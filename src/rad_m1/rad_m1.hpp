@@ -1498,6 +1498,19 @@ class RadiationM1 {
   // E or T <= 0 stays a fault.  Needs implicit_pos_gas = true.
   bool t2_adm_pl = false;
   Real t2_adm_pl_n = 0.0;       // stages admitted by it (would have been rejected)
+  // csacc-1031 <rad_m1>/time2_floor_eint = rho_cut (read only when named; default 0 =
+  // off, bitwise): in cells with rho < rho_cut (the floor class, e.g. env_sponge_rho x
+  // rho_amb) the gas part of the hesdirk2 stage increment t2inc (both stages: momentum,
+  // gas energy, am_vector spin) is dropped, so the stage old vector holds the stage
+  // start's gas, and the gas-energy increment moves to the radiation E (ch/cl weighted:
+  // total energy kept; floor momentum is not conserved, as under the floor sponge / vcap).
+  // Floor gas (1e-8 code) is kicked to the floor vcap by the light every stage: the
+  // explicit combination of those kicks in the old vector gave eint_old <= 0 (pos_gas)
+  // or an extrapolated KE that the solve's drag turned into heat (lt2_P2 / lt3 11-01:
+  // floor gas at e/rho 3-7e5 vs 6e3 in front of the nozzle and above the photosphere,
+  // hydro dt / 2-3).  The floor gas then changes by the implicit stage solves only.
+  Real t2_flr_rho = 0.0;
+  Real t2_flr_n = 0.0;          // cell-stages changed (this rank)
   // pgrst-posfix-1021 <rad_m1>/implicit_hold (DEFAULT true since vphi-1021; a pgen that
   // marks no cell is bitwise either way): cells a problem generator holds (hold_m = 1,
   // set by the pgen where it writes the radiation) are Dirichlet rows of every implicit

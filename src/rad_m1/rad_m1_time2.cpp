@@ -478,6 +478,10 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_accept_fallback")) {
     t2_accfb = pin->GetBoolean("rad_m1", "time2_accept_fallback");
   }
+  // csacc-1031: <rad_m1>/time2_floor_eint (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_floor_eint")) {
+    t2_flr_rho = pin->GetReal("rad_m1", "time2_floor_eint");
+  }
   // csacc-1031: <rad_m1>/time2_adm_poslim (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_adm_poslim")) {
     t2_adm_pl = pin->GetBoolean("rad_m1", "time2_adm_poslim");
@@ -916,6 +920,40 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       ci_(m,n,k,j,i) = v;
     });
     csinc_ok = true;
+  }
+  // csacc-1031 time2_floor_eint (rad_m1.hpp): floor-class cells keep the stage start's
+  // eint in the old vector; the explicit exchange part moves to E
+  if (t2_flr_rho > 0.0) {
+    FluidRef flf = FluidRef::Get(pmy_pack);
+    if (flf.on) {
+      auto &id = pmy_pack->pmesh->mb_indcs;
+      const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+      auto ug = flf.u0;
+      const Real cl = c_light, ch = chat, rc = t2_flr_rho;
+      auto ai_ = aminc;
+      const bool amz = am_vec && aminc.extent_int(0) == t2inc.extent_int(0) &&
+                       aminc.extent_int(1) == t2inc.extent_int(2) &&
+                       aminc.extent_int(2) == t2inc.extent_int(3) &&
+                       aminc.extent_int(3) == t2inc.extent_int(4);
+      Real nf = 0.0;
+      Kokkos::parallel_reduce("m1_t2_flreint", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+          DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
+        const Real dd = ug(m,IDN,k,j,i);
+        if (!(dd > 0.0) || !(dd < rc)) return;
+        // floor gas: the old vector is the stage start's gas (momentum, KE, eint); the
+        // gas-energy increment goes to the radiation E (total energy kept)
+        const Real dex = in_(m,M1_T2_EN,k,j,i);
+        in_(m,M1_T2_EN,k,j,i) = 0.0;
+        in_(m,M1_T2_M1,k,j,i) = 0.0;
+        in_(m,M1_T2_M1+1,k,j,i) = 0.0;
+        in_(m,M1_T2_M1+2,k,j,i) = 0.0;
+        in_(m,M1_T2_E,k,j,i) += (ch/cl)*dex;
+        if (amz) {ai_(m,k,j,i) = 0.0;}
+        sum += 1.0;
+      }, Kokkos::Sum<Real>(nf));
+      t2_flr_n += nf;
+    }
   }
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
   t2_fail = false;
@@ -2456,6 +2494,7 @@ void RadiationM1::Time2Report() {
   }
   if (t2_accfb) {std::cout << " accepted-with-fallback stages=" << t2_accfb_n;}
   if (t2_adm_pl) {std::cout << " time2_adm_poslim admitted stages=" << t2_adm_pl_n;}
+  if (t2_flr_rho > 0.0) {std::cout << " time2_floor_eint(rho<" << t2_flr_rho << ") cell-stages(rank 0)=" << t2_flr_n;}
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   std::cout << std::endl;
