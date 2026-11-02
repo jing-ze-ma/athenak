@@ -1140,7 +1140,8 @@ DvceArray4D<Real> *t2_sd = nullptr;   // ck2nd-1102 ck_t2_seed: g dt K of the st
 int t2_kiter = 0;                     // ck2nd-1102 ck_t2_kiter (TEST)
 bool t2_probe = false;                // ck2nd-1102 ck_t2_start = probe
 bool t2_lin2 = false;                 // ck2nd-1102 ck_t2_lin2
-bool t2_cp_nofsal = false;            // ck2ndt-1102 ck_cad_probe_nofsal (TEST)
+bool t2_cp_nofsal = false;
+int t2_cp_twice = 0;                  // ck2ndt-1102 ck_cad_probe_twice (TEST)            // ck2ndt-1102 ck_cad_probe_nofsal (TEST)
 int64_t t2_nprobe = 0;
 int64_t cnt_full = 0, cnt_nfall = 0, cnt_ncap = 0, cnt_nonconv = 0;
 
@@ -1257,6 +1258,9 @@ void DhjCkT2Init(ParameterInput *pin, Mesh *pm) {
   }
   if (pin->DoesParameterExist("problem", "ck_t2_lin2")) {
     t2_lin2 = pin->GetBoolean("problem", "ck_t2_lin2");
+  }
+  if (pin->DoesParameterExist("problem", "ck_cad_probe_twice")) {
+    t2_cp_twice = pin->GetInteger("problem", "ck_cad_probe_twice");
   }
   if (pin->DoesParameterExist("problem", "ck_cad_probe_nofsal")) {
     t2_cp_nofsal = pin->GetBoolean("problem", "ck_cad_probe_nofsal");
@@ -1434,6 +1438,12 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
                        : ts::ck_cad_probe_fac*dt;
       const Real ti0 = ts::ck_tol_inc;
       if (ts::ck_cad_probe_tolinc > 0.0) ts::ck_tol_inc = ts::ck_cad_probe_tolinc;
+      // ck2ndt-1102 problem/ck_cad_probe_twice (TEST): a first probe only to refresh
+      // what the call forms from the previous call (the VEF factors), then the probe
+      for (int pr=0; pr<t2_cp_twice; ++pr) {
+        picket_fence_two_stream_RT(pm, pdt);
+        Kokkos::deep_copy(u0, u1);
+      }
       picket_fence_two_stream_RT(pm, pdt);
       ts::ck_tol_inc = ti0;
       if (ts::ck_cad_cont) ts::ck_cad_un = u1;
