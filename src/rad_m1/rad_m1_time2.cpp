@@ -48,13 +48,14 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "utils/eint_from_cons.hpp"
+#include "utils/imex_sdirk2.hpp"
 
 namespace radm1 {
 
 using deep_copy_across::DeepCopyAcross;
 
 namespace {
-const Real kT2G = 1.0 - 1.0/std::sqrt(2.0);
+const Real kT2G = imex_sdirk2::Gamma();   // ckhesdirk-1102: shared tableau
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -120,20 +121,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
         std::exit(EXIT_FAILURE);
       }
     }
-    if (t2_tab == 0) {
-      const Real b2 = g/(2.0*(1.0 - g));
-      t2_a21 = 1.0 - g;
-      t2_w0 = 0.5;
-      t2_w1 = 0.5;
-      t2_c31 = 0.5*g;
-      t2_c32 = b2 - 0.5*g;
-    } else {
-      const Real w = 0.25*std::sqrt(2.0);
-      t2_a21 = g;
-      t2_w0 = 0.25;
-      t2_w1 = 0.75;
-      t2_c31 = w - 0.25*g;
-      t2_c32 = w - 0.25*g;
+    // ckhesdirk-1102: the coefficients from the shared tableau (utils/imex_sdirk2.hpp,
+    // the same expressions), also used by <problem>/ck_time_scheme = hesdirk2
+    const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
+    (void) g;
+    t2_a21 = tb.a21;
+    t2_w0 = tb.w0;
+    t2_w1 = tb.w1;
+    t2_c31 = tb.c31;
+    t2_c32 = tb.c32;
+    if (t2_tab != 0) {
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> time2_tableau = trbdf2: TR-BDF2 implicit stages (stage "
                   << "order 2), RK2 hydro with c2 = 2 - sqrt(2)" << std::endl;

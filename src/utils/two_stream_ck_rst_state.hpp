@@ -219,6 +219,15 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
   if (fh_live || fh_stg) {
     for (int s=kCkSlabFhFb; s<=kCkSlabFhCol; ++s) ids.push_back(s);
   }
+  // ckhesdirk-1102 problem/ck_time_scheme = hesdirk2: the FSAL slope and its validity
+  // (live, or still staged: no stage solve since the restart)
+  const bool t2_live = ck_t2_on && ck_t2_k1_ptr != nullptr && ck_t2_k1_ptr->size() > 0;
+  const bool t2_stg = ck_t2_on && !t2_live && CkRstStaged(kCkSlabT2K1) &&
+                      CkRstStaged(kCkSlabT2Ok);
+  if (t2_live || t2_stg) {
+    ids.push_back(kCkSlabT2K1);
+    ids.push_back(kCkSlabT2Ok);
+  }
   const int ns = static_cast<int>(ids.size());
   if (ns > kCkRstMaxSlab) return 0;
   Kokkos::realloc(out, ns, nmb, n3, n2, n1);
@@ -230,11 +239,12 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
     // still staged (not consumed since the restart): copy the staged bytes
     const bool vid = (id >= kCkSlabVefCyc);
     const bool fid = (id >= kCkSlabFhFb && id <= kCkSlabFhCol);
+    const bool tid = (id == kCkSlabT2K1 || id == kCkSlabT2Ok);
     const bool stg = CkRstStaged(id) &&
         ((id == kCkSlabThk && thk_stg) || (id == kCkSlabCv && ck_cv_ptr == nullptr) ||
          (id >= kCkSlabCad0 && id < kCkSlabCad0 + 4 && cad_stg) ||
-         (id >= kCkSlabXsW && !vid && !fid && xs_stg) || (vid && vs_stg) ||
-         (fid && fh_stg));
+         (id >= kCkSlabXsW && !vid && !fid && !tid && xs_stg) || (vid && vs_stg) ||
+         (fid && fh_stg) || (tid && t2_stg));
     if (stg) {
       const std::size_t nd = dst.size();
       if (ck_rst_stage[id].size() == nd) {
@@ -242,6 +252,10 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
       } else {
         Kokkos::deep_copy(dst, 0.0);
       }
+    } else if (id == kCkSlabT2K1) {
+      DeepCopyAcross(dst, Kokkos::subview(*ck_t2_k1_ptr, nm, ALL, ALL, ALL));
+    } else if (id == kCkSlabT2Ok) {
+      Kokkos::deep_copy(dst, ck_t2_ok ? 1.0 : 0.0);
     } else if (fid) {
       RtFhCollect(id, dst);
     } else if (id == kCkSlabThk) {

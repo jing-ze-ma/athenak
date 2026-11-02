@@ -13,6 +13,8 @@
 #include <cstdio>
 
 #include "deep_hot_jupiter_rt.hpp"
+#include "driver/dt_retry.hpp"
+#include "utils/imex_sdirk2.hpp"   // the tableau shared with rad_m1 hesdirk2
 
 
 //----------------------------------------------------------------------------------------
@@ -215,7 +217,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // problem/ck_impl_once: the radiation has left the RK stage (see
     // DhjCkRtSplit); nothing radiative is evaluated here.
     // problem/rt_test_freeze: the radiation is applied by DhjRtFreezeSplit instead
-    if (!two_stream_rt::ck_impl_once && !rt_test_freeze) {
+    // problem/ck_time_scheme = hesdirk2: the SDIRK stage solve of this Heun stage
+    if (two_stream_rt::ck_t2_on) {
+      DhjCkT2Stage(pm, bdt);
+    } else if (!two_stream_rt::ck_impl_once && !rt_test_freeze) {
       picket_fence_two_stream_RT(pm, bdt);
     }
 
@@ -1072,12 +1077,217 @@ void DhjCkRtSplit(Mesh *pm, const Real dt) {
   // problem/ck_impl_every > 1: the cadence (full call every N cycles, linearised step in
   // between); see utils/two_stream_column_ck.hpp
   EBudCk(pm, dt, true);
+  const int64_t nf0 = two_stream_rt::ck_cad_nfull;
   if (two_stream_rt::ck_impl_every > 1) {
     two_stream_rt::CkCadStep(pm, dt);
   } else {
     picket_fence_two_stream_RT(pm, dt);
   }
   EBudCk(pm, dt, false);
+  if (dhj_ck_count_every > 0) {
+    DhjCkCount((two_stream_rt::ck_impl_every <= 1) || (two_stream_rt::ck_cad_nfull != nf0));
+    if (pm->ncycle % dhj_ck_count_every == 0) DhjCkT2Report(pm, false);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! ckhesdirk-1102: problem/ck_time_scheme = hesdirk2.
+//!
+//! DESIGN.  The ck heating S(e) (the backward-Euler correlated-k column solve and the
+//! cadence's linearised step CkCadLin, both BE in T) becomes the STIFF IMPLICIT part of
+//! the IMEX H-ESDIRK2 step of rad_m1_time2.cpp, whose explicit part is the Heun hydro,
+//! unchanged.  Implicit tableau A = [[0,0,0],[1-g,g,0],[1/2,b2,g]], g = 1 - 1/sqrt 2,
+//! b2 = g/(2(1-g)), stiffly accurate, FSAL (K1 = the last slope of the previous step).
+//! The ck runs IN each Heun stage (SourceFunc, where the in-stage ck call sat, after
+//! RKUpdate and before the stage's own exchange; MHD: MHDSrcTerms before CT), no longer
+//! in the operator split (user_split_func is not enrolled).  Each stage solve is the
+//! EXISTING BE solve with dt -> g dt, its old vector = (stage start) + inc:
+//!   stage 1: start = U^n + dt F(U^n),               inc = (1-g) dt K1
+//!   stage 2: start = (U^n + Y2)/2 + dt/2 F(Y2),       inc = dt (g/2 K1 + (b2-g/2) K2)
+//! (the Heun average supplies the rest of the tableau row, as in M1).  inc is added to
+//! u0(IEN) BEFORE the solve, so the solve's old vector and first iterate are rhs; its
+//! slope is K = (Y - rhs)/(g dt), i.e. what it actually applied (caps, fallbacks and
+//! floors of the solve included): stage 1 -> K2, stage 2 -> the next K1.
+//! Admissibility: a negative inc is clamped per cell to -(1 - ck_t2_pos_th) e_int
+//! (default th 0.5; counted), no global redo.
+//! Cadence (ck_impl_every > 1): stage 1 = CkCadStep as today (full on ncycle % N == 0);
+//! stage 2 is ALWAYS the linearised step on the operator stage 1 (or the last full call)
+//! stored (ck_cad_half = 2, shared with rkgfuse-1102 ck_strang), so the number of full solves per cycle is unchanged;
+//! ck_impl_every = 1: both stages are full solves (2 per cycle).  xstep counts cycles.
+//! Without a valid K1 (first step, a restart file without the T2 slabs) the step is
+//! backward Euler: no ck in stage 1, one BE solve with the full dt in stage 2 (= the
+//! Lie split of today, applied before the rest of stage 2's SourceFunc), K1 stored.
+//! Restart: K1 and its validity travel in the ck restart block (slabs T2K1, T2OK), so a
+//! continuation is the straight run.  dt_retry: K1 and ok are registered pgen state
+//! (dtretry::RegisterView/Value) and come back with a retried cycle (dt_retry is not
+//! wired for dhj without rad_m1 today).  MHD: the same hook; the RKG resistive step
+//! stays operator split as today.  The key absent: nothing here runs (bitwise).
+
+namespace {
+const imex_sdirk2::Tableau kCkT2Tab = imex_sdirk2::Make(0);   // hesdirk2
+const Real kCkT2G = kCkT2Tab.g;
+DvceArray4D<Real> *t2_k2 = nullptr;
+DvceArray4D<Real> *t2_r = nullptr;
+Real t2_pos_th = 0.5;
+double t2_nclamp = 0.0;
+int64_t t2_nbe = 0, t2_nstep = 0;
+bool t2_first = true;
+int64_t cnt_full = 0, cnt_nfall = 0, cnt_ncap = 0, cnt_nonconv = 0;
+
+void T2Alloc(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto u0 = (pmbp->phydro != nullptr) ? pmbp->phydro->u0 : pmbp->pmhd->u0;
+  auto &k1 = *two_stream_rt::ck_t2_k1_ptr;
+  if (k1.size() > 0 && k1.extent(0) == u0.extent(0)) return;
+  k1 = DvceArray4D<Real>("ck_t2_k1", u0.extent(0), u0.extent(2), u0.extent(3),
+                         u0.extent(4));
+  *t2_k2 = DvceArray4D<Real>("ck_t2_k2", u0.extent(0), u0.extent(2), u0.extent(3),
+                             u0.extent(4));
+  *t2_r = DvceArray4D<Real>("ck_t2_r", u0.extent(0), u0.extent(2), u0.extent(3),
+                            u0.extent(4));
+}
+}  // namespace
+
+void DhjCkCount(const bool full) {
+  if (!full) return;
+  namespace ts = two_stream_rt;
+  ++cnt_full;
+  cnt_nfall += ts::ck_impl_nfall;
+  cnt_ncap += ts::ck_impl_ncap;
+  cnt_nonconv += ts::ck_impl_nonconv;
+}
+
+void DhjCkT2Report(Mesh *pm, const bool final) {
+  if (global_variable::my_rank != 0) return;
+  namespace ts = two_stream_rt;
+  std::printf("### ck_count%s ncycle=%d scheme=%s full=%lld nfall=%lld ncap=%lld "
+              "nonconv=%lld cadfull=%lld cadlin=%lld t2step=%lld t2be=%lld "
+              "t2clamp=%.0f\n", final ? "_final" : "", static_cast<int>(pm->ncycle),
+              ts::ck_t2_on ? "hesdirk2" : "split", static_cast<long long>(cnt_full),
+              static_cast<long long>(cnt_nfall), static_cast<long long>(cnt_ncap),
+              static_cast<long long>(cnt_nonconv),
+              static_cast<long long>(ts::ck_cad_nfull),
+              static_cast<long long>(ts::ck_cad_nlin), static_cast<long long>(t2_nstep),
+              static_cast<long long>(t2_nbe), t2_nclamp);
+  std::fflush(stdout);
+}
+
+void DhjCkT2Init(ParameterInput *pin, Mesh *pm) {
+  namespace ts = two_stream_rt;
+  t2_pos_th = pin->GetOrAddReal("problem", "ck_t2_pos_th", 0.5);
+  ts::ck_t2_k1_ptr = new DvceArray4D<Real>();
+  t2_k2 = new DvceArray4D<Real>();
+  t2_r = new DvceArray4D<Real>();
+  dtretry::RegisterView("ck_t2_k1", ts::ck_t2_k1_ptr);
+  dtretry::RegisterValue("ck_t2_ok", &ts::ck_t2_ok);
+  if (global_variable::my_rank == 0) {
+    std::cout << "deep_hot_jupiter_rt: ck_time_scheme = hesdirk2 (IMEX H-ESDIRK2, ck "
+              << "solved in each Heun stage with g dt, g = " << kCkT2G
+              << "; cadence stage 2 linearised; pos_th " << t2_pos_th << ")" << std::endl;
+  }
+  (void) pm;
+}
+
+void DhjCkT2Stage(Mesh *pm, const Real bdt) {
+  namespace ts = two_stream_rt;
+  if (t2_first) {
+    // the restart's K1 (or none: the first step is backward Euler)
+    t2_first = false;
+    T2Alloc(pm);
+    ts::ck_t2_ok = false;
+    if (ts::ck_rst_have && ts::CkRstStaged(ts::kCkSlabT2K1) &&
+        ts::CkRstStaged(ts::kCkSlabT2Ok)) {
+      const bool okv = (ts::ck_rst_stage[ts::kCkSlabT2Ok][0] > 0.5);
+      if (ts::CkRstPut(ts::kCkSlabT2K1, *ts::ck_t2_k1_ptr)) ts::ck_t2_ok = okv;
+      ts::CkRstStageFree(ts::kCkSlabT2Ok);
+    } else if (global_variable::restart_run && global_variable::my_rank == 0) {
+      std::cout << "### ck_time_scheme = hesdirk2: the restart file has no K1; the "
+                << "first step is backward Euler" << std::endl;
+    }
+  }
+  T2Alloc(pm);
+  const Real dt = pm->dt;
+  const int stage = (bdt == dt) ? 1 : 2;
+  const Real g = kCkT2G;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto u0 = (pmbp->phydro != nullptr) ? pmbp->phydro->u0 : pmbp->pmhd->u0;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto k1 = *ts::ck_t2_k1_ptr;
+  auto k2 = *t2_k2;
+  auto rr = *t2_r;
+  const bool cad = (ts::ck_impl_every > 1);
+  auto solve = [&](const Real sdt, const bool lin) {
+    const int64_t nf0 = ts::ck_cad_nfull;
+    if (cad) {
+      // rkgfuse-1102's ck_cad_half: 1 = may be the cycle's full call, 2 = linearised
+      ts::ck_cad_half = lin ? 2 : 1;
+      ts::CkCadStep(pm, sdt);
+      ts::ck_cad_half = 0;
+    } else {
+      picket_fence_two_stream_RT(pm, sdt);
+    }
+    if (dhj_ck_count_every > 0) DhjCkCount(!cad || (ts::ck_cad_nfull != nf0));
+  };
+  auto report = [&]() {
+    if (dhj_ck_count_every > 0 && pm->ncycle % dhj_ck_count_every == 0) {
+      DhjCkT2Report(pm, false);
+    }
+  };
+  if (!ts::ck_t2_ok) {
+    if (stage == 1) return;
+    par_for("ck_t2_be0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      rr(m,k,j,i) = u0(m,IEN,k,j,i);
+    });
+    solve(dt, false);
+    const Real idt = 1.0/dt;
+    par_for("ck_t2_be1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      k1(m,k,j,i) = (u0(m,IEN,k,j,i) - rr(m,k,j,i))*idt;
+    });
+    ts::ck_t2_ok = true;
+    ++t2_nbe;
+    report();
+    return;
+  }
+  const bool two = (stage == 2);
+  Real c1, c2;
+  imex_sdirk2::IncCoeffs(kCkT2Tab, stage, dt, c1, c2);
+  const ts::CkCadState st = ts::CkCadMakeState(pm);
+  const Real lof = 1.0 - t2_pos_th;
+  Real ncl = 0.0;
+  Kokkos::parallel_reduce("ck_t2_inc", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
+    Real inc = c1*k1(m,k,j,i);
+    if (two) inc += c2*k2(m,k,j,i);
+    if (inc < 0.0) {
+      const Real e = st.Eint(m, k, j, i);
+      const Real lo = (e > 0.0) ? -lof*e : 0.0;
+      if (inc < lo) {
+        inc = lo;
+        sum += 1.0;
+      }
+    }
+    if (!(inc == inc)) inc = 0.0;
+    u0(m,IEN,k,j,i) += inc;
+    rr(m,k,j,i) = u0(m,IEN,k,j,i);
+  }, Kokkos::Sum<Real>(ncl));
+  t2_nclamp += ncl;
+  solve(g*dt, two);
+  const Real igdt = 1.0/(g*dt);
+  auto kd = two ? k1 : k2;
+  par_for("ck_t2_slope", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    kd(m,k,j,i) = (u0(m,IEN,k,j,i) - rr(m,k,j,i))*igdt;
+  });
+  if (two) {
+    ++t2_nstep;
+    report();
+  }
 }
 
 //--------------------------------------------------------------------------------
