@@ -4565,8 +4565,10 @@ void EnvTcolColumn(MeshBlockPack *pmbp, const Real racc, const std::vector<Real>
 //! (restore) u0 goes back to the restart state
 void WbTanCaptureIC(MeshBlockPack *pmbp, const DvceArray5D<Real> &usave, const bool restore) {
   auto *phd = pmbp->phydro;
-  wbtan::Alloc(acc_wbt, pmbp);
+  // accwbtan-1101 (a): the FULL conserved IC (the rotating envelope's m2, m3 and its KE in E)
+  wbtan::AllocU(acc_wbt, pmbp);
   auto weq = *acc_wbt.weq;
+  auto ueq = *acc_wbt.ueq;
   auto u0 = phd->u0;
   auto phicc = phd->phicc0;
   auto &ic = pmbp->pmesh->mb_indcs;
@@ -4579,20 +4581,47 @@ void WbTanCaptureIC(MeshBlockPack *pmbp, const DvceArray5D<Real> &usave, const b
     const Real d = u0(m,IDN,k,j,i);
     weq(m,0,k,j,i) = d;
     weq(m,1,k,j,i) = u0(m,IEN,k,j,i) - d*phicc(m,k,j,i);
+    for (int n=IDN; n<=IEN; ++n) ueq(m,n,k,j,i) = u0(m,n,k,j,i);
   });
   if (restore) Kokkos::deep_copy(phd->u0, usave);
   acc_wbt.ready = false;
   if (global_variable::my_rank == 0) {
     std::printf("ry_per_accretor: problem/roche_wb_tan ON: tangential gt4/gp4 = the hydro's "
-                "own residual of the static IC envelope (probe at the first source call)\n");
+                "own residual of the IC envelope (spin %.6g; probe at the first source "
+                "call)\n", spin_);
   }
 }
 
-//! roche-wbtan-1101: the probe (wbtan_common.hpp; no pgen extra term: the accretor's
-//! Coriolis terms act on v = 0) and g_t -> gt4_/gp4_ (covariant on cs, as gt4/gp4 are)
+//! accwbtan-1101 (a): the pgen's own tangential stage terms of the rotating W_eq (bdt = 1,
+//! into us): on the spherical polar mesh the analytic Coriolis -2 rho Omega x v of
+//! RyPerSrcEnv (phys_3d), x2: + rho 2 Omega v_phi cos(theta), x3: - rho 2 Omega (v_r sin
+//! + v_theta cos), ALWAYS the analytic form (problem/coriolis_lz's mass-flux Q_c is not
+//! part of the equilibrium).  The cubed sphere's Coriolis is the core frame_omega's
+//! (AmModule::FrameForceProbe inside the probe): nothing here.
+void WbTanAccExtra(Mesh *pm, DvceArray5D<Real> &us, DvceArray5D<Real> &scratch) {
+  (void) scratch;
+  if (cs_) return;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  auto w0 = pmbp->phydro->w0;
+  auto &x2v = pmbp->pcoord->x2v;
+  const Real om2 = 2.0*rp_.omega;
+  par_for("wbt_extra", DevExeSpace(), 0, pmbp->nmb_thispack - 1, indcs.ks, indcs.ke,
+          indcs.js, indcs.je, indcs.is, indcs.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = w0(m,IDN,k,j,i);
+    const Real vr = w0(m,IVX,k,j,i), vt = w0(m,IVY,k,j,i), vp = w0(m,IVZ,k,j,i);
+    const Real st = sin(x2v(m,j)), cth = cos(x2v(m,j));
+    us(m,IM2,k,j,i) += d*om2*vp*cth;
+    us(m,IM3,k,j,i) -= d*om2*(vr*st + vt*cth);
+  });
+}
+
+//! roche-wbtan-1101: the probe (wbtan_common.hpp, the full IC W_eq incl. its rotation;
+//! extra = WbTanAccExtra) and g_t -> gt4_/gp4_ (covariant on cs, as gt4/gp4 are)
 void WbTanAccProbe(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  wbtan::Probe(pm, acc_wbt, nullptr, "ry_per_accretor");
+  wbtan::Probe(pm, acc_wbt, WbTanAccExtra, "ry_per_accretor");
   auto g = *acc_wbt.gt;
   auto gt = gt4_, gp = gp4_;
   auto &ic = pm->mb_indcs;
@@ -5237,7 +5266,9 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   if (acc_wbt.on) {
     std::string bad = "";
     if (!p3_) bad = "problem/phys_3d = true (the 3-D tangential forces gt4_/gp4_)";
-    if (spin_ != 1.0 || spr_on_) bad = "a static envelope (spin 1, no spin ramp: W_eq at rest)";
+    // accwbtan-1101 (a): any constant spin (W_eq = the rotating IC); no spin ramp (W_eq
+    // would change in time)
+    if (spr_on_) bad = "no problem/spin_ramp (W_eq is the IC: a constant spin)";
     if (!phd->use_etotgrav) bad = "<hydro>/etotgrav = true (the work is in the energy flux)";
     if (pin->DoesParameterExist("problem", "env_ic_vz") &&
         pin->GetBoolean("problem", "env_ic_vz")) {
