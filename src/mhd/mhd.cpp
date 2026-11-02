@@ -641,6 +641,12 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // (-1)^(i+k) CT null mode that the cell-centred field cannot; in a radial outflow
     // that biases the corner EMF downwind and grows the mode at ~v_r/dr in a polar row.
     use_bs_emf = pin->GetOrAddBoolean("mhd","bs_emf",false);
+    // lhlld2-1102: smooth GS07 upwind weights in the corner EMF (EmfSmoothW); read only
+    // when named, so key-absent runs keep the sign switch bitwise
+    if (pin->DoesParameterExist("mhd","emf_smooth")) {
+      emf_smooth = pin->GetReal("mhd","emf_smooth");
+      if (emf_smooth < 0.0) emf_smooth = -1.0;
+    }
     // Fix for the above at the source: in the two POLAR cell rows (the only place the
     // (-1)^(i+k) mode closes on itself, because the polar ghost row is the k+N/2 image of
     // the row) add the UCT/Rusanov face-field dissipation to the corner e2, with the local
