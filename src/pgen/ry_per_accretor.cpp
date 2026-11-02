@@ -3479,6 +3479,10 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
   hist_tprev_ = t;
 }
 
+// accwbtan-1101 (c): -grad_t G, x2 / x3 (filled further down; defined here so that
+// RyPerFinal can free them before Kokkos::finalize -- prod-1102 exit-crash fix)
+DvceArray4D<Real> wbt_ga2_, wbt_ga3_;   // accwbtan-1101 (c): -grad_t G, x2 / x3
+
 //! release the namespace-scope Views before Kokkos::finalize
 void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   eint_ledger::Free();   // floorheat-1029: before Kokkos::finalize
@@ -3525,6 +3529,8 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   spr_aref_ = DvceArray4D<Real>();   // accspin-1028
   bdvs_ = DvceArray3D<Real>();   // pgrst-1021
   rbk1_ = DvceArray3D<Real>();   // accbook-1021
+  wbt_ga2_ = DvceArray4D<Real>();   // prod-1102: was never freed (Kokkos finalize error)
+  wbt_ga3_ = DvceArray4D<Real>();
 }
 
 //! thermo = general: log T, log rho of the column at psi (linear in psi, clamped)
@@ -4689,7 +4695,7 @@ void WbTanCaptureIC(MeshBlockPack *pmbp, const DvceArray5D<Real> &usave, const b
 //! + v_theta cos), ALWAYS the analytic form (problem/coriolis_lz's mass-flux Q_c is not
 //! part of the equilibrium).  The cubed sphere's Coriolis is the core frame_omega's
 //! (AmModule::FrameForceProbe inside the probe): nothing here.
-DvceArray4D<Real> wbt_ga2_, wbt_ga3_;   // accwbtan-1101 (c): -grad_t G, x2 / x3
+// (wbt_ga2_, wbt_ga3_ are defined above RyPerFinal, which frees them)
 
 //! accwbtan-1101 (c) (<rad_m1>): the IC's equilibrium RADIATIVE acceleration, tangential:
 //! a_t = -grad_t G(psi), G = the column's radiative potential (Phi_eff = Phi_wb + G; its
