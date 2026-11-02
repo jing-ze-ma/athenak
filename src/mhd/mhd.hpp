@@ -313,6 +313,16 @@ class MHD {
   // set in rkg_u_vmask (0 = all, the default)
   int rkg_u_vmask = 0;
   bool c2p_split = false;   // true while the operator-split ConToPrim task runs
+  // ckbval-1102 <mhd>/split_bval_fast: the MHD twin of the hydro energy-only refresh
+  // after the operator-split source (see mhd_splitbval.cpp).  sbf_s = u0 at the input of
+  // the first ConToPrim after the last u0 refresh (RK stage, RKG super-stage or split).
+  bool sbf_on = false;
+  bool sbf_want = false;
+  bool sbf_valid = false;
+  DvceArray5D<Real> sbf_s;
+  long sbf_nfast = 0, sbf_nfull = 0;
+  bool SplitBvalFastOK();
+  void SplitBvalSnap();
   // stswall-1029: >= 0 while Resistivity::ConToPrimRKG runs: the weight of this super-
   // stage's IEN change in the state the RKG super-step ends with (1: ConToPrimRKG adds
   // the change to every register of the recurrence); the IDN change is carried in full

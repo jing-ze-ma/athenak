@@ -119,6 +119,7 @@ add_executable(
         mhd/mhd_fofc.cpp
         mhd/mhd_newdt.cpp
         mhd/mhd_tasks.cpp
+        mhd/mhd_splitbval.cpp
         mhd/mhd_tracers.cpp
         mhd/mhd_update.cpp
         mhd/mhd_etotgrav.cpp
