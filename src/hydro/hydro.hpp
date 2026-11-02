@@ -269,6 +269,7 @@ class Hydro {
   DvceArray5D<Real> sbf_s;
   long sbf_nfast = 0, sbf_nfull = 0;
   bool SplitBvalFastOK();
+  void SplitBvalSnap(Driver *pdrive, int stage);
   DvceArray2D<Real> c2p_acc;
   DvceArray4D<Real> c2p_ref_e, c2p_ref_d;
   void EnableC2PTrack();
