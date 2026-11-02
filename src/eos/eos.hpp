@@ -226,6 +226,15 @@ struct EOS_Data {
   // 1 -> 0 where d2 changes sign under a finite J and makes the RK step first order in
   // dt (utils/cb_sensor.hpp).  Same s wherever |J| <= |d2|.
   bool cb_cont = false;
+  // lhllc2nd-1102 <hydro>/lhllc_c1 = eps (> 0; default 0 = off, bitwise; read only when
+  // named) and <hydro>/lhllc_c1_parts (bit mask, default 31 = all): the C1 LHLLC of
+  // hydro/rsolvers/lhllc_c1_hyd.hpp.  Every min/max/abs/sign switch of LHLLC that a
+  // low-Mach flow sits on (contact switch sign(S*), PVRS q, chi, odd-even sensor, the
+  // x1 phi floor) is replaced by a C1 blend over a band eps (velocities in units of the
+  // larger sound speed, the PVRS pressure ratio p*/p - 1 directly), so that the flux is
+  // C1 in the state and RK2 keeps second order in dt.
+  Real c1_eps = 0.0;
+  int c1_parts = 31;
 
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
   // energy instead of deleting it (default false = the historical behaviour).

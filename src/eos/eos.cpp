@@ -209,6 +209,13 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     if (pin->DoesParameterExist(bk, kc)) {
       eos_data.cb_cont = pin->GetBoolean(bk, kc);
     }
+    // lhllc2nd-1102: see EOS_Data::c1_eps (hydro only; read only when named)
+    if (is_hyd && pin->DoesParameterExist(bk, "lhllc_c1")) {
+      eos_data.c1_eps = pin->GetReal(bk, "lhllc_c1");
+      if (pin->DoesParameterExist(bk, "lhllc_c1_parts")) {
+        eos_data.c1_parts = pin->GetInteger(bk, "lhllc_c1_parts");
+      }
+    }
   }
   // <block>/vceil_thermalise: see the note on EOS_Data::vceil_thermalise.  Default off,
   // so every existing run is bit-for-bit unchanged.  Meaningless without a ceiling, and
