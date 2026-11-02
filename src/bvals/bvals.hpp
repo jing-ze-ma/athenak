@@ -213,6 +213,21 @@ struct MeshBufferData {
 };
 
 //----------------------------------------------------------------------------------------
+//! \struct PackSegFC
+//! \brief halofc-1102: one active (block m, buffer n, receiver component v) triple of the
+//! face-field pack, with everything the old per-team setup derived from the neighbour
+//! table (see MeshBoundaryValuesFC::BuildPackSegmentsFC).  Plain ints only.
+
+struct PackSegFC {
+  int m, n, v, vv;
+  int il, jl, kl, ni, nj, nk, ndat;
+  int dm, dn, local;
+  int mode;               // 0 plain from b, 1 plain from cb, 2 seam / pole transform
+  int aj, bj, ak, bk, sj, sk, signvar;
+  int cs_xform, cs_coar, cs_slotidx, cs_gkind, cs_skind, cs_seam;
+};
+
+//----------------------------------------------------------------------------------------
 //! \struct MeshBufferDv
 //! \brief DEVICE image of one MeshBoundaryBuffer: every index range and size a kernel
 //! reads, and (pointer, stride) handles on its vars/flux Views.
@@ -498,6 +513,19 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
   DvceArray6D<Real> cs_seam_geom;   // (nmb,nslot,nkind,nk3,nk2,15): SeamFieldXform
   DvceArray6D<Real> cs_seam_stnc;   // (nmb,nkind,2,nk3,nk2,7): bs,wm,w0,wp,fpos,sden,sig
   void BuildCubedSphereSeamTables();
+
+  // halofc-1102: FLAT, LOAD-BALANCED cubed-sphere pack.  Every (block, buffer,
+  // component) triple's index ranges, destination and seam parameters -- the per-team
+  // setup of the old team kernel, which only depends on the (static) neighbour table --
+  // are resolved ONCE into fc_seg, and the samples are walked by a RangePolicy in chunks
+  // of FC_PACK_CHUNK, one thread per sample.  See PackAndSendFCFlat in bvals_fc.cpp.
+  bool fc_seg_ready = false;
+  int fc_nchunk_plain = 0, fc_nchunk_seam = 0;
+  DvceArray1D<PackSegFC> fc_seg;          // the active (m,n,v) triples
+  DvceArray1D<int> fc_chunk_seg;          // chunk -> fc_seg index (plain chunks first)
+  DvceArray1D<int> fc_chunk_beg;          // chunk -> first flat sample of that triple
+  void BuildPackSegmentsFC();
+  void PackAndSendFCFlat(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
 };
 
 //----------------------------------------------------------------------------------------
