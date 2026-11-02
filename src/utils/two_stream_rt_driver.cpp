@@ -41,9 +41,12 @@ void CkWarmSeed(Mesh *pm, DvceArray5D<Real> u0) {
   par_for("ck_warm_seed", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real s = 0.0;
-    if (warm) {
+    if (ext) {
+      s = sx_(m,k,j,i);   // prod-1102: capped where it is formed (DhjCkT2Stage)
+      u0(m,IEN,k,j,i) += s;
+    } else if (warm) {
       const Real e = ei_(m,k,j,i);          // the previous call's last iterate
-      s = ext ? sx_(m,k,j,i) : dep_(m,k,j,i);
+      s = dep_(m,k,j,i);
       if (e > 0.0) {
         const Real lim = cap*e;
         if (s > lim) s = lim;

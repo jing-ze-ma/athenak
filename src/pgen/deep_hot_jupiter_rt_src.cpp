@@ -1408,9 +1408,25 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
     auto sd = *t2_sd;
     auto ks_ = two ? k2 : k1;
     const Real gdt = g*dt;
+    // prod-1102: the seed is capped HERE at ck_impl_dtmax x the cell's current internal
+    // energy (the stage state), not in CkWarmSeed against ck_ei (the previous call's last
+    // iterate): ck_ei is not in the restart file and a restart's rebuild passes overwrite
+    // it, so the old cap made a restart whose first full call is seeded non-bitwise
+    // (fresh r1m, rst at cycle 150 / 8967: 300 straight != 150 + 150)
+    const Real cap = ts::ck_impl_dtmax;
     par_for("ck_t2_seed", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      sd(m,k,j,i) = gdt*ks_(m,k,j,i);
+      Real s = gdt*ks_(m,k,j,i);
+      const Real e = st.Eint(m, k, j, i);
+      if (e > 0.0) {
+        const Real lim = cap*e;
+        if (s > lim) s = lim;
+        if (s < -lim) s = -lim;
+      } else {
+        s = 0.0;
+      }
+      if (!(s == s)) s = 0.0;
+      sd(m,k,j,i) = s;
     });
     ts::ck_seed_ext_on = true;
   }
