@@ -4662,11 +4662,91 @@ void WbTanCaptureIC(MeshBlockPack *pmbp, const DvceArray5D<Real> &usave, const b
 //! + v_theta cos), ALWAYS the analytic form (problem/coriolis_lz's mass-flux Q_c is not
 //! part of the equilibrium).  The cubed sphere's Coriolis is the core frame_omega's
 //! (AmModule::FrameForceProbe inside the probe): nothing here.
+DvceArray4D<Real> wbt_ga2_, wbt_ga3_;   // accwbtan-1101 (c): -grad_t G, x2 / x3
+
+//! accwbtan-1101 (c) (<rad_m1>): the IC's equilibrium RADIATIVE acceleration, tangential:
+//! a_t = -grad_t G(psi), G = the column's radiative potential (Phi_eff = Phi_wb + G; its
+//! radial part -dG/dr is the M1 force_reference a_ref, the tangential part is handed to the
+//! gas by the M1 coupling in full), as face differences of G along the x2 (x3) grid line
+//! through the centre over the same lengths as gt4_/gp4_ (sp orthonormal, cs covariant).
+//! In the probe it is the radiation's share of the equilibrium, so that g_t holds gravity
+//! (+ the discretisation) only and the live M1 force is not counted twice.  Host, once.
+void WbTanAccRadAcc(MeshBlockPack *pmbp) {
+  const RocheParams p = rp_;
+  const Real dlt = env_dlt_, rtop = env_rtop_, rspin = env_rspin_, phtop = env_phtop_;
+  const Real phis = env_phis_;
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  const int nmb = pmbp->nmb_thispack;
+  auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+  auto hx2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
+  auto hx2f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx2f);
+  auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
+  auto hx3f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx3f);
+  Kokkos::realloc(wbt_ga2_, nmb, n3, n2, n1);
+  Kokkos::realloc(wbt_ga3_, nmb, n3, n2, n1);
+  auto h2 = Kokkos::create_mirror_view(wbt_ga2_);
+  auto h3 = Kokkos::create_mirror_view(wbt_ga3_);
+  const bool cs = cs_;
+  auto gat = [&](const Real r, const Real st, const Real ph) {
+    return RadColAt(rcol_g_, phis - PhiWB3(p, dlt, rtop, rspin, phtop, r, st, ph));
+  };
+  Real amax = 0.0;
+  for (int m=0; m<nmb; ++m) {
+    const int pnl = cs ? pmbp->pmb->mb_panel.h_view(m) : 0;
+    for (int k=0; k<n3; ++k) {
+      for (int j=0; j<n2; ++j) {
+        Real st, ph, sa, pa, sb, pb, s3a, p3a, s3b, p3b;
+        AccAng(cs, pnl, hx2(m,j), hx3(m,k), st, ph);
+        AccAng(cs, pnl, hx2f(m,j), hx3(m,k), sa, pa);
+        AccAng(cs, pnl, hx2f(m,j+1), hx3(m,k), sb, pb);
+        AccAng(cs, pnl, hx2(m,j), hx3f(m,k), s3a, p3a);
+        AccAng(cs, pnl, hx2(m,j), hx3f(m,k+1), s3b, p3b);
+        Real a2, a3;
+        if (cs) {
+          a2 = CsArc(pnl, hx2f(m,j), hx3(m,k), hx2f(m,j+1), hx3(m,k));
+          a3 = CsArc(pnl, hx2(m,j), hx3f(m,k), hx2(m,j), hx3f(m,k+1));
+        } else {
+          a2 = hx2f(m,j+1) - hx2f(m,j);
+          a3 = st*(hx3f(m,k+1) - hx3f(m,k));
+        }
+        for (int i=0; i<n1; ++i) {
+          const Real r = hx1(m,i);
+          h2(m,k,j,i) = -(gat(r, sb, pb) - gat(r, sa, pa))/(r*a2);
+          h3(m,k,j,i) = -(gat(r, s3b, p3b) - gat(r, s3a, p3a))/(r*a3);
+          amax = std::max(amax, std::max(std::fabs(h2(m,k,j,i)), std::fabs(h3(m,k,j,i))));
+        }
+      }
+    }
+  }
+  Kokkos::deep_copy(wbt_ga2_, h2);
+  Kokkos::deep_copy(wbt_ga3_, h3);
+  if (global_variable::my_rank == 0) {
+    std::printf("ry_per_accretor: roche_wb_tan: the equilibrium radiative acceleration "
+                "-grad_t G in the probe, max |a_t| (rank 0) = %.6g\n", amax);
+  }
+}
+
 void WbTanAccExtra(Mesh *pm, DvceArray5D<Real> &us, DvceArray5D<Real> &scratch) {
   (void) scratch;
-  if (cs_) return;
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
+  if (rad_) {
+    // accwbtan-1101 (c): the radiation's tangential share of the equilibrium (WbTanAccRadAcc)
+    auto w0r = pmbp->phydro->w0;
+    auto ga2 = wbt_ga2_, ga3 = wbt_ga3_;
+    par_for("wbt_extra_rad", DevExeSpace(), 0, pmbp->nmb_thispack - 1, indcs.ks, indcs.ke,
+            indcs.js, indcs.je, indcs.is, indcs.ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = w0r(m,IDN,k,j,i);
+      us(m,IM2,k,j,i) += d*ga2(m,k,j,i);
+      us(m,IM3,k,j,i) += d*ga3(m,k,j,i);
+    });
+  }
+  if (cs_) return;
   auto w0 = pmbp->phydro->w0;
   auto &x2v = pmbp->pcoord->x2v;
   const Real om2 = 2.0*rp_.omega;
@@ -4686,7 +4766,10 @@ void WbTanAccExtra(Mesh *pm, DvceArray5D<Real> &us, DvceArray5D<Real> &scratch) 
 void WbTanAccProbe(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   // accwbtan-1101 (d): a restart whose file carries g_t is not re-probed
-  if (!acc_wbt.ready) wbtan::Probe(pm, acc_wbt, WbTanAccExtra, "ry_per_accretor");
+  if (!acc_wbt.ready) {
+    if (rad_) WbTanAccRadAcc(pmbp);   // accwbtan-1101 (c)
+    wbtan::Probe(pm, acc_wbt, WbTanAccExtra, "ry_per_accretor");
+  }
   acc_wbt_g4_ = true;
   auto g = *acc_wbt.gt;
   auto gt = gt4_, gp = gp4_;
