@@ -1441,6 +1441,9 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
   // ck2ndt-1102 problem/ck_cad_probe (utils/ck_2nd.hpp (8)): the model refresh as a
   // probe on U^n at the start of a due step; then both stages are linearised
   if (ts::ck_cad_probe && cad) {
+    // a restart's model (and ck_cad_cont state) first: without it the first step after
+    // a restart would probe off the schedule (not the straight run)
+    ts::CkRstCadRestore(pm);
     if (!two && (ts::ck_cad_ptr == nullptr ||
                  ts::CkCadProbeDue(pm->time, dt, pm->ncycle, ts::ck_impl_every))) {
       ts::CkRstCadRestore(pm);
