@@ -217,6 +217,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // resamples, which is all the check below covers.
   sbf_on = pin->DoesParameterExist("hydro","split_bval_fast") ?
            pin->GetBoolean("hydro","split_bval_fast") : false;
+  scp_once = pin->DoesParameterExist("hydro","split_c2p_once") ?
+             pin->GetBoolean("hydro","split_c2p_once") : false;
   if (sbf_on && (pmy_pack->pmesh->multilevel ||
                  pin->DoesBlockExist("shearing_box") ||
                  pin->DoesBlockExist("orbital_advection"))) {

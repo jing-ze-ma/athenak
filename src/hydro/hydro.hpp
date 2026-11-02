@@ -270,6 +270,10 @@ class Hydro {
   long sbf_nfast = 0, sbf_nfull = 0;
   bool SplitBvalFastOK();
   void SplitBvalSnap(Driver *pdrive, int stage);
+  // ckbval-1102 <hydro>/split_c2p_once: skip the two ConToPrimSplit tasks when the
+  // operator-split source is user_split_once (RTOpSplitBvals converts already)
+  bool scp_once = false;
+  bool SplitC2POnce() const;
   DvceArray2D<Real> c2p_acc;
   DvceArray4D<Real> c2p_ref_e, c2p_ref_d;
   void EnableC2PTrack();

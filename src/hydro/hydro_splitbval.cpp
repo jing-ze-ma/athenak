@@ -15,6 +15,7 @@
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "driver/driver.hpp"
+#include "pgen/pgen.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -133,6 +134,31 @@ void Hydro::SplitBvalSnap(Driver *pdrive, int stage) {
     Kokkos::deep_copy(DevExeSpace(), sbf_s, u0);
     sbf_valid = true;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool Hydro::SplitC2POnce
+//! \brief <hydro>/split_c2p_once: true when the ConToPrimSplit tasks are redundant.
+//! Each ConToPrimSplit converts a state that has already been converted with nothing
+//! writing u0 in between:
+//!   - user_split_once: "after_timeintegrator" = RTStrangSplit (source, then
+//!     RTOpSplitBvals = exchange, BCs, ConToPrim over the whole mesh) -> ConToPrimSplit;
+//!     the next "before_timeintegrator" = (RTStrangSplit returns at stage 0) ->
+//!     ConToPrimSplit;
+//!   - no split source at all (e.g. <problem>/ck_time_scheme = hesdirk2, ck inside the
+//!     RK stages): both lists hold only the ConToPrimSplit after the last stage's own
+//!     ConToPrim.
+//! Between those conversions and the next RK stage nothing writes u0 or w0 (NewTimeStep
+//! and the outputs only read them).  The repeats are not bitwise no-ops -- each one redoes
+//! u0(IEN) = (E - rho Phi) + rho Phi under etotgrav and re-solves T from the previous T
+//! -- so this is a ROUND-OFF change, off unless named.  The Strang split (a split source
+//! without user_split_once) keeps both tasks.
+
+bool Hydro::SplitC2POnce() const {
+  if (!scp_once) return false;
+  const Mesh *pm = pmy_pack->pmesh;
+  if (pm->pgen == nullptr || pm->pgen->user_split_func == nullptr) return true;
+  return pm->pgen->user_split_once;
 }
 
 }  // namespace hydro

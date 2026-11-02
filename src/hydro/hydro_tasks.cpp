@@ -879,6 +879,11 @@ void Hydro::C2PTrack(Driver *pdrive, int stage, bool before) {
 //! the RK stages): identical, except that the floor bookkeeping weights it by 1.
 
 TaskStatus Hydro::ConToPrimSplit(Driver *pdrive, int stage) {
+  // ckbval-1102 <hydro>/split_c2p_once: under user_split_once the conversion inside
+  // RTOpSplitBvals is the last thing to touch u0 before the next RK stage, so this one
+  // (after it, and again in "before_timeintegrator") only repeats it (a round-off change:
+  // each call re-runs the etotgrav round trip and the T(d,e) solve).  See SplitC2POnce.
+  if (SplitC2POnce()) return TaskStatus::complete;
   c2p_split = true;
   TaskStatus ts = ConToPrim(pdrive, stage);
   c2p_split = false;
