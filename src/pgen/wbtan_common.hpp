@@ -57,6 +57,10 @@ struct WbTan {
   bool ready = false;
   DvceArray5D<Real> *weq = nullptr;   // (nmb, 2, n3, n2, n1): rho_eq, eint_eq (all cells)
   DvceArray5D<Real> *gt = nullptr;    // (nmb, 2, n3, n2, n1): g_2, g_3 (covariant accel.)
+  // optional (accwbtan): the FULL conserved W_eq (nmb, 5: IDN..IEN, n3, n2, n1; E as the
+  // fluid stores it, etotgrav potential and KE included): a ROTATING equilibrium.  When
+  // set it replaces weq in the probe (AllocU).
+  DvceArray5D<Real> *ueq = nullptr;
   MeshBoundaryValuesCC *pbv = nullptr;   // the probe's private exchange (own comms)
 };
 
@@ -72,6 +76,16 @@ inline void Alloc(WbTan &w, MeshBlockPack *pmbp) {
   const int n3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
   w.weq = new DvceArray5D<Real>("wbtan_weq", pmbp->nmb_thispack, 2, n3, n2, n1);
   w.gt = new DvceArray5D<Real>("wbtan_gt", pmbp->nmb_thispack, 2, n3, n2, n1);
+}
+
+inline void AllocU(WbTan &w, MeshBlockPack *pmbp) {
+  Alloc(w, pmbp);
+  if (w.ueq != nullptr) return;
+  auto &ic = pmbp->pmesh->mb_indcs;
+  const int n1 = ic.nx1 + 2*ic.ng;
+  const int n2 = (ic.nx2 > 1) ? (ic.nx2 + 2*ic.ng) : 1;
+  const int n3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
+  w.ueq = new DvceArray5D<Real>("wbtan_ueq", pmbp->nmb_thispack, 5, n3, n2, n1);
 }
 
 //! the force, one code path for every geometry: a2/a3 are the caller's other tangential
@@ -167,14 +181,21 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   int nvar;
   if constexpr (kMHD) {nvar = ph->nmhd + ph->nscalars;} else {nvar = ph->nhydro + ph->nscalars;}
   zero_b();
+  const bool full = (w.ueq != nullptr);
+  DvceArray5D<Real> ueq;
+  if (full) ueq = *w.ueq;
   par_for("wbtan_u", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    const Real d = weq(m,0,k,j,i);
-    u0(m,IDN,k,j,i) = d;
-    u0(m,IM1,k,j,i) = 0.0;
-    u0(m,IM2,k,j,i) = 0.0;
-    u0(m,IM3,k,j,i) = 0.0;
-    u0(m,IEN,k,j,i) = weq(m,1,k,j,i) + (etg ? d*phi0(m,k,j,i) : 0.0);
+    if (full) {
+      for (int n=IDN; n<=IEN; ++n) u0(m,n,k,j,i) = ueq(m,n,k,j,i);
+    } else {
+      const Real d = weq(m,0,k,j,i);
+      u0(m,IDN,k,j,i) = d;
+      u0(m,IM1,k,j,i) = 0.0;
+      u0(m,IM2,k,j,i) = 0.0;
+      u0(m,IM3,k,j,i) = 0.0;
+      u0(m,IEN,k,j,i) = weq(m,1,k,j,i) + (etg ? d*phi0(m,k,j,i) : 0.0);
+    }
     for (int n=IEN+1; n<nvar; ++n) u0(m,n,k,j,i) = 0.0;
   });
   if (w.pbv == nullptr) {
@@ -243,6 +264,9 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
     hydro::AmFluid fl{us, ph->u1, ph->w0, ph->wder, bcc_, ph->uflx,
                       ph->peos->eos_data, kMHD, ph->use_wellbalance_static, ph->pwb};
     ph->pam->AmTransportProbe(fl);
+    // a rotating W_eq: the frame force (Coriolis) of ITS velocity field belongs to the
+    // static rotating equilibrium (the am_vector mass-flux torque correction does not)
+    ph->pam->FrameForceProbe(fl);
   }
   // the problem generator's own stage terms of W_eq (bdt = 1) into `us`; u0 is free
   // scratch here (restored below)
