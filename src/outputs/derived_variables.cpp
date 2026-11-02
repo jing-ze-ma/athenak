@@ -25,6 +25,7 @@
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
+#include "diffusion/resistivity.hpp"
 #include "radiation/radiation.hpp"
 #include "radiation/radiation_tetrad.hpp"
 #include "rad_m1/rad_m1.hpp"
@@ -997,6 +998,31 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
                             *(w0_(m,IVZ,k,j+1,i)-w0_(m,IVZ,k,j-1,i))))
                       / dx_squared;
     });
+  }
+
+  // rkgstrang-1102: the cell resistivity eta_b (+ the ambipolar eta_A), ghosts included
+  if (name.compare("mhd_eta") == 0) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto *prs = pm->pmb_pack->pmhd->presist;
+    auto eta_ = prs->eta_b;
+    const bool ad_on = (prs->ad_type != 0);
+    auto coef_ = prs->ad_coef;
+    auto bcc_ = pm->pmb_pack->pmhd->bcc0;
+    const Real cap_ad = prs->max_eta_ad;
+    const bool has_eta = (eta_.extent_int(0) >= nmb);
+    par_for("mhd_eta", DevExeSpace(), 0, (nmb-1), 0, (n3-1), 0, (n2-1), 0, (n1-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real e = has_eta ? eta_(m,k,j,i) : 0.0;
+      if (ad_on) {
+        const Real b2 = SQR(bcc_(m,IBX,k,j,i)) + SQR(bcc_(m,IBY,k,j,i))
+                      + SQR(bcc_(m,IBZ,k,j,i));
+        e += fmin(coef_(m,k,j,i)*b2, cap_ad);
+      }
+      dv(m,i_dv,k,j,i) = e;
+    });
+    i_dv += 1; // increment derived variable index
   }
 
   // divergence of B, including ghost zones
