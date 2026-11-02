@@ -279,6 +279,16 @@ if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt" OR ${PROBLEM} STREQUAL "box_convec
           utils/two_stream_rt_chain_nn.cpp
   )
 endif()
+# tusplit-1102: the deep_hot_jupiter_rt problem generator is split by topic; its pieces
+# share the private header pgen/deep_hot_jupiter_rt.hpp
+if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt")
+  target_sources(athena
+      PRIVATE
+          pgen/deep_hot_jupiter_rt_hse.cpp
+          pgen/deep_hot_jupiter_rt_src.cpp
+          pgen/deep_hot_jupiter_rt_diag.cpp
+  )
+endif()
 
 # prodcand-1011: the rad_m1 ic_rad = fs_relax default is for the stellar-envelope pgen only
 # (rad_m1_icrad.cpp IcRadInit); every other problem defaults to ic_rad = none
