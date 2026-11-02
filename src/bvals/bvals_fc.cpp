@@ -297,6 +297,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
     }
   }
   const int nchunk = (nkji_max + fc_chunk - 1)/fc_chunk;
+  const bool d1_ = (pack_depth == 1);
   int nmnv = 3*nmb*nnghbr;
   Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv*nchunk, Kokkos::AUTO);
   BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
@@ -368,6 +369,38 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         const int nk = ku - kl + 1;
         const int nkji = nk*nj*ni;
         const int nji  = nj*ni;
+        // mhdspeed-1101 (B): with pack_depth = 1 only the source layer ADJACENT to the
+        // shared boundary is packed, in each direction the buffer is ghost in.  The
+        // slot fixes the direction (nghbr_index.hpp: 0-7 x1 faces, 8-15 x2 faces,
+        // 16-23 x1x2 edges, 24-31 x3 faces, 32-39 x3x1 edges, 40-47 x2x3 edges, 48-55
+        // corners) and the end of the source range on that side is the depth-1 layer
+        // for every component and staggering (the range is ng deep there).  Along a
+        // seam the ghost layers coincide with the source's active layers, so the
+        // receiver's depth-1 ghosts are exactly what is packed; nothing is skipped in
+        // the tangential (along-seam, vertex-fill widened) direction.
+        int o1 = 0, o2 = 0, o3 = 0;
+        if (n < 8) {
+          o1 = (n < 4) ? -1 : 1;
+        } else if (n < 16) {
+          o2 = (n < 12) ? -1 : 1;
+        } else if (n < 24) {
+          o1 = (((n-16) >> 1) & 1) ? 1 : -1;  o2 = (((n-16) >> 2) & 1) ? 1 : -1;
+        } else if (n < 32) {
+          o3 = (n < 28) ? -1 : 1;
+        } else if (n < 40) {
+          o1 = (((n-32) >> 1) & 1) ? 1 : -1;  o3 = (((n-32) >> 2) & 1) ? 1 : -1;
+        } else if (n < 48) {
+          o2 = (((n-40) >> 1) & 1) ? 1 : -1;  o3 = (((n-40) >> 2) & 1) ? 1 : -1;
+        } else {
+          o1 = ((n-48) & 1) ? 1 : -1;  o2 = (((n-48) >> 1) & 1) ? 1 : -1;
+          o3 = (((n-48) >> 2) & 1) ? 1 : -1;
+        }
+        const int i1d = (o1 < 0) ? il : iu, j1d = (o2 < 0) ? jl : ju;
+        const int k1d = (o3 < 0) ? kl : ku;
+        auto keep = [&](const int kq, const int jq, const int iq) {
+          return !d1_ || ((o1 == 0 || iq == i1d) && (o2 == 0 || jq == j1d) &&
+                          (o3 == 0 || kq == k1d));
+        };
         // this team's slice of the flat (k,j,i) index (mhdspeed-1101 A, see above)
         const int ck0 = (ch*fc_chunk < nkji) ? ch*fc_chunk : nkji;
         const int ck1 = (ck0 + fc_chunk < nkji) ? ck0 + fc_chunk : nkji;
@@ -886,8 +919,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               j += jl;
               int kk = ak*k + bk;
               int jj = aj*j + bj;
-              rbuf[dn].vars(dm, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
-                = seamval(kk,jj,i);
+              if (keep(kk,jj,i)) {
+                rbuf[dn].vars(dm, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
+                  = seamval(kk,jj,i);
+              }
             });
 
           // else copy field components into send buffer for MPI communication below
@@ -901,8 +936,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               j += jl;
               int kk = ak*k + bk;
               int jj = aj*j + bj;
-              sbuf[n].vars(m, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
-                = seamval(kk,jj,i);
+              if (keep(kk,jj,i)) {
+                sbuf[n].vars(m, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
+                  = seamval(kk,jj,i);
+              }
             });
           }
           } else {   // normal boundary exchange
@@ -917,6 +954,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               int i = (idx - k*nji - j*ni) + il;
               k += kl;
               j += jl;
+              if (!keep(k,j,i)) return;
               if (v==0) {
                 rbuf[dn].vars(dm,i-il + ni*(j-jl + nj*(k-kl))) = b.x1f(m,k,j,i);
               } else if (v==1) {
@@ -934,6 +972,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               int i = (idx - k*nji - j*ni) + il;
               k += kl;
               j += jl;
+              if (!keep(k,j,i)) return;
               if (v==0) {
                 rbuf[dn].vars(dm,i-il + ni*(j-jl + nj*(k-kl))) = cb.x1f(m,k,j,i);
               } else if (v==1) {
@@ -955,6 +994,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               int i = (idx - k*nji - j*ni) + il;
               k += kl;
               j += jl;
+              if (!keep(k,j,i)) return;
               if (v==0) {
                 sbuf[n].vars(m,i-il + ni*(j-jl + nj*(k-kl))) = b.x1f(m,k,j,i);
               } else if (v==1) {
@@ -972,6 +1012,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               int i = (idx - k*nji - j*ni) + il;
               k += kl;
               j += jl;
+              if (!keep(k,j,i)) return;
               if (v==0) {
                 sbuf[n].vars(m,i-il + ni*(j-jl + nj*(k-kl))) = cb.x1f(m,k,j,i);
               } else if (v==1) {
