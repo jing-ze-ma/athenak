@@ -555,7 +555,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
                          !pmesh->pgen->user_split_once &&
                          pmesh->pgen->user_split_pre_late &&
                          (pmesh->pmb_pack->pmhd != nullptr);
-    const bool rkg_late = rkg_fuse || ck_late;
+    // rkgfuse-1102 <mhd>/tracer_strang: the tracer pass in halves, inside the RKG halves
+    const bool trc_s = (pmesh->pmb_pack->pmhd != nullptr) &&
+                       pmesh->pmb_pack->pmhd->trc_strang;
+    const bool rkg_late = rkg_fuse || ck_late || trc_s;
     if (rkg_fuse && pmesh->adaptive) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mhd>/rkg_strang_fuse is not supported with AMR"
@@ -648,6 +651,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           rkg_step(1, 0.5);
         }
       }
+      // rkgfuse-1102 <mhd>/tracer_strang: the first tracer half, inside the leading RKG
+      // step and outside the first ck half
+      if (trc_s) {pmesh->pmb_pack->pmhd->TracerSourceHalf(1);}
       // rkgfuse-1102 dhj ck_strang: the first ck half, inside the leading RKG step
       if (ck_late) {(void) pmesh->pmb_pack->pmhd->RTStrangSplit(this, -1);}
 
@@ -830,6 +836,8 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // Work after time integrator indicated by "1" in stage
       ExecuteTaskList(pmesh, "after_timeintegrator", 1);
 
+      // rkgfuse-1102 tracer_strang: the second tracer half, after the second ck half
+      if (trc_s) {pmesh->pmb_pack->pmhd->TracerSourceHalf(2);}
       // rkgfuse-1102: the RKG step after the split work of "after_timeintegrator"
       if (rkg_on && rkg_late) {
         if (!rkg_fuse) {
