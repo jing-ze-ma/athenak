@@ -128,6 +128,15 @@ class ProblemGenerator {
   // when true the split source is applied ONCE per cycle with the FULL dt, in
   // "after_timeintegrator" only -- the "before_timeintegrator" call is skipped.
   bool user_split_once=false;
+  // rkgfuse-1102: which call of a Strang pair the split hook is in (set by the
+  // RTStrangSplit tasks right before the call): 1 = the first half, 2 = the second half,
+  // 0 = the user_split_once full-dt call.  Read by dhj's <problem>/ck_strang cadence.
+  int user_split_half=0;
+  // rkgfuse-1102: the first half is taken by the Driver (MHD only), right before the RK
+  // stages and AFTER the leading RKG super-step, instead of in "before_timeintegrator"
+  // (where it would run before the tracer pass and the leading RKG step).  Set by dhj's
+  // <problem>/ck_strang; false keeps every run bitwise unchanged.
+  bool user_split_pre_late=false;
   UserRefinementFnPtr user_ref_func=nullptr;
   UserHistoryFnPtr user_hist_func=nullptr;
   // the two halves of the optional pgen state block (see kPgenRstMagic).  A pgen enrols

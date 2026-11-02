@@ -1005,7 +1005,9 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
     RTOpSplitBvals(false, false);
     return TaskStatus::complete;
   }
+  pm->pgen->user_split_half = (stage == 0) ? 1 : 2;   // rkgfuse-1102
   (pm->pgen->user_split_func)(pm, 0.5*(pm->dt));
+  pm->pgen->user_split_half = 0;
   // the half-step wrote ACTIVE cells only, outside any stage: bring the MeshBlock halos
   // and the physical x1 ghosts up to the state it produced before the stage reads them
   RTOpSplitBvals(false, false);
