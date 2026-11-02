@@ -56,6 +56,7 @@
 #include <vector>
 
 #include "utils/eint_ledger.hpp"
+#include "rad_m1/rad_m1_t2reset.hpp"
 #include "athena.hpp"
 #include "globals.hpp"
 #include "parameter_input.hpp"
@@ -82,6 +83,10 @@
 #endif
 
 namespace radm1 {
+// csacc-1031 reset-sector exemption of the hesdirk2 admissibility (rad_m1_t2reset.hpp)
+bool g_t2_reset_on = false;
+DvceArray4D<Real> g_t2_reset;
+double g_t2_reset_nskip = 0.0;
 static int M1HaloDepthEnv(MeshBlockPack *pp, ParameterInput *pin);   // (below)
 // DEBUG <rad_m1>/dbg_eint_cells (accretor-sector-light-1017; file scope so the class
 // layout is unchanged): 0 = off
@@ -15557,6 +15562,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool hh = have_hydro;
     const bool gq = have_hydro && coupling && dbgh;
     Real vmin = 1.0e300;
+    const bool rso = g_t2_reset_on;   // csacc-1031 reset-sector exemption
+    auto rsm_ = g_t2_reset;
+    Real nskip = 0.0;
     // a flat 1-D range (m1-fast4): the rank-4 MDRange reduction ran at 360 us on the
     // wedge; a min is order-independent, so the result is the same bit for bit
     const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
@@ -15577,8 +15585,30 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         r = fmin(r, iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq);
       }
       if (!(r > 0.0)) {r = -1.0;}
+      if (rso && rsm_(m,k,j,i) > 0.0) {r = 1.0e300;}   // csacc-1031: a pgen-reset cell
       lmin = (r < lmin) ? r : lmin;
     }, Kokkos::Min<Real>(vmin));
+    if (rso) {   // csacc-1031: count the skipped non-positive cells (diagnostic)
+      Kokkos::parallel_reduce("m1_t2_adm_rs",
+      Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+      KOKKOS_LAMBDA(const int idx, Real &sk) {
+        const int m = idx/nkji;
+        int q = idx - m*nkji;
+        const int k = q/nji + ks;
+        q -= (k - ks)*nji;
+        const int j = q/ni + js;
+        const int i = q - (j - js)*ni + is;
+        if (!(rsm_(m,k,j,i) > 0.0)) return;
+        Real r = iw_(m,M1_IW_S2,k,j,i);
+        if (hh) {r = fmin(r, iw_(m,M1_IW_TP,k,j,i));}
+        if (gq) {
+          Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+          r = fmin(r, iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq);
+        }
+        if (!(r > 0.0)) sk += 1.0;
+      }, Kokkos::Sum<Real>(nskip));
+      g_t2_reset_nskip += nskip;
+    }
 #if MPI_PARALLEL_ENABLED
     {Real g;
     MPI_Allreduce(&vmin, &g, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
@@ -15615,6 +15645,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                     - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
           r = fmin(r, iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq);
         }
+        if (rso && rsm_(m,k,j,i) > 0.0) {return;}   // csacc-1031: a pgen-reset cell
         if (!(r > 0.0)) {pm_(m,k,j,i) = 1.0;}
       });
       t2_pfix_want = true;

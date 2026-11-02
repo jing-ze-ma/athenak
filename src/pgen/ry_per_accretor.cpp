@@ -176,6 +176,7 @@
 #include "coordinates/coordinates.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "coordinates/cubed_sphere.hpp"
+#include "rad_m1/rad_m1_t2reset.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
@@ -2676,6 +2677,14 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       hmk = pmbp->pradm1->hold_m;
       Kokkos::deep_copy(hmk, 0.0);
     }
+    // csacc-1031 problem/t2_reset_exempt: the cells this kernel resets (nozzle, mask, back
+    // sink) are exempt from the next hesdirk2 admissibility check (rad_m1_t2reset.hpp)
+    const bool rse = rad && radm1::g_t2_reset_on;
+    DvceArray4D<Real> rsk;
+    if (rse) {
+      rsk = radm1::g_t2_reset;
+      Kokkos::deep_copy(rsk, 0.0);
+    }
     const Real l1c = l1_c_, l1t = l1_t_;
     const RocheParams pr = rp_;
     const bool g3 = g3d_;
@@ -2730,6 +2739,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         }
       }
       if (!(innz || inmk)) return;
+      if (rse) {rsk(m,k,j,i) = 1.0;}
       array_sum::GlobalSum v;
       for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
       const Real d0 = u0(m,IDN,k,j,i), m30 = u0(m,IM3,k,j,i), e0 = u0(m,IEN,k,j,i);
@@ -3398,6 +3408,18 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
 //! release the namespace-scope Views before Kokkos::finalize
 void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   eint_ledger::Free();   // floorheat-1029: before Kokkos::finalize
+  if (radm1::g_t2_reset_on) {   // csacc-1031 t2_reset_exempt: report, free before finalize
+    double ns = radm1::g_t2_reset_nskip;
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &ns, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("ry_per_accretor: t2_reset_exempt: %.0f non-positive stage values in "
+                  "reset cells skipped by the admissibility check (this run segment)\n", ns);
+    }
+    radm1::g_t2_reset = DvceArray4D<Real>();
+    radm1::g_t2_reset_on = false;
+  }
   // hold-viper-1021: the held-set face supply booked by RyPerHoldBook (into erinj_/Ebnd)
   if (pm->pmb_pack->pradm1 != nullptr && pm->pmb_pack->pradm1->impl_hold) {
     Real hb = hold_bk_;
@@ -4033,6 +4055,8 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
     Real mn[2], mx[2];
     for (int q=0; q<2; ++q) {
       Real lo = 1.0e300, hi = -1.0e300;
+      const bool csk = cs_;   // csacc-1031
+      auto &cck = pmbp->pcoord->cos_cell;
       Kokkos::parallel_reduce("ryper_rchk_lo", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                               nmb*nkji),
       KOKKOS_LAMBDA(const int idx, Real &l) {
@@ -4042,8 +4066,9 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
         const int i = idx%ni + is;
         const Real d = u0(m,IDN,k,j,i);
         if (!(d >= thr)) return;
-        const Real e = u0(m,IEN,k,j,i) - 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
-                       + SQR(u0(m,IM3,k,j,i)))/d - d*phicc(m,k,j,i);
+        // csacc-1031: the cs metric |m|^2 (AccQ; sp the plain sum, bitwise)
+        const Real e = u0(m,IEN,k,j,i) - 0.5*AccQ(csk, csk ? cck(m,k,j) : 0.0,
+                       u0(m,IM1,k,j,i), u0(m,IM2,k,j,i), u0(m,IM3,k,j,i))/d - d*phicc(m,k,j,i);
         const Real v = (q == 0) ? log10(d*du) : log10(eos.Temperature(d, e)*tk);
         l = fmin(l, v);
       }, Kokkos::Min<Real>(lo));
@@ -4056,8 +4081,9 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
         const int i = idx%ni + is;
         const Real d = u0(m,IDN,k,j,i);
         if (!(d >= thr)) return;
-        const Real e = u0(m,IEN,k,j,i) - 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
-                       + SQR(u0(m,IM3,k,j,i)))/d - d*phicc(m,k,j,i);
+        // csacc-1031: the cs metric |m|^2 (AccQ; sp the plain sum, bitwise)
+        const Real e = u0(m,IEN,k,j,i) - 0.5*AccQ(csk, csk ? cck(m,k,j) : 0.0,
+                       u0(m,IM1,k,j,i), u0(m,IM2,k,j,i), u0(m,IM3,k,j,i))/d - d*phicc(m,k,j,i);
         const Real v = (q == 0) ? log10(d*du) : log10(eos.Temperature(d, e)*tk);
         l = fmax(l, v);
       }, Kokkos::Max<Real>(hi));
@@ -6240,6 +6266,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
          pin->GetBoolean("problem", "sink_zero_v");
   flvc_ = pin->DoesParameterExist("problem", "floor_m1_vcap") &&
           pin->GetBoolean("problem", "floor_m1_vcap");
+  // csacc-1031 problem/t2_reset_exempt (read only when named, default false = bitwise): the
+  // nozzle / donor-mask / back-sink cells (reset by this pgen after every stage) are exempt
+  // from the hesdirk2 stage admissibility check and the time2_posfix marking
+  // (rad_m1_t2reset.hpp); sp and cs alike
+  if (pin->DoesParameterExist("problem", "t2_reset_exempt") &&
+      pin->GetBoolean("problem", "t2_reset_exempt")) {
+    if (!rad_) fatal("problem/t2_reset_exempt needs <rad_m1>");
+    auto &idh = pmy_mesh_->mb_indcs;
+    const int nh1 = idh.nx1 + 2*idh.ng;
+    const int nh2 = (idh.nx2 > 1) ? (idh.nx2 + 2*idh.ng) : 1;
+    const int nh3 = (idh.nx3 > 1) ? (idh.nx3 + 2*idh.ng) : 1;
+    const int nmh = std::max(pmbp->nmb_thispack, pmy_mesh_->nmb_maxperrank);
+    Kokkos::realloc(radm1::g_t2_reset, nmh, nh3, nh2, nh1);
+    Kokkos::deep_copy(radm1::g_t2_reset, 0.0);
+    radm1::g_t2_reset_on = true;
+    if (global_variable::my_rank == 0) {
+      std::printf("ry_per_accretor: t2_reset_exempt: nozzle / mask / back-sink cells are "
+                  "exempt from the hesdirk2 admissibility check\n");
+    }
+  }
   if (flvc_ && !rad_) fatal("problem/floor_m1_vcap needs <rad_m1>");
   // accbook-1021 (default true, USER 10-22; history only)
   skb_ = pin->GetOrAddBoolean("problem", "sink_kick_book", true);
