@@ -6,6 +6,15 @@ the template) -> instrumental Gaussian FWHM = planet lsf_fwhm_kms (4.28 for WASP
 with the pRT 3000 K Fe I template (broadened by the same LSF):
 CCF(v) = sum F(lam) T(lam/(1+v/c)) / sum T, lags +-60 km/s on the R = 1e6 pixel grid (0.2998 km/s).
 Kp-Vsys: exposures shifted by (Kp0 - Kp) sin(2 pi phi) and summed (equal weights), as kp.py.
+Kp-marg (Seidel+2026 Methods: "Given the uncertainty on the orbital velocity, we marginalise over
+the orbital velocity as well as over the planetary wind velocity"; no Kp range/prior stated):
+  (a) every Kp row in the prior window (planet key kp_marg_range, default Kp0 +- 50, flat prior) gets
+      a Gaussian+offset fit (+-12 km/s around its maximum, as 'peak'); noise sigma = map std at
+      |v| > 30 (ED Fig. 2 significance normalisation; or scaled so the map maximum = planet key
+      kp_marg_snr); A = row maximum (|v| < 35) minus the row median at |v| > 30; row likelihood
+      ln L = (A/sigma)^2/2 (matched-filter delta chi^2); the offset
+      posterior is the L-weighted mixture of N(mu(Kp), sigma_mu(Kp)) -> mean, 16/50/84 %.
+  (b) the map rows averaged over the same Kp window, then the usual peak/wide fits.
   python ana.py --planet planets/wasp121b.json --out OUTDIR <tag> [<tag> ...]
       -> OUTDIR/ana_<tag>.npz, summary printed and appended to OUTDIR/ana_summary.txt
 """
@@ -26,8 +35,10 @@ _T = {}
 
 def configure(cfg):
     """Kp0, RM mask, T2/T3, LSF from planet.load() (WASP-121b: Kp0 219.2, 0.017, 4.28 km/s)."""
-    global KP0, KPG, PHRM, PH14, PH23, LSF
+    global KP0, KPG, PHRM, PH14, PH23, LSF, KPM_RANGE, KPM_SNR
     KP0 = cfg['KP0']
+    KPM_RANGE = cfg.get('kp_marg_range') or [KP0 - 50.0, KP0 + 50.0]
+    KPM_SNR = cfg.get('kp_marg_snr')
     KPG = np.arange(KP0 - 100, KP0 + 100.01, 1.0)
     PHRM = cfg['rm_mask_phase']                # Seidel+2025 RM exclusion |phi| < 0.017
     PH14 = cfg['PH14']                         # T1 / T4
@@ -95,6 +106,50 @@ def kpvsys(cc, phases, sel):
     return M
 
 
+def gfit_cov(v, y, v0, hw, s0, sig):
+    """Gaussian+offset fit with absolute noise sig: (A, mu, sigma_mu); nan on failure."""
+    from scipy.optimize import curve_fit
+    m = abs(v - v0) < hw
+    f = lambda x, A, mu, s, c: A*np.exp(-0.5*((x - mu)/s)**2) + c   # noqa: E731
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        try:
+            p, C = curve_fit(f, v[m], y[m], p0=[y[m].max() - y[m].min(), v0, s0, y[m].min()],
+                             sigma=np.full(m.sum(), sig), absolute_sigma=True, maxfev=20000)
+        except RuntimeError:
+            return np.nan, np.nan, np.nan
+    return p[0], p[1], np.sqrt(abs(C[1, 1]))
+
+
+def kpmarg(M):
+    """Kp-marginalised offset of a Kp-Vsys map M (KPG x VSG); see the module docstring."""
+    w = (KPG >= KPM_RANGE[0] - 1e-9) & (KPG <= KPM_RANGE[1] + 1e-9)
+    A = np.array([M[i][abs(VSG) < 35].max() - np.median(M[i][abs(VSG) > 30])
+                  for i in np.flatnonzero(w)])
+    sig = M[:, abs(VSG) > 30].std()
+    if KPM_SNR:
+        sig = A.max()/float(KPM_SNR)
+    mu, smu = np.full(w.sum(), np.nan), np.full(w.sum(), np.nan)
+    for n, i in enumerate(np.flatnonzero(w)):
+        vpk = VSG[np.argmax(np.where(abs(VSG) < 35, M[i], -np.inf))]
+        _, mu[n], smu[n] = gfit_cov(VSG, M[i], vpk, 12.0, 3.0, sig)
+    ok = np.isfinite(mu) & np.isfinite(smu) & (smu > 0)
+    lnl = 0.5*(A/sig)**2
+    wt = np.where(ok, np.exp(lnl - np.nanmax(lnl[ok])), 0.0)
+    wt /= wt.sum()
+    vg = np.arange(-40, 40.0001, 0.005)
+    pdf = sum(wt[n]*np.exp(-0.5*((vg - mu[n])/smu[n])**2)/smu[n] for n in np.flatnonzero(ok))
+    cdf = np.cumsum(pdf)/pdf.sum()
+    q = [float(np.interp(x, cdf, vg)) for x in (0.16, 0.5, 0.84)]
+    row = M[w].mean(0)
+    mb = metrics(VSG, row)
+    return dict(mean=float((wt*np.where(ok, mu, 0)).sum()), q=q, sig=float(sig),
+                smax=float(np.nanmax(A[ok])/sig), kpmean=float((wt*KPG[w]).sum()),
+                flat=float(np.nanmean(mu[ok])), b_peak=mb['peak'], b_wide=mb['wide'],
+                b_fwhm=mb['fwhm'], b_cen=mb['cen'], range=list(map(float, KPM_RANGE)),
+                kp=KPG[w], mu=mu, smu=smu, wt=wt)
+
+
 def analyse(tag, outdir):
     d = np.load(os.path.join(outdir, 'spec_%s.npz' % tag))
     ph = d['phases']
@@ -111,6 +166,7 @@ def analyse(tag, outdir):
         R['kp0_' + sn_] = metrics(VSG, M[i0])
         im, jm = np.unravel_index(np.argmax(M), M.shape)
         R['mapmax_' + sn_] = (KPG[im], VSG[jm])
+        R['kpm_' + sn_] = kpmarg(M)
     # Seidel+2025 segments: morning = ingress epoch, evening = egress epoch, |phi| > 0.017 (RM
     # mask) and "excluded true ingress and egress" (Table 3 text), i.e. PHRM < |phi| < T2/T3.
     # Their Table 3 gives the AVERAGE per-exposure shift and FWHM; also the stacked-CCF fit.
@@ -119,6 +175,7 @@ def analyse(tag, outdir):
         R['seg_' + seg] = metrics(VL, st)
         R['seg_' + seg + '_n'] = int(sel.sum())
         R['seg_' + seg + '_ccf'] = st
+        R['kpm_' + seg] = kpmarg(kpvsys(cb, ph, sel))
         per = np.array([[metrics(VL, cb[j])['wide'], metrics(VL, cb[j])['fwhm']]
                         for j in np.flatnonzero(sel)])
         R['seg_' + seg + '_perexp'] = float(np.nanmean(per[:, 0]))
@@ -161,6 +218,14 @@ def summary(R):
                      R['seg_%s_perexp_sd' % seg], R['seg_%s_perexp_fwhm' % seg], k['wide'],
                      k['fwhm'], k['peak'], k['cen'], R['seg_%s_Lmor' % seg],
                      R['seg_%s_Leve' % seg]))
+    for k in ('full', 'rmcut', 'mor', 'eve'):
+        r = R['kpm_' + k]
+        s.append('  Kp-marg %-5s Kp %.1f-%.1f: (a) posterior mean %+6.2f median %+6.2f [16 %+6.2f, '
+                 '84 %+6.2f] <Kp> %.1f (S_max %.1f, flat-Kp mean %+6.2f) | (b) Kp-avg map: peak '
+                 '%+6.2f wide %+6.2f (FWHM %.1f) centroid %+6.2f' % (
+                     k, r['range'][0], r['range'][1], r['mean'], r['q'][1], r['q'][0], r['q'][2],
+                     r['kpmean'], r['smax'], r['flat'], r['b_peak'], r['b_wide'], r['b_fwhm'],
+                     r['b_cen']))
     s.append('  CF (template-weighted absorption) log p_tan 16/50/84 %%: %.2f %.2f %.2f' %
              tuple(R['cf_p16_50_84']))
     return '\n'.join(s)

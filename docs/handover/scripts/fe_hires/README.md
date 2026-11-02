@@ -44,6 +44,8 @@ viper paths).
 | `eos_xh`, `eos_yhe`, `comptab` | composition; must match the run's `eos_xh`, `eos_yhe`, `eos_metal_mh` | 0.7188, 0.2420, `data/comptab_3x.bin.gz` |
 | `a_fe` | Fe/H by number (not scaled with [M/H]) | 3.2e-5 |
 | `pcut_bar` | Fe removed at p < pcut (model top); 0 = no cut | 1e-6 |
+| `kp_marg_range` | Kp-marg flat prior [Kp_lo, Kp_hi] km/s; null = Kp0 +- 50 (paper gives no range) | null -> 169.2-269.2 |
+| `kp_marg_snr` | Kp-marg noise: null = model map std at \|v\| > 30; else map peak S/N set to this | null |
 
 - Paper LSFs: ESPRESSO 1-UT HR 2.14, 4-UT MR 4.28, MAROON-X 3.53 km/s.
 - `planets/wasp121b_1x_caltech.json` is the 1x composition (eos_xh 0.7381, eos_yhe 0.2485,
@@ -117,3 +119,31 @@ command lines in `run_example.sh`; log in `run_w121.log`.
 | morning / evening segment | -3.43 / -6.78 | -3.43 / -6.78 |
 
 - The spectra (`spec_s10_00166.npz`) are **bit-identical** to the 10-07 file (max |diff| 0).
+
+## Kp marginalisation (11-02, `Kp-marg` lines of ana.py)
+
+Seidel+2026 (Nat. Astron., Sec. 2, p. 6 of the ESO PDF): "Given the uncertainty on the orbital
+velocity, we marginalise over the orbital velocity as well as over the planetary wind velocity."
+Methods 5.1.6 only says they "scan over a range of possible projected orbital velocities"; no Kp
+range, prior or fit function is given (arXiv:2606.22455 v1 has the same text). Fig. 1 caption: the
+error is "the fit uncertainty of the observed cross-correlation peak". ana.py therefore prints:
+- **(a)** flat Kp prior over `kp_marg_range`; each Kp row gets a Gaussian+offset fit (+-12 km/s
+  around the row maximum, the `peak` estimator) with sigma_mu at the noise level; row likelihood
+  ln L = S^2/2 (S = row peak above the |v| > 30 median, in noise units); the offset posterior is the
+  L-weighted mixture -> mean, median, 16/84 %. This is the reading of the paper's sentence.
+- **(b)** the Kp-Vsys rows averaged over the same window, then the usual peak/wide/centroid fits.
+- The model has no photon noise, so (a) uses the map's own |v| > 30 std (S_max ~13 for WASP-121b),
+  which pins it close to the best-Kp row; `kp_marg_snr` sets an observational S/N instead.
+- The segment (mor/eve) maps use only one side of the transit, so Kp and v are degenerate there;
+  their Kp-marg lines are printed but are NOT meaningful (16-84 % spans ~10 km/s).
+
+WASP-121b s10 dump 00166 (`run_w121/out`, ana only):
+
+| km/s | full | rmcut |
+|---|---|---|
+| Kp0 row Gaussian peak (unchanged) | -4.26 | -4.28 |
+| map maximum v (Kp) (unchanged) | -3.60 (206.2) | -3.40 (205.2) |
+| **Kp-marg (a)** median [16, 84] | **-4.16 [-4.29, -4.04]** | -4.11 [-4.26, -3.95] |
+| (a) with kp_marg_snr 10 / 5 | -4.17 / -4.23 | |
+| **Kp-marg (b)** peak / wide | -4.82 / -5.05 | -5.03 / -4.96 |
+

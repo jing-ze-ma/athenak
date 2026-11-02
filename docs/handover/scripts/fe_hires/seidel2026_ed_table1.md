@@ -32,9 +32,10 @@ per-night stacking weights, and Supplementary Table 1 (planet parameters; not in
 | | 2022-06-02 | MX | 3.53 | Pelletier, GN-2022A-FT-208 | 84.7-233.5 | |
 
 Notes:
-- WASP-121b: the table lists 3 ESPRESSO 1-UT nights and 2 4-UT nights. Methods 5.1.3 says only that
-  "some of the observations" were 4-UT MR (template at 4.28 km/s). Our seidel2026.md reads it as
-  "E-4UT x2 used (1-UT nights not used)"; the paper text does not say this explicitly.
+- WASP-121b: the table lists 3 ESPRESSO 1-UT nights and 2 4-UT nights, but Methods 5.1.1 (p. 12)
+  says: "For WASP-121 b, we only used the data taken in 4-UT mode". So only the two E-4UT nights
+  (LSF 4.28) enter Fig. 1 (corrected 11-02; the earlier note here was wrong).
+- WASP-76b: Methods 5.1.1: "we discarded the night of 18 Oct 2019 for WASP-76 b" -> 2 E + 3 MX used.
 - WASP-76b and WASP-189b mix ESPRESSO and MAROON-X nights (two LSFs). The paper stacks nights in
   Kp-Vsys after a per-night system-velocity correction, "based on S/N per night".
 - The 2018-11-30 / 2023-09-23 4-UT nights are partial transits (egress / ingress; Seidel+2025).

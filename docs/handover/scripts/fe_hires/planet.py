@@ -36,6 +36,9 @@ DEFAULTS = {
     'comptab': 'data/comptab_3x.bin.gz',
     'a_fe': 3.2e-5,                # Fe/H by number (EOS donor table value; not scaled by [M/H])
     'pcut_bar': 1e-6,              # Fe removed at p < pcut (model top); 0 = no cut
+    # ana.py Kp-marg (Seidel+2026 marginalise over the orbital velocity; no range given)
+    'kp_marg_range': None,         # [Kp_lo, Kp_hi] km/s, flat prior; null -> Kp0 +- 50
+    'kp_marg_snr': None,           # null: noise = model map std at |v| > 30; else map max = this S/N
 }
 
 
