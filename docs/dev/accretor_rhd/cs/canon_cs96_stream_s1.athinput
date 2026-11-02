@@ -284,6 +284,7 @@ vet_col_every    = 1
 time2_vet_col            = extrap2        # run12 USER 10-22: extrap2 (was predict, final_1012)
 implicit_face_opac       = harmonic       # run12 USER 10-22: face opacity harmonic (faceopac-prod-1022)
 time2_reject             = retry          # USER 10-20 option (c): non-admissible hesdirk2 stage -> dt_retry at a smaller dt (2nd order kept) instead of backward Euler (t2retry-1020)
+time2_floor_eint = 1.0e-7   # csacc-1031 ADOPTED (USER 11-01; code 20b3b78d): floor-class gas (rho < 1e-7 = env_sponge_rho x rho_amb) keeps the stage start in the hesdirk2 old vector. Long test csacc_1031 long_base vs long_F (cs96 stream t 0.01-0.02): BE steps 465 -> 2, dt min 3.9e-6 -> 1.17e-5, 1.64x faster, L/Min/Mnzf within ~1e-4..2e-4 (time2_auto_be = 16 stays on)
 marshak_q        = 0.5
 implicit_bc_x1min = flux   # ACC: accretor-specific (units / floor / BC) (prod flux)
 implicit_flux_x1min = 1453030.128124   # s1stream-1031 (USER 10-31 "full-sphere version of the stream run", run12 spin 1): spin-1 full-sphere bottom flux (= mkramp.py flux0)
