@@ -14,6 +14,7 @@
 
 #include "deep_hot_jupiter_rt.hpp"
 #include "driver/dt_retry.hpp"
+#include "utils/imex_sdirk2.hpp"   // the tableau shared with rad_m1 hesdirk2
 
 
 //----------------------------------------------------------------------------------------
@@ -1123,7 +1124,8 @@ void DhjCkRtSplit(Mesh *pm, const Real dt) {
 //! stays operator split as today.  The key absent: nothing here runs (bitwise).
 
 namespace {
-const Real kCkT2G = 1.0 - 1.0/std::sqrt(2.0);
+const imex_sdirk2::Tableau kCkT2Tab = imex_sdirk2::Make(0);   // hesdirk2
+const Real kCkT2G = kCkT2Tab.g;
 DvceArray4D<Real> *t2_k2 = nullptr;
 DvceArray4D<Real> *t2_r = nullptr;
 Real t2_pos_th = 0.5;
@@ -1251,9 +1253,8 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
     return;
   }
   const bool two = (stage == 2);
-  const Real b2 = g/(2.0*(1.0 - g));
-  const Real c1 = two ? 0.5*g*dt : (1.0 - g)*dt;
-  const Real c2 = two ? (b2 - 0.5*g)*dt : 0.0;
+  Real c1, c2;
+  imex_sdirk2::IncCoeffs(kCkT2Tab, stage, dt, c1, c2);
   const ts::CkCadState st = ts::CkCadMakeState(pm);
   const Real lof = 1.0 - t2_pos_th;
   Real ncl = 0.0;
