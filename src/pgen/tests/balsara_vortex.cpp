@@ -85,6 +85,7 @@
 #include "coordinates/cell_locations.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
+#include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
 #include "pgen/pgen.hpp"
 
@@ -113,10 +114,12 @@ void BalsaraVortexErrors(ParameterInput *pin, Mesh *pm);
 
 void ProblemGenerator::BalsaraVortex(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  if (pmbp->pmhd == nullptr) {
+  // lhllc2nd-1102: also runs in hydro (<hydro> block, no field, Btil = 0): a SMOOTH
+  // low-Mach vortex (Gaussian, exact stationary + advected) for the LHLLC order tests
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  if (!is_mhd && pmbp->phydro == nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "Balsara vortex test can only be run in MHD, but no <mhd> block "
-              << "in input file" << std::endl;
+              << "Balsara vortex test needs an <mhd> or a <hydro> block" << std::endl;
     exit(EXIT_FAILURE);
   }
   if (!(pmy_mesh_->two_d)) {
@@ -128,7 +131,7 @@ void ProblemGenerator::BalsaraVortex(ParameterInput *pin, const bool restart) {
   // vortex strength and the magnetic-to-kinetic energy ratio set the two amplitudes
   vtil_ = pin->GetOrAddReal("problem", "vtil", 1.0e-2);
   Real beta_k = pin->GetOrAddReal("problem", "beta_k", 1.0);
-  btil_ = std::sqrt(beta_k)*vtil_;
+  btil_ = is_mhd ? std::sqrt(beta_k)*vtil_ : 0.0;
   vadv_ = vtil_/std::sqrt(2.0);
 
   // one advective crossing of the diagonal returns the vortex to its starting point
@@ -140,7 +143,7 @@ void ProblemGenerator::BalsaraVortex(ParameterInput *pin, const bool restart) {
   pgen_final_func = BalsaraVortexErrors;
   if (restart) return;
 
-  EOS_Data &eos = pmbp->pmhd->peos->eos_data;
+  EOS_Data &eos = is_mhd ? pmbp->pmhd->peos->eos_data : pmbp->phydro->peos->eos_data;
   Real gm1 = eos.gamma - 1.0;
 
   // capture variables for kernel
@@ -149,8 +152,9 @@ void ProblemGenerator::BalsaraVortex(ParameterInput *pin, const bool restart) {
   int &js = indcs.js; int &je = indcs.je;
   int &ks = indcs.ks; int &ke = indcs.ke;
 
-  auto &u0 = pmbp->pmhd->u0;
-  auto &b0 = pmbp->pmhd->b0;
+  auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  DvceFaceFld4D<Real> b0("b0_dummy", 1, 1, 1, 1);
+  if (is_mhd) b0 = pmbp->pmhd->b0;
   auto &size = pmbp->pmb->mb_size;
   Real vt = vtil_, bt = btil_, va = vadv_;
 
@@ -181,17 +185,19 @@ void ProblemGenerator::BalsaraVortex(ParameterInput *pin, const bool restart) {
     Real b2l = -(a_rl - a_ll)/dx1;
     Real b2r = -(a_rr - a_lr)/dx1;
 
-    b0.x1f(m,k,j,i) = b1l;
-    b0.x2f(m,k,j,i) = b2l;
-    b0.x3f(m,k,j,i) = 0.0;
-    if (i==ie) {
-      b0.x1f(m,k,j,i+1) = b1r;
-    }
-    if (j==je) {
-      b0.x2f(m,k,j+1,i) = b2r;
-    }
-    if (k==ke) {
-      b0.x3f(m,k+1,j,i) = 0.0;
+    if (is_mhd) {
+      b0.x1f(m,k,j,i) = b1l;
+      b0.x2f(m,k,j,i) = b2l;
+      b0.x3f(m,k,j,i) = 0.0;
+      if (i==ie) {
+        b0.x1f(m,k,j,i+1) = b1r;
+      }
+      if (j==je) {
+        b0.x2f(m,k,j+1,i) = b2r;
+      }
+      if (k==ke) {
+        b0.x3f(m,k+1,j,i) = 0.0;
+      }
     }
 
     // cell-centred state: rho = 1, so the momenta equal the velocities
@@ -233,11 +239,14 @@ void BalsaraVortexErrors(ParameterInput *pin, Mesh *pm) {
   int &js = indcs.js;
   int &ks = indcs.ks;
   auto &size = pmbp->pmb->mb_size;
-  auto &w0_ = pmbp->pmhd->w0;
-  auto &bcc0_ = pmbp->pmhd->bcc0;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &w0_ = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  DvceArray5D<Real> bcc0_("bcc0_dummy", 1, 3, 1, 1, 1);
+  if (is_mhd) bcc0_ = pmbp->pmhd->bcc0;
   Real vt = vtil_, bt = btil_, va = vadv_;
   // w0(IEN) holds the internal energy density, so p = (gamma-1)*w0(IEN)
-  Real gm1 = pmbp->pmhd->peos->eos_data.gamma - 1.0;
+  Real gm1 = (is_mhd ? pmbp->pmhd->peos->eos_data : pmbp->phydro->peos->eos_data).gamma
+             - 1.0;
 
   const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
@@ -287,9 +296,12 @@ void BalsaraVortexErrors(ParameterInput *pin, Mesh *pm) {
     evars.the_array[2] = fabs(w0_(m,IVY,k,j,i) - vy_ex);
     evars.the_array[3] = fabs(w0_(m,IVZ,k,j,i));
     evars.the_array[4] = fabs(gm1*w0_(m,IEN,k,j,i) - p_ex);
-    evars.the_array[5] = fabs(bcc0_(m,IBX,k,j,i) - bx_ex);
-    evars.the_array[6] = fabs(bcc0_(m,IBY,k,j,i) - by_ex);
-    evars.the_array[7] = fabs(bcc0_(m,IBZ,k,j,i));
+    const Real bxc = is_mhd ? bcc0_(m,IBX,k,j,i) : 0.0;
+    const Real byc = is_mhd ? bcc0_(m,IBY,k,j,i) : 0.0;
+    const Real bzc = is_mhd ? bcc0_(m,IBZ,k,j,i) : 0.0;
+    evars.the_array[5] = fabs(bxc - bx_ex);
+    evars.the_array[6] = fabs(byc - by_ex);
+    evars.the_array[7] = fabs(bzc);
 
     // rotational kinetic energy (Leidi Eq. 56) and magnetic energy, final and initial
     Real dvx = w0_(m,IVX,k,j,i) - va;
@@ -297,8 +309,7 @@ void BalsaraVortexErrors(ParameterInput *pin, Mesh *pm) {
     evars.the_array[8] = vol*0.5*w0_(m,IDN,k,j,i)*(dvx*dvx + dvy*dvy
                          + SQR(w0_(m,IVZ,k,j,i)));
     evars.the_array[9] = vol*0.5*(SQR(vx_ex - va) + SQR(vy_ex - va));
-    evars.the_array[10] = vol*0.5*(SQR(bcc0_(m,IBX,k,j,i)) + SQR(bcc0_(m,IBY,k,j,i))
-                          + SQR(bcc0_(m,IBZ,k,j,i)));
+    evars.the_array[10] = vol*0.5*(SQR(bxc) + SQR(byc) + SQR(bzc));
     evars.the_array[11] = vol*0.5*(bx_ex*bx_ex + by_ex*by_ex);
 
     for (int n=12; n<NREDUCTION_VARIABLES; ++n) {

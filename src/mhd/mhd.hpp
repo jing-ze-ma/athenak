@@ -897,7 +897,7 @@ class MHD {
     KOKKOS_INLINE_FUNCTION
     static void PLM_nonuniform(const Real &q_im1, const Real &q_i, const Real &q_ip1,
                         const Real &dxL, const Real &dxR, const Real &dxLh, const Real &dxRh,
-                        Real &ql_ip1, Real &qr_i) {
+                        Real &ql_ip1, Real &qr_i, const bool c1 = false) {
       Real cL = dxL/dxLh;
       Real cR = dxR/dxRh;
 
@@ -908,6 +908,11 @@ class MHD {
       // modified van Leer (Mignone 2014)
       Real slope = sL*sR*(cR*sL+cL*sR) / (SQR(sL)+(cR+cL-2.0)*sL*sR+SQR(sR));
       slope = (sL * sR > 0.0) ? slope : 0.0;
+      // lhllc2nd-1102 <mhd>/plm_c1: C1 limiter (reconstruct/plm_c1.hpp)
+      if (c1 && slope != 0.0) {
+        const Real th = 2.0*sL*sR/(SQR(sL) + SQR(sR));
+        slope *= th*(2.0 - th);
+      }
 
       // Reconstruct to faces
       ql_ip1 = q_i + slope * dxRh;
@@ -948,7 +953,7 @@ class MHD {
               if ((wb_rmax > 0.0 && x_i > wb_rmax) ||
                   (wb_rmin > 0.0 && x_i < wb_rmin)) {
                 PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1),
-                               dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i));
+                               dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
                 return;
               }
 
@@ -961,7 +966,7 @@ class MHD {
               Real q1_i = q(m,n,k,j,i) - q0_i;
               Real q1_ip1 = q(m,n,k,j,i+1) - q0_ip1;
                   
-              PLM_nonuniform(q1_im1, q1_i, q1_ip1, dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i));
+              PLM_nonuniform(q1_im1, q1_i, q1_ip1, dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
                   
               ql(n,i+1) += q0_iph;
               qr(n,i) += q0_imh;
@@ -970,8 +975,8 @@ class MHD {
                 Real sL = (q(m,n,k,j,i)   - q(m,n,k,j,i-1)) / dxL;
                 Real sR = (q(m,n,k,j,i+1) - q(m,n,k,j,i)  ) / dxR;
                 
-                if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 || sL * sR <= 0.0) {
-                    PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i));
+                if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
+                    PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
                 }
             });
           } else {
@@ -986,7 +991,7 @@ class MHD {
               Real dxL = x_i-x_im1;
               Real dxR = x_ip1-x_i;
                       
-              PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i));
+              PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
             });
           }
       }
@@ -1126,7 +1131,7 @@ class MHD {
             const Real q0_ip1 = pwb(m,k,j,i+1);
             PLM_nonuniform(qd(m,n,k,j,i-1) - q0_im1, qd(m,n,k,j,i) - q0_i,
                            qd(m,n,k,j,i+1) - q0_ip1, dxL, dxR, dxLh, dxRh,
-                           dl(n,i+1), dr(n,i));
+                           dl(n,i+1), dr(n,i), eos.plm_c1);
             dl(n,i+1) += pfwb(m,k,j,i+1);
             dr(n,i)   += pfwb(m,k,j,i);
             return;
@@ -1146,20 +1151,20 @@ class MHD {
             Real q1_ip1 = qd(m,n,k,j,i+1) - q0_ip1;
 
             PLM_nonuniform(q1_im1, q1_i, q1_ip1, dxL, dxR, dxLh, dxRh,
-                           dl(n,i+1), dr(n,i));
+                           dl(n,i+1), dr(n,i), eos.plm_c1);
 
             dl(n,i+1) += q0_iph;
             dr(n,i)   += q0_imh;
 
             Real sL = (qd(m,n,k,j,i)   - qd(m,n,k,j,i-1)) / dxL;
             Real sR = (qd(m,n,k,j,i+1) - qd(m,n,k,j,i)  ) / dxR;
-            if (dl(n,i+1) < 0.0 || dr(n,i) < 0.0 || sL * sR <= 0.0) {
+            if (dl(n,i+1) < 0.0 || dr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
               PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
-                             dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i));
+                             dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i), eos.plm_c1);
             }
           } else {
             PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
-                           dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i));
+                           dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i), eos.plm_c1);
           }
         });
       }
