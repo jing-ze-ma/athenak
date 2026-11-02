@@ -211,12 +211,13 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     }
   }
   use_etotgrav = pin->GetOrAddBoolean("hydro","etotgrav",false);
-  // ckbval-1102: the energy-only ghost refresh after the operator-split source (read
+  // ckbval-1102: the energy-only ghost refresh after the operator-split source (default
+  // ON after the bitwise gates; <hydro>/split_bval_fast = false restores the full refresh; read
   // only when named; see Hydro::SplitBvalFastOK).  Not with refinement, shearing box /
   // orbital advection or the polar grid: their halos are not plain copies or seam
   // resamples, which is all the check below covers.
   sbf_on = pin->DoesParameterExist("hydro","split_bval_fast") ?
-           pin->GetBoolean("hydro","split_bval_fast") : false;
+           pin->GetBoolean("hydro","split_bval_fast") : true;
   scp_once = pin->DoesParameterExist("hydro","split_c2p_once") ?
              pin->GetBoolean("hydro","split_c2p_once") : false;
   if (sbf_on && (pmy_pack->pmesh->multilevel ||
