@@ -916,17 +916,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool flux_hst = (pin->DoesParameterExist("problem","flux_hst")
                          ? pin->GetBoolean("problem","flux_hst") : true)
                         && (pmy_mesh_->use_cubed_sphere || use_spherical_polar);
+  int fh_rst_req = -1;   // problem/flux_hst_rst: -1 unset, 0 false, 1 true
   if (flux_hst) {
     user_hist = true;
     user_hist_func = DhjFluxHistory;
-    // problem/flux_hst_rst (default true; rthst-1101): write the radiative face-flux
-    // cache these columns read into the implicit-ck restart block, so that the rows a
-    // continuation writes before its first full RT call equal the uninterrupted run's
-    // (they had no radiative part).  Diagnostic only; only with problem/ck_implicit
-    // (no block otherwise).  Read without recording it in the input; false writes
-    // restart files byte-identical to the ones before the key existed.
-    two_stream_rt::rt_fhst_rst = pin->DoesParameterExist("problem","flux_hst_rst")
-                                 ? pin->GetBoolean("problem","flux_hst_rst") : true;
+    // problem/flux_hst_rst (rthst-1101): write the radiative face-flux cache these
+    // columns read into the implicit-ck restart block, so that the rows a continuation
+    // writes before its first full RT call equal the uninterrupted run's (they had no
+    // radiative part).  Diagnostic only.  Default = ck_implicit (resolved below, once
+    // ck_implicit is known; no block exists without it).  Read without recording it in
+    // the input; false writes restart files byte-identical to the ones before the key.
+    if (pin->DoesParameterExist("problem","flux_hst_rst")) {
+      fh_rst_req = pin->GetBoolean("problem","flux_hst_rst") ? 1 : 0;
+    }
     // stswall-1029: the RKG resistive energy flux through the top and the wall (see
     // Resistivity::track_x1_bflx); folded into Etot_top / Etot_bot by DhjFluxHistory
     {
@@ -1430,6 +1432,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
        (two_stream_rt::ck_sweep_form != 2);
   two_stream_rt::ck_implicit =
       pin->GetOrAddBoolean("problem","ck_implicit",ckimp_default);}
+  // problem/flux_hst_rst: default = flux_hst && ck_implicit; without ck_implicit an
+  // explicit true is a no-op (no ck restart block to carry the cache) and warns
+  two_stream_rt::rt_fhst_rst = flux_hst && two_stream_rt::ck_implicit &&
+                               (fh_rst_req != 0);
+  if (flux_hst && fh_rst_req == 1 && !two_stream_rt::ck_implicit &&
+      global_variable::my_rank == 0) {
+    std::cout << "### WARNING: problem/flux_hst_rst = true needs problem/ck_implicit; "
+              << "ignored (restart files carry no flux-history cache)" << std::endl;
+  }
   two_stream_rt::ck_impl_tol = pin->GetOrAddReal("problem","ck_impl_tol",1.0e-8);
   two_stream_rt::ck_impl_dtol = pin->GetOrAddReal("problem","ck_impl_dtol",1.0e-8);
   two_stream_rt::ck_impl_norm_eps =
