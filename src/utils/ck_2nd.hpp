@@ -43,12 +43,23 @@
 //!     Q0 + G (t - t0) + D (T - T0): an O((N dt)^2) rate error -> second order.  The
 //!     evaluation time t is pm->time + pm->dt for every call (both hesdirk2 stages have
 //!     c = 1).  Not in the restart file: after a restart G = 0 until the second full call.
+//! (4b) problem/ck_vef_dt = D > 0 [s]: the VEF refresh counted in SIMULATED TIME: a storing
+//!     pass refreshes when t + dt >= t_last + D (instead of every ck_vef_every cycles),
+//!     so the lag of the factors no longer scales with the number of cycles.  t_last is
+//!     not in the restart file: a restarted run refreshes on its first storing pass.
 //! (5) problem/ck_impl_xpass = n > 0: AN EXTRA NEWTON PASS.  Once a call has converged
 //!     by the usual test, n more passes are run on every column with the step forced
 //!     (no column is accepted as it stands), each multiplying the remaining error by the
 //!     Newton contraction (<< 1), so the error a call leaves is ~ contraction^n x tol
 //!     instead of tol, at the cost of n sweeps per call.  The usual stop test then ends
 //!     the call.
+//! (3b) problem/ck_cad_tri = true (with ck_cad_drift): THE LINEARISED STEP IMPLICIT IN
+//!     THE NEIGHBOURS TOO.  The diagonal step treats the coupling to the adjacent cells
+//!     explicitly (through the drift), which in the stiff top (radiative exchange time <<
+//!     dt) is first order whatever the extrapolation (measured: drift alone 10x smaller
+//!     error, ratio 5-10).  The full store also keeps the Newton tridiagonal couplings
+//!     J0, J2 (dS_i/dT_{i-1,i+1}, thick cells), and each linearised step solves the
+//!     linearised BE balance with them (one Thomas sweep per column).
 //! (6) problem/ck_top_live = true: THE TOP SLOT FROM THE CURRENT ITERATE.  The band
 //!     solver's slot i = ie+1 (the unresolved column above, rt_top_clamp = false) reads
 //!     the hydro GHOST, which ApplyPhysicalBCs filled at the end of the previous stage:
@@ -81,6 +92,7 @@ inline bool ck_t2_seed = false;        // (2)
 inline bool ck_seed_ext_on = false;    //     set around a seeded solve
 inline DvceArray4D<Real> *ck_seed_ext_ptr = nullptr;   // the seed [energy/vol]
 inline bool ck_cad_drift = false;      // (3)
+inline bool ck_cad_tri = false;        // (3b) the tridiagonal linearised step
 inline DvceArray5D<Real> *ck_cad2_ptr = nullptr;       // (m,2,k,j,i): G, t0
 inline Real ck_cad_teval = 0.0;        //     the evaluation time of this call
 inline int64_t ck_cad_ndrift = 0;      //     stores that measured a drift
@@ -89,10 +101,15 @@ inline int ck_impl_xpass = 0;          // (5) extra forced Newton passes after c
 inline bool ck_force_step = false;     //     set for such a pass
 inline int64_t ck_impl_nxpass = 0;
 inline bool ck_vef_tint = false;       // (4)
+inline Real ck_vef_dt = 0.0;           // (4b) VEF refresh every ck_vef_dt SIMULATED seconds
+inline Real ck_vef_tlast = -1.0e300;   //      time of the last refresh
 inline int64_t ck_vef_ntint = 0;       //     storing passes that extrapolated
 // (4) called by the pass after the refresh block: refreshed = this pass re-formed the
 // factors, storing = this pass forms the stored operator (defined in the rt driver)
 void CkVefTint(Mesh *pm, const bool refreshed, const bool storing);
+
+// (4b) the VEF refresh test: ck_vef_dt > 0 replaces the cycle count by simulated time
+inline bool CkVefDue2(Mesh *pm, const bool ckfop, const bool ckfst);
 
 // read the keys (only when named); fused/glob are known by now
 inline void Ck2ndInit(ParameterInput *pin, const bool fused, const int glob,
@@ -119,12 +136,19 @@ inline void Ck2ndInit(ParameterInput *pin, const bool fused, const int glob,
   if (pin->DoesParameterExist("problem", "ck_top_live")) {
     ck_top_live = pin->GetBoolean("problem", "ck_top_live");
   }
+  if (pin->DoesParameterExist("problem", "ck_vef_dt")) {
+    ck_vef_dt = pin->GetReal("problem", "ck_vef_dt");
+  }
   if (pin->DoesParameterExist("problem", "ck_vef_tint")) {
     ck_vef_tint = pin->GetBoolean("problem", "ck_vef_tint");
   }
   if (pin->DoesParameterExist("problem", "ck_cad_drift")) {
     ck_cad_drift = pin->GetBoolean("problem", "ck_cad_drift");
-    if (ck_cad_drift && every <= 1) why += " ck_cad_drift needs ck_impl_every > 1;";
+    (void) every;   // (with ck_impl_every = 1 it acts under ck_t2_lin2 only)
+  }
+  if (pin->DoesParameterExist("problem", "ck_cad_tri")) {
+    ck_cad_tri = pin->GetBoolean("problem", "ck_cad_tri");
+    if (ck_cad_tri && !ck_cad_drift) why += " ck_cad_tri needs ck_cad_drift;";
   }
   if (!why.empty()) {
     std::cout << "### FATAL ERROR (ck2nd):" << why << std::endl;

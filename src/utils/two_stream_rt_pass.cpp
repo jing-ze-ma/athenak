@@ -19,6 +19,16 @@
 #include "utils/ck_2nd.hpp"     // ck2nd-1102 ck_vef_tint (read only when named)
 
 namespace two_stream_rt {
+// ck2nd-1102 (utils/ck_2nd.hpp (4b)): the VEF refresh test, in simulated time when named
+inline bool CkVefDue2(Mesh *pm, const bool ckfop, const bool ckfst) {
+  if (!(ck_vef_dt > 0.0)) return CkVefDue(pm, ckfop, ckfst);
+  const bool stp = !ck_vef_sync || !ckfop || ckfst;
+  return stp && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
+                 pm->time + pm->dt >= ck_vef_tlast + ck_vef_dt);
+}
+}  // namespace two_stream_rt
+
+namespace two_stream_rt {
 
 void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
   // the cubed sphere needs the cell's PANEL to turn (x2,x3) into a direction
@@ -990,7 +1000,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // rebuild of a restart re-takes it, so a second restart is bitwise too
         if ((ck_sph_face == 5 || ck_sph_face == 6) &&
             (ck_rst_rebuild_active ? ck_vef_force
-                                                       : CkVefDue(pm, ckfop_, ckfst_))) {
+                                                       : CkVefDue2(pm, ckfop_, ckfst_))) {
           CkVefSnap(pm, bdt);
         }
         if (ckjacp_) ck_impl_jac_built = true;
@@ -2156,7 +2166,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // a restart's rebuild passes (two_stream_ck_rst_state.hpp) form them only when
         // they rebuild the refresh itself (ck_vef_force) or nothing is there yet
         const bool vdue_ = ck_rst_rebuild_active ? ck_vef_force
-                                                 : CkVefDue(pm, ckfop_, ckfst_);
+                                                 : CkVefDue2(pm, ckfop_, ckfst_);
         // (ck_sph_face = 6 reads the same formal solution)
         // ck2nd-1102 ck_vef_tint: does this pass re-form the factors
         const bool vref_ = (ck_sph_face == 5 || ck_sph_face == 6) &&
@@ -2168,6 +2178,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           // a scheduled one: the next storing pass refreshes (and snapshots) properly
           if (!ck_rst_rebuild_active && vdue_) {
             ck_vef_last = static_cast<int>(pm->ncycle);
+            ck_vef_tlast = pm->time + pm->dt;   // ck2nd-1102 ck_vef_dt
           }
           const int nv = n1 + 3;
           const int nc_ = CK_NB*CK_NG;

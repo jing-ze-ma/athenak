@@ -1138,6 +1138,9 @@ bool t2_first = true;
 DvceArray4D<Real> *t2_y2 = nullptr;   // ck_t2_freeze: the stage-1 result (IEN)
 DvceArray4D<Real> *t2_sd = nullptr;   // ck2nd-1102 ck_t2_seed: g dt K of the stage
 int t2_kiter = 0;                     // ck2nd-1102 ck_t2_kiter (TEST)
+bool t2_probe = false;                // ck2nd-1102 ck_t2_start = probe
+bool t2_lin2 = false;                 // ck2nd-1102 ck_t2_lin2
+int64_t t2_nprobe = 0;
 int64_t cnt_full = 0, cnt_nfall = 0, cnt_ncap = 0, cnt_nonconv = 0;
 
 void T2Alloc(Mesh *pm) {
@@ -1241,6 +1244,19 @@ void DhjCkT2Init(ParameterInput *pin, Mesh *pm) {
   if (pin->DoesParameterExist("problem", "ck_t2_seed")) {
     ts::ck_t2_seed = pin->GetBoolean("problem", "ck_t2_seed");
   }
+  if (pin->DoesParameterExist("problem", "ck_t2_start")) {
+    const std::string st = pin->GetString("problem", "ck_t2_start");
+    if (st.compare("probe") == 0) {
+      t2_probe = true;
+    } else if (st.compare("be") != 0) {
+      std::cout << "### FATAL ERROR: problem/ck_t2_start = " << st << " (be | probe)"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  if (pin->DoesParameterExist("problem", "ck_t2_lin2")) {
+    t2_lin2 = pin->GetBoolean("problem", "ck_t2_lin2");
+  }
   if (pin->DoesParameterExist("problem", "ck_t2_kiter")) {
     t2_kiter = pin->GetInteger("problem", "ck_t2_kiter");
   }
@@ -1289,7 +1305,10 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
   auto k1 = *ts::ck_t2_k1_ptr;
   auto k2 = *t2_k2;
   auto rr = *t2_r;
-  const bool cad = (ts::ck_impl_every > 1);
+  // ck2nd-1102 problem/ck_t2_lin2: ck_impl_every = 1 with the second stage linearised on
+  // the operator its own first stage just stored (half the full calls; the model error is
+  // O(Y3 - Y2) = O(dt^2), so the step stays second order)
+  const bool cad = (ts::ck_impl_every > 1) || t2_lin2;
   auto solve = [&](const Real sdt, const bool lin) {
     const int64_t nf0 = ts::ck_cad_nfull;
     if (cad) {
@@ -1307,6 +1326,37 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
       DhjCkT2Report(pm, false);
     }
   };
+  // ck2nd-1102 problem/ck_t2_start = probe (read only when named): without a K1 the
+  // first step is NOT backward Euler; K1 = S(U^n) is measured instead by a backward-Euler
+  // probe of 1e-4 dt on U^n (u0 set to u1 for it and put back), and the step is the
+  // ordinary hesdirk2 one.  The BE start leaves an O(dt) error in the fast (stiff)
+  // components that their relaxation hands to the slow ones: a first-order, decaying
+  // start-up error (measured: the frozen ladder, ratio ~5 that shrinks with the window).
+  if (!ts::ck_t2_ok && t2_probe && stage == 1) {
+    auto u1 = (pmbp->phydro != nullptr) ? pmbp->phydro->u1 : pmbp->pmhd->u1;
+    DvceArray5D<Real> keep("ck_t2_keep", u0.extent(0), u0.extent(1), u0.extent(2),
+                           u0.extent(3), u0.extent(4));
+    Kokkos::deep_copy(keep, u0);
+    Kokkos::deep_copy(u0, u1);
+    par_for("ck_t2_pr0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      rr(m,k,j,i) = u0(m,IEN,k,j,i);
+    });
+    const Real pdt = 1.0e-4*dt;
+    picket_fence_two_stream_RT(pm, pdt);
+    const Real ipdt = 1.0/pdt;
+    par_for("ck_t2_pr1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      k1(m,k,j,i) = (u0(m,IEN,k,j,i) - rr(m,k,j,i))*ipdt;
+    });
+    Kokkos::deep_copy(u0, keep);
+    ts::ck_t2_ok = true;
+    ++t2_nprobe;
+    if (global_variable::my_rank == 0) {
+      std::cout << "ck_time_scheme = hesdirk2: K1 from a probe of " << pdt
+                << " s (ck_t2_start = probe)" << std::endl;
+    }
+  }
   if (!ts::ck_t2_ok) {
     if (stage == 1) {
       if (dhj_ck_t2_freeze) T2FreezeKeep(pm);

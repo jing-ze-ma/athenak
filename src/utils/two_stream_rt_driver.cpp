@@ -1903,7 +1903,7 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
   // ck2nd-1102 problem/ck_cad_drift: G and t0 per cell (a 1-element dummy when off)
   const bool drf = ck_cad_drift;
   if (drf && ck_cad2_ptr == nullptr) {
-    ck_cad2_ptr = new DvceArray5D<Real>("ck_cad2", cad_.extent(0), 2, cad_.extent(2),
+    ck_cad2_ptr = new DvceArray5D<Real>("ck_cad2", cad_.extent(0), 6, cad_.extent(2),
                                         cad_.extent(3), cad_.extent(4));
     // t0 = "none yet" (a restart's Q0 has no measured drift)
     Kokkos::deep_copy(Kokkos::subview(*ck_cad2_ptr, Kokkos::ALL, 1, Kokkos::ALL,
@@ -1912,6 +1912,42 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
   auto cd2_ = drf ? *ck_cad2_ptr : cad_;    // (not read when off)
   const Real tev = ck_cad_teval;
   if (drf) ++ck_cad_ndrift;
+  // ck2nd-1102 problem/ck_cad_tri: the drift of the TRIDIAGONAL model (the neighbours'
+  // own Jacobian terms J0 (i-1), J2 (i+1) taken out too); slot 5 = current T, slot 4 = G
+  const bool tri = drf && ck_cad_tri;
+  if (tri) {
+    par_for("ck_cad_tri_t", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = st.u0(m,IDN,k,j,i);
+      const Real e = st.Eint(m, k, j, i);
+      Real tk = 0.0, cv = 0.0;
+      const bool ok = st.TCv(m, k, j, i, d, e, tk, cv);
+      cd2_(m,5,k,j,i) = ok ? tk : 0.0;
+    });
+    par_for("ck_cad_tri_g", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (partial && msk_(m,k,j) > 0.5) return;
+      Real g = 0.0;
+      const Real tk = cd2_(m,5,k,j,i);
+      const Real q0 = cad_(m,0,k,j,i), d0 = cad_(m,1,k,j,i), t00 = cad_(m,2,k,j,i);
+      const Real tp = cd2_(m,1,k,j,i);
+      const Real tl = tev - tp;
+      const Real q = (tk > 0.0 && i >= icut_(m,k,j)) ? dep_(m,k,j,i)*idt : 0.0;
+      if (tk > 0.0 && t00 > 0.0 && tp > -1.0e299 && tl > 0.0 && (q0 != 0.0 || d0 != 0.0)
+          && q == q && q != 0.0) {
+        Real r = q - q0 - d0*(tk - t00);
+        if (i > is && cad_(m,2,k,j,i-1) > 0.0 && cd2_(m,5,k,j,i-1) > 0.0) {
+          r -= cd2_(m,2,k,j,i)*(cd2_(m,5,k,j,i-1) - cad_(m,2,k,j,i-1));
+        }
+        if (i < ie && cad_(m,2,k,j,i+1) > 0.0 && cd2_(m,5,k,j,i+1) > 0.0) {
+          r -= cd2_(m,3,k,j,i)*(cd2_(m,5,k,j,i+1) - cad_(m,2,k,j,i+1));
+        }
+        g = r/tl;
+        if (!(g == g)) g = 0.0;
+      }
+      cd2_(m,4,k,j,i) = g;
+    });
+  }
   par_for("ck_cad_store", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (partial && msk_(m,k,j) > 0.5) return;
@@ -1943,13 +1979,25 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
       const Real q0 = cad_(m,0,k,j,i), d0 = cad_(m,1,k,j,i), t00 = cad_(m,2,k,j,i);
       const Real tp = cd2_(m,1,k,j,i);
       const Real tl = tev - tp;
-      if (ok && t00 > 0.0 && tp > -1.0e299 && tl > 0.0 && (q0 != 0.0 || d0 != 0.0) &&
-          (q != 0.0 || dd != 0.0)) {
+      if (tri) {
+        g = cd2_(m,4,k,j,i);
+      } else if (ok && t00 > 0.0 && tp > -1.0e299 && tl > 0.0 &&
+                 (q0 != 0.0 || d0 != 0.0) && (q != 0.0 || dd != 0.0)) {
         g = (q - q0 - d0*(tk - t00))/tl;
         if (!(g == g)) g = 0.0;
       }
       cd2_(m,0,k,j,i) = g;
       cd2_(m,1,k,j,i) = tev;
+      if (tri) {
+        // the neighbour couplings of the Newton tridiagonal (thick cells; >= 0)
+        Real j0 = 0.0, j2 = 0.0;
+        if (ok && i >= icut_(m,k,j) && thu_(m,k,j,i) > 0.0) {
+          if (i > icut_(m,k,j)) j0 = jac_(m,0,k,j,i);
+          if (i < ie) j2 = jac_(m,2,k,j,i);
+        }
+        cd2_(m,2,k,j,i) = (j0 > 0.0) ? j0 : 0.0;
+        cd2_(m,3,k,j,i) = (j2 > 0.0) ? j2 : 0.0;
+      }
     }
     cad_(m,0,k,j,i) = q;
     cad_(m,1,k,j,i) = dd;
@@ -1975,6 +2023,7 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
   const bool drf = ck_cad_drift && (ck_cad2_ptr != nullptr);
   auto cd2_ = drf ? *ck_cad2_ptr : cad_;    // (not read when off)
   const Real tev = ck_cad_teval;
+  const bool tri = drf && ck_cad_tri;       // ck2nd-1102 ck_cad_tri
   Real capf = ck_impl_dtmax;
   if (ck_impl_demax > 0.0 && ck_impl_demax < capf) capf = ck_impl_demax;
   const int nk = ke - ks + 1;
@@ -2028,6 +2077,72 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
     tm.team_barrier();
     Real sde = 0.0, sq = 0.0, saq = 0.0;
     int ncp = 0;
+    if (tri) {
+      // ck2nd-1102 ck_cad_tri: the linearised BE step with the Newton tridiagonal
+      //   (cv - dt D) dT_i - dt J0 dT_{i-1} - dt J2 dT_{i+1}
+      //     = dt (Q0 + G (t - t0) + D (T_i - T0_i) + J0 (T_{i-1} - T0_{i-1})
+      //           + J2 (T_{i+1} - T0_{i+1})),
+      // Thomas on one lane (slots 4/5 of ck_cad2 = c', r'); caps as the diagonal step
+      Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+        auto act = [&](const int i) -> bool {
+          return (cad_(m,0,k,j,i) != 0.0 || cad_(m,1,k,j,i) != 0.0) &&
+                 cad_(m,4,k,j,i) > 0.0 && cad_(m,5,k,j,i) > 0.0;
+        };
+        Real cp = 0.0, rp = 0.0;
+        for (int i=is; i<=ie; ++i) {
+          Real a = 0.0, b = 1.0, c = 0.0, r = 0.0;
+          if (act(i)) {
+            const Real dd = cad_(m,1,k,j,i);
+            const Real tk = cad_(m,4,k,j,i);
+            const Real cv = cad_(m,5,k,j,i);
+            Real q0 = cad_(m,0,k,j,i) + cd2_(m,0,k,j,i)*(tev - cd2_(m,1,k,j,i));
+            r = q0 + dd*(tk - cad_(m,2,k,j,i));
+            b = cv - dd*dt;
+            if (i > is && act(i-1)) {
+              const Real j0 = cd2_(m,2,k,j,i);
+              r += j0*(cad_(m,4,k,j,i-1) - cad_(m,2,k,j,i-1));
+              a = -dt*j0;
+            }
+            if (i < ie && act(i+1)) {
+              const Real j2 = cd2_(m,3,k,j,i);
+              r += j2*(cad_(m,4,k,j,i+1) - cad_(m,2,k,j,i+1));
+              c = -dt*j2;
+            }
+            r *= dt;
+          }
+          const Real den = b - a*cp;
+          cp = c/den;
+          rp = (r - a*rp)/den;
+          cd2_(m,4,k,j,i) = cp;
+          cd2_(m,5,k,j,i) = rp;
+        }
+        Real dTn = 0.0;
+        for (int i=ie; i>=is; --i) {
+          const Real dT = cd2_(m,5,k,j,i) - cd2_(m,4,k,j,i)*dTn;
+          dTn = dT;
+          Real de = 0.0;
+          if (act(i)) {
+            de = cad_(m,5,k,j,i)*dT;
+            const Real e = st.Eint(m, k, j, i);
+            const Real lim = capf*e;
+            if (de > lim) {
+              de = lim;
+              ncp += 1;
+            } else if (de < -lim) {
+              de = -lim;
+              ncp += 1;
+            }
+            if (!(de == de)) de = 0.0;
+          }
+          cd2_(m,5,k,j,i) = de;    // applied below, after every row has read its T
+        }
+        for (int i=is; i<=ie; ++i) {
+          const Real de = cd2_(m,5,k,j,i);
+          if (de != 0.0) st.u0(m,IEN,k,j,i) += de;
+          cad_(m,5,k,j,i) = de;
+        }
+      });
+    } else {
     Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, is, ie+1),
     [&](const int i, int &nc) {
       Real q0 = cad_(m,0,k,j,i);
@@ -2053,6 +2168,7 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
       }
       cad_(m,5,k,j,i) = de;
     }, ncp);
+    }
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {
       msk_(m,k,j) = 2.0;
       Kokkos::atomic_max(&sta_(4), dv);
