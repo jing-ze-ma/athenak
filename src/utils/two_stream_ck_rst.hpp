@@ -105,7 +105,7 @@ using CkRstCollectFn = int (*)(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &hdr,
                                int nmb, int n3, int n2, int n1);
 inline CkRstCollectFn ck_rst_collect_fn = nullptr;
 
-// problem/flux_hst_rst (deep_hot_jupiter_rt.cpp, default true with problem/flux_hst):
+// problem/flux_hst_rst (deep_hot_jupiter_rt.cpp, default flux_hst && ck_implicit):
 // carry the flux history's face-flux cache in this block (slabs kCkSlabFh*)
 inline bool rt_fhst_rst = false;
 
