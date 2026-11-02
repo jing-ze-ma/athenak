@@ -50,6 +50,12 @@ MeshBinaryOutput::MeshBinaryOutput(ParameterInput *pin, Mesh *pm, OutputParamete
 //   All MeshBlocks are written to the same file.
 
 void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
+  // lhllc2nd-1102 <outputN>/bin_double (TEST key, read only when named; default float):
+  // write the variables in double precision ("size of variable=8", which
+  // vis/python/bin_convert.py reads), for convergence tests below float round-off
+  const bool bin_dbl = pin->DoesParameterExist(out_params.block_name, "bin_double") &&
+                       pin->GetBoolean(out_params.block_name, "bin_double");
+  const std::size_t vsz = bin_dbl ? sizeof(double) : sizeof(float);
   // check if slicing
   bool bin_slice = (out_params.slice1 || out_params.slice2 || out_params.slice3);
 
@@ -105,7 +111,7 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
         << "  time=" << pm->time << std::endl
         << "  cycle=" << pm->ncycle << std::endl
         << "  size of location=" << sizeof(Real) << std::endl
-        << "  size of variable=" << sizeof(float) << std::endl;
+        << "  size of variable=" << vsz << std::endl;
     if (coord_arrays) {
       msg << "  coordinate arrays=1" << std::endl;
     }
@@ -155,7 +161,7 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // ois, oie, ojs, oje, oks, oke + il1, il2, il3, level +
   // x1min, x1max, x2min, x2max, x3min, x3max + [coordinate arrays] + data
   std::size_t data_size = 10*sizeof(int32_t) + 6*sizeof(Real)
-                        + ncoord*sizeof(Real) + (cells*nout_vars)*sizeof(float);
+                        + ncoord*sizeof(Real) + (cells*nout_vars)*vsz;
 
   // host copies of the 1-D coordinate arrays (only on stretched grids)
   HostArray2D<Real> hx1v, hx1f, hx2v, hx2f, hx3v, hx3f;
@@ -175,6 +181,7 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // allocate 1D vector of floats used to convert and output data
   char *data = new char[nb_mbs*data_size];
   float *single_data = new float[cells];
+  double *double_data = bin_dbl ? new double[cells] : nullptr;
 
   // Loop over MeshBlocks
   for (int m=0; m<nout_mbs; ++m) {
@@ -271,14 +278,22 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       for (int k=oks; k<=oke; k++) {
         for (int j=ojs; j<=oje; j++) {
           for (int i=ois; i<=oie; i++) {
-            tmp_data = static_cast<float>(outarray(n,m,k-oks,j-ojs,i-ois));
-            single_data[cnt] = tmp_data;
+            if (bin_dbl) {
+              double_data[cnt] = static_cast<double>(outarray(n,m,k-oks,j-ojs,i-ois));
+            } else {
+              tmp_data = static_cast<float>(outarray(n,m,k-oks,j-ojs,i-ois));
+              single_data[cnt] = tmp_data;
+            }
             cnt++;
           }
         }
       }
-      memcpy(pdata,single_data,cells*sizeof(float));
-      pdata+=cells*sizeof(float);
+      if (bin_dbl) {
+        memcpy(pdata,double_data,cells*sizeof(double));
+      } else {
+        memcpy(pdata,single_data,cells*sizeof(float));
+      }
+      pdata+=cells*vsz;
     }
   }
 
@@ -354,6 +369,7 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   binfile.Close(single_file_per_rank);
   delete [] data;
   delete [] single_data;
+  if (double_data != nullptr) delete [] double_data;
 
   // increment counters
   out_params.file_number++;

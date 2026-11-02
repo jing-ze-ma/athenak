@@ -28,6 +28,7 @@
 #include "hydro/rsolvers/hllc_hyd.hpp"
 #include "hydro/rsolvers/lhllc_hyd.hpp"
 #include "hydro/rsolvers/lhllc_c1_hyd.hpp"
+#include "reconstruct/plm_c1.hpp"
 #include "hydro/rsolvers/hllclm_hyd.hpp"
 #include "hydro/rsolvers/ausmpup_hyd.hpp"
 #include "hydro/rsolvers/roe_hyd.hpp"
@@ -270,7 +271,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         DonorCellX1(member, m, k, j, il-1, iu, w0_, wl, wr);
         break;
       case ReconstructionMethod::plm:
-        PiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, wl, wr);
+        if (eos_.plm_c1) {
+          PiecewiseLinearC1X1(member, m, k, j, il-1, iu, w0_, wl, wr);
+        } else {
+          PiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, wl, wr);
+        }
         break;
       case ReconstructionMethod::ppm4:
       case ReconstructionMethod::ppmx:
@@ -326,7 +331,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           DonorCellX1(member, m, k, j, il-1, iu, wder_, dl, dr);
           break;
         case ReconstructionMethod::plm:
-          PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
+          if (eos_.plm_c1) {
+            PiecewiseLinearC1X1(member, m, k, j, il-1, iu, wder_, dl, dr);
+          } else {
+            PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
+          }
           break;
         case ReconstructionMethod::ppm4:
         case ReconstructionMethod::ppmx:
@@ -637,7 +646,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             DonorCellX2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
             break;
           case ReconstructionMethod::plm:
-            PiecewiseLinearX2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
+            if (eos_.plm_c1) {
+              PiecewiseLinearC1X2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
+            } else {
+              PiecewiseLinearX2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
+            }
             break;
           case ReconstructionMethod::ppm4:
           case ReconstructionMethod::ppmx:
@@ -672,7 +685,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               DonorCellX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
               break;
             case ReconstructionMethod::plm:
-              PiecewiseLinearX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
+              if (eos_.plm_c1) {
+                PiecewiseLinearC1X2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
+              } else {
+                PiecewiseLinearX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
+              }
               break;
             case ReconstructionMethod::ppm4:
             case ReconstructionMethod::ppmx:
@@ -927,7 +944,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             DonorCellX3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
             break;
           case ReconstructionMethod::plm:
-            PiecewiseLinearX3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
+            if (eos_.plm_c1) {
+              PiecewiseLinearC1X3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
+            } else {
+              PiecewiseLinearX3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
+            }
             break;
           case ReconstructionMethod::ppm4:
           case ReconstructionMethod::ppmx:
@@ -955,7 +976,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               DonorCellX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
               break;
             case ReconstructionMethod::plm:
-              PiecewiseLinearX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
+              if (eos_.plm_c1) {
+                PiecewiseLinearC1X3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
+              } else {
+                PiecewiseLinearX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
+              }
               break;
             case ReconstructionMethod::ppm4:
             case ReconstructionMethod::ppmx:
