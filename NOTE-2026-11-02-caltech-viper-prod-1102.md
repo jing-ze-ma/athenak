@@ -35,6 +35,8 @@ All runs: rst compared after <par_end>. user.hst differs in every pair (timing c
 | fresh launch deck + ck_impl_xpass = 1, 150+150 | rst IDENTICAL |
 | accretor cs96 stream restart, 830-850, 2 GPU, vs cmtest 34c7b76e8 | rst SAME, clean exit |
 | fresh cs96 stream, roche_wb_tan absent vs = true | rst SAME; log "true (cs default, fresh start)"; clean exit |
+| cs96 stream restart of a roche_wb_tan = true rst, 10 cycles: production binary mrg_64e9ee03 vs prod-1102 | rst SAME |
+| N=128 production rst (csacc_1031/test128wb/stream/ryper.00010), 4 H200, cycles 2887-2905: mrg_64e9ee03 vs prod-1102 | rst SAME, hydro.hst identical, clean exit |
 
 Note on rkg_strang_fuse: the fused RKG syncs only at outputs (any output incl. hst) and at the run end. A restart therefore reproduces the
 straight run only when the straight run also has an output on the restart cycle, which is always true in production (rst outputs).
