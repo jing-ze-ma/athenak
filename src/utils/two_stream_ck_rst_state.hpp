@@ -38,7 +38,7 @@ namespace two_stream_rt {
 
 using deep_copy_across::DeepCopyAcross;
 
-inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
+void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);   // two_stream_rt_pass.cpp
 inline void CkRstScalars();
 // problem/flux_hst_rst: the flux history's face-flux cache (two_stream_rt.hpp)
 inline bool RtFhLive();
