@@ -14,6 +14,7 @@
 #include "driver/driver.hpp"
 #include "diffusion/resistivity.hpp"
 #include "mhd.hpp"
+#include "reconstruct/plm.hpp"
 
 #include "coordinates/coordinates.hpp"
 #include "coordinates/cartesian_ks.hpp"
@@ -229,6 +230,48 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     auto e3x2_ = e3x2;
     auto flx1 = uflx.x1f;
     auto flx2 = uflx.x2f;
+
+    // lhlld2-1102 <mhd>/emf_scheme = uct: UCT-HLL corner E3 (Londrillo & Del Zanna 2004
+    // eq. 56; Mignone & Del Zanna 2021 Sect. 3), with E3 = v2 B1 - v1 B2:
+    //   E3 = -[a_R^x v1^W B2^W + a_L^x v1^E B2^E - a_R^x a_L^x (B2^E - B2^W)]/(a_R^x+a_L^x)
+    //        +[a_R^y v2^S B1^S + a_L^y v2^N B1^N - a_R^y a_L^y (B1^N - B1^S)]/(a_R^y+a_L^y)
+    // W/E (S/N): the corner values from the x1 (x2) lower/upper side.  v1^W = mean of the
+    // x1-face LEFT normal velocities of the two x1 faces meeting at the corner; B2^W =
+    // PLM of the staggered B2 along x1 (cells i-2,i-1,i) to the corner; a^x = max over the
+    // two faces of the HLL outer speeds.  No mass-flux sign test: the corner EMF is a
+    // continuous function of the face states.
+    if (emf_uct) {
+      auto u1_ = uct1;
+      auto u2_ = uct2;
+      auto b1f = b0.x1f;
+      auto b2f = b0.x2f;
+      par_for("emf2_uct", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
+      KOKKOS_LAMBDA(const int m, const int j, const int i) {
+        e2(m,ks  ,j,i) = e2x1_(m,ks,j,i);
+        e2(m,ke+1,j,i) = e2x1_(m,ks,j,i);
+        e1(m,ks  ,j,i) = e1x2_(m,ks,j,i);
+        e1(m,ke+1,j,i) = e1x2_(m,ks,j,i);
+        Real dum, b2w, b2e, b1s, b1n;
+        PLM(b2f(m,ks,j,i-2), b2f(m,ks,j,i-1), b2f(m,ks,j,i  ), b2w, dum);
+        PLM(b2f(m,ks,j,i-1), b2f(m,ks,j,i  ), b2f(m,ks,j,i+1), dum, b2e);
+        PLM(b1f(m,ks,j-2,i), b1f(m,ks,j-1,i), b1f(m,ks,j  ,i), b1s, dum);
+        PLM(b1f(m,ks,j-1,i), b1f(m,ks,j  ,i), b1f(m,ks,j+1,i), dum, b1n);
+        const Real v1w = 0.5*(u1_(m,0,ks,j-1,i) + u1_(m,0,ks,j,i));
+        const Real v1e = 0.5*(u1_(m,1,ks,j-1,i) + u1_(m,1,ks,j,i));
+        const Real alx = fmax(u1_(m,2,ks,j-1,i), u1_(m,2,ks,j,i));
+        const Real arx = fmax(u1_(m,3,ks,j-1,i), u1_(m,3,ks,j,i));
+        const Real v2s = 0.5*(u2_(m,0,ks,j,i-1) + u2_(m,0,ks,j,i));
+        const Real v2n = 0.5*(u2_(m,1,ks,j,i-1) + u2_(m,1,ks,j,i));
+        const Real aly = fmax(u2_(m,2,ks,j,i-1), u2_(m,2,ks,j,i));
+        const Real ary = fmax(u2_(m,3,ks,j,i-1), u2_(m,3,ks,j,i));
+        Real fx = arx*v1w*b2w + alx*v1e*b2e - arx*alx*(b2e - b2w);
+        Real fy = ary*v2s*b1s + aly*v2n*b1n - ary*aly*(b1n - b1s);
+        fx = (arx + alx > 0.0) ? fx/(arx + alx) : 0.5*(v1w*b2w + v1e*b2e);
+        fy = (ary + aly > 0.0) ? fy/(ary + aly) : 0.5*(v2s*b1s + v2n*b1n);
+        e3(m,ks,j,i) = fy - fx;
+      });
+      return TaskStatus::complete;
+    }
 
     // integrate E3 to corner using SG07
     //  Note e1[is:ie,  js:je+1,ks:ke+1]

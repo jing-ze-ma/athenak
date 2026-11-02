@@ -647,6 +647,37 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       emf_smooth = pin->GetReal("mhd","emf_smooth");
       if (emf_smooth < 0.0) emf_smooth = -1.0;
     }
+    // lhlld2-1102: <mhd>/emf_scheme = gs07 | uct, read only when named
+    if (pin->DoesParameterExist("mhd","emf_scheme")) {
+      const std::string es = pin->GetString("mhd","emf_scheme");
+      if (es == "uct") {
+        emf_uct = true;
+      } else if (es != "gs07") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/emf_scheme = '" << es << "' (gs07 | uct)"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      // UCT-HLL is implemented for 2-D Cartesian, Newtonian, ideal/general EOS only.  3-D
+      // needs the same corner formula for E1/E2 (x2/x3 and x3/x1 face pairs) and a third
+      // face store; the cubed sphere would need it in the gnomonic covariant EMF slots AND
+      // on the seam edge-EMF exchange (the seam path averages the two panels' GS07 edge
+      // EMFs), spherical polar the PLM_nonuniform B reconstruction and the polar average.
+      if (emf_uct && (!ppack->pmesh->two_d || ppack->pmesh->use_cubed_sphere ||
+                      ppack->pmesh->use_spherical_polar ||
+                      ppack->pcoord->is_special_relativistic ||
+                      ppack->pcoord->is_general_relativistic ||
+                      ppack->pcoord->is_dynamical_relativistic ||
+                      !(peos->eos_data.is_ideal || peos->eos_data.IsGeneral()) ||
+                      use_fofc || emf_smooth >= 0.0)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/emf_scheme = uct is implemented only for 2-D "
+                  << "Cartesian Newtonian MHD with an ideal or general EOS, without fofc "
+                  << "and without emf_smooth (3-D / cubed sphere / spherical polar: not "
+                  << "yet, see mhd.cpp)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // Fix for the above at the source: in the two POLAR cell rows (the only place the
     // (-1)^(i+k) mode closes on itself, because the polar ghost row is the k+N/2 image of
     // the row) add the UCT/Rusanov face-field dissipation to the corner e2, with the local
@@ -905,6 +936,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       Kokkos::realloc(e1_cc, nmb, ncells3, ncells2, ncells1);
       Kokkos::realloc(e2_cc, nmb, ncells3, ncells2, ncells1);
       Kokkos::realloc(e3_cc, nmb, ncells3, ncells2, ncells1);
+      if (emf_uct) {   // lhlld2-1102 UCT face store
+        Kokkos::realloc(uct1, nmb, 4, ncells3, ncells2, ncells1);
+        Kokkos::realloc(uct2, nmb, 4, ncells3, ncells2, ncells1);
+      }
 
       // allocate array of flags used with FOFC
       if (use_fofc) {
