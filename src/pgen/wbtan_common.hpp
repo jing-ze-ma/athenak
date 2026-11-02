@@ -169,6 +169,7 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   // MHD: the probe is the B = 0 equilibrium (see the note in WbTanProbe)
   DvceArray4D<Real> sb1, sb2, sb3, seta, sadc;
   DvceArray4D<Real> se31, se21, se12, se32, se23, se13;
+  DvceArray4D<Real> sr1, sr2, sr3;
   DvceArray5D<Real> sbcc;
   bool sxe = false;
   if constexpr (kMHD) {
@@ -190,6 +191,15 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
     if (ph->presist != nullptr) {
       if (ph->presist->eta_b.size() > 0) seta = dup4(ph->presist->eta_b);
       if (ph->presist->ad_coef.size() > 0) sadc = dup4(ph->presist->ad_coef);
+      // wbtan-efldfix-1102: without STS, MHD::Fluxes -> AddResistiveFluxes clears and
+      // rebuilds the resistive edge EMF efld_resist from the probe's B = 0; the stage's
+      // EField adds it AFTER the user source, so the first stage after a fresh start or
+      // a restart had no resistive EMF (no-STS restart continuation broke).
+      if (!ph->presist->use_rkg_sts) {
+        sr1 = dup4(ph->presist->efld_resist.x1e);
+        sr2 = dup4(ph->presist->efld_resist.x2e);
+        sr3 = dup4(ph->presist->efld_resist.x3e);
+      }
     }
     sbcc = dup5(ph->bcc0);
   }
@@ -335,6 +345,11 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
     Kokkos::deep_copy(ph->e2x3, se23); Kokkos::deep_copy(ph->e1x3, se13);
     if (seta.size() > 0) Kokkos::deep_copy(ph->presist->eta_b, seta);
     if (sadc.size() > 0) Kokkos::deep_copy(ph->presist->ad_coef, sadc);
+    if (sr1.size() > 0) {
+      Kokkos::deep_copy(ph->presist->efld_resist.x1e, sr1);
+      Kokkos::deep_copy(ph->presist->efld_resist.x2e, sr2);
+      Kokkos::deep_copy(ph->presist->efld_resist.x3e, sr3);
+    }
     Kokkos::deep_copy(ph->b0.x1f, sb1); Kokkos::deep_copy(ph->b0.x2f, sb2);
     Kokkos::deep_copy(ph->b0.x3f, sb3); Kokkos::deep_copy(ph->bcc0, sbcc);
   }
