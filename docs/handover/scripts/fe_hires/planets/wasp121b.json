@@ -1,0 +1,11 @@
+{
+  "comment": "WASP-121b, the viper fe_hires 10-07 setup (3x MHD runs s10_e15/b100_e13, ESPRESSO 4-UT MR). All values = planet.py defaults.",
+  "name": "WASP-121b",
+  "R_star_Rsun": 1.461, "R_p_RJ": 1.742, "M_p_MJ": 1.17,
+  "a_over_Rs": 3.7844, "b": 0.160, "P_orb_d": 1.27492504, "omega": 5.704026e-05,
+  "Kp_kms": null, "limb_darkening": [0.0, 0.0],
+  "lsf_fwhm_kms": 4.28, "resolution_R": null,
+  "nph": 31, "phase_range": null, "rm_mask_phase": 0.017,
+  "eos_xh": 0.7188, "eos_yhe": 0.2420, "comptab": "data/comptab_3x.bin.gz",
+  "a_fe": 3.2e-5, "pcut_bar": 1e-6
+}

@@ -1,0 +1,14 @@
+# fe_hires portable reproduction, viper login node 11-02 (run_w121/run_repro.sh)
+WASP-121b dhj.mhd_w_bcc.00166.bin: /viper/ptmp2/jinma/w121_obs_1003/mhd_final/data/s10_e15/dhj.mhd_w_bcc.00166.bin rot 318.00 loaded in 5 s: 176 b, i0 24, lines 9615
+s10_00166 done in 1453 s (per phase 671 s)
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 24:13.56
+	Maximum resident set size (kbytes): 2979916
+s10_00166 rot 318.00
+  KpVsys full  at Kp0: peak  -4.26  wide  -5.07 (FWHM 31.2)  centroid  -3.78  map max Kp 206.2 v -3.60
+  KpVsys rmcut at Kp0: peak  -4.28  wide  -4.99 (FWHM 31.4)  centroid  -3.73  map max Kp 205.2 v -3.40
+  seg mor (n=6): mean per-exp  -3.43 (sd 0.38) FWHM 32.8 | stacked: wide  -3.44 FWHM 32.9 peak  -2.08 centroid  -2.72 | limb rays mor  +4.02 eve -10.88
+  seg eve (n=6): mean per-exp  -6.78 (sd 0.33) FWHM 28.0 | stacked: wide  -6.78 FWHM 28.0 peak  -6.55 centroid  -4.93 | limb rays mor  +1.71 eve -11.25
+  CF (template-weighted absorption) log p_tan 16/50/84 %: -5.13 -4.01 -2.75
+DONE
+spec_s10_00166.npz vs 10-07 viper spec_s10_00166.npz: np.array_equal(spec) True, max |diff| 0.0
+10-07 reference (out/ana_summary.txt): full peak -4.26, wide -5.07, centroid -3.78, map max 206.2/-3.60; mor -3.43, eve -6.78
