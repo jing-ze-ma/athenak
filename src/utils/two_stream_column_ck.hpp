@@ -410,6 +410,14 @@ inline int64_t ck_cad_nfull = 0;             // scheduled full calls
 inline int64_t ck_cad_nlin = 0;              // linearised steps
 inline int64_t ck_cad_nguard = 0;            // linearised steps with a guard call
 inline double ck_cad_fref = 0.0;             // sum over linearised steps of nref/ncol
+// ckhesdirk-1102 problem/ck_time_scheme = hesdirk2 (DhjCkT2Stage, deep_hot_jupiter_rt):
+// ck_cad_force_lin = the cadence step of THIS call is linearised even on a full cycle
+// (the second SDIRK stage); ck_t2_k1_ptr = the FSAL slope K1 (m,k,j,i) [energy/vol/s]
+// and ck_t2_ok its validity, both carried by the restart block (slabs T2K1, T2OK).
+inline bool ck_cad_force_lin = false;
+inline bool ck_t2_on = false;
+inline bool ck_t2_ok = false;
+inline DvceArray4D<Real> *ck_t2_k1_ptr = nullptr;
 // ---- ck-fast2 lever 1: problem/ck_dif_dtau = thr > 0, THE DEEP DIFFUSION HANDOVER.
 // Default 0 (off), and off nothing below is allocated, launched or read (bitwise).
 // Route B only (the ck two-stream owns the whole column down to the inner wall).  Per

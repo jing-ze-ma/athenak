@@ -2015,8 +2015,8 @@ void CkCadStep(Mesh *pm, const Real dt) {
   const int ncol = pmbp->nmb_thispack*indcs.nx2*indcs.nx3;
   const bool diag = ck_impl_verbose;
   CkRstCadRestore(pm);     // restart: Q0, D, T0, rho0 (two_stream_ck_rst.hpp)
-  const bool full = (ck_cad_ptr == nullptr) ||
-                    (pm->ncycle % static_cast<int64_t>(ck_impl_every) == 0);
+  const bool full = (ck_cad_ptr == nullptr) || (!ck_cad_force_lin &&
+                    (pm->ncycle % static_cast<int64_t>(ck_impl_every) == 0));
   if (ck_cad_stat_ptr == nullptr) {
     ck_cad_stat_ptr = new DvceArray1D<Real>("ck_cad_stat", 8);
   }
