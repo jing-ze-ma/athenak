@@ -930,6 +930,7 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
 
 TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   if (sbf_on && sbf_want) SplitBvalSnap(pdrive, stage);   // ckbval-1102
+  if (c2pi_on && c2p_split && C2PIdemSkip()) return TaskStatus::complete;   // ckbval-1102
   if (c2p_track) C2PTrack(pdrive, stage, true);
   eint_ledger::Mark(pmy_pack->pmesh, "gap_c2p");
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -996,6 +997,7 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
     eint_rst = DvceArray4D<Real>();
     c2p_eint_rst = false;
   }
+  if (c2pi_on) C2PIdemSave();   // ckbval-1102
   if (c2p_track) C2PTrack(pdrive, stage, false);
   eint_ledger::Mark(pmy_pack->pmesh, "c2p");
   runaway_scan::Scan(pmy_pack->pmesh, "ConToPrim_floors");

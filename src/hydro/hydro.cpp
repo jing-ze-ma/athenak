@@ -220,6 +220,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
            pin->GetBoolean("hydro","split_bval_fast") : true;
   scp_once = pin->DoesParameterExist("hydro","split_c2p_once") ?
              pin->GetBoolean("hydro","split_c2p_once") : false;
+  c2pi_on = pin->DoesParameterExist("hydro","c2p_idempotent") ?
+            pin->GetBoolean("hydro","c2p_idempotent") : false;
   if (sbf_on && (pmy_pack->pmesh->multilevel ||
                  pin->DoesBlockExist("shearing_box") ||
                  pin->DoesBlockExist("orbital_advection"))) {
@@ -719,6 +721,10 @@ Hydro::~Hydro() {
   if (sbf_on && global_variable::my_rank == 0) {
     std::cout << "<hydro>/split_bval_fast: energy-only refreshes " << sbf_nfast
               << ", full refreshes " << sbf_nfull << " (rank 0)" << std::endl;
+  }
+  if (c2pi_on && global_variable::my_rank == 0) {
+    std::cout << "<hydro>/c2p_idempotent: split conversions skipped " << c2pi_nskip
+              << ", run " << c2pi_nrun << " (rank 0)" << std::endl;
   }
   if (pam != nullptr) {delete pam;}
   if (pmlat != nullptr) {delete pmlat;}

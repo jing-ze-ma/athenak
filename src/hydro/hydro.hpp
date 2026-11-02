@@ -274,6 +274,16 @@ class Hydro {
   // operator-split source is user_split_once (RTOpSplitBvals converts already)
   bool scp_once = false;
   bool SplitC2POnce() const;
+  // ckbval-1102 <hydro>/c2p_idempotent: a ConToPrimSplit conversion of a state that is
+  // bitwise the one the previous conversion left (u0, w0, wder, wtemp, all cells) is a
+  // no-op; see hydro_c2p_idem.cpp
+  bool c2pi_on = false;
+  bool c2pi_valid = false;
+  DvceArray5D<Real> c2pi_u, c2pi_w, c2pi_d;
+  DvceArray4D<Real> c2pi_t;
+  long c2pi_nskip = 0, c2pi_nrun = 0;
+  bool C2PIdemSkip();
+  void C2PIdemSave();
   DvceArray2D<Real> c2p_acc;
   DvceArray4D<Real> c2p_ref_e, c2p_ref_d;
   void EnableC2PTrack();
