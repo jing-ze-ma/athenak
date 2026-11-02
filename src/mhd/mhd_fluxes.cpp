@@ -41,6 +41,39 @@
 namespace mhd {
 
 //----------------------------------------------------------------------------------------
+//! \fn void UctFaceStore
+//! \brief lhlld2-1102 <mhd>/emf_scheme = uct: store, per face, what the UCT-HLL corner EMF
+//! (Londrillo & Del Zanna 2004; Mignone & Del Zanna 2021, JCP 424, 109748, Sect. 3) needs
+//! from the Riemann problem: the L/R normal velocities and the HLL outer-wave
+//! dissipation speeds a_L = max(0,-S_L), a_R = max(0,S_R), with S_L/S_R the Davis fast
+//! speeds of the HLLE/HLLD/LHLLD solvers.  Ideal or general EOS (isothermal is refused at
+//! start-up).
+
+KOKKOS_INLINE_FUNCTION
+void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
+                  const ScrArray2D<Real> &wr, const ScrArray2D<Real> &bl,
+                  const ScrArray2D<Real> &br, const ScrArray2D<Real> &dl,
+                  const ScrArray2D<Real> &dr, const int ivx, const int i, const Real bxi,
+                  const DvceArray5D<Real> &u, const int m, const int k, const int j) {
+  const int iby = ((ivx-IVX) + 1)%3;
+  const int ibz = ((ivx-IVX) + 2)%3;
+  Real pl, pr, g1l, g1r;
+  if (eos.IsGeneral()) {
+    pl = dl(IDPR,i); pr = dr(IDPR,i); g1l = dl(IDG1,i); g1r = dr(IDG1,i);
+  } else {
+    pl = eos.IdealGasPressure(wl(IEN,i)); pr = eos.IdealGasPressure(wr(IEN,i));
+    g1l = eos.gamma; g1r = eos.gamma;
+  }
+  const Real cfl = eos.FastSpeedFromP(wl(IDN,i), pl, g1l, bxi, bl(iby,i), bl(ibz,i));
+  const Real cfr = eos.FastSpeedFromP(wr(IDN,i), pr, g1r, bxi, br(iby,i), br(ibz,i));
+  const Real vl = wl(ivx,i), vr = wr(ivx,i);
+  u(m,0,k,j,i) = vl;
+  u(m,1,k,j,i) = vr;
+  u(m,2,k,j,i) = fmax(0.0, -fmin(vl - cfl, vr - cfr));
+  u(m,3,k,j,i) = fmax(0.0,  fmax(vl + cfl, vr + cfr));
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void MHD::CalculateFlux
 //! \brief Calculate fluxes of conserved variables, and face-centered area-averaged EMFs
 //! for evolution of magnetic field
@@ -141,6 +174,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto &e31_ = e3x1;
   auto &e21_ = e2x1;
   auto &bx_ = b0.x1f;
+  const bool uct_on_ = emf_uct;   // lhlld2-1102 <mhd>/emf_scheme = uct
+  auto &uct1_ = uct1;
+  auto &uct2_ = uct2;
     
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
@@ -468,6 +504,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       GnomonicEquiangleEmfX1(gtrig_cell,member,m,k,j,il,iu,e31,e21);
     }
     member.team_barrier();
+    if (uct_on_) {   // lhlld2-1102 UCT corner EMF inputs (x1 faces)
+      par_for_inner(member, il, iu, [&](const int i) {
+        UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVX, i, bx(m,k,j,i), uct1_, m, k, j);
+      });
+      member.team_barrier();
+    }
 
     // calculate fluxes of scalars (if any)
     if (nvars > nmhd_) {
@@ -765,6 +807,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             GnomonicEquiangleFluxX2(gtrig_xi,member,m,k,j,is-1,ie+1,flx2);
           }
           member.team_barrier();
+          if (uct_on_) {   // lhlld2-1102 UCT corner EMF inputs (x2 faces)
+            par_for_inner(member, is-1, ie+1, [&](const int i) {
+              UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVY, i, by(m,k,j,i), uct2_,
+                           m, k, j);
+            });
+            member.team_barrier();
+          }
         }
 
         // calculate fluxes of scalars (if any)

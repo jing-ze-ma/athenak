@@ -250,6 +250,11 @@ class MHD {
   // lhlld2-1102 <mhd>/emf_smooth (read only when named; < 0 = off): smooth GS07 corner
   // EMF upwind weights, see EmfSmoothW in mhd_corner_e.cpp
   Real emf_smooth = -1.0;
+  // lhlld2-1102 <mhd>/emf_scheme = gs07 (default) | uct (read only when named): UCT-HLL
+  // corner EMF (Londrillo & Del Zanna 2004, Mignone & Del Zanna 2021), 2-D Cartesian.
+  // uct1/uct2 hold, per x1/x2 face, v_nL, v_nR, a_L, a_R (UctFaceStore, mhd_fluxes.cpp)
+  bool emf_uct = false;
+  DvceArray5D<Real> uct1, uct2;
   bool use_polar_emf_diss = false; // Rusanov face-field dissipation on e2 in the polar rows        // plain 4-face average corner EMF (Balsara-Spicer) on ANY grid
 
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per
