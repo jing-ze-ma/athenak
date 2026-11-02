@@ -42,66 +42,36 @@ namespace mhd {
 
 //----------------------------------------------------------------------------------------
 //! \fn void UctFaceStore
-//! \brief lhlld2-1102 <mhd>/emf_scheme = uct: store, per face, what the UCT-HLL corner EMF
-//! (Londrillo & Del Zanna 2004; Mignone & Del Zanna 2021, JCP 424, 109748, Sect. 3) needs
-//! from the Riemann problem: the L/R normal velocities and the HLL outer-wave
-//! dissipation speeds a_L = max(0,-S_L), a_R = max(0,S_R), with S_L/S_R the Davis fast
-//! speeds of the HLLE/HLLD/LHLLD solvers.  Ideal or general EOS (isothermal is refused at
-//! start-up).
+//! \brief <mhd>/emf_scheme = uct | uct_hlld (lhlld2-1102, ucthlld-1102): store, per face,
+//! what the UCT corner EMF in MHD::CornerE needs (Mignone & Del Zanna 2021, JCP 424,
+//! 109748, "MD21").  The Riemann solver's induction flux is written as (MD21 eq. 29)
+//!   F^[B_t] = a^L F^L + a^R F^R - (d^R B_t^R - d^L B_t^L),   F = v_n B_t - v_t B_n,
+//! one (a, d) pair for every face-parallel component B_t.  ONE store for every solver:
+//!  hll = true (emf_scheme = uct, rsolver = hlle, or a cubed-sphere face where
+//!   CSLowBetaFallback replaced the flux by HLLE: same test (p_L + p_R) < lb_beta <B^2>):
+//!   MD21 eq. 30, a^L = aR/(aR+aL), d^L = d^R = aR aL/(aR+aL), aR = max(0,S_R),
+//!   aL = max(0,-S_L), S_L/S_R the Davis fast speeds of every solver here;
+//!  hll = false (uct_hlld, rsolver hlld/lhlld): MD21 eqs. 40, 44-46,
+//!   a^L = (1+nu*)/2, d^s = (nu^s - nu*) (lam*s - lam^s) chi^s/2 + (|lam*s| - nu* lam*s)/2,
+//!   nu^s = (lam*s + lam^s)/(|lam*s| + |lam^s|),  nu* = (lam*R + lam*L)/(|lam*R| + |lam*L|)
+//!   (nu* = 0 when |lam*R - lam*L| <= 1e-9 |S_R - S_L|, MD21 eq. 46), every speed and
+//!   chi^s = B_t*s/B_t^s - 1 recomputed with the formulas and degenerate branches of
+//!   hlld_mhd.hpp / lhlld_mhd.hpp (chi = 0 where B_t* = B_t; lam*L = lam*R = S_M, nu* = 0,
+//!   the HLLC limit, where the solver drops the ** states).  LHLLD's low-Mach fix enters
+//!   only p_T* in the momentum/energy flux, so its a/d are the HLLD ones; its Step-8
+//!   resistivity (lhlld_emf_eta_pos, eta_pos here) adds ceta/2 to d^L and d^R.
+//! Slots: 0 a^L, 1 d^L, 2 d^R, 3/4/5 a^L v^L + a^R v^R of the face-frame components
+//! ivx, ivx+1, ivx+2 (cyclic; on the cubed sphere the gnomonic face frame the solver
+//! used, see gnomonic_kernels.hpp).  Ideal or general EOS (isothermal refused).
 
 KOKKOS_INLINE_FUNCTION
 void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
                   const ScrArray2D<Real> &wr, const ScrArray2D<Real> &bl,
                   const ScrArray2D<Real> &br, const ScrArray2D<Real> &dl,
-                  const ScrArray2D<Real> &dr, const int ivx, const int i, const Real bxi,
-                  const DvceArray5D<Real> &u, const int m, const int k, const int j) {
-  const int iby = ((ivx-IVX) + 1)%3;
-  const int ibz = ((ivx-IVX) + 2)%3;
-  Real pl, pr, g1l, g1r;
-  if (eos.IsGeneral()) {
-    pl = dl(IDPR,i); pr = dr(IDPR,i); g1l = dl(IDG1,i); g1r = dr(IDG1,i);
-  } else {
-    pl = eos.IdealGasPressure(wl(IEN,i)); pr = eos.IdealGasPressure(wr(IEN,i));
-    g1l = eos.gamma; g1r = eos.gamma;
-  }
-  const Real cfl = eos.FastSpeedFromP(wl(IDN,i), pl, g1l, bxi, bl(iby,i), bl(ibz,i));
-  const Real cfr = eos.FastSpeedFromP(wr(IDN,i), pr, g1r, bxi, br(iby,i), br(ibz,i));
-  const Real vl = wl(ivx,i), vr = wr(ivx,i);
-  u(m,0,k,j,i) = vl;
-  u(m,1,k,j,i) = vr;
-  u(m,2,k,j,i) = fmax(0.0, -fmin(vl - cfl, vr - cfr));
-  u(m,3,k,j,i) = fmax(0.0,  fmax(vl + cfl, vr + cfr));
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void UctHlldFaceStore
-//! \brief ucthlld-1102 <mhd>/emf_scheme = uct_hlld: store, per face, the UCT-HLLD
-//! coefficients of Mignone & Del Zanna 2021 (JCP 424, 109748; "MD21") eqs. 40, 44-46:
-//! the HLLD induction flux written as
-//!   F^[B_t] = a^L F^L + a^R F^R - (d^R B_t^R - d^L B_t^L),   F = v_n B_t - v_t B_n,
-//! with a^L = (1+nu*)/2, a^R = 1 - a^L,
-//!   d^s = (nu^s - nu*) chit^s/2 + (|lam*s| - nu* lam*s)/2,   chit^s = (lam*s - lam^s) chi^s,
-//!   nu^s = (lam*s + lam^s)/(|lam*s| + |lam^s|),   nu* = (lam*R + lam*L)/(|lam*R| + |lam*L|)
-//! (nu* = 0 when |lam*R - lam*L| <= 1e-9 |lam^R - lam^L|, MD21 eq. 46).  Every wave speed
-//! and chi^s = B_t*s/B_t^s - 1 is recomputed here with the SAME formulas and the same
-//! degenerate branches as hlld_mhd.hpp / lhlld_mhd.hpp: chi^s = 0 where the solver keeps
-//! B_t* = B_t (|rho sd sdm - Bx^2| < HLLD_SMALL_NUMBER pt*), and lam*L = lam*R = S_M with
-//! nu* = 0 (the three-wave HLLC limit, MD21 eq. 37) where the solver drops the ** states
-//! (0.5 Bx^2 < hlld_bx_zero_tol pt*).  LHLLD: its low-Mach fix enters only p_T* in the
-//! momentum/energy flux (Step 7), its B_t flux is the HLLD one, so the same a/d hold;
-//! its optional non-negative resistivity (lhlld_emf_eta_pos, Step 8) adds
-//! -(1/2) ceta (B^R - B^L), i.e. ceta/2 to both d^L and d^R, and is included.
-//! Slots: 0 a^L, 1 d^L, 2 d^R, 3/4 the a-weighted transverse velocities
-//! a^L v^L + a^R v^R of components ivx+1, ivx+2 (cyclic: x1 face vy,vz; x2 vz,vx;
-//! x3 vx,vy).  Ideal or general EOS (isothermal is refused at start-up).
-
-KOKKOS_INLINE_FUNCTION
-void UctHlldFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
-                      const ScrArray2D<Real> &wr, const ScrArray2D<Real> &bl,
-                      const ScrArray2D<Real> &br, const ScrArray2D<Real> &dl,
-                      const ScrArray2D<Real> &dr, const int ivx, const int i,
-                      const Real bxi, const bool eta_pos, const DvceArray5D<Real> &u,
-                      const int m, const int k, const int j) {
+                  const ScrArray2D<Real> &dr, const int ivx, const int i,
+                  const Real bxi, const bool hll_in, const bool eta_pos,
+                  const Real lb_beta, const DvceArray5D<Real> &u,
+                  const int m, const int k, const int j) {
   const int ivy = IVX + ((ivx-IVX)+1)%3;
   const int ivz = IVX + ((ivx-IVX)+2)%3;
   const int iby = ((ivx-IVX) + 1)%3;
@@ -116,24 +86,30 @@ void UctHlldFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
   const Real rl = wl(IDN,i), rr = wr(IDN,i);
   const Real vl = wl(ivx,i), vr = wr(ivx,i);
   const Real bxsq = bxi*bxi;
-  const Real ptl = pl + 0.5*(bxsq + (SQR(bl(iby,i)) + SQR(bl(ibz,i))));
-  const Real ptr = pr + 0.5*(bxsq + (SQR(br(iby,i)) + SQR(br(ibz,i))));
+  const Real btl = SQR(bl(iby,i)) + SQR(bl(ibz,i));
+  const Real btr = SQR(br(iby,i)) + SQR(br(ibz,i));
+  const Real ptl = pl + 0.5*(bxsq + btl);
+  const Real ptr = pr + 0.5*(bxsq + btr);
   const Real cfl = eos.FastSpeedFromP(rl, pl, g1l, bxi, bl(iby,i), bl(ibz,i));
   const Real cfr = eos.FastSpeedFromP(rr, pr, g1r, bxi, br(iby,i), br(ibz,i));
   const Real sl = fmin(vl - cfl, vr - cfr);
   const Real sr = fmax(vl + cfl, vr + cfr);
+  // CSLowBetaFallback's test (lb_beta = 0 off the cubed sphere)
+  const bool hll = hll_in || ((pl + pr) < lb_beta*(0.5*((bxsq + btl) + (bxsq + btr))));
   Real al, dlc, drc;
-  if (sl >= 0.0) {          // supersonic: F = F^L
+  if (sl >= 0.0) {          // F = F^L
     al = 1.0; dlc = 0.0; drc = 0.0;
   } else if (sr <= 0.0) {   // F = F^R
     al = 0.0; dlc = 0.0; drc = 0.0;
+  } else if (hll) {         // MD21 eq. 30
+    al  = sr/(sr - sl);
+    dlc = -sr*sl/(sr - sl);
+    drc = dlc;
   } else {
     const Real sdl = sl - vl, sdr = sr - vr;
     const Real sm = (sdr*(rr*vr) - sdl*(rl*vl) + (ptl - ptr))/(sdr*rr - sdl*rl);
     const Real sdml = sl - sm, sdmr = sr - sm;
     const Real ptst = 0.5*((ptr + rr*sdr*(sm - vr)) + (ptl + rl*sdl*(sm - vl)));
-    // chi^s = B_t*s/B_t^s - 1 (MK05 eqs. 45/47; MD21 eq. 41), 0 in the solver's
-    // degenerate branch
     const Real denl = rl*sdl*sdml - bxsq;
     const Real denr = rr*sdr*sdmr - bxsq;
     const Real chil = (fabs(denl) < (HLLD_SMALL_NUMBER)*ptst) ? 0.0 :
@@ -166,8 +142,9 @@ void UctHlldFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
   u(m,0,k,j,i) = al;
   u(m,1,k,j,i) = dlc;
   u(m,2,k,j,i) = drc;
-  u(m,3,k,j,i) = al*wl(ivy,i) + (1.0 - al)*wr(ivy,i);
-  u(m,4,k,j,i) = al*wl(ivz,i) + (1.0 - al)*wr(ivz,i);
+  u(m,3,k,j,i) = al*vl + (1.0 - al)*vr;
+  u(m,4,k,j,i) = al*wl(ivy,i) + (1.0 - al)*wr(ivy,i);
+  u(m,5,k,j,i) = al*wl(ivz,i) + (1.0 - al)*wr(ivz,i);
 }
 
 //----------------------------------------------------------------------------------------
@@ -271,13 +248,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto &e31_ = e3x1;
   auto &e21_ = e2x1;
   auto &bx_ = b0.x1f;
-  const bool uct_on_ = emf_uct;   // lhlld2-1102 <mhd>/emf_scheme = uct
+  // <mhd>/emf_scheme = uct | uct_hlld: UCT corner-EMF face store (UctFaceStore)
+  const bool uct_on_ = emf_uct || emf_uct_hlld;
+  const bool uct_hll_ = emf_uct || (rsolver_method_ == MHD_RSolver::hlle);
+  const bool uct_eta_ = (rsolver_method_ == MHD_RSolver::lhlld) &&
+                        peos->eos_data.lhlld_emf_eta_pos;
+  const Real uct_lb_ = use_cubed_sphere ? cs_lowbeta_fallback : 0.0;
   auto &uct1_ = uct1;
   auto &uct2_ = uct2;
-  // ucthlld-1102 <mhd>/emf_scheme = uct_hlld; LHLLD's Step-8 resistivity goes into d^s
-  const bool uhd_on_ = emf_uct_hlld;
-  const bool uhd_eta_ = (rsolver_method_ == MHD_RSolver::lhlld) &&
-                        peos->eos_data.lhlld_emf_eta_pos;
   auto &uct3_ = uct3;
     
   auto &x1v_ = pmy_pack->pcoord->x1v;
@@ -606,16 +584,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       GnomonicEquiangleEmfX1(gtrig_cell,member,m,k,j,il,iu,e31,e21);
     }
     member.team_barrier();
-    if (uct_on_) {   // lhlld2-1102 UCT corner EMF inputs (x1 faces)
+    if (uct_on_) {   // UCT corner EMF inputs (x1 faces)
       par_for_inner(member, il, iu, [&](const int i) {
-        UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVX, i, bx(m,k,j,i), uct1_, m, k, j);
-      });
-      member.team_barrier();
-    }
-    if (uhd_on_) {   // ucthlld-1102 UCT-HLLD corner EMF inputs (x1 faces)
-      par_for_inner(member, il, iu, [&](const int i) {
-        UctHlldFaceStore(eos, wl, wr, bl, br, dl, dr, IVX, i, bx(m,k,j,i), uhd_eta_,
-                         uct1_, m, k, j);
+        UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVX, i, bx(m,k,j,i), uct_hll_, uct_eta_,
+                     uct_lb_, uct1_, m, k, j);
       });
       member.team_barrier();
     }
@@ -916,17 +888,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             GnomonicEquiangleFluxX2(gtrig_xi,member,m,k,j,is-1,ie+1,flx2);
           }
           member.team_barrier();
-          if (uct_on_) {   // lhlld2-1102 UCT corner EMF inputs (x2 faces)
+          if (uct_on_) {   // UCT corner EMF inputs (x2 faces)
             par_for_inner(member, is-1, ie+1, [&](const int i) {
-              UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVY, i, by(m,k,j,i), uct2_,
-                           m, k, j);
-            });
-            member.team_barrier();
-          }
-          if (uhd_on_) {   // ucthlld-1102 UCT-HLLD corner EMF inputs (x2 faces)
-            par_for_inner(member, is-1, ie+1, [&](const int i) {
-              UctHlldFaceStore(eos, wl, wr, bl, br, dl, dr, IVY, i, by(m,k,j,i),
-                               uhd_eta_, uct2_, m, k, j);
+              UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVY, i, by(m,k,j,i), uct_hll_,
+                           uct_eta_, uct_lb_, uct2_, m, k, j);
             });
             member.team_barrier();
           }
@@ -1228,10 +1193,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             GnomonicEquiangleFluxX3(gtrig_eta,member,m,k,j,is-1,ie+1,flx3);
           }
           member.team_barrier();
-          if (uhd_on_) {   // ucthlld-1102 UCT-HLLD corner EMF inputs (x3 faces)
+          if (uct_on_) {   // UCT corner EMF inputs (x3 faces)
             par_for_inner(member, is-1, ie+1, [&](const int i) {
-              UctHlldFaceStore(eos, wl, wr, bl, br, dl, dr, IVZ, i, bz(m,k,j,i),
-                               uhd_eta_, uct3_, m, k, j);
+              UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVZ, i, bz(m,k,j,i), uct_hll_,
+                           uct_eta_, uct_lb_, uct3_, m, k, j);
             });
             member.team_barrier();
           }

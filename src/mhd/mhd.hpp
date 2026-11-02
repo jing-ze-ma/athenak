@@ -250,17 +250,13 @@ class MHD {
   // lhlld2-1102 <mhd>/emf_smooth (read only when named; < 0 = off): smooth GS07 corner
   // EMF upwind weights, see EmfSmoothW in mhd_corner_e.cpp
   Real emf_smooth = -1.0;
-  // lhlld2-1102 <mhd>/emf_scheme = gs07 (default) | uct (read only when named): UCT-HLL
-  // corner EMF (Londrillo & Del Zanna 2004, Mignone & Del Zanna 2021), 2-D Cartesian.
-  // uct1/uct2 hold, per x1/x2 face, v_nL, v_nR, a_L, a_R (UctFaceStore, mhd_fluxes.cpp)
+  // <mhd>/emf_scheme = gs07 (default) | uct | uct_hlld (read only when named; mhd.cpp):
+  // UCT-HLL / UCT-HLLD corner EMF (Mignone & Del Zanna 2021) inside MHD::CornerE.
+  // uct1/uct2/uct3 hold, per x1/x2/x3 face: 0 a^L (a^R = 1 - a^L), 1 d^L, 2 d^R, then the
+  // a-weighted velocity of the face frame: 3 v_n, 4 v_t1, 5 v_t2 (UctFaceStore)
   bool emf_uct = false;
-  DvceArray5D<Real> uct1, uct2;
-  // ucthlld-1102 <mhd>/emf_scheme = uct_hlld: UCT-HLLD corner EMF (Mignone & Del Zanna
-  // 2021, JCP 424, 109748, eqs. 33-46), 2-D and 3-D Cartesian.  uct1/uct2/uct3 then hold,
-  // per x1/x2/x3 face, a^L, d^L, d^R and the two a-weighted transverse velocities
-  // (UctHlldFaceStore, mhd_fluxes.cpp); a^R = 1 - a^L
   bool emf_uct_hlld = false;
-  DvceArray5D<Real> uct3;
+  DvceArray5D<Real> uct1, uct2, uct3;
   bool use_polar_emf_diss = false; // Rusanov face-field dissipation on e2 in the polar rows        // plain 4-face average corner EMF (Balsara-Spicer) on ANY grid
 
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per

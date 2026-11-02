@@ -647,7 +647,13 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       emf_smooth = pin->GetReal("mhd","emf_smooth");
       if (emf_smooth < 0.0) emf_smooth = -1.0;
     }
-    // lhlld2-1102: <mhd>/emf_scheme = gs07 | uct, read only when named
+    // <mhd>/emf_scheme = gs07 (default) | uct | uct_hlld, read only when named
+    // (lhlld2-1102, ucthlld-1102).  Both UCT variants use the Mignone & Del Zanna 2021
+    // composition formula (MD21 eq. 35) for the corner EMF, inside the GS07 corner kernel
+    // (MHD::CornerE), with per-face coefficients stored by the flux sweeps (UctFaceStore,
+    // mhd_fluxes.cpp): uct = UCT-HLL (MD21 eq. 30 coefficients, any of hlle/hlld/lhlld),
+    // uct_hlld = UCT-HLLD (MD21 eqs. 40, 44-46; rsolver hlld or lhlld).  Cartesian 2-D/3-D
+    // and the cubed sphere (gnomonic face frames, the existing seam/vertex EMF averaging).
     if (pin->DoesParameterExist("mhd","emf_scheme")) {
       const std::string es = pin->GetString("mhd","emf_scheme");
       if (es == "uct") {
@@ -660,46 +666,17 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                   << "uct_hlld)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      // ucthlld-1102 UCT-HLLD (Mignone & Del Zanna 2021 eqs. 33-46): the a/d coefficients
-      // are those of the HLLD wave fan, so only rsolver = hlld or lhlld (LHLLD changes
-      // only the momentum/energy flux through p_T*, its B_t flux is the HLLD one plus the
-      // optional lhlld_emf_eta_pos resistivity, which goes into d^L and d^R).  2-D and
-      // 3-D Cartesian.  The cubed sphere would need the face store in the gnomonic
-      // frame (covariant B_t, contravariant v), the corner formula with metric factors,
-      // and the seam edges: the seam edge-EMF exchange averages the two panels' corner
-      // EMFs, which is consistent for UCT-HLLD only if both panels' a/d/v_t are built
-      // from the SAME shared seam Riemann problem (the seam flux) -- see the report.
-      if (emf_uct_hlld && (ppack->pmesh->one_d || ppack->pmesh->use_cubed_sphere ||
+      if ((emf_uct || emf_uct_hlld) && (ppack->pmesh->one_d ||
                       ppack->pmesh->use_spherical_polar ||
                       ppack->pcoord->is_special_relativistic ||
                       ppack->pcoord->is_general_relativistic ||
                       ppack->pcoord->is_dynamical_relativistic ||
                       !(peos->eos_data.is_ideal || peos->eos_data.IsGeneral()) ||
-                      use_fofc || emf_smooth >= 0.0)) {
+                      use_fofc || emf_smooth >= 0.0 || use_bs_emf)) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<mhd>/emf_scheme = uct_hlld is implemented only for "
-                  << "2-D/3-D Cartesian Newtonian MHD with an ideal or general EOS, "
-                  << "rsolver = hlld or lhlld, without fofc and without emf_smooth"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      // UCT-HLL is implemented for 2-D Cartesian, Newtonian, ideal/general EOS only.  3-D
-      // needs the same corner formula for E1/E2 (x2/x3 and x3/x1 face pairs) and a third
-      // face store; the cubed sphere would need it in the gnomonic covariant EMF slots AND
-      // on the seam edge-EMF exchange (the seam path averages the two panels' GS07 edge
-      // EMFs), spherical polar the PLM_nonuniform B reconstruction and the polar average.
-      if (emf_uct && (!ppack->pmesh->two_d || ppack->pmesh->use_cubed_sphere ||
-                      ppack->pmesh->use_spherical_polar ||
-                      ppack->pcoord->is_special_relativistic ||
-                      ppack->pcoord->is_general_relativistic ||
-                      ppack->pcoord->is_dynamical_relativistic ||
-                      !(peos->eos_data.is_ideal || peos->eos_data.IsGeneral()) ||
-                      use_fofc || emf_smooth >= 0.0)) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<mhd>/emf_scheme = uct is implemented only for 2-D "
-                  << "Cartesian Newtonian MHD with an ideal or general EOS, without fofc "
-                  << "and without emf_smooth (3-D / cubed sphere / spherical polar: not "
-                  << "yet, see mhd.cpp)" << std::endl;
+                  << std::endl << "<mhd>/emf_scheme = " << es << " is implemented only "
+                  << "for 2-D/3-D Cartesian or cubed-sphere Newtonian MHD with an ideal or "
+                  << "general EOS, without fofc, emf_smooth or bs_emf" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
@@ -961,21 +938,17 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       Kokkos::realloc(e1_cc, nmb, ncells3, ncells2, ncells1);
       Kokkos::realloc(e2_cc, nmb, ncells3, ncells2, ncells1);
       Kokkos::realloc(e3_cc, nmb, ncells3, ncells2, ncells1);
-      if (emf_uct) {   // lhlld2-1102 UCT face store
-        Kokkos::realloc(uct1, nmb, 4, ncells3, ncells2, ncells1);
-        Kokkos::realloc(uct2, nmb, 4, ncells3, ncells2, ncells1);
-      }
-      if (emf_uct_hlld) {   // ucthlld-1102 UCT-HLLD face store (rsolver now known)
-        if (!(rsolver_method == MHD_RSolver::hlld ||
-              rsolver_method == MHD_RSolver::lhlld)) {
+      if (emf_uct || emf_uct_hlld) {   // UCT face store (UctFaceStore); rsolver now known
+        if (!(rsolver_method == MHD_RSolver::hlld || rsolver_method == MHD_RSolver::lhlld ||
+              (emf_uct && rsolver_method == MHD_RSolver::hlle))) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<mhd>/emf_scheme = uct_hlld needs rsolver = hlld "
-                    << "or lhlld" << std::endl;
+                    << std::endl << "<mhd>/emf_scheme = uct_hlld needs rsolver = hlld or "
+                    << "lhlld; uct needs hlle, hlld or lhlld" << std::endl;
           std::exit(EXIT_FAILURE);
         }
-        Kokkos::realloc(uct1, nmb, 5, ncells3, ncells2, ncells1);
-        Kokkos::realloc(uct2, nmb, 5, ncells3, ncells2, ncells1);
-        if (ppack->pmesh->three_d) Kokkos::realloc(uct3, nmb, 5, ncells3, ncells2, ncells1);
+        Kokkos::realloc(uct1, nmb, 6, ncells3, ncells2, ncells1);
+        Kokkos::realloc(uct2, nmb, 6, ncells3, ncells2, ncells1);
+        if (ppack->pmesh->three_d) Kokkos::realloc(uct3, nmb, 6, ncells3, ncells2, ncells1);
       }
 
       // allocate array of flags used with FOFC

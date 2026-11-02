@@ -57,31 +57,179 @@ Real EmfPick(const Real fd, const Real eps, const Real ra, const Real rb,
 }
 
 //----------------------------------------------------------------------------------------
-//! ucthlld-1102 <mhd>/emf_scheme = uct_hlld: UCT-HLLD corner EMF (Mignone & Del Zanna
-//! 2021, JCP 424, 109748, "MD21", eqs. 33, 35-36, 40, 44-46).  For an edge along r with
-//! (p,q,r) cyclic and E_r = v_q B_p - v_p B_q (E3: p=x,q=y; E1: p=y,q=z; E2: p=z,q=x):
-//!   E_r = -[a_p^W (v_p B_q)^W + a_p^E (v_p B_q)^E] + [a_q^S (v_q B_p)^S + a_q^N (v_q B_p)^N]
-//!         + (d_p^E B_q^E - d_p^W B_q^W) - (d_q^N B_p^N - d_q^S B_p^S)          (MD21 eq. 35)
-//! W/E = the lower/upper side along p, S/N along q.  a_p^W = a^L, a_p^E = a^R = 1 - a^L,
-//! d_p^W = d^L, d_p^E = d^R, each the plain mean over the two p-faces that meet at the
-//! edge (MD21 eq. 36); likewise a_q, d_q over the two q-faces.  B_q^{W,E}: PLM of the
-//! staggered B_q (on q-faces) along p to the edge; v_p^{W,E}: the a-weighted transverse
-//! velocity v_p of the q-face (MD21 eq. 28 with the HLLD a's) carried to the edge with
-//! half the PLM slope of the cell-centred v_p of the two cells sharing that face.  (The
-//! cell-centred slope avoids widening the flux sweeps by a transverse row; in 1-D it
-//! reproduces the PLM face state exactly, so E_r reduces to the HLLD face flux.)
+//! <mhd>/emf_scheme = uct | uct_hlld (lhlld2-1102, ucthlld-1102): the UCT corner EMF of
+//! Mignone & Del Zanna 2021 (JCP 424, 109748, "MD21", eq. 35 with eq. 36 face averages),
+//! evaluated per corner inside the GS07 corner kernels of MHD::CornerE (same loops, same
+//! wall handling; the resistive/RKG EMFs, the cubed-sphere seam sum/average and the
+//! vertex average of flux_correct_fc act on its result exactly as on GS07's).  For an
+//! edge along t with face families p, q (E3: p=x1,q=x2; E1: p=x2,q=x3; E2: p=x3,q=x1):
+//!   E.t = { -[a_p^W (v_p B_q)^W + a_p^E (v_p B_q)^E] + [a_q^S (v_q B_p)^S + a_q^N (v_q B_p)^N]
+//!           + (d_p^E B_q^E - d_p^W B_q^W) - (d_q^N B_p^N - d_q^S B_p^S) } / sin(p,q)
+//! W/E = the lower/upper side along p, S/N along q; a, d = the means over the two p- (q-)
+//! faces at the edge of the coefficients UctFaceStore saved (a^W = a^L, a^E = 1 - a^L,
+//! d^W = d^L, d^E = d^R); B_q = the staggered field of the q faces (B.n_q), PLM along p
+//! to the edge; v_p = v.n_p of the q faces (built from their a-weighted face-frame
+//! velocity) carried to the edge with half the PLM slope of the cell-centred v.n_p of the
+//! two cells sharing the face.  In 1-D this is exactly the face flux.  Writing E.t with
+//! the NORMAL components v.n and B.n of the two face families makes it frame-free:
+//!   (v x B).t = [(v.n_p)(B.n_q) - (v.n_q)(B.n_p)] / sin(p,q)  for n_p, n_q ⊥ t,
+//! and a jump of B.n_q across a p-face Riemann fan is sin(p,q) times the jump of the
+//! face-parallel B_t that the a/d coefficients act on, so the d terms carry the same
+//! 1/sin.  Cartesian: sin = 1 and v.n = the velocity component.  CUBED SPHERE (gnomonic
+//! frames, gnomonic_kernels.hpp; c, s = cos, sin of the xi-eta angle; w0 holds the
+//! contravariant (v^xi, v^eta) on the unit tangents, so v.n_xi = s v^xi, v.n_eta = s v^eta):
+//!   x1 face {rhat, e_xi, f2 = n_eta}: v.n_eta = slot 5, v.n_xi = s slot 4 - c slot 5;
+//!   x2 face {n_xi, e_eta, rhat}: v.rhat = slot 5, v.n_eta = s slot 4 - c slot 3;
+//!   x3 face {n_eta, rhat, e_xi}: v.rhat = slot 4, v.n_xi = s slot 5 - c slot 3;
+//! E1 = E.rhat has sin(xi,eta) = s at the corner; E2 = E.e_xi and E3 = E.e_eta have
+//! sin = 1 (rhat is orthogonal to n_xi, n_eta), and those are the edge projections the
+//! face EMFs and the GS07 corner EMF carry (GnomonicEquiangleEmfX1).
+struct UctCorner {
+  DvceArray5D<Real> u1, u2, u3, w;            // face stores; primitives
+  DvceArray4D<Real> b1, b2, b3;               // staggered field
+  DvceArray3D<Real> sc, cc, sx, cx, se, ce;   // cs trig: cell, xi face, eta face
+  bool cs;
+  int js, ks, nx2, nx3;
+  DualArray1D<RegionSize> size;
+};
+
 KOKKOS_INLINE_FUNCTION
-Real UhdHalf(const Real qm, const Real q0, const Real qp, const bool upper) {
+Real UctHalf(const Real qm, const Real q0, const Real qp, const bool upper) {
   Real ql, qr;
   PLM(qm, q0, qp, ql, qr);
   return upper ? (ql - q0) : (qr - q0);
 }
 KOKKOS_INLINE_FUNCTION
-Real UhdEdge(const Real aw, const Real dw, const Real de, const Real vpw, const Real vpe,
+Real UctEdge(const Real aw, const Real dw, const Real de, const Real vpw, const Real vpe,
              const Real bqw, const Real bqe, const Real as, const Real ds, const Real dn,
              const Real vqs, const Real vqn, const Real bps, const Real bpn) {
   return -(aw*vpw*bqw + (1.0 - aw)*vpe*bqe) + (as*vqs*bps + (1.0 - as)*vqn*bpn)
          + (de*bqe - dw*bqw) - (dn*bpn - ds*bps);
+}
+// cell-centred v.n_xi and v.n_eta (Cartesian: v2, v3)
+KOKKOS_INLINE_FUNCTION
+Real UctVnXi(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  return d.cs ? d.sc(m,k,j)*d.w(m,IVY,k,j,i) : d.w(m,IVY,k,j,i);
+}
+KOKKOS_INLINE_FUNCTION
+Real UctVnEta(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  return d.cs ? d.sc(m,k,j)*d.w(m,IVZ,k,j,i) : d.w(m,IVZ,k,j,i);
+}
+
+// E3 (x3 edge at x1 face i, x2 face j): p = x1, q = x2
+KOKKOS_INLINE_FUNCTION
+Real UctE3(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  const Real aw = 0.5*(d.u1(m,0,k,j-1,i) + d.u1(m,0,k,j,i));
+  const Real dw = 0.5*(d.u1(m,1,k,j-1,i) + d.u1(m,1,k,j,i));
+  const Real de = 0.5*(d.u1(m,2,k,j-1,i) + d.u1(m,2,k,j,i));
+  const Real as = 0.5*(d.u2(m,0,k,j,i-1) + d.u2(m,0,k,j,i));
+  const Real ds = 0.5*(d.u2(m,1,k,j,i-1) + d.u2(m,1,k,j,i));
+  const Real dn = 0.5*(d.u2(m,2,k,j,i-1) + d.u2(m,2,k,j,i));
+  // v.n_1 (v1) of the x2 faces (slot 5) along x1
+  const Real vpw = d.u2(m,5,k,j,i-1) + 0.5*(
+    UctHalf(d.w(m,IVX,k,j-1,i-2), d.w(m,IVX,k,j-1,i-1), d.w(m,IVX,k,j-1,i), true) +
+    UctHalf(d.w(m,IVX,k,j  ,i-2), d.w(m,IVX,k,j  ,i-1), d.w(m,IVX,k,j  ,i), true));
+  const Real vpe = d.u2(m,5,k,j,i) + 0.5*(
+    UctHalf(d.w(m,IVX,k,j-1,i-1), d.w(m,IVX,k,j-1,i), d.w(m,IVX,k,j-1,i+1), false) +
+    UctHalf(d.w(m,IVX,k,j  ,i-1), d.w(m,IVX,k,j  ,i), d.w(m,IVX,k,j  ,i+1), false));
+  // v.n_2 of the x1 faces along x2
+  Real fs = d.u1(m,4,k,j-1,i), fn = d.u1(m,4,k,j,i);
+  if (d.cs) {
+    fs = d.sc(m,k,j-1)*fs - d.cc(m,k,j-1)*d.u1(m,5,k,j-1,i);
+    fn = d.sc(m,k,j  )*fn - d.cc(m,k,j  )*d.u1(m,5,k,j  ,i);
+  }
+  const Real vqs = fs + 0.5*(
+    UctHalf(UctVnXi(d,m,k,j-2,i-1), UctVnXi(d,m,k,j-1,i-1), UctVnXi(d,m,k,j,i-1), true) +
+    UctHalf(UctVnXi(d,m,k,j-2,i  ), UctVnXi(d,m,k,j-1,i  ), UctVnXi(d,m,k,j,i  ), true));
+  const Real vqn = fn + 0.5*(
+    UctHalf(UctVnXi(d,m,k,j-1,i-1), UctVnXi(d,m,k,j,i-1), UctVnXi(d,m,k,j+1,i-1), false) +
+    UctHalf(UctVnXi(d,m,k,j-1,i  ), UctVnXi(d,m,k,j,i  ), UctVnXi(d,m,k,j+1,i  ), false));
+  Real dum, bqw, bqe, bps, bpn;
+  PLM(d.b2(m,k,j,i-2), d.b2(m,k,j,i-1), d.b2(m,k,j,i  ), bqw, dum);
+  PLM(d.b2(m,k,j,i-1), d.b2(m,k,j,i  ), d.b2(m,k,j,i+1), dum, bqe);
+  PLM(d.b1(m,k,j-2,i), d.b1(m,k,j-1,i), d.b1(m,k,j  ,i), bps, dum);
+  PLM(d.b1(m,k,j-1,i), d.b1(m,k,j  ,i), d.b1(m,k,j+1,i), dum, bpn);
+  return UctEdge(aw, dw, de, vpw, vpe, bqw, bqe, as, ds, dn, vqs, vqn, bps, bpn);
+}
+
+// E1 (x1 edge at x2 face j, x3 face k): p = x2, q = x3; / sin(xi,eta) at the corner
+KOKKOS_INLINE_FUNCTION
+Real UctE1(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  const Real aw = 0.5*(d.u2(m,0,k-1,j,i) + d.u2(m,0,k,j,i));
+  const Real dw = 0.5*(d.u2(m,1,k-1,j,i) + d.u2(m,1,k,j,i));
+  const Real de = 0.5*(d.u2(m,2,k-1,j,i) + d.u2(m,2,k,j,i));
+  const Real as = 0.5*(d.u3(m,0,k,j-1,i) + d.u3(m,0,k,j,i));
+  const Real ds = 0.5*(d.u3(m,1,k,j-1,i) + d.u3(m,1,k,j,i));
+  const Real dn = 0.5*(d.u3(m,2,k,j-1,i) + d.u3(m,2,k,j,i));
+  // v.n_2 of the x3 faces along x2
+  Real fw = d.u3(m,5,k,j-1,i), fe = d.u3(m,5,k,j,i);
+  if (d.cs) {
+    fw = d.se(m,k,j-1)*fw - d.ce(m,k,j-1)*d.u3(m,3,k,j-1,i);
+    fe = d.se(m,k,j  )*fe - d.ce(m,k,j  )*d.u3(m,3,k,j  ,i);
+  }
+  const Real vpw = fw + 0.5*(
+    UctHalf(UctVnXi(d,m,k-1,j-2,i), UctVnXi(d,m,k-1,j-1,i), UctVnXi(d,m,k-1,j,i), true) +
+    UctHalf(UctVnXi(d,m,k  ,j-2,i), UctVnXi(d,m,k  ,j-1,i), UctVnXi(d,m,k  ,j,i), true));
+  const Real vpe = fe + 0.5*(
+    UctHalf(UctVnXi(d,m,k-1,j-1,i), UctVnXi(d,m,k-1,j,i), UctVnXi(d,m,k-1,j+1,i), false) +
+    UctHalf(UctVnXi(d,m,k  ,j-1,i), UctVnXi(d,m,k  ,j,i), UctVnXi(d,m,k  ,j+1,i), false));
+  // v.n_3 of the x2 faces along x3
+  Real fs = d.u2(m,4,k-1,j,i), fn = d.u2(m,4,k,j,i);
+  if (d.cs) {
+    fs = d.sx(m,k-1,j)*fs - d.cx(m,k-1,j)*d.u2(m,3,k-1,j,i);
+    fn = d.sx(m,k  ,j)*fn - d.cx(m,k  ,j)*d.u2(m,3,k  ,j,i);
+  }
+  const Real vqs = fs + 0.5*(
+    UctHalf(UctVnEta(d,m,k-2,j-1,i), UctVnEta(d,m,k-1,j-1,i), UctVnEta(d,m,k,j-1,i), true) +
+    UctHalf(UctVnEta(d,m,k-2,j  ,i), UctVnEta(d,m,k-1,j  ,i), UctVnEta(d,m,k,j  ,i), true));
+  const Real vqn = fn + 0.5*(
+    UctHalf(UctVnEta(d,m,k-1,j-1,i), UctVnEta(d,m,k,j-1,i), UctVnEta(d,m,k+1,j-1,i), false) +
+    UctHalf(UctVnEta(d,m,k-1,j  ,i), UctVnEta(d,m,k,j  ,i), UctVnEta(d,m,k+1,j  ,i), false));
+  Real dum, bqw, bqe, bps, bpn;
+  PLM(d.b3(m,k,j-2,i), d.b3(m,k,j-1,i), d.b3(m,k,j  ,i), bqw, dum);
+  PLM(d.b3(m,k,j-1,i), d.b3(m,k,j  ,i), d.b3(m,k,j+1,i), dum, bqe);
+  PLM(d.b2(m,k-2,j,i), d.b2(m,k-1,j,i), d.b2(m,k  ,j,i), bps, dum);
+  PLM(d.b2(m,k-1,j,i), d.b2(m,k  ,j,i), d.b2(m,k+1,j,i), dum, bpn);
+  const Real e = UctEdge(aw, dw, de, vpw, vpe, bqw, bqe, as, ds, dn, vqs, vqn, bps, bpn);
+  if (!d.cs) return e;
+  // sin of the xi-eta angle at the corner (xi_{j-1/2}, eta_{k-1/2}), as Coordinates
+  // computes the face values (coordinates.cpp, "cscoord")
+  const RegionSize &sz = d.size.d_view(m);
+  const Real x = tan(0.25*M_PI*LeftEdgeX(j-d.js, d.nx2, sz.x2min, sz.x2max));
+  const Real y = tan(0.25*M_PI*LeftEdgeX(k-d.ks, d.nx3, sz.x3min, sz.x3max));
+  const Real sn = sqrt(1.0 + SQR(x) + SQR(y))/(sqrt(1.0 + SQR(x))*sqrt(1.0 + SQR(y)));
+  return e/sn;
+}
+
+// E2 (x2 edge at x3 face k, x1 face i): p = x3, q = x1
+KOKKOS_INLINE_FUNCTION
+Real UctE2(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  const Real aw = 0.5*(d.u3(m,0,k,j,i-1) + d.u3(m,0,k,j,i));
+  const Real dw = 0.5*(d.u3(m,1,k,j,i-1) + d.u3(m,1,k,j,i));
+  const Real de = 0.5*(d.u3(m,2,k,j,i-1) + d.u3(m,2,k,j,i));
+  const Real as = 0.5*(d.u1(m,0,k-1,j,i) + d.u1(m,0,k,j,i));
+  const Real ds = 0.5*(d.u1(m,1,k-1,j,i) + d.u1(m,1,k,j,i));
+  const Real dn = 0.5*(d.u1(m,2,k-1,j,i) + d.u1(m,2,k,j,i));
+  // v.n_3 of the x1 faces (slot 5) along x3
+  const Real vpw = d.u1(m,5,k-1,j,i) + 0.5*(
+    UctHalf(UctVnEta(d,m,k-2,j,i-1), UctVnEta(d,m,k-1,j,i-1), UctVnEta(d,m,k,j,i-1), true) +
+    UctHalf(UctVnEta(d,m,k-2,j,i  ), UctVnEta(d,m,k-1,j,i  ), UctVnEta(d,m,k,j,i  ), true));
+  const Real vpe = d.u1(m,5,k,j,i) + 0.5*(
+    UctHalf(UctVnEta(d,m,k-1,j,i-1), UctVnEta(d,m,k,j,i-1), UctVnEta(d,m,k+1,j,i-1), false) +
+    UctHalf(UctVnEta(d,m,k-1,j,i  ), UctVnEta(d,m,k,j,i  ), UctVnEta(d,m,k+1,j,i  ), false));
+  // v.n_1 (v1) of the x3 faces (slot 4) along x1
+  const Real vqs = d.u3(m,4,k,j,i-1) + 0.5*(
+    UctHalf(d.w(m,IVX,k-1,j,i-2), d.w(m,IVX,k-1,j,i-1), d.w(m,IVX,k-1,j,i), true) +
+    UctHalf(d.w(m,IVX,k  ,j,i-2), d.w(m,IVX,k  ,j,i-1), d.w(m,IVX,k  ,j,i), true));
+  const Real vqn = d.u3(m,4,k,j,i) + 0.5*(
+    UctHalf(d.w(m,IVX,k-1,j,i-1), d.w(m,IVX,k-1,j,i), d.w(m,IVX,k-1,j,i+1), false) +
+    UctHalf(d.w(m,IVX,k  ,j,i-1), d.w(m,IVX,k  ,j,i), d.w(m,IVX,k  ,j,i+1), false));
+  Real dum, bqw, bqe, bps, bpn;
+  PLM(d.b1(m,k-2,j,i), d.b1(m,k-1,j,i), d.b1(m,k  ,j,i), bqw, dum);
+  PLM(d.b1(m,k-1,j,i), d.b1(m,k  ,j,i), d.b1(m,k+1,j,i), dum, bqe);
+  PLM(d.b3(m,k,j,i-2), d.b3(m,k,j,i-1), d.b3(m,k,j,i  ), bps, dum);
+  PLM(d.b3(m,k,j,i-1), d.b3(m,k,j,i  ), d.b3(m,k,j,i+1), dum, bpn);
+  return UctEdge(aw, dw, de, vpw, vpe, bqw, bqe, as, ds, dn, vqs, vqn, bps, bpn);
 }
 
 //----------------------------------------------------------------------------------------
@@ -128,6 +276,24 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   // choices are those of a zero-mass-flux wall (wall_in, as for reflect).
   const bool wsf_ = wall_closed_ix1 && wall_stress_free;
   const BoundaryFlag uflag_ = BoundaryFlag::user;
+  // <mhd>/emf_scheme = uct | uct_hlld: the MD21 corner formula (UctE1/E2/E3) replaces
+  // the GS07 weights per corner inside the kernels below; the cell-centred EMFs are not
+  // needed then.  At a reflecting / stress-free wall edge it takes the mean of the two
+  // wall-face EMFs (the solver's mirror-state flux), reading no ghost row.
+  const bool uct_ = emf_uct || emf_uct_hlld;
+  UctCorner ucd;
+  if (uct_) {
+    ucd.u1 = uct1; ucd.u2 = uct2; ucd.u3 = uct3; ucd.w = w0;
+    ucd.b1 = b0.x1f; ucd.b2 = b0.x2f; ucd.b3 = b0.x3f;
+    ucd.cs = use_cubed_sphere;
+    if (use_cubed_sphere) {
+      ucd.sc = pmy_pack->pcoord->sin_cell;     ucd.cc = pmy_pack->pcoord->cos_cell;
+      ucd.sx = pmy_pack->pcoord->sin_face_xi;  ucd.cx = pmy_pack->pcoord->cos_face_xi;
+      ucd.se = pmy_pack->pcoord->sin_face_eta; ucd.ce = pmy_pack->pcoord->cos_face_eta;
+    }
+    ucd.js = js; ucd.ks = ks; ucd.nx2 = indcs.nx2; ucd.nx3 = indcs.nx3;
+    ucd.size = size;
+  }
 
   //---- 1-D problem:
   //  copy face-centered E-fields to edges and return.
@@ -159,7 +325,9 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     auto e3cc_ = e3_cc;
 
     // compute cell-centered EMF in dynamical GRMHD
-    if (pmy_pack->padm != nullptr) {
+    if (uct_) {
+      // emf_scheme = uct | uct_hlld: no cell-centred EMF needed
+    } else if (pmy_pack->padm != nullptr) {
       auto &adm = pmy_pack->padm->adm;
       par_for("e_cc_2d", DevExeSpace(), 0, nmb1, js-1, je+1, is-1, ie+1,
       KOKKOS_LAMBDA(int m, int j, int i) {
@@ -259,96 +427,6 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     auto flx1 = uflx.x1f;
     auto flx2 = uflx.x2f;
 
-    // ucthlld-1102 <mhd>/emf_scheme = uct_hlld: UCT-HLLD corner E3 (see UhdEdge)
-    if (emf_uct_hlld) {
-      auto u1_ = uct1;
-      auto u2_ = uct2;
-      auto b1f = b0.x1f;
-      auto b2f = b0.x2f;
-      auto w_ = w0;
-      par_for("emf12_ucthlld", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
-      KOKKOS_LAMBDA(const int m, const int j, const int i) {
-        e2(m,ks  ,j,i) = e2x1_(m,ks,j,i);
-        e2(m,ke+1,j,i) = e2x1_(m,ks,j,i);
-        e1(m,ks  ,j,i) = e1x2_(m,ks,j,i);
-        e1(m,ke+1,j,i) = e1x2_(m,ks,j,i);
-      });
-      par_for("emf3_ucthlld", DevExeSpace(), 0, nmb1, ks, ks, js, je+1, is, ie+1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        // p = x: x1 faces (k,j-1,i),(k,j,i); q = y: x2 faces (k,j,i-1),(k,j,i)
-        const Real aw = 0.5*(u1_(m,0,k,j-1,i) + u1_(m,0,k,j,i));
-        const Real dw = 0.5*(u1_(m,1,k,j-1,i) + u1_(m,1,k,j,i));
-        const Real de = 0.5*(u1_(m,2,k,j-1,i) + u1_(m,2,k,j,i));
-        const Real as = 0.5*(u2_(m,0,k,j,i-1) + u2_(m,0,k,j,i));
-        const Real ds = 0.5*(u2_(m,1,k,j,i-1) + u2_(m,1,k,j,i));
-        const Real dn = 0.5*(u2_(m,2,k,j,i-1) + u2_(m,2,k,j,i));
-        // v_x of the x2 faces (slot 4) along x
-        const Real vxw = u2_(m,4,k,j,i-1) + 0.5*(
-          UhdHalf(w_(m,IVX,k,j-1,i-2), w_(m,IVX,k,j-1,i-1), w_(m,IVX,k,j-1,i), true) +
-          UhdHalf(w_(m,IVX,k,j  ,i-2), w_(m,IVX,k,j  ,i-1), w_(m,IVX,k,j  ,i), true));
-        const Real vxe = u2_(m,4,k,j,i) + 0.5*(
-          UhdHalf(w_(m,IVX,k,j-1,i-1), w_(m,IVX,k,j-1,i), w_(m,IVX,k,j-1,i+1), false) +
-          UhdHalf(w_(m,IVX,k,j  ,i-1), w_(m,IVX,k,j  ,i), w_(m,IVX,k,j  ,i+1), false));
-        // v_y of the x1 faces (slot 3) along y
-        const Real vys = u1_(m,3,k,j-1,i) + 0.5*(
-          UhdHalf(w_(m,IVY,k,j-2,i-1), w_(m,IVY,k,j-1,i-1), w_(m,IVY,k,j,i-1), true) +
-          UhdHalf(w_(m,IVY,k,j-2,i  ), w_(m,IVY,k,j-1,i  ), w_(m,IVY,k,j,i  ), true));
-        const Real vyn = u1_(m,3,k,j,i) + 0.5*(
-          UhdHalf(w_(m,IVY,k,j-1,i-1), w_(m,IVY,k,j,i-1), w_(m,IVY,k,j+1,i-1), false) +
-          UhdHalf(w_(m,IVY,k,j-1,i  ), w_(m,IVY,k,j,i  ), w_(m,IVY,k,j+1,i  ), false));
-        Real dum, byw, bye, bxs, bxn;
-        PLM(b2f(m,k,j,i-2), b2f(m,k,j,i-1), b2f(m,k,j,i  ), byw, dum);
-        PLM(b2f(m,k,j,i-1), b2f(m,k,j,i  ), b2f(m,k,j,i+1), dum, bye);
-        PLM(b1f(m,k,j-2,i), b1f(m,k,j-1,i), b1f(m,k,j  ,i), bxs, dum);
-        PLM(b1f(m,k,j-1,i), b1f(m,k,j  ,i), b1f(m,k,j+1,i), dum, bxn);
-        e3(m,k,j,i) = UhdEdge(aw, dw, de, vxw, vxe, byw, bye,
-                              as, ds, dn, vys, vyn, bxs, bxn);
-      });
-      return TaskStatus::complete;
-    }
-
-    // lhlld2-1102 <mhd>/emf_scheme = uct: UCT-HLL corner E3 (Londrillo & Del Zanna 2004
-    // eq. 56; Mignone & Del Zanna 2021 Sect. 3), with E3 = v2 B1 - v1 B2:
-    //   E3 = -[a_R^x v1^W B2^W + a_L^x v1^E B2^E - a_R^x a_L^x (B2^E - B2^W)]/(a_R^x+a_L^x)
-    //        +[a_R^y v2^S B1^S + a_L^y v2^N B1^N - a_R^y a_L^y (B1^N - B1^S)]/(a_R^y+a_L^y)
-    // W/E (S/N): the corner values from the x1 (x2) lower/upper side.  v1^W = mean of the
-    // x1-face LEFT normal velocities of the two x1 faces meeting at the corner; B2^W =
-    // PLM of the staggered B2 along x1 (cells i-2,i-1,i) to the corner; a^x = max over the
-    // two faces of the HLL outer speeds.  No mass-flux sign test: the corner EMF is a
-    // continuous function of the face states.
-    if (emf_uct) {
-      auto u1_ = uct1;
-      auto u2_ = uct2;
-      auto b1f = b0.x1f;
-      auto b2f = b0.x2f;
-      par_for("emf2_uct", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
-      KOKKOS_LAMBDA(const int m, const int j, const int i) {
-        e2(m,ks  ,j,i) = e2x1_(m,ks,j,i);
-        e2(m,ke+1,j,i) = e2x1_(m,ks,j,i);
-        e1(m,ks  ,j,i) = e1x2_(m,ks,j,i);
-        e1(m,ke+1,j,i) = e1x2_(m,ks,j,i);
-        Real dum, b2w, b2e, b1s, b1n;
-        PLM(b2f(m,ks,j,i-2), b2f(m,ks,j,i-1), b2f(m,ks,j,i  ), b2w, dum);
-        PLM(b2f(m,ks,j,i-1), b2f(m,ks,j,i  ), b2f(m,ks,j,i+1), dum, b2e);
-        PLM(b1f(m,ks,j-2,i), b1f(m,ks,j-1,i), b1f(m,ks,j  ,i), b1s, dum);
-        PLM(b1f(m,ks,j-1,i), b1f(m,ks,j  ,i), b1f(m,ks,j+1,i), dum, b1n);
-        const Real v1w = 0.5*(u1_(m,0,ks,j-1,i) + u1_(m,0,ks,j,i));
-        const Real v1e = 0.5*(u1_(m,1,ks,j-1,i) + u1_(m,1,ks,j,i));
-        const Real alx = fmax(u1_(m,2,ks,j-1,i), u1_(m,2,ks,j,i));
-        const Real arx = fmax(u1_(m,3,ks,j-1,i), u1_(m,3,ks,j,i));
-        const Real v2s = 0.5*(u2_(m,0,ks,j,i-1) + u2_(m,0,ks,j,i));
-        const Real v2n = 0.5*(u2_(m,1,ks,j,i-1) + u2_(m,1,ks,j,i));
-        const Real aly = fmax(u2_(m,2,ks,j,i-1), u2_(m,2,ks,j,i));
-        const Real ary = fmax(u2_(m,3,ks,j,i-1), u2_(m,3,ks,j,i));
-        Real fx = arx*v1w*b2w + alx*v1e*b2e - arx*alx*(b2e - b2w);
-        Real fy = ary*v2s*b1s + aly*v2n*b1n - ary*aly*(b1n - b1s);
-        fx = (arx + alx > 0.0) ? fx/(arx + alx) : 0.5*(v1w*b2w + v1e*b2e);
-        fy = (ary + aly > 0.0) ? fy/(ary + aly) : 0.5*(v2s*b1s + v2n*b1n);
-        e3(m,ks,j,i) = fy - fx;
-      });
-      return TaskStatus::complete;
-    }
-
     // integrate E3 to corner using SG07
     //  Note e1[is:ie,  js:je+1,ks:ke+1]
     //       e2[is:ie+1,js:je,  ks:ke+1]
@@ -373,6 +451,11 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       e2(m,ke+1,j,i) = e2x1_(m,ks,j,i);
       e1(m,ks  ,j,i) = e1x2_(m,ks,j,i);
       e1(m,ke+1,j,i) = e1x2_(m,ks,j,i);
+      if (uct_) {   // emf_scheme = uct | uct_hlld (UctE3)
+        e3(m,ks,j,i) = wall1 ? 0.5*(e3x1_(m,ks,j-1,i) + e3x1_(m,ks,j,i))
+                             : UctE3(ucd, m, ks, j, i);
+        return;
+      }
 
       Real e3_l2, e3_r2, e3_l1, e3_r1;
       if (wall1) {  // reflecting radial wall: no upwind side, see above
@@ -430,118 +513,6 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   // Use GS07 algorithm to compute all three of E1, E2, and E3
 
   if (pmy_pack->pmesh->three_d) {
-    // ucthlld-1102 <mhd>/emf_scheme = uct_hlld: UCT-HLLD E1, E2, E3 (see UhdEdge).
-    // Every face store it reads lies inside the sweeps' ranges (x1: k,j in [ks-1,ke+1] x
-    // [js-1,je+1]; x2: k in [ks-1,ke+1], i in [is-1,ie+1]; x3: j,i in [js-1,je+1] x
-    // [is-1,ie+1]); the PLM stencils reach two ghost cells.
-    if (emf_uct_hlld) {
-      auto e1 = efld.x1e;
-      auto e2 = efld.x2e;
-      auto e3 = efld.x3e;
-      auto u1_ = uct1;
-      auto u2_ = uct2;
-      auto u3_ = uct3;
-      auto b1f = b0.x1f;
-      auto b2f = b0.x2f;
-      auto b3f = b0.x3f;
-      auto w_ = w0;
-      par_for("emf3_ucthlld", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie+1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        // p = x: x1 faces (k,j-1,i),(k,j,i); q = y: x2 faces (k,j,i-1),(k,j,i)
-        const Real aw = 0.5*(u1_(m,0,k,j-1,i) + u1_(m,0,k,j,i));
-        const Real dw = 0.5*(u1_(m,1,k,j-1,i) + u1_(m,1,k,j,i));
-        const Real de = 0.5*(u1_(m,2,k,j-1,i) + u1_(m,2,k,j,i));
-        const Real as = 0.5*(u2_(m,0,k,j,i-1) + u2_(m,0,k,j,i));
-        const Real ds = 0.5*(u2_(m,1,k,j,i-1) + u2_(m,1,k,j,i));
-        const Real dn = 0.5*(u2_(m,2,k,j,i-1) + u2_(m,2,k,j,i));
-        // v_x of the x2 faces (slot 4) along x
-        const Real vxw = u2_(m,4,k,j,i-1) + 0.5*(
-          UhdHalf(w_(m,IVX,k,j-1,i-2), w_(m,IVX,k,j-1,i-1), w_(m,IVX,k,j-1,i), true) +
-          UhdHalf(w_(m,IVX,k,j  ,i-2), w_(m,IVX,k,j  ,i-1), w_(m,IVX,k,j  ,i), true));
-        const Real vxe = u2_(m,4,k,j,i) + 0.5*(
-          UhdHalf(w_(m,IVX,k,j-1,i-1), w_(m,IVX,k,j-1,i), w_(m,IVX,k,j-1,i+1), false) +
-          UhdHalf(w_(m,IVX,k,j  ,i-1), w_(m,IVX,k,j  ,i), w_(m,IVX,k,j  ,i+1), false));
-        // v_y of the x1 faces (slot 3) along y
-        const Real vys = u1_(m,3,k,j-1,i) + 0.5*(
-          UhdHalf(w_(m,IVY,k,j-2,i-1), w_(m,IVY,k,j-1,i-1), w_(m,IVY,k,j,i-1), true) +
-          UhdHalf(w_(m,IVY,k,j-2,i  ), w_(m,IVY,k,j-1,i  ), w_(m,IVY,k,j,i  ), true));
-        const Real vyn = u1_(m,3,k,j,i) + 0.5*(
-          UhdHalf(w_(m,IVY,k,j-1,i-1), w_(m,IVY,k,j,i-1), w_(m,IVY,k,j+1,i-1), false) +
-          UhdHalf(w_(m,IVY,k,j-1,i  ), w_(m,IVY,k,j,i  ), w_(m,IVY,k,j+1,i  ), false));
-        Real dum, byw, bye, bxs, bxn;
-        PLM(b2f(m,k,j,i-2), b2f(m,k,j,i-1), b2f(m,k,j,i  ), byw, dum);
-        PLM(b2f(m,k,j,i-1), b2f(m,k,j,i  ), b2f(m,k,j,i+1), dum, bye);
-        PLM(b1f(m,k,j-2,i), b1f(m,k,j-1,i), b1f(m,k,j  ,i), bxs, dum);
-        PLM(b1f(m,k,j-1,i), b1f(m,k,j  ,i), b1f(m,k,j+1,i), dum, bxn);
-        e3(m,k,j,i) = UhdEdge(aw, dw, de, vxw, vxe, byw, bye,
-                              as, ds, dn, vys, vyn, bxs, bxn);
-      });
-      // E1 = v_z B_y - v_y B_z: p = y (x2 faces (k-1,j,i),(k,j,i)), q = z (x3 faces
-      // (k,j-1,i),(k,j,i))
-      par_for("emf1_ucthlld", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const Real aw = 0.5*(u2_(m,0,k-1,j,i) + u2_(m,0,k,j,i));
-        const Real dw = 0.5*(u2_(m,1,k-1,j,i) + u2_(m,1,k,j,i));
-        const Real de = 0.5*(u2_(m,2,k-1,j,i) + u2_(m,2,k,j,i));
-        const Real as = 0.5*(u3_(m,0,k,j-1,i) + u3_(m,0,k,j,i));
-        const Real ds = 0.5*(u3_(m,1,k,j-1,i) + u3_(m,1,k,j,i));
-        const Real dn = 0.5*(u3_(m,2,k,j-1,i) + u3_(m,2,k,j,i));
-        // v_y of the x3 faces (slot 4) along y
-        const Real vyw = u3_(m,4,k,j-1,i) + 0.5*(
-          UhdHalf(w_(m,IVY,k-1,j-2,i), w_(m,IVY,k-1,j-1,i), w_(m,IVY,k-1,j,i), true) +
-          UhdHalf(w_(m,IVY,k  ,j-2,i), w_(m,IVY,k  ,j-1,i), w_(m,IVY,k  ,j,i), true));
-        const Real vye = u3_(m,4,k,j,i) + 0.5*(
-          UhdHalf(w_(m,IVY,k-1,j-1,i), w_(m,IVY,k-1,j,i), w_(m,IVY,k-1,j+1,i), false) +
-          UhdHalf(w_(m,IVY,k  ,j-1,i), w_(m,IVY,k  ,j,i), w_(m,IVY,k  ,j+1,i), false));
-        // v_z of the x2 faces (slot 3) along z
-        const Real vzs = u2_(m,3,k-1,j,i) + 0.5*(
-          UhdHalf(w_(m,IVZ,k-2,j-1,i), w_(m,IVZ,k-1,j-1,i), w_(m,IVZ,k,j-1,i), true) +
-          UhdHalf(w_(m,IVZ,k-2,j  ,i), w_(m,IVZ,k-1,j  ,i), w_(m,IVZ,k,j  ,i), true));
-        const Real vzn = u2_(m,3,k,j,i) + 0.5*(
-          UhdHalf(w_(m,IVZ,k-1,j-1,i), w_(m,IVZ,k,j-1,i), w_(m,IVZ,k+1,j-1,i), false) +
-          UhdHalf(w_(m,IVZ,k-1,j  ,i), w_(m,IVZ,k,j  ,i), w_(m,IVZ,k+1,j  ,i), false));
-        Real dum, bzw, bze, bys, byn;
-        PLM(b3f(m,k,j-2,i), b3f(m,k,j-1,i), b3f(m,k,j  ,i), bzw, dum);
-        PLM(b3f(m,k,j-1,i), b3f(m,k,j  ,i), b3f(m,k,j+1,i), dum, bze);
-        PLM(b2f(m,k-2,j,i), b2f(m,k-1,j,i), b2f(m,k  ,j,i), bys, dum);
-        PLM(b2f(m,k-1,j,i), b2f(m,k  ,j,i), b2f(m,k+1,j,i), dum, byn);
-        e1(m,k,j,i) = UhdEdge(aw, dw, de, vyw, vye, bzw, bze,
-                              as, ds, dn, vzs, vzn, bys, byn);
-      });
-      // E2 = v_x B_z - v_z B_x: p = z (x3 faces (k,j,i-1),(k,j,i)), q = x (x1 faces
-      // (k-1,j,i),(k,j,i))
-      par_for("emf2_ucthlld", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie+1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const Real aw = 0.5*(u3_(m,0,k,j,i-1) + u3_(m,0,k,j,i));
-        const Real dw = 0.5*(u3_(m,1,k,j,i-1) + u3_(m,1,k,j,i));
-        const Real de = 0.5*(u3_(m,2,k,j,i-1) + u3_(m,2,k,j,i));
-        const Real as = 0.5*(u1_(m,0,k-1,j,i) + u1_(m,0,k,j,i));
-        const Real ds = 0.5*(u1_(m,1,k-1,j,i) + u1_(m,1,k,j,i));
-        const Real dn = 0.5*(u1_(m,2,k-1,j,i) + u1_(m,2,k,j,i));
-        // v_z of the x1 faces (slot 4) along z
-        const Real vzw = u1_(m,4,k-1,j,i) + 0.5*(
-          UhdHalf(w_(m,IVZ,k-2,j,i-1), w_(m,IVZ,k-1,j,i-1), w_(m,IVZ,k,j,i-1), true) +
-          UhdHalf(w_(m,IVZ,k-2,j,i  ), w_(m,IVZ,k-1,j,i  ), w_(m,IVZ,k,j,i  ), true));
-        const Real vze = u1_(m,4,k,j,i) + 0.5*(
-          UhdHalf(w_(m,IVZ,k-1,j,i-1), w_(m,IVZ,k,j,i-1), w_(m,IVZ,k+1,j,i-1), false) +
-          UhdHalf(w_(m,IVZ,k-1,j,i  ), w_(m,IVZ,k,j,i  ), w_(m,IVZ,k+1,j,i  ), false));
-        // v_x of the x3 faces (slot 3) along x
-        const Real vxs = u3_(m,3,k,j,i-1) + 0.5*(
-          UhdHalf(w_(m,IVX,k-1,j,i-2), w_(m,IVX,k-1,j,i-1), w_(m,IVX,k-1,j,i), true) +
-          UhdHalf(w_(m,IVX,k  ,j,i-2), w_(m,IVX,k  ,j,i-1), w_(m,IVX,k  ,j,i), true));
-        const Real vxn = u3_(m,3,k,j,i) + 0.5*(
-          UhdHalf(w_(m,IVX,k-1,j,i-1), w_(m,IVX,k-1,j,i), w_(m,IVX,k-1,j,i+1), false) +
-          UhdHalf(w_(m,IVX,k  ,j,i-1), w_(m,IVX,k  ,j,i), w_(m,IVX,k  ,j,i+1), false));
-        Real dum, bxw, bxe, bzs, bzn;
-        PLM(b1f(m,k-2,j,i), b1f(m,k-1,j,i), b1f(m,k  ,j,i), bxw, dum);
-        PLM(b1f(m,k-1,j,i), b1f(m,k  ,j,i), b1f(m,k+1,j,i), dum, bxe);
-        PLM(b3f(m,k,j,i-2), b3f(m,k,j,i-1), b3f(m,k,j,i  ), bzs, dum);
-        PLM(b3f(m,k,j,i-1), b3f(m,k,j,i  ), b3f(m,k,j,i+1), dum, bzn);
-        e2(m,k,j,i) = UhdEdge(aw, dw, de, vzw, vze, bxw, bxe,
-                              as, ds, dn, vxs, vxn, bzs, bzn);
-      });
-      return TaskStatus::complete;
-    }
     // Compute cell-centered electric fields
     // E1=-(v X B)=VzBy-VyBz
     // E2=-(v X B)=VxBz-VzBx
@@ -553,7 +524,9 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     auto e3cc_ = e3_cc;
 
     // compute cell-centered EMFs in dynamical GRMHD
-    if (pmy_pack->padm != nullptr) {
+    if (uct_) {
+      // emf_scheme = uct | uct_hlld: no cell-centred EMF needed
+    } else if (pmy_pack->padm != nullptr) {
       auto &adm = pmy_pack->padm->adm;
       par_for("e_cc_3d", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
       KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -754,6 +727,14 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       // flux was shared over the active rows only)
       const int il_ = wall_in ? i : i-1;
       const int ir_ = wall_out ? i-1 : i;
+      if (uct_) {   // emf_scheme = uct | uct_hlld (UctE1/E2/E3)
+        e1(m,k,j,i) = UctE1(ucd, m, k, j, i);
+        e2(m,k,j,i) = wall1 ? 0.5*(e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i))
+                            : UctE2(ucd, m, k, j, i);
+        e3(m,k,j,i) = wall1 ? 0.5*(e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i))
+                            : UctE3(ucd, m, k, j, i);
+        return;
+      }
       // integrate E1 to corner using SG07
       Real e1_l3, e1_r3, e1_l2, e1_r2;
       if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
