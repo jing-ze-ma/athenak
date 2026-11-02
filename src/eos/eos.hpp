@@ -220,6 +220,12 @@ struct EOS_Data {
   // reads as smooth.  Default 1 (user decision 10-30, set in eos.cpp); <= 0 = off,
   // legacy LHLLC/LHLLD, bitwise.
   Real cb_sensor = 0.0;
+  // cbcont-1102 <hydro>/lhllc_cb_cont, <mhd>/lhlld_cb_cont (default false = legacy,
+  // bitwise; read only when named): the CONTINUOUS sensor fraction
+  // s = clamp(J d2/max(d2^2, J^2), 0, 1) in place of clamp(J/d2, 0, 1), which jumps
+  // 1 -> 0 where d2 changes sign under a finite J and makes the RK step first order in
+  // dt (utils/cb_sensor.hpp).  Same s wherever |J| <= |d2|.
+  bool cb_cont = false;
 
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
   // energy instead of deleting it (default false = the historical behaviour).

@@ -45,7 +45,8 @@
 
 KOKKOS_INLINE_FUNCTION
 Real CBSensorChiFloor(const DvceArray5D<Real> &w0, const int m, const int k, const int j,
-                      const int i, const int ivx, const Real chi, const Real gain) {
+                      const int i, const int ivx, const Real chi, const Real gain,
+                      const bool cont = false) {
   const int cdi = (ivx == IVX) ? 1 : 0;
   const int cdj = (ivx == IVY) ? 1 : 0;
   const int cdk = (ivx == IVZ) ? 1 : 0;
@@ -63,7 +64,23 @@ Real CBSensorChiFloor(const DvceArray5D<Real> &w0, const int m, const int k, con
   }
   const Real d2 = qs[2] - qs[1];
   const Real jodd = 0.25*(2.0*d2 - (qs[1] - qs[0]) - (qs[3] - qs[2]));
-  Real s = (jodd*d2 > 0.0) ? fmin(1.0, jodd/d2) : 0.0;
+  // cbcont-1102 <hydro>/lhllc_cb_cont, <mhd>/lhlld_cb_cont (cont): the legacy
+  // clamp(J/d2, 0, 1) JUMPS from 1 to 0 where d2 changes sign under a finite J (every
+  // extremum of the face-normal mass flux), so the Riemann flux, and with it the RK
+  // right-hand side, is DISCONTINUOUS in the state there: the RK2 step drops to first
+  // order in dt (deep u, v of the WASP-121b hydro: (X1-X16)/(X4-X16) = 4.9 at cfl
+  // 0.3/0.075/0.01875; 19 with HLLE, 2.5-4 with the sensor off).  cont uses
+  //   s = clamp(J d2 / max(d2^2, J^2), 0, 1),
+  // identical to J/d2 for |J| <= |d2| (also s = 1 for the pure checkerboard) and d2/J
+  // beyond, which goes to 0 with d2: s is continuous in the state (except at the
+  // codimension-2 point d2 = J = 0).
+  Real s;
+  if (cont) {
+    const Real den = fmax(d2*d2, jodd*jodd);
+    s = (jodd*d2 > 0.0 && den > 0.0) ? fmin(1.0, jodd*d2/den) : 0.0;
+  } else {
+    s = (jodd*d2 > 0.0) ? fmin(1.0, jodd/d2) : 0.0;
+  }
   if (gain != 1.0 && s > 0.0) s = pow(s, gain);
   return (s > 0.0) ? 1.0 - (1.0 - chi)*sqrt(1.0 - s) : 0.0;
 }

@@ -47,6 +47,7 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
   const Real phi_min = (ivx == IVX) ? eos.x1_phi_min : 0.0;
   // <hydro>/lhllc_cb_sensor (EOS_Data::cb_sensor): odd-even sensor on every face
   const Real cb_sensor = eos.cb_sensor;
+  const bool cb_cont = eos.cb_cont;   // cbcont-1102 <hydro>/lhllc_cb_cont
 
   par_for_inner(member, il, iu, [&](const int i) {
     //--- Step 1.  Create local references for L/R states (helps compiler vectorize)
@@ -131,7 +132,7 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
     Real chi = fmin(1.0,qe/qf);
     // odd-even sensor, default 1 (utils/cb_sensor.hpp); 0 when not flagged
     if (cb_sensor > 0.0) chi = fmax(chi, CBSensorChiFloor(w0, m, k, j, i, ivx, chi,
-                                                          cb_sensor));
+                                                          cb_sensor, cb_cont));
     Real phi = chi * (2.0 - chi);
     if (phi_min > 0.0) phi = fmax(phi, phi_min);  // x1 faces, key set only
 

@@ -130,6 +130,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   // <mhd>/lhlld_cb_sensor (EOS_Data::cb_sensor): see eos.hpp and
   // utils/cb_sensor.hpp.
   const Real cb_sensor = eos.cb_sensor;
+  const bool cb_cont = eos.cb_cont;   // cbcont-1102 <mhd>/lhlld_cb_cont
 
   if (eos.is_ideal) {
     Real gm1 = eos.gamma - 1.0;
@@ -245,7 +246,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       }
       // <mhd>/lhlld_cb_sensor: odd-even sensor, default 1 (utils/cb_sensor.hpp)
       if (cb_sensor > 0.0) chi = fmax(chi, CBSensorChiFloor(w0, m, k, j, i, ivx, chi,
-                                                            cb_sensor));
+                                                            cb_sensor, cb_cont));
       Real phi = chi*(2.0 - chi);
 
       // Real cfmax = std::max(cfl,cfr);

@@ -196,6 +196,19 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     if (pin->DoesParameterExist(bk, key)) {
       eos_data.cb_sensor = pin->GetReal(bk, key);
     }
+    // cbcont-1102: see EOS_Data::cb_cont (read only when named: restart files of runs
+    // that do not set it are unchanged)
+    const std::string kc = is_hyd ? "lhllc_cb_cont" : "lhlld_cb_cont";
+    const std::string bc = is_hyd ? "lhlld_cb_cont" : "lhllc_cb_cont";
+    if (pin->DoesParameterExist(bk, bc)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << bk << ">/" << bc << " is not valid in this "
+                << "block; use <" << bk << ">/" << kc << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (pin->DoesParameterExist(bk, kc)) {
+      eos_data.cb_cont = pin->GetBoolean(bk, kc);
+    }
   }
   // <block>/vceil_thermalise: see the note on EOS_Data::vceil_thermalise.  Default off,
   // so every existing run is bit-for-bit unchanged.  Meaningless without a ceiling, and
