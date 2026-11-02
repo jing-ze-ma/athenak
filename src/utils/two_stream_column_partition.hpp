@@ -1557,40 +1557,9 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
 //! asks for it and Kokkos clamps it to what the backend allows (1 on Serial, where the
 //! partition degenerates to exactly the serial block Thomas).
 
-inline void RTCol3TeamLaunch(const RTCol3 &c, const int nmb1, const int ks, const int ke,
-                             const int js, const int je) {
-  RTCol3 cc = c;
-  const int nk = ke - ks + 1, nj = je - js + 1;
-  const int nteam = (nmb1 + 1)*nk*nj;
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), nteam, cc.nseg);
-  // problem/rt_impl_mixed picks the factor type; the two extra instantiations exist
-  // only when the switch is set, and mixed = 0 is the untouched double kernel.
-  if (cc.mixed == 1) {
-    Kokkos::parallel_for("rt_col3_p", policy, KOKKOS_LAMBDA(TeamMember_t tm) {
-      const int q = tm.league_rank();
-      const int m = q/(nk*nj);
-      const int k = ks + (q - m*nk*nj)/nj;
-      const int j = js + (q - m*nk*nj)%nj;
-      RTCol3TeamSolve<float, false>(cc, tm, m, k, j);
-    });
-  } else if (cc.mixed == 2) {
-    Kokkos::parallel_for("rt_col3_p", policy, KOKKOS_LAMBDA(TeamMember_t tm) {
-      const int q = tm.league_rank();
-      const int m = q/(nk*nj);
-      const int k = ks + (q - m*nk*nj)/nj;
-      const int j = js + (q - m*nk*nj)%nj;
-      RTCol3TeamSolve<float, true>(cc, tm, m, k, j);
-    });
-  } else {
-    Kokkos::parallel_for("rt_col3_p", policy, KOKKOS_LAMBDA(TeamMember_t tm) {
-      const int q = tm.league_rank();
-      const int m = q/(nk*nj);
-      const int k = ks + (q - m*nk*nj)/nj;
-      const int j = js + (q - m*nk*nj)%nj;
-      RTCol3TeamSolve<Real, false>(cc, tm, m, k, j);
-    });
-  }
-}
+void RTCol3TeamLaunch(const RTCol3 &c, const int nmb1, const int ks, const int ke,
+                      const int js, const int je);
+// (defined in utils/two_stream_rt_col3.cpp, tusplit-1102)
 
 }  // namespace two_stream_rt
 #endif  // UTILS_TWO_STREAM_COLUMN_PARTITION_HPP_
