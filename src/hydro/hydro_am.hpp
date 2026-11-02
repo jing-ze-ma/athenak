@@ -820,7 +820,7 @@ bool HydroAmVecTorque(const HydroAmV &v, const int m, const int k, const int j,
 KOKKOS_INLINE_FUNCTION
 void HydroAmFrame(const HydroAmV &v, const Real *om, const bool amc, const int m,
                   const int k, const int j, const int i, Real *f, Real *dT, Real *rc,
-                  Real *rh, Real *b1, Real *b2, Real &cc) {
+                  Real *rh, Real *b1, Real *b2, Real &cc, const bool cf = true) {
   const Real dv = v.vol(m,k,j,i);
   const Real r = v.x1v(m,i);
   const Real rho = v.w0(m,IDN,k,j,i);
@@ -880,7 +880,14 @@ void HydroAmFrame(const HydroAmV &v, const Real *om, const bool amc, const int m
   HydroAmCross(om, vel, ov);
   HydroAmCross(om, rc, orc);
   HydroAmCross(om, orc, oorc);
-  for (int c = 0; c < 3; ++c) {f[c] = -2.0*rho*ov[c] - rho*oorc[c];}
+  // csacc-1031 <hydro>/frame_centrifugal = false (cf): Coriolis only (a problem whose
+  // potential already carries the centrifugal term, e.g. the Roche potential of
+  // ry_per_accretor, whose rotation axis does not pass through the mesh origin)
+  if (cf) {
+    for (int c = 0; c < 3; ++c) {f[c] = -2.0*rho*ov[c] - rho*oorc[c];}
+  } else {
+    for (int c = 0; c < 3; ++c) {f[c] = -2.0*rho*ov[c];}
+  }
   for (int c = 0; c < 3; ++c) {dT[c] = 0.0;}
   if (!amc) return;
   phi[0] = -v.f1(m,IDN,k,j,i)*v.a1(m,k,j,i);
@@ -897,7 +904,14 @@ void HydroAmFrame(const HydroAmV &v, const Real *om, const bool amc, const int m
     for (int c = 0; c < 3; ++c) {qv[c] += phi[n]*(wf[c] - wc[c]);}
   }
   Real pa[3], la[3], ol[3], tcd[3];
-  for (int c = 0; c < 3; ++c) {pa[c] = rho*(vel[c] + orc[c])*dv;}
+  // csacc-1031 (cf = false, Coriolis only): the frame force's exact torque is
+  // -Q_c - Omega x L_rel,c (L_rel = V rc x rho v): Coriolis = -Omega x (r x rho v) - rho v.grad w,
+  // the centrifugal part (-Omega x V rc x rho (Omega x rc)) being the potential's
+  if (cf) {
+    for (int c = 0; c < 3; ++c) {pa[c] = rho*(vel[c] + orc[c])*dv;}
+  } else {
+    for (int c = 0; c < 3; ++c) {pa[c] = rho*vel[c]*dv;}
+  }
   HydroAmCross(rc, pa, la);
   HydroAmCross(om, la, ol);
   Real fv[3];
@@ -949,12 +963,17 @@ class AmModule {
   bool frame_on = false;
   Real frame_om[3] = {0.0, 0.0, 0.0};
   bool frame_exact = false;
+  bool frame_cf = true;      // csacc-1031 <hydro>/frame_centrifugal (false: Coriolis only)
   DvceArray5D<Real> frame_ln;
   void AmTransport(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
   // roche-wbtan-1101: the tangential momentum change rate (bdt = 1) AmTransport would add
   // for fl's state and fluxes, added to fl.u0, with NO side effect (no spin reservoir
   // update, no driver): the dhj problem/roche_wb_tan equilibrium probe
   void AmTransportProbe(const AmFluid &fl);
+  // roche-wbtan-1101 (accwbtan): the <hydro>/frame_omega FORCE f of fl's state alone
+  // (HydroAmFrame: Coriolis, + centrifugal with frame_cf) on the cell basis, bdt = 1, added
+  // to fl.u0(IM1..IM3); NOT the am_vector torque correction (its Q_c is the mass-flux term)
+  void FrameForceProbe(const AmFluid &fl);
   void AmSpinReturn(const AmFluid &fl);
   void FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
   void AmFillV(HydroAmV &v, const AmFluid &fl);

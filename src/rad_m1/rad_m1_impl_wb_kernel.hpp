@@ -854,6 +854,7 @@
     //  implicit_pos_gas: a gas eint below e_min = max(e(rho, tfloor),
     //    implicit_pos_gas_frac x max(e_gas old, 0)) is raised to it with energy taken
     //    from the radiation (down to e_floor).
+    Real lim_e = 0.0, lim_g = 0.0;   // csacc-1031 kpre: E and gas changes by the moves
     if (pany && !efc) {
       const Real vol = psph ? pvol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
                                                mbsize.d_view(m).dx3);
@@ -870,7 +871,8 @@
         const Real need = (cl/ch)*fmax(efl - ep, 0.0) + s2def;   // gas units
         const Real avail = (have_hydro && feedback) ? fmax(eg - emin, 0.0) : 0.0;
         const Real take = fmin(need, avail);
-        if (have_hydro && feedback) {eg -= take;}
+        if (have_hydro && feedback) {eg -= take; lim_g -= take;}
+        lim_e += fmax(efl - ep, 0.0);
         ep = fmax(ep, efl);
         Kokkos::atomic_add(&pc_(M1_POS_FLR), 1.0);
         Kokkos::atomic_add(&pc_(M1_POS_FLR_DE), take*vol);
@@ -886,6 +888,8 @@
         const Real take = fmin(need, fmax((cl/ch)*(ep - efl), 0.0));
         eg += take;
         ep -= (ch/cl)*take;
+        lim_g += take;
+        lim_e -= (ch/cl)*take;
         Kokkos::atomic_add(&pc_(M1_POS_GAS), 1.0);
         Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), take*vol);
       }
@@ -933,13 +937,14 @@
     // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve
     if (t2k) {
       const Real fk = 1.0/dt;
-      kk_(m,M1_T2_E,k,j,i) = (ep - iw_(m,M1_IW_EN,k,j,i))*fk;
+      kk_(m,M1_T2_E,k,j,i) = ((kpre ? (ep - lim_e) : ep) - iw_(m,M1_IW_EN,k,j,i))*fk;
       if (eso) {kk_(m,M1_T2_E,k,j,i) += dtes*fk*es_(m,k,j,i);}
       bool gk = have_hydro && feedback;
       kk_(m,M1_T2_M1,k,j,i) = gk ? ((dm1 - dmref)*fk) : 0.0;
       kk_(m,M1_T2_M1+1,k,j,i) = (gk && trans && dbgft) ? (dm2*fk) : 0.0;
       kk_(m,M1_T2_M1+2,k,j,i) = (gk && trans && dbgft && thrd) ? (dm3*fk) : 0.0;
-      kk_(m,M1_T2_EN,k,j,i) = gk ? ((eg + ekin + egrv + work - uh(m,IEN,k,j,i))*fk)
+      kk_(m,M1_T2_EN,k,j,i) = gk ? (((kpre ? (eg - lim_g) : eg) + ekin + egrv + work
+                                     - uh(m,IEN,k,j,i))*fk)
                                  : 0.0;
       if (gcs && coupling_ && dbgf) {
         // consrc-1011: the slope of the stored cell F, which the next stage's old

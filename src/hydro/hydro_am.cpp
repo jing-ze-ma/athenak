@@ -111,6 +111,11 @@ AmModule::AmModule(MeshBlockPack *ppack, ParameterInput *pin, const std::string 
     if (pin->DoesParameterExist(blk,"frame_exact")) {
       frame_exact = pin->GetBoolean(blk,"frame_exact");
     }
+    // csacc-1031: <hydro>/frame_centrifugal (read only when named; default true = the full
+    // rotating-frame force): false = the Coriolis force only
+    if (pin->DoesParameterExist(blk,"frame_centrifugal")) {
+      frame_cf = pin->GetBoolean(blk,"frame_centrifugal");
+    }
   }
   if (pin->DoesParameterExist(blk,"am_vector")) {
     am_vector = pin->GetBoolean(blk,"am_vector");
@@ -294,6 +299,37 @@ void AmModule::AmTransportProbe(const AmFluid &fl) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void AmModule::FrameForceProbe
+//! \brief roche-wbtan-1101: FrameRotation's force f (HydroAmFrame with amc = false: the
+//! analytic Coriolis -2 rho Omega x v, + the centrifugal with frame_cf) of fl's state,
+//! projected as FrameRotation projects it, bdt = 1, added to fl.u0(IM1..IM3).  No energy, no
+//! torque correction, nothing persistent.  No-op unless frame_on.
+
+void AmModule::FrameForceProbe(const AmFluid &fl) {
+  if (!frame_on) return;
+  Mesh *pm = pmy_pack->pmesh;
+  HydroAmV v;
+  AmFillV(v, fl);
+  auto &ic = pm->mb_indcs;
+  auto u0_ = fl.u0;
+  const Real o0 = frame_om[0], o1 = frame_om[1], o2 = frame_om[2];
+  const bool fcf = frame_cf;
+  par_for("hydro_frame_probe", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
+          ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real omv[3] = {o0, o1, o2};
+    Real f[3], dT[3], rc[3], rh[3], b1[3], b2[3], cc;
+    HydroAmFrame(v, omv, false, m, k, j, i, f, dT, rc, rh, b1, b2, cc, fcf);
+    Real fr = 0.0, f1 = 0.0, f2 = 0.0;
+    for (int q = 0; q < 3; ++q) {fr += f[q]*rh[q]; f1 += f[q]*b1[q]; f2 += f[q]*b2[q];}
+    u0_(m,IM1,k,j,i) += fr;
+    u0_(m,IM2,k,j,i) += f1;
+    u0_(m,IM3,k,j,i) += f2;
+    (void) dT; (void) rc; (void) cc;
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void AmModule::AmSpinReturn
 //! \brief cs-open-1018 <hydro>/am_spin_return (see hydro.hpp).  Face f between cell c
 //! and its lateral neighbour n (directions rhat_c, rhat_n, d = |rhat_c - rhat_n|,
@@ -442,6 +478,7 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
               << "rk1 | rk2" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  const bool fcf = frame_cf;
   HydroAmV v;
   AmFillV(v, fl);
   auto &ic = pm->mb_indcs;
@@ -479,7 +516,7 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real omv[3] = {o0, o1, o2};
     Real f[3], dT[3], rc[3], rh[3], b1[3], b2[3], cc;
-    HydroAmFrame(v, omv, amc, m, k, j, i, f, dT, rc, rh, b1, b2, cc);
+    HydroAmFrame(v, omv, amc, m, k, j, i, f, dT, rc, rh, b1, b2, cc, fcf);
     const Real v1 = v.w0(m,IVX,k,j,i), v2 = v.w0(m,IVY,k,j,i), v3 = v.w0(m,IVZ,k,j,i);
     Real pw = 0.0;
     for (int q = 0; q < 3; ++q) {pw += f[q]*(v1*rh[q] + v2*b1[q] + v3*b2[q]);}
@@ -522,7 +559,12 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
         cart(u1_(m,IM1,k,j,i), u1_(m,IM2,k,j,i), u1_(m,IM3,k,j,i), mc);
         HydroAmCross(omv, rc, orc);
         const Real rho = u1_(m,IDN,k,j,i);
-        for (int q = 0; q < 3; ++q) {pa[q] = (mc[q] + rho*orc[q])*dv;}
+        if (fcf) {
+          for (int q = 0; q < 3; ++q) {pa[q] = (mc[q] + rho*orc[q])*dv;}
+        } else {
+          // csacc-1031 Coriolis only: L_rel^n (the vector the exact rotation acts on)
+          for (int q = 0; q < 3; ++q) {pa[q] = mc[q]*dv;}
+        }
         HydroAmCross(rc, pa, la);
         for (int q = 0; q < 3; ++q) {
           la[q] += sp1_(m,k,j,i)*rh[q] + (lx[q] - sps_(m,k,j,i)*rh[q]);

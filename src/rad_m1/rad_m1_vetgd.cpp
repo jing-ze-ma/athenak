@@ -99,6 +99,13 @@
 #endif
 
 namespace radm1 {
+// csacc-1031 <rad_m1>/vet_gd_twin_srw (read only when named, default false = bitwise): the
+// twin's pattern subtraction (D_rr, lateral slots, half-range ratios) weighted per cell by the
+// symref weight w = min(J_twin/J, 1) (VgdSrW), as the reference shift is: a cell much brighter
+// than its shell's laterally uniform twin (a thick bump in a mostly thin shell, the accretor's
+// L1 tip) keeps its own D_gd instead of the thin shell's twin-minus-reference bias (D_rr 0.26,
+// D_tt 0.37 in tau > 30 cells without it); w = 1 cells are bitwise.  Parsed in rad_m1.cpp.
+bool g_vgd_srw = false;
 
 namespace {
 // env VGD_ASYNC_POLL_US (diagnostic): the async helper polls its MPI with these sleeps
@@ -155,6 +162,16 @@ Real VgdTwW(const V &hr, const V &ht, const bool on, const Real q, const int m,
   if (!(jm > 0.0) && !(jt > 0.0)) {return 1.0;}
   if (!(jm > 0.0) || !(jt > 0.0)) {return 0.0;}
   return fmin(fmin(jm/jt, jt/jm)/q, 1.0);
+}
+
+// csacc-1031 vet_gd_twin_srw: the twin pattern weight, min(VgdTwW, VgdSrW) with the key on
+// (fmin(x, 1) = x: bitwise wherever both are 1)
+template <typename V>
+KOKKOS_INLINE_FUNCTION
+Real VgdTwWs(const V &hr, const V &ht, const bool on, const Real q, const bool srw,
+             const bool thx, const int m, const int k, const int j, const int i) {
+  const Real w = VgdTwW(hr, ht, on, q, m, k, j, i);
+  return srw ? fmin(w, VgdSrW(hr, ht, thx, m, k, j, i)) : w;
 }
 
 // vgdlat-1012 vet_gd_symref: the reference of vgd_hr component c at shell i (vgd_srm)
@@ -7082,12 +7099,26 @@ void RadiationM1::VetGdTwin(const int stage) {
   auto sht_ = vgd_hrt;
   const bool twwt = vgd_twwt && sthx;
   const Real twwq = vgd_twwq;
+  const bool srw = g_vgd_srw && sthx;   // csacc-1031 vet_gd_twin_srw
   par_for("m1_vgd_tw_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real ref = mt_(i);
     if (sref) {
       const Real w = VgdSrW(shr_, sht_, sthx, m, k, j, i);
       ref += w*((sr_(M1_VGD_SR_F*sc1 + i) - tt_(m,0,k,j,i)) - mt_(i));
+    }
+    if (srw) {   // csacc-1031 vet_gd_twin_srw: pattern x ww, shift x w (w = VgdSrW)
+      const Real ww = VgdTwWs(shr_, sht_, twwt, twwq, true, sthx, m, k, j, i);
+      if (ww < 1.0) {
+        const Real w = VgdSrW(shr_, sht_, sthx, m, k, j, i);
+        Real d = ww*(twl_(m,0,k,j,i) - mt_(i));
+        if (sref) {d -= w*((sr_(M1_VGD_SR_F*sc1 + i) - tt_(m,0,k,j,i)) - mt_(i));}
+        tt_(m,M1_TT_LAT0,k,j,i) -= d;
+        for (int c = 1; c < M1_TT_NLAT; ++c) {
+          tt_(m,M1_TT_LAT0+c,k,j,i) -= ww*twl_(m,c,k,j,i);
+        }
+        return;
+      }
     }
     if (twwt) {   // twinfix-1012 vet_gd_twin_weight = j (w = 1: the same numbers)
       const Real ww = VgdTwW(shr_, sht_, true, twwq, m, k, j, i);
@@ -7898,6 +7929,7 @@ void RadiationM1::VetGdHalfRange(const int stage) {
   // (J is the last component, so every component reads the cell's uncorrected J)
   const bool twwt = vgd_twwt && thx;
   const Real twwq = vgd_twwq;
+  const bool srw = g_vgd_srw && thx;   // csacc-1031 vet_gd_twin_srw
   auto sr_ = vgd_srm;
   const int c1x = c1;
   // (cs-s4-1017: nx2 x nx3 per panel x npanels, as the twin's means; 1 off the cs)
@@ -7973,7 +8005,7 @@ void RadiationM1::VetGdHalfRange(const int stage) {
           const Real mo = m6_(off + i);
           const Real w = sref ? VgdSrW(hr_, ht_, thx, m, k, j, i) : 0.0;
           const Real rf = sref ? VgdSrRef(sr_, c, i, c1x) : mo;
-          const Real ww = VgdTwW(hr_, ht_, twwt, twwq, m, k, j, i);
+          const Real ww = VgdTwWs(hr_, ht_, twwt, twwq, srw, thx, m, k, j, i);
           if (c == M1_VGD_HRC1) {
             const Real d = (ww < 1.0) ? ww*(ht_(m,c,k,j,i) - mo) : ht_(m,c,k,j,i) - mo;
             hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - d + w*(rf - mo), 0.0);
@@ -7991,7 +8023,7 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       par_for("m1_vgd_hr_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (hr_(m,2*(c/2),k,j,i) < 0.0 || ht_(m,2*(c/2),k,j,i) < 0.0) return;   // flagged
-        const Real ww = VgdTwW(hr_, ht_, twwt, twwq, m, k, j, i);
+        const Real ww = VgdTwWs(hr_, ht_, twwt, twwq, srw, thx, m, k, j, i);
         Real v = hr_(m,c,k,j,i) - ((ww < 1.0) ? ww*(ht_(m,c,k,j,i) - m6_(off + i))
                                               : ht_(m,c,k,j,i) - m6_(off + i));
         if (sref) {
@@ -8072,7 +8104,7 @@ void RadiationM1::VetGdHalfRange(const int stage) {
         if (hr_(m,0,k,j,i) < 0.0 || ht_(m,0,k,j,i) < 0.0) return;   // flagged
         const Real w = sref ? VgdSrW(hr_, ht_, thx, m, k, j, i) : 0.0;
         const Real rf = sref ? VgdSrRef(sr_, c, i, c1x) : mo_(i);
-        const Real ww = VgdTwW(hr_, ht_, twwt, twwq, m, k, j, i);
+        const Real ww = VgdTwWs(hr_, ht_, twwt, twwq, srw, thx, m, k, j, i);
         if (c == M1_VGD_HRC1) {
           const Real d = (ww < 1.0) ? ww*(ht_(m,c,k,j,i) - mo_(i))
                                     : ht_(m,c,k,j,i) - mo_(i);
@@ -8091,7 +8123,7 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     par_for("m1_vgd_hr_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       if (hr_(m,2*(c/2),k,j,i) < 0.0 || ht_(m,2*(c/2),k,j,i) < 0.0) return;   // flagged
-      const Real ww = VgdTwW(hr_, ht_, twwt, twwq, m, k, j, i);
+      const Real ww = VgdTwWs(hr_, ht_, twwt, twwq, srw, thx, m, k, j, i);
       Real v = hr_(m,c,k,j,i) - ((ww < 1.0) ? ww*(ht_(m,c,k,j,i) - mo_(i))
                                             : ht_(m,c,k,j,i) - mo_(i));
       if (sref) {
