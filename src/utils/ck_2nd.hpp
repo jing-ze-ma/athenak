@@ -75,6 +75,7 @@
 //!     differ in sign or one is 0): an O((N dt)^2) error.  Not in the restart file: after
 //!     a restart the factors are held until the second refresh.
 
+#include <cmath>
 #include <iostream>
 #include <string>
 
@@ -93,6 +94,17 @@ inline bool ck_seed_ext_on = false;    //     set around a seeded solve
 inline DvceArray4D<Real> *ck_seed_ext_ptr = nullptr;   // the seed [energy/vol]
 inline bool ck_cad_drift = false;      // (3)
 inline bool ck_cad_tri = false;        // (3b) the tridiagonal linearised step
+// (3c) ck2ndt-1102 problem/ck_cad_drift2 = true (with ck_cad_drift, not ck_cad_tri): the
+//     drift G of (3) is the MEAN slope over the last store interval, i.e. the slope at its
+//     midpoint, an O(N dt) error in G -> an O((N dt)^2) rate error.  With the key the
+//     last two mean slopes give the curvature H, G is moved to the store time
+//     (G + H tl/2) and the model rate is Q0 + G tau + H tau^2/2: O((N dt)^3).
+inline bool ck_cad_drift2 = false;
+// (3d) ck2ndt-1102 problem/ck_cad_lin_iter = n (default 0): the linearised (model) step is
+//     today ONE linearisation of the backward-Euler model step in T (e - e_old = cv dT).
+//     With n > 0 the model step e - e_old = dt (Q + D (T(e) - T0)) is solved by n more
+//     Newton iterations in e with the EOS T(e); not with ck_cad_tri.
+inline int ck_cad_lin_iter = 0;
 inline DvceArray5D<Real> *ck_cad2_ptr = nullptr;       // (m,2,k,j,i): G, t0
 inline Real ck_cad_teval = 0.0;        //     the evaluation time of this call
 inline int64_t ck_cad_ndrift = 0;      //     stores that measured a drift
@@ -104,9 +116,77 @@ inline bool ck_vef_tint = false;       // (4)
 inline Real ck_vef_dt = 0.0;           // (4b) VEF refresh every ck_vef_dt SIMULATED seconds
 inline Real ck_vef_tlast = -1.0e300;   //      time of the last refresh
 inline int64_t ck_vef_ntint = 0;       //     storing passes that extrapolated
+// (7) ck2ndt-1102 problem/ck_cad_dt = P [s] (ck_impl_every > 1): THE CADENCE IN SIMULATED
+//     TIME.  The full call is made on the step whose end t + dt passes a multiple of P
+//     (absolute time, so a restart keeps the schedule: stateless), linearised steps in
+//     between; with a dt that divides P every ladder member refreshes at the same instants,
+//     so the cadence's model error is the same function of time in every member.
+//     problem/ck_xstep_dt = X [s] (a multiple of P; with ck_impl_xstep > 0): the stored
+//     operator is re-formed on the full call that passes a multiple of X, re-applied on
+//     the others.  With ck_cad_dt, problem/ck_vef_dt = V (a multiple of X, or of P when
+//     ck_xstep_dt is absent) refreshes the VEF on the storing pass that passes a multiple
+//     of V (same stateless rule).
+inline Real ck_cad_dt = 0.0;
+inline Real ck_xstep_dt = 0.0;
+inline Real ck_cad_t0 = 0.0;   // problem/ck_cad_t0: the schedule is t0 + n P (default 0)
+// a point t0 + n P in (t, t + dt] (to 1e-3 dt)
+inline bool CkSchedCross(Real t, const Real dt, const Real p) {
+  t -= ck_cad_t0;
+  const Real eps = 1.0e-3*dt;
+  return std::floor((t + dt + eps)/p) > std::floor((t + eps)/p);
+}
 // (4) called by the pass after the refresh block: refreshed = this pass re-formed the
 // factors, storing = this pass forms the stored operator (defined in the rt driver)
 void CkVefTint(Mesh *pm, const bool refreshed, const bool storing);
+
+// (8) ck2ndt-1102 problem/ck_cad_probe = true (hesdirk2, ck_impl_every > 1,
+//     ck_t2_start = probe): THE CADENCE REFRESH AS A PROBE AT A STEP BOUNDARY.  Today the
+//     cycle's full call is the stage-1 solve itself: inside that step the RHS is the true
+//     heating, in the others the linearised model, so every refresh puts a model jump of
+//     one dt into the integral (measured: first order in dt even with the refreshes at
+//     fixed simulated times, ck_cad_dt).  With the key, at the START of a due step
+//     (ncycle % ck_impl_every == 0, or with ck_cad_dt a multiple of P at t) the model is
+//     re-measured on U^n by a backward-Euler probe of ck_cad_probe_fac x dt (u0 = u1 for
+//     it, then put back; Q0 = the probe's rate, D, T0 at U^n, model time t), and BOTH
+//     stages of every step are the linearised step.  The ODE integrated is then exactly
+//     the piecewise model, refreshed at step boundaries (hesdirk2 is second order on it).
+inline bool ck_cad_probe = false;
+// (8b) problem/ck_cad_cont = true (with ck_cad_probe and ck_cad_drift): A CONTINUOUS
+//     MODEL.  A refresh that replaces the model by the measured rate makes the RHS jump at
+//     every refresh; each jump starts a relaxation transient in the cells whose exchange
+//     time is ~dt, which the step integrates with order reduction (measured: first order
+//     in dt at a FIXED refresh schedule, error proportional to the jump).  With the key the
+//     new model starts from the OLD model's rate at U^n (continuous in time) and ramps to
+//     the measured rate extrapolated one interval ahead:
+//       Q0 = M_old(t_n, T_n),  G = G_meas + (S_n - Q0)/P,  T0 = T_n,  D = D_new,
+//     S_n the probe's rate at U^n, G_meas the drift of S between the last two refreshes,
+//     P = ck_cad_dt (or ck_impl_every dt).  The model error stays O(P^2) and only kinks.
+inline bool ck_cad_cont = false;
+// problem/ck_cad_cont_len = f (default 1): the inherited offset S_n - M_old is removed
+// linearly over f P instead of P (model rate S_n + G_meas tau + (M_old - S_n)
+// max(0, 1 - tau/(f P))); continuous for any f > 0.
+inline Real ck_cad_cont_len = 1.0;
+inline Real ck_cad_cont_l = 1.0;     // L [s] of the last cont store
+inline DvceArray5D<Real> ck_cad_un;   // U^n during a probe store (cont)
+inline Real ck_cad_probe_fac = 1.0e-4;
+// problem/ck_cad_probe_dt = s > 0 [s]: the probe length in seconds instead of fac x dt.
+// The probe moves every cell by ~pdt S, and the rate it measures includes the
+// neighbours' response to that move (the diagonal correction to U^n cannot remove it):
+// with pdt proportional to dt that is an O(dt) error in the model (first order).
+inline Real ck_cad_probe_dt = 0.0;
+inline int64_t ck_cad_nprobe = 0;
+// at the step start: is a probe refresh due (cycle or simulated-time schedule)
+inline bool CkCadProbeDue(const Real t, const Real dt, const int64_t ncycle,
+                          const int every) {
+  if (ck_cad_dt > 0.0) {
+    const Real eps = 1.0e-3*dt;
+    const Real tt = t - ck_cad_t0;
+    return std::floor((tt + dt - eps)/ck_cad_dt) > std::floor((tt - eps)/ck_cad_dt);
+  }
+  return (ncycle % static_cast<int64_t>(every) == 0);
+}
+// the store of a probe call of pdt made at model time tev (rt driver)
+void CkCadProbeStore(Mesh *pm, const Real pdt, const Real tev);
 
 // (4b) the VEF refresh test: ck_vef_dt > 0 replaces the cycle count by simulated time
 inline bool CkVefDue2(Mesh *pm, const bool ckfop, const bool ckfst);
@@ -146,9 +226,65 @@ inline void Ck2ndInit(ParameterInput *pin, const bool fused, const int glob,
     ck_cad_drift = pin->GetBoolean("problem", "ck_cad_drift");
     (void) every;   // (with ck_impl_every = 1 it acts under ck_t2_lin2 only)
   }
+  if (pin->DoesParameterExist("problem", "ck_cad_probe")) {
+    ck_cad_probe = pin->GetBoolean("problem", "ck_cad_probe");
+    if (pin->DoesParameterExist("problem", "ck_cad_probe_dt")) {
+      ck_cad_probe_dt = pin->GetReal("problem", "ck_cad_probe_dt");
+    }
+    if (pin->DoesParameterExist("problem", "ck_cad_probe_fac")) {
+      ck_cad_probe_fac = pin->GetReal("problem", "ck_cad_probe_fac");
+    }
+    if (ck_cad_probe && every <= 1) why += " ck_cad_probe needs ck_impl_every > 1;";
+    if (ck_cad_probe && (!pin->DoesParameterExist("problem", "ck_t2_start") ||
+        pin->GetString("problem", "ck_t2_start").compare("probe") != 0)) {
+      why += " ck_cad_probe needs ck_t2_start = probe;";
+    }
+  }
+  if (pin->DoesParameterExist("problem", "ck_cad_lin_iter")) {
+    ck_cad_lin_iter = pin->GetInteger("problem", "ck_cad_lin_iter");
+  }
+  if (pin->DoesParameterExist("problem", "ck_cad_cont")) {
+    ck_cad_cont = pin->GetBoolean("problem", "ck_cad_cont");
+    if (pin->DoesParameterExist("problem", "ck_cad_cont_len")) {
+      ck_cad_cont_len = pin->GetReal("problem", "ck_cad_cont_len");
+    }
+    if (ck_cad_cont && (!ck_cad_probe || !ck_cad_drift)) {
+      why += " ck_cad_cont needs ck_cad_probe and ck_cad_drift;";
+    }
+  }
+  if (pin->DoesParameterExist("problem", "ck_cad_drift2")) {
+    ck_cad_drift2 = pin->GetBoolean("problem", "ck_cad_drift2");
+    if (ck_cad_drift2 && !ck_cad_drift) why += " ck_cad_drift2 needs ck_cad_drift;";
+  }
   if (pin->DoesParameterExist("problem", "ck_cad_tri")) {
     ck_cad_tri = pin->GetBoolean("problem", "ck_cad_tri");
     if (ck_cad_tri && !ck_cad_drift) why += " ck_cad_tri needs ck_cad_drift;";
+  }
+  if (pin->DoesParameterExist("problem", "ck_cad_dt")) {
+    ck_cad_dt = pin->GetReal("problem", "ck_cad_dt");
+    if (ck_cad_dt > 0.0 && every <= 1) why += " ck_cad_dt needs ck_impl_every > 1;";
+  }
+  if (pin->DoesParameterExist("problem", "ck_cad_t0")) {
+    ck_cad_t0 = pin->GetReal("problem", "ck_cad_t0");
+  }
+  if (pin->DoesParameterExist("problem", "ck_xstep_dt")) {
+    ck_xstep_dt = pin->GetReal("problem", "ck_xstep_dt");
+    if (ck_xstep_dt > 0.0) {
+      const Real r = ck_xstep_dt/ck_cad_dt;
+      if (!(ck_cad_dt > 0.0) || std::fabs(r - std::round(r)) > 1.0e-9) {
+        why += " ck_xstep_dt needs ck_cad_dt > 0 and a multiple of it;";
+      }
+      if (pin->GetOrAddInteger("problem", "ck_impl_xstep", 0) <= 0) {
+        why += " ck_xstep_dt needs ck_impl_xstep > 0;";
+      }
+    }
+  }
+  if (ck_cad_dt > 0.0 && ck_vef_dt > 0.0) {
+    const Real b = (ck_xstep_dt > 0.0) ? ck_xstep_dt : ck_cad_dt;
+    const Real r = ck_vef_dt/b;
+    if (std::fabs(r - std::round(r)) > 1.0e-9 || r < 0.5) {
+      why += " ck_vef_dt must be a multiple of ck_xstep_dt (or ck_cad_dt);";
+    }
   }
   if (!why.empty()) {
     std::cout << "### FATAL ERROR (ck2nd):" << why << std::endl;

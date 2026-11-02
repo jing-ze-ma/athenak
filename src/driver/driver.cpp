@@ -421,12 +421,17 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     // temporal-order tests (cfl halving with whole steps).  It is applied as the dt cap
     // of Mesh::NewTimeStep, so set cfl_number large enough that the CFL dt stays above
     // it (the run then takes exactly tlim/dt_fixed steps; check the final cycle count).
+    // ck2ndt-1102: on a restart dt_fixed also replaces the restored dt (else the first
+    // step of every ladder member is the file's dt, and the members' step boundaries
+    // are offset from a schedule in simulated time)
+    bool dtfix = false;
     if (pin->DoesParameterExist("time", "dt_fixed")) {
       pmesh->dt_cap = pin->GetReal("time", "dt_fixed");
+      dtfix = true;
     }
     Real dt_rst = pmesh->dt;
     pmesh->NewTimeStep(tlim);
-    if (res_flag && dt_rst > 0.0) { pmesh->dt = dt_rst; }
+    if (res_flag && dt_rst > 0.0 && !dtfix) { pmesh->dt = dt_rst; }
   }
 
   //---- Step 2b. icrad-1011: <rad_m1>/ic_rad (opt-in; FRESH STARTS ONLY, never on a

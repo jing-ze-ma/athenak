@@ -1903,11 +1903,17 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
   // ck2nd-1102 problem/ck_cad_drift: G and t0 per cell (a 1-element dummy when off)
   const bool drf = ck_cad_drift;
   if (drf && ck_cad2_ptr == nullptr) {
-    ck_cad2_ptr = new DvceArray5D<Real>("ck_cad2", cad_.extent(0), 6, cad_.extent(2),
+    // ck2ndt-1102 ck_cad_drift2: slots 6 (the last slope), 7 (its midpoint time)
+    const int ns2 = (ck_cad_drift2 || ck_cad_cont) ? 8 : 6;
+    ck_cad2_ptr = new DvceArray5D<Real>("ck_cad2", cad_.extent(0), ns2, cad_.extent(2),
                                         cad_.extent(3), cad_.extent(4));
     // t0 = "none yet" (a restart's Q0 has no measured drift)
     Kokkos::deep_copy(Kokkos::subview(*ck_cad2_ptr, Kokkos::ALL, 1, Kokkos::ALL,
                                       Kokkos::ALL, Kokkos::ALL), -1.0e300);
+    if (ck_cad_drift2) {
+      Kokkos::deep_copy(Kokkos::subview(*ck_cad2_ptr, Kokkos::ALL, 7, Kokkos::ALL,
+                                        Kokkos::ALL, Kokkos::ALL), -1.0e300);
+    }
   }
   auto cd2_ = drf ? *ck_cad2_ptr : cad_;    // (not read when off)
   const Real tev = ck_cad_teval;
@@ -1915,6 +1921,58 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
   // ck2nd-1102 problem/ck_cad_tri: the drift of the TRIDIAGONAL model (the neighbours'
   // own Jacobian terms J0 (i-1), J2 (i+1) taken out too); slot 5 = current T, slot 4 = G
   const bool tri = drf && ck_cad_tri;
+  const bool dr2 = drf && ck_cad_drift2 && !tri;   // ck2ndt-1102 (ck_2nd.hpp (3c))
+  // ck2ndt-1102 problem/ck_cad_cont (ck_2nd.hpp (8b)): the continuous probe store
+  if (drf && ck_cad_cont && ck_cad_un.size() > 0 && !partial) {
+    CkCadState sn = st;
+    sn.u0 = ck_cad_un;
+    const Real pest = ((ck_cad_dt > 0.0) ? ck_cad_dt
+                       : static_cast<Real>(ck_impl_every)*pm->dt)*ck_cad_cont_len;
+    ck_cad_cont_l = pest;
+    par_for("ck_cad_cont", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = st.u0(m,IDN,k,j,i);
+      Real tk = 0.0, cv = 0.0;
+      const bool ok = st.TCv(m, k, j, i, d, st.Eint(m, k, j, i), tk, cv);
+      Real tn = 0.0, cvn = 0.0;
+      const bool okn = sn.TCv(m, k, j, i, sn.u0(m,IDN,k,j,i), sn.Eint(m, k, j, i), tn, cvn);
+      Real q = 0.0, dd = 0.0;
+      if (ok && okn && i >= icut_(m,k,j)) {
+        q = dep_(m,k,j,i)*idt;
+        if (thu_(m,k,j,i) > 0.0) {
+          dd = jac_(m,1,k,j,i);
+        } else {
+          const Real tr = trt_(m,k,j,i);
+          dd = (tr > 0.0) ? -4.0*em_(m,k,j,i)/tr : 0.0;
+        }
+        if (!(dd <= 0.0)) dd = 0.0;
+        if (!(q == q)) q = 0.0;
+      }
+      const Real sn_ = (ok && okn) ? q + dd*(tn - tk) : 0.0;   // the rate at U^n
+      const Real q0 = cad_(m,0,k,j,i), d0 = cad_(m,1,k,j,i), t00 = cad_(m,2,k,j,i);
+      const Real g0 = cd2_(m,0,k,j,i), tp = cd2_(m,1,k,j,i), so = cd2_(m,6,k,j,i);
+      const bool hav = okn && (t00 > 0.0) && (q0 != 0.0 || d0 != 0.0);
+      const bool tv = (tp > -1.0e299) && (tev > tp);
+      Real aold = sn_, gm = 0.0;
+      if (hav) {
+        aold = q0 + d0*(tn - t00) + (tv ? g0*(tev - tp) : 0.0);
+        if (tv) gm = (sn_ - so - d0*(tn - t00))/(tev - tp);
+      }
+      if (!(aold == aold)) aold = sn_;
+      Real g = gm;
+      if (!(g == g)) g = 0.0;
+      // the model rate S_n + G tau + C max(0, 1 - tau/L), C = M_old - S_n (slot 7)
+      cd2_(m,7,k,j,i) = (ok && okn) ? aold - sn_ : 0.0;
+      cad_(m,0,k,j,i) = (ok && okn) ? sn_ : 0.0;
+      cad_(m,1,k,j,i) = dd;
+      cad_(m,2,k,j,i) = (ok && okn) ? tn : 0.0;
+      cad_(m,3,k,j,i) = d;
+      cd2_(m,0,k,j,i) = (ok && okn) ? g : 0.0;
+      cd2_(m,1,k,j,i) = tev;
+      cd2_(m,6,k,j,i) = sn_;
+    });
+    return;
+  }
   if (tri) {
     par_for("ck_cad_tri_t", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1986,6 +2044,23 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
         g = (q - q0 - d0*(tk - t00))/tl;
         if (!(g == g)) g = 0.0;
       }
+      if (dr2) {
+        // g is the mean slope over [tp, tev], i.e. the slope at its midpoint; with the
+        // previous mean slope (slot 6, midpoint slot 7) the curvature H, the slope at tev
+        // G = g + H tl/2, and the model rate Q0 + G tau + H tau^2/2
+        Real hh = 0.0;
+        const Real mid = tev - 0.5*tl;
+        const Real sp = cd2_(m,6,k,j,i), mp = cd2_(m,7,k,j,i);
+        const bool gv = (g != 0.0) && tl > 0.0 && tp > -1.0e299;
+        if (gv && mp > -1.0e299 && mid > mp) {
+          hh = (g - sp)/(mid - mp);
+          if (!(hh == hh)) hh = 0.0;
+        }
+        cd2_(m,6,k,j,i) = g;
+        cd2_(m,7,k,j,i) = gv ? mid : -1.0e300;
+        cd2_(m,4,k,j,i) = hh;
+        g += 0.5*hh*tl;
+      }
       cd2_(m,0,k,j,i) = g;
       cd2_(m,1,k,j,i) = tev;
       if (tri) {
@@ -2024,6 +2099,10 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
   auto cd2_ = drf ? *ck_cad2_ptr : cad_;    // (not read when off)
   const Real tev = ck_cad_teval;
   const bool tri = drf && ck_cad_tri;       // ck2nd-1102 ck_cad_tri
+  const bool dr2 = drf && ck_cad_drift2 && !tri;   // ck2ndt-1102 ck_cad_drift2
+  const int nlit = ck_cad_lin_iter;          // ck2ndt-1102 ck_cad_lin_iter
+  const bool cnt = drf && ck_cad_cont && ck_cad_probe && !tri;   // ck2ndt-1102
+  const Real cnl = ck_cad_cont_l;
   Real capf = ck_impl_dtmax;
   if (ck_impl_demax > 0.0 && ck_impl_demax < capf) capf = ck_impl_demax;
   const int nk = ke - ks + 1;
@@ -2147,7 +2226,12 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
     [&](const int i, int &nc) {
       Real q0 = cad_(m,0,k,j,i);
       const Real dd = cad_(m,1,k,j,i);
-      if (drf) q0 += cd2_(m,0,k,j,i)*(tev - cd2_(m,1,k,j,i));
+      if (drf) {
+        const Real tau = tev - cd2_(m,1,k,j,i);
+        q0 += cd2_(m,0,k,j,i)*tau;
+        if (cnt && tau < cnl) q0 += cd2_(m,7,k,j,i)*(1.0 - tau/cnl);   // ck_cad_cont
+        if (dr2) q0 += 0.5*cd2_(m,4,k,j,i)*tau*tau;   // ck2ndt-1102 ck_cad_drift2
+      }
       const Real tk = cad_(m,4,k,j,i);
       const Real cv = cad_(m,5,k,j,i);
       Real de = 0.0;
@@ -2155,6 +2239,18 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
         const Real dT = (q0 + dd*(tk - cad_(m,2,k,j,i)))*dt/(cv - dd*dt);
         de = cv*dT;
         const Real e = st.Eint(m, k, j, i);
+        // ck2ndt-1102 problem/ck_cad_lin_iter = n: the BE step of the model solved by n
+        // more Newton iterations in e (T(e) of the EOS) instead of one linearisation in T
+        // (the unconverged stage leaves an O(de^2) error that a stiff cell does not damp)
+        for (int it=0; it<nlit; ++it) {
+          const Real e1 = e + de;
+          Real t1 = 0.0, c1 = 0.0;
+          if (!st.TCv(m, k, j, i, st.u0(m,IDN,k,j,i), e1, t1, c1)) break;
+          const Real r = de - dt*(q0 + dd*(t1 - cad_(m,2,k,j,i)));
+          const Real ddn = r/(1.0 - dt*dd/c1);
+          if (!(ddn == ddn)) break;
+          de -= ddn;
+        }
         const Real lim = capf*e;
         if (de > lim) {
           de = lim;
@@ -2199,6 +2295,28 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
   return static_cast<int>(hs(0));
 }
 
+// ck2ndt-1102 problem/ck_cad_probe (ck_2nd.hpp (8)): the probe call of pdt on U^n has
+// just run; store its rate as the cadence model at time tev (allocating on first use)
+void CkCadProbeStore(Mesh *pm, const Real pdt, const Real tev) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  if (ck_cad_stat_ptr == nullptr) {
+    ck_cad_stat_ptr = new DvceArray1D<Real>("ck_cad_stat", 8);
+  }
+  if (ck_cad_ptr == nullptr) {
+    const int n1 = indcs.nx1 + 2*indcs.ng;
+    const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+    const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+    ck_cad_ptr = new DvceArray5D<Real>("ck_cad", pmbp->nmb_thispack, 6, n3, n2, n1);
+    ck_cad_mask_ptr = new DvceArray3D<Real>("ck_cad_mask", pmbp->nmb_thispack, n3, n2);
+    Kokkos::deep_copy(*ck_cad_mask_ptr, 2.0);
+  }
+  ck_cad_teval = tev;
+  CkCadStore(pm, pdt, false, false);
+  ++ck_cad_nfull;
+  ++ck_cad_nprobe;
+}
+
 void CkCadStep(Mesh *pm, const Real dt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
@@ -2207,9 +2325,11 @@ void CkCadStep(Mesh *pm, const Real dt) {
   CkRstCadRestore(pm);     // restart: Q0, D, T0, rho0 (two_stream_ck_rst.hpp)
   ck_cad_teval = pm->time + pm->dt;   // ck2nd-1102 ck_cad_drift (both T2 stages: c = 1)
   // rkgfuse-1102 ck_strang: the second half of a cycle is never a scheduled full call
-  const bool full = (ck_cad_ptr == nullptr) ||
-                    (pm->ncycle % static_cast<int64_t>(ck_impl_every) == 0 &&
-                     ck_cad_half != 2);
+  // ck2ndt-1102 problem/ck_cad_dt: the schedule in simulated time (ck_2nd.hpp (7))
+  const bool due = (ck_cad_dt > 0.0)
+                   ? CkSchedCross(pm->time, pm->dt, ck_cad_dt)
+                   : (pm->ncycle % static_cast<int64_t>(ck_impl_every) == 0);
+  const bool full = (ck_cad_ptr == nullptr) || (due && ck_cad_half != 2);
   if (ck_cad_stat_ptr == nullptr) {
     ck_cad_stat_ptr = new DvceArray1D<Real>("ck_cad_stat", 8);
   }

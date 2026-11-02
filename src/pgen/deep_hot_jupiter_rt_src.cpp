@@ -1140,6 +1140,7 @@ DvceArray4D<Real> *t2_sd = nullptr;   // ck2nd-1102 ck_t2_seed: g dt K of the st
 int t2_kiter = 0;                     // ck2nd-1102 ck_t2_kiter (TEST)
 bool t2_probe = false;                // ck2nd-1102 ck_t2_start = probe
 bool t2_lin2 = false;                 // ck2nd-1102 ck_t2_lin2
+bool t2_cp_nofsal = false;            // ck2ndt-1102 ck_cad_probe_nofsal (TEST)
 int64_t t2_nprobe = 0;
 int64_t cnt_full = 0, cnt_nfall = 0, cnt_ncap = 0, cnt_nonconv = 0;
 
@@ -1256,6 +1257,9 @@ void DhjCkT2Init(ParameterInput *pin, Mesh *pm) {
   }
   if (pin->DoesParameterExist("problem", "ck_t2_lin2")) {
     t2_lin2 = pin->GetBoolean("problem", "ck_t2_lin2");
+  }
+  if (pin->DoesParameterExist("problem", "ck_cad_probe_nofsal")) {
+    t2_cp_nofsal = pin->GetBoolean("problem", "ck_cad_probe_nofsal");
   }
   if (pin->DoesParameterExist("problem", "ck_t2_kiter")) {
     t2_kiter = pin->GetInteger("problem", "ck_t2_kiter");
@@ -1413,7 +1417,57 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
     });
     ts::ck_seed_ext_on = true;
   }
-  solve(g*dt, two);
+  // ck2ndt-1102 problem/ck_cad_probe (utils/ck_2nd.hpp (8)): the model refresh as a
+  // probe on U^n at the start of a due step; then both stages are linearised
+  if (ts::ck_cad_probe && cad) {
+    if (!two && (ts::ck_cad_ptr == nullptr ||
+                 ts::CkCadProbeDue(pm->time, dt, pm->ncycle, ts::ck_impl_every))) {
+      ts::CkRstCadRestore(pm);
+      auto u1 = (pmbp->phydro != nullptr) ? pmbp->phydro->u1 : pmbp->pmhd->u1;
+      DvceArray5D<Real> keep("ck_cp_keep", u0.extent(0), u0.extent(1), u0.extent(2),
+                             u0.extent(3), u0.extent(4));
+      Kokkos::deep_copy(keep, u0);
+      Kokkos::deep_copy(u0, u1);
+      const bool sdo = ts::ck_seed_ext_on;
+      ts::ck_seed_ext_on = false;
+      const Real pdt = (ts::ck_cad_probe_dt > 0.0) ? ts::ck_cad_probe_dt
+                       : ts::ck_cad_probe_fac*dt;
+      picket_fence_two_stream_RT(pm, pdt);
+      if (ts::ck_cad_cont) ts::ck_cad_un = u1;
+      ts::CkCadProbeStore(pm, pdt, pm->time);
+      ts::ck_cad_un = DvceArray5D<Real>();
+      if (dhj_ck_count_every > 0) DhjCkCount(true);
+      Kokkos::deep_copy(u0, keep);
+      // FSAL across a refresh: the step's K1 is the NEW model's rate at U^n (= the
+      // probe's Q0), not the old model's last slope (an O(dt x jump) error per refresh,
+      // i.e. first order at a fixed refresh schedule)
+      if (!t2_cp_nofsal) {
+        // (the model through the probe's end state T0: Q0 + D (T(U^n) - T0))
+        auto cad_ = *ts::ck_cad_ptr;
+        // ck_cad_cont: the continuous model's rate at U^n includes the offset C (slot 7)
+        const bool cnt = ts::ck_cad_cont && ts::ck_cad2_ptr != nullptr;
+        auto cd2_ = cnt ? *ts::ck_cad2_ptr : cad_;
+        ts::CkCadState sn = ts::CkCadMakeState(pm);
+        sn.u0 = u1;
+        par_for("ck_cp_k1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          Real kk = cad_(m,0,k,j,i);
+          if (cnt) kk += cd2_(m,7,k,j,i);
+          const Real t0 = cad_(m,2,k,j,i);
+          Real tk = 0.0, cv = 0.0;
+          if (t0 > 0.0 && sn.TCv(m, k, j, i, u1(m,IDN,k,j,i), sn.Eint(m, k, j, i), tk, cv)) {
+            kk += cad_(m,1,k,j,i)*(tk - t0);
+          }
+          k1(m,k,j,i) = kk;
+        });
+      }
+      ts::ck_seed_ext_on = sdo;
+    }
+    ts::ck_seed_ext_on = false;    // a linearised step has no Newton to seed
+    solve(g*dt, true);
+  } else {
+    solve(g*dt, two);
+  }
   ts::ck_seed_ext_on = false;
   // ck2nd-1102 problem/ck_t2_kiter = n (TEST, cadence 1 + ck_t2_seed): re-solve the
   // stage n more times, each seeded with the increment the last solve applied, so the

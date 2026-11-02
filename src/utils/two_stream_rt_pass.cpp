@@ -23,6 +23,10 @@ namespace two_stream_rt {
 inline bool CkVefDue2(Mesh *pm, const bool ckfop, const bool ckfst) {
   if (!(ck_vef_dt > 0.0)) return CkVefDue(pm, ckfop, ckfst);
   const bool stp = !ck_vef_sync || !ckfop || ckfst;
+  if (ck_cad_dt > 0.0) {   // ck2ndt-1102: stateless, on the multiples of ck_vef_dt
+    return stp && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
+                   CkSchedCross(pm->time, pm->dt, ck_vef_dt));
+  }
   return stp && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
                  pm->time + pm->dt >= ck_vef_tlast + ck_vef_dt);
 }
@@ -930,7 +934,9 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // storing call (no cut, no opacity, no chain sweep, no beam, no factorisation).
         if (ckfop_ && ck_impl_xstep > 0 && ck_impl_pass <= 0) {
           bool reu = (ck_impl_xs_cyc >= 0) && (ck_xsT_ptr != nullptr)
-                     && (pm->ncycle - ck_impl_xs_cyc < ck_impl_xstep);
+                     && ((ck_xstep_dt > 0.0)    // ck2ndt-1102 (ck_2nd.hpp (7))
+                         ? !CkSchedCross(pm->time, pm->dt, ck_xstep_dt)
+                         : (pm->ncycle - ck_impl_xs_cyc < ck_impl_xstep));
           const bool thr_on = (ck_impl_xstep_thr > 0.0);
           if (reu && thr_on) {
             auto t0_ = *ck_xsT_ptr;
