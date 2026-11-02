@@ -645,6 +645,10 @@ bool cs_ = false;
 // on a restart the IC is rebuilt and u0 restored), the probe at the first RyPerSrcEnv call.
 wbtan::WbTan acc_wbt;
 void WbTanAccProbe(Mesh *pm);
+// accwbtan-1101 (d): g_t is in gt4_/gp4_ (copied at the first source call, after a probe or
+// from the restart file: wbtan::LoadFromRestart); the pgen (for the restart slabs)
+bool acc_wbt_g4_ = false;
+ProblemGenerator *acc_pg_ = nullptr;
 
 //! (sin theta, phi in [0, 2 pi), cos theta) of the panel point (x2, x3) (code coordinates)
 KOKKOS_INLINE_FUNCTION
@@ -2199,7 +2203,7 @@ void RyPerM1PostLz(Mesh *pm) {
 
 void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  if (acc_wbt.on && !acc_wbt.ready) WbTanAccProbe(pm);   // roche-wbtan-1101
+  if (acc_wbt.on && !acc_wbt_g4_) WbTanAccProbe(pm);   // roche-wbtan-1101
   // accspin-1028: the spin ramp's scalars (and arrays, every spin_ramp_ds) to s(t) at the
   // step's first stage (a retried / redone step starts here again: spr_slast_ is dt_retry
   // registered, so a restore of the arrays is followed by a refresh)
@@ -4621,7 +4625,9 @@ void WbTanAccExtra(Mesh *pm, DvceArray5D<Real> &us, DvceArray5D<Real> &scratch) 
 //! extra = WbTanAccExtra) and g_t -> gt4_/gp4_ (covariant on cs, as gt4/gp4 are)
 void WbTanAccProbe(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  wbtan::Probe(pm, acc_wbt, WbTanAccExtra, "ry_per_accretor");
+  // accwbtan-1101 (d): a restart whose file carries g_t is not re-probed
+  if (!acc_wbt.ready) wbtan::Probe(pm, acc_wbt, WbTanAccExtra, "ry_per_accretor");
+  acc_wbt_g4_ = true;
   auto g = *acc_wbt.gt;
   auto gt = gt4_, gp = gp4_;
   auto &ic = pm->mb_indcs;
@@ -5281,7 +5287,13 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       std::exit(EXIT_FAILURE);
     }
   }
-  const bool wbic = restart && acc_wbt.on;
+  // accwbtan-1101 (d): a restart takes g_t from the file when it carries it (no W_eq
+  // rebuild, no probe); otherwise the IC is rebuilt for the probe
+  bool wbld = false;
+  if (restart && acc_wbt.on && acc_pg_ != nullptr) {
+    wbld = wbtan::LoadFromRestart(acc_pg_, acc_wbt, pmbp, "ry_per_accretor");
+  }
+  const bool wbic = restart && acc_wbt.on && !wbld;
   DvceArray5D<Real> wbt_usave;
   if (wbic) {
     wbt_usave = DvceArray5D<Real>(Kokkos::view_alloc("wbt_usave", Kokkos::WithoutInitializing),
@@ -6638,6 +6650,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (user_hist) user_hist_func = RyPerHist;
   pgen_final_func = RyPerFinal;
   if (env_) {
+    acc_pg_ = this;   // accwbtan-1101 (d)
     EnvSetup(pin, pmbp, racc, rho_amb, restart);
     if (restart && pgen_rst_write_func != nullptr) RyPerRstBadv();
     user_bcs_func = RyPerBCEnv;
