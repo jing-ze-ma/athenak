@@ -1814,14 +1814,9 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
 //! \brief one thread per column.  The struct is copied into the lambda by value, so
 //! nothing on the host is dereferenced on the device.
 
-inline void RTCol3Launch(const RTCol3 &c, const int nmb1, const int ks, const int ke,
-                         const int js, const int je) {
-  RTCol3 cc = c;
-  par_for("rt_col3", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-  KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    cc.Solve(m, k, j);
-  });
-}
+void RTCol3Launch(const RTCol3 &c, const int nmb1, const int ks, const int ke,
+                  const int js, const int je);
+// (defined in utils/two_stream_rt_col3.cpp, tusplit-1102)
 
 }  // namespace two_stream_rt
 #endif  // UTILS_TWO_STREAM_COLUMN_IMPLICIT_HPP_
