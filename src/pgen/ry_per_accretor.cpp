@@ -649,6 +649,7 @@ void WbTanAccProbe(Mesh *pm);
 // from the restart file: wbtan::LoadFromRestart); the pgen (for the restart slabs)
 bool acc_wbt_g4_ = false;
 ProblemGenerator *acc_pg_ = nullptr;
+std::string wbt_file_;         // accwbtan-1101 (e): <basename>.wbt.hst
 
 //! (sin theta, phi in [0, 2 pi), cos theta) of the panel point (x2, x3) (code coordinates)
 KOKKOS_INLINE_FUNCTION
@@ -3208,7 +3209,66 @@ void RyPerLzHist(Mesh *pm) {
   std::fclose(fp);
 }
 
+//! accwbtan-1101 (e): the L_z torque of the WB tangential force rho g_t (gt4_/gp4_, the
+//! force RyPerSrcEnv applies), sum dV R (rho g)_phi in the AccJzCell form (sp: R rho g_3;
+//! cs: z of r x the covariant pair raised), over the domain and inside r_meas, to
+//! <basename>.wbt.hst at every user.hst output once g_t is set (rank 0).  The sp L_z budget
+//! (lz_budget) books the same force in Jgrv.
+void RyPerWbtHist(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nji = indcs.nx2*indcs.nx1, nkji = indcs.nx3*nji;
+  const int nmb = pmbp->nmb_thispack;
+  auto u0 = pmbp->phydro->u0;
+  auto &vol = pmbp->pcoord->volume;
+  auto &x1v = pmbp->pcoord->x1v;
+  auto &x2v = pmbp->pcoord->x2v;
+  auto &x3v = pmbp->pcoord->x3v;
+  auto &mbp = pmbp->pmb->mb_panel;
+  auto gt = gt4_, gp = gp4_;
+  const bool cs = cs_;
+  const Real rm = env_rmeas_;
+  Real tq[2] = {0.0, 0.0};
+  Kokkos::parallel_reduce("ryper_wbtq", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &a, Real &b) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js;
+    const int i = idx%nx1 + is;
+    const Real d = u0(m,IDN,k,j,i), r = x1v(m,i);
+    const Real rz = cs ? 0.0 : r*sin(x2v(m,j));
+    const int pnl = cs ? mbp.d_view(m) : 0;
+    const Real t = AccJzCell(cs, pnl, x2v(m,j), x3v(m,k), r, rz, vol(m,k,j,i), 0.0,
+                             d*gt(m,k,j,i), d*gp(m,k,j,i), 0.0, 0.0);
+    a += t;
+    if (r < rm) b += t;
+  }, Kokkos::Sum<Real>(tq[0]), Kokkos::Sum<Real>(tq[1]));
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::my_rank == 0) {
+    MPI_Reduce(MPI_IN_PLACE, tq, 2, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+  } else {
+    MPI_Reduce(tq, tq, 2, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+  }
+#endif
+  if (global_variable::my_rank != 0) return;
+  bool hdr = false;
+  {
+    std::ifstream f(wbt_file_);
+    hdr = !f.good() || f.peek() == std::ifstream::traits_type::eof();
+  }
+  FILE *fp = std::fopen(wbt_file_.c_str(), "a");
+  if (fp == nullptr) return;
+  if (hdr) {
+    std::fprintf(fp, "# ry_per_accretor problem/roche_wb_tan torque (accwbtan-1101): "
+                 "sum dV R (rho g_t)_phi\n#  [1]=time  [2]=Twb  [3]=Twb(r<r_meas)\n");
+  }
+  std::fprintf(fp, " %.15e %.15e %.15e\n", pm->time, tq[0], tq[1]);
+  std::fclose(fp);
+}
+
 void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
+  if (acc_wbt.on && acc_wbt_g4_) RyPerWbtHist(pm);   // accwbtan-1101 (e)
   if (trc_) RyPerTrcHist(pm);
   if (lz_) RyPerLzHist(pm);
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -5269,6 +5329,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // roche-wbtan-1101 problem/roche_wb_tan: checks; on a restart the IC below is rebuilt
   // into u0 for W_eq and u0 is restored (WbTanCaptureIC), the radiation untouched
   acc_wbt.on = pin->GetOrAddBoolean("problem", "roche_wb_tan", false);
+  wbt_file_ = pin->GetString("job", "basename") + ".wbt.hst";
   if (acc_wbt.on) {
     std::string bad = "";
     if (!p3_) bad = "problem/phys_3d = true (the 3-D tangential forces gt4_/gp4_)";
