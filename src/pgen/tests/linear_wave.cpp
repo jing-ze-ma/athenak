@@ -547,10 +547,15 @@ void ProblemGenerator::LinearWave(ParameterInput *pin, const bool restart) {
     Kokkos::realloc(a3, nmb,ncells3,ncells2,ncells1);
 
     auto &nghbr = pmbp->pmb->nghbr;
+    int nnghbr = pmbp->pmb->nnghbr;  // 8 (1-D), 24 (2-D), 56 (3-D): never index past it
     auto &mblev = pmbp->pmb->mb_lev;
 
     par_for("pgen_linwave2", DevExeSpace(), 0,nmb-1,ks,ke+1,js,je+1,is,ie+1,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      // true if neighbor n is finer; n >= nnghbr does not exist in 1-D/2-D (no read)
+      auto finer = [&](const int n) {
+        return n < nnghbr && nghbr.d_view(m,n).lev > mblev.d_view(m);
+      };
       Real &x1min = size.d_view(m).x1min;
       Real &x1max = size.d_view(m).x1max;
       int nx1 = indcs.nx1;
@@ -582,90 +587,90 @@ void ProblemGenerator::LinearWave(ParameterInput *pin, const bool restart) {
       // faces is identical.
 
       // Correct A1 at x2-faces, x3-faces, and x2x3-edges
-      if ((nghbr.d_view(m,8 ).lev > mblev.d_view(m) && j==js) ||
-          (nghbr.d_view(m,9 ).lev > mblev.d_view(m) && j==js) ||
-          (nghbr.d_view(m,10).lev > mblev.d_view(m) && j==js) ||
-          (nghbr.d_view(m,11).lev > mblev.d_view(m) && j==js) ||
-          (nghbr.d_view(m,12).lev > mblev.d_view(m) && j==je+1) ||
-          (nghbr.d_view(m,13).lev > mblev.d_view(m) && j==je+1) ||
-          (nghbr.d_view(m,14).lev > mblev.d_view(m) && j==je+1) ||
-          (nghbr.d_view(m,15).lev > mblev.d_view(m) && j==je+1) ||
-          (nghbr.d_view(m,24).lev > mblev.d_view(m) && k==ks) ||
-          (nghbr.d_view(m,25).lev > mblev.d_view(m) && k==ks) ||
-          (nghbr.d_view(m,26).lev > mblev.d_view(m) && k==ks) ||
-          (nghbr.d_view(m,27).lev > mblev.d_view(m) && k==ks) ||
-          (nghbr.d_view(m,28).lev > mblev.d_view(m) && k==ke+1) ||
-          (nghbr.d_view(m,29).lev > mblev.d_view(m) && k==ke+1) ||
-          (nghbr.d_view(m,30).lev > mblev.d_view(m) && k==ke+1) ||
-          (nghbr.d_view(m,31).lev > mblev.d_view(m) && k==ke+1) ||
-          (nghbr.d_view(m,40).lev > mblev.d_view(m) && j==js && k==ks) ||
-          (nghbr.d_view(m,41).lev > mblev.d_view(m) && j==js && k==ks) ||
-          (nghbr.d_view(m,42).lev > mblev.d_view(m) && j==je+1 && k==ks) ||
-          (nghbr.d_view(m,43).lev > mblev.d_view(m) && j==je+1 && k==ks) ||
-          (nghbr.d_view(m,44).lev > mblev.d_view(m) && j==js && k==ke+1) ||
-          (nghbr.d_view(m,45).lev > mblev.d_view(m) && j==js && k==ke+1) ||
-          (nghbr.d_view(m,46).lev > mblev.d_view(m) && j==je+1 && k==ke+1) ||
-          (nghbr.d_view(m,47).lev > mblev.d_view(m) && j==je+1 && k==ke+1)) {
+      if ((finer(8) && j==js) ||
+          (finer(9) && j==js) ||
+          (finer(10) && j==js) ||
+          (finer(11) && j==js) ||
+          (finer(12) && j==je+1) ||
+          (finer(13) && j==je+1) ||
+          (finer(14) && j==je+1) ||
+          (finer(15) && j==je+1) ||
+          (finer(24) && k==ks) ||
+          (finer(25) && k==ks) ||
+          (finer(26) && k==ks) ||
+          (finer(27) && k==ks) ||
+          (finer(28) && k==ke+1) ||
+          (finer(29) && k==ke+1) ||
+          (finer(30) && k==ke+1) ||
+          (finer(31) && k==ke+1) ||
+          (finer(40) && j==js && k==ks) ||
+          (finer(41) && j==js && k==ks) ||
+          (finer(42) && j==je+1 && k==ks) ||
+          (finer(43) && j==je+1 && k==ks) ||
+          (finer(44) && j==js && k==ke+1) ||
+          (finer(45) && j==js && k==ke+1) ||
+          (finer(46) && j==je+1 && k==ke+1) ||
+          (finer(47) && j==je+1 && k==ke+1)) {
         Real xl = x1v + 0.25*dx1;
         Real xr = x1v - 0.25*dx1;
         a1(m,k,j,i) = 0.5*(A1(xl,x2f,x3f,lwv) + A1(xr,x2f,x3f,lwv));
       }
 
       // Correct A2 at x1-faces, x3-faces, and x1x3-edges
-      if ((nghbr.d_view(m,0 ).lev > mblev.d_view(m) && i==is) ||
-          (nghbr.d_view(m,1 ).lev > mblev.d_view(m) && i==is) ||
-          (nghbr.d_view(m,2 ).lev > mblev.d_view(m) && i==is) ||
-          (nghbr.d_view(m,3 ).lev > mblev.d_view(m) && i==is) ||
-          (nghbr.d_view(m,4 ).lev > mblev.d_view(m) && i==ie+1) ||
-          (nghbr.d_view(m,5 ).lev > mblev.d_view(m) && i==ie+1) ||
-          (nghbr.d_view(m,6 ).lev > mblev.d_view(m) && i==ie+1) ||
-          (nghbr.d_view(m,7 ).lev > mblev.d_view(m) && i==ie+1) ||
-          (nghbr.d_view(m,24).lev > mblev.d_view(m) && k==ks) ||
-          (nghbr.d_view(m,25).lev > mblev.d_view(m) && k==ks) ||
-          (nghbr.d_view(m,26).lev > mblev.d_view(m) && k==ks) ||
-          (nghbr.d_view(m,27).lev > mblev.d_view(m) && k==ks) ||
-          (nghbr.d_view(m,28).lev > mblev.d_view(m) && k==ke+1) ||
-          (nghbr.d_view(m,29).lev > mblev.d_view(m) && k==ke+1) ||
-          (nghbr.d_view(m,30).lev > mblev.d_view(m) && k==ke+1) ||
-          (nghbr.d_view(m,31).lev > mblev.d_view(m) && k==ke+1) ||
-          (nghbr.d_view(m,32).lev > mblev.d_view(m) && i==is && k==ks) ||
-          (nghbr.d_view(m,33).lev > mblev.d_view(m) && i==is && k==ks) ||
-          (nghbr.d_view(m,34).lev > mblev.d_view(m) && i==ie+1 && k==ks) ||
-          (nghbr.d_view(m,35).lev > mblev.d_view(m) && i==ie+1 && k==ks) ||
-          (nghbr.d_view(m,36).lev > mblev.d_view(m) && i==is && k==ke+1) ||
-          (nghbr.d_view(m,37).lev > mblev.d_view(m) && i==is && k==ke+1) ||
-          (nghbr.d_view(m,38).lev > mblev.d_view(m) && i==ie+1 && k==ke+1) ||
-          (nghbr.d_view(m,39).lev > mblev.d_view(m) && i==ie+1 && k==ke+1)) {
+      if ((finer(0) && i==is) ||
+          (finer(1) && i==is) ||
+          (finer(2) && i==is) ||
+          (finer(3) && i==is) ||
+          (finer(4) && i==ie+1) ||
+          (finer(5) && i==ie+1) ||
+          (finer(6) && i==ie+1) ||
+          (finer(7) && i==ie+1) ||
+          (finer(24) && k==ks) ||
+          (finer(25) && k==ks) ||
+          (finer(26) && k==ks) ||
+          (finer(27) && k==ks) ||
+          (finer(28) && k==ke+1) ||
+          (finer(29) && k==ke+1) ||
+          (finer(30) && k==ke+1) ||
+          (finer(31) && k==ke+1) ||
+          (finer(32) && i==is && k==ks) ||
+          (finer(33) && i==is && k==ks) ||
+          (finer(34) && i==ie+1 && k==ks) ||
+          (finer(35) && i==ie+1 && k==ks) ||
+          (finer(36) && i==is && k==ke+1) ||
+          (finer(37) && i==is && k==ke+1) ||
+          (finer(38) && i==ie+1 && k==ke+1) ||
+          (finer(39) && i==ie+1 && k==ke+1)) {
         Real xl = x2v + 0.25*dx2;
         Real xr = x2v - 0.25*dx2;
         a2(m,k,j,i) = 0.5*(A2(x1f,xl,x3f,lwv) + A2(x1f,xr,x3f,lwv));
       }
 
       // Correct A3 at x1-faces, x2-faces, and x1x2-edges
-      if ((nghbr.d_view(m,0 ).lev > mblev.d_view(m) && i==is) ||
-          (nghbr.d_view(m,1 ).lev > mblev.d_view(m) && i==is) ||
-          (nghbr.d_view(m,2 ).lev > mblev.d_view(m) && i==is) ||
-          (nghbr.d_view(m,3 ).lev > mblev.d_view(m) && i==is) ||
-          (nghbr.d_view(m,4 ).lev > mblev.d_view(m) && i==ie+1) ||
-          (nghbr.d_view(m,5 ).lev > mblev.d_view(m) && i==ie+1) ||
-          (nghbr.d_view(m,6 ).lev > mblev.d_view(m) && i==ie+1) ||
-          (nghbr.d_view(m,7 ).lev > mblev.d_view(m) && i==ie+1) ||
-          (nghbr.d_view(m,8 ).lev > mblev.d_view(m) && j==js) ||
-          (nghbr.d_view(m,9 ).lev > mblev.d_view(m) && j==js) ||
-          (nghbr.d_view(m,10).lev > mblev.d_view(m) && j==js) ||
-          (nghbr.d_view(m,11).lev > mblev.d_view(m) && j==js) ||
-          (nghbr.d_view(m,12).lev > mblev.d_view(m) && j==je+1) ||
-          (nghbr.d_view(m,13).lev > mblev.d_view(m) && j==je+1) ||
-          (nghbr.d_view(m,14).lev > mblev.d_view(m) && j==je+1) ||
-          (nghbr.d_view(m,15).lev > mblev.d_view(m) && j==je+1) ||
-          (nghbr.d_view(m,16).lev > mblev.d_view(m) && i==is && j==js) ||
-          (nghbr.d_view(m,17).lev > mblev.d_view(m) && i==is && j==js) ||
-          (nghbr.d_view(m,18).lev > mblev.d_view(m) && i==ie+1 && j==js) ||
-          (nghbr.d_view(m,19).lev > mblev.d_view(m) && i==ie+1 && j==js) ||
-          (nghbr.d_view(m,20).lev > mblev.d_view(m) && i==is && j==je+1) ||
-          (nghbr.d_view(m,21).lev > mblev.d_view(m) && i==is && j==je+1) ||
-          (nghbr.d_view(m,22).lev > mblev.d_view(m) && i==ie+1 && j==je+1) ||
-          (nghbr.d_view(m,23).lev > mblev.d_view(m) && i==ie+1 && j==je+1)) {
+      if ((finer(0) && i==is) ||
+          (finer(1) && i==is) ||
+          (finer(2) && i==is) ||
+          (finer(3) && i==is) ||
+          (finer(4) && i==ie+1) ||
+          (finer(5) && i==ie+1) ||
+          (finer(6) && i==ie+1) ||
+          (finer(7) && i==ie+1) ||
+          (finer(8) && j==js) ||
+          (finer(9) && j==js) ||
+          (finer(10) && j==js) ||
+          (finer(11) && j==js) ||
+          (finer(12) && j==je+1) ||
+          (finer(13) && j==je+1) ||
+          (finer(14) && j==je+1) ||
+          (finer(15) && j==je+1) ||
+          (finer(16) && i==is && j==js) ||
+          (finer(17) && i==is && j==js) ||
+          (finer(18) && i==ie+1 && j==js) ||
+          (finer(19) && i==ie+1 && j==js) ||
+          (finer(20) && i==is && j==je+1) ||
+          (finer(21) && i==is && j==je+1) ||
+          (finer(22) && i==ie+1 && j==je+1) ||
+          (finer(23) && i==ie+1 && j==je+1)) {
         Real xl = x3v + 0.25*dx3;
         Real xr = x3v - 0.25*dx3;
         a3(m,k,j,i) = 0.5*(A3(x1f,x2f,xl,lwv) + A3(x1f,x2f,xr,lwv));
