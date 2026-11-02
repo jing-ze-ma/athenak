@@ -1,0 +1,15 @@
+import json, numpy as np, matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
+T = json.load(open('fewind.json')); names = list(T)
+te = np.array([T[n]['teq'] for n in names]); vs = np.array([T[n]['vs'] for n in names]); es = np.array([T[n]['es'] for n in names])
+m = lambda k: np.array([T[n]['mean'][k] for n in names])
+fig, ax = plt.subplots(figsize=(7.5, 4.8))
+ax.errorbar(te, vs, yerr=es, fmt='o', color='#222222', ms=8, capsize=3, lw=1.5, label='Seidel+2026 Fe I net blueshift (Fig. 1)')
+ax.vlines(te + 6, m('vmo_w43'), m('vev_w43'), color='#2a6fdb', lw=2, alpha=0.35, label='model morning..evening limb')
+ax.plot(te + 6, m('v_w43'), 's', color='#2a6fdb', ms=8, label='model: Fe I-weighted LOS v, 1e-4..1e-3 bar (wind + rotation)')
+ax.plot(te + 6, m('vwind_w43'), 'D', mfc='none', mec='#d9711c', mew=2, ms=7, label='model: same, wind only')
+ax.plot(te + 6, m('v_crude'), 'v', color='#888888', ms=6, label='page crude: unweighted ring 1e-3 bar, wind only')
+for n, x, y in zip(names, te, m('v_w43')):
+    ax.annotate('%s\nrot %.0f' % (n, T[n]['rot1']), (x + 6, y), textcoords='offset points', xytext=(6, 4), fontsize=7, color='#444444')
+ax.axhline(0, color='#bbbbbb', lw=0.8); ax.set_xlabel('T_eq [K] (Seidel+2026 zero-albedo values)'); ax.set_ylabel('terminator LOS velocity [km/s], + = blueshift')
+ax.set_title('INTERIM approximation (no line RT/CCF): hydro p1 runs vs Seidel+2026', fontsize=10)
+ax.grid(alpha=0.25); ax.legend(fontsize=7, loc='upper center', ncol=2); ax.set_ylim(-1, 19); fig.tight_layout(); fig.savefig('fewind_vs_seidel.png', dpi=150)
