@@ -602,6 +602,146 @@ inline int rt_face_nblk() {
   return (rt_Fb_ptr != nullptr) ? rt_Fb_ptr->extent_int(1) : 0;
 }
 inline DvceArray5D<Real> rt_face_flux() { return *rt_Fb_ptr; }
+
+// --- problem/flux_hst_rst: the face-flux cache across a restart (rthst-1101) ----------
+// rt_Fb, rt_Qb, rt_icut and rt_cf slot 3 are written by the full RT calls only; under
+// the cadence (ck_impl_every) the history rows in between read what the last full call
+// left.  A restart starts with no cache, so until the next full call the flux history
+// had no radiative part (Lir_top, Lsw_refl, Lsw_abs, Lrad_bot, Lsw_in = 0, Etot_top/bot
+// hydro only).  The cache is written to the implicit-ck restart block as three slabs
+// (two_stream_ck_rst.hpp: the chain blocks SUMMED in block order, i.e. exactly the sums
+// the history forms, and per column icut, mu0, fstar, albedo).  After the restart the
+// history reads the staged slabs (RtFhStageViews) until the RT arrays are allocated;
+// RtFhRstAfterAlloc then puts the sums into chain block 0 of the new arrays (blocks
+// 1.. stay 0, so every block sum is unchanged) and frees the staging.  Diagnostic
+// only: no kernel of the solver reads these arrays across calls.
+inline bool RtFhLive() {
+  return rt_fhst_rst && rt_face_flux_ready() && (rt_Qb_ptr != nullptr) &&
+         (rt_cf_ptr != nullptr) && (rt_icut_ptr != nullptr);
+}
+
+// one slab (nmb, n3, n2, n1) of the cache, into the host restart array dst
+template <typename V>
+inline void RtFhCollect(const int id, const V &dst) {
+  const int nmb = static_cast<int>(dst.extent(0));
+  const int n3 = static_cast<int>(dst.extent(1));
+  const int n2 = static_cast<int>(dst.extent(2));
+  const int n1 = static_cast<int>(dst.extent(3));
+  auto fb = *rt_Fb_ptr;
+  auto qb = *rt_Qb_ptr;
+  auto cf = *rt_cf_ptr;
+  auto icut = *rt_icut_ptr;
+  const int nblk = fb.extent_int(1);
+  const bool fit = (fb.extent_int(0) >= nmb) && (fb.extent_int(2) == n1) &&
+                   (fb.extent_int(3) == n3) && (fb.extent_int(4) == n2);
+  if (!fit) {
+    Kokkos::deep_copy(dst, 0.0);
+    return;
+  }
+  DvceArray4D<Real> tmp("rt_fh_col", nmb, n3, n2, n1);
+  if (id == kCkSlabFhCol) {
+    const Real fstar = rt_hist_fstar, alb = rt_hist_albedo;
+    par_for("rt_fh_col", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      tmp(m,k,j,0) = static_cast<Real>(icut(m,k,j));
+      tmp(m,k,j,1) = cf(m,k,j,3);
+      tmp(m,k,j,2) = fstar;
+      tmp(m,k,j,3) = alb;
+    });
+  } else {
+    const bool isq = (id == kCkSlabFhQb);
+    par_for("rt_fh_sum", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real f = 0.0;
+      for (int b=0; b<nblk; ++b) f += isq ? qb(m,b,i,k,j) : fb(m,b,i,k,j);
+      tmp(m,k,j,i) = f;
+    });
+  }
+  DeepCopyAcross(dst, tmp);
+}
+
+// the staged slab id on the device (nmb, n3, n2, n1); empty View when it does not fit
+inline DvceArray4D<Real> RtFhStageDev(const int id) {
+  using UnmanagedHost4D = Kokkos::View<Real****, Kokkos::LayoutRight,
+                                       Kokkos::HostSpace, Kokkos::MemoryUnmanaged>;
+  const std::size_t nd = static_cast<std::size_t>(ck_rst_nmb)*ck_rst_n3*ck_rst_n2*
+                         ck_rst_n1;
+  if (!CkRstStaged(id) || ck_rst_stage[id].size() != nd) return DvceArray4D<Real>();
+  DvceArray4D<Real> d("rt_fh_stg", ck_rst_nmb, ck_rst_n3, ck_rst_n2, ck_rst_n1);
+  UnmanagedHost4D h(ck_rst_stage[id].data(), ck_rst_nmb, ck_rst_n3, ck_rst_n2,
+                    ck_rst_n1);
+  DeepCopyAcross(d, h);
+  return d;
+}
+
+inline bool RtFhStaged(const int nmb) {
+  return rt_fhst_rst && (ck_rst_nmb == nmb) && (ck_rst_n1 >= 4) &&
+         CkRstStaged(kCkSlabFhFb) && CkRstStaged(kCkSlabFhQb) &&
+         CkRstStaged(kCkSlabFhCol);
+}
+
+// for the flux history before the first RT call after a restart: cache-shaped Views
+// (one chain block) built from the staging, which stays staged.  False: nothing staged.
+inline bool RtFhStageViews(const int nmb, DvceArray5D<Real> &fb, DvceArray5D<Real> &qb,
+                           DvceArray4D<Real> &cf, DvceArray3D<int> &icut, Real &fstar,
+                           Real &alb) {
+  if (rt_Fb_ptr != nullptr || !RtFhStaged(nmb)) return false;
+  auto fs = RtFhStageDev(kCkSlabFhFb);
+  auto qs = RtFhStageDev(kCkSlabFhQb);
+  auto cs = RtFhStageDev(kCkSlabFhCol);
+  if (fs.size() == 0 || qs.size() == 0 || cs.size() == 0) return false;
+  const int n3 = ck_rst_n3, n2 = ck_rst_n2, n1 = ck_rst_n1;
+  fb = DvceArray5D<Real>("rt_fh_fb", nmb, 1, n1, n3, n2);
+  qb = DvceArray5D<Real>("rt_fh_qb", nmb, 1, n1, n3, n2);
+  cf = DvceArray4D<Real>("rt_fh_cf", nmb, n3, n2, 5);
+  icut = DvceArray3D<int>("rt_fh_icut", nmb, n3, n2);
+  auto fb_ = fb, qb_ = qb;
+  auto cf_ = cf;
+  auto icut_ = icut;
+  par_for("rt_fh_stv", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    fb_(m,0,i,k,j) = fs(m,k,j,i);
+    qb_(m,0,i,k,j) = qs(m,k,j,i);
+    if (i == 0) {
+      icut_(m,k,j) = static_cast<int>(cs(m,k,j,0));
+      cf_(m,k,j,3) = cs(m,k,j,1);
+    }
+  });
+  fstar = ck_rst_stage[kCkSlabFhCol][2];
+  alb = ck_rst_stage[kCkSlabFhCol][3];
+  return true;
+}
+
+// right after the split path allocated rt_Fb/rt_Qb/rt_icut/rt_cf: the staged cache into
+// chain block 0, then free the staging (also when it does not fit)
+inline void RtFhRstAfterAlloc(const int nmb) {
+  if (RtFhStaged(nmb) && rt_Fb_ptr != nullptr && rt_Qb_ptr != nullptr &&
+      rt_cf_ptr != nullptr && rt_icut_ptr != nullptr) {
+    auto fb = *rt_Fb_ptr;
+    auto qb = *rt_Qb_ptr;
+    auto cf = *rt_cf_ptr;
+    auto icut = *rt_icut_ptr;
+    const int n3 = ck_rst_n3, n2 = ck_rst_n2, n1 = ck_rst_n1;
+    const bool fit = (fb.extent_int(2) == n1) && (fb.extent_int(3) == n3) &&
+                     (fb.extent_int(4) == n2) && (qb.extent_int(2) == n1);
+    auto fs = RtFhStageDev(kCkSlabFhFb);
+    auto qs = RtFhStageDev(kCkSlabFhQb);
+    auto cs = RtFhStageDev(kCkSlabFhCol);
+    if (fit && fs.size() > 0 && qs.size() > 0 && cs.size() > 0) {
+      par_for("rt_fh_rst", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        fb(m,0,i,k,j) = fs(m,k,j,i);
+        qb(m,0,i,k,j) = qs(m,k,j,i);
+        if (i == 0) {
+          icut(m,k,j) = static_cast<int>(cs(m,k,j,0));
+          cf(m,k,j,3) = cs(m,k,j,1);
+        }
+      });
+      Kokkos::fence();
+    }
+  }
+  for (int s=kCkSlabFhFb; s<=kCkSlabFhCol; ++s) CkRstStageFree(s);
+}
 // (m,k,j) deepest cell the band solver integrates; the face below it is where the
 // interior flux is handed in from the diffusion operator.
 inline DvceArray3D<int> rt_cut_index() { return *rt_icut_ptr; }
@@ -5762,6 +5902,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           rt_xP_ptr = new DvceArray4D<Real>("rt_xP", nmb, n3, n2, n1);
           rt_icut_ptr = new DvceArray3D<int>("rt_icut", nmb, n3, n2);
           rt_Qb_ptr = new DvceArray5D<Real>("rt_Qb", nmb, nblk, n1, n3, n2);
+          RtFhRstAfterAlloc(nmb);   // problem/flux_hst_rst: the restart's cache
           // problem/ck_implicit: the column solve's own scratch.  Nothing here exists
           // with the switch off (see utils/two_stream_column_ck.hpp).
           if (ck_implicit) {
