@@ -226,13 +226,37 @@ TaskStatus Resistivity::CopyCons(Driver *pdrive, int stage) {
     const int n = IEN;
     auto A = Kokkos::ALL;
     if (stage > 1) {
-      Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(u2,A,n,A,A,A),
-                        Kokkos::subview(pm->u1,A,n,A,A,A));
-      Kokkos::deep_copy(DevExeSpace(), b2.x1f, pm->b1.x1f);
-      Kokkos::deep_copy(DevExeSpace(), b2.x2f, pm->b1.x2f);
-      Kokkos::deep_copy(DevExeSpace(), b2.x3f, pm->b1.x3f);
-      Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(pm->u1,A,n,A,A,A),
-                        Kokkos::subview(pm->u0,A,n,A,A,A));
+      // mhdspeed-1101 (C): the eight register copies of an intermediate lean super-stage
+      // (u2 <- u1 and u1 <- u0 in IEN, b2 <- b1 and b1 <- b0 on the three faces) in ONE
+      // kernel instead of eight deep_copy launches.  Every element is copied, ghosts
+      // included, as deep_copy does; per element the old u1/b1 is read before it is
+      // overwritten, so the registers are bitwise what the eight copies left.
+      auto u0_ = pm->u0; auto u1_ = pm->u1; auto u2_ = u2;
+      auto b0_ = pm->b0; auto b1_ = pm->b1; auto b2_ = b2;
+      const int nmb1 = static_cast<int>(u0_.extent_int(0)) - 1;
+      const int n3 = static_cast<int>(u0_.extent_int(2));
+      const int n2 = static_cast<int>(u0_.extent_int(3));
+      const int n1 = static_cast<int>(u0_.extent_int(4));
+      par_for("rkg_copy_lean", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (k < n3 && j < n2 && i < n1) {
+          u2_(m,n,k,j,i) = u1_(m,n,k,j,i);
+          u1_(m,n,k,j,i) = u0_(m,n,k,j,i);
+        }
+        if (k < n3 && j < n2) {
+          b2_.x1f(m,k,j,i) = b1_.x1f(m,k,j,i);
+          b1_.x1f(m,k,j,i) = b0_.x1f(m,k,j,i);
+        }
+        if (k < n3 && i < n1) {
+          b2_.x2f(m,k,j,i) = b1_.x2f(m,k,j,i);
+          b1_.x2f(m,k,j,i) = b0_.x2f(m,k,j,i);
+        }
+        if (j < n2 && i < n1) {
+          b2_.x3f(m,k,j,i) = b1_.x3f(m,k,j,i);
+          b1_.x3f(m,k,j,i) = b0_.x3f(m,k,j,i);
+        }
+      });
+      return TaskStatus::complete;
     } else {
       Kokkos::deep_copy(DevExeSpace(), pm->u1, pm->u0);
     }
