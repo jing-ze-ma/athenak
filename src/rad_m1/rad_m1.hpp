@@ -1487,6 +1487,17 @@ class RadiationM1 {
   // positive -- the backward-Euler redo it would otherwise take uses the same fallback
   // operator (backward Euler accepts the fallback), so rejecting it only loses order
   bool t2_accfb = false;
+  // csacc-1031 <rad_m1>/time2_adm_poslim (read only when named; default false = bitwise):
+  // the hesdirk2 admissibility test of the written-back gas eint counts a cell as a fault
+  // only when the write-back's own conserving limiter (implicit_pos_gas: raise eint to
+  // e_min with energy from the cell's radiation above e_floor) cannot cover it.  The
+  // stage slope K is taken after that limiter (rad_m1_impl_wb_kernel.hpp), and the
+  // backward-Euler redo applies the same limiter, so such a stage is positive and
+  // conservative; rejecting it only replaced the whole step by backward Euler (cs
+  // accretor: lit floor cells in front of the nozzle, 1-20 cells per rejected stage).
+  // E or T <= 0 stays a fault.  Needs implicit_pos_gas = true.
+  bool t2_adm_pl = false;
+  Real t2_adm_pl_n = 0.0;       // stages admitted by it (would have been rejected)
   // pgrst-posfix-1021 <rad_m1>/implicit_hold (DEFAULT true since vphi-1021; a pgen that
   // marks no cell is bitwise either way): cells a problem generator holds (hold_m = 1,
   // set by the pgen where it writes the radiation) are Dirichlet rows of every implicit

@@ -478,6 +478,10 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_accept_fallback")) {
     t2_accfb = pin->GetBoolean("rad_m1", "time2_accept_fallback");
   }
+  // csacc-1031: <rad_m1>/time2_adm_poslim (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_adm_poslim")) {
+    t2_adm_pl = pin->GetBoolean("rad_m1", "time2_adm_poslim");
+  }
   // autobe-1029: <rad_m1>/time2_auto_be = N (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_auto_be")) {
     t2_abe = pin->GetInteger("rad_m1", "time2_auto_be");
@@ -2451,6 +2455,7 @@ void RadiationM1::Time2Report() {
               << t2_pfix_nsolve << " cells=" << t2_pfix_ncell;
   }
   if (t2_accfb) {std::cout << " accepted-with-fallback stages=" << t2_accfb_n;}
+  if (t2_adm_pl) {std::cout << " time2_adm_poslim admitted stages=" << t2_adm_pl_n;}
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   std::cout << std::endl;

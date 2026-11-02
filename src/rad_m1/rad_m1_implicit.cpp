@@ -15565,6 +15565,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool rso = g_t2_reset_on;   // csacc-1031 reset-sector exemption
     auto rsm_ = g_t2_reset;
     Real nskip = 0.0;
+    // csacc-1031 time2_adm_poslim (rad_m1.hpp): a written-back eint <= 0 that the
+    // write-back's implicit_pos_gas limiter covers from the cell's radiation is no fault
+    if (t2_adm_pl && !impl_pos_gas) {
+      ImplFatal("<rad_m1>/time2_adm_poslim needs implicit_pos_gas = true");
+    }
+    const bool apl = t2_adm_pl && gq;
+    const Real apl_f = impl_pos_gas_frac, apl_efl = efl;
+    auto apl_eos = flr.eos;
+    Real apl_n = 0.0;
     // a flat 1-D range (m1-fast4): the rank-4 MDRange reduction ran at 360 us on the
     // wedge; a min is order-independent, so the result is the same bit for bit
     const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
@@ -15582,12 +15591,45 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (gq) {
         // the gas internal energy the write-back will set (its step (a))
         Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
-        r = fmin(r, iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq);
+        Real eg = iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq;
+        if (apl && !(eg > 0.0)) {
+          // the e_min and the radiation the write-back's pos_gas move has (its kernel)
+          Real emin = apl_f*fmax(iw_(m,M1_IW_EGN,k,j,i), 0.0);
+          if (apl_eos.tfloor > 0.0) {
+            Real te, pp, cr, ct, tcv;
+            apl_eos.ThermoAt(uh(m,IDN,k,j,i), apl_eos.tfloor, te, pp, cr, ct, tcv);
+            emin = fmax(emin, te);
+          }
+          const Real av = (cl/ch)*fmax(iw_(m,M1_IW_EP,k,j,i) - apl_efl, 0.0);
+          if (emin > 0.0 && eg + av >= emin) {eg = emin;}
+        }
+        r = fmin(r, eg);
       }
       if (!(r > 0.0)) {r = -1.0;}
       if (rso && rsm_(m,k,j,i) > 0.0) {r = 1.0e300;}   // csacc-1031: a pgen-reset cell
       lmin = (r < lmin) ? r : lmin;
     }, Kokkos::Min<Real>(vmin));
+    if (apl) {   // csacc-1031: would this stage have been rejected without the key?
+      Real v0 = 1.0e300;
+      Kokkos::parallel_reduce("m1_t2_adm0",
+      Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+      KOKKOS_LAMBDA(const int idx, Real &lmin) {
+        const int m = idx/nkji;
+        int q = idx - m*nkji;
+        const int k = q/nji + ks;
+        q -= (k - ks)*nji;
+        const int j = q/ni + js;
+        const int i = q - (j - js)*ni + is;
+        Real r = iw_(m,M1_IW_S2,k,j,i);
+        if (hh) {r = fmin(r, iw_(m,M1_IW_TP,k,j,i));}
+        Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+        r = fmin(r, iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq);
+        if (!(r > 0.0)) {r = -1.0;}
+        if (rso && rsm_(m,k,j,i) > 0.0) {r = 1.0e300;}
+        lmin = (r < lmin) ? r : lmin;
+      }, Kokkos::Min<Real>(v0));
+      apl_n = v0;
+    }
     if (rso) {   // csacc-1031: count the skipped non-positive cells (diagnostic)
       Kokkos::parallel_reduce("m1_t2_adm_rs",
       Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
@@ -15614,6 +15656,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     MPI_Allreduce(&vmin, &g, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
     vmin = g;}
 #endif
+#if MPI_PARALLEL_ENABLED
+    if (apl) {Real g;
+    MPI_Allreduce(&apl_n, &g, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+    apl_n = g;}
+#endif
+    if (apl && (vmin > 0.0) && !(apl_n > 0.0)) {t2_adm_pl_n += 1.0;}
     t2_fail = !converged || !(vmin > 0.0) || (od_now != impl_offdiag) ||
               (vimp_now != impl_vimp) ||
               ((t2s == M1_T2S_STAGE1) && (pmy_pack->pmesh->ncycle == t2_dbg_fail));
@@ -15643,7 +15691,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (gq) {
           Real qq = iw_(m,M1_IW_SRCR,k,j,i)
                     - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
-          r = fmin(r, iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq);
+          Real eg = iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq;
+          if (apl && !(eg > 0.0)) {   // csacc-1031 time2_adm_poslim (as the test above)
+            Real emin = apl_f*fmax(iw_(m,M1_IW_EGN,k,j,i), 0.0);
+            if (apl_eos.tfloor > 0.0) {
+              Real te, pp, cr, ct, tcv;
+              apl_eos.ThermoAt(uh(m,IDN,k,j,i), apl_eos.tfloor, te, pp, cr, ct, tcv);
+              emin = fmax(emin, te);
+            }
+            const Real av = (cl/ch)*fmax(iw_(m,M1_IW_EP,k,j,i) - apl_efl, 0.0);
+            if (emin > 0.0 && eg + av >= emin) {eg = emin;}
+          }
+          r = fmin(r, eg);
         }
         if (rso && rsm_(m,k,j,i) > 0.0) {return;}   // csacc-1031: a pgen-reset cell
         if (!(r > 0.0)) {pm_(m,k,j,i) = 1.0;}
@@ -16058,6 +16117,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool pfs = impl_pos_floor_s2;   // F3
   const bool pany = pgas || pflr;
   const Real pgf = impl_pos_gas_frac;
+  // csacc-1031 time2_adm_poslim: a stage slope K keeps the solve's own E / gas split (the
+  // pos_gas / E-floor moves of this write-back stay in the state, not in K): the moved
+  // energy is not extrapolated into the next old vectors (fbP 11-01: with the moves in
+  // K the lit floor gas was heated step after step, rad->gas 0.32 vs 1e-8, dt / 4-10)
+  const bool kpre = t2_adm_pl && t2st;
   auto peos = flr.eos;
   auto pc_ = pos_cnt_d;
   const bool psph = sph_geom;
