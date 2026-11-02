@@ -1087,6 +1087,40 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_split_func = DhjRtFreezeSplit;
     user_split_once = true;
   }
+  // ckhesdirk-1102 problem/ck_time_scheme (read only when named): split (default: the
+  // operator split above, bitwise) | hesdirk2 (the ck heating as the implicit part of
+  // the IMEX H-ESDIRK2 step around the Heun stages, in-stage; see DhjCkT2Stage)
+  if (pin->DoesParameterExist("problem","ck_time_scheme")) {
+    const std::string cts = pin->GetString("problem","ck_time_scheme");
+    if (cts.compare("hesdirk2") == 0) {
+      two_stream_rt::ck_t2_on = true;
+    } else if (cts.compare("split") != 0) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_time_scheme = '"
+                << cts << "' is not a choice (split | hesdirk2)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  if (pin->DoesParameterExist("problem","ck_count_every")) {
+    dhj_ck_count_every = pin->GetInteger("problem","ck_count_every");
+  }
+  if (two_stream_rt::ck_t2_on) {
+    std::string why;
+    if (!two_stream_rt::ck_implicit) why += " ck_implicit = false;";
+    if (pin->GetString("time","integrator").compare("rk2") != 0) why += " integrator != rk2;";
+    if (rt_test_freeze) why += " rt_test_freeze;";
+    if (ebud::on) why += " budget_dt;";
+    if (two_stream_rt::rt_rad_force) why += " rt_rad_force;";
+    if (two_stream_rt::ck_impl_warm) why += " ck_impl_warm;";
+    if (!why.empty()) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_time_scheme = "
+                << "hesdirk2 is not wired for:" << why << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // the ck leaves the operator split: it runs inside each Heun stage (SourceFunc)
+    user_split_func = nullptr;
+    user_split_once = false;
+    DhjCkT2Init(pin, pmy_mesh_);
+  }
   two_stream_rt::rt_test_mu0 = pin->GetOrAddReal("problem","rt_test_mu0",-2.0);
   two_stream_rt::ck_test_kgrey = pin->GetOrAddReal("problem","ck_test_kgrey",0.0);
   if (two_stream_rt::ck_implicit && global_variable::my_rank == 0) {

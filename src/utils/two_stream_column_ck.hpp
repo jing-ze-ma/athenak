@@ -401,6 +401,14 @@ inline bool ck_impl_cvkeep = false;
 // so a restarted run follows the schedule bitwise; a file without them (older) forces a
 // full call first.
 inline int ck_impl_every = 1;
+// rkgfuse-1102 <problem>/ck_strang: the ck RT is called twice per cycle, dt/2 each
+// (Strang).  The cadence counts CYCLES, not calls: on a cycle with ncycle % N == 0 the
+// FIRST half (ck_cad_half = 1) is the full call -- it stores Q0 = (e - e*)/(dt/2), the
+// heating RATE, and D, T0, rho0 -- and the second half (2) is a linearised step from that
+// operator over its own dt/2, like every half of the other cycles.  So the full calls
+// happen on exactly the cycles they happen on without ck_strang, at the same cost, and
+// every call (full or linearised) covers exactly its own dt/2.  0 = one full-dt call.
+inline int ck_cad_half = 0;
 inline Real ck_impl_every_thr = 0.0;
 inline bool ck_cad_partial = false;          // this call solves the unmasked columns only
 inline DvceArray3D<Real> *ck_cad_mask_ptr = nullptr;   // (m,k,j): 0 solve, 2 masked
@@ -410,6 +418,13 @@ inline int64_t ck_cad_nfull = 0;             // scheduled full calls
 inline int64_t ck_cad_nlin = 0;              // linearised steps
 inline int64_t ck_cad_nguard = 0;            // linearised steps with a guard call
 inline double ck_cad_fref = 0.0;             // sum over linearised steps of nref/ncol
+// ckhesdirk-1102 problem/ck_time_scheme = hesdirk2 (DhjCkT2Stage, deep_hot_jupiter_rt):
+// ck_t2_k1_ptr = the FSAL slope K1 (m,k,j,i) [energy/vol/s] and ck_t2_ok its validity,
+// both carried by the restart block (slabs T2K1, T2OK).  The second SDIRK stage takes
+// the linearised cadence step through rkgfuse-1102's ck_cad_half = 2 (above).
+inline bool ck_t2_on = false;
+inline bool ck_t2_ok = false;
+inline DvceArray4D<Real> *ck_t2_k1_ptr = nullptr;
 // ---- ck-fast2 lever 1: problem/ck_dif_dtau = thr > 0, THE DEEP DIFFUSION HANDOVER.
 // Default 0 (off), and off nothing below is allocated, launched or read (bitwise).
 // Route B only (the ck two-stream owns the whole column down to the inner wall).  Per

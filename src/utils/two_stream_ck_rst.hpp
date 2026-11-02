@@ -76,6 +76,10 @@ enum CkRstSlab : std::int32_t {
   kCkSlabFhFb = 11,   // rt_Fb summed over the chain blocks, (m,k,j,i), faces i
   kCkSlabFhQb = 12,   // rt_Qb summed over the chain blocks
   kCkSlabFhCol = 13,  // per column, i = 0..3: rt_icut, rt_cf(3), fstar, albedo
+  // ckhesdirk-1102 problem/ck_time_scheme = hesdirk2: the FSAL slope K1 and its
+  // validity (a Real, 1 or 0, in every cell)
+  kCkSlabT2K1 = 14,
+  kCkSlabT2Ok = 15,
   kCkSlabXsU0 = 16,   // u0 variable n at the store = 16 + n (n < 16)
   kCkSlabXsB0 = 32,   // bcc0 component n at the store = 32 + n (MHD)
   // problem/ck_sph_face = 5: the state the last refresh of the VEF factors read, from
