@@ -62,7 +62,7 @@ void Resistivity::AssembleResistRKGTasks(std::map<std::string, std::shared_ptr<T
   id.res_copyinie = tl["rkg_stagen"]->AddTask(&Resistivity::CopyIniE, this, id.mhd_recve);
   id.res_ct        = tl["rkg_stagen"]->AddTask(&Resistivity::CT, this, id.res_copyinie);
   id.mhd_restb     = tl["rkg_stagen"]->AddTask(&mhd::MHD::RestrictB, pmhd, id.res_ct);
-  id.mhd_sendb     = tl["rkg_stagen"]->AddTask(&Resistivity::SendBRKG, this, id.mhd_restb);
+  id.mhd_sendb     = tl["rkg_stagen"]->AddTask(&mhd::MHD::SendB, pmhd, id.mhd_restb);
   id.mhd_recvb     = tl["rkg_stagen"]->AddTask(&mhd::MHD::RecvB, pmhd, id.mhd_sendb);
   id.mhd_bcs       = tl["rkg_stagen"]->AddTask(&mhd::MHD::ApplyPhysicalBCs, pmhd, id.mhd_recvb);
   id.mhd_prol      = tl["rkg_stagen"]->AddTask(&mhd::MHD::Prolongate, pmhd, id.mhd_bcs);
@@ -157,20 +157,6 @@ TaskStatus Resistivity::Fluxes(Driver *pdrive, int stage) {
   return TaskStatus::complete;
 }
 
-//----------------------------------------------------------------------------------------
-//! \fn Resistivity::SendBRKG
-//! \brief mhdspeed-1101 (B): MHD::SendB for a super-stage.  Stages 1..s-2 pack only the
-//! face-field ghost layer adjacent to each boundary when rkg_halo_d1 is on (see
-//! resistivity.hpp); the depth is reset at once, so no other exchange ever sees it.
-
-TaskStatus Resistivity::SendBRKG(Driver *pdrive, int stage) {
-  auto *pm = pmy_pack->pmhd;
-  pm->pbval_b->pack_depth = (rkg_halo_d1 && stage <= s-2) ? 1 : 0;
-  const TaskStatus st = pm->pbval_b->PackAndSendFC(pm->b0, pm->coarse_b0);
-  pm->pbval_b->pack_depth = 0;
-  return st;
-}
-
 TaskStatus Resistivity::CopyIniConsAndFluxes(Driver *pdrive, int stage) {
   if (stage == 1 && rkg_lean) {
     // only the energy slot of the conserved registers is read (RKUpdate, n = IEN)
@@ -240,37 +226,13 @@ TaskStatus Resistivity::CopyCons(Driver *pdrive, int stage) {
     const int n = IEN;
     auto A = Kokkos::ALL;
     if (stage > 1) {
-      // mhdspeed-1101 (C): the eight register copies of an intermediate lean super-stage
-      // (u2 <- u1 and u1 <- u0 in IEN, b2 <- b1 and b1 <- b0 on the three faces) in ONE
-      // kernel instead of eight deep_copy launches.  Every element is copied, ghosts
-      // included, as deep_copy does; per element the old u1/b1 is read before it is
-      // overwritten, so the registers are bitwise what the eight copies left.
-      auto u0_ = pm->u0; auto u1_ = pm->u1; auto u2_ = u2;
-      auto b0_ = pm->b0; auto b1_ = pm->b1; auto b2_ = b2;
-      const int nmb1 = static_cast<int>(u0_.extent_int(0)) - 1;
-      const int n3 = static_cast<int>(u0_.extent_int(2));
-      const int n2 = static_cast<int>(u0_.extent_int(3));
-      const int n1 = static_cast<int>(u0_.extent_int(4));
-      par_for("rkg_copy_lean", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (k < n3 && j < n2 && i < n1) {
-          u2_(m,n,k,j,i) = u1_(m,n,k,j,i);
-          u1_(m,n,k,j,i) = u0_(m,n,k,j,i);
-        }
-        if (k < n3 && j < n2) {
-          b2_.x1f(m,k,j,i) = b1_.x1f(m,k,j,i);
-          b1_.x1f(m,k,j,i) = b0_.x1f(m,k,j,i);
-        }
-        if (k < n3 && i < n1) {
-          b2_.x2f(m,k,j,i) = b1_.x2f(m,k,j,i);
-          b1_.x2f(m,k,j,i) = b0_.x2f(m,k,j,i);
-        }
-        if (j < n2 && i < n1) {
-          b2_.x3f(m,k,j,i) = b1_.x3f(m,k,j,i);
-          b1_.x3f(m,k,j,i) = b0_.x3f(m,k,j,i);
-        }
-      });
-      return TaskStatus::complete;
+      Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(u2,A,n,A,A,A),
+                        Kokkos::subview(pm->u1,A,n,A,A,A));
+      Kokkos::deep_copy(DevExeSpace(), b2.x1f, pm->b1.x1f);
+      Kokkos::deep_copy(DevExeSpace(), b2.x2f, pm->b1.x2f);
+      Kokkos::deep_copy(DevExeSpace(), b2.x3f, pm->b1.x3f);
+      Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(pm->u1,A,n,A,A,A),
+                        Kokkos::subview(pm->u0,A,n,A,A,A));
     } else {
       Kokkos::deep_copy(DevExeSpace(), pm->u1, pm->u0);
     }
