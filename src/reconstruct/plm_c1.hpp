@@ -12,7 +12,7 @@
 //!
 //! WHY: the van Leer (harmonic-mean) slope dl dr/(dl + dr), set to 0 for dl dr <= 0, has
 //! a KINK at every local extremum of every reconstructed variable (slope 2 dl on one side
-//! of dl = 0, slope 0 on the other).  An extremum that does not move (a stationary vortex,
+//! of dl = 0, slope 0 on the other).  An extremum that does not move (stationary vortex,
 //! a slowly evolving low-Mach flow, the deep layers of a hot Jupiter) keeps the state ON
 //! that kink, step after step, and the RK2 step loses second order in dt there (see
 //! hydro/rsolvers/lhllc_c1_hyd.hpp for the argument).  The low-dissipation low-Mach

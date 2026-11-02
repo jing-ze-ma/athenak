@@ -823,7 +823,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                  nanrep_r,rscnt,rsrec);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
             if (eos.c1_eps > 0.0) {
-              LHLLC_C1(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,w0_);
+              LHLLC_C1(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,
+                       w0_);
             } else {
               LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,w0_);
             }
@@ -1122,7 +1123,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                  nanrep_r,rscnt,rsrec);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
             if (eos.c1_eps > 0.0) {
-              LHLLC_C1(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,w0_);
+              LHLLC_C1(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,
+                       w0_);
             } else {
               LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,w0_);
             }
@@ -1278,12 +1280,20 @@ void Hydro::CsSeamFaceStates() {
     } else {
     for (int n=0; n<nvars; ++n) {
       Real ql, qr;
-      PLM(w0_(m,n,k,jc-1,i), w0_(m,n,k,jc,i), w0_(m,n,k,jc+1,i), ql, qr);
+      if (eos_.plm_c1) {
+        PLMC1(w0_(m,n,k,jc-1,i), w0_(m,n,k,jc,i), w0_(m,n,k,jc+1,i), ql, qr);
+      } else {
+        PLM(w0_(m,n,k,jc-1,i), w0_(m,n,k,jc,i), w0_(m,n,k,jc+1,i), ql, qr);
+      }
       f2(m,n,k,jf,i) = lo ? qr : ql;
     }
     for (int n=0; n<nder; ++n) {
       Real ql, qr;
-      PLM(wder_(m,n,k,jc-1,i), wder_(m,n,k,jc,i), wder_(m,n,k,jc+1,i), ql, qr);
+      if (eos_.plm_c1) {
+        PLMC1(wder_(m,n,k,jc-1,i), wder_(m,n,k,jc,i), wder_(m,n,k,jc+1,i), ql, qr);
+      } else {
+        PLM(wder_(m,n,k,jc-1,i), wder_(m,n,k,jc,i), wder_(m,n,k,jc+1,i), ql, qr);
+      }
       Real q = lo ? qr : ql;
       if (n == IDPR) q = fmax(q, pfl);
       f2(m,nvars+n,k,jf,i) = q;
@@ -1326,12 +1336,20 @@ void Hydro::CsSeamFaceStates() {
     } else {
     for (int n=0; n<nvars; ++n) {
       Real ql, qr;
-      PLM(w0_(m,n,kc-1,j,i), w0_(m,n,kc,j,i), w0_(m,n,kc+1,j,i), ql, qr);
+      if (eos_.plm_c1) {
+        PLMC1(w0_(m,n,kc-1,j,i), w0_(m,n,kc,j,i), w0_(m,n,kc+1,j,i), ql, qr);
+      } else {
+        PLM(w0_(m,n,kc-1,j,i), w0_(m,n,kc,j,i), w0_(m,n,kc+1,j,i), ql, qr);
+      }
       f3(m,n,kf,j,i) = lo ? qr : ql;
     }
     for (int n=0; n<nder; ++n) {
       Real ql, qr;
-      PLM(wder_(m,n,kc-1,j,i), wder_(m,n,kc,j,i), wder_(m,n,kc+1,j,i), ql, qr);
+      if (eos_.plm_c1) {
+        PLMC1(wder_(m,n,kc-1,j,i), wder_(m,n,kc,j,i), wder_(m,n,kc+1,j,i), ql, qr);
+      } else {
+        PLM(wder_(m,n,kc-1,j,i), wder_(m,n,kc,j,i), wder_(m,n,kc+1,j,i), ql, qr);
+      }
       Real q = lo ? qr : ql;
       if (n == IDPR) q = fmax(q, pfl);
       f3(m,nvars+n,kf,j,i) = q;
