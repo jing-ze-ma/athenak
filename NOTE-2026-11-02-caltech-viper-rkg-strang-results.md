@@ -81,6 +81,8 @@ lie4-strang4      1.039e-04  2.874e-03  5.407e-03  7.787e-06  2.147e-05  2.497e-
 ## Timing (1 H200, 01-11 GPU 1, no other process on that GPU, interleaved lie, strang, lieB, strangB; cycles 8880..9260)
 - lie 83.14 / 82.89 ms/cycle (21 RKG stages per cycle); strang 107.15 / 107.10 ms/cycle (2 x 15 = 30 stages).
 - Strang = 1.29x per cycle (+29 % wall: 300 rot about 7.0 d -> 9.0 d on 1 GPU). The stage count is 1.43x, as expected.
+- Repeat on 01-11 GPU 0 with the whole node quiet (t1_lie, t1_strang, t2_lie, t2_strang): lie 82.75 / 82.71, strang
+  106.82 / 106.99 ms/cycle = 1.29x again.
 - (lie4 58.4, strang4 72.7 ms/cycle; these ran beside the other arms, so they are not timing data.)
 
 ## Verdict / recommendation (the USER decides; nothing merged; rkg_strang stays default off)
