@@ -74,6 +74,103 @@ void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void UctHlldFaceStore
+//! \brief ucthlld-1102 <mhd>/emf_scheme = uct_hlld: store, per face, the UCT-HLLD
+//! coefficients of Mignone & Del Zanna 2021 (JCP 424, 109748; "MD21") eqs. 40, 44-46:
+//! the HLLD induction flux written as
+//!   F^[B_t] = a^L F^L + a^R F^R - (d^R B_t^R - d^L B_t^L),   F = v_n B_t - v_t B_n,
+//! with a^L = (1+nu*)/2, a^R = 1 - a^L,
+//!   d^s = (nu^s - nu*) chit^s/2 + (|lam*s| - nu* lam*s)/2,   chit^s = (lam*s - lam^s) chi^s,
+//!   nu^s = (lam*s + lam^s)/(|lam*s| + |lam^s|),   nu* = (lam*R + lam*L)/(|lam*R| + |lam*L|)
+//! (nu* = 0 when |lam*R - lam*L| <= 1e-9 |lam^R - lam^L|, MD21 eq. 46).  Every wave speed
+//! and chi^s = B_t*s/B_t^s - 1 is recomputed here with the SAME formulas and the same
+//! degenerate branches as hlld_mhd.hpp / lhlld_mhd.hpp: chi^s = 0 where the solver keeps
+//! B_t* = B_t (|rho sd sdm - Bx^2| < HLLD_SMALL_NUMBER pt*), and lam*L = lam*R = S_M with
+//! nu* = 0 (the three-wave HLLC limit, MD21 eq. 37) where the solver drops the ** states
+//! (0.5 Bx^2 < hlld_bx_zero_tol pt*).  LHLLD: its low-Mach fix enters only p_T* in the
+//! momentum/energy flux (Step 7), its B_t flux is the HLLD one, so the same a/d hold;
+//! its optional non-negative resistivity (lhlld_emf_eta_pos, Step 8) adds
+//! -(1/2) ceta (B^R - B^L), i.e. ceta/2 to both d^L and d^R, and is included.
+//! Slots: 0 a^L, 1 d^L, 2 d^R, 3/4 the a-weighted transverse velocities
+//! a^L v^L + a^R v^R of components ivx+1, ivx+2 (cyclic: x1 face vy,vz; x2 vz,vx;
+//! x3 vx,vy).  Ideal or general EOS (isothermal is refused at start-up).
+
+KOKKOS_INLINE_FUNCTION
+void UctHlldFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
+                      const ScrArray2D<Real> &wr, const ScrArray2D<Real> &bl,
+                      const ScrArray2D<Real> &br, const ScrArray2D<Real> &dl,
+                      const ScrArray2D<Real> &dr, const int ivx, const int i,
+                      const Real bxi, const bool eta_pos, const DvceArray5D<Real> &u,
+                      const int m, const int k, const int j) {
+  const int ivy = IVX + ((ivx-IVX)+1)%3;
+  const int ivz = IVX + ((ivx-IVX)+2)%3;
+  const int iby = ((ivx-IVX) + 1)%3;
+  const int ibz = ((ivx-IVX) + 2)%3;
+  Real pl, pr, g1l, g1r;
+  if (eos.IsGeneral()) {
+    pl = dl(IDPR,i); pr = dr(IDPR,i); g1l = dl(IDG1,i); g1r = dr(IDG1,i);
+  } else {
+    pl = eos.IdealGasPressure(wl(IEN,i)); pr = eos.IdealGasPressure(wr(IEN,i));
+    g1l = eos.gamma; g1r = eos.gamma;
+  }
+  const Real rl = wl(IDN,i), rr = wr(IDN,i);
+  const Real vl = wl(ivx,i), vr = wr(ivx,i);
+  const Real bxsq = bxi*bxi;
+  const Real ptl = pl + 0.5*(bxsq + (SQR(bl(iby,i)) + SQR(bl(ibz,i))));
+  const Real ptr = pr + 0.5*(bxsq + (SQR(br(iby,i)) + SQR(br(ibz,i))));
+  const Real cfl = eos.FastSpeedFromP(rl, pl, g1l, bxi, bl(iby,i), bl(ibz,i));
+  const Real cfr = eos.FastSpeedFromP(rr, pr, g1r, bxi, br(iby,i), br(ibz,i));
+  const Real sl = fmin(vl - cfl, vr - cfr);
+  const Real sr = fmax(vl + cfl, vr + cfr);
+  Real al, dlc, drc;
+  if (sl >= 0.0) {          // supersonic: F = F^L
+    al = 1.0; dlc = 0.0; drc = 0.0;
+  } else if (sr <= 0.0) {   // F = F^R
+    al = 0.0; dlc = 0.0; drc = 0.0;
+  } else {
+    const Real sdl = sl - vl, sdr = sr - vr;
+    const Real sm = (sdr*(rr*vr) - sdl*(rl*vl) + (ptl - ptr))/(sdr*rr - sdl*rl);
+    const Real sdml = sl - sm, sdmr = sr - sm;
+    const Real ptst = 0.5*((ptr + rr*sdr*(sm - vr)) + (ptl + rl*sdl*(sm - vl)));
+    // chi^s = B_t*s/B_t^s - 1 (MK05 eqs. 45/47; MD21 eq. 41), 0 in the solver's
+    // degenerate branch
+    const Real denl = rl*sdl*sdml - bxsq;
+    const Real denr = rr*sdr*sdmr - bxsq;
+    const Real chil = (fabs(denl) < (HLLD_SMALL_NUMBER)*ptst) ? 0.0 :
+                      rl*sdl*(sm - vl)/denl;
+    const Real chir = (fabs(denr) < (HLLD_SMALL_NUMBER)*ptst) ? 0.0 :
+                      rr*sdr*(sm - vr)/denr;
+    Real lsl, lsr, nus;
+    if (0.5*bxsq < eos.hlld_bx_zero_tol*ptst) {   // solver: ** = *, HLLC limit
+      lsl = sm; lsr = sm; nus = 0.0;
+    } else {
+      lsl = sm - fabs(bxi)/sqrt(rl*sdl/sdml);
+      lsr = sm + fabs(bxi)/sqrt(rr*sdr/sdmr);
+      const Real den = fabs(lsr) + fabs(lsl);
+      nus = (fabs(lsr - lsl) > 1.0e-9*fabs(sr - sl) && den > 0.0) ?
+            (lsr + lsl)/den : 0.0;
+    }
+    const Real dnl = fabs(lsl) + fabs(sl);
+    const Real dnr = fabs(lsr) + fabs(sr);
+    const Real nul = (dnl > 0.0) ? (lsl + sl)/dnl : 0.0;
+    const Real nur = (dnr > 0.0) ? (lsr + sr)/dnr : 0.0;
+    al  = 0.5*(1.0 + nus);
+    dlc = 0.5*(nul - nus)*(lsl - sl)*chil + 0.5*(fabs(lsl) - nus*lsl);
+    drc = 0.5*(nur - nus)*(lsr - sr)*chir + 0.5*(fabs(lsr) - nus*lsr);
+    if (eta_pos) {   // LHLLD Step 8 (lhlld_emf_eta_pos)
+      const Real ceta = fmax(0.0, -(fabs(sm) + 0.5*(vr - vl)));
+      dlc += 0.5*ceta;
+      drc += 0.5*ceta;
+    }
+  }
+  u(m,0,k,j,i) = al;
+  u(m,1,k,j,i) = dlc;
+  u(m,2,k,j,i) = drc;
+  u(m,3,k,j,i) = al*wl(ivy,i) + (1.0 - al)*wr(ivy,i);
+  u(m,4,k,j,i) = al*wl(ivz,i) + (1.0 - al)*wr(ivz,i);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void MHD::CalculateFlux
 //! \brief Calculate fluxes of conserved variables, and face-centered area-averaged EMFs
 //! for evolution of magnetic field
@@ -177,6 +274,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const bool uct_on_ = emf_uct;   // lhlld2-1102 <mhd>/emf_scheme = uct
   auto &uct1_ = uct1;
   auto &uct2_ = uct2;
+  // ucthlld-1102 <mhd>/emf_scheme = uct_hlld; LHLLD's Step-8 resistivity goes into d^s
+  const bool uhd_on_ = emf_uct_hlld;
+  const bool uhd_eta_ = (rsolver_method_ == MHD_RSolver::lhlld) &&
+                        peos->eos_data.lhlld_emf_eta_pos;
+  auto &uct3_ = uct3;
     
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
@@ -510,6 +612,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       });
       member.team_barrier();
     }
+    if (uhd_on_) {   // ucthlld-1102 UCT-HLLD corner EMF inputs (x1 faces)
+      par_for_inner(member, il, iu, [&](const int i) {
+        UctHlldFaceStore(eos, wl, wr, bl, br, dl, dr, IVX, i, bx(m,k,j,i), uhd_eta_,
+                         uct1_, m, k, j);
+      });
+      member.team_barrier();
+    }
 
     // calculate fluxes of scalars (if any)
     if (nvars > nmhd_) {
@@ -814,6 +923,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             });
             member.team_barrier();
           }
+          if (uhd_on_) {   // ucthlld-1102 UCT-HLLD corner EMF inputs (x2 faces)
+            par_for_inner(member, is-1, ie+1, [&](const int i) {
+              UctHlldFaceStore(eos, wl, wr, bl, br, dl, dr, IVY, i, by(m,k,j,i),
+                               uhd_eta_, uct2_, m, k, j);
+            });
+            member.team_barrier();
+          }
         }
 
         // calculate fluxes of scalars (if any)
@@ -1112,6 +1228,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             GnomonicEquiangleFluxX3(gtrig_eta,member,m,k,j,is-1,ie+1,flx3);
           }
           member.team_barrier();
+          if (uhd_on_) {   // ucthlld-1102 UCT-HLLD corner EMF inputs (x3 faces)
+            par_for_inner(member, is-1, ie+1, [&](const int i) {
+              UctHlldFaceStore(eos, wl, wr, bl, br, dl, dr, IVZ, i, bz(m,k,j,i),
+                               uhd_eta_, uct3_, m, k, j);
+            });
+            member.team_barrier();
+          }
         }
 
         // calculate fluxes of scalars (if any)

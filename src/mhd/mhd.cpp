@@ -652,9 +652,34 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       const std::string es = pin->GetString("mhd","emf_scheme");
       if (es == "uct") {
         emf_uct = true;
+      } else if (es == "uct_hlld") {
+        emf_uct_hlld = true;
       } else if (es != "gs07") {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<mhd>/emf_scheme = '" << es << "' (gs07 | uct)"
+                  << std::endl << "<mhd>/emf_scheme = '" << es << "' (gs07 | uct | "
+                  << "uct_hlld)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      // ucthlld-1102 UCT-HLLD (Mignone & Del Zanna 2021 eqs. 33-46): the a/d coefficients
+      // are those of the HLLD wave fan, so only rsolver = hlld or lhlld (LHLLD changes
+      // only the momentum/energy flux through p_T*, its B_t flux is the HLLD one plus the
+      // optional lhlld_emf_eta_pos resistivity, which goes into d^L and d^R).  2-D and
+      // 3-D Cartesian.  The cubed sphere would need the face store in the gnomonic
+      // frame (covariant B_t, contravariant v), the corner formula with metric factors,
+      // and the seam edges: the seam edge-EMF exchange averages the two panels' corner
+      // EMFs, which is consistent for UCT-HLLD only if both panels' a/d/v_t are built
+      // from the SAME shared seam Riemann problem (the seam flux) -- see the report.
+      if (emf_uct_hlld && (ppack->pmesh->one_d || ppack->pmesh->use_cubed_sphere ||
+                      ppack->pmesh->use_spherical_polar ||
+                      ppack->pcoord->is_special_relativistic ||
+                      ppack->pcoord->is_general_relativistic ||
+                      ppack->pcoord->is_dynamical_relativistic ||
+                      !(peos->eos_data.is_ideal || peos->eos_data.IsGeneral()) ||
+                      use_fofc || emf_smooth >= 0.0)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/emf_scheme = uct_hlld is implemented only for "
+                  << "2-D/3-D Cartesian Newtonian MHD with an ideal or general EOS, "
+                  << "rsolver = hlld or lhlld, without fofc and without emf_smooth"
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }
@@ -939,6 +964,18 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       if (emf_uct) {   // lhlld2-1102 UCT face store
         Kokkos::realloc(uct1, nmb, 4, ncells3, ncells2, ncells1);
         Kokkos::realloc(uct2, nmb, 4, ncells3, ncells2, ncells1);
+      }
+      if (emf_uct_hlld) {   // ucthlld-1102 UCT-HLLD face store (rsolver now known)
+        if (!(rsolver_method == MHD_RSolver::hlld ||
+              rsolver_method == MHD_RSolver::lhlld)) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<mhd>/emf_scheme = uct_hlld needs rsolver = hlld "
+                    << "or lhlld" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        Kokkos::realloc(uct1, nmb, 5, ncells3, ncells2, ncells1);
+        Kokkos::realloc(uct2, nmb, 5, ncells3, ncells2, ncells1);
+        if (ppack->pmesh->three_d) Kokkos::realloc(uct3, nmb, 5, ncells3, ncells2, ncells1);
       }
 
       // allocate array of flags used with FOFC

@@ -57,6 +57,34 @@ Real EmfPick(const Real fd, const Real eps, const Real ra, const Real rb,
 }
 
 //----------------------------------------------------------------------------------------
+//! ucthlld-1102 <mhd>/emf_scheme = uct_hlld: UCT-HLLD corner EMF (Mignone & Del Zanna
+//! 2021, JCP 424, 109748, "MD21", eqs. 33, 35-36, 40, 44-46).  For an edge along r with
+//! (p,q,r) cyclic and E_r = v_q B_p - v_p B_q (E3: p=x,q=y; E1: p=y,q=z; E2: p=z,q=x):
+//!   E_r = -[a_p^W (v_p B_q)^W + a_p^E (v_p B_q)^E] + [a_q^S (v_q B_p)^S + a_q^N (v_q B_p)^N]
+//!         + (d_p^E B_q^E - d_p^W B_q^W) - (d_q^N B_p^N - d_q^S B_p^S)          (MD21 eq. 35)
+//! W/E = the lower/upper side along p, S/N along q.  a_p^W = a^L, a_p^E = a^R = 1 - a^L,
+//! d_p^W = d^L, d_p^E = d^R, each the plain mean over the two p-faces that meet at the
+//! edge (MD21 eq. 36); likewise a_q, d_q over the two q-faces.  B_q^{W,E}: PLM of the
+//! staggered B_q (on q-faces) along p to the edge; v_p^{W,E}: the a-weighted transverse
+//! velocity v_p of the q-face (MD21 eq. 28 with the HLLD a's) carried to the edge with
+//! half the PLM slope of the cell-centred v_p of the two cells sharing that face.  (The
+//! cell-centred slope avoids widening the flux sweeps by a transverse row; in 1-D it
+//! reproduces the PLM face state exactly, so E_r reduces to the HLLD face flux.)
+KOKKOS_INLINE_FUNCTION
+Real UhdHalf(const Real qm, const Real q0, const Real qp, const bool upper) {
+  Real ql, qr;
+  PLM(qm, q0, qp, ql, qr);
+  return upper ? (ql - q0) : (qr - q0);
+}
+KOKKOS_INLINE_FUNCTION
+Real UhdEdge(const Real aw, const Real dw, const Real de, const Real vpw, const Real vpe,
+             const Real bqw, const Real bqe, const Real as, const Real ds, const Real dn,
+             const Real vqs, const Real vqn, const Real bps, const Real bpn) {
+  return -(aw*vpw*bqw + (1.0 - aw)*vpe*bqe) + (as*vqs*bps + (1.0 - as)*vqn*bpn)
+         + (de*bqe - dw*bqw) - (dn*bpn - ds*bps);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn  void MHD::CornerE
 //  \brief calculate the corner electric fields.
 
@@ -231,6 +259,54 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     auto flx1 = uflx.x1f;
     auto flx2 = uflx.x2f;
 
+    // ucthlld-1102 <mhd>/emf_scheme = uct_hlld: UCT-HLLD corner E3 (see UhdEdge)
+    if (emf_uct_hlld) {
+      auto u1_ = uct1;
+      auto u2_ = uct2;
+      auto b1f = b0.x1f;
+      auto b2f = b0.x2f;
+      auto w_ = w0;
+      par_for("emf12_ucthlld", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
+      KOKKOS_LAMBDA(const int m, const int j, const int i) {
+        e2(m,ks  ,j,i) = e2x1_(m,ks,j,i);
+        e2(m,ke+1,j,i) = e2x1_(m,ks,j,i);
+        e1(m,ks  ,j,i) = e1x2_(m,ks,j,i);
+        e1(m,ke+1,j,i) = e1x2_(m,ks,j,i);
+      });
+      par_for("emf3_ucthlld", DevExeSpace(), 0, nmb1, ks, ks, js, je+1, is, ie+1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        // p = x: x1 faces (k,j-1,i),(k,j,i); q = y: x2 faces (k,j,i-1),(k,j,i)
+        const Real aw = 0.5*(u1_(m,0,k,j-1,i) + u1_(m,0,k,j,i));
+        const Real dw = 0.5*(u1_(m,1,k,j-1,i) + u1_(m,1,k,j,i));
+        const Real de = 0.5*(u1_(m,2,k,j-1,i) + u1_(m,2,k,j,i));
+        const Real as = 0.5*(u2_(m,0,k,j,i-1) + u2_(m,0,k,j,i));
+        const Real ds = 0.5*(u2_(m,1,k,j,i-1) + u2_(m,1,k,j,i));
+        const Real dn = 0.5*(u2_(m,2,k,j,i-1) + u2_(m,2,k,j,i));
+        // v_x of the x2 faces (slot 4) along x
+        const Real vxw = u2_(m,4,k,j,i-1) + 0.5*(
+          UhdHalf(w_(m,IVX,k,j-1,i-2), w_(m,IVX,k,j-1,i-1), w_(m,IVX,k,j-1,i), true) +
+          UhdHalf(w_(m,IVX,k,j  ,i-2), w_(m,IVX,k,j  ,i-1), w_(m,IVX,k,j  ,i), true));
+        const Real vxe = u2_(m,4,k,j,i) + 0.5*(
+          UhdHalf(w_(m,IVX,k,j-1,i-1), w_(m,IVX,k,j-1,i), w_(m,IVX,k,j-1,i+1), false) +
+          UhdHalf(w_(m,IVX,k,j  ,i-1), w_(m,IVX,k,j  ,i), w_(m,IVX,k,j  ,i+1), false));
+        // v_y of the x1 faces (slot 3) along y
+        const Real vys = u1_(m,3,k,j-1,i) + 0.5*(
+          UhdHalf(w_(m,IVY,k,j-2,i-1), w_(m,IVY,k,j-1,i-1), w_(m,IVY,k,j,i-1), true) +
+          UhdHalf(w_(m,IVY,k,j-2,i  ), w_(m,IVY,k,j-1,i  ), w_(m,IVY,k,j,i  ), true));
+        const Real vyn = u1_(m,3,k,j,i) + 0.5*(
+          UhdHalf(w_(m,IVY,k,j-1,i-1), w_(m,IVY,k,j,i-1), w_(m,IVY,k,j+1,i-1), false) +
+          UhdHalf(w_(m,IVY,k,j-1,i  ), w_(m,IVY,k,j,i  ), w_(m,IVY,k,j+1,i  ), false));
+        Real dum, byw, bye, bxs, bxn;
+        PLM(b2f(m,k,j,i-2), b2f(m,k,j,i-1), b2f(m,k,j,i  ), byw, dum);
+        PLM(b2f(m,k,j,i-1), b2f(m,k,j,i  ), b2f(m,k,j,i+1), dum, bye);
+        PLM(b1f(m,k,j-2,i), b1f(m,k,j-1,i), b1f(m,k,j  ,i), bxs, dum);
+        PLM(b1f(m,k,j-1,i), b1f(m,k,j  ,i), b1f(m,k,j+1,i), dum, bxn);
+        e3(m,k,j,i) = UhdEdge(aw, dw, de, vxw, vxe, byw, bye,
+                              as, ds, dn, vys, vyn, bxs, bxn);
+      });
+      return TaskStatus::complete;
+    }
+
     // lhlld2-1102 <mhd>/emf_scheme = uct: UCT-HLL corner E3 (Londrillo & Del Zanna 2004
     // eq. 56; Mignone & Del Zanna 2021 Sect. 3), with E3 = v2 B1 - v1 B2:
     //   E3 = -[a_R^x v1^W B2^W + a_L^x v1^E B2^E - a_R^x a_L^x (B2^E - B2^W)]/(a_R^x+a_L^x)
@@ -354,6 +430,118 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   // Use GS07 algorithm to compute all three of E1, E2, and E3
 
   if (pmy_pack->pmesh->three_d) {
+    // ucthlld-1102 <mhd>/emf_scheme = uct_hlld: UCT-HLLD E1, E2, E3 (see UhdEdge).
+    // Every face store it reads lies inside the sweeps' ranges (x1: k,j in [ks-1,ke+1] x
+    // [js-1,je+1]; x2: k in [ks-1,ke+1], i in [is-1,ie+1]; x3: j,i in [js-1,je+1] x
+    // [is-1,ie+1]); the PLM stencils reach two ghost cells.
+    if (emf_uct_hlld) {
+      auto e1 = efld.x1e;
+      auto e2 = efld.x2e;
+      auto e3 = efld.x3e;
+      auto u1_ = uct1;
+      auto u2_ = uct2;
+      auto u3_ = uct3;
+      auto b1f = b0.x1f;
+      auto b2f = b0.x2f;
+      auto b3f = b0.x3f;
+      auto w_ = w0;
+      par_for("emf3_ucthlld", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie+1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        // p = x: x1 faces (k,j-1,i),(k,j,i); q = y: x2 faces (k,j,i-1),(k,j,i)
+        const Real aw = 0.5*(u1_(m,0,k,j-1,i) + u1_(m,0,k,j,i));
+        const Real dw = 0.5*(u1_(m,1,k,j-1,i) + u1_(m,1,k,j,i));
+        const Real de = 0.5*(u1_(m,2,k,j-1,i) + u1_(m,2,k,j,i));
+        const Real as = 0.5*(u2_(m,0,k,j,i-1) + u2_(m,0,k,j,i));
+        const Real ds = 0.5*(u2_(m,1,k,j,i-1) + u2_(m,1,k,j,i));
+        const Real dn = 0.5*(u2_(m,2,k,j,i-1) + u2_(m,2,k,j,i));
+        // v_x of the x2 faces (slot 4) along x
+        const Real vxw = u2_(m,4,k,j,i-1) + 0.5*(
+          UhdHalf(w_(m,IVX,k,j-1,i-2), w_(m,IVX,k,j-1,i-1), w_(m,IVX,k,j-1,i), true) +
+          UhdHalf(w_(m,IVX,k,j  ,i-2), w_(m,IVX,k,j  ,i-1), w_(m,IVX,k,j  ,i), true));
+        const Real vxe = u2_(m,4,k,j,i) + 0.5*(
+          UhdHalf(w_(m,IVX,k,j-1,i-1), w_(m,IVX,k,j-1,i), w_(m,IVX,k,j-1,i+1), false) +
+          UhdHalf(w_(m,IVX,k,j  ,i-1), w_(m,IVX,k,j  ,i), w_(m,IVX,k,j  ,i+1), false));
+        // v_y of the x1 faces (slot 3) along y
+        const Real vys = u1_(m,3,k,j-1,i) + 0.5*(
+          UhdHalf(w_(m,IVY,k,j-2,i-1), w_(m,IVY,k,j-1,i-1), w_(m,IVY,k,j,i-1), true) +
+          UhdHalf(w_(m,IVY,k,j-2,i  ), w_(m,IVY,k,j-1,i  ), w_(m,IVY,k,j,i  ), true));
+        const Real vyn = u1_(m,3,k,j,i) + 0.5*(
+          UhdHalf(w_(m,IVY,k,j-1,i-1), w_(m,IVY,k,j,i-1), w_(m,IVY,k,j+1,i-1), false) +
+          UhdHalf(w_(m,IVY,k,j-1,i  ), w_(m,IVY,k,j,i  ), w_(m,IVY,k,j+1,i  ), false));
+        Real dum, byw, bye, bxs, bxn;
+        PLM(b2f(m,k,j,i-2), b2f(m,k,j,i-1), b2f(m,k,j,i  ), byw, dum);
+        PLM(b2f(m,k,j,i-1), b2f(m,k,j,i  ), b2f(m,k,j,i+1), dum, bye);
+        PLM(b1f(m,k,j-2,i), b1f(m,k,j-1,i), b1f(m,k,j  ,i), bxs, dum);
+        PLM(b1f(m,k,j-1,i), b1f(m,k,j  ,i), b1f(m,k,j+1,i), dum, bxn);
+        e3(m,k,j,i) = UhdEdge(aw, dw, de, vxw, vxe, byw, bye,
+                              as, ds, dn, vys, vyn, bxs, bxn);
+      });
+      // E1 = v_z B_y - v_y B_z: p = y (x2 faces (k-1,j,i),(k,j,i)), q = z (x3 faces
+      // (k,j-1,i),(k,j,i))
+      par_for("emf1_ucthlld", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real aw = 0.5*(u2_(m,0,k-1,j,i) + u2_(m,0,k,j,i));
+        const Real dw = 0.5*(u2_(m,1,k-1,j,i) + u2_(m,1,k,j,i));
+        const Real de = 0.5*(u2_(m,2,k-1,j,i) + u2_(m,2,k,j,i));
+        const Real as = 0.5*(u3_(m,0,k,j-1,i) + u3_(m,0,k,j,i));
+        const Real ds = 0.5*(u3_(m,1,k,j-1,i) + u3_(m,1,k,j,i));
+        const Real dn = 0.5*(u3_(m,2,k,j-1,i) + u3_(m,2,k,j,i));
+        // v_y of the x3 faces (slot 4) along y
+        const Real vyw = u3_(m,4,k,j-1,i) + 0.5*(
+          UhdHalf(w_(m,IVY,k-1,j-2,i), w_(m,IVY,k-1,j-1,i), w_(m,IVY,k-1,j,i), true) +
+          UhdHalf(w_(m,IVY,k  ,j-2,i), w_(m,IVY,k  ,j-1,i), w_(m,IVY,k  ,j,i), true));
+        const Real vye = u3_(m,4,k,j,i) + 0.5*(
+          UhdHalf(w_(m,IVY,k-1,j-1,i), w_(m,IVY,k-1,j,i), w_(m,IVY,k-1,j+1,i), false) +
+          UhdHalf(w_(m,IVY,k  ,j-1,i), w_(m,IVY,k  ,j,i), w_(m,IVY,k  ,j+1,i), false));
+        // v_z of the x2 faces (slot 3) along z
+        const Real vzs = u2_(m,3,k-1,j,i) + 0.5*(
+          UhdHalf(w_(m,IVZ,k-2,j-1,i), w_(m,IVZ,k-1,j-1,i), w_(m,IVZ,k,j-1,i), true) +
+          UhdHalf(w_(m,IVZ,k-2,j  ,i), w_(m,IVZ,k-1,j  ,i), w_(m,IVZ,k,j  ,i), true));
+        const Real vzn = u2_(m,3,k,j,i) + 0.5*(
+          UhdHalf(w_(m,IVZ,k-1,j-1,i), w_(m,IVZ,k,j-1,i), w_(m,IVZ,k+1,j-1,i), false) +
+          UhdHalf(w_(m,IVZ,k-1,j  ,i), w_(m,IVZ,k,j  ,i), w_(m,IVZ,k+1,j  ,i), false));
+        Real dum, bzw, bze, bys, byn;
+        PLM(b3f(m,k,j-2,i), b3f(m,k,j-1,i), b3f(m,k,j  ,i), bzw, dum);
+        PLM(b3f(m,k,j-1,i), b3f(m,k,j  ,i), b3f(m,k,j+1,i), dum, bze);
+        PLM(b2f(m,k-2,j,i), b2f(m,k-1,j,i), b2f(m,k  ,j,i), bys, dum);
+        PLM(b2f(m,k-1,j,i), b2f(m,k  ,j,i), b2f(m,k+1,j,i), dum, byn);
+        e1(m,k,j,i) = UhdEdge(aw, dw, de, vyw, vye, bzw, bze,
+                              as, ds, dn, vzs, vzn, bys, byn);
+      });
+      // E2 = v_x B_z - v_z B_x: p = z (x3 faces (k,j,i-1),(k,j,i)), q = x (x1 faces
+      // (k-1,j,i),(k,j,i))
+      par_for("emf2_ucthlld", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie+1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real aw = 0.5*(u3_(m,0,k,j,i-1) + u3_(m,0,k,j,i));
+        const Real dw = 0.5*(u3_(m,1,k,j,i-1) + u3_(m,1,k,j,i));
+        const Real de = 0.5*(u3_(m,2,k,j,i-1) + u3_(m,2,k,j,i));
+        const Real as = 0.5*(u1_(m,0,k-1,j,i) + u1_(m,0,k,j,i));
+        const Real ds = 0.5*(u1_(m,1,k-1,j,i) + u1_(m,1,k,j,i));
+        const Real dn = 0.5*(u1_(m,2,k-1,j,i) + u1_(m,2,k,j,i));
+        // v_z of the x1 faces (slot 4) along z
+        const Real vzw = u1_(m,4,k-1,j,i) + 0.5*(
+          UhdHalf(w_(m,IVZ,k-2,j,i-1), w_(m,IVZ,k-1,j,i-1), w_(m,IVZ,k,j,i-1), true) +
+          UhdHalf(w_(m,IVZ,k-2,j,i  ), w_(m,IVZ,k-1,j,i  ), w_(m,IVZ,k,j,i  ), true));
+        const Real vze = u1_(m,4,k,j,i) + 0.5*(
+          UhdHalf(w_(m,IVZ,k-1,j,i-1), w_(m,IVZ,k,j,i-1), w_(m,IVZ,k+1,j,i-1), false) +
+          UhdHalf(w_(m,IVZ,k-1,j,i  ), w_(m,IVZ,k,j,i  ), w_(m,IVZ,k+1,j,i  ), false));
+        // v_x of the x3 faces (slot 3) along x
+        const Real vxs = u3_(m,3,k,j,i-1) + 0.5*(
+          UhdHalf(w_(m,IVX,k-1,j,i-2), w_(m,IVX,k-1,j,i-1), w_(m,IVX,k-1,j,i), true) +
+          UhdHalf(w_(m,IVX,k  ,j,i-2), w_(m,IVX,k  ,j,i-1), w_(m,IVX,k  ,j,i), true));
+        const Real vxn = u3_(m,3,k,j,i) + 0.5*(
+          UhdHalf(w_(m,IVX,k-1,j,i-1), w_(m,IVX,k-1,j,i), w_(m,IVX,k-1,j,i+1), false) +
+          UhdHalf(w_(m,IVX,k  ,j,i-1), w_(m,IVX,k  ,j,i), w_(m,IVX,k  ,j,i+1), false));
+        Real dum, bxw, bxe, bzs, bzn;
+        PLM(b1f(m,k-2,j,i), b1f(m,k-1,j,i), b1f(m,k  ,j,i), bxw, dum);
+        PLM(b1f(m,k-1,j,i), b1f(m,k  ,j,i), b1f(m,k+1,j,i), dum, bxe);
+        PLM(b3f(m,k,j,i-2), b3f(m,k,j,i-1), b3f(m,k,j,i  ), bzs, dum);
+        PLM(b3f(m,k,j,i-1), b3f(m,k,j,i  ), b3f(m,k,j,i+1), dum, bzn);
+        e2(m,k,j,i) = UhdEdge(aw, dw, de, vzw, vze, bxw, bxe,
+                              as, ds, dn, vxs, vxn, bzs, bzn);
+      });
+      return TaskStatus::complete;
+    }
     // Compute cell-centered electric fields
     // E1=-(v X B)=VzBy-VyBz
     // E2=-(v X B)=VxBz-VzBx

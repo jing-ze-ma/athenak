@@ -255,6 +255,12 @@ class MHD {
   // uct1/uct2 hold, per x1/x2 face, v_nL, v_nR, a_L, a_R (UctFaceStore, mhd_fluxes.cpp)
   bool emf_uct = false;
   DvceArray5D<Real> uct1, uct2;
+  // ucthlld-1102 <mhd>/emf_scheme = uct_hlld: UCT-HLLD corner EMF (Mignone & Del Zanna
+  // 2021, JCP 424, 109748, eqs. 33-46), 2-D and 3-D Cartesian.  uct1/uct2/uct3 then hold,
+  // per x1/x2/x3 face, a^L, d^L, d^R and the two a-weighted transverse velocities
+  // (UctHlldFaceStore, mhd_fluxes.cpp); a^R = 1 - a^L
+  bool emf_uct_hlld = false;
+  DvceArray5D<Real> uct3;
   bool use_polar_emf_diss = false; // Rusanov face-field dissipation on e2 in the polar rows        // plain 4-face average corner EMF (Balsara-Spicer) on ANY grid
 
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per
