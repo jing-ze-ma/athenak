@@ -650,6 +650,7 @@ void WbTanAccProbe(Mesh *pm);
 // accwbtan-1101 (d): g_t is in gt4_/gp4_ (copied at the first source call, after a probe or
 // from the restart file: wbtan::LoadFromRestart); the pgen (for the restart slabs)
 bool acc_wbt_g4_ = false;
+DvceArray4D<Real> wbt_ga2_, wbt_ga3_;   // accwbtan-1101 (c): -grad_t G, x2 / x3
 ProblemGenerator *acc_pg_ = nullptr;
 std::string wbt_file_;         // accwbtan-1101 (e): <basename>.wbt.hst
 
@@ -3525,6 +3526,9 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   spr_aref_ = DvceArray4D<Real>();   // accspin-1028
   bdvs_ = DvceArray3D<Real>();   // pgrst-1021
   rbk1_ = DvceArray3D<Real>();   // accbook-1021
+  // accwbtdef-1102: realloc'd by the WB probe (unnamed): free before Kokkos::finalize
+  wbt_ga2_ = DvceArray4D<Real>();
+  wbt_ga3_ = DvceArray4D<Real>();
 }
 
 //! thermo = general: log T, log rho of the column at psi (linear in psi, clamped)
@@ -4689,7 +4693,7 @@ void WbTanCaptureIC(MeshBlockPack *pmbp, const DvceArray5D<Real> &usave, const b
 //! + v_theta cos), ALWAYS the analytic form (problem/coriolis_lz's mass-flux Q_c is not
 //! part of the equilibrium).  The cubed sphere's Coriolis is the core frame_omega's
 //! (AmModule::FrameForceProbe inside the probe): nothing here.
-DvceArray4D<Real> wbt_ga2_, wbt_ga3_;   // accwbtan-1101 (c): -grad_t G, x2 / x3
+// accwbtan-1101 (c): wbt_ga2_, wbt_ga3_ are declared with acc_wbt (freed in RyPerFinal)
 
 //! accwbtan-1101 (c) (<rad_m1>): the IC's equilibrium RADIATIVE acceleration, tangential:
 //! a_t = -grad_t G(psi), G = the column's radiative potential (Phi_eff = Phi_wb + G; its
