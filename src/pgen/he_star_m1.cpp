@@ -523,6 +523,8 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm);
 //! \fn void ProblemGenerator::UserProblem()
 //! \brief see the file header.
 
+void HsStripBackground(ParameterInput *pin, Mesh *pm);   // stripbg-1102 (he_strip_bg.cpp)
+
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto *pm1 = pmbp->pradm1;
@@ -2801,7 +2803,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << ", sponge rate = " << hs_sp_rate_ << " above r = " << hs_sp_r0_
               << std::endl;
   }
-  if (restart) return;
+  // stripbg-1102 (he_strip_bg.cpp): one-shot restart-time background strip, off unless
+  // problem/strip_bg_on_restart = true (absent: bitwise)
+  if (restart) {
+    HsStripBackground(pin, pmy_mesh_);
+    return;
+  }
   if (hs_rmp) {
     // e1remap-1014: no <rad_m1>/ic_rad (the state is an evolved one), then the arrays
     pm1->icr_mode = 0;
