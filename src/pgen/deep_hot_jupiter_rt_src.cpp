@@ -1432,7 +1432,10 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
       ts::ck_seed_ext_on = false;
       const Real pdt = (ts::ck_cad_probe_dt > 0.0) ? ts::ck_cad_probe_dt
                        : ts::ck_cad_probe_fac*dt;
+      const Real ti0 = ts::ck_tol_inc;
+      if (ts::ck_cad_probe_tolinc > 0.0) ts::ck_tol_inc = ts::ck_cad_probe_tolinc;
       picket_fence_two_stream_RT(pm, pdt);
+      ts::ck_tol_inc = ti0;
       if (ts::ck_cad_cont) ts::ck_cad_un = u1;
       ts::CkCadProbeStore(pm, pdt, pm->time);
       ts::ck_cad_un = DvceArray5D<Real>();

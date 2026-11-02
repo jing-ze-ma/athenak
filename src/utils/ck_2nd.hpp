@@ -174,6 +174,11 @@ inline Real ck_cad_probe_fac = 1.0e-4;
 // neighbours' response to that move (the diagonal correction to U^n cannot remove it):
 // with pdt proportional to dt that is an O(dt) error in the model (first order).
 inline Real ck_cad_probe_dt = 0.0;
+// problem/ck_cad_probe_tolinc = tau (default 1e-6; 0 = the call's own test): the probe's
+// Newton test is (1) of this file with tau, i.e. relative to the probe's own increment
+// pdt S.  The production test |R| <= tol (e + eps e_max) is ~1e-8 e, larger than the
+// whole probe increment of a slow cell (measured: garbage rates, dt -15 %).
+inline Real ck_cad_probe_tolinc = 1.0e-6;
 inline int64_t ck_cad_nprobe = 0;
 // at the step start: is a probe refresh due (cycle or simulated-time schedule)
 inline bool CkCadProbeDue(const Real t, const Real dt, const int64_t ncycle,
@@ -228,6 +233,12 @@ inline void Ck2ndInit(ParameterInput *pin, const bool fused, const int glob,
   }
   if (pin->DoesParameterExist("problem", "ck_cad_probe")) {
     ck_cad_probe = pin->GetBoolean("problem", "ck_cad_probe");
+    if (pin->DoesParameterExist("problem", "ck_cad_probe_tolinc")) {
+      ck_cad_probe_tolinc = pin->GetReal("problem", "ck_cad_probe_tolinc");
+    }
+    if (ck_cad_probe && ck_cad_probe_tolinc > 0.0 && (!fused || glob != 0)) {
+      why += " ck_cad_probe_tolinc needs ck_impl_fuse, ck_impl_debug <= 0, glob none;";
+    }
     if (pin->DoesParameterExist("problem", "ck_cad_probe_dt")) {
       ck_cad_probe_dt = pin->GetReal("problem", "ck_cad_probe_dt");
     }
