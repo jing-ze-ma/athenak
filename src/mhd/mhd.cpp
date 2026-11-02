@@ -217,6 +217,9 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   xe_tracer = tracers.xe;
   ixe = tracers.xe ? (nmhd + tracers.XeOff()) : -1;
   floor_tracer = tracers.fl;
+  if (pin->DoesParameterExist("mhd","tracer_strang")) {   // rkgfuse-1102
+    trc_strang = pin->GetBoolean("mhd","tracer_strang") && (tracers.xe || tracers.fl);
+  }
   ifltr = tracers.fl ? (nmhd + tracers.FlOff()) : -1;
   if (floor_tracer) {
     peos->eos_data.ifltr = ifltr;

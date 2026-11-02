@@ -147,6 +147,14 @@ class MHD {
   // cycle.  fltr_dm/fltr_de: the drained mass/energy (volume integrated, this rank's
   // active cells) since the owner last zeroed them (dhj history Mdrain/Edrain).
   bool floor_tracer = false;
+  // rkgfuse-1102 <mhd>/tracer_strang (default false, read only when named): the
+  // per-cycle tracer pass (TracerSource) Strang-split, x_e relaxation dt/2 before and
+  // dt/2 after, both called by the Driver INSIDE the RKG halves:
+  //   R(dt/2) Tr(dt/2) [ck(dt/2)] H [ck(dt/2)] Tr(dt/2) R(dt/2).
+  // The floor-tracer drain (not a rate) runs in the first half only.  false: the task in
+  // "before_timeintegrator" (full dt, Lie), bitwise as before.
+  bool trc_strang = false;
+  void TracerSourceHalf(int half);
   int ifltr = -1;
   Real fltr_margin = 2.0, fltr_fmax = 0.01;
   Real fltr_dm = 0.0, fltr_de = 0.0;
