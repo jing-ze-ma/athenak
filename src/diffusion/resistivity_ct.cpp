@@ -22,7 +22,7 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
 
   // capture class variables for the kernels
-  Real dt = pmy_pack->pmesh->dt;
+  Real dt = pmy_pack->pmesh->dt*rkg_dtfac;   // rkgstrang-1102: dt/2 per Strang half
   bool &multi_d = pmy_pack->pmesh->multi_d;
   bool &three_d = pmy_pack->pmesh->three_d;
   auto e1 = pmy_pack->pmhd->efld.x1e;

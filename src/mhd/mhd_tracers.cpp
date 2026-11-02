@@ -40,8 +40,10 @@ namespace mhd {
 //! x1 ghosts, then eta from the new z
 
 TaskStatus MHD::TracerSource(Driver *pdrive, int stage) {
-  if (floor_tracer) FloorTracerDrain();
-  if (xe_tracer) XeTracerUpdate(pmy_pack->pmesh->dt, false);
+  if (trc_strang && stage == 0) return TaskStatus::complete;   // Driver: TracerSourceHalf
+  // rkgfuse-1102 tracer_strang: stage = -1|-2 = first|second half (TracerSourceHalf)
+  if (floor_tracer && stage >= -1) FloorTracerDrain();
+  if (xe_tracer) XeTracerUpdate(pmy_pack->pmesh->dt*((stage < 0) ? 0.5 : 1.0), false);
   TracerX1Ghosts(true);
   if (xe_tracer && presist != nullptr) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -59,6 +61,14 @@ TaskStatus MHD::TracerSource(Driver *pdrive, int stage) {
     }
   }
   return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::TracerSourceHalf
+//! \brief rkgfuse-1102 <mhd>/tracer_strang: one half (1|2) of the Strang-split tracer pass
+
+void MHD::TracerSourceHalf(int half) {
+  (void) TracerSource(nullptr, -half);
 }
 
 //----------------------------------------------------------------------------------------

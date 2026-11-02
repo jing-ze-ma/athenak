@@ -1081,6 +1081,7 @@ void DhjCkRtSplit(Mesh *pm, const Real dt) {
   // between); see utils/two_stream_column_ck.hpp
   EBudCk(pm, dt, true);
   const int64_t nf0 = two_stream_rt::ck_cad_nfull;
+  two_stream_rt::ck_cad_half = pm->pgen->user_split_half;   // rkgfuse-1102 ck_strang
   if (two_stream_rt::ck_impl_every > 1) {
     two_stream_rt::CkCadStep(pm, dt);
   } else {

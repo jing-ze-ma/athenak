@@ -105,6 +105,28 @@ class Resistivity {
   // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only
   // the energy slot of the conserved registers.  Uniform cubed-sphere meshes only.
   bool rkg_lean = false;
+  // rkgstrang-1102 <mhd>/rkg_strang (default false = the Lie split, bitwise unchanged):
+  // the super-step is split in two halves of dt/2, one before the RK stages and one
+  // after them (Driver::Execute), so the resistive operator is Strang-split (second
+  // order in dt) instead of Lie-split.  Each half takes its stage count from dt/2 and
+  // the dt_diff of the cycle start (Mesh::NewTimeStep of the previous cycle).  eta (and
+  // ad_coef) is refreshed from w0 before the second half (RefreshEta), so each half
+  // freezes the coefficient on the state it starts from.  The rkg_bflx flux of the
+  // whole cycle is the mean of the two halves (slots 6|7 hold the first).
+  bool rkg_strang = false;
+  // rkgfuse-1102 <mhd>/rkg_strang_fuse (default false; needs rkg_strang): the second
+  // half of cycle n and the first half of cycle n+1 are ONE super-step over
+  // (dt_n + dt_{n+1})/2 at the start of cycle n+1 (Driver::Execute, where the order and
+  // the sync points are documented).  The super-step that leads a cycle (fused, or the
+  // plain dt/2 opening half after a sync) is rkg_half = 3: eta refreshed from w0 first
+  // (like half 2), and its rkg_bflx kept in slots 6|7 (like half 1); the closing half of
+  // a sync cycle is rkg_half = 2 (refresh, then the mean of the two fluxes in 4|5).
+  bool rkg_strang_fuse = false;
+  int rkg_half = 0;        // set by the driver: 0 = one full-dt super-step, 1|2 = half,
+                           // 3 = the leading super-step of a fused cycle
+  Real rkg_dtfac = 1.0;    // set by the driver: fraction of pmesh->dt it spans
+                           // (fused: (dt_n/2 + dt_{n+1}/2)/dt_{n+1})
+  void RefreshEta();
   // <mhd>/rkg_halo_ien_only (default false, read only when named): the conserved-variable
   // halo exchange of RKG super-stages 2..s moves only the slots of u0 that changed
   // since the previous exchange: u0(IEN), the one slot RKUpdate writes, plus every slot

@@ -94,6 +94,20 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     } else {
       rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
     }
+    // rkgstrang-1102: read only when named, so a deck without it keeps its restart header
+    if (pin->DoesParameterExist("mhd", "rkg_strang")) {
+      rkg_strang = use_rkg_sts && pin->GetBoolean("mhd", "rkg_strang");
+    }
+    // rkgfuse-1102: read only when named (restart header unchanged without it)
+    if (pin->DoesParameterExist("mhd", "rkg_strang_fuse")) {
+      rkg_strang_fuse = use_rkg_sts && pin->GetBoolean("mhd", "rkg_strang_fuse");
+      if (rkg_strang_fuse && !rkg_strang) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/rkg_strang_fuse = true needs <mhd>/rkg_strang"
+                  << " = true" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // rkgdt-1101: read only when named, so a deck without them keeps its restart header
     if (pin->DoesParameterExist("mhd", "rkg_dt_safety")) {
       rkg_dt_safety = pin->GetReal("mhd", "rkg_dt_safety");
