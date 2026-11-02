@@ -15,6 +15,7 @@
 #include "deep_hot_jupiter_rt.hpp"
 #include "driver/dt_retry.hpp"
 #include "utils/imex_sdirk2.hpp"   // the tableau shared with rad_m1 hesdirk2
+#include "utils/ck_2nd.hpp"       // ck2nd-1102 ck_t2_seed
 
 
 //----------------------------------------------------------------------------------------
@@ -1135,6 +1136,8 @@ double t2_nclamp = 0.0;
 int64_t t2_nbe = 0, t2_nstep = 0;
 bool t2_first = true;
 DvceArray4D<Real> *t2_y2 = nullptr;   // ck_t2_freeze: the stage-1 result (IEN)
+DvceArray4D<Real> *t2_sd = nullptr;   // ck2nd-1102 ck_t2_seed: g dt K of the stage
+int t2_kiter = 0;                     // ck2nd-1102 ck_t2_kiter (TEST)
 int64_t cnt_full = 0, cnt_nfall = 0, cnt_ncap = 0, cnt_nonconv = 0;
 
 void T2Alloc(Mesh *pm) {
@@ -1150,6 +1153,10 @@ void T2Alloc(Mesh *pm) {
                             u0.extent(4));
   if (t2_y2 != nullptr) {
     *t2_y2 = DvceArray4D<Real>("ck_t2_y2", u0.extent(0), u0.extent(2), u0.extent(3),
+                               u0.extent(4));
+  }
+  if (t2_sd != nullptr) {
+    *t2_sd = DvceArray4D<Real>("ck_t2_sd", u0.extent(0), u0.extent(2), u0.extent(3),
                                u0.extent(4));
   }
 }
@@ -1229,6 +1236,17 @@ void DhjCkT2Init(ParameterInput *pin, Mesh *pm) {
       std::cout << "deep_hot_jupiter_rt: ck_t2_freeze TEST: hydro frozen, only the ck "
                 << "evolves the state" << std::endl;
     }
+  }
+  // ck2nd-1102 problem/ck_t2_seed (read only when named): see utils/ck_2nd.hpp (2)
+  if (pin->DoesParameterExist("problem", "ck_t2_seed")) {
+    ts::ck_t2_seed = pin->GetBoolean("problem", "ck_t2_seed");
+  }
+  if (pin->DoesParameterExist("problem", "ck_t2_kiter")) {
+    t2_kiter = pin->GetInteger("problem", "ck_t2_kiter");
+  }
+  if (ts::ck_t2_seed) {
+    t2_sd = new DvceArray4D<Real>();
+    ts::ck_seed_ext_ptr = t2_sd;
   }
   dtretry::RegisterView("ck_t2_k1", ts::ck_t2_k1_ptr);
   dtretry::RegisterValue("ck_t2_ok", &ts::ck_t2_ok);
@@ -1333,7 +1351,34 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
     rr(m,k,j,i) = u0(m,IEN,k,j,i);
   }, Kokkos::Sum<Real>(ncl));
   t2_nclamp += ncl;
+  // ck2nd-1102 problem/ck_t2_seed: the Newton (and its frozen opacity) starts at the
+  // predicted stage value old + g dt K (stage 1 K1, stage 2 K2); full calls only
+  if (ts::ck_t2_seed) {
+    auto sd = *t2_sd;
+    auto ks_ = two ? k2 : k1;
+    const Real gdt = g*dt;
+    par_for("ck_t2_seed", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      sd(m,k,j,i) = gdt*ks_(m,k,j,i);
+    });
+    ts::ck_seed_ext_on = true;
+  }
   solve(g*dt, two);
+  ts::ck_seed_ext_on = false;
+  // ck2nd-1102 problem/ck_t2_kiter = n (TEST, cadence 1 + ck_t2_seed): re-solve the
+  // stage n more times, each seeded with the increment the last solve applied, so the
+  // frozen opacity converges onto the stage value itself (isolates the opacity lag)
+  for (int it=0; it<t2_kiter && ts::ck_t2_seed && !cad; ++it) {
+    auto sd = *t2_sd;
+    par_for("ck_t2_kit", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      sd(m,k,j,i) = u0(m,IEN,k,j,i) - rr(m,k,j,i);
+      u0(m,IEN,k,j,i) = rr(m,k,j,i);
+    });
+    ts::ck_seed_ext_on = true;
+    solve(g*dt, two);
+    ts::ck_seed_ext_on = false;
+  }
   const Real igdt = 1.0/(g*dt);
   auto kd = two ? k1 : k2;
   par_for("ck_t2_slope", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
