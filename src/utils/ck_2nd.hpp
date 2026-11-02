@@ -180,6 +180,12 @@ inline Real ck_cad_probe_dt = 0.0;
 // whole probe increment of a slow cell (measured: garbage rates, dt -15 %).
 inline Real ck_cad_probe_tolinc = 1.0e-6;
 inline int64_t ck_cad_nprobe = 0;
+inline bool ck_cad_probe_on = false;   // set around a probe call
+// (8c) with ck_cad_probe and problem/ck_vef_dt = V: the VEF factors are refreshed by the
+//     probe whose state U^n (time t) is the first at or after a point ck_cad_t0 + n V,
+//     i.e. a point in (t - ck_impl_every dt, t] (stateless, so a restart keeps the
+//     schedule).  With dt dividing V / ck_impl_every every ladder member refreshes at the
+//     same instants; the factors' lag is then a function of time only.
 // at the step start: is a probe refresh due (cycle or simulated-time schedule)
 inline bool CkCadProbeDue(const Real t, const Real dt, const int64_t ncycle,
                           const int every) {

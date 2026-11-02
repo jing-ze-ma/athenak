@@ -23,6 +23,13 @@ namespace two_stream_rt {
 inline bool CkVefDue2(Mesh *pm, const bool ckfop, const bool ckfst) {
   if (!(ck_vef_dt > 0.0)) return CkVefDue(pm, ckfop, ckfst);
   const bool stp = !ck_vef_sync || !ckfop || ckfst;
+  if (ck_cad_probe_on) {   // ck2ndt-1102 (ck_2nd.hpp (8c)): the probe at U^n, time t
+    const Real eps = 1.0e-3*pm->dt;
+    const Real tt = pm->time - ck_cad_t0;
+    const Real tp = tt - static_cast<Real>(ck_impl_every)*pm->dt;
+    return stp && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
+                   std::floor((tt + eps)/ck_vef_dt) > std::floor((tp + eps)/ck_vef_dt));
+  }
   if (ck_cad_dt > 0.0) {   // ck2ndt-1102: stateless, on the multiples of ck_vef_dt
     return stp && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
                    CkSchedCross(pm->time, pm->dt, ck_vef_dt));
@@ -2184,7 +2191,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           // a scheduled one: the next storing pass refreshes (and snapshots) properly
           if (!ck_rst_rebuild_active && vdue_) {
             ck_vef_last = static_cast<int>(pm->ncycle);
-            ck_vef_tlast = pm->time + pm->dt;   // ck2nd-1102 ck_vef_dt
+            ck_vef_tlast = ck_cad_probe_on ? pm->time : pm->time + pm->dt;   // ck_vef_dt
           }
           const int nv = n1 + 3;
           const int nc_ = CK_NB*CK_NG;

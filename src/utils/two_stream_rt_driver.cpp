@@ -2392,7 +2392,7 @@ void CkVefTint(Mesh *pm, const bool refreshed, const bool storing) {
   if (ck_vef_s_ptr == nullptr || ck_vef_g_ptr == nullptr) return;
   auto vs_ = *ck_vef_s_ptr;
   auto vg_ = *ck_vef_g_ptr;
-  const Real t = pm->time + pm->dt;
+  const Real t = ck_cad_probe_on ? pm->time : pm->time + pm->dt;   // ck2ndt: probe at t
   if (vt_sk == nullptr || vt_sk->extent(0) != vs_.extent(0)) {
     auto mk = [&](const char *lab) {
       return new DvceArray5D<Real>(std::string(lab), vs_.extent(0), vs_.extent(1), vs_.extent(2),

@@ -1461,7 +1461,9 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
         picket_fence_two_stream_RT(pm, pdt);
         Kokkos::deep_copy(u0, u1);
       }
+      ts::ck_cad_probe_on = true;
       picket_fence_two_stream_RT(pm, pdt);
+      ts::ck_cad_probe_on = false;
       ts::ck_tol_inc = ti0;
       if (ts::ck_cad_cont) ts::ck_cad_un = u1;
       ts::CkCadProbeStore(pm, pdt, pm->time);
