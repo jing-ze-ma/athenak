@@ -27,6 +27,8 @@
 #include "hydro/rsolvers/hlle_hyd.hpp"
 #include "hydro/rsolvers/hllc_hyd.hpp"
 #include "hydro/rsolvers/lhllc_hyd.hpp"
+#include "hydro/rsolvers/lhllc_c1_hyd.hpp"
+#include "reconstruct/plm_c1.hpp"
 #include "hydro/rsolvers/hllclm_hyd.hpp"
 #include "hydro/rsolvers/ausmpup_hyd.hpp"
 #include "hydro/rsolvers/roe_hyd.hpp"
@@ -269,7 +271,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         DonorCellX1(member, m, k, j, il-1, iu, w0_, wl, wr);
         break;
       case ReconstructionMethod::plm:
-        PiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, wl, wr);
+        if (eos_.plm_c1) {
+          PiecewiseLinearC1X1(member, m, k, j, il-1, iu, w0_, wl, wr);
+        } else {
+          PiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, wl, wr);
+        }
         break;
       case ReconstructionMethod::ppm4:
       case ReconstructionMethod::ppmx:
@@ -325,7 +331,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           DonorCellX1(member, m, k, j, il-1, iu, wder_, dl, dr);
           break;
         case ReconstructionMethod::plm:
-          PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
+          if (eos_.plm_c1) {
+            PiecewiseLinearC1X1(member, m, k, j, il-1, iu, wder_, dl, dr);
+          } else {
+            PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
+          }
           break;
         case ReconstructionMethod::ppm4:
         case ReconstructionMethod::ppmx:
@@ -490,7 +500,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1,
            nanrep_r,rscnt,rsrec);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
-      LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1,w0_);
+      if (eos.c1_eps > 0.0) {
+        LHLLC_C1(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1,w0_);
+      } else {
+        LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1,w0_);
+      }
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
       HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
@@ -632,7 +646,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             DonorCellX2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
             break;
           case ReconstructionMethod::plm:
-            PiecewiseLinearX2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
+            if (eos_.plm_c1) {
+              PiecewiseLinearC1X2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
+            } else {
+              PiecewiseLinearX2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
+            }
             break;
           case ReconstructionMethod::ppm4:
           case ReconstructionMethod::ppmx:
@@ -667,7 +685,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               DonorCellX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
               break;
             case ReconstructionMethod::plm:
-              PiecewiseLinearX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
+              if (eos_.plm_c1) {
+                PiecewiseLinearC1X2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
+              } else {
+                PiecewiseLinearX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
+              }
               break;
             case ReconstructionMethod::ppm4:
             case ReconstructionMethod::ppmx:
@@ -800,7 +822,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,
                  nanrep_r,rscnt,rsrec);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
-            LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,w0_);
+            if (eos.c1_eps > 0.0) {
+              LHLLC_C1(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,
+                       w0_);
+            } else {
+              LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,w0_);
+            }
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
             HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
@@ -918,7 +945,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             DonorCellX3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
             break;
           case ReconstructionMethod::plm:
-            PiecewiseLinearX3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
+            if (eos_.plm_c1) {
+              PiecewiseLinearC1X3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
+            } else {
+              PiecewiseLinearX3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
+            }
             break;
           case ReconstructionMethod::ppm4:
           case ReconstructionMethod::ppmx:
@@ -946,7 +977,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               DonorCellX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
               break;
             case ReconstructionMethod::plm:
-              PiecewiseLinearX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
+              if (eos_.plm_c1) {
+                PiecewiseLinearC1X3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
+              } else {
+                PiecewiseLinearX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
+              }
               break;
             case ReconstructionMethod::ppm4:
             case ReconstructionMethod::ppmx:
@@ -1087,7 +1122,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,
                  nanrep_r,rscnt,rsrec);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
-            LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,w0_);
+            if (eos.c1_eps > 0.0) {
+              LHLLC_C1(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,
+                       w0_);
+            } else {
+              LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,w0_);
+            }
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
             HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
@@ -1240,12 +1280,20 @@ void Hydro::CsSeamFaceStates() {
     } else {
     for (int n=0; n<nvars; ++n) {
       Real ql, qr;
-      PLM(w0_(m,n,k,jc-1,i), w0_(m,n,k,jc,i), w0_(m,n,k,jc+1,i), ql, qr);
+      if (eos_.plm_c1) {
+        PLMC1(w0_(m,n,k,jc-1,i), w0_(m,n,k,jc,i), w0_(m,n,k,jc+1,i), ql, qr);
+      } else {
+        PLM(w0_(m,n,k,jc-1,i), w0_(m,n,k,jc,i), w0_(m,n,k,jc+1,i), ql, qr);
+      }
       f2(m,n,k,jf,i) = lo ? qr : ql;
     }
     for (int n=0; n<nder; ++n) {
       Real ql, qr;
-      PLM(wder_(m,n,k,jc-1,i), wder_(m,n,k,jc,i), wder_(m,n,k,jc+1,i), ql, qr);
+      if (eos_.plm_c1) {
+        PLMC1(wder_(m,n,k,jc-1,i), wder_(m,n,k,jc,i), wder_(m,n,k,jc+1,i), ql, qr);
+      } else {
+        PLM(wder_(m,n,k,jc-1,i), wder_(m,n,k,jc,i), wder_(m,n,k,jc+1,i), ql, qr);
+      }
       Real q = lo ? qr : ql;
       if (n == IDPR) q = fmax(q, pfl);
       f2(m,nvars+n,k,jf,i) = q;
@@ -1288,12 +1336,20 @@ void Hydro::CsSeamFaceStates() {
     } else {
     for (int n=0; n<nvars; ++n) {
       Real ql, qr;
-      PLM(w0_(m,n,kc-1,j,i), w0_(m,n,kc,j,i), w0_(m,n,kc+1,j,i), ql, qr);
+      if (eos_.plm_c1) {
+        PLMC1(w0_(m,n,kc-1,j,i), w0_(m,n,kc,j,i), w0_(m,n,kc+1,j,i), ql, qr);
+      } else {
+        PLM(w0_(m,n,kc-1,j,i), w0_(m,n,kc,j,i), w0_(m,n,kc+1,j,i), ql, qr);
+      }
       f3(m,n,kf,j,i) = lo ? qr : ql;
     }
     for (int n=0; n<nder; ++n) {
       Real ql, qr;
-      PLM(wder_(m,n,kc-1,j,i), wder_(m,n,kc,j,i), wder_(m,n,kc+1,j,i), ql, qr);
+      if (eos_.plm_c1) {
+        PLMC1(wder_(m,n,kc-1,j,i), wder_(m,n,kc,j,i), wder_(m,n,kc+1,j,i), ql, qr);
+      } else {
+        PLM(wder_(m,n,kc-1,j,i), wder_(m,n,kc,j,i), wder_(m,n,kc+1,j,i), ql, qr);
+      }
       Real q = lo ? qr : ql;
       if (n == IDPR) q = fmax(q, pfl);
       f3(m,nvars+n,kf,j,i) = q;

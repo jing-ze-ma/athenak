@@ -417,6 +417,13 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     // Mesh::NewTimeStep).  Recomputing dt here from the restored state gives a
     // roundoff-different value, so keep the one the file restored: only then does the
     // restarted run take exactly the step the straight run took.
+    // lhllc2nd-1102 <time>/dt_fixed (TEST key, read only when named): a constant dt for
+    // temporal-order tests (cfl halving with whole steps).  It is applied as the dt cap
+    // of Mesh::NewTimeStep, so set cfl_number large enough that the CFL dt stays above
+    // it (the run then takes exactly tlim/dt_fixed steps; check the final cycle count).
+    if (pin->DoesParameterExist("time", "dt_fixed")) {
+      pmesh->dt_cap = pin->GetReal("time", "dt_fixed");
+    }
     Real dt_rst = pmesh->dt;
     pmesh->NewTimeStep(tlim);
     if (res_flag && dt_rst > 0.0) { pmesh->dt = dt_rst; }
