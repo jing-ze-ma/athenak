@@ -466,10 +466,15 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
   if (sfmode == -1) {
     // csedge-1019 seam_raw: every variable of the face takes the NEIGHBOUR's value (the
     // pack already re-expressed the tangential pair IM2/IM3 on this panel's basis)
-    Kokkos::TeamPolicy<> pol_r(DevExeSpace(), (nmb*nnghbr), Kokkos::AUTO);
+    // ucthshare-1102: one team per (MeshBlock, buffer, variable) over the flattened
+    // (k, j, i) range -- a pure copy, so the mapping cannot change a value; the old
+    // (MeshBlock, buffer) teams looped every variable serially per thread (profiled at
+    // 2.9 ms per call with the 54-variable MHD UCT seam record on an H200)
+    Kokkos::TeamPolicy<> pol_r(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
     BvalsTeamFor("SeamStateRecvRaw", pol_r, KOKKOS_LAMBDA(TeamMember_t tmember) {
-      const int m = (tmember.league_rank())/nnghbr;
-      const int n = (tmember.league_rank() - m*nnghbr);
+      const int m = (tmember.league_rank())/(nnghbr*nvar);
+      const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
+      const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
       if (nghbr.d_view(m,n).gid < 0) {return;}
       bool x2face; Real sgn;
       if (!SeamFaceGeom(rbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
@@ -486,24 +491,17 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
       const int ni = iu - il + 1;
       const int nj = ju - jl + 1;
       const int nk = ku - kl + 1;
-      const int nkj = nk*nj;
-      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
-        int k = idx / nj;
-        int j = (idx - k * nj) + jl;
-        k += kl;
-        Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
-                             [&](const int i) {
-          const int i0 = i-il + ni*((j-jl) + nj*(k-kl));
-          const int nvs = ni*nj*nk;
-          for (int v=0; v<nvar; ++v) {
-            const Real recv = rbuf[n].flux(m, i0 + nvs*v);
-            if (x2face) {
-              flx.x2f(m,v,k,j,i) = recv;
-            } else {
-              flx.x3f(m,v,k,j,i) = recv;
-            }
-          }
-        });
+      const int nvs = ni*nj*nk;
+      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nvs), [&](const int idx) {
+        const int k = idx/(ni*nj);
+        const int j = (idx - k*ni*nj)/ni;
+        const int i = idx - k*ni*nj - j*ni;
+        const Real recv = rbuf[n].flux(m, idx + nvs*v);
+        if (x2face) {
+          flx.x2f(m,v,k+kl,j+jl,i+il) = recv;
+        } else {
+          flx.x3f(m,v,k+kl,j+jl,i+il) = recv;
+        }
       });
     });
     return TaskStatus::complete;

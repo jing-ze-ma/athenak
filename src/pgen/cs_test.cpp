@@ -538,11 +538,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (iprob == 15 && pin->GetOrAddInteger("problem", "seam_halo_scan", 0) != 0) {
     pgen_final_func = CSTestSeamHaloScan;
   }
-  if (pin->DoesParameterExist("problem", "seam_gate") &&
-      pin->GetBoolean("problem", "seam_gate")) {   // ucthshare-1102
-    cs_prev_final = pgen_final_func;
-    pgen_final_func = CSTestSeamGatesFinal;
-  }
   // iprob = 13: the STRATIFIED low-beta test. Gravity is a user source term because
   // <srcterms> is refused on the cubed sphere (it has no gnomonic form); this one is
   // purely radial, and rhat is orthogonal to both angular directions on every grid, so
@@ -594,6 +589,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     bux = bu*hx/hn; buy = bu*hy/hn; buz = bu*hz/hn;
     cs_bazi = bazi;
     cs_bvx = bux; cs_bvy = buy; cs_bvz = buz;
+  }
+
+  if (pin->DoesParameterExist("problem", "seam_gate") &&
+      pin->GetBoolean("problem", "seam_gate")) {   // ucthshare-1102
+    cs_prev_final = pgen_final_func;
+    pgen_final_func = CSTestSeamGatesFinal;
   }
 
   const Real blob_w = pin->GetOrAddReal("problem", "blob_width", 0.3);
