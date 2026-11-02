@@ -273,12 +273,39 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   // slice ndat*v.. of its own buffer (sbuf[n] row m, or rbuf[dn] row dm), so the triples
   // are independent.  With 3*nmb = 72 teams on a 132-SM GH200 the serial walk made this
   // the most expensive kernel of a cubed-sphere MHD cycle (0.93 ms per call; 09-30).
+  //
+  // mhdspeed-1101 (A): CHUNKED LEAGUE.  One team per (m,n,v) left the kernel nearly idle:
+  // on the uniform cs dhj mesh (24 blocks spanning the whole radius) only ~8 of the 56
+  // slots per block have a neighbour, so ~190 teams carried all the work, each walking up
+  // to ~3900 seam samples (2 x 17 x 116) serially per thread slice -- 1.0-1.2 ms per call
+  // on one H200, ~25 calls per r1m cycle (half of every RKG super-stage).  Each (m,n,v)
+  // triple is now split into nchunk teams of at most fc_chunk samples; a team handles
+  // only its own slice [c*fc_chunk, min(nkji, (c+1)*fc_chunk)) of the SAME flat index.
+  // Every sample is still written once, by the same expression on the same inputs, so
+  // the buffers are bitwise unchanged.  nchunk comes from the largest buffer of any kind.
+  const int fc_chunk = 256;
+  int nkji_max = 1;
+  for (int n=0; n<nnghbr; ++n) {
+    for (int c=0; c<3; ++c) {
+      const MeshBufferIndcs *ix[3] = {&sendbuf[n].isame[c], &sendbuf[n].icoar[c],
+                                      &sendbuf[n].ifine[c]};
+      for (int q=0; q<3; ++q) {
+        const int sz = (ix[q]->bie - ix[q]->bis + 1)*(ix[q]->bje - ix[q]->bjs + 1)*
+                       (ix[q]->bke - ix[q]->bks + 1);
+        nkji_max = std::max(nkji_max, sz);
+      }
+    }
+  }
+  const int nchunk = (nkji_max + fc_chunk - 1)/fc_chunk;
+  const bool d1_ = (pack_depth == 1);
   int nmnv = 3*nmb*nnghbr;
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv, Kokkos::AUTO);
+  Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv*nchunk, Kokkos::AUTO);
   BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
-    const int m = tmember.league_rank()/(3*nnghbr);
-    const int n = (tmember.league_rank()/3)%nnghbr;
-    const int v = tmember.league_rank()%3;
+    const int lr = tmember.league_rank()/nchunk;
+    const int ch = tmember.league_rank() - lr*nchunk;
+    const int m = lr/(3*nnghbr);
+    const int n = (lr/3)%nnghbr;
+    const int v = lr%3;
 
     {
       // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
@@ -342,6 +369,41 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         const int nk = ku - kl + 1;
         const int nkji = nk*nj*ni;
         const int nji  = nj*ni;
+        // mhdspeed-1101 (B): with pack_depth = 1 only the source layer ADJACENT to the
+        // shared boundary is packed, in each direction the buffer is ghost in.  The
+        // slot fixes the direction (nghbr_index.hpp: 0-7 x1 faces, 8-15 x2 faces,
+        // 16-23 x1x2 edges, 24-31 x3 faces, 32-39 x3x1 edges, 40-47 x2x3 edges, 48-55
+        // corners) and the end of the source range on that side is the depth-1 layer
+        // for every component and staggering (the range is ng deep there).  Along a
+        // seam the ghost layers coincide with the source's active layers, so the
+        // receiver's depth-1 ghosts are exactly what is packed; nothing is skipped in
+        // the tangential (along-seam, vertex-fill widened) direction.
+        int o1 = 0, o2 = 0, o3 = 0;
+        if (n < 8) {
+          o1 = (n < 4) ? -1 : 1;
+        } else if (n < 16) {
+          o2 = (n < 12) ? -1 : 1;
+        } else if (n < 24) {
+          o1 = (((n-16) >> 1) & 1) ? 1 : -1;  o2 = (((n-16) >> 2) & 1) ? 1 : -1;
+        } else if (n < 32) {
+          o3 = (n < 28) ? -1 : 1;
+        } else if (n < 40) {
+          o1 = (((n-32) >> 1) & 1) ? 1 : -1;  o3 = (((n-32) >> 2) & 1) ? 1 : -1;
+        } else if (n < 48) {
+          o2 = (((n-40) >> 1) & 1) ? 1 : -1;  o3 = (((n-40) >> 2) & 1) ? 1 : -1;
+        } else {
+          o1 = ((n-48) & 1) ? 1 : -1;  o2 = (((n-48) >> 1) & 1) ? 1 : -1;
+          o3 = (((n-48) >> 2) & 1) ? 1 : -1;
+        }
+        const int i1d = (o1 < 0) ? il : iu, j1d = (o2 < 0) ? jl : ju;
+        const int k1d = (o3 < 0) ? kl : ku;
+        auto keep = [&](const int kq, const int jq, const int iq) {
+          return !d1_ || ((o1 == 0 || iq == i1d) && (o2 == 0 || jq == j1d) &&
+                          (o3 == 0 || kq == k1d));
+        };
+        // this team's slice of the flat (k,j,i) index (mhdspeed-1101 A, see above)
+        const int ck0 = (ch*fc_chunk < nkji) ? ch*fc_chunk : nkji;
+        const int ck1 = (ck0 + fc_chunk < nkji) ? ck0 + fc_chunk : nkji;
 
         // indices of recv'ing MB and buffer: assumes MB IDs are stored sequentially
         int dm = nghbr.d_view(m,n).gid - mbgid.d_view(0);
@@ -848,7 +910,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
           // seamval() reads b0 or coarse_b0 according to cs_coar, so one expression
           // serves a neighbour at ANY level.
           if (nghbr.d_view(m,n).rank == my_rank) {
-            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
+            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, ck0, ck1),
             [&](const int idx) {
               int k = (idx)/nji;
               int j = (idx - k*nji)/ni;
@@ -857,13 +919,15 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               j += jl;
               int kk = ak*k + bk;
               int jj = aj*j + bj;
-              rbuf[dn].vars(dm, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
-                = seamval(kk,jj,i);
+              if (keep(kk,jj,i)) {
+                rbuf[dn].vars(dm, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
+                  = seamval(kk,jj,i);
+              }
             });
 
           // else copy field components into send buffer for MPI communication below
           } else {
-            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
+            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, ck0, ck1),
             [&](const int idx) {
               int k = (idx)/nji;
               int j = (idx - k*nji)/ni;
@@ -872,8 +936,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               j += jl;
               int kk = ak*k + bk;
               int jj = aj*j + bj;
-              sbuf[n].vars(m, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
-                = seamval(kk,jj,i);
+              if (keep(kk,jj,i)) {
+                sbuf[n].vars(m, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
+                  = seamval(kk,jj,i);
+              }
             });
           }
           } else {   // normal boundary exchange
@@ -881,13 +947,14 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         if (nghbr.d_view(m,n).rank == my_rank) {
           // if neighbor is at same or finer level, load data from b0
           if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
-            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
+            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, ck0, ck1),
             [&](const int idx) {
               int k = (idx)/nji;
               int j = (idx - k*nji)/ni;
               int i = (idx - k*nji - j*ni) + il;
               k += kl;
               j += jl;
+              if (!keep(k,j,i)) return;
               if (v==0) {
                 rbuf[dn].vars(dm,i-il + ni*(j-jl + nj*(k-kl))) = b.x1f(m,k,j,i);
               } else if (v==1) {
@@ -898,13 +965,14 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             });
           // if neighbor is at coarser level, load data from coarse_b0
           } else {
-            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
+            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, ck0, ck1),
             [&](const int idx) {
               int k = (idx)/nji;
               int j = (idx - k*nji)/ni;
               int i = (idx - k*nji - j*ni) + il;
               k += kl;
               j += jl;
+              if (!keep(k,j,i)) return;
               if (v==0) {
                 rbuf[dn].vars(dm,i-il + ni*(j-jl + nj*(k-kl))) = cb.x1f(m,k,j,i);
               } else if (v==1) {
@@ -919,13 +987,14 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         } else {
           // if neighbor is at same or finer level, load data from b0
           if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
-            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
+            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, ck0, ck1),
             [&](const int idx) {
               int k = (idx)/nji;
               int j = (idx - k*nji)/ni;
               int i = (idx - k*nji - j*ni) + il;
               k += kl;
               j += jl;
+              if (!keep(k,j,i)) return;
               if (v==0) {
                 sbuf[n].vars(m,i-il + ni*(j-jl + nj*(k-kl))) = b.x1f(m,k,j,i);
               } else if (v==1) {
@@ -936,13 +1005,14 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             });
           // if neighbor is at coarser level, load data from coarse_b0
           } else {
-            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
+            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, ck0, ck1),
             [&](const int idx) {
               int k = (idx)/nji;
               int j = (idx - k*nji)/ni;
               int i = (idx - k*nji - j*ni) + il;
               k += kl;
               j += jl;
+              if (!keep(k,j,i)) return;
               if (v==0) {
                 sbuf[n].vars(m,i-il + ni*(j-jl + nj*(k-kl))) = cb.x1f(m,k,j,i);
               } else if (v==1) {

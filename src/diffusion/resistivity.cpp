@@ -94,6 +94,13 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     } else {
       rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
     }
+    // mhdspeed-1101 (B): read only when named (no restart-header change); default on
+    // with rkg_lean (bitwise: see resistivity.hpp)
+    if (pin->DoesParameterExist("mhd", "rkg_halo_d1")) {
+      rkg_halo_d1 = rkg_lean && pin->GetBoolean("mhd", "rkg_halo_d1");
+    } else {
+      rkg_halo_d1 = rkg_lean;
+    }
     // rkgdt-1101: read only when named, so a deck without them keeps its restart header
     if (pin->DoesParameterExist("mhd", "rkg_dt_safety")) {
       rkg_dt_safety = pin->GetReal("mhd", "rkg_dt_safety");

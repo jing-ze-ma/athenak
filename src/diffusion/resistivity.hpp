@@ -105,6 +105,12 @@ class Resistivity {
   // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only
   // the energy slot of the conserved registers.  Uniform cubed-sphere meshes only.
   bool rkg_lean = false;
+  // mhdspeed-1101 (B) <mhd>/rkg_halo_d1 (read only when named; default = rkg_lean):
+  // super-stages 1..s-2 exchange only the face-field ghost layer adjacent to each
+  // boundary (the resistive and ambipolar stencils read one layer; the lean stages
+  // convert nothing else).  Stages s-1 and s exchange all ng layers, so everything
+  // the next RK step or the vertex fill reads is exactly what a full exchange gives.
+  bool rkg_halo_d1 = false;
   // <mhd>/rkg_halo_ien_only (default false, read only when named): the conserved-variable
   // halo exchange of RKG super-stages 2..s moves only the slots of u0 that changed
   // since the previous exchange: u0(IEN), the one slot RKUpdate writes, plus every slot
@@ -185,6 +191,7 @@ class Resistivity {
     TaskStatus CopyIniE(Driver *d, int stage);
     TaskStatus CT(Driver *d, int stage);
     TaskStatus CopyCons(Driver *d, int stage);
+    TaskStatus SendBRKG(Driver *d, int stage);
     TaskStatus UpdateResistivity(Driver *d, int stage);
     TaskStatus ConToPrimRKG(Driver *d, int stage);
     TaskStatus NewTimeStepRKG(Driver *d, int stage);

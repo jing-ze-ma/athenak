@@ -474,6 +474,11 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
   TaskStatus InitFluxRecv(const int nvar) override;
 
   TaskStatus PackAndSendFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
+  // mhdspeed-1101 (B): 1 = pack only the ghost layer ADJACENT to each boundary (the
+  // intermediate lean RKG super-stages, whose stencils read one layer); 0 = all ng.
+  // Skipped buffer entries keep what the last full pack wrote.  Set and reset by
+  // Resistivity (RKGCoeff / UpdateResistivity); 0 everywhere else.
+  int pack_depth = 0;
   TaskStatus RecvAndUnpackFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
   void FillCoarseInBndryFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
   void FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coarse = false);
