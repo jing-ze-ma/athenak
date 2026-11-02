@@ -209,6 +209,10 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     if (pin->DoesParameterExist(bk, kc)) {
       eos_data.cb_cont = pin->GetBoolean(bk, kc);
     }
+    // lhllc2nd-1102: see EOS_Data::plm_c1 (read only when named)
+    if (pin->DoesParameterExist(bk, "plm_c1")) {
+      eos_data.plm_c1 = pin->GetBoolean(bk, "plm_c1");
+    }
     // lhllc2nd-1102: see EOS_Data::c1_eps (hydro only; read only when named)
     if (is_hyd && pin->DoesParameterExist(bk, "lhllc_c1")) {
       eos_data.c1_eps = pin->GetReal(bk, "lhllc_c1");

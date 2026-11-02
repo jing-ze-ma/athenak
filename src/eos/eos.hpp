@@ -235,6 +235,10 @@ struct EOS_Data {
   // C1 in the state and RK2 keeps second order in dt.
   Real c1_eps = 0.0;
   int c1_parts = 31;
+  // lhllc2nd-1102 <hydro>/plm_c1, <mhd>/plm_c1 (default false = van Leer PLM, bitwise;
+  // read only when named): the C1 slope limiter of reconstruct/plm_c1.hpp (also in the
+  // non-uniform x1 PLM of the cubed sphere / spherical polar meshes)
+  bool plm_c1 = false;
 
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
   // energy instead of deleting it (default false = the historical behaviour).
