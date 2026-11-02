@@ -14,11 +14,13 @@
 
 // Athena++ headers
 #include "athena.hpp"
+#include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "resistivity.hpp"
 #include "current_density.hpp"
 #include "mhd/mhd.hpp"
+#include "utils/recipe.hpp"
 
 //----------------------------------------------------------------------------------------
 // ctor: also calls Resistivity base class constructor
@@ -68,11 +70,38 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
                 << "'; expected constant, perna or eos" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // proddef-1101 (USER: the Caltech dhj MHD production keys as FRESH-start defaults,
+    // via recipe::NewDefaults).  use_rkg_sts keeps its old default false (user 11-01);
+    // when STS is ON (named by the user) and the key is absent:
+    //   rkg_lean      = true  (uniform single-level cubed sphere: its FATAL),
+    //   rkg_dt_safety = 0.5   (cubed sphere or spherical polar: its FATAL).
+    // An explicit key wins; a restart whose input lacks a key keeps the OLD default and
+    // adds exactly what the old code added (use_rkg_sts, and rkg_lean only with STS).
+    const bool nd = recipe::NewDefaults(pin);
+    const bool curv = pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar;
+    const bool lean_ok = pp->pmesh->use_cubed_sphere && !pp->pmesh->multilevel;
     use_rkg_sts = pin->GetOrAddBoolean("mhd", "use_rkg_sts", false);
-    rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
+    if (use_rkg_sts && !pin->DoesParameterExist("mhd", "rkg_lean")) {
+      // an explicit rkg_halo_ien_only = true (which FATALs with rkg_lean) keeps lean off
+      const bool halo = pin->DoesParameterExist("mhd", "rkg_halo_ien_only") &&
+                        pin->GetBoolean("mhd", "rkg_halo_ien_only");
+      const bool ld = nd && lean_ok && !halo;
+      recipe::Log(std::string("<mhd>/rkg_lean = ") + (ld ? "true (default on a uniform "
+                  "cubed sphere)" : (nd ? (halo ? "false (rkg_halo_ien_only = true)"
+                  : "false (needs a uniform cubed sphere)")
+                  : "false (old default: restart input or recipe none)")));
+      rkg_lean = pin->GetOrAddBoolean("mhd", "rkg_lean", ld);
+    } else {
+      rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
+    }
     // rkgdt-1101: read only when named, so a deck without them keeps its restart header
     if (pin->DoesParameterExist("mhd", "rkg_dt_safety")) {
       rkg_dt_safety = pin->GetReal("mhd", "rkg_dt_safety");
+    } else if (use_rkg_sts) {
+      if (nd && curv) rkg_dt_safety = pin->GetOrAddReal("mhd", "rkg_dt_safety", 0.5);
+      recipe::Log(std::string("<mhd>/rkg_dt_safety = ") + ((nd && curv) ? "0.5 (default "
+                  "with STS on cs/sp)" : (nd ? "0 = off (cs/sp only)"
+                  : "0 = off (old default: restart input or recipe none)")));
     }
     if (pin->DoesParameterExist("mhd", "rkg_lmax_diag")) {
       rkg_lmax_diag = pin->GetInteger("mhd", "rkg_lmax_diag");
@@ -95,6 +124,17 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mhd>/rkg_lean needs a uniform (not multilevel) "
                 << "cubed-sphere mesh" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // rkghalo-1101: read only when named (a deck without it keeps its restart header)
+    // a no-op without use_rkg_sts (no super-stages)
+    if (pin->DoesParameterExist("mhd", "rkg_halo_ien_only")) {
+      rkg_halo_ien_only = use_rkg_sts && pin->GetBoolean("mhd", "rkg_halo_ien_only");
+    }
+    if (rkg_halo_ien_only && (rkg_lean || pp->pmesh->multilevel)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/rkg_halo_ien_only needs rkg_lean = false and a "
+                << "uniform (not multilevel) mesh" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     cs_resist_x1_centred = pin->GetOrAddBoolean("mhd", "cs_resist_x1_centred", true);
@@ -185,7 +225,11 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
                     << "<mhd>/eos = " << eqn_of_state << std::endl;
           std::exit(EXIT_FAILURE);
         }
-        int nscalars = pin->GetOrAddInteger("mhd","nscalars",0);
+        // tracer-1101: the user's scalars plus the x_e / floor tracer slots, the same
+        // layout the MHD constructor builds (mhd/mhd_tracers.hpp)
+        mhd::TracerLayout tl_ = mhd::ReadTracerLayout(pin);
+        tl_.nuser = pin->GetOrAddInteger("mhd","nscalars",0);
+        int nscalars = tl_.Total();
         Kokkos::realloc(u_ideal,     nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
         Kokkos::realloc(b_ideal.x1f, nmb, ncells3, ncells2, ncells1+1);
         Kokkos::realloc(b_ideal.x2f, nmb, ncells3, ncells2+1, ncells1);
@@ -208,6 +252,14 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
 // Resistivity destructor
 
 Resistivity::~Resistivity() {
+  if (rkg_halo_ien_only && global_variable::my_rank == 0) {
+    std::cout << "rkg_halo_ien_only: " << rkg_halo_nstage << " super-stages >= 2, "
+              << rkg_halo_nfull << " with every slot exchanged; per slot:";
+    for (int v=0; v<32; ++v) {
+      if (rkg_halo_nslot[v] > 0) {std::cout << " " << v << ":" << rkg_halo_nslot[v];}
+    }
+    std::cout << std::endl;
+  }
 }
 
 void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos, const Real &Rgas, DvceArray4D<Real> &eta_b, const int il, const int iu, const int jl, const int ju, const int kl, const int ku) {
@@ -255,6 +307,9 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
   auto &wtemp_ = pmy_pack->pmhd->wtemp;
   // local copy: reading the member inside the kernel would capture `this`
   const Real max_eta_ = max_eta;
+  // xetracer-1101: the advected x_e (MHD scalar xe_idx) replaces local Saha when >= 0
+  const int ixe = xe_idx;
+  const Real nhfac = xe_nhfac;
   par_for("mhd_resistval", DevExeSpace(), 0, (nmb-1), kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     Real rho = w(m,IDN,k,j,i);
@@ -276,7 +331,11 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
       // T is already in kelvin on both branches above, so the kelvin entry point is the
       // one to use -- the (d,e,T) form would scale by EOS_Data::temp_cgs, which an ideal
       // gas never sets. For a general EOS the two are the same number.
-      ResistivityEOS(eos.ElectronFractionKelvin(rho, T), T, max_eta_, eta_b(m,k,j,i));
+      // tracer: x_e = n_e/n_tot = y n_H/n_tot (y = n_e/n_H is what is advected)
+      const Real rhoc = gen ? rho*eos.dens_cgs : rho;
+      const Real xe = (ixe >= 0) ? w(m,ixe,k,j,i)*nhfac*rhoc/nn
+                                 : eos.ElectronFractionKelvin(rho, T);
+      ResistivityEOS(xe, T, max_eta_, eta_b(m,k,j,i));
     } else {
       ResistivityPerna(nn, T, max_eta_, eta_b(m,k,j,i));
     }

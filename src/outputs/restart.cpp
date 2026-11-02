@@ -312,6 +312,18 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       Kokkos::deep_copy(outarray_ams, tmp);
     }
   }
+  // wbtan-rstg-1101: the per-cell pgen slabs (kPgenSlabRstMagic), behind the spin ones
+  {
+    DvceArray5D<Real> *ps = (pm->pgen != nullptr) ? pm->pgen->pgen_rst_slabs : nullptr;
+    const int nps = (ps != nullptr) ? ps->extent_int(1) : 0;
+    if (nps > 0) {
+      Kokkos::realloc(outarray_pgs, nmb, nps, nout3, nout2, nout1);
+      DvceArray5D<Real> tmp("rst-pgs", nmb, nps, nout3, nout2, nout1);
+      Kokkos::deep_copy(tmp, Kokkos::subview(*ps, std::make_pair(0, nmb), Kokkos::ALL,
+                                             Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      Kokkos::deep_copy(outarray_pgs, tmp);
+    }
+  }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
     Kokkos::deep_copy(outarray_force, Kokkos::subview(pturb->force, std::make_pair(0,nmb),
@@ -497,6 +509,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   {
     const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(nams), 0, 0};
     std::memcpy(&(ams_hdr[0]), &(hdr[0]), sizeof(hdr));
+  }
+  // wbtan-rstg-1101: the per-cell pgen slabs, behind even the spin ones
+  const int npgs = (pm->pgen != nullptr && pm->pgen->pgen_rst_slabs != nullptr) ?
+                   pm->pgen->pgen_rst_slabs->extent_int(1) : 0;
+  char pgs_hdr[4*sizeof(std::int32_t)];
+  {
+    const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(npgs), 0, 0};
+    std::memcpy(&(pgs_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
   char eint_hdr[2*sizeof(std::int32_t)];
   {
@@ -740,6 +760,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(ams_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    // the per-cell pgen slab header, same marked form, behind the spin one
+    if (npgs > 0) {
+      IOWrapperSizeT nb = sizeof(pgs_hdr);
+      resfile.Write_any_type(&(kPgenSlabRstMagic[0]), sizeof(kPgenSlabRstMagic),
+                             "byte", single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(pgs_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -815,6 +843,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   data_size += static_cast<IOWrapperSizeT>(ncsk)*nout1*nout2*nout3*sizeof(Real);     // conservative csk1
   data_size += static_cast<IOWrapperSizeT>(nra)*nout1*nout2*nout3*sizeof(Real);      // vet_rotate_avg history
   data_size += static_cast<IOWrapperSizeT>(nams)*nout1*nout2*nout3*sizeof(Real);     // am_vector spin (+ amk1)
+  data_size += static_cast<IOWrapperSizeT>(npgs)*nout1*nout2*nout3*sizeof(Real);     // per-cell pgen slabs
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -874,6 +903,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (nams > 0) {
     step3size += sizeof(hydro::kAmSpinRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ams_hdr);
+  }
+  if (npgs > 0) {
+    step3size += sizeof(kPgenSlabRstMagic) + sizeof(IOWrapperSizeT) + sizeof(pgs_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -1394,6 +1426,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   for (int n=0; n<nams; ++n) {
     write_wtemp(Kokkos::subview(outarray_ams, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "am_vector spin");
+  }
+  // and the per-cell pgen slabs behind it (kPgenSlabRstMagic)
+  for (int n=0; n<npgs; ++n) {
+    write_wtemp(Kokkos::subview(outarray_pgs, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                                Kokkos::ALL), "pgen slab");
   }
 
   // close file, clean up

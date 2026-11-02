@@ -72,6 +72,7 @@
 #include "diffusion/resistivity.hpp"
 #include "coordinates/cubed_sphere.hpp"
 #include "outputs/outputs.hpp"
+#include "utils/recipe.hpp"   // proddef-1101: fresh-start defaults
 
 #include <Kokkos_Random.hpp>
 
@@ -175,6 +176,12 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm);
 bool dhj_flux_hst_wall = false;
 // problem/flux_hst_floor: two floor-bookkeeping columns (set in UserProblem)
 bool dhj_flux_hst_floor = false;
+// relaxdrag-1101 problem/relax_drag (default true), problem/relax_drag_rot (default 5):
+// the start-up Rayleigh drag of SourceFunc (tau = P/10 for t < 0.4 R rot, log ramp to
+// tau = P at R rot, off after; R = relax_drag_rot).  Fresh starts default relax_drag to
+// false (recipe::NewDefaults); a restart without the key keeps the drag, bitwise.
+bool dhj_relax_drag = true;
+Real dhj_relax_drag_rot = 5.0;
 Real dhj_floor_t0 = 0.0;   // start of the interval the floor columns average over
 // problem/sponge_top_mode (read without recording): "radial" (DEFAULT since 10-01, user
 // GO after am_coriolis_1001/ext arm D) makes the top velocity sponge damp the RADIAL
@@ -264,12 +271,15 @@ int nst = 0;                // stages per cycle and their weights (as dhj_fhst_w
 Real w[3] = {0.0, 0.0, 0.0};
 int stage = 0;
 int64_t cyc = -1;
-// Tcc Tcont Tbnd Tdif_deep Tdif_rad | Tx1 Tx2 Tx3 Tsrc Tcons Twall
-constexpr int NACC = 11;
-Real acc[NACC] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};  // since last
+// Tcc Tcont Tbnd Tdif_deep Tdif_rad | Tx1 Tx2 Tx3 Tsrc Tcons Twall | Tdrag (relaxdrag-1101)
+constexpr int NACC = 12;
+Real acc[NACC] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};  // since last
 Real t0 = 0.0;
+Real tdrag_rate = 0.0;      // relaxdrag-1101: Tdrag of the last AmHstColumns call
 }  // namespace amh
 void AmHstStage(Mesh *pm);
+Real DhjRelaxDragRate(const Real time, const Real omega);
+Real DhjLrelU0(Mesh *pm);
 void AmFix(Mesh *pm, const Real bdt);
 void AmHstColumns(HistoryData *pdata, Mesh *pm, const int n0);
 
@@ -953,6 +963,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // stages left below a floor).  Nothing else books them: they are not fluxes, so
   // they are the part of d(tot-E)/dt that Etot_bot - Etot_top does not contain (see
   // Hydro::c2p_track).  Costs two active-cell kernels per ConToPrim; off by default.
+  // relaxdrag default (USER 11-01): false on a FRESH dhj start (recipe::NewDefaults; the
+  // resolved value is written into the input, so restarts continue with it); a restart
+  // whose input lacks the key keeps the old default true; an explicit key wins
+  if (!pin->DoesParameterExist("problem","relax_drag")) {
+    if (recipe::NewDefaults(pin)) {
+      pin->GetOrAddBoolean("problem","relax_drag",false);
+      recipe::Log("problem/relax_drag = false (default on a fresh dhj start)");
+    } else {
+      recipe::Log("problem/relax_drag = true (old default: restart input or recipe "
+                  "none)");
+    }
+  }
+  if (pin->DoesParameterExist("problem","relax_drag")) {
+    dhj_relax_drag = pin->GetBoolean("problem","relax_drag");
+  }
+  if (pin->DoesParameterExist("problem","relax_drag_rot")) {
+    dhj_relax_drag_rot = pin->GetReal("problem","relax_drag_rot");
+  }
+  if (global_variable::my_rank == 0 && (!dhj_relax_drag || dhj_relax_drag_rot != 5.0)) {
+    std::cout << "dhj: start-up Rayleigh drag: problem/relax_drag = "
+              << (dhj_relax_drag ? "true" : "false") << ", relax_drag_rot = "
+              << dhj_relax_drag_rot << std::endl;
+  }
   dhj_flux_hst_floor = flux_hst && pin->DoesParameterExist("problem","flux_hst_floor")
                        && pin->GetBoolean("problem","flux_hst_floor");
   if (dhj_flux_hst_floor) {
@@ -1080,7 +1113,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       // + Ttide (tidetrq-1101) with problem/roche
       const int nfh = 9 + (dhj_flux_hst_wall ? 4 : 0) + (dhj_flux_hst_floor ? 3 : 0)
-                      + (amh::split ? 12 : 8) + (hot_jupiter_param.roche ? 1 : 0);
+                      + (amh::split ? 12 : 8) + (hot_jupiter_param.roche ? 1 : 0)
+                      + 1;  // + Tdrag (relaxdrag-1101)
       if (amh::nst == 0 || nfh > NHISTORY_VARIABLES) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "problem/am_hst needs rk1/rk2/rk3 and at most "
@@ -1227,7 +1261,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // read before anything restart-sensitive: the outer BC needs it on restarts too
   bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",true);
   {
-    const std::string tb = pin->GetOrAddString("problem","top_bc","hse");
+    // proddef-1101 (USER): fresh-start default outflow1 (Caltech, all five planets); a
+    // restart whose input lacks the key keeps the old hse
+    if (!pin->DoesParameterExist("problem","top_bc")) {
+      recipe::Log(recipe::NewDefaults(pin) ? "problem/top_bc = outflow1 (default)"
+                  : "problem/top_bc = hse (old default: restart input or recipe none)");
+    }
+    const std::string tb = pin->GetOrAddString("problem","top_bc",
+                                               recipe::NewDefaults(pin) ? "outflow1"
+                                                                        : "hse");
     if (tb == "hse") {
       dhj_top_bc = 0;
     } else if (tb == "outflow1") {
@@ -2389,11 +2431,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << "outside the planet's Roche lobe" << std::endl;
       }
     }
-    // roche-wbtan-1101 problem/roche_wb_tan (default false; see namespace wbtan): the
-    // tangential centrifugal (+ tidal, with problem/roche) force as the hydro's own
-    // discrete residual of the equipotential equilibrium.  Works with rot_potential
-    // alone (centrifugal only) or with roche.
-    dhj_wbt.on = pin->GetOrAddBoolean("problem","roche_wb_tan",false);
+    // roche-wbtan-1101 problem/roche_wb_tan (fresh default: proddef-1101 below; see
+    // namespace wbtan): the tangential centrifugal (+ tidal, with problem/roche) force as
+    // the hydro's own discrete residual of the equipotential equilibrium.  Works with
+    // rot_potential alone (centrifugal only) or with roche.
+    // proddef-1101 (USER): fresh-start default true with problem/roche on a single-level
+    // mesh (roche itself already requires everything else roche_wb_tan needs); a restart
+    // whose input lacks the key keeps the old false
+    if (!pin->DoesParameterExist("problem","roche_wb_tan")) {
+      const bool sl = !(pmy_mesh_->adaptive || pmy_mesh_->multilevel);
+      const bool wd = roche_on && sl && recipe::NewDefaults(pin);
+      if (roche_on) {
+        recipe::Log(std::string("problem/roche_wb_tan = ") + (wd ? "true (default with "
+                    "problem/roche)" : (!sl ? "false (needs a single-level mesh)"
+                    : "false (old default: restart input or recipe none)")));
+      }
+      dhj_wbt.on = pin->GetOrAddBoolean("problem","roche_wb_tan",wd);
+    } else {
+      dhj_wbt.on = pin->GetBoolean("problem","roche_wb_tan");
+    }
     if (dhj_wbt.on) {
       std::string bad = "";
       if (!rot_potential) bad = "problem/rot_potential = true";
@@ -2847,6 +2903,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         weq_(m,1,k,j,i) = EintFromP(eos, igm1, den, p);
       });
       dhj_wbt.ready = false;
+      // wbtan-rstg-1101: a restart takes g_t from the file when it carries it
+      if (restart) wbtan::LoadFromRestart(this, dhj_wbt, pmbp, "deep_hot_jupiter_rt");
       if (global_variable::my_rank == 0) {
         std::cout << "deep_hot_jupiter_rt: problem/roche_wb_tan ON: tangential "
                   << (roche_on ? "centrifugal + tidal" : "centrifugal")
@@ -4975,7 +5033,82 @@ void AmHstStage(Mesh *pm) {
     mb_sum += h;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum));
   Kokkos::fence();
-  for (int n=0; n<amh::NACC; ++n) amh::acc[n] += wdt*sum.the_array[n];
+  for (int n=0; n<11; ++n) amh::acc[n] += wdt*sum.the_array[n];
+  // relaxdrag-1101 Tdrag: the drag removes itdrag bdt of every momentum component of u0
+  // in SourceFunc, so its z torque is -itdrag Lrel(u0) (same time and u0 as the kernel)
+  const Real itd = DhjRelaxDragRate(pm->time, omega);
+  if (itd > 0.0) amh::acc[11] += wdt*(-itd*DhjLrelU0(pm));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn DhjRelaxDragRate (relaxdrag-1101)
+//! \brief 1/tau of the start-up Rayleigh drag at time t, as SourceFunc applies it (0 when
+//! off or after relax_drag_rot rotations)
+
+Real DhjRelaxDragRate(const Real time, const Real omega) {
+  if (!dhj_relax_drag || omega == 0.0) return 0.0;
+  const Real rdf = dhj_relax_drag_rot/5.0;
+  const Real dyntime = 2.0*M_PI/omega;
+  const Real tau1 = dyntime/10.0, tau2 = dyntime;
+  const Real t1 = 2.0*dyntime*rdf, t2 = 5.0*dyntime*rdf;
+  if (time < t1) return 1.0/tau1;
+  if (time < t2) return 1.0/tau1*pow(tau1/tau2, (time - t1)/(t2 - t1));
+  return 0.0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn DhjLrelU0 (relaxdrag-1101)
+//! \brief Lrel = sum vol (x P_y - y P_x) of this rank's u0, as AmHstColumns forms it
+
+Real DhjLrelU0(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  auto u0 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  auto vol = pmbp->pcoord->volume;
+  auto x1v = pmbp->pcoord->x1v;
+  auto x2v = pmbp->pcoord->x2v;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  const bool cs = pm->use_cubed_sphere;
+  Real lsum = 0.0;
+  Kokkos::parallel_reduce("dhj_lrel_u0",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nx3*nx2*nx1),
+  KOKKOS_LAMBDA(const int idx, Real &ls) {
+    const int m = idx/(nx3*nx2*nx1);
+    int rem = idx - m*(nx3*nx2*nx1);
+    const int k = ks + rem/(nx2*nx1);
+    rem -= (k - ks)*(nx2*nx1);
+    const int j = js + rem/nx1;
+    const int i = is + rem - (j - js)*nx1;
+    const Real r = x1v(m,i);
+    Real lz;
+    if (cs) {
+      const Real xi_c = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
+                                              size.d_view(m).x2max);
+      const Real eta_c = 0.25*M_PI*CellCenterX(k-ks, nx3, size.d_view(m).x3min,
+                                               size.d_view(m).x3max);
+      const int pnl = mbpanel.d_view(m);
+      Real qc[3], e1[3], e2[3];
+      cubed_sphere::PanelToCart(pnl, xi_c, eta_c, qc);
+      cubed_sphere::PanelTangents(pnl, xi_c, eta_c, e1, e2);
+      const Real qn = 1.0/sqrt(qc[0]*qc[0] + qc[1]*qc[1] + qc[2]*qc[2]);
+      const Real rh0 = qc[0]*qn, rh1 = qc[1]*qn;
+      const Real c = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+      const Real det = 1.0 - c*c;
+      const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+      const Real p2 = (m2 - c*m3)/det, p3 = (m3 - c*m2)/det;
+      const Real px = m1*rh0 + p2*e1[0] + p3*e2[0];
+      const Real py = m1*rh1 + p2*e1[1] + p3*e2[1];
+      lz = r*rh0*py - r*rh1*px;
+    } else {
+      lz = r*sin(x2v(m,j))*u0(m,IM3,k,j,i);
+    }
+    ls += lz*vol(m,k,j,i);
+  }, Kokkos::Sum<Real>(lsum));
+  return lsum;
 }
 
 //----------------------------------------------------------------------------------------
@@ -5152,6 +5285,9 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // rho g_t (WbTanProbe) in place of the analytic projections below; Coriolis and the
     // radial terms unchanged; no energy term (etotgrav books the potential work)
     const bool wbt_ = dhj_wbt.on;
+    // relaxdrag-1101: the start-up Rayleigh drag switch and length (R/5, 1 by default)
+    const bool relax_ = dhj_relax_drag;
+    const Real rdf_ = dhj_relax_drag_rot/5.0;
     DvceArray5D<Real> wbtg_;
     if (wbt_) wbtg_ = *dhj_wbt.gt;
 
@@ -5430,8 +5566,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
         Real dyntime = 2.0*M_PI/omega;
         Real tau1 = dyntime / 10.0;
         Real tau2 = dyntime;
-        Real t1   = 2.0 * dyntime;
-        Real t2   = 5.0 * dyntime;
+        Real t1   = 2.0 * dyntime * rdf_;
+        Real t2   = 5.0 * dyntime * rdf_;
         Real itdrag, fredux;
         if(time < t1) {
           itdrag = 1.0 / tau1;
@@ -5443,7 +5579,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
         else {
           itdrag = 0.0;
         }
-        if (time < t2) {
+        if (relax_ && time < t2) {
           fredux = itdrag*bdt;///(1.0+itdrag*bdt);
           u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
           u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
@@ -7491,6 +7627,7 @@ void AmHstColumns(HistoryData *pdata, Mesh *pm, const int n0) {
     amh::acc[n] = 0.0;
   }
   amh::t0 = pm->time;
+  amh::tdrag_rate = rate[11];
   pdata->hdata[n0] = sum.the_array[0];
   pdata->hdata[n0+1] = sum.the_array[1];
   pdata->hdata[n0+2] = amh::fix ? rate[1] : rate[0];
@@ -7598,8 +7735,36 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   const int NFH = NFL + (amh::on ? (amh::split ? 12 : 8) : 0);
   // tidetrq-1101: Ttide (DhjTideTorque) after all the others, only with problem/roche
   const bool ttide = pm->pgen->hot_jupiter_param.roche;
-  pdata->nhist = NFH + (ttide ? 1 : 0);
+  // floortrc-1101: with <mhd>/floor_tracer and problem/flux_hst_floor, Mdrain [g/s] and
+  // Edrain [erg/s] after all the others: the floor-tracer drain (MHD::FloorTracerDrain)
+  // over the same interval as Mfloor/Efloor, which are then NET (added - drained); the
+  // gross floor addition is Mfloor + Mdrain
+  // relaxdrag-1101: Tdrag (the start-up Rayleigh drag's z torque, a rate over the
+  // interval like Tcor) after Ttide, only with problem/am_hst
+  const int NTD = NFH + (ttide ? 1 : 0);
+  const int NDR = NTD + (amh::on ? 1 : 0);   // Mdrain/Edrain after Ttide and Tdrag
+  // (the floor tracer is a default with the Alfven floor: when the two columns do not
+  // fit, they are left out with a note instead of stopping the run)
+  bool fdrain = ffloor && (pm->pmb_pack->pmhd != nullptr) &&
+                pm->pmb_pack->pmhd->floor_tracer;
+  if (fdrain && NDR + 2 > NHISTORY_VARIABLES) {
+    static bool warned = false;
+    if (!warned && global_variable::my_rank == 0) {
+      std::cout << "### NOTE: dhj flux history: no room for Mdrain/Edrain ("
+                << NDR + 2 << " > NHISTORY_VARIABLES = " << NHISTORY_VARIABLES
+                << "; problem/am_hst_split = false frees 4); Mfloor/Efloor are NET of "
+                << "the floor-tracer drain" << std::endl;
+    }
+    warned = true;
+    fdrain = false;
+  }
+  pdata->nhist = NDR + (fdrain ? 2 : 0);
   if (ttide) pdata->label[NFH] = "Ttide";
+  if (amh::on) pdata->label[NTD] = "Tdrag";
+  if (fdrain) {
+    pdata->label[NDR] = "Mdrain";
+    pdata->label[NDR+1] = "Edrain";
+  }
   pdata->label[0] = "Lir_top";
   pdata->label[1] = "Lsw_refl";
   pdata->label[2] = "Lsw_abs";
@@ -7756,9 +7921,17 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     pdata->hdata[NFL-3] = (tint > 0.0) ? ef/tint : 0.0;
     pdata->hdata[NFL-2] = (tint > 0.0) ? mf/tint : 0.0;
     pdata->hdata[NFL-1] = (tint > 0.0) ? efr/tint : 0.0;
+    if (fdrain) {
+      auto *pmh = pmbp->pmhd;
+      pdata->hdata[NDR] = (tint > 0.0) ? pmh->fltr_dm/tint : 0.0;
+      pdata->hdata[NDR+1] = (tint > 0.0) ? pmh->fltr_de/tint : 0.0;
+      pmh->fltr_dm = 0.0;
+      pmh->fltr_de = 0.0;
+    }
   }
   if (amh::on) AmHstColumns(pdata, pm, NFL);
   if (ttide) pdata->hdata[NFH] = DhjTideTorque(pm);
+  if (amh::on) pdata->hdata[NTD] = amh::tdrag_rate;
   if (!fwall) return;
   // problem/flux_hst_wall: the inner-wall in/out split, its own small reduction
   array_sum::GlobalSum wsum;

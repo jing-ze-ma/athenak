@@ -104,11 +104,19 @@ static int BvCcVl() {
 
 TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
                                                DvceArray5D<Real> &ca,
-                                               int iwl, int iwu) {
+                                               int iwl, int iwu, int vmask) {
   // create local references for variables in kernel
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
-  int nvar = a.extent_int(1);  // TODO(@user): 2nd index from L of in array must be NVAR
+  // the variables moved (default vmask = 0: all of a, in order); see bvals.hpp
+  if (vmask != 0 && (pmy_pack->pmesh->multilevel || a.extent_int(1) > 32)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "PackAndSendCC: variable list needs a uniform grid and "
+              << "<= 32 variables" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const BvVarList vlst_ = MakeBvVarList(a.extent_int(1), vmask);
+  int nvar = (vmask != 0) ? vlst_.n : a.extent_int(1);
 
   {int my_rank = global_variable::my_rank;
   auto &nghbr = pmy_pack->pmb->nghbr;
@@ -165,7 +173,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     const int sp_ = tmember.league_rank() - lr_*nsp_;
     const int m = (lr_)/(nnghbr*nvar);
     const int n = (lr_ - m*(nnghbr*nvar))/nvar;
-    const int v = (lr_ - m*(nnghbr*nvar) - n*nvar);
+    const int vl = (lr_ - m*(nnghbr*nvar) - n*nvar);
+    const int v = vlst_.v[vl];
 
     // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
@@ -697,7 +706,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
             [&](const int i) {
               Real val = seamval(i);
-              int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
+              int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*vl);
               rbuf[dn].vars(dm, index) = val;
             });
 
@@ -707,7 +716,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
             [&](const int i) {
               Real val = seamval(i);
-              int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
+              int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*vl);
               sbuf[n].vars(m,index) = val;
             });
           }
@@ -728,13 +737,13 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,ilp,iup+1),
             [&](const int i) {
-              rbuf[dn].vars(dm, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = a(m,v,k,j,i);
+              rbuf[dn].vars(dm, (i-il + ni*(j-jl + nj*(k-kl + nk*vl))) ) = a(m,v,k,j,i);
             });
           // if neighbor is at coarser level, load data from coarse_u0
           } else {
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,ilp,iup+1),
             [&](const int i) {
-              rbuf[dn].vars(dm, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = ca(m,v,k,j,i);
+              rbuf[dn].vars(dm, (i-il + ni*(j-jl + nj*(k-kl + nk*vl))) ) = ca(m,v,k,j,i);
             });
           }
 
@@ -745,13 +754,13 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,ilp,iup+1),
             [&](const int i) {
-              sbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = a(m,v,k,j,i);
+              sbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*vl))) ) = a(m,v,k,j,i);
             });
           // if neighbor is at coarser level, load data from coarse_u0
           } else {
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,ilp,iup+1),
             [&](const int i) {
-              sbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = ca(m,v,k,j,i);
+              sbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*vl))) ) = ca(m,v,k,j,i);
             });
           }
         }
@@ -785,7 +794,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   BvalsTeamFor("SendBuffZ4c", policy1, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
-    const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+    const int vl = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+    const int v = vlst_.v[vl];
 
     // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
@@ -825,7 +835,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             // load data from coarse_u0
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
             [&](const int i) {
-              rbuf[dn].vars(dm,ndat+ (i-il + ni*(j-jl + nj*(k-kl + nk*v))))=ca(m,v,k,j,i);
+              rbuf[dn].vars(dm,ndat+ (i-il + ni*(j-jl + nj*(k-kl + nk*vl)))) =
+                ca(m,v,k,j,i);
             });
 
           // else copy into send buffer for MPI communication below
@@ -833,7 +844,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             // load data from coarse_u0
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
             [&](const int i) {
-              sbuf[n].vars(m,ndat+ (i-il + ni*(j-jl + nj*(k-kl + nk*v))) )=ca(m,v,k,j,i);
+              sbuf[n].vars(m,ndat+ (i-il + ni*(j-jl + nj*(k-kl + nk*vl))) )=ca(m,v,k,j,i);
             });
           }
         });
@@ -878,21 +889,24 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
 
           // get ptr to send buffer when neighbor is at coarser/same/fine level
           int data_size = nvar;
+          int per_var = 0;
           if ( nghbr.h_view(m,n).lev < pmy_pack->pmb->mb_lev.h_view(m) ) {
-            data_size *= sendbuf[n].icoar_ndat;
+            per_var = sendbuf[n].icoar_ndat;
           } else if ( nghbr.h_view(m,n).lev == pmy_pack->pmb->mb_lev.h_view(m) ) {
             if (is_z4c) {
-              data_size *= sendbuf[n].isame_z4c_ndat;
+              per_var = sendbuf[n].isame_z4c_ndat;
             } else {
-              data_size *= sendbuf[n].isame_ndat;
+              per_var = sendbuf[n].isame_ndat;
             }
           } else {
-            data_size *= sendbuf[n].ifine_ndat;
+            per_var = sendbuf[n].ifine_ndat;
           }
+          data_size *= per_var;
           auto send_ptr = Kokkos::subview(sendbuf[n].vars, m, Kokkos::ALL);
 
-          int ierr = MPI_Isend(send_ptr.data(), data_size, MPI_ATHENA_REAL, drank, tag,
-                               comm_vars, &(sendbuf[n].vars_req[m]));
+          // variable list: the selected variables are the first nvar chunks
+          int ierr = MPI_Isend(send_ptr.data(), data_size, MPI_ATHENA_REAL,
+                               drank, tag, comm_vars, &(sendbuf[n].vars_req[m]));
           if (ierr != MPI_SUCCESS) {no_errors=false;}
         }
       }
@@ -914,7 +928,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
 
 TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
                                                  DvceArray5D<Real> &ca,
-                                                 int iwl, int iwu) {
+                                                 int iwl, int iwu, int vmask) {
   // create local references for variables in kernel
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
@@ -972,7 +986,9 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
 
   //----- STEP 2: buffers have all completed, so unpack
 
-  int nvar = a.extent_int(1);  // TODO(@user): 2nd index from L of in array must be NVAR
+  // the variables moved (default vmask = 0: all of a, in order); see bvals.hpp
+  const BvVarList vlst_ = MakeBvVarList(a.extent_int(1), vmask);
+  int nvar = (vmask != 0) ? vlst_.n : a.extent_int(1);
 
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   const int nsp_ = BvCcSplit();
@@ -983,7 +999,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     const int sp_ = tmember.league_rank() - lr_*nsp_;
     const int m = (lr_)/(nnghbr*nvar);
     const int n = (lr_ - m*(nnghbr*nvar))/nvar;
-    const int v = (lr_ - m*(nnghbr*nvar) - n*nvar);
+    const int vl = (lr_ - m*(nnghbr*nvar) - n*nvar);
+    const int v = vlst_.v[vl];
 
     // only unpack buffers when neighbor exists (cube vertex skipped -- see bvals.hpp)
     if (nghbr.d_view(m,n).gid >= 0 &&
@@ -1086,14 +1103,14 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
         if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
           Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,ilp,iup+1),
           [&](const int i) {
-            a(m,v,k,j,i) = rbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) );
+            a(m,v,k,j,i) = rbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*vl))) );
           });
 
         // if neighbor is at coarser level, load data into coarse_u0
         } else {
           Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,ilp,iup+1),
           [&](const int i) {
-            ca(m,v,k,j,i) = rbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) );
+            ca(m,v,k,j,i) = rbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*vl))) );
           });
         }
       });
@@ -1107,7 +1124,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   BvalsTeamFor("RecvBuffZ4c", policy1, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
-    const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+    const int vl = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+    const int v = vlst_.v[vl];
     // only unpack buffers when neighbor exists (cube vertex skipped -- see bvals.hpp)
     if (nghbr.d_view(m,n).gid >= 0 &&
         !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n)) &&
@@ -1137,7 +1155,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
           // load data into coarse_u0
           Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
           [&](const int i) {
-            ca(m,v,k,j,i) = rbuf[n].vars(m,ndat + (i-il + ni*(j-jl + nj*(k-kl + nk*v))) );
+            ca(m,v,k,j,i) =
+              rbuf[n].vars(m,ndat + (i-il + ni*(j-jl + nj*(k-kl + nk*vl))) );
           });
         });
       }
@@ -1149,8 +1168,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   // Every face buffer is unpacked by this point, which is what the corner fill needs.
   // The COARSE array needs it too -- see the note in bvals_fc.cpp's RecvAndUnpackFC.
   if (pmy_pack->pmesh->use_cubed_sphere) {
-    FillPanelCornersCC(a, false);
-    if (pmy_pack->pmesh->multilevel) { FillPanelCornersCC(ca, true); }
+    FillPanelCornersCC(a, false, vmask);
+    if (pmy_pack->pmesh->multilevel) { FillPanelCornersCC(ca, true, vmask); }
   }
 
   return TaskStatus::complete;
@@ -1214,7 +1233,8 @@ static Real SignPreserveCS(const Real q, const Real n0, const Real n1, const Rea
   return q;
 }
 
-void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse) {
+void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
+                                              int vmask) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int js = coarse ? indcs.cjs : indcs.js;
   const int je = coarse ? indcs.cje : indcs.je;
@@ -1222,7 +1242,9 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse)
   const int ke = coarse ? indcs.cke : indcs.ke;
   const int ng = indcs.ng;
   const int nmb = pmy_pack->nmb_thispack;
-  const int nvar = a.extent_int(1);
+  // the variables filled (default vmask = 0: all of a); see bvals.hpp
+  const BvVarList vlst_ = MakeBvVarList(a.extent_int(1), vmask);
+  const int nvar = (vmask != 0) ? vlst_.n : a.extent_int(1);
   const int n1 = a.extent_int(4);
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
@@ -1235,7 +1257,8 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse)
   // par_for takes at most five ranges, so the ng x ng corner block is flattened into g
   par_for("cs_fill_corners_cc", DevExeSpace(), 0,(nmb-1), 0,3, 0,(nvar-1), 0,(n1-1),
           0,(ng*ng-1),
-  KOKKOS_LAMBDA(const int m, const int c, const int v, const int i, const int g) {
+  KOKKOS_LAMBDA(const int m, const int c, const int vl, const int i, const int g) {
+    const int v = vlst_.v[vl];
     const int gj = g/ng;
     const int gk = g - gj*ng;
     const int sj = (c & 1) ? 1 : -1;      // -1 = the -x2 side of the block

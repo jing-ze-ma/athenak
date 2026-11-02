@@ -9,7 +9,12 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <cstdlib>
 #include <iostream>
+
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -28,6 +33,7 @@
 #include "shearing_box/orbital_advection.hpp"
 #include "mhd/mhd.hpp"
 #include "dyn_grmhd/dyn_grmhd.hpp"
+#include "mesh/nghbr_index.hpp"
 
 void Resistivity::AssembleResistRKGTasks(std::map<std::string, std::shared_ptr<TaskList>> tl) {
   TaskID none(0);
@@ -116,6 +122,33 @@ TaskStatus Resistivity::RKGCoeff(Driver *pdrive, int stage) {
     gat = -mut*ajm1;
   }
   pmy_pack->pmhd->rkg_skip_u = rkg_lean && (stage < s);
+  if (rkg_halo_ien_only) {
+    // rkghalo-1101: super-stage 1 exchanges everything (the state left by the RK stages
+    // and the operator-split work before the super-step); stages >= 2 move u0(IEN) and
+    // the slots the previous super-stage's ConToPrim wrote on any rank
+    auto *pm = pmy_pack->pmhd;
+    const int nvar = pm->nmhd + pm->nscalars;
+    int vm = 0;
+    if (stage > 1 && nvar <= 32 && rkg_halo_changed >= 0) {
+      const int all = (nvar == 32) ? -1 : ((1 << nvar) - 1);
+      const int mom = (1 << IM1) | (1 << IM2) | (1 << IM3);
+      // test aid: RKG_HALO_FORCE_MASK (env, a decimal bitmask) adds slots to every list;
+      // a superset of the changed slots is exact, so key on must still be bitwise
+      static const int force_ = std::getenv("RKG_HALO_FORCE_MASK") ?
+                                std::atoi(std::getenv("RKG_HALO_FORCE_MASK")) : 0;
+      vm = rkg_halo_changed | (1 << IEN) | force_;
+      if (vm & mom) {vm |= mom;}
+      if (vm == all) {vm = 0;}
+    }
+    if (stage > 1) {
+      rkg_halo_nstage++;
+      if (vm == 0) {rkg_halo_nfull++;}
+      for (int v=0; v<nvar && v<32; ++v) {
+        if (vm == 0 || ((vm >> v) & 1)) {rkg_halo_nslot[v]++;}
+      }
+    }
+    pm->rkg_u_vmask = vm;
+  }
   return TaskStatus::complete;
 }
 
@@ -272,6 +305,67 @@ TaskStatus Resistivity::ConToPrimRKG(Driver *pdrive, int stage) {
         ui_(m,n,k,j,i) += d;
       }
     });
+    if (rkg_halo_ien_only) {
+      // rkghalo-1101: did this ConToPrim write any slot but IEN anywhere (ghosts too)?
+      // u1 = u0 before it (CopyCons); RKUpdate between two super-stages writes only
+      // IEN, so if nothing else changed the other slots' ghosts from the last full
+      // exchange are still exactly what a full exchange would deliver.
+      // ghosts across a PHYSICAL face (no neighbour) are never written by the exchange
+      // (sends read active cells; the cube-vertex widening is tangential), so what the
+      // ConToPrim does there is the same with or without the key: skip them
+      if (rkg_halo_phys.extent_int(0) != nmb1 + 1) {
+        Kokkos::realloc(rkg_halo_phys, nmb1 + 1);
+        auto ph = Kokkos::create_mirror_view(rkg_halo_phys);
+        auto &ngh = pmy_pack->pmb->nghbr;
+        auto *pmsh = pmy_pack->pmesh;
+        for (int m=0; m<=nmb1; ++m) {
+          int b = 0;
+          for (int f=0; f<6; ++f) {
+            const int ax = f/2, sg = (f%2 == 0) ? -1 : 1;
+            if ((ax == 1 && !pmsh->multi_d) || (ax == 2 && !pmsh->three_d)) continue;
+            const int nb = NeighborIndex((ax == 0) ? sg : 0, (ax == 1) ? sg : 0,
+                                         (ax == 2) ? sg : 0, 0, 0);
+            if (ngh.h_view(m,nb).gid < 0) {b |= (1 << f);}
+          }
+          ph(m) = b;
+        }
+        Kokkos::deep_copy(rkg_halo_phys, ph);
+      }
+      auto phys_ = rkg_halo_phys;
+      auto &mi_ = pmy_pack->pmesh->mb_indcs;
+      const int is_ = mi_.is, ie_ = mi_.ie;
+      const int js_ = mi_.js, je_ = mi_.je, ks_ = mi_.ks, ke_ = mi_.ke;
+      const bool md_ = pmy_pack->pmesh->multi_d, td_ = pmy_pack->pmesh->three_d;
+      const int nv = u0_.extent_int(1);
+      const int64_t nc1 = n1 + 1, nc2 = n2 + 1, nc3 = n3 + 1;
+      const int64_t ncell = nc1*nc2*nc3;
+      const int64_t ntot = static_cast<int64_t>(nmb1 + 1)*nv*ncell;
+      int ndiff = 0;   // bit v: slot v changed somewhere
+      Kokkos::parallel_reduce("rkg_halo_check",
+        Kokkos::RangePolicy<DevExeSpace, Kokkos::IndexType<int64_t>>(DevExeSpace(), 0,
+                                                                     ntot),
+      KOKKOS_LAMBDA(const int64_t idx, int &nd) {
+        const int64_t mv = idx/ncell;
+        int64_t r = idx - mv*ncell;
+        const int m = static_cast<int>(mv/nv);
+        const int v = static_cast<int>(mv - static_cast<int64_t>(m)*nv);
+        const int k = static_cast<int>(r/(nc2*nc1));
+        r -= static_cast<int64_t>(k)*nc2*nc1;
+        const int j = static_cast<int>(r/nc1);
+        const int i = static_cast<int>(r - static_cast<int64_t>(j)*nc1);
+        const int b = phys_(m);
+        const bool skip = ((b & 1) && i < is_) || ((b & 2) && i > ie_) ||
+                          (md_ && (((b & 4) && j < js_) || ((b & 8) && j > je_))) ||
+                          (td_ && (((b & 16) && k < ks_) || ((b & 32) && k > ke_)));
+        if (v != n && v < 32 && !skip && u0_(m,v,k,j,i) != u1_(m,v,k,j,i)) {
+          nd |= (1 << v);
+        }
+      }, Kokkos::BOr<int>(ndiff));
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, &ndiff, 1, MPI_INT, MPI_BOR, MPI_COMM_WORLD);
+#endif
+      rkg_halo_changed = ndiff;
+    }
   }
   return st;
 }
@@ -284,6 +378,8 @@ TaskStatus Resistivity::NewTimeStepRKG(Driver *pdrive, int stage) {
 
 TaskStatus Resistivity::UpdateResistivity(Driver *pdrive, int stage) {
   pmy_pack->pmhd->rkg_skip_u = false;
+  pmy_pack->pmhd->rkg_u_vmask = 0;   // rkghalo-1101: the RK stages exchange everything
+  rkg_halo_changed = -1;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &ng = indcs.ng;
   int n1m1 = indcs.nx1 + 2*ng - 1;
