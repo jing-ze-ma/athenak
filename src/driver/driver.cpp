@@ -542,6 +542,42 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // Work before time integrator indicated by "0" in stage
       ExecuteTaskList(pmesh, "before_timeintegrator", 0);
 
+      // RKG super-stepping of the resistive (Ohmic + ambipolar) EMF, operator-split from
+      // the RK stages.  half = 0: one super-step over the cycle dt after the RK stages
+      // (Lie, first order in dt; the default).  rkgstrang-1102 <mhd>/rkg_strang = true:
+      // dt/2 here, before the RK stages (after the before_timeintegrator split work), and
+      // dt/2 after them (Strang, second order; the Athena++ RKL2 placement).  Each half
+      // takes its stage count from dt/2 and the cycle's dt_diff (Resistivity::TotStage).
+      Resistivity *prs = (pmesh->pmb_pack->pmhd != nullptr) ?
+                        pmesh->pmb_pack->pmhd->presist : nullptr;
+      const bool rkg_on = (prs != nullptr) && prs->use_rkg_sts;
+      auto rkg_step = [&](int half) {
+        prs->rkg_half = half;
+        prs->rkg_dtfac = (half == 0) ? 1.0 : 0.5;
+        // Work before time integrator indicated by "0" in stage
+        ExecuteTaskList(pmesh, "before_rkg_timeintegrator", 0);
+        // time-integrator tasks for each stage of integrator (operator-split RKG
+        // super-stepping method for diffusion)
+        for (int stage=1; stage<=(prs->s); ++stage) {
+          ExecuteTaskList(pmesh, "before_rkg_stagen", stage);
+          ExecuteTaskList(pmesh, "rkg_stagen", stage);
+          ExecuteTaskList(pmesh, "after_rkg_stagen", stage);
+        }
+        // Work after time integrator indicated by "1" in stage
+        ExecuteTaskList(pmesh, "after_rkg_timeintegrator", 1);
+        prs->rkg_half = 0;
+        prs->rkg_dtfac = 1.0;
+      };
+      if (rkg_on && prs->rkg_strang) {
+        if (pmesh->pmb_pack->pradm1 != nullptr) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<mhd>/rkg_strang is not supported with <rad_m1>"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        rkg_step(1);
+      }
+
       // time-integrator tasks for each stage of integrator
       // <rad_m1>/time_scheme = hesdirk2 (rad_m1_time2.cpp): the implicit radiation solve
       // runs INSIDE each Heun stage, after its after_stagen; a stage that is not
@@ -639,22 +675,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         for (int stage=1; stage<=(nexp_stages); ++stage) {hydro_stage(stage);}
       }
         
-      if (pmesh->pmb_pack->pmhd != nullptr) {
-        if (pmesh->pmb_pack->pmhd->presist != nullptr) {
-          if (pmesh->pmb_pack->pmhd->presist->use_rkg_sts) {
-            // Work before time integrator indicated by "0" in stage
-            ExecuteTaskList(pmesh, "before_rkg_timeintegrator", 0);
-            // time-integrator tasks for each stage of integrator (operator-splitted RKG super-stepping method for diffusion)
-            for (int stage=1; stage<=(pmesh->pmb_pack->pmhd->presist->s); ++stage) {
-              ExecuteTaskList(pmesh, "before_rkg_stagen", stage);
-              ExecuteTaskList(pmesh, "rkg_stagen", stage);
-              ExecuteTaskList(pmesh, "after_rkg_stagen", stage);
-            }
-            // Work after time integrator indicated by "1" in stage
-            ExecuteTaskList(pmesh, "after_rkg_timeintegrator", 1);
-          }
-        }
-      }
+      // RKG super-step, after the RK stages: the full dt (Lie, the default) or, with
+      // <mhd>/rkg_strang, its second half (the first ran before the RK stages)
+      if (rkg_on) {rkg_step(prs->rkg_strang ? 2 : 0);}
 
       // Operator-split, sub-cycled grey M1 radiation transport (design sect. 5).
       // N_sub = ceil(dt_mesh/dt_rad); each substep runs the module's own two-stage

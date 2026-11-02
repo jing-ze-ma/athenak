@@ -27,7 +27,8 @@ TaskStatus Resistivity::RKUpdate(Driver *pdriver, int stage) {
   bool &three_d = pmy_pack->pmesh->three_d;
 
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto dt = pmy_pack->pmesh->dt;
+  // rkgstrang-1102: a Strang half spans dt/2 (rkg_dtfac = 0.5; 1 otherwise)
+  auto dt = pmy_pack->pmesh->dt*rkg_dtfac;
   auto u0_ = pmy_pack->pmhd->u0;
   auto u2_ = u2;
   auto u_ideal_ = u_ideal;
@@ -72,8 +73,11 @@ TaskStatus Resistivity::RKUpdate(Driver *pdriver, int stage) {
   // nu E_{j-2} + fjm1 F_j + f0 F_0 (E_0 = 0, so the (1-mu-nu) u_ideal term adds nothing)
   if (track_x1_bflx) {
     const int nmb = nmb1 + 1;
-    if (static_cast<int>(rkg_bflx.extent(0)) != nmb) {
-      Kokkos::realloc(rkg_bflx, nmb, 6, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng);
+    // rkgstrang-1102: slots 6|7 keep the first Strang half (UpdateResistivity)
+    const int nsl = rkg_strang ? 8 : 6;
+    if (static_cast<int>(rkg_bflx.extent(0)) != nmb ||
+        static_cast<int>(rkg_bflx.extent(1)) != nsl) {
+      Kokkos::realloc(rkg_bflx, nmb, nsl, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng);
     }
     auto bf = rkg_bflx;
     const bool first = (stage == 1);

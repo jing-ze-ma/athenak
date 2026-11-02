@@ -105,6 +105,18 @@ class Resistivity {
   // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only
   // the energy slot of the conserved registers.  Uniform cubed-sphere meshes only.
   bool rkg_lean = false;
+  // rkgstrang-1102 <mhd>/rkg_strang (default false = the Lie split, bitwise unchanged):
+  // the super-step is split in two halves of dt/2, one before the RK stages and one
+  // after them (Driver::Execute), so the resistive operator is Strang-split (second
+  // order in dt) instead of Lie-split.  Each half takes its stage count from dt/2 and
+  // the dt_diff of the cycle start (Mesh::NewTimeStep of the previous cycle).  eta (and
+  // ad_coef) is refreshed from w0 before the second half (RefreshEta), so each half
+  // freezes the coefficient on the state it starts from.  The rkg_bflx flux of the
+  // whole cycle is the mean of the two halves (slots 6|7 hold the first).
+  bool rkg_strang = false;
+  int rkg_half = 0;        // set by the driver: 0 = one full-dt super-step, 1|2 = half
+  Real rkg_dtfac = 1.0;    // set by the driver: fraction of pmesh->dt it spans
+  void RefreshEta();
   // <mhd>/rkg_halo_ien_only (default false, read only when named): the conserved-variable
   // halo exchange of RKG super-stages 2..s moves only the slots of u0 that changed
   // since the previous exchange: u0(IEN), the one slot RKUpdate writes, plus every slot

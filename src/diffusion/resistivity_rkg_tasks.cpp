@@ -88,8 +88,10 @@ TaskStatus Resistivity::TotStage(Driver *pdrive, int stage) {
     rkg_lmax_done = true;
     LmaxDiag();
   }
+  // rkgstrang-1102: the second half starts from the state the RK stages left; its eta
+  if (rkg_half == 2) {RefreshEta();}
   Real dtp = pmy_pack->pmesh->dt_diff;
-  Real dth = pmy_pack->pmesh->dt;
+  Real dth = pmy_pack->pmesh->dt*rkg_dtfac;   // rkgstrang-1102: dt/2 per Strang half
   tau = dth/dtp;
   alpha = 0.5;
   Real sreal = -alpha + sqrt(SQR(alpha+1.0)+tau*(3.0+2.0*alpha));
@@ -380,6 +382,33 @@ TaskStatus Resistivity::UpdateResistivity(Driver *pdrive, int stage) {
   pmy_pack->pmhd->rkg_skip_u = false;
   pmy_pack->pmhd->rkg_u_vmask = 0;   // rkghalo-1101: the RK stages exchange everything
   rkg_halo_changed = -1;
+  // rkgstrang-1102: the x1-face energy flux of the cycle (dhj ledger: energy = dt E A
+  // with the CYCLE dt) is the mean of the two halves' fluxes, each applied over dt/2
+  if (track_x1_bflx && rkg_half != 0 && rkg_bflx.extent_int(1) >= 8) {
+    auto bf = rkg_bflx;
+    const int h = rkg_half;
+    const int nmb1 = rkg_bflx.extent_int(0) - 1;
+    const int n3 = rkg_bflx.extent_int(2) - 1, n2 = rkg_bflx.extent_int(3) - 1;
+    par_for("rkg_bflx_half", DevExeSpace(), 0, nmb1, 0, n3, 0, n2,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      for (int s2=0; s2<2; ++s2) {
+        if (h == 1) {
+          bf(m,6+s2,k,j) = bf(m,4+s2,k,j);
+        } else {
+          bf(m,4+s2,k,j) = 0.5*(bf(m,6+s2,k,j) + bf(m,4+s2,k,j));
+        }
+      }
+    });
+  }
+  RefreshEta();
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Resistivity::RefreshEta
+//! \brief eta_b (perna/eos) and ad_coef (eos) from w0 over every cell incl. ghosts
+
+void Resistivity::RefreshEta() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &ng = indcs.ng;
   int n1m1 = indcs.nx1 + 2*ng - 1;
@@ -393,5 +422,4 @@ TaskStatus Resistivity::UpdateResistivity(Driver *pdrive, int stage) {
                  pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas,
                  0, n1m1, 0, n2m1, 0, n3m1);
   }
-  return TaskStatus::complete;
 }
