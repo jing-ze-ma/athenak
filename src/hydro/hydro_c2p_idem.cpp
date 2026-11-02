@@ -27,6 +27,8 @@
 //! Only ConToPrimSplit calls are candidates (the RK-stage and split-refresh conversions
 //! always follow a change); the frozen first conversion of a restart is never skipped.
 
+#include <cstdio>
+#include <cstdlib>
 #include <type_traits>
 
 #include "athena.hpp"
@@ -75,8 +77,18 @@ int C2PIdemDiff(const V &a, const V &b) {
 bool Hydro::C2PIdemSkip() {
   bool skip = c2pi_valid && !c2p_freeze_derived && !c2p_eint_rst;
   if (skip) {
-    skip = (C2PIdemDiff(u0, c2pi_u) == 0) && (C2PIdemDiff(w0, c2pi_w) == 0) &&
-           (C2PIdemDiff(wder, c2pi_d) == 0) && (C2PIdemDiff(wtemp, c2pi_t) == 0);
+    const int du = C2PIdemDiff(u0, c2pi_u), dw = C2PIdemDiff(w0, c2pi_w);
+    const int dd = C2PIdemDiff(wder, c2pi_d), dt = C2PIdemDiff(wtemp, c2pi_t);
+    skip = (du == 0) && (dw == 0) && (dd == 0) && (dt == 0);
+    static const bool dbg_ = (std::getenv("ATHENA_C2PI_DEBUG") != nullptr);
+    if (dbg_ && !skip && c2pi_nrun < 6) {
+      std::printf("c2pi_debug cyc=%d differ u=%d w=%d wder=%d wtemp=%d\n",
+                  pmy_pack->pmesh->ncycle, du, dw, dd, dt);
+    }
+  } else if (std::getenv("ATHENA_C2PI_DEBUG") != nullptr && c2pi_nrun < 6) {
+    std::printf("c2pi_debug cyc=%d not valid (valid=%d freeze=%d eint_rst=%d)\n",
+                pmy_pack->pmesh->ncycle, c2pi_valid ? 1 : 0, c2p_freeze_derived ? 1 : 0,
+                c2p_eint_rst ? 1 : 0);
   }
   if (skip) {++c2pi_nskip;} else {++c2pi_nrun;}
   return skip;
