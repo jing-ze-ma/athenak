@@ -1,0 +1,41 @@
+//========================================================================================
+// AthenaXXX astrophysical plasma code
+// Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
+// Licensed under the 3-clause BSD License (the "LICENSE")
+//========================================================================================
+//! \file two_stream_rt_chain_ss_f12.cpp
+//! \brief tusplit-1102: explicit instantiations of TsrtCkChain for part
+//! of the
+//! tag sets picket_fence_two_stream_RT_pass dispatches (generated; the full list is
+//! the union of the two_stream_rt_chain_*.cpp files).  Tags: (SPH, BSP, CCH, FRM,
+//! FOP, JAC); the radial tier NN is 0 for every set.
+
+#include <tuple>
+#include <type_traits>
+
+#include "utils/two_stream_rt_chain.hpp"
+
+namespace two_stream_rt {
+
+template void TsrtCkChain(TsrtCkChainCtx &, std::integral_constant<int, 0>,
+    std::bool_constant<true>, std::bool_constant<true>,
+    std::integral_constant<int, 2>, std::integral_constant<int, 1>,
+    std::bool_constant<true>, std::bool_constant<true>);
+template void TsrtCkChain(TsrtCkChainCtx &, std::integral_constant<int, 0>,
+    std::bool_constant<true>, std::bool_constant<true>,
+    std::integral_constant<int, 2>, std::integral_constant<int, 1>,
+    std::bool_constant<true>, std::bool_constant<false>);
+template void TsrtCkChain(TsrtCkChainCtx &, std::integral_constant<int, 0>,
+    std::bool_constant<true>, std::bool_constant<true>,
+    std::integral_constant<int, 2>, std::integral_constant<int, 1>,
+    std::bool_constant<false>, std::bool_constant<true>);
+template void TsrtCkChain(TsrtCkChainCtx &, std::integral_constant<int, 0>,
+    std::bool_constant<true>, std::bool_constant<true>,
+    std::integral_constant<int, 2>, std::integral_constant<int, 1>,
+    std::bool_constant<false>, std::bool_constant<false>);
+template void TsrtCkChain(TsrtCkChainCtx &, std::integral_constant<int, 0>,
+    std::bool_constant<true>, std::bool_constant<true>,
+    std::integral_constant<int, 2>, std::integral_constant<int, 2>,
+    std::bool_constant<false>, std::bool_constant<false>);
+
+}  // namespace two_stream_rt

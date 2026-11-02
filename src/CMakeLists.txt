@@ -262,6 +262,24 @@ if (NOT ${PROBLEM} STREQUAL "built_in_pgens")
   )
 endif()
 
+# tusplit-1102: the two-stream RT solver (utils/two_stream_rt.hpp) of the problem
+# generators that include it is compiled in its own translation units: the column pass
+# and the explicitly instantiated chain/grey launch templates (the bulk of the device
+# compile).  Only these problem generators build them, so other builds do not grow.
+if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt" OR ${PROBLEM} STREQUAL "box_convection"
+    OR ${PROBLEM} STREQUAL "red_giant")
+  target_sources(athena
+      PRIVATE
+          utils/two_stream_rt_pass.cpp
+          utils/two_stream_rt_chain_ss_f0.cpp
+          utils/two_stream_rt_chain_ss_f12.cpp
+          utils/two_stream_rt_chain_sn_f0.cpp
+          utils/two_stream_rt_chain_sn_f12.cpp
+          utils/two_stream_rt_chain_ns.cpp
+          utils/two_stream_rt_chain_nn.cpp
+  )
+endif()
+
 # prodcand-1011: the rad_m1 ic_rad = fs_relax default is for the stellar-envelope pgen only
 # (rad_m1_icrad.cpp IcRadInit); every other problem defaults to ic_rad = none
 if (${PROBLEM} STREQUAL "he_star_m1")

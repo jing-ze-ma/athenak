@@ -38,7 +38,7 @@ namespace two_stream_rt {
 
 using deep_copy_across::DeepCopyAcross;
 
-inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
+void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);   // two_stream_rt_pass.cpp
 inline void CkRstScalars();
 
 // ---- the ck_impl_xstep snapshot: the state pass 0 of the last STORING call read, and
