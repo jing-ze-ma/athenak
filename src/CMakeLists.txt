@@ -88,6 +88,8 @@ add_executable(
         hydro/fofc_etotgrav.cpp
         hydro/hydro_newdt.cpp
         hydro/hydro_tasks.cpp
+        hydro/hydro_splitbval.cpp
+        hydro/hydro_c2p_idem.cpp
         hydro/hydro_am.cpp
         hydro/hydro_mergelat.cpp
         hydro/hydro_ringavg.cpp
@@ -118,6 +120,7 @@ add_executable(
         mhd/mhd_fofc.cpp
         mhd/mhd_newdt.cpp
         mhd/mhd_tasks.cpp
+        mhd/mhd_splitbval.cpp
         mhd/mhd_tracers.cpp
         mhd/mhd_update.cpp
         mhd/mhd_etotgrav.cpp

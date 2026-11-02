@@ -715,6 +715,11 @@ TaskStatus Hydro::SendU(Driver *pdrive, int stage) {
 
 TaskStatus Hydro::RecvU(Driver *pdrive, int stage) {
   TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0);
+  // ckbval-1102: a ghost refresh; the next ConToPrim takes the split_bval_fast snapshot
+  if (sbf_on && tstat == TaskStatus::complete) {
+    sbf_want = true;
+    sbf_valid = false;
+  }
   return tstat;
 }
 
@@ -816,14 +821,26 @@ TaskStatus Hydro::Prolongate(Driver *pdrive, int stage) {
 //!                     RecvU the rest of the stage still has to run.
 
 void Hydro::RTOpSplitBvals(bool recv_posted, bool repost) {
+  // ckbval-1102 <hydro>/split_bval_fast: u0(IEN) alone when SplitBvalFastOK proves the
+  // ghosts of every other variable already hold what the full exchange would give.
+  // Everything after the exchange (BCs, ConToPrim over the whole mesh) is unchanged.
+  const bool fast = !recv_posted && sbf_on && SplitBvalFastOK();
+  const int vm = fast ? (1 << IEN) : 0;
+  if (sbf_on) {
+    if (fast) {++sbf_nfast;} else {++sbf_nfull;}
+  }
   if (!recv_posted) {
-    while (pbval_u->InitRecv(nhydro+nscalars) != TaskStatus::complete) {}
+    while (pbval_u->InitRecv(nhydro+nscalars, vm) != TaskStatus::complete) {}
   }
   if (pmy_pack->pmesh->multilevel) {
     pmy_pack->pmesh->pmr->RestrictCC(u0, coarse_u0);
   }
-  while (pbval_u->PackAndSendCC(u0, coarse_u0) != TaskStatus::complete) {}
-  while (pbval_u->RecvAndUnpackCC(u0, coarse_u0) != TaskStatus::complete) {}
+  while (pbval_u->PackAndSendCC(u0, coarse_u0, -1, -1, vm) != TaskStatus::complete) {}
+  while (pbval_u->RecvAndUnpackCC(u0, coarse_u0, -1, -1, vm) != TaskStatus::complete) {}
+  if (sbf_on) {
+    sbf_want = true;
+    sbf_valid = false;
+  }
   (void) ApplyPhysicalBCs(nullptr, 0);
   (void) Prolongate(nullptr, 0);
   (void) ConToPrim(nullptr, 0);
@@ -862,6 +879,11 @@ void Hydro::C2PTrack(Driver *pdrive, int stage, bool before) {
 //! the RK stages): identical, except that the floor bookkeeping weights it by 1.
 
 TaskStatus Hydro::ConToPrimSplit(Driver *pdrive, int stage) {
+  // ckbval-1102 <hydro>/split_c2p_once: under user_split_once the conversion inside
+  // RTOpSplitBvals is the last thing to touch u0 before the next RK stage, so this one
+  // (after it, and again in "before_timeintegrator") only repeats it (a round-off change:
+  // each call re-runs the etotgrav round trip and the T(d,e) solve).  See SplitC2POnce.
+  if (SplitC2POnce()) return TaskStatus::complete;
   c2p_split = true;
   TaskStatus ts = ConToPrim(pdrive, stage);
   c2p_split = false;
@@ -909,6 +931,8 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
 //! \brief Wrapper task list function to call ConsToPrim over entire mesh (including gz)
 
 TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
+  if (sbf_on && sbf_want) SplitBvalSnap(pdrive, stage);   // ckbval-1102
+  if (c2pi_on && c2p_split && C2PIdemSkip()) return TaskStatus::complete;   // ckbval-1102
   if (c2p_track) C2PTrack(pdrive, stage, true);
   eint_ledger::Mark(pmy_pack->pmesh, "gap_c2p");
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -975,6 +999,7 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
     eint_rst = DvceArray4D<Real>();
     c2p_eint_rst = false;
   }
+  if (c2pi_on) C2PIdemSave();   // ckbval-1102
   if (c2p_track) C2PTrack(pdrive, stage, false);
   eint_ledger::Mark(pmy_pack->pmesh, "c2p");
   runaway_scan::Scan(pmy_pack->pmesh, "ConToPrim_floors");

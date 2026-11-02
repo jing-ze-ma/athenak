@@ -432,6 +432,13 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     }
     use_etotgrav = pin->GetOrAddBoolean("mhd","etotgrav",false);
+    // ckbval-1102 (read only when named; see MHD::SplitBvalFastOK in mhd_splitbval.cpp)
+    sbf_on = pin->DoesParameterExist("mhd","split_bval_fast") ?
+             pin->GetBoolean("mhd","split_bval_fast") : false;
+    if (sbf_on && (pmy_pack->pmesh->multilevel || pin->DoesBlockExist("shearing_box") ||
+                   pin->DoesBlockExist("orbital_advection"))) {
+      sbf_on = false;
+    }
     // SMR/AMR is not supported with etotgrav: the coarse-buffer inversion used for
     // primitive prolongation (bvals/prolong_prims.cpp) reads e + rho*Phi as the internal
     // energy, the conserved prolongation of rho*Phi is removed again with the FINE
@@ -912,6 +919,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
 // destructor
 
 MHD::~MHD() {
+  if (sbf_on && global_variable::my_rank == 0) {
+    std::cout << "<mhd>/split_bval_fast: energy-only refreshes " << sbf_nfast
+              << ", full refreshes " << sbf_nfull << " (rank 0)" << std::endl;
+  }
   if (pam != nullptr) {delete pam;}
   delete peos;
   delete pbval_u;

@@ -258,6 +258,32 @@ class Hydro {
   // after the split radiation.  Diagnostic only: the state is not touched.
   bool c2p_track = false;
   bool c2p_split = false;   // true while the operator-split ConToPrim task runs
+  // ckbval-1102 <hydro>/split_bval_fast: the ghost refresh after the operator-split
+  // source (RTOpSplitBvals) exchanges u0(IEN) only when a check proves the other
+  // conserved variables in every ghost already hold what a full exchange would deliver.
+  // See Hydro::SplitBvalFastOK in hydro_tasks.cpp.  sbf_s is u0 at the input of the
+  // first ConToPrim after the last ghost refresh (sbf_valid); sbf_want marks a refresh.
+  bool sbf_on = false;
+  bool sbf_want = false;
+  bool sbf_valid = false;
+  DvceArray5D<Real> sbf_s;
+  long sbf_nfast = 0, sbf_nfull = 0;
+  bool SplitBvalFastOK();
+  void SplitBvalSnap(Driver *pdrive, int stage);
+  // ckbval-1102 <hydro>/split_c2p_once: skip the two ConToPrimSplit tasks when the
+  // operator-split source is user_split_once (RTOpSplitBvals converts already)
+  bool scp_once = false;
+  bool SplitC2POnce() const;
+  // ckbval-1102 <hydro>/c2p_idempotent: a ConToPrimSplit conversion of a state that is
+  // bitwise the one the previous conversion left (u0, w0, wder, wtemp, all cells) is a
+  // no-op; see hydro_c2p_idem.cpp
+  bool c2pi_on = false;
+  bool c2pi_valid = false;
+  DvceArray5D<Real> c2pi_u, c2pi_w, c2pi_d;
+  DvceArray4D<Real> c2pi_t;
+  long c2pi_nskip = 0, c2pi_nrun = 0;
+  bool C2PIdemSkip();
+  void C2PIdemSave();
   DvceArray2D<Real> c2p_acc;
   DvceArray4D<Real> c2p_ref_e, c2p_ref_d;
   void EnableC2PTrack();

@@ -494,6 +494,8 @@ TaskStatus MHD::SendU(Driver *pdrive, int stage) {
 TaskStatus MHD::RecvU(Driver *pdrive, int stage) {
   if (rkg_skip_u) return TaskStatus::complete;
   TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0, -1, -1, rkg_u_vmask);
+  // ckbval-1102: a u0 refresh; the next ConToPrim takes the split_bval_fast snapshot
+  if (sbf_on && tstat == TaskStatus::complete) {sbf_want = true; sbf_valid = false;}
   return tstat;
 }
 
@@ -726,12 +728,17 @@ TaskStatus MHD::Prolongate(Driver *pdrive, int stage) {
 //! refill the b0 ghosts from the unchanged b0, which gives the same values again.
 
 void MHD::RTOpSplitBvals() {
-  while (pbval_u->InitRecv(nmhd+nscalars) != TaskStatus::complete) {}
+  // ckbval-1102 <mhd>/split_bval_fast: u0(IEN) alone when SplitBvalFastOK proves it exact
+  const bool fast = sbf_on && SplitBvalFastOK();
+  const int vm = fast ? (1 << IEN) : 0;
+  if (sbf_on) {if (fast) {++sbf_nfast;} else {++sbf_nfull;}}
+  while (pbval_u->InitRecv(nmhd+nscalars, vm) != TaskStatus::complete) {}
   if (pmy_pack->pmesh->multilevel) {
     pmy_pack->pmesh->pmr->RestrictCC(u0, coarse_u0);
   }
-  while (pbval_u->PackAndSendCC(u0, coarse_u0) != TaskStatus::complete) {}
-  while (pbval_u->RecvAndUnpackCC(u0, coarse_u0) != TaskStatus::complete) {}
+  while (pbval_u->PackAndSendCC(u0, coarse_u0, -1, -1, vm) != TaskStatus::complete) {}
+  while (pbval_u->RecvAndUnpackCC(u0, coarse_u0, -1, -1, vm) != TaskStatus::complete) {}
+  if (sbf_on) {sbf_want = true; sbf_valid = false;}
   (void) ApplyPhysicalBCs(nullptr, 0);
   (void) Prolongate(nullptr, 0);
   (void) ConToPrim(nullptr, 0);
@@ -800,6 +807,7 @@ TaskStatus MHD::RTStrangSplit(Driver *pdrive, int stage) {
 //! \brief Wrapper task list function to call ConsToPrim over entire mesh (including gz)
 
 TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
+  if (sbf_on && sbf_want) SplitBvalSnap();   // ckbval-1102
   if (c2p_track) C2PTrack(pdrive, stage, true);
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &ng = indcs.ng;
