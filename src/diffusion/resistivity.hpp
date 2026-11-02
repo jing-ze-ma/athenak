@@ -105,6 +105,25 @@ class Resistivity {
   // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only
   // the energy slot of the conserved registers.  Uniform cubed-sphere meshes only.
   bool rkg_lean = false;
+  // <mhd>/rkg_halo_ien_only (default false, read only when named): the conserved-variable
+  // halo exchange of RKG super-stages 2..s moves only the slots of u0 that changed
+  // since the previous exchange: u0(IEN), the one slot RKUpdate writes, plus every slot
+  // the previous super-stage's ConToPrim wrote.  Exact: after the ConToPrim of every
+  // super-stage < s, u0 is compared with u1 (= u0 before that ConToPrim) slot by slot,
+  // in every cell the exchange sends or fills (active cells and the ghosts not across a
+  // physical boundary face); the per-slot bitmask is OR-reduced over all ranks.  A
+  // changed momentum slot brings all three (the seam basis transform).  Super-stage 1
+  // always exchanges everything.  Uniform grids, <= 32 slots, not with rkg_lean; a
+  // no-op without use_rkg_sts.
+  bool rkg_halo_ien_only = false;
+  int rkg_halo_changed = -1;        // slots ConToPrim changed in the previous stage
+  int64_t rkg_halo_nstage = 0;      // diagnostics: super-stages >= 2,
+  int64_t rkg_halo_nfull = 0;       // ... of which with every slot exchanged,
+  int64_t rkg_halo_nslot[32] = {};  // ... and per slot, how many exchanged it
+  // per MeshBlock, bit f set when face f (x1-, x1+, x2-, x2+, x3-, x3+) has no
+  // neighbour (physical boundary): the ghosts across it are never written by the
+  // exchange, so the check skips them (built on first use; uniform grids)
+  DvceArray1D<int> rkg_halo_phys;
   // cubed sphere + STRETCHED radial grid: take the radial derivative of the Stokes loop
   // AT the x1 face instead of at the midpoint of the two cell centres (see
   // resistivity_gnomonic.cpp).  <mhd>/cs_resist_x1_centred, default true; a no-op on an
@@ -132,6 +151,10 @@ class Resistivity {
   //             gamma_in = <mhd>/ad_sigv_in/(m_ion + m_n); see SetAmbipolar()
   // Off (ad_type = 0) nothing below is allocated and every path is unchanged.
   int ad_type = 0;              // 0 none, 1 constant, 2 eos
+  // xetracer-1101: index of the advected x_e scalar in w (MHD::ixe), or -1 = local Saha
+  int xe_idx = -1;
+  // y = n_e/n_H in that scalar; n_H = xe_nhfac rho_cgs (xh/(a_hyd m_u))
+  Real xe_nhfac = 0.0;
   Real eta_ad = 0.0;            // <mhd>/eta_ad (constant)
   Real ad_sigv_in = 1.9e-9;     // <mhd>/ad_sigv_in [cm^3/s], Langevin rate
   Real ad_mion_amu = 30.0;      // <mhd>/ad_mion_amu, mean ion mass [amu]

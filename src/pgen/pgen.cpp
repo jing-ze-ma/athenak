@@ -297,6 +297,51 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
   }
 
+  // tracer-1101: the MHD analogue for the passive tracers (x_e, floor mass; slot
+  // layout in mhd/mhd_tracers.hpp).  The file's layout (main.cpp: its user scalars and
+  // its tracers) is mapped slot by slot onto the run's: a tracer the file has and the
+  // run has is read; one the run has and the file lacks starts from zero (the floor
+  // tracer stays zero, x_e is set to local Saha by the first ConToPrim through
+  // xe_init_pending); one the file has and the run lacks is skipped.  Any subset works.
+  // The user scalar count has to match.
+  int nmhd_file = nmhd;
+  mhd::TracerLayout mtl_run, mtl_file;
+  if (pmhd != nullptr) {
+    mtl_run = pmhd->tracers;
+    mtl_file = mtl_run;
+  }
+  if (pmhd != nullptr && global_variable::rst_mhd_nscalars >= 0) {
+    mtl_file.nuser = global_variable::rst_mhd_nscalars;
+    mtl_file.xe = (global_variable::rst_mhd_tracers & 1) != 0;
+    mtl_file.fl = (global_variable::rst_mhd_tracers & 2) != 0;
+    if (mtl_file.nuser != mtl_run.nuser) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/nscalars = " << mtl_run.nuser << " but the restart"
+                << " file was written with " << mtl_file.nuser << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    nmhd_file = pmhd->nmhd + mtl_file.Total();
+    if (mtl_file.xe) pmhd->xe_init_pending = false;
+    if (global_variable::my_rank == 0) {
+      if (mtl_run.xe && !mtl_file.xe) {
+        std::cout << "mhd: restart file has no x_e tracer; <mhd>/xe_tracer starts from "
+                  << "local Saha" << std::endl;
+      }
+      if (mtl_run.fl && !mtl_file.fl) {
+        std::cout << "mhd: restart file has no floor tracer; <mhd>/floor_tracer starts "
+                  << "from zero" << std::endl;
+      }
+      if (mtl_file.xe && !mtl_run.xe) {
+        std::cout << "mhd: the restart file's x_e tracer is not read (xe_tracer off)"
+                  << std::endl;
+      }
+      if (mtl_file.fl && !mtl_run.fl) {
+        std::cout << "mhd: the restart file's floor tracer is not read (floor_tracer "
+                  << "off)" << std::endl;
+      }
+    }
+  }
+
   // root process reads z4c last_output_time and tracker data
   if (pz4c != nullptr) {
     Real last_output_time;
@@ -916,6 +961,38 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     nams_file = static_cast<int>(hdr[1]);
   }
 
+  // --- wbtan-rstg-1101: THE PER-CELL PGEN SLAB HEADER (kPgenSlabRstMagic), behind the
+  // spin one: npgs_file slabs, the last of each record
+  int npgs_file = 0;
+  if (std::memcmp(variabledata, &(kPgenSlabRstMagic[0]), sizeof(kPgenSlabRstMagic)) == 0) {
+    char pgs_hdr[4*sizeof(std::int32_t)];
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(pgs_hdr));
+      ok = ok && (resfile.Read_bytes(&(pgs_hdr[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(pgs_hdr[0]), sizeof(pgs_hdr), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    std::int32_t hdr[4] = {0, 0, 0, 0};
+    if (ok) {std::memcpy(&(hdr[0]), &(pgs_hdr[0]), sizeof(hdr));}
+    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 64) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the per-cell pgen slab header of this restart file is "
+                << "broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    npgs_file = static_cast<int>(hdr[1]);
+  }
+
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 
@@ -937,7 +1014,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     data_size_ += nout1*nout2*nout3*nhydro_file*sizeof(Real); // hydro u0
   }
   if (pmhd != nullptr) {
-    data_size_ += nout1*nout2*nout3*nmhd*sizeof(Real);   // mhd u0
+    data_size_ += nout1*nout2*nout3*nmhd_file*sizeof(Real);   // mhd u0
     data_size_ += (nout1+1)*nout2*nout3*sizeof(Real);    // mhd b0.x1f
     data_size_ += nout1*(nout2+1)*nout3*sizeof(Real);    // mhd b0.x2f
     data_size_ += nout1*nout2*(nout3+1)*sizeof(Real);    // mhd b0.x3f
@@ -1003,7 +1080,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
   IOWrapperSizeT wm_size = static_cast<IOWrapperSizeT>(nwarm_file + npred_file + nt2_file
                             + neint_file + nck_file + nctr_file + nrss_file + nvgd_file
-                            + ncsk_file + nra_file + nams_file)
+                            + ncsk_file + nra_file + nams_file + npgs_file)
                            *nout1*nout2*nout3
                            *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
@@ -1136,7 +1213,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
 
   if (pmhd != nullptr) {
-    Kokkos::realloc(ccin, nmb, nmhd, nout3, nout2, nout1);
+    Kokkos::realloc(ccin, nmb, nmhd_file, nout3, nout2, nout1);
     for (int m=0;  m<noutmbs_max; ++m) {
       // every rank has a MB to read, so read collectively
       if (m < noutmbs_min) {
@@ -1168,9 +1245,33 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         myoffset += data_size;
       }
     }
-    Kokkos::deep_copy(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb), Kokkos::ALL,
-                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ccin);
-    offset_myrank += nout1*nout2*nout3*nmhd*sizeof(Real);   // mhd u0
+    if (mtl_file.Mask() == mtl_run.Mask()) {
+      Kokkos::deep_copy(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb), Kokkos::ALL,
+                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ccin);
+    } else {
+      // tracer-1101: MHD variables + user scalars (a common prefix), then each tracer
+      // present in both; the run's tracer slots start at zero
+      const int npre = pmhd->nmhd + mtl_run.nuser;
+      Kokkos::deep_copy(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb),
+                        std::make_pair(npre, nmhd), Kokkos::ALL, Kokkos::ALL,
+                        Kokkos::ALL), 0.0);
+      DeepCopyAcross(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb),
+                     std::make_pair(0, npre), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL),
+                     Kokkos::subview(ccin, Kokkos::ALL, std::make_pair(0, npre),
+                     Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      const int nm = pmhd->nmhd;
+      const int run_off[2] = {mtl_run.XeOff(), mtl_run.FlOff()};
+      const int file_off[2] = {mtl_file.XeOff(), mtl_file.FlOff()};
+      for (int t=0; t<2; ++t) {
+        if (run_off[t] < 0 || file_off[t] < 0) continue;
+        const int nr = nm + run_off[t], nf = nm + file_off[t];
+        DeepCopyAcross(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb),
+                       std::make_pair(nr, nr+1), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL),
+                       Kokkos::subview(ccin, Kokkos::ALL, std::make_pair(nf, nf+1),
+                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      }
+    }
+    offset_myrank += nout1*nout2*nout3*nmhd_file*sizeof(Real);   // mhd u0
     myoffset = offset_myrank;
 
     Kokkos::realloc(fcin.x1f, nmb, nout3, nout2, nout1+1);
@@ -1680,7 +1781,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "history is then not bitwise)." << std::endl;
   }
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0 ||
-      ctr_read || rss_read || vgd_read || ra_read || csk_read || ams_read) {
+      ctr_read || rss_read || vgd_read || ra_read || csk_read || ams_read ||
+      npgs_file > 0) {
     const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
@@ -1961,6 +2063,23 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
           DeepCopyAcross(Kokkos::subview(pradm1->amk1, std::make_pair(0,nmb), Kokkos::ALL,
                          Kokkos::ALL, Kokkos::ALL), wtin);
         }
+      }
+    }
+    // wbtan-rstg-1101: the per-cell pgen slabs (kPgenSlabRstMagic), the last of the
+    // record, into pgen_rst_slabs_in for the restart call of the problem generator
+    if (npgs_file > 0) {
+      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
+                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file
+                  + nams_file;
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
+      myoffset = offset_myrank;
+      pgen_rst_slabs_in = DvceArray5D<Real>("rst-pgs-in", nmb, npgs_file, nout3, nout2,
+                                            nout1);
+      for (int n=0; n<npgs_file; ++n) {
+        read_slab("pgen slab");
+        DeepCopyAcross(Kokkos::subview(pgen_rst_slabs_in, Kokkos::ALL, n, Kokkos::ALL,
+                       Kokkos::ALL, Kokkos::ALL), wtin);
       }
     }
   }

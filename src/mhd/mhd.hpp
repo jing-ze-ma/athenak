@@ -21,6 +21,8 @@
 #include "coordinates/cell_locations.hpp"
 #include "utils/wb_background.hpp"
 #include "utils/fofc_report.hpp"
+#include "mhd/xe_tracer.hpp"
+#include "mhd/mhd_tracers.hpp"
 
 // forward declarations
 class EquationOfState;
@@ -58,6 +60,7 @@ enum class MHD_RSolver {advect, llf, hlle, hlld, lhlld, roe,   // non-relativist
 
 struct MHDTaskIDs {
   TaskID splitpre;
+  TaskID trcsrc;
   TaskID splitpst;
   TaskID savest;
   TaskID irecv;
@@ -124,6 +127,33 @@ class MHD {
 
   int nmhd;                // number of mhd variables (5/4 for ideal/isothermal EOS)
   int nscalars;            // number of passive scalars
+  // tracer-1101: the passive-tracer slot layout (mhd_tracers.hpp): user scalars, then
+  // x_e (ixe), then the floor mass (ifltr, always last).  nscalars counts all of them.
+  TracerLayout tracers;
+  // xetracer-1101: <mhd>/xe_tracer = true adds ONE passive scalar (index ixe) carrying
+  // y = n_e/n_H (electrons per H nucleus; per mass), relaxed to Saha once per cycle
+  // (mhd_tracers.cpp); the Ohmic/ambipolar eos paths then read it instead of Saha.
+  bool xe_tracer = false;
+  int ixe = -1;
+  bool xe_init_pending = false;   // set z = Saha at the next ConToPrim (fresh start or
+                                  // a restart file written without the tracer)
+  xetracer::XeTracerParams xe_par;
+  void XeTracerUpdate(Real dt, bool init);
+  // floortrc-1101: <mhd>/floor_tracer = true adds ONE passive scalar (index ifltr, the
+  // last slot) holding the mass density the density floors added (dfloor and the
+  // Alfven floor, booked in Ideal/GeneralMHD::ConsToPrim).  FloorTracerDrain removes it
+  // once per cycle where the floor does not bind (rho > fltr_margin x rho_floor), at the
+  // same velocity and specific internal energy, at most fltr_fmax of the cell mass per
+  // cycle.  fltr_dm/fltr_de: the drained mass/energy (volume integrated, this rank's
+  // active cells) since the owner last zeroed them (dhj history Mdrain/Edrain).
+  bool floor_tracer = false;
+  int ifltr = -1;
+  Real fltr_margin = 2.0, fltr_fmax = 0.01;
+  Real fltr_dm = 0.0, fltr_de = 0.0;
+  void FloorTracerDrain();
+  // both tracers: radial ghosts at physical x1 boundaries get the edge cell's specific
+  // tracer value (zero gradient in s/rho); u0 only, or u0 and w0
+  void TracerX1Ghosts(bool set_w);
   DvceArray5D<Real> u0;    // conserved variables
   DvceArray5D<Real> w0;    // primitive variables
   DvceFaceFld4D<Real> b0;  // face-centered magnetic fields
@@ -278,6 +308,10 @@ class MHD {
   // set by Resistivity::RKGCoeff under <mhd>/rkg_lean for the intermediate RKG
   // super-stages: no conserved-variable halo exchange (InitRecv/SendU/RecvU skip u0)
   bool rkg_skip_u = false;
+  // set by Resistivity::RKGCoeff under <mhd>/rkg_halo_ien_only: the conserved-variable
+  // halo exchange of this RKG super-stage moves only the variables of u0 whose bit is
+  // set in rkg_u_vmask (0 = all, the default)
+  int rkg_u_vmask = 0;
   bool c2p_split = false;   // true while the operator-split ConToPrim task runs
   // stswall-1029: >= 0 while Resistivity::ConToPrimRKG runs: the weight of this super-
   // stage's IEN change in the state the RKG super-step ends with (1: ConToPrimRKG adds
@@ -404,6 +438,7 @@ class MHD {
   TaskStatus Prolongate(Driver* pdrive, int stage);
   TaskStatus ConToPrim(Driver *d, int stage);
   TaskStatus RTStrangSplit(Driver *d, int stage);
+  TaskStatus TracerSource(Driver *d, int stage);
   void RTOpSplitBvals();
   TaskStatus NewTimeStep(Driver *d, int stage);
   // ...in "after_stagen_tl" task list

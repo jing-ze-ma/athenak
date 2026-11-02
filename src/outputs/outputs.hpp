@@ -329,6 +329,7 @@ class BaseTypeOutput {
   // implicit_gas_src = conservative(2): the cell-F slope csk1 (rotavg-rst-1012)
   HostArray5D<Real> outarray_m1k;
   HostArray5D<Real> outarray_ams;   // cs-open-1018 am_vector spin (+ amk1)
+  HostArray5D<Real> outarray_pgs;   // wbtan-rstg-1101 per-cell pgen slabs
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks

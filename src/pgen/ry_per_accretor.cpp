@@ -190,6 +190,7 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "pgen.hpp"
+#include "wbtan_common.hpp"   // roche-wbtan-1101: problem/roche_wb_tan
 #include "utils/recipe.hpp"
 
 // amdef-1019: the envelope stage fills the potential and carries rho*Phi (it needs
@@ -638,6 +639,18 @@ Real RocheGeffXYZ(const RocheParams &p, const Real x, const Real y, const Real z
 //! gnomonic tangents (m_a = p.e_a, e1.e2 = c = cos_cell), w0 IVY/IVZ contravariant
 //! (hydro_am.cpp header).  The spherical-polar path never reads any of this (cs_ = false).
 bool cs_ = false;
+// roche-wbtan-1101 problem/roche_wb_tan (default false; wbtan_common.hpp): the tangential
+// forces gt4_/gp4_ (phys_3d, sp and cs) become the hydro's own discrete tangential residual
+// of the IC's static envelope W_eq instead of the face differences of the true Phi, so the
+// static envelope is balanced in theta/phi (xi/eta) to round-off.  W_eq = the IC (EnvSetup;
+// on a restart the IC is rebuilt and u0 restored), the probe at the first RyPerSrcEnv call.
+wbtan::WbTan acc_wbt;
+void WbTanAccProbe(Mesh *pm);
+// accwbtan-1101 (d): g_t is in gt4_/gp4_ (copied at the first source call, after a probe or
+// from the restart file: wbtan::LoadFromRestart); the pgen (for the restart slabs)
+bool acc_wbt_g4_ = false;
+ProblemGenerator *acc_pg_ = nullptr;
+std::string wbt_file_;         // accwbtan-1101 (e): <basename>.wbt.hst
 
 //! (sin theta, phi in [0, 2 pi), cos theta) of the panel point (x2, x3) (code coordinates)
 KOKKOS_INLINE_FUNCTION
@@ -2192,6 +2205,7 @@ void RyPerM1PostLz(Mesh *pm) {
 
 void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
+  if (acc_wbt.on && !acc_wbt_g4_) WbTanAccProbe(pm);   // roche-wbtan-1101
   // accspin-1028: the spin ramp's scalars (and arrays, every spin_ramp_ds) to s(t) at the
   // step's first stage (a retried / redone step starts here again: spr_slast_ is dt_retry
   // registered, so a restore of the arrays is followed by a refresh)
@@ -3205,7 +3219,66 @@ void RyPerLzHist(Mesh *pm) {
   std::fclose(fp);
 }
 
+//! accwbtan-1101 (e): the L_z torque of the WB tangential force rho g_t (gt4_/gp4_, the
+//! force RyPerSrcEnv applies), sum dV R (rho g)_phi in the AccJzCell form (sp: R rho g_3;
+//! cs: z of r x the covariant pair raised), over the domain and inside r_meas, to
+//! <basename>.wbt.hst at every user.hst output once g_t is set (rank 0).  The sp L_z budget
+//! (lz_budget) books the same force in Jgrv.
+void RyPerWbtHist(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nji = indcs.nx2*indcs.nx1, nkji = indcs.nx3*nji;
+  const int nmb = pmbp->nmb_thispack;
+  auto u0 = pmbp->phydro->u0;
+  auto &vol = pmbp->pcoord->volume;
+  auto &x1v = pmbp->pcoord->x1v;
+  auto &x2v = pmbp->pcoord->x2v;
+  auto &x3v = pmbp->pcoord->x3v;
+  auto &mbp = pmbp->pmb->mb_panel;
+  auto gt = gt4_, gp = gp4_;
+  const bool cs = cs_;
+  const Real rm = env_rmeas_;
+  Real tq[2] = {0.0, 0.0};
+  Kokkos::parallel_reduce("ryper_wbtq", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &a, Real &b) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js;
+    const int i = idx%nx1 + is;
+    const Real d = u0(m,IDN,k,j,i), r = x1v(m,i);
+    const Real rz = cs ? 0.0 : r*sin(x2v(m,j));
+    const int pnl = cs ? mbp.d_view(m) : 0;
+    const Real t = AccJzCell(cs, pnl, x2v(m,j), x3v(m,k), r, rz, vol(m,k,j,i), 0.0,
+                             d*gt(m,k,j,i), d*gp(m,k,j,i), 0.0, 0.0);
+    a += t;
+    if (r < rm) b += t;
+  }, Kokkos::Sum<Real>(tq[0]), Kokkos::Sum<Real>(tq[1]));
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::my_rank == 0) {
+    MPI_Reduce(MPI_IN_PLACE, tq, 2, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+  } else {
+    MPI_Reduce(tq, tq, 2, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+  }
+#endif
+  if (global_variable::my_rank != 0) return;
+  bool hdr = false;
+  {
+    std::ifstream f(wbt_file_);
+    hdr = !f.good() || f.peek() == std::ifstream::traits_type::eof();
+  }
+  FILE *fp = std::fopen(wbt_file_.c_str(), "a");
+  if (fp == nullptr) return;
+  if (hdr) {
+    std::fprintf(fp, "# ry_per_accretor problem/roche_wb_tan torque (accwbtan-1101): "
+                 "sum dV R (rho g_t)_phi\n#  [1]=time  [2]=Twb  [3]=Twb(r<r_meas)\n");
+  }
+  std::fprintf(fp, " %.15e %.15e %.15e\n", pm->time, tq[0], tq[1]);
+  std::fclose(fp);
+}
+
 void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
+  if (acc_wbt.on && acc_wbt_g4_) RyPerWbtHist(pm);   // accwbtan-1101 (e)
   if (trc_) RyPerTrcHist(pm);
   if (lz_) RyPerLzHist(pm);
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -4577,6 +4650,167 @@ void EnvTcolColumn(MeshBlockPack *pmbp, const Real racc, const std::vector<Real>
 }
 
 //----------------------------------------------------------------------------------------
+//! roche-wbtan-1101: W_eq (rho, eint; the static envelope is at rest) of every cell from
+//! the IC EnvSetup has just written into u0 (E - rho Phi, etotgrav); on a restart
+//! (restore) u0 goes back to the restart state
+void WbTanCaptureIC(MeshBlockPack *pmbp, const DvceArray5D<Real> &usave, const bool restore) {
+  auto *phd = pmbp->phydro;
+  // accwbtan-1101 (a): the FULL conserved IC (the rotating envelope's m2, m3 and its KE in E)
+  wbtan::AllocU(acc_wbt, pmbp);
+  auto weq = *acc_wbt.weq;
+  auto ueq = *acc_wbt.ueq;
+  auto u0 = phd->u0;
+  auto phicc = phd->phicc0;
+  auto &ic = pmbp->pmesh->mb_indcs;
+  const int n1 = ic.nx1 + 2*ic.ng;
+  const int n2 = (ic.nx2 > 1) ? (ic.nx2 + 2*ic.ng) : 1;
+  const int n3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
+  par_for("wbt_weq", DevExeSpace(), 0, pmbp->nmb_thispack - 1, 0, n3 - 1, 0, n2 - 1,
+          0, n1 - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = u0(m,IDN,k,j,i);
+    weq(m,0,k,j,i) = d;
+    weq(m,1,k,j,i) = u0(m,IEN,k,j,i) - d*phicc(m,k,j,i);
+    for (int n=IDN; n<=IEN; ++n) ueq(m,n,k,j,i) = u0(m,n,k,j,i);
+  });
+  if (restore) Kokkos::deep_copy(phd->u0, usave);
+  acc_wbt.ready = false;
+  if (global_variable::my_rank == 0) {
+    std::printf("ry_per_accretor: problem/roche_wb_tan ON: tangential gt4/gp4 = the hydro's "
+                "own residual of the IC envelope (spin %.6g; probe at the first source "
+                "call)\n", spin_);
+  }
+}
+
+//! accwbtan-1101 (a): the pgen's own tangential stage terms of the rotating W_eq (bdt = 1,
+//! into us): on the spherical polar mesh the analytic Coriolis -2 rho Omega x v of
+//! RyPerSrcEnv (phys_3d), x2: + rho 2 Omega v_phi cos(theta), x3: - rho 2 Omega (v_r sin
+//! + v_theta cos), ALWAYS the analytic form (problem/coriolis_lz's mass-flux Q_c is not
+//! part of the equilibrium).  The cubed sphere's Coriolis is the core frame_omega's
+//! (AmModule::FrameForceProbe inside the probe): nothing here.
+DvceArray4D<Real> wbt_ga2_, wbt_ga3_;   // accwbtan-1101 (c): -grad_t G, x2 / x3
+
+//! accwbtan-1101 (c) (<rad_m1>): the IC's equilibrium RADIATIVE acceleration, tangential:
+//! a_t = -grad_t G(psi), G = the column's radiative potential (Phi_eff = Phi_wb + G; its
+//! radial part -dG/dr is the M1 force_reference a_ref, the tangential part is handed to the
+//! gas by the M1 coupling in full), as face differences of G along the x2 (x3) grid line
+//! through the centre over the same lengths as gt4_/gp4_ (sp orthonormal, cs covariant).
+//! In the probe it is the radiation's share of the equilibrium, so that g_t holds gravity
+//! (+ the discretisation) only and the live M1 force is not counted twice.  Host, once.
+void WbTanAccRadAcc(MeshBlockPack *pmbp) {
+  const RocheParams p = rp_;
+  const Real dlt = env_dlt_, rtop = env_rtop_, rspin = env_rspin_, phtop = env_phtop_;
+  const Real phis = env_phis_;
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  const int nmb = pmbp->nmb_thispack;
+  auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+  auto hx2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
+  auto hx2f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx2f);
+  auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
+  auto hx3f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx3f);
+  Kokkos::realloc(wbt_ga2_, nmb, n3, n2, n1);
+  Kokkos::realloc(wbt_ga3_, nmb, n3, n2, n1);
+  auto h2 = Kokkos::create_mirror_view(wbt_ga2_);
+  auto h3 = Kokkos::create_mirror_view(wbt_ga3_);
+  const bool cs = cs_;
+  auto gat = [&](const Real r, const Real st, const Real ph) {
+    return RadColAt(rcol_g_, phis - PhiWB3(p, dlt, rtop, rspin, phtop, r, st, ph));
+  };
+  Real amax = 0.0;
+  for (int m=0; m<nmb; ++m) {
+    const int pnl = cs ? pmbp->pmb->mb_panel.h_view(m) : 0;
+    for (int k=0; k<n3; ++k) {
+      for (int j=0; j<n2; ++j) {
+        Real st, ph, sa, pa, sb, pb, s3a, p3a, s3b, p3b;
+        AccAng(cs, pnl, hx2(m,j), hx3(m,k), st, ph);
+        AccAng(cs, pnl, hx2f(m,j), hx3(m,k), sa, pa);
+        AccAng(cs, pnl, hx2f(m,j+1), hx3(m,k), sb, pb);
+        AccAng(cs, pnl, hx2(m,j), hx3f(m,k), s3a, p3a);
+        AccAng(cs, pnl, hx2(m,j), hx3f(m,k+1), s3b, p3b);
+        Real a2, a3;
+        if (cs) {
+          a2 = CsArc(pnl, hx2f(m,j), hx3(m,k), hx2f(m,j+1), hx3(m,k));
+          a3 = CsArc(pnl, hx2(m,j), hx3f(m,k), hx2(m,j), hx3f(m,k+1));
+        } else {
+          a2 = hx2f(m,j+1) - hx2f(m,j);
+          a3 = st*(hx3f(m,k+1) - hx3f(m,k));
+        }
+        for (int i=0; i<n1; ++i) {
+          const Real r = hx1(m,i);
+          h2(m,k,j,i) = -(gat(r, sb, pb) - gat(r, sa, pa))/(r*a2);
+          h3(m,k,j,i) = -(gat(r, s3b, p3b) - gat(r, s3a, p3a))/(r*a3);
+          amax = std::max(amax, std::max(std::fabs(h2(m,k,j,i)), std::fabs(h3(m,k,j,i))));
+        }
+      }
+    }
+  }
+  Kokkos::deep_copy(wbt_ga2_, h2);
+  Kokkos::deep_copy(wbt_ga3_, h3);
+  if (global_variable::my_rank == 0) {
+    std::printf("ry_per_accretor: roche_wb_tan: the equilibrium radiative acceleration "
+                "-grad_t G in the probe, max |a_t| (rank 0) = %.6g\n", amax);
+  }
+}
+
+void WbTanAccExtra(Mesh *pm, DvceArray5D<Real> &us, DvceArray5D<Real> &scratch) {
+  (void) scratch;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  if (rad_) {
+    // accwbtan-1101 (c): the radiation's tangential share of the equilibrium (WbTanAccRadAcc)
+    auto w0r = pmbp->phydro->w0;
+    auto ga2 = wbt_ga2_, ga3 = wbt_ga3_;
+    par_for("wbt_extra_rad", DevExeSpace(), 0, pmbp->nmb_thispack - 1, indcs.ks, indcs.ke,
+            indcs.js, indcs.je, indcs.is, indcs.ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = w0r(m,IDN,k,j,i);
+      us(m,IM2,k,j,i) += d*ga2(m,k,j,i);
+      us(m,IM3,k,j,i) += d*ga3(m,k,j,i);
+    });
+  }
+  if (cs_) return;
+  auto w0 = pmbp->phydro->w0;
+  auto &x2v = pmbp->pcoord->x2v;
+  const Real om2 = 2.0*rp_.omega;
+  par_for("wbt_extra", DevExeSpace(), 0, pmbp->nmb_thispack - 1, indcs.ks, indcs.ke,
+          indcs.js, indcs.je, indcs.is, indcs.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = w0(m,IDN,k,j,i);
+    const Real vr = w0(m,IVX,k,j,i), vt = w0(m,IVY,k,j,i), vp = w0(m,IVZ,k,j,i);
+    const Real st = sin(x2v(m,j)), cth = cos(x2v(m,j));
+    us(m,IM2,k,j,i) += d*om2*vp*cth;
+    us(m,IM3,k,j,i) -= d*om2*(vr*st + vt*cth);
+  });
+}
+
+//! roche-wbtan-1101: the probe (wbtan_common.hpp, the full IC W_eq incl. its rotation;
+//! extra = WbTanAccExtra) and g_t -> gt4_/gp4_ (covariant on cs, as gt4/gp4 are)
+void WbTanAccProbe(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  // accwbtan-1101 (d): a restart whose file carries g_t is not re-probed
+  if (!acc_wbt.ready) {
+    if (rad_) WbTanAccRadAcc(pmbp);   // accwbtan-1101 (c)
+    wbtan::Probe(pm, acc_wbt, WbTanAccExtra, "ry_per_accretor");
+  }
+  acc_wbt_g4_ = true;
+  auto g = *acc_wbt.gt;
+  auto gt = gt4_, gp = gp4_;
+  auto &ic = pm->mb_indcs;
+  const int n1 = ic.nx1 + 2*ic.ng;
+  const int n2 = (ic.nx2 > 1) ? (ic.nx2 + 2*ic.ng) : 1;
+  const int n3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
+  par_for("wbt_g4", DevExeSpace(), 0, pmbp->nmb_thispack - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    gt(m,k,j,i) = g(m,0,k,j,i);
+    gp(m,k,j,i) = g(m,1,k,j,i);
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! stage 2 set-up, on every start (restart included): keys, potentials (true Phi into
 //! phicc0/phi0 for etotgrav, Phi_wb into the x1 WB pair), the -dDelta/dr force (into
 //! gr_), the relaxation target, the R_acc face index, and on a fresh start the envelope
@@ -5201,7 +5435,40 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
                 "MR/JR are zero there (choose x1min so that R_acc is a log-grid face)\n",
                 racc);
   }
-  if (restart) return;
+  // roche-wbtan-1101 problem/roche_wb_tan: checks; on a restart the IC below is rebuilt
+  // into u0 for W_eq and u0 is restored (WbTanCaptureIC), the radiation untouched
+  acc_wbt.on = pin->GetOrAddBoolean("problem", "roche_wb_tan", false);
+  wbt_file_ = pin->GetString("job", "basename") + ".wbt.hst";
+  if (acc_wbt.on) {
+    std::string bad = "";
+    if (!p3_) bad = "problem/phys_3d = true (the 3-D tangential forces gt4_/gp4_)";
+    // accwbtan-1101 (a): any constant spin (W_eq = the rotating IC); no spin ramp (W_eq
+    // would change in time)
+    if (spr_on_) bad = "no problem/spin_ramp (W_eq is the IC: a constant spin)";
+    if (!phd->use_etotgrav) bad = "<hydro>/etotgrav = true (the work is in the energy flux)";
+    // accwbtan-1101 (b): with env_ic_vz W_eq is the barotropic IC (thermo = general path)
+    if (spr_icvz_ && !gen_) bad = "thermo = general with problem/env_ic_vz";
+    if (pmbp->pmesh->adaptive || pmbp->pmesh->multilevel) bad = "a single-level mesh";
+    if (!bad.empty()) {
+      std::cout << "### FATAL ERROR in ry_per_accretor: problem/roche_wb_tan needs " << bad
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  // accwbtan-1101 (d): a restart takes g_t from the file when it carries it (no W_eq
+  // rebuild, no probe); otherwise the IC is rebuilt for the probe
+  bool wbld = false;
+  if (restart && acc_wbt.on && acc_pg_ != nullptr) {
+    wbld = wbtan::LoadFromRestart(acc_pg_, acc_wbt, pmbp, "ry_per_accretor");
+  }
+  const bool wbic = restart && acc_wbt.on && !wbld;
+  DvceArray5D<Real> wbt_usave;
+  if (wbic) {
+    wbt_usave = DvceArray5D<Real>(Kokkos::view_alloc("wbt_usave", Kokkos::WithoutInitializing),
+                                  phd->u0.layout());
+    Kokkos::deep_copy(wbt_usave, phd->u0);
+  }
+  if (restart && !wbic) return;
 
   // ---- initial state: the envelope in DISCRETE hydrostatic equilibrium of the x1 WB
   // pair, column by column.  T = P/rho is the target profile at the cell centres; the
@@ -5217,12 +5484,25 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // Rotation (spin - 1) Omega r
   // (rotating frame) in the supported part (r < r_top).
   if (gen_) {
+    // accwbtan-1101 (b): problem/env_ic_vz: the von Zeipel IC T is not barotropic (T, P vary
+    // on the equipotentials: a real baroclinic forcing).  W_eq = the BAROTROPIC IC of the
+    // same column (T_col(psi): EnvTcolColumn without the vZ factor), captured; then T back
+    // to the vZ column and the real IC (a restart: u0 back to the restart state)
+    const bool wbvz = acc_wbt.on && spr_icvz_;
+    if (wbvz) {
+      EnvTcolColumn(pmbp, racc, cpsi, clt, clr, crq, false, spr_vzdep_, false);
+      EnvICGeneral(pmbp, racc, rho_amb, eqtop, icpoly, cpsi, clt, clr);
+      WbTanCaptureIC(pmbp, wbt_usave, wbic);
+      EnvTcolColumn(pmbp, racc, cpsi, clt, clr, crq, true, spr_vzdep_, false);
+      if (wbic) return;
+    }
     if (spr_on_) {   // ramp v2: the blended column
       EnvICGeneral(pmbp, racc, rho_amb, eqtop, icpoly, spr_cpsi_, spr_clt_, spr_clr_);
     } else {
       EnvICGeneral(pmbp, racc, rho_amb, eqtop, icpoly, cpsi, clt, clr);
     }
-    if (rad_) RadIC(pin, pmbp);
+    if (rad_ && !wbic) RadIC(pin, pmbp);
+    if (acc_wbt.on && !wbvz) WbTanCaptureIC(pmbp, wbt_usave, wbic);
     return;
   }
   const Real gm1 = eos.gamma - 1.0, dfl = eos.dfloor;
@@ -5290,6 +5570,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       }
     }
   });
+  if (acc_wbt.on) WbTanCaptureIC(pmbp, wbt_usave, wbic);
 }
 
 //----------------------------------------------------------------------------------------
@@ -6569,6 +6850,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (user_hist) user_hist_func = RyPerHist;
   pgen_final_func = RyPerFinal;
   if (env_) {
+    acc_pg_ = this;   // accwbtan-1101 (d)
     EnvSetup(pin, pmbp, racc, rho_amb, restart);
     if (restart && pgen_rst_write_func != nullptr) RyPerRstBadv();
     user_bcs_func = RyPerBCEnv;

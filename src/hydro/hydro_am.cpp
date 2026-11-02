@@ -299,6 +299,37 @@ void AmModule::AmTransportProbe(const AmFluid &fl) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void AmModule::FrameForceProbe
+//! \brief roche-wbtan-1101: FrameRotation's force f (HydroAmFrame with amc = false: the
+//! analytic Coriolis -2 rho Omega x v, + the centrifugal with frame_cf) of fl's state,
+//! projected as FrameRotation projects it, bdt = 1, added to fl.u0(IM1..IM3).  No energy, no
+//! torque correction, nothing persistent.  No-op unless frame_on.
+
+void AmModule::FrameForceProbe(const AmFluid &fl) {
+  if (!frame_on) return;
+  Mesh *pm = pmy_pack->pmesh;
+  HydroAmV v;
+  AmFillV(v, fl);
+  auto &ic = pm->mb_indcs;
+  auto u0_ = fl.u0;
+  const Real o0 = frame_om[0], o1 = frame_om[1], o2 = frame_om[2];
+  const bool fcf = frame_cf;
+  par_for("hydro_frame_probe", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
+          ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real omv[3] = {o0, o1, o2};
+    Real f[3], dT[3], rc[3], rh[3], b1[3], b2[3], cc;
+    HydroAmFrame(v, omv, false, m, k, j, i, f, dT, rc, rh, b1, b2, cc, fcf);
+    Real fr = 0.0, f1 = 0.0, f2 = 0.0;
+    for (int q = 0; q < 3; ++q) {fr += f[q]*rh[q]; f1 += f[q]*b1[q]; f2 += f[q]*b2[q];}
+    u0_(m,IM1,k,j,i) += fr;
+    u0_(m,IM2,k,j,i) += f1;
+    u0_(m,IM3,k,j,i) += f2;
+    (void) dT; (void) rc; (void) cc;
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void AmModule::AmSpinReturn
 //! \brief cs-open-1018 <hydro>/am_spin_return (see hydro.hpp).  Face f between cell c
 //! and its lateral neighbour n (directions rhat_c, rhat_n, d = |rhat_c - rhat_n|,

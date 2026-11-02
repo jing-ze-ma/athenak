@@ -43,6 +43,7 @@
 #include "outputs/outputs.hpp"
 #include "driver/driver.hpp"
 #include "utils/utils.hpp"
+#include "mhd/mhd_tracers.hpp"
 
 // MPI/OpenMP headers
 #if MPI_PARALLEL_ENABLED
@@ -503,6 +504,13 @@ int main(int argc, char *argv[]) {
       global_variable::rst_hydro_nscalars = pinput->GetInteger("hydro", "nscalars");
     } else if (pinput->DoesBlockExist("hydro")) {
       global_variable::rst_hydro_nscalars = 0;
+    }
+    // tracer-1101: the same for <mhd>: the file's user scalars and which passive
+    // tracers (x_e, floor mass) its u0 records carry (mhd/mhd_tracers.hpp)
+    if (pinput->DoesBlockExist("mhd")) {
+      const mhd::TracerLayout ftl = mhd::ReadTracerLayout(pinput);
+      global_variable::rst_mhd_nscalars = ftl.nuser;
+      global_variable::rst_mhd_tracers = ftl.Mask();
     }
     rst_potential_keys = SnapshotPotentialKeys(pinput, PotentialKeys());
     for (const auto &kv : SnapshotPotentialKeys(pinput, GridKeys())) {
