@@ -211,6 +211,16 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   };
   const bool sv_built = ph->wb_cache_built;
   const bool sv_fofc = ph->use_fofc;
+  // followup-1102 (port of Caltech 0f9dc36ec): two more pieces the probe would leave
+  // behind.  (1) Mesh::ecounter: the probe's ConToPrim of W_eq adds its own floor hits,
+  //     which would enter the event-log interval of the first cycle of every run segment
+  //     (diagnostic only; restored for a clean log).  (2) the conduction module: Fluxes
+  //     calls AddHeatFluxes, which (rad_cap_ang / rad_implicit_ang / rad_sts_*) rebuilds
+  //     the frozen angular coefficients and caps from the probe state; the heat flux is
+  //     energy only and g_t takes the momentum components, so the probe runs without it.
+  const EventCounters sv_ec = pm->ecounter;
+  Conduction *sv_cond = ph->pcond;
+  ph->pcond = nullptr;
 
   // W_eq -> u0 in the active cells (v = 0; E = eint (+ rho Phi_tot with etotgrav), as
   // the IC), then the ghosts EXACTLY as the live stage gets them: the MeshBlock/panel
@@ -355,6 +365,8 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   }
   ph->wb_cache_built = sv_built;
   ph->use_fofc = sv_fofc;
+  ph->pcond = sv_cond;
+  pm->ecounter = sv_ec;
   w.ready = true;
   // wbtan-rstg-1101: every restart file from now on carries g_t (kPgenSlabRstMagic)
   if (pm->pgen != nullptr) pm->pgen->pgen_rst_slabs = w.gt;
