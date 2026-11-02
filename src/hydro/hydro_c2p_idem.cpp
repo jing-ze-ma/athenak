@@ -64,9 +64,9 @@ int C2PIdemDiff(const V &a, const V &b) {
                           Kokkos::IndexType<int64_t>>(DevExeSpace(), 0,
                           static_cast<int64_t>(a.size())),
   KOKKOS_LAMBDA(const int64_t n, int &s) {
-    if (!C2PIdemSame(pa[n], pb[n])) s = 1;
-  }, Kokkos::Max<int>(nd));
-  return nd;
+    if (!C2PIdemSame(pa[n], pb[n])) s += 1;
+  }, Kokkos::Sum<int>(nd));
+  return (nd > 0) ? 1 : 0;
 }
 }  // namespace
 
