@@ -16,7 +16,9 @@
                                             const bool vpa) {
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         // the face midpoints (uniform in index space, as the bilinear reads assume)
-        const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+        // accsp-1102: a stretched theta / the full sphere: the row's node (sph2.inc)
+        const Real th = sth_ ? thn_(m,j)
+                             : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
         const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
         // vgdfuse-1010: sin / cos of the cell's (theta, phi) from the per-cell table (the
         // same expressions, evaluated once per cell instead of once per direction)
@@ -33,18 +35,21 @@
             const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
             if (ek == 0 && ej == 0) {return vix(m,dq,kk,jj,ii);}
             const int oo = 3*(ek + 1) + (ej + 1);
-            const int nl = hl_(8*m + ((oo < 4) ? oo : (oo - 1)));
+            const int sl = 8*m + ((oo < 4) ? oo : (oo - 1));
+            const int nl = hl_(sl);
             if (nl < 0) {return vix(m,dq,kk,jj,ii);}
+            // accsp-1102: an on-rank pole partner: its rows reversed about the pole
+            const int jn = (hp_(sl) != 0) ? VgdPoleRow(jj, wb, nx2b) : (jj - ej*nx2b);
             if (wint && wl_(m,kk,jj) != 0) {
               Real v = 0.0;
               for (int t = 0; t < 3; ++t) {
                 v += w3_(m,kk,jj,dq,t)*vix(nl,m3_(m,kk,jj,dq,t),kk - ek*nx3b,
-                                           jj - ej*nx2b,ii);
+                                           jn,ii);
               }
               return v;
             }
             const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,dq) : dq;
-            return vix(nl,dd,kk - ek*nx3b,jj - ej*nx2b,ii);
+            return vix(nl,dd,kk - ek*nx3b,jn,ii);
           };
           auto rd = [&](const int kk, const int jj, const int ii) -> Real {
             // wallbug-1027: a theta ghost of vet_gd_theta_wall = mirror (wall flag 2)
@@ -108,19 +113,35 @@
             const Real yu = r*st*sp - ds*ny;
             const Real zu = r*ct - ds*nz;
             const Real ru = sqrt(xu*xu + yu*yu + zu*zu);
-            const Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
+            Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
             Real dph = atan2(yu, xu) - ph;
             dph -= twopi*floor((dph + M_PI)/twopi);
-            const Real fj = j + (thu - th)/mbsize.d_view(m).dx2;
+            // accsp-1102: behind the polar axis -> the extended chart; the fractional
+            // row from the node table (rad_m1_vgdtheta.hpp)
+            VgdPoleChart(pol_, th, thu, dph);
+            const Real fj = sth_ ? VgdThFj(thn_, m, j, thu, c2w_)
+                                 : j + (thu - th)/mbsize.d_view(m).dx2;
             const Real fk = k + dph/mbsize.d_view(m).dx3;
             int j0 = static_cast<int>(floor(fj));
             int k0 = static_cast<int>(floor(fk));
             Real uj = fj - j0, uk = fk - k0;
             bool clp = false;
-            if (j0 < jlo) {j0 = jlo; uj = 0.0; clp = true;}
-            if (j0 > jhi) {j0 = jhi; uj = 1.0; clp = true;}
-            if (k0 < klo) {k0 = klo; uk = 0.0; clp = true;}
-            if (k0 > khi) {k0 = khi; uk = 1.0; clp = true;}
+            // the full sphere: reads stop at the shell's STORED band on a remote side
+            // (the polar rings' long reads; clamped and counted like any clamp)
+            int jlo_ = jlo, jhi_ = jhi, klo_ = klo, khi_ = khi;
+            if (pol_) {
+              // the depth the halo of the read data filled: the inward band of shell iu
+              // (read by the inward pass and by a turned ray), else its outward band
+              const int wu = wsd_((inw || typ == 3) ? 0 : 1, iu);
+              if (vix.sb(m,0) != 0) {klo_ = wb - wu;}
+              if (vix.sb(m,1) != 0) {khi_ = wb + nx3b + wu - 2;}
+              if (vix.sb(m,2) != 0) {jlo_ = wb - wu;}
+              if (vix.sb(m,3) != 0) {jhi_ = wb + nx2b + wu - 2;}
+            }
+            if (j0 < jlo_) {j0 = jlo_; uj = 0.0; clp = true;}
+            if (j0 > jhi_) {j0 = jhi_; uj = 1.0; clp = true;}
+            if (k0 < klo_) {k0 = klo_; uk = 0.0; clp = true;}
+            if (k0 > khi_) {k0 = khi_; uk = 1.0; clp = true;}
             if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
             const int j1 = j0 + 1, k1 = k0 + 1;
             // share3-1031: the stencil and the field reads of the shared upwind core

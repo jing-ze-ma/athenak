@@ -2951,6 +2951,25 @@ class RadiationM1 {
   // the group) when the direction set changes; vet_gd_overlap_mb caps their memory.
   int vgd_ovl_g = 0, vgd_ovl_mb = 1024;
   DvceArray4D<Real> vgd_trig;   // (m, k, j, 4): sin, cos of theta, phi (shell kernel)
+  // accsp-1102 (rad_m1_vetgd_sph2.inc): vet_gd on a STRETCHED theta and/or the FULL
+  // sphere (polar x2 faces).  vgd_sth: the (theta) positions of the band rows come from
+  // the node table vgd_thn (m, band row) = the face midpoint of the row in the EXTENDED
+  // chart (beyond a pole theta continues to -theta / 2 pi - theta, i.e. the point
+  // (theta, phi + pi)); the upwind fractional row is linear between the two nodes that
+  // bracket it.  false = the uniform index formula (bitwise as before).  vgd_pol: the
+  // full sphere: the halo slots beyond a pole take the pole partner (lx2, lx3 + nb3/2)
+  // with the rows REVERSED (vgd_hpol(8 m + o) = 1 north, 2 south; on-rank partners are
+  // read in-kernel with the reversed row), an upwind point behind the axis is taken in
+  // the extended chart, and reads beyond the shell's stored band are clamped (counted)
+  bool vgd_sth = false, vgd_pol = false;
+  Real vgd_bcolat = 30.0;                 // vet_gd_band_colat (deg): band depth from sin
+  DvceArray2D<Real> vgd_thn;              // (m, c2w) band-row theta (extended chart)
+  std::vector<double> vgd_thn_h;          // host copy, m-major
+  DvceArray1D<int> vgd_hpol;              // (8 nmb) pole slot flag
+  DvceArray2D<int> vgd_wsd;               // (2, c1) per-shell halo depth: inward, outward
+  void VetGdThetaInit();                  // the node table and the checks
+  double VetGdThetaDmin() const;          // the narrowest lateral spacing for the band
+  int VgdPoleSlot(const int o, const int lx2) const;  // 0, 1 north, 2 south
   DvceArray1D<int> vgd_ovl[2];             // (ngroup cap): per group remote, then local
   DvceArray1D<int> vgd_ovl_f;              // scratch: flags -> positions
   std::vector<int> vgd_ovl_nr[2];          // per group: number of remote items

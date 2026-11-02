@@ -1199,6 +1199,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_allow_clamp")) {
       vgd_allow_clamp = pin->GetBoolean("rad_m1","vet_gd_allow_clamp");
     }
+    // accsp-1102 (read only when named): the full sphere's band depth uses sin of this
+    // colatitude (deg) instead of sin(0) (rad_m1_vetgd_sph2.inc); default 30
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_colat")) {
+      vgd_bcolat = pin->GetReal("rad_m1","vet_gd_band_colat");
+      if (!(vgd_bcolat > 0.0 && vgd_bcolat <= 90.0)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_band_colat must be in (0, 90]"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
       vgd_hcomp = pin->GetInteger("rad_m1","vet_gd_halo_compact");
     }
