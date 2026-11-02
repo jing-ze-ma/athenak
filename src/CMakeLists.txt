@@ -271,6 +271,8 @@ if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt" OR ${PROBLEM} STREQUAL "box_convec
   target_sources(athena
       PRIVATE
           utils/two_stream_rt_pass.cpp
+          utils/two_stream_rt_driver.cpp
+          utils/two_stream_rt_col3.cpp
           utils/two_stream_rt_chain_ss_f0.cpp
           utils/two_stream_rt_chain_ss_f12.cpp
           utils/two_stream_rt_chain_sn_f0.cpp
