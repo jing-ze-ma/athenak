@@ -106,6 +106,12 @@ namespace radm1 {
 // L1 tip) keeps its own D_gd instead of the thin shell's twin-minus-reference bias (D_rr 0.26,
 // D_tt 0.37 in tau > 30 cells without it); w = 1 cells are bitwise.  Parsed in rad_m1.cpp.
 bool g_vgd_srw = false;
+// rotadv-1102 <rad_m1>/vet_rotate_advance (read only when named, default false = bitwise;
+// parsed in VetRotInit, one RadiationM1 per rank): with vet_rotate_avg = K the set of
+// block b no longer repeats with period K (VetGdAngleBlk / RotPhase), so the last-K
+// window the closure averages advances through SO(3) (3d axis) or the azimuth (z axis)
+// instead of freezing one fixed K-set pattern in space
+bool g_vra_adv = false;
 
 namespace {
 // env VGD_ASYNC_POLL_US (diagnostic): the async helper polls its MPI with these sleeps
@@ -1046,6 +1052,15 @@ void RadiationM1::VetGdInit() {
 
 void RadiationM1::VetRotInit(ParameterInput *pin) {
   const bool fresh = !global_variable::restart_run;
+  // rotadv-1102: vet_rotate_advance (read only when named; default false = bitwise)
+  if (pin->DoesParameterExist("rad_m1","vet_rotate_advance")) {
+    g_vra_adv = pin->GetBoolean("rad_m1","vet_rotate_advance");
+    if (g_vra_adv && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_rotate_advance = true (rotadv-1102): with vet_rotate_avg"
+                << " the rotated sets do not repeat; the averaged last-K window advances"
+                << " (no effect without vet_rotate_avg)" << std::endl;
+    }
+  }
   {
     const bool rdt_named = pin->DoesParameterExist("rad_m1","vet_gd_rotate_dt");
     const bool rev_named = pin->DoesParameterExist("rad_m1","vet_gd_rotate_every");
@@ -1175,10 +1190,14 @@ Real RadiationM1::VetGdAngle(const int cyc) const {
 Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
   // cs-s3b-1017 vet_gd_rotate_axis = 3d: the KEY of block b (VgdRot3 decodes it): the
   // zig-zag code of b (>= 0, exact in Real), or of b mod K with vet_rotate_avg = K (any K
-  // consecutive blocks hold the same K sets, as the stratified z phases)
+  // consecutive blocks hold the same K sets, as the stratified z phases).  rotadv-1102
+  // vet_rotate_advance: always zigzag(b) (no mod K): any K consecutive blocks are K
+  // consecutive points of the R_3 sequence (low discrepancy for every start), and the
+  // window moves on by one new set per block; the older sets of the window stay pure
+  // functions of their block (the restart / first-build re-sweeps of b - j)
   if (vgd_rot3) {
     int64_t r = blk;
-    if (vra_on && vra_k >= 2) {r = ((blk % vra_k) + vra_k) % vra_k;}
+    if (vra_on && vra_k >= 2 && !g_vra_adv) {r = ((blk % vra_k) + vra_k) % vra_k;}
     const int64_t z = (r >= 0) ? 2*r : (-2*r - 1);
     return static_cast<Real>(z);
   }
@@ -1254,6 +1273,16 @@ void RadiationM1::VgdRot3(const Real key, double r[9]) const {
 //! K)/K (rotavg-1012; shared by vet_gd and vet_sc)
 
 double RadiationM1::RotPhase(const int64_t blk) const {
+  // rotadv-1102 vet_rotate_advance: frac(b (1 + gam)/K), gam = g/(4 (K-1)) irrational:
+  // any K consecutive phases are equispaced to within gam (K-1)/K < 0.16/K of the period
+  // (nearly the K-fold refined set), and the window drifts by gam/K of the period per
+  // block, never repeating (one full sub-period 1/K every 1/gam ~ 4 (K-1)/g blocks)
+  if (vra_on && vra_k >= 2 && g_vra_adv) {
+    const double g = 0.5*(std::sqrt(5.0) - 1.0);
+    const double kk = static_cast<double>(vra_k);
+    const double x = static_cast<double>(blk)*(1.0 + g/(4.0*(kk - 1.0)))/kk;
+    return x - std::floor(x);
+  }
   if (vra_on && vra_k >= 2) {
     const int64_t r = ((blk % vra_k) + vra_k) % vra_k;
     return static_cast<double>(r)/static_cast<double>(vra_k);
