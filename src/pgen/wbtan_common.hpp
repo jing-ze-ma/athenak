@@ -144,6 +144,7 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   // MHD: the probe is the B = 0 equilibrium (see the note in WbTanProbe)
   DvceArray4D<Real> sb1, sb2, sb3, seta, sadc;
   DvceArray4D<Real> se31, se21, se12, se32, se23, se13;
+  DvceArray4D<Real> ser1, ser2, ser3;
   DvceArray5D<Real> sbcc;
   bool sxe = false;
   if constexpr (kMHD) {
@@ -162,9 +163,18 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
     // after a fresh start or a restart: restart continuation broke).  Saved and restored.
     se31 = dup4(ph->e3x1); se21 = dup4(ph->e2x1); se12 = dup4(ph->e1x2);
     se32 = dup4(ph->e3x2); se23 = dup4(ph->e2x3); se13 = dup4(ph->e1x3);
+    // wbtan-rstfix-1101: with the explicit resistive path (no <mhd>/use_rkg_sts),
+    // MHD::Fluxes calls Resistivity::AddResistiveFluxes, which REBUILDS the resistive
+    // (Ohmic + ambipolar) edge EMF efld_resist from b0 -- the probe's B = 0, so zero --
+    // and the stage's EField then adds efld_resist to the corner EMF (AddResistiveEMFs):
+    // the first cycle after a fresh start and after every restart lost its stage-1
+    // resistive EMF (integ_b_nokeys continuation, CPU C8 40 vs 20 + 20).  Saved/restored.
     if (ph->presist != nullptr) {
       if (ph->presist->eta_b.size() > 0) seta = dup4(ph->presist->eta_b);
       if (ph->presist->ad_coef.size() > 0) sadc = dup4(ph->presist->ad_coef);
+      ser1 = dup4(ph->presist->efld_resist.x1e);
+      ser2 = dup4(ph->presist->efld_resist.x2e);
+      ser3 = dup4(ph->presist->efld_resist.x3e);
     }
     sbcc = dup5(ph->bcc0);
   }
@@ -176,6 +186,19 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   };
   const bool sv_built = ph->wb_cache_built;
   const bool sv_fofc = ph->use_fofc;
+  // wbtan-rstfix-1101: two more pieces the probe's ConToPrim / Fluxes would leave behind.
+  // (1) the event counters (floor / C2P counts of the event log): the probe's conversion
+  //     of W_eq adds its own floor hits, which then appear in the log interval of the
+  //     first cycle of every run segment (diagnostic only; restored for a clean log).
+  // (2) the conduction module: Fluxes calls AddHeatFluxes, which (rad_cap_ang /
+  //     rad_implicit_ang / rad_sts_*) rebuilds the frozen angular coefficients and caps
+  //     from the probe state with beta_dt = 0 -- arrays the stage's own implicit
+  //     transverse update / flux caps read.  Not reached by the dhj decks (conduction
+  //     none); the heat flux is energy only and g_t takes the momentum components, so the
+  //     probe simply runs without it.
+  const EventCounters sv_ec = pm->ecounter;
+  Conduction *sv_cond = ph->pcond;
+  ph->pcond = nullptr;
 
   // W_eq -> u0 in the active cells (v = 0; E = eint (+ rho Phi_tot with etotgrav), as
   // the IC), then the ghosts EXACTLY as the live stage gets them: the MeshBlock/panel
@@ -310,11 +333,18 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
     Kokkos::deep_copy(ph->e2x3, se23); Kokkos::deep_copy(ph->e1x3, se13);
     if (seta.size() > 0) Kokkos::deep_copy(ph->presist->eta_b, seta);
     if (sadc.size() > 0) Kokkos::deep_copy(ph->presist->ad_coef, sadc);
+    if (ph->presist != nullptr) {
+      Kokkos::deep_copy(ph->presist->efld_resist.x1e, ser1);
+      Kokkos::deep_copy(ph->presist->efld_resist.x2e, ser2);
+      Kokkos::deep_copy(ph->presist->efld_resist.x3e, ser3);
+    }
     Kokkos::deep_copy(ph->b0.x1f, sb1); Kokkos::deep_copy(ph->b0.x2f, sb2);
     Kokkos::deep_copy(ph->b0.x3f, sb3); Kokkos::deep_copy(ph->bcc0, sbcc);
   }
   ph->wb_cache_built = sv_built;
   ph->use_fofc = sv_fofc;
+  ph->pcond = sv_cond;
+  pm->ecounter = sv_ec;
   w.ready = true;
 
   // one line: the size of g_t (max |g_c| over the rank's cells, rank 0)
