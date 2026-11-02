@@ -924,6 +924,7 @@ void RadiationM1::VetGdInit() {
     Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
   }
   if (!vgd_csg) {VetGdHaloInit();}   // cs-vetgd-1017: cs lists made by VetGdCsInit
+  if (vgd_pol) {VetGdRingInit();}   // accsp-1102: the polar ring buffers (sph2.inc)
   if (vgd_thmir) {
     // wallbug-1027 vet_gd_theta_wall = mirror: the theta neighbour across a wall is the
     // block itself (one MeshBlock in theta), so the corner slots of the halo are the
@@ -5044,6 +5045,13 @@ void RadiationM1::VetGdSweep() {
   auto hp_ = vgd_hpol;
   auto wsd_ = vgd_wsd;
   const int c2w_ = indcs.nx2 + 2*wb;
+  // accsp-1102: the polar ring buffers
+  const bool rbon_ = vgd_rbon;
+  auto lxy_ = vgd_lxy;
+  const int nzr_ = vgd_nzr, nt2_ = vgd_nt2, nx3t_ = std::max(vgd_nx3t, 1);
+  auto rbi_ = vgd_rbi;
+  auto rbc_ = vgd_rbc;
+  auto rbth_ = vgd_rbth;
   vgd_hsweep += 1;
   // vet_gd_shell_list (vgdspeed-1009; read only when named; default true; bitwise): per
   // pass the list of (m, k, j, d) whose n . r_hat (at the face midpoints, as the shell
@@ -5542,6 +5550,7 @@ void RadiationM1::VetGdSweep() {
         }
       }
       if (rga) {VetGdRingFlush();}
+      if (vgd_rbon) {VetGdRingGatherI(i);}   // accsp-1102: the polar ring rows of shell i
       // the next shell's kernel is stream-ordered behind the unpack: no fence needed
       // (env VGD_TIME_HALO: fenced, for the per-part timers)
       if (vgd_time_halo) {vgd_cur.fence();}
@@ -5782,6 +5791,7 @@ void RadiationM1::VetGdSource() {
     return;
   }
   VetGdHaloCs(vgd_cs, ilo, ie);
+  if (vgd_rbon) {VetGdRingGatherC(ilo, ie);}   // accsp-1102
 }
 
 //----------------------------------------------------------------------------------------
@@ -6157,6 +6167,7 @@ void RadiationM1::VetGdBuildAsync() {
       });
       vgd_cur = DevExeSpace();
       VetGdHaloCs(vgd_cs, ilo, ie);
+  if (vgd_rbon) {VetGdRingGatherC(ilo, ie);}   // accsp-1102
     }
     Kokkos::fence();
     vgd_tsrc += tm.seconds();

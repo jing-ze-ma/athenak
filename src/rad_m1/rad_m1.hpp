@@ -2967,6 +2967,21 @@ class RadiationM1 {
   std::vector<double> vgd_thn_h;          // host copy, m-major
   DvceArray1D<int> vgd_hpol;              // (8 nmb) pole slot flag
   DvceArray2D<int> vgd_wsd;               // (2, c1) per-shell halo depth: inward, outward
+  // accsp-1102 polar RING buffers (rad_m1_vetgd_sph2.inc): the full sphere's polar rows
+  // (node colatitude < vet_gd_band_colat, + 1 row) of EVERY phi block, gathered per shell
+  // (intensities, after the shell's sweep) and per build (ln chi, ln S): an upwind
+  // stencil inside the polar zone reads them at its true phi (no band, no clamp)
+  bool vgd_rbon = false;
+  int vgd_nzr = 0, vgd_nx3t = 0, vgd_nt2 = 0;
+  DvceArray1D<Real> vgd_rbi, vgd_rbc;     // ((i 2 nzr + pq) nx3t + K) n + d ; ((i 2 + c) 2 nzr + pq) nx3t + K
+  DvceArray2D<Real> vgd_rbth;             // (2, nzr) physical theta of ring row q (north, south)
+  DvceArray1D<Real> vgd_rbs, vgd_rbr;     // send / receive buffers
+  DvceArray2D<int> vgd_rbit;               // (items, 4): local m (-1 remote), pole p, lx3, offset (per unit)
+  std::vector<int> vgd_rbcnt, vgd_rbdsp;  // per rank: count, displacement (units)
+  int vgd_rbnit = 0, vgd_rbnloc = 0, vgd_rbf0 = 0;   // items total, local, first local
+  void VetGdRingInit();
+  void VetGdRingGatherI(const int i);
+  void VetGdRingGatherC(const int i0, const int i1);
   void VetGdThetaInit();                  // the node table and the checks
   double VetGdThetaDmin() const;          // the narrowest lateral spacing for the band
   int VgdPoleSlot(const int o, const int lx2) const;  // 0, 1 north, 2 south

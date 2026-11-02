@@ -148,4 +148,198 @@ void RadiationM1::VetGdThetaInit() {
   }
 }
 
+
+//----------------------------------------------------------------------------------------
+//! the polar RING buffers (full sphere): every phi block's polar rows (node colatitude <
+//! vet_gd_band_colat, plus one row), gathered so that an upwind stencil inside the polar
+//! zone reads its true phi on the whole ring (the band cannot reach there: the phi cells
+//! of a polar ring are sin(theta) narrow).  Items: (block, pole) for every block at a
+//! pole, in gid order; each rank packs its own items, MPI_Allgatherv, every rank unpacks.
+
+void RadiationM1::VetGdRingInit() {
+  vgd_rbon = false;
+  if (!vgd_pol) {return;}
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nx = pm->mesh_indcs.nx2, nx3t = pm->mesh_indcs.nx3;
+  const int nx2b = indcs.nx2, nx3b = indcs.nx3;
+  std::vector<double> node(nx);
+  for (int n = 0; n < nx; ++n) {
+    node[n] = 0.5*(VgdThetaFace(pm, n) + VgdThetaFace(pm, n + 1));
+  }
+  const double tlim = vgd_bcolat*M_PI/180.0;
+  int nz = 0;
+  while (nz < nx/2 && node[nz] < tlim) {++nz;}
+  nz = std::min(nz + 1, std::min(nx2b, nx/2));
+  vgd_nzr = nz;
+  vgd_nx3t = nx3t;
+  vgd_nt2 = nx;
+  Kokkos::realloc(vgd_rbth, 2, nz);
+  auto th_h = Kokkos::create_mirror_view(vgd_rbth);
+  for (int q = 0; q < nz; ++q) {th_h(0,q) = node[q]; th_h(1,q) = node[nx - 1 - q];}
+  Kokkos::deep_copy(vgd_rbth, th_h);
+  // the items in gid order (ranks own contiguous gid ranges)
+  const int me = global_variable::my_rank, nr = global_variable::nranks;
+  const int g0 = pmy_pack->gids;
+  std::vector<std::array<int, 4>> it;
+  vgd_rbcnt.assign(nr, 0);
+  vgd_rbdsp.assign(nr, 0);
+  const int U = nz*nx3b;
+  for (int g = 0; g < pm->nmb_total; ++g) {
+    const LogicalLocation &l = pm->lloc_eachmb[g];
+    const int rk = pm->rank_eachmb[g];
+    for (int p = 0; p < 2; ++p) {
+      if ((p == 0 && l.lx2 != 0) || (p == 1 && l.lx2 != vgd_nb2 - 1)) {continue;}
+      const int off = static_cast<int>(it.size())*U;
+      if (vgd_rbcnt[rk] == 0) {vgd_rbdsp[rk] = off;}
+      vgd_rbcnt[rk] += U;
+      it.push_back({(rk == me) ? (g - g0) : -1, p, l.lx3, off});
+    }
+  }
+  vgd_rbnit = static_cast<int>(it.size());
+  vgd_rbnloc = 0;
+  Kokkos::realloc(vgd_rbit, std::max(vgd_rbnit, 1), 4);
+  auto e_h = Kokkos::create_mirror_view(vgd_rbit);
+  int first = -1;
+  for (int e = 0; e < vgd_rbnit; ++e) {
+    for (int c = 0; c < 4; ++c) {e_h(e,c) = it[e][c];}
+    if (it[e][0] >= 0) {if (first < 0) {first = e;} ++vgd_rbnloc;}
+  }
+  Kokkos::deep_copy(vgd_rbit, e_h);
+  vgd_rbf0 = std::max(first, 0);
+  const int c1 = indcs.nx1 + 2*indcs.ng;
+  const int n = vgd_n;
+  const int nsh = c1;
+  const size_t ni = static_cast<size_t>(c1)*2*nz*nx3t*n;
+  const size_t nc = static_cast<size_t>(c1)*2*2*nz*nx3t;
+  Kokkos::realloc(vgd_rbi, ni);
+  Kokkos::realloc(vgd_rbc, nc);
+  Kokkos::deep_copy(vgd_rbi, 0.0);
+  Kokkos::deep_copy(vgd_rbc, 0.0);
+  const size_t per = static_cast<size_t>(U)*std::max(n, 2*nsh);
+  Kokkos::realloc(vgd_rbs, std::max<size_t>(per*vgd_rbnloc, 1));
+  Kokkos::realloc(vgd_rbr, std::max<size_t>(per*vgd_rbnit, 1));
+  vgd_rbon = true;
+  if (me == 0) {
+    std::cout << "<rad_m1> vet_gd (accsp-1102): polar RING buffers: " << nz
+              << " rows per pole (node colatitude < " << vgd_bcolat << " deg + 1 row, to "
+              << node[nz - 1]*180.0/M_PI << " deg), " << vgd_rbnit << " (block, pole) items; "
+              << (ni + nc)*sizeof(Real)/1.0e9 << " GB per rank; stencils inside the polar "
+              << "zone read the whole ring (no band, no clamp)" << std::endl;
+  }
+}
+
+void RadiationM1::VetGdRingGatherI(const int i) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nz = vgd_nzr, nx3b = indcs.nx3, nx2b = indcs.nx2, w = vgd_w, n = vgd_n;
+  const int nx3t = vgd_nx3t, U = nz*nx3b;
+  auto e_ = vgd_rbit;
+  auto sb_ = vgd_rbs;
+  auto vi_ = vgd_i;
+  const int nloc = vgd_rbnloc, f0 = vgd_rbf0;   // the local items are contiguous
+  if (nloc > 0) {
+    Kokkos::parallel_for("m1_vgd_rb_packi", Kokkos::RangePolicy<>(vgd_cur, 0, nloc*U*n),
+    KOKKOS_LAMBDA(const int t) {
+      const int d = t % n;
+      const int r1 = t/n;
+      const int k = r1 % nx3b;
+      const int r2 = r1/nx3b;
+      const int q = r2 % nz;
+      const int el = r2/nz;
+      const int m = e_(f0 + el,0), p = e_(f0 + el,1);
+      const int row = (p == 0) ? (w + q) : (w + nx2b - 1 - q);
+      sb_(t) = vi_(m,d,w + k,row,i);
+    });
+  }
+  auto rb_ = sb_;
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::nranks > 1) {
+    vgd_cur.fence();
+    std::vector<int> cnt(vgd_rbcnt.size()), dsp(vgd_rbdsp.size());
+    for (size_t r = 0; r < cnt.size(); ++r) {cnt[r] = vgd_rbcnt[r]*n; dsp[r] = vgd_rbdsp[r]*n;}
+    MPI_Allgatherv(vgd_rbs.data(), nloc*U*n, MPI_ATHENA_REAL, vgd_rbr.data(), cnt.data(),
+                   dsp.data(), MPI_ATHENA_REAL, MPI_COMM_WORLD);
+    rb_ = vgd_rbr;
+  }
+#endif
+  auto ri_ = vgd_rbi;
+  const bool loc = !(global_variable::nranks > 1);
+  Kokkos::parallel_for("m1_vgd_rb_unpi",
+                       Kokkos::RangePolicy<>(vgd_cur, 0, vgd_rbnit*U*n),
+  KOKKOS_LAMBDA(const int t) {
+    const int d = t % n;
+    const int r1 = t/n;
+    const int k = r1 % nx3b;
+    const int r2 = r1/nx3b;
+    const int q = r2 % nz;
+    const int e = r2/nz;
+    const int p = e_(e,1), lx3 = e_(e,2);
+    if (loc && e_(e,0) < 0) {return;}
+    const int src = loc ? (((e - f0)*U + q*nx3b + k)*n + d) : ((e_(e,3) + q*nx3b + k)*n + d);
+    const size_t at = ((static_cast<size_t>(i)*2*nz + p*nz + q)*nx3t + lx3*nx3b + k)*n + d;
+    ri_(at) = rb_(src);
+  });
+}
+
+void RadiationM1::VetGdRingGatherC(const int i0, const int i1) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nz = vgd_nzr, nx3b = indcs.nx3, nx2b = indcs.nx2, w = vgd_w;
+  const int nx3t = vgd_nx3t, U = nz*nx3b, ns = i1 - i0 + 1;
+  auto e_ = vgd_rbit;
+  auto sb_ = vgd_rbs;
+  auto cs_ = vgd_cs;
+  const int nloc = vgd_rbnloc, f0 = vgd_rbf0;
+  const int B = U*2*ns;   // values per item
+  if (nloc > 0) {
+    Kokkos::parallel_for("m1_vgd_rb_packc", Kokkos::RangePolicy<>(vgd_cur, 0, nloc*B),
+    KOKKOS_LAMBDA(const int t) {
+      const int k = t % nx3b;
+      int r = t/nx3b;
+      const int q = r % nz;
+      r /= nz;
+      const int c = r % 2;
+      r /= 2;
+      const int is = r % ns;
+      const int el = r/ns;
+      const int m = e_(f0 + el,0), p = e_(f0 + el,1);
+      const int row = (p == 0) ? (w + q) : (w + nx2b - 1 - q);
+      sb_(t) = cs_(m,c,w + k,row,i0 + is);
+    });
+  }
+  auto rb_ = sb_;
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::nranks > 1) {
+    vgd_cur.fence();
+    std::vector<int> cnt(vgd_rbcnt.size()), dsp(vgd_rbdsp.size());
+    for (size_t r = 0; r < cnt.size(); ++r) {
+      cnt[r] = vgd_rbcnt[r]/U*B;
+      dsp[r] = vgd_rbdsp[r]/U*B;
+    }
+    MPI_Allgatherv(vgd_rbs.data(), nloc*B, MPI_ATHENA_REAL, vgd_rbr.data(), cnt.data(),
+                   dsp.data(), MPI_ATHENA_REAL, MPI_COMM_WORLD);
+    rb_ = vgd_rbr;
+  }
+#endif
+  auto rc_ = vgd_rbc;
+  const bool loc = !(global_variable::nranks > 1);
+  Kokkos::parallel_for("m1_vgd_rb_unpc", Kokkos::RangePolicy<>(vgd_cur, 0, vgd_rbnit*B),
+  KOKKOS_LAMBDA(const int t) {
+    const int k = t % nx3b;
+    int r = t/nx3b;
+    const int q = r % nz;
+    r /= nz;
+    const int c = r % 2;
+    r /= 2;
+    const int is = r % ns;
+    const int e = r/ns;
+    if (loc && e_(e,0) < 0) {return;}
+    const int p = e_(e,1), lx3 = e_(e,2);
+    const int src = loc ? ((e - f0)*B + ((is*2 + c)*nz + q)*nx3b + k)
+                        : (e_(e,3)/U*B + ((is*2 + c)*nz + q)*nx3b + k);
+    const size_t at = ((static_cast<size_t>(i0 + is)*2 + c)*2*nz + p*nz + q)*nx3t
+                      + lx3*nx3b + k;
+    rc_(at) = rb_(src);
+  });
+}
+
 } // namespace radm1

@@ -19,6 +19,9 @@
 
 #include "athena.hpp"
 
+// accsp-1102: stencil row codes >= VGD_RB0 address the polar ring buffers (sph2.inc)
+constexpr int VGD_RB0 = 1 << 24;
+
 // fractional band row of theta thu; jb = a starting guess (the cell's own row: upwind
 // points lie a few rows away, so the walk is short)
 template <typename T>

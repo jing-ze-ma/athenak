@@ -126,6 +126,44 @@
             int k0 = static_cast<int>(floor(fk));
             Real uj = fj - j0, uk = fk - k0;
             bool clp = false;
+            // accsp-1102 polar RING (sph2.inc): both stencil rows inside a polar zone ->
+            // the corners are (global phi K, ring code RB0 + 2 (p nzr + q) + across-axis)
+            // read from the gathered ring buffers at their true phi (no band, no clamp)
+            bool rng = false;
+            int rk0 = 0, rk1 = 0, rj0 = 0, rj1 = 0;
+            Real ruk = 0.0;
+            if (rbon_) {
+              const int J0 = lxy_(m,0)*nx2b + (j0 - wb);
+              int zp = -1;
+              if (J0 >= -nzr_ && J0 + 1 <= nzr_ - 1) {
+                zp = 0;
+              } else if (J0 >= nt2_ - nzr_ && J0 + 1 <= nt2_ + nzr_ - 1) {
+                zp = 1;
+              }
+              if (zp >= 0) {
+                rng = true;
+                auto code = [&](const int J) -> int {
+                  int q, sh;
+                  if (zp == 0) {
+                    sh = (J < 0) ? 1 : 0;
+                    q = sh ? (-1 - J) : J;
+                  } else {
+                    sh = (J >= nt2_) ? 1 : 0;
+                    q = sh ? (J - nt2_) : (nt2_ - 1 - J);
+                  }
+                  return VGD_RB0 + 2*(zp*nzr_ + q) + sh;
+                };
+                rj0 = code(J0);
+                rj1 = code(J0 + 1);
+                const Real kg = lxy_(m,1)*nx3b + (fk - wb);
+                const Real kf = floor(kg);
+                ruk = kg - kf;
+                int kq = static_cast<int>(kf) % nx3t_;
+                if (kq < 0) {kq += nx3t_;}
+                rk0 = kq;
+                rk1 = (kq + 1) % nx3t_;
+              }
+            }
             // the full sphere: reads stop at the shell's halo depth
             // (the polar rings' long reads; clamped and counted like any clamp)
             int jlo_ = jlo, jhi_ = jhi, klo_ = klo, khi_ = khi;
@@ -140,18 +178,47 @@
               jlo_ = wb - wu;
               jhi_ = wb + nx2b + wu - 2;
             }
-            if (j0 < jlo_) {j0 = jlo_; uj = 0.0; clp = true;}
-            if (j0 > jhi_) {j0 = jhi_; uj = 1.0; clp = true;}
-            if (k0 < klo_) {k0 = klo_; uk = 0.0; clp = true;}
-            if (k0 > khi_) {k0 = khi_; uk = 1.0; clp = true;}
+            if (!rng) {
+              if (j0 < jlo_) {j0 = jlo_; uj = 0.0; clp = true;}
+              if (j0 > jhi_) {j0 = jhi_; uj = 1.0; clp = true;}
+              if (k0 < klo_) {k0 = klo_; uk = 0.0; clp = true;}
+              if (k0 > khi_) {k0 = khi_; uk = 1.0; clp = true;}
+            }
             if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
-            const int j1 = j0 + 1, k1 = k0 + 1;
+            int j1 = j0 + 1, k1 = k0 + 1;
+            if (rng) {
+              j0 = rj0; j1 = rj1; k0 = rk0; k1 = rk1; uk = ruk;
+            }
             // share3-1031: the stencil and the field reads of the shared upwind core
             const VgdSt4 st4{k0, k1, j0, j1, uj, uk};
+            // accsp-1102: a ring code (jj >= VGD_RB0) reads the ring buffers
+            auto rkp = [&](const int kk, const int jj) -> int {
+              return (kk + ((jj - VGD_RB0) & 1)*(nx3t_/2)) % nx3t_;
+            };
             auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
+              if (jj >= VGD_RB0) {
+                return rbc_(((static_cast<size_t>(ii)*2 + c)*2*nzr_ + ((jj - VGD_RB0) >> 1))
+                            *nx3t_ + rkp(kk,jj));
+              }
               return csx(m,c,kk,jj,ii);
             };
-            auto fIu = [&](const int kk, const int jj) -> Real {return rd(kk,jj,iu);};
+            auto fIu = [&](const int kk, const int jj) -> Real {
+              if (jj >= VGD_RB0) {
+                return rbi_(((static_cast<size_t>(iu)*2*nzr_ + ((jj - VGD_RB0) >> 1))*nx3t_
+                             + rkp(kk,jj))*n + d);
+              }
+              return rd(kk,jj,iu);
+            };
+            // the branch n . r_hat of a stencil cell (ring: at its true position)
+            auto mrq = [&](const int kk, const int jj) -> Real {
+              if (jj >= VGD_RB0) {
+                const int pq = (jj - VGD_RB0) >> 1;
+                const Real tq = rbth_(pq/nzr_, pq % nzr_);
+                const Real pk = mp0 + (rkp(kk,jj) + 0.5)*(mpl/nx3t_);
+                return nx*sin(tq)*cos(pk) + ny*sin(tq)*sin(pk) + nz*cos(tq);
+              }
+              return mr_(m,kk,jj,d);
+            };
             bool bdone = false;
 #if M1_VGD_BODY_MIR
             // wallbug-1027 vet_gd_theta_wall = vacuum: the upwind point lies beyond a
@@ -336,15 +403,15 @@
               for (int q = 0; q < 4; ++q) {
                 const int kk = (q < 2) ? k0 : k1;
                 const int jj = (q % 2 == 0) ? j0 : j1;
-                const Real mq = mr_(m,kk,jj,d);
+                const Real mq = mrq(kk,jj);
                 ok[q] = want_in ? (mq < 0.0) : (mq >= 0.0);
                 all = all && ok[q];
               }
               // none (-1): the upwind source (below)
               const Real ivu = VgdUpwindI(st4, fIu, ok, all);
               auto lin = [&](const int c) {
-                return VgdLerp(VgdLerp(csx(m,c,k0,j0,iu), csx(m,c,k0,j1,iu), uj),
-                               VgdLerp(csx(m,c,k1,j0,iu), csx(m,c,k1,j1,iu), uj), uk);
+                return VgdLerp(VgdLerp(fC(c,k0,j0,iu), fC(c,k0,j1,iu), uj),
+                               VgdLerp(fC(c,k1,j0,iu), fC(c,k1,j1,iu), uj), uk);
               };
               const Real chu = exp(lin(0));
               const Real su = exp(lin(1));
@@ -538,7 +605,9 @@
                 // the closing segment (vet_seg = jump below the inner face, vet_interp =
                 // corner, vet_seg = split, the plain segment: rad_m1_vgdray.hpp)
                 auto edgef = [&]() {
-                  return VgdCornerEdge(csx, m, k0, k1, j0, j1, iu, uk, uj);
+                  auto csr = [&](const int, const int c, const int kk, const int jj,
+                                 const int ii) -> Real {return fC(c,kk,jj,ii);};
+                  return VgdCornerEdge(csr, m, k0, k1, j0, j1, iu, uk, uj);
                 };
                 iv = VgdSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
                                   s0, ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim);
