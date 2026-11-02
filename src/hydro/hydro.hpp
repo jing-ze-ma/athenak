@@ -258,6 +258,17 @@ class Hydro {
   // after the split radiation.  Diagnostic only: the state is not touched.
   bool c2p_track = false;
   bool c2p_split = false;   // true while the operator-split ConToPrim task runs
+  // ckbval-1102 <hydro>/split_bval_fast: the ghost refresh after the operator-split
+  // source (RTOpSplitBvals) exchanges u0(IEN) only when a check proves the other
+  // conserved variables in every ghost already hold what a full exchange would deliver.
+  // See Hydro::SplitBvalFastOK in hydro_tasks.cpp.  sbf_s is u0 at the input of the
+  // first ConToPrim after the last ghost refresh (sbf_valid); sbf_want marks a refresh.
+  bool sbf_on = false;
+  bool sbf_want = false;
+  bool sbf_valid = false;
+  DvceArray5D<Real> sbf_s;
+  long sbf_nfast = 0, sbf_nfull = 0;
+  bool SplitBvalFastOK();
   DvceArray2D<Real> c2p_acc;
   DvceArray4D<Real> c2p_ref_e, c2p_ref_d;
   void EnableC2PTrack();

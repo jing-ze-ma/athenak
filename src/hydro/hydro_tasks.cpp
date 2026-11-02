@@ -11,6 +11,7 @@
 #include <string>
 #include <utility>
 #include <iostream>
+#include <type_traits>
 
 #include "utils/eint_ledger.hpp"
 #include "athena.hpp"
@@ -715,6 +716,11 @@ TaskStatus Hydro::SendU(Driver *pdrive, int stage) {
 
 TaskStatus Hydro::RecvU(Driver *pdrive, int stage) {
   TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0);
+  // ckbval-1102: a ghost refresh; the next ConToPrim takes the split_bval_fast snapshot
+  if (sbf_on && tstat == TaskStatus::complete) {
+    sbf_want = true;
+    sbf_valid = false;
+  }
   return tstat;
 }
 
@@ -789,6 +795,98 @@ TaskStatus Hydro::Prolongate(Driver *pdrive, int stage) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool Hydro::SplitBvalFastOK
+//! \brief ckbval-1102: may the ghost refresh after the operator-split source exchange
+//! u0(IEN) alone and still be BITWISE the full refresh?
+//!
+//! The full refresh overwrites every ghost of every variable with the exchange of the
+//! current active cells, then applies the physical BCs and converts the whole mesh.  The
+//! energy-only refresh skips the exchange of the other variables X (density, momenta,
+//! scalars) and keeps what the ghosts hold.  Everything after the exchange is the same
+//! code on the same inputs, so the two agree bit for bit iff every ghost X now equals what
+//! the full exchange would put there.
+//!
+//! S = u0 at the input of the first ConToPrim after the last refresh (sbf_s): ghosts
+//! there hold exactly the exchange (+ BCs) of the active cells.  Accept iff, in EVERY cell
+//! (active and ghost, all x1 included):
+//!   - momenta and scalars are bit-identical to S;
+//!   - the density is T(S), with T(d) = (d < dfloor ? dfloor : d) -- the ConToPrim
+//!     density floor, applied the same way in every cell;
+//!   - within ng+1 cells of a cubed-sphere panel seam (active cells and ghosts on that
+//!     side, so the cube-vertex corners too) the density is bit-identical to S and was
+//!     not below dfloor (T = identity there).
+//! Why that is enough: a plain-copy ghost g of an active cell a had S_g = S_a, so
+//! X_g = T(S_g) = T(S_a) = X_a, which the full exchange would copy.  A seam ghost is a
+//! resample (basis transform of the tangential momenta, 3-point stencil, monotone clamp,
+//! the density guard) of source cells within ng of the seam on the other panel; none of
+//! them, nor the ghost, changed since S, so the resample gives what the ghost holds.  The
+//! physical-BC ghosts are rebuilt by the BCs in both paths from these same values.  IEN,
+//! which the source changed, is exchanged as always (its seam resample reads the
+//! density, unchanged since S near seams).  The test is on the bits (-0.0 != +0.0).
+//!
+//! The check runs on every rank and the answer is reduced (MPI MAX of "bad"), so all
+//! ranks pick the same message layout.
+
+namespace {
+KOKKOS_INLINE_FUNCTION
+bool SbfSameBits(const Real a, const Real b) {
+  using U = std::conditional<sizeof(Real) == 8, unsigned long long, unsigned int>::type;
+  return Kokkos::bit_cast<U>(a) == Kokkos::bit_cast<U>(b);
+}
+}  // namespace
+
+bool Hydro::SplitBvalFastOK() {
+  Mesh *pm = pmy_pack->pmesh;
+  int bad = (sbf_valid && !pm->use_polar_boundary && !pm->multilevel) ? 0 : 1;
+  if (bad == 0) {
+    auto &indcs = pm->mb_indcs;
+    const int ng = indcs.ng;
+    const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
+    const int nfp = ng + 1;
+    const bool cs = pm->use_cubed_sphere;
+    const bool td = pm->three_d;
+    const Real x2mn = pm->mesh_size.x2min, x2mx = pm->mesh_size.x2max;
+    const Real x3mn = pm->mesh_size.x3min, x3mx = pm->mesh_size.x3max;
+    auto size = pmy_pack->pmb->mb_size;
+    const Real dfl = peos->eos_data.dfloor;
+    const int nvar = nhydro + nscalars;
+    auto u_ = u0;
+    auto s_ = sbf_s;
+    const int nmb = pmy_pack->nmb_thispack;
+    const int n3 = u0.extent_int(2), n2 = u0.extent_int(3), n1 = u0.extent_int(4);
+    int nbad = 0;
+    Kokkos::parallel_reduce("sbf_check", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, 0, 0, 0}, {nmb, n3, n2, n1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &sum) {
+      bool fp = false;
+      if (cs) {
+        fp = (size.d_view(m).x2min <= x2mn && j < js + nfp) ||
+             (size.d_view(m).x2max >= x2mx && j > je - nfp);
+        if (td) {
+          fp = fp || (size.d_view(m).x3min <= x3mn && k < ks + nfp) ||
+                     (size.d_view(m).x3max >= x3mx && k > ke - nfp);
+        }
+      }
+      for (int v = 0; v < nvar; ++v) {
+        if (v == IEN) continue;
+        const Real b = s_(m,v,k,j,i);
+        Real e = b;
+        if (v == IDN && b < dfl) {
+          if (fp) {sum++; continue;}
+          e = dfl;
+        }
+        if (!SbfSameBits(u_(m,v,k,j,i), e)) sum++;
+      }
+    }, Kokkos::Sum<int>(nbad));
+    bad = (nbad > 0) ? 1 : 0;
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &bad, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  return bad == 0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void Hydro::RTOpSplitBvals
 //! \brief a COMPLETE ghost-zone update of u0 for an operator that ran OUTSIDE the stage's
 //! own communication window (the Strang half-steps of RTStrangSplit).
@@ -816,14 +914,26 @@ TaskStatus Hydro::Prolongate(Driver *pdrive, int stage) {
 //!                     RecvU the rest of the stage still has to run.
 
 void Hydro::RTOpSplitBvals(bool recv_posted, bool repost) {
+  // ckbval-1102 <hydro>/split_bval_fast: u0(IEN) alone when SplitBvalFastOK proves the
+  // ghosts of every other variable already hold what the full exchange would give.
+  // Everything after the exchange (BCs, ConToPrim over the whole mesh) is unchanged.
+  const bool fast = !recv_posted && sbf_on && SplitBvalFastOK();
+  const int vm = fast ? (1 << IEN) : 0;
+  if (sbf_on) {
+    if (fast) {++sbf_nfast;} else {++sbf_nfull;}
+  }
   if (!recv_posted) {
-    while (pbval_u->InitRecv(nhydro+nscalars) != TaskStatus::complete) {}
+    while (pbval_u->InitRecv(nhydro+nscalars, vm) != TaskStatus::complete) {}
   }
   if (pmy_pack->pmesh->multilevel) {
     pmy_pack->pmesh->pmr->RestrictCC(u0, coarse_u0);
   }
-  while (pbval_u->PackAndSendCC(u0, coarse_u0) != TaskStatus::complete) {}
-  while (pbval_u->RecvAndUnpackCC(u0, coarse_u0) != TaskStatus::complete) {}
+  while (pbval_u->PackAndSendCC(u0, coarse_u0, -1, -1, vm) != TaskStatus::complete) {}
+  while (pbval_u->RecvAndUnpackCC(u0, coarse_u0, -1, -1, vm) != TaskStatus::complete) {}
+  if (sbf_on) {
+    sbf_want = true;
+    sbf_valid = false;
+  }
   (void) ApplyPhysicalBCs(nullptr, 0);
   (void) Prolongate(nullptr, 0);
   (void) ConToPrim(nullptr, 0);
@@ -907,6 +1017,22 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
 //! \brief Wrapper task list function to call ConsToPrim over entire mesh (including gz)
 
 TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
+  // ckbval-1102 split_bval_fast: u0 at the input of the first conversion after a ghost
+  // refresh (last RK stage, or the split refresh itself), i.e. right after the
+  // exchange and the physical BCs; SplitBvalFastOK compares against it
+  if (sbf_on && sbf_want) {
+    sbf_want = false;
+    if (pdrive == nullptr || (!c2p_split && stage == pdrive->nexp_stages)) {
+      if (sbf_s.extent(0) != u0.extent(0) || sbf_s.extent(1) != u0.extent(1) ||
+          sbf_s.extent(2) != u0.extent(2) || sbf_s.extent(3) != u0.extent(3) ||
+          sbf_s.extent(4) != u0.extent(4)) {
+        Kokkos::realloc(sbf_s, u0.extent(0), u0.extent(1), u0.extent(2),
+                        u0.extent(3), u0.extent(4));
+      }
+      Kokkos::deep_copy(DevExeSpace(), sbf_s, u0);
+      sbf_valid = true;
+    }
+  }
   if (c2p_track) C2PTrack(pdrive, stage, true);
   eint_ledger::Mark(pmy_pack->pmesh, "gap_c2p");
   auto &indcs = pmy_pack->pmesh->mb_indcs;

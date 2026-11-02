@@ -211,6 +211,17 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     }
   }
   use_etotgrav = pin->GetOrAddBoolean("hydro","etotgrav",false);
+  // ckbval-1102: the energy-only ghost refresh after the operator-split source (read
+  // only when named; see Hydro::SplitBvalFastOK).  Not with refinement, shearing box /
+  // orbital advection or the polar grid: their halos are not plain copies or seam
+  // resamples, which is all the check below covers.
+  sbf_on = pin->DoesParameterExist("hydro","split_bval_fast") ?
+           pin->GetBoolean("hydro","split_bval_fast") : false;
+  if (sbf_on && (pmy_pack->pmesh->multilevel ||
+                 pin->DoesBlockExist("shearing_box") ||
+                 pin->DoesBlockExist("orbital_advection"))) {
+    sbf_on = false;
+  }
   // SMR/AMR is not supported with etotgrav: the coarse-buffer inversion used for
   // primitive prolongation (bvals/prolong_prims.cpp) reads e + rho*Phi as the internal
   // energy, the conserved prolongation of rho*Phi is removed again with the FINE
@@ -702,6 +713,10 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
 // destructor
 
 Hydro::~Hydro() {
+  if (sbf_on && global_variable::my_rank == 0) {
+    std::cout << "<hydro>/split_bval_fast: energy-only refreshes " << sbf_nfast
+              << ", full refreshes " << sbf_nfull << " (rank 0)" << std::endl;
+  }
   if (pam != nullptr) {delete pam;}
   if (pmlat != nullptr) {delete pmlat;}
   if (pravg != nullptr) {delete pravg;}
