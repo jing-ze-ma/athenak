@@ -21,7 +21,7 @@
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
 
-#define NOUTPUT_CHOICES 167
+#define NOUTPUT_CHOICES 168
 // choices for output variables used in <ouput> blocks in input file
 // TO ADD MORE CHOICES:
 //   - add more strings to array below, change NOUTPUT_CHOICES above appropriately
@@ -124,7 +124,11 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
   "m1_vsc",
 
   // gdthin-1011: the thin switch's cell inputs |H|/J, C1, eps, the cell weight, J (165)
-  "m1_thsw", "m1_gdhr"
+  "m1_thsw", "m1_gdhr",
+
+  // rkgstrang-1102: the cell resistivity eta_O (+ eta_A = min(ad_coef |B|^2, max_eta_ad)
+  // with ambipolar diffusion) the resistive EMF uses, code units (167)
+  "mhd_eta"
 };
 
 

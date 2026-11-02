@@ -1072,6 +1072,7 @@ void DhjCkRtSplit(Mesh *pm, const Real dt) {
   // problem/ck_impl_every > 1: the cadence (full call every N cycles, linearised step in
   // between); see utils/two_stream_column_ck.hpp
   EBudCk(pm, dt, true);
+  two_stream_rt::ck_cad_half = pm->pgen->user_split_half;   // rkgfuse-1102 ck_strang
   if (two_stream_rt::ck_impl_every > 1) {
     two_stream_rt::CkCadStep(pm, dt);
   } else {

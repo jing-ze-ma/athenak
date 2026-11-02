@@ -195,6 +195,13 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
        << std::endl << "Input file is likely missing corresponding block" << std::endl;
     exit(EXIT_FAILURE);
   }
+  if (ivar==167 && (pm->pmb_pack->pmhd == nullptr ||
+                    pm->pmb_pack->pmhd->presist == nullptr)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+       << "Output variable 'mhd_eta' requested in <output> block '"
+       << out_params.block_name << "' but there is no <mhd> resistivity" << std::endl;
+    exit(EXIT_FAILURE);
+  }
   if (ivar==161 && (pm->pmb_pack->pradm1 == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
        << "Output of the M1 Eddington tensor requested in <output> block '"
@@ -641,6 +648,14 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       out_params.n_derived += 1;
       int i_derived = out_params.n_derived - 1;
       outvars.emplace_back("fofc_cnt",i_derived,&(derived_var));
+    }
+
+    // rkgstrang-1102: cell resistivity (eta_O + eta_A)
+    if (variable.compare("mhd_eta") == 0) {
+      out_params.contains_derived = true;
+      out_params.n_derived += 1;
+      int i_derived = out_params.n_derived - 1;
+      outvars.emplace_back("eta",i_derived,&(derived_var));
     }
 
     // mhd divergence of B
