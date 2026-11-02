@@ -5276,10 +5276,8 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     // would change in time)
     if (spr_on_) bad = "no problem/spin_ramp (W_eq is the IC: a constant spin)";
     if (!phd->use_etotgrav) bad = "<hydro>/etotgrav = true (the work is in the energy flux)";
-    if (pin->DoesParameterExist("problem", "env_ic_vz") &&
-        pin->GetBoolean("problem", "env_ic_vz")) {
-      bad = "no problem/env_ic_vz (the von Zeipel IC is not barotropic)";
-    }
+    // accwbtan-1101 (b): with env_ic_vz W_eq is the barotropic IC (thermo = general path)
+    if (spr_icvz_ && !gen_) bad = "thermo = general with problem/env_ic_vz";
     if (pmbp->pmesh->adaptive || pmbp->pmesh->multilevel) bad = "a single-level mesh";
     if (!bad.empty()) {
       std::cout << "### FATAL ERROR in ry_per_accretor: problem/roche_wb_tan needs " << bad
@@ -5316,13 +5314,25 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // Rotation (spin - 1) Omega r
   // (rotating frame) in the supported part (r < r_top).
   if (gen_) {
+    // accwbtan-1101 (b): problem/env_ic_vz: the von Zeipel IC T is not barotropic (T, P vary
+    // on the equipotentials: a real baroclinic forcing).  W_eq = the BAROTROPIC IC of the
+    // same column (T_col(psi): EnvTcolColumn without the vZ factor), captured; then T back
+    // to the vZ column and the real IC (a restart: u0 back to the restart state)
+    const bool wbvz = acc_wbt.on && spr_icvz_;
+    if (wbvz) {
+      EnvTcolColumn(pmbp, racc, cpsi, clt, clr, crq, false, spr_vzdep_, false);
+      EnvICGeneral(pmbp, racc, rho_amb, eqtop, icpoly, cpsi, clt, clr);
+      WbTanCaptureIC(pmbp, wbt_usave, wbic);
+      EnvTcolColumn(pmbp, racc, cpsi, clt, clr, crq, true, spr_vzdep_, false);
+      if (wbic) return;
+    }
     if (spr_on_) {   // ramp v2: the blended column
       EnvICGeneral(pmbp, racc, rho_amb, eqtop, icpoly, spr_cpsi_, spr_clt_, spr_clr_);
     } else {
       EnvICGeneral(pmbp, racc, rho_amb, eqtop, icpoly, cpsi, clt, clr);
     }
     if (rad_ && !wbic) RadIC(pin, pmbp);
-    if (acc_wbt.on) WbTanCaptureIC(pmbp, wbt_usave, wbic);
+    if (acc_wbt.on && !wbvz) WbTanCaptureIC(pmbp, wbt_usave, wbic);
     return;
   }
   const Real gm1 = eos.gamma - 1.0, dfl = eos.dfloor;
