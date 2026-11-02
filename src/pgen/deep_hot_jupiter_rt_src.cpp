@@ -1112,7 +1112,7 @@ void DhjCkRtSplit(Mesh *pm, const Real dt) {
 //! (default th 0.5; counted), no global redo.
 //! Cadence (ck_impl_every > 1): stage 1 = CkCadStep as today (full on ncycle % N == 0);
 //! stage 2 is ALWAYS the linearised step on the operator stage 1 (or the last full call)
-//! stored (ck_cad_force_lin), so the number of full solves per cycle is unchanged;
+//! stored (ck_cad_half = 2, shared with rkgfuse-1102 ck_strang), so the number of full solves per cycle is unchanged;
 //! ck_impl_every = 1: both stages are full solves (2 per cycle).  xstep counts cycles.
 //! Without a valid K1 (first step, a restart file without the T2 slabs) the step is
 //! backward Euler: no ck in stage 1, one BE solve with the full dt in stage 2 (= the
@@ -1222,9 +1222,10 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
   auto solve = [&](const Real sdt, const bool lin) {
     const int64_t nf0 = ts::ck_cad_nfull;
     if (cad) {
-      ts::ck_cad_force_lin = lin;
+      // rkgfuse-1102's ck_cad_half: 1 = may be the cycle's full call, 2 = linearised
+      ts::ck_cad_half = lin ? 2 : 1;
       ts::CkCadStep(pm, sdt);
-      ts::ck_cad_force_lin = false;
+      ts::ck_cad_half = 0;
     } else {
       picket_fence_two_stream_RT(pm, sdt);
     }
