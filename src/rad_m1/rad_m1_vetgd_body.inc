@@ -126,17 +126,19 @@
             int k0 = static_cast<int>(floor(fk));
             Real uj = fj - j0, uk = fk - k0;
             bool clp = false;
-            // the full sphere: reads stop at the shell's STORED band on a remote side
+            // the full sphere: reads stop at the shell's halo depth
             // (the polar rings' long reads; clamped and counted like any clamp)
             int jlo_ = jlo, jhi_ = jhi, klo_ = klo, khi_ = khi;
             if (pol_) {
               // the depth the halo of the read data filled: the inward band of shell iu
               // (read by the inward pass and by a turned ray), else its outward band
+              // (every side, on-rank or not: the sweep is then independent of the
+              // decomposition, as the band construction makes it on a wedge)
               const int wu = wsd_((inw || typ == 3) ? 0 : 1, iu);
-              if (vix.sb(m,0) != 0) {klo_ = wb - wu;}
-              if (vix.sb(m,1) != 0) {khi_ = wb + nx3b + wu - 2;}
-              if (vix.sb(m,2) != 0) {jlo_ = wb - wu;}
-              if (vix.sb(m,3) != 0) {jhi_ = wb + nx2b + wu - 2;}
+              klo_ = wb - wu;
+              khi_ = wb + nx3b + wu - 2;
+              jlo_ = wb - wu;
+              jhi_ = wb + nx2b + wu - 2;
             }
             if (j0 < jlo_) {j0 = jlo_; uj = 0.0; clp = true;}
             if (j0 > jhi_) {j0 = jhi_; uj = 1.0; clp = true;}
