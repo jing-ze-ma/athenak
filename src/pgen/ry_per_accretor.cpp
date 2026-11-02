@@ -639,7 +639,8 @@ Real RocheGeffXYZ(const RocheParams &p, const Real x, const Real y, const Real z
 //! gnomonic tangents (m_a = p.e_a, e1.e2 = c = cos_cell), w0 IVY/IVZ contravariant
 //! (hydro_am.cpp header).  The spherical-polar path never reads any of this (cs_ = false).
 bool cs_ = false;
-// roche-wbtan-1101 problem/roche_wb_tan (default false; wbtan_common.hpp): the tangential
+// roche-wbtan-1101 problem/roche_wb_tan (wbtan_common.hpp; key absent: true on cs for a
+// fresh start with its prerequisites, else false, accwbtdef-1102): the tangential
 // forces gt4_/gp4_ (phys_3d, sp and cs) become the hydro's own discrete tangential residual
 // of the IC's static envelope W_eq instead of the face differences of the true Phi, so the
 // static envelope is balanced in theta/phi (xi/eta) to round-off.  W_eq = the IC (EnvSetup;
@@ -3478,6 +3479,10 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
   hist_tprev_ = t;
 }
 
+// accwbtan-1101 (c): -grad_t G, x2 / x3 (filled further down; defined here so that
+// RyPerFinal can free them before Kokkos::finalize -- prod-1102 exit-crash fix)
+DvceArray4D<Real> wbt_ga2_, wbt_ga3_;   // accwbtan-1101 (c): -grad_t G, x2 / x3
+
 //! release the namespace-scope Views before Kokkos::finalize
 void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   eint_ledger::Free();   // floorheat-1029: before Kokkos::finalize
@@ -3524,6 +3529,8 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   spr_aref_ = DvceArray4D<Real>();   // accspin-1028
   bdvs_ = DvceArray3D<Real>();   // pgrst-1021
   rbk1_ = DvceArray3D<Real>();   // accbook-1021
+  wbt_ga2_ = DvceArray4D<Real>();   // prod-1102: was never freed (Kokkos finalize error)
+  wbt_ga3_ = DvceArray4D<Real>();
 }
 
 //! thermo = general: log T, log rho of the column at psi (linear in psi, clamped)
@@ -4688,7 +4695,7 @@ void WbTanCaptureIC(MeshBlockPack *pmbp, const DvceArray5D<Real> &usave, const b
 //! + v_theta cos), ALWAYS the analytic form (problem/coriolis_lz's mass-flux Q_c is not
 //! part of the equilibrium).  The cubed sphere's Coriolis is the core frame_omega's
 //! (AmModule::FrameForceProbe inside the probe): nothing here.
-DvceArray4D<Real> wbt_ga2_, wbt_ga3_;   // accwbtan-1101 (c): -grad_t G, x2 / x3
+// (wbt_ga2_, wbt_ga3_ are defined above RyPerFinal, which frees them)
 
 //! accwbtan-1101 (c) (<rad_m1>): the IC's equilibrium RADIATIVE acceleration, tangential:
 //! a_t = -grad_t G(psi), G = the column's radiative potential (Phi_eff = Phi_wb + G; its
@@ -5437,7 +5444,29 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   }
   // roche-wbtan-1101 problem/roche_wb_tan: checks; on a restart the IC below is rebuilt
   // into u0 for W_eq and u0 is restored (WbTanCaptureIC), the radiation untouched
-  acc_wbt.on = pin->GetOrAddBoolean("problem", "roche_wb_tan", false);
+  // accwbtdef-1102 (USER 11-02): key absent -> default true on the cubed sphere for a
+  // fresh start when every prerequisite below holds (dhj proddef-1101 pattern); a restart
+  // input without the key and the spherical-polar path keep false.  A named key is used
+  // as given.
+  if (!pin->DoesParameterExist("problem", "roche_wb_tan")) {
+    std::string why = "";
+    if (!cs_) why = "spherical-polar path";
+    else if (restart) why = "restart input without the key";
+    else if (!p3_) why = "needs phys_3d";
+    else if (spr_on_) why = "needs no spin_ramp";
+    else if (!phd->use_etotgrav) why = "needs <hydro>/etotgrav";
+    else if (spr_icvz_ && !gen_) why = "env_ic_vz needs thermo = general";
+    else if (pmbp->pmesh->adaptive || pmbp->pmesh->multilevel) why = "needs one level";
+    const bool wd = why.empty();
+    if (root) {
+      const std::string val = wd ? std::string("true (cs default, fresh start)")
+                                 : "false (" + why + ")";
+      std::printf("ry_per_accretor: problem/roche_wb_tan = %s\n", val.c_str());
+    }
+    acc_wbt.on = pin->GetOrAddBoolean("problem", "roche_wb_tan", wd);
+  } else {
+    acc_wbt.on = pin->GetBoolean("problem", "roche_wb_tan");
+  }
   wbt_file_ = pin->GetString("job", "basename") + ".wbt.hst";
   if (acc_wbt.on) {
     std::string bad = "";
