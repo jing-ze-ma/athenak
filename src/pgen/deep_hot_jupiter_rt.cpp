@@ -916,9 +916,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool flux_hst = (pin->DoesParameterExist("problem","flux_hst")
                          ? pin->GetBoolean("problem","flux_hst") : true)
                         && (pmy_mesh_->use_cubed_sphere || use_spherical_polar);
+  int fh_rst_req = -1;   // problem/flux_hst_rst: -1 unset, 0 false, 1 true
   if (flux_hst) {
     user_hist = true;
     user_hist_func = DhjFluxHistory;
+    // problem/flux_hst_rst (rthst-1101): write the radiative face-flux cache these
+    // columns read into the implicit-ck restart block, so that the rows a continuation
+    // writes before its first full RT call equal the uninterrupted run's (they had no
+    // radiative part).  Diagnostic only.  Default = ck_implicit (resolved below, once
+    // ck_implicit is known; no block exists without it).  Read without recording it in
+    // the input; false writes restart files byte-identical to the ones before the key.
+    if (pin->DoesParameterExist("problem","flux_hst_rst")) {
+      fh_rst_req = pin->GetBoolean("problem","flux_hst_rst") ? 1 : 0;
+    }
     // stswall-1029: the RKG resistive energy flux through the top and the wall (see
     // Resistivity::track_x1_bflx); folded into Etot_top / Etot_bot by DhjFluxHistory
     {
@@ -1422,6 +1432,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
        (two_stream_rt::ck_sweep_form != 2);
   two_stream_rt::ck_implicit =
       pin->GetOrAddBoolean("problem","ck_implicit",ckimp_default);}
+  // problem/flux_hst_rst: default = flux_hst && ck_implicit; without ck_implicit an
+  // explicit true is a no-op (no ck restart block to carry the cache) and warns
+  two_stream_rt::rt_fhst_rst = flux_hst && two_stream_rt::ck_implicit &&
+                               (fh_rst_req != 0);
+  if (flux_hst && fh_rst_req == 1 && !two_stream_rt::ck_implicit &&
+      global_variable::my_rank == 0) {
+    std::cout << "### WARNING: problem/flux_hst_rst = true needs problem/ck_implicit; "
+              << "ignored (restart files carry no flux-history cache)" << std::endl;
+  }
   two_stream_rt::ck_impl_tol = pin->GetOrAddReal("problem","ck_impl_tol",1.0e-8);
   two_stream_rt::ck_impl_dtol = pin->GetOrAddReal("problem","ck_impl_dtol",1.0e-8);
   two_stream_rt::ck_impl_norm_eps =
@@ -7840,17 +7859,24 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   auto fx1 = uflx.x1f;
   auto area = pmbp->pcoord->area.x1f;
   auto vol = pmbp->pcoord->volume;
-  const bool rad = ts::rt_face_flux_ready() && (ts::rt_Qb_ptr != nullptr)
-                   && (ts::rt_cf_ptr != nullptr) && (ts::rt_icut_ptr != nullptr);
-  const int nblk = rad ? ts::rt_face_nblk() : 0;
+  bool rad = ts::rt_face_flux_ready() && (ts::rt_Qb_ptr != nullptr)
+             && (ts::rt_cf_ptr != nullptr) && (ts::rt_icut_ptr != nullptr);
+  int nblk = rad ? ts::rt_face_nblk() : 0;
   DvceArray5D<Real> fb, qb;
   DvceArray4D<Real> cf;
   DvceArray3D<int> icut;
+  Real fstar = ts::rt_hist_fstar;
+  Real alb = ts::rt_hist_albedo;
   if (rad) {
     fb = ts::rt_face_flux();
     qb = *ts::rt_Qb_ptr;
     cf = *ts::rt_cf_ptr;
     icut = ts::rt_cut_index();
+  } else if (ts::RtFhStageViews(nmb, fb, qb, cf, icut, fstar, alb)) {
+    // problem/flux_hst_rst: a restart, before its first RT call: the cache the
+    // restart file carries (chain blocks pre-summed, so nblk = 1 gives the same sums)
+    rad = true;
+    nblk = 1;
   }
   // problem/flux_hst_rkavg: the stage-weighted fluid fluxes once a whole cycle is in
   // the accumulator (else, e.g. the first row after a restart, the last stage's)
@@ -7866,8 +7892,6 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
                    pmbp->pmhd->presist->track_x1_bflx &&
                    (pmbp->pmhd->presist->rkg_bflx.extent_int(0) == pmbp->nmb_thispack);
   auto rkb_ = rkb ? pmbp->pmhd->presist->rkg_bflx : DvceArray4D<Real>();
-  const Real fstar = ts::rt_hist_fstar;
-  const Real alb = ts::rt_hist_albedo;
   const Real arat = (alb < 1.0) ? alb/(1.0 - alb) : 0.0;
   array_sum::GlobalSum sum_this_mb;
   Kokkos::parallel_reduce("dhj_flux_hist",

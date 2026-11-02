@@ -40,6 +40,9 @@ using deep_copy_across::DeepCopyAcross;
 
 inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
 inline void CkRstScalars();
+// problem/flux_hst_rst: the flux history's face-flux cache (two_stream_rt.hpp)
+inline bool RtFhLive();
+template <typename V> inline void RtFhCollect(const int id, const V &dst);
 
 // ---- the ck_impl_xstep snapshot: the state pass 0 of the last STORING call read, and
 // that call's bdt.  Refreshed on every store (a device-to-device copy of u0, wtemp,
@@ -208,6 +211,14 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
       for (int n=0; n<3; ++n) ids.push_back(kCkSlabVefB0 + n);
     }
   }
+  // problem/flux_hst_rst: the flux history's face-flux cache (or the staged one, not
+  // consumed yet: no full RT call since the restart)
+  const bool fh_live = RtFhLive();
+  const bool fh_stg = rt_fhst_rst && !fh_live && CkRstStaged(kCkSlabFhFb) &&
+                      CkRstStaged(kCkSlabFhQb) && CkRstStaged(kCkSlabFhCol);
+  if (fh_live || fh_stg) {
+    for (int s=kCkSlabFhFb; s<=kCkSlabFhCol; ++s) ids.push_back(s);
+  }
   const int ns = static_cast<int>(ids.size());
   if (ns > kCkRstMaxSlab) return 0;
   Kokkos::realloc(out, ns, nmb, n3, n2, n1);
@@ -218,10 +229,12 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
     auto dst = Kokkos::subview(out, s, ALL, ALL, ALL, ALL);
     // still staged (not consumed since the restart): copy the staged bytes
     const bool vid = (id >= kCkSlabVefCyc);
+    const bool fid = (id >= kCkSlabFhFb && id <= kCkSlabFhCol);
     const bool stg = CkRstStaged(id) &&
         ((id == kCkSlabThk && thk_stg) || (id == kCkSlabCv && ck_cv_ptr == nullptr) ||
          (id >= kCkSlabCad0 && id < kCkSlabCad0 + 4 && cad_stg) ||
-         (id >= kCkSlabXsW && !vid && xs_stg) || (vid && vs_stg));
+         (id >= kCkSlabXsW && !vid && !fid && xs_stg) || (vid && vs_stg) ||
+         (fid && fh_stg));
     if (stg) {
       const std::size_t nd = dst.size();
       if (ck_rst_stage[id].size() == nd) {
@@ -229,6 +242,8 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
       } else {
         Kokkos::deep_copy(dst, 0.0);
       }
+    } else if (fid) {
+      RtFhCollect(id, dst);
     } else if (id == kCkSlabThk) {
       DeepCopyAcross(dst, Kokkos::subview(*ck_thk_ptr, nm, ALL, ALL, ALL));
     } else if (id >= kCkSlabCad0 && id < kCkSlabCad0 + 4) {
