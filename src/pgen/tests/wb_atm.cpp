@@ -42,6 +42,8 @@
 
 // C++ headers
 #include <cmath>
+#include <cstdint>
+#include <string>
 #include <iostream>
 
 // Athena++ headers
@@ -57,6 +59,8 @@ namespace {
 // parameters of the background, shared by the pgen, the BCs and the source term
 struct WbAtmVars {
   Real g0, p0, rho0, gamma, a0, h0;
+  int strat = 0;      // lowmach2-1102: 0 isentropic (legacy), 1 isothermal, 2 polytropic
+  Real nu = 0.0;      // polytropic index of strat 2
 };
 WbAtmVars wbatm;
 
@@ -65,6 +69,26 @@ WbAtmVars wbatm;
 KOKKOS_INLINE_FUNCTION
 Real WbAtmPres(const Real y, const Real p0, const Real h0, const Real gdgm1) {
   return p0*std::pow((1.0 - y/h0), gdgm1);
+}
+
+//! \fn WbAtmState (lowmach2-1102)
+//! \brief background (p, rho) at height y.  strat 0 = the legacy isentropic profile
+//! (same expressions as before, bitwise); 1 = isothermal (Edelmann+ 2021 eq. 74),
+//! 2 = polytropic of index nu (eqs. 76-77), with phi = -g0 y.
+KOKKOS_INLINE_FUNCTION
+void WbAtmState(const Real y, const WbAtmVars &v, Real &p, Real &den) {
+  if (v.strat == 0) {
+    p = WbAtmPres(y, v.p0, v.h0, v.gamma/(v.gamma - 1.0));
+    den = std::pow(p/v.a0, 1.0/v.gamma);
+  } else if (v.strat == 1) {
+    const Real e = std::exp(v.rho0*v.g0*y/v.p0);
+    p = v.p0*e;
+    den = v.rho0*e;
+  } else {
+    const Real th = 1.0 + (v.nu - 1.0)/v.nu*v.rho0/v.p0*v.g0*y;
+    p = v.p0*std::pow(th, v.nu/(v.nu - 1.0));
+    den = v.rho0*std::pow(th, 1.0/(v.nu - 1.0));
+  }
 }
 }  // namespace
 
@@ -102,6 +126,24 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   wbatm.h0 = -gdgm1*p0/rho0/g0;
   Real a0 = wbatm.a0;
   Real h0 = wbatm.h0;
+  // lowmach2-1102 TEST keys (read only when set): <problem>/strat = isothermal |
+  // polytropic (with poly_nu) and a cell-hashed white-noise velocity seed vrand (rms
+  // per component, absolute units).  Use with the STATIC well-balanced scheme (exact
+  // for any stored background); the dynamic scheme assumes the isentropic profile.
+  if (pin->DoesParameterExist("problem", "strat")) {
+    const std::string st = pin->GetString("problem", "strat");
+    if (st.compare("isothermal") == 0) {
+      wbatm.strat = 1;
+    } else if (st.compare("polytropic") == 0) {
+      wbatm.strat = 2;
+      wbatm.nu = pin->GetReal("problem", "poly_nu");
+    } else if (st.compare("isentropic") != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "wb_atm: strat = " << st << " unknown" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  }
+  const WbAtmVars wv = wbatm;
 
   // the source term must know about the background, and the BCs about both
   user_srcs_func = WbAtmGravity;
@@ -112,6 +154,8 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   Real x0 = pin->GetOrAddReal("problem", "x0", 0.0);
   Real y0 = pin->GetOrAddReal("problem", "y0", 1.0);
   Real r0 = pin->GetOrAddReal("problem", "r0", 0.2);
+  Real vrand = 0.0;
+  if (pin->DoesParameterExist("problem", "vrand")) vrand = pin->GetReal("problem", "vrand");
 
   auto &indcs = pmy_mesh_->mb_indcs;
   int &is = indcs.is; int &ie = indcs.ie;
@@ -135,14 +179,26 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
     Real &x2max = size.d_view(m).x2max;
     Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
 
-    Real p = WbAtmPres(x2v, p0, h0, gdgm1);
-    Real den = std::pow(p/a0, 1.0/gamma);
+    Real p, den;
+    WbAtmState(x2v, wv, p, den);
 
     Real v1 = 0.0, v2 = 0.0;
     Real rad = std::sqrt(SQR(x1v - x0) + SQR(x2v - y0));
     if (rad < r0) {
       v1 = vamp*(x1v - x0)/r0;
       v2 = vamp*(x2v - y0)/r0;
+    }
+    if (vrand != 0.0) {   // lowmach2-1102: cell-hashed uniform deviates, rms vrand
+      const uint64_t gi = static_cast<uint64_t>((x1v + 1000.0)/size.d_view(m).dx1);
+      const uint64_t gj = static_cast<uint64_t>((x2v + 1000.0)/size.d_view(m).dx2);
+      uint64_t h = (gi*0x9E3779B97F4A7C15ULL)
+                   ^ ((gj + 0x632BE59BD9B4E019ULL)*0xBF58476D1CE4E5B9ULL);
+      h ^= h >> 31; h *= 0x94D049BB133111EBULL; h ^= h >> 29;
+      const Real r1 = static_cast<Real>(h >> 11)*(1.0/9007199254740992.0);
+      h *= 0xD6E8FEB86659FD93ULL; h ^= h >> 32;
+      const Real r2 = static_cast<Real>(h >> 11)*(1.0/9007199254740992.0);
+      v1 += vrand*std::sqrt(3.0)*(2.0*r1 - 1.0);
+      v2 += vrand*std::sqrt(3.0)*(2.0*r2 - 1.0);
     }
     u0(m,IDN,k,j,i) = den;
     u0(m,IM1,k,j,i) = den*v1;
@@ -196,8 +252,8 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
     Real &x2min = size.d_view(m).x2min;
     Real &x2max = size.d_view(m).x2max;
     Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
-    Real p = WbAtmPres(x2v, p0, h0, gdgm1);
-    Real den = std::pow(p/a0, 1.0/gamma);
+    Real p, den;
+    WbAtmState(x2v, wv, p, den);
 
     u0wb(m,IDN,k,j,i) = den;
     u0wb(m,IM1,k,j,i) = 0.0;
@@ -235,8 +291,8 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
     }
 
     Real x2f = LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
-    Real pf = WbAtmPres(x2f, p0, h0, gdgm1);
-    Real denf = std::pow(pf/a0, 1.0/gamma);
+    Real pf, denf;
+    WbAtmState(x2f, wv, pf, denf);
     wf2(m,IDN,k,j,i) = denf;
     wf2(m,IM1,k,j,i) = 0.0;
     wf2(m,IM2,k,j,i) = 0.0;
@@ -244,8 +300,7 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
     wf2(m,IEN,k,j,i) = pf/gm1;
     if (j == n2m1) {
       x2f = LeftEdgeX(j+1-js, indcs.nx2, x2min, x2max);
-      pf = WbAtmPres(x2f, p0, h0, gdgm1);
-      denf = std::pow(pf/a0, 1.0/gamma);
+      WbAtmState(x2f, wv, pf, denf);
       wf2(m,IDN,k,j+1,i) = denf;
       wf2(m,IM1,k,j+1,i) = 0.0;
       wf2(m,IM2,k,j+1,i) = 0.0;
@@ -273,9 +328,9 @@ void WbAtmBCs(Mesh *pm) {
   int nmb1 = pmbp->nmb_thispack - 1;
   auto u0 = pmbp->phydro->u0;
 
-  Real p0 = wbatm.p0, h0 = wbatm.h0, a0 = wbatm.a0, gamma = wbatm.gamma;
+  Real gamma = wbatm.gamma;
   Real gm1 = gamma - 1.0;
-  Real gdgm1 = gamma/gm1;
+  const WbAtmVars wv = wbatm;
 
   par_for("wb_atm_bc", DevExeSpace(), 0, nmb1, 0, 0, 0, (ng-1), 0, (n1-1),
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -283,8 +338,8 @@ void WbAtmBCs(Mesh *pm) {
     Real &x2max = size.d_view(m).x2max;
     if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user) {
       Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
-      Real p = WbAtmPres(x2v, p0, h0, gdgm1);
-      Real den = std::pow(p/a0, 1.0/gamma);
+      Real p, den;
+      WbAtmState(x2v, wv, p, den);
       u0(m,IDN,k,j,i) = den;
       u0(m,IM1,k,j,i) = 0.0;
       u0(m,IM2,k,j,i) = 0.0;
@@ -293,8 +348,8 @@ void WbAtmBCs(Mesh *pm) {
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
       Real x2v = CellCenterX((je+j+1)-js, indcs.nx2, x2min, x2max);
-      Real p = WbAtmPres(x2v, p0, h0, gdgm1);
-      Real den = std::pow(p/a0, 1.0/gamma);
+      Real p, den;
+      WbAtmState(x2v, wv, p, den);
       u0(m,IDN,k,(je+j+1),i) = den;
       u0(m,IM1,k,(je+j+1),i) = 0.0;
       u0(m,IM2,k,(je+j+1),i) = 0.0;

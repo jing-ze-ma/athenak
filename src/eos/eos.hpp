@@ -239,6 +239,26 @@ struct EOS_Data {
   // read only when named): the C1 slope limiter of reconstruct/plm_c1.hpp (also in the
   // non-uniform x1 PLM of the cubed sphere / spherical polar meshes)
   bool plm_c1 = false;
+  // lowmach2-1102 <hydro>/lhllc_chi_full (default false = legacy, bitwise; read only
+  // when named; hydro only): the Mach function of LHLLC from the FULL speed,
+  // chi = min(1, max(|u|_L, |u|_R)/max(c_L, c_R)) with |u| over all three velocity
+  // components, instead of the face-normal speed max(|u_n,L|, |u_n,R|)/max(c_L, c_R).
+  // This is Minoshima & Miyoshi 2021 eq. (14) as written (and what LHLLD already does,
+  // through c_u), SLAU/SLAU2 and Furusawa+ 2023.
+  bool chi_full = false;
+  // lowmach2-1102 <hydro>/lhllc_divdiss, <mhd>/lhlld_divdiss (default false = off,
+  // bitwise; read only when named) and the TEST key <hydro|mhd>/lhllc|lhlld_divdiss_form
+  // (hp | raw | row; default hp): MULTI-DIMENSIONAL DIVERGENCE DISSIPATION
+  // (utils/divdiss.hpp).  The contact (total) pressure gets the extra term
+  //   dp* = -(1 - phi) [m_L m_R/(m_L + m_R)] J/rhobar,     m_K = rho_K |S_K - u_K|,
+  // with J an undivided face measure of the divergence of the MASS flux rho u, so that
+  // the face keeps the 1-D velocity-jump term at phi = O(M) and, on top of it, the
+  // missing (1 - phi) of the acoustic dissipation acts on the divergence of rho u
+  // only (Barsukow 2021 arXiv:2103.02621, 2023 arXiv:2306.02847).  It is linear in the
+  // state (no switch, no parameter) and zero at phi = 1.  The energy flux carries the
+  // matching dp* S_M (the contact pressure work).  divdiss = form code: 1 hp, 2 raw,
+  // 3 row (see divdiss.hpp); 0 = off.
+  int divdiss = 0;
 
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
   // energy instead of deleting it (default false = the historical behaviour).

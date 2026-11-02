@@ -61,6 +61,7 @@
 #include <cmath>  // fabs(), fmax(), fmin()
 
 #include "utils/cb_sensor.hpp"
+#include "utils/divdiss.hpp"
 
 namespace mhd {
 
@@ -131,6 +132,13 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   // utils/cb_sensor.hpp.
   const Real cb_sensor = eos.cb_sensor;
   const bool cb_cont = eos.cb_cont;   // cbcont-1102 <mhd>/lhlld_cb_cont
+  // lowmach2-1102 <mhd>/lhlld_divdiss (EOS_Data::divdiss, utils/divdiss.hpp): off
+  // (default) = legacy LHLLD, bitwise.  Acts on the total pressure p_T* only (dpt);
+  // the transverse-field (EMF) fluxes are untouched.
+  const int divdiss = eos.divdiss;
+  const bool dd_act2 = (indcs.nx2 > 1), dd_act3 = (indcs.nx3 > 1);
+  const Real dd_dx1 = size.d_view(m).dx1, dd_dx2 = size.d_view(m).dx2,
+             dd_dx3 = size.d_view(m).dx3;
 
   if (eos.is_ideal) {
     Real gm1 = eos.gamma - 1.0;
@@ -321,6 +329,12 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       // value and dpt is applied to the flux itself in Step 7, which is where p_T*
       // enters (see the note there).  At phi = 1 this is exactly 0.0.
       Real dpt = -(1.0-phi)*ul.d*ur.d*sdl*sdr*(wr_ivx - wl_ivx)/(sdr*ur.d - sdl*ul.d);
+      if (divdiss > 0) {   // lowmach2-1102: m_L m_R/(m_L+m_R) J/rhobar, m_K = rho_K|sd_K|
+        const Real jdd = DivDissJ(w0, m, k, j, i, ivx, divdiss, dd_act2, dd_act3,
+                                  dd_dx1, dd_dx2, dd_dx3);
+        dpt += (1.0-phi)*ul.d*ur.d*sdl*sdr/(sdr*ur.d - sdl*ul.d)
+               *jdd/(0.5*(wl_idn + wr_idn));
+      }
 
       // ul* - eqn (39) of M&K
       ulst.mx = ulst.d * spd[2];
