@@ -220,6 +220,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // problem/ck_time_scheme = hesdirk2: the SDIRK stage solve of this Heun stage
     if (two_stream_rt::ck_t2_on) {
       DhjCkT2Stage(pm, bdt);
+      // problem/ck_t2_freeze (TEST): nothing but the ck moves the state
+      if (dhj_ck_t2_freeze) return;
     } else if (!two_stream_rt::ck_impl_once && !rt_test_freeze) {
       picket_fence_two_stream_RT(pm, bdt);
     }
@@ -1132,6 +1134,7 @@ Real t2_pos_th = 0.5;
 double t2_nclamp = 0.0;
 int64_t t2_nbe = 0, t2_nstep = 0;
 bool t2_first = true;
+DvceArray4D<Real> *t2_y2 = nullptr;   // ck_t2_freeze: the stage-1 result (IEN)
 int64_t cnt_full = 0, cnt_nfall = 0, cnt_ncap = 0, cnt_nonconv = 0;
 
 void T2Alloc(Mesh *pm) {
@@ -1145,6 +1148,41 @@ void T2Alloc(Mesh *pm) {
                              u0.extent(4));
   *t2_r = DvceArray4D<Real>("ck_t2_r", u0.extent(0), u0.extent(2), u0.extent(3),
                             u0.extent(4));
+  if (t2_y2 != nullptr) {
+    *t2_y2 = DvceArray4D<Real>("ck_t2_y2", u0.extent(0), u0.extent(2), u0.extent(3),
+                               u0.extent(4));
+  }
+}
+
+// problem/ck_t2_freeze (TEST, hydro only): the explicit Heun part is removed, so the
+// step integrates de/dt = S(e) alone with the hesdirk2 tableau (the ck-isolating order
+// ladder).  At the top of each stage solve u0 is reset to what Heun would give with
+// F = 0: stage 1 U^n (= u1), stage 2 (U^n + Y2)/2, Y2 = the stage-1 result; SourceFunc
+// returns right after the ck, so no other source acts either.
+void T2Freeze(Mesh *pm, const int stage) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto u0 = pmbp->phydro->u0;
+  auto u1 = pmbp->phydro->u1;
+  auto y2 = *t2_y2;
+  const int nv = static_cast<int>(u0.extent(1));
+  auto &indcs = pm->mb_indcs;
+  const bool two = (stage == 2);
+  par_for("ck_t2_frz", DevExeSpace(), 0, pmbp->nmb_thispack - 1, indcs.ks, indcs.ke,
+          indcs.js, indcs.je, indcs.is, indcs.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int n=0; n<nv; ++n) u0(m,n,k,j,i) = u1(m,n,k,j,i);
+    if (two) u0(m,IEN,k,j,i) = 0.5*(u1(m,IEN,k,j,i) + y2(m,k,j,i));
+  });
+}
+void T2FreezeKeep(Mesh *pm) {
+  auto u0 = pm->pmb_pack->phydro->u0;
+  auto y2 = *t2_y2;
+  par_for("ck_t2_frzk", DevExeSpace(), 0, static_cast<int>(y2.extent(0)) - 1, 0,
+          static_cast<int>(y2.extent(1)) - 1, 0, static_cast<int>(y2.extent(2)) - 1, 0,
+          static_cast<int>(y2.extent(3)) - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    y2(m,k,j,i) = u0(m,IEN,k,j,i);
+  });
 }
 }  // namespace
 
@@ -1178,6 +1216,20 @@ void DhjCkT2Init(ParameterInput *pin, Mesh *pm) {
   ts::ck_t2_k1_ptr = new DvceArray4D<Real>();
   t2_k2 = new DvceArray4D<Real>();
   t2_r = new DvceArray4D<Real>();
+  if (pin->DoesParameterExist("problem", "ck_t2_freeze")) {
+    dhj_ck_t2_freeze = pin->GetBoolean("problem", "ck_t2_freeze");
+  }
+  if (dhj_ck_t2_freeze) {
+    if (pm->pmb_pack->phydro == nullptr) {
+      std::cout << "### FATAL ERROR: problem/ck_t2_freeze is a hydro-only test" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    t2_y2 = new DvceArray4D<Real>();
+    if (global_variable::my_rank == 0) {
+      std::cout << "deep_hot_jupiter_rt: ck_t2_freeze TEST: hydro frozen, only the ck "
+                << "evolves the state" << std::endl;
+    }
+  }
   dtretry::RegisterView("ck_t2_k1", ts::ck_t2_k1_ptr);
   dtretry::RegisterValue("ck_t2_ok", &ts::ck_t2_ok);
   if (global_variable::my_rank == 0) {
@@ -1208,6 +1260,7 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
   T2Alloc(pm);
   const Real dt = pm->dt;
   const int stage = (bdt == dt) ? 1 : 2;
+  if (dhj_ck_t2_freeze) T2Freeze(pm, stage);
   const Real g = kCkT2G;
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto u0 = (pmbp->phydro != nullptr) ? pmbp->phydro->u0 : pmbp->pmhd->u0;
@@ -1237,7 +1290,10 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
     }
   };
   if (!ts::ck_t2_ok) {
-    if (stage == 1) return;
+    if (stage == 1) {
+      if (dhj_ck_t2_freeze) T2FreezeKeep(pm);
+      return;
+    }
     par_for("ck_t2_be0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       rr(m,k,j,i) = u0(m,IEN,k,j,i);
@@ -1288,6 +1344,7 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
     ++t2_nstep;
     report();
   }
+  if (dhj_ck_t2_freeze && !two) T2FreezeKeep(pm);
 }
 
 //--------------------------------------------------------------------------------
