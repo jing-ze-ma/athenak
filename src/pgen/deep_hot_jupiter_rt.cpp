@@ -72,6 +72,7 @@
 #include "diffusion/resistivity.hpp"
 #include "coordinates/cubed_sphere.hpp"
 #include "outputs/outputs.hpp"
+#include "utils/recipe.hpp"   // proddef-1101: fresh-start defaults
 
 #include <Kokkos_Random.hpp>
 
@@ -177,8 +178,8 @@ bool dhj_flux_hst_wall = false;
 bool dhj_flux_hst_floor = false;
 // relaxdrag-1101 problem/relax_drag (default true), problem/relax_drag_rot (default 5):
 // the start-up Rayleigh drag of SourceFunc (tau = P/10 for t < 0.4 R rot, log ramp to
-// tau = P at R rot, off after; R = relax_drag_rot).  Read only when named (a named key is
-// in the input and so in every restart); absent = the drag as before, bitwise.
+// tau = P at R rot, off after; R = relax_drag_rot).  Fresh starts default relax_drag to
+// false (recipe::NewDefaults); a restart without the key keeps the drag, bitwise.
 bool dhj_relax_drag = true;
 Real dhj_relax_drag_rot = 5.0;
 Real dhj_floor_t0 = 0.0;   // start of the interval the floor columns average over
@@ -962,6 +963,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // stages left below a floor).  Nothing else books them: they are not fluxes, so
   // they are the part of d(tot-E)/dt that Etot_bot - Etot_top does not contain (see
   // Hydro::c2p_track).  Costs two active-cell kernels per ConToPrim; off by default.
+  // relaxdrag default (USER 11-01): false on a FRESH dhj start (recipe::NewDefaults; the
+  // resolved value is written into the input, so restarts continue with it); a restart
+  // whose input lacks the key keeps the old default true; an explicit key wins
+  if (!pin->DoesParameterExist("problem","relax_drag")) {
+    if (recipe::NewDefaults(pin)) {
+      pin->GetOrAddBoolean("problem","relax_drag",false);
+      recipe::Log("problem/relax_drag = false (default on a fresh dhj start)");
+    } else {
+      recipe::Log("problem/relax_drag = true (old default: restart input or recipe "
+                  "none)");
+    }
+  }
   if (pin->DoesParameterExist("problem","relax_drag")) {
     dhj_relax_drag = pin->GetBoolean("problem","relax_drag");
   }
@@ -1248,7 +1261,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // read before anything restart-sensitive: the outer BC needs it on restarts too
   bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",true);
   {
-    const std::string tb = pin->GetOrAddString("problem","top_bc","hse");
+    // proddef-1101 (USER): fresh-start default outflow1 (Caltech, all five planets); a
+    // restart whose input lacks the key keeps the old hse
+    if (!pin->DoesParameterExist("problem","top_bc")) {
+      recipe::Log(recipe::NewDefaults(pin) ? "problem/top_bc = outflow1 (default)"
+                  : "problem/top_bc = hse (old default: restart input or recipe none)");
+    }
+    const std::string tb = pin->GetOrAddString("problem","top_bc",
+                                               recipe::NewDefaults(pin) ? "outflow1"
+                                                                        : "hse");
     if (tb == "hse") {
       dhj_top_bc = 0;
     } else if (tb == "outflow1") {
@@ -2410,11 +2431,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << "outside the planet's Roche lobe" << std::endl;
       }
     }
-    // roche-wbtan-1101 problem/roche_wb_tan (default false; see namespace wbtan): the
-    // tangential centrifugal (+ tidal, with problem/roche) force as the hydro's own
-    // discrete residual of the equipotential equilibrium.  Works with rot_potential
-    // alone (centrifugal only) or with roche.
-    dhj_wbt.on = pin->GetOrAddBoolean("problem","roche_wb_tan",false);
+    // roche-wbtan-1101 problem/roche_wb_tan (fresh default: proddef-1101 below; see
+    // namespace wbtan): the tangential centrifugal (+ tidal, with problem/roche) force as
+    // the hydro's own discrete residual of the equipotential equilibrium.  Works with
+    // rot_potential alone (centrifugal only) or with roche.
+    // proddef-1101 (USER): fresh-start default true with problem/roche on a single-level
+    // mesh (roche itself already requires everything else roche_wb_tan needs); a restart
+    // whose input lacks the key keeps the old false
+    if (!pin->DoesParameterExist("problem","roche_wb_tan")) {
+      const bool sl = !(pmy_mesh_->adaptive || pmy_mesh_->multilevel);
+      const bool wd = roche_on && sl && recipe::NewDefaults(pin);
+      if (roche_on) {
+        recipe::Log(std::string("problem/roche_wb_tan = ") + (wd ? "true (default with "
+                    "problem/roche)" : (!sl ? "false (needs a single-level mesh)"
+                    : "false (old default: restart input or recipe none)")));
+      }
+      dhj_wbt.on = pin->GetOrAddBoolean("problem","roche_wb_tan",wd);
+    } else {
+      dhj_wbt.on = pin->GetBoolean("problem","roche_wb_tan");
+    }
     if (dhj_wbt.on) {
       std::string bad = "";
       if (!rot_potential) bad = "problem/rot_potential = true";
@@ -2868,6 +2903,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         weq_(m,1,k,j,i) = EintFromP(eos, igm1, den, p);
       });
       dhj_wbt.ready = false;
+      // wbtan-rstg-1101: a restart takes g_t from the file when it carries it
+      if (restart) wbtan::LoadFromRestart(this, dhj_wbt, pmbp, "deep_hot_jupiter_rt");
       if (global_variable::my_rank == 0) {
         std::cout << "deep_hot_jupiter_rt: problem/roche_wb_tan ON: tangential "
                   << (roche_on ? "centrifugal + tidal" : "centrifugal")
@@ -7698,14 +7735,35 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   const int NFH = NFL + (amh::on ? (amh::split ? 12 : 8) : 0);
   // tidetrq-1101: Ttide (DhjTideTorque) after all the others, only with problem/roche
   const bool ttide = pm->pgen->hot_jupiter_param.roche;
-  pdata->nhist = NFH + (ttide ? 1 : 0);
-  if (ttide) pdata->label[NFH] = "Ttide";
+  // floortrc-1101: with <mhd>/floor_tracer and problem/flux_hst_floor, Mdrain [g/s] and
+  // Edrain [erg/s] after all the others: the floor-tracer drain (MHD::FloorTracerDrain)
+  // over the same interval as Mfloor/Efloor, which are then NET (added - drained); the
+  // gross floor addition is Mfloor + Mdrain
   // relaxdrag-1101: Tdrag (the start-up Rayleigh drag's z torque, a rate over the
   // interval like Tcor) after Ttide, only with problem/am_hst
   const int NTD = NFH + (ttide ? 1 : 0);
-  if (amh::on) {
-    pdata->nhist = NTD + 1;
-    pdata->label[NTD] = "Tdrag";
+  const int NDR = NTD + (amh::on ? 1 : 0);   // Mdrain/Edrain after Ttide and Tdrag
+  // (the floor tracer is a default with the Alfven floor: when the two columns do not
+  // fit, they are left out with a note instead of stopping the run)
+  bool fdrain = ffloor && (pm->pmb_pack->pmhd != nullptr) &&
+                pm->pmb_pack->pmhd->floor_tracer;
+  if (fdrain && NDR + 2 > NHISTORY_VARIABLES) {
+    static bool warned = false;
+    if (!warned && global_variable::my_rank == 0) {
+      std::cout << "### NOTE: dhj flux history: no room for Mdrain/Edrain ("
+                << NDR + 2 << " > NHISTORY_VARIABLES = " << NHISTORY_VARIABLES
+                << "; problem/am_hst_split = false frees 4); Mfloor/Efloor are NET of "
+                << "the floor-tracer drain" << std::endl;
+    }
+    warned = true;
+    fdrain = false;
+  }
+  pdata->nhist = NDR + (fdrain ? 2 : 0);
+  if (ttide) pdata->label[NFH] = "Ttide";
+  if (amh::on) pdata->label[NTD] = "Tdrag";
+  if (fdrain) {
+    pdata->label[NDR] = "Mdrain";
+    pdata->label[NDR+1] = "Edrain";
   }
   pdata->label[0] = "Lir_top";
   pdata->label[1] = "Lsw_refl";
@@ -7863,6 +7921,13 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     pdata->hdata[NFL-3] = (tint > 0.0) ? ef/tint : 0.0;
     pdata->hdata[NFL-2] = (tint > 0.0) ? mf/tint : 0.0;
     pdata->hdata[NFL-1] = (tint > 0.0) ? efr/tint : 0.0;
+    if (fdrain) {
+      auto *pmh = pmbp->pmhd;
+      pdata->hdata[NDR] = (tint > 0.0) ? pmh->fltr_dm/tint : 0.0;
+      pdata->hdata[NDR+1] = (tint > 0.0) ? pmh->fltr_de/tint : 0.0;
+      pmh->fltr_dm = 0.0;
+      pmh->fltr_de = 0.0;
+    }
   }
   if (amh::on) AmHstColumns(pdata, pm, NFL);
   if (ttide) pdata->hdata[NFH] = DhjTideTorque(pm);

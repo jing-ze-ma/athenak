@@ -49,6 +49,8 @@
 #include "hydro/hydro.hpp"
 #include "hydro/hydro_am.hpp"
 #include "mhd/mhd.hpp"
+#include "pgen/pgen.hpp"
+#include "diffusion/resistivity.hpp"
 
 namespace wbtan {
 
@@ -72,6 +74,30 @@ inline void Alloc(WbTan &w, MeshBlockPack *pmbp) {
   const int n3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
   w.weq = new DvceArray5D<Real>("wbtan_weq", pmbp->nmb_thispack, 2, n3, n2, n1);
   w.gt = new DvceArray5D<Real>("wbtan_gt", pmbp->nmb_thispack, 2, n3, n2, n1);
+}
+
+//! wbtan-rstg-1101: on a restart, g_t from the file's per-cell pgen slabs instead of a new
+//! probe (a restart must not depend on rebuilding W_eq bit for bit, nor on the probe being
+//! side-effect free on a developed state).  True (and w.ready) when the file had exactly
+//! the two g_t slabs of this mesh; false (re-probe at the first source call) otherwise.
+inline bool LoadFromRestart(ProblemGenerator *pg, WbTan &w, MeshBlockPack *pmbp,
+                            const char *who) {
+  Alloc(w, pmbp);
+  auto &in = pg->pgen_rst_slabs_in;
+  const bool ok = (in.extent_int(1) == 2) && (in.extent(0) == w.gt->extent(0)) &&
+                  (in.extent(2) == w.gt->extent(2)) && (in.extent(3) == w.gt->extent(3)) &&
+                  (in.extent(4) == w.gt->extent(4));
+  if (ok) {
+    Kokkos::deep_copy(*w.gt, in);
+    w.ready = true;
+    pg->pgen_rst_slabs = w.gt;
+  }
+  if (global_variable::my_rank == 0) {
+    std::cout << who << ": roche_wb_tan: " << (ok ? "g_t read from the restart file (no "
+              "re-probe)" : "the restart file has no g_t: re-probe at the first source "
+              "call") << std::endl;
+  }
+  return ok;
 }
 
 //! the force, one code path for every geometry: a2/a3 are the caller's other tangential
@@ -141,10 +167,40 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   if (hastmp) stmp = dup4(ph->wtemp);
   if (haswbq) swbq = dup5(ph->wbq0);
   // MHD: the probe is the B = 0 equilibrium (see the note in WbTanProbe)
-  DvceArray4D<Real> sb1, sb2, sb3;
+  DvceArray4D<Real> sb1, sb2, sb3, seta, sadc;
+  DvceArray4D<Real> se31, se21, se12, se32, se23, se13;
+  DvceArray4D<Real> sr1, sr2, sr3;
   DvceArray5D<Real> sbcc;
+  bool sxe = false;
   if constexpr (kMHD) {
+    // tracer-1101: a pending x_e Saha start (fresh start / restart without the tracer) is
+    // for the live state, not the probe's: kept pending across the probe's ConToPrim
+    sxe = ph->xe_init_pending;
     sb1 = dup4(ph->b0.x1f); sb2 = dup4(ph->b0.x2f); sb3 = dup4(ph->b0.x3f);
+    // wbtan-etafix-1101: MHD::ConToPrim at stage 0 (as the probe calls it) recomputes the
+    // resistivity arrays (Ohmic eta_b, ambipolar ad_coef) from the probe's state, whose
+    // passive scalars -- the <mhd>/xe_tracer x_e among them -- are zero: an eta of the
+    // probe state.  Saved here and restored below (E_B x450 in the first cycle with
+    // xe_tracer + ambipolar = eos, integ-test-1101 gate (b)).
+    // wbtan-emffix-1101: MHD::Fluxes also writes the face electric fields e3x1 ... e1x3,
+    // which the stage's CornerE/CT read AFTER the user source (where the probe runs): the
+    // probe's B = 0 fields replaced this stage's EMF (the stage-1 CT of the first cycle
+    // after a fresh start or a restart: restart continuation broke).  Saved and restored.
+    se31 = dup4(ph->e3x1); se21 = dup4(ph->e2x1); se12 = dup4(ph->e1x2);
+    se32 = dup4(ph->e3x2); se23 = dup4(ph->e2x3); se13 = dup4(ph->e1x3);
+    if (ph->presist != nullptr) {
+      if (ph->presist->eta_b.size() > 0) seta = dup4(ph->presist->eta_b);
+      if (ph->presist->ad_coef.size() > 0) sadc = dup4(ph->presist->ad_coef);
+      // wbtan-efldfix-1102: without STS, MHD::Fluxes -> AddResistiveFluxes clears and
+      // rebuilds the resistive edge EMF efld_resist from the probe's B = 0; the stage's
+      // EField adds it AFTER the user source, so the first stage after a fresh start or
+      // a restart had no resistive EMF (no-STS restart continuation broke).
+      if (!ph->presist->use_rkg_sts) {
+        sr1 = dup4(ph->presist->efld_resist.x1e);
+        sr2 = dup4(ph->presist->efld_resist.x2e);
+        sr3 = dup4(ph->presist->efld_resist.x3e);
+      }
+    }
     sbcc = dup5(ph->bcc0);
   }
   auto zero_b = [&]() {
@@ -283,12 +339,25 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   if (hastmp) Kokkos::deep_copy(ph->wtemp, stmp);
   if (haswbq) Kokkos::deep_copy(ph->wbq0, swbq);
   if constexpr (kMHD) {
+    ph->xe_init_pending = sxe;
+    Kokkos::deep_copy(ph->e3x1, se31); Kokkos::deep_copy(ph->e2x1, se21);
+    Kokkos::deep_copy(ph->e1x2, se12); Kokkos::deep_copy(ph->e3x2, se32);
+    Kokkos::deep_copy(ph->e2x3, se23); Kokkos::deep_copy(ph->e1x3, se13);
+    if (seta.size() > 0) Kokkos::deep_copy(ph->presist->eta_b, seta);
+    if (sadc.size() > 0) Kokkos::deep_copy(ph->presist->ad_coef, sadc);
+    if (sr1.size() > 0) {
+      Kokkos::deep_copy(ph->presist->efld_resist.x1e, sr1);
+      Kokkos::deep_copy(ph->presist->efld_resist.x2e, sr2);
+      Kokkos::deep_copy(ph->presist->efld_resist.x3e, sr3);
+    }
     Kokkos::deep_copy(ph->b0.x1f, sb1); Kokkos::deep_copy(ph->b0.x2f, sb2);
     Kokkos::deep_copy(ph->b0.x3f, sb3); Kokkos::deep_copy(ph->bcc0, sbcc);
   }
   ph->wb_cache_built = sv_built;
   ph->use_fofc = sv_fofc;
   w.ready = true;
+  // wbtan-rstg-1101: every restart file from now on carries g_t (kPgenSlabRstMagic)
+  if (pm->pgen != nullptr) pm->pgen->pgen_rst_slabs = w.gt;
 
   // one line: the size of g_t (max |g_c| over the rank's cells, rank 0)
   Real gmax = 0.0;

@@ -135,6 +135,15 @@ struct EOS_Data {
   // eos_dfloor).
   Real va_noinfall_fac = 0.0;
 
+  // <mhd>/floor_tracer (floortrc-1101): the u0/w0 index of the floor-mass passive scalar
+  // (-1 = off).  ConsToPrim adds every density-floor increment (dfloor and the Alfven
+  // floor) to it; MHD::FloorTracerDrain removes it again where the floor does not bind.
+  int ifltr = -1;
+  // <mhd>/xe_tracer (tracer-1101): the u0/w0 index of the x_e tracer (-1 = off).  When a
+  // density floor raises rho in ConsToPrim, the tracer is scaled with it, so the floor
+  // mass inherits the cell's y = n_e/n_H instead of arriving with y = 0.
+  int ixe = -1;
+
   // <mhd>/hlld_bx_zero_tol -- plasma-beta cut used by the HLLD family (hlld_mhd.hpp,
   // hlld_uct_mhd.hpp, lhlld_mhd.hpp) to decide whether the rotational discontinuities
   // (the ** states) are built at all.  The test is 0.5*Bx^2 < tol*pt*: since pt* is the
