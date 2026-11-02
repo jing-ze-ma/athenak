@@ -424,6 +424,7 @@ env_sponge_thin_rho = 1e-3   # direct_s2.7378
 env_spin_to_top = true   # accspin-1027 (5d3a1a8b): spin term + IC rotation up to the envelope top at every phi (tidal bulge)
 env_sponge_spin = true   # accspin-1027 test F: floor sponge relaxes to the star's spin (not to rest)
 phys_3d   = true   # acc3d-1017: the 3-D physics
+roche_wb_tan = true   # csacc-1031 USER 11-01 (11-02): WB tangential tide (accwbtan-1101 merged 64e9ee03): W_eq = full rotating IC (+ IC Coriolis in the probe), barotropic W_eq under env_ic_vz, M1 equilibrium radiative force -grad_t G in the probe, g_t in the rst (no re-probe on restart); needs phys_3d, etotgrav, single level, no spin ramp
 user_srcs   = true
 user_hist   = true
 thermo      = general                # accretor-rhd-1008 S2: general EOS, column IC
