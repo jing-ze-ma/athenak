@@ -603,6 +603,12 @@ inline int rt_face_nblk() {
 }
 inline DvceArray5D<Real> rt_face_flux() { return *rt_Fb_ptr; }
 
+// the stellar flux sigma T_irr^4 and the albedo of the LAST RT call, host scalars
+// recorded for the problem generator's flux history (problem/flux_hst); nothing reads
+// them back into the solver.
+inline Real rt_hist_fstar = 0.0;
+inline Real rt_hist_albedo = 0.0;
+
 // --- problem/flux_hst_rst: the face-flux cache across a restart (rthst-1101) ----------
 // rt_Fb, rt_Qb, rt_icut and rt_cf slot 3 are written by the full RT calls only; under
 // the cadence (ck_impl_every) the history rows in between read what the last full call
@@ -745,11 +751,6 @@ inline void RtFhRstAfterAlloc(const int nmb) {
 // (m,k,j) deepest cell the band solver integrates; the face below it is where the
 // interior flux is handed in from the diffusion operator.
 inline DvceArray3D<int> rt_cut_index() { return *rt_icut_ptr; }
-// the stellar flux sigma T_irr^4 and the albedo of the LAST RT call, host scalars
-// recorded for the problem generator's flux history (problem/flux_hst); nothing reads
-// them back into the solver.
-inline Real rt_hist_fstar = 0.0;
-inline Real rt_hist_albedo = 0.0;
 // problem/rt_de_max: the cap in LimitRTSource, as a fraction of the cell's internal
 // energy per RT application. Applies to every EXPLICIT radiative update -- grey and
 // correlated-k, split and monolithic. Set <= 0 to disable the limiter entirely.
