@@ -510,6 +510,69 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     // unkkey-1017: WARNING for input keys never read, once, after the first cycle
     // (some modules read their keys lazily inside the first step)
     bool unread_reported = false;
+    // rkgfuse-1102 <mhd>/rkg_strang_fuse: the fused Strang RKG split.
+    //  rkg_strang (unfused) runs per cycle   [B] R(dt/2) H(dt) R(dt/2) [A]
+    //  with B = before_timeintegrator (tracer pass, SaveMHDState), H = the RK stages,
+    //  A = after_timeintegrator (dhj ck RT, user_split_once, full dt) + outputs + new dt.
+    //  Fused, the closing R(dt_n/2) of cycle n is NOT taken; it is carried (rkg_pend) and
+    //  taken together with the opening R(dt_{n+1}/2) of cycle n+1, as ONE super-step of
+    //  (dt_n + dt_{n+1})/2 placed where the opening half sits (after B, before H):
+    //      B R((dt_{n-1}+dt_n)/2) H(dt_n) A | B R((dt_n+dt_{n+1})/2) H(dt_{n+1}) A | ...
+    //  RKG stages ~ sqrt(dt), so one fused step costs ~1/1.41 of the two halves.
+    //  Order: over a run this is R(dt/2) [H A B] R(dt/2) per cycle, i.e. R is still
+    //  Strang-split (symmetric) around the composite C = B.H.A of the other operators;
+    //  the R splitting error stays O(dt^2) globally.  What moved is R across A and B:
+    //  A (ck RT, full dt, Lie) and B (tracer, Lie) were and are first-order splits, so
+    //  their order is unchanged.  dt_{n+1} is only known after A (Mesh::NewTimeStep
+    //  sees the post-A state), so a fused step cannot sit before A.
+    //  SYNC: a pending half is closed on its own, R(dt_n/2) (rkg_half 2, eta refreshed),
+    //  right after A (and before the time/ncycle increment) whenever the state must be
+    //  synchronised: an output of any kind (incl. rst and hst) is due at the end of the
+    //  cycle, or the loop ends after it (tlim, nlim, wall clock; the wall clock is then
+    //  read at that point instead of at the bottom of the loop), or AMR.  The next cycle
+    //  opens with the plain R(dt/2) (rkg_half 3, fac 0.5).  The first cycle of a run or
+    //  restart has nothing pending.  A restart file is therefore always written on a
+    //  synchronised state with nothing pending, and the run that continues from it takes
+    //  exactly the steps the uninterrupted run takes.  A dt retry (fin4-dtretry) puts
+    //  rkg_pend back with the checkpoint; the retried cycle fuses it with its new dt.
+    //  Between syncs the state carries a pending R(dt_n/2): only problem/user_cycle_func
+    //  (dhj diag_gid) sees such a state.
+    //  rkg_bflx: the leading step of a cycle keeps its flux in slots 6|7, the closing
+    //  half sets 4|5 = the mean of the two (as rkg_strang); history rows are written on
+    //  sync cycles only, so a row books the mean flux of the cycle's leading super-step
+    //  (fused or opening) and its closing half.
+    //  dhj <problem>/ck_strang (user_split_pre_late): the ck RT is Strang-split too,
+    //  ck(dt/2) H ck(dt/2), nested INSIDE the RKG halves: R ck H ck R.  The first ck
+    //  half is taken here right after the leading RKG step, the second stays in A, and
+    //  the RKG step(s) that follow H (Lie R(dt), unfused half 2, the fused closing half)
+    //  move after A.
+    Resistivity *prs0 = (pmesh->pmb_pack->pmhd != nullptr) ?
+                        pmesh->pmb_pack->pmhd->presist : nullptr;
+    const bool rkg_fuse = (prs0 != nullptr) && prs0->use_rkg_sts && prs0->rkg_strang &&
+                          prs0->rkg_strang_fuse;
+    const bool ck_late = (pmesh->pgen != nullptr) &&
+                         (pmesh->pgen->user_split_func != nullptr) &&
+                         !pmesh->pgen->user_split_once &&
+                         pmesh->pgen->user_split_pre_late &&
+                         (pmesh->pmb_pack->pmhd != nullptr);
+    const bool rkg_late = rkg_fuse || ck_late;
+    if (rkg_fuse && pmesh->adaptive) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/rkg_strang_fuse is not supported with AMR"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    Real rkg_pend = 0.0;        // the carried closing half, in time units (0 = none)
+    Real rkg_pend_ckpt = 0.0;   // ... at the dt-retry checkpoint of this cycle
+    // compare at floating point (32-bit) precision to reduce effect of round off
+    auto out_due_at = [&](BaseTypeOutput *out, Real time, int ncycle) {
+      float time_32 = static_cast<float>(time);
+      float next_32 = static_cast<float>(out->out_params.last_time+out->out_params.dt);
+      float tlim_32 = static_cast<float>(tlim);
+      int &dcycle_ = out->out_params.dcycle;
+      return (((out->out_params.dt > 0.0) && ((time_32 >= next_32)&&(time_32<tlim_32)))
+              || ((dcycle_ > 0) && ((ncycle)%(dcycle_) == 0)));
+    };
     while ((pmesh->time < tlim) && (pmesh->ncycle < nlim || nlim < 0) &&
            (elapsed_time < wall_time)) {
       if (global_variable::my_rank == 0 && !dtr_retrying) {OutputCycleDiagnostics(pmesh);}
@@ -522,6 +585,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       } else {
         eint_ledger::Mark(pmesh, "gap_cycle");
       }
+      if (dtr_retrying) {rkg_pend = rkg_pend_ckpt;} else {rkg_pend_ckpt = rkg_pend;}
       dtr_retrying = false;
       // autobe-1029: the hesdirk2 wall split (rank 0, fenced; RadiationM1::Time2AutoBeEnd)
       radm1::RadiationM1 *pm1w = pmesh->pmb_pack->pradm1;
@@ -551,9 +615,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       Resistivity *prs = (pmesh->pmb_pack->pmhd != nullptr) ?
                         pmesh->pmb_pack->pmhd->presist : nullptr;
       const bool rkg_on = (prs != nullptr) && prs->use_rkg_sts;
-      auto rkg_step = [&](int half) {
+      auto rkg_step = [&](int half, Real fac) {
         prs->rkg_half = half;
-        prs->rkg_dtfac = (half == 0) ? 1.0 : 0.5;
+        prs->rkg_dtfac = fac;
         // Work before time integrator indicated by "0" in stage
         ExecuteTaskList(pmesh, "before_rkg_timeintegrator", 0);
         // time-integrator tasks for each stage of integrator (operator-split RKG
@@ -575,8 +639,17 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
                     << std::endl;
           std::exit(EXIT_FAILURE);
         }
-        rkg_step(1);
+        if (rkg_fuse) {
+          // rkgfuse-1102: the carried closing half of the previous cycle + this cycle's
+          // opening half (rkg_pend = 0: the opening half alone, fac exactly 0.5)
+          rkg_step(3, (rkg_pend + 0.5*pmesh->dt)/pmesh->dt);
+          rkg_pend = 0.0;
+        } else {
+          rkg_step(1, 0.5);
+        }
       }
+      // rkgfuse-1102 dhj ck_strang: the first ck half, inside the leading RKG step
+      if (ck_late) {(void) pmesh->pmb_pack->pmhd->RTStrangSplit(this, -1);}
 
       // time-integrator tasks for each stage of integrator
       // <rad_m1>/time_scheme = hesdirk2 (rad_m1_time2.cpp): the implicit radiation solve
@@ -677,7 +750,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         
       // RKG super-step, after the RK stages: the full dt (Lie, the default) or, with
       // <mhd>/rkg_strang, its second half (the first ran before the RK stages)
-      if (rkg_on) {rkg_step(prs->rkg_strang ? 2 : 0);}
+      // (rkgfuse-1102: after "after_timeintegrator" instead with rkg_late, see above)
+      if (rkg_on && !rkg_late) {
+        if (prs->rkg_strang) {rkg_step(2, 0.5);} else {rkg_step(0, 1.0);}
+      }
 
       // Operator-split, sub-cycled grey M1 radiation transport (design sect. 5).
       // N_sub = ceil(dt_mesh/dt_rad); each substep runs the module's own two-stage
@@ -754,6 +830,32 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // Work after time integrator indicated by "1" in stage
       ExecuteTaskList(pmesh, "after_timeintegrator", 1);
 
+      // rkgfuse-1102: the RKG step after the split work of "after_timeintegrator"
+      if (rkg_on && rkg_late) {
+        if (!rkg_fuse) {
+          if (prs->rkg_strang) {rkg_step(2, 0.5);} else {rkg_step(0, 1.0);}
+        } else {
+          // sync point?  the time and ncycle this cycle ends on (same arithmetic as below)
+          const Real t_end = pmesh->time + pmesh->dt;
+          const int nc_end = pmesh->ncycle + 1;
+          bool sync = !(t_end < tlim) || (nlim >= 0 && nc_end >= nlim) ||
+                      pmesh->adaptive;
+          if (wall_time > 0.) {
+            elapsed_time = UpdateWallClock();
+            if (!(elapsed_time < wall_time)) {sync = true;}
+          }
+          for (auto &out : pout->pout_list) {
+            if (out_due_at(out, t_end, nc_end)) {sync = true;}
+          }
+          if (sync) {
+            rkg_step(2, 0.5);
+            rkg_pend = 0.0;
+          } else {
+            rkg_pend = 0.5*pmesh->dt;
+          }
+        }
+      }
+
       // Work outside of TaskLists:
       // increment time, ncycle, etc.
       pmesh->time = pmesh->time + pmesh->dt;
@@ -774,14 +876,8 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // further down, AFTER Mesh::NewTimeStep, because the dt a restart file stores must
       // be the dt of the NEXT cycle -- the one the running code is about to take.  Write
       // it here and the restarted run starts from a different (recomputed) dt.
-      // compare at floating point (32-bit) precision to reduce effect of round off
       auto out_is_due = [&](BaseTypeOutput *out) {
-        float time_32 = static_cast<float>(pmesh->time);
-        float next_32 = static_cast<float>(out->out_params.last_time+out->out_params.dt);
-        float tlim_32 = static_cast<float>(tlim);
-        int &dcycle_ = out->out_params.dcycle;
-        return (((out->out_params.dt > 0.0) && ((time_32 >= next_32)&&(time_32<tlim_32)))
-                || ((dcycle_ > 0) && ((pmesh->ncycle)%(dcycle_) == 0)));
+        return out_due_at(out, pmesh->time, pmesh->ncycle);
       };
       for (auto &out : pout->pout_list) {
         if (out->out_params.file_type.compare("rst") == 0) { continue; }
@@ -1000,8 +1096,8 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         }
       }
 
-      // Update wall clock time if needed.
-      if (wall_time > 0.) {
+      // Update wall clock time if needed (rkgfuse-1102: read at the sync decision)
+      if (wall_time > 0. && !rkg_fuse) {
         elapsed_time = UpdateWallClock();
       }
     }  // end while

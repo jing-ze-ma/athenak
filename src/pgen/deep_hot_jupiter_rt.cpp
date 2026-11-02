@@ -1908,6 +1908,28 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_split_func = DhjCkRtSplit;
     user_split_once = true;
   }
+  // rkgfuse-1102 problem/ck_strang (default false, read only when named): the ck RT of
+  // ck_impl_once Strang-split around the RK stages, ck(dt/2) H ck(dt/2), instead of one
+  // full-dt call after them (first order).  Under MHD the first half is taken by the
+  // Driver after the leading RKG super-step (user_split_pre_late), so with <mhd>/
+  // rkg_strang the RKG halves nest outside: R(dt/2) ck(dt/2) H ck(dt/2) R(dt/2).  The
+  // ck_impl_every cadence counts cycles (two_stream_column_ck.hpp, ck_cad_half).
+  if (pin->DoesParameterExist("problem", "ck_strang") &&
+      pin->GetBoolean("problem", "ck_strang")) {
+    if (!two_stream_rt::ck_impl_once) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_strang needs "
+                << "problem/ck_impl_once = true" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (ebud::on) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_strang is not "
+                << "supported with the energy-budget diagnostic (ebud, one call per "
+                << "cycle)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    user_split_once = false;
+    user_split_pre_late = (pmy_mesh_->pmb_pack->pmhd != nullptr);
+  }
   // problem/rt_test_* (see the note at rt_test_freeze).  Default off.
   rt_test_freeze = pin->GetOrAddBoolean("problem","rt_test_freeze",false);
   if (rt_test_freeze) {
@@ -7044,6 +7066,7 @@ void DhjCkRtSplit(Mesh *pm, const Real dt) {
   // problem/ck_impl_every > 1: the cadence (full call every N cycles, linearised step in
   // between); see utils/two_stream_column_ck.hpp
   EBudCk(pm, dt, true);
+  two_stream_rt::ck_cad_half = pm->pgen->user_split_half;   // rkgfuse-1102 ck_strang
   if (two_stream_rt::ck_impl_every > 1) {
     two_stream_rt::CkCadStep(pm, dt);
   } else {

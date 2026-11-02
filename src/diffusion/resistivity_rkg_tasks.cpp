@@ -89,7 +89,9 @@ TaskStatus Resistivity::TotStage(Driver *pdrive, int stage) {
     LmaxDiag();
   }
   // rkgstrang-1102: the second half starts from the state the RK stages left; its eta
-  if (rkg_half == 2) {RefreshEta();}
+  // rkgfuse-1102: so does the leading super-step of a fused cycle (rkg_half = 3), which
+  // starts from the state the previous cycle's RK stages and split work left
+  if (rkg_half == 2 || rkg_half == 3) {RefreshEta();}
   Real dtp = pmy_pack->pmesh->dt_diff;
   Real dth = pmy_pack->pmesh->dt*rkg_dtfac;   // rkgstrang-1102: dt/2 per Strang half
   tau = dth/dtp;
@@ -392,7 +394,7 @@ TaskStatus Resistivity::UpdateResistivity(Driver *pdrive, int stage) {
     par_for("rkg_bflx_half", DevExeSpace(), 0, nmb1, 0, n3, 0, n2,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       for (int s2=0; s2<2; ++s2) {
-        if (h == 1) {
+        if (h == 1 || h == 3) {   // rkgfuse-1102: 3 = the leading step of a cycle
           bf(m,6+s2,k,j) = bf(m,4+s2,k,j);
         } else {
           bf(m,4+s2,k,j) = 0.5*(bf(m,6+s2,k,j) + bf(m,4+s2,k,j));
