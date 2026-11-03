@@ -30,6 +30,10 @@ Mode GetMode(ParameterInput *pin);        // validates <job>/recipe (read withou
 bool NewDefaults(ParameterInput *pin);    // see above
 void Log(const std::string &line);        // one defaulted key (or why it stayed off)
 void PrintLog();                          // the start-up block (rank 0), then clears
+// prod1103c: a problem generator's fresh-start defaults of keys read before the pgen
+// exists (main.cpp, before the Mesh); pgen/<problem>_defaults.cpp or the no-op
+// pgen/early_defaults_none.cpp
+void PgenEarlyDefaults(ParameterInput *pin);
 }  // namespace recipe
 
 #endif  // UTILS_RECIPE_HPP_

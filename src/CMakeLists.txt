@@ -269,6 +269,14 @@ if (NOT ${PROBLEM} STREQUAL "built_in_pgens")
   )
 endif()
 
+# prod1103c: recipe::PgenEarlyDefaults (utils/recipe.hpp), the pre-physics fresh-start
+# defaults of a problem generator; a no-op for every pgen without its own file
+if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt")
+  target_sources(athena PRIVATE pgen/deep_hot_jupiter_rt_defaults.cpp)
+else()
+  target_sources(athena PRIVATE pgen/early_defaults_none.cpp)
+endif()
+
 # tusplit-1102: the two-stream RT solver (utils/two_stream_rt.hpp) of the problem
 # generators that include it is compiled in its own translation units: the column pass
 # and the explicitly instantiated chain/grey launch templates (the bulk of the device

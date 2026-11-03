@@ -553,6 +553,8 @@ int main(int argc, char *argv[]) {
   // a restart may ADD keys its embedded input predates (parameter_input.cpp)
   pinput->ModifyFromCmdline(argc, argv, res_flag);
   if (res_flag) CheckRestartPotentialKeys(pinput, rst_potential_keys);
+  // prod1103c: the problem generator's pre-physics fresh-start defaults (recipe.hpp)
+  recipe::PgenEarlyDefaults(pinput);
 
   // Dump input parameters and quit if code was run with -n option.
   if (narg_flag) {
