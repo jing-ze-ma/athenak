@@ -73,7 +73,8 @@ void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
                   const ScrArray2D<Real> &dr, const int ivx, const int i,
                   const Real bxi, const bool hll_in, const bool eta_pos,
                   const Real lb_beta, const DvceArray5D<Real> &u,
-                  const int m, const int k, const int j) {
+                  const int m, const int k, const int j,
+                  const DvceArray5D<Real> &w0) {
   const int ivy = IVX + ((ivx-IVX)+1)%3;
   const int ivz = IVX + ((ivx-IVX)+2)%3;
   const int iby = ((ivx-IVX) + 1)%3;
@@ -151,6 +152,23 @@ void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
     al  = 0.5*(1.0 + nus);
     dlc = 0.5*(nul - nus)*(lsl - sl)*chil + 0.5*(fabs(lsl) - nus*lsl);
     drc = 0.5*(nur - nus)*(lsr - sr)*chir + 0.5*(fabs(lsr) - nus*lsr);
+    // alfmach-1102 <mhd>/lhlld_alfmach_rot (LHLLD only, refused for other solvers): the
+    // solver's B_t flux is F_ref + psi_A (F_HLLD - F_ref), F_ref = (F*L + F*R)/2 =
+    // (F^L + F^R)/2 + (S_L chi^L B^L + S_R chi^R B^R)/2, i.e. (a, d^L, d^R)_ref =
+    // (1/2, S_L chi^L/2, -S_R chi^R/2); blend the coefficients with the same psi_A
+    if (eos.alfmach_rot && !(0.5*bxsq < eos.hlld_bx_zero_tol*ptst) && lsl < 0.0 &&
+        lsr > 0.0) {
+      Real usql = SQR(vl) + (SQR(wl(ivy,i)) + SQR(wl(ivz,i)));
+      Real usqr = SQR(vr) + (SQR(wr(ivy,i)) + SQR(wr(ivz,i)));
+      if (eos.chi_normal) { usql = SQR(vl); usqr = SQR(vr); }
+      const Real caxs = fabs(bxi)*fmax(1.0/sqrt(rl*sdl/sdml), 1.0/sqrt(rr*sdr/sdmr));
+      const Real psia = LhlldAlfRotPsi(w0, m, k, j, i, ivx, ivy, ivz, fmax(usql, usqr),
+                                       caxs, eos.cb_sensor, eos.cb_cont,
+                                       eos.alfmach_rot_min);
+      al  = 0.5 + psia*(al - 0.5);
+      dlc = 0.5*sl*chil + psia*(dlc - 0.5*sl*chil);
+      drc = -0.5*sr*chir + psia*(drc + 0.5*sr*chir);
+    }
     if (eta_pos) {   // LHLLD Step 8 (lhlld_emf_eta_pos)
       const Real ceta = fmax(0.0, -(fabs(sm) + 0.5*(vr - vl)));
       dlc += 0.5*ceta;
@@ -626,7 +644,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     if (uct_on_) {   // UCT corner EMF inputs (x1 faces)
       par_for_inner(member, il, iu, [&](const int i) {
         UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVX, i, bx(m,k,j,i), uct_hll_, uct_eta_,
-                     uct_lb_, uct1_, m, k, j);
+                     uct_lb_, uct1_, m, k, j, w0_);
       });
       member.team_barrier();
     }
@@ -960,7 +978,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           if (uct_on_) {   // UCT corner EMF inputs (x2 faces)
             par_for_inner(member, is-1, ie+1, [&](const int i) {
               UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVY, i, by(m,k,j,i), uct_hll_,
-                           uct_eta_, uct_lb_, uct2_, m, k, j);
+                           uct_eta_, uct_lb_, uct2_, m, k, j, w0_);
             });
             member.team_barrier();
           }
@@ -1295,7 +1313,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           if (uct_on_) {   // UCT corner EMF inputs (x3 faces)
             par_for_inner(member, is-1, ie+1, [&](const int i) {
               UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVZ, i, bz(m,k,j,i), uct_hll_,
-                           uct_eta_, uct_lb_, uct3_, m, k, j);
+                           uct_eta_, uct_lb_, uct3_, m, k, j, w0_);
             });
             member.team_barrier();
           }

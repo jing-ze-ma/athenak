@@ -278,6 +278,30 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       }
       eos_data.chi_normal = pin->GetBoolean(bk, "lhlld_chi_normal");
     }
+    // alfmach-1102: see EOS_Data::alfmach, ::alfmach_rot (read only when named)
+    for (const std::string key :
+         {"lhlld_alfmach", "lhlld_alfmach_rot", "lhlld_alfmach_rot_min"}) {
+      if (!pin->DoesParameterExist(bk, key)) continue;
+      if (is_hyd) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<hydro>/" << key << " is MHD (LHLLD) only"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (pin->GetOrAddString(bk, "rsolver", "none").compare("lhlld") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/" << key << " needs <mhd>/rsolver = lhlld"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (key.compare("lhlld_alfmach") == 0) {
+        eos_data.alfmach = pin->GetBoolean(bk, key);
+      } else if (key.compare("lhlld_alfmach_rot") == 0) {
+        eos_data.alfmach_rot = pin->GetBoolean(bk, key);
+      } else {
+        eos_data.alfmach_rot_min = pin->GetReal(bk, key);
+      }
+    }
     {
       const std::string kd = is_hyd ? "lhllc_divdiss" : "lhlld_divdiss";
       const std::string bd = is_hyd ? "lhlld_divdiss" : "lhllc_divdiss";

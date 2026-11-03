@@ -304,6 +304,24 @@ struct EOS_Data {
   // eq. 14 with the full |u|, bitwise; read only when named; MHD only): c_u of LHLLD from
   // the face-normal velocity only (|u|^2 -> u_n^2), mirroring LHLLC's legacy chi.
   bool chi_normal = false;
+  // alfmach-1102 <mhd>/lhlld_alfmach (default false = Minoshima & Miyoshi c_u with the
+  // full Alfven floor, bitwise; read only when named; MHD only): ALFVEN-MACH SCALED
+  // FLOOR.  Per side, the Alfven speeds in c_u are scaled by chi_A = min(1, |u|/c_a),
+  // i.e. c_a^2 -> min(c_a^2, |u|^2), c_ax^2 -> c_ax^2 min(1, |u|^2/c_a^2), so that
+  // chi = O(|u|/c_f) when M_A = |u|/c_a < 1 (the floor ~c_a/c_f made the total-pressure
+  // dissipation O(1/M_A) too large), and c_u is unchanged (bitwise) where M_A >= 1.
+  bool alfmach = false;
+  // alfmach-1102 <mhd>/lhlld_alfmach_rot (default false = HLLD Alfven fan, bitwise;
+  // read only when named) and <mhd>/lhlld_alfmach_rot_min = psi_min (default 0):
+  // ALFVEN-MACH SCALING OF THE ROTATIONAL-DISCONTINUITY DISSIPATION.  On faces whose
+  // Alfven fan straddles the face (S*_L < 0 < S*_R, ** states present) the transverse
+  // momentum and field fluxes become F_ref + psi_A (F_HLLD - F_ref), F_ref = the mean of
+  // the two outer-star fluxes F*_L, F*_R, with psi_A = chi_A (2 - chi_A),
+  // chi_A = min(1, max|u|/max c_ax*) floored by the odd-even sensor on the transverse
+  // velocities (cb_sensor/cb_cont) and psi_A >= psi_min; the energy flux takes the
+  // matching work/Poynting terms (as lhlld_emf_eta_pos).
+  bool alfmach_rot = false;
+  Real alfmach_rot_min = 0.0;
   // lowmach2-1102 <hydro>/lhllc_divdiss, <mhd>/lhlld_divdiss (default false = off,
   // bitwise; read only when named) and the TEST key <hydro|mhd>/lhllc|lhlld_divdiss_form
   // (hpd | hp | raw | row; default hpd): MULTI-DIMENSIONAL DIVERGENCE DISSIPATION

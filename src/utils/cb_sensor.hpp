@@ -46,7 +46,10 @@
 KOKKOS_INLINE_FUNCTION
 Real CBSensorChiFloor(const DvceArray5D<Real> &w0, const int m, const int k, const int j,
                       const int i, const int ivx, const Real chi, const Real gain,
-                      const bool cont = false) {
+                      const bool cont = false, const int comp = -1) {
+  // alfmach-1102: comp >= 0 senses rho*w0(comp) (a TRANSVERSE velocity) along the same
+  // face normal instead of the normal mass flux; comp < 0 (default) = legacy
+  const int qc = (comp < 0) ? ivx : comp;
   const int cdi = (ivx == IVX) ? 1 : 0;
   const int cdj = (ivx == IVY) ? 1 : 0;
   const int cdk = (ivx == IVZ) ? 1 : 0;
@@ -60,7 +63,7 @@ Real CBSensorChiFloor(const DvceArray5D<Real> &w0, const int m, const int k, con
     int c = c0 - 2 + o;
     c = (c < 0) ? 0 : ((c > nn) ? nn : c);
     const int kk = cdk ? c : k, jj = cdj ? c : j, ii = cdi ? c : i;
-    qs[o] = w0(m,IDN,kk,jj,ii)*w0(m,ivx,kk,jj,ii);
+    qs[o] = w0(m,IDN,kk,jj,ii)*w0(m,qc,kk,jj,ii);
   }
   const Real d2 = qs[2] - qs[1];
   const Real jodd = 0.25*(2.0*d2 - (qs[1] - qs[0]) - (qs[3] - qs[2]));
