@@ -54,6 +54,17 @@ void PgenEarlyDefaults(ParameterInput *pin) {
       Log("<" + fb + ">/wb_option = polytropic (default with wellbalance_dynamic)");
     }
   }
+  // <fluid>/am_vector = true with problem/am_transport = false (the angular-momentum
+  // vector form + spin reservoir, as every dhj production deck; the pgen correction must
+  // be off with it, YieldToPgen FATAL otherwise).  Only as the PAIR, on the cubed sphere,
+  // when neither the fluid's AM keys nor problem/am_transport are named.
+  if (fluid && cs && !named(fb, "am_vector") && !named(fb, "am_transport") &&
+      !named(fb, "frame_omega") && !named("problem", "am_transport")) {
+    pin->GetOrAddBoolean(fb, "am_vector", true);
+    pin->GetOrAddBoolean("problem", "am_transport", false);
+    Log("<" + fb + ">/am_vector = true + problem/am_transport = false (default pair on a "
+        "fresh cs dhj start)");
+  }
 }
 
 }  // namespace recipe
