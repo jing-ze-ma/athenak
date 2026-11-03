@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.ticker
 
 B = '/resnick/groups/carnegie_poc/jingze/lowbeta_1102'
 IMG = '/resnick/home/jingze/ATHENAK/pages/lowbeta_cart/img'
@@ -28,7 +29,11 @@ def lab(s):
     return t
 def sty(s):
     a = s.split('_')
-    return dict(color=COL[a[0]], ls=DASH[a[1]], lw=2, marker='o', ms=5)
+    if len(a) > 2:        # FOFC arm
+        return dict(color=COL[a[0]], ls='-.', lw=1.4, marker='s', ms=5)
+    if a[0] == 'lhlld':   # hollow + thinner so an identical HLLD curve shows beneath
+        return dict(color=COL[a[0]], ls=DASH[a[1]], lw=1.3, marker='o', ms=7, mfc='none')
+    return dict(color=COL[a[0]], ls=DASH[a[1]], lw=2.2, marker='o', ms=5)
 
 plt.rcParams.update({'font.size': 10, 'axes.spines.top': False, 'axes.spines.right': False,
                      'axes.grid': True, 'grid.color': '#e6e6e6', 'grid.linewidth': 0.6,
@@ -37,8 +42,20 @@ FLOOR = 1e-30
 
 
 def save(fig, name):
+    for ax in fig.axes:
+        ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
     fig.savefig(f'{IMG}/{name}.png', bbox_inches='tight')
     plt.close(fig)
+
+
+def legend_all(fig, ax, **kw):
+    seen = {}
+    for a in fig.axes:
+        for h, l in zip(*a.get_legend_handles_labels()):
+            seen.setdefault(l, h)
+    order_ = [lab(x) for x in SCH + ['hlld_gs_fofc', 'hlle_gs_fofc']]
+    ls_ = sorted(seen, key=lambda l: order_.index(l) if l in order_ else 99)
+    ax.legend([seen[l] for l in ls_], ls_, **kw)
 
 
 def slope_guides(ax, Ns, ref):
@@ -86,7 +103,7 @@ for test, schemes in (('cpaw2d', SCH), ('cpaw1d', ['hlle_gs', 'hlld_gs', 'lhlld_
                 ax.set_xlabel('N')
                 ax.set_xticks([32, 64, 128, 256]); ax.set_xticklabels(['32', '64', '128', '256'])
             axs[0].set_ylabel(kl)
-            axs[-1].legend(fontsize=7.5, loc='center left', bbox_to_anchor=(1.12, 0.5),
+            legend_all(fig, axs[-1], fontsize=7.5, loc='center left', bbox_to_anchor=(1.12, 0.5),
                            frameon=False)
             save(fig, f'{test}_{key}_{rec}')
     # order vs beta (slope between N=128 and 256)
@@ -119,7 +136,7 @@ for test, schemes in (('cpaw2d', SCH), ('cpaw1d', ['hlle_gs', 'hlld_gs', 'lhlld_
         ax.axhline(1, color='#666', lw=1, ls='-.')
         ax.set_title(f'beta = {beta:g}, N = 128 (PLM)'); ax.set_xlabel('t / wave period')
     axs[0].set_ylabel('min p / exact p  (floored at 1e-3)')
-    axs[-1].legend(fontsize=7.5, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
+    legend_all(fig, axs[-1], fontsize=7.5, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
     save(fig, f'{test}_pmin_t')
     # floor hits map: total efloor counts at each (beta, N), PLM
     tab = {}
@@ -156,9 +173,18 @@ if 'lw' in R:
             Ns0 = [32, 64, 128, 256]
             m0 = R['lw'].get(f'b{beta:.0e}_{mode}_hlld_gs_N32')
             if m0 and 'err_rms' in m0: slope_guides(ax, Ns0, m0['err_rms']*1.5)
+        if mode == 'slow':
+            for ax, beta in zip(axs, LB):
+                if beta <= 1e-3:
+                    ax.text(0.97, 0.97, 'HLLD / LHLLD + GS07:\nblew up at N >= %d\n(p floor every step, dt collapse)' % (64 if beta > 5e-4 else 32), transform=ax.transAxes,
+                            ha='right', va='top', fontsize=8, color='#c62828')
         axs[0].set_ylabel('RMS L1 error (amp 1e-6)')
-        axs[-1].legend(fontsize=7.5, loc='center left', bbox_to_anchor=(1.12, 0.5), frameon=False)
+        legend_all(fig, axs[-1], fontsize=7.5, loc='center left', bbox_to_anchor=(1.12, 0.5), frameon=False)
         save(fig, f'lw_{mode}')
+    summary['lw']['status'] = {c: dict(completed=bool(m.get('completed')), rc=m.get('rc'),
+        floor_hits=m['counts']['efloor'] + m['counts']['tfloor'],
+        first_floor_cycle=m.get('first_floor_cycle'), end_time=m.get('end_time'))
+        for c, m in R['lw'].items()}
     fig, axs = plt.subplots(1, 3, figsize=(15, 3.6), sharey=True)
     for ax, mode in zip(axs, ('fast', 'alf', 'slow')):
         for sc in SCH:
@@ -168,7 +194,7 @@ if 'lw' in R:
         ax.axhline(2, color='#666', lw=1, ls='-.'); ax.set_title(f'{mode}: order at the finest pair')
         ax.set_xlabel('plasma beta'); ax.invert_xaxis()
     axs[0].set_ylabel('measured order')
-    axs[-1].legend(fontsize=7.5, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
+    legend_all(fig, axs[-1], fontsize=7.5, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
     save(fig, 'lw_order')
 
 # ------------------------------------------------------------------ vortex
@@ -197,7 +223,7 @@ if 'vortex' in R:
     axs[2].set_ylabel('min p over the run (floored 1e-16)')
     axs[2].axhline(5.3e-12, color='#666', lw=1, ls='-.'); axs[2].text(40, 8e-12, 'exact centre p = 5.3e-12', fontsize=8)
     for ax in axs: ax.set_xlabel('N'); ax.set_xticks(NV); ax.set_xticklabels([str(n) for n in NV])
-    axs[-1].legend(fontsize=7.5, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
+    legend_all(fig, axs[-1], fontsize=7.5, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
     save(fig, 'vortex')
 
 # ------------------------------------------------------------------ RD
@@ -237,7 +263,7 @@ if 'rotor' in R:
                 first_floor_cycle=m.get('first_floor_cycle'), wall=m.get('wall_s'))
         ax.set_yscale('log'); ax.set_title(f'low-beta rotor, N = {N}'); ax.set_xlabel('t')
     axs[0].set_ylabel('min (E - KE - ME)(gamma-1) over mesh\n(gaps = negative)')
-    axs[-1].legend(fontsize=7.5, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
+    legend_all(fig, axs[-1], fontsize=7.5, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
     save(fig, 'rotor_pmin_t')
     # pressure maps N=400
     sel = ['hlld_gs', 'hlld_sm', 'hlld_uct', 'lhlld_gs']
@@ -269,27 +295,43 @@ if 'blast' in R:
                 dfloor=m['counts']['dfloor'], fofc=m['counts']['fofc'], pmin=m.get('pmin_all'),
                 emin=m.get('emin_all'), t_end=m.get('hist_tmax'), tend=m['tend'], wall=m.get('wall_s'),
                 rc=m.get('rc'))
-            ys.append(i); vals.append(max(hits, 0.8)); cols.append(COL[sc.split('_')[0]])
-            labels.append(lab(sc) + ('' if ok else '  [STOPPED]'))
-        ax.barh(ys, vals, color=cols, height=0.6)
-        ax.set_xscale('log'); ax.set_title(title, fontsize=9.5); ax.set_xlabel('pressure-floor hits (cells x steps)')
-        ax.set_xlim(0.7, None)
-        for y, l in zip(ys, labels):
-            if 'STOPPED' in l: ax.text(1.0, y, ' stopped', va='center', fontsize=8, color='#c62828')
+            ncyc = m.get('end_cycle')
+            if not ncyc:
+                ls_ = [l for l in open(f'{B}/runs/blast/{lb}_{dim}d_N{N}_{sc}/run.log') if not l.startswith('#')]
+                ncyc = int(ls_[-1].split()[0]) if ls_ else 1
+            frac = m['counts']['efloor']/(2.0*ncyc*N**dim)
+            summary['blast'][f'{lb}_{dim}d_N{N}_{sc}']['floor_fraction'] = frac
+            summary['blast'][f'{lb}_{dim}d_N{N}_{sc}']['cycles'] = ncyc
+            ax.barh(i, max(frac, 1e-7), color=COL[sc.split('_')[0]], height=0.6,
+                    hatch=None if ok else '///', edgecolor='white', lw=0)
+        ax.set_xscale('log'); ax.set_title(title, fontsize=9.5)
+        ax.set_xlabel('fraction of cell updates at the p floor'); ax.set_xlim(1e-7, 1)
     axs[0].set_yticks(range(len(ARMS))); axs[0].set_yticklabels([lab(s) for s in ARMS], fontsize=8)
     axs[0].invert_yaxis()
+    fig.suptitle('hatched bar = run did not reach t_end (time step collapsed, stopped at the 90-min cap)', fontsize=9, y=1.02)
     save(fig, 'blast_floors')
     # min p vs time for the beta 3e-6 and 2.5e-4 2-D
+    fig, ax = plt.subplots(1, 1, figsize=(8, 3.6))
+    for sc in ARMS:
+        f = f'{B}/runs/blast/b3e-6_2d_N256_{sc}/run.mhd.hst'
+        if not os.path.exists(f): continue
+        a = np.loadtxt(f, ndmin=2)
+        ax.semilogy(a[:, 0]/0.02, a[:, 1], label=lab(sc), **dict(sty(sc), marker=None, lw=1.6))
+    ax.set_xlabel('t / t_end'); ax.set_ylabel('time step dt')
+    ax.set_title('beta 3e-6 blast (2-D, N = 256): time step', fontsize=9.5)
+    ax.legend(fontsize=7.5, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
+    save(fig, 'blast_dt')
     fig, axs = plt.subplots(1, 3, figsize=(15, 3.6))
     for ax, (lb, dim, N, title) in zip(axs, [groups[0], groups[1], groups[4]]):
         for sc in ARMS:
             m = R['blast'].get(f'{lb}_{dim}d_N{N}_{sc}')
             if not m or 'hist' not in m: continue
-            t = np.array(m['hist']['time'])/m['tend']; e = np.array(m['hist']['emin'])
-            ax.plot(t, np.where(e > 0, e, np.nan), label=lab(sc), **dict(sty(sc), marker=None, lw=1.6))
+            t = np.array(m['hist']['time'])/m['tend']; e = np.array(m['hist']['pmin'])/0.1
+            ax.plot(t, np.maximum(e, 1e-10), label=lab(sc), **dict(sty(sc), marker=None, lw=1.6))
         ax.set_yscale('log'); ax.set_title(title, fontsize=9.5); ax.set_xlabel('t / t_end')
-    axs[0].set_ylabel('min e_int over mesh (gaps = negative)')
-    axs[-1].legend(fontsize=7.5, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
+        ax.set_ylim(5e-11, 2)
+    axs[0].set_ylabel('min p / ambient p\n(1e-10 = at the floor)')
+    legend_all(fig, axs[-1], fontsize=7.5, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
     save(fig, 'blast_emin_t')
 
 json.dump(dict(summary=summary, runs=R), open(f'{B}/results.json', 'w'), default=float)
