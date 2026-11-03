@@ -31,6 +31,25 @@
 //!                                 largest power of 2 with N_j sin(theta_j) <=
 //!                                 polar_ring_avg_tol, capped to divide the block nx3
 //!   <mesh>/polar_ring_avg_tol = 1.05    (default rule only)
+//!
+//! ringsmooth-1102 (opt-in, read only when named; absent = the group average, bitwise):
+//!   <mesh>/polar_ring_avg_filter = fourier   instead of the piecewise-constant group
+//!       average, a conservative FOURIER TRUNCATION of each whole ring (all phi blocks, all
+//!       ranks: partial DFT sums + MPI_Allreduce): rho, IM1..3, the scalars and the internal
+//!       energy e = E - KE (- rho Phi with etotgrav) keep their modes m <= m_c(N_j), m_c =
+//!       floor(mfac (nphi/pi) asin(1/N_j)) (the largest m whose fine-grid phase speed
+//!       sin(pi m/nphi)/dphi fits the group-width CFL: the same stability margin as the
+//!       unaveraged rows), all higher m are removed.  The state stays SMOOTH in phi (no
+//!       staircase), the low-m content (tidal m = 1, 2 equilibrium, cross-pole flow) is
+//!       untouched.  Energy: the ring-sum defect dE = sum E - sum E_f (the kinetic and rho
+//!       Phi energy of the removed modes) is put back UNIFORMLY on the ring as heat (or, after
+//!       the M1 solve with polar_ring_avg_ke = rad, into the radiation E), never as velocity.
+//!       Mass, momentum components, L_z and total energy are conserved per ring.  A ring
+//!       (pole, row, i) whose filtered rho or e falls below thr x the old value somewhere
+//!       falls back to the group average (counted, reported at the end).
+//!   <mesh>/polar_ring_avg_mfac = 1.0, <mesh>/polar_ring_avg_thr = 0.5  (fourier only)
+
+#include <vector>
 
 #include "athena.hpp"
 
@@ -55,8 +74,29 @@ class RingAvg {
   int nent = 0;                 // number of averaged (block, row) entries on this rank
   DvceArray1D<int> em, ej, en;  // block, row j, group size of each entry
 
+  // ringsmooth-1102 <mesh>/polar_ring_avg_filter = fourier (hydro_ringfourier.cpp)
+  bool fourier = false;
+  //! u as Average; urad != nullptr: the energy defect goes to urad(m, irad) x hc (M1 E)
+  //! instead of gas heat
+  void Filter(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Real> &phi,
+              const bool grav, DvceArray5D<Real> *urad, const int irad, const Real hc);
+  ~RingAvg();
+
  private:
   MeshBlockPack *pmy_pack;
+  // ringsmooth-1102 fourier tables (FourierInit)
+  void FourierInit(ParameterInput *pin, const std::vector<int> &vjp);
+  void FourierAlloc(const int nvar);
+  Real fthr = 0.5;
+  int nphi = 0, nx1g = 0, nring = 0, nslot = 0, fnvar = 0, nfoff = 0, fmcmax = 0;
+  DvceArray1D<int> ering, ek0, eig0;          // per entry: ring, global k0, global i0
+  DvceArray1D<int> rmc, roff;                 // per ring: cutoff m_c, coef offset (nvar 0)
+  DvceArray1D<int> sring, sig0, sbeg, slist;  // slots (ring, i0): CSR of local entries
+  DvceArray1D<Real> tcos, tsin;               // cos, sin(2 pi q/nphi)
+  DualArray1D<Real> coef, rsum, rmin;         // ring coefficients; ring (sum E, sum E_f); mins
+  DvceArray4D<Real> scr;                      // (entry*nvar, k, i) filtered state
+  DvceArray3D<Real> part;                     // (entry, i, 4) partial sums / mins
+  double nfall = 0.0, ncall = 0.0;
 };
 
 }  // namespace hydro

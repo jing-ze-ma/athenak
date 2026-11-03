@@ -2043,6 +2043,7 @@ class RadiationM1 {
   // the polar rows on the coarse phi groups of <mesh>/polar_ring_avg (hydro's table)
   bool rav_on = false;
   bool rav_lump = false, rav_dist = true;   // polar_ring_avg_lump / _dist (study keys)
+  bool rav_gz = false;   // ringsmooth-1102 polar_ring_avg_gz (RavFaces: intra-group Z_f)
   // floorheat-1029 <rad_m1>/polar_ring_avg_ke = rad: the gas kinetic-energy spread the
   // after-solve group average removes goes back to E (the coarse cell's kick), not to heat
   bool rav_ke_rad = false;

@@ -105,6 +105,11 @@ void RadiationM1::RavInit(ParameterInput *pin) {
   // study keys: (3) the lumped preconditioner rows, (2) the coarse phi distance
   rav_lump = pin->GetOrAddBoolean("rad_m1", "polar_ring_avg_lump", false);
   rav_dist = pin->GetOrAddBoolean("rad_m1", "polar_ring_avg_dist", true);
+  // ringsmooth-1102: the intra-group phi-face momentum deposit (RavFaces); read only when
+  // named, default false (bitwise)
+  if (pin->DoesParameterExist("rad_m1", "polar_ring_avg_gz")) {
+    rav_gz = pin->GetBoolean("rad_m1", "polar_ring_avg_gz");
+  }
   // floorheat-1029: polar_ring_avg_ke = gas | rad.  defaults-1030 (USER 10-30): DEFAULT
   // rad on a fresh run (the floor-heating fix every accretor run names); a named key
   // wins; a restart whose file lacks the key keeps gas (bitwise)
@@ -271,6 +276,28 @@ void RadiationM1::RavFaces() {
       f3_(m,k+q,j,i) = fl + (static_cast<Real>(q)*rn)*(fr - fl);
     }
   });
+  // ringsmooth-1102 <rad_m1>/polar_ring_avg_gz = true (read only when named): the phi
+  // faces' gas momentum deposit Z_f (gcz3, implicit_gas_src = conservative*: the gas takes
+  // -(1/2) sum_faces Z_f) INSIDE a group to the same linear interpolation of the group's
+  // boundary faces.  Without it Z_f is the solve's own: ~0 on the intra-group faces (E is
+  // group-uniform there) and the coarse value on the two group faces, so a group of N
+  // cells took the tangential radiation force of ONE cell (1/N of the coarse cell's):
+  // against the WB tide's equilibrium radiative share (roche_wb_tan) a first-order
+  // imbalance in every averaged row (accsp sp static: v_phi m = 1, 2 grew from t = 0).
+  if (!rav_gz || !impl_gas_src_cons) return;
+  auto gz3 = gcz3;
+  if (gz3.extent_int(0) == 0) return;
+  par_for("m1_rav_gz3", DevExeSpace(), 0, prav->nent-1, ks, ke, is, ie,
+  KOKKOS_LAMBDA(const int e, const int k, const int i) {
+    const int n = en_(e);
+    if (((k - ks) % n) != 0) return;
+    const int m = em_(e), j = ej_(e);
+    const Real zl = gz3(m,k,j,i), zr = gz3(m,k+n,j,i);
+    const Real rn = 1.0/static_cast<Real>(n);
+    for (int q = 1; q < n; ++q) {
+      gz3(m,k+q,j,i) = zl + (static_cast<Real>(q)*rn)*(zr - zl);
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -283,6 +310,16 @@ void RadiationM1::RavState(const bool gas) {
   RavAvg(u0, 0, M1_NVAR);
   if (!gas) return;
   hydro::Hydro *ph = pmy_pack->phydro;
+  if (prav->fourier) {
+    // ringsmooth-1102 polar_ring_avg_filter = fourier: the gas ring-filtered (smooth, no
+    // staircase); with polar_ring_avg_ke = rad its energy defect (the kinetic energy of the
+    // removed modes, incl. the intra-group kick spread) goes to E, ring-uniform (E stays
+    // group-uniform), else to gas heat.  A ring that fails the positivity test falls back
+    // to the group average (without the KE -> rad step).
+    prav->Filter(ph->u0, ph->nhydro + ph->nscalars, ph->phicc0, ph->use_etotgrav,
+                 rav_ke_rad ? &u0 : nullptr, M1_E, chat/c_light);
+    return;
+  }
   if (rav_ke_rad) RavKeToRad();
   prav->Average(ph->u0, ph->nhydro + ph->nscalars, ph->phicc0, ph->use_etotgrav);
 }

@@ -60,7 +60,7 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
   Kokkos::realloc(nfac, nmb, n2);
   auto hfac = Kokkos::create_mirror_view(nfac);
   auto hx2v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ppack->pcoord->x2v);
-  std::vector<int> vm, vj, vn;
+  std::vector<int> vm, vj, vn, vjg;
   std::vector<int> nrep(nrow, 1);   // per global row (report)
   for (int m = 0; m < nmb; ++m) {
     const int lx2 = static_cast<int>(pm->lloc_eachmb[ppack->gids + m].lx2);
@@ -85,7 +85,7 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
       }
       if (n > 1) {
         hfac(m,j) = static_cast<Real>(n);
-        vm.push_back(m); vj.push_back(j); vn.push_back(n);
+        vm.push_back(m); vj.push_back(j); vn.push_back(n); vjg.push_back(jg);
         nrep[jg] = n;
       }
     }
@@ -109,6 +109,16 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
     for (int jp = 0; jp < nrow/2 && nrep[jp] > 1; ++jp) std::cout << " " << nrep[jp];
     std::cout << (have_list ? " (polar_ring_avg_n)" : " (auto)") << std::endl;
   }
+  // ringsmooth-1102: <mesh>/polar_ring_avg_filter, read only when named (default bitwise)
+  if (pin->DoesParameterExist("mesh", "polar_ring_avg_filter")) {
+    const std::string f = pin->GetString("mesh", "polar_ring_avg_filter");
+    if (f == "fourier") {
+      fourier = true;
+      FourierInit(pin, vjg);
+    } else if (f != "average") {
+      RavgFatal("polar_ring_avg_filter must be average or fourier");
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -118,6 +128,7 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
 
 void RingAvg::Average(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Real> &phi,
                       const bool grav) {
+  if (fourier) {Filter(u, nvar, phi, grav, nullptr, 0, 0.0); return;}   // ringsmooth-1102
   if (nent == 0) return;
   auto &ic = pmy_pack->pmesh->mb_indcs;
   const int is = ic.is, ie = ic.ie, ks = ic.ks, ke = ic.ke;
