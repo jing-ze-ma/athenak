@@ -91,11 +91,20 @@ takes about 15 min on 16 cores; the cubed-sphere and Cartesian cases take second
   - MHD: RKG Ohmic plus ambipolar diffusion and tracers;
   - layouts: 1 vs 2x2 blocks per panel and 1, 3, 4 or 6 ranks. dhj refuses a radial split.
 
+- **HG** (he_star_m1 production deck, C16 x 704, M1 with vet_col, vet_gd twin and vet_sc),
+  comparing 1 vs 2x2 blocks per panel and 3 vs 6 ranks. The 1-ulp seed is `he_gm`, because
+  dt is set by the `vet_gd_rotate_dt` alignment, not by the cfl. This deck is so sensitive
+  that 1 ulp already gives 1.5e-6 in rho after one cycle, so the case resolves layout bugs
+  only above that level.
+- **sp accretor** (ry_per_accretor production deck, 500 x 48 x 64): phi split into 2 or
+  4 blocks, with vet_gd on and off.
+- **red_giant**: the vpert seed with and without `vpert_global`.
+
 ## Not covered yet
 
 - Restart starts from a permutation remap, i.e. production states. Fresh analytic ICs only.
-- he_star_m1 (the HG/RSG pgen): M1 with vet_sc, vet_gd and vetlat.
-- ry_per_accretor (the sp accretor deck).
 - Refined meshes: `libin.assemble` handles single-level meshes only.
 - GPU builds: run the same cases with GPU binaries in `bins.cfg`. The suite is
   backend-agnostic, but it uses mpirun on one node.
+- Cases whose dt is not set by `time/cfl_number` need their own `perturb` key, otherwise the
+  ulp reference reads 0. Check the `ulp-ref` line.
