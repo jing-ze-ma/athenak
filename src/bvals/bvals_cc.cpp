@@ -137,6 +137,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   const Real rg_ = cs_rho_guard;
   const bool rs_lin = cs_lin_resample;
   const bool nors_ = cs_noresample;
+  const bool ext_ = cs_ext_pass_;   // layoutbug-1103: second pass, see cs_seam_blockend
+  const int ngx_ = pmy_pack->pmesh->mb_indcs.ng;
   const bool cperm_ = cs_perm_pairs;
   const int hrq_ = cs_hrq0;
   auto sbuf = SendBufDv();
@@ -524,6 +526,19 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
               dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(nx2_);
               sc = jj;
               blo = js_; bhi = js_ + nx2_ - 3;
+            }
+            // layoutbug-1103 (<mesh>/cs_seam_blockend = extend, second pass): at an
+            // INTERIOR block end along the seam the stencil continues into this block's
+            // own along-seam ghosts (same-panel copies of the next block's active cells,
+            // fresh after the first pass), up to ng cells, so the stencil is the one a
+            // single block per panel would use: clamped to the PANEL, not the block.
+            if (ext_ && !cs_coar) {
+              const Real w_ = (cs_seam == 2) ? (x3mx - x3mn) : (x2mx - x2mn);
+              const Real x0_ = (cs_seam == 2) ? x3mn : x2mn;
+              const int nbp_ = static_cast<int>(floor(2.0/w_ + 0.5));
+              const int ib_ = static_cast<int>(floor((x0_ + 1.0)/w_ + 0.5));
+              if (ib_ > 0) {blo -= ngx_;}
+              if (ib_ < nbp_ - 1) {bhi += ngx_;}
             }
             // THE CLAMP IS TO THE SOURCE'S ACTIVE RANGE, NOT THE BUFFER'S.  For a face or
             // x1-edge buffer the two coincide (the along-seam extent of such a buffer IS
@@ -1170,6 +1185,25 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   if (pmy_pack->pmesh->use_cubed_sphere) {
     FillPanelCornersCC(a, false, vmask);
     if (pmy_pack->pmesh->multilevel) { FillPanelCornersCC(ca, true, vmask); }
+  }
+
+  // layoutbug-1103: <mesh>/cs_seam_blockend = extend.  The along-seam resample of the
+  // pack above was clamped to the SENDING block's active range, so at an interior block
+  // end on a seam (more than one MeshBlock per panel side) the ghost was EXTRAPOLATED
+  // from that block alone while a single block per panel interpolates: a MeshBlock-
+  // layout dependence of the seam halo at truncation level.  Every ghost is now in place,
+  // in particular each sender's along-seam ghosts next to such an end (same-panel copies),
+  // so the whole exchange is repeated once with the stencil allowed into them (blocking;
+  // same buffers, same variables and window).  Non-seam buffers and every stencil that
+  // did not reach a block end come out bitwise as in the first pass.
+  if (cs_blockend_ext_ && !cs_ext_pass_ && !cs_noresample &&
+      pmy_pack->pmesh->use_cubed_sphere) {
+    cs_ext_pass_ = true;
+    (void) ClearSend();
+    (void) InitRecv(a.extent_int(1), vmask);
+    while (PackAndSendCC(a, ca, iwl, iwu, vmask) != TaskStatus::complete) {}
+    while (RecvAndUnpackCC(a, ca, iwl, iwu, vmask) != TaskStatus::complete) {}
+    cs_ext_pass_ = false;
   }
 
   return TaskStatus::complete;

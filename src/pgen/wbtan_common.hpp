@@ -268,6 +268,7 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
     w.pbv = new MeshBoundaryValuesCC(pmbp, nullptr, false);
     w.pbv->cs_rho_guard = ph->pbval_u->cs_rho_guard;
     w.pbv->cs_lin_resample = ph->pbval_u->cs_lin_resample;
+    w.pbv->cs_blockend_ext_ = ph->pbval_u->cs_blockend_ext_;   // layoutbug-1103
     w.pbv->InitializeBuffers(nvar);
   }
   MeshBoundaryValuesCC *pbv = w.pbv;

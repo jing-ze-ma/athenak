@@ -8,6 +8,7 @@
 //! Mesh variables.
 //! Prolongation of FC variables  occurs in ProlongateFC() function called from task list
 
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <utility>
@@ -120,6 +121,27 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
 
   Kokkos::realloc(cs_seam_geom, nmb, nslot, nkg, nk3, nk2, 15);
   Kokkos::realloc(cs_seam_stnc, nmb, nks, 2, nk3, nk2, 7);
+  // layoutbug-1103: the stencil of the second (extended) pass, <mesh>/cs_seam_blockend
+  if (cs_blockend_ext_) {
+    Kokkos::realloc(cs_seam_stnc_x, nmb, nks, 2, nk3, nk2, 7);
+    Kokkos::realloc(cs_ext_jk, nmb, 4);
+    auto hx = Kokkos::create_mirror_view(cs_ext_jk);
+    auto &msz = pmy_pack->pmb->mb_size;
+    for (int m=0; m<nmb; ++m) {
+      const Real w2 = msz.h_view(m).x2max - msz.h_view(m).x2min;
+      const Real w3 = msz.h_view(m).x3max - msz.h_view(m).x3min;
+      const int nb2 = static_cast<int>(std::floor(2.0/w2 + 0.5));
+      const int nb3 = static_cast<int>(std::floor(2.0/w3 + 0.5));
+      const int ib2 = static_cast<int>(std::floor((msz.h_view(m).x2min + 1.0)/w2 + 0.5));
+      const int ib3 = static_cast<int>(std::floor((msz.h_view(m).x3min + 1.0)/w3 + 0.5));
+      hx(m,0) = (ib2 > 0) ? indcs.ng : 0;  hx(m,1) = (ib2 < nb2-1) ? indcs.ng : 0;
+      hx(m,2) = (ib3 > 0) ? indcs.ng : 0;  hx(m,3) = (ib3 < nb3-1) ? indcs.ng : 0;
+    }
+    Kokkos::deep_copy(cs_ext_jk, hx);
+  }
+  const bool bext_ = cs_blockend_ext_;
+  auto stnx_ = cs_seam_stnc_x;
+  const int ngx_ = indcs.ng;
 
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto slot_ = cs_seam_slot;
@@ -206,6 +228,29 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
       const Real sden = sin(2.0*nrm);
       stnc_(m,kd,sidx,kk,jj,5) = sden;
       stnc_(m,kd,sidx,kk,jj,6) = sin(2.0*ang)/sden;
+      if (bext_) {
+        // the same stencil clamped to the PANEL (up to ng cells into this block's own
+        // along-seam ghosts at an interior block end); bitwise the entry above elsewhere
+        int blx = blo, bhx = bhi;
+        if (!coar) {
+          const Real w_ = (sidx == 0) ? (x3mx - x3mn) : (x2mx - x2mn);
+          const Real x0_ = (sidx == 0) ? x3mn : x2mn;
+          const int nbp_ = static_cast<int>(floor(2.0/w_ + 0.5));
+          const int ib_ = static_cast<int>(floor((x0_ + 1.0)/w_ + 0.5));
+          if (ib_ > 0) {blx -= ngx_;}
+          if (ib_ < nbp_ - 1) {bhx += ngx_;}
+        }
+        int bx = static_cast<int>(floor(pos + 0.5)) - 1;
+        bx = (bx < blx) ? blx : ((bx > bhx) ? bhx : bx);
+        const Real ux = pos - static_cast<Real>(bx + 1);
+        stnx_(m,kd,sidx,kk,jj,0) = static_cast<Real>(bx);
+        stnx_(m,kd,sidx,kk,jj,1) = 0.5*ux*(ux - 1.0);
+        stnx_(m,kd,sidx,kk,jj,2) = 1.0 - ux*ux;
+        stnx_(m,kd,sidx,kk,jj,3) = 0.5*ux*(ux + 1.0);
+        stnx_(m,kd,sidx,kk,jj,4) = pos - static_cast<Real>(bx);
+        stnx_(m,kd,sidx,kk,jj,5) = sden;
+        stnx_(m,kd,sidx,kk,jj,6) = sin(2.0*ang)/sden;
+      }
     }
   });
 
@@ -493,12 +538,15 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
           // the samples' resample reads srcval at (bs..bs+2) along the seam, bs within
           // [lo, hi-2] (BuildCubedSphereSeamTables), at the sample's own normal index
           u.pil = u.il; u.pni = u.ni;
+          // layoutbug-1103: with cs_seam_blockend = extend the box also covers ng cells
+          // on each side (the second pass's stencil reaches the along-seam ghosts)
+          const int bxg_ = cs_blockend_ext_ ? cs_indcs.ng : 0;
           if (g.cs_seam == 2) {   // along eta (k); normal index jj = aj*j + bj
-            u.ptlo = ks_; u.pnt = ke_ + ((g.vv == 2) ? 1 : 0) - ks_ + 1;
+            u.ptlo = ks_ - bxg_; u.pnt = ke_ + ((g.vv == 2) ? 1 : 0) - ks_ + 1 + 2*bxg_;
             const int a0 = g.aj*u.jl + g.bj, a1 = g.aj*(u.jl + u.nj - 1) + g.bj;
             u.pnlo = (a0 < a1) ? a0 : a1; u.pnn = u.nj;
           } else {                 // along xi (j); normal index kk = ak*k + bk
-            u.ptlo = js_; u.pnt = je_ + ((g.vv == 1) ? 1 : 0) - js_ + 1;
+            u.ptlo = js_ - bxg_; u.pnt = je_ + ((g.vv == 1) ? 1 : 0) - js_ + 1 + 2*bxg_;
             const int a0 = g.ak*u.kl + g.bk, a1 = g.ak*(u.kl + u.nk - 1) + g.bk;
             u.pnlo = (a0 < a1) ? a0 : a1; u.pnn = u.nk;
           }
@@ -633,6 +681,10 @@ struct FCSeamPack {
   RegionIndcs cs_indcs;
   Real cs_shear_sgn;
   bool cs_nolim_;
+  // layoutbug-1103: second pass of <mesh>/cs_seam_blockend = extend -- the source index
+  // bounds are widened by (j lo, j hi, k lo, k hi) = ext_jk(m,:) at interior block ends
+  bool ext_ = false;
+  DvceArray2D<int> ext_jk;
 
   FCSeamPack(DvceFaceFld4D<Real> &b_, DvceFaceFld4D<Real> &cb_,
              DvceArray1D<MeshBufferDv> sb_, DvceArray1D<MeshBufferDv> rb_,
@@ -817,6 +869,10 @@ struct FCSeamPack {
     a.ks_ = s.cs_coar ? cs_indcs.cks : cs_indcs.ks;
     a.je_ = s.cs_coar ? cs_indcs.cje : cs_indcs.je;
     a.ke_ = s.cs_coar ? cs_indcs.cke : cs_indcs.ke;
+    if (ext_ && !s.cs_coar) {
+      a.js_ -= ext_jk(s.m,0); a.je_ += ext_jk(s.m,1);
+      a.ks_ -= ext_jk(s.m,2); a.ke_ += ext_jk(s.m,3);
+    }
     a.wide2 = (a.je_ - a.js_ >= 3);
     a.wide3 = (a.ke_ - a.ks_ >= 3);
     a.pvoff = u.pvoff; a.ptlo = u.ptlo; a.pnt = u.pnt; a.pnlo = u.pnlo;
@@ -901,6 +957,7 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
   auto rbuf = RecvBufDv();
   // r1mspeed-1102: walk set 0 (all ng layers) or 1 (depth 1), see bvals.hpp
   const int d = (pack_depth == 1) ? 1 : 0;
+  last_pack_depth_ = pack_depth;   // layoutbug-1103
   const int np = fc_np[d], ns = fc_ns[d], nr = fc_npre[d];
   if (np > 0) {
     FCPlainPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub[d], fc_cs[d], fc_cb[d], 0);
@@ -908,18 +965,22 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
         Kokkos::RangePolicy<>(DevExeSpace(), 0, np*FC_PACK_CHUNK),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
   }
+  // layoutbug-1103: the second pass of <mesh>/cs_seam_blockend = extend
+  auto stbl_ = cs_ext_pass_ ? cs_seam_stnc_x : cs_seam_stnc;
   if (nr > 0) {
     FCSeamPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub[d], fc_cs[d], fc_cb[d], cs_seam_geom,
-                 cs_seam_stnc, fc_preval, np + ns, pmy_pack->pmesh->mb_indcs,
+                 stbl_, fc_preval, np + ns, pmy_pack->pmesh->mb_indcs,
                  cs_shear_sgn, cs_nolim_);
+    f.ext_ = cs_ext_pass_; f.ext_jk = cs_ext_jk;
     Kokkos::parallel_for("SendBuffFCsrc", Kokkos::Experimental::require(
         Kokkos::RangePolicy<FCSeamPre>(DevExeSpace(), 0, nr*FC_PACK_CHUNK),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
   }
   if (ns > 0) {
     FCSeamPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub[d], fc_cs[d], fc_cb[d], cs_seam_geom,
-                 cs_seam_stnc, fc_preval, np, pmy_pack->pmesh->mb_indcs, cs_shear_sgn,
+                 stbl_, fc_preval, np, pmy_pack->pmesh->mb_indcs, cs_shear_sgn,
                  cs_nolim_);
+    f.ext_ = cs_ext_pass_; f.ext_jk = cs_ext_jk;
     Kokkos::parallel_for("SendBuffFCseam", Kokkos::Experimental::require(
         Kokkos::RangePolicy<>(DevExeSpace(), 0, ns*FC_PACK_CHUNK),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
@@ -2170,6 +2231,21 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
   if (pmy_pack->pmesh->use_cubed_sphere) {
     FillPanelCornersFC(b, false);
     if (pmy_pack->pmesh->multilevel) { FillPanelCornersFC(cb, true); }
+  }
+
+  // layoutbug-1103: <mesh>/cs_seam_blockend = extend, the second pass (see the note in
+  // RecvAndUnpackCC): repeat the exchange with the panel-clamped stencil table, at the
+  // depth of the pack it repeats.
+  if (cs_blockend_ext_ && !cs_ext_pass_ && pmy_pack->pmesh->use_cubed_sphere) {
+    cs_ext_pass_ = true;
+    const int pd0 = pack_depth;
+    pack_depth = last_pack_depth_;
+    (void) ClearSend();
+    (void) InitRecv(3);
+    while (PackAndSendFC(b, cb) != TaskStatus::complete) {}
+    while (RecvAndUnpackFC(b, cb) != TaskStatus::complete) {}
+    pack_depth = pd0;
+    cs_ext_pass_ = false;
   }
 
   return TaskStatus::complete;

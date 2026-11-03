@@ -289,6 +289,10 @@ class MeshBlockPack;
 //! \class MeshBoundaryValues
 //  \brief Abstract base class for boundary values for different kinds of Mesh variables
 
+// layoutbug-1103: <mesh>/cs_seam_blockend = clamp (default) | extend, true for extend on
+// a cubed sphere with more than one MeshBlock per panel side (bvals.cpp)
+bool CsSeamBlockendExtend(MeshBlockPack *ppack, ParameterInput *pin);
+
 class MeshBoundaryValues {
  public:
   MeshBoundaryValues(MeshBlockPack *ppack, ParameterInput *pin, bool z4c);
@@ -373,6 +377,13 @@ class MeshBoundaryValues {
   // object alone (Conduction::pbval_tr); every other MeshBoundaryValues leaves it false
   // and is bitwise untouched.
   bool skip_x2x3_diag = false;
+  // layoutbug-1103: <mesh>/cs_seam_blockend = extend (default clamp = the old halo) on
+  // the fluid's conserved-state / face-field exchange (set by Hydro / MHD).  After the
+  // exchange completes it is repeated once with the along-seam resample stencil allowed
+  // into the sender's own along-seam ghosts at an INTERIOR block end, so the seam halo
+  // does not depend on the MeshBlock layout (see RecvAndUnpackCC / RecvAndUnpackFC).
+  bool cs_blockend_ext_ = false;
+  bool cs_ext_pass_ = false;     // true while the second (extended) pass runs
 };
 
 //----------------------------------------------------------------------------------------
@@ -544,6 +555,8 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
   DualArray2D<int> cs_seam_slot;    // (nmb,6): destination panel -> slot, -1 if none
   DvceArray6D<Real> cs_seam_geom;   // (nmb,nslot,nkind,nk3,nk2,15): SeamFieldXform
   DvceArray6D<Real> cs_seam_stnc;   // (nmb,nkind,2,nk3,nk2,7): bs,wm,w0,wp,fpos,sden,sig
+  DvceArray6D<Real> cs_seam_stnc_x; // layoutbug-1103: the same, cs_seam_blockend = extend
+  DvceArray2D<int> cs_ext_jk;       // layoutbug-1103: (nmb,4) interior-end widening
   void BuildCubedSphereSeamTables();
 
   // halofc-1102: FLAT, LOAD-BALANCED cubed-sphere pack.  Every (block, buffer,
@@ -567,6 +580,7 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
   // 1 = the next PackAndSendFC packs (and RecvAndUnpackFC unpacks) depth 1 only; reset
   // by the caller.  0 everywhere else.
   int pack_depth = 0;
+  int last_pack_depth_ = 0;   // layoutbug-1103: pack_depth of the last pack
   // r1mspeed-1102: RecvAndUnpackFluxFC work arrays, kept (they were allocated, memset and
   // freed on every call: 2 cudaMalloc/cudaFree pairs and 4 fences per E exchange)
   DvceArray2D<int> nflx_buf;
