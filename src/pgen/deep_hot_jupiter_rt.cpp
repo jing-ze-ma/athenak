@@ -1292,6 +1292,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_dump_m = pin->GetOrAddInteger("problem","ck_dump_m",0);
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
+  // prod1103c default (USER 11-03; route B of 09-25, every Caltech dhj production deck):
+  // ck_pcut_bar = 1e8 (the ck two-stream reaches the inner wall) on a FRESH start
+  // (recipe::NewDefaults) with rt_ck when the fluid names isotropic_conduction = none and
+  // the key is not named; recorded for restarts.  Otherwise 10 bar as before.
+  if (!pin->DoesParameterExist("problem","ck_pcut_bar") && rt_ck) {
+    const std::string fb = pin->DoesBlockExist("mhd") ? "mhd" : "hydro";
+    const bool nocond = pin->DoesParameterExist(fb,"isotropic_conduction") &&
+                        pin->GetString(fb,"isotropic_conduction") == "none";
+    if (nocond && recipe::NewDefaults(pin)) {
+      pin->GetOrAddReal("problem","ck_pcut_bar",1.0e8);
+      recipe::Log("problem/ck_pcut_bar = 1e8 (default with rt_ck and <" + fb +
+                  ">/isotropic_conduction = none: route B)");
+    } else if (nocond) {
+      recipe::Log("problem/ck_pcut_bar = 10 (restart input or recipe none: the old "
+                  "default)");
+    }
+  }
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
   // the grey-sweep fix, wired here so a dhj run can reproduce a pre-fix run bitwise.
   // Defaults to the FIX (false); see utils/two_stream_rt.hpp.
