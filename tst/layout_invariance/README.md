@@ -100,11 +100,25 @@ takes about 15 min on 16 cores; the cubed-sphere and Cartesian cases take second
   4 blocks, with vet_gd on and off.
 - **red_giant**: the vpert seed with and without `vpert_global`.
 
+- **merge_lat** (`<hydro>/merge_lat_blockend`): f 2, 4 and 8 and the RSG pattern 8:4:2 with
+  the RSG E key set (nghost 3, fofc, `cs_seam_flux = shared`). Each runs as flat (the old
+  rule, expect FAIL) and as exchange. The same comparison is done on the RSG E production
+  deck at C32 (`rsg_mlat_x`).
+- **sp polar rows**: ideal UCT and GS07, Ohmic and ambipolar, each with a 1-ulp IC
+  reference (`problem/b0`).
+- **Cube-vertex probe** `r1m_v8_vertex_cc`: the r1m v8 deck with the vertexacc-1103
+  `cs_vertex_cc_perturb` diagnostic (bin family `dhjvtx`).
+
 ## Not covered yet
 
 - Restart starts from a permutation remap, i.e. production states. Fresh analytic ICs only.
 - Refined meshes: `libin.assemble` handles single-level meshes only.
 - GPU builds: run the same cases with GPU binaries in `bins.cfg`. The suite is
   backend-agnostic, but it uses mpirun on one node.
-- Cases whose dt is not set by `time/cfl_number` need their own `perturb` key, otherwise the
-  ulp reference reads 0. Check the `ulp-ref` line.
+- The ulp reference may not cover the real round-off seed:
+  - Cases whose dt is not set by `time/cfl_number` need their own `perturb` key, otherwise
+    the ulp reference reads 0. Check the `ulp-ref` line.
+  - Cases whose IC is not bitwise identical across layouts need an IC-level perturbation.
+    An example is a field built from a vector potential on per-block coordinates, which
+    differs in the last bit. A cfl perturbation then underestimates the round-off seed,
+    and the case reads SUSPECT, or FAIL in GS07 near v = 0.
