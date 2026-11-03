@@ -364,6 +364,35 @@ KOKKOS_INLINE_FUNCTION Real HalfC(const bool left, const Real a, const Real dl,
                                   const Real dr, const Real vn, const Real x) {
   return left ? (a*vn*x + dl*x) : ((1.0 - a)*vn*x - dr*x);
 }
+// vertexmd-1103 <mhd>/cs_vertex_emf = md3: a THREE-STATE multidimensional upwind EMF at
+// a cube-vertex radial edge, in the spirit of the 2-D HLL / UCT-HLL strongly interacting
+// state (Londrillo & Del Zanna 2004; Mignone & Del Zanna 2021 sec. 3; the MuSIC edge EMF
+// of Balsara et al. 2019 over all zones around an edge).  The three corner cells c meet
+// at 120 deg; each is bounded by two of the three seam faces, on which its upwind
+// fraction is f_c,f (a on the L side, 1 - a on the R side, from that face's own HLLD fan).
+// The 4-cell 2-D HLL weight of a corner state is the PRODUCT of its upwind fractions in
+// the two directions; the 3-cell analogue is
+//   E.t = -[ sum_c W_c (v_c x B_c).t / sum_c W_c  +  sum_f (d_f^L X_f^L - d_f^R X_f^R) ],
+//   W_c = f_c,1 f_c,2 + eps (f_c,1 + f_c,2),
+// with B_c the cell's own in-plane field at the vertex (its two faces' B.n), v_c its own
+// cell velocity carried to the vertex (own rows, one-sided), and the per-face dissipation
+// of the 3-face rule (X = B.(t x g_f), g_f = (2/3) n_f).  Equal states: E = -(v x B).t,
+// the same as the 3-face rule.  Fully upwind from cell c (f_c = 1 on both its faces):
+// W = 1, 0, 0 -> E = E_c.  eps keeps the cyclic (all W = 0) case defined (-> linear
+// weights).  Every panel forms its own (W_c E_c, W_c, dissipation) and the three are
+// summed after the seam exchange (UctSeamOwnSide).  cen: W_c = 1, no dissipation
+// (a centred, non-upwind diagnostic bracket for the sensitivity of the vertex error).
+KOKKOS_INLINE_FUNCTION void Md3Partial(const int mode, const bool leftA, const Real aA,
+                                       const Real dlA, const Real drA, const Real xA,
+                                       const bool leftB, const Real aB, const Real dlB,
+                                       const Real drB, const Real xB, const Real ec,
+                                       Real &diss, Real &num, Real &den) {
+  if (mode == 2) {diss = 0.0; num = ec; den = 1.0; return;}
+  const Real fA = leftA ? aA : (1.0 - aA), fB = leftB ? aB : (1.0 - aB);
+  const Real w = fA*fB + 1.0e-3*(fA + fB);
+  diss = (leftA ? dlA*xA : -drA*xA) + (leftB ? dlB*xB : -drB*xB);
+  num = w*ec; den = w;
+}
 DvceArray5D<Real> xrec_, xrecb_;
 // the shared RESISTIVE seam record (CsSeamResist): per seam position 0-2 along-seam edge
 // at radial face i (H, A, eta2), 3-5 at ie+1, 6-8 / 9-11 radial edge at the lower /
@@ -381,6 +410,9 @@ DvceArray5D<Real> xrr_;   // 3-variable four-block patch record (own-side / resi
 // same values: the halo copy is exact within a panel).
 DvceArray2D<int> nbloc_;
 bool xlocal_ = false;   // owned here (one MHD/process)
+// vertexmd-1103 <mhd>/cs_vertex_emf (shared_o only; read only when named): 0 = own (the
+// 3-face UCT rule, default), 1 = md3, 2 = cen (diagnostic bracket).  See Md3Partial.
+int vtx_emf_ = 0;
 }  // namespace cs_uct
 
 // release the file-scope Views before Kokkos::finalize (MHD::~MHD)
@@ -458,6 +490,24 @@ void MHD::CsSeamInit(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
+  if (pin->DoesParameterExist("mhd","cs_vertex_emf")) {   // vertexmd-1103
+    const std::string v = pin->GetString("mhd","cs_vertex_emf");
+    if (v == "own") {vtx_emf_ = 0;}
+    else if (v == "md3") {vtx_emf_ = 1;}
+    else if (v == "cen") {vtx_emf_ = 2;}
+    else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/cs_vertex_emf = '" << v << "' (own | md3 | cen)"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (vtx_emf_ != 0 && cs_seam_mhd != 4) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/cs_vertex_emf = md3 | cen needs cs_seam_mhd = shared_o"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   if (pin->DoesParameterExist("mhd","cs_seam_res")) {
     const std::string v = pin->GetString("mhd","cs_seam_res");
     if (v == "own") {cs_seam_res_own = true;}
@@ -503,7 +553,9 @@ void MHD::CsSeamInit(ParameterInput *pin) {
   pseamfs = new DvceFaceFld5D<Real>("cs_seamfs_mhd", nmb, cs_seam_nfs, n3, n2, n1);
   Kokkos::realloc(pseamfs->x1f, nmb, cs_seam_nfs, 1, 1, 1);
   if (cs_seam_mhd >= 2) {
-    const int nu = (cs_seam_mhd == 4) ? 6 : ((cs_seam_mhd == 3) ? kNUG : kNU);
+    // shared_o: 6 slots; + 4 (vertex W E, W at the lower / upper end) with cs_vertex_emf
+    const int nu = (cs_seam_mhd == 4) ? ((vtx_emf_ != 0) ? 10 : 6)
+                                      : ((cs_seam_mhd == 3) ? kNUG : kNU);
     if (cs_seam_mhd >= 3) {   // the four-block seam-edge record (see kXF)
       Kokkos::realloc(xrec_, nmb, kNXA, n3, n2, n1);
       Kokkos::realloc(xrecb_, nmb, kNXB, n3, n2, n1);
@@ -589,6 +641,8 @@ void MHD::CsSeamInit(ParameterInput *pin) {
                   : (cs_seam_mhd == 2) ? "shared (faces + seam-edge/vertex UCT EMF)"
                                      : "faces (shared seam Riemann states)")
               << (cs_seam_noavg ? ", edge-EMF reconciliation OFF (diagnostic)" : "")
+              << ((vtx_emf_ == 1) ? ", cube-vertex EMF md3 (3-state upwind)"
+                  : (vtx_emf_ == 2) ? ", cube-vertex EMF cen (centred, diagnostic)" : "")
               << std::endl;
   }
 }
@@ -1245,6 +1299,7 @@ void MHD::UctSeamOwnSide() {
   const BoundaryFlag rflag_ = BoundaryFlag::reflect;
   const BoundaryFlag uflag_ = BoundaryFlag::user;
   auto X = xrec_;
+  const int vem_ = vtx_emf_;
   seam_for("uct_seam_own", DevExeSpace(), 0, nmb1, 0, 3, 0, nc-1, d.is, d.ie,
   KOKKOS_LAMBDA(const int m, const int sd, const int c, const int i) {
     if (!OnPanelEdge(d, m, sd)) return;
@@ -1455,7 +1510,11 @@ void MHD::UctSeamOwnSide() {
     // --- cube-vertex radial edges at the lower (slot 4) / upper (slot 5) end of the seam
     for (int s=0; s<2; ++s) {
       const bool isv = (s == 0) ? (c == 0 && vlo) : (c == nc-1 && vhi);
-      if (!isv) {out(4+s) = 0.0; continue;}
+      if (!isv) {
+        out(4+s) = 0.0;
+        if (vem_ != 0) {out(6+s) = 0.0; out(8+s) = 0.0;}
+        continue;
+      }
       // corner: x2-seam index jc/jv, x3-seam index kc/kv
       const bool jlo = x2t ? lo : (s == 0), klo = x2t ? (s == 0) : lo;
       const int jc = jlo ? d.js : d.je+1, kc = klo ? d.ks : d.ke+1;
@@ -1481,6 +1540,33 @@ void MHD::UctSeamOwnSide() {
       tgb[0] = t[1]*fb.neta[2] - t[2]*fb.neta[1]; tgb[1] = t[2]*fb.neta[0] - t[0]*fb.neta[2];
       tgb[2] = t[0]*fb.neta[1] - t[1]*fb.neta[0];
       for (int q=0; q<3; ++q) {tga[q] *= 2.0/3.0; tgb[q] *= 2.0/3.0;}
+      if (vem_ != 0) {   // vertexmd-1103 md3 / cen (Md3Partial)
+        // own corner-cell velocity carried to the vertex along both own directions
+        auto Vc = [&](const int kk, const int jj, Real v[3]) {
+          Frame fc; MakeFrame(p, XiC(d, m, jj), EtaC(d, m, kk), fc);
+          CellV(d, fc, m, kk, jj, i, v);
+        };
+        const int dj = jlo ? 1 : -1, dk = klo ? 1 : -1;
+        Real v0[3], vj1[3], vj2[3], vk1[3], vk2[3];
+        Vc(kv, jv, v0);
+        if (d.nx2 > 2) {
+          Vc(kv, jv+dj, vj1); Vc(kv, jv+2*dj, vj2);
+          Vc(kv+dk, jv, vk1); Vc(kv+2*dk, jv, vk2);
+          for (int q=0; q<3; ++q) {
+            v0[q] += (OwnCarry(v0[q], vj1[q], vj2[q], ocm) - v0[q])
+                   + (OwnCarry(v0[q], vk1[q], vk2[q], ocm) - v0[q]);
+          }
+        }
+        Real vxb[3];
+        vxb[0] = v0[1]*Bv[2] - v0[2]*Bv[1]; vxb[1] = v0[2]*Bv[0] - v0[0]*Bv[2];
+        vxb[2] = v0[0]*Bv[1] - v0[1]*Bv[0];
+        Real di, nu_, de;
+        Md3Partial(vem_, !jlo, d.u2(m,0,kv,jc,i), d.u2(m,1,kv,jc,i), d.u2(m,2,kv,jc,i),
+                   Dot3(Bv, tga), !klo, d.u3(m,0,kc,jv,i), d.u3(m,1,kc,jv,i),
+                   d.u3(m,2,kc,jv,i), Dot3(Bv, tgb), Dot3(vxb, t), di, nu_, de);
+        out(4+s) = di; out(6+s) = nu_; out(8+s) = de;
+        continue;
+      }
       out(4+s) = HalfC(!jlo, d.u2(m,0,kv,jc,i), d.u2(m,1,kv,jc,i), d.u2(m,2,kv,jc,i),
                        Dot3(vB, fa.nxi), Dot3(Bv, tga))
                + HalfC(!klo, d.u3(m,0,kc,jv,i), d.u3(m,1,kc,jv,i), d.u3(m,2,kc,jv,i),
@@ -1523,7 +1609,7 @@ void MHD::UctSeamOwnSide() {
     if (x2t) {d.o2(m,3,cb+nc-1,sf,i) = XR(m,0,kg,jg,i);}
     else     {d.o3(m,3,sf,cb+nc-1,i) = XR(m,0,kg,jg,i);}
   });
-  pbval_us->InitFluxSeamRecv(6);   // (the X record was exchanged at the top)
+  pbval_us->InitFluxSeamRecv((vtx_emf_ != 0) ? 10 : 6);   // (X record exchanged at the top)
   pbval_us->PackAndSendFluxSeamCC(*pusown);
   while (pbval_us->RecvAndUnpackFluxSeamCC(*pusnbr) != TaskStatus::complete) {}
   pbval_us->ClearFluxSend();
@@ -1562,6 +1648,7 @@ void MHD::UctSeamOwnSide() {
       if (x2t) {e1(m,cb+nc,sf,i) = e;} else {e1(m,sf,cb+nc,i) = e;}
     }
   });
+  const int vem2_ = vtx_emf_;
   seam_for("uct_seam_own_vtx", DevExeSpace(), 0, nmb1, 0, 3, d.is, d.ie,
   KOKKOS_LAMBDA(const int m, const int cn, const int i) {
     const bool jlo = (cn & 1) == 0, klo = (cn & 2) == 0;
@@ -1574,6 +1661,13 @@ void MHD::UctSeamOwnSide() {
     const bool r2 = SeamRev(d, m, sj), r3 = SeamRev(d, m, sk);
     const Real q = d.n2(m, (klo != r2) ? 4 : 5, kv, jc, i);
     const Real r = d.n3(m, (jlo != r3) ? 4 : 5, kc, jv, i);
+    if (vem2_ != 0) {   // vertexmd-1103 md3 / cen: sum W E / sum W + dissipation
+      const int so = klo ? 0 : 1, sq = (klo != r2) ? 0 : 1, sr = (jlo != r3) ? 0 : 1;
+      const Real num = d.o2(m,6+so,kv,jc,i) + d.n2(m,6+sq,kv,jc,i) + d.n3(m,6+sr,kc,jv,i);
+      const Real den = d.o2(m,8+so,kv,jc,i) + d.n2(m,8+sq,kv,jc,i) + d.n3(m,8+sr,kc,jv,i);
+      e1(m,kc,jc,i) = -(num/den + own + q + r);
+      return;
+    }
     e1(m,kc,jc,i) = -(own + q + r);
   });
 }

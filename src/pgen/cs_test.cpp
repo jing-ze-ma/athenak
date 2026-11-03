@@ -4639,6 +4639,44 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
         std::printf("### CS BLAST PROFILE written to %s\n", fname.c_str());
       }
     }
+    // vertexmd-1103 <problem>/blast_cells (read only when named; one rank): every active
+    // cell's radial index, geodesic angle from the centre, azimuth about it (from e1),
+    // rho, p, |B| -> <basename>-cells.dat, for a per-cell imprint analysis
+    if (pin->DoesParameterExist("problem", "blast_cells") &&
+        pin->GetBoolean("problem", "blast_cells") && global_variable::nranks == 1) {
+      std::string fname = pin->GetString("job", "basename") + "-cells.dat";
+      FILE *pf = std::fopen(fname.c_str(), "w");
+      if (pf != nullptr) {
+        std::fprintf(pf, "# i ang psi rho p |B|  t %.6e\n", pm->time);
+        for (int m=0; m<pmbp->nmb_thispack; ++m) {
+          const int p = mbpanel.h_view(m);
+          for (int k=ks; k<=ke; ++k) {
+            const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                                                   size.h_view(m).x3max);
+            for (int j=js; j<=je; ++j) {
+              const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
+                                                                     size.h_view(m).x2max);
+              Real q[3];
+              cubed_sphere::PanelToCart(p, xc, ec, q);
+              const Real cd = q[0]*c[0] + q[1]*c[1] + q[2]*c[2];
+              const Real ang = std::acos(std::fmin(1.0, std::fmax(-1.0, cd)));
+              const Real psi = std::atan2(q[0]*e2[0] + q[1]*e2[1] + q[2]*e2[2],
+                                          q[0]*e1[0] + q[1]*e1[1] + q[2]*e1[2]);
+              for (int i=is; i<=ie; ++i) {
+                Real babs = 0.0;
+                if (is_mhd) {
+                  babs = std::sqrt(SQR(bcc(m,IBX,k,j,i)) + SQR(bcc(m,IBY,k,j,i))
+                                   + SQR(bcc(m,IBZ,k,j,i)));
+                }
+                std::fprintf(pf, "%d %.10e %.10e %.10e %.10e %.10e\n", i-is, ang, psi,
+                             wh(m,IDN,k,j,i), gm1*wh(m,IEN,k,j,i), babs);
+              }
+            }
+          }
+        }
+        std::fclose(pf);
+      }
+    }
   }
   return;
 }
