@@ -2765,6 +2765,9 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
     Kokkos::realloc(st.dsc_c, nmb, 6, 1, 1, 1);
     st.pbd = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     st.pbd->InitializeBuffers(6);
+    // m1blockend-1103: the D-tensor halo follows <mesh>/cs_seam_blockend (as pbval_u;
+    // VetInit runs from ImplicitInit, before pbval_u exists, so the key is read here)
+    st.pbd->cs_blockend_ext_ = CsSeamBlockendExtend(pmy_pack, pin);
     // the six components of the symmetric tensor D: no slot is a tangential VECTOR
     // member (the default rule would treat slots 2,3 as one).  A tensor transform at
     // poles/seams is a later stage; rad_m1 is a fatal on sp/cs until then.

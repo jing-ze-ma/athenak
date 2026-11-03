@@ -292,6 +292,10 @@ void RadiationM1::VetLatInit() {
   pbval_vs = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
   pbval_vs->InitializeBuffers(2);
   pbval_vs->SetVectorPairs(2, {});
+  // m1blockend-1103: the resampled lateral-VET exchanges follow <mesh>/cs_seam_blockend
+  // as the moments' pbval_u does (the index-copy pbval_vt below needs nothing)
+  pbval_vl->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
+  pbval_vs->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
   pbval_vt = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
   pbval_vt->InitializeBuffers(nlx);
   // accsp-1102 (vet_gd on the full sphere): across a pole e_theta and e_phi both flip, so

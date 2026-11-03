@@ -1731,6 +1731,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // (5) boundary buffers
   pbval_u = new MeshBoundaryValuesCC(ppack, pin, false);
+  // m1blockend-1103: <mesh>/cs_seam_blockend = extend also on the radiation moments
+  // (E, F; the quadratic along-seam resample of bvals_cc.cpp): the shared second pass of
+  // RecvAndUnpackCC, clamped to the PANEL at an interior block end (default clamp, bitwise)
+  pbval_u->cs_blockend_ext_ = CsSeamBlockendExtend(ppack, pin);
   pbval_u->InitializeBuffers(M1_NVAR);
   // (F2, F3) is the tangential pair (what the default (IVY, IVZ) rule gives by luck);
   // E and F1 (radial) are scalars.  Stated explicitly, see SetVectorPairs.
