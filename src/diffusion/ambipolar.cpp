@@ -40,6 +40,7 @@
 #include "resistivity.hpp"
 #include "current_density.hpp"
 #include "mhd/mhd.hpp"
+#include "cs_edge_jb.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \fn void Resistivity::SetAmbipolar()
@@ -396,78 +397,29 @@ void Resistivity::AddEMFAmbipolarGnomonic(const DvceFaceFld4D<Real> &b0,
                   + SQR(bc(m,IBZ,kk,jj,ii));
     etc_(m,kk,jj,ii) = fmin(coef_(m,kk,jj,ii)*b2, cap);
   });
+  // seamexact-1103: J and B at the edge from CsEdgeOps (cs_edge_jb.hpp, shared with the
+  // single-valued seam current of cs_seam_res = mean_j); the same expressions, bitwise
+  CsEdgeOps ops(b, bc, jnorm);
+  ops.etc = etc_; ops.has_ad = true;
+  ops.cxi = cxi; ops.sxi = sxi; ops.cet = cet; ops.set = set; ops.ccl = ccl; ops.scl = scl;
   par_for("ad_cs_emf", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    auto eta = [&](int kk, int jj, int ii) {
-      return etc_(m,kk,jj,ii);
-    };
     // physical radial boundary face: the radial-edge J average uses the active column
     // (as the Cartesian/sp kernel; the Ohmic curl switches stencil there too)
     const bool rin = (mbbcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::block);
     const bool rout = (mbbcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::block);
     const int ia = (i == is && rin) ? i : i-1;
     const int ib = (i == ie+1 && rout) ? i-1 : i;
+    CsEdgeJB s;
     // ---- x1 edge (r centre, xi face j, eta face k): along rhat
-    if (i <= ie) {
-      const Real c = 0.5*(cxi(m,k,j) + cxi(m,k-1,j));
-      const Real sn = sqrt(1.0 - c*c);
-      const Real eta_a = 0.25*(eta(k,j,i) + eta(k,j-1,i) + eta(k-1,j,i) + eta(k-1,j-1,i));
-      const Real br = 0.25*(bc(m,IBX,k,j,i) + bc(m,IBX,k,j-1,i)
-                          + bc(m,IBX,k-1,j,i) + bc(m,IBX,k-1,j-1,i));
-      const Real bu1 = 0.5*(b.x2f(m,k,j,i) + b.x2f(m,k-1,j,i))/sn;   // B^xi
-      const Real bu2 = 0.5*(b.x3f(m,k,j,i) + b.x3f(m,k,j-1,i))/sn;   // B^eta
-      const Real bd1 = bu1 + c*bu2, bd2 = c*bu1 + bu2;
-      const Real jr = jn1(m,k,j,i);
-      const Real ju1 = 0.25*(jn2(m,k,j,i) + jn2(m,k,j,i+1)
-                           + jn2(m,k,j-1,i) + jn2(m,k,j-1,i+1))/sn;
-      const Real ju2 = 0.25*(jn3(m,k,j,i) + jn3(m,k,j,i+1)
-                           + jn3(m,k-1,j,i) + jn3(m,k-1,j,i+1))/sn;
-      const Real bsq = br*br + bu1*bd1 + bu2*bd2 + 1.0e-300;
-      const Real jdb = jr*br + ju1*bd1 + ju2*bd2;
-      e1(m,k,j,i) += eta_a*(jr - jdb*br/bsq);
-    }
+    if (i <= ie) {ops.X1(m,k,j,i,s); e1(m,k,j,i) += CsEdgeAdEmf(1, s);}
     // ---- x2 edge (r face i, xi centre j, eta face k): along e_xi
-    if (j <= je) {
-      const Real c = cet(m,k,j), sn = set(m,k,j);
-      const Real eta_a = 0.25*(eta(k,j,i) + eta(k,j,i-1) + eta(k-1,j,i) + eta(k-1,j,i-1));
-      const Real br = 0.5*(b.x1f(m,k,j,i) + b.x1f(m,k-1,j,i));
-      const Real bu2 = 0.5*(b.x3f(m,k,j,i) + b.x3f(m,k,j,i-1))/sn;   // B^eta
-      const Real bd1 = 0.25*(bc(m,IBY,k,j,i) + bc(m,IBY,k,j,i-1)     // B_xi
-                           + bc(m,IBY,k-1,j,i) + bc(m,IBY,k-1,j,i-1));
-      const Real bu1 = bd1 - c*bu2, bd2 = c*bu1 + bu2;
-      const Real jr = 0.25*(jn1(m,k,j,ib) + jn1(m,k,j,ia)
-                          + jn1(m,k,j+1,ib) + jn1(m,k,j+1,ia));
-      const Real ju1 = jn2(m,k,j,i)/sn;
-      const Real ju2 = 0.25*(jn3(m,k,j,i) + jn3(m,k,j+1,i)
-                           + jn3(m,k-1,j,i) + jn3(m,k-1,j+1,i))/sn;
-      const Real jd1 = ju1 + c*ju2;
-      const Real bsq = br*br + bu1*bd1 + bu2*bd2 + 1.0e-300;
-      const Real jdb = jr*br + ju1*bd1 + ju2*bd2;
-      e2(m,k,j,i) += eta_a*(jd1 - jdb*bd1/bsq);
-    }
+    if (j <= je) {ops.X2(m,k,j,i,ia,ib,s); e2(m,k,j,i) += CsEdgeAdEmf(2, s);}
     // ---- x3 edge (r face i, xi face j, eta centre k): along e_eta
-    if (k <= ke) {
-      const Real c = cxi(m,k,j), sn = sxi(m,k,j);
-      const Real eta_a = 0.25*(eta(k,j,i) + eta(k,j-1,i) + eta(k,j,i-1) + eta(k,j-1,i-1));
-      const Real br = 0.5*(b.x1f(m,k,j,i) + b.x1f(m,k,j-1,i));
-      const Real bu1 = 0.5*(b.x2f(m,k,j,i) + b.x2f(m,k,j,i-1))/sn;   // B^xi
-      // B.e_eta per cell = c_cell B_xi + s_cell N_eta, then averaged
-      auto bde = [&](int jj, int ii) {
-        return ccl(m,k,jj)*bc(m,IBY,k,jj,ii) + scl(m,k,jj)*bc(m,IBZ,k,jj,ii);
-      };
-      const Real bd2 = 0.25*(bde(j,i) + bde(j,i-1) + bde(j-1,i) + bde(j-1,i-1));
-      const Real bu2 = bd2 - c*bu1, bd1 = bu1 + c*bu2;
-      const Real jr = 0.25*(jn1(m,k,j,ib) + jn1(m,k,j,ia)
-                          + jn1(m,k+1,j,ib) + jn1(m,k+1,j,ia));
-      const Real ju2 = jn3(m,k,j,i)/sn;
-      const Real ju1 = 0.25*(jn2(m,k,j,i) + jn2(m,k+1,j,i)
-                           + jn2(m,k,j-1,i) + jn2(m,k+1,j-1,i))/sn;
-      const Real jd2 = c*ju1 + ju2;
-      const Real bsq = br*br + bu1*bd1 + bu2*bd2 + 1.0e-300;
-      const Real jdb = jr*br + ju1*bd1 + ju2*bd2;
-      e3(m,k,j,i) += eta_a*(jd2 - jdb*bd2/bsq);
-    }
+    if (k <= ke) {ops.X3(m,k,j,i,ia,ib,s); e3(m,k,j,i) += CsEdgeAdEmf(3, s);}
   });
+  // the stage field for the shared seam current (cs_seam_res = mean_j)
+  CsSeamResJBcc(&bc);
   // ucthshare-1102 cs_seam_mhd = shared_g | shared_o: the seam edges take the TWO-CHART
   // MEAN of the Ohmic + ambipolar EMF (MHD::CsSeamResist, mean), single-valued without
   // the edge-EMF averaging (the Ohmic call skipped its mean so it is taken once, here)
