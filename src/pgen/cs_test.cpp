@@ -49,6 +49,7 @@
 #include <cstdio>
 #include <iostream>
 #include <map>
+#include <tuple>
 #include <string>
 #include <utility>
 #include <vector>
@@ -2092,6 +2093,24 @@ void CSTestRadialBC(Mesh *pm) {
         const int i = (side == 0) ? (is-ng+ig) : (ie_i+1+ig);
         b0f.x2f(m,k,j,i) = bxi;
         b0f.x3f(m,k,j,i) = bet;
+        // the OUTERMOST tangential ghost faces (index n2 / n3) of the radial ghost rows:
+        // nothing else fills them, and the radial-ghost-row transverse fluxes at a block
+        // boundary reconstruct through them (ucthshare-1102: they made the boundary-edge
+        // EMFs of two same-panel blocks differ before the EMF averaging)
+        if (j == indcs.nx2 + 2*ng - 1) {
+          Real m1[3], m2[3];
+          const Real x2p = 0.25*M_PI*LeftEdgeX(j+1-js, indcs.nx2, size.d_view(m).x2min,
+                                                                 size.d_view(m).x2max);
+          PanelNormals(p, x2p, x3c, m1, m2);
+          b0f.x2f(m,k,j+1,i) = bvx*m1[0] + bvy*m1[1] + bvz*m1[2];
+        }
+        if (k == indcs.nx3 + 2*ng - 1) {
+          Real m1[3], m2[3];
+          const Real x3p = 0.25*M_PI*LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min,
+                                                                 size.d_view(m).x3max);
+          PanelNormals(p, x2c, x3p, m1, m2);
+          b0f.x3f(m,k+1,j,i) = bvx*m2[0] + bvy*m2[1] + bvz*m2[2];
+        }
         // x1f: fill the GHOST faces only. The two DOMAIN faces x1f(is) and x1f(ie+1)
         // belong to active cells and are updated by CT; overwriting one of them each
         // step breaks the exact cell-by-cell conservation of sum(area*B) that CT
@@ -5713,6 +5732,145 @@ void CSTestSeamGatesFinal(ParameterInput *pin, Mesh *pm) {
       std::printf("### CS BLOCK-CORNER x1e SPREAD by geometry\n");
       for (int b=0; b<3; ++b) {
         std::printf("   %s  %12.5e   (%d edges)\n", nm[b], sp[b], nb[b]);
+      }
+    }
+    {
+      // ucthshare-1102 diagnostic: SAME-PANEL ghost consistency.  Every ghost cell / face
+      // whose position lies inside the same panel is compared with the owner block's
+      // interior value (u0, w0 all variables; b0 three components): face ghosts (one
+      // transverse index outside), corner ghosts (both outside), and the shared block-
+      // boundary faces themselves (the two owners' copies).
+      auto u0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->u0);
+      auto w0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->w0);
+      auto c1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x1f);
+      auto c2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
+      auto c3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
+      const int nx = indcs.nx2, nv = u0h.extent_int(1);
+      std::map<std::tuple<int,int,int>, int> own;
+      std::vector<int> oj(pmbp->nmb_thispack), ok(pmbp->nmb_thispack);
+      int np = 0;
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        const auto &z = size.h_view(m);
+        np = static_cast<int>(std::lround(2.0/(z.x2max - z.x2min)))*nx;
+        oj[m] = static_cast<int>(std::lround((z.x2min + 1.0)*0.5*np));
+        ok[m] = static_cast<int>(std::lround((z.x3min + 1.0)*0.5*np));
+        own[std::make_tuple(mbpanel.h_view(m), oj[m], ok[m])] = m;
+      }
+      // cat: 0 face ghost, 1 corner ghost, 2 shared boundary face; q: 0 u0, 1 w0, 2 b1, 3 b2, 4 b3
+      Real dm[5][5] = {}; int cnt[5][5] = {};
+      int wk[5][5][4] = {};
+      auto findm = [&](int p, int J, int K, int &m2, int &jj, int &kk) {
+        if (J < 0 || K < 0 || J >= np || K >= np) return false;
+        auto it = own.find(std::make_tuple(p, (J/nx)*nx, (K/nx)*nx));
+        if (it == own.end()) return false;
+        m2 = it->second; jj = J - oj[m2] + js; kk = K - ok[m2] + ks; return true;
+      };
+      auto acc = [&](int c, int q, Real a, Real b, int m, int k, int j, int i) {
+        if (i < is || i > ie) c = (j == js-ng || j >= je+ng || k == ks-ng || k >= ke+ng) ? 4 : 3;
+        const Real d = fabs(a - b); cnt[c][q] += 1;
+        if (d > dm[c][q]) {dm[c][q] = d; wk[c][q][0] = m; wk[c][q][1] = k;
+                           wk[c][q][2] = j; wk[c][q][3] = i;}
+      };
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        const int p = mbpanel.h_view(m);
+        for (int k=ks-ng; k<=ke+ng; ++k) {
+          for (int j=js-ng; j<=je+ng; ++j) {
+            const bool jo = (j < js || j > je), ko = (k < ks || k > ke);
+            if (!jo && !ko) continue;
+            int m2, jj, kk;
+            if (!findm(p, oj[m]+j-js, ok[m]+k-ks, m2, jj, kk)) continue;
+            const int c = (jo && ko) ? 1 : 0;
+            for (int i=is-ng; i<=ie+ng; ++i) {
+              for (int v=0; v<nv; ++v) {
+                acc(c, 0, u0h(m,v,k,j,i), u0h(m2,v,kk,jj,i), m, k, j, i);
+                acc(c, 1, w0h(m,v,k,j,i), w0h(m2,v,kk,jj,i), m, k, j, i);
+              }
+              acc(c, 2, c1(m,k,j,i), c1(m2,kk,jj,i), m, k, j, i);
+            }
+          }
+        }
+        // x2 faces j = js-ng .. je+ng+1; owner = the block holding face J as a LOW face
+        // (J % nx == 0 -> the upper block), or the shared copy (category 2)
+        for (int k=ks-ng; k<=ke+ng; ++k) {
+          for (int j=js-ng; j<=je+ng+1; ++j) {
+            const bool jo = (j < js || j > je+1), ko = (k < ks || k > ke);
+            const bool shared = (j == js || j == je+1) && !ko;
+            if (!jo && !ko && !shared) continue;
+            const int J = oj[m]+j-js, K = ok[m]+k-ks;
+            int m2, jj, kk;
+            if (!findm(p, (J == np) ? J-1 : J, K, m2, jj, kk)) continue;
+            if (J == np) jj += 1;
+            if (m2 == m) continue;
+            const int c = shared ? 2 : ((jo && ko) ? 1 : 0);
+            for (int i=is-ng; i<=ie+ng; ++i) acc(c, 3, c2(m,k,j,i), c2(m2,kk,jj,i), m, k, j, i);
+          }
+        }
+        for (int k=ks-ng; k<=ke+ng+1; ++k) {
+          for (int j=js-ng; j<=je+ng; ++j) {
+            const bool ko = (k < ks || k > ke+1), jo = (j < js || j > je);
+            const bool shared = (k == ks || k == ke+1) && !jo;
+            if (!jo && !ko && !shared) continue;
+            const int J = oj[m]+j-js, K = ok[m]+k-ks;
+            int m2, jj, kk;
+            if (!findm(p, J, (K == np) ? K-1 : K, m2, jj, kk)) continue;
+            if (K == np) kk += 1;
+            if (m2 == m) continue;
+            const int c = shared ? 2 : ((jo && ko) ? 1 : 0);
+            for (int i=is-ng; i<=ie+ng; ++i) acc(c, 4, c3(m,k,j,i), c3(m2,kk,jj,i), m, k, j, i);
+          }
+        }
+      }
+      const char *cn[5] = {"face ghost  ", "corner ghost", "shared face ", "radial gh   ", "rad gh outer"};
+      const char *qn[5] = {"u0", "w0", "b1", "b2", "b3"};
+      {
+        // EMFs on the shared block faces (x1e, x3e on j faces; x1e, x2e on k faces),
+        // split: block-corner edge / face interior, radial index boundary / interior
+        auto e1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->efld.x1e);
+        auto e2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->efld.x2e);
+        auto e3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->efld.x3e);
+        Real em[2][2][3] = {}; int ew[2][2][3][4] = {};
+        auto ea = [&](int c, int r, int q, Real a, Real b, int m, int k, int j, int i) {
+          const Real d = fabs(a - b);
+          if (d > em[c][r][q]) {em[c][r][q] = d; ew[c][r][q][0] = m; ew[c][r][q][1] = k;
+                                ew[c][r][q][2] = j; ew[c][r][q][3] = i;}
+        };
+        for (int m=0; m<pmbp->nmb_thispack; ++m) {
+          const int p = mbpanel.h_view(m);
+          // upper j face of m vs the lower j face of the block above (same panel)
+          int m2, jj, kk;
+          if (findm(p, oj[m]+nx, ok[m], m2, jj, kk)) {
+            for (int k=ks; k<=ke+1; ++k) {
+              const int c = (k == ks || k == ke+1) ? 0 : 1;
+              for (int i=is; i<=ie+1; ++i) {
+                if (i <= ie) ea(c, (i == is || i == ie) ? 0 : 1, 0, e1(m,k,je+1,i), e1(m2,k,js,i), m, k, je+1, i);
+                if (k <= ke) ea(c, (i == is || i == ie+1) ? 0 : 1, 2, e3(m,k,je+1,i), e3(m2,k,js,i), m, k, je+1, i);
+              }
+            }
+          }
+          if (findm(p, oj[m], ok[m]+nx, m2, jj, kk)) {
+            for (int j=js; j<=je+1; ++j) {
+              const int c = (j == js || j == je+1) ? 0 : 1;
+              for (int i=is; i<=ie+1; ++i) {
+                if (i <= ie) ea(c, (i == is || i == ie) ? 0 : 1, 0, e1(m,ke+1,j,i), e1(m2,ks,j,i), m, ke+1, j, i);
+                if (j <= je) ea(c, (i == is || i == ie+1) ? 0 : 1, 1, e2(m,ke+1,j,i), e2(m2,ks,j,i), m, ke+1, j, i);
+              }
+            }
+          }
+        }
+        const char *rn[2] = {"radial-bdry", "radial-int "};
+        for (int c=0; c<2; ++c) for (int r=0; r<2; ++r) {
+          std::printf("### CS SHARED-FACE EMF %s %s:", c ? "face-interior" : "block-corner ", rn[r]);
+          for (int q=0; q<3; ++q) std::printf("  e%d %10.3e @m%d k%d j%d i%d", q+1, em[c][r][q],
+              ew[c][r][q][0], ew[c][r][q][1], ew[c][r][q][2], ew[c][r][q][3]);
+          std::printf("\n");
+        }
+      }
+      std::printf("### CS SAME-PANEL GHOST CONSISTENCY (max |ghost - owner|)\n");
+      for (int c=0; c<5; ++c) {
+        std::printf("   %s", cn[c]);
+        for (int q=0; q<5; ++q) std::printf("  %s %10.3e (n %d @m%d k%d j%d i%d)", qn[q], dm[c][q],
+            cnt[c][q], wk[c][q][0], wk[c][q][1], wk[c][q][2], wk[c][q][3]);
+        std::printf("\n");
       }
     }
     {
