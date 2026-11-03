@@ -950,6 +950,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // (CkConserveFlux, utils/two_stream_rt.hpp).  Read only if present, so a run without
   // it writes the same restart header.
   // default changed 09-30 (user), was 0
+  // prod1103b default (USER 10-28 production key; audit 11-03): ck_impl_conserve = 2 on a
+  // FRESH start (recipe::NewDefaults) with ck_implicit when the key is not named
+  // (diagnostic: the solution is unchanged); recorded for the run's restarts.
+  if (!pin->DoesParameterExist("problem","ck_impl_conserve") && two_stream_rt::ck_implicit &&
+      recipe::NewDefaults(pin)) {
+    pin->GetOrAddInteger("problem","ck_impl_conserve",2);
+    recipe::Log("problem/ck_impl_conserve = 2 (default with ck_implicit)");
+  }
   two_stream_rt::ck_impl_conserve =
       pin->DoesParameterExist("problem","ck_impl_conserve")
       ? pin->GetInteger("problem","ck_impl_conserve") : 1;
