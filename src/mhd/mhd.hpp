@@ -283,6 +283,8 @@ class MHD {
   // and cube-vertex UCT EMFs evaluated from the SAME inputs on every panel (UctSeamEdges,
   // mhd_cs_seam.cpp; neighbour packets through pbval_us).  <mhd>/cs_seam_emf_avg = false
   // (diagnostic, read only when named) skips the edge-EMF reconciliation entirely.
+  // FRESH-start default shared_o on the cubed sphere where supported (prod1103, USER
+  // 11-03; recipe::NewDefaults, mhd.cpp); a restart whose input lacks the key: none.
   int cs_seam_mhd = 0;
   bool cs_seam_noavg = false;
   bool cs_seam_res_own = false;   // <mhd>/cs_seam_res = own (default mean; shared modes)

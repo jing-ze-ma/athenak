@@ -990,6 +990,38 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         Kokkos::realloc(uct2, nmb, 6, ncells3, ncells2, ncells1);
         if (ppack->pmesh->three_d) Kokkos::realloc(uct3, nmb, 6, ncells3, ncells2, ncells1);
       }
+      // prod1103 default (USER 11-03): cs_seam_mhd = shared_o on a FRESH start
+      // (recipe::NewDefaults) of cubed-sphere MHD when the key is not named and the
+      // shared seam modes are supported (CsSeamInit's conditions: 3-D, reconstruct = plm,
+      // no x2 well-balance / static-perturbation reconstruction, a uniform mesh,
+      // Newtonian, no fofc, and emf_scheme = uct | uct_hlld); else none, logged.  The
+      // value is recorded (GetOrAdd); a restart whose input lacks the key keeps none
+      // (bitwise); an explicit key wins.
+      if (pmy_pack->pmesh->use_cubed_sphere &&
+          !pin->DoesParameterExist("mhd","cs_seam_mhd") &&
+          !pin->DoesParameterExist("mhd","cs_seam_emf_avg")) {
+        std::string no;
+        if (!pmy_pack->pmesh->three_d || recon_method != ReconstructionMethod::plm ||
+            (use_wellbalance_dynamic && use_wb_x2) ||
+            use_wellbalance_static_reconst_perturb || pmy_pack->pmesh->multilevel ||
+            pmy_pack->pcoord->is_special_relativistic ||
+            pmy_pack->pcoord->is_general_relativistic || use_fofc) {
+          no = "needs 3-D, plm, no x2 well-balance, uniform mesh, Newtonian, no fofc";
+        } else if (!(emf_uct || emf_uct_hlld)) {
+          no = "needs emf_scheme = uct or uct_hlld";
+        }
+        if (!recipe::NewDefaults(pin)) {
+          recipe::Log("<mhd>/cs_seam_mhd = none (" + std::string(
+              recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+              "restart input has no key") + ": the old default)");
+        } else if (!no.empty()) {
+          recipe::Log("<mhd>/cs_seam_mhd = none (shared_o default not applied: " + no +
+                      ")");
+        } else {
+          pin->GetOrAddString("mhd","cs_seam_mhd","shared_o");
+          recipe::Log("<mhd>/cs_seam_mhd = shared_o (default on the cubed sphere)");
+        }
+      }
       // ucthshare-1102 <mhd>/cs_seam_mhd (read only when named; mhd_cs_seam.cpp)
       if (pin->DoesParameterExist("mhd","cs_seam_mhd") ||
           pin->DoesParameterExist("mhd","cs_seam_emf_avg")) {
