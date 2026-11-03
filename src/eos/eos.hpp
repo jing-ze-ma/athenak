@@ -135,6 +135,60 @@ struct EOS_Data {
   // eos_dfloor).
   Real va_noinfall_fac = 0.0;
 
+  // <mhd>/boris_c (boris-1102) -- ALFVEN-SPEED LIMITER (simplified Boris / semi-
+  // relativistic correction with a reduced "speed of light" c, Boris 1970, Gombosi et
+  // al. 2002, Rempel 2017), in cm/s; 0 = off, the default; read only when named.  The
+  // inertia of motion PERPENDICULAR to B is raised from rho to rho/f with
+  //   f = 1/sqrt(1 + (v_A/c_eff)^4),   v_A^2 = B^2/rho  (Rempel 2017 form),
+  // so every perpendicular-to-B momentum change of an RK stage (fluxes + ALL momentum
+  // sources) is multiplied by f and the parallel one is kept (MHD::BorisCorrect); the
+  // kinetic-energy difference is taken out of the total energy so the internal energy
+  // evolves exactly as without the limiter.  The fast speed of the modified system is
+  // bounded by the usual formula with B -> sqrt(f) B (<= sqrt(c_s^2 + f v_A^2) <~
+  // sqrt(c_s^2 + c^2)); the CFL time step and the Riemann-solver wave speeds use it.
+  // Faces with (v_A/c_eff)^2 > boris_sw on either side take an HLLE flux with those
+  // limited speeds and the Boris momentum rho (v_par + v_perp/f) in its dissipation
+  // (rsolvers/boris_hlle_mhd.hpp); the UCT corner EMF uses the matching HLL weights.
+  // Where v_A << c, f = 1 - (v_A/c)^4/2: slow flows are left unchanged.
+  // <mhd>/boris_pmax_bar (default 0 = everywhere): c_eff = c max(1, p/p_max), i.e. the
+  // limiter fades out (as (p_max/p)^4 in 1-f) below the pressure p_max.
+  // Stored as 1/c^2 and p_max in code units.
+  Real boris_c2inv = 0.0;
+  Real boris_pmax = 0.0;
+  Real boris_pmin = 0.0;
+  Real boris_vfac = 0.0;
+  Real boris_sw = 0.25;
+  // <mhd>/boris_face_fmax (default false): the face Boris momentum of BorisHLLEFace uses
+  // ONE factor f_face = max(f_L, f_R) for both sides instead of each side's own f, so a
+  // cell's v_perp dissipation f_cell/f_face * S/2 can never exceed S/2 next to a cell of
+  // much smaller f (per-side f amplifies it by f_cell/f_neighbour)
+  bool boris_face_fmax = false;
+  // <mhd>/boris_diss_plain (default false): HLLE dissipation on rho v (no Boris momentum)
+  bool boris_diss_plain = false;
+  //! \fn Real BorisF \brief the limiter factor f in (0,1] (1 when off or B = 0)
+  KOKKOS_INLINE_FUNCTION
+  Real BorisX(const Real d, const Real b2, const Real p, const Real v2) const {
+    Real ic2 = boris_c2inv;
+    // <mhd>/boris_vfac: c_eff >= boris_vfac |v| (the simplified Boris correction needs
+    // v << c; with v ~ c it runs away, boris-1102 c = 5 km/s test)
+    if (boris_vfac > 0.0) ic2 = fmin(ic2, 1.0/(boris_vfac*boris_vfac*v2 + 1.0e-300));
+    if (boris_pmax > 0.0 && p > boris_pmax) {
+      const Real r = boris_pmax/p;
+      ic2 *= r*r;
+    }
+    // <mhd>/boris_pmin_bar: c_eff = c p_min/p above the pressure p_min (limiter fades out
+    // upward, e.g. kept off the free top p < 1e-6 bar)
+    if (boris_pmin > 0.0 && p < boris_pmin) {
+      const Real r = p/boris_pmin;
+      ic2 *= r*r;
+    }
+    return b2/d*ic2;          // (v_A/c_eff)^2
+  }
+  KOKKOS_INLINE_FUNCTION
+  Real BorisF(const Real x) const {
+    return 1.0/sqrt(1.0 + x*x);
+  }
+
   // <mhd>/floor_tracer (floortrc-1101): the u0/w0 index of the floor-mass passive scalar
   // (-1 = off).  ConsToPrim adds every density-floor increment (dfloor and the Alfven
   // floor) to it; MHD::FloorTracerDrain removes it again where the floor does not bind.

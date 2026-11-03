@@ -378,6 +378,9 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->pgen->user_srcs) {
     (pmy_pack->pmesh->pgen->user_srcs_func)(pmy_pack->pmesh, beta_dt);
   }
+  // boris-1102 <mhd>/boris_c: perpendicular-to-B part of the stage's momentum change
+  // (fluxes + every momentum source above) times f (mhd_boris.cpp)
+  if (boris_on) BorisCorrect(pdrive, stage);
 
   return TaskStatus::complete;
 }

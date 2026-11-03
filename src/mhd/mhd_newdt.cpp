@@ -208,9 +208,9 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
       // timestep in Newtonian MHD
       } else {
         Real &w_d = w0_(m,IDN,k,j,i);
-        Real &w_bx = bcc0_(m,IBX,k,j,i);
-        Real &w_by = bcc0_(m,IBY,k,j,i);
-        Real &w_bz = bcc0_(m,IBZ,k,j,i);
+        Real w_bx = bcc0_(m,IBX,k,j,i);
+        Real w_by = bcc0_(m,IBY,k,j,i);
+        Real w_bz = bcc0_(m,IBZ,k,j,i);
         Real cf;
         Real p = eos.IdealGasPressure(w0_(m,ipr_,k,j,i));
         // For a general EOS the pressure and Gamma_1 were evaluated once per cell in
@@ -220,6 +220,17 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
         if (eos.IsGeneral()) {
           pg = wder_(m,IDPR,k,j,i);
           g1 = wder_(m,IDG1,k,j,i);
+        }
+        // boris-1102 <mhd>/boris_c: the fast speed of the limited system, B -> sqrt(f) B
+        // (an upper bound of it; see EOS_Data::boris_c2inv)
+        if (eos.boris_c2inv > 0.0) {
+          const Real sf = sqrt(eos.BorisF(eos.BorisX(w_d, w_bx*w_bx + w_by*w_by
+                                                     + w_bz*w_bz,
+                                                     eos.IsGeneral() ? pg : p,
+                                                     SQR(w0_(m,IVX,k,j,i))
+                                                     + SQR(w0_(m,IVY,k,j,i))
+                                                     + SQR(w0_(m,IVZ,k,j,i)))));
+          w_bx *= sf; w_by *= sf; w_bz *= sf;
         }
 
         if (eos.IsGeneral()) {
