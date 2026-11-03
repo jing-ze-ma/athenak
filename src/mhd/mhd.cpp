@@ -670,12 +670,15 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // composition formula (MD21 eq. 35) for the corner EMF, inside the GS07 corner kernel
     // (MHD::CornerE), with per-face coefficients stored by the flux sweeps (UctFaceStore,
     // mhd_fluxes.cpp): uct = UCT-HLL (MD21 eq. 30 coefficients, any of hlle/hlld/lhlld),
-    // uct_hlld = UCT-HLLD (MD21 eqs. 40, 44-46; rsolver hlld or lhlld).  Cartesian 2-D/3-D
-    // and the cubed sphere (gnomonic face frames, the existing seam/vertex EMF averaging).
+    // uct_hlld = UCT-HLLD (MD21 eqs. 40, 44-46; rsolver hlld or lhlld).  Cartesian 2-D/3-D,
+    // the cubed sphere (gnomonic face frames, the existing seam/vertex EMF averaging) and
+    // spherical polar (spdef-1103: orthonormal face frames = the Cartesian branch of the
+    // shared UctE1/E2/E3; polar_hlle_rows faces take the HLL coefficients, the polar-row
+    // polar_emf_diss term and the polar E_r azimuthal average act on the UCT EMF as on GS07).
     // prod1103 default (USER 11-03): emf_scheme = uct_hlld on a FRESH start
     // (recipe::NewDefaults) when rsolver = hlld or lhlld and the key is not named, on
     // every mesh UCT-HLLD supports (2-D/3-D Cartesian, cubed sphere; spherical polar:
-    // UCT_SP_DEFAULT below), Newtonian, ideal/general EOS, no fofc / emf_smooth / bs_emf,
+    // UCT_SP_DEFAULT below, on since spdef-1103), Newtonian, ideal/general EOS, no fofc / emf_smooth / bs_emf,
     // a uniform mesh (UCT is not validated with refinement); elsewhere gs07, logged with
     // the reason.  The value is recorded (GetOrAdd) so the run's restarts carry it.  A
     // restart whose input lacks the key keeps gs07 (bitwise); an explicit key wins.
@@ -683,7 +686,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         pin->DoesParameterExist("mhd","rsolver") &&
         (pin->GetString("mhd","rsolver") == "hlld" ||
          pin->GetString("mhd","rsolver") == "lhlld")) {
-      constexpr bool UCT_SP_DEFAULT = false;
+      constexpr bool UCT_SP_DEFAULT = true;   // spdef-1103: sp port gated (prod_1103/sp)
       std::string no;
       if (ppack->pmesh->one_d) {
         no = "1-D (no corner EMF)";
@@ -725,7 +728,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
       if ((emf_uct || emf_uct_hlld) && (ppack->pmesh->one_d ||
-                      ppack->pmesh->use_spherical_polar ||
                       ppack->pcoord->is_special_relativistic ||
                       ppack->pcoord->is_general_relativistic ||
                       ppack->pcoord->is_dynamical_relativistic ||
@@ -733,8 +735,9 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                       use_fofc || emf_smooth >= 0.0 || use_bs_emf)) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<mhd>/emf_scheme = " << es << " is implemented only "
-                  << "for 2-D/3-D Cartesian or cubed-sphere Newtonian MHD with an ideal or "
-                  << "general EOS, without fofc, emf_smooth or bs_emf" << std::endl;
+                  << "for 2-D/3-D Cartesian, cubed-sphere or spherical-polar Newtonian MHD "
+                  << "with an ideal or general EOS, without fofc, emf_smooth or bs_emf"
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }

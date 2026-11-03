@@ -49,7 +49,8 @@ namespace mhd {
 //! 109748, "MD21").  The Riemann solver's induction flux is written as (MD21 eq. 29)
 //!   F^[B_t] = a^L F^L + a^R F^R - (d^R B_t^R - d^L B_t^L),   F = v_n B_t - v_t B_n,
 //! one (a, d) pair for every face-parallel component B_t.  ONE store for every solver:
-//!  hll = true (emf_scheme = uct, rsolver = hlle, or a cubed-sphere face where
+//!  hll = true (emf_scheme = uct, rsolver = hlle, a spherical-polar polar-row face where
+//!   polar_hlle_rows replaced HLLD/LHLLD by HLLE (spdef-1103), or a cubed-sphere face where
 //!   CSLowBetaFallback replaced the flux by HLLE: same test (p_L + p_R) < lb_beta <B^2>):
 //!   MD21 eq. 30, a^L = aR/(aR+aL), d^L = d^R = aR aL/(aR+aL), aR = max(0,S_R),
 //!   aL = max(0,-S_L), S_L/S_R the Davis fast speeds of every solver here;
@@ -643,7 +644,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     member.team_barrier();
     if (uct_on_) {   // UCT corner EMF inputs (x1 faces)
       par_for_inner(member, il, iu, [&](const int i) {
-        UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVX, i, bx(m,k,j,i), uct_hll_, uct_eta_,
+        UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVX, i, bx(m,k,j,i),
+                     uct_hll_ || do_pole, uct_eta_,
                      uct_lb_, uct1_, m, k, j, w0_);
       });
       member.team_barrier();
@@ -977,7 +979,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           member.team_barrier();
           if (uct_on_) {   // UCT corner EMF inputs (x2 faces)
             par_for_inner(member, is-1, ie+1, [&](const int i) {
-              UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVY, i, by(m,k,j,i), uct_hll_,
+              UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVY, i, by(m,k,j,i),
+                           uct_hll_ || do_pole,
                            uct_eta_, uct_lb_, uct2_, m, k, j, w0_);
             });
             member.team_barrier();
@@ -1312,7 +1315,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           member.team_barrier();
           if (uct_on_) {   // UCT corner EMF inputs (x3 faces)
             par_for_inner(member, is-1, ie+1, [&](const int i) {
-              UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVZ, i, bz(m,k,j,i), uct_hll_,
+              UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVZ, i, bz(m,k,j,i),
+                           uct_hll_ || do_pole,
                            uct_eta_, uct_lb_, uct3_, m, k, j, w0_);
             });
             member.team_barrier();
