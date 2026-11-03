@@ -678,7 +678,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // prod1103 default (USER 11-03): emf_scheme = uct_hlld on a FRESH start
     // (recipe::NewDefaults) when rsolver = hlld or lhlld and the key is not named, on
     // every mesh UCT-HLLD supports (2-D/3-D Cartesian, cubed sphere; spherical polar:
-    // UCT_SP_DEFAULT below), Newtonian, ideal/general EOS, no fofc / emf_smooth / bs_emf,
+    // UCT_SP_DEFAULT below, on since spdef-1103), Newtonian, ideal/general EOS, no fofc / emf_smooth / bs_emf,
     // a uniform mesh (UCT is not validated with refinement); elsewhere gs07, logged with
     // the reason.  The value is recorded (GetOrAdd) so the run's restarts carry it.  A
     // restart whose input lacks the key keeps gs07 (bitwise); an explicit key wins.
@@ -686,7 +686,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         pin->DoesParameterExist("mhd","rsolver") &&
         (pin->GetString("mhd","rsolver") == "hlld" ||
          pin->GetString("mhd","rsolver") == "lhlld")) {
-      constexpr bool UCT_SP_DEFAULT = false;
+      constexpr bool UCT_SP_DEFAULT = true;   // spdef-1103: sp port gated (prod_1103/sp)
       std::string no;
       if (ppack->pmesh->one_d) {
         no = "1-D (no corner EMF)";
