@@ -105,6 +105,8 @@ namespace mhd {
 //----------------------------------------------------------------------------------------
 //! \class MHD
 
+void CsSeamRelease();   // ucthshare-1102 (mhd_cs_seam.cpp)
+
 class MHD {
  public:
   MHD(MeshBlockPack *ppack, ParameterInput *pin);
@@ -278,6 +280,9 @@ class MHD {
   void UctSeamPackets();
   void UctSeamEdges();
   void UctSeamOwnSide();
+  void SeamXRecord(const bool packets);
+  void CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta,
+                    DvceEdgeFld4D<Real> &efld_);
   bool use_polar_emf_diss = false; // Rusanov face-field dissipation on e2 in the polar rows        // plain 4-face average corner EMF (Balsara-Spicer) on ANY grid
 
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per

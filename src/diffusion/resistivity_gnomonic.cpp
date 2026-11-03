@@ -239,9 +239,17 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   auto e2 = efld.x2e;
   auto e3 = efld.x3e;
   auto eta_b_ = eta_b;
+  // ucthshare-1102 <mhd>/cs_seam_mhd = shared_g | shared_o: the seam edges take the SHARED
+  // resistive EMF (MHD::CsSeamResist, below), so pass 2 skips them
+  const bool rsh_ = (pmy_pack->pmhd != nullptr && pmy_pack->pmhd->cs_seam_mhd >= 3);
+  auto &msz_ = pmy_pack->pmb->mb_size;
 
   par_for("res_cs_e1", DevExeSpace(), 0,nmb1, ks,ke+1, js,je+1, is,ie,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    if (rsh_ && ((k == ks && msz_.d_view(m).x3min <= -1.0 + 1.0e-12) ||
+                 (k == ke+1 && msz_.d_view(m).x3max >= 1.0 - 1.0e-12))) return;
+    if (rsh_ && ((j == js && msz_.d_view(m).x2min <= -1.0 + 1.0e-12) ||
+                 (j == je+1 && msz_.d_view(m).x2max >= 1.0 - 1.0e-12))) return;
     const Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j-1,i)
                         + eta_b_(m,k-1,j,i) + eta_b_(m,k-1,j-1,i));
     e1(m,k,j,i) += et*jn1(m,k,j,i);
@@ -249,6 +257,8 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
 
   par_for("res_cs_e2", DevExeSpace(), 0,nmb1, ks,ke+1, js,je, is,ie+1,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    if (rsh_ && ((k == ks && msz_.d_view(m).x3min <= -1.0 + 1.0e-12) ||
+                 (k == ke+1 && msz_.d_view(m).x3max >= 1.0 - 1.0e-12))) return;
     const Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j,i-1)
                         + eta_b_(m,k-1,j,i) + eta_b_(m,k-1,j,i-1));
     const Real j3a = 0.25*(jn3(m,k,j,i) + jn3(m,k,j+1,i)
@@ -258,12 +268,15 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
 
   par_for("res_cs_e3", DevExeSpace(), 0,nmb1, ks,ke, js,je+1, is,ie+1,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    if (rsh_ && ((j == js && msz_.d_view(m).x2min <= -1.0 + 1.0e-12) ||
+                 (j == je+1 && msz_.d_view(m).x2max >= 1.0 - 1.0e-12))) return;
     const Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j-1,i)
                         + eta_b_(m,k,j,i-1) + eta_b_(m,k,j-1,i-1));
     const Real j2a = 0.25*(jn2(m,k,j,i) + jn2(m,k+1,j,i)
                          + jn2(m,k,j-1,i) + jn2(m,k+1,j-1,i));
     e3(m,k,j,i) += et*(jn3(m,k,j,i) + cxi(m,k,j)*j2a)/sxi(m,k,j);
   });
+  if (rsh_) {pmy_pack->pmhd->CsSeamResist(b0, eta_b, efld);}
 
   return;
 }

@@ -988,6 +988,7 @@ MHD::~MHD() {
   if (pseamfs != nullptr) {delete pseamfs;}
   if (pusown != nullptr) {delete pusown;}
   if (pusnbr != nullptr) {delete pusnbr;}
+  CsSeamRelease();
   if (pvisc != nullptr) {delete pvisc;}
   if (presist!= nullptr) {delete presist;}
   if (pcond != nullptr) {delete pcond;}
