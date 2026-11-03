@@ -84,6 +84,28 @@ namespace mhd {
 // uses compare |rho sd sdm - Bx^2| ~ rho c_f^2, a different and unrelated scale.
 
 //----------------------------------------------------------------------------------------
+//! \fn Real LhlldAlfRotPsi
+//! \brief alfmach-1102 <mhd>/lhlld_alfmach_rot: weight psi_A in [0,1] of the Alfven-fan
+//! dissipation, psi_A = max(psi_min, chi_A (2 - chi_A)), chi_A = min(1, |u|max/c_ax*)
+//! floored by the odd-even sensor on the two transverse momenta.  Shared by LHLLD (face
+//! fluxes) and UctFaceStore (emf_scheme = uct_hlld corner EMF), so both see one psi_A.
+
+KOKKOS_INLINE_FUNCTION
+Real LhlldAlfRotPsi(const DvceArray5D<Real> &w0, const int m, const int k, const int j,
+                    const int i, const int ivx, const int ivy, const int ivz,
+                    const Real usqmax, const Real caxs, const Real cb_sensor,
+                    const bool cb_cont, const Real psi_min) {
+  Real chia = fmin(1.0, sqrt(usqmax)/caxs);
+  if (cb_sensor > 0.0) {
+    chia = fmax(chia, CBSensorChiFloor(w0, m, k, j, i, ivx, chia, cb_sensor, cb_cont,
+                                       ivy));
+    chia = fmax(chia, CBSensorChiFloor(w0, m, k, j, i, ivx, chia, cb_sensor, cb_cont,
+                                       ivz));
+  }
+  return fmax(psi_min, chia*(2.0 - chia));
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void LHLLD
 //! \brief The low-dissipation HLLD Riemann solver for MHD
 
@@ -573,14 +595,8 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       if (alf_rot && rot_exist && (spd[0] < 0.0) && (spd[4] > 0.0) &&
           (spd[1] < 0.0) && (spd[3] > 0.0)) {
         const Real caxs = fabs(bxi)*fmax(1.0/sqrtdl, 1.0/sqrtdr);
-        Real chia = fmin(1.0, sqrt(fmax(usql, usqr))/caxs);
-        if (cb_sensor > 0.0) {
-          chia = fmax(chia, CBSensorChiFloor(w0, m, k, j, i, ivx, chia, cb_sensor,
-                                             cb_cont, ivy));
-          chia = fmax(chia, CBSensorChiFloor(w0, m, k, j, i, ivx, chia, cb_sensor,
-                                             cb_cont, ivz));
-        }
-        const Real psia = fmax(alf_rot_min, chia*(2.0 - chia));
+        const Real psia = LhlldAlfRotPsi(w0, m, k, j, i, ivx, ivy, ivz, fmax(usql, usqr),
+                                         caxs, cb_sensor, cb_cont, alf_rot_min);
         const Real wgt = 1.0 - psia;
         if (wgt > 0.0) {
           const Real dmy = -wgt*(flxi.my - 0.5*((fl.my + ulst.my) + (fr.my + urst.my)));

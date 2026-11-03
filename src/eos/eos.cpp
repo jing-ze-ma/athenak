@@ -242,6 +242,12 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }
+      if (pin->GetOrAddString(bk, "rsolver", "none").compare("lhlld") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/" << key << " needs <mhd>/rsolver = lhlld"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       if (key.compare("lhlld_alfmach") == 0) {
         eos_data.alfmach = pin->GetBoolean(bk, key);
       } else if (key.compare("lhlld_alfmach_rot") == 0) {
