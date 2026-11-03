@@ -271,7 +271,9 @@ class Hydro {
   bool SplitBvalFastOK();
   void SplitBvalSnap(Driver *pdrive, int stage);
   // ckbval-1102 <hydro>/split_c2p_once: skip the two ConToPrimSplit tasks when the
-  // operator-split source is user_split_once (RTOpSplitBvals converts already)
+  // operator-split source is user_split_once (RTOpSplitBvals converts already).
+  // FRESH-start default true (prod1103; recipe::NewDefaults, hydro.cpp); a restart whose
+  // input lacks the key keeps false.
   bool scp_once = false;
   bool SplitC2POnce() const;
   // ckbval-1102 <hydro>/c2p_idempotent: a ConToPrimSplit conversion of a state that is

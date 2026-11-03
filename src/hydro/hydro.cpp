@@ -218,6 +218,22 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // resamples, which is all the check below covers.
   sbf_on = pin->DoesParameterExist("hydro","split_bval_fast") ?
            pin->GetBoolean("hydro","split_bval_fast") : true;
+  // prod1103 default (USER 11-02/11-03): split_c2p_once = true on a FRESH start
+  // (recipe::NewDefaults; ckbval_1102: gates a/c/d bitwise where they must be, seed-noise
+  // gate b: the change is at the round-off seed-spread level, worst bin 1.26x the 1e-14
+  // and 1.61x the 1e-12 member spread; -11 % hydro ms/cycle).  The value is recorded
+  // (GetOrAdd); a restart whose input lacks the key keeps false (bitwise); an explicit key
+  // wins.  With it on, c2p_idempotent is a no-op (bitwise, ckbval_1102 gates_idem).
+  if (!pin->DoesParameterExist("hydro","split_c2p_once")) {
+    if (recipe::NewDefaults(pin)) {
+      pin->GetOrAddBoolean("hydro","split_c2p_once",true);
+      recipe::Log("<hydro>/split_c2p_once = true (default on a fresh start)");
+    } else {
+      recipe::Log("<hydro>/split_c2p_once = false (" + std::string(
+          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+          "restart input has no key") + ": the old default)");
+    }
+  }
   scp_once = pin->DoesParameterExist("hydro","split_c2p_once") ?
              pin->GetBoolean("hydro","split_c2p_once") : false;
   c2pi_on = pin->DoesParameterExist("hydro","c2p_idempotent") ?
