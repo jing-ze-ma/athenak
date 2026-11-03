@@ -248,7 +248,7 @@ struct EOS_Data {
   bool chi_full = false;
   // lowmach2-1102 <hydro>/lhllc_divdiss, <mhd>/lhlld_divdiss (default false = off,
   // bitwise; read only when named) and the TEST key <hydro|mhd>/lhllc|lhlld_divdiss_form
-  // (hp | raw | row; default hp): MULTI-DIMENSIONAL DIVERGENCE DISSIPATION
+  // (hpd | hp | raw | row; default hpd): MULTI-DIMENSIONAL DIVERGENCE DISSIPATION
   // (utils/divdiss.hpp).  The contact (total) pressure gets the extra term
   //   dp* = -(1 - phi) [m_L m_R/(m_L + m_R)] J/rhobar,     m_K = rho_K |S_K - u_K|,
   // with J an undivided face measure of the divergence of the MASS flux rho u, so that
@@ -257,7 +257,7 @@ struct EOS_Data {
   // only (Barsukow 2021 arXiv:2103.02621, 2023 arXiv:2306.02847).  It is linear in the
   // state (no switch, no parameter) and zero at phi = 1.  The energy flux carries the
   // matching dp* S_M (the contact pressure work).  divdiss = form code: 1 hp, 2 raw,
-  // 3 row (see divdiss.hpp); 0 = off.
+  // 3 row, 4 hpd (see divdiss.hpp); 0 = off.
   int divdiss = 0;
 
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic

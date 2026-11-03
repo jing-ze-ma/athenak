@@ -26,7 +26,7 @@
 //! J = an undivided (x dx_n) face divergence of rho u built from the cell-centred w0.
 //! J/rhobar replaces (u_R - u_L), so on a pure normal checkerboard the face gets
 //! exactly the plain HLLC/HLLD dissipation.  Linear in the state, no switch, no
-//! parameter; zero at phi = 1.  Three forms (key <..>_divdiss_form):
+//! parameter; zero at phi = 1.  Four forms (key <..>_divdiss_form; default hpd):
 //!
 //!  raw (2)  Barsukow's corner divergence: J = dx_n div_face(rho u) with the normal
 //!           difference averaged over the transverse neighbours with weights
@@ -45,6 +45,15 @@
 //!           sound wave keeps its order).  Same kernel mode u = (-1)^(i+j) as raw.
 //!  row (3)  hp without the transverse smoothing (face row only): damps every 2dx
 //!           compressive mode including u = (-1)^(i+j); purely 1-D.
+//!
+//!  hpd (4) the normal-direction high-pass of the raw DIVERGENCE (not of the flux):
+//!           J = (2 J_raw(f) - J_raw(f-1) - J_raw(f+1))/4 with f-1, f+1 the neighbouring
+//!           faces along the normal.  Vanishes wherever the corner divergence does
+//!           (discretely incompressible flow, at any smoothness: kinks in the flux of a
+//!           solenoidal field cancel between the normal and transverse parts, which the
+//!           flux high-pass hp cannot see), O(dx^3) on smooth compressive flow (sound keeps
+//!           its order), and = J_raw for a normal checkerboard.  Kernel: that of raw
+//!           plus the linear-in-x divergence fields.
 //!
 //! Cartesian prototype: on curvilinear grids w0(ivx) is the coordinate component and
 //! raw would need the metric (refused there by the caller's mesh check: TODO).
@@ -66,9 +75,9 @@ Real DivDissQ(const DvceArray5D<Real> &w0, const int m, const int var, int p0, i
 //! J (units of rho*u) at face (k,j,i) of normal ivx; the face sits between cells
 //! (normal index) -1 and 0.  act2/act3: x2/x3 active; dx[3] the cell widths.
 KOKKOS_INLINE_FUNCTION
-Real DivDissJ(const DvceArray5D<Real> &w0, const int m, const int k, const int j,
-              const int i, const int ivx, const int form, const bool act2,
-              const bool act3, const Real dx1, const Real dx2, const Real dx3) {
+Real DivDissJ0(const DvceArray5D<Real> &w0, const int m, const int k, const int j,
+               const int i, const int ivx, const int form, const bool act2,
+               const bool act3, const Real dx1, const Real dx2, const Real dx3) {
   const int dn = ivx - IVX;
   const int t1 = (dn + 1) % 3, t2 = (dn + 2) % 3;
   const bool act[3] = {true, act2, act3};
@@ -120,6 +129,20 @@ Real DivDissJ(const DvceArray5D<Real> &w0, const int m, const int k, const int j
     jsum += (dxa[dn]/dxa[td])*tsum;
   }
   return jsum;
+}
+
+
+//! dispatcher: forms 1-3 directly, 4 (hpd) = normal second difference of raw (form 2)
+KOKKOS_INLINE_FUNCTION
+Real DivDissJ(const DvceArray5D<Real> &w0, const int m, const int k, const int j,
+              const int i, const int ivx, const int form, const bool act2,
+              const bool act3, const Real dx1, const Real dx2, const Real dx3) {
+  if (form != 4) return DivDissJ0(w0, m, k, j, i, ivx, form, act2, act3, dx1, dx2, dx3);
+  const int di = (ivx == IVX) ? 1 : 0, dj = (ivx == IVY) ? 1 : 0, dk = (ivx == IVZ) ? 1 : 0;
+  const Real jc = DivDissJ0(w0, m, k, j, i, ivx, 2, act2, act3, dx1, dx2, dx3);
+  const Real jm = DivDissJ0(w0, m, k-dk, j-dj, i-di, ivx, 2, act2, act3, dx1, dx2, dx3);
+  const Real jp = DivDissJ0(w0, m, k+dk, j+dj, i+di, ivx, 2, act2, act3, dx1, dx2, dx3);
+  return 0.25*(2.0*jc - jm - jp);
 }
 
 #endif // UTILS_DIVDISS_HPP_
