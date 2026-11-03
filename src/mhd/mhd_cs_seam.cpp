@@ -45,6 +45,14 @@
 //!     vertex/interior L1(B) 3.0 / 6.7 / 12.8 at nx2 = 16/32/64; one-sided 2.1/2.7/3.1.)
 //!     Four-block seam edges (block corners on a seam that are not a cube vertex) keep
 //!     the per-block value; the edge-EMF sum/average reconciles them as before.
+//! shared_g (USER 11-02 option 1): every seam edge (along-seam and radial) is the MEAN of
+//!     the two charts' 4-face evaluations, chart P = P's own first-row faces on its side
+//!     and P's resampled ghost-row faces (its own view) on the other side, chart Q the
+//!     same from Q; the seam faces carried with the half slopes of the chart's own cell
+//!     and its ghost cell.  Both panels hold all four records (own + ghost-row view, sent
+//!     both), so both compute the same mean: single-valued by construction, with the
+//!     per-chart (kink-free, resampled) inputs that measured better than the neighbour's
+//!     own radial-face B.r (cs_test iprob 9 per-step).  Cube vertices: the 3-face rule.
 //!     The existing seam/vertex EMF exchange + averaging stays as a guard; with shared
 //!     inputs it is a no-op to round-off (<mhd>/cs_seam_emf_avg = false skips it).
 
@@ -293,9 +301,11 @@ void MHD::CsSeamInit(ParameterInput *pin) {
       cs_seam_mhd = 1;
     } else if (v == "shared") {
       cs_seam_mhd = 2;
+    } else if (v == "shared_g") {
+      cs_seam_mhd = 3;
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<mhd>/cs_seam_mhd = '" << v << "' (none | faces | shared)"
+                << std::endl << "<mhd>/cs_seam_mhd = '" << v << "' (none | faces | shared | shared_g)"
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -316,7 +326,7 @@ void MHD::CsSeamInit(ParameterInput *pin) {
               << "Newtonian MHD, no fofc" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (cs_seam_mhd == 2 && !(emf_uct || emf_uct_hlld)) {
+  if (cs_seam_mhd >= 2 && !(emf_uct || emf_uct_hlld)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<mhd>/cs_seam_mhd = shared needs <mhd>/emf_scheme = uct or uct_hlld "
               << "(use faces with GS07)" << std::endl;
@@ -335,19 +345,22 @@ void MHD::CsSeamInit(ParameterInput *pin) {
   pbval_fs->InitializeBuffers(cs_seam_nfs);
   pseamfs = new DvceFaceFld5D<Real>("cs_seamfs_mhd", nmb, cs_seam_nfs, n3, n2, n1);
   Kokkos::realloc(pseamfs->x1f, nmb, cs_seam_nfs, 1, 1, 1);
-  if (cs_seam_mhd == 2) {
+  if (cs_seam_mhd >= 2) {
+    const int nu = kNU*((cs_seam_mhd == 3) ? 2 : 1);
     pbval_us = new MeshBoundaryValuesCC(pp, pin, false);
     pbval_us->seam_raw = true;
     pbval_us->seam_xform_off = true;
-    pbval_us->InitializeBuffers(kNU);
-    pusown = new DvceFaceFld5D<Real>("cs_uctseam_own", nmb, kNU, n3, n2, n1);
-    pusnbr = new DvceFaceFld5D<Real>("cs_uctseam_nbr", nmb, kNU, n3, n2, n1);
-    Kokkos::realloc(pusown->x1f, nmb, kNU, 1, 1, 1);
-    Kokkos::realloc(pusnbr->x1f, nmb, kNU, 1, 1, 1);
+    pbval_us->InitializeBuffers(nu);
+    pusown = new DvceFaceFld5D<Real>("cs_uctseam_own", nmb, nu, n3, n2, n1);
+    pusnbr = new DvceFaceFld5D<Real>("cs_uctseam_nbr", nmb, nu, n3, n2, n1);
+    Kokkos::realloc(pusown->x1f, nmb, nu, 1, 1, 1);
+    Kokkos::realloc(pusnbr->x1f, nmb, nu, 1, 1, 1);
   }
   if (global_variable::my_rank == 0) {
     std::cout << "MHD: cubed-sphere seam = "
-              << ((cs_seam_mhd == 2) ? "shared (faces + seam-edge/vertex UCT EMF)"
+              << ((cs_seam_mhd == 3) ? "shared_g (faces + seam-edge UCT EMF as the mean of the "
+                                        "two charts' resampled evaluations + vertex UCT EMF)"
+                  : (cs_seam_mhd == 2) ? "shared (faces + seam-edge/vertex UCT EMF)"
                                      : "faces (shared seam Riemann states)")
               << (cs_seam_noavg ? ", edge-EMF reconciliation OFF (diagnostic)" : "")
               << std::endl;
@@ -405,6 +418,7 @@ void MHD::UctSeamPackets() {
   d.ks = indcs.ks; d.ke = indcs.ke; d.nx2 = indcs.nx2; d.nx3 = indcs.nx3;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int nc = indcs.nx2;   // == nx3 on the cubed sphere
+  const int nset_ = (cs_seam_mhd == 3) ? 2 : 1;
   par_for("uct_seam_pack", DevExeSpace(), 0, nmb1, 0, 3, 0, nc-1, d.is, d.ie,
   KOKKOS_LAMBDA(const int m, const int sd, const int c, const int i) {
     if (!OnPanelEdge(d, m, sd)) return;
@@ -418,115 +432,124 @@ void MHD::UctSeamPackets() {
     auto FrC = [&](const int a, const int r, Frame &f) {
       MakeFrame(p, XiC(d, m, J(a,r)), EtaC(d, m, K(a,r)), f);
     };
+    int og = 0;   // record offset of the row set being written
     auto out = [&](const int v) -> Real & {
-      return x2t ? d.o2(m, v, cb + c, lo ? d.js : d.je+1, i)
-                 : d.o3(m, v, lo ? d.ks : d.ke+1, cb + c, i);
+      return x2t ? d.o2(m, v + og, cb + c, lo ? d.js : d.je+1, i)
+                   : d.o3(m, v + og, lo ? d.ks : d.ke+1, cb + c, i);
     };
-    // cross-seam half slope (toward the seam) of the Cartesian velocity of cell (a, r0, ii)
-    auto Hx = [&](const int a, const int ii, Real h[3]) {
-      Frame fm, f0, fp;
-      FrC(a, r0-1, fm); FrC(a, r0, f0); FrC(a, r0+1, fp);
-      Real vm[3], v0[3], vp[3];
-      CellV(d, fm, m, K(a,r0-1), J(a,r0-1), ii, vm);
-      CellV(d, f0, m, K(a,r0), J(a,r0), ii, v0);
-      CellV(d, fp, m, K(a,r0+1), J(a,r0+1), ii, vp);
-      for (int q=0; q<3; ++q) h[q] = Half(vm[q], v0[q], vp[q], !lo);
-    };
-    // field value of a 4-D face array carried across the rows to the seam
-    auto Bx = [&](const DvceArray4D<Real> &b, const int kf, const int jf, const int ii) {
-      if (x2t) return Edge(b(m,kf,jf-1,ii), b(m,kf,jf,ii), b(m,kf,jf+1,ii), !lo);
-      return Edge(b(m,kf-1,jf,ii), b(m,kf,jf,ii), b(m,kf+1,jf,ii), !lo);
-    };
-    Frame f0;
-    FrC(c, r0, f0);
-    const int k0 = K(c, r0), j0 = J(c, r0);
-    // A / B: radial face(s)
-    for (int s=0; s<2; ++s) {
-      if (s == 1 && i != d.ie) break;
-      const int ifc = (s == 0) ? i : d.ie+1, o = (s == 0) ? kA : kB;
-      out(o+0) = d.u1(m,0,k0,j0,ifc);
-      out(o+1) = d.u1(m,1,k0,j0,ifc);
-      out(o+2) = d.u1(m,2,k0,j0,ifc);
-      out(o+3) = Bx(d.b1, k0, j0, ifc);
-      Real v[3], h0[3], h1[3];
-      FaceV(d.u1, f0, 1, m, k0, j0, ifc, v);
-      Hx(c, ifc-1, h0); Hx(c, ifc, h1);
-      for (int q=0; q<3; ++q) out(o+4+q) = v[q] + 0.5*(h0[q] + h1[q]);
-      Real va[3], vb[3], vc[3], vd[3];
-      CellV(d, f0, m, k0, j0, ifc-2, va); CellV(d, f0, m, k0, j0, ifc-1, vb);
-      CellV(d, f0, m, k0, j0, ifc, vc);   CellV(d, f0, m, k0, j0, ifc+1, vd);
-      for (int q=0; q<3; ++q) {
-        out(o+7+q) = Half(va[q], vb[q], vc[q], true);
-        out(o+10+q) = Half(vb[q], vc[q], vd[q], false);
+    // ucthshare-1102 shared_g: set 0 = this panel's own first row (toward the seam), set
+    // 1 = its GHOST row, i.e. its own resampled view of the neighbour's first row (toward
+    // the seam from the other side), at offset kNU
+    for (int gs=0; gs<nset_; ++gs) {
+    og = gs*kNU;
+    const int rr = (gs == 0) ? r0 : (lo ? r0-1 : r0+1);
+    const bool tu = (gs == 0) ? !lo : lo;   // carry to the upper side of the row
+      // cross-seam half slope (toward the seam) of the Cartesian velocity of cell (a, rr, ii)
+      auto Hx = [&](const int a, const int ii, Real h[3]) {
+        Frame fm, f0, fp;
+        FrC(a, rr-1, fm); FrC(a, rr, f0); FrC(a, rr+1, fp);
+        Real vm[3], v0[3], vp[3];
+        CellV(d, fm, m, K(a,rr-1), J(a,rr-1), ii, vm);
+        CellV(d, f0, m, K(a,rr), J(a,rr), ii, v0);
+        CellV(d, fp, m, K(a,rr+1), J(a,rr+1), ii, vp);
+        for (int q=0; q<3; ++q) h[q] = Half(vm[q], v0[q], vp[q], tu);
+      };
+      // field value of a 4-D face array carried across the rows to the seam
+      auto Bx = [&](const DvceArray4D<Real> &b, const int kf, const int jf, const int ii) {
+        if (x2t) return Edge(b(m,kf,jf-1,ii), b(m,kf,jf,ii), b(m,kf,jf+1,ii), tu);
+        return Edge(b(m,kf-1,jf,ii), b(m,kf,jf,ii), b(m,kf+1,jf,ii), tu);
+      };
+      Frame f0;
+      FrC(c, rr, f0);
+      const int k0 = K(c, rr), j0 = J(c, rr);
+      // A / B: radial face(s)
+      for (int s=0; s<2; ++s) {
+        if (s == 1 && i != d.ie) break;
+        const int ifc = (s == 0) ? i : d.ie+1, o = (s == 0) ? kA : kB;
+        out(o+0) = d.u1(m,0,k0,j0,ifc);
+        out(o+1) = d.u1(m,1,k0,j0,ifc);
+        out(o+2) = d.u1(m,2,k0,j0,ifc);
+        out(o+3) = Bx(d.b1, k0, j0, ifc);
+        Real v[3], h0[3], h1[3];
+        FaceV(d.u1, f0, 1, m, k0, j0, ifc, v);
+        Hx(c, ifc-1, h0); Hx(c, ifc, h1);
+        for (int q=0; q<3; ++q) out(o+4+q) = v[q] + 0.5*(h0[q] + h1[q]);
+        Real va[3], vb[3], vc[3], vd[3];
+        CellV(d, f0, m, k0, j0, ifc-2, va); CellV(d, f0, m, k0, j0, ifc-1, vb);
+        CellV(d, f0, m, k0, j0, ifc, vc);   CellV(d, f0, m, k0, j0, ifc+1, vd);
+        for (int q=0; q<3; ++q) {
+          out(o+7+q) = Half(va[q], vb[q], vc[q], true);
+          out(o+10+q) = Half(vb[q], vc[q], vd[q], false);
+        }
+        out(o+13) = x2t ? d.e31(m,k0,j0,ifc) : d.e21(m,k0,j0,ifc);
       }
-      out(o+13) = x2t ? d.e31(m,k0,j0,ifc) : d.e21(m,k0,j0,ifc);
-    }
-    // C: the two along-seam faces of cell c (x2 seam: x3 faces; x3 seam: x2 faces)
-    const bool vlo = OnPanelEdge(d, m, x2t ? 2 : 0) && (c == 0);
-    const bool vhi = OnPanelEdge(d, m, x2t ? 3 : 1) && (c == nc-1);
-    for (int s=0; s<2; ++s) {
-      const int a = c + s;                 // face index along the seam (lower face of a)
-      const bool vtx = (s == 0) ? vlo : vhi;
-      const int o = (s == 0) ? kCL : kCU;
-      const int kf = x2t ? (cb + a) : r0, jf = x2t ? r0 : (cb + a);
-      const DvceArray5D<Real> &u = x2t ? d.u3 : d.u2;
-      const DvceArray4D<Real> &b = x2t ? d.b3 : d.b2;
-      Frame ff;
-      if (x2t) {
-        MakeFrame(p, XiC(d, m, jf), EtaF(d, m, kf), ff);
+      // C: the two along-seam faces of cell c (x2 seam: x3 faces; x3 seam: x2 faces)
+      const bool vlo = OnPanelEdge(d, m, x2t ? 2 : 0) && (c == 0);
+      const bool vhi = OnPanelEdge(d, m, x2t ? 3 : 1) && (c == nc-1);
+      for (int s=0; s<2; ++s) {
+        const int a = c + s;                 // face index along the seam (lower face of a)
+        const bool vtx = (s == 0) ? vlo : vhi;
+        const int o = (s == 0) ? kCL : kCU;
+        const int kf = x2t ? (cb + a) : rr, jf = x2t ? rr : (cb + a);
+        const DvceArray5D<Real> &u = x2t ? d.u3 : d.u2;
+        const DvceArray4D<Real> &b = x2t ? d.b3 : d.b2;
+        Frame ff;
+        if (x2t) {
+          MakeFrame(p, XiC(d, m, jf), EtaF(d, m, kf), ff);
+        } else {
+          MakeFrame(p, XiF(d, m, jf), EtaC(d, m, kf), ff);
+        }
+        out(o+0) = u(m,0,kf,jf,i);
+        out(o+1) = u(m,1,kf,jf,i);
+        out(o+2) = u(m,2,kf,jf,i);
+        if (!vtx) {
+          out(o+3) = Bx(b, kf, jf, i);
+        } else {   // one-sided along the shared seam faces of the other seam
+          const Real b0 = b(m,kf,jf,i);
+          const Real bi = x2t ? b(m,kf,jf + (tu ? -1 : 1),i) : b(m,kf + (tu ? -1 : 1),jf,i);
+          out(o+3) = b0 + 0.5*(b0 - bi);
+        }
+        const Real *nn = x2t ? ff.neta : ff.nxi;
+        for (int q=0; q<3; ++q) out(o+4+q) = nn[q];
+        Real v[3];
+        FaceV(u, ff, x2t ? 3 : 2, m, kf, jf, i, v);
+        if (!vtx) {
+          Real h0[3], h1[3];
+          Hx(a-1, i, h0); Hx(a, i, h1);
+          for (int q=0; q<3; ++q) v[q] += 0.5*(h0[q] + h1[q]);
+        }
+        for (int q=0; q<3; ++q) out(o+7+q) = v[q];
+      }
+      // H: along-seam half slopes of cell c (zero for a cube-vertex corner cell)
+      if ((vlo || vhi) && nc > 1) {   // one-sided from the in-panel neighbour
+        const int cn = vlo ? c+1 : c-1;
+        Frame fn;
+        FrC(cn, rr, fn);
+        Real v0[3], vn[3];
+        CellV(d, f0, m, k0, j0, i, v0);
+        CellV(d, fn, m, K(cn,rr), J(cn,rr), i, vn);
+        for (int q=0; q<3; ++q) {
+          const Real sl = vlo ? (vn[q] - v0[q]) : (v0[q] - vn[q]);   // per cell, increasing
+          out(kHL+q) = -0.5*sl;
+          out(kHU+q) = 0.5*sl;
+        }
+      } else if (vlo || vhi) {
+        for (int q=0; q<3; ++q) {out(kHL+q) = 0.0; out(kHU+q) = 0.0;}
       } else {
-        MakeFrame(p, XiF(d, m, jf), EtaC(d, m, kf), ff);
-      }
-      out(o+0) = u(m,0,kf,jf,i);
-      out(o+1) = u(m,1,kf,jf,i);
-      out(o+2) = u(m,2,kf,jf,i);
-      if (!vtx) {
-        out(o+3) = Bx(b, kf, jf, i);
-      } else {   // one-sided along the shared seam faces of the other seam
-        const Real b0 = b(m,kf,jf,i);
-        const Real bi = x2t ? b(m,kf,jf + (lo ? 1 : -1),i) : b(m,kf + (lo ? 1 : -1),jf,i);
-        out(o+3) = b0 + 0.5*(b0 - bi);
-      }
-      const Real *nn = x2t ? ff.neta : ff.nxi;
-      for (int q=0; q<3; ++q) out(o+4+q) = nn[q];
-      Real v[3];
-      FaceV(u, ff, x2t ? 3 : 2, m, kf, jf, i, v);
-      if (!vtx) {
-        Real h0[3], h1[3];
-        Hx(a-1, i, h0); Hx(a, i, h1);
-        for (int q=0; q<3; ++q) v[q] += 0.5*(h0[q] + h1[q]);
-      }
-      for (int q=0; q<3; ++q) out(o+7+q) = v[q];
-    }
-    // H: along-seam half slopes of cell c (zero for a cube-vertex corner cell)
-    if ((vlo || vhi) && nc > 1) {   // one-sided from the in-panel neighbour
-      const int cn = vlo ? c+1 : c-1;
-      Frame fn;
-      FrC(cn, r0, fn);
-      Real v0[3], vn[3];
-      CellV(d, f0, m, k0, j0, i, v0);
-      CellV(d, fn, m, K(cn,r0), J(cn,r0), i, vn);
-      for (int q=0; q<3; ++q) {
-        const Real sl = vlo ? (vn[q] - v0[q]) : (v0[q] - vn[q]);   // per cell, increasing
-        out(kHL+q) = -0.5*sl;
-        out(kHU+q) = 0.5*sl;
-      }
-    } else if (vlo || vhi) {
-      for (int q=0; q<3; ++q) {out(kHL+q) = 0.0; out(kHU+q) = 0.0;}
-    } else {
-      Frame fm, fp;
-      FrC(c-1, r0, fm); FrC(c+1, r0, fp);
-      Real vm[3], v0[3], vp[3];
-      CellV(d, fm, m, K(c-1,r0), J(c-1,r0), i, vm);
-      CellV(d, f0, m, k0, j0, i, v0);
-      CellV(d, fp, m, K(c+1,r0), J(c+1,r0), i, vp);
-      for (int q=0; q<3; ++q) {
-        out(kHL+q) = Half(vm[q], v0[q], vp[q], false);
-        out(kHU+q) = Half(vm[q], v0[q], vp[q], true);
+        Frame fm, fp;
+        FrC(c-1, rr, fm); FrC(c+1, rr, fp);
+        Real vm[3], v0[3], vp[3];
+        CellV(d, fm, m, K(c-1,rr), J(c-1,rr), i, vm);
+        CellV(d, f0, m, k0, j0, i, v0);
+        CellV(d, fp, m, K(c+1,rr), J(c+1,rr), i, vp);
+        for (int q=0; q<3; ++q) {
+          out(kHL+q) = Half(vm[q], v0[q], vp[q], false);
+          out(kHU+q) = Half(vm[q], v0[q], vp[q], true);
+        }
       }
     }
   });
-  pbval_us->InitFluxSeamRecv(kNU);
+  pbval_us->InitFluxSeamRecv(kNU*((cs_seam_mhd == 3) ? 2 : 1));
   pbval_us->PackAndSendFluxSeamCC(*pusown);
   while (pbval_us->RecvAndUnpackFluxSeamCC(*pusnbr) != TaskStatus::complete) {}
   pbval_us->ClearFluxSend();
@@ -559,6 +582,7 @@ void MHD::UctSeamEdges() {
   const bool wsf_ = wall_closed_ix1 && wall_stress_free;
   const BoundaryFlag rflag_ = BoundaryFlag::reflect;
   const BoundaryFlag uflag_ = BoundaryFlag::user;
+  const bool gmode = (cs_seam_mhd == 3);
 
   // (2a) along-seam edges (x2 seam: e3, x3 seam: e2), radial faces is..ie+1
   par_for("uct_seam_e_t", DevExeSpace(), 0, nmb1, 0, 3, 0, nc-1, d.is, d.ie+1,
@@ -593,38 +617,58 @@ void MHD::UctSeamEdges() {
       const Real *ns = x2t ? fe.nxi : fe.neta;
       const DvceArray5D<Real> &u = x2t ? d.u2 : d.u3;
       const DvceArray4D<Real> &b = x2t ? d.b2 : d.b3;
-      UF f[4];
-      // seam faces at radial cells i-1 (0) and i (2)
-      for (int s=0; s<2; ++s) {
-        const int ii = (s == 0) ? i-1 : i;
-        UF &g = f[2*s];
-        for (int q=0; q<3; ++q) g.n[q] = ns[q];
-        g.a = u(m,0,kf,jf,ii); g.dl = u(m,1,kf,jf,ii); g.dr = u(m,2,kf,jf,ii);
-        g.bn = (s == 0) ? Edge(b(m,kf,jf,ii-1), b(m,kf,jf,ii), b(m,kf,jf,ii+1), true)
-                        : Edge(b(m,kf,jf,ii-1), b(m,kf,jf,ii), b(m,kf,jf,ii+1), false);
-        FaceV(u, fe, x2t ? 2 : 3, m, kf, jf, ii, g.v);
-        const int ho = (s == 0) ? ob+7 : ob+10;
-        for (int q=0; q<3; ++q) {
-          g.v[q] += 0.5*(P(d.o2, d.o3, ho+q) + P(d.n2, d.n3, ho+q));
+      // one 4-face evaluation: the E side (this panel's half of the edge) and the W side
+      // (the neighbour's) from records (nbr?, set offset); the seam faces' radial carries
+      // from the half slopes of the two cells sharing them, records h1 and h2
+      auto Eval = [&](const bool en, const int eo, const bool wn, const int wo,
+                      const bool h1n, const int h1o, const bool h2n, const int h2o) {
+        UF f[4];
+        // seam faces at radial cells i-1 (0) and i (2)
+        for (int s=0; s<2; ++s) {
+          const int ii = (s == 0) ? i-1 : i;
+          UF &g = f[2*s];
+          for (int q=0; q<3; ++q) g.n[q] = ns[q];
+          g.a = u(m,0,kf,jf,ii); g.dl = u(m,1,kf,jf,ii); g.dr = u(m,2,kf,jf,ii);
+          g.bn = (s == 0) ? Edge(b(m,kf,jf,ii-1), b(m,kf,jf,ii), b(m,kf,jf,ii+1), true)
+                          : Edge(b(m,kf,jf,ii-1), b(m,kf,jf,ii), b(m,kf,jf,ii+1), false);
+          FaceV(u, fe, x2t ? 2 : 3, m, kf, jf, ii, g.v);
+          const int ho = (s == 0) ? ob+7 : ob+10;
+          for (int q=0; q<3; ++q) {
+            g.v[q] += 0.5*((h1n ? P(d.n2, d.n3, h1o+ho+q) : P(d.o2, d.o3, h1o+ho+q)) +
+                           (h2n ? P(d.n2, d.n3, h2o+ho+q) : P(d.o2, d.o3, h2o+ho+q)));
+          }
         }
+        // radial faces: W side (1), E side (3)
+        for (int s=0; s<2; ++s) {
+          UF &g = f[1 + 2*s];
+          const bool nb = (s == 0) ? wn : en;
+          const int so = ((s == 0) ? wo : eo) + ob;
+          const DvceArray5D<Real> &a2 = nb ? d.n2 : d.o2;
+          const DvceArray5D<Real> &a3 = nb ? d.n3 : d.o3;
+          for (int q=0; q<3; ++q) g.n[q] = fe.r[q];
+          g.a = P(a2, a3, so); g.dl = P(a2, a3, so+1); g.dr = P(a2, a3, so+2);
+          g.bn = P(a2, a3, so+3);
+          for (int q=0; q<3; ++q) g.v[q] = P(a2, a3, so+4+q);
+        }
+        // cells: (0,1) nbr i-1, (1,2) nbr i, (2,3) own i, (3,0) own i-1
+        int oL[4], oR[4];
+        oL[0] = lo ? 1 : 3; oR[0] = lo ? 3 : 1;
+        oL[2] = lo ? 1 : 3; oR[2] = lo ? 3 : 1;
+        oL[1] = 0; oR[1] = 2;
+        oL[3] = 0; oR[3] = 2;
+        return EdgeEmfN(t, 4, f, oL, oR);
+      };
+      if (gmode) {
+        // shared_g: the mean of the two charts' evaluations, each with its OWN first row
+        // on its side and its own RESAMPLED view (ghost row) of the other side -- the
+        // averaged scheme's two estimates, formed from the same exchanged inputs on both
+        // panels, so the result is single-valued by construction
+        const Real ep = Eval(false, 0, false, kNU, false, 0, false, kNU);
+        const Real eq = Eval(true, kNU, true, 0, true, 0, true, kNU);
+        e = 0.5*(ep + eq);
+      } else {
+        e = Eval(false, 0, true, 0, false, 0, true, 0);
       }
-      // radial faces: neighbour (1), own (3)
-      for (int s=0; s<2; ++s) {
-        UF &g = f[1 + 2*s];
-        const DvceArray5D<Real> &a2 = (s == 0) ? d.n2 : d.o2;
-        const DvceArray5D<Real> &a3 = (s == 0) ? d.n3 : d.o3;
-        for (int q=0; q<3; ++q) g.n[q] = fe.r[q];
-        g.a = P(a2, a3, ob); g.dl = P(a2, a3, ob+1); g.dr = P(a2, a3, ob+2);
-        g.bn = P(a2, a3, ob+3);
-        for (int q=0; q<3; ++q) g.v[q] = P(a2, a3, ob+4+q);
-      }
-      // cells: (0,1) nbr i-1, (1,2) nbr i, (2,3) own i, (3,0) own i-1
-      int oL[4], oR[4];
-      oL[0] = lo ? 1 : 3; oR[0] = lo ? 3 : 1;
-      oL[2] = lo ? 1 : 3; oR[2] = lo ? 3 : 1;
-      oL[1] = 0; oR[1] = 2;
-      oL[3] = 0; oR[3] = 2;
-      e = EdgeEmfN(t, 4, f, oL, oR);
     }
     if (x2t) {e3(m,kf,jf,i) = e;} else {e2(m,kf,jf,i) = e;}
   });
@@ -662,57 +706,75 @@ void MHD::UctSeamEdges() {
     auto Bs = [&](const int cc) {   // seam-face field of cell cc
       return x2t ? b(m,cb+cc,jf,i) : b(m,kf,cb+cc,i);
     };
-    UF f[4];
-    // S1 = seam face of cell a-1 (0), S2 = of cell a (2)
-    for (int s=0; s<2; ++s) {
-      const int cc = (s == 0) ? a-1 : a;
-      UF &g = f[2*s];
-      Frame ff;
-      if (x2t) {
-        MakeFrame(p, XiF(d, m, jf), EtaC(d, m, SK(cc)), ff);
-      } else {
-        MakeFrame(p, XiC(d, m, SJ(cc)), EtaF(d, m, kf), ff);
+    // one 4-face evaluation (see (2a)); records (nbr?, set offset); a record from the
+    // neighbour is in ITS along-seam orientation (rev: lower <-> upper)
+    auto Eval = [&](const bool en, const int eo, const bool wn, const int wo,
+                    const bool h1n, const int h1o, const bool h2n, const int h2o) {
+      UF f[4];
+      // S1 = seam face of cell a-1 (0), S2 = of cell a (2)
+      for (int s=0; s<2; ++s) {
+        const int cc = (s == 0) ? a-1 : a;
+        UF &g = f[2*s];
+        Frame ff;
+        if (x2t) {
+          MakeFrame(p, XiF(d, m, jf), EtaC(d, m, SK(cc)), ff);
+        } else {
+          MakeFrame(p, XiC(d, m, SJ(cc)), EtaF(d, m, kf), ff);
+        }
+        const Real *ns = x2t ? ff.nxi : ff.neta;
+        for (int q=0; q<3; ++q) g.n[q] = ns[q];
+        g.a = u(m,0,SK(cc),SJ(cc),i); g.dl = u(m,1,SK(cc),SJ(cc),i);
+        g.dr = u(m,2,SK(cc),SJ(cc),i);
+        const bool corner = (cc == 0 && vlo) || (cc == nc-1 && vhi);
+        if (!corner) {
+          g.bn = Edge(Bs(cc-1), Bs(cc), Bs(cc+1), s == 0);
+        } else if (nc > 1) {
+          const Real sl = (cc == 0 && vlo) ? (Bs(cc+1) - Bs(cc)) : (Bs(cc) - Bs(cc-1));
+          g.bn = Bs(cc) + ((s == 0) ? 0.5 : -0.5)*sl;
+        } else {
+          g.bn = Bs(cc);
+        }
+        FaceV(u, ff, x2t ? 2 : 3, m, SK(cc), SJ(cc), i, g.v);
+        // toward the edge: the upper half of cell a-1, the lower half of cell a
+        const int ho = (s == 0) ? kHU : kHL, hn = ((s == 0) != rev) ? kHU : kHL;
+        for (int q=0; q<3; ++q) {
+          const Real x1 = h1n ? P(d.n2, d.n3, cc, h1o+hn+q) : P(d.o2, d.o3, cc, h1o+ho+q);
+          const Real x2 = h2n ? P(d.n2, d.n3, cc, h2o+hn+q) : P(d.o2, d.o3, cc, h2o+ho+q);
+          g.v[q] += 0.5*(x1 + x2);
+        }
       }
-      const Real *ns = x2t ? ff.nxi : ff.neta;
-      for (int q=0; q<3; ++q) g.n[q] = ns[q];
-      g.a = u(m,0,SK(cc),SJ(cc),i); g.dl = u(m,1,SK(cc),SJ(cc),i);
-      g.dr = u(m,2,SK(cc),SJ(cc),i);
-      const bool corner = (cc == 0 && vlo) || (cc == nc-1 && vhi);
-      if (!corner) {
-        g.bn = Edge(Bs(cc-1), Bs(cc), Bs(cc+1), s == 0);
-      } else if (nc > 1) {
-        const Real sl = (cc == 0 && vlo) ? (Bs(cc+1) - Bs(cc)) : (Bs(cc) - Bs(cc-1));
-        g.bn = Bs(cc) + ((s == 0) ? 0.5 : -0.5)*sl;
-      } else {
-        g.bn = Bs(cc);
+      // E side (3), W side (1): the along-seam face at a (the lower face of cell a)
+      for (int s=0; s<2; ++s) {
+        UF &g = f[(s == 0) ? 3 : 1];
+        const bool nb = (s == 0) ? en : wn;
+        const int so = (s == 0) ? eo : wo;
+        const DvceArray5D<Real> &a2 = nb ? d.n2 : d.o2;
+        const DvceArray5D<Real> &a3 = nb ? d.n3 : d.o3;
+        const int o = so + ((!nb || !rev) ? kCL : kCU);
+        g.a = P(a2, a3, a, o); g.dl = P(a2, a3, a, o+1); g.dr = P(a2, a3, a, o+2);
+        g.bn = P(a2, a3, a, o+3);
+        for (int q=0; q<3; ++q) {
+          g.n[q] = P(a2, a3, a, o+4+q);
+          g.v[q] = P(a2, a3, a, o+7+q);
+        }
       }
-      FaceV(u, ff, x2t ? 2 : 3, m, SK(cc), SJ(cc), i, g.v);
-      // toward the edge: the upper half of cell a-1, the lower half of cell a
-      const int ho = (s == 0) ? kHU : kHL, hn = ((s == 0) != rev) ? kHU : kHL;
-      for (int q=0; q<3; ++q) {
-        g.v[q] += 0.5*(P(d.o2, d.o3, cc, ho+q) + P(d.n2, d.n3, cc, hn+q));
-      }
+      // cells: (0,1) nbr a-1, (1,2) nbr a, (2,3) own a, (3,0) own a-1
+      int oL[4], oR[4];
+      oL[0] = lo ? 1 : 3; oR[0] = lo ? 3 : 1;
+      oL[2] = lo ? 1 : 3; oR[2] = lo ? 3 : 1;
+      if (Dot3(f[3].n, sp) > 0.0) {oL[3] = 0; oR[3] = 2;} else {oL[3] = 2; oR[3] = 0;}
+      if (Dot3(f[1].n, sp) > 0.0) {oL[1] = 0; oR[1] = 2;} else {oL[1] = 2; oR[1] = 0;}
+      return EdgeEmfN(t, 4, f, oL, oR);
+    };
+    Real e;
+    if (gmode) {   // shared_g: see (2a)
+      const Real ep = Eval(false, 0, false, kNU, false, 0, false, kNU);
+      const Real eq = Eval(true, kNU, true, 0, true, 0, true, kNU);
+      e = 0.5*(ep + eq);
+    } else {
+      e = Eval(false, 0, true, 0, false, 0, true, 0);
     }
-    // E = own along-seam face (3): the lower face of cell a; W = neighbour's (1)
-    for (int s=0; s<2; ++s) {
-      UF &g = f[(s == 0) ? 3 : 1];
-      const DvceArray5D<Real> &a2 = (s == 0) ? d.o2 : d.n2;
-      const DvceArray5D<Real> &a3 = (s == 0) ? d.o3 : d.n3;
-      const int o = (s == 0 || !rev) ? kCL : kCU;
-      g.a = P(a2, a3, a, o); g.dl = P(a2, a3, a, o+1); g.dr = P(a2, a3, a, o+2);
-      g.bn = P(a2, a3, a, o+3);
-      for (int q=0; q<3; ++q) {
-        g.n[q] = P(a2, a3, a, o+4+q);
-        g.v[q] = P(a2, a3, a, o+7+q);
-      }
-    }
-    // cells: (0,1) nbr a-1, (1,2) nbr a, (2,3) own a, (3,0) own a-1
-    int oL[4], oR[4];
-    oL[0] = lo ? 1 : 3; oR[0] = lo ? 3 : 1;
-    oL[2] = lo ? 1 : 3; oR[2] = lo ? 3 : 1;
-    oL[3] = 0; oR[3] = 2;
-    if (Dot3(f[1].n, sp) > 0.0) {oL[1] = 0; oR[1] = 2;} else {oL[1] = 2; oR[1] = 0;}
-    e1(m,kf,jf,i) = EdgeEmfN(t, 4, f, oL, oR);
+    e1(m,kf,jf,i) = e;
   });
 
   // (3) cube-vertex radial edges: the three seam faces at 120 deg

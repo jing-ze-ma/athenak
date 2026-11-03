@@ -257,7 +257,7 @@ class MHD {
   bool emf_uct = false;
   bool emf_uct_hlld = false;
   DvceArray5D<Real> uct1, uct2, uct3;
-  // ucthshare-1102 <mhd>/cs_seam_mhd = none (default) | faces | shared (read only when
+  // ucthshare-1102 <mhd>/cs_seam_mhd = none (default) | faces | shared | shared_g (read only when
   // named; cubed sphere).  faces (1): each panel-seam face is ONE Riemann problem -- the
   // ghost-side state is the neighbour panel's OWN PLM state (primitives, derived, bcc),
   // exchanged through pbval_fs (cs_seam_states.hpp, shared with the hydro), radial ghost
