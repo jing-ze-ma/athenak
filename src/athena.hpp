@@ -306,6 +306,13 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
 }
 
 //------------------------------
+// rkghalo-1103: largest 4D par_for body launched as a kernel argument (bytes; CUDA's
+// kernel-argument limit is 4096 incl. the policy); 0 = never (the old launch everywhere)
+#ifndef ATHENA_LW_LAUNCH_MAX
+#define ATHENA_LW_LAUNCH_MAX 3584
+#endif
+
+//------------------------------
 // 4D loop using Kokkos 1D Range
 template <typename ExeSpace, typename Function>
 inline void par_for(const std::string &name, ExeSpace exec_space,
@@ -320,8 +327,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
   const int nnkji = nn * nk * nj * ni;
   const int nkji  = nk * nj * ni;
   const int nji   = nj * ni;
-  Kokkos::parallel_for(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nnkji),
-  KOKKOS_LAMBDA(const int &idx) {
+  auto body = KOKKOS_LAMBDA(const int &idx) {
     // compute n,k,j,i indices of thread and call function
     int n = (idx)/nkji;
     int k = (idx - n*nkji)/nji;
@@ -331,7 +337,20 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
     k += kl;
     j += jl;
     function(n, k, j, i);
-  });
+  };
+  // rkghalo-1103: a body of 0.5-3.5 kB is launched as a kernel ARGUMENT (HintLightWeight)
+  // instead of through constant memory, whose reuse makes the host wait
+  // (cudaEventSynchronize) on the previous constant-memory kernel before every such
+  // launch, ~250 per r1m cycle.  Larger bodies keep the default (constant memory; a
+  // light-weight hint above the 4 kB argument limit would fall back to the slower
+  // global-memory path).  Only the launch mechanism changes: bitwise.
+  if constexpr (sizeof(body) <= ATHENA_LW_LAUNCH_MAX) {
+    Kokkos::parallel_for(name, Kokkos::Experimental::require(
+        Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nnkji),
+        Kokkos::Experimental::WorkItemProperty::HintLightWeight), body);
+  } else {
+    Kokkos::parallel_for(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nnkji), body);
+  }
 }
 
 //------------------------------
