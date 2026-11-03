@@ -507,6 +507,14 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
           const int us = static_cast<int>(sub.size());
           for (int c0=0; c0<npts; c0+=FC_PACK_CHUNK) {cs_r.push_back(us); cb_r.push_back(c0);}
           pv += npts;
+        } else if (g.mode == 2) {
+          // every other seam / pole segment: srcval at each sample itself, indexed by the
+          // sample (pnt = 0), so the sample pass never evaluates srcval
+          u.pvoff = static_cast<int>(pv); u.pnt = 0;
+          const int npts = u.nk*u.nj*u.ni;
+          const int us = static_cast<int>(sub.size());
+          for (int c0=0; c0<npts; c0+=FC_PACK_CHUNK) {cs_r.push_back(us); cb_r.push_back(c0);}
+          pv += npts;
         }
         const int us = static_cast<int>(sub.size());
         const int nkji = u.nk*u.nj*u.ni;
@@ -774,29 +782,21 @@ struct FCSeamPack {
     return (a.v == 1) ? oxi : oet;
   }
   KOKKOS_FORCEINLINE_FUNCTION
-  Real seamval(const SeamArgs &a, const int kk, const int jj, const int i) const {
+  Real seamval_pre(const SeamArgs &a, const int kk, const int jj, const int i) const {
     const int cs_seam = a.cs_seam;
-    if (cs_seam == 0) return srcval(a,kk,jj,i);
     const int m = a.m;
     const int sidx_ = (cs_seam == 2) ? 0 : 1;
     const int bs = static_cast<int>(cs_stbl(m,a.cs_skind,sidx_,kk,jj,0));
     const Real wm = cs_stbl(m,a.cs_skind,sidx_,kk,jj,1);
     const Real w0 = cs_stbl(m,a.cs_skind,sidx_,kk,jj,2);
     const Real wp = cs_stbl(m,a.cs_skind,sidx_,kk,jj,3);
-    Real sv0, sv1, sv2;
-    if (a.pvoff >= 0) {
-      // r1mspeed-1102: the same srcval values, evaluated once by the FCSeamPre pass
-      const int nn = (cs_seam == 2) ? jj : kk;
-      const int64_t base = a.pvoff + (static_cast<int64_t>(nn - a.pnlo)*a.pnt
-                                      + (bs - a.ptlo))*a.pni + (i - a.pil);
-      sv0 = pre(base);
-      sv1 = pre(base + a.pni);
-      sv2 = pre(base + 2*a.pni);
-    } else {
-      sv0 = (cs_seam == 2) ? srcval(a,bs,jj,i)   : srcval(a,kk,bs,i);
-      sv1 = (cs_seam == 2) ? srcval(a,bs+1,jj,i) : srcval(a,kk,bs+1,i);
-      sv2 = (cs_seam == 2) ? srcval(a,bs+2,jj,i) : srcval(a,kk,bs+2,i);
-    }
+    // r1mspeed-1102: the srcval values evaluated once by the FCSeamPre pass
+    const int nn = (cs_seam == 2) ? jj : kk;
+    const int64_t base = a.pvoff + (static_cast<int64_t>(nn - a.pnlo)*a.pnt
+                                    + (bs - a.ptlo))*a.pni + (i - a.pil);
+    const Real sv0 = pre(base);
+    const Real sv1 = pre(base + a.pni);
+    const Real sv2 = pre(base + 2*a.pni);
     const Real qq = wm*sv0 + w0*sv1 + wp*sv2;
     const Real dd1 = sv1 - sv0, dd2 = sv2 - sv1;
     const Real fpos = cs_stbl(m,a.cs_skind,sidx_,kk,jj,4);
@@ -842,7 +842,8 @@ struct FCSeamPack {
     int kk = s.ak*k + s.bk;
     int jj = s.aj*j + s.bj;
     const int ix = s.ndat*s.v + i-s.il + ni*(s.sj*(j-s.jl) + s.sk*(k-s.kl));
-    const Real val = seamval(a,kk,jj,i);
+    // r1mspeed-1102: never srcval here (FCSeamPre did it): small, stack-free kernel
+    const Real val = (u.pnt == 0) ? pre(u.pvoff + idx) : seamval_pre(a,kk,jj,i);
     if (s.local) {
       rbuf(s.dn).vars(s.dm, ix) = val;
     } else {
@@ -856,11 +857,22 @@ struct FCSeamPack {
     const int c = c0 + t/FC_PACK_CHUNK;
     const SubSegFC u = sub(cseg(c));
     const int idx = cbeg(c) + t%FC_PACK_CHUNK;
-    const int tni = u.pnt*u.pni;
-    if (idx >= u.pnn*tni) return;
     const PackSegFC s = seg(u.q);
     SeamArgs a;
     SetArgs(s, u, a);
+    if (u.pnt == 0) {   // sample-indexed: the pack's own (k,j,i) -> (kk,jj,i) map
+      if (idx >= u.nk*u.nj*u.ni) return;
+      const int uji = u.nj*u.ni;
+      int k = idx/uji;
+      int j = (idx - k*uji)/u.ni;
+      const int i = (idx - k*uji - j*u.ni) + u.il;
+      k += u.kl;
+      j += u.jl;
+      pre(u.pvoff + idx) = srcval(a, s.ak*k + s.bk, s.aj*j + s.bj, i);
+      return;
+    }
+    const int tni = u.pnt*u.pni;
+    if (idx >= u.pnn*tni) return;
     const int nq = idx/tni;
     const int tq = (idx - nq*tni)/u.pni;
     const int i = (idx - nq*tni - tq*u.pni) + u.pil;
