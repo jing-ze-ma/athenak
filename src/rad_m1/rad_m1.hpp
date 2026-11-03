@@ -2043,6 +2043,7 @@ class RadiationM1 {
   // the polar rows on the coarse phi groups of <mesh>/polar_ring_avg (hydro's table)
   bool rav_on = false;
   bool rav_lump = false, rav_dist = true;   // polar_ring_avg_lump / _dist (study keys)
+  bool rav_gz = false;   // ringsmooth-1102 polar_ring_avg_gz (RavFaces: intra-group Z_f)
   // floorheat-1029 <rad_m1>/polar_ring_avg_ke = rad: the gas kinetic-energy spread the
   // after-solve group average removes goes back to E (the coarse cell's kick), not to heat
   bool rav_ke_rad = false;
@@ -2951,6 +2952,42 @@ class RadiationM1 {
   // the group) when the direction set changes; vet_gd_overlap_mb caps their memory.
   int vgd_ovl_g = 0, vgd_ovl_mb = 1024;
   DvceArray4D<Real> vgd_trig;   // (m, k, j, 4): sin, cos of theta, phi (shell kernel)
+  // accsp-1102 (rad_m1_vetgd_sph2.inc): vet_gd on a STRETCHED theta and/or the FULL
+  // sphere (polar x2 faces).  vgd_sth: the (theta) positions of the band rows come from
+  // the node table vgd_thn (m, band row) = the face midpoint of the row in the EXTENDED
+  // chart (beyond a pole theta continues to -theta / 2 pi - theta, i.e. the point
+  // (theta, phi + pi)); the upwind fractional row is linear between the two nodes that
+  // bracket it.  false = the uniform index formula (bitwise as before).  vgd_pol: the
+  // full sphere: the halo slots beyond a pole take the pole partner (lx2, lx3 + nb3/2)
+  // with the rows REVERSED (vgd_hpol(8 m + o) = 1 north, 2 south; on-rank partners are
+  // read in-kernel with the reversed row), an upwind point behind the axis is taken in
+  // the extended chart, and reads beyond the shell's stored band are clamped (counted)
+  bool vgd_sth = false, vgd_pol = false;
+  Real vgd_bcolat = 30.0;                 // vet_gd_band_colat (deg): band depth from sin
+  DvceArray2D<Real> vgd_thn;              // (m, c2w) band-row theta (extended chart)
+  std::vector<double> vgd_thn_h;          // host copy, m-major
+  DvceArray1D<int> vgd_hpol;              // (8 nmb) pole slot flag
+  DvceArray2D<int> vgd_wsd;               // (2, c1) per-shell halo depth: inward, outward
+  // accsp-1102 polar RING buffers (rad_m1_vetgd_sph2.inc): the full sphere's polar rows
+  // (node colatitude < vet_gd_band_colat, + 1 row) of EVERY phi block, gathered per shell
+  // (intensities, after the shell's sweep) and per build (ln chi, ln S): an upwind
+  // stencil inside the polar zone reads them at its true phi (no band, no clamp)
+  bool vgd_rbon = false;
+  bool vgd_rbkey = false;                 // vet_gd_pole_ring (read only when named; default off)
+  Real vgd_rbcolat = -1.0;               // vet_gd_pole_ring_colat (deg; default vet_gd_band_colat)
+  int vgd_nzr = 0, vgd_nx3t = 0, vgd_nt2 = 0;
+  DvceArray1D<Real> vgd_rbi, vgd_rbc;     // ((i 2 nzr + pq) nx3t + K) n + d ; ((i 2 + c) 2 nzr + pq) nx3t + K
+  DvceArray2D<Real> vgd_rbth;             // (2, nzr) physical theta of ring row q (north, south)
+  DvceArray1D<Real> vgd_rbs, vgd_rbr;     // send / receive buffers
+  DvceArray2D<int> vgd_rbit;               // (items, 4): local m (-1 remote), pole p, lx3, offset (per unit)
+  std::vector<int> vgd_rbcnt, vgd_rbdsp;  // per rank: count, displacement (units)
+  int vgd_rbnit = 0, vgd_rbnloc = 0, vgd_rbf0 = 0;   // items total, local, first local
+  void VetGdRingInit();
+  void VetGdRingGatherI(const int i);
+  void VetGdRingGatherC(const int i0, const int i1);
+  void VetGdThetaInit();                  // the node table and the checks
+  double VetGdThetaDmin() const;          // the narrowest lateral spacing for the band
+  int VgdPoleSlot(const int o, const int lx2) const;  // 0, 1 north, 2 south
   DvceArray1D<int> vgd_ovl[2];             // (ngroup cap): per group remote, then local
   DvceArray1D<int> vgd_ovl_f;              // scratch: flags -> positions
   std::vector<int> vgd_ovl_nr[2];          // per group: number of remote items

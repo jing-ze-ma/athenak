@@ -1199,6 +1199,26 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_allow_clamp")) {
       vgd_allow_clamp = pin->GetBoolean("rad_m1","vet_gd_allow_clamp");
     }
+    // accsp-1102 (read only when named): the full sphere's band depth uses sin of this
+    // colatitude (deg) instead of sin(0) (rad_m1_vetgd_sph2.inc); default 30
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_colat")) {
+      vgd_bcolat = pin->GetReal("rad_m1","vet_gd_band_colat");
+      if (!(vgd_bcolat > 0.0 && vgd_bcolat <= 90.0)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_band_colat must be in (0, 90]"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // accsp-1102 (read only when named): the polar ring buffers of the full sphere (exact
+    // whole-ring reads in the polar zone; default off: ~3 s/cycle more on the 4-H200
+    // accretor with 8 rows, and the T6a pole test is unchanged by them) and their zone
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_pole_ring")) {
+      vgd_rbkey = pin->GetBoolean("rad_m1","vet_gd_pole_ring");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_pole_ring_colat")) {
+      vgd_rbcolat = pin->GetReal("rad_m1","vet_gd_pole_ring_colat");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
       vgd_hcomp = pin->GetInteger("rad_m1","vet_gd_halo_compact");
     }

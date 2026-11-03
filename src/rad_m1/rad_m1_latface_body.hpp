@@ -270,12 +270,15 @@
     const int nd = vgd_n;
     const int og = vgd_w - indcs.ng;
     const int ilo = is + vlat_icut;
+    const bool sth_ = vgd_sth;   // accsp-1102: stretched theta / full sphere node table
+    auto thn_ = vgd_thn;
     par_for("m1_impl_lfcgd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real fm = M1FLev(iw_(m,M1_IW_WCHI,k,j,i));
       Real n2 = iw_(m,M1_IW_N2,k,j,i), n3 = iw_(m,M1_IW_N3,k,j,i);
       if (i >= ilo) {
-        const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+        const Real th = sth_ ? thn_(m,j+og)
+                             : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
         const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
         const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
         Real jm = 0.0, hr = 0.0, ht = 0.0, hp = 0.0;
