@@ -727,6 +727,56 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       // flux was shared over the active rows only)
       const int il_ = wall_in ? i : i-1;
       const int ir_ = wall_out ? i-1 : i;
+      // In a polar cell row, add Rusanov dissipation built from the FACE fields on either
+      // side of this edge: -a_r/2 * [B3(i) - B3(i-1)] and +a_phi/2 * [B1(k) - B1(k-1)],
+      // signs fixed by the CT update (bx3f -= d(e2)/dx1, bx1f += d(e2)/dx3). The GS05
+      // terms above see the (-1)^(i+k) face checkerboard only through the phi-face EMF
+      // and bias the corner value DOWNWIND for it; this term restores an upwind bias.
+      auto polar_diss_e2 = [&](Real &e2v) {
+      if (polar_diss) {
+        const bool do_pole =
+            (j == js && mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
+            (j == je && mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar);
+        if (do_pole) {
+          Real ar = 0.0, ap = 0.0;
+          for (int dk=-1; dk<=0; ++dk) {
+            for (int di=-1; di<=0; ++di) {
+              // thermodynamics from ACTIVE cells only (wder is not filled in the ghosts)
+              int ic = (i+di < is) ? is : ((i+di > ie) ? ie : i+di);
+              int kc = (k+dk < ks) ? ks : ((k+dk > ke) ? ke : k+dk);
+              Real d = w0_(m,IDN,kc,j,ic);
+              Real bx = bcc_(m,IBX,kc,j,ic);
+              Real by = bcc_(m,IBY,kc,j,ic);
+              Real bz = bcc_(m,IBZ,kc,j,ic);
+              Real cf;
+              if (eos.IsGeneral()) {
+                cf = eos.FastSpeedFromP(d, wder_(m,IDPR,kc,j,ic), wder_(m,IDG1,kc,j,ic),
+                                        bx, by, bz);
+              } else if (eos.is_ideal) {
+                Real p = eos.IdealGasPressure(w0_(m,IEN,kc,j,ic));
+                cf = eos.IdealMHDFastSpeed(d, p, bx, by, bz);
+              } else {
+                cf = eos.IdealMHDFastSpeed(d, bx, by, bz);
+              }
+              ar = fmax(ar, fabs(w0_(m,IVX,kc,j,ic)) + cf);
+              ap = fmax(ap, fabs(w0_(m,IVZ,kc,j,ic)) + cf);
+            }
+          }
+          // THIRD differences, not first.  The first-difference (Rusanov) form damps a
+          // mode of wavenumber kappa at the rate a*kappa^2*dx/2, and in the polar row
+          // dx_phi = r sin(theta) dphi ~ dtheta*dphi while the smooth m = 1 pattern of
+          // B_r has kappa ~ 1/(r sin theta): the rate is a*dphi/(2 r sin theta) = O(1),
+          // INDEPENDENT of resolution.  That distorted every smooth field threading the
+          // pole (sp_test iprob=11: polar-row v_r error 2.5e-2 at nx2 = 16 AND 32, and
+          // 100x smaller with the term off).  -D3/4 equals D1 exactly on the (-1)^k
+          // checkerboard this term exists to damp and is O(kappa^3 dx^3) on smooth modes.
+          e2v -= 0.5*ar*0.25*(-b3_(m,k,j,i+1) + 3.0*b3_(m,k,j,i)
+                                      - 3.0*b3_(m,k,j,i-1) + b3_(m,k,j,i-2));
+          e2v += 0.5*ap*0.25*(-b1_(m,k+1,j,i) + 3.0*b1_(m,k,j,i)
+                                      - 3.0*b1_(m,k-1,j,i) + b1_(m,k-2,j,i));
+        }
+      }
+      };
       if (uct_) {   // emf_scheme = uct | uct_hlld (UctE1/E2/E3)
         e1(m,k,j,i) = UctE1(ucd, m, k, j, i);
         e2(m,k,j,i) = wall1 ? 0.5*(e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i))
@@ -823,54 +873,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       e2(m,k,j,i) = 0.25*(e2_l3 + e2_r3 + e2_l1 + e2_r1 +
                 e2x3_(m,k,j,im_) + e2x3_(m,k,j,i) + e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i));
 
-      // In a polar cell row, add Rusanov dissipation built from the FACE fields on either
-      // side of this edge: -a_r/2 * [B3(i) - B3(i-1)] and +a_phi/2 * [B1(k) - B1(k-1)],
-      // signs fixed by the CT update (bx3f -= d(e2)/dx1, bx1f += d(e2)/dx3). The GS05
-      // terms above see the (-1)^(i+k) face checkerboard only through the phi-face EMF
-      // and bias the corner value DOWNWIND for it; this term restores an upwind bias.
-      if (polar_diss) {
-        const bool do_pole =
-            (j == js && mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
-            (j == je && mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar);
-        if (do_pole) {
-          Real ar = 0.0, ap = 0.0;
-          for (int dk=-1; dk<=0; ++dk) {
-            for (int di=-1; di<=0; ++di) {
-              // thermodynamics from ACTIVE cells only (wder is not filled in the ghosts)
-              int ic = (i+di < is) ? is : ((i+di > ie) ? ie : i+di);
-              int kc = (k+dk < ks) ? ks : ((k+dk > ke) ? ke : k+dk);
-              Real d = w0_(m,IDN,kc,j,ic);
-              Real bx = bcc_(m,IBX,kc,j,ic);
-              Real by = bcc_(m,IBY,kc,j,ic);
-              Real bz = bcc_(m,IBZ,kc,j,ic);
-              Real cf;
-              if (eos.IsGeneral()) {
-                cf = eos.FastSpeedFromP(d, wder_(m,IDPR,kc,j,ic), wder_(m,IDG1,kc,j,ic),
-                                        bx, by, bz);
-              } else if (eos.is_ideal) {
-                Real p = eos.IdealGasPressure(w0_(m,IEN,kc,j,ic));
-                cf = eos.IdealMHDFastSpeed(d, p, bx, by, bz);
-              } else {
-                cf = eos.IdealMHDFastSpeed(d, bx, by, bz);
-              }
-              ar = fmax(ar, fabs(w0_(m,IVX,kc,j,ic)) + cf);
-              ap = fmax(ap, fabs(w0_(m,IVZ,kc,j,ic)) + cf);
-            }
-          }
-          // THIRD differences, not first.  The first-difference (Rusanov) form damps a
-          // mode of wavenumber kappa at the rate a*kappa^2*dx/2, and in the polar row
-          // dx_phi = r sin(theta) dphi ~ dtheta*dphi while the smooth m = 1 pattern of
-          // B_r has kappa ~ 1/(r sin theta): the rate is a*dphi/(2 r sin theta) = O(1),
-          // INDEPENDENT of resolution.  That distorted every smooth field threading the
-          // pole (sp_test iprob=11: polar-row v_r error 2.5e-2 at nx2 = 16 AND 32, and
-          // 100x smaller with the term off).  -D3/4 equals D1 exactly on the (-1)^k
-          // checkerboard this term exists to damp and is O(kappa^3 dx^3) on smooth modes.
-          e2(m,k,j,i) -= 0.5*ar*0.25*(-b3_(m,k,j,i+1) + 3.0*b3_(m,k,j,i)
-                                      - 3.0*b3_(m,k,j,i-1) + b3_(m,k,j,i-2));
-          e2(m,k,j,i) += 0.5*ap*0.25*(-b1_(m,k+1,j,i) + 3.0*b1_(m,k,j,i)
-                                      - 3.0*b1_(m,k-1,j,i) + b1_(m,k-2,j,i));
-        }
-      }
+      polar_diss_e2(e2(m,k,j,i));   // see polar_diss_e2 above (GS07 path)
 
       // integrate E3 to corner using SG07
       Real e3_l2, e3_r2, e3_l1, e3_r1;
