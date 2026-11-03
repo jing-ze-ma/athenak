@@ -145,13 +145,12 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   // Each loop is bounded by the four cell centres around the edge, so every side passes
   // through a face centre and carries that face's field. Pass 2 needs J one layer beyond
   // its own edge range in the two transverse directions, hence the -1 / +1 below.
-  par_for("res_cs_j1", DevExeSpace(), 0,nmb1, ks,ke+1, js,je+1, is,ie,
-  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+  auto j1_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
     jn1(m,k,j,i) = (dxf3(m,k,j,i)*BcovEta(b,cet,set,m,k,j,i)
                   - dxf3(m,k,j-1,i)*BcovEta(b,cet,set,m,k,j-1,i)
                   - dxf2(m,k,j,i)*BcovXi(b,cxi,sxi,m,k,j,i)
                   + dxf2(m,k-1,j,i)*BcovXi(b,cxi,sxi,m,k-1,j,i))/ae1(m,k,j,i);
-  });
+  };
 
   // STRETCHED radial grid: the radial difference is taken AT the x1 face (see
   // RadialFaceWeights).  Off, or on an unstretched grid, this is the two-point loop,
@@ -159,21 +158,24 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   const bool x1c = cs_resist_x1_centred && (pmy_pack->pmesh->use_grid_stretch_r ||
                                             pmy_pack->pmesh->use_grid_stretch_r_poly);
   if (!x1c) {
-    par_for("res_cs_j2", DevExeSpace(), 0,nmb1, ks,ke+1, js-1,je+1, is,ie+1,
-    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    auto j2_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
       jn2(m,k,j,i) = (-dxf3(m,k,j,i)*BcovEta(b,cet,set,m,k,j,i)
                       + dxf3(m,k,j,i-1)*BcovEta(b,cet,set,m,k,j,i-1)
                       + dxf1(m,k,j,i)*b.x1f(m,k,j,i)
                       - dxf1(m,k-1,j,i)*b.x1f(m,k-1,j,i))/ae2(m,k,j,i);
-    });
+    };
 
-    par_for("res_cs_j3", DevExeSpace(), 0,nmb1, ks-1,ke+1, js,je+1, is,ie+1,
-    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    auto j3_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
       jn3(m,k,j,i) = (dxf2(m,k,j,i)*BcovXi(b,cxi,sxi,m,k,j,i)
                     - dxf2(m,k,j,i-1)*BcovXi(b,cxi,sxi,m,k,j,i-1)
                     - dxf1(m,k,j,i)*b.x1f(m,k,j,i)
                     + dxf1(m,k,j-1,i)*b.x1f(m,k,j-1,i))/ae3(m,k,j,i);
-    });
+    };
+    // r1mspeed-1102: pass 1 as ONE launch (independent loops; bitwise)
+    par_for_fused3("res_cs_j", DevExeSpace(), nmb1,
+                   LoopBox3{ks, ke+1, js, je+1, is, ie}, j1_,
+                   LoopBox3{ks, ke+1, js-1, je+1, is, ie+1}, j2_,
+                   LoopBox3{ks-1, ke+1, js, je+1, is, ie+1}, j3_);
   } else {
     auto &rc = pmy_pack->pcoord->x1v;    // cell centroids, ghosts included
     auto &rf = pmy_pack->pcoord->xx1f;   // x1 faces
@@ -184,8 +186,7 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    par_for("res_cs_j2c", DevExeSpace(), 0,nmb1, ks,ke+1, js-1,je+1, is,ie+1,
-    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    auto j2c_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
       // +1: physical inner radial boundary on this face; -1: outer; 0: interior
       int sd = 0;
       if (i == is && mbbcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::block) {
@@ -206,10 +207,9 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
       jn2(m,k,j,i) = rsc*(-dg
                       + dxf1(m,k,j,i)*b.x1f(m,k,j,i)
                       - dxf1(m,k-1,j,i)*b.x1f(m,k-1,j,i))/ae2(m,k,j,i);
-    });
+    };
 
-    par_for("res_cs_j3c", DevExeSpace(), 0,nmb1, ks-1,ke+1, js,je+1, is,ie+1,
-    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    auto j3c_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
       // +1: physical inner radial boundary on this face; -1: outer; 0: interior
       int sd = 0;
       if (i == is && mbbcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::block) {
@@ -228,7 +228,11 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
       jn3(m,k,j,i) = rsc*(dg
                     - dxf1(m,k,j,i)*b.x1f(m,k,j,i)
                     + dxf1(m,k,j-1,i)*b.x1f(m,k,j-1,i))/ae3(m,k,j,i);
-    });
+    };
+    par_for_fused3("res_cs_jc", DevExeSpace(), nmb1,
+                   LoopBox3{ks, ke+1, js, je+1, is, ie}, j1_,
+                   LoopBox3{ks, ke+1, js-1, je+1, is, ie+1}, j2c_,
+                   LoopBox3{ks-1, ke+1, js, je+1, is, ie+1}, j3c_);
   }
 
   // ---- pass 2: rotate into the edge (covariant) frame and multiply by eta -------------
@@ -246,8 +250,7 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   const bool rsh_ = rsc_ && pmy_pack->pmhd->cs_seam_res_own;
   auto &msz_ = pmy_pack->pmb->mb_size;
 
-  par_for("res_cs_e1", DevExeSpace(), 0,nmb1, ks,ke+1, js,je+1, is,ie,
-  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+  auto e1_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
     if (rsh_ && ((k == ks && msz_.d_view(m).x3min <= -1.0 + 1.0e-12) ||
                  (k == ke+1 && msz_.d_view(m).x3max >= 1.0 - 1.0e-12))) return;
     if (rsh_ && ((j == js && msz_.d_view(m).x2min <= -1.0 + 1.0e-12) ||
@@ -255,10 +258,9 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
     const Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j-1,i)
                         + eta_b_(m,k-1,j,i) + eta_b_(m,k-1,j-1,i));
     e1(m,k,j,i) += et*jn1(m,k,j,i);
-  });
+  };
 
-  par_for("res_cs_e2", DevExeSpace(), 0,nmb1, ks,ke+1, js,je, is,ie+1,
-  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+  auto e2_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
     if (rsh_ && ((k == ks && msz_.d_view(m).x3min <= -1.0 + 1.0e-12) ||
                  (k == ke+1 && msz_.d_view(m).x3max >= 1.0 - 1.0e-12))) return;
     const Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j,i-1)
@@ -266,10 +268,9 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
     const Real j3a = 0.25*(jn3(m,k,j,i) + jn3(m,k,j+1,i)
                          + jn3(m,k-1,j,i) + jn3(m,k-1,j+1,i));
     e2(m,k,j,i) += et*(jn2(m,k,j,i) + cet(m,k,j)*j3a)/set(m,k,j);
-  });
+  };
 
-  par_for("res_cs_e3", DevExeSpace(), 0,nmb1, ks,ke, js,je+1, is,ie+1,
-  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+  auto e3_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
     if (rsh_ && ((j == js && msz_.d_view(m).x2min <= -1.0 + 1.0e-12) ||
                  (j == je+1 && msz_.d_view(m).x2max >= 1.0 - 1.0e-12))) return;
     const Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j-1,i)
@@ -277,7 +278,11 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
     const Real j2a = 0.25*(jn2(m,k,j,i) + jn2(m,k+1,j,i)
                          + jn2(m,k,j-1,i) + jn2(m,k+1,j-1,i));
     e3(m,k,j,i) += et*(jn3(m,k,j,i) + cxi(m,k,j)*j2a)/sxi(m,k,j);
-  });
+  };
+  // r1mspeed-1102: pass 2 as ONE launch (each edge loop reads only J; bitwise)
+  par_for_fused3("res_cs_e", DevExeSpace(), nmb1, LoopBox3{ks, ke+1, js, je+1, is, ie}, e1_,
+                 LoopBox3{ks, ke+1, js, je, is, ie+1}, e2_,
+                 LoopBox3{ks, ke, js, je+1, is, ie+1}, e3_);
   // with ambipolar diffusion the two-chart mean is taken once, after the ambipolar EMF
   // has been added too (AddEMFAmbipolarGnomonic); the own-grid Ohmic part is added here
   if (rsc_ && (rsh_ || ad_type == 0)) {

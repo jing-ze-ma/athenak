@@ -228,6 +228,20 @@ struct PackSegFC {
 };
 
 //----------------------------------------------------------------------------------------
+//! \struct SubSegFC
+//! \brief r1mspeed-1102: the sample box of one PackSegFC that a pack actually walks (the
+//! whole segment, or only the source layer adjacent to the boundary for a depth-1 pack),
+//! and, for a cross-panel seam segment, the box of along-seam source values (srcval) its
+//! resample reads, evaluated once per pack into a scratch array instead of three times
+//! per sample.  pvoff < 0: no precompute (the sample calls srcval itself).
+
+struct SubSegFC {
+  int q;                   // fc_seg index
+  int il, ni, jl, nj, kl, nk;   // sample box (source-loop indices, as PackSegFC)
+  int pvoff, ptlo, pnt, pnlo, pnn, pil, pni;   // srcval box: tangent x normal x i
+};
+
+//----------------------------------------------------------------------------------------
 //! \struct MeshBufferDv
 //! \brief DEVICE image of one MeshBoundaryBuffer: every index range and size a kernel
 //! reads, and (pointer, stride) handles on its vars/flux Views.
@@ -397,6 +411,10 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // exchanges (stage CS1, rad_m1_sph.cpp), whose seam faces pair cell to cell; the
   // global diagnostic env CS_NORESAMP_CC does the same for every object.
   bool cs_noresample = false;
+  // r1mspeed-1102: >= 0 = the *FluxSeamCC exchange (averaging modes only) packs and
+  // reconciles only this variable.  Set by an RKG super-stage around its flux exchange
+  // (the super-stage update reads only the energy flux); -1 everywhere else.
+  int seam_flux_var = -1;
   // csedge-1019: the *FluxSeamCC exchange moves RAW face values (no outward sign, the
   // receiver's array is overwritten by the neighbour's) -- the hydro's shared seam face
   // states (<mesh>/cs_seam_flux = shared, Hydro::CsSeamFaceStates)
@@ -538,6 +556,21 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
   DvceArray1D<PackSegFC> fc_seg;          // the active (m,n,v) triples
   DvceArray1D<int> fc_chunk_seg;          // chunk -> fc_seg index (plain chunks first)
   DvceArray1D<int> fc_chunk_beg;          // chunk -> first flat sample of that triple
+  // r1mspeed-1102: two walk sets over fc_seg, [0] all ng layers, [1] depth 1 (only the
+  // source layer adjacent to each boundary; <mhd>/rkg_halo_d1, see resistivity.hpp).
+  // Each set: SubSegFC boxes and chunk lists for the plain samples, the seam samples and
+  // the seam srcval precompute (all chunk lists index fc_sub[set]).
+  DvceArray1D<SubSegFC> fc_sub[2];
+  DvceArray1D<int> fc_cs[2], fc_cb[2];    // chunk -> (sub index, first sample)
+  int fc_np[2] = {0, 0}, fc_ns[2] = {0, 0}, fc_npre[2] = {0, 0};   // chunk counts
+  DvceArray1D<Real> fc_preval;            // srcval scratch (max over the sets)
+  // 1 = the next PackAndSendFC packs (and RecvAndUnpackFC unpacks) depth 1 only; reset
+  // by the caller.  0 everywhere else.
+  int pack_depth = 0;
+  // r1mspeed-1102: RecvAndUnpackFluxFC work arrays, kept (they were allocated, memset and
+  // freed on every call: 2 cudaMalloc/cudaFree pairs and 4 fences per E exchange)
+  DvceArray2D<int> nflx_buf;
+  DvceArray3D<Real> cnr_e1_buf;
   void BuildPackSegmentsFC();
   void PackAndSendFCFlat(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
 };

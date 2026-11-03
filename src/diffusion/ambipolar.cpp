@@ -382,12 +382,24 @@ void Resistivity::AddEMFAmbipolarGnomonic(const DvceFaceFld4D<Real> &b0,
   const Real cap = max_eta_ad;
   auto e1 = efld.x1e, e2 = efld.x2e, e3 = efld.x3e;
   auto &mbbcs = pmy_pack->pmb->mb_bcs;
+  // r1mspeed-1102: the cell eta_A, evaluated once per cell (the edge loop below reads
+  // each cell's value 12 times); the same expression, so bitwise
+  if (ad_eta_c.extent_int(0) != ad_coef.extent_int(0) ||
+      ad_eta_c.extent_int(3) != ad_coef.extent_int(3)) {
+    ad_eta_c = DvceArray4D<Real>("ad_eta_c", ad_coef.extent_int(0), ad_coef.extent_int(1),
+                                 ad_coef.extent_int(2), ad_coef.extent_int(3));
+  }
+  auto etc_ = ad_eta_c;
+  par_for("ad_cs_eta", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
+  KOKKOS_LAMBDA(const int m, const int kk, const int jj, const int ii) {
+    const Real b2 = SQR(bc(m,IBX,kk,jj,ii)) + SQR(bc(m,IBY,kk,jj,ii))
+                  + SQR(bc(m,IBZ,kk,jj,ii));
+    etc_(m,kk,jj,ii) = fmin(coef_(m,kk,jj,ii)*b2, cap);
+  });
   par_for("ad_cs_emf", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     auto eta = [&](int kk, int jj, int ii) {
-      const Real b2 = SQR(bc(m,IBX,kk,jj,ii)) + SQR(bc(m,IBY,kk,jj,ii))
-                    + SQR(bc(m,IBZ,kk,jj,ii));
-      return fmin(coef_(m,kk,jj,ii)*b2, cap);
+      return etc_(m,kk,jj,ii);
     };
     // physical radial boundary face: the radial-edge J average uses the active column
     // (as the Cartesian/sp kernel; the Ohmic curl switches stencil there too)

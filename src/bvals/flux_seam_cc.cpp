@@ -173,12 +173,17 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   const bool sxoff_ = seam_xform_off;
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
   auto rbuf = RecvBufDv();
+  // r1mspeed-1102: only variable sfv_ (see bvals.hpp); averaging modes only
+  const int sfm_ = pmy_pack->pmesh->cs_seam_flux;
+  const int sfv_ = (seam_flux_var >= 0 && !sraw && sfm_ != 1 && sfm_ != 2)
+                   ? seam_flux_var : -1;
 
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
   BvalsTeamFor("SeamFluxSendLocal", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+    if (sfv_ >= 0 && v != sfv_) {return;}
 
     if (nghbr.d_view(m,n).gid < 0) {return;}
     bool x2face; Real sgn;
@@ -284,6 +289,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+    if (sfv_ >= 0 && v != sfv_) {return;}
 
     if (nghbr.d_view(m,n).gid < 0) {return;}
     bool x2face; Real sgn;
@@ -579,11 +585,14 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
     });
     return TaskStatus::complete;
   }
+  // r1mspeed-1102: only variable sfv_ (see bvals.hpp; this is an averaging mode)
+  const int sfv_ = seam_flux_var;
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
   BvalsTeamFor("SeamFluxRecv", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+    if (sfv_ >= 0 && v != sfv_) {return;}
 
     if (nghbr.d_view(m,n).gid < 0) {return;}
     bool x2face; Real sgn;

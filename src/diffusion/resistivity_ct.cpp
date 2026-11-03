@@ -60,28 +60,27 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
   if (use_cubed_sphere || use_spherical_polar) {
       
       //---- update B1 (only for 2D/3D problems)
-      if (multi_d) {
-        auto bx1f = pmy_pack->pmhd->b0.x1f;
-        auto bx1f2 = b2.x1f;
-        auto bx1f_ideal = b_ideal.x1f;
-        par_for("resCT-b1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
-        KOKKOS_LAMBDA(int m, int k, int j, int i) {
-          if (stage > 1) {
-            bx1f(m,k,j,i) = mu_*bx1f(m,k,j,i) + nu_*bx1f2(m,k,j,i) + (1.0-mu_-nu_)*bx1f_ideal(m,k,j,i);
-          }
-          bx1f(m,k,j,i) -= dt*(dxe3(m,k,j+1,i)*(fjm1*e3(m,k,j+1,i)+f0*e30(m,k,j+1,i)) - dxe3(m,k,j,i)*(fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/area1(m,k,j,i);
-          if (three_d) {
-            bx1f(m,k,j,i) += dt*(dxe2(m,k+1,j,i)*(fjm1*e2(m,k+1,j,i)+f0*e20(m,k+1,j,i)) - dxe2(m,k,j,i)*(fjm1*e2(m,k,j,i)+f0*e20(m,k,j,i)))/area1(m,k,j,i);
-          }
-        });
+      auto bx1f = pmy_pack->pmhd->b0.x1f;
+      auto bx1f2 = b2.x1f;
+      auto bx1f_ideal = b_ideal.x1f;
+      auto ct1_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        if (stage > 1) {
+          bx1f(m,k,j,i) = mu_*bx1f(m,k,j,i) + nu_*bx1f2(m,k,j,i) + (1.0-mu_-nu_)*bx1f_ideal(m,k,j,i);
+        }
+        bx1f(m,k,j,i) -= dt*(dxe3(m,k,j+1,i)*(fjm1*e3(m,k,j+1,i)+f0*e30(m,k,j+1,i)) - dxe3(m,k,j,i)*(fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/area1(m,k,j,i);
+        if (three_d) {
+          bx1f(m,k,j,i) += dt*(dxe2(m,k+1,j,i)*(fjm1*e2(m,k+1,j,i)+f0*e20(m,k+1,j,i)) - dxe2(m,k,j,i)*(fjm1*e2(m,k,j,i)+f0*e20(m,k,j,i)))/area1(m,k,j,i);
+        }
+      };
+      if (multi_d && !three_d) {
+        par_for("resCT-b1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1, ct1_);
       }
 
       //---- update B2 (curl terms in 1D and 3D problems)
       auto bx2f = pmy_pack->pmhd->b0.x2f;
       auto bx2f2 = b2.x2f;
       auto bx2f_ideal = b_ideal.x2f;
-      par_for("resCT-b2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
-      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      auto ct2_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
         const bool do_pole = (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) || (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je+1);
         Real a2 = (do_pole) ? 1.0 : area2(m,k,j,i);
         Real dxe31 = (do_pole) ? 0.0 : dxe3(m,k,j,i+1);
@@ -95,14 +94,13 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
           Real dxe10 = (do_pole) ? 0.0 : dxe1(m,k,j,i);
           bx2f(m,k,j,i) -= dt*(dxe11*(fjm1*e1(m,k+1,j,i)+f0*e10(m,k+1,j,i)) - dxe10*(fjm1*e1(m,k,j,i)+f0*e10(m,k,j,i)))/a2;
         }
-      });
+      };
 
       //---- update B3 (curl terms in 1D and 2D/3D problems)
       auto bx3f = pmy_pack->pmhd->b0.x3f;
       auto bx3f2 = b2.x3f;
       auto bx3f_ideal = b_ideal.x3f;
-      par_for("resCT-b3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
-      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      auto ct3_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
         if (stage > 1) {
           bx3f(m,k,j,i) = mu_*bx3f(m,k,j,i) + nu_*bx3f2(m,k,j,i) + (1.0-mu_-nu_)*bx3f_ideal(m,k,j,i);
         }
@@ -110,7 +108,17 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
         if (multi_d) {
           bx3f(m,k,j,i) += dt*(dxe1(m,k,j+1,i)*(fjm1*e1(m,k,j+1,i)+f0*e10(m,k,j+1,i)) - dxe1(m,k,j,i)*(fjm1*e1(m,k,j,i)+f0*e10(m,k,j,i)))/area3(m,k,j,i);
         }
-      });
+      };
+      // r1mspeed-1102: in 3D the three face updates run as ONE launch (each writes its
+      // own component from the edge EMFs only; bitwise, see par_for_fused3)
+      if (three_d) {
+        par_for_fused3("resCT", DevExeSpace(), nmb1, LoopBox3{ks, ke, js, je, is, ie+1}, ct1_,
+                       LoopBox3{ks, ke, js, je+1, is, ie}, ct2_,
+                       LoopBox3{ks, ke+1, js, je, is, ie}, ct3_);
+      } else {
+        par_for("resCT-b2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie, ct2_);
+        par_for("resCT-b3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie, ct3_);
+      }
       
   } else {
 

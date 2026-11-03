@@ -94,6 +94,12 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     } else {
       rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
     }
+    // r1mspeed-1102: read only when named (no restart-header change); default false.
+    // Opt-in: on r1m the active cells stay bitwise but the restart's u0(IEN) ghost and
+    // general-EOS cache slabs differ in the depth-2 ghost ring (see resistivity.hpp)
+    if (pin->DoesParameterExist("mhd", "rkg_halo_d1")) {
+      rkg_halo_d1 = rkg_lean && pin->GetBoolean("mhd", "rkg_halo_d1");
+    }
     // rkgstrang-1102: read only when named, so a deck without it keeps its restart header
     if (pin->DoesParameterExist("mhd", "rkg_strang")) {
       rkg_strang = use_rkg_sts && pin->GetBoolean("mhd", "rkg_strang");
@@ -992,8 +998,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
   const bool wbt0_ = wall_bt_zero;
   auto &mbbcs_ = pmy_pack->pmb->mb_bcs;
   auto &flx1 = flx.x1f;
-  par_for("ohm_heat1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  auto oh1_ = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
 
     Real e3a, e2a;
     if (one_d) {
@@ -1041,14 +1046,16 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
       flx1(m,IEN,k,j,i) += -(fr1*bc(m,IBY,k,j,i) + fl1*bc(m,IBY,k,j,i-1))*e3a
         + (fr1*bc(m,IBZ,k,j,i) + fl1*bc(m,IBZ,k,j,i-1))*e2a;
     }
-  });
+  };
+  // r1mspeed-1102: in 3D the three face loops run as one launch (bitwise; see
+  // par_for_fused3); 1D/2D keep their separate launches
+  if (!three_d) {par_for("ohm_heat1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1, oh1_);}
   if (one_d) {return;}
 
   //------------------------------
   // energy fluxes in x2-direction
   auto &flx2 = flx.x2f;
-  par_for("ohm_heat2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  auto oh2_ = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e1a;
     Real fl1 = 0.5;
     Real fr1 = 0.5;
@@ -1101,14 +1108,14 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
     } else {
       flx2(m,IEN,k,j,i) += fx2;
     }
-  });
+  };
+  if (!three_d) {par_for("ohm_heat2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie, oh2_);}
   if (two_d) {return;}
 
   //------------------------------
   // energy fluxes in x3-direction
   auto &flx3 = flx.x3f;
-  par_for("ohm_heat3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  auto oh3_ = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real fl1 = 0.5;
     Real fr1 = 0.5;
     if (use_spherical_polar || str_r1_) {
@@ -1141,7 +1148,10 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
       flx3(m,IEN,k,j,i) += -(fr3*bc(m,IBX,k,j,i) + fl3*bc(m,IBX,k-1,j,i))*e2a
         + (fr3*bc(m,IBY,k,j,i) + fl3*bc(m,IBY,k-1,j,i))*e1a;
     }
-  });
+  };
+  par_for_fused3("ohm_heat", DevExeSpace(), nmb1, LoopBox3{ks, ke, js, je, is, ie+1}, oh1_,
+                 LoopBox3{ks, ke, js, je+1, is, ie}, oh2_, LoopBox3{ks, ke+1, js, je, is, ie},
+                 oh3_);
 
   return;
 }
