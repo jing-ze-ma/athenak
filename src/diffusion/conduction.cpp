@@ -607,6 +607,8 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           // its own MeshBoundaryValues object, hence its own MPI_Comm_dup'd
           // communicator, so the substage traffic cannot collide with u0 or b0
           pbval_tr = new MeshBoundaryValuesCC(pp, pin, false);
+          // seamexact-1103: the same <mesh>/cs_seam_blockend rule as the fluid's halo
+          pbval_tr->cs_blockend_ext_ = CsSeamBlockendExtend(pp, pin);
           pbval_tr->InitializeBuffers(1);
           // ---- the halo communication cadence, resolved once here.
           if (rad_tr_halo_every < 1) rad_tr_halo_every = 1;

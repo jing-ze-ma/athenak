@@ -2230,6 +2230,29 @@ void CSTestRadialBC(Mesh *pm) {
         bx = -bazi*rc*cy + bux;
         by =  bazi*rc*cx + buy;
         b0f.x3f(m,k,j,i) = bx*n2[0] + by*n2[1] + buz*n2[2];
+        // seamexact-1103: the outermost tangential ghost FACES (j = n2, k = n3) too, as
+        // the other iprob boundaries do.  Left stale they entered the resistive curl at
+        // the top edges of internal block ends: 2x2 vs 1x1 B 6e-8 after one cycle
+        // (tst/layout_invariance cs_res_*), where one block per panel side has an
+        // active, boundary-filled face.
+        if (j == indcs.nx2 + 2*ng - 1) {
+          const Real x2p = 0.25*M_PI*LeftEdgeX(j+1-js, indcs.nx2, size.d_view(m).x2min,
+                                                                 size.d_view(m).x2max);
+          PanelToCart(p, x2p, x3c, cx, cy, cz);
+          PanelNormals(p, x2p, x3c, n1, n2);
+          bx = -bazi*rc*cy + bux;
+          by =  bazi*rc*cx + buy;
+          b0f.x2f(m,k,j+1,i) = bx*n1[0] + by*n1[1] + buz*n1[2];
+        }
+        if (k == indcs.nx3 + 2*ng - 1) {
+          const Real x3p = 0.25*M_PI*LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min,
+                                                                 size.d_view(m).x3max);
+          PanelToCart(p, x2c, x3p, cx, cy, cz);
+          PanelNormals(p, x2c, x3p, n1, n2);
+          bx = -bazi*rc*cy + bux;
+          by =  bazi*rc*cx + buy;
+          b0f.x3f(m,k+1,j,i) = bx*n2[0] + by*n2[1] + buz*n2[2];
+        }
         // magnetic energy at the ghost cell centre, analytic
         PanelToCart(p, x2c, x3c, cx, cy, cz);
         const Real px = rc*cx, py = rc*cy;
