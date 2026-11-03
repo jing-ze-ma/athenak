@@ -783,6 +783,10 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
                             : UctE2(ucd, m, k, j, i);
         e3(m,k,j,i) = wall1 ? 0.5*(e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i))
                             : UctE3(ucd, m, k, j, i);
+        // spdef-1103: the polar-row face-field dissipation acts on the UCT corner e2
+        // too (UCT's d-terms do not see the (-1)^(i+k) mode that closes through the
+        // polar ghost row; same term, same <mhd>/polar_emf_diss key as GS07)
+        polar_diss_e2(e2(m,k,j,i));
         return;
       }
       // integrate E1 to corner using SG07
