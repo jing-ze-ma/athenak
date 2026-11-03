@@ -38,7 +38,98 @@
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
+
 #endif
+
+// layoutbug-1103 DEBUG dump: env LAYOUT_DUMP=<dir>, LAYOUT_DUMP_NCYC (default 1): after
+// every completed task of the first NCYC cycles write the MHD u0 (all i, active j,k) and
+// b0 (active j,k faces) of every MeshBlock in double, with its x2min/x3min, to
+// <dir>/d<seq>_<list>_s<stage>_t<task>.bin.  One rank only.
+#include <cstdio>
+#include <sys/stat.h>
+#include <vector>
+namespace {
+Mesh *ld_mesh_ = nullptr;
+std::string ld_list_;
+int ld_seq_ = 0;
+}  // namespace
+void LayoutDumpNow(const char *tag, int stage, int tpos) {
+  static const char *dir = std::getenv("LAYOUT_DUMP");
+  static const int ncyc = std::getenv("LAYOUT_DUMP_NCYC") ?
+                          std::atoi(std::getenv("LAYOUT_DUMP_NCYC")) : 1;
+  Mesh *pm = ld_mesh_;
+  static const int dmax = std::getenv("LAYOUT_DUMP_MAX") ?
+                          std::atoi(std::getenv("LAYOUT_DUMP_MAX")) : 1000000;
+  if (dir == nullptr || pm == nullptr || pm->ncycle >= ncyc || ld_seq_ >= dmax) return;
+  static const char *lonly = std::getenv("LAYOUT_DUMP_LIST");
+  if (lonly != nullptr && tag == nullptr && ld_list_ != lonly) return;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pmhd == nullptr && pmbp->phydro == nullptr) return;
+  Kokkos::fence();
+  auto &id = pm->mb_indcs;
+  const int ng = id.ng, nx1 = id.nx1, nx2 = id.nx2, nx3 = id.nx3;
+  const int n1 = nx1 + 2*ng, nmb = pmbp->nmb_thispack;
+  auto u0 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  auto hu = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), u0);
+  const int nv = u0.extent_int(1);
+  char fn[1024];
+  std::snprintf(fn, sizeof(fn), "%s/d%05d_%s_s%d_t%03d_c%d.bin", dir, ld_seq_++,
+                (tag != nullptr) ? tag : ld_list_.c_str(), stage, tpos, pm->ncycle);
+  FILE *f = std::fopen(fn, "wb");
+  if (f == nullptr) return;
+  int hdr[8] = {nmb, nv, n1, nx2, nx3, ng, (pmbp->pmhd != nullptr) ? 1 : 0,
+                (std::getenv("LAYOUT_DUMP_FULL") != nullptr) ? 1 : 0};
+  std::fwrite(hdr, sizeof(int), 8, f);
+  auto &sz = pmbp->pmb->mb_size;
+  for (int m = 0; m < nmb; ++m) {
+    double g[2] = {sz.h_view(m).x2min, sz.h_view(m).x3min};
+    std::fwrite(g, sizeof(double), 2, f);
+  }
+  std::vector<double> buf;
+  static const bool full = (std::getenv("LAYOUT_DUMP_FULL") != nullptr);
+  if (full) {   // whole arrays incl. every ghost: u0, bcc0 (MHD), b0 x1f/x2f/x3f
+    auto wr = [&](auto h) {
+      std::vector<double> v(h.data(), h.data() + h.size());
+      std::fwrite(v.data(), sizeof(double), v.size(), f);
+    };
+    wr(hu);
+    if (pmbp->pmhd != nullptr) {
+      wr(Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pmbp->pmhd->bcc0));
+      wr(Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pmbp->pmhd->b0.x1f));
+      wr(Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pmbp->pmhd->b0.x2f));
+      wr(Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pmbp->pmhd->b0.x3f));
+    }
+    std::fclose(f);
+    return;
+  }
+  for (int m = 0; m < nmb; ++m) {
+    buf.clear();
+    for (int v = 0; v < nv; ++v)
+      for (int k = id.ks; k <= id.ke; ++k)
+        for (int j = id.js; j <= id.je; ++j)
+          for (int i = 0; i < n1; ++i) buf.push_back(hu(m,v,k,j,i));
+    std::fwrite(buf.data(), sizeof(double), buf.size(), f);
+  }
+  if (pmbp->pmhd != nullptr) {
+    auto b1 = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pmbp->pmhd->b0.x1f);
+    auto b2 = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pmbp->pmhd->b0.x2f);
+    auto b3 = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pmbp->pmhd->b0.x3f);
+    for (int m = 0; m < nmb; ++m) {
+      buf.clear();
+      for (int k = id.ks; k <= id.ke; ++k)        // x1f: all i faces 0..n1
+        for (int j = id.js; j <= id.je; ++j)
+          for (int i = 0; i <= n1; ++i) buf.push_back(b1(m,k,j,i));
+      for (int k = id.ks; k <= id.ke; ++k)        // x2f: j faces js..je+1, all i
+        for (int j = id.js; j <= id.je+1; ++j)
+          for (int i = 0; i < n1; ++i) buf.push_back(b2(m,k,j,i));
+      for (int k = id.ks; k <= id.ke+1; ++k)      // x3f: k faces ks..ke+1, all i
+        for (int j = id.js; j <= id.je; ++j)
+          for (int i = 0; i < n1; ++i) buf.push_back(b3(m,k,j,i));
+      std::fwrite(buf.data(), sizeof(double), buf.size(), f);
+    }
+  }
+  std::fclose(f);
+}
 
 //----------------------------------------------------------------------------------------
 // constructor, initializes data structures and parameters
@@ -315,6 +406,10 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
 
 void Driver::ExecuteTaskList(Mesh *pm, std::string tl, int stage) {
   MeshBlockPack* pmbp = pm->pmb_pack;
+  if (std::getenv("LAYOUT_DUMP") != nullptr) { ld_mesh_ = pm; ld_list_ = tl; }
+  if (std::getenv("LAYOUT_DUMP_TASKS") != nullptr) {
+    layout_dump_hook = [](Driver *, int st, int tp) { LayoutDumpNow(nullptr, st, tp); };
+  }
   for (int p=0; p<(pm->nmb_packs_thisrank); ++p) {
     if (!(pmbp->tl_map[tl]->Empty())) {pmbp->tl_map[tl]->Reset();}
   }
@@ -329,6 +424,7 @@ void Driver::ExecuteTaskList(Mesh *pm, std::string tl, int stage) {
       }
     }
   }
+  if (ld_mesh_ != nullptr && !pmbp->tl_map[tl]->Empty()) LayoutDumpNow(nullptr, stage, 0);
   return;
 }
 
@@ -1385,11 +1481,14 @@ void Driver::InitBoundaryValuesAndPrimitives(Mesh *pm, bool keep_ghosts) {
       (void) pmhd->ClearRecv(this, -4); // stage = -4 only clear RecvU_Shr, SendB_Shr
       (void) pmhd->RecvU_Shr(this, 0);
       (void) pmhd->RecvB_Shr(this, 0);
+      if (std::getenv("LAYOUT_DUMP") != nullptr) { ld_mesh_ = pm; LayoutDumpNow("init_prebc", 0, 0); }
       (void) pmhd->ApplyPhysicalBCs(this, 0);
+      if (ld_mesh_ != nullptr) LayoutDumpNow("init_postbc", 0, 0);
       (void) pmhd->Prolongate(this, 0);
     }
     if (pdyngr == nullptr) {
       (void) pmhd->ConToPrim(this, 0);
+      if (ld_mesh_ != nullptr) LayoutDumpNow("init_postc2p", 0, 0);
       // see the hydro comment above
       pmhd->SetWbBackgroundPressure();
     } else {

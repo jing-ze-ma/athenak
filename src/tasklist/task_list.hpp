@@ -21,6 +21,8 @@
 #include <iterator>
 
 class Driver;
+// layoutbug-1103 DEBUG: called after every completed task when set (env LAYOUT_DUMP_TASKS)
+inline void (*layout_dump_hook)(Driver *, int, int) = nullptr;
 class Multigrid;
 
 // Maximum size of TL
@@ -144,13 +146,16 @@ class TaskList {
 
   // cycle through task list once, do any tasks whose dependencies are clear
   TaskListStatus DoAvailable(Driver *d, int s) {
+    int tpos_ = 0;
     for (auto &task : task_list_) {
+      ++tpos_;
       auto dep = task.GetDependency();
       if ( tasks_completed_.CheckDependencies(dep) && !(task.IsComplete()) ) {
         TaskStatus status = task(d,s);  // calls Task function using overloaded operator()
         if (status == TaskStatus::complete) {
           task.SetComplete();              // set bool flag in task
           MarkTaskComplete(task.GetID());  // add TaskID to tasks_completed_
+          if (layout_dump_hook != nullptr) layout_dump_hook(d, s, tpos_);
         }
       }
     }

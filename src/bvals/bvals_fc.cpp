@@ -301,6 +301,7 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
   auto cs_sltb = cs_seam_slot;
   auto sbuf = SendBufDv();
 
+  const bool no_rs_fc_ = (std::getenv("CS_NORESAMP_FC") != nullptr);
   DvceArray1D<PackSegFC> all("fc_seg_all", nmnv);
   par_for("fc_seg_build", DevExeSpace(), 0, nmnv-1, KOKKOS_LAMBDA(const int lr) {
     const int m = lr/(3*nnghbr);
@@ -430,6 +431,7 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
               ? ((cs_seam == 2) ? cs_indcs.cnx3 : cs_indcs.cnx2)
               : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
           if (cs_seam != 0 && seam_extent < 3) { cs_seam = 0; }
+          if (no_rs_fc_) { cs_seam = 0; }   // layoutbug-1103 DEBUG
         } else if (do_pole) {
           aj = -1;
           bj = jl + ju;
