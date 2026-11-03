@@ -48,9 +48,19 @@ Real rep_p1 = 1.0, rep_p2 = 1.0e3;
 int rep_calls = 0;
 }  // namespace
 
-void DtReportInit(ParameterInput *pin) {
+void DtReportInit(ParameterInput *pin, MeshBlockPack *pp, const bool rss) {
   if (pin->DoesParameterExist("mhd", "dt_report")) {
     rep_every = pin->GetInteger("mhd", "dt_report");
+    // prod1103: the report reads the curvilinear cell widths (pcoord dx1/dx2/dx3, sin of
+    // the cs cell angle), so it is 3-D cubed sphere / spherical polar only; refuse the key
+    // elsewhere at start-up instead of switching it off silently.  Hydro has no dt_report.
+    if (rep_every > 0 && (!pp->pmesh->three_d || rss ||
+        !(pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar))) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/dt_report needs a 3-D cubed-sphere or spherical-"
+                << "polar mesh and rad_signal_speed off" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     rep_p1 = pin->GetOrAddReal("mhd", "dt_report_p1", 1.0);
     rep_p2 = pin->GetOrAddReal("mhd", "dt_report_p2", 1.0e3);
   }

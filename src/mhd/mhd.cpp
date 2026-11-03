@@ -102,7 +102,7 @@ void DefaultAmbipolar(ParameterInput *pin) {
 
 namespace mhd {
 
-void DtReportInit(ParameterInput *pin);   // dtdiag-1103, mhd_dtreport.cpp
+void DtReportInit(ParameterInput *pin, MeshBlockPack *pp, const bool rss);   // dtdiag-1103, mhd_dtreport.cpp
 //----------------------------------------------------------------------------------------
 // constructor, initializes data structures and parameters
 
@@ -504,7 +504,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       rad_signal_speed = pin->GetBoolean("mhd","rad_signal_speed");
     }
     // dtdiag-1103: <mhd>/dt_report (mhd_dtreport.cpp); read only when named
-    DtReportInit(pin);
+    DtReportInit(pin, ppack, rad_signal_speed);
     // allocate array of flags used with etotgrav
     if (use_etotgrav || use_wellbalance_dynamic) {
       auto &indcs = pmy_pack->pmesh->mb_indcs;
