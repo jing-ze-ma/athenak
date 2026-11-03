@@ -142,6 +142,7 @@ CASES = [
               'mesh/polar_ring_avg': 'true', 'mesh/nx3': 64},
          layouts=sp_layouts(8, 16, 64, False)),
     dict(name='sp_resist', bin='sp', deck='spherical_polar_resist.athinput', ncyc=10,
+         perturb='problem/b0',
          vars=['mhd_u', 'mhd_bcc'], what='sp Ohmic + ambipolar decay, RKG, polar',
          set={'mhd/ambipolar': 'constant', 'mhd/eta_ad': 0.05, 'mhd/use_rkg_sts': 'true'},
          layouts=sp_layouts(8, 16, 32, False)),
@@ -232,7 +233,10 @@ CASES.append(dict(_acc, name='acc_sp_novetgd', set=dict(_acc['set'], **{'rad_m1/
 
 # ---------------------------------------------------------------- resistive probes
 # (sp_resist and cs_resist_rkg fail with any block split): which term?
+# the IC field differs between layouts in the last bit (vector potential on per-block
+# coordinates): the 1-ulp reference perturbs the field amplitude b0, not the cfl
 _SPR = dict(bin='sp', deck='spherical_polar_resist.athinput', ncyc=10, vars=['mhd_u', 'mhd_bcc'],
+            perturb='problem/b0',
             layouts=sp_layouts(8, 16, 32, False)[:3])
 _CSR = dict(bin='cs', deck='cubed_sphere_resist.athinput', ncyc=10, vars=['mhd_u', 'mhd_bcc'],
             layouts=cs_layouts(16, 8)[:2])
@@ -360,4 +364,46 @@ CASES += [
          '(b2x2flat = the production rule; the 1x1 reference is the same for both)',
          set={'mesh/nx2': 32, 'mesh/nx3': 32, 'mesh/cs_seam_blockend': 'extend',
               'hydro/merge_lat_blockend': 'exchange'}),
+]
+CASES += [
+    dict(_SPR, name='sp_res_ohm_nopolavg', what='sp Ohmic, use_polar_average_eresist = false',
+         ncyc=1, set={'mesh/use_polar_average_eresist': 'false'}),
+    dict(_SPR, name='sp_res_ohm_1c', what='sp Ohmic, 1 cycle', ncyc=1, set={}),
+]
+
+# ---------------------------------------------------------------- cube-vertex corner probe
+# (USER 11-03) does the EXACT r1m v8 configuration read the cell-centred cube-vertex
+# corner block?  Binary family dhjvtx = deep_hot_jupiter_rt built from vertexacc-1103
+# (<mesh>/cs_vertex_cc_perturb = eps multiplies the extrapolated corner block by 1+eps).
+# "Layouts" here are the same layout with the perturbation: BITWISE = never read.
+_V8 = dict(bin='dhjvtx', deck='dhj_r1m_v8.athinput', ncyc=10, vars=['mhd_u', 'mhd_bcc'],
+           links=DHJ_LINKS, timeout=7200,
+           set={'mesh/nx1': 32, 'mesh/nx2': 8, 'mesh/nx3': 8, 'time/ndiag': 1},
+           layouts=[L('ref', (32, 8, 8)), L('vp1e-2', (32, 8, 8),
+                                            set={'mesh/cs_vertex_cc_perturb': 1e-2}),
+                    L('vp1e200', (32, 8, 8), set={'mesh/cs_vertex_cc_perturb': 1e200}),
+                    L('vp1e-2_np6', (32, 8, 8), 6, set={'mesh/cs_vertex_cc_perturb': 1e-2})])
+CASES += [dict(_V8, name='r1m_v8_vertex_cc', what='r1m v8 deck C8x32 (1 block/panel), corner '
+               'block x (1+eps): BITWISE = the corner block is never read')]
+# sp pole-row probes (the sp_resist failure is already in the IDEAL corner EMF e2 at j = js)
+_SPI = dict(_SPR, ncyc=1)
+CASES += [
+    dict(_SPI, name='sp_ideal_res_deck', what='sp_resist deck, NO resistivity',
+         set={'mhd/eta_ohm_const': 0.0}),
+    dict(_SPI, name='sp_ideal_nodiss', what='no resistivity, polar_emf_diss = false',
+         set={'mhd/eta_ohm_const': 0.0, 'mhd/polar_emf_diss': 'false'}),
+    dict(_SPI, name='sp_ideal_gs07', what='no resistivity, emf_scheme = gs07',
+         set={'mhd/eta_ohm_const': 0.0, 'mhd/emf_scheme': 'gs07'}),
+    dict(_SPI, name='sp_ideal_gs07_nodiss', what='no resistivity, gs07, no polar_emf_diss',
+         set={'mhd/eta_ohm_const': 0.0, 'mhd/emf_scheme': 'gs07', 'mhd/polar_emf_diss': 'false'}),
+]
+# the IC field differs between layouts in the last bit (vector potential on per-block
+# coordinates), so the reference for these is a 1-ulp IC perturbation of the field
+CASES += [
+    dict(_SPI, name='sp_ideal_gs07_iculp', what='no resistivity, gs07; 1-ulp IC (b0) reference',
+         perturb='problem/b0', set={'mhd/eta_ohm_const': 0.0, 'mhd/emf_scheme': 'gs07'}),
+    dict(_SPI, name='sp_ideal_uct_iculp', what='no resistivity, uct_hlld + polar_emf_diss; '
+         '1-ulp IC (b0) reference', perturb='problem/b0', set={'mhd/eta_ohm_const': 0.0}),
+    dict(_SPI, name='sp_res_ohm_iculp', what='Ohmic; 1-ulp IC (b0) reference',
+         perturb='problem/b0', set={}),
 ]
