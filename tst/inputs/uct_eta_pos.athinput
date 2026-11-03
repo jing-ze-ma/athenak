@@ -1,0 +1,86 @@
+<comment>
+problem   = low-Mach colliding flows with a weak transverse field (uctaudit-1103)
+reference = <mhd>/lhlld_emf_eta_pos (LHLLD Step 8) under <mhd>/emf_scheme = uct_hlld
+configure = --prob=built_in_pgens
+# Two uniform streams at Mach 0.1 collide at x1 = 0 across a B_y jump (0.1 | 0.3, total
+# pressure balanced): the converging faces at the contact are where the HLLD B_t flux has
+# a negative numerical resistivity, (|S_M| + du/2) dx/2 < 0, which LHLLD Step 8
+# (lhlld_emf_eta_pos) lifts to 0.  2-D, aligned with x1, periodic in x2: the UCT-HLLD
+# corner EMF E3 then reduces to the x1-face flux, so uct_hlld must reproduce gs07 to
+# round-off with eta_pos on and with it off (eta_pos is mirrored in the UCT d^L, d^R).
+# tst/test_suite/mhd/test_mhd_uct_eta_pos_cpu.py
+
+<job>
+basename  = uct_eta_pos
+
+<mesh>
+nghost      = 2
+nx1         = 128
+x1min       = -0.5
+x1max       = 0.5
+ix1_bc      = outflow
+ox1_bc      = outflow
+nx2         = 4
+x2min       = -0.015625
+x2max       = 0.015625
+ix2_bc      = periodic
+ox2_bc      = periodic
+nx3         = 1
+x3min       = -0.5
+x3max       = 0.5
+ix3_bc      = periodic
+ox3_bc      = periodic
+
+<meshblock>
+nx1       = 128
+nx2       = 4
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = -1
+tlim       = 0.2       # the two shocks (|u| ~ 1.4) stay inside |x1| < 0.5
+ndiag      = -1
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = lhlld
+gamma       = 1.66666666667
+emf_scheme  = uct_hlld
+lhlld_emf_eta_pos = true   # LHLLD Step 8 (the default)
+
+<problem>
+pgen_name = shock_tube
+shock_dir = 1
+xshock    = 0.0
+dl  = 1.0
+pl  = 1.04         # p + B_y^2/2 = 1.045 on both sides
+ul  = 0.13         # Mach 0.1 (c_s = 1.29)
+vl  = 0.0
+wl  = 0.0
+bxl = 0.02
+byl = 0.1          # beta = 208 | 22
+bzl = 0.0
+dr  = 1.0
+pr  = 1.0
+ur  = -0.13
+vr  = 0.0
+wr  = 0.0
+bxr = 0.02
+byr = 0.3
+bzr = 0.0
+
+<output1>
+file_type   = hst
+dt          = 0.01
+data_format = %24.16e
+
+<output2>
+file_type   = tab
+variable    = mhd_w_bcc
+data_format = %24.16e
+dt          = 0.2
+slice_x2    = 0.0
