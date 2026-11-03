@@ -78,6 +78,9 @@ bool CSConstAccelOffRadial(ParameterInput *pin, const std::string &blk) {
 
 }  // namespace
 
+// vertexacc-1103: the `<mesh>/cs_vertex_cc_perturb` diagnostic, read by bvals_cc.cpp
+namespace cs_vertex_diag { Real cc_perturb = 0.0; }
+
 //----------------------------------------------------------------------------------------
 //! Mesh constructor:
 //! initializes some mesh variables using parameters in input file.
@@ -187,6 +190,13 @@ Mesh::Mesh(ParameterInput *pin) :
   // the two spellings: `extrapolate` is false here, `sample` is true.
   cs_vertex_fill_cc = use_cubed_sphere &&
                       pin->GetOrAddBoolean("mesh", "cs_vertex_fill_cc", false);
+  // vertexacc-1103 DIAGNOSTIC `<mesh>/cs_vertex_cc_perturb` (read only when named): the
+  // extrapolated cell-centred cube-vertex corner block is multiplied by (1 + this), so a
+  // run that stays BITWISE equal to the unperturbed one proves no operator reads that
+  // block into the active cells, and the size of the change says how much it matters.
+  if (use_cubed_sphere && pin->DoesParameterExist("mesh", "cs_vertex_cc_perturb")) {
+    cs_vertex_diag::cc_perturb = pin->GetReal("mesh", "cs_vertex_cc_perturb");
+  }
   // csedge-1019 (USER 10-19 "go ahead with the seam fix" / "the seam should behave the
   // same as the interior", default for every cs run, fresh AND restart): DEFAULT `shared`
   // = ONE Riemann problem per seam face from the two panels' OWN reconstructions (the

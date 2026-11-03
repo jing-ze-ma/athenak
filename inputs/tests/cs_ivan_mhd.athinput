@@ -1,0 +1,71 @@
+# Cubed sphere, MHD: the MANUFACTURED SOLUTION of Ivan, De Sterck, Northrup & Groth
+# (JCP 2013, sect. 5.2.1, eqs 11-12).  Build with -D PROBLEM=cs_test.  layoutaudit-1103.
+#
+#   rho = p = r^-5/2,  v = r^1/2 rhat + kappa r^5/2 zhat,  B = rhat/r^2 + kappa zhat
+# (eq 11 lists PRIMITIVES [rho, v, B, p]); v x B = 0 and B is curl free.  It is steady
+# with the eq 12 source Q_O on momentum and energy (checked by finite differences: eq 12
+# is exact as printed, and gamma independent).  Shell r = 2..3.5, kappa = 0.017,
+# gamma 1.4; supersonic (fast) everywhere, v_r - c_f ~ 0.07 at the inner boundary, so the
+# initial transient flushes slowly: tlim = 10.  Faces: monopole as 1/r_f^2 on the radial
+# faces (flux = exact solid angle), kappa zhat as the discrete curl of
+# A = kappa/2 zhat x r; div B is round-off.  Inner radial ghosts exact; outer ghosts:
+# conserved variables extrapolated linearly, faces exact.  Outputs as cs_ivan_hyd.
+# Radial cells = 1.25 x nx2 (the paper's 8x8x10 ... grids):
+#   for n in 8 16 32 64; do athena -i cs_ivan_mhd.athinput mesh/nx1=$((5*n/4)) ...; done
+# AXES: x1 is RADIAL; x2 = xi and x3 = eta are the panel-tangential angles.
+
+<comment>
+problem = cubed sphere MHD manufactured solution (Ivan et al. 2013)
+
+<job>
+basename = cs_ivan_mhd
+
+<mesh>
+nghost   = 2
+nx1      = 20
+x1min    = 2.0
+x1max    = 3.5
+ix1_bc   = user
+ox1_bc   = user
+nx2      = 16
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+nx3      = 16
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+use_cubed_sphere = true
+cs_seam_blockend = extend
+
+<meshblock>
+nx1      = 20
+nx2      = 16
+nx3      = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 10.0     # L1rho flat to 0.3 % from t ~ 5 (slowest radial crossing 6.4)
+ndiag      = 1000
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.4
+
+<problem>
+iprob     = 18
+kappa     = 0.017
+ivan_outer_exact = 0
+user_srcs = true
+user_hist = true
+
+<output1>
+file_type = hst
+dt        = 0.5

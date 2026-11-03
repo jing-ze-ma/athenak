@@ -14,6 +14,8 @@
 //! deliberately minimal instrument instead.
 //!
 //! problem/iprob selects:
+//!  17 / 18 = the Ivan et al. (JCP 2013) supersonic-expansion (hydro) and MHD manufactured-
+//!       solution convergence tests (layoutaudit-1103; see CSIvanPar below).
 //!   1 = STATIC UNIFORM STATE.  rho = d0, p = p0, v = 0 everywhere on all six panels.
 //!       The exact solution is "unchanged, forever". This isolates the GEOMETRY and the
 //!       inter-panel communication from anything to do with the velocity representation:
@@ -221,11 +223,20 @@ void PanelNormals(const int p, const Real xi, const Real eta,
 KOKKOS_INLINE_FUNCTION
 void RotatingUniformField(const Real omega, const Real t,
                           const Real bx0, const Real by0, const Real bz0,
-                          Real &bx, Real &by, Real &bz) {
+                          Real &bx, Real &by, Real &bz, const Real nx = 0.0,
+                          const Real ny = 0.0, const Real nz = 1.0) {
   const Real cw = cos(omega*t), sw = sin(omega*t);
-  bx = cw*bx0 - sw*by0;
-  by = sw*bx0 + cw*by0;
-  bz = bz0;
+  if (nx == 0.0 && ny == 0.0 && nz == 1.0) {
+    bx = cw*bx0 - sw*by0;
+    by = sw*bx0 + cw*by0;
+    bz = bz0;
+    return;
+  }
+  // vertexacc-1103: any unit axis n (problem/rot_axis), Rodrigues' formula
+  const Real nb = nx*bx0 + ny*by0 + nz*bz0;
+  bx = cw*bx0 + sw*(ny*bz0 - nz*by0) + (1.0 - cw)*nb*nx;
+  by = cw*by0 + sw*(nz*bx0 - nx*bz0) + (1.0 - cw)*nb*ny;
+  bz = cw*bz0 + sw*(nx*by0 - ny*bx0) + (1.0 - cw)*nb*nz;
 }
 
 //----------------------------------------------------------------------------------------
@@ -387,6 +398,94 @@ void StaticAtmState(const Real r, const Real d0, const Real p0, const Real hs,
   ie = (p0/d0)*dn/gm1;      // isothermal: p/rho is the same constant everywhere
 }
 
+//----------------------------------------------------------------------------------------
+//! layoutaudit-1103: iprob 17 / 18, the two exact-solution convergence tests of Ivan,
+//! De Sterck, Northrup & Groth, JCP 2013 (sect. 5.1.1 eqs 8-9, sect. 5.2.1 eqs 11-12).
+//!
+//!  17  HYDRO SUPERSONIC RADIAL EXPANSION, no gravity.  Inflow at r = x1min (rho, v_r, p
+//!      = problem/ivan_rho, ivan_vr, ivan_p; 10, 4.5, 26 in the paper).  The steady state
+//!      follows from the three invariants: mass flux rho v_r r^2, entropy p/rho^gamma and
+//!      total enthalpy gamma/(gamma-1) p/rho + v_r^2/2.  v_r(r) is the root of
+//!      f(v) = gamma/(gamma-1) K (mdot/(v r^2))^(gamma-1) + v^2/2 - H on the SUPERSONIC
+//!      branch, bracketed by the sonic speed (df/dv = 0) and sqrt(2H) and bisected to
+//!      round-off (IvanHydVr).
+//!  18  MHD MANUFACTURED SOLUTION (eq 11; U there is PRIMITIVE, [rho, v, B, p]):
+//!          rho = p = r^-5/2,  v = r^(1/2) rhat + kappa r^(5/2) zhat,
+//!          B = rhat/r^2 + kappa zhat  ( = r^(-5/2) v, so v x B = 0 ),
+//!      steady with the source Q_O of eq 12 on the momentum and energy (mass and induction
+//!      sources are zero).  Verified 11-03 by finite-differencing the ideal-MHD fluxes
+//!      (B^2/2 units, as here): residual - Q_O = 1e-12 at random points, so eq 12 has NO
+//!      typo.  It is also gamma-independent: the energy flux is
+//!      (gamma/(gamma-1) p + rho v^2/2) v = (gamma/(gamma-1) + r^5 B^2/2) B and the
+//!      constant drops out of the divergence.  B is curl free, so the Maxwell stress has
+//!      zero divergence; the faces are set exactly divergence free (CSIvanFaces).
+//! Both use exact inner radial ghosts and linearly extrapolated outer ones
+//! (problem/ivan_outer_exact = 1: exact outer ghosts instead), and report the density
+//! error norms and the error-vs-distance-from-seam profile at the end (CSIvanErrors).
+//! Exact values are POINT values at (radial volume centroid, equiangular cell centre);
+//! the IC, the ghosts, the source and the error all use the same point.
+
+struct CSIvanPar {
+  Real mdot = 0.0, kk = 0.0, hh = 0.0, gam = 1.4;   // 17: rho v r^2, p/rho^gam, enthalpy
+  Real kap = 0.017;                                  // 18: the zhat perturbation
+  int outer_exact = 0;
+};
+CSIvanPar cs_iv;
+
+KOKKOS_INLINE_FUNCTION
+Real IvanHydVr(const CSIvanPar &P, const Real r) {
+  const Real g = P.gam, a = P.mdot/(r*r), cf = g/(g - 1.0)*P.kk;
+  Real lo = pow(P.kk*g*pow(a, g - 1.0), 1.0/(g + 1.0));   // the sonic speed
+  Real hi = sqrt(2.0*P.hh);
+  for (int it=0; it<200; ++it) {
+    const Real v = 0.5*(lo + hi);
+    const Real f = cf*pow(a/v, g - 1.0) + 0.5*v*v - P.hh;
+    if (f > 0.0) {hi = v;} else {lo = v;}
+    if (hi - lo <= 4.0e-16*hi) break;
+  }
+  return 0.5*(lo + hi);
+}
+
+//! the exact state at (panel p, xi, eta, r): rho, p, the panel-frame velocity (v1 radial,
+//! v2/v3 contravariant on the unit tangents) and the Cartesian B (zero for 17)
+KOKKOS_INLINE_FUNCTION
+void IvanExact(const CSIvanPar &P, const int iprob, const int p, const Real xi,
+               const Real eta, const Real r, Real &dn, Real &pr, Real &v1, Real &v2,
+               Real &v3, Real bb[3]) {
+  if (iprob == 17) {
+    v1 = IvanHydVr(P, r);
+    dn = P.mdot/(v1*r*r);
+    pr = P.kk*pow(dn, P.gam);
+    v2 = 0.0; v3 = 0.0;
+    bb[0] = 0.0; bb[1] = 0.0; bb[2] = 0.0;
+    return;
+  }
+  Real q[3];
+  cubed_sphere::PanelToCart(p, xi, eta, q);
+  const Real sr = sqrt(r), r52 = r*r*sr;
+  dn = 1.0/r52;
+  pr = dn;
+  const Real vx = sr*q[0], vy = sr*q[1], vz = sr*q[2] + P.kap*r52;
+  v1 = vx*q[0] + vy*q[1] + vz*q[2];
+  Real cs_;
+  CartToPanelVec(p, xi, eta, vx, vy, vz, v2, v3, cs_);
+  bb[0] = q[0]/(r*r); bb[1] = q[1]/(r*r); bb[2] = q[2]/(r*r) + P.kap;
+  return;
+}
+
+//! eq 12: the Cartesian momentum source qm and the energy source qe at (x, y, z)
+KOKKOS_INLINE_FUNCTION
+void IvanMhdSrc(const Real kap, const Real x, const Real y, const Real z, Real qm[3],
+                Real &qe) {
+  const Real r = sqrt(x*x + y*y + z*z), sr = sqrt(r);
+  const Real f = 0.5/(r*r*sr)*(1.0/r - 5.0/(r*r) - kap*z);
+  qm[0] = x*f;
+  qm[1] = y*f;
+  qm[2] = z*f + 2.5*kap/sr*(1.0 + kap*r*z) + kap/sr;
+  qe = 0.5/(r*r) + kap*z*(3.5/r + 2.0*kap*z) + 0.5*SQR(kap*r)*(7.0 + 5.0*kap*r*z);
+  return;
+}
+
 } // namespace
 
 
@@ -487,6 +586,11 @@ void CSTestLoopHistory(HistoryData *pdata, Mesh *pm);
 void CSTestCavityHistory(HistoryData *pdata, Mesh *pm);
 void CSTestSeamHaloScan(ParameterInput *pin, Mesh *pm);
 void CSTestSeamHaloScanFC(ParameterInput *pin, Mesh *pm);
+void CSIvanFaces(MeshBlockPack *pmbp, const int side);   // layoutaudit-1103
+void CSIvanBC(Mesh *pm);
+void CSIvanSrc(Mesh *pm, const Real bdt);
+void CSIvanErrors(ParameterInput *pin, Mesh *pm);
+void CSIvanHist(HistoryData *pdata, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn ProblemGenerator::UserProblem
@@ -672,6 +776,38 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_bcs_func = CSTestRadialBC;
     pgen_final_func = CSTestConvErrors;
   }
+  // layoutaudit-1103: iprob 17 / 18, the Ivan et al. (2013) exact-solution convergence
+  // tests (see CSIvanPar).  ix1_bc = ox1_bc = user.
+  if (iprob == 17 || iprob == 18) {
+    CSIvanPar &P = cs_iv;
+    P.gam = is_mhd ? pmbp->pmhd->peos->eos_data.gamma : pmbp->phydro->peos->eos_data.gamma;
+    if (iprob == 17) {
+      if (is_mhd) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "cs_test iprob = 17 is a HYDRO test" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      const Real ri = pmy_mesh_->mesh_size.x1min;
+      const Real rhoi = pin->GetOrAddReal("problem", "ivan_rho", 10.0);
+      const Real vri = pin->GetOrAddReal("problem", "ivan_vr", 4.5);
+      const Real pri = pin->GetOrAddReal("problem", "ivan_p", 26.0);
+      P.mdot = rhoi*vri*ri*ri;
+      P.kk = pri/std::pow(rhoi, P.gam);
+      P.hh = P.gam/(P.gam - 1.0)*pri/rhoi + 0.5*vri*vri;
+    } else {
+      if (!is_mhd) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "cs_test iprob = 18 needs an <mhd> block" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      P.kap = pin->GetOrAddReal("problem", "kappa", 0.017);
+      user_srcs_func = CSIvanSrc;
+    }
+    P.outer_exact = pin->GetOrAddInteger("problem", "ivan_outer_exact", 0);
+    user_bcs_func = CSIvanBC;
+    user_hist_func = CSIvanHist;
+    pgen_final_func = CSIvanErrors;
+  }
   // iprob = 11: B = b0c*(-y,x,0) + a uniform tilted field. Its curl is the UNIFORM
   // vector 2*b0c*zhat while the field itself is not uniform, which is what makes it a
   // quantitative test of the resistive current: the uniform part contributes nothing to
@@ -752,9 +888,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real cavw_ = cs_cavw, cavr_ = cs_cavr, cavwr_ = cs_cavwr;
   const int cavp_ = cs_cavp;
   // the rotation axis of iprob 3 (iprob 9 keeps zhat: its field precesses about z)
-  const Real axx_ = (iprob == 3) ? cs_axx : 0.0, axy_ = (iprob == 3) ? cs_axy : 0.0;
-  const Real axz_ = (iprob == 3) ? cs_axz : 1.0;
+  // vertexacc-1103: iprob 9 takes problem/rot_axis too (default z: the same 0, 0, 1)
+  const bool rax_ = (iprob == 3 || iprob == 9);
+  const Real axx_ = rax_ ? cs_axx : 0.0, axy_ = rax_ ? cs_axy : 0.0;
+  const Real axz_ = rax_ ? cs_axz : 1.0;
 
+  const CSIvanPar iv_ = cs_iv;     // layoutaudit-1103 (iprob 17 / 18)
   const CSStressPar st_ = cs_st;   // ucthshare-1102 (iprob 16)
   par_for("pgen_cs_test", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je, is,ie,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -772,6 +911,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
     rad = RadialCentroid(rad, rad_rr);
 
+    if (iprob == 17 || iprob == 18) {   // layoutaudit-1103: Ivan et al. 2013, exact
+      Real dn, pr, v1, v2, v3, bb[3];
+      IvanExact(iv_, iprob, mbpanel.d_view(m), xi, eta, rad, dn, pr, v1, v2, v3, bb);
+      w0(m,IDN,k,j,i) = dn;
+      w0(m,IEN,k,j,i) = pr/gm1;
+      w0(m,IVX,k,j,i) = v1;
+      w0(m,IVY,k,j,i) = v2;
+      w0(m,IVZ,k,j,i) = v3;
+      if (nscal > 0) w0(m,nhyd,k,j,i) = 1.0;
+      return;
+    }
     if (iprob == 16) {   // ucthshare-1102 stress tests: the exact state at t = 0
       Real dn = st_.d0, ie_ = st_.p0/gm1, v1 = 0.0, v2 = 0.0, v3 = 0.0;
       if (st_.mode == 5) {
@@ -1079,6 +1229,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         b0f.x3f(m,k,j,i) = bvx*n2[0] + bvy*n2[1] + bvz*n2[2];
       }
     });
+  } else if (is_mhd && iprob == 18) {
+    CSIvanFaces(pmbp, -1);          // layoutaudit-1103
   } else if (is_mhd && iprob == 16) {
     CSStressFaces(pmbp, -1, 0.0);   // ucthshare-1102 stress tests
   } else if (is_mhd && iprob == 11 &&
@@ -1247,7 +1399,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // conserved momentum is the COVARIANT one. See Coordinates::GnomonicEquiangleLowerMom.
   pmbp->pcoord->GnomonicEquiangleLowerMom(w0, u0, is, ie, js, je, ks, ke);
   // LowerMom knows nothing about B, so add the magnetic energy it left out.
-  if (is_mhd && iprob == 16) {   // ucthshare-1102: the analytic |B|^2/2 at the centroid
+  if (is_mhd && iprob == 18) {   // layoutaudit-1103: the analytic |B|^2/2 (IvanExact)
+    const CSIvanPar iv18 = cs_iv;
+    par_for("pgen_cs_emag18", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je,
+            is,ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      const Real x2v = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                    size.d_view(m).x2max);
+      const Real x3v = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                    size.d_view(m).x3max);
+      Real rad = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
+          size.d_view(m).x1min, size.d_view(m).x1max);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+      rad = RadialCentroid(rad, rad_rr);
+      Real dn, pr, v1, v2, v3, bb[3];
+      IvanExact(iv18, 18, mbpanel.d_view(m), 0.25*M_PI*x2v, 0.25*M_PI*x3v, rad,
+                dn, pr, v1, v2, v3, bb);
+      u0(m,IEN,k,j,i) += 0.5*(bb[0]*bb[0] + bb[1]*bb[1] + bb[2]*bb[2]);
+    });
+  } else   if (is_mhd && iprob == 16) {   // ucthshare-1102: the analytic |B|^2/2 at the centroid
     const CSStressPar st5 = cs_st;
     par_for("pgen_cs_emag16", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je,
             is,ie,
@@ -1769,8 +1941,10 @@ void CSTestRadialBC(Mesh *pm) {
   const int iprob = cs_iprob;
   const Real amp_ = cs_amp, r0_ = cs_r0;
   const Real hs_ = cs_hscl;
-  const Real axx_ = (iprob == 3) ? cs_axx : 0.0, axy_ = (iprob == 3) ? cs_axy : 0.0;
-  const Real axz_ = (iprob == 3) ? cs_axz : 1.0;
+  // vertexacc-1103: iprob 9 takes problem/rot_axis too (default z: the same 0, 0, 1)
+  const bool rax_ = (iprob == 3 || iprob == 9);
+  const Real axx_ = rax_ ? cs_axx : 0.0, axy_ = rax_ ? cs_axy : 0.0;
+  const Real axz_ = rax_ ? cs_axz : 1.0;
   // iprob 14: the exact field decays; the ghosts carry it at t^n + bc_time_frac*dt
   const Real ffb0_ = cs_ffb0, ffal_ = cs_alpha;
   const Real ffdec_ = exp(-cs_eta*cs_alpha*cs_alpha*(pm->time + cs_bc_tfrac*pm->dt));
@@ -1990,7 +2164,7 @@ void CSTestRadialBC(Mesh *pm) {
       // puts both of its stage outputs, so the ghost that nulls the lag is 1.41*dt BEHIND
       // the interior it faces, not level with it.
       RotatingUniformField(omega, pm->time + cs_bc_tfrac*pm->dt, cs_bvx, cs_bvy, cs_bvz,
-                           bvx, bvy, bvz);
+                           bvx, bvy, bvz, cs_axx, cs_axy, cs_axz);
     }
     // -------------------------------------------------------------------------------
     // problem/bc_probe. WHAT TIME IS THE INTERIOR AT, as seen from the radial boundary?
@@ -2500,6 +2674,114 @@ void CSTestGravSrc(Mesh *pm, const Real bdt) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn CSErrCells
+//! \brief vertexacc-1103 <problem>/err_cells (read only when named): every active cell's
+//! error against the exact steady state of iprob 3 / 9 (rigid rotation about any axis,
+//! with or without the uniform field), 17 or 18 (Ivan et al.) -> <basename>-errcells.dat
+//! (-errcells.<rank>.dat with MPI), for maps of the error vs distance from the cube
+//! vertices and the seams.  Columns: panel, panel-global (jg, kg), i, xi, eta, r, vol,
+//! rho-rho_ex, p-p_ex, |V-V_ex| (Cartesian), |V_t-V_t,ex| (its tangential part), the
+//! cell-centre unit vector (qx, qy, qz).  Exact values at the cell centre (radial
+//! centroid).  <problem>/err_cells_rstride = s keeps every s-th radial layer only.
+
+void CSErrCells(ParameterInput *pin, Mesh *pm) {
+  if (!(pin->DoesParameterExist("problem", "err_cells") &&
+        pin->GetBoolean("problem", "err_cells"))) return;
+  const int iprob = cs_iprob;
+  if (iprob != 3 && iprob != 9 && iprob != 17 && iprob != 18) return;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int npan = pm->mesh_indcs.nx2;
+  auto &size = pmbp->pmb->mb_size;
+  size.sync_host();
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  mbpanel.sync_host();
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmbp->pmesh->fStretchRPoly[n];
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto w0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), w0);
+  const Real gm1 = (is_mhd ? pmbp->pmhd->peos->eos_data.gamma
+                           : pmbp->phydro->peos->eos_data.gamma) - 1.0;
+  const CSIvanPar P = cs_iv;
+  // <problem>/err_cells_rstride = s: only every s-th radial layer (small n128 dumps)
+  const int rst = std::max(1, pin->GetOrAddInteger("problem", "err_cells_rstride", 1));
+  // one file per rank (-errcells.dat on one rank, -errcells.<rank>.dat otherwise)
+  std::string fname = pin->GetString("job", "basename") + "-errcells" +
+      (global_variable::nranks > 1 ? "." + std::to_string(global_variable::my_rank) : "")
+      + ".dat";
+  FILE *pf = std::fopen(fname.c_str(), "w");
+  if (pf == nullptr) return;
+  std::fprintf(pf, "# iprob %d t %.8e ncycle %d npan %d nx1 %d | p jg kg i xi eta r vol"
+               " drho dp |dV| |dVt| qx qy qz\n", iprob, pm->time, pm->ncycle, npan,
+               pm->mesh_indcs.nx1);
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    const Real x1mn = size.h_view(m).x1min, x1mx = size.h_view(m).x1max;
+    const Real x2mn = size.h_view(m).x2min, x2mx = size.h_view(m).x2max;
+    const Real x3mn = size.h_view(m).x3min, x3mx = size.h_view(m).x3max;
+    for (int k=0; k<nx3; ++k) {
+      const Real eta = 0.25*M_PI*CellCenterX(k, nx3, x3mn, x3mx);
+      const Real ytl = tan(0.25*M_PI*LeftEdgeX(k, nx3, x3mn, x3mx));
+      const Real ytr = tan(0.25*M_PI*LeftEdgeX(k+1, nx3, x3mn, x3mx));
+      const int kg = static_cast<int>(floor(0.5*(CellCenterX(k, nx3, x3mn, x3mx) + 1.0)
+                                            *npan));
+      for (int j=0; j<nx2; ++j) {
+        const Real xi = 0.25*M_PI*CellCenterX(j, nx2, x2mn, x2mx);
+        const Real xtl = tan(0.25*M_PI*LeftEdgeX(j, nx2, x2mn, x2mx));
+        const Real xtr = tan(0.25*M_PI*LeftEdgeX(j+1, nx2, x2mn, x2mx));
+        auto om = [](const Real X, const Real Y) {return atan(X*Y/sqrt(1.0+X*X+Y*Y));};
+        const Real dom = om(xtr, ytr) - om(xtl, ytr) - om(xtr, ytl) + om(xtl, ytl);
+        const int jg = static_cast<int>(floor(0.5*(CellCenterX(j, nx2, x2mn, x2mx) + 1.0)
+                                              *npan));
+        Real e1[3], e2[3], q[3];
+        cubed_sphere::PanelTangents(p, xi, eta, e1, e2);
+        cubed_sphere::PanelToCart(p, xi, eta, q);
+        for (int i=0; i<nx1; i+=rst) {
+          Real rl = LeftEdgeX(i, nx1, x1mn, x1mx), rr = LeftEdgeX(i+1, nx1, x1mn, x1mx);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+          const Real rc = RadialCentroid(rl, rr);
+          const Real vol = (rr*rr*rr - rl*rl*rl)/3.0*dom;
+          Real dn, pr, v1, v2, v3;
+          if (iprob == 3 || iprob == 9) {   // a uniform B exerts no force: same p, v
+            Real ie_;
+            RigidRotState(p, xi, eta, rc, cs_d0, cs_p0, cs_omega, gm1, dn, ie_, v1, v2,
+                          v3, cs_axx, cs_axy, cs_axz);
+            pr = gm1*ie_;
+          } else {
+            Real bb[3];
+            IvanExact(P, iprob, p, xi, eta, rc, dn, pr, v1, v2, v3, bb);
+          }
+          const Real n1 = w0h(m,IVX,k+ks,j+js,i+is) - v1;
+          const Real n2 = w0h(m,IVY,k+ks,j+js,i+is) - v2;
+          const Real n3 = w0h(m,IVZ,k+ks,j+js,i+is) - v3;
+          Real dv2 = 0.0, dt2 = 0.0;
+          for (int c=0; c<3; ++c) {
+            const Real t = n2*e1[c] + n3*e2[c];
+            const Real a = n1*q[c] + t;
+            dv2 += a*a; dt2 += t*t;
+          }
+          std::fprintf(pf, "%d %d %d %d %.8e %.8e %.8e %.8e %.6e %.6e %.6e %.6e %.8f %.8f"
+                       " %.8f\n", p, jg, kg, i, xi, eta, rc, vol,
+                       w0h(m,IDN,k+ks,j+js,i+is) - dn, gm1*w0h(m,IEN,k+ks,j+js,i+is) - pr,
+                       std::sqrt(dv2), std::sqrt(dt2), q[0], q[1], q[2]);
+        }
+      }
+    }
+  }
+  std::fclose(pf);
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   CSTestEosCacheCheck(pm);
@@ -2511,6 +2793,7 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   // hydro errors alone, against the same exact steady equilibrium.
   const bool has_b = (pmbp->pmhd != nullptr) && (cs_iprob == 9);
   if (pmbp->pmhd == nullptr && pmbp->phydro == nullptr) return;
+  CSErrCells(pin, pm);   // vertexacc-1103
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -2530,7 +2813,8 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
 
   // the exact field at the final time
   Real ex, ey, ez;
-  RotatingUniformField(cs_omega, pm->time, cs_bvx, cs_bvy, cs_bvz, ex, ey, ez);
+  RotatingUniformField(cs_omega, pm->time, cs_bvx, cs_bvy, cs_bvz, ex, ey, ez, cs_axx,
+                       cs_axy, cs_axz);
 
   DvceArray4D<Real> b1d, b2d, b3d;
   if (has_b) {
@@ -4660,6 +4944,46 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
         }
         std::fclose(pfile);
         std::printf("### CS BLAST PROFILE written to %s\n", fname.c_str());
+      }
+    }
+    // vertexmd-1103 <problem>/blast_cells (read only when named; one rank): every active
+    // cell's radial index, geodesic angle from the centre, azimuth about it (from e1),
+    // rho, p, |B| -> <basename>-cells.dat, for a per-cell imprint analysis
+    if (pin->DoesParameterExist("problem", "blast_cells") &&
+        pin->GetBoolean("problem", "blast_cells") && global_variable::nranks == 1) {
+      std::string fname = pin->GetString("job", "basename") + "-cells.dat";
+      FILE *pf = std::fopen(fname.c_str(), "w");
+      if (pf != nullptr) {
+        std::fprintf(pf, "# i ang psi rho p |B|  t %.6e\n", pm->time);
+        for (int m=0; m<pmbp->nmb_thispack; ++m) {
+          const int p = mbpanel.h_view(m);
+          for (int k=ks; k<=ke; ++k) {
+            const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                                                   size.h_view(m).x3max);
+            for (int j=js; j<=je; ++j) {
+              const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
+                                                                     size.h_view(m).x2max);
+              Real q[3];
+              cubed_sphere::PanelToCart(p, xc, ec, q);
+              const Real cd = q[0]*c[0] + q[1]*c[1] + q[2]*c[2];
+              const Real ang = std::acos(std::fmin(1.0, std::fmax(-1.0, cd)));
+              const Real psi = std::atan2(q[0]*e2[0] + q[1]*e2[1] + q[2]*e2[2],
+                                          q[0]*e1[0] + q[1]*e1[1] + q[2]*e1[2]);
+              for (int i=is; i<=ie; ++i) {
+                Real babs = 0.0;
+                if (is_mhd) {
+                  babs = std::sqrt(SQR(bcc(m,IBX,k,j,i)) + SQR(bcc(m,IBY,k,j,i))
+                                   + SQR(bcc(m,IBZ,k,j,i)));
+                }
+                // vertexacc-1103: + panel, xi, eta (seam-distance maps)
+                std::fprintf(pf, "%d %.10e %.10e %.10e %.10e %.10e %d %.8e %.8e\n", i-is,
+                             ang, psi, wh(m,IDN,k,j,i), gm1*wh(m,IEN,k,j,i), babs, p, xc,
+                             ec);
+              }
+            }
+          }
+        }
+        std::fclose(pf);
       }
     }
   }
@@ -7909,4 +8233,403 @@ void CSTestCavityHistory(HistoryData *pdata, Mesh *pm) {
   pdata->hdata[11] = me;
   pdata->hdata[12] = pmin;
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSIvanFaces
+//! \brief layoutaudit-1103 iprob 18: B = rhat/r^2 + kappa zhat on the faces, divergence
+//! free to round-off.  The monopole goes on the x1 faces only, as b = 1/r_f^2: the face
+//! area is r_f^2 * (exact solid angle), so every radial face carries the flux Omega and
+//! the radial difference cancels exactly; it has no tangential component.  kappa zhat is
+//! the discrete curl of A = 0.5 kappa (zhat x r) (A.rhat = 0, so only the tangential
+//! edges enter) on the CT edges, the same Stokes loops CSTestBlastFaces uses.
+//! side = -1: every face of the pack; 0 / 1: the inner / outer radial ghost zones of
+//! `user` x1 boundaries (ghost x1 faces only: x1f(is) and x1f(ie+1) belong to CT).
+
+void CSIvanFaces(MeshBlockPack *pmbp, const int side) {
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, ks = indcs.ks, ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng, n2 = indcs.nx2 + 2*ng, n3 = indcs.nx3 + 2*ng;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mb_bcs = pmbp->pmb->mb_bcs;
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmbp->pmesh->fStretchRPoly[n];
+  const Real kap = cs_iv.kap;
+  auto &b0f = pmbp->pmhd->b0;
+  auto &ar1 = pmbp->pcoord->area.x1f;
+  auto &ar2 = pmbp->pcoord->area.x2f;
+  auto &ar3 = pmbp->pcoord->area.x3f;
+  auto &dxe2 = pmbp->pcoord->dxedge.x2e;
+  auto &dxe3 = pmbp->pcoord->dxedge.x3e;
+  auto &mbp = pmbp->pmb->mb_panel;
+  const int qmax = (side < 0) ? n1 : ng-1;
+  par_for("cs_ivan_faces", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0,n3, 0,n2, 0,qmax,
+  KOKKOS_LAMBDA(int m, int k, int j, int q) {
+    if (side == 0 && mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) {
+      return;
+    }
+    if (side == 1 && mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) {
+      return;
+    }
+    const int i = (side < 0) ? q : ((side == 0) ? (is-ng+q) : (ie+1+q));
+    const int ifc = (side == 1) ? i+1 : i;
+    const int p = mbp.d_view(m);
+    const Real x2mn = size.d_view(m).x2min, x2mx = size.d_view(m).x2max;
+    const Real x3mn = size.d_view(m).x3min, x3mx = size.d_view(m).x3max;
+    const Real x1mn = size.d_view(m).x1min, x1mx = size.d_view(m).x1max;
+    auto Rf = [&](const int ii) {
+      Real rf = LeftEdgeX(ii-is, indcs.nx1, x1mn, x1mx);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rf);
+      return rf;
+    };
+    // A = 0.5 kappa (-y, x, 0) on the edge's unit tangent (see CSTestBlastFaces)
+    auto Aedge = [&](const int ii, const int jj, const int kk, const bool along_xi) {
+      const Real rf = Rf(ii);
+      const Real xi = 0.25*M_PI*(along_xi ? CellCenterX(jj-js, indcs.nx2, x2mn, x2mx)
+                                          : LeftEdgeX(jj-js, indcs.nx2, x2mn, x2mx));
+      const Real et = 0.25*M_PI*(along_xi ? LeftEdgeX(kk-ks, indcs.nx3, x3mn, x3mx)
+                                          : CellCenterX(kk-ks, indcs.nx3, x3mn, x3mx));
+      Real qh[3], e1[3], e2[3];
+      cubed_sphere::PanelToCart(p, xi, et, qh);
+      cubed_sphere::PanelTangents(p, xi, et, e1, e2);
+      const Real ax = -0.5*kap*rf*qh[1], ay = 0.5*kap*rf*qh[0];
+      const Real *t = along_xi ? e1 : e2;
+      const Real tn = sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
+      return (ax*t[0] + ay*t[1])/tn;
+    };
+    if (j < n2 && k < n3 && ifc <= n1) {
+      const Real rf = Rf(ifc);
+      b0f.x1f(m,k,j,ifc) =
+          (dxe3(m,k,j+1,ifc)*Aedge(ifc,j+1,k,false) - dxe3(m,k,j,ifc)*Aedge(ifc,j,k,false)
+         - dxe2(m,k+1,j,ifc)*Aedge(ifc,j,k+1,true) + dxe2(m,k,j,ifc)*Aedge(ifc,j,k,true))
+          /ar1(m,k,j,ifc) + 1.0/(rf*rf);
+    }
+    if (i < n1 && k < n3) {
+      b0f.x2f(m,k,j,i) =
+          -(dxe3(m,k,j,i+1)*Aedge(i+1,j,k,false) - dxe3(m,k,j,i)*Aedge(i,j,k,false))
+          /ar2(m,k,j,i);
+    }
+    if (i < n1 && j < n2) {
+      b0f.x3f(m,k,j,i) =
+          (dxe2(m,k,j,i+1)*Aedge(i+1,j,k,true) - dxe2(m,k,j,i)*Aedge(i,j,k,true))
+          /ar3(m,k,j,i);
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSIvanBC
+//! \brief layoutaudit-1103 iprob 17 / 18 radial ghosts: the EXACT state at the inner
+//! (inflow) boundary; at the outer (supersonic outflow) boundary a LINEAR extrapolation of
+//! the conserved variables from the last two active cells in the centroid radius (the
+//! panel basis depends on the angles only, so the covariant momenta extrapolate
+//! component by component), or the exact state with problem/ivan_outer_exact = 1.  MHD:
+//! exact ghost faces on both sides (B is static), and the exact |B|^2/2 in the exact
+//! ghosts' energy.
+
+void CSIvanBC(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, ks = indcs.ks, ng = indcs.ng;
+  const int n2 = indcs.nx2 + 2*ng, n3 = indcs.nx3 + 2*ng;
+  auto &size = pmbp->pmb->mb_size;
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmbp->pmesh->fStretchRPoly[n];
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  auto &mb_bcs = pmbp->pmb->mb_bcs;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  const Real gm1 = (is_mhd ? pmbp->pmhd->peos->eos_data.gamma
+                           : pmbp->phydro->peos->eos_data.gamma) - 1.0;
+  const int nhyd = is_mhd ? pmbp->pmhd->nmhd : pmbp->phydro->nhydro;
+  const CSIvanPar P = cs_iv;
+  const int iprob = cs_iprob;
+  par_for("cs_ivan_rbc", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0,(n3-1),
+          0,(n2-1), 0,(ng-1),
+  KOKKOS_LAMBDA(int m, int k, int j, int ig) {
+    const Real x1mn = size.d_view(m).x1min, x1mx = size.d_view(m).x1max;
+    const Real xi  = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                            size.d_view(m).x2max);
+    const Real eta = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                            size.d_view(m).x3max);
+    const int p = mbpanel.d_view(m);
+    auto Rc = [&](const int ii) {
+      Real rl = LeftEdgeX(ii-is, indcs.nx1, x1mn, x1mx);
+      Real rr = LeftEdgeX(ii+1-is, indcs.nx1, x1mn, x1mx);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+      return RadialCentroid(rl, rr);
+    };
+    for (int side=0; side<2; ++side) {
+      if (side == 0 &&
+          mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) continue;
+      if (side == 1 &&
+          mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) continue;
+      const int i = (side == 0) ? (is-ng+ig) : (ie+1+ig);
+      if (side == 1 && P.outer_exact == 0) {
+        const Real ra = Rc(ie), rb = Rc(ie-1);
+        const Real f = (Rc(i) - ra)/(ra - rb);
+        for (int n=0; n<nhyd; ++n) {
+          u0(m,n,k,j,i) = u0(m,n,k,j,ie) + f*(u0(m,n,k,j,ie) - u0(m,n,k,j,ie-1));
+          w0(m,n,k,j,i) = w0(m,n,k,j,ie) + f*(w0(m,n,k,j,ie) - w0(m,n,k,j,ie-1));
+        }
+        continue;
+      }
+      Real dn, pr, v1, v2, v3, bb[3];
+      IvanExact(P, iprob, p, xi, eta, Rc(i), dn, pr, v1, v2, v3, bb);
+      w0(m,IDN,k,j,i) = dn;
+      w0(m,IEN,k,j,i) = pr/gm1;
+      w0(m,IVX,k,j,i) = v1;
+      w0(m,IVY,k,j,i) = v2;
+      w0(m,IVZ,k,j,i) = v3;
+      // covariant momentum, as in CSTestRadialBC / GnomonicEquiangleLowerMom
+      Real ca, cb, ccos;
+      CartToPanelVec(p, xi, eta, 1.0, 0.0, 0.0, ca, cb, ccos);
+      u0(m,IDN,k,j,i) = dn;
+      u0(m,IM1,k,j,i) = dn*v1;
+      u0(m,IM2,k,j,i) = dn*(v2 + ccos*v3);
+      u0(m,IM3,k,j,i) = dn*(v3 + ccos*v2);
+      u0(m,IEN,k,j,i) = pr/gm1 + 0.5*dn*(v1*v1 + v2*v2 + v3*v3 + 2.0*ccos*v2*v3)
+                      + 0.5*(bb[0]*bb[0] + bb[1]*bb[1] + bb[2]*bb[2]);
+    }
+  });
+  if (is_mhd) {
+    CSIvanFaces(pmbp, 0);
+    CSIvanFaces(pmbp, 1);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSIvanSrc
+//! \brief layoutaudit-1103 iprob 18: the manufactured source Q_O (eq 12), a point value at
+//! the cell's (centroid radius, equiangular centre).  The Cartesian momentum source goes
+//! on rhat (IM1) and on the two UNIT tangents (IM2/IM3: the conserved momenta are the
+//! COVARIANT components rho v.e_i).
+
+void CSIvanSrc(Mesh *pm, const Real bdt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto &size = pmbp->pmb->mb_size;
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmbp->pmesh->fStretchRPoly[n];
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  auto u0 = pmbp->pmhd->u0;
+  const Real kap = cs_iv.kap;
+  par_for("cs_ivan_src", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je, is,ie,
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    const Real xi  = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                            size.d_view(m).x2max);
+    const Real eta = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                            size.d_view(m).x3max);
+    Real rl = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    Real rr = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+    ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+    const Real rc = RadialCentroid(rl, rr);
+    const int p = mbpanel.d_view(m);
+    Real q[3], e1[3], e2[3], qm[3], qe;
+    cubed_sphere::PanelToCart(p, xi, eta, q);
+    cubed_sphere::PanelTangents(p, xi, eta, e1, e2);
+    IvanMhdSrc(kap, rc*q[0], rc*q[1], rc*q[2], qm, qe);
+    u0(m,IM1,k,j,i) += bdt*(qm[0]*q[0] + qm[1]*q[1] + qm[2]*q[2]);
+    u0(m,IM2,k,j,i) += bdt*(qm[0]*e1[0] + qm[1]*e1[1] + qm[2]*e1[2]);
+    u0(m,IM3,k,j,i) += bdt*(qm[0]*e2[0] + qm[1]*e2[1] + qm[2]*e2[2]);
+    u0(m,IEN,k,j,i) += bdt*qe;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSIvanErrSums
+//! \brief layoutaudit-1103 iprob 17 / 18: host-side DENSITY error against the exact point
+//! value, all ranks.  Fills sum|e| V, sum e^2 V, sum V, max|e| (and where), and per ring
+//! of constant d = min distance IN CELLS to the nearest panel edge (d = 0 is the seam
+//! row; the panel-global index comes from the cell's angle, so it is independent of the
+//! MeshBlock layout): sum|e| V, sum V, max|e|.
+
+struct CSIvanErr {
+  Real l1 = 0.0, l2 = 0.0, vol = 0.0, li = 0.0;
+  int li_d = -1, li_i = -1, li_p = -1;
+  std::vector<Real> rl1, rvol, rli;
+};
+
+CSIvanErr CSIvanErrSums(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int npan = pm->mesh_indcs.nx2;   // cells per panel side
+  const int nring = (npan + 1)/2;
+  auto &size = pmbp->pmb->mb_size;
+  size.sync_host();
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  mbpanel.sync_host();
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmbp->pmesh->fStretchRPoly[n];
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto w0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), w0);
+  const CSIvanPar P = cs_iv;
+  CSIvanErr E;
+  E.rl1.assign(nring, 0.0); E.rvol.assign(nring, 0.0); E.rli.assign(nring, 0.0);
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    const Real x1mn = size.h_view(m).x1min, x1mx = size.h_view(m).x1max;
+    const Real x2mn = size.h_view(m).x2min, x2mx = size.h_view(m).x2max;
+    const Real x3mn = size.h_view(m).x3min, x3mx = size.h_view(m).x3max;
+    for (int k=0; k<nx3; ++k) {
+      const Real eta = 0.25*M_PI*CellCenterX(k, nx3, x3mn, x3mx);
+      const Real ytl = tan(0.25*M_PI*LeftEdgeX(k, nx3, x3mn, x3mx));
+      const Real ytr = tan(0.25*M_PI*LeftEdgeX(k+1, nx3, x3mn, x3mx));
+      for (int j=0; j<nx2; ++j) {
+        const Real xi = 0.25*M_PI*CellCenterX(j, nx2, x2mn, x2mx);
+        const Real xtl = tan(0.25*M_PI*LeftEdgeX(j, nx2, x2mn, x2mx));
+        const Real xtr = tan(0.25*M_PI*LeftEdgeX(j+1, nx2, x2mn, x2mx));
+        auto om = [](const Real X, const Real Y) {return atan(X*Y/sqrt(1.0 + X*X + Y*Y));};
+        const Real dom = om(xtr, ytr) - om(xtl, ytr) - om(xtr, ytl) + om(xtl, ytl);
+        // panel-global indices from the cell-centre angle (x in [-1,1] over a panel)
+        const Real x2c = CellCenterX(j, nx2, x2mn, x2mx);
+        const Real x3c = CellCenterX(k, nx3, x3mn, x3mx);
+        const int jg = static_cast<int>(floor(0.5*(x2c + 1.0)*npan));
+        const int kg2 = static_cast<int>(floor(0.5*(x3c + 1.0)*npan));
+        const int d = std::min(std::min(jg, npan-1-jg), std::min(kg2, npan-1-kg2));
+        for (int i=0; i<nx1; ++i) {
+          Real rl = LeftEdgeX(i, nx1, x1mn, x1mx), rr = LeftEdgeX(i+1, nx1, x1mn, x1mx);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+          const Real rc = RadialCentroid(rl, rr);
+          const Real vol = (rr*rr*rr - rl*rl*rl)/3.0*dom;
+          Real dn, pr, v1, v2, v3, bb[3];
+          IvanExact(P, cs_iprob, p, xi, eta, rc, dn, pr, v1, v2, v3, bb);
+          const Real e = fabs(w0h(m,IDN,k+ks,j+js,i+is) - dn);
+          E.l1 += e*vol; E.l2 += e*e*vol; E.vol += vol;
+          if (e > E.li) {E.li = e; E.li_d = d; E.li_i = i; E.li_p = p;}
+          if (d >= 0 && d < nring) {
+            E.rl1[d] += e*vol; E.rvol[d] += vol; E.rli[d] = fmax(E.rli[d], e);
+          }
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  Real s[3] = {E.l1, E.l2, E.vol};
+  MPI_Allreduce(MPI_IN_PLACE, s, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  E.l1 = s[0]; E.l2 = s[1]; E.vol = s[2];
+  MPI_Allreduce(MPI_IN_PLACE, E.rl1.data(), nring, MPI_ATHENA_REAL, MPI_SUM,
+                MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, E.rvol.data(), nring, MPI_ATHENA_REAL, MPI_SUM,
+                MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, E.rli.data(), nring, MPI_ATHENA_REAL, MPI_MAX,
+                MPI_COMM_WORLD);
+  struct {double v; int r;} mx{static_cast<double>(E.li), global_variable::my_rank};
+  MPI_Allreduce(MPI_IN_PLACE, &mx, 1, MPI_DOUBLE_INT, MPI_MAXLOC, MPI_COMM_WORLD);
+  int loc[3] = {E.li_d, E.li_i, E.li_p};
+  MPI_Bcast(loc, 3, MPI_INT, mx.r, MPI_COMM_WORLD);
+  E.li = mx.v; E.li_d = loc[0]; E.li_i = loc[1]; E.li_p = loc[2];
+#endif
+  return E;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSIvanErrors
+//! \brief layoutaudit-1103 iprob 17 / 18: print the density error norms (L1 and L2
+//! volume-weighted and normalised by the domain volume, Linf = max over cells) and the
+//! ring profile.  "seam/int" = ring d = 0 over the volume mean of all rings d >= 2.
+
+void CSIvanErrors(ParameterInput *pin, Mesh *pm) {
+  CSIvanErr E = CSIvanErrSums(pm);
+  CSErrCells(pin, pm);   // vertexacc-1103
+  if (global_variable::my_rank != 0) return;
+  const int nring = static_cast<int>(E.rl1.size());
+  Real il1 = 0.0, ivol = 0.0, ili = 0.0;
+  for (int d=2; d<nring; ++d) {il1 += E.rl1[d]; ivol += E.rvol[d]; ili = fmax(ili, E.rli[d]);}
+  std::printf("### CS IVAN ERR iprob=%d nx1=%d nx2=%d t=%.6e ncycle=%d  L1=%.6e L2=%.6e "
+              "Linf=%.6e (at ring d=%d, i=%d, panel %d)\n", cs_iprob, pm->mesh_indcs.nx1,
+              pm->mesh_indcs.nx2, pm->time, pm->ncycle, E.l1/E.vol, std::sqrt(E.l2/E.vol),
+              E.li, E.li_d, E.li_i, E.li_p);
+  for (int d=0; d<nring; ++d) {
+    std::printf("### CS IVAN RING d=%d  meanL1=%.6e  max=%.6e\n", d,
+                E.rvol[d] > 0.0 ? E.rl1[d]/E.rvol[d] : 0.0, E.rli[d]);
+  }
+  if (ivol > 0.0 && E.rvol[0] > 0.0) {
+    std::printf("### CS IVAN SEAM/INT  meanL1 ratio=%.4f  max ratio=%.4f\n",
+                (E.rl1[0]/E.rvol[0])/(il1/ivol), E.rli[0]/fmax(ili, 1.0e-300));
+  }
+  std::fflush(stdout);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSIvanHist
+//! \brief layoutaudit-1103 iprob 17 / 18: sum |rho - rho_ex| V / V_shell, the steady-state
+//! monitor (a sum, so the history reduction across ranks keeps it right).
+
+void CSIvanHist(HistoryData *pdata, Mesh *pm) {
+  pdata->nhist = 1;
+  pdata->label[0] = "L1rho";
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmbp->pmesh->fStretchRPoly[n];
+  const Real vsh = 4.0*M_PI/3.0*(rmax_*rmax_*rmax_ - rmin_*rmin_*rmin_);
+  auto &w0 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  const CSIvanPar P = cs_iv;
+  const int iprob = cs_iprob;
+  const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1, nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  Real sum = 0.0;
+  Kokkos::parallel_reduce("CSIvanHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  KOKKOS_LAMBDA(const int &idx, Real &ls) {
+    const int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/nx1;
+    const int i = idx - m*nkji - k*nji - j*nx1;
+    const Real x1mn = size.d_view(m).x1min, x1mx = size.d_view(m).x1max;
+    const Real x2mn = size.d_view(m).x2min, x2mx = size.d_view(m).x2max;
+    const Real x3mn = size.d_view(m).x3min, x3mx = size.d_view(m).x3max;
+    const Real xtl = tan(0.25*M_PI*LeftEdgeX(j, nx2, x2mn, x2mx));
+    const Real xtr = tan(0.25*M_PI*LeftEdgeX(j+1, nx2, x2mn, x2mx));
+    const Real ytl = tan(0.25*M_PI*LeftEdgeX(k, nx3, x3mn, x3mx));
+    const Real ytr = tan(0.25*M_PI*LeftEdgeX(k+1, nx3, x3mn, x3mx));
+    const Real dom = atan(xtr*ytr/sqrt(1.0 + xtr*xtr + ytr*ytr))
+                   - atan(xtl*ytr/sqrt(1.0 + xtl*xtl + ytr*ytr))
+                   - atan(xtr*ytl/sqrt(1.0 + xtr*xtr + ytl*ytl))
+                   + atan(xtl*ytl/sqrt(1.0 + xtl*xtl + ytl*ytl));
+    Real rl = LeftEdgeX(i, nx1, x1mn, x1mx), rr = LeftEdgeX(i+1, nx1, x1mn, x1mx);
+    ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+    ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+    Real dn, pr, v1, v2, v3, bb[3];
+    IvanExact(P, iprob, mbpanel.d_view(m), 0.25*M_PI*CellCenterX(j, nx2, x2mn, x2mx),
+              0.25*M_PI*CellCenterX(k, nx3, x3mn, x3mx), RadialCentroid(rl, rr),
+              dn, pr, v1, v2, v3, bb);
+    ls += fabs(w0(m,IDN,k+ks,j+js,i+is) - dn)*(rr*rr*rr - rl*rl*rl)/3.0*dom/vsh;
+  }, Kokkos::Sum<Real>(sum));
+  pdata->hdata[0] = sum;
 }
