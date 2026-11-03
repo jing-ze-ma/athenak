@@ -18,6 +18,7 @@
 #include "parameter_input.hpp"
 #include "units/units.hpp"
 #include "eos/eos.hpp"
+#include "utils/recipe.hpp"
 
 //----------------------------------------------------------------------------------------
 // EquationOfState constructor
@@ -251,6 +252,24 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
                 << std::endl << "<" << bk << ">/" << bc << " is not valid in this "
                 << "block; use <" << bk << ">/" << kc << std::endl;
       std::exit(EXIT_FAILURE);
+    }
+    // prod1103 default (USER 11-03): cb_cont = true on a FRESH start (recipe::NewDefaults)
+    // whenever <bk>/rsolver = lhllc (hydro) / lhlld (MHD) and the key is not named; the
+    // value is recorded (GetOrAdd) so the run's restarts carry it.  A restart whose input
+    // lacks the key keeps the old default false (bitwise); an explicit key always wins.
+    {
+      const std::string rs = is_hyd ? "lhllc" : "lhlld";
+      if (!pin->DoesParameterExist(bk, kc) && pin->DoesParameterExist(bk, "rsolver") &&
+          pin->GetString(bk, "rsolver") == rs) {
+        if (recipe::NewDefaults(pin)) {
+          pin->GetOrAddBoolean(bk, kc, true);
+          recipe::Log("<" + bk + ">/" + kc + " = true (default with rsolver = " + rs + ")");
+        } else {
+          recipe::Log("<" + bk + ">/" + kc + " = false (" + std::string(
+              recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+              "restart input has no key") + ": the old default)");
+        }
+      }
     }
     if (pin->DoesParameterExist(bk, kc)) {
       eos_data.cb_cont = pin->GetBoolean(bk, kc);

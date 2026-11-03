@@ -278,7 +278,9 @@ struct EOS_Data {
   // bitwise; read only when named): the CONTINUOUS sensor fraction
   // s = clamp(J d2/max(d2^2, J^2), 0, 1) in place of clamp(J/d2, 0, 1), which jumps
   // 1 -> 0 where d2 changes sign under a finite J and makes the RK step first order in
-  // dt (utils/cb_sensor.hpp).  Same s wherever |J| <= |d2|.
+  // dt (utils/cb_sensor.hpp).  Same s wherever |J| <= |d2|.  FRESH-start default true
+  // with rsolver = lhllc / lhlld (prod1103, USER 11-03; recipe::NewDefaults, eos.cpp); a
+  // restart whose input lacks the key keeps false.
   bool cb_cont = false;
   // lhllc2nd-1102 <hydro>/lhllc_c1 = eps (> 0; default 0 = off, bitwise; read only when
   // named) and <hydro>/lhllc_c1_parts (bit mask, default 31 = all): the C1 LHLLC of
