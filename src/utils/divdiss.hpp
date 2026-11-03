@@ -55,6 +55,10 @@
 //!           its order), and = J_raw for a normal checkerboard.  Kernel: that of raw
 //!           plus the linear-in-x divergence fields.
 //!
+//!  hpdk (5) hpd + (row - hp): adds the transverse 2dx part of the face-row odd part, the
+//!           only component the corner-averaged forms cannot see (kernel mode
+//!           u = (-1)^(i+j), which grows under hpd/raw at M 1e-4 over a turnover).
+//!
 //! Cartesian prototype: on curvilinear grids w0(ivx) is the coordinate component and
 //! raw would need the metric (refused there by the caller's mesh check: TODO).
 
@@ -137,12 +141,19 @@ KOKKOS_INLINE_FUNCTION
 Real DivDissJ(const DvceArray5D<Real> &w0, const int m, const int k, const int j,
               const int i, const int ivx, const int form, const bool act2,
               const bool act3, const Real dx1, const Real dx2, const Real dx3) {
-  if (form != 4) return DivDissJ0(w0, m, k, j, i, ivx, form, act2, act3, dx1, dx2, dx3);
+  if (form < 4) return DivDissJ0(w0, m, k, j, i, ivx, form, act2, act3, dx1, dx2, dx3);
   const int di = (ivx == IVX) ? 1 : 0, dj = (ivx == IVY) ? 1 : 0, dk = (ivx == IVZ) ? 1 : 0;
   const Real jc = DivDissJ0(w0, m, k, j, i, ivx, 2, act2, act3, dx1, dx2, dx3);
   const Real jm = DivDissJ0(w0, m, k-dk, j-dj, i-di, ivx, 2, act2, act3, dx1, dx2, dx3);
   const Real jp = DivDissJ0(w0, m, k+dk, j+dj, i+di, ivx, 2, act2, act3, dx1, dx2, dx3);
-  return 0.25*(2.0*jc - jm - jp);
+  Real jd = 0.25*(2.0*jc - jm - jp);
+  // hpdk (5): + the TRANSVERSE high-pass of the face-row odd part, row - corner-smoothed
+  // (= J_row for the kernel mode u = (-1)^(i+j), O(dx^2) along a face for smooth flow)
+  if (form == 5) {
+    jd += DivDissJ0(w0, m, k, j, i, ivx, 3, act2, act3, dx1, dx2, dx3)
+        - DivDissJ0(w0, m, k, j, i, ivx, 1, act2, act3, dx1, dx2, dx3);
+  }
+  return jd;
 }
 
 #endif // UTILS_DIVDISS_HPP_

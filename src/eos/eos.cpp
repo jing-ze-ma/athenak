@@ -253,10 +253,12 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
             eos_data.divdiss = 3;
           } else if (f.compare("hpd") == 0) {
             eos_data.divdiss = 4;
+          } else if (f.compare("hpdk") == 0) {
+            eos_data.divdiss = 5;
           } else {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                       << std::endl << "<" << bk << ">/" << kd << "_form = " << f
-                      << " unknown (hp | raw | row | hpd)" << std::endl;
+                      << " unknown (hpd | hpdk | hp | raw | row)" << std::endl;
             std::exit(EXIT_FAILURE);
           }
         }
