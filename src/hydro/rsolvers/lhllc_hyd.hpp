@@ -23,6 +23,7 @@
 #include <cmath>      // sqrt()
 
 #include "utils/cb_sensor.hpp"
+#include "utils/divdiss.hpp"
 
 namespace hydro {
 //----------------------------------------------------------------------------------------
@@ -48,6 +49,13 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
   // <hydro>/lhllc_cb_sensor (EOS_Data::cb_sensor): odd-even sensor on every face
   const Real cb_sensor = eos.cb_sensor;
   const bool cb_cont = eos.cb_cont;   // cbcont-1102 <hydro>/lhllc_cb_cont
+  // lowmach2-1102 <hydro>/lhllc_chi_full, <hydro>/lhllc_divdiss (EOS_Data::chi_full,
+  // ::divdiss; utils/divdiss.hpp).  Both off (default) = legacy LHLLC, bitwise.
+  const bool chi_full = eos.chi_full;
+  const int divdiss = eos.divdiss;
+  const bool dd_act2 = (indcs.nx2 > 1), dd_act3 = (indcs.nx3 > 1);
+  const Real dd_dx1 = size.d_view(m).dx1, dd_dx2 = size.d_view(m).dx2,
+             dd_dx3 = size.d_view(m).dx3;
 
   par_for_inner(member, il, iu, [&](const int i) {
     //--- Step 1.  Create local references for L/R states (helps compiler vectorize)
@@ -128,6 +136,10 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
 
     // coefficients for the low-Mach fix
     qe = fmax(fabs(wl_ivx),fabs(wr_ivx)); // maximum speed
+    if (chi_full) {   // lowmach2-1102: full speed, Minoshima & Miyoshi 2021 eq. (14)
+      qe = sqrt(fmax(SQR(wl_ivx) + (SQR(wl_ivy) + SQR(wl_ivz)),
+                     SQR(wr_ivx) + (SQR(wr_ivy) + SQR(wr_ivz))));
+    }
     qf = fmax(qa,qb); // maximum sound speed
     Real chi = fmin(1.0,qe/qf);
     // odd-even sensor, default 1 (utils/cb_sensor.hpp); 0 when not flagged
@@ -168,6 +180,14 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
     qc = wl_ipr + phi*qe*wl_idn*wl_ivx;  // tl
     qd = wr_ipr + phi*qf*wr_idn*wr_ivx;  // tr
     Real cp = (ml*qd + mr*qc)/(ml + mr);
+    // lowmach2-1102: (1 - phi) of the acoustic term acting on the multi-D divergence of
+    // rho u (utils/divdiss.hpp); enters the momentum flux and, through cp*am, the
+    // energy flux as the matching contact-pressure work
+    if (divdiss > 0) {
+      const Real jdd = DivDissJ(w0, m, k, j, i, ivx, divdiss, dd_act2, dd_act3,
+                                dd_dx1, dd_dx2, dd_dx3);
+      cp -= (1.0 - phi)*(ml*mr/(ml + mr))*jdd/(0.5*(wl_idn + wr_idn));
+    }
     cp = cp > 0.0 ? cp : 0.0;
 
     //--- Step 6. Compute L/R fluxes along the line bm (qb), bp (qa)

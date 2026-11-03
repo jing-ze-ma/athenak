@@ -213,6 +213,64 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     if (pin->DoesParameterExist(bk, "plm_c1")) {
       eos_data.plm_c1 = pin->GetBoolean(bk, "plm_c1");
     }
+    // lowmach2-1102: see EOS_Data::chi_full and EOS_Data::divdiss (read only when named)
+    if (pin->DoesParameterExist(bk, "lhllc_chi_full")) {
+      if (!is_hyd) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<" << bk << ">/lhllc_chi_full is hydro (LHLLC) only; "
+                  << "LHLLD already uses the full speed" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      eos_data.chi_full = pin->GetBoolean(bk, "lhllc_chi_full");
+    }
+    if (pin->DoesParameterExist(bk, "lhlld_chi_normal")) {
+      if (is_hyd) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<hydro>/lhlld_chi_normal is MHD (LHLLD) only"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      eos_data.chi_normal = pin->GetBoolean(bk, "lhlld_chi_normal");
+    }
+    {
+      const std::string kd = is_hyd ? "lhllc_divdiss" : "lhlld_divdiss";
+      const std::string bd = is_hyd ? "lhlld_divdiss" : "lhllc_divdiss";
+      if (pin->DoesParameterExist(bk, bd) || pin->DoesParameterExist(bk, bd + "_form")) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<" << bk << ">/" << bd << " is not valid in this "
+                  << "block; use <" << bk << ">/" << kd << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (pin->DoesParameterExist(bk, kd) && pin->GetBoolean(bk, kd)) {
+        eos_data.divdiss = 4;   // default form hpd (lowmach2-1102 tests: hp loses Gresho KE)
+        if (pin->DoesParameterExist(bk, kd + "_form")) {
+          const std::string f = pin->GetString(bk, kd + "_form");
+          if (f.compare("hp") == 0) {
+            eos_data.divdiss = 1;
+          } else if (f.compare("raw") == 0) {
+            eos_data.divdiss = 2;
+          } else if (f.compare("row") == 0) {
+            eos_data.divdiss = 3;
+          } else if (f.compare("hpd") == 0) {
+            eos_data.divdiss = 4;
+          } else if (f.compare("hpdk") == 0) {
+            eos_data.divdiss = 5;
+          } else {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                      << std::endl << "<" << bk << ">/" << kd << "_form = " << f
+                      << " unknown (hpd | hpdk | hp | raw | row)" << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
+        }
+      }
+    }
+    if ((eos_data.chi_full || eos_data.divdiss > 0) &&
+        pin->DoesParameterExist(bk, "lhllc_c1")) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "lhllc_chi_full / lhllc_divdiss are not implemented in "
+                << "the C1 LHLLC (lhllc_c1)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // lhllc2nd-1102: see EOS_Data::c1_eps (hydro only; read only when named)
     if (is_hyd && pin->DoesParameterExist(bk, "lhllc_c1")) {
       eos_data.c1_eps = pin->GetReal(bk, "lhllc_c1");

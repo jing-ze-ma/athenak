@@ -129,6 +129,13 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
     auto &w0 = pmbp->phydro->w0;
     auto &nscal = pmbp->phydro->nscalars;
     auto shk_dir_ = shk_dir;
+    // lowmach2-1102 TEST key (read only when set): <problem>/quirk_pert = eps multiplies
+    // the density of the row 0 < x2 < dx2 (centre line of a domain symmetric about
+    // x2 = 0) by 1 + eps: odd-even decoupling seed (Quirk 1994) for a shock along x1
+    Real qpert = 0.0;
+    if (pin->DoesParameterExist("problem", "quirk_pert")) {
+      qpert = pin->GetReal("problem", "quirk_pert");
+    }
     par_for("pgen_shock1", DevExeSpace(),0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
     KOKKOS_LAMBDA(int m,int k, int j, int i) {
       Real x;
@@ -172,6 +179,11 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
         for (int r=0; r<nscal; ++r) {
           w0(m,IYF+r,k,j,i) = yr;
         }
+      }
+      if (qpert != 0.0) {   // lowmach2-1102
+        Real x2c = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                               size.d_view(m).x2max);
+        if (x2c > 0.0 && x2c < size.d_view(m).dx2) w0(m,IDN,k,j,i) *= 1.0 + qpert;
       }
     });
 

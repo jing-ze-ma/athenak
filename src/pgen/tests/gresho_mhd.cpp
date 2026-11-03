@@ -114,6 +114,25 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem", "vpert_rand")) {
     vrand = pin->GetReal("problem", "vpert_rand");
   }
+  // lowmach2-1102 (TEST keys, read only when set): vortex_amp scales the vortex
+  // (velocity x a, pressure perturbation x a^2; 0 = no vortex), ubg1/ubg2 add a uniform
+  // flow, and three grid-scale seeds with the global cell parity gi, gj:
+  //   cb_p:    p  *= 1 + cb_p (-1)^gi        (pressure checkerboard along x1)
+  //   cb_un:   vx += cb_un (-1)^gi           (normal-velocity checkerboard along x1)
+  //   cb_kern: vx += cb_kern (-1)^(gi+gj)    (the corner-divergence kernel mode)
+  Real vamp = 1.0, ubg1 = 0.0, ubg2 = 0.0, cbp = 0.0, cbun = 0.0, cbkern = 0.0;
+  if (pin->DoesParameterExist("problem", "vortex_amp")) {
+    vamp = pin->GetReal("problem", "vortex_amp");
+  }
+  if (pin->DoesParameterExist("problem", "ubg1")) ubg1 = pin->GetReal("problem", "ubg1");
+  if (pin->DoesParameterExist("problem", "ubg2")) ubg2 = pin->GetReal("problem", "ubg2");
+  if (pin->DoesParameterExist("problem", "cb_p")) cbp = pin->GetReal("problem", "cb_p");
+  if (pin->DoesParameterExist("problem", "cb_un")) cbun = pin->GetReal("problem", "cb_un");
+  if (pin->DoesParameterExist("problem", "cb_kern")) {
+    cbkern = pin->GetReal("problem", "cb_kern");
+  }
+  const bool lm2 = (vamp != 1.0) || (ubg1 != 0.0) || (ubg2 != 0.0) || (cbp != 0.0) ||
+                   (cbun != 0.0) || (cbkern != 0.0);
   Real b1 = b0mag*std::cos(bang), b2 = b0mag*std::sin(bang), b3 = 0.0;
   // ... and with b_incl (degrees from x3) set, a field out of the x1-x2 plane, e.g.
   // b_incl = 0: B along x3, perpendicular to every face normal of the 2-D mesh
@@ -174,12 +193,22 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
       vy += vrand*std::sqrt(3.0)*(2.0*r2 - 1.0);
     }
 
+    Real pres = GreshoPres(rad,p0);
+    if (lm2) {
+      const int gi = static_cast<int>(std::floor((x1v + 1000.0)*nx1/(x1max - x1min)));
+      const int gj = static_cast<int>(std::floor((x2v + 1000.0)*nx2/(x2max - x2min)));
+      const Real si = (gi % 2 == 0) ? 1.0 : -1.0;
+      const Real sij = ((gi + gj) % 2 == 0) ? 1.0 : -1.0;
+      vx = vamp*vx + ubg1 + cbun*si + cbkern*sij;
+      vy = vamp*vy + ubg2;
+      pres = (p0 + vamp*vamp*(pres - p0))*(1.0 + cbp*si);
+    }
     u0(m,IDN,k,j,i) = d0;
     u0(m,IM1,k,j,i) = d0*vx;
     u0(m,IM2,k,j,i) = d0*vy;
     u0(m,IM3,k,j,i) = 0.0;
     // total energy, with the uniform field contributing 0.5*B0^2 everywhere
-    u0(m,IEN,k,j,i) = GreshoPres(rad,p0)/gm1 + 0.5*d0*(vx*vx + vy*vy)
+    u0(m,IEN,k,j,i) = pres/gm1 + 0.5*d0*(vx*vx + vy*vy)
                       + 0.5*b0mag*b0mag;
   });
   if (!is_mhd) return;
