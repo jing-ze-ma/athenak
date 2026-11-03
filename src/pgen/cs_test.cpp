@@ -388,6 +388,84 @@ void StaticAtmState(const Real r, const Real d0, const Real p0, const Real hs,
 
 } // namespace
 
+
+//----------------------------------------------------------------------------------------
+//! ucthshare-1102 MHD SEAM STRESS TESTS, iprob = 16, <problem>/stress = 1 | 2 | 4 | 5
+//! (keys read only for iprob 16).  Exact solutions on the shell, the radial ghosts held
+//! at the exact state (user BC), and a region-split error history (CSStressHistory, also
+//! for iprob 9: the uniform field in rigid rotation):
+//!  1  uniform field b0c*bh, v = 0, uniform p: exact static (force-free).
+//!  2  POTENTIAL field b0c*bh + 2 cq (x, -y, 0) (curl-free, div-free), v = 0, uniform p:
+//!     exact static.  Built from A = 0.5 b0 x r + (2 cq/3)(-yz, -xz, 2xy) (A.r = 0).
+//!  4  circularly polarized ALFVEN wave along bh (exact, any amplitude):
+//!     B = b0c bh + aw (cos f e1 + sin f e2), v = -(B - b0c bh)/sqrt(d0), f = k (bh.x - vA t).
+//!  5  FIELD LOOP in the iprob 3 rigid rotation about z: B = bz zhat + a passive loop of
+//!     strength al and radius R0 around the vertical line through (cx, cy), rotated
+//!     rigidly with the flow (exact while al << bz).
+//! The potential parts (uniform, quadratic, bz zhat) are the discrete curl of A on the CT
+//! edges (div B round-off); the wave / loop parts are face-centre projections.
+struct CSStressPar {
+  int mode;
+  Real b0[3], cq, aw, kw, nh[3], e1[3], e2[3], d0, p0, om, bz, al, R0, cx, cy;
+};
+CSStressPar cs_st;
+KOKKOS_INLINE_FUNCTION
+void CSStressExact(const CSStressPar &P, const Real x, const Real y, const Real z,
+                   const Real t, Real v[3], Real B[3]) {
+  for (int q=0; q<3; ++q) {v[q] = 0.0; B[q] = P.b0[q];}
+  if (P.mode == 2) {
+    B[0] += 2.0*P.cq*x; B[1] -= 2.0*P.cq*y;
+  } else if (P.mode == 4) {
+    const Real b0m = sqrt(P.b0[0]*P.b0[0] + P.b0[1]*P.b0[1] + P.b0[2]*P.b0[2]);
+    const Real va = b0m/sqrt(P.d0);
+    const Real ph = P.kw*(P.nh[0]*x + P.nh[1]*y + P.nh[2]*z - va*t);
+    for (int q=0; q<3; ++q) {
+      const Real db = P.aw*(cos(ph)*P.e1[q] + sin(ph)*P.e2[q]);
+      B[q] += db;
+      v[q] = -db/sqrt(P.d0);
+    }
+  } else if (P.mode == 5 || P.mode == 9) {
+    v[0] = -P.om*y; v[1] = P.om*x; v[2] = 0.0;
+    const Real c = cos(P.om*t), sn = sin(P.om*t);
+    if (P.mode == 9) {
+      B[0] = c*P.b0[0] - sn*P.b0[1]; B[1] = sn*P.b0[0] + c*P.b0[1]; B[2] = P.b0[2];
+    } else {
+      B[0] = 0.0; B[1] = 0.0; B[2] = P.bz;
+      const Real xr = c*x + sn*y, yr = -sn*x + c*y;   // Rz(-om t) x
+      const Real dx = xr - P.cx, dy = yr - P.cy;
+      const Real d = sqrt(dx*dx + dy*dy);
+      if (d < P.R0 && d > 0.0) {
+        const Real lx = -P.al*dy/d, ly = P.al*dx/d;
+        B[0] += c*lx - sn*ly; B[1] += sn*lx + c*ly;
+      }
+    }
+  }
+}
+// the gauge-OK potential part: A (Cartesian) with A.r = 0
+KOKKOS_INLINE_FUNCTION
+void CSStressApot(const CSStressPar &P, const Real x, const Real y, const Real z,
+                  Real A[3]) {
+  Real b[3] = {P.b0[0], P.b0[1], P.b0[2]};
+  if (P.mode == 5) {b[0] = 0.0; b[1] = 0.0; b[2] = P.bz;}
+  A[0] = 0.5*(b[1]*z - b[2]*y); A[1] = 0.5*(b[2]*x - b[0]*z); A[2] = 0.5*(b[0]*y - b[1]*x);
+  if (P.mode == 2) {
+    const Real f = 2.0*P.cq/3.0;
+    A[0] += -f*y*z; A[1] += -f*x*z; A[2] += 2.0*f*x*y;
+  }
+}
+// the non-potential (projected) part of the exact field
+KOKKOS_INLINE_FUNCTION
+void CSStressDB(const CSStressPar &P, const Real x, const Real y, const Real z,
+                const Real t, Real dB[3]) {
+  Real v[3], B[3];
+  CSStressExact(P, x, y, z, t, v, B);
+  Real b[3] = {P.b0[0], P.b0[1], P.b0[2]};
+  if (P.mode == 5) {b[0] = 0.0; b[1] = 0.0; b[2] = P.bz;}
+  if (P.mode == 2) {b[0] += 2.0*P.cq*x; b[1] -= 2.0*P.cq*y;}
+  for (int q=0; q<3; ++q) dB[q] = B[q] - b[q];
+}
+void CSStressFaces(MeshBlockPack *pmbp, const int side, const Real t);
+void CSStressHistory(HistoryData *pdata, Mesh *pm);
 void CSTestRadialBC(Mesh *pm);
 void CSTestBlastFaces(MeshBlockPack *pmbp, const int side);
 void CSTestGravSrc(Mesh *pm, const Real bdt);
@@ -547,6 +625,41 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (iprob == 3 && pin->DoesParameterExist("problem", "vnoise")) {
     cs_vnoise = pin->GetReal("problem", "vnoise");
   }
+  // ucthshare-1102 MHD seam stress tests (iprob 16; also the history of iprob 9)
+  if (iprob == 16 || (iprob == 9 && pin->DoesParameterExist("problem", "stress_hist"))) {
+    CSStressPar &P = cs_st;
+    P.mode = (iprob == 9) ? 9 : pin->GetInteger("problem", "stress");
+    const Real b0c = pin->GetOrAddReal("problem", "b0c", 1.0);
+    Real hx = pin->GetOrAddReal("problem", "bhx", 1.0);
+    Real hy = pin->GetOrAddReal("problem", "bhy", 1.0);
+    Real hz = pin->GetOrAddReal("problem", "bhz", 1.0);
+    const Real hn = std::sqrt(hx*hx + hy*hy + hz*hz);
+    hx /= hn; hy /= hn; hz /= hn;
+    P.nh[0] = hx; P.nh[1] = hy; P.nh[2] = hz;
+    P.b0[0] = b0c*hx; P.b0[1] = b0c*hy; P.b0[2] = b0c*hz;
+    // e1 = a unit vector normal to bh, e2 = bh x e1
+    Real ax = (std::fabs(hz) < 0.9) ? 0.0 : 1.0, ay = 0.0, az = (std::fabs(hz) < 0.9) ? 1.0 : 0.0;
+    const Real dt_ = ax*hx + ay*hy + az*hz;
+    ax -= dt_*hx; ay -= dt_*hy; az -= dt_*hz;
+    const Real an = std::sqrt(ax*ax + ay*ay + az*az);
+    P.e1[0] = ax/an; P.e1[1] = ay/an; P.e1[2] = az/an;
+    P.e2[0] = hy*P.e1[2] - hz*P.e1[1]; P.e2[1] = hz*P.e1[0] - hx*P.e1[2];
+    P.e2[2] = hx*P.e1[1] - hy*P.e1[0];
+    P.cq = (P.mode == 2) ? pin->GetOrAddReal("problem", "stress_cq", 0.25) : 0.0;
+    P.aw = (P.mode == 4) ? pin->GetOrAddReal("problem", "stress_aw", 0.1) : 0.0;
+    P.kw = (P.mode == 4) ? 2.0*M_PI/pin->GetOrAddReal("problem", "stress_lambda", 1.0) : 0.0;
+    P.d0 = d0; P.p0 = p0; P.om = omega;
+    P.bz = (P.mode == 5) ? pin->GetOrAddReal("problem", "stress_bz", 1.0) : 0.0;
+    P.al = (P.mode == 5) ? pin->GetOrAddReal("problem", "stress_al", 1.0e-3) : 0.0;
+    P.R0 = (P.mode == 5) ? pin->GetOrAddReal("problem", "stress_R0", 0.3) : 0.0;
+    P.cx = (P.mode == 5) ? pin->GetOrAddReal("problem", "stress_cx", 1.06) : 0.0;
+    P.cy = (P.mode == 5) ? pin->GetOrAddReal("problem", "stress_cy", 0.0) : 0.0;
+    if (P.mode == 5 || P.mode == 9) {cs_axx = 0.0; cs_axy = 0.0; cs_axz = 1.0;}
+    cs_bvx = P.b0[0]; cs_bvy = P.b0[1]; cs_bvz = P.b0[2];
+    cs_hist_nband = pin->GetOrAddInteger("problem", "stress_nband", 2);
+    user_hist_func = CSStressHistory;
+    if (iprob == 16) user_bcs_func = CSTestRadialBC;
+  }
   if (iprob == 13) {
     cs_gacc = pin->GetOrAddReal("problem", "grav", 1.0);
     cs_hscl = (p0/d0)/cs_gacc;
@@ -641,6 +754,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real axx_ = (iprob == 3) ? cs_axx : 0.0, axy_ = (iprob == 3) ? cs_axy : 0.0;
   const Real axz_ = (iprob == 3) ? cs_axz : 1.0;
 
+  const CSStressPar st_ = cs_st;   // ucthshare-1102 (iprob 16)
   par_for("pgen_cs_test", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je, is,ie,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     // x1 is RADIAL; xi = x2 and eta = x3, matching CoordGnomonicEquiangle.
@@ -656,6 +770,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
     ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
     rad = RadialCentroid(rad, rad_rr);
+
+    if (iprob == 16) {   // ucthshare-1102 stress tests: the exact state at t = 0
+      Real dn = st_.d0, ie_ = st_.p0/gm1, v1 = 0.0, v2 = 0.0, v3 = 0.0;
+      if (st_.mode == 5) {
+        RigidRotState(mbpanel.d_view(m), xi, eta, rad, d0, p0, st_.om, gm1, dn, ie_,
+                      v1, v2, v3, 0.0, 0.0, 1.0);
+      } else {
+        Real cx, cy, cz, vv[3], bb[3], cs_;
+        PanelToCart(mbpanel.d_view(m), xi, eta, cx, cy, cz);
+        CSStressExact(st_, rad*cx, rad*cy, rad*cz, 0.0, vv, bb);
+        v1 = vv[0]*cx + vv[1]*cy + vv[2]*cz;
+        CartToPanelVec(mbpanel.d_view(m), xi, eta, vv[0], vv[1], vv[2], v2, v3, cs_);
+      }
+      w0(m,IDN,k,j,i) = dn;
+      w0(m,IEN,k,j,i) = ie_;
+      w0(m,IVX,k,j,i) = v1;
+      w0(m,IVY,k,j,i) = v2;
+      w0(m,IVZ,k,j,i) = v3;
+      if (nscal > 0) w0(m,nhyd,k,j,i) = 1.0;
+      return;
+    }
 
     if (iprob == 12) {
       // BLAST ON THE SPHERE.  A geodesic cap of overpressure, uniform in radius, on an
@@ -943,6 +1078,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         b0f.x3f(m,k,j,i) = bvx*n2[0] + bvy*n2[1] + bvz*n2[2];
       }
     });
+  } else if (is_mhd && iprob == 16) {
+    CSStressFaces(pmbp, -1, 0.0);   // ucthshare-1102 stress tests
   } else if (is_mhd && iprob == 11 &&
              pin->GetOrAddBoolean("problem", "faces_from_potential", true)) {
     // The same field as the discrete curl of its vector potential on the CT edges (the
@@ -1109,7 +1246,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // conserved momentum is the COVARIANT one. See Coordinates::GnomonicEquiangleLowerMom.
   pmbp->pcoord->GnomonicEquiangleLowerMom(w0, u0, is, ie, js, je, ks, ke);
   // LowerMom knows nothing about B, so add the magnetic energy it left out.
-  if (is_mhd && iprob == 11) {
+  if (is_mhd && iprob == 16) {   // ucthshare-1102: the analytic |B|^2/2 at the centroid
+    const CSStressPar st5 = cs_st;
+    par_for("pgen_cs_emag16", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je,
+            is,ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      const Real x2v = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                    size.d_view(m).x2max);
+      const Real x3v = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                    size.d_view(m).x3max);
+      Real rad = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
+          size.d_view(m).x1min, size.d_view(m).x1max);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+      rad = RadialCentroid(rad, rad_rr);
+      Real cx, cy, cz, vv[3], bb[3];
+      PanelToCart(mbpanel.d_view(m), 0.25*M_PI*x2v, 0.25*M_PI*x3v, cx, cy, cz);
+      CSStressExact(st5, rad*cx, rad*cy, rad*cz, 0.0, vv, bb);
+      u0(m,IEN,k,j,i) += 0.5*(bb[0]*bb[0] + bb[1]*bb[1] + bb[2]*bb[2]);
+    });
+  } else if (is_mhd && iprob == 11) {
     // ANALYTIC too, and it matters: the pressure is in force balance against the ANALYTIC
     // |B|^2/2, so taking the magnetic energy from the face-averaged bcc instead would
     // leave the state out of balance by that difference and set the shell ringing.
@@ -1322,6 +1479,245 @@ void CSTestBlastFaces(MeshBlockPack *pmbp, const int side) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn CSStressFaces
+//! \brief ucthshare-1102 iprob 16: the exact face fields at time t -- the potential part
+//! as the discrete curl of A (A.r = 0, see CSTestBlastFaces), the rest as face-centre
+//! projections.  side = -1: every face of the pack; 0 / 1: the inner / outer radial
+//! ghost zones of `user` x1 boundaries (ghost x1 faces only), with the ghost energy.
+
+void CSStressFaces(MeshBlockPack *pmbp, const int side, const Real t) {
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, ks = indcs.ks, ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng, n2 = indcs.nx2 + 2*ng, n3 = indcs.nx3 + 2*ng;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mb_bcs = pmbp->pmb->mb_bcs;
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmbp->pmesh->fStretchRPoly[n];
+  const CSStressPar P = cs_st;
+  auto &b0f = pmbp->pmhd->b0;
+  auto &u0 = pmbp->pmhd->u0;
+  auto &ar1 = pmbp->pcoord->area.x1f;
+  auto &ar2 = pmbp->pcoord->area.x2f;
+  auto &ar3 = pmbp->pcoord->area.x3f;
+  auto &dxe2 = pmbp->pcoord->dxedge.x2e;
+  auto &dxe3 = pmbp->pcoord->dxedge.x3e;
+  auto &mbp = pmbp->pmb->mb_panel;
+  const int qmax = (side < 0) ? n1 : ng-1;
+  par_for("cs_stress_faces", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0,n3, 0,n2, 0,qmax,
+  KOKKOS_LAMBDA(int m, int k, int j, int q) {
+    if (side == 0 && mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+    if (side == 1 && mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) return;
+    const int i = (side < 0) ? q : ((side == 0) ? (is-ng+q) : (ie+1+q));
+    const int ifc = (side == 1) ? i+1 : i;
+    const int p = mbp.d_view(m);
+    const Real x2mn = size.d_view(m).x2min, x2mx = size.d_view(m).x2max;
+    const Real x3mn = size.d_view(m).x3min, x3mx = size.d_view(m).x3max;
+    const Real x1mn = size.d_view(m).x1min, x1mx = size.d_view(m).x1max;
+    auto Rf = [&](const int ii) {
+      Real rf = LeftEdgeX(ii-is, indcs.nx1, x1mn, x1mx);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rf);
+      return rf;
+    };
+    auto Rc = [&](const int ii) { return RadialCentroid(Rf(ii), Rf(ii+1)); };
+    auto Aedge = [&](const int ii, const int jj, const int kk, const bool along_xi) {
+      const Real rf = Rf(ii);
+      const Real xi = 0.25*M_PI*(along_xi ? CellCenterX(jj-js, indcs.nx2, x2mn, x2mx)
+                                          : LeftEdgeX(jj-js, indcs.nx2, x2mn, x2mx));
+      const Real et = 0.25*M_PI*(along_xi ? LeftEdgeX(kk-ks, indcs.nx3, x3mn, x3mx)
+                                          : CellCenterX(kk-ks, indcs.nx3, x3mn, x3mx));
+      Real qh[3], e1[3], e2[3], A[3];
+      cubed_sphere::PanelToCart(p, xi, et, qh);
+      cubed_sphere::PanelTangents(p, xi, et, e1, e2);
+      CSStressApot(P, rf*qh[0], rf*qh[1], rf*qh[2], A);
+      const Real *tt = along_xi ? e1 : e2;
+      return A[0]*tt[0] + A[1]*tt[1] + A[2]*tt[2];
+    };
+    // projection of the non-potential part at a face centre (radius r, angles xi, et)
+    auto Proj = [&](const Real r, const Real xi, const Real et, const int dir) {
+      Real qh[3], dB[3];
+      cubed_sphere::PanelToCart(p, xi, et, qh);
+      CSStressDB(P, r*qh[0], r*qh[1], r*qh[2], t, dB);
+      if (dir == 1) return dB[0]*qh[0] + dB[1]*qh[1] + dB[2]*qh[2];
+      Real nn1[3], nn2[3];
+      PanelNormals(p, xi, et, nn1, nn2);
+      const Real *nn = (dir == 2) ? nn1 : nn2;
+      return dB[0]*nn[0] + dB[1]*nn[1] + dB[2]*nn[2];
+    };
+    const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2mn, x2mx);
+    const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3mn, x3mx);
+    const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2mn, x2mx);
+    const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3mn, x3mx);
+    if (j < n2 && k < n3 && ifc <= n1) {
+      b0f.x1f(m,k,j,ifc) =
+          (dxe3(m,k,j+1,ifc)*Aedge(ifc,j+1,k,false) - dxe3(m,k,j,ifc)*Aedge(ifc,j,k,false)
+         - dxe2(m,k+1,j,ifc)*Aedge(ifc,j,k+1,true) + dxe2(m,k,j,ifc)*Aedge(ifc,j,k,true))
+          /ar1(m,k,j,ifc) + Proj(Rf(ifc), xc, ec, 1);
+    }
+    if (i < n1 && k < n3) {
+      b0f.x2f(m,k,j,i) =
+          -(dxe3(m,k,j,i+1)*Aedge(i+1,j,k,false) - dxe3(m,k,j,i)*Aedge(i,j,k,false))
+          /ar2(m,k,j,i) + Proj(Rc(i), xf, ec, 2);
+    }
+    if (i < n1 && j < n2) {
+      b0f.x3f(m,k,j,i) =
+          (dxe2(m,k,j,i+1)*Aedge(i+1,j,k,true) - dxe2(m,k,j,i)*Aedge(i,j,k,true))
+          /ar3(m,k,j,i) + Proj(Rc(i), xc, ef, 3);
+    }
+    if (side >= 0 && i < n1 && j < n2 && k < n3) {
+      const Real rc = Rc(i);
+      Real qh[3], vv[3], bb[3];
+      cubed_sphere::PanelToCart(p, xc, ec, qh);
+      CSStressExact(P, rc*qh[0], rc*qh[1], rc*qh[2], t, vv, bb);
+      u0(m,IEN,k,j,i) += 0.5*(bb[0]*bb[0] + bb[1]*bb[1] + bb[2]*bb[2]);
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSStressHistory
+//! \brief ucthshare-1102: region-split errors against the exact solution (iprob 16, and
+//! iprob 9 with problem/stress_hist), host side, one rank.  Regions: panel interior,
+//! seam rows (within stress_nband cells of ONE panel edge), cube vertex (of two).  Per
+//! region: rms and max over active cells of |v - v_ex|, |B - B_ex| (bcc, Cartesian) and
+//! of the error of J.r, the discrete curl of the cell-centred field around the cell's
+//! angular cross-section (the same Stokes operator applied to the exact field is
+//! subtracted, so only the field error enters).  Column 18: the loop energy ratio
+//! sum|B - bz zhat|^2 / sum|B_ex - bz zhat|^2 (iprob 16 stress 5).
+
+void CSStressHistory(HistoryData *pdata, Mesh *pm) {
+  pdata->nhist = 19;
+  const char *rn[3] = {"in", "sm", "vx"};
+  const char *qn[6] = {"rv", "mv", "rB", "mB", "rJ", "mJ"};
+  static std::string lab[19];
+  for (int r=0; r<3; ++r) for (int q=0; q<6; ++q) lab[6*r+q] = std::string(qn[q]) + "-" + rn[r];
+  lab[18] = "Eloop";
+  for (int n=0; n<19; ++n) {pdata->label[n] = lab[n]; pdata->hdata[n] = 0.0;}
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pmhd == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto wh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->w0);
+  auto bch = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->bcc0);
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  size.sync_host(); mbpanel.sync_host();
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmbp->pmesh->fStretchRPoly[n];
+  const CSStressPar P = cs_st;
+  const Real t = pm->time;
+  const int nbr = cs_hist_nband;
+  Real s2[3][3] = {{0,0,0},{0,0,0},{0,0,0}}, mx[3][3] = {{0,0,0},{0,0,0},{0,0,0}};
+  long long nc[3] = {0, 0, 0};
+  Real el_num = 0.0, el_den = 0.0;
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    const Real x2mn = size.h_view(m).x2min, x2mx = size.h_view(m).x2max;
+    const Real x3mn = size.h_view(m).x3min, x3mx = size.h_view(m).x3max;
+    const Real x1mn = size.h_view(m).x1min, x1mx = size.h_view(m).x1max;
+    auto Xi = [&](const Real jj) { return 0.25*M_PI*(x2mn + (jj - js + 0.5)*(x2mx - x2mn)/indcs.nx2); };
+    auto Et = [&](const Real kk) { return 0.25*M_PI*(x3mn + (kk - ks + 0.5)*(x3mx - x3mn)/indcs.nx3); };
+    const Real dg2 = 0.25*M_PI*(x2mx - x2mn)/indcs.nx2, dg3 = 0.25*M_PI*(x3mx - x3mn)/indcs.nx3;
+    for (int i=is; i<=ie; ++i) {
+      Real rl = LeftEdgeX(i-is, indcs.nx1, x1mn, x1mx);
+      Real rr = LeftEdgeX(i+1-is, indcs.nx1, x1mn, x1mx);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+      const Real rc = RadialCentroid(rl, rr);
+      // Cartesian numerical / exact B of a cell (k,j), ghosts included
+      auto Bnum = [&](const int kk, const int jj, Real B[3]) {
+        Real qh[3], e1[3], e2[3];
+        cubed_sphere::PanelToCart(p, Xi(jj), Et(kk), qh);
+        cubed_sphere::PanelTangents(p, Xi(jj), Et(kk), e1, e2);
+        const Real c = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2], sn = std::sqrt(1.0 - c*c);
+        for (int a=0; a<3; ++a) {
+          B[a] = bch(m,IBX,kk,jj,i)*qh[a] + bch(m,IBY,kk,jj,i)*e1[a]
+               + bch(m,IBZ,kk,jj,i)*(e2[a] - c*e1[a])/sn;
+        }
+      };
+      auto Bex = [&](const int kk, const int jj, Real B[3]) {
+        Real qh[3], vv[3];
+        cubed_sphere::PanelToCart(p, Xi(jj), Et(kk), qh);
+        CSStressExact(P, rc*qh[0], rc*qh[1], rc*qh[2], t, vv, B);
+      };
+      // J.r by Stokes around the cross-section of cell (k,j) at radius rc
+      auto Jr = [&](const int k, const int j, const bool ex) {
+        Real b[3][3][3];
+        for (int dk=-1; dk<=1; ++dk) for (int dj=-1; dj<=1; ++dj) {
+          if (dk != 0 && dj != 0) continue;
+          if (ex) Bex(k+dk, j+dj, b[dk+1][dj+1]); else Bnum(k+dk, j+dj, b[dk+1][dj+1]);
+        }
+        auto R = [&](const Real jj, const Real kk, Real q[3]) {
+          cubed_sphere::PanelToCart(p, Xi(jj), Et(kk), q);
+          for (int a=0; a<3; ++a) q[a] *= rc;
+        };
+        Real c00[3], c10[3], c11[3], c01[3];   // corners (j -/+ 1/2, k -/+ 1/2)
+        R(j-0.5, k-0.5, c00); R(j+0.5, k-0.5, c10); R(j+0.5, k+0.5, c11);
+        R(j-0.5, k+0.5, c01);
+        auto seg = [&](const Real a0[3], const Real a1[3], const Real B1[3], const Real B2[3]) {
+          Real s = 0.0;
+          for (int a=0; a<3; ++a) s += 0.5*(B1[a] + B2[a])*(a1[a] - a0[a]);
+          return s;
+        };
+        // counter-clockwise about rhat (panel frames are right-handed: e_xi x e_eta ~ rhat)
+        const Real circ = seg(c00, c10, b[1][1], b[0][1]) + seg(c10, c11, b[1][1], b[1][2])
+                        + seg(c11, c01, b[1][1], b[2][1]) + seg(c01, c00, b[1][1], b[1][0]);
+        Real d1[3], d2[3];
+        for (int a=0; a<3; ++a) {d1[a] = c11[a] - c00[a]; d2[a] = c01[a] - c10[a];}
+        const Real ax = d1[1]*d2[2] - d1[2]*d2[1], ay = d1[2]*d2[0] - d1[0]*d2[2];
+        const Real az = d1[0]*d2[1] - d1[1]*d2[0];
+        const Real area = 0.5*std::sqrt(ax*ax + ay*ay + az*az);
+        return circ/area;
+      };
+      for (int k=ks; k<=ke; ++k) {
+        const Real ec = Et(k);
+        const bool nre = ((0.25*M_PI - std::fabs(ec))/dg3) < static_cast<Real>(nbr);
+        for (int j=js; j<=je; ++j) {
+          const Real xc = Xi(j);
+          const bool nrx = ((0.25*M_PI - std::fabs(xc))/dg2) < static_cast<Real>(nbr);
+          const int rg = (nrx && nre) ? 2 : ((nrx || nre) ? 1 : 0);
+          Real qh[3], e1[3], e2[3];
+          cubed_sphere::PanelToCart(p, xc, ec, qh);
+          cubed_sphere::PanelTangents(p, xc, ec, e1, e2);
+          Real vn[3], bn[3], ve[3], be[3];
+          for (int a=0; a<3; ++a) {
+            vn[a] = wh(m,IVX,k,j,i)*qh[a] + wh(m,IVY,k,j,i)*e1[a] + wh(m,IVZ,k,j,i)*e2[a];
+          }
+          Bnum(k, j, bn);
+          CSStressExact(P, rc*qh[0], rc*qh[1], rc*qh[2], t, ve, be);
+          Real dv = 0.0, db = 0.0;
+          for (int a=0; a<3; ++a) {dv += (vn[a]-ve[a])*(vn[a]-ve[a]); db += (bn[a]-be[a])*(bn[a]-be[a]);}
+          dv = std::sqrt(dv); db = std::sqrt(db);
+          const Real dj = std::fabs(Jr(k, j, false) - Jr(k, j, true));
+          const Real e3[3] = {dv, db, dj};
+          for (int q=0; q<3; ++q) {s2[rg][q] += e3[q]*e3[q]; mx[rg][q] = std::fmax(mx[rg][q], e3[q]);}
+          ++nc[rg];
+          if (P.mode == 5) {
+            el_num += bn[0]*bn[0] + bn[1]*bn[1] + (bn[2]-P.bz)*(bn[2]-P.bz);
+            el_den += be[0]*be[0] + be[1]*be[1] + (be[2]-P.bz)*(be[2]-P.bz);
+          }
+        }
+      }
+    }
+  }
+  for (int r=0; r<3; ++r) for (int q=0; q<3; ++q) {
+    pdata->hdata[6*r+2*q] = (nc[r] > 0) ? std::sqrt(s2[r][q]/nc[r]) : 0.0;
+    pdata->hdata[6*r+2*q+1] = mx[r][q];
+  }
+  pdata->hdata[18] = (el_den > 0.0) ? el_num/el_den : 0.0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn CSTestRadialBC
 //! \brief Impose the exact iprob=3 solution in the RADIAL (x3) ghost zones.
 //!
@@ -1378,6 +1774,8 @@ void CSTestRadialBC(Mesh *pm) {
   const Real ffb0_ = cs_ffb0, ffal_ = cs_alpha;
   const Real ffdec_ = exp(-cs_eta*cs_alpha*cs_alpha*(pm->time + cs_bc_tfrac*pm->dt));
 
+  const CSStressPar st_ = cs_st;   // ucthshare-1102 (iprob 16)
+  const Real st_t_ = pm->time;
   // The RADIAL direction is x1. The lateral (x2/x3) ghosts are filled by the panel
   // exchange; only the two radial boundaries are physical here.
   par_for("cs_test_rbc", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0,(n3-1),
@@ -1437,6 +1835,16 @@ void CSTestRadialBC(Mesh *pm) {
         dn = d0;
         ie_ = (p0 + 0.5*gm1*ffb0_*ffb0_*(1.0 - ffdec_*ffdec_))/gm1;
         v1 = 0.0; v2 = 0.0; v3 = 0.0;
+      } else if (iprob == 16 && st_.mode != 5) {   // ucthshare-1102 stress tests
+        Real cx, cy, cz, vv[3], bb[3], cs_;
+        PanelToCart(p, xi, eta, cx, cy, cz);
+        CSStressExact(st_, rad*cx, rad*cy, rad*cz, st_t_, vv, bb);
+        dn = st_.d0; ie_ = st_.p0/gm1;
+        v1 = vv[0]*cx + vv[1]*cy + vv[2]*cz;
+        CartToPanelVec(p, xi, eta, vv[0], vv[1], vv[2], v2, v3, cs_);
+      } else if (iprob == 16) {
+        RigidRotState(p, xi, eta, rad, d0, p0, st_.om, gm1, dn, ie_, v1, v2, v3,
+                      0.0, 0.0, 1.0);
       } else {
         RigidRotState(p, xi, eta, rad, d0, p0, omega, gm1, dn, ie_, v1, v2, v3,
                       axx_, axy_, axz_);
@@ -1531,6 +1939,9 @@ void CSTestRadialBC(Mesh *pm) {
         u0(m,IEN,k,j,i) += 0.5*bd*bd;
       }
     });
+  } else if (is_mhd && iprob == 16) {   // ucthshare-1102 stress tests: exact ghost faces
+    CSStressFaces(pmbp, 0, pm->time);
+    CSStressFaces(pmbp, 1, pm->time);
   } else if (is_mhd && iprob == 12) {
     // the ambient blast field (uniform tilted + azimuthal) in the radial ghosts, from
     // the same discrete curl of A that built it, plus its energy; bcc is rebuilt by
