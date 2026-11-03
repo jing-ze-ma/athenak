@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <utility>
+#include <string>
 #include <algorithm> // max
 
 #include "athena.hpp"
@@ -315,4 +316,30 @@ particles::ParticlesBoundaryValues::ParticlesBoundaryValues(
 // destructor
 
 particles::ParticlesBoundaryValues::~ParticlesBoundaryValues() {
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool CsSeamBlockendExtend
+//! \brief layoutbug-1103: <mesh>/cs_seam_blockend = clamp (default, the old halo) |
+//! extend.  The along-seam resample of the cubed-sphere halo (bvals_cc.cpp, bvals_fc.cpp)
+//! clamps its stencil to the SENDING MeshBlock's active range; at an interior block end on
+//! a seam -- only with more than one MeshBlock per panel side -- the ghost is then
+//! extrapolated from that block where one block per panel interpolates, i.e. the answer
+//! depends on the MeshBlock layout at truncation level.  extend repeats the exchange once,
+//! after it has completed, with the stencil allowed into the sender's own along-seam
+//! ghosts (same-panel copies), clamped to the PANEL: layout independent to round-off.
+
+bool CsSeamBlockendExtend(MeshBlockPack *ppack, ParameterInput *pin) {
+  Mesh *pm = ppack->pmesh;
+  if (!pm->use_cubed_sphere) return false;
+  const std::string v = pin->GetOrAddString("mesh", "cs_seam_blockend", "clamp");
+  if (v != "clamp" && v != "extend") {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<mesh>/cs_seam_blockend = '" << v
+              << "' must be clamp or extend" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const bool split = (pm->mesh_indcs.nx2 > pm->mb_indcs.nx2) ||
+                     (pm->mesh_indcs.nx3 > pm->mb_indcs.nx3);
+  return (v == "extend") && split;
 }

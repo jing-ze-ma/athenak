@@ -400,9 +400,11 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   pbval_u = new MeshBoundaryValuesCC(ppack, pin, false);
   pbval_u->cs_rho_guard = ppack->pmesh->cs_seam_rho_guard;
   pbval_u->cs_lin_resample = ppack->pmesh->cs_seam_resample_linear;
+  pbval_u->cs_blockend_ext_ = CsSeamBlockendExtend(ppack, pin);   // layoutbug-1103
   pbval_u->InitializeBuffers((nmhd+nscalars));
   pbval_b = new MeshBoundaryValuesFC(ppack, pin);
   pbval_b->InitializeBuffers(3);
+  pbval_b->cs_blockend_ext_ = CsSeamBlockendExtend(ppack, pin);   // layoutbug-1103
 
   // Orbital advection and shearing box BCs (if requested in input file)
   if (pin->DoesBlockExist("shearing_box")) {

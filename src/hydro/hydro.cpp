@@ -172,6 +172,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   pbval_u = new MeshBoundaryValuesCC(ppack, pin, false);
   pbval_u->cs_rho_guard = ppack->pmesh->cs_seam_rho_guard;
   pbval_u->cs_lin_resample = ppack->pmesh->cs_seam_resample_linear;
+  pbval_u->cs_blockend_ext_ = CsSeamBlockendExtend(ppack, pin);   // layoutbug-1103
   pbval_u->InitializeBuffers((nhydro+nscalars));
   // csedge-1019 <mesh>/cs_seam_flux = shared: the seam face-state exchange (hydro.hpp)
   if (ppack->pmesh->use_cubed_sphere && ppack->pmesh->cs_seam_flux == 3) {
