@@ -1258,6 +1258,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
 //! and q has the opposite sign or is exactly zero, q is discarded for n0, i.e. constant
 //! extrapolation; otherwise q is returned unchanged. See the note above the caller.
 
+namespace cs_vertex_diag { extern Real cc_perturb; }   // vertexacc-1103 (mesh.cpp)
+
 KOKKOS_INLINE_FUNCTION
 static Real SignPreserveCS(const Real q, const Real n0, const Real n1, const Real n2) {
   if (((n0 > 0.0) && (n1 > 0.0) && (n2 > 0.0) && !(q > 0.0)) ||
@@ -1286,6 +1288,7 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
   auto a_ = a;
   const bool vfill_ = pmy_pack->pmesh->cs_vertex_fill_cc;
   const bool coar_ = coarse;
+  const Real vpert_ = cs_vertex_diag::cc_perturb;   // vertexacc-1103 (mesh.cpp)
   const int is_ = indcs.is, ie_ = indcs.ie;
 
   // par_for takes at most five ranges, so the ng x ng corner block is flattened into g
@@ -1361,7 +1364,7 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
     // and then drops to the node next to the ghost; smooth data is kept exactly.
     ek = SignPreserveCS(ek, k0, k1, k2);
     ej = SignPreserveCS(ej, j0, j1, j2);
-    a_(m,v,kt,jt,i) = 0.5*(ek + ej);
+    a_(m,v,kt,jt,i) = 0.5*(ek + ej)*(1.0 + vpert_);   // vpert_ = 0: bitwise
   });
   return;
 }
