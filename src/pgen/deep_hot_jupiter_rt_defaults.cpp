@@ -65,6 +65,13 @@ void PgenEarlyDefaults(ParameterInput *pin) {
     Log("<" + fb + ">/am_vector = true + problem/am_transport = false (default pair on a "
         "fresh cs dhj start)");
   }
+  // <mhd>/max_eta = 1e15 cm^2/s with ohmic_resistivity = eos (a required key until now;
+  // user 10-03 test 1e13/1e14/1e15, every dhj MHD production deck)
+  if (fb == "mhd" && named("mhd", "ohmic_resistivity") &&
+      pin->GetString("mhd", "ohmic_resistivity") == "eos" && !named("mhd", "max_eta")) {
+    pin->GetOrAddReal("mhd", "max_eta", 1.0e15);
+    Log("<mhd>/max_eta = 1e15 (default with ohmic_resistivity = eos on a fresh dhj start)");
+  }
 }
 
 }  // namespace recipe
