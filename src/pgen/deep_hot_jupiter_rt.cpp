@@ -286,22 +286,36 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << (amh::on ? "true" : "false") << std::endl;
     }
   }
-  // dhj-only DEFAULT (user 09-30): <hydro>/lhllc_x1_phi_min, <mhd>/lhlld_x1_phi_min = 1,
-  // i.e. the full HLLC/HLLD velocity-jump term on x1 (radial) faces; see
-  // EOS_Data::x1_phi_min.  The global default stays 0 (box / He runs, where x1 is the
-  // convective direction).  An input (or restart) that names the key keeps its value;
-  // GetOrAdd records 1 so this run's restarts carry it.  Runs on restart too, so a
-  // restart from an older file also gets 1; to switch it off there use `-i file` with
-  // the key = 0 (the command line cannot add a key a restart file does not hold).
+  // <hydro>/lhllc_x1_phi_min, <mhd>/lhlld_x1_phi_min (EOS_Data::x1_phi_min) on dhj:
+  //   FRESH start (recipe::NewDefaults; prod1103, USER 11-03): 0 = the low-Mach fix on
+  //     the radial faces too, hydro AND MHD (mhdab_1102: MHD state within 0.5-2 % of 1,
+  //     the r1m v6 deck's value), = the global default.
+  //   RESTART whose input lacks the key (or <job>/recipe = none): 1, the old dhj-only
+  //     default (user 09-30: the full HLLC/HLLD velocity-jump term on x1 faces), so
+  //     running chains are unchanged.
+  // An input (or restart) that names the key keeps its value; GetOrAdd records the
+  // chosen value so this run's restarts carry it.  To change it on a restart use
+  // `-i file` with the key (the command line cannot add a key a restart file lacks).
   {
     MeshBlockPack *plm = pmy_mesh_->pmb_pack;
+    const bool nd = recipe::NewDefaults(pin);
+    const Real xd = nd ? 0.0 : 1.0;
+    const std::string why = nd ? " (default on a fresh start)" : (recipe::GetMode(pin) ==
+        recipe::Mode::none ? " (recipe none: the old dhj default)" : " (restart input "
+        "has no key: the old dhj default)");
     if (plm->phydro != nullptr) {
+      if (!pin->DoesParameterExist("hydro", "lhllc_x1_phi_min")) {
+        recipe::Log(std::string("<hydro>/lhllc_x1_phi_min = ") + (nd ? "0" : "1") + why);
+      }
       plm->phydro->peos->eos_data.x1_phi_min =
-          pin->GetOrAddReal("hydro", "lhllc_x1_phi_min", 1.0);
+          pin->GetOrAddReal("hydro", "lhllc_x1_phi_min", xd);
     }
     if (plm->pmhd != nullptr) {
+      if (!pin->DoesParameterExist("mhd", "lhlld_x1_phi_min")) {
+        recipe::Log(std::string("<mhd>/lhlld_x1_phi_min = ") + (nd ? "0" : "1") + why);
+      }
       plm->pmhd->peos->eos_data.x1_phi_min =
-          pin->GetOrAddReal("mhd", "lhlld_x1_phi_min", 1.0);
+          pin->GetOrAddReal("mhd", "lhlld_x1_phi_min", xd);
     }
     if (global_variable::my_rank == 0) {
       if (plm->phydro != nullptr) {
