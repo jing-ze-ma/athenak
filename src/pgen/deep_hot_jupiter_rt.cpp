@@ -626,8 +626,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   dtloc_every = pin->GetOrAddInteger("problem","dtloc_every",0);
   two_stream_rt::ck_impl_colskip =
       pin->GetOrAddBoolean("problem","ck_impl_colskip",true);
+  // ck_impl_once / _jreuse / _pred / _every: read here only when named; otherwise the
+  // value (prod1103b fresh default or the old one) is set and recorded below, once the
+  // fused-Newton configuration is known (before ck_impl_xstep)
+  const bool once_named = pin->DoesParameterExist("problem","ck_impl_once");
   two_stream_rt::ck_impl_once =
-      pin->GetOrAddBoolean("problem","ck_impl_once",false);
+      once_named ? pin->GetBoolean("problem","ck_impl_once") : false;
   // ck-fast levers (tests_ck_implicit/README_fast.md), all default off: the stored
   // operator kept across calls (xstep = k cycles, xstep_thr = max relative T/rho change),
   // the adaptive chord Jacobian (jreuse = the contraction that triggers a rebuild), no
@@ -636,12 +640,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // once ck_impl_every and ck_impl_frozen_op are known (its default depends on them).
   two_stream_rt::ck_impl_xstep_thr =
       pin->GetOrAddReal("problem","ck_impl_xstep_thr",0.0);
-  two_stream_rt::ck_impl_jreuse = pin->GetOrAddReal("problem","ck_impl_jreuse",0.0);
+  const bool jreuse_named = pin->DoesParameterExist("problem","ck_impl_jreuse");
+  two_stream_rt::ck_impl_jreuse =
+      jreuse_named ? pin->GetReal("problem","ck_impl_jreuse") : 0.0;
   two_stream_rt::ck_impl_jreuse_xc =
       pin->GetOrAddBoolean("problem","ck_impl_jreuse_xc",false);
   two_stream_rt::ck_impl_jreuse_act =
       pin->GetOrAddReal("problem","ck_impl_jreuse_act",0.25);
-  two_stream_rt::ck_impl_pred = pin->GetOrAddBoolean("problem","ck_impl_pred",false);
+  const bool pred_named = pin->DoesParameterExist("problem","ck_impl_pred");
+  two_stream_rt::ck_impl_pred =
+      pred_named ? pin->GetBoolean("problem","ck_impl_pred") : false;
   two_stream_rt::ck_impl_pred_fac =
       pin->GetOrAddReal("problem","ck_impl_pred_fac",0.5);
   two_stream_rt::ck_impl_pred_chk =
@@ -656,7 +664,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // ck-cadence (tests_ck_implicit/README_cadence.md), default off: the full implicit
   // call every N cycles, the per-cell linearised implicit step in between, and the
   // per-column refresh guard.  See utils/two_stream_column_ck.hpp.
-  two_stream_rt::ck_impl_every = pin->GetOrAddInteger("problem","ck_impl_every",1);
+  const bool every_named = pin->DoesParameterExist("problem","ck_impl_every");
+  two_stream_rt::ck_impl_every =
+      every_named ? pin->GetInteger("problem","ck_impl_every") : 1;
   two_stream_rt::ck_impl_every_thr =
       pin->GetOrAddReal("problem","ck_impl_every_thr",0.0);
   // ck-fast2 lever 1, default off: the deep diffusion handover (per-layer dtau of every
@@ -994,6 +1004,53 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::cout << "### WARNING in deep_hot_jupiter_rt: problem/ck_impl_frozen_op is "
               << "IGNORED with ck_impl_refresh_kappa = true: the operator is frozen "
               << "only where the opacity is." << std::endl;
+  }
+  // prod1103b defaults (USER 09-24 dhj production "T4 + C2 + E4", approved for every
+  // Caltech dhj production; audit 11-03): on a FRESH start (recipe::NewDefaults) with the
+  // fused frozen-operator ck_implicit Newton (ck_impl_fuse, ck_impl_frozen_op, debug <= 0,
+  // glob = none, aa = 0, reuse_jac = 0, colskip, no warm start, no rt_rad_force), each of
+  // these keys that is not named takes the production value and is recorded (GetOrAdd):
+  //   ck_impl_once = true (C2: the ck RT once per cycle, operator split after the RK
+  //   stages), ck_impl_jreuse = 0.2 (C2 adaptive chord), ck_impl_pred = true (C2
+  //   predictor), ck_impl_every = 4 (E4 cadence; only with ck_impl_once on).
+  // Otherwise (restart input without the key, recipe none, another ck configuration) the
+  // old default (false / 0 / false / 1) is recorded as before.  An explicit key wins.
+  // ck_impl_xstep is NOT defaulted (audit_dhj_0928, below).
+  {
+    const bool nd = recipe::NewDefaults(pin);
+    const bool c2ok = two_stream_rt::ck_implicit && two_stream_rt::ck_impl_fuse &&
+        two_stream_rt::ck_impl_frozen_op && two_stream_rt::ck_impl_debug <= 0 &&
+        two_stream_rt::ck_impl_glob == 0 && two_stream_rt::ck_impl_aa == 0 &&
+        two_stream_rt::ck_impl_reuse_jac == 0 && two_stream_rt::ck_impl_colskip &&
+        !two_stream_rt::ck_impl_warm && !two_stream_rt::rt_rad_force;
+    const bool c2def = nd && c2ok;
+    const std::string why = c2def ? " (default with the fused T4 ck_implicit)" :
+        (!nd ? (recipe::GetMode(pin) == recipe::Mode::none ? " (recipe none: the old "
+        "default)" : " (restart input has no key: the old default)") : "");
+    const bool logit = two_stream_rt::ck_implicit && (c2def || !nd);
+    if (!once_named) {
+      two_stream_rt::ck_impl_once = pin->GetOrAddBoolean("problem","ck_impl_once",c2def);
+      if (logit) recipe::Log(std::string("problem/ck_impl_once = ") +
+                             (c2def ? "true" : "false") + why);
+    }
+    if (!jreuse_named) {
+      two_stream_rt::ck_impl_jreuse =
+          pin->GetOrAddReal("problem","ck_impl_jreuse",c2def ? 0.2 : 0.0);
+      if (logit) recipe::Log(std::string("problem/ck_impl_jreuse = ") +
+                             (c2def ? "0.2" : "0") + why);
+    }
+    if (!pred_named) {
+      two_stream_rt::ck_impl_pred = pin->GetOrAddBoolean("problem","ck_impl_pred",c2def);
+      if (logit) recipe::Log(std::string("problem/ck_impl_pred = ") +
+                             (c2def ? "true" : "false") + why);
+    }
+    if (!every_named) {
+      const bool e4 = c2def && two_stream_rt::ck_impl_once;
+      two_stream_rt::ck_impl_every =
+          pin->GetOrAddInteger("problem","ck_impl_every",e4 ? 4 : 1);
+      if (logit) recipe::Log(std::string("problem/ck_impl_every = ") + (e4 ? "4" : "1") +
+                             (e4 || !nd ? why : " (ck_impl_once off)"));
+    }
   }
   // problem/ck_impl_xstep: keep the stored operator of ck_impl_frozen_op over k CYCLES
   // (under ck_impl_every = 4, k <= 4 is bitwise off).  DEFAULT 0 (off) since
