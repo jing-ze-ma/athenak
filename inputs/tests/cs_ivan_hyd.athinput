@@ -1,0 +1,73 @@
+# Cubed sphere, HYDRO: the SUPERSONIC RADIAL EXPANSION of Ivan, De Sterck, Northrup & Groth
+# (JCP 2013, sect. 5.1.1, eqs 8-9).  Build with -D PROBLEM=cs_test.  layoutaudit-1103.
+#
+# Shell r = 1..4, gamma 1.4, no gravity.  Inflow at r = 1: rho 10, v_r 4.5, v_par 0,
+# p 26 (Mach 2.36).  The exact steady state follows from the three invariants (mass flux,
+# entropy, total enthalpy) on the supersonic branch.  IC = exact, inner radial ghosts
+# exact, outer ghosts linearly extrapolated (problem/ivan_outer_exact = 1: exact).
+# CSIvanErrors prints at the end:
+#   ### CS IVAN ERR   L1, L2 (volume weighted / domain volume), Linf of rho - rho_exact
+#   ### CS IVAN RING  the same error averaged in rings of constant distance d (cells) to
+#                     the nearest panel edge; SEAM/INT = ring 0 over the mean of d >= 2
+# hst column L1rho is the steady-state monitor.  Radial cells = 2 x nx2 (the paper's
+# 8x8x16 ... grids):
+#   for n in 8 16 32 64; do athena -i cs_ivan_hyd.athinput mesh/nx1=$((2*n)) \
+#     mesh/nx2=$n mesh/nx3=$n meshblock/nx1=$((2*n)) meshblock/nx2=$n meshblock/nx3=$n; done
+# AXES: x1 is RADIAL; x2 = xi and x3 = eta are the panel-tangential angles.
+
+<comment>
+problem = cubed sphere supersonic radial expansion (Ivan et al. 2013)
+
+<job>
+basename = cs_ivan_hyd
+
+<mesh>
+nghost   = 2
+nx1      = 32
+x1min    = 1.0
+x1max    = 4.0
+ix1_bc   = user
+ox1_bc   = user
+nx2      = 16
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+nx3      = 16
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+use_cubed_sphere = true
+cs_seam_blockend = extend
+
+<meshblock>
+nx1      = 32
+nx2      = 16
+nx3      = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 2.0      # steady (L1rho flat to 1e-5) from t ~ 1.2 at nx2 = 8 and 16
+ndiag      = 1000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.4
+
+<problem>
+iprob    = 17
+ivan_rho = 10.0
+ivan_vr  = 4.5
+ivan_p   = 26.0
+ivan_outer_exact = 0
+user_hist = true
+
+<output1>
+file_type = hst
+dt        = 0.1

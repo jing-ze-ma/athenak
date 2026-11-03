@@ -221,9 +221,13 @@ CASES += [
          '500 x 48 x 64 (plateau core 16), phi split',
          set={'mesh/nx2': 48, 'mesh/nx3': 64, 'mesh/theta_plateau_ncore': 16,
               'mesh/theta_plateau_dth': 0.06},
-         layouts=[L('ph2_np2', (500, 48, 32), 2), L('ph4_np4', (500, 48, 16), 4),
-                  L('ph8_np8', (500, 48, 8), 8)]),
+         layouts=[L('ph2_np2', (500, 48, 32), 2), L('ph4_np4', (500, 48, 16), 4)]),
 ]
+# (8 phi blocks of 8 cells: refused since 8995b8d8e, the pole group is 16)
+_acc = [c for c in CASES if c['name'] == 'acc_sp'][0]
+CASES.append(dict(_acc, name='acc_sp_novetgd', set=dict(_acc['set'], **{'rad_m1/vet_gd': 'false'}),
+                  what='accretor deck with rad_m1/vet_gd = false (control: is the M1 layout '
+                  'dependence vet_gd?)'))
 
 # ---------------------------------------------------------------- resistive probes
 # (sp_resist and cs_resist_rkg fail with any block split): which term?
@@ -281,4 +285,21 @@ CASES += [
     dict(_RG, name='rg_vpert_global', what='red_giant cs, vpert_global = true',
          set={'mesh/nx1': 48, 'mesh/cs_seam_blockend': 'extend', 'problem/rt_ck': 'false',
               'problem/vpert_global': 'true'}),
+]
+
+# ---------------------------------------------------------------- exact-solution tests
+# layoutaudit-1103: the Ivan et al. (JCP 2013) convergence problems (cs_test iprob 17 hydro
+# supersonic expansion, 18 MHD manufactured solution with a user source), C16 x 8, extend.
+# Smooth, steady, non-zero flow through every seam and the radial user BCs (exact inflow,
+# linearly extrapolated outflow).  Known: MHD + extend fails at > 2 blocks per panel side
+# (being fixed elsewhere), so cs_ivan_mhd may FAIL only in b4x4_np6.
+_IV = {'mesh/nx1': 8, 'mesh/nx2': 16, 'mesh/nx3': 16, 'mesh/cs_seam_blockend': 'extend'}
+CASES += [
+    dict(name='cs_ivan_hyd', bin='cs', deck='cs_ivan_hyd.athinput', ncyc=10,
+         vars=['hydro_u'], what='cs Ivan 2013 supersonic expansion (iprob 17), hllc, extend',
+         set=dict(_IV), layouts=cs_layouts(16, 8)),
+    dict(name='cs_ivan_mhd', bin='cs', deck='cs_ivan_mhd.athinput', ncyc=10,
+         vars=['mhd_u', 'mhd_bcc'],
+         what='cs Ivan 2013 MHD manufactured solution (iprob 18, user source), hlld, extend',
+         set=dict(_IV), layouts=cs_layouts(16, 8)),
 ]
