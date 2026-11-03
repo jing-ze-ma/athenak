@@ -218,10 +218,11 @@ CASES += [
                   L('b1x1_np3', (704, 16, 16), 3)]),
     dict(name='acc_sp', bin='acc', deck='acc_sp.athinput', ncyc=3, timeout=7200,
          vars=['hydro_u', 'm1'], what='sp accretor production deck (ring avg ke/gz, vet_gd), '
-         '500 x 29 x 64, phi split',
-         set={'mesh/nx2': 29, 'mesh/nx3': 64},
-         layouts=[L('ph2_np2', (500, 29, 32), 2), L('ph4_np4', (500, 29, 16), 4),
-                  L('ph8_np8', (500, 29, 8), 8)]),
+         '500 x 48 x 64 (plateau core 16), phi split',
+         set={'mesh/nx2': 48, 'mesh/nx3': 64, 'mesh/theta_plateau_ncore': 16,
+              'mesh/theta_plateau_dth': 0.06},
+         layouts=[L('ph2_np2', (500, 48, 32), 2), L('ph4_np4', (500, 48, 16), 4),
+                  L('ph8_np8', (500, 48, 8), 8)]),
 ]
 
 # ---------------------------------------------------------------- resistive probes
