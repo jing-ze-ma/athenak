@@ -121,6 +121,7 @@ add_executable(
         mhd/mhd_fluxes.cpp
         mhd/mhd_fofc.cpp
         mhd/mhd_newdt.cpp
+        mhd/mhd_dtreport.cpp
         mhd/mhd_tasks.cpp
         mhd/mhd_splitbval.cpp
         mhd/mhd_tracers.cpp
