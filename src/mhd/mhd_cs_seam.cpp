@@ -380,6 +380,11 @@ MeshBoundaryValuesCC *pbrs_ = nullptr;
 // (Cartesian), eta_Ohm, eta_A at the edge, from this panel's own grid + halo.
 constexpr int kNJ = 32;
 bool res_j_ = false;
+// stokes-1103 <mhd>/cs_seam_res = stokes: per edge 4 more slots (the panel's PARTIAL
+// Stokes circulation H and its partial loop vector area A, Cartesian): 12 slots per edge
+constexpr int kNJS = 48;
+bool res_s_ = false;
+bool res_sv_ = false;   // cs_seam_res = stokes_v: the Stokes current at cube vertices only
 struct ResJEdge {int k, j, i, dir; Real xi, et;};   // a seam edge (CsSeamResJ)
 // the kernel context of CsSeamResJ (kept small: one capture per kernel)
 struct ResJK {
@@ -391,8 +396,168 @@ struct ResJK {
   DvceArray2D<BoundaryFlag> bcs;
   int is, ie, js, je, ks, ke, nx2, nx3;
   bool had;
+  // stokes-1103 (cs_seam_res = stokes): radial cell centroids, centre-to-centre lengths
+  DvceArray2D<Real> x1v;
+  DvceArray4D<Real> dxf1, dxf2, dxf3;
   ResJK(const DvceFaceFld4D<Real> &b, const DvceArray5D<Real> &bc,
         const DvceEdgeFld4D<Real> &jn) : ops(b, bc, jn) {}
+  //--------------------------------------------------------------------------------------
+  // stokes-1103: the REAL-CELL Stokes current at a seam edge.  The loop runs through the
+  // centres of the real cells of all panels around the edge (four at a seam edge, three at
+  // a cube vertex); the two panels' cells next to a seam are mirror images about the seam
+  // plane, so the chord joining them is normal to that plane and B along it is the
+  // seam-face normal field (shared): its line integral is 2 d B.n, with B.n interpolated
+  // along the seam (this panel's own seam faces, linear) to where the chord crosses.  The
+  // loop sides inside a panel are that panel's own seam-row arcs (the interior formula's
+  // dxface * B.e, real faces only).  Each panel adds its own side + HALF of each chord
+  // (H) and the vector area of its half of the loop polygon (A, Cartesian); the panels'
+  // sums H, A are single-valued, and J.A = H fixes the component of J along A.
+  KOKKOS_INLINE_FUNCTION
+  void Pos(const int m, const bool x2t, const int r0, const int aa, const int ii,
+           Real X[3]) const {   // centre of this panel's seam-row cell at along index aa
+    const RegionSize &z = sz(m);
+    const int jj = x2t ? r0 : aa, kk = x2t ? aa : r0;
+    const Real xi = 0.25*M_PI*CellCenterX(jj-js, nx2, z.x2min, z.x2max);
+    const Real et = 0.25*M_PI*CellCenterX(kk-ks, nx3, z.x3min, z.x3max);
+    Real q[3];
+    cubed_sphere::PanelToCart(pn(m), xi, et, q);
+    for (int c=0; c<3; ++c) X[c] = x1v(m,ii)*q[c];
+  }
+  // unit normal of the seam plane (side sd of this panel), pointing INTO this panel
+  KOKKOS_INLINE_FUNCTION
+  void SeamN(const int m, const bool x2t, const bool lo, Real sn[3]) const {
+    Real a[3], b[3], n[3];
+    cubed_sphere::PanelFrame(pn(m), a, b, n);
+    const Real sg = lo ? 1.0 : -1.0;
+    for (int c=0; c<3; ++c) sn[c] = (n[c] + sg*(x2t ? a[c] : b[c]))*M_SQRT1_2;
+  }
+  // the chord integral along +xi (x2 seam) / +eta (x3 seam) from cell centre X to its
+  // mirror image: 2 d B.n, B.n of this panel's seam faces (sf) interpolated along the
+  // seam to the crossing point M = X - d sn; vlo / vhi: a cube vertex at that end
+  // (clamp the stencil to the panel: extrapolation)
+  KOKKOS_INLINE_FUNCTION
+  Real Chord(const int m, const bool x2t, const int sf, const Real X[3], const Real sn[3],
+             const int ii, const bool vlo, const bool vhi, Real M[3]) const {
+    const Real d = X[0]*sn[0] + X[1]*sn[1] + X[2]*sn[2];
+    for (int c=0; c<3; ++c) M[c] = X[c] - d*sn[c];
+    Real a[3], b[3], n[3];
+    cubed_sphere::PanelFrame(pn(m), a, b, n);
+    const Real mn = M[0]*n[0] + M[1]*n[1] + M[2]*n[2];
+    const Real *e = x2t ? b : a;   // the along-seam chart direction
+    const Real u = atan((M[0]*e[0] + M[1]*e[1] + M[2]*e[2])/mn);
+    const RegionSize &z = sz(m);
+    const int nc = x2t ? nx3 : nx2;
+    const Real lo_ = x2t ? z.x3min : z.x2min, hi_ = x2t ? z.x3max : z.x2max;
+    const Real h = 0.25*M_PI*(hi_ - lo_)/nc;
+    const Real c0 = 0.25*M_PI*CellCenterX(0, nc, lo_, hi_);
+    const Real f = (u - c0)/h;
+    int a0 = static_cast<int>(floor(f));
+    const int amin = vlo ? 0 : -1, amax = vhi ? nc-2 : nc-1;
+    a0 = (a0 < amin) ? amin : ((a0 > amax) ? amax : a0);
+    const Real w = f - a0;
+    const int cb = x2t ? ks : js;
+    Real f0, f1;
+    if (x2t) {f0 = ops.b.x2f(m,cb+a0,sf,ii); f1 = ops.b.x2f(m,cb+a0+1,sf,ii);}
+    else     {f0 = ops.b.x3f(m,sf,cb+a0,ii); f1 = ops.b.x3f(m,sf,cb+a0+1,ii);}
+    return 2.0*d*((1.0 - w)*f0 + w*f1);
+  }
+  // this panel's partial H and A (Cartesian) of the loop around seam edge e of cell c
+  // (e: 0 / 1 along-seam at radial face i / ie+1, 2 / 3 radial at the lower / upper
+  // along-seam face), oriented positively about the edge tangent t (Cartesian)
+  KOKKOS_INLINE_FUNCTION
+  void StokesPart(const int m, const bool x2t, const bool lo, const int sf, const int c,
+                  const int e, const int i, const bool vlo, const bool vhi,
+                  const Real t[3], Real &H, Real A[3]) const {
+    const int r0 = x2t ? (lo ? js : je) : (lo ? ks : ke);
+    const int cb = x2t ? ks : js;
+    const Real slo = lo ? 1.0 : -1.0;
+    Real sn[3];
+    SeamN(m, x2t, lo, sn);
+    Real Xl[3], Xh[3], Ml[3], Mh[3], Dl, Dh;
+    if (e <= 1) {   // along-seam edge at radial face ifc: cells (c, ifc-1), (c, ifc)
+      const int ifc = (e == 1) ? ie+1 : i;
+      Pos(m, x2t, r0, cb+c, ifc-1, Xl); Pos(m, x2t, r0, cb+c, ifc, Xh);
+      Dl = Chord(m, x2t, sf, Xl, sn, ifc-1, vlo, vhi, Ml);
+      Dh = Chord(m, x2t, sf, Xh, sn, ifc, vlo, vhi, Mh);
+      if (x2t) {
+        H = -slo*dxf1(m,cb+c,r0,ifc)*ops.b.x1f(m,cb+c,r0,ifc) + 0.5*(Dh - Dl);
+      } else {
+        H = slo*dxf1(m,r0,cb+c,ifc)*ops.b.x1f(m,r0,cb+c,ifc) - 0.5*(Dh - Dl);
+      }
+    } else {        // radial edge at along face fa: cells fa-1, fa
+      const int fa = cb + c + (e - 2);
+      Pos(m, x2t, r0, fa-1, i, Xl); Pos(m, x2t, r0, fa, i, Xh);
+      Dl = Chord(m, x2t, sf, Xl, sn, i, vlo, vhi, Ml);
+      Dh = Chord(m, x2t, sf, Xh, sn, i, vlo, vhi, Mh);
+      if (x2t) {
+        H = slo*dxf3(m,fa,r0,i)*CsBcovEta(ops.b, ops.cet, ops.set, m, fa, r0, i)
+          - 0.5*(Dh - Dl);
+      } else {
+        H = -slo*dxf2(m,r0,fa,i)*CsBcovXi(ops.b, ops.cxi, ops.sxi, m, r0, fa, i)
+          + 0.5*(Dh - Dl);
+      }
+    }
+    // the half-loop polygon (Xl, Ml, Mh, Xh): vector area, oriented along +t
+    Real p[3], q[3];
+    for (int cc=0; cc<3; ++cc) {p[cc] = Mh[cc] - Xl[cc]; q[cc] = Xh[cc] - Ml[cc];}
+    A[0] = 0.5*(p[1]*q[2] - p[2]*q[1]);
+    A[1] = 0.5*(p[2]*q[0] - p[0]*q[2]);
+    A[2] = 0.5*(p[0]*q[1] - p[1]*q[0]);
+    if (A[0]*t[0] + A[1]*t[1] + A[2]*t[2] < 0.0) {A[0] = -A[0]; A[1] = -A[1]; A[2] = -A[2];}
+  }
+  // this panel's partial of the TRIANGULAR loop through the three corner cells at the
+  // cube vertex (jlo, klo) at radial index i: half of each of its two chords, and its
+  // kite (corner centre, the two chord midpoints, the triangle centroid) of the area
+  KOKKOS_INLINE_FUNCTION
+  void StokesVertex(const int m, const bool jlo, const bool klo, const int i,
+                    const Real t[3], Real &H, Real A[3]) const {
+    const int jv = jlo ? js : je, kv = klo ? ks : ke;
+    const int jc = jlo ? js : je+1, kc = klo ? ks : ke+1;
+    Real X[3], s2[3], s3[3], M2[3], M3[3];
+    Pos(m, true, jv, kv, i, X);
+    SeamN(m, true, jlo, s2); SeamN(m, false, klo, s3);
+    // chords P -> Q (across the x2 seam) and P -> R (x3 seam), as +xi / +eta integrals
+    const bool k0 = (fl(m,2) & 1) != 0, k1 = (fl(m,3) & 1) != 0;   // along x2 seams: k
+    const bool j0 = (fl(m,0) & 1) != 0, j1 = (fl(m,1) & 1) != 0;   // along x3 seams: j
+    const Real D2 = Chord(m, true, jc, X, s2, i, k0, k1, M2);
+    const Real D3 = Chord(m, false, kc, X, s3, i, j0, j1, M3);
+    const Real I2 = jlo ? -D2 : D2, I3 = klo ? -D3 : D3;
+    Real Q[3], R[3], G[3];
+    for (int c=0; c<3; ++c) {
+      Q[c] = 2.0*M2[c] - X[c]; R[c] = 2.0*M3[c] - X[c];
+      G[c] = (X[c] + Q[c] + R[c])/3.0;
+    }
+    Real u[3], w[3];
+    for (int c=0; c<3; ++c) {u[c] = Q[c] - X[c]; w[c] = R[c] - X[c];}
+    const Real o = ((u[1]*w[2] - u[2]*w[1])*t[0] + (u[2]*w[0] - u[0]*w[2])*t[1]
+                  + (u[0]*w[1] - u[1]*w[0])*t[2] > 0.0) ? 1.0 : -1.0;
+    H = 0.5*o*(I2 - I3);   // loop P -> Q -> R -> P (o > 0) or reversed
+    for (int c=0; c<3; ++c) {u[c] = G[c] - X[c]; w[c] = M3[c] - M2[c];}
+    A[0] = 0.5*(u[1]*w[2] - u[2]*w[1]);
+    A[1] = 0.5*(u[2]*w[0] - u[0]*w[2]);
+    A[2] = 0.5*(u[0]*w[1] - u[1]*w[0]);
+    if (A[0]*t[0] + A[1]*t[1] + A[2]*t[2] < 0.0) {A[0] = -A[0]; A[1] = -A[1]; A[2] = -A[2];}
+  }
+  // the edge tangent (Cartesian) of seam edge g on this panel
+  KOKKOS_INLINE_FUNCTION
+  void Tangent(const int m, const ResJEdge &g, Real tt[3]) const {
+    Real q[3], t1[3], t2[3];
+    cubed_sphere::PanelToCart(pn(m), g.xi, g.et, q);
+    cubed_sphere::PanelTangents(pn(m), g.xi, g.et, t1, t2);
+    const Real *t = (g.dir == 1) ? q : ((g.dir == 2) ? t1 : t2);
+    for (int c=0; c<3; ++c) tt[c] = t[c];
+  }
+  // stokes: J = J_mean + ((H - J_mean.A)/(A.t)) t (J.A = H), then the EMF of Emf
+  KOKKOS_INLINE_FUNCTION
+  Real EmfS(const int m, const ResJEdge &g, Real v[12]) const {
+    Real t[3];
+    Tangent(m, g, t);
+    const Real ja = v[0]*v[9] + v[1]*v[10] + v[2]*v[11];
+    const Real at = t[0]*v[9] + t[1]*v[10] + t[2]*v[11];
+    const Real dj = (v[8] - ja)/at;
+    for (int c=0; c<3; ++c) v[c] += dj*t[c];
+    return Emf(m, g, v);
+  }
   // the edge of kind e (0 along-seam at radial face i, 1 the same at ie+1, 2 / 3 radial
   // at the lower / upper along-seam face) of seam cell c (seam face index sf)
   KOKKOS_INLINE_FUNCTION
@@ -558,9 +723,13 @@ void MHD::CsSeamInit(ParameterInput *pin) {
     const std::string v = pin->GetString("mhd","cs_seam_res");
     if (v == "own") {cs_seam_res_own = true;}
     else if (v == "mean_j") {cs_uct::res_j_ = true;}   // seamexact-1103
+    else if (v == "stokes") {cs_uct::res_j_ = true; cs_uct::res_s_ = true;}   // stokes-1103
+    else if (v == "stokes_v") {   // stokes-1103: vertex triangle only, seams = mean_j
+      cs_uct::res_j_ = true; cs_uct::res_s_ = true; cs_uct::res_sv_ = true;
+    }
     else if (v != "mean") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<mhd>/cs_seam_res = '" << v << "' (mean | mean_j | own)"
+                << std::endl << "<mhd>/cs_seam_res = '" << v << "' (mean | mean_j | stokes | stokes_v | own)"
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -672,11 +841,12 @@ void MHD::CsSeamInit(ParameterInput *pin) {
         pbrj_ = new MeshBoundaryValuesCC(pp, pin, false);
         pbrj_->seam_raw = true;
         pbrj_->seam_xform_off = true;
-        pbrj_->InitializeBuffers(kNJ);
-        rjown_ = new DvceFaceFld5D<Real>("cs_resj_own", nmb, kNJ, n3, n2, n1);
-        rjnbr_ = new DvceFaceFld5D<Real>("cs_resj_nbr", nmb, kNJ, n3, n2, n1);
-        Kokkos::realloc(rjown_->x1f, nmb, kNJ, 1, 1, 1);
-        Kokkos::realloc(rjnbr_->x1f, nmb, kNJ, 1, 1, 1);
+        const int nj = res_s_ ? kNJS : kNJ;   // stokes-1103: + H, A per edge
+        pbrj_->InitializeBuffers(nj);
+        rjown_ = new DvceFaceFld5D<Real>("cs_resj_own", nmb, nj, n3, n2, n1);
+        rjnbr_ = new DvceFaceFld5D<Real>("cs_resj_nbr", nmb, nj, n3, n2, n1);
+        Kokkos::realloc(rjown_->x1f, nmb, nj, 1, 1, 1);
+        Kokkos::realloc(rjnbr_->x1f, nmb, nj, 1, 1, 1);
       }
     }
     pbval_us = new MeshBoundaryValuesCC(pp, pin, false);
@@ -1707,7 +1877,16 @@ void MHD::UctSeamOwnSide() {
 //! projected on their own edge tangent.  The EMF mean that follows (CsSeamResist, mean)
 //! then only removes the last-bit difference of the two tangents, so the EMF, the
 //! ambipolar term and the resistive Poynting flux (the Joule heating, built from these
-//! edge EMFs) all derive from the one shared current.  Without ambipolar diffusion
+//! edge EMFs) all derive from the one shared current.
+//! stokes-1103 cs_seam_res = stokes | stokes_v: the component of J along the loop normal
+//! comes from the REAL-CELL Stokes circulation (ResJK::StokesPart / StokesVertex; J.A = H,
+//! the other components from the mean above).  Measured (cs_test iprob 14, operator at
+//! t = 0, N = 16/32/64): at the cube vertex 1.6-1.9x below mean (radial E Linf 2.1e-2 /
+//! 8.9e-3 / 4.1e-3 vs 3.3e-2 / 1.6e-2 / 7.9e-3); on the seam edges it is FIRST order like
+//! mean and ~2x above it (the two panels' cells are mirror images about the seam plane
+//! and the grid meets the seam obliquely, so the O(h^2) reconstruction errors of B.dl on
+//! the two loop sides do not cancel as they do between translated interior stencils).
+//! stokes_v uses it at the cube vertices only (seam edges = mean_j).  Without ambipolar diffusion
 //! (Ohmic only) the radial current does not enter (J.t on a tangential edge) and B is
 //! carried but unused.
 
@@ -1745,6 +1924,16 @@ void MHD::CsSeamResJ(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta
   K.bcs = pmy_pack->pmb->mb_bcs.d_view;
   K.is = is; K.ie = ie; K.js = js; K.je = je; K.ks = ks; K.ke = ke;
   K.nx2 = indcs.nx2; K.nx3 = indcs.nx3; K.had = had;
+  const bool st = cs_uct::res_s_;   // stokes-1103: cs_seam_res = stokes | stokes_v
+  const bool sts = st && !cs_uct::res_sv_;   // the Stokes current on the seam edges too
+  const int SJ = st ? 12 : 8;       // slots per edge
+  const int nj = st ? cs_uct::kNJS : kNJ;
+  if (st) {
+    K.x1v = pmy_pack->pcoord->x1v;
+    K.dxf1 = pmy_pack->pcoord->dxface.x1f;
+    K.dxf2 = pmy_pack->pcoord->dxface.x2f;
+    K.dxf3 = pmy_pack->pcoord->dxface.x3f;
+  }
   auto o2 = rjown_->x2f, o3 = rjown_->x3f, n2 = rjnbr_->x2f, n3 = rjnbr_->x3f;
   auto e1 = efld_.x1e;
   auto e2 = efld_.x2e;
@@ -1755,16 +1944,31 @@ void MHD::CsSeamResJ(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta
     const bool x2t = (sd < 2), lo = ((sd & 1) == 0);
     const int cb = x2t ? ks : js;
     const int sf = x2t ? (lo ? js : je+1) : (lo ? ks : ke+1);
+    const bool vlo = (K.fl(m, x2t ? 2 : 0) & 1) != 0, vhi = (K.fl(m, x2t ? 3 : 1) & 1) != 0;
     for (int e=0; e<4; ++e) {
-      Real v[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-      if (e != 1 || i == ie) K.Own(m, K.EdgeAt(m, x2t, sf, c, e, i), v);
-      for (int q=0; q<8; ++q) {
-        if (x2t) {o2(m, 8*e + q, cb + c, sf, i) = v[q];}
-        else     {o3(m, 8*e + q, sf, cb + c, i) = v[q];}
+      Real v[12] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      if (e != 1 || i == ie) {
+        const ResJEdge g = K.EdgeAt(m, x2t, sf, c, e, i);
+        K.Own(m, g, v);
+        if (st) {   // stokes-1103: this panel's partial loop H, A (the vertex: its kite)
+          Real t[3];
+          K.Tangent(m, g, t);
+          const bool vtx = (e == 2 && c == 0 && vlo) || (e == 3 && c == nc-1 && vhi);
+          if (vtx) {
+            const bool jlo = x2t ? lo : (e == 2), klo = x2t ? (e == 2) : lo;
+            K.StokesVertex(m, jlo, klo, i, t, v[8], &v[9]);
+          } else {
+            K.StokesPart(m, x2t, lo, sf, c, e, i, vlo, vhi, t, v[8], &v[9]);
+          }
+        }
+      }
+      for (int q=0; q<SJ; ++q) {
+        if (x2t) {o2(m, SJ*e + q, cb + c, sf, i) = v[q];}
+        else     {o3(m, SJ*e + q, sf, cb + c, i) = v[q];}
       }
     }
   });
-  pbrj_->InitFluxSeamRecv(kNJ);
+  pbrj_->InitFluxSeamRecv(nj);
   pbrj_->PackAndSendFluxSeamCC(*rjown_);
   while (pbrj_->RecvAndUnpackFluxSeamCC(*rjnbr_) != TaskStatus::complete) {}
   pbrj_->ClearFluxSend();
@@ -1782,14 +1986,22 @@ void MHD::CsSeamResJ(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta
       if (e == 2 && c == 0 && vlo) continue;              // cube vertex: resj_vtx
       if (e == 3 && (c != nc-1 || vhi)) continue;         // else the next cell's lower
       const int en = (e <= 1) ? e : (rev ? 5 - e : e);   // reversed: lower <-> upper
-      Real v[8];
+      Real v[12];
       for (int q=0; q<8; ++q) {
-        const Real a = x2t ? o2(m, 8*e + q, cb + c, sf, i) : o3(m, 8*e + q, sf, cb + c, i);
-        const Real b = x2t ? n2(m, 8*en + q, cb + c, sf, i) : n3(m, 8*en + q, sf, cb + c, i);
+        const Real a = x2t ? o2(m, SJ*e + q, cb + c, sf, i) : o3(m, SJ*e + q, sf, cb + c, i);
+        const Real b = x2t ? n2(m, SJ*en + q, cb + c, sf, i) : n3(m, SJ*en + q, sf, cb + c, i);
         v[q] = 0.5*(a + b);
       }
+      // stokes: H, A are SUMS of the two panels' halves; the neighbour's along-seam loop is
+      // oriented along its own tangent (opposite on a reversed seam)
+      const Real sg = (e <= 1 && rev) ? -1.0 : 1.0;
+      for (int q=8; q<SJ; ++q) {
+        const Real a = x2t ? o2(m, SJ*e + q, cb + c, sf, i) : o3(m, SJ*e + q, sf, cb + c, i);
+        const Real b = x2t ? n2(m, SJ*en + q, cb + c, sf, i) : n3(m, SJ*en + q, sf, cb + c, i);
+        v[q] = a + sg*b;
+      }
       const Edge g = K.EdgeAt(m, x2t, sf, c, e, i);
-      const Real ev = K.Emf(m, g, v);
+      const Real ev = sts ? K.EmfS(m, g, v) : K.Emf(m, g, v);
       if (g.dir == 1) {e1(m,g.k,g.j,g.i) = ev;}
       else if (g.dir == 2) {e2(m,g.k,g.j,g.i) = ev;}
       else {e3(m,g.k,g.j,g.i) = ev;}
@@ -1804,19 +2016,20 @@ void MHD::CsSeamResJ(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta
     const int jv = jlo ? js : je, kv = klo ? ks : ke;
     const bool r2 = (K.fl(m,sj) & 2) != 0, r3 = (K.fl(m,sk) & 2) != 0;
     const int eo = klo ? 2 : 3, e2_ = (klo != r2) ? 2 : 3, e3_ = (jlo != r3) ? 2 : 3;
-    Real v[8];
-    for (int q=0; q<8; ++q) {
-      Real a = o2(m, 8*eo + q, kv, jc, i);
-      Real b_ = n2(m, 8*e2_ + q, kv, jc, i);
-      Real c_ = n3(m, 8*e3_ + q, kc, jv, i);
+    Real v[12];
+    for (int q=0; q<SJ; ++q) {
+      Real a = o2(m, SJ*eo + q, kv, jc, i);
+      Real b_ = n2(m, SJ*e2_ + q, kv, jc, i);
+      Real c_ = n3(m, SJ*e3_ + q, kc, jv, i);
       // sort, so that all three panels add the same numbers in the same order
       if (a > b_) {const Real t = a; a = b_; b_ = t;}
       if (b_ > c_) {const Real t = b_; b_ = c_; c_ = t;}
       if (a > b_) {const Real t = a; a = b_; b_ = t;}
-      v[q] = ((a + b_) + c_)/3.0;
+      // stokes slots 8-11 (H, A of the triangle loop): the SUM of the three kites
+      v[q] = (q < 8) ? ((a + b_) + c_)/3.0 : ((a + b_) + c_);
     }
     const Edge g = K.EdgeAt(m, true, jc, kv - ks, klo ? 2 : 3, i);
-    e1(m,kc,jc,i) = K.Emf(m, g, v);
+    e1(m,kc,jc,i) = st ? K.EmfS(m, g, v) : K.Emf(m, g, v);
   });
 }
 

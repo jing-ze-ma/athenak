@@ -18,6 +18,31 @@
 
 #include "athena.hpp"
 
+//----------------------------------------------------------------------------------------
+// B.e_xi at the centre of an x2 face / B.e_eta at the centre of an x3 face, from the
+// face-normal components (the partner component from the four faces that share the
+// face's corners).  THE one copy: the resistive curl (resistivity_gnomonic.cpp, pass 1)
+// and the cubed-sphere seam current (mhd_cs_seam.cpp, cs_seam_res = own | stokes) both
+// use it (stokes-1103: moved here from resistivity_gnomonic.cpp, the same expressions).
+
+KOKKOS_INLINE_FUNCTION
+Real CsBcovXi(const DvceFaceFld4D<Real> &b, const DvceArray3D<Real> &cosf,
+              const DvceArray3D<Real> &sinf, const int m, const int k, const int j,
+              const int i) {
+  const Real b3a = 0.25*(b.x3f(m,k,j,i) + b.x3f(m,k+1,j,i)
+                       + b.x3f(m,k,j-1,i) + b.x3f(m,k+1,j-1,i));
+  return (b.x2f(m,k,j,i) + cosf(m,k,j)*b3a)/sinf(m,k,j);
+}
+
+KOKKOS_INLINE_FUNCTION
+Real CsBcovEta(const DvceFaceFld4D<Real> &b, const DvceArray3D<Real> &cosf,
+               const DvceArray3D<Real> &sinf, const int m, const int k, const int j,
+               const int i) {
+  const Real b2a = 0.25*(b.x2f(m,k,j,i) + b.x2f(m,k,j+1,i)
+                       + b.x2f(m,k-1,j,i) + b.x2f(m,k-1,j+1,i));
+  return (b.x3f(m,k,j,i) + cosf(m,k,j)*b2a)/sinf(m,k,j);
+}
+
 struct CsEdgeJB {
   Real c, sn, eta_a;
   Real jr, ju1, ju2;

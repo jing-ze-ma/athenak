@@ -7238,6 +7238,11 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
   // resistive EMF on every edge against eta*alpha*B.that, in units eta*alpha*b0
   Real le[3][2] = {}, me[3][2] = {};
   Real ne[3][2] = {};
+  // stokes-1103: the EMF error by EDGE CLASS (0 interior >= 2 cells from a panel edge,
+  // 1 first ring, 2 seam (on a panel edge), 3 cube vertex / seam edge of a corner cell),
+  // radially interior edges only for E2/E3 (no radial-boundary ghosts); sums, max, count
+  Real lc[3][4] = {}, mc[3][4] = {}, nc[3][4] = {};
+  int loc[3][4][4] = {};   // where the class max sits: panel, edge index (j, k), radial i
   const bool has_res = (pmbp->pmhd->presist != nullptr);
   if (has_res) {
     auto pres = pmbp->pmhd->presist;
@@ -7265,6 +7270,17 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
             ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
             ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
             Real q[3], t1[3], t2[3], bx, by, bz;
+            // panel-global distances (in cells) of this edge's position from a panel edge
+            const Real hh = 0.5*M_PI/pm->mesh_indcs.nx2;
+            const int dxf_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(xf))/hh));
+            const int def_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(ef))/hh));
+            const int dxc_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(xc))/hh - 0.5));
+            const int dec_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(ec))/hh - 0.5));
+            auto cls = [](const int da, const int db) {   // da: across-seam distance
+              if (da == 0) return (db == 0) ? 3 : 2;   // on the seam (corner cell: 3)
+              return (da == 1 || db == 0) ? 1 : 0;      // next to a seam / interior
+            };
+            const bool rint = (i > is) && (i <= ie);
             if (i <= ie) {   // x1 edge along r at (xf, ef)
               cubed_sphere::PanelToCart(p, xf, ef, q);
               const Real rc = 0.5*(rl + rr);
@@ -7272,6 +7288,11 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
               const Real d = std::fabs(e1(m,k,j,i)
                                        - eta*al*(bx*q[0] + by*q[1] + bz*q[2]))/scale;
               le[0][reg] += d; ne[0][reg] += 1.0; me[0][reg] = std::fmax(me[0][reg], d);
+              {const int cc = (dxf_ == 0 || def_ == 0) ? ((dxf_ == 0 && def_ == 0) ? 3 : 2)
+                              : ((dxf_ == 1 || def_ == 1) ? 1 : 0);
+               if (d > mc[0][cc]) {loc[0][cc][0] = p; loc[0][cc][1] = dxf_; loc[0][cc][2] = def_;
+                                   loc[0][cc][3] = i - is;}
+               lc[0][cc] += d; nc[0][cc] += 1.0; mc[0][cc] = std::fmax(mc[0][cc], d);}
             }
             if (j <= je) {   // x2 edge along xi at (rl, ef), centre xc
               cubed_sphere::PanelToCart(p, xc, ef, q);
@@ -7280,6 +7301,8 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
               const Real d = std::fabs(e2(m,k,j,i)
                                        - eta*al*(bx*t1[0] + by*t1[1] + bz*t1[2]))/scale;
               le[1][reg] += d; ne[1][reg] += 1.0; me[1][reg] = std::fmax(me[1][reg], d);
+              if (rint) {const int cc = cls(def_, dxc_);
+                         lc[1][cc] += d; nc[1][cc] += 1.0; mc[1][cc] = std::fmax(mc[1][cc], d);}
             }
             if (k <= ke) {   // x3 edge along eta at (rl, xf), centre ec
               cubed_sphere::PanelToCart(p, xf, ec, q);
@@ -7288,6 +7311,10 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
               const Real d = std::fabs(e3(m,k,j,i)
                                        - eta*al*(bx*t2[0] + by*t2[1] + bz*t2[2]))/scale;
               le[2][reg] += d; ne[2][reg] += 1.0; me[2][reg] = std::fmax(me[2][reg], d);
+              if (rint) {const int cc = cls(dxf_, dec_);
+                         if (d > mc[2][cc]) {loc[2][cc][0] = p; loc[2][cc][1] = dxf_;
+                                             loc[2][cc][2] = dec_; loc[2][cc][3] = i - is;}
+                         lc[2][cc] += d; nc[2][cc] += 1.0; mc[2][cc] = std::fmax(mc[2][cc], d);}
             }
           }
         }
@@ -7303,6 +7330,9 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
   MPI_Allreduce(MPI_IN_PLACE, &le[0][0], 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, &me[0][0], 6, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, &ne[0][0], 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &lc[0][0], 12, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &mc[0][0], 12, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &nc[0][0], 12, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
   if (global_variable::my_rank != 0) return;
   Real tot[5] = {};
@@ -7332,6 +7362,18 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
       std::printf("###     %s  interior L1 %.3e Linf %.3e | seam+vertex L1 %.3e"
                   " Linf %.3e\n", en[c], (ne[c][0] > 0) ? le[c][0]/ne[c][0] : 0.0,
                   me[c][0], (ne[c][1] > 0) ? le[c][1]/ne[c][1] : 0.0, me[c][1]);
+    }
+    for (int c=0; c<3; ++c) {
+      std::printf("###   EMFCLASS E%d L1/Linf interior %.3e %.3e | ring1 %.3e %.3e | seam %.3e"
+                  " %.3e | vertex %.3e %.3e\n", c+1,
+                  (nc[c][0] > 0) ? lc[c][0]/nc[c][0] : 0.0, mc[c][0],
+                  (nc[c][1] > 0) ? lc[c][1]/nc[c][1] : 0.0, mc[c][1],
+                  (nc[c][2] > 0) ? lc[c][2]/nc[c][2] : 0.0, mc[c][2],
+                  (nc[c][3] > 0) ? lc[c][3]/nc[c][3] : 0.0, mc[c][3]);
+      if (c != 1) std::printf("###   EMFCLASS E%d max at (panel, dist_xi, dist_eta, i): seam"
+                              " (%d %d %d %d) vertex (%d %d %d %d) [rank 0]\n", c+1,
+                              loc[c][2][0], loc[c][2][1], loc[c][2][2], loc[c][2][3],
+                              loc[c][3][0], loc[c][3][1], loc[c][3][2], loc[c][3][3]);
     }
   }
   std::string fname = pin->GetString("job", "basename") + "-errs.dat";

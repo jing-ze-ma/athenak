@@ -37,30 +37,25 @@
 #include "coordinates/coordinates.hpp"
 #include "resistivity.hpp"
 #include "mhd/mhd.hpp"
+#include "diffusion/cs_edge_jb.hpp"
 
 //----------------------------------------------------------------------------------------
-//! \brief B.e_xi at the centre of an x2 face, from the face-normal components. The
-//! partner component lives on the four x3 faces that share this face's corners.
+//! \brief B.e_xi at the centre of an x2 face / B.e_eta at the centre of an x3 face, from
+//! the face-normal components: CsBcovXi / CsBcovEta (diffusion/cs_edge_jb.hpp, shared
+//! with the cubed-sphere seam current).
 
 KOKKOS_INLINE_FUNCTION
 Real BcovXi(const DvceFaceFld4D<Real> &b, const DvceArray3D<Real> &cosf,
             const DvceArray3D<Real> &sinf, const int m, const int k, const int j,
             const int i) {
-  const Real b3a = 0.25*(b.x3f(m,k,j,i) + b.x3f(m,k+1,j,i)
-                       + b.x3f(m,k,j-1,i) + b.x3f(m,k+1,j-1,i));
-  return (b.x2f(m,k,j,i) + cosf(m,k,j)*b3a)/sinf(m,k,j);
+  return CsBcovXi(b, cosf, sinf, m, k, j, i);
 }
-
-//----------------------------------------------------------------------------------------
-//! \brief B.e_eta at the centre of an x3 face.
 
 KOKKOS_INLINE_FUNCTION
 Real BcovEta(const DvceFaceFld4D<Real> &b, const DvceArray3D<Real> &cosf,
              const DvceArray3D<Real> &sinf, const int m, const int k, const int j,
              const int i) {
-  const Real b2a = 0.25*(b.x2f(m,k,j,i) + b.x2f(m,k,j+1,i)
-                       + b.x2f(m,k-1,j,i) + b.x2f(m,k-1,j+1,i));
-  return (b.x3f(m,k,j,i) + cosf(m,k,j)*b2a)/sinf(m,k,j);
+  return CsBcovEta(b, cosf, sinf, m, k, j, i);
 }
 
 //----------------------------------------------------------------------------------------
