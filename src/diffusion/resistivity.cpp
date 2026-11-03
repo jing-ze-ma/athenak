@@ -74,7 +74,11 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     // via recipe::NewDefaults).  use_rkg_sts keeps its old default false (user 11-01);
     // when STS is ON (named by the user) and the key is absent:
     //   rkg_lean      = true  (uniform single-level cubed sphere: its FATAL),
-    //   rkg_dt_safety = 0.5   (cubed sphere or spherical polar: its FATAL).
+    //   rkg_dt_safety = 0.8   (cubed sphere or spherical polar: its FATAL; prod1103
+    //                          USER 11-03: was 0.5.  r1mspeed_1102: 0.8 tracks 0.5 to
+    //                          1.2e-4 in ME over 3000 r1m cycles, no dt dips; the edge is
+    //                          ~1.3, where dt collapses).  A restart whose input lacks the
+    //                          key keeps the old behaviour (off), as before.
     // An explicit key wins; a restart whose input lacks a key keeps the OLD default and
     // adds exactly what the old code added (use_rkg_sts, and rkg_lean only with STS).
     const bool nd = recipe::NewDefaults(pin);
@@ -118,8 +122,8 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     if (pin->DoesParameterExist("mhd", "rkg_dt_safety")) {
       rkg_dt_safety = pin->GetReal("mhd", "rkg_dt_safety");
     } else if (use_rkg_sts) {
-      if (nd && curv) rkg_dt_safety = pin->GetOrAddReal("mhd", "rkg_dt_safety", 0.5);
-      recipe::Log(std::string("<mhd>/rkg_dt_safety = ") + ((nd && curv) ? "0.5 (default "
+      if (nd && curv) rkg_dt_safety = pin->GetOrAddReal("mhd", "rkg_dt_safety", 0.8);
+      recipe::Log(std::string("<mhd>/rkg_dt_safety = ") + ((nd && curv) ? "0.8 (default "
                   "with STS on cs/sp)" : (nd ? "0 = off (cs/sp only)"
                   : "0 = off (old default: restart input or recipe none)")));
     }

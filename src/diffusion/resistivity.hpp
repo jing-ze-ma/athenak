@@ -69,7 +69,9 @@ class Resistivity {
   // (dc = centroid spacings; eta_r, eta_h = max of eta over the cells of the radial-derivative
   // edges, over the 3x3x3 block; s = sin of the cs cell angle, 1 elsewhere), NOT multiplied
   // by cfl_number.  Off: the old
-  // cfl x (1/6) min_d dx_d^2/eta, bitwise.  See NewTimeStepRKGFE.
+  // cfl x (1/6) min_d dx_d^2/eta, bitwise.  See NewTimeStepRKGFE.  FRESH-start default
+  // (recipe::NewDefaults, resistivity.cpp) with STS on the cubed sphere / spherical polar:
+  // 0.8 (prod1103, USER 11-03; 0.5 before); a restart whose input lacks the key keeps 0.
   Real rkg_dt_safety = 0.0;
   bool rkg_dt_fe = false;
   // rkgdt-1101 <mhd>/rkg_lmax_diag = N (read only when named; 0 = off): at the first RKG
