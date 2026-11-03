@@ -604,6 +604,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_norm_eps =
       pin->GetOrAddReal("problem","ck_impl_norm_eps",1.0e-3);
   // default changed 09-30 (user), was 8
+  // prod1103c default (USER 11-03 "default become 16"): ck_impl_maxit = 16 on a FRESH
+  // start (recipe::NewDefaults) with ck_implicit when the key is not named (every Caltech
+  // dhj production deck: "reset 09-30 (user): original 3x key"); recorded for restarts.
+  // Otherwise 24 (the 09-30 default) as before; an explicit key wins.
+  if (!pin->DoesParameterExist("problem","ck_impl_maxit") && two_stream_rt::ck_implicit) {
+    const bool nd = recipe::NewDefaults(pin);
+    pin->GetOrAddInteger("problem","ck_impl_maxit", nd ? 16 : 24);
+    recipe::Log(nd ? "problem/ck_impl_maxit = 16 (default with ck_implicit)"
+                   : "problem/ck_impl_maxit = 24 (restart input or recipe none: the old "
+                     "default)");
+  }
   two_stream_rt::ck_impl_maxit = pin->GetOrAddInteger("problem","ck_impl_maxit",24);
   two_stream_rt::ck_impl_dtmax = pin->GetOrAddReal("problem","ck_impl_dtmax",0.5);
   two_stream_rt::ck_impl_verbose =
