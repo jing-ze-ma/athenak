@@ -434,7 +434,21 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     }
     use_etotgrav = pin->GetOrAddBoolean("mhd","etotgrav",false);
-    // ckbval-1102 (read only when named; see MHD::SplitBvalFastOK in mhd_splitbval.cpp)
+    // ckbval-1102 (read only when named; see MHD::SplitBvalFastOK in mhd_splitbval.cpp).
+    // prod1103 default (USER 11-02/11-03): true on a FRESH start (recipe::NewDefaults), as
+    // the hydro twin; ckbval_1102 + prod_1103 gates: r1m bitwise 40/300 and restart split
+    // (on r1m it never takes the energy-only path: 0 fast refreshes, a no-op).  The value is
+    // recorded (GetOrAdd); a restart whose input lacks the key keeps false; explicit wins.
+    if (!pin->DoesParameterExist("mhd","split_bval_fast")) {
+      if (recipe::NewDefaults(pin)) {
+        pin->GetOrAddBoolean("mhd","split_bval_fast",true);
+        recipe::Log("<mhd>/split_bval_fast = true (default on a fresh start)");
+      } else {
+        recipe::Log("<mhd>/split_bval_fast = false (" + std::string(
+            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+            "restart input has no key") + ": the old default)");
+      }
+    }
     sbf_on = pin->DoesParameterExist("mhd","split_bval_fast") ?
              pin->GetBoolean("mhd","split_bval_fast") : false;
     if (sbf_on && (pmy_pack->pmesh->multilevel || pin->DoesBlockExist("shearing_box") ||
