@@ -53,6 +53,8 @@
 //! sets keep the requests disjoint too.
 
 #include <cstdlib>
+#include <map>
+#include <vector>
 #include <iostream>
 
 #include "athena.hpp"
@@ -62,6 +64,46 @@
 #include "coordinates/cell_locations.hpp"
 #include "coordinates/cubed_sphere.hpp"
 #include "bvals.hpp"
+
+//----------------------------------------------------------------------------------------
+//! r1mspeed-1102: the (block, buffer) pairs whose neighbour is on ANOTHER panel, as
+//! m*nnghbr + n, once per boundary object (the neighbour table of a cubed sphere is
+//! static: no adaptive refinement).  The seam-face kernels below launch one team per
+//! (pair, variable) over this list instead of over every (block, buffer, variable),
+//! most of which returned at once; each team's work is unchanged (bitwise).
+
+namespace {
+DvceArray1D<int> CrossPanelPairs(MeshBlockPack *pp, const void *key) {
+  static std::map<const void*, DvceArray1D<int>> cache;
+  // the Views must go before Kokkos::finalize, not at static destruction
+  static const bool hook_ = [] {
+    Kokkos::push_finalize_hook([] {cache.clear();});
+    return true;
+  }();
+  (void) hook_;
+  auto it = cache.find(key);
+  if (it != cache.end()) return it->second;
+  const int nmb = pp->nmb_thispack, nnghbr = pp->pmb->nnghbr;
+  auto &nghbr = pp->pmb->nghbr;
+  auto &mbpanel = pp->pmb->mb_panel;
+  std::vector<int> l;
+  for (int m=0; m<nmb; ++m) {
+    for (int n=0; n<nnghbr; ++n) {
+      if (nghbr.h_view(m,n).gid >= 0 && nghbr.h_view(m,n).panel != mbpanel.h_view(m)) {
+        l.push_back(m*nnghbr + n);
+      }
+    }
+  }
+  const int np = static_cast<int>(l.size());
+  DvceArray1D<int> d("cs_xpanel_pairs", (np > 0) ? np : 1);
+  auto h = Kokkos::create_mirror_view(d);
+  for (int q=0; q<np; ++q) {h(q) = l[q];}
+  if (np == 0) {h(0) = -1;}
+  Kokkos::deep_copy(d, h);
+  cache[key] = d;
+  return d;
+}
+}  // namespace
 
 namespace {
 //! Classify a boundary buffer from its own stored index range, rather than from the
@@ -173,12 +215,20 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   const bool sxoff_ = seam_xform_off;
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
   auto rbuf = RecvBufDv();
+  // r1mspeed-1102: only variable sfv_ (see bvals.hpp); averaging modes only
+  const int sfm_ = pmy_pack->pmesh->cs_seam_flux;
+  const int sfv_ = (seam_flux_var >= 0 && !sraw && sfm_ != 1 && sfm_ != 2)
+                   ? seam_flux_var : -1;
 
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
+  auto xpp_ = CrossPanelPairs(pmy_pack, this);   // r1mspeed-1102
+  Kokkos::TeamPolicy<> policy(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO);
   BvalsTeamFor("SeamFluxSendLocal", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
-    const int m = (tmember.league_rank())/(nnghbr*nvar);
-    const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
-    const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+    const int mn_ = xpp_(tmember.league_rank()/nvar);   // r1mspeed-1102
+    if (mn_ < 0) {return;}
+    const int m = mn_/nnghbr;
+    const int n = mn_ - m*nnghbr;
+    const int v = tmember.league_rank() - (tmember.league_rank()/nvar)*nvar;
+    if (sfv_ >= 0 && v != sfv_) {return;}
 
     if (nghbr.d_view(m,n).gid < 0) {return;}
     bool x2face; Real sgn;
@@ -281,9 +331,12 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   // trig POD: give a kernel only what it uses.
   auto sbuf = SendBufDv();
   BvalsTeamFor("SeamFluxSendMPI", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
-    const int m = (tmember.league_rank())/(nnghbr*nvar);
-    const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
-    const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+    const int mn_ = xpp_(tmember.league_rank()/nvar);   // r1mspeed-1102
+    if (mn_ < 0) {return;}
+    const int m = mn_/nnghbr;
+    const int n = mn_ - m*nnghbr;
+    const int v = tmember.league_rank() - (tmember.league_rank()/nvar)*nvar;
+    if (sfv_ >= 0 && v != sfv_) {return;}
 
     if (nghbr.d_view(m,n).gid < 0) {return;}
     bool x2face; Real sgn;
@@ -470,11 +523,14 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
     // (k, j, i) range -- a pure copy, so the mapping cannot change a value; the old
     // (MeshBlock, buffer) teams looped every variable serially per thread (profiled at
     // 2.9 ms per call with the 54-variable MHD UCT seam record on an H200)
-    Kokkos::TeamPolicy<> pol_r(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
+    auto xpp_ = CrossPanelPairs(pmy_pack, this);   // r1mspeed-1102
+    Kokkos::TeamPolicy<> pol_r(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO);
     BvalsTeamFor("SeamStateRecvRaw", pol_r, KOKKOS_LAMBDA(TeamMember_t tmember) {
-      const int m = (tmember.league_rank())/(nnghbr*nvar);
-      const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
-      const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+      const int mn_ = xpp_(tmember.league_rank()/nvar);   // r1mspeed-1102
+      if (mn_ < 0) {return;}
+      const int m = mn_/nnghbr;
+      const int n = mn_ - m*nnghbr;
+      const int v = tmember.league_rank() - (tmember.league_rank()/nvar)*nvar;
       if (nghbr.d_view(m,n).gid < 0) {return;}
       bool x2face; Real sgn;
       if (!SeamFaceGeom(rbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
@@ -579,11 +635,17 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
     });
     return TaskStatus::complete;
   }
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
+  // r1mspeed-1102: only variable sfv_ (see bvals.hpp; this is an averaging mode)
+  const int sfv_ = seam_flux_var;
+  auto xpp_ = CrossPanelPairs(pmy_pack, this);   // r1mspeed-1102
+  Kokkos::TeamPolicy<> policy(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO);
   BvalsTeamFor("SeamFluxRecv", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
-    const int m = (tmember.league_rank())/(nnghbr*nvar);
-    const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
-    const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+    const int mn_ = xpp_(tmember.league_rank()/nvar);   // r1mspeed-1102
+    if (mn_ < 0) {return;}
+    const int m = mn_/nnghbr;
+    const int n = mn_ - m*nnghbr;
+    const int v = tmember.league_rank() - (tmember.league_rank()/nvar)*nvar;
+    if (sfv_ >= 0 && v != sfv_) {return;}
 
     if (nghbr.d_view(m,n).gid < 0) {return;}
     bool x2face; Real sgn;
@@ -623,3 +685,4 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
   });
   return TaskStatus::complete;
 }
+

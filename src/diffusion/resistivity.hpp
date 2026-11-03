@@ -105,6 +105,14 @@ class Resistivity {
   // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only
   // the energy slot of the conserved registers.  Uniform cubed-sphere meshes only.
   bool rkg_lean = false;
+  // r1mspeed-1102 <mhd>/rkg_halo_d1 (read only when named; default false; needs
+  // rkg_lean): the face-field halo of super-stages 1..s-2 packs only the source layer
+  // adjacent to each boundary (the resistive / ambipolar stencils of a lean super-stage
+  // read one ghost layer); stages s-1 and s exchange all ng layers.  r1m (11-02): -2.6 %
+  // per cycle, the active cells bitwise (prims + bcc output, 10 cycles) and cs_test RKG
+  // rst bitwise, but the r1m restart differs in the u0(IEN) and general-EOS cache slabs
+  // of the depth-2 ghost ring (whatever the depth-1 stage range), so it is not default.
+  bool rkg_halo_d1 = false;
   // rkgstrang-1102 <mhd>/rkg_strang (default false = the Lie split, bitwise unchanged):
   // the super-step is split in two halves of dt/2, one before the RK stages and one
   // after them (Driver::Execute), so the resistive operator is Strang-split (second
@@ -182,6 +190,7 @@ class Resistivity {
   Real ad_mion_amu = 30.0;      // <mhd>/ad_mion_amu, mean ion mass [amu]
   Real max_eta_ad = 1.0e300;    // <mhd>/max_eta_ad, cap on eta_A alone
   DvceArray4D<Real> ad_coef;    // eta_A/|B|^2 per cell (code units)
+  DvceArray4D<Real> ad_eta_c;   // r1mspeed-1102: min(ad_coef |B|^2, cap) per cell, scratch
   DvceEdgeFld4D<Real> jcur;     // edge current density J (AD only)
   bool OhmicNeedsUpdate() const {
     return (iso_resist_type.compare("perna") == 0 || iso_resist_type.compare("eos") == 0);
@@ -207,6 +216,9 @@ class Resistivity {
     TaskStatus CopyIniE(Driver *d, int stage);
     TaskStatus CT(Driver *d, int stage);
     TaskStatus CopyCons(Driver *d, int stage);
+    TaskStatus SendBRKG(Driver *d, int stage);
+    TaskStatus SendFluxRKG(Driver *d, int stage);
+    TaskStatus RecvFluxRKG(Driver *d, int stage);
     TaskStatus UpdateResistivity(Driver *d, int stage);
     TaskStatus ConToPrimRKG(Driver *d, int stage);
     TaskStatus NewTimeStepRKG(Driver *d, int stage);

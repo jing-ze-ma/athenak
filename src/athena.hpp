@@ -368,6 +368,32 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
   });
 }
 
+//------------------------------
+// r1mspeed-1102: up to three INDEPENDENT 4D loops in one launch.  Each loop keeps its own
+// (k,j,i) box over m = 0..nmb1 and its own body; a thread of the bounding box runs every
+// body whose box holds its index, in the order given.  Bitwise the separate launches
+// provided no body reads what another body of the same launch writes.
+struct LoopBox3 {int kl, ku, jl, ju, il, iu;};
+template <typename F1, typename F2, typename F3>
+inline void par_for_fused3(const std::string &name, DevExeSpace exec_space, const int nmb1,
+                           const LoopBox3 b1, const F1 &f1, const LoopBox3 b2,
+                           const F2 &f2, const LoopBox3 b3, const F3 &f3) {
+  auto mn = [](int a, int b) {return (a < b) ? a : b;};
+  auto mx = [](int a, int b) {return (a > b) ? a : b;};
+  const int kl = mn(b1.kl, mn(b2.kl, b3.kl)), ku = mx(b1.ku, mx(b2.ku, b3.ku));
+  const int jl = mn(b1.jl, mn(b2.jl, b3.jl)), ju = mx(b1.ju, mx(b2.ju, b3.ju));
+  const int il = mn(b1.il, mn(b2.il, b3.il)), iu = mx(b1.iu, mx(b2.iu, b3.iu));
+  par_for(name, exec_space, 0, nmb1, kl, ku, jl, ju, il, iu,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (k >= b1.kl && k <= b1.ku && j >= b1.jl && j <= b1.ju && i >= b1.il && i <= b1.iu)
+      f1(m, k, j, i);
+    if (k >= b2.kl && k <= b2.ku && j >= b2.jl && j <= b2.ju && i >= b2.il && i <= b2.iu)
+      f2(m, k, j, i);
+    if (k >= b3.kl && k <= b3.ku && j >= b3.jl && j <= b3.ju && i >= b3.il && i <= b3.iu)
+      f3(m, k, j, i);
+  });
+}
+
 //------------------------------------------
 // Team scratch level that can be launched: returns scr_level unchanged unless it is 0 and
 // the device cannot fit scr_size bytes of level-0 (on-chip) team scratch, in which case

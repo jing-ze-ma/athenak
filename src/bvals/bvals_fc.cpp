@@ -441,6 +441,113 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
   Kokkos::deep_copy(fc_seg, h_seg);
   Kokkos::deep_copy(fc_chunk_seg, h_cs);
   Kokkos::deep_copy(fc_chunk_beg, h_cb);
+
+  // r1mspeed-1102: the two walk sets (all layers / depth 1) with the seam srcval boxes
+  {
+    const int js_ = cs_indcs.js, je_ = cs_indcs.je, ks_ = cs_indcs.ks, ke_ = cs_indcs.ke;
+    int64_t npv_max = 0;
+    for (int d=0; d<2; ++d) {
+      std::vector<SubSegFC> sub;
+      std::vector<int> cs_p, cb_p, cs_s, cb_s, cs_r, cb_r;
+      int64_t pv = 0;
+      for (int q=0; q<nseg; ++q) {
+        const PackSegFC &g = h_seg(q);
+        SubSegFC u;
+        u.q = q; u.il = g.il; u.ni = g.ni; u.jl = g.jl; u.nj = g.nj; u.kl = g.kl;
+        u.nk = g.nk;
+        u.pvoff = -1; u.ptlo = 0; u.pnt = 0; u.pnlo = 0; u.pnn = 0; u.pil = 0; u.pni = 0;
+        if (d == 1) {
+          // direction of buffer n (nghbr_index.hpp: 0-7 x1 faces, 8-15 x2 faces, 16-23
+          // x1x2 edges, 24-31 x3 faces, 32-39 x3x1 edges, 40-47 x2x3 edges, 48-55
+          // corners); in each direction the buffer is ghost in, keep the source layer
+          // whose READ index (k,j after the seam map) is adjacent to the boundary
+          const int n = g.n;
+          int o1 = 0, o2 = 0, o3 = 0;
+          if (n < 8) {
+            o1 = (n < 4) ? -1 : 1;
+          } else if (n < 16) {
+            o2 = (n < 12) ? -1 : 1;
+          } else if (n < 24) {
+            o1 = (((n-16) >> 1) & 1) ? 1 : -1;  o2 = (((n-16) >> 2) & 1) ? 1 : -1;
+          } else if (n < 32) {
+            o3 = (n < 28) ? -1 : 1;
+          } else if (n < 40) {
+            o1 = (((n-32) >> 1) & 1) ? 1 : -1;  o3 = (((n-32) >> 2) & 1) ? 1 : -1;
+          } else if (n < 48) {
+            o2 = (((n-40) >> 1) & 1) ? 1 : -1;  o3 = (((n-40) >> 2) & 1) ? 1 : -1;
+          } else {
+            o1 = ((n-48) & 1) ? 1 : -1;  o2 = (((n-48) >> 1) & 1) ? 1 : -1;
+            o3 = (((n-48) >> 2) & 1) ? 1 : -1;
+          }
+          if (o1 != 0) {u.il = (o1 < 0) ? g.il : g.il + g.ni - 1; u.ni = 1;}
+          if (o2 != 0) {
+            const int jt = (o2 < 0) ? g.jl : g.jl + g.nj - 1;
+            u.jl = (g.aj == 1) ? jt : (g.bj - jt); u.nj = 1;
+          }
+          if (o3 != 0) {
+            const int kt = (o3 < 0) ? g.kl : g.kl + g.nk - 1;
+            u.kl = (g.ak == 1) ? kt : (g.bk - kt); u.nk = 1;
+          }
+        }
+        if (g.mode == 2 && g.cs_seam != 0 && !g.cs_coar) {
+          // the samples' resample reads srcval at (bs..bs+2) along the seam, bs within
+          // [lo, hi-2] (BuildCubedSphereSeamTables), at the sample's own normal index
+          u.pil = u.il; u.pni = u.ni;
+          if (g.cs_seam == 2) {   // along eta (k); normal index jj = aj*j + bj
+            u.ptlo = ks_; u.pnt = ke_ + ((g.vv == 2) ? 1 : 0) - ks_ + 1;
+            const int a0 = g.aj*u.jl + g.bj, a1 = g.aj*(u.jl + u.nj - 1) + g.bj;
+            u.pnlo = (a0 < a1) ? a0 : a1; u.pnn = u.nj;
+          } else {                 // along xi (j); normal index kk = ak*k + bk
+            u.ptlo = js_; u.pnt = je_ + ((g.vv == 1) ? 1 : 0) - js_ + 1;
+            const int a0 = g.ak*u.kl + g.bk, a1 = g.ak*(u.kl + u.nk - 1) + g.bk;
+            u.pnlo = (a0 < a1) ? a0 : a1; u.pnn = u.nk;
+          }
+          u.pvoff = static_cast<int>(pv);
+          const int npts = u.pnn*u.pnt*u.pni;
+          const int us = static_cast<int>(sub.size());
+          for (int c0=0; c0<npts; c0+=FC_PACK_CHUNK) {cs_r.push_back(us); cb_r.push_back(c0);}
+          pv += npts;
+        } else if (g.mode == 2) {
+          // every other seam / pole segment: srcval at each sample itself, indexed by the
+          // sample (pnt = 0), so the sample pass never evaluates srcval
+          u.pvoff = static_cast<int>(pv); u.pnt = 0;
+          const int npts = u.nk*u.nj*u.ni;
+          const int us = static_cast<int>(sub.size());
+          for (int c0=0; c0<npts; c0+=FC_PACK_CHUNK) {cs_r.push_back(us); cb_r.push_back(c0);}
+          pv += npts;
+        }
+        const int us = static_cast<int>(sub.size());
+        const int nkji = u.nk*u.nj*u.ni;
+        for (int c0=0; c0<nkji; c0+=FC_PACK_CHUNK) {
+          if (g.mode != 2) {cs_p.push_back(us); cb_p.push_back(c0);}
+          else {cs_s.push_back(us); cb_s.push_back(c0);}
+        }
+        sub.push_back(u);
+      }
+      npv_max = (pv > npv_max) ? pv : npv_max;
+      fc_np[d] = static_cast<int>(cs_p.size());
+      fc_ns[d] = static_cast<int>(cs_s.size());
+      fc_npre[d] = static_cast<int>(cs_r.size());
+      // chunk lists: plain, then seam, then precompute
+      std::vector<int> ca(cs_p), cb(cb_p);
+      ca.insert(ca.end(), cs_s.begin(), cs_s.end()); cb.insert(cb.end(), cb_s.begin(), cb_s.end());
+      ca.insert(ca.end(), cs_r.begin(), cs_r.end()); cb.insert(cb.end(), cb_r.begin(), cb_r.end());
+      const int nsub = static_cast<int>(sub.size());
+      Kokkos::realloc(fc_sub[d], (nsub > 0) ? nsub : 1);
+      auto h_sub = Kokkos::create_mirror_view(fc_sub[d]);
+      for (int u=0; u<nsub; ++u) {h_sub(u) = sub[u];}
+      Kokkos::deep_copy(fc_sub[d], h_sub);
+      const int nc = static_cast<int>(ca.size());
+      Kokkos::realloc(fc_cs[d], (nc > 0) ? nc : 1);
+      Kokkos::realloc(fc_cb[d], (nc > 0) ? nc : 1);
+      auto h_a = Kokkos::create_mirror_view(fc_cs[d]);
+      auto h_b = Kokkos::create_mirror_view(fc_cb[d]);
+      for (int c=0; c<nc; ++c) {h_a(c) = ca[c]; h_b(c) = cb[c];}
+      Kokkos::deep_copy(fc_cs[d], h_a);
+      Kokkos::deep_copy(fc_cb[d], h_b);
+    }
+    Kokkos::realloc(fc_preval, (npv_max > 0) ? npv_max : 1);
+  }
   fc_seg_ready = true;
 }
 
@@ -454,31 +561,33 @@ struct FCPlainPack {
   DvceFaceFld4D<Real> b, cb;
   DvceArray1D<MeshBufferDv> sbuf, rbuf;
   DvceArray1D<PackSegFC> seg;
+  DvceArray1D<SubSegFC> sub;   // r1mspeed-1102: chunk -> sample box (all / depth 1)
   DvceArray1D<int> cseg, cbeg;
   int c0;   // first chunk of this launch
 
   FCPlainPack(DvceFaceFld4D<Real> &b_, DvceFaceFld4D<Real> &cb_,
               DvceArray1D<MeshBufferDv> sb_, DvceArray1D<MeshBufferDv> rb_,
-              DvceArray1D<PackSegFC> sg_, DvceArray1D<int> cs_, DvceArray1D<int> cb2_,
-              int c0_) : b(b_), cb(cb_), sbuf(sb_), rbuf(rb_), seg(sg_), cseg(cs_),
-              cbeg(cb2_), c0(c0_) {}
+              DvceArray1D<PackSegFC> sg_, DvceArray1D<SubSegFC> su_,
+              DvceArray1D<int> cs_, DvceArray1D<int> cb2_,
+              int c0_) : b(b_), cb(cb_), sbuf(sb_), rbuf(rb_), seg(sg_), sub(su_),
+              cseg(cs_), cbeg(cb2_), c0(c0_) {}
 
   KOKKOS_INLINE_FUNCTION
   void operator()(const int t) const {
     const int c = c0 + t/FC_PACK_CHUNK;
-    const int q = cseg(c);
+    const SubSegFC u = sub(cseg(c));
+    const int q = u.q;
     const int idx = cbeg(c) + t%FC_PACK_CHUNK;
-    const int ni = seg(q).ni, nj = seg(q).nj, nk = seg(q).nk;
-    const int nkji = nk*nj*ni;
-    if (idx >= nkji) return;
-    const int nji = nj*ni;
+    if (idx >= u.nk*u.nj*u.ni) return;
+    const int ni = seg(q).ni, nj = seg(q).nj;
     const int il = seg(q).il, jl = seg(q).jl, kl = seg(q).kl;
     const int m = seg(q).m, v = seg(q).v, ndat = seg(q).ndat;
-    int k = (idx)/nji;
-    int j = (idx - k*nji)/ni;
-    int i = (idx - k*nji - j*ni) + il;
-    k += kl;
-    j += jl;
+    const int uji = u.nj*u.ni;
+    int k = (idx)/uji;
+    int j = (idx - k*uji)/u.ni;
+    int i = (idx - k*uji - j*u.ni) + u.il;
+    k += u.kl;
+    j += u.jl;
     Real val;
     if (seg(q).mode == 0) {
       val = (v == 0) ? b.x1f(m,k,j,i) : ((v == 1) ? b.x2f(m,k,j,i) : b.x3f(m,k,j,i));
@@ -507,14 +616,19 @@ struct SeamArgs {
   int m, v, vv, signvar, cs_xform, cs_coar, cs_slotidx, cs_gkind, cs_skind, cs_seam;
   int js_, ks_, je_, ke_;
   bool wide2, wide3;
+  int pvoff, ptlo, pnt, pnlo, pil, pni;   // r1mspeed-1102 (SubSegFC); pvoff < 0: none
 };
+
+struct FCSeamPre {};   // r1mspeed-1102: tag of the srcval precompute pass
 
 struct FCSeamPack {
   DvceFaceFld4D<Real> b, cb;
   DvceArray1D<MeshBufferDv> sbuf, rbuf;
   DvceArray1D<PackSegFC> seg;
+  DvceArray1D<SubSegFC> sub;
   DvceArray1D<int> cseg, cbeg;
   DvceArray6D<Real> cs_gtbl, cs_stbl;
+  DvceArray1D<Real> pre;   // r1mspeed-1102: srcval scratch (SubSegFC pv* boxes)
   int c0;
   RegionIndcs cs_indcs;
   Real cs_shear_sgn;
@@ -522,12 +636,13 @@ struct FCSeamPack {
 
   FCSeamPack(DvceFaceFld4D<Real> &b_, DvceFaceFld4D<Real> &cb_,
              DvceArray1D<MeshBufferDv> sb_, DvceArray1D<MeshBufferDv> rb_,
-             DvceArray1D<PackSegFC> sg_, DvceArray1D<int> cs_, DvceArray1D<int> cb2_,
-             DvceArray6D<Real> gt_, DvceArray6D<Real> st_, int c0_,
-             const RegionIndcs &ix_, Real sh_, bool nl_) :
-             b(b_), cb(cb_), sbuf(sb_), rbuf(rb_), seg(sg_), cseg(cs_), cbeg(cb2_),
-             cs_gtbl(gt_), cs_stbl(st_), c0(c0_), cs_indcs(ix_), cs_shear_sgn(sh_),
-             cs_nolim_(nl_) {}
+             DvceArray1D<PackSegFC> sg_, DvceArray1D<SubSegFC> su_,
+             DvceArray1D<int> cs_, DvceArray1D<int> cb2_,
+             DvceArray6D<Real> gt_, DvceArray6D<Real> st_, DvceArray1D<Real> pr_,
+             int c0_, const RegionIndcs &ix_, Real sh_, bool nl_) :
+             b(b_), cb(cb_), sbuf(sb_), rbuf(rb_), seg(sg_), sub(su_), cseg(cs_),
+             cbeg(cb2_), cs_gtbl(gt_), cs_stbl(st_), pre(pr_), c0(c0_), cs_indcs(ix_),
+             cs_shear_sgn(sh_), cs_nolim_(nl_) {}
 
   KOKKOS_FORCEINLINE_FUNCTION
   Real bx1(const SeamArgs &a, const int kk, const int jj, const int i) const {
@@ -667,18 +782,21 @@ struct FCSeamPack {
     return (a.v == 1) ? oxi : oet;
   }
   KOKKOS_FORCEINLINE_FUNCTION
-  Real seamval(const SeamArgs &a, const int kk, const int jj, const int i) const {
+  Real seamval_pre(const SeamArgs &a, const int kk, const int jj, const int i) const {
     const int cs_seam = a.cs_seam;
-    if (cs_seam == 0) return srcval(a,kk,jj,i);
     const int m = a.m;
     const int sidx_ = (cs_seam == 2) ? 0 : 1;
     const int bs = static_cast<int>(cs_stbl(m,a.cs_skind,sidx_,kk,jj,0));
     const Real wm = cs_stbl(m,a.cs_skind,sidx_,kk,jj,1);
     const Real w0 = cs_stbl(m,a.cs_skind,sidx_,kk,jj,2);
     const Real wp = cs_stbl(m,a.cs_skind,sidx_,kk,jj,3);
-    const Real sv0 = (cs_seam == 2) ? srcval(a,bs,jj,i)   : srcval(a,kk,bs,i);
-    const Real sv1 = (cs_seam == 2) ? srcval(a,bs+1,jj,i) : srcval(a,kk,bs+1,i);
-    const Real sv2 = (cs_seam == 2) ? srcval(a,bs+2,jj,i) : srcval(a,kk,bs+2,i);
+    // r1mspeed-1102: the srcval values evaluated once by the FCSeamPre pass
+    const int nn = (cs_seam == 2) ? jj : kk;
+    const int64_t base = a.pvoff + (static_cast<int64_t>(nn - a.pnlo)*a.pnt
+                                    + (bs - a.ptlo))*a.pni + (i - a.pil);
+    const Real sv0 = pre(base);
+    const Real sv1 = pre(base + a.pni);
+    const Real sv2 = pre(base + 2*a.pni);
     const Real qq = wm*sv0 + w0*sv1 + wp*sv2;
     const Real dd1 = sv1 - sv0, dd2 = sv2 - sv1;
     const Real fpos = cs_stbl(m,a.cs_skind,sidx_,kk,jj,4);
@@ -691,16 +809,7 @@ struct FCSeamPack {
   }
 
   KOKKOS_INLINE_FUNCTION
-  void operator()(const int t) const {
-    const int c = c0 + t/FC_PACK_CHUNK;
-    const int q = cseg(c);
-    const int idx = cbeg(c) + t%FC_PACK_CHUNK;
-    const PackSegFC s = seg(q);
-    const int nkji = s.nk*s.nj*s.ni;
-    if (idx >= nkji) return;
-    const int ni = s.ni, nj = s.nj;
-    const int nji = nj*ni;
-    SeamArgs a;
+  void SetArgs(const PackSegFC &s, const SubSegFC &u, SeamArgs &a) const {
     a.m = s.m; a.v = s.v; a.vv = s.vv; a.signvar = s.signvar; a.cs_xform = s.cs_xform;
     a.cs_coar = s.cs_coar; a.cs_slotidx = s.cs_slotidx; a.cs_gkind = s.cs_gkind;
     a.cs_skind = s.cs_skind; a.cs_seam = s.cs_seam;
@@ -710,20 +819,67 @@ struct FCSeamPack {
     a.ke_ = s.cs_coar ? cs_indcs.cke : cs_indcs.ke;
     a.wide2 = (a.je_ - a.js_ >= 3);
     a.wide3 = (a.ke_ - a.ks_ >= 3);
-    int k = (idx)/nji;
-    int j = (idx - k*nji)/ni;
-    int i = (idx - k*nji - j*ni) + s.il;
-    k += s.kl;
-    j += s.jl;
+    a.pvoff = u.pvoff; a.ptlo = u.ptlo; a.pnt = u.pnt; a.pnlo = u.pnlo;
+    a.pil = u.pil; a.pni = u.pni;
+  }
+
+  KOKKOS_INLINE_FUNCTION
+  void operator()(const int t) const {
+    const int c = c0 + t/FC_PACK_CHUNK;
+    const SubSegFC u = sub(cseg(c));
+    const int idx = cbeg(c) + t%FC_PACK_CHUNK;
+    if (idx >= u.nk*u.nj*u.ni) return;
+    const PackSegFC s = seg(u.q);
+    const int ni = s.ni;
+    SeamArgs a;
+    SetArgs(s, u, a);
+    const int uji = u.nj*u.ni;
+    int k = (idx)/uji;
+    int j = (idx - k*uji)/u.ni;
+    int i = (idx - k*uji - j*u.ni) + u.il;
+    k += u.kl;
+    j += u.jl;
     int kk = s.ak*k + s.bk;
     int jj = s.aj*j + s.bj;
     const int ix = s.ndat*s.v + i-s.il + ni*(s.sj*(j-s.jl) + s.sk*(k-s.kl));
-    const Real val = seamval(a,kk,jj,i);
+    // r1mspeed-1102: never srcval here (FCSeamPre did it): small, stack-free kernel
+    const Real val = (u.pnt == 0) ? pre(u.pvoff + idx) : seamval_pre(a,kk,jj,i);
     if (s.local) {
       rbuf(s.dn).vars(s.dm, ix) = val;
     } else {
       sbuf(s.n).vars(s.m, ix) = val;
     }
+  }
+
+  // r1mspeed-1102: srcval over a SubSegFC's (normal, tangent, i) box, once per pack
+  KOKKOS_INLINE_FUNCTION
+  void operator()(const FCSeamPre &, const int t) const {
+    const int c = c0 + t/FC_PACK_CHUNK;
+    const SubSegFC u = sub(cseg(c));
+    const int idx = cbeg(c) + t%FC_PACK_CHUNK;
+    const PackSegFC s = seg(u.q);
+    SeamArgs a;
+    SetArgs(s, u, a);
+    if (u.pnt == 0) {   // sample-indexed: the pack's own (k,j,i) -> (kk,jj,i) map
+      if (idx >= u.nk*u.nj*u.ni) return;
+      const int uji = u.nj*u.ni;
+      int k = idx/uji;
+      int j = (idx - k*uji)/u.ni;
+      const int i = (idx - k*uji - j*u.ni) + u.il;
+      k += u.kl;
+      j += u.jl;
+      pre(u.pvoff + idx) = srcval(a, s.ak*k + s.bk, s.aj*j + s.bj, i);
+      return;
+    }
+    const int tni = u.pnt*u.pni;
+    if (idx >= u.pnn*tni) return;
+    const int nq = idx/tni;
+    const int tq = (idx - nq*tni)/u.pni;
+    const int i = (idx - nq*tni - tq*u.pni) + u.pil;
+    const int nn = nq + u.pnlo, ta = tq + u.ptlo;
+    const int kk = (s.cs_seam == 2) ? ta : nn;
+    const int jj = (s.cs_seam == 2) ? nn : ta;
+    pre(u.pvoff + idx) = srcval(a,kk,jj,i);
   }
 };
 
@@ -743,18 +899,29 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
   const bool cs_nolim_ = pmy_pack->pmesh->cs_seam_fc_nolimit;
   auto sbuf = SendBufDv();
   auto rbuf = RecvBufDv();
-  if (fc_nchunk_plain > 0) {
-    FCPlainPack f(b, cb, sbuf, rbuf, fc_seg, fc_chunk_seg, fc_chunk_beg, 0);
+  // r1mspeed-1102: walk set 0 (all ng layers) or 1 (depth 1), see bvals.hpp
+  const int d = (pack_depth == 1) ? 1 : 0;
+  const int np = fc_np[d], ns = fc_ns[d], nr = fc_npre[d];
+  if (np > 0) {
+    FCPlainPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub[d], fc_cs[d], fc_cb[d], 0);
     Kokkos::parallel_for("SendBuffFCplain", Kokkos::Experimental::require(
-        Kokkos::RangePolicy<>(DevExeSpace(), 0, fc_nchunk_plain*FC_PACK_CHUNK),
+        Kokkos::RangePolicy<>(DevExeSpace(), 0, np*FC_PACK_CHUNK),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
   }
-  if (fc_nchunk_seam > 0) {
-    FCSeamPack f(b, cb, sbuf, rbuf, fc_seg, fc_chunk_seg, fc_chunk_beg, cs_seam_geom,
-                 cs_seam_stnc, fc_nchunk_plain, pmy_pack->pmesh->mb_indcs, cs_shear_sgn,
+  if (nr > 0) {
+    FCSeamPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub[d], fc_cs[d], fc_cb[d], cs_seam_geom,
+                 cs_seam_stnc, fc_preval, np + ns, pmy_pack->pmesh->mb_indcs,
+                 cs_shear_sgn, cs_nolim_);
+    Kokkos::parallel_for("SendBuffFCsrc", Kokkos::Experimental::require(
+        Kokkos::RangePolicy<FCSeamPre>(DevExeSpace(), 0, nr*FC_PACK_CHUNK),
+        Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
+  }
+  if (ns > 0) {
+    FCSeamPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub[d], fc_cs[d], fc_cb[d], cs_seam_geom,
+                 cs_seam_stnc, fc_preval, np, pmy_pack->pmesh->mb_indcs, cs_shear_sgn,
                  cs_nolim_);
     Kokkos::parallel_for("SendBuffFCseam", Kokkos::Experimental::require(
-        Kokkos::RangePolicy<>(DevExeSpace(), 0, fc_nchunk_seam*FC_PACK_CHUNK),
+        Kokkos::RangePolicy<>(DevExeSpace(), 0, ns*FC_PACK_CHUNK),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
   }
 }
@@ -1824,11 +1991,20 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
 
   //----- STEP 2: buffers have all completed, so unpack 3-components of field
 
-  // Outer loop over (# of MeshBlocks)*(# of buffers)*(three field components)
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), (3*nmb), Kokkos::AUTO);
+  // Outer loop over (# of MeshBlocks)*(three field components)*(radial chunks)
+  // r1mspeed-1102: the radial index range is cut into chunks of FC_UNP_CHUNK, one team
+  // each.  Buffers overlap only at the SAME (k,j,i), which stays in one team, so each
+  // element still takes its writes in the buffer order n (bitwise); 72 teams were
+  // ~half the device.
+  constexpr int FC_UNP_CHUNK = 16;
+  const int nic = (pmy_pack->pmesh->mb_indcs.nx1 + 2*pmy_pack->pmesh->mb_indcs.ng + 1
+                   + FC_UNP_CHUNK - 1)/FC_UNP_CHUNK;
+  Kokkos::TeamPolicy<> policy(DevExeSpace(), (3*nmb*nic), Kokkos::AUTO);
   BvalsTeamFor("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
-    const int m = tmember.league_rank()/3;
-    const int v = tmember.league_rank()%3;
+    const int m = tmember.league_rank()/(3*nic);
+    const int v = (tmember.league_rank()/nic)%3;
+    const int ic0 = (tmember.league_rank()%nic)*FC_UNP_CHUNK;
+    const int ic1 = ic0 + FC_UNP_CHUNK - 1;
 
     // scalar loop over neighbors to prevent race condition in overlapping assignments
     for (int n=0; n<nnghbr; ++n) {
@@ -1866,17 +2042,21 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
         }
         const int ni = iu - il + 1;
         const int nj = ju - jl + 1;
+        // r1mspeed-1102: this team's radial slice [cl, cu] of [il, iu]
+        const int cl = (il > ic0) ? il : ic0;
+        const int cu = (iu < ic1) ? iu : ic1;
+        const int nci = (cu >= cl) ? (cu - cl + 1) : 0;
         const int nk = ku - kl + 1;
-        const int nkji = nk*nj*ni;
-        const int nji  = nj*ni;
+        const int nkji = nk*nj*nci;
+        const int nji  = nj*nci;
 
         // if neighbor is at same or finer level, load data directly into b0
         if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
           Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
           [&](const int idx) {
             int k = (idx)/nji;
-            int j = (idx - k*nji)/ni;
-            int i = (idx - k*nji - j*ni) + il;
+            int j = (idx - k*nji)/nci;
+            int i = (idx - k*nji - j*nci) + cl;
             k += kl;
             j += jl;
             // CUBE-VERTEX CORNER FILL: OWNERSHIP.  The face buffers were widened by ng
@@ -1957,8 +2137,8 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
           Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
           [&](const int idx) {
             int k = (idx)/nji;
-            int j = (idx - k*nji)/ni;
-            int i = (idx - k*nji - j*ni) + il;
+            int j = (idx - k*nji)/nci;
+            int i = (idx - k*nji - j*nci) + cl;
             k += kl;
             j += jl;
             if (v==0) {
