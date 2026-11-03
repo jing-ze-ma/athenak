@@ -126,6 +126,7 @@ add_executable(
         mhd/mhd_tracers.cpp
         mhd/mhd_update.cpp
         mhd/mhd_etotgrav.cpp
+        mhd/mhd_boris.cpp
         mhd/mhd_wellbalance.cpp
 
         outputs/io_wrapper.cpp

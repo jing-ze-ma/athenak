@@ -100,6 +100,36 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
                 << " [code]: density floor rho >= B^2/v_A,max^2" << std::endl;
     }
   }
+  // <mhd>/boris_c [cm/s], <mhd>/boris_pmax_bar, <mhd>/boris_sw (boris-1102): see the
+  // note on EOS_Data::boris_c2inv.  Newtonian <mhd> only, read only when named.
+  if (pin->DoesParameterExist(bk,"boris_c")) {
+    if (bk.compare("mhd") != 0 || pp->pcoord->is_special_relativistic ||
+        pp->pcoord->is_general_relativistic) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << bk << ">/boris_c is implemented only for "
+                << "Newtonian <mhd>" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    const Real c_cgs = pin->GetReal(bk,"boris_c");
+    const Real vunit = (pp->punit != nullptr) ? pp->punit->velocity_cgs() : 1.0;
+    const Real punit = (pp->punit != nullptr) ? pp->punit->pressure_cgs() : 1.0;
+    if (c_cgs > 0.0) {
+      const Real cc = c_cgs/vunit;
+      eos_data.boris_c2inv = 1.0/(cc*cc);
+      if (pin->DoesParameterExist(bk,"boris_pmax_bar")) {
+        eos_data.boris_pmax = pin->GetReal(bk,"boris_pmax_bar")*1.0e6/punit;
+      }
+      if (pin->DoesParameterExist(bk,"boris_sw")) {
+        eos_data.boris_sw = pin->GetReal(bk,"boris_sw");
+      }
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<mhd>/boris_c = " << c_cgs << " [cm/s] = " << c_cgs/vunit
+                << " [code]: Alfven-speed (Boris) limiter, f = 1/sqrt(1+(vA/c)^4)"
+                << ", p_max = " << eos_data.boris_pmax << " [code] (0 = everywhere)"
+                << ", HLLE switch at (vA/c)^2 > " << eos_data.boris_sw << std::endl;
+    }
+  }
   // <mhd>/valfven_noinfall_fac: see the note on EOS_Data::va_noinfall_fac.  Read only
   // when named; needs valfven_max_cgs and a radial x1.
   if (pin->DoesParameterExist(bk,"valfven_noinfall_fac")) {

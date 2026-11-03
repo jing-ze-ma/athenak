@@ -231,6 +231,20 @@ class MHD {
   // following used for FOFC algorithm
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed
   bool use_fofc = false;   // flag to enable FOFC
+  // boris-1102 <mhd>/boris_c (EOS_Data::boris_c2inv): momentum of the RK-stage
+  // reference gam0 u0 + gam1 u1 (IM1..IM3), saved by RKUpdate, read by BorisCorrect;
+  // diagnostics accumulated over the run (printed every ndiag cycles)
+  bool boris_on = false;
+  DvceArray5D<Real> boris_mref;
+  int boris_ndiag = 100;
+  double boris_de_sum = 0.0;      // sum over stages of the signed E correction (x vol)
+  double boris_de_abs = 0.0;      // ... of |E correction| (x vol)
+  double boris_dm_abs = 0.0;      // ... of |momentum correction| (x vol)
+  double boris_ncell = 0.0;       // cell-stages with f < 0.99 (last cycle)
+  double boris_fmin = 1.0;        // min f (last cycle)
+  void BorisInit(ParameterInput *pin);
+  void BorisSaveRef(Driver *d, int stage);
+  void BorisCorrect(Driver *d, int stage);
   // Per-cell count of FOFC flags, for the `mhd_fofc` output variable: incremented by
   // one in every stage in which the cell was flagged, so a dump answers "WHERE did FOFC
   // fire", which the scalar <output>/file_type=log column cannot.  Allocated only when

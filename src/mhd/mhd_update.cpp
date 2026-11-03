@@ -30,6 +30,7 @@ TaskStatus MHD::RKUpdate(Driver *pdriver, int stage) {
   bool &multi_d = pmy_pack->pmesh->multi_d;
   bool &three_d = pmy_pack->pmesh->three_d;
 
+  if (boris_on) BorisSaveRef(pdriver, stage);   // boris-1102 (mhd_boris.cpp)
   Real &gam0 = pdriver->gam0[stage-1];
   Real &gam1 = pdriver->gam1[stage-1];
   Real beta_dt = (pdriver->beta[stage-1])*(pmy_pack->pmesh->dt);
