@@ -223,6 +223,15 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       }
       eos_data.chi_full = pin->GetBoolean(bk, "lhllc_chi_full");
     }
+    if (pin->DoesParameterExist(bk, "lhlld_chi_normal")) {
+      if (is_hyd) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<hydro>/lhlld_chi_normal is MHD (LHLLD) only"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      eos_data.chi_normal = pin->GetBoolean(bk, "lhlld_chi_normal");
+    }
     {
       const std::string kd = is_hyd ? "lhllc_divdiss" : "lhlld_divdiss";
       const std::string bd = is_hyd ? "lhlld_divdiss" : "lhllc_divdiss";

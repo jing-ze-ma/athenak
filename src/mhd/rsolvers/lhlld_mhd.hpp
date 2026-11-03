@@ -136,6 +136,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   // (default) = legacy LHLLD, bitwise.  Acts on the total pressure p_T* only (dpt);
   // the transverse-field (EMF) fluxes are untouched.
   const int divdiss = eos.divdiss;
+  const bool chi_normal = eos.chi_normal;   // lowmach2-1102 TEST key
   const bool dd_act2 = (indcs.nx2 > 1), dd_act3 = (indcs.nx3 > 1);
   const Real dd_dx1 = size.d_view(m).dx1, dd_dx2 = size.d_view(m).dx2,
              dd_dx3 = size.d_view(m).dx3;
@@ -224,6 +225,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       Real caxsqr = bxsq/wr_idn;
       Real usql = SQR(wl_ivx) + (SQR(wl_ivy) + SQR(wl_ivz));
       Real usqr = SQR(wr_ivx) + (SQR(wr_ivy) + SQR(wr_ivz));
+      if (chi_normal) { usql = SQR(wl_ivx); usqr = SQR(wr_ivx); }
       Real qa = casql + usql;
       Real qb = casqr + usqr;
       Real cul = sqrt(0.5*(qa + sqrt(fmax(0.0, SQR(qa) - 4.0*usql*caxsql))));

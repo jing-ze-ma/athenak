@@ -246,6 +246,10 @@ struct EOS_Data {
   // This is Minoshima & Miyoshi 2021 eq. (14) as written (and what LHLLD already does,
   // through c_u), SLAU/SLAU2 and Furusawa+ 2023.
   bool chi_full = false;
+  // lowmach2-1102 <mhd>/lhlld_chi_normal (TEST key, default false = Minoshima & Miyoshi
+  // eq. 14 with the full |u|, bitwise; read only when named; MHD only): c_u of LHLLD from
+  // the face-normal velocity only (|u|^2 -> u_n^2), mirroring LHLLC's legacy chi.
+  bool chi_normal = false;
   // lowmach2-1102 <hydro>/lhllc_divdiss, <mhd>/lhlld_divdiss (default false = off,
   // bitwise; read only when named) and the TEST key <hydro|mhd>/lhllc|lhlld_divdiss_form
   // (hpd | hp | raw | row; default hpd): MULTI-DIMENSIONAL DIVERGENCE DISSIPATION
