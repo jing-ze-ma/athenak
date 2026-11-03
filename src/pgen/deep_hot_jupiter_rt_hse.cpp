@@ -9,7 +9,60 @@
 
 #include "deep_hot_jupiter_rt.hpp"
 
+//----------------------------------------------------------------------------------------
+//! \fn HseMaxwellBlockend
+//! \brief seamexact-1103: top_bc = hse with bc_outer_maxwell and cs_seam_blockend =
+//! extend.  The stress divergence of a top ghost cell reads the cell-centred field one
+//! column further out (j+1, k+1); in the OUTERMOST tangential ghost row that column is
+//! not in the block and the difference is one-sided -- next to an interior MeshBlock end
+//! the same physical column is an active one, differenced centrally, when the panel side
+//! is one block.  The row's PLM state enters the x2/x3 flux at the block-boundary face
+//! of the first radial ghost and through it the top edge EMF (~1e-7 in B between
+//! layouts).  Each block evaluates the divergence on its ACTIVE columns (one value per
+//! top ghost layer, stored at i = ie), a same-panel ghost exchange (plain scalars) hands
+//! the owning neighbour's values to the outermost row, and the boundary kernel uses them
+//! there (only at an interior high-side block end, not in the corner of two).
 
+namespace {
+MeshBoundaryValuesCC *hse_mx_pbv_ = nullptr;
+}  // namespace
+
+template <typename F>
+void HseMaxwellBlockend(MeshBlockPack *pmbp, const F &mxdiv, DvceArray5D<Real> &q,
+                        DvceArray1D<int> &hj, DvceArray1D<int> &hk) {
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int ng = indcs.ng, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
+  const int n1 = indcs.nx1 + 2*ng, n2 = indcs.nx2 + 2*ng, n3 = indcs.nx3 + 2*ng;
+  const int nmb = pmbp->nmb_thispack;
+  q = DvceArray5D<Real>("hse_mxq", nmb, ng, n3, n2, n1);
+  hj = DvceArray1D<int>("hse_mxhj", nmb);
+  hk = DvceArray1D<int>("hse_mxhk", nmb);
+  auto &size = pmbp->pmb->mb_size;
+  auto &mb_bcs = pmbp->pmb->mb_bcs;
+  auto qq = q;
+  auto hjj = hj;
+  auto hkk = hk;
+  par_for("hse_mx_end", DevExeSpace(), 0, nmb-1, KOKKOS_LAMBDA(const int m) {
+    hjj(m) = (size.d_view(m).x2max < 1.0 - 1.0e-12) ? 1 : 0;   // interior high j end
+    hkk(m) = (size.d_view(m).x3max < 1.0 - 1.0e-12) ? 1 : 0;
+  });
+  par_for("hse_mx_own", DevExeSpace(), 0, nmb-1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    if (mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) return;
+    for (int i=0; i<ng; ++i) qq(m,i,k,j,ie) = mxdiv(m,k,j,i);
+  });
+  if (hse_mx_pbv_ == nullptr) {
+    hse_mx_pbv_ = new MeshBoundaryValuesCC(pmbp, nullptr, false);
+    hse_mx_pbv_->InitializeBuffers(ng);
+    hse_mx_pbv_->SetVectorPairs(ng, {});   // plain scalars; only same-panel ghosts are read
+    hse_mx_pbv_->cs_noresample = true;
+  }
+  while (hse_mx_pbv_->InitRecv(ng) == TaskStatus::incomplete) {}
+  while (hse_mx_pbv_->PackAndSendCC(q, q) == TaskStatus::incomplete) {}
+  while (hse_mx_pbv_->RecvAndUnpackCC(q, q) == TaskStatus::incomplete) {}
+  while (hse_mx_pbv_->ClearSend() == TaskStatus::incomplete) {}
+}
 
 void HydrostaticEquilibrium(Mesh *pm) {
   auto &indcs = pm->mb_indcs;
@@ -338,6 +391,43 @@ void HydrostaticEquilibrium(Mesh *pm) {
         }
     });
 
+    // seamexact-1103: the Maxwell-stress divergence of the hse top ghost (i = 0..ng-1),
+    // shared by the boundary kernel and the block-end exchange below
+    auto mxdiv = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i) {
+      Real dM1mag;
+      // (k,j+1) and (k+1,j) are read here. They belong to other threads, which is
+      // why the write had to move to its own kernel -- see the note on that kernel.
+      // At the outermost ghost row j+1 and k+1 leave the cell-centred array (the
+      // FACE arrays have the extra slot, the cell-centred one does not), so the
+      // index is held at the edge: the correction degenerates to a one-sided
+      // difference in that row rather than reading past the end, which is what the
+      // previous version did.
+      int jp1 = (j+1 < n2) ? (j+1) : j;
+      int kp1 = (k+1 < n3) ? (k+1) : k;
+      // Same one past the end in x1: on the LAST ghost cell (i = ng-1) the cell
+      // centred index ie+i+2 is n1, one beyond the array. The face array b0_x1f has
+      // the extra slot and is indexed as before; only bcc0 is held back.
+      int ip2 = (ie+i+2 < n1) ? (ie+i+2) : (n1-1);
+      Real pb = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
+      Real pbp1 = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+2)))+SQR(bcc0(m,IBY,k,j,ip2))+SQR(bcc0(m,IBZ,k,j,ip2)));
+      Real M11 = pb - SQR(b0_x1f(m,k,j,(ie+i+1)));
+      Real M11p1 = pbp1 - SQR(b0_x1f(m,k,j,(ie+i+2)));
+      Real M12 = - b0_x2f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
+      Real M12p1 = - b0_x2f(m,k,j+1,(ie+i+1)) * bcc0(m,IBX,k,jp1,(ie+i+1));
+      Real M13 = - b0_x3f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
+      Real M13p1 = - b0_x3f(m,k+1,j,(ie+i+1)) * bcc0(m,IBX,kp1,j,(ie+i+1));
+      dM1mag = -( (M11p1*area1(m,k,j,(ie+i+2))-M11*area1(m,k,j,(ie+i+1))) + (M12p1*area2(m,k,j+1,(ie+i+1))-M12*area2(m,k,j,(ie+i+1))) + (M13p1*area3(m,k+1,j,(ie+i+1))-M13*area3(m,k,j,(ie+i+1))) )/volume(m,k,j,(ie+i+1));
+      return dM1mag;
+    };
+    // seamexact-1103 (cs_seam_blockend = extend): the outermost tangential ghost row's
+    // stress divergence from the same-panel neighbour that owns those columns
+    const bool mxe_ = is_mhd_ && bc_outer_maxwell_ && !top_out_ &&
+                      pmbp->pmhd->pbval_u->cs_blockend_ext_;
+    DvceArray5D<Real> mxq;
+    DvceArray1D<int> mxhj, mxhk;
+    if (mxe_) {
+      HseMaxwellBlockend(pmbp, mxdiv, mxq, mxhj, mxhk);
+    }
     par_for("usrboundaryx1_bfieldc", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
     KOKKOS_LAMBDA(int m, int k, int j) {
         if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
@@ -496,28 +586,17 @@ void HydrostaticEquilibrium(Mesh *pm) {
             if (is_mhd_) {
               // bcc0 in these ghost cells was built by usrboundaryx1_bcc_outer above.
               if (bc_outer_maxwell_) {
-              // (k,j+1) and (k+1,j) are read here. They belong to other threads, which is
-              // why the write had to move to its own kernel -- see the note on that kernel.
-              // At the outermost ghost row j+1 and k+1 leave the cell-centred array (the
-              // FACE arrays have the extra slot, the cell-centred one does not), so the
-              // index is held at the edge: the correction degenerates to a one-sided
-              // difference in that row rather than reading past the end, which is what the
-              // previous version did.
-              int jp1 = (j+1 < n2) ? (j+1) : j;
-              int kp1 = (k+1 < n3) ? (k+1) : k;
-              // Same one past the end in x1: on the LAST ghost cell (i = ng-1) the cell
-              // centred index ie+i+2 is n1, one beyond the array. The face array b0_x1f has
-              // the extra slot and is indexed as before; only bcc0 is held back.
-              int ip2 = (ie+i+2 < n1) ? (ie+i+2) : (n1-1);
-              Real pb = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
-              Real pbp1 = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+2)))+SQR(bcc0(m,IBY,k,j,ip2))+SQR(bcc0(m,IBZ,k,j,ip2)));
-              Real M11 = pb - SQR(b0_x1f(m,k,j,(ie+i+1)));
-              Real M11p1 = pbp1 - SQR(b0_x1f(m,k,j,(ie+i+2)));
-              Real M12 = - b0_x2f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
-              Real M12p1 = - b0_x2f(m,k,j+1,(ie+i+1)) * bcc0(m,IBX,k,jp1,(ie+i+1));
-              Real M13 = - b0_x3f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
-              Real M13p1 = - b0_x3f(m,k+1,j,(ie+i+1)) * bcc0(m,IBX,kp1,j,(ie+i+1));
-              dM1mag = -( (M11p1*area1(m,k,j,(ie+i+2))-M11*area1(m,k,j,(ie+i+1))) + (M12p1*area2(m,k,j+1,(ie+i+1))-M12*area2(m,k,j,(ie+i+1))) + (M13p1*area3(m,k+1,j,(ie+i+1))-M13*area3(m,k,j,(ie+i+1))) )/volume(m,k,j,(ie+i+1));
+              // seamexact-1103: at the OUTERMOST tangential ghost row next to an
+              // INTERIOR MeshBlock end (cs_seam_blockend = extend) the one-sided
+              // difference above is layout dependent -- one block per panel side
+              // differences centrally there; the owning neighbour's value, exchanged
+              // (HseMaxwellBlockend), replaces it
+              if (mxe_ && ((j == n2-1 && mxhj(m)) || (k == n3-1 && mxhk(m))) &&
+                  !((j == n2-1) && (k == n3-1))) {
+                dM1mag = mxq(m,i,k,j,ie);
+              } else {
+                dM1mag = mxdiv(m,k,j,i);
+              }
               dM1mag += z_ov_rE(m,k,j,(ie+i+1)) * 0.5*SQR(bcc0(m,IBX,k,j,(ie+i+1)));
               }
             }
