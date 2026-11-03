@@ -743,6 +743,20 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // layoutaudit-1103 (USER 11-03, from vertexacc-1103): the cell-centred cube-vertex
+    // fill <mesh>/cs_vertex_fill_cc = true with the GS07 corner EMF (named, or the
+    // fallback when uct / uct_hlld is not selected) or with MHD fofc collapses dt to
+    // ~1e-28 at the cube vertex at low beta, or goes NaN by cycle 2.  Refused.
+    if (ppack->pmesh->cs_vertex_fill_cc && (!(emf_uct || emf_uct_hlld) || use_fofc)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mesh>/cs_vertex_fill_cc = true is not supported with "
+                << (use_fofc ? "<mhd>/fofc = true" : "the GS07 corner EMF (<mhd>/"
+                    "emf_scheme = gs07, named or by fallback)")
+                << ": the vertex dt collapses (~1e-28 at low beta) or the run goes NaN by "
+                << "cycle 2 (vertexacc-1103).  Use emf_scheme = uct or uct_hlld without "
+                << "fofc, or leave cs_vertex_fill_cc off." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // Fix for the above at the source: in the two POLAR cell rows (the only place the
     // (-1)^(i+k) mode closes on itself, because the polar ghost row is the k+N/2 image of
     // the row) add the UCT/Rusanov face-field dissipation to the corner e2, with the local
