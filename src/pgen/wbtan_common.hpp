@@ -185,6 +185,7 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   DvceArray4D<Real> se31, se21, se12, se32, se23, se13;
   DvceArray4D<Real> sr1, sr2, sr3;
   DvceArray5D<Real> sbcc;
+  DvceArray5D<Real> su1, su2, su3;
   bool sxe = false;
   if constexpr (kMHD) {
     // tracer-1101: a pending x_e Saha start (fresh start / restart without the tracer) is
@@ -202,6 +203,15 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
     // after a fresh start or a restart: restart continuation broke).  Saved and restored.
     se31 = dup4(ph->e3x1); se21 = dup4(ph->e2x1); se12 = dup4(ph->e1x2);
     se32 = dup4(ph->e3x2); se23 = dup4(ph->e2x3); se13 = dup4(ph->e1x3);
+    // uctaudit-1103: under <mhd>/emf_scheme = uct | uct_hlld, MHD::Fluxes also writes the
+    // UCT face stores uct1/2/3 (UctFaceStore), which this stage's CornerE reads AFTER the
+    // user source: without this the first stage of a fresh start built its corner EMF
+    // from the probe's B = 0 equilibrium coefficients and velocities.  Saved and restored.
+    if (ph->emf_uct || ph->emf_uct_hlld) {
+      if (ph->uct1.size() > 0) su1 = dup5(ph->uct1);
+      if (ph->uct2.size() > 0) su2 = dup5(ph->uct2);
+      if (ph->uct3.size() > 0) su3 = dup5(ph->uct3);
+    }
     if (ph->presist != nullptr) {
       if (ph->presist->eta_b.size() > 0) seta = dup4(ph->presist->eta_b);
       if (ph->presist->ad_coef.size() > 0) sadc = dup4(ph->presist->ad_coef);
@@ -377,6 +387,9 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
     Kokkos::deep_copy(ph->e3x1, se31); Kokkos::deep_copy(ph->e2x1, se21);
     Kokkos::deep_copy(ph->e1x2, se12); Kokkos::deep_copy(ph->e3x2, se32);
     Kokkos::deep_copy(ph->e2x3, se23); Kokkos::deep_copy(ph->e1x3, se13);
+    if (su1.size() > 0) Kokkos::deep_copy(ph->uct1, su1);
+    if (su2.size() > 0) Kokkos::deep_copy(ph->uct2, su2);
+    if (su3.size() > 0) Kokkos::deep_copy(ph->uct3, su3);
     if (seta.size() > 0) Kokkos::deep_copy(ph->presist->eta_b, seta);
     if (sadc.size() > 0) Kokkos::deep_copy(ph->presist->ad_coef, sadc);
     if (sr1.size() > 0) {

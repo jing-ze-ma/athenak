@@ -98,24 +98,27 @@ void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
   Real cfr = eos.FastSpeedFromP(rr, pr, g1r, bxi, br(iby,i), br(ibz,i));
   // boris-1102 <mhd>/boris_c: the faces BorisHLLEFace took over carry an HLLE flux with
   // the limited (B -> sqrt(f) B) fast speeds: same test, same speeds, HLL weights
+  // (uctaudit-1103: the one test BorisFaceTest, same |B|^2 / |v|^2 expressions)
   bool boris_face = false;
   if (eos.boris_c2inv > 0.0) {
-    const Real xl = eos.BorisX(rl, bxsq + btl, pl,
-                               SQR(wl(IVX,i)) + SQR(wl(IVY,i)) + SQR(wl(IVZ,i)));
-    const Real xr = eos.BorisX(rr, bxsq + btr, pr,
-                               SQR(wr(IVX,i)) + SQR(wr(IVY,i)) + SQR(wr(IVZ,i)));
-    if (fmax(xl, xr) > eos.boris_sw) {
-      boris_face = true;
-      const Real sfl = sqrt(eos.BorisF(xl)), sfr = sqrt(eos.BorisF(xr));
+    Real ffl, ffr;
+    boris_face = BorisFaceTest(eos,
+        rl, bxi*bxi + bl(iby,i)*bl(iby,i) + bl(ibz,i)*bl(ibz,i), pl,
+        SQR(wl(IVX,i)) + SQR(wl(IVY,i)) + SQR(wl(IVZ,i)),
+        rr, bxi*bxi + br(iby,i)*br(iby,i) + br(ibz,i)*br(ibz,i), pr,
+        SQR(wr(IVX,i)) + SQR(wr(IVY,i)) + SQR(wr(IVZ,i)), ffl, ffr);
+    if (boris_face) {
+      const Real sfl = sqrt(ffl), sfr = sqrt(ffr);
       cfl = eos.FastSpeedFromP(rl, pl, g1l, sfl*bxi, sfl*bl(iby,i), sfl*bl(ibz,i));
       cfr = eos.FastSpeedFromP(rr, pr, g1r, sfr*bxi, sfr*br(iby,i), sfr*br(ibz,i));
     }
   }
   const Real sl = fmin(vl - cfl, vr - cfr);
   const Real sr = fmax(vl + cfl, vr + cfr);
-  // CSLowBetaFallback's test (lb_beta = 0 off the cubed sphere)
+  // CSLowBetaFallback's test, the shared CSLowBetaFires (lb_beta = 0 off the cubed sphere)
   const bool hll = hll_in || boris_face ||
-                   ((pl + pr) < lb_beta*(0.5*((bxsq + btl) + (bxsq + btr))));
+                   ((lb_beta > 0.0) && CSLowBetaFires(pl, pr, bxi, bl(iby,i), bl(ibz,i),
+                                                      br(iby,i), br(ibz,i), lb_beta));
   Real al, dlc, drc;
   if (sl >= 0.0) {          // F = F^L
     al = 1.0; dlc = 0.0; drc = 0.0;
