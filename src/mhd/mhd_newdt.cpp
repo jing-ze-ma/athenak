@@ -28,6 +28,8 @@
 
 namespace mhd {
 
+void DtReport(MHD *pm, MeshBlockPack *pp);   // dtdiag-1103, mhd_dtreport.cpp
+
 //----------------------------------------------------------------------------------------
 // \!fn void MHD::NewTimeStep()
 // \brief calculate the minimum timestep within a MeshBlockPack for MHD problems
@@ -445,6 +447,8 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
     dt_diag_valid = true;
   }
   dtnew_prev = dtnew;
+  // dtdiag-1103: <mhd>/dt_report (off unless named)
+  DtReport(this, pmy_pack);
 
   // compute timestep for diffusion
   if (pcond != nullptr) {
