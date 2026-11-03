@@ -73,8 +73,13 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
       if (have_list) {
         if (jp < static_cast<int>(nlist.size())) n = nlist[jp];
       } else {
+        // layoutaudit-1103: the doubling is capped by the HALF-RING (a mesh property),
+        // not by the MeshBlock nx3: capping by the block silently changed the polar
+        // group size (and the Fourier cutoff, the CFL group width and the M1 coarse
+        // groups that use it) with the phi decomposition.  A block nx3 that the
+        // mesh-wide group size does not divide is refused below.
         const Real st = std::sin(hx2v(m,j));
-        while (2*n*st <= tol && (ic.nx3 % (2*n)) == 0) n *= 2;
+        while (2*n*st <= tol && ((nphi/2) % (2*n)) == 0) n *= 2;
       }
       if (n < 1) RavgFatal("polar_ring_avg_n entries must be >= 1");
       if ((ic.nx3 % n) != 0 || ((nphi/2) % n) != 0) {

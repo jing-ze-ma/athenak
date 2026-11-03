@@ -211,18 +211,17 @@ CASES += [
 # Accretor (ry_per_accretor, spherical polar, polar ring average _ke/_gz, vet_gd, M1
 # hesdirk2): 50 x 29 x 64, phi split 2 / 4 / 8 (production: 8 blocks of 64 in phi).
 CASES += [
-    dict(name='he_hg', bin='he', deck='he_hg.athinput', ncyc=6, timeout=7200,
-         vars=['hydro_u', 'm1'], what='HG production deck (he_star_m1, M1 vet), C16 x 64',
-         set={'mesh/nx1': 64, 'mesh/nx2': 16, 'mesh/nx3': 16,
-              'mesh/cs_seam_blockend': 'extend'},
-         layouts=[L('b1x1_np1', (64, 16, 16)), L('b2x2_np1', (64, 8, 8)),
-                  L('b2x2_np4', (64, 8, 8), 4), L('b1x1_np6', (64, 16, 16), 6)]),
-    dict(name='acc_sp', bin='acc', deck='acc_sp.athinput', ncyc=6, timeout=7200,
+    dict(name='he_hg', bin='he', deck='he_hg.athinput', ncyc=3, timeout=7200,
+         vars=['hydro_u', 'm1'], what='HG production deck (he_star_m1, M1 vet), C16 x 704 (production radial grid)',
+         set={'mesh/nx2': 16, 'mesh/nx3': 16, 'mesh/cs_seam_blockend': 'extend'},
+         layouts=[L('b1x1_np6', (704, 16, 16), 6), L('b2x2_np6', (704, 8, 8), 6),
+                  L('b1x1_np3', (704, 16, 16), 3)]),
+    dict(name='acc_sp', bin='acc', deck='acc_sp.athinput', ncyc=3, timeout=7200,
          vars=['hydro_u', 'm1'], what='sp accretor production deck (ring avg ke/gz, vet_gd), '
-         '50 x 29 x 64, phi split',
-         set={'mesh/nx1': 50, 'mesh/nx2': 29, 'mesh/nx3': 64},
-         layouts=[L('ph2_np1', (50, 29, 32)), L('ph4_np1', (50, 29, 16)),
-                  L('ph8_np4', (50, 29, 8), 4), L('ph2_np2', (50, 29, 32), 2)]),
+         '500 x 29 x 64, phi split',
+         set={'mesh/nx2': 29, 'mesh/nx3': 64},
+         layouts=[L('ph2_np2', (500, 29, 32), 2), L('ph4_np4', (500, 29, 16), 4),
+                  L('ph8_np8', (500, 29, 8), 8)]),
 ]
 
 # ---------------------------------------------------------------- resistive probes
@@ -256,4 +255,16 @@ CASES += [
         extra=dict(_ML, **{'hydro/merge_lat_f': 2}),
         layouts=[L('b1x1_np1', (8, 32, 32)), L('b2x2_np1', (8, 16, 16)),
                  L('b2x2_np4', (8, 16, 16), 4)]),
+]
+# radial-BC probes of the resistive failure (located at i = ie on internal block ends)
+CASES += [
+    dict(_SPR, name='sp_res_ohm_outflow', what='sp Ohmic, OUTFLOW radial BCs',
+         set={'mesh/ix1_bc': 'outflow', 'mesh/ox1_bc': 'outflow', 'problem/user_bcs': 'false'}),
+    dict(_CSR, name='cs_res_ohm_reflect', what='cs Ohmic, REFLECT radial BCs',
+         set=dict(_CSRS, **{'mesh/ix1_bc': 'reflect', 'mesh/ox1_bc': 'reflect',
+                            'problem/user_bcs': 'false'})),
+]
+CASES += [
+    dict(_SPR, name='sp_res_ohm_polavg', what='sp Ohmic + use_polar_average_eresist',
+         set={'mesh/use_polar_average_eresist': 'true'}),
 ]
