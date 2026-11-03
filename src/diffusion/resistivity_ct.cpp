@@ -65,7 +65,9 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
       auto bx1f_ideal = b_ideal.x1f;
       auto ct1_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
         if (stage > 1) {
-          bx1f(m,k,j,i) = mu_*bx1f(m,k,j,i) + nu_*bx1f2(m,k,j,i) + (1.0-mu_-nu_)*bx1f_ideal(m,k,j,i);
+          const Real bold_ = bx1f(m,k,j,i);
+          bx1f(m,k,j,i) = mu_*bold_ + nu_*bx1f2(m,k,j,i) + (1.0-mu_-nu_)*bx1f_ideal(m,k,j,i);
+          bx1f2(m,k,j,i) = bold_;   // rkghalo-1103: Y_j for the next stage
         }
         bx1f(m,k,j,i) -= dt*(dxe3(m,k,j+1,i)*(fjm1*e3(m,k,j+1,i)+f0*e30(m,k,j+1,i)) - dxe3(m,k,j,i)*(fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/area1(m,k,j,i);
         if (three_d) {
@@ -86,7 +88,9 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
         Real dxe31 = (do_pole) ? 0.0 : dxe3(m,k,j,i+1);
         Real dxe30 = (do_pole) ? 0.0 : dxe3(m,k,j,i);
         if (stage > 1) {
-          bx2f(m,k,j,i) = mu_*bx2f(m,k,j,i) + nu_*bx2f2(m,k,j,i) + (1.0-mu_-nu_)*bx2f_ideal(m,k,j,i);
+          const Real bold_ = bx2f(m,k,j,i);
+          bx2f(m,k,j,i) = mu_*bold_ + nu_*bx2f2(m,k,j,i) + (1.0-mu_-nu_)*bx2f_ideal(m,k,j,i);
+          bx2f2(m,k,j,i) = bold_;   // rkghalo-1103: Y_j for the next stage
         }
         bx2f(m,k,j,i) += dt*(dxe31*(fjm1*e3(m,k,j,i+1)+f0*e30(m,k,j,i+1)) - dxe30*(fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/a2;
         if (three_d) {
@@ -102,7 +106,9 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
       auto bx3f_ideal = b_ideal.x3f;
       auto ct3_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
         if (stage > 1) {
-          bx3f(m,k,j,i) = mu_*bx3f(m,k,j,i) + nu_*bx3f2(m,k,j,i) + (1.0-mu_-nu_)*bx3f_ideal(m,k,j,i);
+          const Real bold_ = bx3f(m,k,j,i);
+          bx3f(m,k,j,i) = mu_*bold_ + nu_*bx3f2(m,k,j,i) + (1.0-mu_-nu_)*bx3f_ideal(m,k,j,i);
+          bx3f2(m,k,j,i) = bold_;   // rkghalo-1103: Y_j for the next stage
         }
         bx3f(m,k,j,i) -= dt*(dxe2(m,k,j,i+1)*(fjm1*e2(m,k,j,i+1)+f0*e20(m,k,j,i+1)) - dxe2(m,k,j,i)*(fjm1*e2(m,k,j,i)+f0*e20(m,k,j,i)))/area3(m,k,j,i);
         if (multi_d) {
@@ -130,7 +136,9 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
     par_for("resCT-b1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       if (stage > 1) {
-        bx1f(m,k,j,i) = mu_*bx1f(m,k,j,i) + nu_*bx1f2(m,k,j,i) + (1.0-mu_-nu_)*bx1f_ideal(m,k,j,i);
+        const Real bold_ = bx1f(m,k,j,i);
+        bx1f(m,k,j,i) = mu_*bold_ + nu_*bx1f2(m,k,j,i) + (1.0-mu_-nu_)*bx1f_ideal(m,k,j,i);
+        bx1f2(m,k,j,i) = bold_;   // rkghalo-1103: Y_j for the next stage
       }
       bx1f(m,k,j,i) -= dt*((fjm1*e3(m,k,j+1,i)+f0*e30(m,k,j+1,i)) - (fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/mbsize.d_view(m).dx2;
       if (three_d) {
@@ -146,7 +154,9 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
   par_for("resCT-b2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     if (stage > 1) {
-      bx2f(m,k,j,i) = mu_*bx2f(m,k,j,i) + nu_*bx2f2(m,k,j,i) + (1.0-mu_-nu_)*bx2f_ideal(m,k,j,i);
+      const Real bold_ = bx2f(m,k,j,i);
+      bx2f(m,k,j,i) = mu_*bold_ + nu_*bx2f2(m,k,j,i) + (1.0-mu_-nu_)*bx2f_ideal(m,k,j,i);
+      bx2f2(m,k,j,i) = bold_;   // rkghalo-1103: Y_j for the next stage
     }
     bx2f(m,k,j,i) += dt*((fjm1*e3(m,k,j,i+1)+f0*e30(m,k,j,i+1)) - (fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/mbsize.d_view(m).dx1;
     if (three_d) {
@@ -161,7 +171,9 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
   par_for("resCT-b3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     if (stage > 1) {
-      bx3f(m,k,j,i) = mu_*bx3f(m,k,j,i) + nu_*bx3f2(m,k,j,i) + (1.0-mu_-nu_)*bx3f_ideal(m,k,j,i);
+      const Real bold_ = bx3f(m,k,j,i);
+      bx3f(m,k,j,i) = mu_*bold_ + nu_*bx3f2(m,k,j,i) + (1.0-mu_-nu_)*bx3f_ideal(m,k,j,i);
+      bx3f2(m,k,j,i) = bold_;   // rkghalo-1103: Y_j for the next stage
     }
     bx3f(m,k,j,i) -= dt*((fjm1*e2(m,k,j,i+1)+f0*e20(m,k,j,i+1)) - (fjm1*e2(m,k,j,i)+f0*e20(m,k,j,i)))/mbsize.d_view(m).dx1;
     if (multi_d) {

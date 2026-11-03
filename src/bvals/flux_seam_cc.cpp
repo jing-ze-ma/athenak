@@ -137,6 +137,28 @@ bool SeamFaceGeom(const MeshBufferIndcs &ix, const int is, const int ie,
 } // namespace
 
 //----------------------------------------------------------------------------------------
+//! rkghalo-1103: vector length of the seam-flux team kernels (SeamFluxSendLocal/MPI,
+//! SeamFluxRecv, SeamFluxRecvUpw).  Their inner loop is ThreadVectorRange over the
+//! radial index; with the default vector length 1 every thread walked the whole radial
+//! column serially while only nk*nj (= 16) threads of a team had work.  32 lanes run the
+//! column in parallel (as bvsplit-1031 did for the CC pack, BvCcVl in bvals_cc.cpp).
+//! Every element is still written once by the same expression: bitwise.  CUDA only
+//! (env BVALS_SEAM_VL, default 32; 1 = the old launch); 1 on other backends.
+static int SeamFluxVl() {
+  static int v = -1;
+  if (v < 0) {
+#if defined(KOKKOS_ENABLE_CUDA)
+    const char *e = std::getenv("BVALS_SEAM_VL");
+    v = (e != nullptr) ? std::atoi(e) : 32;
+    if (v < 1) {v = 1;}
+#else
+    v = 1;
+#endif
+  }
+  return v;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn TaskStatus MeshBoundaryValuesCC::InitFluxSeamRecv
 //! \brief Post non-blocking receives for the seam flux exchange.
 
@@ -221,7 +243,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
                    ? seam_flux_var : -1;
 
   auto xpp_ = CrossPanelPairs(pmy_pack, this);   // r1mspeed-1102
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO);
+  Kokkos::TeamPolicy<> policy(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO,
+                              SeamFluxVl());   // rkghalo-1103
   BvalsTeamFor("SeamFluxSendLocal", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int mn_ = xpp_(tmember.league_rank()/nvar);   // r1mspeed-1102
     if (mn_ < 0) {return;}
@@ -571,7 +594,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
     // OUTWARD mass flux, b = the neighbour's.  The neighbour decides with (a, b) swapped,
     // which gives it weight 1 - wa on its own flux: both sides write the same value, so
     // the update stays exactly conservative.
-    Kokkos::TeamPolicy<> pol_u(DevExeSpace(), (nmb*nnghbr), Kokkos::AUTO);
+    Kokkos::TeamPolicy<> pol_u(DevExeSpace(), (nmb*nnghbr), Kokkos::AUTO,
+                               SeamFluxVl());   // rkghalo-1103
     BvalsTeamFor("SeamFluxRecvUpw", pol_u, KOKKOS_LAMBDA(TeamMember_t tmember) {
       const int m = (tmember.league_rank())/nnghbr;
       const int n = (tmember.league_rank() - m*nnghbr);
@@ -638,7 +662,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
   // r1mspeed-1102: only variable sfv_ (see bvals.hpp; this is an averaging mode)
   const int sfv_ = seam_flux_var;
   auto xpp_ = CrossPanelPairs(pmy_pack, this);   // r1mspeed-1102
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO);
+  Kokkos::TeamPolicy<> policy(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO,
+                              SeamFluxVl());   // rkghalo-1103
   BvalsTeamFor("SeamFluxRecv", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int mn_ = xpp_(tmember.league_rank()/nvar);   // r1mspeed-1102
     if (mn_ < 0) {return;}

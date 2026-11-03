@@ -67,6 +67,11 @@ TaskStatus Resistivity::RKUpdate(Driver *pdriver, int stage) {
   // capture `this` and dereference a host pointer on the device (see current_density.hpp)
   const Real mu_ = mu;
   const Real nu_ = nu;
+  // rkghalo-1103: with rkg_lean the energy slot of u2 (Y_{j-1}, read only here, in the
+  // active cells) is rotated in place: the stage-j update saves the u0 it overwrites
+  // (Y_{j-1} for stage j+1) instead of CopyCons copying u1 -> u2 and u0 -> u1 every
+  // super-stage (see CopyCons; bitwise: the same values at the same cells)
+  const bool lean_ = rkg_lean;
 
   // stswall-1029: the RKG energy flux through the x1 faces is and ie+1 of every column,
   // followed through the same recurrence as u: E_1 = f0 F_0, E_j = mu E_{j-1} +
@@ -116,7 +121,9 @@ TaskStatus Resistivity::RKUpdate(Driver *pdriver, int stage) {
       if (stage == 1) {
         u0_(m,n,k,j,i) = u0_(m,n,k,j,i) - dt*divf;
       } else {
-        u0_(m,n,k,j,i) = mu_*u0_(m,n,k,j,i) + nu_*u2_(m,n,k,j,i) + (1.0-mu_-nu_)*u_ideal_(m,n,k,j,i) - dt*divf;
+        const Real uold_ = u0_(m,n,k,j,i);
+        u0_(m,n,k,j,i) = mu_*uold_ + nu_*u2_(m,n,k,j,i) + (1.0-mu_-nu_)*u_ideal_(m,n,k,j,i) - dt*divf;
+        if (lean_) {u2_(m,n,k,j,i) = uold_;}   // rkghalo-1103: Y_j for the next stage
       }
     });
     return TaskStatus::complete;
@@ -185,7 +192,9 @@ TaskStatus Resistivity::RKUpdate(Driver *pdriver, int stage) {
       if (stage == 1) {
         u0_(m,n,k,j,i) = u0_(m,n,k,j,i) - dt*divf(i);
       } else {
-        u0_(m,n,k,j,i) = mu_*u0_(m,n,k,j,i) + nu_*u2_(m,n,k,j,i) + (1.0-mu_-nu_)*u_ideal_(m,n,k,j,i) - dt*divf(i);
+        const Real uold_ = u0_(m,n,k,j,i);
+        u0_(m,n,k,j,i) = mu_*uold_ + nu_*u2_(m,n,k,j,i) + (1.0-mu_-nu_)*u_ideal_(m,n,k,j,i) - dt*divf(i);
+        if (lean_) {u2_(m,n,k,j,i) = uold_;}   // rkghalo-1103: Y_j for the next stage
       }
     });
   });

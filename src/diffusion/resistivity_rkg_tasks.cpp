@@ -261,38 +261,40 @@ TaskStatus Resistivity::CopyIniE(Driver *pdrive, int stage) {
 }
 
 TaskStatus Resistivity::CopyCons(Driver *pdrive, int stage) {
+  // rkghalo-1103: b2 (Y_{j-1}) is rotated in place by CT, and with rkg_lean the energy
+  // slot of u2 by RKUpdate: each stage saves the value it overwrites, which is exactly
+  // what the u1 -> u2, u0 -> u1 copies below used to deliver at the cells those kernels
+  // read (nothing writes b0 or the active u0(IEN) between this task and the next
+  // stage's CT / RKUpdate).  b1 is read by no RKG task, so it is refreshed only at the
+  // last super-stage, where it ends as before (b0 after the final halo and BCs); u1 too
+  // (lean: the full copy of stage 1 and the energy slot of the last stage, as before).
+  // u2 / b2 are read by nothing after the last super-stage (CopyIniConsAndFluxes
+  // resets them at the next stage 1).  Bitwise; 5-8 fewer copies per super-stage.
+  auto *pm = pmy_pack->pmhd;
   if (rkg_lean) {
     // u2 is read only in its energy slot; u1 is fully refreshed at stage 1 (it held the
     // RK stage state) and afterwards differs from u0 only in the energy slot
-    auto &pm = pmy_pack->pmhd;
     const int n = IEN;
     auto A = Kokkos::ALL;
-    if (stage > 1) {
-      Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(u2,A,n,A,A,A),
-                        Kokkos::subview(pm->u1,A,n,A,A,A));
-      Kokkos::deep_copy(DevExeSpace(), b2.x1f, pm->b1.x1f);
-      Kokkos::deep_copy(DevExeSpace(), b2.x2f, pm->b1.x2f);
-      Kokkos::deep_copy(DevExeSpace(), b2.x3f, pm->b1.x3f);
+    if (stage == 1) {
+      Kokkos::deep_copy(DevExeSpace(), pm->u1, pm->u0);
+    } else if (stage == s) {
       Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(pm->u1,A,n,A,A,A),
                         Kokkos::subview(pm->u0,A,n,A,A,A));
-    } else {
-      Kokkos::deep_copy(DevExeSpace(), pm->u1, pm->u0);
     }
+  } else {
+    // the full u1 -> u2 shift stays: the ConToPrim of an intermediate super-stage
+    // (rkg_c2p_shift, rkg_halo_ien_only) reads u1 and u2 in every cell
+    if (stage > 1) {
+      Kokkos::deep_copy(DevExeSpace(), u2, pm->u1);
+    }
+    Kokkos::deep_copy(DevExeSpace(), pm->u1, pm->u0);
+  }
+  if (stage == s) {
     Kokkos::deep_copy(DevExeSpace(), pm->b1.x1f, pm->b0.x1f);
     Kokkos::deep_copy(DevExeSpace(), pm->b1.x2f, pm->b0.x2f);
     Kokkos::deep_copy(DevExeSpace(), pm->b1.x3f, pm->b0.x3f);
-    return TaskStatus::complete;
   }
-  if (stage > 1) {
-    Kokkos::deep_copy(DevExeSpace(), u2, pmy_pack->pmhd->u1);
-    Kokkos::deep_copy(DevExeSpace(), b2.x1f, pmy_pack->pmhd->b1.x1f);
-    Kokkos::deep_copy(DevExeSpace(), b2.x2f, pmy_pack->pmhd->b1.x2f);
-    Kokkos::deep_copy(DevExeSpace(), b2.x3f, pmy_pack->pmhd->b1.x3f);
-  }
-  Kokkos::deep_copy(DevExeSpace(), pmy_pack->pmhd->u1, pmy_pack->pmhd->u0);
-  Kokkos::deep_copy(DevExeSpace(), pmy_pack->pmhd->b1.x1f, pmy_pack->pmhd->b0.x1f);
-  Kokkos::deep_copy(DevExeSpace(), pmy_pack->pmhd->b1.x2f, pmy_pack->pmhd->b0.x2f);
-  Kokkos::deep_copy(DevExeSpace(), pmy_pack->pmhd->b1.x3f, pmy_pack->pmhd->b0.x3f);
   return TaskStatus::complete;
 }
 
