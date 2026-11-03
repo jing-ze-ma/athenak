@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -1292,24 +1293,40 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_dump_m = pin->GetOrAddInteger("problem","ck_dump_m",0);
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
-  // prod1103c default (USER 11-03; route B of 09-25, every Caltech dhj production deck):
-  // ck_pcut_bar = 1e8 (the ck two-stream reaches the inner wall) on a FRESH start
-  // (recipe::NewDefaults) with rt_ck when the fluid names isotropic_conduction = none and
-  // the key is not named; recorded for restarts.  Otherwise 10 bar as before.
-  if (!pin->DoesParameterExist("problem","ck_pcut_bar") && rt_ck) {
+  // problem/ck_pcut_bar [bar]: correlated-k is applied where p < ck_pcut_bar (default 10).
+  // prod1103c (USER 11-03 "a switch to just use ck everywhere instead of the pcut"):
+  // ck_pcut_bar = none = NO pressure cut, the ck two-stream covers the whole column to the
+  // inner wall (rt_ck_pcut = the largest Real: the cut search finds the innermost cell,
+  // the same as any numeric cut above the deepest column pressure, e.g. the 1e8 of the
+  // route-B decks).  FRESH-start default (recipe::NewDefaults) with rt_ck when the fluid
+  // names isotropic_conduction = none (route B) and the key is not named, logged as "ck
+  // everywhere"; recorded for restarts.  Otherwise 10 bar as before; a numeric key works
+  // as before.
+  {
     const std::string fb = pin->DoesBlockExist("mhd") ? "mhd" : "hydro";
     const bool nocond = pin->DoesParameterExist(fb,"isotropic_conduction") &&
                         pin->GetString(fb,"isotropic_conduction") == "none";
-    if (nocond && recipe::NewDefaults(pin)) {
-      pin->GetOrAddReal("problem","ck_pcut_bar",1.0e8);
-      recipe::Log("problem/ck_pcut_bar = 1e8 (default with rt_ck and <" + fb +
-                  ">/isotropic_conduction = none: route B)");
-    } else if (nocond) {
-      recipe::Log("problem/ck_pcut_bar = 10 (restart input or recipe none: the old "
-                  "default)");
+    if (!pin->DoesParameterExist("problem","ck_pcut_bar") && rt_ck && nocond) {
+      if (recipe::NewDefaults(pin)) {
+        pin->GetOrAddString("problem","ck_pcut_bar","none");
+        recipe::Log("problem/ck_pcut_bar = none: ck everywhere (default with rt_ck and <" +
+                    fb + ">/isotropic_conduction = none: route B)");
+      } else {
+        recipe::Log("problem/ck_pcut_bar = 10 (restart input or recipe none: the old "
+                    "default)");
+      }
+    }
+    if (pin->DoesParameterExist("problem","ck_pcut_bar") &&
+        pin->GetString("problem","ck_pcut_bar") == "none") {
+      rt_ck_pcut = std::numeric_limits<Real>::max();
+      if (global_variable::my_rank == 0) {
+        std::cout << "deep_hot_jupiter_rt: problem/ck_pcut_bar = none: ck everywhere (no "
+                  << "pressure cut, the ck two-stream to the inner wall)" << std::endl;
+      }
+    } else {
+      rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
     }
   }
-  rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
   // the grey-sweep fix, wired here so a dhj run can reproduce a pre-fix run bitwise.
   // Defaults to the FIX (false); see utils/two_stream_rt.hpp.
   // rt_layer_legacy: every layer used to span a whole cell in optical depth but carry a

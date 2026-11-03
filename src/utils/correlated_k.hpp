@@ -227,8 +227,9 @@ inline void build_planck_fractions(const Real pcut_bar) {
               << "band is no"
               << " longer a small correction" << std::endl;
     if (blue1pc_T > 0.0 && blue1pc_T < CK_PF_TMAX) {
-      std::cout << "  (with the p < " << rt_ck_pcut
-                << " bar cut this setup tops out near "
+      std::cout << "  (with the " << (rt_ck_pcut > 1.0e300 ? std::string("no pressure") :
+                                       "p < " + std::to_string(rt_ck_pcut) + " bar")
+                << " cut this setup tops out near "
                 << "4800 K, where the tail is 3e-3)" << std::endl;
     }
     if (worst_sum_err > 1.0e-12) {
@@ -396,7 +397,9 @@ inline void read_ck_table(const std::string &fname, const Real pcut_bar) {
               << " .. " << std::pow(10.0, hlP(nP-1)) << " bar" << std::endl
               << "  bands " << hwl(CK_NB) << " .. " << hwl(0)
               << " um, g weights sum to " << wsum << std::endl
-              << "  correlated-k applied where p < " << rt_ck_pcut << " bar" << std::endl;
+              << "  correlated-k applied " << (rt_ck_pcut > 1.0e300 ? std::string(
+                     "everywhere (ck_pcut_bar = none)") : "where p < " +
+                     std::to_string(rt_ck_pcut) + " bar") << std::endl;
     // the grids must be increasing: the lookup does a bracketing search on them
     for (int i=1; i<nT; ++i) {
       if (hlT(i) <= hlT(i-1)) {
