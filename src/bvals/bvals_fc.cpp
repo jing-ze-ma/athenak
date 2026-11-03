@@ -1031,7 +1031,10 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
   auto sbuf = SendBufDv();
   auto rbuf = RecvBufDv();
   // r1mspeed-1102: walk set 0 (all ng layers) or 1 (depth 1), see bvals.hpp
-  const int d = (pack_depth == 1) ? 1 : 0;
+  // seamexact-1103: with cs_seam_blockend = extend and > 2 blocks per panel side the
+  // extended pass and its partner interpolants (CsSeamExtPartner) read the along-seam
+  // ghosts to depth ng, which a depth-1 pack (<mhd>/rkg_halo_d1) leaves stale: full depth
+  const int d = (pack_depth == 1 && !(cs_blockend_ext_ && cs_ext_q_)) ? 1 : 0;
   last_pack_depth_ = pack_depth;   // layoutbug-1103
   const int np = fc_np[d], ns = fc_ns[d], nr = fc_npre[d];
   if (np > 0) {
