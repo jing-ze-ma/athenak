@@ -13,6 +13,15 @@
 # 8x8x16 ... grids):
 #   for n in 8 16 32 64; do athena -i cs_ivan_hyd.athinput mesh/nx1=$((2*n)) \
 #     mesh/nx2=$n mesh/nx3=$n meshblock/nx1=$((2*n)) meshblock/nx2=$n meshblock/nx3=$n; done
+# RESULT 11-03 (CPU athena_cpu_cs_test_iv1, plm/hllc/rk2, cfl 0.3, tlim 2, extend):
+#   nx2  nx1      L1        L2       Linf     orders L1 / L2 / Linf
+#     8   16   6.014e-2  7.395e-2  2.207e-1
+#    16   32   1.057e-2  1.265e-2  3.577e-2   2.51 / 2.55 / 2.63
+#    32   64   2.306e-3  2.732e-3  7.506e-3   2.20 / 2.21 / 2.25
+#    64  128   5.414e-4  6.383e-4  1.726e-3   2.09 / 2.10 / 2.12
+# SEAM/INT = 1.0000 at every n: the tangential velocity stays at round-off (~1e-16) and
+# the solution is EXACTLY one-dimensional on this grid (area = r^2 Omega, volume =
+# r^3 Omega/3: Omega cancels from the radial update), so this test cannot see a seam.
 # AXES: x1 is RADIAL; x2 = xi and x3 = eta are the panel-tangential angles.
 
 <comment>
