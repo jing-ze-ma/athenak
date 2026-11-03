@@ -17,6 +17,7 @@
 //! sn = sqrt(1 - c^2) at the edge; eta_a the edge's ambipolar coefficient.
 
 #include "athena.hpp"
+#include "diffusion/cs_vertex_res.hpp"
 
 struct CsEdgeJB {
   Real c, sn, eta_a;
@@ -31,6 +32,15 @@ struct CsEdgeOps {
   DvceArray3D<Real> cxi, sxi, cet, set, ccl, scl;
   DvceArray4D<Real> etc;   // the cell eta_A (ad_eta_c); unused when has_ad = false
   bool has_ad = true;
+  // cornerfix-1103 <mesh>/cs_vertex_3cell: at a cube-vertex radial edge eta_A and B_r are
+  // the means over the THREE real cells (CsVertexAt), not over the made-up corner block
+  bool v3 = false;
+  DualArray1D<RegionSize> sz;
+  int js = 0, je = 0, ks = 0, ke = 0;
+  void SetVertex(const bool on, const DualArray1D<RegionSize> &z, const int js_,
+                 const int je_, const int ks_, const int ke_) {
+    v3 = on; sz = z; js = js_; je = je_; ks = ks_; ke = ke_;
+  }
   CsEdgeOps(const DvceFaceFld4D<Real> &b_, const DvceArray5D<Real> &bc_,
             const DvceEdgeFld4D<Real> &jn_) : b(b_), bc(bc_), jn(jn_) {}
 
@@ -46,6 +56,11 @@ struct CsEdgeOps {
     s.eta_a = 0.25*(Eta(m,k,j,i) + Eta(m,k,j-1,i) + Eta(m,k-1,j,i) + Eta(m,k-1,j-1,i));
     s.br = 0.25*(bc(m,IBX,k,j,i) + bc(m,IBX,k,j-1,i)
                + bc(m,IBX,k-1,j,i) + bc(m,IBX,k-1,j-1,i));
+    CsVtx3 vx;
+    if (v3 && CsVertexAt(sz.d_view(m), k, j, js, je, ks, ke, vx)) {
+      s.eta_a = has_ad ? CsVertex3(etc, m, vx, i) : 0.0;
+      s.br = (bc(m,IBX,vx.kv,vx.jv,i) + bc(m,IBX,vx.kv,vx.jn,i) + bc(m,IBX,vx.kn,vx.jv,i))/3.0;
+    }
     s.bu1 = 0.5*(b.x2f(m,k,j,i) + b.x2f(m,k-1,j,i))/s.sn;   // B^xi
     s.bu2 = 0.5*(b.x3f(m,k,j,i) + b.x3f(m,k,j-1,i))/s.sn;   // B^eta
     s.bd1 = s.bu1 + s.c*s.bu2; s.bd2 = s.c*s.bu1 + s.bu2;

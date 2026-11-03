@@ -829,14 +829,47 @@ Real M1CsTanDer(const V &iw, const V &vd, const bool full, const VF &cdxf, const
 //! has filled it, and the active range at a PHYSICAL boundary, where the difference
 //! silently becomes one-sided (the divisor counts the cells actually used).
 
+//! cornerfix-1103 <mesh>/cs_vertex_3cell (vx.on): at a CUBE VERTEX the ng x ng corner
+//! ghost block has no physical counterpart.  A seam GHOST cell (column j outside
+//! [js,je], or row k outside [ks,ke]) next to a vertex corner takes the derivative ALONG
+//! its seam one-sided, from the cell itself and its in-range neighbour, instead of the
+//! centred difference across the corner block.  Off (the default argument): bitwise.
+struct M1Vtx {
+  bool on = false;
+  int js = 0, je = 0, ks = 0, ke = 0;
+  bool jl = false, jh = false, kl = false, kh = false;   // panel edges of the block
+};
+template <class SZ>
+KOKKOS_INLINE_FUNCTION
+M1Vtx M1VtxOf(const bool on, const SZ &z, const int js, const int je, const int ks,
+              const int ke) {
+  M1Vtx v;
+  v.on = on; v.js = js; v.je = je; v.ks = ks; v.ke = ke;
+  v.jl = z.x2min <= -1.0 + 1.0e-12; v.jh = z.x2max >= 1.0 - 1.0e-12;
+  v.kl = z.x3min <= -1.0 + 1.0e-12; v.kh = z.x3max >= 1.0 - 1.0e-12;
+  return v;
+}
+
 template <class V>
 KOKKOS_INLINE_FUNCTION
 Real M1OffDiv(const V &iw, const int m, const int d, const int k, const int j,
               const int i, const Real dx1, const Real dx2, const Real dx3,
               const bool thrd,
-              const int il, const int iu, const int jl, const int ju,
-              const int kl, const int ku, const int ec,
-              const V &vd, const bool full) {
+              const int il_, const int iu_, const int jl_, const int ju_,
+              const int kl_, const int ku_, const int ec,
+              const V &vd, const bool full, const M1Vtx vx = M1Vtx()) {
+  const int il = il_, iu = iu_;
+  int jl = jl_, ju = ju_, kl = kl_, ku = ku_;
+  if (vx.on) {
+    const bool jg = (j < vx.js) || (j > vx.je), kg = (k < vx.ks) || (k > vx.ke);
+    if (jg && !kg && ((j < vx.js) ? vx.jl : vx.jh)) {
+      if (vx.kl && kl < vx.ks) kl = vx.ks;
+      if (vx.kh && ku > vx.ke) ku = vx.ke;
+    } else if (kg && !jg && ((k < vx.ks) ? vx.kl : vx.kh)) {
+      if (vx.jl && jl < vx.js) jl = vx.js;
+      if (vx.jh && ju > vx.je) ju = vx.je;
+    }
+  }
   Real s = 0.0;
   if (d != 0) {
     int ia = (i+1 <= iu) ? (i+1) : i;

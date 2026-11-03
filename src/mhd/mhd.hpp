@@ -301,6 +301,7 @@ class MHD {
   void UctSeamPackets();
   void UctSeamEdges();
   void UctSeamOwnSide();
+  void CsVertexEmf3();   // cornerfix-1103 (mhd_cs_seam.cpp)
   void SeamXRecord(const bool packets);
   void CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta,
                     const DvceEdgeFld4D<Real> &jnorm, DvceEdgeFld4D<Real> &efld_,

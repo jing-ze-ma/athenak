@@ -19,33 +19,10 @@
 #include "coordinates/coordinates.hpp"
 #include "coordinates/cartesian_ks.hpp"
 #include "coordinates/cell_locations.hpp"
+#include "mhd/emf_smooth.hpp"
 
 namespace mhd {
-//----------------------------------------------------------------------------------------
-//! \fn Real EmfSmoothW(fd, eps, rhoe)
-//! \brief lhlld2-1102, <mhd>/emf_smooth = eps (read only when named; default off =
-//! the GS07 sign switch, bitwise).  Weight of the LEFT (lower-index) upwind choice in the
-//! GS07 corner EMF, as a smooth function of the face mass flux fd:
-//!   w = 0.5*(1 + fd/sqrt(fd^2 + delta^2)),  delta = eps*sqrt(rho*e)  (~ eps*rho*c_s),
-//! instead of the step function w = (fd >= 0).  The step makes the semi-discrete
-//! right-hand side DISCONTINUOUS wherever a face mass flux changes sign (any flow at
-//! rest or turning, and every low-Mach flow, where fd is round-off-sized noise about 0):
-//! the two upwind choices differ by O(dx^2 d^2E/dx^2), so a Runge-Kutta stage that lands
-//! on the other side of the switch than its predecessor costs an O(dt * jump) local
-//! error, and the global temporal error is FIRST order at fixed grid (in-plane-B
-//! magnetized Gresho vortex, M = 0.01: B order 0.8-1.3, v 1.2).  eps = 0 is the GS07
-//! rule for a zero mass flux (the average of both sides) applied to every face.
-//! For |fd| >> delta the weight is 1 or 0 to O(delta^2/fd^2): GS07 is recovered in any
-//! flow that is not slow compared with eps*c_s.
-
-KOKKOS_INLINE_FUNCTION
-Real EmfSmoothW(const Real fd, const Real eps, const Real rhoe) {
-  const Real del2 = eps*eps*rhoe;
-  if (del2 <= 0.0) {   // eps = 0: GS07 zero-mass-flux rule everywhere
-    return 0.5;
-  }
-  return 0.5*(1.0 + fd/sqrt(fd*fd + del2));
-}
+// EmfSmoothW: mhd/emf_smooth.hpp (cornerfix-1103: shared with MHD::CsVertexEmf3)
 
 //! \brief lhlld2-1102: the GS07 upwind choice with smooth weights: a is the choice for
 //! fd >= 0 (its reference EMF in cell A), b the one for fd < 0 (cell B); rA, rB = rho*e
@@ -153,43 +130,58 @@ Real UctE3(const UctCorner &d, const int m, const int k, const int j, const int 
 }
 
 // E1 (x1 edge at x2 face j, x3 face k): p = x2, q = x3; / sin(xi,eta) at the corner
+// cornerfix-1103: templated on CELL-index maps K(kk), J(jj) applied to every array read
+// (identity: UctE1, bitwise).  MHD::CornerE passes the seam MIRROR at the seam radial
+// edges within ng-1 of a cube vertex under <mesh>/cs_vertex_3cell, so the ghost row /
+// column (whose stencils reach the corner block) is replaced by the own one.
+struct UctIdx {
+  KOKKOS_INLINE_FUNCTION int operator()(const int a) const {return a;}
+};
+struct UctMirror {   // reflect cell indices below lo / above hi into [lo, hi]
+  int lo, hi;
+  KOKKOS_INLINE_FUNCTION int operator()(const int a) const {
+    return (a < lo) ? (2*lo - 1 - a) : ((a > hi) ? (2*hi + 1 - a) : a);
+  }
+};
+template <class MK, class MJ>
 KOKKOS_INLINE_FUNCTION
-Real UctE1(const UctCorner &d, const int m, const int k, const int j, const int i) {
-  const Real aw = 0.5*(d.u2(m,0,k-1,j,i) + d.u2(m,0,k,j,i));
-  const Real dw = 0.5*(d.u2(m,1,k-1,j,i) + d.u2(m,1,k,j,i));
-  const Real de = 0.5*(d.u2(m,2,k-1,j,i) + d.u2(m,2,k,j,i));
-  const Real as = 0.5*(d.u3(m,0,k,j-1,i) + d.u3(m,0,k,j,i));
-  const Real ds = 0.5*(d.u3(m,1,k,j-1,i) + d.u3(m,1,k,j,i));
-  const Real dn = 0.5*(d.u3(m,2,k,j-1,i) + d.u3(m,2,k,j,i));
+Real UctE1T(const UctCorner &d, const int m, const int k, const int j, const int i,
+            const MK &K, const MJ &J) {
+  const Real aw = 0.5*(d.u2(m,0,K(k-1),J(j),i) + d.u2(m,0,K(k),J(j),i));
+  const Real dw = 0.5*(d.u2(m,1,K(k-1),J(j),i) + d.u2(m,1,K(k),J(j),i));
+  const Real de = 0.5*(d.u2(m,2,K(k-1),J(j),i) + d.u2(m,2,K(k),J(j),i));
+  const Real as = 0.5*(d.u3(m,0,K(k),J(j-1),i) + d.u3(m,0,K(k),J(j),i));
+  const Real ds = 0.5*(d.u3(m,1,K(k),J(j-1),i) + d.u3(m,1,K(k),J(j),i));
+  const Real dn = 0.5*(d.u3(m,2,K(k),J(j-1),i) + d.u3(m,2,K(k),J(j),i));
   // v.n_2 of the x3 faces along x2
-  Real fw = d.u3(m,5,k,j-1,i), fe = d.u3(m,5,k,j,i);
+  Real fw = d.u3(m,5,K(k),J(j-1),i), fe = d.u3(m,5,K(k),J(j),i);
   if (d.cs) {
-    fw = d.se(m,k,j-1)*fw - d.ce(m,k,j-1)*d.u3(m,3,k,j-1,i);
-    fe = d.se(m,k,j  )*fe - d.ce(m,k,j  )*d.u3(m,3,k,j  ,i);
+    fw = d.se(m,K(k),J(j-1))*fw - d.ce(m,K(k),J(j-1))*d.u3(m,3,K(k),J(j-1),i);
+    fe = d.se(m,K(k),J(j))*fe - d.ce(m,K(k),J(j))*d.u3(m,3,K(k),J(j),i);
   }
   const Real vpw = fw + 0.5*(
-    UctHalf(UctVnXi(d,m,k-1,j-2,i), UctVnXi(d,m,k-1,j-1,i), UctVnXi(d,m,k-1,j,i), true) +
-    UctHalf(UctVnXi(d,m,k  ,j-2,i), UctVnXi(d,m,k  ,j-1,i), UctVnXi(d,m,k  ,j,i), true));
+    UctHalf(UctVnXi(d,m,K(k-1),J(j-2),i), UctVnXi(d,m,K(k-1),J(j-1),i), UctVnXi(d,m,K(k-1),J(j),i), true) +
+    UctHalf(UctVnXi(d,m,K(k),J(j-2),i), UctVnXi(d,m,K(k),J(j-1),i), UctVnXi(d,m,K(k),J(j),i), true));
   const Real vpe = fe + 0.5*(
-    UctHalf(UctVnXi(d,m,k-1,j-1,i), UctVnXi(d,m,k-1,j,i), UctVnXi(d,m,k-1,j+1,i), false) +
-    UctHalf(UctVnXi(d,m,k  ,j-1,i), UctVnXi(d,m,k  ,j,i), UctVnXi(d,m,k  ,j+1,i), false));
+    UctHalf(UctVnXi(d,m,K(k-1),J(j-1),i), UctVnXi(d,m,K(k-1),J(j),i), UctVnXi(d,m,K(k-1),J(j+1),i), false) +
+    UctHalf(UctVnXi(d,m,K(k),J(j-1),i), UctVnXi(d,m,K(k),J(j),i), UctVnXi(d,m,K(k),J(j+1),i), false));
   // v.n_3 of the x2 faces along x3
-  Real fs = d.u2(m,4,k-1,j,i), fn = d.u2(m,4,k,j,i);
+  Real fs = d.u2(m,4,K(k-1),J(j),i), fn = d.u2(m,4,K(k),J(j),i);
   if (d.cs) {
-    fs = d.sx(m,k-1,j)*fs - d.cx(m,k-1,j)*d.u2(m,3,k-1,j,i);
-    fn = d.sx(m,k  ,j)*fn - d.cx(m,k  ,j)*d.u2(m,3,k  ,j,i);
+    fs = d.sx(m,K(k-1),J(j))*fs - d.cx(m,K(k-1),J(j))*d.u2(m,3,K(k-1),J(j),i);
+    fn = d.sx(m,K(k),J(j))*fn - d.cx(m,K(k),J(j))*d.u2(m,3,K(k),J(j),i);
   }
   const Real vqs = fs + 0.5*(
-    UctHalf(UctVnEta(d,m,k-2,j-1,i), UctVnEta(d,m,k-1,j-1,i), UctVnEta(d,m,k,j-1,i), true) +
-    UctHalf(UctVnEta(d,m,k-2,j  ,i), UctVnEta(d,m,k-1,j  ,i), UctVnEta(d,m,k,j  ,i), true));
+    UctHalf(UctVnEta(d,m,K(k-2),J(j-1),i), UctVnEta(d,m,K(k-1),J(j-1),i), UctVnEta(d,m,K(k),J(j-1),i), true) +
+    UctHalf(UctVnEta(d,m,K(k-2),J(j),i), UctVnEta(d,m,K(k-1),J(j),i), UctVnEta(d,m,K(k),J(j),i), true));
   const Real vqn = fn + 0.5*(
-    UctHalf(UctVnEta(d,m,k-1,j-1,i), UctVnEta(d,m,k,j-1,i), UctVnEta(d,m,k+1,j-1,i), false) +
-    UctHalf(UctVnEta(d,m,k-1,j  ,i), UctVnEta(d,m,k,j  ,i), UctVnEta(d,m,k+1,j  ,i), false));
+    UctHalf(UctVnEta(d,m,K(k-1),J(j-1),i), UctVnEta(d,m,K(k),J(j-1),i), UctVnEta(d,m,K(k+1),J(j-1),i), false) +
+    UctHalf(UctVnEta(d,m,K(k-1),J(j),i), UctVnEta(d,m,K(k),J(j),i), UctVnEta(d,m,K(k+1),J(j),i), false));
   Real dum, bqw, bqe, bps, bpn;
-  PLM(d.b3(m,k,j-2,i), d.b3(m,k,j-1,i), d.b3(m,k,j  ,i), bqw, dum);
-  PLM(d.b3(m,k,j-1,i), d.b3(m,k,j  ,i), d.b3(m,k,j+1,i), dum, bqe);
-  PLM(d.b2(m,k-2,j,i), d.b2(m,k-1,j,i), d.b2(m,k  ,j,i), bps, dum);
-  PLM(d.b2(m,k-1,j,i), d.b2(m,k  ,j,i), d.b2(m,k+1,j,i), dum, bpn);
+  PLM(d.b3(m,K(k),J(j-2),i), d.b3(m,K(k),J(j-1),i), d.b3(m,K(k),J(j),i), bqw, dum);
+  PLM(d.b3(m,K(k),J(j-1),i), d.b3(m,K(k),J(j),i), d.b3(m,K(k),J(j+1),i), dum, bqe);
+  PLM(d.b2(m,K(k-2),J(j),i), d.b2(m,K(k-1),J(j),i), d.b2(m,K(k),J(j),i), bps, dum);
+  PLM(d.b2(m,K(k-1),J(j),i), d.b2(m,K(k),J(j),i), d.b2(m,K(k+1),J(j),i), dum, bpn);
   const Real e = UctEdge(aw, dw, de, vpw, vpe, bqw, bqe, as, ds, dn, vqs, vqn, bps, bpn);
   if (!d.cs) return e;
   // sin of the xi-eta angle at the corner (xi_{j-1/2}, eta_{k-1/2}), as Coordinates
@@ -199,6 +191,11 @@ Real UctE1(const UctCorner &d, const int m, const int k, const int j, const int 
   const Real y = tan(0.25*M_PI*LeftEdgeX(k-d.ks, d.nx3, sz.x3min, sz.x3max));
   const Real sn = sqrt(1.0 + SQR(x) + SQR(y))/(sqrt(1.0 + SQR(x))*sqrt(1.0 + SQR(y)));
   return e/sn;
+}
+
+KOKKOS_INLINE_FUNCTION
+Real UctE1(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  return UctE1T(d, m, k, j, i, UctIdx(), UctIdx());
 }
 
 // E2 (x2 edge at x3 face k, x1 face i): p = x3, q = x1
@@ -281,6 +278,10 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   // needed then.  At a reflecting / stress-free wall edge it takes the mean of the two
   // wall-face EMFs (the solver's mirror-state flux), reading no ghost row.
   const bool uct_ = emf_uct || emf_uct_hlld;
+  // cornerfix-1103: near-vertex seam edges of UCT without the shared seam (see below)
+  const bool v3n_ = uct_ && use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell &&
+                    pmy_pack->pmesh->three_d && cs_seam_mhd < 2;
+  const int ng_ = indcs.ng;
   UctCorner ucd;
   if (uct_) {
     ucd.u1 = uct1; ucd.u2 = uct2; ucd.u3 = uct3; ucd.w = w0;
@@ -779,6 +780,23 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       };
       if (uct_) {   // emf_scheme = uct | uct_hlld (UctE1/E2/E3)
         e1(m,k,j,i) = UctE1(ucd, m, k, j, i);
+        // cornerfix-1103 <mesh>/cs_vertex_3cell (no shared seam): a seam radial edge
+        // within ng-1 of a cube vertex takes the seam MIRROR of its ghost row / column
+        // (whose stencils reach the corner block); the vertex itself: CsVertexEmf3
+        if (v3n_) {
+          const RegionSize &z = size.d_view(m);
+          const bool pjl = z.x2min <= -1.0 + 1.0e-12, pjh = z.x2max >= 1.0 - 1.0e-12;
+          const bool pkl = z.x3min <= -1.0 + 1.0e-12, pkh = z.x3max >= 1.0 - 1.0e-12;
+          const bool ksm = (k == ks && pkl) || (k == ke+1 && pkh);   // on an x3 seam
+          const bool jsm = (j == js && pjl) || (j == je+1 && pjh);   // on an x2 seam
+          const bool nvj = (pjl && j > js && j < js + ng_) || (pjh && j <= je && j > je+1-ng_);
+          const bool nvk = (pkl && k > ks && k < ks + ng_) || (pkh && k <= ke && k > ke+1-ng_);
+          if (ksm && !jsm && nvj) {
+            e1(m,k,j,i) = UctE1T(ucd, m, k, j, i, UctMirror{ks, ke}, UctIdx());
+          } else if (jsm && !ksm && nvk) {
+            e1(m,k,j,i) = UctE1T(ucd, m, k, j, i, UctIdx(), UctMirror{js, je});
+          }
+        }
         e2(m,k,j,i) = wall1 ? 0.5*(e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i))
                             : UctE2(ucd, m, k, j, i);
         e3(m,k,j,i) = wall1 ? 0.5*(e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i))
@@ -930,6 +948,11 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   // ucthshare-1102 <mhd>/cs_seam_mhd = shared: the seam-edge / cube-vertex UCT EMFs from
   // shared inputs (mhd_cs_seam.cpp)
   if (cs_seam_mhd >= 2 && pmy_pack->pmesh->three_d) {UctSeamEdges();}
+  // cornerfix-1103 <mesh>/cs_vertex_3cell: without the shared seam the cube-vertex
+  // radial EMF took a 4-cell stencil whose 4th cell is the made-up corner block; the
+  // 3-cell vertex rule replaces it (mhd_cs_seam.cpp, GS07 and UCT alike)
+  else if (use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell &&
+           pmy_pack->pmesh->three_d) {CsVertexEmf3();}
   if (pmy_pack->pmesh->use_polar_boundary) PolarAzimuthalAverageEr();
   return TaskStatus::complete;
 }

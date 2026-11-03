@@ -41,6 +41,7 @@
 #include "current_density.hpp"
 #include "mhd/mhd.hpp"
 #include "cs_edge_jb.hpp"
+#include "diffusion/cs_vertex_res.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \fn void Resistivity::SetAmbipolar()
@@ -379,6 +380,14 @@ void Resistivity::AddEMFAmbipolarGnomonic(const DvceFaceFld4D<Real> &b0,
                   - dxf2(m,k,j,i)*bxi(k,j) + dxf2(m,k-1,j,i)*bxi(k-1,j))/ae1(m,k,j,i);
   });
 
+  // cornerfix-1103 <mesh>/cs_vertex_3cell: the vertex radial J of the extra layers too
+  const bool v3_ = pmy_pack->pmesh->cs_vertex_3cell;
+  if (v3_) {
+    CsVertexJFix(b0, is-1, is-1, true);
+    CsVertexJFix(b0, ie+1, ie+1, true);
+  }
+  auto &msz_ = pmy_pack->pmb->mb_size;
+
   auto coef_ = ad_coef;
   const Real cap = max_eta_ad;
   auto e1 = efld.x1e, e2 = efld.x2e, e3 = efld.x3e;
@@ -402,6 +411,7 @@ void Resistivity::AddEMFAmbipolarGnomonic(const DvceFaceFld4D<Real> &b0,
   CsEdgeOps ops(b, bc, jnorm);
   ops.etc = etc_; ops.has_ad = true;
   ops.cxi = cxi; ops.sxi = sxi; ops.cet = cet; ops.set = set; ops.ccl = ccl; ops.scl = scl;
+  ops.SetVertex(v3_, msz_, js, je, ks, ke);   // cornerfix-1103: 3-cell vertex edge
   par_for("ad_cs_emf", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     // physical radial boundary face: the radial-edge J average uses the active column

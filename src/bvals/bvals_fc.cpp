@@ -1941,6 +1941,8 @@ static Real SignPreserveCS(const Real q, const Real n0, const Real n1, const Rea
   return q;
 }
 
+namespace cs_vertex_diag { extern Real fc_perturb, perturb_add; }   // cornerfix-1103
+
 void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coarse) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int js = coarse ? indcs.cjs : indcs.js;
@@ -1957,6 +1959,10 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
   const bool coar_ = coarse;
   const int is_ = indcs.is, ie_ = indcs.ie;
   auto &mblev_ = pmy_pack->pmb->mb_lev;
+  // cornerfix-1103 DIAGNOSTIC <mesh>/cs_vertex_fc_perturb / cs_vertex_perturb_add (0 unless
+  // named): every corner-block face, sampled or extrapolated, -> b*(1 + fp) + fa
+  const Real fp_ = cs_vertex_diag::fc_perturb, fa_ = cs_vertex_diag::perturb_add;
+  const bool fpon_ = (fp_ != 0.0) || (fa_ != 0.0);
 
   par_for("cs_fill_corners", DevExeSpace(), 0,(nmb-1), 0,3, 0,nc1, 0,(ng-1), 0,(ng-1),
   KOKKOS_LAMBDA(const int m, const int c, const int i, const int gj, const int gk) {
@@ -2044,6 +2050,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
       ej = SignPreserveCS(ej, j0, j1, j2);
       b_.x1f(m,ktc,jtc,i) = wblend*ek + (1.0-wblend)*ej;
     }
+    if (fpon_) b_.x1f(m,ktc,jtc,i) = b_.x1f(m,ktc,jtc,i)*(1.0 + fp_) + fa_;
     if (i > (nc1-1)) return;
     // b.x2f: FACE index in j, cell index in k
     if (!vfill_cc) {
@@ -2059,6 +2066,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
       ej = SignPreserveCS(ej, j0, j1, j2);
       b_.x2f(m,ktc,jtf,i) = wblend*ek + (1.0-wblend)*ej;
     }
+    if (fpon_) b_.x2f(m,ktc,jtf,i) = b_.x2f(m,ktc,jtf,i)*(1.0 + fp_) + fa_;
     // b.x3f: cell index in j, FACE index in k
     if (!vfill_cc) {
       const Real k0 = b_.x3f(m,akf,jtc,i);
@@ -2073,6 +2081,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
       ej = SignPreserveCS(ej, j0, j1, j2);
       b_.x3f(m,ktf,jtc,i) = wblend*ek + (1.0-wblend)*ej;
     }
+    if (fpon_) b_.x3f(m,ktf,jtc,i) = b_.x3f(m,ktf,jtc,i)*(1.0 + fp_) + fa_;
   });
   return;
 }

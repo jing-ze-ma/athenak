@@ -79,7 +79,11 @@ bool CSConstAccelOffRadial(ParameterInput *pin, const std::string &blk) {
 }  // namespace
 
 // vertexacc-1103: the `<mesh>/cs_vertex_cc_perturb` diagnostic, read by bvals_cc.cpp
-namespace cs_vertex_diag { Real cc_perturb = 0.0; }
+// cornerfix-1103: + `cs_vertex_fc_perturb` (the face-centred corner block, both the sampled
+// and the extrapolated fill) and `cs_vertex_perturb_add` (an offset added to both, so a
+// corner block that is exactly zero is perturbed too); the CC factor now also acts on the
+// sampled (cs_vertex_fill_cc) corner block.  All 0 unless named: bitwise.
+namespace cs_vertex_diag { Real cc_perturb = 0.0, fc_perturb = 0.0, perturb_add = 0.0; }
 
 //----------------------------------------------------------------------------------------
 //! Mesh constructor:
@@ -190,12 +194,45 @@ Mesh::Mesh(ParameterInput *pin) :
   // the two spellings: `extrapolate` is false here, `sample` is true.
   cs_vertex_fill_cc = use_cubed_sphere &&
                       pin->GetOrAddBoolean("mesh", "cs_vertex_fill_cc", false);
+  // cornerfix-1103 `<mesh>/cs_vertex_3cell` (USER 11-03 "no operator may read the cube-
+  // vertex corner block"): at the 8 cube vertices only THREE panels meet, so the ng x ng
+  // diagonal ghost block beyond a block corner there (cell- and face-centred) has no
+  // physical counterpart (Ivan et al. JCP 2013 "collapsed" ghosts) and holds made-up
+  // values (FillPanelCorners*, cs_vertex_fill*).  true: every operator that read it
+  // takes a 3-cell / one-sided rule there instead:
+  //   MHD vertex radial EMF without the shared seam (GS07 and UCT: MHD::CsVertexEmf3;
+  //   GS07 also on the seam edges within ng-1 of a vertex), hydro / MHD FOFC trial
+  //   state, the cubed-sphere resistive J and eta at a vertex (Ohmic + ambipolar:
+  //   Resistivity::CsVertexJFix), the M1 implicit off-diagonal VET terms (M1Vtx).
+  //   Diagnostic: <mesh>/cs_vertex_cc_perturb / cs_vertex_fc_perturb /
+  //   cs_vertex_perturb_add (below) -- a run that is BITWISE under them never reads it.
+  // DEFAULT: true on a FRESH cubed-sphere start (recipe != none), false on a restart
+  // whose input lacks the key (running chains bitwise); an explicit key wins.
+  if (use_cubed_sphere) {
+    if (pin->DoesParameterExist("mesh", "cs_vertex_3cell")) {
+      cs_vertex_3cell = pin->GetBoolean("mesh", "cs_vertex_3cell");
+    } else if (recipe::GetMode(pin) != recipe::Mode::none &&
+               !global_variable::restart_run) {
+      cs_vertex_3cell = pin->GetOrAddBoolean("mesh", "cs_vertex_3cell", true);
+      recipe::Log("<mesh>/cs_vertex_3cell = true (default on a fresh cubed-sphere start)");
+    } else {
+      recipe::Log("<mesh>/cs_vertex_3cell = false (" + std::string(
+          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+          "restart input has no key") + ": the old corner-block reads, key not added)");
+    }
+  }
   // vertexacc-1103 DIAGNOSTIC `<mesh>/cs_vertex_cc_perturb` (read only when named): the
   // extrapolated cell-centred cube-vertex corner block is multiplied by (1 + this), so a
   // run that stays BITWISE equal to the unperturbed one proves no operator reads that
   // block into the active cells, and the size of the change says how much it matters.
   if (use_cubed_sphere && pin->DoesParameterExist("mesh", "cs_vertex_cc_perturb")) {
     cs_vertex_diag::cc_perturb = pin->GetReal("mesh", "cs_vertex_cc_perturb");
+  }
+  if (use_cubed_sphere && pin->DoesParameterExist("mesh", "cs_vertex_fc_perturb")) {
+    cs_vertex_diag::fc_perturb = pin->GetReal("mesh", "cs_vertex_fc_perturb");
+  }
+  if (use_cubed_sphere && pin->DoesParameterExist("mesh", "cs_vertex_perturb_add")) {
+    cs_vertex_diag::perturb_add = pin->GetReal("mesh", "cs_vertex_perturb_add");
   }
   // csedge-1019 (USER 10-19 "go ahead with the seam fix" / "the seam should behave the
   // same as the interior", default for every cs run, fresh AND restart): DEFAULT `shared`

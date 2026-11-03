@@ -114,6 +114,31 @@ bool IsCubeVertexCorner(const NghbrView &nghbr, const PanelView &mbpanel,
           nghbr(m,nk_id).gid >= 0 && nghbr(m,nk_id).panel != mp);
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void CsVertexFofcDrop(nghbr, mbpanel, m, k, j, js, je, ks, ke, ng, drop2, drop3)
+//! \brief cornerfix-1103 <mesh>/cs_vertex_3cell: the FOFC trial state of a seam GHOST cell
+//! (row k outside [ks,ke] or column j outside [js,je]) within ng of a cube-vertex corner
+//! along its seam takes the along-seam flux divergence from faces whose reconstruction
+//! stencils reach into the made-up corner block: drop2 / drop3 = leave the x2 / x3 terms
+//! out.  Shared by Hydro::FOFC, MHD::FOFC and FofcTrialRemoveGrav.
+template <class NghbrView, class PanelView>
+KOKKOS_INLINE_FUNCTION
+void CsVertexFofcDrop(const NghbrView &nghbr, const PanelView &mbpanel, const int m,
+                      const int k, const int j, const int js, const int je, const int ks,
+                      const int ke, const int ng, bool &drop2, bool &drop3) {
+  drop2 = false; drop3 = false;
+  const bool gk = (k < ks) || (k > ke), gj = (j < js) || (j > je);
+  if (gk && !gj) {
+    const int sk = (k > ke) ? 1 : 0;
+    drop2 = (j < js + ng && IsCubeVertexCorner(nghbr, mbpanel, m, 40 + 2*(0 + 2*sk))) ||
+            (j > je - ng && IsCubeVertexCorner(nghbr, mbpanel, m, 40 + 2*(1 + 2*sk)));
+  } else if (gj && !gk) {
+    const int sj = (j > je) ? 1 : 0;
+    drop3 = (k < ks + ng && IsCubeVertexCorner(nghbr, mbpanel, m, 40 + 2*(sj + 0))) ||
+            (k > ke - ng && IsCubeVertexCorner(nghbr, mbpanel, m, 40 + 2*(sj + 2)));
+  }
+}
+
 
 //----------------------------------------------------------------------------------------
 //! \fn bool IsX2X3DiagSlot(int n)

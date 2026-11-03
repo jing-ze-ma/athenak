@@ -37,6 +37,7 @@
 #include "coordinates/coordinates.hpp"
 #include "resistivity.hpp"
 #include "mhd/mhd.hpp"
+#include "diffusion/cs_vertex_res.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \brief B.e_xi at the centre of an x2 face, from the face-normal components. The
@@ -106,6 +107,57 @@ void RadialFaceWeights(const Real r0, const Real r1, const Real r2, const Real r
   w[1] = dr*(fl*la1 + fr*ra1);
   w[2] = dr*(fl*la2 + fr*ra2);
   w[3] = dr*(fr*ra3);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Resistivity::CsVertexJFix
+//! \brief cornerfix-1103 <mesh>/cs_vertex_3cell.  Pass 1's dual loops at a cube vertex
+//! run through the made-up corner block (ng x ng diagonal ghosts: no physical cells).
+//! j1 = true: the vertex RADIAL current from the 3-cell loop through this block's corner
+//! cell and the two seam ghost cells.  Each panel forms the part of the loop it owns,
+//! its two seam-face segments (Stokes, B.e from the same BcovXi / BcovEta as pass 1)
+//! over its quarter of the edge area, and the three panels' values are averaged
+//! afterwards with the EMF (the per-panel half-loop H/(A/4) averages to the full 3-cell
+//! loop sum H/(3A/4): the three corner cells are congruent).  j1 = false: the x3 edge
+//! (kn, jc) of the ghost row and the x2 edge (kc, jn) of the ghost column at the vertex
+//! (corner cell edges, read by the transverse J averages of the Ohmic metric term and of
+//! ambipolar diffusion) are extrapolated linearly along their own ghost row / column
+//! from the two real edges next to them (constant if the block has < 3 cells).
+
+void Resistivity::CsVertexJFix(const DvceFaceFld4D<Real> &b0, const int il,
+                               const int iu, const bool j1) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+  auto &msz = pmy_pack->pmb->mb_size;
+  auto &cxi = pmy_pack->pcoord->cos_face_xi;
+  auto &sxi = pmy_pack->pcoord->sin_face_xi;
+  auto &cet = pmy_pack->pcoord->cos_face_eta;
+  auto &set = pmy_pack->pcoord->sin_face_eta;
+  auto &dxf2 = pmy_pack->pcoord->dxface.x2f;
+  auto &dxf3 = pmy_pack->pcoord->dxface.x3f;
+  auto &ae1 = pmy_pack->pcoord->areaedge.x1e;
+  auto b = b0;
+  auto jn1 = jnorm.x1e, jn2 = jnorm.x2e, jn3 = jnorm.x3e;
+  par_for("res_cs_vtxj", DevExeSpace(), 0, nmb1, 0, 3, il, iu,
+  KOKKOS_LAMBDA(const int m, const int cn, const int i) {
+    const bool jlo = (cn & 1) == 0, klo = (cn & 2) == 0;
+    const int jc = jlo ? js : je+1, kc = klo ? ks : ke+1;
+    CsVtx3 v;
+    if (!CsVertexAt(msz.d_view(m), kc, jc, js, je, ks, ke, v)) return;
+    if (j1) {
+      const Real tb = dxf3(m,kc,v.jv,i)*BcovEta(b,cet,set,m,kc,v.jv,i);
+      const Real ta = dxf2(m,v.kv,jc,i)*BcovXi(b,cxi,sxi,m,v.kv,jc,i);
+      jn1(m,kc,jc,i) = 2.0*((jlo ? tb : -tb) + (klo ? -ta : ta))/ae1(m,kc,jc,i);
+      return;
+    }
+    const int dj = jlo ? 1 : -1, dk = klo ? 1 : -1;
+    jn3(m,v.kn,jc,i) = (nx2 >= 3) ? 2.0*jn3(m,v.kn,jc+dj,i) - jn3(m,v.kn,jc+2*dj,i)
+                                  : jn3(m,v.kn,jc+dj,i);
+    jn2(m,kc,v.jn,i) = (nx3 >= 3) ? 2.0*jn2(m,kc+dk,v.jn,i) - jn2(m,kc+2*dk,v.jn,i)
+                                  : jn2(m,kc+dk,v.jn,i);
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -235,6 +287,13 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
                    LoopBox3{ks-1, ke+1, js, je+1, is, ie+1}, j3c_);
   }
 
+  // cornerfix-1103 <mesh>/cs_vertex_3cell: no J entry may read the cube-vertex corner
+  if (pmy_pack->pmesh->cs_vertex_3cell) {
+    CsVertexJFix(b0, is, ie+1, false);
+    CsVertexJFix(b0, is, ie, true);
+  }
+  const bool v3_ = pmy_pack->pmesh->cs_vertex_3cell;
+
   // ---- pass 2: rotate into the edge (covariant) frame and multiply by eta -------------
   // J.e_xi = (J.nhat_xi + c J.nhat_eta)/s and likewise for eta, the same transform
   // GnomonicEquiangleRaiseVelMHD applies to the field. The radial edge needs no rotation:
@@ -255,8 +314,12 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
                  (k == ke+1 && msz_.d_view(m).x3max >= 1.0 - 1.0e-12))) return;
     if (rsh_ && ((j == js && msz_.d_view(m).x2min <= -1.0 + 1.0e-12) ||
                  (j == je+1 && msz_.d_view(m).x2max >= 1.0 - 1.0e-12))) return;
-    const Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j-1,i)
-                        + eta_b_(m,k-1,j,i) + eta_b_(m,k-1,j-1,i));
+    Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j-1,i)
+                  + eta_b_(m,k-1,j,i) + eta_b_(m,k-1,j-1,i));
+    CsVtx3 vx;   // cornerfix-1103: a cube vertex has three cells, not four
+    if (v3_ && CsVertexAt(msz_.d_view(m), k, j, js, je, ks, ke, vx)) {
+      et = CsVertex3(eta_b_, m, vx, i);
+    }
     e1(m,k,j,i) += et*jn1(m,k,j,i);
   };
 

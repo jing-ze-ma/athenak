@@ -234,6 +234,12 @@ class Resistivity {
   void AddEMFConstantResist(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);
   void AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);
   void AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);
+  // cornerfix-1103 <mesh>/cs_vertex_3cell: J (jnorm) at the cube-vertex edges without the
+  // made-up corner block (resistivity_gnomonic.cpp): the vertex radial J from the 3-cell
+  // loop (j1 = true, radial cells il..iu), the two fictitious transverse edges of the
+  // corner cell one-sided along their ghost row / column (j1 = false, faces il..iu)
+  void CsVertexJFix(const DvceFaceFld4D<Real> &b0, const int il, const int iu,
+                    const bool j1);
   void AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeFld4D<Real> &efld);
   void AddFluxConstantGridResist(const DvceFaceFld4D<Real> &b, DvceFaceFld5D<Real> &flx);
   void AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceArray5D<Real> &bc, DvceFaceFld5D<Real> &flx);
