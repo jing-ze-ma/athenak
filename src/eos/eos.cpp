@@ -119,15 +119,31 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       if (pin->DoesParameterExist(bk,"boris_pmax_bar")) {
         eos_data.boris_pmax = pin->GetReal(bk,"boris_pmax_bar")*1.0e6/punit;
       }
+      if (pin->DoesParameterExist(bk,"boris_pmin_bar")) {
+        eos_data.boris_pmin = pin->GetReal(bk,"boris_pmin_bar")*1.0e6/punit;
+      }
+      if (pin->DoesParameterExist(bk,"boris_vfac")) {
+        eos_data.boris_vfac = pin->GetReal(bk,"boris_vfac");
+      }
       if (pin->DoesParameterExist(bk,"boris_sw")) {
         eos_data.boris_sw = pin->GetReal(bk,"boris_sw");
+      }
+      if (pin->DoesParameterExist(bk,"boris_diss_plain")) {
+        eos_data.boris_diss_plain = pin->GetBoolean(bk,"boris_diss_plain");
+      }
+      if (pin->DoesParameterExist(bk,"boris_face_fmax")) {
+        eos_data.boris_face_fmax = pin->GetBoolean(bk,"boris_face_fmax");
       }
     }
     if (global_variable::my_rank == 0) {
       std::cout << "<mhd>/boris_c = " << c_cgs << " [cm/s] = " << c_cgs/vunit
                 << " [code]: Alfven-speed (Boris) limiter, f = 1/sqrt(1+(vA/c)^4)"
-                << ", p_max = " << eos_data.boris_pmax << " [code] (0 = everywhere)"
-                << ", HLLE switch at (vA/c)^2 > " << eos_data.boris_sw << std::endl;
+                << ", p_max = " << eos_data.boris_pmax << ", p_min = " << eos_data.boris_pmin
+                << " [code] (0 = no window)"
+                << ", c_eff >= " << eos_data.boris_vfac << " |v|"
+                << ", HLLE switch at (vA/c)^2 > " << eos_data.boris_sw
+                << ", face f = " << (eos_data.boris_face_fmax ? "max(fL,fR)" : "per side")
+                << std::endl;
     }
   }
   // <mhd>/valfven_noinfall_fac: see the note on EOS_Data::va_noinfall_fac.  Read only

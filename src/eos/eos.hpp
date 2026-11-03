@@ -155,13 +155,31 @@ struct EOS_Data {
   // Stored as 1/c^2 and p_max in code units.
   Real boris_c2inv = 0.0;
   Real boris_pmax = 0.0;
+  Real boris_pmin = 0.0;
+  Real boris_vfac = 0.0;
   Real boris_sw = 0.25;
+  // <mhd>/boris_face_fmax (default false): the face Boris momentum of BorisHLLEFace uses
+  // ONE factor f_face = max(f_L, f_R) for both sides instead of each side's own f, so a
+  // cell's v_perp dissipation f_cell/f_face * S/2 can never exceed S/2 next to a cell of
+  // much smaller f (per-side f amplifies it by f_cell/f_neighbour)
+  bool boris_face_fmax = false;
+  // <mhd>/boris_diss_plain (default false): HLLE dissipation on rho v (no Boris momentum)
+  bool boris_diss_plain = false;
   //! \fn Real BorisF \brief the limiter factor f in (0,1] (1 when off or B = 0)
   KOKKOS_INLINE_FUNCTION
-  Real BorisX(const Real d, const Real b2, const Real p) const {
+  Real BorisX(const Real d, const Real b2, const Real p, const Real v2) const {
     Real ic2 = boris_c2inv;
+    // <mhd>/boris_vfac: c_eff >= boris_vfac |v| (the simplified Boris correction needs
+    // v << c; with v ~ c it runs away, boris-1102 c = 5 km/s test)
+    if (boris_vfac > 0.0) ic2 = fmin(ic2, 1.0/(boris_vfac*boris_vfac*v2 + 1.0e-300));
     if (boris_pmax > 0.0 && p > boris_pmax) {
       const Real r = boris_pmax/p;
+      ic2 *= r*r;
+    }
+    // <mhd>/boris_pmin_bar: c_eff = c p_min/p above the pressure p_min (limiter fades out
+    // upward, e.g. kept off the free top p < 1e-6 bar)
+    if (boris_pmin > 0.0 && p < boris_pmin) {
+      const Real r = p/boris_pmin;
       ic2 *= r*r;
     }
     return b2/d*ic2;          // (v_A/c_eff)^2

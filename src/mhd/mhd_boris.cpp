@@ -131,7 +131,9 @@ void MHD::BorisCorrect(Driver *pdriver, int stage) {
     const Real b2 = bx*bx + by*by + bz*bz;
     if (!(b2 > 0.0)) return;
     const Real p = gen ? wder_(m,IDPR,k,j,i) : eos.IdealGasPressure(w0_(m,IEN,k,j,i));
-    const Real f = eos.BorisF(eos.BorisX(w0_(m,IDN,k,j,i), b2, p));
+    const Real f = eos.BorisF(eos.BorisX(w0_(m,IDN,k,j,i), b2, p,
+                                         SQR(w0_(m,IVX,k,j,i)) + SQR(w0_(m,IVY,k,j,i))
+                                         + SQR(w0_(m,IVZ,k,j,i))));
     if (f < s_f) s_f = f;
     if (!(f < 1.0)) return;
     if (f < 0.99) s_n += 1.0;

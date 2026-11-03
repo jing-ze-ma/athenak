@@ -98,8 +98,10 @@ void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
   // the limited (B -> sqrt(f) B) fast speeds: same test, same speeds, HLL weights
   bool boris_face = false;
   if (eos.boris_c2inv > 0.0) {
-    const Real xl = eos.BorisX(rl, bxsq + btl, pl);
-    const Real xr = eos.BorisX(rr, bxsq + btr, pr);
+    const Real xl = eos.BorisX(rl, bxsq + btl, pl,
+                               SQR(wl(IVX,i)) + SQR(wl(IVY,i)) + SQR(wl(IVZ,i)));
+    const Real xr = eos.BorisX(rr, bxsq + btr, pr,
+                               SQR(wr(IVX,i)) + SQR(wr(IVY,i)) + SQR(wr(IVZ,i)));
     if (fmax(xl, xr) > eos.boris_sw) {
       boris_face = true;
       const Real sfl = sqrt(eos.BorisF(xl)), sfr = sqrt(eos.BorisF(xr));

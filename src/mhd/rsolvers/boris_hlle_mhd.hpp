@@ -61,10 +61,12 @@ void BorisHLLEFace(TeamMember_t const &member, const EOS_Data &eos, const bool g
     }
     const Real b2l = bxi*bxi + byl*byl + bzl*bzl;
     const Real b2r = bxi*bxi + byr*byr + bzr*bzr;
-    const Real xl = eos.BorisX(dlv, b2l, pl);
-    const Real xr = eos.BorisX(drv, b2r, pr);
+    const Real v2l = SQR(wl(IVX,i)) + SQR(wl(IVY,i)) + SQR(wl(IVZ,i));
+    const Real v2r = SQR(wr(IVX,i)) + SQR(wr(IVY,i)) + SQR(wr(IVZ,i));
+    const Real xl = eos.BorisX(dlv, b2l, pl, v2l);
+    const Real xr = eos.BorisX(drv, b2r, pr, v2r);
     if (!(fmax(xl, xr) > eos.boris_sw)) return;
-    const Real fl_ = eos.BorisF(xl), fr_ = eos.BorisF(xr);
+    Real fl_ = eos.BorisF(xl), fr_ = eos.BorisF(xr);
     const Real sl = sqrt(fl_), sr = sqrt(fr_);
     const Real cl = eos.FastSpeedFromP(dlv, pl, g1l, sl*bxi, sl*byl, sl*bzl);
     const Real cr = eos.FastSpeedFromP(drv, pr, g1r, sr*bxi, sr*byr, sr*bzr);
@@ -78,14 +80,17 @@ void BorisHLLEFace(TeamMember_t const &member, const EOS_Data &eos, const bool g
     const Real bp = ar > 0.0 ? ar : 1.0e-20;
     const Real bm = al < 0.0 ? al : -1.0e-20;
 
+    // <mhd>/boris_face_fmax: one face factor for the Boris momentum (the wave speeds
+    // above keep each side's own f)
+    if (eos.boris_face_fmax) { fl_ = fmax(fl_, fr_); fr_ = fl_; }
     // extra Boris momentum rho (1/f - 1) v_perp of each side
     Real exl[3] = {0.0, 0.0, 0.0}, exr[3] = {0.0, 0.0, 0.0};
-    if (b2l > 0.0) {
+    if (b2l > 0.0 && !eos.boris_diss_plain) {
       const Real vb = (vxl*bxi + vyl*byl + vzl*bzl)/b2l;
       const Real w = dlv*(1.0/fl_ - 1.0);
       exl[0] = w*(vxl - vb*bxi); exl[1] = w*(vyl - vb*byl); exl[2] = w*(vzl - vb*bzl);
     }
-    if (b2r > 0.0) {
+    if (b2r > 0.0 && !eos.boris_diss_plain) {
       const Real vb = (vxr*bxi + vyr*byr + vzr*bzr)/b2r;
       const Real w = drv*(1.0/fr_ - 1.0);
       exr[0] = w*(vxr - vb*bxi); exr[1] = w*(vyr - vb*byr); exr[2] = w*(vzr - vb*bzr);
