@@ -174,6 +174,17 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   const int mln2_ = indcs_.nx2 + 2*indcs_.ng;
   const int mln3_ = indcs_.nx3 + 2*indcs_.ng;
   const int mlng_ = indcs_.ng;
+  // layoutaudit-1103 <hydro>/merge_lat_blockend = exchange: the cell of the group beyond
+  // each ghost group at an internal MeshBlock face (hydro.hpp, MlatBlockendStates)
+  const bool mlx_ = mlat_ && mlat_exch;
+  DvceArray1D<int> mlmask_;
+  DvceArray5D<Real> mlr2_, mlr3_;
+  if (mlx_) {
+    MlatBlockendStates();
+    mlmask_ = mlat_imask;
+    mlr2_ = pmlfs->x2f;
+    mlr3_ = pmlfs->x3f;
+  }
 
   //--------------------------------------------------------------------------------------
   // i-direction
@@ -725,18 +736,38 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             // compute the same face states (conservation); also any group whose stencil
             // leaves the array
             const bool narrow = (f*((f + 1)/f) > mlng_ - 1);
-            const bool flat = (jm < 0 || jp > mln2_ - 1) ||
-                              (narrow && (jlo <= js || jlo + f - 1 >= je));
+            bool flat = (jm < 0 || jp > mln2_ - 1) ||
+                        (narrow && (jlo <= js || jlo + f - 1 >= je));
+            // layoutaudit-1103 merge_lat_blockend = exchange (active rows only; the
+            // FOFC ghost rows keep the rule above): at an INTERNAL block face an own edge
+            // group keeps its PLM (both neighbour cells are in the array), and the ghost
+            // group beyond the face takes the neighbour's cell beyond it (src 1 / 2)
+            int src = 0;
+            if (mlx_ && narrow && k >= ks && k <= ke) {
+              const int msk = mlmask_(m);
+              const bool loi = (msk & 1) != 0, hii = (msk & 2) != 0;
+              if (jlo < js) {
+                if (loi) {flat = false; src = 1;}
+              } else if (jlo > je) {
+                if (hii) {flat = false; src = 2;}
+              } else {
+                flat = ((jlo <= js) && !loi) || ((jlo + f - 1 >= je) && !hii);
+              }
+            }
             const int sc = j - jlo;
             for (int n=0; n<nvars; ++n) {
-              MlatCoarsePLM(flat ? w0_(m,n,k,j,i) : w0_(m,n,k,jm,i), w0_(m,n,k,j,i),
-                            flat ? w0_(m,n,k,j,i) : w0_(m,n,k,jp,i), sc, f,
-                            wr(n,i), wl_jp1(n,i));
+              const Real qm = (src == 1) ? mlr2_(m,n,k,js,i)
+                              : (flat ? w0_(m,n,k,j,i) : w0_(m,n,k,jm,i));
+              const Real qp = (src == 2) ? mlr2_(m,n,k,je+1,i)
+                              : (flat ? w0_(m,n,k,j,i) : w0_(m,n,k,jp,i));
+              MlatCoarsePLM(qm, w0_(m,n,k,j,i), qp, sc, f, wr(n,i), wl_jp1(n,i));
             }
             for (int n=0; n<nder; ++n) {
-              MlatCoarsePLM(flat ? wder_(m,n,k,j,i) : wder_(m,n,k,jm,i), wder_(m,n,k,j,i),
-                            flat ? wder_(m,n,k,j,i) : wder_(m,n,k,jp,i), sc, f,
-                            dr(n,i), dl_jp1(n,i));
+              const Real qm = (src == 1) ? mlr2_(m,nvars+n,k,js,i)
+                              : (flat ? wder_(m,n,k,j,i) : wder_(m,n,k,jm,i));
+              const Real qp = (src == 2) ? mlr2_(m,nvars+n,k,je+1,i)
+                              : (flat ? wder_(m,n,k,j,i) : wder_(m,n,k,jp,i));
+              MlatCoarsePLM(qm, wder_(m,n,k,j,i), qp, sc, f, dr(n,i), dl_jp1(n,i));
             }
             if (nder > 0) {
               dl_jp1(IDPR,i) = fmax(dl_jp1(IDPR,i), eos_.pfloor);
@@ -1008,18 +1039,35 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             // compute the same face states (conservation); also any group whose stencil
             // leaves the array
             const bool narrow = (f*((f + 1)/f) > mlng_ - 1);
-            const bool flat = (km < 0 || kp > mln3_ - 1) ||
-                              (narrow && (klo <= ks || klo + f - 1 >= ke));
+            bool flat = (km < 0 || kp > mln3_ - 1) ||
+                        (narrow && (klo <= ks || klo + f - 1 >= ke));
+            // layoutaudit-1103 merge_lat_blockend = exchange (see the x2 sweep)
+            int src = 0;
+            if (mlx_ && narrow && j >= js && j <= je) {
+              const int msk = mlmask_(m);
+              const bool loi = (msk & 4) != 0, hii = (msk & 8) != 0;
+              if (klo < ks) {
+                if (loi) {flat = false; src = 1;}
+              } else if (klo > ke) {
+                if (hii) {flat = false; src = 2;}
+              } else {
+                flat = ((klo <= ks) && !loi) || ((klo + f - 1 >= ke) && !hii);
+              }
+            }
             const int sc = k - klo;
             for (int n=0; n<nvars; ++n) {
-              MlatCoarsePLM(flat ? w0_(m,n,k,j,i) : w0_(m,n,km,j,i), w0_(m,n,k,j,i),
-                            flat ? w0_(m,n,k,j,i) : w0_(m,n,kp,j,i), sc, f,
-                            wr(n,i), wl_kp1(n,i));
+              const Real qm = (src == 1) ? mlr3_(m,n,ks,j,i)
+                              : (flat ? w0_(m,n,k,j,i) : w0_(m,n,km,j,i));
+              const Real qp = (src == 2) ? mlr3_(m,n,ke+1,j,i)
+                              : (flat ? w0_(m,n,k,j,i) : w0_(m,n,kp,j,i));
+              MlatCoarsePLM(qm, w0_(m,n,k,j,i), qp, sc, f, wr(n,i), wl_kp1(n,i));
             }
             for (int n=0; n<nder; ++n) {
-              MlatCoarsePLM(flat ? wder_(m,n,k,j,i) : wder_(m,n,km,j,i), wder_(m,n,k,j,i),
-                            flat ? wder_(m,n,k,j,i) : wder_(m,n,kp,j,i), sc, f,
-                            dr(n,i), dl_kp1(n,i));
+              const Real qm = (src == 1) ? mlr3_(m,nvars+n,ks,j,i)
+                              : (flat ? wder_(m,n,k,j,i) : wder_(m,n,km,j,i));
+              const Real qp = (src == 2) ? mlr3_(m,nvars+n,ke+1,j,i)
+                              : (flat ? wder_(m,n,k,j,i) : wder_(m,n,kp,j,i));
+              MlatCoarsePLM(qm, wder_(m,n,k,j,i), qp, sc, f, dr(n,i), dl_kp1(n,i));
             }
             if (nder > 0) {
               dl_kp1(IDPR,i) = fmax(dl_kp1(IDPR,i), eos_.pfloor);
@@ -1233,6 +1281,64 @@ void Hydro::CsSeamFaceStates() {
   while (pbval_fs->RecvAndUnpackFluxSeamCC(*pseamfs) != TaskStatus::complete) {}
   pbval_fs->ClearFluxSend();
   pbval_fs->ClearFluxRecv();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::MlatBlockendStates()
+//! \brief layoutaudit-1103 <hydro>/merge_lat_blockend = exchange.  A 'narrow' merged
+//! group (f ceil(2/f) > nghost - 1) next to a MeshBlock face cannot be reconstructed
+//! from this block's ghosts alone when it is the NEIGHBOUR's group: its PLM needs the
+//! cell beyond it, f+1 cells from the face, outside the ghost zone.  The old rule
+//! flattened every such group (and, to stay conservative, the own group on the other
+//! side) at EVERY MeshBlock edge, which made the result depend on the layout (the panel
+//! midlines of a 2x2 layout went first order).  Here each block writes, at each of its
+//! internal x2/x3 faces, the primitive (+ derived) values of the cell its neighbour
+//! needs -- for the face js the first cell of its second group (js+f), for je+1 the last
+//! cell of its second-to-last group (je-f) -- and pbval_ml (seam_raw, seam_same_panel)
+//! hands them over, so *pmlfs then holds at each internal face the cell beyond the ghost
+//! group.  The sweep forms exactly the group PLM a one-block layout forms.  Active
+//! rows (k in ks..ke for x2 faces, j in js..je for x3) only.
+
+void Hydro::MlatBlockendStates() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nvars = nhydro + nscalars;
+  auto eos_ = peos->eos_data;
+  const int nder = eos_.IsGeneral() ? NDERIVED : 0;
+  const int nfs = nhydro + nscalars + NDERIVED;
+  pmlat->Build();
+  auto mlfi_ = pmlat->fi;
+  auto msk_ = mlat_imask;
+  auto w0_ = w0;
+  auto wder_ = wder;
+  auto r2 = pmlfs->x2f;
+  auto r3 = pmlfs->x3f;
+  const int mlng_ = indcs.ng;
+  par_for("mlat_be_x2", DevExeSpace(), 0, nmb1, ks, ke, 0, 1, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int sd, const int i) {
+    if ((msk_(m) & (1 << sd)) == 0) return;
+    const int f = mlfi_(m,i);
+    if (f <= 1 || !(f*((f + 1)/f) > mlng_ - 1)) return;
+    const int jf = (sd == 0) ? js : je+1, jc = (sd == 0) ? js+f : je-f;
+    for (int n=0; n<nvars; ++n) r2(m,n,k,jf,i) = w0_(m,n,k,jc,i);
+    for (int n=0; n<nder; ++n) r2(m,nvars+n,k,jf,i) = wder_(m,n,k,jc,i);
+  });
+  par_for("mlat_be_x3", DevExeSpace(), 0, nmb1, 0, 1, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int sd, const int j, const int i) {
+    if ((msk_(m) & (4 << sd)) == 0) return;
+    const int f = mlfi_(m,i);
+    if (f <= 1 || !(f*((f + 1)/f) > mlng_ - 1)) return;
+    const int kf = (sd == 0) ? ks : ke+1, kc = (sd == 0) ? ks+f : ke-f;
+    for (int n=0; n<nvars; ++n) r3(m,n,kf,j,i) = w0_(m,n,kc,j,i);
+    for (int n=0; n<nder; ++n) r3(m,nvars+n,kf,j,i) = wder_(m,n,kc,j,i);
+  });
+  pbval_ml->InitFluxSeamRecv(nfs);
+  pbval_ml->PackAndSendFluxSeamCC(*pmlfs);
+  while (pbval_ml->RecvAndUnpackFluxSeamCC(*pmlfs) != TaskStatus::complete) {}
+  pbval_ml->ClearFluxSend();
+  pbval_ml->ClearFluxRecv();
 }
 
 // function definitions for each template parameter

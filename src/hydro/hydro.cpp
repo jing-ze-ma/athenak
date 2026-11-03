@@ -322,6 +322,74 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   if (hydro::MergeLat::Named(pin)) {
     pmlat = new hydro::MergeLat(ppack, pin);
   }
+  // layoutaudit-1103 <hydro>/merge_lat_blockend = flat (the old rule: a 'narrow' merged
+  // group at EVERY MeshBlock edge takes a zero slope, so the result depends on the
+  // MeshBlock layout) | exchange (internal block faces exchange the one cell the group
+  // PLM needs; layout-independent).  Absent: exchange on a fresh start under the default
+  // recipe (recorded, so its restarts carry it), flat on a restart (bitwise the old run).
+  if (pmlat != nullptr && pmlat->on) {
+    std::string mb;
+    if (pin->DoesParameterExist("hydro", "merge_lat_blockend")) {
+      mb = pin->GetString("hydro", "merge_lat_blockend");
+    } else if (recipe::NewDefaults(pin)) {
+      mb = pin->GetOrAddString("hydro", "merge_lat_blockend", "exchange");
+      recipe::Log("<hydro>/merge_lat_blockend = exchange (default on a fresh start)");
+    } else {
+      mb = "flat";
+    }
+    if (mb == "exchange") {
+      mlat_exch = true;
+    } else if (mb != "flat") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/merge_lat_blockend = flat | exchange" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    auto &ind = ppack->pmesh->mb_indcs;
+    if (mlat_exch && (ind.nx2 < 2*pmlat->fbig || ind.nx3 < 2*pmlat->fbig)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/merge_lat_blockend = exchange needs MeshBlock "
+                << "nx2, nx3 >= 2 x the largest merge_lat_f (" << pmlat->fbig << ")"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (mlat_exch) {
+      const int nfs = nhydro + nscalars + NDERIVED;
+      pbval_ml = new MeshBoundaryValuesCC(ppack, pin, false);
+      pbval_ml->seam_raw = true;
+      pbval_ml->seam_same_panel = true;
+      pbval_ml->InitializeBuffers(nfs);
+      if (pseamfs != nullptr) {
+        pmlfs = pseamfs;   // seam faces and internal faces never coincide: one record
+      } else {
+        const int n1 = ind.nx1 + 2*ind.ng, n2 = ind.nx2 + 2*ind.ng;
+        const int n3 = ind.nx3 + 2*ind.ng;
+        pmlfs = new DvceFaceFld5D<Real>("mlat_blockend", nmb, nfs, n3, n2, n1);
+        Kokkos::realloc(pmlfs->x1f, nmb, nfs, 1, 1, 1);
+        mlat_own_rec = true;
+      }
+      // internal-face mask from the (static) neighbour table: same panel, same level,
+      // not polar; buffers 8 / 12 = x2 inner / outer face, 24 / 28 = x3
+      auto &nghbr = ppack->pmb->nghbr;
+      auto &mbpanel = ppack->pmb->mb_panel;
+      auto &mblev = ppack->pmb->mb_lev;
+      Kokkos::realloc(mlat_imask, nmb);
+      auto hm = Kokkos::create_mirror_view(mlat_imask);
+      const int nb_[4] = {8, 12, 24, 28};
+      for (int m = 0; m < nmb; ++m) hm(m) = 0;
+      for (int m = 0; m < ppack->nmb_thispack; ++m) {
+        int msk = 0;
+        for (int q = 0; q < 4; ++q) {
+          const auto nb = nghbr.h_view(m, nb_[q]);
+          if (nb.gid >= 0 && nb.panel == mbpanel.h_view(m) && nb.lev == mblev.h_view(m) &&
+              nb.polar <= 0) {
+            msk |= (1 << q);
+          }
+        }
+        hm(m) = msk;
+      }
+      Kokkos::deep_copy(mlat_imask, hm);
+    }
+  }
   if (pin->GetOrAddBoolean("mesh", "polar_ring_avg", false)) {
     if (pmlat != nullptr && pmlat->on) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -750,6 +818,8 @@ Hydro::~Hydro() {
   delete pbval_u;
   if (pbval_fs != nullptr) {delete pbval_fs;}
   if (pseamfs != nullptr) {delete pseamfs;}
+  if (pbval_ml != nullptr) {delete pbval_ml;}
+  if (mlat_own_rec && pmlfs != nullptr) {delete pmlfs;}
   if (pvisc != nullptr) {delete pvisc;}
   if (pcond != nullptr) {delete pcond;}
   if (psrc != nullptr) {delete psrc;}

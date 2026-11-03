@@ -253,8 +253,10 @@ for _nm, _s in (('ohm', {}), ('ohm_rkg', {'mhd/use_rkg_sts': 'true'}),
 _ML = {'mesh/nx1': 8, 'mesh/nx2': 32, 'mesh/nx3': 32, 'mesh/nghost': 3,
        'mesh/cs_seam_blockend': 'extend', 'hydro/merge_lat_rc': 1.0e3}
 CASES += [
-    var(CS_HYD, 'cs_mlat_f4', 'cs hydro blast, merge_lat_f 4 everywhere (ng 3), extend',
-        extra=dict(_ML, **{'hydro/merge_lat_f': 4}), expect='FAIL',
+    var(CS_HYD, 'cs_mlat_f4', 'cs hydro blast, merge_lat_f 4 everywhere (ng 3), extend, '
+        'merge_lat_blockend = flat (the old rule, kept visible)',
+        extra=dict(_ML, **{'hydro/merge_lat_f': 4, 'hydro/merge_lat_blockend': 'flat'}),
+        expect='FAIL',
         layouts=[L('b1x1_np1', (8, 32, 32)), L('b2x2_np1', (8, 16, 16)),
                  L('b2x2_np4', (8, 16, 16), 4)]),
     var(CS_HYD, 'cs_mlat_f2', 'cs hydro blast, merge_lat_f 2 (not narrow at ng 3), extend',
@@ -310,3 +312,52 @@ CASES.append(dict(_accn, name='acc_sp_novetgd_sep', what='accretor, vet_gd off: 
                   'only (ph2_np4) vs phi layout only (ph4_np2)',
                   layouts=[L('ph2_np2', (500, 48, 32), 2), L('ph2_np4', (500, 48, 32), 4),
                            L('ph4_np2', (500, 48, 16), 2)]))
+
+# merge_lat_blockend = exchange (layoutaudit-1103): the gates
+_MLL = [L('b1x1_np1', (8, 32, 32)), L('b2x2_np1', (8, 16, 16)), L('b2x2_np4', (8, 16, 16), 4),
+        L('b2x2_np6', (8, 16, 16), 6), L('b1x1_np6', (8, 32, 32), 6)]
+CASES += [
+    var(CS_HYD, 'cs_mlat_f4x', 'cs hydro blast, merge_lat_f 4, merge_lat_blockend = exchange',
+        extra=dict(_ML, **{'hydro/merge_lat_f': 4, 'hydro/merge_lat_blockend': 'exchange'}),
+        layouts=_MLL),
+    var(CS_HYD, 'cs_mlat_f8x', 'cs hydro blast, merge_lat_f 8, merge_lat_blockend = exchange',
+        extra=dict(_ML, **{'hydro/merge_lat_f': 8, 'hydro/merge_lat_blockend': 'exchange'}),
+        layouts=_MLL),
+    var(CS_HYD, 'cs_mlat_842x', 'cs hydro blast, merge_lat_f 8:4:2 shells (RSG pattern), '
+        'exchange', extra=dict(_ML, **{'hydro/merge_lat_f': '8:4:2',
+                                       'hydro/merge_lat_rc': '1.3:1.6:1.85',
+                                       'hydro/merge_lat_blockend': 'exchange'}),
+        layouts=_MLL),
+    var(CS_HYD, 'cs_mlat_f2x', 'cs hydro blast, merge_lat_f 2 (not narrow), exchange',
+        extra=dict(_ML, **{'hydro/merge_lat_f': 2, 'hydro/merge_lat_blockend': 'exchange'}),
+        layouts=_MLL),
+]
+CASES += [
+    var(CS_HYD, 'cs_mlat_rsgkeys', 'cs hydro blast, RSG E key set: merge_lat 8:4:2, ng 3, '
+        'cs_seam_flux shared, fofc, exchange',
+        extra=dict(_ML, **{'hydro/merge_lat_f': '8:4:2', 'hydro/merge_lat_rc': '1.3:1.6:1.85',
+                           'hydro/merge_lat_blockend': 'exchange', 'hydro/fofc': 'true',
+                           'mesh/cs_seam_flux': 'shared'}),
+        layouts=_MLL),
+    var(CS_HYD, 'cs_mlat_rsgkeys_flat', 'as cs_mlat_rsgkeys with merge_lat_blockend = flat '
+        '(= RSG E production now)',
+        extra=dict(_ML, **{'hydro/merge_lat_f': '8:4:2', 'hydro/merge_lat_rc': '1.3:1.6:1.85',
+                           'hydro/merge_lat_blockend': 'flat', 'hydro/fofc': 'true',
+                           'mesh/cs_seam_flux': 'shared'}),
+        expect='FAIL', layouts=_MLL[:3]),
+]
+
+# RSG E production deck (he_star_m1, merge_lat 8:4:2, ng 3, cs_seam_flux shared, fofc, M1),
+# laterally C32 (2x2 blocks of 16 = 2 x f 8), the production radial grid (nx1 548).
+# perturb he_gm: dt may be set by the vet_gd rotation alignment, not the cfl.
+_RSG = dict(bin='he', deck='he_rsg.athinput', ncyc=3, timeout=14400, perturb='problem/he_gm',
+            vars=['hydro_u'],
+            layouts=[L('b1x1_np6', (548, 32, 32), 6), L('b2x2_np6', (548, 16, 16), 6),
+                     L('b2x2flat_np6', (548, 16, 16), 6,
+                       set={'hydro/merge_lat_blockend': 'flat'})])
+CASES += [
+    dict(_RSG, name='rsg_mlat_x', what='RSG E deck C32, merge_lat_blockend = exchange '
+         '(b2x2flat = the production rule; the 1x1 reference is the same for both)',
+         set={'mesh/nx2': 32, 'mesh/nx3': 32, 'mesh/cs_seam_blockend': 'extend',
+              'hydro/merge_lat_blockend': 'exchange'}),
+]

@@ -320,6 +320,18 @@ class Hydro {
   MeshBoundaryValuesCC *pbval_fs = nullptr;
   DvceFaceFld5D<Real> *pseamfs = nullptr;
   void CsSeamFaceStates();
+  // layoutaudit-1103 <hydro>/merge_lat_blockend = flat | exchange (hydro_fluxes.cpp
+  // MlatBlockendStates): with exchange, a 'narrow' merged group next to an INTERNAL
+  // MeshBlock face is no longer flattened; the neighbour sends the one cell of the group
+  // beyond the ghost group (pbval_ml, seam_raw + seam_same_panel, record *pmlfs at the
+  // faces js / je+1 / ks / ke+1), so every block forms the group PLM a one-block layout
+  // forms.  mlat_imask(m): bits 1/2/4/8 = x2 lo/hi, x3 lo/hi face is internal.
+  bool mlat_exch = false;
+  MeshBoundaryValuesCC *pbval_ml = nullptr;
+  DvceFaceFld5D<Real> *pmlfs = nullptr;
+  bool mlat_own_rec = false;
+  DvceArray1D<int> mlat_imask;
+  void MlatBlockendStates();
   bool use_wb_x2 = false;    // flag for directions
   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic
