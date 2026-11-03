@@ -1391,6 +1391,7 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
   imex_sdirk2::IncCoeffs(kCkT2Tab, stage, dt, c1, c2);
   const ts::CkCadState st = ts::CkCadMakeState(pm);
   const Real lof = 1.0 - t2_pos_th;
+  const Real hif = ts::ck_t2_pos_cap;   // ckdrift-1102 (0 = off)
   Real ncl = 0.0;
   Kokkos::parallel_reduce("ck_t2_inc", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
@@ -1402,6 +1403,14 @@ void DhjCkT2Stage(Mesh *pm, const Real bdt) {
       const Real lo = (e > 0.0) ? -lof*e : 0.0;
       if (inc < lo) {
         inc = lo;
+        sum += 1.0;
+      }
+    }
+    if (hif > 0.0 && inc > 0.0) {
+      const Real e = st.Eint(m, k, j, i);
+      const Real hi = (e > 0.0) ? hif*e : 0.0;
+      if (inc > hi) {
+        inc = hi;
         sum += 1.0;
       }
     }

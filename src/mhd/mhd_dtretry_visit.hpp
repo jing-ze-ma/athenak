@@ -58,6 +58,8 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("fofc_hlle", fofc_hlle);
   v.value("use_bs_emf", use_bs_emf);
   v.value("emf_smooth", emf_smooth);
+  v.value("emf_uct", emf_uct);
+  v.value("emf_uct_hlld", emf_uct_hlld);
   v.value("use_polar_emf_diss", use_polar_emf_diss);
   v.value("cs_lowbeta_fallback", cs_lowbeta_fallback);
   v.value("polar_hlle_rows", polar_hlle_rows);

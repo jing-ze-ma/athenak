@@ -14,6 +14,7 @@
 #include "driver/driver.hpp"
 #include "diffusion/resistivity.hpp"
 #include "mhd.hpp"
+#include "reconstruct/plm.hpp"
 
 #include "coordinates/coordinates.hpp"
 #include "coordinates/cartesian_ks.hpp"
@@ -53,6 +54,182 @@ KOKKOS_INLINE_FUNCTION
 Real EmfPick(const Real fd, const Real eps, const Real ra, const Real rb,
              const Real a, const Real b) {
   return b + EmfSmoothW(fd, eps, 0.5*(ra + rb))*(a - b);
+}
+
+//----------------------------------------------------------------------------------------
+//! <mhd>/emf_scheme = uct | uct_hlld (lhlld2-1102, ucthlld-1102): the UCT corner EMF of
+//! Mignone & Del Zanna 2021 (JCP 424, 109748, "MD21", eq. 35 with eq. 36 face averages),
+//! evaluated per corner inside the GS07 corner kernels of MHD::CornerE (same loops, same
+//! wall handling; the resistive/RKG EMFs, the cubed-sphere seam sum/average and the
+//! vertex average of flux_correct_fc act on its result exactly as on GS07's).  For an
+//! edge along t with face families p, q (E3: p=x1,q=x2; E1: p=x2,q=x3; E2: p=x3,q=x1):
+//!   E.t = { -[a_p^W (v_p B_q)^W + a_p^E (v_p B_q)^E] + [a_q^S (v_q B_p)^S + a_q^N (v_q B_p)^N]
+//!           + (d_p^E B_q^E - d_p^W B_q^W) - (d_q^N B_p^N - d_q^S B_p^S) } / sin(p,q)
+//! W/E = the lower/upper side along p, S/N along q; a, d = the means over the two p- (q-)
+//! faces at the edge of the coefficients UctFaceStore saved (a^W = a^L, a^E = 1 - a^L,
+//! d^W = d^L, d^E = d^R); B_q = the staggered field of the q faces (B.n_q), PLM along p
+//! to the edge; v_p = v.n_p of the q faces (built from their a-weighted face-frame
+//! velocity) carried to the edge with half the PLM slope of the cell-centred v.n_p of the
+//! two cells sharing the face.  In 1-D this is exactly the face flux.  Writing E.t with
+//! the NORMAL components v.n and B.n of the two face families makes it frame-free:
+//!   (v x B).t = [(v.n_p)(B.n_q) - (v.n_q)(B.n_p)] / sin(p,q)  for n_p, n_q ⊥ t,
+//! and a jump of B.n_q across a p-face Riemann fan is sin(p,q) times the jump of the
+//! face-parallel B_t that the a/d coefficients act on, so the d terms carry the same
+//! 1/sin.  Cartesian: sin = 1 and v.n = the velocity component.  CUBED SPHERE (gnomonic
+//! frames, gnomonic_kernels.hpp; c, s = cos, sin of the xi-eta angle; w0 holds the
+//! contravariant (v^xi, v^eta) on the unit tangents, so v.n_xi = s v^xi, v.n_eta = s v^eta):
+//!   x1 face {rhat, e_xi, f2 = n_eta}: v.n_eta = slot 5, v.n_xi = s slot 4 - c slot 5;
+//!   x2 face {n_xi, e_eta, rhat}: v.rhat = slot 5, v.n_eta = s slot 4 - c slot 3;
+//!   x3 face {n_eta, rhat, e_xi}: v.rhat = slot 4, v.n_xi = s slot 5 - c slot 3;
+//! E1 = E.rhat has sin(xi,eta) = s at the corner; E2 = E.e_xi and E3 = E.e_eta have
+//! sin = 1 (rhat is orthogonal to n_xi, n_eta), and those are the edge projections the
+//! face EMFs and the GS07 corner EMF carry (GnomonicEquiangleEmfX1).
+struct UctCorner {
+  DvceArray5D<Real> u1, u2, u3, w;            // face stores; primitives
+  DvceArray4D<Real> b1, b2, b3;               // staggered field
+  DvceArray3D<Real> sc, cc, sx, cx, se, ce;   // cs trig: cell, xi face, eta face
+  bool cs;
+  int js, ks, nx2, nx3;
+  DualArray1D<RegionSize> size;
+};
+
+KOKKOS_INLINE_FUNCTION
+Real UctHalf(const Real qm, const Real q0, const Real qp, const bool upper) {
+  Real ql, qr;
+  PLM(qm, q0, qp, ql, qr);
+  return upper ? (ql - q0) : (qr - q0);
+}
+KOKKOS_INLINE_FUNCTION
+Real UctEdge(const Real aw, const Real dw, const Real de, const Real vpw, const Real vpe,
+             const Real bqw, const Real bqe, const Real as, const Real ds, const Real dn,
+             const Real vqs, const Real vqn, const Real bps, const Real bpn) {
+  return -(aw*vpw*bqw + (1.0 - aw)*vpe*bqe) + (as*vqs*bps + (1.0 - as)*vqn*bpn)
+         + (de*bqe - dw*bqw) - (dn*bpn - ds*bps);
+}
+// cell-centred v.n_xi and v.n_eta (Cartesian: v2, v3)
+KOKKOS_INLINE_FUNCTION
+Real UctVnXi(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  return d.cs ? d.sc(m,k,j)*d.w(m,IVY,k,j,i) : d.w(m,IVY,k,j,i);
+}
+KOKKOS_INLINE_FUNCTION
+Real UctVnEta(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  return d.cs ? d.sc(m,k,j)*d.w(m,IVZ,k,j,i) : d.w(m,IVZ,k,j,i);
+}
+
+// E3 (x3 edge at x1 face i, x2 face j): p = x1, q = x2
+KOKKOS_INLINE_FUNCTION
+Real UctE3(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  const Real aw = 0.5*(d.u1(m,0,k,j-1,i) + d.u1(m,0,k,j,i));
+  const Real dw = 0.5*(d.u1(m,1,k,j-1,i) + d.u1(m,1,k,j,i));
+  const Real de = 0.5*(d.u1(m,2,k,j-1,i) + d.u1(m,2,k,j,i));
+  const Real as = 0.5*(d.u2(m,0,k,j,i-1) + d.u2(m,0,k,j,i));
+  const Real ds = 0.5*(d.u2(m,1,k,j,i-1) + d.u2(m,1,k,j,i));
+  const Real dn = 0.5*(d.u2(m,2,k,j,i-1) + d.u2(m,2,k,j,i));
+  // v.n_1 (v1) of the x2 faces (slot 5) along x1
+  const Real vpw = d.u2(m,5,k,j,i-1) + 0.5*(
+    UctHalf(d.w(m,IVX,k,j-1,i-2), d.w(m,IVX,k,j-1,i-1), d.w(m,IVX,k,j-1,i), true) +
+    UctHalf(d.w(m,IVX,k,j  ,i-2), d.w(m,IVX,k,j  ,i-1), d.w(m,IVX,k,j  ,i), true));
+  const Real vpe = d.u2(m,5,k,j,i) + 0.5*(
+    UctHalf(d.w(m,IVX,k,j-1,i-1), d.w(m,IVX,k,j-1,i), d.w(m,IVX,k,j-1,i+1), false) +
+    UctHalf(d.w(m,IVX,k,j  ,i-1), d.w(m,IVX,k,j  ,i), d.w(m,IVX,k,j  ,i+1), false));
+  // v.n_2 of the x1 faces along x2
+  Real fs = d.u1(m,4,k,j-1,i), fn = d.u1(m,4,k,j,i);
+  if (d.cs) {
+    fs = d.sc(m,k,j-1)*fs - d.cc(m,k,j-1)*d.u1(m,5,k,j-1,i);
+    fn = d.sc(m,k,j  )*fn - d.cc(m,k,j  )*d.u1(m,5,k,j  ,i);
+  }
+  const Real vqs = fs + 0.5*(
+    UctHalf(UctVnXi(d,m,k,j-2,i-1), UctVnXi(d,m,k,j-1,i-1), UctVnXi(d,m,k,j,i-1), true) +
+    UctHalf(UctVnXi(d,m,k,j-2,i  ), UctVnXi(d,m,k,j-1,i  ), UctVnXi(d,m,k,j,i  ), true));
+  const Real vqn = fn + 0.5*(
+    UctHalf(UctVnXi(d,m,k,j-1,i-1), UctVnXi(d,m,k,j,i-1), UctVnXi(d,m,k,j+1,i-1), false) +
+    UctHalf(UctVnXi(d,m,k,j-1,i  ), UctVnXi(d,m,k,j,i  ), UctVnXi(d,m,k,j+1,i  ), false));
+  Real dum, bqw, bqe, bps, bpn;
+  PLM(d.b2(m,k,j,i-2), d.b2(m,k,j,i-1), d.b2(m,k,j,i  ), bqw, dum);
+  PLM(d.b2(m,k,j,i-1), d.b2(m,k,j,i  ), d.b2(m,k,j,i+1), dum, bqe);
+  PLM(d.b1(m,k,j-2,i), d.b1(m,k,j-1,i), d.b1(m,k,j  ,i), bps, dum);
+  PLM(d.b1(m,k,j-1,i), d.b1(m,k,j  ,i), d.b1(m,k,j+1,i), dum, bpn);
+  return UctEdge(aw, dw, de, vpw, vpe, bqw, bqe, as, ds, dn, vqs, vqn, bps, bpn);
+}
+
+// E1 (x1 edge at x2 face j, x3 face k): p = x2, q = x3; / sin(xi,eta) at the corner
+KOKKOS_INLINE_FUNCTION
+Real UctE1(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  const Real aw = 0.5*(d.u2(m,0,k-1,j,i) + d.u2(m,0,k,j,i));
+  const Real dw = 0.5*(d.u2(m,1,k-1,j,i) + d.u2(m,1,k,j,i));
+  const Real de = 0.5*(d.u2(m,2,k-1,j,i) + d.u2(m,2,k,j,i));
+  const Real as = 0.5*(d.u3(m,0,k,j-1,i) + d.u3(m,0,k,j,i));
+  const Real ds = 0.5*(d.u3(m,1,k,j-1,i) + d.u3(m,1,k,j,i));
+  const Real dn = 0.5*(d.u3(m,2,k,j-1,i) + d.u3(m,2,k,j,i));
+  // v.n_2 of the x3 faces along x2
+  Real fw = d.u3(m,5,k,j-1,i), fe = d.u3(m,5,k,j,i);
+  if (d.cs) {
+    fw = d.se(m,k,j-1)*fw - d.ce(m,k,j-1)*d.u3(m,3,k,j-1,i);
+    fe = d.se(m,k,j  )*fe - d.ce(m,k,j  )*d.u3(m,3,k,j  ,i);
+  }
+  const Real vpw = fw + 0.5*(
+    UctHalf(UctVnXi(d,m,k-1,j-2,i), UctVnXi(d,m,k-1,j-1,i), UctVnXi(d,m,k-1,j,i), true) +
+    UctHalf(UctVnXi(d,m,k  ,j-2,i), UctVnXi(d,m,k  ,j-1,i), UctVnXi(d,m,k  ,j,i), true));
+  const Real vpe = fe + 0.5*(
+    UctHalf(UctVnXi(d,m,k-1,j-1,i), UctVnXi(d,m,k-1,j,i), UctVnXi(d,m,k-1,j+1,i), false) +
+    UctHalf(UctVnXi(d,m,k  ,j-1,i), UctVnXi(d,m,k  ,j,i), UctVnXi(d,m,k  ,j+1,i), false));
+  // v.n_3 of the x2 faces along x3
+  Real fs = d.u2(m,4,k-1,j,i), fn = d.u2(m,4,k,j,i);
+  if (d.cs) {
+    fs = d.sx(m,k-1,j)*fs - d.cx(m,k-1,j)*d.u2(m,3,k-1,j,i);
+    fn = d.sx(m,k  ,j)*fn - d.cx(m,k  ,j)*d.u2(m,3,k  ,j,i);
+  }
+  const Real vqs = fs + 0.5*(
+    UctHalf(UctVnEta(d,m,k-2,j-1,i), UctVnEta(d,m,k-1,j-1,i), UctVnEta(d,m,k,j-1,i), true) +
+    UctHalf(UctVnEta(d,m,k-2,j  ,i), UctVnEta(d,m,k-1,j  ,i), UctVnEta(d,m,k,j  ,i), true));
+  const Real vqn = fn + 0.5*(
+    UctHalf(UctVnEta(d,m,k-1,j-1,i), UctVnEta(d,m,k,j-1,i), UctVnEta(d,m,k+1,j-1,i), false) +
+    UctHalf(UctVnEta(d,m,k-1,j  ,i), UctVnEta(d,m,k,j  ,i), UctVnEta(d,m,k+1,j  ,i), false));
+  Real dum, bqw, bqe, bps, bpn;
+  PLM(d.b3(m,k,j-2,i), d.b3(m,k,j-1,i), d.b3(m,k,j  ,i), bqw, dum);
+  PLM(d.b3(m,k,j-1,i), d.b3(m,k,j  ,i), d.b3(m,k,j+1,i), dum, bqe);
+  PLM(d.b2(m,k-2,j,i), d.b2(m,k-1,j,i), d.b2(m,k  ,j,i), bps, dum);
+  PLM(d.b2(m,k-1,j,i), d.b2(m,k  ,j,i), d.b2(m,k+1,j,i), dum, bpn);
+  const Real e = UctEdge(aw, dw, de, vpw, vpe, bqw, bqe, as, ds, dn, vqs, vqn, bps, bpn);
+  if (!d.cs) return e;
+  // sin of the xi-eta angle at the corner (xi_{j-1/2}, eta_{k-1/2}), as Coordinates
+  // computes the face values (coordinates.cpp, "cscoord")
+  const RegionSize &sz = d.size.d_view(m);
+  const Real x = tan(0.25*M_PI*LeftEdgeX(j-d.js, d.nx2, sz.x2min, sz.x2max));
+  const Real y = tan(0.25*M_PI*LeftEdgeX(k-d.ks, d.nx3, sz.x3min, sz.x3max));
+  const Real sn = sqrt(1.0 + SQR(x) + SQR(y))/(sqrt(1.0 + SQR(x))*sqrt(1.0 + SQR(y)));
+  return e/sn;
+}
+
+// E2 (x2 edge at x3 face k, x1 face i): p = x3, q = x1
+KOKKOS_INLINE_FUNCTION
+Real UctE2(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  const Real aw = 0.5*(d.u3(m,0,k,j,i-1) + d.u3(m,0,k,j,i));
+  const Real dw = 0.5*(d.u3(m,1,k,j,i-1) + d.u3(m,1,k,j,i));
+  const Real de = 0.5*(d.u3(m,2,k,j,i-1) + d.u3(m,2,k,j,i));
+  const Real as = 0.5*(d.u1(m,0,k-1,j,i) + d.u1(m,0,k,j,i));
+  const Real ds = 0.5*(d.u1(m,1,k-1,j,i) + d.u1(m,1,k,j,i));
+  const Real dn = 0.5*(d.u1(m,2,k-1,j,i) + d.u1(m,2,k,j,i));
+  // v.n_3 of the x1 faces (slot 5) along x3
+  const Real vpw = d.u1(m,5,k-1,j,i) + 0.5*(
+    UctHalf(UctVnEta(d,m,k-2,j,i-1), UctVnEta(d,m,k-1,j,i-1), UctVnEta(d,m,k,j,i-1), true) +
+    UctHalf(UctVnEta(d,m,k-2,j,i  ), UctVnEta(d,m,k-1,j,i  ), UctVnEta(d,m,k,j,i  ), true));
+  const Real vpe = d.u1(m,5,k,j,i) + 0.5*(
+    UctHalf(UctVnEta(d,m,k-1,j,i-1), UctVnEta(d,m,k,j,i-1), UctVnEta(d,m,k+1,j,i-1), false) +
+    UctHalf(UctVnEta(d,m,k-1,j,i  ), UctVnEta(d,m,k,j,i  ), UctVnEta(d,m,k+1,j,i  ), false));
+  // v.n_1 (v1) of the x3 faces (slot 4) along x1
+  const Real vqs = d.u3(m,4,k,j,i-1) + 0.5*(
+    UctHalf(d.w(m,IVX,k-1,j,i-2), d.w(m,IVX,k-1,j,i-1), d.w(m,IVX,k-1,j,i), true) +
+    UctHalf(d.w(m,IVX,k  ,j,i-2), d.w(m,IVX,k  ,j,i-1), d.w(m,IVX,k  ,j,i), true));
+  const Real vqn = d.u3(m,4,k,j,i) + 0.5*(
+    UctHalf(d.w(m,IVX,k-1,j,i-1), d.w(m,IVX,k-1,j,i), d.w(m,IVX,k-1,j,i+1), false) +
+    UctHalf(d.w(m,IVX,k  ,j,i-1), d.w(m,IVX,k  ,j,i), d.w(m,IVX,k  ,j,i+1), false));
+  Real dum, bqw, bqe, bps, bpn;
+  PLM(d.b1(m,k-2,j,i), d.b1(m,k-1,j,i), d.b1(m,k  ,j,i), bqw, dum);
+  PLM(d.b1(m,k-1,j,i), d.b1(m,k  ,j,i), d.b1(m,k+1,j,i), dum, bqe);
+  PLM(d.b3(m,k,j,i-2), d.b3(m,k,j,i-1), d.b3(m,k,j,i  ), bps, dum);
+  PLM(d.b3(m,k,j,i-1), d.b3(m,k,j,i  ), d.b3(m,k,j,i+1), dum, bpn);
+  return UctEdge(aw, dw, de, vpw, vpe, bqw, bqe, as, ds, dn, vqs, vqn, bps, bpn);
 }
 
 //----------------------------------------------------------------------------------------
@@ -99,6 +276,24 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   // choices are those of a zero-mass-flux wall (wall_in, as for reflect).
   const bool wsf_ = wall_closed_ix1 && wall_stress_free;
   const BoundaryFlag uflag_ = BoundaryFlag::user;
+  // <mhd>/emf_scheme = uct | uct_hlld: the MD21 corner formula (UctE1/E2/E3) replaces
+  // the GS07 weights per corner inside the kernels below; the cell-centred EMFs are not
+  // needed then.  At a reflecting / stress-free wall edge it takes the mean of the two
+  // wall-face EMFs (the solver's mirror-state flux), reading no ghost row.
+  const bool uct_ = emf_uct || emf_uct_hlld;
+  UctCorner ucd;
+  if (uct_) {
+    ucd.u1 = uct1; ucd.u2 = uct2; ucd.u3 = uct3; ucd.w = w0;
+    ucd.b1 = b0.x1f; ucd.b2 = b0.x2f; ucd.b3 = b0.x3f;
+    ucd.cs = use_cubed_sphere;
+    if (use_cubed_sphere) {
+      ucd.sc = pmy_pack->pcoord->sin_cell;     ucd.cc = pmy_pack->pcoord->cos_cell;
+      ucd.sx = pmy_pack->pcoord->sin_face_xi;  ucd.cx = pmy_pack->pcoord->cos_face_xi;
+      ucd.se = pmy_pack->pcoord->sin_face_eta; ucd.ce = pmy_pack->pcoord->cos_face_eta;
+    }
+    ucd.js = js; ucd.ks = ks; ucd.nx2 = indcs.nx2; ucd.nx3 = indcs.nx3;
+    ucd.size = size;
+  }
 
   //---- 1-D problem:
   //  copy face-centered E-fields to edges and return.
@@ -130,7 +325,9 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     auto e3cc_ = e3_cc;
 
     // compute cell-centered EMF in dynamical GRMHD
-    if (pmy_pack->padm != nullptr) {
+    if (uct_) {
+      // emf_scheme = uct | uct_hlld: no cell-centred EMF needed
+    } else if (pmy_pack->padm != nullptr) {
       auto &adm = pmy_pack->padm->adm;
       par_for("e_cc_2d", DevExeSpace(), 0, nmb1, js-1, je+1, is-1, ie+1,
       KOKKOS_LAMBDA(int m, int j, int i) {
@@ -254,6 +451,11 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       e2(m,ke+1,j,i) = e2x1_(m,ks,j,i);
       e1(m,ks  ,j,i) = e1x2_(m,ks,j,i);
       e1(m,ke+1,j,i) = e1x2_(m,ks,j,i);
+      if (uct_) {   // emf_scheme = uct | uct_hlld (UctE3)
+        e3(m,ks,j,i) = wall1 ? 0.5*(e3x1_(m,ks,j-1,i) + e3x1_(m,ks,j,i))
+                             : UctE3(ucd, m, ks, j, i);
+        return;
+      }
 
       Real e3_l2, e3_r2, e3_l1, e3_r1;
       if (wall1) {  // reflecting radial wall: no upwind side, see above
@@ -322,7 +524,9 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     auto e3cc_ = e3_cc;
 
     // compute cell-centered EMFs in dynamical GRMHD
-    if (pmy_pack->padm != nullptr) {
+    if (uct_) {
+      // emf_scheme = uct | uct_hlld: no cell-centred EMF needed
+    } else if (pmy_pack->padm != nullptr) {
       auto &adm = pmy_pack->padm->adm;
       par_for("e_cc_3d", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
       KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -523,6 +727,14 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       // flux was shared over the active rows only)
       const int il_ = wall_in ? i : i-1;
       const int ir_ = wall_out ? i-1 : i;
+      if (uct_) {   // emf_scheme = uct | uct_hlld (UctE1/E2/E3)
+        e1(m,k,j,i) = UctE1(ucd, m, k, j, i);
+        e2(m,k,j,i) = wall1 ? 0.5*(e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i))
+                            : UctE2(ucd, m, k, j, i);
+        e3(m,k,j,i) = wall1 ? 0.5*(e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i))
+                            : UctE3(ucd, m, k, j, i);
+        return;
+      }
       // integrate E1 to corner using SG07
       Real e1_l3, e1_r3, e1_l2, e1_r2;
       if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth

@@ -167,6 +167,28 @@ inline bool ck_cad_cont = false;
 // max(0, 1 - tau/(f P))); continuous for any f > 0.
 inline Real ck_cad_cont_len = 1.0;
 inline Real ck_cad_cont_l = 1.0;     // L [s] of the last cont store
+// (8d) ckdrift-1102 problem/ck_cad_drift_lim = f > 0 (default 0 = off, read only when
+//     named): A LIMITER ON THE MEASURED DRIFT G (ck_cad_drift, both store paths).  The
+//     drift is an explicit linear extrapolation of the rate.  In cells whose rate is
+//     driven by a stiff coupling (the neighbours' response, a heating that grows with T,
+//     which D <= 0 cannot hold) the measured rate alternates or grows between refreshes,
+//     and extrapolating it amplifies the alternation by up to 3x per refresh (2 S_n -
+//     S_n-1): measured on the fresh r1m (WASP-121b MHD) as a runaway to the EOS ceiling
+//     1e6 K in a few columns at ~1e-4 bar by t ~1300-1900 s.  With the key a cell's new G
+//     is set to 0 when it has the opposite sign of its previous G (an alternating rate is
+//     not a drift), and |G| is capped so that the drift alone moves T by at most f T over
+//     one refresh interval P (|G| P^2 <= f c_v T).  A smooth drift (same sign, small) is
+//     unchanged, so the order is kept where the model is meaningful.
+inline Real ck_cad_drift_lim = 0.0;
+inline int64_t ck_cad_nlim_flip = 0, ck_cad_nlim_cap = 0;
+// problem/ck_cad_drift_diag = true (TEST, read only when named): every store reports the
+//     cell with the largest |G_meas| P^2/(c_v T) (location, T, rho, rates, sign flips).
+inline bool ck_cad_drift_diag = false;
+inline DvceArray5D<Real> *ck_cad_dg_ptr = nullptr;   // (m,3,k,j,i): x, flip, capped
+// (9) ckdrift-1102 problem/ck_t2_pos_cap = f > 0 (default 0 = off): the hesdirk2 stage
+//     increment inc = c1 K1 + c2 K2 is clamped to +f e_int on the heating side too
+//     (the cooling side is clamped to -(1 - ck_t2_pos_th) e_int today).
+inline Real ck_t2_pos_cap = 0.0;
 inline DvceArray5D<Real> ck_cad_un;   // U^n during a probe store (cont)
 inline Real ck_cad_probe_fac = 1.0e-4;
 // problem/ck_cad_probe_dt = s > 0 [s]: the probe length in seconds instead of fac x dt.
@@ -268,6 +290,18 @@ inline void Ck2ndInit(ParameterInput *pin, const bool fused, const int glob,
     if (ck_cad_cont && (!ck_cad_probe || !ck_cad_drift)) {
       why += " ck_cad_cont needs ck_cad_probe and ck_cad_drift;";
     }
+  }
+  if (pin->DoesParameterExist("problem", "ck_cad_drift_lim")) {
+    ck_cad_drift_lim = pin->GetReal("problem", "ck_cad_drift_lim");
+    if (ck_cad_drift_lim > 0.0 && !ck_cad_drift) {
+      why += " ck_cad_drift_lim needs ck_cad_drift;";
+    }
+  }
+  if (pin->DoesParameterExist("problem", "ck_cad_drift_diag")) {
+    ck_cad_drift_diag = pin->GetBoolean("problem", "ck_cad_drift_diag");
+  }
+  if (pin->DoesParameterExist("problem", "ck_t2_pos_cap")) {
+    ck_t2_pos_cap = pin->GetReal("problem", "ck_t2_pos_cap");
   }
   if (pin->DoesParameterExist("problem", "ck_cad_drift2")) {
     ck_cad_drift2 = pin->GetBoolean("problem", "ck_cad_drift2");
