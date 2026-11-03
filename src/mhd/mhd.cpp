@@ -219,9 +219,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   xe_tracer = tracers.xe;
   ixe = tracers.xe ? (nmhd + tracers.XeOff()) : -1;
   floor_tracer = tracers.fl;
-  if (pin->DoesParameterExist("mhd","tracer_strang")) {   // rkgfuse-1102
-    trc_strang = pin->GetBoolean("mhd","tracer_strang") && (tracers.xe || tracers.fl);
-  }
   ifltr = tracers.fl ? (nmhd + tracers.FlOff()) : -1;
   if (floor_tracer) {
     peos->eos_data.ifltr = ifltr;
@@ -260,6 +257,25 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     presist = new Resistivity(ppack, pin);
   } else {
     presist = nullptr;
+  }
+  // rkgfuse-1102 <mhd>/tracer_strang (read only when named).  prod1103b default (USER
+  // 11-03): true on a FRESH start (recipe::NewDefaults) whenever rkg_strang_fuse is on
+  // and a tracer (x_e or floor) exists and the key is not named; recorded (GetOrAdd)
+  // for the run's restarts; a restart whose input lacks the key keeps false (bitwise).
+  if (!pin->DoesParameterExist("mhd","tracer_strang") && (tracers.xe || tracers.fl) &&
+      presist != nullptr && presist->use_rkg_sts && presist->rkg_strang &&
+      presist->rkg_strang_fuse) {
+    if (recipe::NewDefaults(pin)) {
+      pin->GetOrAddBoolean("mhd","tracer_strang",true);
+      recipe::Log("<mhd>/tracer_strang = true (default with rkg_strang_fuse and a tracer)");
+    } else {
+      recipe::Log("<mhd>/tracer_strang = false (" + std::string(
+          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+          "restart input has no key") + ": the old default)");
+    }
+  }
+  if (pin->DoesParameterExist("mhd","tracer_strang")) {   // rkgfuse-1102
+    trc_strang = pin->GetBoolean("mhd","tracer_strang") && (tracers.xe || tracers.fl);
   }
 
   // xetracer-1101: advected electron fraction (mhd_tracers.cpp).  Read only when named;

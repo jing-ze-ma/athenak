@@ -154,7 +154,9 @@ class MHD {
   // dt/2 after, both called by the Driver INSIDE the RKG halves:
   //   R(dt/2) Tr(dt/2) [ck(dt/2)] H [ck(dt/2)] Tr(dt/2) R(dt/2).
   // The floor-tracer drain (not a rate) runs in the first half only.  false: the task in
-  // "before_timeintegrator" (full dt, Lie), bitwise as before.
+  // "before_timeintegrator" (full dt, Lie), bitwise as before.  FRESH-start default true
+  // whenever rkg_strang_fuse is on and a tracer exists (prod1103b, USER 11-03: removes
+  // the O(dt) tracer-split error at +0.5 %; restart-bitwise since trcrst-1103; mhd.cpp).
   bool trc_strang = false;
   void TracerSourceHalf(int half);
   int ifltr = -1;
