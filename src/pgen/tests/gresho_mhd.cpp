@@ -74,6 +74,20 @@ Real GreshoPres(const Real r, const Real p0) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real GreshoVint(const Real r)
+//! \brief alfmach-1102: integral of GreshoVphi from 0 to r (flux function of b_phi)
+
+KOKKOS_INLINE_FUNCTION
+Real GreshoVint(const Real r) {
+  if (r < 0.2) {
+    return 2.5*r*r;
+  } else if (r < 0.4) {
+    return 0.1 + 2.0*(r - 0.2) - 2.5*(r*r - 0.04);
+  }
+  return 0.2;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart)
 //! \brief Problem generator for the magnetized Gresho vortex.  Assumes the domain is
 //! [-0.5,0.5] x [-0.5,0.5], so that the vortex is centered on the origin.
@@ -131,7 +145,11 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem", "cb_kern")) {
     cbkern = pin->GetReal("problem", "cb_kern");
   }
-  const bool lm2 = (vamp != 1.0) || (ubg1 != 0.0) || (ubg2 != 0.0) || (cbp != 0.0) ||
+  // alfmach-1102 (TEST key, read only when set): cb_ut: vy += cb_ut (-1)^gi, a 2dx
+  // TRANSVERSE-velocity checkerboard along x1 (an Alfvenic 2dx mode when B has an x1 part)
+  Real cbut = 0.0;
+  if (pin->DoesParameterExist("problem", "cb_ut")) cbut = pin->GetReal("problem", "cb_ut");
+  const bool lm2 = (cbut != 0.0) || (vamp != 1.0) || (ubg1 != 0.0) || (ubg2 != 0.0) || (cbp != 0.0) ||
                    (cbun != 0.0) || (cbkern != 0.0);
   Real b1 = b0mag*std::cos(bang), b2 = b0mag*std::sin(bang), b3 = 0.0;
   // ... and with b_incl (degrees from x3) set, a field out of the x1-x2 plane, e.g.
@@ -142,6 +160,24 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
     b2 = b0mag*std::sin(binc)*std::sin(bang);
     b3 = b0mag*std::cos(binc);
   }
+
+  // alfmach-1102 <problem>/b_phi (TEST key, read only when named): in place of the
+  // uniform field, an AZIMUTHAL field ALIGNED with the flow, B_phi = B0 u_phi(r) (peak
+  // B0 = sqrt(2 p0/beta) at r = 0.2, zero for r > 0.4), so the Alfven Mach number
+  // M_A = u_phi/v_A = sqrt(d0)/B0 is the same at every radius of the vortex.  u x B = 0,
+  // so the induction equation is stationary, and the pressure takes the hoop stress:
+  //   dp_T/dr = (d0 - B0^2) u_phi^2/r,  p = p_Gresho(r) + B0^2 (G(0.4) - G(r))
+  //                                          - B0^2 u_phi^2/2,   G = p_Gresho - p0
+  // (d0 = 1, as the hydro profile above), with the outside pressure unchanged.  The face
+  // field is the curl of A_z = -B0 int_0^r u_phi dr' (divergence-free to round-off).
+  // An exact stationary state for any M and M_A (Leidi et al. 2022 use the same idea).
+  bool bphi = false;
+  if (pin->DoesParameterExist("problem", "b_phi")) {
+    bphi = pin->GetBoolean("problem", "b_phi");
+  }
+  if (bphi) { b1 = 0.0; b2 = 0.0; b3 = 0.0; }
+  const Real bphi0 = bphi ? b0mag : 0.0;
+  const Real gout = GreshoPres(1.0, 0.0);
 
   // capture variables for kernel
   auto &indcs = pmy_mesh_->mb_indcs;
@@ -194,13 +230,29 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
     }
 
     Real pres = GreshoPres(rad,p0);
+    Real emag = 0.5*b0mag*b0mag;
+    if (bphi0 != 0.0) {
+      pres += bphi0*bphi0*(gout - GreshoPres(rad, 0.0) - 0.5*SQR(GreshoVphi(rad)));
+      // cell-centred field = mean of the two face fields, from A_z at the 4 corners
+      const Real x1l = LeftEdgeX(i-is, nx1, x1min, x1max);
+      const Real x1r = LeftEdgeX(i-is+1, nx1, x1min, x1max);
+      const Real x2l = LeftEdgeX(j-js, nx2, x2min, x2max);
+      const Real x2r = LeftEdgeX(j-js+1, nx2, x2min, x2max);
+      auto az = [=](Real x, Real y) { return -bphi0*GreshoVint(std::sqrt(x*x + y*y)); };
+      const Real dx1 = x1r - x1l, dx2 = x2r - x2l;
+      const Real bxl = (az(x1l, x2r) - az(x1l, x2l))/dx2;
+      const Real bxr = (az(x1r, x2r) - az(x1r, x2l))/dx2;
+      const Real byl = -(az(x1r, x2l) - az(x1l, x2l))/dx1;
+      const Real byr = -(az(x1r, x2r) - az(x1l, x2r))/dx1;
+      emag = 0.5*(SQR(0.5*(bxl + bxr)) + SQR(0.5*(byl + byr)));
+    }
     if (lm2) {
       const int gi = static_cast<int>(std::floor((x1v + 1000.0)*nx1/(x1max - x1min)));
       const int gj = static_cast<int>(std::floor((x2v + 1000.0)*nx2/(x2max - x2min)));
       const Real si = (gi % 2 == 0) ? 1.0 : -1.0;
       const Real sij = ((gi + gj) % 2 == 0) ? 1.0 : -1.0;
       vx = vamp*vx + ubg1 + cbun*si + cbkern*sij;
-      vy = vamp*vy + ubg2;
+      vy = vamp*vy + ubg2 + cbut*si;
       pres = (p0 + vamp*vamp*(pres - p0))*(1.0 + cbp*si);
     }
     u0(m,IDN,k,j,i) = d0;
@@ -209,7 +261,7 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
     u0(m,IM3,k,j,i) = 0.0;
     // total energy, with the uniform field contributing 0.5*B0^2 everywhere
     u0(m,IEN,k,j,i) = pres/gm1 + 0.5*d0*(vx*vx + vy*vy)
-                      + 0.5*b0mag*b0mag;
+                      + emag;
   });
   if (!is_mhd) return;
 
@@ -225,6 +277,22 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
     }
     if (j==je) {
       b0.x2f(m,k,j+1,i) = b2;
+    }
+    if (bphi0 != 0.0) {
+      Real &x1min = size.d_view(m).x1min;
+      Real &x1max = size.d_view(m).x1max;
+      Real &x2min = size.d_view(m).x2min;
+      Real &x2max = size.d_view(m).x2max;
+      const int nx1 = indcs.nx1, nx2 = indcs.nx2;
+      const Real x1l = LeftEdgeX(i-is, nx1, x1min, x1max);
+      const Real x1r = LeftEdgeX(i-is+1, nx1, x1min, x1max);
+      const Real x2l = LeftEdgeX(j-js, nx2, x2min, x2max);
+      const Real x2r = LeftEdgeX(j-js+1, nx2, x2min, x2max);
+      auto az = [=](Real x, Real y) { return -bphi0*GreshoVint(std::sqrt(x*x + y*y)); };
+      b0.x1f(m,k,j,i) = (az(x1l, x2r) - az(x1l, x2l))/(x2r - x2l);
+      b0.x2f(m,k,j,i) = -(az(x1r, x2l) - az(x1l, x2l))/(x1r - x1l);
+      if (i==ie) b0.x1f(m,k,j,i+1) = (az(x1r, x2r) - az(x1r, x2l))/(x2r - x2l);
+      if (j==je) b0.x2f(m,k,j+1,i) = -(az(x1r, x2r) - az(x1l, x2r))/(x1r - x1l);
     }
     if (k==ke) {
       b0.x3f(m,k+1,j,i) = b3;

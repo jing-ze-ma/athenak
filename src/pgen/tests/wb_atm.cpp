@@ -53,6 +53,7 @@
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
 #include "pgen/pgen.hpp"
 
 namespace {
@@ -61,6 +62,7 @@ struct WbAtmVars {
   Real g0, p0, rho0, gamma, a0, h0;
   int strat = 0;      // lowmach2-1102: 0 isentropic (legacy), 1 isothermal, 2 polytropic
   Real nu = 0.0;      // polytropic index of strat 2
+  Real bx = 0.0;      // alfmach-1102: uniform horizontal field (MHD only)
 };
 WbAtmVars wbatm;
 
@@ -95,15 +97,52 @@ void WbAtmState(const Real y, const WbAtmVars &v, Real &p, Real &den) {
 void WbAtmBCs(Mesh *pm);
 void WbAtmGravity(Mesh *pm, const Real bdt);
 
+namespace {
+// alfmach-1102: the field parts of the MHD port (no-ops for hydro)
+void WbAtmSetB(hydro::Hydro *ph, Mesh *pm, const Real bx, const bool ghosts) {}
+void WbAtmSetB(mhd::MHD *ph, Mesh *pm, const Real bx, const bool ghosts) {
+  auto &indcs = pm->mb_indcs;
+  int &ng = indcs.ng;
+  const int n1m1 = indcs.nx1 + 2*ng - 1, n2m1 = indcs.nx2 + 2*ng - 1;
+  const int je = indcs.je, js = indcs.js;
+  auto b0 = ph->b0;
+  auto &mb_bcs = pm->pmb_pack->pmb->mb_bcs;
+  par_for("wb_atm_b", DevExeSpace(), 0, (pm->pmb_pack->nmb_thispack-1), 0, 0, 0, n2m1,
+  0, n1m1, KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    if (ghosts) {
+      const bool lo = (j < js) &&
+                      (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user);
+      const bool hi = (j > je) &&
+                      (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user);
+      if (!(lo || hi)) return;
+    }
+    b0.x1f(m,k,j,i) = bx;
+    if (i == n1m1) b0.x1f(m,k,j,i+1) = bx;
+    b0.x2f(m,k,j,i) = 0.0;
+    if (j == n2m1 || (ghosts && j == js-1)) b0.x2f(m,k,j+1,i) = 0.0;
+    b0.x3f(m,k,j,i) = 0.0;
+    b0.x3f(m,k+1,j,i) = 0.0;
+  });
+}
+}  // namespace
+
+template <class P>
+void WbAtmFill(P *ph, Mesh *pmesh, const WbAtmVars wv, const Real gm1, const Real g0,
+               const Real vamp, const Real x0, const Real y0, const Real r0,
+               const Real vrand);
+template <class P> void WbAtmBCsT(Mesh *pm, P *ph);
+template <class P> void WbAtmGravityT(Mesh *pm, P *ph, const Real bdt);
+
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::WbAtmosphere()
 //! \brief sets up the well-balanced atmosphere and its background arrays
 
 void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  if (pmbp->phydro == nullptr) {
+  if (pmbp->phydro == nullptr && pmbp->pmhd == nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "wb_atm problem generator requires <hydro>" << std::endl;
+              << std::endl << "wb_atm problem generator requires <hydro> or <mhd>"
+              << std::endl;
     exit(EXIT_FAILURE);
   }
   if (!(pmy_mesh_->two_d)) {
@@ -115,7 +154,11 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   Real g0 = pin->GetOrAddReal("problem", "g0", -1.0);
   Real p0 = pin->GetOrAddReal("problem", "p0", 1.0);
   Real rho0 = pin->GetOrAddReal("problem", "rho0", 1.0);
-  Real gamma = pmbp->phydro->peos->eos_data.gamma;
+  // alfmach-1102: also runs in MHD (static well balance only), with an optional uniform
+  // horizontal field B_x = sqrt(2 p(y=0)/bx_beta), <problem>/bx_beta (read when named)
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  Real gamma = is_mhd ? pmbp->pmhd->peos->eos_data.gamma
+                      : pmbp->phydro->peos->eos_data.gamma;
   Real gm1 = gamma - 1.0;
   Real gdgm1 = gamma/gm1;
   wbatm.g0 = g0;
@@ -143,6 +186,18 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
       exit(EXIT_FAILURE);
     }
   }
+  if (is_mhd) {
+    if (pmbp->pmhd->use_wellbalance_dynamic) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "wb_atm in MHD: static well balance only" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (pin->DoesParameterExist("problem", "bx_beta")) {
+      Real pb, db;
+      WbAtmState(0.0, wbatm, pb, db);
+      wbatm.bx = std::sqrt(2.0*pb/pin->GetReal("problem", "bx_beta"));
+    }
+  }
   const WbAtmVars wv = wbatm;
 
   // the source term must know about the background, and the BCs about both
@@ -157,7 +212,146 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   Real vrand = 0.0;
   if (pin->DoesParameterExist("problem", "vrand")) vrand = pin->GetReal("problem", "vrand");
 
-  auto &indcs = pmy_mesh_->mb_indcs;
+  if (is_mhd) {
+    WbAtmFill(pmbp->pmhd, pmy_mesh_, wv, gm1, g0, vamp, x0, y0, r0, vrand);
+  } else {
+    WbAtmFill(pmbp->phydro, pmy_mesh_, wv, gm1, g0, vamp, x0, y0, r0, vrand);
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void WbAtmBCs
+//! \brief x2 ghost zones held at the analytic hydrostatic background, so that the
+//! balance is exact right up to the physical boundary.
+
+void WbAtmBCs(Mesh *pm) {
+  if (pm->pmb_pack->pmhd != nullptr) {
+    WbAtmBCsT(pm, pm->pmb_pack->pmhd);
+  } else {
+    WbAtmBCsT(pm, pm->pmb_pack->phydro);
+  }
+}
+
+template <class P>
+void WbAtmBCsT(Mesh *pm, P *ph) {
+  auto &indcs = pm->mb_indcs;
+  int &ng = indcs.ng;
+  int n1 = indcs.nx1 + 2*ng;
+  int &js = indcs.js; int &je = indcs.je;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mb_bcs = pmbp->pmb->mb_bcs;
+  int nmb1 = pmbp->nmb_thispack - 1;
+  auto u0 = ph->u0;
+
+  Real gamma = wbatm.gamma;
+  Real gm1 = gamma - 1.0;
+  const WbAtmVars wv = wbatm;
+
+  par_for("wb_atm_bc", DevExeSpace(), 0, nmb1, 0, 0, 0, (ng-1), 0, (n1-1),
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    Real &x2min = size.d_view(m).x2min;
+    Real &x2max = size.d_view(m).x2max;
+    if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user) {
+      Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
+      Real p, den;
+      WbAtmState(x2v, wv, p, den);
+      u0(m,IDN,k,j,i) = den;
+      u0(m,IM1,k,j,i) = 0.0;
+      u0(m,IM2,k,j,i) = 0.0;
+      u0(m,IM3,k,j,i) = 0.0;
+      u0(m,IEN,k,j,i) = p/gm1;
+      if (wv.bx != 0.0) u0(m,IEN,k,j,i) += 0.5*wv.bx*wv.bx;
+    }
+    if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
+      Real x2v = CellCenterX((je+j+1)-js, indcs.nx2, x2min, x2max);
+      Real p, den;
+      WbAtmState(x2v, wv, p, den);
+      u0(m,IDN,k,(je+j+1),i) = den;
+      u0(m,IM1,k,(je+j+1),i) = 0.0;
+      u0(m,IM2,k,(je+j+1),i) = 0.0;
+      u0(m,IM3,k,(je+j+1),i) = 0.0;
+      u0(m,IEN,k,(je+j+1),i) = p/gm1;
+      if (wv.bx != 0.0) u0(m,IEN,k,(je+j+1),i) += 0.5*wv.bx*wv.bx;
+    }
+  });
+  WbAtmSetB(ph, pm, wv.bx, true);
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void WbAtmGravity
+//! \brief constant gravity along -x2.  With the static well-balanced scheme on, the
+//! background's own weight is already carried by the flux (RemoveWbFlux), so the
+//! momentum source must act on the DEVIATION rho - rho_background only.  With the
+//! DYNAMIC scheme on there is no stored background to subtract: the momentum source is
+//! instead the local hydrostatic background's OWN pressure difference across the cell,
+//! (p_{j+1/2} - p_{j-1/2})/dx2, obtained through the same entry point the
+//! reconstruction uses (Hydro::getWBq0) so that the two cancel identically for a
+//! balanced state.  (Handing the dynamic scheme the plain -rho g source would NOT be
+//! well balanced, since the flux it assembles already carries the full background
+//! pressure.)  The energy source is physical and always uses the full density.
+
+void WbAtmGravity(Mesh *pm, const Real bdt) {
+  if (pm->pmb_pack->pmhd != nullptr) {
+    WbAtmGravityT(pm, pm->pmb_pack->pmhd, bdt);
+  } else {
+    WbAtmGravityT(pm, pm->pmb_pack->phydro, bdt);
+  }
+}
+
+template <class P>
+void WbAtmGravityT(Mesh *pm, P *ph, const Real bdt) {
+  auto &indcs = pm->mb_indcs;
+  int &is = indcs.is; int &ie = indcs.ie;
+  int &js = indcs.js; int &je = indcs.je;
+  int &ks = indcs.ks; int &ke = indcs.ke;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  int nmb1 = pmbp->nmb_thispack - 1;
+  auto u0 = ph->u0;
+  auto w0 = ph->w0;
+  auto w0wb = ph->w0wb;
+  auto phicc0 = ph->phicc0;
+  auto phi2 = ph->phi0.x2f;
+  auto &size = pmbp->pmb->mb_size;
+  const bool wbstatic = ph->use_wellbalance_static;
+  const bool wbdyn = ph->use_wellbalance_dynamic;
+  // by-value copies, capturable in the device lambda (never dereference pmbp there)
+  const auto eos = ph->peos->eos_data;
+  const WBOption wbo = ph->wb_option;
+  Real g0 = wbatm.g0;
+
+  par_for("wb_atm_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real src = bdt*g0*w0(m,IDN,k,j,i);
+    u0(m,IEN,k,j,i) += src*w0(m,IVY,k,j,i);
+    if (wbstatic) {
+      src = bdt*g0*(w0(m,IDN,k,j,i) - w0wb(m,IDN,k,j,i));
+    }
+    if (wbdyn) {
+      Real pl, pr, d1, d2, d3;
+      hydro::Hydro::getWBq0(eos, wbo, WBVar::wb_pres,
+          w0(m,IDN,k,j-1,i), w0(m,IDN,k,j,i), w0(m,IDN,k,j+1,i),
+          w0(m,IEN,k,j-1,i), w0(m,IEN,k,j,i), w0(m,IEN,k,j+1,i),
+          phicc0(m,k,j-1,i), phi2(m,k,j,i), phicc0(m,k,j,i), phi2(m,k,j+1,i),
+          phicc0(m,k,j+1,i), d1, pl, d2, pr, d3);
+      src = bdt*(pr - pl)/size.d_view(m).dx2;
+    }
+    u0(m,IM2,k,j,i) += src;
+  });
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn WbAtmFill (alfmach-1102: the former body of WbAtmosphere, for hydro or MHD)
+
+template <class P>
+void WbAtmFill(P *ph, Mesh *pmesh, const WbAtmVars wv, const Real gm1, const Real g0,
+               const Real vamp, const Real x0, const Real y0, const Real r0,
+               const Real vrand) {
+  MeshBlockPack *pmbp = pmesh->pmb_pack;
+  auto &indcs = pmesh->mb_indcs;
   int &is = indcs.is; int &ie = indcs.ie;
   int &js = indcs.js; int &je = indcs.je;
   int &ks = indcs.ks; int &ke = indcs.ke;
@@ -165,9 +359,9 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   int n1m1 = indcs.nx1 + 2*ng - 1;
   int n2m1 = indcs.nx2 + 2*ng - 1;
   auto &size = pmbp->pmb->mb_size;
-  auto u0 = pmbp->phydro->u0;
-  const bool wbstatic = pmbp->phydro->use_wellbalance_static;
-  const bool wbdyn = pmbp->phydro->use_wellbalance_dynamic;
+  auto u0 = ph->u0;
+  const bool wbstatic = ph->use_wellbalance_static;
+  const bool wbdyn = ph->use_wellbalance_dynamic;
 
   // initial conditions: background + (optional) velocity kick
   par_for("wb_atm_ic", DevExeSpace(), 0, (pmbp->nmb_thispack-1), ks, ke, js, je, is, ie,
@@ -205,6 +399,7 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
     u0(m,IM2,k,j,i) = den*v2;
     u0(m,IM3,k,j,i) = 0.0;
     u0(m,IEN,k,j,i) = p/gm1 + 0.5*den*(v1*v1 + v2*v2);
+    if (wv.bx != 0.0) u0(m,IEN,k,j,i) += 0.5*wv.bx*wv.bx;
   });
 
   // ---- DYNAMIC well-balanced scheme (Kappeli & Mishra) -------------------------------
@@ -215,10 +410,10 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   // the active range, and the source term below differences the x2 faces.  With
   // g = g0 = const along x2 the potential is simply Phi = -g0*y.
   if (wbdyn) {
-    auto phicc0 = pmbp->phydro->phicc0;
-    auto phi1 = pmbp->phydro->phi0.x1f;
-    auto phi2 = pmbp->phydro->phi0.x2f;
-    auto phi3 = pmbp->phydro->phi0.x3f;
+    auto phicc0 = ph->phicc0;
+    auto phi1 = ph->phi0.x1f;
+    auto phi2 = ph->phi0.x2f;
+    auto phi3 = ph->phi0.x3f;
     par_for("wb_atm_phi", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, 0, 0, n2m1,
     0, n1m1, KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real &x2min = size.d_view(m).x2min;
@@ -239,14 +434,17 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
     });
   }
 
-  if (!wbstatic) return;
+  if (!wbstatic) {
+    WbAtmSetB(ph, pmesh, wv.bx, false);
+    return;
+  }
 
   // static well-balanced background, over the FULL arrays including ghost zones
-  auto u0wb = pmbp->phydro->u0wb;
-  auto w0wb = pmbp->phydro->w0wb;
-  auto wf1 = pmbp->phydro->w0facewb.x1f;
-  auto wf2 = pmbp->phydro->w0facewb.x2f;
-  auto wf3 = pmbp->phydro->w0facewb.x3f;
+  auto u0wb = ph->u0wb;
+  auto w0wb = ph->w0wb;
+  auto wf1 = ph->w0facewb.x1f;
+  auto wf2 = ph->w0facewb.x2f;
+  auto wf3 = ph->w0facewb.x3f;
   par_for("wb_atm_bg", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, 0, 0, n2m1,
   0, n1m1, KOKKOS_LAMBDA(int m, int k, int j, int i) {
     Real &x2min = size.d_view(m).x2min;
@@ -309,107 +507,6 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
     }
   });
 
-  return;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void WbAtmBCs
-//! \brief x2 ghost zones held at the analytic hydrostatic background, so that the
-//! balance is exact right up to the physical boundary.
-
-void WbAtmBCs(Mesh *pm) {
-  auto &indcs = pm->mb_indcs;
-  int &ng = indcs.ng;
-  int n1 = indcs.nx1 + 2*ng;
-  int &js = indcs.js; int &je = indcs.je;
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto &size = pmbp->pmb->mb_size;
-  auto &mb_bcs = pmbp->pmb->mb_bcs;
-  int nmb1 = pmbp->nmb_thispack - 1;
-  auto u0 = pmbp->phydro->u0;
-
-  Real gamma = wbatm.gamma;
-  Real gm1 = gamma - 1.0;
-  const WbAtmVars wv = wbatm;
-
-  par_for("wb_atm_bc", DevExeSpace(), 0, nmb1, 0, 0, 0, (ng-1), 0, (n1-1),
-  KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    Real &x2min = size.d_view(m).x2min;
-    Real &x2max = size.d_view(m).x2max;
-    if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user) {
-      Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
-      Real p, den;
-      WbAtmState(x2v, wv, p, den);
-      u0(m,IDN,k,j,i) = den;
-      u0(m,IM1,k,j,i) = 0.0;
-      u0(m,IM2,k,j,i) = 0.0;
-      u0(m,IM3,k,j,i) = 0.0;
-      u0(m,IEN,k,j,i) = p/gm1;
-    }
-    if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
-      Real x2v = CellCenterX((je+j+1)-js, indcs.nx2, x2min, x2max);
-      Real p, den;
-      WbAtmState(x2v, wv, p, den);
-      u0(m,IDN,k,(je+j+1),i) = den;
-      u0(m,IM1,k,(je+j+1),i) = 0.0;
-      u0(m,IM2,k,(je+j+1),i) = 0.0;
-      u0(m,IM3,k,(je+j+1),i) = 0.0;
-      u0(m,IEN,k,(je+j+1),i) = p/gm1;
-    }
-  });
-  return;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void WbAtmGravity
-//! \brief constant gravity along -x2.  With the static well-balanced scheme on, the
-//! background's own weight is already carried by the flux (RemoveWbFlux), so the
-//! momentum source must act on the DEVIATION rho - rho_background only.  With the
-//! DYNAMIC scheme on there is no stored background to subtract: the momentum source is
-//! instead the local hydrostatic background's OWN pressure difference across the cell,
-//! (p_{j+1/2} - p_{j-1/2})/dx2, obtained through the same entry point the
-//! reconstruction uses (Hydro::getWBq0) so that the two cancel identically for a
-//! balanced state.  (Handing the dynamic scheme the plain -rho g source would NOT be
-//! well balanced, since the flux it assembles already carries the full background
-//! pressure.)  The energy source is physical and always uses the full density.
-
-void WbAtmGravity(Mesh *pm, const Real bdt) {
-  auto &indcs = pm->mb_indcs;
-  int &is = indcs.is; int &ie = indcs.ie;
-  int &js = indcs.js; int &je = indcs.je;
-  int &ks = indcs.ks; int &ke = indcs.ke;
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  int nmb1 = pmbp->nmb_thispack - 1;
-  auto u0 = pmbp->phydro->u0;
-  auto w0 = pmbp->phydro->w0;
-  auto w0wb = pmbp->phydro->w0wb;
-  auto phicc0 = pmbp->phydro->phicc0;
-  auto phi2 = pmbp->phydro->phi0.x2f;
-  auto &size = pmbp->pmb->mb_size;
-  const bool wbstatic = pmbp->phydro->use_wellbalance_static;
-  const bool wbdyn = pmbp->phydro->use_wellbalance_dynamic;
-  // by-value copies, capturable in the device lambda (never dereference pmbp there)
-  const auto eos = pmbp->phydro->peos->eos_data;
-  const WBOption wbo = pmbp->phydro->wb_option;
-  Real g0 = wbatm.g0;
-
-  par_for("wb_atm_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real src = bdt*g0*w0(m,IDN,k,j,i);
-    u0(m,IEN,k,j,i) += src*w0(m,IVY,k,j,i);
-    if (wbstatic) {
-      src = bdt*g0*(w0(m,IDN,k,j,i) - w0wb(m,IDN,k,j,i));
-    }
-    if (wbdyn) {
-      Real pl, pr, d1, d2, d3;
-      hydro::Hydro::getWBq0(eos, wbo, WBVar::wb_pres,
-          w0(m,IDN,k,j-1,i), w0(m,IDN,k,j,i), w0(m,IDN,k,j+1,i),
-          w0(m,IEN,k,j-1,i), w0(m,IEN,k,j,i), w0(m,IEN,k,j+1,i),
-          phicc0(m,k,j-1,i), phi2(m,k,j,i), phicc0(m,k,j,i), phi2(m,k,j+1,i),
-          phicc0(m,k,j+1,i), d1, pl, d2, pr, d3);
-      src = bdt*(pr - pl)/size.d_view(m).dx2;
-    }
-    u0(m,IM2,k,j,i) += src;
-  });
+  WbAtmSetB(ph, pmesh, wv.bx, false);
   return;
 }

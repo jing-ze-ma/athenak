@@ -137,6 +137,9 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   // the transverse-field (EMF) fluxes are untouched.
   const int divdiss = eos.divdiss;
   const bool chi_normal = eos.chi_normal;   // lowmach2-1102 TEST key
+  const bool alfmach = eos.alfmach;         // alfmach-1102 <mhd>/lhlld_alfmach
+  const bool alf_rot = eos.alfmach_rot;     // alfmach-1102 <mhd>/lhlld_alfmach_rot
+  const Real alf_rot_min = eos.alfmach_rot_min;
   const bool dd_act2 = (indcs.nx2 > 1), dd_act3 = (indcs.nx3 > 1);
   const Real dd_dx1 = size.d_view(m).dx1, dd_dx2 = size.d_view(m).dx2,
              dd_dx3 = size.d_view(m).dx3;
@@ -226,6 +229,13 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       Real usql = SQR(wl_ivx) + (SQR(wl_ivy) + SQR(wl_ivz));
       Real usqr = SQR(wr_ivx) + (SQR(wr_ivy) + SQR(wr_ivz));
       if (chi_normal) { usql = SQR(wl_ivx); usqr = SQR(wr_ivx); }
+      // alfmach-1102 <mhd>/lhlld_alfmach: Alfven floor scaled by chi_A = min(1, |u|/c_a)
+      // per side (c_a^2 -> |u|^2, c_ax^2 -> c_ax^2 |u|^2/c_a^2 where |u| < c_a), so that
+      // c_u ~ |u| (1..sqrt 2) at M_A < 1; untouched (bitwise) where M_A >= 1
+      if (alfmach) {
+        if (usql < casql) { caxsql *= usql/casql; casql = usql; }
+        if (usqr < casqr) { caxsqr *= usqr/casqr; casqr = usqr; }
+      }
       Real qa = casql + usql;
       Real qb = casqr + usqr;
       Real cul = sqrt(0.5*(qa + sqrt(fmax(0.0, SQR(qa) - 4.0*usql*caxsql))));
@@ -394,7 +404,8 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       urst.e = (sdr*ur.e - ptr*wr_ivx + ptst*spd[2] +
                 bxi*(wr_ivx*bxi + (wr_ivy*ur.by + wr_ivz*ur.bz) - vbstr))*sdmr_inv;
       // ul** and ur** - if Bx is near zero, same as *-states
-      if (0.5*bxsq < eos.hlld_bx_zero_tol*ptst) {
+      const bool rot_exist = !(0.5*bxsq < eos.hlld_bx_zero_tol*ptst);
+      if (!rot_exist) {
         uldst = ulst;
         urdst = urst;
       } else {
@@ -547,6 +558,42 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
         Real wpt = (spd[2] >= 0.0) ? spd[0]*sdml_inv : spd[4]*sdmr_inv;
         flxi.mx += dpt;
         flxi.e  += wpt*dpt*spd[2];
+      }
+
+      //--- Step 7b. alfmach-1102 <mhd>/lhlld_alfmach_rot: Alfven-Mach scaling of the
+      // rotational-discontinuity (Alfven fan) dissipation.  When the fan straddles the
+      // face, the HLLD transverse flux F** differs from the mean of the two outer-star
+      // fluxes F_ref = (F*_L + F*_R)/2 by D ~ -(c_ax*/2) (U*_R - U*_L) + O(S_M): the
+      // Alfven-wave upwinding of the transverse momentum and field, a numerical
+      // viscosity/resistivity ~ c_ax* dx, O(1/M_A) larger than the flow-speed upwinding
+      // when M_A << 1.  Keep F_ref + psi_A D, psi_A = chi_A (2 - chi_A), chi_A =
+      // min(1, max|u|/max c_ax*), floored by the odd-even sensor on the transverse
+      // velocities (full Alfven dissipation of 2dx transverse modes) and by psi_min.
+      // The energy flux takes the matching work and Poynting terms (as in Step 8).
+      if (alf_rot && rot_exist && (spd[0] < 0.0) && (spd[4] > 0.0) &&
+          (spd[1] < 0.0) && (spd[3] > 0.0)) {
+        const Real caxs = fabs(bxi)*fmax(1.0/sqrtdl, 1.0/sqrtdr);
+        Real chia = fmin(1.0, sqrt(fmax(usql, usqr))/caxs);
+        if (cb_sensor > 0.0) {
+          chia = fmax(chia, CBSensorChiFloor(w0, m, k, j, i, ivx, chia, cb_sensor,
+                                             cb_cont, ivy));
+          chia = fmax(chia, CBSensorChiFloor(w0, m, k, j, i, ivx, chia, cb_sensor,
+                                             cb_cont, ivz));
+        }
+        const Real psia = fmax(alf_rot_min, chia*(2.0 - chia));
+        const Real wgt = 1.0 - psia;
+        if (wgt > 0.0) {
+          const Real dmy = -wgt*(flxi.my - 0.5*((fl.my + ulst.my) + (fr.my + urst.my)));
+          const Real dmz = -wgt*(flxi.mz - 0.5*((fl.mz + ulst.mz) + (fr.mz + urst.mz)));
+          const Real dby = -wgt*(flxi.by - 0.5*((fl.by + ulst.by) + (fr.by + urst.by)));
+          const Real dbz = -wgt*(flxi.bz - 0.5*((fl.bz + ulst.bz) + (fr.bz + urst.bz)));
+          flxi.my += dmy;
+          flxi.mz += dmz;
+          flxi.by += dby;
+          flxi.bz += dbz;
+          flxi.e  += 0.5*((wl_ivy + wr_ivy)*dmy + (wl_ivz + wr_ivz)*dmz
+                          + (ul.by + ur.by)*dby + (ul.bz + ur.bz)*dbz);
+        }
       }
 
       //--- Step 8.  Non-negative numerical resistivity of the transverse-field flux
