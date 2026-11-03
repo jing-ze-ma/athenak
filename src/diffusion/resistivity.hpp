@@ -122,7 +122,9 @@ class Resistivity {
   // the dt_diff of the cycle start (Mesh::NewTimeStep of the previous cycle).  eta (and
   // ad_coef) is refreshed from w0 before the second half (RefreshEta), so each half
   // freezes the coefficient on the state it starts from.  The rkg_bflx flux of the
-  // whole cycle is the mean of the two halves (slots 6|7 hold the first).
+  // whole cycle is the mean of the two halves (slots 6|7 hold the first).  FRESH-start
+  // default true with STS on a uniform cubed sphere (prod1103b, USER 11-03; with
+  // rkg_strang_fuse and rkg_fuse_sync = none; recipe::NewDefaults, resistivity.cpp).
   bool rkg_strang = false;
   // rkgfuse-1102 <mhd>/rkg_strang_fuse (default false; needs rkg_strang): the second
   // half of cycle n and the first half of cycle n+1 are ONE super-step over
@@ -131,6 +133,7 @@ class Resistivity {
   // plain dt/2 opening half after a sync) is rkg_half = 3: eta refreshed from w0 first
   // (like half 2), and its rkg_bflx kept in slots 6|7 (like half 1); the closing half of
   // a sync cycle is rkg_half = 2 (refresh, then the mean of the two fluxes in 4|5).
+  // FRESH-start default true with rkg_strang on (prod1103b, see rkg_strang).
   bool rkg_strang_fuse = false;
   int rkg_half = 0;        // set by the driver: 0 = one full-dt super-step, 1|2 = half,
                            // 3 = the leading super-step of a fused cycle

@@ -104,6 +104,37 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     if (pin->DoesParameterExist("mhd", "rkg_halo_d1")) {
       rkg_halo_d1 = rkg_lean && pin->GetBoolean("mhd", "rkg_halo_d1");
     }
+    // prod1103b defaults (USER 11-03 "make some defaults"; r1m production keys, approved
+    // 11-02): with STS ON on a uniform single-level cubed sphere and the key absent, a
+    // FRESH start (recipe::NewDefaults) takes rkg_strang = true (rkgstrang-1102),
+    // rkg_strang_fuse = true (rkgfuse-1102) and rkg_fuse_sync = none (ckdrift-1102: the
+    // solution independent of the output cadence).  The values are recorded (GetOrAdd) for
+    // the run's restarts; a restart whose input lacks a key keeps the old default (off /
+    // outputs); an explicit key always wins.
+    if (use_rkg_sts && lean_ok) {
+      const char *ks[3] = {"rkg_strang", "rkg_strang_fuse", "rkg_fuse_sync"};
+      for (int q = 0; q < 3; ++q) {
+        if (pin->DoesParameterExist("mhd", ks[q])) continue;
+        // rkg_strang_fuse / rkg_fuse_sync only on top of an rkg_strang (rkg_strang_fuse)
+        // that is on, so an explicit rkg_strang = false never meets a defaulted fuse
+        if (q >= 1 && !(pin->DoesParameterExist("mhd", ks[q-1]) &&
+                        (q == 1 ? pin->GetBoolean("mhd", ks[0])
+                                : pin->GetBoolean("mhd", ks[1])))) continue;
+        if (nd) {
+          if (q < 2) {
+            pin->GetOrAddBoolean("mhd", ks[q], true);
+          } else {
+            pin->GetOrAddString("mhd", ks[q], "none");
+          }
+          recipe::Log(std::string("<mhd>/") + ks[q] + (q < 2 ? " = true" : " = none") +
+                      " (default with STS on a uniform cubed sphere)");
+        } else {
+          recipe::Log(std::string("<mhd>/") + ks[q] + (q < 2 ? " = false" : " = outputs")
+                      + " (" + (recipe::GetMode(pin) == recipe::Mode::none ? "recipe none"
+                      : "restart input has no key") + ": the old default)");
+        }
+      }
+    }
     // rkgstrang-1102: read only when named, so a deck without it keeps its restart header
     if (pin->DoesParameterExist("mhd", "rkg_strang")) {
       rkg_strang = use_rkg_sts && pin->GetBoolean("mhd", "rkg_strang");
