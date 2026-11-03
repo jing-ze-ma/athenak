@@ -331,7 +331,8 @@ DvceArray5D<Real> xrec_, xrecb_;
 constexpr int kNR = 18;
 DvceFaceFld5D<Real> *rsown_ = nullptr, *rsnbr_ = nullptr;
 MeshBoundaryValuesCC *pbrs_ = nullptr;
-MeshBoundaryValuesCC *pbx_ = nullptr, *pbxb_ = nullptr;   // owned here (one MHD/process)
+MeshBoundaryValuesCC *pbx_ = nullptr, *pbxb_ = nullptr, *pbxr_ = nullptr;
+DvceArray5D<Real> xrr_;   // 3-variable four-block patch record (own-side / resistive)   // owned here (one MHD/process)
 }  // namespace cs_uct
 
 // release the file-scope Views before Kokkos::finalize (MHD::~MHD)
@@ -340,6 +341,8 @@ void CsSeamRelease() {
   cs_uct::xrecb_ = DvceArray5D<Real>();
   if (cs_uct::pbx_ != nullptr) {delete cs_uct::pbx_; cs_uct::pbx_ = nullptr;}
   if (cs_uct::pbxb_ != nullptr) {delete cs_uct::pbxb_; cs_uct::pbxb_ = nullptr;}
+  if (cs_uct::pbxr_ != nullptr) {delete cs_uct::pbxr_; cs_uct::pbxr_ = nullptr;}
+  cs_uct::xrr_ = DvceArray5D<Real>();
   if (cs_uct::rsown_ != nullptr) {delete cs_uct::rsown_; cs_uct::rsown_ = nullptr;}
   if (cs_uct::rsnbr_ != nullptr) {delete cs_uct::rsnbr_; cs_uct::rsnbr_ = nullptr;}
   if (cs_uct::pbrs_ != nullptr) {delete cs_uct::pbrs_; cs_uct::pbrs_ = nullptr;}
@@ -406,6 +409,15 @@ void MHD::CsSeamInit(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
+  if (pin->DoesParameterExist("mhd","cs_seam_res")) {
+    const std::string v = pin->GetString("mhd","cs_seam_res");
+    if (v == "own") {cs_seam_res_own = true;}
+    else if (v != "mean") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/cs_seam_res = '" << v << "' (mean | own)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   if (pin->DoesParameterExist("mhd","cs_seam_emf_avg")) {
     cs_seam_noavg = !pin->GetBoolean("mhd","cs_seam_emf_avg");
     pbval_b->skip_emf_reconcile = cs_seam_noavg;
@@ -446,14 +458,23 @@ void MHD::CsSeamInit(ParameterInput *pin) {
     if (cs_seam_mhd >= 3) {   // the four-block seam-edge record (see kXF)
       Kokkos::realloc(xrec_, nmb, kNXA, n3, n2, n1);
       Kokkos::realloc(xrecb_, nmb, kNXB, n3, n2, n1);
+      // only the first ghost layer is ever read: one-layer buffers (exch_depth)
       pbx_ = new MeshBoundaryValuesCC(pp, pin, false);
+      pbx_->exch_depth = 1;
       pbx_->InitializeBuffers(kNXA);
       pbx_->SetVectorPairs(kNXA, {});    // all scalars (only within-panel ghosts are read)
       pbx_->cs_noresample = true;
       pbxb_ = new MeshBoundaryValuesCC(pp, pin, false);
+      pbxb_->exch_depth = 1;
       pbxb_->InitializeBuffers(kNXB);
       pbxb_->SetVectorPairs(kNXB, {});
       pbxb_->cs_noresample = true;
+      Kokkos::realloc(xrr_, nmb, 3, n3, n2, n1);
+      pbxr_ = new MeshBoundaryValuesCC(pp, pin, false);
+      pbxr_->exch_depth = 1;
+      pbxr_->InitializeBuffers(3);
+      pbxr_->SetVectorPairs(3, {});
+      pbxr_->cs_noresample = true;
       // the shared resistive seam EMF (CsSeamResist; used only with a resistivity)
       pbrs_ = new MeshBoundaryValuesCC(pp, pin, false);
       pbrs_->seam_raw = true;
@@ -1350,6 +1371,7 @@ void MHD::UctSeamOwnSide() {
   // above it (its cell-0 lower-face partial); the block below takes it from the X record
   // (slot 6, exchanged once more), so all four blocks combine the same two numbers even
   // where their copies of the block-boundary face differ (no same-panel averaging)
+  auto XR = xrr_;
   par_for("uct_seam_own_xp", DevExeSpace(), 0, nmb1, 0, 3, d.is, d.ie,
   KOKKOS_LAMBDA(const int m, const int sd, const int i) {
     if (!OnPanelEdge(d, m, sd)) return;
@@ -1358,13 +1380,13 @@ void MHD::UctSeamOwnSide() {
     const int cb = x2t ? d.ks : d.js;
     const int sf = x2t ? (lo ? d.js : d.je+1) : (lo ? d.ks : d.ke+1);
     const int k0 = x2t ? cb : r0, j0 = x2t ? r0 : cb;
-    X(m,6,k0,j0,i) = x2t ? d.o2(m,2,cb,sf,i) : d.o3(m,2,sf,cb,i);
+    XR(m,0,k0,j0,i) = x2t ? d.o2(m,2,cb,sf,i) : d.o3(m,2,sf,cb,i);
   });
-  while (pbx_->InitRecv(kNXA) == TaskStatus::incomplete) {}
-  while (pbx_->PackAndSendCC(X, X) == TaskStatus::incomplete) {}
-  while (pbx_->RecvAndUnpackCC(X, X) == TaskStatus::incomplete) {}
-  while (pbx_->ClearSend() == TaskStatus::incomplete) {}
-  while (pbx_->ClearRecv() == TaskStatus::incomplete) {}
+  while (pbxr_->InitRecv(3) == TaskStatus::incomplete) {}
+  while (pbxr_->PackAndSendCC(XR, XR) == TaskStatus::incomplete) {}
+  while (pbxr_->RecvAndUnpackCC(XR, XR) == TaskStatus::incomplete) {}
+  while (pbxr_->ClearSend() == TaskStatus::incomplete) {}
+  while (pbxr_->ClearRecv() == TaskStatus::incomplete) {}
   par_for("uct_seam_own_xq", DevExeSpace(), 0, nmb1, 0, 3, d.is, d.ie,
   KOKKOS_LAMBDA(const int m, const int sd, const int i) {
     if (!OnPanelEdge(d, m, sd)) return;
@@ -1374,8 +1396,8 @@ void MHD::UctSeamOwnSide() {
     const int cb = x2t ? d.ks : d.js;
     const int sf = x2t ? (lo ? d.js : d.je+1) : (lo ? d.ks : d.ke+1);
     const int kg = x2t ? (cb + nc) : r0, jg = x2t ? r0 : (cb + nc);
-    if (x2t) {d.o2(m,3,cb+nc-1,sf,i) = X(m,6,kg,jg,i);}
-    else     {d.o3(m,3,sf,cb+nc-1,i) = X(m,6,kg,jg,i);}
+    if (x2t) {d.o2(m,3,cb+nc-1,sf,i) = XR(m,0,kg,jg,i);}
+    else     {d.o3(m,3,sf,cb+nc-1,i) = XR(m,0,kg,jg,i);}
   });
   pbval_us->InitFluxSeamRecv(6);   // (the X record was exchanged at the top)
   pbval_us->PackAndSendFluxSeamCC(*pusown);
@@ -1450,7 +1472,7 @@ void MHD::UctSeamOwnSide() {
 //! The radial edges at four-block seam ends use the same-panel ghost copies (exact).
 
 void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta,
-                       DvceEdgeFld4D<Real> &efld_) {
+                       const DvceEdgeFld4D<Real> &jnorm, DvceEdgeFld4D<Real> &efld_) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -1462,6 +1484,103 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
   d.is = is; d.ie = ie; d.js = js; d.je = je; d.ks = ks; d.ke = ke;
   d.nx2 = indcs.nx2; d.nx3 = indcs.nx3;
   auto o2 = rsown_->x2f, o3 = rsown_->x3f, n2 = rsnbr_->x2f, n3 = rsnbr_->x3f;
+  if (!cs_seam_res_own) {
+    // ---- cs_seam_res = mean (default): the TWO-CHART MEAN of the standard resistive
+    // EMF (pass 2 computed every seam edge from each panel's own + ghost cells), the
+    // shared_g idea applied to eta J: each panel exchanges its TOTAL seam-edge EMF (the
+    // ideal part is already single-valued, so the mean leaves it unchanged) and both take
+    //   E = (E_P + s E_Q)/2,  three panels at a cube vertex (sorted, then summed),
+    // the same numbers in the same order -> single-valued without the post-hoc averaging.
+    // Four-block seam ends: the upper block's value is canonical (one-layer record).
+    auto e1 = efld_.x1e;
+    auto e2 = efld_.x2e;
+    auto e3 = efld_.x3e;
+    auto XR = xrr_;
+    par_for("res_mean_xp", DevExeSpace(), 0, nmb1, 0, 3, is, ie,
+    KOKKOS_LAMBDA(const int m, const int sd, const int i) {
+      if (!OnPanelEdge(d, m, sd)) return;
+      const bool x2t = (sd < 2), lo = ((sd & 1) == 0);
+      const int r0 = x2t ? (lo ? js : je) : (lo ? ks : ke);
+      const int cb = x2t ? ks : js;
+      const int sf = x2t ? (lo ? js : je+1) : (lo ? ks : ke+1);
+      if (x2t) {XR(m,0,cb,r0,i) = e1(m,cb,sf,i);} else {XR(m,0,r0,cb,i) = e1(m,sf,cb,i);}
+    });
+    while (pbxr_->InitRecv(3) == TaskStatus::incomplete) {}
+    while (pbxr_->PackAndSendCC(XR, XR) == TaskStatus::incomplete) {}
+    while (pbxr_->RecvAndUnpackCC(XR, XR) == TaskStatus::incomplete) {}
+    while (pbxr_->ClearSend() == TaskStatus::incomplete) {}
+    while (pbxr_->ClearRecv() == TaskStatus::incomplete) {}
+    par_for("res_mean_own", DevExeSpace(), 0, nmb1, 0, 3, 0, nc-1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int sd, const int c, const int i) {
+      if (!OnPanelEdge(d, m, sd)) return;
+      const bool x2t = (sd < 2), lo = ((sd & 1) == 0);
+      const int r0 = x2t ? (lo ? js : je) : (lo ? ks : ke);
+      const int cb = x2t ? ks : js;
+      const int sf = x2t ? (lo ? js : je+1) : (lo ? ks : ke+1);
+      const bool vhi = OnPanelEdge(d, m, x2t ? 3 : 1);
+      auto out = [&](const int v) -> Real & {
+        return x2t ? o2(m, v, cb + c, sf, i) : o3(m, v, sf, cb + c, i);
+      };
+      out(0) = x2t ? e3(m,cb+c,sf,i) : e2(m,sf,cb+c,i);
+      out(1) = (i == ie) ? (x2t ? e3(m,cb+c,sf,ie+1) : e2(m,sf,cb+c,ie+1)) : 0.0;
+      out(2) = x2t ? e1(m,cb+c,sf,i) : e1(m,sf,cb+c,i);
+      if (c == nc-1 && !vhi) {   // four-block upper end: the upper block's value
+        const int kg = x2t ? (cb + nc) : r0, jg = x2t ? r0 : (cb + nc);
+        out(3) = XR(m,0,kg,jg,i);
+      } else {
+        out(3) = x2t ? e1(m,cb+c+1,sf,i) : e1(m,sf,cb+c+1,i);
+      }
+    });
+    pbrs_->InitFluxSeamRecv(kNR);
+    pbrs_->PackAndSendFluxSeamCC(*rsown_);
+    while (pbrs_->RecvAndUnpackFluxSeamCC(*rsnbr_) != TaskStatus::complete) {}
+    pbrs_->ClearFluxSend();
+    pbrs_->ClearFluxRecv();
+    par_for("res_mean_sum", DevExeSpace(), 0, nmb1, 0, 3, 0, nc-1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int sd, const int c, const int i) {
+      if (!OnPanelEdge(d, m, sd)) return;
+      const bool x2t = (sd < 2), lo = ((sd & 1) == 0);
+      const bool rev = SeamRev(d, m, sd);
+      const int cb = x2t ? ks : js;
+      const int sf = x2t ? (lo ? js : je+1) : (lo ? ks : ke+1);
+      auto O = [&](const int v) { return x2t ? o2(m, v, cb + c, sf, i) : o3(m, v, sf, cb + c, i); };
+      auto N = [&](const int v) { return x2t ? n2(m, v, cb + c, sf, i) : n3(m, v, sf, cb + c, i); };
+      const Real sg = rev ? -1.0 : 1.0;
+      const Real ea = 0.5*(O(0) + sg*N(0));
+      if (x2t) {e3(m,cb+c,sf,i) = ea;} else {e2(m,sf,cb+c,i) = ea;}
+      if (i == ie) {
+        const Real eb = 0.5*(O(1) + sg*N(1));
+        if (x2t) {e3(m,cb+c,sf,ie+1) = eb;} else {e2(m,sf,cb+c,ie+1) = eb;}
+      }
+      const bool vlo = OnPanelEdge(d, m, x2t ? 2 : 0), vhi = OnPanelEdge(d, m, x2t ? 3 : 1);
+      if (!(c == 0 && vlo)) {
+        const Real er = 0.5*(O(2) + N(rev ? 3 : 2));
+        if (x2t) {e1(m,cb+c,sf,i) = er;} else {e1(m,sf,cb+c,i) = er;}
+      }
+      if (c == nc-1 && !vhi) {
+        const Real er = 0.5*(O(3) + N(rev ? 2 : 3));
+        if (x2t) {e1(m,cb+nc,sf,i) = er;} else {e1(m,sf,cb+nc,i) = er;}
+      }
+    });
+    par_for("res_mean_vtx", DevExeSpace(), 0, nmb1, 0, 3, is, ie,
+    KOKKOS_LAMBDA(const int m, const int cn, const int i) {
+      const bool jlo = (cn & 1) == 0, klo = (cn & 2) == 0;
+      const int sj = jlo ? 0 : 1, sk = klo ? 2 : 3;
+      if (!OnPanelEdge(d, m, sj) || !OnPanelEdge(d, m, sk)) return;
+      const int jc = jlo ? js : je+1, kc = klo ? ks : ke+1;
+      const int jv = jlo ? js : je, kv = klo ? ks : ke;
+      const bool r2 = SeamRev(d, m, sj), r3 = SeamRev(d, m, sk);
+      Real a = o2(m, klo ? 2 : 3, kv, jc, i);
+      Real b_ = n2(m, (klo != r2) ? 2 : 3, kv, jc, i);
+      Real c_ = n3(m, (jlo != r3) ? 2 : 3, kc, jv, i);
+      // sort, so that all three panels add the same numbers in the same order
+      if (a > b_) {const Real t = a; a = b_; b_ = t;}
+      if (b_ > c_) {const Real t = b_; b_ = c_; c_ = t;}
+      if (a > b_) {const Real t = a; a = b_; b_ = t;}
+      e1(m,kc,jc,i) = ((a + b_) + c_)/3.0;
+    });
+    return;
+  }
   auto b = b0;
   auto et = eta;
   auto &cxi = pmy_pack->pcoord->cos_face_xi;
@@ -1576,7 +1695,7 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
     }
   });
   // FOUR-BLOCK seam ends: the canonical partial is the upper block's (see UctSeamOwnSide)
-  auto X = xrec_;
+  auto XR = xrr_;
   par_for("res_seam_xp", DevExeSpace(), 0, nmb1, 0, 3, is, ie,
   KOKKOS_LAMBDA(const int m, const int sd, const int i) {
     if (!OnPanelEdge(d, m, sd)) return;
@@ -1585,13 +1704,13 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
     const int cb = x2t ? ks : js;
     const int sf = x2t ? (lo ? js : je+1) : (lo ? ks : ke+1);
     const int k0 = x2t ? cb : r0, j0 = x2t ? r0 : cb;
-    for (int q=0; q<3; ++q) X(m,6+q,k0,j0,i) = x2t ? o2(m,6+q,cb,sf,i) : o3(m,6+q,sf,cb,i);
+    for (int q=0; q<3; ++q) XR(m,q,k0,j0,i) = x2t ? o2(m,6+q,cb,sf,i) : o3(m,6+q,sf,cb,i);
   });
-  while (pbx_->InitRecv(kNXA) == TaskStatus::incomplete) {}
-  while (pbx_->PackAndSendCC(X, X) == TaskStatus::incomplete) {}
-  while (pbx_->RecvAndUnpackCC(X, X) == TaskStatus::incomplete) {}
-  while (pbx_->ClearSend() == TaskStatus::incomplete) {}
-  while (pbx_->ClearRecv() == TaskStatus::incomplete) {}
+  while (pbxr_->InitRecv(3) == TaskStatus::incomplete) {}
+  while (pbxr_->PackAndSendCC(XR, XR) == TaskStatus::incomplete) {}
+  while (pbxr_->RecvAndUnpackCC(XR, XR) == TaskStatus::incomplete) {}
+  while (pbxr_->ClearSend() == TaskStatus::incomplete) {}
+  while (pbxr_->ClearRecv() == TaskStatus::incomplete) {}
   par_for("res_seam_xq", DevExeSpace(), 0, nmb1, 0, 3, is, ie,
   KOKKOS_LAMBDA(const int m, const int sd, const int i) {
     if (!OnPanelEdge(d, m, sd)) return;
@@ -1602,8 +1721,8 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
     const int sf = x2t ? (lo ? js : je+1) : (lo ? ks : ke+1);
     const int kg = x2t ? (cb + nc) : r0, jg = x2t ? r0 : (cb + nc);
     for (int q=0; q<3; ++q) {
-      if (x2t) {o2(m,9+q,cb+nc-1,sf,i) = X(m,6+q,kg,jg,i);}
-      else     {o3(m,9+q,sf,cb+nc-1,i) = X(m,6+q,kg,jg,i);}
+      if (x2t) {o2(m,9+q,cb+nc-1,sf,i) = XR(m,q,kg,jg,i);}
+      else     {o3(m,9+q,sf,cb+nc-1,i) = XR(m,q,kg,jg,i);}
     }
   });
   pbrs_->InitFluxSeamRecv(kNR);

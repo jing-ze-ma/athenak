@@ -240,8 +240,10 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   auto e3 = efld.x3e;
   auto eta_b_ = eta_b;
   // ucthshare-1102 <mhd>/cs_seam_mhd = shared_g | shared_o: the seam edges take the SHARED
-  // resistive EMF (MHD::CsSeamResist, below), so pass 2 skips them
-  const bool rsh_ = (pmy_pack->pmhd != nullptr && pmy_pack->pmhd->cs_seam_mhd >= 3);
+  // resistive EMF (MHD::CsSeamResist, after pass 2).  cs_seam_res = own: pass 2 skips
+  // them; mean (default): pass 2 computes them and CsSeamResist takes the two-chart mean
+  const bool rsc_ = (pmy_pack->pmhd != nullptr && pmy_pack->pmhd->cs_seam_mhd >= 3);
+  const bool rsh_ = rsc_ && pmy_pack->pmhd->cs_seam_res_own;
   auto &msz_ = pmy_pack->pmb->mb_size;
 
   par_for("res_cs_e1", DevExeSpace(), 0,nmb1, ks,ke+1, js,je+1, is,ie,
@@ -276,7 +278,7 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
                          + jn2(m,k,j-1,i) + jn2(m,k+1,j-1,i));
     e3(m,k,j,i) += et*(jn3(m,k,j,i) + cxi(m,k,j)*j2a)/sxi(m,k,j);
   });
-  if (rsh_) {pmy_pack->pmhd->CsSeamResist(b0, eta_b, efld);}
+  if (rsc_) {pmy_pack->pmhd->CsSeamResist(b0, eta_b, jnorm, efld);}
 
   return;
 }
