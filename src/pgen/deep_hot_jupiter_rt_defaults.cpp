@@ -30,10 +30,29 @@ void PgenEarlyDefaults(ParameterInput *pin) {
   auto named = [pin](const std::string &b, const std::string &k) {
     return pin->DoesParameterExist(b, k);
   };
+  // the fluid block (MHD decks have <mhd>, hydro decks <hydro>), the mesh kind
+  const std::string fb = pin->DoesBlockExist("mhd") ? "mhd" : "hydro";
+  const bool fluid = pin->DoesBlockExist(fb);
+  const bool cs = named("mesh", "use_cubed_sphere") &&
+                  pin->GetBoolean("mesh", "use_cubed_sphere");
   // <time>/dt_min = 1e-3 s (the abort floor of every dhj production deck; old default 0)
   if (!named("time", "dt_min")) {
     pin->GetOrAddReal("time", "dt_min", 1.0e-3);
     Log("<time>/dt_min = 1e-3 (default on a fresh dhj start)");
+  }
+  // <fluid>/wellbalance_dynamic = true + wb_x1 = true + wb_option = polytropic (the x1
+  // well-balanced reconstruction of every dhj production deck; old default off) on the
+  // cubed sphere; each key only when not named, wb_option only when the scheme ends on
+  if (fluid && cs) {
+    for (const char *k : {"wellbalance_dynamic", "wb_x1"}) {
+      if (named(fb, k)) continue;
+      pin->GetOrAddBoolean(fb, k, true);
+      Log("<" + fb + ">/" + k + " = true (default on a fresh cs dhj start)");
+    }
+    if (pin->GetBoolean(fb, "wellbalance_dynamic") && !named(fb, "wb_option")) {
+      pin->GetOrAddString(fb, "wb_option", "polytropic");
+      Log("<" + fb + ">/wb_option = polytropic (default with wellbalance_dynamic)");
+    }
   }
 }
 
