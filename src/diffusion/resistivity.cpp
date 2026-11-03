@@ -71,7 +71,9 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     // proddef-1101 (USER: the Caltech dhj MHD production keys as FRESH-start defaults,
-    // via recipe::NewDefaults).  use_rkg_sts keeps its old default false (user 11-01);
+    // via recipe::NewDefaults).  use_rkg_sts keeps its old default false (user 11-01;
+    // USER 11-03: true on a fresh resistive deep_hot_jupiter_rt start, set before the
+    // physics by pgen/deep_hot_jupiter_rt_defaults.cpp);
     // when STS is ON (named by the user) and the key is absent:
     //   rkg_lean      = true  (uniform single-level cubed sphere: its FATAL),
     //   rkg_dt_safety = 0.8   (cubed sphere or spherical polar: its FATAL; prod1103

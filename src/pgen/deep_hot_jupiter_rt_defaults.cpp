@@ -79,6 +79,16 @@ void PgenEarlyDefaults(ParameterInput *pin) {
     pin->GetOrAddReal("mhd", "valfven_max_cgs", 2.0e6);
     Log("<mhd>/valfven_max_cgs = 2e6 (default on a fresh dhj MHD start)");
   }
+  // <mhd>/use_rkg_sts = true (RKG2 super-time-stepping of the resistive terms, every dhj
+  // MHD production deck; USER 11-03 overrides the 11-01 "keep false" for this scope) with
+  // resistive dhj MHD: ohmic_resistivity named, or ambipolar named and not none.  Its
+  // own fresh defaults (rkg_lean, rkg_dt_safety, rkg_strang, ...) follow in resistivity.cpp.
+  if (fb == "mhd" && fluid && !named("mhd", "use_rkg_sts") &&
+      (named("mhd", "ohmic_resistivity") ||
+       (named("mhd", "ambipolar") && pin->GetString("mhd", "ambipolar") != "none"))) {
+    pin->GetOrAddBoolean("mhd", "use_rkg_sts", true);
+    Log("<mhd>/use_rkg_sts = true (default with resistive dhj MHD on a fresh start)");
+  }
 }
 
 }  // namespace recipe
