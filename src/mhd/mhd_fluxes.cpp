@@ -36,6 +36,7 @@
 #include "mhd/rsolvers/hlle_srmhd.hpp"
 #include "mhd/rsolvers/llf_grmhd.hpp"
 #include "mhd/rsolvers/hlle_grmhd.hpp"
+#include "bvals/cs_seam_states.hpp"
 // #include "mhd/rsolvers/roe_mhd.hpp"
 
 namespace mhd {
@@ -257,6 +258,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto &uct1_ = uct1;
   auto &uct2_ = uct2;
   auto &uct3_ = uct3;
+  // ucthshare-1102 <mhd>/cs_seam_mhd = faces | shared: the neighbour's own seam face
+  // states (MHD::CsSeamFaceStates, mhd_cs_seam.cpp), substituted on the ghost side of
+  // every panel-seam face (rows is-1..ie+1) after the gnomonic face rotation
+  const bool cs_shr_ = (cs_seam_mhd > 0);
+  if (cs_shr_) {CsSeamFaceStates();}
+  DvceArray5D<Real> sfs2_, sfs3_;
+  if (cs_shr_) {sfs2_ = pseamfs->x2f; sfs3_ = pseamfs->x3f;}
+  const int sfob_ = nvars + NDERIVED;   // record slots of (B.r, B.e_xi, B.e_eta)
     
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
@@ -834,6 +843,25 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           auto flx2 = flx2_;
           auto e12 = e12_;
           auto e32 = e32_;
+          if (cs_shr_ && k >= ks && k <= ke &&
+              ((j == js && size.d_view(m).x2min <= -1.0 + 1.0e-12) ||
+               (j == je+1 && size.d_view(m).x2max >= 1.0 - 1.0e-12))) {
+            member.team_barrier();
+            const bool lo = (j == js);
+            const Real sf = gtrig_xi.sn(m,k,j), cf = gtrig_xi.cs(m,k,j);
+            auto sfs = sfs2_;
+            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, is-1, ie+1, lo, sf, cf, nvars,
+                                     nder, IVY, IVZ, wl, wr, dl, dr);
+            par_for_inner(member, is-1, ie+1, [&](const int i) {
+              // x2 frame {n_xi, e_eta, rhat}: slot 0 = B.r, slot 2 = B.e_eta
+              if (lo) {
+                bl(0,i) = sfs(m,sfob_,k,j,i); bl(2,i) = sfs(m,sfob_+2,k,j,i);
+              } else {
+                br(0,i) = sfs(m,sfob_,k,j,i); br(2,i) = sfs(m,sfob_+2,k,j,i);
+              }
+            });
+            member.team_barrier();
+          }
           const bool do_pole = polar_hlle_x2_ &&
             ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar &&
               (j == js || j == js+1)) ||
@@ -1140,6 +1168,25 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           auto flx3 = flx3_;
           auto e23 = e23_;
           auto e13 = e13_;
+          if (cs_shr_ && j >= js && j <= je &&
+              ((k == ks && size.d_view(m).x3min <= -1.0 + 1.0e-12) ||
+               (k == ke+1 && size.d_view(m).x3max >= 1.0 - 1.0e-12))) {
+            member.team_barrier();
+            const bool lo = (k == ks);
+            const Real sf = gtrig_eta.sn(m,k,j), cf = gtrig_eta.cs(m,k,j);
+            auto sfs = sfs3_;
+            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, is-1, ie+1, lo, sf, cf, nvars,
+                                     nder, IVZ, IVY, wl, wr, dl, dr);
+            par_for_inner(member, is-1, ie+1, [&](const int i) {
+              // x3 frame {n_eta, rhat, e_xi}: slot 0 = B.r, slot 1 = B.e_xi
+              if (lo) {
+                bl(0,i) = sfs(m,sfob_,k,j,i); bl(1,i) = sfs(m,sfob_+1,k,j,i);
+              } else {
+                br(0,i) = sfs(m,sfob_,k,j,i); br(1,i) = sfs(m,sfob_+1,k,j,i);
+              }
+            });
+            member.team_barrier();
+          }
           const bool do_pole = polar_hlle_x3_ &&
             ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar &&
               j == js) ||

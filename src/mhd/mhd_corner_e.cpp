@@ -920,6 +920,9 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
                 e3x2_(m,k,j,im_) + e3x2_(m,k,j,i) + e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i));
     });
   }
+  // ucthshare-1102 <mhd>/cs_seam_mhd = shared: the seam-edge / cube-vertex UCT EMFs from
+  // shared inputs (mhd_cs_seam.cpp)
+  if (cs_seam_mhd >= 2 && pmy_pack->pmesh->three_d) {UctSeamEdges();}
   if (pmy_pack->pmesh->use_polar_boundary) PolarAzimuthalAverageEr();
   return TaskStatus::complete;
 }

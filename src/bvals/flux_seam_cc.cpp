@@ -169,6 +169,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto &mbsize = pmy_pack->pmb->mb_size;
   const bool sraw = seam_raw;   // csedge-1019 (bvals.hpp)
+  const int sxs_ = seam_xform_stride, sxb_ = seam_xform_b;   // ucthshare-1102
+  const bool sxoff_ = seam_xform_off;
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
   auto rbuf = RecvBufDv();
 
@@ -215,7 +217,14 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     // Mass and energy fluxes are true scalars, and so is the RADIAL momentum flux since
     // rhat is common to both charts. Only the two tangential momentum fluxes are
     // components on a basis the seam changes.
-    const bool xform = (v == IM2) || (v == IM3);
+    // ucthshare-1102: the vector pairs of this record (bvals.hpp seam_xform_*)
+    const int vv = (sxs_ > 0) ? (v % sxs_) : v;
+    const int vb = v - vv;
+    const bool vpair = (vv == IM2) || (vv == IM3);
+    const bool bpair = (sxb_ >= 0) && ((vv == sxb_) || (vv == sxb_ + 1));
+    const bool xform = !sxoff_ && (vpair || bpair);
+    const int p0 = vb + (bpair ? sxb_ : IM2);
+    const bool first_ = bpair ? (vv == sxb_) : (vv == IM2);
 
     Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
       int k = idx / nj;
@@ -248,11 +257,11 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
         if (!xform) {
           val = x2face ? flx.x2f(m,v,kk,jj,i) : flx.x3f(m,v,kk,jj,i);
         } else {
-          const Real f2 = x2face ? flx.x2f(m,IM2,kk,jj,i) : flx.x3f(m,IM2,kk,jj,i);
-          const Real f3 = x2face ? flx.x2f(m,IM3,kk,jj,i) : flx.x3f(m,IM3,kk,jj,i);
+          const Real f2 = x2face ? flx.x2f(m,p0,kk,jj,i) : flx.x3f(m,p0,kk,jj,i);
+          const Real f3 = x2face ? flx.x2f(m,p0+1,kk,jj,i) : flx.x3f(m,p0+1,kk,jj,i);
           Real f2o, f3o;
           cubed_sphere::ApplyMomentumXform(xf, f2, f3, f2o, f3o);
-          val = (v == IM2) ? f2o : f3o;
+          val = first_ ? f2o : f3o;
         }
         const int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
         rbuf[dn].flux(dm, index) = sraw ? val : sgn*val;
@@ -311,7 +320,14 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     // Mass and energy fluxes are true scalars, and so is the RADIAL momentum flux since
     // rhat is common to both charts. Only the two tangential momentum fluxes are
     // components on a basis the seam changes.
-    const bool xform = (v == IM2) || (v == IM3);
+    // ucthshare-1102: the vector pairs of this record (bvals.hpp seam_xform_*)
+    const int vv = (sxs_ > 0) ? (v % sxs_) : v;
+    const int vb = v - vv;
+    const bool vpair = (vv == IM2) || (vv == IM3);
+    const bool bpair = (sxb_ >= 0) && ((vv == sxb_) || (vv == sxb_ + 1));
+    const bool xform = !sxoff_ && (vpair || bpair);
+    const int p0 = vb + (bpair ? sxb_ : IM2);
+    const bool first_ = bpair ? (vv == sxb_) : (vv == IM2);
 
     Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
       int k = idx / nj;
@@ -344,11 +360,11 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
         if (!xform) {
           val = x2face ? flx.x2f(m,v,kk,jj,i) : flx.x3f(m,v,kk,jj,i);
         } else {
-          const Real f2 = x2face ? flx.x2f(m,IM2,kk,jj,i) : flx.x3f(m,IM2,kk,jj,i);
-          const Real f3 = x2face ? flx.x2f(m,IM3,kk,jj,i) : flx.x3f(m,IM3,kk,jj,i);
+          const Real f2 = x2face ? flx.x2f(m,p0,kk,jj,i) : flx.x3f(m,p0,kk,jj,i);
+          const Real f3 = x2face ? flx.x2f(m,p0+1,kk,jj,i) : flx.x3f(m,p0+1,kk,jj,i);
           Real f2o, f3o;
           cubed_sphere::ApplyMomentumXform(xf, f2, f3, f2o, f3o);
-          val = (v == IM2) ? f2o : f3o;
+          val = first_ ? f2o : f3o;
         }
         const int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
         sbuf[n].flux(m, index) = sraw ? val : sgn*val;
@@ -450,10 +466,15 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
   if (sfmode == -1) {
     // csedge-1019 seam_raw: every variable of the face takes the NEIGHBOUR's value (the
     // pack already re-expressed the tangential pair IM2/IM3 on this panel's basis)
-    Kokkos::TeamPolicy<> pol_r(DevExeSpace(), (nmb*nnghbr), Kokkos::AUTO);
+    // ucthshare-1102: one team per (MeshBlock, buffer, variable) over the flattened
+    // (k, j, i) range -- a pure copy, so the mapping cannot change a value; the old
+    // (MeshBlock, buffer) teams looped every variable serially per thread (profiled at
+    // 2.9 ms per call with the 54-variable MHD UCT seam record on an H200)
+    Kokkos::TeamPolicy<> pol_r(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
     BvalsTeamFor("SeamStateRecvRaw", pol_r, KOKKOS_LAMBDA(TeamMember_t tmember) {
-      const int m = (tmember.league_rank())/nnghbr;
-      const int n = (tmember.league_rank() - m*nnghbr);
+      const int m = (tmember.league_rank())/(nnghbr*nvar);
+      const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
+      const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
       if (nghbr.d_view(m,n).gid < 0) {return;}
       bool x2face; Real sgn;
       if (!SeamFaceGeom(rbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
@@ -470,24 +491,17 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
       const int ni = iu - il + 1;
       const int nj = ju - jl + 1;
       const int nk = ku - kl + 1;
-      const int nkj = nk*nj;
-      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
-        int k = idx / nj;
-        int j = (idx - k * nj) + jl;
-        k += kl;
-        Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
-                             [&](const int i) {
-          const int i0 = i-il + ni*((j-jl) + nj*(k-kl));
-          const int nvs = ni*nj*nk;
-          for (int v=0; v<nvar; ++v) {
-            const Real recv = rbuf[n].flux(m, i0 + nvs*v);
-            if (x2face) {
-              flx.x2f(m,v,k,j,i) = recv;
-            } else {
-              flx.x3f(m,v,k,j,i) = recv;
-            }
-          }
-        });
+      const int nvs = ni*nj*nk;
+      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nvs), [&](const int idx) {
+        const int k = idx/(ni*nj);
+        const int j = (idx - k*ni*nj)/ni;
+        const int i = idx - k*ni*nj - j*ni;
+        const Real recv = rbuf[n].flux(m, idx + nvs*v);
+        if (x2face) {
+          flx.x2f(m,v,k+kl,j+jl,i+il) = recv;
+        } else {
+          flx.x3f(m,v,k+kl,j+jl,i+il) = recv;
+        }
       });
     });
     return TaskStatus::complete;

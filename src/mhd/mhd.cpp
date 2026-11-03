@@ -950,6 +950,11 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         Kokkos::realloc(uct2, nmb, 6, ncells3, ncells2, ncells1);
         if (ppack->pmesh->three_d) Kokkos::realloc(uct3, nmb, 6, ncells3, ncells2, ncells1);
       }
+      // ucthshare-1102 <mhd>/cs_seam_mhd (read only when named; mhd_cs_seam.cpp)
+      if (pin->DoesParameterExist("mhd","cs_seam_mhd") ||
+          pin->DoesParameterExist("mhd","cs_seam_emf_avg")) {
+        CsSeamInit(pin);
+      }
 
       // allocate array of flags used with FOFC
       if (use_fofc) {
@@ -978,6 +983,12 @@ MHD::~MHD() {
   delete peos;
   delete pbval_u;
   delete pbval_b;
+  if (pbval_fs != nullptr) {delete pbval_fs;}
+  if (pbval_us != nullptr) {delete pbval_us;}
+  if (pseamfs != nullptr) {delete pseamfs;}
+  if (pusown != nullptr) {delete pusown;}
+  if (pusnbr != nullptr) {delete pusnbr;}
+  CsSeamRelease();
   if (pvisc != nullptr) {delete pvisc;}
   if (presist!= nullptr) {delete presist;}
   if (pcond != nullptr) {delete pcond;}

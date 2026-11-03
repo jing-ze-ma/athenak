@@ -16,6 +16,7 @@
 #include "hydro.hpp"
 #include "bvals/bvals.hpp"
 #include "hydro_mergelat.hpp"
+#include "bvals/cs_seam_states.hpp"
 #include "eos/eos.hpp"
 #include "reconstruct/dc.hpp"
 #include "reconstruct/plm.hpp"
@@ -800,16 +801,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             const Real sf = gtrig_xi.sn(m,k,j), cf = gtrig_xi.cs(m,k,j);
             auto sfs = sfs2_;
             const int ia = (il > is) ? il : is, ib = (iu < ie) ? iu : ie;
-            par_for_inner(member, ia, ib, [&](const int i) {
-              for (int n=0; n<nvars; ++n) {
-                Real q = sfs(m,n,k,j,i);
-                if (n == IVY) q = (sfs(m,IVY,k,j,i) - cf*sfs(m,IVZ,k,j,i))/sf;
-                if (lo) {wl(n,i) = q;} else {wr(n,i) = q;}
-              }
-              for (int n=0; n<nder; ++n) {
-                if (lo) {dl(n,i) = sfs(m,nvars+n,k,j,i);} else {dr(n,i) = sfs(m,nvars+n,k,j,i);}
-              }
-            });
+            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, ia, ib, lo, sf, cf, nvars, nder,
+                                     IVY, IVZ, wl, wr, dl, dr);
             member.team_barrier();
           }
           if constexpr (rsolver_method_ == Hydro_RSolver::advect) {
@@ -1100,16 +1093,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             const Real sf = gtrig_eta.sn(m,k,j), cf = gtrig_eta.cs(m,k,j);
             auto sfs = sfs3_;
             const int ia = (il > is) ? il : is, ib = (iu < ie) ? iu : ie;
-            par_for_inner(member, ia, ib, [&](const int i) {
-              for (int n=0; n<nvars; ++n) {
-                Real q = sfs(m,n,k,j,i);
-                if (n == IVZ) q = (sfs(m,IVZ,k,j,i) - cf*sfs(m,IVY,k,j,i))/sf;
-                if (lo) {wl(n,i) = q;} else {wr(n,i) = q;}
-              }
-              for (int n=0; n<nder; ++n) {
-                if (lo) {dl(n,i) = sfs(m,nvars+n,k,j,i);} else {dr(n,i) = sfs(m,nvars+n,k,j,i);}
-              }
-            });
+            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, ia, ib, lo, sf, cf, nvars, nder,
+                                     IVZ, IVY, wl, wr, dl, dr);
             member.team_barrier();
           }
           if constexpr (rsolver_method_ == Hydro_RSolver::advect) {
@@ -1226,14 +1211,6 @@ void Hydro::CsSeamFaceStates() {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  auto w0_ = w0;
-  auto wder_ = wder;
-  auto &size = pmy_pack->pmb->mb_size;
-  auto gtx = pmy_pack->pcoord->GnomonicTrigFaceXi();
-  auto gte = pmy_pack->pcoord->GnomonicTrigFaceEta();
-  auto f2 = pseamfs->x2f;
-  auto f3 = pseamfs->x3f;
-  const Real pfl = eos_.pfloor;
   // mrglat-rsg-1019: in the merged region (<hydro>/merge_lat_rc) the sweep's own seam face
   // state is the GROUP-level PLM (MlatCoarsePLM over the neighbour groups, zero slope for
   // a 'narrow' block-edge group), not the fine PLM of the edge cell: send exactly that, so
@@ -1244,122 +1221,12 @@ void Hydro::CsSeamFaceStates() {
     pmlat->Build();
     mlfi_ = pmlat->fi;
   }
-  const int mlng_ = indcs.ng;
-  const int mln2_ = indcs.nx2 + 2*indcs.ng;
-  const int mln3_ = indcs.nx3 + 2*indcs.ng;
-  // x2 (xi) seams: side 0 = the face js (x2min = -1), side 1 = the face je+1 (x2max = 1)
-  par_for("cs_seamfs_x2", DevExeSpace(), 0, nmb1, ks, ke, 0, 1, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int sd, const int i) {
-    const bool lo = (sd == 0);
-    if (lo && !(size.d_view(m).x2min <= -1.0 + 1.0e-12)) return;
-    if (!lo && !(size.d_view(m).x2max >= 1.0 - 1.0e-12)) return;
-    const int jc = lo ? js : je, jf = lo ? js : je+1;
-    const int f = mlat_ ? mlfi_(m,i) : 1;
-    if (f > 1) {
-      // the x2 sweep's merged branch at row jc (hydro_fluxes.cpp, mrglat-1019)
-      const int jlo = js + ((jc - js)/f)*f;
-      const int jm = jlo - 1, jp = jlo + f;
-      const bool narrow = (f*((f + 1)/f) > mlng_ - 1);
-      const bool flat = (jm < 0 || jp > mln2_ - 1) ||
-                        (narrow && (jlo <= js || jlo + f - 1 >= je));
-      const int sc = jc - jlo;
-      for (int n=0; n<nvars; ++n) {
-        Real qlo, qhi;
-        MlatCoarsePLM(flat ? w0_(m,n,k,jc,i) : w0_(m,n,k,jm,i), w0_(m,n,k,jc,i),
-                      flat ? w0_(m,n,k,jc,i) : w0_(m,n,k,jp,i), sc, f, qlo, qhi);
-        f2(m,n,k,jf,i) = lo ? qlo : qhi;
-      }
-      for (int n=0; n<nder; ++n) {
-        Real qlo, qhi;
-        MlatCoarsePLM(flat ? wder_(m,n,k,jc,i) : wder_(m,n,k,jm,i), wder_(m,n,k,jc,i),
-                      flat ? wder_(m,n,k,jc,i) : wder_(m,n,k,jp,i), sc, f, qlo, qhi);
-        Real q = lo ? qlo : qhi;
-        if (n == IDPR) q = fmax(q, pfl);
-        f2(m,nvars+n,k,jf,i) = q;
-      }
-    } else {
-    for (int n=0; n<nvars; ++n) {
-      Real ql, qr;
-      if (eos_.plm_c1) {
-        PLMC1(w0_(m,n,k,jc-1,i), w0_(m,n,k,jc,i), w0_(m,n,k,jc+1,i), ql, qr);
-      } else {
-        PLM(w0_(m,n,k,jc-1,i), w0_(m,n,k,jc,i), w0_(m,n,k,jc+1,i), ql, qr);
-      }
-      f2(m,n,k,jf,i) = lo ? qr : ql;
-    }
-    for (int n=0; n<nder; ++n) {
-      Real ql, qr;
-      if (eos_.plm_c1) {
-        PLMC1(wder_(m,n,k,jc-1,i), wder_(m,n,k,jc,i), wder_(m,n,k,jc+1,i), ql, qr);
-      } else {
-        PLM(wder_(m,n,k,jc-1,i), wder_(m,n,k,jc,i), wder_(m,n,k,jc+1,i), ql, qr);
-      }
-      Real q = lo ? qr : ql;
-      if (n == IDPR) q = fmax(q, pfl);
-      f2(m,nvars+n,k,jf,i) = q;
-    }
-    }
-    const Real c = gtx.cs(m,k,jf);
-    const Real v2 = f2(m,IVY,k,jf,i), v3 = f2(m,IVZ,k,jf,i);
-    f2(m,IVY,k,jf,i) = v2 + c*v3;     // covariant on the face's (unit) basis
-    f2(m,IVZ,k,jf,i) = v3 + c*v2;
-  });
-  par_for("cs_seamfs_x3", DevExeSpace(), 0, nmb1, 0, 1, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int sd, const int j, const int i) {
-    const bool lo = (sd == 0);
-    if (lo && !(size.d_view(m).x3min <= -1.0 + 1.0e-12)) return;
-    if (!lo && !(size.d_view(m).x3max >= 1.0 - 1.0e-12)) return;
-    const int kc = lo ? ks : ke, kf = lo ? ks : ke+1;
-    const int f = mlat_ ? mlfi_(m,i) : 1;
-    if (f > 1) {
-      // the x3 sweep's merged branch at row kc (hydro_fluxes.cpp, mrglat-1019)
-      const int klo = ks + ((kc - ks)/f)*f;
-      const int km = klo - 1, kp = klo + f;
-      const bool narrow = (f*((f + 1)/f) > mlng_ - 1);
-      const bool flat = (km < 0 || kp > mln3_ - 1) ||
-                        (narrow && (klo <= ks || klo + f - 1 >= ke));
-      const int sc = kc - klo;
-      for (int n=0; n<nvars; ++n) {
-        Real qlo, qhi;
-        MlatCoarsePLM(flat ? w0_(m,n,kc,j,i) : w0_(m,n,km,j,i), w0_(m,n,kc,j,i),
-                      flat ? w0_(m,n,kc,j,i) : w0_(m,n,kp,j,i), sc, f, qlo, qhi);
-        f3(m,n,kf,j,i) = lo ? qlo : qhi;
-      }
-      for (int n=0; n<nder; ++n) {
-        Real qlo, qhi;
-        MlatCoarsePLM(flat ? wder_(m,n,kc,j,i) : wder_(m,n,km,j,i), wder_(m,n,kc,j,i),
-                      flat ? wder_(m,n,kc,j,i) : wder_(m,n,kp,j,i), sc, f, qlo, qhi);
-        Real q = lo ? qlo : qhi;
-        if (n == IDPR) q = fmax(q, pfl);
-        f3(m,nvars+n,kf,j,i) = q;
-      }
-    } else {
-    for (int n=0; n<nvars; ++n) {
-      Real ql, qr;
-      if (eos_.plm_c1) {
-        PLMC1(w0_(m,n,kc-1,j,i), w0_(m,n,kc,j,i), w0_(m,n,kc+1,j,i), ql, qr);
-      } else {
-        PLM(w0_(m,n,kc-1,j,i), w0_(m,n,kc,j,i), w0_(m,n,kc+1,j,i), ql, qr);
-      }
-      f3(m,n,kf,j,i) = lo ? qr : ql;
-    }
-    for (int n=0; n<nder; ++n) {
-      Real ql, qr;
-      if (eos_.plm_c1) {
-        PLMC1(wder_(m,n,kc-1,j,i), wder_(m,n,kc,j,i), wder_(m,n,kc+1,j,i), ql, qr);
-      } else {
-        PLM(wder_(m,n,kc-1,j,i), wder_(m,n,kc,j,i), wder_(m,n,kc+1,j,i), ql, qr);
-      }
-      Real q = lo ? qr : ql;
-      if (n == IDPR) q = fmax(q, pfl);
-      f3(m,nvars+n,kf,j,i) = q;
-    }
-    }
-    const Real c = gte.cs(m,kf,j);
-    const Real v2 = f3(m,IVY,kf,j,i), v3 = f3(m,IVZ,kf,j,i);
-    f3(m,IVY,kf,j,i) = v2 + c*v3;
-    f3(m,IVZ,kf,j,i) = v3 + c*v2;
-  });
+  // ucthshare-1102: the fill / covariant kernels are shared with MHD (cs_seam_states.hpp)
+  cs_seam::CsSeamPLMFill(pmy_pack, w0, nvars, 0, -1, eos_.pfloor, eos_.plm_c1,
+                         *pseamfs, mlat_, mlfi_, is, ie);
+  cs_seam::CsSeamPLMFill(pmy_pack, wder, nder, nvars, IDPR, eos_.pfloor, eos_.plm_c1,
+                         *pseamfs, mlat_, mlfi_, is, ie);
+  cs_seam::CsSeamCovariant(pmy_pack, *pseamfs, IVY, 0, is, ie);
   (void) nfs;
   pbval_fs->InitFluxSeamRecv(nfs);
   pbval_fs->PackAndSendFluxSeamCC(*pseamfs);
