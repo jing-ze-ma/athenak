@@ -138,6 +138,21 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
       hx(m,2) = (ib3 > 0) ? indcs.ng : 0;  hx(m,3) = (ib3 < nb3-1) ? indcs.ng : 0;
     }
     Kokkos::deep_copy(cs_ext_jk, hx);
+    // seamexact-1103: with > 2 blocks per panel side a block end lies off the panel
+    // midline, the along-seam resample shifts there and reaches the outermost along-seam
+    // ghost, whose partner interpolation needs one face more than this block holds: those
+    // interpolants come from the owning same-panel neighbour (CsSeamExtPartner).
+    auto &pmi = pmy_pack->pmesh->mesh_indcs;
+    cs_ext_q_ = (pmi.nx2 > 2*indcs.nx2) || (pmi.nx3 > 2*indcs.nx3);
+    if (cs_ext_q_) {
+      Kokkos::realloc(cs_ext_q, nmb, 4, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng,
+                      indcs.nx1 + 2*indcs.ng);
+      Kokkos::deep_copy(cs_ext_q, 0.0);
+      pbq_ = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
+      pbq_->InitializeBuffers(4);
+      pbq_->SetVectorPairs(4, {});     // plain scalars; only same-panel ghosts are read
+      pbq_->cs_noresample = true;
+    }
   }
   const bool bext_ = cs_blockend_ext_;
   auto stnx_ = cs_seam_stnc_x;
@@ -668,6 +683,7 @@ struct SeamArgs {
 };
 
 struct FCSeamPre {};   // r1mspeed-1102: tag of the srcval precompute pass
+struct FCSeamQ {};     // seamexact-1103: tag of the partner-interpolant pass
 
 struct FCSeamPack {
   DvceFaceFld4D<Real> b, cb;
@@ -685,6 +701,11 @@ struct FCSeamPack {
   // bounds are widened by (j lo, j hi, k lo, k hi) = ext_jk(m,:) at interior block ends
   bool ext_ = false;
   DvceArray2D<int> ext_jk;
+  // seamexact-1103: the extended pass reads the partner interpolants at the along-seam
+  // ghost positions of an interior block end from q (CsSeamExtPartner) instead of
+  // evaluating them on this block's own faces (one-sided at the outermost ghost)
+  bool useq_ = false;
+  DvceArray5D<Real> q;
 
   FCSeamPack(DvceFaceFld4D<Real> &b_, DvceFaceFld4D<Real> &cb_,
              DvceArray1D<MeshBufferDv> sb_, DvceArray1D<MeshBufferDv> rb_,
@@ -768,6 +789,33 @@ struct FCSeamPack {
                 x2f_at_etaface(a,kk,w,i),   x2f_at_etaface(a,kk,w+1,i),
                 x2f_at_etaface(a,kk,w+2,i), x2f_at_etaface(a,kk,w+3,i));
   }
+  // seamexact-1103: the partner component at (kk,jj) -- x3f at an x2-face centre (x2 =
+  // true) or x2f at an x3-face centre.  In the extended pass, at an along-seam ghost
+  // position beyond an INTERIOR block end, the owning neighbour's value (q, see
+  // CsSeamExtPartner); everywhere else this block's own interpolation, as before.
+  KOKKOS_FORCEINLINE_FUNCTION
+  Real q_partner(const SeamArgs &a, const int kk, const int jj, const int i,
+                 const bool x2) const {
+    // (radial ghosts i excluded: the same-panel exchange of q carries active i only, and
+    // those seam ghosts are rewritten by the radial boundary condition anyway)
+    if (useq_ && !a.cs_coar && i >= cs_indcs.is && i <= cs_indcs.ie) {
+      const int m = a.m;
+      if (a.cs_seam == 2) {          // along eta: kk is the along index
+        const int ke1 = cs_indcs.ke + (x2 ? 0 : 1);
+        if (kk < cs_indcs.ks && ext_jk(m,2) > 0) return q(m, x2 ? 0 : 2, kk, jj, i);
+        if (kk > ke1 && ext_jk(m,3) > 0) {
+          return x2 ? q(m,0,kk,jj,i) : q(m,3,kk-1,jj,i);
+        }
+      } else if (a.cs_seam == 3) {   // along xi: jj is the along index
+        const int je1 = cs_indcs.je + (x2 ? 1 : 0);
+        if (jj < cs_indcs.js && ext_jk(m,0) > 0) return q(m, x2 ? 0 : 2, kk, jj, i);
+        if (jj > je1 && ext_jk(m,1) > 0) {
+          return x2 ? q(m,1,kk,jj-1,i) : q(m,2,kk,jj,i);
+        }
+      }
+    }
+    return x2 ? x3f_at_etacentre(a,kk,jj,i) : x2f_at_xicentre(a,kk,jj,i);
+  }
   KOKKOS_FORCEINLINE_FUNCTION
   Real srcval(const SeamArgs &a, const int kk, const int jj, const int i) const {
     const int m = a.m, vv = a.vv;
@@ -779,10 +827,10 @@ struct FCSeamPack {
     Real bxi, bet;
     if (vv == 1) {
       bxi = bx2(a,kk,jj,i);
-      bet = x3f_at_etacentre(a,kk,jj,i);
+      bet = q_partner(a,kk,jj,i,true);
     } else {
       bet = bx3(a,kk,jj,i);
-      bxi = x2f_at_xicentre(a,kk,jj,i);
+      bxi = q_partner(a,kk,jj,i,false);
     }
     const int cs_seam = a.cs_seam;
     if (cs_seam != 0) {
@@ -907,6 +955,33 @@ struct FCSeamPack {
     }
   }
 
+  // seamexact-1103: the partner interpolants of every ACTIVE face of block m, with the
+  // extended pass's (panel-clamped) bounds -- the values that pass would compute here
+  KOKKOS_INLINE_FUNCTION
+  void operator()(const FCSeamQ &, const int t) const {
+    const int n1 = cs_indcs.nx1 + 2*cs_indcs.ng;
+    const int n2 = cs_indcs.nx2 + 2*cs_indcs.ng;
+    const int n3 = cs_indcs.nx3 + 2*cs_indcs.ng;
+    const int m = t/(n3*n2*n1);
+    const int k = (t - m*n3*n2*n1)/(n2*n1);
+    const int j = (t - m*n3*n2*n1 - k*n2*n1)/n1;
+    const int i = t - m*n3*n2*n1 - k*n2*n1 - j*n1;
+    const int js = cs_indcs.js, je = cs_indcs.je, ks = cs_indcs.ks, ke = cs_indcs.ke;
+    SeamArgs a;
+    a.m = m; a.cs_coar = 0;
+    a.js_ = js - ext_jk(m,0); a.je_ = je + ext_jk(m,1);
+    a.ks_ = ks - ext_jk(m,2); a.ke_ = ke + ext_jk(m,3);
+    a.wide2 = (a.je_ - a.js_ >= 3);
+    a.wide3 = (a.ke_ - a.ks_ >= 3);
+    const bool kin = (k >= ks && k <= ke), jin = (j >= js && j <= je);
+    if (kin && jin) {
+      q(m,0,k,j,i) = x3f_at_etacentre(a,k,j,i);     // face j
+      q(m,1,k,j,i) = x3f_at_etacentre(a,k,j+1,i);   // face j+1
+      q(m,2,k,j,i) = x2f_at_xicentre(a,k,j,i);      // face k
+      q(m,3,k,j,i) = x2f_at_xicentre(a,k+1,j,i);    // face k+1
+    }
+  }
+
   // r1mspeed-1102: srcval over a SubSegFC's (normal, tangent, i) box, once per pack
   KOKKOS_INLINE_FUNCTION
   void operator()(const FCSeamPre &, const int t) const {
@@ -972,6 +1047,7 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
                  stbl_, fc_preval, np + ns, pmy_pack->pmesh->mb_indcs,
                  cs_shear_sgn, cs_nolim_);
     f.ext_ = cs_ext_pass_; f.ext_jk = cs_ext_jk;
+    f.useq_ = cs_ext_pass_ && cs_ext_q_; f.q = cs_ext_q;   // seamexact-1103
     Kokkos::parallel_for("SendBuffFCsrc", Kokkos::Experimental::require(
         Kokkos::RangePolicy<FCSeamPre>(DevExeSpace(), 0, nr*FC_PACK_CHUNK),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
@@ -981,6 +1057,7 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
                  stbl_, fc_preval, np, pmy_pack->pmesh->mb_indcs, cs_shear_sgn,
                  cs_nolim_);
     f.ext_ = cs_ext_pass_; f.ext_jk = cs_ext_jk;
+    f.useq_ = cs_ext_pass_ && cs_ext_q_; f.q = cs_ext_q;   // seamexact-1103
     Kokkos::parallel_for("SendBuffFCseam", Kokkos::Experimental::require(
         Kokkos::RangePolicy<>(DevExeSpace(), 0, ns*FC_PACK_CHUNK),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
@@ -2237,6 +2314,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
   // RecvAndUnpackCC): repeat the exchange with the panel-clamped stencil table, at the
   // depth of the pack it repeats.
   if (cs_blockend_ext_ && !cs_ext_pass_ && pmy_pack->pmesh->use_cubed_sphere) {
+    if (cs_ext_q_) CsSeamExtPartner(b);   // seamexact-1103
     cs_ext_pass_ = true;
     const int pd0 = pack_depth;
     pack_depth = last_pack_depth_;
@@ -2249,4 +2327,37 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
   }
 
   return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MeshBoundaryValuesFC::CsSeamExtPartner
+//! \brief seamexact-1103: <mesh>/cs_seam_blockend = extend with > 2 MeshBlocks per panel
+//! side.  The extended pass's partner interpolation (x3f at an x2-face centre, x2f at an
+//! x3-face centre: a 4-point Lagrange in the along-seam direction of a 4-point Lagrange
+//! across it) is centred only up to ng-1 cells into the sender's along-seam ghosts; at
+//! the outermost ghost it would need face ng+2 beyond the block end and is one-sided,
+//! where one block per panel interpolates.  The resample reaches that ghost wherever the
+//! block end is off the panel midline (the seam map shifts the source position by up to
+//! ~a cell there), so 4x4 and finer layouts differed from 1x1 at truncation level
+//! (~1e-7 in B per exchange at nghost = 2; nghost = 3 hid it).  Here every block
+//! evaluates the interpolants on its ACTIVE faces with the extended pass's own bounds,
+//! and a same-panel ghost exchange (plain scalars) hands each block its neighbours'
+//! values at the along-seam ghost positions; the extended pass reads them there
+//! (FCSeamPack::q_partner): the very numbers one block per panel computes.  Called after
+//! the first pass, so every face it reads is in place.
+
+void MeshBoundaryValuesFC::CsSeamExtPartner(DvceFaceFld4D<Real> &b) {
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int ncell = nmb*(id.nx3 + 2*id.ng)*(id.nx2 + 2*id.ng)*(id.nx1 + 2*id.ng);
+  FCSeamPack f(b, b, SendBufDv(), RecvBufDv(), fc_seg, fc_sub[0], fc_cs[0], fc_cb[0],
+               cs_seam_geom, cs_seam_stnc_x, fc_preval, 0, id, 0.0, false);
+  f.ext_ = true; f.ext_jk = cs_ext_jk; f.q = cs_ext_q;
+  Kokkos::parallel_for("CsSeamExtPartner",
+      Kokkos::RangePolicy<FCSeamQ>(DevExeSpace(), 0, ncell), f);
+  DvceArray5D<Real> q = cs_ext_q;
+  while (pbq_->InitRecv(4) == TaskStatus::incomplete) {}
+  while (pbq_->PackAndSendCC(q, q) == TaskStatus::incomplete) {}
+  while (pbq_->RecvAndUnpackCC(q, q) == TaskStatus::incomplete) {}
+  while (pbq_->ClearSend() == TaskStatus::incomplete) {}
 }

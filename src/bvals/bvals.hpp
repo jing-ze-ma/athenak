@@ -557,6 +557,18 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
   DvceArray6D<Real> cs_seam_stnc;   // (nmb,nkind,2,nk3,nk2,7): bs,wm,w0,wp,fpos,sden,sig
   DvceArray6D<Real> cs_seam_stnc_x; // layoutbug-1103: the same, cs_seam_blockend = extend
   DvceArray2D<int> cs_ext_jk;       // layoutbug-1103: (nmb,4) interior-end widening
+  // seamexact-1103: the partner-component interpolants of the extended pass at the
+  // sender's along-seam ghost positions, taken from the same-panel neighbour that owns
+  // them (CsSeamExtPartner).  Only with > 2 MeshBlocks per panel side (cs_ext_q_), where
+  // a block end lies off the panel midline: there the 4-point partner interpolation of
+  // the outermost along-seam ghost would need one face beyond this block's ghosts.
+  // cs_ext_q (nmb,4,n3,n2,n1): 0 = x3f at x2-face centres (slot j = face j), 1 = the
+  // same with slot j = face j-1, 2 = x2f at x3-face centres (slot k = face k), 3 = the
+  // same with slot k = face k-1 (the -1 slots carry the high-side outermost ghost face).
+  bool cs_ext_q_ = false;
+  DvceArray5D<Real> cs_ext_q;
+  MeshBoundaryValuesCC *pbq_ = nullptr;
+  void CsSeamExtPartner(DvceFaceFld4D<Real> &b);
   void BuildCubedSphereSeamTables();
 
   // halofc-1102: FLAT, LOAD-BALANCED cubed-sphere pack.  Every (block, buffer,
