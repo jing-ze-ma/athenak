@@ -35,6 +35,31 @@
 namespace mhd {
 
 //----------------------------------------------------------------------------------------
+//! \fn void TracerPrimFromCons (file scope)
+//! \brief trcrst-1103: w0 = u0/u0(IDN) in the tracer slots, every cell incl. ghosts (the
+//! expression ConsToPrim and ConsToPrimFrozen use for the scalars)
+
+static void TracerPrimFromCons(MHD *pm) {
+  if (pm->tracers.NTracer() == 0) return;
+  // u0 and w0 are (nmb_thispack, nvar, n3, n2, n1), ghosts included
+  const int nmb = pm->u0.extent_int(0);
+  const int n3m1 = pm->u0.extent_int(2) - 1;
+  const int n2m1 = pm->u0.extent_int(3) - 1;
+  const int n1m1 = pm->u0.extent_int(4) - 1;
+  const int t0 = (pm->ixe >= 0) ? pm->ixe : pm->ifltr;
+  const int t1 = (pm->ifltr >= 0) ? pm->ifltr : pm->ixe;
+  auto u0_ = pm->u0;
+  auto w0_ = pm->w0;
+  par_for("mhd_tracer_w0", DevExeSpace(), 0, nmb-1, 0, n3m1, 0, n2m1, 0, n1m1,
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    const Real ud = u0_(m,IDN,k,j,i);
+    for (int n=t0; n<=t1; ++n) {
+      w0_(m,n,k,j,i) = u0_(m,n,k,j,i)/ud;
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn TaskStatus MHD::TracerSource
 //! \brief the per-cycle tracer pass: floor drain, x_e relaxation over the cycle dt,
 //! x1 ghosts, then eta from the new z
@@ -45,6 +70,15 @@ TaskStatus MHD::TracerSource(Driver *pdrive, int stage) {
   if (floor_tracer && stage >= -1) FloorTracerDrain();
   if (xe_tracer) XeTracerUpdate(pmy_pack->pmesh->dt*((stage < 0) ? 0.5 : 1.0), false);
   TracerX1Ghosts(true);
+  // trcrst-1103: the second tracer half closes the cycle, so the state it leaves is the
+  // one a restart file stores -- and the file holds u0 only: a restart rebuilds the
+  // tracer primitives as u0(n)/u0(IDN) (ConsToPrim[Frozen]).  XeTracerUpdate and
+  // TracerX1Ghosts set w0(n) = y and u0(n) = rho y, and (rho y)/rho != y in the last
+  // bit, which went into eta (here, and the RefreshEta of the next leading RKG step) and
+  // made a restart differ from the straight run.  Re-derive w0 of the tracer slots from
+  // u0 exactly as the restart does, every cell incl. ghosts (half 2 only: the first
+  // half is followed by the RK stages, whose ConToPrim overwrites w0 anyway).
+  if (stage == -2) TracerPrimFromCons(this);
   if (xe_tracer && presist != nullptr) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;
     const int ng = indcs.ng;
@@ -70,6 +104,7 @@ TaskStatus MHD::TracerSource(Driver *pdrive, int stage) {
 void MHD::TracerSourceHalf(int half) {
   (void) TracerSource(nullptr, -half);
 }
+
 
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::XeTracerUpdate
