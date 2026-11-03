@@ -13,6 +13,7 @@
 #include <limits>
 #include <cstdio> // fclose
 #include <string> // string
+#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -35,6 +36,18 @@
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
+
+// ckdrift-1102 <time>/dt_collapse_med = F > 0 (read only when named; default 0 = off):
+// the `### dt COLLAPSE` report also fires when dt < (median of the last 100 dt) / F, once
+// per episode (re-armed when dt is back above median / 2).  The 4x-per-step test misses a
+// slide of a few x per step (fresh r1m 11-02: 10.8 -> 0.15 s in ~10 steps, silent).
+namespace {
+Real dt_collapse_med = 0.0;
+std::vector<Real> dt_hist_;
+int dt_hist_n_ = 0;
+bool dt_med_latch_ = false;
+}  // namespace
+void SetDtCollapseMed(Real f) {dt_collapse_med = f;}
 #endif
 
 namespace {
@@ -1407,7 +1420,33 @@ void Mesh::NewTimeStep(const Real tlim) {
   // dt; every other rank's candidates are larger and would mislead.  At most 20 lines.
   {
     static int ndbg = 0;
-    if (dtold > 0.0 && dt < 0.25*dtold && ndbg < 20) {
+    // ckdrift-1102 <time>/dt_collapse_med: dt against the running median of 100 dt
+    bool med_hit = false;
+    if (dt_collapse_med > 0.0) {
+      if (dt_hist_.empty()) dt_hist_.assign(100, 0.0);
+      if (dt_hist_n_ >= 20) {
+        const int nh = std::min(dt_hist_n_, 100);
+        std::vector<Real> w(dt_hist_.begin(), dt_hist_.begin() + nh);
+        std::nth_element(w.begin(), w.begin() + nh/2, w.end());
+        const Real med = w[nh/2];
+        if (dt < med/dt_collapse_med) {
+          if (!dt_med_latch_) {
+            med_hit = true;
+            dt_med_latch_ = true;
+            std::cout << "### dt COLLAPSE (median) cycle=" << ncycle << " time=" << time
+                      << " dt=" << dt << " < median(last " << nh << " dt)=" << med
+                      << " / " << dt_collapse_med << std::endl;
+          }
+        } else if (dt > 0.5*med) {
+          dt_med_latch_ = false;
+        }
+      }
+      if (!dt_med_latch_) {   // a collapsed episode does not pull the median down
+        dt_hist_[dt_hist_n_ % 100] = dt;
+        ++dt_hist_n_;
+      }
+    }
+    if (((dtold > 0.0 && dt < 0.25*dtold) || med_hit) && ndbg < 20) {
       Real mine = std::numeric_limits<Real>::max();
       if (dbg_hyd > 0.0) mine = std::min(mine, dbg_hyd);
       if (dbg_mhd > 0.0) mine = std::min(mine, dbg_mhd);

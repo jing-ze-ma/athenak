@@ -579,6 +579,37 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     }
     Real rkg_pend = 0.0;        // the carried closing half, in time units (0 = none)
     Real rkg_pend_ckpt = 0.0;   // ... at the dt-retry checkpoint of this cycle
+    // ckdrift-1102 <mhd>/rkg_fuse_sync = outputs (default, as above) | none (read only
+    // when named).  With "outputs" the state is synchronised (the pending half closed
+    // on its own) at every output and at the end of the run, so the SPLITTING SEQUENCE
+    // depends on the output schedule: hst every 5 / 7 / 10 cycles gives different
+    // solutions (r1m_v3 cycle 100: median rel. diff 1e-7, up to 11x in T in unstable
+    // cells), and a restart must land on an output cycle.  With "none" the run is never
+    // synchronised: every output (hst, bin, rst) is written from the state as it stands,
+    // with the closing half R(dt_n/2) still pending, and rst files carry the pending
+    // amount as <mhd>/rkg_fuse_pend in their header, so a restart from ANY rst takes
+    // exactly the steps of the uninterrupted run.  The solution is then independent of
+    // the output schedule (outputs only read).  Outputs see a state that lacks one
+    // R(dt/2) (the O(dt) Strang offset of the split; history rkg fluxes book the leading
+    // fused super-step).  AMR still synchronises (fused + AMR is FATAL anyway).
+    bool rkg_nosync = false;
+    if (rkg_fuse && pin->DoesParameterExist("mhd", "rkg_fuse_sync")) {
+      const std::string sm = pin->GetString("mhd", "rkg_fuse_sync");
+      if (sm == "none") {
+        rkg_nosync = true;
+      } else if (sm != "outputs") {
+        std::cout << "### FATAL ERROR: <mhd>/rkg_fuse_sync must be outputs or none, not '"
+                  << sm << "'" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    if (rkg_nosync && pin->DoesParameterExist("mhd", "rkg_fuse_pend")) {
+      rkg_pend = pin->GetReal("mhd", "rkg_fuse_pend");   // a restart: the carried half
+      if (global_variable::my_rank == 0) {
+        std::cout << "<mhd>/rkg_fuse_sync = none: carried RKG half from the restart "
+                  << "file = " << rkg_pend << std::endl;
+      }
+    }
     // compare at floating point (32-bit) precision to reduce effect of round off
     auto out_due_at = [&](BaseTypeOutput *out, Real time, int ncycle) {
       float time_32 = static_cast<float>(time);
@@ -867,12 +898,16 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           for (auto &out : pout->pout_list) {
             if (out_due_at(out, t_end, nc_end)) {sync = true;}
           }
+          if (rkg_nosync) {sync = pmesh->adaptive;}   // ckdrift-1102 rkg_fuse_sync none
           if (sync) {
             rkg_step(2, 0.5);
             rkg_pend = 0.0;
           } else {
             rkg_pend = 0.5*pmesh->dt;
           }
+          // ckdrift-1102 rkg_fuse_sync none: the carried half travels in the header of
+          // every rst written from here on (in-loop and final)
+          if (rkg_nosync) {pin->SetReal("mhd", "rkg_fuse_pend", rkg_pend);}
         }
       }
 

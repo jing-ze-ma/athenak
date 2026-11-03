@@ -1885,6 +1885,69 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
   RTSourceLimiterReduce();
 }
 
+// ckdrift-1102 problem/ck_cad_drift_diag (TEST): the cell with the largest measured
+// drift |G| P^2/(c_v T) of this store, and the sign-flip / capped counts (x > 1e-2)
+static void CkCadDriftReport(Mesh *pm, const Real pint) {
+  if (!ck_cad_drift_diag || ck_cad_dg_ptr == nullptr) return;
+  auto dg_ = *ck_cad_dg_ptr;
+  auto cad_ = *ck_cad_ptr;
+  auto cd2_ = *ck_cad2_ptr;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pm->pmb_pack->nmb_thispack;
+  const int64_t ntot = static_cast<int64_t>(nmb)*nx3*nx2*nx1;
+  using ML = Kokkos::MaxLoc<Real, int64_t>;
+  ML::value_type mx;
+  Kokkos::parallel_reduce("ck_cad_dg_max", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
+  KOKKOS_LAMBDA(const int64_t n, ML::value_type &v) {
+    const int i = static_cast<int>(n % nx1) + is;
+    const int j = static_cast<int>((n/nx1) % nx2) + js;
+    const int k = static_cast<int>((n/(nx1*nx2)) % nx3) + ks;
+    const int m = static_cast<int>(n/(static_cast<int64_t>(nx1)*nx2*nx3));
+    const Real x = dg_(m,0,k,j,i);
+    if (x > v.val) {v.val = x; v.loc = n;}
+  }, ML(mx));
+  Real nfl = 0.0, ncp = 0.0, nbig = 0.0;
+  Kokkos::parallel_reduce("ck_cad_dg_cnt", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
+  KOKKOS_LAMBDA(const int64_t n, Real &a, Real &b, Real &c) {
+    const int i = static_cast<int>(n % nx1) + is;
+    const int j = static_cast<int>((n/nx1) % nx2) + js;
+    const int k = static_cast<int>((n/(nx1*nx2)) % nx3) + ks;
+    const int m = static_cast<int>(n/(static_cast<int64_t>(nx1)*nx2*nx3));
+    if (dg_(m,0,k,j,i) > 1.0e-2) {
+      c += 1.0;
+      a += dg_(m,1,k,j,i);
+      b += dg_(m,2,k,j,i);
+    }
+  }, nfl, ncp, nbig);
+  const int64_t n = mx.loc;
+  const int i = static_cast<int>(n % nx1) + is;
+  const int j = static_cast<int>((n/nx1) % nx2) + js;
+  const int k = static_cast<int>((n/(nx1*nx2)) % nx3) + ks;
+  const int m = static_cast<int>(n/(static_cast<int64_t>(nx1)*nx2*nx3));
+  Real h[6] = {0, 0, 0, 0, 0, 0};
+  if (mx.val > 0.0) {
+    DvceArray1D<Real> pk("ck_cad_dg_pk", 6);
+    const bool h7 = (cd2_.extent(1) > 7);
+    par_for("ck_cad_dg_pk", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
+      pk(0) = cad_(m,0,k,j,i); pk(1) = cad_(m,1,k,j,i); pk(2) = cad_(m,2,k,j,i);
+      pk(3) = cad_(m,3,k,j,i); pk(4) = cd2_(m,0,k,j,i);
+      pk(5) = h7 ? cd2_(m,7,k,j,i) : 0.0;
+    });
+    auto hp = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pk);
+    for (int q=0; q<6; ++q) h[q] = hp(q);
+  }
+  const int gid = pm->pmb_pack->gids + m;
+  const LogicalLocation &ll = pm->lloc_eachmb[gid];
+  std::printf("### ck_drift ncyc=%d t=%.4e P=%.3e maxx=%.3e at gid=%d pan=%d K=%d J=%d i=%d"
+              " T=%.4e rho=%.3e Sn=%.4e D=%.3e G=%.4e C=%.4e | x>1e-2: n=%.0f flip=%.0f"
+              " cap=%.0f\n", static_cast<int>(pm->ncycle), pm->time, pint, mx.val, gid,
+              ll.panel, ll.lx3*nx3 + (k - ks), ll.lx2*nx2 + (j - js), i - is, h[2], h[3],
+              h[0], h[1], h[4], h[5], nbig, nfl, ncp);
+  std::fflush(stdout);
+}
+
 void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -1925,6 +1988,42 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
   // own Jacobian terms J0 (i-1), J2 (i+1) taken out too); slot 5 = current T, slot 4 = G
   const bool tri = drf && ck_cad_tri;
   const bool dr2 = drf && ck_cad_drift2 && !tri;   // ck2ndt-1102 (ck_2nd.hpp (3c))
+  // ckdrift-1102 problem/ck_cad_drift_lim / ck_cad_drift_diag (ck_2nd.hpp (8d))
+  const Real dlim = ck_cad_drift_lim;
+  const bool dlon = drf && (dlim > 0.0);
+  const bool ddg = drf && ck_cad_drift_diag;
+  const Real pint = (ck_cad_dt > 0.0) ? ck_cad_dt
+                    : static_cast<Real>(ck_impl_every)*pm->dt;
+  if (ddg && (ck_cad_dg_ptr == nullptr || ck_cad_dg_ptr->extent(0) != cad_.extent(0))) {
+    ck_cad_dg_ptr = new DvceArray5D<Real>("ck_cad_dg", cad_.extent(0), 3, cad_.extent(2),
+                                          cad_.extent(3), cad_.extent(4));
+  }
+  auto dg_ = ddg ? *ck_cad_dg_ptr : cad_;    // (not read when off)
+  if (ddg) Kokkos::deep_copy(dg_, 0.0);
+  // the limiter: returns the G to use; x = |G_meas| P^2/(cv T), flip, capped -> dg_
+  auto lim_g = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
+                                    const Real gmeas, const Real gold, const Real cvv,
+                                    const Real tt) -> Real {
+    Real g = gmeas;
+    const Real en = cvv*tt;
+    const Real x = (en > 0.0) ? fabs(gmeas)*pint*pint/en : 0.0;
+    const bool flip = (gmeas*gold < 0.0);
+    bool cap = false;
+    if (dlon) {
+      if (flip) {
+        g = 0.0;
+      } else if (en > 0.0 && fabs(g)*pint*pint > dlim*en) {
+        g = copysign(dlim*en/(pint*pint), g);
+        cap = true;
+      }
+    }
+    if (ddg) {
+      dg_(m,0,k,j,i) = x;
+      dg_(m,1,k,j,i) = flip ? 1.0 : 0.0;
+      dg_(m,2,k,j,i) = cap ? 1.0 : 0.0;
+    }
+    return g;
+  };
   // ck2ndt-1102 problem/ck_cad_cont (ck_2nd.hpp (8b)): the continuous probe store
   if (drf && ck_cad_cont && ck_cad_un.size() > 0 && !partial) {
     CkCadState sn = st;
@@ -1964,6 +2063,7 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
       if (!(aold == aold)) aold = sn_;
       Real g = gm;
       if (!(g == g)) g = 0.0;
+      if ((dlon || ddg) && hav && tv) g = lim_g(m, k, j, i, g, g0, cvn, tn);
       // the model rate S_n + G tau + C max(0, 1 - tau/L), C = M_old - S_n (slot 7)
       cd2_(m,7,k,j,i) = (ok && okn) ? aold - sn_ : 0.0;
       cad_(m,0,k,j,i) = (ok && okn) ? sn_ : 0.0;
@@ -1974,6 +2074,7 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
       cd2_(m,1,k,j,i) = tev;
       cd2_(m,6,k,j,i) = sn_;
     });
+    if (ddg) CkCadDriftReport(pm, pint);
     return;
   }
   if (tri) {
@@ -2046,6 +2147,7 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
                  (q0 != 0.0 || d0 != 0.0) && (q != 0.0 || dd != 0.0)) {
         g = (q - q0 - d0*(tk - t00))/tl;
         if (!(g == g)) g = 0.0;
+        if (dlon || ddg) g = lim_g(m, k, j, i, g, cd2_(m,0,k,j,i), cv, tk);
       }
       if (dr2) {
         // g is the mean slope over [tp, tev], i.e. the slope at its midpoint; with the
@@ -2082,6 +2184,7 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
     cad_(m,2,k,j,i) = ok ? tk : 0.0;
     cad_(m,3,k,j,i) = d;
   });
+  if (ddg) CkCadDriftReport(pm, pint);
 }
 
 int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
