@@ -270,6 +270,8 @@ class MHD {
   // UCT-HLL / UCT-HLLD corner EMF (Mignone & Del Zanna 2021) inside MHD::CornerE.
   // uct1/uct2/uct3 hold, per x1/x2/x3 face: 0 a^L (a^R = 1 - a^L), 1 d^L, 2 d^R, then the
   // a-weighted velocity of the face frame: 3 v_n, 4 v_t1, 5 v_t2 (UctFaceStore)
+  // FRESH-start default uct_hlld with rsolver = hlld | lhlld where supported (prod1103,
+  // USER 11-03; recipe::NewDefaults, mhd.cpp); a restart whose input lacks the key: gs07.
   bool emf_uct = false;
   bool emf_uct_hlld = false;
   DvceArray5D<Real> uct1, uct2, uct3;

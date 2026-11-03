@@ -654,6 +654,46 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // mhd_fluxes.cpp): uct = UCT-HLL (MD21 eq. 30 coefficients, any of hlle/hlld/lhlld),
     // uct_hlld = UCT-HLLD (MD21 eqs. 40, 44-46; rsolver hlld or lhlld).  Cartesian 2-D/3-D
     // and the cubed sphere (gnomonic face frames, the existing seam/vertex EMF averaging).
+    // prod1103 default (USER 11-03): emf_scheme = uct_hlld on a FRESH start
+    // (recipe::NewDefaults) when rsolver = hlld or lhlld and the key is not named, on
+    // every mesh UCT-HLLD supports (2-D/3-D Cartesian, cubed sphere; spherical polar:
+    // UCT_SP_DEFAULT below), Newtonian, ideal/general EOS, no fofc / emf_smooth / bs_emf,
+    // a uniform mesh (UCT is not validated with refinement); elsewhere gs07, logged with
+    // the reason.  The value is recorded (GetOrAdd) so the run's restarts carry it.  A
+    // restart whose input lacks the key keeps gs07 (bitwise); an explicit key wins.
+    if (!pin->DoesParameterExist("mhd","emf_scheme") &&
+        pin->DoesParameterExist("mhd","rsolver") &&
+        (pin->GetString("mhd","rsolver") == "hlld" ||
+         pin->GetString("mhd","rsolver") == "lhlld")) {
+      constexpr bool UCT_SP_DEFAULT = false;
+      std::string no;
+      if (ppack->pmesh->one_d) {
+        no = "1-D (no corner EMF)";
+      } else if (ppack->pmesh->use_spherical_polar && !UCT_SP_DEFAULT) {
+        no = "spherical polar not supported";
+      } else if (ppack->pcoord->is_special_relativistic ||
+                 ppack->pcoord->is_general_relativistic ||
+                 ppack->pcoord->is_dynamical_relativistic) {
+        no = "relativistic MHD";
+      } else if (!(peos->eos_data.is_ideal || peos->eos_data.IsGeneral())) {
+        no = "isothermal EOS";
+      } else if (use_fofc || emf_smooth >= 0.0 || use_bs_emf) {
+        no = "fofc, emf_smooth or bs_emf set";
+      } else if (ppack->pmesh->multilevel) {
+        no = "mesh refinement";
+      }
+      if (!recipe::NewDefaults(pin)) {
+        recipe::Log("<mhd>/emf_scheme = gs07 (" + std::string(
+            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+            "restart input has no key") + ": the old default)");
+      } else if (!no.empty()) {
+        recipe::Log("<mhd>/emf_scheme = gs07 (uct_hlld default not applied: " + no + ")");
+      } else {
+        pin->GetOrAddString("mhd","emf_scheme","uct_hlld");
+        recipe::Log("<mhd>/emf_scheme = uct_hlld (default with rsolver = " +
+                    pin->GetString("mhd","rsolver") + ")");
+      }
+    }
     if (pin->DoesParameterExist("mhd","emf_scheme")) {
       const std::string es = pin->GetString("mhd","emf_scheme");
       if (es == "uct") {
