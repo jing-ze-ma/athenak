@@ -72,6 +72,13 @@ void PgenEarlyDefaults(ParameterInput *pin) {
     pin->GetOrAddReal("mhd", "max_eta", 1.0e15);
     Log("<mhd>/max_eta = 1e15 (default with ohmic_resistivity = eos on a fresh dhj start)");
   }
+  // <mhd>/valfven_max_cgs = 2e6 cm/s (the Alfven-speed density floor of every dhj MHD
+  // production deck; old: off).  Also switches on its own defaults in mhd.cpp
+  // (valfven_noinfall_fac 4, floor_tracer), as a named key does.
+  if (fb == "mhd" && fluid && !named("mhd", "valfven_max_cgs")) {
+    pin->GetOrAddReal("mhd", "valfven_max_cgs", 2.0e6);
+    Log("<mhd>/valfven_max_cgs = 2e6 (default on a fresh dhj MHD start)");
+  }
 }
 
 }  // namespace recipe
