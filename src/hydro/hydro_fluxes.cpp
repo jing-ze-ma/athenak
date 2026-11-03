@@ -738,12 +738,13 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             const bool narrow = (f*((f + 1)/f) > mlng_ - 1);
             bool flat = (jm < 0 || jp > mln2_ - 1) ||
                         (narrow && (jlo <= js || jlo + f - 1 >= je));
-            // layoutaudit-1103 merge_lat_blockend = exchange (active rows only; the
-            // FOFC ghost rows keep the rule above): at an INTERNAL block face an own edge
+            // layoutaudit-1103 merge_lat_blockend = exchange (active rows and radii
+            // only: the exchanged record covers k = ks..ke, i = is..ie; the FOFC-widened
+            // ghost rows / radial ghosts keep the rule above): at an INTERNAL block face an own edge
             // group keeps its PLM (both neighbour cells are in the array), and the ghost
             // group beyond the face takes the neighbour's cell beyond it (src 1 / 2)
             int src = 0;
-            if (mlx_ && narrow && k >= ks && k <= ke) {
+            if (mlx_ && narrow && k >= ks && k <= ke && i >= is && i <= ie) {
               const int msk = mlmask_(m);
               const bool loi = (msk & 1) != 0, hii = (msk & 2) != 0;
               if (jlo < js) {
@@ -1043,7 +1044,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                         (narrow && (klo <= ks || klo + f - 1 >= ke));
             // layoutaudit-1103 merge_lat_blockend = exchange (see the x2 sweep)
             int src = 0;
-            if (mlx_ && narrow && j >= js && j <= je) {
+            if (mlx_ && narrow && j >= js && j <= je && i >= is && i <= ie) {
               const int msk = mlmask_(m);
               const bool loi = (msk & 4) != 0, hii = (msk & 8) != 0;
               if (klo < ks) {
