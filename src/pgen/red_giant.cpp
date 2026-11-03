@@ -2844,11 +2844,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // cancel.  (Both means verified numerically against 8e6 uniform directions.)
   const Real vrwamp = (nrw > 0)
                       ? sqrt(244.0/525.0)*vrandamp/sqrt(static_cast<Real>(nrw)) : 0.0;
+  // layoutaudit-1103 <problem>/vpert_global (read only when named; default false = the
+  // old seed, bitwise): the structured seeds below are periodic over each MeshBlock's
+  // OWN extent (x?lo..x?hi of the block), so the initial velocity pattern changes with
+  // the MeshBlock layout (2x2 blocks per panel = twice the angular wavenumber).  true:
+  // the pattern is taken over the MESH (= panel) extent, with nmbx1 radial periods, which
+  // is the old seed of a one-block-per-panel layout in every layout.
+  const bool vpg = pin->DoesParameterExist("problem", "vpert_global") &&
+                   pin->GetBoolean("problem", "vpert_global");
+  const Real nrper = vpg ? static_cast<Real>(nmbx1) : 1.0;
   par_for("rg_ic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
     const Real x2lo = size.d_view(m).x2min, x2hi = size.d_view(m).x2max;
     const Real x3lo = size.d_view(m).x3min, x3hi = size.d_view(m).x3max;
+    // the extents the seed pattern is periodic over (vpert_global: the mesh)
+    const Real p1lo = vpg ? mx1lo : x1lo, p1hi = vpg ? mx1hi : x1hi;
+    const Real p2lo = vpg ? mx2lo : x2lo, p2hi = vpg ? mx2hi : x2hi;
+    const Real p3lo = vpg ? mx3lo : x3lo, p3hi = vpg ? mx3hi : x3hi;
     const Real xc = curv ? x1v_(m,i) : CellCenterX(i-is, indcs.nx1, x1lo, x1hi);
     const Real r = RadiusOf(curv, xc, rin, x1min);
     Real lp, t;
@@ -2912,7 +2925,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const Real q2x = q[0]*q[0], q2y = q[1]*q[1], q2z = q[2]*q[2];
         const Real k4 = q2x*q2y + q2y*q2z + q2z*q2x;         // l=4 cubic harmonic
         const Real k6 = q[0]*q[1]*q[2];                      // l=3 cubic harmonic
-        v1 = vpert*cs*sin(3.0*tp*(xc - x1lo)/(x1hi - x1lo))
+        v1 = vpert*cs*sin(3.0*nrper*tp*(xc - p1lo)/(p1hi - p1lo))
              *(4.0*(k4 - 0.2) + 6.0*k6);
         v2 = 0.0;
         v3 = 0.0;
@@ -2958,13 +2971,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         v2 = 0.0;
         v3 = 0.0;
       } else {
-        v1 = vpert*cs*sin(3.0*tp*(xc - x1lo)/(x1hi - x1lo))
-             *cos(2.0*tp*(x2v - x2lo)/(x2hi - x2lo))
-             *cos(tp*(x3v - x3lo)/(x3hi - x3lo));
-        v2 = vpert*cs*sin(2.0*tp*(x2v - x2lo)/(x2hi - x2lo))
-             *cos(tp*(x3v - x3lo)/(x3hi - x3lo));
-        v3 = vpert*cs*sin(tp*(x3v - x3lo)/(x3hi - x3lo))
-             *cos(2.0*tp*(x2v - x2lo)/(x2hi - x2lo));
+        v1 = vpert*cs*sin(3.0*nrper*tp*(xc - p1lo)/(p1hi - p1lo))
+             *cos(2.0*tp*(x2v - p2lo)/(p2hi - p2lo))
+             *cos(tp*(x3v - p3lo)/(p3hi - p3lo));
+        v2 = vpert*cs*sin(2.0*tp*(x2v - p2lo)/(p2hi - p2lo))
+             *cos(tp*(x3v - p3lo)/(p3hi - p3lo));
+        v3 = vpert*cs*sin(tp*(x3v - p3lo)/(p3hi - p3lo))
+             *cos(2.0*tp*(x2v - p2lo)/(p2hi - p2lo));
       }
     }
     // problem/vpert_var = eint: the RADIAL component of the pattern (which carries the

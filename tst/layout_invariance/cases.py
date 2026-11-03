@@ -268,3 +268,16 @@ CASES += [
     dict(_SPR, name='sp_res_ohm_polavg', what='sp Ohmic + use_polar_average_eresist',
          set={'mesh/use_polar_average_eresist': 'true'}),
 ]
+
+# ---------------------------------------------------------------- red_giant IC seed
+# The default vpert seed is periodic over each MeshBlock (O(1) layout dependence of the
+# IC); <problem>/vpert_global = true takes it over the mesh.  ncyc 1: the seed itself.
+_RG = dict(bin='rg', deck='rg_cs.athinput', ncyc=1, vars=['hydro_u'], timeout=3600,
+           layouts=[L('b1x1_np1', (48, 16, 16)), L('b2x2_np4', (48, 8, 8), 4)])
+CASES += [
+    dict(_RG, name='rg_vpert_block', what='red_giant cs, default vpert seed', expect='FAIL',
+         set={'mesh/nx1': 48, 'mesh/cs_seam_blockend': 'extend', 'problem/rt_ck': 'false'}),
+    dict(_RG, name='rg_vpert_global', what='red_giant cs, vpert_global = true',
+         set={'mesh/nx1': 48, 'mesh/cs_seam_blockend': 'extend', 'problem/rt_ck': 'false',
+              'problem/vpert_global': 'true'}),
+]
