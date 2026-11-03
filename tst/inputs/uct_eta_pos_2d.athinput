@@ -1,0 +1,60 @@
+<comment>
+problem   = 2-D converging checkerboard flow in a ring field (uctaudit-1103)
+reference = <mhd>/lhlld_emf_eta_pos (LHLLD Step 8) under <mhd>/emf_scheme = uct_hlld
+configure = --prob=built_in_pgens
+# gresho_mhd with the vortex switched off (vortex_amp = 0): the azimuthal Gresho field
+# (b_phi, in pressure balance) and a 2dx velocity checkerboard v_x = (-1)^(i+j) at Mach
+# 0.1, so every other x1 face is converging across a field gradient, in a genuinely 2-D
+# pattern (the corner EMF averages four different faces).  Periodic: the total energy is
+# conserved, and the magnetic energy eta_pos removes must reappear as heat.
+# tst/test_suite/mhd/test_mhd_uct_eta_pos_cpu.py
+
+<job>
+basename  = uct_eta_pos_2d
+<mesh>
+nghost    = 3
+nx1       = 64
+x1min     = -0.5
+x1max     = 0.5
+ix1_bc    = periodic
+ox1_bc    = periodic
+nx2       = 64
+x2min     = -0.5
+x2max     = 0.5
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+<meshblock>
+nx1       = 64
+nx2       = 64
+nx3       = 1
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = -1
+tlim       = 0.05
+ndiag      = -1
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = lhlld
+gamma       = 1.666666666666667
+emf_scheme  = uct_hlld
+lhlld_emf_eta_pos = true
+<problem>
+pgen_name = gresho_mhd
+d0        = 1.0
+mach      = 0.1
+beta      = 100.0
+vortex_amp = 0.0
+cb_kern   = 1.0
+b_phi     = true
+<output1>
+file_type   = hst
+dt          = 0.0025
+data_format = %24.16e

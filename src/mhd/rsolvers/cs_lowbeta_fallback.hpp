@@ -55,6 +55,22 @@
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
+//! \fn bool CSLowBetaFires
+//! \brief uctaudit-1103: THE face test of the fallback (mean face beta below
+//! beta_thresh, written as a product so a vanishing field never divides), shared by
+//! CSLowBetaFallback and UctFaceStore (emf_scheme = uct | uct_hlld), so the corner-EMF
+//! coefficients switch to HLL on exactly the faces whose flux was replaced.
+
+KOKKOS_INLINE_FUNCTION
+bool CSLowBetaFires(const Real pl, const Real pr, const Real bxi, const Real byl,
+                    const Real bzl, const Real byr, const Real bzr,
+                    const Real beta_thresh) {
+  const Real bsql = SQR(bxi) + SQR(byl) + SQR(bzl);
+  const Real bsqr = SQR(bxi) + SQR(byr) + SQR(bzr);
+  return ((pl + pr) < beta_thresh*(0.5*(bsql + bsqr)));
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CSLowBetaFallback
 //! \brief overwrite flx/ey/ez with the HLLE flux wherever beta < beta_thresh.
 //!
@@ -93,11 +109,9 @@ void CSLowBetaFallback(TeamMember_t const &member, const EOS_Data &eos, const bo
                                                      : wl(IDN,i)*SQR(eos.iso_cs));
     const Real pr = gen ? dr(IDPR,i) : (eos.is_ideal ? eos.IdealGasPressure(wr(IEN,i))
                                                      : wr(IDN,i)*SQR(eos.iso_cs));
-    const Real bsql = SQR(bxi) + SQR(wli.by) + SQR(wli.bz);
-    const Real bsqr = SQR(bxi) + SQR(wri.by) + SQR(wri.bz);
-    const Real bsq = 0.5*(bsql + bsqr);
     // beta = 2p/B^2, written as a product so a vanishing field never divides
-    const bool fire = ((pl + pr) < beta_thresh*bsq);
+    const bool fire = CSLowBetaFires(pl, pr, bxi, wli.by, wli.bz, wri.by, wri.bz,
+                                     beta_thresh);
 
     if (!fire) return;
 

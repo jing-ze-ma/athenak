@@ -35,6 +35,25 @@
 
 namespace mhd {
 
+//----------------------------------------------------------------------------------------
+//! \fn bool BorisFaceTest
+//! \brief uctaudit-1103: THE test of a Boris face (fmax of the two sides' (v_A/c_eff)^2
+//! > boris_sw) and its per-side sqrt(f), shared by BorisHLLEFace (the face flux) and
+//! UctFaceStore (the emf_scheme = uct | uct_hlld corner-EMF coefficients), so both take
+//! the same decision and the same limited fast speeds bit for bit.
+//! b2 = |B|^2 = bx*bx + by*by + bz*bz, v2 = |v|^2 of each side.
+
+KOKKOS_INLINE_FUNCTION
+bool BorisFaceTest(const EOS_Data &eos, const Real dl, const Real b2l, const Real pl,
+                   const Real v2l, const Real dr, const Real b2r, const Real pr,
+                   const Real v2r, Real &fl, Real &fr) {
+  const Real xl = eos.BorisX(dl, b2l, pl, v2l);
+  const Real xr = eos.BorisX(dr, b2r, pr, v2r);
+  if (!(fmax(xl, xr) > eos.boris_sw)) return false;
+  fl = eos.BorisF(xl); fr = eos.BorisF(xr);
+  return true;
+}
+
 KOKKOS_INLINE_FUNCTION
 void BorisHLLEFace(TeamMember_t const &member, const EOS_Data &eos, const bool gen,
      const int m, const int k, const int j, const int il, const int iu, const int ivx,
@@ -63,10 +82,8 @@ void BorisHLLEFace(TeamMember_t const &member, const EOS_Data &eos, const bool g
     const Real b2r = bxi*bxi + byr*byr + bzr*bzr;
     const Real v2l = SQR(wl(IVX,i)) + SQR(wl(IVY,i)) + SQR(wl(IVZ,i));
     const Real v2r = SQR(wr(IVX,i)) + SQR(wr(IVY,i)) + SQR(wr(IVZ,i));
-    const Real xl = eos.BorisX(dlv, b2l, pl, v2l);
-    const Real xr = eos.BorisX(drv, b2r, pr, v2r);
-    if (!(fmax(xl, xr) > eos.boris_sw)) return;
-    Real fl_ = eos.BorisF(xl), fr_ = eos.BorisF(xr);
+    Real fl_, fr_;
+    if (!BorisFaceTest(eos, dlv, b2l, pl, v2l, drv, b2r, pr, v2r, fl_, fr_)) return;
     const Real sl = sqrt(fl_), sr = sqrt(fr_);
     const Real cl = eos.FastSpeedFromP(dlv, pl, g1l, sl*bxi, sl*byl, sl*bzl);
     const Real cr = eos.FastSpeedFromP(drv, pr, g1r, sr*bxi, sr*byr, sr*bzr);
