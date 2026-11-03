@@ -212,6 +212,7 @@ CASES += [
 # hesdirk2): 50 x 29 x 64, phi split 2 / 4 / 8 (production: 8 blocks of 64 in phi).
 CASES += [
     dict(name='he_hg', bin='he', deck='he_hg.athinput', ncyc=3, timeout=7200,
+         perturb='problem/he_gm',   # dt is set by vet_gd_rotate_dt alignment, not the cfl
          vars=['hydro_u', 'm1'], what='HG production deck (he_star_m1, M1 vet), C16 x 704 (production radial grid)',
          set={'mesh/nx2': 16, 'mesh/nx3': 16, 'mesh/cs_seam_blockend': 'extend'},
          layouts=[L('b1x1_np6', (704, 16, 16), 6), L('b2x2_np6', (704, 8, 8), 6),
@@ -303,3 +304,9 @@ CASES += [
          what='cs Ivan 2013 MHD manufactured solution (iprob 18, user source), hlld, extend',
          set=dict(_IV), layouts=cs_layouts(16, 8)),
 ]
+# separate the rank count from the phi layout (vet_gd off)
+_accn = [c for c in CASES if c['name'] == 'acc_sp_novetgd'][0]
+CASES.append(dict(_accn, name='acc_sp_novetgd_sep', what='accretor, vet_gd off: rank count '
+                  'only (ph2_np4) vs phi layout only (ph4_np2)',
+                  layouts=[L('ph2_np2', (500, 48, 32), 2), L('ph2_np4', (500, 48, 32), 4),
+                           L('ph4_np2', (500, 48, 16), 2)]))
