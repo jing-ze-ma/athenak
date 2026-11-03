@@ -65,6 +65,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -138,7 +139,16 @@ void RadiationM1::VetLatInit() {
   // fullsph-1027 S1: rad_m1 runs on the full sphere (polar x2 faces) with vet_col only.
   // The SC reads of vet_col_lat / vet_gd wrap theta periodically at block level, their
   // band formula has 1/sin(theta_min) and no pole partner map: stage S2 (latitude cap).
-  if (pm->use_polar_boundary) {
+  // accsp-1102: vet_gd on the spherical-polar mesh takes a stretched theta and the full
+  // sphere through its node table (rad_m1_vetgd_sph2.inc); vet_col_lat keeps both
+  // refusals.  env VGD_THTAB=1 forces the table path on a uniform wedge (round-off gate)
+  if (vgd_on && !pm->use_cubed_sphere) {
+    vgd_pol = pm->use_polar_boundary;
+    const char *ett = std::getenv("VGD_THTAB");
+    vgd_sth = pm->use_grid_stretch_theta || vgd_pol ||
+              ((ett != nullptr) && (std::atoi(ett) != 0));
+  }
+  if (pm->use_polar_boundary && !vgd_sth) {
     VlatFatal(std::string(vgd_on ? "vet_gd" : "vet_col_lat (lateral SC)") +
               " on the FULL sphere (mesh/use_polar_boundary) is stage S2 (not "
               "implemented): use closure = vet_col without vet_gd / vet_col_lat");
@@ -156,7 +166,7 @@ void RadiationM1::VetLatInit() {
   // requirement, so the same check applies unchanged (it cannot fire on a cs mesh).
   {
     const std::string who = vgd_on ? "vet_gd" : "vet_col_lat (lateral SC)";
-    if (pm->use_grid_stretch_theta) {
+    if (pm->use_grid_stretch_theta && !vgd_sth) {
       VlatFatal(who + " needs a theta-UNIFORM mesh: mesh/use_grid_stretch_theta = true "
                 "(the SC upwind interpolation is bilinear in (theta, phi) index space; "
                 "only radial stretches are supported)");
@@ -185,7 +195,7 @@ void RadiationM1::VetLatInit() {
     MPI_Allreduce(MPI_IN_PLACE, dmin, 2, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, dmax, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 #endif
-    for (int a = 0; a < 2; ++a) {
+    for (int a = (vgd_sth ? 1 : 0); a < 2; ++a) {   // accsp-1102: theta via the table
       const double rtol = (sizeof(Real) == 4) ? 1.0e-3 : 1.0e-9;  // LeftEdgeX round-off
       if (!(dmin[a] > 0.0) || dmax[a] - dmin[a] > rtol*dmax[a]) {
         char buf[256];
@@ -284,7 +294,14 @@ void RadiationM1::VetLatInit() {
   pbval_vs->SetVectorPairs(2, {});
   pbval_vt = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
   pbval_vt->InitializeBuffers(nlx);
-  pbval_vt->SetVectorPairs(nlx, {});
+  // accsp-1102 (vet_gd on the full sphere): across a pole e_theta and e_phi both flip, so
+  // the hand-over pair (D_r,theta, D_r,phi) = lx slots (2, 3) flips; D_rr, the trace-free
+  // tangential D_tt, D_pp and D_tp (two flips) are scalars
+  if (vgd_on && vgd_pol) {
+    pbval_vt->SetVectorPairs(nlx, {{2, 3}});
+  } else {
+    pbval_vt->SetVectorPairs(nlx, {});
+  }
   // cs-s4-1017: on the cubed sphere the tau_ten ghosts are the neighbour's own (mirror)
   // cells, as the implicit operator's E and work-array ghosts (no along-seam resample):
   // the Cartesian D_r,lat of M1CsLat0 / M1CsLatF pairs with the mirror E

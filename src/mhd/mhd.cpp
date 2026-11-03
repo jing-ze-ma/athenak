@@ -647,6 +647,39 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       emf_smooth = pin->GetReal("mhd","emf_smooth");
       if (emf_smooth < 0.0) emf_smooth = -1.0;
     }
+    // <mhd>/emf_scheme = gs07 (default) | uct | uct_hlld, read only when named
+    // (lhlld2-1102, ucthlld-1102).  Both UCT variants use the Mignone & Del Zanna 2021
+    // composition formula (MD21 eq. 35) for the corner EMF, inside the GS07 corner kernel
+    // (MHD::CornerE), with per-face coefficients stored by the flux sweeps (UctFaceStore,
+    // mhd_fluxes.cpp): uct = UCT-HLL (MD21 eq. 30 coefficients, any of hlle/hlld/lhlld),
+    // uct_hlld = UCT-HLLD (MD21 eqs. 40, 44-46; rsolver hlld or lhlld).  Cartesian 2-D/3-D
+    // and the cubed sphere (gnomonic face frames, the existing seam/vertex EMF averaging).
+    if (pin->DoesParameterExist("mhd","emf_scheme")) {
+      const std::string es = pin->GetString("mhd","emf_scheme");
+      if (es == "uct") {
+        emf_uct = true;
+      } else if (es == "uct_hlld") {
+        emf_uct_hlld = true;
+      } else if (es != "gs07") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/emf_scheme = '" << es << "' (gs07 | uct | "
+                  << "uct_hlld)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if ((emf_uct || emf_uct_hlld) && (ppack->pmesh->one_d ||
+                      ppack->pmesh->use_spherical_polar ||
+                      ppack->pcoord->is_special_relativistic ||
+                      ppack->pcoord->is_general_relativistic ||
+                      ppack->pcoord->is_dynamical_relativistic ||
+                      !(peos->eos_data.is_ideal || peos->eos_data.IsGeneral()) ||
+                      use_fofc || emf_smooth >= 0.0 || use_bs_emf)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/emf_scheme = " << es << " is implemented only "
+                  << "for 2-D/3-D Cartesian or cubed-sphere Newtonian MHD with an ideal or "
+                  << "general EOS, without fofc, emf_smooth or bs_emf" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // Fix for the above at the source: in the two POLAR cell rows (the only place the
     // (-1)^(i+k) mode closes on itself, because the polar ghost row is the k+N/2 image of
     // the row) add the UCT/Rusanov face-field dissipation to the corner e2, with the local
@@ -905,6 +938,23 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       Kokkos::realloc(e1_cc, nmb, ncells3, ncells2, ncells1);
       Kokkos::realloc(e2_cc, nmb, ncells3, ncells2, ncells1);
       Kokkos::realloc(e3_cc, nmb, ncells3, ncells2, ncells1);
+      if (emf_uct || emf_uct_hlld) {   // UCT face store (UctFaceStore); rsolver now known
+        if (!(rsolver_method == MHD_RSolver::hlld || rsolver_method == MHD_RSolver::lhlld ||
+              (emf_uct && rsolver_method == MHD_RSolver::hlle))) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<mhd>/emf_scheme = uct_hlld needs rsolver = hlld or "
+                    << "lhlld; uct needs hlle, hlld or lhlld" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        Kokkos::realloc(uct1, nmb, 6, ncells3, ncells2, ncells1);
+        Kokkos::realloc(uct2, nmb, 6, ncells3, ncells2, ncells1);
+        if (ppack->pmesh->three_d) Kokkos::realloc(uct3, nmb, 6, ncells3, ncells2, ncells1);
+      }
+      // ucthshare-1102 <mhd>/cs_seam_mhd (read only when named; mhd_cs_seam.cpp)
+      if (pin->DoesParameterExist("mhd","cs_seam_mhd") ||
+          pin->DoesParameterExist("mhd","cs_seam_emf_avg")) {
+        CsSeamInit(pin);
+      }
 
       // allocate array of flags used with FOFC
       if (use_fofc) {
@@ -933,6 +983,12 @@ MHD::~MHD() {
   delete peos;
   delete pbval_u;
   delete pbval_b;
+  if (pbval_fs != nullptr) {delete pbval_fs;}
+  if (pbval_us != nullptr) {delete pbval_us;}
+  if (pseamfs != nullptr) {delete pseamfs;}
+  if (pusown != nullptr) {delete pusown;}
+  if (pusnbr != nullptr) {delete pusnbr;}
+  CsSeamRelease();
   if (pvisc != nullptr) {delete pvisc;}
   if (presist!= nullptr) {delete presist;}
   if (pcond != nullptr) {delete pcond;}

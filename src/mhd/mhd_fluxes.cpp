@@ -36,9 +36,117 @@
 #include "mhd/rsolvers/hlle_srmhd.hpp"
 #include "mhd/rsolvers/llf_grmhd.hpp"
 #include "mhd/rsolvers/hlle_grmhd.hpp"
+#include "bvals/cs_seam_states.hpp"
 // #include "mhd/rsolvers/roe_mhd.hpp"
 
 namespace mhd {
+
+//----------------------------------------------------------------------------------------
+//! \fn void UctFaceStore
+//! \brief <mhd>/emf_scheme = uct | uct_hlld (lhlld2-1102, ucthlld-1102): store, per face,
+//! what the UCT corner EMF in MHD::CornerE needs (Mignone & Del Zanna 2021, JCP 424,
+//! 109748, "MD21").  The Riemann solver's induction flux is written as (MD21 eq. 29)
+//!   F^[B_t] = a^L F^L + a^R F^R - (d^R B_t^R - d^L B_t^L),   F = v_n B_t - v_t B_n,
+//! one (a, d) pair for every face-parallel component B_t.  ONE store for every solver:
+//!  hll = true (emf_scheme = uct, rsolver = hlle, or a cubed-sphere face where
+//!   CSLowBetaFallback replaced the flux by HLLE: same test (p_L + p_R) < lb_beta <B^2>):
+//!   MD21 eq. 30, a^L = aR/(aR+aL), d^L = d^R = aR aL/(aR+aL), aR = max(0,S_R),
+//!   aL = max(0,-S_L), S_L/S_R the Davis fast speeds of every solver here;
+//!  hll = false (uct_hlld, rsolver hlld/lhlld): MD21 eqs. 40, 44-46,
+//!   a^L = (1+nu*)/2, d^s = (nu^s - nu*) (lam*s - lam^s) chi^s/2 + (|lam*s| - nu* lam*s)/2,
+//!   nu^s = (lam*s + lam^s)/(|lam*s| + |lam^s|),  nu* = (lam*R + lam*L)/(|lam*R| + |lam*L|)
+//!   (nu* = 0 when |lam*R - lam*L| <= 1e-9 |S_R - S_L|, MD21 eq. 46), every speed and
+//!   chi^s = B_t*s/B_t^s - 1 recomputed with the formulas and degenerate branches of
+//!   hlld_mhd.hpp / lhlld_mhd.hpp (chi = 0 where B_t* = B_t; lam*L = lam*R = S_M, nu* = 0,
+//!   the HLLC limit, where the solver drops the ** states).  LHLLD's low-Mach fix enters
+//!   only p_T* in the momentum/energy flux, so its a/d are the HLLD ones; its Step-8
+//!   resistivity (lhlld_emf_eta_pos, eta_pos here) adds ceta/2 to d^L and d^R.
+//! Slots: 0 a^L, 1 d^L, 2 d^R, 3/4/5 a^L v^L + a^R v^R of the face-frame components
+//! ivx, ivx+1, ivx+2 (cyclic; on the cubed sphere the gnomonic face frame the solver
+//! used, see gnomonic_kernels.hpp).  Ideal or general EOS (isothermal refused).
+
+KOKKOS_INLINE_FUNCTION
+void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
+                  const ScrArray2D<Real> &wr, const ScrArray2D<Real> &bl,
+                  const ScrArray2D<Real> &br, const ScrArray2D<Real> &dl,
+                  const ScrArray2D<Real> &dr, const int ivx, const int i,
+                  const Real bxi, const bool hll_in, const bool eta_pos,
+                  const Real lb_beta, const DvceArray5D<Real> &u,
+                  const int m, const int k, const int j) {
+  const int ivy = IVX + ((ivx-IVX)+1)%3;
+  const int ivz = IVX + ((ivx-IVX)+2)%3;
+  const int iby = ((ivx-IVX) + 1)%3;
+  const int ibz = ((ivx-IVX) + 2)%3;
+  Real pl, pr, g1l, g1r;
+  if (eos.IsGeneral()) {
+    pl = dl(IDPR,i); pr = dr(IDPR,i); g1l = dl(IDG1,i); g1r = dr(IDG1,i);
+  } else {
+    pl = eos.IdealGasPressure(wl(IEN,i)); pr = eos.IdealGasPressure(wr(IEN,i));
+    g1l = eos.gamma; g1r = eos.gamma;
+  }
+  const Real rl = wl(IDN,i), rr = wr(IDN,i);
+  const Real vl = wl(ivx,i), vr = wr(ivx,i);
+  const Real bxsq = bxi*bxi;
+  const Real btl = SQR(bl(iby,i)) + SQR(bl(ibz,i));
+  const Real btr = SQR(br(iby,i)) + SQR(br(ibz,i));
+  const Real ptl = pl + 0.5*(bxsq + btl);
+  const Real ptr = pr + 0.5*(bxsq + btr);
+  const Real cfl = eos.FastSpeedFromP(rl, pl, g1l, bxi, bl(iby,i), bl(ibz,i));
+  const Real cfr = eos.FastSpeedFromP(rr, pr, g1r, bxi, br(iby,i), br(ibz,i));
+  const Real sl = fmin(vl - cfl, vr - cfr);
+  const Real sr = fmax(vl + cfl, vr + cfr);
+  // CSLowBetaFallback's test (lb_beta = 0 off the cubed sphere)
+  const bool hll = hll_in || ((pl + pr) < lb_beta*(0.5*((bxsq + btl) + (bxsq + btr))));
+  Real al, dlc, drc;
+  if (sl >= 0.0) {          // F = F^L
+    al = 1.0; dlc = 0.0; drc = 0.0;
+  } else if (sr <= 0.0) {   // F = F^R
+    al = 0.0; dlc = 0.0; drc = 0.0;
+  } else if (hll) {         // MD21 eq. 30
+    al  = sr/(sr - sl);
+    dlc = -sr*sl/(sr - sl);
+    drc = dlc;
+  } else {
+    const Real sdl = sl - vl, sdr = sr - vr;
+    const Real sm = (sdr*(rr*vr) - sdl*(rl*vl) + (ptl - ptr))/(sdr*rr - sdl*rl);
+    const Real sdml = sl - sm, sdmr = sr - sm;
+    const Real ptst = 0.5*((ptr + rr*sdr*(sm - vr)) + (ptl + rl*sdl*(sm - vl)));
+    const Real denl = rl*sdl*sdml - bxsq;
+    const Real denr = rr*sdr*sdmr - bxsq;
+    const Real chil = (fabs(denl) < (HLLD_SMALL_NUMBER)*ptst) ? 0.0 :
+                      rl*sdl*(sm - vl)/denl;
+    const Real chir = (fabs(denr) < (HLLD_SMALL_NUMBER)*ptst) ? 0.0 :
+                      rr*sdr*(sm - vr)/denr;
+    Real lsl, lsr, nus;
+    if (0.5*bxsq < eos.hlld_bx_zero_tol*ptst) {   // solver: ** = *, HLLC limit
+      lsl = sm; lsr = sm; nus = 0.0;
+    } else {
+      lsl = sm - fabs(bxi)/sqrt(rl*sdl/sdml);
+      lsr = sm + fabs(bxi)/sqrt(rr*sdr/sdmr);
+      const Real den = fabs(lsr) + fabs(lsl);
+      nus = (fabs(lsr - lsl) > 1.0e-9*fabs(sr - sl) && den > 0.0) ?
+            (lsr + lsl)/den : 0.0;
+    }
+    const Real dnl = fabs(lsl) + fabs(sl);
+    const Real dnr = fabs(lsr) + fabs(sr);
+    const Real nul = (dnl > 0.0) ? (lsl + sl)/dnl : 0.0;
+    const Real nur = (dnr > 0.0) ? (lsr + sr)/dnr : 0.0;
+    al  = 0.5*(1.0 + nus);
+    dlc = 0.5*(nul - nus)*(lsl - sl)*chil + 0.5*(fabs(lsl) - nus*lsl);
+    drc = 0.5*(nur - nus)*(lsr - sr)*chir + 0.5*(fabs(lsr) - nus*lsr);
+    if (eta_pos) {   // LHLLD Step 8 (lhlld_emf_eta_pos)
+      const Real ceta = fmax(0.0, -(fabs(sm) + 0.5*(vr - vl)));
+      dlc += 0.5*ceta;
+      drc += 0.5*ceta;
+    }
+  }
+  u(m,0,k,j,i) = al;
+  u(m,1,k,j,i) = dlc;
+  u(m,2,k,j,i) = drc;
+  u(m,3,k,j,i) = al*vl + (1.0 - al)*vr;
+  u(m,4,k,j,i) = al*wl(ivy,i) + (1.0 - al)*wr(ivy,i);
+  u(m,5,k,j,i) = al*wl(ivz,i) + (1.0 - al)*wr(ivz,i);
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::CalculateFlux
@@ -141,6 +249,23 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto &e31_ = e3x1;
   auto &e21_ = e2x1;
   auto &bx_ = b0.x1f;
+  // <mhd>/emf_scheme = uct | uct_hlld: UCT corner-EMF face store (UctFaceStore)
+  const bool uct_on_ = emf_uct || emf_uct_hlld;
+  const bool uct_hll_ = emf_uct || (rsolver_method_ == MHD_RSolver::hlle);
+  const bool uct_eta_ = (rsolver_method_ == MHD_RSolver::lhlld) &&
+                        peos->eos_data.lhlld_emf_eta_pos;
+  const Real uct_lb_ = use_cubed_sphere ? cs_lowbeta_fallback : 0.0;
+  auto &uct1_ = uct1;
+  auto &uct2_ = uct2;
+  auto &uct3_ = uct3;
+  // ucthshare-1102 <mhd>/cs_seam_mhd = faces | shared: the neighbour's own seam face
+  // states (MHD::CsSeamFaceStates, mhd_cs_seam.cpp), substituted on the ghost side of
+  // every panel-seam face (rows is-1..ie+1) after the gnomonic face rotation
+  const bool cs_shr_ = (cs_seam_mhd > 0);
+  if (cs_shr_) {CsSeamFaceStates();}
+  DvceArray5D<Real> sfs2_, sfs3_;
+  if (cs_shr_) {sfs2_ = pseamfs->x2f; sfs3_ = pseamfs->x3f;}
+  const int sfob_ = nvars + NDERIVED;   // record slots of (B.r, B.e_xi, B.e_eta)
     
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
@@ -468,6 +593,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       GnomonicEquiangleEmfX1(gtrig_cell,member,m,k,j,il,iu,e31,e21);
     }
     member.team_barrier();
+    if (uct_on_) {   // UCT corner EMF inputs (x1 faces)
+      par_for_inner(member, il, iu, [&](const int i) {
+        UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVX, i, bx(m,k,j,i), uct_hll_, uct_eta_,
+                     uct_lb_, uct1_, m, k, j);
+      });
+      member.team_barrier();
+    }
 
     // calculate fluxes of scalars (if any)
     if (nvars > nmhd_) {
@@ -711,6 +843,25 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           auto flx2 = flx2_;
           auto e12 = e12_;
           auto e32 = e32_;
+          if (cs_shr_ && k >= ks && k <= ke &&
+              ((j == js && size.d_view(m).x2min <= -1.0 + 1.0e-12) ||
+               (j == je+1 && size.d_view(m).x2max >= 1.0 - 1.0e-12))) {
+            member.team_barrier();
+            const bool lo = (j == js);
+            const Real sf = gtrig_xi.sn(m,k,j), cf = gtrig_xi.cs(m,k,j);
+            auto sfs = sfs2_;
+            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, is-1, ie+1, lo, sf, cf, nvars,
+                                     nder, IVY, IVZ, wl, wr, dl, dr);
+            par_for_inner(member, is-1, ie+1, [&](const int i) {
+              // x2 frame {n_xi, e_eta, rhat}: slot 0 = B.r, slot 2 = B.e_eta
+              if (lo) {
+                bl(0,i) = sfs(m,sfob_,k,j,i); bl(2,i) = sfs(m,sfob_+2,k,j,i);
+              } else {
+                br(0,i) = sfs(m,sfob_,k,j,i); br(2,i) = sfs(m,sfob_+2,k,j,i);
+              }
+            });
+            member.team_barrier();
+          }
           const bool do_pole = polar_hlle_x2_ &&
             ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar &&
               (j == js || j == js+1)) ||
@@ -765,6 +916,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             GnomonicEquiangleFluxX2(gtrig_xi,member,m,k,j,is-1,ie+1,flx2);
           }
           member.team_barrier();
+          if (uct_on_) {   // UCT corner EMF inputs (x2 faces)
+            par_for_inner(member, is-1, ie+1, [&](const int i) {
+              UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVY, i, by(m,k,j,i), uct_hll_,
+                           uct_eta_, uct_lb_, uct2_, m, k, j);
+            });
+            member.team_barrier();
+          }
         }
 
         // calculate fluxes of scalars (if any)
@@ -1010,6 +1168,25 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           auto flx3 = flx3_;
           auto e23 = e23_;
           auto e13 = e13_;
+          if (cs_shr_ && j >= js && j <= je &&
+              ((k == ks && size.d_view(m).x3min <= -1.0 + 1.0e-12) ||
+               (k == ke+1 && size.d_view(m).x3max >= 1.0 - 1.0e-12))) {
+            member.team_barrier();
+            const bool lo = (k == ks);
+            const Real sf = gtrig_eta.sn(m,k,j), cf = gtrig_eta.cs(m,k,j);
+            auto sfs = sfs3_;
+            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, is-1, ie+1, lo, sf, cf, nvars,
+                                     nder, IVZ, IVY, wl, wr, dl, dr);
+            par_for_inner(member, is-1, ie+1, [&](const int i) {
+              // x3 frame {n_eta, rhat, e_xi}: slot 0 = B.r, slot 1 = B.e_xi
+              if (lo) {
+                bl(0,i) = sfs(m,sfob_,k,j,i); bl(1,i) = sfs(m,sfob_+1,k,j,i);
+              } else {
+                br(0,i) = sfs(m,sfob_,k,j,i); br(1,i) = sfs(m,sfob_+1,k,j,i);
+              }
+            });
+            member.team_barrier();
+          }
           const bool do_pole = polar_hlle_x3_ &&
             ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar &&
               j == js) ||
@@ -1063,6 +1240,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             GnomonicEquiangleFluxX3(gtrig_eta,member,m,k,j,is-1,ie+1,flx3);
           }
           member.team_barrier();
+          if (uct_on_) {   // UCT corner EMF inputs (x3 faces)
+            par_for_inner(member, is-1, ie+1, [&](const int i) {
+              UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVZ, i, bz(m,k,j,i), uct_hll_,
+                           uct_eta_, uct_lb_, uct3_, m, k, j);
+            });
+            member.team_barrier();
+          }
         }
 
         // calculate fluxes of scalars (if any)
