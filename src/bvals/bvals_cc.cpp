@@ -1203,6 +1203,10 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     (void) InitRecv(a.extent_int(1), vmask);
     while (PackAndSendCC(a, ca, iwl, iwu, vmask) != TaskStatus::complete) {}
     while (RecvAndUnpackCC(a, ca, iwl, iwu, vmask) != TaskStatus::complete) {}
+    // seamexact-1103: wait on this pass's own sends here.  A caller that cleared its
+    // sends before unpacking (rad_m1_coupling.cpp FluidRefresh) would otherwise leave
+    // them in flight into its next exchange, which reuses the buffers and the requests.
+    (void) ClearSend();
     cs_ext_pass_ = false;
   }
 

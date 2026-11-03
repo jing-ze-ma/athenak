@@ -74,6 +74,8 @@
 #include "bvals/cs_seam_states.hpp"
 #include "reconstruct/plm.hpp"
 #include "mhd.hpp"
+#include "diffusion/resistivity.hpp"
+#include "diffusion/cs_edge_jb.hpp"
 
 namespace mhd {
 
@@ -372,6 +374,97 @@ DvceArray5D<Real> xrec_, xrecb_;
 constexpr int kNR = 18;
 DvceFaceFld5D<Real> *rsown_ = nullptr, *rsnbr_ = nullptr;
 MeshBoundaryValuesCC *pbrs_ = nullptr;
+// seamexact-1103 <mhd>/cs_seam_res = mean_j: the single-valued seam CURRENT.  Per seam
+// cell, four edges (0 along-seam at radial face i, 1 the same at ie+1 (i = ie only), 2 / 3
+// radial at the lower / upper along-seam face), 8 slots each: J (Cartesian), B
+// (Cartesian), eta_Ohm, eta_A at the edge, from this panel's own grid + halo.
+constexpr int kNJ = 32;
+bool res_j_ = false;
+struct ResJEdge {int k, j, i, dir; Real xi, et;};   // a seam edge (CsSeamResJ)
+// the kernel context of CsSeamResJ (kept small: one capture per kernel)
+struct ResJK {
+  CsEdgeOps ops;
+  DvceArray4D<Real> etb;
+  DvceArray2D<int> fl;
+  DvceArray1D<RegionSize> sz;
+  DvceArray1D<int> pn;
+  DvceArray2D<BoundaryFlag> bcs;
+  int is, ie, js, je, ks, ke, nx2, nx3;
+  bool had;
+  ResJK(const DvceFaceFld4D<Real> &b, const DvceArray5D<Real> &bc,
+        const DvceEdgeFld4D<Real> &jn) : ops(b, bc, jn) {}
+  // the edge of kind e (0 along-seam at radial face i, 1 the same at ie+1, 2 / 3 radial
+  // at the lower / upper along-seam face) of seam cell c (seam face index sf)
+  KOKKOS_INLINE_FUNCTION
+  ResJEdge EdgeAt(const int m, const bool x2t, const int sf, const int c, const int e,
+                  const int i) const {
+    ResJEdge g;
+    const int cb = x2t ? ks : js;
+    const RegionSize &z = sz(m);
+    g.i = (e == 1) ? ie+1 : i;
+    if (e <= 1) {
+      g.dir = x2t ? 3 : 2;
+      g.k = x2t ? (cb + c) : sf;
+      g.j = x2t ? sf : (cb + c);
+    } else {
+      g.dir = 1;
+      g.k = x2t ? (cb + c + (e - 2)) : sf;
+      g.j = x2t ? sf : (cb + c + (e - 2));
+    }
+    g.xi = 0.25*M_PI*((g.dir == 2) ? CellCenterX(g.j-js, nx2, z.x2min, z.x2max)
+                                   : LeftEdgeX(g.j-js, nx2, z.x2min, z.x2max));
+    g.et = 0.25*M_PI*((g.dir == 3) ? CellCenterX(g.k-ks, nx3, z.x3min, z.x3max)
+                                   : LeftEdgeX(g.k-ks, nx3, z.x3min, z.x3max));
+    return g;
+  }
+  // this panel's own J, B (Cartesian), eta_Ohm and eta_A at edge g
+  KOKKOS_INLINE_FUNCTION
+  void Own(const int m, const ResJEdge &g, Real v[8]) const {
+    const int i = g.i, k = g.k, j = g.j;
+    // physical radial boundary face: the radial-edge J average uses the active column
+    // (the ambipolar kernel's rule; Ohmic only: J.t of a tangential edge has no J_r)
+    const bool rin = !had || (bcs(m,BoundaryFace::inner_x1) != BoundaryFlag::block);
+    const bool rout = !had || (bcs(m,BoundaryFace::outer_x1) != BoundaryFlag::block);
+    const int ia = (i == is && rin) ? i : i-1;
+    const int ib = (i == ie+1 && rout) ? i-1 : i;
+    CsEdgeJB s;
+    Real eo;
+    if (g.dir == 1) {
+      ops.X1(m,k,j,i,s);
+      eo = 0.25*(etb(m,k,j,i) + etb(m,k,j-1,i) + etb(m,k-1,j,i) + etb(m,k-1,j-1,i));
+    } else if (g.dir == 2) {
+      ops.X2(m,k,j,i,ia,ib,s);
+      eo = 0.25*(etb(m,k,j,i) + etb(m,k,j,i-1) + etb(m,k-1,j,i) + etb(m,k-1,j,i-1));
+    } else {
+      ops.X3(m,k,j,i,ia,ib,s);
+      eo = 0.25*(etb(m,k,j,i) + etb(m,k,j-1,i) + etb(m,k,j,i-1) + etb(m,k,j-1,i-1));
+    }
+    Real q[3], t1[3], t2[3];
+    cubed_sphere::PanelToCart(pn(m), g.xi, g.et, q);
+    cubed_sphere::PanelTangents(pn(m), g.xi, g.et, t1, t2);
+    for (int cc=0; cc<3; ++cc) {
+      v[cc] = s.jr*q[cc] + s.ju1*t1[cc] + s.ju2*t2[cc];
+      v[3+cc] = s.br*q[cc] + s.bu1*t1[cc] + s.bu2*t2[cc];
+    }
+    v[6] = eo; v[7] = s.eta_a;
+  }
+  // the EMF of the shared (J, B, eta_Ohm, eta_A) along this panel's edge g
+  KOKKOS_INLINE_FUNCTION
+  Real Emf(const int m, const ResJEdge &g, const Real v[8]) const {
+    Real q[3], t1[3], t2[3];
+    cubed_sphere::PanelToCart(pn(m), g.xi, g.et, q);
+    cubed_sphere::PanelTangents(pn(m), g.xi, g.et, t1, t2);
+    const Real *t = (g.dir == 1) ? q : ((g.dir == 2) ? t1 : t2);
+    const Real bsq = v[3]*v[3] + v[4]*v[4] + v[5]*v[5] + 1.0e-300;
+    const Real jdb = v[0]*v[3] + v[1]*v[4] + v[2]*v[5];
+    const Real jt = v[0]*t[0] + v[1]*t[1] + v[2]*t[2];
+    const Real bt = v[3]*t[0] + v[4]*t[1] + v[5]*t[2];
+    return v[6]*jt + v[7]*(jt - jdb*bt/bsq);
+  }
+};
+DvceFaceFld5D<Real> *rjown_ = nullptr, *rjnbr_ = nullptr;
+MeshBoundaryValuesCC *pbrj_ = nullptr;
+const DvceArray5D<Real> *rj_bc_ = nullptr;
 MeshBoundaryValuesCC *pbx_ = nullptr, *pbxb_ = nullptr, *pbxr_ = nullptr;
 DvceArray5D<Real> xrr_;   // 3-variable four-block patch record (own-side / resistive)
 // LOCAL fast path for the four-block records: the along-seam same-panel neighbour block of
@@ -395,6 +488,9 @@ void CsSeamRelease() {
   if (cs_uct::rsown_ != nullptr) {delete cs_uct::rsown_; cs_uct::rsown_ = nullptr;}
   if (cs_uct::rsnbr_ != nullptr) {delete cs_uct::rsnbr_; cs_uct::rsnbr_ = nullptr;}
   if (cs_uct::pbrs_ != nullptr) {delete cs_uct::pbrs_; cs_uct::pbrs_ = nullptr;}
+  if (cs_uct::rjown_ != nullptr) {delete cs_uct::rjown_; cs_uct::rjown_ = nullptr;}
+  if (cs_uct::rjnbr_ != nullptr) {delete cs_uct::rjnbr_; cs_uct::rjnbr_ = nullptr;}
+  if (cs_uct::pbrj_ != nullptr) {delete cs_uct::pbrj_; cs_uct::pbrj_ = nullptr;}
 }
 using namespace cs_uct;  // NOLINT
 
@@ -461,9 +557,11 @@ void MHD::CsSeamInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("mhd","cs_seam_res")) {
     const std::string v = pin->GetString("mhd","cs_seam_res");
     if (v == "own") {cs_seam_res_own = true;}
+    else if (v == "mean_j") {cs_uct::res_j_ = true;}   // seamexact-1103
     else if (v != "mean") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<mhd>/cs_seam_res = '" << v << "' (mean | own)" << std::endl;
+                << std::endl << "<mhd>/cs_seam_res = '" << v << "' (mean | mean_j | own)"
+                << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
@@ -570,6 +668,16 @@ void MHD::CsSeamInit(ParameterInput *pin) {
       rsnbr_ = new DvceFaceFld5D<Real>("cs_resseam_nbr", nmb, nr, n3, n2, n1);
       Kokkos::realloc(rsown_->x1f, nmb, nr, 1, 1, 1);
       Kokkos::realloc(rsnbr_->x1f, nmb, nr, 1, 1, 1);
+      if (res_j_) {   // seamexact-1103: the shared seam current record
+        pbrj_ = new MeshBoundaryValuesCC(pp, pin, false);
+        pbrj_->seam_raw = true;
+        pbrj_->seam_xform_off = true;
+        pbrj_->InitializeBuffers(kNJ);
+        rjown_ = new DvceFaceFld5D<Real>("cs_resj_own", nmb, kNJ, n3, n2, n1);
+        rjnbr_ = new DvceFaceFld5D<Real>("cs_resj_nbr", nmb, kNJ, n3, n2, n1);
+        Kokkos::realloc(rjown_->x1f, nmb, kNJ, 1, 1, 1);
+        Kokkos::realloc(rjnbr_->x1f, nmb, kNJ, 1, 1, 1);
+      }
     }
     pbval_us = new MeshBoundaryValuesCC(pp, pin, false);
     pbval_us->seam_raw = true;
@@ -1579,6 +1687,140 @@ void MHD::UctSeamOwnSide() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CsSeamResJBcc
+//! \brief seamexact-1103: the stage cell-centred field AddEMFAmbipolarGnomonic used, for
+//! the shared seam current (nullptr = MHD::bcc0).
+
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::CsSeamResJ
+//! \brief seamexact-1103 <mhd>/cs_seam_res = mean_j: a SINGLE-VALUED CURRENT on every seam
+//! edge (along-seam, radial, cube vertex).  With cs_seam_res = mean every panel forms its
+//! own J (and B, eta) at a seam edge from its own grid and its resampled halo, its own
+//! EMF eta J + eta_A (J - (J.B) B/B^2) from them, and the EMFs are averaged: J itself is
+//! two-valued (1.3e-2 of |J| at N = 16, a truncation-level difference of the two charts)
+//! and the nonlinear ambipolar term is evaluated on each panel's own J and B.  Here each
+//! panel exchanges J and B (Cartesian: no basis or orientation mapping) and eta_Ohm,
+//! eta_A at the edge (CsEdgeOps, the ambipolar kernel's own expressions); all panels take
+//! the same mean (two panels: (P + Q)/2, commutative; three at a cube vertex: sorted,
+//! then summed) and evaluate ONE EMF vector E = eta J + eta_A (J - (J.B) B/B^2) from it,
+//! projected on their own edge tangent.  The EMF mean that follows (CsSeamResist, mean)
+//! then only removes the last-bit difference of the two tangents, so the EMF, the
+//! ambipolar term and the resistive Poynting flux (the Joule heating, built from these
+//! edge EMFs) all derive from the one shared current.  Without ambipolar diffusion
+//! (Ohmic only) the radial current does not enter (J.t on a tangential edge) and B is
+//! carried but unused.
+
+void MHD::CsSeamResJ(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta,
+                     const DvceEdgeFld4D<Real> &jnorm, DvceEdgeFld4D<Real> &efld_) {
+  using cs_uct::rjown_; using cs_uct::rjnbr_; using cs_uct::pbrj_; using cs_uct::kNJ;
+  using Edge = cs_uct::ResJEdge;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nc = indcs.nx2;
+  SeamCtx d;
+  d.panel = pmy_pack->pmb->mb_panel; d.size = pmy_pack->pmb->mb_size;
+  d.nghbr = pmy_pack->pmb->nghbr;
+  d.is = is; d.ie = ie; d.js = js; d.je = je; d.ks = ks; d.ke = ke;
+  d.nx2 = indcs.nx2; d.nx3 = indcs.nx3;
+  // per (block, side): bit 0 on a panel edge, bit 1 reversed along-seam orientation
+  DvceArray2D<int> fl("resj_fl", nmb1 + 1, 4);
+  par_for("resj_fl", DevExeSpace(), 0, nmb1, 0, 3,
+  KOKKOS_LAMBDA(const int m, const int sd) {
+    const bool on = OnPanelEdge(d, m, sd);
+    fl(m,sd) = (on ? 1 : 0) | ((on && SeamRev(d, m, sd)) ? 2 : 0);
+  });
+  const bool had = (presist->ad_type != 0);
+  cs_uct::ResJK K(b0, (cs_uct::rj_bc_ != nullptr) ? *cs_uct::rj_bc_ : bcc0, jnorm);
+  cs_uct::rj_bc_ = nullptr;
+  K.ops.has_ad = had;
+  if (had) K.ops.etc = presist->ad_eta_c;
+  K.ops.cxi = pmy_pack->pcoord->cos_face_xi; K.ops.sxi = pmy_pack->pcoord->sin_face_xi;
+  K.ops.cet = pmy_pack->pcoord->cos_face_eta; K.ops.set = pmy_pack->pcoord->sin_face_eta;
+  K.ops.ccl = pmy_pack->pcoord->cos_cell; K.ops.scl = pmy_pack->pcoord->sin_cell;
+  K.etb = eta; K.fl = fl;
+  K.sz = pmy_pack->pmb->mb_size.d_view; K.pn = pmy_pack->pmb->mb_panel.d_view;
+  K.bcs = pmy_pack->pmb->mb_bcs.d_view;
+  K.is = is; K.ie = ie; K.js = js; K.je = je; K.ks = ks; K.ke = ke;
+  K.nx2 = indcs.nx2; K.nx3 = indcs.nx3; K.had = had;
+  auto o2 = rjown_->x2f, o3 = rjown_->x3f, n2 = rjnbr_->x2f, n3 = rjnbr_->x3f;
+  auto e1 = efld_.x1e;
+  auto e2 = efld_.x2e;
+  auto e3 = efld_.x3e;
+  seam_for("resj_own", DevExeSpace(), 0, nmb1, 0, 3, 0, nc-1, is, ie,
+  KOKKOS_LAMBDA(const int m, const int sd, const int c, const int i) {
+    if ((K.fl(m,sd) & 1) == 0) return;
+    const bool x2t = (sd < 2), lo = ((sd & 1) == 0);
+    const int cb = x2t ? ks : js;
+    const int sf = x2t ? (lo ? js : je+1) : (lo ? ks : ke+1);
+    for (int e=0; e<4; ++e) {
+      Real v[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      if (e != 1 || i == ie) K.Own(m, K.EdgeAt(m, x2t, sf, c, e, i), v);
+      for (int q=0; q<8; ++q) {
+        if (x2t) {o2(m, 8*e + q, cb + c, sf, i) = v[q];}
+        else     {o3(m, 8*e + q, sf, cb + c, i) = v[q];}
+      }
+    }
+  });
+  pbrj_->InitFluxSeamRecv(kNJ);
+  pbrj_->PackAndSendFluxSeamCC(*rjown_);
+  while (pbrj_->RecvAndUnpackFluxSeamCC(*rjnbr_) != TaskStatus::complete) {}
+  pbrj_->ClearFluxSend();
+  pbrj_->ClearFluxRecv();
+  seam_for("resj_emf", DevExeSpace(), 0, nmb1, 0, 3, 0, nc-1, is, ie,
+  KOKKOS_LAMBDA(const int m, const int sd, const int c, const int i) {
+    if ((K.fl(m,sd) & 1) == 0) return;
+    const bool x2t = (sd < 2), lo = ((sd & 1) == 0);
+    const bool rev = (K.fl(m,sd) & 2) != 0;
+    const int cb = x2t ? ks : js;
+    const int sf = x2t ? (lo ? js : je+1) : (lo ? ks : ke+1);
+    const bool vlo = (K.fl(m, x2t ? 2 : 0) & 1) != 0, vhi = (K.fl(m, x2t ? 3 : 1) & 1) != 0;
+    for (int e=0; e<4; ++e) {
+      if (e == 1 && i != ie) continue;
+      if (e == 2 && c == 0 && vlo) continue;              // cube vertex: resj_vtx
+      if (e == 3 && (c != nc-1 || vhi)) continue;         // else the next cell's lower
+      const int en = (e <= 1) ? e : (rev ? 5 - e : e);   // reversed: lower <-> upper
+      Real v[8];
+      for (int q=0; q<8; ++q) {
+        const Real a = x2t ? o2(m, 8*e + q, cb + c, sf, i) : o3(m, 8*e + q, sf, cb + c, i);
+        const Real b = x2t ? n2(m, 8*en + q, cb + c, sf, i) : n3(m, 8*en + q, sf, cb + c, i);
+        v[q] = 0.5*(a + b);
+      }
+      const Edge g = K.EdgeAt(m, x2t, sf, c, e, i);
+      const Real ev = K.Emf(m, g, v);
+      if (g.dir == 1) {e1(m,g.k,g.j,g.i) = ev;}
+      else if (g.dir == 2) {e2(m,g.k,g.j,g.i) = ev;}
+      else {e3(m,g.k,g.j,g.i) = ev;}
+    }
+  });
+  seam_for("resj_vtx", DevExeSpace(), 0, nmb1, 0, 3, is, ie,
+  KOKKOS_LAMBDA(const int m, const int cn, const int i) {
+    const bool jlo = (cn & 1) == 0, klo = (cn & 2) == 0;
+    const int sj = jlo ? 0 : 1, sk = klo ? 2 : 3;
+    if ((K.fl(m,sj) & 1) == 0 || (K.fl(m,sk) & 1) == 0) return;
+    const int jc = jlo ? js : je+1, kc = klo ? ks : ke+1;
+    const int jv = jlo ? js : je, kv = klo ? ks : ke;
+    const bool r2 = (K.fl(m,sj) & 2) != 0, r3 = (K.fl(m,sk) & 2) != 0;
+    const int eo = klo ? 2 : 3, e2_ = (klo != r2) ? 2 : 3, e3_ = (jlo != r3) ? 2 : 3;
+    Real v[8];
+    for (int q=0; q<8; ++q) {
+      Real a = o2(m, 8*eo + q, kv, jc, i);
+      Real b_ = n2(m, 8*e2_ + q, kv, jc, i);
+      Real c_ = n3(m, 8*e3_ + q, kc, jv, i);
+      // sort, so that all three panels add the same numbers in the same order
+      if (a > b_) {const Real t = a; a = b_; b_ = t;}
+      if (b_ > c_) {const Real t = b_; b_ = c_; c_ = t;}
+      if (a > b_) {const Real t = a; a = b_; b_ = t;}
+      v[q] = ((a + b_) + c_)/3.0;
+    }
+    const Edge g = K.EdgeAt(m, true, jc, kv - ks, klo ? 2 : 3, i);
+    e1(m,kc,jc,i) = K.Emf(m, g, v);
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void MHD::CsSeamResist
 //! \brief shared_g / shared_o with a resistivity: the RESISTIVE EMF eta J.t on every seam
 //! edge (along-seam, radial, cube vertex), single-valued by construction.  J.t is the
@@ -1620,6 +1862,7 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
     auto e1 = efld_.x1e;
     auto e2 = efld_.x2e;
     auto e3 = efld_.x3e;
+    if (res_j_) CsSeamResJ(b0, eta, jnorm, efld_);   // seamexact-1103: cs_seam_res = mean_j
     auto XR = xrr_;
     seam_for("res_mean_xp", DevExeSpace(), 0, nmb1, 0, 3, is, ie,
     KOKKOS_LAMBDA(const int m, const int sd, const int i) {
@@ -1911,3 +2154,6 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
 }
 
 }  // namespace mhd
+
+// seamexact-1103 (cs_edge_jb.hpp): the stage field for the shared seam current
+void CsSeamResJBcc(const DvceArray5D<Real> *bc) {mhd::cs_uct::rj_bc_ = bc;}
