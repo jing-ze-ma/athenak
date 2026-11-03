@@ -1,0 +1,105 @@
+# Cubed sphere, TEST F: a CLOSED MHD blast.  Build with -D PROBLEM=cs_test.
+#
+# The MHD companion to cubed_sphere_blast.athinput, and the first shock test on this grid
+# whose CONSERVATION budget means anything.
+#
+# WHY THE FIELD IS AZIMUTHAL.  The blast's other field option is a uniform tilted B0, and
+# that field THREADS the reflecting radial walls: B.rhat != 0 at a wall is not a closed
+# system in MHD, the wall Riemann problem is ill-posed, and mass leaks at O(B^2) -- with
+# ZERO floor events to warn you.  That is not a cubed-sphere defect; the same thing
+# reproduces on a plain Cartesian grid with AthenaK's own inputs/mhd/blast_mhd.athinput
+# (mass +7.5e-04 weak field, +1.6e-02 strong, exactly 0.0 at b_amb = 0).  So a conserved
+# budget needs B.rhat = 0 EXACTLY, and `bazi` with `b0c = 0` gives it: the field is
+# bazi*(-y, x, 0), purely azimuthal, built from the vector potential
+# A = -0.5*bazi*(x^2 + y^2) zhat through the same discrete curl the uniform part uses.
+# `CSTestBlastCheck` prints max |B.rhat| at a radial wall so the premise is CHECKED.
+#
+# GATE IT WITH FOUR NUMBERS, not one:
+#   1. mass and energy against a `time/nlim=0` run of this same input -- must be round-off
+#   2. max |sum A.B| / (|B| max A)      -- div B, round-off by construction, held by CT
+#   3. |B|max against bazi*R            -- div B alone is satisfied by a ZERO field
+#   4. max |B.rhat| at a radial WALL    -- ~0, or item 1 is measuring the wrong thing
+#
+# The blast centre defaults to the CUBE VERTEX (1,1,1), the hardest place on the grid.
+#
+# STATUS: PASSES.  blast_p = 100, tlim = 0.30, joint refinement:
+#
+#   nx2      mass        energy      div B     wall Br/|B|   non-finite
+#    16   +1.696e-15   -2.274e-08   4.30e-14    4.58e-04         0
+#    32   -4.604e-15   -5.144e-09   1.40e-13    1.27e-04         0
+#    64   -2.326e-14   -1.225e-09   1.36e-12    3.34e-05         0
+#
+# MASS IS ROUND-OFF UNDER THE SHOCK at every resolution, and div B stays at round-off
+# through it.  ENERGY IS NOT round-off, and should not be expected to be: the discrete
+# curl evaluates A by the midpoint rule, so the initial B.rhat at the wall is O(h^2)
+# rather than zero (4.58e-04 -> 1.27e-04 -> 3.34e-05, second order), and that residual
+# normal component leaks energy through the wall by the same O(B^2) law the uniform field
+# obeys.  Both controls confirm it: at `bazi = 0` (B = 0 exactly) the energy drift is
+# -9.95e-15, pure round-off, and HALVING the field to bazi = 0.05 divides the drift by
+# exactly 4.00 (-5.144e-09 -> -1.286e-09).  So the energy error is O(B^2 h^2) and
+# converges away; it is a property of the initial condition, not of the update.
+#
+# THE UNIFORM-FIELD CONTROL, for contrast -- `bazi=0.0 b0c=0.1` at nx2 = 32 gives
+# wall Br/|B| = 1.00 and mass +1.701e-04, ELEVEN decades worse, with zero floor events.
+# That is the trap this input exists to avoid; do not gate conservation on that field.
+#
+# AXES: x1 is RADIAL; x2 = xi and x3 = eta are the panel-tangential angles.
+
+<comment>
+problem = cubed sphere CLOSED MHD blast through a panel seam and a cube vertex
+
+<job>
+basename = cs_mhd_blast
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = reflect      # a CLOSED box: with B.rhat = 0 these pass exactly zero flux
+ox1_bc   = reflect
+
+nx2      = 32           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 32           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 32
+nx3      = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.30
+ndiag      = 1000
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.666667
+
+<problem>
+iprob      = 12
+d0         = 1.0
+p0         = 1.0
+blast_p    = 100.0      # strong: a Mach ~4 shock, not a linear wave
+blast_ang  = 0.25       # angular radius of the overpressure cap, radians
+blast_x    = 1.0        # centre direction; the DEFAULT here is the CUBE VERTEX
+blast_y    = 1.0
+blast_z    = 1.0
+bazi       = 0.1        # AZIMUTHAL amplitude: B = bazi*(-y, x, 0), so B.rhat = 0
+b0c        = 0.0        # the uniform tilted part MUST be off, or the box is not closed
