@@ -75,6 +75,12 @@
 namespace {
 DvceArray1D<int> CrossPanelPairs(MeshBlockPack *pp, const void *key) {
   static std::map<const void*, DvceArray1D<int>> cache;
+  // the Views must go before Kokkos::finalize, not at static destruction
+  static const bool hook_ = [] {
+    Kokkos::push_finalize_hook([] {cache.clear();});
+    return true;
+  }();
+  (void) hook_;
   auto it = cache.find(key);
   if (it != cache.end()) return it->second;
   const int nmb = pp->nmb_thispack, nnghbr = pp->pmb->nnghbr;

@@ -99,6 +99,29 @@ TaskStatus Resistivity::RKUpdate(Driver *pdriver, int stage) {
     });
   }
 
+  // r1mspeed-1102: curvilinear meshes update one cell per thread (no team scratch or
+  // barriers); every expression and its order are those of the team kernel below, so
+  // the result is bitwise the same
+  if (use_cubed_sphere || use_spherical_polar) {
+    const bool md_ = multi_d, td_ = three_d;
+    par_for("resmhd_update", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real divf = ((fjm1*flx1(m,n,k,j,i+1)+f0*flx1_ideal(m,n,k,j,i+1))*area1(m,k,j,i+1) - (fjm1*flx1(m,n,k,j,i)+f0*flx1_ideal(m,n,k,j,i))*area1(m,k,j,i))/volume(m,k,j,i);
+      if (md_) {
+        divf += ((fjm1*flx2(m,n,k,j+1,i)+f0*flx2_ideal(m,n,k,j+1,i))*area2(m,k,j+1,i) - (fjm1*flx2(m,n,k,j,i)+f0*flx2_ideal(m,n,k,j,i))*area2(m,k,j,i))/volume(m,k,j,i);
+      }
+      if (td_) {
+        divf += ((fjm1*flx3(m,n,k+1,j,i)+f0*flx3_ideal(m,n,k+1,j,i))*area3(m,k+1,j,i) - (fjm1*flx3(m,n,k,j,i)+f0*flx3_ideal(m,n,k,j,i))*area3(m,k,j,i))/volume(m,k,j,i);
+      }
+      if (stage == 1) {
+        u0_(m,n,k,j,i) = u0_(m,n,k,j,i) - dt*divf;
+      } else {
+        u0_(m,n,k,j,i) = mu_*u0_(m,n,k,j,i) + nu_*u2_(m,n,k,j,i) + (1.0-mu_-nu_)*u_ideal_(m,n,k,j,i) - dt*divf;
+      }
+    });
+    return TaskStatus::complete;
+  }
+
   scr_level = TeamScratchLevel(scr_size, 0);
   par_for_outer("resmhd_update",DevExeSpace(),scr_size,scr_level,0,nmb1,ks,ke,js,je,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
