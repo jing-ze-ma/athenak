@@ -283,7 +283,8 @@ class MHD {
   void UctSeamOwnSide();
   void SeamXRecord(const bool packets);
   void CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta,
-                    const DvceEdgeFld4D<Real> &jnorm, DvceEdgeFld4D<Real> &efld_);
+                    const DvceEdgeFld4D<Real> &jnorm, DvceEdgeFld4D<Real> &efld_,
+                    const bool mean_only = false);
   bool use_polar_emf_diss = false; // Rusanov face-field dissipation on e2 in the polar rows        // plain 4-face average corner EMF (Balsara-Spicer) on ANY grid
 
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per

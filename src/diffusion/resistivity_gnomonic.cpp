@@ -278,7 +278,11 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
                          + jn2(m,k,j-1,i) + jn2(m,k+1,j-1,i));
     e3(m,k,j,i) += et*(jn3(m,k,j,i) + cxi(m,k,j)*j2a)/sxi(m,k,j);
   });
-  if (rsc_) {pmy_pack->pmhd->CsSeamResist(b0, eta_b, jnorm, efld);}
+  // with ambipolar diffusion the two-chart mean is taken once, after the ambipolar EMF
+  // has been added too (AddEMFAmbipolarGnomonic); the own-grid Ohmic part is added here
+  if (rsc_ && (rsh_ || ad_type == 0)) {
+    pmy_pack->pmhd->CsSeamResist(b0, eta_b, jnorm, efld);
+  }
 
   return;
 }

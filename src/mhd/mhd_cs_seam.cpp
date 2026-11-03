@@ -1596,7 +1596,8 @@ void MHD::UctSeamOwnSide() {
 //! The radial edges at four-block seam ends use the same-panel ghost copies (exact).
 
 void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta,
-                       const DvceEdgeFld4D<Real> &jnorm, DvceEdgeFld4D<Real> &efld_) {
+                       const DvceEdgeFld4D<Real> &jnorm, DvceEdgeFld4D<Real> &efld_,
+                       const bool mean_only) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -1608,7 +1609,7 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
   d.is = is; d.ie = ie; d.js = js; d.je = je; d.ks = ks; d.ke = ke;
   d.nx2 = indcs.nx2; d.nx3 = indcs.nx3;
   auto o2 = rsown_->x2f, o3 = rsown_->x3f, n2 = rsnbr_->x2f, n3 = rsnbr_->x3f;
-  if (!cs_seam_res_own) {
+  if (!cs_seam_res_own || mean_only) {
     // ---- cs_seam_res = mean (default): the TWO-CHART MEAN of the standard resistive
     // EMF (pass 2 computed every seam edge from each panel's own + ghost cells), the
     // shared_g idea applied to eta J: each panel exchanges its TOTAL seam-edge EMF (the
