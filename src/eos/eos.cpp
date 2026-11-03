@@ -288,6 +288,24 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       }
       eos_data.chi_full = pin->GetBoolean(bk, "lhllc_chi_full");
     }
+    // prod1103 default (USER 11-03, "use u_n for lhllc/d"): lhlld_chi_normal = true on a
+    // FRESH start (recipe::NewDefaults) whenever <mhd>/rsolver = lhlld and the key is not
+    // named, i.e. c_u of LHLLD from the face-normal velocity as LHLLC's chi (lowmach2-1102:
+    // Gresho B_z KE 0.52 vs 0.47, checkerboard damping identical).  Recorded (GetOrAdd)
+    // for the run's restarts; a restart whose input lacks the key keeps false (bitwise);
+    // an explicit key always wins.  LHLLC is unchanged (face-normal chi unless
+    // lhllc_chi_full is named).
+    if (!is_hyd && !pin->DoesParameterExist(bk, "lhlld_chi_normal") &&
+        pin->DoesParameterExist(bk, "rsolver") && pin->GetString(bk, "rsolver") == "lhlld") {
+      if (recipe::NewDefaults(pin)) {
+        pin->GetOrAddBoolean(bk, "lhlld_chi_normal", true);
+        recipe::Log("<mhd>/lhlld_chi_normal = true (default with rsolver = lhlld)");
+      } else {
+        recipe::Log("<mhd>/lhlld_chi_normal = false (" + std::string(
+            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+            "restart input has no key") + ": the old default)");
+      }
+    }
     if (pin->DoesParameterExist(bk, "lhlld_chi_normal")) {
       if (is_hyd) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

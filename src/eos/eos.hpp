@@ -302,9 +302,12 @@ struct EOS_Data {
   // This is Minoshima & Miyoshi 2021 eq. (14) as written (and what LHLLD already does,
   // through c_u), SLAU/SLAU2 and Furusawa+ 2023.
   bool chi_full = false;
-  // lowmach2-1102 <mhd>/lhlld_chi_normal (TEST key, default false = Minoshima & Miyoshi
-  // eq. 14 with the full |u|, bitwise; read only when named; MHD only): c_u of LHLLD from
-  // the face-normal velocity only (|u|^2 -> u_n^2), mirroring LHLLC's legacy chi.
+  // lowmach2-1102 <mhd>/lhlld_chi_normal (false = Minoshima & Miyoshi eq. 14 with the
+  // full |u|, the legacy behaviour; read only when named; MHD only): c_u of LHLLD from
+  // the face-normal velocity only (|u|^2 -> u_n^2), mirroring LHLLC's legacy chi; also
+  // used by the alfmach_rot psi_A (LHLLD and UctFaceStore).  FRESH-start default true
+  // with rsolver = lhlld (prod1103, USER 11-03; recipe::NewDefaults, eos.cpp); a restart
+  // whose input lacks the key keeps false.
   bool chi_normal = false;
   // alfmach-1102 <mhd>/lhlld_alfmach (default false = Minoshima & Miyoshi c_u with the
   // full Alfven floor, bitwise; read only when named; MHD only): ALFVEN-MACH SCALED
