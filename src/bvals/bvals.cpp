@@ -20,6 +20,7 @@
 #include "mesh/mesh.hpp"
 #include "particles/particles.hpp"
 #include "bvals.hpp"
+#include "utils/recipe.hpp"
 
 //----------------------------------------------------------------------------------------
 // MeshBoundaryValues constructor:
@@ -328,10 +329,28 @@ particles::ParticlesBoundaryValues::~ParticlesBoundaryValues() {
 //! depends on the MeshBlock layout at truncation level.  extend repeats the exchange once,
 //! after it has completed, with the stencil allowed into the sender's own along-seam
 //! ghosts (same-panel copies), clamped to the PANEL: layout independent to round-off.
+//! prod1103 default (USER 11-03): extend on a FRESH start (recipe::NewDefaults) whenever
+//! a panel side has more than one MeshBlock and the key is not named; the value is
+//! recorded (GetOrAdd) so the run's restarts carry it.  A restart whose input lacks the
+//! key keeps clamp (bitwise); an explicit key always wins.  One MeshBlock per panel side:
+//! no interior block end, extend is a no-op and the key stays clamp unless named.
 
 bool CsSeamBlockendExtend(MeshBlockPack *ppack, ParameterInput *pin) {
   Mesh *pm = ppack->pmesh;
   if (!pm->use_cubed_sphere) return false;
+  const bool split = (pm->mesh_indcs.nx2 > pm->mb_indcs.nx2) ||
+                     (pm->mesh_indcs.nx3 > pm->mb_indcs.nx3);
+  if (split && !pin->DoesParameterExist("mesh", "cs_seam_blockend")) {
+    if (recipe::NewDefaults(pin)) {
+      pin->GetOrAddString("mesh", "cs_seam_blockend", "extend");
+      recipe::Log("<mesh>/cs_seam_blockend = extend (default: more than one MeshBlock "
+                  "per panel side)");
+    } else {
+      recipe::Log("<mesh>/cs_seam_blockend = clamp (" + std::string(
+          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+          "restart input has no key") + ": the old default)");
+    }
+  }
   const std::string v = pin->GetOrAddString("mesh", "cs_seam_blockend", "clamp");
   if (v != "clamp" && v != "extend") {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -339,7 +358,5 @@ bool CsSeamBlockendExtend(MeshBlockPack *ppack, ParameterInput *pin) {
               << "' must be clamp or extend" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  const bool split = (pm->mesh_indcs.nx2 > pm->mb_indcs.nx2) ||
-                     (pm->mesh_indcs.nx3 > pm->mb_indcs.nx3);
   return (v == "extend") && split;
 }

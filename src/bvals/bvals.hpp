@@ -289,8 +289,10 @@ class MeshBlockPack;
 //! \class MeshBoundaryValues
 //  \brief Abstract base class for boundary values for different kinds of Mesh variables
 
-// layoutbug-1103: <mesh>/cs_seam_blockend = clamp (default) | extend, true for extend on
-// a cubed sphere with more than one MeshBlock per panel side (bvals.cpp)
+// layoutbug-1103: <mesh>/cs_seam_blockend = clamp | extend, true for extend on a cubed
+// sphere with more than one MeshBlock per panel side (bvals.cpp).  FRESH-start default
+// extend there (prod1103, USER 11-03; recipe::NewDefaults); a restart whose input lacks
+// the key keeps clamp.
 bool CsSeamBlockendExtend(MeshBlockPack *ppack, ParameterInput *pin);
 
 class MeshBoundaryValues {
@@ -377,7 +379,8 @@ class MeshBoundaryValues {
   // object alone (Conduction::pbval_tr); every other MeshBoundaryValues leaves it false
   // and is bitwise untouched.
   bool skip_x2x3_diag = false;
-  // layoutbug-1103: <mesh>/cs_seam_blockend = extend (default clamp = the old halo) on
+  // layoutbug-1103: <mesh>/cs_seam_blockend = extend (fresh-start default with more than
+  // one MeshBlock per panel side, prod1103; clamp = the old halo, restarts w/o key) on
   // the fluid's conserved-state / face-field exchange (set by Hydro / MHD).  After the
   // exchange completes it is repeated once with the along-seam resample stencil allowed
   // into the sender's own along-seam ghosts at an INTERIOR block end, so the seam halo
