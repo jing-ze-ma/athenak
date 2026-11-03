@@ -740,6 +740,14 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }
+      // uctaudit-1103: UCT is not validated with mesh refinement (the fresh-start default
+      // already skips it there); an explicit emf_scheme = uct | uct_hlld is refused too
+      if ((emf_uct || emf_uct_hlld) && ppack->pmesh->multilevel) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/emf_scheme = " << es << " is not supported with "
+                  << "mesh refinement (SMR/AMR); use emf_scheme = gs07" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       // uctaudit-1103: emf_scheme = uct builds the corner EMF from the HLL coefficients
       // (MD21 eq. 30), which have no Alfven fan, so the lhlld_alfmach_rot scaling of the
       // fan dissipation (a TEST key) would act on the face fluxes only and be silently
