@@ -322,6 +322,8 @@ struct EOS_Data {
   // i.e. c_a^2 -> min(c_a^2, |u|^2), c_ax^2 -> c_ax^2 min(1, |u|^2/c_a^2), so that
   // chi = O(|u|/c_f) when M_A = |u|/c_a < 1 (the floor ~c_a/c_f made the total-pressure
   // dissipation O(1/M_A) too large), and c_u is unchanged (bitwise) where M_A >= 1.
+  // FRESH-start default true with rsolver = lhlld (prod1104a, USER 11-04; recipe::
+  // NewDefaults, eos.cpp); a restart whose input lacks the key keeps false.
   bool alfmach = false;
   // alfmach-1102 <mhd>/lhlld_alfmach_rot (default false = HLLD Alfven fan, bitwise;
   // read only when named) and <mhd>/lhlld_alfmach_rot_min = psi_min (default 0):

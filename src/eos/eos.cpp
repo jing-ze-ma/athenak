@@ -338,6 +338,22 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       }
       eos_data.chi_normal = pin->GetBoolean(bk, "lhlld_chi_normal");
     }
+    // prod1104a default (USER 11-04, lowmachpu_1103 acoustics gate 18/18 PASS):
+    // <mhd>/lhlld_alfmach = true on a FRESH start (recipe::NewDefaults) whenever
+    // <mhd>/rsolver = lhlld and the key is not named; recorded (GetOrAdd) for the run's
+    // restarts.  A restart whose input lacks the key keeps false (bitwise); an explicit
+    // key always wins.
+    if (!is_hyd && !pin->DoesParameterExist(bk, "lhlld_alfmach") &&
+        pin->DoesParameterExist(bk, "rsolver") && pin->GetString(bk, "rsolver") == "lhlld") {
+      if (recipe::NewDefaults(pin)) {
+        pin->GetOrAddBoolean(bk, "lhlld_alfmach", true);
+        recipe::Log("<mhd>/lhlld_alfmach = true (default with rsolver = lhlld)");
+      } else {
+        recipe::Log("<mhd>/lhlld_alfmach = false (" + std::string(
+            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+            "restart input has no key") + ": the old default)");
+      }
+    }
     // alfmach-1102: see EOS_Data::alfmach, ::alfmach_rot (read only when named)
     for (const std::string key :
          {"lhlld_alfmach", "lhlld_alfmach_rot", "lhlld_alfmach_rot_min"}) {
