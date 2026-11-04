@@ -64,6 +64,7 @@
 #include <future>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <numeric>
 #include <string>
 #include <thread>  // NOLINT(build/c++11)
@@ -886,7 +887,16 @@ void RadiationM1::VetGdInit() {
     // angular offset <= chord / r_lo; + 2 cells for the bilinear stencil and rounding
     auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->xx1f);
-    const int nmax = std::min(indcs.nx2, indcs.nx3);
+    int nmax = std::min(indcs.nx2, indcs.nx3);
+    // accpolar-1103 vet_gd_band_global: the band is filled from any block (global-cell
+    // lists), so its depth is capped by the SPHERE (half a ring in phi, the theta rows
+    // of one pole-to-pole mirror), not by the MeshBlock: the same depth for every layout
+    if (vgd_gband) {
+      if (!vgd_pol) {
+        VgdFatal("vet_gd_band_global needs the full sphere (mesh/use_polar_boundary)");
+      }
+      nmax = std::min(pm->mesh_indcs.nx3/2, pm->mesh_indcs.nx2);
+    }
     vgd_wsh.assign(indcs.nx1 + 2*indcs.ng, 0);
     vgd_wsi.assign(indcs.nx1 + 2*indcs.ng, 0);
     vgd_wso.assign(indcs.nx1 + 2*indcs.ng, 0);
@@ -930,6 +940,7 @@ void RadiationM1::VetGdInit() {
     Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
   }
   if (!vgd_csg) {VetGdHaloInit();}   // cs-vetgd-1017: cs lists made by VetGdCsInit
+  if (vgd_gband) {VetGdGlobalBandInit();}   // accpolar-1103 (sph2.inc): after the slots
   if (vgd_pol) {VetGdRingInit();}   // accsp-1102: the polar ring buffers (sph2.inc)
   if (vgd_thmir) {
     // wallbug-1027 vet_gd_theta_wall = mirror: the theta neighbour across a wall is the
@@ -1612,6 +1623,8 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
   // extended chart: the same point, same global directions): no theta wall
   const bool thwrap = !vgd_pol;
   auto x3_h = [&](const int m, const int k) {
+    // accpolar-1103 vet_gd_band_global: the band column's phi from the GLOBAL index
+    if (vgd_gband) {return static_cast<Real>(vgd_phc_h[static_cast<size_t>(m)*c3 + k]);}
     return mbs.h_view(m).x3min + (k - ksg + 0.5)*mbs.h_view(m).dx3;
   };
   const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
@@ -1653,7 +1666,8 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
           }
           mp_h(m,k,j,q) = best;
           ++nmap;
-          if (bd > 1.0 - 1.0e-12) {++nexact;}
+          // accpolar-1103 vet_gd_band_global copies without re-indexing: exact = identity
+          if (bd > 1.0 - 1.0e-12 && (!vgd_gband || best == q)) {++nexact;}
           if (wint) {
             // vet_gd_wall_interp: the exactly rotated direction M n_q from the 3 nearest
             // set directions OF THE SAME BRANCH at the source cell (spherical
@@ -1954,6 +1968,10 @@ void RadiationM1::VetGdTables(const Real alpha) {
   vgd_tab_state = 0;
   const int n = vgd_n;
   const int nwall = H.nwall, nexact = H.nexact, nmap = H.nmap;
+  if (vgd_gband && nexact != nmap) {
+    VgdFatal("vet_gd_band_global: a wall direction map is not the identity (the global "
+             "band copies do not re-index directions)");
+  }
   const bool first = (vgd_alpha < 0.0);
   vgd_alpha = alpha;
   g_vgd_tab_alpha = alpha;   // csfix-1023
@@ -2272,6 +2290,14 @@ void RadiationM1::VetGdHaloInit() {
 template <class V>
 void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, const int ws,
                             const bool mapd, V *b) {
+  // accpolar-1103 vet_gd_band_global: every band position within depth ws from its
+  // owner's interior (global-cell lists, rad_m1_vetgd_sph2.inc); the full sphere has no
+  // direction re-indexing at its walls (checked in VgdTabCompute)
+  if (vgd_gband) {
+    if (b != nullptr) {VgdFatal("vet_gd_band_global: no fused twin band");}
+    VetGdCsHalo(a, nv, i0, i1, true, ws);
+    return;
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int nx2 = indcs.nx2, nx3 = indcs.nx3, w = vgd_w;
@@ -5069,7 +5095,10 @@ void RadiationM1::VetGdSweep() {
   const int klo = 0, khi = ke + wb - 1;
   const Real twopi = 2.0*M_PI;
   // accsp-1102 (rad_m1_vetgd_sph2.inc): stretched theta / full sphere
-  const bool sth_ = vgd_sth, pol_ = vgd_pol;
+  // accpolar-1103: pol_ 2 = vet_gd_band_global (the cell-window clamp), 1 = the block band
+  const bool sth_ = vgd_sth;
+  const int pol_ = vgd_pol ? (vgd_gband ? 2 : 1) : 0;
+  const bool gphb_ = vgd_gband; auto phcb_ = vgd_phc; const int gpwb_ = vgd_w;
   auto thn_ = vgd_thn;
   auto hp_ = vgd_hpol;
   auto wsd_ = vgd_wsd;
@@ -5098,6 +5127,7 @@ void RadiationM1::VetGdSweep() {
       }
       auto L_ = vgd_shl[p];
       int cnt = 0;
+      const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;   // accpolar-1103
       Kokkos::parallel_scan("m1_vgd_shl", Kokkos::RangePolicy<>(vgd_cur, 0, ntot),
       KOKKOS_LAMBDA(const int c, int &acc, const bool fin) {
         int t = c;
@@ -5110,7 +5140,7 @@ void RadiationM1::VetGdSweep() {
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         const Real th = sth_ ? thn_(m,j)   // accsp-1102
                              : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-        const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+        const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3);
         const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
         const Real mr = nx*st*cp + ny*st*sp + nz*ct;
         const bool keep = inw ? (mr < 1.0e-12) : (mr >= -1.0e-12);
@@ -5134,11 +5164,12 @@ void RadiationM1::VetGdSweep() {
   if (static_cast<int>(vgd_trig.extent(0)) != nmb1 + 1) {
     Kokkos::realloc(vgd_trig, nmb1 + 1, ke - ks + 1, je - js + 1, 4);
     auto tw_ = vgd_trig;
+    const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;   // accpolar-1103
     par_for("m1_vgd_trig", vgd_cur, 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       const Real th = sth_ ? thn_(m,j)   // accsp-1102
                            : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-      const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+      const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3);
       tw_(m,k-ks,j-js,0) = sin(th);
       tw_(m,k-ks,j-js,1) = cos(th);
       tw_(m,k-ks,j-js,2) = sin(ph);
@@ -5635,13 +5666,14 @@ void RadiationM1::VetGdMoments() {
   if (vgd_csg) {
     VetGdCsMoments(0);
   } else {
+  const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;   // accpolar-1103
   par_for("m1_vgd_mom", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
     for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
     if (i < ilo) {return;}
     const Real th = sth_ ? thn_(m,j+og)   // accsp-1102
                          : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-    const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+    const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3);
     const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
     Real jm = 0.0, rr = 0.0, rt = 0.0, rp = 0.0, tq = 0.0, tp = 0.0, pq = 0.0;
     for (int d = 0; d < n; ++d) {
@@ -5742,11 +5774,12 @@ void RadiationM1::VetGdMoments() {
     VetGdCsMoments(1);
     return;
   }
+  const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;   // accpolar-1103
   par_for("m1_vgd_q", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real th = sth_ ? thn_(m,j+og)   // accsp-1102
                          : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-    const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+    const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3);
     const VgdRhatSp rh{sin(th), cos(th), sin(ph), cos(ph)};
     vq_(m,k,j) = VgdSurfaceQ(rh, dir_, vi_, n, m, k, j, og, ie, cx1v(m,ie)/cx1f(m,ie+1),
                              sqf, jca, jcb, jcap, qlo, qhi, q0);
@@ -8005,6 +8038,7 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       });
       return;
     }
+    const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;   // accpolar-1103
     par_for("m1_vgd_hr", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
       if (i < ilo) {
@@ -8018,7 +8052,7 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       }
       const Real th = sth_ ? thn_(m,j+og)   // accsp-1102
                            : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-      const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+      const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3);
       const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
       Real jm = 0.0, h[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
       for (int d = 0; d < n; ++d) {

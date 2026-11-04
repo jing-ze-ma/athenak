@@ -19,7 +19,9 @@
         // accsp-1102: a stretched theta / the full sphere: the row's node (sph2.inc)
         const Real th = sth_ ? thn_(m,j)
                              : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-        const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+        // accpolar-1103 vet_gd_band_global: phi from the global index (layout exact)
+        const Real ph = gphb_ ? phcb_(m, gpwb_ + k - ks)
+                              : mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
         // vgdfuse-1010: sin / cos of the cell's (theta, phi) from the per-cell table (the
         // same expressions, evaluated once per cell instead of once per direction)
         const Real st = tg_(m,k-ks,j-js,0), ct = tg_(m,k-ks,j-js,1);
@@ -177,6 +179,14 @@
               khi_ = wb + nx3b + wu - 2;
               jlo_ = wb - wu;
               jhi_ = wb + nx2b + wu - 2;
+              // accpolar-1103 vet_gd_band_global: the CELL's window (the same cells for
+              // every layout; inside the block's band since wb <= k, j < wb + nx)
+              if (pol_ == 2) {
+                klo_ = k - wu;
+                khi_ = k + wu - 1;
+                jlo_ = j - wu;
+                jhi_ = j + wu - 1;
+              }
             }
             if (!rng) {
               if (j0 < jlo_) {j0 = jlo_; uj = 0.0; clp = true;}

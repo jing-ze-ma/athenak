@@ -1234,13 +1234,18 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdCsHalo
 //! \brief fill every band position of a(m, v, k, j, i), v in [0, nv), shells [i0, i1],
-//! with its owner's interior value (exact copies; the shell range chunked to the buffer)
+//! with its owner's interior value (exact copies; the shell range chunked to the buffer).
+//! accpolar-1103: ws >= 0 with the depth-sorted lists of vet_gd_band_global (the full
+//! sphere, VetGdGlobalBandInit): only the positions within depth ws (a prefix of the
+//! on-rank list and of every partner's segment); ws < 0 (the cubed sphere): all
 
 template <class V>
 void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
-                              const bool loc) {
+                              const bool loc, const int ws) {
   auto a_ = a;
-  const int nl = loc ? vgd_csnloc : 0;
+  const bool dp = (ws >= 0) && vgd_gband && !vgd_gdnl.empty();
+  const int wq = dp ? std::min(ws, static_cast<int>(vgd_gdnl.size()) - 1) : 0;
+  const int nl = loc ? (dp ? vgd_gdnl[wq] : vgd_csnloc) : 0;
   {
     const int ni = i1 - i0 + 1;
     if (nl > 0 && ni > 0) {
@@ -1254,7 +1259,9 @@ void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
 #if MPI_PARALLEL_ENABLED
   if (vgd_hmpi) {
     const int nent = std::max(std::max(vgd_csnsnd, vgd_csnrcv), 1);
-    const int cap = static_cast<int>(vgd_cssb.extent(0)/nent);   // nv*ni per entry
+    // accpolar-1103: the full-sphere global band packs into DEVICE buffers (vgd_sbuf /
+    // vgd_rbuf, CUDA-aware MPI as the sp slot halo); the cubed sphere keeps pinned host
+    const int cap = static_cast<int>((dp ? vgd_sbuf.extent(0) : vgd_cssb.extent(0))/nent);
     const int nich = std::max(1, cap/nv);
     for (int c0 = i0; c0 <= i1; c0 += nich) {
       const int c1 = std::min(c0 + nich - 1, i1);
@@ -1264,7 +1271,21 @@ void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
       auto rb_ = vgd_csrb;
       auto S_ = vgd_cssl;
       auto R_ = vgd_csrl;
-      if (vgd_csnsnd > 0) {
+      auto DS_ = vgd_gdps;
+      auto DR_ = vgd_gdpr;
+      auto gsb_ = vgd_sbuf;
+      auto grb_ = vgd_rbuf;
+      Real *sbp = dp ? gsb_.data() : sb_.data();
+      Real *rbp = dp ? grb_.data() : rb_.data();
+      if (vgd_csnsnd > 0 && dp) {
+        // accpolar-1103: the depth-ws prefix of every partner segment (same offsets)
+        par_for("m1_vgdgb_pack", DevExeSpace(), 0, vgd_csnsnd - 1, 0, nv - 1, 0, ni - 1,
+        KOKKOS_LAMBDA(const int e, const int v, const int ii) {
+          if (DS_(e) > wq) {return;}
+          gsb_(static_cast<size_t>(e)*nvi + v*ni + ii) =
+              a_(S_(e,0),v,S_(e,1),S_(e,2),c0+ii);
+        });
+      } else if (vgd_csnsnd > 0) {
         par_for("m1_vgdcs_pack", DevExeSpace(), 0, vgd_csnsnd - 1, 0, nv - 1, 0, ni - 1,
         KOKKOS_LAMBDA(const int e, const int v, const int ii) {
           sb_(static_cast<size_t>(e)*nvi + v*ni + ii) =
@@ -1276,16 +1297,18 @@ void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
       std::vector<MPI_Request> req;
       for (size_t p = 0; p < vgd_csprk.size(); ++p) {
         const int rk = vgd_csprk[p];
-        if (vgd_cspm[p] > 0) {
+        const int cm = dp ? vgd_gdrn[wq][p] : vgd_cspm[p];
+        const int cn = dp ? vgd_gdsn[wq][p] : vgd_cspn[p];
+        if (cm > 0) {
           req.emplace_back();
-          MPI_Irecv(rb_.data() + static_cast<size_t>(vgd_cspr[p])*nvi, vgd_cspm[p]*nvi,
+          MPI_Irecv(rbp + static_cast<size_t>(vgd_cspr[p])*nvi, cm*nvi,
                     MPI_ATHENA_REAL, rk, 7101, MPI_COMM_WORLD, &req.back());
         }
-        if (vgd_cspn[p] > 0) {
+        if (cn > 0) {
           req.emplace_back();
-          MPI_Isend(sb_.data() + static_cast<size_t>(vgd_csps[p])*nvi, vgd_cspn[p]*nvi,
+          MPI_Isend(sbp + static_cast<size_t>(vgd_csps[p])*nvi, cn*nvi,
                     MPI_ATHENA_REAL, rk, 7101, MPI_COMM_WORLD, &req.back());
-          vgd_nbyte += static_cast<Real>(vgd_cspn[p])*nvi*sizeof(Real);
+          vgd_nbyte += static_cast<Real>(cn)*nvi*sizeof(Real);
         }
       }
       MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
@@ -1295,7 +1318,14 @@ void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
         vgd_csvsent += static_cast<double>(vgd_csnsnd)*nvi;
         vgd_csvdense += static_cast<double>(vgd_csnsnd)*nvi;
       }
-      if (vgd_csnrcv > 0) {
+      if (vgd_csnrcv > 0 && dp) {
+        par_for("m1_vgdgb_unpack", DevExeSpace(), 0, vgd_csnrcv - 1, 0, nv - 1, 0, ni - 1,
+        KOKKOS_LAMBDA(const int e, const int v, const int ii) {
+          if (DR_(e) > wq) {return;}
+          a_(R_(e,0),v,R_(e,1),R_(e,2),c0+ii) =
+              grb_(static_cast<size_t>(e)*nvi + v*ni + ii);
+        });
+      } else if (vgd_csnrcv > 0) {
         par_for("m1_vgdcs_unpack", DevExeSpace(), 0, vgd_csnrcv - 1, 0, nv - 1, 0, ni - 1,
         KOKKOS_LAMBDA(const int e, const int v, const int ii) {
           a_(R_(e,0),v,R_(e,1),R_(e,2),c0+ii) =
@@ -1309,10 +1339,12 @@ void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
 
 template void RadiationM1::VetGdCsHalo<DvceArray5D<Real>>(DvceArray5D<Real> &a,
                                                          const int nv, const int i0,
-                                                         const int i1, const bool loc);
+                                                         const int i1, const bool loc,
+                                                         const int ws);
 template void RadiationM1::VetGdCsHalo<RadiationM1::VgdRag>(RadiationM1::VgdRag &a,
                                                             const int nv, const int i0,
-                                                            const int i1, const bool loc);
+                                                            const int i1, const bool loc,
+                                                            const int ws);
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdCsSource

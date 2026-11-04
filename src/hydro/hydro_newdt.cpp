@@ -12,6 +12,8 @@
 #include <cstdlib>
 #include <iostream>
 #include <algorithm> // min
+#include <array>
+#include <vector>
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -59,6 +61,19 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   hloc.loc = -1;
   if (dt_diag.h_view.extent(0) == 0) Kokkos::realloc(dt_diag, ndtdiag);
 
+  // accpolar-1103: env ATHENA_DT_REPORT = N > 0 (diagnostic, no key): the report cycles
+  // also keep every cell's CFL dt (dt_cell) for the per-region minima (polar rows / rest)
+  static int dtrep = -1;
+  if (dtrep < 0) {
+    const char *ev = std::getenv("ATHENA_DT_REPORT");
+    dtrep = (ev != nullptr) ? std::atoi(ev) : 0;
+  }
+  const bool dtcell_on = (dtrep > 0) && ((pmy_pack->pmesh->ncycle % dtrep) == 0) &&
+                         (pmy_pack->pmesh->use_spherical_polar);
+  if (dtcell_on && dt_cell.extent(0) != static_cast<size_t>(pmy_pack->nmb_thispack)) {
+    Kokkos::realloc(dt_cell, pmy_pack->nmb_thispack, nx3, nx2, nx1);
+  }
+  auto dtc_ = dt_cell;
   // capture class variables for kernel
   auto &w0_ = w0;
   auto &eos = pmy_pack->phydro->peos->eos_data;
@@ -334,6 +349,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         cell_dt = dx1_(m,k,j,i)/max_dv1;
         if (multi_d_) cell_dt = fmin(cell_dt, dx2_(m,k,j,i)/max_dv2);
         if (three_d_) cell_dt = fmin(cell_dt, h3/max_dv3);
+        if (dtcell_on) {dtc_(m,k-ks,j-js,i-is) = cell_dt;}
         }
       } else {
       min_dt1 = fmin((mbsize.d_view(m).dx1/max_dv1), min_dt1);
@@ -413,11 +429,6 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // limiting cell, its direction, gas and radiation-modified signal speeds, the taper
   // optical depth rho kappa_T dx, E_rad, c dt rho kappa_P and the thin-freeze flag; the
   // global minimum of the GAS-ONLY dt dx/(|v| + c_gas) is printed alongside.
-  static int dtrep = -1;
-  if (dtrep < 0) {
-    const char *ev = std::getenv("ATHENA_DT_REPORT");
-    dtrep = (ev != nullptr) ? std::atoi(ev) : 0;
-  }
   if (dtrep > 0 && pdrive->time_evolution != TimeEvolution::kinematic &&
       !is_special_relativistic_ && !is_general_relativistic_ &&
       !is_dynamical_relativistic_ && (pmy_pack->pmesh->ncycle % dtrep) == 0) {
@@ -458,9 +469,70 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     MPI_Allreduce(MPI_IN_PLACE, &loc, 1, MPI_DOUBLE_INT, MPI_MINLOC, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, &dtg, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
 #endif
+    // accpolar-1103: the cell diagnostics for the global minimum and (sp) the minima of
+    // the polar rows (env ATHENA_DT_REPORT_NPOL rows from each pole, default 7; lines
+    // DTREG polar) and of the rest (DTREG rest), each printed by its owning rank
+    auto pmy_x2v_ = pmy_pack->pcoord->x2v;
+    auto pmy_x3v_ = pmy_pack->pcoord->x3v;
+    // the targets: kind 0 the global minimum (its owner), 1 polar rows, 2 the rest
+    std::vector<std::array<int, 7>> tgt;
     if (loc.r == global_variable::my_rank && dtnew_m >= 0) {
+      tgt.push_back({0, dtnew_m, dtnew_k, dtnew_j, dtnew_i, 0, 0});
+    }
+    if (dtcell_on) {
+      // the polar rows (global row < npol from either pole) and the rest
+      static int npol = -1;
+      if (npol < 0) {
+        const char *ev = std::getenv("ATHENA_DT_REPORT_NPOL");
+        npol = (ev != nullptr) ? std::atoi(ev) : 7;
+      }
+      const int nrow = pmy_pack->pmesh->mesh_indcs.nx2;
+      auto &mbl = pmy_pack->pmesh->lloc_eachmb;
+      std::vector<int> lx2h(pmy_pack->nmb_thispack);
+      for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
+        lx2h[m] = mbl[pmy_pack->gids + m].lx2;
+      }
+      DvceArray1D<int> lx2d("dtrep_lx2", pmy_pack->nmb_thispack);
+      {
+        auto h = Kokkos::create_mirror_view(lx2d);
+        for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {h(m) = lx2h[m];}
+        Kokkos::deep_copy(lx2d, h);
+      }
+      for (int reg = 0; reg < 2; ++reg) {
+        Kokkos::ValLocScalar<Real, int> rl;
+        rl.val = std::numeric_limits<float>::max();
+        rl.loc = -1;
+        const int n2b = nx2, npl = npol;
+        Kokkos::parallel_reduce("HydroDtReg", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+        KOKKOS_LAMBDA(const int &idx, Kokkos::ValLocScalar<Real, int> &mr) {
+          const int m = idx/nkji;
+          const int k = (idx - m*nkji)/nji;
+          const int j = (idx - m*nkji - k*nji)/nx1;
+          const int i = idx - m*nkji - k*nji - j*nx1;
+          const int jg = lx2d(m)*n2b + j;
+          const int jp = (jg < nrow - 1 - jg) ? jg : (nrow - 1 - jg);
+          const bool pol = (jp < npl);
+          if (pol != (reg == 0)) {return;}
+          const Real v = dtc_(m,k,j,i);
+          if (v < mr.val) {mr.val = v; mr.loc = idx;}
+        }, Kokkos::MinLoc<Real, int>(rl));
+        struct {double v; int r;} rg{static_cast<double>(rl.val),
+                                     global_variable::my_rank};
+#if MPI_PARALLEL_ENABLED
+        MPI_Allreduce(MPI_IN_PLACE, &rg, 1, MPI_DOUBLE_INT, MPI_MINLOC, MPI_COMM_WORLD);
+#endif
+        if (rg.r == global_variable::my_rank && rl.loc >= 0) {
+          const int m = rl.loc/nkji;
+          const int k = (rl.loc - m*nkji)/nji + ks;
+          const int j = (rl.loc - m*nkji - (k-ks)*nji)/nx1 + js;
+          const int i = (rl.loc - m*nkji - (k-ks)*nji - (j-js)*nx1) + is;
+          tgt.push_back({1 + reg, m, k, j, i, (lx2h[m]*nx2 + j - js), npol});
+        }
+      }
+    }
+    for (const auto &tg : tgt) {
       DualArray1D<Real> rp("dtrep", 32);
-      const int dm = dtnew_m, dk = dtnew_k, dj = dtnew_j, di = dtnew_i;
+      const int dm = tg[1], dk = tg[2], dj = tg[3], di = tg[4];
       auto &x1v_ = pmy_pack->pcoord->x1v;
       auto &wtemp_ = pmy_pack->phydro->wtemp;
       const bool curv = (use_cubed_sphere || use_spherical_polar);
@@ -492,6 +564,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         Real h[3];
         if (curv) {
           h[0] = dx1_(m,k,j,i); h[1] = dx2_(m,k,j,i); h[2] = dx3_(m,k,j,i);
+          if (rav_) {h[2] *= rnf_(m,j);}   // accpolar-1103: the ring-avg group width
         } else {
           h[0] = mbsize.d_view(m).dx1; h[1] = mbsize.d_view(m).dx2;
           h[2] = mbsize.d_view(m).dx3;
@@ -578,10 +651,13 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         rv(15) = best;
         rv(16) = h[adir]/(fabs(v[adir]) + cs*(adir > 0 ? sc : 1.0));
         rv(17) = sc;
+        rv(18) = (curv ? pmy_x2v_(m,j) : 0.0);
+        rv(19) = (curv ? pmy_x3v_(m,k) : 0.0);
       });
       rp.modify_device();
       rp.sync_host();
       auto &q = rp.h_view;
+      if (tg[0] == 0) {
       const Real cf = pmy_pack->pmesh->cfl_no;
       std::cout << "DTREP cycle=" << pmy_pack->pmesh->ncycle
                 << " time=" << pmy_pack->pmesh->time
@@ -594,7 +670,20 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
                 << " h=" << q(9) << " tauT_h=" << q(10) << " Erad=" << q(11)
                 << " Ddd=" << q(12) << " cdt_kP=" << q(13) << " frz=" << q(14)
                 << " sc=" << q(17) << " cell_dt=" << q(15) << " cell_dt_gas=" << q(16)
+                << " theta_deg=" << q(18)*180.0/M_PI << " phi=" << q(19)
                 << std::endl;
+      }
+      if (tg[0] > 0) {
+        const Real cf = pmy_pack->pmesh->cfl_no;
+        std::cout << (tg[0] == 1 ? "DTREG polar" : "DTREG rest ") << " cycle="
+                  << pmy_pack->pmesh->ncycle << " npol=" << tg[6]
+                  << " cfl*cell_dt=" << cf*q(15) << " row=" << tg[5]
+                  << " theta_deg=" << q(18)*180.0/M_PI << " phi=" << q(19)
+                  << " r=" << q(0) << " dir=" << static_cast<int>(q(6))
+                  << " rho=" << q(1) << " T=" << q(2) << " v=" << q(7)
+                  << " cgas=" << q(5) << " ceff=" << q(8) << " h=" << q(9)
+                  << " cfl*cell_dt_gas=" << cf*q(16) << std::endl;
+      }
     }
   }
 
