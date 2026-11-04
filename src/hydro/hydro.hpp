@@ -914,6 +914,9 @@ class Hydro {
                 } else if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
                     PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
                 }
+                if (eos.wb_plm_range) {
+                  wbplm::WbPlmRange(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), ql(n,i+1), qr(n,i));
+                }
             });
           } else {
             par_for_inner(member, il, iu, [&](const int i) {
@@ -1108,6 +1111,10 @@ class Hydro {
             } else if (dl(n,i+1) < 0.0 || dr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
               PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
                              dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i), eos.plm_c1);
+            }
+            if (eos.wb_plm_range) {
+              wbplm::WbPlmRange(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
+                                dl(n,i+1), dr(n,i));
             }
           } else {
             PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),

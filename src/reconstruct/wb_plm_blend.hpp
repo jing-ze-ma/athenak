@@ -65,5 +65,19 @@ void WbPlmBlend(const Real q_i, const Real sL, const Real sR, const Real pl,
   ql = w*ql + (1.0 - w)*pl;
   qr = w*qr + (1.0 - w)*pr;
 }
+
+//! wbplm-1103 <hydro|mhd>/wb_plm_range (default false): bound both faces by the data range
+//! of the 3-cell stencil.  The dynamic background is a hydrostatic profile through cell i
+//! with cell i's own scale height; where the column is far from that (floor-cold top
+//! cells, a magnetically supported or outflowing top) its face values leave the data
+//! range -- measured on r1m v8 at cycle <= 10: up to 650x max(q_{i-1}, q_i, q_{i+1}) at
+//! the top cell, kept by the legacy rule.  In a hydrostatic column the background faces lie
+//! between the neighbours, so the bound never acts there (well balance is kept bitwise).
+KOKKOS_INLINE_FUNCTION
+void WbPlmRange(const Real qim1, const Real qi, const Real qip1, Real &ql, Real &qr) {
+  const Real lo = fmin(qim1, fmin(qi, qip1)), hi = fmax(qim1, fmax(qi, qip1));
+  ql = fmin(fmax(ql, lo), hi);
+  qr = fmin(fmax(qr, lo), hi);
+}
 }  // namespace wbplm
 #endif  // RECONSTRUCT_WB_PLM_BLEND_HPP_
