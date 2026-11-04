@@ -89,6 +89,37 @@ void PgenEarlyDefaults(ParameterInput *pin) {
     pin->GetOrAddBoolean("mhd", "use_rkg_sts", true);
     Log("<mhd>/use_rkg_sts = true (default with resistive dhj MHD on a fresh start)");
   }
+  // <fluid>/wb_plm_range = true, wb_plm_smooth = true, top_ghost_prim_copy = true
+  // (wbplm-1103; USER 11-03) for the dhj well-balanced x1 PLM on the non-uniform x1 grid
+  // (cubed sphere or spherical polar, wellbalance_dynamic + wb_x1, reconstruct plm) with the
+  // outflow1 top (problem/top_bc outflow1, the fresh default; top_ghost_prim_copy acts
+  // only there).  Not supported elsewhere (the keys FATAL off the non-uniform WB PLM):
+  // then nothing is added and the reason is logged.  Each key only when not named.
+  {
+    const bool sp = named("mesh", "use_spherical_polar") &&
+                    pin->GetBoolean("mesh", "use_spherical_polar");
+    const bool wb = fluid && named(fb, "wellbalance_dynamic") &&
+                    pin->GetBoolean(fb, "wellbalance_dynamic") && named(fb, "wb_x1") &&
+                    pin->GetBoolean(fb, "wb_x1");
+    const bool plm = !named(fb, "reconstruct") || pin->GetString(fb, "reconstruct") == "plm";
+    const bool top1 = !named("problem", "top_bc") ||
+                      pin->GetString("problem", "top_bc") == "outflow1";
+    const char *ks[3] = {"wb_plm_range", "wb_plm_smooth", "top_ghost_prim_copy"};
+    std::string why;
+    if (!(cs || sp)) why = "not on the cubed sphere / spherical polar grid";
+    else if (!wb) why = "no x1 well-balanced reconstruction";
+    else if (!plm) why = "reconstruct is not plm";
+    else if (!top1) why = "problem/top_bc is not outflow1";
+    for (int q = 0; q < 3; ++q) {
+      if (named(fb, ks[q])) continue;
+      if (why.empty()) {
+        pin->GetOrAddBoolean(fb, ks[q], true);
+        Log("<" + fb + ">/" + ks[q] + " = true (default: dhj well-balanced PLM, outflow1 top)");
+      } else if (fluid) {
+        Log("<" + fb + ">/" + ks[q] + " = false (default skipped: " + why + ")");
+      }
+    }
+  }
 }
 
 }  // namespace recipe
