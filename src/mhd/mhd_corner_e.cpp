@@ -741,9 +741,15 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
           Real ar = 0.0, ap = 0.0;
           for (int dk=-1; dk<=0; ++dk) {
             for (int di=-1; di<=0; ++di) {
-              // thermodynamics from ACTIVE cells only (wder is not filled in the ghosts)
+              // radial: ACTIVE cells only (the physical radial ghosts); phi: the ghost
+              // cell itself -- a copy of the neighbour's active cell, w0 / bcc / wder
+              // included (ConsToPrim runs over all cells after the halo exchange).
+              // layoutaudit-1103: the phi index used to be clamped to THIS MeshBlock's
+              // ks..ke, so at an internal phi block edge the fast speed came from one
+              // side only: the polar-row e2 (and B) depended on the phi decomposition
+              // (sp_test resistive/MHD decks, 2 vs 4 phi blocks: B 6e-8 after 1 cycle).
               int ic = (i+di < is) ? is : ((i+di > ie) ? ie : i+di);
-              int kc = (k+dk < ks) ? ks : ((k+dk > ke) ? ke : k+dk);
+              int kc = k+dk;
               Real d = w0_(m,IDN,kc,j,ic);
               Real bx = bcc_(m,IBX,kc,j,ic);
               Real by = bcc_(m,IBY,kc,j,ic);

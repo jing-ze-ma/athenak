@@ -103,6 +103,51 @@ DvceArray1D<int> CrossPanelPairs(MeshBlockPack *pp, const void *key) {
   cache[key] = d;
   return d;
 }
+
+//! layoutaudit-1103: the (block, buffer) pairs of a seam_same_panel exchange -- every
+//! same-panel, same-level, non-polar neighbour (the kernels keep only the x2/x3 FACE
+//! buffers, SeamFaceGeom).  Cached per boundary object like CrossPanelPairs.
+DvceArray1D<int> SamePanelFacePairs(MeshBlockPack *pp, const void *key) {
+  static std::map<const void*, DvceArray1D<int>> cache;
+  static const bool hook_ = [] {
+    Kokkos::push_finalize_hook([] {cache.clear();});
+    return true;
+  }();
+  (void) hook_;
+  auto it = cache.find(key);
+  if (it != cache.end()) return it->second;
+  const int nmb = pp->nmb_thispack, nnghbr = pp->pmb->nnghbr;
+  auto &nghbr = pp->pmb->nghbr;
+  auto &mbpanel = pp->pmb->mb_panel;
+  auto &mblev = pp->pmb->mb_lev;
+  std::vector<int> l;
+  for (int m=0; m<nmb; ++m) {
+    for (int n=0; n<nnghbr; ++n) {
+      const auto nb = nghbr.h_view(m,n);
+      if (nb.gid >= 0 && nb.panel == mbpanel.h_view(m) && nb.lev == mblev.h_view(m) &&
+          nb.polar <= 0) {
+        l.push_back(m*nnghbr + n);
+      }
+    }
+  }
+  const int np = static_cast<int>(l.size());
+  DvceArray1D<int> d("cs_spanel_pairs", (np > 0) ? np : 1);
+  auto h = Kokkos::create_mirror_view(d);
+  for (int q=0; q<np; ++q) {h(q) = l[q];}
+  if (np == 0) {h(0) = -1;}
+  Kokkos::deep_copy(d, h);
+  cache[key] = d;
+  return d;
+}
+
+//! host: is (m,n) a neighbour this exchange serves?  Cross-panel seams, or (layoutaudit-
+//! 1103 seam_same_panel) same-panel same-level non-polar neighbours.
+inline bool SeamPairWantedH(MeshBlockPack *pp, const int m, const int n, const bool ssp) {
+  const auto nb = pp->pmb->nghbr.h_view(m,n);
+  const int myp = pp->pmb->mb_panel.h_view(m);
+  if (!ssp) {return nb.panel != myp;}
+  return nb.panel == myp && nb.lev == pp->pmb->mb_lev.h_view(m) && nb.polar <= 0;
+}
 }  // namespace
 
 namespace {
@@ -189,7 +234,7 @@ TaskStatus MeshBoundaryValuesCC::InitFluxSeamRecv(const int nvars) {
     for (int n=0; n<nnghbr; ++n) {
       if ((nghbr.h_view(m,n).gid >= 0) &&
           SeamFaceGeom(recvbuf[n].iflux_same[0], is_, ie_, js_, ks_, x2f, sg) &&
-          (nghbr.h_view(m,n).panel != mbpanel.h_view(m))) {
+          SeamPairWantedH(pmy_pack, m, n, seam_same_panel)) {
         int drank = nghbr.h_view(m,n).rank;
         if (drank != global_variable::my_rank) {
           // tag uses the local ID and buffer index of the *receiving* MeshBlock
@@ -242,7 +287,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   const int sfv_ = (seam_flux_var >= 0 && !sraw && sfm_ != 1 && sfm_ != 2)
                    ? seam_flux_var : -1;
 
-  auto xpp_ = CrossPanelPairs(pmy_pack, this);   // r1mspeed-1102
+  const bool ssp_ = seam_same_panel;   // layoutaudit-1103
+  auto xpp_ = ssp_ ? SamePanelFacePairs(pmy_pack, this)
+                   : CrossPanelPairs(pmy_pack, this);   // r1mspeed-1102
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO,
                               SeamFluxVl());   // rkghalo-1103
   BvalsTeamFor("SeamFluxSendLocal", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
@@ -261,7 +308,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     }
     const int my_panel = mbpanel.d_view(m);
     const int dst_panel = nghbr.d_view(m,n).panel;
-    if (dst_panel == my_panel) {return;}
+    if ((dst_panel == my_panel) != ssp_) {return;}   // layoutaudit-1103 seam_same_panel
     if (nghbr.d_view(m,n).rank != my_rank) {return;}   // off-rank: second kernel
 
     const int il = rbuf[n].iflux_same[0].bis;
@@ -279,13 +326,15 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     const int dn = nghbr.d_view(m,n).dest;
 
     // the seam index map, exactly as in MeshBoundaryValuesCC::PackAndSendCC
-    const PanelBoundaries pb = GetPanelBoundary(my_panel, dst_panel);
     int aj = 1, bj = 0, ak = 1, bk = 0, sj = 1, sk = nj;
-    const int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
-    const int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
-    if (pb.swap_ax == 1) {sj = nk; sk = 1;}
-    if (rev_a_preswap) {aj = -1; bj = jl + ju;}
-    if (rev_b_preswap) {ak = -1; bk = kl + ku;}
+    if (!ssp_) {   // layoutaudit-1103: one chart (seam_same_panel) = the identity map
+      const PanelBoundaries pb = GetPanelBoundary(my_panel, dst_panel);
+      const int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
+      const int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
+      if (pb.swap_ax == 1) {sj = nk; sk = 1;}
+      if (rev_a_preswap) {aj = -1; bj = jl + ju;}
+      if (rev_b_preswap) {ak = -1; bk = kl + ku;}
+    }
 
     // Mass and energy fluxes are true scalars, and so is the RADIAL momentum flux since
     // rhat is common to both charts. Only the two tangential momentum fluxes are
@@ -295,7 +344,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     const int vb = v - vv;
     const bool vpair = (vv == IM2) || (vv == IM3);
     const bool bpair = (sxb_ >= 0) && ((vv == sxb_) || (vv == sxb_ + 1));
-    const bool xform = !sxoff_ && (vpair || bpair);
+    const bool xform = !sxoff_ && !ssp_ && (vpair || bpair);
     const int p0 = vb + (bpair ? sxb_ : IM2);
     const bool first_ = bpair ? (vv == sxb_) : (vv == IM2);
 
@@ -369,7 +418,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     }
     const int my_panel = mbpanel.d_view(m);
     const int dst_panel = nghbr.d_view(m,n).panel;
-    if (dst_panel == my_panel) {return;}
+    if ((dst_panel == my_panel) != ssp_) {return;}   // layoutaudit-1103 seam_same_panel
     if (nghbr.d_view(m,n).rank == my_rank) {return;}   // on-rank: first kernel
 
     const int il = sbuf[n].iflux_same[0].bis;
@@ -385,13 +434,15 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
 
 
     // the seam index map, exactly as in MeshBoundaryValuesCC::PackAndSendCC
-    const PanelBoundaries pb = GetPanelBoundary(my_panel, dst_panel);
     int aj = 1, bj = 0, ak = 1, bk = 0, sj = 1, sk = nj;
-    const int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
-    const int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
-    if (pb.swap_ax == 1) {sj = nk; sk = 1;}
-    if (rev_a_preswap) {aj = -1; bj = jl + ju;}
-    if (rev_b_preswap) {ak = -1; bk = kl + ku;}
+    if (!ssp_) {   // layoutaudit-1103: one chart (seam_same_panel) = the identity map
+      const PanelBoundaries pb = GetPanelBoundary(my_panel, dst_panel);
+      const int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
+      const int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
+      if (pb.swap_ax == 1) {sj = nk; sk = 1;}
+      if (rev_a_preswap) {aj = -1; bj = jl + ju;}
+      if (rev_b_preswap) {ak = -1; bk = kl + ku;}
+    }
 
     // Mass and energy fluxes are true scalars, and so is the RADIAL momentum flux since
     // rhat is common to both charts. Only the two tangential momentum fluxes are
@@ -401,7 +452,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     const int vb = v - vv;
     const bool vpair = (vv == IM2) || (vv == IM3);
     const bool bpair = (sxb_ >= 0) && ((vv == sxb_) || (vv == sxb_ + 1));
-    const bool xform = !sxoff_ && (vpair || bpair);
+    const bool xform = !sxoff_ && !ssp_ && (vpair || bpair);
     const int p0 = vb + (bpair ? sxb_ : IM2);
     const bool first_ = bpair ? (vv == sxb_) : (vv == IM2);
 
@@ -466,7 +517,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     for (int n=0; n<nnghbr; ++n) {
       if ((nghbr_h.h_view(m,n).gid >= 0) &&
           SeamFaceGeom(sendbuf[n].iflux_same[0], is_h, ie_h, js_h, ks_h, x2f_h, sg_h) &&
-          (nghbr_h.h_view(m,n).panel != mbpanel_h.h_view(m))) {
+          SeamPairWantedH(pmy_pack, m, n, seam_same_panel)) {
         int dn = nghbr_h.h_view(m,n).dest;
         int drank = nghbr_h.h_view(m,n).rank;
         if (drank != my_rank) {
@@ -520,7 +571,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
       if ((nghbr.h_view(m,n).gid >= 0) &&
           SeamFaceGeom(recvbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
                        cs_indcs.js, cs_indcs.ks, x2f_h, sg_h) &&
-          (nghbr.h_view(m,n).panel != mbpanel.h_view(m)) &&
+          SeamPairWantedH(pmy_pack, m, n, seam_same_panel) &&
           (nghbr.h_view(m,n).rank != global_variable::my_rank)) {
         int test;
         int ierr = MPI_Test(&(recvbuf[n].flux_req[m]), &test, MPI_STATUS_IGNORE);
@@ -546,7 +597,9 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
     // (k, j, i) range -- a pure copy, so the mapping cannot change a value; the old
     // (MeshBlock, buffer) teams looped every variable serially per thread (profiled at
     // 2.9 ms per call with the 54-variable MHD UCT seam record on an H200)
-    auto xpp_ = CrossPanelPairs(pmy_pack, this);   // r1mspeed-1102
+    const bool ssp_ = seam_same_panel;   // layoutaudit-1103
+    auto xpp_ = ssp_ ? SamePanelFacePairs(pmy_pack, this)
+                     : CrossPanelPairs(pmy_pack, this);   // r1mspeed-1102
     Kokkos::TeamPolicy<> pol_r(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO);
     BvalsTeamFor("SeamStateRecvRaw", pol_r, KOKKOS_LAMBDA(TeamMember_t tmember) {
       const int mn_ = xpp_(tmember.league_rank()/nvar);   // r1mspeed-1102
@@ -560,7 +613,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
                         cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
         return;
       }
-      if (nghbr.d_view(m,n).panel == mbpanel.d_view(m)) {return;}
+      if ((nghbr.d_view(m,n).panel == mbpanel.d_view(m)) != ssp_) {return;}
       const int il = rbuf[n].iflux_same[0].bis;
       const int iu = rbuf[n].iflux_same[0].bie;
       const int jl = rbuf[n].iflux_same[0].bjs;

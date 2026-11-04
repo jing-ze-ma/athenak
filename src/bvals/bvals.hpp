@@ -433,6 +433,11 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // receiver's array is overwritten by the neighbour's) -- the hydro's shared seam face
   // states (<mesh>/cs_seam_flux = shared, Hydro::CsSeamFaceStates)
   bool seam_raw = false;
+  // layoutaudit-1103 (seam_raw only): the *FluxSeamCC exchange runs over the SAME-PANEL,
+  // same-level, non-polar x2/x3 FACE neighbours (internal MeshBlock faces, incl. periodic
+  // ones) instead of the cross-panel seams, with the identity index map and no basis
+  // transform (one chart).  Hydro <hydro>/merge_lat_blockend = exchange.
+  bool seam_same_panel = false;
   // ucthshare-1102 (seam_raw only): which variables of the exchanged face record are
   // tangential COVARIANT vector pairs (re-expressed on the receiver's basis by
   // cubed_sphere::ApplyMomentumXform).  Default: IM2/IM3 only (the hydro record).

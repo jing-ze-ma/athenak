@@ -1,0 +1,85 @@
+# Cubed sphere, MHD: the MANUFACTURED SOLUTION of Ivan, De Sterck, Northrup & Groth
+# (JCP 2013, sect. 5.2.1, eqs 11-12).  Build with -D PROBLEM=cs_test.  layoutaudit-1103.
+#
+#   rho = p = r^-5/2,  v = r^1/2 rhat + kappa r^5/2 zhat,  B = rhat/r^2 + kappa zhat
+# (eq 11 lists PRIMITIVES [rho, v, B, p]); v x B = 0 and B is curl free.  It is steady
+# with the eq 12 source Q_O on momentum and energy (checked by finite differences: eq 12
+# is exact as printed, and gamma independent).  Shell r = 2..3.5, kappa = 0.017,
+# gamma 1.4; supersonic (fast) everywhere, v_r - c_f ~ 0.07 at the inner boundary, so the
+# initial transient flushes slowly: tlim = 10.  Faces: monopole as 1/r_f^2 on the radial
+# faces (flux = exact solid angle), kappa zhat as the discrete curl of
+# A = kappa/2 zhat x r; div B is round-off.  Inner radial ghosts exact; outer ghosts:
+# conserved variables extrapolated linearly, faces exact.  Outputs as cs_ivan_hyd.
+# Radial cells = 1.25 x nx2 (the paper's 8x8x10 ... grids):
+#   for n in 8 16 32 64; do athena -i cs_ivan_mhd.athinput mesh/nx1=$((5*n/4)) ...; done
+# RESULT 11-03 (CPU athena_cpu_cs_test_iv1, plm/hlld/rk2, cfl 0.3, tlim 10, extend):
+#   nx2  nx1      L1        L2       Linf     orders L1 / L2 / Linf   seam/int (mean L1)
+#     8   10   1.961e-4  2.111e-4  3.487e-4                           0.80
+#    16   20   4.710e-5  4.928e-5  8.792e-5   2.06 / 2.10 / 1.99      0.87
+#    32   40   1.155e-5  1.193e-5  2.310e-5   2.03 / 2.05 / 1.93      0.96
+#    64   80   2.858e-6  2.934e-6  6.542e-6   2.01 / 2.02 / 1.82      1.00
+# The ring profile is flat (C64: 2.83e-6 .. 2.93e-6 for rings d = 0 .. 30, 3.13e-6 at the
+# panel centre), so the seam is not worse than the interior.  The Linf order drops
+# because the maximum sits on the +z POLAR panel (panel 3), a few cells off the axis,
+# near the inner boundary, where v_r and B_r have a tangential extremum.  It is not at a
+# seam.  Likely cause (NOT verified): the van Leer PLM slope goes to zero at an extremum.
+# ppm4 (nghost 3) is no cure.  Its L1 is the same as plm (1.96e-4 / 4.70e-5 / 1.15e-5),
+# but its C32 Linf is 3.41e-5 ON THE SEAM ring (seam/int max ratio 1.43; Linf orders
+# 1.91 / 1.46).  Open item: an Linf gate >= 1.95 FAILS at C32 -> C64 with plm.
+# AXES: x1 is RADIAL; x2 = xi and x3 = eta are the panel-tangential angles.
+
+<comment>
+problem = cubed sphere MHD manufactured solution (Ivan et al. 2013)
+
+<job>
+basename = cs_ivan_mhd
+
+<mesh>
+nghost   = 2
+nx1      = 20
+x1min    = 2.0
+x1max    = 3.5
+ix1_bc   = user
+ox1_bc   = user
+nx2      = 16
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+nx3      = 16
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+use_cubed_sphere = true
+cs_seam_blockend = extend
+
+<meshblock>
+nx1      = 20
+nx2      = 16
+nx3      = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 10.0     # L1rho flat to 0.3 % from t ~ 5 (slowest radial crossing 6.4)
+ndiag      = 1000
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.4
+
+<problem>
+iprob     = 18
+kappa     = 0.017
+ivan_outer_exact = 0
+user_srcs = true
+user_hist = true
+
+<output1>
+file_type = hst
+dt        = 0.5

@@ -1,0 +1,238 @@
+# w121r1_1101 ROUND 1 (user 11-01): WASP-121b at 1x SOLAR, Roche tide ON, fresh start t = 0.  Caltech.  Built by tools/mkdecks.py.
+# = viper's docs/handover/w121hfresh_1101/deck/hfresh_1x.athinput (md5 800caef9ad49cc45123bf2865c6c466e, gated 1x tide-off) with ONLY the keys marked '# r1:' changed or added (diff against viper1x/hfresh_1x.athinput).
+# Code: fork/fin51-r-fix c62542349 (= cccfebcb for these decks: c62542349 adds only problem/remap_bfile, read when named); binary in launch.sh.
+# Anchor (literature only, as if never run before): roche_anchor.py --mp 1.170 --rp 1.742 --pref 7.07e-4 (1x NRS1 transit pressure)
+#   --a_au 0.02571 --porb 1.27492504 --teff 6628 --rstar 1.461 --mstar 1.358 --profile ic_w121_1x_f5.txt --eos <1x EOS dump>
+#   -> ap = x1min = 1.144050e10, grav = 1132.4682, roche_a 3.846161e11 (viper; ours 1.144058e10 / 1132.4528 with another 1x dump,
+#   7e-6 / 1.4e-5).  Code IC (smoke t = 0): terminator area-equivalent r(7.07e-4 bar) = 1.742 R_J (tools/term_ic_1x.py).
+# Grid: viper grid/gridkeys_112_roche.txt (nx1 112, x1max 2.232001e10, built at x1min = 1.144050e10; min 3.11 cells/H at p >= 1e-6 bar).
+# Seam keys: as viper's deck (cs_seam_flux = positive is read as the current default 'shared'); the WASP seam A/B decides.
+# Swap-ins (pending): WB tangential tide key, one-way outflow top key: see '# r1 SWAP-IN' lines in <problem> and overrides/README.txt.
+# (A) HYDRO control: <hydro> lhllc + am_vector (+ problem/am_transport false), as viper's hfresh.
+#------------------------------------------------------------------------------------------------------------------
+# hfresh_1x (w121hfresh_1101/push_1x): 1x SOLAR twin of deck/hfresh.athinput (3x). Changed keys are marked
+# "# hfresh_1x:" with the 3x value; everything else is identical (roche off). See README_1x.md.
+# w121hfresh_1101: HYDRO twin (<mhd> -> <hydro>) of w121_s10fresh_1027/pkg/s10fresh.athinput (fresh start t = 0), code
+# fork/fin51-r-fix 182477553.  Changes vs the MHD deck are marked '# hfresh:'; dropped MHD-only keys:
+#   <mhd>/lhlld_x1_phi_min, ohmic_resistivity, max_eta, use_rkg_sts, valfven_max_cgs; problem/bbot_gauss (B seed).
+# w121_s10fresh_1027: FRESH START (t = 0) twin of the Raven arm w121_mhd_1003/s10_e15, for Caltech (4 H200),
+# production binary fork/fin51-r-fix 6fac5c7ff, PROBLEM deep_hot_jupiter_rt.
+# Base = /raven/ptmp/jinma/w121_mhd_1003/inputs/s10_e15.athinput (C32 x nx1 112, x1max 2.1e10, 3x metals,
+# 10 G polar dipole at R_p = bbot_gauss 13.594863 at r0, ohmic_resistivity eos, max_eta 1e15, RKG2 STS,
+# valfven_max_cgs 2e6, lhlld, ck T4/C2/E4).  Every key is the s10_e15 value except those marked "# s10fresh:":
+#   start_time 0, tlim 300 rot (the wall clock / holder end stops it), remap_file removed (fresh IC from
+#   ic_profile instead of the remapped 3x hydro state at rot 300), output cadences and last_time/file_number
+#   removed, am_hst / am_hst_split added (flux_hst_floor as s10_e15) (diagnostic columns only, no effect on the solution),
+#   table paths relative to the run directory (ck/, ic/ from the package).
+# IC: ic/ic_w121_3x_f5.txt (face-5 exact RCE, the same IC as the fresh 3x f6 run w121fresh_3x_f6) reaches
+#   1e-10 bar; above it the pgen column (get_init_eos_arr, N = 10000 to 1.1 (x1max - x1min)) is isothermal at
+#   the top row (3726 K) in point-mass gravity, so the raised top up to 2.1e10 is filled by the pgen itself.
+# B: set at t = 0 by the pgen (fresh-start branch, !restart): A_phi dipole, B_r = bbot cos(theta) (r0/r)^3,
+#   bbot from problem/bbot_gauss (pgen.cpp ReadHotJupiterBbot; bbot and bbot_gauss together are FATAL).
+#------------------------- PAR_DUMP -------------------------
+<comment>
+problem   = WASP-121b fresh start, general EOS + metal ionization, PURE HYDRO, am_vector (w121hfresh_1101)
+reference = Heng et al. MNRAS 413, 2380 (2011); Perna et al. ApJ 719, 1421 (2010) 
+<job>
+basename = dhj 
+<mesh>
+nghost                    = 2            
+nx1                  = 112   # s10_e15 grid (remap target)
+x1min                 = 1.144050e+10   # r1: Roche anchor 1x (viper gate/roche_anchor_1x.txt; ours anchor/anchor_out.txt 1.144058e10 / 1132.4528 with eos_1x.txt); viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+x1max                 = 2.232001e+10   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+ix1_bc                    = user         
+ox1_bc                    = user         
+nx2                       = 32           
+x2min                     = -1.0         # -1 lets the pgen set the full polar range
+x2max                     = 1.0          
+ix2_bc                    = panel        
+ox2_bc                    = panel        
+nx3                       = 32           
+x3min                     = -1.0         
+x3max                     = 1.0          
+ix3_bc                    = panel        
+ox3_bc                    = panel        
+use_grid_stretch_r_poly   = true         
+f_stretch_r_c1        = -1.597547   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+f_stretch_r_c2        = -1.578371   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+f_stretch_r_c3        = -12.073881   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+f_stretch_r_c4        = 74.674546   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+f_stretch_r_c5        = -273.067922   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+f_stretch_r_c6        = 535.436451   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+f_stretch_r_c7        = -482.162508   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+f_stretch_r_c8        = 159.458581   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+use_cubed_sphere          = true         
+cs_seam_flux              = shared       # user 11-01: pinned (seam A/B: positive_donor == shared)
+cs_seam_resample          = linear       # w121prod_0927: convex seam ghost resample (default; explicit)
+cs_seam_rho_guard         = 4            # w121prod_0927: seam ghost density guard (default; explicit)
+f_stretch_r_b1_amp    = -1.471727   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+f_stretch_r_b1_x      = 0.533072   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+f_stretch_r_b1_w      = 0.155245   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+f_stretch_r_b2_amp    = -2.437299   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+f_stretch_r_b2_x      = 0.692302   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+f_stretch_r_b2_w      = 0.102815   # r1: viper grid/gridkeys_112_roche.txt (grid112 at the Roche anchor, max dr/target 1.058)
+<meshblock>
+nx1                  = 112   # s10_e15 grid (remap target)
+nx2 = 16 
+nx3 = 16 
+<time>
+start_time           = 0.0   # s10fresh: fresh start (s10_e15: 33046050.0, t of the remapped dhj.00600.rst)
+evolution             = dynamic      
+integrator            = rk2          
+cfl_number            = 0.3          
+nlim                  = 1000000000   # effectively no cycle limit; tlim and the wall clock stop it.
+tlim                  = 1.0e9   # r1: very long, the chain is stopped by hand (user rule 10-14; viper 3.304605e+07 = 300 rot)
+ndiag                 = 100          
+dt_min                = 1.0e-3       # as s10_e15
+<units>
+length_cgs = 1.0 
+mass_cgs   = 1.0 
+time_cgs   = 1.0 
+mu         = 1.0 
+<hydro>
+wellbalance_dynamic        = true                   
+wb_x1                      = true                   
+wb_option                  = polytropic             
+wb_cache_every             = 0                      
+cs_wellbalanced_src        = false                  # 09-23 user: DROPPED. min beta at prod3 rot 283 = 1.22 (>> the ~2e-3 crossover); hurts hydro accuracy (tests_hyd4/README_wbsrc.md)
+isotropic_conduction       = none                   # 09-25 ROUTE B: ck two-stream to the wall, no diffusion (rad_* below unused)
+rad_implicit_x1            = true                   
+rad_cap_ang                = 0.5                    # silent no-op with rad_angular=false below; kept for the diff.
+rad_angular                = false                  # CHANGED from prod3 (implicit default true): see change (3).
+rad_tau_lo                 = 30.0                   
+rad_tau_hi                 = 300.0                  
+rad_kappa_src              = table                  
+rad_flux_inner             = -1.0                   # unused under route B (no conduction); sigma T_int^4 enters at the ck bottom (problem/ck_int_at_cut)
+rad_met                    = 0.0  # hfresh_1x: 1x (3x: 0.4771)
+eos                        = general                
+general_eos                = table                  
+reconstruct                = plm                    
+rsolver                    = lhllc   # hfresh: hydro rsolver (MHD deck: lhlld); lhllc_cb_sensor left at its default (1)
+am_vector                  = true    # hfresh: angular-momentum vector form + spin reservoir (cs-open-1018)
+gamma                      = 1.4727545958           # unused by the table; kept so ideal/general inputs match
+etotgrav                   = true                   
+eos_h2                     = true                   # H2 dissociation: the heat pipe
+eos_ionization             = true                   # Saha for H, He, He+
+eos_metal_ionization       = true                   # Na, K, Ca, Al, Mg, Fe -- the electron donors
+eos_radiation              = false                  # aT^4/3 is ~1e-7 of the gas pressure here
+eos_xh                     = 0.7381  # hfresh_1x: 1x solar (as w121fresh_1x_f6) (3x: 0.7188)
+eos_yhe                    = 0.2485  # hfresh_1x: 1x solar (as w121fresh_1x_f6) (3x: 0.2420)
+eos_metal_condensation     = true                   
+eos_logd_min               = -19.0   # w121_mhd_1003: as the C128 production (user 10-03)
+eos_logd_max               = 0.0                    
+eos_logt_min               = 1.5                    
+eos_logt_max               = 6.0                    
+eos_dlog                   = 0.05                   
+pfloor               = 1.0e-7   # s10_e15 value (fresh 3x f6: pfloor 1e-5, dfloor 1e-16; raised top needs these)
+dfloor               = 1.0e-18   # s10_e15 value (fresh 3x f6: pfloor 1e-5, dfloor 1e-16; raised top needs these)
+tfloor_kelvin              = 200.0                  
+
+<problem>
+sponge_top            = true                                                                    # w121prod_0927: top velocity sponge ON (1e-7..1e-6 bar) (was true)
+roche_wb_tan          = true       # USER 11-01: keep WB tide (torque-fixed, fin51-r-fix 65658289)
+relax_drag            = false      # USER 11-01: no start-up Rayleigh drag (relaxdrag test, fin51-r-fix d3f878be)
+top_bc                = outflow1   # USER 11-01: uniform one-way outflow top for all planets (hydro_prep_1101 verdict)
+sponge_bottom         = false                                                                   # w121prod_0927: user 09-27: NO bottom sponge (was true)
+flux_hst_floor        = true                                                                    # w121prod_0929: Efloor, Efloor_rt, Mfloor hst columns
+# flux_hst_wall NOT set: s10fresh smoke 12405109 FATAL "am_hst ... at most 24 user history columns (have 27)"; 9 flux + 3 floor + 11 am_hst_split = 23
+am_hst                = true    # s10fresh: angular momentum columns Lrel Iw Tcor Tcc Tcont Tbnd (diagnostic only)
+am_hst_split          = false    # s10fresh: + Tx1 Tx2 Tx3 Tsrc Tcons in place of Tdif_deep Tdif_rad (diagnostic only)   # 11-01: Ttide column + flux_hst_floor -> >24 hst columns (viper note bf54375e)
+am_transport          = false   # hfresh: REQUIRED with <hydro>/am_vector (pgen YieldToPgen FATAL: the correction would be applied twice)
+ck_implicit           = true                                                                    # w121prod_0927: T4 (was false)
+ck_impl_arat          = 1e30                                                                    # w121prod_0927: T4 (was 2.0)
+ck_impl_frozen_op     = true                                                                    # w121prod_0927: T4 (was false)
+ck_impl_frozen_cof    = true                                                                    
+ck_impl_lin           = true                                                                    # w121prod_0927: T4 (was false)
+ck_impl_lin_thr       = 1                                                                       # w121prod_0927: T4 (was 1)
+ck_impl_fuse          = true                                                                    # w121prod_0927: T4 (was false)
+ck_impl_jac_lin       = true                                                                    # w121prod_0927: T4 (was false)
+ck_impl_cvsec         = true                                                                    # w121prod_0927: T4 (was false)
+ck_impl_tol           = 1.0e-8                                                                  # 3x-ck10: kept at the 3x value (user 09-30: only the keys that may remove the inflow)
+ck_impl_dtol          = 1.0e-8                                                                  
+ck_impl_maxit         = 16                                                                      # reset 09-30 (user): original 3x key (Caltech A/B: no limit cycle with 3x keys)
+ck_impl_dtmax         = 0.5                                                                     # reset 09-30 (user): original 3x key (Caltech A/B)
+ck_impl_demax         = 0.5                                                                     # default: bound on the total |e - e*|/e* per call (0 = off; off + dtmax 3 collapsed dt, SMOKE_DIAG.md)
+ck_impl_floorbound    = true                                                                    # 1x SOLAR (x1/README): was true in the 10x input
+ck_impl_kkt_demax     = true                                                                    # 1x SOLAR (x1/README): was true in the 10x input
+ck_impl_kkt_row       = true                                                                    # w121prod_0927: default since 7df65ad2; explicit (was true)
+ck_impl_conserve      = 2                                                                       # user 10-28: 2 = reported ck fluxes consistent with the applied energy in EVERY cell (was 1: bound cells only); solution bitwise unchanged
+ck_impl_verbose       = false                                                                   
+ck_impl_debug         = 0                                                                       
+ck_impl_once          = true                                                                    # w121prod_0927: C2 (was false)
+ck_impl_warm          = false                                                                   
+ck_impl_reuse_jac     = 0                                                                       
+ck_impl_seed          = 0                                                                       
+ck_impl_lw            = false                                                                   
+ck_impl_xstep         = 8                                                                       # w121prod_0927: C2 (09-26: 8) (was 0)
+ck_impl_xstep_thr     = 0.0                                                                     
+ck_impl_jreuse        = 0.2                                                                     # w121prod_0927: C2 (was 0.0)
+ck_impl_pred          = true                                                                    # w121prod_0927: C2 (was false)
+ck_impl_pred_fac      = 0.5                                                                     # w121prod_0927: C2 (was 1.0)
+ck_impl_pred_chk      = false                                                                   
+ck_impl_jreuse_xc     = false                                                                   
+ck_impl_warm_step     = false                                                                   
+ck_impl_cvkeep        = false                                                                   
+ck_impl_every         = 4                                                                       # w121prod_0927: E4 (was 1)
+ck_impl_every_thr     = 0.0                                                                     
+ck_impl_jreuse_act    = 0.25                                                                    
+ck_impl_nosync        = true                                                                    # w121prod_0927: C2 (was false)
+user_srcs             = true                                                                    
+hot_jupiter           = true                                                                    
+Teq                   = 2409.3                                                                  # WASP-121b: Teff sqrt(R*/2a), Sing+2024 (zero albedo, full redistribution; = their 2409 +- 24 K) (was 2500.0)
+omega                 = 5.704026e-05                                                            # WASP-121b: 2 pi / P_orb, P = 1.27492504 d (Bourrier+2020, adopted by Sing+2024); tidally locked (was 2.06e-5)
+rot_potential         = true                                                                    # sp_mhd_prod3 value; see change (2) header note for the
+grav                  = 1132.4682   # r1: Roche anchor 1x (viper gate/roche_anchor_1x.txt; ours anchor/anchor_out.txt 1.144058e10 / 1132.4528 with eos_1x.txt); G M_p = grav ap^2 = 1.482232e23 unchanged
+grav_point_mass       = true                                                                    
+ap                    = 1.144050e+10   # r1: Roche anchor 1x (viper gate/roche_anchor_1x.txt; ours anchor/anchor_out.txt 1.144058e10 / 1132.4528 with eos_1x.txt) = x1min
+roche                 = true   # r1: host-star Roche tide (roche-dhj-1031); G M_* from Kepler (M_* 1.3938, lit. 1.358)
+roche_a               = 3.846161e+11   # r1: a = 0.02571 AU
+ic_adiabat_ext        = true   # r1: default; T below the IC table along the adiabat (wall reaches 4680 bar substellar)
+ic_adiabat_ext_dex    = 2.0   # r1: default; the wall needs 0.32 dex below the table
+# r1 SWAP-IN (pending, not in binary cccfebcb): well-balanced tangential tide key, e.g.  roche_wb_tan = true  (name TBD;
+#   needs a new binary: launch with BIN= and OVR=, overrides/README.txt)
+# r1 SWAP-IN (pending user approval): one-way outflow top key (name TBD; same mechanism)
+Rgas                  = 4.593e7                                                                 # ignored under the general EOS; composition is the EOS's
+met                   = 0.0  # hfresh_1x: 1x (3x: 0.4771)
+rt_de_max             = 0.5                                                                     
+rt_use_cons           = true                                                                    
+rt_ck                 = true                                                                    
+rt_split              = false                                                                   
+ck_pcut_bar           = 1e8                                                                     # 09-25 ROUTE B: the cut falls on the inner wall
+ck_nquad              = 2                                                                       # 09-25: exact non-grey diffusion limit (nq2_0925)
+ck_int_at_cut         = true                                                                    # route B: sigma T_int^4 enters ONCE, as the ck intensity at the wall
+ck_star_teff          = 0.0                                                                     # WASP-121b: <= 0: stellar band fluxes from ck_swflux (WASP-121 model spectrum), not a blackbody (was 6000.0)
+ck_spherical          = true                                                                    # NEW: spherical thermal two-stream. See change (1).
+ck_sph_face           = 6                                                                       # w121fresh_1001 f6 (user 10-01 22:10): passive-ladder VEF closure (was 5)
+ck_sph_top            = 1                                                                       # w121fresh_1001: vacuum top (d_top = 0)
+ck_beam_sph           = true                                                                    # NEW: pseudo-spherical direct beam. See change (1).
+ck_sweep_form         = 1                                                                       # 09-22 (change 9): tm = exact probe-free spherical sweep; see header
+ck_table              = ck/CK1X/ck/Premixed_1x_g8_11_hiT2.txt  # hfresh_1x: 1x table, package-relative (3x: ck/CK3X/ck/Premixed_3x_g8_11_hiT2.txt)
+ck_ce_table           = CE_tables/FastChem_ck_1x_int_hiT2.txt  # hfresh_1x: 1x CE table (3x: CE_tables/FastChem_ck_3x_int_hiT2.txt)
+ic_profile            = ic/ic_w121_1x_f5.txt  # hfresh_1x: 1x face-5 RCE IC, package-relative (3x: ic/ic_w121_3x_f5.txt)
+ic_profile_mu         =   # dead key (no reader in 6fac5c7ff); kept for the diff, empty
+ck_data_dir           = ck/CK1X  # hfresh_1x: package-relative 1x dir (3x: ck/CK3X)
+ck_dump_file          =                                                                         
+ck_dump_m             = 0                                                                       
+ck_dump_j             = -1                                                                      
+ck_dump_k             = -1                                                                      
+ck_swflux             = sw_band_flux_W121_11.txt                                                # WASP-121b: Exo-FMS WASP-121 band fluxes (Lee+2021), under ck_data_dir/sw_flux (NEW key)
+albedo                = 0.277                                                                   # WASP-121b: Bond albedo, Splinter+2025 (JWST NIRISS phase curve); needs branch dhj-albedo (NEW key)
+ck_beam_par           = true                                                                    # w121prod_0927: user 09-26: beam chord walk in its own kernels (ck-fast2)
+
+<output1>
+file_type      = hst                
+data_format    = %.17e              
+dt             = 1101.54       # s10fresh: 0.01 rot (s10_e15: 0.1 rot)
+<output2>
+file_type   = log                # floor / C2P counters; rows are per-interval
+dt          = 1.10154e+04        # WASP-121b: 10 per rotation (was 3.05e4)
+<output3>
+file_type            = bin         
+variable                   = hydro_w   # hfresh: hydro primitives (MHD deck: mhd_w_bcc)
+dt                   = 55077.0     # s10fresh: 0.5 rot (s10_e15 10-04 srun override 5.50768e4)
+<output4>
+file_type            = rst                # so a 24 h timeout can be continued with -r
+dt                   = 110154.0           # s10fresh: 1 rot (s10_e15: 0.5 rot)
+<mesh_refinement>
+<coord>
+#------------------------- PAR_DUMP -------------------------
