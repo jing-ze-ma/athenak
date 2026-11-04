@@ -1001,6 +1001,17 @@ void M1GhostBathAB(const IW &iw, const FN &f0n, const CV &x1v, const CF &x1f,
 KOKKOS_INLINE_FUNCTION
 Real M1LbathDiss(const int mode, const Real tau) {
   if (mode == 0) return 1.0;
+  if (mode == 3) {
+    // Athena++ (PrincetonUniversity/athena 053bc738, Oct 2026) implicit DO face flux:
+    // implicit_first_order.cpp:71-88 + rad_integrators.cpp:549-566, 615-657 (tau_scheme 1,
+    // Advection 1): HLLE with Smax = f_r v, Smin = -f_l v, f_r^2 = (1 - e^-t^2)/t^2,
+    // f_l^2 = (1 - e^-t^4)/t^2 (t^2 > 1e-3; else 1 - t^2/2 and t^2), t = taucell (tau_L +
+    // tau_R); the E-jump coefficient s = 2a - 1 with a = f_r (1 + f_l)/(f_r + f_l)
+    const Real t2 = tau*tau;
+    const Real fr = sqrt((t2 > 1.0e-3) ? (1.0 - exp(-t2))/t2 : (1.0 - 0.5*t2));
+    const Real fl = sqrt((t2 > 1.0e-3) ? (1.0 - exp(-t2*t2))/t2 : t2);
+    return (fr - fl + 2.0*fr*fl)/(fr + fl);
+  }
   const Real x = (mode == 1) ? tau : 0.5*tau*tau;
   return (x > 1.0e-3) ? (1.0 - exp(-x))/x : (1.0 - 0.5*x);
 }

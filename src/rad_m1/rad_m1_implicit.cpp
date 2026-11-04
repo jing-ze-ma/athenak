@@ -14612,8 +14612,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           // upwind with half-range intensities, F = A - B E_is (rad_m1.hpp)
           const Real eg1 = lgr_(m,0,k,j), ag1 = lgr_(m,5,k,j);
           const Real fis = 0.5*(f0n_(m,k,j,is) + f0n_(m,k,j,is+1));
-          const Real tauc = lhal*0.5*(lgr_(m,2,k,j) + iw_(m,M1_IW_KT,k,j,i))
-                            *(cx1v(m,i) - cx1v(m,i-1));
+          const Real ktg = (lgr_(m,2,k,j) > 0.0) ? lgr_(m,2,k,j) : iw_(m,M1_IW_KT,k,j,i);
+          const Real tauc = (lhdm == 3) ?
+              lhal*(ktg*(cx1f(m,i) - cx1f(m,i-1)) + iw_(m,M1_IW_KT,k,j,i)*(cx1f(m,i+1) - cx1f(m,i)))
+            : lhal*0.5*(lgr_(m,2,k,j) + iw_(m,M1_IW_KT,k,j,i))*(cx1v(m,i) - cx1v(m,i-1));
           const Real hb = 0.5*cl*lhmu*M1LbathDiss(lhdm, tauc);
           const Real ha = hb*lheg + 0.5*(lhfg + fis);
           bb += num*cr*hb;
@@ -15261,8 +15263,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real fn = th*(f0n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*od);
         if (lbhrf) {
           // linhao-prod-1104 halfrange: the flux the row was assembled with
-          const Real tauc = lhalf*0.5*(lgf_(m,2,k,j) + iw_(m,M1_IW_KT,k,j,ip))
-                            *(cx1v(m,ip) - cx1v(m,im));
+          const Real ktgf = (lgf_(m,2,k,j) > 0.0) ? lgf_(m,2,k,j) : iw_(m,M1_IW_KT,k,j,ip);
+          const Real tauc = (lhdmf == 3) ?
+              lhalf*(ktgf*(cx1f(m,ip) - cx1f(m,im)) + iw_(m,M1_IW_KT,k,j,ip)*(cx1f(m,ip+1) - cx1f(m,ip)))
+            : lhalf*0.5*(lgf_(m,2,k,j) + iw_(m,M1_IW_KT,k,j,ip))*(cx1v(m,ip) - cx1v(m,im));
           fn = 0.5*(cl*lhmuf*M1LbathDiss(lhdmf, tauc)*(lhegf - iw_(m,M1_IW_EP,k,j,ip))
                     + lhfgf + 0.5*(f0n_(m,k,j,ip) + f0n_(m,k,j,ip+1)));
         } else if (aphll) {

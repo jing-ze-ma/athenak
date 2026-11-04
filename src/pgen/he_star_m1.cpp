@@ -2780,12 +2780,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           // the E-jump (dissipative) part of his DO face flux: modified HLLE (Jiang 2014/2021),
           // s = (1 - e^-x)/x, x = tau2: (alpha tau_c)^2/2 (default; the Athena++ form as we
           // read it) | tau: alpha tau_c | upwind: s = 1 (pure upwind, unstable at tau_c ~ 1e5)
-          const std::string dm = pin->GetOrAddString("problem","he_bc_linhao_diss","tau2");
-          if (dm != "upwind" && dm != "tau" && dm != "tau2") {
-            HsFatal("problem/he_bc_linhao_diss must be upwind, tau or tau2", __LINE__);
+          // athena (default): the stock Athena++ implicit DO HLLE taufactor (tau_scheme 1),
+          // alpha = <radiation>/taucell (Athena++ default 5; his athinput not available),
+          // tau_c = alpha (kappa_T dx of ghost 1 + kappa_T dx of the first cell)
+          const std::string dm = pin->GetOrAddString("problem","he_bc_linhao_diss","athena");
+          if (dm != "upwind" && dm != "tau" && dm != "tau2" && dm != "athena") {
+            HsFatal("problem/he_bc_linhao_diss must be athena, upwind, tau or tau2", __LINE__);
           }
-          pm1->lbath_dmode = (dm == "upwind") ? 0 : ((dm == "tau") ? 1 : 2);
-          pm1->lbath_alpha = pin->GetOrAddReal("problem","he_bc_linhao_alpha",1.0);
+          pm1->lbath_dmode = (dm == "upwind") ? 0 : ((dm == "tau") ? 1 :
+                             ((dm == "tau2") ? 2 : 3));
+          pm1->lbath_alpha = pin->GetOrAddReal("problem","he_bc_linhao_alpha",
+                                               (dm == "athena") ? 5.0 : 1.0);
           pm1->lbath_mu1 = mu1;
           pm1->lbath_heg = heg;
           pm1->lbath_hfg = hfg;
