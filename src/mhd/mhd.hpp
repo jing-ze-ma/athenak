@@ -268,6 +268,9 @@ class MHD {
   // lhlld2-1102 <mhd>/emf_smooth (read only when named; < 0 = off): smooth GS07 corner
   // EMF upwind weights, see EmfSmoothW in mhd_corner_e.cpp
   Real emf_smooth = -1.0;
+  // ctramp-1103 <mhd>/emf_ramp = athenapp (read only when named; default off): the
+  // Athena++ GetWeightForCT linear-ramp corner-EMF weights (EmfRampW, emf_smooth.hpp)
+  bool emf_ramp = false;
   // <mhd>/emf_scheme = gs07 (default) | uct | uct_hlld (read only when named; mhd.cpp):
   // UCT-HLL / UCT-HLLD corner EMF (Mignone & Del Zanna 2021) inside MHD::CornerE.
   // uct1/uct2/uct3 hold, per x1/x2/x3 face: 0 a^L (a^R = 1 - a^L), 1 d^L, 2 d^R, then the

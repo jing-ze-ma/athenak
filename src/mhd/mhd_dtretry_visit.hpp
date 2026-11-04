@@ -58,6 +58,7 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("fofc_hlle", fofc_hlle);
   v.value("use_bs_emf", use_bs_emf);
   v.value("emf_smooth", emf_smooth);
+  v.value("emf_ramp", emf_ramp);
   v.value("emf_uct", emf_uct);
   v.value("emf_uct_hlld", emf_uct_hlld);
   v.value("cs_seam_mhd", cs_seam_mhd);

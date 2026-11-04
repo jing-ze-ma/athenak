@@ -683,6 +683,34 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       emf_smooth = pin->GetReal("mhd","emf_smooth");
       if (emf_smooth < 0.0) emf_smooth = -1.0;
     }
+    // ctramp-1103 <mhd>/emf_ramp = athenapp (read only when named; key absent = bitwise):
+    // the GS07 upwind step replaced by the Athena++ weight 1/2 + clamp(1024 dt F_rho /
+    // (dx (rho_L + rho_R)), -1/2, 1/2) (Hydro::GetWeightForCT; EmfRampW).  TEST key.
+    // GS07 corner EMF only (FATAL with emf_smooth or emf_scheme = uct | uct_hlld, checked
+    // below), 2-D/3-D Cartesian Newtonian (dx = the coordinate width of the block).
+    if (pin->DoesParameterExist("mhd","emf_ramp")) {
+      const std::string er = pin->GetString("mhd","emf_ramp");
+      if (er == "athenapp") {
+        emf_ramp = true;
+      } else if (er != "none") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/emf_ramp = '" << er << "' (none | athenapp)"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (emf_ramp && (emf_smooth >= 0.0 || use_bs_emf || ppack->pmesh->one_d ||
+                       ppack->pmesh->use_cubed_sphere ||
+                       ppack->pmesh->use_spherical_polar ||
+                       ppack->pcoord->is_special_relativistic ||
+                       ppack->pcoord->is_general_relativistic ||
+                       ppack->pcoord->is_dynamical_relativistic)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/emf_ramp = athenapp is implemented only for the "
+                  << "GS07 corner EMF of 2-D/3-D Cartesian Newtonian MHD, without "
+                  << "emf_smooth or bs_emf" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // <mhd>/emf_scheme = gs07 (default) | uct | uct_hlld, read only when named
     // (lhlld2-1102, ucthlld-1102).  Both UCT variants use the Mignone & Del Zanna 2021
     // composition formula (MD21 eq. 35) for the corner EMF, inside the GS07 corner kernel
@@ -716,8 +744,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         no = "relativistic MHD";
       } else if (!(peos->eos_data.is_ideal || peos->eos_data.IsGeneral())) {
         no = "isothermal EOS";
-      } else if (use_fofc || emf_smooth >= 0.0 || use_bs_emf) {
-        no = "fofc, emf_smooth or bs_emf set";
+      } else if (use_fofc || emf_smooth >= 0.0 || use_bs_emf || emf_ramp) {
+        no = "fofc, emf_smooth, emf_ramp or bs_emf set";
       } else if (ppack->pmesh->multilevel) {
         no = "mesh refinement";
       }
@@ -750,11 +778,12 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                       ppack->pcoord->is_general_relativistic ||
                       ppack->pcoord->is_dynamical_relativistic ||
                       !(peos->eos_data.is_ideal || peos->eos_data.IsGeneral()) ||
-                      use_fofc || emf_smooth >= 0.0 || use_bs_emf)) {
+                      use_fofc || emf_smooth >= 0.0 || use_bs_emf || emf_ramp)) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<mhd>/emf_scheme = " << es << " is implemented only "
                   << "for 2-D/3-D Cartesian, cubed-sphere or spherical-polar Newtonian MHD "
-                  << "with an ideal or general EOS, without fofc, emf_smooth or bs_emf"
+                  << "with an ideal or general EOS, without fofc, emf_smooth, emf_ramp or "
+                  << "bs_emf"
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }

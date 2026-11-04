@@ -38,5 +38,31 @@ Real EmfSmoothW(const Real fd, const Real eps, const Real rhoe) {
   }
   return 0.5*(1.0 + fd/sqrt(fd*fd + del2));
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn Real EmfRampW(fd, cdx, rhosum)
+//! \brief ctramp-1103, <mhd>/emf_ramp = athenapp (read only when named; default off,
+//! bitwise): the Athena++ corner-EMF weight (Hydro::GetWeightForCT, used by
+//! Field::ComputeCornerE): v = clamp(1024 dt F_rho / (dx (rho_L + rho_R)), -1/2, 1/2),
+//! weights (1/2 + v) on the LEFT (lower-index, F_rho > 0 upwind) choice and (1/2 - v) on
+//! the right.  cdx = 1024*dt/dx of the face direction; Athena++ uses the FULL step
+//! dt = Mesh::dt in every RK stage (not beta*dt) and dx = CenterWidth of the face's
+//! right cell; rho_L, rho_R are there the reconstructed face states, here the two
+//! adjacent cell-centred densities (no face states are kept after the flux sweep).
+//! A linear ramp of the face Courant number: upwind (GS07) once |v_n| dt/dx > 1/512,
+//! the plain average as dt -> 0 -- so the semi-discrete limit is the AVERAGE scheme.
+KOKKOS_INLINE_FUNCTION
+Real EmfRampW(const Real fd, const Real cdx, const Real rhosum) {
+  const Real v = cdx*fd/rhosum;
+  return 0.5 + fmax(-0.5, fmin(0.5, v));
+}
+
+//! \brief the weight of the LEFT choice for MHD::CornerE: emf_ramp when cdx > 0 (then
+//! ra, rb are the cell densities), else emf_smooth (ra, rb = rho*e, see EmfSmoothW)
+KOKKOS_INLINE_FUNCTION
+Real EmfWeightL(const Real cdx, const Real fd, const Real eps, const Real ra,
+                const Real rb) {
+  return (cdx > 0.0) ? EmfRampW(fd, cdx, ra + rb) : EmfSmoothW(fd, eps, 0.5*(ra + rb));
+}
 }  // namespace mhd
 #endif  // MHD_EMF_SMOOTH_HPP_

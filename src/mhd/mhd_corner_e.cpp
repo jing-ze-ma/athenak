@@ -26,11 +26,13 @@ namespace mhd {
 
 //! \brief lhlld2-1102: the GS07 upwind choice with smooth weights: a is the choice for
 //! fd >= 0 (its reference EMF in cell A), b the one for fd < 0 (cell B); rA, rB = rho*e
-//! (rho*c_iso^2 isothermal) of those two cells.
+//! (rho*c_iso^2 isothermal) of those two cells.  ctramp-1103: cdx = 1024 dt/dx of the
+//! face direction > 0 selects the Athena++ ramp (<mhd>/emf_ramp = athenapp; rA, rB are
+//! then the densities), see EmfRampW / EmfWeightL in emf_smooth.hpp.
 KOKKOS_INLINE_FUNCTION
-Real EmfPick(const Real fd, const Real eps, const Real ra, const Real rb,
+Real EmfPick(const Real cdx, const Real fd, const Real eps, const Real ra, const Real rb,
              const Real a, const Real b) {
-  return b + EmfSmoothW(fd, eps, 0.5*(ra + rb))*(a - b);
+  return b + EmfWeightL(cdx, fd, eps, ra, rb)*(a - b);
 }
 
 //----------------------------------------------------------------------------------------
@@ -246,6 +248,11 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   const bool use_bs = use_bs_emf;
   const Real emf_sm_ = emf_smooth;   // lhlld2-1102: < 0 = off (GS07 sign switch)
+  // ctramp-1103 <mhd>/emf_ramp = athenapp: Athena++ weights (EmfRampW) with the FULL dt
+  // (as Athena++, Mesh::dt in every stage); 1024*dt, divided by the face dx per block
+  const bool emf_rp_ = emf_ramp;
+  const Real emf_rdt_ = emf_rp_ ? 1024.0*pmy_pack->pmesh->dt : 0.0;
+  const bool emf_sw_ = (emf_sm_ >= 0.0) || emf_rp_;   // smooth or ramp weights
   // rho*e of a cell for EmfSmoothW (isothermal: rho*c_iso^2); unused when emf_sm_ < 0
   const bool emf_has_e_ = (nmhd == 5);
   const Real emf_cs2_ = (emf_has_e_ ? 0.0 : SQR(peos->eos_data.iso_cs));
@@ -434,6 +441,9 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     //       e3[is:ie+1,js:je+1,ks:ke  ]
     par_for("emf2", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int j, const int i) {
+      // ctramp-1103 emf_ramp: 1024 dt/dx per face direction (0 = off -> emf_smooth)
+      const Real rdx1_ = emf_rp_ ? emf_rdt_/size.d_view(m).dx1 : 0.0;
+      const Real rdx2_ = emf_rp_ ? emf_rdt_/size.d_view(m).dx2 : 0.0;
       // reflecting radial wall: GS07 x1 upwind choices averaged (see sph_wall_)
       const bool wall_sf = wsf_ && i == is &&
                            mb_bcs.d_view(m,BoundaryFace::inner_x1) == uflag_;
@@ -485,23 +495,24 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e3_r1 = e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,i  );
       }
-      if (emf_sm_ >= 0.0) {
+      if (emf_sw_) {
         // lhlld2-1102 <mhd>/emf_smooth: smooth GS07 upwind weights (see EmfSmoothW)
         auto re = [&](const int jj, const int ii) {
+          if (emf_rp_) return w0_(m,IDN,ks,jj,ii);   // ctramp-1103: density
           return w0_(m,IDN,ks,jj,ii)*(emf_has_e_ ? fabs(w0_(m,IEN,ks,jj,ii)) : emf_cs2_);
         };
         if (!wall1) {
-          e3_l2 = EmfPick(flx1(m,IDN,ks,j-1,i), emf_sm_, re(j-1,im_), re(j-1,i),
+          e3_l2 = EmfPick(rdx1_, flx1(m,IDN,ks,j-1,i), emf_sm_, re(j-1,im_), re(j-1,i),
                           e3x2_(m,ks,j,im_) - e3cc_(m,ks,j-1,im_),
                           e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j-1,i  ));
-          e3_r2 = EmfPick(flx1(m,IDN,ks,j,i), emf_sm_, re(j,im_), re(j,i),
+          e3_r2 = EmfPick(rdx1_, flx1(m,IDN,ks,j,i), emf_sm_, re(j,im_), re(j,i),
                           e3x2_(m,ks,j,im_) - e3cc_(m,ks,j  ,im_),
                           e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j  ,i  ));
         }
-        e3_l1 = EmfPick(flx2(m,IDN,ks,j,il_), emf_sm_, re(j-1,im_), re(j,im_),
+        e3_l1 = EmfPick(rdx2_, flx2(m,IDN,ks,j,il_), emf_sm_, re(j-1,im_), re(j,im_),
                         e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,im_),
                         e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,im_));
-        e3_r1 = EmfPick(flx2(m,IDN,ks,j,ir_), emf_sm_, re(j-1,i), re(j,i),
+        e3_r1 = EmfPick(rdx2_, flx2(m,IDN,ks,j,ir_), emf_sm_, re(j-1,i), re(j,i),
                         e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,i  ),
                         e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,i  ));
       }
@@ -710,8 +721,13 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 
     par_for("emf3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      // ctramp-1103 emf_ramp: 1024 dt/dx per face direction (0 = off -> emf_smooth)
+      const Real rdx1_ = emf_rp_ ? emf_rdt_/size.d_view(m).dx1 : 0.0;
+      const Real rdx2_ = emf_rp_ ? emf_rdt_/size.d_view(m).dx2 : 0.0;
+      const Real rdx3_ = emf_rp_ ? emf_rdt_/size.d_view(m).dx3 : 0.0;
       // lhlld2-1102 emf_smooth: rho*e of a cell (EmfSmoothW); unused when emf_sm_ < 0
       auto re3 = [&](const int kk, const int jj, const int ii) {
+        if (emf_rp_) return w0_(m,IDN,kk,jj,ii);   // ctramp-1103: density
         return w0_(m,IDN,kk,jj,ii)*(emf_has_e_ ? fabs(w0_(m,IEN,kk,jj,ii)) : emf_cs2_);
       };
       // reflecting radial wall: GS07 x1 upwind choices averaged (see sph_wall_)
@@ -815,8 +831,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       }
       // integrate E1 to corner using SG07
       Real e1_l3, e1_r3, e1_l2, e1_r2;
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
-        e1_l3 = EmfPick(flx2(m,IDN,k-1,j,i), emf_sm_, re3(k-1,j-1,i), re3(k-1,j  ,i),
+      if (emf_sw_) {  // lhlld2-1102 emf_smooth
+        e1_l3 = EmfPick(rdx2_, flx2(m,IDN,k-1,j,i), emf_sm_, re3(k-1,j-1,i), re3(k-1,j  ,i),
                         e1x3_(m,k,j-1,i) - e1cc_(m,k-1,j-1,i),
                         e1x3_(m,k,j  ,i) - e1cc_(m,k-1,j  ,i));
       } else if (flx2(m,IDN,k-1,j,i) >= 0.0) {
@@ -824,8 +840,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e1_l3 = e1x3_(m,k,j  ,i) - e1cc_(m,k-1,j  ,i);
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
-        e1_r3 = EmfPick(flx2(m,IDN,k,j,i), emf_sm_, re3(k  ,j-1,i), re3(k  ,j  ,i),
+      if (emf_sw_) {  // lhlld2-1102 emf_smooth
+        e1_r3 = EmfPick(rdx2_, flx2(m,IDN,k,j,i), emf_sm_, re3(k  ,j-1,i), re3(k  ,j  ,i),
                         e1x3_(m,k,j-1,i) - e1cc_(m,k  ,j-1,i),
                         e1x3_(m,k,j  ,i) - e1cc_(m,k  ,j  ,i));
       } else if (flx2(m,IDN,k,j,i) >= 0.0) {
@@ -833,8 +849,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e1_r3 = e1x3_(m,k,j  ,i) - e1cc_(m,k  ,j  ,i);
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
-        e1_l2 = EmfPick(flx3(m,IDN,k,j-1,i), emf_sm_, re3(k-1,j-1,i), re3(k  ,j-1,i),
+      if (emf_sw_) {  // lhlld2-1102 emf_smooth
+        e1_l2 = EmfPick(rdx3_, flx3(m,IDN,k,j-1,i), emf_sm_, re3(k-1,j-1,i), re3(k  ,j-1,i),
                         e1x2_(m,k-1,j,i) - e1cc_(m,k-1,j-1,i),
                         e1x2_(m,k  ,j,i) - e1cc_(m,k  ,j-1,i));
       } else if (flx3(m,IDN,k,j-1,i) >= 0.0) {
@@ -842,8 +858,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e1_l2 = e1x2_(m,k  ,j,i) - e1cc_(m,k  ,j-1,i);
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
-        e1_r2 = EmfPick(flx3(m,IDN,k,j,i), emf_sm_, re3(k-1,j  ,i), re3(k  ,j  ,i),
+      if (emf_sw_) {  // lhlld2-1102 emf_smooth
+        e1_r2 = EmfPick(rdx3_, flx3(m,IDN,k,j,i), emf_sm_, re3(k-1,j  ,i), re3(k  ,j  ,i),
                         e1x2_(m,k-1,j,i) - e1cc_(m,k-1,j  ,i),
                         e1x2_(m,k  ,j,i) - e1cc_(m,k  ,j  ,i));
       } else if (flx3(m,IDN,k,j,i) >= 0.0) {
@@ -859,8 +875,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       if (wall1) {  // reflecting radial wall: no upwind side, see above
         e2_l3 = 0.5*((e2x3_(m,k,j,im_) - e2cc_(m,k-1,j,im_)) +
               (e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  )));
-      } else if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
-        e2_l3 = EmfPick(flx1(m,IDN,k-1,j,i), emf_sm_, re3(k-1,j,im_), re3(k-1,j,i  ),
+      } else if (emf_sw_) {  // lhlld2-1102 emf_smooth
+        e2_l3 = EmfPick(rdx1_, flx1(m,IDN,k-1,j,i), emf_sm_, re3(k-1,j,im_), re3(k-1,j,i  ),
                         e2x3_(m,k,j,im_) - e2cc_(m,k-1,j,im_),
                         e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  ));
       } else if (flx1(m,IDN,k-1,j,i) >= 0.0) {
@@ -871,8 +887,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       if (wall1) {  // reflecting radial wall: no upwind side, see above
         e2_r3 = 0.5*((e2x3_(m,k,j,im_) - e2cc_(m,k  ,j,im_)) +
               (e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  )));
-      } else if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
-        e2_r3 = EmfPick(flx1(m,IDN,k,j,i), emf_sm_, re3(k  ,j,im_), re3(k  ,j,i  ),
+      } else if (emf_sw_) {  // lhlld2-1102 emf_smooth
+        e2_r3 = EmfPick(rdx1_, flx1(m,IDN,k,j,i), emf_sm_, re3(k  ,j,im_), re3(k  ,j,i  ),
                         e2x3_(m,k,j,im_) - e2cc_(m,k  ,j,im_),
                         e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  ));
       } else if (flx1(m,IDN,k,j,i) >= 0.0) {
@@ -880,8 +896,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e2_r3 = e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  );
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
-        e2_l1 = EmfPick(flx3(m,IDN,k,j,il_), emf_sm_, re3(k-1,j,im_), re3(k  ,j,im_),
+      if (emf_sw_) {  // lhlld2-1102 emf_smooth
+        e2_l1 = EmfPick(rdx3_, flx3(m,IDN,k,j,il_), emf_sm_, re3(k-1,j,im_), re3(k  ,j,im_),
                         e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,im_),
                         e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,im_));
       } else if (flx3(m,IDN,k,j,il_) >= 0.0) {
@@ -889,8 +905,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e2_l1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,im_);
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
-        e2_r1 = EmfPick(flx3(m,IDN,k,j,ir_), emf_sm_, re3(k-1,j,i  ), re3(k  ,j,i  ),
+      if (emf_sw_) {  // lhlld2-1102 emf_smooth
+        e2_r1 = EmfPick(rdx3_, flx3(m,IDN,k,j,ir_), emf_sm_, re3(k-1,j,i  ), re3(k  ,j,i  ),
                         e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,i  ),
                         e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,i  ));
       } else if (flx3(m,IDN,k,j,ir_) >= 0.0) {
@@ -908,8 +924,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       if (wall1) {  // reflecting radial wall: no upwind side, see above
         e3_l2 = 0.5*((e3x2_(m,k,j,im_) - e3cc_(m,k,j-1,im_)) +
               (e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  )));
-      } else if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
-        e3_l2 = EmfPick(flx1(m,IDN,k,j-1,i), emf_sm_, re3(k,j-1,im_), re3(k,j-1,i  ),
+      } else if (emf_sw_) {  // lhlld2-1102 emf_smooth
+        e3_l2 = EmfPick(rdx1_, flx1(m,IDN,k,j-1,i), emf_sm_, re3(k,j-1,im_), re3(k,j-1,i  ),
                         e3x2_(m,k,j,im_) - e3cc_(m,k,j-1,im_),
                         e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  ));
       } else if (flx1(m,IDN,k,j-1,i) >= 0.0) {
@@ -920,8 +936,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       if (wall1) {  // reflecting radial wall: no upwind side, see above
         e3_r2 = 0.5*((e3x2_(m,k,j,im_) - e3cc_(m,k,j  ,im_)) +
               (e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  )));
-      } else if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
-        e3_r2 = EmfPick(flx1(m,IDN,k,j,i), emf_sm_, re3(k,j  ,im_), re3(k,j  ,i  ),
+      } else if (emf_sw_) {  // lhlld2-1102 emf_smooth
+        e3_r2 = EmfPick(rdx1_, flx1(m,IDN,k,j,i), emf_sm_, re3(k,j  ,im_), re3(k,j  ,i  ),
                         e3x2_(m,k,j,im_) - e3cc_(m,k,j  ,im_),
                         e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  ));
       } else if (flx1(m,IDN,k,j,i) >= 0.0) {
@@ -929,8 +945,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e3_r2 = e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  );
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
-        e3_l1 = EmfPick(flx2(m,IDN,k,j,il_), emf_sm_, re3(k,j-1,im_), re3(k,j  ,im_),
+      if (emf_sw_) {  // lhlld2-1102 emf_smooth
+        e3_l1 = EmfPick(rdx2_, flx2(m,IDN,k,j,il_), emf_sm_, re3(k,j-1,im_), re3(k,j  ,im_),
                         e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,im_),
                         e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,im_));
       } else if (flx2(m,IDN,k,j,il_) >= 0.0) {
@@ -938,8 +954,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e3_l1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,im_);
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
-        e3_r1 = EmfPick(flx2(m,IDN,k,j,ir_), emf_sm_, re3(k,j-1,i  ), re3(k,j  ,i  ),
+      if (emf_sw_) {  // lhlld2-1102 emf_smooth
+        e3_r1 = EmfPick(rdx2_, flx2(m,IDN,k,j,ir_), emf_sm_, re3(k,j-1,i  ), re3(k,j  ,i  ),
                         e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,i  ),
                         e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,i  ));
       } else if (flx2(m,IDN,k,j,ir_) >= 0.0) {
