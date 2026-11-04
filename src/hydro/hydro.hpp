@@ -167,6 +167,7 @@ class Hydro {
   int dtnew_m = -1, dtnew_k = -1, dtnew_j = -1, dtnew_i = -1;
   static constexpr int ndtdiag = 8;
   DualArray1D<Real> dt_diag;   // r, rho, T, p, cs, v1, v2, v3
+  DvceArray4D<Real> dt_cell;   // accpolar-1103: per-cell CFL dt (env ATHENA_DT_REPORT only)
   bool dt_diag_valid = false;
   Real dtnew_prev = -1.0;
   // <hydro>/rad_signal_speed: the CFL signal speed includes the radiation pressure of

@@ -342,4 +342,211 @@ void RadiationM1::VetGdRingGatherC(const int i0, const int i1) {
   });
 }
 
+//----------------------------------------------------------------------------------------
+//! accpolar-1103 <rad_m1>/vet_gd_band_global: the band lists keyed on the GLOBAL cell
+//! (the cubed sphere's exact band copies, VetGdCsInit, on the full sphere's index space).
+//! Band position (kk, jj) of block (lx2, lx3) is the global cell J = lx2 nx2 + jj - w, K =
+//! lx3 nx3 + kk - w, continued beyond a pole in the extended chart (J -> -1 - J north,
+//! 2 nt2 - 1 - J south, K -> K + nx3t/2: the pole partner's reversed rows, as the slot
+//! halo), K periodic.  Every position at depth d >= 1 (Chebyshev distance from the
+//! interior) takes its owner's interior value: on-rank copies and one message per
+//! partner rank, both sorted by depth so that the per-shell halo of depth ws is a prefix
+//! (VetGdCsHalo with ws).  Every slot is marked remote (vgd_hloc = -1): the sweep reads
+//! every band position from the band (no direct neighbour reads, which reach one block).
+
+void RadiationM1::VetGdGlobalBandInit() {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int g0 = pmy_pack->gids;
+  const int me = global_variable::my_rank;
+  const int ngb = pm->nmb_total;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3, w = vgd_w;
+  const int c2w = nx2 + 2*w, c3w = nx3 + 2*w;
+  const int nt2 = pm->mesh_indcs.nx2, nt3 = pm->mesh_indcs.nx3;
+  const int nb2 = vgd_nb2, nb3 = vgd_nb3;
+  if (pm->multilevel) {VgdFatal("vet_gd_band_global: SMR/AMR not supported");}
+  if (nb2*nx2 != nt2 || nb3*nx3 != nt3 || (nt3 % 2) != 0) {
+    VgdFatal("vet_gd_band_global: the MeshBlocks must tile the mesh, nx3 even");
+  }
+  std::vector<int> gof(nb2*nb3, -1);
+  for (int g = 0; g < ngb; ++g) {
+    const LogicalLocation &l = pm->lloc_eachmb[g];
+    gof[l.lx3*nb2 + l.lx2] = g;
+  }
+  // the owner (gid, band k, band j) of band position (kk, jj) of block g; false: none
+  auto owner = [&](const int g, const int kk, const int jj, int &go, int &ko,
+                   int &jo) -> bool {
+    const LogicalLocation &l = pm->lloc_eachmb[g];
+    int J = l.lx2*nx2 + jj - w, K = l.lx3*nx3 + kk - w;
+    if (J < 0) {
+      J = -1 - J;
+      K += nt3/2;
+    } else if (J >= nt2) {
+      J = 2*nt2 - 1 - J;
+      K += nt3/2;
+    }
+    if (J < 0 || J >= nt2) {return false;}
+    K = ((K % nt3) + nt3) % nt3;
+    const int b2 = J/nx2, b3 = K/nx3;
+    go = gof[b3*nb2 + b2];
+    ko = K - b3*nx3 + w;
+    jo = J - b2*nx2 + w;
+    return true;
+  };
+  auto depth = [&](const int kk, const int jj) -> int {
+    const int dk = std::max(std::max(w - kk, kk - (w + nx3 - 1)), 0);
+    const int dj = std::max(std::max(w - jj, jj - (w + nx2 - 1)), 0);
+    return std::max(dk, dj);
+  };
+  // buckets by depth (1..w): on-rank (6 ints), per partner rank send / recv (3 ints)
+  std::vector<std::vector<int>> lb(w + 1);
+  std::map<int, std::vector<std::vector<int>>> sb, rb;
+  for (int gr = 0; gr < ngb; ++gr) {
+    const int rr = pm->rank_eachmb[gr];
+    for (int kk = 0; kk < c3w; ++kk) {
+      for (int jj = 0; jj < c2w; ++jj) {
+        const int d = depth(kk, jj);
+        if (d == 0) {continue;}
+        int go, ko, jo;
+        if (!owner(gr, kk, jj, go, ko, jo)) {
+          VgdFatal("vet_gd_band_global: a band position beyond the sphere (band deeper "
+                   "than the theta rows)");
+        }
+        const int ro = pm->rank_eachmb[go];
+        if (rr != me && ro != me) {continue;}
+        if (rr == me && ro == me) {
+          lb[d].insert(lb[d].end(), {gr - g0, kk, jj, go - g0, ko, jo, d});
+        } else if (rr == me) {
+          auto &v = rb[ro];
+          if (v.empty()) {v.resize(w + 1);}
+          v[d].insert(v[d].end(), {gr - g0, kk, jj});
+        } else {
+          auto &v = sb[rr];
+          if (v.empty()) {v.resize(w + 1);}
+          v[d].insert(v[d].end(), {go - pm->gids_eachrank[me], ko, jo});
+        }
+      }
+    }
+  }
+  // the on-rank list in depth order, its prefix counts
+  std::vector<int> loc;
+  vgd_gdnl.assign(w + 1, 0);
+  for (int d = 1; d <= w; ++d) {
+    for (size_t q = 0; q < lb[d].size(); q += 7) {
+      loc.insert(loc.end(), lb[d].begin() + q, lb[d].begin() + q + 6);
+    }
+    vgd_gdnl[d] = static_cast<int>(loc.size()/6);
+  }
+  vgd_csnloc = static_cast<int>(loc.size()/6);
+  Kokkos::realloc(vgd_csloc, std::max(vgd_csnloc, 1), 6);
+  {
+    auto l_h = Kokkos::create_mirror_view(vgd_csloc);
+    for (int e = 0; e < vgd_csnloc; ++e) {
+      for (int c = 0; c < 6; ++c) {l_h(e,c) = loc[6*e + c];}
+    }
+    Kokkos::deep_copy(vgd_csloc, l_h);
+  }
+  // the partners (sorted), their segments in depth order
+  vgd_csprk.clear();
+  for (const auto &x : sb) {vgd_csprk.push_back(x.first);}
+  for (const auto &x : rb) {
+    if (sb.find(x.first) == sb.end()) {vgd_csprk.push_back(x.first);}
+  }
+  std::sort(vgd_csprk.begin(), vgd_csprk.end());
+  const int np = static_cast<int>(vgd_csprk.size());
+  vgd_csps.assign(np, 0);
+  vgd_cspn.assign(np, 0);
+  vgd_cspr.assign(np, 0);
+  vgd_cspm.assign(np, 0);
+  vgd_gdsn.assign(w + 1, std::vector<int>(np, 0));
+  vgd_gdrn.assign(w + 1, std::vector<int>(np, 0));
+  std::vector<int> sl, rl, sd, rd;
+  for (int p = 0; p < np; ++p) {
+    const int rk = vgd_csprk[p];
+    vgd_csps[p] = static_cast<int>(sl.size()/3);
+    vgd_cspr[p] = static_cast<int>(rl.size()/3);
+    for (int d = 1; d <= w; ++d) {
+      if (sb.count(rk)) {
+        const auto &v = sb[rk][d];
+        sl.insert(sl.end(), v.begin(), v.end());
+        sd.insert(sd.end(), v.size()/3, d);
+      }
+      if (rb.count(rk)) {
+        const auto &v = rb[rk][d];
+        rl.insert(rl.end(), v.begin(), v.end());
+        rd.insert(rd.end(), v.size()/3, d);
+      }
+      vgd_gdsn[d][p] = static_cast<int>(sl.size()/3) - vgd_csps[p];
+      vgd_gdrn[d][p] = static_cast<int>(rl.size()/3) - vgd_cspr[p];
+    }
+    vgd_cspn[p] = static_cast<int>(sl.size()/3) - vgd_csps[p];
+    vgd_cspm[p] = static_cast<int>(rl.size()/3) - vgd_cspr[p];
+  }
+  vgd_csnsnd = static_cast<int>(sl.size()/3);
+  vgd_csnrcv = static_cast<int>(rl.size()/3);
+  Kokkos::realloc(vgd_cssl, std::max(vgd_csnsnd, 1), 3);
+  Kokkos::realloc(vgd_csrl, std::max(vgd_csnrcv, 1), 3);
+  Kokkos::realloc(vgd_gdps, std::max(vgd_csnsnd, 1));
+  Kokkos::realloc(vgd_gdpr, std::max(vgd_csnrcv, 1));
+  {
+    auto s_h = Kokkos::create_mirror_view(vgd_cssl);
+    auto r_h = Kokkos::create_mirror_view(vgd_csrl);
+    auto ds_h = Kokkos::create_mirror_view(vgd_gdps);
+    auto dr_h = Kokkos::create_mirror_view(vgd_gdpr);
+    for (int e = 0; e < vgd_csnsnd; ++e) {
+      for (int c = 0; c < 3; ++c) {s_h(e,c) = sl[3*e + c];}
+      ds_h(e) = sd[e];
+    }
+    for (int e = 0; e < vgd_csnrcv; ++e) {
+      for (int c = 0; c < 3; ++c) {r_h(e,c) = rl[3*e + c];}
+      dr_h(e) = rd[e];
+    }
+    Kokkos::deep_copy(vgd_cssl, s_h);
+    Kokkos::deep_copy(vgd_csrl, r_h);
+    Kokkos::deep_copy(vgd_gdps, ds_h);
+    Kokkos::deep_copy(vgd_gdpr, dr_h);
+  }
+  // message buffers: one shell of every direction, or ln chi and ln S of some shells
+  const int nent = std::max(std::max(vgd_csnsnd, vgd_csnrcv), 1);
+  const int nvb = std::max(vgd_n, 2*8);
+  // device buffers (CUDA-aware MPI, as the sp slot halo; VetGdCsHalo with ws >= 0);
+  // the pinned host buffers of the cubed sphere get one element
+  Kokkos::realloc(vgd_sbuf, static_cast<size_t>(nent)*nvb);
+  Kokkos::realloc(vgd_rbuf, static_cast<size_t>(nent)*nvb);
+  Kokkos::realloc(vgd_cssb, 1);
+  Kokkos::realloc(vgd_csrb, 1);
+  vgd_hmpi = (np > 0);
+  // the band columns' phi from the GLOBAL index (P0 + (K + 0.5) D, K unwrapped): the
+  // per-block x3min + (k + 0.5) dx3 differs in the last bit between layouts, and a
+  // tangent cell's branch test n . r_hat >= 0 may flip with it
+  {
+    const double p0 = pm->mesh_size.x3min, dp = (pm->mesh_size.x3max - p0)/nt3;
+    vgd_phc_h.assign(static_cast<size_t>(nmb)*c3w, 0.0);
+    Kokkos::realloc(vgd_phc, nmb, c3w);
+    auto ph_h = Kokkos::create_mirror_view(vgd_phc);
+    for (int m = 0; m < nmb; ++m) {
+      const int lx3 = pm->lloc_eachmb[g0 + m].lx3;
+      for (int kb = 0; kb < c3w; ++kb) {
+        const int K = lx3*nx3 + kb - w;
+        const double v = p0 + (K + 0.5)*dp;
+        vgd_phc_h[static_cast<size_t>(m)*c3w + kb] = v;
+        ph_h(m,kb) = v;
+      }
+    }
+    Kokkos::deep_copy(vgd_phc, ph_h);
+  }
+  // every slot reads the band (no direct on-rank neighbour reads)
+  Kokkos::deep_copy(vgd_hloc, -1);
+  for (int t = 0; t < 8*nmb; ++t) {vgd_hrank[t] = me;}
+  if (me == 0) {
+    std::cout << "<rad_m1> vet_gd_band_global (accpolar-1103): band " << w
+              << " cells keyed on the global cell (exact copies from any block; rank 0: "
+              << "on-rank " << vgd_csnloc << ", sent " << vgd_csnsnd << ", received "
+              << vgd_csnrcv << " positions per shell at full depth, partners " << np
+              << "); stencil clamped to the cell's own window (layout independent)"
+              << std::endl;
+  }
+}
+
 } // namespace radm1

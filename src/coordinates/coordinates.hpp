@@ -101,6 +101,11 @@ class Coordinates {
   DvceArray4D<Real> z_ov_rE;
     
   void CoordSphericalPolar();
+  // accpolar-1103 <mesh>/sp_phi_global (read only when named; default false = bitwise):
+  // the spherical-polar phi faces/centres from the GLOBAL phi index (LeftEdgeX(K, nx3 of
+  // the mesh, mesh x3min, x3max)) instead of the block's own edges: the same coordinates
+  // for every MeshBlock layout (the per-block formula differs in the last bit)
+  bool sp_phi_global = false;
   void SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
       const DvceArray4D<Real> &pwb, const DvceFaceFld5D<Real> uflx,
       const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);

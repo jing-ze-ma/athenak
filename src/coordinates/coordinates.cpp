@@ -118,6 +118,8 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     CoordGnomonicEquiangle();
   }
   if (pmy_pack->pmesh->use_spherical_polar) {
+    sp_phi_global = pin->DoesParameterExist("mesh", "sp_phi_global") &&
+                    pin->GetBoolean("mesh", "sp_phi_global");
     CoordSphericalPolar();
   }
   }
@@ -1743,6 +1745,20 @@ void Coordinates::CoordSphericalPolar() {
   auto z_ov_rE_ = z_ov_rE;
   const bool use_stretch_theta = pmy_pack->pmesh->use_grid_stretch_theta;
   const Real f_stretch_theta = pmy_pack->pmesh->fStretchTheta;
+  // accpolar-1103 <mesh>/sp_phi_global: the global phi index offset of every block
+  const bool phg = sp_phi_global;
+  const int nx3t = pmy_pack->pmesh->mesh_indcs.nx3;
+  const Real mx3min = pmy_pack->pmesh->mesh_size.x3min;
+  const Real mx3max = pmy_pack->pmesh->mesh_size.x3max;
+  DvceArray1D<int> k0g("sp_phi_k0", nmb1 + 1);
+  {
+    auto h = Kokkos::create_mirror_view(k0g);
+    for (int m = 0; m <= nmb1; ++m) {
+      h(m) = static_cast<int>(pmy_pack->pmesh->lloc_eachmb[pmy_pack->gids + m].lx3)*
+             indcs.nx3;
+    }
+    Kokkos::deep_copy(k0g, h);
+  }
   Real tplat[8];   // fullsph-1027 theta_plateau parameters (tplat[2] = 0: sinh map)
   for (int n=0; n<8; ++n) tplat[n] = pmy_pack->pmesh->fStretchThetaPlat[n];
   par_for("spcoord", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,//ks,ke,js,je,is,ie,
@@ -1778,6 +1794,12 @@ void Coordinates::CoordSphericalPolar() {
     Real phi    = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
     Real phil   = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
     Real phir   = LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+    if (phg) {   // accpolar-1103: from the global phi index (layout independent)
+      const int kg = k0g(m) + k - ks;
+      phi  = CellCenterX(kg, nx3t, mx3min, mx3max);
+      phil = LeftEdgeX(kg, nx3t, mx3min, mx3max);
+      phir = LeftEdgeX(kg + 1, nx3t, mx3min, mx3max);
+    }
 
     Real sintl  = sin(thetal);
     Real sintr  = sin(thetar);

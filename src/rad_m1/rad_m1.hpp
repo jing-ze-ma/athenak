@@ -2820,7 +2820,8 @@ class RadiationM1 {
   void VetGdCsTab(const std::vector<double> &d);   // into vgd_tabh (walls off, mr)
   void VetGdCsDump(const char *env);
   template <class V>
-  void VetGdCsHalo(V &a, const int nv, const int i0, const int i1, const bool loc);
+  void VetGdCsHalo(V &a, const int nv, const int i0, const int i1, const bool loc,
+                   const int ws = -1);
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_csown;   // (m, k, j, 3) owner
   // cs-s3b-1017 (USER decision 2): vet_gd_halo_compact > 0 on cs -- the chart-aware
   // exact lists: per shell and pass only the (remote band cell, direction) values the
@@ -2983,6 +2984,23 @@ class RadiationM1 {
   std::vector<int> vgd_rbcnt, vgd_rbdsp;  // per rank: count, displacement (units)
   int vgd_rbnit = 0, vgd_rbnloc = 0, vgd_rbf0 = 0;   // items total, local, first local
   void VetGdRingInit();
+  // accpolar-1103 <rad_m1>/vet_gd_band_global (read only when named; default false =
+  // bitwise; full sphere only, rad_m1_vetgd_sph2.inc): a decomposition-INDEPENDENT band.
+  // (1) every band position of every block is filled by an exact copy of its owner's
+  // interior value keyed on the GLOBAL cell (the cs band lists vgd_cs* and VetGdCsHalo,
+  // shared with the cubed sphere; any depth, several blocks away: the band is no longer
+  // capped at the MeshBlock size), per shell only the positions within the shell's halo
+  // depth (the lists sorted by depth, prefix counts per depth); (2) the upwind stencil is
+  // clamped to the CELL's own window (k +- wu, j +- wu, wu the read shell's halo depth)
+  // instead of to the block's band edge, so a clamped polar read is the same wherever the
+  // MeshBlock boundaries lie
+  bool vgd_gband = false;
+  DvceArray2D<Real> vgd_phc;              // (m, band k): band-column phi, global index
+  std::vector<double> vgd_phc_h;          // host copy, m-major
+  DvceArray1D<int> vgd_gdps, vgd_gdpr;    // depth of every send / receive entry
+  std::vector<int> vgd_gdnl;              // (ws): on-rank entries with depth <= ws
+  std::vector<std::vector<int>> vgd_gdsn, vgd_gdrn;   // (ws)(partner): send / recv counts
+  void VetGdGlobalBandInit();
   void VetGdRingGatherI(const int i);
   void VetGdRingGatherC(const int i0, const int i1);
   void VetGdThetaInit();                  // the node table and the checks

@@ -1216,6 +1216,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_pole_ring")) {
       vgd_rbkey = pin->GetBoolean("rad_m1","vet_gd_pole_ring");
     }
+    // accpolar-1103 (read only when named, default false = bitwise): the band keyed on
+    // the global cell + the cell-window clamp (layout-independent sweep; sph2.inc)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_global")) {
+      vgd_gband = pin->GetBoolean("rad_m1","vet_gd_band_global");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_pole_ring_colat")) {
       vgd_rbcolat = pin->GetReal("rad_m1","vet_gd_pole_ring_colat");
     }
