@@ -5068,10 +5068,13 @@ void RadiationM1::VetGdSweep() {
   // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath, or the beam)
   // unify-sc-gd-1012 (#2): vet_bc_inner (VetBcEmit: emit, or auto at a Marshak face)
-  const bool emi = (VetBcEmit() || (vgd_beam && vgd_emit)) && (lcut == 0) &&
-                   (vgd_beam || ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK);
-  const Real iemit = vgd_beam ? 0.0 : ((ibc_x1min == M1_IBC_FLUX) ?
-                     4.0*iflux_x1min/c_light : iebath_x1min);
+  // linhao-prod-1104 he_bc_linhao_rad = halfrange (vgd_lhx_ie > 0, rad_m1.hpp): the
+  // outward rays at the physical inner face start from his ghost I_+
+  const bool lhx = (vgd_lhx_ie > 0.0) && (lcut == 0) && !vgd_beam;
+  const bool emi = lhx || ((VetBcEmit() || (vgd_beam && vgd_emit)) && (lcut == 0) &&
+                   (vgd_beam || ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK));
+  const Real iemit = lhx ? vgd_lhx_ie : (vgd_beam ? 0.0 : ((ibc_x1min == M1_IBC_FLUX) ?
+                     4.0*iflux_x1min/c_light : iebath_x1min));
   // vgdbath-1011: the top bath (vet_bc_bath with a MARSHAK outer x1 and a nonzero
   // implicit_ebath_x1max): the inward ray of the top shell carries it, attenuated over
   // the path from the top face, as vet_sc's downward rays (ib*ex + wu*S_u + w0*S_0)
@@ -6953,6 +6956,10 @@ void RadiationM1::VetGdSymRef() {
   in.emi = VetBcEmit() && (lcut == 0) &&
            (ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK);
   in.iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
+  if (vgd_lhx_ie > 0.0 && lcut == 0) {   // linhao-prod-1104 halfrange (rad_m1.hpp)
+    in.emi = true;
+    in.iemit = vgd_lhx_ie;
+  }
   const bool tbh = vgd_tbath && (ibc_x1max == M1_IBC_MARSHAK) && (iebath_x1max != 0.0);
   in.itop = tbh ? iebath_x1max : 0.0;
   in.bfc = vet_bc_face;

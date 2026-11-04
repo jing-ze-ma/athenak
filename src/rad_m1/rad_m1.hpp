@@ -685,6 +685,19 @@ class RadiationM1 {
   Real lbath_l1 = 0.0, lbath_l2 = 0.0, lbath_rstl = 0.0;
   bool lbath_rst = false;
   Real LbathWallSum();
+  // linhao-prod-1104 problem/he_bc_linhao_rad = halfrange (set by the he_star pgen; off =
+  // the interior-face formula above, bitwise): the inner face carries the DISCRETE-
+  // ORDINATES UPWIND flux of L. Ma's ghost intensities (bsg_star.cpp Inflow_rad_X1): the
+  // half-range (two-stream, isotropic per hemisphere) intensities of the ghost (E_g, F_g,
+  // comoving, fixed: lbath_heg, lbath_hfg) go out, those of the first cell (E_is, F_is)
+  // come in, F = 0.5 (c <mu>_+ (E_g - E_is) + F_g + F_is), <mu>_+ = lbath_mu1 of the
+  // quadrature (rad_m1_implicit.cpp m1_impl_asm); the advective enthalpy flux as before.
+  // vgd_lhx_ie > 0: the VET formal solutions (vet_gd, vet_col) start their outward rays at
+  // the physical inner face from his I_+ = E_g + F_g/(c <mu>_+) (E units) instead of the
+  // vet_bc_inner rule.
+  bool impl_lbath_hr = false;
+  Real lbath_mu1 = 0.5, lbath_heg = 0.0, lbath_hfg = 0.0;
+  Real vgd_lhx_ie = -1.0;
   // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
   // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror
   // pair).  ibm_i(m,q,k,j): the entering intensity of beam ray q at column (k,j) (local,

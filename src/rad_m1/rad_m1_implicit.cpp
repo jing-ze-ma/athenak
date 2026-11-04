@@ -14179,6 +14179,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool pt0_ = (it == 0);   // the face q is set on pass 0, frozen after
     auto ptq_a = ptq1;
     const bool lbath = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
+    const bool lbhr = impl_lbath_hr;   // linhao-prod-1104 halfrange (rad_m1.hpp)
+    const Real lhmu = lbath_mu1, lheg = lbath_heg, lhfg = lbath_hfg;
     auto lgr_ = lbath_g;
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
@@ -14604,7 +14606,43 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         } else if (bchi == M1_IBC_FLUX) {
           rr -= nup*cr*fxhi;
         }
-        if (lbath && i == is && botb) {
+        if (lbath && i == is && botb && lbhr) {
+          // linhao-prod-1104 he_bc_linhao_rad = halfrange: the inner face flux of his DO
+          // upwind with half-range intensities, F = A - B E_is (rad_m1.hpp)
+          const int im = is - 1;
+          const Real eg1 = lgr_(m,0,k,j), eg2 = lgr_(m,1,k,j);
+          const Real ag1 = lgr_(m,5,k,j), ag2 = lgr_(m,6,k,j);
+          const Real fis = 0.5*(f0n_(m,k,j,is) + f0n_(m,k,j,is+1));
+          const Real hb = 0.5*cl*lhmu;
+          const Real ha = hb*lheg + 0.5*(lhfg + fis);
+          bb += num*cr*hb;
+          d_[0] += num*cr*hb;
+          rr += num*cr*ha;
+          d_[11] += num*cr*ha;
+          Real vf = M1FaceAvgX1(lgr_(m,3,k,j), vi, cx1f, m, im, i, fwd);
+          if (vf > 0.0) {
+            rr += num*cr*ag1*eg1;
+          } else {
+            bb -= num*cr*ai;
+            d_[2] -= num*cr*ai;
+          }
+          const Real re1_ = rr;
+          if (enth2) {
+            bool o3;
+            int i3 = M1EnthIdx(i+1, is, ie, false, hxl, hxh, o3);
+            if (t2vs) {
+              rr += num*cr*M1EnthCorrT(enm, eg2, eg1, iw_(m,M1_IW_EP,k,j,i),
+                                       iw_(m,M1_IW_EP,k,j,i3), o3, ag2, ag1, ai,
+                                       iw_(m,M1_IW_ADV,k,j,i3), 0.0, 0.0,
+                                       iw_(m,t2da,k,j,i), iw_(m,t2da,k,j,i3), vf, t2afc);
+            } else {
+              rr += num*cr*M1EnthCorr(enm, eg2, eg1, iw_(m,M1_IW_EP,k,j,i),
+                                      iw_(m,M1_IW_EP,k,j,i3), o3, ag2, ag1, ai,
+                                      iw_(m,M1_IW_ADV,k,j,i3), vf);
+            }
+          }
+          d_[13] += rr - re1_;
+        } else if (lbath && i == is && botb) {
           // fin4-linhao-bc: the face i-1/2 of the branch below (an interior face whose
           // other cell is a ghost) with the ghost's own quantities (lgr_, rad_m1.hpp):
           // D = 1/3 and no curvature / lateral term on the ghost side; its E is fixed,
@@ -15185,6 +15223,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool cs2z = impl_gas_src_cs2;   // consfix-1011: Z with the true F0^n
     auto q1z_ = cs2f1;
     const bool lbathf = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
+    const bool lbhrf = impl_lbath_hr;   // linhao-prod-1104 halfrange
+    const Real lhmuf = lbath_mu1, lhegf = lbath_heg, lhfgf = lbath_hfg;
     auto lgf_ = lbath_g;
     auto lff_ = lbath_f;
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
@@ -15232,7 +15272,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           }
         }
         Real fn = th*(f0n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*od);
-        if (aphll) {
+        if (lbhrf) {
+          // linhao-prod-1104 halfrange: the flux the row was assembled with
+          fn = 0.5*(cl*lhmuf*(lhegf - iw_(m,M1_IW_EP,k,j,ip)) + lhfgf
+                    + 0.5*(f0n_(m,k,j,ip) + f0n_(m,k,j,ip+1)));
+        } else if (aphll) {
           Real al = ifw_(m,M1_IFW_AL,k,j,i);
           Real gh = ifw_(m,M1_IFW_HCL,k,j,i)*eg1
                     + ifw_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,ip)

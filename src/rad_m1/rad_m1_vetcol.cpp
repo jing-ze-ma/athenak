@@ -746,6 +746,8 @@ void RadiationM1::VetColBuild() {
   // MIRRORED incoming intensity at the inner face (specular reflection, H = 0 there)
   const bool mir = vcol_o2 && (ibc_x1min == M1_IBC_REFLECT);
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
+  const bool lhxc = (vgd_lhx_ie > 0.0);   // linhao-prod-1104 (rad_m1.hpp)
+  const Real lhxi = vgd_lhx_ie;
   auto gb_ = vcol_gb;
   auto gb0_ = vcol_gb0;
   const int nray = vcol_nray;
@@ -900,6 +902,7 @@ void RadiationM1::VetColBuild() {
           if (ty == VC_CORE) {
             // the diffusion intensity at the inner face, carried to the first shell
             Real ib = fmax(e0 + 3.0*f0*ray_(r,3)/cl, 0.0);
+            if (lhxc) {ib = lhxi;}   // linhao-prod-1104 halfrange: his I_+
             VetSegW(ch0*ray_(r,2), ex, w0, wu);
             if (g2) {VcolW2(ch0*ray_(r,2), -VcolC2(gb0_(r)), ex, w0, wu);}
             if (mir) {ib = fmax(buf_(r,c)*ex + wu*s0 + w0*sbot, 0.0);}
@@ -1094,6 +1097,8 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   // MIRRORED incoming intensity at the inner face (specular reflection, H = 0 there)
   const bool mir = vcol_o2 && (ibc_x1min == M1_IBC_REFLECT);
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
+  const bool lhxc = (vgd_lhx_ie > 0.0);   // linhao-prod-1104 (rad_m1.hpp)
+  const Real lhxi = vgd_lhx_ie;
   auto gb_ = vcol_gb;
   auto gb0_ = vcol_gb0;
   const int nray = vcol_nray, lc = vcol_lc;
@@ -1299,6 +1304,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
             const int ty = static_cast<int>(ray_(r,1));
             if (ty == VC_CORE) {
               Real ib = fmax(e0 + 3.0*f0*ray_(r,3)/cl, 0.0);
+            if (lhxc) {ib = lhxi;}   // linhao-prod-1104 halfrange: his I_+
               if (g2) {
                 VcolW2(ch0*ray_(r,2), -VcolC2(gb0_(r)), ex, w0, wu);
               } else {

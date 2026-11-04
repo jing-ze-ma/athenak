@@ -220,6 +220,11 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("lbath_l2", lbath_l2);
   v.value("lbath_rstl", lbath_rstl);
   v.value("lbath_rst", lbath_rst);
+  v.value("impl_lbath_hr", impl_lbath_hr);
+  v.value("lbath_mu1", lbath_mu1);
+  v.value("lbath_heg", lbath_heg);
+  v.value("lbath_hfg", lbath_hfg);
+  v.value("vgd_lhx_ie", vgd_lhx_ie);
   v.value("ibm_n", ibm_n);
   v.value("ibm_nr", ibm_nr);
   v.value("ibm_ray", ibm_ray);

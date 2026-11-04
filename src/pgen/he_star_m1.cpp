@@ -2752,6 +2752,43 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       lb.sync_device();
       hs_lbc_d_ = lb.d_view;
       pm1->impl_lbath = true;
+      // linhao-prod-1104 problem/he_bc_linhao_rad = interior (default: the interior face
+      // formula with the ghost state, bitwise) | halfrange: his DO upwind face with the
+      // half-range ghost intensities (bsg_star.cpp Inflow_rad_X1 cpp:969-1034).
+      // Derivation (E units, sum_all w = 1, his I+- = 0.5 (E/A +- (F/c)/B), A = sum_{mu>0}
+      // w = 1/2, B = sum_{mu>0} mu w = <mu>_+/2):
+      //   F_face/c = sum_{mu>0} w mu I+_ghost + sum_{mu<0} w mu I-_cell
+      //            = B I+_g - B I-_is = 0.5 [(E_g - E_is) <mu>_+ + (F_g + F_is)/c]
+      //   (the P_rr face flux 0.5 <mu^2>_+ [(E_g + E_is) + (F_g - F_is)/(c <mu>_+)] has
+      //   no place in this M1 scheme: F lives on the faces and its own equation is
+      //   replaced at the wall by the formula above)
+      //   VET: the outward rays at the inner face start from I+_g = E_g + F_g/(c <mu>_+).
+      // <mu>_+ = he_bc_linhao_mu1, default 0.5063576644955016 = the 120-angle level-
+      // symmetric LQ10 set (Athena++ angle_flag 0, nmu 5; vet_gd's VgdLevelSym(10)); E_g,
+      // F_g comoving of ghost 1 (his ComToLab is O(v/c) ~ 1e-7 here; the advective
+      // enthalpy flux of the row carries the v terms as before).
+      if (pin->DoesParameterExist("problem","he_bc_linhao_rad")) {
+        const std::string lr = pin->GetString("problem","he_bc_linhao_rad");
+        if (lr != "interior" && lr != "halfrange") {
+          HsFatal("problem/he_bc_linhao_rad must be interior or halfrange", __LINE__);
+        }
+        if (lr == "halfrange") {
+          const Real mu1 = pin->GetOrAddReal("problem","he_bc_linhao_mu1",
+                                             0.5063576644955016);
+          const Real heg = lb.h_view(0,0,2), hfg = lb.h_view(0,0,3);
+          pm1->impl_lbath_hr = true;
+          pm1->lbath_mu1 = mu1;
+          pm1->lbath_heg = heg;
+          pm1->lbath_hfg = hfg;
+          pm1->vgd_lhx_ie = heg + hfg/(pm1->c_light*mu1);
+          if (global_variable::my_rank == 0) {
+            std::cout << std::setprecision(17) << "he_star_m1: he_bc_linhao_rad = halfrange:"
+                      << " <mu>_+ " << mu1 << ", ghost-1 E_g " << heg << " F_g " << hfg
+                      << ", VET I+ " << pm1->vgd_lhx_ie << std::setprecision(6)
+                      << std::endl;
+          }
+        }
+      }
     }
     if (hs_bhse_) {
       hs_bhse_gmax_ = pin->GetOrAddReal("problem","he_bc_hse_gmax",0.9);
