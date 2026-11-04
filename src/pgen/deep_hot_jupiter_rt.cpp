@@ -1787,18 +1787,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // namespace wbtan): the tangential centrifugal (+ tidal, with problem/roche) force as
     // the hydro's own discrete residual of the equipotential equilibrium.  Works with
     // rot_potential alone (centrifugal only) or with roche.
-    // proddef-1101 (USER): fresh-start default true with problem/roche on a single-level
-    // mesh (roche itself already requires everything else roche_wb_tan needs); a restart
-    // whose input lacks the key keeps the old false
+    // nowbtan-1104 (USER 11-04 "we should not use the tangential tide"): default FALSE
+    // again, fresh start and restart alike (proddef-1101 had made it the fresh default
+    // with problem/roche): S_t = -(rho/rho_eq) R_t(W_eq) is wrong wherever the gas is not
+    // the stored equilibrium (the accretor cold spot; on dhj 99.5 % of the top shell lies
+    // on OPEN equipotentials).  Without the key the analytic tangential tide of
+    // problem/roche is used.  A named key (deck, restart input, command line) still wins.
     if (!pin->DoesParameterExist("problem","roche_wb_tan")) {
-      const bool sl = !(pmy_mesh_->adaptive || pmy_mesh_->multilevel);
-      const bool wd = roche_on && sl && recipe::NewDefaults(pin);
       if (roche_on) {
-        recipe::Log(std::string("problem/roche_wb_tan = ") + (wd ? "true (default with "
-                    "problem/roche)" : (!sl ? "false (needs a single-level mesh)"
-                    : "false (old default: restart input or recipe none)")));
+        recipe::Log("problem/roche_wb_tan = false (default since nowbtan-1104: the "
+                    "analytic tangential tide of problem/roche)");
       }
-      dhj_wbt.on = pin->GetOrAddBoolean("problem","roche_wb_tan",wd);
+      dhj_wbt.on = pin->GetOrAddBoolean("problem","roche_wb_tan",false);
     } else {
       dhj_wbt.on = pin->GetBoolean("problem","roche_wb_tan");
     }

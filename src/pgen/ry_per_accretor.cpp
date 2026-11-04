@@ -5444,26 +5444,16 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   }
   // roche-wbtan-1101 problem/roche_wb_tan: checks; on a restart the IC below is rebuilt
   // into u0 for W_eq and u0 is restored (WbTanCaptureIC), the radiation untouched
-  // accwbtdef-1102 (USER 11-02): key absent -> default true on the cubed sphere for a
-  // fresh start when every prerequisite below holds (dhj proddef-1101 pattern); a restart
-  // input without the key and the spherical-polar path keep false.  A named key is used
-  // as given.
+  // nowbtan-1104 (USER 11-04 "we should not use the tangential tide"): key absent ->
+  // FALSE (fresh start and restart; accwbtdef-1102 had made it the cs fresh default):
+  // S_t = -(rho/rho_eq) R_t(W_eq) is wrong wherever the gas is not the stored equilibrium
+  // (the accretor cold spot).  A named key is used as given.
   if (!pin->DoesParameterExist("problem", "roche_wb_tan")) {
-    std::string why = "";
-    if (!cs_) why = "spherical-polar path";
-    else if (restart) why = "restart input without the key";
-    else if (!p3_) why = "needs phys_3d";
-    else if (spr_on_) why = "needs no spin_ramp";
-    else if (!phd->use_etotgrav) why = "needs <hydro>/etotgrav";
-    else if (spr_icvz_ && !gen_) why = "env_ic_vz needs thermo = general";
-    else if (pmbp->pmesh->adaptive || pmbp->pmesh->multilevel) why = "needs one level";
-    const bool wd = why.empty();
     if (root) {
-      const std::string val = wd ? std::string("true (cs default, fresh start)")
-                                 : "false (" + why + ")";
-      std::printf("ry_per_accretor: problem/roche_wb_tan = %s\n", val.c_str());
+      std::printf("ry_per_accretor: problem/roche_wb_tan = false (default since "
+                  "nowbtan-1104)\n");
     }
-    acc_wbt.on = pin->GetOrAddBoolean("problem", "roche_wb_tan", wd);
+    acc_wbt.on = pin->GetOrAddBoolean("problem", "roche_wb_tan", false);
   } else {
     acc_wbt.on = pin->GetBoolean("problem", "roche_wb_tan");
   }
