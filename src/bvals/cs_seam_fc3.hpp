@@ -82,5 +82,34 @@ Real SolidDens(const Real X, const Real Y) {
   return (1.0 + X*X)*(1.0 + Y*Y)/(d*sqrt(d));
 }
 
+
+//! cornerfix3-1103: SHARED smoothness gate for a higher-order correction (one function
+//! for the seam samples and the cube-vertex rule).  fa, fb, fc are three equally spaced
+//! samples of the field along the correction's direction; their second difference
+//! dd = fa - 2 fb + fc carries the curvature.  The smoothness ratio
+//!   r = |dd| / (|fb - fa| + |fc - fb|)
+//! is O(h) on smooth data and ~1 across a jump (or at an extremum the samples resolve
+//! poorly), so the weight w = max(0, 1 - r) keeps the full correction where the data
+//! are smooth and switches it off continuously at a jump (no threshold flip-flop).
+KOKKOS_FORCEINLINE_FUNCTION
+Real SmoothW(const Real fa, const Real fb, const Real fc) {
+  const Real d1 = fb - fa, d2 = fc - fb;
+  const Real s = fabs(d1) + fabs(d2);
+  if (!(s > 0.0)) return 1.0;               // constant data: the correction is 0 anyway
+  const Real r = fabs(d2 - d1)/s;
+  return fmax(0.0, 1.0 - r);
+}
+
+//! cornerfix3-1103: a linear-exact base value `base` raised to quadratic exactness by
+//! subtracting coef x (second difference of fa, fb, fc), gated by SmoothW and finally
+//! bounded to [lo, hi] (the range of every value the estimate used): third-order point
+//! value on smooth data, the base value at a jump, never an overshoot.
+KOKKOS_FORCEINLINE_FUNCTION
+Real CurvCorrect(const Real base, const Real fa, const Real fb, const Real fc,
+                 const Real coef, const Real lo, const Real hi) {
+  const Real v = base - coef*SmoothW(fa, fb, fc)*(fa - 2.0*fb + fc);
+  return fmin(hi, fmax(lo, v));
+}
+
 }  // namespace cs_fc3
 #endif  // BVALS_CS_SEAM_FC3_HPP_

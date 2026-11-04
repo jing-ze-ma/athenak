@@ -56,11 +56,6 @@ struct CsEdgeOps {
     s.eta_a = 0.25*(Eta(m,k,j,i) + Eta(m,k,j-1,i) + Eta(m,k-1,j,i) + Eta(m,k-1,j-1,i));
     s.br = 0.25*(bc(m,IBX,k,j,i) + bc(m,IBX,k,j-1,i)
                + bc(m,IBX,k-1,j,i) + bc(m,IBX,k-1,j-1,i));
-    CsVtx3 vx;
-    if (v3 && CsVertexAt(sz.d_view(m), k, j, js, je, ks, ke, vx)) {
-      s.eta_a = has_ad ? CsVertex3(etc, m, vx, i) : 0.0;
-      s.br = (bc(m,IBX,vx.kv,vx.jv,i) + bc(m,IBX,vx.kv,vx.jn,i) + bc(m,IBX,vx.kn,vx.jv,i))/3.0;
-    }
     s.bu1 = 0.5*(b.x2f(m,k,j,i) + b.x2f(m,k-1,j,i))/s.sn;   // B^xi
     s.bu2 = 0.5*(b.x3f(m,k,j,i) + b.x3f(m,k,j-1,i))/s.sn;   // B^eta
     s.bd1 = s.bu1 + s.c*s.bu2; s.bd2 = s.c*s.bu1 + s.bu2;
@@ -69,6 +64,18 @@ struct CsEdgeOps {
                 + jn.x2e(m,k,j-1,i) + jn.x2e(m,k,j-1,i+1))/s.sn;
     s.ju2 = 0.25*(jn.x3e(m,k,j,i) + jn.x3e(m,k,j,i+1)
                 + jn.x3e(m,k-1,j,i) + jn.x3e(m,k-1,j,i+1))/s.sn;
+    CsVtx3 vx;
+    if (v3 && CsVertexAt(sz.d_view(m), k, j, js, je, ks, ke, vx)) {
+      s.eta_a = has_ad ? CsVertex3(etc, m, vx, i) : 0.0;
+      s.br = CsVertex3n(bc, m, IBX, vx, i);
+      // cornerfix2-1103: the transverse J at the vertex point from the point-reflected
+      // pairs (one in each seam ghost region), not through the corner cell's edges
+      const int dj = (vx.jn < vx.jv) ? 1 : -1, dk = (vx.kn < vx.kv) ? 1 : -1;
+      auto p2 = [&](const int ii) {return 0.5*(jn.x2e(m,k-dk,vx.jv,ii) + jn.x2e(m,k+dk,vx.jn,ii));};
+      auto p3 = [&](const int ii) {return 0.5*(jn.x3e(m,vx.kn,j+dj,ii) + jn.x3e(m,vx.kv,j-dj,ii));};
+      s.ju1 = 0.5*(p2(i) + p2(i+1))/s.sn;
+      s.ju2 = 0.5*(p3(i) + p3(i+1))/s.sn;
+    }
   }
   // x2 edge at (k,j,i): r face i, xi centre j, eta face k; ia/ib the radial-edge columns
   KOKKOS_INLINE_FUNCTION

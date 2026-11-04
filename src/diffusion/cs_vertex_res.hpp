@@ -12,10 +12,11 @@
 //! cell (kv, jv) and the two seam ghost cells (kv, jn) (across the x2 seam) and (kn, jv)
 //! (across the x3 seam); the fourth cell of the Cartesian 4-cell stencil (kn, jn) is the
 //! made-up corner block.  CsVertexAt says whether the radial edge (k, j) of block m is a
-//! cube vertex and gives the three cells; CsVertex3 is the 3-cell mean of a cell field.
+//! cube vertex and gives the three cells; CsVertex3 is a cell field at the vertex point.
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
+#include "bvals/cs_seam_fc3.hpp"
 
 struct CsVtx3 {
   int jv, kv, jn, kn;   // corner cell (kv, jv); seam ghosts (kv, jn) and (kn, jv)
@@ -34,10 +35,36 @@ bool CsVertexAt(const RegionSize &z, const int k, const int j, const int js, con
   return true;
 }
 
+//! cornerfix2-1103: a cell field AT the vertex point.  In this block's own (smoothly
+//! extended) gnomonic chart the two seam ghost cells (kv, jn) and (kn, jv) are point
+//! reflections of each other through the vertex, so their mean is the linear-exact,
+//! convex (never overshooting) vertex value: second order, bounded at jumps.  (The
+//! 3-cell mean with the corner cell is NOT linear-exact in this chart: first order.)
+//! cornerfix3-1103: raised to a THIRD-order point value by the pair's curvature term,
+//! 1/8 of the second difference along the pair's direction centred on this block's own
+//! corner cell (the cells (kn, jv+dj), (kv, jv), (kv+dk, jn): real, corner-free), gated
+//! by the shared smoothness weight and bounded to the range of the five values
+//! (cs_fc3::CurvCorrect): the pair mean at a jump, never an overshoot.
+template <class F>
+KOKKOS_INLINE_FUNCTION
+Real CsVertexCell(const F &f, const CsVtx3 &v) {
+  const int dj = (v.jn < v.jv) ? 1 : -1, dk = (v.kn < v.kv) ? 1 : -1;
+  const Real p1 = f(v.kv, v.jn), p2 = f(v.kn, v.jv);
+  const Real fa = f(v.kn, v.jv+dj), fb = f(v.kv, v.jv), fc = f(v.kv+dk, v.jn);
+  const Real lo = fmin(fmin(fmin(p1, p2), fmin(fa, fb)), fc);
+  const Real hi = fmax(fmax(fmax(p1, p2), fmax(fa, fb)), fc);
+  return cs_fc3::CurvCorrect(0.5*(p1 + p2), fa, fb, fc, 0.125, lo, hi);
+}
 template <class A>
 KOKKOS_INLINE_FUNCTION
 Real CsVertex3(const A &a, const int m, const CsVtx3 &v, const int i) {
-  return (a(m,v.kv,v.jv,i) + a(m,v.kv,v.jn,i) + a(m,v.kn,v.jv,i))/3.0;
+  return CsVertexCell([&](const int k, const int j) {return a(m,k,j,i);}, v);
+}
+//! the same for a component of a 5-D array (bcc)
+template <class A>
+KOKKOS_INLINE_FUNCTION
+Real CsVertex3n(const A &a, const int m, const int n, const CsVtx3 &v, const int i) {
+  return CsVertexCell([&](const int k, const int j) {return a(m,n,k,j,i);}, v);
 }
 
 #endif  // DIFFUSION_CS_VERTEX_RES_HPP_

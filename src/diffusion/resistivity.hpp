@@ -235,9 +235,9 @@ class Resistivity {
   void AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);
   void AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);
   // cornerfix-1103 <mesh>/cs_vertex_3cell: J (jnorm) at the cube-vertex edges without the
-  // made-up corner block (resistivity_gnomonic.cpp): the vertex radial J from the 3-cell
-  // loop (j1 = true, radial cells il..iu), the two fictitious transverse edges of the
-  // corner cell one-sided along their ghost row / column (j1 = false, faces il..iu)
+  // made-up corner block (resistivity_gnomonic.cpp): the vertex radial J (j1 = true,
+  // radial cells il..iu) and the corner cell's two transverse edges (j1 = false, faces
+  // il..iu); second order and convex (cornerfix2-1103, see the function)
   void CsVertexJFix(const DvceFaceFld4D<Real> &b0, const int il, const int iu,
                     const bool j1);
   void AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeFld4D<Real> &efld);
