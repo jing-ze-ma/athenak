@@ -244,7 +244,14 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
         sc = jj; blo = js_; bhi = je_ + ((vv == 1) ? 1 : 0) - 2;
       }
       const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
-      int bs = static_cast<int>(floor(pos + 0.5)) - 1;
+      // fc2vtx-1103: TIE-SAFE stencil choice.  At a panel END face (ang = +-pi/4, the
+      // along-staggered component) the map shifts by exactly the normal offset, so at a
+      // ghost cell centre pos is a HALF-INTEGER mathematically, and round(pos) went either
+      // way with the last bit of pos -- which depends on the block's own coordinates.
+      // That picked different 3-point stencils in different layouts (1x1 vs 4x4: 4e-4 in
+      // x2f(ks-2,js) / x3f(ks,js-2) at 12 cube vertices).  A fixed 1e-9 bias makes every
+      // layout break the tie the same way; any pos not within 1e-9 of a tie is unchanged.
+      int bs = static_cast<int>(floor(pos + 0.5 + 1.0e-9)) - 1;
       bs = (bs < blo) ? blo : ((bs > bhi) ? bhi : bs);
       const Real u = pos - static_cast<Real>(bs + 1);
       stnc_(m,kd,sidx,kk,jj,0) = static_cast<Real>(bs);
@@ -271,7 +278,7 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
           if (ib_ > 0) {blx -= ngx_;}
           if (ib_ < nbp_ - 1) {bhx += ngx_;}
         }
-        int bx = static_cast<int>(floor(pos + 0.5)) - 1;
+        int bx = static_cast<int>(floor(pos + 0.5 + 1.0e-9)) - 1;   // tie-safe, as bs
         bx = (bx < blx) ? blx : ((bx > bhx) ? bhx : bx);
         const Real ux = pos - static_cast<Real>(bx + 1);
         stnx_(m,kd,sidx,kk,jj,0) = static_cast<Real>(bx);
