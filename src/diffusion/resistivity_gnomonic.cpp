@@ -162,7 +162,15 @@ void Resistivity::CsVertexJFix(const DvceFaceFld4D<Real> &b0, const int il,
       };
       // the vertex is the midpoint of the point-reflected pair (one step into the x3-seam
       // ghost row, one into the x2-seam ghost column, diagonally)
-      jn1(m,kc,jc,i) = 0.5*(j1at(kc-dk, jc+dj) + j1at(kc+dk, jc-dj));
+      const Real p1 = j1at(kc-dk, jc+dj), p2 = j1at(kc+dk, jc-dj);
+      // cornerfix3-1103: the pair's curvature term (half the second difference along the
+      // pair's direction, centred on the own interior edge (kc+dk, jc+dj), from the two
+      // own seam edges next to the vertex), smoothness-gated and bounded (cs_fc3)
+      const Real fa = jn1(m,kc,jc+2*dj,i), fb = jn1(m,kc+dk,jc+dj,i);
+      const Real fc = jn1(m,kc+2*dk,jc,i);
+      const Real lo = fmin(fmin(fmin(p1, p2), fmin(fa, fb)), fc);
+      const Real hi = fmax(fmax(fmax(p1, p2), fmax(fa, fb)), fc);
+      jn1(m,kc,jc,i) = cs_fc3::CurvCorrect(0.5*(p1 + p2), fa, fb, fc, 0.5, lo, hi);
       return;
     }
     // the corner cell's own transverse edges (x3 edge at (kn, jc), x2 edge at (kc, jn))
