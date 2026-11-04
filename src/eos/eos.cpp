@@ -278,6 +278,18 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     if (pin->DoesParameterExist(bk, "plm_c1")) {
       eos_data.plm_c1 = pin->GetBoolean(bk, "plm_c1");
     }
+    // wbplm-1103: see EOS_Data::wb_plm_smooth (read only when named)
+    if (pin->DoesParameterExist(bk, "wb_plm_smooth")) {
+      eos_data.wb_plm_smooth = pin->GetBoolean(bk, "wb_plm_smooth");
+      if (eos_data.wb_plm_smooth &&
+          !(pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<" << bk << ">/wb_plm_smooth is implemented in the "
+                  << "non-uniform x1 well-balanced PLM only (cubed sphere, spherical "
+                  << "polar)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // lowmach2-1102: see EOS_Data::chi_full and EOS_Data::divdiss (read only when named)
     if (pin->DoesParameterExist(bk, "lhllc_chi_full")) {
       if (!is_hyd) {
