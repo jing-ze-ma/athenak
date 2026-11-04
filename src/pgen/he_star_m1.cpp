@@ -179,6 +179,11 @@ Real hs_atp_dfl_ = 0.0;
 // problem/he_bc_outer = copy (hs_bcopy_): the edge cell's rho, eint, v_t copied,
 //   v_r copied where it points out and 0 where it points in.
 bool hs_pm_ = false, hs_bzc_ = false, hs_bcopy_ = false;
+// linhao-prod-1104 problem/he_bc_outer_r2 (read only when named; default false = bitwise;
+// needs he_bc_outer = copy): L. Ma bsg_star.cpp Outflow_X1 exactly: edge v_r < 0 -> rho
+// copied, v_r = 0; else (v_r >= 0) ghost rho = previous ghost rho (r_{g-1}/r_g)^2 and v_r
+// copied; P (here eint, ideal gas) and v_t copied in both branches
+bool hs_bcr2_ = false;
 // fin4-linhao-bc problem/he_bc_linhao (read only when named; default false = bitwise):
 // L. Ma's Athena++ inner boundary (bsg_star.cpp InitUserMeshBlockData bd_data, Inflow_X1,
 // Inflow_rad_X1) on top of he_bc_inner = zerocontact.  hs_lbc_d_(m, g, q): the ghost
@@ -2657,6 +2662,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_bout_ = (bo == "outflow");
     hs_bhse_ = (bo == "hse");
     hs_bcopy_ = (bo == "copy");
+    if (pin->DoesParameterExist("problem","he_bc_outer_r2")) {
+      hs_bcr2_ = pin->GetBoolean("problem","he_bc_outer_r2");
+      if (hs_bcr2_ && !hs_bcopy_) {
+        HsFatal("problem/he_bc_outer_r2 = true needs he_bc_outer = copy", __LINE__);
+      }
+    }
     if (hs_bzc_) {
       // bsg-truerepro-1008: the root find replays the plain (non-WB) spherical-polar
       // PLM (Hydro::PLM_nonuniform) and the ideal-gas HLLC contact speed
@@ -3279,6 +3290,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const int lrng = pin->GetOrAddInteger("problem","he_ic_linhao_rng",0);
     // Athena++ Constants::grav_const_cgs (his grav_rmax uses G and the file's M column)
     const Real lG = pin->GetOrAddReal("problem","he_ic_linhao_gconst",6.67408e-8);
+    // linhao-prod-1104: he_ic_linhao_gext = r2 (default, his bsg_star.cpp:429 g = g(rmax)
+    // (r/rmax)^+2, as coded) | invsq (the run's point mass GM/r^2, hydrostatic; see below)
+    const std::string gxs = pin->GetOrAddString("problem","he_ic_linhao_gext","r2");
+    if (gxs != "r2" && gxs != "invsq") {
+      HsFatal("problem/he_ic_linhao_gext must be r2 or invsq", __LINE__);
+    }
+    const bool gxi = (gxs == "invsq");
+    if (gxi && gmc) {
+      HsFatal("problem/he_ic_linhao_gext = invsq needs the point-mass gravity", __LINE__);
+    }
     std::vector<Real> pr, pT, pd, pM, pF;
     {
       std::ifstream f(lfn);
@@ -3327,8 +3348,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (x1 > rmax) {
           tem = tmax;
           const Real tc = tem/tk;   // P/rho of this EOS at T(rmax)
-          const Real gl = gmax*std::pow(x1/rmax, 2.0);
-          rho = dmax*std::exp(-gl*(x1 - rmax)/tc);
+          if (gxi) {
+            // linhao-prod-1104 he_ic_linhao_gext = invsq (USER 11-04 "fix their gravity
+            // outside the star"): the isothermal hydrostatic atmosphere of the run's own
+            // point mass, g = GM/r^2 (= g(rmax) (rmax/r)^2 with g(rmax) = GM/rmax^2):
+            //   rho = rho(rmax) exp(-(GM/(P/rho)) (1/rmax - 1/r))
+            rho = dmax*std::exp(-(hs_gm_/tc)*(1.0/rmax - 1.0/x1));
+          } else {
+            const Real gl = gmax*std::pow(x1/rmax, 2.0);
+            rho = dmax*std::exp(-gl*(x1 - rmax)/tc);
+          }
           rho = std::max(rho, dfl);
         } else {
           lint(x1, rho, tem, flx);
@@ -3397,7 +3426,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       for (int n=0; n<np; ++n) if (pd[n] > lthr) nthr = n;
       std::cout << "he_star_m1: he_ic_linhao: " << lfn << " (" << np << " rows, r "
                 << pr[0] << " .. rmax " << rmax << "), T(rmax) " << tmax << " K, rho(rmax) "
-                << dmax << ", g(rmax) " << gmax << " (x (r/rmax)^2 above, as bsg_star.cpp)"
+                << dmax << ", g(rmax) " << gmax
+                << (gxi ? " (gext invsq: hydrostatic in GM/r^2 above, GM = he_gm)"
+                        : " (x (r/rmax)^2 above, as bsg_star.cpp)")
                 << "; perturbation amp " << lamp << " where rho > " << lthr
                 << " (last profile row above: r " << pr[nthr] << "), rng " << lrng
                 << "; he_seed off" << std::endl;
@@ -3742,6 +3773,7 @@ void HeStarBC(Mesh *pm) {
   auto ff1 = pmbp->pradm1->f0x1;
   // bsg-truerepro-1008: he_bc_inner = zerocontact, he_bc_outer = copy
   const bool bzc = hs_bzc_, bcopy = hs_bcopy_;
+  const bool bcr2 = hs_bcr2_;   // linhao-prod-1104
   auto &x1fb = pmbp->pcoord->xx1f;
   const bool hcsb = pm->use_cubed_sphere;   // cs-port-1016: metric KE (HsKeCs)
   auto hcclb = pmbp->pcoord->cos_cell;
@@ -3880,16 +3912,21 @@ void HeStarBC(Mesh *pm) {
         // Ma+2026 OUTFLOW TOP: rho, eint and v_t of the edge cell copied into every
         // ghost, v_r copied where it points out and 0 where it points in
         const Real v1e = uh(m,IM1,k,j,ia)/da;
-        const Real v1 = (v1e > 0.0) ? v1e : 0.0;
+        Real v1 = (v1e > 0.0) ? v1e : 0.0;
         const Real v2 = uh(m,IM2,k,j,ia)/da;
         const Real v3 = uh(m,IM3,k,j,ia)/da;
+        // linhao-prod-1104 he_bc_outer_r2: his branch test is v_r < 0 (v_r = 0 -> outflow)
+        const bool r2o = bcr2 && !(v1e < 0.0);
+        if (bcr2) v1 = r2o ? v1e : 0.0;
+        Real dg = da;
         for (int g=0; g<ng; ++g) {
           const int ig = ie + 1 + g;
-          uh(m,IDN,k,j,ig) = da;
-          uh(m,IM1,k,j,ig) = da*v1;
-          uh(m,IM2,k,j,ig) = da*v2;
-          uh(m,IM3,k,j,ig) = da*v3;
-          uh(m,IEN,k,j,ig) = ea + 0.5*da*(v1*v1 + v2*v2 + v3*v3) + da*phicc(m,k,j,ig);
+          if (r2o) dg *= SQR(x1v(m,ig-1)/x1v(m,ig));
+          uh(m,IDN,k,j,ig) = dg;
+          uh(m,IM1,k,j,ig) = dg*v1;
+          uh(m,IM2,k,j,ig) = dg*v2;
+          uh(m,IM3,k,j,ig) = dg*v3;
+          uh(m,IEN,k,j,ig) = ea + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
           radm1::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 2, 1.0, cl, efl);
         }
         continue;
