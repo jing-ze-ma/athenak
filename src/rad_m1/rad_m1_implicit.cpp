@@ -14609,9 +14609,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (lbath && i == is && botb && lbhr) {
           // linhao-prod-1104 he_bc_linhao_rad = halfrange: the inner face flux of his DO
           // upwind with half-range intensities, F = A - B E_is (rad_m1.hpp)
-          const int im = is - 1;
-          const Real eg1 = lgr_(m,0,k,j), eg2 = lgr_(m,1,k,j);
-          const Real ag1 = lgr_(m,5,k,j), ag2 = lgr_(m,6,k,j);
+          const Real eg1 = lgr_(m,0,k,j), ag1 = lgr_(m,5,k,j);
           const Real fis = 0.5*(f0n_(m,k,j,is) + f0n_(m,k,j,is+1));
           const Real hb = 0.5*cl*lhmu;
           const Real ha = hb*lheg + 0.5*(lhfg + fis);
@@ -14619,28 +14617,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           d_[0] += num*cr*hb;
           rr += num*cr*ha;
           d_[11] += num*cr*ha;
-          Real vf = M1FaceAvgX1(lgr_(m,3,k,j), vi, cx1f, m, im, i, fwd);
-          if (vf > 0.0) {
-            rr += num*cr*ag1*eg1;
-          } else {
-            bb -= num*cr*ai;
-            d_[2] -= num*cr*ai;
-          }
+          // his ComToLab Doppler factor (1 + 4 beta mu) per hemisphere: the ghost's I+ carries
+          // 4 v_g sum_{mu>0} w mu^2 E_g/c... = (2/3) v_g E_g, the cell's I- (2/3) v_is E_is
+          // (<mu^2>_+ = 1/3 on LQ10): half of each side's (4/3) v E, no donor / plm switch
           const Real re1_ = rr;
-          if (enth2) {
-            bool o3;
-            int i3 = M1EnthIdx(i+1, is, ie, false, hxl, hxh, o3);
-            if (t2vs) {
-              rr += num*cr*M1EnthCorrT(enm, eg2, eg1, iw_(m,M1_IW_EP,k,j,i),
-                                       iw_(m,M1_IW_EP,k,j,i3), o3, ag2, ag1, ai,
-                                       iw_(m,M1_IW_ADV,k,j,i3), 0.0, 0.0,
-                                       iw_(m,t2da,k,j,i), iw_(m,t2da,k,j,i3), vf, t2afc);
-            } else {
-              rr += num*cr*M1EnthCorr(enm, eg2, eg1, iw_(m,M1_IW_EP,k,j,i),
-                                      iw_(m,M1_IW_EP,k,j,i3), o3, ag2, ag1, ai,
-                                      iw_(m,M1_IW_ADV,k,j,i3), vf);
-            }
-          }
+          rr += num*cr*0.5*ag1*eg1;
+          bb -= num*cr*0.5*ai;
+          d_[2] -= num*cr*0.5*ai;
           d_[13] += rr - re1_;
         } else if (lbath && i == is && botb) {
           // fin4-linhao-bc: the face i-1/2 of the branch below (an interior face whose
@@ -15288,7 +15271,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // enthalpy flux and its plm correction, with the row's own arguments
         Real adf = (vf > 0.0) ? lgf_(m,5,k,j)*eg1
                    : iw_(m,M1_IW_ADV,k,j,ip)*iw_(m,M1_IW_EP,k,j,ip);
-        if (enth2) {
+        if (lbhrf) {   // linhao-prod-1104 halfrange: the row's split advective flux
+          adf = 0.5*(lgf_(m,5,k,j)*eg1 + iw_(m,M1_IW_ADV,k,j,ip)*iw_(m,M1_IW_EP,k,j,ip));
+        } else if (enth2) {
           const int i3 = (ip + 1 <= ie) ? (ip + 1) : ip;
           const bool o3 = (ip + 1 <= ie);
           const Real eg2 = lgf_(m,1,k,j), ag1 = lgf_(m,5,k,j), ag2 = lgf_(m,6,k,j);
