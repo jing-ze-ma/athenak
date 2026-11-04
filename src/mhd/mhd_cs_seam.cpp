@@ -76,6 +76,7 @@
 #include "mhd.hpp"
 #include "diffusion/resistivity.hpp"
 #include "diffusion/cs_edge_jb.hpp"
+#include "mhd/emf_smooth.hpp"
 
 namespace mhd {
 
@@ -366,6 +367,41 @@ KOKKOS_INLINE_FUNCTION Real HalfC(const bool left, const Real a, const Real dl,
                                   const Real dr, const Real vn, const Real x) {
   return left ? (a*vn*x + dl*x) : ((1.0 - a)*vn*x - dr*x);
 }
+
+// cornerfix-1103: the OWN partial of the 3-face UCT vertex rule (shared_o, MD21 at three
+// faces at 120 deg, g = (2/3) n): this panel's half-terms of its two seam faces at the
+// cube-vertex radial edge (kc, jc, i) of block m, corner (jlo, klo).  E.r = -(own sum of
+// the three panels' partials).  Used by UctSeamOwnSide (shared_o) and MHD::CsVertexEmf3.
+KOKKOS_INLINE_FUNCTION Real VertexOwnUct(const SeamCtx &d, const int m, const int p,
+                                         const int i, const bool jlo, const bool klo) {
+  const int jc = jlo ? d.js : d.je+1, kc = klo ? d.ks : d.ke+1;
+  const int jv = jlo ? d.js : d.je, kv = klo ? d.ks : d.ke;
+  Frame fv, fa, fb;
+  MakeFrame(p, XiF(d, m, jc), EtaF(d, m, kc), fv);
+  MakeFrame(p, XiF(d, m, jc), EtaC(d, m, kv), fa);
+  MakeFrame(p, XiC(d, m, jv), EtaF(d, m, kc), fb);
+  Real u1[3], u2[3]; PlaneBasis(fv.r, fa.nxi, u1, u2);
+  Real ba_ = d.b2(m,kv,jc,i), bb_ = d.b3(m,kc,jv,i);
+  if (d.nx2 > 1) {
+    ba_ += 0.5*(d.b2(m,kv,jc,i) - d.b2(m,klo ? kv+1 : kv-1,jc,i));
+    bb_ += 0.5*(d.b3(m,kc,jv,i) - d.b3(m,kc,jlo ? jv+1 : jv-1,i));
+  }
+  Real vA[3], vB[3];
+  FaceV(d.u2, fa, 2, m, kv, jc, i, vA);
+  FaceV(d.u3, fb, 3, m, kc, jv, i, vB);
+  Real Bv[3]; SolveB(u1, u2, fa.nxi, ba_, fb.neta, bb_, Bv);
+  Real tga[3], tgb[3];
+  const Real *t = fv.r;
+  tga[0] = t[1]*fa.nxi[2] - t[2]*fa.nxi[1]; tga[1] = t[2]*fa.nxi[0] - t[0]*fa.nxi[2];
+  tga[2] = t[0]*fa.nxi[1] - t[1]*fa.nxi[0];
+  tgb[0] = t[1]*fb.neta[2] - t[2]*fb.neta[1]; tgb[1] = t[2]*fb.neta[0] - t[0]*fb.neta[2];
+  tgb[2] = t[0]*fb.neta[1] - t[1]*fb.neta[0];
+  for (int q=0; q<3; ++q) {tga[q] *= 2.0/3.0; tgb[q] *= 2.0/3.0;}
+  return HalfC(!jlo, d.u2(m,0,kv,jc,i), d.u2(m,1,kv,jc,i), d.u2(m,2,kv,jc,i),
+               Dot3(vB, fa.nxi), Dot3(Bv, tga))
+       + HalfC(!klo, d.u3(m,0,kc,jv,i), d.u3(m,1,kc,jv,i), d.u3(m,2,kc,jv,i),
+               Dot3(vA, fb.neta), Dot3(Bv, tgb));
+}
 DvceArray5D<Real> xrec_, xrecb_;
 // the shared RESISTIVE seam record (CsSeamResist): per seam position 0-2 along-seam edge
 // at radial face i (H, A, eta2), 3-5 at ie+1, 6-8 / 9-11 radial edge at the lower /
@@ -432,6 +468,8 @@ struct ResJK {
     if (g.dir == 1) {
       ops.X1(m,k,j,i,s);
       eo = 0.25*(etb(m,k,j,i) + etb(m,k,j-1,i) + etb(m,k-1,j,i) + etb(m,k-1,j-1,i));
+      CsVtx3 vx;   // cornerfix-1103: a cube vertex has three cells (cs_vertex_3cell)
+      if (ops.v3 && CsVertexAt(sz(m), k, j, js, je, ks, ke, vx)) eo = CsVertex3(etb, m, vx, i);
     } else if (g.dir == 2) {
       ops.X2(m,k,j,i,ia,ib,s);
       eo = 0.25*(etb(m,k,j,i) + etb(m,k,j,i-1) + etb(m,k-1,j,i) + etb(m,k-1,j,i-1));
@@ -1321,6 +1359,115 @@ void MHD::UctSeamEdges() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void MHD::CsVertexEmf3
+//! \brief cornerfix-1103 <mesh>/cs_vertex_3cell (without the shared seam, cs_seam_mhd <
+//! shared): the cube-vertex radial EMF from the THREE real cells and the three seam faces
+//! that meet there, for every emf_scheme.  Each panel P writes its OWN estimate E_P into
+//! x1e at the vertex edge, formed from its corner cell and its two seam faces only, and
+//! the existing three-way vertex mean (flux_correct_fc AveragePanelCornerEMF) of the
+//! three panels' estimates IS the 3-cell rule:
+//!   UCT / UCT-HLLD: E_P = -3 x (P's partial of the shared_o 3-face rule, VertexOwnUct),
+//!     so the mean is exactly shared_o's E = -(own + q + r).
+//!   GS07: E = (1/3) [ sum_f E_f + sum_f (E_g(X_f) - E_cc(X_f)) ] over the three seam faces
+//!     f, X_f = the upwind cell of f (mass flux; emf_smooth weights; 1/2 at zero flux)
+//!     and g(X_f) its other vertex face -- the GS07 corner rule with three faces in
+//!     place of four (constant E exact; each pick owned by its upwind cell), so
+//!     E_P = (E_a + E_b)/2 + w_a (E_b - E_cc) + w_b (E_a - E_cc), w_f = P's upwind
+//!     weight on its seam face f (a = x2 seam face, b = x3 seam face).
+//! The old 4-cell stencil read the corner block (e1_cc and the ghost-ghost face EMFs).
+
+void MHD::CsVertexEmf3() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  SeamCtx d;
+  d.u2 = uct2; d.u3 = uct3; d.w = w0;
+  d.b2 = b0.x2f; d.b3 = b0.x3f;
+  d.panel = pmy_pack->pmb->mb_panel; d.size = pmy_pack->pmb->mb_size;
+  d.nghbr = pmy_pack->pmb->nghbr;
+  d.is = indcs.is; d.ie = indcs.ie; d.js = indcs.js; d.je = indcs.je;
+  d.ks = indcs.ks; d.ke = indcs.ke; d.nx2 = indcs.nx2; d.nx3 = indcs.nx3;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool uct_ = emf_uct || emf_uct_hlld;
+  const Real sm_ = emf_smooth;
+  const bool has_e_ = (nmhd == 5);
+  const Real cs2_ = has_e_ ? 0.0 : SQR(peos->eos_data.iso_cs);
+  auto e1 = efld.x1e;
+  auto e1x2_ = e1x2, e1x3_ = e1x3, e1cc_ = e1_cc;
+  auto fx2 = uflx.x2f, fx3 = uflx.x3f;
+  auto w0_ = w0;
+  seam_for("cs_vertex_emf3", DevExeSpace(), 0, nmb1, 0, 3, d.is, d.ie,
+  KOKKOS_LAMBDA(const int m, const int cn, const int i) {
+    const bool jlo = (cn & 1) == 0, klo = (cn & 2) == 0;
+    if (!OnPanelEdge(d, m, jlo ? 0 : 1) || !OnPanelEdge(d, m, klo ? 2 : 3)) return;
+    const int jc = jlo ? d.js : d.je+1, kc = klo ? d.ks : d.ke+1;
+    const int jv = jlo ? d.js : d.je, kv = klo ? d.ks : d.ke;
+    if (uct_) {
+      e1(m,kc,jc,i) = -3.0*VertexOwnUct(d, m, d.panel.d_view(m), i, jlo, klo);
+      return;
+    }
+    auto re = [&](const int k, const int j) {
+      return w0_(m,IDN,k,j,i)*(has_e_ ? fabs(w0_(m,IEN,k,j,i)) : cs2_);
+    };
+    // weight of the LOWER-index side of a face (GS07: the step; emf_smooth: smooth)
+    auto wlo = [&](const Real fd, const Real ra, const Real rb) {
+      if (sm_ >= 0.0) return EmfSmoothW(fd, sm_, 0.5*(ra + rb));
+      return (fd > 0.0) ? 1.0 : ((fd < 0.0) ? 0.0 : 0.5);
+    };
+    const Real ea = e1x2_(m,kv,jc,i), eb = e1x3_(m,kc,jv,i), ec = e1cc_(m,kv,jv,i);
+    const int jn = jlo ? jv-1 : jv+1, kn = klo ? kv-1 : kv+1;   // the seam ghost cells
+    const Real r0 = re(kv,jv);
+    const Real wa0 = wlo(fx2(m,IDN,kv,jc,i), jlo ? re(kv,jn) : r0, jlo ? r0 : re(kv,jn));
+    const Real wb0 = wlo(fx3(m,IDN,kc,jv,i), klo ? re(kn,jv) : r0, klo ? r0 : re(kn,jv));
+    const Real wa = jlo ? (1.0 - wa0) : wa0, wb = klo ? (1.0 - wb0) : wb0;
+    e1(m,kc,jc,i) = 0.5*(ea + eb) + wa*(eb - ec) + wb*(ea - ec);
+  });
+  if (uct_) return;
+  // GS07: the seam radial edges within ng-1 cells of a vertex.  Their 4-cell stencil
+  // takes the transverse face EMF of the seam GHOST row (column), whose reconstruction
+  // reaches into the corner block.  Each panel evaluates the same GS07 formula with the
+  // ghost row (column) replaced by its own seam row (column) -- a mirror image across
+  // the seam -- and the seam-edge average of the two panels' values combines their own
+  // rows.  Edges farther along the seam are unchanged.
+  const int ng = indcs.ng;
+  seam_for("cs_vertex_emf3_adj", DevExeSpace(), 0, nmb1, 0, 7, 1, ng-1, d.is, d.ie,
+  KOKKOS_LAMBDA(const int m, const int cs, const int s, const int i) {
+    const int cn = cs & 3;
+    const bool alongj = (cs < 4);   // true: the x3 seam (edges along j), false: x2 seam
+    const bool jlo = (cn & 1) == 0, klo = (cn & 2) == 0;
+    if (!OnPanelEdge(d, m, jlo ? 0 : 1) || !OnPanelEdge(d, m, klo ? 2 : 3)) return;
+    const int jc = jlo ? d.js : d.je+1, kc = klo ? d.ks : d.ke+1;
+    const int k = alongj ? kc : (kc + (klo ? s : -s));
+    const int j = alongj ? (jc + (jlo ? s : -s)) : jc;
+    if (alongj ? !(j > d.js && j <= d.je) : !(k > d.ks && k <= d.ke)) return;
+    // the ghost row (k-1 or k) / column (j-1 or j) of this seam -> the own one
+    auto mk = [&](const int kk) {
+      return (alongj && kk < d.ks) ? d.ks : ((alongj && kk > d.ke) ? d.ke : kk);
+    };
+    auto mj = [&](const int jj) {
+      return (!alongj && jj < d.js) ? d.js : ((!alongj && jj > d.je) ? d.je : jj);
+    };
+    auto re = [&](const int kk, const int jj) {
+      return w0_(m,IDN,mk(kk),mj(jj),i)*(has_e_ ? fabs(w0_(m,IEN,mk(kk),mj(jj),i)) : cs2_);
+    };
+    auto pick = [&](const Real fd, const Real ra, const Real rb, const Real a, const Real b) {
+      if (sm_ >= 0.0) return b + EmfSmoothW(fd, sm_, 0.5*(ra + rb))*(a - b);
+      return (fd >= 0.0) ? a : b;
+    };
+    auto x2 = [&](const int kk, const int jj) {return e1x2_(m,mk(kk),jj,i);};
+    auto x3 = [&](const int kk, const int jj) {return e1x3_(m,kk,mj(jj),i);};
+    auto cc = [&](const int kk, const int jj) {return e1cc_(m,mk(kk),mj(jj),i);};
+    const Real l3 = pick(fx2(m,IDN,mk(k-1),j,i), re(k-1,j-1), re(k-1,j),
+                         x3(k,j-1) - cc(k-1,j-1), x3(k,j) - cc(k-1,j));
+    const Real r3 = pick(fx2(m,IDN,mk(k),j,i), re(k,j-1), re(k,j),
+                         x3(k,j-1) - cc(k,j-1), x3(k,j) - cc(k,j));
+    const Real l2 = pick(fx3(m,IDN,k,mj(j-1),i), re(k-1,j-1), re(k,j-1),
+                         x2(k-1,j) - cc(k-1,j-1), x2(k,j) - cc(k,j-1));
+    const Real r2 = pick(fx3(m,IDN,k,mj(j),i), re(k-1,j), re(k,j),
+                         x2(k-1,j) - cc(k-1,j), x2(k,j) - cc(k,j));
+    e1(m,k,j,i) = 0.25*(l3 + r3 + l2 + r2 + x2(k-1,j) + x2(k,j) + x3(k,j-1) + x3(k,j));
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void MHD::UctSeamOwnSide
 //! \brief <mhd>/cs_seam_mhd = shared_o (USER 11-02 option 2): every seam / cube-vertex
 //! edge EMF as the per-face sum E.t = -sum_f C_f, each panel adding ONLY the parts it can
@@ -1564,35 +1711,9 @@ void MHD::UctSeamOwnSide() {
     for (int s=0; s<2; ++s) {
       const bool isv = (s == 0) ? (c == 0 && vlo) : (c == nc-1 && vhi);
       if (!isv) {out(4+s) = 0.0; continue;}
-      // corner: x2-seam index jc/jv, x3-seam index kc/kv
+      // corner: x2-seam index jc/jv, x3-seam index kc/kv (cornerfix-1103: shared helper)
       const bool jlo = x2t ? lo : (s == 0), klo = x2t ? (s == 0) : lo;
-      const int jc = jlo ? d.js : d.je+1, kc = klo ? d.ks : d.ke+1;
-      const int jv = jlo ? d.js : d.je, kv = klo ? d.ks : d.ke;
-      Frame fv, fa, fb;
-      MakeFrame(p, XiF(d, m, jc), EtaF(d, m, kc), fv);
-      MakeFrame(p, XiF(d, m, jc), EtaC(d, m, kv), fa);
-      MakeFrame(p, XiC(d, m, jv), EtaF(d, m, kc), fb);
-      Real u1[3], u2[3]; PlaneBasis(fv.r, fa.nxi, u1, u2);
-      Real ba_ = d.b2(m,kv,jc,i), bb_ = d.b3(m,kc,jv,i);
-      if (d.nx2 > 1) {
-        ba_ += 0.5*(d.b2(m,kv,jc,i) - d.b2(m,klo ? kv+1 : kv-1,jc,i));
-        bb_ += 0.5*(d.b3(m,kc,jv,i) - d.b3(m,kc,jlo ? jv+1 : jv-1,i));
-      }
-      Real vA[3], vB[3];
-      FaceV(d.u2, fa, 2, m, kv, jc, i, vA);
-      FaceV(d.u3, fb, 3, m, kc, jv, i, vB);
-      Real Bv[3]; SolveB(u1, u2, fa.nxi, ba_, fb.neta, bb_, Bv);
-      Real tga[3], tgb[3];
-      const Real *t = fv.r;
-      tga[0] = t[1]*fa.nxi[2] - t[2]*fa.nxi[1]; tga[1] = t[2]*fa.nxi[0] - t[0]*fa.nxi[2];
-      tga[2] = t[0]*fa.nxi[1] - t[1]*fa.nxi[0];
-      tgb[0] = t[1]*fb.neta[2] - t[2]*fb.neta[1]; tgb[1] = t[2]*fb.neta[0] - t[0]*fb.neta[2];
-      tgb[2] = t[0]*fb.neta[1] - t[1]*fb.neta[0];
-      for (int q=0; q<3; ++q) {tga[q] *= 2.0/3.0; tgb[q] *= 2.0/3.0;}
-      out(4+s) = HalfC(!jlo, d.u2(m,0,kv,jc,i), d.u2(m,1,kv,jc,i), d.u2(m,2,kv,jc,i),
-                       Dot3(vB, fa.nxi), Dot3(Bv, tga))
-               + HalfC(!klo, d.u3(m,0,kc,jv,i), d.u3(m,1,kc,jv,i), d.u3(m,2,kc,jv,i),
-                       Dot3(vA, fb.neta), Dot3(Bv, tgb));
+      out(4+s) = VertexOwnUct(d, m, p, i, jlo, klo);
     }
   });
   // FOUR-BLOCK seam ends: the CANONICAL partial of such an edge is the one of the block
@@ -1740,6 +1861,9 @@ void MHD::CsSeamResJ(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta
   K.ops.cxi = pmy_pack->pcoord->cos_face_xi; K.ops.sxi = pmy_pack->pcoord->sin_face_xi;
   K.ops.cet = pmy_pack->pcoord->cos_face_eta; K.ops.set = pmy_pack->pcoord->sin_face_eta;
   K.ops.ccl = pmy_pack->pcoord->cos_cell; K.ops.scl = pmy_pack->pcoord->sin_cell;
+  {auto &ind = pmy_pack->pmesh->mb_indcs;   // cornerfix-1103: 3-cell vertex edge
+   K.ops.SetVertex(pmy_pack->pmesh->cs_vertex_3cell, pmy_pack->pmb->mb_size, ind.js, ind.je,
+                   ind.ks, ind.ke);}
   K.etb = eta; K.fl = fl;
   K.sz = pmy_pack->pmb->mb_size.d_view; K.pn = pmy_pack->pmb->mb_panel.d_view;
   K.bcs = pmy_pack->pmb->mb_bcs.d_view;

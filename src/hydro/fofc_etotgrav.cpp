@@ -10,6 +10,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "hydro/fofc_etotgrav.hpp"
+#include "bvals/bvals.hpp"
 
 //! utest(IEN) -= div(F_rho*Phi_f) + utest(IDN)*Phi_c over [il,iu]x[jl,ju]x[kl,ku]
 void FofcTrialRemoveGrav(MeshBlockPack *pp, DvceArray5D<Real> utest,
@@ -26,9 +27,20 @@ void FofcTrialRemoveGrav(MeshBlockPack *pp, DvceArray5D<Real> utest,
   auto flx_ = flx;
   auto phif_ = phif;
   auto phicc_ = phicc;
+  // cornerfix-1103 <mesh>/cs_vertex_3cell: the same terms left out as in the trial update
+  const bool v3_ = pp->pmesh->use_cubed_sphere && pp->pmesh->cs_vertex_3cell && three_d;
+  auto &vnb_ = pp->pmb->nghbr;
+  auto &vpn_ = pp->pmb->mb_panel;
+  auto &indcs = pp->pmesh->mb_indcs;
+  const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke, ng_ = indcs.ng;
   par_for("FOFC-etotgrav", DevExeSpace(), 0, pp->nmb_thispack-1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real divg = FofcGravDiv(m, k, j, i, curv, multi_d, three_d, beta_dt, flx_,
+    bool drop2 = false, drop3 = false;
+    if (v3_) {
+      CsVertexFofcDrop(vnb_.d_view, vpn_.d_view, m, k, j, js, je, ks, ke, ng_, drop2, drop3);
+    }
+    const Real divg = FofcGravDiv(m, k, j, i, curv, multi_d && !drop2, three_d && !drop3,
+                                  beta_dt, flx_,
                                   phif_, vol, area, size.d_view(m).dx1,
                                   size.d_view(m).dx2, size.d_view(m).dx3);
     utest(m,IEN,k,j,i) -= divg + utest(m,IDN,k,j,i)*phicc_(m,k,j,i);

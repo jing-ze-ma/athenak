@@ -4575,8 +4575,10 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
   auto cx2v = pmy_pack->pcoord->x2v;
   auto cx3v = pmy_pack->pcoord->x3v;
 
+  const bool v3m1_ = cs_geom && pmy_pack->pmesh->cs_vertex_3cell;   // cornerfix-1103
   par_for("m1_impl_tlim2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const M1Vtx vx = M1VtxOf(v3m1_, mbsize.d_view(m), js, je, ks, ke);   // cornerfix-1103
     BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
     BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x2);
     bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
@@ -4613,9 +4615,9 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
       Real gf = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/dx2;
       if (odm != M1_OD_NONE) {
         gf += 0.5*(M1OffDiv(iw_,m,1,k,jm,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
-                            vd_,dfull)
+                            vd_,dfull, vx)
                    + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
-                              vd_,dfull));
+                              vd_,dfull, vx));
       }
       if (sph) {
         Real dls = dl, drs = dr;
@@ -4671,6 +4673,7 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
   if (!thrd) return;
   par_for("m1_impl_tlim3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const M1Vtx vx = M1VtxOf(v3m1_, mbsize.d_view(m), js, je, ks, ke);   // cornerfix-1103
     BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x3);
     BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x3);
     bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
@@ -4706,9 +4709,9 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
       Real gf = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/dx3;
       if (odm != M1_OD_NONE) {
         gf += 0.5*(M1OffDiv(iw_,m,2,km,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
-                            vd_,dfull)
+                            vd_,dfull, vx)
                    + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
-                              vd_,dfull));
+                              vd_,dfull, vx));
       }
       if (sph) {   // m1poslim-1018: the sp x3 face equation's G (see the x2 kernel)
         Real dls = dl, drs = dr;
@@ -5156,8 +5159,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   // vtxfix-1029 cs_vertex_mono (rad_m1.hpp): two-point faces near the cube vertices
   const bool vmo = cs_vtx_mono && cs_geom;
   const int vmn = cs_vtx_n;
+  const bool v3m1_ = cs_geom && pmy_pack->pmesh->cs_vertex_3cell;   // cornerfix-1103
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const M1Vtx vx = M1VtxOf(v3m1_, mbsize.d_view(m), js, je, ks, ke);   // cornerfix-1103
     BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
     BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x2);
     bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
@@ -5228,9 +5233,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     Real off = 0.0;
     if (odm != M1_OD_NONE) {
       off = 0.5*(M1OffDiv(iw_,m,1,k,jm,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,vd_,
-                          dfull)
+                          dfull, vx)
                  + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,vd_,
-                            dfull));
+                            dfull, vx));
     }
     if (sphq) {
       off = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,1,k,jm,i,odl,thrd,il,iu,jl,ju,kl,ku,
@@ -5360,8 +5365,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
 
   // (2) the x3 face fluxes
   if (thrd) {
+    const bool v3m1_ = cs_geom && pmy_pack->pmesh->cs_vertex_3cell;   // cornerfix-1103
     par_for_lb("m1_impl_f3face", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const M1Vtx vx = M1VtxOf(v3m1_, mbsize.d_view(m), js, je, ks, ke);   // cornerfix-1103
       BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x3);
       BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x3);
       bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
@@ -5432,9 +5439,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       Real off = 0.0;
       if (odm != M1_OD_NONE) {
         off = 0.5*(M1OffDiv(iw_,m,2,km,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
-                            vd_,dfull)
+                            vd_,dfull, vx)
                    + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
-                              vd_,dfull));
+                              vd_,dfull, vx));
       }
       if (sphq) {
         off = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,2,km,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
@@ -6512,8 +6519,10 @@ void RadiationM1::ImplicitODCache(int xc) {
   auto vd_ = vet_cell;
   const bool dfull = vet_full;
   const int cx = xc;
+  const bool v3m1_ = cs_geom && pmy_pack->pmesh->cs_vertex_3cell;   // cornerfix-1103
   par_for("m1_impl_odc", DevExeSpace(), 0, nmb1, ks-e3, ke+e3, js-1, je+1, is-1, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const M1Vtx vx = M1VtxOf(v3m1_, mbsize(m), js, je, ks, ke);   // cornerfix-1103
     Real dx1 = mbsize(m).dx1;
     Real dx2 = mbsize(m).dx2;
     Real dx3 = mbsize(m).dx3;
@@ -6535,12 +6544,12 @@ void RadiationM1::ImplicitODCache(int xc) {
     if (thrd && !p3lo) {kl = ks-1;}
     if (thrd && !p3hi) {ku = ke+1;}
     od_(m,0,k,j,i) = M1OffDiv(iw_,m,0,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                              dfull);
+                              dfull, vx);
     od_(m,1,k,j,i) = M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                              dfull);
+                              dfull, vx);
     if (thrd) {
       od_(m,2,k,j,i) = M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                                dfull);
+                                dfull, vx);
     }
   });
 }
@@ -7651,8 +7660,10 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
   const bool bx1 = bvec_x1 && trans_on;   // blendall-1009: x1 faces keep 1 - AL
   auto fw_ = ifw;
   const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
+  const bool v3m1_ = cs_geom && pmy_pack->pmesh->cs_vertex_3cell;   // cornerfix-1103
   par_for("m1_impl_odop", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const M1Vtx vx = M1VtxOf(v3m1_, mbsize(m), js, je, ks, ke);   // cornerfix-1103
     int ipos = pos_(m);
     bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
     if ((hon_ && hm_(m,k,j,i) > 0.0) ||
@@ -7690,9 +7701,9 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
       Real th = 1.0/(1.0 + ch*dt*ktf);
       if (bx1) {th *= 1.0 - fw_(m,M1_IFW_AL,k,j,i+1);}
       Real od = 0.5*(M1OffDiv(iw_,m,0,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                              dfull)
+                              dfull, vx)
                      + M1OffDiv(iw_,m,0,k,j,ip,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                                dfull));
+                                dfull, vx));
       y -= (dt/dx1)*cr*th*kk*od;
     }
     if (i > is || cyclic || !botb) {
@@ -7701,9 +7712,9 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
       Real th = 1.0/(1.0 + ch*dt*ktf);
       if (bx1) {th *= 1.0 - fw_(m,M1_IFW_AL,k,j,i);}
       Real od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                              dfull)
+                              dfull, vx)
                      + M1OffDiv(iw_,m,0,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                                dfull));
+                                dfull, vx));
       y += (dt/dx1)*cr*th*kk*od;
     }
     // ---- the two x2 faces
@@ -7712,18 +7723,18 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
       Real th = lm ? th2_(m,k,j+1,i) : 1.0/(1.0 + ch*dt*ktf);
       Real od = 0.5*(M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                              dfull)
+                              dfull, vx)
                      + M1OffDiv(iw_,m,1,k,j+1,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                                dfull));
+                                dfull, vx));
       y -= nu2*cr*th*kk*od;
     }
     if (!(j == js && p2lo)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
       Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
       Real od = 0.5*(M1OffDiv(iw_,m,1,k,j-1,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                              dfull)
+                              dfull, vx)
                      + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                                dfull));
+                                dfull, vx));
       y += nu2*cr*th*kk*od;
     }
     // ---- the two x3 faces
@@ -7733,18 +7744,18 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
         Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
         Real th = lm ? th3_(m,k+1,j,i) : 1.0/(1.0 + ch*dt*ktf);
         Real od = 0.5*(M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                                dfull)
+                                dfull, vx)
                        + M1OffDiv(iw_,m,2,k+1,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,
-                                  vd_,dfull));
+                                  vd_,dfull, vx));
         y -= nu3*cr*th*kk*od;
       }
       if (!(k == ks && p3lo)) {
         Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
         Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
         Real od = 0.5*(M1OffDiv(iw_,m,2,k-1,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                                dfull)
+                                dfull, vx)
                        + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
-                                  dfull));
+                                  dfull, vx));
         y += nu3*cr*th*kk*od;
       }
     }

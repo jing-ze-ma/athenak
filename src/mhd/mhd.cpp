@@ -782,7 +782,19 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // fill <mesh>/cs_vertex_fill_cc = true with the GS07 corner EMF (named, or the
     // fallback when uct / uct_hlld is not selected) or with MHD fofc collapses dt to
     // ~1e-28 at the cube vertex at low beta, or goes NaN by cycle 2.  Refused.
-    if (ppack->pmesh->cs_vertex_fill_cc && (!(emf_uct || emf_uct_hlld) || use_fofc)) {
+    // cornerfix-1103: with <mesh>/cs_vertex_3cell (fresh default) no EMF reads the corner
+    // block any more (3-cell vertex rule, mirrored near-vertex GS07 edges); the
+    // combination then runs (gates: cornerfix_1103/FATAL.txt) and is only noted.
+    if (ppack->pmesh->cs_vertex_fill_cc && (!(emf_uct || emf_uct_hlld) || use_fofc) &&
+        ppack->pmesh->cs_vertex_3cell) {
+      if (global_variable::my_rank == 0) {
+        std::cout << "### WARNING <mesh>/cs_vertex_fill_cc = true with "
+                  << (use_fofc ? "<mhd>/fofc" : "the GS07 corner EMF")
+                  << ": allowed under <mesh>/cs_vertex_3cell = true (the corner block is "
+                  << "not read); refused without it" << std::endl;
+      }
+    } else if (ppack->pmesh->cs_vertex_fill_cc &&
+               (!(emf_uct || emf_uct_hlld) || use_fofc)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mesh>/cs_vertex_fill_cc = true is not supported with "
                 << (use_fofc ? "<mhd>/fofc = true" : "the GS07 corner EMF (<mhd>/"

@@ -1262,6 +1262,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
 //! and q has the opposite sign or is exactly zero, q is discarded for n0, i.e. constant
 //! extrapolation; otherwise q is returned unchanged. See the note above the caller.
 
+namespace cs_vertex_diag { extern Real cc_perturb, perturb_add; }   // vertexacc-1103 (mesh.cpp)
+
 KOKKOS_INLINE_FUNCTION
 static Real SignPreserveCS(const Real q, const Real n0, const Real n1, const Real n2) {
   if (((n0 > 0.0) && (n1 > 0.0) && (n2 > 0.0) && !(q > 0.0)) ||
@@ -1290,6 +1292,9 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
   auto a_ = a;
   const bool vfill_ = pmy_pack->pmesh->cs_vertex_fill_cc;
   const bool coar_ = coarse;
+  const Real vpert_ = cs_vertex_diag::cc_perturb;   // vertexacc-1103 (mesh.cpp)
+  const Real vadd_ = cs_vertex_diag::perturb_add;   // cornerfix-1103 (mesh.cpp)
+  const bool vpon_ = (vpert_ != 0.0) || (vadd_ != 0.0);
   const int is_ = indcs.is, ie_ = indcs.ie;
 
   // par_for takes at most five ranges, so the ng x ng corner block is flattened into g
@@ -1338,7 +1343,14 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
       const bool vfill_rg =
           nghbr.d_view(m,e12).gid >= 0 && nghbr.d_view(m,e12).lev == mblev.d_view(m) &&
           nghbr.d_view(m,e31).gid >= 0 && nghbr.d_view(m,e31).lev == mblev.d_view(m);
-      if ((i >= is_ && i <= ie_) || vfill_rg) return;
+      if ((i >= is_ && i <= ie_) || vfill_rg) {
+        if (vpon_) {   // cornerfix-1103 diagnostic: the sampled block is perturbed too
+          const int jt = (sj < 0) ? (js-1-gj) : (je+1+gj);
+          const int kt = (sk < 0) ? (ks-1-gk) : (ke+1+gk);
+          a_(m,v,kt,jt,i) = a_(m,v,kt,jt,i)*(1.0 + vpert_) + vadd_;
+        }
+        return;
+      }
     }
     // Quadratic Lagrange extrapolated d cells beyond an anchor, nodes 0,1,2 stepping
     // inward: w = ((d+1)(d+2)/2, -d(d+2), d(d+1)/2), which sums to 1.
@@ -1365,7 +1377,8 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
     // and then drops to the node next to the ghost; smooth data is kept exactly.
     ek = SignPreserveCS(ek, k0, k1, k2);
     ej = SignPreserveCS(ej, j0, j1, j2);
-    a_(m,v,kt,jt,i) = 0.5*(ek + ej);
+    a_(m,v,kt,jt,i) = 0.5*(ek + ej)*(1.0 + vpert_);   // vpert_ = 0: bitwise
+    if (vadd_ != 0.0) a_(m,v,kt,jt,i) += vadd_;
   });
   return;
 }

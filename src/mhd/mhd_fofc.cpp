@@ -17,6 +17,7 @@
 #include "eos/eos.hpp"
 #include "mhd/rsolvers/llf_mhd_singlestate.hpp"
 #include "mhd/rsolvers/hlle_mhd_singlestate.hpp"
+#include "bvals/bvals.hpp"
 #include "mhd.hpp"
 #include "hydro/fofc_etotgrav.hpp"
 
@@ -113,12 +114,26 @@ void MHD::FOFC(Driver *pdriver, int stage) {
     if (multi_d) { jl = js-1, ju = je+1; }
     if (three_d) { kl = ks-1, ku = ke+1; }
 
+    // cornerfix-1103 <mesh>/cs_vertex_3cell: as Hydro::FOFC -- a seam GHOST cell within
+    // ng of a cube-vertex corner along its row leaves the along-seam flux / EMF terms
+    // (their stencils reach the made-up corner block) out of its trial state, and the
+    // corner-block cells are never flagged
+    const bool v3_ = cs_ && pmy_pack->pmesh->cs_vertex_3cell && three_d;
+    auto &vnb_ = pmy_pack->pmb->nghbr;
+    auto &vpn_ = pmy_pack->pmb->mb_panel;
+    const int ng_ = indcs.ng;
+
     // Estimate updated conserved variables and cell-centered fields
     par_for("FOFC-newu", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dtodx1 = beta_dt/size.d_view(m).dx1;
       Real dtodx2 = beta_dt/size.d_view(m).dx2;
       Real dtodx3 = beta_dt/size.d_view(m).dx3;
+      bool drop2 = false, drop3 = false;   // cornerfix-1103 (v3_ only)
+      if (v3_) {
+        CsVertexFofcDrop(vnb_.d_view, vpn_.d_view, m, k, j, js, je, ks, ke, ng_,
+                         drop2, drop3);
+      }
 
       // Estimate conserved variables
       if (curv_fofc_) {
@@ -129,11 +144,11 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         for (int n=0; n<nmhd_; ++n) {
           Real divf = dtodv*(flx1(m,n,k,j,i+1)*ar1_(m,k,j,i+1) -
                              flx1(m,n,k,j,i  )*ar1_(m,k,j,i  ));
-          if (multi_d) {
+          if (multi_d && !drop2) {
             divf += dtodv*(flx2(m,n,k,j+1,i)*ar2_(m,k,j+1,i) -
                            flx2(m,n,k,j  ,i)*ar2_(m,k,j  ,i));
           }
-          if (three_d) {
+          if (three_d && !drop3) {
             divf += dtodv*(flx3(m,n,k+1,j,i)*ar3_(m,k+1,j,i) -
                            flx3(m,n,k  ,j,i)*ar3_(m,k  ,j,i));
           }
@@ -238,12 +253,12 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         const Real dtordr = beta_dt/(rc*(rfr - rfl));
         bcctest_(m,IBY,k,j,i) += dtordr*(rfr*e3x1_(m,k,j,i+1) - rfl*e3x1_(m,k,j,i));
         bcctest_(m,IBZ,k,j,i) -= dtordr*(rfr*e2x1_(m,k,j,i+1) - rfl*e2x1_(m,k,j,i));
-        if (multi_d) {
+        if (multi_d && !drop2) {
           const Real dtod2 = beta_dt/dx2_fofc_(m,k,j,i);
           bcctest_(m,IBX,k,j,i) -= dtod2*(e3x2_(m,k,j+1,i) - e3x2_(m,k,j,i));
           bcctest_(m,IBZ,k,j,i) += dtod2*(e1x2_(m,k,j+1,i) - e1x2_(m,k,j,i));
         }
-        if (three_d) {
+        if (three_d && !drop3) {
           const Real dtod3 = beta_dt/dx3_fofc_(m,k,j,i);
           bcctest_(m,IBX,k,j,i) += dtod3*(e2x3_(m,k+1,j,i) - e2x3_(m,k,j,i));
           bcctest_(m,IBY,k,j,i) -= dtod3*(e1x3_(m,k+1,j,i) - e1x3_(m,k,j,i));
@@ -329,6 +344,19 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         }
       }, Kokkos::Sum<int>(nflag_));
       pmy_pack->pmesh->ecounter.nfofc += nflag_;
+    }
+    // cornerfix-1103: the cube-vertex corner-block cells are never flagged (v3_ only)
+    if (v3_) {
+      auto fofcv_ = fofc;
+      par_for("FOFC-vtxclr", DevExeSpace(), 0, nmb-1, 0, 3, 0, ng_-1, 0, ng_-1, il, iu,
+      KOKKOS_LAMBDA(const int m, const int c, const int gk, const int gj, const int i) {
+        const int sj = c & 1, sk = (c >> 1) & 1;
+        if (!IsCubeVertexCorner(vnb_.d_view, vpn_.d_view, m, 40 + 2*(sj + 2*sk))) return;
+        const int j = sj ? (je + 1 + gj) : (js - 1 - gj);
+        const int k = sk ? (ke + 1 + gk) : (ks - 1 - gk);
+        if (j < jl || j > ju || k < kl || k > ku) return;
+        fofcv_(m,k,j,i) = false;
+      });
     }
     // Accumulate the PER-CELL FOFC flag count for the `mhd_fofc` output variable.
     // Placed after every writer of the flag array and before the flux kernel that reads

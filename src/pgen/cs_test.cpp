@@ -223,11 +223,20 @@ void PanelNormals(const int p, const Real xi, const Real eta,
 KOKKOS_INLINE_FUNCTION
 void RotatingUniformField(const Real omega, const Real t,
                           const Real bx0, const Real by0, const Real bz0,
-                          Real &bx, Real &by, Real &bz) {
+                          Real &bx, Real &by, Real &bz, const Real nx = 0.0,
+                          const Real ny = 0.0, const Real nz = 1.0) {
   const Real cw = cos(omega*t), sw = sin(omega*t);
-  bx = cw*bx0 - sw*by0;
-  by = sw*bx0 + cw*by0;
-  bz = bz0;
+  if (nx == 0.0 && ny == 0.0 && nz == 1.0) {
+    bx = cw*bx0 - sw*by0;
+    by = sw*bx0 + cw*by0;
+    bz = bz0;
+    return;
+  }
+  // vertexacc-1103: any unit axis n (problem/rot_axis), Rodrigues' formula
+  const Real nb = nx*bx0 + ny*by0 + nz*bz0;
+  bx = cw*bx0 + sw*(ny*bz0 - nz*by0) + (1.0 - cw)*nb*nx;
+  by = cw*by0 + sw*(nz*bx0 - nx*bz0) + (1.0 - cw)*nb*ny;
+  bz = cw*bz0 + sw*(nx*by0 - ny*bx0) + (1.0 - cw)*nb*nz;
 }
 
 //----------------------------------------------------------------------------------------
@@ -879,8 +888,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real cavw_ = cs_cavw, cavr_ = cs_cavr, cavwr_ = cs_cavwr;
   const int cavp_ = cs_cavp;
   // the rotation axis of iprob 3 (iprob 9 keeps zhat: its field precesses about z)
-  const Real axx_ = (iprob == 3) ? cs_axx : 0.0, axy_ = (iprob == 3) ? cs_axy : 0.0;
-  const Real axz_ = (iprob == 3) ? cs_axz : 1.0;
+  // vertexacc-1103: iprob 9 takes problem/rot_axis too (default z: the same 0, 0, 1)
+  const bool rax_ = (iprob == 3 || iprob == 9);
+  const Real axx_ = rax_ ? cs_axx : 0.0, axy_ = rax_ ? cs_axy : 0.0;
+  const Real axz_ = rax_ ? cs_axz : 1.0;
 
   const CSIvanPar iv_ = cs_iv;     // layoutaudit-1103 (iprob 17 / 18)
   const CSStressPar st_ = cs_st;   // ucthshare-1102 (iprob 16)
@@ -1930,8 +1941,10 @@ void CSTestRadialBC(Mesh *pm) {
   const int iprob = cs_iprob;
   const Real amp_ = cs_amp, r0_ = cs_r0;
   const Real hs_ = cs_hscl;
-  const Real axx_ = (iprob == 3) ? cs_axx : 0.0, axy_ = (iprob == 3) ? cs_axy : 0.0;
-  const Real axz_ = (iprob == 3) ? cs_axz : 1.0;
+  // vertexacc-1103: iprob 9 takes problem/rot_axis too (default z: the same 0, 0, 1)
+  const bool rax_ = (iprob == 3 || iprob == 9);
+  const Real axx_ = rax_ ? cs_axx : 0.0, axy_ = rax_ ? cs_axy : 0.0;
+  const Real axz_ = rax_ ? cs_axz : 1.0;
   // iprob 14: the exact field decays; the ghosts carry it at t^n + bc_time_frac*dt
   const Real ffb0_ = cs_ffb0, ffal_ = cs_alpha;
   const Real ffdec_ = exp(-cs_eta*cs_alpha*cs_alpha*(pm->time + cs_bc_tfrac*pm->dt));
@@ -2151,7 +2164,7 @@ void CSTestRadialBC(Mesh *pm) {
       // puts both of its stage outputs, so the ghost that nulls the lag is 1.41*dt BEHIND
       // the interior it faces, not level with it.
       RotatingUniformField(omega, pm->time + cs_bc_tfrac*pm->dt, cs_bvx, cs_bvy, cs_bvz,
-                           bvx, bvy, bvz);
+                           bvx, bvy, bvz, cs_axx, cs_axy, cs_axz);
     }
     // -------------------------------------------------------------------------------
     // problem/bc_probe. WHAT TIME IS THE INTERIOR AT, as seen from the radial boundary?
@@ -2661,6 +2674,114 @@ void CSTestGravSrc(Mesh *pm, const Real bdt) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn CSErrCells
+//! \brief vertexacc-1103 <problem>/err_cells (read only when named): every active cell's
+//! error against the exact steady state of iprob 3 / 9 (rigid rotation about any axis,
+//! with or without the uniform field), 17 or 18 (Ivan et al.) -> <basename>-errcells.dat
+//! (-errcells.<rank>.dat with MPI), for maps of the error vs distance from the cube
+//! vertices and the seams.  Columns: panel, panel-global (jg, kg), i, xi, eta, r, vol,
+//! rho-rho_ex, p-p_ex, |V-V_ex| (Cartesian), |V_t-V_t,ex| (its tangential part), the
+//! cell-centre unit vector (qx, qy, qz).  Exact values at the cell centre (radial
+//! centroid).  <problem>/err_cells_rstride = s keeps every s-th radial layer only.
+
+void CSErrCells(ParameterInput *pin, Mesh *pm) {
+  if (!(pin->DoesParameterExist("problem", "err_cells") &&
+        pin->GetBoolean("problem", "err_cells"))) return;
+  const int iprob = cs_iprob;
+  if (iprob != 3 && iprob != 9 && iprob != 17 && iprob != 18) return;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int npan = pm->mesh_indcs.nx2;
+  auto &size = pmbp->pmb->mb_size;
+  size.sync_host();
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  mbpanel.sync_host();
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmbp->pmesh->fStretchRPoly[n];
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto w0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), w0);
+  const Real gm1 = (is_mhd ? pmbp->pmhd->peos->eos_data.gamma
+                           : pmbp->phydro->peos->eos_data.gamma) - 1.0;
+  const CSIvanPar P = cs_iv;
+  // <problem>/err_cells_rstride = s: only every s-th radial layer (small n128 dumps)
+  const int rst = std::max(1, pin->GetOrAddInteger("problem", "err_cells_rstride", 1));
+  // one file per rank (-errcells.dat on one rank, -errcells.<rank>.dat otherwise)
+  std::string fname = pin->GetString("job", "basename") + "-errcells" +
+      (global_variable::nranks > 1 ? "." + std::to_string(global_variable::my_rank) : "")
+      + ".dat";
+  FILE *pf = std::fopen(fname.c_str(), "w");
+  if (pf == nullptr) return;
+  std::fprintf(pf, "# iprob %d t %.8e ncycle %d npan %d nx1 %d | p jg kg i xi eta r vol"
+               " drho dp |dV| |dVt| qx qy qz\n", iprob, pm->time, pm->ncycle, npan,
+               pm->mesh_indcs.nx1);
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    const Real x1mn = size.h_view(m).x1min, x1mx = size.h_view(m).x1max;
+    const Real x2mn = size.h_view(m).x2min, x2mx = size.h_view(m).x2max;
+    const Real x3mn = size.h_view(m).x3min, x3mx = size.h_view(m).x3max;
+    for (int k=0; k<nx3; ++k) {
+      const Real eta = 0.25*M_PI*CellCenterX(k, nx3, x3mn, x3mx);
+      const Real ytl = tan(0.25*M_PI*LeftEdgeX(k, nx3, x3mn, x3mx));
+      const Real ytr = tan(0.25*M_PI*LeftEdgeX(k+1, nx3, x3mn, x3mx));
+      const int kg = static_cast<int>(floor(0.5*(CellCenterX(k, nx3, x3mn, x3mx) + 1.0)
+                                            *npan));
+      for (int j=0; j<nx2; ++j) {
+        const Real xi = 0.25*M_PI*CellCenterX(j, nx2, x2mn, x2mx);
+        const Real xtl = tan(0.25*M_PI*LeftEdgeX(j, nx2, x2mn, x2mx));
+        const Real xtr = tan(0.25*M_PI*LeftEdgeX(j+1, nx2, x2mn, x2mx));
+        auto om = [](const Real X, const Real Y) {return atan(X*Y/sqrt(1.0+X*X+Y*Y));};
+        const Real dom = om(xtr, ytr) - om(xtl, ytr) - om(xtr, ytl) + om(xtl, ytl);
+        const int jg = static_cast<int>(floor(0.5*(CellCenterX(j, nx2, x2mn, x2mx) + 1.0)
+                                              *npan));
+        Real e1[3], e2[3], q[3];
+        cubed_sphere::PanelTangents(p, xi, eta, e1, e2);
+        cubed_sphere::PanelToCart(p, xi, eta, q);
+        for (int i=0; i<nx1; i+=rst) {
+          Real rl = LeftEdgeX(i, nx1, x1mn, x1mx), rr = LeftEdgeX(i+1, nx1, x1mn, x1mx);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+          const Real rc = RadialCentroid(rl, rr);
+          const Real vol = (rr*rr*rr - rl*rl*rl)/3.0*dom;
+          Real dn, pr, v1, v2, v3;
+          if (iprob == 3 || iprob == 9) {   // a uniform B exerts no force: same p, v
+            Real ie_;
+            RigidRotState(p, xi, eta, rc, cs_d0, cs_p0, cs_omega, gm1, dn, ie_, v1, v2,
+                          v3, cs_axx, cs_axy, cs_axz);
+            pr = gm1*ie_;
+          } else {
+            Real bb[3];
+            IvanExact(P, iprob, p, xi, eta, rc, dn, pr, v1, v2, v3, bb);
+          }
+          const Real n1 = w0h(m,IVX,k+ks,j+js,i+is) - v1;
+          const Real n2 = w0h(m,IVY,k+ks,j+js,i+is) - v2;
+          const Real n3 = w0h(m,IVZ,k+ks,j+js,i+is) - v3;
+          Real dv2 = 0.0, dt2 = 0.0;
+          for (int c=0; c<3; ++c) {
+            const Real t = n2*e1[c] + n3*e2[c];
+            const Real a = n1*q[c] + t;
+            dv2 += a*a; dt2 += t*t;
+          }
+          std::fprintf(pf, "%d %d %d %d %.8e %.8e %.8e %.8e %.6e %.6e %.6e %.6e %.8f %.8f"
+                       " %.8f\n", p, jg, kg, i, xi, eta, rc, vol,
+                       w0h(m,IDN,k+ks,j+js,i+is) - dn, gm1*w0h(m,IEN,k+ks,j+js,i+is) - pr,
+                       std::sqrt(dv2), std::sqrt(dt2), q[0], q[1], q[2]);
+        }
+      }
+    }
+  }
+  std::fclose(pf);
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   CSTestEosCacheCheck(pm);
@@ -2672,6 +2793,7 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   // hydro errors alone, against the same exact steady equilibrium.
   const bool has_b = (pmbp->pmhd != nullptr) && (cs_iprob == 9);
   if (pmbp->pmhd == nullptr && pmbp->phydro == nullptr) return;
+  CSErrCells(pin, pm);   // vertexacc-1103
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -2691,7 +2813,8 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
 
   // the exact field at the final time
   Real ex, ey, ez;
-  RotatingUniformField(cs_omega, pm->time, cs_bvx, cs_bvy, cs_bvz, ex, ey, ez);
+  RotatingUniformField(cs_omega, pm->time, cs_bvx, cs_bvy, cs_bvz, ex, ey, ez, cs_axx,
+                       cs_axy, cs_axz);
 
   DvceArray4D<Real> b1d, b2d, b3d;
   if (has_b) {
@@ -4821,6 +4944,46 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
         }
         std::fclose(pfile);
         std::printf("### CS BLAST PROFILE written to %s\n", fname.c_str());
+      }
+    }
+    // vertexmd-1103 <problem>/blast_cells (read only when named; one rank): every active
+    // cell's radial index, geodesic angle from the centre, azimuth about it (from e1),
+    // rho, p, |B| -> <basename>-cells.dat, for a per-cell imprint analysis
+    if (pin->DoesParameterExist("problem", "blast_cells") &&
+        pin->GetBoolean("problem", "blast_cells") && global_variable::nranks == 1) {
+      std::string fname = pin->GetString("job", "basename") + "-cells.dat";
+      FILE *pf = std::fopen(fname.c_str(), "w");
+      if (pf != nullptr) {
+        std::fprintf(pf, "# i ang psi rho p |B|  t %.6e\n", pm->time);
+        for (int m=0; m<pmbp->nmb_thispack; ++m) {
+          const int p = mbpanel.h_view(m);
+          for (int k=ks; k<=ke; ++k) {
+            const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                                                   size.h_view(m).x3max);
+            for (int j=js; j<=je; ++j) {
+              const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
+                                                                     size.h_view(m).x2max);
+              Real q[3];
+              cubed_sphere::PanelToCart(p, xc, ec, q);
+              const Real cd = q[0]*c[0] + q[1]*c[1] + q[2]*c[2];
+              const Real ang = std::acos(std::fmin(1.0, std::fmax(-1.0, cd)));
+              const Real psi = std::atan2(q[0]*e2[0] + q[1]*e2[1] + q[2]*e2[2],
+                                          q[0]*e1[0] + q[1]*e1[1] + q[2]*e1[2]);
+              for (int i=is; i<=ie; ++i) {
+                Real babs = 0.0;
+                if (is_mhd) {
+                  babs = std::sqrt(SQR(bcc(m,IBX,k,j,i)) + SQR(bcc(m,IBY,k,j,i))
+                                   + SQR(bcc(m,IBZ,k,j,i)));
+                }
+                // vertexacc-1103: + panel, xi, eta (seam-distance maps)
+                std::fprintf(pf, "%d %.10e %.10e %.10e %.10e %.10e %d %.8e %.8e\n", i-is,
+                             ang, psi, wh(m,IDN,k,j,i), gm1*wh(m,IEN,k,j,i), babs, p, xc,
+                             ec);
+              }
+            }
+          }
+        }
+        std::fclose(pf);
       }
     }
   }
@@ -8397,6 +8560,7 @@ CSIvanErr CSIvanErrSums(Mesh *pm) {
 
 void CSIvanErrors(ParameterInput *pin, Mesh *pm) {
   CSIvanErr E = CSIvanErrSums(pm);
+  CSErrCells(pin, pm);   // vertexacc-1103
   if (global_variable::my_rank != 0) return;
   const int nring = static_cast<int>(E.rl1.size());
   Real il1 = 0.0, ivol = 0.0, ili = 0.0;

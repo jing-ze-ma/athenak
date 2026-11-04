@@ -19,6 +19,7 @@
 #include "hydro.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "hydro/fofc_etotgrav.hpp"
+#include "bvals/bvals.hpp"
 
 namespace hydro {
 //----------------------------------------------------------------------------------------
@@ -88,10 +89,27 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
     if (multi_d) { jl = js-1, ju = je+1; }
     if (three_d) { kl = ks-1, ku = ke+1; }
 
+    // cornerfix-1103 <mesh>/cs_vertex_3cell: at a CUBE VERTEX the ng x ng corner ghost
+    // block has no physical counterpart.  The trial state of a seam GHOST cell within ng
+    // of a vertex corner along its row took the along-seam flux divergence from faces
+    // whose reconstruction stencils reach into that block; those terms are left out of
+    // the trial (the test then sees the radial and seam-normal fluxes only), and the
+    // corner-block cells themselves are never flagged.  Flags of the active cells and of
+    // every other ghost are unchanged.
+    const bool v3_ = cs_ && pmy_pack->pmesh->cs_vertex_3cell && three_d;
+    auto &vnb_ = pmy_pack->pmb->nghbr;
+    auto &vpn_ = pmy_pack->pmb->mb_panel;
+    const int ng_ = indcs.ng;
+
     // Estimate updated conserved variables and cell-centered fields
     par_for("FOFC-newu", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       if (curv_) {
+        bool drop2 = false, drop3 = false;   // cornerfix-1103 (v3_ only)
+        if (v3_) {
+          CsVertexFofcDrop(vnb_.d_view, vpn_.d_view, m, k, j, js, je, ks, ke, ng_,
+                           drop2, drop3);
+        }
         // area/volume divergence: the same form as Hydro::RKUpdate.  At a POLAR axis
         // the x2 face area is identically zero, so the pole face contributes nothing
         // here, exactly as in the real update.
@@ -99,11 +117,11 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         for (int n=0; n<nhyd_; ++n) {
           Real divf = dtodv*(flx1(m,n,k,j,i+1)*ar1_(m,k,j,i+1) -
                              flx1(m,n,k,j,i  )*ar1_(m,k,j,i  ));
-          if (multi_d) {
+          if (multi_d && !drop2) {
             divf += dtodv*(flx2(m,n,k,j+1,i)*ar2_(m,k,j+1,i) -
                            flx2(m,n,k,j  ,i)*ar2_(m,k,j  ,i));
           }
-          if (three_d) {
+          if (three_d && !drop3) {
             divf += dtodv*(flx3(m,n,k+1,j,i)*ar3_(m,k+1,j,i) -
                            flx3(m,n,k  ,j,i)*ar3_(m,k  ,j,i));
           }
@@ -194,6 +212,19 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         }
       }, Kokkos::Sum<int>(nflag_));
       pmy_pack->pmesh->ecounter.nfofc += nflag_;
+    }
+    // cornerfix-1103: the cube-vertex corner-block cells are never flagged (v3_ only)
+    if (v3_) {
+      auto fofcv_ = fofc;
+      par_for("FOFC-vtxclr", DevExeSpace(), 0, nmb-1, 0, 3, 0, ng_-1, 0, ng_-1, il, iu,
+      KOKKOS_LAMBDA(const int m, const int c, const int gk, const int gj, const int i) {
+        const int sj = c & 1, sk = (c >> 1) & 1;
+        if (!IsCubeVertexCorner(vnb_.d_view, vpn_.d_view, m, 40 + 2*(sj + 2*sk))) return;
+        const int j = sj ? (je + 1 + gj) : (js - 1 - gj);
+        const int k = sk ? (ke + 1 + gk) : (ks - 1 - gk);
+        if (j < jl || j > ju || k < kl || k > ku) return;
+        fofcv_(m,k,j,i) = false;
+      });
     }
     // Accumulate the PER-CELL FOFC flag count for the `hydro_fofc` output variable.
     // Placed after every writer of the flag array and before the flux kernel that reads
