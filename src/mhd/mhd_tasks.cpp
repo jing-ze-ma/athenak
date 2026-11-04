@@ -17,6 +17,7 @@
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 #include "mesh/mesh.hpp"
+#include "bvals/top_ghost_prim_copy.hpp"
 #include "coordinates/coordinates.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro_am.hpp"
@@ -869,6 +870,10 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
   }
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
+  }
+  // wbplm-1103 <mhd>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp)
+  if (top_ghost_prim_copy && diode_ox1) {
+    TopGhostPrimCopy(pmy_pack, w0, wder, wtemp, peos->eos_data.IsGeneral());
   }
   if (eint_fix) {
     const int nmbe = static_cast<int>(eint_rst.extent(0));

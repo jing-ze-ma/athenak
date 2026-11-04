@@ -310,6 +310,8 @@ class Hydro {
   // and zero advected energy (pressure only); where it moves outward the ghost-side
   // state is left as the boundary built it.  Default false: nothing changes.
   bool diode_ox1 = false;
+  // wbplm-1103 <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
+  bool top_ghost_prim_copy = false;
   // csedge-1019 <hydro>/cs_seam_rsolver = hlle: the cubed-sphere PANEL-SEAM faces take the
   // HLLE flux (contact/shear dissipation) whatever <hydro>/rsolver is (hydro.cpp)
   bool cs_seam_hlle = false;

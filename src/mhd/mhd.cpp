@@ -812,6 +812,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // Default ON wherever there is a polar boundary: verified on CPU (bench/sp_cpu_ablate/
     // diss, 50 G -> 3e-4 G in 300 s) and on the GPU from scratch (bench/sp_diss, clean to
     // rot 1.13 where the control jumped 100x at rot 0.8).
+  // wbplm-1103 (read only when named): see mhd.hpp top_ghost_prim_copy
+  if (pin->DoesParameterExist("mhd","top_ghost_prim_copy")) {
+    top_ghost_prim_copy = pin->GetBoolean("mhd","top_ghost_prim_copy");
+  }
     use_polar_emf_diss = pin->GetOrAddBoolean("mhd","polar_emf_diss",
                                               pmy_pack->pmesh->use_polar_boundary);
     // On the cubed sphere the scheme is UNSTABLE below beta ~ 0.05 and the fallback is

@@ -423,6 +423,8 @@ class MHD {
   // and zero advected energy (pressure only); where it moves outward the ghost-side
   // state is left as the boundary built it.  Default false: nothing changes.
   bool diode_ox1 = false;
+  // wbplm-1103 <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
+  bool top_ghost_prim_copy = false;
   // ... and under MHD, the STRESS-FREE wall (dhj problem/wall_mhd_mirror = stress_free;
   // the dhj default is conducting since condwall-1028): the mirror flips B_t as well,
   // matching the odd ghost B_t of the user boundary, so the wall carries neither Maxwell

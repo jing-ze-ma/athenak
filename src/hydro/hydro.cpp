@@ -211,6 +211,10 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
           "restart input has no key") + ": the old default)");
     }
   }
+  // wbplm-1103 (read only when named): see hydro.hpp top_ghost_prim_copy
+  if (pin->DoesParameterExist("hydro","top_ghost_prim_copy")) {
+    top_ghost_prim_copy = pin->GetBoolean("hydro","top_ghost_prim_copy");
+  }
   use_etotgrav = pin->GetOrAddBoolean("hydro","etotgrav",false);
   // ckbval-1102: the energy-only ghost refresh after the operator-split source (default
   // ON after the bitwise gates; <hydro>/split_bval_fast = false restores the full refresh; read
