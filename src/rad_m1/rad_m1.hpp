@@ -703,6 +703,9 @@ class RadiationM1 {
   int lbath_dmode = 2;
   Real lbath_alpha = 1.0;
   Real vgd_lhx_ie = -1.0;
+  // per column (m, k - ks, j - js): his I_+ normalised over the CURRENT (rotated) vet_gd set,
+  // 0.5 (E_g/sum_{n.r>0} w + (F_g/c)/sum_{n.r>0} w n.r), rebuilt every sweep (VetGdSweep)
+  DvceArray3D<Real> vgd_lhx_iec;
   // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
   // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror
   // pair).  ibm_i(m,q,k,j): the entering intensity of beam ray q at column (k,j) (local,
