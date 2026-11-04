@@ -276,7 +276,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         }
       } else {
 
-    if (use_wellbalance_dynamic_ && use_wb_x1_)
+    if (wb_all_) {   // wball-1104: x1 through the same routine (w = 1)
+      WbAllPLM(member, use_wb_rho_, 1, m, k, j, il-1, iu, w0_, wbq0_, wbw_, wl, wr);
+    } else if (use_wellbalance_dynamic_ && use_wb_x1_)
     {
       WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
           m, k, j, il-1, iu, w0_, phicc_wb_, phi_wb_x1f_, wbq0_, wl, wr);
@@ -338,6 +340,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         WbStaticPiecewiseLinearDerX1(member, m, k, j, il-1, iu,
                                      pwb_, pfacewb_x1f,
                                     wder_, dl, dr);
+      } else if (wb_all_) {
+        WbAllPLMDer(member, 1, m, k, j, il-1, iu, wder_, wbq0_, wbw_, dl, dr);
       } else if (use_wellbalance_dynamic_ && use_wb_x1_) {
         WbPiecewiseLinearDerX1(member, eos_, wb_option_,
             m, k, j, il-1, iu, w0_, wder_,

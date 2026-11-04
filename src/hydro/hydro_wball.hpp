@@ -24,7 +24,11 @@
 //! central -rho dPhi/dx in the same face-sum form, so w = 1 is the exact well-balanced
 //! pair, w = 0 the plain scheme with the analytic force, and any w in between a convex
 //! combination of two O(h^2)-consistent discretisations (no w-gradient term).
-//! x1 keeps the existing global scheme (wbq0, w = 1).
+//! x1 keeps the existing global scheme (wbq0, w = 1); under wb_dirs = all its
+//! reconstruction is this same routine (dir = 1), whose only fallback is a negative face:
+//! the x1 routine's extremum fallback (sL sR <= 0 -> plain PLM) would break the balance
+//! wherever the STATE has an extremum along a grid line with a zero deviation -- generic
+//! for a potential with an extremum off the grid axes (point mass, tide).
 
 #include "athena.hpp"
 #include "reconstruct/plm.hpp"
@@ -47,17 +51,17 @@ void WbAllPLM(TeamMember_t const &member, const bool use_wb_rho, const int dir,
               const DvceArray5D<Real> &q, const DvceArray5D<Real> &wbq,
               const DvceArray5D<Real> &wbw, ScrArray2D<Real> &ql_p1,
               ScrArray2D<Real> &qr) {
-  const int dk = (dir == 3) ? 1 : 0, dj = (dir == 2) ? 1 : 0;
+  const int dk = (dir == 3) ? 1 : 0, dj = (dir == 2) ? 1 : 0, di = (dir == 1) ? 1 : 0;
   const int nvar = q.extent_int(1);
   const int n2 = wbw.extent_int(3), n3 = wbw.extent_int(2);
   for (int n=0; n<nvar; ++n) {
     const bool wbv = (n == IEN) || (n == IDN && use_wb_rho);
     par_for_inner(member, il, iu, [&](const int i) {
-      const Real qm = q(m,n,k-dk,j-dj,i), qc = q(m,n,k,j,i), qp = q(m,n,k+dk,j+dj,i);
+      const Real qm = q(m,n,k-dk,j-dj,i-di), qc = q(m,n,k,j,i), qp = q(m,n,k+dk,j+dj,i+di);
       Real lp, rp;
       PLM(qm, qc, qp, lp, rp);
       if (!wbv) {
-        ql_p1(n,i) = lp; qr(n,i) = rp;
+        ql_p1(n,i+di) = lp; qr(n,i) = rp;
         return;
       }
       const int var = (n == IEN) ? WBVar::wb_eint : WBVar::wb_dens;
@@ -66,9 +70,12 @@ void WbAllPLM(TeamMember_t const &member, const bool use_wb_rho, const int dir,
       Real lw, rw;
       PLM(qm - b_m, qc - b_c, qp - b_p, lw, rw);
       lw += b_ph; rw += b_mh;
-      const Real sL = qc - qm, sR = qp - qc;
-      if (lw < 0.0 || rw < 0.0 || sL*sR <= 0.0) {lw = lp; rw = rp;}
+      if (lw < 0.0 || rw < 0.0) {lw = lp; rw = rp;}
       // face weights: min over the two cells of each face (clamped to the built range)
+      if (di) {   // x1: the global scheme (w = 1)
+        ql_p1(n,i+1) = lw; qr(n,i) = rw;
+        return;
+      }
       const int km = (k - dk < 0) ? 0 : k - dk, kp = (k + dk > n3 - 1) ? n3 - 1 : k + dk;
       const int jm = (j - dj < 0) ? 0 : j - dj, jp = (j + dj > n2 - 1) ? n2 - 1 : j + dj;
       const Real wc = wbw(m,dir-1,k,j,i);
@@ -87,16 +94,16 @@ void WbAllPLMDer(TeamMember_t const &member, const int dir, const int m, const i
                  const int j, const int il, const int iu, const DvceArray5D<Real> &qd,
                  const DvceArray5D<Real> &wbq, const DvceArray5D<Real> &wbw,
                  ScrArray2D<Real> &dl_p1, ScrArray2D<Real> &dr) {
-  const int dk = (dir == 3) ? 1 : 0, dj = (dir == 2) ? 1 : 0;
+  const int dk = (dir == 3) ? 1 : 0, dj = (dir == 2) ? 1 : 0, di = (dir == 1) ? 1 : 0;
   const int nvar = qd.extent_int(1);
   const int n2 = wbw.extent_int(3), n3 = wbw.extent_int(2);
   for (int n=0; n<nvar; ++n) {
     par_for_inner(member, il, iu, [&](const int i) {
-      const Real qm = qd(m,n,k-dk,j-dj,i), qc = qd(m,n,k,j,i), qp = qd(m,n,k+dk,j+dj,i);
+      const Real qm = qd(m,n,k-dk,j-dj,i-di), qc = qd(m,n,k,j,i), qp = qd(m,n,k+dk,j+dj,i+di);
       Real lp, rp;
       PLM(qm, qc, qp, lp, rp);
       if (n != IDPR) {
-        dl_p1(n,i) = lp; dr(n,i) = rp;
+        dl_p1(n,i+di) = lp; dr(n,i) = rp;
         return;
       }
       Real b_m, b_mh, b_c, b_ph, b_p;
@@ -104,8 +111,11 @@ void WbAllPLMDer(TeamMember_t const &member, const int dir, const int m, const i
       Real lw, rw;
       PLM(qm - b_m, qc - b_c, qp - b_p, lw, rw);
       lw += b_ph; rw += b_mh;
-      const Real sL = qc - qm, sR = qp - qc;
-      if (lw < 0.0 || rw < 0.0 || sL*sR <= 0.0) {lw = lp; rw = rp;}
+      if (lw < 0.0 || rw < 0.0) {lw = lp; rw = rp;}
+      if (di) {
+        dl_p1(n,i+1) = lw; dr(n,i) = rw;
+        return;
+      }
       const int km = (k - dk < 0) ? 0 : k - dk, kp = (k + dk > n3 - 1) ? n3 - 1 : k + dk;
       const int jm = (j - dj < 0) ? 0 : j - dj, jp = (j + dj > n2 - 1) ? n2 - 1 : j + dj;
       const Real wc = wbw(m,dir-1,k,j,i);
