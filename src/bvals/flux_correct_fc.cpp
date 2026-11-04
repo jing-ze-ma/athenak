@@ -775,8 +775,9 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
   // Sum recieve buffers into EMFs stored on MeshBlocks
   // Outer loop over (# of MeshBlocks)*(3 field components)
   // r1mspeed-1102: and radial chunks of FLX_SUM_CHUNK, one team each.  The sums onto one
-  // edge element stay in one team, in the buffer order n (bitwise); the loops without a
-  // radial index and the nflx counts run in chunk 0 only.
+  // edge element stay in one team, in the buffer order n (bitwise): the loops at a fixed
+  // radial index il run in the chunk containing il (flxrace-1104); the nflx counts run in
+  // chunk 0 only.
   constexpr int FLX_SUM_CHUNK = 16;
   const int nic = (pmy_pack->pmesh->mb_indcs.nx1 + 2*pmy_pack->pmesh->mb_indcs.ng + 1
                    + FLX_SUM_CHUNK - 1)/FLX_SUM_CHUNK;
@@ -845,7 +846,13 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
         const int cu = (iu < ic1) ? iu : ic1;
         const int nci = (cu >= cl) ? (cu - cl + 1) : 0;
         const int nji  = nj*nci;
-        const int nkj  = c0_ ? nk*nj : 0;
+        // flxrace-1104: the loops at the FIXED radial index il (x1-face neighbours, the
+        // x1-x2 and x1-x3 edge neighbours) run in the team whose radial chunk contains il,
+        // the same team that sums the x2/x3-face neighbours' edges at i = il; running them
+        // in chunk 0 raced with that team on GPUs (two teams += the same edge EMF).  The
+        // nflx counts stay in chunk 0 (one team per block; they are not edge EMFs).
+        const bool own_il = (il >= ic0) && (il <= ic1);
+        const int nkj  = own_il ? nk*nj : 0;
         const int nki  = nk*nci;
 
         // x1faces
@@ -915,7 +922,7 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
               nflx(m,n) += 1;
             });
           } else if (v==2) {
-            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember,c0_ ? nk : 0),
+            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember,own_il ? nk : 0),
                                  [&](const int idx){
               int k = idx + kl;
               { const Real rf_ = rbuf[n].flux(m,ndat*v + (k-kl));
@@ -960,7 +967,7 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
               nflx(m,n) += 1;
             });
           } else if (v==1) {
-            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember,c0_ ? nj : 0),
+            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember,own_il ? nj : 0),
                                  [&](const int idx){
               int j = idx + jl;
               { const Real rf_ = rbuf[n].flux(m,ndat*v + (j-jl));
