@@ -13,6 +13,7 @@
 #include <string>
 
 #include "athena.hpp"
+#include "reconstruct/wb_plm_blend.hpp"
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 #include "bvals/bvals.hpp"
@@ -309,6 +310,8 @@ class Hydro {
   // and zero advected energy (pressure only); where it moves outward the ghost-side
   // state is left as the boundary built it.  Default false: nothing changes.
   bool diode_ox1 = false;
+  // wbplm-1103 <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
+  bool top_ghost_prim_copy = false;
   // csedge-1019 <hydro>/cs_seam_rsolver = hlle: the cubed-sphere PANEL-SEAM faces take the
   // HLLE flux (contact/shear dissipation) whatever <hydro>/rsolver is (hydro.cpp)
   bool cs_seam_hlle = false;
@@ -904,8 +907,15 @@ class Hydro {
                 Real sL = (q(m,n,k,j,i)   - q(m,n,k,j,i-1)) / dxL;
                 Real sR = (q(m,n,k,j,i+1) - q(m,n,k,j,i)  ) / dxR;
                 
-                if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
+                if (eos.wb_plm_smooth) {   // wbplm-1103: continuous (reconstruct/wb_plm_blend.hpp)
+                  Real pl_, pr_;
+                  PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
+                  wbplm::WbPlmBlend(q(m,n,k,j,i), sL, sR, pl_, pr_, eos.plm_c1, ql(n,i+1), qr(n,i));
+                } else if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
                     PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
+                }
+                if (eos.wb_plm_range) {
+                  wbplm::WbPlmRange(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), ql(n,i+1), qr(n,i));
                 }
             });
           } else {
@@ -1092,9 +1102,19 @@ class Hydro {
 
             Real sL = (qd(m,n,k,j,i)   - qd(m,n,k,j,i-1)) / dxL;
             Real sR = (qd(m,n,k,j,i+1) - qd(m,n,k,j,i)  ) / dxR;
-            if (dl(n,i+1) < 0.0 || dr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
+            if (eos.wb_plm_smooth) {   // wbplm-1103: continuous (reconstruct/wb_plm_blend.hpp)
+              Real pl_, pr_;
+              PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
+                             dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
+              wbplm::WbPlmBlend(qd(m,n,k,j,i), sL, sR, pl_, pr_, eos.plm_c1,
+                                dl(n,i+1), dr(n,i));
+            } else if (dl(n,i+1) < 0.0 || dr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
               PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
                              dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i), eos.plm_c1);
+            }
+            if (eos.wb_plm_range) {
+              wbplm::WbPlmRange(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
+                                dl(n,i+1), dr(n,i));
             }
           } else {
             PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),

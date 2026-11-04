@@ -295,6 +295,13 @@ struct EOS_Data {
   // read only when named): the C1 slope limiter of reconstruct/plm_c1.hpp (also in the
   // non-uniform x1 PLM of the cubed sphere / spherical polar meshes)
   bool plm_c1 = false;
+  // wbplm-1103 <hydro>/wb_plm_smooth, <mhd>/wb_plm_smooth (default false = the legacy
+  // threshold fallback, bitwise; read only when named): continuous blend of the
+  // well-balanced and plain x1 PLM faces (reconstruct/wb_plm_blend.hpp)
+  bool wb_plm_smooth = false;
+  // wbplm-1103 <hydro|mhd>/wb_plm_range (default false, read only when named): bound the
+  // well-balanced x1 faces by the 3-cell data range (reconstruct/wb_plm_blend.hpp)
+  bool wb_plm_range = false;
   // lowmach2-1102 <hydro>/lhllc_chi_full (default false = legacy, bitwise; read only
   // when named; hydro only): the Mach function of LHLLC from the FULL speed,
   // chi = min(1, max(|u|_L, |u|_R)/max(c_L, c_R)) with |u| over all three velocity
