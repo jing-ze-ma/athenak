@@ -324,6 +324,27 @@ Mesh::Mesh(ParameterInput *pin) :
   // halo).  Smooth data never differ by a factor R > 1.5 at resolution, so the smooth
   // answer is untouched.  It acts in the halo only, so the seam update stays exactly
   // conservative.
+  // prod1103f default (USER 11-03; seamguard_ab_1103: guard 0 + linear = the reference
+  // within noise over 10 rot of W121 hydro): cs_seam_rho_guard = 0 on a FRESH cubed-sphere
+  // start with <mesh>/cs_seam_flux = shared (the default; or its legacy spelling positive)
+  // when the key is not named (recipe::NewDefaults); recorded for restarts.  Other flux
+  // modes, restarts whose input lacks the key and recipe none keep 4 (bitwise); an
+  // explicit key wins.
+  if (use_cubed_sphere && !pin->DoesParameterExist("mesh", "cs_seam_rho_guard")) {
+    const std::string sf0 = pin->DoesParameterExist("mesh", "cs_seam_flux") ?
+                            pin->GetString("mesh", "cs_seam_flux") : "shared";
+    if (sf0 == "shared" || sf0 == "positive") {
+      if (recipe::NewDefaults(pin)) {
+        pin->GetOrAddReal("mesh", "cs_seam_rho_guard", 0.0);
+        recipe::Log("<mesh>/cs_seam_rho_guard = 0 (default on a fresh cs start with "
+                    "cs_seam_flux = shared)");
+      } else {
+        recipe::Log("<mesh>/cs_seam_rho_guard = 4 (" + std::string(
+            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+            "restart input has no key") + ": the old default)");
+      }
+    }
+  }
   cs_seam_rho_guard = use_cubed_sphere ?
       pin->GetOrAddReal("mesh", "cs_seam_rho_guard", 4.0) : 0.0;
   // `<mesh>/cs_seam_resample = linear (DEFAULT since 09-26) | quadratic (the old halo)`,
