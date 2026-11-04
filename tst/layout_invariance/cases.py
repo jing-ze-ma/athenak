@@ -446,3 +446,21 @@ for _nm, _s in (('ohm', {}), ('ohm_rkg', {'mhd/use_rkg_sts': 'true'}),
                              'mhd/ohmic_resistivity': 'none', 'mhd/use_rkg_sts': 'true'})):
     CASES.append(dict(_CSR, name='cs_res_' + _nm + '_fc3', what='cs resistive probe ' + _nm
                       + ', fc order 3', set=dict(_CSRS, **_s, **_F3)))
+
+# ---------------------------------------------------------------- fc3blk-1103
+# order 3 with 4-cell blocks (r1m v6 deck C8x32, 1x1 vs 2x2, cs_vertex_3cell off).  The
+# cfl 1-ulp reference reaches the stiff ck operator only weakly; the second case takes a
+# 1-ulp IC field perturbation (problem/bbot_gauss) as the reference, which is the honest
+# round-off spread of this deck after one ck step (1e-11 in ener at either order).
+_R4L = [L('b1x1_np1', (32, 8, 8)), L('b2x2_np1', (32, 4, 4))]
+_R4S = dict(EXT, **{'mesh/cs_vertex_3cell': 'false', 'mesh/cs_seam_fc_order': 3,
+                    'mesh/nx2': 8, 'mesh/nx3': 8})
+CASES += [
+    dict(dvar(DHJ_M, 'r1m4_fc3', 'r1m v6 C8 4-cell blocks, order 3, cfl 1-ulp reference', _R4S),
+         layouts=_R4L),
+    dict(dvar(DHJ_M, 'r1m4_fc3_iculp', 'r1m v6 C8 4-cell blocks, order 3, IC field 1-ulp '
+              'reference', _R4S), layouts=_R4L, perturb='problem/bbot_gauss'),
+    dict(dvar(DHJ_M, 'r1m4_fc2_iculp', 'as r1m4_fc3_iculp, order 2',
+              dict(_R4S, **{'mesh/cs_seam_fc_order': 2})), layouts=_R4L,
+         perturb='problem/bbot_gauss'),
+]
