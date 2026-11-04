@@ -134,7 +134,6 @@ void Resistivity::CsVertexJFix(const DvceFaceFld4D<Real> &b0, const int il,
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
   auto &msz = pmy_pack->pmb->mb_size;
   auto &cxi = pmy_pack->pcoord->cos_face_xi;
   auto &sxi = pmy_pack->pcoord->sin_face_xi;
@@ -151,17 +150,28 @@ void Resistivity::CsVertexJFix(const DvceFaceFld4D<Real> &b0, const int il,
     const int jc = jlo ? js : je+1, kc = klo ? ks : ke+1;
     CsVtx3 v;
     if (!CsVertexAt(msz.d_view(m), kc, jc, js, je, ks, ke, v)) return;
+    const int dj = jlo ? 1 : -1, dk = klo ? 1 : -1;
     if (j1) {
-      const Real tb = dxf3(m,kc,v.jv,i)*BcovEta(b,cet,set,m,kc,v.jv,i);
-      const Real ta = dxf2(m,v.kv,jc,i)*BcovXi(b,cxi,sxi,m,v.kv,jc,i);
-      jn1(m,kc,jc,i) = 2.0*((jlo ? tb : -tb) + (klo ? -ta : ta))/ae1(m,kc,jc,i);
+      // pass 1's dual-loop J.r (res_cs_j) at a radial edge (k, j) of the seam GHOST
+      // region: corner-free for the two edges used here
+      auto j1at = [&](const int k, const int j) {
+        return (dxf3(m,k,j,i)*BcovEta(b,cet,set,m,k,j,i)
+              - dxf3(m,k,j-1,i)*BcovEta(b,cet,set,m,k,j-1,i)
+              - dxf2(m,k,j,i)*BcovXi(b,cxi,sxi,m,k,j,i)
+              + dxf2(m,k-1,j,i)*BcovXi(b,cxi,sxi,m,k-1,j,i))/ae1(m,k,j,i);
+      };
+      // the vertex is the midpoint of the point-reflected pair (one step into the x3-seam
+      // ghost row, one into the x2-seam ghost column, diagonally)
+      jn1(m,kc,jc,i) = 0.5*(j1at(kc-dk, jc+dj) + j1at(kc+dk, jc-dj));
       return;
     }
-    const int dj = jlo ? 1 : -1, dk = klo ? 1 : -1;
-    jn3(m,v.kn,jc,i) = (nx2 >= 3) ? 2.0*jn3(m,v.kn,jc+dj,i) - jn3(m,v.kn,jc+2*dj,i)
-                                  : jn3(m,v.kn,jc+dj,i);
-    jn2(m,kc,v.jn,i) = (nx3 >= 3) ? 2.0*jn2(m,kc+dk,v.jn,i) - jn2(m,kc+2*dk,v.jn,i)
-                                  : jn2(m,kc+dk,v.jn,i);
+    // the corner cell's own transverse edges (x3 edge at (kn, jc), x2 edge at (kc, jn))
+    // loop through the corner block.  They only enter 4-point averages (the Ohmic metric
+    // term, ambipolar / mean_j transverse J at the vertex-cell along-seam edges); the
+    // parallelogram value makes each of those averages the midpoint of the two real
+    // entries on the diagonal through the average's point (linear-exact, convex)
+    jn3(m,v.kn,jc,i) = jn3(m,v.kv,jc,i) + jn3(m,v.kn,jc+dj,i) - jn3(m,v.kv,jc+dj,i);
+    jn2(m,kc,v.jn,i) = jn2(m,kc,v.jv,i) + jn2(m,kc+dk,v.jn,i) - jn2(m,kc+dk,v.jv,i);
   });
 }
 
@@ -198,6 +208,10 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   auto jn2 = jnorm.x2e;
   auto jn3 = jnorm.x3e;
 
+  // cornerfix2-1103 <mesh>/cs_vertex_3cell: jn2 one layer further in k and jn3 in j (the
+  // vertex point-reflection pairs of the ambipolar / mean_j vertex J, CsEdgeOps::X1);
+  // extra entries only, every value computed before is unchanged
+  const int v3w = pmy_pack->pmesh->cs_vertex_3cell ? 1 : 0;
   // ---- pass 1: J in the face-normal frame, by Stokes' theorem on the dual loop --------
   // Each loop is bounded by the four cell centres around the edge, so every side passes
   // through a face centre and carries that face's field. Pass 2 needs J one layer beyond
@@ -231,8 +245,8 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
     // r1mspeed-1102: pass 1 as ONE launch (independent loops; bitwise)
     par_for_fused3("res_cs_j", DevExeSpace(), nmb1,
                    LoopBox3{ks, ke+1, js, je+1, is, ie}, j1_,
-                   LoopBox3{ks, ke+1, js-1, je+1, is, ie+1}, j2_,
-                   LoopBox3{ks-1, ke+1, js, je+1, is, ie+1}, j3_);
+                   LoopBox3{ks-v3w, ke+1+v3w, js-1, je+1, is, ie+1}, j2_,
+                   LoopBox3{ks-1, ke+1, js-v3w, je+1+v3w, is, ie+1}, j3_);
   } else {
     auto &rc = pmy_pack->pcoord->x1v;    // cell centroids, ghosts included
     auto &rf = pmy_pack->pcoord->xx1f;   // x1 faces
@@ -288,8 +302,8 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
     };
     par_for_fused3("res_cs_jc", DevExeSpace(), nmb1,
                    LoopBox3{ks, ke+1, js, je+1, is, ie}, j1_,
-                   LoopBox3{ks, ke+1, js-1, je+1, is, ie+1}, j2c_,
-                   LoopBox3{ks-1, ke+1, js, je+1, is, ie+1}, j3c_);
+                   LoopBox3{ks-v3w, ke+1+v3w, js-1, je+1, is, ie+1}, j2c_,
+                   LoopBox3{ks-1, ke+1, js-v3w, je+1+v3w, is, ie+1}, j3c_);
   }
 
   // cornerfix-1103 <mesh>/cs_vertex_3cell: no J entry may read the cube-vertex corner
