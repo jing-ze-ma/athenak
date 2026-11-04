@@ -49,6 +49,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <map>
 #include <tuple>
@@ -3421,6 +3422,14 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   // do.  These bins separate the two questions.
   Real l1v[4] = {0.0, 0.0, 0.0, 0.0};
   std::int64_t ncv[4] = {0, 0, 0, 0};
+  // fcorder3-1103: the EMF error by EDGE CLASS, as CSTestFFCheck (0 interior, 1 ring 1,
+  // 2 seam, 3 cube vertex); E2/E3 radially interior edges only
+  Real lc11[3][4] = {}, mc11[3][4] = {}, nc11[3][4] = {};
+  const Real hh11 = 0.5*M_PI/pm->mesh_indcs.nx2;
+  auto cls11 = [](const int da, const int db) {
+    if (da == 0) return (db == 0) ? 3 : 2;
+    return (da == 1 || db == 0) ? 1 : 0;
+  };
   Real mx0_local = 0.0;
   if (has_res) {
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
@@ -3443,6 +3452,11 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
           for (int i=is; i<=ie; ++i) {
             if (ead != 0.0) ex = exact_e(rcv(m,i), cx, cy, cz, cx, cy, cz);
             const Real d = fabs(e1(m,k,j,i) - ex)/scale;
+            {const int dxf_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(xf))/hh11));
+             const int def_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(ef))/hh11));
+             const int cc = (dxf_ == 0 || def_ == 0) ? ((dxf_ == 0 && def_ == 0) ? 3 : 2)
+                            : ((dxf_ == 1 || def_ == 1) ? 1 : 0);
+             lc11[0][cc] += d; nc11[0][cc] += 1.0; mc11[0][cc] = std::fmax(mc11[0][cc], d);}
             if (d > mx[0]) { mxloc[0]=p; mxloc[1]=i; mxloc[2]=j; mxloc[3]=k; }
             mx[0] = fmax(mx[0], d); l1[0] += d; ++nc[0];
             if (seam) {
@@ -3466,6 +3480,12 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
           for (int i=is; i<=ie+1; ++i) {
             if (ead != 0.0) ex = exact_e(rfv(m,i), cx, cy, cz, t1[0], t1[1], t1[2]);
             const Real d = fabs(e2(m,k,j,i) - ex)/scale;
+            if (i > is && i <= ie) {
+              const int def_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(ef))/hh11));
+              const int dxc_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(xc))/hh11 - 0.5));
+              const int cc = cls11(def_, dxc_);
+              lc11[1][cc] += d; nc11[1][cc] += 1.0; mc11[1][cc] = std::fmax(mc11[1][cc], d);
+            }
             mx[1] = fmax(mx[1], d); l1[1] += d; ++nc[1];
           }
         }
@@ -3477,6 +3497,12 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
           for (int i=is; i<=ie+1; ++i) {
             if (ead != 0.0) ex = exact_e(rfv(m,i), cx, cy, cz, t2[0], t2[1], t2[2]);
             const Real d = fabs(e3(m,k,j,i) - ex)/scale;
+            if (i > is && i <= ie) {
+              const int dxf_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(xf))/hh11));
+              const int dec_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(ec))/hh11 - 0.5));
+              const int cc = cls11(dxf_, dec_);
+              lc11[2][cc] += d; nc11[2][cc] += 1.0; mc11[2][cc] = std::fmax(mc11[2][cc], d);
+            }
             mx[2] = fmax(mx[2], d); l1[2] += d; ++nc[2];
           }
         }
@@ -3492,6 +3518,9 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   mx0_local = mx[0];
 #if MPI_PARALLEL_ENABLED
   {
+    MPI_Allreduce(MPI_IN_PLACE, &lc11[0][0], 12, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &mc11[0][0], 12, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &nc11[0][0], 12, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, l1v, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, ncv, 4, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
     Real s_[5] = {l1[0], l1[1], l1[2], l1s, l1i};
@@ -3511,6 +3540,14 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   if (ead != 0.0) {
     std::printf("###   ambipolar eta_ad=%.3e: exact = eta*J + eta_ad (B^2 J - (J.B) B),"
                 " scale |eta J| + eta_ad B_ref^2 |J|\n", ead);
+  }
+  for (int c=0; c<3; ++c) {
+    std::printf("###   EMFCLASS11 E%d L1/Linf interior %.3e %.3e | ring1 %.3e %.3e | seam %.3e"
+                " %.3e | vertex %.3e %.3e\n", c+1,
+                (nc11[c][0] > 0) ? lc11[c][0]/nc11[c][0] : 0.0, mc11[c][0],
+                (nc11[c][1] > 0) ? lc11[c][1]/nc11[c][1] : 0.0, mc11[c][1],
+                (nc11[c][2] > 0) ? lc11[c][2]/nc11[c][2] : 0.0, mc11[c][2],
+                (nc11[c][3] > 0) ? lc11[c][3]/nc11[c][3] : 0.0, mc11[c][3]);
   }
   std::printf("###   relative error vs the analytic eta*J:"
               "  x1e L1=%.4e max=%.4e | x2e L1=%.4e max=%.4e | x3e L1=%.4e max=%.4e\n",
@@ -7562,6 +7599,11 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
   // resistive EMF on every edge against eta*alpha*B.that, in units eta*alpha*b0
   Real le[3][2] = {}, me[3][2] = {};
   Real ne[3][2] = {};
+  // stokes-1103: the EMF error by EDGE CLASS (0 interior >= 2 cells from a panel edge,
+  // 1 first ring, 2 seam (on a panel edge), 3 cube vertex / seam edge of a corner cell),
+  // radially interior edges only for E2/E3 (no radial-boundary ghosts); sums, max, count
+  Real lc[3][4] = {}, mc[3][4] = {}, nc[3][4] = {};
+  int loc[3][4][4] = {};   // where the class max sits: panel, edge index (j, k), radial i
   const bool has_res = (pmbp->pmhd->presist != nullptr);
   if (has_res) {
     auto pres = pmbp->pmhd->presist;
@@ -7589,6 +7631,17 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
             ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
             ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
             Real q[3], t1[3], t2[3], bx, by, bz;
+            // panel-global distances (in cells) of this edge's position from a panel edge
+            const Real hh = 0.5*M_PI/pm->mesh_indcs.nx2;
+            const int dxf_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(xf))/hh));
+            const int def_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(ef))/hh));
+            const int dxc_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(xc))/hh - 0.5));
+            const int dec_ = static_cast<int>(std::lround((0.25*M_PI - std::fabs(ec))/hh - 0.5));
+            auto cls = [](const int da, const int db) {   // da: across-seam distance
+              if (da == 0) return (db == 0) ? 3 : 2;   // on the seam (corner cell: 3)
+              return (da == 1 || db == 0) ? 1 : 0;      // next to a seam / interior
+            };
+            const bool rint = (i > is) && (i <= ie);
             if (i <= ie) {   // x1 edge along r at (xf, ef)
               cubed_sphere::PanelToCart(p, xf, ef, q);
               const Real rc = 0.5*(rl + rr);
@@ -7596,6 +7649,18 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
               const Real d = std::fabs(e1(m,k,j,i)
                                        - eta*al*(bx*q[0] + by*q[1] + bz*q[2]))/scale;
               le[0][reg] += d; ne[0][reg] += 1.0; me[0][reg] = std::fmax(me[0][reg], d);
+              {const int cc = (dxf_ == 0 || def_ == 0) ? ((dxf_ == 0 && def_ == 0) ? 3 : 2)
+                              : ((dxf_ == 1 || def_ == 1) ? 1 : 0);
+               if (d > mc[0][cc]) {loc[0][cc][0] = p; loc[0][cc][1] = dxf_; loc[0][cc][2] = def_;
+                                   loc[0][cc][3] = i - is;}
+               lc[0][cc] += d; nc[0][cc] += 1.0; mc[0][cc] = std::fmax(mc[0][cc], d);
+               // fcorder3-1103 DIAGNOSTIC: env CS_EMF1_DUMP=<thr> lists the radial edges of
+               // classes 1-3 with error > thr (panel, signed xi/eta face angles / (pi/4), i)
+               static const char *e1d_ = std::getenv("CS_EMF1_DUMP");
+               if (e1d_ != nullptr && cc >= 1 && d > std::atof(e1d_)) {
+                 std::printf("E1DUMP cls %d p %d xf %+.5f ef %+.5f dxi %d deta %d i %d err %.4e\n",
+                             cc, p, xf/(0.25*M_PI), ef/(0.25*M_PI), dxf_, def_, i - is, d);
+               }}
             }
             if (j <= je) {   // x2 edge along xi at (rl, ef), centre xc
               cubed_sphere::PanelToCart(p, xc, ef, q);
@@ -7604,6 +7669,8 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
               const Real d = std::fabs(e2(m,k,j,i)
                                        - eta*al*(bx*t1[0] + by*t1[1] + bz*t1[2]))/scale;
               le[1][reg] += d; ne[1][reg] += 1.0; me[1][reg] = std::fmax(me[1][reg], d);
+              if (rint) {const int cc = cls(def_, dxc_);
+                         lc[1][cc] += d; nc[1][cc] += 1.0; mc[1][cc] = std::fmax(mc[1][cc], d);}
             }
             if (k <= ke) {   // x3 edge along eta at (rl, xf), centre ec
               cubed_sphere::PanelToCart(p, xf, ec, q);
@@ -7612,6 +7679,10 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
               const Real d = std::fabs(e3(m,k,j,i)
                                        - eta*al*(bx*t2[0] + by*t2[1] + bz*t2[2]))/scale;
               le[2][reg] += d; ne[2][reg] += 1.0; me[2][reg] = std::fmax(me[2][reg], d);
+              if (rint) {const int cc = cls(dxf_, dec_);
+                         if (d > mc[2][cc]) {loc[2][cc][0] = p; loc[2][cc][1] = dxf_;
+                                             loc[2][cc][2] = dec_; loc[2][cc][3] = i - is;}
+                         lc[2][cc] += d; nc[2][cc] += 1.0; mc[2][cc] = std::fmax(mc[2][cc], d);}
             }
           }
         }
@@ -7627,6 +7698,9 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
   MPI_Allreduce(MPI_IN_PLACE, &le[0][0], 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, &me[0][0], 6, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, &ne[0][0], 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &lc[0][0], 12, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &mc[0][0], 12, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &nc[0][0], 12, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
   if (global_variable::my_rank != 0) return;
   Real tot[5] = {};
@@ -7656,6 +7730,18 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
       std::printf("###     %s  interior L1 %.3e Linf %.3e | seam+vertex L1 %.3e"
                   " Linf %.3e\n", en[c], (ne[c][0] > 0) ? le[c][0]/ne[c][0] : 0.0,
                   me[c][0], (ne[c][1] > 0) ? le[c][1]/ne[c][1] : 0.0, me[c][1]);
+    }
+    for (int c=0; c<3; ++c) {
+      std::printf("###   EMFCLASS E%d L1/Linf interior %.3e %.3e | ring1 %.3e %.3e | seam %.3e"
+                  " %.3e | vertex %.3e %.3e\n", c+1,
+                  (nc[c][0] > 0) ? lc[c][0]/nc[c][0] : 0.0, mc[c][0],
+                  (nc[c][1] > 0) ? lc[c][1]/nc[c][1] : 0.0, mc[c][1],
+                  (nc[c][2] > 0) ? lc[c][2]/nc[c][2] : 0.0, mc[c][2],
+                  (nc[c][3] > 0) ? lc[c][3]/nc[c][3] : 0.0, mc[c][3]);
+      if (c != 1) std::printf("###   EMFCLASS E%d max at (panel, dist_xi, dist_eta, i): seam"
+                              " (%d %d %d %d) vertex (%d %d %d %d) [rank 0]\n", c+1,
+                              loc[c][2][0], loc[c][2][1], loc[c][2][2], loc[c][2][3],
+                              loc[c][3][0], loc[c][3][1], loc[c][3][2], loc[c][3][3]);
     }
   }
   std::string fname = pin->GetString("job", "basename") + "-errs.dat";
