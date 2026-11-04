@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <map>
 #include <utility>
 #include <vector>
 #include <iomanip>    // std::setprecision()
@@ -312,6 +313,7 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
 
 namespace {
 constexpr int FC_PACK_CHUNK = 128;
+constexpr int kFc3Max = 48;   // fcorder3-1103: max distinct faces of one order-3 sample
 }  // namespace
 
 void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
@@ -702,6 +704,21 @@ struct SeamArgs {
 struct FCSeamPre {};   // r1mspeed-1102: tag of the srcval precompute pass
 struct FCSeamQ {};     // seamexact-1103: tag of the partner-interpolant pass
 struct FCSeamPre3 {};  // fcorder3-1103: tag of the order-3 precompute pass
+struct FCSeamTab {};   // fcorder3-1103: tag of the order-3 coefficient-table build
+
+// fcorder3-1103: the order-3 coefficient tables, one row per (seam segment, sample k,j),
+// [0] with the first pass's bounds, [1] with the extended pass's (cs_seam_blockend =
+// extend).  Kept here, keyed by the boundary object, so bvals.hpp is untouched.
+struct Fc3Tables {
+  bool ready[2] = {false, false};
+  int nrow = 0;
+  DvceArray1D<int> gbase, rq;
+  DvceArray1D<int> cnt[2];
+  DvceArray2D<int> code[2];
+  DvceArray2D<Real> w[2];
+};
+// never destroyed: its Views must not outlive Kokkos::finalize
+std::map<const void*, Fc3Tables> *fc3_tables_ = new std::map<const void*, Fc3Tables>;
 
 struct FCSeamPack {
   DvceFaceFld4D<Real> b, cb;
@@ -727,6 +744,10 @@ struct FCSeamPack {
   // fcorder3-1103 <mesh>/cs_seam_fc_order = 3: srcval3 (block sizes for the angles)
   bool fc3_ = false;
   DualArray1D<RegionSize>::t_dev mbsz;
+  bool fc3tab_ = false;            // evaluate from the coefficient table
+  DvceArray1D<int> t_gbase, t_rq, t_cnt;
+  DvceArray2D<int> t_code;
+  DvceArray2D<Real> t_w;
 
   FCSeamPack(DvceFaceFld4D<Real> &b_, DvceFaceFld4D<Real> &cb_,
              DvceArray1D<MeshBufferDv> sb_, DvceArray1D<MeshBufferDv> rb_,
@@ -964,53 +985,55 @@ struct FCSeamPack {
     w = (w < g.alo) ? g.alo : ((w > g.ahi - 2) ? g.ahi - 2 : w);
     return w;
   }
+  // The point values are LINEAR in the source faces and every weight is geometry only,
+  // so each reconstruction hands (component, along index, normal index, weight) terms to
+  // an accumulator: Fc3Direct sums them on the fly, Fc3Tab records them (the per-sample
+  // coefficient table of PackAndSendFCFlat, evaluated once per run).  comp: 0 = x1f,
+  // 1 = the across-staggered component, 2 = the along-staggered one.
   // across-staggered component (normal faces 0..3 from the seam) at (u, along face
-  // coordinate xabs, along angle tangent Aa)
+  // coordinate xabs, along angle tangent Aa), times sc
+  template <class Acc>
   KOKKOS_FORCEINLINE_FUNCTION
-  Real fc3_PtN(const Fc3Geo &g, const Real u, const Real xabs, const Real Aa) const {
+  void fc3_PtN(const Fc3Geo &g, const Real u, const Real xabs, const Real Aa,
+               const Real sc, Acc &acc) const {
     const int c0 = fc3_cwin(g, xabs);
     Real wq[3], wl[4];
     cs_fc3::QuadDensW(xabs - 0.5 - static_cast<Real>(c0 + 1), wq);
     cs_fc3::Lag4W(u, wl);
     Real tf[4];
     for (int l=0; l<4; ++l) tf[l] = tan(fc3_aface(g, c0 + l));
-    Real r = 0.0;
     for (int mc=0; mc<4; ++mc) {
       const int col = g.nseam + g.dir*mc;
       const Real C = tan(0.25*M_PI - static_cast<Real>(mc)*g.dn);
-      Real sm = 0.0;
-      for (int l=0; l<3; ++l) {
-        sm += wq[l]*fc3_bN(g, c0 + l, col)*cs_fc3::Arc(C, tf[l], tf[l+1]);
-      }
-      r += wl[mc]*sm/(cs_fc3::ArcDens(C, Aa)*g.da);
+      const Real f = sc*wl[mc]/(cs_fc3::ArcDens(C, Aa)*g.da);
+      for (int l=0; l<3; ++l) acc(g, 1, c0 + l, col, f*wq[l]*cs_fc3::Arc(C, tf[l], tf[l+1]));
     }
-    return r;
   }
   // along-staggered component (along faces w..w+3, normal cells 0..2) at (u, xabs,
-  // tangent of |n| = Nn)
+  // tangent of |n| = Nn), times sc
+  template <class Acc>
   KOKKOS_FORCEINLINE_FUNCTION
-  Real fc3_PtA(const Fc3Geo &g, const Real u, const Real xabs, const Real Nn) const {
+  void fc3_PtA(const Fc3Geo &g, const Real u, const Real xabs, const Real Nn,
+               const Real sc, Acc &acc) const {
     const int w = fc3_fwin(g, xabs);
     Real wq[3], wl[4];
     cs_fc3::QuadDensW(u - 1.5, wq);
     cs_fc3::Lag4W(xabs - static_cast<Real>(w), wl);
     Real tn[4];
     for (int mc=0; mc<4; ++mc) tn[mc] = tan(0.25*M_PI - static_cast<Real>(mc)*g.dn);
-    Real r = 0.0;
     for (int rr=0; rr<4; ++rr) {
       const Real R = tan(fc3_aface(g, w + rr));
-      Real sm = 0.0;
+      const Real f = sc*wl[rr]/(cs_fc3::ArcDens(R, Nn)*g.dn);
       for (int mc=0; mc<3; ++mc) {
-        sm += wq[mc]*fc3_bA(g, w + rr, fc3_ncell(g, mc))*cs_fc3::Arc(R, tn[mc+1], tn[mc]);
+        acc(g, 2, w + rr, fc3_ncell(g, mc), f*wq[mc]*cs_fc3::Arc(R, tn[mc+1], tn[mc]));
       }
-      r += wl[rr]*sm/(cs_fc3::ArcDens(R, Nn)*g.dn);
     }
-    return r;
   }
-  // x1f (cell integrals, 3 x 3) at (u, xabs), point tangents (Nn, Aa)
+  // x1f (cell integrals, 3 x 3) at (u, xabs), point tangents (Nn, Aa), times sc
+  template <class Acc>
   KOKKOS_FORCEINLINE_FUNCTION
-  Real fc3_PtR(const Fc3Geo &g, const Real u, const Real xabs, const Real Nn,
-               const Real Aa) const {
+  void fc3_PtR(const Fc3Geo &g, const Real u, const Real xabs, const Real Nn,
+               const Real Aa, const Real sc, Acc &acc) const {
     const int c0 = fc3_cwin(g, xabs);
     Real wa[3], wn[3];
     cs_fc3::QuadDensW(xabs - 0.5 - static_cast<Real>(c0 + 1), wa);
@@ -1018,20 +1041,20 @@ struct FCSeamPack {
     Real tf[4], tn[4];
     for (int l=0; l<4; ++l) tf[l] = tan(fc3_aface(g, c0 + l));
     for (int mc=0; mc<4; ++mc) tn[mc] = tan(0.25*M_PI - static_cast<Real>(mc)*g.dn);
-    Real r = 0.0;
+    const Real f = sc/(cs_fc3::SolidDens(Nn, Aa)*g.dn*g.da);
     for (int l=0; l<3; ++l) {
-      Real sm = 0.0;
       for (int mc=0; mc<3; ++mc) {
-        sm += wn[mc]*fc3_bR(g, c0 + l, fc3_ncell(g, mc))*
-              cs_fc3::Solid(tn[mc+1], tn[mc], tf[l], tf[l+1]);
+        acc(g, 0, c0 + l, fc3_ncell(g, mc),
+            f*wa[l]*wn[mc]*cs_fc3::Solid(tn[mc+1], tn[mc], tf[l], tf[l+1]));
       }
-      r += wa[l]*sm;
     }
-    return r/(cs_fc3::SolidDens(Nn, Aa)*g.dn*g.da);
   }
+  // the receiver face fed by sample (kk,jj) as terms of acc; false: not an order-3 sample
+  // (block not on a panel edge, or the shared seam face) -- the caller uses srcval
+  template <class Acc>
   KOKKOS_INLINE_FUNCTION
-  Real srcval3(const SeamArgs &a, const int psrc, const int pdst, const int kk,
-               const int jj, const int i) const {
+  bool srcval3_acc(const SeamArgs &a, const int psrc, const int pdst, const int kk,
+                   const int jj, const int i, Acc &acc) const {
     const int m = a.m, vv = a.vv;
     Fc3Geo g;
     g.m = m; g.i = i;
@@ -1049,7 +1072,7 @@ struct FCSeamPack {
     const int nn = g.aeta ? jj : kk, an = g.aeta ? kk : jj;
     // which panel edge is the seam: the one the sample sits next to
     const bool elo = (nmin < -1.0 + 1.0e-10), ehi = (nmax > 1.0 - 1.0e-10);
-    if (!elo && !ehi) return srcval(a,kk,jj,i);
+    if (!elo && !ehi) return false;
     g.low = (elo && (!ehi || (nn - g.ns <= g.ne + 1 - nn))) ? 1 : 0;
     g.dir = g.low ? 1 : -1;
     g.nseam = g.low ? g.ns : (g.ne + 1);
@@ -1061,7 +1084,7 @@ struct FCSeamPack {
     Real u0, u1;
     if (kind == 1) {
       u0 = static_cast<Real>(g.dir*(nn - g.nseam));
-      if (u0 < 0.5) return srcval(a,kk,jj,i);    // the shared seam face is never a ghost
+      if (u0 < 0.5) return false;    // the shared seam face is never a ghost
       u1 = u0;
     } else {
       u0 = static_cast<Real>(g.low ? (nn - g.ns) : (g.ne - nn));
@@ -1078,7 +1101,8 @@ struct FCSeamPack {
     const Real at1 = (kind == 2) ? at0 : fc3_aface(g, an + 1);
     const int nga = (kind == 2) ? 1 : 2;
     const int ngn = (kind == 1) ? 1 : 2;
-    Real num = 0.0, den = 0.0;
+    for (int pass=0; pass<2; ++pass) {   // 0: the weight sum, 1: the terms
+    Real den = 0.0;
     for (int gn=0; gn<ngn; ++gn) {
       const Real u = (kind == 1) ? u0 :
           0.5*(u0 + u1) + 0.5*(u1 - u0)*((gn == 0) ? -cs_fc3::kGauss : cs_fc3::kGauss);
@@ -1089,31 +1113,65 @@ struct FCSeamPack {
         const Real at = (kind == 2) ? at0 : 0.5*(at0 + at1)
             + 0.5*(at1 - at0)*((ga == 0) ? -cs_fc3::kGauss : cs_fc3::kGauss);
         const Real Y = tan(at);
+        const Real wgt = (kind == 3) ? cs_fc3::SolidDens(X, Y)
+                       : ((kind == 1) ? cs_fc3::ArcDens(X, Y) : cs_fc3::ArcDens(Y, X));
+        if (pass == 0) {den += wgt; continue;}
+        const Real sc = wgt/acc.den;
         const Real Aa = Y*Nn;
         const Real asrc = atan(Aa);
         const Real xabs = static_cast<Real>(g.as0) + (asrc - g.a0)/g.da;
-        Real wgt, val;
         if (kind == 3) {
-          wgt = cs_fc3::SolidDens(X, Y);
-          val = fc3_PtR(g, u, xabs, Nn, Aa);
+          fc3_PtR(g, u, xabs, Nn, Aa, sc, acc);
         } else {
-          wgt = (kind == 1) ? cs_fc3::ArcDens(X, Y) : cs_fc3::ArcDens(Y, X);
-          const Real pn = fc3_PtN(g, u, xabs, Aa);
-          const Real pa = fc3_PtA(g, u, xabs, Nn);
+          // the receiver component is linear in the source pair: its two coefficients
           const Real nsg = g.low ? -nabs : nabs;
           const Real xi = g.aeta ? nsg : asrc, eta = g.aeta ? asrc : nsg;
-          const Real bxi = g.aeta ? pn : pa, bet = g.aeta ? pa : pn;
           cubed_sphere::SeamFieldXform t;
           cubed_sphere::SeamFieldXformAt(psrc, pdst, xi, eta, t);
-          Real oxi, oet;
-          cubed_sphere::ApplyFieldXform(t, bxi, bet, oxi, oet);
-          val = (a.v == 1) ? oxi : oet;
+          Real ox1, oe1, ox2, oe2;
+          cubed_sphere::ApplyFieldXform(t, 1.0, 0.0, ox1, oe1);
+          cubed_sphere::ApplyFieldXform(t, 0.0, 1.0, ox2, oe2);
+          const Real cxi = (a.v == 1) ? ox1 : oe1, cet = (a.v == 1) ? ox2 : oe2;
+          fc3_PtN(g, u, xabs, Aa, sc*(g.aeta ? cxi : cet), acc);
+          fc3_PtA(g, u, xabs, Nn, sc*(g.aeta ? cet : cxi), acc);
         }
-        num += wgt*val;
-        den += wgt;
       }
     }
-    return num/den;
+    if (pass == 0) acc.den = den;
+    }
+    return true;
+  }
+  // the direct evaluation (reads the faces at radial index g.i)
+  struct Fc3Direct {
+    const FCSeamPack *p; Real sum = 0.0, den = 1.0;
+    KOKKOS_INLINE_FUNCTION
+    void operator()(const Fc3Geo &g, const int comp, const int aa, const int nn,
+                    const Real w) {
+      const Real v = (comp == 0) ? p->fc3_bR(g, aa, nn)
+                   : ((comp == 1) ? p->fc3_bN(g, aa, nn) : p->fc3_bA(g, aa, nn));
+      sum += w*v;
+    }
+  };
+  // the recorded terms, merged by face (code: array 0/1/2 = x1f/x2f/x3f, k, j)
+  struct Fc3Tab {
+    int n = 0; Real den = 1.0;
+    int code[kFc3Max]; Real w[kFc3Max];
+    KOKKOS_INLINE_FUNCTION
+    void operator()(const Fc3Geo &g, const int comp, const int aa, const int nn,
+                    const Real wt) {
+      const int arr = (comp == 0) ? 0 : (((comp == 1) == (g.aeta != 0)) ? 1 : 2);
+      const int k = g.aeta ? aa : nn, j = g.aeta ? nn : aa;
+      const int c = (arr << 26) | (k << 13) | j;
+      for (int q=0; q<n; ++q) { if (code[q] == c) { w[q] += wt; return; } }
+      if (n < kFc3Max) { code[n] = c; w[n] = wt; ++n; } else { n = kFc3Max + 1; }
+    }
+  };
+  KOKKOS_INLINE_FUNCTION
+  Real srcval3(const SeamArgs &a, const int psrc, const int pdst, const int kk,
+               const int jj, const int i) const {
+    Fc3Direct acc; acc.p = this;
+    if (!srcval3_acc(a, psrc, pdst, kk, jj, i, acc)) return srcval(a,kk,jj,i);
+    return acc.sum;
   }
 
   KOKKOS_FORCEINLINE_FUNCTION
@@ -1237,11 +1295,48 @@ struct FCSeamPack {
     j += u.jl;
     if (s.cs_seam != 0 && !s.cs_coar && (s.cs_xform || s.v == 0) &&
         s.cs_psrc != s.cs_pdst) {
-      pre(u.pvoff + idx) = srcval3(a, s.cs_psrc, s.cs_pdst, s.ak*k + s.bk,
-                                   s.aj*j + s.bj, i);
+      const int gr = fc3tab_ ? t_gbase(u.q) : -1;
+      const int row = gr + (k - s.kl)*s.nj + (j - s.jl);
+      const int nc = (gr >= 0) ? t_cnt(row) : -1;
+      if (nc >= 0) {
+        const int m = s.m;
+        Real sum = 0.0;
+        for (int q=0; q<nc; ++q) {
+          const int c = t_code(row,q);
+          const int ar = c >> 26, kq = (c >> 13) & 8191, jq = c & 8191;
+          const Real v = (ar == 0) ? b.x1f(m,kq,jq,i)
+                       : ((ar == 1) ? b.x2f(m,kq,jq,i) : b.x3f(m,kq,jq,i));
+          sum += t_w(row,q)*v;
+        }
+        pre(u.pvoff + idx) = sum;
+      } else {
+        pre(u.pvoff + idx) = srcval3(a, s.cs_psrc, s.cs_pdst, s.ak*k + s.bk,
+                                     s.aj*j + s.bj, i);
+      }
     } else {
       pre(u.pvoff + idx) = srcval(a, s.ak*k + s.bk, s.aj*j + s.bj, i);
     }
+  }
+
+  // fcorder3-1103: one coefficient-table row (seam segment, sample k,j); cnt -1: the
+  // sample is evaluated directly (not an order-3 sample, or > kFc3Max faces)
+  KOKKOS_INLINE_FUNCTION
+  void operator()(const FCSeamTab &, const int t) const {
+    const int q = t_rq(t);
+    const PackSegFC s = seg(q);
+    SubSegFC u;
+    u.q = q; u.il = s.il; u.ni = s.ni; u.jl = s.jl; u.nj = s.nj; u.kl = s.kl; u.nk = s.nk;
+    u.pvoff = -1; u.ptlo = 0; u.pnt = 0; u.pnlo = 0; u.pnn = 0; u.pil = 0; u.pni = 0;
+    SeamArgs a;
+    SetArgs(s, u, a);
+    const int loc = t - t_gbase(q);
+    const int k = loc/s.nj + s.kl, j = loc%s.nj + s.jl;
+    Fc3Tab acc;
+    const bool ok = srcval3_acc(a, s.cs_psrc, s.cs_pdst, s.ak*k + s.bk, s.aj*j + s.bj,
+                                s.il, acc);
+    if (!ok || acc.n > kFc3Max) { t_cnt(t) = -1; return; }
+    t_cnt(t) = acc.n;
+    for (int n=0; n<acc.n; ++n) { t_code(t,n) = acc.code[n]; t_w(t,n) = acc.w[n]; }
   }
 
   // r1mspeed-1102: srcval over a SubSegFC's (normal, tangent, i) box, once per pack
@@ -1318,6 +1413,47 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
     f.useq_ = cs_ext_pass_ && cs_ext_q_; f.q = cs_ext_q;   // seamexact-1103
     if (fc3_) {   // fcorder3-1103
       f.fc3_ = true; f.mbsz = pmy_pack->pmb->mb_size.d_view;
+      // the coefficient table of this pass (built once; env FC3_DIRECT = the direct sum)
+      static const bool fc3dir_ = (std::getenv("FC3_DIRECT") != nullptr);
+      if (!fc3dir_) {
+        Fc3Tables &T = (*fc3_tables_)[this];
+        const int ip = cs_ext_pass_ ? 1 : 0;
+        if (T.nrow == 0) {
+          auto hs = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), fc_seg);
+          const int nseg = static_cast<int>(hs.extent(0));
+          Kokkos::realloc(T.gbase, nseg);
+          auto hg = Kokkos::create_mirror_view(T.gbase);
+          std::vector<int> rq;
+          for (int q=0; q<nseg; ++q) {
+            const PackSegFC &g = hs(q);
+            hg(q) = -1;
+            if (g.mode == 2 && g.cs_seam != 0 && !g.cs_coar && (g.cs_xform || g.v == 0) &&
+                g.cs_psrc != g.cs_pdst) {
+              hg(q) = static_cast<int>(rq.size());
+              for (int r=0; r<g.nk*g.nj; ++r) rq.push_back(q);
+            }
+          }
+          T.nrow = (rq.empty()) ? 1 : static_cast<int>(rq.size());
+          if (rq.empty()) rq.push_back(0);
+          Kokkos::realloc(T.rq, T.nrow);
+          auto hr = Kokkos::create_mirror_view(T.rq);
+          for (int r=0; r<T.nrow; ++r) hr(r) = rq[r];
+          Kokkos::deep_copy(T.gbase, hg);
+          Kokkos::deep_copy(T.rq, hr);
+        }
+        if (!T.ready[ip]) {
+          Kokkos::realloc(T.cnt[ip], T.nrow);
+          Kokkos::realloc(T.code[ip], T.nrow, kFc3Max);
+          Kokkos::realloc(T.w[ip], T.nrow, kFc3Max);
+          f.t_gbase = T.gbase; f.t_rq = T.rq; f.t_cnt = T.cnt[ip];
+          f.t_code = T.code[ip]; f.t_w = T.w[ip];
+          Kokkos::parallel_for("SendBuffFCtab3",
+              Kokkos::RangePolicy<FCSeamTab>(DevExeSpace(), 0, T.nrow), f);
+          T.ready[ip] = true;
+        }
+        f.fc3tab_ = true; f.t_gbase = T.gbase; f.t_rq = T.rq; f.t_cnt = T.cnt[ip];
+        f.t_code = T.code[ip]; f.t_w = T.w[ip];
+      }
       Kokkos::parallel_for("SendBuffFCsrc3", Kokkos::Experimental::require(
           Kokkos::RangePolicy<FCSeamPre3>(DevExeSpace(), 0, nr*FC_PACK_CHUNK),
           Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
