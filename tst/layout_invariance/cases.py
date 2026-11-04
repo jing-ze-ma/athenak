@@ -94,13 +94,15 @@ CASES = [
          perturb='rad_m1/cfl_rad'),
     # ------------------------------------------------------------ cubed sphere (cs_test)
     var(CS_HYD, 'cs_hyd_clamp', 'cs hydro blast through seam + cube vertex, '
-        'cs_seam_blockend = clamp (the 11-03 bug, kept visible)', expect='FAIL'),
+        'cs_seam_blockend = clamp (the 11-03 bug, kept visible)', expect='FAIL',
+        extra={'mesh/cs_seam_blockend': 'clamp'}),   # explicit: extend is the fresh default since prod1103
     var(CS_HYD, 'cs_hyd_extend', 'cs hydro blast, cs_seam_blockend = extend',
         extra={'mesh/cs_seam_blockend': 'extend'}),
     var(CS_HYD, 'cs_hyd_ng3', 'cs hydro blast, nghost 3 ppm (HG/RSG halo depth), extend',
         extra={'mesh/cs_seam_blockend': 'extend', 'mesh/nghost': 3,
                'hydro/reconstruct': 'ppm4'}),
-    var(CS_MHD, 'cs_mhd_clamp', 'cs MHD blast (hlld, CT), clamp', expect='FAIL'),
+    var(CS_MHD, 'cs_mhd_clamp', 'cs MHD blast (hlld, CT), clamp', expect='FAIL',
+        extra={'mesh/cs_seam_blockend': 'clamp'}),
     var(CS_MHD, 'cs_mhd_extend', 'cs MHD blast (hlld, CT), extend',
         extra={'mesh/cs_seam_blockend': 'extend'}),
     var(CS_MHD, 'cs_mhd_shared_o', 'cs MHD blast, r1m seam keys (cs_seam_flux shared, '
@@ -116,7 +118,8 @@ CASES = [
     dict(name='cs_resist_rkg_clamp', bin='cs', deck='cubed_sphere_resist.athinput',
          ncyc=10, vars=['mhd_u', 'mhd_bcc'], what='as cs_resist_rkg, clamp', expect='FAIL',
          set={'mesh/nx1': 8, 'mesh/nx2': 16, 'mesh/nx3': 16, 'mhd/ambipolar': 'constant',
-              'mhd/eta_ad': 0.05, 'mhd/use_rkg_sts': 'true'},
+              'mhd/eta_ad': 0.05, 'mhd/use_rkg_sts': 'true',
+              'mesh/cs_seam_blockend': 'clamp'},
          layouts=cs_layouts(16, 8)),
     dict(name='cs_raddiff', bin='cs', deck='cubed_sphere_raddiff.athinput', ncyc=10,
          vars=['hydro_u'], what='cs scalar diffusion (iprob 15), extend',
@@ -179,7 +182,8 @@ EXT = {'mesh/cs_seam_blockend': 'extend'}
 CASES += [
     dvar(DHJ_M, 'dhj_r1m', 'r1m v6 MHD deck (wb, sponge, Roche + wb_tan, outflow1, ck every 4, '
          'RKG Ohmic+ambipolar, tracers), extend', EXT),
-    dvar(DHJ_M, 'dhj_r1m_clamp', 'r1m v6 deck, clamp (the prod default)', expect='FAIL'),
+    dvar(DHJ_M, 'dhj_r1m_clamp', 'r1m v6 deck, clamp (the old default; explicit since the prod1103 extend default)',
+         {'mesh/cs_seam_blockend': 'clamp'}, expect='FAIL'),
     dvar(DHJ_H, 'dhj_hyd', 'hydro planet deck (lhllc), extend', EXT),
     dvar(DHJ_H, 'dhj_hyd_hse_spb', 'hydro deck + top_bc hse + sponge_bottom, extend',
          dict(EXT, **{'problem/top_bc': 'hse', 'problem/sponge_bottom': 'true'})),
