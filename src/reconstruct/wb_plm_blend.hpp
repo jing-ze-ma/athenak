@@ -52,7 +52,7 @@ Real WbPlmWeight(const Real q_i, const Real sL, const Real sR, const Real qwl,
   const Real qmin = fmin(qwl, qwr);
   const Real sc = kWbPosFrac*fabs(q_i);
   w *= (sc > 0.0) ? SmoothStep01(qmin/sc) : ((qmin > 0.0) ? 1.0 : 0.0);
-  return (isfinite(w) ? w : static_cast<Real>(0.0));
+  return w;   // NaN inputs give 0: fmax(NaN, 0) = 0 in SmoothStep01
 }
 
 //! in place: (ql, qr) well-balanced faces -> blended with the plain-PLM faces (pl, pr)
