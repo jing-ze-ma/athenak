@@ -2065,10 +2065,10 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
     // cube vertices: |E_P - s E_Q|.  Printed by rank 0 on every call.
     static const bool sdiag_ = (std::getenv("CS_SEAMRES_DIAG") != nullptr);
     if (sdiag_) {
-      Real dmx[2] = {0.0, 0.0};
+      Real dmx[3] = {0.0, 0.0, 0.0};
       const int ni_ = ie - is + 1;
       const int ntot_ = (nmb1 + 1)*4*nc*ni_;
-      for (int kd=0; kd<2; ++kd) {
+      for (int kd=0; kd<3; ++kd) {
         Real dm_ = 0.0;
         Kokkos::parallel_reduce("res_mean_diag", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot_),
         KOKKOS_LAMBDA(const int t, Real &dd) {
@@ -2083,7 +2083,10 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
           const int sf = x2t ? (lo ? js : je+1) : (lo ? ks : ke+1);
           auto O = [&](const int v) { return x2t ? o2(m, v, cb + c, sf, i) : o3(m, v, sf, cb + c, i); };
           auto N = [&](const int v) { return x2t ? n2(m, v, cb + c, sf, i) : n3(m, v, sf, cb + c, i); };
-          if (kd == 0) {
+          if (kd != 1) {   // 0: along-seam edges off the vertex cells, 2: next to a vertex
+            const bool vlo = OnPanelEdge(d, m, x2t ? 2 : 0), vhi = OnPanelEdge(d, m, x2t ? 3 : 1);
+            const bool vadj = (c == 0 && vlo) || (c == nc-1 && vhi);
+            if (vadj != (kd == 2)) return;
             const Real sg = rev ? -1.0 : 1.0;
             dd = fmax(dd, fabs(O(0) - sg*N(0)));
           } else {
@@ -2094,11 +2097,11 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
         dmx[kd] = dm_;
       }
 #if MPI_PARALLEL_ENABLED
-      MPI_Allreduce(MPI_IN_PLACE, dmx, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, dmx, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
 #endif
       if (global_variable::my_rank == 0) {
         std::printf("### CS_SEAMRES_DIAG two-chart seam EMF |E_P - E_Q| max: along-seam %.4e"
-                    " radial %.4e\n", dmx[0], dmx[1]);
+                    " radial %.4e vertex-cell along-seam %.4e\n", dmx[0], dmx[1], dmx[2]);
       }
     }
     seam_for("res_mean_vtx", DevExeSpace(), 0, nmb1, 0, 3, is, ie,
