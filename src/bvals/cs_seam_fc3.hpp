@@ -89,7 +89,7 @@ Real SolidDens(const Real X, const Real Y) {
 //! dd = fa - 2 fb + fc carries the curvature.  The smoothness ratio
 //!   r = |dd| / (|fb - fa| + |fc - fb|)
 //! is O(h) on smooth data and ~1 across a jump (or at an extremum the samples resolve
-//! poorly), so the weight w = max(0, 1 - 2 r) keeps the full correction where the data
+//! poorly), so the weight w = max(0, 1 - r) keeps the full correction where the data
 //! are smooth and switches it off continuously at a jump (no threshold flip-flop).
 KOKKOS_FORCEINLINE_FUNCTION
 Real SmoothW(const Real fa, const Real fb, const Real fc) {
@@ -97,7 +97,7 @@ Real SmoothW(const Real fa, const Real fb, const Real fc) {
   const Real s = fabs(d1) + fabs(d2);
   if (!(s > 0.0)) return 1.0;               // constant data: the correction is 0 anyway
   const Real r = fabs(d2 - d1)/s;
-  return fmax(0.0, 1.0 - 2.0*r);
+  return fmax(0.0, 1.0 - r);
 }
 
 //! cornerfix3-1103: a linear-exact base value `base` raised to quadratic exactness by
