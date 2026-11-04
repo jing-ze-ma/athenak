@@ -26,6 +26,7 @@
 #include "coordinates/cubed_sphere.hpp"
 #include "bvals.hpp"
 #include "bvals/cs_seam_fc3.hpp"
+#include "bvals/cs_seam_round.hpp"
 
 //----------------------------------------------------------------------------------------
 // BValFC constructor:
@@ -244,7 +245,14 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
         sc = jj; blo = js_; bhi = je_ + ((vv == 1) ? 1 : 0) - 2;
       }
       const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
-      int bs = static_cast<int>(floor(pos + 0.5)) - 1;
+      // fc2vtx-1103: TIE-SAFE stencil choice.  At a panel END face (ang = +-pi/4, the
+      // along-staggered component) the map shifts by exactly the normal offset, so at a
+      // ghost cell centre pos is a HALF-INTEGER mathematically, and round(pos) went either
+      // way with the last bit of pos -- which depends on the block's own coordinates.
+      // That picked different 3-point stencils in different layouts (1x1 vs 4x4: 4e-4 in
+      // x2f(ks-2,js) / x3f(ks,js-2) at 12 cube vertices).  cs_seam::SeamRound (cs_seam_round.hpp) breaks
+      // the tie the same way in every layout; any pos not within 1e-9 of a tie is unchanged.
+      int bs = cs_seam::SeamRound(pos) - 1;
       bs = (bs < blo) ? blo : ((bs > bhi) ? bhi : bs);
       const Real u = pos - static_cast<Real>(bs + 1);
       stnc_(m,kd,sidx,kk,jj,0) = static_cast<Real>(bs);
@@ -271,7 +279,7 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
           if (ib_ > 0) {blx -= ngx_;}
           if (ib_ < nbp_ - 1) {bhx += ngx_;}
         }
-        int bx = static_cast<int>(floor(pos + 0.5)) - 1;
+        int bx = cs_seam::SeamRound(pos) - 1;   // tie-safe, as bs
         bx = (bx < blx) ? blx : ((bx > bhx) ? bhx : bx);
         const Real ux = pos - static_cast<Real>(bx + 1);
         stnx_(m,kd,sidx,kk,jj,0) = static_cast<Real>(bx);
@@ -990,14 +998,14 @@ struct FCSeamPack {
   }
   KOKKOS_FORCEINLINE_FUNCTION
   int fc3_cwin(const Fc3Geo &g, const Real xabs) const {   // first of 3 along cells
-    int c0 = static_cast<int>(floor(xabs - 0.5)) - 1;
+    int c0 = cs_seam::SeamFloor(xabs - 0.5) - 1;
     c0 = (c0 < g.clo) ? g.clo : ((c0 > g.chi) ? g.chi : c0);
     c0 = (c0 < g.alo) ? g.alo : ((c0 > g.ahi - 2) ? g.ahi - 2 : c0);
     return c0;
   }
   KOKKOS_FORCEINLINE_FUNCTION
   int fc3_fwin(const Fc3Geo &g, const Real xabs) const {   // first of 4 along faces
-    int w = static_cast<int>(floor(xabs + 0.5)) - 2;
+    int w = cs_seam::SeamRound(xabs) - 2;
     w = (w < g.flo) ? g.flo : ((w > g.fhi) ? g.fhi : w);
     w = (w < g.alo) ? g.alo : ((w > g.ahi - 2) ? g.ahi - 2 : w);
     return w;
