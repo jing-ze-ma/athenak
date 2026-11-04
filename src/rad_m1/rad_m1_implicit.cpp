@@ -14181,6 +14181,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool lbath = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
     const bool lbhr = impl_lbath_hr;   // linhao-prod-1104 halfrange (rad_m1.hpp)
     const Real lhmu = lbath_mu1, lheg = lbath_heg, lhfg = lbath_hfg;
+    const int lhdm = lbath_dmode; const Real lhal = lbath_alpha;
     auto lgr_ = lbath_g;
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
@@ -14611,7 +14612,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           // upwind with half-range intensities, F = A - B E_is (rad_m1.hpp)
           const Real eg1 = lgr_(m,0,k,j), ag1 = lgr_(m,5,k,j);
           const Real fis = 0.5*(f0n_(m,k,j,is) + f0n_(m,k,j,is+1));
-          const Real hb = 0.5*cl*lhmu;
+          const Real tauc = lhal*0.5*(lgr_(m,2,k,j) + iw_(m,M1_IW_KT,k,j,i))
+                            *(cx1v(m,i) - cx1v(m,i-1));
+          const Real hb = 0.5*cl*lhmu*M1LbathDiss(lhdm, tauc);
           const Real ha = hb*lheg + 0.5*(lhfg + fis);
           bb += num*cr*hb;
           d_[0] += num*cr*hb;
@@ -15208,6 +15211,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool lbathf = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
     const bool lbhrf = impl_lbath_hr;   // linhao-prod-1104 halfrange
     const Real lhmuf = lbath_mu1, lhegf = lbath_heg, lhfgf = lbath_hfg;
+    const int lhdmf = lbath_dmode; const Real lhalf = lbath_alpha;
     auto lgf_ = lbath_g;
     auto lff_ = lbath_f;
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
@@ -15257,8 +15261,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real fn = th*(f0n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*od);
         if (lbhrf) {
           // linhao-prod-1104 halfrange: the flux the row was assembled with
-          fn = 0.5*(cl*lhmuf*(lhegf - iw_(m,M1_IW_EP,k,j,ip)) + lhfgf
-                    + 0.5*(f0n_(m,k,j,ip) + f0n_(m,k,j,ip+1)));
+          const Real tauc = lhalf*0.5*(lgf_(m,2,k,j) + iw_(m,M1_IW_KT,k,j,ip))
+                            *(cx1v(m,ip) - cx1v(m,im));
+          fn = 0.5*(cl*lhmuf*M1LbathDiss(lhdmf, tauc)*(lhegf - iw_(m,M1_IW_EP,k,j,ip))
+                    + lhfgf + 0.5*(f0n_(m,k,j,ip) + f0n_(m,k,j,ip+1)));
         } else if (aphll) {
           Real al = ifw_(m,M1_IFW_AL,k,j,i);
           Real gh = ifw_(m,M1_IFW_HCL,k,j,i)*eg1

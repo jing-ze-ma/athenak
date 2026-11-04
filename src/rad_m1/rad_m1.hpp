@@ -697,6 +697,11 @@ class RadiationM1 {
   // vet_bc_inner rule.
   bool impl_lbath_hr = false;
   Real lbath_mu1 = 0.5, lbath_heg = 0.0, lbath_hfg = 0.0;
+  // the dissipative (E-jump) part of the face flux is scaled by s(tau_c) as in a modified-HLLE
+  // DO flux (Jiang 2014/2021): lbath_dmode 0 upwind s = 1, 1 s = (1 - e^-x)/x with x = tau_c,
+  // 2 with x = tau_c^2/2; tau_c = lbath_alpha kappa_T dr_g (ghost-1 to first cell)
+  int lbath_dmode = 2;
+  Real lbath_alpha = 1.0;
   Real vgd_lhx_ie = -1.0;
   // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
   // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror

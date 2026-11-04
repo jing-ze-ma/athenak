@@ -225,6 +225,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("lbath_heg", lbath_heg);
   v.value("lbath_hfg", lbath_hfg);
   v.value("vgd_lhx_ie", vgd_lhx_ie);
+  v.value("lbath_dmode", lbath_dmode);
+  v.value("lbath_alpha", lbath_alpha);
   v.value("ibm_n", ibm_n);
   v.value("ibm_nr", ibm_nr);
   v.value("ibm_ray", ibm_ray);

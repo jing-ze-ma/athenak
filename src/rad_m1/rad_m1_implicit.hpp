@@ -997,6 +997,14 @@ void M1GhostBathAB(const IW &iw, const FN &f0n, const CV &x1v, const CF &x1f,
           - ch*dt*iw(m,M1_IW_V1,k,j,is)*iw(m,M1_IW_G0,k,j,is));
 }
 
+//! linhao-prod-1104: the modified-HLLE dissipation factor of the halfrange inner face
+KOKKOS_INLINE_FUNCTION
+Real M1LbathDiss(const int mode, const Real tau) {
+  if (mode == 0) return 1.0;
+  const Real x = (mode == 1) ? tau : 0.5*tau*tau;
+  return (x > 1.0e-3) ? (1.0 - exp(-x))/x : (1.0 - 0.5*x);
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn M1FaceAvg
 //! \brief <rad_m1>/implicit_face_weight: the x1 face value of a cell quantity from the

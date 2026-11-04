@@ -2777,6 +2777,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                              0.5063576644955016);
           const Real heg = lb.h_view(0,0,2), hfg = lb.h_view(0,0,3);
           pm1->impl_lbath_hr = true;
+          // the E-jump (dissipative) part of his DO face flux: modified HLLE (Jiang 2014/2021),
+          // s = (1 - e^-x)/x, x = tau2: (alpha tau_c)^2/2 (default; the Athena++ form as we
+          // read it) | tau: alpha tau_c | upwind: s = 1 (pure upwind, unstable at tau_c ~ 1e5)
+          const std::string dm = pin->GetOrAddString("problem","he_bc_linhao_diss","tau2");
+          if (dm != "upwind" && dm != "tau" && dm != "tau2") {
+            HsFatal("problem/he_bc_linhao_diss must be upwind, tau or tau2", __LINE__);
+          }
+          pm1->lbath_dmode = (dm == "upwind") ? 0 : ((dm == "tau") ? 1 : 2);
+          pm1->lbath_alpha = pin->GetOrAddReal("problem","he_bc_linhao_alpha",1.0);
           pm1->lbath_mu1 = mu1;
           pm1->lbath_heg = heg;
           pm1->lbath_hfg = hfg;
