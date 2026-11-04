@@ -22,6 +22,7 @@
 #include "coordinates/cell_locations.hpp"
 #include "coordinates/cubed_sphere.hpp"
 #include "bvals.hpp"
+#include "bvals/cs_seam_round.hpp"
 
 //----------------------------------------------------------------------------------------
 // BValCC constructor:
@@ -548,7 +549,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             // The stencil reads the array directly, not the buffer, so any active cell is
             // available.  bvals_fc.cpp says the same thing about its own stencil table.
             const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
-            int b = static_cast<int>(floor(pos + 0.5)) - 1;
+            int b = cs_seam::SeamRound(pos) - 1;   // fc2vtx-1103: tie-safe
             b = (b < blo) ? blo : ((b > bhi) ? bhi : b);
             const Real u = pos - static_cast<Real>(b + 1);
             cs_interp = (u >= -1.0) && (u <= 1.0);
