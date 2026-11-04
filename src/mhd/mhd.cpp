@@ -873,6 +873,35 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
 
+    // kriel-1103 <mhd>/uct_corner_recon = plm (default, bitwise) | match, read only when
+    // named: match = the UCT corner reconstructions along the face (staggered B_q, the
+    // half-cell change of v.n_p; mhd_corner_e.cpp UctE3M/E1M/E2M) use <mhd>/reconstruct
+    // (ppm4 | ppmx | wenoz) instead of PLM.  emf_scheme = uct | uct_hlld, Cartesian only.
+    if (pin->DoesParameterExist("mhd","uct_corner_recon")) {
+      const std::string ucr = pin->GetString("mhd","uct_corner_recon");
+      if (ucr == "match") {
+        if (!(emf_uct || emf_uct_hlld) || pmy_pack->pmesh->use_cubed_sphere ||
+            pmy_pack->pmesh->use_spherical_polar) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<mhd>/uct_corner_recon = match needs emf_scheme = uct"
+                    << " | uct_hlld on a Cartesian mesh" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (recon_method == ReconstructionMethod::ppm4) {
+          uct_corner_rec = 1;
+        } else if (recon_method == ReconstructionMethod::ppmx) {
+          uct_corner_rec = 2;
+        } else if (recon_method == ReconstructionMethod::wenoz) {
+          uct_corner_rec = 3;
+        }   // plm / dc: the PLM corner (0)
+      } else if (ucr != "plm") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/uct_corner_recon = '" << ucr << "' (plm | match)"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+
     // select RADIAL (x1) reconstruction on the cubed sphere / spherical polar (default
     // PLM, i.e. today's GridPiecewiseLinearX1, bitwise unchanged). `reconstruct` above
     // never reaches the x1 sweep on those two grids -- see the note on str_r1_ in
