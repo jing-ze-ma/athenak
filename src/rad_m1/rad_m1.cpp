@@ -1218,6 +1218,29 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // accpolar-1103 (read only when named, default false = bitwise): the band keyed on
     // the global cell + the cell-window clamp (layout-independent sweep; sph2.inc)
+    // prod1103d default (USER 11-03): vet_gd_band_global = true on a FRESH spherical-polar
+    // FULL-SPHERE start with vet_gd on (polar boundaries at both poles, x3 periodic over
+    // 2 pi; recipe::NewDefaults) when the key is not named; recorded for restarts; a
+    // restart whose input lacks the key keeps false (bitwise); an explicit key wins.
+    {
+      Mesh *pm = ppack->pmesh;
+      const bool fullsph = pm->use_spherical_polar && pm->use_polar_boundary &&
+      pin->GetOrAddString("mesh", "ix2_bc", "") == "polar" &&
+      pin->GetOrAddString("mesh", "ox2_bc", "") == "polar" &&
+      pin->GetOrAddString("mesh", "ix3_bc", "") == "periodic" &&
+      std::abs(pm->mesh_size.x3max - pm->mesh_size.x3min - 2.0*M_PI) < 1.0e-8;
+      if (vgd_on && fullsph && !pin->DoesParameterExist("rad_m1","vet_gd_band_global")) {
+        if (recipe::NewDefaults(pin)) {
+          pin->GetOrAddBoolean("rad_m1","vet_gd_band_global",true);
+          recipe::Log("<rad_m1>/vet_gd_band_global = true (default with vet_gd on a fresh sp "
+                      "full-sphere start)");
+        } else {
+          recipe::Log("<rad_m1>/vet_gd_band_global = false (" + std::string(
+              recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+              "restart input has no key") + ": the old default)");
+        }
+      }
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_global")) {
       vgd_gband = pin->GetBoolean("rad_m1","vet_gd_band_global");
     }

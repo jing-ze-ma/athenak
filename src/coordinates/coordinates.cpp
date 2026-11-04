@@ -5,6 +5,7 @@
 //========================================================================================
 //! \file coordinates.cpp
 //! \brief
+#include <cmath>
 #include <iostream> // cout
 #include <string>
 
@@ -20,6 +21,7 @@
 #include "gnomonic_raisevel_mhd.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
+#include "utils/recipe.hpp"
 
 //----------------------------------------------------------------------------------------
 // constructor, initializes coordinates data
@@ -118,6 +120,29 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     CoordGnomonicEquiangle();
   }
   if (pmy_pack->pmesh->use_spherical_polar) {
+    // prod1103d default (USER 11-03): sp_phi_global = true on a FRESH spherical-polar
+    // FULL-SPHERE start (polar boundaries at both poles, x3 periodic over 2 pi;
+    // recipe::NewDefaults) when the key is not named: the phi faces/centres come from the
+    // global index, so the IC is MeshBlock-layout exact.  Recorded for restarts; a
+    // restart whose input lacks the key keeps false (bitwise); an explicit key wins.
+    {
+      Mesh *pm = pmy_pack->pmesh;
+      const bool fullsph = pm->use_spherical_polar && pm->use_polar_boundary &&
+      pin->GetOrAddString("mesh", "ix2_bc", "") == "polar" &&
+      pin->GetOrAddString("mesh", "ox2_bc", "") == "polar" &&
+      pin->GetOrAddString("mesh", "ix3_bc", "") == "periodic" &&
+      std::abs(pm->mesh_size.x3max - pm->mesh_size.x3min - 2.0*M_PI) < 1.0e-8;
+      if (fullsph && !pin->DoesParameterExist("mesh", "sp_phi_global")) {
+        if (recipe::NewDefaults(pin)) {
+          pin->GetOrAddBoolean("mesh", "sp_phi_global", true);
+          recipe::Log("<mesh>/sp_phi_global = true (default on a fresh sp full-sphere start)");
+        } else {
+          recipe::Log("<mesh>/sp_phi_global = false (" + std::string(
+              recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+              "restart input has no key") + ": the old default)");
+        }
+      }
+    }
     sp_phi_global = pin->DoesParameterExist("mesh", "sp_phi_global") &&
                     pin->GetBoolean("mesh", "sp_phi_global");
     CoordSphericalPolar();
