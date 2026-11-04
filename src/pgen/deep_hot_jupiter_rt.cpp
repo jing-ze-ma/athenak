@@ -2789,21 +2789,104 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // the cubed-sphere tangent-pair trig, for the orthonormal-frame bcc below
     auto &ccell_ic_ = pmbp->pcoord->cos_cell;
     auto &scell_ic_ = pmbp->pcoord->sin_cell;
+    // alfven100-1104: change the field strength ON A RESTART (one-shot, opt-in; both keys
+    // read only when named, so a run without them is untouched):
+    //   problem/b_restart_scale = f        b0 (every face, ghosts incl.) and bcc0 times f,
+    //                                      E += (f^2 - 1) B^2/2 per cell (ghosts incl.)
+    //   problem/b_restart_dipole_gauss = B the field REPLACED by the fresh-start A_phi
+    //                                      dipole with bbot_gauss = B (div B = 0 to round-off
+    //                                      by construction), E -= B_old^2/2, E += B_new^2/2
+    // After applying, problem/b_restart_done = true is recorded, so the restart files this
+    // run writes do not apply it again even when the key is passed on every link.
+    bool b_reinit = false, b_rescale = false;
+    Real b_reinit_bbot = 0.0, b_scale_f = 1.0;
+    if (restart && pmbp->pmhd != nullptr) {
+      const bool hs = pin->DoesParameterExist("problem","b_restart_scale");
+      const bool hd = pin->DoesParameterExist("problem","b_restart_dipole_gauss");
+      const bool done = pin->DoesParameterExist("problem","b_restart_done") &&
+                        pin->GetBoolean("problem","b_restart_done");
+      if (hs && hd) {
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/b_restart_scale and "
+                  << "b_restart_dipole_gauss together; set one" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if ((hs || hd) && done) {
+        if (global_variable::my_rank == 0) {
+          std::cout << "deep_hot_jupiter_rt: problem/b_restart_* ignored: "
+                    << "b_restart_done = true (already applied by an earlier segment)"
+                    << std::endl;
+        }
+      } else if (hs) {
+        b_rescale = true;
+        b_scale_f = pin->GetReal("problem","b_restart_scale");
+      } else if (hd) {
+        b_reinit = true;
+        Real punit = 1.0;
+        if (pmbp->punit != nullptr) punit = pmbp->punit->pressure_cgs();
+        b_reinit_bbot = pin->GetReal("problem","b_restart_dipole_gauss")
+                        /std::sqrt(4.0*M_PI*punit);
+      }
+      if (b_rescale || b_reinit) {
+        if (!use_cubed_sphere_ && !use_spherical_polar) {
+          std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/b_restart_* "
+                    << "needs the cubed sphere or spherical polar" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        pin->SetBoolean("problem","b_restart_done",true);
+      }
+    }
+    // the magnetic energy of the restored field is removed from E (every cell, ghosts
+    // incl.; bcc as ConsToPrim / the restart fill below form it) before the dipole below
+    // overwrites b0 and adds its own
+    if (b_reinit) {
+      auto &b0 = pmbp->pmhd->b0;
+      auto &ccr_ = pmbp->pcoord->cos_cell;
+      auto &scr_ = pmbp->pcoord->sin_cell;
+      const bool csr = use_cubed_sphere_;
+      par_for("pgen_b_reinit_demag", DevExeSpace(), 0, (pmbp->nmb_thispack-1),
+              0, n3m1, 0, n2m1, 0, n1m1, KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        Real lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+        Real rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+        const Real bx = lw*b0.x1f(m,k,j,i) + rw*b0.x1f(m,k,j,i+1);
+        Real by, bz;
+        if (csr) {
+          const Real cg = ccr_(m,k,j), sg = scr_(m,k,j);
+          const Real by_n = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
+          bz = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
+          by = (by_n + cg*bz)/sg;
+        } else {
+          lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+          rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+          by = lw*b0.x2f(m,k,j,i) + rw*b0.x2f(m,k,j+1,i);
+          lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+          rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+          bz = lw*b0.x3f(m,k,j,i) + rw*b0.x3f(m,k+1,j,i);
+        }
+        u0_(m,IEN,k,j,i) -= 0.5*(SQR(bx) + SQR(by) + SQR(bz));
+      });
+      if (global_variable::my_rank == 0) {
+        std::cout << "deep_hot_jupiter_rt: problem/b_restart_dipole_gauss: field REPLACED "
+                  << "by the A_phi dipole, bbot = " << b_reinit_bbot << " [code] = "
+                  << pin->GetReal("problem","b_restart_dipole_gauss") << " G at r0"
+                  << std::endl;
+      }
+    }
     // initialize magnetic fields if MHD. One-off like the initial condition above: on a
-    // restart b0/bcc0 are read from file.
-    if (!restart && pmbp->pmhd != nullptr) {
+    // restart b0/bcc0 are read from file (unless b_restart_dipole_gauss re-initialises).
+    if ((!restart || b_reinit) && pmbp->pmhd != nullptr) {
       // Base field in CODE units (Heaviside-Lorentz, p_mag = B^2/2): problem/bbot, or
       // problem/bbot_gauss converted by ReadHotJupiterBbot (pgen.cpp), which also prints
       // it in both units.  B_r = bbot cos(theta) (r0/r)^3: bbot is the polar field at r0.
       // default changed 09-30 (user), was none (fatal if absent)
-      Real bbot = hot_jupiter ? hot_jupiter_param.bbot
-                              : pin->GetOrAddReal("problem","bbot",0.0);
+      Real bbot = b_reinit ? b_reinit_bbot
+                : (hot_jupiter ? hot_jupiter_param.bbot
+                               : pin->GetOrAddReal("problem","bbot",0.0));
       // problem/remap_bfile (see below) REPLACES the seed: with the key set the dipole is
       // not applied (bbot = 0 here), so the field is the remapped one only and the
       // energy of the active cells is E_file + e_mag(remap) with no add/subtract of a
       // dipole.  Read only when named, so a run without it embeds the same input.
       const std::string remap_bfile =
-          pin->DoesParameterExist("problem","remap_bfile") ?
+          (!b_reinit && pin->DoesParameterExist("problem","remap_bfile")) ?
           pin->GetString("problem","remap_bfile") : std::string("");
       if (!remap_bfile.empty() && bbot != 0.0) {
         if (global_variable::my_rank == 0) {
@@ -3157,6 +3240,31 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           bcc0(m,IBZ,k,j,i) = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
         }
       });
+    }
+    // alfven100-1104: problem/b_restart_scale (see above): every face incl. ghosts and the
+    // far faces, bcc0 (just filled from the faces), and E += (f^2 - 1) B^2/2
+    if (b_rescale) {
+      auto &b0 = pmbp->pmhd->b0;
+      auto &bcc0 = pmbp->pmhd->bcc0;
+      const Real f = b_scale_f, f2m1 = b_scale_f*b_scale_f - 1.0;
+      par_for("pgen_b_rescale", DevExeSpace(), 0, (pmbp->nmb_thispack-1),
+              0, n3m1, 0, n2m1, 0, n1m1, KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        u0_(m,IEN,k,j,i) += f2m1*0.5*(SQR(bcc0(m,IBX,k,j,i)) + SQR(bcc0(m,IBY,k,j,i))
+                                    + SQR(bcc0(m,IBZ,k,j,i)));
+        bcc0(m,IBX,k,j,i) *= f;
+        bcc0(m,IBY,k,j,i) *= f;
+        bcc0(m,IBZ,k,j,i) *= f;
+        b0.x1f(m,k,j,i) *= f;
+        b0.x2f(m,k,j,i) *= f;
+        b0.x3f(m,k,j,i) *= f;
+        if (i == n1m1) b0.x1f(m,k,j,i+1) *= f;
+        if (j == n2m1) b0.x2f(m,k,j+1,i) *= f;
+        if (k == n3m1) b0.x3f(m,k+1,j,i) *= f;
+      });
+      if (global_variable::my_rank == 0) {
+        std::cout << "deep_hot_jupiter_rt: problem/b_restart_scale = " << f
+                  << ": every face field x f, E += (f^2-1) B^2/2" << std::endl;
+      }
     }
 
   // problem/rt_test_rho / rt_test_T / rt_test_dT / rt_test_nwave: the test initial
