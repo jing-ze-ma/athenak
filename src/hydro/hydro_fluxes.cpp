@@ -14,6 +14,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "hydro.hpp"
+#include "hydro_wball.hpp"
 #include "bvals/bvals.hpp"
 #include "hydro_mergelat.hpp"
 #include "bvals/cs_seam_states.hpp"
@@ -136,6 +137,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
   const bool use_wb_x2_ = use_wb_x2;
+  const bool wb_all_ = wb_all;   // wball-1104
+  auto wbq2_ = wbq2;
+  auto wbq3_ = wbq3;
+  auto wbw_ = wbw;
   const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
   const Real wb_rmax_ = wb_rmax;
   const Real wb_phimax_ = wb_phimax;
@@ -572,6 +577,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   //--------------------------------------------------------------------------------------
   // j-direction
 
+  if (wb_all) BuildWBCacheAll();   // wball-1104: the x2/x3 backgrounds and weights
   if (pmy_pack->pmesh->multi_d) {
     scr_size = (ScrArray2D<Real>::shmem_size(nvars, ncells1) +
                 ScrArray2D<Real>::shmem_size(nder, ncells1)) * 3;
@@ -646,7 +652,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                                   wl_jp1, wr, pq);
         } else {
             
-        if (use_wellbalance_dynamic_ && use_wb_x2_)
+        if (wb_all_) {
+          WbAllPLM(member, use_wb_rho_, 2, m, k, j, il, iu, w0_, wbq2_, wbw_, wl_jp1, wr);
+        } else if (use_wellbalance_dynamic_ && use_wb_x2_)
         {
           WbLocalPiecewiseLinearX2(member, eos_, wb_option_, use_wb_rho_,
               m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
@@ -687,6 +695,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         WbStaticPiecewiseLinearDerX2(member, m, k, j, il, iu,
                                      pwb_, pfacewb_x2f,
                                     wder_, dl_jp1, dr);
+      } else if (wb_all_) {
+            WbAllPLMDer(member, 2, m, k, j, il, iu, wder_, wbq2_, wbw_, dl_jp1, dr);
       } else if (use_wellbalance_dynamic_ && use_wb_x2_) {
             WbPiecewiseLinearDerX2(member, eos_, wb_option_,
                 m, k, j, il, iu, w0_, wder_,
@@ -963,6 +973,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
         if (use_spherical_polar) {
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, x3v_, x3f_, wl_kp1, wr);
+        } else if (wb_all_) {
+          WbAllPLM(member, use_wb_rho_, 3, m, k, j, il, iu, w0_, wbq3_, wbw_, wl_kp1, wr);
         } else {
         // Reconstruct qR[k] and qL[k+1]
         switch (recon_method_) {
@@ -996,6 +1008,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         WbStaticPiecewiseLinearDerX3(member, m, k, j, il, iu,
                                      pwb_, pfacewb_x3f,
                                     wder_, dl_kp1, dr);
+      } else if (wb_all_) {
+            WbAllPLMDer(member, 3, m, k, j, il, iu, wder_, wbq3_, wbw_, dl_kp1, dr);
       } else {
           switch (recon_method_) {
             case ReconstructionMethod::dc:

@@ -461,6 +461,51 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "' not implemented for hydro" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+      // wball-1104 <hydro>/wb_dirs = x1 (default) | all (read only when named)
+      if (pin->DoesParameterExist("hydro","wb_dirs")) {
+        const std::string wd = pin->GetString("hydro","wb_dirs");
+        if (wd.compare("all") == 0) {
+          wb_all = true;
+        } else if (wd.compare("x1") != 0) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<hydro>/wb_dirs must be x1 or all" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      }
+      if (wb_all) {
+        std::string bad = "";
+        if (!use_wb_x1) bad = "<hydro>/wb_x1 = true";
+        if (use_wb_x2) bad = "<hydro>/wb_x2 = false (the legacy x2 path)";
+        if (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar ||
+            pmy_pack->pcoord->is_general_relativistic ||
+            pmy_pack->pcoord->is_special_relativistic) {
+          bad = "a Cartesian mesh (sp / cs: later milestones)";
+        }
+        if (pmy_pack->pmesh->one_d) bad = "a 2-D or 3-D mesh";
+        if (!bad.empty()) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<hydro>/wb_dirs = all needs " << bad << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        wb_weight = pin->GetOrAddBoolean("hydro","wb_weight",true);
+        wbw_r0 = pin->GetOrAddReal("hydro","wb_w_r0",0.1);
+        wbw_r1 = pin->GetOrAddReal("hydro","wb_w_r1",0.3);
+        wbw_m0 = pin->GetOrAddReal("hydro","wb_w_m0",0.2);
+        wbw_m1 = pin->GetOrAddReal("hydro","wb_w_m1",0.5);
+        wbw_eta = pin->GetOrAddReal("hydro","wb_w_eta",1.0e-4);
+        auto &ic = pmy_pack->pmesh->mb_indcs;
+        const int c1 = ic.nx1 + 2*ic.ng;
+        const int c2 = (ic.nx2 > 1) ? (ic.nx2 + 2*ic.ng) : 1;
+        const int c3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
+        Kokkos::realloc(wbq2, nmb, 15, c3, c2, c1);
+        if (c3 > 1) Kokkos::realloc(wbq3, nmb, 15, c3, c2, c1);
+        Kokkos::realloc(wbw, nmb, 3, c3, c2, c1);
+        Kokkos::deep_copy(wbw, 1.0);
+        if (global_variable::my_rank == 0) {
+          std::cout << "hydro: wb_dirs = all (x2/x3 dynamic well balance), wb_weight = "
+                    << (wb_weight ? "true" : "false") << std::endl;
+        }
+      }
       // select well-balanced scheme direction
       if (!use_wb_x1 && !use_wb_x2) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
