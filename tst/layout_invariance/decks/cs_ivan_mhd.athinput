@@ -25,7 +25,10 @@
 # seam.  Likely cause (NOT verified): the van Leer PLM slope goes to zero at an extremum.
 # ppm4 (nghost 3) is no cure.  Its L1 is the same as plm (1.96e-4 / 4.70e-5 / 1.15e-5),
 # but its C32 Linf is 3.41e-5 ON THE SEAM ring (seam/int max ratio 1.43; Linf orders
-# 1.91 / 1.46).  Open item: an Linf gate >= 1.95 FAILS at C32 -> C64 with plm.
+# 1.91 / 1.46).
+# GATE (USER 11-03): L1 and L2 order >= 1.95 (PASS: 2.01 / 2.02 at C32 -> C64); Linf is
+# reported only, or >= 1.8 (1.82 here, off the seams at a tangential extremum: limiter
+# clipping, generic); the seam ring must be no worse than the interior (PASS).
 # AXES: x1 is RADIAL; x2 = xi and x3 = eta are the panel-tangential angles.
 
 <comment>
