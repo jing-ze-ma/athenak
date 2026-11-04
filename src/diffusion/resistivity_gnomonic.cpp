@@ -32,7 +32,12 @@
 
 #include <iostream>
 
+#include <cstdio>
+#include <cstdlib>
+#include <algorithm>
+#include <cmath>
 #include "athena.hpp"
+#include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "resistivity.hpp"
@@ -293,6 +298,55 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
     CsVertexJFix(b0, is, ie, true);
   }
   const bool v3_ = pmy_pack->pmesh->cs_vertex_3cell;
+
+  // fcorder3-1103 DIAGNOSTIC (env CS_RESJ_STAT=<every>, off unless set; no data change):
+  // max |J.n| of the pass-1 current on the panel-edge (seam) edges vs >= 2 cells inside,
+  // radial edges and tangential (x2/x3) edges, printed every <every>-th call by rank 0
+  {static const char *rjs_ = std::getenv("CS_RESJ_STAT");
+   static int rjcall_ = 0;
+   if (rjs_ != nullptr && (rjcall_++ % std::max(1, std::atoi(rjs_))) == 0) {
+    const int nx2_ = je - js + 1, nx3_ = ke - ks + 1, ni_ = ie - is + 1;
+    const int ntot_ = (nmb1 + 1)*(nx3_ + 1)*(nx2_ + 1)*ni_;
+    auto &msd = pmy_pack->pmb->mb_size;
+    Real mx[4];
+    for (int kd=0; kd<4; ++kd) {
+      Real r_ = 0.0;
+      Kokkos::parallel_reduce("res_cs_jstat", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot_),
+      KOKKOS_LAMBDA(const int t, Real &rr) {
+        const int i = is + t%ni_;
+        const int j = js + (t/ni_)%(nx2_ + 1);
+        const int k = ks + (t/(ni_*(nx2_ + 1)))%(nx3_ + 1);
+        const int m = t/(ni_*(nx2_ + 1)*(nx3_ + 1));
+        const auto z = msd.d_view(m);
+        const Real h2 = (z.x2max - z.x2min)/nx2_, h3 = (z.x3max - z.x3min)/nx3_;
+        // distance (faces) of face j / k from the panel edge
+        const Real xf = z.x2min + (j - js)*h2, ef = z.x3min + (k - ks)*h3;
+        const int dj = static_cast<int>(floor((1.0 - fabs(xf))/h2 + 0.5));
+        const int dk = static_cast<int>(floor((1.0 - fabs(ef))/h3 + 0.5));
+        const bool rad = (kd < 2);
+        const bool seam = rad ? (dj == 0 || dk == 0) : (dj == 0 || dk == 0);
+        const bool intr = (dj >= 2 && dk >= 2);
+        if ((kd % 2 == 0) ? !seam : !intr) return;
+        Real v = 0.0;
+        if (rad) {
+          v = fabs(jn1(m,k,j,i));
+        } else {
+          if (dj == 0 || intr) v = fmax(v, (k <= ke) ? fabs(jn3(m,k,j,i)) : 0.0);
+          if (dk == 0 || intr) v = fmax(v, (j <= je) ? fabs(jn2(m,k,j,i)) : 0.0);
+        }
+        rr = fmax(rr, v);
+      }, Kokkos::Max<Real>(r_));
+      mx[kd] = r_;
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, mx, 4, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("### CS_RESJ_STAT call %d |J| max: radial seam %.4e interior %.4e |"
+                  " tangential seam %.4e interior %.4e\n", rjcall_ - 1, mx[0], mx[1],
+                  mx[2], mx[3]);
+    }
+  }}
 
   // ---- pass 2: rotate into the edge (covariant) frame and multiply by eta -------------
   // J.e_xi = (J.nhat_xi + c J.nhat_eta)/s and likewise for eta, the same transform

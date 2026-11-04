@@ -8,7 +8,9 @@
 //! Mesh variables.
 //! Prolongation of FC variables  occurs in ProlongateFC() function called from task list
 
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -745,6 +747,21 @@ struct FCSeamPack {
   bool fc3_ = false;
   DualArray1D<RegionSize>::t_dev mbsz;
   bool fc3tab_ = false;            // evaluate from the coefficient table
+  // fcorder3-1103 DIAGNOSTIC (env FC3_OVS): ghost-face OVERSHOOT beyond the range its own
+  // stencil data allows (order 2: the 3 resample nodes; order 3: per source component,
+  // weight sum x [min, max] of the faces read).  ovsv: max abs, max relative to the
+  // stencil's max |face|, count relative > 1e-2, samples
+  bool ovs_ = false;
+  DvceArray1D<Real> ovsv;
+  KOKKOS_INLINE_FUNCTION
+  void ovs_note(const Real val, const Real lo, const Real hi, const Real sc) const {
+    const Real o = fmax(0.0, fmax(val - hi, lo - val));
+    Kokkos::atomic_max(&ovsv(0), o);
+    const Real r = o/fmax(sc, 1.0e-300);
+    Kokkos::atomic_max(&ovsv(1), r);
+    if (r > 1.0e-2) Kokkos::atomic_add(&ovsv(2), 1.0);
+    Kokkos::atomic_add(&ovsv(3), 1.0);
+  }
   DvceArray1D<int> t_gbase, t_rq, t_cnt;
   DvceArray2D<int> t_code;
   DvceArray2D<Real> t_w;
@@ -1241,6 +1258,16 @@ struct FCSeamPack {
     const int ix = s.ndat*s.v + i-s.il + ni*(s.sj*(j-s.jl) + s.sk*(k-s.kl));
     // r1mspeed-1102: never srcval here (FCSeamPre did it): small, stack-free kernel
     const Real val = (u.pnt == 0) ? pre(u.pvoff + idx) : seamval_pre(a,kk,jj,i);
+    if (ovs_ && u.pnt != 0) {   // fcorder3-1103 diagnostic: the order-2 resample nodes
+      const int sidx_ = (a.cs_seam == 2) ? 0 : 1;
+      const int bs = static_cast<int>(cs_stbl(a.m,a.cs_skind,sidx_,kk,jj,0));
+      const int nn = (a.cs_seam == 2) ? jj : kk;
+      const int64_t base = a.pvoff + (static_cast<int64_t>(nn - a.pnlo)*a.pnt
+                                      + (bs - a.ptlo))*a.pni + (i - a.pil);
+      const Real s0 = pre(base), s1 = pre(base + a.pni), s2 = pre(base + 2*a.pni);
+      ovs_note(val, fmin(s0, fmin(s1, s2)), fmax(s0, fmax(s1, s2)),
+               fmax(fabs(s0), fmax(fabs(s1), fabs(s2))));
+    }
     if (s.local) {
       rbuf(s.dn).vars(s.dm, ix) = val;
     } else {
@@ -1309,6 +1336,25 @@ struct FCSeamPack {
           sum += t_w(row,q)*v;
         }
         pre(u.pvoff + idx) = sum;
+        if (ovs_) {   // fcorder3-1103 diagnostic: per-component weight sum x data range
+          Real W[3] = {0.0, 0.0, 0.0}, vl[3] = {1e300, 1e300, 1e300};
+          Real vh[3] = {-1e300, -1e300, -1e300}, sc = 0.0;
+          for (int q=0; q<nc; ++q) {
+            const int c = t_code(row,q);
+            const int ar = c >> 26, kq = (c >> 13) & 8191, jq = c & 8191;
+            const Real v = (ar == 0) ? b.x1f(m,kq,jq,i)
+                         : ((ar == 1) ? b.x2f(m,kq,jq,i) : b.x3f(m,kq,jq,i));
+            W[ar] += t_w(row,q); vl[ar] = fmin(vl[ar], v); vh[ar] = fmax(vh[ar], v);
+            sc = fmax(sc, fabs(v));
+          }
+          Real lo = 0.0, hi = 0.0;
+          for (int ar=0; ar<3; ++ar) {
+            if (vh[ar] < vl[ar]) continue;
+            lo += (W[ar] >= 0.0) ? W[ar]*vl[ar] : W[ar]*vh[ar];
+            hi += (W[ar] >= 0.0) ? W[ar]*vh[ar] : W[ar]*vl[ar];
+          }
+          ovs_note(sum, lo, hi, sc);
+        }
       } else {
         pre(u.pvoff + idx) = srcval3(a, s.cs_psrc, s.cs_pdst, s.ak*k + s.bk,
                                      s.aj*j + s.bj, i);
@@ -1393,8 +1439,14 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
   // ghosts to depth ng, which a depth-1 pack (<mhd>/rkg_halo_d1) leaves stale: full depth
   // fcorder3-1103: order 3's along stencils read the along-seam ghosts to depth ng in the
   // extended pass, so it too needs the full-depth pack there
+  // (only where a panel side is split between blocks: with one block per panel side no
+  // stencil reaches an along-seam ghost)
   const bool fc3_ = (pmy_pack->pmesh->cs_seam_fc_order == 3);
-  const int d = (pack_depth == 1 && !(cs_blockend_ext_ && (cs_ext_q_ || fc3_))) ? 1 : 0;
+  const auto &pmi_ = pmy_pack->pmesh->mesh_indcs;
+  const auto &mbi_ = pmy_pack->pmesh->mb_indcs;
+  const bool fc3split_ = fc3_ && (pmi_.nx2 > mbi_.nx2 || pmi_.nx3 > mbi_.nx3);
+  const int d = (pack_depth == 1 &&
+                 !(cs_blockend_ext_ && (cs_ext_q_ || fc3split_))) ? 1 : 0;
   last_pack_depth_ = pack_depth;   // layoutbug-1103
   const int np = fc_np[d], ns = fc_ns[d], nr = fc_npre[d];
   if (np > 0) {
@@ -1405,12 +1457,17 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
   }
   // layoutbug-1103: the second pass of <mesh>/cs_seam_blockend = extend
   auto stbl_ = cs_ext_pass_ ? cs_seam_stnc_x : cs_seam_stnc;
+  // fcorder3-1103 DIAGNOSTIC env FC3_OVS=<every>: ghost-face overshoot, printed by rank 0
+  static const char *ovse_ = std::getenv("FC3_OVS");
+  static DvceArray1D<Real> *ovsv_ = nullptr;
+  if (ovse_ != nullptr && ovsv_ == nullptr) ovsv_ = new DvceArray1D<Real>("fc3_ovs", 4);
   if (nr > 0) {
     FCSeamPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub[d], fc_cs[d], fc_cb[d], cs_seam_geom,
                  stbl_, fc_preval, np + ns, pmy_pack->pmesh->mb_indcs,
                  cs_shear_sgn, cs_nolim_);
     f.ext_ = cs_ext_pass_; f.ext_jk = cs_ext_jk;
     f.useq_ = cs_ext_pass_ && cs_ext_q_; f.q = cs_ext_q;   // seamexact-1103
+    if (ovse_ != nullptr) {f.ovs_ = true; f.ovsv = *ovsv_;}
     if (fc3_) {   // fcorder3-1103
       f.fc3_ = true; f.mbsz = pmy_pack->pmb->mb_size.d_view;
       // the coefficient table of this pass (built once; env FC3_DIRECT = the direct sum)
@@ -1469,9 +1526,26 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
                  cs_nolim_);
     f.ext_ = cs_ext_pass_; f.ext_jk = cs_ext_jk;
     f.useq_ = cs_ext_pass_ && cs_ext_q_; f.q = cs_ext_q;   // seamexact-1103
+    if (ovse_ != nullptr) {f.ovs_ = true; f.ovsv = *ovsv_;}
     Kokkos::parallel_for("SendBuffFCseam", Kokkos::Experimental::require(
         Kokkos::RangePolicy<>(DevExeSpace(), 0, ns*FC_PACK_CHUNK),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
+  }
+  if (ovse_ != nullptr) {
+    static int ocall = 0;
+    if ((++ocall % std::max(1, std::atoi(ovse_))) == 0) {
+      auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), *ovsv_);
+      Real v[4] = {h(0), h(1), h(2), h(3)};
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, v, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, v + 2, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+      if (global_variable::my_rank == 0) {
+        std::printf("### FC3_OVS order %d pack %d (cumulative): max abs %.4e max rel %.4e"
+                    " frac rel>1e-2 %.3e of %.0f samples\n", pmy_pack->pmesh->cs_seam_fc_order,
+                    ocall, v[0], v[1], v[2]/fmax(v[3], 1.0), v[3]);
+      }
+    }
   }
 }
 
