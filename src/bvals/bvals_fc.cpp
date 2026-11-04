@@ -22,6 +22,7 @@
 #include "coordinates/cell_locations.hpp"
 #include "coordinates/cubed_sphere.hpp"
 #include "bvals.hpp"
+#include "bvals/cs_seam_fc3.hpp"
 
 //----------------------------------------------------------------------------------------
 // BValFC constructor:
@@ -87,6 +88,15 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
   // ran it off the end.  One entry per face index of the block array covers everything.
   const int nk2 = indcs.nx2 + 2*indcs.ng + 1;
   const int nk3 = indcs.nx3 + 2*indcs.ng + 1;
+  // fcorder3-1103: <mesh>/cs_seam_fc_order = 3 needs one level, ng >= 2 and >= 4 cells
+  // per block side (3 cells / 4 faces next to the seam, 3-4 along it)
+  if (pmy_pack->pmesh->cs_seam_fc_order == 3 &&
+      (ml_ || indcs.ng < 2 || indcs.nx2 < 4 || indcs.nx3 < 4)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<mesh>/cs_seam_fc_order = 3 needs a single-level cubed sphere, "
+              << "nghost >= 2 and MeshBlocks of >= 4 cells in x2 and x3" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
 
   // Which destination panels does each block actually send to?  At most four (the four
   // edge neighbours of a panel; the cube-vertex diagonals are skipped on both sides), so
@@ -144,6 +154,9 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
     // interpolants come from the owning same-panel neighbour (CsSeamExtPartner).
     auto &pmi = pmy_pack->pmesh->mesh_indcs;
     cs_ext_q_ = (pmi.nx2 > 2*indcs.nx2) || (pmi.nx3 > 2*indcs.nx3);
+    // fcorder3-1103: order 3 keeps every stencil within ng of the sample (srcval3), so
+    // it needs no partner interpolants from the neighbour
+    if (pmy_pack->pmesh->cs_seam_fc_order == 3) cs_ext_q_ = false;
     if (cs_ext_q_) {
       Kokkos::realloc(cs_ext_q, nmb, 4, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng,
                       indcs.nx1 + 2*indcs.ng);
@@ -328,6 +341,7 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
     s.aj = 1; s.bj = 0; s.ak = 1; s.bk = 0; s.sj = 1; s.sk = 0; s.signvar = 1;
     s.cs_xform = 0; s.cs_coar = 0; s.cs_slotidx = 0; s.cs_gkind = 0; s.cs_skind = 0;
     s.cs_seam = 0;
+    s.cs_psrc = mbpanel.d_view(m); s.cs_pdst = s.cs_psrc;
     if (nghbr.d_view(m,n).gid >= 0 &&
       !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
       int il, iu, jl, ju, kl, ku, ndat;
@@ -457,6 +471,7 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
         s.cs_xform = cs_xform ? 1 : 0; s.cs_coar = cs_coar ? 1 : 0;
         s.cs_slotidx = cs_slotidx; s.cs_gkind = cs_gkind; s.cs_skind = cs_skind;
         s.cs_seam = cs_seam;
+        if (do_cs) s.cs_pdst = nghbr.d_view(m,n).panel;
       } else {
         s.mode = (nghbr.d_view(m,n).lev >= mblev.d_view(m)) ? 0 : 1;
       }
@@ -505,6 +520,8 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
   // r1mspeed-1102: the two walk sets (all layers / depth 1) with the seam srcval boxes
   {
     const int js_ = cs_indcs.js, je_ = cs_indcs.je, ks_ = cs_indcs.ks, ke_ = cs_indcs.ke;
+    // fcorder3-1103: order 3 evaluates every seam sample itself (srcval3, no resample box)
+    const bool fc3_ = (pmy_pack->pmesh->cs_seam_fc_order == 3);
     int64_t npv_max = 0;
     for (int d=0; d<2; ++d) {
       std::vector<SubSegFC> sub;
@@ -549,7 +566,7 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
             u.kl = (g.ak == 1) ? kt : (g.bk - kt); u.nk = 1;
           }
         }
-        if (g.mode == 2 && g.cs_seam != 0 && !g.cs_coar) {
+        if (g.mode == 2 && g.cs_seam != 0 && !g.cs_coar && !fc3_) {
           // the samples' resample reads srcval at (bs..bs+2) along the seam, bs within
           // [lo, hi-2] (BuildCubedSphereSeamTables), at the sample's own normal index
           u.pil = u.il; u.pni = u.ni;
@@ -684,6 +701,7 @@ struct SeamArgs {
 
 struct FCSeamPre {};   // r1mspeed-1102: tag of the srcval precompute pass
 struct FCSeamQ {};     // seamexact-1103: tag of the partner-interpolant pass
+struct FCSeamPre3 {};  // fcorder3-1103: tag of the order-3 precompute pass
 
 struct FCSeamPack {
   DvceFaceFld4D<Real> b, cb;
@@ -706,6 +724,9 @@ struct FCSeamPack {
   // evaluating them on this block's own faces (one-sided at the outermost ghost)
   bool useq_ = false;
   DvceArray5D<Real> q;
+  // fcorder3-1103 <mesh>/cs_seam_fc_order = 3: srcval3 (block sizes for the angles)
+  bool fc3_ = false;
+  DualArray1D<RegionSize>::t_dev mbsz;
 
   FCSeamPack(DvceFaceFld4D<Real> &b_, DvceFaceFld4D<Real> &cb_,
              DvceArray1D<MeshBufferDv> sb_, DvceArray1D<MeshBufferDv> rb_,
@@ -881,6 +902,220 @@ struct FCSeamPack {
     cubed_sphere::ApplyFieldXform(t, bxi, bet, oxi, oet);
     return (a.v == 1) ? oxi : oet;
   }
+  //--------------------------------------------------------------------------------------
+  // fcorder3-1103 <mesh>/cs_seam_fc_order = 3: the destination ghost face fed by the
+  // source sample (kk,jj,i) of component vv, as the THIRD-ORDER average over the
+  // receiver's own ghost face (see cs_seam_fc3.hpp for the why).  All in the SOURCE chart:
+  //   n = seam-normal angle, a = along-seam angle, u = offset from the seam in normal
+  //   cells (the two charts share it exactly: the ghost layers ARE the source layers);
+  //   the receiver's along angle at the sample's along index equals the source's grid
+  //   angle there (the grids coincide on the seam; reversal is in the index map), and a
+  //   receiver point at (u, a~) is the source point a = atan(tan a~ tan|n|) -- the
+  //   along-seam resample's own map (BuildCubedSphereSeamTables).
+  // The receiver's face is one of three kinds, fixed by vv's staggering:
+  //   T1 vv staggered across the seam: the face at normal face u, along cell [a~0,a~1];
+  //   T2 vv staggered along it: the face at along face a~, normal cell [u0,u0+1];
+  //   T3 vv = 0 (x1f): the radial face over the cell [u0,u0+1] x [a~0,a~1].
+  // 2-point Gauss per extended direction of B.n_dst at points rebuilt from the source's
+  // face integrals (PtN: the across-staggered component, PtA: the along-staggered one,
+  // PtR: x1f), weighted by the receiver face's arc / solid-angle density.
+  // STENCILS (layout independence under cs_seam_blockend = extend): the along window is
+  // centred on the target but clamped to within ng cells/faces of the SAMPLE's own along
+  // index (a sample is never more than ng outside its block's active range, so with the
+  // extended pass's bounds this never binds at an interior block end and every layout
+  // picks the same window), then to the source bounds (binding only at a panel end, or
+  // at a block end in the clamp mode).  Across the seam: the 4 faces / 3 cells next to it.
+  struct Fc3Geo {
+    int m, i, aeta, low, dir, nseam, ns, ne, as0, alo, ahi, clo, chi, flo, fhi, nxa;
+    Real dn, da, a0, amin, amax;
+  };
+  KOKKOS_FORCEINLINE_FUNCTION
+  Real fc3_aface(const Fc3Geo &g, const int f) const {
+    return 0.25*M_PI*LeftEdgeX(f - g.as0, g.nxa, g.amin, g.amax);
+  }
+  // normal cell m (0..2 from the seam) -> block index
+  KOKKOS_FORCEINLINE_FUNCTION
+  int fc3_ncell(const Fc3Geo &g, const int mc) const {
+    return g.low ? (g.ns + mc) : (g.ne - mc);
+  }
+  KOKKOS_FORCEINLINE_FUNCTION
+  Real fc3_bN(const Fc3Geo &g, const int aa, const int nn) const {
+    return g.aeta ? b.x2f(g.m,aa,nn,g.i) : b.x3f(g.m,nn,aa,g.i);
+  }
+  KOKKOS_FORCEINLINE_FUNCTION
+  Real fc3_bA(const Fc3Geo &g, const int aa, const int nn) const {
+    return g.aeta ? b.x3f(g.m,aa,nn,g.i) : b.x2f(g.m,nn,aa,g.i);
+  }
+  KOKKOS_FORCEINLINE_FUNCTION
+  Real fc3_bR(const Fc3Geo &g, const int aa, const int nn) const {
+    return g.aeta ? b.x1f(g.m,aa,nn,g.i) : b.x1f(g.m,nn,aa,g.i);
+  }
+  KOKKOS_FORCEINLINE_FUNCTION
+  int fc3_cwin(const Fc3Geo &g, const Real xabs) const {   // first of 3 along cells
+    int c0 = static_cast<int>(floor(xabs - 0.5)) - 1;
+    c0 = (c0 < g.clo) ? g.clo : ((c0 > g.chi) ? g.chi : c0);
+    c0 = (c0 < g.alo) ? g.alo : ((c0 > g.ahi - 2) ? g.ahi - 2 : c0);
+    return c0;
+  }
+  KOKKOS_FORCEINLINE_FUNCTION
+  int fc3_fwin(const Fc3Geo &g, const Real xabs) const {   // first of 4 along faces
+    int w = static_cast<int>(floor(xabs + 0.5)) - 2;
+    w = (w < g.flo) ? g.flo : ((w > g.fhi) ? g.fhi : w);
+    w = (w < g.alo) ? g.alo : ((w > g.ahi - 2) ? g.ahi - 2 : w);
+    return w;
+  }
+  // across-staggered component (normal faces 0..3 from the seam) at (u, along face
+  // coordinate xabs, along angle tangent Aa)
+  KOKKOS_FORCEINLINE_FUNCTION
+  Real fc3_PtN(const Fc3Geo &g, const Real u, const Real xabs, const Real Aa) const {
+    const int c0 = fc3_cwin(g, xabs);
+    Real wq[3], wl[4];
+    cs_fc3::QuadDensW(xabs - 0.5 - static_cast<Real>(c0 + 1), wq);
+    cs_fc3::Lag4W(u, wl);
+    Real tf[4];
+    for (int l=0; l<4; ++l) tf[l] = tan(fc3_aface(g, c0 + l));
+    Real r = 0.0;
+    for (int mc=0; mc<4; ++mc) {
+      const int col = g.nseam + g.dir*mc;
+      const Real C = tan(0.25*M_PI - static_cast<Real>(mc)*g.dn);
+      Real sm = 0.0;
+      for (int l=0; l<3; ++l) {
+        sm += wq[l]*fc3_bN(g, c0 + l, col)*cs_fc3::Arc(C, tf[l], tf[l+1]);
+      }
+      r += wl[mc]*sm/(cs_fc3::ArcDens(C, Aa)*g.da);
+    }
+    return r;
+  }
+  // along-staggered component (along faces w..w+3, normal cells 0..2) at (u, xabs,
+  // tangent of |n| = Nn)
+  KOKKOS_FORCEINLINE_FUNCTION
+  Real fc3_PtA(const Fc3Geo &g, const Real u, const Real xabs, const Real Nn) const {
+    const int w = fc3_fwin(g, xabs);
+    Real wq[3], wl[4];
+    cs_fc3::QuadDensW(u - 1.5, wq);
+    cs_fc3::Lag4W(xabs - static_cast<Real>(w), wl);
+    Real tn[4];
+    for (int mc=0; mc<4; ++mc) tn[mc] = tan(0.25*M_PI - static_cast<Real>(mc)*g.dn);
+    Real r = 0.0;
+    for (int rr=0; rr<4; ++rr) {
+      const Real R = tan(fc3_aface(g, w + rr));
+      Real sm = 0.0;
+      for (int mc=0; mc<3; ++mc) {
+        sm += wq[mc]*fc3_bA(g, w + rr, fc3_ncell(g, mc))*cs_fc3::Arc(R, tn[mc+1], tn[mc]);
+      }
+      r += wl[rr]*sm/(cs_fc3::ArcDens(R, Nn)*g.dn);
+    }
+    return r;
+  }
+  // x1f (cell integrals, 3 x 3) at (u, xabs), point tangents (Nn, Aa)
+  KOKKOS_FORCEINLINE_FUNCTION
+  Real fc3_PtR(const Fc3Geo &g, const Real u, const Real xabs, const Real Nn,
+               const Real Aa) const {
+    const int c0 = fc3_cwin(g, xabs);
+    Real wa[3], wn[3];
+    cs_fc3::QuadDensW(xabs - 0.5 - static_cast<Real>(c0 + 1), wa);
+    cs_fc3::QuadDensW(u - 1.5, wn);
+    Real tf[4], tn[4];
+    for (int l=0; l<4; ++l) tf[l] = tan(fc3_aface(g, c0 + l));
+    for (int mc=0; mc<4; ++mc) tn[mc] = tan(0.25*M_PI - static_cast<Real>(mc)*g.dn);
+    Real r = 0.0;
+    for (int l=0; l<3; ++l) {
+      Real sm = 0.0;
+      for (int mc=0; mc<3; ++mc) {
+        sm += wn[mc]*fc3_bR(g, c0 + l, fc3_ncell(g, mc))*
+              cs_fc3::Solid(tn[mc+1], tn[mc], tf[l], tf[l+1]);
+      }
+      r += wa[l]*sm;
+    }
+    return r/(cs_fc3::SolidDens(Nn, Aa)*g.dn*g.da);
+  }
+  KOKKOS_INLINE_FUNCTION
+  Real srcval3(const SeamArgs &a, const int psrc, const int pdst, const int kk,
+               const int jj, const int i) const {
+    const int m = a.m, vv = a.vv;
+    Fc3Geo g;
+    g.m = m; g.i = i;
+    g.aeta = (a.cs_seam == 2) ? 1 : 0;           // along = k (eta), normal = j (xi)
+    const RegionSize sz = mbsz(m);
+    const Real nmin = g.aeta ? sz.x2min : sz.x3min, nmax = g.aeta ? sz.x2max : sz.x3max;
+    g.amin = g.aeta ? sz.x3min : sz.x2min; g.amax = g.aeta ? sz.x3max : sz.x2max;
+    const int nxn = g.aeta ? cs_indcs.nx2 : cs_indcs.nx3;
+    g.nxa = g.aeta ? cs_indcs.nx3 : cs_indcs.nx2;
+    g.ns = g.aeta ? cs_indcs.js : cs_indcs.ks;
+    g.ne = g.aeta ? cs_indcs.je : cs_indcs.ke;
+    g.as0 = g.aeta ? cs_indcs.ks : cs_indcs.js;
+    g.alo = g.aeta ? a.ks_ : a.js_;
+    g.ahi = g.aeta ? a.ke_ : a.je_;
+    const int nn = g.aeta ? jj : kk, an = g.aeta ? kk : jj;
+    // which panel edge is the seam: the one the sample sits next to
+    const bool elo = (nmin < -1.0 + 1.0e-10), ehi = (nmax > 1.0 - 1.0e-10);
+    if (!elo && !ehi) return srcval(a,kk,jj,i);
+    g.low = (elo && (!ehi || (nn - g.ns <= g.ne + 1 - nn))) ? 1 : 0;
+    g.dir = g.low ? 1 : -1;
+    g.nseam = g.low ? g.ns : (g.ne + 1);
+    g.dn = 0.25*M_PI*(nmax - nmin)/static_cast<Real>(nxn);
+    g.da = 0.25*M_PI*(g.amax - g.amin)/static_cast<Real>(g.nxa);
+    g.a0 = 0.25*M_PI*g.amin;
+    // the receiver face kind
+    const int kind = (vv == 0) ? 3 : (((g.aeta != 0) == (vv == 1)) ? 1 : 2);
+    Real u0, u1;
+    if (kind == 1) {
+      u0 = static_cast<Real>(g.dir*(nn - g.nseam));
+      if (u0 < 0.5) return srcval(a,kk,jj,i);    // the shared seam face is never a ghost
+      u1 = u0;
+    } else {
+      u0 = static_cast<Real>(g.low ? (nn - g.ns) : (g.ne - nn));
+      u1 = u0 + 1.0;
+    }
+    const int ngh = cs_indcs.ng;
+    // along stencil limits relative to the sample (see the note above)
+    if (kind == 2) {
+      g.clo = an - ngh; g.chi = an + ngh - 3; g.flo = an - ngh; g.fhi = an + ngh - 3;
+    } else {
+      g.clo = an - ngh; g.chi = an + ngh - 2; g.flo = an - ngh; g.fhi = an + ngh - 2;
+    }
+    const Real at0 = fc3_aface(g, an);
+    const Real at1 = (kind == 2) ? at0 : fc3_aface(g, an + 1);
+    const int nga = (kind == 2) ? 1 : 2;
+    const int ngn = (kind == 1) ? 1 : 2;
+    Real num = 0.0, den = 0.0;
+    for (int gn=0; gn<ngn; ++gn) {
+      const Real u = (kind == 1) ? u0 :
+          0.5*(u0 + u1) + 0.5*(u1 - u0)*((gn == 0) ? -cs_fc3::kGauss : cs_fc3::kGauss);
+      const Real nabs = 0.25*M_PI - u*g.dn;
+      const Real Nn = tan(nabs);
+      const Real X = 1.0/Nn;                          // receiver's normal tangent
+      for (int ga=0; ga<nga; ++ga) {
+        const Real at = (kind == 2) ? at0 : 0.5*(at0 + at1)
+            + 0.5*(at1 - at0)*((ga == 0) ? -cs_fc3::kGauss : cs_fc3::kGauss);
+        const Real Y = tan(at);
+        const Real Aa = Y*Nn;
+        const Real asrc = atan(Aa);
+        const Real xabs = static_cast<Real>(g.as0) + (asrc - g.a0)/g.da;
+        Real wgt, val;
+        if (kind == 3) {
+          wgt = cs_fc3::SolidDens(X, Y);
+          val = fc3_PtR(g, u, xabs, Nn, Aa);
+        } else {
+          wgt = (kind == 1) ? cs_fc3::ArcDens(X, Y) : cs_fc3::ArcDens(Y, X);
+          const Real pn = fc3_PtN(g, u, xabs, Aa);
+          const Real pa = fc3_PtA(g, u, xabs, Nn);
+          const Real nsg = g.low ? -nabs : nabs;
+          const Real xi = g.aeta ? nsg : asrc, eta = g.aeta ? asrc : nsg;
+          const Real bxi = g.aeta ? pn : pa, bet = g.aeta ? pa : pn;
+          cubed_sphere::SeamFieldXform t;
+          cubed_sphere::SeamFieldXformAt(psrc, pdst, xi, eta, t);
+          Real oxi, oet;
+          cubed_sphere::ApplyFieldXform(t, bxi, bet, oxi, oet);
+          val = (a.v == 1) ? oxi : oet;
+        }
+        num += wgt*val;
+        den += wgt;
+      }
+    }
+    return num/den;
+  }
+
   KOKKOS_FORCEINLINE_FUNCTION
   Real seamval_pre(const SeamArgs &a, const int kk, const int jj, const int i) const {
     const int cs_seam = a.cs_seam;
@@ -982,6 +1217,33 @@ struct FCSeamPack {
     }
   }
 
+  // fcorder3-1103: the precompute pass of <mesh>/cs_seam_fc_order = 3 -- every seam
+  // segment is sample-indexed (BuildPackSegmentsFC) and its cross-panel samples go
+  // through srcval3.  A kernel of its own, so the order-2 pass keeps its registers.
+  KOKKOS_INLINE_FUNCTION
+  void operator()(const FCSeamPre3 &, const int t) const {
+    const int c = c0 + t/FC_PACK_CHUNK;
+    const SubSegFC u = sub(cseg(c));
+    const int idx = cbeg(c) + t%FC_PACK_CHUNK;
+    const PackSegFC s = seg(u.q);
+    if (u.pnt != 0 || idx >= u.nk*u.nj*u.ni) return;
+    SeamArgs a;
+    SetArgs(s, u, a);
+    const int uji = u.nj*u.ni;
+    int k = idx/uji;
+    int j = (idx - k*uji)/u.ni;
+    const int i = (idx - k*uji - j*u.ni) + u.il;
+    k += u.kl;
+    j += u.jl;
+    if (s.cs_seam != 0 && !s.cs_coar && (s.cs_xform || s.v == 0) &&
+        s.cs_psrc != s.cs_pdst) {
+      pre(u.pvoff + idx) = srcval3(a, s.cs_psrc, s.cs_pdst, s.ak*k + s.bk,
+                                   s.aj*j + s.bj, i);
+    } else {
+      pre(u.pvoff + idx) = srcval(a, s.ak*k + s.bk, s.aj*j + s.bj, i);
+    }
+  }
+
   // r1mspeed-1102: srcval over a SubSegFC's (normal, tangent, i) box, once per pack
   KOKKOS_INLINE_FUNCTION
   void operator()(const FCSeamPre &, const int t) const {
@@ -1034,7 +1296,10 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
   // seamexact-1103: with cs_seam_blockend = extend and > 2 blocks per panel side the
   // extended pass and its partner interpolants (CsSeamExtPartner) read the along-seam
   // ghosts to depth ng, which a depth-1 pack (<mhd>/rkg_halo_d1) leaves stale: full depth
-  const int d = (pack_depth == 1 && !(cs_blockend_ext_ && cs_ext_q_)) ? 1 : 0;
+  // fcorder3-1103: order 3's along stencils read the along-seam ghosts to depth ng in the
+  // extended pass, so it too needs the full-depth pack there
+  const bool fc3_ = (pmy_pack->pmesh->cs_seam_fc_order == 3);
+  const int d = (pack_depth == 1 && !(cs_blockend_ext_ && (cs_ext_q_ || fc3_))) ? 1 : 0;
   last_pack_depth_ = pack_depth;   // layoutbug-1103
   const int np = fc_np[d], ns = fc_ns[d], nr = fc_npre[d];
   if (np > 0) {
@@ -1051,9 +1316,16 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
                  cs_shear_sgn, cs_nolim_);
     f.ext_ = cs_ext_pass_; f.ext_jk = cs_ext_jk;
     f.useq_ = cs_ext_pass_ && cs_ext_q_; f.q = cs_ext_q;   // seamexact-1103
+    if (fc3_) {   // fcorder3-1103
+      f.fc3_ = true; f.mbsz = pmy_pack->pmb->mb_size.d_view;
+      Kokkos::parallel_for("SendBuffFCsrc3", Kokkos::Experimental::require(
+          Kokkos::RangePolicy<FCSeamPre3>(DevExeSpace(), 0, nr*FC_PACK_CHUNK),
+          Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
+    } else {
     Kokkos::parallel_for("SendBuffFCsrc", Kokkos::Experimental::require(
         Kokkos::RangePolicy<FCSeamPre>(DevExeSpace(), 0, nr*FC_PACK_CHUNK),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
+    }
   }
   if (ns > 0) {
     FCSeamPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub[d], fc_cs[d], fc_cb[d], cs_seam_geom,

@@ -250,6 +250,7 @@ struct PackSegFC {
   int mode;               // 0 plain from b, 1 plain from cb, 2 seam / pole transform
   int aj, bj, ak, bk, sj, sk, signvar;
   int cs_xform, cs_coar, cs_slotidx, cs_gkind, cs_skind, cs_seam;
+  int cs_psrc, cs_pdst;    // fcorder3-1103: source / destination panel
 };
 
 //----------------------------------------------------------------------------------------

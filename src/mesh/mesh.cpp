@@ -179,6 +179,20 @@ Mesh::Mesh(ParameterInput *pin) :
   cs_seam_fc_nolimit = use_cubed_sphere &&
                        pin->DoesParameterExist("mesh", "cs_seam_fc_nolimit") &&
                        pin->GetBoolean("mesh", "cs_seam_fc_nolimit");
+  // fcorder3-1103 `<mesh>/cs_seam_fc_order` = 2 (default, bitwise; read only when named)
+  // | 3: the cubed-sphere seam ghost FACE fields as third-order face averages over the
+  // receiving chart's ghost faces (bvals_fc.cpp FCSeamPack::srcval3, weights in
+  // bvals/cs_seam_fc3.hpp), so every per-panel stencil that reads them (the resistive /
+  // ambipolar curl at seam edges, Joule heating, bcc beside the seam) is second order
+  // there.  Same-level cubed sphere only.
+  if (use_cubed_sphere && pin->DoesParameterExist("mesh", "cs_seam_fc_order")) {
+    cs_seam_fc_order = pin->GetInteger("mesh", "cs_seam_fc_order");
+    if (cs_seam_fc_order != 2 && cs_seam_fc_order != 3) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mesh>/cs_seam_fc_order must be 2 or 3" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   // THE SAME FILL FOR CELL-CENTRED DATA, `<mesh>/cs_vertex_fill_cc`, DEFAULT OFF.
   // `cs_vertex_fill` above widens only the FACE-CENTRED buffers; every cell-centred
   // variable (the conserved state, the primitives, radiation, ...) still gets its

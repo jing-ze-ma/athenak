@@ -318,6 +318,7 @@ class Mesh {
   bool cs_vertex_fill_cc;     // same for CELL-CENTRED data (see mesh.cpp)
   bool cs_vertex_3cell = false;   // cornerfix-1103: no operator reads the corner block
   bool cs_seam_fc_nolimit;    // no monotonicity clamp in the FC seam resample (mesh.cpp)
+  int cs_seam_fc_order = 2;   // fcorder3-1103: 3 = third-order FC seam ghosts (mesh.cpp)
   int cs_seam_flux;           // seam flux reconciliation: 0 average, 1 upwind, 2 positive_donor, 3 shared (default, csedge-1019)
   bool cs_seam_flux_named = false;   // <mesh>/cs_seam_flux given in the input (csedge-1019)
   Real cs_seam_rho_guard;     // seam ghost density guard ratio, 0 = off (mesh.cpp)

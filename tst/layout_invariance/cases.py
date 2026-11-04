@@ -411,3 +411,38 @@ CASES += [
     dict(_SPI, name='sp_res_ohm_iculp', what='Ohmic; 1-ulp IC (b0) reference',
          perturb='problem/b0', set={}),
 ]
+
+# ---------------------------------------------------------------- fcorder3-1103
+# <mesh>/cs_seam_fc_order = 3 (third-order seam ghost face fields): must stay ROUNDOFF under
+# cs_seam_blockend = extend at every layout (its along stencils are clamped to within ng of
+# the sample, so no layout reads beyond its extended bounds).
+_F3 = {'mesh/cs_seam_fc_order': 3}
+CASES += [
+    var(CS_MHD, 'cs_mhd_ext_fc3', 'cs MHD blast, extend, cs_seam_fc_order 3',
+        extra=dict(EXT, **_F3)),
+    var(CS_MHD, 'cs_mhd_ext_n32_fc3', 'cs MHD blast C32 1 vs 4x4 / 2x2 / 8x8, extend, fc order 3',
+        extra=dict(EXT, **_F3, **{'mesh/nx2': 32, 'mesh/nx3': 32}),
+        layouts=[L('b1x1_np1', (8, 32, 32)), L('b4x4_np1', (8, 8, 8)),
+                 L('b2x2_np1', (8, 16, 16)), L('b8x8_np6', (8, 4, 4), 6)]),
+    var(CS_MHD, 'cs_mhd_ng3_fc3', 'cs MHD blast, nghost 3, extend, fc order 3',
+        extra=dict(EXT, **_F3, **{'mesh/nghost': 3})),
+    dict(name='cs_resist_rkg_fc3', bin='cs', deck='cubed_sphere_resist.athinput', ncyc=10,
+         vars=['mhd_u', 'mhd_bcc'], what='cs Ohmic + ambipolar, RKG STS, extend, fc order 3',
+         set={'mesh/nx1': 8, 'mesh/nx2': 16, 'mesh/nx3': 16,
+              'mesh/cs_seam_blockend': 'extend', 'mhd/ambipolar': 'constant',
+              'mhd/eta_ad': 0.05, 'mhd/use_rkg_sts': 'true', 'mesh/cs_seam_fc_order': 3},
+         layouts=cs_layouts(16, 8)),
+    dict(name='cs_ivan_mhd_fc3', bin='cs', deck='cs_ivan_mhd.athinput', ncyc=10,
+         vars=['mhd_u', 'mhd_bcc'], what='cs Ivan MHD (iprob 18), extend, fc order 3',
+         set=dict(_IV, **_F3), layouts=cs_layouts(16, 8)),
+    dvar(DHJ_M, 'dhj_r1m_fc3', 'r1m v6 MHD deck, extend, cs_seam_fc_order 3', dict(EXT, **_F3)),
+    dict(_V8, name='r1m_v8_vertex_cc_fc3', what='r1m v8 deck C8x32, corner block x (1+eps), '
+         'fc order 3: BITWISE = the corner block is never read', set=dict(_V8['set'], **_F3)),
+]
+for _nm, _s in (('ohm', {}), ('ohm_rkg', {'mhd/use_rkg_sts': 'true'}),
+                ('amb', {'mhd/ambipolar': 'constant', 'mhd/eta_ad': 0.05,
+                         'mhd/ohmic_resistivity': 'none'}),
+                ('amb_rkg', {'mhd/ambipolar': 'constant', 'mhd/eta_ad': 0.05,
+                             'mhd/ohmic_resistivity': 'none', 'mhd/use_rkg_sts': 'true'})):
+    CASES.append(dict(_CSR, name='cs_res_' + _nm + '_fc3', what='cs resistive probe ' + _nm
+                      + ', fc order 3', set=dict(_CSRS, **_s, **_F3)))
