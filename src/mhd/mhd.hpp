@@ -277,6 +277,10 @@ class MHD {
   // USER 11-03; recipe::NewDefaults, mhd.cpp); a restart whose input lacks the key: gs07.
   bool emf_uct = false;
   bool emf_uct_hlld = false;
+  // kriel-1103 <mhd>/uct_corner_recon = plm (default, bitwise) | match (read only when
+  // named; uct | uct_hlld, Cartesian): 0 PLM, else the corner B_q / v.n_p reconstruction
+  // along the face uses <mhd>/reconstruct: 1 ppm4, 2 ppmx, 3 wenoz (mhd_corner_e.cpp)
+  int uct_corner_rec = 0;
   DvceArray5D<Real> uct1, uct2, uct3;
   // ucthshare-1102 <mhd>/cs_seam_mhd = none (default) | faces | shared | shared_g | shared_o (read only when
   // named; cubed sphere).  faces (1): each panel-seam face is ONE Riemann problem -- the

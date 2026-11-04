@@ -15,6 +15,8 @@
 #include "diffusion/resistivity.hpp"
 #include "mhd.hpp"
 #include "reconstruct/plm.hpp"
+#include "reconstruct/ppm.hpp"
+#include "reconstruct/wenoz.hpp"
 
 #include "coordinates/coordinates.hpp"
 #include "coordinates/cartesian_ks.hpp"
@@ -66,6 +68,7 @@ struct UctCorner {
   DvceArray4D<Real> b1, b2, b3;               // staggered field
   DvceArray3D<Real> sc, cc, sx, cx, se, ce;   // cs trig: cell, xi face, eta face
   bool cs;
+  int rec = 0;   // kriel-1103 <mhd>/uct_corner_recon: 0 plm, 1 ppm4, 2 ppmx, 3 wenoz
   int js, ks, nx2, nx3;
   DualArray1D<RegionSize> size;
 };
@@ -93,9 +96,118 @@ Real UctVnEta(const UctCorner &d, const int m, const int k, const int j, const i
   return d.cs ? d.sc(m,k,j)*d.w(m,IVZ,k,j,i) : d.w(m,IVZ,k,j,i);
 }
 
+
+//----------------------------------------------------------------------------------------
+//! kriel-1103 <mhd>/uct_corner_recon = match (read only when named; default plm, bitwise):
+//! the UCT corner reconstructions along p -- the staggered B_q of the q faces to the edge,
+//! and the half-cell change of the cell-centred v.n_p added to the q-face velocity -- use
+//! the CELL reconstruction <mhd>/reconstruct (ppm4 | ppmx | wenoz, 5-point stencil) instead
+//! of PLM.  Cartesian only (refused on the cubed sphere / spherical polar, mhd.cpp).
+//! UctRec5: the face values of the "cell" centred on q0, ql_ip1 = upper, qr_i = lower.
+KOKKOS_INLINE_FUNCTION
+void UctRec5(const int rec, const Real qm2, const Real qm1, const Real q0, const Real qp1,
+             const Real qp2, Real &ql_ip1, Real &qr_i) {
+  if (rec == 1) {
+    PPM4(qm2, qm1, q0, qp1, qp2, ql_ip1, qr_i);
+  } else if (rec == 2) {
+    PPMX(qm2, qm1, q0, qp1, qp2, ql_ip1, qr_i);
+  } else {
+    WENOZ(qm2, qm1, q0, qp1, qp2, ql_ip1, qr_i);
+  }
+}
+// half-cell change of w(n) of the cell centred at (k,j,i) along (dk,dj,di), upper/lower
+KOKKOS_INLINE_FUNCTION
+Real UctDW(const UctCorner &d, const int m, const int n, const int k, const int j,
+           const int i, const int dk, const int dj, const int di, const bool upper) {
+  Real ql, qr;
+  const Real q0 = d.w(m,n,k,j,i);
+  UctRec5(d.rec, d.w(m,n,k-2*dk,j-2*dj,i-2*di), d.w(m,n,k-dk,j-dj,i-di), q0,
+          d.w(m,n,k+dk,j+dj,i+di), d.w(m,n,k+2*dk,j+2*dj,i+2*di), ql, qr);
+  return upper ? (ql - q0) : (qr - q0);
+}
+// face value of the staggered component b centred at (k,j,i) along (dk,dj,di)
+KOKKOS_INLINE_FUNCTION
+Real UctFB(const UctCorner &d, const DvceArray4D<Real> &b, const int m, const int k,
+           const int j, const int i, const int dk, const int dj, const int di,
+           const bool upper) {
+  Real ql, qr;
+  UctRec5(d.rec, b(m,k-2*dk,j-2*dj,i-2*di), b(m,k-dk,j-dj,i-di), b(m,k,j,i),
+          b(m,k+dk,j+dj,i+di), b(m,k+2*dk,j+2*dj,i+2*di), ql, qr);
+  return upper ? ql : qr;
+}
+// E3 (p = x1, q = x2), E1 (p = x2, q = x3), E2 (p = x3, q = x1) with the matched corner
+// reconstruction; the face-store a, d and face velocities exactly as UctE3/E1/E2
+KOKKOS_INLINE_FUNCTION
+Real UctE3M(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  const Real aw = 0.5*(d.u1(m,0,k,j-1,i) + d.u1(m,0,k,j,i));
+  const Real dw = 0.5*(d.u1(m,1,k,j-1,i) + d.u1(m,1,k,j,i));
+  const Real de = 0.5*(d.u1(m,2,k,j-1,i) + d.u1(m,2,k,j,i));
+  const Real as = 0.5*(d.u2(m,0,k,j,i-1) + d.u2(m,0,k,j,i));
+  const Real ds = 0.5*(d.u2(m,1,k,j,i-1) + d.u2(m,1,k,j,i));
+  const Real dn = 0.5*(d.u2(m,2,k,j,i-1) + d.u2(m,2,k,j,i));
+  const Real vpw = d.u2(m,5,k,j,i-1) + 0.5*(UctDW(d,m,IVX,k,j-1,i-1,0,0,1,true) +
+                                            UctDW(d,m,IVX,k,j  ,i-1,0,0,1,true));
+  const Real vpe = d.u2(m,5,k,j,i) + 0.5*(UctDW(d,m,IVX,k,j-1,i,0,0,1,false) +
+                                          UctDW(d,m,IVX,k,j  ,i,0,0,1,false));
+  const Real vqs = d.u1(m,4,k,j-1,i) + 0.5*(UctDW(d,m,IVY,k,j-1,i-1,0,1,0,true) +
+                                            UctDW(d,m,IVY,k,j-1,i  ,0,1,0,true));
+  const Real vqn = d.u1(m,4,k,j,i) + 0.5*(UctDW(d,m,IVY,k,j,i-1,0,1,0,false) +
+                                          UctDW(d,m,IVY,k,j,i  ,0,1,0,false));
+  const Real bqw = UctFB(d, d.b2, m, k, j, i-1, 0, 0, 1, true);
+  const Real bqe = UctFB(d, d.b2, m, k, j, i  , 0, 0, 1, false);
+  const Real bps = UctFB(d, d.b1, m, k, j-1, i, 0, 1, 0, true);
+  const Real bpn = UctFB(d, d.b1, m, k, j  , i, 0, 1, 0, false);
+  return UctEdge(aw, dw, de, vpw, vpe, bqw, bqe, as, ds, dn, vqs, vqn, bps, bpn);
+}
+KOKKOS_INLINE_FUNCTION
+Real UctE1M(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  const Real aw = 0.5*(d.u2(m,0,k-1,j,i) + d.u2(m,0,k,j,i));
+  const Real dw = 0.5*(d.u2(m,1,k-1,j,i) + d.u2(m,1,k,j,i));
+  const Real de = 0.5*(d.u2(m,2,k-1,j,i) + d.u2(m,2,k,j,i));
+  const Real as = 0.5*(d.u3(m,0,k,j-1,i) + d.u3(m,0,k,j,i));
+  const Real ds = 0.5*(d.u3(m,1,k,j-1,i) + d.u3(m,1,k,j,i));
+  const Real dn = 0.5*(d.u3(m,2,k,j-1,i) + d.u3(m,2,k,j,i));
+  const Real vpw = d.u3(m,5,k,j-1,i) + 0.5*(UctDW(d,m,IVY,k-1,j-1,i,0,1,0,true) +
+                                            UctDW(d,m,IVY,k  ,j-1,i,0,1,0,true));
+  const Real vpe = d.u3(m,5,k,j,i) + 0.5*(UctDW(d,m,IVY,k-1,j,i,0,1,0,false) +
+                                          UctDW(d,m,IVY,k  ,j,i,0,1,0,false));
+  const Real vqs = d.u2(m,4,k-1,j,i) + 0.5*(UctDW(d,m,IVZ,k-1,j-1,i,1,0,0,true) +
+                                            UctDW(d,m,IVZ,k-1,j  ,i,1,0,0,true));
+  const Real vqn = d.u2(m,4,k,j,i) + 0.5*(UctDW(d,m,IVZ,k,j-1,i,1,0,0,false) +
+                                          UctDW(d,m,IVZ,k,j  ,i,1,0,0,false));
+  const Real bqw = UctFB(d, d.b3, m, k, j-1, i, 0, 1, 0, true);
+  const Real bqe = UctFB(d, d.b3, m, k, j  , i, 0, 1, 0, false);
+  const Real bps = UctFB(d, d.b2, m, k-1, j, i, 1, 0, 0, true);
+  const Real bpn = UctFB(d, d.b2, m, k  , j, i, 1, 0, 0, false);
+  return UctEdge(aw, dw, de, vpw, vpe, bqw, bqe, as, ds, dn, vqs, vqn, bps, bpn);
+}
+KOKKOS_INLINE_FUNCTION
+Real UctE2M(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  const Real aw = 0.5*(d.u3(m,0,k,j,i-1) + d.u3(m,0,k,j,i));
+  const Real dw = 0.5*(d.u3(m,1,k,j,i-1) + d.u3(m,1,k,j,i));
+  const Real de = 0.5*(d.u3(m,2,k,j,i-1) + d.u3(m,2,k,j,i));
+  const Real as = 0.5*(d.u1(m,0,k-1,j,i) + d.u1(m,0,k,j,i));
+  const Real ds = 0.5*(d.u1(m,1,k-1,j,i) + d.u1(m,1,k,j,i));
+  const Real dn = 0.5*(d.u1(m,2,k-1,j,i) + d.u1(m,2,k,j,i));
+  const Real vpw = d.u1(m,5,k-1,j,i) + 0.5*(UctDW(d,m,IVZ,k-1,j,i-1,1,0,0,true) +
+                                            UctDW(d,m,IVZ,k-1,j,i  ,1,0,0,true));
+  const Real vpe = d.u1(m,5,k,j,i) + 0.5*(UctDW(d,m,IVZ,k,j,i-1,1,0,0,false) +
+                                          UctDW(d,m,IVZ,k,j,i  ,1,0,0,false));
+  const Real vqs = d.u3(m,4,k,j,i-1) + 0.5*(UctDW(d,m,IVX,k-1,j,i-1,0,0,1,true) +
+                                            UctDW(d,m,IVX,k  ,j,i-1,0,0,1,true));
+  const Real vqn = d.u3(m,4,k,j,i) + 0.5*(UctDW(d,m,IVX,k-1,j,i,0,0,1,false) +
+                                          UctDW(d,m,IVX,k  ,j,i,0,0,1,false));
+  const Real bqw = UctFB(d, d.b1, m, k-1, j, i, 1, 0, 0, true);
+  const Real bqe = UctFB(d, d.b1, m, k  , j, i, 1, 0, 0, false);
+  const Real bps = UctFB(d, d.b3, m, k, j, i-1, 0, 0, 1, true);
+  const Real bpn = UctFB(d, d.b3, m, k, j, i  , 0, 0, 1, false);
+  return UctEdge(aw, dw, de, vpw, vpe, bqw, bqe, as, ds, dn, vqs, vqn, bps, bpn);
+}
+
 // E3 (x3 edge at x1 face i, x2 face j): p = x1, q = x2
 KOKKOS_INLINE_FUNCTION
 Real UctE3(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  if (d.rec != 0) return UctE3M(d, m, k, j, i);   // kriel-1103
   const Real aw = 0.5*(d.u1(m,0,k,j-1,i) + d.u1(m,0,k,j,i));
   const Real dw = 0.5*(d.u1(m,1,k,j-1,i) + d.u1(m,1,k,j,i));
   const Real de = 0.5*(d.u1(m,2,k,j-1,i) + d.u1(m,2,k,j,i));
@@ -147,6 +259,7 @@ template <class MK, class MJ>
 KOKKOS_INLINE_FUNCTION
 Real UctE1T(const UctCorner &d, const int m, const int k, const int j, const int i,
             const MK &K, const MJ &J) {
+  if (d.rec != 0) return UctE1M(d, m, k, j, i);   // kriel-1103 (Cartesian only)
   const Real aw = 0.5*(d.u2(m,0,K(k-1),J(j),i) + d.u2(m,0,K(k),J(j),i));
   const Real dw = 0.5*(d.u2(m,1,K(k-1),J(j),i) + d.u2(m,1,K(k),J(j),i));
   const Real de = 0.5*(d.u2(m,2,K(k-1),J(j),i) + d.u2(m,2,K(k),J(j),i));
@@ -201,6 +314,7 @@ Real UctE1(const UctCorner &d, const int m, const int k, const int j, const int 
 // E2 (x2 edge at x3 face k, x1 face i): p = x3, q = x1
 KOKKOS_INLINE_FUNCTION
 Real UctE2(const UctCorner &d, const int m, const int k, const int j, const int i) {
+  if (d.rec != 0) return UctE2M(d, m, k, j, i);   // kriel-1103
   const Real aw = 0.5*(d.u3(m,0,k,j,i-1) + d.u3(m,0,k,j,i));
   const Real dw = 0.5*(d.u3(m,1,k,j,i-1) + d.u3(m,1,k,j,i));
   const Real de = 0.5*(d.u3(m,2,k,j,i-1) + d.u3(m,2,k,j,i));
@@ -287,6 +401,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     ucd.u1 = uct1; ucd.u2 = uct2; ucd.u3 = uct3; ucd.w = w0;
     ucd.b1 = b0.x1f; ucd.b2 = b0.x2f; ucd.b3 = b0.x3f;
     ucd.cs = use_cubed_sphere;
+    ucd.rec = uct_corner_rec;   // kriel-1103
     if (use_cubed_sphere) {
       ucd.sc = pmy_pack->pcoord->sin_cell;     ucd.cc = pmy_pack->pcoord->cos_cell;
       ucd.sx = pmy_pack->pcoord->sin_face_xi;  ucd.cx = pmy_pack->pcoord->cos_face_xi;
