@@ -964,12 +964,16 @@ struct FCSeamPack {
   // picks the same window), then to the source bounds (binding only at a panel end, or
   // at a block end in the clamp mode).  Across the seam: the 4 faces / 3 cells next to it.
   struct Fc3Geo {
-    int m, i, aeta, low, dir, nseam, ns, ne, as0, alo, ahi, clo, chi, flo, fhi, nxa;
+    int m, i, aeta, low, dir, nseam, ns, ne, as0, alo, ahi, clo, chi, flo, fhi, nxa, npan, ga0, off;
     Real dn, da, a0, amin, amax;
   };
   KOKKOS_FORCEINLINE_FUNCTION
   Real fc3_aface(const Fc3Geo &g, const int f) const {
-    return 0.25*M_PI*LeftEdgeX(f - g.as0, g.nxa, g.amin, g.amax);
+    // fc3blk-1103: from the GLOBAL along face index (f - as0 + ga0), so every MeshBlock
+    // layout computes the very same bits (block-local LeftEdgeX differs in the last bit,
+    // and the order-3 lever arms near a panel end amplified that to ~1e-13 in the ghosts)
+    return 0.5*M_PI*static_cast<Real>(f - g.as0 + g.ga0)/static_cast<Real>(g.npan)
+           - 0.25*M_PI;
   }
   // normal cell m (0..2 from the seam) -> block index
   KOKKOS_FORCEINLINE_FUNCTION
@@ -990,14 +994,15 @@ struct FCSeamPack {
   }
   KOKKOS_FORCEINLINE_FUNCTION
   int fc3_cwin(const Fc3Geo &g, const Real xabs) const {   // first of 3 along cells
-    int c0 = static_cast<int>(floor(xabs - 0.5)) - 1;
+    // xabs: the GLOBAL along face coordinate; off = as0 - ga0 turns global into local
+    int c0 = static_cast<int>(floor(xabs - 0.5)) - 1 + g.off;
     c0 = (c0 < g.clo) ? g.clo : ((c0 > g.chi) ? g.chi : c0);
     c0 = (c0 < g.alo) ? g.alo : ((c0 > g.ahi - 2) ? g.ahi - 2 : c0);
     return c0;
   }
   KOKKOS_FORCEINLINE_FUNCTION
   int fc3_fwin(const Fc3Geo &g, const Real xabs) const {   // first of 4 along faces
-    int w = static_cast<int>(floor(xabs + 0.5)) - 2;
+    int w = static_cast<int>(floor(xabs + 0.5)) - 2 + g.off;
     w = (w < g.flo) ? g.flo : ((w > g.fhi) ? g.fhi : w);
     w = (w < g.alo) ? g.alo : ((w > g.ahi - 2) ? g.ahi - 2 : w);
     return w;
@@ -1015,7 +1020,7 @@ struct FCSeamPack {
                const Real sc, Acc &acc) const {
     const int c0 = fc3_cwin(g, xabs);
     Real wq[3], wl[4];
-    cs_fc3::QuadDensW(xabs - 0.5 - static_cast<Real>(c0 + 1), wq);
+    cs_fc3::QuadDensW(xabs - 0.5 - static_cast<Real>(c0 - g.off + 1), wq);
     cs_fc3::Lag4W(u, wl);
     Real tf[4];
     for (int l=0; l<4; ++l) tf[l] = tan(fc3_aface(g, c0 + l));
@@ -1035,7 +1040,7 @@ struct FCSeamPack {
     const int w = fc3_fwin(g, xabs);
     Real wq[3], wl[4];
     cs_fc3::QuadDensW(u - 1.5, wq);
-    cs_fc3::Lag4W(xabs - static_cast<Real>(w), wl);
+    cs_fc3::Lag4W(xabs - static_cast<Real>(w - g.off), wl);
     Real tn[4];
     for (int mc=0; mc<4; ++mc) tn[mc] = tan(0.25*M_PI - static_cast<Real>(mc)*g.dn);
     for (int rr=0; rr<4; ++rr) {
@@ -1053,7 +1058,7 @@ struct FCSeamPack {
                const Real Aa, const Real sc, Acc &acc) const {
     const int c0 = fc3_cwin(g, xabs);
     Real wa[3], wn[3];
-    cs_fc3::QuadDensW(xabs - 0.5 - static_cast<Real>(c0 + 1), wa);
+    cs_fc3::QuadDensW(xabs - 0.5 - static_cast<Real>(c0 - g.off + 1), wa);
     cs_fc3::QuadDensW(u - 1.5, wn);
     Real tf[4], tn[4];
     for (int l=0; l<4; ++l) tf[l] = tan(fc3_aface(g, c0 + l));
@@ -1093,8 +1098,14 @@ struct FCSeamPack {
     g.low = (elo && (!ehi || (nn - g.ns <= g.ne + 1 - nn))) ? 1 : 0;
     g.dir = g.low ? 1 : -1;
     g.nseam = g.low ? g.ns : (g.ne + 1);
-    g.dn = 0.25*M_PI*(nmax - nmin)/static_cast<Real>(nxn);
-    g.da = 0.25*M_PI*(g.amax - g.amin)/static_cast<Real>(g.nxa);
+    // fc3blk-1103: the panel resolution and this block's global along offset; every
+    // angle below from global indices (layout-independent bits)
+    g.npan = static_cast<int>(floor(2.0*g.nxa/(g.amax - g.amin) + 0.5));
+    g.ga0 = static_cast<int>(floor(0.5*(g.amin + 1.0)*g.npan + 0.5));
+    {const int npn = static_cast<int>(floor(2.0*nxn/(nmax - nmin) + 0.5));
+     g.dn = 0.5*M_PI/static_cast<Real>(npn);}
+    g.da = 0.5*M_PI/static_cast<Real>(g.npan);
+    g.off = g.as0 - g.ga0;
     g.a0 = 0.25*M_PI*g.amin;
     // the receiver face kind
     const int kind = (vv == 0) ? 3 : (((g.aeta != 0) == (vv == 1)) ? 1 : 2);
@@ -1136,7 +1147,8 @@ struct FCSeamPack {
         const Real sc = wgt/acc.den;
         const Real Aa = Y*Nn;
         const Real asrc = atan(Aa);
-        const Real xabs = static_cast<Real>(g.as0) + (asrc - g.a0)/g.da;
+        // global along face coordinate: the same bits in every layout (fc3blk-1103)
+        const Real xabs = (asrc + 0.25*M_PI)/g.da;
         if (kind == 3) {
           fc3_PtR(g, u, xabs, Nn, Aa, sc, acc);
         } else {
@@ -1441,12 +1453,12 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
   // extended pass, so it too needs the full-depth pack there
   // (only where a panel side is split between blocks: with one block per panel side no
   // stencil reaches an along-seam ghost)
+  // fc3blk-1103: for order 3 ALWAYS, independent of the layout and of the blockend mode.
+  // Keying it on "a panel side is split" (f780bc3bf) made the depth itself layout
+  // dependent: with a depth-1 pack (<mhd>/rkg_halo_d1) the deeper seam ghosts would be
+  // stale in one layout and fresh in another.
   const bool fc3_ = (pmy_pack->pmesh->cs_seam_fc_order == 3);
-  const auto &pmi_ = pmy_pack->pmesh->mesh_indcs;
-  const auto &mbi_ = pmy_pack->pmesh->mb_indcs;
-  const bool fc3split_ = fc3_ && (pmi_.nx2 > mbi_.nx2 || pmi_.nx3 > mbi_.nx3);
-  const int d = (pack_depth == 1 &&
-                 !(cs_blockend_ext_ && (cs_ext_q_ || fc3split_))) ? 1 : 0;
+  const int d = (pack_depth == 1 && !(cs_blockend_ext_ && cs_ext_q_) && !fc3_) ? 1 : 0;
   last_pack_depth_ = pack_depth;   // layoutbug-1103
   const int np = fc_np[d], ns = fc_ns[d], nr = fc_npre[d];
   if (np > 0) {
