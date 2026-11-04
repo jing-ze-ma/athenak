@@ -2784,11 +2784,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           // alpha = <radiation>/taucell (Athena++ default 5; his athinput not available),
           // tau_c = alpha (kappa_T dx of ghost 1 + kappa_T dx of the first cell)
           const std::string dm = pin->GetOrAddString("problem","he_bc_linhao_diss","athena");
-          if (dm != "upwind" && dm != "tau" && dm != "tau2" && dm != "athena") {
-            HsFatal("problem/he_bc_linhao_diss must be athena, upwind, tau or tau2", __LINE__);
+          // none (user 11-04, the production choice): no E-jump term at all, the face is the
+          // central average 0.5 (F_g + F_is) plus his Doppler / advective part
+          if (dm != "upwind" && dm != "tau" && dm != "tau2" && dm != "athena" && dm != "none") {
+            HsFatal("problem/he_bc_linhao_diss must be athena, none, upwind, tau or tau2",
+                    __LINE__);
           }
           pm1->lbath_dmode = (dm == "upwind") ? 0 : ((dm == "tau") ? 1 :
-                             ((dm == "tau2") ? 2 : 3));
+                             ((dm == "tau2") ? 2 : ((dm == "none") ? 4 : 3)));
           pm1->lbath_alpha = pin->GetOrAddReal("problem","he_bc_linhao_alpha",
                                                (dm == "athena") ? 5.0 : 1.0);
           pm1->lbath_mu1 = mu1;

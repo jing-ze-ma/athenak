@@ -1001,6 +1001,7 @@ void M1GhostBathAB(const IW &iw, const FN &f0n, const CV &x1v, const CF &x1f,
 KOKKOS_INLINE_FUNCTION
 Real M1LbathDiss(const int mode, const Real tau) {
   if (mode == 0) return 1.0;
+  if (mode == 4) return 0.0;   // linhao-prod-1104 none (user 11-04): pure central face
   if (mode == 3) {
     // Athena++ (PrincetonUniversity/athena 053bc738, Oct 2026) implicit DO face flux:
     // implicit_first_order.cpp:71-88 + rad_integrators.cpp:549-566, 615-657 (tau_scheme 1,
