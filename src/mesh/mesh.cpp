@@ -179,12 +179,33 @@ Mesh::Mesh(ParameterInput *pin) :
   cs_seam_fc_nolimit = use_cubed_sphere &&
                        pin->DoesParameterExist("mesh", "cs_seam_fc_nolimit") &&
                        pin->GetBoolean("mesh", "cs_seam_fc_nolimit");
-  // fcorder3-1103 `<mesh>/cs_seam_fc_order` = 2 (default, bitwise; read only when named)
+  // fcorder3-1103 `<mesh>/cs_seam_fc_order` = 2 (old default, bitwise; fresh default 3 on
+  // resistive cs MHD, prod1103e below)
   // | 3: the cubed-sphere seam ghost FACE fields as third-order face averages over the
   // receiving chart's ghost faces (bvals_fc.cpp FCSeamPack::srcval3, weights in
   // bvals/cs_seam_fc3.hpp), so every per-panel stencil that reads them (the resistive /
   // ambipolar curl at seam edges, Joule heating, bcc beside the seam) is second order
   // there.  Same-level cubed sphere only.
+  // prod1103e default (USER 11-03): cs_seam_fc_order = 3 on a FRESH same-level cubed-sphere
+  // MHD start with resistivity (<mhd>/ohmic_resistivity named, or <mhd>/ambipolar named and
+  // not none; recipe::NewDefaults) when the key is not named; recorded for restarts.  A
+  // restart whose input lacks the key keeps 2 (bitwise); an explicit key always wins.
+  if (use_cubed_sphere && pin->DoesBlockExist("mhd") &&
+      !pin->DoesParameterExist("mesh", "cs_seam_fc_order") &&
+      (pin->DoesParameterExist("mhd", "ohmic_resistivity") ||
+       (pin->DoesParameterExist("mhd", "ambipolar") &&
+        pin->GetString("mhd", "ambipolar") != "none")) &&
+      !(pin->DoesParameterExist("mesh_refinement", "refinement") &&
+        pin->GetString("mesh_refinement", "refinement") != "none")) {
+    if (recipe::NewDefaults(pin)) {
+      pin->GetOrAddInteger("mesh", "cs_seam_fc_order", 3);
+      recipe::Log("<mesh>/cs_seam_fc_order = 3 (default on a fresh resistive cs MHD start)");
+    } else {
+      recipe::Log("<mesh>/cs_seam_fc_order = 2 (" + std::string(
+          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+          "restart input has no key") + ": the old default)");
+    }
+  }
   if (use_cubed_sphere && pin->DoesParameterExist("mesh", "cs_seam_fc_order")) {
     cs_seam_fc_order = pin->GetInteger("mesh", "cs_seam_fc_order");
     if (cs_seam_fc_order != 2 && cs_seam_fc_order != 3) {
