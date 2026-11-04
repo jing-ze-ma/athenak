@@ -67,4 +67,33 @@ Real CsVertex3n(const A &a, const int m, const int n, const CsVtx3 &v, const int
   return CsVertexCell([&](const int k, const int j) {return a(m,n,k,j,i);}, v);
 }
 
+
+//! cornerfix4-1103: a stencil read of cell (k, j) that may fall in the made-up cube-
+//! vertex corner block (k outside [ks,ke] AND j outside [js,je] at a corner whose two
+//! flanking block faces are panel edges): the parallelogram value
+//!   f(k, jv) + f(kv, j) - f(kv, jv)   (jv, kv = the nearest active column / row)
+//! from the seam ghost row cell, the seam ghost column cell and this block's own corner
+//! cell -- linear-exact in the block's extended chart, so a difference stencil through
+//! it stays second order (the same construction as the corner-cell edges of
+//! CsVertexJFix).  Every other (k, j): f(k, j) unchanged.
+KOKKOS_INLINE_FUNCTION
+bool CsCornerRead(const RegionSize &z, const int k, const int j, const int js,
+                  const int je, const int ks, const int ke, int &kv, int &jv) {
+  const bool jl = (j < js), jh = (j > je), kl = (k < ks), kh = (k > ke);
+  if (!((jl || jh) && (kl || kh))) return false;
+  const bool pj = jl ? (z.x2min <= -1.0 + 1.0e-12) : (z.x2max >= 1.0 - 1.0e-12);
+  const bool pk = kl ? (z.x3min <= -1.0 + 1.0e-12) : (z.x3max >= 1.0 - 1.0e-12);
+  if (!(pj && pk)) return false;
+  jv = jl ? js : je; kv = kl ? ks : ke;
+  return true;
+}
+template <class F>
+KOKKOS_INLINE_FUNCTION
+Real CsCornerCell(const F &f, const RegionSize &z, const int k, const int j,
+                  const int js, const int je, const int ks, const int ke) {
+  int kv, jv;
+  if (!CsCornerRead(z, k, j, js, je, ks, ke, kv, jv)) return f(k, j);
+  return f(k, jv) + f(kv, j) - f(kv, jv);
+}
+
 #endif  // DIFFUSION_CS_VERTEX_RES_HPP_

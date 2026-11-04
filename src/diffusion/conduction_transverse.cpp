@@ -73,6 +73,7 @@
 #include "mhd/mhd.hpp"
 #include "eos/eos.hpp"
 #include "utils/eint_from_cons.hpp"
+#include "diffusion/cs_vertex_res.hpp"
 #include "conduction.hpp"
 
 //----------------------------------------------------------------------------------------
@@ -397,10 +398,20 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   // operators cannot disagree about the geometry.  The second term couples j to k and is
   // therefore not part of the 5-point/tridiagonal structure: it is carried explicitly.
   // Th = T* + alpha y when a register is supplied (usey), T* alone otherwise.
+  // cornerfix4-1103 <mesh>/cs_vertex_3cell: corner-block reads of the cross term take the
+  // parallelogram value (CsCornerCell, diffusion/cs_vertex_res.hpp); off: unchanged
+  const bool v3c_ = pmy_pack->pmesh->use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell;
+  auto &vsz_ = pmy_pack->pmb->mb_size;
+  const int vjs_ = pmy_pack->pmesh->mb_indcs.js, vje_ = pmy_pack->pmesh->mb_indcs.je;
+  const int vks_ = pmy_pack->pmesh->mb_indcs.ks, vke_ = pmy_pack->pmesh->mb_indcs.ke;
   auto thof = KOKKOS_LAMBDA (const DvceArray5D<Real> &yv, const bool usey,
                              const int m, const int k, const int j, const int i) {
-    return usey ? (st(m,it_,k,j,i) + st(m,ia_,k,j,i)*yv(m,0,k,j,i))
-                : st(m,it_,k,j,i);
+    auto t0 = [&](const int kk, const int jj) {
+      return usey ? (st(m,it_,kk,jj,i) + st(m,ia_,kk,jj,i)*yv(m,0,kk,jj,i))
+                  : st(m,it_,kk,jj,i);
+    };
+    if (!v3c_) return t0(k, j);
+    return CsCornerCell(t0, vsz_.d_view(m), k, j, vjs_, vje_, vks_, vke_);
   };
   auto cross2 = KOKKOS_LAMBDA (const DvceArray5D<Real> &yv, const bool usey,
                                const int m, const int k, const int j, const int i) {
@@ -424,13 +435,22 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   };
   // the cross term's contribution to the Gershgorin ROW RADIUS of the face: the sum of
   // |entry| over the four cells its stencil reads, each weighted by that cell's alpha
+  // cornerfix4-1103: a corner-block read enters thof as the parallelogram of three real
+  // cells (CsCornerCell), so its |entry| reaches each of them: alpha summed over the three
+  auto aof = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
+    int kv, jv;
+    if (v3c_ && CsCornerRead(vsz_.d_view(m), k, j, vjs_, vje_, vks_, vke_, kv, jv)) {
+      return fabs(st(m,ia_,k,jv,i)) + fabs(st(m,ia_,kv,j,i)) + fabs(st(m,ia_,kv,jv,i));
+    }
+    return st(m,ia_,k,j,i);
+  };
   auto crad2 = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
     const Real gg = fabs(g2(m,k,j,i));
     if (!(gg > 0.0)) return static_cast<Real>(0.0);
     const Real dzm = 0.5*dx3c_(m,k-1,j-1,i) + dx3c_(m,k,j-1,i) + 0.5*dx3c_(m,k+1,j-1,i);
     const Real dzp = 0.5*dx3c_(m,k-1,j,i) + dx3c_(m,k,j,i) + 0.5*dx3c_(m,k+1,j,i);
-    const Real r = 0.5*gg*((st(m,ia_,k+1,j-1,i) + st(m,ia_,k-1,j-1,i))/dzm
-                         + (st(m,ia_,k+1,j,i) + st(m,ia_,k-1,j,i))/dzp);
+    const Real r = 0.5*gg*((aof(m,k+1,j-1,i) + aof(m,k-1,j-1,i))/dzm
+                         + (aof(m,k+1,j,i) + aof(m,k-1,j,i))/dzp);
     return isfinite(r) ? r : static_cast<Real>(0.0);
   };
   auto crad3 = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
@@ -438,8 +458,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     if (!(gg > 0.0)) return static_cast<Real>(0.0);
     const Real dym = 0.5*dx2c_(m,k-1,j-1,i) + dx2c_(m,k-1,j,i) + 0.5*dx2c_(m,k-1,j+1,i);
     const Real dyp = 0.5*dx2c_(m,k,j-1,i) + dx2c_(m,k,j,i) + 0.5*dx2c_(m,k,j+1,i);
-    const Real r = 0.5*gg*((st(m,ia_,k-1,j+1,i) + st(m,ia_,k-1,j-1,i))/dym
-                         + (st(m,ia_,k,j+1,i) + st(m,ia_,k,j-1,i))/dyp);
+    const Real r = 0.5*gg*((aof(m,k-1,j+1,i) + aof(m,k-1,j-1,i))/dym
+                         + (aof(m,k,j+1,i) + aof(m,k,j-1,i))/dyp);
     return isfinite(r) ? r : static_cast<Real>(0.0);
   };
   // V_i.  Exactly 1.0 off a cubed sphere, so the divisions below are bitwise no-ops

@@ -24,6 +24,7 @@
 #include "mhd/mhd.hpp"
 #include "eos/eos.hpp"
 #include "conduction.hpp"
+#include "diffusion/cs_vertex_res.hpp"
 #include "bvals/bvals.hpp"
 #include "utils/rosseland.hpp"
 #include "utils/eint_from_cons.hpp"
@@ -961,8 +962,18 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   const bool cs = pmy_pack->pmesh->use_cubed_sphere && rad_cs_exact;
   auto &sinc_ = pmy_pack->pcoord->sin_cell;
   auto &cosc_ = pmy_pack->pcoord->cos_cell;
+  // cornerfix4-1103 <mesh>/cs_vertex_3cell: the metric cross terms' corner-block reads
+  // take the parallelogram value (CsCornerCell); off: unchanged
+  const bool v3c_ = pmy_pack->pmesh->use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell;
+  auto &vsz_ = pmy_pack->pmb->mb_size;
+  const int vjs_ = pmy_pack->pmesh->mb_indcs.js, vje_ = pmy_pack->pmesh->mb_indcs.je;
+  const int vks_ = pmy_pack->pmesh->mb_indcs.ks, vke_ = pmy_pack->pmesh->mb_indcs.ke;
   auto tcell = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
-    return gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
+    auto t0 = [&](const int kk, const int jj) {
+      return gen ? wtemp_(m,kk,jj,i) : w0(m,IEN,kk,jj,i)/w0(m,IDN,kk,jj,i)*gm1;
+    };
+    if (!v3c_) return t0(k, j);
+    return CsCornerCell(t0, vsz_.d_view(m), k, j, vjs_, vje_, vks_, vke_);
   };
   const Real capbdt = beta_dt;
   // rad_sts_all: the x1 faces join the stencil, and the radial tau-blend weight comes
@@ -1414,8 +1425,18 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   const bool cs = pmy_pack->pmesh->use_cubed_sphere && rad_cs_exact;
   auto &sinc_ = pmy_pack->pcoord->sin_cell;
   auto &cosc_ = pmy_pack->pcoord->cos_cell;
+  // cornerfix4-1103 <mesh>/cs_vertex_3cell: the metric cross terms' corner-block reads
+  // take the parallelogram value (CsCornerCell); off: unchanged
+  const bool v3c_ = pmy_pack->pmesh->use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell;
+  auto &vsz_ = pmy_pack->pmb->mb_size;
+  const int vjs_ = pmy_pack->pmesh->mb_indcs.js, vje_ = pmy_pack->pmesh->mb_indcs.je;
+  const int vks_ = pmy_pack->pmesh->mb_indcs.ks, vke_ = pmy_pack->pmesh->mb_indcs.ke;
   auto tcell = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
-    return gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
+    auto t0 = [&](const int kk, const int jj) {
+      return gen ? wtemp_(m,kk,jj,i) : w0(m,IEN,kk,jj,i)/w0(m,IDN,kk,jj,i)*gm1;
+    };
+    if (!v3c_) return t0(k, j);
+    return CsCornerCell(t0, vsz_.d_view(m), k, j, vjs_, vje_, vks_, vke_);
   };
 
   // <problem>/nan_report device counter/record; untouched when the switch is off
