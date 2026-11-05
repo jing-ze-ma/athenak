@@ -703,6 +703,13 @@ class RadiationM1 {
   int lbath_dmode = 2;
   Real lbath_alpha = 1.0;
   Real vgd_lhx_ie = -1.0;
+  // linhao-prod-1104 col1d A7/A7b (rad_m1/athena_face_diss, default false = bitwise): Athena++'s
+  // implicit DO HLL tau-factor dissipation at EVERY interior x1 face, F_d = s(tau) 0.5 c <mu>_+
+  // (E_L - E_R) (M1LbathDiss mode 3, tau = athena_face_taucell (kT dx_L + kT dx_R)); in the
+  // energy row always; athena_face_diss_force = true also puts it into the stored face flux
+  // (which the momentum deposit and F^n use), false (A7) = energy without a matching force
+  bool afd_on = false, afd_force = false;
+  Real afd_tc = 4.0, afd_mu1 = 0.5063576644955016;
   // per column (m, k - ks, j - js): his I_+ normalised over the CURRENT (rotated) vet_gd set,
   // 0.5 (E_g/sum_{n.r>0} w + (F_g/c)/sum_{n.r>0} w n.r), rebuilt every sweep (VetGdSweep)
   DvceArray3D<Real> vgd_lhx_iec;
