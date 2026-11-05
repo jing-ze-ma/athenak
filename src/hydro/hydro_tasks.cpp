@@ -198,6 +198,12 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
   id.splitpst  = tl["after_timeintegrator"]->AddTask(&Hydro::RTStrangSplit, this, none);
   id.splitsc2p = tl["after_timeintegrator"]->AddTask(&Hydro::ConToPrimSplit, this,
                                                      id.splitpst);
+  // share-1104 P4 <hydro>/floor_tracer: the per-cycle tracer pass (floor drain, x1
+  // ghosts; mhd/mhd_tracers.cpp) after the split source's ConToPrim (no task without it)
+  if (tracers.NTracer() > 0) {
+    id.trcsrc = tl["before_timeintegrator"]->AddTask(&Hydro::TracerSource, this,
+                                                     id.splitpc2p);
+  }
   pmy_pack->split_hook_tasks = true;
 
   id.irecv = tl["before_stagen"]->AddTask(&Hydro::InitRecv, this, none);
@@ -772,6 +778,8 @@ TaskStatus Hydro::ApplyPhysicalBCs(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->pgen->user_bcs) {
     (pmy_pack->pmesh->pgen->user_bcs_func)(pmy_pack->pmesh);
   }
+  // share-1104 P4: floor-tracer radial ghosts at physical x1 boundaries (no-op without)
+  TracerX1Ghosts(false);
   return TaskStatus::complete;
 }
 

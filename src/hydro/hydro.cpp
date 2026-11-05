@@ -98,6 +98,49 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // (2) Initialize scalars, diffusion, source terms
   nscalars = pin->GetOrAddInteger("hydro","nscalars",0);
+  // share-1104 P4: the passive-tracer layout shared with MHD (mhd/mhd_tracers.hpp): the
+  // floor-mass tracer <hydro>/floor_tracer (read only when named; default off) is the
+  // LAST scalar slot.  Off, nscalars and every path are unchanged.  Hydro has no x_e
+  // tracer (its consumer, the resistivity, is MHD only).
+  if (mhd::NamedTrue(pin, "hydro", "xe_tracer")) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<hydro>/xe_tracer is not implemented (MHD only: its "
+              << "consumer is the resistivity); use <mhd>/xe_tracer" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  tracers = mhd::ReadTracerLayout(pin, "hydro");
+  tracers.nuser = nscalars;
+  nscalars = tracers.Total();
+  floor_tracer = tracers.fl;
+  ifltr = tracers.fl ? (nhydro + tracers.FlOff()) : -1;
+  if (floor_tracer) {
+    if (nhydro != 5 || pmy_pack->pcoord->is_special_relativistic ||
+        pmy_pack->pcoord->is_general_relativistic) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/floor_tracer needs a non-relativistic hydro "
+                << "with an energy equation (eos ideal or general)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    peos->eos_data.ifltr = ifltr;
+    if (pin->DoesParameterExist("hydro","floor_tracer_margin")) {
+      fltr_margin = pin->GetReal("hydro","floor_tracer_margin");
+    }
+    if (pin->DoesParameterExist("hydro","floor_tracer_fmax")) {
+      fltr_fmax = pin->GetReal("hydro","floor_tracer_fmax");
+    }
+    if (fltr_margin < 1.0 || fltr_fmax <= 0.0 || fltr_fmax > 1.0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/floor_tracer needs floor_tracer_margin >= 1 and "
+                << "0 < floor_tracer_fmax <= 1" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<hydro>/floor_tracer: floor-added mass in scalar slot " << ifltr
+                << " (nscalars " << nscalars << "); drained once per cycle where rho > "
+                << fltr_margin << " x dfloor, at most " << fltr_fmax
+                << " of the cell mass per cycle" << std::endl;
+    }
+  }
 
   // Viscosity (if requested in input file)
   if (pin->DoesParameterExist("hydro","isotropic_viscosity")) {

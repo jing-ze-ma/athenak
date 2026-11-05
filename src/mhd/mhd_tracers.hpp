@@ -17,10 +17,19 @@
 //!   last                             <mhd>/floor_tracer: floor-added mass (if on)
 //! Both tracer keys are read only when named, so an input without them (and its
 //! restarts) has nscalars = <mhd>/nscalars exactly as before.
+//!
+//! share-1104 P4: the SAME layout serves <hydro> (ReadTracerLayout(pin, "hydro")):
+//! [0, nhydro) hydro variables, then <hydro>/nscalars, then <hydro>/floor_tracer (last).
+//! Hydro has no x_e tracer (its consumer, the resistivity, is MHD only: refused there).
+//! The floor-tracer drain and the x1-ghost rule are shared too (fluid:: below,
+//! mhd_tracers.cpp); hydro's floor increments are added in the hydro ConsToPrim kernels.
 
 #include <string>
 
+#include "athena.hpp"
 #include "parameter_input.hpp"
+
+class MeshBlockPack;
 
 namespace mhd {
 
@@ -43,16 +52,35 @@ inline bool NamedTrue(ParameterInput *pin, const std::string &blk,
   return pin->DoesParameterExist(blk, key) && pin->GetBoolean(blk, key);
 }
 
-inline TracerLayout ReadTracerLayout(ParameterInput *pin) {
+inline TracerLayout ReadTracerLayout(ParameterInput *pin,
+                                     const std::string &blk = "mhd") {
   TracerLayout t;
-  if (pin->DoesParameterExist("mhd", "nscalars")) {
-    t.nuser = pin->GetInteger("mhd", "nscalars");
+  if (pin->DoesParameterExist(blk, "nscalars")) {
+    t.nuser = pin->GetInteger(blk, "nscalars");
   }
-  t.xe = NamedTrue(pin, "mhd", "xe_tracer");
-  t.fl = NamedTrue(pin, "mhd", "floor_tracer");
+  t.xe = (blk == "mhd") && NamedTrue(pin, blk, "xe_tracer");
+  t.fl = NamedTrue(pin, blk, "floor_tracer");
   return t;
 }
 
 }  // namespace mhd
+
+namespace fluid {
+//! share-1104 P4: the floor-tracer drain kernel of MHD::FloorTracerDrain, shared with
+//! Hydro::FloorTracerDrain.  bcc empty (hydro): the floor density is dfloor alone;
+//! otherwise max(dfloor, B^2 va2i) as before.  phi empty unless etotgrav.  Adds the
+//! active-cell drained mass/energy (volume integrated) to dm_sum/de_sum.
+void FloorTracerDrainCore(MeshBlockPack *pp, const DvceArray5D<Real> &u0,
+                          const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc,
+                          const DvceArray5D<Real> &wder, const DvceArray4D<Real> &phi,
+                          const int isl, const int ns0, const int ns1, const Real dfl,
+                          const Real va2i, const Real marg, const Real fmx,
+                          Real &dm_sum, Real &de_sum);
+//! the tracer slots [t0, t1] of the radial ghosts at physical x1 boundaries take the
+//! edge cell's specific value (MHD::TracerX1Ghosts / Hydro::TracerX1Ghosts)
+void TracerX1GhostsCore(MeshBlockPack *pp, const DvceArray5D<Real> &u0,
+                        const DvceArray5D<Real> &w0, const int t0, const int t1,
+                        const bool set_w);
+}  // namespace fluid
 
 #endif  // MHD_MHD_TRACERS_HPP_

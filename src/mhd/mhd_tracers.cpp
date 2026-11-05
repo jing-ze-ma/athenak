@@ -28,6 +28,7 @@
 #include "diffusion/resistivity.hpp"
 #include "pgen/pgen.hpp"
 #include "mhd/mhd.hpp"
+#include "hydro/hydro.hpp"
 #include "mhd/mhd_tracers.hpp"
 #include "mhd/xe_tracer.hpp"
 #include "utils/c2p_track.hpp"
@@ -201,14 +202,69 @@ void MHD::XeTracerUpdate(Real dt, bool init) {
 
 void MHD::TracerX1Ghosts(bool set_w) {
   if (tracers.NTracer() == 0) return;
+  const int t0 = (ixe >= 0) ? ixe : ifltr;
+  const int t1 = (ifltr >= 0) ? ifltr : ixe;
+  fluid::TracerX1GhostsCore(pmy_pack, u0, w0, t0, t1, set_w);   // share-1104 P4
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::FloorTracerDrain
+//! \brief <mhd>/floor_tracer: remove floor-added mass (scalar ifltr, s) once per cycle
+//! where the density floor does not bind.  With rho_fl = max(dfloor, B^2/v_A,max^2)
+//! (the two floors ConsToPrim applies):
+//!     dm = min(s, fltr_fmax rho, rho - fltr_margin rho_fl)      (no drain if dm <= 0)
+//! so (a) only tagged floor mass is removed (dm <= s), (b) a drained cell stays at least
+//! fltr_margin x above the floor (it cannot be pushed back onto the floor, which would
+//! re-add the mass the next conversion: a drain/floor pump), (c) at most fltr_fmax of
+//! the cell mass goes per cycle, so the pressure change per cycle is <= fltr_fmax.
+//! The cell keeps its velocity, its specific internal energy and its specific values
+//! of every other scalar: with f = dm/rho, rho, the momenta, e_int and the other
+//! scalars' conserved values scale by (1 - f); the total energy loses
+//! de = f (e_int + KE) (+ dm phi with etotgrav, whose u0(IEN) contains rho phi); the
+//! magnetic energy is untouched.  The kinetic energy is m_i v^i/2 (covariant u0
+//! momentum, contravariant w0 velocity on the cubed sphere; orthonormal elsewhere).  w0
+//! is updated to the new state; the general-EOS pressure cache scales by (1 - f)
+//! (constant T; exact for an ideal gas, O(f) otherwise until the next conversion
+//! re-solves it); wtemp is kept.
+//! Every cell including ghosts is drained (pointwise; ghosts that mirror an interior
+//! cell get the identical result).  The ACTIVE-cell removal is booked twice: into
+//! fltr_dm/fltr_de (history Mdrain/Edrain) and, when the floor bookkeeping (c2p_track)
+//! is on, into c2p_acc rows 0/1 with weight 1, so Mfloor/Efloor and the energy ledgers
+//! see the NET floor change (added - drained).
+
+void MHD::FloorTracerDrain() {
+  if (c2p_track) c2p_track::Before(pmy_pack, u0, c2p_ref_e, c2p_ref_d);
+  DvceArray4D<Real> phi_;
+  if (use_etotgrav) phi_ = phicc0;
+  Real sum_dm = 0.0, sum_de = 0.0;
+  // share-1104 P4: the kernel is shared with Hydro::FloorTracerDrain
+  fluid::FloorTracerDrainCore(pmy_pack, u0, w0, bcc0, wder, phi_, ifltr, nmhd,
+                              nmhd + nscalars, peos->eos_data.dfloor,
+                              peos->eos_data.va2max_inv, fltr_margin, fltr_fmax,
+                              sum_dm, sum_de);
+  fltr_dm += sum_dm;
+  fltr_de += sum_de;
+  if (c2p_track) {
+    c2p_track::After(pmy_pack, u0, c2p_ref_e, c2p_ref_d, c2p_acc, 1.0, false);
+  }
+}
+
+}  // namespace mhd
+
+namespace fluid {
+//----------------------------------------------------------------------------------------
+//! \fn void fluid::TracerX1GhostsCore
+//! \brief share-1104 P4: see MHD::TracerX1Ghosts
+
+void TracerX1GhostsCore(MeshBlockPack *pmy_pack, const DvceArray5D<Real> &u0,
+                        const DvceArray5D<Real> &w0, const int t0, const int t1,
+                        const bool set_w) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int ng = indcs.ng;
   const int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
   const int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
   const int nmb = pmy_pack->nmb_thispack;
   const int is = indcs.is, ie = indcs.ie;
-  const int t0 = (ixe >= 0) ? ixe : ifltr;
-  const int t1 = (ifltr >= 0) ? ifltr : ixe;
   auto u0_ = u0;
   auto w0_ = w0;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
@@ -240,31 +296,16 @@ void MHD::TracerX1Ghosts(bool set_w) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void MHD::FloorTracerDrain
-//! \brief <mhd>/floor_tracer: remove floor-added mass (scalar ifltr, s) once per cycle
-//! where the density floor does not bind.  With rho_fl = max(dfloor, B^2/v_A,max^2)
-//! (the two floors ConsToPrim applies):
-//!     dm = min(s, fltr_fmax rho, rho - fltr_margin rho_fl)      (no drain if dm <= 0)
-//! so (a) only tagged floor mass is removed (dm <= s), (b) a drained cell stays at least
-//! fltr_margin x above the floor (it cannot be pushed back onto the floor, which would
-//! re-add the mass the next conversion: a drain/floor pump), (c) at most fltr_fmax of
-//! the cell mass goes per cycle, so the pressure change per cycle is <= fltr_fmax.
-//! The cell keeps its velocity, its specific internal energy and its specific values
-//! of every other scalar: with f = dm/rho, rho, the momenta, e_int and the other
-//! scalars' conserved values scale by (1 - f); the total energy loses
-//! de = f (e_int + KE) (+ dm phi with etotgrav, whose u0(IEN) contains rho phi); the
-//! magnetic energy is untouched.  The kinetic energy is m_i v^i/2 (covariant u0
-//! momentum, contravariant w0 velocity on the cubed sphere; orthonormal elsewhere).  w0
-//! is updated to the new state; the general-EOS pressure cache scales by (1 - f)
-//! (constant T; exact for an ideal gas, O(f) otherwise until the next conversion
-//! re-solves it); wtemp is kept.
-//! Every cell including ghosts is drained (pointwise; ghosts that mirror an interior
-//! cell get the identical result).  The ACTIVE-cell removal is booked twice: into
-//! fltr_dm/fltr_de (history Mdrain/Edrain) and, when the floor bookkeeping (c2p_track)
-//! is on, into c2p_acc rows 0/1 with weight 1, so Mfloor/Efloor and the energy ledgers
-//! see the NET floor change (added - drained).
+//! \fn void fluid::FloorTracerDrainCore
+//! \brief share-1104 P4: the kernel of MHD::FloorTracerDrain (see there), shared with
+//! Hydro::FloorTracerDrain (bcc empty: floor density dfloor alone)
 
-void MHD::FloorTracerDrain() {
+void FloorTracerDrainCore(MeshBlockPack *pmy_pack, const DvceArray5D<Real> &u0,
+                          const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc,
+                          const DvceArray5D<Real> &wder, const DvceArray4D<Real> &phi,
+                          const int isl, const int ns0, const int ns1, const Real dfl,
+                          const Real va2i, const Real marg, const Real fmx,
+                          Real &dm_sum, Real &de_sum) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int ng = indcs.ng;
   const int nc1 = indcs.nx1 + 2*ng;
@@ -273,21 +314,15 @@ void MHD::FloorTracerDrain() {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb = pmy_pack->nmb_thispack;
-  if (c2p_track) c2p_track::Before(pmy_pack, u0, c2p_ref_e, c2p_ref_d);
   auto u0_ = u0;
   auto w0_ = w0;
-  auto bcc_ = bcc0;
+  auto bcc_ = bcc;
+  const bool hasb = (bcc.size() > 0);
   auto wder_ = wder;
   auto vol = pmy_pack->pcoord->volume;
   const bool hasder = (wder.size() > 0);
-  const bool etg = use_etotgrav;
-  DvceArray4D<Real> phi_;
-  if (etg) phi_ = phicc0;
-  const int isl = ifltr;
-  const int ns0 = nmhd, ns1 = nmhd + nscalars;
-  const Real dfl = peos->eos_data.dfloor;
-  const Real va2i = peos->eos_data.va2max_inv;
-  const Real marg = fltr_margin, fmx = fltr_fmax;
+  const bool etg = (phi.size() > 0);
+  auto phi_ = phi;
   const int ncell = nmb*nc3*nc2*nc1;
   Real sum_dm = 0.0, sum_de = 0.0;
   Kokkos::parallel_reduce("mhd_fltr_drain",
@@ -301,9 +336,12 @@ void MHD::FloorTracerDrain() {
     const int i = r - j*nc1;
     const Real rho = u0_(m,IDN,k,j,i);
     const Real s = fmin(fmax(u0_(m,isl,k,j,i), 0.0), rho);
-    const Real b2 = SQR(bcc_(m,IBX,k,j,i)) + SQR(bcc_(m,IBY,k,j,i))
-                    + SQR(bcc_(m,IBZ,k,j,i));
-    const Real rfl = fmax(dfl, b2*va2i);
+    Real rfl = dfl;
+    if (hasb) {
+      const Real b2 = SQR(bcc_(m,IBX,k,j,i)) + SQR(bcc_(m,IBY,k,j,i))
+                      + SQR(bcc_(m,IBZ,k,j,i));
+      rfl = fmax(dfl, b2*va2i);
+    }
     const Real dm = fmin(s, fmin(fmx*rho, rho - marg*rfl));
     // (no early return: the reducers must see every index)
     if (rho > 0.0 && dm > 0.0) {
@@ -335,6 +373,38 @@ void MHD::FloorTracerDrain() {
       }
     }
   }, Kokkos::Sum<Real>(sum_dm), Kokkos::Sum<Real>(sum_de));
+  dm_sum += sum_dm;
+  de_sum += sum_de;
+}
+
+}  // namespace fluid
+
+namespace hydro {
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Hydro::TracerSource
+//! \brief share-1104 P4 <hydro>/floor_tracer: the per-cycle tracer pass of the hydro
+//! ("before_timeintegrator", after the split source and its ConToPrim): the floor drain,
+//! then the x1 ghosts -- MHD::TracerSource without x_e and without tracer_strang (hydro
+//! has no RKG super-steps to split it into).
+
+TaskStatus Hydro::TracerSource(Driver *pdrive, int stage) {
+  if (floor_tracer) FloorTracerDrain();
+  TracerX1Ghosts(true);
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::FloorTracerDrain
+//! \brief see MHD::FloorTracerDrain; the floor density is dfloor (no Alfven floor)
+
+void Hydro::FloorTracerDrain() {
+  if (c2p_track) c2p_track::Before(pmy_pack, u0, c2p_ref_e, c2p_ref_d);
+  DvceArray4D<Real> phi_;
+  if (use_etotgrav) phi_ = phicc0;
+  Real sum_dm = 0.0, sum_de = 0.0;
+  fluid::FloorTracerDrainCore(pmy_pack, u0, w0, DvceArray5D<Real>(), wder, phi_, ifltr,
+                              nhydro, nhydro + nscalars, peos->eos_data.dfloor, 0.0,
+                              fltr_margin, fltr_fmax, sum_dm, sum_de);
   fltr_dm += sum_dm;
   fltr_de += sum_de;
   if (c2p_track) {
@@ -342,4 +412,12 @@ void MHD::FloorTracerDrain() {
   }
 }
 
-}  // namespace mhd
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::TracerX1Ghosts
+//! \brief see MHD::TracerX1Ghosts (the floor-tracer slot only)
+
+void Hydro::TracerX1Ghosts(bool set_w) {
+  if (tracers.NTracer() == 0) return;
+  fluid::TracerX1GhostsCore(pmy_pack, u0, w0, ifltr, ifltr, set_w);
+}
+}  // namespace hydro

@@ -130,6 +130,9 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
     } else {
       // update counter, reset conserved if floor was hit
       if (dfloor_used) {
+        // share-1104 P4 <hydro>/floor_tracer: the floor's mass joins the floor-mass
+        // scalar (as <mhd>/floor_tracer in ideal_mhd.cpp / general_mhd.cpp)
+        if (eos.ifltr >= 0) cons(m,eos.ifltr,k,j,i) += u.d - cons(m,IDN,k,j,i);
         cons(m,IDN,k,j,i) = u.d;
         sumd++;
       }
@@ -188,6 +191,10 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
         // apply scalar floor
         if (cons(m,n,k,j,i) < 0.0) {
           cons(m,n,k,j,i) = 0.0;
+        }
+        // share-1104 P4 <hydro>/floor_tracer: the floor mass cannot exceed the cell mass
+        if (n == eos.ifltr && cons(m,n,k,j,i) > u.d) {
+          cons(m,n,k,j,i) = u.d;
         }
         prim(m,n,k,j,i) = cons(m,n,k,j,i)/u.d;
       }

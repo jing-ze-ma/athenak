@@ -275,11 +275,40 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // record would be read at the wrong offsets; for a general EOS a 2-scalar difference is
   // exactly the size of the derived (p, Gamma_1) tail and would pass the size check).
   int nhydro_file = nhydro;
-  if (phydro != nullptr && global_variable::rst_hydro_nscalars >= 0 &&
-      global_variable::rst_hydro_nscalars != phydro->nscalars) {
+  // share-1104 P4 <hydro>/floor_tracer (the last scalar slot): a run that has it reading
+  // a file without it (same user scalars) reads the file's variables and starts the
+  // floor tracer from zero; the user-scalar rules below are unchanged (with the floor
+  // tracer on both sides, or on neither).  Switching it OFF at a restart is refused.
+  const bool fl_run = (phydro != nullptr) && phydro->floor_tracer;
+  const bool fl_file = (global_variable::rst_hydro_tracers & 2) != 0;
+  if (phydro != nullptr && global_variable::rst_hydro_nscalars >= 0 && fl_run != fl_file) {
+    const int nu_run = phydro->tracers.nuser;
     const std::string smode = pin->DoesParameterExist("hydro", "scalars_rst_missing") ?
                               pin->GetString("hydro", "scalars_rst_missing") : "";
-    if (global_variable::rst_hydro_nscalars == 0 && smode.compare("zero") == 0) {
+    if (fl_run && global_variable::rst_hydro_nscalars == nu_run) {
+      nhydro_file = nhydro - 1;
+    } else if (fl_run && global_variable::rst_hydro_nscalars == 0 &&
+               smode.compare("zero") == 0) {
+      nhydro_file = phydro->nhydro;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/floor_tracer = " << (fl_run ? "true" : "false")
+                << " (user nscalars " << nu_run << ") but the restart file was written "
+                << "with floor_tracer = " << (fl_file ? "true" : "false") << " and "
+                << "nscalars = " << global_variable::rst_hydro_nscalars << "; switching "
+                << "the floor tracer off at a restart is not supported" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "hydro: restart file has no floor tracer; <hydro>/floor_tracer starts "
+                << "from zero" << std::endl;
+    }
+  } else if (phydro != nullptr && global_variable::rst_hydro_nscalars >= 0 &&
+      global_variable::rst_hydro_nscalars != phydro->tracers.nuser) {
+    const std::string smode = pin->DoesParameterExist("hydro", "scalars_rst_missing") ?
+                              pin->GetString("hydro", "scalars_rst_missing") : "";
+    if (global_variable::rst_hydro_nscalars == 0 && !fl_file &&
+        smode.compare("zero") == 0) {
       nhydro_file = phydro->nhydro;
       if (global_variable::my_rank == 0) {
         std::cout << "hydro: restart file has no passive scalars; <hydro>/nscalars = "

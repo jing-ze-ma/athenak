@@ -21,4 +21,5 @@ bool restart_run = false;  // started from a restart file (-r); set in main() St
 int rst_mhd_nscalars = -1;    // tracer-1101: same for <mhd> (user scalars only)
 int rst_mhd_tracers = 0;      // tracer-1101: file MHD tracers (bit 0 x_e, 1 floor)
 int rst_hydro_nscalars = -1;  // acctrc-1019: nscalars the restart file was written with
+int rst_hydro_tracers = 0;    // share-1104 P4: file hydro tracers (bit 1 floor)
 }
