@@ -231,6 +231,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("afd_force", afd_force);
   v.value("afd_tc", afd_tc);
   v.value("afd_mu1", afd_mu1);
+  v.value("afd_taumin", afd_taumin);
   v.value("ibm_n", ibm_n);
   v.value("ibm_nr", ibm_nr);
   v.value("ibm_ray", ibm_ray);

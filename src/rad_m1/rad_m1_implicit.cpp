@@ -3167,9 +3167,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       afd_force = pin->GetOrAddBoolean("rad_m1","athena_face_diss_force",false);
       afd_tc = pin->GetOrAddReal("rad_m1","athena_face_taucell",4.0);
       afd_mu1 = pin->GetOrAddReal("rad_m1","athena_face_mu1",0.5063576644955016);
+      afd_taumin = pin->GetOrAddReal("rad_m1","athena_face_taumin",0.0);
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> athena_face_diss: Athena++ HLL tau-factor dissipation at every "
-                  << "interior x1 face, taucell " << afd_tc << ", <mu>_+ " << afd_mu1
+                  << "interior x1 face, taucell " << afd_tc << ", <mu>_+ " << afd_mu1 << ", tau_cell min " << afd_taumin
                   << (afd_force ? ", in the face flux (force consistent)"
                                 : ", energy row only (no matching force)") << std::endl;
       }
@@ -14195,6 +14196,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool lbath = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
     const bool lbhr = impl_lbath_hr;   // linhao-prod-1104 halfrange (rad_m1.hpp)
     const bool afd = afd_on; const Real afdt = afd_tc, afdm = afd_mu1;   // col1d A7
+    const Real afdq = afd_taumin;
     const Real lhmu = lbath_mu1, lheg = lbath_heg, lhfg = lbath_hfg;
     const int lhdm = lbath_dmode; const Real lhal = lbath_alpha;
     auto lgr_ = lbath_g;
@@ -14558,9 +14560,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             rr -= nup*ifw_(m,M1_IFW_DG,k,j,i+1);
           }
           if (afd) {   // col1d A7: Athena++ HLL tau-factor dissipation, face i+1/2
-            const Real tq = afdt*(iw_(m,M1_IW_KT,k,j,i)*(cx1f(m,i+1) - cx1f(m,i))
-                                  + iw_(m,M1_IW_KT,k,j,ip)*(cx1f(m,ip+1) - cx1f(m,ip)));
-            const Real kc = 0.5*ch*afdm*M1LbathDiss(3, tq);
+            const Real ta = iw_(m,M1_IW_KT,k,j,i)*(cx1f(m,i+1) - cx1f(m,i));
+            const Real tb = iw_(m,M1_IW_KT,k,j,ip)*(cx1f(m,ip+1) - cx1f(m,ip));
+            const Real kc = (fmin(ta, tb) >= afdq) ? 0.5*ch*afdm*M1LbathDiss(3, afdt*(ta + tb))
+                                                   : 0.0;
             bb += nup*kc;
             cc -= nup*kc;
           }
@@ -14814,9 +14817,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             rr += num*ifw_(m,M1_IFW_DG,k,j,i);
           }
           if (afd) {   // col1d A7: Athena++ HLL tau-factor dissipation, face i-1/2
-            const Real tq = afdt*(iw_(m,M1_IW_KT,k,j,im)*(cx1f(m,im+1) - cx1f(m,im))
-                                  + iw_(m,M1_IW_KT,k,j,i)*(cx1f(m,i+1) - cx1f(m,i)));
-            const Real kc = 0.5*ch*afdm*M1LbathDiss(3, tq);
+            const Real ta = iw_(m,M1_IW_KT,k,j,im)*(cx1f(m,im+1) - cx1f(m,im));
+            const Real tb = iw_(m,M1_IW_KT,k,j,i)*(cx1f(m,i+1) - cx1f(m,i));
+            const Real kc = (fmin(ta, tb) >= afdq) ? 0.5*ch*afdm*M1LbathDiss(3, afdt*(ta + tb))
+                                                   : 0.0;
             aa -= num*kc;
             bb += num*kc;
           }
@@ -15242,6 +15246,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool lbathf = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
     const bool lbhrf = impl_lbath_hr;   // linhao-prod-1104 halfrange
     const bool afdf = afd_on && afd_force; const Real afdtf = afd_tc, afdmf = afd_mu1;
+    const Real afdqf = afd_taumin;
     const Real lhmuf = lbath_mu1, lhegf = lbath_heg, lhfgf = lbath_hfg;
     const int lhdmf = lbath_dmode; const Real lhalf = lbath_alpha;
     auto lgf_ = lbath_g;
@@ -15519,10 +15524,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           hhz = (cl/ch)*gh;
         }
         if (afdf) {   // col1d A7b: the Athena++ dissipation also in the stored face flux
-          const Real tq = afdtf*(iw_(m,M1_IW_KT,k,j,im)*(cx1f(m,im+1) - cx1f(m,im))
-                                 + iw_(m,M1_IW_KT,k,j,ip)*(cx1f(m,ip+1) - cx1f(m,ip)));
-          fn += 0.5*cl*afdmf*M1LbathDiss(3, tq)
-                *(iw_(m,M1_IW_EP,k,j,im) - iw_(m,M1_IW_EP,k,j,ip));
+          const Real ta = iw_(m,M1_IW_KT,k,j,im)*(cx1f(m,im+1) - cx1f(m,im));
+          const Real tb = iw_(m,M1_IW_KT,k,j,ip)*(cx1f(m,ip+1) - cx1f(m,ip));
+          if (fmin(ta, tb) >= afdqf) {
+            fn += 0.5*cl*afdmf*M1LbathDiss(3, afdtf*(ta + tb))
+                  *(iw_(m,M1_IW_EP,k,j,im) - iw_(m,M1_IW_EP,k,j,ip));
+          }
         }
         // postr-1031 implicit_pos_transport = upwind: the memory part of the face flux
         // as the row took it (M1PtMemQ, interior faces only): q E'_donor for fmem

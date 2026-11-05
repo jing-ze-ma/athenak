@@ -710,6 +710,7 @@ class RadiationM1 {
   // (which the momentum deposit and F^n use), false (A7) = energy without a matching force
   bool afd_on = false, afd_force = false;
   Real afd_tc = 4.0, afd_mu1 = 0.5063576644955016;
+  Real afd_taumin = 0.0;   // athena_face_taumin: only faces with min(kT dx) of the two cells >= it
   // per column (m, k - ks, j - js): his I_+ normalised over the CURRENT (rotated) vet_gd set,
   // 0.5 (E_g/sum_{n.r>0} w + (F_g/c)/sum_{n.r>0} w n.r), rebuilt every sweep (VetGdSweep)
   DvceArray3D<Real> vgd_lhx_iec;
