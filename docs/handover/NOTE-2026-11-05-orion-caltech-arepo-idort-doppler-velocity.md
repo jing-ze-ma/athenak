@@ -52,6 +52,9 @@ So the error would matter (Lambda >> 1); both production paths avoid it.
 - Original IDORT (no IdortVelMode key = P.Vel = v^n + g dt/2): all 296 IDORT runs under /orion/ptmp/jinma/Arepo, 2024-04 .. 2026-05:
   RSGg (72), RSG3*_relax_r (~75), BSGg (2, 2025-06), MS, IDORT_dir/IDORT_test test problems (~145). Unless built with IDORT_NEGLECT_VEL
   (not checked), the stellar ones carry the lagged-frame error; BSGg is the most exposed (radiation-dominated, thick).
+  USER 11-05: most of these production runs were built with IDORT_NEGLECT_VEL (no O(v/c) terms, so no frame error). Confirmed from the
+  compile flags in the run logs of the one RSGg output that kept them (RSGg_m10lgl5.0_res6ib03n3s_r6s_new4_kap2); the others kept no logs.
+  So the original-IDORT exposure is mainly the IDORT_dir/IDORT_test test problems (velocity terms on by design, mostly non-gravitating).
 - Arepo2: long_v1 and long_m8 ran mode 3 (run.log "using default value '3'"). Before 7a7dc2c61 (10-16) the default was **2** (Athena++-like):
   ~830 Arepo2 dev/test runs used it, incl. g25 test runs (runs_g25: long_fhyb, full_start2, chk_fhyb, red_cons12clos*; runs_basefix/g25;
   star3d tests). Their outputs are small (<= 1 GB each; long_fhyb's snapshots are gone). Explicit 1/2 only in 6 core/smoke tests.
