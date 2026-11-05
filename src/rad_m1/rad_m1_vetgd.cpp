@@ -92,6 +92,7 @@
 #include "rad_m1/rad_m1_vetseg.hpp"
 #include "rad_m1/rad_m1_vgdray.hpp"
 #include "rad_m1/rad_m1_vgdtheta.hpp"
+#include "utils/recipe.hpp"
 #include "coordinates/grid_stretch.hpp"
 #if defined(KOKKOS_ENABLE_CUDA)
 #include <cub/cub.cuh>
@@ -1115,7 +1116,20 @@ void RadiationM1::VetGdInit() {
 
 void RadiationM1::VetRotInit(ParameterInput *pin) {
   const bool fresh = !global_variable::restart_run;
-  // rotadv-1102: vet_rotate_advance (read only when named; default false = bitwise)
+  // rotadv-1102: vet_rotate_advance (read only when named; default false = bitwise).
+  // defaults-1105 (USER 11-05): DEFAULT true on a FRESH vet_gd run (recipe::NewDefaults:
+  // fresh start or <job>/recipe = prod1019) when the key is not named; recorded, so the
+  // run's restarts keep it; a restart whose input lacks the key keeps false (logged).
+  // Acts only with vet_rotate_avg >= 2 (as every he_star production deck sets by hand).
+  if (vgd_on && !pin->DoesParameterExist("rad_m1","vet_rotate_advance")) {
+    if (recipe::NewDefaults(pin)) {
+      pin->GetOrAddBoolean("rad_m1","vet_rotate_advance",true);
+      recipe::Log("<rad_m1>/vet_rotate_advance = true (default on a fresh vet_gd run)");
+    } else {
+      recipe::Log("<rad_m1>/vet_rotate_advance = false (restart input has no key: the old "
+                  "default kept; set it true or <job>/recipe = prod1019 to switch)");
+    }
+  }
   if (pin->DoesParameterExist("rad_m1","vet_rotate_advance")) {
     g_vra_adv = pin->GetBoolean("rad_m1","vet_rotate_advance");
     if (g_vra_adv && global_variable::my_rank == 0) {

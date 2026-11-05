@@ -67,13 +67,15 @@ void MeshBoundaryValuesCC::SetVectorPairs(const int nvar,
 // buffers worked (HG cs, 3 blocks/rank: ~600 us per 1-variable pack on 168 teams).  Now
 // each team is split into S teams over chunks of its (k, j) range and the i loop runs on
 // VL vector lanes.  Every buffer / ghost value is the same expression of the same inputs
-// (per-element copies / transforms): bitwise.  Env BVALS_CC_SPLIT (default 16) and
-// BVALS_CC_VL (default 32 on CUDA, 1 elsewhere); both = 1 is the old launch.
+// (per-element copies / transforms): bitwise.  Env BVALS_CC_SPLIT (default 1 since
+// defaults-1105, USER 11-05: 3.6 % faster than 16 on the 2-GPU dhj restart, bitwise; was 16)
+// and BVALS_CC_VL (default 32 on CUDA, 1 elsewhere); both = 1 is the old launch.  The env
+// variable still overrides (BVALS_CC_SPLIT=16 = the 10-31 split).
 static int BvCcSplit() {
   static int s = -1;
   if (s < 0) {
     const char *e = std::getenv("BVALS_CC_SPLIT");
-    s = (e != nullptr) ? std::atoi(e) : 16;
+    s = (e != nullptr) ? std::atoi(e) : 1;
     if (s < 1) {s = 1;}
   }
   return s;

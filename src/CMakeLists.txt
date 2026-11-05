@@ -276,6 +276,9 @@ endif()
 # defaults of a problem generator; a no-op for every pgen without its own file
 if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt")
   target_sources(athena PRIVATE pgen/deep_hot_jupiter_rt_defaults.cpp)
+elseif (${PROBLEM} STREQUAL "he_star_m1" OR ${PROBLEM} STREQUAL "ry_per_accretor")
+  # defaults-1105 (USER 11-05, P12): the he_star / accretor x1 well-balanced defaults
+  target_sources(athena PRIVATE pgen/star_wb_defaults.cpp)
 else()
   target_sources(athena PRIVATE pgen/early_defaults_none.cpp)
 endif()
