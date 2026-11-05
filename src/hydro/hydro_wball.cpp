@@ -26,7 +26,7 @@ namespace hydro {
   auto &w0 = c.w0; auto &u0 = c.u0; auto &wder = c.wder; (void) wder; \
   auto &wbq0 = c.wbq0; auto &wbq2 = c.wbq2; auto &wbq3 = c.wbq3; auto &wbw = c.wbw; \
   auto &phicc0 = c.phicc; auto &wtemp = c.wtemp; auto &pwb = c.pwb; (void) pwb; \
-  auto &phi0 = c.phi0; AmModule *pam = c.pam; (void) pam; \
+  struct WbPhiF {DvceArray4D<Real> x1f, x2f, x3f;}; WbPhiF phi0{c.phi1f, c.phi2f, c.phi3f}; AmModule *pam = c.pam; (void) pam; \
   const WBOption wb_option = c.wbo; (void) wb_option; \
   const bool wb_weight = c.wgt, wb_guard_ideal = c.wbgi; \
   const bool use_wellbalance_static = c.wbs; (void) use_wellbalance_static; \
@@ -367,7 +367,7 @@ WbAllCtx Hydro::WbCtx() {
   c.wgt = wb_weight; c.wbgi = wb_guard_ideal; c.wbs = use_wellbalance_static;
   c.r0 = wbw_r0; c.r1 = wbw_r1; c.m0 = wbw_m0; c.m1 = wbw_m1; c.eta = wbw_eta;
   c.w0 = w0; c.u0 = u0; c.wder = wder; c.wbq0 = wbq0; c.wbq2 = wbq2; c.wbq3 = wbq3;
-  c.wbw = wbw; c.phicc = phicc0; c.wtemp = wtemp; c.pwb = pwb; c.phi0 = phi0; c.pam = pam;
+  c.wbw = wbw; c.phicc = phicc0; c.wtemp = wtemp; c.pwb = pwb; c.phi1f = phi0.x1f; c.phi2f = phi0.x2f; c.phi3f = phi0.x3f; c.pam = pam;
   c.wbam_u = &wbam_u; c.wbam_w = &wbam_w; c.wbam_f = &wbam_f;
   return c;
 }

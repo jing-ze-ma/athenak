@@ -220,7 +220,7 @@ struct WbAllCtx {
   Real r0 = 0.1, r1 = 0.3, m0 = 0.2, m1 = 0.5, eta = 1.0e-4;
   DvceArray5D<Real> w0, u0, wder, wbq0, wbq2, wbq3, wbw;
   DvceArray4D<Real> phicc, wtemp, pwb;
-  DvceFaceFld4D<Real> phi0;
+  DvceArray4D<Real> phi1f, phi2f, phi3f;   // the face potentials (phi0.x1f/x2f/x3f)
   class AmModule *pam = nullptr;
   DvceArray5D<Real> *wbam_u = nullptr, *wbam_w = nullptr;
   DvceFaceFld5D<Real> **wbam_f = nullptr;

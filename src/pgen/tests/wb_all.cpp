@@ -65,7 +65,7 @@ struct WbFl {
   DvceArray5D<Real> u0, w0, wbq0;
   bool all = false, dyn = false, wbx1 = false, mhd = false;
   DvceArray4D<Real> phicc;
-  DvceFaceFld4D<Real> phi0;
+  DvceArray4D<Real> phi1, phi2, phi3;
   EOS_Data eos;
   std::function<void(Real, bool)> addgrav;
 };
@@ -75,13 +75,13 @@ WbFl WbFluid(MeshBlockPack *pmbp) {
     auto *p = pmbp->pmhd;
     f.u0 = p->u0; f.w0 = p->w0; f.wbq0 = p->wbq0; f.all = p->wb_all;
     f.dyn = p->use_wellbalance_dynamic; f.wbx1 = p->use_wb_x1; f.mhd = true;
-    f.phicc = p->phicc0; f.phi0 = p->phi0; f.eos = p->peos->eos_data;
+    f.phicc = p->phicc0; f.phi1 = p->phi0.x1f; f.phi2 = p->phi0.x2f; f.phi3 = p->phi0.x3f; f.eos = p->peos->eos_data;
     f.addgrav = [p](Real b, bool x1) {p->AddWbGravity(b, x1);};
   } else {
     auto *p = pmbp->phydro;
     f.u0 = p->u0; f.w0 = p->w0; f.wbq0 = p->wbq0; f.all = p->wb_all;
     f.dyn = p->use_wellbalance_dynamic; f.wbx1 = p->use_wb_x1;
-    f.phicc = p->phicc0; f.phi0 = p->phi0; f.eos = p->peos->eos_data;
+    f.phicc = p->phicc0; f.phi1 = p->phi0.x1f; f.phi2 = p->phi0.x2f; f.phi3 = p->phi0.x3f; f.eos = p->peos->eos_data;
     f.addgrav = [p](Real b, bool x1) {p->AddWbGravity(b, x1);};
   }
   return f;
@@ -336,7 +336,7 @@ void ProblemGenerator::WbAll(ParameterInput *pin, const bool restart) {
     const int n1 = nx1 + 2*ng, n2 = nx2 + 2*ng, n3 = (nx3 > 1) ? nx3 + 2*ng : 1;
     auto &size = pmbp->pmb->mb_size;
     auto pcc = fl.phicc;
-    auto p1 = fl.phi0.x1f, p2 = fl.phi0.x2f, p3 = fl.phi0.x3f;
+    auto p1 = fl.phi1, p2 = fl.phi2, p3 = fl.phi3;
     const bool threed = pmy_mesh_->three_d;
     const WbAllG gg = WbAllGeo(pmy_mesh_);
     par_for("wball_phi", DevExeSpace(), 0, pmbp->nmb_thispack - 1, 0, n3 - 1, 0, n2 - 1,
