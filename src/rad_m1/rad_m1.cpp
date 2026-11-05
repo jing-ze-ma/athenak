@@ -1247,6 +1247,20 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_pole_ring_colat")) {
       vgd_rbcolat = pin->GetReal("rad_m1","vet_gd_pole_ring_colat");
     }
+    // prod1104b default (USER 11-04): vet_gd_halo_compact = 2 on a FRESH vet_gd start
+    // (recipe::NewDefaults) when not named (bitwise; 29-40 % faster on cs vet_gd runs;
+    // the vet_gd setup still switches it off where it does not apply); recorded for
+    // restarts; a restart whose input lacks the key keeps 0; an explicit key wins.
+    if (vgd_on && !pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
+      if (recipe::NewDefaults(pin)) {
+        pin->GetOrAddInteger("rad_m1","vet_gd_halo_compact",2);
+        recipe::Log("<rad_m1>/vet_gd_halo_compact = 2 (default with vet_gd on a fresh start)");
+      } else {
+        recipe::Log("<rad_m1>/vet_gd_halo_compact = 0 (" + std::string(
+            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+            "restart input has no key") + ": the old default)");
+      }
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
       vgd_hcomp = pin->GetInteger("rad_m1","vet_gd_halo_compact");
     }
@@ -1263,7 +1277,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin")) {
       vgd_twin = pin->GetBoolean("rad_m1","vet_gd_twin");
     } else if (vgd_on && fresh && !vgd_async_named) {
-      vgd_twin = pin->GetOrAddBoolean("rad_m1","vet_gd_twin",true);
+      // prod1104b (USER 11-04): the fresh default is FALSE on the cubed sphere (every cs
+      // production runs without the twin); spherical polar keeps true (BSG fin3 lineage)
+      const bool cs_tw = ppack->pmesh->use_cubed_sphere;
+      vgd_twin = pin->GetOrAddBoolean("rad_m1","vet_gd_twin",!cs_tw);
+      if (cs_tw) recipe::Log("<rad_m1>/vet_gd_twin = false (default with vet_gd on the "
+                             "cubed sphere)");
     }
     // twinfix-1012 (rad_m1_vetgd.cpp VetGdTwinTrans, VgdTwW).
     // vet_gd_twin_state = mean | trans: the twin's laterally uniform shell state from
