@@ -402,6 +402,9 @@ void RadiationM1::VetGdGlobalBandInit() {
   // buckets by depth (1..w): on-rank (6 ints), per partner rank send / recv (3 ints)
   std::vector<std::vector<int>> lb(w + 1);
   std::map<int, std::vector<std::vector<int>>> sb, rb;
+  // share-1104 G1: the source cell's global (J, K) of every send / receive entry, in the
+  // same order (the compact halo's keep test is evaluated from them on both sides)
+  std::map<int, std::vector<std::vector<int>>> sbj, rbj;
   for (int gr = 0; gr < ngb; ++gr) {
     const int rr = pm->rank_eachmb[gr];
     for (int kk = 0; kk < c3w; ++kk) {
@@ -415,16 +418,24 @@ void RadiationM1::VetGdGlobalBandInit() {
         }
         const int ro = pm->rank_eachmb[go];
         if (rr != me && ro != me) {continue;}
+        const int jg = pm->lloc_eachmb[go].lx2*nx2 + jo - w;
+        const int kg = pm->lloc_eachmb[go].lx3*nx3 + ko - w;
         if (rr == me && ro == me) {
           lb[d].insert(lb[d].end(), {gr - g0, kk, jj, go - g0, ko, jo, d});
         } else if (rr == me) {
           auto &v = rb[ro];
           if (v.empty()) {v.resize(w + 1);}
           v[d].insert(v[d].end(), {gr - g0, kk, jj});
+          auto &vj = rbj[ro];
+          if (vj.empty()) {vj.resize(w + 1);}
+          vj[d].insert(vj[d].end(), {jg, kg});
         } else {
           auto &v = sb[rr];
           if (v.empty()) {v.resize(w + 1);}
           v[d].insert(v[d].end(), {go - pm->gids_eachrank[me], ko, jo});
+          auto &vj = sbj[rr];
+          if (vj.empty()) {vj.resize(w + 1);}
+          vj[d].insert(vj[d].end(), {jg, kg});
         }
       }
     }
@@ -461,7 +472,7 @@ void RadiationM1::VetGdGlobalBandInit() {
   vgd_cspm.assign(np, 0);
   vgd_gdsn.assign(w + 1, std::vector<int>(np, 0));
   vgd_gdrn.assign(w + 1, std::vector<int>(np, 0));
-  std::vector<int> sl, rl, sd, rd;
+  std::vector<int> sl, rl, sd, rd, sj, rj;
   for (int p = 0; p < np; ++p) {
     const int rk = vgd_csprk[p];
     vgd_csps[p] = static_cast<int>(sl.size()/3);
@@ -471,11 +482,15 @@ void RadiationM1::VetGdGlobalBandInit() {
         const auto &v = sb[rk][d];
         sl.insert(sl.end(), v.begin(), v.end());
         sd.insert(sd.end(), v.size()/3, d);
+        const auto &vj = sbj[rk][d];
+        sj.insert(sj.end(), vj.begin(), vj.end());
       }
       if (rb.count(rk)) {
         const auto &v = rb[rk][d];
         rl.insert(rl.end(), v.begin(), v.end());
         rd.insert(rd.end(), v.size()/3, d);
+        const auto &vj = rbj[rk][d];
+        rj.insert(rj.end(), vj.begin(), vj.end());
       }
       vgd_gdsn[d][p] = static_cast<int>(sl.size()/3) - vgd_csps[p];
       vgd_gdrn[d][p] = static_cast<int>(rl.size()/3) - vgd_cspr[p];
@@ -536,6 +551,62 @@ void RadiationM1::VetGdGlobalBandInit() {
     }
     Kokkos::deep_copy(vgd_phc, ph_h);
   }
+  // share-1104 G1: the compact global band (vet_gd_halo_compact > 0, an MPI band)
+  vgd_gbc = (vgd_hcomp > 0) && vgd_hmpi;
+  if (vgd_gbc) {
+    const int n = vgd_n;
+    Kokkos::realloc(vgd_gbjs, std::max(vgd_csnsnd, 1), 2);
+    Kokkos::realloc(vgd_gbjr, std::max(vgd_csnrcv, 1), 2);
+    {
+      auto a_h = Kokkos::create_mirror_view(vgd_gbjs);
+      for (int e = 0; e < vgd_csnsnd; ++e) {a_h(e,0) = sj[2*e]; a_h(e,1) = sj[2*e + 1];}
+      Kokkos::deep_copy(vgd_gbjs, a_h);
+      auto b_h = Kokkos::create_mirror_view(vgd_gbjr);
+      for (int e = 0; e < vgd_csnrcv; ++e) {b_h(e,0) = rj[2*e]; b_h(e,1) = rj[2*e + 1];}
+      Kokkos::deep_copy(vgd_gbjr, b_h);
+    }
+    // the global rows: node theta, cell width, the polar zone (node colatitude <
+    // vet_gd_band_colat, + w + 1 rows: every row a clamped polar read can reach)
+    Kokkos::realloc(vgd_gbth, nt2);
+    Kokkos::realloc(vgd_gbdt, nt2);
+    Kokkos::realloc(vgd_gbcap, nt2);
+    auto th_h = Kokkos::create_mirror_view(vgd_gbth);
+    auto dt_h = Kokkos::create_mirror_view(vgd_gbdt);
+    auto cp_h = Kokkos::create_mirror_view(vgd_gbcap);
+    const double tb = vgd_bcolat*M_PI/180.0;
+    int nz = 0;
+    for (int J = 0; J < nt2; ++J) {
+      const double f0 = VgdThetaFace(pm, J), f1 = VgdThetaFace(pm, J + 1);
+      th_h(J) = 0.5*(f0 + f1);
+      dt_h(J) = f1 - f0;
+      if (0.5*(f0 + f1) < tb) {nz = J + 1;}
+    }
+    for (int J = 0; J < nt2; ++J) {
+      cp_h(J) = (J < nz + w + 1 || J >= nt2 - nz - w - 1) ? 1 : 0;
+    }
+    Kokkos::deep_copy(vgd_gbth, th_h);
+    Kokkos::deep_copy(vgd_gbdt, dt_h);
+    Kokkos::deep_copy(vgd_gbcap, cp_h);
+    vgd_gbdmin = static_cast<Real>(VetGdThetaDmin());
+    auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
+    auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmy_pack->pcoord->xx1f);
+    vgd_r1v.assign(x1v_h.extent(1), 0.0);
+    vgd_r1f.assign(x1f_h.extent(1), 0.0);
+    for (size_t q = 0; q < vgd_r1v.size(); ++q) {vgd_r1v[q] = x1v_h(0,q);}
+    for (size_t q = 0; q < vgd_r1f.size(); ++q) {vgd_r1f[q] = x1f_h(0,q);}
+    Kokkos::realloc(vgd_gbfs, static_cast<size_t>(vgd_csnsnd)*n + 1);
+    Kokkos::realloc(vgd_gbfr, static_cast<size_t>(vgd_csnrcv)*n + 1);
+    vgd_gbpb = Kokkos::View<int*, Kokkos::SharedHostPinnedSpace>("m1_vgd_gb_pb",
+                                                                 8*np + 2);
+    if (vgd_scan_sums.extent(0) == 0) {Kokkos::realloc(vgd_scan_sums, 1);}
+    if (me == 0) {
+      std::cout << "<rad_m1> vet_gd_band_global: COMPACT exchange (vet_gd_halo_compact = "
+                << vgd_hcomp << ", share-1104): per shell and pass only the kept (cell, "
+                << "direction) values; polar zone rows " << nz + w + 1 << " per pole "
+                << "keep their whole branch" << std::endl;
+    }
+  }
   // every slot reads the band (no direct on-rank neighbour reads)
   Kokkos::deep_copy(vgd_hloc, -1);
   for (int t = 0; t < 8*nmb; ++t) {vgd_hrank[t] = me;}
@@ -548,5 +619,163 @@ void RadiationM1::VetGdGlobalBandInit() {
               << std::endl;
   }
 }
+
+//----------------------------------------------------------------------------------------
+//! share-1104 G1 (USER 11-04): vet_gd_halo_compact > 0 with vet_gd_band_global (the full
+//! sphere, stretched theta).  The per-shell exchange of VetGdCsHalo (depth-ws prefix of
+//! the global-cell lists), sending only the (entry, direction) values that pass the keep
+//! test of the slot halo (VgdHaloKeepTP), evaluated on BOTH sides from the source cell's
+//! global row J (node-table theta, the row's own width for the stencil offset) and
+//! column K (global phi), the receiver's band depth of the entry and the shell's radii:
+//! sender and receiver compute the same flags in the same list order, so the compact
+//! messages need no index.  Rows of the polar zone (+ the band depth) keep their whole
+//! branch (clamped polar reads).  Unsent positions get 0 (env VGD_COMPACT_NAN: NaN, the
+//! gate that nothing unsent is read).  On-rank copies as before (all directions).
+
+template <class V>
+void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  auto a_ = a;
+  const int nv = vgd_n;
+  vgd_cur.fence();   // the shell's intensities (sweep stream) are complete
+  const int wq = std::min(ws, static_cast<int>(vgd_gdnl.size()) - 1);
+  {
+    const int nl = vgd_gdnl[wq];
+    if (nl > 0) {
+      auto L_ = vgd_csloc;
+      par_for("m1_vgdgb_loc", DevExeSpace(), 0, nl - 1, 0, nv - 1,
+      KOKKOS_LAMBDA(const int e, const int v) {
+        a_(L_(e,0),v,L_(e,1),L_(e,2),i) = a_(L_(e,3),v,L_(e,4),L_(e,5),i);
+      });
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  if (!vgd_hmpi) {return;}
+  const int np = static_cast<int>(vgd_csprk.size());
+  const int ns = vgd_csnsnd, nr = vgd_csnrcv;
+  const bool inw = vgd_hinw;
+  const int mode = vgd_hcomp;
+  const Real p0 = pm->mesh_size.x3min;
+  const Real dph = (pm->mesh_size.x3max - p0)/pm->mesh_indcs.nx3;
+  const Real dmin = vgd_gbdmin;
+  const int lcut = indcs.is + vgd_scut;
+  const Real rs = vgd_r1v[i];
+  const bool hasm = (i >= lcut);
+  const Real rm = (i > lcut) ? vgd_r1v[i-1] : vgd_r1f[i];
+  const bool hasp = (i < indcs.ie);
+  const Real rp = hasp ? vgd_r1v[i+1] : rs;
+  auto dir_ = vgd_dir;
+  auto th_ = vgd_gbth;
+  auto dt_ = vgd_gbdt;
+  auto cp_ = vgd_gbcap;
+  auto JS_ = vgd_gbjs;
+  auto JR_ = vgd_gbjr;
+  auto DS_ = vgd_gdps;
+  auto DR_ = vgd_gdpr;
+  auto S_ = vgd_cssl;
+  auto R_ = vgd_csrl;
+  auto fs_ = vgd_gbfs;
+  auto fr_ = vgd_gbfr;
+  const int nmx = std::max(ns, nr);
+  // (1) the flags of both sides (send: my interior cells; receive: my band positions)
+  par_for("m1_vgdgb_flag", DevExeSpace(), 0, nmx - 1, 0, nv - 1,
+  KOKKOS_LAMBDA(const int e, const int v) {
+    const Real nx = dir_(v,0), ny = dir_(v,1), nz = dir_(v,2);
+    for (int sd = 0; sd < 2; ++sd) {
+      if (e >= ((sd == 0) ? ns : nr)) {continue;}
+      const int dep = (sd == 0) ? DS_(e) : DR_(e);
+      int f = 0;
+      if (dep <= wq) {
+        const int J = (sd == 0) ? JS_(e,0) : JR_(e,0);
+        const int K = (sd == 0) ? JS_(e,1) : JR_(e,1);
+        const Real gam = 2.0*fmax(dt_(J), dph);
+        f = VgdHaloKeepTP(nx, ny, nz, th_(J), p0 + (K + 0.5)*dph, inw, mode,
+                          cp_(J) != 0, dep, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
+      }
+      if (sd == 0) {fs_(static_cast<size_t>(e)*nv + v) = f;}
+      else {fr_(static_cast<size_t>(e)*nv + v) = f;}
+    }
+  });
+  // (2) exclusive scans in place (flag -> position; totals at the end)
+  VgdScan2(DevExeSpace(), vgd_gbfs, static_cast<size_t>(ns)*nv, vgd_gbfr,
+           static_cast<size_t>(nr)*nv, "m1_vgdgb_scan2", vgd_scan_sums);
+  // (3) the positions at the partner segment bounds (prefix of depth wq) -> pinned host
+  {
+    std::vector<int> bd(4*np);
+    for (int p = 0; p < np; ++p) {
+      bd[4*p] = vgd_csps[p];
+      bd[4*p + 1] = vgd_csps[p] + vgd_gdsn[wq][p];
+      bd[4*p + 2] = vgd_cspr[p];
+      bd[4*p + 3] = vgd_cspr[p] + vgd_gdrn[wq][p];
+    }
+    for (int q = 0; q < 4*np; ++q) {vgd_gbpb(q) = bd[q];}
+  }
+  auto pb_ = vgd_gbpb;
+  const int np_ = np;
+  auto pv = Kokkos::subview(vgd_gbpb, std::make_pair(4*np, 8*np));
+  Kokkos::fence();
+  Kokkos::parallel_for("m1_vgdgb_bnd", Kokkos::RangePolicy<>(DevExeSpace(), 0, 4*np),
+  KOKKOS_LAMBDA(const int q) {
+    const size_t at = static_cast<size_t>(pb_(q))*nv;
+    pb_(4*np_ + q) = ((q & 3) < 2) ? fs_(at) : fr_(at);
+  });
+  // (4) the compact pack (my kept values in list order)
+  auto sb_ = vgd_sbuf;
+  auto rb_ = vgd_rbuf;
+  if (ns > 0) {
+    par_for("m1_vgdgb_pack", DevExeSpace(), 0, ns - 1, 0, nv - 1,
+    KOKKOS_LAMBDA(const int e, const int v) {
+      const size_t q = static_cast<size_t>(e)*nv + v;
+      if (fs_(q + 1) == fs_(q)) {return;}
+      sb_(fs_(q)) = a_(S_(e,0),v,S_(e,1),S_(e,2),i);
+    });
+  }
+  Kokkos::fence();
+  Kokkos::Timer tq;
+  std::vector<MPI_Request> req;
+  double nsent = 0.0;
+  for (int p = 0; p < np; ++p) {
+    const int rk = vgd_csprk[p];
+    const int s0 = pv(4*p), s1 = pv(4*p + 1), r0 = pv(4*p + 2), r1 = pv(4*p + 3);
+    if (r1 > r0) {
+      req.emplace_back();
+      MPI_Irecv(rb_.data() + r0, r1 - r0, MPI_ATHENA_REAL, rk, 7111, MPI_COMM_WORLD,
+                &req.back());
+    }
+    if (s1 > s0) {
+      req.emplace_back();
+      MPI_Isend(sb_.data() + s0, s1 - s0, MPI_ATHENA_REAL, rk, 7111, MPI_COMM_WORLD,
+                &req.back());
+      vgd_nbyte += static_cast<Real>(s1 - s0)*sizeof(Real);
+      nsent += static_cast<double>(s1 - s0);
+    }
+    vgd_csvdense += static_cast<double>(vgd_gdsn[wq][p])*nv;
+  }
+  MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+  vgd_tmpi += tq.seconds();
+  vgd_nexch += 1.0;
+  vgd_csvsent += nsent;
+  // (5) the expansion into the band (unsent positions of the prefix: 0, or NaN)
+  if (nr > 0) {
+    const bool nanfill = (std::getenv("VGD_COMPACT_NAN") != nullptr);
+    const Real fill = nanfill ? std::numeric_limits<Real>::quiet_NaN() : 0.0;
+    par_for("m1_vgdgb_unpack", DevExeSpace(), 0, nr - 1, 0, nv - 1,
+    KOKKOS_LAMBDA(const int e, const int v) {
+      if (DR_(e) > wq) {return;}
+      const size_t q = static_cast<size_t>(e)*nv + v;
+      a_(R_(e,0),v,R_(e,1),R_(e,2),i) = (fr_(q + 1) > fr_(q)) ? rb_(fr_(q)) : fill;
+    });
+  }
+  Kokkos::fence();
+#else
+  (void) i;
+#endif
+}
+
+template void RadiationM1::VetGdGbHaloC<DvceArray5D<Real>>(DvceArray5D<Real> &a,
+                                                           const int i, const int ws);
+template void RadiationM1::VetGdGbHaloC<RadiationM1::VgdRag>(RadiationM1::VgdRag &a,
+                                                             const int i, const int ws);
 
 } // namespace radm1

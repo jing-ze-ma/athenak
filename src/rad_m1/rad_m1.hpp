@@ -3001,6 +3001,20 @@ class RadiationM1 {
   std::vector<int> vgd_gdnl;              // (ws): on-rank entries with depth <= ws
   std::vector<std::vector<int>> vgd_gdsn, vgd_gdrn;   // (ws)(partner): send / recv counts
   void VetGdGlobalBandInit();
+  // share-1104 G1: vet_gd_halo_compact > 0 with vet_gd_band_global (the full sphere,
+  // stretched theta): per shell and pass only the (band cell, direction) values that pass
+  // VgdHaloKeep, evaluated at the SOURCE cell's global (row J, column K) on both sides
+  // (node-table theta, global phi, the row's own theta spacing); rows within the polar
+  // zone (node colatitude < vet_gd_band_colat) + the band depth keep their whole branch
+  bool vgd_gbc = false;
+  DvceArray2D<int> vgd_gbjs, vgd_gbjr;    // (entry, 2): source cell global J, K
+  DvceArray1D<Real> vgd_gbth, vgd_gbdt;   // (J): node theta, theta cell width
+  DvceArray1D<int> vgd_gbcap;             // (J): 1 = polar zone (branch only)
+  DvceArray1D<int> vgd_gbfs, vgd_gbfr;    // flags -> positions (entry*n + v; +1)
+  Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_gbpb;   // segment bounds
+  Real vgd_gbdmin = 0.0;
+  template <class V>
+  void VetGdGbHaloC(V &a, const int i, const int ws);
   void VetGdRingGatherI(const int i);
   void VetGdRingGatherC(const int i0, const int i1);
   void VetGdThetaInit();                  // the node table and the checks
