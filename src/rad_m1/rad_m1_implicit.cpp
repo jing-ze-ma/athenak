@@ -2752,8 +2752,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     const std::string dv = pin->GetString("rad_m1","doppler_vel");
     if (dv == "vstar") {
       dop_vstar = true;
+    } else if (dv == "vstar_n") {
+      dop_vstar = true;
+      dop_vstar_n = true;
     } else if (dv != "stage") {
-      ImplFatal("<rad_m1>/doppler_vel must be stage | vstar");
+      ImplFatal("<rad_m1>/doppler_vel must be stage | vstar | vstar_n");
     }
     if (dop_vstar) {
       if (impl_vimp && pin->DoesParameterExist("rad_m1","implicit_vimp") &&
@@ -12835,6 +12838,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // basis, so the kinetic energy is 0.5 m_a v^a with the metric (gnomonic_raisevel.hpp)
     const bool csk = cs_geom;
     const bool dvs = dop_vstar;   // athpp-vstar-1105
+    const bool dvn = dop_vstar_n;
     const bool dpr = (dop_dbg > 0) && ((dop_dbg_cnt++ % dop_dbg) == 0);
     auto un_ = flr.u1;   // U^n of the Heun step (diagnostic only)
     const int dts2 = t2_solve;
@@ -12879,9 +12883,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         eg = uh(m,IEN,k,j,i) - ekin - egrv;
       }
       iw_(m,M1_IW_EGN,k,j,i) = eg;
-      const Real wv1 = dvs ? mv1 : uh(m,IM1,k,j,i);
-      const Real wv2 = dvs ? mv2 : uh(m,IM2,k,j,i);
-      const Real wv3 = dvs ? mv3 : uh(m,IM3,k,j,i);
+      Real wv1 = dvs ? mv1 : uh(m,IM1,k,j,i);
+      Real wv2 = dvs ? mv2 : uh(m,IM2,k,j,i);
+      Real wv3 = dvs ? mv3 : uh(m,IM3,k,j,i);
+      if (dvn && dts2 != M1_T2S_STAGE1) {
+        // vstar_n: v^n + 2 (v_stage - v^n), in momentum units at the stage density
+        const Real rn = dd/fmax(un_(m,IDN,k,j,i), 1.0e-300);
+        const Real p1 = rn*un_(m,IM1,k,j,i), p2 = rn*un_(m,IM2,k,j,i), p3 = rn*un_(m,IM3,k,j,i);
+        wv1 = p1 + 2.0*(mv1 - p1);
+        wv2 = p2 + 2.0*(mv2 - p2);
+        wv3 = p3 + 2.0*(mv3 - p3);
+      }
       iw_(m,M1_IW_V1,k,j,i) = wv1*idd;
       if (dpr && m == 0 && k == ks && j == js && i <= is + 2) {
         printf("DOPV t2s %d dt %.3e i %d v_n %.5e v_stage %.5e v_stage+t2inc %.5e V_used %.5e\n",

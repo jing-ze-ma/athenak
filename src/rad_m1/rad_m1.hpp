@@ -1858,6 +1858,11 @@ class RadiationM1 {
   // GetTgasVel hands its solve.  Forces implicit_vimp = false.  Diagnostic / Athena++
   // reproduction only (the toy athpp_toy_1104 shows it makes an O(dt) wall drain).
   bool dop_vstar = false;
+  // doppler_vel = vstar_n: Athena++'s vl2 value v^n + dt a_hydro with the FULL deficit.  The
+  // Heun stage-1 state already is U^n + dt L(U^n); the stage-2 (and BE) state carries half of it
+  // (1/2 (U^n + Y1) + 1/2 dt L(Y1), Y1 kicked), so there V = v^n + 2 (v_stage - v^n).  Also forces
+  // implicit_vimp = false.
+  bool dop_vstar_n = false;
   int dop_dbg = 0;        // <rad_m1>/doppler_vel_dbg = N (read only when named): every N-th solve
   int dop_dbg_cnt = 0;    // print the wall cells' V vs v^n (hydro u1) vs the stage v (diagnostic)
   // pgrst-vimp-1021 <rad_m1>/implicit_vimp_ewf (read only when named; default false =
