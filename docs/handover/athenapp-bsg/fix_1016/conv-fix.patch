@@ -1,0 +1,642 @@
+diff --git a/src/nr_radiation/implicit/rad_iteration.cpp b/src/nr_radiation/implicit/rad_iteration.cpp
+index 3a6fabe4..4d7f37b7 100644
+--- a/src/nr_radiation/implicit/rad_iteration.cpp
++++ b/src/nr_radiation/implicit/rad_iteration.cpp
+@@ -20,6 +20,9 @@
+ // C headers
+ 
+ // C++ headers
++#include <algorithm>
++#include <cstdio>
++#include <ctime>
+ #include <sstream>    // stringstream
+ 
+ // Athena++ headers
+@@ -47,6 +50,7 @@ void IMRadiation::Iteration(
+   std::stringstream msg;
+ 
+   const Real wght = ptlist->stage_wghts[stage-1].beta*pm->dt;
++  std::clock_t conv_c0 = std::clock();
+   g_led_last = (stage == ptlist->nstages) ? 1 : 0;   // LEDGER
+ 
+   if (stage <= ptlist->nstages) {
+@@ -110,6 +114,8 @@ void IMRadiation::Iteration(
+ 
+     srj_level = 0;
+     srj_cnt = 0;
++    conv_prev_res_ = 1.0e300;
++    conv_prev_cell_ = 1.0e300;
+     if (srj_p > 0)
+       omega = srj_w[0];
+ 
+@@ -118,9 +124,32 @@ void IMRadiation::Iteration(
+       pmb = pm->my_blocks(0);
+       sum_full_ = 0.0;
+       sum_diff_ = 0.0;
++      max_cell_ = 0.0;
+ 
+       // using TaskList to handle
+       // operations during each iteration
++      if (sweep_ == 2) {
++        // conv-fix: x1-line direct solve of the linearised system, then one normal
++        // Athena++ sweep (restores the exact non-linear cell relation, sets divflx_
++        // and measures the residual against the line solution)
++        for (int nb=0; nb<pm->nblocal; ++nb) {
++          MeshBlock *pb = pm->my_blocks(nb);
++          NRRadiation *prad = pb->pnrrad;
++          if (prad->pradintegrator->LineSolveX1(pb, wght, pb->phydro->u, prad->ir1,
++                                                prad->ir)) {
++            prad->ir_old = prad->ir;
++          }
++        }
++        rb_or_not = 0;
++        pimraditlist->DoTaskListOneStage(wght);
++      } else if (sweep_ == 1) {
++        // conv-fix: symmetric Gauss-Seidel = forward pass + backward pass
++        rb_or_not = 3;
++        pimraditlist->DoTaskListOneStage(wght);
++        rb_or_not = 4;
++        pimraditlist->DoTaskListOneStage(wght);
++        rb_or_not = 0;
++      } else {
+       if (rb_or_not > 0)
+         rb_or_not = 1;
+       // red cells
+@@ -131,8 +160,28 @@ void IMRadiation::Iteration(
+         // black cells
+         pimraditlist->DoTaskListOneStage(wght);
+       }
++      }
+ 
+ 
++      if (conv_dump_ >= 0 && pm->ncycle == conv_dump_ && stage == ptlist->nstages) {
++        int s = niter + 1;  // sweep index just done
++        if (s <= 10 || s % 50 == 0 || conv_dump_all_) {
++          NRRadiation *prad = pm->my_blocks(0)->pnrrad;
++          MeshBlock *pb = pm->my_blocks(0);
++          static FILE *fd = nullptr;
++          if (fd == nullptr) fd = std::fopen("conv_dump.txt", "w");
++          for (int i=pb->is; i<=pb->ie; ++i) {
++            if (conv_dump_all_ && !(s <= 10 || s % 50 == 0) && !((i-pb->is) < 4
++                || ((i-pb->is) >= 190 && (i-pb->is) <= 240))) continue;
++            std::fprintf(fd, "%d %d", s, i-pb->is);
++            for (int n=0; n<prad->nang; ++n)
++              std::fprintf(fd, " %.6e %.6e", prad->ir(pb->ks,pb->js,i,n),
++                           prad->ir(pb->ks,pb->js,i,n) - prad->ir_old(pb->ks,pb->js,i,n));
++            std::fprintf(fd, " %.6e\n", prad->pradintegrator->tgas_new_(pb->ks,pb->js,i));
++          }
++          std::fflush(fd);
++        }
++      }
+       for(int nb=0; nb<pm->nblocal; ++nb) {
+         pmb = pm->my_blocks(nb);
+         NRRadiation *prad = pmb->pnrrad;
+@@ -140,6 +189,7 @@ void IMRadiation::Iteration(
+         prad->ir_old = prad->ir;
+         sum_full_ += prad->sum_full;
+         sum_diff_ += prad->sum_diff;
++        if (error_limit_cell_ > 0.0) max_cell_ = std::max(max_cell_, prad->max_cell_rel);
+       }
+ 
+       // MPI sum across all the cores
+@@ -152,13 +202,32 @@ void IMRadiation::Iteration(
+ 
+       sum_full_ = global_sum;
+       sum_diff_ = global_diff;
++      if (error_limit_cell_ > 0.0) {
++        Real global_max = 0.0;
++        MPI_Allreduce(&max_cell_, &global_max, 1, MPI_ATHENA_REAL, MPI_MAX,
++                      MPI_COMM_WORLD);
++        max_cell_ = global_max;
++      }
+ #endif
+ 
+       niter++;
+       Real tot_res = sum_diff_/sum_full_;
+ 
++      if (error_limit_cell_ > 0.0) {
++        // conv-fix: require BOTH the global and the per-cell relative change, or stop
++        // at the round-off floor of the cell update (no further contraction while the
++        // per-cell change is already below error_limit_stag)
++        bool stag = (niter >= 3) && (tot_res > 0.5*conv_prev_res_) &&
++                    (max_cell_ > 0.5*conv_prev_cell_) && (max_cell_ < error_limit_stag_);
++        if ((niter > nlimit_) || (tot_res < error_limit_ && max_cell_ < error_limit_cell_)
++            || stag)
++          iteration = false;
++        conv_prev_res_ = tot_res;
++        conv_prev_cell_ = max_cell_;
++      } else {
+       if ((niter > nlimit_) || tot_res < error_limit_)
+         iteration = false;
++      }
+ 
+       if (srj_p > 0) {
+         srj_cnt++;
+@@ -172,6 +241,18 @@ void IMRadiation::Iteration(
+       }
+     }
+ 
++    conv_nsweep_ += niter; conv_nsolve_ += 1;
++    if (conv_log_ > 0 && Globals::my_rank == 0) {
++      static FILE *fconv = nullptr;
++      if (fconv == nullptr) {
++        fconv = std::fopen("conv.txt", "w");
++        std::fprintf(fconv, "# ncycle stage time dt niter rel_err cum_sweeps cpu_s max_cell_rel\n");
++      }
++      std::fprintf(fconv, "%d %d %.10e %.6e %d %.4e %lld %.4e %.4e\n", pm->ncycle, stage,
++                   pm->time, pm->dt, niter, sum_diff_/sum_full_, conv_nsweep_,
++                   static_cast<double>(std::clock() - conv_c0)/CLOCKS_PER_SEC, max_cell_);
++      if (pm->ncycle % 50 == 0) std::fflush(fconv);
++    }
+     if (Globals::my_rank == 0) {
+       int output_info = 0;
+       if (pm->ncycle_out != 0) {
+@@ -187,6 +268,17 @@ void IMRadiation::Iteration(
+     for(int nb=0; nb<pm->nblocal; ++nb) {
+       pmb = pm->my_blocks(nb);
+       NRRadiation *prad = pmb->pnrrad;
++      if (cons_bill_ > 0 && !g_led_fix) {
++        // conv-fix: bill the gas with the transport rebuilt from the FINAL intensities,
++        // so every face flux is seen identically by both cells (telescopes exactly).
++        // Only meaningful once the iteration is converged (sweep = 2).
++        for (int k=pmb->ks; k<=pmb->ke; ++k) for (int j=pmb->js; j<=pmb->je; ++j)
++          for (int i=pmb->is; i<=pmb->ie; ++i) {
++            prad->pradintegrator->FirstOrderFluxDivergence(k, j, i, prad->ir);
++            if (prad->angle_flag == 1)
++              prad->pradintegrator->ImplicitAngularFluxes(k, j, i, prad->ir);
++          }
++      }
+       if (g_led_fix) {
+         // LEDGER FIX VARIANT (diagnosis): rebuild the per-cell transport from the FINAL
+         // intensities so the gas billing telescopes (every face seen by both cells alike)
+@@ -239,4 +331,20 @@ void IMRadiation::CheckResidual(MeshBlock *pmb,
+       }
+     }
+   }
++  if (error_limit_cell_ > 0.0) {
++    // conv-fix: per-cell relative change
++    prad->max_cell_rel = 0.0;
++    for(int k=ks; k<=ke; ++k) {
++      for(int j=js; j<=je; ++j) {
++        for(int i=is; i<=ie; ++i) {
++          Real cd = 0.0, cf = 0.0;
++          for(int n=0; n<nang*nfreq; ++n) {
++            cd += std::abs(ir_old(k,j,i,n) - ir_new(k,j,i,n));
++            cf += std::abs(ir_new(k,j,i,n));
++          }
++          if (cf > 0.0) prad->max_cell_rel = std::max(prad->max_cell_rel, cd/cf);
++        }
++      }
++    }
++  }
+ }
+diff --git a/src/nr_radiation/implicit/rad_line_solve.cpp b/src/nr_radiation/implicit/rad_line_solve.cpp
+new file mode 100644
+index 00000000..4565f497
+--- /dev/null
++++ b/src/nr_radiation/implicit/rad_line_solve.cpp
+@@ -0,0 +1,233 @@
++//======================================================================================
++// Athena++ astrophysical MHD code
++// Copyright (C) 2014 James M. Stone  <jmstone@princeton.edu>
++// See LICENSE file for full public license information.
++//======================================================================================
++//! \file rad_line_solve.cpp
++//  \brief conv-fix: x1-line implicit solve of the linearised implicit transport +
++//  absorption/scattering system (radiation/sweep = 2).
++//
++//  For every (k,j) line of a MeshBlock, the per-angle equations that CalSourceTerms
++//  solves cell by cell (with the neighbours, the own-cell explicit split exp_coef_ and
++//  the implicit angular-flux neighbour lagged) are assembled for ALL cells and angles of
++//  the line and solved directly with a block-tridiagonal (block Thomas) elimination:
++//    row (i,n):  [(imcoef_n + s' tcoef_n) cm_n + cm_n exp_n] I_{i,n}
++//              + cm_n coefang_n I_{i,n+1} - tcoef_n (a + b beta) sum_m wcm_m cm_m I_{i,m}
++//              + cm_n coefl_n I_{i-1,n} + cm_n coefr_n I_{i+1,n}
++//              = cm_n (I_ini + adv + lagged x2/x3 terms)_n + tcoef_n b alpha
++//  where T^4 = alpha + beta J is the gas-energy equation linearised about the current
++//  gas temperature iterate. Ghost cells (MeshBlock boundaries) and x2/x3 neighbours are
++//  taken from the current iterate (lagged). The exact non-linear relation (quartic
++//  for T, floors) is then restored by the normal Athena++ sweep that follows, so the
++//  fixed point is identical to the Jacobi fixed point; only the path is different.
++//  Supports nfreq == 1, npsi == 0, compton_flag == 0 (otherwise returns false and
++//  the caller falls back to the default iteration).
++//======================================================================================
++
++// C++ headers
++#include <algorithm>
++#include <cmath>
++#include <vector>
++
++// Athena++ headers
++#include "../../athena.hpp"
++#include "../../athena_arrays.hpp"
++#include "../../eos/eos.hpp"
++#include "../../mesh/mesh.hpp"
++#include "../integrators/rad_integrators.hpp"
++#include "../radiation.hpp"
++#include "radiation_implicit.hpp"
++
++namespace {
++// in-place LU with partial pivoting of an n x n row-major matrix; returns false if
++// singular
++bool LUDecomp(int n, Real *a, int *piv) {
++  for (int c=0; c<n; ++c) {
++    int p = c;
++    Real amax = std::abs(a[c*n+c]);
++    for (int r=c+1; r<n; ++r) {
++      if (std::abs(a[r*n+c]) > amax) { amax = std::abs(a[r*n+c]); p = r; }
++    }
++    piv[c] = p;
++    if (amax == 0.0) return false;
++    if (p != c) {
++      for (int q=0; q<n; ++q) std::swap(a[c*n+q], a[p*n+q]);
++    }
++    Real inv = 1.0/a[c*n+c];
++    for (int r=c+1; r<n; ++r) {
++      Real f = a[r*n+c]*inv;
++      a[r*n+c] = f;
++      if (f != 0.0) {
++        for (int q=c+1; q<n; ++q) a[r*n+q] -= f*a[c*n+q];
++      }
++    }
++  }
++  return true;
++}
++
++void LUSolve(int n, const Real *lu, const int *piv, Real *b) {
++  for (int c=0; c<n; ++c) {
++    if (piv[c] != c) std::swap(b[c], b[piv[c]]);
++  }
++  for (int r=1; r<n; ++r) {
++    Real s = b[r];
++    for (int q=0; q<r; ++q) s -= lu[r*n+q]*b[q];
++    b[r] = s;
++  }
++  for (int r=n-1; r>=0; --r) {
++    Real s = b[r];
++    for (int q=r+1; q<n; ++q) s -= lu[r*n+q]*b[q];
++    b[r] = s/lu[r*n+r];
++  }
++}
++} // namespace
++
++bool RadIntegrator::LineSolveX1(MeshBlock *pmb, const Real dt, AthenaArray<Real> &u,
++                                AthenaArray<Real> &ir_ini, AthenaArray<Real> &ir) {
++  NRRadiation *prad = pmy_rad;
++  const int nang = prad->nang;
++  if (prad->nfreq != 1 || prad->npsi != 0 || compton_flag_ != 0) return false;
++
++  const Real invcrat = 1.0/prad->crat;
++  const Real prat = prad->prat;
++  const Real ct = dt*prad->crat;
++  const Real redfactor = prad->reduced_c/prad->crat;
++  const Real gamma = pmb->peos->GetGamma();
++  const bool af = (prad->angle_flag == 1);
++  const int nzeta = prad->nzeta;
++
++  int is = pmb->is, ie = pmb->ie, js = pmb->js, je = pmb->je;
++  int ks = pmb->ks, ke = pmb->ke;
++  const int ncell = ie - is + 1;
++  const int nn = nang*nang;
++
++  // work arrays (per line)
++  std::vector<Real> blk(nn), lu(static_cast<size_t>(ncell)*nn);
++  std::vector<int> piv(static_cast<size_t>(ncell)*nang);
++  std::vector<Real> cmat(static_cast<size_t>(ncell)*nn);   // A'^-1 U  (column-major n)
++  std::vector<Real> y(static_cast<size_t>(ncell)*nang);
++  std::vector<Real> lo(static_cast<size_t>(ncell)*nang), up(static_cast<size_t>(ncell)*nang);
++  std::vector<Real> tcoef(nang), wcm(nang), cm(nang), col(nang);
++
++  for (int k=ks; k<=ke; ++k) {
++    for (int j=js; j<=je; ++j) {
++      // ---- assemble + forward elimination
++      for (int ic=0; ic<ncell; ++ic) {
++        const int i = is + ic;
++        Real rho = u(IDN,k,j,i);
++        Real vx = vel_source_(k,j,i,0), vy = vel_source_(k,j,i,1);
++        Real vz = vel_source_(k,j,i,2);
++        Real vsq = vx*vx + vy*vy + vz*vz;
++        Real lorz = std::sqrt(1.0/(1.0 - vsq*invcrat*invcrat));
++        Real numsum = 0.0;
++        for (int n=0; n<nang; ++n) {
++          Real vdotn = vx*prad->mu(0,k,j,i,n) + vy*prad->mu(1,k,j,i,n)
++                       + vz*prad->mu(2,k,j,i,n);
++          tcoef[n] = lorz*(1.0 - vdotn*invcrat);
++          wcm[n] = prad->wmu(n)/(tcoef[n]*tcoef[n]);
++          numsum += wcm[n];
++          cm[n] = tcoef[n]*tcoef[n]*tcoef[n]*tcoef[n];
++        }
++        for (int n=0; n<nang; ++n) wcm[n] /= numsum;
++
++        const Real sa = prad->sigma_a(k,j,i,0), ss = prad->sigma_s(k,j,i,0);
++        const Real sp = prad->sigma_p(k,j,i,0), se = prad->sigma_pe(k,j,i,0);
++        const Real rsr = redfactor*ct*sa, rss = redfactor*ct*ss;
++        const Real rsp = redfactor*ct*sp, rse = redfactor*ct*se;
++        const Real acoef = rss + rsr - rse;
++        const Real bcoef = rsp;
++        // gas energy equation linearised about T0
++        Real t0 = tgas_new_(k,j,i);
++        if (!(t0 > 0.0)) t0 = tgas_(k,j,i);
++        const Real pg = prat*(gamma - 1.0)/rho;
++        const Real hp = ct*sp, he = ct*se;
++        const Real t03 = t0*t0*t0, t04 = t03*t0;
++        const Real d0 = 1.0 + 4.0*pg*hp*t03;
++        const Real alpha = -3.0*t04 + 4.0*t03*(tgas_(k,j,i) + 3.0*pg*hp*t04)/d0;
++        const Real beta = 4.0*t03*pg*he/d0;
++
++        Real *a = &(blk[0]);
++        Real *rhs = &(y[ic*nang]);
++        for (int q=0; q<nn; ++q) a[q] = 0.0;
++        for (int n=0; n<nang; ++n) {
++          Real imcoef = 1.0 + const_coef_(k,j,i,n);
++          if (af) imcoef += imp_ang_coef_(k,j,i,n);
++          Real g = tcoef[n]*(acoef + bcoef*beta);
++          if (lclip_(k,j,i,n) > 0.0) {
++            // the last cell update floored this angle's RHS: mirror the floor
++            // (row has no transport coupling; RHS = TINY in the co-moving frame)
++            a[n*nang+n] = (imcoef + (rsr + rss)*tcoef[n])*cm[n];
++            for (int m=0; m<nang; ++m) a[n*nang+m] -= g*wcm[m]*cm[m];
++            lo[ic*nang+n] = 0.0;
++            up[ic*nang+n] = 0.0;
++            rhs[n] = TINY_NUMBER + tcoef[n]*bcoef*alpha;
++            continue;
++          }
++          a[n*nang+n] = (imcoef + (rsr + rss)*tcoef[n])*cm[n] + cm[n]*exp_coef_(k,j,i,n);
++          for (int m=0; m<nang; ++m) a[n*nang+m] -= g*wcm[m]*cm[m];
++          if (af && n < 2*nzeta-1) a[n*nang+n+1] += cm[n]*imp_ang_coef_r_(k,j,i,n);
++          // right-hand side
++          Real r = ir_ini(k,j,i,n);
++          if (adv_flag_ > 0) r += adv_flx_(k,j,i,n);
++          if (pmb->block_size.nx2 > 1) {
++            r -= const_coef2_l_(k,j,i,n)*ir(k,j-1,i,n)
++                 + const_coef2_r_(k,j,i,n)*ir(k,j+1,i,n);
++          }
++          if (pmb->block_size.nx3 > 1) {
++            r -= const_coef3_l_(k,j,i,n)*ir(k-1,j,i,n)
++                 + const_coef3_r_(k,j,i,n)*ir(k+1,j,i,n);
++          }
++          lo[ic*nang+n] = cm[n]*const_coef1_l_(k,j,i,n);
++          up[ic*nang+n] = cm[n]*const_coef1_r_(k,j,i,n);
++          if (ic == 0) r -= const_coef1_l_(k,j,i,n)*ir(k,j,i-1,n);
++          if (ic == ncell-1) r -= const_coef1_r_(k,j,i,n)*ir(k,j,i+1,n);
++          rhs[n] = cm[n]*r + tcoef[n]*bcoef*alpha;
++        }
++        // Schur update with the previous cell: A' = A - L C_{i-1}, y' = y - L y'_{i-1}
++        if (ic > 0) {
++          const Real *cp = &(cmat[(ic-1)*nn]);
++          const Real *yp = &(y[(ic-1)*nang]);
++          for (int n=0; n<nang; ++n) {
++            Real l = lo[ic*nang+n];
++            if (l == 0.0) continue;
++            for (int m=0; m<nang; ++m) a[n*nang+m] -= l*cp[n*nang+m];
++            rhs[n] -= l*yp[n];
++          }
++        }
++        Real *luc = &(lu[ic*nn]);
++        for (int q=0; q<nn; ++q) luc[q] = a[q];
++        if (!LUDecomp(nang, luc, &(piv[ic*nang]))) return false;
++        LUSolve(nang, luc, &(piv[ic*nang]), rhs);   // y'_i = A'^-1 y'
++        if (ic < ncell-1) {
++          // C_i = A'^-1 diag(up_i); stored row-major (row n, column m)
++          Real *cc = &(cmat[ic*nn]);
++          for (int m=0; m<nang; ++m) {
++            for (int n=0; n<nang; ++n) col[n] = 0.0;
++            col[m] = up[ic*nang+m];
++            if (col[m] != 0.0) LUSolve(nang, luc, &(piv[ic*nang]), &(col[0]));
++            for (int n=0; n<nang; ++n) cc[n*nang+m] = col[n];
++          }
++        }
++      }
++      // ---- back substitution: x_i = y'_i - C_i x_{i+1}
++      for (int ic=ncell-2; ic>=0; --ic) {
++        const Real *cc = &(cmat[ic*nn]);
++        const Real *xn = &(y[(ic+1)*nang]);
++        Real *xi = &(y[ic*nang]);
++        for (int n=0; n<nang; ++n) {
++          Real s = 0.0;
++          for (int m=0; m<nang; ++m) s += cc[n*nang+m]*xn[m];
++          xi[n] -= s;
++        }
++      }
++      for (int ic=0; ic<ncell; ++ic) {
++        for (int n=0; n<nang; ++n) {
++          Real x = y[ic*nang+n];
++          if (!(x == x)) return false;
++          ir(k,j,is+ic,n) = std::max(x, static_cast<Real>(TINY_NUMBER));
++        }
++      }
++    }
++  }
++  return true;
++}
+diff --git a/src/nr_radiation/implicit/radiation_implicit.cpp b/src/nr_radiation/implicit/radiation_implicit.cpp
+index 3e03cdc6..69f9d994 100644
+--- a/src/nr_radiation/implicit/radiation_implicit.cpp
++++ b/src/nr_radiation/implicit/radiation_implicit.cpp
+@@ -61,6 +61,30 @@ IMRadiation::IMRadiation(Mesh *pm, ParameterInput *pin) {
+   cfl_rad = pin->GetOrAddReal("radiation","cfl_rad",1.0);
+   ite_scheme = pin->GetOrAddInteger("radiation","iteration",1);
+   rb_or_not = pin->GetOrAddInteger("radiation","red_or_black",0);
++  conv_log_ = 0;
++  if (pin->DoesParameterExist("radiation","conv_log"))
++    conv_log_ = pin->GetInteger("radiation","conv_log");
++  sweep_ = 0;
++  if (pin->DoesParameterExist("radiation","sweep"))
++    sweep_ = pin->GetInteger("radiation","sweep");
++  error_limit_cell_ = 0.0;
++  if (pin->DoesParameterExist("radiation","error_limit_cell"))
++    error_limit_cell_ = pin->GetReal("radiation","error_limit_cell");
++  cons_bill_ = (sweep_ == 2) ? 1 : 0;
++  if (pin->DoesParameterExist("radiation","cons_bill"))
++    cons_bill_ = pin->GetInteger("radiation","cons_bill");
++  max_cell_ = 0.0;
++  error_limit_stag_ = 1.0e-4;
++  if (pin->DoesParameterExist("radiation","error_limit_stag"))
++    error_limit_stag_ = pin->GetReal("radiation","error_limit_stag");
++  conv_prev_res_ = 1.0e300; conv_prev_cell_ = 1.0e300;
++  conv_dump_ = -1;
++  conv_dump_all_ = 0;
++  if (pin->DoesParameterExist("radiation","conv_dump_all"))
++    conv_dump_all_ = pin->GetInteger("radiation","conv_dump_all");
++  if (pin->DoesParameterExist("radiation","conv_dump"))
++    conv_dump_ = pin->GetInteger("radiation","conv_dump");
++  conv_nsweep_ = 0; conv_nsolve_ = 0;
+ 
+   omega = pin->GetOrAddReal("radiation","omega",1.0);
+   srj_p = std::min(9, pin->GetOrAddInteger("radiation","SRJ_P",0));
+diff --git a/src/nr_radiation/implicit/radiation_implicit.hpp b/src/nr_radiation/implicit/radiation_implicit.hpp
+index d34875a5..b5c4b767 100644
+--- a/src/nr_radiation/implicit/radiation_implicit.hpp
++++ b/src/nr_radiation/implicit/radiation_implicit.hpp
+@@ -71,6 +71,17 @@ class IMRadiation {
+   Real sum_full_;
+   int nlimit_;       // threadhold for the number of iterations
+   Real error_limit_;
++  // conv-fix (athpp_fix_1016): diagnostics + convergence options; all default off
++  int conv_log_;
++  int conv_dump_, conv_dump_all_;
++  int sweep_;
++  Real error_limit_cell_;  // radiation/error_limit_cell: per-cell max relative change (0 = off)
++  int cons_bill_;          // radiation/cons_bill: bill the gas with fluxes from the FINAL intensities
++  Real max_cell_;
++  Real error_limit_stag_;  // radiation/error_limit_stag (default 1e-4): accept a stagnated residual below this
++  Real conv_prev_res_, conv_prev_cell_;        // radiation/sweep: 0 = Athena++ default (Jacobi or red-black), 1 = symmetric Gauss-Seidel    // radiation/conv_dump: cycle at which to dump per-sweep per-cell changes     // radiation/conv_log: 1 = write conv.txt (cycle stage niter res)
++ public:
++  long long conv_nsweep_, conv_nsolve_;
+ };
+ 
+ #endif // NR_RADIATION_IMPLICIT_RADIATION_IMPLICIT_HPP_
+diff --git a/src/nr_radiation/integrators/rad_integrators.cpp b/src/nr_radiation/integrators/rad_integrators.cpp
+index 874f6cc4..a7c0ff3e 100644
+--- a/src/nr_radiation/integrators/rad_integrators.cpp
++++ b/src/nr_radiation/integrators/rad_integrators.cpp
+@@ -63,6 +63,19 @@ RadIntegrator::RadIntegrator(NRRadiation *prad, ParameterInput *pin) {
+   Real taucell = pin->GetOrAddReal("radiation","taucell",5);
+   tau_flag_ = pin->GetOrAddInteger("radiation","tau_scheme",1);
+   compton_flag_=pin->GetOrAddInteger("radiation","Compton",0);
++  // conv-fix: Newton-polish the analytic quartic root (cancellation in FouthPolyRoot
++  // limits T to ~1e-9 relative in very thick cells). Default: on only with sweep = 2.
++  root_newton_ = 0;
++  line_solve_ = 0;
++  // conv-fix: radiation/rhs_floor = 0 removes the pre-solve per-angle RHS floor
++  // (post-solve floors kept). Default 1 = Athena++.
++  rhs_floor_ = 1;
++  if (pin->DoesParameterExist("radiation","rhs_floor"))
++    rhs_floor_ = pin->GetInteger("radiation","rhs_floor");
++  if (pin->DoesParameterExist("radiation","sweep") &&
++      pin->GetInteger("radiation","sweep") == 2) root_newton_ = 1;
++  if (pin->DoesParameterExist("radiation","root_newton"))
++    root_newton_ = pin->GetInteger("radiation","root_newton");
+   compton_t_=pin->GetOrAddInteger("radiation","Compton_t",0);
+   split_compton_=pin->GetOrAddInteger("radiation","Split_compton",0);
+   if ((!IM_RADIATION_ENABLED) || (compton_flag_ == 0))
+@@ -159,6 +172,13 @@ RadIntegrator::RadIntegrator(NRRadiation *prad, ParameterInput *pin) {
+       const_coef3_r_.NewAthenaArray(ncells3,ncells2,ncells1,prad->n_fre_ang);
+     }
+     divflx_.NewAthenaArray(ncells3,ncells2,ncells1,prad->n_fre_ang);
++    // conv-fix: clip (RHS floor) active set seen by the last cell update (sweep = 2)
++    line_solve_ = 0;
++    if (pin->DoesParameterExist("radiation","sweep") &&
++        pin->GetInteger("radiation","sweep") == 2) {
++      line_solve_ = 1;
++      lclip_.NewAthenaArray(ncells3,ncells2,ncells1,prad->n_fre_ang);
++    }
+ 
+     left_coef1_.NewAthenaArray(ncells3,ncells2,ncells1,prad->n_fre_ang);
+     left_coef2_.NewAthenaArray(ncells3,ncells2,ncells1,prad->n_fre_ang);
+diff --git a/src/nr_radiation/integrators/rad_integrators.hpp b/src/nr_radiation/integrators/rad_integrators.hpp
+index 6bd330de..2fdc14bf 100644
+--- a/src/nr_radiation/integrators/rad_integrators.hpp
++++ b/src/nr_radiation/integrators/rad_integrators.hpp
+@@ -36,6 +36,9 @@ class RadIntegrator {
+   void FirstOrderFluxDivergenceCoef(const Real wght);
+   void FirstOrderFluxDivergence(const int k, const int j, const int i,
+                                  AthenaArray<Real> &ir);
++  // conv-fix: x1-line direct solve of the linearised implicit system (sweep = 2)
++  bool LineSolveX1(MeshBlock *pmb, const Real dt, AthenaArray<Real> &u,
++                   AthenaArray<Real> &ir_ini, AthenaArray<Real> &ir);
+ 
+ 
+   void ImplicitAngularFluxesCoef(const Real wght);
+@@ -167,6 +170,10 @@ class RadIntegrator {
+   AthenaArray<Real> adv_vel; // the advectioin velocity that we separate
+   AthenaArray<Real> taufact;
+   AthenaArray<Real> rad_source; // store the radiation source terms
++  int line_solve_;   // conv-fix: sweep = 2 active (records lclip_)
++  AthenaArray<Real> lclip_;  // conv-fix: 1 where the RHS floor was applied
++  int rhs_floor_;    // conv-fix: 1 = Athena++ pre-solve RHS floor, 0 = off
++  int root_newton_;  // conv-fix: Newton-polish quartic roots (0 = Athena++ default)
+   AthenaArray<Real> delta_source; // calculate delta E, delta Fr per frequency
+                                   // then sum the different across fre
+ 
+diff --git a/src/nr_radiation/integrators/rad_source.cpp b/src/nr_radiation/integrators/rad_source.cpp
+index e4c86457..19021457 100644
+--- a/src/nr_radiation/integrators/rad_source.cpp
++++ b/src/nr_radiation/integrators/rad_source.cpp
+@@ -130,9 +130,15 @@ void RadIntegrator::CalSourceTerms(MeshBlock *pmb, const Real dt,
+       ir_cm(n+ifr*nang) *= cm_to_lab(n);
+     }
+     // apply floor to ir_cm
++    if (rhs_floor_ > 0) {
++    if (IM_RADIATION_ENABLED && line_solve_ > 0) {
++      for (int n=0; n<nang; ++n)
++        lclip_(k,j,i,n+ifr*nang) = (ir_cm(n+ifr*nang) < TINY_NUMBER) ? 1.0 : 0.0;
++    }
+     for (int n=0; n<nang; ++n) {
+       ir_cm(n+ifr*nang) = std::max(ir_cm(n+ifr*nang),static_cast<Real>(TINY_NUMBER));
+     }
++    }
+ 
+     for (int n=0; n<nang; n++) {
+       implicit_coef_(n+ifr*nang) = 1.0;
+diff --git a/src/nr_radiation/integrators/srcterms/absorption_scattering.cpp b/src/nr_radiation/integrators/srcterms/absorption_scattering.cpp
+index f8db80fe..1a5c1057 100644
+--- a/src/nr_radiation/integrators/srcterms/absorption_scattering.cpp
++++ b/src/nr_radiation/integrators/srcterms/absorption_scattering.cpp
+@@ -22,6 +22,7 @@
+ 
+ // C++ headers
+ #include <cmath>
++#include <cstdio>
+ 
+ // Athena++ headers
+ #include "../../../athena.hpp"
+@@ -116,6 +117,15 @@ Real RadIntegrator::AbsorptionScattering(
+       if (flag == -1 || tgasnew != tgasnew) {
+         badcell = 1;
+         tgasnew = tgas;
++        if (root_newton_ > 5) std::printf("#BADCELL coef1 %.6e coef0 %.6e tgas %.6e suma1 %.6e suma2 %.6e suma3 %.6e\n", coef[1], coef[0], tgas, suma1, suma2, suma3);
++      } else if (root_newton_ > 0) {
++        // conv-fix: Newton polish of coef1 T^4 + T + coef0 = 0 (monotone for T > 0)
++        for (int it=0; it<root_newton_+1; ++it) {
++          Real t3 = tgasnew*tgasnew*tgasnew;
++          Real f = coef[1]*t3*tgasnew + tgasnew + coef[0];
++          Real tn = tgasnew - f/(4.0*coef[1]*t3 + 1.0);
++          if (tn > 0.0 && tn == tn) tgasnew = tn;
++        }
+       }
+     } else {
+       tgasnew = -coef[0];
+diff --git a/src/nr_radiation/radiation.hpp b/src/nr_radiation/radiation.hpp
+index a8e9d126..00e6eaf0 100644
+--- a/src/nr_radiation/radiation.hpp
++++ b/src/nr_radiation/radiation.hpp
+@@ -74,6 +74,7 @@ class NRRadiation {
+ 
+   Real sum_diff;
+   Real sum_full; // store
++  Real max_cell_rel;  // conv-fix: max over cells of sum|dI|/sum|I| (only with error_limit_cell)
+ 
+   int nang, noct, n_fre_ang; // n_fre_ang=nang*nfreq
+   int angle_flag;
+diff --git a/src/task_list/im_radit_task_list.cpp b/src/task_list/im_radit_task_list.cpp
+index 2649eda7..c8ddce4f 100644
+--- a/src/task_list/im_radit_task_list.cpp
++++ b/src/task_list/im_radit_task_list.cpp
+@@ -173,6 +173,26 @@ TaskStatus IMRadITTaskList::AddFluxAndSourceTerms(MeshBlock *pmb) {
+         }
+       }
+     }
++  } else if (rb_or_not == 3 || rb_or_not == 4) {
++    // conv-fix: symmetric Gauss-Seidel (radiation/sweep = 1). 3 = forward lexicographic
++    // pass, 4 = backward pass; in place, so cells already visited in this pass are used
++    // with their new values (exact upwind streaming in one pass per direction).
++    const bool fwd = (rb_or_not == 3);
++    for (int kk=0; kk<=ke-ks; ++kk) {
++      int k = fwd ? ks+kk : ke-kk;
++      for (int jj=0; jj<=je-js; ++jj) {
++        int j = fwd ? js+jj : je-jj;
++        for (int ii=0; ii<=ie-is; ++ii) {
++          int i = fwd ? is+ii : ie-ii;
++          prad->pradintegrator->FirstOrderFluxDivergence(k, j, i, prad->ir);
++          if (prad->angle_flag == 1) {
++            prad->pradintegrator->ImplicitAngularFluxes(k,j,i,prad->ir);
++          }
++          prad->pradintegrator->CalSourceTerms(pmb, dt, k,j,i, ph->u,
++                                               prad->ir1, prad->ir);
++        }
++      }
++    }
+   } else {
+     std::stringstream msg;
+     msg << "### FATAL ERROR in function [Iteration]"

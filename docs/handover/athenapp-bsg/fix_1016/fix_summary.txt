@@ -1,0 +1,47 @@
+# energies 1e45 erg full sphere (ledger, change since t=0); T1 = gas T cell 1 [K]; rsurf = r(rho=1e-10) [Rsun]
+== Bd1 default        t_end 29.99 d
+   t  1.00 dE_tot    -1.071 nontelesc    -1.012 boundary    -0.062 resets  +0.010 | T1 1.021e+06 rsurf  54.30
+   t  2.01 dE_tot    -7.836 nontelesc    -7.844 boundary    -0.012 resets  +0.027 | T1 6.760e+05 rsurf  50.39
+   t  3.00 dE_tot   -19.561 nontelesc   -19.704 boundary    +0.077 resets  +0.073 | T1 3.004e+05 rsurf  51.33
+   t  5.00 dE_tot   -47.397 nontelesc   -47.822 boundary    +0.288 resets  +0.144 | T1 3.799e+05 rsurf  50.08
+   t 10.00 dE_tot   -98.078 nontelesc   -98.586 boundary    +0.307 resets  +0.347 | T1 4.872e+05 rsurf  47.27
+   t 20.00 dE_tot   -79.705 nontelesc  -170.680 boundary   -11.581 resets +102.371 | T1 4.271e+05 rsurf  79.92
+   t 29.99 dE_tot   -71.455 nontelesc  -239.791 boundary   -23.243 resets +190.216 | T1 2.308e+05 rsurf  79.92
+   solves 1732  mean iterations/solve 85.4  (max 101)  CPU in solves 56.2 s over 2.00 d -> 28.1 s/day
+== Bd1 converged ref  t_end 2.68 d
+   t  1.00 dE_tot    -0.008 nontelesc    -0.000 boundary    -0.016 resets  +0.013 | T1 9.536e+05 rsurf  53.98
+   t  2.00 dE_tot    +0.430 nontelesc    -0.000 boundary    +0.401 resets  +0.033 | T1 1.456e+06 rsurf  49.61
+   solves 965  mean iterations/solve 925.0  (max 5001)  CPU in solves 289.0 s over 2.68 d -> 107.7 s/day
+== Bd1 fix            t_end 2.70 d
+   t  1.00 dE_tot    -0.050 nontelesc    +0.000 boundary    -0.057 resets  +0.012 | T1 9.480e+05 rsurf  53.98
+   t  2.00 dE_tot    +0.396 nontelesc    +0.000 boundary    +0.365 resets  +0.035 | T1 1.454e+06 rsurf  49.61
+   solves 2660  mean iterations/solve 2.9  (max 31)  CPU in solves 21.2 s over 2.70 d -> 7.8 s/day
+== tc4 default        t_end 5.07 d
+   t  1.00 dE_tot    -4.047 nontelesc    -2.266 boundary    -1.791 resets  +0.009 | T1 7.246e+05 rsurf  53.67
+   t  2.00 dE_tot   -12.294 nontelesc    -2.740 boundary    -9.574 resets  +0.016 | T1 4.421e+05 rsurf  48.05
+   t  3.00 dE_tot   -20.141 nontelesc    -4.273 boundary   -15.997 resets  +0.125 | T1 2.949e+05 rsurf  55.86
+   t  5.00 dE_tot   -37.692 nontelesc   -11.973 boundary   -25.848 resets  +0.125 | T1 3.197e+05 rsurf  54.77
+== tc4 fix            t_end 29.99 d
+   t  1.00 dE_tot    -3.197 nontelesc    +0.000 boundary    -3.208 resets  +0.010 | T1 7.797e+05 rsurf  53.20
+   t  2.00 dE_tot   -11.457 nontelesc    +0.000 boundary   -11.497 resets  +0.037 | T1 4.292e+05 rsurf  46.64
+   t  3.00 dE_tot   -18.748 nontelesc    +0.000 boundary   -18.898 resets  +0.144 | T1 3.417e+05 rsurf  62.42
+   t  5.00 dE_tot   -31.090 nontelesc    +0.000 boundary   -31.244 resets  +0.146 | T1 3.897e+05 rsurf  58.20
+   t 10.00 dE_tot   -59.569 nontelesc    +0.000 boundary   -60.043 resets  +0.466 | T1 1.684e+05 rsurf  40.23
+   t 20.00 dE_tot  -101.140 nontelesc    +0.000 boundary  -150.113 resets +49.128 | T1 6.150e+04 rsurf  79.92
+   t 29.99 dE_tot   -85.278 nontelesc    +0.000 boundary  -271.078 resets +192.648 | T1 1.233e+05 rsurf  79.92
+   solves 38134  mean iterations/solve 13.6  (max 31)  CPU in solves 773.7 s over 30.00 d -> 25.8 s/day
+== af1 default        t_end 23.81 d
+   t  1.00 dE_tot    -1.301 nontelesc    -0.343 boundary    -0.968 resets  +0.010 | T1 1.038e+06 rsurf  54.30
+   t  2.00 dE_tot    -6.293 nontelesc    +0.187 boundary    -6.509 resets  +0.029 | T1 8.701e+05 rsurf  50.86
+   t  3.01 dE_tot   -15.213 nontelesc    -2.255 boundary   -13.033 resets  +0.074 | T1 4.432e+05 rsurf  52.11
+   t  5.00 dE_tot   -32.487 nontelesc   -13.104 boundary   -19.505 resets  +0.122 | T1 3.771e+05 rsurf  51.17
+   t 10.00 dE_tot   -71.093 nontelesc   -26.553 boundary   -44.910 resets  +0.368 | T1 2.702e+05 rsurf  49.14
+   t 20.00 dE_tot   -94.764 nontelesc   -54.237 boundary   -98.343 resets +57.566 | T1 1.960e+05 rsurf  79.92
+   solves 24530  mean iterations/solve 96.7  (max 101)  CPU in solves 751.3 s over 23.81 d -> 31.5 s/day
+== af1 fix            t_end 8.97 d
+   t  1.00 dE_tot    -2.170 nontelesc    +0.000 boundary    -2.183 resets  +0.012 | T1 1.028e+06 rsurf  53.98
+   t  1.99 dE_tot    -8.428 nontelesc    -0.000 boundary    -8.460 resets  +0.032 | T1 6.609e+05 rsurf  49.61
+   t  3.01 dE_tot   -13.793 nontelesc    +0.000 boundary   -13.894 resets  +0.101 | T1 7.325e+05 rsurf  49.30
+   t  5.00 dE_tot    -9.422 nontelesc    +0.000 boundary   -20.253 resets +10.891 | T1 8.686e+05 rsurf  71.95
+   solves 9304  mean iterations/solve 2.7  (max 31)  CPU in solves 61.7 s over 8.97 d -> 6.9 s/day
+figure written

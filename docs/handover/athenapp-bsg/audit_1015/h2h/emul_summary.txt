@@ -1,0 +1,176 @@
+A_tc4  t_end 5.00 d
+   t  1.00 T1 7.246e+05 rho1 8.408e-05 Fwall/L  -308.10 Ltop/L   0.92 rsurf  53.67 dEtot -4.043e+45 dU +8.106e+44 dEg -7.453e+45
+   t  5.00 T1 3.197e+05 rho1 1.664e-04 Fwall/L  -131.23 Ltop/L   2.28 rsurf  54.77 dEtot -3.768e+46 dU -1.039e+46 dEg -2.244e+46
+   Fe(38-44) t  0.00 <T> 1.771e+05 <rho> 4.835e-08 maxGamma 0.894 max|v| 0.0 km/s
+   Fe(38-44) t  0.80 <T> 1.585e+05 <rho> 3.641e-08 maxGamma -0.057 max|v| 33.7 km/s
+   Fe(38-44) t  1.60 <T> 1.336e+05 <rho> 3.176e-08 maxGamma 8.737 max|v| 62.4 km/s
+   Fe(38-44) t  2.40 <T> 1.543e+05 <rho> 3.261e-08 maxGamma 1.515 max|v| 27.1 km/s
+   Fe(38-44) t  3.20 <T> 1.569e+05 <rho> 3.598e-08 maxGamma 0.219 max|v| 34.3 km/s
+   Fe(38-44) t  4.00 <T> 1.391e+05 <rho> 3.053e-08 maxGamma 0.454 max|v| 55.9 km/s
+   Fe(38-44) t  4.80 <T> 1.149e+05 <rho> 2.237e-08 maxGamma 2.297 max|v| 109.1 km/s
+A_nf4  t_end 5.00 d
+   t  1.00 T1 9.309e+05 rho1 7.358e-05 Fwall/L  -292.98 Ltop/L   0.93 rsurf  53.67 dEtot -3.874e+45 dU +1.808e+45 dEg -7.170e+45
+   t  5.00 T1 5.285e+05 rho1 1.449e-04 Fwall/L  -414.56 Ltop/L   1.99 rsurf  55.39 dEtot -3.409e+46 dU -4.391e+45 dEg -1.906e+46
+   Fe(38-44) t  0.00 <T> 1.771e+05 <rho> 4.835e-08 maxGamma 0.894 max|v| 0.0 km/s
+   Fe(38-44) t  0.80 <T> 1.585e+05 <rho> 3.642e-08 maxGamma -0.057 max|v| 33.7 km/s
+   Fe(38-44) t  1.60 <T> 1.338e+05 <rho> 3.161e-08 maxGamma 8.748 max|v| 61.9 km/s
+   Fe(38-44) t  2.40 <T> 1.556e+05 <rho> 3.304e-08 maxGamma 1.740 max|v| 28.2 km/s
+   Fe(38-44) t  3.20 <T> 1.584e+05 <rho> 3.644e-08 maxGamma 0.446 max|v| 34.5 km/s
+   Fe(38-44) t  4.00 <T> 1.404e+05 <rho> 3.089e-08 maxGamma 0.399 max|v| 53.5 km/s
+   Fe(38-44) t  4.80 <T> 1.174e+05 <rho> 2.366e-08 maxGamma 2.159 max|v| 107.8 km/s
+A_af1  t_end 23.80 d
+   t  1.00 T1 1.038e+06 rho1 5.841e-05 Fwall/L  -106.46 Ltop/L   1.16 rsurf  54.30 dEtot -1.317e+45 dU +3.709e+44 dEg -1.400e+45
+   t  5.00 T1 3.771e+05 rho1 1.524e-04 Fwall/L  -147.08 Ltop/L   1.87 rsurf  51.17 dEtot -3.249e+46 dU -1.050e+46 dEg -1.730e+46
+   t 10.00 T1 2.702e+05 rho1 1.989e-04 Fwall/L  -138.86 Ltop/L   1.77 rsurf  49.14 dEtot -7.110e+46 dU -2.204e+46 dEg -3.520e+46
+   t 20.00 T1 1.960e+05 rho1 2.563e-04 Fwall/L  -127.15 Ltop/L   1.09 rsurf  79.92 dEtot -9.476e+46 dU -3.680e+46 dEg -4.303e+46
+   Fe(38-44) t  0.00 <T> 1.771e+05 <rho> 4.835e-08 maxGamma 0.894 max|v| 0.0 km/s
+   Fe(38-44) t  3.90 <T> 1.667e+05 <rho> 4.238e-08 maxGamma 0.576 max|v| 9.8 km/s
+   Fe(38-44) t  7.80 <T> 1.467e+05 <rho> 3.367e-08 maxGamma 0.837 max|v| 8.3 km/s
+   Fe(38-44) t 11.70 <T> 1.260e+05 <rho> 2.555e-08 maxGamma 0.593 max|v| 9.7 km/s
+   Fe(38-44) t 15.60 <T> 1.017e+05 <rho> 1.686e-08 maxGamma 0.589 max|v| 8.6 km/s
+   Fe(38-44) t 19.50 <T> 1.652e+05 <rho> 3.306e-08 maxGamma -1.721 max|v| 54.1 km/s
+   Fe(38-44) t 23.40 <T> 2.184e+05 <rho> 9.735e-08 maxGamma 51.022 max|v| 150.4 km/s
+K1     t_end 30.00 d
+   t  1.00 T1 1.049e+06 rho1 5.652e-05 Fwall/L    -7.75 Ltop/L   0.96 rsurf  53.98 dEtot +4.196e+44 dU +3.110e+44 dEg -4.927e+44
+   t  5.00 T1 1.054e+06 rho1 5.589e-05 Fwall/L    -8.59 Ltop/L   0.97 rsurf  50.55 dEtot +8.066e+44 dU +3.123e+44 dEg -2.717e+44
+   t 10.00 T1 1.055e+06 rho1 5.573e-05 Fwall/L    -9.04 Ltop/L   0.89 rsurf  51.33 dEtot +1.054e+45 dU +3.455e+44 dEg -2.113e+44
+   t 20.00 T1 1.056e+06 rho1 5.558e-05 Fwall/L    -8.55 Ltop/L   0.94 rsurf  51.48 dEtot +1.382e+45 dU +3.598e+44 dEg -6.143e+43
+   t 30.00 T1 1.057e+06 rho1 5.551e-05 Fwall/L    -8.07 Ltop/L   0.93 rsurf  52.11 dEtot +1.625e+45 dU +3.674e+44 dEg +5.900e+43
+   Fe(38-44) t  0.00 <T> 1.769e+05 <rho> 4.840e-08 maxGamma 0.888 max|v| 0.0 km/s
+   Fe(38-44) t  5.00 <T> 1.755e+05 <rho> 4.811e-08 maxGamma 0.726 max|v| 3.5 km/s
+   Fe(38-44) t 10.00 <T> 1.751e+05 <rho> 4.765e-08 maxGamma 0.962 max|v| 1.6 km/s
+   Fe(38-44) t 15.00 <T> 1.758e+05 <rho> 4.793e-08 maxGamma 0.766 max|v| 0.4 km/s
+   Fe(38-44) t 20.00 <T> 1.750e+05 <rho> 4.801e-08 maxGamma 0.728 max|v| 1.2 km/s
+   Fe(38-44) t 25.00 <T> 1.750e+05 <rho> 4.807e-08 maxGamma 0.892 max|v| 0.9 km/s
+   Fe(38-44) t 30.00 <T> 1.750e+05 <rho> 4.800e-08 maxGamma 0.801 max|v| 0.3 km/s
+E0     t_end 30.00 d
+   t  1.00 T1 1.049e+06 rho1 5.652e-05 Fwall/L    -7.75 Ltop/L   0.96 rsurf  53.98 dEtot +4.196e+44 dU +3.110e+44 dEg -4.927e+44
+   t  5.00 T1 1.054e+06 rho1 5.589e-05 Fwall/L    -8.59 Ltop/L   0.97 rsurf  50.55 dEtot +8.066e+44 dU +3.123e+44 dEg -2.717e+44
+   t 10.00 T1 1.055e+06 rho1 5.573e-05 Fwall/L    -9.04 Ltop/L   0.89 rsurf  51.33 dEtot +1.054e+45 dU +3.455e+44 dEg -2.113e+44
+   t 20.00 T1 1.056e+06 rho1 5.558e-05 Fwall/L    -8.55 Ltop/L   0.94 rsurf  51.48 dEtot +1.382e+45 dU +3.598e+44 dEg -6.143e+43
+   t 30.00 T1 1.057e+06 rho1 5.551e-05 Fwall/L    -8.07 Ltop/L   0.93 rsurf  52.11 dEtot +1.625e+45 dU +3.674e+44 dEg +5.900e+43
+   Fe(38-44) t  0.00 <T> 1.769e+05 <rho> 4.840e-08 maxGamma 0.888 max|v| 0.0 km/s
+   Fe(38-44) t  5.00 <T> 1.755e+05 <rho> 4.811e-08 maxGamma 0.726 max|v| 3.5 km/s
+   Fe(38-44) t 10.00 <T> 1.751e+05 <rho> 4.765e-08 maxGamma 0.962 max|v| 1.6 km/s
+   Fe(38-44) t 15.00 <T> 1.758e+05 <rho> 4.793e-08 maxGamma 0.766 max|v| 0.4 km/s
+   Fe(38-44) t 20.00 <T> 1.750e+05 <rho> 4.801e-08 maxGamma 0.728 max|v| 1.2 km/s
+   Fe(38-44) t 25.00 <T> 1.750e+05 <rho> 4.807e-08 maxGamma 0.892 max|v| 0.9 km/s
+   Fe(38-44) t 30.00 <T> 1.750e+05 <rho> 4.800e-08 maxGamma 0.801 max|v| 0.3 km/s
+R1     t_end 30.00 d
+   t  1.00 T1 1.052e+06 rho1 5.613e-05 Fwall/L    -6.14 Ltop/L   0.96 rsurf  53.98 dEtot +6.445e+44 dU +3.251e+44 dEg -4.038e+44
+   t  5.00 T1 1.059e+06 rho1 5.527e-05 Fwall/L    -7.69 Ltop/L   0.97 rsurf  50.55 dEtot +1.238e+45 dU +3.414e+44 dEg -1.052e+44
+   t 10.00 T1 1.060e+06 rho1 5.507e-05 Fwall/L    -7.88 Ltop/L   0.89 rsurf  51.17 dEtot +1.625e+45 dU +3.841e+44 dEg +8.373e+42
+   t 20.00 T1 1.061e+06 rho1 5.491e-05 Fwall/L    -7.22 Ltop/L   0.94 rsurf  51.64 dEtot +2.115e+45 dU +4.068e+44 dEg +2.249e+44
+   t 30.00 T1 1.061e+06 rho1 5.485e-05 Fwall/L    -6.59 Ltop/L   0.93 rsurf  52.11 dEtot +2.458e+45 dU +4.193e+44 dEg +3.879e+44
+   Fe(38-44) t  0.00 <T> 1.769e+05 <rho> 4.840e-08 maxGamma 0.888 max|v| 0.0 km/s
+   Fe(38-44) t  5.00 <T> 1.756e+05 <rho> 4.819e-08 maxGamma 0.739 max|v| 3.4 km/s
+   Fe(38-44) t 10.00 <T> 1.752e+05 <rho> 4.772e-08 maxGamma 0.961 max|v| 1.5 km/s
+   Fe(38-44) t 15.00 <T> 1.759e+05 <rho> 4.803e-08 maxGamma 0.765 max|v| 0.4 km/s
+   Fe(38-44) t 20.00 <T> 1.751e+05 <rho> 4.814e-08 maxGamma 0.731 max|v| 1.2 km/s
+   Fe(38-44) t 25.00 <T> 1.751e+05 <rho> 4.819e-08 maxGamma 0.890 max|v| 0.9 km/s
+   Fe(38-44) t 30.00 <T> 1.751e+05 <rho> 4.814e-08 maxGamma 0.802 max|v| 0.2 km/s
+R1t1   t_end 30.00 d
+   t  1.00 T1 1.052e+06 rho1 5.613e-05 Fwall/L    -6.15 Ltop/L   0.96 rsurf  53.98 dEtot +6.428e+44 dU +3.250e+44 dEg -4.045e+44
+   t  5.00 T1 1.059e+06 rho1 5.528e-05 Fwall/L    -7.69 Ltop/L   0.97 rsurf  50.55 dEtot +1.235e+45 dU +3.412e+44 dEg -1.066e+44
+   t 10.00 T1 1.060e+06 rho1 5.507e-05 Fwall/L    -7.88 Ltop/L   0.89 rsurf  51.17 dEtot +1.622e+45 dU +3.839e+44 dEg +7.157e+42
+   t 20.00 T1 1.061e+06 rho1 5.491e-05 Fwall/L    -7.22 Ltop/L   0.94 rsurf  51.64 dEtot +2.112e+45 dU +4.066e+44 dEg +2.239e+44
+   t 30.00 T1 1.061e+06 rho1 5.486e-05 Fwall/L    -6.60 Ltop/L   0.93 rsurf  52.11 dEtot +2.455e+45 dU +4.191e+44 dEg +3.868e+44
+   Fe(38-44) t  0.00 <T> 1.769e+05 <rho> 4.840e-08 maxGamma 0.888 max|v| 0.0 km/s
+   Fe(38-44) t  5.00 <T> 1.756e+05 <rho> 4.819e-08 maxGamma 0.739 max|v| 3.4 km/s
+   Fe(38-44) t 10.00 <T> 1.752e+05 <rho> 4.772e-08 maxGamma 0.961 max|v| 1.5 km/s
+   Fe(38-44) t 15.00 <T> 1.759e+05 <rho> 4.803e-08 maxGamma 0.766 max|v| 0.4 km/s
+   Fe(38-44) t 20.00 <T> 1.751e+05 <rho> 4.814e-08 maxGamma 0.731 max|v| 1.2 km/s
+   Fe(38-44) t 25.00 <T> 1.751e+05 <rho> 4.819e-08 maxGamma 0.891 max|v| 0.9 km/s
+   Fe(38-44) t 30.00 <T> 1.751e+05 <rho> 4.814e-08 maxGamma 0.802 max|v| 0.2 km/s
+R2     t_end 0.50 d
+   Fe(38-44) t  0.00 <T> 1.769e+05 <rho> 4.840e-08 maxGamma 0.888 max|v| 0.0 km/s
+   Fe(38-44) t  0.25 <T> 2.323e+05 <rho> 4.441e-08 maxGamma 34.557 max|v| 146.4 km/s
+   Fe(38-44) t  0.50 <T> 1.989e+05 <rho> 2.924e-08 maxGamma 22.989 max|v| 167.1 km/s
+R1R2   t_end 1.50 d
+   t  1.00 T1 1.049e+06 rho1 5.657e-05 Fwall/L    -6.89 Ltop/L  47.53 rsurf  79.92 dEtot +1.172e+45 dU +9.183e+44 dEg -1.744e+45
+   Fe(38-44) t  0.00 <T> 1.769e+05 <rho> 4.840e-08 maxGamma 0.888 max|v| 0.0 km/s
+   Fe(38-44) t  0.25 <T> 2.123e+05 <rho> 4.484e-08 maxGamma 11.659 max|v| 103.9 km/s
+   Fe(38-44) t  0.50 <T> 1.744e+05 <rho> 2.466e-08 maxGamma 7.952 max|v| 100.3 km/s
+   Fe(38-44) t  0.75 <T> 1.704e+05 <rho> 2.709e-08 maxGamma 10.219 max|v| 96.4 km/s
+   Fe(38-44) t  1.00 <T> 1.717e+05 <rho> 3.117e-08 maxGamma 9.721 max|v| 87.1 km/s
+   Fe(38-44) t  1.25 <T> 1.760e+05 <rho> 3.681e-08 maxGamma 13.055 max|v| 69.1 km/s
+   Fe(38-44) t  1.50 <T> 1.820e+05 <rho> 4.403e-08 maxGamma 9.969 max|v| 67.7 km/s
+R3     t_end 30.00 d
+   t  1.00 T1 1.025e+06 rho1 6.242e-05 Fwall/L   -72.53 Ltop/L   0.57 rsurf  53.20 dEtot +7.288e+44 dU +2.236e+45 dEg -5.302e+45
+   t  5.00 T1 1.063e+06 rho1 5.756e-05 Fwall/L   -80.63 Ltop/L   2.51 rsurf  68.05 dEtot +2.352e+45 dU +2.010e+45 dEg -3.804e+45
+   t 10.00 T1 1.070e+06 rho1 5.665e-05 Fwall/L   -81.48 Ltop/L   0.83 rsurf  56.02 dEtot +3.117e+45 dU +1.977e+45 dEg -3.198e+45
+   t 20.00 T1 1.075e+06 rho1 5.609e-05 Fwall/L   -81.23 Ltop/L   0.84 rsurf  52.58 dEtot +4.027e+45 dU +2.082e+45 dEg -2.983e+45
+   t 30.00 T1 1.076e+06 rho1 5.587e-05 Fwall/L   -80.75 Ltop/L   0.88 rsurf  50.86 dEtot +4.594e+45 dU +2.147e+45 dEg -2.846e+45
+   Fe(38-44) t  0.00 <T> 1.769e+05 <rho> 4.840e-08 maxGamma 0.888 max|v| 0.0 km/s
+   Fe(38-44) t  5.00 <T> 1.434e+05 <rho> 3.588e-08 maxGamma 3.346 max|v| 104.8 km/s
+   Fe(38-44) t 10.00 <T> 1.637e+05 <rho> 3.778e-08 maxGamma 0.316 max|v| 9.0 km/s
+   Fe(38-44) t 15.00 <T> 1.515e+05 <rho> 3.797e-08 maxGamma 1.174 max|v| 3.2 km/s
+   Fe(38-44) t 20.00 <T> 1.610e+05 <rho> 3.742e-08 maxGamma 1.013 max|v| 3.5 km/s
+   Fe(38-44) t 25.00 <T> 1.546e+05 <rho> 3.749e-08 maxGamma 0.497 max|v| 7.5 km/s
+   Fe(38-44) t 30.00 <T> 1.579e+05 <rho> 3.734e-08 maxGamma 1.280 max|v| 6.3 km/s
+R1R3   t_end 30.00 d
+   t  1.00 T1 1.026e+06 rho1 6.236e-05 Fwall/L   -67.50 Ltop/L   0.57 rsurf  53.20 dEtot +8.025e+44 dU +2.249e+45 dEg -5.300e+45
+   t  5.00 T1 1.065e+06 rho1 5.738e-05 Fwall/L   -81.11 Ltop/L   2.51 rsurf  68.05 dEtot +2.495e+45 dU +2.020e+45 dEg -3.752e+45
+   t 10.00 T1 1.070e+06 rho1 5.663e-05 Fwall/L   -81.48 Ltop/L   0.83 rsurf  56.02 dEtot +3.177e+45 dU +1.981e+45 dEg -3.173e+45
+   t 20.00 T1 1.074e+06 rho1 5.619e-05 Fwall/L   -81.40 Ltop/L   0.84 rsurf  52.58 dEtot +3.982e+45 dU +2.080e+45 dEg -2.998e+45
+   t 30.00 T1 1.075e+06 rho1 5.603e-05 Fwall/L   -80.99 Ltop/L   0.88 rsurf  50.86 dEtot +4.464e+45 dU +2.139e+45 dEg -2.892e+45
+   Fe(38-44) t  0.00 <T> 1.769e+05 <rho> 4.840e-08 maxGamma 0.888 max|v| 0.0 km/s
+   Fe(38-44) t  5.00 <T> 1.434e+05 <rho> 3.585e-08 maxGamma 3.340 max|v| 104.4 km/s
+   Fe(38-44) t 10.00 <T> 1.637e+05 <rho> 3.779e-08 maxGamma 0.317 max|v| 9.0 km/s
+   Fe(38-44) t 15.00 <T> 1.514e+05 <rho> 3.797e-08 maxGamma 1.173 max|v| 3.2 km/s
+   Fe(38-44) t 20.00 <T> 1.610e+05 <rho> 3.742e-08 maxGamma 1.012 max|v| 3.5 km/s
+   Fe(38-44) t 25.00 <T> 1.545e+05 <rho> 3.747e-08 maxGamma 0.497 max|v| 7.4 km/s
+   Fe(38-44) t 30.00 <T> 1.579e+05 <rho> 3.732e-08 maxGamma 1.277 max|v| 6.2 km/s
+R4     t_end 30.00 d
+   t  1.00 T1 1.049e+06 rho1 5.651e-05 Fwall/L    -8.06 Ltop/L   1.05 rsurf  53.98 dEtot +4.187e+44 dU +3.110e+44 dEg -4.928e+44
+   t  5.00 T1 1.054e+06 rho1 5.588e-05 Fwall/L    -8.96 Ltop/L   1.06 rsurf  50.55 dEtot +8.069e+44 dU +3.109e+44 dEg -2.677e+44
+   t 10.00 T1 1.056e+06 rho1 5.573e-05 Fwall/L    -9.38 Ltop/L   0.98 rsurf  51.17 dEtot +1.057e+45 dU +3.456e+44 dEg -2.101e+44
+   t 20.00 T1 1.056e+06 rho1 5.558e-05 Fwall/L    -8.86 Ltop/L   1.03 rsurf  51.48 dEtot +1.389e+45 dU +3.594e+44 dEg -5.616e+43
+   t 30.00 T1 1.057e+06 rho1 5.551e-05 Fwall/L    -8.36 Ltop/L   1.02 rsurf  52.11 dEtot +1.636e+45 dU +3.678e+44 dEg +6.434e+43
+   Fe(38-44) t  0.00 <T> 1.769e+05 <rho> 4.840e-08 maxGamma 0.888 max|v| 0.0 km/s
+   Fe(38-44) t  5.00 <T> 1.755e+05 <rho> 4.810e-08 maxGamma 0.724 max|v| 3.5 km/s
+   Fe(38-44) t 10.00 <T> 1.750e+05 <rho> 4.769e-08 maxGamma 0.955 max|v| 1.5 km/s
+   Fe(38-44) t 15.00 <T> 1.757e+05 <rho> 4.793e-08 maxGamma 0.775 max|v| 0.3 km/s
+   Fe(38-44) t 20.00 <T> 1.749e+05 <rho> 4.802e-08 maxGamma 0.718 max|v| 1.3 km/s
+   Fe(38-44) t 25.00 <T> 1.749e+05 <rho> 4.807e-08 maxGamma 0.890 max|v| 0.9 km/s
+   Fe(38-44) t 30.00 <T> 1.749e+05 <rho> 4.798e-08 maxGamma 0.811 max|v| 0.1 km/s
+R5a    t_end 0.00 d
+   Fe(38-44) t  0.00 <T> 1.769e+05 <rho> 4.840e-08 maxGamma 0.888 max|v| 0.0 km/s
+R5b    t_end 30.00 d
+   t  1.00 T1 1.049e+06 rho1 5.693e-05 Fwall/L   -14.58 Ltop/L   0.95 rsurf  53.83 dEtot +6.445e+44 dU +5.545e+44 dEg -9.828e+44
+   t  5.00 T1 1.056e+06 rho1 5.600e-05 Fwall/L   -15.80 Ltop/L   1.02 rsurf  51.95 dEtot +1.158e+45 dU +5.363e+44 dEg -6.395e+44
+   t 10.00 T1 1.058e+06 rho1 5.579e-05 Fwall/L   -16.39 Ltop/L   0.86 rsurf  51.17 dEtot +1.478e+45 dU +5.738e+44 dEg -5.376e+44
+   t 20.00 T1 1.059e+06 rho1 5.559e-05 Fwall/L   -15.87 Ltop/L   0.98 rsurf  51.33 dEtot +1.888e+45 dU +5.957e+44 dEg -3.672e+44
+   t 30.00 T1 1.059e+06 rho1 5.551e-05 Fwall/L   -15.34 Ltop/L   0.95 rsurf  52.11 dEtot +2.185e+45 dU +6.060e+44 dEg -2.207e+44
+   Fe(38-44) t  0.00 <T> 1.769e+05 <rho> 4.840e-08 maxGamma 0.888 max|v| 0.0 km/s
+   Fe(38-44) t  5.00 <T> 1.737e+05 <rho> 4.792e-08 maxGamma 0.944 max|v| 5.6 km/s
+   Fe(38-44) t 10.00 <T> 1.742e+05 <rho> 4.675e-08 maxGamma 1.136 max|v| 2.4 km/s
+   Fe(38-44) t 15.00 <T> 1.748e+05 <rho> 4.693e-08 maxGamma 0.623 max|v| 1.6 km/s
+   Fe(38-44) t 20.00 <T> 1.742e+05 <rho> 4.745e-08 maxGamma 0.788 max|v| 0.8 km/s
+   Fe(38-44) t 25.00 <T> 1.744e+05 <rho> 4.706e-08 maxGamma 0.962 max|v| 1.4 km/s
+   Fe(38-44) t 30.00 <T> 1.744e+05 <rho> 4.713e-08 maxGamma 0.730 max|v| 0.9 km/s
+R5c    t_end 30.00 d
+   t  1.00 T1 1.049e+06 rho1 5.655e-05 Fwall/L    -8.59 Ltop/L   0.96 rsurf  53.98 dEtot +3.862e+44 dU +3.078e+44 dEg -5.030e+44
+   t  5.00 T1 1.052e+06 rho1 5.616e-05 Fwall/L    -9.28 Ltop/L   0.97 rsurf  50.55 dEtot +6.189e+44 dU +2.986e+44 dEg -3.421e+44
+   t 10.00 T1 1.054e+06 rho1 5.593e-05 Fwall/L    -9.90 Ltop/L   0.89 rsurf  51.33 dEtot +8.744e+44 dU +3.335e+44 dEg -2.808e+44
+   t 20.00 T1 1.055e+06 rho1 5.581e-05 Fwall/L    -8.95 Ltop/L   0.95 rsurf  51.48 dEtot +1.143e+45 dU +3.449e+44 dEg -1.569e+44
+   t 30.00 T1 1.056e+06 rho1 5.566e-05 Fwall/L    -8.28 Ltop/L   0.93 rsurf  52.11 dEtot +1.400e+45 dU +3.536e+44 dEg -3.124e+43
+   Fe(38-44) t  0.00 <T> 1.769e+05 <rho> 4.840e-08 maxGamma 0.888 max|v| 0.0 km/s
+   Fe(38-44) t  5.00 <T> 1.754e+05 <rho> 4.805e-08 maxGamma 0.733 max|v| 3.6 km/s
+   Fe(38-44) t 10.00 <T> 1.750e+05 <rho> 4.764e-08 maxGamma 0.958 max|v| 1.7 km/s
+   Fe(38-44) t 15.00 <T> 1.757e+05 <rho> 4.791e-08 maxGamma 0.768 max|v| 0.3 km/s
+   Fe(38-44) t 20.00 <T> 1.749e+05 <rho> 4.795e-08 maxGamma 0.719 max|v| 1.1 km/s
+   Fe(38-44) t 25.00 <T> 1.749e+05 <rho> 4.804e-08 maxGamma 0.903 max|v| 0.8 km/s
+   Fe(38-44) t 30.00 <T> 1.749e+05 <rho> 4.795e-08 maxGamma 0.803 max|v| 0.3 km/s
+K1 own budget to 30.00 d: dEtot 1.6248e+45  int(Lin-Ltop) 2.2949e+45  mean L_in/L 2.52
+E0 own budget to 30.00 d: dEtot 1.6248e+45  int(Lin-Ltop) 2.2949e+45  mean L_in/L 2.52
+R1 own budget to 30.00 d: dEtot 2.4580e+45  int(Lin-Ltop) 3.2453e+45  mean L_in/L 3.18
+R1t1 own budget to 30.00 d: dEtot 2.4553e+45  int(Lin-Ltop) 3.2450e+45  mean L_in/L 3.18
+R2 own budget to 0.73 d: dEtot 4.0480e+45  int(Lin-Ltop) -1.6380e+46  mean L_in/L 7.20
+R1R2 own budget to 1.59 d: dEtot 5.7759e+44  int(Lin-Ltop) -6.6517e+46  mean L_in/L 1.57
+R3 own budget to 30.00 d: dEtot 4.5814e+45  int(Lin-Ltop) 4.9836e+45  mean L_in/L 4.43
+R1R3 own budget to 30.00 d: dEtot 4.4514e+45  int(Lin-Ltop) 5.0157e+45  mean L_in/L 4.45
+R4 own budget to 30.00 d: dEtot 1.6356e+45  int(Lin-Ltop) 2.3034e+45  mean L_in/L 2.62
+R5a own budget to 0.00 d: dEtot 0.0000e+00  int(Lin-Ltop) 0.0000e+00  mean L_in/L 1.00
+R5b own budget to 30.00 d: dEtot 2.1832e+45  int(Lin-Ltop) 2.8515e+45  mean L_in/L 2.92
+R5c own budget to 30.00 d: dEtot 1.3999e+45  int(Lin-Ltop) 1.7441e+45  mean L_in/L 2.14
