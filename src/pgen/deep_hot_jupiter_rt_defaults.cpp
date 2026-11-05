@@ -105,6 +105,14 @@ void PgenEarlyDefaults(ParameterInput *pin) {
     pin->GetOrAddReal("mhd", "valfven_max_cgs", 2.0e6);
     Log("<mhd>/valfven_max_cgs = 2e6 (default on a fresh dhj MHD start)");
   }
+  // <hydro>/floor_tracer = true (defaults-1105, USER 11-05): the floor-mass tracer with its
+  // drain, as the dhj MHD fresh default (mhd.cpp, with valfven_max_cgs), on the shared
+  // tracer layout (share-1104 P4) for a fresh dhj HYDRO start when not named.  Not passive:
+  // the drain removes floor-added mass (A/B: effect only below 1e-6 bar).
+  if (fb == "hydro" && fluid && !named("hydro", "floor_tracer")) {
+    pin->GetOrAddBoolean("hydro", "floor_tracer", true);
+    Log("<hydro>/floor_tracer = true (default on a fresh dhj hydro start: floor mass + drain)");
+  }
   // <mhd>/use_rkg_sts = true (RKG2 super-time-stepping of the resistive terms, every dhj
   // MHD production deck; USER 11-03 overrides the 11-01 "keep false" for this scope) with
   // resistive dhj MHD: ohmic_resistivity named, or ambipolar named and not none.  Its
