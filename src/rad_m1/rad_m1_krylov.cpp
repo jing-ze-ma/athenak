@@ -278,13 +278,17 @@ void RadiationM1::ImplicitHaloMPIInit() {
   const int nseg = static_cast<int>(hm_rank.size());
   hm_soff.assign(nseg, 0); hm_slen.assign(nseg, 0);
   hm_roff.assign(nseg, 0); hm_rlen.assign(nseg, 0);
+  // share-1104 G5: the ghost depth of the lists = <rad_m1>/implicit_halo_depth where it
+  // applies (the spherical-polar wedge: the same layers the implicit kernels read,
+  // poisoned-ghost gate), else all ng layers as before
+  const int dg = (impl_hdepth > 0 && impl_hdepth < ng) ? impl_hdepth : ng;
   auto rng = [&](int o, int s, int e, int nx, bool on, int &lo, int &hi) {
     if (!on) {lo = s; hi = e; return;}
     (void)nx;
     if (o < 0) {
-      lo = s - ng; hi = s - 1;
+      lo = s - dg; hi = s - 1;
     } else if (o > 0) {
-      lo = e + 1; hi = e + ng;
+      lo = e + 1; hi = e + dg;
     } else {
       lo = s; hi = e;
     }

@@ -1170,6 +1170,7 @@ class RadiationM1 {
                                 // several ranks: on-rank copy kernel + ONE message per
                                 // neighbour rank (pack / unpack kernels)
   int hm_state;                 // 0 = not built, 1 = on, -1 = not possible on this mesh
+  int impl_hdepth = 0;   // share-1104 G5: implicit_halo_depth of the halo_mpi lists (0 = ng)
   int hm_nsend, hm_nrecv;       // entries (cells) sent / received per component
   int hm_nq;                    // components the buffers are sized for
   std::vector<int> hm_rank, hm_soff, hm_slen, hm_roff, hm_rlen;  // per neighbour rank
@@ -3001,6 +3002,20 @@ class RadiationM1 {
   std::vector<int> vgd_gdnl;              // (ws): on-rank entries with depth <= ws
   std::vector<std::vector<int>> vgd_gdsn, vgd_gdrn;   // (ws)(partner): send / recv counts
   void VetGdGlobalBandInit();
+  // share-1104 G1: vet_gd_halo_compact > 0 with vet_gd_band_global (the full sphere,
+  // stretched theta): per shell and pass only the (band cell, direction) values that pass
+  // VgdHaloKeep, evaluated at the SOURCE cell's global (row J, column K) on both sides
+  // (node-table theta, global phi, the row's own theta spacing); rows within the polar
+  // zone (node colatitude < vet_gd_band_colat) + the band depth keep their whole branch
+  bool vgd_gbc = false;
+  DvceArray2D<int> vgd_gbjs, vgd_gbjr;    // (entry, 2): source cell global J, K
+  DvceArray1D<Real> vgd_gbth, vgd_gbdt;   // (J): node theta, theta cell width
+  DvceArray1D<int> vgd_gbcap;             // (J): 1 = polar zone (branch only)
+  DvceArray1D<int> vgd_gbfs, vgd_gbfr;    // flags -> positions (entry*n + v; +1)
+  Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_gbpb;   // segment bounds
+  Real vgd_gbdmin = 0.0;
+  template <class V>
+  void VetGdGbHaloC(V &a, const int i, const int ws);
   void VetGdRingGatherI(const int i);
   void VetGdRingGatherC(const int i0, const int i1);
   void VetGdThetaInit();                  // the node table and the checks

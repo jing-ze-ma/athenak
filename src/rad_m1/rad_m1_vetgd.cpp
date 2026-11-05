@@ -807,14 +807,23 @@ void RadiationM1::VetGdInit() {
     if (!bad.empty()) {
       VgdFatal("not available on a stretched theta / the full sphere (accsp-1102):" + bad);
     }
-    if (vgd_hcomp > 0) {
+    // share-1104 G1: with vet_gd_band_global (the full-sphere fresh default) the compact
+    // halo is the keep-tested global-band exchange (VetGdGbHaloC, sph2.inc); the slot
+    // halo of a stretched-theta wedge / a full sphere without the global band keeps the
+    // dense halo (its slot keep test is the uniform index formula)
+    if (vgd_hcomp > 0 && !vgd_gband) {
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> vet_gd (accsp-1102): vet_gd_halo_compact = " << vgd_hcomp
-                  << " -> 0 (the dense per-shell halo; the compact keep test is not "
-                  << "ported to the theta node table / pole slots; speed only)"
-                  << std::endl;
+                  << " -> 0 (the dense per-shell slot halo; the compact keep test is "
+                  << "ported only to vet_gd_band_global; speed only)" << std::endl;
       }
       vgd_hcomp = 0;
+    }
+    if (vgd_hcomp > 0) {
+      // the slot-path speed machinery does not apply to the global band
+      vgd_hx_on = false;
+      vgd_hx_named = false;
+      vgd_hx_mode = 0;
     }
     vgd_ipc_on = false;
   }
@@ -2295,6 +2304,11 @@ void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, cons
   // direction re-indexing at its walls (checked in VgdTabCompute)
   if (vgd_gband) {
     if (b != nullptr) {VgdFatal("vet_gd_band_global: no fused twin band");}
+    // share-1104 G1: the compact per-shell exchange of the global band
+    if (mapd && vgd_gbc && i1 == i0 && nv == vgd_n) {
+      VetGdGbHaloC(a, i0, ws);
+      return;
+    }
     VetGdCsHalo(a, nv, i0, i1, true, ws);
     return;
   }
@@ -2515,13 +2529,14 @@ void RadiationM1::VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1)
 //! by gam for the source-cell/upwind-point offset) >= dep - 3 cells.  wall: branch only.
 
 namespace {
+// share-1104 G1: the keep test at a given source-cell position (theta, phi): shared by
+// the uniform slot halo (VgdHaloKeep, the index formula) and the global band of the full
+// sphere / stretched theta (VetGdGbHaloC, the node table)
 KOKKOS_INLINE_FUNCTION
-bool VgdHaloKeep(const Real nx, const Real ny, const Real nz, const int gj, const int gk,
-                 const Real t0, const Real dth, const Real p0, const Real dph,
-                 const bool inw, const int mode, const bool wall, const int dep,
-                 const Real rs, const Real rm, const Real rp, const bool hasm,
-                 const bool hasp, const Real gam, const Real dmin) {
-  const Real th = t0 + (gj + 0.5)*dth, ph = p0 + (gk + 0.5)*dph;
+bool VgdHaloKeepTP(const Real nx, const Real ny, const Real nz, const Real th,
+                   const Real ph, const bool inw, const int mode, const bool wall,
+                   const int dep, const Real rs, const Real rm, const Real rp,
+                   const bool hasm, const bool hasp, const Real gam, const Real dmin) {
   const Real st = sin(th);
   const Real mu = nx*st*cos(ph) + ny*st*sin(ph) + nz*cos(th);
   if (fabs(mu) < 1.0e-12) {return true;}
@@ -2544,6 +2559,17 @@ bool VgdHaloKeep(const Real nx, const Real ny, const Real nz, const int gj, cons
     dl = fmax(dl, asin(fmin(pp/rs, 1.0)) - asin(fmin(pp/rp, 1.0)));
   }
   return dep <= static_cast<int>(dl/dmin) + 3;
+}
+
+KOKKOS_INLINE_FUNCTION
+bool VgdHaloKeep(const Real nx, const Real ny, const Real nz, const int gj, const int gk,
+                 const Real t0, const Real dth, const Real p0, const Real dph,
+                 const bool inw, const int mode, const bool wall, const int dep,
+                 const Real rs, const Real rm, const Real rp, const bool hasm,
+                 const bool hasp, const Real gam, const Real dmin) {
+  const Real th = t0 + (gj + 0.5)*dth, ph = p0 + (gk + 0.5)*dph;
+  return VgdHaloKeepTP(nx, ny, nz, th, ph, inw, mode, wall, dep, rs, rm, rp, hasm, hasp,
+                       gam, dmin);
 }
 } // namespace
 

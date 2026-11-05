@@ -3566,6 +3566,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(thw_c, nmb, M1_NHALO_T, 1, 1, 1);
     pbval_th = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     pbval_th->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
+    impl_hdepth = pbval_th->exch_depth;   // share-1104 G5: also the halo_mpi cell lists
     pbval_th->InitializeBuffers(M1_NHALO_T);
     // COMPONENT ROLES of the scratch halos (SetVectorPairs).  Slots 2,3 hold F1 and KT,
     // SCALARS under the polar flip and the seam transform; the real tangential pairs
@@ -4041,10 +4042,16 @@ void RadiationM1::ImplicitTransverseHalo(int nq) {
 // behaviour), env M1_HALO_DEPTH overrides.  The implicit kernels read 2 ghost layers
 // (the vimp enthalpy stencil +-2; poisoned-ghost gate M1_POISON_GHOST: NaN beyond depth
 // 2 leaves the outputs identical, beyond depth 1 does not), so depth 2 sends the same
-// values that are read with 2/3 of the bytes (RSG 2-node loop -2.5 %, bitwise).  Not
-// used off the cubed sphere.
+// values that are read with 2/3 of the bytes (RSG 2-node loop -2.5 %, bitwise).
+// share-1104 G5 (USER 11-04): also on the spherical-polar mesh (wedge and full sphere:
+// the pole partner's rows are reversed within the strip, so a depth-2 strip fills the
+// 2 ghost rows next to the pole; poisoned-ghost gate incl. the polar rows) when x1 is
+// one MeshBlock (the gate poisons x2/x3 ghosts only; every sp production is x1-unsplit);
+// not on Cartesian meshes (the old behaviour, all ng layers).
 static int M1HaloDepthEnv(MeshBlockPack *pp, ParameterInput *pin) {
-  if (!pp->pmesh->use_cubed_sphere) {return 0;}
+  Mesh *pm = pp->pmesh;
+  const bool sp = pm->use_spherical_polar && (pm->mesh_indcs.nx1 == pm->mb_indcs.nx1);
+  if (!pm->use_cubed_sphere && !sp) {return 0;}
   int d = 2;
   if (pin != nullptr && pin->DoesParameterExist("rad_m1", "implicit_halo_depth")) {
     d = pin->GetInteger("rad_m1", "implicit_halo_depth");
