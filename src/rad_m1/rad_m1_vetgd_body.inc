@@ -371,7 +371,7 @@
             } else if (typ == 2 && emi) {
               // sptests-1011 vet_gd_inner = emit: the inner boundary's emission at the
               // upwind point of the inner face, carried to the cell with the face source
-              Real ie0 = iemit;
+              Real ie0 = lhx ? lhxi_(m,k-ks,j-js) : iemit;   // linhao-prod-1104 per column
               if (bm) {
                 ie0 = 0.0;
                 const int bq = (d == bdir0) ? 0 : ((nbm > 1 && d == bdir1) ? 1 : -1);

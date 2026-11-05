@@ -5094,10 +5094,40 @@ void RadiationM1::VetGdSweep() {
   // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath, or the beam)
   // unify-sc-gd-1012 (#2): vet_bc_inner (VetBcEmit: emit, or auto at a Marshak face)
-  const bool emi = (VetBcEmit() || (vgd_beam && vgd_emit)) && (lcut == 0) &&
-                   (vgd_beam || ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK);
-  const Real iemit = vgd_beam ? 0.0 : ((ibc_x1min == M1_IBC_FLUX) ?
-                     4.0*iflux_x1min/c_light : iebath_x1min);
+  // linhao-prod-1104 he_bc_linhao_rad = halfrange (vgd_lhx_ie > 0, rad_m1.hpp): the
+  // outward rays at the physical inner face start from his ghost I_+
+  const bool lhx = (vgd_lhx_ie > 0.0) && (lcut == 0) && !vgd_beam;
+  const bool emi = lhx || ((VetBcEmit() || (vgd_beam && vgd_emit)) && (lcut == 0) &&
+                   (vgd_beam || ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK));
+  const Real iemit = lhx ? vgd_lhx_ie : (vgd_beam ? 0.0 : ((ibc_x1min == M1_IBC_FLUX) ?
+                     4.0*iflux_x1min/c_light : iebath_x1min));
+  // linhao-prod-1104 (user 11-04 "mimic his inner BC with the rotating rays"): I_+ per column
+  // with the half-range sums of the CURRENT direction set about the column's radial
+  // direction, so the outward ghost moments are exactly E_g and F_g at any orientation
+  if (lhx) {
+    const int nmbq = pmy_pack->nmb_thispack, n3q = indcs.nx3, n2q = indcs.nx2;
+    if (vgd_lhx_iec.extent_int(0) != nmbq || vgd_lhx_iec.extent_int(1) != n3q ||
+        vgd_lhx_iec.extent_int(2) != n2q) {
+      Kokkos::realloc(vgd_lhx_iec, nmbq, n3q, n2q);
+    }
+    auto liec = vgd_lhx_iec;
+    auto ldir = vgd_dir;
+    auto ltg = vgd_trig;
+    const int ndq = vgd_dir.extent_int(0);
+    const Real leg = lbath_heg, lfg = lbath_hfg/c_light;
+    par_for("m1_vgd_lhx_iec", DevExeSpace(), 0, nmbq - 1, 0, n3q - 1, 0, n2q - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      const Real st = ltg(m,k,j,0), ct = ltg(m,k,j,1), sp = ltg(m,k,j,2), cp = ltg(m,k,j,3);
+      const Real rx = st*cp, ry = st*sp, rz = ct;
+      Real sa = 0.0, sb = 0.0;
+      for (int d = 0; d < ndq; ++d) {
+        const Real mu = ldir(d,0)*rx + ldir(d,1)*ry + ldir(d,2)*rz;
+        if (mu > 0.0) {sa += ldir(d,3); sb += ldir(d,3)*mu;}
+      }
+      liec(m,k,j) = (sa > 0.0 && sb > 0.0) ? 0.5*(leg/sa + lfg/sb) : leg;
+    });
+  }
+  auto lhxi_ = vgd_lhx_iec;
   // vgdbath-1011: the top bath (vet_bc_bath with a MARSHAK outer x1 and a nonzero
   // implicit_ebath_x1max): the inward ray of the top shell carries it, attenuated over
   // the path from the top face, as vet_sc's downward rays (ib*ex + wu*S_u + w0*S_0)
@@ -6979,6 +7009,10 @@ void RadiationM1::VetGdSymRef() {
   in.emi = VetBcEmit() && (lcut == 0) &&
            (ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK);
   in.iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
+  if (vgd_lhx_ie > 0.0 && lcut == 0) {   // linhao-prod-1104 halfrange (rad_m1.hpp)
+    in.emi = true;
+    in.iemit = vgd_lhx_ie;
+  }
   const bool tbh = vgd_tbath && (ibc_x1max == M1_IBC_MARSHAK) && (iebath_x1max != 0.0);
   in.itop = tbh ? iebath_x1max : 0.0;
   in.bfc = vet_bc_face;

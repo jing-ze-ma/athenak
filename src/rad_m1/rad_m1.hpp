@@ -652,6 +652,68 @@ class RadiationM1 {
   bool ifx2_on = false;
   DvceArray3D<Real> ifx2_lo, ifx2_hi;
   DvceArray3D<Real> ibadv_x1max;
+  // marelax-1013 implicit_ghost_x1min (default false; sp, implicit_bc_x1min = flux): the
+  // inner face flux is NOT imposed but built by the interior face-flux formula across the
+  // face between a fixed ghost (E = implicit_ghost_e_x1min, the IC a T^4 at the first
+  // ghost radius; Ma+2026 sect. 2.2.3 / Athena++ ghost intensities) and the first cell,
+  // implicit in E of the first cell (a heat bath through the diffusion conductance)
+  bool impl_ghx = false;
+  Real impl_ghx_e = 0.0;
+  // fin4-linhao-bc (set by the problem generator, problem/he_bc_linhao; default false):
+  // L. Ma's Athena++ inner radiation BC (bsg_star.cpp Inflow_rad_X1).  Nothing is imposed
+  // at the inner x1 face (implicit_bc_x1min = flux is required but its flux is unused):
+  // the face is built by the INTERIOR face formula of the solve (m1_impl_asm sp row,
+  // m1_impl_face) between the first cell and the x1 ghosts, whose state the problem
+  // generator's BC sets in every ghost layer (E = a T_g^4 and F_r of his profile at the
+  // ghost radius, boosted to the lab frame with the ghost velocity).  The ghost side of
+  // the formula: E of ghosts 1 and 2 (u0), kappa_T of ghost 1 (opac), its v_r, the
+  // isotropic Eddington tensor of his two-zone intensities (D = 1/3, no curvature / lateral
+  // term), a = (4/3) v_r and the pointwise g0 of the ghost; lbath_g(m, q, k, j) holds them
+  // per solve (q: 0 E1, 1 E2, 2 kT1, 3 v1, 4 g0, 5 a1, 6 a2).
+  bool impl_lbath = false;
+  DvceArray4D<Real> lbath_g;
+  // the wall flux diagnostic (history L_in): lbath_f(m, 0, k, j) = the lab flux of the
+  // last solve through the wall face of column (k, j) (comoving face flux + the row's
+  // donor enthalpy flux and its plm correction).  lbath_l1 / lbath_l2: the wall
+  // luminosity (sum of area x flux, all ranks) of the solve before a hesdirk2 stage-1
+  // solve (the FSAL
+  // slope's) and of stage 1; lbath_t2 = the kind of the last solve.  Step-effective:
+  // after stage 2  L1/2 + b2 L(stage 1) + g L(stage 2) (ESDIRK weights of the energy
+  // update), else L.  lbath_l1 is restored from the pgen restart trailer (lbath_rst).
+  DvceArray4D<Real> lbath_f;
+  int lbath_t2 = 0;
+  Real lbath_l1 = 0.0, lbath_l2 = 0.0, lbath_rstl = 0.0;
+  bool lbath_rst = false;
+  Real LbathWallSum();
+  // linhao-prod-1104 problem/he_bc_linhao_rad = halfrange (set by the he_star pgen; off =
+  // the interior-face formula above, bitwise): the inner face carries the DISCRETE-
+  // ORDINATES UPWIND flux of L. Ma's ghost intensities (bsg_star.cpp Inflow_rad_X1): the
+  // half-range (two-stream, isotropic per hemisphere) intensities of the ghost (E_g, F_g,
+  // comoving, fixed: lbath_heg, lbath_hfg) go out, those of the first cell (E_is, F_is)
+  // come in, F = 0.5 (c <mu>_+ (E_g - E_is) + F_g + F_is), <mu>_+ = lbath_mu1 of the
+  // quadrature (rad_m1_implicit.cpp m1_impl_asm); the advective enthalpy flux as before.
+  // vgd_lhx_ie > 0: the VET formal solutions (vet_gd, vet_col) start their outward rays at
+  // the physical inner face from his I_+ = E_g + F_g/(c <mu>_+) (E units) instead of the
+  // vet_bc_inner rule.
+  bool impl_lbath_hr = false;
+  Real lbath_mu1 = 0.5, lbath_heg = 0.0, lbath_hfg = 0.0;
+  // the dissipative (E-jump) part of the face flux is scaled by s(tau_c) as in a modified-HLLE
+  // DO flux (Jiang 2014/2021): lbath_dmode 0 upwind s = 1, 1 s = (1 - e^-x)/x with x = tau_c,
+  // 2 with x = tau_c^2/2; tau_c = lbath_alpha kappa_T dr_g (ghost-1 to first cell)
+  int lbath_dmode = 2;
+  Real lbath_alpha = 1.0;
+  Real vgd_lhx_ie = -1.0;
+  // linhao-prod-1104 col1d A7/A7b (rad_m1/athena_face_diss, default false = bitwise): Athena++'s
+  // implicit DO HLL tau-factor dissipation at EVERY interior x1 face, F_d = s(tau) 0.5 c <mu>_+
+  // (E_L - E_R) (M1LbathDiss mode 3, tau = athena_face_taucell (kT dx_L + kT dx_R)); in the
+  // energy row always; athena_face_diss_force = true also puts it into the stored face flux
+  // (which the momentum deposit and F^n use), false (A7) = energy without a matching force
+  bool afd_on = false, afd_force = false;
+  Real afd_tc = 4.0, afd_mu1 = 0.5063576644955016;
+  Real afd_taumin = 0.0;   // athena_face_taumin: only faces with min(kT dx) of the two cells >= it
+  // per column (m, k - ks, j - js): his I_+ normalised over the CURRENT (rotated) vet_gd set,
+  // 0.5 (E_g/sum_{n.r>0} w + (F_g/c)/sum_{n.r>0} w n.r), rebuilt every sweep (VetGdSweep)
+  DvceArray3D<Real> vgd_lhx_iec;
   // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
   // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror
   // pair).  ibm_i(m,q,k,j): the entering intensity of beam ray q at column (k,j) (local,
@@ -1788,6 +1850,30 @@ class RadiationM1 {
   // <rad_m1>/implicit_vimp (tests_m1/runs_3v_vimplicit): the gas velocity of the
   // enthalpy flux implicit through the radiative force of the solve (Newton form)
   bool impl_vimp;               // the switch (default false: nothing below is touched)
+  // athpp-vstar-1105 <rad_m1>/doppler_vel (read only when named; default stage = the
+  // behaviour before, bitwise).  vstar: the velocity-dependent terms of the implicit solve
+  // (the work-array V, hence the enthalpy coefficient a = v(1+chi), E0 - E, g0 and the
+  // wall face) take the Heun stage state's velocity BEFORE the hesdirk2 old-vector
+  // increment t2inc (which carries the previous radiative slope K1) and without the
+  // implicit_vimp kick dv: the post-hydro, pre-radiation-kick velocity v* that Athena++
+  // GetTgasVel hands its solve.  Forces implicit_vimp = false.  Diagnostic / Athena++
+  // reproduction only (the toy athpp_toy_1104 shows it makes an O(dt) wall drain).
+  bool dop_vstar = false;
+  // doppler_vel = vstar_n: Athena++'s vl2 value v^n + dt a_hydro with the FULL deficit.  The
+  // Heun stage-1 state already is U^n + dt L(U^n); the stage-2 (and BE) state carries half of it
+  // (1/2 (U^n + Y1) + 1/2 dt L(Y1), Y1 kicked), so there V = v^n + 2 (v_stage - v^n).  Also forces
+  // implicit_vimp = false.
+  bool dop_vstar_n = false;
+  // doface-1105 <rad_m1>/doppler_face = donor | central (read only when named; default
+  // donor = bitwise).  central: the x1 enthalpy (Doppler) flux a E, a = v (1 + chi), of the
+  // implicit E row is the face MEAN 0.5 (a_L E_L + a_R E_R) of the two cells' fluxes, with
+  // no donor switch and no plm correction (implicit_enthalpy), in the Cartesian and sp rows
+  // and at the fin4 ghost-bath wall face.  That is the Athena++ implicit DO near-central
+  // face (tau_scheme 1 HLL, f -> 1/tau in thick cells) applied to the cell-centred lab
+  // flux (4/3) v E.  Forces implicit_vimp = false.  Athena++ reproduction only.
+  int dop_face = 0;
+  int dop_dbg = 0;        // <rad_m1>/doppler_vel_dbg = N (read only when named): every N-th solve
+  int dop_dbg_cnt = 0;    // print the wall cells' V vs v^n (hydro u1) vs the stage v (diagnostic)
   // pgrst-vimp-1021 <rad_m1>/implicit_vimp_ewf (read only when named; default false =
   // bitwise): the lagged enthalpy-work term of a face, E_f (1 + D_f) dv_f with dv_f the
   // face mean of the two cells' predicted kicks, is taken as

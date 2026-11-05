@@ -967,6 +967,57 @@ Real M1PtMemQ(const Real fmem, const Real cr, const Real nl, const Real nr,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1GhostBathAB
+//! \brief marelax-1013 <rad_m1>/implicit_ghost_x1min: the inner face flux of the first
+//! cell is,  F = A - B E_is,  from the interior face formula (the central part of the
+//! m1_impl_face expression)
+//!   F = th (F0^n - ch cl dt (D_is E_is - D_g E_g)/dr_g - ch dt v g0),
+//!   th = 1/(1 + ch dt kt_is),  dr_g = x1v(is) - x1v(is-1),
+//! with the fixed ghost E_g at x1v(is-1) (the IC radiation of the ghost) and the first
+//! cell's own opacity kt, Eddington weight chi (n1) and v, g0 standing in for the ghost's.
+//! On sp (sphq) D = M1SphDrr(chi, n1, (r_c/r_f)^2) as in the row; else D = chi.
+template <typename IW, typename FN, typename CV, typename CF>
+KOKKOS_INLINE_FUNCTION
+void M1GhostBathAB(const IW &iw, const FN &f0n, const CV &x1v, const CF &x1f,
+                   const int m, const int k, const int j, const int is, const Real eg,
+                   const Real ch, const Real cl, const Real dt, const bool sphq,
+                   const bool trans, Real &a, Real &b) {
+  const Real th = 1.0/(1.0 + ch*dt*iw(m,M1_IW_KT,k,j,is));
+  const Real chi = iw(m,M1_IW_WCHI,k,j,is);
+  Real di = chi, dg = chi;
+  if (sphq) {
+    const Real rf = x1f(m,is);
+    const Real n1 = trans ? iw(m,M1_IW_N1,k,j,is) : 1.0;
+    di = M1SphDrr(chi, n1, (x1v(m,is)/rf)*(x1v(m,is)/rf));
+    dg = M1SphDrr(chi, n1, (x1v(m,is-1)/rf)*(x1v(m,is-1)/rf));
+  }
+  const Real drg = x1v(m,is) - x1v(m,is-1);
+  b = th*ch*cl*dt*di/drg;
+  a = th*(f0n(m,k,j,is) + ch*cl*dt*dg*eg/drg
+          - ch*dt*iw(m,M1_IW_V1,k,j,is)*iw(m,M1_IW_G0,k,j,is));
+}
+
+//! linhao-prod-1104: the modified-HLLE dissipation factor of the halfrange inner face
+KOKKOS_INLINE_FUNCTION
+Real M1LbathDiss(const int mode, const Real tau) {
+  if (mode == 0) return 1.0;
+  if (mode == 4) return 0.0;   // linhao-prod-1104 none (user 11-04): pure central face
+  if (mode == 3) {
+    // Athena++ (PrincetonUniversity/athena 053bc738, Oct 2026) implicit DO face flux:
+    // implicit_first_order.cpp:71-88 + rad_integrators.cpp:549-566, 615-657 (tau_scheme 1,
+    // Advection 1): HLLE with Smax = f_r v, Smin = -f_l v, f_r^2 = (1 - e^-t^2)/t^2,
+    // f_l^2 = (1 - e^-t^4)/t^2 (t^2 > 1e-3; else 1 - t^2/2 and t^2), t = taucell (tau_L +
+    // tau_R); the E-jump coefficient s = 2a - 1 with a = f_r (1 + f_l)/(f_r + f_l)
+    const Real t2 = tau*tau;
+    const Real fr = sqrt((t2 > 1.0e-3) ? (1.0 - exp(-t2))/t2 : (1.0 - 0.5*t2));
+    const Real fl = sqrt((t2 > 1.0e-3) ? (1.0 - exp(-t2*t2))/t2 : t2);
+    return (fr - fl + 2.0*fr*fl)/(fr + fl);
+  }
+  const Real x = (mode == 1) ? tau : 0.5*tau*tau;
+  return (x > 1.0e-3) ? (1.0 - exp(-x))/x : (1.0 - 0.5*x);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1FaceAvg
 //! \brief <rad_m1>/implicit_face_weight: the x1 face value of a cell quantity from the
 //! left (ql, radial width dl) and right (qr, dr) cells.  equal (dist false): 0.5 (ql+qr),

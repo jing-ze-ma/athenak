@@ -67,6 +67,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <random>
 #include <sstream>
@@ -178,6 +179,20 @@ Real hs_atp_dfl_ = 0.0;
 // problem/he_bc_outer = copy (hs_bcopy_): the edge cell's rho, eint, v_t copied,
 //   v_r copied where it points out and 0 where it points in.
 bool hs_pm_ = false, hs_bzc_ = false, hs_bcopy_ = false;
+// linhao-prod-1104 problem/he_bc_outer_r2 (read only when named; default false = bitwise;
+// needs he_bc_outer = copy): L. Ma bsg_star.cpp Outflow_X1 exactly: edge v_r < 0 -> rho
+// copied, v_r = 0; else (v_r >= 0) ghost rho = previous ghost rho (r_{g-1}/r_g)^2 and v_r
+// copied; P (here eint, ideal gas) and v_t copied in both branches
+bool hs_bcr2_ = false;
+// fin4-linhao-bc problem/he_bc_linhao (read only when named; default false = bitwise):
+// L. Ma's Athena++ inner boundary (bsg_star.cpp InitUserMeshBlockData bd_data, Inflow_X1,
+// Inflow_rad_X1) on top of he_bc_inner = zerocontact.  hs_lbc_d_(m, g, q): the ghost
+// i = is-1-g of block m, from his profile (problem/he_ic_linhao_file, LINEAR in r at
+// x1v(is-1-g), his lleft/lright search): q = 0 rho, 1 eint (this EOS at his T, i.e. his
+// P = rho T), 2 E = a T^4 (comoving), 3 F_r (comoving).  Built on every start (fresh and
+// restart) from the file alone, so a restart rebuilds the very same numbers.
+bool hs_lbc_ = false;
+DvceArray3D<Real> hs_lbc_d_;
 // problem/mlt_flux_frozen: the frozen MLT flux of the IC on the x1 faces (index = face)
 bool hs_mlt_ = false;
 DvceArray1D<Real> hs_fm_;
@@ -245,6 +260,9 @@ Real hs_eq_tol_ = 1.0e-9, hs_eq_dfl_ = 0.0;
 std::vector<Real> hs_eq_a_;
 DvceArray4D<Real> hs_sfac_;
 constexpr char kHsDicTag[8] = {'H', 'S', 'D', 'I', 'C', 'E', '0', '1'};
+// fin4-linhao-bc (he_bc_linhao only): the wall luminosity of the last solve (the FSAL
+// slope's part of the history's L_in) as the LAST tagged trailer (Real L, tag)
+constexpr char kHsLbcTag[8] = {'H', 'S', 'L', 'B', 'A', 'T', 'H', '1'};
 
 //! the frozen-MLT weight w(t): a function of the time only (restart-safe)
 Real HsMltW(const Real t) {
@@ -275,6 +293,19 @@ Real HsLinInterp(const DvceArray1D<Real> &a, const Real rlo, const Real dr, cons
   Real w = x - i;
   w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
   return (1.0 - w)*a(i) + w*a(i+1);
+}
+
+//! bsglinhao-1014 (problem/he_ic_linhao): a uniform deviate U in [0, 1) that depends only
+//! on the GLOBAL cell index (and the key's seed): splitmix64 of the index.  Identical on
+//! every layout, device and site (the per-block srand(gid)/rand() stream of the Athena++
+//! pgen cannot be reproduced; only its statistics are).
+KOKKOS_INLINE_FUNCTION
+Real HsLinhaoU(const std::uint64_t idx, const std::uint64_t seed) {
+  std::uint64_t z = idx + seed*0x9E3779B97F4A7C15ULL + 0x632BE59BD9B4E019ULL;
+  z = (z ^ (z >> 30))*0xBF58476D1CE4E5B9ULL;
+  z = (z ^ (z >> 27))*0x94D049BB133111EBULL;
+  z = z ^ (z >> 31);
+  return static_cast<Real>(z >> 11)*(1.0/9007199254740992.0);
 }
 
 [[noreturn]] void HsFatal(const std::string &msg, const int line) {
@@ -2410,6 +2441,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // pgen restart block as the LAST tagged trailer (a_ref..., Real n, tag); a restart
   // re-applies it with the Phi_eff rebuilt from it above the face x1f(is), exactly as the
   // fresh start's HeStarIcEquil left them (stripped here, before the Picard trailer)
+  if (restart) {
+    // fin4-linhao-bc: strip the wall-luminosity trailer first (it is the last one)
+    auto &blk = pgen_rststate;
+    const std::size_t nt = sizeof(kHsLbcTag) + sizeof(Real);
+    if (blk.size() >= nt &&
+        std::memcmp(blk.data() + blk.size() - sizeof(kHsLbcTag), &(kHsLbcTag[0]),
+                    sizeof(kHsLbcTag)) == 0) {
+      Real l;
+      std::memcpy(&l, blk.data() + blk.size() - nt, sizeof(Real));
+      blk.resize(blk.size() - nt);
+      pm1->lbath_rstl = l;   // used only with he_bc_linhao (impl_lbath)
+      pm1->lbath_rst = true;
+    }
+  }
   // (e1remap-1014: also from a he_ic_remap_file's copy of the parent's block)
   if (restart || hs_rmp) {
     auto &blk = pgen_rststate;
@@ -2617,6 +2662,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_bout_ = (bo == "outflow");
     hs_bhse_ = (bo == "hse");
     hs_bcopy_ = (bo == "copy");
+    if (pin->DoesParameterExist("problem","he_bc_outer_r2")) {
+      hs_bcr2_ = pin->GetBoolean("problem","he_bc_outer_r2");
+      if (hs_bcr2_ && !hs_bcopy_) {
+        HsFatal("problem/he_bc_outer_r2 = true needs he_bc_outer = copy", __LINE__);
+      }
+    }
     if (hs_bzc_) {
       // bsg-truerepro-1008: the root find replays the plain (non-WB) spherical-polar
       // PLM (Hydro::PLM_nonuniform) and the ideal-gas HLLC contact speed
@@ -2628,6 +2679,132 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         HsFatal("problem/he_bc_inner = zerocontact needs spherical polar, an ideal gas, "
                 "<hydro>/rsolver = hllc, reconstruct_x1 = plm, no well-balanced scheme, "
                 "he_ic_balance = false, nx1 >= 2 and nghost >= 2", __LINE__);
+      }
+    }
+    // fin4-linhao-bc: problem/he_bc_linhao (see hs_lbc_)
+    if (pin->DoesParameterExist("problem","he_bc_linhao")) {
+      hs_lbc_ = pin->GetBoolean("problem","he_bc_linhao");
+    }
+    if (hs_lbc_) {
+      if (!hs_bzc_ || hcs || pm1->ibc_x1min != radm1::M1_IBC_FLUX ||
+          pm1->f0x1.extent_int(0) == 0) {
+        HsFatal("problem/he_bc_linhao needs he_bc_inner = zerocontact, the spherical-polar "
+                "wedge and the implicit rad_m1 transport with implicit_bc_x1min = flux "
+                "(its flux is not used)", __LINE__);
+      }
+      if (pmbp->punit != nullptr && (std::fabs(pmbp->punit->length_cgs() - 1.0) > 1.0e-12
+          || std::fabs(pmbp->punit->density_cgs() - 1.0) > 1.0e-12)) {
+        HsFatal("problem/he_bc_linhao needs <units> length_cgs = mass_cgs = 1", __LINE__);
+      }
+      const std::string lfn = pin->GetString("problem","he_ic_linhao_file");
+      std::vector<Real> pr, pT, pd, pF;
+      {
+        std::ifstream f(lfn);
+        if (!f.good()) HsFatal("cannot open problem/he_ic_linhao_file '" + lfn + "'",
+                               __LINE__);
+        std::string line;
+        while (std::getline(f, line)) {
+          if (line.empty() || line[0] == '#') continue;
+          std::istringstream ss(line);
+          Real a, b, c, d, e, g;
+          if (!(ss >> a >> b >> c >> d >> e >> g)) continue;
+          pr.push_back(a); pT.push_back(b); pd.push_back(c); pF.push_back(g);
+        }
+      }
+      const int np = static_cast<int>(pr.size());
+      if (np < 2) HsFatal("problem/he_ic_linhao_file: fewer than 2 rows", __LINE__);
+      auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+      const int nm = nmb1 + 1, is0 = indcs.is;
+      DualArray3D<Real> lb("hs_lbc", nm, ng, 4);
+      for (int m=0; m<nm; ++m) {
+        for (int g=0; g<ng; ++g) {
+          const Real x1 = hx1v(m,is0-1-g);
+          if (!(x1 >= pr[0] && x1 <= pr[np-1])) {
+            HsFatal("problem/he_bc_linhao: a ghost radius is outside the profile",
+                    __LINE__);
+          }
+          // bsg_star.cpp InitUserMeshBlockData, verbatim
+          int lleft = 0, lright = 1;
+          while ((x1 > pr[lright]) && (lright < np - 1)) lright = lright + 1;
+          if (lright - lleft > 1) lleft = lright - 1;
+          const Real rho = pd[lleft] + (x1 - pr[lleft])*(pd[lright] - pd[lleft])
+                           /(pr[lright] - pr[lleft]);
+          const Real tem = pT[lleft] + (x1 - pr[lleft])*(pT[lright] - pT[lleft])
+                           /(pr[lright] - pr[lleft]);
+          const Real flx = pF[lleft] + (x1 - pr[lleft])*(pF[lright] - pF[lleft])
+                           /(pr[lright] - pr[lleft]);
+          Real ee, pp, cr, ct, cv;
+          const Real tc = tem/hs_tk;
+          eos.ThermoAt(rho, tc, ee, pp, cr, ct, cv);
+          lb.h_view(m,g,0) = rho;
+          lb.h_view(m,g,1) = ee;
+          lb.h_view(m,g,2) = ar*tc*tc*tc*tc;
+          lb.h_view(m,g,3) = flx;
+          if (global_variable::my_rank == 0 && m == 0) {
+            std::cout << std::setprecision(17) << "he_star_m1: he_bc_linhao ghost " << g
+                      << " r " << x1 << " rho " << rho << " T " << tem << " eint " << ee
+                      << " P " << pp << " E " << lb.h_view(m,g,2) << " F_r " << flx
+                      << std::setprecision(6) << std::endl;
+          }
+        }
+      }
+      lb.modify_host();
+      lb.sync_device();
+      hs_lbc_d_ = lb.d_view;
+      pm1->impl_lbath = true;
+      // linhao-prod-1104 problem/he_bc_linhao_rad = interior (default: the interior face
+      // formula with the ghost state, bitwise) | halfrange: his DO upwind face with the
+      // half-range ghost intensities (bsg_star.cpp Inflow_rad_X1 cpp:969-1034).
+      // Derivation (E units, sum_all w = 1, his I+- = 0.5 (E/A +- (F/c)/B), A = sum_{mu>0}
+      // w = 1/2, B = sum_{mu>0} mu w = <mu>_+/2):
+      //   F_face/c = sum_{mu>0} w mu I+_ghost + sum_{mu<0} w mu I-_cell
+      //            = B I+_g - B I-_is = 0.5 [(E_g - E_is) <mu>_+ + (F_g + F_is)/c]
+      //   (the P_rr face flux 0.5 <mu^2>_+ [(E_g + E_is) + (F_g - F_is)/(c <mu>_+)] has
+      //   no place in this M1 scheme: F lives on the faces and its own equation is
+      //   replaced at the wall by the formula above)
+      //   VET: the outward rays at the inner face start from I+_g = E_g + F_g/(c <mu>_+).
+      // <mu>_+ = he_bc_linhao_mu1, default 0.5063576644955016 = the 120-angle level-
+      // symmetric LQ10 set (Athena++ angle_flag 0, nmu 5; vet_gd's VgdLevelSym(10)); E_g,
+      // F_g comoving of ghost 1 (his ComToLab is O(v/c) ~ 1e-7 here; the advective
+      // enthalpy flux of the row carries the v terms as before).
+      if (pin->DoesParameterExist("problem","he_bc_linhao_rad")) {
+        const std::string lr = pin->GetString("problem","he_bc_linhao_rad");
+        if (lr != "interior" && lr != "halfrange") {
+          HsFatal("problem/he_bc_linhao_rad must be interior or halfrange", __LINE__);
+        }
+        if (lr == "halfrange") {
+          const Real mu1 = pin->GetOrAddReal("problem","he_bc_linhao_mu1",
+                                             0.5063576644955016);
+          const Real heg = lb.h_view(0,0,2), hfg = lb.h_view(0,0,3);
+          pm1->impl_lbath_hr = true;
+          // the E-jump (dissipative) part of his DO face flux: modified HLLE (Jiang 2014/2021),
+          // s = (1 - e^-x)/x, x = tau2: (alpha tau_c)^2/2 (default; the Athena++ form as we
+          // read it) | tau: alpha tau_c | upwind: s = 1 (pure upwind, unstable at tau_c ~ 1e5)
+          // athena (default): the stock Athena++ implicit DO HLLE taufactor (tau_scheme 1),
+          // alpha = <radiation>/taucell (Athena++ default 5; his athinput not available),
+          // tau_c = alpha (kappa_T dx of ghost 1 + kappa_T dx of the first cell)
+          const std::string dm = pin->GetOrAddString("problem","he_bc_linhao_diss","athena");
+          // none (user 11-04, the production choice): no E-jump term at all, the face is the
+          // central average 0.5 (F_g + F_is) plus his Doppler / advective part
+          if (dm != "upwind" && dm != "tau" && dm != "tau2" && dm != "athena" && dm != "none") {
+            HsFatal("problem/he_bc_linhao_diss must be athena, none, upwind, tau or tau2",
+                    __LINE__);
+          }
+          pm1->lbath_dmode = (dm == "upwind") ? 0 : ((dm == "tau") ? 1 :
+                             ((dm == "tau2") ? 2 : ((dm == "none") ? 4 : 3)));
+          pm1->lbath_alpha = pin->GetOrAddReal("problem","he_bc_linhao_alpha",
+                                               (dm == "athena") ? 5.0 : 1.0);
+          pm1->lbath_mu1 = mu1;
+          pm1->lbath_heg = heg;
+          pm1->lbath_hfg = hfg;
+          pm1->vgd_lhx_ie = heg + hfg/(pm1->c_light*mu1);
+          if (global_variable::my_rank == 0) {
+            std::cout << std::setprecision(17) << "he_star_m1: he_bc_linhao_rad = halfrange:"
+                      << " <mu>_+ " << mu1 << ", ghost-1 E_g " << heg << " F_g " << hfg
+                      << ", VET I+ " << pm1->vgd_lhx_ie << std::setprecision(6)
+                      << std::endl;
+          }
+        }
       }
     }
     if (hs_bhse_) {
@@ -2816,6 +2993,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     return;
   }
 
+  // bsglinhao-1014: problem/he_ic_linhao (read only when named; default false = this
+  // IC bitwise, no key added to the input) replaces the initial state below by L. Ma's
+  // Athena++ bsg_star.cpp construction (see the block at the end of this function)
+  const bool hlin = pin->DoesParameterExist("problem","he_ic_linhao") &&
+                    pin->GetBoolean("problem","he_ic_linhao");
+
   // ---- the initial state (active + ghost cells)
   // n2seed-1022 (USER 10-22 "make that seed default"): he_seed_band = n2 (default) | old.
   // old = the seed exactly as the keys below name it (he_seed default 0 = no seed).  n2 =
@@ -2829,6 +3012,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   const bool sn2 = (sband == "n2");
   Real seed = pin->GetOrAddReal("problem","he_seed",sn2 ? 1.0e-3 : 0.0);
+  if (hlin && seed != 0.0) {
+    HsFatal("problem/he_ic_linhao = true replaces the he_seed perturbation by its own "
+            "(set he_seed = 0)", __LINE__);
+  }
   const Real seedk = pin->GetOrAddReal("problem","he_seed_k",4.0);
   Real srlo = pin->GetOrAddReal("problem","he_seed_rlo",hs_rin_);
   Real srhi = pin->GetOrAddReal("problem","he_seed_rhi",hs_rint_);
@@ -3118,6 +3305,188 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       ff0(m,k,j,i) = HsLinInterp(cF, rlo, dr, nf, x1f(m,i));
     });
+  }
+  if (!hlin) return;
+
+  // ---- bsglinhao-1014: problem/he_ic_linhao = true.  The initial state of L. Ma's
+  // Athena++ pgen bsg_star.cpp (ProblemGenerator), in cgs (he_ic_linhao_file = his
+  // MESA_profile_combined profile: r T rho M kappa F_r per line, cgs, ascending r; his
+  // code reads the same table in code units, a pure rescaling):
+  //  * r <= rmax (the file's last r): rho, T, F_r LINEAR in r between the bracketing rows
+  //    (his lleft/lright search and formula, verbatim);
+  //  * r > rmax: T = T(rmax), rho = max(rho_rmax exp(-g (r - rmax)/(P/rho)), dfloor),
+  //    F_r = 0, with g = G M_rmax/rmax^2 (r/rmax)^2 EXACTLY as his code (the factor grows
+  //    outward; the paper's "local gravity" would be (rmax/r)^2: reproduced, not fixed),
+  //    P/rho = this EOS's code temperature T/T_unit (gas pressure only);
+  //  * gas energy from the UNPERTURBED rho and T (his IEN = rho T/(gamma - 1)), E = a T^4,
+  //    F1 = F_r (his two-zone intensities have exactly these moments), F2 = F3 = 0, v = 0;
+  //  * the perturbation rho *= 1 + amp (U - 0.5) where the unperturbed rho > rho_thr,
+  //    U uniform per cell from HsLinhaoU(global cell index) (his: srand(gid), rand()):
+  //    isobaric (P, E unchanged).  The potential energy of etotgrav uses the perturbed rho.
+  //  * the comoving x1 face fluxes f0x1 = his F_r at the faces.
+  // Fresh starts only (a restart returned above).  The ghost cells are filled the same
+  // way and then overwritten by the (unchanged) boundary conditions.
+  {
+    if (hcs || wic || bal) {
+      HsFatal("problem/he_ic_linhao needs the spherical-polar wedge and no he_wind_ic / "
+              "he_ic_balance", __LINE__);
+    }
+    if (pmbp->punit != nullptr && (std::fabs(pmbp->punit->length_cgs() - 1.0) > 1.0e-12
+        || std::fabs(pmbp->punit->density_cgs() - 1.0) > 1.0e-12)) {
+      HsFatal("problem/he_ic_linhao needs <units> length_cgs = mass_cgs = 1 (cgs r, rho)",
+              __LINE__);
+    }
+    const std::string lfn = pin->GetString("problem","he_ic_linhao_file");
+    const Real lamp = pin->GetOrAddReal("problem","he_ic_linhao_amp",0.05);
+    // his threshold rho > 0.01 in HIS code units: rho_thr [cgs] = 0.01 rho_unit (his
+    // input file, not supplied).  No default: the run states its assumption.
+    const Real lthr = pin->GetReal("problem","he_ic_linhao_rho_thr");
+    const int lrng = pin->GetOrAddInteger("problem","he_ic_linhao_rng",0);
+    // Athena++ Constants::grav_const_cgs (his grav_rmax uses G and the file's M column)
+    const Real lG = pin->GetOrAddReal("problem","he_ic_linhao_gconst",6.67408e-8);
+    // linhao-prod-1104: he_ic_linhao_gext = r2 (default, his bsg_star.cpp:429 g = g(rmax)
+    // (r/rmax)^+2, as coded) | invsq (the run's point mass GM/r^2, hydrostatic; see below)
+    const std::string gxs = pin->GetOrAddString("problem","he_ic_linhao_gext","r2");
+    if (gxs != "r2" && gxs != "invsq") {
+      HsFatal("problem/he_ic_linhao_gext must be r2 or invsq", __LINE__);
+    }
+    const bool gxi = (gxs == "invsq");
+    if (gxi && gmc) {
+      HsFatal("problem/he_ic_linhao_gext = invsq needs the point-mass gravity", __LINE__);
+    }
+    std::vector<Real> pr, pT, pd, pM, pF;
+    {
+      std::ifstream f(lfn);
+      if (!f.good()) HsFatal("cannot open problem/he_ic_linhao_file '" + lfn + "'",
+                             __LINE__);
+      std::string line;
+      while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream ss(line);
+        Real a, b, c, d, e, g;
+        if (!(ss >> a >> b >> c >> d >> e >> g)) continue;
+        pr.push_back(a); pT.push_back(b); pd.push_back(c); pM.push_back(d);
+        pF.push_back(g);
+      }
+    }
+    const int np = static_cast<int>(pr.size());
+    if (np < 2) HsFatal("problem/he_ic_linhao_file: fewer than 2 rows", __LINE__);
+    const Real rmax = pr[np-1], tmax = pT[np-1], dmax = pd[np-1];
+    const Real gmax = lG*pM[np-1]/(rmax*rmax);
+    const Real dfl = eos.dfloor;
+    // his interpolation (bsg_star.cpp ProblemGenerator, r <= rmax): returns rho, T [K], F_r
+    auto lint = [&](const Real x1, Real &rho, Real &tem, Real &flx) {
+      int lleft = 0, lright = 1;
+      while ((x1 > pr[lright]) && (lright < np - 1)) lright = lright + 1;
+      if (lright - lleft > 1) lleft = lright - 1;
+      rho = pd[lleft] + (x1 - pr[lleft])*(pd[lright] - pd[lleft])/(pr[lright] - pr[lleft]);
+      tem = pT[lleft] + (x1 - pr[lleft])*(pT[lright] - pT[lleft])/(pr[lright] - pr[lleft]);
+      flx = pF[lleft] + (x1 - pr[lleft])*(pF[lright] - pF[lleft])/(pr[lright] - pr[lleft]);
+    };
+    const int nm = nmb1 + 1, nc1 = n1m1 + 1;
+    DualArray2D<Real> lD("hs_lin_d", nm, nc1), lE("hs_lin_eg", nm, nc1);
+    DualArray2D<Real> lR("hs_lin_er", nm, nc1), lF("hs_lin_f", nm, nc1);
+    DualArray2D<Real> lFf("hs_lin_ff", nm, nc1 + 1);
+    DualArray2D<std::int64_t> lof("hs_lin_off", nm, 3);
+    auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+    auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+    const Real tk = hs_tk;
+    for (int m=0; m<nm; ++m) {
+      const LogicalLocation &ll = pmy_mesh_->lloc_eachmb[pmbp->gids + m];
+      lof.h_view(m,0) = static_cast<std::int64_t>(ll.lx1)*indcs.nx1;
+      lof.h_view(m,1) = static_cast<std::int64_t>(ll.lx2)*indcs.nx2;
+      lof.h_view(m,2) = static_cast<std::int64_t>(ll.lx3)*indcs.nx3;
+      for (int i=0; i<nc1; ++i) {
+        const Real x1 = hx1v(m,i);
+        Real rho, tem, flx = 0.0;
+        if (x1 > rmax) {
+          tem = tmax;
+          const Real tc = tem/tk;   // P/rho of this EOS at T(rmax)
+          if (gxi) {
+            // linhao-prod-1104 he_ic_linhao_gext = invsq (USER 11-04 "fix their gravity
+            // outside the star"): the isothermal hydrostatic atmosphere of the run's own
+            // point mass, g = GM/r^2 (= g(rmax) (rmax/r)^2 with g(rmax) = GM/rmax^2):
+            //   rho = rho(rmax) exp(-(GM/(P/rho)) (1/rmax - 1/r))
+            rho = dmax*std::exp(-(hs_gm_/tc)*(1.0/rmax - 1.0/x1));
+          } else {
+            const Real gl = gmax*std::pow(x1/rmax, 2.0);
+            rho = dmax*std::exp(-gl*(x1 - rmax)/tc);
+          }
+          rho = std::max(rho, dfl);
+        } else {
+          lint(x1, rho, tem, flx);
+        }
+        Real ee, pp, cr, ct, cv;
+        eos.ThermoAt(rho, tem/tk, ee, pp, cr, ct, cv);
+        const Real tc = tem/tk;
+        lD.h_view(m,i) = rho;
+        lE.h_view(m,i) = ee;
+        lR.h_view(m,i) = ar*tc*tc*tc*tc;
+        lF.h_view(m,i) = flx;
+      }
+      for (int i=0; i<=nc1; ++i) {
+        const Real x1 = hx1f(m,i);
+        Real rho, tem, flx = 0.0;
+        if (!(x1 > rmax)) lint(x1, rho, tem, flx);
+        lFf.h_view(m,i) = flx;
+      }
+    }
+    for (auto *a : {&lD, &lE, &lR, &lF, &lFf}) {a->modify_host(); a->sync_device();}
+    lof.modify_host(); lof.sync_device();
+    auto ld = lD.d_view, le = lE.d_view, lr = lR.d_view, lf = lF.d_view;
+    auto lff = lFf.d_view;
+    auto lo = lof.d_view;
+    const int lis = indcs.is, ljs = indcs.js, lks = indcs.ks;
+    const std::int64_t gn1 = pmy_mesh_->mesh_indcs.nx1 + 2*ng;
+    const std::int64_t gn2 = pmy_mesh_->mesh_indcs.nx2 + 2*ng;
+    const std::uint64_t useed = static_cast<std::uint64_t>(lrng);
+    const bool m3 = (indcs.nx3 > 1), m2 = (indcs.nx2 > 1);
+    par_for("hs_ic_linhao", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real r = x1v(m,i);
+      const Real d0 = ld(m,i);
+      Real d = d0;
+      if (d0 > lthr) {
+        const std::int64_t gi = lo(m,0) + (i - lis) + ng;
+        const std::int64_t gj = m2 ? (lo(m,1) + (j - ljs) + ng) : 0;
+        const std::int64_t gk = m3 ? (lo(m,2) + (k - lks) + ng) : 0;
+        const std::uint64_t idx = static_cast<std::uint64_t>((gk*gn2 + gj)*gn1 + gi);
+        d = d0*(1.0 + lamp*(HsLinhaoU(idx, useed) - 0.5));
+      }
+      uh(m,IDN,k,j,i) = d;
+      uh(m,IM1,k,j,i) = 0.0;
+      uh(m,IM2,k,j,i) = 0.0;
+      uh(m,IM3,k,j,i) = 0.0;
+      if (gmc) {
+        uh(m,IEN,k,j,i) = le(m,i) + d*HsLinInterp(pgc, rlo, dr, nf, r);
+      } else {
+        uh(m,IEN,k,j,i) = le(m,i) + d*gm*(1.0/rin - 1.0/r);
+      }
+      ur(m,radm1::M1_E,k,j,i) = fmax(lr(m,i), efl);
+      ur(m,radm1::M1_F1,k,j,i) = lf(m,i);
+      ur(m,radm1::M1_F2,k,j,i) = 0.0;
+      ur(m,radm1::M1_F3,k,j,i) = 0.0;
+    });
+    if (ff0.extent_int(0) >= nmb1 + 1) {
+      const int e3 = ff0.extent_int(1) - 1, e2 = ff0.extent_int(2) - 1;
+      const int e1 = std::min(ff0.extent_int(3) - 1, nc1);
+      par_for("hs_icf_linhao", DevExeSpace(), 0, nmb1, 0, e3, 0, e2, 0, e1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        ff0(m,k,j,i) = lff(m,i);
+      });
+    }
+    if (global_variable::my_rank == 0) {
+      int nthr = 0;
+      for (int n=0; n<np; ++n) if (pd[n] > lthr) nthr = n;
+      std::cout << "he_star_m1: he_ic_linhao: " << lfn << " (" << np << " rows, r "
+                << pr[0] << " .. rmax " << rmax << "), T(rmax) " << tmax << " K, rho(rmax) "
+                << dmax << ", g(rmax) " << gmax
+                << (gxi ? " (gext invsq: hydrostatic in GM/r^2 above, GM = he_gm)"
+                        : " (x (r/rmax)^2 above, as bsg_star.cpp)")
+                << "; perturbation amp " << lamp << " where rho > " << lthr
+                << " (last profile row above: r " << pr[nthr] << "), rng " << lrng
+                << "; he_seed off" << std::endl;
+    }
   }
   return;
 }
@@ -3458,9 +3827,12 @@ void HeStarBC(Mesh *pm) {
   auto ff1 = pmbp->pradm1->f0x1;
   // bsg-truerepro-1008: he_bc_inner = zerocontact, he_bc_outer = copy
   const bool bzc = hs_bzc_, bcopy = hs_bcopy_;
+  const bool bcr2 = hs_bcr2_;   // linhao-prod-1104
   auto &x1fb = pmbp->pcoord->xx1f;
   const bool hcsb = pm->use_cubed_sphere;   // cs-port-1016: metric KE (HsKeCs)
   auto hcclb = pmbp->pcoord->cos_cell;
+  const bool lbc = hs_lbc_;   // fin4-linhao-bc
+  auto lbd = hs_lbc_d_;
   par_for("hs_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     for (int side=0; side<2; ++side) {
@@ -3484,10 +3856,17 @@ void HeStarBC(Mesh *pm) {
         // transverse-momentum and energy fluxes vanish; the momentum flux is p*.
         // S_M increases with vg; bracketed Illinois iteration; no bracket -> mirror v.
         const int g0 = is - 1, g1 = is - 2, ib = is + 1;
-        const Real d0 = HsLogInterp(crho, rlo, dr, nf, x1v(m,g0));
-        const Real e0 = HsLogInterp(ceint, rlo, dr, nf, x1v(m,g0));
-        const Real d1 = HsLogInterp(crho, rlo, dr, nf, x1v(m,g1));
-        const Real e1 = HsLogInterp(ceint, rlo, dr, nf, x1v(m,g1));
+        Real d0 = HsLogInterp(crho, rlo, dr, nf, x1v(m,g0));
+        Real e0 = HsLogInterp(ceint, rlo, dr, nf, x1v(m,g0));
+        Real d1 = HsLogInterp(crho, rlo, dr, nf, x1v(m,g1));
+        Real e1 = HsLogInterp(ceint, rlo, dr, nf, x1v(m,g1));
+        if (lbc) {
+          // fin4-linhao-bc: his bd_data (linear in r in his profile, fixed in time)
+          d0 = lbd(m,0,0);
+          e0 = lbd(m,0,1);
+          d1 = lbd(m,1,0);
+          e1 = lbd(m,1,1);
+        }
         const Real db = uh(m,IDN,k,j,ib);
         const Real vb = uh(m,IM1,k,j,ib)/db;
         const Real eb = uh(m,IEN,k,j,ib) - 0.5*(SQR(uh(m,IM1,k,j,ib))
@@ -3555,17 +3934,31 @@ void HeStarBC(Mesh *pm) {
         for (int g=0; g<ng; ++g) {
           const int ig = is - 1 - g;
           const Real rg = x1v(m,ig);
-          const Real dg = (g == 0) ? d0 : ((g == 1) ? d1 : HsLogInterp(crho, rlo, dr, nf,
-                                                                       rg));
-          const Real eg = (g == 0) ? e0 : ((g == 1) ? e1 : HsLogInterp(ceint, rlo, dr,
-                                                                       nf, rg));
+          Real dg = (g == 0) ? d0 : ((g == 1) ? d1 : HsLogInterp(crho, rlo, dr, nf, rg));
+          Real eg = (g == 0) ? e0 : ((g == 1) ? e1 : HsLogInterp(ceint, rlo, dr, nf, rg));
+          if (lbc) {
+            dg = lbd(m,g,0);
+            eg = lbd(m,g,1);
+          }
           const Real v1 = (g == 0) ? vg : 0.0;
           uh(m,IDN,k,j,ig) = dg;
           uh(m,IM1,k,j,ig) = dg*v1;
           uh(m,IM2,k,j,ig) = 0.0;
           uh(m,IM3,k,j,ig) = 0.0;
           uh(m,IEN,k,j,ig) = eg + 0.5*dg*v1*v1 + dg*phicc(m,k,j,ig);
-          radm1::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 0, -1.0, cl, efl);
+          if (lbc) {
+            // fin4-linhao-bc: his Inflow_rad_X1 in every ghost layer: the two-zone
+            // intensities of E0 = a T^4 and F0 = F_r (comoving; D = 1/3) taken to the lab
+            // frame with the ghost velocity (ComToLab), here the boost of the moments
+            const Real e0r = lbd(m,g,2), f0r = lbd(m,g,3);
+            const Real b = v1/cl, gg = 1.0/(1.0 - b*b);
+            ur(m,radm1::M1_E,k,j,ig) = gg*(e0r + 2.0*b*f0r/cl + b*b*e0r/3.0);
+            ur(m,radm1::M1_F1,k,j,ig) = gg*((1.0 + b*b)*f0r + b*cl*(4.0/3.0)*e0r);
+            ur(m,radm1::M1_F2,k,j,ig) = 0.0;
+            ur(m,radm1::M1_F3,k,j,ig) = 0.0;
+          } else {
+            radm1::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 0, -1.0, cl, efl);
+          }
         }
         continue;
       }
@@ -3573,16 +3966,21 @@ void HeStarBC(Mesh *pm) {
         // Ma+2026 OUTFLOW TOP: rho, eint and v_t of the edge cell copied into every
         // ghost, v_r copied where it points out and 0 where it points in
         const Real v1e = uh(m,IM1,k,j,ia)/da;
-        const Real v1 = (v1e > 0.0) ? v1e : 0.0;
+        Real v1 = (v1e > 0.0) ? v1e : 0.0;
         const Real v2 = uh(m,IM2,k,j,ia)/da;
         const Real v3 = uh(m,IM3,k,j,ia)/da;
+        // linhao-prod-1104 he_bc_outer_r2: his branch test is v_r < 0 (v_r = 0 -> outflow)
+        const bool r2o = bcr2 && !(v1e < 0.0);
+        if (bcr2) v1 = r2o ? v1e : 0.0;
+        Real dg = da;
         for (int g=0; g<ng; ++g) {
           const int ig = ie + 1 + g;
-          uh(m,IDN,k,j,ig) = da;
-          uh(m,IM1,k,j,ig) = da*v1;
-          uh(m,IM2,k,j,ig) = da*v2;
-          uh(m,IM3,k,j,ig) = da*v3;
-          uh(m,IEN,k,j,ig) = ea + 0.5*da*(v1*v1 + v2*v2 + v3*v3) + da*phicc(m,k,j,ig);
+          if (r2o) dg *= SQR(x1v(m,ig-1)/x1v(m,ig));
+          uh(m,IDN,k,j,ig) = dg;
+          uh(m,IM1,k,j,ig) = dg*v1;
+          uh(m,IM2,k,j,ig) = dg*v2;
+          uh(m,IM3,k,j,ig) = dg*v3;
+          uh(m,IEN,k,j,ig) = ea + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
           radm1::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 2, 1.0, cl, efl);
         }
         continue;
@@ -3740,6 +4138,15 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
   const Real rint = hs_rint_, fin = hs_fin_;
+  const bool lbcd = hs_lbc_ && (pmbp->pradm1->lbath_f.extent_int(0) > 0);
+  auto lbf = pmbp->pradm1->lbath_f;
+  // fin4-linhao-bc: after a hesdirk2 step L_in = L1/2 + b2 L(stage 1) + g L(stage 2)
+  const bool lst2 = (pmbp->pradm1->lbath_t2 == radm1::M1_T2S_STAGE2);
+  const Real lg2 = 1.0 - 1.0/std::sqrt(2.0), lb2 = lg2/(2.0*(1.0 - lg2));
+  const Real lw3 = lst2 ? lg2 : 1.0;
+  const Real l12 = (lst2 && global_variable::my_rank == 0) ?
+                   (0.5*pmbp->pradm1->lbath_l1 + lb2*pmbp->pradm1->lbath_l2) : 0.0;
+  const int js0 = indcs.js, ks0 = indcs.ks;
   // v1sq_wall: mean v_r^2 over the wall (first active) cells of the whole mesh
   const Real inwall = 1.0/(static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3);
   const bool eso = pm1->esrc_on;
@@ -3770,6 +4177,12 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
       if (i == ie) h.the_array[3] = ff0(m,k,j,i+1)*area1(m,k,j,i+1);
     }
     if (i == is) h.the_array[4] = fin*area1(m,k,j,i);
+    if (i == is && lbcd) {
+      // fin4-linhao-bc: nothing is imposed at the wall; L_in is the lab luminosity the
+      // solves put through it this step (rad_m1.hpp lbath_f, lbath_l1/l2)
+      h.the_array[4] = lw3*lbf(m,0,k,j)*area1(m,k,j,i);
+      if (m == 0 && k == ks0 && j == js0) {h.the_array[4] += l12;}
+    }
     h.the_array[5] = ur(m,radm1::M1_E,k,j,i)*vol;
     h.the_array[6] = w0(m,IEN,k,j,i)*vol;
     h.the_array[13] = w0(m,IDN,k,j,i)*vol;
@@ -4081,6 +4494,15 @@ std::vector<char> HsAdaptiveRstWrite() {
     std::memcpy(out.data() + o + (na + 1)*sizeof(Real), &(kHsDicTag[0]),
                 sizeof(kHsDicTag));
   };
+  // fin4-linhao-bc: the wall luminosity of the last solve (collective: every rank calls)
+  auto lbt = [&out]() {
+    if (!hs_lbc_ || hs_mesh_ == nullptr) return;
+    const Real l = hs_mesh_->pmb_pack->pradm1->LbathWallSum();
+    const std::size_t o = out.size();
+    out.resize(o + sizeof(Real) + sizeof(kHsLbcTag));
+    std::memcpy(out.data() + o, &l, sizeof(Real));
+    std::memcpy(out.data() + o + sizeof(Real), &(kHsLbcTag[0]), sizeof(kHsLbcTag));
+  };
   // n2ramp-1022: the auto ramp's two numbers as the very last trailer
   auto rmp = [&out]() {
     if (!hs_mr_store_) return;
@@ -4090,7 +4512,7 @@ std::vector<char> HsAdaptiveRstWrite() {
     std::memcpy(out.data() + o, &(w[0]), sizeof(w));
     std::memcpy(out.data() + o + sizeof(w), &(kHsRmpTag[0]), sizeof(kHsRmpTag));
   };
-  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) {pic(); dic(); rmp(); return out;}
+  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) {pic(); dic(); lbt(); rmp(); return out;}
   const int nfc = hs_fsub_.extent_int(0);
   auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
   const std::int32_t hdr[2] = {static_cast<std::int32_t>(nfc), 0};
@@ -4102,6 +4524,7 @@ std::vector<char> HsAdaptiveRstWrite() {
   std::memcpy(out.data() + sizeof(hdr), tmp.data(), (nfc + 1)*sizeof(Real));
   pic();
   dic();
+  lbt();
   rmp();
   return out;
 }
@@ -4858,6 +5281,7 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_gmr_ = DvceArray1D<Real>();
   hs_fb_ = DvceArray1D<Real>();
   hs_sfac_ = DvceArray4D<Real>();
+  hs_lbc_d_ = DvceArray3D<Real>();   // fin4-linhao-bc
 }
 
 //----------------------------------------------------------------------------------------
