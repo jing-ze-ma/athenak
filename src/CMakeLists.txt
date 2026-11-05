@@ -130,6 +130,7 @@ add_executable(
         mhd/mhd_etotgrav.cpp
         mhd/mhd_boris.cpp
         mhd/mhd_wellbalance.cpp
+        mhd/mhd_wball.cpp
 
         outputs/io_wrapper.cpp
         outputs/outputs.cpp

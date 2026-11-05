@@ -74,6 +74,7 @@ struct HydroTaskIDs {
 
 namespace hydro {
 class AmModule;   // cs-open-1018: hydro_am.hpp
+struct WbAllCtx;   // wball-1104 (hydro_wball.hpp)
 class MergeLat;   // mrglat-1019: hydro_mergelat.hpp
 class RingAvg;    // ringavg-1029: hydro_ringavg.hpp
 
@@ -220,7 +221,7 @@ class Hydro {
   // pressure fluxes, subtracted from the WB source so the pair stays balanced
   DvceArray5D<Real> wbam_u, wbam_w;
   DvceFaceFld5D<Real> *wbam_f = nullptr;
-  void WbAmBackground();
+  WbAllCtx WbCtx();
   // ---- THE EFFECTIVE POTENTIAL OF THE WELL-BALANCED x1 SCHEME.
   // Phi_eff = Phi - int a_rad dz, i.e. the potential of the EFFECTIVE gravity
   // g_eff = g - a_rad, where a_rad is a radiative acceleration that a separate module

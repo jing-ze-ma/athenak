@@ -128,6 +128,43 @@ void WbAllPLMDer(TeamMember_t const &member, const int dir, const int m, const i
   }
 }
 
+//! uniform grids (Cartesian, cs panel coordinates): as WbAllBlendGrid with the uniform PLM
+//! (the plain faces of any reconstruction already in ql_p1 / qr)
+KOKKOS_INLINE_FUNCTION
+void WbAllBlendUni(TeamMember_t const &member, const bool use_wb_rho, const int dir,
+                   const bool der, const int m, const int k, const int j, const int il,
+                   const int iu, const DvceArray5D<Real> &q, const DvceArray5D<Real> &wbq,
+                   const DvceArray5D<Real> &wbw, ScrArray2D<Real> &ql_p1,
+                   ScrArray2D<Real> &qr) {
+  const int dk = (dir == 3) ? 1 : 0, dj = (dir == 2) ? 1 : 0;
+  const int nvar = q.extent_int(1);
+  const int n2 = wbw.extent_int(3), n3 = wbw.extent_int(2);
+  member.team_barrier();
+  for (int n=0; n<nvar; ++n) {
+    const bool wbv = der ? (n == IDPR) : ((n == IEN) || (n == IDN && use_wb_rho));
+    if (!wbv) continue;
+    const int var = der ? WBVar::wb_pres : ((n == IEN) ? WBVar::wb_eint : WBVar::wb_dens);
+    par_for_inner(member, il, iu, [&](const int i) {
+      const Real qm = q(m,n,k-dk,j-dj,i), qc = q(m,n,k,j,i), qp = q(m,n,k+dk,j+dj,i);
+      Real b_m, b_mh, b_c, b_ph, b_p;
+      WBReadCache(wbq, var, m, k, j, i, b_m, b_mh, b_c, b_ph, b_p);
+      Real lw, rw;
+      PLM(qm - b_m, qc - b_c, qp - b_p, lw, rw);
+      lw += b_ph; rw += b_mh;
+      const Real lp = ql_p1(n,i), rp = qr(n,i);
+      if (lw < 0.0 || rw < 0.0) {lw = lp; rw = rp;}
+      const int km = (k - dk < 0) ? 0 : k - dk, kp = (k + dk > n3 - 1) ? n3 - 1 : k + dk;
+      const int jm = (j - dj < 0) ? 0 : j - dj, jp = (j + dj > n2 - 1) ? n2 - 1 : j + dj;
+      const Real wc = wbw(m,dir-1,k,j,i);
+      const Real wp = fmin(wc, wbw(m,dir-1,kp,jp,i));
+      const Real wm = fmin(wc, wbw(m,dir-1,km,jm,i));
+      ql_p1(n,i) = (wp >= 1.0) ? lw : wp*lw + (1.0 - wp)*lp;
+      qr(n,i) = (wm >= 1.0) ? rw : wm*rw + (1.0 - wm)*rp;
+    });
+  }
+  member.team_barrier();
+}
+
 //! spherical polar (x2 = theta, x3 = phi): the plain faces are ALREADY in ql_p1 / qr
 //! (GridPiecewiseLinearX2/X3, the polar-row quadratic included); this forms the WB
 //! deviation on the non-uniform grid (PLM_nonuniform at the reconstruction coordinates
@@ -172,6 +209,26 @@ void WbAllBlendGrid(TeamMember_t const &member, const bool use_wb_rho, const int
   }
   member.team_barrier();
 }
+
+//! the fluid-independent view of a Hydro or MHD for the wb_dirs = all routines (shared
+//! code: Hydro:: and MHD:: members fill it and call the WbAll* functions below)
+struct WbAllCtx {
+  MeshBlockPack *pmbp = nullptr;
+  EOS_Data eos;
+  WBOption wbo;
+  bool wgt = true, wbgi = false, wbs = false;
+  Real r0 = 0.1, r1 = 0.3, m0 = 0.2, m1 = 0.5, eta = 1.0e-4;
+  DvceArray5D<Real> w0, u0, wder, wbq0, wbq2, wbq3, wbw;
+  DvceArray4D<Real> phicc, wtemp, pwb;
+  DvceFaceFld4D<Real> phi0;
+  class AmModule *pam = nullptr;
+  DvceArray5D<Real> *wbam_u = nullptr, *wbam_w = nullptr;
+  DvceFaceFld5D<Real> **wbam_f = nullptr;
+};
+
+void WbAllBuild(WbAllCtx &c);
+void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1);
+void WbAllAmBackground(WbAllCtx &c);
 
 }  // namespace hydro
 #endif  // HYDRO_HYDRO_WBALL_HPP_

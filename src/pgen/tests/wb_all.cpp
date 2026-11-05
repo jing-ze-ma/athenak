@@ -41,6 +41,8 @@
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
+#include <functional>
 #include "pgen/pgen.hpp"
 
 namespace {
@@ -57,6 +59,34 @@ struct WbAllV {
   bool sp = false;          // spherical polar: (x1, x2, x3) = (r, theta, phi)
 };
 WbAllV wv_;
+
+//! the fluid the problem runs with (<hydro> or <mhd>): the pieces wb_all needs
+struct WbFl {
+  DvceArray5D<Real> u0, w0, wbq0;
+  bool all = false, dyn = false, wbx1 = false, mhd = false;
+  DvceArray4D<Real> phicc;
+  DvceFaceFld4D<Real> phi0;
+  EOS_Data eos;
+  std::function<void(Real, bool)> addgrav;
+};
+WbFl WbFluid(MeshBlockPack *pmbp) {
+  WbFl f;
+  if (pmbp->pmhd != nullptr) {
+    auto *p = pmbp->pmhd;
+    f.u0 = p->u0; f.w0 = p->w0; f.wbq0 = p->wbq0; f.all = p->wb_all;
+    f.dyn = p->use_wellbalance_dynamic; f.wbx1 = p->use_wb_x1; f.mhd = true;
+    f.phicc = p->phicc0; f.phi0 = p->phi0; f.eos = p->peos->eos_data;
+    f.addgrav = [p](Real b, bool x1) {p->AddWbGravity(b, x1);};
+  } else {
+    auto *p = pmbp->phydro;
+    f.u0 = p->u0; f.w0 = p->w0; f.wbq0 = p->wbq0; f.all = p->wb_all;
+    f.dyn = p->use_wellbalance_dynamic; f.wbx1 = p->use_wb_x1;
+    f.phicc = p->phicc0; f.phi0 = p->phi0; f.eos = p->peos->eos_data;
+    f.addgrav = [p](Real b, bool x1) {p->AddWbGravity(b, x1);};
+  }
+  return f;
+}
+Real wb_bx_ = 0.0;   // <problem>/bx: a uniform x1 field (MHD, Cartesian)
 
 KOKKOS_INLINE_FUNCTION
 Real WbAllPhiRaw(const WbAllV &v, const Real x1, const Real x2, const Real x3) {
@@ -212,7 +242,8 @@ void WbAllFillRange(Mesh *pm, const int il, const int iu, const int jl, const in
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   auto &size = pmbp->pmb->mb_size;
   auto &bcs = pmbp->pmb->mb_bcs;
-  auto u0 = pmbp->phydro->u0;
+  auto u0 = WbFluid(pmbp).u0;
+  const Real bx = wb_bx_;
   const WbAllV v = wv_;
   const bool threed = pm->three_d;
   const WbAllG gg = WbAllGeo(pm);
@@ -241,19 +272,20 @@ void WbAllFillRange(Mesh *pm, const int il, const int iu, const int jl, const in
     u0(m,IM1,k,j,i) = d*v1;
     u0(m,IM2,k,j,i) = d*v2;
     u0(m,IM3,k,j,i) = d*v3;
-    u0(m,IEN,k,j,i) = p/v.gm1 + 0.5*d*(v1*v1 + v2*v2 + v3*v3);
+    u0(m,IEN,k,j,i) = p/v.gm1 + 0.5*d*(v1*v1 + v2*v2 + v3*v3) + 0.5*bx*bx;
   });
 }
 }  // namespace
 
 void ProblemGenerator::WbAll(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  if (pmbp->phydro == nullptr || (pmy_mesh_->one_d && !pmy_mesh_->use_cubed_sphere)) {
+  if ((pmbp->phydro == nullptr && pmbp->pmhd == nullptr) ||
+      (pmy_mesh_->one_d && !pmy_mesh_->use_cubed_sphere)) {
     std::cout << "### FATAL ERROR in wb_all: needs <hydro> on a 2-D/3-D mesh" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  auto *ph = pmbp->phydro;
-  if (!ph->peos->eos_data.is_ideal || ph->peos->eos_data.IsGeneral()) {
+  WbFl fl = WbFluid(pmbp);
+  if (!fl.eos.is_ideal || fl.eos.IsGeneral()) {
     std::cout << "### FATAL ERROR in wb_all: ideal gas only" << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -275,7 +307,7 @@ void ProblemGenerator::WbAll(ParameterInput *pin, const bool restart) {
   v.rho0 = pin->GetOrAddReal("problem", "rho0", 1.0);
   v.pn = pin->GetOrAddReal("problem", "poly_n", 1.5);
   v.beta = pin->GetOrAddReal("problem", "beta", 0.3);
-  v.gm1 = ph->peos->eos_data.gamma - 1.0;
+  v.gm1 = fl.eos.gamma - 1.0;
   v.om = pin->GetOrAddReal("problem", "omega", 0.0);
   v.sp = pmy_mesh_->use_spherical_polar;
   v.phiref = 0.0;
@@ -291,19 +323,20 @@ void ProblemGenerator::WbAll(ParameterInput *pin, const bool restart) {
   v.s0 = pin->GetOrAddReal("problem", "s0", 0.0);
   v.delta = pin->GetOrAddReal("problem", "delta", 0.1);
   wv_ = v;
+  wb_bx_ = (pmbp->pmhd != nullptr) ? pin->GetOrAddReal("problem", "bx", 0.0) : 0.0;
   user_srcs_func = WbAllSrc;
   user_bcs_func = WbAllBCs;
   pgen_final_func = WbAllFinal;
 
   // the potential over the FULL arrays (the WB stencils reach into the ghost zones)
-  if (ph->use_wellbalance_dynamic) {
+  if (fl.dyn) {
     auto &indcs = pmy_mesh_->mb_indcs;
     const int is = indcs.is, js = indcs.js, ks = indcs.ks;
     const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3, ng = indcs.ng;
     const int n1 = nx1 + 2*ng, n2 = nx2 + 2*ng, n3 = (nx3 > 1) ? nx3 + 2*ng : 1;
     auto &size = pmbp->pmb->mb_size;
-    auto pcc = ph->phicc0;
-    auto p1 = ph->phi0.x1f, p2 = ph->phi0.x2f, p3 = ph->phi0.x3f;
+    auto pcc = fl.phicc;
+    auto p1 = fl.phi0.x1f, p2 = fl.phi0.x2f, p3 = fl.phi0.x3f;
     const bool threed = pmy_mesh_->three_d;
     const WbAllG gg = WbAllGeo(pmy_mesh_);
     par_for("wball_phi", DevExeSpace(), 0, pmbp->nmb_thispack - 1, 0, n3 - 1, 0, n2 - 1,
@@ -339,6 +372,17 @@ void ProblemGenerator::WbAll(ParameterInput *pin, const bool restart) {
   const int n1 = indcs.nx1 + 2*ng, n2 = indcs.nx2 + 2*ng;
   const int n3 = pmy_mesh_->three_d ? indcs.nx3 + 2*ng : 1;
   WbAllFillRange(pmy_mesh_, 0, n1 - 1, 0, n2 - 1, 0, n3 - 1, false);
+  if (pmbp->pmhd != nullptr) {   // the field: uniform B_x1 = bx (0: field-free MHD)
+    const Real bx = wb_bx_;
+    Kokkos::deep_copy(pmbp->pmhd->b0.x1f, bx);
+    Kokkos::deep_copy(pmbp->pmhd->b0.x2f, 0.0);
+    Kokkos::deep_copy(pmbp->pmhd->b0.x3f, 0.0);
+    auto bcc = pmbp->pmhd->bcc0;
+    par_for("wball_bcc", DevExeSpace(), 0, pmbp->nmb_thispack - 1, 0, n3 - 1, 0, n2 - 1,
+            0, n1 - 1, KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      bcc(m,IBX,k,j,i) = bx; bcc(m,IBY,k,j,i) = 0.0; bcc(m,IBZ,k,j,i) = 0.0;
+    });
+  }
 }
 
 namespace {
@@ -352,24 +396,24 @@ void WbAllBCs(Mesh *pm) {
 
 void WbAllSrc(Mesh *pm, const Real bdt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  auto *ph = pmbp->phydro;
+  WbFl fl = WbFluid(pmbp);
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   auto &size = pmbp->pmb->mb_size;
-  auto u0 = ph->u0;
-  auto w0 = ph->w0;
-  auto c1 = ph->wbq0;
-  const bool all = ph->wb_all;
-  const bool dyn1 = ph->use_wellbalance_dynamic && ph->use_wb_x1 && !all;
+  auto u0 = fl.u0;
+  auto w0 = fl.w0;
+  auto c1 = fl.wbq0;
+  const bool all = fl.all;
+  const bool dyn1 = fl.dyn && fl.wbx1 && !all;
   const bool threed = pm->three_d;
   const WbAllV v = wv_;
   const WbAllG gg = WbAllGeo(pm);
   const bool sp = gg.sp;
   auto vol = pmbp->pcoord->volume;
   auto a1 = pmbp->pcoord->area.x1f;
-  if (all) ph->AddWbGravity(bdt, true);
+  if (all) fl.addgrav(bdt, true);
   par_for("wball_src", DevExeSpace(), 0, pmbp->nmb_thispack - 1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i);
@@ -395,16 +439,17 @@ void WbAllSrc(Mesh *pm, const Real bdt) {
 
 void WbAllFinal(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  auto *ph = pmbp->phydro;
+  WbFl fl = WbFluid(pmbp);
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   auto &size = pmbp->pmb->mb_size;
-  auto u0 = ph->u0;
+  auto u0 = fl.u0;
   const bool threed = pm->three_d;
   const WbAllV v = wv_;
-  const Real gam = ph->peos->eos_data.gamma;
+  const Real gam = fl.eos.gamma;
+  const Real bx = wb_bx_;
   const WbAllG gg = WbAllGeo(pm);
   Real mach = 0.0, l1d = 0.0, mxd = 0.0, l1v = 0.0, ncell = 0.0, l1vw = 0.0, nw = 0.0;
   Kokkos::parallel_reduce("wball_diag",
@@ -423,7 +468,7 @@ void WbAllFinal(ParameterInput *pin, Mesh *pm) {
     const Real dn = u0(m,IDN,k,j,i);
     const Real u1 = u0(m,IM1,k,j,i)/dn, u2 = u0(m,IM2,k,j,i)/dn, u3 = u0(m,IM3,k,j,i)/dn;
     const Real ek = 0.5*dn*(u1*u1 + u2*u2 + u3*u3);
-    const Real pn = (gam - 1.0)*(u0(m,IEN,k,j,i) - ek);
+    const Real pn = (gam - 1.0)*(u0(m,IEN,k,j,i) - ek - 0.5*bx*bx);
     const Real cs = sqrt(gam*fmax(pn, 1.0e-300)/dn);
     const Real dv = sqrt((u1-v1)*(u1-v1) + (u2-v2)*(u2-v2) + (u3-v3)*(u3-v3));
     a = fmax(a, dv/cs);

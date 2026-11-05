@@ -99,7 +99,7 @@ struct MHDTaskIDs {
   TaskID crecv;
 };
 
-namespace hydro {class AmModule;}   // cs-open-1018: hydro/hydro_am.hpp
+namespace hydro {class AmModule; struct WbAllCtx;}   // cs-open-1018 / wball-1104
 
 namespace mhd {
 
@@ -347,6 +347,16 @@ class MHD {
   DvceArray4D<Real> phicc_wb;    // cell-centered potential seen by the x1 WB scheme
   DvceArray4D<Real> phi_wb_x1f;  // x1-face potential seen by the x1 WB scheme
   DvceArray5D<Real> wbq0;       // per-cell well-balanced background (BuildWBCache)
+  // wball-1104 <mhd>/wb_dirs = all (hydro/hydro_wball.hpp, the shared routines)
+  bool wb_all = false;
+  bool wb_weight = true;
+  Real wbw_r0 = 0.1, wbw_r1 = 0.3, wbw_m0 = 0.2, wbw_m1 = 0.5, wbw_eta = 1.0e-4;
+  DvceArray5D<Real> wbq2, wbq3, wbw;
+  DvceArray5D<Real> wbam_u, wbam_w;
+  DvceFaceFld5D<Real> *wbam_f = nullptr;
+  hydro::WbAllCtx WbCtx();
+  void BuildWBCacheAll();
+  void AddWbGravity(const Real bdt, const bool with_x1);
   bool wb_guard_ideal = false;  // <mhd>/wb_guard_ideal (mhd.cpp)
   bool wb_clamp_ideal = false;  // <mhd>/wb_clamp_ideal (mhd.cpp)
   int wb_cache_every = 0;       // rebuild wbq0 every stage (0) or every N-th cycle
@@ -999,7 +1009,7 @@ class MHD {
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
          const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          const DvceArray5D<Real> &wbq0, const bool hyd,
-        ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
+        ScrArray2D<Real> &ql, ScrArray2D<Real> &qr, const bool wb_noext = false) {
       Real gamma = eos.gamma;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
@@ -1048,7 +1058,8 @@ class MHD {
                   Real pl_, pr_;
                   PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
                   wbplm::WbPlmBlend(q(m,n,k,j,i), sL, sR, pl_, pr_, eos.plm_c1, ql(n,i+1), qr(n,i));
-                } else if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
+                } else if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 ||
+                           (sL * sR <= 0.0 && !eos.plm_c1 && !wb_noext)) {
                     PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
                 }
                 if (eos.wb_plm_range) {

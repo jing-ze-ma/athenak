@@ -21,13 +21,29 @@
 
 namespace hydro {
 
+#define WBALL_ALIASES \
+  MeshBlockPack *pmy_pack = c.pmbp; (void) pmy_pack; \
+  auto &w0 = c.w0; auto &u0 = c.u0; auto &wder = c.wder; (void) wder; \
+  auto &wbq0 = c.wbq0; auto &wbq2 = c.wbq2; auto &wbq3 = c.wbq3; auto &wbw = c.wbw; \
+  auto &phicc0 = c.phicc; auto &wtemp = c.wtemp; auto &pwb = c.pwb; (void) pwb; \
+  auto &phi0 = c.phi0; AmModule *pam = c.pam; (void) pam; \
+  const WBOption wb_option = c.wbo; (void) wb_option; \
+  const bool wb_weight = c.wgt, wb_guard_ideal = c.wbgi; \
+  const bool use_wellbalance_static = c.wbs; (void) use_wellbalance_static; \
+  const Real wbw_r0 = c.r0, wbw_r1 = c.r1, wbw_m0 = c.m0, wbw_m1 = c.m1, wbw_eta = c.eta; \
+  (void) wb_weight; (void) wb_guard_ideal; (void) wbw_r0; (void) wbw_r1; (void) wbw_m0; \
+  (void) wbw_m1; (void) wbw_eta; (void) wbq0; (void) wbq2; (void) wbq3; (void) wbw; \
+  (void) phicc0; (void) wtemp; (void) phi0; (void) u0; (void) w0
+
+
 //----------------------------------------------------------------------------------------
 //! \fn void Hydro::BuildWBCacheAll
 //! \brief the x2 and x3 local hydrostatic backgrounds of every cell whose 3-point stencil
 //! lies inside the arrays (wbq2 / wbq3, the layout of wbq0) and the weights wbw(0..2)
 //! (wbw(0) = 1: x1 stays the global scheme).  Built once per stage, after ConsToPrim.
 
-void Hydro::BuildWBCacheAll() {
+void WbAllBuild(WbAllCtx &c) {
+  WBALL_ALIASES;
   if (pmy_pack->pmesh->use_spherical_polar &&
       (pmy_pack->pcoord->sp_cart_polar_momentum || pmy_pack->pcoord->sp_wellbalanced_src)) {
     std::cout << "### FATAL ERROR in hydro_wball: <hydro>/wb_dirs = all on spherical "
@@ -41,7 +57,7 @@ void Hydro::BuildWBCacheAll() {
   const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
   const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto eos = peos->eos_data;
+  auto eos = c.eos;
   const WBOption wbo = wb_option;
   const bool gen = eos.IsGeneral();
   auto &w0_ = w0;
@@ -133,7 +149,9 @@ void Hydro::BuildWBCacheAll() {
 //! (etotgrav, or its own v.(-rho grad Phi)).  Reads the caches of THIS stage: call it
 //! from the user source of the stage whose fluxes built them.
 
-void Hydro::AddWbGravity(const Real bdt, const bool with_x1) {
+void WbAllAmBackground(WbAllCtx &c);
+void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1) {
+  WBALL_ALIASES;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -150,8 +168,8 @@ void Hydro::AddWbGravity(const Real bdt, const bool with_x1) {
   const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
   const bool am = (pam != nullptr) && pam->am_transport &&
                   (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar);
-  if (am) WbAmBackground();
-  auto amu = wbam_u;
+  if (am) WbAllAmBackground(c);
+  auto amu = *c.wbam_u;
   if (pmy_pack->pmesh->use_cubed_sphere) {
     // the cubed sphere: the face-sum form on the covariant (e_xi, e_eta) components, the
     // angular faces carrying their own sin factor exactly as the flux conversion
@@ -285,7 +303,10 @@ void Hydro::AddWbGravity(const Real bdt, const bool with_x1) {
 //! p sin on the normal component), a static copy of w0 (v = 0), and AmTransportProbe on
 //! them (bdt = 1) into wbam_u.  AddWbGravity subtracts it (x the cell weight).
 
-void Hydro::WbAmBackground() {
+void WbAllAmBackground(WbAllCtx &c) {
+  WBALL_ALIASES;
+  DvceFaceFld5D<Real> *&wbam_f = *c.wbam_f;
+  DvceArray5D<Real> &wbam_u = *c.wbam_u, &wbam_w = *c.wbam_w;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -333,9 +354,26 @@ void Hydro::WbAmBackground() {
       f3(m,IM3,k,j,i) = cs ? p*se(m,k,j) : p;
     });
   }
-  AmFluid fl{wbam_u, wbam_u, wbam_w, wder, DvceArray5D<Real>(), *wbam_f, peos->eos_data,
+  AmFluid fl{wbam_u, wbam_u, wbam_w, wder, DvceArray5D<Real>(), *wbam_f, c.eos,
              false, use_wellbalance_static, pwb};
   pam->AmTransportProbe(fl);
+}
+
+//----------------------------------------------------------------------------------------
+//! Hydro's members: fill the context, call the shared routines
+WbAllCtx Hydro::WbCtx() {
+  WbAllCtx c;
+  c.pmbp = pmy_pack; c.eos = peos->eos_data; c.wbo = wb_option;
+  c.wgt = wb_weight; c.wbgi = wb_guard_ideal; c.wbs = use_wellbalance_static;
+  c.r0 = wbw_r0; c.r1 = wbw_r1; c.m0 = wbw_m0; c.m1 = wbw_m1; c.eta = wbw_eta;
+  c.w0 = w0; c.u0 = u0; c.wder = wder; c.wbq0 = wbq0; c.wbq2 = wbq2; c.wbq3 = wbq3;
+  c.wbw = wbw; c.phicc = phicc0; c.wtemp = wtemp; c.pwb = pwb; c.phi0 = phi0; c.pam = pam;
+  c.wbam_u = &wbam_u; c.wbam_w = &wbam_w; c.wbam_f = &wbam_f;
+  return c;
+}
+void Hydro::BuildWBCacheAll() {WbAllCtx c = WbCtx(); WbAllBuild(c);}
+void Hydro::AddWbGravity(const Real bdt, const bool with_x1) {
+  WbAllCtx c = WbCtx(); WbAllGravity(c, bdt, with_x1);
 }
 
 }  // namespace hydro

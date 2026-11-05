@@ -583,6 +583,44 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                   << "' not implemented for mhd" << std::endl;
         std::exit(EXIT_FAILURE);
       }
+        // wball-1104 <mhd>/wb_dirs = x1 (default) | all (read only when named)
+        if (pin->DoesParameterExist("mhd","wb_dirs")) {
+          const std::string wd = pin->GetString("mhd","wb_dirs");
+          if (wd.compare("all") == 0) {
+            wb_all = true;
+          } else if (wd.compare("x1") != 0) {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                      << std::endl << "<mhd>/wb_dirs must be x1 or all" << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
+        }
+        if (wb_all) {
+          if (!use_wb_x1 || use_wb_x2 || pmy_pack->pmesh->one_d) {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                      << std::endl << "<mhd>/wb_dirs = all needs wb_x1 = true, wb_x2 = "
+                      << "false and a 2-D/3-D mesh" << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
+          wb_weight = pin->GetOrAddBoolean("mhd","wb_weight",true);
+          wbw_r0 = pin->GetOrAddReal("mhd","wb_w_r0",0.1);
+          wbw_r1 = pin->GetOrAddReal("mhd","wb_w_r1",0.3);
+          wbw_m0 = pin->GetOrAddReal("mhd","wb_w_m0",0.2);
+          wbw_m1 = pin->GetOrAddReal("mhd","wb_w_m1",0.5);
+          wbw_eta = pin->GetOrAddReal("mhd","wb_w_eta",1.0e-4);
+          auto &ic = pmy_pack->pmesh->mb_indcs;
+          const int c1 = ic.nx1 + 2*ic.ng;
+          const int c2 = (ic.nx2 > 1) ? (ic.nx2 + 2*ic.ng) : 1;
+          const int c3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
+          const int nmbw = std::max((pmy_pack->nmb_thispack), (pmy_pack->pmesh->nmb_maxperrank));
+          Kokkos::realloc(wbq2, nmbw, 15, c3, c2, c1);
+          if (c3 > 1) Kokkos::realloc(wbq3, nmbw, 15, c3, c2, c1);
+          Kokkos::realloc(wbw, nmbw, 3, c3, c2, c1);
+          Kokkos::deep_copy(wbw, 1.0);
+          if (global_variable::my_rank == 0) {
+            std::cout << "mhd: wb_dirs = all (x2/x3 dynamic well balance), wb_weight = "
+                      << (wb_weight ? "true" : "false") << std::endl;
+          }
+        }
         // select well-balanced scheme direction
         if (!use_wb_x1 && !use_wb_x2) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
