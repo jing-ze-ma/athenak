@@ -216,6 +216,11 @@ class Hydro {
   DvceArray5D<Real> wbw;          // (nmb, 3, n3, n2, n1) validity weight per direction
   void BuildWBCacheAll();
   void AddWbGravity(const Real bdt, const bool with_x1);
+  // the zonal angular-momentum correction (am_transport / am_vector) of the BACKGROUND
+  // pressure fluxes, subtracted from the WB source so the pair stays balanced
+  DvceArray5D<Real> wbam_u, wbam_w;
+  DvceFaceFld5D<Real> *wbam_f = nullptr;
+  void WbAmBackground();
   // ---- THE EFFECTIVE POTENTIAL OF THE WELL-BALANCED x1 SCHEME.
   // Phi_eff = Phi - int a_rad dz, i.e. the potential of the EFFECTIVE gravity
   // g_eff = g - a_rad, where a_rad is a radiative acceleration that a separate module

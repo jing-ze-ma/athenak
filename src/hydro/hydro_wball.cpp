@@ -148,17 +148,16 @@ void Hydro::AddWbGravity(const Real bdt, const bool with_x1) {
   auto &size = pmy_pack->pmb->mb_size;
   const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+  const bool am = (pam != nullptr) && pam->am_transport &&
+                  (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar);
+  if (am) WbAmBackground();
+  auto amu = wbam_u;
   if (pmy_pack->pmesh->use_cubed_sphere) {
     // the cubed sphere: the face-sum form on the covariant (e_xi, e_eta) components, the
     // angular faces carrying their own sin factor exactly as the flux conversion
     // (GnomonicEquiangleFluxX2/X3) and the coordinate source x_ov_rD / y_ov_rC take it:
     // S_a = [A+ s+ (p_bg,+ - p_c) - A- s- (p_bg,- - p_c)]/V (+ the linearised analytic
     // part with the same weights)
-    if ((pam != nullptr) && pam->am_transport) {
-      std::cout << "### FATAL ERROR in hydro_wball: <hydro>/wb_dirs = all on the cubed "
-                << "sphere with am_transport/am_vector: not yet" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     if (pmy_pack->pcoord->cs_wellbalanced_src) {
       std::cout << "### FATAL ERROR in hydro_wball: <hydro>/wb_dirs = all on the cubed "
                 << "sphere needs cs_wellbalanced_src = false" << std::endl;
@@ -196,6 +195,11 @@ void Hydro::AddWbGravity(const Real bdt, const bool with_x1) {
         const Real sm = wm*(c3(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f3(m,k,j,i) - phc));
         u0_(m,IM3,k,j,i) += bdt*iv*(a3(m,k+1,j,i)*se(m,k+1,j)*sp - a3(m,k,j,i)*se(m,k,j)*sm);
       }
+      if (am) {   // minus the AM correction of the background fluxes, x the cell weight
+        const Real wa = fmin(ww(m,1,k,j,i), ww(m,2,k,j,i));
+        u0_(m,IM2,k,j,i) -= bdt*wa*amu(m,IM2,k,j,i);
+        u0_(m,IM3,k,j,i) -= bdt*wa*amu(m,IM3,k,j,i);
+      }
     });
     return;
   }
@@ -206,17 +210,6 @@ void Hydro::AddWbGravity(const Real bdt, const bool with_x1) {
     auto vol = pmy_pack->pcoord->volume;
     auto a1 = pmy_pack->pcoord->area.x1f, a2 = pmy_pack->pcoord->area.x2f;
     auto a3 = pmy_pack->pcoord->area.x3f;
-    // <hydro>/am_transport (the scalar zonal correction, hydro_am.hpp) turns the x3 flux
-    // force into -(Rbar_3/R_c)(F+ A+ - F- A-)/V (Rbar_3 the phi face's mean lever arm, R_c
-    // = x1v sin(x2v)): the x3 source takes the same factor, so the pair stays balanced
-    const bool amx3 = (pam != nullptr) && pam->am_transport;
-    if (amx3 && pam->am_vector) {
-      std::cout << "### FATAL ERROR in hydro_wball: <hydro>/wb_dirs = all on spherical "
-                << "polar with am_vector: not yet (am_transport scalar only)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    auto x1v = pmy_pack->pcoord->x1v, x1f = pmy_pack->pcoord->xx1f;
-    auto x2v = pmy_pack->pcoord->x2v, x2f = pmy_pack->pcoord->xx2f;
     par_for("wball_grav_sp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real d = w0_(m,IDN,k,j,i);
@@ -241,19 +234,14 @@ void Hydro::AddWbGravity(const Real bdt, const bool with_x1) {
         const Real wc = ww(m,2,k,j,i);
         const int kp = (k + 1 > n3 - 1) ? n3 - 1 : k + 1;
         const Real wp = fmin(wc, ww(m,2,kp,j,i)), wm = fmin(wc, ww(m,2,k-1,j,i));
-        Real fam = 1.0;
-        if (amx3) {
-          const Real rl = x1f(m,i), rr = x1f(m,i+1);
-          const Real thl = x2f(m,j), thr = x2f(m,j+1);
-          const Real rc = x1v(m,i)*sin(x2v(m,j));
-          const Real r3 = (rr*rr*rr - rl*rl*rl)/3.0, r2h = 0.5*(rr*rr - rl*rl);
-          const Real rb3 = (thr > thl) ? r3*(cos(thl) - cos(thr))/(r2h*(thr - thl)) : 0.0;
-          if (rc > 0.0) fam = rb3/rc;
-        }
-        // the WB part with the am_transport factor, the analytic part plain
-        const Real sp = fam*wp*(c3(m,13,k,j,i) - pc) + (1.0 - wp)*(-d*(f3(m,k+1,j,i) - phc));
-        const Real sm = fam*wm*(c3(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f3(m,k,j,i) - phc));
+        const Real sp = wp*(c3(m,13,k,j,i) - pc) + (1.0 - wp)*(-d*(f3(m,k+1,j,i) - phc));
+        const Real sm = wm*(c3(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f3(m,k,j,i) - phc));
         u0_(m,IM3,k,j,i) += bdt*iv*(a3(m,k+1,j,i)*sp - a3(m,k,j,i)*sm);
+      }
+      if (am) {
+        const Real wa = x3 ? fmin(ww(m,1,k,j,i), ww(m,2,k,j,i)) : ww(m,1,k,j,i);
+        u0_(m,IM2,k,j,i) -= bdt*wa*amu(m,IM2,k,j,i);
+        u0_(m,IM3,k,j,i) -= bdt*wa*amu(m,IM3,k,j,i);
       }
     });
     return;
@@ -285,6 +273,69 @@ void Hydro::AddWbGravity(const Real bdt, const bool with_x1) {
       u0_(m,IM3,k,j,i) += bdt*(sp - sm)/size.d_view(m).dx3;
     }
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::WbAmBackground
+//! \brief <hydro>/am_transport (or am_vector) corrects the zonal momentum update of the
+//! ACTUAL fluxes by T_cons - T_code (hydro_am.hpp).  For a background state the fluxes are
+//! the background face pressures, and that correction is a part of the discrete pressure
+//! force the WB source must cancel.  Here: the background momentum fluxes of every face
+//! (the mean of the two cells' walked face pressures; cs: on the covariant face basis,
+//! p sin on the normal component), a static copy of w0 (v = 0), and AmTransportProbe on
+//! them (bdt = 1) into wbam_u.  AddWbGravity subtracts it (x the cell weight).
+
+void Hydro::WbAmBackground() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool cs = pmy_pack->pmesh->use_cubed_sphere;
+  const bool x3 = (indcs.nx3 > 1);
+  if (wbam_f == nullptr) {
+    const int n1 = indcs.nx1 + 2*indcs.ng;
+    const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+    const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+    const int nv = u0.extent_int(1);
+    wbam_f = new DvceFaceFld5D<Real>("wbam_f", nmb1 + 1, nv, n3, n2, n1);
+    wbam_u = DvceArray5D<Real>("wbam_u", nmb1 + 1, nv, n3, n2, n1);
+    wbam_w = DvceArray5D<Real>("wbam_w", nmb1 + 1, w0.extent_int(1), n3, n2, n1);
+  }
+  Kokkos::deep_copy(wbam_u, 0.0);
+  Kokkos::deep_copy(wbam_f->x1f, 0.0);
+  Kokkos::deep_copy(wbam_f->x2f, 0.0);
+  if (x3) Kokkos::deep_copy(wbam_f->x3f, 0.0);
+  Kokkos::deep_copy(wbam_w, w0);
+  auto ws = wbam_w;
+  const int n1 = indcs.nx1 + 2*indcs.ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+  par_for("wbam_static", DevExeSpace(), 0, nmb1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    ws(m,IVX,k,j,i) = 0.0; ws(m,IVY,k,j,i) = 0.0; ws(m,IVZ,k,j,i) = 0.0;
+  });
+  auto c1 = wbq0, c2 = wbq2, c3 = wbq3;
+  auto f1 = wbam_f->x1f, f2 = wbam_f->x2f, f3 = wbam_f->x3f;
+  auto sx = pmy_pack->pcoord->sin_face_xi, se = pmy_pack->pcoord->sin_face_eta;
+  par_for("wbam_f1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    f1(m,IM1,k,j,i) = 0.5*(c1(m,13,k,j,i-1) + c1(m,11,k,j,i));
+  });
+  par_for("wbam_f2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real p = 0.5*(c2(m,13,k,j-1,i) + c2(m,11,k,j,i));
+    f2(m,IM2,k,j,i) = cs ? p*sx(m,k,j) : p;
+  });
+  if (x3) {
+    par_for("wbam_f3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real p = 0.5*(c3(m,13,k-1,j,i) + c3(m,11,k,j,i));
+      f3(m,IM3,k,j,i) = cs ? p*se(m,k,j) : p;
+    });
+  }
+  AmFluid fl{wbam_u, wbam_u, wbam_w, wder, DvceArray5D<Real>(), *wbam_f, peos->eos_data,
+             false, use_wellbalance_static, pwb};
+  pam->AmTransportProbe(fl);
 }
 
 }  // namespace hydro
