@@ -259,7 +259,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                               use_wellbalance_dynamic_,
                               use_wb_x1_, wb_rmax_, wb_rmin_, wb_phimax_,
                               m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc_wb_,
-                              phi_wb_x1f_, wbq0_, wl, wr);
+                              phi_wb_x1f_, wbq0_, wl, wr, wb_all_);
       } else if (use_spherical_polar || str_r1_) {
         // reconstruct_x1 != plm: Mignone (2014) curvilinear reconstruction -- see
         // reconstruct/mignone_curvilinear.hpp. wellbalance_dynamic+wb_x1 with this

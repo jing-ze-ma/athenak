@@ -871,7 +871,10 @@ class Hydro {
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
          const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          const DvceArray5D<Real> &wbq0,
-        ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
+        ScrArray2D<Real> &ql, ScrArray2D<Real> &qr, const bool wb_noext = false) {
+      // wb_noext (wball-1104, <hydro>/wb_dirs = all): no plain fallback at a STATE
+      // extremum (sL sR <= 0) -- the balanced deviation is kept there; negative faces
+      // still fall back
       Real gamma = eos.gamma;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
@@ -921,7 +924,8 @@ class Hydro {
                   Real pl_, pr_;
                   PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
                   wbplm::WbPlmBlend(q(m,n,k,j,i), sL, sR, pl_, pr_, eos.plm_c1, ql(n,i+1), qr(n,i));
-                } else if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
+                } else if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 ||
+                           (sL * sR <= 0.0 && !eos.plm_c1 && !wb_noext)) {
                     PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
                 }
                 if (eos.wb_plm_range) {
