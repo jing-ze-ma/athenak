@@ -1279,10 +1279,24 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     } else if (vgd_on && fresh && !vgd_async_named) {
       // prod1104b (USER 11-04): the fresh default is FALSE on the cubed sphere (every cs
       // production runs without the twin); spherical polar keeps true (BSG fin3 lineage)
-      const bool cs_tw = ppack->pmesh->use_cubed_sphere;
+      // A deck that names a twin-only setting (twin_state trans, twin_weight j,
+      // twin_full, twin_fuse, symref col) keeps the old default true, so a default never
+      // FATALs a fresh deck.
+      auto nv = [pin](const char *k, const char *off) {
+        return pin->DoesParameterExist("rad_m1", k) &&
+               pin->GetString("rad_m1", k).compare(off) != 0;
+      };
+      const bool twkeys = nv("vet_gd_twin_state", "mean") || nv("vet_gd_twin_weight", "none") ||
+                          nv("vet_gd_twin_full", "false") || nv("vet_gd_twin_fuse", "false") ||
+                          nv("vet_gd_symref", "none");
+      const bool cs_tw = ppack->pmesh->use_cubed_sphere && !twkeys;
       vgd_twin = pin->GetOrAddBoolean("rad_m1","vet_gd_twin",!cs_tw);
-      if (cs_tw) recipe::Log("<rad_m1>/vet_gd_twin = false (default with vet_gd on the "
-                             "cubed sphere)");
+      if (cs_tw) {
+        recipe::Log("<rad_m1>/vet_gd_twin = false (default with vet_gd on the cubed sphere)");
+      } else if (ppack->pmesh->use_cubed_sphere) {
+        recipe::Log("<rad_m1>/vet_gd_twin = true (cs default false skipped: the deck names "
+                    "twin-only keys)");
+      }
     }
     // twinfix-1012 (rad_m1_vetgd.cpp VetGdTwinTrans, VgdTwW).
     // vet_gd_twin_state = mean | trans: the twin's laterally uniform shell state from
