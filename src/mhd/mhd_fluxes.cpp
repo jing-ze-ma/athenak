@@ -295,7 +295,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const bool uct_hll_ = emf_uct || (rsolver_method_ == MHD_RSolver::hlle);
   const bool uct_eta_ = (rsolver_method_ == MHD_RSolver::lhlld) &&
                         peos->eos_data.lhlld_emf_eta_pos;
-  const Real uct_lb_ = use_cubed_sphere ? cs_lowbeta_fallback : 0.0;
+  const Real uct_lb_ = cs_lowbeta_fallback;   // share-1104 G8: every grid (0 off cs by default)
   auto &uct1_ = uct1;
   auto &uct2_ = uct2;
   auto &uct3_ = uct3;
@@ -623,6 +623,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       HLLE_GR(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
     }
 
+    // share-1104 G8: the per-face low-beta HLLD -> HLLE fallback on every grid (default
+    // 0 = off except on the cubed sphere, so bitwise unless named); same order as on cs
+    if (!use_cubed_sphere && cs_lb_beta > 0.0) {
+      member.team_barrier();
+      CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,il,iu,IVX,cs_lb_beta,
+                        wl,wr,bl,br,dl,dr,bx,flx1,e31,e21);
+      member.team_barrier();
+    }
     if (boris_on_ && !use_cubed_sphere) {
       member.team_barrier();
       BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
@@ -960,6 +968,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                     m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
           }
 
+          if (!use_cubed_sphere && cs_lb_beta > 0.0) {   // share-1104 G8 (see x1)
+            member.team_barrier();
+            CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,cs_lb_beta,
+                              wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
+            member.team_barrier();
+          }
           if (boris_on_ && !use_cubed_sphere) {
             member.team_barrier();
             BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,dl,dr,
@@ -1296,6 +1310,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                     m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);
           }
 
+          if (!use_cubed_sphere && cs_lb_beta > 0.0) {   // share-1104 G8 (see x1)
+            member.team_barrier();
+            CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,cs_lb_beta,
+                              wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
+            member.team_barrier();
+          }
           if (boris_on_ && !use_cubed_sphere) {
             member.team_barrier();
             BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,dl,dr,
