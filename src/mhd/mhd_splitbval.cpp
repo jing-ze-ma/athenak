@@ -38,65 +38,12 @@
 #endif
 
 namespace mhd {
-
-namespace {
-KOKKOS_INLINE_FUNCTION
-bool SbfSameBits(const Real a, const Real b) {
-  using U = std::conditional<sizeof(Real) == 8, unsigned long long, unsigned int>::type;
-  return Kokkos::bit_cast<U>(a) == Kokkos::bit_cast<U>(b);
-}
-}  // namespace
-
-bool MHD::SplitBvalFastOK() {
-  Mesh *pm = pmy_pack->pmesh;
-  int bad = (sbf_valid && !pm->use_polar_boundary && !pm->multilevel) ? 0 : 1;
-  if (bad == 0) {
-    auto &indcs = pm->mb_indcs;
-    const int ng = indcs.ng;
-    const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
-    const int nfp = ng + 1;
-    const bool cs = pm->use_cubed_sphere;
-    const bool td = pm->three_d;
-    const Real x2mn = pm->mesh_size.x2min, x2mx = pm->mesh_size.x2max;
-    const Real x3mn = pm->mesh_size.x3min, x3mx = pm->mesh_size.x3max;
-    auto size = pmy_pack->pmb->mb_size;
-    const Real dfl = peos->eos_data.dfloor;
-    const int nvar = nmhd + nscalars;
-    auto u_ = u0;
-    auto s_ = sbf_s;
-    const int nmb = pmy_pack->nmb_thispack;
-    const int n3 = u0.extent_int(2), n2 = u0.extent_int(3), n1 = u0.extent_int(4);
-    int nbad = 0;
-    Kokkos::parallel_reduce("sbf_check", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-        DevExeSpace(), {0, 0, 0, 0}, {nmb, n3, n2, n1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &sum) {
-      bool fp = false;
-      if (cs) {
-        fp = (size.d_view(m).x2min <= x2mn && j < js + nfp) ||
-             (size.d_view(m).x2max >= x2mx && j > je - nfp);
-        if (td) {
-          fp = fp || (size.d_view(m).x3min <= x3mn && k < ks + nfp) ||
-                     (size.d_view(m).x3max >= x3mx && k > ke - nfp);
-        }
-      }
-      for (int v = 0; v < nvar; ++v) {
-        if (v == IEN) continue;
-        const Real b = s_(m,v,k,j,i);
-        Real e = b;
-        if (v == IDN && b < dfl) {
-          if (fp) {sum++; continue;}
-          e = dfl;
-        }
-        if (!SbfSameBits(u_(m,v,k,j,i), e)) sum++;
-      }
-    }, Kokkos::Sum<int>(nbad));
-    bad = (nbad > 0) ? 1 : 0;
-  }
-#if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, &bad, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
-#endif
-  return bad == 0;
-}
+// share-1104 P6: the test and the snapshot copy are shared with Hydro
+#define SBV_CLASS MHD
+#define SBV_NVAR nmhd
+#include "hydro/splitbval_impl.hpp"
+#undef SBV_CLASS
+#undef SBV_NVAR
 
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::SplitBvalSnap
@@ -104,14 +51,7 @@ bool MHD::SplitBvalFastOK() {
 
 void MHD::SplitBvalSnap() {
   sbf_want = false;
-  if (sbf_s.extent(0) != u0.extent(0) || sbf_s.extent(1) != u0.extent(1) ||
-      sbf_s.extent(2) != u0.extent(2) || sbf_s.extent(3) != u0.extent(3) ||
-      sbf_s.extent(4) != u0.extent(4)) {
-    Kokkos::realloc(sbf_s, u0.extent(0), u0.extent(1), u0.extent(2), u0.extent(3),
-                    u0.extent(4));
-  }
-  Kokkos::deep_copy(DevExeSpace(), sbf_s, u0);
-  sbf_valid = true;
+  SbfSnapCopy(sbf_s, u0, sbf_valid);
 }
 
 }  // namespace mhd
