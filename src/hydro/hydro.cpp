@@ -476,10 +476,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
         std::string bad = "";
         if (!use_wb_x1) bad = "<hydro>/wb_x1 = true";
         if (use_wb_x2) bad = "<hydro>/wb_x2 = false (the legacy x2 path)";
-        if (pmy_pack->pmesh->use_cubed_sphere ||
-            pmy_pack->pcoord->is_general_relativistic ||
+        if (pmy_pack->pcoord->is_general_relativistic ||
             pmy_pack->pcoord->is_special_relativistic) {
-          bad = "a Cartesian or spherical-polar mesh (cs: later milestone)";
+          bad = "a Newtonian mesh";
         }
         if (pmy_pack->pmesh->one_d) bad = "a 2-D or 3-D mesh";
         if (!bad.empty()) {

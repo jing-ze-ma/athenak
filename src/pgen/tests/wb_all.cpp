@@ -37,6 +37,7 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "coordinates/cell_locations.hpp"
+#include "coordinates/cubed_sphere.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
@@ -110,10 +111,11 @@ void WbAllVel(const WbAllV &v, const Real x, const Real y, const Real z, Real &v
 
 //! the cell-centre and face coordinates of one cell, Cartesian or spherical polar
 struct WbAllG {
-  bool sp = false, threed = false;
+  bool sp = false, threed = false, cs = false;
   int is = 0, js = 0, ks = 0, nx1 = 1, nx2 = 1, nx3 = 1;
   DvceArray2D<Real> x1v, x2v, x3v, x1f, x2f, x3f;
   DualArray1D<RegionSize> size;
+  DualArray1D<int> panel;
 };
 WbAllG WbAllGeo(Mesh *pm) {
   WbAllG g;
@@ -123,7 +125,9 @@ WbAllG WbAllGeo(Mesh *pm) {
   g.is = indcs.is; g.js = indcs.js; g.ks = indcs.ks;
   g.nx1 = indcs.nx1; g.nx2 = indcs.nx2; g.nx3 = indcs.nx3;
   g.size = pmbp->pmb->mb_size;
-  if (g.sp) {
+  g.cs = pm->use_cubed_sphere;
+  if (g.cs) g.panel = pmbp->pmb->mb_panel;
+  if (g.sp || g.cs) {
     g.x1v = pmbp->pcoord->x1v; g.x2v = pmbp->pcoord->x2v; g.x3v = pmbp->pcoord->x3v;
     g.x1f = pmbp->pcoord->xx1f; g.x2f = pmbp->pcoord->xx2f; g.x3f = pmbp->pcoord->xx3f;
   }
@@ -133,6 +137,15 @@ WbAllG WbAllGeo(Mesh *pm) {
 KOKKOS_INLINE_FUNCTION
 void WbAllX(const WbAllG &g, const int c, const int m, const int k, const int j,
             const int i, Real &x, Real &y, Real &z) {
+  if (g.cs) {   // the Cartesian position (WbAllPhi then takes it as Cartesian)
+    const Real r = (c == 1) ? g.x1f(m,i) : g.x1v(m,i);
+    const Real xi = (c == 2) ? g.x2f(m,j) : g.x2v(m,j);
+    const Real et = (c == 3) ? g.x3f(m,k) : g.x3v(m,k);
+    Real q[3];
+    cubed_sphere::PanelToCart(g.panel.d_view(m), 0.25*M_PI*xi, 0.25*M_PI*et, q);
+    x = r*q[0]; y = r*q[1]; z = r*q[2];
+    return;
+  }
   if (g.sp) {
     x = (c == 1) ? g.x1f(m,i) : g.x1v(m,i);
     y = (c == 2) ? g.x2f(m,j) : g.x2v(m,j);
@@ -154,6 +167,21 @@ KOKKOS_INLINE_FUNCTION
 void WbAllAcc(const WbAllV &v, const WbAllG &g, const int m, const int k, const int j,
               const int i, Real &g1, Real &g2, Real &g3) {
   Real x, y, z, xl, yl, zl, xr, yr, zr;
+  if (g.cs) {
+    // -grad Phi by central differences in Cartesian, on (rhat, e_xi, e_eta) (covariant)
+    WbAllX(g, 0, m, k, j, i, x, y, z);
+    const Real r = sqrt(x*x + y*y + z*z), h = 1.0e-5*r;
+    const Real gx = -(WbAllPhi(v, x + h, y, z) - WbAllPhi(v, x - h, y, z))/(2.0*h);
+    const Real gy = -(WbAllPhi(v, x, y + h, z) - WbAllPhi(v, x, y - h, z))/(2.0*h);
+    const Real gz = -(WbAllPhi(v, x, y, z + h) - WbAllPhi(v, x, y, z - h))/(2.0*h);
+    Real e1[3], e2[3];
+    cubed_sphere::PanelTangents(g.panel.d_view(m), 0.25*M_PI*g.x2v(m,j),
+                                0.25*M_PI*g.x3v(m,k), e1, e2);
+    g1 = (gx*x + gy*y + gz*z)/r;
+    g2 = gx*e1[0] + gy*e1[1] + gz*e1[2];
+    g3 = gx*e2[0] + gy*e2[1] + gz*e2[2];
+    return;
+  }
   WbAllX(g, 0, m, k, j, i, x, y, z);
   WbAllX(g, 1, m, k, j, i, xl, yl, zl);
   WbAllX(g, 1, m, k, j, i+1, xr, yr, zr);
@@ -220,7 +248,7 @@ void WbAllFillRange(Mesh *pm, const int il, const int iu, const int jl, const in
 
 void ProblemGenerator::WbAll(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  if (pmbp->phydro == nullptr || pmy_mesh_->one_d) {
+  if (pmbp->phydro == nullptr || (pmy_mesh_->one_d && !pmy_mesh_->use_cubed_sphere)) {
     std::cout << "### FATAL ERROR in wb_all: needs <hydro> on a 2-D/3-D mesh" << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -254,7 +282,9 @@ void ProblemGenerator::WbAll(ParameterInput *pin, const bool restart) {
   // the reference point: the origin (Cartesian) or (r_ref, pi/2, 0) (spherical polar)
   v.phiref = v.sp ? WbAllPhiRaw(v, pin->GetOrAddReal("problem", "r_ref", 1.0), 0.5*M_PI,
                                 0.0)
-                  : WbAllPhiRaw(v, 0.0, 0.0, 0.0);
+                  : (pmy_mesh_->use_cubed_sphere
+                     ? WbAllPhiRaw(v, pin->GetOrAddReal("problem", "r_ref", 1.0), 0.0, 0.0)
+                     : WbAllPhiRaw(v, 0.0, 0.0, 0.0));
   const std::string fl = pin->GetOrAddString("problem", "flow", "none");
   v.flow = (fl.compare("shear") == 0) ? 1 : ((fl.compare("jet") == 0) ? 2 : 0);
   v.U = pin->GetOrAddReal("problem", "U", 0.0);
