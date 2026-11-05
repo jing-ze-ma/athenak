@@ -308,6 +308,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // states (MHD::CsSeamFaceStates, mhd_cs_seam.cpp), substituted on the ghost side of
   // every panel-seam face (rows is-1..ie+1) after the gnomonic face rotation
   const bool cs_shr_ = (cs_seam_mhd > 0);
+  if (wb_all) BuildWBCacheAll();   // wball-1104 (before the seam face states)
   if (cs_shr_) {CsSeamFaceStates();}
   DvceArray5D<Real> sfs2_, sfs3_;
   if (cs_shr_) {sfs2_ = pseamfs->x2f; sfs3_ = pseamfs->x3f;}
@@ -680,7 +681,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   //--------------------------------------------------------------------------------------
   // j-direction
 
-  if (wb_all) BuildWBCacheAll();   // wball-1104
   if (pmy_pack->pmesh->multi_d) {
     scr_size = (ScrArray2D<Real>::shmem_size(nvars, ncells1) +
                 ScrArray2D<Real>::shmem_size(3, ncells1) +

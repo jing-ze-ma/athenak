@@ -246,6 +246,8 @@ struct WbAllCtx {
 void WbAllBuild(WbAllCtx &c);
 void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1);
 void WbAllAmBackground(WbAllCtx &c);
+void WbAllSeamFaces(WbAllCtx &c, DvceFaceFld5D<Real> &fs, const int nvh, const int nder,
+                    const bool wrho, const int ia, const int ib);
 
 }  // namespace hydro
 #endif  // HYDRO_HYDRO_WBALL_HPP_

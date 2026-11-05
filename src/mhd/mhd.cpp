@@ -616,6 +616,21 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
           if (c3 > 1) Kokkos::realloc(wbq3, nmbw, 15, c3, c2, c1);
           Kokkos::realloc(wbw, nmbw, 3, c3, c2, c1);
           Kokkos::deep_copy(wbw, 1.0);
+          if (pin->DoesParameterExist("mhd","wb_seam") && pin->GetBoolean("mhd","wb_seam")) {
+            if (!pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->multilevel) {
+              std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                        << std::endl << "<mhd>/wb_seam needs a single-level cubed sphere"
+                        << std::endl;
+              std::exit(EXIT_FAILURE);
+            }
+            pbval_u->wb_seam = true;
+            pbval_u->wbs_phi = phicc0;
+            pbval_u->wbs_eos = peos->eos_data;
+            pbval_u->wbs_opt = (wb_option == WBOption::polytropic) ? 3 : 1;
+            pbval_u->wbs_etg = use_etotgrav;
+            pbval_u->wbs_ien = IEN;
+            pbval_u->wbs_bcc = bcc0;
+          }
           if (global_variable::my_rank == 0) {
             std::cout << "mhd: wb_dirs = all (x2/x3 dynamic well balance), wb_weight = "
                       << (wb_weight ? "true" : "false") << std::endl;

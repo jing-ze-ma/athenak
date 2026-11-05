@@ -1311,56 +1311,9 @@ void Hydro::CsSeamFaceStates() {
                          *pseamfs, mlat_, mlfi_, is, ie);
   cs_seam::CsSeamPLMFill(pmy_pack, wder, nder, nvars, IDPR, eos_.pfloor, eos_.plm_c1,
                          *pseamfs, mlat_, mlfi_, is, ie);
-  if (wb_all) {
-    // wball-1104: the edge cell's own seam face state as the sweep forms it under
-    // wb_dirs = all (WbAllPLM: the WB deviation blended with the plain PLM above by the
-    // face weight), density and energy (and the derived pressure of a general EOS)
-    auto f2 = pseamfs->x2f, f3 = pseamfs->x3f;
-    auto q_ = w0, qd_ = wder;
-    auto c2 = wbq2, c3 = wbq3, ww = wbw;
-    auto &size = pmy_pack->pmb->mb_size;
-    const bool wrho = use_wb_rho;
-    const int nvh = nvars;
-    par_for("cs_seamfs_wb2", DevExeSpace(), 0, nmb1, ks, ke, 0, 1, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int sd, const int i) {
-      const bool lo = (sd == 0);
-      if (lo && !(size.d_view(m).x2min <= -1.0 + 1.0e-12)) return;
-      if (!lo && !(size.d_view(m).x2max >= 1.0 - 1.0e-12)) return;
-      const int jc = lo ? js : je, jf = lo ? js : je+1, jn = lo ? jc - 1 : jc + 1;
-      const Real w = fmin(ww(m,1,k,jc,i), ww(m,1,k,jn,i));
-      for (int n = 0; n < 2; ++n) {
-        const int nv = (n == 0) ? IDN : IEN;
-        if (nv == IDN && !wrho) continue;
-        f2(m,nv,k,jf,i) = hydro::WbSeamBlend(q_(m,nv,k,jc-1,i), q_(m,nv,k,jc,i), q_(m,nv,k,jc+1,i), c2,
-                                (nv == IEN) ? WBVar::wb_eint : WBVar::wb_dens, m, k, jc, i,
-                                lo, w, f2(m,nv,k,jf,i));
-      }
-      if (nder > 0) {
-        f2(m,nvh+IDPR,k,jf,i) = hydro::WbSeamBlend(qd_(m,IDPR,k,jc-1,i), qd_(m,IDPR,k,jc,i),
-                                      qd_(m,IDPR,k,jc+1,i), c2, WBVar::wb_pres, m, k, jc, i,
-                                      lo, w, f2(m,nvh+IDPR,k,jf,i));
-      }
-    });
-    par_for("cs_seamfs_wb3", DevExeSpace(), 0, nmb1, 0, 1, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int sd, const int j, const int i) {
-      const bool lo = (sd == 0);
-      if (lo && !(size.d_view(m).x3min <= -1.0 + 1.0e-12)) return;
-      if (!lo && !(size.d_view(m).x3max >= 1.0 - 1.0e-12)) return;
-      const int kc = lo ? ks : ke, kf = lo ? ks : ke+1, kn = lo ? kc - 1 : kc + 1;
-      const Real w = fmin(ww(m,2,kc,j,i), ww(m,2,kn,j,i));
-      for (int n = 0; n < 2; ++n) {
-        const int nv = (n == 0) ? IDN : IEN;
-        if (nv == IDN && !wrho) continue;
-        f3(m,nv,kf,j,i) = hydro::WbSeamBlend(q_(m,nv,kc-1,j,i), q_(m,nv,kc,j,i), q_(m,nv,kc+1,j,i), c3,
-                                (nv == IEN) ? WBVar::wb_eint : WBVar::wb_dens, m, kc, j, i,
-                                lo, w, f3(m,nv,kf,j,i));
-      }
-      if (nder > 0) {
-        f3(m,nvh+IDPR,kf,j,i) = hydro::WbSeamBlend(qd_(m,IDPR,kc-1,j,i), qd_(m,IDPR,kc,j,i),
-                                      qd_(m,IDPR,kc+1,j,i), c3, WBVar::wb_pres, m, kc, j, i,
-                                      lo, w, f3(m,nvh+IDPR,kf,j,i));
-      }
-    });
+  if (wb_all) {   // wball-1104: the edge cells' own WB seam face states (shared code)
+    WbAllCtx c = WbCtx();
+    WbAllSeamFaces(c, *pseamfs, nvars, nder, use_wb_rho, is, ie);
   }
   cs_seam::CsSeamCovariant(pmy_pack, *pseamfs, IVY, 0, is, ie);
   (void) nfs;

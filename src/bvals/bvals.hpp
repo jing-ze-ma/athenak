@@ -459,6 +459,7 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   int wbs_opt = 1;             // WBAdvance branch: 1 isothermal, 3 local polytrope
   bool wbs_etg = false;        // E carries rho Phi (<hydro|mhd>/etotgrav)
   int wbs_ien = 4;             // the energy index of the exchanged state
+  DvceArray5D<Real> wbs_bcc;   // MHD: the cell field (E carries |B|^2/2); empty for hydro
   // cs_noresample (default false): this object's cross-panel ghosts are the plain signed
   // index copy of the neighbour's own cells (no along-seam resample), i.e. the mirror
   // images of this block's cells across the seam.  Set by the implicit M1 on its scratch

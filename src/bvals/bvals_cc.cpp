@@ -145,6 +145,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   const EOS_Data wbseos_ = wbs_eos;
   const int wbsopt_ = wbs_opt, wbsien_ = wbs_ien;
   const bool wbsetg_ = wbs_etg;
+  auto wbsbcc_ = wbs_bcc;
+  const bool wbsmhd_ = (wbs_bcc.extent_int(0) > 0);
   const bool ext_ = cs_ext_pass_;   // layoutbug-1103: second pass, see cs_seam_blockend
   const int ngx_ = pmy_pack->pmesh->mb_indcs.ng;
   const bool cperm_ = cs_perm_pairs;
@@ -746,6 +748,12 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
               ke = 0.5*(m1*m1 + (m2*m2 - 2.0*cc*m2*m3 + m3*m3)/(1.0 - cc*cc))/d;
               ph = wbsphi_(m,kc,jc,i);
               e = a(m,wbsien_,kc,jc,i) - ke - (wbsetg_ ? d*ph : 0.0);
+              if (wbsmhd_) {
+                const Real b1 = wbsbcc_(m,0,kc,jc,i), b2 = wbsbcc_(m,1,kc,jc,i);
+                const Real b3 = wbsbcc_(m,2,kc,jc,i);
+                ke += 0.5*(b1*b1 + b2*b2 + b3*b3);   // carried as part of E like KE
+                e -= 0.5*(b1*b1 + b2*b2 + b3*b3);
+              }
             };
             Real d, e, ke, ph;
             prim(kq, jq, d, e, ke, ph);
