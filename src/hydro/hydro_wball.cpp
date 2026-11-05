@@ -17,6 +17,7 @@
 #include "eos/eos.hpp"
 #include "hydro.hpp"
 #include "hydro_wball.hpp"
+#include "hydro_am.hpp"
 
 namespace hydro {
 
@@ -154,6 +155,17 @@ void Hydro::AddWbGravity(const Real bdt, const bool with_x1) {
     auto vol = pmy_pack->pcoord->volume;
     auto a1 = pmy_pack->pcoord->area.x1f, a2 = pmy_pack->pcoord->area.x2f;
     auto a3 = pmy_pack->pcoord->area.x3f;
+    // <hydro>/am_transport (the scalar zonal correction, hydro_am.hpp) turns the x3 flux
+    // force into -(Rbar_3/R_c)(F+ A+ - F- A-)/V (Rbar_3 the phi face's mean lever arm, R_c
+    // = x1v sin(x2v)): the x3 source takes the same factor, so the pair stays balanced
+    const bool amx3 = (pam != nullptr) && pam->am_transport;
+    if (amx3 && pam->am_vector) {
+      std::cout << "### FATAL ERROR in hydro_wball: <hydro>/wb_dirs = all on spherical "
+                << "polar with am_vector: not yet (am_transport scalar only)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    auto x1v = pmy_pack->pcoord->x1v, x1f = pmy_pack->pcoord->xx1f;
+    auto x2v = pmy_pack->pcoord->x2v, x2f = pmy_pack->pcoord->xx2f;
     par_for("wball_grav_sp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real d = w0_(m,IDN,k,j,i);
@@ -178,8 +190,18 @@ void Hydro::AddWbGravity(const Real bdt, const bool with_x1) {
         const Real wc = ww(m,2,k,j,i);
         const int kp = (k + 1 > n3 - 1) ? n3 - 1 : k + 1;
         const Real wp = fmin(wc, ww(m,2,kp,j,i)), wm = fmin(wc, ww(m,2,k-1,j,i));
-        const Real sp = wp*(c3(m,13,k,j,i) - pc) + (1.0 - wp)*(-d*(f3(m,k+1,j,i) - phc));
-        const Real sm = wm*(c3(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f3(m,k,j,i) - phc));
+        Real fam = 1.0;
+        if (amx3) {
+          const Real rl = x1f(m,i), rr = x1f(m,i+1);
+          const Real thl = x2f(m,j), thr = x2f(m,j+1);
+          const Real rc = x1v(m,i)*sin(x2v(m,j));
+          const Real r3 = (rr*rr*rr - rl*rl*rl)/3.0, r2h = 0.5*(rr*rr - rl*rl);
+          const Real rb3 = (thr > thl) ? r3*(cos(thl) - cos(thr))/(r2h*(thr - thl)) : 0.0;
+          if (rc > 0.0) fam = rb3/rc;
+        }
+        // the WB part with the am_transport factor, the analytic part plain
+        const Real sp = fam*wp*(c3(m,13,k,j,i) - pc) + (1.0 - wp)*(-d*(f3(m,k+1,j,i) - phc));
+        const Real sm = fam*wm*(c3(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f3(m,k,j,i) - phc));
         u0_(m,IM3,k,j,i) += bdt*iv*(a3(m,k+1,j,i)*sp - a3(m,k,j,i)*sm);
       }
     });
