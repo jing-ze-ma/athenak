@@ -1170,6 +1170,7 @@ class RadiationM1 {
                                 // several ranks: on-rank copy kernel + ONE message per
                                 // neighbour rank (pack / unpack kernels)
   int hm_state;                 // 0 = not built, 1 = on, -1 = not possible on this mesh
+  int impl_hdepth = 0;   // share-1104 G5: implicit_halo_depth of the halo_mpi lists (0 = ng)
   int hm_nsend, hm_nrecv;       // entries (cells) sent / received per component
   int hm_nq;                    // components the buffers are sized for
   std::vector<int> hm_rank, hm_soff, hm_slen, hm_roff, hm_rlen;  // per neighbour rank
