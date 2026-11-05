@@ -2744,6 +2744,27 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
   impl_vimp = pin->GetOrAddBoolean("rad_m1","implicit_vimp",vdef);}
+  // athpp-vstar-1105 <rad_m1>/doppler_vel = stage | vstar (rad_m1.hpp dop_vstar)
+  if (pin->DoesParameterExist("rad_m1","doppler_vel")) {
+    const std::string dv = pin->GetString("rad_m1","doppler_vel");
+    if (dv == "vstar") {
+      dop_vstar = true;
+    } else if (dv != "stage") {
+      ImplFatal("<rad_m1>/doppler_vel must be stage | vstar");
+    }
+    if (dop_vstar) {
+      if (impl_vimp && pin->DoesParameterExist("rad_m1","implicit_vimp") &&
+          global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> doppler_vel = vstar: implicit_vimp = true overridden to false"
+                  << std::endl;
+      }
+      impl_vimp = false;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> doppler_vel = vstar (athpp-vstar-1105): v-terms at the Heun "
+                  << "stage velocity before t2inc, implicit_vimp off" << std::endl;
+      }
+    }
+  }
   {  // vphi-1021 (USER defaults group 1): DEFAULT true; inert unless a pgen marks hold_m
     impl_hold = pin->GetOrAddBoolean("rad_m1","implicit_hold",true);
     if (impl_hold) {
@@ -12810,6 +12831,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // STAGE CS2 (C3): on the cubed sphere the hydro momentum is COVARIANT on the panel
     // basis, so the kinetic energy is 0.5 m_a v^a with the metric (gnomonic_raisevel.hpp)
     const bool csk = cs_geom;
+    const bool dvs = dop_vstar;   // athpp-vstar-1105
     auto ccl = pmy_pack->pcoord->cos_cell;
     par_for_lb("m1_impl_i1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -12827,6 +12849,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (mhd) egrv += emag_(m,k,j,i);
       Real eg = uh(m,IEN,k,j,i) - ekin - egrv;
       iw_(m,M1_IW_TP,k,j,i) = eos.Temperature(dd, fmax(eg, 1.0e-300));
+      // athpp-vstar-1105: the Heun stage momentum before the old-vector increment
+      const Real mv1 = uh(m,IM1,k,j,i), mv2 = uh(m,IM2,k,j,i), mv3 = uh(m,IM3,k,j,i);
       if (t2st && !(hoi_ && hmi_(m,k,j,i) > 0.0)) {
         // the start T is set; now the gas becomes the OLD vector of the stage solve
         uh(m,IM1,k,j,i) += t2i_(m,M1_T2_M1,k,j,i);
@@ -12848,17 +12872,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         eg = uh(m,IEN,k,j,i) - ekin - egrv;
       }
       iw_(m,M1_IW_EGN,k,j,i) = eg;
-      iw_(m,M1_IW_V1,k,j,i) = uh(m,IM1,k,j,i)*idd;
+      const Real wv1 = dvs ? mv1 : uh(m,IM1,k,j,i);
+      const Real wv2 = dvs ? mv2 : uh(m,IM2,k,j,i);
+      const Real wv3 = dvs ? mv3 : uh(m,IM3,k,j,i);
+      iw_(m,M1_IW_V1,k,j,i) = wv1*idd;
       if (trans) {
-        iw_(m,M1_IW_V2,k,j,i) = uh(m,IM2,k,j,i)*idd;
-        iw_(m,M1_IW_V3,k,j,i) = uh(m,IM3,k,j,i)*idd;
+        iw_(m,M1_IW_V2,k,j,i) = wv2*idd;
+        iw_(m,M1_IW_V3,k,j,i) = wv3*idd;
       }
       if (csk && trans) {
         // STAGE CS2 (C3): the transverse V of the work array are the FACE-NORMAL
         // velocities the face fluxes advect with, v.n_xi = s v^xi, v.n_eta = s v^eta
         // (v^a = g^ab m_b/rho contravariant, s = sin_cell)
         const Real c = ccl(m,k,j), s2 = 1.0 - c*c, sn = sqrt(s2);
-        const Real m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
+        const Real m2 = wv2, m3 = wv3;
         iw_(m,M1_IW_V2,k,j,i) = sn*(m2 - c*m3)*idd/s2;
         iw_(m,M1_IW_V3,k,j,i) = sn*(m3 - c*m2)*idd/s2;
       }

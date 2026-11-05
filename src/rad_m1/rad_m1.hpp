@@ -1849,6 +1849,15 @@ class RadiationM1 {
   // <rad_m1>/implicit_vimp (tests_m1/runs_3v_vimplicit): the gas velocity of the
   // enthalpy flux implicit through the radiative force of the solve (Newton form)
   bool impl_vimp;               // the switch (default false: nothing below is touched)
+  // athpp-vstar-1105 <rad_m1>/doppler_vel (read only when named; default stage = the
+  // behaviour before, bitwise).  vstar: the velocity-dependent terms of the implicit solve
+  // (the work-array V, hence the enthalpy coefficient a = v(1+chi), E0 - E, g0 and the
+  // wall face) take the Heun stage state's velocity BEFORE the hesdirk2 old-vector
+  // increment t2inc (which carries the previous radiative slope K1) and without the
+  // implicit_vimp kick dv: the post-hydro, pre-radiation-kick velocity v* that Athena++
+  // GetTgasVel hands its solve.  Forces implicit_vimp = false.  Diagnostic / Athena++
+  // reproduction only (the toy athpp_toy_1104 shows it makes an O(dt) wall drain).
+  bool dop_vstar = false;
   // pgrst-vimp-1021 <rad_m1>/implicit_vimp_ewf (read only when named; default false =
   // bitwise): the lagged enthalpy-work term of a face, E_f (1 + D_f) dv_f with dv_f the
   // face mean of the two cells' predicted kicks, is taken as
