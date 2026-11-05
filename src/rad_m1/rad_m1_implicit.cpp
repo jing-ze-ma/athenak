@@ -2744,6 +2744,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
   impl_vimp = pin->GetOrAddBoolean("rad_m1","implicit_vimp",vdef);}
+  if (pin->DoesParameterExist("rad_m1","doppler_vel_dbg")) {
+    dop_dbg = pin->GetInteger("rad_m1","doppler_vel_dbg");
+  }
   // athpp-vstar-1105 <rad_m1>/doppler_vel = stage | vstar (rad_m1.hpp dop_vstar)
   if (pin->DoesParameterExist("rad_m1","doppler_vel")) {
     const std::string dv = pin->GetString("rad_m1","doppler_vel");
@@ -12832,6 +12835,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // basis, so the kinetic energy is 0.5 m_a v^a with the metric (gnomonic_raisevel.hpp)
     const bool csk = cs_geom;
     const bool dvs = dop_vstar;   // athpp-vstar-1105
+    const bool dpr = (dop_dbg > 0) && ((dop_dbg_cnt++ % dop_dbg) == 0);
+    auto un_ = flr.u1;   // U^n of the Heun step (diagnostic only)
+    const int dts2 = t2_solve;
+    const Real ddt = dt;
     auto ccl = pmy_pack->pcoord->cos_cell;
     par_for_lb("m1_impl_i1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -12876,6 +12883,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const Real wv2 = dvs ? mv2 : uh(m,IM2,k,j,i);
       const Real wv3 = dvs ? mv3 : uh(m,IM3,k,j,i);
       iw_(m,M1_IW_V1,k,j,i) = wv1*idd;
+      if (dpr && m == 0 && k == ks && j == js && i <= is + 2) {
+        printf("DOPV t2s %d dt %.3e i %d v_n %.5e v_stage %.5e v_stage+t2inc %.5e V_used %.5e\n",
+               dts2, ddt, i - is, un_(m,IM1,k,j,i)/fmax(un_(m,IDN,k,j,i), 1.0e-300), mv1*idd,
+               uh(m,IM1,k,j,i)*idd, wv1*idd);
+      }
       if (trans) {
         iw_(m,M1_IW_V2,k,j,i) = wv2*idd;
         iw_(m,M1_IW_V3,k,j,i) = wv3*idd;
