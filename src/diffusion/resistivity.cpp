@@ -113,7 +113,13 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     // solution independent of the output cadence).  The values are recorded (GetOrAdd) for
     // the run's restarts; a restart whose input lacks a key keeps the old default (off /
     // outputs); an explicit key always wins.
-    if (use_rkg_sts && lean_ok) {
+    // share-1104 G2 (USER 11-04 "g2 should also apply on cartesian"): the Strang/fuse/
+    // sync code (driver.cpp, resistivity_rkg_tasks.cpp) has no geometry test, so the
+    // defaults apply on ANY single-level mesh (cubed sphere, spherical polar, Cartesian),
+    // not only where rkg_lean is possible.  What the code truly needs: no mesh refinement
+    // (rkg_strang_fuse FATALs with AMR) and no <rad_m1> (rkg_strang FATALs with it).
+    const bool strang_ok = !pp->pmesh->multilevel && !pin->DoesBlockExist("rad_m1");
+    if (use_rkg_sts && strang_ok) {
       const char *ks[3] = {"rkg_strang", "rkg_strang_fuse", "rkg_fuse_sync"};
       for (int q = 0; q < 3; ++q) {
         if (pin->DoesParameterExist("mhd", ks[q])) continue;
@@ -129,7 +135,7 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
             pin->GetOrAddString("mhd", ks[q], "none");
           }
           recipe::Log(std::string("<mhd>/") + ks[q] + (q < 2 ? " = true" : " = none") +
-                      " (default with STS on a uniform cubed sphere)");
+                      " (default with STS on a single-level mesh)");
         } else {
           recipe::Log(std::string("<mhd>/") + ks[q] + (q < 2 ? " = false" : " = outputs")
                       + " (" + (recipe::GetMode(pin) == recipe::Mode::none ? "recipe none"
