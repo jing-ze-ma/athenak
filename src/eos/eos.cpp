@@ -451,6 +451,21 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   // lowest temperature (in BuildGeneralEOS, once the table exists and its range is
   // known), because a tfloor below the table can never fire.
   eos_data.efloor_as_tfloor = pin->GetOrAddBoolean(bk,"efloor_as_tfloor",false);
+  // efloor_from_ekin and efloor_as_tfloor are implemented only in the HYDRO general-EOS
+  // inversion (general_c2p_hyd.hpp); general_c2p_mhd.hpp never reads them, so in <mhd>
+  // they would be silent no-ops (efloor_as_tfloor would only raise tfloor).  Refuse them
+  // there, as dfloor_keep_velocity/temperature above.  eos_floor_consistent is NOT
+  // refused: it acts inside the shared EOS_Data functions (SubFloorState,
+  // EnergyBelowFloor, ThermoAt, EnergyFromTemperature) that the MHD inversion calls.
+  if ((eos_data.efloor_from_ekin || eos_data.efloor_as_tfloor) &&
+      bk.compare("hydro") != 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<" << bk << ">/"
+              << (eos_data.efloor_from_ekin ? "efloor_from_ekin" : "efloor_as_tfloor")
+              << " is implemented only for hydrodynamics (general_c2p_hyd.hpp)"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   eos_data.sfloor = pin->GetOrAddReal(bk,"sfloor",(FLT_MIN));
   // See the note on defer_cons_floors in eos.hpp.  Set for the cubed sphere, where
   // GnomonicEquiangleRaiseVel{,MHD} re-applies the floors to the corrected energy.

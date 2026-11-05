@@ -820,7 +820,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                                               pmy_pack->pmesh->use_polar_boundary);
     // On the cubed sphere the scheme is UNSTABLE below beta ~ 0.05 and the fallback is
     // what stops it, so this defaults ON there -- there is no correct answer below that
-    // beta to preserve.  It is a no-op on every other grid.
+    // beta to preserve.  Off (0) by default on every other grid; share-1104 G8: a named
+    // value > 0 acts there too (same face test and HLLE flux, mhd_fluxes.cpp).
     cs_lowbeta_fallback = pin->GetOrAddReal("mhd","cs_lowbeta_fallback",
                      (pmy_pack->pmesh->use_cubed_sphere ? 0.5 : 0.0));
     {

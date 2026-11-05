@@ -35,19 +35,24 @@ void PgenEarlyDefaults(ParameterInput *pin) {
   const bool fluid = pin->DoesBlockExist(fb);
   const bool cs = named("mesh", "use_cubed_sphere") &&
                   pin->GetBoolean("mesh", "use_cubed_sphere");
+  const bool sp = named("mesh", "use_spherical_polar") &&
+                  pin->GetBoolean("mesh", "use_spherical_polar");
+  const std::string geo = cs ? "cs" : (sp ? "sp" : "Cartesian");
   // <time>/dt_min = 1e-3 s (the abort floor of every dhj production deck; old default 0)
   if (!named("time", "dt_min")) {
     pin->GetOrAddReal("time", "dt_min", 1.0e-3);
     Log("<time>/dt_min = 1e-3 (default on a fresh dhj start)");
   }
   // <fluid>/wellbalance_dynamic = true + wb_x1 = true + wb_option = polytropic (the x1
-  // well-balanced reconstruction of every dhj production deck; old default off) on the
-  // cubed sphere; each key only when not named, wb_option only when the scheme ends on
-  if (fluid && cs) {
+  // well-balanced reconstruction of every dhj production deck; old default off) on every
+  // dhj mesh (share-1104 G4: the K&M x1 scheme has no geometry restriction -- cubed
+  // sphere, spherical polar, and the Cartesian plane-parallel box with constant g, where
+  // x1 is the height); each key only when not named, wb_option only when the scheme ends on
+  if (fluid) {
     for (const char *k : {"wellbalance_dynamic", "wb_x1"}) {
       if (named(fb, k)) continue;
       pin->GetOrAddBoolean(fb, k, true);
-      Log("<" + fb + ">/" + k + " = true (default on a fresh cs dhj start)");
+      Log("<" + fb + ">/" + k + " = true (default on a fresh " + geo + " dhj start)");
     }
     if (pin->GetBoolean(fb, "wellbalance_dynamic") && !named(fb, "wb_option")) {
       pin->GetOrAddString(fb, "wb_option", "polytropic");
@@ -56,14 +61,35 @@ void PgenEarlyDefaults(ParameterInput *pin) {
   }
   // <fluid>/am_vector = true with problem/am_transport = false (the angular-momentum
   // vector form + spin reservoir, as every dhj production deck; the pgen correction must
-  // be off with it, YieldToPgen FATAL otherwise).  Only as the PAIR, on the cubed sphere,
-  // when neither the fluid's AM keys nor problem/am_transport are named.
-  if (fluid && cs && !named(fb, "am_vector") && !named(fb, "am_transport") &&
+  // be off with it, YieldToPgen FATAL otherwise).  Only as the PAIR, on the cubed sphere
+  // or the spherical-polar mesh (share-1104 G4; AmModule's own exclusions: 1-D sp and
+  // 2-D sp with sp_cart_polar_momentum; no angular momentum on the Cartesian box), when
+  // neither the fluid's AM keys nor problem/am_transport are named.
+  if (fluid && !named(fb, "am_vector") && !named(fb, "am_transport") &&
       !named(fb, "frame_omega") && !named("problem", "am_transport")) {
-    pin->GetOrAddBoolean(fb, "am_vector", true);
-    pin->GetOrAddBoolean("problem", "am_transport", false);
-    Log("<" + fb + ">/am_vector = true + problem/am_transport = false (default pair on a "
-        "fresh cs dhj start)");
+    std::string why;
+    if (!(cs || sp)) {
+      why = "Cartesian mesh";
+    } else if (sp) {
+      const int nx2 = named("mesh", "nx2") ? pin->GetInteger("mesh", "nx2") : 1;
+      const int nx3 = named("mesh", "nx3") ? pin->GetInteger("mesh", "nx3") : 1;
+      auto on = [pin, &named, &fb](const char *k) {
+        return named(fb, k) && pin->GetBoolean(fb, k);
+      };
+      if (nx2 < 2) {
+        why = "1-D spherical polar";
+      } else if (nx3 < 2 && (on("sp_cart_polar_momentum") || on("sp_cart_all_momentum"))) {
+        why = "2-D spherical polar with sp_cart_polar_momentum";
+      }
+    }
+    if (why.empty()) {
+      pin->GetOrAddBoolean(fb, "am_vector", true);
+      pin->GetOrAddBoolean("problem", "am_transport", false);
+      Log("<" + fb + ">/am_vector = true + problem/am_transport = false (default pair on a "
+          "fresh " + geo + " dhj start)");
+    } else {
+      Log("<" + fb + ">/am_vector = false (default pair skipped: " + why + ")");
+    }
   }
   // <mhd>/max_eta = 1e15 cm^2/s with ohmic_resistivity = eos (a required key until now;
   // user 10-03 test 1e13/1e14/1e15, every dhj MHD production deck)
@@ -96,8 +122,6 @@ void PgenEarlyDefaults(ParameterInput *pin) {
   // only there).  Not supported elsewhere (the keys FATAL off the non-uniform WB PLM):
   // then nothing is added and the reason is logged.  Each key only when not named.
   {
-    const bool sp = named("mesh", "use_spherical_polar") &&
-                    pin->GetBoolean("mesh", "use_spherical_polar");
     const bool wb = fluid && named(fb, "wellbalance_dynamic") &&
                     pin->GetBoolean(fb, "wellbalance_dynamic") && named(fb, "wb_x1") &&
                     pin->GetBoolean(fb, "wb_x1");
