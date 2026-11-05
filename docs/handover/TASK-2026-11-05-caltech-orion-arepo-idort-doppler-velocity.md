@@ -24,3 +24,13 @@
 4. Report what you find (code path, velocity used, Lambda estimate, test result) in a NOTE on this branch.
 
 Context: Caltech's local Arepo2 copy (arepo2_gpu, 10-24) is being checked in parallel; Orion's current IDORT may differ, so please check your version.
+
+## Addendum (Caltech code read of the local 10-24 copies arepo2 6cef4d1d6 / arepo2_opt c663a54c5 / arepo2_nltree 31a5b39ff)
+- Default `IdortUseVelocity 3` (module_idort.h:108, module_idort.cc:68; fix 7a7dc2c61 on 10-16) uses v^n = `SphP.IdortVel0`, stored in
+  onFindTimestepsBeforeGravity (module_idort.cc:1277-1280), for all O(v/c) terms (beta at module_idort.cc:1362-1369). So no Athena++ error by default.
+  The work term v.dp uses the post-hydro momentum, which is the correct energy bookkeeping.
+- Error still possible: (i) mode 3 FALLS BACK to P.Vel = v* when none of SELFGRAVITY / EXTERNALGRAVITY / EXACT_GRAVITY_FOR_PARTICLE_TYPE
+  is compiled (module_idort.cc:1215-1229): suggest using IdortVel0 unconditionally (one line); (ii) param files with IdortUseVelocity 1 or 2
+  (mode 2 = exactly the Athena++ case). Lambda in a deep RSG/He-giant envelope ~ 3e2 if it happens.
+- Please confirm for the PRODUCTION runs (RSG g25 etc.): the Config.sh gravity flag and the IdortUseVelocity value, and that Orion's current
+  IDORT still has mode 3 as above.
