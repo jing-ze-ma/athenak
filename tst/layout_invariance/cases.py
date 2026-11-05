@@ -360,14 +360,22 @@ CASES += [
 # perturb he_gm: dt may be set by the vet_gd rotation alignment, not the cfl.
 _RSG = dict(bin='he', deck='he_rsg.athinput', ncyc=3, timeout=14400, perturb='problem/he_gm',
             vars=['hydro_u'],
-            layouts=[L('b1x1_np6', (548, 32, 32), 6), L('b2x2_np6', (548, 16, 16), 6),
-                     L('b2x2flat_np6', (548, 16, 16), 6,
-                       set={'hydro/merge_lat_blockend': 'flat'})])
+            layouts=[L('b1x1_np6', (548, 32, 32), 6), L('b2x2_np6', (548, 16, 16), 6)])
+_RSGS = {'mesh/nx2': 32, 'mesh/nx3': 32, 'mesh/cs_seam_blockend': 'extend',
+         'hydro/merge_lat_blockend': 'exchange'}
+# share-1104 (11-05): split.  rsg_mlat_x = the PRODUCTION check (merge_lat_blockend =
+# exchange, RSG E since 11-03); rsg_mlat_flat = the old flat rule, an expected FAIL (narrow
+# merge groups take a zero slope at internal block ends: 1e-4..1e-3 in mom at i 1-5).
+# Known on 6a11ee57e (share_1104/RSG_MLAT_LAYOUT.md): the exchange layouts differ ~100x the
+# 1-ulp reference in the front band i 317-323 only, seeded by a layout-dependent IC (whole
+# shells at c0) plus a one-time jump at the block-end corners in cycle 1, flat afterwards.
 CASES += [
     dict(_RSG, name='rsg_mlat_x', what='RSG E deck C32, merge_lat_blockend = exchange '
-         '(b2x2flat = the production rule; the 1x1 reference is the same for both)',
-         set={'mesh/nx2': 32, 'mesh/nx3': 32, 'mesh/cs_seam_blockend': 'extend',
-              'hydro/merge_lat_blockend': 'exchange'}),
+         '(the production rule)', set=dict(_RSGS)),
+    dict(_RSG, name='rsg_mlat_flat', what='RSG E deck C32, merge_lat_blockend = flat (old rule)',
+         expect='FAIL', set=dict(_RSGS),
+         layouts=[L('b1x1_np6', (548, 32, 32), 6),
+                  L('b2x2flat_np6', (548, 16, 16), 6, set={'hydro/merge_lat_blockend': 'flat'})]),
 ]
 CASES += [
     dict(_SPR, name='sp_res_ohm_nopolavg', what='sp Ohmic, use_polar_average_eresist = false',
