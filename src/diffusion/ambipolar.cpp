@@ -144,7 +144,7 @@ void Resistivity::AddEMFAmbipolar(const DvceFaceFld4D<Real> &b0,
   const bool two_d = pmy_pack->pmesh->two_d;
   const bool three_d = pmy_pack->pmesh->three_d;
   const bool sph = pmy_pack->pmesh->use_spherical_polar;
-  const auto geom = MakeCurrentDensityGeom(pmy_pack);
+  const auto geom = MakeCurrentDensityGeom(pmy_pack, sp_resist_x1_centred);
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &mb_bcs_ = pmy_pack->pmb->mb_bcs;
   auto &x2v_ = pmy_pack->pcoord->x2v;

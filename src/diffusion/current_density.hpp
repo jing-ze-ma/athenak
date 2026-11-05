@@ -10,6 +10,8 @@
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
+#include "coordinates/coordinates.hpp"
+#include "diffusion/radial_face_weights.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \struct CurrentDensityGeom
@@ -34,6 +36,14 @@ struct CurrentDensityGeom {
   bool three_d;     // nx3 > 1: the x3-derivative terms of J1 and J2 exist
   DvceArray4D<Real> area1, area2, area3;  // Coordinates::areaedge.x{1,2,3}e
   DvceArray4D<Real> dx1, dx2, dx3;        // Coordinates::dxface.x{1,2,3}f
+  // share-1104 G9 <mhd>/sp_resist_x1_centred (spherical polar, stretched r): the radial
+  // difference of the J2/J3 dual loops taken AT the x1 face with the cubed sphere's
+  // RadialFaceWeights (resistivity_gnomonic.cpp), for the faces is..ie+1; false = the
+  // two-point loop bit for bit
+  bool x1c = false;
+  int is = 0, ie = 0;
+  DvceArray2D<Real> rc, rf;               // Coordinates::x1v, xx1f
+  DualArray2D<BoundaryFlag> bcs;          // MeshBlock::mb_bcs
 };
 
 //----------------------------------------------------------------------------------------
@@ -41,7 +51,8 @@ struct CurrentDensityGeom {
 //  \brief Host-side gather of everything CurrentDensity() needs. Call this OUTSIDE any
 //  par_for, then capture the result by value.
 
-inline CurrentDensityGeom MakeCurrentDensityGeom(MeshBlockPack *pmy_pack) {
+inline CurrentDensityGeom MakeCurrentDensityGeom(MeshBlockPack *pmy_pack,
+                                                 const bool sp_x1c = false) {
   CurrentDensityGeom geom;
   geom.use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   // Mesh::two_d is EXCLUSIVE (nx2 > 1 and nx3 == 1), so a 3D run has two_d == false.
@@ -58,6 +69,12 @@ inline CurrentDensityGeom MakeCurrentDensityGeom(MeshBlockPack *pmy_pack) {
   geom.dx1 = pmy_pack->pcoord->dxface.x1f;
   geom.dx2 = pmy_pack->pcoord->dxface.x2f;
   geom.dx3 = pmy_pack->pcoord->dxface.x3f;
+  geom.x1c = sp_x1c && geom.use_spherical_polar;
+  geom.is = pmy_pack->pmesh->mb_indcs.is;
+  geom.ie = pmy_pack->pmesh->mb_indcs.ie;
+  geom.rc = pmy_pack->pcoord->x1v;
+  geom.rf = pmy_pack->pcoord->xx1f;
+  geom.bcs = pmy_pack->pmb->mb_bcs;
   return geom;
 }
 
@@ -117,11 +134,42 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
   const auto &dx1 = geom.dx1;
   const auto &dx2 = geom.dx2;
   const auto &dx3 = geom.dx3;
+  // share-1104 G9: the face-centred radial derivative (geom.x1c) on faces is..ie+1;
+  // rsc renormalises the loop from its mean radius to r_l (as res_cs_j2c/j3c)
+  const bool x1c = geom.x1c;
+  auto fw = [&](const int i, Real w[4], Real &rsc) {
+    if (!x1c || i < geom.is || i > geom.ie+1) return false;
+    int sd = 0;
+    if (i == geom.is && geom.bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::block) {
+      sd = 1;
+    }
+    if (i == geom.ie+1 &&
+        geom.bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::block) {
+      sd = -1;
+    }
+    const auto &rc = geom.rc;
+    RadialFaceWeights(rc(m,i-2), rc(m,i-1), rc(m,i), rc(m,i+1), geom.rf(m,i), sd, w);
+    rsc = 0.5*(rc(m,i) + rc(m,i-1))/geom.rf(m,i);
+    return true;
+  };
   if (use_spherical_polar) {
       par_for_inner(member, il, iu, [&](const int i) {
         j1(i) = 0.0;
-        j2(i) = -(dx3(m,k,j,i)*b.x3f(m,k,j,i) - dx3(m,k,j,i-1)*b.x3f(m,k,j,i-1))/area2(m,k,j,i);
-        j3(i) =  (dx2(m,k,j,i)*b.x2f(m,k,j,i) - dx2(m,k,j,i-1)*b.x2f(m,k,j,i-1))/area3(m,k,j,i);
+        Real w[4], rsc;
+        if (fw(i, w, rsc)) {
+          Real d3 = 0.0, d2 = 0.0;
+          for (int s=0; s<4; ++s) {
+            if (w[s] != 0.0) {
+              d3 += w[s]*dx3(m,k,j,i-2+s)*b.x3f(m,k,j,i-2+s);
+              d2 += w[s]*dx2(m,k,j,i-2+s)*b.x2f(m,k,j,i-2+s);
+            }
+          }
+          j2(i) = -rsc*d3/area2(m,k,j,i);
+          j3(i) =  rsc*d2/area3(m,k,j,i);
+        } else {
+          j2(i) = -(dx3(m,k,j,i)*b.x3f(m,k,j,i) - dx3(m,k,j,i-1)*b.x3f(m,k,j,i-1))/area2(m,k,j,i);
+          j3(i) =  (dx2(m,k,j,i)*b.x2f(m,k,j,i) - dx2(m,k,j,i-1)*b.x2f(m,k,j,i-1))/area3(m,k,j,i);
+        }
       });
       member.team_barrier();
 
@@ -135,7 +183,13 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
             j1(i) += (dx3(m,k,j,i)*b.x3f(m,k,j,i)
                       - dx3(m,k,j-1,i)*b.x3f(m,k,j-1,i))/area1(m,k,j,i);
           }
-          j3(i) -= (dx1(m,k,j,i)*b.x1f(m,k,j,i) - dx1(m,k,j-1,i)*b.x1f(m,k,j-1,i))/area3(m,k,j,i);
+          Real w[4], rsc = 1.0;
+          if (fw(i, w, rsc)) {
+            j3(i) -= rsc*(dx1(m,k,j,i)*b.x1f(m,k,j,i)
+                         - dx1(m,k,j-1,i)*b.x1f(m,k,j-1,i))/area3(m,k,j,i);
+          } else {
+            j3(i) -= (dx1(m,k,j,i)*b.x1f(m,k,j,i) - dx1(m,k,j-1,i)*b.x1f(m,k,j-1,i))/area3(m,k,j,i);
+          }
         });
         member.team_barrier();
       }
@@ -157,7 +211,13 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
             j1(i) -= (dx2(m,k,j,i)*b.x2f(m,k,j,i)
                       - dx2(m,k-1,j,i)*b.x2f(m,k-1,j,i))/area1(m,k,j,i);
           }
-          j2(i) += (dx1(m,k,j,i)*b.x1f(m,k,j,i) - dx1(m,k-1,j,i)*b.x1f(m,k-1,j,i))/area2(m,k,j,i);
+          Real w[4], rsc = 1.0;
+          if (fw(i, w, rsc)) {
+            j2(i) += rsc*(dx1(m,k,j,i)*b.x1f(m,k,j,i)
+                          - dx1(m,k-1,j,i)*b.x1f(m,k-1,j,i))/area2(m,k,j,i);
+          } else {
+            j2(i) += (dx1(m,k,j,i)*b.x1f(m,k,j,i) - dx1(m,k-1,j,i)*b.x1f(m,k-1,j,i))/area2(m,k,j,i);
+          }
         });
         member.team_barrier();
       }
