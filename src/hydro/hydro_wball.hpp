@@ -128,6 +128,23 @@ void WbAllPLMDer(TeamMember_t const &member, const int dir, const int m, const i
   }
 }
 
+//! the cs shared-seam face state of an edge cell (Hydro::CsSeamFaceStates under
+//! wb_dirs = all): the WB deviation face value (lo: the -1/2 face, else +1/2) blended with
+//! the plain one by the face weight w, as WbAllPLM forms it in the sweep
+KOKKOS_INLINE_FUNCTION
+Real WbSeamBlend(const Real qm, const Real qc, const Real qp, const DvceArray5D<Real> &c,
+                 const int var, const int m, const int k, const int j, const int i,
+                 const bool lo, const Real w, const Real plain) {
+  Real b_m, b_mh, b_c, b_ph, b_p;
+  WBReadCache(c, var, m, k, j, i, b_m, b_mh, b_c, b_ph, b_p);
+  Real lw, rw;
+  PLM(qm - b_m, qc - b_c, qp - b_p, lw, rw);
+  lw += b_ph; rw += b_mh;
+  Real qw = lo ? rw : lw;
+  if (lw < 0.0 || rw < 0.0) qw = plain;
+  return (w >= 1.0) ? qw : w*qw + (1.0 - w)*plain;
+}
+
 //! uniform grids (Cartesian, cs panel coordinates): as WbAllBlendGrid with the uniform PLM
 //! (the plain faces of any reconstruction already in ql_p1 / qr)
 KOKKOS_INLINE_FUNCTION
