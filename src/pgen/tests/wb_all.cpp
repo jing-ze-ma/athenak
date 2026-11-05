@@ -52,14 +52,21 @@ struct WbAllV {
   Real phiref = 0.0;        // Phi at the reference point (0, 0, 0)
   int flow = 0;             // 0 none, 1 shear, 2 jet
   Real U = 0.0, s0 = 0.0, delta = 0.1;
+  Real om = 0.0;            // <problem>/omega: + the centrifugal -om^2 (x^2 + y^2)/2
+  bool sp = false;          // spherical polar: (x1, x2, x3) = (r, theta, phi)
 };
 WbAllV wv_;
 
 KOKKOS_INLINE_FUNCTION
-Real WbAllPhiRaw(const WbAllV &v, const Real x, const Real y, const Real z) {
-  if (v.phi == 0) return -(v.gx*x + v.gy*y + v.gz*z);
+Real WbAllPhiRaw(const WbAllV &v, const Real x1, const Real x2, const Real x3) {
+  Real x = x1, y = x2, z = x3;
+  if (v.sp) {
+    x = x1*sin(x2)*cos(x3); y = x1*sin(x2)*sin(x3); z = x1*cos(x2);
+  }
+  const Real cf = -0.5*v.om*v.om*(x*x + y*y);
+  if (v.phi == 0) return -(v.gx*x + v.gy*y + v.gz*z) + cf;
   const Real X = x - v.x0, Y = y - v.y0, Z = z - v.z0;
-  return -v.gm/sqrt(X*X + Y*Y + Z*Z + v.soft*v.soft) - 0.5*v.kt*(2.0*X*X - Y*Y - Z*Z);
+  return -v.gm/sqrt(X*X + Y*Y + Z*Z + v.soft*v.soft) - 0.5*v.kt*(2.0*X*X - Y*Y - Z*Z) + cf;
 }
 KOKKOS_INLINE_FUNCTION
 Real WbAllPhi(const WbAllV &v, const Real x, const Real y, const Real z) {
@@ -86,7 +93,7 @@ KOKKOS_INLINE_FUNCTION
 void WbAllVel(const WbAllV &v, const Real x, const Real y, const Real z, Real &v1,
               Real &v2, Real &v3) {
   v1 = 0.0; v2 = 0.0; v3 = 0.0;
-  if (v.flow == 0 || v.phi != 0) return;
+  if (v.flow == 0 || v.phi != 0 || v.sp) return;
   const Real gn = sqrt(v.gx*v.gx + v.gy*v.gy + v.gz*v.gz);
   const Real nx = v.gx/gn, ny = v.gy/gn, nz = v.gz/gn;
   const Real s = nx*x + ny*y + nz*z;
@@ -98,6 +105,69 @@ void WbAllVel(const WbAllV &v, const Real x, const Real y, const Real z, Real &v
   if (tn < 1.0e-12) {tx = 1.0; ty = 0.0;} else {tx /= tn; ty /= tn;}
   (void) nz;
   v1 = u*tx; v2 = u*ty; v3 = u*tz;
+}
+
+
+//! the cell-centre and face coordinates of one cell, Cartesian or spherical polar
+struct WbAllG {
+  bool sp = false, threed = false;
+  int is = 0, js = 0, ks = 0, nx1 = 1, nx2 = 1, nx3 = 1;
+  DvceArray2D<Real> x1v, x2v, x3v, x1f, x2f, x3f;
+  DualArray1D<RegionSize> size;
+};
+WbAllG WbAllGeo(Mesh *pm) {
+  WbAllG g;
+  auto *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  g.sp = pm->use_spherical_polar; g.threed = pm->three_d;
+  g.is = indcs.is; g.js = indcs.js; g.ks = indcs.ks;
+  g.nx1 = indcs.nx1; g.nx2 = indcs.nx2; g.nx3 = indcs.nx3;
+  g.size = pmbp->pmb->mb_size;
+  if (g.sp) {
+    g.x1v = pmbp->pcoord->x1v; g.x2v = pmbp->pcoord->x2v; g.x3v = pmbp->pcoord->x3v;
+    g.x1f = pmbp->pcoord->xx1f; g.x2f = pmbp->pcoord->xx2f; g.x3f = pmbp->pcoord->xx3f;
+  }
+  return g;
+}
+//! centre (c = 0) or left face (c = 1, 2, 3: of direction c) coordinates
+KOKKOS_INLINE_FUNCTION
+void WbAllX(const WbAllG &g, const int c, const int m, const int k, const int j,
+            const int i, Real &x, Real &y, Real &z) {
+  if (g.sp) {
+    x = (c == 1) ? g.x1f(m,i) : g.x1v(m,i);
+    y = (c == 2) ? g.x2f(m,j) : g.x2v(m,j);
+    z = (c == 3) ? g.x3f(m,k) : g.x3v(m,k);
+    return;
+  }
+  const RegionSize &sz = g.size.d_view(m);
+  x = (c == 1) ? LeftEdgeX(i - g.is, g.nx1, sz.x1min, sz.x1max)
+               : CellCenterX(i - g.is, g.nx1, sz.x1min, sz.x1max);
+  y = (c == 2) ? LeftEdgeX(j - g.js, g.nx2, sz.x2min, sz.x2max)
+               : CellCenterX(j - g.js, g.nx2, sz.x2min, sz.x2max);
+  if (!g.threed) {z = 0.0; return;}
+  z = (c == 3) ? LeftEdgeX(k - g.ks, g.nx3, sz.x3min, sz.x3max)
+               : CellCenterX(k - g.ks, g.nx3, sz.x3min, sz.x3max);
+}
+//! the plain central acceleration (orthonormal components) at a cell centre from the
+//! potential at the face centres
+KOKKOS_INLINE_FUNCTION
+void WbAllAcc(const WbAllV &v, const WbAllG &g, const int m, const int k, const int j,
+              const int i, Real &g1, Real &g2, Real &g3) {
+  Real x, y, z, xl, yl, zl, xr, yr, zr;
+  WbAllX(g, 0, m, k, j, i, x, y, z);
+  WbAllX(g, 1, m, k, j, i, xl, yl, zl);
+  WbAllX(g, 1, m, k, j, i+1, xr, yr, zr);
+  g1 = -(WbAllPhi(v, xr, y, z) - WbAllPhi(v, xl, y, z))/(xr - xl);
+  WbAllX(g, 2, m, k, j, i, xl, yl, zl);
+  WbAllX(g, 2, m, k, j+1, i, xr, yr, zr);
+  g2 = -(WbAllPhi(v, x, yr, z) - WbAllPhi(v, x, yl, z))/((g.sp ? x : 1.0)*(yr - yl));
+  g3 = 0.0;
+  if (g.threed) {
+    WbAllX(g, 3, m, k, j, i, xl, yl, zl);
+    WbAllX(g, 3, m, k+1, j, i, xr, yr, zr);
+    g3 = -(WbAllPhi(v, x, y, zr) - WbAllPhi(v, x, y, zl))/
+         ((g.sp ? x*sin(y) : 1.0)*(zr - zl));
+  }
 }
 
 void WbAllBCs(Mesh *pm);
@@ -117,6 +187,7 @@ void WbAllFillRange(Mesh *pm, const int il, const int iu, const int jl, const in
   auto u0 = pmbp->phydro->u0;
   const WbAllV v = wv_;
   const bool threed = pm->three_d;
+  const WbAllG gg = WbAllGeo(pm);
   par_for("wball_fill", DevExeSpace(), 0, pmbp->nmb_thispack - 1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (only_ghosts) {
@@ -133,10 +204,8 @@ void WbAllFillRange(Mesh *pm, const int il, const int iu, const int jl, const in
           bcs.d_view(m,BoundaryFace::outer_x3) == BoundaryFlag::user) g = true;
       if (!g) return;
     }
-    const Real x = CellCenterX(i - is, nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    const Real y = CellCenterX(j - js, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-    const Real z = threed ? CellCenterX(k - ks, nx3, size.d_view(m).x3min,
-                                        size.d_view(m).x3max) : 0.0;
+    Real x, y, z;
+    WbAllX(gg, 0, m, k, j, i, x, y, z);
     Real p, d, v1, v2, v3;
     WbAllState(v, WbAllPhi(v, x, y, z), p, d);
     WbAllVel(v, x, y, z, v1, v2, v3);
@@ -179,8 +248,13 @@ void ProblemGenerator::WbAll(ParameterInput *pin, const bool restart) {
   v.pn = pin->GetOrAddReal("problem", "poly_n", 1.5);
   v.beta = pin->GetOrAddReal("problem", "beta", 0.3);
   v.gm1 = ph->peos->eos_data.gamma - 1.0;
+  v.om = pin->GetOrAddReal("problem", "omega", 0.0);
+  v.sp = pmy_mesh_->use_spherical_polar;
   v.phiref = 0.0;
-  v.phiref = WbAllPhiRaw(v, 0.0, 0.0, 0.0);
+  // the reference point: the origin (Cartesian) or (r_ref, pi/2, 0) (spherical polar)
+  v.phiref = v.sp ? WbAllPhiRaw(v, pin->GetOrAddReal("problem", "r_ref", 1.0), 0.5*M_PI,
+                                0.0)
+                  : WbAllPhiRaw(v, 0.0, 0.0, 0.0);
   const std::string fl = pin->GetOrAddString("problem", "flow", "none");
   v.flow = (fl.compare("shear") == 0) ? 1 : ((fl.compare("jet") == 0) ? 2 : 0);
   v.U = pin->GetOrAddReal("problem", "U", 0.0);
@@ -201,34 +275,31 @@ void ProblemGenerator::WbAll(ParameterInput *pin, const bool restart) {
     auto pcc = ph->phicc0;
     auto p1 = ph->phi0.x1f, p2 = ph->phi0.x2f, p3 = ph->phi0.x3f;
     const bool threed = pmy_mesh_->three_d;
+    const WbAllG gg = WbAllGeo(pmy_mesh_);
     par_for("wball_phi", DevExeSpace(), 0, pmbp->nmb_thispack - 1, 0, n3 - 1, 0, n2 - 1,
             0, n1 - 1, KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real x = CellCenterX(i - is, nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-      const Real y = CellCenterX(j - js, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-      const Real z = threed ? CellCenterX(k - ks, nx3, size.d_view(m).x3min,
-                                          size.d_view(m).x3max) : 0.0;
-      const Real xf = LeftEdgeX(i - is, nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-      const Real yf = LeftEdgeX(j - js, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-      const Real zf = threed ? LeftEdgeX(k - ks, nx3, size.d_view(m).x3min,
-                                         size.d_view(m).x3max) : 0.0;
+      Real x, y, z, a, b, c;
+      WbAllX(gg, 0, m, k, j, i, x, y, z);
       pcc(m,k,j,i) = WbAllPhi(v, x, y, z);
-      p1(m,k,j,i) = WbAllPhi(v, xf, y, z);
-      p2(m,k,j,i) = WbAllPhi(v, x, yf, z);
-      p3(m,k,j,i) = WbAllPhi(v, x, y, zf);
+      WbAllX(gg, 1, m, k, j, i, a, b, c);
+      p1(m,k,j,i) = WbAllPhi(v, a, b, c);
+      WbAllX(gg, 2, m, k, j, i, a, b, c);
+      p2(m,k,j,i) = WbAllPhi(v, a, b, c);
+      if (threed) {
+        WbAllX(gg, 3, m, k, j, i, a, b, c);
+        p3(m,k,j,i) = WbAllPhi(v, a, b, c);
+      }
       if (i == n1 - 1) {
-        const Real xr = LeftEdgeX(i + 1 - is, nx1, size.d_view(m).x1min,
-                                  size.d_view(m).x1max);
-        p1(m,k,j,i+1) = WbAllPhi(v, xr, y, z);
+        WbAllX(gg, 1, m, k, j, i+1, a, b, c);
+        p1(m,k,j,i+1) = WbAllPhi(v, a, b, c);
       }
       if (j == n2 - 1) {
-        const Real yr = LeftEdgeX(j + 1 - js, nx2, size.d_view(m).x2min,
-                                  size.d_view(m).x2max);
-        p2(m,k,j+1,i) = WbAllPhi(v, x, yr, z);
+        WbAllX(gg, 2, m, k, j+1, i, a, b, c);
+        p2(m,k,j+1,i) = WbAllPhi(v, a, b, c);
       }
       if (threed && k == n3 - 1) {
-        const Real zr = LeftEdgeX(k + 1 - ks, nx3, size.d_view(m).x3min,
-                                  size.d_view(m).x3max);
-        p3(m,k+1,j,i) = WbAllPhi(v, x, y, zr);
+        WbAllX(gg, 3, m, k+1, j, i, a, b, c);
+        p3(m,k+1,j,i) = WbAllPhi(v, a, b, c);
       }
     });
   }
@@ -264,24 +335,23 @@ void WbAllSrc(Mesh *pm, const Real bdt) {
   const bool dyn1 = ph->use_wellbalance_dynamic && ph->use_wb_x1 && !all;
   const bool threed = pm->three_d;
   const WbAllV v = wv_;
+  const WbAllG gg = WbAllGeo(pm);
+  const bool sp = gg.sp;
+  auto vol = pmbp->pcoord->volume;
+  auto a1 = pmbp->pcoord->area.x1f;
   if (all) ph->AddWbGravity(bdt, true);
   par_for("wball_src", DevExeSpace(), 0, pmbp->nmb_thispack - 1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i);
-    const Real dx1 = size.d_view(m).dx1, dx2 = size.d_view(m).dx2;
-    const Real dx3 = threed ? size.d_view(m).dx3 : 1.0;
-    const Real x = CellCenterX(i - is, nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    const Real y = CellCenterX(j - js, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-    const Real z = threed ? CellCenterX(k - ks, nx3, size.d_view(m).x3min,
-                                        size.d_view(m).x3max) : 0.0;
-    // the central analytic acceleration from the face potentials
-    const Real g1 = -(WbAllPhi(v, x + 0.5*dx1, y, z) - WbAllPhi(v, x - 0.5*dx1, y, z))/dx1;
-    const Real g2 = -(WbAllPhi(v, x, y + 0.5*dx2, z) - WbAllPhi(v, x, y - 0.5*dx2, z))/dx2;
-    const Real g3 = threed ? -(WbAllPhi(v, x, y, z + 0.5*dx3) -
-                               WbAllPhi(v, x, y, z - 0.5*dx3))/dx3 : 0.0;
+    Real g1, g2, g3;
+    WbAllAcc(v, gg, m, k, j, i, g1, g2, g3);
     if (!all) {
-      if (dyn1) {
-        u0(m,IM1,k,j,i) += bdt*(c1(m,13,k,j,i) - c1(m,11,k,j,i))/dx1;
+      if (dyn1 && sp) {
+        const Real pc = c1(m,12,k,j,i);
+        u0(m,IM1,k,j,i) += bdt*(a1(m,k,j,i+1)*(c1(m,13,k,j,i) - pc) +
+                                a1(m,k,j,i)*(pc - c1(m,11,k,j,i)))/vol(m,k,j,i);
+      } else if (dyn1) {
+        u0(m,IM1,k,j,i) += bdt*(c1(m,13,k,j,i) - c1(m,11,k,j,i))/size.d_view(m).dx1;
       } else {
         u0(m,IM1,k,j,i) += bdt*d*g1;
       }
@@ -305,6 +375,7 @@ void WbAllFinal(ParameterInput *pin, Mesh *pm) {
   const bool threed = pm->three_d;
   const WbAllV v = wv_;
   const Real gam = ph->peos->eos_data.gamma;
+  const WbAllG gg = WbAllGeo(pm);
   Real mach = 0.0, l1d = 0.0, mxd = 0.0, l1v = 0.0, ncell = 0.0, l1vw = 0.0, nw = 0.0;
   Kokkos::parallel_reduce("wball_diag",
       Kokkos::RangePolicy<>(DevExeSpace(), 0, pmbp->nmb_thispack*nkji),
@@ -314,10 +385,8 @@ void WbAllFinal(ParameterInput *pin, Mesh *pm) {
     const int k = (idx - m*nkji)/nji + ks;
     const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js;
     const int i = idx%nx1 + is;
-    const Real x = CellCenterX(i - is, nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    const Real y = CellCenterX(j - js, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-    const Real z = threed ? CellCenterX(k - ks, nx3, size.d_view(m).x3min,
-                                        size.d_view(m).x3max) : 0.0;
+    Real x, y, z;
+    WbAllX(gg, 0, m, k, j, i, x, y, z);
     Real p, d, v1, v2, v3;
     WbAllState(v, WbAllPhi(v, x, y, z), p, d);
     WbAllVel(v, x, y, z, v1, v2, v3);

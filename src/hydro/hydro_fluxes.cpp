@@ -654,6 +654,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         if (use_spherical_polar) {
             GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_,
                                   wl_jp1, wr, pq);
+            if (wb_all_) {   // wball-1104: the WB deviation blended into the plain faces
+              WbAllBlendGrid(member, use_wb_rho_, 2, false, m, k, j, is-1, ie+1, w0_,
+                             x2v_, x2f_, wbq2_, wbw_, wl_jp1, wr);
+            }
         } else {
             
         if (wb_all_) {
@@ -695,6 +699,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           if (use_spherical_polar) {
             GridPiecewiseLinearX2(member, m, k, j, il, iu, wder_, x2v_, x2f_, dl_jp1, dr,
                                   pq);
+            if (wb_all_) {
+              WbAllBlendGrid(member, false, 2, true, m, k, j, il, iu, wder_, x2v_, x2f_,
+                             wbq2_, wbw_, dl_jp1, dr);
+            }
           } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX2(member, m, k, j, il, iu,
                                      pwb_, pfacewb_x2f,
@@ -977,6 +985,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
         if (use_spherical_polar) {
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, x3v_, x3f_, wl_kp1, wr);
+          if (wb_all_) {
+            WbAllBlendGrid(member, use_wb_rho_, 3, false, m, k, j, is-1, ie+1, w0_, x3v_,
+                           x3f_, wbq3_, wbw_, wl_kp1, wr);
+          }
         } else if (wb_all_) {
           WbAllPLM(member, use_wb_rho_, 3, m, k, j, il, iu, w0_, wbq3_, wbw_, wl_kp1, wr);
         } else {
@@ -1008,6 +1020,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         if (nder > 0) {
           if (use_spherical_polar) {
             GridPiecewiseLinearX3(member, m, k, j, il, iu, wder_, x3v_, x3f_, dl_kp1, dr);
+            if (wb_all_) {
+              WbAllBlendGrid(member, false, 3, true, m, k, j, il, iu, wder_, x3v_, x3f_,
+                             wbq3_, wbw_, dl_kp1, dr);
+            }
           } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX3(member, m, k, j, il, iu,
                                      pwb_, pfacewb_x3f,

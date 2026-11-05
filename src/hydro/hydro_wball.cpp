@@ -27,6 +27,13 @@ namespace hydro {
 //! (wbw(0) = 1: x1 stays the global scheme).  Built once per stage, after ConsToPrim.
 
 void Hydro::BuildWBCacheAll() {
+  if (pmy_pack->pmesh->use_spherical_polar &&
+      (pmy_pack->pcoord->sp_cart_polar_momentum || pmy_pack->pcoord->sp_wellbalanced_src)) {
+    std::cout << "### FATAL ERROR in hydro_wball: <hydro>/wb_dirs = all on spherical "
+              << "polar needs the default sp momentum/source (no sp_cart_polar_momentum, "
+              << "sp_cart_all_momentum, sp_wellbalanced_src)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int ng = indcs.ng;
   const int n1 = indcs.nx1 + 2*ng;
@@ -140,6 +147,44 @@ void Hydro::AddWbGravity(const Real bdt, const bool with_x1) {
   auto &size = pmy_pack->pmb->mb_size;
   const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+  if (pmy_pack->pmesh->use_spherical_polar) {
+    // the face-sum form with the sp areas: S_d = [A+ s+ - A- s-]/V, s = w (p_bg,f - p_c)
+    // + (1 - w)(-rho (Phi_f - Phi_c)); the sp coordinate source adds p_c (A+ - A-)/V
+    // (x_ov_rD, z_ov_rE), so a background state balances to round-off
+    auto vol = pmy_pack->pcoord->volume;
+    auto a1 = pmy_pack->pcoord->area.x1f, a2 = pmy_pack->pcoord->area.x2f;
+    auto a3 = pmy_pack->pcoord->area.x3f;
+    par_for("wball_grav_sp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = w0_(m,IDN,k,j,i);
+      const Real phc = phicc(m,k,j,i);
+      const Real iv = 1.0/vol(m,k,j,i);
+      if (with_x1) {
+        const Real pc = c1(m,12,k,j,i);
+        u0_(m,IM1,k,j,i) += bdt*iv*(a1(m,k,j,i+1)*(c1(m,13,k,j,i) - pc) +
+                                    a1(m,k,j,i)*(pc - c1(m,11,k,j,i)));
+      }
+      if (x2) {
+        const Real pc = c2(m,12,k,j,i);
+        const Real wc = ww(m,1,k,j,i);
+        const int jp = (j + 1 > n2 - 1) ? n2 - 1 : j + 1;
+        const Real wp = fmin(wc, ww(m,1,k,jp,i)), wm = fmin(wc, ww(m,1,k,j-1,i));
+        const Real sp = wp*(c2(m,13,k,j,i) - pc) + (1.0 - wp)*(-d*(f2(m,k,j+1,i) - phc));
+        const Real sm = wm*(c2(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f2(m,k,j,i) - phc));
+        u0_(m,IM2,k,j,i) += bdt*iv*(a2(m,k,j+1,i)*sp - a2(m,k,j,i)*sm);
+      }
+      if (x3) {
+        const Real pc = c3(m,12,k,j,i);
+        const Real wc = ww(m,2,k,j,i);
+        const int kp = (k + 1 > n3 - 1) ? n3 - 1 : k + 1;
+        const Real wp = fmin(wc, ww(m,2,kp,j,i)), wm = fmin(wc, ww(m,2,k-1,j,i));
+        const Real sp = wp*(c3(m,13,k,j,i) - pc) + (1.0 - wp)*(-d*(f3(m,k+1,j,i) - phc));
+        const Real sm = wm*(c3(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f3(m,k,j,i) - phc));
+        u0_(m,IM3,k,j,i) += bdt*iv*(a3(m,k+1,j,i)*sp - a3(m,k,j,i)*sm);
+      }
+    });
+    return;
+  }
   par_for("wball_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0_(m,IDN,k,j,i);

@@ -33,6 +33,7 @@
 #include "athena.hpp"
 #include "reconstruct/plm.hpp"
 #include "utils/wb_background.hpp"
+#include "hydro/hydro.hpp"
 
 namespace hydro {
 
@@ -125,6 +126,51 @@ void WbAllPLMDer(TeamMember_t const &member, const int dir, const int m, const i
       dr(n,i) = (wm >= 1.0) ? rw : wm*rw + (1.0 - wm)*rp;
     });
   }
+}
+
+//! spherical polar (x2 = theta, x3 = phi): the plain faces are ALREADY in ql_p1 / qr
+//! (GridPiecewiseLinearX2/X3, the polar-row quadratic included); this forms the WB
+//! deviation on the non-uniform grid (PLM_nonuniform at the reconstruction coordinates
+//! xv, xf: x2v_rec / xx2f, or x3v / xx3f) and blends it in with the face weights.  nd > 0:
+//! the derived channel IDPR of qd (general EOS) against the background pressure.
+KOKKOS_INLINE_FUNCTION
+void WbAllBlendGrid(TeamMember_t const &member, const bool use_wb_rho, const int dir,
+                    const bool der, const int m, const int k, const int j, const int il,
+                    const int iu, const DvceArray5D<Real> &q,
+                    const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
+                    const DvceArray5D<Real> &wbq, const DvceArray5D<Real> &wbw,
+                    ScrArray2D<Real> &ql_p1, ScrArray2D<Real> &qr) {
+  const int dk = (dir == 3) ? 1 : 0, dj = (dir == 2) ? 1 : 0;
+  const int c = (dir == 3) ? k : j;
+  const Real x_m = xv(m,c-1), x_mh = xf(m,c), x_c = xv(m,c), x_ph = xf(m,c+1),
+             x_p = xv(m,c+1);
+  const Real dxLh = x_c - x_mh, dxRh = x_ph - x_c, dxL = x_c - x_m, dxR = x_p - x_c;
+  const int nvar = q.extent_int(1);
+  const int n2 = wbw.extent_int(3), n3 = wbw.extent_int(2);
+  member.team_barrier();
+  for (int n=0; n<nvar; ++n) {
+    const bool wbv = der ? (n == IDPR) : ((n == IEN) || (n == IDN && use_wb_rho));
+    if (!wbv) continue;
+    const int var = der ? WBVar::wb_pres : ((n == IEN) ? WBVar::wb_eint : WBVar::wb_dens);
+    par_for_inner(member, il, iu, [&](const int i) {
+      const Real qm = q(m,n,k-dk,j-dj,i), qc = q(m,n,k,j,i), qp = q(m,n,k+dk,j+dj,i);
+      Real b_m, b_mh, b_c, b_ph, b_p;
+      WBReadCache(wbq, var, m, k, j, i, b_m, b_mh, b_c, b_ph, b_p);
+      Real lw, rw;
+      Hydro::PLM_nonuniform(qm - b_m, qc - b_c, qp - b_p, dxL, dxR, dxLh, dxRh, lw, rw);
+      lw += b_ph; rw += b_mh;
+      const Real lp = ql_p1(n,i), rp = qr(n,i);
+      if (lw < 0.0 || rw < 0.0) {lw = lp; rw = rp;}
+      const int km = (k - dk < 0) ? 0 : k - dk, kp = (k + dk > n3 - 1) ? n3 - 1 : k + dk;
+      const int jm = (j - dj < 0) ? 0 : j - dj, jp = (j + dj > n2 - 1) ? n2 - 1 : j + dj;
+      const Real wc = wbw(m,dir-1,k,j,i);
+      const Real wp = fmin(wc, wbw(m,dir-1,kp,jp,i));
+      const Real wm = fmin(wc, wbw(m,dir-1,km,jm,i));
+      ql_p1(n,i) = (wp >= 1.0) ? lw : wp*lw + (1.0 - wp)*lp;
+      qr(n,i) = (wm >= 1.0) ? rw : wm*rw + (1.0 - wm)*rp;
+    });
+  }
+  member.team_barrier();
 }
 
 }  // namespace hydro
