@@ -16,15 +16,18 @@
 #include "eos/eos.hpp"
 #include "hydro.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "hydro/rk_update_shared.hpp"
 
-namespace hydro {
+namespace fluid {
 //----------------------------------------------------------------------------------------
-//! \fn  void Hydro::Update
-//  \brief Explicit RK update including flux divergence terms
+//! \fn void fluid::RKUpdateCore
+//! \brief share-1104 P6: the explicit RK stage update u0 = gam0 u0 + gam1 u1 - beta dt
+//! div(F) of the first nvar variables, ONE implementation for Hydro::RKUpdate and
+//! MHD::RKUpdate (which keep their own hooks: eint_ledger + DetTrace / Boris).
 
-TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
-  eint_ledger::Mark(pmy_pack->pmesh, "gap_pre");   // floorheat-1029 (no-op unless on)
-  if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_preupd");}
+void RKUpdateCore(MeshBlockPack *pmy_pack, Driver *pdriver, const int stage,
+                  const int nvar, const DvceFaceFld5D<Real> &uflx,
+                  DvceArray5D<Real> &u0, const DvceArray5D<Real> &u1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -37,7 +40,6 @@ TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
   Real &gam1 = pdriver->gam1[stage-1];
   Real beta_dt = (pdriver->beta[stage-1])*(pmy_pack->pmesh->dt);
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  int nvar = nhydro + nscalars;
   auto u0_ = u0;
   auto u1_ = u1;
   auto flx1 = uflx.x1f;
@@ -121,6 +123,18 @@ TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
       u0_(m,n,k,j,i) = gam0*u0_(m,n,k,j,i) + gam1*u1_(m,n,k,j,i) - beta_dt*divf(i);
     });
   });
+}
+}  // namespace fluid
+
+namespace hydro {
+//----------------------------------------------------------------------------------------
+//! \fn  void Hydro::Update
+//  \brief Explicit RK update including flux divergence terms
+
+TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
+  eint_ledger::Mark(pmy_pack->pmesh, "gap_pre");   // floorheat-1029 (no-op unless on)
+  if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_preupd");}
+  fluid::RKUpdateCore(pmy_pack, pdriver, stage, nhydro + nscalars, uflx, u0, u1);
   return TaskStatus::complete;
 }
 } // namespace hydro

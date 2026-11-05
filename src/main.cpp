@@ -505,6 +505,10 @@ int main(int argc, char *argv[]) {
     } else if (pinput->DoesBlockExist("hydro")) {
       global_variable::rst_hydro_nscalars = 0;
     }
+    // share-1104 P4: and whether its hydro u0 records carry the floor tracer (last slot)
+    if (pinput->DoesBlockExist("hydro")) {
+      global_variable::rst_hydro_tracers = mhd::ReadTracerLayout(pinput, "hydro").Mask();
+    }
     // tracer-1101: the same for <mhd>: the file's user scalars and which passive
     // tracers (x_e, floor mass) its u0 records carry (mhd/mhd_tracers.hpp)
     if (pinput->DoesBlockExist("mhd")) {

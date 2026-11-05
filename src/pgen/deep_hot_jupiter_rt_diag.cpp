@@ -1184,8 +1184,11 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   const int NDR = NTD + (amh::on ? 1 : 0);   // Mdrain/Edrain after Ttide and Tdrag
   // (the floor tracer is a default with the Alfven floor: when the two columns do not
   // fit, they are left out with a note instead of stopping the run)
-  bool fdrain = ffloor && (pm->pmb_pack->pmhd != nullptr) &&
-                pm->pmb_pack->pmhd->floor_tracer;
+  // (share-1104 P4: <hydro>/floor_tracer books the same two columns)
+  bool fdrain = ffloor && (((pm->pmb_pack->pmhd != nullptr) &&
+                            pm->pmb_pack->pmhd->floor_tracer) ||
+                           ((pm->pmb_pack->phydro != nullptr) &&
+                            pm->pmb_pack->phydro->floor_tracer));
   if (fdrain && NDR + 2 > NHISTORY_VARIABLES) {
     static bool warned = false;
     if (!warned && global_variable::my_rank == 0) {
@@ -1366,11 +1369,12 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     pdata->hdata[NFL-2] = (tint > 0.0) ? mf/tint : 0.0;
     pdata->hdata[NFL-1] = (tint > 0.0) ? efr/tint : 0.0;
     if (fdrain) {
-      auto *pmh = pmbp->pmhd;
-      pdata->hdata[NDR] = (tint > 0.0) ? pmh->fltr_dm/tint : 0.0;
-      pdata->hdata[NDR+1] = (tint > 0.0) ? pmh->fltr_de/tint : 0.0;
-      pmh->fltr_dm = 0.0;
-      pmh->fltr_de = 0.0;
+      Real &fdm = (pmbp->pmhd != nullptr) ? pmbp->pmhd->fltr_dm : pmbp->phydro->fltr_dm;
+      Real &fde = (pmbp->pmhd != nullptr) ? pmbp->pmhd->fltr_de : pmbp->phydro->fltr_de;
+      pdata->hdata[NDR] = (tint > 0.0) ? fdm/tint : 0.0;
+      pdata->hdata[NDR+1] = (tint > 0.0) ? fde/tint : 0.0;
+      fdm = 0.0;
+      fde = 0.0;
     }
   }
   if (amh::on) AmHstColumns(pdata, pm, NFL);

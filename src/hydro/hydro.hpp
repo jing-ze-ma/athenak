@@ -22,6 +22,7 @@
 #include "coordinates/cell_locations.hpp"
 #include "utils/wb_background.hpp"
 #include "utils/fofc_report.hpp"
+#include "mhd/mhd_tracers.hpp"
 
 // forward declarations
 class EquationOfState;
@@ -70,6 +71,7 @@ struct HydroTaskIDs {
   TaskID splitpc2p;
   TaskID splitpst;
   TaskID splitsc2p;
+  TaskID trcsrc;   // share-1104 P4: <hydro>/floor_tracer pass
 };
 
 namespace hydro {
@@ -124,6 +126,18 @@ class Hydro {
 
   int nhydro;             // number of hydro variables (5/4 for ideal/isothermal EOS)
   int nscalars;           // number of passive scalars
+  // share-1104 P4: the tracer slot layout shared with MHD (mhd/mhd_tracers.hpp): the
+  // user's <hydro>/nscalars, then <hydro>/floor_tracer (last; read only when named,
+  // default off).  floor_tracer adds ONE scalar (index ifltr) holding the floor-added
+  // mass: every ConsToPrim density-floor increment joins it, and once per cycle
+  // (TracerSource, "before_timeintegrator") it is drained where the floor does not bind,
+  // exactly as <mhd>/floor_tracer (floor density = dfloor; MHD::FloorTracerDrain).
+  // nscalars counts it.  fltr_dm/fltr_de: drained mass/energy (this rank, active cells).
+  mhd::TracerLayout tracers;
+  bool floor_tracer = false;
+  int ifltr = -1;
+  Real fltr_margin = 2.0, fltr_fmax = 0.01;
+  Real fltr_dm = 0.0, fltr_de = 0.0;
   DvceArray5D<Real> u0;   // conserved variables
   DvceArray5D<Real> w0;   // primitive variables
 
@@ -402,6 +416,10 @@ class Hydro {
   TaskStatus ConToPrim(Driver *d, int stage);
   TaskStatus ConToPrimSplit(Driver *d, int stage);
   TaskStatus RTStrangSplit(Driver *d, int stage);
+  // share-1104 P4 (mhd/mhd_tracers.cpp): the floor-tracer pass, its drain, the x1 ghosts
+  TaskStatus TracerSource(Driver *d, int stage);
+  void FloorTracerDrain();
+  void TracerX1Ghosts(bool set_w);
   void RTOpSplitBvals(bool recv_posted, bool repost);
   TaskStatus NewTimeStep(Driver *d, int stage);
   // ...in "after_stagen_tl" list
