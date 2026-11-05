@@ -98,6 +98,17 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // (2) Initialize scalars, diffusion, source terms
   nscalars = pin->GetOrAddInteger("hydro","nscalars",0);
+  // share-1104 P6: the dt report keys (hydro_newdt.cpp; env ATHENA_DT_REPORT[_NPOL]
+  // aliases), read only when named
+  {
+    extern int dt_report_key, dt_report_npol_key;
+    if (pin->DoesParameterExist("hydro","dt_report")) {
+      dt_report_key = pin->GetInteger("hydro","dt_report");
+    }
+    if (pin->DoesParameterExist("hydro","dt_report_npol")) {
+      dt_report_npol_key = pin->GetInteger("hydro","dt_report_npol");
+    }
+  }
   // share-1104 P4: the passive-tracer layout shared with MHD (mhd/mhd_tracers.hpp): the
   // floor-mass tracer <hydro>/floor_tracer (read only when named; default off) is the
   // LAST scalar slot.  Off, nscalars and every path are unchanged.  Hydro has no x_e

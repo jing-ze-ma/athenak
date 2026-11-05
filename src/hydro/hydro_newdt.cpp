@@ -35,6 +35,12 @@
 #include "rad_m1/rad_m1_closure.hpp"
 
 namespace hydro {
+// share-1104 P6: <hydro>/dt_report and <hydro>/dt_report_npol (read only when named, in
+// the Hydro constructor; -1 = not named).  The key wins; the env ATHENA_DT_REPORT /
+// ATHENA_DT_REPORT_NPOL stay as aliases (and <mhd>/dt_report takes the same env alias,
+// mhd_dtreport.cpp).  Diagnostics only: no state change.
+int dt_report_key = -1;
+int dt_report_npol_key = -1;
 
 //----------------------------------------------------------------------------------------
 // \!fn void Hydro::NewTimeStep()
@@ -66,7 +72,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   static int dtrep = -1;
   if (dtrep < 0) {
     const char *ev = std::getenv("ATHENA_DT_REPORT");
-    dtrep = (ev != nullptr) ? std::atoi(ev) : 0;
+    dtrep = (dt_report_key >= 0) ? dt_report_key : ((ev != nullptr) ? std::atoi(ev) : 0);
   }
   const bool dtcell_on = (dtrep > 0) && ((pmy_pack->pmesh->ncycle % dtrep) == 0) &&
                          (pmy_pack->pmesh->use_spherical_polar);
@@ -484,7 +490,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
       static int npol = -1;
       if (npol < 0) {
         const char *ev = std::getenv("ATHENA_DT_REPORT_NPOL");
-        npol = (ev != nullptr) ? std::atoi(ev) : 7;
+        npol = (dt_report_npol_key >= 0) ? dt_report_npol_key
+                                         : ((ev != nullptr) ? std::atoi(ev) : 7);
       }
       const int nrow = pmy_pack->pmesh->mesh_indcs.nx2;
       auto &mbl = pmy_pack->pmesh->lloc_eachmb;

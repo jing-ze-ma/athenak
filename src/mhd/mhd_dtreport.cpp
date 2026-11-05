@@ -63,6 +63,28 @@ void DtReportInit(ParameterInput *pin, MeshBlockPack *pp, const bool rss) {
     }
     rep_p1 = pin->GetOrAddReal("mhd", "dt_report_p1", 1.0);
     rep_p2 = pin->GetOrAddReal("mhd", "dt_report_p2", 1.0e3);
+  } else if (std::getenv("ATHENA_DT_REPORT") != nullptr &&
+             std::atoi(std::getenv("ATHENA_DT_REPORT")) > 0) {
+    // share-1104 P6: the hydro env ATHENA_DT_REPORT = N is an alias of <mhd>/dt_report
+    // when the key is absent (the key wins).  Where the report is unsupported the alias
+    // is ignored with a note (no FATAL: an env must not stop a run); nothing is added to
+    // the input dump (p1/p2 keep their defaults unless named).
+    if (!pp->pmesh->three_d || rss ||
+        !(pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar)) {
+      if (global_variable::my_rank == 0) {
+        std::cout << "### NOTE: ATHENA_DT_REPORT ignored for MHD (the report needs a 3-D "
+                  << "cubed-sphere or spherical-polar mesh and rad_signal_speed off)"
+                  << std::endl;
+      }
+    } else {
+      rep_every = std::atoi(std::getenv("ATHENA_DT_REPORT"));
+      if (pin->DoesParameterExist("mhd", "dt_report_p1")) {
+        rep_p1 = pin->GetReal("mhd", "dt_report_p1");
+      }
+      if (pin->DoesParameterExist("mhd", "dt_report_p2")) {
+        rep_p2 = pin->GetReal("mhd", "dt_report_p2");
+      }
+    }
   }
 }
 
