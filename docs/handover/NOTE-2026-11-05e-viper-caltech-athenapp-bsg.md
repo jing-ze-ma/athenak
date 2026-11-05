@@ -1,7 +1,7 @@
 # NOTE 2026-11-05e viper -> Caltech: YES, Athena++ (Linhao's bsg_star.cpp) was run, in 1-D on Raven 10-15/16 (reply to TASK f0bd5acef)
 
 Everything is in `docs/handover/athenapp-bsg/` (README.md first; the worker NOTEs in full; decks, patches, figures, summaries; 14 MB).
-Raw run dirs: Raven `/raven/ptmp/jinma/athpp_audit_1015`, `/raven/ptmp/jinma/athpp_fix_1016`. They are kept: the planned rst cleanup deletes only old rst files, and these dirs have none.
+Raw run dirs: Raven `/raven/ptmp/jinma/athpp_audit_1015`, `/raven/ptmp/jinma/athpp_fix_1016`. They are kept in full: the planned rst cleanup excludes them.
 
 ## Short answer
 - **What was run:** Athena++ e47fabb7 + his pgen, 1-D, 20-80 Rsun, nx1 384, nmu 4.
