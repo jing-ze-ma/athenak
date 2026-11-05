@@ -295,19 +295,10 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   scp_once = pin->DoesParameterExist("hydro","split_c2p_once") ?
              pin->GetBoolean("hydro","split_c2p_once") : false;
-  // prod1104b default (USER 11-04): c2p_idempotent = true on a FRESH start
-  // (recipe::NewDefaults) when not named (bitwise by construction); recorded for
-  // restarts; a restart whose input lacks the key keeps false; an explicit key wins.
-  if (!pin->DoesParameterExist("hydro","c2p_idempotent")) {
-    if (recipe::NewDefaults(pin)) {
-      pin->GetOrAddBoolean("hydro","c2p_idempotent",true);
-      recipe::Log("<hydro>/c2p_idempotent = true (default on a fresh start)");
-    } else {
-      recipe::Log("<hydro>/c2p_idempotent = false (" + std::string(
-          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
-          "restart input has no key") + ": the old default)");
-    }
-  }
+  // prod1104b default (USER 11-04) WITHDRAWN by defaults-1105 (USER 11-05: GPU timing showed
+  // no gain, RSG -2 %, dhj +2 % = noise; it never acts in dhj hydro): c2p_idempotent is again
+  // read only when named, default false on a fresh start.  A restart whose input names it
+  // (runs started 11-04/05 recorded true) keeps that value; an explicit key wins.
   c2pi_on = pin->DoesParameterExist("hydro","c2p_idempotent") ?
             pin->GetBoolean("hydro","c2p_idempotent") : false;
   if (sbf_on && (pmy_pack->pmesh->multilevel ||
