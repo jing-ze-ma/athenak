@@ -201,6 +201,30 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cs_resist_x1_centred = pin->GetOrAddBoolean("mhd", "cs_resist_x1_centred", true);
+    // share-1104 G9 (USER 11-04 "go ahead with all"): <mhd>/sp_resist_x1_centred
+    {
+      const bool sp_str = pp->pmesh->use_spherical_polar &&
+                          (pp->pmesh->use_grid_stretch_r || pp->pmesh->use_grid_stretch_r_poly);
+      if (pin->DoesParameterExist("mhd", "sp_resist_x1_centred")) {
+        sp_resist_x1_centred = pin->GetBoolean("mhd", "sp_resist_x1_centred");
+      } else if (sp_str) {
+        if (nd) {
+          sp_resist_x1_centred = pin->GetOrAddBoolean("mhd", "sp_resist_x1_centred", true);
+          recipe::Log("<mhd>/sp_resist_x1_centred = true (default on a stretched sp radial "
+                      "grid)");
+        } else {
+          recipe::Log(std::string("<mhd>/sp_resist_x1_centred = false (") +
+                      (recipe::GetMode(pin) == recipe::Mode::none ? "recipe none"
+                       : "restart input has no key") + ": the old default)");
+        }
+      }
+      sp_resist_x1_centred = sp_resist_x1_centred && sp_str;
+      if (sp_resist_x1_centred && pp->pmesh->mb_indcs.ng < 2) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/sp_resist_x1_centred needs nghost >= 2" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
       
     // Total number of MeshBlocks on this rank to be used in array dimensioning
     int nmb = std::max((pp->nmb_thispack), (pp->pmesh->nmb_maxperrank));
@@ -466,7 +490,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
   int ncells1 = indcs.nx1 + 2*(indcs.ng);
   int nmb1 = pmy_pack->nmb_thispack - 1;
   // gathered on the host; the kernels must not chase pmy_pack on the device
-  const auto geom = MakeCurrentDensityGeom(pmy_pack);
+  const auto geom = MakeCurrentDensityGeom(pmy_pack, sp_resist_x1_centred);
 
   //---- 1-D problem:
   //  copy face-centered E-fields to edges and return.
@@ -583,7 +607,7 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
   int ncells1 = indcs.nx1 + 2*(indcs.ng);
   int nmb1 = pmy_pack->nmb_thispack - 1;
   // gathered on the host; the kernels must not chase pmy_pack on the device
-  const auto geom = MakeCurrentDensityGeom(pmy_pack);
+  const auto geom = MakeCurrentDensityGeom(pmy_pack, sp_resist_x1_centred);
   // local copy of the member View, so the lambdas do not capture `this`
   auto eta_b_ = eta_b;
 

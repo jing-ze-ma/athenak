@@ -13,6 +13,7 @@ void Resistivity::DtRetryVisit(V &v) {
   v.value("use_rkg_sts", use_rkg_sts);
   v.value("rkg_lean", rkg_lean);
   v.value("cs_resist_x1_centred", cs_resist_x1_centred);
+  v.value("sp_resist_x1_centred", sp_resist_x1_centred);
   v.value("tau", tau);
   v.value("alpha", alpha);
   v.value("w1", w1);

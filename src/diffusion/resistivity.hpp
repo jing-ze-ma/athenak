@@ -164,6 +164,11 @@ class Resistivity {
   // resistivity_gnomonic.cpp).  <mhd>/cs_resist_x1_centred, default true; a no-op on an
   // unstretched radial grid.
   bool cs_resist_x1_centred;
+  // share-1104 G9: the same face-centred radial derivative for the SPHERICAL-POLAR
+  // current (current_density.hpp).  <mhd>/sp_resist_x1_centred: true on a FRESH start
+  // (recipe::NewDefaults) on a stretched radial grid when not named; a restart whose input
+  // lacks the key keeps the old two-point loop (false); a no-op on an unstretched grid.
+  bool sp_resist_x1_centred = false;
   Real tau, alpha, w1, mu, nu, mut, gat;
   int s = 0;   // RKG stage count; only set once TotStage() has run for the first time
   Real bjm2, bjm1, bj;
