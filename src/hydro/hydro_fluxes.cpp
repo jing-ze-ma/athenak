@@ -14,6 +14,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "hydro.hpp"
+#include "hydro_wball.hpp"
 #include "bvals/bvals.hpp"
 #include "hydro_mergelat.hpp"
 #include "bvals/cs_seam_states.hpp"
@@ -62,6 +63,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const auto recon_method_ = recon_method;
   // csedge-1019 <mesh>/cs_seam_flux = shared: the neighbour's own seam face states
+  // wball-1104: the x2/x3 backgrounds and weights (before the shared seam face states,
+  // which reconstruct the edge cells exactly as the sweep does)
+  if (wb_all) BuildWBCacheAll();
   if (cs_seam_shared) {CsSeamFaceStates();}
   const bool cs_shr_ = cs_seam_shared;
   DvceArray5D<Real> sfs2_, sfs3_;
@@ -136,6 +140,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
   const bool use_wb_x2_ = use_wb_x2;
+  const bool wb_all_ = wb_all;   // wball-1104
+  auto wbq2_ = wbq2;
+  auto wbq3_ = wbq3;
+  auto wbw_ = wbw;
   const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
   const Real wb_rmax_ = wb_rmax;
   const Real wb_phimax_ = wb_phimax;
@@ -254,7 +262,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                               use_wellbalance_dynamic_,
                               use_wb_x1_, wb_rmax_, wb_rmin_, wb_phimax_,
                               m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc_wb_,
-                              phi_wb_x1f_, wbq0_, wl, wr);
+                              phi_wb_x1f_, wbq0_, wl, wr, wb_all_);
       } else if (use_spherical_polar || str_r1_) {
         // reconstruct_x1 != plm: Mignone (2014) curvilinear reconstruction -- see
         // reconstruct/mignone_curvilinear.hpp. wellbalance_dynamic+wb_x1 with this
@@ -271,7 +279,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         }
       } else {
 
-    if (use_wellbalance_dynamic_ && use_wb_x1_)
+    if (wb_all_) {   // wball-1104: x1 through the same routine (w = 1)
+      WbAllPLM(member, use_wb_rho_, 1, m, k, j, il-1, iu, w0_, wbq0_, wbw_, wl, wr);
+    } else if (use_wellbalance_dynamic_ && use_wb_x1_)
     {
       WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
           m, k, j, il-1, iu, w0_, phicc_wb_, phi_wb_x1f_, wbq0_, wl, wr);
@@ -333,6 +343,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         WbStaticPiecewiseLinearDerX1(member, m, k, j, il-1, iu,
                                      pwb_, pfacewb_x1f,
                                     wder_, dl, dr);
+      } else if (wb_all_) {
+        WbAllPLMDer(member, 1, m, k, j, il-1, iu, wder_, wbq0_, wbw_, dl, dr);
       } else if (use_wellbalance_dynamic_ && use_wb_x1_) {
         WbPiecewiseLinearDerX1(member, eos_, wb_option_,
             m, k, j, il-1, iu, w0_, wder_,
@@ -644,9 +656,15 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         if (use_spherical_polar) {
             GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_,
                                   wl_jp1, wr, pq);
+            if (wb_all_) {   // wball-1104: the WB deviation blended into the plain faces
+              WbAllBlendGrid(member, use_wb_rho_, 2, false, m, k, j, is-1, ie+1, w0_,
+                             x2v_, x2f_, wbq2_, wbw_, wl_jp1, wr);
+            }
         } else {
             
-        if (use_wellbalance_dynamic_ && use_wb_x2_)
+        if (wb_all_) {
+          WbAllPLM(member, use_wb_rho_, 2, m, k, j, il, iu, w0_, wbq2_, wbw_, wl_jp1, wr);
+        } else if (use_wellbalance_dynamic_ && use_wb_x2_)
         {
           WbLocalPiecewiseLinearX2(member, eos_, wb_option_, use_wb_rho_,
               m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
@@ -683,10 +701,16 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           if (use_spherical_polar) {
             GridPiecewiseLinearX2(member, m, k, j, il, iu, wder_, x2v_, x2f_, dl_jp1, dr,
                                   pq);
+            if (wb_all_) {
+              WbAllBlendGrid(member, false, 2, true, m, k, j, il, iu, wder_, x2v_, x2f_,
+                             wbq2_, wbw_, dl_jp1, dr);
+            }
           } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX2(member, m, k, j, il, iu,
                                      pwb_, pfacewb_x2f,
                                     wder_, dl_jp1, dr);
+      } else if (wb_all_) {
+            WbAllPLMDer(member, 2, m, k, j, il, iu, wder_, wbq2_, wbw_, dl_jp1, dr);
       } else if (use_wellbalance_dynamic_ && use_wb_x2_) {
             WbPiecewiseLinearDerX2(member, eos_, wb_option_,
                 m, k, j, il, iu, w0_, wder_,
@@ -963,6 +987,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
         if (use_spherical_polar) {
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, x3v_, x3f_, wl_kp1, wr);
+          if (wb_all_) {
+            WbAllBlendGrid(member, use_wb_rho_, 3, false, m, k, j, is-1, ie+1, w0_, x3v_,
+                           x3f_, wbq3_, wbw_, wl_kp1, wr);
+          }
+        } else if (wb_all_) {
+          WbAllPLM(member, use_wb_rho_, 3, m, k, j, il, iu, w0_, wbq3_, wbw_, wl_kp1, wr);
         } else {
         // Reconstruct qR[k] and qL[k+1]
         switch (recon_method_) {
@@ -992,10 +1022,16 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         if (nder > 0) {
           if (use_spherical_polar) {
             GridPiecewiseLinearX3(member, m, k, j, il, iu, wder_, x3v_, x3f_, dl_kp1, dr);
+            if (wb_all_) {
+              WbAllBlendGrid(member, false, 3, true, m, k, j, il, iu, wder_, x3v_, x3f_,
+                             wbq3_, wbw_, dl_kp1, dr);
+            }
           } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX3(member, m, k, j, il, iu,
                                      pwb_, pfacewb_x3f,
                                     wder_, dl_kp1, dr);
+      } else if (wb_all_) {
+            WbAllPLMDer(member, 3, m, k, j, il, iu, wder_, wbq3_, wbw_, dl_kp1, dr);
       } else {
           switch (recon_method_) {
             case ReconstructionMethod::dc:
@@ -1275,6 +1311,10 @@ void Hydro::CsSeamFaceStates() {
                          *pseamfs, mlat_, mlfi_, is, ie);
   cs_seam::CsSeamPLMFill(pmy_pack, wder, nder, nvars, IDPR, eos_.pfloor, eos_.plm_c1,
                          *pseamfs, mlat_, mlfi_, is, ie);
+  if (wb_all) {   // wball-1104: the edge cells' own WB seam face states (shared code)
+    WbAllCtx c = WbCtx();
+    WbAllSeamFaces(c, *pseamfs, nvars, nder, use_wb_rho, is, ie);
+  }
   cs_seam::CsSeamCovariant(pmy_pack, *pseamfs, IVY, 0, is, ie);
   (void) nfs;
   pbval_fs->InitFluxSeamRecv(nfs);

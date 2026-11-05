@@ -76,6 +76,7 @@ struct HydroTaskIDs {
 
 namespace hydro {
 class AmModule;   // cs-open-1018: hydro_am.hpp
+struct WbAllCtx;   // wball-1104 (hydro_wball.hpp)
 class MergeLat;   // mrglat-1019: hydro_mergelat.hpp
 class RingAvg;    // ringavg-1029: hydro_ringavg.hpp
 
@@ -220,6 +221,21 @@ class Hydro {
   DvceFaceFld4D<Real> phi0;     // face-centered gravitational potential energy
   DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
   DvceArray5D<Real> wbq0;       // per-cell well-balanced background (BuildWBCache)
+  // wball-1104 <hydro>/wb_dirs = all (hydro_wball.hpp/.cpp; read only when named): the
+  // dynamic well-balanced scheme in x2/x3 too, with the validity weight w per cell and
+  // direction (<hydro>/wb_weight, default true; thresholds wb_w_r0/r1, wb_w_m0/m1, wb_w_eta)
+  bool wb_all = false;
+  bool wb_weight = true;
+  Real wbw_r0 = 0.1, wbw_r1 = 0.3, wbw_m0 = 0.2, wbw_m1 = 0.5, wbw_eta = 1.0e-4;
+  DvceArray5D<Real> wbq2, wbq3;   // x2 / x3 background stencils (the layout of wbq0)
+  DvceArray5D<Real> wbw;          // (nmb, 3, n3, n2, n1) validity weight per direction
+  void BuildWBCacheAll();
+  void AddWbGravity(const Real bdt, const bool with_x1);
+  // the zonal angular-momentum correction (am_transport / am_vector) of the BACKGROUND
+  // pressure fluxes, subtracted from the WB source so the pair stays balanced
+  DvceArray5D<Real> wbam_u, wbam_w;
+  DvceFaceFld5D<Real> *wbam_f = nullptr;
+  WbAllCtx WbCtx();
   // ---- THE EFFECTIVE POTENTIAL OF THE WELL-BALANCED x1 SCHEME.
   // Phi_eff = Phi - int a_rad dz, i.e. the potential of the EFFECTIVE gravity
   // g_eff = g - a_rad, where a_rad is a radiative acceleration that a separate module
@@ -879,7 +895,10 @@ class Hydro {
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
          const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          const DvceArray5D<Real> &wbq0,
-        ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
+        ScrArray2D<Real> &ql, ScrArray2D<Real> &qr, const bool wb_noext = false) {
+      // wb_noext (wball-1104, <hydro>/wb_dirs = all): no plain fallback at a STATE
+      // extremum (sL sR <= 0) -- the balanced deviation is kept there; negative faces
+      // still fall back
       Real gamma = eos.gamma;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
@@ -929,7 +948,8 @@ class Hydro {
                   Real pl_, pr_;
                   PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
                   wbplm::WbPlmBlend(q(m,n,k,j,i), sL, sR, pl_, pr_, eos.plm_c1, ql(n,i+1), qr(n,i));
-                } else if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
+                } else if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 ||
+                           (sL * sR <= 0.0 && !eos.plm_c1 && !wb_noext)) {
                     PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
                 }
                 if (eos.wb_plm_range) {

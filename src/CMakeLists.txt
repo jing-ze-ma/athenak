@@ -83,6 +83,7 @@ add_executable(
 
         hydro/hydro.cpp
         hydro/hydro_wellbalance.cpp
+        hydro/hydro_wball.cpp
         hydro/hydro_fluxes.cpp
         hydro/hydro_fofc.cpp
         hydro/fofc_etotgrav.cpp
@@ -129,6 +130,7 @@ add_executable(
         mhd/mhd_etotgrav.cpp
         mhd/mhd_boris.cpp
         mhd/mhd_wellbalance.cpp
+        mhd/mhd_wball.cpp
 
         outputs/io_wrapper.cpp
         outputs/outputs.cpp
@@ -169,6 +171,7 @@ add_executable(
         pgen/tests/shock_tube.cpp
         pgen/tests/shwave.cpp
         pgen/tests/wb_atm.cpp
+        pgen/tests/wb_all.cpp
         pgen/tests/am_wb.cpp
         pgen/tests/rad_beam.cpp
         pgen/tests/rad_diff2d.cpp

@@ -23,6 +23,7 @@
 #include "coordinates/cubed_sphere.hpp"
 #include "bvals.hpp"
 #include "bvals/cs_seam_round.hpp"
+#include "utils/wb_background.hpp"
 
 //----------------------------------------------------------------------------------------
 // BValCC constructor:
@@ -138,6 +139,14 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   const Real rg_ = cs_rho_guard;
   const bool rs_lin = cs_lin_resample;
   const bool nors_ = cs_noresample;
+  // wball-1104 wb_seam (see bvals.hpp)
+  const bool wbs_ = wb_seam;
+  auto wbsphi_ = wbs_phi;
+  const EOS_Data wbseos_ = wbs_eos;
+  const int wbsopt_ = wbs_opt, wbsien_ = wbs_ien;
+  const bool wbsetg_ = wbs_etg;
+  auto wbsbcc_ = wbs_bcc;
+  const bool wbsmhd_ = (wbs_bcc.extent_int(0) > 0);
   const bool ext_ = cs_ext_pass_;   // layoutbug-1103: second pass, see cs_seam_blockend
   const int ngx_ = pmy_pack->pmesh->mb_indcs.ng;
   const bool cperm_ = cs_perm_pairs;
@@ -512,6 +521,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           // range, so `pos` can fall outside [b, b+2] and the quadratic then
           // EXTRAPOLATES -- see the note on the monotonicity limit in seamval().
           bool cs_interp = true;
+          Real wpos = 0.0;    // wball-1104 wb_seam: the target's along-seam index position
+          int winw = 0;       //   and the inward seam-normal step in the source chart
           if (cs_seam != 0) {
             const Real xi  = 0.25*M_PI*CellCenterX(jj-js_, nx2_, x2mn, x2mx);
             const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, nx3_, x3mn, x3mx);
@@ -549,6 +560,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             // The stencil reads the array directly, not the buffer, so any active cell is
             // available.  bvals_fc.cpp says the same thing about its own stencil table.
             const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
+            wpos = pos;
+            winw = (nrm > 0.0) ? -1 : 1;
             int b = cs_seam::SeamRound(pos) - 1;   // fc2vtx-1103: tie-safe
             b = (b < blo) ? blo : ((b > bhi) ? bhi : b);
             const Real u = pos - static_cast<Real>(b + 1);
@@ -700,8 +713,74 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             cubed_sphere::ApplyMomentumXform(xfc, my_, mz_, m2o, m3o);
             return (v == va_) ? m2o : m3o;
           };
+          // wball-1104 wb_seam: the state of stencil cell s walked to the ghost's potential
+          // (density for v = 0, total energy for v = wbsien_); see bvals.hpp
+          const bool wbsv = wbs_ && (cs_seam != 0) && !cs_coar && (v == 0 || v == wbsien_);
+          Real lw5[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+          int c5 = 0;
+          if (wbsv) {
+            c5 = static_cast<int>(floor(wpos + 0.5));
+            const Real x = wpos - static_cast<Real>(c5);
+            for (int q = 0; q < 5; ++q) {
+              Real l = 1.0;
+              for (int r = 0; r < 5; ++r) {
+                if (r != q) l *= (x - static_cast<Real>(r - 2))/static_cast<Real>(q - r);
+              }
+              lw5[q] = l;
+            }
+          }
+          auto wbval = [&](const int s, const int i) {
+            const int kq = kst[s], jq = jst[s];
+            Real phig = 0.0;
+            const int nA = (cs_seam == 2) ? wbsphi_.extent_int(1) : wbsphi_.extent_int(2);
+            for (int q = 0; q < 5; ++q) {
+              int ix = c5 - 2 + q;
+              ix = (ix < 0) ? 0 : ((ix > nA - 1) ? nA - 1 : ix);
+              phig += lw5[q]*((cs_seam == 2) ? wbsphi_(m,ix,jj,i) : wbsphi_(m,kk,ix,i));
+            }
+            auto prim = [&](const int kc, const int jc, Real &d, Real &e, Real &ke,
+                            Real &ph) {
+              d = a(m,0,kc,jc,i);
+              const Real m1 = a(m,1,kc,jc,i), m2 = a(m,2,kc,jc,i), m3 = a(m,3,kc,jc,i);
+              const Real xs = 0.25*M_PI*CellCenterX(jc-js_, nx2_, x2mn, x2mx);
+              const Real es = 0.25*M_PI*CellCenterX(kc-ks_, nx3_, x3mn, x3mx);
+              const Real cc = -sin(xs)*sin(es);
+              ke = 0.5*(m1*m1 + (m2*m2 - 2.0*cc*m2*m3 + m3*m3)/(1.0 - cc*cc))/d;
+              ph = wbsphi_(m,kc,jc,i);
+              e = a(m,wbsien_,kc,jc,i) - ke - (wbsetg_ ? d*ph : 0.0);
+              if (wbsmhd_) {
+                const Real b1 = wbsbcc_(m,0,kc,jc,i), b2 = wbsbcc_(m,1,kc,jc,i);
+                const Real b3 = wbsbcc_(m,2,kc,jc,i);
+                ke += 0.5*(b1*b1 + b2*b2 + b3*b3);   // carried as part of E like KE
+                e -= 0.5*(b1*b1 + b2*b2 + b3*b3);
+              }
+            };
+            Real d, e, ke, ph;
+            prim(kq, jq, d, e, ke, ph);
+            Real dd = d, ee = e, tt = -1.0;
+            if (wbsopt_ == 3) {
+              const int ki = (cs_seam == 3) ? kq + winw : kq;
+              const int ji = (cs_seam == 2) ? jq + winw : jq;
+              Real di, ei, kei, phi_;
+              prim(ki, ji, di, ei, kei, phi_);
+              const Real ts = wbseos_.Temperature(d, e), ti = wbseos_.Temperature(di, ei);
+              const Real dph = ph - phi_;
+              const Real al = (fabs(dph) > 1.0e-12*(fabs(ph) + 1.0e-300)) ? (ts - ti)/dph : 0.0;
+              WBAdvance(wbseos_, 3, d, e, phig - ph, dd, ee, tt, ts, al, ts);
+            } else {
+              WBAdvance(wbseos_, 1, d, e, phig - ph, dd, ee, tt);
+            }
+            if (v == 0) return dd;
+            return ee + ke + (wbsetg_ ? dd*phig : 0.0);
+          };
           auto seamval = [&](const int i) {
             if (cs_seam == 0) return sval(0,i);
+            if (wbsv) {
+              const Real sv0 = wbval(0,i), sv1 = wbval(1,i), sv2 = wbval(2,i);
+              const Real qq = wm*sv0 + w0*sv1 + wp*sv2;
+              if (!cs_interp) return qq;
+              return fmin(fmax(sv0, fmax(sv1, sv2)), fmax(fmin(sv0, fmin(sv1, sv2)), qq));
+            }
             if (rgon && rgbad(i)) return plainval(i);
             const Real sv0 = sval(0,i);
             const Real sv1 = sval(1,i);

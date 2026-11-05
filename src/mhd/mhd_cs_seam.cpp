@@ -75,6 +75,7 @@
 #include "bvals/cs_seam_states.hpp"
 #include "reconstruct/plm.hpp"
 #include "mhd.hpp"
+#include "hydro/hydro_wball.hpp"
 #include "diffusion/resistivity.hpp"
 #include "diffusion/cs_edge_jb.hpp"
 #include "mhd/emf_smooth.hpp"
@@ -789,6 +790,10 @@ void MHD::CsSeamFaceStates() {
                          *pseamfs, false, nomlat, is-1, ie+1);
   cs_seam::CsSeamPLMFill(pmy_pack, bcc0, 3, ob, -1, eos_.pfloor, eos_.plm_c1, *pseamfs,
                          false, nomlat, is-1, ie+1);
+  if (wb_all) {   // wball-1104: the edge cells' own WB seam face states (shared code)
+    hydro::WbAllCtx c = WbCtx();
+    hydro::WbAllSeamFaces(c, *pseamfs, nvars, nder, use_wb_rho, is-1, ie+1);
+  }
   cs_seam::CsSeamCovariant(pmy_pack, *pseamfs, IVY, 0, is-1, ie+1);
   cs_seam::CsSeamCovariant(pmy_pack, *pseamfs, ob+1, 1, is-1, ie+1);
   CsSeamMoveRadialGhosts(pmy_pack, *pseamfs, nfs1, true);

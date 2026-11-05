@@ -2292,6 +2292,10 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   auto &ccl = pmbp->pcoord->cos_cell;
   auto &mbpcs = pmbp->pmb->mb_panel;   // csacc-1031 (spin port)
   auto &x3cs = pmbp->pcoord->x3v;
+  // wball-1104 <hydro>/wb_dirs = all: the tangential gravity is the shared well-balanced
+  // source (Hydro::AddWbGravity, the true Phi of phicc0/phi0, after this kernel); the x1
+  // part stays this kernel's fg (Phi_wb) + gr4 remainder
+  const bool wball = ph->wb_all;
   par_for("ryper_srce", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
@@ -2316,19 +2320,22 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       // csacc-1031: gravity remainders (gt4/gp4 covariant on e_xi, e_eta); the Coriolis
       // force is the core frame_omega's (applied before the user sources)
       u0(m,IM1,k,j,i) += bdt*(fg + d*gr4(m,k,j,i));
-      u0(m,IM2,k,j,i) += bdt*d*gt4(m,k,j,i);
-      u0(m,IM3,k,j,i) += bdt*d*gp4(m,k,j,i);
+      if (!wball) {
+        u0(m,IM2,k,j,i) += bdt*d*gt4(m,k,j,i);
+        u0(m,IM3,k,j,i) += bdt*d*gp4(m,k,j,i);
+      }
     } else if (p3) {
       // 3-D: gravity remainders on (m,k,j,i), the full Coriolis -2 Omega x v
       const Real vt = w0(m,IVY,k,j,i);
       const Real st = sin(x2v(m,j)), cth = cos(x2v(m,j));
       u0(m,IM1,k,j,i) += bdt*(fg + d*(gr4(m,k,j,i) + om2*vp*st));
-      u0(m,IM2,k,j,i) += bdt*d*(gt4(m,k,j,i) + om2*vp*cth);
+      const Real g2 = wball ? 0.0 : gt4(m,k,j,i), g3 = wball ? 0.0 : gp4(m,k,j,i);
+      u0(m,IM2,k,j,i) += bdt*d*(g2 + om2*vp*cth);
       if (corlz) {
         const Real q = RyCorLzQ(cf1, cf2, area1, ca2, cx1f, cx2f, x1v, x2v, true, m, k, j, i);
-        u0(m,IM3,k,j,i) += bdt*(d*gp4(m,k,j,i) - omc*q/(x1v(m,i)*st*volume(m,k,j,i)));
+        u0(m,IM3,k,j,i) += bdt*(d*g3 - omc*q/(x1v(m,i)*st*volume(m,k,j,i)));
       } else {
-        u0(m,IM3,k,j,i) += bdt*d*(gp4(m,k,j,i) - om2*(vr*st + vt*cth));
+        u0(m,IM3,k,j,i) += bdt*d*(g3 - om2*(vr*st + vt*cth));
       }
     } else {
       u0(m,IM1,k,j,i) += bdt*(fg + d*(gr(m,k,i) + om2*vp));
@@ -2465,6 +2472,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       }
     }
   });
+  if (wball) ph->AddWbGravity(bdt, false);   // wball-1104: x2/x3 (x1: fg above)
   eint_ledger::Mark(pm, "srce");   // floorheat-1029 (no-op unless on)
   // problem/env_amb_mode = radeq: the density floor applied here (the EOS floor then never
   // acts), added gas at the cell's velocity and temperature; its mass is booked (Mfl), its
@@ -5456,6 +5464,15 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     acc_wbt.on = pin->GetOrAddBoolean("problem", "roche_wb_tan", false);
   } else {
     acc_wbt.on = pin->GetBoolean("problem", "roche_wb_tan");
+  }
+  // wball-1104: <hydro>/wb_dirs = all replaces the tangential forces (gt4_/gp4_) by the
+  // shared well-balanced source; roche_wb_tan (a replacement of the same forces) and the
+  // 2-D band path (gp_ on (m,k,i)) are refused with it
+  if (phd->wb_all && (acc_wbt.on || !(p3_ || cs_))) {
+    std::cout << "### FATAL ERROR in ry_per_accretor: <hydro>/wb_dirs = all needs "
+              << (acc_wbt.on ? "problem/roche_wb_tan = false" : "problem/phys_3d = true")
+              << std::endl;
+    std::exit(EXIT_FAILURE);
   }
   wbt_file_ = pin->GetString("job", "basename") + ".wbt.hst";
   if (acc_wbt.on) {

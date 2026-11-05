@@ -19,6 +19,7 @@
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "mhd.hpp"
+#include "hydro/hydro_wball.hpp"
 #include "eos/eos.hpp"
 #include "reconstruct/dc.hpp"
 #include "reconstruct/plm.hpp"
@@ -250,6 +251,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
   const bool use_wb_x2_ = use_wb_x2;
+  const bool wb_all_ = wb_all;   // wball-1104
+  auto wbq2_ = wbq2;
+  auto wbq3_ = wbq3;
+  auto wbw_ = wbw;
   const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
   const Real wb_rmax_ = wb_rmax;
   const Real wb_rmin_ = wb_rmin;
@@ -303,6 +308,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // states (MHD::CsSeamFaceStates, mhd_cs_seam.cpp), substituted on the ghost side of
   // every panel-seam face (rows is-1..ie+1) after the gnomonic face rotation
   const bool cs_shr_ = (cs_seam_mhd > 0);
+  if (wb_all) BuildWBCacheAll();   // wball-1104 (before the seam face states)
   if (cs_shr_) {CsSeamFaceStates();}
   DvceArray5D<Real> sfs2_, sfs3_;
   if (cs_shr_) {sfs2_ = pseamfs->x2f; sfs3_ = pseamfs->x3f;}
@@ -359,7 +365,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                               use_wellbalance_dynamic_,
                               use_wb_x1_, wb_rmax_, wb_rmin_,
                               m, k, j, il-1, iu, w0_, x1v_, x1f_, phiwbcc_,
-                              phiwb_x1f_, wbq0_, true, wl, wr);
+                              phiwb_x1f_, wbq0_, true, wl, wr, wb_all_);
         GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                               use_wellbalance_dynamic_,
                               use_wb_x1_, wb_rmax_, wb_rmin_,
@@ -389,8 +395,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         
     if (use_wellbalance_dynamic_ && use_wb_x1_)
     {
+      if (wb_all_) {   // wball-1104: x1 through the shared routine (w = 1)
+        hydro::WbAllPLM(member, use_wb_rho_, 1, m, k, j, il-1, iu, w0_, wbq0_, wbw_, wl, wr);
+      } else {
       WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
           m, k, j, il-1, iu, w0_, phiwbcc_, phiwb_x1f_, wbq0_, wl, wr);
+      }
       if (eos_.plm_c1) {
         PiecewiseLinearC1X1(member, m, k, j, il-1, iu, b0_, bl, br);
       } else {
@@ -741,6 +751,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                                 pq);
           GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, x2v_, x2f_, bl_jp1, br,
                                 pq);
+          if (wb_all_) {
+            hydro::WbAllBlendGrid(member, use_wb_rho_, 2, false, m, k, j, is-1, ie+1, w0_,
+                                  x2v_, x2f_, wbq2_, wbw_, wl_jp1, wr);
+          }
         } else {
             
         if (use_wellbalance_dynamic_ && use_wb_x2_)
@@ -791,6 +805,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         }
             
         }
+        if (wb_all_) {   // wball-1104: the WB deviation blended into the plain faces
+          hydro::WbAllBlendUni(member, use_wb_rho_, 2, false, m, k, j, is-1, ie+1, w0_,
+                               wbq2_, wbw_, wl_jp1, wr);
+        }
         }
           
         // Reconstruct the derived thermodynamic variables (general EOS only). NOTE the
@@ -832,6 +850,15 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             default:
               break;
           }
+          }
+          if (wb_all_) {
+            if (use_spherical_polar) {
+              hydro::WbAllBlendGrid(member, false, 2, true, m, k, j, is-1, ie+1, wder_,
+                                    x2v_, x2f_, wbq2_, wbw_, dl_jp1, dr);
+            } else {
+              hydro::WbAllBlendUni(member, false, 2, true, m, k, j, is-1, ie+1, wder_,
+                                   wbq2_, wbw_, dl_jp1, dr);
+            }
           }
           par_for_inner(member, is-1, ie+1, [&](const int i) {
             dl_jp1(IDPR,i) = fmax(dl_jp1(IDPR,i), eos_.pfloor);
@@ -1077,6 +1104,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         if (use_spherical_polar) {
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, x3v_, x3f_, wl_kp1, wr);
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, x3v_, x3f_, bl_kp1, br);
+          if (wb_all_) {
+            hydro::WbAllBlendGrid(member, use_wb_rho_, 3, false, m, k, j, is-1, ie+1, w0_,
+                                  x3v_, x3f_, wbq3_, wbw_, wl_kp1, wr);
+          }
         } else {
         // Reconstruct qR[k] and qL[k+1], for both W and Bcc
         switch (recon_method_) {
@@ -1107,6 +1138,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             break;
           default:
             break;
+        }
+        if (wb_all_) {
+          hydro::WbAllBlendUni(member, use_wb_rho_, 3, false, m, k, j, is-1, ie+1, w0_,
+                               wbq3_, wbw_, wl_kp1, wr);
         }
         }
 
@@ -1143,6 +1178,15 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             default:
               break;
           }
+          }
+          if (wb_all_) {
+            if (use_spherical_polar) {
+              hydro::WbAllBlendGrid(member, false, 3, true, m, k, j, is-1, ie+1, wder_,
+                                    x3v_, x3f_, wbq3_, wbw_, dl_kp1, dr);
+            } else {
+              hydro::WbAllBlendUni(member, false, 3, true, m, k, j, is-1, ie+1, wder_,
+                                   wbq3_, wbw_, dl_kp1, dr);
+            }
           }
           par_for_inner(member, is-1, ie+1, [&](const int i) {
             dl_kp1(IDPR,i) = fmax(dl_kp1(IDPR,i), eos_.pfloor);
