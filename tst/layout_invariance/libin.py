@@ -6,7 +6,12 @@ Only uniform (single-level) meshes.  Cubed sphere: MeshBlock gids are panel-majo
 tree per panel, mesh/build_tree.cpp), so panel = gid // (nmb/6) and lx2/lx3 are
 panel-local.  The file stores MeshBlocks in gid order (rank offsets by gid)."""
 import os
+import sys
 import numpy as np
+
+# USER 11-05: comparisons refuse float32 dumps (the float32-dump trap) unless ALLOW_FLOAT32 is set
+# (li.py --allow-float32, or env LI_ALLOW_FLOAT32=1)
+ALLOW_FLOAT32 = os.environ.get('LI_ALLOW_FLOAT32', '') == '1'
 
 
 def read_bin(fn):
@@ -38,6 +43,10 @@ def read_bin(fn):
     nvar = int(hdr['number of variables'])
     ldt = np.float64 if lsz == 8 else np.float32
     vdt = np.float64 if vsz == 8 else np.float32
+    if vsz != 8 and not ALLOW_FLOAT32:
+        sys.stderr.write('### REFUSED: %s is a float32 .bin dump; layout/bitwise comparisons need '
+                         '<outputN>/bin_double = true (or --allow-float32)\n' % fn)
+        sys.exit(3)
     blocks = []
     while pos < len(raw):
         ii = np.frombuffer(raw, np.int32, 10, pos)
