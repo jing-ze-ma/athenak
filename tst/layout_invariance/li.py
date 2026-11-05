@@ -286,7 +286,10 @@ def main():
     ap.add_argument('--list', action='store_true')
     ap.add_argument('--compare-only', action='store_true')
     ap.add_argument('--always-mpirun', action='store_true')
+    ap.add_argument('--allow-float32', action='store_true',
+                    help='compare float32 .bin dumps anyway (default: refuse)')
     opts = ap.parse_args()
+    libin.ALLOW_FLOAT32 = opts.allow_float32 or libin.ALLOW_FLOAT32
     bins = {}
     if os.path.exists(opts.bins):
         for s in open(opts.bins):
