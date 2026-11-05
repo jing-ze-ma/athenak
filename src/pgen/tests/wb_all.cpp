@@ -317,8 +317,8 @@ void ProblemGenerator::WbAll(ParameterInput *pin, const bool restart) {
                   : (pmy_mesh_->use_cubed_sphere
                      ? WbAllPhiRaw(v, pin->GetOrAddReal("problem", "r_ref", 1.0), 0.0, 0.0)
                      : WbAllPhiRaw(v, 0.0, 0.0, 0.0));
-  const std::string fl = pin->GetOrAddString("problem", "flow", "none");
-  v.flow = (fl.compare("shear") == 0) ? 1 : ((fl.compare("jet") == 0) ? 2 : 0);
+  const std::string flw = pin->GetOrAddString("problem", "flow", "none");
+  v.flow = (flw.compare("shear") == 0) ? 1 : ((flw.compare("jet") == 0) ? 2 : 0);
   v.U = pin->GetOrAddReal("problem", "U", 0.0);
   v.s0 = pin->GetOrAddReal("problem", "s0", 0.0);
   v.delta = pin->GetOrAddReal("problem", "delta", 0.1);
