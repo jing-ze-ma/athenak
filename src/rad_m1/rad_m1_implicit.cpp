@@ -2771,6 +2771,28 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
     }
   }
+  // doface-1105 <rad_m1>/doppler_face = donor | central (rad_m1.hpp dop_face; read only
+  // when named, default donor = bitwise)
+  if (pin->DoesParameterExist("rad_m1","doppler_face")) {
+    const std::string df = pin->GetString("rad_m1","doppler_face");
+    if (df == "central") {
+      dop_face = 1;
+    } else if (df != "donor") {
+      ImplFatal("<rad_m1>/doppler_face must be donor | central");
+    }
+    if (dop_face == 1) {
+      if (impl_vimp && global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> doppler_face = central: implicit_vimp overridden to false "
+                  << "(its Newton rows linearise the donor flux)" << std::endl;
+      }
+      impl_vimp = false;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> doppler_face = central (doface-1105): x1 enthalpy flux "
+                  << "a E = v (1 + chi) E as the face mean 0.5 (a_L E_L + a_R E_R) (Athena++ "
+                  << "DO near-central face), no donor / plm correction" << std::endl;
+      }
+    }
+  }
   {  // vphi-1021 (USER defaults group 1): DEFAULT true; inert unless a pgen marks hold_m
     impl_hold = pin->GetOrAddBoolean("rad_m1","implicit_hold",true);
     if (impl_hold) {
@@ -14247,6 +14269,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool lbath = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
     const bool lbhr = impl_lbath_hr;   // linhao-prod-1104 halfrange (rad_m1.hpp)
     const bool afd = afd_on; const Real afdt = afd_tc, afdm = afd_mu1;   // col1d A7
+    const bool dfc_ = (dop_face == 1);   // doface-1105 doppler_face = central (rad_m1.hpp)
     const Real afdq = afd_taumin;
     const Real lhmu = lbath_mu1, lheg = lbath_heg, lhfg = lbath_hfg;
     const int lhdm = lbath_dmode; const Real lhal = lbath_alpha;
@@ -14348,12 +14371,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         bb += nu*ifw_(m,M1_IFW_HCL,k,j,i+1);
         cc += nu*ifw_(m,M1_IFW_HCR,k,j,i+1);
         rr -= nu*ifw_(m,M1_IFW_DG,k,j,i+1);
-        if (vf > 0.0) {
+        if (dfc_) {   // doface-1105 doppler_face = central: the DO face mean of a E
+          bb += nu*cr*0.5*ai;
+          cc += nu*cr*0.5*iw_(m,M1_IW_ADV,k,j,ip);
+        } else if (vf > 0.0) {
           bb += nu*cr*ai;
         } else {
           cc += nu*cr*iw_(m,M1_IW_ADV,k,j,ip);
         }
-        if (enth2) {
+        if (enth2 && !dfc_) {
           bool o0, o3;
           int i0 = M1EnthIdx(i-1, is, ie, cyclic, hxl, hxh, o0);
           int i3 = M1EnthIdx(i+2, is, ie, cyclic, hxl, hxh, o3);
@@ -14431,12 +14457,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         aa -= nu*ifw_(m,M1_IFW_HCL,k,j,i);
         bb -= nu*ifw_(m,M1_IFW_HCR,k,j,i);
         rr += nu*ifw_(m,M1_IFW_DG,k,j,i);
-        if (vf > 0.0) {
+        if (dfc_) {   // doface-1105 doppler_face = central
+          aa -= nu*cr*0.5*iw_(m,M1_IW_ADV,k,j,im);
+          bb -= nu*cr*0.5*ai;
+        } else if (vf > 0.0) {
           aa -= nu*cr*iw_(m,M1_IW_ADV,k,j,im);
         } else {
           bb -= nu*cr*ai;
         }
-        if (enth2) {
+        if (enth2 && !dfc_) {
           bool o0, o3;
           int i0 = M1EnthIdx(i-2, is, ie, cyclic, hxl, hxh, o0);
           int i3 = M1EnthIdx(i+1, is, ie, cyclic, hxl, hxh, o3);
@@ -14618,14 +14647,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             bb += nup*kc;
             cc -= nup*kc;
           }
-          if (vf > 0.0) {
+          if (dfc_) {   // doface-1105 doppler_face = central: the DO face mean of a E
+            bb += nup*cr*0.5*ai;
+            d_[2] += nup*cr*0.5*ai;
+            cc += nup*cr*0.5*iw_(m,M1_IW_ADV,k,j,ip);
+          } else if (vf > 0.0) {
             bb += nup*cr*ai;
             d_[2] += nup*cr*ai;
           } else {
             cc += nup*cr*iw_(m,M1_IW_ADV,k,j,ip);
           }
           const Real re0_ = rr;
-          if (enth2) {
+          if (enth2 && !dfc_) {
             bool o0, o3;
             int i0 = M1EnthIdx(i-1, is, ie, false, hxl, hxh, o0);
             int i3 = M1EnthIdx(i+2, is, ie, false, hxl, hxh, o3);
@@ -14749,14 +14782,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             bb -= num*ifw_(m,M1_IFW_HCR,k,j,i);
             rr += num*ifw_(m,M1_IFW_DG,k,j,i);
           }
-          if (vf > 0.0) {
+          if (dfc_) {   // doface-1105 doppler_face = central (ghost E fixed: right-hand side)
+            rr += num*cr*0.5*ag1*eg1;
+            bb -= num*cr*0.5*ai;
+            d_[2] -= num*cr*0.5*ai;
+          } else if (vf > 0.0) {
             rr += num*cr*ag1*eg1;
           } else {
             bb -= num*cr*ai;
             d_[2] -= num*cr*ai;
           }
           const Real re1_ = rr;
-          if (enth2) {
+          if (enth2 && !dfc_) {
             bool o3;
             int i3 = M1EnthIdx(i+1, is, ie, false, hxl, hxh, o3);
             if (t2vs) {
@@ -14875,14 +14912,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             aa -= num*kc;
             bb += num*kc;
           }
-          if (vf > 0.0) {
+          if (dfc_) {   // doface-1105 doppler_face = central
+            aa -= num*cr*0.5*iw_(m,M1_IW_ADV,k,j,im);
+            bb -= num*cr*0.5*ai;
+            d_[2] -= num*cr*0.5*ai;
+          } else if (vf > 0.0) {
             aa -= num*cr*iw_(m,M1_IW_ADV,k,j,im);
           } else {
             bb -= num*cr*ai;
             d_[2] -= num*cr*ai;
           }
           const Real re1_ = rr;
-          if (enth2) {
+          if (enth2 && !dfc_) {
             bool o0, o3;
             int i0 = M1EnthIdx(i-2, is, ie, false, hxl, hxh, o0);
             int i3 = M1EnthIdx(i+1, is, ie, false, hxl, hxh, o3);
@@ -15296,6 +15337,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto q1z_ = cs2f1;
     const bool lbathf = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
     const bool lbhrf = impl_lbath_hr;   // linhao-prod-1104 halfrange
+    const bool dfcf = (dop_face == 1);   // doface-1105 doppler_face = central
     const bool afdf = afd_on && afd_force; const Real afdtf = afd_tc, afdmf = afd_mu1;
     const Real afdqf = afd_taumin;
     const Real lhmuf = lbath_mu1, lhegf = lbath_heg, lhfgf = lbath_hfg;
@@ -15368,6 +15410,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real adf = (vf > 0.0) ? lgf_(m,5,k,j)*eg1
                    : iw_(m,M1_IW_ADV,k,j,ip)*iw_(m,M1_IW_EP,k,j,ip);
         if (lbhrf) {   // linhao-prod-1104 halfrange: the row's split advective flux
+          adf = 0.5*(lgf_(m,5,k,j)*eg1 + iw_(m,M1_IW_ADV,k,j,ip)*iw_(m,M1_IW_EP,k,j,ip));
+        } else if (dfcf) {   // doface-1105 doppler_face = central: the row's face mean
           adf = 0.5*(lgf_(m,5,k,j)*eg1 + iw_(m,M1_IW_ADV,k,j,ip)*iw_(m,M1_IW_EP,k,j,ip));
         } else if (enth2) {
           const int i3 = (ip + 1 <= ie) ? (ip + 1) : ip;

@@ -1863,6 +1863,14 @@ class RadiationM1 {
   // (1/2 (U^n + Y1) + 1/2 dt L(Y1), Y1 kicked), so there V = v^n + 2 (v_stage - v^n).  Also forces
   // implicit_vimp = false.
   bool dop_vstar_n = false;
+  // doface-1105 <rad_m1>/doppler_face = donor | central (read only when named; default
+  // donor = bitwise).  central: the x1 enthalpy (Doppler) flux a E, a = v (1 + chi), of the
+  // implicit E row is the face MEAN 0.5 (a_L E_L + a_R E_R) of the two cells' fluxes, with
+  // no donor switch and no plm correction (implicit_enthalpy), in the Cartesian and sp rows
+  // and at the fin4 ghost-bath wall face.  That is the Athena++ implicit DO near-central
+  // face (tau_scheme 1 HLL, f -> 1/tau in thick cells) applied to the cell-centred lab
+  // flux (4/3) v E.  Forces implicit_vimp = false.  Athena++ reproduction only.
+  int dop_face = 0;
   int dop_dbg = 0;        // <rad_m1>/doppler_vel_dbg = N (read only when named): every N-th solve
   int dop_dbg_cnt = 0;    // print the wall cells' V vs v^n (hydro u1) vs the stage v (diagnostic)
   // pgrst-vimp-1021 <rad_m1>/implicit_vimp_ewf (read only when named; default false =
