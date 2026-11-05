@@ -27,6 +27,7 @@ enum class BoundaryFlag {undef=-1,block, panel, polar, reflect, inflow, outflow,
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
+#include "eos/eos.hpp"
 #include "tasklist/task_list.hpp"
 //#include "particles/particles.hpp"
 
@@ -445,6 +446,19 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // where variable 0 is the density; 0 = off): see PackAndSendCC.
   Real cs_rho_guard = 0.0;
   bool cs_lin_resample = false;   // <mesh>/cs_seam_resample = linear, same scope
+  // wball-1104 <hydro|mhd>/wb_seam (opt-in, with wb_dirs = all on the cubed sphere; set by
+  // Hydro/MHD on their conserved-state exchange only): the along-seam resample of the
+  // DENSITY and ENERGY takes each stencil cell's state WALKED hydrostatically (isothermal,
+  // or the local polytrope from the cell's inward seam-normal neighbour) to the potential
+  // of the ghost point (a 5-point Lagrange interpolation of phicc0 along the source row),
+  // then interpolates those: an equilibrium ghost is the equilibrium state at its own
+  // potential to O(h^5) instead of the O(h^2) of resampling the stratified state itself.
+  bool wb_seam = false;
+  DvceArray4D<Real> wbs_phi;   // the fluid's phicc0
+  EOS_Data wbs_eos;
+  int wbs_opt = 1;             // WBAdvance branch: 1 isothermal, 3 local polytrope
+  bool wbs_etg = false;        // E carries rho Phi (<hydro|mhd>/etotgrav)
+  int wbs_ien = 4;             // the energy index of the exchanged state
   // cs_noresample (default false): this object's cross-panel ghosts are the plain signed
   // index copy of the neighbour's own cells (no along-seam resample), i.e. the mirror
   // images of this block's cells across the seam.  Set by the implicit M1 on its scratch

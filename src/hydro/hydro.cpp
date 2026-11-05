@@ -500,6 +500,27 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
         if (c3 > 1) Kokkos::realloc(wbq3, nmb, 15, c3, c2, c1);
         Kokkos::realloc(wbw, nmb, 3, c3, c2, c1);
         Kokkos::deep_copy(wbw, 1.0);
+        // wball-1104 <hydro>/wb_seam (opt-in, read only when named): the WB-aware seam
+        // resample of the density and energy (bvals.hpp, MeshBoundaryValuesCC::wb_seam)
+        if (pin->DoesParameterExist("hydro","wb_seam") && pin->GetBoolean("hydro","wb_seam")) {
+          if (!pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->multilevel) {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                      << std::endl << "<hydro>/wb_seam needs a single-level cubed sphere"
+                      << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
+          pbval_u->wb_seam = true;
+          pbval_u->wbs_phi = phicc0;
+          pbval_u->wbs_eos = peos->eos_data;
+          pbval_u->wbs_opt = (wb_option == WBOption::polytropic) ? 3 : 1;
+          pbval_u->wbs_etg = use_etotgrav;
+          pbval_u->wbs_ien = IEN;
+          if (global_variable::my_rank == 0) {
+            std::cout << "hydro: wb_seam = true (seam resample of rho, E walked to the ghost "
+                      << "potential, " << ((pbval_u->wbs_opt == 3) ? "local polytrope" :
+                      "isothermal") << ")" << std::endl;
+          }
+        }
         if (global_variable::my_rank == 0) {
           std::cout << "hydro: wb_dirs = all (x2/x3 dynamic well balance), wb_weight = "
                     << (wb_weight ? "true" : "false") << std::endl;
