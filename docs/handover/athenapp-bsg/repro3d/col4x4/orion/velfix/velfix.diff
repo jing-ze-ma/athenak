@@ -1,0 +1,35 @@
+diff -ru ../athena4x4/src/nr_radiation/implicit/radiation_implicit.cpp src/nr_radiation/implicit/radiation_implicit.cpp
+--- ../athena4x4/src/nr_radiation/implicit/radiation_implicit.cpp	2026-10-14 22:12:07.000000000 +0200
++++ src/nr_radiation/implicit/radiation_implicit.cpp	2026-11-06 23:26:39.048543204 +0100
+@@ -60,6 +60,7 @@
+   error_limit_ =  pin->GetOrAddReal("radiation","error_limit",1.e-6);
+   cfl_rad = pin->GetOrAddReal("radiation","cfl_rad",1.0);
+   ite_scheme = pin->GetOrAddInteger("radiation","iteration",1);
++  vel_mode = pin->GetOrAddInteger("radiation","vel_mode",0);
+   rb_or_not = pin->GetOrAddInteger("radiation","red_or_black",0);
+ 
+   omega = pin->GetOrAddReal("radiation","omega",1.0);
+diff -ru ../athena4x4/src/nr_radiation/implicit/radiation_implicit.hpp src/nr_radiation/implicit/radiation_implicit.hpp
+--- ../athena4x4/src/nr_radiation/implicit/radiation_implicit.hpp	2026-10-14 22:12:07.000000000 +0200
++++ src/nr_radiation/implicit/radiation_implicit.hpp	2026-11-06 23:26:39.046633966 +0100
+@@ -45,6 +45,7 @@
+                 // but with smaller time step
+ 
+   int ite_scheme;
++  int vel_mode;  // 1: Doppler terms of the solve use the prim from before this stage's hydro update
+   int rb_or_not;
+ 
+   IMRadITTaskList *pimraditlist;
+diff -ru ../athena4x4/src/nr_radiation/implicit/rad_iteration.cpp src/nr_radiation/implicit/rad_iteration.cpp
+--- ../athena4x4/src/nr_radiation/implicit/rad_iteration.cpp	2026-10-14 22:12:07.000000000 +0200
++++ src/nr_radiation/implicit/rad_iteration.cpp	2026-11-06 23:26:39.065648000 +0100
+@@ -67,6 +67,9 @@
+       if (stage == 1) {
+         ir_ini = prad->ir;
+       }
++      // vel_mode 1: w <-> w1, so stage 1 sees w^n, stage 2 w^{n+1/2} after its radiation kick,
++      // ghosts included. IMRadHydroTaskList::Primitive only writes w1, then swaps.
++      if (vel_mode == 1) ph->w.SwapAthenaArray(ph->w1);
+       // use the current stage velocity for advection
+       prad->pradintegrator->GetTgasVel(pmb,wght,ph->u,ph->w,pf->bcc,ir_ini);
+ 
