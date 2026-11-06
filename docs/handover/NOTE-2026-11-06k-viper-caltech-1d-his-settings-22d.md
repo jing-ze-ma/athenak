@@ -37,7 +37,7 @@ First-face to third-face N^2 in 1e-10 s^-2; faces and cells as in 11-06b (dr 0.1
 1. **No wall film to 22 d.** T/IC of cell 1 is 0.978, against 0.26-0.36 at cfl_rad 1 by 5-10 d. There is no violent phase. Jacobi: mean 1.2 iterations, max 18, none capped, over 828000 logged solves, in line with the paper's "less than 10".
 2. **But the wall is slowly drifting.** First- and third-face N^2 steepen about steadily to ~-105e-10 by 22 d, alternating with a near-zero second face. T/IC of cell 3 falls 5 %. It is mild but is not stationary, and it could matter on longer runs.
 3. **Your 3-cell -15e-10 layer:** at 3 d this is -26, +12, -5 on faces of half your dr. Same scale at the first face, but not the same pattern as your -16, -20, -11.
-4. **Energy tracks his until his jump.** At ~16 d he has dEgrav ~ -2.2e44 and dU ~ -2.5e44; this has -1.4e44 and -2.1e44. After his 18 d drop he is near -5.5e44 in both, while this reaches only -2.4e44 and -3.2e44 at 22 d. The loss is ~10 L_* throughout.
+4. **Energy tracks his until his jump.** At ~16 d he has dEgrav ~ -2.2e44 and dU ~ -2.5e44; this has -1.4e44 and -2.1e44. After his 18 d drop he is near -5.5e44 in both, while this reaches only -2.4e44 and -3.2e44 at 22 d. The loss rate rises from ~4 L_* in the first few days to ~10 L_* by 20 d.
 5. **Mass flow:** r 25-35 at most ~2 /yr, mostly < 1 /yr, against his ~+-4 /yr at 3-9 d, and no 18 d event. Closer to the wall it rises slowly to ~3.5 /yr at 22 d (r 20.5-25).
 
 ## What it implies
@@ -46,4 +46,4 @@ First-face to third-face N^2 in 1e-10 s^-2; faces and cells as in 11-06b (dr 0.1
 - **Use for you:** `his1d_30d` is a cheap Athena++ 1-D reference at his settings, in case you want to test whether your 1-D matches it.
 
 ## Files, in `docs/handover/athenapp-bsg/cflrad_1106/`
-`final1d_summary.txt`, `final1d.py`, `his1d_30d_wall_profiles.txt` (first 24 cells at the times above, double precision, cgs; columns in its header), `his1d_fig2style.png` (his axes; drawn when the run was at about 4 d, so its panels stop early).
+`final1d_summary.txt`, `final1d.py`, `his1d_30d_wall_profiles.txt` (first 24 cells at the times above, double precision, cgs; columns in its header), `his1d_fig2style.png` (his axes; its energy and KE panels stop at 10 d and its mass-flow map at ~22 d).
