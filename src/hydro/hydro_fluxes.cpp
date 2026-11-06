@@ -15,6 +15,7 @@
 #include "coordinates/coordinates.hpp"
 #include "hydro.hpp"
 #include "hydro_wball.hpp"
+#include "reconstruct/wb_wall.hpp"
 #include "bvals/bvals.hpp"
 #include "hydro_mergelat.hpp"
 #include "bvals/cs_seam_states.hpp"
@@ -164,11 +165,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   // is off-centre even without a stretch; `reconstruct` governs the ANGULAR sweeps)
   const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
   const bool wall_ix1_ = wall_closed_ix1;
-  // wallwb-1105 <hydro>/wall_wb_onesided (hydro.hpp): only on the path that owns it
-  const bool wall_wb1_ = wall_closed_ix1 && wall_wb_onesided && use_wellbalance_dynamic &&
-                         use_wb_x1 && recon_method_x1 == ReconstructionMethod::plm &&
-                         (pmy_pack->pmesh->use_spherical_polar ||
-                          pmy_pack->pmesh->use_cubed_sphere);
+  // wallwb-1105 <hydro>/wall_wb_onesided (hydro.hpp, reconstruct/wb_wall.hpp): every
+  // geometry, on the x1 dynamic WB paths that read the x1 cache wbq0 (PLM)
+  const bool wwb_ = wall_wb_onesided && use_wellbalance_dynamic && use_wb_x1 &&
+                    (wb_all || recon_method_x1 == ReconstructionMethod::plm ||
+                     !(pmy_pack->pmesh->use_spherical_polar || str_r1_));
+  const bool curv1_ = pmy_pack->pmesh->use_spherical_polar || str_r1_;
   const bool diode_ox1_ = diode_ox1;   // topbc-1101 (hydro.hpp)
   const bool cs_seam_hlle_ = cs_seam_hlle;   // csedge-1019 (hydro.hpp)
   // <hydro>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see hydro.hpp).
@@ -471,7 +473,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     // O(dx^2) and a strong blast leaked 2-3e-4 of the mass through a "closed" wall.  Make
     // the ghost-side state the exact mirror of the interior-side one: any solver then
     // returns a zero mass flux (S_M = 0 by symmetry) to round-off.
-    if (use_spherical_polar || str_r1_) {
+    if (use_spherical_polar || str_r1_ || wwb_) {
       member.team_barrier();
       Kokkos::single(Kokkos::PerTeam(member), [&]() {
         // Also used for a USER inner boundary under wall_closed_ix1 (dhj problem/
@@ -480,55 +482,40 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         // from (d,e), so mirroring only wl would keep the ghost-side pressure and give
         // S_M != 0.  (ix1_bc = reflect is left exactly as it was.)
         const BoundaryFlag bix1 = mb_bcs_pq.d_view(m,BoundaryFace::inner_x1);
-        // wallwb-1105 <hydro>/wall_wb_onesided: the wall cell's WB deviation with the
-        // one-sided interior slope, at BOTH its faces (hydro.hpp).  q1_is is the
-        // deviation of the cell from its own background (0 up to round-off).
-        if (wall_wb1_ && bix1 == BoundaryFlag::user &&
-            !(wb_rmax_ > 0.0 && x1v_(m,is) > wb_rmax_) &&
-            !(wb_rmin_ > 0.0 && x1v_(m,is) < wb_rmin_) &&
-            !(phicc_wb_(m,k,j,is) > wb_phimax_)) {
-          const Real dxLh = x1v_(m,is) - x1f_(m,is);
-          const Real dxRh = x1f_(m,is+1) - x1v_(m,is);
-          const Real dxR = x1v_(m,is+1) - x1v_(m,is);
-          for (int c=0; c<3; ++c) {
-            if (c == 0 && !use_wb_rho_) continue;
-            if (c == 2 && nder == 0) continue;
-            const WBVar wv = (c == 0) ? WBVar::wb_dens :
-                             ((c == 1) ? WBVar::wb_eint : WBVar::wb_pres);
-            Real q0m, q0mh, q0c, q0ph, q0p;
-            WBReadCache(wbq0_, wv, m, k, j, is, q0m, q0mh, q0c, q0ph, q0p);
-            const Real qc = (c == 2) ? wder_(m,IDPR,k,j,is) :
-                            w0_(m,(c == 0) ? IDN : IEN,k,j,is);
-            const Real qp = (c == 2) ? wder_(m,IDPR,k,j,is+1) :
-                            w0_(m,(c == 0) ? IDN : IEN,k,j,is+1);
-            const Real q1c = qc - q0c;
-            const Real sl = ((qp - q0p) - q1c)/dxR;
-            const Real fl = q0mh + q1c - sl*dxLh;   // wall face
-            const Real fr = q0ph + q1c + sl*dxRh;   // face is+1/2, cell is side
-            if (fl > 0.0 && fr > 0.0) {
-              if (c == 2) {
-                dr(IDPR,is) = fl;
-                dl(IDPR,is+1) = fr;
-              } else {
-                const int n = (c == 0) ? IDN : IEN;
-                wr(n,is) = fl;
-                wl(n,is+1) = fr;
-              }
-            }
+        // wallwb-1105 <hydro>/wall_wb_onesided: the wall cells reconstruct their WB
+        // deviation one-sided (reconstruct/wb_wall.hpp), then the mirror below
+        const BoundaryFlag box1 = mb_bcs_pq.d_view(m,BoundaryFace::outer_x1);
+        if (wwb_) {
+          auto inr = [&](const int i) {
+            return !curv1_ || (!(wb_rmax_ > 0.0 && x1v_(m,i) > wb_rmax_) &&
+                               !(wb_rmin_ > 0.0 && x1v_(m,i) < wb_rmin_) &&
+                               !(phicc_wb_(m,k,j,i) > wb_phimax_));
+          };
+          if ((bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user))
+              && inr(is)) {
+            wbwall::WallCellX1(true, m, k, j, is, w0_, wder_, wbq0_, x1v_, x1f_,
+                               use_wb_rho_, nder, wl, wr, dl, dr);
+          }
+          if (box1 == BoundaryFlag::reflect && inr(ie)) {
+            wbwall::WallCellX1(false, m, k, j, ie, w0_, wder_, wbq0_, x1v_, x1f_,
+                               use_wb_rho_, nder, wl, wr, dl, dr);
           }
         }
         if (bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user)) {
           for (int n=0; n<nvars; ++n) { wl(n,is) = wr(n,is); }
           wl(IVX,is) = -wr(IVX,is);
-          if (bix1 == BoundaryFlag::user) {  // reflect stays bitwise
+          if (bix1 == BoundaryFlag::user || wwb_) {  // reflect stays bitwise (key off)
             for (int n=0; n<nder; ++n) {
               dl(n,is) = dr(n,is);
             }
           }
         }
-        if (mb_bcs_pq.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect) {
+        if (box1 == BoundaryFlag::reflect) {
           for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
           wr(IVX,ie+1) = -wl(IVX,ie+1);
+          if (wwb_) {
+            for (int n=0; n<nder; ++n) { dr(n,ie+1) = dl(n,ie+1); }
+          }
         }
       });
     }

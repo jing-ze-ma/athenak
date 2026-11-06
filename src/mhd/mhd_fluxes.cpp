@@ -20,6 +20,7 @@
 #include "mesh/mesh.hpp"
 #include "mhd.hpp"
 #include "hydro/hydro_wball.hpp"
+#include "reconstruct/wb_wall.hpp"
 #include "eos/eos.hpp"
 #include "reconstruct/dc.hpp"
 #include "reconstruct/plm.hpp"
@@ -278,6 +279,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const bool wall_sf_ = wall_closed_ix1 && wall_stress_free;
   // the dhj conducting wall is a closed wall on every geometry too (legacy mirror)
   const bool wall_cd_ = wall_closed_ix1 && wall_conducting_ix1;
+  // wallwb-1105 <mhd>/wall_wb_onesided (mhd.hpp, reconstruct/wb_wall.hpp, shared with
+  // Hydro::Fluxes): every geometry, on the x1 dynamic WB paths that read wbq0 (PLM)
+  const bool curv1_ = pmy_pack->pmesh->use_spherical_polar || str_r1_;
+  const bool wwb_ = wall_wb_onesided && use_wellbalance_dynamic && use_wb_x1 &&
+                    (wb_all || recon_method_x1 == ReconstructionMethod::plm || !curv1_);
   // <mhd>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see mhd.hpp).
   const auto recon_method_x1_ = recon_method_x1;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
@@ -543,30 +549,52 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     // A Cartesian mesh takes the user-wall mirror only under the stress-free or the
     // conducting wall (the legacy closed wall was never applied there; reflect is
     // untouched on Cartesian).
-    if (use_spherical_polar || str_r1_ || wall_sf_ || wall_cd_) {
-      const bool curv_ = use_spherical_polar || str_r1_;
+    if (use_spherical_polar || str_r1_ || wall_sf_ || wall_cd_ || wwb_) {
+      // wallwb-1105: under <mhd>/wall_wb_onesided a Cartesian reflect wall takes the
+      // mirror as the curvilinear one (key off: unchanged)
+      const bool curv_ = use_spherical_polar || str_r1_ || wwb_;
       member.team_barrier();
       Kokkos::single(Kokkos::PerTeam(member), [&]() {
         // (user inner boundary under wall_closed_ix1 too -- see hydro_fluxes.cpp)
         const BoundaryFlag bix1 = mb_bcs.d_view(m,BoundaryFace::inner_x1);
+        const BoundaryFlag box1 = mb_bcs.d_view(m,BoundaryFace::outer_x1);
+        // wallwb-1105: the wall cells' one-sided WB deviation (reconstruct/wb_wall.hpp)
+        if (wwb_) {
+          auto inr = [&](const int i) {
+            return !curv1_ || (!(wb_rmax_ > 0.0 && x1v_(m,i) > wb_rmax_) &&
+                               !(wb_rmin_ > 0.0 && x1v_(m,i) < wb_rmin_));
+          };
+          if ((bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user))
+              && inr(is)) {
+            wbwall::WallCellX1(true, m, k, j, is, w0_, wder_, wbq0_, x1v_, x1f_,
+                               use_wb_rho_, nder, wl, wr, dl, dr);
+          }
+          if (box1 == BoundaryFlag::reflect && inr(ie)) {
+            wbwall::WallCellX1(false, m, k, j, ie, w0_, wder_, wbq0_, x1v_, x1f_,
+                               use_wb_rho_, nder, wl, wr, dl, dr);
+          }
+        }
         if ((curv_ && bix1 == BoundaryFlag::reflect) ||
             (wall_ix1_ && bix1 == BoundaryFlag::user)) {
           for (int n=0; n<nvars; ++n) { wl(n,is) = wr(n,is); }
           wl(IVX,is) = -wr(IVX,is);
           bl(1,is) = br(1,is);  bl(2,is) = br(2,is);
-          if (bix1 == BoundaryFlag::user) {  // reflect stays bitwise
+          if (bix1 == BoundaryFlag::user || wwb_) {  // reflect stays bitwise (key off)
             for (int n=0; n<nder; ++n) {
               dl(n,is) = dr(n,is);
             }
-            if (wall_sf_) {  // stress-free: B_t odd, as the ghost field
-              bl(1,is) = -br(1,is);  bl(2,is) = -br(2,is);
-            }
+          }
+          if (bix1 == BoundaryFlag::user && wall_sf_) {  // stress-free: B_t odd
+            bl(1,is) = -br(1,is);  bl(2,is) = -br(2,is);
           }
         }
-        if (curv_ && mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect) {
+        if (curv_ && box1 == BoundaryFlag::reflect) {
           for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
           wr(IVX,ie+1) = -wl(IVX,ie+1);
           br(1,ie+1) = bl(1,ie+1);  br(2,ie+1) = bl(2,ie+1);
+          if (wwb_) {
+            for (int n=0; n<nder; ++n) { dr(n,ie+1) = dl(n,ie+1); }
+          }
         }
       });
     }

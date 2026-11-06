@@ -516,6 +516,22 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                                           wbi_default("wb_clamp_ideal"));
     use_wb_x2 = pin->GetOrAddBoolean("mhd","wb_x2",false);
     use_wb_rho = pin->GetOrAddBoolean("mhd","wb_rho",false);
+    // wallwb-1105 (mhd.hpp): as <hydro>/wall_wb_onesided, fresh-start default with WB x1
+    if (!pin->DoesParameterExist("mhd","wall_wb_onesided") &&
+        use_wellbalance_dynamic && use_wb_x1) {
+      if (recipe::NewDefaults(pin)) {
+        pin->GetOrAddBoolean("mhd","wall_wb_onesided",true);
+        recipe::Log("<mhd>/wall_wb_onesided = true (default with wellbalance_dynamic + "
+                    "wb_x1; acts at closed / reflecting x1 walls)");
+      } else {
+        recipe::Log("<mhd>/wall_wb_onesided = false (" + std::string(
+            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+            "restart input has no key") + ": the old wall cell)");
+      }
+    }
+    if (pin->DoesParameterExist("mhd","wall_wb_onesided")) {
+      wall_wb_onesided = pin->GetBoolean("mhd","wall_wb_onesided");
+    }
     // switch the x1 well-balanced reconstruction off above this radius (0 = never); see
     // the declaration in mhd.hpp.  Only the position-aware x1 path (spherical polar and
     // cubed sphere, where x1v is the radius) honours it -- a Cartesian mesh has no radius
