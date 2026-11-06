@@ -143,8 +143,16 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
         }
       }
     }
-    sp_phi_global = pin->DoesParameterExist("mesh", "sp_phi_global") &&
-                    pin->GetBoolean("mesh", "sp_phi_global");
+    // layinv-1105: with <mesh>/layout_invariant (fresh default) both angles come from the
+    // global index (theta: sp_theta_global; phi: sp_phi_global, now also on wedges)
+    // unless the key is named; without layout_invariant the old rules, bitwise.
+    {
+      const bool li = pmy_pack->pmesh->layout_invariant;
+      sp_phi_global = pin->DoesParameterExist("mesh", "sp_phi_global") ?
+                      pin->GetBoolean("mesh", "sp_phi_global") : li;
+      sp_theta_global = pin->DoesParameterExist("mesh", "sp_theta_global") ?
+                        pin->GetBoolean("mesh", "sp_theta_global") : li;
+    }
     CoordSphericalPolar();
   }
   }
@@ -1784,6 +1792,29 @@ void Coordinates::CoordSphericalPolar() {
     }
     Kokkos::deep_copy(k0g, h);
   }
+  // layinv-1105 <mesh>/sp_theta_global (and phi with refinement): the global index of the
+  // block's first cell at its own level and the global cell count at that level
+  // (root-level count << (level - root level)); a refinement-free mesh has level = root,
+  // i.e. exactly the cell faces/centres a one-block run computes.  The theta stretch is a
+  // function of the uniform coordinate, applied afterwards exactly as before.
+  const bool thg = sp_theta_global;
+  const int nx2t = pmy_pack->pmesh->mesh_indcs.nx2;
+  const Real mx2min = pmy_pack->pmesh->mesh_size.x2min;
+  const Real mx2max = pmy_pack->pmesh->mesh_size.x2max;
+  DvceArray2D<int> lvg("sp_glob_lev", nmb1 + 1, 4);   // j0, nx2 at level, k0, nx3 at level
+  {
+    auto h = Kokkos::create_mirror_view(lvg);
+    const int rl = pmy_pack->pmesh->root_level;
+    for (int m = 0; m <= nmb1; ++m) {
+      const auto &ll = pmy_pack->pmesh->lloc_eachmb[pmy_pack->gids + m];
+      const int sh = ll.level - rl;
+      h(m,0) = static_cast<int>(ll.lx2)*indcs.nx2;
+      h(m,1) = nx2t << sh;
+      h(m,2) = static_cast<int>(ll.lx3)*indcs.nx3;
+      h(m,3) = nx3t << sh;
+    }
+    Kokkos::deep_copy(lvg, h);
+  }
   Real tplat[8];   // fullsph-1027 theta_plateau parameters (tplat[2] = 0: sinh map)
   for (int n=0; n<8; ++n) tplat[n] = pmy_pack->pmesh->fStretchThetaPlat[n];
   par_for("spcoord", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,//ks,ke,js,je,is,ie,
@@ -1809,6 +1840,12 @@ void Coordinates::CoordSphericalPolar() {
     Real theta  = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
     Real thetal = LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
     Real thetar = LeftEdgeX(j+1-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+    if (thg) {   // layinv-1105: from the global theta index (layout independent)
+      const int jg = lvg(m,0) + j - js, n2g = lvg(m,1);
+      theta  = CellCenterX(jg, n2g, mx2min, mx2max);
+      thetal = LeftEdgeX(jg, n2g, mx2min, mx2max);
+      thetar = LeftEdgeX(jg + 1, n2g, mx2min, mx2max);
+    }
     // stretch the radial grid
     if (use_stretch_theta) {
       Real factor_stretch = f_stretch_theta;
@@ -1820,10 +1857,11 @@ void Coordinates::CoordSphericalPolar() {
     Real phil   = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
     Real phir   = LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
     if (phg) {   // accpolar-1103: from the global phi index (layout independent)
-      const int kg = k0g(m) + k - ks;
-      phi  = CellCenterX(kg, nx3t, mx3min, mx3max);
-      phil = LeftEdgeX(kg, nx3t, mx3min, mx3max);
-      phir = LeftEdgeX(kg + 1, nx3t, mx3min, mx3max);
+      // layinv-1105: the cell count at the block's level (= nx3t on a uniform mesh)
+      const int kg = k0g(m) + k - ks, n3g = lvg(m,3);
+      phi  = CellCenterX(kg, n3g, mx3min, mx3max);
+      phil = LeftEdgeX(kg, n3g, mx3min, mx3max);
+      phir = LeftEdgeX(kg + 1, n3g, mx3min, mx3max);
     }
 
     Real sintl  = sin(thetal);

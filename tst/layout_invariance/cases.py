@@ -472,3 +472,45 @@ CASES += [
               dict(_R4S, **{'mesh/cs_seam_fc_order': 2})), layouts=_R4L,
          perturb='problem/bbot_gauss'),
 ]
+
+# ---------------------------------------------------------------- layinv-1105
+# <mesh>/layout_invariant (fresh default): the accretor full sphere with a THETA split of
+# the stretched (plateau) theta grid as well as phi splits, ranks 2..4.  The accretor's
+# M1 preconditioner is mg (block-local): bitwise is NOT expected after cycle 0 (USER
+# 11-05 option a: mg/rbgs decks are gated at the tolerance level, see README).
+CASES.append(dict(_acc, name='acc_sp_th', what='accretor deck, theta + phi splits '
+                  '(stretched plateau theta), layout_invariant; (a1) gate: mg is block-local, '
+                  'PASS = no worse than the old binary (family acc_old) on the same layouts, '
+                  'with acc_sp_th_line bitwise', ref_old=True,
+                  layouts=[L('ph2_np2', (500, 48, 32), 2), L('th2ph2_np4', (500, 24, 32), 4),
+                           L('ph4_np4', (500, 48, 16), 4)]))
+CASES.append(dict(_acc, name='acc_sp_th_line', what='accretor deck, theta + phi splits, '
+                  'implicit_precond = line (layout-independent preconditioner: bitwise '
+                  'expected)', set=dict(_acc['set'], **{'rad_m1/implicit_precond': 'line'}),
+                  require_bitwise=True,
+                  layouts=[L('ph2_np2', (500, 48, 32), 2), L('th2ph2_np4', (500, 24, 32), 4),
+                           L('ph4_np4', (500, 48, 16), 4)]))
+
+# layinv-1105: the BSG column deck (bsgLI_exact derivative: sp WEDGE pi/3 x pi/3, 256 x 8 x 8,
+# vet_gd twin trans + symref col, implicit_precond = line, Linhao IC with a 5 % lateral
+# perturbation; needs the linhao-prod-1104 IC, i.e. prod-1102 after the athpp-doface-1105
+# merge).  layout_invariant on (fresh default): BITWISE required across theta, phi and
+# theta+phi splits and ranks.
+_HCG = dict(bin='he', deck='he_col_gd.athinput', ncyc=3, vars=['hydro_w', 'm1'],
+            set={'mesh/nx2': 8, 'mesh/nx3': 8, 'problem/he_ic_linhao_amp': 0.05},
+            require_bitwise=True)
+CASES += [dict(_HCG, name='he_col_gd', what='BSG col_gd_df deck 256 x 8 x 8, layout_invariant',
+               layouts=[L('b1_np1', (256, 8, 8)), L('ph2_np1', (256, 8, 4)),
+                        L('th2_np1', (256, 4, 8)), L('th2ph2_np1', (256, 4, 4)),
+                        L('th2ph2_np4', (256, 4, 4), 4)]),
+          dict(_HCG, name='he_col_gd_off', what='the same deck with layout_invariant = false '
+               '(the old block-ordered paths: expected to differ)', expect='FAIL',
+               require_bitwise=True,
+               set=dict(_HCG['set'], **{'mesh/layout_invariant': 'false'}),
+               layouts=[L('b1_np1', (256, 8, 8)), L('th2ph2_np1', (256, 4, 4))])]
+
+# layinv-1105 (a1, USER 11-05): the M1 decks with a block-local preconditioner (mg) are gated
+# against the OLD binary's same layouts (families he_old / acc_old in the bins file)
+for _c in CASES:
+    if _c['name'] in ('he_hg', 'rsg_mlat_x', 'acc_sp', 'acc_sp_novetgd', 'acc_sp_novetgd_sep'):
+        _c['ref_old'] = True

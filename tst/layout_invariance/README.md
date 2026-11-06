@@ -122,3 +122,43 @@ takes about 15 min on 16 cores; the cubed-sphere and Cartesian cases take second
     An example is a field built from a vector potential on per-block coordinates, which
     differs in the last bit. A cfl perturbation then underestimates the round-off seed,
     and the case reads SUSPECT, or FAIL in GS07 near v = 0.
+
+## layout_invariant and the two gate kinds (layinv-1105, USER 11-05)
+
+`<mesh>/layout_invariant` (fresh-start default true; a restart whose input lacks the key keeps
+false, the old code paths, bitwise) makes a run independent of the MeshBlock layout and of the
+rank count:
+
+- every global or shell SUM that feeds the state uses the exact, order-independent accumulator
+  `src/utils/repro_sum.hpp`: the M1 BiCGStab dot products, the vet_gd twin / half-range /
+  trans shell means, the ic_rad shell sums and L_top, the he_star IC shell sums
+  (he_ic_rad_atm_post, he_ic_equil) and the adaptive MLT closure;
+- the spherical-polar theta and phi faces/centres come from the GLOBAL cell index
+  (`<mesh>/sp_theta_global`, `sp_phi_global` also on wedges); a stretched theta is applied to
+  the global uniform coordinate exactly as before;
+- the vet_gd sweep takes its (theta, phi), spacings and fractional upwind indices at the
+  global magnitude (`src/rad_m1/rad_m1_vgdlg.hpp`).
+
+The M1 PRECONDITIONER can still depend on the layout: `rbgs`, `rbgs_fwd`, `mg`, `mg_gc` and
+`mg_gf` are block-local (red-black parity and couplings inside the MeshBlock; mg coarsens inside
+the block).  Only `implicit_precond = line` (x1 lines, blocks span x1) is layout-independent.
+With a block-local preconditioner the Krylov / Picard iterations stop at their tolerances on
+different iterates, so two layouts agree to the TOLERANCE, not to round-off.  Hence two gates:
+
+| gate      | decks                                                     | case keys                  | pass                     |
+|-----------|-----------------------------------------------------------|----------------------------|--------------------------|
+| BITWISE   | line-preconditioned decks, hydro-only cases, the cycle-0 IC | `require_bitwise = True`   | every variable identical |
+| TOLERANCE | mg / rbgs decks (production R136a1, BSG, accretor, HG, RSG) | `tolref = {key: factor}`   | layout difference <= `tol_factor` (default 1) x the spread of the reference layout re-run with the tolerances scaled by the factors (e.g. `implicit_lin_tol`, `implicit_lin_cnorm` (the linear stop test when named), `implicit_tol` x 0.5) |
+
+`tolref` replaces the 1-ulp perturbation of the reference run (`<layout>_ulp`) by the scaled
+tolerances; the verdict is BITWISE, TOLERANCE or FAIL.  USER 11-05 chose this split (option a): no
+preconditioner change.
+
+**Gate (a1), the one in use (USER 11-05, after the tolerance reference proved too tight).**
+The linear solves overshoot their stop tests, so the x0.5 tolerance re-run barely moves (dens
+2e-19, F 4e-13 on the BSG deck) while a different block-local preconditioner lands on a different
+iterate (dens 4e-14, F 2.5e-12, the same as the old binary's layout pair).  A mg / rbgs deck
+therefore PASSES when (1) its layout pair is no worse (x2) than the OLD binary's same layout pair
+(`ref_old = True`; bins family `<family>_old`; verdict NOWORSE) AND (2) the same deck with
+`implicit_precond = line` is BITWISE across the layouts (`require_bitwise`, e.g. `acc_sp_th_line`).
+The `tolref` machinery stays for reference.

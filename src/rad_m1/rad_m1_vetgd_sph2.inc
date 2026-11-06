@@ -69,7 +69,7 @@ double RadiationM1::VetGdThetaDmin() const {
   const double smin = vgd_pol ? std::sin(vgd_bcolat*M_PI/180.0)
                               : std::min(std::sin(t0), std::sin(t1));
   auto &mbs = pmy_pack->pmb->mb_size;
-  return std::min(dth, smin*mbs.h_view(0).dx3);
+  return std::min(dth, smin*vgd_lg.Dx3H(mbs, 0));   // layinv-1105
 }
 
 //----------------------------------------------------------------------------------------
