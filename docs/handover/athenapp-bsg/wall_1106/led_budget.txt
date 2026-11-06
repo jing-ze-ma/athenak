@@ -1,0 +1,42 @@
+===== A_af1
+cell budget per interval in L* (full sphere). B=billing, C=consistent rad transport, H=hydro flux+pointmass, G=grav mass x Phi, R=reset+floors, dU=dE-G
+ 0.00- 0.50 step  207s | c0 B  -24.7 C  +56.3 H  -12.3 R +0.0 dU  +19.3 | c1 B   +1.7 C   -7.7 H   +6.9 R +0.0 dU   +0.9 | c2 B   +0.7 C   -4.2 H   +7.3 R -0.0 dU   +3.7
+ 0.50- 1.00 step  204s | c0 B  -18.3 C  +28.8 H   -5.7 R +0.0 dU   +4.9 | c1 B   +1.9 C   -6.3 H   +2.8 R +0.0 dU   -1.6 | c2 B   +6.8 C  -17.3 H   +7.6 R +0.0 dU   -2.9
+ 1.00- 2.00 step  201s | c0 B   +0.3 C   +9.3 H   -2.6 R +0.0 dU   +7.0 | c1 B   +4.3 C  -32.9 H  +25.1 R +0.0 dU   -3.5 | c2 B   +0.3 C  -30.6 H  +20.7 R +0.0 dU   -9.5
+ 2.00- 3.00 step  197s | c0 B   -8.4 C  +32.9 H   -9.8 R +0.0 dU  +14.7 | c1 B   +7.2 C  -83.0 H  +86.3 R +0.0 dU  +10.5 | c2 B  -15.7 C   -8.3 H  +14.1 R -0.0 dU  -10.0
+ 3.00- 5.00 step  194s | c0 B  -12.9 C  +29.2 H   -7.5 R -0.0 dU   +8.9 | c1 B   +4.5 C  -36.0 H  +30.5 R +0.0 dU   -1.0 | c2 B  -17.7 C  +31.3 H   -5.4 R -0.0 dU   +8.3
+ 5.00- 7.00 step  191s | c0 B   -9.5 C  +33.9 H  -16.2 R -0.0 dU   +8.2 | c1 B   -0.2 C  -24.3 H  +32.9 R -0.0 dU   +8.4 | c2 B   -9.3 C   -3.1 H  +12.7 R -0.0 dU   +0.3
+cell0 per step, B erg and fraction of cell U (gas+rad, from dumps):
+   0.00- 0.50 B per step -2.86e+42 erg  U_cell0(end)=6.484e+45 erg  frac/step -4.4e-04  rate -24.7 L*
+   0.50- 1.00 B per step -2.08e+42 erg  U_cell0(end)=6.601e+45 erg  frac/step -3.2e-04  rate -18.3 L*
+   1.00- 2.00 B per step +3.70e+40 erg  U_cell0(end)=6.941e+45 erg  frac/step +5.3e-06  rate +0.3 L*
+   2.00- 3.00 B per step -9.26e+41 erg  U_cell0(end)=7.650e+45 erg  frac/step -1.2e-04  rate -8.4 L*
+   3.00- 5.00 B per step -1.39e+42 erg  U_cell0(end)=8.499e+45 erg  frac/step -1.6e-04  rate -12.9 L*
+   5.00- 7.00 B per step -1.01e+42 erg  U_cell0(end)=9.296e+45 erg  frac/step -1.1e-04  rate -9.5 L*
+cum to 7.0 d [1e45]: all B -20.12 cons -29.04 dE -48.91
+5 d: B all -13.10 cells0-2 -3.86 cells3-10 -7.90 cells>10 -1.35; C all -19.50; dE -32.49
+ledger.txt: t[d] all B, cells0-10 B, all C [1e45]:
+  5.00:   -13.10   -11.75   -19.50
+  7.00:   -20.11   -17.54   -29.03
+  9.00:   -24.66   -22.24   -40.64
+  9.90:   -26.57   -23.96   -44.47
+===== A_tc4
+cell budget per interval in L* (full sphere). B=billing, C=consistent rad transport, H=hydro flux+pointmass, G=grav mass x Phi, R=reset+floors, dU=dE-G
+ 0.00- 0.50 step  200s | c0 B  -39.7 C +126.6 H  -12.5 R +0.0 dU  +74.3 | c1 B   -0.4 C  -60.3 H  +54.2 R +0.0 dU   -6.4 | c2 B   -5.7 C   +4.1 H  +28.1 R +0.0 dU  +26.5
+ 0.50- 1.00 step  194s | c0 B  -17.8 C  +66.9 H  -31.4 R -0.0 dU  +17.6 | c1 B  -12.5 C  -26.4 H  +61.4 R +0.0 dU  +22.5 | c2 B   -3.1 C  -25.5 H  +11.1 R +0.0 dU  -17.5
+ 1.00- 2.00 step  192s | c0 B   -7.2 C  +21.3 H   -6.2 R +0.0 dU   +7.9 | c1 B   -1.2 C  -66.6 H  +77.2 R +0.0 dU   +9.4 | c2 B   -6.1 C  -22.4 H  +18.8 R -0.0 dU   -9.7
+ 2.00- 3.00 step  191s | c0 B   -6.9 C  +21.4 H   -6.3 R +0.0 dU   +8.2 | c1 B  -12.5 C  -43.5 H  +63.9 R -0.0 dU   +7.8 | c2 B   +5.8 C  -17.2 H   +1.1 R +0.0 dU  -10.4
+ 3.00- 5.00 step  189s | c0 B  -11.5 C  +25.3 H   -5.1 R -0.0 dU   +8.6 | c1 B   -3.1 C   -6.6 H  +11.2 R -0.0 dU   +1.5 | c2 B   -8.5 C   +4.2 H  +13.0 R -0.0 dU   +8.8
+cell0 per step, B erg and fraction of cell U (gas+rad, from dumps):
+   0.00- 0.50 B per step -4.43e+42 erg  U_cell0(end)=7.811e+45 erg  frac/step -5.7e-04  rate -39.7 L*
+   0.50- 1.00 B per step -1.92e+42 erg  U_cell0(end)=8.241e+45 erg  frac/step -2.3e-04  rate -17.8 L*
+   1.00- 2.00 B per step -7.68e+41 erg  U_cell0(end)=8.619e+45 erg  frac/step -8.9e-05  rate -7.2 L*
+   2.00- 3.00 B per step -7.39e+41 erg  U_cell0(end)=9.014e+45 erg  frac/step -8.2e-05  rate -6.9 L*
+   3.00- 5.00 B per step -1.22e+42 erg  U_cell0(end)=9.848e+45 erg  frac/step -1.2e-04  rate -11.5 L*
+cum to 5.0 d [1e45]: all B -11.97 cons -25.85 dE -37.69
+5 d: B all -11.97 cells0-2 -5.50 cells3-10 -5.86 cells>10 -0.62; C all -25.85; dE -37.69
+ledger.txt: t[d] all B, cells0-10 B, all C [1e45]:
+  5.00:   -11.97   -11.36   -25.85
+  5.07:   -12.10   -11.42   -26.34
+  5.07:   -12.10   -11.42   -26.34
+  5.07:   -12.10   -11.42   -26.34

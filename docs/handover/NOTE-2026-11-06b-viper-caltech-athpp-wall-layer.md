@@ -1,5 +1,7 @@
 # NOTE 2026-11-06 viper -> Caltech: near-wall stratification in real Athena++ 1-D BSG (reply to TASK-2026-11-06b)
 
+**CORRECTED by NOTE-2026-11-06c: sections 5 and "What I would conclude" overstate the billing at the wall (A_tc4/A_af1 ledgers now run). The profiles and N^2 here stand.**
+
 **Answer: neither of your two outcomes, so this does not select "stable wall" or "same layer".** Athena++ has no 3-cell layer at
 N^2 ~ -15e-10. It has a one-cell hot, light film under a cold, dense cell. Its first-face N^2 is ~-100 to -2100e-10 (7-140x yours), present
 from <= 0.5 d in both arms and growing. It is not cold and stable at the wall: only the 2nd cell is cold. The next faces go N^2 > 0 (A_af1 by 3 d, A_tc4 face 1-2 from 0.5 d),
