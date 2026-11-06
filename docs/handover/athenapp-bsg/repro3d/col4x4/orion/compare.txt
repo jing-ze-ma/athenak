@@ -1,0 +1,16 @@
+t_last 4.947 d, dumps 10
+0-1 d: col median 6.91e+39 max 9.65e+39  his1d_g median 6.56e+39 max 8.79e+39  n=150
+1-2 d: col median 1.72e+40 max 2.61e+40  his1d_g median 1.61e+40 max 2.40e+40  n=149
+2-4 d: col median 4.47e+40 max 1.76e+41  his1d_g median 3.93e+40 max 1.54e+41  n=299
+4-6 d: col median 5.65e+40 max 1.33e+41  his1d_g median 4.29e+40 max 1.19e+41  n=142
+col peak KE 1.759e+41 at 3.863 d; his1d_g peak 1.539e+41 at 3.869 d
+t=0 d vr(r=22.66): col 0.0 m/s; his1d_g 0.0 m/s (table covers 20.16..27.34)
+   i=0: r 20.157 rho 5.77195e-05/5.77195e-05 T 1.0581e+06/1.0581e+06 Fr1 2.2586e+13/2.2586e+13 N2 8.784e-10/8.784e-10 (col/his1d_g)
+t=1 d vr(r=22.66): col -126.5 m/s; his1d_g -121.7 m/s (table covers 20.16..27.34)
+   i=0: r 20.157 rho 5.77254e-05/5.77204e-05 T 1.0601e+06/1.0603e+06 Fr1 -7.6424e+13/-7.6523e+13 N2 4.607e-10/4.362e-10 (col/his1d_g)
+t=2 d vr(r=22.66): col -49.8 m/s; his1d_g -53.2 m/s (table covers 20.16..27.34)
+   i=0: r 20.157 rho 5.77026e-05/5.76867e-05 T 1.0620e+06/1.0623e+06 Fr1 -6.8366e+13/-6.7708e+13 N2 6.516e-11/3.294e-11 (col/his1d_g)
+t=3 d vr(r=22.66): col -2.2 m/s; his1d_g -0.5 m/s (table covers 20.16..27.34)
+   i=0: r 20.157 rho 5.78037e-05/5.77551e-05 T 1.0653e+06/1.0655e+06 Fr1 -1.7069e+14/-1.4901e+14 N2 -4.207e-10/-4.588e-10 (col/his1d_g)
+t=4 d vr(r=22.66): col -429.9 m/s; his1d_g -403.2 m/s (table covers 20.16..27.34)
+   i=0: r 20.157 rho 5.78916e-05/5.78492e-05 T 1.0649e+06/1.0652e+06 Fr1 -2.0711e+14/-1.9264e+14 N2 -4.376e-10/-4.691e-10 (col/his1d_g)
