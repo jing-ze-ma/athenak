@@ -1,0 +1,10 @@
+551,554c551,554
+<           user_out_var(0,k,j,i) = phydro->rad_source_term(0,k,j,i);
+<           user_out_var(1,k,j,i) = phydro->rad_source_term(1,k,j,i);
+<           user_out_var(2,k,j,i) = phydro->rad_source_term(2,k,j,i);
+<           user_out_var(3,k,j,i) = phydro->rad_source_term(3,k,j,i);
+---
+>           user_out_var(0,k,j,i) = pnrrad->pradintegrator->rad_source(0,k,j,i);
+>           user_out_var(1,k,j,i) = pnrrad->pradintegrator->rad_source(1,k,j,i);
+>           user_out_var(2,k,j,i) = pnrrad->pradintegrator->rad_source(2,k,j,i);
+>           user_out_var(3,k,j,i) = pnrrad->pradintegrator->rad_source(3,k,j,i);

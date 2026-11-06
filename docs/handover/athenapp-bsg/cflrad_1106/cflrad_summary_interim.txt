@@ -1,0 +1,26 @@
+== af1_cflrad  (old units/padded tables, cfl_rad .025) dumps 9
+   jacobi stops at 101: 0  total reports 68 fatal 0
+   hst reaches 4.07 d, dt 5.2 s, nan False
+    0.00 d T/IC 1.000 1.000 1.000 1.000 rho/IC 1.00 1.00 1.00 N2f +36 -15 +8 rms(0-23) 23 KE(pi/3) 0.00e+00 dE +0.00e45 Lc0/L* +1
+    0.50 d T/IC 1.039 0.988 1.017 1.012 rho/IC 0.98 1.04 1.01 N2f -58 +26 -1 rms(0-23) 17 KE(pi/3) 1.58e+41 dE -0.22e45 Lc0/L* -25
+    1.00 d T/IC 1.045 0.985 1.018 1.007 rho/IC 0.97 1.04 1.01 N2f -80 +34 -14 rms(0-23) 22 KE(pi/3) 5.43e+40 dE -0.30e45 Lc0/L* -13
+    2.00 d T/IC 1.046 0.986 1.019 1.001 rho/IC 0.97 1.04 1.01 N2f -81 +34 -31 rms(0-23) 24 KE(pi/3) 2.97e+40 dE -0.44e45 Lc0/L* -11
+    3.00 d T/IC 1.050 0.985 1.021 0.997 rho/IC 0.96 1.04 1.02 N2f -92 +38 -42 rms(0-23) 27 KE(pi/3) 2.90e+40 dE -0.76e45 Lc0/L* -12
+== his1d       (his units/tables, nzeta5, cfl_rad .025) dumps 6
+   jacobi stops at 101: 0  total reports 91978 fatal 0
+   hst reaches 2.79 d, dt 5.1 s, nan False
+    0.00 d T/IC 1.000 1.000 1.000 1.000 rho/IC 1.00 1.00 1.00 N2f +36 -15 +8 rms(0-23) 22 KE(pi/3) 0.00e+00 dE +0.00e45 Lc0/L* +1
+    0.50 d T/IC 1.020 0.993 1.010 1.011 rho/IC 0.98 1.01 1.00 N2f -5 +4 +8 rms(0-23) 12 KE(pi/3) 1.17e+40 dE -0.03e45 Lc0/L* -6
+    1.00 d T/IC 1.022 0.991 1.011 1.009 rho/IC 0.98 1.02 1.00 N2f -10 +7 +5 rms(0-23) 11 KE(pi/3) 5.15e+39 dE -0.10e45 Lc0/L* -3
+    2.00 d T/IC 1.024 0.990 1.011 1.007 rho/IC 0.98 1.02 1.00 N2f -19 +10 -1 rms(0-23) 12 KE(pi/3) 1.20e+40 dE -0.36e45 Lc0/L* -2
+== his1d_cfl1  (his units/tables, nzeta5, cfl_rad 1) dumps 21
+   jacobi stops at 101: 7304  total reports 9062 fatal 0
+   hst reaches 10.00 d, dt 187.2 s, nan False
+    0.00 d T/IC 1.000 1.000 1.000 1.000 rho/IC 1.00 1.00 1.00 N2f +36 -15 +8 rms(0-23) 22 KE(pi/3) 0.00e+00 dE +0.00e45 Lc0/L* +1
+    0.50 d T/IC 1.033 0.994 1.007 1.004 rho/IC 0.96 1.01 1.01 N2f -35 -11 +1 rms(0-23) 17 KE(pi/3) 9.50e+39 dE -0.17e45 Lc0/L* -50
+    1.00 d T/IC 1.039 0.993 1.001 0.996 rho/IC 0.95 1.01 1.02 N2f -55 -25 -3 rms(0-23) 22 KE(pi/3) 1.29e+40 dE -0.54e45 Lc0/L* -56
+    2.00 d T/IC 1.059 0.987 0.955 0.937 rho/IC 0.92 1.04 1.14 N2f -126 -129 -22 rms(0-23) 70 KE(pi/3) 1.12e+41 dE -2.65e45 Lc0/L* -124
+    3.00 d T/IC 1.107 0.645 0.846 0.969 rho/IC 0.88 1.57 1.32 N2f -745 +140 +306 rms(0-23) 221 KE(pi/3) 7.20e+41 dE -9.75e45 Lc0/L* -213
+    5.00 d T/IC 1.171 0.385 0.974 1.117 rho/IC 0.84 2.52 1.02 N2f -1484 +1060 +376 rms(0-23) 554 KE(pi/3) 6.95e+41 dE -25.67e45 Lc0/L* -75
+    7.00 d T/IC 1.212 0.356 0.948 0.952 rho/IC 0.80 2.63 1.15 N2f -1583 +950 -32 rms(0-23) 583 KE(pi/3) 1.20e+42 dE -38.43e45 Lc0/L* -154
+   10.00 d T/IC 1.271 0.287 0.285 0.411 rho/IC 0.76 3.27 3.30 N2f -1938 -158 +400 rms(0-23) 528 KE(pi/3) 9.72e+41 dE -64.20e45 Lc0/L* -218
