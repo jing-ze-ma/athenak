@@ -523,4 +523,13 @@ _hg = [c for c in CASES if c['name'] == 'he_hg'][0]
 CASES.append(dict(_hg, name='he_hg_wallwb', ref_old=True,
                   what='HG deck with hydro/wall_wb_onesided = true',
                   set=dict(_hg['set'], **{'hydro/wall_wb_onesided': 'true'}),
-                  layouts=[L('b1x1_np3', (704, 16, 16), 3), L('b2x2_np3', (704, 8, 8), 3)]))
+                  layouts=[L('b1x1_np3', (704, 16, 16), 3), L('b2x2_np4', (704, 8, 8), 4)]))
+
+# wallwb-1105 v2: the R136a1 column (sp wedge, closed wall, x1 WB, general EOS, M1 vet_col +
+# vet_gd), 831 x 8 x 8, seed 0, implicit_precond = line (layout-independent), the fresh-start
+# default wall_wb_onesided = true active: theta + phi split and 4 ranks.  ref_old as he_hg.
+CASES.append(dict(name='he_r136col', bin='he', deck='he_r136col.athinput', ncyc=3, timeout=3000,
+                  perturb='problem/he_gm', vars=['hydro_u', 'm1'], ref_old=True,
+                  what='R136a1 column 831 x 8 x 8, line precond, default wall_wb_onesided',
+                  set={'rad_m1/implicit_precond': 'line'},
+                  layouts=[L('b1_np1', (831, 8, 8)), L('th2ph2_np4', (831, 4, 4), 4)]))
