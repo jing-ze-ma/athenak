@@ -1,0 +1,22 @@
+# t[d] KE[erg] dU[erg] dEgrav[erg] r_photo[Rsun]  AthenaK prod_lhxs, pi/3 sr wedge, cgs. KE: hst rows; dU, dEgrav, r_photo: 0.5 d dumps (nan elsewhere). float32 dumps; r_photo: tau=1 of <rho kappa_Ross(T=(P/rho) mu/R)>, outer face inward. AthenaK M1 + vet_gd, not his code
+0.000000 0.00000e+00 nan nan nan
+0.000000 0.00000e+00 0.00000e+00 0.00000e+00 52.3843
+0.011576 4.99430e+39 nan nan nan
+0.023194 1.66019e+40 nan nan nan
+0.034766 2.03377e+40 nan nan nan
+0.046345 2.11929e+40 nan nan nan
+0.057895 2.16938e+40 nan nan nan
+0.069453 2.20043e+40 nan nan nan
+0.081060 2.22067e+40 nan nan nan
+0.092617 2.23781e+40 nan nan nan
+0.104183 2.25702e+40 nan nan nan
+0.115755 2.28060e+40 nan nan nan
+0.127330 2.30997e+40 nan nan nan
+0.138908 2.34555e+40 nan nan nan
+0.150490 2.38721e+40 nan nan nan
+0.162074 2.43446e+40 nan nan nan
+0.173658 2.48656e+40 nan nan nan
+0.185191 2.54241e+40 nan nan nan
+0.196775 2.60182e+40 nan nan nan
+0.208359 2.66381e+40 nan nan nan
+0.219943 2.72759e+40 nan nan nan
