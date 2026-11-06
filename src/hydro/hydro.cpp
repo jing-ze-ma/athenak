@@ -364,6 +364,11 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   scratch_level = pin->GetOrAddInteger("hydro","scratch_level",0);
   use_wb_x2 = pin->GetOrAddBoolean("hydro","wb_x2",false);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
+  // wallwb-1105 (hydro.hpp): read only when named, so absent keys add nothing to the
+  // parameter dump and a restart of an old run is unchanged
+  if (pin->DoesParameterExist("hydro","wall_wb_onesided")) {
+    wall_wb_onesided = pin->GetBoolean("hydro","wall_wb_onesided");
+  }
   // switch the x1 well-balanced reconstruction off above this radius (0 = never); see
   // the declaration in hydro.hpp.  Only the position-aware x1 path (spherical polar and
   // cubed sphere, where x1v is the radius) honours it -- a Cartesian mesh has no radius

@@ -333,6 +333,20 @@ class Hydro {
   // from the mirror of the interior-side state, exactly as for ix1_bc = reflect, so
   // it carries zero mass and zero advected energy whatever the ghost cells hold.
   bool wall_closed_ix1 = false;
+  // wallwb-1105 <hydro>/wall_wb_onesided (default false = bitwise): under
+  // wall_closed_ix1 (user inner x1 face) with the x1 dynamic well-balanced PLM on a
+  // spherical / cubed-sphere radial grid, the FIRST active cell reconstructs its WB
+  // deviation (rho if wb_rho, e, and the general-EOS pressure) with the one-sided
+  // slope towards the interior, (q1_{is+1} - q1_is)/dx_R, unlimited, instead of the
+  // limited slope whose left difference reads the ghost.  The ghosts (a scaled copy of
+  // the initial column) carry no deviation, so the limiter flattens the wall cell and
+  // only part of a deviation pressure gradient (a residual radiation force rho (a_rad -
+  // a_ref), a thermal change) is seen by the wall cell: an O(1) unbalanced force there
+  // that drives the stationary odd-even v_r wall mode.  With the one-sided slope a
+  // linear deviation is reconstructed exactly at both faces of the wall cell (the wall
+  // face then is the linear extrapolation).  Falls back to the old faces where a
+  // one-sided face value is not positive.
+  bool wall_wb_onesided = false;
   // topbc-1101 ONE-WAY (diode) outer radial face under a USER outer-x1 boundary (set by
   // a problem generator, e.g. dhj problem/top_bc = outflow1): where the interior-side
   // state at the ie+1 face moves INWARD (v_r < 0) the ghost-side state is replaced by

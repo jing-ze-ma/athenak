@@ -164,6 +164,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   // is off-centre even without a stretch; `reconstruct` governs the ANGULAR sweeps)
   const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
   const bool wall_ix1_ = wall_closed_ix1;
+  // wallwb-1105 <hydro>/wall_wb_onesided (hydro.hpp): only on the path that owns it
+  const bool wall_wb1_ = wall_closed_ix1 && wall_wb_onesided && use_wellbalance_dynamic &&
+                         use_wb_x1 && recon_method_x1 == ReconstructionMethod::plm &&
+                         (pmy_pack->pmesh->use_spherical_polar ||
+                          pmy_pack->pmesh->use_cubed_sphere);
   const bool diode_ox1_ = diode_ox1;   // topbc-1101 (hydro.hpp)
   const bool cs_seam_hlle_ = cs_seam_hlle;   // csedge-1019 (hydro.hpp)
   // <hydro>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see hydro.hpp).
@@ -475,6 +480,43 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         // from (d,e), so mirroring only wl would keep the ghost-side pressure and give
         // S_M != 0.  (ix1_bc = reflect is left exactly as it was.)
         const BoundaryFlag bix1 = mb_bcs_pq.d_view(m,BoundaryFace::inner_x1);
+        // wallwb-1105 <hydro>/wall_wb_onesided: the wall cell's WB deviation with the
+        // one-sided interior slope, at BOTH its faces (hydro.hpp).  q1_is is the
+        // deviation of the cell from its own background (0 up to round-off).
+        if (wall_wb1_ && bix1 == BoundaryFlag::user &&
+            !(wb_rmax_ > 0.0 && x1v_(m,is) > wb_rmax_) &&
+            !(wb_rmin_ > 0.0 && x1v_(m,is) < wb_rmin_) &&
+            !(phicc_wb_(m,k,j,is) > wb_phimax_)) {
+          const Real dxLh = x1v_(m,is) - x1f_(m,is);
+          const Real dxRh = x1f_(m,is+1) - x1v_(m,is);
+          const Real dxR = x1v_(m,is+1) - x1v_(m,is);
+          for (int c=0; c<3; ++c) {
+            if (c == 0 && !use_wb_rho_) continue;
+            if (c == 2 && nder == 0) continue;
+            const WBVar wv = (c == 0) ? WBVar::wb_dens :
+                             ((c == 1) ? WBVar::wb_eint : WBVar::wb_pres);
+            Real q0m, q0mh, q0c, q0ph, q0p;
+            WBReadCache(wbq0_, wv, m, k, j, is, q0m, q0mh, q0c, q0ph, q0p);
+            const Real qc = (c == 2) ? wder_(m,IDPR,k,j,is) :
+                            w0_(m,(c == 0) ? IDN : IEN,k,j,is);
+            const Real qp = (c == 2) ? wder_(m,IDPR,k,j,is+1) :
+                            w0_(m,(c == 0) ? IDN : IEN,k,j,is+1);
+            const Real q1c = qc - q0c;
+            const Real sl = ((qp - q0p) - q1c)/dxR;
+            const Real fl = q0mh + q1c - sl*dxLh;   // wall face
+            const Real fr = q0ph + q1c + sl*dxRh;   // face is+1/2, cell is side
+            if (fl > 0.0 && fr > 0.0) {
+              if (c == 2) {
+                dr(IDPR,is) = fl;
+                dl(IDPR,is+1) = fr;
+              } else {
+                const int n = (c == 0) ? IDN : IEN;
+                wr(n,is) = fl;
+                wl(n,is+1) = fr;
+              }
+            }
+          }
+        }
         if (bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user)) {
           for (int n=0; n<nvars; ++n) { wl(n,is) = wr(n,is); }
           wl(IVX,is) = -wr(IVX,is);
