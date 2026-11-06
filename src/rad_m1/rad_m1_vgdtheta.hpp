@@ -26,11 +26,15 @@ constexpr int VGD_RB0 = 1 << 24;
 // points lie a few rows away, so the walk is short)
 template <typename T>
 KOKKOS_INLINE_FUNCTION
-Real VgdThFj(const T &tn, const int m, const int jb, const Real thu, const int c2w) {
+Real VgdThFj(const T &tn, const int m, const int jb, const Real thu, const int c2w,
+             const int sh = 0) {
   int j0 = (jb < 0) ? 0 : ((jb > c2w - 2) ? (c2w - 2) : jb);
   while (j0 < c2w - 2 && tn(m,j0+1) <= thu) {++j0;}
   while (j0 > 0 && tn(m,j0) > thu) {--j0;}
-  return j0 + (thu - tn(m,j0))/(tn(m,j0+1) - tn(m,j0));
+  // layinv-1105: sh = the global row offset of band row 0 (0: the old value, bitwise);
+  // the result is then the GLOBAL fractional row (the caller subtracts sh from its
+  // integer part), so the fraction rounds the same on every MeshBlock layout
+  return (j0 + sh) + (thu - tn(m,j0))/(tn(m,j0+1) - tn(m,j0));
 }
 
 // the full sphere: an upwind point BEHIND the polar axis (|dphi| > pi/2 from the cell)

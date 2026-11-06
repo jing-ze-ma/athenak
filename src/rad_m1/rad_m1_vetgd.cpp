@@ -87,6 +87,8 @@
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
+#include "utils/repro_sum.hpp"
+#include "rad_m1/rad_m1_vgdlg.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
@@ -372,14 +374,15 @@ KOKKOS_INLINE_FUNCTION
 void VgdCand(const int m, const int k, const int j, const int d, const int i, const int l,
              const bool inw, const int n1, const int lcut, const int js, const int ks,
              const int jlo, const int jhi, const int klo, const int khi, const TD &dir_,
-             const TB &mbsize, const TX &cx1v, const TF &cx1f, const bool sth,
+             const TB &mbsize, const VgdLG &lg_, const TX &cx1v, const TF &cx1f,
+             const bool sth,
              const bool pol, const TT &tn, const int c2w, const FN &f) {
   if (inw && l == n1 - 1) {return;}          // the top shell reads no intensity
   const Real twopi = 2.0*M_PI;
   const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
   const Real th = sth ? tn(m,j)
-                      : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-  const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+                      : lg_.Th(mbsize, m, j, js);
+  const Real ph = lg_.Ph(mbsize, m, k, ks);
   const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
   const Real mr = nx*st*cp + ny*st*sp + nz*ct;
   const Real r = cx1v(m,i);
@@ -394,9 +397,9 @@ void VgdCand(const int m, const int k, const int j, const int d, const int i, co
     Real dph = atan2(yu, xu) - ph;
     dph -= twopi*floor((dph + M_PI)/twopi);
     VgdPoleChart(pol, th, thu, dph);
-    const Real fj = sth ? VgdThFj(tn, m, j, thu, c2w)
-                        : j + (thu - th)/mbsize.d_view(m).dx2;
-    const Real fk = k + dph/mbsize.d_view(m).dx3;
+    const Real fj = sth ? (VgdThFj(tn, m, j, thu, c2w, lg_.Sj(m, js)) - lg_.Sj(m, js))
+                        : VgdLG::Fs(j, lg_.Sj(m, js), (thu - th)/lg_.Dx2(mbsize, m));
+    const Real fk = VgdLG::Fs(k, lg_.Sk(m, ks), dph/lg_.Dx3(mbsize, m));
     const Real e = 1.0e-8;
     int ja = static_cast<int>(floor(fj - e)), jb = static_cast<int>(floor(fj + e));
     int ka = static_cast<int>(floor(fk - e)), kb = static_cast<int>(floor(fk + e));
@@ -751,6 +754,28 @@ void RadiationM1::VetGdInit() {
   // one exchange per shell for both fields); vet_gd_twin_lowmem and the plain unfused
   // twin sweep it first with this build's cut (the same numbers); no walls
   vgd_csg = pm->use_cubed_sphere;
+  // layinv-1105 <mesh>/layout_invariant: the sweep's (theta, phi) from the global index
+  // (rad_m1_vgdlg.hpp); a uniform single-level sp mesh (the stretched-theta node table
+  // and the full sphere's global band are global already; their spacing is taken here)
+  vgd_lg.on = false;
+  if (!vgd_csg && pm->layout_invariant) {
+    vgd_lg.on = true;
+    vgd_lg.x2a = pm->mesh_size.x2min;
+    vgd_lg.dx2 = (pm->mesh_size.x2max - pm->mesh_size.x2min)/pm->mesh_indcs.nx2;
+    vgd_lg.x3a = pm->mesh_size.x3min;
+    vgd_lg.dx3 = (pm->mesh_size.x3max - pm->mesh_size.x3min)/pm->mesh_indcs.nx3;
+    Kokkos::realloc(vgd_lg.o, pmy_pack->nmb_thispack, 2);
+    vgd_lg.oh = Kokkos::create_mirror_view(vgd_lg.o);
+    for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
+      const auto &ll = pm->lloc_eachmb[pmy_pack->gids + m];
+      if (ll.level != pm->root_level) {
+        VgdFatal("layout_invariant: the global vet_gd geometry needs a single-level mesh");
+      }
+      vgd_lg.oh(m,0) = static_cast<int>(ll.lx2)*pm->mb_indcs.nx2;
+      vgd_lg.oh(m,1) = static_cast<int>(ll.lx3)*pm->mb_indcs.nx3;
+    }
+    Kokkos::deep_copy(vgd_lg.o, vgd_lg.oh);
+  }
   if (vgd_csg) {
     std::string bad;
     if (vgd_beam) {bad += " vet_gd_beam (a wedge (theta, phi) patch);";}
@@ -889,7 +914,8 @@ void RadiationM1::VetGdInit() {
     // accsp-1102: a stretched theta / the full sphere: the real narrowest row and the
     // band latitude limit (VetGdThetaDmin)
     const double dmin = vgd_sth ? VetGdThetaDmin()
-                                : std::min(mbs.h_view(0).dx2, smin*mbs.h_view(0).dx3);
+                                : std::min(vgd_lg.Dx2H(mbs, 0),
+                                           smin*vgd_lg.Dx3H(mbs, 0));
     // the data of shell s is read (a) by shell s-1 in the inward pass, chord <=
     // sqrt(r_s^2 - r_{s-1}^2), (b) by shell s+1 in the outward pass, chord <=
     // sqrt(r_{s+1}^2 - r_s^2), (c) by shell s itself (TURN / inner face), chord <= 2
@@ -1640,7 +1666,7 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
   auto x2_h = [&](const int m, const int j) {
     // accsp-1102: a stretched theta / the full sphere: the node table (sph2.inc)
     if (vgd_sth) {return static_cast<Real>(vgd_thn_h[static_cast<size_t>(m)*c2 + j]);}
-    return mbs.h_view(m).x2min + (j - jsg + 0.5)*mbs.h_view(m).dx2;
+    return vgd_lg.ThH(mbs, m, j, jsg);   // layinv-1105
   };
   // accsp-1102: on the full sphere the rows beyond a pole are not a periodic image (the
   // extended chart: the same point, same global directions): no theta wall
@@ -1648,7 +1674,7 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
   auto x3_h = [&](const int m, const int k) {
     // accpolar-1103 vet_gd_band_global: the band column's phi from the GLOBAL index
     if (vgd_gband) {return static_cast<Real>(vgd_phc_h[static_cast<size_t>(m)*c3 + k]);}
-    return mbs.h_view(m).x3min + (k - ksg + 0.5)*mbs.h_view(m).dx3;
+    return vgd_lg.PhH(mbs, m, k, ksg);   // layinv-1105
   };
   const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
   const double p0 = pm->mesh_size.x3min, p1 = pm->mesh_size.x3max;
@@ -2497,6 +2523,7 @@ void RadiationM1::VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1)
   const Real t0 = pmy_pack->pmesh->mesh_size.x2min;
   const Real t1 = pmy_pack->pmesh->mesh_size.x2max;
   auto &mbsize = pmy_pack->pmb->mb_size;
+  const VgdLG lg_ = vgd_lg;   // layinv-1105
   auto a_ = a;
   auto wl_ = vgd_wall;
   par_for("m1_vgd_thvac_cs", vgd_cur, 0, nmb1, 0, 1, 0, c3 - 1, 0, 2*wb - 1, i0, i1,
@@ -2505,9 +2532,8 @@ void RadiationM1::VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1)
     const int j = (s < wb) ? (wb - 1 - g) : (wb + nx2 + g);
     if (wl_(m,k,j) < 3) {return;}
     // the band row next to the wall (the block's own edge row with one theta MeshBlock)
-    const Real x0 = mbsize.d_view(m).x2min, dx = mbsize.d_view(m).dx2;
-    int je = (s < wb) ? (wb + static_cast<int>(floor((t0 - x0)/dx + 0.5)))
-                      : (wb + static_cast<int>(floor((t1 - x0)/dx + 0.5)) - 1);
+    int je = (s < wb) ? static_cast<int>(lg_.Jw(mbsize, m, wb, t0))
+                      : (static_cast<int>(lg_.Jw(mbsize, m, wb, t1)) - 1);
     je = (je < 0) ? 0 : ((je > c2 - 1) ? (c2 - 1) : je);
     a_(m,c,k,j,i) = a_(m,c,k,je,i);
   });
@@ -4205,6 +4231,7 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
   auto m3_ = vgd_m3;
   auto dir_ = vgd_dir;
   auto &mbsize = pmy_pack->pmb->mb_size;
+  const VgdLG lg_ = vgd_lg;   // layinv-1105
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   const bool wint = vgd_wint;
@@ -4352,7 +4379,7 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
           const int k = ks + t/nj;
           const int j = js + (t % nj);
           VgdCand(m, k, j, d, ir, lr, inwr, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
-                  mbsize, cx1v, cx1f, sth_, pol_, thn_, c2w_,
+                  mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_,
           [&](const int iu, const int ka, const int kb, const int ja, const int jb) {
             if (iu != i) {return;}
             for (int kk = ka; kk <= kb; ++kk) {
@@ -5161,6 +5188,7 @@ void RadiationM1::VetGdSweep() {
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   auto &mbsize = pmy_pack->pmb->mb_size;
+  const VgdLG lg_ = vgd_lg;   // layinv-1105
   const int jlo = 0, jhi = je + wb - 1;
   const int klo = 0, khi = ke + wb - 1;
   const Real twopi = 2.0*M_PI;
@@ -5209,8 +5237,8 @@ void RadiationM1::VetGdSweep() {
         const int j = js + (t % nj);
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         const Real th = sth_ ? thn_(m,j)   // accsp-1102
-                             : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-        const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3);
+                             : lg_.Th(mbsize, m, j, js);
+        const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
         const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
         const Real mr = nx*st*cp + ny*st*sp + nz*ct;
         const bool keep = inw ? (mr < 1.0e-12) : (mr >= -1.0e-12);
@@ -5238,8 +5266,8 @@ void RadiationM1::VetGdSweep() {
     par_for("m1_vgd_trig", vgd_cur, 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       const Real th = sth_ ? thn_(m,j)   // accsp-1102
-                           : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-      const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3);
+                           : lg_.Th(mbsize, m, j, js);
+      const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
       tw_(m,k-ks,j-js,0) = sin(th);
       tw_(m,k-ks,j-js,1) = cos(th);
       tw_(m,k-ks,j-js,2) = sin(ph);
@@ -5397,7 +5425,7 @@ void RadiationM1::VetGdSweep() {
           const int i = is + l;
           const int ip = inw ? (i + 1) : (i - 1);   // the previous shell of the pass
           VgdCand(m, k, j, d, i, l, inw, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
-                  mbsize, cx1v, cx1f, sth_, pol_, thn_, c2w_,
+                  mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_,
           [&](const int iu, const int ka, const int kb, const int ja, const int jb) {
             if (iu != ip) {return;}
             for (int kk = ka; kk <= kb; ++kk) {
@@ -5480,7 +5508,7 @@ void RadiationM1::VetGdSweep() {
           const int k = ks + t/nj;
           const int j = js + (t % nj);
           VgdCand(m, k, j, d, ir, lr, inwr, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
-                  mbsize, cx1v, cx1f, sth_, pol_, thn_, c2w_,
+                  mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_,
           [&](const int iu, const int ka, const int kb, const int ja, const int jb) {
             if (iu != i) {return;}
             for (int kk = ka; kk <= kb; ++kk) {
@@ -5727,6 +5755,7 @@ void RadiationM1::VetGdMoments() {
   auto dir_ = vgd_dir;
   auto tt_ = tau_ten;
   auto &mbsize = pmy_pack->pmb->mb_size;
+  const VgdLG lg_ = vgd_lg;   // layinv-1105
   // vet_gd_replace with vet_col_surface_q: the outer Marshak q = H_r/J of the top cell
   const bool repq = vgd_replace && vcol_sq;
   auto vq_ = vcol_q;
@@ -5742,8 +5771,8 @@ void RadiationM1::VetGdMoments() {
     for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
     if (i < ilo) {return;}
     const Real th = sth_ ? thn_(m,j+og)   // accsp-1102
-                         : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-    const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3);
+                         : lg_.Th(mbsize, m, j, js);
+    const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
     const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
     Real jm = 0.0, rr = 0.0, rt = 0.0, rp = 0.0, tq = 0.0, tp = 0.0, pq = 0.0;
     for (int d = 0; d < n; ++d) {
@@ -5819,10 +5848,11 @@ void RadiationM1::VetGdMoments() {
     const Real t1m = pmy_pack->pmesh->mesh_size.x2max;
     const int ns = vgd_seam;
     auto &mbz = pmy_pack->pmb->mb_size;
+    const VgdLG lg_ = vgd_lg;   // layinv-1105
     par_for("m1_vgd_seam", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real d2 = mbz.d_view(m).dx2;
-      const Real th = mbz.d_view(m).x2min + (j - js + 0.5)*d2;
+      const Real d2 = lg_.Dx2(mbz, m);
+      const Real th = lg_.Th(mbz, m, j, js);
       if (th - t0m < ns*d2 || t1m - th < ns*d2) {
         for (int c = 1; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
       }
@@ -5848,8 +5878,8 @@ void RadiationM1::VetGdMoments() {
   par_for("m1_vgd_q", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real th = sth_ ? thn_(m,j+og)   // accsp-1102
-                         : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-    const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3);
+                         : lg_.Th(mbsize, m, j, js);
+    const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
     const VgdRhatSp rh{sin(th), cos(th), sin(ph), cos(ph)};
     vq_(m,k,j) = VgdSurfaceQ(rh, dir_, vi_, n, m, k, j, og, ie, cx1v(m,ie)/cx1f(m,ie+1),
                              sqf, jca, jcb, jcap, qlo, qhi, q0);
@@ -7094,6 +7124,40 @@ void RadiationM1::VetGdSymRefJoin() {
 //!  vet_gd_twin_full: LAT0 -= twin LAT0 (no shell mean), i.e. on a laterally uniform
 //!    state D_rr = vet_col's f_K exactly and LAT1..5 = 0.
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VgdReproMean
+//! \brief layinv-1105 <mesh>/layout_invariant: the shell means of VetGdTwin (over the
+//! active lateral cells of all ranks, cells ilo..ie, exp of the value when ex) with
+//! order-independent sums (repro::ShellSums): components ca -> outa and (outb != null)
+//! cb -> *outb.  Same means as the block-ordered path up to round-off, for any layout.
+
+void RadiationM1::VgdReproMean(DvceArray5D<Real> &arr, const int ca, const int cb,
+                               const int og, const bool ex, DvceArray1D<Real> &outa,
+                               DvceArray1D<Real> *outb) {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int c1 = indcs.nx1 + 2*indcs.ng;
+  const int ilo = indcs.is + vlat_icut;
+  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3*pm->npanels;
+  auto a_ = arr;
+  const int nq = (outb != nullptr) ? 2 : 1;
+  std::vector<Real> sm;
+  repro::ShellSums("m1_vgd_tw_sumr", nq, c1, pmy_pack->nmb_thispack, ks, ke, js, je, ilo,
+                   ie, KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
+                                     const int i) {
+    const Real v = a_(m, (q == 0) ? ca : cb, k+og, j+og, i);
+    return ex ? exp(v) : v;
+  }, sm);
+  for (int q = 0; q < nq; ++q) {
+    DvceArray1D<Real> &o = (q == 0) ? outa : *outb;
+    auto h = Kokkos::create_mirror_view(o);
+    for (int i = 0; i < c1; ++i) {h(i) = sm[static_cast<size_t>(q)*c1 + i]/ncol;}
+    Kokkos::deep_copy(o, h);
+  }
+}
+
 void RadiationM1::VetGdTwin(const int stage) {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
@@ -7116,6 +7180,10 @@ void RadiationM1::VetGdTwin(const int stage) {
 #if MPI_PARALLEL_ENABLED
   auto shell_mean2 = [&](DvceArray5D<Real> &arr, const int ca, const int cb, const int og,
                          const bool ex, DvceArray1D<Real> &outa, DvceArray1D<Real> &outb) {
+    if (pm->layout_invariant) {   // layinv-1105: order-independent (both means)
+      VgdReproMean(arr, ca, cb, og, ex, outa, &outb);
+      return;
+    }
     Kokkos::deep_copy(outa, 0.0);
     Kokkos::deep_copy(outb, 0.0);
     auto a_ = arr;
@@ -7171,6 +7239,10 @@ void RadiationM1::VetGdTwin(const int stage) {
 #endif
   auto shell_mean = [&](DvceArray5D<Real> &arr, const int c, const int og, const bool ex,
                         DvceArray1D<Real> &out) {
+    if (pm->layout_invariant) {   // layinv-1105: order-independent
+      VgdReproMean(arr, c, c, og, ex, out, nullptr);
+      return;
+    }
     Kokkos::deep_copy(out, 0.0);
     auto o_ = out;
     auto a_ = arr;
@@ -7941,8 +8013,33 @@ void RadiationM1::VetGdTwinTrans() {
     tb_(3*c1_ + i) = mn;
     tb_(4*c1_ + i) = mx;
   });
+  if (pm->layout_invariant) {
+    // layinv-1105: the three shell sums order-independent (the same per-cell terms);
+    // min / max are order-independent already
+    std::vector<Real> sm;
+    repro::ShellSums("m1_vgd_twtr_sumr", 3, c1, nmb1 + 1, ks, ke, js, je, ilo, ie,
+                     KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
+                                   const int i) {
+      const Real dr = cx1f(m,i+1) - cx1f(m,i);
+      const Real tau = exp(cs_(m,0,k+og,j+og,i))*dr;
+      if (q == 0) {return exp(-tau);}
+      const Real w = -expm1(-tau);
+      return (q == 1) ? w : w*exp(cs_(m,1,k+og,j+og,i));
+    }, sm);
+    auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vgd_twtb);
+    for (int n = 0; n < 3*c1; ++n) {h(n) = sm[n];}
 #if MPI_PARALLEL_ENABLED
-  if (global_variable::nranks > 1) {
+    if (global_variable::nranks > 1) {
+      MPI_Allreduce(MPI_IN_PLACE, h.data() + 3*c1, c1, MPI_ATHENA_REAL, MPI_MIN,
+                    MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, h.data() + 4*c1, c1, MPI_ATHENA_REAL, MPI_MAX,
+                    MPI_COMM_WORLD);
+    }
+#endif
+    Kokkos::deep_copy(vgd_twtb, h);
+  }
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::nranks > 1 && !pm->layout_invariant) {
     auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vgd_twtb);
     const int nr = global_variable::nranks;
     std::vector<Real> all(static_cast<size_t>(3*c1)*nr);
@@ -8053,6 +8150,7 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     auto thn_ = vgd_thn;
     auto dir_ = vgd_dir;
     auto &mbsize = pmy_pack->pmb->mb_size;
+  const VgdLG lg_ = vgd_lg;   // layinv-1105
     // gdthin-1011: the sweep's cell source (the fused twin's own in its pass) and opacity
     auto cs_ = vgd_hr_tw ? vgd_cst : vgd_cs;
     auto opac_ = opac;
@@ -8125,8 +8223,8 @@ void RadiationM1::VetGdHalfRange(const int stage) {
         return;
       }
       const Real th = sth_ ? thn_(m,j+og)   // accsp-1102
-                           : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-      const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3);
+                           : lg_.Th(mbsize, m, j, js);
+      const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
       const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
       Real jm = 0.0, h[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
       for (int d = 0; d < n; ++d) {
@@ -8181,7 +8279,8 @@ void RadiationM1::VetGdHalfRange(const int stage) {
   // copy and ONE rank-ordered gather (was one round per component; each mean is the
   // same fixed-order sum, so the same numbers), into a persistent pinned buffer; the
   // per-component subtractions then in the same order as below
-  if (vgd_twdet && global_variable::nranks > 1) {
+  // (layinv-1105: not with <mesh>/layout_invariant, whose sums the loop below takes)
+  if (vgd_twdet && global_variable::nranks > 1 && !pmy_pack->pmesh->layout_invariant) {
     if (vgd_hrm6.extent_int(0) != nhc*c1) {
       Kokkos::realloc(vgd_hrm6, nhc*c1);
       vgd_pin_hr = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>("m1_vgd_pin_hr",
@@ -8314,8 +8413,24 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       mo_(i) = sm/ncol;
     });
     }  // !(vgd_csg lateral)
+    const bool lay = pmy_pack->pmesh->layout_invariant;
+    if (lay) {
+      // layinv-1105: the same per-cell terms, summed order-independently over all ranks
+      const bool lpair = vgd_csg && c >= 2 && c <= 5;
+      const int pc = (c <= 3) ? (c + 2) : (c - 2);
+      std::vector<Real> sm;
+      repro::ShellSums("m1_vgd_hr_smr", 1, c1, nm, ks, ke, js, je, ilo, ie,
+                       KOKKOS_LAMBDA(const int, const int m, const int k, const int j,
+                                     const int i) {
+        return lpair ? 0.5*(ht_(m,(c <= 3) ? c : pc,k,j,i) + ht_(m,(c <= 3) ? pc : c,k,j,i))
+                     : ht_(m,c,k,j,i);
+      }, sm);
+      auto mh = Kokkos::create_mirror_view(vgd_hrm);
+      for (int i = 0; i < c1; ++i) {mh(i) = (i >= ilo && i <= ie) ? sm[i]/ncol : 0.0;}
+      Kokkos::deep_copy(vgd_hrm, mh);
+    }
 #if MPI_PARALLEL_ENABLED
-    {
+    if (!lay) {
       auto mh = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vgd_hrm);
       if (vgd_twdet && global_variable::nranks > 1) {
         // hrdet-1009: rank-ordered sum (as the twin's shell_mean under vet_gd_twin_det).

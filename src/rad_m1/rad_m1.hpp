@@ -23,6 +23,7 @@
 //! T4/T4b (<rad_m1>/source_form).  Still absent: implicit transport (stage 3) and any
 //! geometry but Cartesian (stage 4).
 
+#include "rad_m1/rad_m1_vgdlg.hpp"
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -2804,6 +2805,10 @@ class RadiationM1 {
   void VetGdTwinFusedMoments();
   Real vgd_ttwin = 0.0;
   void VetGdTwin(const int stage);
+  VgdLG vgd_lg;   // layinv-1105: the vet_gd sweep geometry from the global index
+  // layinv-1105: order-independent shell means of VetGdTwin (rad_m1_vetgd.cpp)
+  void VgdReproMean(DvceArray5D<Real> &arr, const int ca, const int cb, const int og,
+                    const bool ex, DvceArray1D<Real> &outa, DvceArray1D<Real> *outb);
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
   DvceArray5D<Real> vgd_w3;
   // wallbug-1027 vet_gd_theta_wall (read only when named; periodic | mirror, default

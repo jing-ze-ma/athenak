@@ -106,6 +106,9 @@ class Coordinates {
   // the mesh, mesh x3min, x3max)) instead of the block's own edges: the same coordinates
   // for every MeshBlock layout (the per-block formula differs in the last bit)
   bool sp_phi_global = false;
+  // layinv-1105 <mesh>/sp_theta_global: theta faces/centres from the global index
+  // (default = <mesh>/layout_invariant; coordinates.cpp)
+  bool sp_theta_global = false;
   void SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
       const DvceArray4D<Real> &pwb, const DvceFaceFld5D<Real> uflx,
       const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);

@@ -18,10 +18,10 @@
         // the face midpoints (uniform in index space, as the bilinear reads assume)
         // accsp-1102: a stretched theta / the full sphere: the row's node (sph2.inc)
         const Real th = sth_ ? thn_(m,j)
-                             : mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+                             : lg_.Th(mbsize, m, j, js);
         // accpolar-1103 vet_gd_band_global: phi from the global index (layout exact)
         const Real ph = gphb_ ? phcb_(m, gpwb_ + k - ks)
-                              : mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+                              : lg_.Ph(mbsize, m, k, ks);
         // vgdfuse-1010: sin / cos of the cell's (theta, phi) from the per-cell table (the
         // same expressions, evaluated once per cell instead of once per direction)
         const Real st = tg_(m,k-ks,j-js,0), ct = tg_(m,k-ks,j-js,1);
@@ -121,12 +121,18 @@
             // accsp-1102: behind the polar axis -> the extended chart; the fractional
             // row from the node table (rad_m1_vgdtheta.hpp)
             VgdPoleChart(pol_, th, thu, dph);
-            const Real fj = sth_ ? VgdThFj(thn_, m, j, thu, c2w_)
-                                 : j + (thu - th)/mbsize.d_view(m).dx2;
-            const Real fk = k + dph/mbsize.d_view(m).dx3;
-            int j0 = static_cast<int>(floor(fj));
-            int k0 = static_cast<int>(floor(fk));
-            Real uj = fj - j0, uk = fk - k0;
+            // layinv-1105: the fractional upwind index at its GLOBAL magnitude (fjg, fkg;
+            // sj_ = sk_ = 0 without <mesh>/layout_invariant: the old fj, fk exactly); the
+            // stencil base and the bilinear fractions come from it, so they are the same
+            // numbers on every MeshBlock layout
+            const int sj_ = lg_.Sj(m, js), sk_ = lg_.Sk(m, ks);
+            const Real fjg = sth_ ? VgdThFj(thn_, m, j, thu, c2w_, sj_)
+                                  : (j + sj_) + (thu - th)/lg_.Dx2(mbsize, m);
+            const Real fkg = (k + sk_) + dph/lg_.Dx3(mbsize, m);
+            const Real fj = fjg - sj_, fk = fkg - sk_;
+            int j0 = static_cast<int>(floor(fjg)) - sj_;
+            int k0 = static_cast<int>(floor(fkg)) - sk_;
+            Real uj = fjg - floor(fjg), uk = fkg - floor(fkg);
             bool clp = false;
             // accsp-1102 polar RING (sph2.inc): both stencil rows inside a polar zone ->
             // the corners are (global phi K, ring code RB0 + 2 (p nzr + q) + across-axis)
@@ -238,7 +244,7 @@
             // from the row next to the wall (linear in phi index, linear in r between
             // the shells i and iu as vet_gd_band_exit)
             const bool vlo = (thu < mt0), vhi = (thu > mt0 + mtl);
-            const int jrw = static_cast<int>(fmin(fmax(floor(fj + 0.5), Real(jlo)),
+            const int jrw = static_cast<int>(fmin(fmax(floor(fjg + 0.5) - sj_, Real(jlo)),
                                                   Real(jhi + 1)));
             if (!twn && typ != 2 && (vlo || vhi) && wl_(m,k,jrw) == 3) {
               const bool hi = vhi;
@@ -246,7 +252,7 @@
               // the row next to the wall (the block's own edge row with one MeshBlock in
               // theta), band index
               const int jw = static_cast<int>(fmin(fmax(
-                js + floor((thw - mbsize.d_view(m).x2min)/mbsize.d_view(m).dx2 + 0.5)
+                lg_.Jw(mbsize, m, js, thw)
                 - (hi ? 1 : 0), Real(jlo)), Real(jhi + 1)));
               const Real cw = cos(thw), c2w = cw*cw;
               const Real x0 = r*st*cp, y0 = r*st*sp, z0 = r*ct;
@@ -280,7 +286,7 @@
               const Real rx = sqrt(xx*xx + yx*yx + zx*zx);
               Real dpx = atan2(yx, xx) - ph;
               dpx -= twopi*floor((dpx + M_PI)/twopi);
-              const Real fkx = fmin(fmax(k + dpx/mbsize.d_view(m).dx3, Real(klo)),
+              const Real fkx = fmin(fmax(k + dpx/lg_.Dx3(mbsize, m), Real(klo)),
                                     Real(khi + 1));
               int kx0 = static_cast<int>(floor(fkx));
               kx0 = (kx0 > khi) ? khi : kx0;
@@ -324,9 +330,9 @@
               const Real thx = acos(fmin(fmax(zx/rx, -1.0), 1.0));
               Real dpx = atan2(yx, xx) - ph;
               dpx -= twopi*floor((dpx + M_PI)/twopi);
-              const Real fjx = fmin(fmax(j + (thx - th)/mbsize.d_view(m).dx2, Real(jlo)),
+              const Real fjx = fmin(fmax(j + (thx - th)/lg_.Dx2(mbsize, m), Real(jlo)),
                                     Real(jhi + 1));
-              const Real fkx = fmin(fmax(k + dpx/mbsize.d_view(m).dx3, Real(klo)),
+              const Real fkx = fmin(fmax(k + dpx/lg_.Dx3(mbsize, m), Real(klo)),
                                     Real(khi + 1));
               int jx0 = static_cast<int>(floor(fjx)), kx0 = static_cast<int>(floor(fkx));
               jx0 = (jx0 > jhi) ? jhi : jx0;
@@ -448,7 +454,7 @@
               bool pdone = false;
               if (vpa && !clp && !(spl && spe == 2 && typ == 3 && l > lcut &&
                                    p2 < rfi*rfi)) {
-                const Real gj = fj - j, gk = fk - k;
+                const Real gj = fjg - (j + sj_), gk = fkg - (k + sk_);   // layinv-1105
                 const Real a2 = fabs(gj), a3 = fabs(gk);
                 const int n2 = (a2 > 1.0) ? (static_cast<int>(ceil(a2)) - 1) : 0;
                 const int n3 = (a3 > 1.0) ? (static_cast<int>(ceil(a3)) - 1) : 0;
@@ -461,9 +467,9 @@
                   auto node = [&](const Real sn, const Real yj, const Real yk, Real &lcn,
                                   Real &lsn, Real &lch, Real &lsh) {
                     const Real q = (1.0 - sn)*ds;   // the path distance from the cell
-                    const int jn = static_cast<int>(floor(yj));
-                    const int kn = static_cast<int>(floor(yk));
-                    const Real aj = yj - jn, ak = yk - kn;
+                    const int jn = static_cast<int>(floor(yj)) - sj_;
+                    const int kn = static_cast<int>(floor(yk)) - sk_;
+                    const Real aj = yj - floor(yj), ak = yk - floor(yk);
                     Real wr = 0.0;
                     if (!own3) {
                       const Real rq = sqrt(fmax(r*r - 2.0*q*r*mr + q*q, 0.0));
@@ -509,14 +515,16 @@
                     const Real s3 = (t3 < n3) ? (1.0 - (n3 - t3)/a3) : 2.0;
                     if (s2 <= s3) {
                       sn = s2;
-                      yj = j + g2*(n2 - t2);
-                      yk = k + gk*(1.0 - sn);
+                      // layinv-1105: yj, yk at the global magnitude (node() and the
+                      // gate subtract sj_, sk_ from their integer parts)
+                      yj = (j + sj_) + g2*(n2 - t2);
+                      yk = (k + sk_) + gk*(1.0 - sn);
                       ++t2;
                       if (s3 == s2) {++t3;}   // a row-layer corner: one node
                     } else {
                       sn = s3;
-                      yk = k + g3*(n3 - t3);
-                      yj = j + gj*(1.0 - sn);
+                      yk = (k + sk_) + g3*(n3 - t3);
+                      yj = (j + sj_) + gj*(1.0 - sn);
                       ++t3;
                     }
                   };
@@ -544,10 +552,10 @@
                       next(t2, t3, sn, yj, yk);
                       const Real q = (1.0 - sn)*ds;
                       const int ih = (own3 || q < dso) ? i : iu;
-                      const int jn = static_cast<int>(floor(yj));
-                      const int kn = static_cast<int>(floor(yk));
-                      const int jh = jn + ((yj - jn < 0.5) ? 0 : 1);
-                      const int kh = kn + ((yk - kn < 0.5) ? 0 : 1);
+                      const int jn = static_cast<int>(floor(yj)) - sj_;   // layinv-1105
+                      const int kn = static_cast<int>(floor(yk)) - sk_;
+                      const int jh = jn + ((yj - floor(yj) < 0.5) ? 0 : 1);
+                      const int kh = kn + ((yk - floor(yk) < 0.5) ? 0 : 1);
                       const Real cl = csx(m,0,kh,jh,ih);
                       cmn = fmin(cmn, cl);
                       cmx = fmax(cmx, cl);

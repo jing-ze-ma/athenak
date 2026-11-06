@@ -125,7 +125,13 @@ def build_deck(case, lay, perturb, rundir):
     ncyc = case.get('ncyc', 10)
     deck_set(deck, 'time/nlim', ncyc)
     deck_set(deck, 'time/tlim', 1e30)
-    if perturb:
+    if perturb and case.get('tolref'):
+        # layinv-1105 (USER 11-05 option a): the reference spread of a deck whose solver
+        # stops at a tolerance with a block-local preconditioner (mg / rbgs): the same
+        # layout with the tolerances scaled (e.g. x 0.5), instead of the 1-ulp perturbation
+        for pk, f in case['tolref'].items():
+            deck_set(deck, pk, repr(float(deck_get(deck, pk)) * f))
+    elif perturb:
         pk = case.get('perturb', 'time/cfl_number')
         x = float(deck_get(deck, pk))
         deck_set(deck, pk, repr(float(np.nextafter(x, np.inf))))
@@ -150,7 +156,13 @@ def run_one(case, lay, perturb, binp, work, cores, opts):
     build_deck(case, lay, perturb, rd)
     np_ = lay.get('np', 1)
     cmd = ['nice', '-n', '10']
-    if np_ > 1 or opts.always_mpirun:
+    if os.environ.get('LI_SRUN'):
+        # layinv-1105: launch through srun into a held allocation with a memory cap, e.g.
+        # LI_SRUN="srun --overlap --jobid=5719508 -w hpc-sm-01-05 -N1 -c1 --mpi=pmix"
+        # (LI_MEM_GB per rank, default 6)
+        mem = int(os.environ.get('LI_MEM_GB', '6'))*np_ + 4
+        cmd += os.environ['LI_SRUN'].split() + ['-n', str(np_), '--mem=%dG' % mem]
+    elif np_ > 1 or opts.always_mpirun:
         cmd += ['mpirun', '-np', str(np_), '--bind-to', 'none', '--oversubscribe']
     cmd += [binp, '-i', 'run.athinput']
     env = dict(os.environ, OMP_NUM_THREADS='1')
@@ -214,9 +226,11 @@ def locate(d, lay, ng):
         idx[0], idx[1], idx[2], idx[3], len(nz), 100 * near)
 
 
-def verdict(d, ref):
+def verdict(d, ref, tol=None):
     if d == 0:
         return 'BITWISE'
+    if tol is not None:   # layinv-1105 tolerance gate: within tol x the tolerance spread
+        return 'TOLERANCE' if d <= max(tol * ref, 100 * EPS) else 'FAIL'
     if d <= max(10 * ref, 100 * EPS):
         return 'ROUNDOFF'
     if d > max(1000 * ref, 1e-10):
@@ -236,7 +250,8 @@ def compare_case(case, work, out):
     cycs = sorted(set([1, ncyc]) & set(fc))
     ng = int(case.get('ng', 2))
     worst = 'BITWISE'
-    rank = ['BITWISE', 'ROUNDOFF', 'SUSPECT', 'FAIL', 'ERROR']
+    rank = ['BITWISE', 'ROUNDOFF', 'TOLERANCE', 'NOWORSE', 'SUSPECT', 'FAIL', 'ERROR']
+    tolg = case.get('tol_factor', 1.0) if case.get('tolref') else None
     for c in cycs:
         B, _ = libin.load_cycle(bd, c)
         U, _ = libin.load_cycle(ud, c)
@@ -244,7 +259,7 @@ def compare_case(case, work, out):
         sc = scales(B)
         for v in B:
             refs[v] = reldiff(B[v], U[v], sc[v])[0] if v in U else np.nan
-        out.append('  cycle %d  ulp-ref: %s' % (c, ' '.join('%s %.1e' % (v, refs[v]) for v in B)))
+        out.append('  cycle %d  %s: %s' % (c, 'tol-ref' if tolg else 'ulp-ref', ' '.join('%s %.1e' % (v, refs[v]) for v in B)))
         for lay in case['layouts'][1:]:
             ld = os.path.join(work, case['name'], lay['name'])
             try:
@@ -264,8 +279,25 @@ def compare_case(case, work, out):
                     wl = 'ERROR'
                     continue
                 r, d = reldiff(B[v], L[v], sc[v])
-                vd = verdict(r, refs[v])
-                parts.append('%s %.1e%s' % (v, r, '' if vd in ('BITWISE', 'ROUNDOFF') else '!'))
+                vd = verdict(r, refs[v], tolg)
+                if case.get('ref_old') and vd != 'BITWISE':
+                    # layinv-1105 (a1, USER 11-05): a block-local preconditioner (mg / rbgs):
+                    # PASS when the layout pair is no worse (x2) than the OLD binary's pair
+                    try:
+                        ob, _ = libin.load_cycle(os.path.join(work, case['name'], 'old_' + base), c)
+                        ol, _ = libin.load_cycle(os.path.join(work, case['name'],
+                                                              'old_' + lay['name']), c)
+                        ro = reldiff(ob[v], ol[v], sc[v])[0]
+                        vd = 'NOWORSE' if r <= max(2.0 * ro, 100 * EPS) else 'FAIL'
+                        r = (r, ro)
+                    except Exception:   # noqa: BLE001
+                        vd = 'ERROR'
+                if isinstance(r, tuple):
+                    parts.append('%s %.1e(old %.1e)%s' % (v, r[0], r[1], '' if vd == 'NOWORSE'
+                                                         else '!'))
+                else:
+                    parts.append('%s %.1e%s' % (v, r, '' if vd in ('BITWISE', 'ROUNDOFF',
+                                                                  'TOLERANCE') else '!'))
                 if rank.index(vd) > rank.index(wl):
                     wl, wd = vd, (v, d)
             line = '    %-14s %-8s %s' % (lay['name'], wl, ' '.join(parts))
@@ -312,8 +344,12 @@ def main():
             if not bp or not os.path.exists(bp):
                 skipped.append(c['name'])
                 continue
+            ob = bins.get(c['bin'] + '_old') if c.get('ref_old') else None
             for i, lay in enumerate(c['layouts']):
                 jobs.append((c, lay, ex.submit(run_one, c, lay, False, bp, opts.work, cores, opts)))
+                if ob and os.path.exists(ob):   # layinv-1105 (a1): the OLD binary's same layouts
+                    lo = dict(lay, name='old_' + lay['name'])
+                    jobs.append((c, lo, ex.submit(run_one, c, lo, False, ob, opts.work, cores, opts)))
                 if i == 0:
                     jobs.append((c, lay, ex.submit(run_one, c, lay, True, bp, opts.work, cores, opts)))
         status = {}
@@ -333,7 +369,9 @@ def main():
             out.append('  COMPARE ERROR %r' % e)
             w = 'ERROR'
         exp = c.get('expect', 'PASS')
-        ok = w in ('BITWISE', 'ROUNDOFF')
+        ok = w in ('BITWISE', 'ROUNDOFF', 'TOLERANCE', 'NOWORSE')
+        if c.get('require_bitwise'):   # layinv-1105: layout_invariant cases
+            ok = (w == 'BITWISE')
         tagx = '' if (ok and exp == 'PASS') or (not ok and exp != 'PASS') else '  <-- UNEXPECTED'
         summary.append('%-24s %-8s expect %s%s' % (c['name'], w, exp, tagx))
         rep += out

@@ -176,6 +176,26 @@ Mesh::Mesh(ParameterInput *pin) :
           "restart input has no key") + ": the old default, key not added)");
     }
   }
+  // layinv-1105 (USER 11-05 "fix invariant") `<mesh>/layout_invariant`: results independent
+  // of the MeshBlock layout and the rank count.  true: every global / shell SUM that feeds
+  // the state (M1 Krylov dot products, coarse-space band sums, vet_gd / ic_rad shell sums,
+  // problem-generator IC shell sums) uses the order-independent exact accumulator
+  // utils/repro_sum.hpp, and the spherical-polar theta and phi coordinates are computed
+  // from the GLOBAL cell index (<mesh>/sp_theta_global, sp_phi_global follow it unless
+  // named).  Fresh-start default true (recipe::NewDefaults), recorded for restarts; a
+  // restart whose input lacks the key keeps false = the old block-ordered paths, bitwise.
+  if (!pin->DoesParameterExist("mesh", "layout_invariant")) {
+    if (recipe::NewDefaults(pin)) {
+      pin->GetOrAddBoolean("mesh", "layout_invariant", true);
+      recipe::Log("<mesh>/layout_invariant = true (default on a fresh start)");
+    } else {
+      recipe::Log("<mesh>/layout_invariant = false (" + std::string(
+          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+          "restart input has no key") + ": the old block-ordered sums, key not added)");
+    }
+  }
+  layout_invariant = pin->DoesParameterExist("mesh", "layout_invariant") &&
+                     pin->GetBoolean("mesh", "layout_invariant");
   cs_seam_fc_nolimit = use_cubed_sphere &&
                        pin->DoesParameterExist("mesh", "cs_seam_fc_nolimit") &&
                        pin->GetBoolean("mesh", "cs_seam_fc_nolimit");

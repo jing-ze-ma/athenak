@@ -97,6 +97,7 @@
 #include "pgen/pgen.hpp"
 #include "driver/dt_retry.hpp"
 #include "utils/eint_from_cons.hpp"
+#include "utils/repro_sum.hpp"
 
 // defaults-1002: <hydro>/fofc defaults to TRUE for this problem generator (every
 // stellar/box input ran it explicitly); see hydro::fofc_pgen_default (hydro.hpp).
@@ -4354,7 +4355,32 @@ void HsAdaptiveUpdate(Mesh *pm) {
   });
   auto hsh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sh);
   const int nfc = hsh.extent_int(0);
-  HsDetSum(&hsh(is,0), 8*(ie + 2 - is));   // rsgrst-1021: rank-ordered (restart-exact)
+  if (pm->layout_invariant) {
+    // layinv-1105: the same per-cell terms, summed order-independently over all ranks
+    std::vector<Real> rs;
+    repro::ShellSums("hs_ad_shell_r", 8, nfc, nmb, ks, ke, js, je, is, ie + 1,
+                     KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
+                                   const int i) {
+      if (q == 0) {return f0(m,k,j,i)*area1(m,k,j,i);}
+      if (q == 1) {return area1(m,k,j,i);}
+      if (i > ie) {return 0.0;}
+      const Real vol = volume(m,k,j,i);
+      if (q == 2) {return vol;}
+      const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
+      const Real h = e + eos.Pressure(d, e);
+      const Real v = w0(m,IVX,k,j,i), er = ur(m,radm1::M1_E,k,j,i);
+      if (q == 3) {return vol*v;}
+      if (q == 4) {return vol*h;}
+      if (q == 5) {return vol*er;}
+      if (q == 6) {return vol*v*h;}
+      return vol*v*er;
+    }, rs);
+    for (int i=is; i<=ie+1; ++i) {
+      for (int q=0; q<8; ++q) {hsh(i,q) = rs[static_cast<size_t>(q)*nfc + i];}
+    }
+  } else {
+    HsDetSum(&hsh(is,0), 8*(ie + 2 - is));   // rsgrst-1021: rank-ordered (restart-exact)
+  }
   // luminosities of the wedge (the units of the history's L_in = F_in A(r_in))
   std::vector<Real> lc(nfc, 0.0), lrad(nfc, 0.0), lcf(nfc, 0.0), tgt(nfc, 0.0);
   for (int i=is; i<=ie; ++i) {
@@ -4394,7 +4420,23 @@ void HsAdaptiveUpdate(Mesh *pm) {
       sp(i,0) = s0; sp(i,1) = s1; sp(i,2) = s2;
     });
     auto hsp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sp);
-HsDetSum(&hsp(is,0), 3*(ie + 1 - is));   // rsgrst-1021: rank-ordered
+    if (pm->layout_invariant) {   // layinv-1105: order-independent
+      const int nsp = hsp.extent_int(0);
+      std::vector<Real> rs;
+      repro::ShellSums("hs_adp_shell_r", 3, nsp, nmb, ks, ke, js, je, is, ie,
+                       KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
+                                     const int i) {
+        const Real vol = vv(m,k,j,i);
+        if (q == 0) {return vol;}
+        if (q == 1) {return vol*eo.Pressure(ww(m,IDN,k,j,i), ww(m,IEN,k,j,i));}
+        return vol*uu(m,radm1::M1_E,k,j,i);
+      }, rs);
+      for (int i=is; i<=ie; ++i) {
+        for (int q=0; q<3; ++q) {hsp(i,q) = rs[static_cast<size_t>(q)*nsp + i];}
+      }
+    } else {
+      HsDetSum(&hsp(is,0), 3*(ie + 1 - is));   // rsgrst-1021: rank-ordered
+    }
     std::vector<Real> lp(nfc, 0.0);
     for (int i=is; i<=ie; ++i) lp[i] = log((hsp(i,1) + hsp(i,2)/3.0)/hsp(i,0));
     const int np = static_cast<int>(hs_plnp_.size());
@@ -4662,6 +4704,9 @@ void HeStarIcPost(Mesh *pm) {
     return ((static_cast<std::size_t>(m)*nk + (k - ks))*nj + (j - js))*nr + (i - i0);
   };
   Real ff = 0.0;   // F0 of the top face x1f(ie+1), summed
+  // layinv-1105 <mesh>/layout_invariant: the shell sums order-independent (ReproSum)
+  const bool lay = pm->layout_invariant;
+  repro::ReproVec rv(lay ? 4*nr + 1 : 0);
   for (int m=0; m<nmb; ++m) {
     for (int k=ks; k<=ke; ++k) {
       for (int j=js; j<=je; ++j) {
@@ -4672,20 +4717,38 @@ void HeStarIcPost(Mesh *pm) {
           const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i);
           const Real t = eos.Temperature(d, e);
           tcell[cid(m,k,j,i)] = t;
-          sh[4*(i - i0)] += t;
-          sh[4*(i - i0) + 1] += d;
-          sh[4*(i - i0) + 2] += 1.0;
-          sh[4*(i - i0) + 3] += hf0(m,k,j,i);
+          if (lay) {
+            rv.Add(4*(i - i0), t);
+            rv.Add(4*(i - i0) + 1, d);
+            rv.Add(4*(i - i0) + 2, 1.0);
+            rv.Add(4*(i - i0) + 3, hf0(m,k,j,i));
+          } else {
+            sh[4*(i - i0)] += t;
+            sh[4*(i - i0) + 1] += d;
+            sh[4*(i - i0) + 2] += 1.0;
+            sh[4*(i - i0) + 3] += hf0(m,k,j,i);
+          }
           tmn[i - i0] = std::min(tmn[i - i0], t);
           tmx[i - i0] = std::max(tmx[i - i0], t);
         }
-        ff += hf0(m,k,j,ie+1);
+        if (lay) {
+          rv.Add(4*nr, hf0(m,k,j,ie+1));
+        } else {
+          ff += hf0(m,k,j,ie+1);
+        }
       }
     }
   }
+  if (lay) {
+    rv.Merge();
+    for (int q=0; q<4*nr; ++q) {sh[q] = rv.Value(q);}
+    ff = rv.Value(4*nr);
+  }
 #if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, sh.data(), 4*nr, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, &ff, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  if (!lay) {
+    MPI_Allreduce(MPI_IN_PLACE, sh.data(), 4*nr, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &ff, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  }
   MPI_Allreduce(MPI_IN_PLACE, tmn.data(), nr, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, tmx.data(), nr, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
 #endif
@@ -4889,6 +4952,11 @@ void HeStarIcEquil(Mesh *pm) {
   const Real dtm = pm1->icr_dm_dt;
   // shell sums per x1 index: rho, T, the net deposit dm, count; per x1 face: F0 area
   std::vector<Real> sh(4*n1, 0.0), lf(n1 + 1, 0.0), af(n1 + 1, 0.0);
+  // layinv-1105 <mesh>/layout_invariant: the shell sums order-independent (ReproSum);
+  // slots [0, 4 n1) sh, [4 n1, 5 n1 + 1) lf, [5 n1 + 1, 6 n1 + 2) af
+  const bool lay = pm->layout_invariant;
+  repro::ReproVec rv(lay ? 6*n1 + 2 : 0);
+  const int olf = 4*n1, oaf = 5*n1 + 1;
   for (int m=0; m<nmb; ++m) {
     for (int k=ks; k<=ke; ++k) {
       for (int j=js; j<=je; ++j) {
@@ -4897,24 +4965,46 @@ void HeStarIcEquil(Mesh *pm) {
           const Real ek = 0.5*(SQR(hu(m,IM1,k,j,i)) + SQR(hu(m,IM2,k,j,i)) +
                                SQR(hu(m,IM3,k,j,i)))/d;
           const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i);
-          sh[4*i] += d;
-          sh[4*i + 1] += eos.Temperature(d, e);
-          sh[4*i + 2] += hdmv(m,k,j,i);
-          sh[4*i + 3] += 1.0;
+          if (lay) {
+            rv.Add(4*i, d);
+            rv.Add(4*i + 1, eos.Temperature(d, e));
+            rv.Add(4*i + 2, hdmv(m,k,j,i));
+            rv.Add(4*i + 3, 1.0);
+          } else {
+            sh[4*i] += d;
+            sh[4*i + 1] += eos.Temperature(d, e);
+            sh[4*i + 2] += hdmv(m,k,j,i);
+            sh[4*i + 3] += 1.0;
+          }
         }
         for (int i=is; i<=ie+1; ++i) {
-          lf[i] += hf0(m,k,j,i)*har(m,k,j,i);
-          af[i] += har(m,k,j,i);
+          if (lay) {
+            rv.Add(olf + i, hf0(m,k,j,i)*har(m,k,j,i));
+            rv.Add(oaf + i, har(m,k,j,i));
+          } else {
+            lf[i] += hf0(m,k,j,i)*har(m,k,j,i);
+            af[i] += har(m,k,j,i);
+          }
         }
       }
     }
   }
+  if (lay) {
+    rv.Merge();
+    for (int q=0; q<4*n1; ++q) {sh[q] = rv.Value(q);}
+    for (int i=0; i<=n1; ++i) {
+      lf[i] = rv.Value(olf + i);
+      af[i] = rv.Value(oaf + i);
+    }
+  }
 #if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, sh.data(), 4*n1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, lf.data(), n1 + 1, MPI_ATHENA_REAL, MPI_SUM,
-                MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, af.data(), n1 + 1, MPI_ATHENA_REAL, MPI_SUM,
-                MPI_COMM_WORLD);
+  if (!lay) {
+    MPI_Allreduce(MPI_IN_PLACE, sh.data(), 4*n1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, lf.data(), n1 + 1, MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, af.data(), n1 + 1, MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
+  }
 #endif
   // the 1-D column on x1 indices: rho, T, e, the force per volume f = dm/dt + rho a_ref
   std::vector<Real> bd(n1, 0.0), be(n1, 0.0), tc(n1, 0.0), d0(n1, 0.0), fv(n1, 0.0);

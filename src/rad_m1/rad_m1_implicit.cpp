@@ -67,6 +67,7 @@
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
 #include "utils/recipe.hpp"
+#include "utils/repro_sum.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "hydro/hydro.hpp"
 #include "hydro/hydro_am.hpp"
@@ -8262,6 +8263,36 @@ void M1DetReduce(const char *name, const int n, const F &fn,
   out.s2 = h[2];
   out.mx = h[3];
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn M1LayReduce
+//! \brief layinv-1105 <mesh>/layout_invariant: the M1BcgVal reduction of fn(idx, v) over
+//! idx in [0, n) AND over all ranks with ORDER-INDEPENDENT sums (repro::ReproSum): each
+//! cell's contribution is taken from fn on a zeroed M1BcgVal (0 + term = term exactly;
+//! fn runs once per idx, so its side effects are those of the plain reduction) and
+//! deposited exactly.  The result depends only on the multiset of cell terms: the same
+//! for every MeshBlock layout, rank count, thread schedule and backend.
+
+template <class F>
+void M1LayReduce(const char *name, const int n, const F &fn, M1BcgVal &out) {
+  repro::ReproVal<3> rv;
+  Kokkos::parallel_reduce(name, Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, n),
+  KOKKOS_LAMBDA(const int idx, repro::ReproVal<3> &a) {
+    M1BcgVal t;
+    t.s0 = t.s1 = t.s2 = t.mx = 0.0;
+    fn(idx, t);
+    a.s[0].Add(t.s0);
+    a.s[1].Add(t.s1);
+    a.s[2].Add(t.s2);
+    a.mx = (t.mx > a.mx) ? t.mx : a.mx;
+  }, repro::ReproRed<3, Kokkos::HostSpace>(rv));
+  repro::AllMerge(rv.s, 3);
+  M1GlobalMax(rv.mx);
+  out.s0 = rv.s[0].Value();
+  out.s1 = rv.s[1].Value();
+  out.s2 = rv.s[2].Value();
+  out.mx = rv.mx;
+}
 } // namespace
 
 //----------------------------------------------------------------------------------------
@@ -8544,7 +8575,10 @@ int RadiationM1::ImplicitBiCGStab(Real rhsmax) {
 //! redo of implicit_precond_fallback, the one ImplicitBiCGStab has put in impl_prec).
 
 int RadiationM1::ImplicitBiCGStabRun(Real rhsmax) {
-  if (impl_bcg_sync > 0) {return ImplicitBiCGStabFused(rhsmax);}
+  // layinv-1105: the layout-invariant sums live in the fused loop (any bcg_sync)
+  if (impl_bcg_sync > 0 || pmy_pack->pmesh->layout_invariant) {
+    return ImplicitBiCGStabFused(rhsmax);
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -8803,8 +8837,13 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   const int nkji = (ke - ks + 1)*nji;
   Kokkos::RangePolicy<DevExeSpace> pol(DevExeSpace(), 0, (nmb1 + 1)*nkji);
   using HRed = M1BcgRed<Kokkos::HostSpace>;
-  const bool devrv = (impl_bcg_sync == 2) && (global_variable::nranks == 1);
-  const int kf = impl_kfuse;   // implicit_krylov_fuse (needs bcg_sync = 1, pcr)
+  // layinv-1105 <mesh>/layout_invariant: every sum of the loop order-independent
+  // (M1LayReduce, local + all ranks in one call); the loop variants whose sums ride in
+  // other kernels (krylov_fuse 2: the operator kernel; 3: Two / Dev / Pipe) take the
+  // krylov_fuse = 1 recurrence instead (same iterates in exact arithmetic)
+  const bool lay = pmy_pack->pmesh->layout_invariant;
+  const bool devrv = (impl_bcg_sync == 2) && (global_variable::nranks == 1) && !lay;
+  const int kf = (lay && impl_kfuse >= 2) ? 1 : impl_kfuse;
   if (impl_stencil) {ImplicitStencilBuild();}   // the operator of this pass, once
   if (impl_stencil && impl_dump_cyc >= 0) {ImplicitDumpOp();}
   if (impl_prec >= 3) {ImplicitMGBuild();}      // the coarse rows of this pass
@@ -8819,15 +8858,20 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   auto dpart = det_part;
   M1BcgVal red;
   auto lred = [&](const char *nm, const auto &fn) {   // this rank's part
-    if (det) {
+    if (lay) {
+      M1LayReduce(nm, ntot, fn, red);   // layinv-1105: already over all ranks
+    } else if (det) {
       M1DetReduce(nm, ntot, fn, dpart, red);
     } else {
       Kokkos::parallel_reduce(nm, pol, fn, HRed(red));
     }
   };
+  auto gbcg = [&](M1BcgVal &v) {   // the cross-rank part (lay: done by M1LayReduce)
+    if (!lay) {M1GlobalBcg(v, det);}
+  };
   auto bred = [&](const char *nm, const auto &fn) {   // ... and over all ranks
     lred(nm, fn);
-    M1GlobalBcg(red, det);
+    gbcg(red);
   };
   // implicit_lin_cnorm > 0: the max norm is taken of r_i/(s_i E^k_i), s_i = 1 + SRCB_i
   // the row EXCESS of the M-matrix (diagonal minus the off-diagonal moduli: the
@@ -8935,7 +8979,12 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
                                 Kokkos::Sum<Real, DevMemSpace>(rvd_));
       } else {
         if (!rvdone) {
-        if (det) {
+        if (lay) {
+          M1BcgVal rr;
+          M1LayReduce("m1_impl_bcgf_rv", ntot,
+                      KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {rvf(idx, v.s0);}, rr);
+          rv = rr.s0;
+        } else if (det) {
           M1BcgVal rr;
           M1DetReduce("m1_impl_bcgf_rv", ntot,
                       KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {rvf(idx, v.s0);},
@@ -8945,7 +8994,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
           Kokkos::parallel_reduce("m1_impl_bcgf_rv", pol, rvf, rv);
         }
         Real d2 = 0.0;
-        M1GlobalSum2(rv, d2, det);
+        if (!lay) {M1GlobalSum2(rv, d2, det);}
         bcg_nred += 1.0;
         }
         if (!(fabs(rv) > M1_BCG_EPS)) {
@@ -8989,7 +9038,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
           if (dv && idx == 0) {v.s2 += rvd_();}   // carries rhat.v to the host, exactly
         });
         }
-        M1GlobalBcg(red, det);
+        gbcg(red);
         bcg_nred += 1.0;
         if (devrv) {
           rv = red.s2;

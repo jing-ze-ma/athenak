@@ -48,6 +48,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/m1_fluid.hpp"
+#include "utils/repro_sum.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -169,8 +170,34 @@ void RadiationM1::IcRadShellSum(DvceArray5D<Real> &a, const int c0, const int nc
   const int ks = indcs.ks, ke = indcs.ke;
   const int c1 = indcs.nx1 + 2*indcs.ng;
   const int nm = pmy_pack->nmb_thispack;
-  DvceArray2D<Real> s("icr_ss", nc, c1);
   auto a_ = a;
+  if (pmy_pack->pmesh->layout_invariant) {
+    // layinv-1105: order-independent per-shell sums (repro::ReproSum), merged over ranks
+    Kokkos::View<repro::ReproSum**, DevMemSpace> rs("icr_ssr", nc, c1);
+    par_for("icr_shsum_r", DevExeSpace(), 0, nc - 1, 0, c1 - 1,
+    KOKKOS_LAMBDA(const int c, const int i) {
+      repro::ReproSum acc;
+      acc.Init();
+      if (i >= is && i <= ie) {
+        for (int m = 0; m < nm; ++m) {
+          for (int k = ks; k <= ke; ++k) {
+            for (int j = js; j <= je; ++j) {acc.Add(a_(m,c0+c,k,j,i));}
+          }
+        }
+      }
+      rs(c,i) = acc;
+    });
+    auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rs);
+    std::vector<repro::ReproSum> v(static_cast<size_t>(nc)*c1);
+    for (int c = 0; c < nc; ++c) {
+      for (int i = 0; i < c1; ++i) {v[static_cast<size_t>(c)*c1 + i] = hr(c,i);}
+    }
+    repro::AllMerge(v.data(), static_cast<int>(v.size()));
+    out.assign(static_cast<size_t>(nc)*c1, 0.0);
+    for (size_t q = 0; q < v.size(); ++q) {out[q] = v[q].Value();}
+    return;
+  }
+  DvceArray2D<Real> s("icr_ss", nc, c1);
   par_for("icr_shsum", DevExeSpace(), 0, nc - 1, is, ie,
   KOKKOS_LAMBDA(const int c, const int i) {
     Real acc = 0.0;
@@ -312,6 +339,25 @@ Real RadiationM1::IcRadLtop() {
   auto f0_ = f0x1;
   auto ar_ = pmy_pack->pcoord->area.x1f;
   auto &mbbcs = pmy_pack->pmb->mb_bcs;
+  if (pmy_pack->pmesh->layout_invariant) {
+    // layinv-1105: order-independent (repro::ReproSum), merged over ranks
+    Kokkos::View<repro::ReproSum*, DevMemSpace> rs("icr_ltr", 1);
+    par_for("icr_ltop_r", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
+      repro::ReproSum acc;
+      acc.Init();
+      for (int m = 0; m < nm; ++m) {
+        if (mbbcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::block) continue;
+        for (int k = ks; k <= ke; ++k) {
+          for (int j = js; j <= je; ++j) {acc.Add(f0_(m,k,j,ie+1)*ar_(m,k,j,ie+1));}
+        }
+      }
+      rs(0) = acc;
+    });
+    auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rs);
+    repro::ReproSum v = hr(0);
+    repro::AllMerge(&v, 1);
+    return v.Value();
+  }
   DvceArray1D<Real> s("icr_lt", 1);
   par_for("icr_ltop", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
     Real acc = 0.0;
