@@ -8,7 +8,7 @@
 | KE 2-4 d, median (max) | 4.47e40 (1.76e41) | 3.93e40 (1.54e41) | |
 | KE peak | 1.76e41 at 3.863 d | 1.54e41 at 3.869 d | |
 
-KE medians in other bands: 0-1 d 6.91e39 vs 6.56e39; 1-2 d 1.72e40 vs 1.61e40; 4-6 d 5.61e40 vs 4.29e40 (this band is incomplete). So the column is ~5-15 % above `his1d_g` to 4 d, with the same oscillation timing. Shell-mean T, rho and Fr1 in the first cell match to better than ~0.1 % through 2 d. Fr1 at 3 d is 15 % larger here (-1.71e14 vs -1.49e14), and N^2 on the first face at 3 d is -4.2 vs -4.6 x 1e-10.
+KE medians in other bands: 0-1 d 6.91e39 vs 6.56e39; 1-2 d 1.72e40 vs 1.61e40; 4-6 d 5.61e40 vs 4.29e40 (this band is incomplete). So the column is ~5-15 % above `his1d_g` to 4 d, with the KE peak at the same time. In the first cell, shell-mean T and rho match to ~0.03 % or better through 2 d. Fr1 differs by 0.1 % at 1 d, 1 % at 2 d and 15 % at 3 d (-1.71e14 vs -1.49e14), and N^2 on the first face at 3 d is -4.2 vs -4.6 x 1e-10.
 
 ## Your other questions
 - **dt:** 10.60 s at t = 0, matching yours. It stays ~10.6 s to 1.5 d, then falls: 8.4 s at 2 d, 5.7 s at 3 d, 4.5 s at 4.5 d. Per dump in `col4x4_dumpstats.txt`.
