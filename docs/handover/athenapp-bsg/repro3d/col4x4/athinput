@@ -1,0 +1,90 @@
+<comment>
+problem   = Blue Supergiant Envelope
+reference = 
+configure = --prob = bsg_star
+
+
+<job>
+problem_id = output/bsg                # problem ID: basename of output filenames
+
+<output1>
+file_type = hst
+dt = 0.1
+
+<output2>
+file_type = tab
+variable = prim
+data_format = %.17e
+dt = 7.46886
+
+<output3>
+file_type = rst
+dt = 100.0
+
+<time>
+cfl_number = 0.3                # The Courant, Friedrichs, & Lewy (CFL) Number, used to ensure numerical stability for propagating props
+nlim       = -1                 # time step limit, -1 = no limit
+tlim = 373.5
+rad_xorder = 2
+xorder     = 2
+
+<mesh>
+nx1 = 256
+x1min      = 20.0              # minimum value of X1, location of the bottom in code units ("length unit" below)
+x1max      = 80.0              # maximum value of X1, in code units, some expected extension of envelope
+ix1_bc     = user              # inner-X1 boundary flag
+ox1_bc     = user              # outer-X1 boundary flag
+x1rat = -1.0
+
+nx2 = 4
+x2min      = 1.047198           # minimum value of X2, pi/3
+x2max      = 2.094395           # maximum value of X2, 2pi/3
+ix2_bc     = periodic           # inner-X2 boundary flag
+ox2_bc     = periodic           # outer-X2 boundary flag
+
+
+nx3 = 4
+x3min      = 0.0                # minimum value of X3
+x3max      = 1.047198           # maximum value of X3, pi/3
+ix3_bc     = periodic           # inner-X3 boundary flag
+ox3_bc     = periodic           # outer-X3 boundary flag
+
+
+
+<meshblock>
+nx1 = 8
+nx2 = 4
+nx3 = 4
+
+# 16**3 meshblock size is about 1GB memory as a safe estimate
+
+
+<hydro>
+gamma           = 1.66666666666667   # gas gamma = C_p/C_v, Lars suggested 5/3
+dfloor          = 1.e-9              # density floor values
+pfloor          = 1.e-12             #
+
+<problem>
+seed_amp = 0.0
+
+GM           = 2.60795e+02      # enable central gravity by G*M_bottom in code units
+
+<radiation>
+nmu          = 4                # default angular system with 80 angles per cell in 3D
+
+unit         = 1                # prat and crat will be automatically calculated, otherwise (0) we have to provide prat and crat
+density_unit = 6.15245e-5       # set to cgs value of density at the bottom
+length_unit  = 6.95700e+10      # simply the solar radius
+T_unit        = 1.07887e+06     # set to cgs value of temperature at the bottom
+molecular_weight = 0.62         # mean molecular weight, I added this, from MESA model, or 1/(2X+3Y/4), i.e. H and He fully ionized
+
+Compton      = 0                # no Compton scattering, temperature is not that high, only Thomson
+tfloor       = 0.0001           # temperature floor value
+reduced_factor = 1.0
+angle_flag   = 1
+nzeta        = 5                # should set bigger than 2, otherwise will be bug
+npsi         = 6                # should set bigger than 2, otherwise will be bug
+error_limit  = 1.e-6
+taucell      = 4
+cfl_rad      = 0.025            # previously 0.05
+

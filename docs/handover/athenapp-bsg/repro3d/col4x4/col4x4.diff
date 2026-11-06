@@ -1,0 +1,38 @@
+--- /raven/ptmp/jinma/athpp_repro3d/athena/src/pgen/bsg_star.cpp
++++ /raven/ptmp/jinma/athpp_repro3d/athena4x4/src/pgen/bsg_star.cpp
+@@ -115,8 +115,18 @@
+ 
+ 
+ 
++// col4x4: his 256 radial faces as explicit piecewise-uniform spacing (no SMR)
++// 48 x 0.3125 (20-35), 128 x 0.15625 (35-55), 80 x 0.3125 (55-80); linear past the ends
++static Real HisGridX1(Real x, RegionSize rs) {
++  Real n = x*256.0;
++  if (n <= 48.0) return 20.0 + n*0.3125;
++  if (n <= 176.0) return 35.0 + (n - 48.0)*0.15625;
++  return 55.0 + (n - 176.0)*0.3125;
++}
++
+ void Mesh::InitUserMeshData(ParameterInput *pin)
+ {
++  if (mesh_size.x1rat < 0.0) EnrollUserMeshGenerator(X1DIR, HisGridX1);
+   
+   // enroll boundary functions
+   EnrollUserBoundaryFunction(BoundaryFace::outer_x1, Outflow_X1);
+@@ -393,6 +403,7 @@
+   }
+   
+   Real amp = 0.0;
++  const Real seed_amp = pin->DoesParameterExist("problem","seed_amp") ? pin->GetReal("problem","seed_amp") : 0.05;
+   
+   int kl=ks, ku=ke;
+   if(ku > kl){
+@@ -454,7 +465,7 @@
+ 
+ 
+     
+-    if(rho > 0.01 ) amp = 0.05;
++    if(rho > 0.01 ) amp = seed_amp;
+     else amp = 0.0;
+     
+     
