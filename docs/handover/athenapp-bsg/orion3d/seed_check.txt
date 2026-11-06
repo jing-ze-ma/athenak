@@ -1,0 +1,22 @@
+# t=0 seed audit, dump 0. rms = solid-angle weighted rms(rho-<rho>)/<rho> per shell. Uniform +-2.5% has rms 0.05/sqrt(12)=1.4434%.
+# i r[Rsun] <rho>[g/cc] rms(drho/rho)[%] rms(dP/P)[%]
+0 20.15706 5.77177e-05 1.4460 0.00e+00
+1 20.46955 5.15124e-05 1.4365 0.00e+00
+2 20.78203 4.59309e-05 1.4405 0.00e+00
+3 21.09452 4.09338e-05 1.4399 0.00e+00
+4 21.40701 3.64433e-05 1.4525 0.00e+00
+5 21.71950 3.24073e-05 1.4477 0.00e+00
+# requested radii
+3 21.09452 4.09338e-05 1.4399 0.00e+00
+86 41.01572 4.60267e-08 0.0000 0.00e+00
+223 69.84398 6.15245e-14 0.0000 0.00e+00
+# seeded shells: i=0-36, r=20.157-31.407; shell mean rho at top seeded 6.183e-07 g/cc, next 5.483e-07 g/cc (threshold 0.01 code=6.152e-07)
+# rms over seeded shells: mean 1.4430% min 1.4308% max 1.4559%
+# stream test: corr(rho/<rho>-1, u)=0.9999712843 over seeded cells; rho/(1+0.05 u) relative scatter within (block,shell): median 1.35e-16 max 3.52e-16
+# block-block corr of the seed in dump, 128 fully seeded blocks (r 20-30), 8128 pairs: max|c| 0.9999 for gids 0,1, locations (lx1,lx2,lx3) (0, 0, 0) (1, 0, 0). glibc srand(0)=srand(1): same stream.
+# stream corr, 191 seeded blocks excluding gid 0, 18145 pairs: rms 0.01571 (white 0.01562), max|c| 0.0639 (Gaussian extreme ~0.0692) gids 699,1231; pairs |c|>5 sigma 0 (expected 0.0)
+# mean corr by gid gap (>=20 pairs): 318 gaps, max |z| 3.14 at gap 532 (Gaussian extreme ~3.39); gap 1: +0.00029
+# r=21.095 seed: mode power mean k<=8 1.212e-08, k>32 1.265e-08; block-harmonic (k mod 8=0) 1.216e-08 vs all 1.266e-08; max mode/mean 9.0 (exp ~ ln N^2=9.7); half-shift corr phi +0.0195 theta -0.0063
+# r=21.095 block means of the seed: rms 9.3993e-04 (white 9.0000e-04)
+# r=24.844 seed: mode power mean k<=8 1.195e-08, k>32 1.281e-08; block-harmonic (k mod 8=0) 1.329e-08 vs all 1.275e-08; max mode/mean 9.8 (exp ~ ln N^2=9.7); half-shift corr phi +0.0160 theta -0.0004
+# r=24.844 block means of the seed: rms 9.3571e-04 (white 9.0324e-04)

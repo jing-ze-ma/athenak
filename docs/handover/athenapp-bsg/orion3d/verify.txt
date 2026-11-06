@@ -1,0 +1,154 @@
+# dump 0 t=0 code cycle 0; hst row t=0; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400525e+03  hst 1.400530e+03  rel -3.41e-06
+mom1  dump 0.000000e+00  hst 0.000000e+00  rel +nan
+KE1   dump 0.000000e+00  hst 0.000000e+00  rel +nan
+KE2   dump 0.000000e+00  hst 0.000000e+00  rel +nan
+KE3   dump 0.000000e+00  hst 0.000000e+00  rel +nan
+totE  dump 1.548157e+03  hst 1.548160e+03  rel -1.70e-06
+Er    dump 1.203216e+03  hst 1.203220e+03  rel -3.51e-06
+Fr1   dump 1.016815e-03  hst 1.016820e-03  rel -4.50e-06
+Fr01  dump 1.016815e-03  hst 1.016820e-03  rel -4.50e-06
+# dump 13 t=2.60045 code cycle 3114; hst row t=2.60045; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400530e+03  hst 1.400530e+03  rel +2.01e-07
+mom1  dump -1.740776e-01  hst -1.740780e-01  rel -2.18e-06
+KE1   dump 1.206563e-02  hst 1.206560e-02  rel +2.63e-06
+KE2   dump 2.933771e-03  hst 2.933770e-03  rel +3.30e-07
+KE3   dump 2.825307e-03  hst 2.825310e-03  rel -1.20e-06
+totE  dump 1.548199e+03  hst 1.548200e+03  rel -8.67e-07
+Er    dump 1.200845e+03  hst 1.200850e+03  rel -4.11e-06
+Fr1   dump 1.831966e-03  hst 1.831970e-03  rel -1.94e-06
+Fr01  dump 1.896625e-03  hst 1.896620e-03  rel +2.39e-06
+# dump 1 t=0.20045 code cycle 240; hst row t=0.20045; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400525e+03  hst 1.400530e+03  rel -3.44e-06
+mom1  dump -2.127847e-01  hst -2.127850e-01  rel -1.63e-06
+KE1   dump 6.494491e-04  hst 6.494490e-04  rel +2.26e-07
+KE2   dump 7.067672e-04  hst 7.067670e-04  rel +2.14e-07
+KE3   dump 7.312164e-04  hst 7.312160e-04  rel +5.24e-07
+totE  dump 1.548120e+03  hst 1.548120e+03  rel +3.15e-07
+Er    dump 1.201522e+03  hst 1.201520e+03  rel +1.65e-06
+Fr1   dump 3.963144e-03  hst 3.963140e-03  rel +1.05e-06
+Fr01  dump 4.065109e-03  hst 4.065110e-03  rel -1.31e-07
+# dump 2 t=0.40044 code cycle 480; hst row t=0.40044; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400525e+03  hst 1.400530e+03  rel -3.57e-06
+mom1  dump -3.736037e-01  hst -3.736040e-01  rel -8.79e-07
+KE1   dump 2.003495e-03  hst 2.003500e-03  rel -2.36e-06
+KE2   dump 2.452130e-03  hst 2.452130e-03  rel +2.00e-07
+KE3   dump 2.487999e-03  hst 2.488000e-03  rel -4.48e-07
+totE  dump 1.548114e+03  hst 1.548110e+03  rel +2.77e-06
+Er    dump 1.201418e+03  hst 1.201420e+03  rel -1.54e-06
+Fr1   dump 2.840693e-03  hst 2.840690e-03  rel +9.00e-07
+Fr01  dump 3.020725e-03  hst 3.020730e-03  rel -1.51e-06
+# dump 3 t=0.600571 code cycle 720; hst row t=0.600571; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400525e+03  hst 1.400520e+03  rel +3.47e-06
+mom1  dump -4.870620e-01  hst -4.870620e-01  rel +5.07e-09
+KE1   dump 3.363499e-03  hst 3.363500e-03  rel -3.40e-07
+KE2   dump 2.940064e-03  hst 2.940060e-03  rel +1.20e-06
+KE3   dump 2.902326e-03  hst 2.902330e-03  rel -1.49e-06
+totE  dump 1.548121e+03  hst 1.548120e+03  rel +3.40e-07
+Er    dump 1.201342e+03  hst 1.201340e+03  rel +1.40e-06
+Fr1   dump 2.095760e-03  hst 2.095760e-03  rel +1.52e-07
+Fr01  dump 2.330488e-03  hst 2.330490e-03  rel -7.51e-07
+# dump 4 t=0.800796 code cycle 960; hst row t=0.800796; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400525e+03  hst 1.400520e+03  rel +3.44e-06
+mom1  dump -5.548802e-01  hst -5.548800e-01  rel +3.14e-07
+KE1   dump 4.587801e-03  hst 4.587800e-03  rel +2.19e-07
+KE2   dump 3.072635e-03  hst 3.072640e-03  rel -1.52e-06
+KE3   dump 2.995018e-03  hst 2.995020e-03  rel -6.25e-07
+totE  dump 1.548127e+03  hst 1.548130e+03  rel -1.96e-06
+Er    dump 1.201268e+03  hst 1.201270e+03  rel -1.63e-06
+Fr1   dump 1.880465e-03  hst 1.880470e-03  rel -2.57e-06
+Fr01  dump 2.146862e-03  hst 2.146860e-03  rel +9.74e-07
+# dump 5 t=1.00028 code cycle 1199; hst row t=1.00028; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400525e+03  hst 1.400520e+03  rel +3.50e-06
+mom1  dump -5.846195e-01  hst -5.846200e-01  rel -7.81e-07
+KE1   dump 5.692085e-03  hst 5.692090e-03  rel -7.93e-07
+KE2   dump 3.115863e-03  hst 3.115860e-03  rel +1.12e-06
+KE3   dump 3.023554e-03  hst 3.023550e-03  rel +1.32e-06
+totE  dump 1.548144e+03  hst 1.548140e+03  rel +2.36e-06
+Er    dump 1.201227e+03  hst 1.201230e+03  rel -2.21e-06
+Fr1   dump 1.788686e-03  hst 1.788690e-03  rel -2.47e-06
+Fr01  dump 2.067631e-03  hst 2.067630e-03  rel +4.64e-07
+# dump 6 t=1.20069 code cycle 1439; hst row t=1.20069; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400525e+03  hst 1.400530e+03  rel -3.47e-06
+mom1  dump -5.834813e-01  hst -5.834810e-01  rel +5.33e-07
+KE1   dump 6.687150e-03  hst 6.687150e-03  rel +2.36e-08
+KE2   dump 3.115811e-03  hst 3.115810e-03  rel +3.21e-07
+KE3   dump 3.015457e-03  hst 3.015460e-03  rel -8.98e-07
+totE  dump 1.548161e+03  hst 1.548160e+03  rel +9.64e-07
+Er    dump 1.201193e+03  hst 1.201190e+03  rel +2.83e-06
+Fr1   dump 1.700685e-03  hst 1.700680e-03  rel +2.84e-06
+Fr01  dump 1.976819e-03  hst 1.976820e-03  rel -7.43e-07
+# dump 7 t=1.40037 code cycle 1678; hst row t=1.40037; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400526e+03  hst 1.400530e+03  rel -3.18e-06
+mom1  dump -5.597734e-01  hst -5.597730e-01  rel +7.90e-07
+KE1   dump 7.605465e-03  hst 7.605470e-03  rel -6.20e-07
+KE2   dump 3.118688e-03  hst 3.118690e-03  rel -6.89e-07
+KE3   dump 3.014623e-03  hst 3.014620e-03  rel +1.16e-06
+totE  dump 1.548176e+03  hst 1.548180e+03  rel -2.61e-06
+Er    dump 1.201154e+03  hst 1.201150e+03  rel +3.65e-06
+Fr1   dump 1.691002e-03  hst 1.691000e-03  rel +1.14e-06
+Fr01  dump 1.953226e-03  hst 1.953230e-03  rel -1.94e-06
+# dump 8 t=1.60006 code cycle 1917; hst row t=1.60006; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400526e+03  hst 1.400530e+03  rel -2.77e-06
+mom1  dump -5.183750e-01  hst -5.183750e-01  rel +3.61e-08
+KE1   dump 8.440224e-03  hst 8.440220e-03  rel +4.27e-07
+KE2   dump 3.082598e-03  hst 3.082600e-03  rel -8.10e-07
+KE3   dump 2.975903e-03  hst 2.975900e-03  rel +1.05e-06
+totE  dump 1.548190e+03  hst 1.548190e+03  rel -1.70e-07
+Er    dump 1.201117e+03  hst 1.201120e+03  rel -2.85e-06
+Fr1   dump 1.721425e-03  hst 1.721420e-03  rel +2.74e-06
+Fr01  dump 1.961289e-03  hst 1.961290e-03  rel -7.02e-07
+# dump 9 t=1.80066 code cycle 2157; hst row t=1.80066; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400527e+03  hst 1.400530e+03  rel -2.29e-06
+mom1  dump -4.638914e-01  hst -4.638910e-01  rel +9.07e-07
+KE1   dump 9.231930e-03  hst 9.231930e-03  rel -1.25e-08
+KE2   dump 3.059383e-03  hst 3.059380e-03  rel +1.10e-06
+KE3   dump 2.951829e-03  hst 2.951830e-03  rel -2.61e-07
+totE  dump 1.548196e+03  hst 1.548200e+03  rel -2.83e-06
+Er    dump 1.201063e+03  hst 1.201060e+03  rel +2.89e-06
+Fr1   dump 1.718204e-03  hst 1.718200e-03  rel +2.38e-06
+Fr01  dump 1.929381e-03  hst 1.929380e-03  rel +5.49e-07
+# dump 10 t=2.00046 code cycle 2396; hst row t=2.00046; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400528e+03  hst 1.400530e+03  rel -1.74e-06
+mom1  dump -4.009103e-01  hst -4.009100e-01  rel +8.18e-07
+KE1   dump 9.995124e-03  hst 9.995120e-03  rel +3.75e-07
+KE2   dump 3.046659e-03  hst 3.046660e-03  rel -2.64e-07
+KE3   dump 2.939506e-03  hst 2.939510e-03  rel -1.26e-06
+totE  dump 1.548199e+03  hst 1.548200e+03  rel -3.83e-07
+Er    dump 1.201009e+03  hst 1.201010e+03  rel -4.61e-07
+Fr1   dump 1.736427e-03  hst 1.736430e-03  rel -1.58e-06
+Fr01  dump 1.915068e-03  hst 1.915070e-03  rel -9.09e-07
+# dump 11 t=2.20021 code cycle 2635; hst row t=2.20021; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400528e+03  hst 1.400530e+03  rel -1.12e-06
+mom1  dump -3.306336e-01  hst -3.306340e-01  rel -1.06e-06
+KE1   dump 1.072131e-02  hst 1.072130e-02  rel +1.12e-06
+KE2   dump 3.017690e-03  hst 3.017690e-03  rel -6.13e-08
+KE3   dump 2.910692e-03  hst 2.910690e-03  rel +5.86e-07
+totE  dump 1.548201e+03  hst 1.548200e+03  rel +8.67e-07
+Er    dump 1.200955e+03  hst 1.200960e+03  rel -4.02e-06
+Fr1   dump 1.756379e-03  hst 1.756380e-03  rel -7.99e-07
+Fr01  dump 1.899271e-03  hst 1.899270e-03  rel +3.48e-07
+# dump 12 t=2.40076 code cycle 2875; hst row t=2.40076; blocks 2560 (levels 512/2048), cells 10485760, shells 256
+# volume coarse dump/analytic 1.0000000000 fine 1.0000000000; Omega 1.047197500 (pi/3=1.047197551)
+mass  dump 1.400529e+03  hst 1.400530e+03  rel -4.74e-07
+mom1  dump -2.542545e-01  hst -2.542550e-01  rel -1.86e-06
+KE1   dump 1.141327e-02  hst 1.141330e-02  rel -3.04e-06
+KE2   dump 2.978479e-03  hst 2.978480e-03  rel -4.91e-07
+KE3   dump 2.870831e-03  hst 2.870830e-03  rel +3.39e-07
+totE  dump 1.548201e+03  hst 1.548200e+03  rel +7.42e-07
+Er    dump 1.200900e+03  hst 1.200900e+03  rel +2.29e-07
+Fr1   dump 1.785760e-03  hst 1.785760e-03  rel +1.85e-07
+Fr01  dump 1.890281e-03  hst 1.890280e-03  rel +3.63e-07
