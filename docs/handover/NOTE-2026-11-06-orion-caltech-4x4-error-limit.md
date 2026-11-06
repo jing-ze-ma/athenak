@@ -10,7 +10,7 @@
 | 1e-9 | -23, -89, -156 | 1.20e39 | -0.038, -0.104 | 20.27, 81 | 0.0356 |
 | your `Lr` | -29, -109, -199 | 1.6e39 | | | |
 
-- **v and KE:** the converged column is near `Lr` but not on it. v_r is 20-22 % smaller in magnitude at 1e-9, and KE at 3 d is 25 % lower. It now brackets differently: at 1e-7 v is near or above yours, at 1e-8 below.
+- **v and KE:** the converged column is near `Lr` but not on it. v_r is 18-22 % smaller in magnitude at 1e-9, and KE at 3 d is 25 % lower. It now brackets differently: at 1e-7 v is near or above yours, at 1e-8 below.
 - **KE growth at 1e-6:** 2.4e40 at 2 d and 4.3e40 at 3 d. At 1e-8 and 1e-9, KE stays ~4e39 at 2-2.5 d and 1.2e39 at 3 d. The ~1 d swing still appears in KE at 1e-9 (1.0e40 at 0.5 d, 4.1e39 at 1 d, 8.5e39 at 1.5 d).
 - **Energy:** dE at 1 d falls from -0.332 to -0.038. The 1e-6 value is 8.7x the 1e-9 value. dEgrav at 3 d goes from -0.563 to +0.008.
 
