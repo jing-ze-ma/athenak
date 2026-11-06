@@ -1,0 +1,13 @@
+his1d baseline             tend 1.00 KE .1/.25/.5/1 d 6.40e+39 9.70e+39 1.17e+40 5.15e+39 | 1d T/IC 1.022 0.991 Lc0 -3 dE -0.10e45 | .5d max|v| +1.08 km/s at 33.5 KE r50 33.4
+units only (physics same)  tend 1.00 KE .1/.25/.5/1 d 6.41e+39 9.71e+39 1.17e+40 5.15e+39 | 1d T/IC 1.022 0.991 Lc0 -3 dE -0.10e45 | .5d max|v| +1.08 km/s at 33.5 KE r50 33.4
+GM = 20 Msun               tend 1.00 KE .1/.25/.5/1 d 8.21e+40 1.83e+41 1.36e+41 5.23e+40 | 1d T/IC 1.045 0.985 Lc0 -12 dE -0.28e45 | .5d max|v| -3.57 km/s at 27.9 KE r50 28.0
+nzeta 4                    tend 1.00 KE .1/.25/.5/1 d 6.24e+39 8.97e+39 1.06e+40 4.85e+39 | 1d T/IC 1.022 0.991 Lc0 -3 dE -0.10e45 | .5d max|v| +1.03 km/s at 33.5 KE r50 34.0
+floors = old               tend 1.00 KE .1/.25/.5/1 d 6.40e+39 9.70e+39 1.17e+40 5.13e+39 | 1d T/IC 1.022 0.991 Lc0 -3 dE -0.10e45 | .5d max|v| +1.08 km/s at 33.5 KE r50 33.4
+padded tables              tend 1.00 KE .1/.25/.5/1 d 6.40e+39 9.70e+39 1.17e+40 5.15e+39 | 1d T/IC 1.022 0.991 Lc0 -3 dE -0.10e45 | .5d max|v| +1.08 km/s at 33.5 KE r50 33.4
+seed thresh = old          tend 1.00 KE .1/.25/.5/1 d 6.30e+39 8.41e+39 8.31e+39 6.15e+39 | 1d T/IC 1.022 0.991 Lc0 -4 dE -0.12e45 | .5d max|v| +1.27 km/s at 41.0 KE r50 41.8
+G+Z+F+T+S                  tend 1.00 KE .1/.25/.5/1 d 8.49e+40 1.92e+41 1.58e+41 5.43e+40 | 1d T/IC 1.045 0.985 Lc0 -12 dE -0.30e45 | .5d max|v| -3.78 km/s at 28.2 KE r50 28.2
+Z+F+T+S, his GM            tend 1.00 KE .1/.25/.5/1 d 6.15e+39 7.80e+39 7.62e+39 5.80e+39 | 1d T/IC 1.022 0.991 Lc0 -3 dE -0.13e45 | .5d max|v| +1.23 km/s at 41.0 KE r50 46.6
+af1_cflrad                 tend 10.00 KE .1/.25/.5/1 d 9.33e+40 1.83e+41 1.40e+41 5.41e+40 | 1d T/IC 1.045 0.985 Lc0 -13 dE -0.30e45 | .5d max|v| -3.78 km/s at 28.2 KE r50 28.2
+profile mass at r=20 Rsun [Msun]: 19.8232787070941  at 80: 19.99844042844601
+his GM 260.795 GM=2.6250e+27 = 19.779 Msun; IC (dP_tot/dr)/(rho g)+1, r 21-40: median -0.0045 at 21: +0.0182 at 25 -0.0037 at 40 +0.0142
+old GM (20 Msun) GM=2.6548e+27 = 20.004 Msun; IC (dP_tot/dr)/(rho g)+1, r 21-40: median +0.0068 at 21: +0.0292 at 25 +0.0076 at 40 +0.0252

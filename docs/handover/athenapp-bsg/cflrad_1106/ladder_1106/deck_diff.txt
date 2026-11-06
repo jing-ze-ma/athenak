@@ -1,0 +1,101 @@
+1d0
+< <comment>
+6a6,7
+> <output3>
+> <output4>
+10,12c11,12
+< Compton = 0 
+< GM = 2.60795e+02 
+< T_unit = 1.07887e+06 
+---
+> GM = 2.84560241e+03
+> T_unit = 1.0e5
+14,16c14,15
+< cfl_number = 0.3 
+< cfl_rad = 0.025 
+< configure = --prob = bsg_star
+---
+> cfl_number = 0.3
+> cfl_rad = 0.025
+18,21c17,22
+< density_unit = 6.15245e-5 
+< dfloor = 1.e-9 
+< dt = 0.1
+< dt = 7.46886
+---
+> density_unit = 1.0e-9
+> dfloor = 1.0e-11
+> dt = 0.00526316
+> dt = 0.0263158
+> dt = 0.0263158
+> dt = 0.0263158
+25,45c26,47
+< gamma = 1.66666666666667 
+< ix1_bc = user 
+< ix2_bc = outflow 
+< ix3_bc = periodic 
+< length_unit = 6.95700e+10 
+< molecular_weight = 0.62 
+< nlim = -1 
+< nmu = 4 
+< nx1 = 384 
+< nx2 = 1 
+< nx3 = 1 
+< nzeta = 5 
+< ox1_bc = user 
+< ox2_bc = outflow 
+< ox3_bc = periodic 
+< pfloor = 1.e-12 
+< problem = Blue Supergiant Envelope
+< problem_id = bsg 
+< rad_xorder = 2
+< reduced_factor = 1.0
+< reference = 
+---
+> file_type = tab
+> file_type = tab
+> gamma = 1.6666666666666667
+> integrator = vl2
+> ix1_bc = user
+> ix2_bc = outflow
+> ix3_bc = periodic
+> length_unit = 6.957e10
+> molecular_weight = 0.62
+> ncycle_out = 2000
+> nlim = -1
+> nlimit = 100
+> nmu = 4
+> nx1 = 384
+> nx2 = 1
+> nx3 = 1
+> nzeta = 4
+> ox1_bc = user
+> ox2_bc = outflow
+> ox3_bc = periodic
+> pfloor = 1.0e-15
+> problem_id = bsg
+47,49c49,53
+< tfloor = 0.0001 
+< tlim = 10000.0 
+< unit = 1 
+---
+> tfloor = 0.05
+> tlim = 13.644
+> unit = 1
+> variable = Er
+> variable = Fr1
+51,57c55,60
+< x1max = 80.0 
+< x1min = 20.0 
+< x1rat = 1.000000 
+< x2max = 2.0943951023931953 
+< x2min = 1.0471975511965976 
+< x3max = 1.047198 
+< x3min = 0.0 
+---
+> x1max = 80.0
+> x1min = 20.0
+> x2max = 2.0943951023931953
+> x2min = 1.0471975511965976
+> x3max = 1.0471975511965976
+> x3min = 0.0
