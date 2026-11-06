@@ -116,6 +116,13 @@ DvceArray1D<Real> hs_rho_, hs_eint_;
 Real hs_rlo_ = 0.0, hs_dr_ = 1.0;
 int hs_nf_ = 0;
 Real hs_gm_ = 0.0, hs_rin_ = 1.0, hs_rint_ = 0.0, hs_fin_ = 0.0;
+// athpp-doface-1105 <problem>/he_athpp_wall_sink_L (TEST, read only when named; default off =
+// bitwise): the Athena++ unconverged-Jacobi energy loss (viper audit_1015 G1: non-telescoping
+// billing destroys gas energy, 89 % of it in wall cells 0/1/2 with weights ~0.52/0.28/0.20,
+// ~50-60 L in the his-BC arms at dt 212 s) as a prescribed sink [erg/s, whole star] of gas
+// internal energy in the first three cells of the inner wall.  he_athpp_wall_sink_dtref > 0:
+// scaled by dtref/dt (a fixed loss per implicit solve instead of per unit time).
+Real hs_ws_L_ = 0.0, hs_ws_dtref_ = 0.0;
 // hegiant-1006: problem/he_gm_column (read only when named, default false = the point
 // mass GM = he_gm, bit for bit): the gravity of the ENCLOSED MASS of the initial column,
 // G m(r) = he_gm + G int_{r_in}^{r} 4 pi r'^2 rho_IC dr' (he_gm = G m(r_in), the mass
@@ -2836,6 +2843,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
   }
+  if (pin->DoesParameterExist("problem","he_athpp_wall_sink_L")) {   // athpp-doface-1105
+    hs_ws_L_ = pin->GetReal("problem","he_athpp_wall_sink_L");
+    hs_ws_dtref_ = pin->GetOrAddReal("problem","he_athpp_wall_sink_dtref",0.0);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<problem> he_athpp_wall_sink_L = " << hs_ws_L_ << " erg/s (Athena++ Jacobi-loss mimic, "
+                << "wall cells 0-2), dtref " << hs_ws_dtref_ << std::endl;
+    }
+  }
   pmbp->phydro->wall_closed_ix1 = pin->GetOrAddBoolean("problem","he_wall_closed",
                                                        !(hs_binf_ || hs_bzc_));
   if ((hs_binf_ || hs_bzc_) && pmbp->phydro->wall_closed_ix1) {
@@ -3531,6 +3546,22 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   if (hs_mlt_ && hs_mrs_ >= 0.0) {
     const Real w = HsMltW(pm->time);
     if (w != hs_mw_) HsApplyMltW(pm, w);
+  }
+  // athpp-doface-1105 he_athpp_wall_sink_L: gas-energy sink in the inner-wall cells 0-2
+  if (hs_ws_L_ > 0.0) {
+    auto cx1f = pmbp->pcoord->xx1f;
+    const Real x1a = pm->mesh_size.x1min;
+    const Real lsk = hs_ws_L_*((hs_ws_dtref_ > 0.0) ? hs_ws_dtref_/pm->dt : 1.0);
+    const Real sdt = bdt;
+    par_for("hs_wsink", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, is+2,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (fabs(cx1f(m,is) - x1a) > 1.0e-6*fabs(x1a)) return;   // not the inner-wall block
+      const int c = i - is;
+      const Real w = (c == 0) ? 0.52 : ((c == 1) ? 0.28 : 0.20);
+      const Real ra = cx1f(m,i), rb = cx1f(m,i+1);
+      const Real vsh = 4.0*M_PI*(rb*rb*rb - ra*ra*ra)/3.0;      // full-sphere shell volume
+      u0(m,IEN,k,j,i) -= sdt*lsk*w/vsh;
+    });
   }
   // fsanchor-1009 he_clump (TEST): re-impose the fixed cold clump (rho, eint, v = 0)
   if (hs_cl_on_) {
