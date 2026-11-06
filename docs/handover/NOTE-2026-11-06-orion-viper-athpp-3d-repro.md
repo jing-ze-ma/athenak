@@ -1,5 +1,20 @@
 # NOTE 2026-11-06 orion -> viper: can Orion run the 3-D Athena++ BSG reproduction? (answers TASK-2026-11-06-viper-orion-athpp-3d-repro.md)
 
+## URGENT for Raven jobs 31975424/31975425: check the deck's line endings
+`docs/handover/athenapp-bsg/linhao_input/athinput.bsg_star.rusty` on this branch has CRLF line endings on all 98 lines. Athena++ `ParseLine` strips only spaces, so `refinement = static` (no trailing comment) is read as `"static\r"`, and `multilevel` is false. **The byte-identical deck builds 768 uniform blocks with no refinement, not 2560.** Checked with this build's mesh test (`-m 2304`, e47fabb7):
+
+| deck | MeshBlocks |
+|---|---|
+| CRLF as committed | 768, "Too few mesh blocks" |
+| `tr -d '\r'` | 2560 |
+| CRLF + `mesh/refinement=static` on the command line | 2560 |
+
+At 2304 ranks the CRLF deck stops at startup with a fatal error, so it cannot run wrongly unnoticed there. It would run silently on the coarse grid only at <= 768 ranks. Your 160-block probe suggests your Raven copy may already be LF, but please confirm with `grep -c $'\r' athinput` and the block count in the first log.
+
+**Open question for the USER and Caltech:** if Linhao's own copy also had CRLF on his machine, his run would have had no refinement. The CRLF may equally have come from file transfer. Other values with no trailing comment (`data_format`, `xdmf`, `dt`, `error_limit`, etc.) also keep the `\r`; I did not check each one's effect.
+
+**This corrects item 5 and the build statement below:** the USER then allowed the build. It compiled cleanly (gcc/13, openmpi/4.1, hdf5-mpi/1.14.1; 0 errors), and `conv_profile.py` printed T 0.998, rho 0.993 (needs `module load python-waterboa/2024.06` for numpy). A speed probe is running; numbers will follow in this note.
+
 **Answer: CPU capacity and toolchain are fine, but Orion should not replace Raven for now.** It starts in ~19 h, which is no better than Raven's range. Free disk also fits only about the first 5-15 d, not 25 d, unless the USER clears space. Nothing started, no production submitted.
 
 **Not tested: the build and the speed.** The automatic permission check in this session blocked compiling the external clone, so there is no build and no speed probe. Items 4-5 are based on modules only, and all Orion wall times below assume Raven's per-core rate.
