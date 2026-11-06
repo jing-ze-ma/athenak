@@ -2756,8 +2756,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     } else if (dv == "vstar_n") {
       dop_vstar = true;
       dop_vstar_n = true;
+    } else if (dv == "vstar_nbe") {   // vstarfix-1106
+      dop_vstar = true;
+      dop_vstar_n = true;
+      dop_vstar_nbe = true;
     } else if (dv != "stage") {
-      ImplFatal("<rad_m1>/doppler_vel must be stage | vstar | vstar_n");
+      ImplFatal("<rad_m1>/doppler_vel must be stage | vstar | vstar_n | vstar_nbe");
     }
     if (dop_vstar) {
       if (impl_vimp && pin->DoesParameterExist("rad_m1","implicit_vimp") &&
@@ -12917,6 +12921,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool csk = cs_geom;
     const bool dvs = dop_vstar;   // athpp-vstar-1105
     const bool dvn = dop_vstar_n;
+    const bool dvb = dop_vstar_nbe;   // vstarfix-1106
     const bool dpr = (dop_dbg > 0) && ((dop_dbg_cnt++ % dop_dbg) == 0);
     auto un_ = flr.u1;   // U^n of the Heun step (diagnostic only)
     const int dts2 = t2_solve;
@@ -12964,7 +12969,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real wv1 = dvs ? mv1 : uh(m,IM1,k,j,i);
       Real wv2 = dvs ? mv2 : uh(m,IM2,k,j,i);
       Real wv3 = dvs ? mv3 : uh(m,IM3,k,j,i);
-      if (dvn && dts2 != M1_T2S_STAGE1) {
+      if (dvn && dts2 != M1_T2S_STAGE1 && (!dvb || dts2 == M1_T2S_STAGE2)) {
         // vstar_n: v^n + 2 (v_stage - v^n), in momentum units at the stage density
         const Real rn = dd/fmax(un_(m,IDN,k,j,i), 1.0e-300);
         const Real p1 = rn*un_(m,IM1,k,j,i), p2 = rn*un_(m,IM2,k,j,i), p3 = rn*un_(m,IM3,k,j,i);
@@ -14233,6 +14238,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // consfix-1011 (conservative2): this pass's dA into the face equation's F0^n
     if ((Cs2Active() && !(cs2_dbg & 1)) || RinrActive()) {ImplicitCs2Pass(false);}
     if (muscl_now) {ImplicitMusclBuild();}   // xthinfix-1009 Fix B
+    // vstarfix-1106 he_bc_linhao_fis = iter (rad_m1.hpp): F_is of the wall face, frozen over
+    // this pass (m1_impl_asm and m1_impl_face must see the same value; m1_impl_face overwrites
+    // f0x1 while it runs)
+    if (impl_lbath && impl_lbath_hr && lbath_fis_iter) {
+      if (lbath_fi.extent_int(0) != nmb1 + 1) {
+        Kokkos::realloc(lbath_fi, nmb1 + 1, iw.extent_int(2), iw.extent_int(3));
+      }
+      auto lfi_ = lbath_fi;
+      auto f0q_ = f0x1;
+      par_for("m1_impl_lbfi", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+      KOKKOS_LAMBDA(const int m, const int k, const int j) {
+        lfi_(m,k,j) = 0.5*(f0q_(m,k,j,is) + f0q_(m,k,j,is+1));
+      });
+    }
     const bool vim = vimp_now;
     const int ivb = iw_vimp;
 
@@ -14324,6 +14343,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto ptq_a = ptq1;
     const bool lbath = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
     const bool lbhr = impl_lbath_hr;   // linhao-prod-1104 halfrange (rad_m1.hpp)
+    const bool lfit = lbath_fis_iter;   // vstarfix-1106
+    auto lfir_ = lbath_fi;
     const bool afd = afd_on; const Real afdt = afd_tc, afdm = afd_mu1;   // col1d A7
     const bool dfc_ = (dop_face == 1);   // doface-1105 doppler_face = central (rad_m1.hpp)
     const Real afdq = afd_taumin;
@@ -14776,7 +14797,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           // linhao-prod-1104 he_bc_linhao_rad = halfrange: the inner face flux of his DO
           // upwind with half-range intensities, F = A - B E_is (rad_m1.hpp)
           const Real eg1 = lgr_(m,0,k,j), ag1 = lgr_(m,5,k,j);
-          const Real fis = 0.5*(f0n_(m,k,j,is) + f0n_(m,k,j,is+1));
+          const Real fis = lfit ? lfir_(m,k,j) : 0.5*(f0n_(m,k,j,is) + f0n_(m,k,j,is+1));
           const Real ktg = (lgr_(m,2,k,j) > 0.0) ? lgr_(m,2,k,j) : iw_(m,M1_IW_KT,k,j,i);
           const Real tauc = (lhdm == 3) ?
               lhal*(ktg*(cx1f(m,i) - cx1f(m,i-1)) + iw_(m,M1_IW_KT,k,j,i)*(cx1f(m,i+1) - cx1f(m,i)))
@@ -15393,6 +15414,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto q1z_ = cs2f1;
     const bool lbathf = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
     const bool lbhrf = impl_lbath_hr;   // linhao-prod-1104 halfrange
+    const bool lfitf = lbath_fis_iter;   // vstarfix-1106
+    auto lfif_ = lbath_fi;
     const bool dfcf = (dop_face == 1);   // doface-1105 doppler_face = central
     const bool afdf = afd_on && afd_force; const Real afdtf = afd_tc, afdmf = afd_mu1;
     const Real afdqf = afd_taumin;
@@ -15451,8 +15474,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real tauc = (lhdmf == 3) ?
               lhalf*(ktgf*(cx1f(m,ip) - cx1f(m,im)) + iw_(m,M1_IW_KT,k,j,ip)*(cx1f(m,ip+1) - cx1f(m,ip)))
             : lhalf*0.5*(lgf_(m,2,k,j) + iw_(m,M1_IW_KT,k,j,ip))*(cx1v(m,ip) - cx1v(m,im));
+          const Real fisf = lfitf ? lfif_(m,k,j) : 0.5*(f0n_(m,k,j,ip) + f0n_(m,k,j,ip+1));
           fn = 0.5*(cl*lhmuf*M1LbathDiss(lhdmf, tauc)*(lhegf - iw_(m,M1_IW_EP,k,j,ip))
-                    + lhfgf + 0.5*(f0n_(m,k,j,ip) + f0n_(m,k,j,ip+1)));
+                    + lhfgf + fisf);
         } else if (aphll) {
           Real al = ifw_(m,M1_IFW_AL,k,j,i);
           Real gh = ifw_(m,M1_IFW_HCL,k,j,i)*eg1

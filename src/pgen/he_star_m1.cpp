@@ -2795,6 +2795,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                              ((dm == "tau2") ? 2 : ((dm == "none") ? 4 : 3)));
           pm1->lbath_alpha = pin->GetOrAddReal("problem","he_bc_linhao_alpha",
                                                (dm == "athena") ? 5.0 : 1.0);
+          // vstarfix-1106 he_bc_linhao_fis = lagged | iter (rad_m1.hpp lbath_fis_iter; read only
+          // when named, default lagged = bitwise)
+          if (pin->DoesParameterExist("problem","he_bc_linhao_fis")) {
+            const std::string fs = pin->GetString("problem","he_bc_linhao_fis");
+            if (fs != "lagged" && fs != "iter") {
+              HsFatal("problem/he_bc_linhao_fis must be lagged or iter", __LINE__);
+            }
+            pm1->lbath_fis_iter = (fs == "iter");
+          }
           pm1->lbath_mu1 = mu1;
           pm1->lbath_heg = heg;
           pm1->lbath_hfg = hfg;
