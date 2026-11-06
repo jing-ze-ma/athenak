@@ -96,16 +96,21 @@ def deck_drop_outputs(deck):
 
 # ---------------------------------------------------------------- running
 class Cores:
+    """counting slots.  wallwb-1105: a run wider than the pool takes the whole pool (it runs
+    oversubscribed) instead of waiting for ever: with --np-max 4 and a 6-rank layout, take(6)
+    never returned and the suite hung silently for 11 h with no athena running"""
     def __init__(self, n):
-        self.n, self.c = n, threading.Condition()
+        self.n, self.total, self.c = n, n, threading.Condition()
 
     def take(self, k):
+        k = min(k, self.total)
         with self.c:
             while self.n < k:
                 self.c.wait()
             self.n -= k
 
     def give(self, k):
+        k = min(k, self.total)
         with self.c:
             self.n += k
             self.c.notify_all()
@@ -172,7 +177,7 @@ def run_one(case, lay, perturb, binp, work, cores, opts):
     try:
         with open(os.path.join(rd, 'run.log'), 'w') as lf:
             r = subprocess.run(cmd, cwd=rd, stdout=lf, stderr=subprocess.STDOUT, env=env,
-                               timeout=case.get('timeout', 3600))
+                               timeout=opts.run_timeout or case.get('timeout', 3600))
         st = 'rc=%d %.0fs' % (r.returncode, time.time() - t0)
     except subprocess.TimeoutExpired:
         st = 'TIMEOUT'
@@ -318,6 +323,8 @@ def main():
     ap.add_argument('--list', action='store_true')
     ap.add_argument('--compare-only', action='store_true')
     ap.add_argument('--always-mpirun', action='store_true')
+    ap.add_argument('--run-timeout', type=int, default=0,
+                    help='seconds per run, overrides the case timeouts (TIMEOUT -> ERROR in the report)')
     ap.add_argument('--allow-float32', action='store_true',
                     help='compare float32 .bin dumps anyway (default: refuse)')
     opts = ap.parse_args()

@@ -15,6 +15,7 @@
 #include "coordinates/coordinates.hpp"
 #include "hydro.hpp"
 #include "hydro_wball.hpp"
+#include "reconstruct/wb_wall.hpp"
 #include "bvals/bvals.hpp"
 #include "hydro_mergelat.hpp"
 #include "bvals/cs_seam_states.hpp"
@@ -164,6 +165,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   // is off-centre even without a stretch; `reconstruct` governs the ANGULAR sweeps)
   const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
   const bool wall_ix1_ = wall_closed_ix1;
+  // wallwb-1105 <hydro>/wall_wb_onesided (hydro.hpp, reconstruct/wb_wall.hpp): every
+  // geometry, on the x1 dynamic WB paths that read the x1 cache wbq0 (PLM)
+  const bool wwb_ = wall_wb_onesided && use_wellbalance_dynamic && use_wb_x1 &&
+                    (wb_all || recon_method_x1 == ReconstructionMethod::plm ||
+                     !(pmy_pack->pmesh->use_spherical_polar || str_r1_));
+  const bool curv1_ = pmy_pack->pmesh->use_spherical_polar || str_r1_;
   const bool diode_ox1_ = diode_ox1;   // topbc-1101 (hydro.hpp)
   const bool cs_seam_hlle_ = cs_seam_hlle;   // csedge-1019 (hydro.hpp)
   // <hydro>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see hydro.hpp).
@@ -466,7 +473,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     // O(dx^2) and a strong blast leaked 2-3e-4 of the mass through a "closed" wall.  Make
     // the ghost-side state the exact mirror of the interior-side one: any solver then
     // returns a zero mass flux (S_M = 0 by symmetry) to round-off.
-    if (use_spherical_polar || str_r1_) {
+    if (use_spherical_polar || str_r1_ || wwb_) {
       member.team_barrier();
       Kokkos::single(Kokkos::PerTeam(member), [&]() {
         // Also used for a USER inner boundary under wall_closed_ix1 (dhj problem/
@@ -475,18 +482,40 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         // from (d,e), so mirroring only wl would keep the ghost-side pressure and give
         // S_M != 0.  (ix1_bc = reflect is left exactly as it was.)
         const BoundaryFlag bix1 = mb_bcs_pq.d_view(m,BoundaryFace::inner_x1);
+        // wallwb-1105 <hydro>/wall_wb_onesided: the wall cells reconstruct their WB
+        // deviation one-sided (reconstruct/wb_wall.hpp), then the mirror below
+        const BoundaryFlag box1 = mb_bcs_pq.d_view(m,BoundaryFace::outer_x1);
+        if (wwb_) {
+          auto inr = [&](const int i) {
+            return !curv1_ || (!(wb_rmax_ > 0.0 && x1v_(m,i) > wb_rmax_) &&
+                               !(wb_rmin_ > 0.0 && x1v_(m,i) < wb_rmin_) &&
+                               !(phicc_wb_(m,k,j,i) > wb_phimax_));
+          };
+          if ((bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user))
+              && inr(is)) {
+            wbwall::WallCellX1(true, m, k, j, is, w0_, wder_, wbq0_, x1v_, x1f_,
+                               use_wb_rho_, nder, wl, wr, dl, dr);
+          }
+          if (box1 == BoundaryFlag::reflect && inr(ie)) {
+            wbwall::WallCellX1(false, m, k, j, ie, w0_, wder_, wbq0_, x1v_, x1f_,
+                               use_wb_rho_, nder, wl, wr, dl, dr);
+          }
+        }
         if (bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user)) {
           for (int n=0; n<nvars; ++n) { wl(n,is) = wr(n,is); }
           wl(IVX,is) = -wr(IVX,is);
-          if (bix1 == BoundaryFlag::user) {  // reflect stays bitwise
+          if (bix1 == BoundaryFlag::user || wwb_) {  // reflect stays bitwise (key off)
             for (int n=0; n<nder; ++n) {
               dl(n,is) = dr(n,is);
             }
           }
         }
-        if (mb_bcs_pq.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect) {
+        if (box1 == BoundaryFlag::reflect) {
           for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
           wr(IVX,ie+1) = -wl(IVX,ie+1);
+          if (wwb_) {
+            for (int n=0; n<nder; ++n) { dr(n,ie+1) = dl(n,ie+1); }
+          }
         }
       });
     }

@@ -333,6 +333,13 @@ class Hydro {
   // from the mirror of the interior-side state, exactly as for ix1_bc = reflect, so
   // it carries zero mass and zero advected energy whatever the ghost cells hold.
   bool wall_closed_ix1 = false;
+  // wallwb-1105 <hydro>/wall_wb_onesided (reconstruct/wb_wall.hpp): with the x1 dynamic
+  // WB scheme, the wall cell of a closed x1 wall (reflect inner/outer, or a user inner
+  // face under wall_closed_ix1; every geometry) reconstructs its WB deviation one-sided
+  // towards the interior, and the wall face takes the mirror state.  Removes the
+  // closed-wall odd-even v_r mode.  Default true on a FRESH start with WB x1 (USER
+  // 11-05, recipe::NewDefaults); a restart whose input lacks the key keeps false.
+  bool wall_wb_onesided = false;
   // topbc-1101 ONE-WAY (diode) outer radial face under a USER outer-x1 boundary (set by
   // a problem generator, e.g. dhj problem/top_bc = outflow1): where the interior-side
   // state at the ie+1 face moves INWARD (v_r < 0) the ghost-side state is replaced by

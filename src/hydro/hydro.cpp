@@ -364,6 +364,26 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   scratch_level = pin->GetOrAddInteger("hydro","scratch_level",0);
   use_wb_x2 = pin->GetOrAddBoolean("hydro","wb_x2",false);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
+  // wallwb-1105 (hydro.hpp, reconstruct/wb_wall.hpp).  USER 11-05: default true on a
+  // FRESH start (recipe::NewDefaults) whenever the x1 dynamic WB scheme is on and the
+  // key is not named (it acts only at closed / reflecting x1 walls); recorded, so the
+  // run's restarts carry it.  A restart whose input lacks the key keeps the old
+  // behaviour (false, bitwise); an explicit key always wins.
+  if (!pin->DoesParameterExist("hydro","wall_wb_onesided") &&
+      use_wellbalance_dynamic && use_wb_x1) {
+    if (recipe::NewDefaults(pin)) {
+      pin->GetOrAddBoolean("hydro","wall_wb_onesided",true);
+      recipe::Log("<hydro>/wall_wb_onesided = true (default with wellbalance_dynamic + "
+                  "wb_x1; acts at closed / reflecting x1 walls)");
+    } else {
+      recipe::Log("<hydro>/wall_wb_onesided = false (" + std::string(
+          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+          "restart input has no key") + ": the old wall cell)");
+    }
+  }
+  if (pin->DoesParameterExist("hydro","wall_wb_onesided")) {
+    wall_wb_onesided = pin->GetBoolean("hydro","wall_wb_onesided");
+  }
   // switch the x1 well-balanced reconstruction off above this radius (0 = never); see
   // the declaration in hydro.hpp.  Only the position-aware x1 path (spherical polar and
   // cubed sphere, where x1v is the radius) honours it -- a Cartesian mesh has no radius

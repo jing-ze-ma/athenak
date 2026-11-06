@@ -430,6 +430,9 @@ class MHD {
   // from the mirror of the interior-side state, exactly as for ix1_bc = reflect, so
   // it carries zero mass and zero advected energy whatever the ghost cells hold.
   bool wall_closed_ix1 = false;
+  // wallwb-1105 <mhd>/wall_wb_onesided: as <hydro>/wall_wb_onesided (hydro.hpp,
+  // reconstruct/wb_wall.hpp), the same helper; default true on a FRESH start with WB x1
+  bool wall_wb_onesided = false;
   // topbc-1101 ONE-WAY (diode) outer radial face under a USER outer-x1 boundary (set by
   // a problem generator, e.g. dhj problem/top_bc = outflow1): where the interior-side
   // state at the ie+1 face moves INWARD (v_r < 0) the ghost-side state is replaced by
