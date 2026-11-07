@@ -1,0 +1,4 @@
+# BSG prod_lhxo (fresh start 11-06 14:51 PST, ended rc 0 at tlim 57.4 d 11-07 06:14), 4 ranks x 4 MeshBlocks on 4 H200 (hpc-sm-01-05)
+# srun -n 4 -c 8 --mem=440G --cpu-bind=none --mpi=pmix r1planets_1101/tools/gpuwrap.sh 0,1,2,3 ; env OMPI_MCA_io=romio321 OMP_NUM_THREADS=1 HSA_XNACK=1 HSA_NO_SCRATCH_RECLAIM=1 UCX_TLS=^xpmem OMPI_MCA_coll_hcoll_enable=0
+/resnick/groups/carnegie_poc/jingze/builds_rstfixx/bin/athena_gpu_he_star_m1_v3_fmadoff -i /resnick/groups/carnegie_poc/jingze/doface_1105/prep3d/bsgLI_lhx_exact_o.athinput time/tlim=4.95936e6   # binary md5 20efaed08d5ab3789073112597af3ed9 = branch vstarfix-1106 3b1d3dc19 (unpushed)
+# continuation for tests from rst 58: -r rst/bsg3d.00058.rst output1/last_time=4959000 output2/last_time=4924800 output3/last_time=4924800 output4/last_time=4950000 output5/last_time=4924800 output6/last_time=4924800 output7/last_time=4924800 time/tlim=<new>

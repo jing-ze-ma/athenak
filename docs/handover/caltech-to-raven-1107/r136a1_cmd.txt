@@ -1,0 +1,5 @@
+# last start (11-06 18:30 PST, launch.log), 2 ranks x 2 MeshBlocks on 2 H200 (hpc-sm-02-03 GPUs 2,3); srun -n 2 -c 8 --mem=220G --cpu-bind=none --mpi=pmix r1planets_1101/tools/gpuwrap.sh 2,3
+# env: OMPI_MCA_io=romio321 OMP_NUM_THREADS=1 HSA_XNACK=1 HSA_NO_SCRATCH_RECLAIM=1 UCX_TLS=^xpmem OMPI_MCA_coll_hcoll_enable=0
+/resnick/groups/carnegie_poc/jingze/builds_rstfixx/bin/athena_gpu_he_star_m1_prod_dc2dc20c_fmadoff -r rst/r136.00005.rst output1/last_time=432000 output2/last_time=432000 output3/last_time=432000 output4/last_time=430000 output5/last_time=432000 output6/last_time=432000 -d /resnick/groups/carnegie_poc/jingze/r136a1_1104/runB/prod -t 13:47:37 time/tlim=1.728e6 rad_m1/time2_adm_poslim=true
+# NEXT (from rst 8; ended rc 0 at wall limit 11-07 08:18):
+athena_gpu_he_star_m1_prod_dc2dc20c_fmadoff -r rst/r136.00008.rst output1/last_time=648500 output2/last_time=648000 output3/last_time=648000 output4/last_time=640000 output5/last_time=604800 output6/last_time=648000 -d <RUNDIR> -t <TL> time/tlim=1.728e6 rad_m1/time2_adm_poslim=true

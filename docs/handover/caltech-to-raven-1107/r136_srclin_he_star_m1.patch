@@ -1,0 +1,44 @@
+--- a/src/pgen/he_star_m1.cpp (dc2dc20c)
++++ b/src/pgen/he_star_m1.cpp (r136open_1106/build/exp, binary athena_gpu_he_star_m1_dc2dc20c_srclin_fmadoff; diagnostic, not on any branch)
+@@ -135,6 +135,10 @@
+ DvceArray1D<Real> hs_fb_;
+ Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
+ bool hs_zflux_ = true;
++// r136open-1106 (diagnostic, default off): problem/he_wb_src_linear_rmin > 0: cells with
++// x1v above it take the LINEAR (isodensity) walk p -/+ rho dPhi_eff in the WB gravity
++// source instead of the cached hydrostatic walk (unresolved H/dr there)
++Real hs_srclin_r_ = 0.0;
+ // fsanchor-1009 problem/he_clump (TEST, read only when named, default false): a cold
+ // opaque sphere of gas held fixed (rho, T, v = 0) at every stage, the absorber of the
+ // shadow test in the production geometry; (r, theta, phi) centre, radius (code units)
+@@ -2590,6 +2594,9 @@
+ 
+   // top sponge (default off) and hooks
+   hs_zflux_ = pin->GetOrAddBoolean("problem","he_wall_zero_flux",true);
++  if (pin->DoesParameterExist("problem","he_wb_src_linear_rmin")) {
++    hs_srclin_r_ = pin->GetReal("problem","he_wb_src_linear_rmin");
++  }
+   // the inner wall face sees the exact mirror of the interior-side state
+   // (hydro_fluxes.cpp, wall_closed_ix1, as deep_hot_jupiter_rt problem/wall_closed): zero
+   // mass flux to round-off.  Measured: it does not change the first-cell force
+@@ -3248,6 +3255,9 @@
+       u0(m,IM1,k,j,i) -= bdt*w0(m,IDN,k,j,i)*gmp*src1/x1vg(m,i);
+     });
+   } else {
++  const Real slr = hs_srclin_r_;
++  auto &x1vs = pmbp->pcoord->x1v;
++  auto pwcs = ph->phicc_wb, pwfs = ph->phi_wb_x1f;
+   par_for("hs_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+     const Real d = w0(m,IDN,k,j,i);
+@@ -3255,6 +3265,10 @@
+     WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i, d1, pl, d2, pr, d3);
+     const Real e_ = w0(m,IEN,k,j,i);
+     const Real p = (e_ > 0.0) ? eos.Pressure(d, e_) : 0.5*(pl + pr);
++    if (slr > 0.0 && x1vs(m,i) > slr) {
++      pl = p + d*(pwcs(m,k,j,i) - pwfs(m,k,j,i));
++      pr = p - d*(pwfs(m,k,j,i+1) - pwcs(m,k,j,i));
++    }
+     u0(m,IM1,k,j,i) += bdt*(area1(m,k,j,i+1)*(pr - p) + area1(m,k,j,i)*(p - pl))
+                        /volume(m,k,j,i);
+   });
