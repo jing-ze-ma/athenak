@@ -9,6 +9,7 @@
 //! (AddWbGravity).  See hydro_wball.hpp for the scheme.  Cartesian geometry in this
 //! milestone (hydro.cpp refuses the spherical grids).
 
+#include <cstdlib>
 #include <iostream>
 
 #include "athena.hpp"
@@ -163,7 +164,10 @@ void WbAllAmBackground(WbAllCtx &c);
 //! with Phi_wb > wb_phimax -> a huge value: if any code path still reads it, the run differs
 //! from the run without the key.  nv channels of cache(m,n,k,j,i).
 void WbPoison(MeshBlockPack *pmbp, DvceArray5D<Real> &cache, const DvceArray4D<Real> &phiwb,
-              const Real phimax) {
+              const Real phimax_in) {
+  // env WB_POISON_MARGIN (negative control): poison below the cut too; the run must then differ
+  const char *ev = std::getenv("WB_POISON_MARGIN");
+  const Real phimax = phimax_in - ((ev != nullptr) ? std::atof(ev) : 0.0);
   auto q = cache; auto pw = phiwb;
   const int nm = pmbp->nmb_thispack - 1, nv = q.extent_int(1) - 1;
   const int n3 = q.extent_int(2) - 1, n2 = q.extent_int(3) - 1, n1 = q.extent_int(4) - 1;
