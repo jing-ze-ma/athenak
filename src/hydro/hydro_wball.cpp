@@ -93,25 +93,29 @@ void WbAllBuild(WbAllCtx &c) {
   // vs a fresh inversion, interior and ghost separately
   if (std::getenv("WB_DIAG") != nullptr && gen) {
     auto wd = wder;
-    Real a[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     const int is_ = indcs.is, ie_ = indcs.ie, js_ = indcs.js, je_ = indcs.je;
     const int ks_ = indcs.ks, ke_ = indcs.ke;
-    Kokkos::parallel_reduce("wb_diag", Kokkos::MDRangePolicy<Kokkos::Rank<4>, DevExeSpace>(
-      {0,0,0,0},{nmb1+1,n3,n2,n1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &r0, Real &r1,
-                  Real &r2, Real &r3, Real &r4, Real &r5) {
-      const Real d = w0_(m,IDN,k,j,i), e = w0_(m,IEN,k,j,i), t = WBT(wt,m,k,j,i);
-      if (!(d > 0.0 && e > 0.0 && t > 0.0)) return;
-      const Real pw = wd(m,IDPR,k,j,i), pt = eos.Pressure(d, e, t), pf = eos.Pressure(d, e);
-      const bool in = (i >= is_ && i <= ie_ && j >= js_ && j <= je_ && k >= ks_ && k <= ke_);
-      const Real x = fabs(pw - pt)/pt, y = fabs(pt - pf)/pt, z = fabs(pw - pf)/pt;
-      if (in) {r0 = fmax(r0, x); r1 = fmax(r1, y); r2 = fmax(r2, z);}
-      else {r3 = fmax(r3, x); r4 = fmax(r4, y); r5 = fmax(r5, z);}
-    }, Kokkos::Max<Real>(a[0]), Kokkos::Max<Real>(a[1]), Kokkos::Max<Real>(a[2]),
-       Kokkos::Max<Real>(a[3]), Kokkos::Max<Real>(a[4]), Kokkos::Max<Real>(a[5]));
-    std::cout << "WB_DIAG interior wder-P(T) " << a[0] << " P(T)-P(fresh) " << a[1]
-              << " wder-P(fresh) " << a[2] << " | ghost " << a[3] << " " << a[4] << " "
-              << a[5] << std::endl;
+    // region: 0 interior, 1 i<is, 2 i>ie, 3 j ghost only, 4 k ghost only, 5 j and k ghost;
+    // the max |wder - P(T)|/P, |P(T) - P(fresh)|/P of each, in-sweep (rows +-1, is-1..ie+1) cells
+    for (int rg = 0; rg < 6; ++rg) {
+      Real a0 = 0.0, a1 = 0.0, a2 = 0.0;
+      Kokkos::parallel_reduce("wb_diag", Kokkos::MDRangePolicy<Kokkos::Rank<4>, DevExeSpace>(
+        {0,0,0,0},{nmb1+1,n3,n2,n1}),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &r0, Real &r1,
+                    Real &r2) {
+        const bool jg = (j < js_ || j > je_), kg = (k < ks_ || k > ke_);
+        int r;
+        if (i < is_) r = 1; else if (i > ie_) r = 2; else if (jg && kg) r = 5;
+        else if (jg) r = 3; else if (kg) r = 4; else r = 0;
+        if (r != rg) return;
+        const Real d = w0_(m,IDN,k,j,i), e = w0_(m,IEN,k,j,i), t = WBT(wt,m,k,j,i);
+        if (!(d > 0.0 && e > 0.0 && t > 0.0)) return;
+        const Real pw = wd(m,IDPR,k,j,i), pt = eos.Pressure(d, e, t), pf = eos.Pressure(d, e);
+        r0 = fmax(r0, fabs(pw - pt)/pt); r1 = fmax(r1, fabs(pt - pf)/pt); r2 = fmax(r2, fabs(pw - pf)/pf);
+      }, Kokkos::Max<Real>(a0), Kokkos::Max<Real>(a1), Kokkos::Max<Real>(a2));
+      std::cout << "WB_DIAG rg " << rg << " wder-P(T) " << a0 << " P(T)-P(fresh) " << a1
+                << " wder-P(fresh) " << a2 << std::endl;
+    }
   }
   for (int dir = 2; dir <= 3; ++dir) {
     if (dir == 2 && n2 == 1) continue;
