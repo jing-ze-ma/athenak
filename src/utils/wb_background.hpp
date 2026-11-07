@@ -459,14 +459,6 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
       const Real t_m = (t_im1c > 0.0) ? t_im1c : eos.Temperature(rho_im1, e_im1, t_i);
       const Real t_p = (t_ip1c > 0.0) ? t_ip1c : eos.Temperature(rho_ip1, e_ip1, t_i);
       dlntdphi = (t_p - t_m)/dphis;   // dT/dPhi: T LINEAR in Phi, the true polytrope
-      // dhjwball-1106, wb_dirs = all only (thermo_i): a stencil straddling an extremum of Phi
-      // along the sweep (a tangential sweep does: tide, rotation) has dphis ~ 0 and the ratio
-      // is round-off: it then differs between a cell and its neighbour block's ghost copy, so
-      // the two blocks' face states differ and mass is not conserved.  Isothermal there.
-      if (thermo_i != nullptr &&
-          fabs(dphis) < 0.25*(fabs(phi_ip1 - phi_i) + fabs(phi_i - phi_im1))) {
-        dlntdphi = 0.0;
-      }
     }
   }
 
