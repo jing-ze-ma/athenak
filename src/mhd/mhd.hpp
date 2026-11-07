@@ -1202,7 +1202,8 @@ class MHD {
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
          const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          const DvceArray5D<Real> &wbq0,
-         ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
+         ScrArray2D<Real> &dl, ScrArray2D<Real> &dr,
+         const Real wb_phimax = 1.0e300) {
       int nvar = qd.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         par_for_inner(member, il, iu, [&](const int i) {

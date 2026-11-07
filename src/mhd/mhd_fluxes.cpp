@@ -463,7 +463,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                                  use_wellbalance_static_reconst_perturb_,
                                  pwb_, pfacewb_x1f,
                                  m, k, j, il-1, iu, w0_, wder_,
-                                 x1v_, x1f_, phiwbcc_, phiwb_x1f_, wbq0_, dl, dr);
+                                 x1v_, x1f_, phiwbcc_, phiwb_x1f_, wbq0_, dl, dr, wb_phimax_);
       } else if (use_spherical_polar || str_r1_) {
         // reconstruct_x1 != plm: same Mignone curvilinear reconstruction as w0_/b0_
         // above, applied to the derived thermodynamic variables (no WB background,

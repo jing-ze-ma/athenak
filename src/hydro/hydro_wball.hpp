@@ -235,6 +235,7 @@ struct WbAllCtx {
   WBOption wbo;
   bool wgt = true, wbgi = false, wbs = false;
   Real r0 = 0.1, r1 = 0.3, m0 = 0.2, m1 = 0.5, eta = 1.0e-4;
+  Real phimax = 1.0e300;   // dhjwball-1106: wb_phimax (w = 0 above it)
   DvceArray5D<Real> w0, u0, wder, wbq0, wbq2, wbq3, wbw;
   DvceArray4D<Real> phicc, wtemp, pwb;
   DvceArray4D<Real> phi1f, phi2f, phi3f;   // the face potentials (phi0.x1f/x2f/x3f)

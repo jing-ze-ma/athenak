@@ -1777,6 +1777,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                     << std::endl;
         }
       }
+      // dhjwball-1106 problem/wb_lobe_cut (USER 11-06 "we should not use wb above the roche
+      // lobe"; opt-in here, default false = bitwise): every WB (x1 and x2/x3, face states
+      // and force) off where Phi > Phi(L1): plain PLM, plain -rho grad Phi
+      if (pin->GetOrAddBoolean("problem","wb_lobe_cut",false)) {
+        if (pmbp->pmhd != nullptr) pmbp->pmhd->wb_phimax = phil1;
+        if (pmbp->phydro != nullptr) pmbp->phydro->wb_phimax = phil1;
+        if (global_variable::my_rank == 0) {
+          std::cout << "deep_hot_jupiter_rt: problem/wb_lobe_cut: wb_phimax = Phi(L1) = "
+                    << phil1 << std::endl;
+        }
+      }
       if (gsc >= 1.0e-3 && !(phtop < phil1) && global_variable::my_rank == 0) {
         std::cout << "### WARNING: problem/roche: the equipotential through part of the "
                   << "domain top is OPEN (max Phi(x1max) >= Phi(L1)): those top cells lie "

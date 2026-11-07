@@ -198,6 +198,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const bool wba_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_all :
                       ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_all : false);
     const bool cor_only_ = wbt_ || wba_;
+    const Real phimax_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_phimax :
+                         ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_phimax : 1.0e300);
     // relaxdrag-1101: the start-up Rayleigh drag switch and length (R/5, 1 by default)
     const bool relax_ = dhj_relax_drag;
     const Real rdf_ = dhj_relax_drag_rot/5.0;
@@ -320,6 +322,11 @@ void SourceFunc(Mesh *pm, Real bdt) {
               WBReadCache(wbq0_, WBVar::wb_pres, m, k, j, i, dum1, pl, dum2, pr, dum3);
           }
           src = bdt*(area_r*(pr-p)+area_l*(p-pl))/vol;
+          // dhjwball-1106 problem/wb_lobe_cut: no WB outside the L1 equipotential: the
+          // plain radial force of the true Phi (plain PLM there: hydro.hpp/mhd.hpp x1)
+          if (phicc0(m,k,j,i) > phimax_) {
+            src = -bdt*rho*(phi0_x1f(m,k,j,i+1) - phi0_x1f(m,k,j,i))/dx1(m,k,j,i);
+          }
         }
         u0(m,IM1,k,j,i) += src;
         
