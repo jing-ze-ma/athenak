@@ -67,6 +67,7 @@ void WbAllBuild(WbAllCtx &c) {
   auto &ww = wbw;
   const bool wgt = wb_weight;
   const Real phimx = c.phimax;
+  auto wdr = wder;
   auto pw = c.phiwb;
   const Real r0 = wbw_r0, r1 = wbw_r1, m0 = wbw_m0, m1 = wbw_m1, eta = wbw_eta;
   const bool wbgi = wb_guard_ideal;
@@ -79,9 +80,13 @@ void WbAllBuild(WbAllCtx &c) {
     auto c = (dir == 2) ? wbq2 : wbq3;
     auto phif = (dir == 2) ? phi0.x2f : phi0.x3f;
     const int dk = (dir == 3) ? 1 : 0, dj = (dir == 2) ? 1 : 0;
-    const int kl = (n3 > 1) ? dk : 0, ku = (n3 > 1) ? n3 - 1 - dk : 0;
-    const int jl = dj, ju = n2 - 1 - dj;
-    par_for("wball_cache", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, 0, n1 - 1,
+    // dhjwball-1106: the sweep's cells only: along dir the whole interior + ghost rows it
+    // always covered; transverse and in x1 the +-1 rows the sweeps, seam faces and AM read
+    const int kl = (n3 > 1) ? (dk ? 1 : indcs.ks - 1) : 0;
+    const int ku = (n3 > 1) ? (dk ? n3 - 2 : indcs.ke + 1) : 0;
+    const int jl = dj ? 1 : indcs.js - 1, ju = dj ? n2 - 2 : indcs.je + 1;
+    const int il = indcs.is - 1, iu = indcs.ie + 1;
+    par_for("wball_cache", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, il, iu,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int km = k - dk, kp = k + dk, jm = j - dj, jp = j + dj;
       const Real dm = w0_(m,IDN,km,jm,i), dc = w0_(m,IDN,k,j,i), dp = w0_(m,IDN,kp,jp,i);
@@ -124,9 +129,8 @@ void WbAllBuild(WbAllCtx &c) {
       if (wgt) {
         Real pm, pc, pp, cs2;
         if (gen) {
-          pm = eos.Pressure(dm, em, WBT(wt,m,km,jm,i));
-          pc = eos.Pressure(dc, ec, WBT(wt,m,k,j,i));
-          pp = eos.Pressure(dp, ep, WBT(wt,m,kp,jp,i));
+          // dhjwball-1106: the pressures the EOS already stored for this state
+          pm = wdr(m,IDPR,km,jm,i); pc = wdr(m,IDPR,k,j,i); pp = wdr(m,IDPR,kp,jp,i);
           cs2 = gam*pc/dc;   // the Mach ramp only needs the order of magnitude
         } else {
           pm = gm1*em; pc = gm1*ec; pp = gm1*ep; cs2 = gam*pc/dc;
