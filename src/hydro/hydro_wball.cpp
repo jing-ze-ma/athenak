@@ -87,7 +87,7 @@ void WbAllBuild(WbAllCtx &c) {
       Real et, p, chir, chit, cv;
       eos.ThermoAt(d, t, et, p, chir, chit, cv);
       ww(m,4,k,j,i) = p; ww(m,5,k,j,i) = chir; ww(m,6,k,j,i) = chit;
-      ww(m,3,k,j,i) = wgt ? eos.Pressure(d, e, t) : p;
+      ww(m,3,k,j,i) = p;   // the weight's pressure: the same table value as eos.Pressure(d,e,T)
     });
   }
   // WB_DIAG (test only, env; removed after use): stored wder pressure vs eos.Pressure(d,e,T)
