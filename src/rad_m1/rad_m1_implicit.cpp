@@ -3024,6 +3024,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","cs_vertex_mono")) {
     cs_vtx_mono = pin->GetBoolean("rad_m1","cs_vertex_mono") && cs_geom;
   }
+  if (pin->DoesParameterExist("rad_m1","cs_cross_mono")) {   // seamE-1106
+    cs_cross_mono = pin->GetBoolean("rad_m1","cs_cross_mono");
+  }
   if (pin->DoesParameterExist("rad_m1","cs_vertex_mono_n")) {
     cs_vtx_n = pin->GetInteger("rad_m1","cs_vertex_mono_n");
     if (cs_vtx_n < 0) {
@@ -5242,6 +5245,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto hqvc_ = vet_cell;
   auto hqgh_ = vgd_hr;
   // vtxfix-1029 cs_vertex_mono (rad_m1.hpp): two-point faces near the cube vertices
+  const bool xmono = cs_cross_mono && cs_geom;   // seamE-1106
   const bool vmo = cs_vtx_mono && cs_geom;
   const int vmn = cs_vtx_n;
   const bool v3m1_ = cs_geom && pmy_pack->pmesh->cs_vertex_3cell;   // cornerfix-1103
@@ -5302,8 +5306,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         // cs-open-1018: the quadratic through the foot values, at the face midpoint
         gr = M1CsSeamMid(dpr, csg2_, m, k, sd, up, dn);
       } else {
-        Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,jm,i,ks,ke,s3lo,s3hi)
-                       + M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,j,i,ks,ke,s3lo,s3hi));
+        Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,jm,i,ks,ke,s3lo,s3hi,xmono)
+                       + M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,j,i,ks,ke,s3lo,s3hi,xmono));
         // vtxfix-1029: no skew cross term on a face with a cell within vmn of a vertex
         if (vmo && (M1CsVtxDist(k,jm,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn ||
                     M1CsVtxDist(k,j,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn)) {
@@ -5508,8 +5512,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           // cs-open-1018: the quadratic through the foot values, at the face midpoint
           gr = M1CsSeamMid(dpr, csg3_, m, j, sd, up, dn);
         } else {
-          Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,km,j,i,js,je,s2lo,s2hi)
-                         + M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,k,j,i,js,je,s2lo,s2hi));
+          Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,km,j,i,js,je,s2lo,s2hi,xmono)
+                         + M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,k,j,i,js,je,s2lo,s2hi,xmono));
           // vtxfix-1029: no skew cross term on a face with a cell within vmn of a vertex
           if (vmo && (M1CsVtxDist(km,j,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn ||
                       M1CsVtxDist(k,j,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn)) {
