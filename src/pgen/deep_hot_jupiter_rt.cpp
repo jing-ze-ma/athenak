@@ -1802,6 +1802,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     } else {
       dhj_wbt.on = pin->GetBoolean("problem","roche_wb_tan");
     }
+    {  // dhjwball-1106 wb_dirs = all: the tangential potential force is AddWbGravity
+      const bool wba = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_all :
+                       ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_all : false);
+      if (wba) {
+        std::string bad = "";
+        if (!rot_potential) bad = "problem/rot_potential = true (Phi must carry it)";
+        if (!(use_spherical_polar || use_cubed_sphere_)) bad = "sp or the cubed sphere";
+        if (use_wellbalance_static) bad = "no wellbalance_static";
+        if (!use_etotgrav) bad = "etotgrav = true (the work is booked by the energy flux)";
+        if (!user_srcs) bad = "problem/user_srcs = true";
+        if (tide) bad = "problem/stellar_tide = false (not in Phi)";
+        if (dhj_wbt.on) bad = "problem/roche_wb_tan = false";
+        if (!bad.empty()) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "wb_dirs = all on dhj needs " << bad << std::endl;
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
     if (dhj_wbt.on) {
       std::string bad = "";
       if (!rot_potential) bad = "problem/rot_potential = true";
