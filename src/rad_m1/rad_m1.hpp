@@ -702,6 +702,17 @@ class RadiationM1 {
   // DO flux (Jiang 2014/2021): lbath_dmode 0 upwind s = 1, 1 s = (1 - e^-x)/x with x = tau_c,
   // 2 with x = tau_c^2/2; tau_c = lbath_alpha kappa_T dr_g (ghost-1 to first cell)
   int lbath_dmode = 2;
+  // vstarfix-1106 problem/he_bc_linhao_fis = lagged (default, bitwise) | iter, halfrange only.
+  // F_is of the wall face F = 0.5 (F_g + F_is + ...).  lagged: F_is = the face mean of the OLD
+  // vector f0x1n, whose interior face i = is+1 carries the conservative2 shift -dA
+  // (ImplicitCs2Pass) and, on the first solve, ImplicitF0Init's -aE: harmless on an interior
+  // face (it is multiplied by theta ~ 1/(chat dt rho k), here 1e-6), but taken raw at the wall,
+  // where the whole wall-half deposit dt (rho k) F0_wall/(2c) follows it (F0_wall 19 L at the
+  // first step of vstar_n, then a growing odd-even wall-cell oscillation).  iter: F_is = the
+  // face mean of the previous Picard iterate f0x1, i.e. the physical comoving flux the first
+  // cell has (his I-_is at the current Jacobi iterate); no shift, implicit at convergence.
+  bool lbath_fis_iter = false;
+  DvceArray3D<Real> lbath_fi;   // (m,k,j), the frozen F_is of this Picard pass (iter only)
   Real lbath_alpha = 1.0;
   Real vgd_lhx_ie = -1.0;
   // linhao-prod-1104 col1d A7/A7b (rad_m1/athena_face_diss, default false = bitwise): Athena++'s
@@ -1882,6 +1893,12 @@ class RadiationM1 {
   // (1/2 (U^n + Y1) + 1/2 dt L(Y1), Y1 kicked), so there V = v^n + 2 (v_stage - v^n).  Also forces
   // implicit_vimp = false.
   bool dop_vstar_n = false;
+  // vstarfix-1106 doppler_vel = vstar_nbe: as vstar_n, but the 2 (v_stage - v^n) only in the
+  // hesdirk2 stage-2 solve.  A backward-Euler solve (BESTORE/NONE: the first steps, auto_be and
+  // stage fallbacks) sees the whole Heun state v^n + dt a_hydro (Y1 carries no radiative kick):
+  // measured at t = 0, v_stage - v^n = -0.62 km/s = dt grad P_rad/rho, so vstar_n's doubling
+  // gives those solves 2 v* (wall cell lab flux -71 L at BE steps vs -31 L at stage steps).
+  bool dop_vstar_nbe = false;
   // doface-1105 <rad_m1>/doppler_face = donor | central (read only when named; default
   // donor = bitwise).  central: the x1 enthalpy (Doppler) flux a E, a = v (1 + chi), of the
   // implicit E row is the face MEAN 0.5 (a_L E_L + a_R E_R) of the two cells' fluxes, with

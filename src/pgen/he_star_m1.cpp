@@ -2796,6 +2796,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                              ((dm == "tau2") ? 2 : ((dm == "none") ? 4 : 3)));
           pm1->lbath_alpha = pin->GetOrAddReal("problem","he_bc_linhao_alpha",
                                                (dm == "athena") ? 5.0 : 1.0);
+          // vstarfix-1106 he_bc_linhao_fis = lagged | iter (rad_m1.hpp lbath_fis_iter; read only
+          // when named, default lagged = bitwise)
+          if (pin->DoesParameterExist("problem","he_bc_linhao_fis")) {
+            const std::string fs = pin->GetString("problem","he_bc_linhao_fis");
+            if (fs != "lagged" && fs != "iter") {
+              HsFatal("problem/he_bc_linhao_fis must be lagged or iter", __LINE__);
+            }
+            pm1->lbath_fis_iter = (fs == "iter");
+          }
           pm1->lbath_mu1 = mu1;
           pm1->lbath_heg = heg;
           pm1->lbath_hfg = hfg;
@@ -3444,6 +3453,39 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const std::int64_t gn2 = pmy_mesh_->mesh_indcs.nx2 + 2*ng;
     const std::uint64_t useed = static_cast<std::uint64_t>(lrng);
     const bool m3 = (indcs.nx3 > 1), m2 = (indcs.nx2 > 1);
+    // lhxseed-1106 problem/he_ic_linhao_seed_group = true (read only when named): one
+    // deviate per hydro merge_lat group, so a merged 128^2 shell has the seed of his real
+    // coarse cells (same amp and rms) instead of the average of 4 fine deviates.
+    DualArray2D<int> lfg("hs_lin_fg", nm, nc1);
+    {
+      std::vector<Real> mrc;
+      std::vector<int> mfs;
+      if (pin->DoesParameterExist("problem","he_ic_linhao_seed_group") &&
+          pin->GetBoolean("problem","he_ic_linhao_seed_group")) {
+        if (!pin->DoesParameterExist("hydro","merge_lat_rc")) {
+          HsFatal("problem/he_ic_linhao_seed_group needs hydro/merge_lat_rc", __LINE__);
+        }
+        std::istringstream sr(pin->GetString("hydro","merge_lat_rc"));
+        std::istringstream sf(pin->GetString("hydro","merge_lat_f"));
+        std::string tk1;
+        while (std::getline(sr, tk1, ',')) mrc.push_back(std::stod(tk1));
+        while (std::getline(sf, tk1, ',')) mfs.push_back(std::stoi(tk1));
+        if (mrc.size() != mfs.size()) {
+          HsFatal("merge_lat_rc and merge_lat_f sizes differ", __LINE__);
+        }
+      }
+      for (int m=0; m<nm; ++m) {
+        for (int i=0; i<nc1; ++i) {
+          int fg = 1;
+          for (std::size_t n=0; n<mrc.size(); ++n) {
+            if (hx1v(m,i) < mrc[n]) {fg = mfs[n]; break;}
+          }
+          lfg.h_view(m,i) = fg;
+        }
+      }
+      lfg.modify_host(); lfg.sync_device();
+    }
+    auto lfgd = lfg.d_view;
     par_for("hs_ic_linhao", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real r = x1v(m,i);
@@ -3451,8 +3493,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real d = d0;
       if (d0 > lthr) {
         const std::int64_t gi = lo(m,0) + (i - lis) + ng;
-        const std::int64_t gj = m2 ? (lo(m,1) + (j - ljs) + ng) : 0;
-        const std::int64_t gk = m3 ? (lo(m,2) + (k - lks) + ng) : 0;
+        const int fg = lfgd(m,i);
+        const std::int64_t gj = m2 ? (lo(m,1) + ((j - ljs)/fg)*fg + ng) : 0;
+        const std::int64_t gk = m3 ? (lo(m,2) + ((k - lks)/fg)*fg + ng) : 0;
         const std::uint64_t idx = static_cast<std::uint64_t>((gk*gn2 + gj)*gn1 + gi);
         d = d0*(1.0 + lamp*(HsLinhaoU(idx, useed) - 0.5));
       }
