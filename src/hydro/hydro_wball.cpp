@@ -67,7 +67,6 @@ void WbAllBuild(WbAllCtx &c) {
   auto &ww = wbw;
   const bool wgt = wb_weight;
   const Real phimx = c.phimax;
-  auto wdr = wder;
   auto pw = c.phiwb;
   const Real r0 = wbw_r0, r1 = wbw_r1, m0 = wbw_m0, m1 = wbw_m1, eta = wbw_eta;
   const bool wbgi = wb_guard_ideal;
@@ -129,8 +128,9 @@ void WbAllBuild(WbAllCtx &c) {
       if (wgt) {
         Real pm, pc, pp, cs2;
         if (gen) {
-          // dhjwball-1106: the pressures the EOS already stored for this state
-          pm = wdr(m,IDPR,km,jm,i); pc = wdr(m,IDPR,k,j,i); pp = wdr(m,IDPR,kp,jp,i);
+          pm = eos.Pressure(dm, em, WBT(wt,m,km,jm,i));
+          pc = eos.Pressure(dc, ec, WBT(wt,m,k,j,i));
+          pp = eos.Pressure(dp, ep, WBT(wt,m,kp,jp,i));
           cs2 = gam*pc/dc;   // the Mach ramp only needs the order of magnitude
         } else {
           pm = gm1*em; pc = gm1*ec; pp = gm1*ep; cs2 = gam*pc/dc;
