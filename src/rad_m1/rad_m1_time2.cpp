@@ -278,6 +278,20 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     } else if (vm.compare("extrap2") == 0) {
       t2_vcmode = 4;   // rbfast-1021 (rad_m1.hpp Time2VetColExtrap2)
       x2_fields = pin->GetOrAddInteger("rad_m1", "time2_vet_x2_fields", 9);
+      // faceextrap-1106 (read only when named; rad_m1.hpp)
+      if (pin->DoesParameterExist("rad_m1","time2_vet_x2_rotmode")) {
+        const std::string xr = pin->GetString("rad_m1","time2_vet_x2_rotmode");
+        if (xr.compare("same") == 0) {
+          x2_rot_same = true;
+        } else if (xr.compare("cross") != 0) {
+          std::cout << "### FATAL ERROR <rad_m1>/time2_vet_x2_rotmode = '" << xr
+                    << "' is not a choice (cross | same)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      }
+      if (pin->DoesParameterExist("rad_m1","time2_vet_x2_stats")) {
+        x2_stats = pin->GetBoolean("rad_m1","time2_vet_x2_stats");
+      }
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_m1>/" << kvc << " = '" << vm
@@ -2176,7 +2190,8 @@ void RadiationM1::Time2VetColExtrap2() {
   // the vet_gd fields only within one rotated direction set
   const Real rg = (vgd_on && vgd_alpha == x2_alpha) ? r : 0.0;
   const int xf = x2_fields;
-  const Real rk = (xf & 1) ? r : 0.0, rl = (xf & 2) ? rg : 0.0, rh = (xf & 4) ? rg : 0.0;
+  const Real rk = (xf & 1) ? ((x2_rot_same && vgd_on) ? rg : r) : 0.0;
+  const Real rl = (xf & 2) ? rg : 0.0, rh = (xf & 4) ? rg : 0.0;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int n3 = static_cast<int>(tau_ten.extent(2));
   const int n2 = static_cast<int>(tau_ten.extent(3));
@@ -2186,6 +2201,7 @@ void RadiationM1::Time2VetColExtrap2() {
   auto pt_ = x2_tt;
   const Real fkm = vcol_axis_flux ? (1.0/3.0) : vcol_fkmin;
   const int lat0 = M1_TT_LAT0;
+  if (x2_stats) {Time2X2Stats(r, rk, fkm);}
   par_for("m1_t2_x2tt", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int c = 0; c < ntt; ++c) {
@@ -2247,6 +2263,74 @@ void RadiationM1::Time2VetColExtrap2() {
   x2_t = tn;
   x2_alpha = vgd_alpha;
   x2_ok = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2X2Stats
+//! \brief faceextrap-1106 <rad_m1>/time2_vet_x2_stats (diagnostic, host copy, every step):
+//! one line per optical-depth bucket from the top (M1_IW_KT): cells, mean slot 0, rms and
+//! max of g^n - g^{n-1}, rms of the applied extrapolation increment, cells clipped at
+//! the low / high bound.  set=1: the rotated set changed between the two builds.
+
+void RadiationM1::Time2X2Stats(const Real r, const Real rk, const Real fkm) {
+  if (!x2_ok) return;
+  auto &ind = pmy_pack->pmesh->mb_indcs;
+  const int is = ind.is, ie = ind.ie, js = ind.js, je = ind.je, ks = ind.ks, ke = ind.ke;
+  auto tth = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                 Kokkos::subview(tau_ten, Kokkos::ALL, 0, Kokkos::ALL, Kokkos::ALL,
+                                 Kokkos::ALL));
+  auto pth = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                 Kokkos::subview(x2_tt, Kokkos::ALL, 0, Kokkos::ALL, Kokkos::ALL,
+                                 Kokkos::ALL));
+  auto kth = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                 Kokkos::subview(iw, Kokkos::ALL, static_cast<int>(M1_IW_KT), Kokkos::ALL,
+                                 Kokkos::ALL, Kokkos::ALL));
+  auto x1fh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx1f);
+  // tau < 0.3 | 0.3-3 | 3-30 | 30-300 | 300-1e4 | > 1e4
+  static constexpr int NB = 6;
+  const Real edge[NB-1] = {0.3, 3.0, 30.0, 300.0, 1.0e4};
+  double q[NB][7] = {};   // n, sum g, sum dg^2, max |dg|, sum (rk dg)^2, clip lo, clip hi
+  const double dtd = pmy_pack->pmesh->dt;
+  for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
+    for (int k = ks; k <= ke; ++k) {
+      for (int j = js; j <= je; ++j) {
+        Real tau = 0.0;
+        for (int i = ie; i >= is; --i) {
+          const Real dt1 = kth(m,k,j,i)*(x1fh(m,i+1) - x1fh(m,i));
+          const Real tc = tau + 0.5*dt1;
+          tau += dt1;
+          int b = 0;
+          while (b < NB-1 && tc >= edge[b]) ++b;
+          const Real g = tth(m,k,j,i), dg = g - pth(m,k,j,i);
+          const Real v = g + rk*dg;
+          q[b][0] += 1.0;
+          q[b][1] += g;
+          q[b][2] += dg*dg;
+          q[b][3] = std::max(q[b][3], static_cast<double>(fabs(dg)));
+          q[b][4] += rk*dg*rk*dg;
+          if (v < fkm) q[b][5] += 1.0;
+          if (v > 1.0) q[b][6] += 1.0;
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  double mx[NB];
+  for (int b = 0; b < NB; ++b) {mx[b] = q[b][3];}
+  MPI_Allreduce(MPI_IN_PLACE, q, NB*7, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, mx, NB, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+  for (int b = 0; b < NB; ++b) {q[b][3] = mx[b];}
+#endif
+  if (global_variable::my_rank != 0) return;
+  const int chg = (vgd_on && vgd_alpha != x2_alpha) ? 1 : 0;
+  for (int b = 0; b < NB; ++b) {
+    if (q[b][0] <= 0.0) continue;
+    std::printf("X2ST cyc=%ld t=%.6e dt=%.4e r=%.4f set=%d b=%d n=%.0f g=%.6f rmsdg=%.4e "
+                "maxdg=%.4e rmsinc=%.4e clo=%.0f chi=%.0f\n",
+                static_cast<long>(pmy_pack->pmesh->ncycle), pmy_pack->pmesh->time, dtd,
+                static_cast<double>(r), chg, b, q[b][0], q[b][1]/q[b][0],
+                sqrt(q[b][2]/q[b][0]), q[b][3], sqrt(q[b][4]/q[b][0]), q[b][5], q[b][6]);
+  }
 }
 
 //----------------------------------------------------------------------------------------

@@ -14,6 +14,7 @@
 //! ImplicitLatFaceCoef (the same expression trees under nvcc --fmad=true: bitwise).
 //! M1_LFC_SFX is the kernel-name suffix ("" or "cs").  No include guard: included once per variant.
 
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -178,7 +179,7 @@
         Real dx = (d == 1) ? mbsize.d_view(m).dx2 : mbsize.d_view(m).dx3;
         if (sph) {dx = (d == 1) ? cdxf.x2f(m,k,j,i) : cdxf.x3f(m,k,j,i);}
 #endif
-        const Real tauf = 0.5*(iw_(m,M1_IW_KT,km,jm,i) + iw_(m,M1_IW_KT,k,j,i))*dx;
+        const Real tauf = M1KtLat(iw_(m,M1_IW_KT,km,jm,i), iw_(m,M1_IW_KT,k,j,i), khl_)*dx;
         Real al, hl, hr;
         if (thsw) {   // thinsw-1010
           Real dgt;
@@ -342,7 +343,7 @@
     Real dx = mbsize.d_view(m).dx2;
     if (sph) {dx = cdxf.x2f(m,k,j,i);}
 #endif
-    const Real tauf = 0.5*(iw_(m,M1_IW_KT,k,jm,i) + iw_(m,M1_IW_KT,k,j,i))*dx;
+    const Real tauf = M1KtLat(iw_(m,M1_IW_KT,k,jm,i), iw_(m,M1_IW_KT,k,j,i), khl_)*dx;
     Real al, hl, hr;
     M1BeamFace(fmag(m,k,jm,i), iw_(m,cn2,k,jm,i),
                fmag(m,k,j,i), iw_(m,cn2,k,j,i), tauf, edd, blend, bkind,
@@ -397,7 +398,7 @@
     Real dx = mbsize.d_view(m).dx3;
     if (sph) {dx = cdxf.x3f(m,k,j,i);}
 #endif
-    const Real tauf = 0.5*(iw_(m,M1_IW_KT,km,j,i) + iw_(m,M1_IW_KT,k,j,i))*dx;
+    const Real tauf = M1KtLat(iw_(m,M1_IW_KT,km,j,i), iw_(m,M1_IW_KT,k,j,i), khl_)*dx;
     Real al, hl, hr;
     M1BeamFace(fmag(m,km,j,i), iw_(m,cn3,km,j,i),
                fmag(m,k,j,i), iw_(m,cn3,k,j,i), tauf, edd, blend, bkind,

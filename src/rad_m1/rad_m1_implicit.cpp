@@ -3464,6 +3464,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               + "' is not a choice (arith | kirchhoff | harmonic)");
   }
   }
+  // faceextrap-1106 <rad_m1>/implicit_face_opac_lat (read only when named; arith default,
+  // bitwise): harmonic = every x2, x3 face takes the harmonic mean of rho kappa_T (M1KtLat)
+  if (pin->DoesParameterExist("rad_m1","implicit_face_opac_lat")) {
+    const std::string sfl = pin->GetString("rad_m1","implicit_face_opac_lat");
+    if (sfl.compare("harmonic") == 0) {
+      impl_kt_lat_harm = true;
+    } else if (sfl.compare("arith") != 0) {
+      ImplFatal("<rad_m1>/implicit_face_opac_lat = '" + sfl
+                + "' is not a choice (arith | harmonic)");
+    }
+  }
   iw_cs2 = -1;
   // cs-open-1018: the conservative gas sources run on the cubed sphere (were refused
   // since cs-port-1016): the write-back's conservative loop re-forms the cell F inside
@@ -4589,6 +4600,7 @@ void RadiationM1::ImplicitLatFaceCoefCs(bool first) {
 //! the linear system stays linear.
 
 void RadiationM1::ImplicitTransTheta(bool newk) {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   if (impl_tlim == M1_TLIM_NONE && !blat_on) return;
   if (impl_tlim == M1_TLIM_NONE) {
     // blendall-1009 without the limiter: theta_f = (1 - AL_f)/(1 + c dt kt_f), the plain
@@ -4605,14 +4617,14 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
     const Real ch0 = chat, dt0 = dt_sub;
     par_for("m1_impl_tbl2", DevExeSpace(), 0, nmb0, ks0, ke0, js0, je0+1, is0, ie0,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real ktf = 0.5*(iw0(m,M1_IW_KT,k,j-1,i) + iw0(m,M1_IW_KT,k,j,i));
+      Real ktf = M1KtLat(iw0(m,M1_IW_KT,k,j-1,i), iw0(m,M1_IW_KT,k,j,i), khl_);
       Real th = 1.0/(1.0 + ch0*dt0*ktf);
       t2(m,k,j,i) = (1.0 - w2(m,M1_IFW_AL,k,j,i))*th;
     });
     if (trans_x3) {
       par_for("m1_impl_tbl3", DevExeSpace(), 0, nmb0, ks0, ke0+1, js0, je0, is0, ie0,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        Real ktf = 0.5*(iw0(m,M1_IW_KT,k-1,j,i) + iw0(m,M1_IW_KT,k,j,i));
+        Real ktf = M1KtLat(iw0(m,M1_IW_KT,k-1,j,i), iw0(m,M1_IW_KT,k,j,i), khl_);
         Real th = 1.0/(1.0 + ch0*dt0*ktf);
         t3(m,k,j,i) = (1.0 - w3(m,M1_IFW_AL,k,j,i))*th;
       });
@@ -4742,14 +4754,14 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
         // m1lpr-1019 lpr: a pure realizability bound, kt_f + klim_f = max(kt_f, |G_f|/(fmax E_f))
         // (the steady face flux c |G_f|/(kt_f + klim_f) <= c fmax E_f, unchanged where it is
         // already sub-luminal), tapered by the face optical depth min(1, kt_f dx_f)
-        const Real kt0 = 0.5*(iw_(m,M1_IW_KT,k,jm,i) + iw_(m,M1_IW_KT,k,j,i));
+        const Real kt0 = M1KtLat(iw_(m,M1_IW_KT,k,jm,i), iw_(m,M1_IW_KT,k,j,i), khl_);
         const Real dxs = sph ? cdxf.x2f(m,k,j,i) : dx2;
         kl2_(m,k,j,i) = fmax(fabs(gf)/(fmx*ef) - kt0, 0.0)*fmin(1.0, kt0*dxs);
       } else {
         kl2_(m,k,j,i) = fabs(gf)/(phif*ef);
       }
     }
-    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,jm,i) + iw_(m,M1_IW_KT,k,j,i));
+    Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,jm,i), iw_(m,M1_IW_KT,k,j,i), khl_);
     th2_(m,k,j,i) = 1.0/(1.0 + ch*dt*(ktf + kl2_(m,k,j,i)));
     if (blt) {th2_(m,k,j,i) *= 1.0 - bw2_(m,M1_IFW_AL,k,j,i);}
   });
@@ -4836,14 +4848,14 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
         // m1lpr-1019 lpr: a pure realizability bound, kt_f + klim_f = max(kt_f, |G_f|/(fmax E_f))
         // (the steady face flux c |G_f|/(kt_f + klim_f) <= c fmax E_f, unchanged where it is
         // already sub-luminal), tapered by the face optical depth min(1, kt_f dx_f)
-        const Real kt0 = 0.5*(iw_(m,M1_IW_KT,km,j,i) + iw_(m,M1_IW_KT,k,j,i));
+        const Real kt0 = M1KtLat(iw_(m,M1_IW_KT,km,j,i), iw_(m,M1_IW_KT,k,j,i), khl_);
         const Real dxs = sph ? cdxf.x3f(m,k,j,i) : dx3;
         kl3_(m,k,j,i) = fmax(fabs(gf)/(fmx*ef) - kt0, 0.0)*fmin(1.0, kt0*dxs);
       } else {
         kl3_(m,k,j,i) = fabs(gf)/(phif*ef);
       }
     }
-    Real ktf = 0.5*(iw_(m,M1_IW_KT,km,j,i) + iw_(m,M1_IW_KT,k,j,i));
+    Real ktf = M1KtLat(iw_(m,M1_IW_KT,km,j,i), iw_(m,M1_IW_KT,k,j,i), khl_);
     th3_(m,k,j,i) = 1.0/(1.0 + ch*dt*(ktf + kl3_(m,k,j,i)));
     if (blt) {th3_(m,k,j,i) *= 1.0 - bw3_(m,M1_IFW_AL,k,j,i);}
   });
@@ -4869,7 +4881,7 @@ void M1TransRowCore(const G &geo, const V &iw_, const VD &vd_, const bool dfull,
                     const bool p3hi, const bool bcg, const Real ch, const Real cl,
                     const Real dt, const Real fp, const Real fm, const Real gp,
                     const Real gm, Real &dia, Real &tt, const bool blt, const VT &th2,
-                    const VT &th3, const V &bw2, const V &bw3) {
+                    const VT &th3, const V &bw2, const V &bw3, const bool khl_) {
   const Real cr = ch/cl;
   const Real iv = dt/cvol(m,k,j,i);
   dia = 0.0;
@@ -4878,7 +4890,7 @@ void M1TransRowCore(const G &geo, const V &iw_, const VD &vd_, const bool dfull,
   const Real a2c = iw_(m,M1_IW_A2,k,j,i);
   const Real n2p = geo.A2p(m,k,j,i)*iv, n2m = geo.A2m(m,k,j,i)*iv;
   if (!(j == je && p2hi)) {
-    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
+    Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j+1,i), khl_);
     Real th = 1.0/(1.0 + ch*dt*ktf);
     if (blt) {   // blendall-1009: (1 - AL) th, and the berthon part below
       th = th2(m,k,j+1,i);
@@ -4896,7 +4908,7 @@ void M1TransRowCore(const G &geo, const V &iw_, const VD &vd_, const bool dfull,
     cjp -= n2p*g*M1DDiag(iw_,vd_,dfull,m,1,k,j+1,i);
   }
   if (!(j == js && p2lo)) {
-    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
+    Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j-1,i), iw_(m,M1_IW_KT,k,j,i), khl_);
     Real th = 1.0/(1.0 + ch*dt*ktf);
     if (blt) {
       th = th2(m,k,j,i);
@@ -4919,7 +4931,7 @@ void M1TransRowCore(const G &geo, const V &iw_, const VD &vd_, const bool dfull,
     const Real a3c = iw_(m,M1_IW_A3,k,j,i);
     const Real n3p = geo.A3p(m,k,j,i)*iv, n3m = geo.A3m(m,k,j,i)*iv;
     if (!(k == ke && p3hi)) {
-      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
+      Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k+1,j,i), khl_);
       Real th = 1.0/(1.0 + ch*dt*ktf);
       if (blt) {
         th = th3(m,k+1,j,i);
@@ -4937,7 +4949,7 @@ void M1TransRowCore(const G &geo, const V &iw_, const VD &vd_, const bool dfull,
       ckp -= n3p*g*M1DDiag(iw_,vd_,dfull,m,2,k+1,j,i);
     }
     if (!(k == ks && p3lo)) {
-      Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
+      Real ktf = M1KtLat(iw_(m,M1_IW_KT,k-1,j,i), iw_(m,M1_IW_KT,k,j,i), khl_);
       Real th = 1.0/(1.0 + ch*dt*ktf);
       if (blt) {
         th = th3(m,k,j,i);
@@ -5054,13 +5066,13 @@ void M1SphTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol
                    const Real ch, const Real cl, const Real dt, const Real fp,
                    const Real fm, const Real gp, const Real gm, Real &dia, Real &tt,
                    const bool blt, const VT &th2, const VT &th3, const V &bw2,
-                   const V &bw3) {
+                   const V &bw3, const bool khl_) {
   const bool p3lo = (b5 != BoundaryFlag::block) && (b5 != BoundaryFlag::periodic);
   const bool p3hi = (b6 != BoundaryFlag::block) && (b6 != BoundaryFlag::periodic);
   const M1SphRowGeo<VF> geo{carea, cdxf};
   M1TransRowCore(geo, iw_, vd_, dfull, cvol, m, k, j, i, js, je, ks, ke, p2lo, p2hi, thrd,
                  p3lo, p3hi, bcg, ch, cl, dt, fp, fm, gp, gm, dia, tt, blt, th2, th3,
-                 bw2, bw3);
+                 bw2, bw3, khl_);
 }
 
 //----------------------------------------------------------------------------------------
@@ -5082,12 +5094,12 @@ void M1CsTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol,
                   const Real ch, const Real cl, const Real dt, const Real fp,
                   const Real fm, const Real gp, const Real gm, Real &dia, Real &tt,
                   const bool blt, const VT &th2, const VT &th3, const V &bw2,
-                  const V &bw3) {
+                  const V &bw3, const bool khl_) {
   const M1CsRowGeo<VF, VS, VG, VB, VX> geo{carea, cdxf, sn2, sn3, g2, g3, cseam, x1v, x1f,
                                            js, je, ks, ke};
   M1TransRowCore(geo, iw_, vd_, dfull, cvol, m, k, j, i, js, je, ks, ke, p2lo, p2hi, thrd,
                  p3lo, p3hi, bcg, ch, cl, dt, fp, fm, gp, gm, dia, tt, blt, th2, th3,
-                 bw2, bw3);
+                 bw2, bw3, khl_);
 }
 } // namespace
 
@@ -5121,6 +5133,7 @@ void M1CsTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol,
 //! a lagged coupling can stall and look converged on |dE|/E alone.
 
 void RadiationM1::ImplicitTransverseTerms(bool first) {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   if (!trans_on) return;
   // blendall-1009: the x2/x3 face coefficients, frozen for the step under
   // implicit_recon_lag = step (the default with implicit_flux_faces = all)
@@ -5273,7 +5286,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     int jl = plo ? js : js-1;
     int ju = phi ? je : je+1;
     int jm = j - 1;
-    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,jm,i) + iw_(m,M1_IW_KT,k,j,i));
+    Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,jm,i), iw_(m,M1_IW_KT,k,j,i), khl_);
     Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
     Real dl = M1DDiag(iw_,vd_,dfull,m,1,k,jm,i);
     Real dr = M1DDiag(iw_,vd_,dfull,m,1,k,j,i);
@@ -5389,8 +5402,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                  *(iw_(m,M1_IW_G0,q,jm,i) + iw_(m,M1_IW_G0,q,j,i));
         };
         auto tbq = [&](const int q) {
-          return 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,q,jm,i)
-                                       + iw_(m,M1_IW_KT,q,j,i)));
+          return 1.0/(1.0 + ch*dt*M1KtLat(iw_(m,M1_IW_KT,q,jm,i),
+                                       iw_(m,M1_IW_KT,q,j,i), khl_));
         };
         off += (M1CsSeamMid(vgq, csg2_, m, k, sd, up, dn) - vf*g0f)/cl;
         th *= M1CsSeamMid(tbq, csg2_, m, k, sd, up, dn)/tbq(k);
@@ -5479,7 +5492,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       int kl = plo ? ks : ks-1;
       int ku = phi ? ke : ke+1;
       int km = k - 1;
-      Real ktf = 0.5*(iw_(m,M1_IW_KT,km,j,i) + iw_(m,M1_IW_KT,k,j,i));
+      Real ktf = M1KtLat(iw_(m,M1_IW_KT,km,j,i), iw_(m,M1_IW_KT,k,j,i), khl_);
       Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
       Real dl = M1DDiag(iw_,vd_,dfull,m,2,km,j,i);
       Real dr = M1DDiag(iw_,vd_,dfull,m,2,k,j,i);
@@ -5580,8 +5593,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                    *(iw_(m,M1_IW_G0,km,q,i) + iw_(m,M1_IW_G0,k,q,i));
           };
           auto tbq = [&](const int q) {
-            return 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,km,q,i)
-                                         + iw_(m,M1_IW_KT,k,q,i)));
+            return 1.0/(1.0 + ch*dt*M1KtLat(iw_(m,M1_IW_KT,km,q,i),
+                                         iw_(m,M1_IW_KT,k,q,i), khl_));
           };
           off += (M1CsSeamMid(vgq, csg3_, m, j, sd, up, dn) - vf*g0f)/cl;
           th *= M1CsSeamMid(tbq, csg3_, m, j, sd, up, dn)/tbq(j);
@@ -5682,7 +5695,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     Real fp = 0.0, fm = 0.0;
     Real cjp = 0.0, cjm = 0.0;
     if (!(j == je && p2hi)) {
-      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
+      Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j+1,i), khl_);
       Real th = lm ? th2_(m,k,j+1,i) : 1.0/(1.0 + ch*dt*ktf);
       Real vf = 0.5*(iw_(m,M1_IW_V2,k,j,i) + iw_(m,M1_IW_V2,k,j+1,i));
       fp = f2_(m,k,j+1,i);
@@ -5728,7 +5741,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     }
     if (j == je && p2hi && vf2hi) {fp = fx2h_(m,k,i);}   // acc3d-1017: imposed flux face
     if (!(j == js && p2lo)) {
-      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
+      Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j-1,i), iw_(m,M1_IW_KT,k,j,i), khl_);
       Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
       Real vf = 0.5*(iw_(m,M1_IW_V2,k,j-1,i) + iw_(m,M1_IW_V2,k,j,i));
       fm = f2_(m,k,j,i);
@@ -5792,7 +5805,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       Real gp = 0.0, gm = 0.0;
       Real ckp = 0.0, ckm = 0.0;
       if (!(k == ke && p3hi)) {
-        Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
+        Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k+1,j,i), khl_);
         Real th = lm ? th3_(m,k+1,j,i) : 1.0/(1.0 + ch*dt*ktf);
         Real vf = 0.5*(iw_(m,M1_IW_V3,k,j,i) + iw_(m,M1_IW_V3,k+1,j,i));
         gp = f3_(m,k+1,j,i);
@@ -5832,7 +5845,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         }
       }
       if (!(k == ks && p3lo)) {
-        Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
+        Real ktf = M1KtLat(iw_(m,M1_IW_KT,k-1,j,i), iw_(m,M1_IW_KT,k,j,i), khl_);
         Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
         Real vf = 0.5*(iw_(m,M1_IW_V3,k-1,j,i) + iw_(m,M1_IW_V3,k,j,i));
         gm = f3_(m,k,j,i);
@@ -5889,7 +5902,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       M1SphTransRow(iw_, vd_, dfull, cvol, carea, cdxf, m, k, j, i, js, je, ks, ke,
                     p2lo, p2hi, thrd, mbbcs.d_view(m,BoundaryFace::inner_x3),
                     mbbcs.d_view(m,BoundaryFace::outer_x3), bcg, ch, cl, dt, fp, fm,
-                    gps, gms, dia, tt, blt, th2_, th3_, bw2_, bw3_);
+                    gps, gms, dia, tt, blt, th2_, th3_, bw2_, bw3_, khl_);
     }
     if (csg) {
       // STAGE CS1: the same row on the skewed panel grid and the seam pairs
@@ -5900,7 +5913,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       M1CsTransRow(iw_, vd_, dfull, cvol, carea, cdxf, csn2, csn3, csg2_, csg3_, cseam,
                    cx1v, cx1f, m, k, j, i, js, je, ks, ke, p2lo, p2hi, thrd, q3lo, q3hi,
                    bcg, ch, cl, dt, fp, fm, gps, gms, dia, tt, blt, th2_, th3_, bw2_,
-                   bw3_);
+                   bw3_, khl_);
     }
     if ((sph || csg) && ((j == je && p2hi && vm2hi) || (j == js && p2lo && vm2lo) ||
                          (thrd && ((k == ke && vm3hi && (mbbcs.d_view(m,
@@ -6753,7 +6766,8 @@ Real M1OdFaces(const DvceArray5D<Real> &iw_, const DvceArray5D<Real> &od_,
                const bool p2lo, const bool p2hi, const bool p3lo, const bool p3hi,
                const bool thrd, const Real dx1, const Real dx2, const Real dx3,
                const Real ch, const Real cl, const Real dt, const bool bx1,
-               const DvceArray5D<Real> &fw_, const int kir_ = -1) {
+               const DvceArray5D<Real> &fw_, const int kir_ = -1,
+               const bool khl_ = false) {
   Real cr = ch/cl;
   Real kk = ch*cl*dt;
   Real y = 0.0;
@@ -6777,13 +6791,13 @@ Real M1OdFaces(const DvceArray5D<Real> &iw_, const DvceArray5D<Real> &od_,
   }
   Real nu2 = dt/dx2;
   if (!(j == je && p2hi)) {
-    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
+    Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j+1,i), khl_);
     Real th = lm ? th2_(m,k,j+1,i) : 1.0/(1.0 + ch*dt*ktf);
     Real od = 0.5*(od_(m,1,k,j,i) + od_(m,1,k,j+1,i));
     y -= nu2*cr*th*kk*od;
   }
   if (!(j == js && p2lo)) {
-    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
+    Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j-1,i), iw_(m,M1_IW_KT,k,j,i), khl_);
     Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
     Real od = 0.5*(od_(m,1,k,j-1,i) + od_(m,1,k,j,i));
     y += nu2*cr*th*kk*od;
@@ -6791,13 +6805,13 @@ Real M1OdFaces(const DvceArray5D<Real> &iw_, const DvceArray5D<Real> &od_,
   if (thrd) {
     Real nu3 = dt/dx3;
     if (!(k == ke && p3hi)) {
-      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
+      Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k+1,j,i), khl_);
       Real th = lm ? th3_(m,k+1,j,i) : 1.0/(1.0 + ch*dt*ktf);
       Real od = 0.5*(od_(m,2,k,j,i) + od_(m,2,k+1,j,i));
       y -= nu3*cr*th*kk*od;
     }
     if (!(k == ks && p3lo)) {
-      Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
+      Real ktf = M1KtLat(iw_(m,M1_IW_KT,k-1,j,i), iw_(m,M1_IW_KT,k,j,i), khl_);
       Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
       Real od = 0.5*(od_(m,2,k-1,j,i) + od_(m,2,k,j,i));
       y += nu3*cr*th*kk*od;
@@ -6897,7 +6911,7 @@ void RadiationM1::ImplicitOffDiagOpC(int xc, int yc, Real sgn, bool with7, int r
     Real y = M1OdFaces(iw_, od_, th2_, th3_, lm, m, k, j, i, is, ie, js, je, ks, ke,
                        cyclic, botb, topb, p2lo, p2hi, p3lo, p3hi, thrd,
                        mbsize(m).dx1, mbsize(m).dx2, mbsize(m).dx3, ch, cl, dt,
-                       bx1, fw_, kir_);
+                       bx1, fw_, kir_, khl_);
     Real out = y7 + sg*y;
     iw_(m,cy,k,j,i) = out;
     return out;
@@ -6992,6 +7006,7 @@ Real M1DOffC(const DvceArray5D<Real> &iw, const DvceArray5D<Real> &vd, const boo
 //! Not for a periodic x1 wrap (cyclic), which keeps the od_cache path.
 
 void RadiationM1::ImplicitStencilBuild() {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   if (ibc_x1min == M1_IBC_PERIODIC) {   // a problem generator may set it late
     ImplFatal("<rad_m1>/implicit_op_stencil does not take a periodic x1 wrap");
   }
@@ -7123,7 +7138,7 @@ void RadiationM1::ImplicitStencilBuild() {
           th = (d == 1) ? th2_(m,k,(sd > 0) ? j+1 : j,i)
                         : th3_(m,(sd > 0) ? k+1 : k,j,i);
         } else {
-          Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,nb[2],nb[1],nb[0]));
+          Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,nb[2],nb[1],nb[0]), (khl_ && d > 0));
           th = 1.0/(1.0 + ch*dt*ktf);
           if (d == 0 && bx1) {   // blendall-1009
             th *= 1.0 - fw_(m,M1_IFW_AL,k,j,(sd > 0) ? i+1 : i);
@@ -7708,6 +7723,7 @@ void RadiationM1::ImplicitOpX(int xc, int yc, int red, Real *out) {
 //! and an M1_IBC_EFIX Dirichlet row is replaced whole and gets nothing at all.
 
 void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   if (impl_odc) {   // the same numbers from the per-cell cache
@@ -7804,7 +7820,7 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
     // ---- the two x2 faces
     Real nu2 = dt/dx2;
     if (!(j == je && p2hi)) {
-      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
+      Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j+1,i), khl_);
       Real th = lm ? th2_(m,k,j+1,i) : 1.0/(1.0 + ch*dt*ktf);
       Real od = 0.5*(M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
                               dfull, vx)
@@ -7813,7 +7829,7 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
       y -= nu2*cr*th*kk*od;
     }
     if (!(j == js && p2lo)) {
-      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
+      Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j-1,i), iw_(m,M1_IW_KT,k,j,i), khl_);
       Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
       Real od = 0.5*(M1OffDiv(iw_,m,1,k,j-1,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
                               dfull, vx)
@@ -7825,7 +7841,7 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
     if (thrd) {
       Real nu3 = dt/dx3;
       if (!(k == ke && p3hi)) {
-        Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
+        Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k+1,j,i), khl_);
         Real th = lm ? th3_(m,k+1,j,i) : 1.0/(1.0 + ch*dt*ktf);
         Real od = 0.5*(M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
                                 dfull, vx)
@@ -7834,7 +7850,7 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
         y -= nu3*cr*th*kk*od;
       }
       if (!(k == ks && p3lo)) {
-        Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
+        Real ktf = M1KtLat(iw_(m,M1_IW_KT,k-1,j,i), iw_(m,M1_IW_KT,k,j,i), khl_);
         Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
         Real od = 0.5*(M1OffDiv(iw_,m,2,k-1,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
                                 dfull, vx)
@@ -10261,6 +10277,7 @@ void RadiationM1::ImplicitWorkRow(bool row, bool slot) {
 //! against the (4/3) v E enthalpy flux of the row (dynamic diffusion: BE D_eff +26 %).
 
 void RadiationM1::ImplicitNofbWorkRow() {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -10317,8 +10334,8 @@ void RadiationM1::ImplicitNofbWorkRow() {
       const bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
       const bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
       const Real ktc = iw_(m,M1_IW_KT,k,j,i);
-      const Real kl2 = (j == js && p2lo) ? ktc : 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + ktc);
-      const Real kr2 = (j == je && p2hi) ? ktc : 0.5*(ktc + iw_(m,M1_IW_KT,k,j+1,i));
+      const Real kl2 = (j == js && p2lo) ? ktc : M1KtLat(iw_(m,M1_IW_KT,k,j-1,i), ktc, khl_);
+      const Real kr2 = (j == je && p2hi) ? ktc : M1KtLat(ktc, iw_(m,M1_IW_KT,k,j+1,i), khl_);
       const Real u2 = ((j == js && p2lo) && !bmhalf) ? 1.0 : 0.5;
       const Real w2 = ((j == je && p2hi) && !bmhalf) ? 1.0 : 0.5;
       w += v2*(dt/cl)*(u2*kl2*f2_(m,k,j,i) + w2*kr2*f2_(m,k,j+1,i));
@@ -10328,8 +10345,8 @@ void RadiationM1::ImplicitNofbWorkRow() {
         BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
         const bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
         const bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
-        const Real kl3 = (k == ks && p3lo) ? ktc : 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + ktc);
-        const Real kr3 = (k == ke && p3hi) ? ktc : 0.5*(ktc + iw_(m,M1_IW_KT,k+1,j,i));
+        const Real kl3 = (k == ks && p3lo) ? ktc : M1KtLat(iw_(m,M1_IW_KT,k-1,j,i), ktc, khl_);
+        const Real kr3 = (k == ke && p3hi) ? ktc : M1KtLat(ktc, iw_(m,M1_IW_KT,k+1,j,i), khl_);
         const Real u3 = ((k == ks && p3lo) && !bmhalf) ? 1.0 : 0.5;
         const Real w3 = ((k == ke && p3hi) && !bmhalf) ? 1.0 : 0.5;
         w += v3*(dt/cl)*(u3*kl3*f3_(m,k,j,i) + w3*kr3*f3_(m,k+1,j,i));
@@ -10518,6 +10535,7 @@ void RadiationM1::ImplicitF0Init() {
 //! where a = 0 (static gas: bitwise).  Needs E^n in the ghosts: one scalar exchange.
 
 void RadiationM1::ImplicitRadInertia() {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -10590,7 +10608,7 @@ void RadiationM1::ImplicitRadInertia() {
       if (al == 0.0 && ar == 0.0) return;
       const Real dl = al*(iw_(m,M1_IW_EP,km,jm,i) - iw_(m,M1_IW_EN,km,jm,i));
       const Real dr = ar*(iw_(m,M1_IW_EP,k,j,i) - iw_(m,M1_IW_EN,k,j,i));
-      const Real ktf = 0.5*(iw_(m,M1_IW_KT,km,jm,i) + iw_(m,M1_IW_KT,k,j,i));
+      const Real ktf = M1KtLat(iw_(m,M1_IW_KT,km,jm,i), iw_(m,M1_IW_KT,k,j,i), khl_);
       const Real th = lm ? thd_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
       fd_(m,k,j,i) -= th*0.5*(dl + dr);
     });
@@ -10619,6 +10637,7 @@ bool RadiationM1::Cs2Active() {
 //! ghosts.
 
 void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -10701,7 +10720,7 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
             const int cf = c + s;
             const int kq = (d == 2) ? cf : k, jq = (d == 1) ? cf : j;
             const int kl = (d == 2) ? (cf-1) : k, jl = (d == 1) ? (cf-1) : j;
-            const Real ktf = 0.5*(iw_(m,M1_IW_KT,kl,jl,i) + iw_(m,M1_IW_KT,kq,jq,i));
+            const Real ktf = M1KtLat(iw_(m,M1_IW_KT,kl,jl,i), iw_(m,M1_IW_KT,kq,jq,i), khl_);
             Real om = 1.0;
             if (lm) {
               om = ((d == 1) ? th2_(m,k,cf,i) : th3_(m,cf,j,i))*(1.0 + ch*dts*ktf);
@@ -11148,6 +11167,7 @@ void RadiationM1::ImplicitCs2Shift() {
 //! P are scaled by 1/(1 + eta_d) (they only set the Newton direction).
 
 void RadiationM1::ImplicitCs2Vimp() {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   // cs-open-1018: on the cubed sphere dv, V, A^old, dA and the face weights are all
   // face-normal (DV pair exchange, ImplicitCs2DeltaA), so the rule below holds in that
   // basis as written; the tensor algebra is the one of the vimp build (m1_impl_wb_csvfx)
@@ -11252,7 +11272,7 @@ void RadiationM1::ImplicitCs2Vimp() {
           const int cf = c + s;
           const int kq = (d == 2) ? cf : k, jq = (d == 1) ? cf : j;
           const int kl = (d == 2) ? (cf-1) : k, jl = (d == 1) ? (cf-1) : j;
-          const Real ktf = 0.5*(iw_(m,M1_IW_KT,kl,jl,i) + iw_(m,M1_IW_KT,kq,jq,i));
+          const Real ktf = M1KtLat(iw_(m,M1_IW_KT,kl,jl,i), iw_(m,M1_IW_KT,kq,jq,i), khl_);
           Real th = 1.0;   // om of the face (thx2/thx3 carry theta (1 - AL) and limiters)
           if (lm) {
             th = ((d == 1) ? th2_(m,k,cf,i) : th3_(m,cf,j,i))*(1.0 + ch*dt*ktf);
@@ -11310,6 +11330,7 @@ void RadiationM1::ImplicitCs2Vimp() {
 //!     correction; the velocity increment is the face MEAN of the two cells.
 
 void RadiationM1::ImplicitVimpBuild() {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   if (!fl_on || !coupling || !gas_feedback || !dbg_gas_force) {
@@ -11500,7 +11521,7 @@ void RadiationM1::ImplicitVimpBuild() {
             kf[s] = ktc;
             wf[s] = bmhalf ? 0.5 : 1.0;
           } else {
-            kf[s] = 0.5*(iw_(m,M1_IW_KT,kl,jl,i) + iw_(m,M1_IW_KT,kq,jq,i));
+            kf[s] = M1KtLat(iw_(m,M1_IW_KT,kl,jl,i), iw_(m,M1_IW_KT,kq,jq,i), khl_);
             wf[s] = 0.5;
             Real th = 1.0/(1.0 + ch*dt*kf[s]);
             if (lm) {th = (d == 1) ? th2_(m,k,cf,i) : th3_(m,cf,j,i);}
@@ -12515,6 +12536,7 @@ void RadiationM1::EAuditMark(int pt) {
 }
 
 TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   TmrMark(1);   // implicit_timers: Opacity (and anything since the closure limits)
@@ -17090,7 +17112,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                        : ifl3_(m,M1_IFW_AL,kq,jq,i);
             const Real fnew = (dir == 0) ? f2c_(m,kq,jq,i) : f3c_(m,kq,jq,i);
             const Real fold = (dir == 0) ? f2np_(m,kq,jq,i) : f3np_(m,kq,jq,i);
-            const Real kft = 0.5*(iw_(m,M1_IW_KT,kp,jp,i) + iw_(m,M1_IW_KT,kq,jq,i));
+            const Real kft = M1KtLat(iw_(m,M1_IW_KT,kp,jp,i), iw_(m,M1_IW_KT,kq,jq,i), khl_);
             const Real dlt = 0.5*((fnew - fold)*icc + (dt/cl)*kft*fnew)/snw_(m,k,j);
             Real pq[3], tq[3];
             for (int q = 0; q < 3; ++q) {pq[q] = dlt*((dir == 0) ? e1[q] : e2[q]);}

@@ -138,8 +138,8 @@
     }
     // the two x2 faces (cs: the face's own planar normal for both cells)
     if (!(j == je && p2hi)) {
-      Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j,i)
-                                      + iw_(m,M1_IW_KT,k,j+1,i)));
+      Real th = 1.0/(1.0 + ch*dt*M1KtLat(iw_(m,M1_IW_KT,k,j,i),
+                                      iw_(m,M1_IW_KT,k,j+1,i), khl_));
       if (blt) {th *= 1.0 - bw2_(m,M1_IFW_AL,k,j+1,i);}
 #if M1_VLAT_CS
       const Real nf[3] = {fn2(m,j+1,0), fn2(m,j+1,1), fn2(m,j+1,2)};
@@ -151,8 +151,8 @@
 #endif
     }
     if (!(j == js && p2lo)) {
-      Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j-1,i)
-                                      + iw_(m,M1_IW_KT,k,j,i)));
+      Real th = 1.0/(1.0 + ch*dt*M1KtLat(iw_(m,M1_IW_KT,k,j-1,i),
+                                      iw_(m,M1_IW_KT,k,j,i), khl_));
       if (blt) {th *= 1.0 - bw2_(m,M1_IFW_AL,k,j,i);}
 #if M1_VLAT_CS
       const Real nf[3] = {fn2(m,j,0), fn2(m,j,1), fn2(m,j,2)};
@@ -166,8 +166,8 @@
     // the two x3 faces
     if (thrd) {
       if (!(k == ke && p3hi)) {
-        Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j,i)
-                                        + iw_(m,M1_IW_KT,k+1,j,i)));
+        Real th = 1.0/(1.0 + ch*dt*M1KtLat(iw_(m,M1_IW_KT,k,j,i),
+                                        iw_(m,M1_IW_KT,k+1,j,i), khl_));
         if (blt) {th *= 1.0 - bw3_(m,M1_IFW_AL,k+1,j,i);}
 #if M1_VLAT_CS
         const Real nf[3] = {fn3(m,k+1,0), fn3(m,k+1,1), fn3(m,k+1,2)};
@@ -179,8 +179,8 @@
 #endif
       }
       if (!(k == ks && p3lo)) {
-        Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k-1,j,i)
-                                        + iw_(m,M1_IW_KT,k,j,i)));
+        Real th = 1.0/(1.0 + ch*dt*M1KtLat(iw_(m,M1_IW_KT,k-1,j,i),
+                                        iw_(m,M1_IW_KT,k,j,i), khl_));
         if (blt) {th *= 1.0 - bw3_(m,M1_IFW_AL,k,j,i);}
 #if M1_VLAT_CS
         const Real nf[3] = {fn3(m,k,0), fn3(m,k,1), fn3(m,k,2)};

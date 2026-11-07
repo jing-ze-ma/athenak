@@ -1769,6 +1769,13 @@ class RadiationM1 {
   // 5e-2 error vs the converged reference into the accretor stream phase; f_K + q alone
   // (the gd fields as built at U^n) = the rebuild accuracy (rbfast-1021)
   int x2_fields = 9;
+  // faceextrap-1106 time2_vet_x2_rotmode = cross (default, bitwise): slot 0 (D_rr incl. the
+  // fold) extrapolates across a new rotated set | same: slot 0 only within one set, as the
+  // gd fields.  time2_vet_x2_stats (default false): per-step print of the slot 0 change
+  // (Time2X2Stats) by optical depth from the top, set change or not, and the clips
+  bool x2_rot_same = false;
+  bool x2_stats = false;
+  void Time2X2Stats(const Real r, const Real rk, const Real fkm);
   static constexpr int M1_X2_NTT = 10, M1_X2_NHR = 10;
   static constexpr int M1_X2_NCH = M1_X2_NTT + M1_X2_NHR + 4;   // + q, time, alpha, dts
   void Time2Report();
@@ -1963,6 +1970,8 @@ class RadiationM1 {
   int iw_kir = -1;
   int impl_kir_ng = 8;          // implicit_face_opac_ng: Gauss points in T
   bool impl_kir_harm = false;   // implicit_face_opac = harmonic (no table lookups)
+  // faceextrap-1106 implicit_face_opac_lat = arith (default, bitwise) | harmonic: x2, x3 faces
+  bool impl_kt_lat_harm = false;
   int iw_gas;                   // first iw component of the M1_NIW_GAS block (see
                                 // rad_m1_implicit.hpp); < 0 when neither option is on
   int impl_nec;                 // components of `ecache`

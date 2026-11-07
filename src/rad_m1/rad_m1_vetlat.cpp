@@ -1060,6 +1060,7 @@ void RadiationM1::VetLatDump() {
 //! physical x2/x3 faces carry no term, a Dirichlet (efix) row gets none.
 
 void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   if (cs_geom) {VetLatOpCs(xc, yc, sgn); return;}   // cs-s4-1017
@@ -1098,6 +1099,7 @@ int VlatStIdx(const int di, const int dj, const int dk) {
 //! are grouped differently: round-off), compared by implicit_op_check.
 
 void RadiationM1::VetLatStencilAdd() {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   if (cs_geom) {VetLatStencilAddCs(); return;}   // cs-s4-1017
@@ -1119,6 +1121,7 @@ void RadiationM1::VetLatStencilAdd() {
 //! the E row takes, M1CsTransRow) and the open seams (m1bcs).
 
 void RadiationM1::VetLatOpCs(int xc, int yc, Real sgn) {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
 #define M1_VLAT_CS 1
@@ -1137,6 +1140,7 @@ void RadiationM1::VetLatOpCs(int xc, int yc, Real sgn) {
 //! sums are grouped differently: round-off), compared by implicit_op_check.
 
 void RadiationM1::VetLatStencilAddCs() {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
 #define M1_VLAT_CS 1

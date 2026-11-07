@@ -1064,6 +1064,16 @@ Real M1KtX1(const IW &iw, const int kir, const int m, const int k, const int j,
   return M1FaceAvgX1(iw(m,M1_IW_KT,k,j,il), iw(m,M1_IW_KT,k,j,ir), x1f, m, il, ir, dist);
 }
 
+//! faceextrap-1106 M1KtLat: the LATERAL (x2, x3) FACE transport opacity rho kappa_T of two
+//! cells: their mean, or with <rad_m1>/implicit_face_opac_lat = harmonic (h) the harmonic
+//! mean (a cell without an opacity: the mean).  Symmetric in the two cells bitwise, so a
+//! cs seam face has one value on both panels.
+KOKKOS_INLINE_FUNCTION
+Real M1KtLat(const Real a, const Real b, const bool h) {
+  if (h && a > 0.0 && b > 0.0) return 2.0*a*b/(a + b);
+  return 0.5*(a + b);
+}
+
 //! \fn M1SphMarshakFaceE
 //! \brief <rad_m1>/implicit_marshak_face = linear (m1-sp-order2, spherical-polar wedge,
 //! tests_m1/runs_5o_sporder2): the E of a Marshak boundary FACE at r_f, from the end cell

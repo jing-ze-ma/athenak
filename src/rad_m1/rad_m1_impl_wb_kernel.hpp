@@ -135,9 +135,9 @@
           bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
           Real ktc = iw_(m,M1_IW_KT,k,j,i);
           Real kl2 = (j == js && p2lo) ? ktc
-                     : 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + ktc);
+                     : M1KtLat(iw_(m,M1_IW_KT,k,j-1,i), ktc, khl_);
           Real kr2 = (j == je && p2hi) ? ktc
-                     : 0.5*(ktc + iw_(m,M1_IW_KT,k,j+1,i));
+                     : M1KtLat(ktc, iw_(m,M1_IW_KT,k,j+1,i), khl_);
           Real u2 = ((j == js && p2lo) && !bmhalf) ? 1.0 : 0.5;
           Real w2 = ((j == je && p2hi) && !bmhalf) ? 1.0 : 0.5;
           dm2 = (dt/cl)*(u2*kl2*g2l + w2*kr2*g2r);
@@ -147,9 +147,9 @@
             bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
             bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
             Real kl3 = (k == ks && p3lo) ? ktc
-                       : 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + ktc);
+                       : M1KtLat(iw_(m,M1_IW_KT,k-1,j,i), ktc, khl_);
             Real kr3 = (k == ke && p3hi) ? ktc
-                       : 0.5*(ktc + iw_(m,M1_IW_KT,k+1,j,i));
+                       : M1KtLat(ktc, iw_(m,M1_IW_KT,k+1,j,i), khl_);
             Real u3 = ((k == ks && p3lo) && !bmhalf) ? 1.0 : 0.5;
             Real w3 = ((k == ke && p3hi) && !bmhalf) ? 1.0 : 0.5;
             dm3 = (dt/cl)*(u3*kl3*g3l + w3*kr3*g3r);
@@ -520,8 +520,8 @@
             BoundaryFlag b4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
             const bool l2 = (b3 != BoundaryFlag::block) && (b3 != BoundaryFlag::periodic);
             const bool h2 = (b4 != BoundaryFlag::block) && (b4 != BoundaryFlag::periodic);
-            const Real kl2 = (j == js && l2) ? ktc : 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + ktc);
-            const Real kr2 = (j == je && h2) ? ktc : 0.5*(ktc + iw_(m,M1_IW_KT,k,j+1,i));
+            const Real kl2 = (j == js && l2) ? ktc : M1KtLat(iw_(m,M1_IW_KT,k,j-1,i), ktc, khl_);
+            const Real kr2 = (j == je && h2) ? ktc : M1KtLat(ktc, iw_(m,M1_IW_KT,k,j+1,i), khl_);
             const Real u2 = ((j == js && l2) && !bmhalf) ? 1.0 : 0.5;
             const Real w2 = ((j == je && h2) && !bmhalf) ? 1.0 : 0.5;
             gd2 = (dt/cl)*(u2*kl2*g2l + w2*kr2*g2r);
@@ -533,9 +533,9 @@
               const bool h3 = (b6 != BoundaryFlag::block) &&
                               (b6 != BoundaryFlag::periodic);
               const Real kl3 = (k == ks && l3) ? ktc
-                                               : 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + ktc);
+                                               : M1KtLat(iw_(m,M1_IW_KT,k-1,j,i), ktc, khl_);
               const Real kr3 = (k == ke && h3) ? ktc
-                                               : 0.5*(ktc + iw_(m,M1_IW_KT,k+1,j,i));
+                                               : M1KtLat(ktc, iw_(m,M1_IW_KT,k+1,j,i), khl_);
               const Real u3 = ((k == ks && l3) && !bmhalf) ? 1.0 : 0.5;
               const Real w3 = ((k == ke && h3) && !bmhalf) ? 1.0 : 0.5;
               gd3 = (dt/cl)*(u3*kl3*g3l + w3*kr3*g3r);

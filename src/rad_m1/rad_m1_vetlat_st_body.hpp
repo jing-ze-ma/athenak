@@ -217,7 +217,7 @@
 #endif
     }
     if (!(j == je && p2hi)) {
-      const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
+      const Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j+1,i), khl_);
 #if M1_VLAT_CS
       Real w = -0.5*car.x2f(m,k,j+1,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
       if (blt) {w *= 1.0 - bw2_(m,M1_IFW_AL,k,j+1,i);}
@@ -232,7 +232,7 @@
 #endif
     }
     if (!(j == js && p2lo)) {
-      const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
+      const Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j-1,i), iw_(m,M1_IW_KT,k,j,i), khl_);
 #if M1_VLAT_CS
       Real w = 0.5*car.x2f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
       if (blt) {w *= 1.0 - bw2_(m,M1_IFW_AL,k,j,i);}
@@ -248,7 +248,7 @@
     }
     if (thrd) {
       if (!(k == ke && p3hi)) {
-        const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
+        const Real ktf = M1KtLat(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k+1,j,i), khl_);
 #if M1_VLAT_CS
         Real w = -0.5*car.x3f(m,k+1,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
         if (blt) {w *= 1.0 - bw3_(m,M1_IFW_AL,k+1,j,i);}
@@ -263,7 +263,7 @@
 #endif
       }
       if (!(k == ks && p3lo)) {
-        const Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
+        const Real ktf = M1KtLat(iw_(m,M1_IW_KT,k-1,j,i), iw_(m,M1_IW_KT,k,j,i), khl_);
 #if M1_VLAT_CS
         Real w = 0.5*car.x3f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
         if (blt) {w *= 1.0 - bw3_(m,M1_IFW_AL,k,j,i);}
