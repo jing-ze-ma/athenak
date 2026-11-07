@@ -3035,6 +3035,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   if (pin->DoesParameterExist("rad_m1","cs_cross_mono")) {   // seamE-1106
     cs_cross_mono = pin->GetBoolean("rad_m1","cs_cross_mono");
+    if (pin->DoesParameterExist("rad_m1","cs_cross_mono_k")) {
+      cs_cross_mono_k = pin->GetReal("rad_m1","cs_cross_mono_k");
+    }
   }
   if (pin->DoesParameterExist("rad_m1","cs_vertex_mono_n")) {
     cs_vtx_n = pin->GetInteger("rad_m1","cs_vertex_mono_n");
@@ -5419,7 +5422,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto hqvc_ = vet_cell;
   auto hqgh_ = vgd_hr;
   // vtxfix-1029 cs_vertex_mono (rad_m1.hpp): two-point faces near the cube vertices
-  const bool xmono = cs_cross_mono && cs_geom;   // seamE-1106
+  const Real xmono = (cs_cross_mono && cs_geom) ? cs_cross_mono_k : -1.0;   // seamE-1106
   const bool vmo = cs_vtx_mono && cs_geom;
   const int vmn = cs_vtx_n;
   const bool v3m1_ = cs_geom && pmy_pack->pmesh->cs_vertex_3cell;   // cornerfix-1103

@@ -115,6 +115,8 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
         t2_tab = 0;
       } else if (tb.compare("trbdf2") == 0) {
         t2_tab = 1;
+      } else if (tb.compare("sdirk2") == 0) {   // seamE-1106
+        t2_tab = 2;
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<rad_m1>/time2_tableau = '" << tb
@@ -131,7 +133,10 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     t2_w1 = tb.w1;
     t2_c31 = tb.c31;
     t2_c32 = tb.c32;
-    if (t2_tab != 0) {
+    if (t2_tab == 2 && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> time2_tableau = sdirk2: no explicit K1, Heun hydro" << std::endl;
+    }
+    if (t2_tab == 1) {
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> time2_tableau = trbdf2: TR-BDF2 implicit stages (stage "
                   << "order 2), RK2 hydro with c2 = 2 - sqrt(2)" << std::endl;
@@ -456,6 +461,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist")) {   // seamE-1106
     t2_k1rd = pin->GetReal("rad_m1", "time2_k1_redist");
   }
+  if (t2_k1rd > 0.0 && pmy_pack->pmesh->mesh_indcs.nx1 != pmy_pack->pmesh->mb_indcs.nx1) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/time2_k1_redist is column-local: one radial block only"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
     t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
   }
@@ -640,7 +651,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
   if (dbg_rst_fp > 0 && stage == 1) {dbg_rst_fp -= 1; RstFingerprint("formstage1");}   // rstbit-1107
   const Real g = kT2G;
   const Real w0 = t2_w0, w1 = t2_w1;
-  const bool heun = (t2_tab == 0);   // hesdirk2: the original expression, bitwise
+  const bool heun = (t2_tab == 0 || t2_tab == 2);   // the original expression, bitwise
   Real c1, c2;
   auto u0_ = u0;
   auto u1_ = u1;
@@ -820,10 +831,11 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       auto &vol = pmy_pack->pcoord->volume;
       const Real th = t2_k1rd, ca = c1;
       const int rr = t2_k1rd_r;
-      Real nb = 0.0, nun = 0.0;
+      Real nb = 0.0, nun = 0.0, mvd = 0.0, mvx = 0.0;
       Kokkos::parallel_reduce("m1_t2_k1rd", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
           DevExeSpace(), {0, ks, js}, {nmbr + 1, ke + 1, je + 1}),
-      KOKKOS_LAMBDA(const int m, const int k, const int j, Real &sb, Real &su) {
+      KOKKOS_LAMBDA(const int m, const int k, const int j, Real &sb, Real &su, Real &sm,
+                    Real &sx) {
         for (int i = is; i <= ie; ++i) {
           const Real e0 = ue_(m,M1_E,k,j,i);
           const Real ev = e0 + ca*k1d_(m,M1_T2_E,k,j,i);
@@ -833,16 +845,25 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
           Real need = (th*e0 - ev)/ca*vol(m,k,j,i);
           k1d_(m,M1_T2_E,k,j,i) += need/vol(m,k,j,i);
           for (int d = 1; d <= rr && need > 0.0; ++d) {
-            for (int sg = -1; sg <= 1 && need > 0.0; sg += 2) {
-              const int q = i + sg*d;
-              if (q < is || q > ie) continue;
-              const Real eq = ue_(m,M1_E,k,j,q);
-              const Real room = (eq + ca*k1d_(m,M1_T2_E,k,j,q) - th*eq)/ca*vol(m,k,j,q);
-              if (room <= 0.0) continue;
-              const Real take = (room < need) ? room : need;
-              k1d_(m,M1_T2_E,k,j,q) -= take/vol(m,k,j,q);
-              need -= take;
+            // both sides at distance d, in proportion to their room (no inward bias)
+            const int ql = i - d, qh = i + d;
+            Real rl = 0.0, rh = 0.0;
+            if (ql >= is) {
+              const Real eq = ue_(m,M1_E,k,j,ql);
+              rl = fmax((eq + ca*k1d_(m,M1_T2_E,k,j,ql) - th*eq)/ca*vol(m,k,j,ql), 0.0);
             }
+            if (qh <= ie) {
+              const Real eq = ue_(m,M1_E,k,j,qh);
+              rh = fmax((eq + ca*k1d_(m,M1_T2_E,k,j,qh) - th*eq)/ca*vol(m,k,j,qh), 0.0);
+            }
+            const Real rs = rl + rh;
+            if (!(rs > 0.0)) continue;
+            const Real f = (need < rs) ? need/rs : 1.0;
+            if (ql >= is) {k1d_(m,M1_T2_E,k,j,ql) -= f*rl/vol(m,k,j,ql);}
+            if (qh <= ie) {k1d_(m,M1_T2_E,k,j,qh) -= f*rh/vol(m,k,j,qh);}
+            need -= f*rs;
+            sm += f*rs;
+            sx += f*rs*static_cast<Real>(d);
           }
           if (need > 0.0) {
             // not enough within rr cells: undo the unpaid part, posfix decides
@@ -850,9 +871,25 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
             su += 1.0;
           }
         }
-      }, Kokkos::Sum<Real>(nb), Kokkos::Sum<Real>(nun));
-      t2_k1rd_n += nb;
-      t2_k1rd_un += nun;
+      }, Kokkos::Sum<Real>(nb), Kokkos::Sum<Real>(nun), Kokkos::Sum<Real>(mvd),
+         Kokkos::Sum<Real>(mvx));
+      {
+        Real vv[4] = {nb, nun, mvd, mvx};
+#if MPI_PARALLEL_ENABLED
+        MPI_Allreduce(MPI_IN_PLACE, vv, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+        t2_k1rd_n += vv[0];
+        t2_k1rd_un += vv[1];
+        t2_k1rd_mv += vv[2];
+        t2_k1rd_mx += vv[3];
+        t2_k1rd_calls += 1;
+        if (global_variable::my_rank == 0 && t2_k1rd_calls % 50 == 0) {
+          std::cout << "<rad_m1> K1RD calls " << t2_k1rd_calls << " cells/call "
+                    << t2_k1rd_n/t2_k1rd_calls << " unpaid/call " << t2_k1rd_un/t2_k1rd_calls
+                    << " moved rate " << t2_k1rd_mv/t2_k1rd_calls << " mean cells moved "
+                    << t2_k1rd_mx/fmax(t2_k1rd_mv, 1.0e-300) << std::endl;
+        }
+      }
     }
     t2_ys_ok = false;
     // t2pos-1020 time2_posfix: the stage-1 start of the gas (and of the closure memory)
@@ -1344,7 +1381,7 @@ void RadiationM1::EbndAccept(Real dt, bool t2step) {
   const Real l3 = EbndFluxX1();
   if (t2step) {
     const Real g = kT2G;
-    const Real wy = (t2_tab == 0) ? 0.5 : t2_w0;   // weight of Y1 in the stage-2 start
+    const Real wy = (t2_tab != 1) ? 0.5 : t2_w0;   // weight of Y1 in the stage-2 start
     ebnd_acc += dt*((wy*t2_a21 + t2_c31)*ebnd_l1 + (wy*g + t2_c32)*ebnd_l2 + g*l3);
   } else {
     ebnd_acc += dt*l3;

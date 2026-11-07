@@ -544,7 +544,10 @@ CASES.append(dict(_hg, name='he_hg_k1rd', ref_old=True,
 for _n, _k in (('he_hg_g4', {'mesh/cs_seam_rho_guard': '4'}),
                ('he_hg_rd', {'rad_m1/time2_k1_redist': '0.999'}),
                ('he_hg_nn', {'rad_m1/implicit_opac_newton': 'false',
-                             'rad_m1/implicit_predictor_tcap': '1.1'})):
+                             'rad_m1/implicit_predictor_tcap': '1.1'}),
+               ('he_hg_nnl', {'rad_m1/implicit_opac_newton': 'false',
+                              'rad_m1/implicit_opac_lag': 'none'}),
+               ('he_hg_l0', {'rad_m1/implicit_opac_lag': 'none'})):
     CASES.append(dict(_hg, name=_n, ref_old=True, what=_hg['what'] + ' ' + str(_k),
                       set=dict(_hg['set'], **_k),
                       layouts=[L('b1x1_np6', (704, 16, 16), 6), L('b2x2_np6', (704, 8, 8), 6)]))
