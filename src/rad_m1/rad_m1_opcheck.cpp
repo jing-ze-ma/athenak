@@ -241,6 +241,7 @@ void RadiationM1::ImplicitOpCheck() {
   const int npn = pm->mesh_indcs.nx2;
   auto label_check = [&](Real *res) {
     auto a = iw;
+    const int lbd = impl_hdepth;
     // the expected value of cell (m,k,j,i), or (vertex) a flag: returns false for a ghost
     // across two seams
     auto want = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
@@ -309,6 +310,11 @@ void RadiationM1::ImplicitOpCheck() {
       const int o3 = td ? ((k < ks) ? -1 : ((k > ke) ? 1 : 0)) : 0;
       if (o1 == 0 && o2 == 0 && o3 == 0) return;
       if (o1 != 0) return;   // x1 is a physical boundary on cs (one radial block)
+      // seamE-1106: an exchange of depth lbd (implicit_halo_depth, default 2) never fills
+      // the layers beyond it: not a wrong ghost (was: FATAL with 1 of 3 layers "wrong")
+      const int dj = (j < js) ? (js - j) : ((j > je) ? (j - je) : 0);
+      const int dk = (k < ks) ? (ks - k) : ((k > ke) ? (k - ke) : 0);
+      if (lbd > 0 && (dj > lbd || dk > lbd)) return;
       const int d = (o1+1) + 3*(o2+1) + 9*(o3+1);
       if (nbg_(m,d) < 0) return;
       Real w = 0.0;

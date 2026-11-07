@@ -535,6 +535,14 @@ void RadiationM1::ImplicitSeamRowDump(int it, int kd, Real nb) {
       std::fprintf(fp, "VIMP JD %.6e J1M %.6e J1P %.6e JRHS %.6e\n", jd(m,k,j,i), j1m(m,k,j,i),
                    j1p(m,k,j,i), jr(m,k,j,i));
     }
+    {
+      auto ifh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ifw);
+      std::fprintf(fp, "IFW1 DGp %.6e DGm %.6e HCLp %.5e HCRp %.5e HCLm %.5e HCRm %.5e ALp %.4e ALm "
+                   "%.4e dg_rhs %.6e\n", ifh(m,M1_IFW_DG,k,j,i+1), ifh(m,M1_IFW_DG,k,j,i),
+                   ifh(m,M1_IFW_HCL,k,j,i+1), ifh(m,M1_IFW_HCR,k,j,i+1), ifh(m,M1_IFW_HCL,k,j,i),
+                   ifh(m,M1_IFW_HCR,k,j,i), ifh(m,M1_IFW_AL,k,j,i+1), ifh(m,M1_IFW_AL,k,j,i),
+                   -nup*ifh(m,M1_IFW_DG,k,j,i+1) + num*ifh(m,M1_IFW_DG,k,j,i));
+    }
     auto tth = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tau_ten);
     std::fprintf(fp, "LATC D0 %.5e L1 %.5e L2 %.5e L3 %.5e\n", tth(m,0,k,j,i),
                  tth(m,M1_TT_LAT0+1,k,j,i), tth(m,M1_TT_LAT0+2,k,j,i),
