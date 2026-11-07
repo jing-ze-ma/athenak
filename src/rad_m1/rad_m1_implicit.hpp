@@ -791,13 +791,16 @@ Real M1CsSeamMid(const F &fv, const G &g, const int m, const int c, const int sd
 //! whose ghost there is a mirror cell off this cell's coordinate line.  slo/shi: the
 //! block's low/high face along e is a panel seam.
 
-// seamE-1106 cs_cross_mono: the one-sided derivative at the cell next to a seam, kept
-// between 0 and twice the difference to the first neighbour, but only at a sharp front:
-// |q0 - 2 q1 + q2| > k (|q0| + |q1| + |q2|)/3, k = cs_cross_mono_k (0: always, the first form).  The three-point formula extrapolates
-// across such a front (E = 20, 174, 3390 gives the wrong sign and 5 times the size), and
-// through the skew cross term that reaches the face flux and the RHS.  Without the front
-// test the clamp also fired at smooth extrema and Linf fell to first order (audit 11-07);
-// a field resolved with (wavenumber h)^2 < k does not reach it, so it stays second order.
+// seamE-1106 cs_cross_mono: the one-sided derivative d at the cell next to a seam, kept
+// between 0 and 2 s1 (s1 = the one-sided first difference quotient to the first
+// neighbour), but only where |q0 - 2 q1 + q2| > k (|q0| + |q1| + |q2|)/3 with
+// k = cs_cross_mono_k.  The three-point formula extrapolates across a sharp front
+// (E = 20, 174, 3390 gives the wrong sign and 5 times the size), and through the skew
+// cross term that reaches the face flux and the RHS.  k = 0, the DEFAULT when
+// cs_cross_mono_k is not named, is the first form: the clamp acts wherever the second
+// difference is nonzero, also at smooth extrema, where Linf falls to first order (audit
+// 11-07).  Only k > 0 leaves smooth data alone: a sinusoid with (wavenumber h)^2 < k
+// does not reach the clamp, so the formula stays second order there.
 KOKKOS_INLINE_FUNCTION
 Real M1CsTanMono(const Real d, const Real s1, const Real q0, const Real q1, const Real q2,
                  const Real fk) {

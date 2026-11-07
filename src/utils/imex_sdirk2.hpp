@@ -55,7 +55,7 @@ inline Tableau Make(const int tab) {
     t.w1 = 0.5;
     t.c31 = 0.0;
     t.c32 = (1.0 - g) - 0.5*g;
-} else {
+  } else {
     const Real w = 0.25*std::sqrt(2.0);
     t.a21 = g;
     t.w0 = 0.25;

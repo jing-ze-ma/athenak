@@ -13448,10 +13448,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // implicit_predictor_order = 2: + dt dt1 h (h = 0 until two increments are known)
     const bool po2 = (impl_pord == 2);
     const Real r2 = po2 ? dt*(p2 ? pred2_dt : pred_dt) : 0.0;
-    // seamE-1106 implicit_predictor_tcap = f > 1 (read only when named; default 2): the
-    // predicted T is taken only within [T/f, T f].  From a T far above the gas energy the
-    // first pass's tangent to T^4 gives SRCR ~ q (e^n - e(T_k)) << 0 and E' < 0 although
-    // the fixed point is positive.  Starting point only: the fixed point does not move.
+    // seamE-1106 implicit_predictor_tcap = f > 1 (read only when named): the predicted
+    // T is taken only strictly inside (T/f, T f), T the unpredicted start.  Default 2 =
+    // the fixed window (0.5 T, 2 T) used before the key existed (bitwise).  From a
+    // predicted T far above the T of the gas energy the first pass's tangent to T^4 gives
+    // SRCR ~ q (e^n - e(T_k)) << 0 and E' < 0 although the fixed point is positive.
+    // Starting point only: the fixed point does not move.
     const Real pth = impl_pred_tcap, ptl = 1.0/impl_pred_tcap;
     const Real pecap = impl_pred_ecap;   // rsgdiag-1107
     par_for("m1_impl_pred", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,

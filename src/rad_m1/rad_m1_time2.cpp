@@ -652,7 +652,9 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
   if (dbg_rst_fp > 0 && stage == 1) {dbg_rst_fp -= 1; RstFingerprint("formstage1");}   // rstbit-1107
   const Real g = kT2G;
   const Real w0 = t2_w0, w1 = t2_w1;
-  const bool heun = (t2_tab == 0 || t2_tab == 2);   // the original expression, bitwise
+  // hesdirk2 and sdirk2 both use the Heun stage start (tab 0's original expression,
+  // bitwise); only trbdf2 (tab 1) takes the w0/w1 average
+  const bool heun = (t2_tab == 0 || t2_tab == 2);
   Real c1, c2;
   auto u0_ = u0;
   auto u1_ = u1;
@@ -818,11 +820,17 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     }
     if (t2_k1fct > 0.0) {ImplicitK1Fct(c1);}   // seamE-1106
     // seamE-1106 time2_k1_redist = th (> 0, read only when named): where the explicit
-    // increment takes the stage-1 old vector below th E, E + a21 dt K1_E < th E, the missing
-    // K1_E is taken from the nearest cells of the radial column that can give it (keeping
-    // their own E + a21 dt K1_E >= th E), volume-weighted: sum V K1_E is exact, E channel
-    // only.  K1 is the stored slope, so stage 2 reads the same field.  Column-local: one
-    // radial block on every production deck, so no neighbour rank is read.
+    // increment takes the stage-1 old vector below th E, E + a21 dt K1_E < th E, the
+    // missing V K1_E, V (th E - E - a21 dt K1_E)/(a21 dt), is taken from the cells of
+    // the same x1 (radial) column at distance d = 1, 2, .. time2_k1_redist_r, the two
+    // cells at each d in proportion to their room V (E + a21 dt K1_E - th E)/(a21 dt)
+    // (> 0 only; donors keep E + a21 dt K1_E >= th E).  The moved quantity is V K1_E, so
+    // sum V K1_E is exact, E channel only; what rr cells cannot pay is given back
+    // (unpaid, left to the posfix).  One thread serves the receivers of a column in
+    // ascending i, so when two compete for one donor the inner one is served first.  K1
+    // is the stored slope, so stage 2 reads the same field.  Column-local: Time2Init
+    // FATALs unless x1 is one block (mesh nx1 = block nx1), so no neighbour block or
+    // rank is read.  A no-op under time2_tableau = sdirk2 (a21 = 0).
     if (t2_k1rd > 0.0) {
       auto &id = pmy_pack->pmesh->mb_indcs;
       const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
