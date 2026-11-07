@@ -186,7 +186,7 @@ vet_gd_gl_nphi   = 12             # inert (vet_gd_gl_nmu = 0)
 vet_gd_gl_stagger = true          # inert (vet_gd_gl_nmu = 0)
 # vet_gd_rotate_every = 10  # bsgprod-1012: DROPPED (vet_gd_rotate_dt in this block = the physical clock)
 vet_col_lat_offdiag = operator       # T5wihc
-vet_gd_tangential   = false          # T5wihc
+vet_gd_tangential   = true           # USER 11-07: full Eddington tensor (was false, T5wihc)
 vet_gd_wall_interp  = true           # T5wihc
 vet_gd_halo_compact = 2              # T5wihc
 implicit_halo_direct = true         # fast Krylov set
