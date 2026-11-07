@@ -2531,6 +2531,7 @@ class RadiationM1 {
   Real cstan_np = 0.0, cstan_na = 0.0;   // assemblies, assemblies with Q on (log only)
   DvceArray4D<Real> cs_qf;
   void CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac, MeshBoundaryValuesCC *pb);
+  void CsTanDiag();
   int vgd_iter = 1;            // vet_gd_iter: sweeps per ordinary build
   int vgd_smooth = 0;          // vet_gd_smooth: lateral 1-2-1 passes on dD_rr (diag.)
   DvceArray4D<Real> vgd_sm;    // (m, k, j, i) scratch of VetGdSmooth

@@ -339,6 +339,7 @@ void RadiationM1::VetLatInit() {
 //! active cells: 0 keeps the operator form untouched (vet_col_lat and vet_gd)
 
 void RadiationM1::VetLatOdMax() {
+  if (vgd_cstan) {CsTanDiag();}   // cs-tan-1106, env VGD_TANQ_DIAG
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;

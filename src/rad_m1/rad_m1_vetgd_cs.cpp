@@ -2126,6 +2126,59 @@ void RadiationM1::CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CsTanDiag
+//! \brief cs-tan-1106 diagnostic (env VGD_TANQ_DIAG = N, every N-th call; log only): the
+//! size of Q, A = sqrt(s1^2 + s2^2) = half the tangential eigenvalue split, per band of
+//! tau_top: rms and max over the active cells, all ranks.
+
+void RadiationM1::CsTanDiag() {
+  static const int every = std::getenv("VGD_TANQ_DIAG") ? std::atoi(std::getenv("VGD_TANQ_DIAG")) : 0;
+  static int ncall = 0;
+  if (every <= 0 || (ncall++ % every) != 0) {return;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, nmb = pmy_pack->nmb_thispack;
+  auto tt = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tau_ten);
+  auto cs = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vlat_cs);
+  auto xf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx1f);
+  const double ed[7] = {0.0, 0.01, 0.1, 1.0, 3.0, 10.0, 30.0};
+  double sum[6] = {0.0}, cnt[6] = {0.0}, mx[6] = {0.0};
+  for (int m = 0; m < nmb; ++m) {
+    for (int k = ks; k <= ke; ++k) {
+      for (int j = js; j <= je; ++j) {
+        double tau = 0.0;
+        for (int i = ie; i >= is; --i) {
+          const double dtc = std::exp(cs(m,0,k,j,i))*(xf(m,i+1) - xf(m,i));
+          const double tc = tau + 0.5*dtc;
+          tau += dtc;
+          if (tc >= ed[6]) {break;}
+          int b = 5;
+          while (b > 0 && tc < ed[b]) {--b;}
+          const double s1 = tt(m,M1_TT_LAT0+4,k,j,i), s2 = tt(m,M1_TT_LAT0+5,k,j,i);
+          const double a2 = s1*s1 + s2*s2;
+          sum[b] += a2;
+          cnt[b] += 1.0;
+          mx[b] = std::max(mx[b], a2);
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, sum, 6, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, cnt, 6, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, mx, 6, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0) {
+    std::printf("VGD_TANQ cycle %d:", pmy_pack->pmesh->ncycle);
+    for (int b = 0; b < 6; ++b) {
+      std::printf(" tau[%g,%g] n %.0f rms %.3e max %.3e;", ed[b], ed[b+1], cnt[b],
+                  std::sqrt(sum[b]/std::max(cnt[b], 1.0)), std::sqrt(mx[b]));
+    }
+    std::printf("\n");
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdCsMoments
 //! \brief part 0: D_rr = K_rr/J about the cell's r_hat -> LAT0 = D_rr - f_K (LAT1..3 the
 //! Cartesian D_r,lat; LAT4, LAT5 = 0, or Q under vet_gd_tangential: cs-tan-1106);
