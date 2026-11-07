@@ -969,7 +969,7 @@ class AmModule {
   // roche-wbtan-1101: the tangential momentum change rate (bdt = 1) AmTransport would add
   // for fl's state and fluxes, added to fl.u0, with NO side effect (no spin reservoir
   // update, no driver): the dhj problem/roche_wb_tan equilibrium probe
-  void AmTransportProbe(const AmFluid &fl);
+  void AmTransportProbe(const AmFluid &fl, const DvceArray5D<Real> *wmask = nullptr);
   // roche-wbtan-1101 (accwbtan): the <hydro>/frame_omega FORCE f of fl's state alone
   // (HydroAmFrame: Coriolis, + centrifugal with frame_cf) on the cell basis, bdt = 1, added
   // to fl.u0(IM1..IM3); NOT the am_vector torque correction (its Q_c is the mass-flux term)

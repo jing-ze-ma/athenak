@@ -389,6 +389,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // cubed sphere, where x1v is the radius) honours it -- a Cartesian mesh has no radius
   // to compare against.
   wb_rmax = pin->GetOrAddReal("hydro","wb_rmax",0.0);
+  if (pin->DoesParameterExist("hydro","wb_poison_test")) wb_poison = pin->GetBoolean("hydro","wb_poison_test");
   // ...and off BELOW this radius (0 = never), same path, same caveat.
   wb_rmin = pin->GetOrAddReal("hydro","wb_rmin",0.0);
   nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
@@ -576,7 +577,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
         const int c3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
         Kokkos::realloc(wbq2, nmb, 15, c3, c2, c1);
         if (c3 > 1) Kokkos::realloc(wbq3, nmb, 15, c3, c2, c1);
-        Kokkos::realloc(wbw, nmb, 3, c3, c2, c1);
+        Kokkos::realloc(wbw, nmb, 7, c3, c2, c1);
         Kokkos::deep_copy(wbw, 1.0);
         // wball-1104 <hydro>/wb_seam (opt-in, read only when named): the WB-aware seam
         // resample of the density and energy (bvals.hpp, MeshBoundaryValuesCC::wb_seam)

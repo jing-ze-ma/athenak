@@ -169,6 +169,7 @@
 #include <string>
 #include <vector>
 
+#include "roche_common.hpp"
 #include "utils/eint_ledger.hpp"
 #include "athena.hpp"
 #include "globals.hpp"
@@ -454,6 +455,7 @@ Real spr_tau_ = 0.0, spr_t0_ = 0.0, spr_ds_ = 0.002, spr_stgt_ = 1.0;
 Real spr_slast_ = 1.0;         // s of the last refresh (dt_retry registered: a restore re-refreshes)
 Real spr_pr_ = -1.0;           // last reported 0.1 step of s
 Real spr_rspk_ = 1.0e30, spr_ntop_ = 15.0, spr_wdep_ = 0.0, spr_racc_ = 0.0;
+bool spr_lobe_ = false; Real spr_dl1_ = 0.0;   // dhjwball-1106 problem/wb_lobe_cut
 bool spr_eqtop_ = false, spr_icvz_ = false;
 Real spr_vzdep_ = 0.0, spr_rhoamb_ = 0.0;
 // the TARGET-spin values (RadSetup's bottom-flux check; = the current ones without a ramp)
@@ -5424,6 +5426,20 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
                     "%.4f (phi 90), Phi_wb > %.6e\n", rw, phd->wb_phimax);
       }
     }
+    // dhjwball-1106 problem/wb_lobe_cut (USER 11-06: no WB outside the Roche lobe, every run;
+    // opt-in until gated): cap on the wb_phimax scale at the accretor's own L1, with the
+    // spin term and the radiation offset of Phi_wb (shared: roche::L1Distance, wball w)
+    if (pin->GetOrAddBoolean("problem", "wb_lobe_cut", false)) {
+      spr_lobe_ = true;
+      spr_dl1_ = roche::L1Distance(p.gma, p.gmd, p.asep, SQR(p.omega));
+      Real cap = RochePot(p, spr_dl1_, 0.0) - dlt*SQR(fmin(spr_dl1_, rspin));
+      if (rad_) cap += RadColAt(rcol_g_, env_phis_ - cap);
+      phd->wb_phimax = fmin(phd->wb_phimax, cap);
+      if (root) {
+        std::printf("ry_per_accretor: problem/wb_lobe_cut: d_L1 %.4f, Phi_wb(L1) %.6e, "
+                    "wb_phimax %.6e\n", spr_dl1_, cap, phd->wb_phimax);
+      }
+    }
   }
   if (root && !mexact) {
     std::printf("ry_per_accretor: measuring face (MR, JR, Menv, Jenv) at r = %.5f\n",
@@ -5634,6 +5650,12 @@ void RySpinRefresh(MeshBlockPack *pmbp) {
     const Real rw = spr_racc_ - spr_wdep_;
     phd->wb_phimax = RochePot(rp_, rw, 0.5*M_PI) - env_dlt_*SQR(fmin(rw, env_rspin_));
     phd->wb_phimax += RadColAt(rcol_g_, env_phis_ - phd->wb_phimax);
+  }
+  if (spr_lobe_) {   // dhjwball-1106 wb_lobe_cut: as EnvSetup, at this spin
+    auto *phd = pmbp->phydro;
+    Real cap = RochePot(rp_, spr_dl1_, 0.0) - env_dlt_*SQR(fmin(spr_dl1_, env_rspin_));
+    if (rad_) cap += RadColAt(rcol_g_, env_phis_ - cap);
+    phd->wb_phimax = fmin((spr_wdep_ > 0.0) ? phd->wb_phimax : 1.0e300, cap);
   }
   spr_slast_ = spin_;
 }

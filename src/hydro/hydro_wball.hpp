@@ -229,14 +229,18 @@ void WbAllBlendGrid(TeamMember_t const &member, const bool use_wb_rho, const int
 
 //! the fluid-independent view of a Hydro or MHD for the wb_dirs = all routines (shared
 //! code: Hydro:: and MHD:: members fill it and call the WbAll* functions below)
+void WbPoison(MeshBlockPack *pmbp, DvceArray5D<Real> &cache, const DvceArray4D<Real> &phiwb,
+              const Real phimax);
+void WbFluxDiag(MeshBlockPack *pmbp, DvceFaceFld5D<Real> &uflx);
 struct WbAllCtx {
   MeshBlockPack *pmbp = nullptr;
   EOS_Data eos;
   WBOption wbo;
   bool wgt = true, wbgi = false, wbs = false;
   Real r0 = 0.1, r1 = 0.3, m0 = 0.2, m1 = 0.5, eta = 1.0e-4;
+  Real phimax = 1.0e300;   // dhjwball-1106: wb_phimax (w = 0 above it)
   DvceArray5D<Real> w0, u0, wder, wbq0, wbq2, wbq3, wbw;
-  DvceArray4D<Real> phicc, wtemp, pwb;
+  DvceArray4D<Real> phicc, phiwb, wtemp, pwb;   // phiwb: the x1 WB potential (wb_phimax)
   DvceArray4D<Real> phi1f, phi2f, phi3f;   // the face potentials (phi0.x1f/x2f/x3f)
   class AmModule *pam = nullptr;
   DvceArray5D<Real> *wbam_u = nullptr, *wbam_w = nullptr;

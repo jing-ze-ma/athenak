@@ -67,6 +67,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   // wball-1104: the x2/x3 backgrounds and weights (before the shared seam face states,
   // which reconstruct the edge cells exactly as the sweep does)
   if (wb_all) BuildWBCacheAll();
+  if (wb_all && wb_poison) {   // dhjwball-1106 TEST ONLY
+    WbPoison(pmy_pack, wbq2, phicc_wb, wb_phimax);
+    if (wbq3.extent_int(2) > 1) WbPoison(pmy_pack, wbq3, phicc_wb, wb_phimax);
+  }
   if (cs_seam_shared) {CsSeamFaceStates();}
   const bool cs_shr_ = cs_seam_shared;
   DvceArray5D<Real> sfs2_, sfs3_;
@@ -236,6 +240,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     if (wb_cache_every <= 0 || !wb_cache_built ||
         (stage == 1 && (ncyc % wb_cache_every) == 0)) {
       BuildWBCache(jl, ju, kl, ku);
+      if (wb_poison) WbPoison(pmy_pack, wbq0, phicc_wb, wb_phimax);   // dhjwball-1106 TEST
       wb_cache_built = true;
       wbreb_h = true;
     }

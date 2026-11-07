@@ -396,6 +396,7 @@ class Hydro {
   // whose x1 well-balanced potential phicc_wb exceeds wb_phimax take the plain
   // reconstruction, exactly as above wb_rmax.  Default +huge = never (bitwise unchanged).
   Real wb_phimax = 1.0e300;
+  bool wb_poison = false;   // dhjwball-1106 TEST ONLY <block>/wb_poison_test: hydro_wball WbPoison
   WBOption wb_option;
   DvceArray5D<Real> u0wb;   // background conserved variables
   DvceArray5D<Real> w0wb;   // background primitive variables

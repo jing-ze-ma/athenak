@@ -25,6 +25,7 @@ hydro::WbAllCtx MHD::WbCtx() {
   c.w0 = w0; c.u0 = u0; c.wder = wder; c.wbq0 = wbq0; c.wbq2 = wbq2; c.wbq3 = wbq3;
   c.wbw = wbw; c.phicc = phicc0; c.wtemp = wtemp; c.pwb = pwb; c.phi1f = phi0.x1f; c.phi2f = phi0.x2f; c.phi3f = phi0.x3f; c.pam = pam;
   c.wbam_u = &wbam_u; c.wbam_w = &wbam_w; c.wbam_f = &wbam_f;
+  c.phimax = wb_phimax; c.phiwb = phicc_wb;
   return c;
 }
 void MHD::BuildWBCacheAll() {hydro::WbAllCtx c = WbCtx(); hydro::WbAllBuild(c);}

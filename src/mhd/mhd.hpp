@@ -473,6 +473,10 @@ class MHD {
   // reconstruction and the plain -rho g source, exactly as wellbalance_dynamic = false.
   // Mirror of Hydro::wb_rmax; see the note there.
   Real wb_rmax = 0.0;
+  // dhjwball-1106: cells whose x1 WB potential exceeds it take plain PLM (Hydro::wb_phimax;
+  // wb_dirs = all: w = 0).  1e300 = never.  Set by the pgen.
+  Real wb_phimax = 1.0e300;
+  bool wb_poison = false;   // dhjwball-1106 TEST ONLY <block>/wb_poison_test: hydro_wball WbPoison
   // Mirror of wb_rmax at the bottom of the domain: below wb_rmin the dynamic x1
   // well-balanced reconstruction and the matching well-balanced gravity source are
   // switched off cell by cell; 0 = never.  Same failure mode from the other side --
@@ -1012,7 +1016,8 @@ class MHD {
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
          const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          const DvceArray5D<Real> &wbq0, const bool hyd,
-        ScrArray2D<Real> &ql, ScrArray2D<Real> &qr, const bool wb_noext = false) {
+        ScrArray2D<Real> &ql, ScrArray2D<Real> &qr, const bool wb_noext = false,
+        const Real wb_phimax = 1.0e300) {
       Real gamma = eos.gamma;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
@@ -1033,7 +1038,8 @@ class MHD {
               // directly, like the non-well-balanced branch below.  Per CELL, not per
               // MeshBlock: a radial block spans both.
               if ((wb_rmax > 0.0 && x_i > wb_rmax) ||
-                  (wb_rmin > 0.0 && x_i < wb_rmin)) {
+                  (wb_rmin > 0.0 && x_i < wb_rmin) ||
+                  phicc(m,k,j,i) > wb_phimax) {
                 PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1),
                                dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
                 return;
@@ -1197,7 +1203,8 @@ class MHD {
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
          const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          const DvceArray5D<Real> &wbq0,
-         ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
+         ScrArray2D<Real> &dl, ScrArray2D<Real> &dr,
+         const Real wb_phimax = 1.0e300) {
       int nvar = qd.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         par_for_inner(member, il, iu, [&](const int i) {
@@ -1231,7 +1238,8 @@ class MHD {
           // primitives were reconstructed in full
           if (n == (IDPR) && use_wellbalance_dynamic && use_wb_x1 &&
               !(wb_rmax > 0.0 && x_i > wb_rmax) &&
-              !(wb_rmin > 0.0 && x_i < wb_rmin)) {
+              !(wb_rmin > 0.0 && x_i < wb_rmin) &&
+              !(phicc(m,k,j,i) > wb_phimax)) {
             Real q0_im1, q0_imh, q0_i, q0_iph, q0_ip1;
             WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i,
                      q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);

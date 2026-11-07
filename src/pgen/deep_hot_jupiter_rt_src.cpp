@@ -16,6 +16,8 @@
 #include "driver/dt_retry.hpp"
 #include "utils/imex_sdirk2.hpp"   // the tableau shared with rad_m1 hesdirk2
 #include "utils/ck_2nd.hpp"       // ck2nd-1102 ck_t2_seed
+#include <cstdlib>
+#include "hydro/hydro_wball.hpp"
 
 
 //----------------------------------------------------------------------------------------
@@ -88,6 +90,13 @@ void WbTanProbe(Mesh *pm, const Real bdt) {
 }
 
 void SourceFunc(Mesh *pm, Real bdt) {
+  if (std::getenv("WB_FDIAG") != nullptr) {   // dhjwball-1106 test only
+    if (pm->pmb_pack->phydro != nullptr) {
+      hydro::WbFluxDiag(pm->pmb_pack, pm->pmb_pack->phydro->uflx);
+    } else {
+      hydro::WbFluxDiag(pm->pmb_pack, pm->pmb_pack->pmhd->uflx);
+    }
+  }
   if (dhj_wbt.on && !dhj_wbt.ready) WbTanProbe(pm, bdt);
   EBudStage(pm, bdt);
   DhjFluxStage(pm);
@@ -192,6 +201,14 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // rho g_t (WbTanProbe) in place of the analytic projections below; Coriolis and the
     // radial terms unchanged; no energy term (etotgrav books the potential work)
     const bool wbt_ = dhj_wbt.on;
+    // dhjwball-1106 <mhd|hydro>/wb_dirs = all: the tangential centrifugal + tidal force is
+    // the shared well-balanced source (AddWbGravity after this kernel, the true Phi of
+    // phicc0/phi0): this kernel keeps the tangential Coriolis only (wbt_a2/a3); x1 as ever
+    const bool wba_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_all :
+                      ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_all : false);
+    const bool cor_only_ = wbt_ || wba_;
+    const Real phimax_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_phimax :
+                         ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_phimax : 1.0e300);
     // relaxdrag-1101: the start-up Rayleigh drag switch and length (R/5, 1 by default)
     const bool relax_ = dhj_relax_drag;
     const Real rdf_ = dhj_relax_drag_rot/5.0;
@@ -314,6 +331,11 @@ void SourceFunc(Mesh *pm, Real bdt) {
               WBReadCache(wbq0_, WBVar::wb_pres, m, k, j, i, dum1, pl, dum2, pr, dum3);
           }
           src = bdt*(area_r*(pr-p)+area_l*(p-pl))/vol;
+          // dhjwball-1106 problem/wb_lobe_cut: no WB outside the L1 equipotential: the
+          // plain radial force of the true Phi (plain PLM there: hydro.hpp/mhd.hpp x1)
+          if (phicc0(m,k,j,i) > phimax_) {
+            src = -bdt*rho*(phi0_x1f(m,k,j,i+1) - phi0_x1f(m,k,j,i))/dx1(m,k,j,i);
+          }
         }
         u0(m,IM1,k,j,i) += src;
         
@@ -327,7 +349,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           Real cosine = cos(theta);
           Real oor = SQR(omega)*r*sine;
           Real cor = 2.0*omega*vphi;
-          if (wbt_) {
+          if (cor_only_) {
             // geometry front-end only: Coriolis on (e_theta, e_phi); ApplyTan below
             wbt_a2 = cor*cosine;
             wbt_a3 = -2.0*omega*(vr*sine+vtheta*cosine);
@@ -369,7 +391,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
             u0(m,IEN,k,j,i) += rho*(atr*vr + att*vtheta + atp*vphi)*bdt;
           }
           // roche-dhj-1031: tangential -grad TidePot (stellar_tide is refused with it)
-          if (rgms != 0.0 && !wbt_) {
+          if (rgms != 0.0 && !cor_only_) {
             const Real cph = cos(phi), sph = sin(phi);
             Real gs, gy, gz;
             roche::TideGrad(rgms, rra, r*sine*cph, r*sine*sph, r*cosine, gs, gy, gz);
@@ -423,7 +445,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           // Omega^2 r sin^2(theta) = Omega^2 (x rh0 + y rh1), which the potential carries
           const Real acr_rot = rotpot_src ? SQR(omega)*(xx*rh0 + yy*rh1) : 0.0;
           u0(m,IM1,k,j,i) += rho*(acx*rh0 + acy*rh1 - acr_rot)*bdt;
-          if (wbt_) {
+          if (cor_only_) {
             // geometry front-end only: Coriolis on (e_xi, e_eta); ApplyTan below
             const Real ccx =  2.0*omega*vcy, ccy = -2.0*omega*vcx;
             wbt_a2 = ccx*e1[0] + ccy*e1[1];
@@ -446,7 +468,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           // (CSCellAngles: phi = atan2(-y, -x)), so the stellar frame is s = -x, y' = -y,
           // z; the Cartesian acceleration is (gs, gy', -gz), projected like the
           // centrifugal one above on e1, e2 (covariant momentum components)
-          if (rgms != 0.0 && !wbt_) {
+          if (rgms != 0.0 && !cor_only_) {
             Real gs, gy, gz;
             roche::TideGrad(rgms, rra, -r*rh0, -r*rh1, r*rh2, gs, gy, gz);
             u0(m,IM2,k,j,i) += rho*(gs*e1[0] + gy*e1[1] - gz*e1[2])*bdt;
@@ -461,6 +483,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
         // problem/roche_wb_tan: ONE force path for sp and cs (wbtan_common.hpp): the
         // tangential centrifugal + tidal force rho g_t plus the front-end's Coriolis
         if (wbt_) wbtan::ApplyTan(u0, wbtg_, m, k, j, i, rho, wbt_a2, wbt_a3, bdt);
+        if (wba_) {   // dhjwball-1106: Coriolis here, the potential force in AddWbGravity
+          u0(m,IM2,k,j,i) += rho*wbt_a2*bdt;
+          u0(m,IM3,k,j,i) += rho*wbt_a3*bdt;
+        }
 
 //        // Newtonian cooling
 //        Real Teq, itrad;
@@ -536,6 +562,11 @@ void SourceFunc(Mesh *pm, Real bdt) {
                              (u0(m,IDN,k,j,i) - eb_d0)*volume(m,k,j,i)*eb_w);
         }
     });
+    // dhjwball-1106: x2/x3 (x1: the WB fg of this kernel); reads this stage's caches
+    if (wba_) {
+      if (pmbp->pmhd != nullptr) {pmbp->pmhd->AddWbGravity(bdt, false);}
+      else {pmbp->phydro->AddWbGravity(bdt, false);}
+    }
 
     return;
 }

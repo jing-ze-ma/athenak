@@ -261,8 +261,13 @@ void AmModule::AmTransport(Real bdt, Driver *pdrive, int stage, const AmFluid &f
 //! the am_vector spin-reservoir update (so nothing persistent changes).  No-op unless
 //! am_transport is on.
 
-void AmModule::AmTransportProbe(const AmFluid &fl) {
+void AmModule::AmTransportProbe(const AmFluid &fl, const DvceArray5D<Real> *wmask) {
   if (!am_transport) return;
+  // dhjwball-1106: wball's weights: cells with min(w1, w2) <= 0 are skipped (the caller reads
+  // only wa*result there)
+  const bool mk_ = (wmask != nullptr);
+  DvceArray5D<Real> wm_;
+  if (mk_) wm_ = *wmask;
   Mesh *pm = pmy_pack->pmesh;
   HydroAmV v;
   AmFillV(v, fl);
@@ -272,6 +277,7 @@ void AmModule::AmTransportProbe(const AmFluid &fl) {
     par_for("hydro_am_vector_probe", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
             ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (mk_ && !(fmin(wm_(m,1,k,j,i), wm_(m,2,k,j,i)) > 0.0)) return;
       Real dT[3], rc[3], b1[3], b2[3], cc;
       HydroAmVecTorque(v, m, k, j, i, dT, rc, b1, b2, cc);
       const Real r2 = rc[0]*rc[0] + rc[1]*rc[1] + rc[2]*rc[2];
@@ -289,6 +295,7 @@ void AmModule::AmTransportProbe(const AmFluid &fl) {
   par_for("hydro_am_transport_probe", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
           ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (mk_ && !(fmin(wm_(m,1,k,j,i), wm_(m,2,k,j,i)) > 0.0)) return;
     Real dtq, c2, c3;
     const bool ok = plain ? HydroAmTorqueBase(v, m, k, j, i, dtq, c2, c3)
                           : HydroAmTorque(v, m, k, j, i, dtq, c2, c3);

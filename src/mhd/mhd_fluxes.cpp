@@ -258,6 +258,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto wbw_ = wbw;
   const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
   const Real wb_rmax_ = wb_rmax;
+  const Real wb_phimax_ = wb_phimax;   // dhjwball-1106
   const Real wb_rmin_ = wb_rmin;
   const bool use_wellbalance_static_reconst_perturb_ =
       use_wellbalance_static_reconst_perturb;
@@ -315,6 +316,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // every panel-seam face (rows is-1..ie+1) after the gnomonic face rotation
   const bool cs_shr_ = (cs_seam_mhd > 0);
   if (wb_all) BuildWBCacheAll();   // wball-1104 (before the seam face states)
+  if (wb_all && wb_poison) {   // dhjwball-1106 TEST ONLY
+    hydro::WbPoison(pmy_pack, wbq2, phicc_wb, wb_phimax);
+    if (wbq3.extent_int(2) > 1) hydro::WbPoison(pmy_pack, wbq3, phicc_wb, wb_phimax);
+  }
   if (cs_shr_) {CsSeamFaceStates();}
   DvceArray5D<Real> sfs2_, sfs3_;
   if (cs_shr_) {sfs2_ = pseamfs->x2f; sfs3_ = pseamfs->x3f;}
@@ -350,6 +355,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     if (wb_cache_every <= 0 || !wb_cache_built ||
         (stage == 1 && (ncyc % wb_cache_every) == 0)) {
       BuildWBCache(jl, ju, kl, ku);
+      if (wb_poison) hydro::WbPoison(pmy_pack, wbq0, phicc_wb, wb_phimax);   // dhjwball-1106 TEST
       wb_cache_built = true;
     }
   }
@@ -371,7 +377,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                               use_wellbalance_dynamic_,
                               use_wb_x1_, wb_rmax_, wb_rmin_,
                               m, k, j, il-1, iu, w0_, x1v_, x1f_, phiwbcc_,
-                              phiwb_x1f_, wbq0_, true, wl, wr, wb_all_);
+                              phiwb_x1f_, wbq0_, true, wl, wr, wb_all_, wb_phimax_);
         GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                               use_wellbalance_dynamic_,
                               use_wb_x1_, wb_rmax_, wb_rmin_,
@@ -462,7 +468,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                                  use_wellbalance_static_reconst_perturb_,
                                  pwb_, pfacewb_x1f,
                                  m, k, j, il-1, iu, w0_, wder_,
-                                 x1v_, x1f_, phiwbcc_, phiwb_x1f_, wbq0_, dl, dr);
+                                 x1v_, x1f_, phiwbcc_, phiwb_x1f_, wbq0_, dl, dr, wb_phimax_);
       } else if (use_spherical_polar || str_r1_) {
         // reconstruct_x1 != plm: same Mignone curvilinear reconstruction as w0_/b0_
         // above, applied to the derived thermodynamic variables (no WB background,
@@ -562,7 +568,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         if (wwb_) {
           auto inr = [&](const int i) {
             return !curv1_ || (!(wb_rmax_ > 0.0 && x1v_(m,i) > wb_rmax_) &&
-                               !(wb_rmin_ > 0.0 && x1v_(m,i) < wb_rmin_));
+                               !(wb_rmin_ > 0.0 && x1v_(m,i) < wb_rmin_) &&
+                               !(phiwbcc_(m,k,j,i) > wb_phimax_));
           };
           if ((bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user))
               && inr(is)) {

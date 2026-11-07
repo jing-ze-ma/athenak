@@ -430,7 +430,7 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
                          WBState &q0_im1, WBState &q0_imh, WBState &q0_i,
                          WBState &q0_iph, WBState &q0_ip1,
                          const Real t_im1c = -1.0, const Real t_ic = -1.0,
-                         const Real t_ip1c = -1.0) {
+                         const Real t_ip1c = -1.0, const Real *thermo_i = nullptr) {
   // t_*c: the cached temperatures of the three cells (WBT), or -1 to solve.
   // The four advanced points get their pressure from the temperature WBAdvance() hands
   // back, not from a fresh root find: the states have only just been constructed and
@@ -473,8 +473,13 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
     // from the evaluation at each segment's end, which also delivers that state's e and
     // p: anchor (p_i and the anchor coefficient), two interfaces, two neighbours.  A
     // third of the midpoint version's table traffic at the same order (see `seg`).
+    // thermo_i (dhjwball-1106): the anchor's p, chi_rho, chi_T already evaluated at t_i
     Real ei_t, p_i, chir, chit;
-    eos.ThermoAt(rho_i, t_i, ei_t, p_i, chir, chit, dum_cv);
+    if (thermo_i != nullptr) {
+      p_i = thermo_i[0]; chir = thermo_i[1]; chit = thermo_i[2];
+    } else {
+      eos.ThermoAt(rho_i, t_i, ei_t, p_i, chir, chit, dum_cv);
+    }
     q0_i.p = p_i;
     const Real a = dlntdphi;   // dT/dPhi
     // one segment: predictor with the start coefficient k0, ONE table evaluation at the

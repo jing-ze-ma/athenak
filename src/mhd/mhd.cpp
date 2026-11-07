@@ -537,6 +537,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // cubed sphere, where x1v is the radius) honours it -- a Cartesian mesh has no radius
     // to compare against.  Mirror of <hydro>/wb_rmax.
     wb_rmax = pin->GetOrAddReal("mhd","wb_rmax",0.0);
+    if (pin->DoesParameterExist("mhd","wb_poison_test")) wb_poison = pin->GetBoolean("mhd","wb_poison_test");
     // ...and off BELOW this radius (0 = never), same path, same caveat.
     wb_rmin = pin->GetOrAddReal("mhd","wb_rmin",0.0);
     // radiation-modified CFL signal speed (mhd_newdt.cpp), the MHD form of
@@ -630,7 +631,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
           const int nmbw = std::max((pmy_pack->nmb_thispack), (pmy_pack->pmesh->nmb_maxperrank));
           Kokkos::realloc(wbq2, nmbw, 15, c3, c2, c1);
           if (c3 > 1) Kokkos::realloc(wbq3, nmbw, 15, c3, c2, c1);
-          Kokkos::realloc(wbw, nmbw, 3, c3, c2, c1);
+          Kokkos::realloc(wbw, nmbw, 7, c3, c2, c1);
           Kokkos::deep_copy(wbw, 1.0);
           if (pin->DoesParameterExist("mhd","wb_seam") && pin->GetBoolean("mhd","wb_seam")) {
             if (!pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->multilevel) {
