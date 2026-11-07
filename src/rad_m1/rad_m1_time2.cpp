@@ -440,6 +440,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_k1_fct")) {   // seamE-1106
     t2_k1fct = pin->GetReal("rad_m1", "time2_k1_fct");
   }
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_fct_dbg")) {
+    t2_k1fct_dbg = pin->GetInteger("rad_m1", "time2_k1_fct_dbg");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_fct_rounds")) {
     t2_k1fct_r = pin->GetInteger("rad_m1", "time2_k1_fct_rounds");
   }

@@ -5100,95 +5100,63 @@ void M1CsTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol,
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitK1Fct
-//! \brief seamE-1106 <rad_m1>/time2_k1_fct = th (> 0, read only when named): flux-corrected
-//! stage-1 increment.  Where E + ca K1_E < th E, the OUTFLOW of the cell's face fluxes in
-//! K1_E is scaled down by the fraction delta that restores th E (Zalesak's donor limit, as
-//! FOFC limits the donor's flux): a face's correction is delta(donor) x cr A_f F_f and
-//! enters both cells with opposite sign, so sum V K1_E telescopes.  delta is exchanged
-//! (ghost mask), so block, rank and panel-seam faces use the same donor delta; A_f is the
-//! canonical seam area (M1CsRowGeo).  Cells that lose inflow are caught by the next round
-//! (time2_k1_fct_rounds).  Where nothing fires K1 is untouched, so the scheme stays
-//! second order.  K1 is the stored slope: stage 2 reads the same limited field (the
-//! tableau's weights).  E channel only: the face slopes of K1 (F) and the gas channels
-//! are not changed; they do not enter the row's E budget through this term.
+//! \brief seamE-1106 <rad_m1>/time2_k1_fct = th (> 0, read only when named): the stage-1
+//! explicit increment made positive by CONSERVATIVE FACE CORRECTIONS of K1_E.
+//!
+//! Scaling a cell's outflow (Zalesak's donor form) cannot work here: the face fluxes in K1
+//! carry dt F A/V ~ 60 E through a cell whose net change is much smaller (measured, HG
+//! rst 139, time2_k1_fct_dbg), so one donor's scaling empties its receiver.  Instead a
+//! cell with E + ca K1_E < th E (deficit D, rate x volume) takes D across its open faces
+//! from neighbours with room Q = (E + ca K1_E - th E) V/ca, in proportion to Q:
+//!   t_f = r_c Q_n beta_n,  r_c = D_c/sum_nb Q_nb,  beta_n = min(1, 1/sum_nb r_nb).
+//! r, Q and beta are cell fields with their ghosts exchanged, so the two cells of a face,
+//! on any rank and across a panel seam (plain mirror copy), compute the SAME t_f: sum V K1_E
+//! telescopes.  No neighbour has room: r < 0, an equal split across the open faces, which
+//! passes the deficit one cell on per round (time2_k1_fct_rounds, default 8).  What is left
+//! goes to time2_posfix.  Nothing fires in a smooth field: K1 is untouched, second order.
+//! K1 is the stored slope, so stage 2 reads the same field (the tableau's weights).  E
+//! channel only: the K1 face slopes (F) and the gas channels are unchanged; the correction
+//! moves energy between E of neighbouring cells within the explicit increment.
 void RadiationM1::ImplicitK1Fct(const Real ca) {
   if (iw.extent_int(1) <= M1_IW_KZ || !trans_on) {return;}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
-  if (t2fct_cum.extent_int(0) != nmb1 + 1) {
-    Kokkos::realloc(t2fct_cum, nmb1 + 1, iw.extent_int(2), iw.extent_int(3), iw.extent_int(4));
-  }
-  Kokkos::deep_copy(DevExeSpace(), t2fct_cum, 0.0);
-  auto cum_ = t2fct_cum;
   auto iw_ = iw;
   auto u0_ = u0;
   auto k1_ = t2k1;
-  auto f1_ = f0x1;
-  auto f2_ = f0x2;
-  auto f3_ = f0x3;
   auto cvol = pmy_pack->pcoord->volume;
-  auto carea = pmy_pack->pcoord->area;
-  auto cdxf = M1Dxf();
-  auto csn2 = pmy_pack->pcoord->sin_face_xi;
-  auto csn3 = pmy_pack->pcoord->sin_face_eta;
-  auto cx1v = pmy_pack->pcoord->x1v;
-  auto cx1f = pmy_pack->pcoord->xx1f;
-  auto cseam = cs_seam.d_view;
-  auto g2_ = csg2;
-  auto g3_ = csg3;
   auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
   auto bcs = mbbcs.d_view;
-  const bool csg = cs_geom, thrd = trans_x3;
-  const Real cr = chat/c_light, th = t2_k1fct;
-  // the six outward fluxes (rate of E x V) of cell (m,k,j,i); a physical boundary face is 0
-  auto flows = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real *o) {
-    const auto open = [&](const BoundaryFace bf) {
+  const bool thrd = trans_x3;
+  const Real th = t2_k1fct;
+  const int cq = M1_IW_KZ, cr = M1_IW_KS, cb = M1_IW_KTT;
+  // face n (0,1: x1 -,+; 2,3: x2; 4,5: x3) of cell (m,k,j,i) has a neighbour
+  auto fopen = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, const int n) {
+    const auto o = [&](const BoundaryFace bf) {
       const BoundaryFlag q = bcs(m,bf);
       return (q == BoundaryFlag::block) || (q == BoundaryFlag::periodic);
     };
-    for (int n = 0; n < 6; ++n) {o[n] = 0.0;}
-    if (i > is || open(BoundaryFace::inner_x1)) {o[0] = -cr*carea.x1f(m,k,j,i)*f1_(m,k,j,i);}
-    if (i < ie || open(BoundaryFace::outer_x1)) {o[1] = cr*carea.x1f(m,k,j,i+1)*f1_(m,k,j,i+1);}
-    Real a2m = carea.x2f(m,k,j,i), a2p = carea.x2f(m,k,j+1,i);
-    Real a3m = thrd ? carea.x3f(m,k,j,i) : 0.0, a3p = thrd ? carea.x3f(m,k+1,j,i) : 0.0;
-    if (csg) {
-      const M1CsRowGeo<decltype(carea), decltype(csn2), decltype(g2_), decltype(cseam),
-                       decltype(cx1v)>
-          geo{carea, cdxf, csn2, csn3, g2_, g3_, cseam, cx1v, cx1f, js, je, ks, ke};
-      a2m = geo.A2m(m,k,j,i);
-      a2p = geo.A2p(m,k,j,i);
-      a3m = geo.A3m(m,k,j,i);
-      a3p = geo.A3p(m,k,j,i);
-    }
-    if (j > js || open(BoundaryFace::inner_x2)) {o[2] = -cr*a2m*f2_(m,k,j,i);}
-    if (j < je || open(BoundaryFace::outer_x2)) {o[3] = cr*a2p*f2_(m,k,j+1,i);}
-    if (thrd) {
-      if (k > ks || open(BoundaryFace::inner_x3)) {o[4] = -cr*a3m*f3_(m,k,j,i);}
-      if (k < ke || open(BoundaryFace::outer_x3)) {o[5] = cr*a3p*f3_(m,k+1,j,i);}
+    switch (n) {
+      case 0: return (i > is) || o(BoundaryFace::inner_x1);
+      case 1: return (i < ie) || o(BoundaryFace::outer_x1);
+      case 2: return (j > js) || o(BoundaryFace::inner_x2);
+      case 3: return (j < je) || o(BoundaryFace::outer_x2);
+      case 4: return thrd && ((k > ks) || o(BoundaryFace::inner_x3));
+      default: return thrd && ((k < ke) || o(BoundaryFace::outer_x3));
     }
   };
   Real nfire = 0.0;
   for (int r = 0; r < t2_k1fct_r; ++r) {
     Real nb = 0.0;
-    par_reduce_flat("m1_k1fct_d", 0, nmb1, ks, ke, js, je, is, ie,
+    par_reduce_flat("m1_k1fct_q", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
-      iw_(m,M1_IW_KZ,k,j,i) = 0.0;
       const Real e0 = u0_(m,M1_E,k,j,i);
-      const Real ev = e0 + ca*k1_(m,M1_T2_E,k,j,i);
-      if (ev >= th*e0) return;
-      Real o[6];
-      flows(m, k, j, i, o);
-      Real pp = 0.0;
-      for (int n = 0; n < 6; ++n) {pp += (o[n] > 0.0) ? o[n] : 0.0;}
-      const Real left = 1.0 - cum_(m,k,j,i);
-      if (!(pp > 0.0) || !(left > 0.0)) return;
-      const Real rr = (th*e0 - ev)/ca*cvol(m,k,j,i);
-      const Real d = (rr/pp < left) ? rr/pp : left;
-      iw_(m,M1_IW_KZ,k,j,i) = d;
-      cum_(m,k,j,i) += d;
-      a += 1.0;
+      const Real s = (e0 + ca*k1_(m,M1_T2_E,k,j,i) - th*e0)/ca*cvol(m,k,j,i);
+      // cq: > 0 room, < 0 deficit
+      iw_(m,cq,k,j,i) = s;
+      if (s < 0.0) {a += 1.0;}
     }, Kokkos::Sum<Real>(nb));
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, &nb, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
@@ -5196,19 +5164,67 @@ void RadiationM1::ImplicitK1Fct(const Real ca) {
     if (r == 0) {nfire = nb;}
     t2_k1fct_n += nb;
     if (!(nb > 0.0)) {break;}
-    ImplicitKrylovHalo(M1_IW_KZ);
-    par_for("m1_k1fct_c", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    ImplicitKrylovHalo(cq);
+    par_for("m1_k1fct_r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real o[6];
-      flows(m, k, j, i, o);
-      const Real dc = iw_(m,M1_IW_KZ,k,j,i);
-      const Real dn[6] = {iw_(m,M1_IW_KZ,k,j,i-1), iw_(m,M1_IW_KZ,k,j,i+1),
-                          iw_(m,M1_IW_KZ,k,j-1,i), iw_(m,M1_IW_KZ,k,j+1,i),
-                          thrd ? iw_(m,M1_IW_KZ,k-1,j,i) : 0.0,
-                          thrd ? iw_(m,M1_IW_KZ,k+1,j,i) : 0.0};
+      Real rv = 0.0;
+      const Real s = iw_(m,cq,k,j,i);
+      if (s < 0.0) {
+        const Real qn[6] = {iw_(m,cq,k,j,i-1), iw_(m,cq,k,j,i+1), iw_(m,cq,k,j-1,i),
+                            iw_(m,cq,k,j+1,i), thrd ? iw_(m,cq,k-1,j,i) : 0.0,
+                            thrd ? iw_(m,cq,k+1,j,i) : 0.0};
+        Real sq = 0.0, no = 0.0;
+        for (int n = 0; n < 6; ++n) {
+          if (fopen(m, k, j, i, n)) {
+            no += 1.0;
+            if (qn[n] > 0.0) {sq += qn[n];}
+          }
+        }
+        if (sq > 0.0) {
+          rv = -s/sq;
+        } else if (no > 0.0) {
+          rv = s/no;   // < 0: equal split, -rv per face
+        }
+      }
+      iw_(m,cr,k,j,i) = rv;
+    });
+    ImplicitKrylovHalo(cr);
+    par_for("m1_k1fct_b", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real rn[6] = {iw_(m,cr,k,j,i-1), iw_(m,cr,k,j,i+1), iw_(m,cr,k,j-1,i),
+                          iw_(m,cr,k,j+1,i), thrd ? iw_(m,cr,k-1,j,i) : 0.0,
+                          thrd ? iw_(m,cr,k+1,j,i) : 0.0};
+      Real sr = 0.0;
+      for (int n = 0; n < 6; ++n) {
+        if (fopen(m, k, j, i, n) && rn[n] > 0.0) {sr += rn[n];}
+      }
+      iw_(m,cb,k,j,i) = (sr > 1.0) ? 1.0/sr : 1.0;
+    });
+    ImplicitKrylovHalo(cb);
+    par_for("m1_k1fct_u", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const auto at = [&](const int c, const int n) {
+        switch (n) {
+          case 0: return iw_(m,c,k,j,i-1);
+          case 1: return iw_(m,c,k,j,i+1);
+          case 2: return iw_(m,c,k,j-1,i);
+          case 3: return iw_(m,c,k,j+1,i);
+          case 4: return iw_(m,c,k-1,j,i);
+          default: return iw_(m,c,k+1,j,i);
+        }
+      };
+      const Real qc = iw_(m,cq,k,j,i), rc = iw_(m,cr,k,j,i), bc = iw_(m,cb,k,j,i);
       Real dk = 0.0;
-      // an outflow scaled by the donor's delta: this cell donor, or the neighbour donor
-      for (int n = 0; n < 6; ++n) {dk += o[n]*((o[n] > 0.0) ? dc : dn[n]);}
+      for (int n = 0; n < (thrd ? 6 : 4); ++n) {
+        if (!fopen(m, k, j, i, n)) {continue;}
+        const Real qn = at(cq, n), rn = at(cr, n), bn = at(cb, n);
+        // into this cell (it is the deficit cell of the face)
+        if (rc > 0.0 && qn > 0.0) {dk += rc*qn*bn;}
+        if (rc < 0.0) {dk -= rc;}
+        // out of this cell (the neighbour is the deficit cell)
+        if (rn > 0.0 && qc > 0.0) {dk -= rn*qc*bc;}
+        if (rn < 0.0) {dk += rn;}
+      }
       k1_(m,M1_T2_E,k,j,i) += dk/cvol(m,k,j,i);
     });
   }
