@@ -253,6 +253,11 @@ void WbFluxDiag(MeshBlockPack *pmbp, DvceFaceFld5D<Real> &uflx) {
       for (int k = ks; k <= ke; ++k) for (int i = is; i <= ie; ++i) {
         const Real d = fabs(f2(a,IDN,k,je+1,i) - f2(b,IDN,k,js,i)), r = fabs(f2(a,IDN,k,je+1,i));
         ref2 = fmax(ref2, r);
+        if (d > 1.0e-12*fmax(r, 1.0e-300) && std::getenv("WB_FDIAG2") != nullptr && i == is + 9) {
+          std::cout << "  x2 pair " << a << " " << b << " panel " << pn.h_view(a) << " k " << k
+                    << " x3[" << A.x3min << "," << A.x3max << "] x2max " << A.x2max << " dF " << d
+                    << " F " << r << std::endl;
+        }
         if (d > mx2) {mx2 = d; ii2 = i; kk2 = k;}
       }
     }
