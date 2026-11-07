@@ -2480,6 +2480,8 @@ class RadiationM1 {
   void VetLatFbFill();
   bool ImplicitFbLocal(int it, int odm);
   void ImplicitFbDiagPass(int it);
+  void ImplicitSeamRowDump(int it, int kd, Real nb);   // seamE-1106
+  int sdm_n = 0, sdm_done = 0;
   void ImplicitFbDiagSolve(int npass);
   void ImplicitFbSummary();
   int vlat_nmu = 4, vlat_npsi = 4, vlat_every = 1, vlat_iinit = 3;
