@@ -5429,7 +5429,8 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     // dhjwball-1106 problem/wb_lobe_cut (USER 11-06: no WB outside the Roche lobe, every run;
     // opt-in until gated): cap on the wb_phimax scale at the accretor's own L1, with the
     // spin term and the radiation offset of Phi_wb (shared: roche::L1Distance, wball w)
-    if (pin->GetOrAddBoolean("problem", "wb_lobe_cut", false)) {
+    // USER 11-07 make some defaults: default true (false = old, no cap)
+    if (pin->GetOrAddBoolean("problem", "wb_lobe_cut", true)) {
       spr_lobe_ = true;
       spr_dl1_ = roche::L1Distance(p.gma, p.gmd, p.asep, SQR(p.omega));
       Real cap = RochePot(p, spr_dl1_, 0.0) - dlt*SQR(fmin(spr_dl1_, rspin));
