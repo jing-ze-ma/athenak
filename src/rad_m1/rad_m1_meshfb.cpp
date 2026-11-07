@@ -253,7 +253,7 @@ void RadiationM1::ImplicitFbDiagPass(int it) {
       dv(m,k,j,i) = sv(m,c,k,j,i);
     });
     Kokkos::fence();
-    auto hv = Kokkos::create_mirror_view(HostMemSpace(), dv);
+    auto hv = Kokkos::create_mirror(HostMemSpace(), dv);   // rsgdiag-1107: a new array also on CPU (mirror_view aliased dt3: every fetch read the last one)
     Kokkos::deep_copy(hv, dv);
     return hv;
   };
@@ -356,7 +356,7 @@ void RadiationM1::ImplicitSeamRowDump(int it, int kd, Real nb) {
       dv(m,k,j,i) = sv(m,c,k,j,i);
     });
     Kokkos::fence();
-    auto hv = Kokkos::create_mirror_view(HostMemSpace(), dv);
+    auto hv = Kokkos::create_mirror(HostMemSpace(), dv);   // rsgdiag-1107: a new array also on CPU (mirror_view aliased dt3: every fetch read the last one)
     Kokkos::deep_copy(hv, dv);
     return hv;
   };
