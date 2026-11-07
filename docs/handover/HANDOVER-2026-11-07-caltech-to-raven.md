@@ -111,8 +111,10 @@ Common to all runs:
 - `implicit_fb_local` on RSG: floors x2.6 (m1_pos_flr 3044/3031 vs 1173 global path) in both tensor arms, unexplained (cstan_1106).
 - Old STOP file: `prodH/STOP` exists on Caltech. It must stay there while Raven runs RSG (section 6.4).
 
-**RSG r7 test 11-07 (Caltech, 600 cycles)**
-_(placeholder: the coordinator adds the result. Arm `$J/rsgr7_1107/r7`, rst 1295, 4 H200, keys `rad_m1/cs_cross_mono=true rad_m1/implicit_opac_newton=false mesh/cs_seam_rho_guard=4 rad_m1/implicit_predictor_tcap=1.1 rad_m1/time2_k1_redist=0.1 rad_m1/implicit_fb_local=true rad_m1/implicit_fb_local_rounds=4 rad_m1/implicit_fb_diag=300`, binary md5 85587996, ended rc 0 at 09:41 PST.)_
+**RSG r7 test 11-07 (Caltech, 319 cycles, stopped early for merge gates)**
+Arm `$J/rsgr7_1107/r7`, rst 1295 (cycle 589788 -> 590107), 4 H200, binary sd19 (seamE-1106, md5 85587996), RSG production keys (runH.cfg XKEYS, no k1_stiff) plus `rad_m1/cs_cross_mono=true rad_m1/implicit_opac_newton=false mesh/cs_seam_rho_guard=4 rad_m1/implicit_predictor_tcap=1.1 rad_m1/time2_k1_redist=0.1 rad_m1/implicit_fb_local=true rad_m1/implicit_fb_local_rounds=4 rad_m1/implicit_fb_diag=300`; hst on (dcycle 10).
+Compared with rsgdiag_1107 arms from the same rst (base = production keys + cs_cross_mono + guard_mode 7; ecap2 = base + implicit_predictor_ecap=2), per cycle: NOT POSITIVE r7 0.21 / base 0.28 / ecap2 0.19; NOT ADMISSIBLE 0.07 / 0.13 / 0.075; BE redos 1 in 315 / 4 in 159 / 4 in 226; fbdiag trigger lines ~1.1 / ~5.3 / ~0.9 (rough: r7 did not reach an FBDIAG_SUM line). No FATAL, no NON-CONVERGED.
+Too short for the energy budget, drifts, or the fb_local floor rise (x2.6 on RSG in cstan_1106). **Next RSG arm (priority):** r7 + `implicit_predictor_ecap=2` (the two target different triggers: seam/lag vs hot predictor start in cold downdrafts), with a production noise member, >= 2000 cycles, energy gate and floor counters.
 
 ### 2.2 HG = He giant (`hgglob_1021/prodG`)
 **Physics.** Global 3-D He giant (14.5 Msun stripped-star model, MESA r15140 14p5M wide binary, X 0.0009 Y 0.978), R_ph ~103 Rsun, T_eff ~7800 K, L_top ~1.38e38 erg/s. Full sphere C128 (6 x 2x2 blocks of 704 x 64 x 64), r 3-200 Rsun, same radiation recipe as RSG plus geodesic 42 directions with vet_rotate_avg 8, cfl 0.3 (explicit), dt 80-110 s. Fresh 10-22 (N^2 surface seed). Purpose: He-giant envelope structure, convection 17.8-94 Rsun, a 53 d radial mode, settling (hg_relax_1106: r > 15 Rsun relaxed; deep part needs ~500-900 more star days).
