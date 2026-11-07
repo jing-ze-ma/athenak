@@ -1783,6 +1783,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (pin->GetOrAddBoolean("problem","wb_lobe_cut",false)) {
         if (pmbp->pmhd != nullptr) pmbp->pmhd->wb_phimax = phil1;
         if (pmbp->phydro != nullptr) pmbp->phydro->wb_phimax = phil1;
+        // the hse top ghosts are a hydrostatic walk (WBAdvance) and wb_seam a walked resample
+        if (dhj_top_bc == 0 && !(phtop < phil1)) {
+          std::cout << "### FATAL ERROR: problem/wb_lobe_cut with an open top shell needs "
+                    << "problem/top_bc = outflow1 or outflow0 (hse walks the ghosts)" << std::endl;
+          exit(EXIT_FAILURE);
+        }
+        if (pin->GetOrAddBoolean(pmbp->pmhd != nullptr ? "mhd" : "hydro", "wb_seam", false)) {
+          std::cout << "### FATAL ERROR: problem/wb_lobe_cut: wb_seam does not honor "
+                    << "wb_phimax" << std::endl;
+          exit(EXIT_FAILURE);
+        }
         if (global_variable::my_rank == 0) {
           std::cout << "deep_hot_jupiter_rt: problem/wb_lobe_cut: wb_phimax = Phi(L1) = "
                     << phil1 << std::endl;

@@ -389,6 +389,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // cubed sphere, where x1v is the radius) honours it -- a Cartesian mesh has no radius
   // to compare against.
   wb_rmax = pin->GetOrAddReal("hydro","wb_rmax",0.0);
+  if (pin->DoesParameterExist("hydro","wb_poison_test")) wb_poison = pin->GetBoolean("hydro","wb_poison_test");
   // ...and off BELOW this radius (0 = never), same path, same caveat.
   wb_rmin = pin->GetOrAddReal("hydro","wb_rmin",0.0);
   nan_report = pin->GetOrAddBoolean("problem","nan_report",false);

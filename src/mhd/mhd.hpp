@@ -476,6 +476,7 @@ class MHD {
   // dhjwball-1106: cells whose x1 WB potential exceeds it take plain PLM (Hydro::wb_phimax;
   // wb_dirs = all: w = 0).  1e300 = never.  Set by the pgen.
   Real wb_phimax = 1.0e300;
+  bool wb_poison = false;   // dhjwball-1106 TEST ONLY <block>/wb_poison_test: hydro_wball WbPoison
   // Mirror of wb_rmax at the bottom of the domain: below wb_rmin the dynamic x1
   // well-balanced reconstruction and the matching well-balanced gravity source are
   // switched off cell by cell; 0 = never.  Same failure mode from the other side --

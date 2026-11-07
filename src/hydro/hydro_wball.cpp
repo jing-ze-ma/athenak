@@ -66,6 +66,7 @@ void WbAllBuild(WbAllCtx &c) {
   auto &ww = wbw;
   const bool wgt = wb_weight;
   const Real phimx = c.phimax;
+  auto pw = c.phiwb;
   const Real r0 = wbw_r0, r1 = wbw_r1, m0 = wbw_m0, m1 = wbw_m1, eta = wbw_eta;
   const bool wbgi = wb_guard_ideal;
   const Real gam = eos.gamma, gm1 = eos.gamma - 1.0;
@@ -138,7 +139,12 @@ void WbAllBuild(WbAllCtx &c) {
         w = WbRamp(rd, r0, r1)*WbRamp(mach, m0, m1);
       }
       // dhjwball-1106: no WB outside wb_phimax (dhj Roche: the L1 equipotential)
-      if (fmax(fmax(fm, fc), fp) > phimx) w = 0.0;
+      // (the wb_phimax scale = phiwb; x1 neighbours too: the AM background reads their wbq0)
+      if (phimx < 1.0e299) {
+        const int ia = (i > 0) ? i - 1 : 0, ib = (i < n1 - 1) ? i + 1 : n1 - 1;
+        if (fmax(fmax(pw(m,km,jm,i), pw(m,k,j,i)), pw(m,kp,jp,i)) > phimx ||
+            fmax(pw(m,k,j,ia), pw(m,k,j,ib)) > phimx) w = 0.0;
+      }
       ww(m,dir-1,k,j,i) = w;
     });
   }
@@ -153,6 +159,19 @@ void WbAllBuild(WbAllCtx &c) {
 //! from the user source of the stage whose fluxes built them.
 
 void WbAllAmBackground(WbAllCtx &c);
+//! dhjwball-1106 <fluid>/wb_poison_test (TEST ONLY): every cached WB background of a cell
+//! with Phi_wb > wb_phimax -> a huge value: if any code path still reads it, the run differs
+//! from the run without the key.  nv channels of cache(m,n,k,j,i).
+void WbPoison(MeshBlockPack *pmbp, DvceArray5D<Real> &cache, const DvceArray4D<Real> &phiwb,
+              const Real phimax) {
+  auto q = cache; auto pw = phiwb;
+  const int nm = pmbp->nmb_thispack - 1, nv = q.extent_int(1) - 1;
+  const int n3 = q.extent_int(2) - 1, n2 = q.extent_int(3) - 1, n1 = q.extent_int(4) - 1;
+  par_for("wb_poison", DevExeSpace(), 0, nm, 0, nv, 0, n3, 0, n2, 0, n1,
+  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+    if (pw(m,k,j,i) > phimax) q(m,n,k,j,i) = 1.0e40;
+  });
+}
 void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1) {
   WBALL_ALIASES;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -431,7 +450,7 @@ WbAllCtx Hydro::WbCtx() {
   c.w0 = w0; c.u0 = u0; c.wder = wder; c.wbq0 = wbq0; c.wbq2 = wbq2; c.wbq3 = wbq3;
   c.wbw = wbw; c.phicc = phicc0; c.wtemp = wtemp; c.pwb = pwb; c.phi1f = phi0.x1f; c.phi2f = phi0.x2f; c.phi3f = phi0.x3f; c.pam = pam;
   c.wbam_u = &wbam_u; c.wbam_w = &wbam_w; c.wbam_f = &wbam_f;
-  c.phimax = wb_phimax;
+  c.phimax = wb_phimax; c.phiwb = phicc_wb;
   return c;
 }
 void Hydro::BuildWBCacheAll() {WbAllCtx c = WbCtx(); WbAllBuild(c);}

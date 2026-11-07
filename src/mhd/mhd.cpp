@@ -537,6 +537,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // cubed sphere, where x1v is the radius) honours it -- a Cartesian mesh has no radius
     // to compare against.  Mirror of <hydro>/wb_rmax.
     wb_rmax = pin->GetOrAddReal("mhd","wb_rmax",0.0);
+    if (pin->DoesParameterExist("mhd","wb_poison_test")) wb_poison = pin->GetBoolean("mhd","wb_poison_test");
     // ...and off BELOW this radius (0 = never), same path, same caveat.
     wb_rmin = pin->GetOrAddReal("mhd","wb_rmin",0.0);
     // radiation-modified CFL signal speed (mhd_newdt.cpp), the MHD form of
