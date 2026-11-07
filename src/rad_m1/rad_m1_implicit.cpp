@@ -5111,8 +5111,9 @@ void M1CsTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol,
 //!   t_f = r_c Q_n beta_n,  r_c = D_c/sum_nb Q_nb,  beta_n = min(1, 1/sum_nb r_nb).
 //! r, Q and beta are cell fields with their ghosts exchanged, so the two cells of a face,
 //! on any rank and across a panel seam (plain mirror copy), compute the SAME t_f: sum V K1_E
-//! telescopes.  No neighbour has room: r < 0, an equal split across the open faces, which
-//! passes the deficit one cell on per round (time2_k1_fct_rounds, default 8).  What is left
+//! telescopes.  No neighbour has room: r = -D_c/sum_nb E_nb, a relay in proportion to the
+//! neighbours' E, which passes the deficit one cell on per round, mostly towards larger E
+//! (time2_k1_fct_rounds, default 16; E is exchanged once).  What is left
 //! goes to time2_posfix.  Nothing fires in a smooth field: K1 is untouched, second order.
 //! K1 is the stored slope, so stage 2 reads the same field (the tableau's weights).  E
 //! channel only: the K1 face slopes (F) and the gas channels are unchanged; the correction
@@ -5131,7 +5132,7 @@ void RadiationM1::ImplicitK1Fct(const Real ca) {
   auto bcs = mbbcs.d_view;
   const bool thrd = trans_x3;
   const Real th = t2_k1fct;
-  const int cq = M1_IW_KZ, cr = M1_IW_KS, cb = M1_IW_KTT;
+  const int cq = M1_IW_KZ, cr = M1_IW_KS, cb = M1_IW_KTT, ce = M1_IW_KY;
   // face n (0,1: x1 -,+; 2,3: x2; 4,5: x3) of cell (m,k,j,i) has a neighbour
   auto fopen = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, const int n) {
     const auto o = [&](const BoundaryFace bf) {
@@ -5148,6 +5149,7 @@ void RadiationM1::ImplicitK1Fct(const Real ca) {
     }
   };
   Real nfire = 0.0;
+  bool efill = false;
   for (int r = 0; r < t2_k1fct_r; ++r) {
     Real nb = 0.0;
     par_reduce_flat("m1_k1fct_q", 0, nmb1, ks, ke, js, je, is, ie,
@@ -5164,6 +5166,15 @@ void RadiationM1::ImplicitK1Fct(const Real ca) {
     if (r == 0) {nfire = nb;}
     t2_k1fct_n += nb;
     if (!(nb > 0.0)) {break;}
+    if (!efill) {
+      // the relay's weights: E at the stage start, ghosts included (fixed in the rounds)
+      par_for("m1_k1fct_e", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        iw_(m,ce,k,j,i) = fmax(u0_(m,M1_E,k,j,i), 0.0);
+      });
+      ImplicitKrylovHalo(ce);
+      efill = true;
+    }
     ImplicitKrylovHalo(cq);
     par_for("m1_k1fct_r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -5173,17 +5184,20 @@ void RadiationM1::ImplicitK1Fct(const Real ca) {
         const Real qn[6] = {iw_(m,cq,k,j,i-1), iw_(m,cq,k,j,i+1), iw_(m,cq,k,j-1,i),
                             iw_(m,cq,k,j+1,i), thrd ? iw_(m,cq,k-1,j,i) : 0.0,
                             thrd ? iw_(m,cq,k+1,j,i) : 0.0};
-        Real sq = 0.0, no = 0.0;
+        const Real en[6] = {iw_(m,ce,k,j,i-1), iw_(m,ce,k,j,i+1), iw_(m,ce,k,j-1,i),
+                            iw_(m,ce,k,j+1,i), thrd ? iw_(m,ce,k-1,j,i) : 0.0,
+                            thrd ? iw_(m,ce,k+1,j,i) : 0.0};
+        Real sq = 0.0, se = 0.0;
         for (int n = 0; n < 6; ++n) {
           if (fopen(m, k, j, i, n)) {
-            no += 1.0;
+            se += en[n];
             if (qn[n] > 0.0) {sq += qn[n];}
           }
         }
         if (sq > 0.0) {
           rv = -s/sq;
-        } else if (no > 0.0) {
-          rv = s/no;   // < 0: equal split, -rv per face
+        } else if (se > 0.0) {
+          rv = s/se;   // < 0: relay, -rv E_n per face: mostly towards the larger E
         }
       }
       iw_(m,cr,k,j,i) = rv;
@@ -5214,16 +5228,17 @@ void RadiationM1::ImplicitK1Fct(const Real ca) {
         }
       };
       const Real qc = iw_(m,cq,k,j,i), rc = iw_(m,cr,k,j,i), bc = iw_(m,cb,k,j,i);
+      const Real ec = iw_(m,ce,k,j,i);
       Real dk = 0.0;
       for (int n = 0; n < (thrd ? 6 : 4); ++n) {
         if (!fopen(m, k, j, i, n)) {continue;}
-        const Real qn = at(cq, n), rn = at(cr, n), bn = at(cb, n);
+        const Real qn = at(cq, n), rn = at(cr, n), bn = at(cb, n), en = at(ce, n);
         // into this cell (it is the deficit cell of the face)
         if (rc > 0.0 && qn > 0.0) {dk += rc*qn*bn;}
-        if (rc < 0.0) {dk -= rc;}
+        if (rc < 0.0) {dk -= rc*en;}
         // out of this cell (the neighbour is the deficit cell)
         if (rn > 0.0 && qc > 0.0) {dk -= rn*qc*bc;}
-        if (rn < 0.0) {dk += rn;}
+        if (rn < 0.0) {dk += rn*ec;}
       }
       k1_(m,M1_T2_E,k,j,i) += dk/cvol(m,k,j,i);
     });
