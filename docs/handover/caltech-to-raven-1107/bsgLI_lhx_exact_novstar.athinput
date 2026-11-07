@@ -1,0 +1,312 @@
+# LHX RUSTY ARM (USER 11-06): kick-fixed vstarfix deck with Linhao athinput.bsg_star.rusty: no FOFC, his SMR lateral grid incl. radiation, his floors and seed threshold. Not matched: rk2 (his VL2), M1 + vet_gd (his DO); cfl_rad applied; his GM; USER 11-06 normal CFL 0.3, rad_signal_speed on; USER 11-06 twin off
+# bsgli_1104 bsgLI_exact (USER 11-04 12:50 "follow Linhao's setting exactly, except with our radiation"; 12:55 "fix their gravity
+# VSN+MLAT ARM (USER 11-05 ~19:05): bsgLI_exact + rad_m1/doppler_vel = vstar_n + hydro merge_lat x2 below 35 Rsun (Linhao SMR base 128^2), NO sink; from t = 0 to 57.4 d
+# Binary: run branch linhao-prod-1104 (origin/prod-1102 21dfeb5d8 + Linhao IC/BC commits + he_bc_outer_r2 + he_ic_linhao_gext).
+# His code = docs/handover/bsg-paper-code-1104/bsg_star.cpp on bsg-files-1009 (cpp:N). He sent no athinput: its settings are [PAPER].
+<comment>
+VSN+SINK ARM (PREPARED ONLY, NOT LAUNCHED; 1-D best match S3 in LINHAO1D.txt) -- base: DOFACE ARM (athpp-doface-1105, PREPARED ONLY, NOT LAUNCHED: user decides): bsgLI_exact.athinput + rad_m1/doppler_vel = vstar_n (doppler_face dropped 11-05: inert), from t = 0; USER 11-05 GO after GPU gate
+TABLE  setting | his code (bsg_star.cpp line, or athinput -> paper 2609.28656 txt) | ours (this deck) | status.  Labels: [HIS] matched his code; [FIXED] made to match on linhao-prod-1104;
+       [USER] user change; [PAPER] his athinput missing, value from the paper; [RT] ours by necessity (M1+VET vs DO); [OURS] numerical default kept (user); [CANNOT] cannot match (reason)
+ IC r<=rmax rho,T,F_r linear in r        | cpp:434-451                                   | he_ic_linhao, same formula + file (cgs)        | [HIS]
+ IC atmosphere gravity (r>52.49 Rsun)    | cpp:429 g=g(rmax)(r/rmax)^+2                  | he_ic_linhao_gext = invsq: HSE in GM/r^2       | [USER] fixed (his r^+2 = gext r2)
+ IC atmosphere T, floor, F               | cpp:424-431 T(rmax), max(rho,dfloor), F=0     | same                                           | [HIS]
+ IC v, gas energy                        | cpp:464-469 v=0, IEN=rho T/(g-1) unperturbed  | same                                           | [HIS]
+ IC seed                                 | cpp:384,457-463 5 % p-p, isobaric, rho>0.01 code, srand(gid) | amp 0.05, rho_thr 1e-11 g/cc, splitmix64(cell) | [HIS] form; RNG [CANNOT] (his is layout-dependent); threshold assumes density_unit 1e-9 (unknown; rho(rmax)=2.6e-11 so the whole profile is seeded either way)
+ our seed                                | none                                          | he_seed 0, he_seed_band old                    | [HIS] (nothing else seeds)
+ IC radiation                            | cpp:476-501 two-zone I+-                      | E=aT^4, F1=F_r                                 | [RT] same moments
+ inner ghosts rho, P                     | cpp:318-350,797-801 bd_data linear in r, P=rho T | he_bc_linhao                                 | [HIS]
+ inner ghost radii                       | x1v(is-i), dr 0.3125 Rsun                     | same faces (19.2196 19.5321 19.8446 Rsun)      | [HIS] (grid below)
+ inner ghost count                       | NGHOST 2 (xorder 2)                           | 3 (ghost 3 not read by PLM/HLLC, halfrange)    | matched in effect
+ inner ghost v                           | cpp:798-861 v=0; ghost-1 v_r iterated to HLLC S_M=0 (<=100 it, tol 1e-20) | he_bc_inner = zerocontact: same S_M (PVRS q-factors, Mignone PLM), bracketed Illinois root | [HIS] same root to round-off; if his 100 iterations fail he keeps the last iterate + warning, ours mirrors v (no bracket): [CANNOT] identical failure path
+ inner radiation (M1 face)               | cpp:969-1034 half-range I+- (E=T^4, F=F_r) ComToLab(v_ghost), DO modified-HLLE face | he_bc_linhao_rad = halfrange: F = 0.5(F_g+F_is) + s 0.5 c<mu>+(E_g-E_is) + (2/3)(v_g E_g + v_is E_is), <mu>+ LQ10 = 0.50636, s = 0: inner-face dissipation none (user; his HLLE taucell 4 would give s ~ 2e-7) | [FIXED]/[USER]
+ inner radiation (VET rays)              | same ghost I+                                 | vet_gd/vet_col outward rays start from I+ = E_g + F_g/(c<mu>+) | [FIXED]
+ inner ghost opacity                     | cpp:566-577 kappa(T=max(P/rho,tfloor)) in ghosts | used only in s(tau_c) (deep: s ~ 0)        | [HIS] in effect
+ BC timing                               | every VL2 substage                            | every RK2 stage                                | [CANNOT] (no VL2 in AthenaK)
+ outer BC hydro                          | cpp:916-931 v_r(ie)<0: rho copy, v_r 0; else rho ~ r^-2 per ghost, v_r copy; P, v_t copy | he_bc_outer copy + he_bc_outer_r2 | [FIXED]
+ outer BC radiation                      | cpp:947-957 outgoing copied, incoming 0       | marshak, bath 0                                | [RT]
+ gravity                                 | cpp:141 none in code; GM from athinput        | he_gravity pointmass, he_gm = G 20 Msun        | [PAPER] txt:488-495 (his GM value unknown)
+ EOS                                     | cpp:133,378,469 P=rho T code, mu/gamma athinput | ideal, gamma 5/3, mu 0.62, gas only          | [PAPER] txt:484-487
+ opacity tables                          | cpp:200-266 TOPS X0.7 Z0.008 kR, kP, ke        | same tables, resampled in log T, padded = clamp | [HIS] (resample <= 1.7e-4)
+ opacity interpolation / clamp           | cpp:617-745 bilinear log kappa, clamp rho and low T | same (pad)                                | [HIS]
+ kP above T_max (3.48 MK)                | cpp:655-660 x 10^(-3.5 dlogT)                 | clamp                                          | not reached (domain T <= 1.1 MK)
+ kappa_a / kappa_e                       | cpp:601-607 ka = kR - ke(table 0.335-0.34), sigma_pe = sigma_p | ke const 0.34, ka = kR - ke         | [RT] split enters only the VET closure source (<= 6e-6)
+ opacity temperature                     | cpp:587 max(P/rho, tfloor)                    | gas T                                          | [HIS] (tfloor value unknown)
+ floors                                  | athinput dfloor, tfloor                       | dfloor 1e-20, tfloor 5e3 K, pfloor 1e-12, vceil 1e8 | [PAPER]/unknown
+ domain                                  | athinput                                      | 20-80 Rsun, pi/3..2pi/3, 0..pi/3, periodic     | [PAPER] txt:198,212-220,362-364
+ rays (VET)                              | his fixed 120-angle set (paper txt:247), local frame | vet_gd_ls 10 (LQ10, 120 dirs), FIXED: rotation off (user: to match him) | [FIXED] orientation global, his local [CANNOT] exactly
+ radial grid                             | athinput: base 192 x 0.3125 Rsun (paper "196" is a typo: 2560 blocks of 16^3 => 12 base x1 blocks + 4 refined on 35-55) | 256 faces = his exactly (sharp plateau, max face error < 1e-10 Rsun) | [FIXED]
+ lateral grid                            | 128^2 base, 256^2 on 35-55 (SMR)              | 256^2 everywhere                               | [CANNOT] (vet_gd needs one x1 block, no SMR); ours finer outside 35-55
+ hydro                                   | athinput VL2, PLM, HLLC                       | rk2, plm (Mignone), hllc, fofc                 | VL2 [CANNOT] (user: leave); HLLC [PAPER]; fofc [OURS]
+ CFL                                     | athinput                                      | 0.3                                            | [PAPER] txt:496-501
+ RT                                      | implicit DO 120 angles, tol 1e-6              | implicit M1 + VET (vet_gd), tol 1e-8           | [RT]
+ run length                              | athinput                                      | tlim 4.96e6 s                                  | [PAPER] txt:557-566
+ split_c2p_once, am_transport, dt_retry, cs2_vimp_npass 3, time2_enth_be, time2_fref_wacc | (none) | fresh defaults, named explicitly | [OURS] numerical default kept (user)
+
+<job>
+basename = bsg3d
+<mesh>
+nghost    = 3
+nx1 = 256          # his grid has exactly 256 radial cells: 48 x 0.3125 + 128 x 0.15625 + 80 x 0.3125 Rsun (see comment)
+x1min     = 1.391400e12          # 20 Rsun
+x1max     = 5.565600e12          # 80 Rsun
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 256
+x2min     = 1.0471975511965976    # pi/3
+x2max     = 2.0943951023931953    # 2 pi/3
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 256
+x3min     = 0.0
+x3max     = 1.0471975511965976    # pi/3
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+use_grid_stretch_r_poly = true
+f_stretch_r_p_amp = -0.66666666666666667   # [PAPER, his SMR reconstructed] dr 0.3125 Rsun on 20-35 and 55-80, 0.15625 on 35-55 (refinement level 1)
+f_stretch_r_p_xa = 0.1875                    # = face 48/256 = 35 Rsun (his refined region starts at a base-block edge)
+f_stretch_r_p_xb = 0.6875                    # = face 176/256 = 55 Rsun
+f_stretch_r_p_w = 1.0e-12                    # sharp edges: every face equals his piecewise-uniform faces to < 1e-10 Rsun
+<meshblock>
+nx1 = 256
+nx2       = 64    # 16 blocks, 1 per A100 on 4 nodes x 4
+nx3       = 64
+<time>
+dt_retry   = true              # [OURS] numerical default kept (user 11-04); acts only on a failed step
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3           # USER 11-06: normal CFL, not cfl_rad
+nlim       = -1
+tlim       = 4.96e6              # 57.4 d
+ndiag      = 50
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 0.62
+<hydro>
+merge_lat_rc             = 2.43495e12,3.82635e12,5.5656e12   # USER 11-06 his SMR: 128^2 at 20-35, 256^2 at 35-55, 128^2 at 55-80 Rsun
+merge_lat_f              = 2,1,2
+merge_lat_mom            = rigid
+merge_lat_rad            = true            # USER 11-06: radiation also 128^2 in the merged shells, as his grid
+merge_lat_diag           = 1000
+split_c2p_once = true         # [OURS] numerical default kept (user 11-04); not in the 10-14 binary / his code
+am_transport   = true         # [OURS] numerical default kept (user 11-04); Athena++ (his code) has none
+sp_x2_periodic_image = true   # theta-periodic wedge: seam mass/energy fix (mass_1009)
+eos         = ideal
+rad_signal_speed = true
+gamma       = 1.6666666666666667
+reconstruct = plm
+rsolver     = hllc             # paper: HLLC
+fofc        = false            # USER 11-06: as Linhao (no FOFC)
+etotgrav    = true
+wellbalance_dynamic = false      # paper: no well-balanced scheme
+dfloor  = 6.15245e-14            # his athinput.bsg_star.rusty: 1e-9 x density_unit
+tfloor_kelvin = 107.887          # his: 1e-4 x T_unit
+pfloor  = 8.9014e-3              # his: 1e-12 x rho_unit c_s,unit^2
+dfloor_keep_velocity = true
+vceil   = 1.0e8
+<rad_m1>
+vet_gd_ls                = 10             # [HIS set] level-symmetric LQ10 = 120 directions (Athena++ angle_flag 0, nmu 5); global orientation (his: local r,theta,phi frame)
+implicit_cs2_vimp_npass  = 3              # [RT] = the 10-14 binary's fresh default (named for the record)
+time2_enth_be            = true           # [RT] = the 10-14 binary's fresh default (named)
+time2_fref_wacc          = true           # [RT] inert (force_reference = none)
+vet_gd_twin_state        = mean   # needed with twin off
+vet_rotate_avg           = 0              # [USER 11-04] no rotated-set averaging (needs rotation)
+vet_gd_twin_weight       = none           # FIN3 (prodswitch-1013, fin3-1012)
+vet_interp               = auto           # FIN3 (prodswitch-1013, fin3-1012)
+vet_col_lat_cut_thin     = 1.0            # FIN3 (prodswitch-1013, fin3-1012)
+implicit_predictor_frozen = false          # FIN3: UN #10 dropped (frozen predictor costs Cartesian T-ladder order; inert on sp). coordinator 2026-10-13, reported to user
+vet_bc_inner             = auto           # FIN3 (prodswitch-1013, fin3-1012)
+vet_bc_reflect           = auto           # FIN3 (prodswitch-1013, fin3-1012)
+implicit_hr_face_gd      = none           # FIN3 (prodswitch-1013, fin3-1012)
+vet_source               = relaxed        # FIN3 (prodswitch-1013, fin3-1012)
+time2_start              = be             # FIN
+time2_vet_sc             = predict        # FIN (inert on vet_col/vet_gd; named for the record)
+time2_vstage             = true           # FIN
+time2_pred_cap           = 0.5            # FIN
+time2_vet_col_source     = blend          # FIN (X sporder-1012)
+implicit_vimp_bc         = true           # FIN (vimpbcdef-1011)
+implicit_gas_src         = conservative2  # FIN (consfix-1011; full BSG OK, DeltaAI 3363656)
+implicit_cs2_hll         = drag           # FIN
+implicit_cs2_shift       = false          # FIN
+implicit_thin_corr       = hc             # FIN
+implicit_thin_hcsf       = j              # FIN
+implicit_thin_recon      = jse            # FIN (unify-1012)
+implicit_thin_js_gd      = x1             # FIN (unify-1012: lateral jse off on vet_gd)
+implicit_thin_bq         = lin            # FIN (unify-1012)
+implicit_thin_bq_gd      = cell           # FIN
+implicit_thin_hcface     = tau            # FIN (coreL-1012)
+implicit_thin_hcface_gd  = x1             # FIN
+implicit_thin_js_face    = hcface         # jsfix-1012 8bfeae8c (bsgcand-1012 d3bf42d7)
+vet_seg                  = jump           # FIN (coreL-1012; was emit)
+vet_bc_diff              = face           # FIN
+vet_gd_symref            = none   # USER 11-06 twin off, as R136a1
+vet_gd_rotate_dt         = 0              # [USER 11-04] rotation OFF to match his fixed rays (0 = no physical-clock rotation; no vet_gd_rotate_every)
+vet_gd_rotate_align      = true           # FIN
+vet_gd_rotate_t0         = 0.0            # FIN
+vet_gd_rotate_stretch    = 0              # inert without rotation
+vet_gd_rotate_slope      = correct        # >>> R2 PENDING <<< set to correct ONLY if NOTE-rotslope validates AND the binary has rotslope 1bfe213a; else keep
+implicit_hr_excess       = none           # bsgrec-R
+implicit_nofb_work       = true           # bsgrec-R
+implicit_rad_inertia     = true           # bsgrec-R
+implicit_f0_init         = auto           # bsgrec-R
+implicit_hr_face         = sf             # bsgrec-R
+vet_source_noesrc_h2be   = true           # bsgrec-R
+vet_gd_allow_clamp       = true           # [OURS-BIN] binary compatibility, not physics: the 10-14 binaries clamped the vet_gd lateral reach silently (band 64, needs 102); prod-1102 FATALs unless allowed (as bsgma-1104)
+vet_gd_halo_ipc          = true           # Caltech: single node, 2 H200 x 8 blocks (CUDA IPC; speed-only, bitwise: smoke arm Coff)
+ic_rad                   = none           # ORIGINAL IC (fresh default fs_relax would replace the file radiation)
+implicit_thin_switch     = fse            # FIN (replaces the hr_lm PIN none)
+vet_gd_twin_fuse         = false  # twin off, as R136a1
+vet_gd_twin_lowmem       = true           # Caltech: 8 blocks/GPU, as your BSG fin3 deck (bitwise vs false per DeltaAI mem2)
+vet_gd_twin_det          = true   # accel-1009: fixed-order twin shell means (GPU run-to-run bitwise)
+vet_source_noesrc        = true   # F1: never without vet_gd_twin
+vet_gd_twin              = false  # USER 11-06: twin off, as the other productions
+implicit_face_opac_n     = true   # F2
+implicit_pos_floor_solve = true   # F3 (needs implicit_pos_floor = true)
+vet_scatter_form         = ma     # paper split (Jiang 2021 eq. 6)
+vet_scatter_j            = relaxed
+vet_scatter_kappa_e      = const  # paper: ideal gas mu 0.62, kappa_es const (NOT eos)
+implicit_tsolve_opac = true          # R2+B
+implicit_tsolve_opac_mode = 1        # R2+B: nearest root (mode 1 default; no mode 8)
+implicit_gas_newton_switch = 10      # R2+B
+implicit_thin_freeze = 1.0e-2        # R2+B (B)
+implicit_realisable_coupling = true  # fix A (gd-physfix-1005 12b78e4f): realisable flux in E0 - E and the gas deposit
+report_newton_fb = false   # rc-1009: no per-step iw host copy (F4 counters keep the count)
+c_light          = 2.99792458e10
+arad             = 2.3392742567e-47   # a_cgs*T_unit^4, T_unit = 0.62 m_u/k_B = 7.4568864364e-9 K
+chat_over_c      = 1.0
+closure          = vet_col          # vet_gd rides on the vet_col interface; vet_gd_replace drops the vet_col sweep
+vet_gd           = true
+vet_scatter      = true           # Ma+2026 kappa_a/kappa_e split in the closure source (Jiang 2021 eq. 6, form ma; VET_SCATTER.md: <= 6e-6 effect)
+vet_gd_replace   = true
+vet_col_lat_taucut = 30.0
+vet_gd_gl_nmu            = 0              # [USER 11-04 fixed rays] no GL product set; vet_gd_ls below
+vet_gd_gl_nphi   = 12             # inert (vet_gd_gl_nmu = 0)
+vet_gd_gl_stagger = true          # inert (vet_gd_gl_nmu = 0)
+# vet_gd_rotate_every = 10  # bsgprod-1012: DROPPED (vet_gd_rotate_dt in this block = the physical clock)
+vet_col_lat_offdiag = operator       # T5wihc
+vet_gd_tangential   = false          # T5wihc
+vet_gd_wall_interp  = true           # T5wihc
+vet_gd_halo_compact = 2              # T5wihc
+implicit_halo_direct = true         # fast Krylov set
+implicit_od_cache = true
+implicit_krylov_fuse = 1
+implicit_op_stencil = true
+implicit_precond         = mg_gf          # bsgaccel global Fourier coarse space (full BSG 1.6-1.8x; R2 0.239 s/cycle)
+implicit_halo_mpi = true
+implicit_halo_overlap = true
+opacity          = table
+temp_unit_kelvin = 7.4568864364e-9
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4
+coupling         = true
+gas_feedback     = true
+force_reference = none     # full M1 radiation force (no WB pair)
+transport        = implicit
+implicit_solver  = bicgstab
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_lin_maxit = 200
+implicit_lin_tol = 1.0e-10
+implicit_lin_cnorm = 1.0e-10
+implicit_tol     = 1.0e-8
+implicit_resid_fatal = 1.0e-2
+implicit_maxit   = 200
+implicit_one_pass = 0
+implicit_opac_update = true
+implicit_opac_newton = true
+implicit_opac_newton_guard_mode = 6
+implicit_gas_newton = true
+implicit_flux            = blend          # FIN (as hr_lm)
+implicit_flux_faces      = all            # FIN (as hr_lm)
+implicit_flux_beam       = halfrange      # FIN (as hr_lm)
+implicit_blend           = idort_f        # FIN (as hr_lm)
+implicit_blend_tau0      = 1              # FIN (as hr_lm)
+implicit_blend_alpha     = 1              # FIN (as hr_lm)
+implicit_blend_flo       = 0.3            # FIN (as hr_lm)
+implicit_blend_fhi       = 0.6            # FIN (as hr_lm)
+implicit_blend_xthin     = 0              # FIN (was 30 in the 10-09 hr deck)
+implicit_enthalpy = plm
+implicit_vimp            = true           # FIN (was false in the 10-09 hr deck)
+implicit_predictor = step
+implicit_lin_ew_max = 1.0e-2
+implicit_closure_thin_relax = 1.5
+implicit_g0_exchange = true
+implicit_g0_limit = 1.0
+implicit_pos_gas = true
+implicit_pos_floor = true
+time_scheme              = hesdirk2       # FIN (was be in the 10-09 hr deck)
+vet_col_every    = 1
+time2_vet_col            = predict        # FIN
+marshak_q        = 0.5
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 2.2942145641e+13   # L/(4 pi r_in^2), L = 5.581461e+38 (Ma file), r_in = 20 Rsun
+implicit_bc_x1max   = marshak
+implicit_flux_x1max = 0.0
+<problem>
+he_seed_band             = old            # no seed of ours (he_seed = 0 below); his 5 % perturbation only
+he_seed                  = 0.0            # LI: the 1e-6 T seed is REPLACED by the Linhao perturbation
+he_ic_linhao             = true           # LI: L. Ma bsg_star.cpp initial state (b5585cb8+)
+he_ic_linhao_file        = /resnick/groups/carnegie_poc/jingze/bsgli_1014/files/linhao_profile_full.txt
+he_ic_linhao_amp         = 0.05           # his rho *= 1 + 0.05 (U - 0.5)
+he_ic_linhao_rho_thr     = 6.15245e-7     # his rho > 0.01 code x density_unit 6.15245e-5 (his athinput.bsg_star.rusty)
+he_ic_linhao_seed_group = true   # lhxseed-1106: one deviate per merged group, as his coarse cells
+he_ic_linhao_rng         = 0              # splitmix64(global cell index) seed
+he_ic_linhao_gconst      = 6.67408e-8     # Athena++ Constants::grav_const_cgs (his g(rmax) = G M_rmax / rmax^2)
+he_ic_linhao_gext        = invsq          # [USER 11-04] atmosphere above rmax hydrostatic in GM/r^2 (his cpp:429 r^+2 = r2)
+he_bc_linhao             = true           # XB fin4-linhao-bc: L. Ma bsg_star.cpp inner BC (bd_data hydro ghosts + ghost-bath radiation)
+he_bc_linhao_rad         = halfrange      # [HIS] cpp:969-1034 half-range ghost intensities, DO upwind face (M1 face flux + VET outward rays); <mu>_+ of his 120-angle LQ10 set
+he_bc_linhao_diss        = none           # [USER 11-04] inner-face dissipation: none (central average; his stock Athena++ HLLE would add ~1/(taucell tau) x the E jump)
+he_bc_linhao_fis = iter   # vstarfix-1106 (F_is = Picard iterate, not the shifted F0^n)
+he_ic_rad_gas            = column         # ORIGINAL IC
+he_ic_rad_hse            = false          # ORIGINAL IC
+he_ic_rad                = file           # ORIGINAL IC (fresh default sph1d)
+he_ic_eint_from_t        = false          # ORIGINAL IC (PIN defaults-1009)
+user_srcs   = true
+user_bcs    = true
+user_hist   = true
+he_gm       = 2.62502e27          # USER 11-06: his deck GM 260.795 code = 19.78 Msun (was 20 Msun)
+he_gravity = pointmass   # Athena++ point-mass source (bsg-truerepro-1008)
+he_ic_file = /resnick/groups/carnegie_poc/jingze/bsgli_1014/files/ic_ma2026_f0.txt   # ic_ma2026.txt with F_r = 0 above r_photo, md5 246a666e
+he_opac_table = /resnick/groups/carnegie_poc/jingze/bsgli_1014/files/rosseland_ma2026_x0.7_z0.008_padded.txt   # md5 450bc0c1
+he_planck_table = /resnick/groups/carnegie_poc/jingze/bsgli_1014/files/planck_ma2026_x0.7_z0.008_padded.txt      # md5 e18ca805
+he_nfine    = 262144
+he_tau_int  = 1.0
+he_ic_cols  = 5
+he_wall_zero_flux = false   # paper: no flux surgery (S_M = 0 makes the inner mass flux vanish)
+he_ic_balance = false            # the Ma IC AS IS (paper: no re-balance)
+mlt_flux_frozen = false          # radiative-only IC, no MLT deposit
+he_wall_closed = false      # the zero-contact ghosts, not the mirror wall
+mlt_closure    = frozen
+he_grid_dump   = true
+he_bc_outer = copy     # [HIS] cpp:916-931 with he_bc_outer_r2 below
+he_bc_outer_r2 = true  # [HIS] Outflow_X1: outflow ghost rho ~ r^-2 (cpp:925), inflow rho copy + v_r 0
+he_bc_inner = zerocontact   # paper: zero-mass-flux ghosts (HLLC S_M = 0)
+<output1>
+file_type   = hst
+dt          = 1000.0
+data_format = %24.16e
+<output2>
+file_type = bin
+variable  = hydro_w
+dt = 4.32e4                      # 0.5 d
+<output3>
+file_type = bin
+variable  = m1
+dt = 4.32e4
+<output4>
+file_type = log
+dt = 1.0e4
+<output5>
+file_type = rst
+dt = 8.64e4                      # 1 d
+<output6>
+file_type = bin
+variable  = m1_vet
+dt = 4.32e4
+<output7>
+file_type = bin
+variable  = m1_face       # face fluxes fx1/fx1o/fx2/fx3: the thin-atmosphere check (TRUEREPRO.md sect. atm)
+dt = 4.32e4
