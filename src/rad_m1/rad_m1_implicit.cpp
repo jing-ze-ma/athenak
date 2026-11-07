@@ -15077,6 +15077,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // left by the first (the two can together take it no lower than opg^2 x b0)
       if (opgd) {
         Real bc = bb - gpd - gmd, rc = rr + gpr + gmr;
+        // seamE-1106 guard_mode bit 8: under bicgstab rr holds TRHS, whose neighbour part the
+        // solve takes back (b = TR + sum C E^k): the right-hand-side test of bit 1 reads the
+        // row without it, or a large lagged diffusion term hides a Newton term that takes
+        // the true right-hand side negative (measured: TRHS 8400, Newton -5100, EN 270)
+        if ((ogm & 8) && bicg && trans) {rc -= iw_(m,M1_IW_TRHS,k,j,i);}
         int ns = M1OpnGuardFace(opg, ogm, gpd, gpo, gpr, bc, rc, bb, cc, rr);
         const int nsp = ns;
         ns += M1OpnGuardFace(opg, ogm, gmd, gmo, gmr, bc, rc, bb, aa, rr);
