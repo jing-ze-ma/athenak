@@ -196,6 +196,8 @@ Mesh::Mesh(ParameterInput *pin) :
   }
   layout_invariant = pin->DoesParameterExist("mesh", "layout_invariant") &&
                      pin->GetBoolean("mesh", "layout_invariant");
+  cs_seam_pos_global = pin->DoesParameterExist("mesh", "cs_seam_pos_global") &&
+                       pin->GetBoolean("mesh", "cs_seam_pos_global");
   cs_seam_fc_nolimit = use_cubed_sphere &&
                        pin->DoesParameterExist("mesh", "cs_seam_fc_nolimit") &&
                        pin->GetBoolean("mesh", "cs_seam_fc_nolimit");

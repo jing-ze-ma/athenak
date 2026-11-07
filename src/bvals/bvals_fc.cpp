@@ -172,6 +172,7 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
     }
   }
   const bool bext_ = cs_blockend_ext_;
+  const bool posg_ = pmy_pack->pmesh->cs_seam_pos_global;   // layoutfix-1106
   auto stnx_ = cs_seam_stnc_x;
   const int ngx_ = indcs.ng;
 
@@ -244,7 +245,14 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
         dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(nx2_);
         sc = jj; blo = js_; bhi = je_ + ((vv == 1) ? 1 : 0) - 2;
       }
-      const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
+      // layoutfix-1106: cs_seam_pos_global, the offset of this block in the panel
+      int spn_ = 0;
+      if (posg_) {
+        const Real wp_ = (sidx == 0) ? (x3mx - x3mn) : (x2mx - x2mn);
+        const Real xp_ = (sidx == 0) ? x3mn : x2mn;
+        spn_ = static_cast<int>(floor((xp_ + 1.0)/wp_ + 0.5))*((sidx == 0) ? nx3_ : nx2_);
+      }
+      const Real pos = cs_seam::SeamPos(sc, spn_, (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang);
       // fc2vtx-1103: TIE-SAFE stencil choice.  At a panel END face (ang = +-pi/4, the
       // along-staggered component) the map shifts by exactly the normal offset, so at a
       // ghost cell centre pos is a HALF-INTEGER mathematically, and round(pos) went either

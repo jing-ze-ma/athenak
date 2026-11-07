@@ -150,6 +150,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   auto wbsbcc_ = wbs_bcc;
   const bool wbsmhd_ = (wbs_bcc.extent_int(0) > 0);
   const bool ext_ = cs_ext_pass_;   // layoutbug-1103: second pass, see cs_seam_blockend
+  const bool posg_ = pmy_pack->pmesh->cs_seam_pos_global;   // layoutfix-1106
   const int ngx_ = pmy_pack->pmesh->mb_indcs.ng;
   const bool cperm_ = cs_perm_pairs;
   const int hrq_ = cs_hrq0;
@@ -561,7 +562,16 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             // would extrapolate from two cells while the source block holds the data.
             // The stencil reads the array directly, not the buffer, so any active cell is
             // available.  bvals_fc.cpp says the same thing about its own stencil table.
-            const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
+            // layoutfix-1106: cs_seam_pos_global, the offset of this block in the panel
+            int spn_ = 0;
+            if (posg_) {
+              const Real wp_ = (cs_seam == 2) ? (x3mx - x3mn) : (x2mx - x2mn);
+              const Real xp_ = (cs_seam == 2) ? x3mn : x2mn;
+              spn_ = static_cast<int>(floor((xp_ + 1.0)/wp_ + 0.5))
+                     *((cs_seam == 2) ? nx3_ : nx2_);
+            }
+            const Real pos = cs_seam::SeamPos(sc, spn_,
+                                              (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang);
             wpos = pos;
             winw = (nrm > 0.0) ? -1 : 1;
             int b = cs_seam::SeamRound(pos) - 1;   // fc2vtx-1103: tie-safe

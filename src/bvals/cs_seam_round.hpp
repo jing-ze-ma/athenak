@@ -20,6 +20,14 @@ constexpr Real kSeamTie = 1.0e-9;
 //! nearest integer, ties up (layout-independent)
 KOKKOS_FORCEINLINE_FUNCTION
 int SeamRound(const Real x) { return static_cast<int>(floor(x + 0.5 + kSeamTie)); }
+//! layoutfix-1106 <mesh>/cs_seam_pos_global: sc + d with the integer part at its magnitude in
+//! the PANEL (s = the block's first cell in the panel): sc + d rounds d to the ulp of the
+//! block-local index, so the weights differ in the last bits between MeshBlock layouts; the
+//! removal of s is exact.  s = 0 is sc + d, bitwise
+KOKKOS_FORCEINLINE_FUNCTION
+Real SeamPos(const int sc, const int s, const Real d) {
+  return (static_cast<Real>(sc + s) + d) - static_cast<Real>(s);
+}
 //! floor, an exact integer stays itself (layout-independent)
 KOKKOS_FORCEINLINE_FUNCTION
 int SeamFloor(const Real x) { return static_cast<int>(floor(x + kSeamTie)); }
