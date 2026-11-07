@@ -1,0 +1,14 @@
+554b8aca4bd257422d9e18b3faece0fa  README.md
+9fca62606d9c2b72d0f9ab2639e0ac6c  index.html
+730b011bea279cc4b5ddc805aaede739  tess_s96_crop.png
+a91019a578b6feefcf6a85660860a324  update_page_repro.sh
+0af37d9fa6ced86f808ac9c7f9bcf58f  bsg_figs.py
+f83b2c2a925f89343e209ce9bcdffc4f  bin_convert_repro.py
+cfdbc41743c4d11b60bb23a90ad5b6b5  cost_repro.py
+582f7ca7d06da7a89142723f2b6813bc  gen_status.py
+d3418a7e8dfa870f8143a69cb9b845af  ke_compare.py
+7ebf253eb4ff0f314ef3f2143de1b5d5  compare57.py
+85bdebc77523a087377ea86d863b2680  cmp57_dumps.py
+5241893984745a641595e32ff6b03ce7  movie_times.py
+3317ebbe4d5d8f65e24640593fcb7f26  movie/make_movie.sh
+97422837a5eef5d35c1022379440262d  movie/movie_frames.py

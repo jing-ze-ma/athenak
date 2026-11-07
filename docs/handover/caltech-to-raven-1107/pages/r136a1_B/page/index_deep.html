@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R136a1 deep envelope run (B)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,650&family=Public+Sans:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; each figure is a paired row (ours | paper) that stacks on phones. */
+:root {
+  --bg: #f5f7f9;
+  --surface: #ffffff;
+  --fg: #1b2530;
+  --muted: #5a6774;
+  --rule: #d6dde4;
+  --accent: #1f5f8b;      /* the paper's blue colour-map family */
+  --warn-bg: #fdf3e2;
+  --warn-fg: #8a5300;
+  --plate: #ffffff;       /* figures are rendered on white in both themes */
+  --display: "Literata", Georgia, "Times New Roman", serif;
+  --body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11171d; --surface: #182029; --fg: #e3e9ef; --muted: #9aa8b5; --rule: #2b3642;
+    --accent: #7fb6dd; --warn-bg: #3a2c12; --warn-fg: #f2c27a; --plate: #ffffff; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11171d; --surface: #182029; --fg: #e3e9ef; --muted: #9aa8b5; --rule: #2b3642;
+  --accent: #7fb6dd; --warn-bg: #3a2c12; --warn-fg: #f2c27a; --plate: #ffffff; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 56px; display: grid; gap: 40px; }
+header { display: grid; gap: 14px; }
+h1 { font-family: var(--display); font-weight: 650; font-size: clamp(1.6rem, 3.2vw, 2.3rem); line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { margin: 0; max-width: 68ch; color: var(--muted); }
+.lede a { color: var(--accent); }
+.status { display: flex; flex-wrap: wrap; gap: 8px 22px; font-family: var(--mono); font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.status b { color: var(--fg); font-weight: 500; }
+.banner { background: var(--warn-bg); color: var(--warn-fg); border-radius: 6px; padding: 10px 14px; font-size: 0.9rem; max-width: 80ch; }
+section { display: grid; gap: 14px; border-top: 1px solid var(--rule); padding-top: 22px; }
+section h2 { font-family: var(--display); font-weight: 500; font-size: 1.35rem; margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+section h2 .tag { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
+.label { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.label .when { letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+.plate { background: var(--plate); border: 1px solid var(--rule); border-radius: 4px; padding: 8px; display: block; }
+.plate img { display: block; width: 100%; height: auto; }
+.plate.dark { background: #0b0d10; }   /* HG/RSG-style figures are drawn on the dark facecolour */
+.pair .plate { padding: 0; }
+.plate:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mv-ctrl { margin-bottom: 8px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.mv-ctrl input[type=range] { flex: 1 1 240px; min-width: 0; accent-color: var(--accent); }
+.mv-ctrl button { font: 600 0.85rem var(--body); padding: 6px 14px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--fg); cursor: pointer; }
+.mv-time { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 9ch; }
+figcaption { font-size: 0.88rem; color: var(--muted); max-width: 70ch; }
+details { font-size: 0.86rem; color: var(--muted); max-width: 90ch; }
+details summary { cursor: pointer; color: var(--fg); font-weight: 600; }
+details p { margin: 8px 0 0; }
+footer { border-top: 1px solid var(--rule); padding-top: 18px; font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; }
+code { font-family: var(--mono); font-size: 0.85em; overflow-wrap: anywhere; }
+.tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); max-width: 100%; }
+.cmp { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 0.84rem; line-height: 1.4; }
+.cmp th, .cmp td { text-align: left; vertical-align: top; padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+.cmp thead th { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--bg); }
+.cmp tbody th { font-weight: 600; white-space: nowrap; width: 11ch; }
+.cmp td { width: 44%; }
+.cmp4 { min-width: 760px; }
+.cmp4 td { width: 30%; }
+.cmp4 td:last-child { width: 18%; }
+.cmp tbody tr:last-child th, .cmp tbody tr:last-child td { border-bottom: 0; }
+.cmp .ns { color: var(--muted); font-style: italic; }
+.cmp a, .tnote a { color: var(--accent); }
+.tnote { margin: 0; font-size: 0.84rem; color: var(--muted); max-width: 100ch; }
+.cost { display: flex; flex-wrap: wrap; gap: 14px 40px; align-items: baseline; padding: 16px 20px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
+.cost div { display: grid; gap: 2px; }
+.cost .big { font-family: var(--display); font-weight: 650; font-size: clamp(2rem, 6vw, 3.2rem); line-height: 1.05; color: var(--accent); font-variant-numeric: tabular-nums; }
+.cost .cap { font-size: 0.85rem; color: var(--muted); }
+.cost p { flex-basis: 100%; margin: 0; font-size: 0.84rem; color: var(--muted); max-width: 90ch; }
+@media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+/* Fig. 4 (10-14): ours, the paper's and the movie sit together on a black panel (figures drawn dark) */
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>R136a1: 3-D radiation-hydrodynamic envelope, phase 1, deep inner boundary, grid B (128&sup2;)</h1>
+    <div class="cost" aria-label="Run cost">
+      <div><span class="big" id="c-wall">&ndash;</span><span class="cap">wall-clock so far</span></div>
+      <div><span class="big" id="c-perday">&ndash;</span><span class="cap">wall-clock per simulated day (recent rate)</span></div>
+      <div><span class="big" id="c-proj">&ndash;</span><span class="cap">projected wall-clock for the planned 20 d</span></div>
+      <div><span class="big" id="c-gpuh">&ndash;</span><span class="cap">GPU-hours so far</span></div>
+      <p>Measured from the run log; <span id="c-spc">&ndash;</span> per cycle recently, on <span id="s-hw">&ndash;</span>.</p>
+    </div>
+    <p class="lede">AthenaK run of the most massive known star, <b>R136a1</b> (R136 cluster, 30&nbsp;Doradus, LMC), with our implicit
+      two-moment radiation module (M1 + variable Eddington tensor), the general EOS and tabulated opacities, set up like our
+      BSG / He-giant / RSG envelope runs. Interim page.</p>
+    <div class="status" aria-label="Run status">
+      <span>model time <b id="s-time">&ndash;</b> of 20 d planned</span>
+      <span>cycle <b id="s-cyc">&ndash;</b></span>
+      <span>dt <b id="s-dt">&ndash;</b></span>
+      <span>R<sub>ph</sub> <b id="s-rph">&ndash;</b></span>
+      <span>T<sub>eff</sub> <b id="s-teff">&ndash;</b></span>
+      <span>snapshots <b id="s-ndump">&ndash;</b> (every 0.25 d)</span>
+      <span>grid <b>831 &times; 128 &times; 128</b></span>
+      <span>health <b id="s-health">&ndash;</b></span>
+      <span>updated <b id="s-updated"></b></span>
+    </div>
+    <p class="banner" id="s-banner">Phase 1: no line force. Any outflow, &#7742; or v<sub>&infin;</sub> in this run is not physical.</p>
+  </header>
+
+  <section id="setup">
+    <h2><span class="tag">Setup</span>Star, initial condition and numerics</h2>
+    <div class="tbl-wrap" role="region" aria-label="Setup" tabindex="0">
+    <table class="cmp">
+      <thead><tr><th scope="col">Item</th><th scope="col">This run</th><th scope="col">Notes</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Star (observed)</th><td>log L/L<sub>&#9737;</sub> 6.82, T<sub>*</sub> &asymp; 46.5 kK, R<sub>*</sub> &asymp; 40 R<sub>&#9737;</sub>, M &asymp; 230 M<sub>&#9737;</sub> (M<sub>init</sub> &asymp; 275), X<sub>surf</sub> &asymp; 0.5, Z &asymp; 0.5 Z<sub>&#9737;</sub>, age &asymp; 1 Myr; &#7742; &asymp; 2.5&times;10<sup>&minus;5</sup> M<sub>&#9737;</sub>/yr (clumped), v<sub>&infin;</sub> &asymp; 2600 km/s, &Gamma;<sub>e</sub> &asymp; 0.66</td><td>Bestenlehner+2020, Brands+2022/2023, Sabhahit+2025; log L 6.67&ndash;6.94 across papers (extinction, a resolved neighbour)</td></tr>
+        <tr><th scope="row">Stellar model (IC)</th><td>Keszthelyi+2025 MESA grid (Zenodo 10.5281/zenodo.15702085, CC-BY-4.0): TS, <b>MLT++</b>, v<sub>init</sub> 200 km/s, M<sub>init</sub> 281.8 M<sub>&#9737;</sub>, mid-MS: M 233.9 M<sub>&#9737;</sub>, log L 6.833, R<sub>ph</sub> 24.9 R<sub>&#9737;</sub>, T<sub>eff</sub> 59.1 kK, age 1.44 Myr</td><td>the compact (MLT++) profile; without MLT++ the same model is inflated to 60 R<sub>&#9737;</sub>. Observed R<sub>*</sub> lies between</td></tr>
+        <tr><th scope="row">IC method</th><td>tools/ic_star mode mesa: MESA T(P) re-integrated in HSE with our EOS, &kappa;<sub>R</sub> and G m(r); photosphere seam fixed point through the code's own startup (R<sub>ph</sub> 25.39 R<sub>&#9737;</sub>); frozen MLT flux scaffold (F<sub>MLT</sub>/F up to 0.81 in the envelope CZ, 0 below 20.6 R<sub>&#9737;</sub>) ramped off by the auto rule</td><td>MESA's MLT++ envelope reaches &Gamma;<sub>L</sub> = &kappa;L/(4&pi;cGm) &asymp; 5 in the Fe and He layers</td></tr>
+        <tr><th scope="row">Composition, EOS</th><td>X 0.58, Y 0.4136, Z 0.0064 (AGSS09 metals); general EOS (Saha H/He, inert metals), gas only, radiation in M1</td><td>profile surface X 0.555</td></tr>
+        <tr><th scope="row">Opacity</th><td>tables on log T 3.5&ndash;7.0; Rosseland: <b>MESA</b> r24.08.1 kap a09 (OPAL + Ferguson) at this composition, TOPS of the same composition outside MESA's log R box; Planck: <b>LANL TOPS</b> (fetched 11-04), same composition and grid</td><td>TOPS Rosseland is 4 % (up to 14 %) above MESA where &Gamma; crosses 1 (log T 5.5&ndash;5.7)</td></tr>
+        <tr><th scope="row">Domain</th><td>r 19.45&ndash;100 R<sub>&#9737;</sub> (x1min at log T 6.50, 0.30 M<sub>&#9737;</sub> above; x1max &asymp; 4 R<sub>ph</sub> of the IC); wedge &theta; &pi;/3&ndash;2&pi;/3, &phi; 0&ndash;&pi;/3, periodic</td><td>x1min lies in MESA's radiative zone below the MLT++ envelope convection zone (base 20.6 R<sub>&#9737;</sub>): no frozen convective flux at the wall, wall flux = L/(4&pi;r<sup>2</sup>)</td></tr>
+        <tr><th scope="row">Grid</th><td>831 radial (grid B): 0.05&ndash;0.065 R<sub>&#9737;</sub> at the base, <b>0.011&ndash;0.012 R<sub>&#9737;</sub> on 24.2&ndash;25.9</b> (the compact Fe peak), <b>0.04 R<sub>&#9737;</sub> on 27&ndash;40</b> (where the inflating envelope is), then coarser: 0.07 at 45, 0.15 at 50, 0.6 at 65, 1.5 at 100 R<sub>&#9737;</sub>; &times; 128 &times; 128; 4 MeshBlocks 831&times;64&times;64</td><td>&ge;7 cells/H<sub>p</sub> at the compact Fe peak; 9&ndash;10 at the inflating Fe peak (H<sub>p</sub> 0.35 R<sub>&#9737;</sub> at 27 R<sub>&#9737;</sub>); photosphere fronts 1&ndash;2 cells</td></tr>
+        <tr><th scope="row">Radiation</th><td>implicit M1, hesdirk2, closure vet_gd: Eddington tensor from a 120-direction short-characteristics solve above the first swept shell (D<sub>rr</sub> and D<sub>r,lat</sub> used; the tangential anisotropy is computed but not in the operator, vet_gd_tangential = false; D = 1/3 exactly below that shell; no twin); rad_m1/time2_adm_poslim = true since 5.0 d, Ma+2026 scattering split</td><td>Rosseland/Planck means only</td></tr>
+        <tr><th scope="row">Boundaries</th><td>inner (log T 6.50): closed wall (zero mass flux), M1 flux BC F = L/(4&pi;x1min<sup>2</sup>); gravity: well-balanced (WB), G m(r) from the column; n2 seed (10<sup>&minus;3</sup>); outer: outflow, Marshak radiation, radial sponge above 0.9 x1max</td><td>as RSG E / He giant / BSG (our inner boundary)</td></tr>
+        <tr><th scope="row">Physics gap</th><td><b>no line (CAK) force in phase 1</b></td><td>R136a1's wind is line-driven (Fe V&ndash;VII) from just outside R<sub>*</sub>; a force-multiplier term is phase 2</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section id="ts">
+    <h2><span class="tag">Time series</span>Luminosities, photosphere, energies</h2>
+    <figure>
+      <a class="plate" href="img/timeseries.png" target="_blank" rel="noopener"><img src="img/timeseries.png" alt="Time series of luminosities, photospheric radius, effective temperature, kinetic and total energy"></a>
+      <figcaption>Top left: L<sub>in</sub> (inner boundary) and L<sub>bot</sub> (they overlap: the wall carries the full stellar flux, 1.00 L<sub>&star;</sub>, as radiation) and L<sub>top</sub> (radiative luminosity through the top face) from the history, wedge &times; 4&pi;/&Omega;, over L<sub>&star;</sub> = 2.60&times;10<sup>40</sup> erg/s. Top right: R<sub>ph</sub> where the shell-mean &tau;<sub>R</sub> (integrated inward from the top in each column, then averaged) crosses 1, as r<sub>photo,3D</sub> on the BSG pages, and T<sub>eff</sub> = (L<sub>top</sub>/4&pi;&sigma;R<sub>ph</sub><sup>2</sup>)<sup>1/4</sup>, from the dumps. Bottom: kinetic energy and the change of total energy (history, wedge &times; 4&pi;/&Omega;).</figcaption>
+    </figure>
+  </section>
+
+  <section id="prof">
+    <h2><span class="tag">Profiles</span>Shell means against the IC</h2>
+    <figure>
+      <a class="plate" href="img/profiles.png" target="_blank" rel="noopener"><img src="img/profiles.png" alt="Radial profiles of density, temperature, Eddington factor, radiation pressure fraction, rms radial velocity and luminosity split"></a>
+      <figcaption><b>Why comoving (11-05):</b> the closed inner wall carries a stationary odd-even v<sub>r</sub> mode (&plusmn;3 m/s at the wall cell, fading over 20&ndash;40 cells, same in every column, as in all our closed-wall runs). The lab-frame M1 flux contains (4/3)Ev, so the mode showed up as a &plusmn;25&ndash;30 % zigzag in the lab F<sub>r</sub>, &Gamma; and L<sub>rad</sub> near the wall; F<sub>0</sub>, E, T and &rho; are smooth there. <b>Deep F<sub>0</sub> (11-06):</b> where G = (4/3)&kappa;<sub>R</sub>E dt/c &gt; 10<sup>&minus;3</sup> (r &lt; ~28&ndash;30 R<sub>&#9737;</sub>) F<sub>0</sub> is taken from the E gradient, &minus;(c/3&chi;<sub>f</sub>) dE/dr with harmonic faces, which matches the solver&rsquo;s stored face F<sub>0</sub> to 10<sup>&minus;4</sup> (a restart file at 4 d). After a backward-Euler-path step the stored F holds the velocity before that solve&rsquo;s radiative kick while the dumped v holds it, so F<sub>r</sub> &minus; (E + P<sub>rr</sub>)v would show F<sub>0</sub> &minus; G(F<sub>0</sub> &minus; F<sub>wb</sub>), a false pattern up to ~40 times the real one at the wall. Solid-angle-weighted shell means at up to five times (first, quarters, newest), dashed black = the IC column. &Gamma;: solid &lang;&kappa;<sub>R</sub>F<sub>0</sub>&rang;/(c g) with the comoving radial flux F<sub>0</sub> = F<sub>r</sub> &minus; v<sub>r</sub>(E + P<sub>rr</sub>) (F<sub>r</sub> = lab-frame M1 flux; P<sub>rr</sub> = D<sub>rr</sub>E from the m1_vet dump at the same time, else E/3), faint thin = the same with the lab-frame F<sub>r</sub> for reference, dotted &kappa;<sub>R</sub>L/(4&pi;cGm) with the star's L; g = G m(r)/r<sup>2</sup>, m(r) from the dump. P<sub>rad</sub> = E/3. v<sub>r</sub> rms about the mass-weighted mean. L<sub>rad</sub> = 4&pi;r<sup>2</sup>&lang;F<sub>0</sub>&rang; (comoving; faint thin = lab frame 4&pi;r<sup>2</sup>&lang;F<sub>r</sub>&rang;), L<sub>conv</sub> = 4&pi;r<sup>2</sup>[&lang;(e<sub>gas</sub>+P<sub>gas</sub>)(v<sub>r</sub>&minus;&#7805;)&rang; + &lang;(E+P<sub>rr</sub>)v<sub>r</sub>&rang;] (the advected radiation enthalpy is booked with the convective luminosity, HG/RSG convention, so L<sub>rad</sub> + L<sub>conv</sub> equals the lab-frame sum), L<sub>MLT</sub> = the frozen scaffold times the ramp weight. Shown for r &le; <span id="c-rmax">32</span> R<sub>&#9737;</sub> (raised automatically as the envelope grows).</figcaption>
+    </figure>
+  </section>
+
+  <section id="mdot">
+    <h2><span class="tag">Mass flux</span>&#7742;<sub>r</sub>(t, r) over the envelope mass</h2>
+    <figure>
+      <a class="plate" href="img/mdot.png" target="_blank" rel="noopener"><img src="img/mdot.png" alt="Map of the radial mass flux over the envelope mass versus time and radius"></a>
+      <figcaption>4&pi;r<sup>2</sup>&lang;&rho;v<sub>r</sub>&rang; over the envelope mass above x1min (4&pi;/&Omega; &times; the wedge mass), per day; red outward, blue inward; symmetric-log colour scale. With no line force, outflow above the photosphere is not a physical wind.</figcaption>
+    </figure>
+  </section>
+
+  <section id="hg-hist">
+    <h2><span class="tag">Time series, HG/RSG style</span>History as on the He giant and RSG E pages</h2>
+    <figure>
+      <a class="plate dark" href="img/hgstyle_hist.png" target="_blank" rel="noopener"><img src="img/hgstyle_hist.png" alt="History panels in the He giant and RSG page style: luminosities, kinetic energy, energy and mass budget, time step, photosphere, boundary terms"></a>
+      <figcaption>The same panels as the He giant global and RSG E pages, from the history (wedge &times; 4&pi;/&Omega;). Top: L<sub>top</sub>, L<sub>mid</sub>, L<sub>bot</sub> and the frozen MLT scaffold L<sub>MLT</sub> over L<sub>in</sub> (= L<sub>&star;</sub>, imposed at x1min); total and radial kinetic energy; relative change of total energy and mass, with &int;(L<sub>in</sub>&minus;L<sub>top</sub>)dt for comparison. Bottom: time step (green) and Picard iterations per cycle (white, running mean); R<sub>ph</sub>/R<sub>ph,IC</sub> from the dumps: points = shell-mean &tau;<sub>R</sub> = 1 (as the panels above), dashed and band = median and 2&ndash;98 % of the per-column &tau;<sub>R</sub> = 1 radius, orange dashed T<sub>eff</sub> from L<sub>top</sub> and R<sub>ph</sub>; |&#7745;| through the top, sponge and energy-source powers. R<sub>ph,IC</sub> = &tau;<sub>R</sub> = 1 of the IC column (same opacity table).</figcaption>
+    </figure>
+  </section>
+
+  <section id="hg-prof">
+    <h2><span class="tag">Profiles, HG/RSG style</span>Shell means on r / R<sub>ph,IC</sub></h2>
+    <figure>
+      <a class="plate dark" href="img/hgstyle_profiles.png" target="_blank" rel="noopener"><img src="img/hgstyle_profiles.png" alt="Radial profiles in the He giant and RSG page style, with an extra row for the Eddington factor, radiation pressure fraction and mass flux"></a>
+      <figcaption>Top two rows as on the He giant and RSG E pages: solid-angle-weighted shell means at up to five dumps (first, quarters, newest; white dotted = IC column) against r/R<sub>ph,IC</sub> on a log axis (dotted line: R<sub>ph,IC</sub>; dashed: x1min). &rho;; T<sub>gas</sub> from the run's EOS (solid) and T<sub>rad</sub> = (E/a)<sup>1/4</sup> (dashed); &rho;-weighted rms v<sub>r</sub> about the mean flow and rms |v<sub>t</sub>|; L<sub>rad</sub> = 4&pi;r<sup>2</sup>&lang;F<sub>0</sub> = F<sub>r</sub> &minus; v<sub>r</sub>(E + P<sub>rr</sub>)&rang; comoving (faint thin: lab frame 4&pi;r<sup>2</sup>&lang;F<sub>r</sub>&rang;); resolved enthalpy flux with h = (e + P<sub>gas</sub> + E + P<sub>rr</sub>)/&rho; minus the mean mass flux times &lang;h&rang; (solid) and kinetic-energy flux (dashed), IC scaffold F<sub>MLT</sub>/F (white dotted; coloured dotted = times the ramp weight while it is on); rms &delta;log&rho; per shell; luminosities over L<sub>in</sub>. Bottom row (R136a1 only): &Gamma; = &lang;&kappa;<sub>R</sub>F<sub>0</sub>&rang;/(c g) with the comoving F<sub>0</sub> (solid; faint thin: lab F<sub>r</sub>) and &kappa;<sub>R</sub>L/(4&pi;cGm) (dotted); P<sub>rad</sub>/(P<sub>rad</sub>+P<sub>gas</sub>) with P<sub>rad</sub> = E/3; &#7742;<sub>r</sub> = 4&pi;r<sup>2</sup>&lang;&rho;v<sub>r</sub>&rang; over the envelope mass, per day (symmetric-log axis; the line version of the map above).</figcaption>
+    </figure>
+  </section>
+
+  <section id="hg-flux">
+    <h2><span class="tag">Flux budget, HG/RSG style</span>L<sub>rad</sub> + L<sub>enth</sub> + L<sub>kin</sub> against L<sub>in</sub></h2>
+    <figure>
+      <a class="plate dark" href="img/hgstyle_fluxbudget.png" target="_blank" rel="noopener"><img src="img/hgstyle_fluxbudget.png" alt="Energy-flux budget: comoving radiative, enthalpy and kinetic luminosities and their sum, at two times"></a>
+      <figcaption>As on the He giant and RSG E pages, from the dumps that have an m1_vet companion (every 0.5 d, real P<sub>rr</sub> = D<sub>rr</sub>E): middle and newest. Comoving L<sub>rad</sub> = lab M1 flux minus the full (E + P<sub>rr</sub>)v<sub>r</sub>; L<sub>enth</sub> with h = (e + P<sub>gas</sub> + E + P<sub>rr</sub>)/&rho; (dashed: gas part only, dotted: ideal-gas h); L<sub>kin</sub>; grey dashed: what the mean (breathing) flow carries; white: the sum, dotted: + the mean flow (= lab-frame total). The MLT scaffold is added only while its ramp weight is on (off after 0.23 d). The 1 line is L<sub>in</sub> = L<sub>&star;</sub>.</figcaption>
+    </figure>
+  </section>
+
+  <section id="movies">
+    <h2><span class="tag">Movies</span>Equatorial and meridional slices</h2>
+    <figure><div class="label"><span>Equatorial plane (&theta; &asymp; 90&deg;): &rho;, T, v<sub>r</sub>, &Gamma;<sub>loc</sub></span></div>
+      <div class="mv-ctrl"><button type="button" class="mv-play" data-k="eq">Play</button>
+        <input type="range" class="mv-slider" data-k="eq" min="0" max="0" value="0" step="1" aria-label="equatorial snapshot">
+        <span class="mv-time" id="mv-time-eq">t = 0.00 d</span></div>
+      <div class="plate"><img id="mv-eq" src="movie/eq/eq_00000.png" alt="Equatorial slice frame"></div></figure>
+    <figure><div class="label"><span>Meridional plane (&phi; &asymp; 30&deg;): &rho;, T, v<sub>r</sub>, &Gamma;<sub>loc</sub></span></div>
+      <div class="mv-ctrl"><button type="button" class="mv-play" data-k="me">Play</button>
+        <input type="range" class="mv-slider" data-k="me" min="0" max="0" value="0" step="1" aria-label="meridional snapshot">
+        <span class="mv-time" id="mv-time-me">t = 0.00 d</span></div>
+      <div class="plate"><img id="mv-me" src="movie/me/me_00000.png" alt="Meridional slice frame"></div></figure>
+    <p class="lede">Drag a slider or press Play; one frame per dump (0.25 d). &Gamma;<sub>loc</sub> = &kappa;<sub>R</sub>F<sub>0</sub>/(c g) cell by cell, comoving F<sub>0</sub>. Colour ranges are fixed within each movie, chosen from the newest dump on a full refresh. Shown for r &le; <span id="c-rmax">32</span> R<sub>&#9737;</sub> (raised automatically as the envelope grows).</p>
+  </section>
+
+  <footer>
+    <span>Run: AthenaK prod commit dc2dc20c (binary athena_gpu_he_star_m1_prod_dc2dc20c_fmadoff), deck r136a1_1104/decks/r136a1_128_B.athinput (md5 3d48ea84), run dir r136a1_1104/runB/prod. Setup and choices: r136a1_1104/SETUP.md.</span>
+    <span>Page made on Caltech with <code>r136a1_1104/page/make_page_deep.sh</code> (refresh: <code>r136a1_1104/page/refresh_deep.sh</code>). The 512-cell first-look run (x1min 23.14 R<sub>&#9737;</sub>, stopped) has its own page..</span>
+  </footer>
+</div>
+<script>
+// Fills run status, labels and notes from status.json (written by scripts_repro/gen_status.py).
+(function () {
+  fetch('status.json?v=' + Date.now(), { cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (!d) return;
+      Object.keys(d).forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.innerHTML = d[id];
+      });
+      document.querySelectorAll('img[src^="img/"]').forEach(function (im) {
+        if (d.__v) im.src = im.getAttribute('src').split('?')[0] + '?v=' + d.__v;
+      });
+    })
+    .catch(function () {});
+})();
+</script>
+<script>
+(function(){function pad(n){return ('00000'+n).slice(-5)}
+fetch('movie/n.json?v='+Date.now(),{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).catch(function(){return null}).then(function(d){d=d||window.__NJ;
+document.querySelectorAll('.mv-slider').forEach(function(sl){if(d&&d.n){sl.max=d.n-1;sl.value=d.n-1;}var k=sl.dataset.k,img=document.getElementById('mv-'+k),tt=document.getElementById('mv-time-'+k),pb=document.querySelector('.mv-play[data-k="'+k+'"]'),tm=null;
+for(var i=0;i<=+sl.max;i++)(new Image()).src='movie/'+k+'/'+k+'_'+pad(i)+'.png';
+function show(i){img.src='movie/'+k+'/'+k+'_'+pad(i)+'.png';tt.textContent='t = '+((d&&d.t&&d.t[i]!=null)?d.t[i]:0.5*i).toFixed(2)+' d';}
+sl.addEventListener('input',function(){show(+sl.value)});
+pb.addEventListener('click',function(){if(tm){clearInterval(tm);tm=null;pb.textContent='Play';return;}pb.textContent='Pause';if(+sl.value>=+sl.max)sl.value=0;tm=setInterval(function(){var v=+sl.value+1;if(v>+sl.max){clearInterval(tm);tm=null;pb.textContent='Play';return;}sl.value=v;show(v);},250);});show(+sl.value);});});
+})();
+</script>
+</body></html>

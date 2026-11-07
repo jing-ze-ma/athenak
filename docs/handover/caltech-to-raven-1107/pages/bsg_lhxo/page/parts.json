@@ -1,0 +1,1 @@
+[{"name": "Caltech 4 H200", "run": "/resnick/groups/carnegie_poc/jingze/doface_1105/prod_lhxo", "gpu": "H200", "ngpu": 4, "layout": "1 node x 4 H200", "jobs": [], "host": "local"}]

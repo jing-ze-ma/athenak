@@ -1,0 +1,16 @@
+# pages_cache_bulk.lst (11-07): per-dump reductions of the RSG/HG pages, NOT in pages_cache.tar (too big to duplicate). Paths relative to $J=/resnick/groups/carnegie_poc/jingze.
+# REQUIRED for continuous history (dumps are not copied to Raven). Columns: path  bytes  files
+rsgE_page/out/data 116190695780 6305
+hgglob_page/out/data 33313540526 1731
+vis3d/rsgE_glob/red 22378749672 2948
+vis3d/hggl_glob/red 8406416932 974
+# OPTIONAL (rendered PNG frames; regenerable from the reductions above; 3-D frames re-render anyway once the cs3d cfg hash changes with repointed paths)
+rsgE_page/out/frames/eq 4907162920 6305
+rsgE_page/out/frames/inner 10022033601 6305
+rsgE_page/out/frames/map 11521756114 6305
+rsgE_page/out/frames/phot 3033865343 6305
+hgglob_page/out/frames/eq 1092820144 1731
+hgglob_page/out/frames/inner 1967049519 1731
+hgglob_page/out/frames/map 2148413710 1731
+hgglob_page/out/frames/phot 763849269 1731
+# suggested: cd $J && rsync -a --files-from=<(grep -v '^#' pages_cache_bulk.lst | head -4 | cut -d' ' -f1) -r ./ raven:/raven/ptmp/jinma/caltech_1107/pages/  (or tar|ssh stream per dir); keep mtimes (figcache keys on name+size+mtime)
