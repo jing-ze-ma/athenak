@@ -234,6 +234,41 @@ void WbAllBuild(WbAllCtx &c) {
 //! from the user source of the stage whose fluxes built them.
 
 void WbAllAmBackground(WbAllCtx &c);
+//! dhjwball-1106 WB_FDIAG (test only): flux mismatch across same-panel MeshBlock faces on one
+//! rank (uflx of the stage): the same face seen by both blocks must carry the same flux
+void WbFluxDiag(MeshBlockPack *pmbp, DvceFaceFld5D<Real> &uflx) {
+  auto &ic = pmbp->pmesh->mb_indcs;
+  const int is = ic.is, ie = ic.ie, js = ic.js, je = ic.je, ks = ic.ks, ke = ic.ke;
+  auto f2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), uflx.x2f);
+  auto f3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), uflx.x3f);
+  auto &sz = pmbp->pmb->mb_size;
+  auto &pn = pmbp->pmb->mb_panel;
+  const int nmb = pmbp->nmb_thispack;
+  Real mx2 = 0.0, ref2 = 0.0, mx3 = 0.0, ref3 = 0.0; int ii2 = -1, kk2 = -1, ii3 = -1, jj3 = -1, np = 0;
+  for (int a = 0; a < nmb; ++a) for (int b = 0; b < nmb; ++b) {
+    if (a == b || pn.h_view(a) != pn.h_view(b)) continue;
+    const auto &A = sz.h_view(a); const auto &B = sz.h_view(b);
+    if (fabs(A.x2max - B.x2min) < 1.0e-10 && fabs(A.x3min - B.x3min) < 1.0e-10) {
+      np++;
+      for (int k = ks; k <= ke; ++k) for (int i = is; i <= ie; ++i) {
+        const Real d = fabs(f2(a,IDN,k,je+1,i) - f2(b,IDN,k,js,i)), r = fabs(f2(a,IDN,k,je+1,i));
+        ref2 = fmax(ref2, r);
+        if (d > mx2) {mx2 = d; ii2 = i; kk2 = k;}
+      }
+    }
+    if (fabs(A.x3max - B.x3min) < 1.0e-10 && fabs(A.x2min - B.x2min) < 1.0e-10) {
+      np++;
+      for (int j = js; j <= je; ++j) for (int i = is; i <= ie; ++i) {
+        const Real d = fabs(f3(a,IDN,ke+1,j,i) - f3(b,IDN,ks,j,i)), r = fabs(f3(a,IDN,ke+1,j,i));
+        ref3 = fmax(ref3, r);
+        if (d > mx3) {mx3 = d; ii3 = i; jj3 = j;}
+      }
+    }
+  }
+  std::cout << "WB_FDIAG pairs " << np << " x2 max|dF| " << mx2 << " at i " << ii2 << " k " << kk2
+            << " (max|F| " << ref2 << ") x3 " << mx3 << " at i " << ii3 << " j " << jj3
+            << " (max|F| " << ref3 << ")" << std::endl;
+}
 //! dhjwball-1106 <fluid>/wb_poison_test (TEST ONLY): every cached WB background of a cell
 //! with Phi_wb > wb_phimax -> a huge value: if any code path still reads it, the run differs
 //! from the run without the key.  nv channels of cache(m,n,k,j,i).

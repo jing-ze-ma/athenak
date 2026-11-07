@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <cstdio>
 
+#include <cstdlib>
+#include "hydro/hydro_wball.hpp"
 #include "deep_hot_jupiter_rt.hpp"
 #include "driver/dt_retry.hpp"
 #include "utils/imex_sdirk2.hpp"   // the tableau shared with rad_m1 hesdirk2
@@ -88,6 +90,13 @@ void WbTanProbe(Mesh *pm, const Real bdt) {
 }
 
 void SourceFunc(Mesh *pm, Real bdt) {
+  if (std::getenv("WB_FDIAG") != nullptr) {   // dhjwball-1106 test only
+    if (pm->pmb_pack->phydro != nullptr) {
+      hydro::WbFluxDiag(pm->pmb_pack, pm->pmb_pack->phydro->uflx);
+    } else {
+      hydro::WbFluxDiag(pm->pmb_pack, pm->pmb_pack->pmhd->uflx);
+    }
+  }
   if (dhj_wbt.on && !dhj_wbt.ready) WbTanProbe(pm, bdt);
   EBudStage(pm, bdt);
   DhjFluxStage(pm);
