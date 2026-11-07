@@ -2277,15 +2277,26 @@ void RadiationM1::Time2X2Stats(const Real r, const Real rk, const Real fkm) {
   if (!x2_ok) return;
   auto &ind = pmy_pack->pmesh->mb_indcs;
   const int is = ind.is, ie = ind.ie, js = ind.js, je = ind.je, ks = ind.ks, ke = ind.ke;
-  auto tth = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                 Kokkos::subview(tau_ten, Kokkos::ALL, 0, Kokkos::ALL, Kokkos::ALL,
-                                 Kokkos::ALL));
-  auto pth = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                 Kokkos::subview(x2_tt, Kokkos::ALL, 0, Kokkos::ALL, Kokkos::ALL,
-                                 Kokkos::ALL));
-  auto kth = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                 Kokkos::subview(iw, Kokkos::ALL, static_cast<int>(M1_IW_KT), Kokkos::ALL,
-                                 Kokkos::ALL, Kokkos::ALL));
+  // three 4-D device copies (a subview of a 5-D LayoutRight view has no host deep_copy)
+  const int nmb = pmy_pack->nmb_thispack;
+  const int e2 = static_cast<int>(tau_ten.extent(2)), e3 = static_cast<int>(tau_ten.extent(3));
+  const int e4 = static_cast<int>(tau_ten.extent(4));
+  DvceArray4D<Real> st0("m1_x2st0", nmb, e2, e3, e4), st1("m1_x2st1", nmb, e2, e3, e4);
+  DvceArray4D<Real> st2("m1_x2st2", nmb, e2, e3, e4);
+  {
+    auto a_ = tau_ten;
+    auto b_ = x2_tt;
+    auto c_ = iw;
+    par_for("m1_x2st", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      st0(m,k,j,i) = a_(m,0,k,j,i);
+      st1(m,k,j,i) = b_(m,0,k,j,i);
+      st2(m,k,j,i) = c_(m,M1_IW_KT,k,j,i);
+    });
+  }
+  auto tth = Kokkos::create_mirror_view_and_copy(HostMemSpace(), st0);
+  auto pth = Kokkos::create_mirror_view_and_copy(HostMemSpace(), st1);
+  auto kth = Kokkos::create_mirror_view_and_copy(HostMemSpace(), st2);
   auto x1fh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx1f);
   // tau < 0.3 | 0.3-3 | 3-30 | 30-300 | 300-1e4 | > 1e4
   static constexpr int NB = 6;
