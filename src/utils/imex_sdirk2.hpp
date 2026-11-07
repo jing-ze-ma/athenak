@@ -33,7 +33,7 @@ struct Tableau {
 
 inline Real Gamma() {return 1.0 - 1.0/std::sqrt(2.0);}
 
-// tab = 0: hesdirk2, 1: trbdf2
+// tab = 0: hesdirk2, 1: trbdf2, 2: sdirk2
 inline Tableau Make(const int tab) {
   Tableau t;
   const Real g = Gamma();
@@ -45,7 +45,17 @@ inline Tableau Make(const int tab) {
     t.w1 = 0.5;
     t.c31 = 0.5*g;
     t.c32 = b2 - 0.5*g;
-  } else {
+  } else if (tab == 2) {
+    // seamE-1106 sdirk2: Alexander's two-stage L-stable SDIRK (g = 1 - 1/sqrt 2): no K1 in
+    // either stage.  With the Heun average of the start state, stage 2's start is
+    // U^n + (1 - g) dt K2 + (the implicit g dt K3): c32 = (1 - g) - g/2.  The hydro keeps
+    // Heun (c2 = 1), so the implicit stage 1 at c = g is not the hydro's stage time.
+    t.a21 = 0.0;
+    t.w0 = 0.5;
+    t.w1 = 0.5;
+    t.c31 = 0.0;
+    t.c32 = (1.0 - g) - 0.5*g;
+} else {
     const Real w = 0.25*std::sqrt(2.0);
     t.a21 = g;
     t.w0 = 0.25;

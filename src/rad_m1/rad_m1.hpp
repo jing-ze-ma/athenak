@@ -1709,7 +1709,8 @@ class RadiationM1 {
   // (so every face of those cells sees none).  Conservative (per face), local.
   Real impl_pred_tcap = 2.0;   // seamE-1106 implicit_predictor_tcap
   Real t2_k1rd = 0.0, t2_k1rd_n = 0.0, t2_k1rd_un = 0.0;   // seamE-1106 time2_k1_redist
-  int t2_k1rd_r = 16;
+  int t2_k1rd_r = 16, t2_k1rd_calls = 0;
+  Real t2_k1rd_mv = 0.0, t2_k1rd_mx = 0.0;
   Real t2_k1fct = 0.0, t2_k1fct_n = 0.0, t2_k1fct_left = 0.0, t2_k1fct_first = 0.0;   // seamE-1106
   int t2_k1fct_r = 16, t2_k1fct_calls = 0, t2_k1fct_dbg = 0;
   DvceArray4D<Real> t2fct_cum;
