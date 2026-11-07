@@ -186,7 +186,8 @@ CASES += [
          {'mesh/cs_seam_blockend': 'clamp'}, expect='FAIL'),
     dvar(DHJ_H, 'dhj_hyd', 'hydro planet deck (lhllc), extend', EXT),
     dvar(DHJ_H, 'dhj_hyd_hse_spb', 'hydro deck + top_bc hse + sponge_bottom, extend',
-         dict(EXT, **{'problem/top_bc': 'hse', 'problem/sponge_bottom': 'true'})),
+         dict(EXT, **{'problem/top_bc': 'hse', 'problem/sponge_bottom': 'true',
+                   'problem/wb_lobe_cut': 'false'})),
     dvar(DHJ_H, 'dhj_hyd_nojreuse', 'hydro deck, ck_impl_jreuse = 0 (control for the per-rank '
          'chord-Jacobian rebuild decision)', dict(EXT, **{'problem/ck_impl_jreuse': 0.0})),
     dvar(DHJ_H, 'dhj_hyd_ck1', 'hydro deck, ck every cycle, xstep 1, extend',
