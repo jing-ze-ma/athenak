@@ -12,12 +12,12 @@
 #include <algorithm>
 #include <cstdio>
 
-#include <cstdlib>
-#include "hydro/hydro_wball.hpp"
 #include "deep_hot_jupiter_rt.hpp"
 #include "driver/dt_retry.hpp"
 #include "utils/imex_sdirk2.hpp"   // the tableau shared with rad_m1 hesdirk2
 #include "utils/ck_2nd.hpp"       // ck2nd-1102 ck_t2_seed
+#include <cstdlib>
+#include "hydro/hydro_wball.hpp"
 
 
 //----------------------------------------------------------------------------------------
