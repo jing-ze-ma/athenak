@@ -10234,10 +10234,75 @@ uint64_t M1DtHash(const DvceArray5D<Real> &a, const int n, const int k0, const i
   }, Kokkos::Sum<uint64_t>(h));
   return h;
 }
+// layoutdet-1107: the LAYOUT-comparable hash of component n of a cell-centred array:
+// active cells only, each term mixed with its GLOBAL position (gid, k, j, i), the exact
+// uint64 sum over the pack and over all ranks.  Equal for two layouts with the same
+// MeshBlocks iff the active values are bitwise equal (up to hash collisions).
+uint64_t M1DtHashL(const DvceArray5D<Real> &a, const int n, const DvceArray1D<int> &gid,
+                   const int ks, const int nk, const int js, const int nj, const int is,
+                   const int ni) {
+  const int64_t tot = static_cast<int64_t>(a.extent(0))*nk*nj*ni;
+  uint64_t h = 0;
+  if (tot > 0) {
+    Kokkos::parallel_reduce("m1_dt_hashl",
+    Kokkos::RangePolicy<DevExeSpace, Kokkos::IndexType<int64_t>>(DevExeSpace(), 0, tot),
+    KOKKOS_LAMBDA(const int64_t q, uint64_t &s) {
+      int64_t r = q;
+      const int i = static_cast<int>(r % ni);
+      r /= ni;
+      const int j = static_cast<int>(r % nj);
+      r /= nj;
+      const int k = static_cast<int>(r % nk);
+      const int m = static_cast<int>(r/nk);
+      const uint64_t qg = ((static_cast<uint64_t>(gid(m))*nk + k)*nj + j)*ni + i;
+      s += M1DtMix(a(m,n,k+ks,j+js,i+is), qg);
+    }, Kokkos::Sum<uint64_t>(h));
+  }
+#if MPI_PARALLEL_ENABLED
+  uint64_t g = 0;
+  MPI_Allreduce(&h, &g, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+  h = g;
+#endif
+  return h;
+}
 } // namespace
+
+//! layoutdet-1107: env M1_DTRACE_LAYOUT=1 with <rad_m1>/implicit_det_trace = N prints,
+//! on rank 0, the layout-comparable hashes (M1DtHashL) of the active cells of the solve's
+//! arrays per component ("<dtl>" lines); compare two layouts line by line (diagnostic).
+void RadiationM1::DetTraceLayout(const char *tag) {
+  if (impl_dtrace <= 0 || impl_nstep >= static_cast<Real>(impl_dtrace)) {return;}
+  std::ostringstream os;
+  os << "<dtl> s" << static_cast<int>(impl_nstep) << " " << tag << std::hex;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  auto gid = pmy_pack->pmb->mb_gid.d_view;
+  auto put = [&](const char *nm, const DvceArray5D<Real> &a) {
+    if (a.size() == 0) {return;}
+    const bool cc = (a.extent_int(2) > indcs.ke) && (a.extent_int(3) > indcs.je) &&
+                    (a.extent_int(4) > indcs.ie);
+    if (!cc) {return;}
+    os << " " << nm << "=";
+    for (int n = 0; n < a.extent_int(1); ++n) {
+      const uint64_t h = M1DtHashL(a, n, gid, indcs.ks, indcs.nx3, indcs.js, indcs.nx2,
+                                   indcs.is, indcs.nx1);
+      os << (n ? "," : "") << (h & 0xffffffffULL);
+    }
+  };
+  radm1::FluidRef fl = radm1::FluidRef::Get(pmy_pack);
+  put("u0", u0);
+  put("u1", u1);
+  put("opac", opac);
+  put("fu0", fl.u0);
+  put("fw0", fl.w0);
+  put("iw", iw);
+  put("ifw", ifw);
+  put("tau", tau_ten);
+  if (global_variable::my_rank == 0) {std::cout << os.str() << std::endl;}
+}
 
 void RadiationM1::DetTrace(const char *tag) {
   if (impl_dtrace <= 0 || impl_nstep >= static_cast<Real>(impl_dtrace)) {return;}
+  if (std::getenv("M1_DTRACE_LAYOUT") != nullptr) {DetTraceLayout(tag); return;}
   std::ostringstream os;
   os << "<dtr> r" << global_variable::my_rank << " s" << static_cast<int>(impl_nstep)
      << " " << tag << std::hex;
@@ -12724,6 +12789,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   TmrMark(1);   // implicit_timers: Opacity (and anything since the closure limits)
+  DetTrace("isolve_in");
   if (dbg_eaudit) {EAuditMark(2);}
   eint_ledger::Mark(pmy_pack->pmesh, "m1_pre");   // floorheat-1029
   if (dbg_etally) {

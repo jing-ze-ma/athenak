@@ -1414,6 +1414,7 @@ class RadiationM1 {
                                 // bitwise hashes of the solve's arrays for the first N
                                 // solves (run-to-run reproducibility diagnostic)
   void DetTrace(const char *tag);
+  void DetTraceLayout(const char *tag);   // layoutdet-1107 (env M1_DTRACE_LAYOUT)
   void DetTraceScalars(const char *tag, int n, const Real *v);
   bool impl_tsolve_opac;        // <rad_m1>/implicit_tsolve_opac (nc_cure_1002)
   int impl_tsolve_opac_start;   // implicit_tsolve_opac_start: first Picard pass

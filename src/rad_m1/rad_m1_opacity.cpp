@@ -47,6 +47,7 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
   // m1-mhd: this task is the first gas reader of both M1 chains; |B|^2/2 of the stage's
   // field is refreshed here, before any early return (Coupling / ImplicitSolve read it)
   if (fl_mhd && !emag_hold) EmagBuild(false);
+  DetTrace("opac_in");
   if (opac_zero) return TaskStatus::complete;
   if (!fl_on) return TaskStatus::complete;
   // <rad_m1>/opac_freeze (debug): fill the array once and leave it alone afterwards, so

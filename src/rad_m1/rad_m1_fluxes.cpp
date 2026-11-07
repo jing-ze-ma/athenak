@@ -134,6 +134,7 @@ TaskStatus RadiationM1::ApplyClosureLimits(Driver *pdrive, int stage) {
   if (tmr_on) {tmr_cnt[7] += 1.0;}
   TmrMark(-1);
   if (dbg_eaudit) {EAuditMark(0);}   // accbook-1021 (output only)
+  DetTrace("clos_in");
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int n1 = indcs.nx1 + 2*(indcs.ng);
   int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;

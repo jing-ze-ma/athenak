@@ -390,6 +390,7 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
 //! the inversion.
 
 TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
+  DetTrace("c2p_in");
   // mrglat-1019 <hydro>/merge_lat_rad = true: the radiation E, F of the merged lateral
   // groups replaced by their group values after the solve (hydro_mergelat.hpp)
   {
