@@ -12675,7 +12675,7 @@ void RadiationM1::EAuditMark(int pt) {
   const Real dfl = hy ? 10.0*fl.eos.dfloor : -1.0;
   const bool init = eaud_init;
   const bool cls = (pt == 2) && (t2_solve != M1_T2S_STAGE2);
-  const bool sete = (pt == 5) || !init;
+  const bool sete = (pt == 5) || (pt == 6) || !init;
   array_sum::GlobalSum s3;
   Kokkos::parallel_reduce("m1_eaudit", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nk*nj*ni),
@@ -12802,6 +12802,10 @@ void RadiationM1::EAuditMark(int pt) {
     for (int r=0; r<4; ++r) {eaud_pd[r] += loc[10 + r] - eaud_pc[r];}
   }
   if (!init) return;
+  if (pt == 6) {   // r136e-1107: a put-back (discarded attempt), no segment
+    eaud_disc += loc[0] + loc[1] + loc[2];
+    return;
+  }
   for (int r=0; r<3; ++r) {eaud_seg[pt][r] += loc[r];}
   if (pt == 3) {
     for (int r=0; r<6; ++r) {eaud_bnd[r] = loc[3 + r];}
@@ -12820,12 +12824,13 @@ void RadiationM1::EAuditMark(int pt) {
                   eaud_seg[q][2]);
     }
     std::printf(" B=%.10e,%.10e,%.10e,%.10e,%.10e T2=%.10e W=%.10e"
-                " P=%.10e,%.10e,%.10e,%.10e RSOLVE=%.10e\n",
+                " P=%.10e,%.10e,%.10e,%.10e RSOLVE=%.10e D=%.10e\n",
                 eaud_bnd[0], eaud_bnd[1], eaud_bnd[2], eaud_bnd[3], eaud_bnd[4],
                 eaud_bnd[5], eaud_w, eaud_pd[0], eaud_pd[1], eaud_pd[2], eaud_pd[3],
-                rsol);
+                rsol, eaud_disc);
   }
   eaud_w = 0.0;
+  eaud_disc = 0.0;
   for (int r=0; r<4; ++r) {eaud_pd[r] = 0.0;}
   for (int q=0; q<6; ++q) {
     for (int r=0; r<3; ++r) {eaud_seg[q][r] = 0.0;}

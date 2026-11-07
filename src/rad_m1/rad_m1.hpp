@@ -2238,6 +2238,10 @@ class RadiationM1 {
   DvceArray4D<Real> eaud_u, eaud_e, eaud_c;
   Real eaud_seg[6][3] = {};
   Real eaud_bnd[7] = {0.0};
+  // r136e-1107: mark 6 = the state was put back outside the M1 chain (Time2Restore,
+  // Time2PosFix): the change since the last mark (the discarded attempt) is summed here
+  // instead of into a segment; printed as D= at mark 5
+  Real eaud_disc = 0.0;
   Real eaud_w = 0.0;               // force_reference_work = split (be): fref_wacc
   Real eaud_pc[4] = {0.0};         // M1_POS_FLR_UN, FLR_DE, GAS_DE, FLRS at the entry
   Real eaud_pd[4] = {0.0};         // their change over the solve (summed per print)

@@ -792,6 +792,8 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (m1t2fail && !dtr_now) {
         if (pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 1);}
         pm1->Time2Restore(this);
+        // r136e-1107 dbg_energy_audit: the put-back is no segment (EAUDIT D=)
+        if (pm1->dbg_eaudit) {pm1->EAuditMark(6);}
         dtretry::PgenStageRestore();
         eint_ledger::Discard(pmesh);   // floorheat-1029: the redo starts a new baseline
         for (int stage=1; stage<=(nexp_stages); ++stage) {hydro_stage(stage);}
