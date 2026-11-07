@@ -2524,6 +2524,13 @@ class RadiationM1 {
   bool vgd_on = false;         // vet_gd
   int vgd_nside = 3;           // vet_gd_nside: 12 nside^2 directions (3 -> 108)
   bool vgd_tan = true;         // vet_gd_tangential: the lagged M1SphTan term
+  // cs-tan-1106: vet_gd_tangential = true on the cubed sphere (vgd_tan itself stays false
+  // there, it selects the sp forms): Q in LAT4, LAT5 about the per-cell tangent frame
+  // cs_qf (m, 6, k, j incl. ghosts; M1CsQab), M1CsTanFaceLag / M1CsTanFaceOp
+  bool vgd_cstan = false;
+  Real cstan_np = 0.0, cstan_na = 0.0;   // assemblies, assemblies with Q on (log only)
+  DvceArray4D<Real> cs_qf;
+  void CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac, MeshBoundaryValuesCC *pb);
   int vgd_iter = 1;            // vet_gd_iter: sweeps per ordinary build
   int vgd_smooth = 0;          // vet_gd_smooth: lateral 1-2-1 passes on dD_rr (diag.)
   DvceArray4D<Real> vgd_sm;    // (m, k, j, i) scratch of VetGdSmooth

@@ -2086,9 +2086,50 @@ void RadiationM1::VetGdCsSweep() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CsTanFrameInit
+//! \brief cs-tan-1106: the per-cell orthonormal tangent frame cs_qf of Q: e1 = the normal
+//! of the x2 plane through the cell centre, e2 = the x3 plane's normal less its e1 part
+//! (both planes hold the radial line, so both are tangential).  Cartesian components,
+//! exchanged once through the tau_ten kind of exchange (a = at least 6 components, the
+//! same no-resample map as the slots): a seam ghost holds its mirror cell's frame, a cube-
+//! vertex corner ghost zeros, so Q contracts to zero there.
+
+void RadiationM1::CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
+                                 MeshBoundaryValuesCC *pb) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int n3 = a.extent_int(2), n2 = a.extent_int(3);
+  Kokkos::realloc(cs_qf, nmb1 + 1, 6, n3, n2);
+  Kokkos::deep_copy(a, 0.0);
+  auto a_ = a;
+  auto cn2 = cs_cn2, cn3 = cs_cn3;
+  par_for("m1_cstan_fr", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    Real e1[3], e2[3];
+    for (int c = 0; c < 3; ++c) {e1[c] = cn2(m,j,c); e2[c] = cn3(m,k,c);}
+    const Real d = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+    for (int c = 0; c < 3; ++c) {e2[c] -= d*e1[c];}
+    const Real nn = 1.0/sqrt(e2[0]*e2[0] + e2[1]*e2[1] + e2[2]*e2[2]);
+    for (int c = 0; c < 3; ++c) {
+      a_(m,c,k,j,is) = e1[c];
+      a_(m,3+c,k,j,is) = e2[c]*nn;
+    }
+  });
+  VetLatExchange(a, ac, pb);
+  auto q_ = cs_qf;
+  par_for("m1_cstan_fq", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    for (int c = 0; c < 6; ++c) {q_(m,c,k,j) = a_(m,c,k,j,is);}
+  });
+  Kokkos::deep_copy(a, 0.0);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdCsMoments
-//! \brief part 0: D_rr = K_rr/J about the cell's r_hat -> LAT0 = D_rr - f_K (LAT1..5 =
-//! 0 on cs, stage S3); part 1: the vet_gd_replace surface q of the top cell
+//! \brief part 0: D_rr = K_rr/J about the cell's r_hat -> LAT0 = D_rr - f_K (LAT1..3 the
+//! Cartesian D_r,lat; LAT4, LAT5 = 0, or Q under vet_gd_tangential: cs-tan-1106);
+//! part 1: the vet_gd_replace surface q of the top cell
 
 void RadiationM1::VetGdCsMoments(const int part) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -2104,6 +2145,9 @@ void RadiationM1::VetGdCsMoments(const int part) {
   auto tt_ = tau_ten;
   auto cr_ = vgd_csr;
   if (part == 0) {
+    // cs-tan-1106 vet_gd_tangential: Q in LAT4, LAT5 about the frame cs_qf (M1CsQab)
+    const bool ctan = vgd_cstan;
+    auto qf_ = cs_qf;
     par_for("m1_vgdcs_mom", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
       for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
@@ -2111,6 +2155,7 @@ void RadiationM1::VetGdCsMoments(const int part) {
       const Real rx = cr_(m,k+og,j+og,0), ry = cr_(m,k+og,j+og,1);
       const Real rz = cr_(m,k+og,j+og,2);
       Real jm = 0.0, rr = 0.0, kx = 0.0, ky = 0.0, kz = 0.0;
+      Real q1m2 = 0.0, q12 = 0.0;
       for (int d = 0; d < n; ++d) {
         const Real a = dir_(d,0)*rx + dir_(d,1)*ry + dir_(d,2)*rz;
         const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
@@ -2119,8 +2164,20 @@ void RadiationM1::VetGdCsMoments(const int part) {
         kx += wi*a*dir_(d,0);
         ky += wi*a*dir_(d,1);
         kz += wi*a*dir_(d,2);
+        if (ctan) {
+          const Real b1 = dir_(d,0)*qf_(m,0,k,j) + dir_(d,1)*qf_(m,1,k,j)
+                          + dir_(d,2)*qf_(m,2,k,j);
+          const Real b2 = dir_(d,0)*qf_(m,3,k,j) + dir_(d,1)*qf_(m,4,k,j)
+                          + dir_(d,2)*qf_(m,5,k,j);
+          q1m2 += wi*(b1*b1 - b2*b2);
+          q12 += wi*b1*b2;
+        }
       }
       if (jm > 0.0) {
+        if (ctan) {
+          tt_(m,M1_TT_LAT0+4,k,j,i) = 0.5*q1m2/jm;
+          tt_(m,M1_TT_LAT0+5,k,j,i) = q12/jm;
+        }
         tt_(m,M1_TT_LAT0,k,j,i) = rr/jm - tt_(m,0,k,j,i);
         // cs-s4-1017: v = D.rhat - D_rr rhat (CARTESIAN, tangential) -> LAT1..LAT3, the
         // D_r,lat of the cs operator (M1CsLat0 / M1CsLatF); read only with
@@ -2499,6 +2556,204 @@ void RadiationM1::VetGdMmsCs() {
         if (ncl[t][c] > 0.0) {
           std::printf("  %s %.0f: max %.3e mean %.3e", cn[c], ncl[t][c],
                       emax[t][c]/amax[t], esum[t][c]/ncl[t][c]/amax[t]);
+        }
+      }
+      std::printf("\n");
+    }
+  }
+  // cs-tan-1106: the same check of n . div(Q E) on the x2 / x3 faces (M1CsTanFaceLag,
+  // and its operator form M1CsTanFaceOp) with Q = P A P - tr(P A P) P / 2 (P = I - q q,
+  // A(X) a smooth symmetric matrix), held as the two frame slots of a real run, against
+  // the 3-D divergence of (Q n E)(X) at the face midpoint (4th-order Cartesian FD)
+  const double a0[6] = {0.3, -0.2, 0.1, 0.15, -0.25, 0.05};
+  const double a1m[6] = {-0.1, 0.25, 0.2, -0.3, 0.1, 0.15};
+  auto fQ = [&](const double *X, double q[3][3]) {
+    const double r = std::sqrt(dot(X, X));
+    const double u[3] = {X[0]/r, X[1]/r, X[2]/r};
+    const double w = (r - r0)/(r1 - r0);
+    const double sf = (1.0 + 0.5*w)*std::sin(2.0*dot(u, a1) + 0.4);
+    double am[3][3];
+    const int ix[6][2] = {{0,0},{1,1},{2,2},{0,1},{0,2},{1,2}};
+    for (int c = 0; c < 6; ++c) {
+      am[ix[c][0]][ix[c][1]] = am[ix[c][1]][ix[c][0]] = a0[c] + sf*a1m[c];
+    }
+    double pr[3][3], t1[3][3], t2[3][3];
+    for (int a = 0; a < 3; ++a) {
+      for (int b = 0; b < 3; ++b) {pr[a][b] = ((a == b) ? 1.0 : 0.0) - u[a]*u[b];}
+    }
+    for (int a = 0; a < 3; ++a) {
+      for (int b = 0; b < 3; ++b) {
+        t1[a][b] = 0.0;
+        for (int c = 0; c < 3; ++c) {t1[a][b] += pr[a][c]*am[c][b];}
+      }
+    }
+    double tr = 0.0;
+    for (int a = 0; a < 3; ++a) {
+      for (int b = 0; b < 3; ++b) {
+        t2[a][b] = 0.0;
+        for (int c = 0; c < 3; ++c) {t2[a][b] += t1[a][c]*pr[c][b];}
+      }
+      tr += t2[a][a];
+    }
+    for (int a = 0; a < 3; ++a) {
+      for (int b = 0; b < 3; ++b) {q[a][b] = t2[a][b] - 0.5*tr*pr[a][b];}
+    }
+  };
+  // the frame (exchange through its own 6-component buffer)
+  DvceArray5D<Real> frm("vgdmms_qf", nmb, 6, c3, c2, c1), frmc("vgdmms_qfc", nmb, 6, 1, 1, 1);
+  {
+    MeshBoundaryValuesCC pf(pmy_pack, nullptr, false);
+    pf.InitializeBuffers(6);
+    pf.SetVectorPairs(6, {});
+    pf.cs_noresample = true;
+    CsTanFrameInit(frm, frmc, &pf);
+  }
+  auto qfh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cs_qf);
+  DvceArray5D<Real> sl("vgdmms_s", nmb, 2, c3, c2, c1), slc("vgdmms_sc", nmb, 2, 1, 1, 1);
+  {
+    auto sh = Kokkos::create_mirror_view(sl);
+    Kokkos::deep_copy(sh, 0.0);
+    for (int m = 0; m < nmb; ++m) {
+      for (int k = ks; k <= ke; ++k) {
+        for (int j = js; j <= je; ++j) {
+          const double xi = 0.25*M_PI*CellCenterX(j - js, nx2, msz.h_view(m).x2min,
+                                                  msz.h_view(m).x2max);
+          const double eta = 0.25*M_PI*CellCenterX(k - ks, nx3, msz.h_view(m).x3min,
+                                                   msz.h_view(m).x3max);
+          double q[3];
+          p2c(mpan.h_view(m), xi, eta, q);
+          for (int i = is; i <= ie; ++i) {
+            const double X[3] = {x1v(m,i)*q[0], x1v(m,i)*q[1], x1v(m,i)*q[2]};
+            double qm[3][3];
+            fQ(X, qm);
+            double s11 = 0.0, s22 = 0.0, s12 = 0.0;
+            for (int a = 0; a < 3; ++a) {
+              for (int b = 0; b < 3; ++b) {
+                s11 += qfh(m,a,k,j)*qm[a][b]*qfh(m,b,k,j);
+                s22 += qfh(m,3+a,k,j)*qm[a][b]*qfh(m,3+b,k,j);
+                s12 += qfh(m,a,k,j)*qm[a][b]*qfh(m,3+b,k,j);
+              }
+            }
+            sh(m,0,k,j,i) = 0.5*(s11 - s22);
+            sh(m,1,k,j,i) = s12;
+          }
+        }
+      }
+    }
+    Kokkos::deep_copy(sl, sh);
+    MeshBoundaryValuesCC ps(pmy_pack, nullptr, false);
+    ps.InitializeBuffers(2);
+    ps.SetVectorPairs(2, {});
+    ps.cs_noresample = true;
+    VetLatExchange(sl, slc, &ps);
+  }
+  DvceArray5D<Real> oq("vgdmms_cs_oq", nmb, 4, c3 + 1, c2 + 1, c1);
+  {
+    auto f_ = fld;
+    auto sl_ = sl;
+    auto o_ = oq;
+    auto cdxf_ = M1Dxf();
+    auto x1_ = pmy_pack->pcoord->x1v;
+    const auto tg = M1MakeCsTanGeo(cs_qf, cdxf_, pmy_pack->pcoord->sin_face_xi,
+                                   pmy_pack->pcoord->cos_face_xi,
+                                   pmy_pack->pcoord->sin_face_eta,
+                                   pmy_pack->pcoord->cos_face_eta, csg2, csg3,
+                                   cs_seam.d_view, cs_fn2, cs_fn3, cs_cn2, cs_cn3, x1_,
+                                   js, je, ks, ke);
+    par_for("m1_vgdmms_csq", DevExeSpace(), 0, nmb - 1, ks, ke + 1, js, je + 1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int e = 1; e <= 2; ++e) {
+        if ((e == 1 && k > ke) || (e == 2 && j > je)) {continue;}
+        o_(m,e-1,k,j,i) = M1CsTanFaceLag(f_, sl_, -4, tg, e, m, k, j, i, 3, false, 0);
+        Real tv = 0.0;
+        M1CsTanFaceOp(sl_, -4, tg, e, m, k, j, i,
+                      [&](const int qk, const int qj, const Real c) {
+                        tv += c*f_(m,3,qk,qj,i);
+                      });
+        o_(m,e+1,k,j,i) = tv;
+      }
+    });
+  }
+  auto oqh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), oq);
+  auto divq = [&](const double *q, const double *nf, double r) {
+    const double X0[3] = {r*q[0], r*q[1], r*q[2]};
+    const double h = 1.0e-3*r;
+    double s = 0.0;
+    for (int a = 0; a < 3; ++a) {
+      auto g = [&](double d) {
+        double X[3] = {X0[0], X0[1], X0[2]};
+        X[a] += d;
+        double qm[3][3];
+        fQ(X, qm);
+        return (qm[a][0]*nf[0] + qm[a][1]*nf[1] + qm[a][2]*nf[2])*fE(X);
+      };
+      s += (8.0*(g(h) - g(-h)) - (g(2.0*h) - g(-2.0*h)))/(12.0*h);
+    }
+    return s;
+  };
+  double qe[4][3] = {{0.0}}, qs[4][3] = {{0.0}}, qn[4][3] = {{0.0}}, qa[4] = {0.0};
+  for (int m = 0; m < nmb; ++m) {
+    const int p = mpan.h_view(m);
+    const int j0 = static_cast<int>(std::lround(0.5*(msz.h_view(m).x2min + 1.0)*npan));
+    const int k0 = static_cast<int>(std::lround(0.5*(msz.h_view(m).x3min + 1.0)*npan));
+    auto n2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cs_fn2);
+    auto n3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cs_fn3);
+    for (int k = ks; k <= ke + 1; ++k) {
+      for (int j = js; j <= je + 1; ++j) {
+        const double xc = 0.25*M_PI*CellCenterX(j - js, nx2, msz.h_view(m).x2min,
+                                                msz.h_view(m).x2max);
+        const double ec = 0.25*M_PI*CellCenterX(k - ks, nx3, msz.h_view(m).x3min,
+                                                msz.h_view(m).x3max);
+        const double xf = 0.25*M_PI*LeftEdgeX(j - js, nx2, msz.h_view(m).x2min,
+                                              msz.h_view(m).x2max);
+        const double ef = 0.25*M_PI*LeftEdgeX(k - ks, nx3, msz.h_view(m).x3min,
+                                              msz.h_view(m).x3max);
+        const int jg = j - js + j0, kg = k - ks + k0;
+        auto cls = [&](int a, int t) {
+          const bool ea = (a <= 0) || (a >= npan - 1), et = (t <= 0) || (t >= npan - 1);
+          return (ea && et) ? 2 : ((ea || et) ? 1 : 0);
+        };
+        for (int i = is + 2; i <= ie - 2; ++i) {
+          const double r = x1v(m,i);
+          for (int e = 1; e <= 2; ++e) {
+            if ((e == 1 && k > ke) || (e == 2 && j > je)) {continue;}
+            double q[3];
+            if (e == 1) {p2c(p, xf, ec, q);} else {p2c(p, xc, ef, q);}
+            const double nf[3] = {(e == 1) ? n2h(m,j,0) : n3h(m,k,0),
+                                  (e == 1) ? n2h(m,j,1) : n3h(m,k,1),
+                                  (e == 1) ? n2h(m,j,2) : n3h(m,k,2)};
+            const double a = divq(q, nf, r);
+            const int c = (e == 1) ? std::max(cls(jg - 1, kg), cls(jg, kg))
+                                   : std::max(cls(jg, kg - 1), cls(jg, kg));
+            for (int t = 0; t < 2; ++t) {
+              const int tt = (e - 1) + 2*t;
+              const double er = std::fabs(oqh(m,tt,k,j,i) - a);
+              qe[tt][c] = std::max(qe[tt][c], er);
+              qs[tt][c] += er;
+              qn[tt][c] += 1.0;
+              qa[tt] = std::max(qa[tt], std::fabs(a));
+            }
+          }
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &qe[0][0], 12, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &qs[0][0], 12, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &qn[0][0], 12, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, qa, 4, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0) {
+    const char *nq[4] = {"Q2 FaceLag (x2 faces)", "Q3 FaceLag (x3 faces)",
+                         "Q2 FaceOp (x2 faces)", "Q3 FaceOp (x3 faces)"};
+    const char *cq[3] = {"interior", "seam", "vertex"};
+    for (int t = 0; t < 4; ++t) {
+      std::printf("VGD_MMS_CS %-22s max|term| %.3e:", nq[t], qa[t]);
+      for (int c = 0; c < 3; ++c) {
+        if (qn[t][c] > 0.0) {
+          std::printf("  %s %.0f: max %.3e mean %.3e", cq[c], qn[t][c], qe[t][c]/qa[t],
+                      qs[t][c]/qn[t][c]/qa[t]);
         }
       }
       std::printf("\n");

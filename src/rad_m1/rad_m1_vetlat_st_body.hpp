@@ -45,6 +45,15 @@
   auto car = cs_area_eff;
   auto fn2 = cs_fn2;
   auto fn3 = cs_fn3;
+  // cs-tan-1106: Q in the operator, the same M1CsTanFaceOp terms as VetLatOpCs
+  const bool tanq = vgd_cstan && vgd_tanop;
+  auto cdxf_ = M1Dxf();
+  const auto tg_ = M1MakeCsTanGeo(cs_qf, cdxf_, pmy_pack->pcoord->sin_face_xi,
+                                  pmy_pack->pcoord->cos_face_xi,
+                                  pmy_pack->pcoord->sin_face_eta,
+                                  pmy_pack->pcoord->cos_face_eta, csg2, csg3,
+                                  cs_seam.d_view, cs_fn2, cs_fn3, cs_cn2, cs_cn3, cx1v,
+                                  js, je, ks, ke);
 #endif
   const int c0 = M1_TT_LAT0;
 #if !M1_VLAT_CS
@@ -125,6 +134,14 @@
       const Real f = w/(r*r*r*(ra - rb));
       add(ia, qj, qk, f*ra*ra*ra*vdot(qk, qj, ia, nf));
       add(ib, qj, qk, -f*rb*rb*rb*vdot(qk, qj, ib, nf));
+    };
+    // W [M1CsTanFaceOp of face (e, fk, fj)] distributed; w of a face carries the 0.5 of
+    // the two M1CsLatF, the Q term is one face value: W = 2 w
+    auto tanfc = [&](const int e, const int fk, const int fj, const Real w) {
+      M1CsTanFaceOp(tt_, c0, tg_, e, m, fk, fj, i,
+                    [&](const int qk, const int qj, const Real c) {
+                      add(i, qj, qk, 2.0*w*c);
+                    });
     };
 #else
     // x coefficient c at the cell p (absolute indices) of this row
@@ -224,6 +241,7 @@
       const Real nf[3] = {fn2(m,j+1,0), fn2(m,j+1,1), fn2(m,j+1,2)};
       latfc(k, j, nf, w);
       latfc(k, j+1, nf, w);
+      if (tanq) {tanfc(1, k, j+1, w);}
 #else
       Real w = -0.5*carea.x2f(m,k,j+1,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
       if (blt) {w *= 1.0 - bw2_(m,M1_IFW_AL,k,j+1,i);}
@@ -239,6 +257,7 @@
       const Real nf[3] = {fn2(m,j,0), fn2(m,j,1), fn2(m,j,2)};
       latfc(k, j-1, nf, w);
       latfc(k, j, nf, w);
+      if (tanq) {tanfc(1, k, j, w);}
 #else
       Real w = 0.5*carea.x2f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
       if (blt) {w *= 1.0 - bw2_(m,M1_IFW_AL,k,j,i);}
@@ -255,6 +274,7 @@
         const Real nf[3] = {fn3(m,k+1,0), fn3(m,k+1,1), fn3(m,k+1,2)};
         latfc(k, j, nf, w);
         latfc(k+1, j, nf, w);
+        if (tanq) {tanfc(2, k+1, j, w);}
 #else
         Real w = -0.5*carea.x3f(m,k+1,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
         if (blt) {w *= 1.0 - bw3_(m,M1_IFW_AL,k+1,j,i);}
@@ -270,6 +290,7 @@
         const Real nf[3] = {fn3(m,k,0), fn3(m,k,1), fn3(m,k,2)};
         latfc(k-1, j, nf, w);
         latfc(k, j, nf, w);
+        if (tanq) {tanfc(2, k, j, w);}
 #else
         Real w = 0.5*carea.x3f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
         if (blt) {w *= 1.0 - bw3_(m,M1_IFW_AL,k,j,i);}

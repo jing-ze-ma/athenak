@@ -48,6 +48,15 @@
   auto cse_ = cs_seam.d_view;
   auto g2_ = csg2;
   auto g3_ = csg3;
+  // cs-tan-1106: Q in the operator (vet_gd_tan_operator), the frozen terms of M1CsTanFaceOp
+  const bool tanq = vgd_cstan && vgd_tanop;
+  auto cdxf_ = M1Dxf();
+  const auto tg_ = M1MakeCsTanGeo(cs_qf, cdxf_, pmy_pack->pcoord->sin_face_xi,
+                                  pmy_pack->pcoord->cos_face_xi,
+                                  pmy_pack->pcoord->sin_face_eta,
+                                  pmy_pack->pcoord->cos_face_eta, csg2, csg3,
+                                  cs_seam.d_view, cs_fn2, cs_fn3, cs_cn2, cs_cn3, cx1v,
+                                  js, je, ks, ke);
 #endif
   const int cx = xc, cy = yc;
   const Real sg = sgn;
@@ -102,6 +111,14 @@
       return M1CsLat0(iw_, tt_, c0, cvol, car, fn2, fn3, m, k, j, iq, thrd, cx, false,
                       cse_, g2_, g3_, js, je, ks, ke);
     };
+    auto tanf = [&](const int e, const int fk, const int fj) {
+      Real tv = 0.0;
+      M1CsTanFaceOp(tt_, c0, tg_, e, m, fk, fj, i,
+                    [&](const int qk, const int qj, const Real c) {
+                      tv += c*iw_(m,cx,qk,qj,i);
+                    });
+      return tv;
+    };
 #else
     auto lat = [&](const int d, const int kq, const int jq, const int iq) {
       Real v = M1SphLat(iw_, tt_, c0, cx1v, cx2v, cx3v, m, d, kq, jq, iq, thrd, il, iu,
@@ -146,6 +163,7 @@
       y -= car.x2f(m,k,j+1,i)*iv*cr*th*kk*0.5
            *(M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k, j, i, il, iu, cx)
              + M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k, j+1, i, il, iu, cx));
+      if (tanq) {y -= car.x2f(m,k,j+1,i)*iv*cr*th*kk*tanf(1, k, j+1);}
 #else
       y -= carea.x2f(m,k,j+1,i)*iv*cr*th*kk*0.5*(lat(1,k,j,i) + lat(1,k,j+1,i));
 #endif
@@ -159,6 +177,7 @@
       y += car.x2f(m,k,j,i)*iv*cr*th*kk*0.5
            *(M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k, j-1, i, il, iu, cx)
              + M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k, j, i, il, iu, cx));
+      if (tanq) {y += car.x2f(m,k,j,i)*iv*cr*th*kk*tanf(1, k, j);}
 #else
       y += carea.x2f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(1,k,j-1,i) + lat(1,k,j,i));
 #endif
@@ -174,6 +193,7 @@
         y -= car.x3f(m,k+1,j,i)*iv*cr*th*kk*0.5
              *(M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k, j, i, il, iu, cx)
                + M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k+1, j, i, il, iu, cx));
+        if (tanq) {y -= car.x3f(m,k+1,j,i)*iv*cr*th*kk*tanf(2, k+1, j);}
 #else
         y -= carea.x3f(m,k+1,j,i)*iv*cr*th*kk*0.5*(lat(2,k,j,i) + lat(2,k+1,j,i));
 #endif
@@ -187,6 +207,7 @@
         y += car.x3f(m,k,j,i)*iv*cr*th*kk*0.5
              *(M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k-1, j, i, il, iu, cx)
                + M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k, j, i, il, iu, cx));
+        if (tanq) {y += car.x3f(m,k,j,i)*iv*cr*th*kk*tanf(2, k, j);}
 #else
         y += carea.x3f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(2,k-1,j,i) + lat(2,k,j,i));
 #endif

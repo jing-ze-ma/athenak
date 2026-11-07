@@ -791,6 +791,25 @@ Real M1CsSeamMid(const F &fv, const G &g, const int m, const int c, const int sd
 //! whose ghost there is a mirror cell off this cell's coordinate line.  slo/shi: the
 //! block's low/high face along e is a panel seam.
 
+// cs-tan-1106: the derivative itself, of any cell field q(o) at offset o along the axis,
+// with h(o) the arc between offsets o-1 and o (shared by M1CsTanDer and M1CsTanFaceLag)
+template <class Q, class H>
+KOKKOS_INLINE_FUNCTION
+Real M1CsAxisDer(const Q &q, const H &h, const int c, const int lo, const int hi,
+                 const bool slo, const bool shi) {
+  if (c == lo && slo) {
+    const Real h1 = h(1), h2 = h(2);
+    return (-(2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) + ((h1 + h2)/(h1*h2))*q(1)
+           - (h1/(h2*(h1 + h2)))*q(2);
+  }
+  if (c == hi && shi) {
+    const Real h1 = h(0), h2 = h(-1);
+    return ((2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) - ((h1 + h2)/(h1*h2))*q(-1)
+           + (h1/(h2*(h1 + h2)))*q(-2);
+  }
+  return (q(1) - q(-1))/(h(0) + h(1));
+}
+
 template <class V, class VF>
 KOKKOS_INLINE_FUNCTION
 Real M1CsTanDer(const V &iw, const V &vd, const bool full, const VF &cdxf, const int m,
@@ -804,17 +823,7 @@ Real M1CsTanDer(const V &iw, const V &vd, const bool full, const VF &cdxf, const
   auto h = [&](const int o) {   // the arc between cells c+o-1 and c+o
     return (e == 1) ? cdxf.x2f(m,k,j+o,i) : cdxf.x3f(m,k+o,j,i);
   };
-  if (c == lo && slo) {
-    const Real h1 = h(1), h2 = h(2);
-    return (-(2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) + ((h1 + h2)/(h1*h2))*q(1)
-           - (h1/(h2*(h1 + h2)))*q(2);
-  }
-  if (c == hi && shi) {
-    const Real h1 = h(0), h2 = h(-1);
-    return ((2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) - ((h1 + h2)/(h1*h2))*q(-1)
-           + (h1/(h2*(h1 + h2)))*q(-2);
-  }
-  return (q(1) - q(-1))/(h(0) + h(1));
+  return M1CsAxisDer(q, h, c, lo, hi, slo, shi);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1378,6 +1387,213 @@ Real M1CsLatF(const V &iw, const V &tt, const int c0, const A &x1v, const Real *
   };
   const Real r = x1v(m,i);
   return (q(ia) - q(ib))/(r*r*r*(x1v(m,ia) - x1v(m,ib)));
+}
+
+//----------------------------------------------------------------------------------------
+//! \brief cs-tan-1106 (vet_gd_tangential on the cubed sphere): the trace-free tangential
+//! part Q of the vet_gd tensor, the cs counterpart of M1SphTan.  Q . r_hat = 0, tr Q = 0,
+//! so a cell holds two numbers in tau_ten slots c0+4, c0+5 about an orthonormal tangent
+//! frame (e1, e2) of THAT cell (qf, Cartesian, (m, 6, k, j), ghosts exchanged like the
+//! slots, so a seam ghost holds its mirror cell's frame next to its mirror cell's values):
+//!   Q = s1 (e1 e1 - e2 e2) + s2 (e1 e2 + e2 e1).
+//! Contractions with fixed Cartesian vectors need no rotation at a seam or a vertex.  At
+//! the face midpoint, with the face's planar normal n (Cartesian, constant on the face)
+//! and the unit tangent t along the face, w = Q n E is a tangential field: w . r_hat = 0
+//! on the radial line through the midpoint, so d_r(w . r_mid) = 0 there and
+//!   n . div(Q E) = div(w) = d_n (n.Q.n E) + d_t (t.Q.n E),
+//! with n and t FROZEN at their midpoint values over the stencil: the curvature terms of
+//! M1SphTan (2 cot a E / r, ...) are in the variation of the Cartesian contractions.  The
+//! normal derivative is the compact two-point one (the wide centred difference is what
+//! drove the sp thin-top L_top runaway, fc693cbe1), corrected for the skew like the
+//! isotropic gradient, d_n = (d_a - cos d_t)/sin; at a seam the mirror pair, moved from the
+//! chord's foot to the face midpoint by M1CsSeamMid.
+
+template <class VQ, class VF, class VS, class VG, class VB, class VN, class VX>
+struct M1CsTanGeo {
+  VQ qf;
+  VF cdxf;
+  VS sn2, cs2, sn3, cs3;
+  VG g2, g3;
+  VB cse;
+  VN fn2, fn3, cn2, cn3;
+  VX x1v;
+  int js, je, ks, ke;
+};
+
+template <class VQ, class VF, class VS, class VG, class VB, class VN, class VX>
+KOKKOS_INLINE_FUNCTION
+M1CsTanGeo<VQ,VF,VS,VG,VB,VN,VX> M1MakeCsTanGeo(
+    const VQ &qf, const VF &cdxf, const VS &sn2, const VS &cs2, const VS &sn3,
+    const VS &cs3, const VG &g2, const VG &g3, const VB &cse, const VN &fn2,
+    const VN &fn3, const VN &cn2, const VN &cn3, const VX &x1v, const int js,
+    const int je, const int ks, const int ke) {
+  return M1CsTanGeo<VQ,VF,VS,VG,VB,VN,VX>{qf, cdxf, sn2, cs2, sn3, cs3, g2, g3, cse, fn2,
+                                          fn3, cn2, cn3, x1v, js, je, ks, ke};
+}
+
+// a . Q . b at cell (k,j,i)
+template <class VT, class VQ>
+KOKKOS_INLINE_FUNCTION
+Real M1CsQab(const VT &tt, const int c0, const VQ &qf, const int m, const int k,
+             const int j, const int i, const Real *a, const Real *b) {
+  const Real a1 = a[0]*qf(m,0,k,j) + a[1]*qf(m,1,k,j) + a[2]*qf(m,2,k,j);
+  const Real a2 = a[0]*qf(m,3,k,j) + a[1]*qf(m,4,k,j) + a[2]*qf(m,5,k,j);
+  const Real b1 = b[0]*qf(m,0,k,j) + b[1]*qf(m,1,k,j) + b[2]*qf(m,2,k,j);
+  const Real b2 = b[0]*qf(m,3,k,j) + b[1]*qf(m,4,k,j) + b[2]*qf(m,5,k,j);
+  return tt(m,c0+4,k,j,i)*(a1*b1 - a2*b2) + tt(m,c0+5,k,j,i)*(a1*b2 + a2*b1);
+}
+
+// the face's n and t: an x2 face (e = 1) t along +x3 from the x3 plane through the face
+// midpoint (its normal cn3(k) is tangential there), an x3 face (e = 2) t along +x2
+template <class G>
+KOKKOS_INLINE_FUNCTION
+void M1CsFaceNT(const G &tg, const int e, const int m, const int k, const int j, Real *n,
+                Real *t) {
+  for (int c = 0; c < 3; ++c) {
+    n[c] = (e == 1) ? tg.fn2(m,j,c) : tg.fn3(m,k,c);
+    t[c] = (e == 1) ? tg.cn3(m,k,c) : tg.cn2(m,j,c);
+  }
+  const Real d = n[0]*t[0] + n[1]*t[1] + n[2]*t[2];
+  for (int c = 0; c < 3; ++c) {t[c] -= d*n[c];}
+  const Real nn = 1.0/sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
+  for (int c = 0; c < 3; ++c) {t[c] *= nn;}
+}
+
+// d/ds of the M1CsSeamMid quadratic at the face midpoint (per unit angle); 0 at a foot-
+// value face (a vertex face under cs_vertex_mono, where Q is zero anyway)
+template <class F, class G>
+KOKKOS_INLINE_FUNCTION
+Real M1CsSeamDs(const F &fv, const G &g, const int m, const int c, const int sd,
+                const bool up, const bool dn) {
+  int a, b, e;
+  if (up && dn) {
+    a = c - 1; b = c; e = c + 1;
+  } else if (up) {
+    a = c; b = c + 1; e = c + 2;
+  } else if (dn) {
+    a = c - 2; b = c - 1; e = c;
+  } else {
+    return 0.0;
+  }
+  const Real sa = g(m,2,a,sd), sb = g(m,2,b,sd), se = g(m,2,e,sd), s = g(m,3,c,sd);
+  return fv(a)*(2.0*s - sb - se)/((sa - sb)*(sa - se))
+         + fv(b)*(2.0*s - sa - se)/((sb - sa)*(sb - se))
+         + fv(e)*(2.0*s - sa - sb)/((se - sa)*(se - sb));
+}
+
+//! \fn M1CsTanFaceLag: n . div(Q E) at face (e, k, j, i), the second-order lagged form
+//! (E = component ec of iw).  vmo, vmn: cs_vertex_mono, as the isotropic gradient.
+template <class V, class VT, class G>
+KOKKOS_INLINE_FUNCTION
+Real M1CsTanFaceLag(const V &iw, const VT &tt, const int c0, const G &tg, const int e,
+                    const int m, const int k, const int j, const int i, const int ec,
+                    const bool vmo, const int vmn) {
+  Real n[3], t[3];
+  M1CsFaceNT(tg, e, m, k, j, n, t);
+  // cell of side s (0 = low, 1 = high) at position q along the face
+  auto ck = [&](const int s, const int q) {return (e == 1) ? q : (k - 1 + s);};
+  auto cj = [&](const int s, const int q) {return (e == 1) ? (j - 1 + s) : q;};
+  auto pq = [&](const int s, const int q, const Real *a) {
+    return M1CsQab(tt, c0, tg.qf, m, ck(s,q), cj(s,q), i, a, n)*iw(m,ec,ck(s,q),cj(s,q),i);
+  };
+  const int c = (e == 1) ? k : j;
+  const int lo = (e == 1) ? tg.ks : tg.js, hi = (e == 1) ? tg.ke : tg.je;
+  const bool slo = (e == 1) ? (tg.cse(m,2) != 0) : (tg.cse(m,0) != 0);
+  const bool shi = (e == 1) ? (tg.cse(m,3) != 0) : (tg.cse(m,1) != 0);
+  const int f = (e == 1) ? j : k;
+  const int flo = (e == 1) ? tg.js : tg.ks, fhi = ((e == 1) ? tg.je : tg.ke) + 1;
+  const int cl = (e == 1) ? 0 : 2;
+  const bool seam = (f == flo && tg.cse(m,cl) != 0) || (f == fhi && tg.cse(m,cl+1) != 0);
+  if (seam) {
+    const int sd = (f == flo) ? 0 : 1;
+    const Real r = tg.x1v(m,i);
+    bool up = !(c == hi && shi), dn = !(c == lo && slo);
+    if (vmo && M1CsSeamDepth(c, lo, hi, slo, shi) <= vmn) {up = false; dn = false;}
+    if (e == 1) {
+      auto dpr = [&](const int q) {
+        return (pq(1,q,n) - pq(0,q,n))/(r*tg.g2(m,1,q,sd));
+      };
+      auto fv = [&](const int q) {return 0.5*(pq(1,q,t) + pq(0,q,t));};
+      return M1CsSeamMid(dpr, tg.g2, m, c, sd, up, dn)
+             + M1CsSeamDs(fv, tg.g2, m, c, sd, up, dn)/r;
+    }
+    auto dpr = [&](const int q) {
+      return (pq(1,q,n) - pq(0,q,n))/(r*tg.g3(m,1,q,sd));
+    };
+    auto fv = [&](const int q) {return 0.5*(pq(1,q,t) + pq(0,q,t));};
+    return M1CsSeamMid(dpr, tg.g3, m, c, sd, up, dn)
+           + M1CsSeamDs(fv, tg.g3, m, c, sd, up, dn)/r;
+  }
+  auto der = [&](const int s, const Real *a) {
+    auto q = [&](const int o) {return pq(s, c + o, a);};
+    auto h = [&](const int o) {
+      return (e == 1) ? tg.cdxf.x3f(m,k+o,cj(s,c),i) : tg.cdxf.x2f(m,ck(s,c),j+o,i);
+    };
+    return M1CsAxisDer(q, h, c, lo, hi, slo, shi);
+  };
+  const Real sn = (e == 1) ? tg.sn2(m,k,j) : tg.sn3(m,k,j);
+  const Real cs = (e == 1) ? tg.cs2(m,k,j) : tg.cs3(m,k,j);
+  const Real al = (e == 1) ? tg.cdxf.x2f(m,k,j,i) : tg.cdxf.x3f(m,k,j,i);
+  return ((pq(1,c,n) - pq(0,c,n))/al - cs*0.5*(der(0,n) + der(1,n)))/sn
+         + 0.5*(der(0,t) + der(1,t));
+}
+
+//! \fn M1CsTanFaceOp: the same term as frozen coefficients on the 19-point stencil,
+//! vis(kq, jq, c) per cell of the column i (one body for VetLatOpCs and its stencil).  No
+//! foot-to-midpoint move at a seam and a first-order one-sided d_t next to a seam (neither
+//! fits the stencil): the operator is the implicit part only, the fixed point is the
+//! lagged form above (the right-hand side adds it and removes this one at E^k).
+template <class VT, class G, class F>
+KOKKOS_INLINE_FUNCTION
+void M1CsTanFaceOp(const VT &tt, const int c0, const G &tg, const int e, const int m,
+                   const int k, const int j, const int i, const F &vis) {
+  Real n[3], t[3];
+  M1CsFaceNT(tg, e, m, k, j, n, t);
+  auto ck = [&](const int s, const int q) {return (e == 1) ? q : (k - 1 + s);};
+  auto cj = [&](const int s, const int q) {return (e == 1) ? (j - 1 + s) : q;};
+  auto qq = [&](const int s, const int q, const Real *a) {
+    return M1CsQab(tt, c0, tg.qf, m, ck(s,q), cj(s,q), i, a, n);
+  };
+  const int c = (e == 1) ? k : j;
+  const int lo = (e == 1) ? tg.ks : tg.js, hi = (e == 1) ? tg.ke : tg.je;
+  const bool slo = (e == 1) ? (tg.cse(m,2) != 0) : (tg.cse(m,0) != 0);
+  const bool shi = (e == 1) ? (tg.cse(m,3) != 0) : (tg.cse(m,1) != 0);
+  const int f = (e == 1) ? j : k;
+  const int flo = (e == 1) ? tg.js : tg.ks, fhi = ((e == 1) ? tg.je : tg.ke) + 1;
+  const int cl = (e == 1) ? 0 : 2;
+  const bool seam = (f == flo && tg.cse(m,cl) != 0) || (f == fhi && tg.cse(m,cl+1) != 0);
+  const int a = (c == hi && shi) ? c : c + 1, b = (c == lo && slo) ? c : c - 1;
+  const Real r = tg.x1v(m,i);
+  if (seam) {
+    const int sd = (f == flo) ? 0 : 1;
+    const Real pair = r*((e == 1) ? tg.g2(m,1,c,sd) : tg.g3(m,1,c,sd));
+    vis(ck(1,c), cj(1,c), qq(1,c,n)/pair);
+    vis(ck(0,c), cj(0,c), -qq(0,c,n)/pair);
+    const Real ds = r*((e == 1) ? (tg.g2(m,2,a,sd) - tg.g2(m,2,b,sd))
+                                : (tg.g3(m,2,a,sd) - tg.g3(m,2,b,sd)));
+    for (int s = 0; s < 2; ++s) {
+      vis(ck(s,a), cj(s,a), 0.5*qq(s,a,t)/ds);
+      vis(ck(s,b), cj(s,b), -0.5*qq(s,b,t)/ds);
+    }
+    return;
+  }
+  const Real sn = (e == 1) ? tg.sn2(m,k,j) : tg.sn3(m,k,j);
+  const Real cs = (e == 1) ? tg.cs2(m,k,j) : tg.cs3(m,k,j);
+  const Real al = (e == 1) ? tg.cdxf.x2f(m,k,j,i) : tg.cdxf.x3f(m,k,j,i);
+  vis(ck(1,c), cj(1,c), qq(1,c,n)/(al*sn));
+  vis(ck(0,c), cj(0,c), -qq(0,c,n)/(al*sn));
+  const Real cot = cs/sn;
+  for (int s = 0; s < 2; ++s) {
+    Real den = 0.0;
+    if (a != c) {
+      den += (e == 1) ? tg.cdxf.x3f(m,k+1,cj(s,c),i) : tg.cdxf.x2f(m,ck(s,c),j+1,i);
+    }
+    if (b != c) {
+      den += (e == 1) ? tg.cdxf.x3f(m,k,cj(s,c),i) : tg.cdxf.x2f(m,ck(s,c),j,i);
+    }
+    vis(ck(s,a), cj(s,a), 0.5*(qq(s,a,t) - cot*qq(s,a,n))/den);
+    vis(ck(s,b), cj(s,b), -0.5*(qq(s,b,t) - cot*qq(s,b,n))/den);
+  }
 }
 
 // the six LAGGED quantities the x1 halo of the partitioned solve exchanges once per
