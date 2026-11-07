@@ -2809,6 +2809,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_kill")) {
     vimp_kill = pin->GetBoolean("rad_m1","implicit_vimp_kill");
   }
+  ImplicitFbKeys(pin);   // meshfb-1106
   if (pin->DoesParameterExist("rad_m1","implicit_pos_transport")) {   // postr-1031
     const std::string pt = pin->GetString("rad_m1","implicit_pos_transport");
     if (pt == "none") {
@@ -4652,7 +4653,7 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
   const bool odl = (odm != M1_OD_NONE);
   const bool vlat = vlat_now && vlat_ready && sph;
   const bool vtan = vgd_on && vgd_tan && vlat_ready && sph;
-  auto vlt_ = tau_ten;
+  auto vlt_ = VlatTT();   // meshfb-1106
   const int c0l = M1_TT_LAT0;
   auto cdxf = M1Dxf();
   auto cx1v = pmy_pack->pcoord->x1v;
@@ -5201,7 +5202,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool vlatc = vlat_now && vlat_ready && cs_geom;
   auto cfn2 = cs_fn2;
   auto cfn3 = cs_fn3;
-  auto vlt_ = tau_ten;
+  auto vlt_ = VlatTT();   // meshfb-1106
   const int c0l = M1_TT_LAT0;
   // vet_gd (m1-vet-gd): the lagged tangential anisotropy M1SphTan
   const bool vtan = vgd_on && vgd_tan && vlat_ready && sph;
@@ -9752,6 +9753,7 @@ void RadiationM1::ImplicitReport() {
                 << " max |dq|/q of the exchanged energy=" << ec_tmax << std::endl;
     }
   }
+  if (fbd_n > 0 || fbl_on) {ImplicitFbSummary();}   // meshfb-1106
   if (impl_pcr_check) {
     std::cout << "<rad_m1> line solver=" << ((impl_line_solver == 1) ? "pcr" : "thomas")
               << " pcr_check: calls=" << pcr_chk_n
@@ -12591,7 +12593,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   vimp_now = impl_vimp;
   t2_pfix_fbm = false;
   // implicit_vimp_kill: a clean mask at the start of every solve
-  if (vimp_kill && impl_vimp) {
+  fbl_any = false;   // meshfb-1106
+  fbl_used = 0;
+  if ((vimp_kill && impl_vimp) || fbl_on) {
     auto &idk = pmy_pack->pmesh->mb_indcs;
     const int nk1 = idk.nx1 + 2*idk.ng;
     const int nk2 = (idk.nx2 > 1) ? (idk.nx2 + 2*idk.ng) : 1;
@@ -13440,10 +13444,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if (vgd_on && vlat_ready && vgd_rbe > 0 && it > 0 && (it % vgd_rbe) == 0 &&
         !impl_fr_sh) {
       VetGdIterRebuild();
+      if (fbl_any) {VetLatFbFill();}   // meshfb-1106
     }
     // the gas Newton update of THIS pass (off after a detected stall, see above)
     const bool gnw = gnewt && !gnsw;
     int nin = -1;
+    bool fbl_tr = false;   // meshfb-1106: this pass solved to E <= 0, mask grown
     TmrMark((it == 0) ? 4 : 7);
     ew_tight = onep && (it == 0);
     // MILESTONE 3e: x_k, the state this pass maps
@@ -14255,7 +14261,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto cse_ = cs_seam.d_view;
     auto cg2_ = csg2;
     auto cg3_ = csg3;
-    auto vlt_ = tau_ten;
+    auto vlt_ = VlatTT();   // meshfb-1106
     const int c0l = M1_TT_LAT0;
     auto cx1v = pmy_pack->pcoord->x1v;
     auto cx2v = pmy_pack->pcoord->x2v;
@@ -15213,7 +15219,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (t2s == M1_T2S_STAGE2) {tmr_cnt[4] += 1.0; tmr_cnt[6] += nin;}
       }
       if (muscl_now && impl_muscl_bound) {ImplicitMusclBound();}   // xthinfix-1009
-      if ((vimp_now || muscl_now) && odm != M1_OD_OPERATOR) {
+      // meshfb-1106 (rad_m1_meshfb.cpp): measured before any fallback acts; a local
+      // trigger skips the two global blocks below and takes another pass
+      if (fbd_n > 0) {ImplicitFbDiagPass(it);}
+      fbl_tr = ImplicitFbLocal(it, odm);
+      if (fbl_tr && muscl_now && impl_muscl_kill) {ImplicitMusclKill(); muscl_nfall += 1.0;}
+      if (!fbl_tr && (vimp_now || muscl_now) && odm != M1_OD_OPERATOR) {
         // implicit_vimp POSITIVITY: the Newton coupling is not an M-matrix either; a
         // non-positive E drops it for the rest of the step (counted), as for od below.
         // xthinfix-1009 Fix B: the plm half-range row has positive off-diagonals too
@@ -15251,7 +15262,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             T2AdmissDebug(uh, u0_, t2i_, cl, ch, have_hydro,
                           have_hydro && coupling && dbgh, t2s, it);
           }
-          if (vimp_kill) {
+          if (vimp_kill && !fbl_on) {
             ImplicitVimpKill();   // local: the cells within 2 lose the kick
           } else {
             Time2PosFixMarkFb();
@@ -15261,7 +15272,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
       }
       const bool vlop = VlatOp();
-      if (odm == M1_OD_OPERATOR || vlop) {
+      if (!fbl_tr && (odm == M1_OD_OPERATOR || vlop)) {
         // POSITIVITY.  The cross-derivative coefficients have mixed signs, so the
         // 9-/19-point operator is not an M-matrix and E' > 0 is no longer guaranteed.
         // Measure the smallest E the solve produced and, if any cell is non-positive,
@@ -15893,6 +15904,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
       converged = pc && lc;
     }
+    if (fbl_tr) {converged = false;}   // meshfb-1106: the re-solve is not optional
     // open-ot-1013 implicit_cs2_vimp_npass: with the conservative2 vimp prediction on,
     // at least this many Picard passes, so its lagged neighbour dA (one pass behind)
     // reaches the fixed point
@@ -15985,6 +15997,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
   }
   TmrMark(7);
+  if (fbd_n > 0) {ImplicitFbDiagSolve(it);}   // meshfb-1106
   if (tmr_on) {tmr_cnt[0] += 1.0;}
   ew_tight = false;
   if (onep) {
@@ -16964,7 +16977,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto &mpn = pmy_pack->pmb->mb_panel;
     auto fn2_ = cs_fn2;
     auto fn3_ = cs_fn3;
-    auto tt_ = tau_ten;
+    auto tt_ = VlatTT();   // meshfb-1106
     const int c0t = M1_TT_LAT0;
     const bool vlc = vlat_now && vlat_ready;
     const int nx2a = pmy_pack->pmesh->mb_indcs.nx2, nx3a = pmy_pack->pmesh->mb_indcs.nx3;
