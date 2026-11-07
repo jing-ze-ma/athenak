@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <string>
 #include <tuple>
@@ -2290,6 +2291,12 @@ void RadiationM1::Time2X2Stats(const Real r, const Real rk, const Real fkm) {
   static constexpr int NB = 6;
   const Real edge[NB-1] = {0.3, 3.0, 30.0, 300.0, 1.0e4};
   double q[NB][7] = {};   // n, sum g, sum dg^2, max |dg|, sum (rk dg)^2, clip lo, clip hi
+  // lateral (x2, x3) faces inside a block: max/min of the two cells' rho kappa_T, every
+  // 20th build: < 1.1 | 1.5 | 2 | 3 | 5 | 10 | 100 | above.  arithmetic/harmonic = (1+q)^2/(4q)
+  static constexpr int NH = 8;
+  const Real hedge[NH-1] = {1.1, 1.5, 2.0, 3.0, 5.0, 10.0, 100.0};
+  double qh[NB][NH] = {};
+  const bool dohist = (x2_stats_n++ % 20 == 0);
   const double dtd = pmy_pack->pmesh->dt;
   for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
     for (int k = ks; k <= ke; ++k) {
@@ -2310,6 +2317,18 @@ void RadiationM1::Time2X2Stats(const Real r, const Real rk, const Real fkm) {
           q[b][4] += rk*dg*rk*dg;
           if (v < fkm) q[b][5] += 1.0;
           if (v > 1.0) q[b][6] += 1.0;
+          if (dohist) {
+            for (int d = 0; d < 2; ++d) {
+              if ((d == 0 && j == je) || (d == 1 && k == ke)) continue;
+              const Real ka = kth(m,k,j,i);
+              const Real kb = (d == 0) ? kth(m,k,j+1,i) : kth(m,k+1,j,i);
+              if (!(ka > 0.0 && kb > 0.0)) continue;
+              const Real rq = std::max(ka, kb)/std::min(ka, kb);
+              int h = 0;
+              while (h < NH-1 && rq >= hedge[h]) ++h;
+              qh[b][h] += 1.0;
+            }
+          }
         }
       }
     }
@@ -2318,6 +2337,7 @@ void RadiationM1::Time2X2Stats(const Real r, const Real rk, const Real fkm) {
   double mx[NB];
   for (int b = 0; b < NB; ++b) {mx[b] = q[b][3];}
   MPI_Allreduce(MPI_IN_PLACE, q, NB*7, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, qh, NB*NH, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, mx, NB, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
   for (int b = 0; b < NB; ++b) {q[b][3] = mx[b];}
 #endif
@@ -2330,6 +2350,12 @@ void RadiationM1::Time2X2Stats(const Real r, const Real rk, const Real fkm) {
                 static_cast<long>(pmy_pack->pmesh->ncycle), pmy_pack->pmesh->time, dtd,
                 static_cast<double>(r), chg, b, q[b][0], q[b][1]/q[b][0],
                 sqrt(q[b][2]/q[b][0]), q[b][3], sqrt(q[b][4]/q[b][0]), q[b][5], q[b][6]);
+    if (dohist) {
+      std::printf("X2KR cyc=%ld b=%d fkm=%.4f hist=", static_cast<long>(pmy_pack->pmesh->ncycle),
+                  b, static_cast<double>(fkm));
+      for (int h = 0; h < NH; ++h) {std::printf(" %.0f", qh[b][h]);}
+      std::printf("\n");
+    }
   }
 }
 

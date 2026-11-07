@@ -1775,6 +1775,7 @@ class RadiationM1 {
   // (Time2X2Stats) by optical depth from the top, set change or not, and the clips
   bool x2_rot_same = false;
   bool x2_stats = false;
+  int x2_stats_n = 0;
   void Time2X2Stats(const Real r, const Real rk, const Real fkm);
   static constexpr int M1_X2_NTT = 10, M1_X2_NHR = 10;
   static constexpr int M1_X2_NCH = M1_X2_NTT + M1_X2_NHR + 4;   // + q, time, alpha, dts
