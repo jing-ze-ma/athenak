@@ -1707,6 +1707,7 @@ class RadiationM1 {
   // takes the two-point gradient (no cross term), its seam faces the foot values (no
   // midpoint quadratic), and D_r,lat is zero in the cells within cs_vertex_mono_n + 1
   // (so every face of those cells sees none).  Conservative (per face), local.
+  Real impl_pred_tcap = 2.0;   // seamE-1106 implicit_predictor_tcap
   bool cs_cross_mono = false;   // seamE-1106: one-sided seam cross derivative clamped
   bool cs_vtx_mono = false;    // DEFAULT = cs geometry since defaults-1029 (USER 10-29)
   int cs_vtx_n = 1;

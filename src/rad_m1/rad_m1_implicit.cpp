@@ -3024,6 +3024,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","cs_vertex_mono")) {
     cs_vtx_mono = pin->GetBoolean("rad_m1","cs_vertex_mono") && cs_geom;
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_predictor_tcap")) {   // seamE-1106
+    impl_pred_tcap = pin->GetReal("rad_m1","implicit_predictor_tcap");
+  }
   if (pin->DoesParameterExist("rad_m1","cs_cross_mono")) {   // seamE-1106
     cs_cross_mono = pin->GetBoolean("rad_m1","cs_cross_mono");
   }
@@ -13237,6 +13240,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // implicit_predictor_order = 2: + dt dt1 h (h = 0 until two increments are known)
     const bool po2 = (impl_pord == 2);
     const Real r2 = po2 ? dt*(p2 ? pred2_dt : pred_dt) : 0.0;
+    // seamE-1106 implicit_predictor_tcap = f > 1 (read only when named; default 2): the
+    // predicted T is taken only within [T/f, T f].  From a T far above the gas energy the
+    // first pass's tangent to T^4 gives SRCR ~ q (e^n - e(T_k)) << 0 and E' < 0 although
+    // the fixed point is positive.  Starting point only: the fixed point does not move.
+    const Real pth = impl_pred_tcap, ptl = 1.0/impl_pred_tcap;
     par_for("m1_impl_pred", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real tn = iw_(m,M1_IW_TP,k,j,i);
@@ -13249,7 +13257,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (hh) {
         Real tp = tn + rat*pd_(m,1,k,j,i);
         if (po2) {tp += r2*pd_(m,4,k,j,i);}
-        if (tp > 0.5*tn && tp < 2.0*tn) {iw_(m,M1_IW_TP,k,j,i) = tp;}
+        if (tp > ptl*tn && tp < pth*tn) {iw_(m,M1_IW_TP,k,j,i) = tp;}
       }
     });
     if (pok) {
