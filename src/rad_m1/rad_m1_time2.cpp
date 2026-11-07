@@ -437,6 +437,15 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_k1_stiff")) {
     t2_k1stiff = pin->GetReal("rad_m1", "time2_k1_stiff");
   }
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_redist")) {   // seamE-1106
+    t2_k1rd = pin->GetReal("rad_m1", "time2_k1_redist");
+  }
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
+    t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
+  }
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_pos_after_stiff")) {   // seamE-1106
+    t2_k1pos_as = pin->GetBoolean("rad_m1", "time2_k1_pos_after_stiff");
+  }
   if (t2_k1pos && pin->DoesParameterExist("rad_m1", "time2_k1_pos_theta")) {
     t2_k1pos_th = pin->GetReal("rad_m1", "time2_k1_pos_theta");
   }
@@ -752,7 +761,80 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
           sum += 1.0;
         }, Kokkos::Sum<Real>(ns));
         t2_k1stiff_n += ns;
+        // seamE-1106: time2_k1_reset = pos tested K1_E before the exchange moved into it
+        // above, so a cell the move takes to E + ca K1_E <= th E was missed (measured:
+        // E 1990, increment -6100).  The same test again, same treatment.  Only with
+        // time2_k1_reset = pos, time2_k1_stiff and key time2_k1_pos_after_stiff.
+        if (t2_k1pos_as && t2_k1pos && t2_k1reset && t2_ys_ok &&
+            t2ys.extent_int(0) >= pmy_pack->nmb_thispack) {
+          auto ys2_ = t2ys;
+          auto k1p_ = t2k1;
+          auto ue_ = u0;
+          const Real th2 = t2_k1pos_th;
+          const int nc2 = M1_T2_F1;
+          Real np2 = 0.0;
+          Kokkos::parallel_reduce("m1_t2_k1pos2", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+              DevExeSpace(), {0, ks, js, is}, {nmbr + 1, ke + 1, je + 1, ie + 1}),
+          KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
+            const Real e0 = ue_(m,M1_E,k,j,i);
+            if (!(e0 + ca*k1p_(m,M1_T2_E,k,j,i) > th2*e0)) {
+              for (int n = 0; n < nc2; ++n) {k1p_(m,n,k,j,i) = 0.0;}
+              ys2_(m,k,j,i) = -1.0;   // the faces of the cell, as the first test
+              sum += 1.0;
+            }
+          }, Kokkos::Sum<Real>(np2));
+          t2_k1pos_n += np2;
+        }
       }
+    }
+    // seamE-1106 time2_k1_redist = th (> 0, read only when named): where the explicit
+    // increment takes the stage-1 old vector below th E, E + a21 dt K1_E < th E, the missing
+    // K1_E is taken from the nearest cells of the radial column that can give it (keeping
+    // their own E + a21 dt K1_E >= th E), volume-weighted: sum V K1_E is exact, E channel
+    // only.  K1 is the stored slope, so stage 2 reads the same field.  Column-local: one
+    // radial block on every production deck, so no neighbour rank is read.
+    if (t2_k1rd > 0.0) {
+      auto &id = pmy_pack->pmesh->mb_indcs;
+      const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+      const int nmbr = pmy_pack->nmb_thispack - 1;
+      auto k1d_ = t2k1;
+      auto ue_ = u0;
+      auto &vol = pmy_pack->pcoord->volume;
+      const Real th = t2_k1rd, ca = c1;
+      const int rr = t2_k1rd_r;
+      Real nb = 0.0, nun = 0.0;
+      Kokkos::parallel_reduce("m1_t2_k1rd", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
+          DevExeSpace(), {0, ks, js}, {nmbr + 1, ke + 1, je + 1}),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, Real &sb, Real &su) {
+        for (int i = is; i <= ie; ++i) {
+          const Real e0 = ue_(m,M1_E,k,j,i);
+          const Real ev = e0 + ca*k1d_(m,M1_T2_E,k,j,i);
+          if (ev >= th*e0) continue;
+          sb += 1.0;
+          // the energy (rate x volume) this cell lacks
+          Real need = (th*e0 - ev)/ca*vol(m,k,j,i);
+          k1d_(m,M1_T2_E,k,j,i) += need/vol(m,k,j,i);
+          for (int d = 1; d <= rr && need > 0.0; ++d) {
+            for (int sg = -1; sg <= 1 && need > 0.0; sg += 2) {
+              const int q = i + sg*d;
+              if (q < is || q > ie) continue;
+              const Real eq = ue_(m,M1_E,k,j,q);
+              const Real room = (eq + ca*k1d_(m,M1_T2_E,k,j,q) - th*eq)/ca*vol(m,k,j,q);
+              if (room <= 0.0) continue;
+              const Real take = (room < need) ? room : need;
+              k1d_(m,M1_T2_E,k,j,q) -= take/vol(m,k,j,q);
+              need -= take;
+            }
+          }
+          if (need > 0.0) {
+            // not enough within rr cells: undo the unpaid part, posfix decides
+            k1d_(m,M1_T2_E,k,j,i) -= need/vol(m,k,j,i);
+            su += 1.0;
+          }
+        }
+      }, Kokkos::Sum<Real>(nb), Kokkos::Sum<Real>(nun));
+      t2_k1rd_n += nb;
+      t2_k1rd_un += nun;
     }
     t2_ys_ok = false;
     // t2pos-1020 time2_posfix: the stage-1 start of the gas (and of the closure memory)
@@ -2449,6 +2531,10 @@ void RadiationM1::Time2Report() {
   if (t2_k1reset) {
     std::cout << " k1_reset cells(rank 0)=" << t2_k1reset_n << " faces=" << t2_k1reset_nf;
     if (t2_k1pos) {std::cout << " (pos rule cells " << t2_k1pos_n << ")";}
+  }
+  if (t2_k1rd > 0.0) {
+    std::cout << " k1_redist(th=" << t2_k1rd << ") cells(rank 0)=" << t2_k1rd_n
+              << " unpaid=" << t2_k1rd_un;
   }
   if (t2_k1stiff > 0.0) {
     std::cout << " k1_stiff(s=" << t2_k1stiff << ") cells(rank 0)=" << t2_k1stiff_n;
