@@ -934,6 +934,45 @@
       dm2 = a2;
       dm3 = a3;
     }
+    // r136e-1107 implicit_wb_vcap (rad_m1.hpp): the momentum increment of the solve is
+    // scaled to keep |m + dm| <= V rho; the kinetic energy it no longer gets goes back to
+    // E (gas units -> E: ch/cl), before the slope below so that K takes the same state
+    if (wvcap > 0.0 && have_hydro && feedback && !csw) {
+      const bool tv = trans && dbgft;
+      const Real p0[3] = {uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i)};
+      const Real dq[3] = {dm1 - dmref, tv ? dm2 : 0.0, (tv && thrd) ? dm3 : 0.0};
+      const Real pmax = wvcap*dd;
+      Real pn2 = 0.0, dq2 = 0.0, pd = 0.0, pp2 = 0.0;
+      for (int a = 0; a < 3; ++a) {
+        pn2 += SQR(p0[a] + dq[a]);
+        dq2 += SQR(dq[a]);
+        pd += p0[a]*dq[a];
+        pp2 += SQR(p0[a]);
+      }
+      if (pn2 > SQR(pmax) && dq2 > 0.0) {
+        // s in [0, 1): |p0 + s dq| = pmax (s = 0 when the old speed is already above V)
+        Real sc = 0.0;
+        if (pp2 < SQR(pmax)) {
+          const Real disc = fmax(pd*pd - dq2*(pp2 - SQR(pmax)), 0.0);
+          sc = fmin(fmax((-pd + sqrt(disc))/dq2, 0.0), 1.0);
+        }
+        Real ps2 = 0.0;
+        for (int a = 0; a < 3; ++a) {ps2 += SQR(p0[a] + sc*dq[a]);}
+        const Real idg = 1.0/fmax(dd, 1.0e-300);
+        const Real dke = 0.5*(pn2 - ps2)*idg;   // kinetic energy not given (>= 0)
+        dm1 = dmref + sc*dq[0];
+        if (tv) {
+          dm2 = sc*dq[1];
+          if (thrd) {dm3 = sc*dq[2];}
+        }
+        work -= dke;
+        ep += (ch/cl)*dke;
+        const Real vol = psph ? pvol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                                 mbsize.d_view(m).dx3);
+        Kokkos::atomic_add(&vcc_(0), 1.0);
+        Kokkos::atomic_add(&vcc_(1), dke*vol);
+      }
+    }
     // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve
     if (t2k) {
       const Real fk = 1.0/dt;
