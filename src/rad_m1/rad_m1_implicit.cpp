@@ -3024,6 +3024,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","cs_vertex_mono")) {
     cs_vtx_mono = pin->GetBoolean("rad_m1","cs_vertex_mono") && cs_geom;
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_predictor_ecap")) {   // rsgdiag-1107
+    impl_pred_ecap = pin->GetReal("rad_m1","implicit_predictor_ecap");
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_predictor_tcap")) {   // seamE-1106
     impl_pred_tcap = pin->GetReal("rad_m1","implicit_predictor_tcap");
   }
@@ -13410,6 +13413,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // first pass's tangent to T^4 gives SRCR ~ q (e^n - e(T_k)) << 0 and E' < 0 although
     // the fixed point is positive.  Starting point only: the fixed point does not move.
     const Real pth = impl_pred_tcap, ptl = 1.0/impl_pred_tcap;
+    const Real pecap = impl_pred_ecap;   // rsgdiag-1107
     par_for("m1_impl_pred", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real tn = iw_(m,M1_IW_TP,k,j,i);
@@ -13418,8 +13422,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real ep = (t2st ? iw_(m,M1_IW_EP,k,j,i) : iw_(m,M1_IW_EN,k,j,i))
                 + rat*pd_(m,0,k,j,i);
       if (po2) {ep += r2*pd_(m,3,k,j,i);}
-      if (ep > efl) {iw_(m,M1_IW_EP,k,j,i) = ep;}
-      if (hh) {
+      // rsgdiag-1107 implicit_predictor_ecap = f > 1 (read only when named; off = 0): the
+      // predicted E is taken only within [E0/f, E0 f] (E0 the unpredicted start), and the
+      // predicted T only where the E prediction was taken.  RSG cold (H-recombined) cells:
+      // the extrapolated increment of a transient start E 12x E^n and a T whose table
+      // opacity is 1e4x (dtau_cell 0.003 -> 100+).  Starting point only.
+      const Real e0p = t2st ? iw_(m,M1_IW_EP,k,j,i) : iw_(m,M1_IW_EN,k,j,i);
+      const bool eok = !(pecap > 1.0) || (ep > e0p/pecap && ep < e0p*pecap);
+      if (ep > efl && eok) {iw_(m,M1_IW_EP,k,j,i) = ep;}
+      if (hh && eok) {
         Real tp = tn + rat*pd_(m,1,k,j,i);
         if (po2) {tp += r2*pd_(m,4,k,j,i);}
         if (tp > ptl*tn && tp < pth*tn) {iw_(m,M1_IW_TP,k,j,i) = tp;}
