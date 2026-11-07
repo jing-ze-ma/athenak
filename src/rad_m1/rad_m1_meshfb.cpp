@@ -228,15 +228,27 @@ void RadiationM1::ImplicitFbDiagPass(int it) {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb = pmy_pack->nmb_thispack;
-  auto s2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-             Kokkos::subview(iw, Kokkos::ALL, static_cast<int>(M1_IW_S2), Kokkos::ALL,
-                             Kokkos::ALL, Kokkos::ALL));
-  auto ep = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-             Kokkos::subview(iw, Kokkos::ALL, static_cast<int>(M1_IW_EP), Kokkos::ALL,
-                             Kokkos::ALL, Kokkos::ALL));
-  auto chi = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-             Kokkos::subview(opac, Kokkos::ALL, static_cast<int>(M1_OP_T), Kokkos::ALL,
-                             Kokkos::ALL, Kokkos::ALL));
+  // (a subview of a component is strided: no device -> host deep_copy; go through a
+  // contiguous device array)
+  auto &iwv = iw;
+  auto &opv = opac;
+  const int nh3 = iw.extent_int(2), nh2 = iw.extent_int(3), nh1 = iw.extent_int(4);
+  DvceArray4D<Real> dt3("m1_fb_d3", nmb, nh3, nh2, nh1);
+  auto fetch = [&](const DvceArray5D<Real> &src, const int c) {
+    auto sv = src;
+    auto dv = dt3;
+    par_for("m1_fb_fetch", DevExeSpace(), 0, nmb - 1, 0, nh3 - 1, 0, nh2 - 1, 0, nh1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      dv(m,k,j,i) = sv(m,c,k,j,i);
+    });
+    Kokkos::fence();
+    auto hv = Kokkos::create_mirror_view(HostMemSpace(), dv);
+    Kokkos::deep_copy(hv, dv);
+    return hv;
+  };
+  auto s2 = fetch(iwv, M1_IW_S2);
+  auto ep = fetch(iwv, M1_IW_EP);
+  auto chi = fetch(opv, M1_OP_T);
   auto tth = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tau_ten);
   auto &size = pmy_pack->pmb->mb_size;
   auto x1fv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx1f);
