@@ -3024,6 +3024,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","cs_vertex_mono")) {
     cs_vtx_mono = pin->GetBoolean("rad_m1","cs_vertex_mono") && cs_geom;
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_tstart_old")) {   // rsgdiag-1107
+    impl_tstart_old = pin->GetBoolean("rad_m1","implicit_tstart_old");
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_predictor_ecap")) {   // rsgdiag-1107
     impl_pred_ecap = pin->GetReal("rad_m1","implicit_predictor_ecap");
   }
@@ -13100,6 +13103,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto un_ = flr.u1;   // U^n of the Heun step (diagnostic only)
     const int dts2 = t2_solve;
     const Real ddt = dt;
+    const bool tso = impl_tstart_old;   // rsgdiag-1107
     auto ccl = pmy_pack->pcoord->cos_cell;
     par_for_lb("m1_impl_i1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -13140,6 +13144,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         eg = uh(m,IEN,k,j,i) - ekin - egrv;
       }
       iw_(m,M1_IW_EGN,k,j,i) = eg;
+      // rsgdiag-1107 implicit_tstart_old (default false): the start T of a stage solve
+      // from the gas OLD vector (EGN) where that is cooler than the stage start state.
+      // RSG cold cells: a21 dt K1_EN takes e_gas down 2x, the start T stays at the hot
+      // stage start, and the first pass's tangent to T^4 gives SRCR << 0, E' < 0
+      // (measured Tk/T(EGN) p50 1.55, SRCR/E -15).  Starting point only.
+      if (tso && t2st && eg > 0.0) {
+        const Real tq = eos.Temperature(dd, eg);
+        if (tq > 0.0 && tq < iw_(m,M1_IW_TP,k,j,i)) {iw_(m,M1_IW_TP,k,j,i) = tq;}
+      }
       Real wv1 = dvs ? mv1 : uh(m,IM1,k,j,i);
       Real wv2 = dvs ? mv2 : uh(m,IM2,k,j,i);
       Real wv3 = dvs ? mv3 : uh(m,IM3,k,j,i);
