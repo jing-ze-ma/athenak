@@ -65,6 +65,7 @@ void WbAllBuild(WbAllCtx &c) {
   auto &wt = wtemp;
   auto &ww = wbw;
   const bool wgt = wb_weight;
+  const Real phimx = c.phimax;
   const Real r0 = wbw_r0, r1 = wbw_r1, m0 = wbw_m0, m1 = wbw_m1, eta = wbw_eta;
   const bool wbgi = wb_guard_ideal;
   const Real gam = eos.gamma, gm1 = eos.gamma - 1.0;
@@ -136,6 +137,8 @@ void WbAllBuild(WbAllCtx &c) {
         const Real mach = sqrt(v2/fmax(cs2, 1.0e-300));
         w = WbRamp(rd, r0, r1)*WbRamp(mach, m0, m1);
       }
+      // dhjwball-1106: no WB outside wb_phimax (dhj Roche: the L1 equipotential)
+      if (fmax(fmax(fm, fc), fp) > phimx) w = 0.0;
       ww(m,dir-1,k,j,i) = w;
     });
   }
@@ -428,6 +431,7 @@ WbAllCtx Hydro::WbCtx() {
   c.w0 = w0; c.u0 = u0; c.wder = wder; c.wbq0 = wbq0; c.wbq2 = wbq2; c.wbq3 = wbq3;
   c.wbw = wbw; c.phicc = phicc0; c.wtemp = wtemp; c.pwb = pwb; c.phi1f = phi0.x1f; c.phi2f = phi0.x2f; c.phi3f = phi0.x3f; c.pam = pam;
   c.wbam_u = &wbam_u; c.wbam_w = &wbam_w; c.wbam_f = &wbam_f;
+  c.phimax = wb_phimax;
   return c;
 }
 void Hydro::BuildWBCacheAll() {WbAllCtx c = WbCtx(); WbAllBuild(c);}

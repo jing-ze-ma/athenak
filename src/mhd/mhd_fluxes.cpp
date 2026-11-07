@@ -258,6 +258,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto wbw_ = wbw;
   const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
   const Real wb_rmax_ = wb_rmax;
+  const Real wb_phimax_ = wb_phimax;   // dhjwball-1106
   const Real wb_rmin_ = wb_rmin;
   const bool use_wellbalance_static_reconst_perturb_ =
       use_wellbalance_static_reconst_perturb;
@@ -371,7 +372,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                               use_wellbalance_dynamic_,
                               use_wb_x1_, wb_rmax_, wb_rmin_,
                               m, k, j, il-1, iu, w0_, x1v_, x1f_, phiwbcc_,
-                              phiwb_x1f_, wbq0_, true, wl, wr, wb_all_);
+                              phiwb_x1f_, wbq0_, true, wl, wr, wb_all_, wb_phimax_);
         GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                               use_wellbalance_dynamic_,
                               use_wb_x1_, wb_rmax_, wb_rmin_,
@@ -562,7 +563,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         if (wwb_) {
           auto inr = [&](const int i) {
             return !curv1_ || (!(wb_rmax_ > 0.0 && x1v_(m,i) > wb_rmax_) &&
-                               !(wb_rmin_ > 0.0 && x1v_(m,i) < wb_rmin_));
+                               !(wb_rmin_ > 0.0 && x1v_(m,i) < wb_rmin_) &&
+                               !(phiwbcc_(m,k,j,i) > wb_phimax_));
           };
           if ((bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user))
               && inr(is)) {
