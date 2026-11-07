@@ -3,7 +3,7 @@
 "l1" is a **test arm name** in seamE_1106 (HG real state). It is not a separate key. Its local part is `implicit_fb_local`, which is the "local fallback" connection.
 
 - **r1** (binary sd10) = `rad_m1/cs_cross_mono=true`, `rad_m1/implicit_opac_newton=false`, `mesh/cs_seam_rho_guard=4`, `rad_m1/implicit_predictor_tcap=1.1`, `rad_m1/time2_k1_redist=0.1`.
-- **l1** (binary sd12) = r1 + `rad_m1/implicit_fb_local=true`, `rad_m1/implicit_fb_local_rounds=4`. The radius is the default, 2 cells (the L1 ball in rad_m1_meshfb.cpp; "l1" is named after "local", not after the L1 norm).
+- **l1** (binary sd12) = r1 + `rad_m1/implicit_fb_local=true`, `rad_m1/implicit_fb_local_rounds=4`. The radius is the default, 2 cells (the L1 ball in rad_m1_meshfb.cpp; why the arm is called "l1" was not recorded).
 - Arm l1 ran from HG rst 139 (meshfb_1106/rst/hegiant.00139.rst) to tlim 50284800 on 6 H200, with cfl 0.3. The full command line is in `$J/seamE_1106/runs/l1/arm.info`; the base keys are the HG prod set listed there.
 - Later, **r7** (sd19) is the same key set on a newer build (donor-order fix). It agrees with l1 to 0.05 %. So "r7 keys" = "l1 keys" = the r7 default candidate in the handover.
 
