@@ -437,6 +437,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_k1_stiff")) {
     t2_k1stiff = pin->GetReal("rad_m1", "time2_k1_stiff");
   }
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_fct")) {   // seamE-1106
+    t2_k1fct = pin->GetReal("rad_m1", "time2_k1_fct");
+  }
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_fct_rounds")) {
+    t2_k1fct_r = pin->GetInteger("rad_m1", "time2_k1_fct_rounds");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist")) {   // seamE-1106
     t2_k1rd = pin->GetReal("rad_m1", "time2_k1_redist");
   }
@@ -787,6 +793,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         }
       }
     }
+    if (t2_k1fct > 0.0) {ImplicitK1Fct(c1);}   // seamE-1106
     // seamE-1106 time2_k1_redist = th (> 0, read only when named): where the explicit
     // increment takes the stage-1 old vector below th E, E + a21 dt K1_E < th E, the missing
     // K1_E is taken from the nearest cells of the radial column that can give it (keeping

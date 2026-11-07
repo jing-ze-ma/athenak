@@ -1710,6 +1710,10 @@ class RadiationM1 {
   Real impl_pred_tcap = 2.0;   // seamE-1106 implicit_predictor_tcap
   Real t2_k1rd = 0.0, t2_k1rd_n = 0.0, t2_k1rd_un = 0.0;   // seamE-1106 time2_k1_redist
   int t2_k1rd_r = 16;
+  Real t2_k1fct = 0.0, t2_k1fct_n = 0.0, t2_k1fct_left = 0.0, t2_k1fct_first = 0.0;   // seamE-1106
+  int t2_k1fct_r = 2, t2_k1fct_calls = 0;
+  DvceArray4D<Real> t2fct_cum;
+  void ImplicitK1Fct(const Real ca);
   bool t2_k1pos_as = false;   // seamE-1106 time2_k1_pos_after_stiff
   bool cs_cross_mono = false;   // seamE-1106: one-sided seam cross derivative clamped
   bool cs_vtx_mono = false;    // DEFAULT = cs geometry since defaults-1029 (USER 10-29)
