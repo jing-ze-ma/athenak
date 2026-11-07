@@ -2664,6 +2664,77 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
         }
     });
+    // dhjwball-1106: "probwb" above fills the face potentials phi0.x1f/x2f/x3f on the ACTIVE
+    // cells only; a walk in a ghost row (the x2/x3 caches of wb_dirs = all, which read
+    // their own ghost rows and give a block's ghost copy of its neighbour's edge row) then
+    // reads 0 there, and two blocks see different states on their common face: mass is not
+    // conserved across MeshBlock faces.  Under wb_dirs = all (or problem/phi_faces_ghosts,
+    // test key for the x1-only scheme) the same formulas fill EVERY face, interior ones
+    // bitwise as above.
+    {
+      const bool wba_g = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_all :
+                         ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_all : false);
+      if (wba_g || pin->GetOrAddBoolean("problem","phi_faces_ghosts",false)) {
+        const int ng_ = indcs.ng;
+        const int m1 = indcs.nx1 + 2*ng_, m2 = (indcs.nx2 > 1) ? indcs.nx2 + 2*ng_ : 1;
+        const int m3 = (indcs.nx3 > 1) ? indcs.nx3 + 2*ng_ : 1;
+        auto pf1 = phi0_x1f, pf2 = phi0_x2f, pf3 = phi0_x3f;
+        // one potential at (radius coordinate, x2, x3) the way probwb evaluates it
+        auto potat = KOKKOS_LAMBDA (const int m, Real x1v, const Real x2v,
+                                    const Real x3v) {
+          Real r = x1v;
+          if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
+          Real theta, lam, phi;
+          if (use_spherical_polar) {
+            theta = x2v; lam = -x2v + M_PI/2.0; phi = x3v - M_PI;
+          } else if (use_cubed_sphere_) {
+            CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
+          } else {
+            theta = -(x3v*iap - M_PI/2.0); lam = x3v*iap; phi = x2v*iap;
+          }
+          (void) lam;
+          return TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta, phi, rgms_, ra_);
+        };
+        par_for("probwb_ghostfaces", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, m3, 0, m2,
+                0, m1,
+        KOKKOS_LAMBDA(int m, int k, int j, int i) {
+          const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
+          const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
+          const Real x3min = size.d_view(m).x3min, x3max = size.d_view(m).x3max;
+          const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+          // the radius coordinate of a cell centre / x1 face as probwb forms it
+          auto rc = [&](const int ii) {
+            if (use_spherical_polar) return x1v_(m,ii);
+            Real x = CellCenterX(ii-is, nx1, x1min, x1max);
+            ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x);
+            if (use_cubed_sphere_) x = x1v_(m,ii);
+            return x;
+          };
+          auto rf = [&](const int ii) {
+            if (use_spherical_polar) return x1f_(m,ii);
+            Real x = LeftEdgeX(ii-is, nx1, x1min, x1max);
+            ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x);
+            if (use_cubed_sphere_) x = x1f_(m,ii);
+            return x;
+          };
+          auto c2 = [&](const int jj) {
+            return use_spherical_polar ? x2v_(m,jj) : CellCenterX(jj-js, nx2, x2min, x2max);
+          };
+          auto f2 = [&](const int jj) {
+            return use_spherical_polar ? x2f_(m,jj) : LeftEdgeX(jj-js, nx2, x2min, x2max);
+          };
+          auto c3 = [&](const int kk) {
+            return use_spherical_polar ? x3v_(m,kk) : CellCenterX(kk-ks, nx3, x3min, x3max);
+          };
+          auto f3 = [&](const int kk) {
+            return use_spherical_polar ? x3f_(m,kk) : LeftEdgeX(kk-ks, nx3, x3min, x3max);
+          };
+          if (k < m3 && j < m2) pf1(m,k,j,i) = potat(m, rf(i), c2(j), c3(k));
+          if (i < m1 && k < m3) pf2(m,k,j,i) = potat(m, rc(i), f2(j), c3(k));
+          if (i < m1 && j < m2) pf3(m,k,j,i) = potat(m, rc(i), c2(j), f3(k));
+        });
+      }
+    }
     if (use_etotgrav || use_wellbalance_dynamic) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
