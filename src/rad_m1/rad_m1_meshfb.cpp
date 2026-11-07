@@ -43,6 +43,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_parfor.hpp"
+#include "rad_m1/m1_fluid.hpp"
 
 namespace radm1 {
 
@@ -54,6 +55,9 @@ void RadiationM1::ImplicitFbKeys(ParameterInput *pin) {
   }
   if (pin->DoesParameterExist("rad_m1", "implicit_seam_dump")) {   // seamE-1106
     sdm_n = pin->GetInteger("rad_m1", "implicit_seam_dump");
+  }
+  if (pin->DoesParameterExist("rad_m1", "implicit_seam_dump_stage")) {   // seamE-1106
+    sdm_stage = pin->GetBoolean("rad_m1", "implicit_seam_dump_stage");
   }
   if (pin->DoesParameterExist("rad_m1", "implicit_fb_local")) {
     fbl_on = pin->GetBoolean("rad_m1", "implicit_fb_local");
@@ -224,7 +228,7 @@ void RadiationM1::ImplicitFbDiagPass(int it) {
       s[8] += static_cast<Real>(it);
     }
   }
-  if (!(emin > 0.0) && sdm_done < sdm_n) {   // seamE-1106
+  if (!(emin > 0.0) && sdm_done < sdm_n && (!sdm_stage || kd == 1 || kd == 2)) {   // seamE-1106
     sdm_done += 1;
     ImplicitSeamRowDump(it, kd, nb);
   }
@@ -416,7 +420,7 @@ void RadiationM1::ImplicitSeamRowDump(int it, int kd, Real nb) {
   auto g2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), csg2);
   auto g3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), csg3);
   auto csh = cs_seam.h_view;
-  DvceArray5D<Real> ddv("m1_sd_dd", nmb, 4, nh3, nh2, nh1);
+  DvceArray5D<Real> ddv("m1_sd_dd", nmb, 7, nh3, nh2, nh1);
   {
     auto dd = ddv; auto iw_ = iw; auto vd_ = vet_cell; const bool dfull = vet_full;
     par_for("m1_sd_dd", DevExeSpace(), 0, nmb - 1, 0, nh3 - 1, 0, nh2 - 1, 0, nh1 - 1,
@@ -446,6 +450,24 @@ void RadiationM1::ImplicitSeamRowDump(int it, int kd, Real nb) {
       });
     }
     Kokkos::fence();
+  }
+  {
+    // the gas state of the row: T_k, T(EGN), e(T_k), rho (the stage old vector), uh(IEN)
+    FluidRef fl = FluidRef::Get(pmy_pack);
+    if (fl.on) {
+      auto dd = ddv; auto iw_ = iw; auto uh = fl.u0; auto eos = fl.eos;
+      par_for("m1_sd_gas", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real r = uh(m,IDN,k,j,i), tk = iw_(m,M1_IW_TP,k,j,i);
+        const Real eg = iw_(m,M1_IW_EGN,k,j,i);
+        Real te, pp, cr, ct, tcv;
+        eos.ThermoAt(r, tk, te, pp, cr, ct, tcv);
+        dd(m,4,k,j,i) = te;
+        dd(m,5,k,j,i) = (eg > 0.0) ? eos.Temperature(r, eg) : -1.0;
+        dd(m,6,k,j,i) = r;
+      });
+      Kokkos::fence();
+    }
   }
   auto ddh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ddv);
   auto lloc = pmy_pack->pmesh->lloc_eachmb;
@@ -542,6 +564,24 @@ void RadiationM1::ImplicitSeamRowDump(int it, int kd, Real nb) {
                    ifh(m,M1_IFW_HCL,k,j,i+1), ifh(m,M1_IFW_HCR,k,j,i+1), ifh(m,M1_IFW_HCL,k,j,i),
                    ifh(m,M1_IFW_HCR,k,j,i), ifh(m,M1_IFW_AL,k,j,i+1), ifh(m,M1_IFW_AL,k,j,i),
                    -nup*ifh(m,M1_IFW_DG,k,j,i+1) + num*ifh(m,M1_IFW_DG,k,j,i));
+    }
+    if (kd == 1 || kd == 2) {
+      auto ti = Kokkos::create_mirror_view_and_copy(HostMemSpace(), t2inc);
+      auto k1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), t2k1);
+      auto k2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), t2k2);
+      auto tph = fetch(iw, M1_IW_TP);
+      auto opp = fetch(opac, M1_OP_P);
+      auto de0h = fetch(iw, M1_IW_DE0);
+      std::fprintf(fp, "GAS Tk %.5e TEGN %.5e ek %.5e egn %.5e rho %.5e kP %.5e kE %.5e de0 %.5e "
+                   "emisT4 %.5e\n", tph(m,k,j,i), ddh(m,5,k,j,i), ddh(m,4,k,j,i), egn(m,k,j,i),
+                   ddh(m,6,k,j,i), opp(m,k,j,i), ke_(m,k,j,i), de0h(m,k,j,i),
+                   dt*ch*opp(m,k,j,i)*arad*std::pow(tph(m,k,j,i), 4));
+      for (const int q : {0, -1, 1}) {
+        std::fprintf(fp, "T2 di %d incE %.6e incEN %.6e k1E %.6e k1EN %.6e k2E %.6e k2EN %.6e "
+                     "incM1 %.5e\n", q, ti(m,M1_T2_E,k,j,i+q), ti(m,M1_T2_EN,k,j,i+q),
+                     k1h(m,M1_T2_E,k,j,i+q), k1h(m,M1_T2_EN,k,j,i+q), k2h(m,M1_T2_E,k,j,i+q),
+                     k2h(m,M1_T2_EN,k,j,i+q), ti(m,M1_T2_M1,k,j,i+q));
+      }
     }
     auto tth = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tau_ten);
     std::fprintf(fp, "LATC D0 %.5e L1 %.5e L2 %.5e L3 %.5e\n", tth(m,0,k,j,i),
