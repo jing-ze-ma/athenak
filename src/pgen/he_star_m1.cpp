@@ -137,6 +137,9 @@ Real hs_bheat_ = 0.0;
 DvceArray1D<Real> hs_fb_;
 Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
 bool hs_zflux_ = true;
+// hgwall-1107 problem/he_wall_diag_every (default 0 = off, output only): every N cycles a
+// line "HSWALL" with the energy budget of the first x1 cells (see HsWallDiag)
+int hs_wdiag_every_ = 0, hs_wdiag_cyc_ = -1;
 // fsanchor-1009 problem/he_clump (TEST, read only when named, default false): a cold
 // opaque sphere of gas held fixed (rho, T, v = 0) at every stage, the absorber of the
 // shadow test in the production geometry; (r, theta, phi) centre, radius (code units)
@@ -2637,6 +2640,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // top sponge (default off) and hooks
   hs_zflux_ = pin->GetOrAddBoolean("problem","he_wall_zero_flux",true);
+  if (pin->DoesParameterExist("problem","he_wall_diag_every")) {
+    hs_wdiag_every_ = pin->GetInteger("problem","he_wall_diag_every");
+  }
   // the inner wall face sees the exact mirror of the interior-side state
   // (hydro_fluxes.cpp, wall_closed_ix1, as deep_hot_jupiter_rt problem/wall_closed): zero
   // mass flux to round-off.  Measured: it does not change the first-cell force
@@ -3539,6 +3545,80 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
 namespace {
 //----------------------------------------------------------------------------------------
+//! \fn void HsWallDiag()
+//! \brief hgwall-1107 problem/he_wall_diag_every = N (output only): on the first source
+//! call of every N-th cycle, rank 0 prints one line
+//!   HSWALL cycle time dt L_in Lco1 Lco2 Lco3 Lcomid H1 H2 H3 Hmid M1 U0 U1
+//!          v0 v1 v2 v3 vrms0 vrms1 vrms2 vrms3
+//! L_in = F_in A(r_in); Lco_q = sum A f0x1 (comoving radiation flux of the last solve) on
+//! the x1 face is+q (mid: is+nx1/2), H_q = sum A F_IEN (hydro total-energy flux of this
+//! stage, incl. the potential under etotgrav) on the same faces, M1 = mass flux on face
+//! is+1, U_q = sum V (u0 IEN + E_rad) over the cells is+q, v_q / vrms_q = volume means
+//! of v_r and v_r^2 (sqrt) over the cells is+q.  With a conservative scheme the time
+//! mean of the total energy flux through face is+1 is L_in - dU0/dt, so the radiation's
+//! LAB flux there is L_in - dU0/dt - H1 and its non-comoving part that minus Lco1.
+
+void HsWallDiag(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto *pm1 = pmbp->pradm1;
+  if (pm1 == nullptr || pm1->f0x1.extent_int(0) == 0) return;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3, imid = is + indcs.nx1/2;
+  const int nmb = pmbp->nmb_thispack;
+  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  auto u0 = fl.u0;
+  auto w0 = fl.w0;
+  auto flx = fl.uflx->x1f;
+  auto ur = pm1->u0;
+  auto ff = pm1->f0x1;
+  auto &area1 = pmbp->pcoord->area.x1f;
+  auto &volume = pmbp->pcoord->volume;
+  const Real fin = hs_fin_;
+  array_sum::GlobalSum sum_this;
+  Kokkos::parallel_reduce("hs_wdiag", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          nmb*nx3*nx2),
+  KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &msum) {
+    const int m = idx/(nx3*nx2);
+    const int k = (idx/nx2)%nx3 + ks, j = idx%nx2 + js;
+    array_sum::GlobalSum h;
+    for (int n=0; n<NREDUCTION_VARIABLES; ++n) h.the_array[n] = 0.0;
+    h.the_array[0] = fin*area1(m,k,j,is);
+    for (int q=1; q<=3; ++q) {
+      h.the_array[q] = ff(m,k,j,is+q)*area1(m,k,j,is+q);
+      h.the_array[4+q] = flx(m,IEN,k,j,is+q)*area1(m,k,j,is+q);
+    }
+    h.the_array[4] = ff(m,k,j,imid)*area1(m,k,j,imid);
+    h.the_array[8] = flx(m,IEN,k,j,imid)*area1(m,k,j,imid);
+    h.the_array[9] = flx(m,IDN,k,j,is+1)*area1(m,k,j,is+1);
+    for (int q=0; q<=1; ++q) {
+      h.the_array[10+q] = (u0(m,IEN,k,j,is+q) + ur(m,radm1::M1_E,k,j,is+q))
+                          *volume(m,k,j,is+q);
+    }
+    for (int q=0; q<=3; ++q) {
+      const Real v = volume(m,k,j,is+q), vr = w0(m,IVX,k,j,is+q);
+      h.the_array[12+q] += vr*v;
+      h.the_array[16+q] += vr*vr*v;
+      h.the_array[20+q] += v;
+    }
+    msum += h;
+  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this));
+#if MPI_PARALLEL_ENABLED
+  array_sum::GlobalSum g;
+  MPI_Allreduce(sum_this.the_array, g.the_array, NREDUCTION_VARIABLES, MPI_ATHENA_REAL,
+                MPI_SUM, MPI_COMM_WORLD);
+  sum_this = g;
+#endif
+  if (global_variable::my_rank != 0) return;
+  const Real *a = sum_this.the_array;
+  std::printf("HSWALL %d %.10e %.6e", pm->ncycle, pm->time, pm->dt);
+  for (int n=0; n<12; ++n) std::printf(" %.10e", a[n]);
+  for (int q=0; q<4; ++q) std::printf(" %.6e", a[12+q]/a[20+q]);
+  for (int q=0; q<4; ++q) std::printf(" %.6e", std::sqrt(a[16+q]/a[20+q]));
+  std::printf("\n");
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void HeStarGravity()
 //! \brief the point-mass source with the x1 well-balanced pressure form (etotgrav), the
 //! reference work of the WB kick (force_reference_work = split), the wall/top mass-flux
@@ -3565,6 +3645,10 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   // w L_sub), so F_sub and its clock stay FROZEN at their last values (also in the
   // restart files), except when a problem/mlt_closure_dout profile is due (diagnostic
   // cadence kept: the update runs and writes its lines)
+  if (hs_wdiag_every_ > 0 && pm->ncycle != hs_wdiag_cyc_) {
+    hs_wdiag_cyc_ = pm->ncycle;
+    if (pm->ncycle % hs_wdiag_every_ == 0) HsWallDiag(pm);
+  }
   if (hs_ad_ && pm->ncycle != hs_ad_cyc_) {
     hs_ad_cyc_ = pm->ncycle;
     if (pm->ncycle % hs_ad_every_ == 0) {
