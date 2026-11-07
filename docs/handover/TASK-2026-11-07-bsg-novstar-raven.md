@@ -12,7 +12,18 @@ Fresh start t = 0 -> 57.4 d of the BSG Linhao-exact 3-D model, identical to the 
 ## Size
 256 x 256 x 256 in 16 MeshBlocks 256x64x64 (deck comment: 1 per A100 on 4 nodes x 4, or 4 per GPU). Caltech: 4 ranks x 4 blocks on 4 H200, ~25 GB/GPU, 61 H200 GPU-h for 57.4 d (~15 h wall). On Raven: 1 node, 4 ranks x 4 blocks (25 GB fits 40 GB A100) ≈ 1.9x slower ≈ ~30 h wall; or 4 nodes x 4 ranks x 1 block if queue allows (faster, more nodes).
 
-## Full-tensor energy gate (REQUIRED, your NOTE-2026-11-07 vet-gd-tangential)
+## STEP 0 (USER 11-07: "make sure full tensor works on it first"): validate the full tensor on this BSG deck BEFORE the long run
+Short arms from t = 0 with this deck (same binary, same node layout), ~1-2 h each, all compared at equal sim time with bin_double dumps:
+- A = deck as is (vstar off, tensor ON); B = same with vet_gd_tangential = false; Bn = B with E x (1+1e-10 u) (noise member; Caltech key rst_pert_erad or your equivalent).
+- Required to pass, A vs B (vs the B-Bn noise):
+  1. runs clean: no FATAL, no NON-CONVERGED=[1-9], no nan; NOT POSITIVE / NOT ADMISSIBLE / BE-redo / fallback rates not higher than B beyond noise; dt not lower;
+  2. the term is actually ON: the tangential term is applied in most solves (not dropped by the mesh-wide fallback); report the active fraction (implicit_fb_diag / FBDIAG_SUM or your equivalent) and the size of D_tt-D_pp, D_tp where tau_top < 30;
+  3. energy gate: R = dEtot - int(L_in - L_top) dt; slope(A) - slope(B) within 1e-4 L_in and not growing (your He-wedge source was +1.34 / +3.2e-2 with wall_interp, which is ON in this deck);
+  4. no imprint at the poles / wedge walls / block edges in E, F_r, F_t, T_eff maps (sp-specific: check the axis and the wall_interp walls);
+  5. restart 2 + 2 vs 4 cycles bitwise (tensor on), and a quick 2-layout check if cheap.
+- If all pass: start the long run (tensor on). If any fails: report the numbers, start the long run with vet_gd_tangential = false (vstar off only) so the user's main question still gets answered, and say so in the NOTE.
+
+## Full-tensor energy gate during the long run (REQUIRED, your NOTE-2026-11-07 vet-gd-tangential)
 Your He wedge showed an energy source with vet_gd_tangential on sp (T7wi sink, XQ2nt R=+1.34; with wall_interp +3.2e-2); this deck has vet_gd_wall_interp = true. Caltech saw no source on cs (HG/RSG) or in short sp runs (R136a1, BSG column), but never on your He state. So: run the energy gate R = dEtot - int(L_in - L_top) dt relative to int L_in dt from the start; STOP and report if |slope| > 1e-4 L_in over the first ~2 d (or if L_top runs away). Optional if nodes allow: a second arm with vet_gd_tangential = false (vstar off only) to separate the two changes; the user asked for one run with both, so the second arm is lower priority.
 
 ## Stop rules / checks
