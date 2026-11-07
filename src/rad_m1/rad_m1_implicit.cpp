@@ -2809,6 +2809,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_kill")) {
     vimp_kill = pin->GetBoolean("rad_m1","implicit_vimp_kill");
   }
+  ImplicitFbKeys(pin);   // meshfb-1106
   if (pin->DoesParameterExist("rad_m1","implicit_pos_transport")) {   // postr-1031
     const std::string pt = pin->GetString("rad_m1","implicit_pos_transport");
     if (pt == "none") {
@@ -3022,6 +3023,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   cs_vtx_mono = cs_geom;
   if (pin->DoesParameterExist("rad_m1","cs_vertex_mono")) {
     cs_vtx_mono = pin->GetBoolean("rad_m1","cs_vertex_mono") && cs_geom;
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_tstart_old")) {   // rsgdiag-1107
+    impl_tstart_old = pin->GetBoolean("rad_m1","implicit_tstart_old");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_predictor_ecap")) {   // rsgdiag-1107
+    impl_pred_ecap = pin->GetReal("rad_m1","implicit_predictor_ecap");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_predictor_tcap")) {   // seamE-1106
+    impl_pred_tcap = pin->GetReal("rad_m1","implicit_predictor_tcap");
+  }
+  if (pin->DoesParameterExist("rad_m1","cs_cross_mono")) {   // seamE-1106
+    cs_cross_mono = pin->GetBoolean("rad_m1","cs_cross_mono");
   }
   if (pin->DoesParameterExist("rad_m1","cs_vertex_mono_n")) {
     cs_vtx_n = pin->GetInteger("rad_m1","cs_vertex_mono_n");
@@ -4652,7 +4665,7 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
   const bool odl = (odm != M1_OD_NONE);
   const bool vlat = vlat_now && vlat_ready && sph;
   const bool vtan = vgd_on && vgd_tan && vlat_ready && sph;
-  auto vlt_ = tau_ten;
+  auto vlt_ = VlatTT();   // meshfb-1106
   const int c0l = M1_TT_LAT0;
   auto cdxf = M1Dxf();
   auto cx1v = pmy_pack->pcoord->x1v;
@@ -5092,6 +5105,171 @@ void M1CsTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol,
 } // namespace
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitK1Fct
+//! \brief seamE-1106 <rad_m1>/time2_k1_fct = th (> 0, read only when named): the stage-1
+//! explicit increment made positive by CONSERVATIVE FACE CORRECTIONS of K1_E.
+//!
+//! Scaling a cell's outflow (Zalesak's donor form) cannot work here: the face fluxes in K1
+//! carry dt F A/V ~ 60 E through a cell whose net change is much smaller (measured, HG
+//! rst 139, time2_k1_fct_dbg), so one donor's scaling empties its receiver.  Instead a
+//! cell with E + ca K1_E < th E (deficit D, rate x volume) takes D across its open faces
+//! from neighbours with room Q = (E + ca K1_E - th E) V/ca, in proportion to Q:
+//!   t_f = r_c Q_n beta_n,  r_c = D_c/sum_nb Q_nb,  beta_n = min(1, 1/sum_nb r_nb).
+//! r, Q and beta are cell fields with their ghosts exchanged, so the two cells of a face,
+//! on any rank and across a panel seam (plain mirror copy), compute the SAME t_f: sum V K1_E
+//! telescopes.  No neighbour has room: r = -D_c/sum_nb E_nb, a relay in proportion to the
+//! neighbours' E, which passes the deficit one cell on per round, mostly towards larger E
+//! (time2_k1_fct_rounds, default 16; E is exchanged once).  What is left
+//! goes to time2_posfix.  Nothing fires in a smooth field: K1 is untouched, second order.
+//! K1 is the stored slope, so stage 2 reads the same field (the tableau's weights).  E
+//! channel only: the K1 face slopes (F) and the gas channels are unchanged; the correction
+//! moves energy between E of neighbouring cells within the explicit increment.
+void RadiationM1::ImplicitK1Fct(const Real ca) {
+  if (iw.extent_int(1) <= M1_IW_KZ || !trans_on) {return;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto u0_ = u0;
+  auto k1_ = t2k1;
+  auto cvol = pmy_pack->pcoord->volume;
+  auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
+  auto bcs = mbbcs.d_view;
+  const bool thrd = trans_x3;
+  const Real th = t2_k1fct;
+  const int cq = M1_IW_KZ, cr = M1_IW_KS, cb = M1_IW_KTT, ce = M1_IW_KY;
+  // face n (0,1: x1 -,+; 2,3: x2; 4,5: x3) of cell (m,k,j,i) has a neighbour
+  auto fopen = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, const int n) {
+    const auto o = [&](const BoundaryFace bf) {
+      const BoundaryFlag q = bcs(m,bf);
+      return (q == BoundaryFlag::block) || (q == BoundaryFlag::periodic);
+    };
+    switch (n) {
+      case 0: return (i > is) || o(BoundaryFace::inner_x1);
+      case 1: return (i < ie) || o(BoundaryFace::outer_x1);
+      case 2: return (j > js) || o(BoundaryFace::inner_x2);
+      case 3: return (j < je) || o(BoundaryFace::outer_x2);
+      case 4: return thrd && ((k > ks) || o(BoundaryFace::inner_x3));
+      default: return thrd && ((k < ke) || o(BoundaryFace::outer_x3));
+    }
+  };
+  Real nfire = 0.0;
+  bool efill = false;
+  for (int r = 0; r < t2_k1fct_r; ++r) {
+    Real nb = 0.0;
+    par_reduce_flat("m1_k1fct_q", 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+      const Real e0 = u0_(m,M1_E,k,j,i);
+      const Real s = (e0 + ca*k1_(m,M1_T2_E,k,j,i) - th*e0)/ca*cvol(m,k,j,i);
+      // cq: > 0 room, < 0 deficit
+      iw_(m,cq,k,j,i) = s;
+      if (s < 0.0) {a += 1.0;}
+    }, Kokkos::Sum<Real>(nb));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &nb, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (r == 0) {nfire = nb;}
+    t2_k1fct_n += nb;
+    if (!(nb > 0.0)) {break;}
+    if (!efill) {
+      // the relay's weights: E at the stage start, ghosts included (fixed in the rounds)
+      par_for("m1_k1fct_e", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        iw_(m,ce,k,j,i) = fmax(u0_(m,M1_E,k,j,i), 0.0);
+      });
+      ImplicitKrylovHalo(ce);
+      efill = true;
+    }
+    ImplicitKrylovHalo(cq);
+    par_for("m1_k1fct_r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real rv = 0.0;
+      const Real s = iw_(m,cq,k,j,i);
+      if (s < 0.0) {
+        const Real qn[6] = {iw_(m,cq,k,j,i-1), iw_(m,cq,k,j,i+1), iw_(m,cq,k,j-1,i),
+                            iw_(m,cq,k,j+1,i), thrd ? iw_(m,cq,k-1,j,i) : 0.0,
+                            thrd ? iw_(m,cq,k+1,j,i) : 0.0};
+        const Real en[6] = {iw_(m,ce,k,j,i-1), iw_(m,ce,k,j,i+1), iw_(m,ce,k,j-1,i),
+                            iw_(m,ce,k,j+1,i), thrd ? iw_(m,ce,k-1,j,i) : 0.0,
+                            thrd ? iw_(m,ce,k+1,j,i) : 0.0};
+        Real sq = 0.0, se = 0.0;
+        for (int n = 0; n < 6; ++n) {
+          if (fopen(m, k, j, i, n)) {
+            se += en[n];
+            if (qn[n] > 0.0) {sq += qn[n];}
+          }
+        }
+        if (sq > 0.0) {
+          rv = -s/sq;
+        } else if (se > 0.0) {
+          rv = s/se;   // < 0: relay, -rv E_n per face: mostly towards the larger E
+        }
+      }
+      iw_(m,cr,k,j,i) = rv;
+    });
+    ImplicitKrylovHalo(cr);
+    par_for("m1_k1fct_b", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real rn[6] = {iw_(m,cr,k,j,i-1), iw_(m,cr,k,j,i+1), iw_(m,cr,k,j-1,i),
+                          iw_(m,cr,k,j+1,i), thrd ? iw_(m,cr,k-1,j,i) : 0.0,
+                          thrd ? iw_(m,cr,k+1,j,i) : 0.0};
+      Real sr = 0.0;
+      for (int n = 0; n < 6; ++n) {
+        if (fopen(m, k, j, i, n) && rn[n] > 0.0) {sr += rn[n];}
+      }
+      iw_(m,cb,k,j,i) = (sr > 1.0) ? 1.0/sr : 1.0;
+    });
+    ImplicitKrylovHalo(cb);
+    par_for("m1_k1fct_u", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const auto at = [&](const int c, const int n) {
+        switch (n) {
+          case 0: return iw_(m,c,k,j,i-1);
+          case 1: return iw_(m,c,k,j,i+1);
+          case 2: return iw_(m,c,k,j-1,i);
+          case 3: return iw_(m,c,k,j+1,i);
+          case 4: return iw_(m,c,k-1,j,i);
+          default: return iw_(m,c,k+1,j,i);
+        }
+      };
+      const Real qc = iw_(m,cq,k,j,i), rc = iw_(m,cr,k,j,i), bc = iw_(m,cb,k,j,i);
+      const Real ec = iw_(m,ce,k,j,i);
+      Real dk = 0.0;
+      for (int n = 0; n < (thrd ? 6 : 4); ++n) {
+        if (!fopen(m, k, j, i, n)) {continue;}
+        const Real qn = at(cq, n), rn = at(cr, n), bn = at(cb, n), en = at(ce, n);
+        // into this cell (it is the deficit cell of the face)
+        if (rc > 0.0 && qn > 0.0) {dk += rc*qn*bn;}
+        if (rc < 0.0) {dk -= rc*en;}
+        // out of this cell (the neighbour is the deficit cell)
+        if (rn > 0.0 && qc > 0.0) {dk -= rn*qc*bc;}
+        if (rn < 0.0) {dk += rn*ec;}
+      }
+      k1_(m,M1_T2_E,k,j,i) += dk/cvol(m,k,j,i);
+    });
+  }
+  // what is left below th E goes to time2_posfix as before
+  Real nleft = 0.0;
+  par_reduce_flat("m1_k1fct_l", 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+    const Real e0 = u0_(m,M1_E,k,j,i);
+    if (e0 + ca*k1_(m,M1_T2_E,k,j,i) < th*e0) {a += 1.0;}
+  }, Kokkos::Sum<Real>(nleft));
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &nleft, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  t2_k1fct_left += nleft;
+  t2_k1fct_calls += 1;
+  t2_k1fct_first += nfire;
+  if (global_variable::my_rank == 0 && t2_k1fct_calls % 50 == 0) {
+    std::cout << "<rad_m1> K1FCT calls " << t2_k1fct_calls << " cells first round "
+              << t2_k1fct_first << " all rounds " << t2_k1fct_n << " left " << t2_k1fct_left
+              << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitTransverseTerms
 //! \brief milestone 3b phase B: one line-Jacobi evaluation of the TRANSVERSE (x2, x3)
 //! part of the operator at the current Picard iterate.
@@ -5201,7 +5379,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool vlatc = vlat_now && vlat_ready && cs_geom;
   auto cfn2 = cs_fn2;
   auto cfn3 = cs_fn3;
-  auto vlt_ = tau_ten;
+  auto vlt_ = VlatTT();   // meshfb-1106
   const int c0l = M1_TT_LAT0;
   // vet_gd (m1-vet-gd): the lagged tangential anisotropy M1SphTan
   const bool vtan = vgd_on && vgd_tan && vlat_ready && sph;
@@ -5241,6 +5419,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto hqvc_ = vet_cell;
   auto hqgh_ = vgd_hr;
   // vtxfix-1029 cs_vertex_mono (rad_m1.hpp): two-point faces near the cube vertices
+  const bool xmono = cs_cross_mono && cs_geom;   // seamE-1106
   const bool vmo = cs_vtx_mono && cs_geom;
   const int vmn = cs_vtx_n;
   const bool v3m1_ = cs_geom && pmy_pack->pmesh->cs_vertex_3cell;   // cornerfix-1103
@@ -5301,8 +5480,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         // cs-open-1018: the quadratic through the foot values, at the face midpoint
         gr = M1CsSeamMid(dpr, csg2_, m, k, sd, up, dn);
       } else {
-        Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,jm,i,ks,ke,s3lo,s3hi)
-                       + M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,j,i,ks,ke,s3lo,s3hi));
+        Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,jm,i,ks,ke,s3lo,s3hi,xmono)
+                       + M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,j,i,ks,ke,s3lo,s3hi,xmono));
         // vtxfix-1029: no skew cross term on a face with a cell within vmn of a vertex
         if (vmo && (M1CsVtxDist(k,jm,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn ||
                     M1CsVtxDist(k,j,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn)) {
@@ -5507,8 +5686,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           // cs-open-1018: the quadratic through the foot values, at the face midpoint
           gr = M1CsSeamMid(dpr, csg3_, m, j, sd, up, dn);
         } else {
-          Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,km,j,i,js,je,s2lo,s2hi)
-                         + M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,k,j,i,js,je,s2lo,s2hi));
+          Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,km,j,i,js,je,s2lo,s2hi,xmono)
+                         + M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,k,j,i,js,je,s2lo,s2hi,xmono));
           // vtxfix-1029: no skew cross term on a face with a cell within vmn of a vertex
           if (vmo && (M1CsVtxDist(km,j,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn ||
                       M1CsVtxDist(k,j,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn)) {
@@ -9752,6 +9931,7 @@ void RadiationM1::ImplicitReport() {
                 << " max |dq|/q of the exchanged energy=" << ec_tmax << std::endl;
     }
   }
+  if (fbd_n > 0 || fbl_on) {ImplicitFbSummary();}   // meshfb-1106
   if (impl_pcr_check) {
     std::cout << "<rad_m1> line solver=" << ((impl_line_solver == 1) ? "pcr" : "thomas")
               << " pcr_check: calls=" << pcr_chk_n
@@ -12591,7 +12771,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   vimp_now = impl_vimp;
   t2_pfix_fbm = false;
   // implicit_vimp_kill: a clean mask at the start of every solve
-  if (vimp_kill && impl_vimp) {
+  fbl_any = false;   // meshfb-1106
+  fbl_used = 0;
+  if ((vimp_kill && impl_vimp) || fbl_on) {
     auto &idk = pmy_pack->pmesh->mb_indcs;
     const int nk1 = idk.nx1 + 2*idk.ng;
     const int nk2 = (idk.nx2 > 1) ? (idk.nx2 + 2*idk.ng) : 1;
@@ -12921,6 +13103,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto un_ = flr.u1;   // U^n of the Heun step (diagnostic only)
     const int dts2 = t2_solve;
     const Real ddt = dt;
+    const bool tso = impl_tstart_old;   // rsgdiag-1107
     auto ccl = pmy_pack->pcoord->cos_cell;
     par_for_lb("m1_impl_i1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -12961,6 +13144,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         eg = uh(m,IEN,k,j,i) - ekin - egrv;
       }
       iw_(m,M1_IW_EGN,k,j,i) = eg;
+      // rsgdiag-1107 implicit_tstart_old (default false): the start T of a stage solve
+      // from the gas OLD vector (EGN) where that is cooler than the stage start state.
+      // RSG cold cells: a21 dt K1_EN takes e_gas down 2x, the start T stays at the hot
+      // stage start, and the first pass's tangent to T^4 gives SRCR << 0, E' < 0
+      // (measured Tk/T(EGN) p50 1.55, SRCR/E -15).  Starting point only.
+      if (tso && t2st && eg > 0.0) {
+        const Real tq = eos.Temperature(dd, eg);
+        if (tq > 0.0 && tq < iw_(m,M1_IW_TP,k,j,i)) {iw_(m,M1_IW_TP,k,j,i) = tq;}
+      }
       Real wv1 = dvs ? mv1 : uh(m,IM1,k,j,i);
       Real wv2 = dvs ? mv2 : uh(m,IM2,k,j,i);
       Real wv3 = dvs ? mv3 : uh(m,IM3,k,j,i);
@@ -13229,6 +13421,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // implicit_predictor_order = 2: + dt dt1 h (h = 0 until two increments are known)
     const bool po2 = (impl_pord == 2);
     const Real r2 = po2 ? dt*(p2 ? pred2_dt : pred_dt) : 0.0;
+    // seamE-1106 implicit_predictor_tcap = f > 1 (read only when named; default 2): the
+    // predicted T is taken only within [T/f, T f].  From a T far above the gas energy the
+    // first pass's tangent to T^4 gives SRCR ~ q (e^n - e(T_k)) << 0 and E' < 0 although
+    // the fixed point is positive.  Starting point only: the fixed point does not move.
+    const Real pth = impl_pred_tcap, ptl = 1.0/impl_pred_tcap;
+    const Real pecap = impl_pred_ecap;   // rsgdiag-1107
     par_for("m1_impl_pred", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real tn = iw_(m,M1_IW_TP,k,j,i);
@@ -13237,11 +13435,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real ep = (t2st ? iw_(m,M1_IW_EP,k,j,i) : iw_(m,M1_IW_EN,k,j,i))
                 + rat*pd_(m,0,k,j,i);
       if (po2) {ep += r2*pd_(m,3,k,j,i);}
-      if (ep > efl) {iw_(m,M1_IW_EP,k,j,i) = ep;}
-      if (hh) {
+      // rsgdiag-1107 implicit_predictor_ecap = f > 1 (read only when named; off = 0): the
+      // predicted E is taken only within [E0/f, E0 f] (E0 the unpredicted start), and the
+      // predicted T only where the E prediction was taken.  RSG cold (H-recombined) cells:
+      // the extrapolated increment of a transient start E 12x E^n and a T whose table
+      // opacity is 1e4x (dtau_cell 0.003 -> 100+).  Starting point only.
+      const Real e0p = t2st ? iw_(m,M1_IW_EP,k,j,i) : iw_(m,M1_IW_EN,k,j,i);
+      const bool eok = !(pecap > 1.0) || (ep > e0p/pecap && ep < e0p*pecap);
+      if (ep > efl && eok) {iw_(m,M1_IW_EP,k,j,i) = ep;}
+      if (hh && eok) {
         Real tp = tn + rat*pd_(m,1,k,j,i);
         if (po2) {tp += r2*pd_(m,4,k,j,i);}
-        if (tp > 0.5*tn && tp < 2.0*tn) {iw_(m,M1_IW_TP,k,j,i) = tp;}
+        if (tp > ptl*tn && tp < pth*tn) {iw_(m,M1_IW_TP,k,j,i) = tp;}
       }
     });
     if (pok) {
@@ -13440,10 +13645,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if (vgd_on && vlat_ready && vgd_rbe > 0 && it > 0 && (it % vgd_rbe) == 0 &&
         !impl_fr_sh) {
       VetGdIterRebuild();
+      if (fbl_any) {VetLatFbFill();}   // meshfb-1106
     }
     // the gas Newton update of THIS pass (off after a detected stall, see above)
     const bool gnw = gnewt && !gnsw;
     int nin = -1;
+    bool fbl_tr = false;   // meshfb-1106: this pass solved to E <= 0, mask grown
     TmrMark((it == 0) ? 4 : 7);
     ew_tight = onep && (it == 0);
     // MILESTONE 3e: x_k, the state this pass maps
@@ -14255,7 +14462,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto cse_ = cs_seam.d_view;
     auto cg2_ = csg2;
     auto cg3_ = csg3;
-    auto vlt_ = tau_ten;
+    auto vlt_ = VlatTT();   // meshfb-1106
     const int c0l = M1_TT_LAT0;
     auto cx1v = pmy_pack->pcoord->x1v;
     auto cx2v = pmy_pack->pcoord->x2v;
@@ -15059,6 +15266,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // left by the first (the two can together take it no lower than opg^2 x b0)
       if (opgd) {
         Real bc = bb - gpd - gmd, rc = rr + gpr + gmr;
+        // seamE-1106 guard_mode bit 8: under bicgstab rr holds TRHS, whose neighbour part the
+        // solve takes back (b = TR + sum C E^k): the right-hand-side test of bit 1 reads the
+        // row without it, or a large lagged diffusion term hides a Newton term that takes
+        // the true right-hand side negative (measured: TRHS 8400, Newton -5100, EN 270)
+        if ((ogm & 8) && bicg && trans) {rc -= iw_(m,M1_IW_TRHS,k,j,i);}
         int ns = M1OpnGuardFace(opg, ogm, gpd, gpo, gpr, bc, rc, bb, cc, rr);
         const int nsp = ns;
         ns += M1OpnGuardFace(opg, ogm, gmd, gmo, gmr, bc, rc, bb, aa, rr);
@@ -15213,7 +15425,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (t2s == M1_T2S_STAGE2) {tmr_cnt[4] += 1.0; tmr_cnt[6] += nin;}
       }
       if (muscl_now && impl_muscl_bound) {ImplicitMusclBound();}   // xthinfix-1009
-      if ((vimp_now || muscl_now) && odm != M1_OD_OPERATOR) {
+      // meshfb-1106 (rad_m1_meshfb.cpp): measured before any fallback acts; a local
+      // trigger skips the two global blocks below and takes another pass
+      if (fbd_n > 0) {ImplicitFbDiagPass(it);}
+      fbl_tr = ImplicitFbLocal(it, odm);
+      if (fbl_tr && muscl_now && impl_muscl_kill) {ImplicitMusclKill(); muscl_nfall += 1.0;}
+      if (!fbl_tr && (vimp_now || muscl_now) && odm != M1_OD_OPERATOR) {
         // implicit_vimp POSITIVITY: the Newton coupling is not an M-matrix either; a
         // non-positive E drops it for the rest of the step (counted), as for od below.
         // xthinfix-1009 Fix B: the plm half-range row has positive off-diagonals too
@@ -15251,7 +15468,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             T2AdmissDebug(uh, u0_, t2i_, cl, ch, have_hydro,
                           have_hydro && coupling && dbgh, t2s, it);
           }
-          if (vimp_kill) {
+          if (vimp_kill && !fbl_on) {
             ImplicitVimpKill();   // local: the cells within 2 lose the kick
           } else {
             Time2PosFixMarkFb();
@@ -15261,7 +15478,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
       }
       const bool vlop = VlatOp();
-      if (odm == M1_OD_OPERATOR || vlop) {
+      if (!fbl_tr && (odm == M1_OD_OPERATOR || vlop)) {
         // POSITIVITY.  The cross-derivative coefficients have mixed signs, so the
         // 9-/19-point operator is not an M-matrix and E' > 0 is no longer guaranteed.
         // Measure the smallest E the solve produced and, if any cell is non-positive,
@@ -15893,6 +16110,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
       converged = pc && lc;
     }
+    if (fbl_tr) {converged = false;}   // meshfb-1106: the re-solve is not optional
     // open-ot-1013 implicit_cs2_vimp_npass: with the conservative2 vimp prediction on,
     // at least this many Picard passes, so its lagged neighbour dA (one pass behind)
     // reaches the fixed point
@@ -15985,6 +16203,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
   }
   TmrMark(7);
+  if (fbd_n > 0) {ImplicitFbDiagSolve(it);}   // meshfb-1106
   if (tmr_on) {tmr_cnt[0] += 1.0;}
   ew_tight = false;
   if (onep) {
@@ -16964,7 +17183,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto &mpn = pmy_pack->pmb->mb_panel;
     auto fn2_ = cs_fn2;
     auto fn3_ = cs_fn3;
-    auto tt_ = tau_ten;
+    auto tt_ = VlatTT();   // meshfb-1106
     const int c0t = M1_TT_LAT0;
     const bool vlc = vlat_now && vlat_ready;
     const int nx2a = pmy_pack->pmesh->mb_indcs.nx2, nx3a = pmy_pack->pmesh->mb_indcs.nx3;

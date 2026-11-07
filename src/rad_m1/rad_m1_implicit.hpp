@@ -791,11 +791,22 @@ Real M1CsSeamMid(const F &fv, const G &g, const int m, const int c, const int sd
 //! whose ghost there is a mirror cell off this cell's coordinate line.  slo/shi: the
 //! block's low/high face along e is a panel seam.
 
+// seamE-1106 cs_cross_mono: the one-sided derivative at the cell next to a seam, kept
+// between 0 and twice the difference to the first neighbour.  The three-point formula
+// extrapolates across a sharp front (E = 20, 174, 3390 gives the wrong sign and 5 times
+// the size), and through the skew cross term that reaches the face flux and the RHS.  A
+// smooth field never reaches the clamp: second order is kept.
+KOKKOS_INLINE_FUNCTION
+Real M1CsTanMono(const Real d, const Real s1) {
+  const Real lo = (s1 > 0.0) ? 0.0 : 2.0*s1, hi = (s1 > 0.0) ? 2.0*s1 : 0.0;
+  return (d < lo) ? lo : ((d > hi) ? hi : d);
+}
+
 template <class V, class VF>
 KOKKOS_INLINE_FUNCTION
 Real M1CsTanDer(const V &iw, const V &vd, const bool full, const VF &cdxf, const int m,
                 const int e, const int k, const int j, const int i, const int lo,
-                const int hi, const bool slo, const bool shi) {
+                const int hi, const bool slo, const bool shi, const bool mono = false) {
   const int c = (e == 1) ? j : k;
   auto q = [&](const int o) {
     const int kk = (e == 2) ? (k + o) : k, jj = (e == 1) ? (j + o) : j;
@@ -806,13 +817,15 @@ Real M1CsTanDer(const V &iw, const V &vd, const bool full, const VF &cdxf, const
   };
   if (c == lo && slo) {
     const Real h1 = h(1), h2 = h(2);
-    return (-(2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) + ((h1 + h2)/(h1*h2))*q(1)
-           - (h1/(h2*(h1 + h2)))*q(2);
+    const Real d = (-(2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) + ((h1 + h2)/(h1*h2))*q(1)
+                   - (h1/(h2*(h1 + h2)))*q(2);
+    return mono ? M1CsTanMono(d, (q(1) - q(0))/h1) : d;
   }
   if (c == hi && shi) {
     const Real h1 = h(0), h2 = h(-1);
-    return ((2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) - ((h1 + h2)/(h1*h2))*q(-1)
-           + (h1/(h2*(h1 + h2)))*q(-2);
+    const Real d = ((2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) - ((h1 + h2)/(h1*h2))*q(-1)
+                   + (h1/(h2*(h1 + h2)))*q(-2);
+    return mono ? M1CsTanMono(d, (q(0) - q(-1))/h1) : d;
   }
   return (q(1) - q(-1))/(h(0) + h(1));
 }

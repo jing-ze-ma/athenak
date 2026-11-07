@@ -38,6 +38,7 @@
 //========================================================================================
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <iostream>
 #include <sstream>
@@ -245,4 +246,55 @@ void HsStripBackground(ParameterInput *pin, Mesh *pm) {
   }
   // one-shot: never inherited by the restart files this run writes
   pin->SetBoolean("problem", "strip_bg_on_restart", false);
+}
+
+//----------------------------------------------------------------------------------------
+//! rstpert-1105 (USER 11-05, HG prodG stall at t 4.4232e7): a ONE-SHOT restart-time tiny
+//! relative perturbation of the M1 radiation energy E of every active cell,
+//!   E -> E (1 + amp (2 h - 1)),  h = hash(gid, k, j, i) in [0, 1) (layout-independent),
+//! to move the trajectory off a deterministic stall.  Keys (<problem>):
+//!   rst_pert_erad (absent = nothing, bitwise)  the relative amplitude amp (>= 0)
+//!   rst_pert_time (required with it)           apply only when the restart time equals it
+//!                                              (relative 1e-9): an inherited key never re-fires
+void HsRestartPerturb(ParameterInput *pin, Mesh *pm) {
+  if (!pin->DoesParameterExist("problem", "rst_pert_erad")) return;   // absent: bitwise
+  const Real amp = pin->GetReal("problem", "rst_pert_erad");
+  if (!(amp > 0.0)) return;
+  if (!pin->DoesParameterExist("problem", "rst_pert_time")) {
+    std::cout << "### FATAL rst_pert_erad needs problem/rst_pert_time" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const Real ts = pin->GetReal("problem", "rst_pert_time");
+  if (std::fabs(pm->time - ts) > 1.0e-9*std::max(std::fabs(ts), 1.0)) {
+    if (global_variable::my_rank == 0) {
+      std::cout << "rst_pert: restart time " << pm->time << " != rst_pert_time " << ts
+                << ": NOT applied" << std::endl;
+    }
+    return;
+  }
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto *pm1 = pmbp->pradm1;
+  if (pm1 == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmbp->nmb_thispack, gids = pmbp->gids;
+  auto ur = pm1->u0;
+  par_for("rst_pert_erad", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    uint64_t x = (static_cast<uint64_t>(m + gids) << 48) ^
+                 (static_cast<uint64_t>(k) << 32) ^ (static_cast<uint64_t>(j) << 16) ^
+                 static_cast<uint64_t>(i);
+    x += 0x9E3779B97F4A7C15ULL;   // splitmix64
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    x = x ^ (x >> 31);
+    const Real h = static_cast<Real>(x >> 11) * (1.0/9007199254740992.0);
+    ur(m,0,k,j,i) *= (1.0 + amp*(2.0*h - 1.0));
+  });
+  Kokkos::fence();
+  if (global_variable::my_rank == 0) {
+    std::cout << "rst_pert: M1 E of every active cell perturbed by relative " << amp
+              << " (hash noise) at t = " << pm->time << std::endl;
+  }
 }
