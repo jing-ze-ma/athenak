@@ -960,17 +960,30 @@
         for (int a = 0; a < 3; ++a) {ps2 += SQR(p0[a] + sc*dq[a]);}
         const Real idg = 1.0/fmax(dd, 1.0e-300);
         const Real dke = 0.5*(pn2 - ps2)*idg;   // kinetic energy not given (>= 0)
-        dm1 = dmref + sc*dq[0];
-        if (tv) {
-          dm2 = sc*dq[1];
-          if (thrd) {dm3 = sc*dq[2];}
-        }
-        work -= dke;
-        ep += (ch/cl)*dke;
         const Real vol = psph ? pvol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
                                                  mbsize.d_view(m).dx3);
         Kokkos::atomic_add(&vcc_(0), 1.0);
         Kokkos::atomic_add(&vcc_(1), dke*vol);
+        if (wvnp > 0.0) {   // DEBUG implicit_wb_vcap_print: the first N cells per rank
+          const Real np = Kokkos::atomic_fetch_add(&vcc_(2), 1.0);
+          if (np < wvnp) {
+            printf("WBVCAP rank %d cycle %d t2s %d m %d k %d j %d i %d r %.5e rho %.4e "
+                   "v_old %.4e %.4e %.4e dv %.4e %.4e %.4e |v_new| %.4e s %.4e dke %.4e "
+                   "E_old %.4e E %.4e egas %.4e\n", wvrk, wvcy, wvts, m, k, j, i,
+                   psph ? wvx1(m,i) : 0.0, dd, p0[0]*idg, p0[1]*idg, p0[2]*idg,
+                   dq[0]*idg, dq[1]*idg, dq[2]*idg, sqrt(pn2)*idg, sc, dke,
+                   iw_(m,M1_IW_EN,k,j,i), ep, eg);
+          }
+        }
+        if (!wvmeas) {
+          dm1 = dmref + sc*dq[0];
+          if (tv) {
+            dm2 = sc*dq[1];
+            if (thrd) {dm3 = sc*dq[2];}
+          }
+          work -= dke;
+          ep += (ch/cl)*dke;
+        }
       }
     }
     // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve

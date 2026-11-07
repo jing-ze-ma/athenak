@@ -625,8 +625,13 @@ class RadiationM1 {
   // |m + s dm| = V rho, and the kinetic energy it no longer gets (the work the radiation
   // already paid) goes back to E: e_gas + (c/chat) E of the cell is unchanged.  Momentum:
   // (1 - s) dm leaves (as the ceiling's clip did).  Sp / Cartesian only (not cs).
-  // vcap_cnt_d: 0 capped cell-solves, 1 energy returned to E (gas units x volume)
+  // vcap_cnt_d: 0 capped cell-solves, 1 energy returned to E (gas units x volume),
+  // 2 cells printed.  implicit_wb_vcap_measure = true (read only when named): count and
+  // print only, nothing is changed (bitwise with the key off); implicit_wb_vcap_print = N
+  // (read only when named): the first N cells beyond V per rank are printed (WBVCAP)
   Real impl_wb_vcap = 0.0;
+  bool impl_wb_vcap_meas = false;
+  int impl_wb_vcap_np = 0;
   DvceArray1D<Real> vcap_cnt_d;
   DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
   // picard-1014 implicit_gas_newton_u4: emission-dominated cells take the gas Newton
