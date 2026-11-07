@@ -527,6 +527,10 @@ CASES.append(dict(_hg, name='he_hg_wallwb', ref_old=True,
 
 # wallwb-1105 v2: the R136a1 column (sp wedge, closed wall, x1 WB, general EOS, M1 vet_col +
 # vet_gd), 831 x 8 x 8, seed 0, implicit_precond = line (layout-independent), the fresh-start
+# seamE-1106: cs_cross_mono (clamped one-sided seam-adjacent cross derivative), ref_old as he_hg
+CASES.append(dict(_hg, name='he_hg_xmono', ref_old=True,
+                  what=_hg['what'] + ', rad_m1/cs_cross_mono = true',
+                  set=dict(_hg['set'], **{'rad_m1/cs_cross_mono': 'true'})))
 # default wall_wb_onesided = true active: theta + phi split and 4 ranks.  ref_old as he_hg.
 CASES.append(dict(name='he_r136col', bin='he', deck='he_r136col.athinput', ncyc=3, timeout=3000,
                   perturb='problem/he_gm', vars=['hydro_u', 'm1'], ref_old=True,

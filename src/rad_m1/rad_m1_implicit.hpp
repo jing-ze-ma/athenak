@@ -791,21 +791,34 @@ Real M1CsSeamMid(const F &fv, const G &g, const int m, const int c, const int sd
 //! whose ghost there is a mirror cell off this cell's coordinate line.  slo/shi: the
 //! block's low/high face along e is a panel seam.
 
+// seamE-1106 cs_cross_mono: the one-sided derivative at the cell next to a seam, kept
+// between 0 and twice the difference to the first neighbour.  The three-point formula
+// extrapolates across a sharp front (E = 20, 174, 3390 gives the wrong sign and 5 times
+// the size), and through the skew cross term that reaches the face flux and the RHS.  A
+// smooth field never reaches the clamp: second order is kept.
+KOKKOS_INLINE_FUNCTION
+Real M1CsTanMono(const Real d, const Real s1) {
+  const Real lo = (s1 > 0.0) ? 0.0 : 2.0*s1, hi = (s1 > 0.0) ? 2.0*s1 : 0.0;
+  return (d < lo) ? lo : ((d > hi) ? hi : d);
+}
+
 // cs-tan-1106: the derivative itself, of any cell field q(o) at offset o along the axis,
 // with h(o) the arc between offsets o-1 and o (shared by M1CsTanDer and M1CsTanFaceLag)
 template <class Q, class H>
 KOKKOS_INLINE_FUNCTION
 Real M1CsAxisDer(const Q &q, const H &h, const int c, const int lo, const int hi,
-                 const bool slo, const bool shi) {
+                 const bool slo, const bool shi, const bool mono = false) {
   if (c == lo && slo) {
     const Real h1 = h(1), h2 = h(2);
-    return (-(2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) + ((h1 + h2)/(h1*h2))*q(1)
-           - (h1/(h2*(h1 + h2)))*q(2);
+    const Real d = (-(2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) + ((h1 + h2)/(h1*h2))*q(1)
+                   - (h1/(h2*(h1 + h2)))*q(2);
+    return mono ? M1CsTanMono(d, (q(1) - q(0))/h1) : d;
   }
   if (c == hi && shi) {
     const Real h1 = h(0), h2 = h(-1);
-    return ((2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) - ((h1 + h2)/(h1*h2))*q(-1)
-           + (h1/(h2*(h1 + h2)))*q(-2);
+    const Real d = ((2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) - ((h1 + h2)/(h1*h2))*q(-1)
+                   + (h1/(h2*(h1 + h2)))*q(-2);
+    return mono ? M1CsTanMono(d, (q(0) - q(-1))/h1) : d;
   }
   return (q(1) - q(-1))/(h(0) + h(1));
 }
@@ -814,7 +827,7 @@ template <class V, class VF>
 KOKKOS_INLINE_FUNCTION
 Real M1CsTanDer(const V &iw, const V &vd, const bool full, const VF &cdxf, const int m,
                 const int e, const int k, const int j, const int i, const int lo,
-                const int hi, const bool slo, const bool shi) {
+                const int hi, const bool slo, const bool shi, const bool mono = false) {
   const int c = (e == 1) ? j : k;
   auto q = [&](const int o) {
     const int kk = (e == 2) ? (k + o) : k, jj = (e == 1) ? (j + o) : j;
@@ -823,7 +836,7 @@ Real M1CsTanDer(const V &iw, const V &vd, const bool full, const VF &cdxf, const
   auto h = [&](const int o) {   // the arc between cells c+o-1 and c+o
     return (e == 1) ? cdxf.x2f(m,k,j+o,i) : cdxf.x3f(m,k+o,j,i);
   };
-  return M1CsAxisDer(q, h, c, lo, hi, slo, shi);
+  return M1CsAxisDer(q, h, c, lo, hi, slo, shi, mono);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1529,20 +1542,7 @@ Real M1CsTanFaceLag(const V &iw, const VT &tt, const int c0, const G &tg, const 
     auto h = [&](const int o) {
       return (e == 1) ? tg.cdxf.x3f(m,k+o,cj(s,c),i) : tg.cdxf.x2f(m,ck(s,c),j+o,i);
     };
-    const Real d = M1CsAxisDer(q, h, c, lo, hi, slo, shi);
-    if (xmono) {   // cs_cross_mono (seamE-1106): the one-sided seam derivative is limited
-      if (c == lo && slo) {
-        const Real s1 = (q(1) - q(0))/h(1);
-        const Real l = (s1 > 0.0) ? 0.0 : 2.0*s1, u = (s1 > 0.0) ? 2.0*s1 : 0.0;
-        return (d < l) ? l : ((d > u) ? u : d);
-      }
-      if (c == hi && shi) {
-        const Real s1 = (q(0) - q(-1))/h(0);
-        const Real l = (s1 > 0.0) ? 0.0 : 2.0*s1, u = (s1 > 0.0) ? 2.0*s1 : 0.0;
-        return (d < l) ? l : ((d > u) ? u : d);
-      }
-    }
-    return d;
+    return M1CsAxisDer(q, h, c, lo, hi, slo, shi, xmono);   // cs_cross_mono (seamE-1106)
   };
   const Real sn = (e == 1) ? tg.sn2(m,k,j) : tg.sn3(m,k,j);
   const Real cs = (e == 1) ? tg.cs2(m,k,j) : tg.cs3(m,k,j);

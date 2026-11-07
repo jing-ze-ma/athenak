@@ -20,7 +20,7 @@
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto iw_ = iw;
-  auto tt_ = tau_ten;
+  auto tt_ = VlatTT();   // meshfb-1106
 #if M1_VLAT_CS
   auto mbbcs = m1bcs.d_view;
 #else

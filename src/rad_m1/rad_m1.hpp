@@ -1707,6 +1707,7 @@ class RadiationM1 {
   // takes the two-point gradient (no cross term), its seam faces the foot values (no
   // midpoint quadratic), and D_r,lat is zero in the cells within cs_vertex_mono_n + 1
   // (so every face of those cells sees none).  Conservative (per face), local.
+  bool cs_cross_mono = false;   // seamE-1106: one-sided seam cross derivative clamped
   bool cs_vtx_mono = false;    // DEFAULT = cs geometry since defaults-1029 (USER 10-29)
   int cs_vtx_n = 1;
   // vtxfix-1029 <rad_m1>/implicit_pos_floor_cons (read only when named; default false =
@@ -2466,6 +2467,25 @@ class RadiationM1 {
   // the operator form is active: on in this step and a non-zero D_r,lat (a zero one
   // leaves the operator, its stencil and the right-hand side untouched, bitwise)
   bool VlatOp() const {return vlat_now && (vlat_odm == 2) && (vlat_odmax > 0.0);}
+  // meshfb-1106 (rad_m1_meshfb.cpp): implicit_fb_diag, implicit_fb_local
+  int fbd_n = 0, fbd_done = 0, fbd_first = -1, fbd_kind = 0, fbd_nsolve = 0;
+  bool fbd_last_full = false;
+  Real fbd_s[4][12] = {};
+  bool fbl_on = false, fbl_any = false;
+  int fbl_rounds = 2, fbl_rad = 2, fbl_used = 0;
+  Real fbl_ntrig = 0.0, fbl_nlocal = 0.0, fbl_nglobal = 0.0, fbl_nbad = 0.0, fbl_ncell = 0.0;
+  DvceArray5D<Real> vlat_tt_loc;
+  DvceArray5D<Real> VlatTT() const {return fbl_any ? vlat_tt_loc : tau_ten;}
+  void ImplicitFbKeys(ParameterInput *pin);
+  Real ImplicitFbMin(Real *nbad);
+  void VetLatFbFill();
+  bool ImplicitFbLocal(int it, int odm);
+  void ImplicitFbDiagPass(int it);
+  void ImplicitSeamRowDump(int it, int kd, Real nb);   // seamE-1106
+  int sdm_n = 0, sdm_done = 0;
+  bool sdm_stage = false;
+  void ImplicitFbDiagSolve(int npass);
+  void ImplicitFbSummary();
   int vlat_nmu = 4, vlat_npsi = 4, vlat_every = 1, vlat_iinit = 3;
   Real vlat_taucut = 30.0;     // vet_col_lat_taucut: the sweep starts where every column
                                // has tau_top >= this (global shell index vlat_icut)
@@ -2502,7 +2522,7 @@ class RadiationM1 {
   void VetLatInit();
   void VetLatBuild();
   void VetLatSweep(const int stage);   // 0 twin, 1 3-D, 2 moments
-  void VetLatTTGhosts();
+  void VetLatTTGhosts(DvceArray5D<Real> *src = nullptr);
   void VetLatOdMax();
   void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);

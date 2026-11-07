@@ -442,9 +442,9 @@ void RadiationM1::VetGdIterRebuild() {
 //! \brief the lateral ghosts of the tau_ten slots the operator reads at neighbours,
 //! through a copy: D_rt, D_rp (vet_col_lat), or slot 0 and every LAT slot (vet_gd)
 
-void RadiationM1::VetLatTTGhosts() {
+void RadiationM1::VetLatTTGhosts(DvceArray5D<Real> *src) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto tt_ = tau_ten;
+  auto tt_ = (src != nullptr) ? *src : tau_ten;   // meshfb-1106: or vlat_tt_loc
   auto lx_ = vlat_lx;
   const int nlx = static_cast<int>(vlat_lx.extent(1));
   const bool gd = vgd_on;
