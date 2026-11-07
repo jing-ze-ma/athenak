@@ -660,8 +660,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_jreuse_act =
       pin->GetOrAddReal("problem","ck_impl_jreuse_act",0.25);
   // layoutfix-1106: rank-independent pass control (two_stream_column_ck.hpp)
-  two_stream_rt::ck_impl_global_ctl = pin->DoesParameterExist("problem","ck_impl_global_ctl") &&
-                                      pin->GetBoolean("problem","ck_impl_global_ctl");
+  // USER 11-07 make some defaults: problem/ck_impl_global_ctl default true (false = old)
+  two_stream_rt::ck_impl_global_ctl = pin->GetOrAddBoolean("problem","ck_impl_global_ctl",
+                                                           true);
   const bool pred_named = pin->DoesParameterExist("problem","ck_impl_pred");
   two_stream_rt::ck_impl_pred =
       pred_named ? pin->GetBoolean("problem","ck_impl_pred") : false;
