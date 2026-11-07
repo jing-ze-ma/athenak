@@ -16,10 +16,14 @@
 #include <cstdio>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "utils/two_stream_rt.hpp"
 #include "utils/ck_2nd.hpp"     // ck2nd-1102 (keys read only when named)
 #include "pgen/pgen.hpp"
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
 
 namespace two_stream_rt {
 
@@ -60,6 +64,24 @@ void CkWarmSeed(Mesh *pm, DvceArray5D<Real> u0) {
     sd_(m,k,j,i) = s;
     dep_(m,k,j,i) = s;     // the accumulator starts from what has already been applied
   });
+}
+
+// layoutfix-1106 ck_impl_global_ctl: the convergence slots over all ranks (0, 1 maxima, the
+// rest sums of counts and report-only sums)
+template <class H>
+static void CkCnvGlobal(H &h) {
+#if MPI_PARALLEL_ENABLED
+  if (!ck_impl_global_ctl || global_variable::nranks < 2) return;
+  const int n = h.extent_int(0);
+  std::vector<Real> mx(2), sm(n);
+  for (int q = 0; q < 2; ++q) mx[q] = h(q);
+  for (int q = 0; q < n; ++q) sm[q] = h(q);
+  MPI_Allreduce(MPI_IN_PLACE, mx.data(), 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, sm.data(), n, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  for (int q = 0; q < n; ++q) h(q) = (q < 2) ? mx[q] : sm[q];
+#else
+  (void) h;
+#endif
 }
 
 int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
@@ -1059,6 +1081,7 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     }
     auto hcf = ck_impl_nosync ? *hcf_c : Kokkos::create_mirror_view(cnv_);
     Kokkos::deep_copy(hcf, cnv_);
+    CkCnvGlobal(hcf);   // layoutfix-1106
     ck_impl_last_res = hcf(0);
     ck_impl_last_gap = (hcf(5) != 0.0) ? (hcf(4)/hcf(5) - 1.0) : 0.0;
     ck_impl_nactive = static_cast<int>(hcf(6));
@@ -1131,6 +1154,7 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
   });
   auto hc = Kokkos::create_mirror_view(cnv_);
   Kokkos::deep_copy(hc, cnv_);
+  CkCnvGlobal(hc);   // layoutfix-1106
   ck_impl_last_res = hc(0);
   ck_impl_last_gap = (hc(5) != 0.0) ? (hc(4)/hc(5) - 1.0) : 0.0;
   ck_impl_nactive = static_cast<int>(hc(6));
@@ -1361,6 +1385,7 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     if (cap) Kokkos::atomic_add(&cnv_(2), 1.0);
   });
   Kokkos::deep_copy(hc, cnv_);
+  CkCnvGlobal(hc);   // layoutfix-1106
   ck_impl_last_dst = hc(1);
   ck_impl_ncap = static_cast<int>(hc(2));
   ck_impl_nfall = static_cast<int>(hc(3));
@@ -1768,7 +1793,8 @@ void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt) {
         // ck_impl_jreuse_act: once few columns are left the rebuild is cheap (the
         // Jacobian kernels skip converged columns), and the few slow columns are the
         // ones a stale chord holds back, so rebuild whatever the max residual did
-        const int ncol_ = pp->nmb_thispack*pm->mb_indcs.nx2*pm->mb_indcs.nx3;
+        const int ncol_ = (ck_impl_global_ctl ? pm->nmb_total : pp->nmb_thispack)
+                          *pm->mb_indcs.nx2*pm->mb_indcs.nx3;   // layoutfix-1106
         if (ck_impl_jreuse_act > 0.0 &&
             static_cast<Real>(ck_impl_nactive) < ck_impl_jreuse_act*ncol_) {
           ck_impl_jac_again = true;

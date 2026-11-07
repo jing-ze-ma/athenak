@@ -322,6 +322,10 @@ class Mesh {
   // the order-independent repro::ReproSum and sp coordinates come from the global index
   // (mesh.cpp; fresh-start default true, restart without the key false = old paths)
   bool layout_invariant = false;
+  // layoutfix-1106 <mesh>/cs_seam_pos_global (default false, bitwise): the cs seam resample
+  // position at the magnitude of the panel index (cs_seam::SeamPos), the last bits of its
+  // weights independent of the MeshBlock layout
+  bool cs_seam_pos_global = false;
   int cs_seam_fc_order = 2;   // fcorder3-1103: 3 = third-order FC seam ghosts (mesh.cpp)
   int cs_seam_flux;           // seam flux reconciliation: 0 average, 1 upwind, 2 positive_donor, 3 shared (default, csedge-1019)
   bool cs_seam_flux_named = false;   // <mesh>/cs_seam_flux given in the input (csedge-1019)

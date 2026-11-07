@@ -134,6 +134,16 @@ void RadiationM1::IcRadInit(ParameterInput *pin) {
   icr_relax_n = pin->GetOrAddInteger("rad_m1","ic_rad_relax_n",40);
   icr_relax_tol = pin->GetOrAddReal("rad_m1","ic_rad_relax_tol",1.0e-4);
   icr_relax_dtfac = pin->GetOrAddReal("rad_m1","ic_rad_relax_dtfac",1.0);
+  // layoutfix-1106 <rad_m1>/ic_rad_precond = line (opt-in; absent: the run's preconditioner,
+  // bitwise): the relaxation steps use the layout-independent x1 line preconditioner.  The
+  // relaxation does not converge on a stiff atmosphere and amplifies any difference in its
+  // start or iterates (HG: 1 ulp -> 1e-3 in L_top after 40 passes), so a block-local
+  // preconditioner here makes the whole initial state depend on the MeshBlock layout
+  if (pin->DoesParameterExist("rad_m1","ic_rad_precond")) {
+    const std::string pc = pin->GetString("rad_m1","ic_rad_precond");
+    if (pc != "line") {IcrFatal("<rad_m1>/ic_rad_precond must be line");}
+    icr_line = true;
+  }
   if (transport < M1_TRANSPORT_IMPLICIT_X1 || !vet_col || !vgd_on) {
     IcrFatal("<rad_m1>/ic_rad and ic_rad_diag need transport = implicit, closure = "
              "vet_col and vet_gd = true");
@@ -485,6 +495,8 @@ void RadiationM1::IcRadRun(Driver *pdrive) {
                   icr_fs_iter, icr_tfs);
     }
   }
+  const int sprec = impl_prec;
+  if (icr_line) {impl_prec = 0;}   // layoutfix-1106, restored below
   if (icr_mode & 2) {
     pm->dt = icr_relax_dtfac*dt0;
     auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -580,6 +592,7 @@ void RadiationM1::IcRadRun(Driver *pdrive) {
       (void) IcRadLtop();
     }
   }
+  impl_prec = sprec;
   icr_active = false;
   dbg_gas_force = sgf;
   dbg_gas_force_trans = sgft;

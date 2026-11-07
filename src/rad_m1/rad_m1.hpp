@@ -2073,6 +2073,7 @@ class RadiationM1 {
   int icr_fs_iter = 3;          // ic_rad_fs_iter: E := J passes
   int icr_relax_n = 40;         // ic_rad_relax_n: max radiation-only steps
   Real icr_relax_tol = 1.0e-4;  // ic_rad_relax_tol: stop at |dL_top/L_top| below this
+  bool icr_line = false;        // ic_rad_precond = line (layoutfix-1106)
   Real icr_relax_dtfac = 1.0;   // ic_rad_relax_dtfac: dt of the relaxation steps / dt
   int icr_diag = 0;             // ic_rad_diag = N: E/J shell profiles (icrad_ej.txt)
   int icr_ndiag_done = 0, icr_nrx = 0;

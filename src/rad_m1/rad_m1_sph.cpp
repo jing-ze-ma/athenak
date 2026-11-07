@@ -158,7 +158,12 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     // the cs seam (no-resample, mirror-pair) exchange of the Krylov vector itself.
     // mg_gc / mg_gf stay refused (band / Fourier coarse spaces of a periodic x2/x3 mesh;
     // the cs analogue is mg_ylm, stage 3 list).  The cs DEFAULT stays rbgs_fwd.
-    if (impl_prec != 2 && impl_prec != 3) {
+    // layoutfix-1106: <rad_m1>/cs_precond_line = true admits implicit_precond = line on cs
+    // (opt-in, a layout-gate arm, not a production choice): the x1 line solves read no
+    // geometry and no neighbour, so the deck's other layout dependences show up bitwise
+    const bool cs_line_ok = (impl_prec == 0) &&
+                            pin->GetOrAddBoolean("rad_m1","cs_precond_line",false);
+    if (impl_prec != 2 && impl_prec != 3 && !cs_line_ok) {
       wcs += " implicit_precond != rbgs_fwd | mg;";
     }
     if (impl_prec_fb >= 0) {   // precond-fb-1023: rbgs / line are refused on cs

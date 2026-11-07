@@ -325,6 +325,8 @@ def main():
     ap.add_argument('--always-mpirun', action='store_true')
     ap.add_argument('--run-timeout', type=int, default=0,
                     help='seconds per run, overrides the case timeouts (TIMEOUT -> ERROR in the report)')
+    ap.add_argument('--set', action='append', default=[],
+                    help='block/key=value applied to every selected case (layoutfix-1106)')
     ap.add_argument('--allow-float32', action='store_true',
                     help='compare float32 .bin dumps anyway (default: refuse)')
     opts = ap.parse_args()
@@ -337,6 +339,10 @@ def main():
                 k, v = s.split('=', 1)
                 bins[k.strip()] = v.strip()
     sel = [c for c in CASES.CASES if not opts.only or c['name'] in opts.only.split(',')]
+    for c in sel:
+        for kv in opts.set:
+            k, v = kv.split('=', 1)
+            c['set'] = dict(c.get('set', {}), **{k: v})
     if opts.list:
         for c in sel:
             print('%-24s %-4s %s | %s' % (c['name'], c['bin'], c['deck'],

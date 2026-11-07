@@ -533,3 +533,47 @@ CASES.append(dict(name='he_r136col', bin='he', deck='he_r136col.athinput', ncyc=
                   what='R136a1 column 831 x 8 x 8, line precond, default wall_wb_onesided',
                   set={'rad_m1/implicit_precond': 'line'},
                   layouts=[L('b1_np1', (831, 8, 8)), L('th2ph2_np4', (831, 4, 4), 4)]))
+
+# layoutfix-1106: separate the two contributions to the he_hg layout pair.
+# he_hg_noic*: identical analytic column IC (no ic_rad, no he_ic_equil): cycle 0 must be bitwise and
+# the pair measures the time step only.  he_hg_line*: implicit_precond = line (layout-independent
+# preconditioner): the deck must be bitwise, with and without the IC relaxation.
+_hg4 = [L('b1x1_np4', (704, 16, 16), 4), L('b2x2_np4', (704, 8, 8), 4)]
+_noic = {'rad_m1/ic_rad': 'none', 'problem/he_ic_equil': 'false'}
+_line = {'rad_m1/implicit_precond': 'line', 'rad_m1/cs_precond_line': 'true'}
+CASES.append(dict(_hg, name='he_hg_noic', ref_old=False, layouts=_hg4,
+                  what=_hg['what'] + ', no IC relaxation', set=dict(_hg['set'], **_noic)))
+CASES.append(dict(_hg, name='he_hg_noic_line', ref_old=False, require_bitwise=True, layouts=_hg4,
+                  what=_hg['what'] + ', no IC relaxation, line precond',
+                  set=dict(_hg['set'], **_noic, **_line)))
+CASES.append(dict(_hg, name='he_hg_line', ref_old=False, require_bitwise=True, layouts=_hg4,
+                  what=_hg['what'] + ', line precond',
+                  set=dict(_hg['set'], **_line)))
+# tolerances x 1e-3: does the mg pair fall with the solver tolerance?
+_t3 = {'rad_m1/implicit_lin_tol': '1.0e-13', 'rad_m1/implicit_lin_cnorm': '1.0e-13',
+       'rad_m1/implicit_tol': '1.0e-11'}
+CASES.append(dict(_hg, name='he_hg_noic_t3', ref_old=False, layouts=_hg4,
+                  what=_hg['what'] + ', no IC relaxation, tolerances x 1e-3',
+                  set=dict(_hg['set'], **_noic, **_t3)))
+# Eisenstat-Walker and the relative Picard stop off (the deck's real stops are ew_max 1e-2 and
+# tol_rel 0.1, capped at 1e-4): t4 with the deck's tolerances, t5 with them x 1e-3
+_ewoff = {'rad_m1/implicit_lin_ew_max': '0.0', 'rad_m1/implicit_tol_rel': '0.0'}
+CASES.append(dict(_hg, name='he_hg_noic_t4', ref_old=False, layouts=_hg4,
+                  what=_hg['what'] + ', no IC relaxation, EW and tol_rel off',
+                  set=dict(_hg['set'], **_noic, **_ewoff)))
+CASES.append(dict(_hg, name='he_hg_noic_t5', ref_old=False, layouts=_hg4,
+                  what=_hg['what'] + ', no IC relaxation, EW and tol_rel off, tolerances x 1e-3',
+                  set=dict(_hg['set'], **_noic, **_ewoff, **_t3)))
+# layoutfix-1106: <mesh>/cs_seam_pos_global: the line arm must be BITWISE across layouts
+_pg = {'mesh/cs_seam_pos_global': 'true'}
+CASES.append(dict(_hg, name='he_hg_noic_line_pg', ref_old=False, require_bitwise=True, layouts=_hg4,
+                  what=_hg['what'] + ', no IC relaxation, line precond, cs_seam_pos_global',
+                  set=dict(_hg['set'], **_noic, **_line, **_pg)))
+CASES.append(dict(_hg, name='he_hg_line_pg', ref_old=False, require_bitwise=True, layouts=_hg4,
+                  what=_hg['what'] + ', line precond incl. the IC relaxation, cs_seam_pos_global',
+                  set=dict(_hg['set'], **_line, **_pg)))
+# the production mg deck with a layout-independent initial state: cycle 0 must be bitwise
+_icl = {'rad_m1/ic_rad_precond': 'line'}
+CASES.append(dict(_hg, name='he_hg_icline_pg', ref_old=False, layouts=_hg4,
+                  what=_hg['what'] + ', mg, IC relaxation with line, cs_seam_pos_global',
+                  set=dict(_hg['set'], **_icl, **_pg)))
