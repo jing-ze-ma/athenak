@@ -614,6 +614,20 @@ class RadiationM1 {
   // floor raises E to e_floor with the energy taken from the gas (FLR_DE) or counted
   // (FLR_UN); what the 1e-6 guard itself raised, (c/ch)(1 + SRCB)(EP - S2), joins it
   bool impl_pos_floor_s2 = false;
+  // r136e-1107 <rad_m1>/implicit_wb_vcap = V (read only when named; absent or 0 = off,
+  // bitwise): the write-back limits the gas momentum change of the solve so that the
+  // written-back speed does not exceed V (code units; e.g. the <hydro>/vceil).  In a cell
+  // at the density floor a change of the stored cell flux that is not an absorption
+  // (closure / limiter / face changes the conservative gas source books as momentum)
+  // gives dv ~ dF/(rho c chat) >> any physical speed; the velocity ceiling of the next
+  // ConToPrim then took (1 - fs^2) KE out of the total (vceil_thermalise = false): the
+  // energy sink of the R136a1 E_tot drops.  Here the increment is scaled, dm -> s dm with
+  // |m + s dm| = V rho, and the kinetic energy it no longer gets (the work the radiation
+  // already paid) goes back to E: e_gas + (c/chat) E of the cell is unchanged.  Momentum:
+  // (1 - s) dm leaves (as the ceiling's clip did).  Sp / Cartesian only (not cs).
+  // vcap_cnt_d: 0 capped cell-solves, 1 energy returned to E (gas units x volume)
+  Real impl_wb_vcap = 0.0;
+  DvceArray1D<Real> vcap_cnt_d;
   DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
   // picard-1014 implicit_gas_newton_u4: emission-dominated cells take the gas Newton
   // step in u = T^4 (T' = (T^4 + 4 T^3 dT)^(1/4)); implicit_opac_lag = pred: the

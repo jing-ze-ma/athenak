@@ -2130,6 +2130,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   Kokkos::realloc(pos_cnt_d, M1_POS_N);
   Kokkos::deep_copy(pos_cnt_d, 0.0);
+  // r136e-1107 implicit_wb_vcap (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1","implicit_wb_vcap")) {
+    impl_wb_vcap = pin->GetReal("rad_m1","implicit_wb_vcap");
+    if (!(impl_wb_vcap >= 0.0)) {
+      ImplFatal("<rad_m1>/implicit_wb_vcap must be >= 0 (0 = off)");
+    }
+    if (impl_wb_vcap > 0.0) {
+      Kokkos::realloc(vcap_cnt_d, 2);
+      Kokkos::deep_copy(vcap_cnt_d, 0.0);
+    }
+  }
   // implicit_opac_newton_guard_mode: 0 = the diagonal test alone; + 1 = also the
   // right-hand side, + 2 = also the sign of the neighbour entry (M1OpnGuardFace; He presn
   // wedge gate: 7 floor clips with the diagonal alone, 0 with both), + 4 (m1-positivity)
@@ -9761,6 +9772,21 @@ void RadiationM1::ImplicitReport() {
   }
   // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
   // every rank holds the same three numbers and no reduction is needed here
+  // r136e-1107 implicit_wb_vcap: the capped cell-solves and the energy returned to E
+  if (impl_wb_vcap > 0.0 && vcap_cnt_d.extent_int(0) == 2) {
+    auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vcap_cnt_d);
+    Real vv[2] = {hv(0), hv(1)};
+#if MPI_PARALLEL_ENABLED
+    Real gv[2];
+    MPI_Allreduce(vv, gv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    vv[0] = gv[0]; vv[1] = gv[1];
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_wb_vcap=" << impl_wb_vcap << ": capped cell-solves="
+                << vv[0] << " kinetic energy returned to E=" << vv[1]
+                << " (code units x volume)" << std::endl;
+    }
+  }
   if (global_variable::my_rank != 0) return;
   if (tmr_c0 > 0) {
     // implicit_timers: seconds per category, then the counters (see TmrMark)
@@ -16884,6 +16910,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto pc_ = pos_cnt_d;
   const bool psph = sph_geom;
   auto pvol = pmy_pack->pcoord->volume;
+  // r136e-1107 implicit_wb_vcap (rad_m1.hpp): not on the cubed sphere
+  const Real wvcap = cs_geom ? 0.0 : impl_wb_vcap;
+  auto vcc_ = vcap_cnt_d;
   // implicit_face_weight = distance (sp): the face kappa_T of the momentum deposit is
   // the one the face equation used
   auto cx1f = pmy_pack->pcoord->xx1f;
