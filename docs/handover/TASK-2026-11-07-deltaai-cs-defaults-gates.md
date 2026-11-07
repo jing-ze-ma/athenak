@@ -24,7 +24,7 @@ Your `athena_hesnf_gpu_698b8241329e` (md5 136cf6db3ce6e79950c0e0ca7177c09a), pla
 3. G2 layout: from R1 with BASE+r8-cs+T, 4 cycles on 1 GPU vs 2 GPUs (vs 4 if the blocks divide); cmp.
 4. G3 determinism: from R1 with BASE, 4 cycles, twice, same layout; cmp.
 5. If time remains (stop 5 min before the limit): short A/B from R1, same layout, equal cycles (as many as fit, e.g. 50-100): BASE / BASE+r8-cs / BASE+r8-cs+T / BASE+r8-cs+problem/rst_pert_erad=1e-10. Report per run: NOT POSITIVE, NOT ADMISSIBLE, BE redo, fallback/FBDIAG lines, m1_pos_flr floor counters (RSG: Caltech saw fb_local x2.6 floors), Picard mean, dt, s/cycle, GPU memory.
-**Preflight first (USER rule after 5 jobs died at start tonight):** on the login node, check every command line: fresh start -> every key must exist in the deck; restart -> the <block> must exist in the rst input (absent keys are added). Script: `git show fork/bsg-files-1009:docs/handover/caltech-to-raven-1107/../../../` is not needed; the logic is 40 lines, copy it from viper's `/raven/ptmp/jinma/pool_1107/preflight.py` if the USER can bring it, else check by hand.
+**Preflight first (USER rule after 5 jobs died at start tonight):** on the login node, check every command line: fresh start -> every key must exist in the deck; restart -> the <block> must exist in the rst input (absent keys are added). Script: `docs/handover/caltech-to-raven-1107/preflight.py` on this branch (usage in its header: `python3 preflight.py --md5 MD5 BIN <exact athena args>`; exit 1 on any problem).
 
 ## Report (NOTE on this branch)
 Per gate BITWISE / DIFF (which output, max rel diff), the A/B table, GPU memory per GPU, s/cycle, SU used. Stop rules: FATAL, NON-CONVERGED=[1-9] in the summary, NaN, rc != 0 -> stop and report.
