@@ -812,6 +812,21 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       out_params.n_derived += 4;
     }
 
+    // tanacc-1107: m1_lat = the closure tensor the implicit operator reads (VlatTT()):
+    // m1_tt0 = slot 0 (vet_col f_K), m1_lat0..5 = the vet_col_lat slots (sp: D_rr - f_K,
+    // D_rt, D_rp, D_tt - (1 - D_rr)/2, D_tp, D_pp - (1 - D_rr)/2; cs: D_rr - f_K, the
+    // Cartesian D_r,lat, Q = ((D11 - D22)/2, D12) about the cs_qf frame), the cell unit
+    // vector m1_rx/ry/rz (Cartesian; cs: the vet_gd band vector) and J, H_r of the
+    // current vet_gd formal solution about that vector (m1_jg, m1_hg; E units).  Derived.
+    if (variable.compare("m1_lat") == 0) {
+      out_params.contains_derived = true;
+      const char *nm[12] = {"m1_tt0", "m1_lat0", "m1_lat1", "m1_lat2", "m1_lat3",
+                            "m1_lat4", "m1_lat5", "m1_rx", "m1_ry", "m1_rz", "m1_jg",
+                            "m1_hg"};
+      for (int c = 0; c < 12; ++c) {outvars.emplace_back(nm[c],c,&(derived_var));}
+      out_params.n_derived += 12;
+    }
+
     // turbulent forcing
     if (variable.compare("turb_force") == 0) {
       outvars.emplace_back("force1",0,&(pm->pmb_pack->pturb->force));
