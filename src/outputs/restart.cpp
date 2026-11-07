@@ -261,7 +261,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     // <hydro|mhd>/rad_signal_speed: the signal-speed inputs of the last M1 step
     if ((phydro != nullptr && phydro->rad_signal_speed) ||
         (pmhd != nullptr && pmhd->rad_signal_speed)) {
-      const int rmode = pradm1->RssMode();
+      const int rmode = pradm1->RssRstMode();
       const int nrs = pradm1->RssRstNch(rmode);
       DvceArray5D<Real> tmp("rst-m1s", nmb, nrs, nout3, nout2, nout1);
       pradm1->RssRstPack(tmp, nmb, rmode);
@@ -464,7 +464,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   const bool wrss = (pradm1 != nullptr) &&
                     ((phydro != nullptr && phydro->rad_signal_speed) ||
                      (pmhd != nullptr && pmhd->rad_signal_speed));
-  const int rss_mode = wrss ? pradm1->RssMode() : 0;
+  const int rss_mode = wrss ? pradm1->RssRstMode() : 0;
   const int nrss = wrss ? pradm1->RssRstNch(rss_mode) : 0;
   char rss_hdr[4*sizeof(std::int32_t)];
   {

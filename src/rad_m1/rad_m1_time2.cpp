@@ -24,6 +24,7 @@
 //! stage, which is redone from U^n.
 
 #include <algorithm>
+#include <cstdio>
 #include <cmath>
 #include <iostream>
 #include <string>
@@ -423,6 +424,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
 
   // pgrst-1021: <rad_m1>/time2_k1_reset (see rad_m1.hpp)
   t2_k1reset = false;
+  if (pin->DoesParameterExist("rad_m1", "rst_state_ext")) {   // rstbit-1107
+    rst_ext = pin->GetBoolean("rad_m1", "rst_state_ext");
+  }
+  if (pin->DoesParameterExist("rad_m1", "dbg_rst_fp")) {   // rstbit-1107
+    dbg_rst_fp = pin->GetInteger("rad_m1", "dbg_rst_fp");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_reset")) {
     const std::string kr = pin->GetString("rad_m1", "time2_k1_reset");
     if (kr == "pos") {
@@ -612,6 +619,7 @@ bool RadiationM1::Time2Active() {
 //! into the old vector of the stage solve.  ImplicitSolve applies t2inc.
 
 void RadiationM1::Time2FormStage(int stage, Real dt) {
+  if (dbg_rst_fp > 0 && stage == 1) {dbg_rst_fp -= 1; RstFingerprint("formstage1");}   // rstbit-1107
   const Real g = kT2G;
   const Real w0 = t2_w0, w1 = t2_w1;
   const bool heun = (t2_tab == 0);   // hesdirk2: the original expression, bitwise
@@ -2508,4 +2516,61 @@ void RadiationM1::Time2Report() {
             << " | discarded dt_retry attempts " << t2w_retry << std::endl;
 }
 
+}  // namespace radm1
+
+namespace radm1 {
+//----------------------------------------------------------------------------------------
+//! \fn RadiationM1::RstFingerprint (rstbit-1107, DIAGNOSTIC <rad_m1>/dbg_rst_fp = N)
+//! Sum and sum of squares of every persistent array (per component of the 5-D ones), all
+//! ranks, printed by rank 0: run A (straight) and run B (restarted) are diffed line by
+//! line at the same cycle to find the state a restart does not carry.  Moves no state.
+namespace {
+template <class V>
+void M1Fp(const char *nm, const V &v, int cycle) {
+  if (v.span() == 0) return;
+  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), v);
+  const int nc = (V::rank == 5) ? static_cast<int>(v.extent(1)) : 1;
+  const std::size_t per = h.span()/(V::rank == 5 ? v.extent(1)*v.extent(0) : 1);
+  for (int c = 0; c < nc; ++c) {
+    double s1 = 0.0, s2 = 0.0;
+    if (V::rank == 5) {
+      for (std::size_t m = 0; m < v.extent(0); ++m) {
+        const Real *p = h.data() + (m*v.extent(1) + c)*per;
+        for (std::size_t q = 0; q < per; ++q) {s1 += p[q]; s2 += p[q]*p[q];}
+      }
+    } else {
+      const Real *p = h.data();
+      for (std::size_t q = 0; q < h.span(); ++q) {s1 += p[q]; s2 += p[q]*p[q];}
+    }
+    double g[2] = {s1, s2};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, g, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("RSTFP cyc %d %s[%d] %.17e %.17e\n", cycle, nm, c, g[0], g[1]);
+    }
+  }
+}
+}  // namespace
+void RadiationM1::RstFingerprint(const char *tag) {
+  const int cy = pmy_pack->pmesh->ncycle;
+  if (global_variable::my_rank == 0) {std::printf("RSTFP cyc %d tag %s\n", cy, tag);}
+  M1Fp("u0", u0, cy); M1Fp("opac", opac, cy); M1Fp("iw", iw, cy);
+  M1Fp("t2k1", t2k1, cy); M1Fp("t2k2", t2k2, cy); M1Fp("ipred", ipred, cy);
+  M1Fp("ipred2", ipred2, cy); M1Fp("f0x1", f0x1, cy); M1Fp("f0x2", f0x2, cy);
+  M1Fp("f0x3", f0x3, cy); M1Fp("tau_ten", tau_ten, cy); M1Fp("vet_cell", vet_cell, cy);
+  M1Fp("x2_tt", x2_tt, cy); M1Fp("x2_hr", x2_hr, cy); M1Fp("x2_q", x2_q, cy);
+  M1Fp("ctr_mem", ctr_mem, cy); M1Fp("csk1", csk1, cy); M1Fp("ifw", ifw, cy);
+  M1Fp("ifw2", ifw2, cy); M1Fp("ifw3", ifw3, cy); M1Fp("thx2", thx2, cy);
+  M1Fp("thx3", thx3, cy); M1Fp("ktd", ktd, cy); M1Fp("vgd_hr", vgd_hr, cy);
+  M1Fp("vgd_hr_c", vgd_hr_c, cy); M1Fp("t2f1", t2f1, cy); M1Fp("t2f2", t2f2, cy);
+  M1Fp("t2f3", t2f3, cy); M1Fp("vet_prev", vet_prev, cy);
+  if (global_variable::my_rank == 0) {
+    std::printf("RSTFP cyc %d scalars pred_ok %d pred_dt %.17e pred2_ok %d pred2_dt %.17e "
+                "t2_ok %d t2_dtprev %.17e t2_vprev %d x2_ok %d x2_t %.17e abe %d %d\n", cy,
+                pred_ok ? 1 : 0, pred_dt, pred2_ok ? 1 : 0, pred2_dt, t2_ok ? 1 : 0,
+                t2_dtprev, t2_vprev ? 1 : 0, x2_ok ? 1 : 0, x2_t, t2_abe_len, t2_abe_left);
+    std::fflush(stdout);
+  }
+}
 }  // namespace radm1

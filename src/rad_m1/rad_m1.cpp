@@ -1935,6 +1935,8 @@ DvceArray4D<Real> RadiationM1::FrefWacc() {
 //! \fn int RadiationM1::RssMode
 //! \brief the closure tensor <hydro>/rad_signal_speed reads (hydro_newdt.cpp uses this)
 
+int RadiationM1::RssRstMode() const {return RssMode() + (rst_ext ? 16 : 0);}
+
 int RadiationM1::RssMode() const {
   if (tau_closure && tau_ten.extent(0) > 0) return 2;
   if (vet_sc && vet_cell.extent(0) > 0) return vet_full ? 4 : 3;
@@ -1943,12 +1945,29 @@ int RadiationM1::RssMode() const {
 }
 
 int RadiationM1::RssRstNch(int mode) const {
+  // rstbit-1107 <rad_m1>/rst_state_ext (mode + 16): also the other opacity components
+  // and, with the tau closure, the tensor's lateral slots (both are read before the first
+  // rebuild of a step: time2_k1_stiff reads opac P/E at the stage formation)
+  if (mode >= 16) {
+    const int b = mode - 16;
+    return RssRstNch(b) + (opac.extent_int(1) - 1)
+           + ((b == 2 && tau_ten.extent_int(1) > 4) ? (tau_ten.extent_int(1) - 4) : 0);
+  }
   if (mode == 2 || mode == 3) return 5;
   if (mode == 4) return 4;
   return 1;
 }
 
 void RadiationM1::RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c) {
+  if (mode >= 16) {   // rstbit-1107: the base slots, then opac (all but T), then tau_ten 4..
+    const int b = mode - 16, nb = RssRstNch(b), nop = opac.extent_int(1) - 1;
+    if (n < nb) {RssSlot(b, n, a, c); return;}
+    const int k = n - nb;
+    if (k < nop) {a = &opac; c = (k < M1_OP_T) ? k : (k + 1); return;}
+    a = &tau_ten;
+    c = 4 + (k - nop);
+    return;
+  }
   if (n == 0) {a = &opac; c = M1_OP_T; return;}
   if (mode == 2) {a = &tau_ten; c = n - 1; return;}
   a = &vet_cell;
@@ -1982,6 +2001,32 @@ void RadiationM1::RssRstPack(DvceArray5D<Real> &dst, int nmb, int mode) {
 //! the module has (E/3 or M1Chi(F/cE)).
 
 void RadiationM1::RssPrime(bool restart) {
+  if (rss_stage_mode >= 16) {
+    // rstbit-1107: the extended record; the tensor slots only into the same closure
+    const int mode = rss_stage_mode, b = mode - 16, nb = RssRstNch(b);
+    const bool tens = (b == 2 && tau_closure) ||
+                      ((b == 3 || b == 4) && vet_sc && vet_cell.extent(0) > 0 &&
+                       (vet_full == (b == 4)));
+    if (b == 2 && tau_closure && !tau_ready) {TauClosureInit();}
+    const int nmb = static_cast<int>(rss_stage.extent(0));
+    const int nall = static_cast<int>(rss_stage.extent(1));
+    const int nop = opac.extent_int(1) - 1;
+    for (int n=0; n<nall; ++n) {
+      const bool isop = (n == 0) || (n >= nb && n < nb + nop);
+      if (!isop && !tens) continue;
+      DvceArray5D<Real> *a = nullptr;
+      int c = 0;
+      RssSlot(mode, n, a, c);
+      if (a->extent_int(1) <= c) continue;
+      Kokkos::deep_copy(Kokkos::subview(*a, std::make_pair(0,nmb), c, Kokkos::ALL,
+                                        Kokkos::ALL, Kokkos::ALL),
+                        Kokkos::subview(rss_stage, Kokkos::ALL, n, Kokkos::ALL,
+                                        Kokkos::ALL, Kokkos::ALL));
+    }
+    rss_stage = DvceArray5D<Real>();
+    rss_stage_mode = -1;
+    return;
+  }
   if (rss_stage_mode >= 0) {
     const int mode = rss_stage_mode;
     // the tensor is put back only into the same kind of closure; opac always
