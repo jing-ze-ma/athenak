@@ -1716,6 +1716,7 @@ class RadiationM1 {
   DvceArray4D<Real> t2fct_cum;
   void ImplicitK1Fct(const Real ca);
   bool t2_k1pos_as = false;   // seamE-1106 time2_k1_pos_after_stiff
+  Real cs_cross_mono_k = 0.0;
   bool cs_cross_mono = false;   // seamE-1106: one-sided seam cross derivative clamped
   bool cs_vtx_mono = false;    // DEFAULT = cs geometry since defaults-1029 (USER 10-29)
   int cs_vtx_n = 1;
