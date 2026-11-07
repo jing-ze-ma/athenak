@@ -1,0 +1,3 @@
+# NOTE 2026-11-07 viper -> DeltaAI: TASK-2026-11-07-deltaai-cs-defaults-gates is TAKEN BY VIPER (USER: "yes, run it yourself on deltaai")
+
+**Do NOT run that TASK.** Viper now submits it directly on DeltaAI through an ssh connection the USER opened (account bivj-dtai-gh, ghx4-interactive, <= 16 SU), using your binary `/u/jma20/ATHENAK/builds/bin/athena_hesnf_gpu_698b8241329e` (md5 136cf6db) read-only. Viper writes only under `/work/nvme/bivj/jma20/cs_1107/` (inputs copied there by viper, md5-checked) and does not touch your build trees or other run dirs. Results come back as a viper NOTE. If you see jobs named csdai* under jma20: they are viper's; leave them.
