@@ -129,9 +129,40 @@ void WbAllBuild(WbAllCtx &c) {
     const int ku = (n3 > 1) ? (dk ? n3 - 2 : indcs.ke + 1) : 0;
     const int jl = dj ? 1 : indcs.js - 1, ju = dj ? n2 - 2 : indcs.je + 1;
     const int il = indcs.is - 1, iu = indcs.ie + 1;
+    // dhjwball-1106 general EOS: the weights first (table free: the shared pressures), then
+    // the walk only where a reader can use it (w > 0 here or at a +-1 neighbour along dir):
+    // the sweeps and the force read a cell's cache through w_face = min(w, w_nb), the AM
+    // background only for a cell with w > 0 from its +-1 neighbours; other caches stay stale
+    if (gen) {
+      par_for("wball_weight", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, il, iu,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const int km = k - dk, kp = k + dk, jm = j - dj, jp = j + dj;
+        Real w = 1.0;
+        if (wgt) {
+          const Real dc = w0_(m,IDN,k,j,i);
+          const Real pm = ww(m,3,km,jm,i), pc = ww(m,3,k,j,i), pp = ww(m,3,kp,jp,i);
+          const Real cs2 = gam*pc/dc;   // the Mach ramp only needs the order of magnitude
+          const Real dpr = pp - pm, dph = phicc(m,kp,jp,i) - phicc(m,km,jm,i);
+          const Real rd = fabs(dpr + dc*dph)/(dc*fabs(dph) + fabs(dpr) + eta*pc + 1.0e-300);
+          const Real v2 = w0_(m,IVX,k,j,i)*w0_(m,IVX,k,j,i) +
+                          w0_(m,IVY,k,j,i)*w0_(m,IVY,k,j,i) +
+                          w0_(m,IVZ,k,j,i)*w0_(m,IVZ,k,j,i);
+          const Real mach = sqrt(v2/fmax(cs2, 1.0e-300));
+          w = WbRamp(rd, r0, r1)*WbRamp(mach, m0, m1);
+        }
+        if (phimx < 1.0e299) {
+          const int ia = (i > 0) ? i - 1 : 0, ib = (i < n1 - 1) ? i + 1 : n1 - 1;
+          if (fmax(fmax(pw(m,km,jm,i), pw(m,k,j,i)), pw(m,kp,jp,i)) > phimx ||
+              fmax(pw(m,k,j,ia), pw(m,k,j,ib)) > phimx) w = 0.0;
+        }
+        ww(m,dir-1,k,j,i) = w;
+      });
+    }
     par_for("wball_cache", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, il, iu,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int km = k - dk, kp = k + dk, jm = j - dj, jp = j + dj;
+      if (gen && !(ww(m,dir-1,k,j,i) > 0.0 || ww(m,dir-1,km,jm,i) > 0.0 ||
+                   ww(m,dir-1,kp,jp,i) > 0.0)) return;
       const Real dm = w0_(m,IDN,km,jm,i), dc = w0_(m,IDN,k,j,i), dp = w0_(m,IDN,kp,jp,i);
       const Real em = w0_(m,IEN,km,jm,i), ec = w0_(m,IEN,k,j,i), ep = w0_(m,IEN,kp,jp,i);
       const Real fm = phicc(m,km,jm,i), fc = phicc(m,k,j,i), fp = phicc(m,kp,jp,i);
@@ -168,16 +199,12 @@ void WbAllBuild(WbAllCtx &c) {
           }
         }
       }
+      if (gen) return;   // the weight is already stored
       // the validity weight of this cell in this direction
       Real w = 1.0;
       if (wgt) {
         Real pm, pc, pp, cs2;
-        if (gen) {
-          pm = ww(m,3,km,jm,i); pc = ww(m,3,k,j,i); pp = ww(m,3,kp,jp,i);
-          cs2 = gam*pc/dc;   // the Mach ramp only needs the order of magnitude
-        } else {
-          pm = gm1*em; pc = gm1*ec; pp = gm1*ep; cs2 = gam*pc/dc;
-        }
+        pm = gm1*em; pc = gm1*ec; pp = gm1*ep; cs2 = gam*pc/dc;
         const Real dpr = pp - pm, dph = fp - fm;
         const Real rd = fabs(dpr + dc*dph)/(dc*fabs(dph) + fabs(dpr) + eta*pc + 1.0e-300);
         const Real v2 = w0_(m,IVX,k,j,i)*w0_(m,IVX,k,j,i) +
@@ -429,7 +456,7 @@ void WbAllAmBackground(WbAllCtx &c) {
   }
   AmFluid fl{wbam_u, wbam_u, wbam_w, wder, DvceArray5D<Real>(), *wbam_f, c.eos,
              false, use_wellbalance_static, pwb};
-  pam->AmTransportProbe(fl);
+  pam->AmTransportProbe(fl, &wbw);   // dhjwball-1106: only where wa > 0 reads it
 }
 
 //----------------------------------------------------------------------------------------
