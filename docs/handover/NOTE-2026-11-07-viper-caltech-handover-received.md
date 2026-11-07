@@ -33,3 +33,32 @@ Binaries (prod-1107v): Raven he `athena_he_a100_nofma_b_698b8241_fmadoff` md5 ba
 - Keep prodG/STOP and prodH/STOP.
 - Before R136a1 continues anywhere off Caltech: create r136a1_1104/runB/prod/STOP or scontrol hold 6264757 (r136B2 would fork the history).
 - If you push more to prod-1107 or the branches, say so in a NOTE: we build from prod-1107v and will re-merge.
+
+## 7. FASTER TRANSFER (USER: "also about faster transfer")
+Measured on Raven: the running rsync writes a flat **9 MB/s** (rsg.01295 partial 16.4 GB at 19:47 CET). Flat ~9 MB/s on a transatlantic RTT is the per-channel ssh window limit, not the link. At that rate the rest (RSG ~29 GB, HG 97.5 GB, small states ~30 GB) takes ~5 h.
+Fix: several byte ranges of one file in parallel, each its own ssh channel. Over the existing ControlMaster this needs **no new password/OTP**. Expected ~3-5x with 8 streams (unmeasured; if it does not scale, open 2-4 extra masters, see below).
+
+`pcp.sh` (run on the Caltech login node inside tmux, from $J):
+```
+#!/bin/bash
+# pcp.sh FILE RAVEN_DEST [N=8]: N parallel byte ranges of one file over the open ssh master; writes RAVEN_DEST in place
+F=$1; D=$2; N=${3:-8}; SZ=$(stat -c %s "$F"); MB=$(( SZ/1048576/N + 1 ))
+ssh raven "mkdir -p \$(dirname '$D')"
+for i in $(seq 0 $((N-1))); do
+  dd if="$F" bs=1M skip=$((i*MB)) count=$MB iflag=fullblock status=none \
+    | ssh -o Compression=no raven "dd of='$D' bs=1M seek=$((i*MB)) conv=notrunc iflag=fullblock status=none" &
+done; wait
+echo "local $SZ remote $(ssh raven "stat -c %s '$D'")"
+```
+Order (priority = the defaults tests, then production):
+```
+R=/raven/ptmp/jinma
+./pcp.sh prod_1103b/he/runs/hgb/rst/hegiant.00001.rst $R/caltech_1107/rst/small/hgb_hegiant.00001.rst.part 8
+./pcp.sh prod_1103b/he/runs/rsb/rst/rsg.00001.rst      $R/caltech_1107/rst/small/rsb_rsg.00001.rst.part 8
+./pcp.sh hgglob_1021/prodG/rst/hegiant.00139.rst        $R/raven_gap_1105/hg/rst/hegiant.00139.rst.part 8
+```
+- Write to `.part` names; viper checks size + md5 (compute job) and renames. Sizes/md5s are the ones in HANDOVER sec 0.
+- The running rsync chain: let it finish RSG (rsg.01295 is ~half done), then Ctrl-C it before it starts HG (otherwise it re-sends HG). R136a1 rst 5 and BSG rst 58 are low priority (R136a1 tests use rst 8, already here).
+- If 8 streams give < 2x: extra TCP connections = extra masters, one OTP each:
+  `ssh -o ControlPath=~/.ssh/cm2-%r@%h:%p -o ControlMaster=yes -o ControlPersist=12h -fN raven` (and cm3, cm4), then give each stream `-o ControlPath=~/.ssh/cmK-%r@%h:%p` round-robin.
+- If both sides offer Globus endpoints (Caltech HPC and MPCDF): that would be faster still and needs no open terminal; we have not checked whether MPCDF has one for /raven/ptmp.
