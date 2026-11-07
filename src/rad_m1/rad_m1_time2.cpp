@@ -429,6 +429,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
 
   // pgrst-1021: <rad_m1>/time2_k1_reset (see rad_m1.hpp)
   t2_k1reset = false;
+  rst_ext = true;   // USER 11-07 make some defaults: <rad_m1>/rst_state_ext default true
   if (pin->DoesParameterExist("rad_m1", "rst_state_ext")) {   // rstbit-1107
     rst_ext = pin->GetBoolean("rad_m1", "rst_state_ext");
   }

@@ -1827,7 +1827,7 @@ class RadiationM1 {
   //! 3 vet_cell (chi, n), 4 vet_cell (D_dd); the mode selection of hydro_newdt.cpp
   int RssMode() const;
   int RssRstMode() const;   // rstbit-1107: RssMode + 16 under rst_state_ext
-  bool rst_ext = false;     // rstbit-1107 <rad_m1>/rst_state_ext
+  bool rst_ext = true;      // rstbit-1107 <rad_m1>/rst_state_ext
   int RssRstNch(int mode) const;  // channels written: opac(M1_OP_T) + the tensor's
   //! the array and channel holding restart channel n of a given mode
   void RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c);
