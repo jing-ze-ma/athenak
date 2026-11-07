@@ -67,6 +67,7 @@ void WbAllBuild(WbAllCtx &c) {
   auto &ww = wbw;
   const bool wgt = wb_weight;
   const Real phimx = c.phimax;
+  const bool skp = (std::getenv("WB_NOSKIP") == nullptr);   // test only: walk everywhere
   auto pw = c.phiwb;
   const Real r0 = wbw_r0, r1 = wbw_r1, m0 = wbw_m0, m1 = wbw_m1, eta = wbw_eta;
   const bool wbgi = wb_guard_ideal;
@@ -161,7 +162,7 @@ void WbAllBuild(WbAllCtx &c) {
     par_for("wball_cache", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, il, iu,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int km = k - dk, kp = k + dk, jm = j - dj, jp = j + dj;
-      if (gen && !(ww(m,dir-1,k,j,i) > 0.0 || ww(m,dir-1,km,jm,i) > 0.0 ||
+      if (gen && skp && !(ww(m,dir-1,k,j,i) > 0.0 || ww(m,dir-1,km,jm,i) > 0.0 ||
                    ww(m,dir-1,kp,jp,i) > 0.0)) return;
       const Real dm = w0_(m,IDN,km,jm,i), dc = w0_(m,IDN,k,j,i), dp = w0_(m,IDN,kp,jp,i);
       const Real em = w0_(m,IEN,km,jm,i), ec = w0_(m,IEN,k,j,i), ep = w0_(m,IEN,kp,jp,i);
@@ -496,7 +497,7 @@ void WbAllAmBackground(WbAllCtx &c) {
   }
   AmFluid fl{wbam_u, wbam_u, wbam_w, wder, DvceArray5D<Real>(), *wbam_f, c.eos,
              false, use_wellbalance_static, pwb};
-  pam->AmTransportProbe(fl, &wbw);   // dhjwball-1106: only where wa > 0 reads it
+  pam->AmTransportProbe(fl, (std::getenv("WB_NOSKIP") == nullptr) ? &wbw : nullptr);   // dhjwball-1106: only where wa > 0 reads it (WB_NOSKIP: test only)
 }
 
 //----------------------------------------------------------------------------------------
