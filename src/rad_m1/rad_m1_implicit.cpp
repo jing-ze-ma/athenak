@@ -6832,6 +6832,7 @@ Real M1OdFaces(const DvceArray5D<Real> &iw_, const DvceArray5D<Real> &od_,
 
 void RadiationM1::ImplicitOffDiagOpC(int xc, int yc, Real sgn, bool with7, int red,
                                      Real *out) {
+  const bool khl_ = impl_kt_lat_harm;   // faceextrap-1106 M1KtLat
   const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   ImplicitODCache(xc);
   const bool bx1 = bvec_x1 && trans_on;   // blendall-1009: x1 faces keep 1 - AL
