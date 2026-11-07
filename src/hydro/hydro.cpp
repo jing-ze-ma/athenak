@@ -577,7 +577,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
         const int c3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
         Kokkos::realloc(wbq2, nmb, 15, c3, c2, c1);
         if (c3 > 1) Kokkos::realloc(wbq3, nmb, 15, c3, c2, c1);
-        Kokkos::realloc(wbw, nmb, 3, c3, c2, c1);
+        Kokkos::realloc(wbw, nmb, 7, c3, c2, c1);
         Kokkos::deep_copy(wbw, 1.0);
         // wball-1104 <hydro>/wb_seam (opt-in, read only when named): the WB-aware seam
         // resample of the density and energy (bvals.hpp, MeshBoundaryValuesCC::wb_seam)
