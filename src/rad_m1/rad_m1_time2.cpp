@@ -837,18 +837,25 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
           Real need = (th*e0 - ev)/ca*vol(m,k,j,i);
           k1d_(m,M1_T2_E,k,j,i) += need/vol(m,k,j,i);
           for (int d = 1; d <= rr && need > 0.0; ++d) {
-            for (int sg = -1; sg <= 1 && need > 0.0; sg += 2) {
-              const int q = i + sg*d;
-              if (q < is || q > ie) continue;
-              const Real eq = ue_(m,M1_E,k,j,q);
-              const Real room = (eq + ca*k1d_(m,M1_T2_E,k,j,q) - th*eq)/ca*vol(m,k,j,q);
-              if (room <= 0.0) continue;
-              const Real take = (room < need) ? room : need;
-              k1d_(m,M1_T2_E,k,j,q) -= take/vol(m,k,j,q);
-              need -= take;
-              sm += take;
-              sx += take*static_cast<Real>(d);
+            // both sides at distance d, in proportion to their room (no inward bias)
+            const int ql = i - d, qh = i + d;
+            Real rl = 0.0, rh = 0.0;
+            if (ql >= is) {
+              const Real eq = ue_(m,M1_E,k,j,ql);
+              rl = fmax((eq + ca*k1d_(m,M1_T2_E,k,j,ql) - th*eq)/ca*vol(m,k,j,ql), 0.0);
             }
+            if (qh <= ie) {
+              const Real eq = ue_(m,M1_E,k,j,qh);
+              rh = fmax((eq + ca*k1d_(m,M1_T2_E,k,j,qh) - th*eq)/ca*vol(m,k,j,qh), 0.0);
+            }
+            const Real rs = rl + rh;
+            if (!(rs > 0.0)) continue;
+            const Real f = (need < rs) ? need/rs : 1.0;
+            if (ql >= is) {k1d_(m,M1_T2_E,k,j,ql) -= f*rl/vol(m,k,j,ql);}
+            if (qh <= ie) {k1d_(m,M1_T2_E,k,j,qh) -= f*rh/vol(m,k,j,qh);}
+            need -= f*rs;
+            sm += f*rs;
+            sx += f*rs*static_cast<Real>(d);
           }
           if (need > 0.0) {
             // not enough within rr cells: undo the unpaid part, posfix decides
