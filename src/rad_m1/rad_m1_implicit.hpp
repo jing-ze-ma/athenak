@@ -1487,7 +1487,7 @@ template <class V, class VT, class G>
 KOKKOS_INLINE_FUNCTION
 Real M1CsTanFaceLag(const V &iw, const VT &tt, const int c0, const G &tg, const int e,
                     const int m, const int k, const int j, const int i, const int ec,
-                    const bool vmo, const int vmn) {
+                    const bool vmo, const int vmn, const bool xmono = false) {
   Real n[3], t[3];
   M1CsFaceNT(tg, e, m, k, j, n, t);
   // cell of side s (0 = low, 1 = high) at position q along the face
@@ -1529,7 +1529,20 @@ Real M1CsTanFaceLag(const V &iw, const VT &tt, const int c0, const G &tg, const 
     auto h = [&](const int o) {
       return (e == 1) ? tg.cdxf.x3f(m,k+o,cj(s,c),i) : tg.cdxf.x2f(m,ck(s,c),j+o,i);
     };
-    return M1CsAxisDer(q, h, c, lo, hi, slo, shi);
+    const Real d = M1CsAxisDer(q, h, c, lo, hi, slo, shi);
+    if (xmono) {   // cs_cross_mono (seamE-1106): the one-sided seam derivative is limited
+      if (c == lo && slo) {
+        const Real s1 = (q(1) - q(0))/h(1);
+        const Real l = (s1 > 0.0) ? 0.0 : 2.0*s1, u = (s1 > 0.0) ? 2.0*s1 : 0.0;
+        return (d < l) ? l : ((d > u) ? u : d);
+      }
+      if (c == hi && shi) {
+        const Real s1 = (q(0) - q(-1))/h(0);
+        const Real l = (s1 > 0.0) ? 0.0 : 2.0*s1, u = (s1 > 0.0) ? 2.0*s1 : 0.0;
+        return (d < l) ? l : ((d > u) ? u : d);
+      }
+    }
+    return d;
   };
   const Real sn = (e == 1) ? tg.sn2(m,k,j) : tg.sn3(m,k,j);
   const Real cs = (e == 1) ? tg.cs2(m,k,j) : tg.cs3(m,k,j);
