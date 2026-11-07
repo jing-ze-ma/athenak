@@ -339,6 +339,7 @@ void RadiationM1::VetLatInit() {
 //! active cells: 0 keeps the operator form untouched (vet_col_lat and vet_gd)
 
 void RadiationM1::VetLatOdMax() {
+  if (vgd_cstan) {CsTanDiag();}   // cs-tan-1106, env VGD_TANQ_DIAG
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -347,6 +348,7 @@ void RadiationM1::VetLatOdMax() {
   const bool tn = vgd_on && vgd_tan && vgd_tanop;   // + the tangential slots (vet_gd)
   // cs-s4-1017: on the cubed sphere D_r,lat is the Cartesian vector in LAT1..LAT3
   const bool c3 = cs_geom;
+  const bool cst = vgd_cstan;   // cs-tan-1106: + Q (LAT4, LAT5)
   // vtxfix-1029 cs_vertex_mono (rad_m1.hpp): D_r,lat (LAT1..3) = 0 in the cells within
   // cs_vertex_mono_n + 1 of a cube vertex, set after every build and before the ghost
   // exchange (the callers), so the operator, its stencil, the lagged assembly and the
@@ -362,6 +364,10 @@ void RadiationM1::VetLatOdMax() {
         tt_(m,M1_TT_LAT0+1,k,j,i) = 0.0;
         tt_(m,M1_TT_LAT0+2,k,j,i) = 0.0;
         tt_(m,M1_TT_LAT0+3,k,j,i) = 0.0;
+        if (cst) {
+          tt_(m,M1_TT_LAT0+4,k,j,i) = 0.0;
+          tt_(m,M1_TT_LAT0+5,k,j,i) = 0.0;
+        }
       }
     });
   }
@@ -384,6 +390,10 @@ void RadiationM1::VetLatOdMax() {
                            fabs(tt_(m,M1_TT_LAT0+4,k,j,i))));
         }
         if (c3) {v = fmax(v, fabs(tt_(m,M1_TT_LAT0+3,k,j,i)));}
+        if (cst) {
+          v = fmax(v, fmax(fabs(tt_(m,M1_TT_LAT0+4,k,j,i)),
+                           fabs(tt_(m,M1_TT_LAT0+5,k,j,i))));
+        }
         mx = (v > mx) ? v : mx;
       }, Kokkos::Max<Real>(omx));
 #if MPI_PARALLEL_ENABLED
@@ -478,6 +488,9 @@ void RadiationM1::VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
 
 void RadiationM1::VetLatBuild() {
   if (!vlat_ready) {VetLatInit();}
+  if (vgd_cstan && cs_qf.extent_int(0) == 0) {   // cs-tan-1106
+    CsTanFrameInit(vlat_lx, vlat_tt_c, pbval_vt);
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;

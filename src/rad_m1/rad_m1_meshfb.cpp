@@ -121,12 +121,17 @@ void RadiationM1::VetLatFbFill() {
   auto tl_ = vlat_tt_loc;
   auto vk_ = vkill_;
   const bool c3 = cs_geom;
+  const bool cst = vgd_cstan;
   par_for("m1_fb_ttz", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (vk_(m,k,j,i) > 0.0) {
       tl_(m,M1_TT_LAT0+1,k,j,i) = 0.0;
       tl_(m,M1_TT_LAT0+2,k,j,i) = 0.0;
       if (c3) {tl_(m,M1_TT_LAT0+3,k,j,i) = 0.0;}
+      if (cst) {   // cs-tan-1106: Q off in the mask too
+        tl_(m,M1_TT_LAT0+4,k,j,i) = 0.0;
+        tl_(m,M1_TT_LAT0+5,k,j,i) = 0.0;
+      }
     }
   });
   VetLatTTGhosts(&vlat_tt_loc);

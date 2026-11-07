@@ -601,3 +601,25 @@ _icl = {'rad_m1/ic_rad_precond': 'line'}
 CASES.append(dict(_hg, name='he_hg_icline_pg', ref_old=False, layouts=_hg4,
                   what=_hg['what'] + ', mg, IC relaxation with line, cs_seam_pos_global',
                   set=dict(_hg['set'], **_icl, **_pg)))
+# cs-tan-1106: vet_gd_tangential = true on the cubed sphere (Q in the transverse face equations,
+# seam / vertex stencils, frame exchange), HG and RSG decks with a layout-independent
+# preconditioner, and the sp arm on the BSG col_gd deck.  The old binary refuses the key on cs,
+# so no ref_old: a straight layout verdict.
+CASES.append(dict(_hg, name='he_hg_tan', ref_old=False,
+                  what='HG deck C16 with rad_m1/vet_gd_tangential = true, line precond',
+                  set=dict(_hg['set'], **{'rad_m1/vet_gd_tangential': 'true',
+                                          'rad_m1/implicit_precond': 'line'}),
+                  layouts=[L('b1x1_np6', (704, 16, 16), 6), L('b2x2_np6', (704, 8, 8), 6),
+                           L('b1x1_np3', (704, 16, 16), 3)]))
+CASES.append(dict(_hg, name='he_hg_tanctl', ref_old=False,
+                  what='control: the same deck with vet_gd_tangential = false',
+                  set=dict(_hg['set'], **{'rad_m1/implicit_precond': 'line'}),
+                  layouts=[L('b1x1_np6', (704, 16, 16), 6), L('b2x2_np6', (704, 8, 8), 6),
+                           L('b1x1_np3', (704, 16, 16), 3)]))
+CASES.append(dict(_RSG, name='rsg_tan', what='RSG E deck C32, vet_gd_tangential = true, line precond',
+                  set=dict(_RSGS, **{'rad_m1/vet_gd_tangential': 'true',
+                                     'rad_m1/implicit_precond': 'line'})))
+CASES.append(dict(_HCG, name='he_col_gd_tan', what='BSG col_gd deck (sp), vet_gd_tangential = true',
+                  set=dict(_HCG['set'], **{'rad_m1/vet_gd_tangential': 'true'}),
+                  layouts=[L('b1_np1', (256, 8, 8)), L('th2ph2_np1', (256, 4, 4)),
+                           L('th2ph2_np4', (256, 4, 4), 4)]))

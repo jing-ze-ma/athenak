@@ -5384,6 +5384,13 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto cfn3 = cs_fn3;
   auto vlt_ = VlatTT();   // meshfb-1106
   const int c0l = M1_TT_LAT0;
+  // cs-tan-1106: vet_gd_tangential on the cubed sphere, Q in the face equations
+  const bool vtanc = vlatc && vgd_cstan;
+  // how often the full tensor is really on (the positivity guard drops vlat_now, and Q)
+  if (vgd_cstan) {
+    cstan_np += 1.0;
+    if (vtanc) {cstan_na += 1.0;}
+  }
   // vet_gd (m1-vet-gd): the lagged tangential anisotropy M1SphTan
   const bool vtan = vgd_on && vgd_tan && vlat_ready && sph;
   auto cx1v = pmy_pack->pcoord->x1v;
@@ -5408,6 +5415,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto ccs2 = pmy_pack->pcoord->cos_face_xi;
   auto csn3 = pmy_pack->pcoord->sin_face_eta;
   auto ccs3 = pmy_pack->pcoord->cos_face_eta;
+  const auto tang_ = M1MakeCsTanGeo(cs_qf, cdxf, csn2, ccs2, csn3, ccs3, csg2, csg3,
+                                    cs_seam.d_view, cs_fn2, cs_fn3, cs_cn2, cs_cn3, cx1v,
+                                    js, je, ks, ke);
   auto cx1f = pmy_pack->pcoord->xx1f;
 
   // (1) the x2 face fluxes
@@ -5553,6 +5563,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           off = M1CsSeamMid(lf, csg2_, m, k, sd, up, dn);
         }
       }
+      if (vtanc) {off += M1CsTanFaceLag(iw_, vlt_, c0l, tang_, 1, m, k, j, i, M1_IW_EP, vmo, vmn,
+                                       xmono);}
     }
     if (csg) {
       // cs-open-1018: the rest of a SEAM face's flux to the face midpoint as well.  The
@@ -5745,6 +5757,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           off = M1CsSeamMid(lf, csg3_, m, j, sd, up, dn);
         }
       }
+      if (vtanc) {off += M1CsTanFaceLag(iw_, vlt_, c0l, tang_, 2, m, k, j, i, M1_IW_EP, vmo, vmn,
+                                       xmono);}
       if (csg) {
         // cs-open-1018: the rest of a SEAM face's flux to the face midpoint as well.  The
         // mirror pair's face theta (1 + chat dt kt_f)^-1 and v_f g0_f sit at the chord's
@@ -9950,6 +9964,11 @@ void RadiationM1::ImplicitReport() {
               << " positivity fallbacks=" << od_nfall
               << " (vet_col_lat " << vlat_nfall << ")"
               << " min E from the solve=" << od_emin << std::endl;
+  }
+  if (vgd_cstan) {
+    std::cout << "<rad_m1> vet_gd_tangential (cubed sphere): Q active in " << cstan_na
+              << " of " << cstan_np << " transverse assemblies (rank 0); positivity "
+              << "fallbacks (vet_col_lat) " << vlat_nfall << std::endl;
   }
   if (impl_vimp) {
     std::cout << "<rad_m1> implicit_vimp positivity fallbacks=" << vimp_nfall
