@@ -1435,6 +1435,62 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
+  // tanacc-1107 m1_lat: the handed-over closure tensor slots (basetype_output.cpp)
+  if (name.compare("m1_lat") == 0) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto prm = pm->pmb_pack->pradm1;
+    auto tt_ = prm->VlatTT();
+    const bool htt = (tt_.extent_int(0) >= nmb) &&
+                     (tt_.extent_int(1) >= radm1::M1_TT_LAT0 + radm1::M1_TT_NLAT);
+    auto vi_ = prm->vgd_i;
+    auto dir_ = prm->vgd_dir;
+    auto cr_ = prm->vgd_csr;
+    const int nd = prm->vgd_n;
+    const bool hv = prm->vgd_on && (nd > 0) && (vi_.extent_int(0) >= nmb) &&
+                    (vi_.extent_int(1) >= nd);
+    const bool csm = pm->use_cubed_sphere;
+    const bool hcr = csm && (cr_.extent_int(0) >= nmb);
+    const int og = prm->vgd_w - indcs.ng;
+    const int ilo = is + prm->vlat_icut;
+    auto &mbsize = pm->pmb_pack->pmb->mb_size;
+    par_for("m1_lat_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      for (int c = 0; c < 7; ++c) {
+        dv(m,i_dv+c,k,j,i) = htt ? tt_(m,((c == 0) ? 0 : radm1::M1_TT_LAT0 + c - 1),k,j,i)
+                                 : 0.0;
+      }
+      Real rx = 0.0, ry = 0.0, rz = 0.0;
+      if (hcr) {
+        rx = cr_(m,k+og,j+og,0);
+        ry = cr_(m,k+og,j+og,1);
+        rz = cr_(m,k+og,j+og,2);
+      } else if (!csm) {
+        const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+        const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+        rx = sin(th)*cos(ph);
+        ry = sin(th)*sin(ph);
+        rz = cos(th);
+      }
+      Real jm = 0.0, hr = 0.0;
+      if (hv && i >= ilo) {
+        for (int d = 0; d < nd; ++d) {
+          const Real a = dir_(d,0)*rx + dir_(d,1)*ry + dir_(d,2)*rz;
+          const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
+          jm += wi;
+          hr += wi*a;
+        }
+      }
+      dv(m,i_dv+7,k,j,i) = rx;
+      dv(m,i_dv+8,k,j,i) = ry;
+      dv(m,i_dv+9,k,j,i) = rz;
+      dv(m,i_dv+10,k,j,i) = jm;
+      dv(m,i_dv+11,k,j,i) = hr;
+    });
+    i_dv += 12;
+  }
+
   // sptests-1011 P2 m1_gdhr: the vet_gd half-range ratios (basetype_output.cpp)
   if (name.compare("m1_gdhr") == 0) {
     if (derived_var.extent(4) <= 1)
