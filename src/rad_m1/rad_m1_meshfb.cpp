@@ -37,6 +37,8 @@
 
 #include "athena.hpp"
 #include "parameter_input.hpp"
+#include <array>
+#include <vector>
 #include "coordinates/cell_locations.hpp"
 #include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
@@ -471,14 +473,26 @@ void RadiationM1::ImplicitSeamRowDump(int it, int kd, Real nb) {
   }
   auto ddh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ddv);
   auto lloc = pmy_pack->pmesh->lloc_eachmb;
-  const LogicalLocation &ll = lloc[pmy_pack->gids + bm];
-  const int ig = ll.lx1*indcs.nx1 + bi - is, jg = ll.lx2*indcs.nx2 + bj - js;
-  const int kg = ll.lx3*indcs.nx3 + bk - ks;
   char fn[64];
   std::snprintf(fn, sizeof(fn), "seamrow.rank%05d.txt", global_variable::my_rank);
   FILE *fp = std::fopen(fn, "a");
   if (fp == nullptr) {return;}
-  const int m = bm, k = bk, j = bj, i = bi;
+  // rsgdiag-1107: every cell with E <= 0 of this rank (cap 40), not only the min
+  std::vector<std::array<int,4>> cand;
+  for (int mm = 0; mm < nmb; ++mm) {
+    for (int kk = ks; kk <= ke; ++kk) {
+      for (int jj = js; jj <= je; ++jj) {
+        for (int ii = is; ii <= ie; ++ii) {
+          if (!(s2(mm,kk,jj,ii) > 0.0) && cand.size() < 40) {cand.push_back({mm,kk,jj,ii});}
+        }
+      }
+    }
+  }
+  for (const auto &cnd : cand) {
+  const int m = cnd[0], k = cnd[1], j = cnd[2], i = cnd[3];
+  const LogicalLocation &ll = lloc[pmy_pack->gids + m];
+  const int ig = ll.lx1*indcs.nx1 + i - is, jg = ll.lx2*indcs.nx2 + j - js;
+  const int kg = ll.lx3*indcs.nx3 + k - ks;
   const double cl = c_light, ch = chat, dt = dt_sub, cr = ch/cl;
   const double iv = dt/volh(m,k,j,i);
   std::fprintf(fp, "TRIG cyc %d it %d kind %d nb %.0f panel %d i %d j %d k %d seam %d %d %d %d "
@@ -601,6 +615,7 @@ void RadiationM1::ImplicitSeamRowDump(int it, int kd, Real nb) {
                  v2(m,kk,jj,ii), v3(m,kk,jj,ii), a2(m,kk,jj,ii), a3(m,kk,jj,ii), g0(m,kk,jj,ii),
                  egn(m,kk,jj,ii), srcb(m,kk,jj,ii), srcr(m,kk,jj,ii));
   }
+  }   // rsgdiag-1107: cand
   std::fclose(fp);
 }
 
