@@ -73,6 +73,46 @@ void WbAllBuild(WbAllCtx &c) {
   const Real gam = eos.gamma, gm1 = eos.gamma - 1.0;
   Kokkos::deep_copy(Kokkos::subview(ww, Kokkos::ALL, 0, Kokkos::ALL, Kokkos::ALL,
                                     Kokkos::ALL), 1.0);
+  // dhjwball-1106: one thermo evaluation per cell per stage, shared by the two walks and the
+  // two weights (wbw channels 3 = the weight's pressure, 4,5,6 = the anchor's p, chi_rho,
+  // chi_T); the same table values as evaluating each of them in place
+  const int ith0 = indcs.is - 1, ith1 = indcs.ie + 1;
+  if (gen) {
+    par_for("wball_thermo", DevExeSpace(), 0, nmb1, 0, n3 - 1, 0, n2 - 1, ith0, ith1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = w0_(m,IDN,k,j,i), e = w0_(m,IEN,k,j,i);
+      const Real tc = WBT(wt,m,k,j,i);
+      const Real t = (tc > 0.0) ? tc : eos.Temperature(d, e);
+      Real et, p, chir, chit, cv;
+      eos.ThermoAt(d, t, et, p, chir, chit, cv);
+      ww(m,4,k,j,i) = p; ww(m,5,k,j,i) = chir; ww(m,6,k,j,i) = chit;
+      ww(m,3,k,j,i) = wgt ? eos.Pressure(d, e, t) : p;
+    });
+  }
+  // WB_DIAG (test only, env; removed after use): stored wder pressure vs eos.Pressure(d,e,T)
+  // vs a fresh inversion, interior and ghost separately
+  if (std::getenv("WB_DIAG") != nullptr && gen) {
+    auto wd = wder;
+    Real a[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    const int is_ = indcs.is, ie_ = indcs.ie, js_ = indcs.js, je_ = indcs.je;
+    const int ks_ = indcs.ks, ke_ = indcs.ke;
+    Kokkos::parallel_reduce("wb_diag", Kokkos::MDRangePolicy<Kokkos::Rank<4>, DevExeSpace>(
+      {0,0,0,0},{nmb1+1,n3,n2,n1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &r0, Real &r1,
+                  Real &r2, Real &r3, Real &r4, Real &r5) {
+      const Real d = w0_(m,IDN,k,j,i), e = w0_(m,IEN,k,j,i), t = WBT(wt,m,k,j,i);
+      if (!(d > 0.0 && e > 0.0 && t > 0.0)) return;
+      const Real pw = wd(m,IDPR,k,j,i), pt = eos.Pressure(d, e, t), pf = eos.Pressure(d, e);
+      const bool in = (i >= is_ && i <= ie_ && j >= js_ && j <= je_ && k >= ks_ && k <= ke_);
+      const Real x = fabs(pw - pt)/pt, y = fabs(pt - pf)/pt, z = fabs(pw - pf)/pt;
+      if (in) {r0 = fmax(r0, x); r1 = fmax(r1, y); r2 = fmax(r2, z);}
+      else {r3 = fmax(r3, x); r4 = fmax(r4, y); r5 = fmax(r5, z);}
+    }, Kokkos::Max<Real>(a[0]), Kokkos::Max<Real>(a[1]), Kokkos::Max<Real>(a[2]),
+       Kokkos::Max<Real>(a[3]), Kokkos::Max<Real>(a[4]), Kokkos::Max<Real>(a[5]));
+    std::cout << "WB_DIAG interior wder-P(T) " << a[0] << " P(T)-P(fresh) " << a[1]
+              << " wder-P(fresh) " << a[2] << " | ghost " << a[3] << " " << a[4] << " "
+              << a[5] << std::endl;
+  }
   for (int dir = 2; dir <= 3; ++dir) {
     if (dir == 2 && n2 == 1) continue;
     if (dir == 3 && n3 == 1) continue;
@@ -94,9 +134,10 @@ void WbAllBuild(WbAllCtx &c) {
       const Real fmh = phif(m,k,j,i), fph = phif(m,kp,jp,i);
       if (gen) {
         WBState s_m, s_mh, s_c, s_ph, s_p;
+        const Real th[3] = {ww(m,4,k,j,i), ww(m,5,k,j,i), ww(m,6,k,j,i)};
         WBBackgroundStencil(eos, wbo, dm, dc, dp, em, ec, ep, fm, fmh, fc, fph, fp,
                             s_m, s_mh, s_c, s_ph, s_p, WBT(wt,m,km,jm,i), WBT(wt,m,k,j,i),
-                            WBT(wt,m,kp,jp,i));
+                            WBT(wt,m,kp,jp,i), th);
         c(m,0,k,j,i) = s_m.d; c(m,1,k,j,i) = s_mh.d; c(m,2,k,j,i) = s_c.d;
         c(m,3,k,j,i) = s_ph.d; c(m,4,k,j,i) = s_p.d;
         c(m,5,k,j,i) = s_m.e; c(m,6,k,j,i) = s_mh.e; c(m,7,k,j,i) = s_c.e;
@@ -128,9 +169,7 @@ void WbAllBuild(WbAllCtx &c) {
       if (wgt) {
         Real pm, pc, pp, cs2;
         if (gen) {
-          pm = eos.Pressure(dm, em, WBT(wt,m,km,jm,i));
-          pc = eos.Pressure(dc, ec, WBT(wt,m,k,j,i));
-          pp = eos.Pressure(dp, ep, WBT(wt,m,kp,jp,i));
+          pm = ww(m,3,km,jm,i); pc = ww(m,3,k,j,i); pp = ww(m,3,kp,jp,i);
           cs2 = gam*pc/dc;   // the Mach ramp only needs the order of magnitude
         } else {
           pm = gm1*em; pc = gm1*ec; pp = gm1*ep; cs2 = gam*pc/dc;

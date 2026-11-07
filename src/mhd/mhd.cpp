@@ -631,7 +631,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
           const int nmbw = std::max((pmy_pack->nmb_thispack), (pmy_pack->pmesh->nmb_maxperrank));
           Kokkos::realloc(wbq2, nmbw, 15, c3, c2, c1);
           if (c3 > 1) Kokkos::realloc(wbq3, nmbw, 15, c3, c2, c1);
-          Kokkos::realloc(wbw, nmbw, 3, c3, c2, c1);
+          Kokkos::realloc(wbw, nmbw, 7, c3, c2, c1);
           Kokkos::deep_copy(wbw, 1.0);
           if (pin->DoesParameterExist("mhd","wb_seam") && pin->GetBoolean("mhd","wb_seam")) {
             if (!pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->multilevel) {
