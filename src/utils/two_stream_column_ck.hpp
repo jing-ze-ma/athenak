@@ -352,6 +352,12 @@ inline bool ck_impl_jreuse_xc = false;
 // problem/ck_impl_jreuse_act: with ck_impl_jreuse, also rebuild on any pass that follows
 // one on which fewer than this fraction of the rank's columns were still active
 inline Real ck_impl_jreuse_act = 0.25;
+// layoutfix-1106 problem/ck_impl_global_ctl (default false, bitwise): the pass loop's
+// control quantities (max residual, max step, active / predicted column counts) reduced over
+// all ranks before the chord-Jacobian rebuild and the stop tests, so every rank takes the
+// same decisions as a single rank would; rank-local otherwise (the rebuild then depends on
+// which columns share a rank: dhj_hyd b1x1 np1 vs np3 r_00 8.6e-5 after 12 cycles)
+inline bool ck_impl_global_ctl = false;
 inline bool ck_impl_jac_built = false;
 inline Real ck_impl_prev_res = -1.0;
 // problem/ck_impl_pred (lever 4): no confirmation pass.  A column whose residual r_p
