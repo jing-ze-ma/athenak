@@ -1286,8 +1286,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (sp_face_sync && pin->DoesParameterExist("rad_m1", "sp_face_sync_relax")) {
     fsync_w = pin->GetReal("rad_m1", "sp_face_sync_relax");
     if (!(fsync_w > 0.0 && fsync_w <= 1.0)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-                << "<rad_m1>/sp_face_sync_relax must be in (0, 1]" << std::endl;
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/sp_face_sync_relax must be in (0, 1]"
+                << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
