@@ -161,6 +161,26 @@ bool hs_bhse_ = false, hs_bhse_tg_ = false, hs_sp_rad_ = false;
 // embedded input lacks the key keeps cell (no silent change mid-run).
 bool hs_bhse_face_ = true;
 Real hs_bhse_gmax_ = 0.9, hs_sp_dmax_ = 0.0;
+// r136seam-1108 problem/he_sponge_dmax_lat (default false = the cell's own u0 density,
+// bitwise the old sponge): true decides "rho < he_sponge_dmax" by the MAJORITY of the
+// lateral stencil (j +- 1 and k +- 1, 3 or 9 cells) of the stage-start density w0
+// (ghosts filled: the same answer on every MeshBlock decomposition).  The cell-local
+// switch releases a single cell above dmax while its neighbours stay held at v_r = 0:
+// one-cell radial infall rays in the floor gas (R136a1 phase 1, 11-08).
+bool hs_sp_lat_ = false;
+KOKKOS_INLINE_FUNCTION
+bool HsSpLowLat(const DvceArray5D<Real> &w, const int m, const int k, const int j,
+                const int i, const Real spd, const bool md, const bool td) {
+  const int dj = md ? 1 : 0, dk = td ? 1 : 0;
+  int nlow = 0, ntot = 0;
+  for (int kk = k - dk; kk <= k + dk; ++kk) {
+    for (int jj = j - dj; jj <= j + dj; ++jj) {
+      ++ntot;
+      if (w(m,IDN,kk,jj,i) < spd) ++nlow;
+    }
+  }
+  return 2*nlow > ntot;
+}
 // problem/he_ic_balance: the discretely balanced initial cells (all x1 cells incl. ghosts
 // of the ONE MeshBlock along x1; every block has the same radial grid)
 bool hs_bal_ = false;
@@ -2865,6 +2885,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem","he_sponge_dmax")) {
     hs_sp_dmax_ = pin->GetReal("problem","he_sponge_dmax");
   }
+  if (pin->DoesParameterExist("problem","he_sponge_dmax_lat")) {
+    hs_sp_lat_ = pin->GetBoolean("problem","he_sponge_dmax_lat");
+  }
   hs_rtop_ = rtop;
   if (pin->DoesParameterExist("problem","he_clump")) {
     hs_cl_on_ = pin->GetBoolean("problem","he_clump");
@@ -3742,11 +3765,14 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   // he_sponge_mode = radial: only v_r (the transverse momenta are untouched)
   auto &x1v = pmbp->pcoord->x1v;
   const Real rate = hs_sp_rate_, r0 = hs_sp_r0_, rt = hs_rtop_, spd = hs_sp_dmax_;
+  const bool splat = hs_sp_lat_ && (spd > 0.0);
+  const bool spmd = pm->multi_d, sptd = pm->three_d;
   if (hs_sp_rad_) {
     par_for("hs_sponge_r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real r = x1v(m,i);
-      const bool low = (u0(m,IDN,k,j,i) < spd);
+      const bool low = splat ? HsSpLowLat(w0, m, k, j, i, spd, spmd, sptd)
+                             : (u0(m,IDN,k,j,i) < spd);
       if (r <= r0 && !low) return;
       const Real w = low ? 1.0 : SQR((r - r0)/(rt - r0));
       const Real f = exp(-bdt*rate*w);
@@ -3770,7 +3796,8 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   par_for("hs_sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
-    const bool low = (u0(m,IDN,k,j,i) < spd);
+    const bool low = splat ? HsSpLowLat(w0, m, k, j, i, spd, spmd, sptd)
+                           : (u0(m,IDN,k,j,i) < spd);
     if (r <= r0 && !low) return;
     const Real w = low ? 1.0 : SQR((r - r0)/(rt - r0));
     const Real f = exp(-bdt*rate*w);
@@ -4200,6 +4227,8 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   const Real chc = pm1->chat/pm1->c_light;
   const Real sprate = hs_sp_rate_, spr0 = hs_sp_r0_, sprt = hs_rtop_, spd = hs_sp_dmax_;
   const bool sprad = hs_sp_rad_;
+  const bool splat = hs_sp_lat_ && (spd > 0.0);
+  const bool spmd = pm->multi_d, sptd = pm->three_d;
   const bool hcsh = pm->use_cubed_sphere;   // cs-port-1016: metric KE
   auto hccl_ = pmbp->pcoord->cos_cell;
   array_sum::GlobalSum sum_this;
@@ -4246,7 +4275,7 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
     if (sprate > 0.0) {
       const Real r = x1v(m,i);
       const Real d = u0(m,IDN,k,j,i);
-      const bool low = (d < spd);
+      const bool low = splat ? HsSpLowLat(w0, m, k, j, i, spd, spmd, sptd) : (d < spd);
       if (r > spr0 || low) {
         const Real wsp = low ? 1.0 : SQR((r - spr0)/(sprt - spr0));
         const Real kes = sprad ? 0.5*SQR(u0(m,IM1,k,j,i))/d
