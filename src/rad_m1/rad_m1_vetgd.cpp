@@ -5322,12 +5322,70 @@ void RadiationM1::VetGdSweep() {
 #include "rad_m1_vetgd_body.inc"
 #undef M1_VGD_BODY_NAME
 #undef M1_VGD_BODY_MIR
+    // speedup-1109 vet_gd_body_global: this pass's shell kernel closure copied once
+    // to device memory; the launches below then carry only its address (bitwise)
+    using VgdBodyT = decltype(body);
+    using VgdBodymT = decltype(bodym);
+    const VgdBodyT *bdp = nullptr;
+    const VgdBodymT *bmp = nullptr;
+    if (vgd_bglob) {
+      if (thm) {
+        bmp = VgdClosureToDevice(bodym, vgd_bbuf1);
+      } else {
+        bdp = VgdClosureToDevice(body, vgd_bbuf0);
+      }
+    }
     const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
     // the shell kernel over the codes cl(c), c in [c0, c1) (vet_gd_shell_list codes)
     auto run_list = [&](const DvceArray1D<int> &cl, const int c0, const int c1,
                         const int i, const int l, const char *name) {
       if (c1 <= c0) {return;}
       auto L_ = cl;
+      if (bmp != nullptr || bdp != nullptr) {
+        // speedup-1109 vet_gd_body_global: the same codes, the closure through a pointer
+        const VgdBodyT *bp_ = bdp;
+        const VgdBodymT *bq_ = bmp;
+        const bool vp_ = vpa_h;
+        // one kernel per variant, as below (host-side choice)
+        if (bq_ != nullptr) {
+          Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
+          KOKKOS_LAMBDA(const int c) {
+            int t = L_(c);
+            const int d = t % n;
+            t /= n;
+            const int m = t/nkj;
+            t -= m*nkj;
+            const int k = ks + t/nj;
+            const int j = js + (t % nj);
+            (*bq_)(m, k, j, d, i, l, vp_);
+          });
+        } else if (vp_) {
+          Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
+          KOKKOS_LAMBDA(const int c) {
+            int t = L_(c);
+            const int d = t % n;
+            t /= n;
+            const int m = t/nkj;
+            t -= m*nkj;
+            const int k = ks + t/nj;
+            const int j = js + (t % nj);
+            (*bp_)(m, k, j, d, i, l, true);
+          });
+        } else {
+          Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
+          KOKKOS_LAMBDA(const int c) {
+            int t = L_(c);
+            const int d = t % n;
+            t /= n;
+            const int m = t/nkj;
+            t -= m*nkj;
+            const int k = ks + t/nj;
+            const int j = js + (t % nj);
+            (*bp_)(m, k, j, d, i, l, false);
+          });
+        }
+        return;
+      }
       if (thm) {
         // wallbug-1027 vet_gd_theta_wall = mirror: its own kernel (bodym)
         Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
@@ -5623,7 +5681,28 @@ void RadiationM1::VetGdSweep() {
           // vet_gd_shell_list: only the (m, k, j, d) of this pass's branch
           run_list(vgd_shl[pass], 0, vgd_shn[pass], i, l, "m1_vgd_shell");
         } else {
-          if (thm) {
+          if (bmp != nullptr || bdp != nullptr) {
+            // speedup-1109 vet_gd_body_global (see run_list)
+            const VgdBodyT *bp_ = bdp;
+            const VgdBodymT *bq_ = bmp;
+            const bool vp_ = vpa_h;
+            if (bq_ != nullptr) {
+              par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
+              KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+                (*bq_)(m, k, j, d, i, l, vp_);
+              });
+            } else if (vp_) {
+              par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
+              KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+                (*bp_)(m, k, j, d, i, l, true);
+              });
+            } else {
+              par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
+              KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+                (*bp_)(m, k, j, d, i, l, false);
+              });
+            }
+          } else if (thm) {
             par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
             KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
               bodym(m, k, j, d, i, l, vpa_h);
