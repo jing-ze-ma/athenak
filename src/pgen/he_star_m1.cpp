@@ -137,6 +137,11 @@ Real hs_bheat_ = 0.0;
 DvceArray1D<Real> hs_fb_;
 Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
 bool hs_zflux_ = true;
+// hewbrmax-1107 problem/he_wb_grav_window (read only when named, default false): the x1
+// WB gravity source honours the fluid's wb_rmax / wb_rmin / wb_phimax window -- the cells
+// the reconstruction treats as plain (Hydro::wb_rmax) take the isodensity walk
+// p -/+ rho dPhi_wb instead of the cached hydrostatic walk (see HeStarGravity)
+bool hs_wbwin_ = false;
 // fsanchor-1009 problem/he_clump (TEST, read only when named, default false): a cold
 // opaque sphere of gas held fixed (rho, T, v = 0) at every stage, the absorber of the
 // shadow test in the production geometry; (r, theta, phi) centre, radius (code units)
@@ -2637,6 +2642,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // top sponge (default off) and hooks
   hs_zflux_ = pin->GetOrAddBoolean("problem","he_wall_zero_flux",true);
+  if (pin->DoesParameterExist("problem","he_wb_grav_window")) {
+    hs_wbwin_ = pin->GetBoolean("problem","he_wb_grav_window");
+  }
   // the inner wall face sees the exact mirror of the interior-side state
   // (hydro_fluxes.cpp, wall_closed_ix1, as deep_hot_jupiter_rt problem/wall_closed): zero
   // mass flux to round-off.  Measured: it does not change the first-cell force
@@ -3662,6 +3670,40 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
       const Real src1 = 1.5*(rp*rp - rm*rm)/(rp*rp*rp - rm*rm*rm);
       u0(m,IM1,k,j,i) -= bdt*w0(m,IDN,k,j,i)*gmp*src1/x1vg(m,i);
     });
+  } else if (hs_wbwin_) {
+  // hewbrmax-1107 problem/he_wb_grav_window: outside the fluid's WB window (x1v >
+  // wb_rmax > 0, x1v < wb_rmin > 0, or phicc_wb > wb_phimax: exactly the cells whose x1
+  // reconstruction is plain, hydro_fluxes.cpp / mhd_fluxes.cpp) the cached hydrostatic
+  // walk describes no supported atmosphere (H << dr above a star): its face pressures
+  // fall by orders of magnitude across the cell and the pressure form over-pulls the gas.
+  // There the face pressures are walked at the CELL density, pl = p + d (Phi_c - Phi_l),
+  // pr = p - d (Phi_r - Phi_c): the source becomes -d [A_r (Phi_r - Phi_c) + A_l (Phi_c -
+  // Phi_l)]/V, the plain -rho dPhi_wb/dr in the same face form and on the same effective
+  // potential (so the a_ref split and the energy flux are untouched).  The switch is per
+  // cell and coincides with the reconstruction's; the two forms differ by O(dr/H) of
+  // the force where H is resolved, so the transition at wb_rmax is continuous to that
+  // order.  Window absent (all three at their defaults): bitwise the branch below.
+  const Real wrmax = fl.mhd ? fl.pm->wb_rmax : fl.ph->wb_rmax;
+  const Real wrmin = fl.mhd ? fl.pm->wb_rmin : fl.ph->wb_rmin;
+  const Real wphmax = fl.mhd ? fl.pm->wb_phimax : fl.ph->wb_phimax;
+  auto &x1vw = pmbp->pcoord->x1v;
+  auto pwcw = ph->phicc_wb, pwfw = ph->phi_wb_x1f;
+  par_for("hs_grav_win", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = w0(m,IDN,k,j,i);
+    Real pl, pr, d1, d2, d3;
+    WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i, d1, pl, d2, pr, d3);
+    const Real e_ = w0(m,IEN,k,j,i);
+    const Real p = (e_ > 0.0) ? eos.Pressure(d, e_) : 0.5*(pl + pr);
+    const Real r = x1vw(m,i);
+    if ((wrmax > 0.0 && r > wrmax) || (wrmin > 0.0 && r < wrmin) ||
+        pwcw(m,k,j,i) > wphmax) {
+      pl = p + d*(pwcw(m,k,j,i) - pwfw(m,k,j,i));
+      pr = p - d*(pwfw(m,k,j,i+1) - pwcw(m,k,j,i));
+    }
+    u0(m,IM1,k,j,i) += bdt*(area1(m,k,j,i+1)*(pr - p) + area1(m,k,j,i)*(p - pl))
+                       /volume(m,k,j,i);
+  });
   } else {
   par_for("hs_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
