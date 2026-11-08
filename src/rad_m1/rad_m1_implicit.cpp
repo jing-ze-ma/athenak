@@ -4689,6 +4689,7 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
   auto cdxf = M1Dxf();
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx2v = pmy_pack->pcoord->x2v;
+  auto cx2t = VtanX2t();   // tensor-sp-1108: theta of the data (M1SphTan)
   auto cx3v = pmy_pack->pcoord->x3v;
 
   const bool v3m1_ = cs_geom && pmy_pack->pmesh->cs_vertex_3cell;   // cornerfix-1103
@@ -4756,10 +4757,10 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
                                 kl,ku,M1_IW_EP));
         }
         if (vtan) {
-          gs += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,jm,i,thrd,jl,ju,kl,ku,
-                              M1_IW_EP)
-                     + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,j,i,thrd,jl,ju,kl,ku,
-                                M1_IW_EP));
+          gs += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx2t,cx3v,m,1,k,jm,i,thrd,jl,ju,
+                              kl,ku,M1_IW_EP)
+                     + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx2t,cx3v,m,1,k,j,i,thrd,jl,ju,
+                                kl,ku,M1_IW_EP));
         }
         gf = gs;
       }
@@ -4850,10 +4851,10 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
                                 kl,ku,M1_IW_EP));
         }
         if (vtan) {
-          gs += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,km,j,i,thrd,jl,ju,kl,ku,
-                              M1_IW_EP)
-                     + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,k,j,i,thrd,jl,ju,kl,ku,
-                                M1_IW_EP));
+          gs += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx2t,cx3v,m,2,km,j,i,thrd,jl,ju,
+                              kl,ku,M1_IW_EP)
+                     + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx2t,cx3v,m,2,k,j,i,thrd,jl,ju,
+                                kl,ku,M1_IW_EP));
         }
         gf = gs;
       }
@@ -5411,6 +5412,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool vtan = vgd_on && vgd_tan && vlat_ready && sph;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx2v = pmy_pack->pcoord->x2v;
+  auto cx2t = VtanX2t();   // tensor-sp-1108: theta of the data (M1SphTan)
   auto cx3v = pmy_pack->pcoord->x3v;
   // STAGE CS1 (cubed sphere): the face-normal gradient on the skewed panel grid, as
   // `if (csg)` overwrites of the sp result.  An interior face takes
@@ -5542,9 +5544,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                             ju,kl,ku,M1_IW_EP));
     }
     if (vtan) {
-      off += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,jm,i,thrd,jl,ju,kl,ku,
+      off += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx2t,cx3v,m,1,k,jm,i,thrd,jl,ju,kl,ku,
                            M1_IW_EP)
-                 + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,j,i,thrd,jl,ju,kl,ku,
+                 + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx2t,cx3v,m,1,k,j,i,thrd,jl,ju,kl,ku,
                             M1_IW_EP));
     }
     if (csg) {
@@ -5750,9 +5752,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                               ju,kl,ku,M1_IW_EP));
       }
       if (vtan) {
-        off += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,km,j,i,thrd,jl,ju,kl,ku,
+        off += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx2t,cx3v,m,2,km,j,i,thrd,jl,ju,kl,ku,
                              M1_IW_EP)
-                   + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,k,j,i,thrd,jl,ju,kl,ku,
+                   + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx2t,cx3v,m,2,k,j,i,thrd,jl,ju,kl,ku,
                               M1_IW_EP));
       }
       if (csg) {off = 0.0;}   // STAGE CS2: the lateral-closure hook (see the x2 face)
@@ -12617,6 +12619,61 @@ void RadiationM1::DbgEnergyTally(Real *o) {
 #endif
 }
 
+
+//----------------------------------------------------------------------------------------
+//! \fn DvceArray2D<Real> RadiationM1::VtanX2t
+//! \brief tensor-sp-1108: the theta at which M1SphTan evaluates sin / cot of the value an
+//! x2 row holds.  The interior rows and every row of a non-periodic or non-sp mesh: x2v
+//! itself (returned as is, nothing allocated).  On a theta-PERIODIC spherical-polar mesh
+//! the ghost rows below x2min (above x2max) hold the cells just below x2max (above
+//! x2min): their theta is the sin-weighted centroid of the faces shifted by +L (-L),
+//! L = x2max - x2min, the formula of the coordinates' x2v.  Then both blocks at the seam
+//! evaluate the seam face's tangential term from the same numbers and its flux F2 is
+//! single valued (energy conservation of the solve); the interior is bitwise unchanged.
+
+DvceArray2D<Real> RadiationM1::VtanX2t() {
+  Mesh *pm = pmy_pack->pmesh;
+  auto x2v = pmy_pack->pcoord->x2v;
+  if (!sph_geom || !pm->multi_d ||
+      pm->mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::periodic) {
+    return x2v;
+  }
+  const int nmb = pmy_pack->nmb_thispack;
+  // rebuilt when the pack or the coordinate arrays change (every call under AMR)
+  if (!pm->adaptive && vtan_x2t_nmb == nmb && vtan_x2t_src == x2v.data()) {
+    return vtan_x2t;
+  }
+  Kokkos::realloc(vtan_x2t, x2v.extent_int(0), x2v.extent_int(1));
+  Kokkos::deep_copy(vtan_x2t, x2v);
+  auto &indcs = pm->mb_indcs;
+  const int js = indcs.js, je = indcs.je, ng = indcs.ng;
+  const Real x2min = pm->mesh_size.x2min, x2max = pm->mesh_size.x2max;
+  const Real len = x2max - x2min;
+  auto h_t = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vtan_x2t);
+  auto h_f = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(),
+                                                 pmy_pack->pcoord->xx2f);
+  auto &size = pmy_pack->pmb->mb_size;
+  auto centroid = [](Real tl, Real tr) {
+    return -((sin(tr) - tr*cos(tr)) - (sin(tl) - tl*cos(tl)))/(cos(tr) - cos(tl));
+  };
+  const Real tol = 1.0e-12*len;
+  for (int m = 0; m < nmb; ++m) {
+    if (fabs(size.h_view(m).x2min - x2min) < tol) {
+      for (int j = js-ng; j < js; ++j) {
+        h_t(m,j) = centroid(h_f(m,j) + len, h_f(m,j+1) + len);
+      }
+    }
+    if (fabs(size.h_view(m).x2max - x2max) < tol) {
+      for (int j = je+1; j <= je+ng; ++j) {
+        h_t(m,j) = centroid(h_f(m,j) - len, h_f(m,j+1) - len);
+      }
+    }
+  }
+  Kokkos::deep_copy(vtan_x2t, h_t);
+  vtan_x2t_nmb = nmb;
+  vtan_x2t_src = x2v.data();
+  return vtan_x2t;
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::EAuditMark

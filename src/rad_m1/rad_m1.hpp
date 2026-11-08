@@ -2513,6 +2513,13 @@ class RadiationM1 {
   Real fbl_ntrig = 0.0, fbl_nlocal = 0.0, fbl_nglobal = 0.0, fbl_nbad = 0.0, fbl_ncell = 0.0;
   DvceArray5D<Real> vlat_tt_loc;
   DvceArray5D<Real> VlatTT() const {return fbl_any ? vlat_tt_loc : tau_ten;}
+  // tensor-sp-1108: theta of the data each x2 row holds, for the trigonometric factors of
+  // M1SphTan (= x2v; the periodic source cell's theta in the ghost rows at a
+  // theta-periodic seam).  Built on first use, rebuilt when the pack size changes.
+  DvceArray2D<Real> vtan_x2t;
+  int vtan_x2t_nmb = -1;
+  const Real *vtan_x2t_src = nullptr;
+  DvceArray2D<Real> VtanX2t();
   void ImplicitFbKeys(ParameterInput *pin);
   Real ImplicitFbMin(Real *nbad);
   void VetLatFbFill();

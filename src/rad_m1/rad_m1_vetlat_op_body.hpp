@@ -35,6 +35,7 @@
   auto cx1v = pmy_pack->pcoord->x1v;
 #if !M1_VLAT_CS
   auto cx2v = pmy_pack->pcoord->x2v;
+  auto cx2t = VtanX2t();   // tensor-sp-1108: theta of the data (M1SphTan)
   auto cx3v = pmy_pack->pcoord->x3v;
 #endif
   auto cx1f = pmy_pack->pcoord->xx1f;
@@ -124,8 +125,8 @@
       Real v = M1SphLat(iw_, tt_, c0, cx1v, cx2v, cx3v, m, d, kq, jq, iq, thrd, il, iu,
                         jl, ju, kl, ku, cx);
       if (tanop && d > 0) {   // vet_gd: the tangential cross terms in the operator too
-        v += M1SphTan(iw_, tt_, c0, cx1v, cx2v, cx3v, m, d, kq, jq, iq, thrd, jl, ju, kl,
-                      ku, cx);
+        v += M1SphTan(iw_, tt_, c0, cx1v, cx2v, cx2t, cx3v, m, d, kq, jq, iq, thrd, jl,
+                      ju, kl, ku, cx);
       }
       return v;
     };

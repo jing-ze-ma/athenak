@@ -6538,7 +6538,8 @@ void RadiationM1::VetGdMms() {
                     ku, ep);
   };
   auto tan = [&](int m, int d, int k, int j, int i) {
-    return M1SphTan(iwh, tth, c0, x1v, x2v, x3v, m, d, k, j, i, true, jl, ju, kl, ku, ep);
+    return M1SphTan(iwh, tth, c0, x1v, x2v, x2v, x3v, m, d, k, j, i, true, jl, ju, kl, ku,
+                    ep);
   };
   for (int m = 0; m < nmb; ++m) {
     for (int k = ks + 2; k <= ke - 2; ++k) {
