@@ -168,9 +168,14 @@ The `tolref` machinery stays for reference.
 A restart whose input lacks `<mesh>/layout_invariant` keeps `false` (old block-ordered sums).
 The HG and RSG production decks are such restarts. Their rank-count dependence (1 vs 2 vs 4
 ranks, same 24 MeshBlocks: dens ~1e-13, eint ~1e-11, m1_e ~1e-10 after 4 cycles; near-zero
-velocities flip sign) comes from these old sums. The first of them on the solve path are the
-BiCGStab dot products in `ImplicitBiCGStabRun`: a Kokkos reduction over the rank's pack, so its
-order depends on nmb per rank, followed by `M1GlobalSum2`. Adding `mesh/layout_invariant=true`
+velocities flip sign) comes from these old sums. The layout det trace below puts the first
+difference at the first solve of the cycle in `iw(M1_IW_EN)` (E^n + dt esrc) while u0, opac and
+the fluid state are still identical: `esrc` comes from the adaptive MLT closure
+(`HsAdaptiveUpdate`, he_star_m1.cpp), whose radial shell sums are a serial loop over the
+rank's own MeshBlocks followed by the rank-ordered `HsDetSum`, so the association of the terms
+changes with the rank count. The BiCGStab dot products (`ImplicitBiCGStabRun`: a Kokkos
+reduction over the rank's pack, then `M1GlobalSum2`) have the same defect.
+Adding `mesh/layout_invariant=true`
 to the restart command line (it is then recorded in the next restart) makes them bitwise across
 rank counts, with no code change (prod-1107v 698b82413, layoutdet-1107 gates of 11-08):
 
