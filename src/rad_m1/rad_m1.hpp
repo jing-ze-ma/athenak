@@ -625,6 +625,10 @@ class RadiationM1 {
   // Thomas solve leaves round-off, no-op) and implicit_pos_floor (an E^{n+1} below
   // e_floor is raised with the energy taken from the gas, counted as FLR_DE / FLR_UN).
   bool impl_cons_final = false;
+  // lintol-1109 <rad_m1>/implicit_lin_tolcap = kappa (read only when named; 0 = off): the
+  // Eisenstat-Walker inner tolerance is capped at kappa x the pass's Picard tolerance
+  Real impl_lin_tolcap = 0.0;
+  Real cur_tolcap = 0.0;
   bool cf_named = false;        // prod-1112-cand: key named (a named true may fatal)
   // consfix-1109 <rad_m1>/dbg_cons_ledger (DIAGNOSTIC, read only when named): r of every
   // solve; rank 0 prints CONSR cycle t2s dt sum(V (c/chat) r) sum(V (c/chat) |r|)

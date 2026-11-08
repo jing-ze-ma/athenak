@@ -696,6 +696,9 @@ int RadiationM1::ImplicitBiCGStabPipe(Real rhsmax) {
     ew_fprev = rnorm;
     ew_etaprev = eta;
     tabs = fmax(tabs, eta*rnorm);
+    if (impl_lin_tolcap > 0.0 && cur_tolcap > 0.0) {   // lintol-1109
+      tabs = fmax(tol*bscale, fmin(tabs, impl_lin_tolcap*cur_tolcap*bscale));
+    }
   }
   auto lin_done = [=](const Real r) {
     return ew ? (r < tabs) : (r/bscale < tol);

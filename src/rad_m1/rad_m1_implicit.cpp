@@ -2164,6 +2164,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // falls back to off with a one-line notice; only a NAMED true is fatal there.
   cf_named = pin->DoesParameterExist("rad_m1","implicit_cons_final");
   impl_cons_final = cf_named ? pin->GetBoolean("rad_m1","implicit_cons_final") : true;
+  impl_lin_tolcap = pin->DoesParameterExist("rad_m1","implicit_lin_tolcap") ?
+                    pin->GetReal("rad_m1","implicit_lin_tolcap") : 0.0;   // lintol-1109
+  if (impl_lin_tolcap < 0.0) {ImplFatal("<rad_m1>/implicit_lin_tolcap must be >= 0");}
   dbg_cons_ledger = pin->DoesParameterExist("rad_m1","dbg_cons_ledger") &&
                     pin->GetBoolean("rad_m1","dbg_cons_ledger");
   if (impl_cons_final && !impl_pos_floor && !cf_named) {
@@ -9331,6 +9334,13 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
     ew_fprev = rnorm;
     ew_etaprev = eta;
     tabs = fmax(tabs, eta*rnorm);
+    // lintol-1109 implicit_lin_tolcap = kappa (read only when named; 0 = off, bitwise): the
+    // Eisenstat-Walker loosening may not exceed kappa x the Picard tolerance of this pass
+    // (per cell under cnorm, else relative to max|b|)
+    if (impl_lin_tolcap > 0.0 && cur_tolcap > 0.0) {
+      const Real cap = impl_lin_tolcap*cur_tolcap*(cn ? 1.0 : bscale);
+      tabs = fmax(cn ? impl_lin_cnorm : (tol*bscale), fmin(tabs, cap));
+    }
   }
   auto lin_done = [=](const Real r) {
     return (ew || cn) ? (r < tabs) : (r/bscale < tol);
@@ -9687,6 +9697,9 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
     ew_fprev = rnorm;
     ew_etaprev = eta;
     tabs = fmax(tabs, eta*rnorm);
+    if (impl_lin_tolcap > 0.0 && cur_tolcap > 0.0) {   // lintol-1109
+      tabs = fmax(tol*bscale, fmin(tabs, impl_lin_tolcap*cur_tolcap*bscale));
+    }
   }
   auto lin_done = [=](const Real r) {
     return ew ? (r < tabs) : (r/bscale < tol);
@@ -14137,6 +14150,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     int nin = -1;
     bool fbl_tr = false;   // meshfb-1106: this pass solved to E <= 0, mask grown
     cf_fb_pass = false;    // consfix-1109
+    // lintol-1109: the Picard tolerance this pass's inner solve is capped against
+    cur_tolcap = (it == 0 && tolr) ? std::max(impl_tol, impl_tol_rel_max) : tol_eff;
     TmrMark((it == 0) ? 4 : 7);
     ew_tight = onep && (it == 0);
     // MILESTONE 3e: x_k, the state this pass maps
