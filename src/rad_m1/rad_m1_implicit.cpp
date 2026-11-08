@@ -2141,8 +2141,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   {const bool pfsn = pin->DoesParameterExist("rad_m1","implicit_pos_floor_solve");
   bool pfs_rd = false;
   if (!pfsn && rst && impl_pos_floor) {
-    pfs_rd = pin->DoesParameterExist("rad_m1","implicit_pos_floor_solve_rst_default") &&
-             pin->GetBoolean("rad_m1","implicit_pos_floor_solve_rst_default");
+    // prod-1112-cand: DEFAULT true (name implicit_pos_floor_solve_rst_default = false for
+    // the prod-1111 behaviour: such a restart keeps false)
+    pfs_rd = pin->DoesParameterExist("rad_m1","implicit_pos_floor_solve_rst_default") ?
+             pin->GetBoolean("rad_m1","implicit_pos_floor_solve_rst_default") : true;
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> WARN: restart input lacks implicit_pos_floor_solve: "
                 << (pfs_rd ? "true (implicit_pos_floor_solve_rst_default)"
@@ -2156,10 +2158,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   // consfix-1109 (a) implicit_cons_final, dbg_cons_ledger (rad_m1.hpp): read only when
   // named; the solver checks are made at the first solve
-  impl_cons_final = pin->DoesParameterExist("rad_m1","implicit_cons_final") &&
-                    pin->GetBoolean("rad_m1","implicit_cons_final");
+  // prod-1112-cand: implicit_cons_final DEFAULT true (name false for the prod-1111
+  // behaviour, bitwise).  Not recorded when absent: a deck that cannot take it (no
+  // implicit_pos_floor here; line_jacobi multi-D or polar_ring_avg at the first solve)
+  // falls back to off with a one-line notice; only a NAMED true is fatal there.
+  cf_named = pin->DoesParameterExist("rad_m1","implicit_cons_final");
+  impl_cons_final = cf_named ? pin->GetBoolean("rad_m1","implicit_cons_final") : true;
   dbg_cons_ledger = pin->DoesParameterExist("rad_m1","dbg_cons_ledger") &&
                     pin->GetBoolean("rad_m1","dbg_cons_ledger");
+  if (impl_cons_final && !impl_pos_floor && !cf_named) {
+    impl_cons_final = false;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_cons_final (default) off: implicit_pos_floor = false"
+                << std::endl;
+    }
+  }
   if (impl_cons_final && !impl_pos_floor) {
     ImplFatal("<rad_m1>/implicit_cons_final needs implicit_pos_floor = true (an E below "
               "e_floor is raised with the energy taken from the gas)");
@@ -19551,6 +19564,14 @@ void RadiationM1::ImplicitConsResid(bool bicg, bool trans) {
     return;
   }
   if (!bicg || rav_on) {
+    if (impl_cons_final && !cf_named) {   // prod-1112-cand: the default falls back
+      impl_cons_final = false;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> implicit_cons_final (default) off: needs implicit_solver = "
+                  << "bicgstab on a multi-D mesh and no polar_ring_avg" << std::endl;
+      }
+      return;
+    }
     if (impl_cons_final) {
       ImplFatal("<rad_m1>/implicit_cons_final needs implicit_solver = bicgstab on a "
                 "multi-D mesh and no polar_ring_avg");
