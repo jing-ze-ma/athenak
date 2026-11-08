@@ -2142,6 +2142,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (!(impl_wb_vkrej >= 0.0)) {
       ImplFatal("<rad_m1>/implicit_wb_vkick_reject must be >= 0 (0 = off)");
     }
+    if (pin->DoesParameterExist("rad_m1","implicit_wb_vkick_be_retry")) {
+      impl_wb_vkbr = pin->GetBoolean("rad_m1","implicit_wb_vkick_be_retry");
+    }
     if (impl_wb_vkrej > 0.0) {
       Kokkos::realloc(vkick_cnt_d, 2);
       Kokkos::deep_copy(vkick_cnt_d, 0.0);
@@ -9890,7 +9893,12 @@ void RadiationM1::ImplicitReport() {
     std::cout << "<rad_m1> implicit_wb_vkick_reject=" << impl_wb_vkrej
               << ": stages rejected=" << vkick_nrej
               << " backward-Euler solves with kicks=" << vkick_nbe << " (cells "
-              << vkick_nbecell << ")" << std::endl;
+              << vkick_nbecell << ")";
+    if (impl_wb_vkbr) {
+      std::cout << " of which dt_retry=" << vkick_nberetry
+                << " accepted after the last cut=" << vkick_nbefall;
+    }
+    std::cout << std::endl;
   }
   if (global_variable::my_rank != 0) return;
   if (tmr_c0 > 0) {
@@ -17256,14 +17264,25 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                   << impl_wb_vkrej << ", max " << vmx << "): the step is redone"
                   << (was ? " (already not admissible)" : "") << std::endl;
       }
-    } else if (nk > 0.0 && !t2st) {
+    } else if (nk > 0.0 && !t2st && !t2_inprobe) {
       vkick_nbe += 1.0;
       vkick_nbecell += nk;
+      // implicit_wb_vkick_be_retry: a dt_retry failure while the cycle has cuts left
+      const bool rt = impl_wb_vkbr && dtr_on && (dtr_ncut < dtr_maxcut);
+      if (rt) {
+        vkick_nberetry += 1.0;
+        if (!dtr_fail) {dtr_why = 6; dtr_resid = vmx;}
+        dtr_fail = true;
+      } else if (impl_wb_vkbr) {
+        vkick_nbefall += 1.0;
+      }
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> implicit_wb_vkick_reject: backward-Euler solve at cycle "
                   << pmy_pack->pmesh->ncycle << " kicks " << nk << " cells to |v| > "
-                  << impl_wb_vkrej << " (max " << vmx << "); accepted (no redo)"
-                  << std::endl;
+                  << impl_wb_vkrej << " (max " << vmx << "); "
+                  << (rt ? "dt_retry (implicit_wb_vkick_be_retry)"
+                         : (impl_wb_vkbr ? "accepted (dt_retry cuts used up)"
+                                         : "accepted (no redo)")) << std::endl;
       }
     }
   }
