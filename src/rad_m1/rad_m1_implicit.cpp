@@ -1279,6 +1279,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   dbg_etally = pin->GetOrAddBoolean("rad_m1","dbg_energy_tally",false);
   // accbook-1021: read only when named (an input without it is unchanged, also in the
   // parameters a restart file records)
+  // seamsync-1108: <rad_m1>/sp_face_sync (read only when named; off = bitwise)
+  sp_face_sync = sph_geom && !cs_geom &&
+                 pin->DoesParameterExist("rad_m1", "sp_face_sync") &&
+                 pin->GetBoolean("rad_m1", "sp_face_sync");
+  if (sp_face_sync && pin->DoesParameterExist("rad_m1", "sp_face_sync_relax")) {
+    fsync_w = pin->GetReal("rad_m1", "sp_face_sync_relax");
+    if (!(fsync_w > 0.0 && fsync_w <= 1.0)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/sp_face_sync_relax must be in (0, 1]"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  dbg_eaudit_map = pin->DoesParameterExist("rad_m1", "dbg_energy_audit_map") &&
+                   pin->GetBoolean("rad_m1", "dbg_energy_audit_map");
   dbg_eaudit = pin->DoesParameterExist("rad_m1", "dbg_energy_audit") &&
                pin->GetBoolean("rad_m1", "dbg_energy_audit");
   impl_ecnt = pin->GetOrAddInteger("rad_m1","implicit_eos_cache_nt",2);
@@ -12800,6 +12815,151 @@ void RadiationM1::EAuditMark(int pt) {
   const bool init = eaud_init;
   const bool cls = (pt == 2) && (t2_solve != M1_T2S_STAGE2);
   const bool sete = (pt == 5) || (pt == 6) || !init;
+  // tsp-1108 <rad_m1>/dbg_energy_audit_map (output only): at mark 3, BEFORE U is
+  // re-stored, the per-cell residual of the solve against its OWN stored faces,
+  //   r = dU + dt (c/chat) sum_faces (+-) F A [+ the x1max bath advective part] + W_cell,
+  // summed: all cells, |r|, 8 radial bins of i, lateral block-edge vs interior cells, the
+  // top row (i = ie) and the bottom row.  sum r = 0 with RSOLVE != 0 means the faces
+  // shared by two MeshBlocks are not single valued; r != 0 localises a solve whose E
+  // update is not the divergence of the stored faces.  Line EAUDITX at mark 3, rank 0.
+  if (pt == 3 && dbg_eaudit_map && init) {
+    auto &area = pmy_pack->pcoord->area;
+    auto f1 = f0x1;
+    auto f2 = f0x2;
+    auto f3 = f0x3;
+    const bool tr2 = trans_on && (f2.extent_int(0) > 0);
+    const bool tr3 = trans_on && trans_x3 && (f3.extent_int(0) > 0);
+    const bool hbd = iebath_hi_col_on && (ibadv_x1max.extent_int(0) > 0);
+    DvceArray3D<Real> bdv;
+    if (hbd) {bdv = ibadv_x1max;}
+    auto &mbbcs = pmy_pack->pmb->mb_bcs;
+    const bool hw = fref_wsplit && FrefWaccOn();
+    DvceArray4D<Real> wc;
+    if (hw) {wc = FrefWacc();}
+    const Real wfac = dt_sub/pmy_pack->pmesh->dt;
+    const Real dts = dt_sub;
+    array_sum::GlobalSum xm;
+    Kokkos::parallel_reduce("m1_eaudit_map", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            nmb*nk*nj*ni),
+    KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
+      const int m = n/(nk*nj*ni);
+      const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
+      const Real v = sph ? vol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                           mbsize.d_view(m).dx3);
+      const Real u = ((hy ? uh(m,IEN,k,j,i) : 0.0) + ccr*ur(m,M1_E,k,j,i))*v;
+      Real fo = f1(m,k,j,i+1)*area.x1f(m,k,j,i+1) - f1(m,k,j,i)*area.x1f(m,k,j,i);
+      if (tr2) {fo += f2(m,k,j+1,i)*area.x2f(m,k,j+1,i) - f2(m,k,j,i)*area.x2f(m,k,j,i);}
+      if (tr3) {fo += f3(m,k+1,j,i)*area.x3f(m,k+1,j,i) - f3(m,k,j,i)*area.x3f(m,k,j,i);}
+      if (hbd && i == ie) {
+        const BoundaryFlag bf = mbbcs.d_view(m, BoundaryFace::outer_x1);
+        if ((bf != BoundaryFlag::block) && (bf != BoundaryFlag::periodic)) {
+          fo += bdv(m,k,j)*area.x1f(m,k,j,ie+1);
+        }
+      }
+      Real r = (u - au(m,k,j,i)) + dts*ccr*fo;
+      if (hw) {r += wc(m,k,j,i)*v*wfac;}
+      array_sum::GlobalSum q;
+      for (int c=0; c<NREDUCTION_VARIABLES; ++c) q.the_array[c] = 0.0;
+      q.the_array[0] = r;
+      q.the_array[1] = fabs(r);
+      q.the_array[2 + ((i - is)*8)/ni] = r;
+      const bool edge = (j == js) || (j == je) || (nk > 1 && (k == ks || k == ke));
+      q.the_array[edge ? 10 : 11] = r;
+      if (i == ie) {q.the_array[12] = r; q.the_array[13] = fabs(r);}
+      if (i == is) {q.the_array[14] = r;}
+      sum += q;
+    }, Kokkos::Sum<array_sum::GlobalSum>(xm));
+    Real xl[15];
+    for (int c=0; c<15; ++c) {xl[c] = xm.the_array[c];}
+#if MPI_PARALLEL_ENABLED
+    {Real xg[15];
+    MPI_Allreduce(xl, xg, 15, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int c=0; c<15; ++c) {xl[c] = xg[c];}}
+#endif
+    // the shared lateral faces: each block puts its own boundary-row face fluxes into a
+    // cell array (0: x2 lower face of row js, 1: x2 upper face of row je, 2/3 the same in
+    // x3), the ordinary cc exchange hands every block its neighbours' values in the
+    // ghosts, and D = dt (c/chat) sum (F_mine - F_neighbour) A over the lower faces of
+    // each block (each shared face once) is what RSOLVE carries beyond sum r
+    Real xd[12] = {0.0};
+    // its OWN boundary object (4 components, the ordinary ng ghost layers): pbval_vl's
+    // buffers carry the wider vet band, and pbval_u has the stage's receives posted
+    // (a second InitRecv on it deadlocks)
+    if (pbval_ea == nullptr && pbval_u != nullptr) {
+      pbval_ea = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
+      pbval_ea->InitializeBuffers(4);
+      pbval_ea->SetVectorPairs(4, {});
+      pbval_ea->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
+    }
+    if (pbval_ea != nullptr && tr2) {
+      const int n1c = u0.extent_int(4), n2c = u0.extent_int(3), n3c = u0.extent_int(2);
+      if (eaud_fx.extent_int(0) != nmb) {
+        Kokkos::realloc(eaud_fx, nmb, 4, n3c, n2c, n1c);
+        Kokkos::realloc(eaud_fxc, nmb, 4, 1, 1, 1);
+      }
+      Kokkos::deep_copy(eaud_fx, 0.0);
+      auto fx = eaud_fx;
+      par_for("m1_eaudit_fx", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (j == js) {fx(m,0,k,j,i) = f2(m,k,js,i);}
+        if (j == je) {fx(m,1,k,j,i) = f2(m,k,je+1,i);}
+        if (tr3 && k == ks) {fx(m,2,k,j,i) = f3(m,ks,j,i);}
+        if (tr3 && k == ke) {fx(m,3,k,j,i) = f3(m,ke+1,j,i);}
+      });
+      VetLatExchange(eaud_fx, eaud_fxc, pbval_ea);
+      const Real x2lo = pmy_pack->pmesh->mesh_size.x2min;
+      const Real x3lo = pmy_pack->pmesh->mesh_size.x3min;
+      const Real tol = 1.0e-12;
+      array_sum::GlobalSum xs;
+      Kokkos::parallel_reduce("m1_eaudit_fxd", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              nmb*nk*nj*ni),
+      KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
+        const int m = n/(nk*nj*ni);
+        const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
+        array_sum::GlobalSum q;
+        for (int c=0; c<NREDUCTION_VARIABLES; ++c) q.the_array[c] = 0.0;
+        const int b = ((i - is)*8)/ni;
+        if (j == js) {
+          const BoundaryFlag bf = mbbcs.d_view(m, BoundaryFace::inner_x2);
+          if ((bf == BoundaryFlag::block) || (bf == BoundaryFlag::periodic)) {
+            const Real d = dts*ccr*(f2(m,k,js,i) - fx(m,1,k,js-1,i))*area.x2f(m,k,js,i);
+            const bool seam = fabs(mbsize.d_view(m).x2min - x2lo) < tol;
+            q.the_array[seam ? 0 : 1] += d;
+            q.the_array[4 + b] += d;
+          }
+        }
+        if (tr3 && k == ks) {
+          const BoundaryFlag bf = mbbcs.d_view(m, BoundaryFace::inner_x3);
+          if ((bf == BoundaryFlag::block) || (bf == BoundaryFlag::periodic)) {
+            const Real d = dts*ccr*(f3(m,ks,j,i) - fx(m,3,ks-1,j,i))*area.x3f(m,ks,j,i);
+            const bool seam = fabs(mbsize.d_view(m).x3min - x3lo) < tol;
+            q.the_array[seam ? 2 : 3] += d;
+            q.the_array[4 + b] += d;
+          }
+        }
+        sum += q;
+      }, Kokkos::Sum<array_sum::GlobalSum>(xs));
+      for (int c=0; c<12; ++c) {xd[c] = xs.the_array[c];}
+#if MPI_PARALLEL_ENABLED
+      {Real xg[12];
+      MPI_Allreduce(xd, xg, 12, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      for (int c=0; c<12; ++c) {xd[c] = xg[c];}}
+#endif
+    }
+    if (global_variable::my_rank == 0) {
+      std::printf("EAUDITF cycle=%d D_x2seam=%.6e D_x2blk=%.6e D_x3seam=%.6e D_x3blk=%.6e"
+                  " bins=", pmy_pack->pmesh->ncycle, xd[0], xd[1], xd[2], xd[3]);
+      for (int c=0; c<8; ++c) {std::printf("%s%.4e", c ? "," : "", xd[4 + c]);}
+      std::printf("\n");
+    }
+    if (global_variable::my_rank == 0) {
+      std::printf("EAUDITX cycle=%d dt=%.10e sum=%.6e abs=%.6e bins=",
+                  pmy_pack->pmesh->ncycle, dts, xl[0], xl[1]);
+      for (int c=0; c<8; ++c) {std::printf("%s%.4e", c ? "," : "", xl[2 + c]);}
+      std::printf(" edge=%.6e inner=%.6e top=%.6e topabs=%.6e bot=%.6e\n", xl[10], xl[11],
+                  xl[12], xl[13], xl[14]);
+    }
+  }
   array_sum::GlobalSum s3;
   Kokkos::parallel_reduce("m1_eaudit", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nk*nj*ni),
@@ -13085,6 +13245,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto f3_ = f0x3;
   if (trans) {
     if (cs_geom && thrd) {CubedSeamFaceAverage();}   // STAGE CS1 (C5)
+    if (sp_face_sync) {SphFaceSync();}   // seamsync-1108 (sp, opt-in)
     Kokkos::deep_copy(DevExeSpace(), f0x2n, f0x2);
     if (thrd) {Kokkos::deep_copy(DevExeSpace(), f0x3n, f0x3);}
   }

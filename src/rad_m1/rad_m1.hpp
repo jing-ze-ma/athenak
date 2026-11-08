@@ -2253,6 +2253,8 @@ class RadiationM1 {
   // the boundary energy fluxes of the solve and its hesdirk2 old-vector increment; rank
   // 0 prints line EAUDIT at mark 5 (see EAuditMark)
   bool dbg_eaudit = false;
+  bool dbg_eaudit_map = false;   // tsp-1108: per-cell residual map (EAUDITX)
+  DvceArray5D<Real> eaud_fx, eaud_fxc;   // tsp-1108: shared-face fluxes (EAUDITF)
   bool eaud_init = false;
   DvceArray4D<Real> eaud_u, eaud_e, eaud_c;
   Real eaud_seg[6][3] = {};
@@ -2602,6 +2604,15 @@ class RadiationM1 {
   std::vector<double> vlat_nodes;   // the mu nodes (host)
   int vlat_geo_icut = -1;       // the first shell vlat_geo was built for
   MeshBoundaryValuesCC *pbval_vl = nullptr;   // vlat_i
+  MeshBoundaryValuesCC *pbval_ea = nullptr;   // tsp-1108 EAUDITF diagnostic
+  // seamsync-1108 <rad_m1>/sp_face_sync (SphFaceSync, rad_m1_sph.cpp)
+  bool sp_face_sync = false;
+  MeshBoundaryValuesCC *pbval_fs = nullptr;
+  DvceArray5D<Real> fsync_a, fsync_c;
+  Real fsync_dmax = 0.0;
+  Real fsync_w = 1.0;   // <rad_m1>/sp_face_sync_relax
+  int fsync_n = 0;
+  void SphFaceSync();
   MeshBoundaryValuesCC *pbval_vs = nullptr;   // vlat_cs
   MeshBoundaryValuesCC *pbval_vt = nullptr;   // tau_ten (all slots)
   void VetLatInit();
