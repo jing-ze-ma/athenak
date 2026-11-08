@@ -42,6 +42,7 @@
 
 
 #include <algorithm>
+#include <cstdio>
 #include <iostream>
 
 #include "athena.hpp"
@@ -418,20 +419,23 @@ void RadiationM1::RotAvgEmaChange(const int ilo) {
   const Tab t = vra_tab;
   const int o1 = t.nf + 1, od = (vra_k - 1)*(t.nf + 1);
   const Real eps = vra_ema_eps;
+  const bool usej = vra_ema_chj, step = vra_ema_chstep;
   par_for("m1_ra_ema_chg", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kk = k - ks, jj = j - js, ii = i - is;
     Real ach = -1.0;
     if (eps > 0.0) {
       Real c = 0.0;
-      if (t.jf >= 0 && t.arr[t.jf] != 2) {
+      if (usej && t.jf >= 0 && t.arr[t.jf] != 2) {
         const Real jn = d_(m,od+t.jf,kk,jj,ii), jo = d_(m,o1+t.jf,kk,jj,ii);
         c = (jn > 0.0 && jo > 0.0) ? fabs(log(jn/jo)) : 1.0e30;
       }
       if (t.nf > 0 && t.arr[0] != 2 && t.kind[0] != 2) {
         c = fmax(c, fabs(d_(m,od,kk,jj,ii) - d_(m,o1,kk,jj,ii)));
       }
-      ach = fmin(1.0, c/eps);
+      // linear: a_ch = c/eps (any drift shortens the memory); step: 0 below eps, 1 at
+      // 2 eps (only a change larger than eps per block drops the history)
+      ach = step ? fmin(1.0, fmax(0.0, c/eps - 1.0)) : fmin(1.0, c/eps);
     }
     const Real jr = RaJ(a, t, m, k, j, i);
     for (int f = 0; f < t.nf; ++f) {
@@ -459,6 +463,39 @@ void RadiationM1::RotAvgEmaShift(const int ds) {
                                       : static_cast<Real>(std::max(vgd_rot, 1))*pm->dt;
   auto &size = pmy_pack->pmb->mb_size;
   const int nx1 = indcs.nx1;
+  // raycorr-1108 vet_rotate_avg_ema_diag = M > 0: every M-th boundary, the change
+  // weights of the cells with a history (mean, fraction > 1/N, fraction >= 0.5), printed
+  vra_ema_nsh += 1;
+  if (vra_ema_diag > 0 && vra_ema_nsh % vra_ema_diag == 0) {
+    const int nkji = (ke-ks+1)*(je-js+1)*(ie-is+1);
+    const int nji = (je-js+1)*(ie-is+1), ni = ie-is+1;
+    Real sn = 0.0, sa = 0.0, s1 = 0.0, s2 = 0.0;
+    Kokkos::parallel_reduce("m1_ra_ema_diag",
+    Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &rn, Real &ra, Real &r1, Real &r2) {
+      const int m = idx/nkji;
+      const int kk = (idx - m*nkji)/nji;
+      const int jj = (idx - m*nkji - kk*nji)/ni;
+      const int ii = idx - m*nkji - kk*nji - jj*ni;
+      if (!(d_(m,od+t.nf,kk,jj,ii) > 0.5) || !(d_(m,t.nf,kk,jj,ii) > 0.5)) return;
+      const Real ach = fmax(d_(m,(t.nf+1)+t.nf,kk,jj,ii), 0.0);
+      rn += 1.0;
+      ra += ach;
+      if (ach > a0) r1 += 1.0;
+      if (ach >= 0.5) r2 += 1.0;
+    }, Kokkos::Sum<Real>(sn), Kokkos::Sum<Real>(sa), Kokkos::Sum<Real>(s1),
+       Kokkos::Sum<Real>(s2));
+    Real v[4] = {sn, sa, s1, s2};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, v, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      const Real n = fmax(v[0], 1.0);
+      std::printf("<rad_m1> ema_diag cycle %d: cells %.0f, mean a_ch %.4e, "
+                  "f(a_ch > 1/N) %.4f, f(a_ch >= 0.5) %.4f\n", pm->ncycle, v[0],
+                  v[1]/n, v[2]/n, v[3]/n);
+    }
+  }
   par_for("m1_ra_ema_shift", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kk = k - ks, jj = j - js, ii = i - is;
