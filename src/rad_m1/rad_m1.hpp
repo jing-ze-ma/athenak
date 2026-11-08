@@ -2214,6 +2214,7 @@ class RadiationM1 {
   // 0 prints line EAUDIT at mark 5 (see EAuditMark)
   bool dbg_eaudit = false;
   bool dbg_eaudit_map = false;   // tsp-1108: per-cell residual map (EAUDITX)
+  DvceArray5D<Real> eaud_fx, eaud_fxc;   // tsp-1108: shared-face fluxes (EAUDITF)
   bool eaud_init = false;
   DvceArray4D<Real> eaud_u, eaud_e, eaud_c;
   Real eaud_seg[6][3] = {};
