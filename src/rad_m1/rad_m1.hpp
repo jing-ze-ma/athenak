@@ -615,7 +615,8 @@ class RadiationM1 {
   // (FLR_UN); what the 1e-6 guard itself raised, (c/ch)(1 + SRCB)(EP - S2), joins it
   bool impl_pos_floor_s2 = false;
   // consfix-1109 <rad_m1>/implicit_cons_final (prod-1112-cand: DEFAULT true; name false for
-  // the prod-1111 behaviour, bitwise; not recorded when absent): the write-back takes E^{n+1} = E' + r, r = b - A E' the residual of the
+  // the prod-1111 behaviour, bitwise; not recorded when absent): the write-back takes
+  // E^{n+1} = E' + r, r = b - A E' the residual of the
   // LAST pass's frozen linear system at the accepted iterate, i.e. E^{n+1} = E^n + q(E')
   // - T(E') with the transport T the divergence of the faces rebuilt from E' and q the
   // exchange the gas is charged with: e_gas + (c/chat) E then changes by the face fluxes
@@ -624,7 +625,7 @@ class RadiationM1 {
   // Thomas solve leaves round-off, no-op) and implicit_pos_floor (an E^{n+1} below
   // e_floor is raised with the energy taken from the gas, counted as FLR_DE / FLR_UN).
   bool impl_cons_final = false;
-  bool cf_named = false;        // prod-1112-cand: the key was named (a named true may fatal)
+  bool cf_named = false;        // prod-1112-cand: key named (a named true may fatal)
   // consfix-1109 <rad_m1>/dbg_cons_ledger (DIAGNOSTIC, read only when named): r of every
   // solve; rank 0 prints CONSR cycle t2s dt sum(V (c/chat) r) sum(V (c/chat) |r|)
   // sum(V (c/chat) E^{n+1}) applied, and the run totals in the summary

@@ -2169,8 +2169,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_cons_final && !impl_pos_floor && !cf_named) {
     impl_cons_final = false;
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> implicit_cons_final (default) off: implicit_pos_floor = false"
-                << std::endl;
+      std::cout << "<rad_m1> implicit_cons_final (default) off: implicit_pos_floor = "
+                << "false" << std::endl;
     }
   }
   if (impl_cons_final && !impl_pos_floor) {
@@ -19567,8 +19567,9 @@ void RadiationM1::ImplicitConsResid(bool bicg, bool trans) {
     if (impl_cons_final && !cf_named) {   // prod-1112-cand: the default falls back
       impl_cons_final = false;
       if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> implicit_cons_final (default) off: needs implicit_solver = "
-                  << "bicgstab on a multi-D mesh and no polar_ring_avg" << std::endl;
+        std::cout << "<rad_m1> implicit_cons_final (default) off: needs "
+                  << "implicit_solver = bicgstab on a multi-D mesh and no polar_ring_avg"
+                  << std::endl;
       }
       return;
     }
