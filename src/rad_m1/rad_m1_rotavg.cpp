@@ -132,6 +132,10 @@ void RadiationM1::RotAvgSnap(const int slot, const int ilo) {
 
 void RadiationM1::RotAvgUpdate(const int ilo) {
   if (vra_pend != 1) return;
+  if (vra_ema) {
+    RotAvgEmaInit(ilo);
+    return;
+  }
   vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -207,6 +211,10 @@ void RadiationM1::RotAvgDelta(const int slot, const int ilo) {
 //! other d_j -= Delta (/= R)
 
 void RadiationM1::RotAvgShift(const int ds) {
+  if (vra_ema) {
+    RotAvgEmaShift(ds);
+    return;
+  }
   vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -251,6 +259,10 @@ void RadiationM1::RotAvgShift(const int ds) {
 //! the normalised moments of the union of the K sets; kind 3: (X/J)_avg times the mean J)
 
 void RadiationM1::RotAvgApply(const int ilo) {
+  if (vra_ema) {
+    RotAvgEmaApply(ilo);
+    return;
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -303,6 +315,152 @@ void RadiationM1::RotAvgApply(const int ilo) {
         v = g*sm/nv;
       } else {
         v = g + sm/wsum;
+        if (t.kind[f] == 1 || (t.kind[f] == 3 && t.lo[f] < t.hi[f])) {
+          v = fmin(fmax(v, t.lo[f]), t.hi[f]);
+        }
+        if (t.kind[f] == 3) v *= ju;
+      }
+      a.At(t.arr[f], t.comp[f], m, k, j, i) = v;
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! raycorr-1108 vet_rotate_avg_ema = N: the exponential moving average over the rotated
+//! sets in the offset form of the K-window (one ring slot, vra_k = 2).  With weights
+//! w_j = a (1 - a)^j over the sets b - j (J-weighted as the K-window: the normalised
+//! moments of the weighted union of the sets' intensities), slot 0 holds
+//!   e_f = avg_f - g_f(now)  (additive fields),  r_f = avg_f/g_f(now)  (ratio fields: J)
+//! and the boundary b-1 -> b with the same-state Delta (D_f = g_new - g_old, R_f =
+//! g_new/g_old) updates them as
+//!   r' = (1 - a) r/R + a,   e' = (1 - a) (r_jw/R_jw) (e - D)/r'_jw
+//! (the factor r_jw/R_jw / r'_jw is 1 with equal weights).  In a steady state used = the
+//! EMA of the sets; the current set stays live, only pattern differences are carried
+//! (they decay as (1 - a)^blocks).  Init (the first build of a run): the equal mix of the
+//! current and the one previous set (as K = 2).
+
+namespace {
+// the EMA weight of block boundary for a cell at radius rr: a = max(1/N, 1 - exp(-dtb/tau))
+// with tau = tau0 (physical) and/or lc r/c (local light crossing); 1/N without either
+KOKKOS_INLINE_FUNCTION
+Real RaEmaA(const Real a0, const Real dtb, const Real tau0, const Real lc, const Real rr,
+            const Real cl) {
+  Real a = a0;
+  if (tau0 > 0.0) a = fmax(a, 1.0 - exp(-dtb/tau0));
+  if (lc > 0.0) a = fmax(a, 1.0 - exp(-dtb*cl/(lc*fmax(rr, 1.0e-30))));
+  return fmin(a, 1.0);
+}
+}  // namespace
+
+void RadiationM1::RotAvgEmaInit(const int ilo) {
+  vra_gen += 1;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto d_ = vra_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const Tab t = vra_tab;
+  par_for("m1_ra_ema_init", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool v = RaValid(a, t, ilo, m, k, j, i) && (d_(m,t.nf,kk,jj,ii) > 0.5);
+    const Real jr = RaJ(a, t, m, k, j, i);
+    // the previous set's weight relative to the current one (its J ratio, or 1)
+    Real ws = 1.0;
+    if (v && t.jw >= 0) {
+      Real g;
+      if (RaGet(a, t, t.jw, ie, m, k, j, i, jr, g)) {
+        const Real sv = d_(m,t.jw,kk,jj,ii);
+        ws = (g > 0.0 && sv > 0.0) ? sv/g : 1.0;
+      }
+    }
+    for (int f = 0; f < t.nf; ++f) {
+      Real g;
+      if (!RaGet(a, t, f, ie, m, k, j, i, jr, g)) continue;
+      const Real sv = d_(m,f,kk,jj,ii);
+      if (t.kind[f] == 2) {
+        d_(m,f,kk,jj,ii) = (v && g > 0.0 && sv > 0.0) ? 0.5*(1.0 + sv/g) : 1.0;
+      } else {
+        d_(m,f,kk,jj,ii) = v ? ws*(sv - g)/(1.0 + ws) : 0.0;
+      }
+    }
+    d_(m,t.nf,kk,jj,ii) = v ? 1.0 : 0.0;
+  });
+  vra_pend = 0;
+}
+
+void RadiationM1::RotAvgEmaShift(const int ds) {
+  vra_gen += 1;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto d_ = vra_d;
+  const Tab t = vra_tab;
+  const int od = ds*(t.nf + 1);
+  const Real a0 = 1.0/vra_ema_n;
+  const Real tau0 = vra_ema_tau, lc = vra_ema_lc, cl = c_light;
+  // the block length: the physical rotation clock, else the cycles of a block x dt
+  Mesh *pm = pmy_pack->pmesh;
+  const Real dtb = (vgd_rot_dt > 0.0) ? vgd_rot_dt
+                                      : static_cast<Real>(std::max(vgd_rot, 1))*pm->dt;
+  auto &size = pmy_pack->pmb->mb_size;
+  const int nx1 = indcs.nx1;
+  par_for("m1_ra_ema_shift", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool vd = d_(m,od+t.nf,kk,jj,ii) > 0.5;
+    const bool vh = d_(m,t.nf,kk,jj,ii) > 0.5;
+    if (!vd || !vh) {   // no Delta or no history: restart from the current set alone
+      for (int f = 0; f < t.nf; ++f) {d_(m,f,kk,jj,ii) = (t.kind[f] == 2) ? 1.0 : 0.0;}
+      d_(m,t.nf,kk,jj,ii) = vd ? 1.0 : 0.0;
+      return;
+    }
+    Real rr = 1.0;
+    if (lc > 0.0) {   // the cell radius (x1 = r on the sp wedge and the cubed sphere)
+      const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
+      rr = x1min + (static_cast<Real>(ii) + 0.5)*(x1max - x1min)/nx1;
+    }
+    const Real aw = RaEmaA(a0, dtb, tau0, lc, rr, cl);
+    Real fac = 1.0 - aw;
+    if (t.jw >= 0) {
+      const Real r0 = d_(m,t.jw,kk,jj,ii), R = d_(m,od+t.jw,kk,jj,ii);
+      const Real r1 = (1.0 - aw)*r0/R + aw;
+      fac = (1.0 - aw)*(r0/R)/r1;
+    }
+    for (int f = 0; f < t.nf; ++f) {
+      const Real x = d_(m,od+f,kk,jj,ii);
+      const Real y = d_(m,f,kk,jj,ii);
+      d_(m,f,kk,jj,ii) = (t.kind[f] == 2) ? ((1.0 - aw)*y/x + aw) : fac*(y - x);
+    }
+    d_(m,t.nf,kk,jj,ii) = 1.0;
+  });
+}
+
+void RadiationM1::RotAvgEmaApply(const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto d_ = vra_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const Tab t = vra_tab;
+  par_for("m1_ra_ema_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (!RaValid(a, t, ilo, m, k, j, i)) return;
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    if (!(d_(m,t.nf,kk,jj,ii) > 0.5)) return;
+    const Real jr = RaJ(a, t, m, k, j, i);
+    const Real ju = (t.jf >= 0) ? jr*d_(m,t.jf,kk,jj,ii) : jr;
+    for (int f = 0; f < t.nf; ++f) {
+      Real g;
+      if (!RaGet(a, t, f, ie, m, k, j, i, jr, g)) continue;
+      Real v;
+      if (t.kind[f] == 2) {
+        v = g*d_(m,f,kk,jj,ii);
+      } else {
+        v = g + d_(m,f,kk,jj,ii);
         if (t.kind[f] == 1 || (t.kind[f] == 3 && t.lo[f] < t.hi[f])) {
           v = fmin(fmax(v, t.lo[f]), t.hi[f]);
         }
@@ -384,7 +542,7 @@ void RadiationM1::RotAvgRstHdr(int64_t *h) const {
   h[0] = 1;
   h[2] = vra_k;
   h[3] = RotAvgNf();
-  h[4] = vgd_on ? 1 : 2;
+  h[4] = (vgd_on ? 1 : 2) + (vra_ema ? 16 : 0);   // raycorr-1108: EMA history
   h[5] = vra_head;
   h[6] = vra_pend;
   h[7] = (vra_pend == 3) ? vra_k : vra_k - 1;
@@ -501,7 +659,7 @@ bool RadiationM1::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
                                 const int nmb) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int64_t ncint = static_cast<int64_t>(indcs.nx1)*indcs.nx2*indcs.nx3;
-  const int64_t close = vgd_on ? 1 : 2;
+  const int64_t close = (vgd_on ? 1 : 2) + (vra_ema ? 16 : 0);
   const bool ok = vra_on && h[0] == 1 && h[2] == vra_k && h[4] == close && h[3] > 0 &&
                   h[3] < M1_RA_NF && h[9] == ncint && h[5] >= 0 && h[5] < vra_k - 1 &&
                   (h[6] == 0 || h[6] == 3) && h[7] == ((h[6] == 3) ? vra_k : vra_k - 1) &&
