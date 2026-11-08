@@ -36,6 +36,14 @@
 
 namespace repro {
 
+//! prod-1108 <mesh>/layout_invariant_mode: true = "block" (DEFAULT): every sum is taken
+//! per MeshBlock in a FIXED order set by the code (independent of how many MeshBlocks a
+//! rank holds and of the launch configuration), and only the per-MeshBlock partials go
+//! into the exact accumulator below (a restart changes the rank assignment of the
+//! MeshBlocks, never the MeshBlocks themselves).  false = "exact": every cell term
+//! deposited exactly (layinv-1105).  Set once by the Mesh constructor.
+inline bool block_mode = true;
+
 constexpr int RS_K = 3;      // folds
 constexpr int RS_W = 32;     // bits per fold
 // the lowest top grid exponent: every fold scale 2^(g - f RS_W) and every remainder
@@ -184,11 +192,41 @@ struct ReproVec {
 //! (0 elsewhere).  One device thread per (q, i), serial over (m, k, j) (any order would
 //! do: the accumulator is exact), then the exact rank merge on the host.
 //! f is a device functor Real f(int q, int m, int k, int j, int i).
+//! block_mode (prod-1108): one thread per (q, m, i) sums its MeshBlock's (k, j) cells in
+//! increasing (k, j) order (a plain double sum: a function of the MeshBlock alone); one
+//! thread per (q, i) then deposits the nmb per-MeshBlock partials exactly, and the exact
+//! rank merge follows.  The result depends only on the set of MeshBlock partials.
 template <class F>
 void ShellSums(const char *name, const int nq, const int c1, const int nmb,
                const int ks, const int ke, const int js, const int je, const int ilo,
                const int ihi, const F &f, std::vector<Real> &out) {
   Kokkos::View<ReproSum**, DevMemSpace> rs(std::string(name), nq, c1);
+  if (block_mode) {
+    Kokkos::View<Real***, DevMemSpace> bp(std::string(name) + "_blk", nq, nmb, c1);
+    const int nqm = nq*nmb;
+    Kokkos::parallel_for(std::string(name) + "_blk",
+                         Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nqm*c1),
+    KOKKOS_LAMBDA(const int idx) {
+      const int i = idx % c1, qm = idx/c1;
+      const int q = qm/nmb, m = qm - q*nmb;
+      Real a = 0.0;
+      if (i >= ilo && i <= ihi) {
+        for (int k = ks; k <= ke; ++k) {
+          for (int j = js; j <= je; ++j) {a += f(q, m, k, j, i);}
+        }
+      }
+      bp(q, m, i) = a;
+    });
+    Kokkos::parallel_for(std::string(name) + "_dep",
+                         Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nq*c1),
+    KOKKOS_LAMBDA(const int idx) {
+      const int q = idx/c1, i = idx % c1;
+      ReproSum acc;
+      acc.Init();
+      for (int m = 0; m < nmb; ++m) {acc.Add(bp(q, m, i));}
+      rs(q, i) = acc;
+    });
+  } else {
   // one team per (q, i), its threads over the (m, k, j) cells: the exact accumulator makes
   // the team's combination order irrelevant (a serial loop per shell was latency-bound on
   // the GPU: +7 % per cycle on the BSG deck with the vet_gd twin / half-range means)
@@ -211,6 +249,7 @@ void ShellSums(const char *name, const int nq, const int c1, const int nmb,
     }
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {rs(q, i) = acc.s[0];});
   });
+  }
   auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), rs);
   std::vector<ReproSum> v(static_cast<std::size_t>(nq)*c1);
   for (int q = 0; q < nq; ++q) {

@@ -2049,9 +2049,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // implicit_gas_newton on; hydro or MHD (FluidRef), Cartesian or sp rows.  False on a
   // restart whose file lacks the key (the implicit_gas_newton convention).  Named true
   // without its two prerequisites it is fatal (below).
+  // prod-1108 (USER 11-08 "make some defaults", r8 key set): DEFAULT false (fresh and
+  // restart); recipe none keeps the old rule above
+  const bool rcp_none = recipe::GetMode(pin) == recipe::Mode::none;
   impl_opac_newton = pin->GetOrAddBoolean("rad_m1","implicit_opac_newton",
-                                          impl_opac_update && impl_gas_newton &&
-                                          !global_variable::restart_run);
+                                          !rcp_none ? false :
+                                          (impl_opac_update && impl_gas_newton &&
+                                           !global_variable::restart_run));
   // implicit_opac_newton_guard (m1-opn-guard, 09-29): the Newton term above has the sign
   // of the face flux times d kappa/dT and no bound; in fast optically thin cells (He
   // presn wedge, across the Fe bump) it took a row diagonal of +802 to -9200, the row
@@ -2081,7 +2085,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   } else {
     ImplFatal("<rad_m1>/implicit_opac_lag = '" + ol + "' is not a choice (none | pred)");
   }
-  impl_opac_lagn = pin->GetOrAddInteger("rad_m1","implicit_opac_lag_passes",1);
+  // prod-1108 (r8 key set): DEFAULT 3 (was 1; recipe none keeps 1)
+  impl_opac_lagn = pin->GetOrAddInteger("rad_m1","implicit_opac_lag_passes",
+                     (recipe::GetMode(pin) == recipe::Mode::none) ? 1 : 3);
   if (impl_opac_lagn < 1) {ImplFatal("<rad_m1>/implicit_opac_lag_passes must be >= 1");}
   }
   // m1-positivity set: DEFAULT ON since defaults-1002 (implicit_g0_exchange = true,
@@ -3034,14 +3040,20 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_predictor_ecap")) {   // rsgdiag-1107
     impl_pred_ecap = pin->GetReal("rad_m1","implicit_predictor_ecap");
   }
+  // prod-1108 (USER 11-08 "make some defaults", r8 key set): implicit_predictor_tcap
+  // DEFAULT 1.1 (was 2) and cs_cross_mono DEFAULT true (was false; cubed sphere only, see
+  // xmono); read only when named as before; recipe none keeps the old values
+  const bool rcp_none8 = recipe::GetMode(pin) == recipe::Mode::none;
+  impl_pred_tcap = rcp_none8 ? 2.0 : 1.1;
+  cs_cross_mono = !rcp_none8;
   if (pin->DoesParameterExist("rad_m1","implicit_predictor_tcap")) {   // seamE-1106
     impl_pred_tcap = pin->GetReal("rad_m1","implicit_predictor_tcap");
   }
   if (pin->DoesParameterExist("rad_m1","cs_cross_mono")) {   // seamE-1106
     cs_cross_mono = pin->GetBoolean("rad_m1","cs_cross_mono");
-    if (pin->DoesParameterExist("rad_m1","cs_cross_mono_k")) {
-      cs_cross_mono_k = pin->GetReal("rad_m1","cs_cross_mono_k");
-    }
+  }
+  if (cs_cross_mono && pin->DoesParameterExist("rad_m1","cs_cross_mono_k")) {
+    cs_cross_mono_k = pin->GetReal("rad_m1","cs_cross_mono_k");
   }
   if (pin->DoesParameterExist("rad_m1","cs_vertex_mono_n")) {
     cs_vtx_n = pin->GetInteger("rad_m1","cs_vertex_mono_n");
@@ -8473,8 +8485,74 @@ void M1DetReduce(const char *name, const int n, const F &fn,
 //! deposited exactly.  The result depends only on the multiset of cell terms: the same
 //! for every MeshBlock layout, rank count, thread schedule and backend.
 
+//!
+//! prod-1108 block mode (<mesh>/layout_invariant_mode = block, the default;
+//! repro::block_mode): idx = m*nkji + q (M1BcgIdx).  One team per MeshBlock m; slot t
+//! of the team accumulates fn(m*nkji + q) for q = t, t + M1_DR_NT, ... in increasing q
+//! on a running M1BcgVal (as M1DetReduce), and the M1_DR_NT slots are combined by the
+//! same fixed pairwise tree in team scratch: the MeshBlock's partial is a function of
+//! the MeshBlock alone (any team size, any number of MeshBlocks on the rank).  The nmb
+//! partials are copied to the host and deposited exactly (repro::ReproSum), then merged
+//! over ranks: the result depends only on the set of MeshBlock partials.
+//! bpart: >= 4 nmb Reals.
+
 template <class F>
-void M1LayReduce(const char *name, const int n, const F &fn, M1BcgVal &out) {
+void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real> &bpart,
+                 const F &fn, M1BcgVal &out) {
+  if (repro::block_mode) {
+    const int nmb = n/nkji;
+    if (bpart.extent_int(0) < 4*nmb) {Kokkos::realloc(bpart, 4*nmb);}
+    auto part = bpart;
+    using TP = Kokkos::TeamPolicy<DevExeSpace>;
+    using Mem = Kokkos::View<Real*, ScratchMemSpace,
+                             Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+    const size_t sb = Mem::shmem_size(4*M1_DR_NT);
+    Kokkos::parallel_for(name, TP(DevExeSpace(), nmb, Kokkos::AUTO)
+                         .set_scratch_size(0, Kokkos::PerTeam(sb)),
+    KOKKOS_LAMBDA(const TP::member_type &tm) {
+      Mem sh(tm.team_scratch(0), 4*M1_DR_NT);
+      const int m = tm.league_rank();
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, M1_DR_NT), [&](const int t) {
+        M1BcgVal v;
+        v.s0 = v.s1 = v.s2 = v.mx = 0.0;
+        for (int q = t; q < nkji; q += M1_DR_NT) {fn(m*nkji + q, v);}
+        sh(4*t) = v.s0;
+        sh(4*t + 1) = v.s1;
+        sh(4*t + 2) = v.s2;
+        sh(4*t + 3) = v.mx;
+      });
+      tm.team_barrier();
+      for (int w = M1_DR_NT/2; w > 0; w /= 2) {
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, w), [&](const int t) {
+          sh(4*t) += sh(4*(t + w));
+          sh(4*t + 1) += sh(4*(t + w) + 1);
+          sh(4*t + 2) += sh(4*(t + w) + 2);
+          sh(4*t + 3) = (sh(4*(t + w) + 3) > sh(4*t + 3)) ? sh(4*(t + w) + 3)
+                                                          : sh(4*t + 3);
+        });
+        tm.team_barrier();
+      }
+      Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+        for (int c = 0; c < 4; ++c) {part(4*m + c) = sh(c);}
+      });
+    });
+    auto hp = Kokkos::create_mirror_view_and_copy(
+        Kokkos::HostSpace(), Kokkos::subview(part, Kokkos::make_pair(0, 4*nmb)));
+    repro::ReproSum rs[3];
+    for (int c = 0; c < 3; ++c) {rs[c].Init();}
+    Real mx = 0.0;
+    for (int m = 0; m < nmb; ++m) {
+      for (int c = 0; c < 3; ++c) {rs[c].Add(hp(4*m + c));}
+      mx = (hp(4*m + 3) > mx) ? hp(4*m + 3) : mx;
+    }
+    repro::AllMerge(rs, 3);
+    M1GlobalMax(mx);
+    out.s0 = rs[0].Value();
+    out.s1 = rs[1].Value();
+    out.s2 = rs[2].Value();
+    out.mx = mx;
+    return;
+  }
   repro::ReproVal<3> rv;
   Kokkos::parallel_reduce(name, Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, n),
   KOKKOS_LAMBDA(const int idx, repro::ReproVal<3> &a) {
@@ -9059,7 +9137,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   M1BcgVal red;
   auto lred = [&](const char *nm, const auto &fn) {   // this rank's part
     if (lay) {
-      M1LayReduce(nm, ntot, fn, red);   // layinv-1105: already over all ranks
+      M1LayReduce(nm, ntot, nkji, lay_part, fn, red);   // layinv-1105: over all ranks
     } else if (det) {
       M1DetReduce(nm, ntot, fn, dpart, red);
     } else {
@@ -9181,7 +9259,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
         if (!rvdone) {
         if (lay) {
           M1BcgVal rr;
-          M1LayReduce("m1_impl_bcgf_rv", ntot,
+          M1LayReduce("m1_impl_bcgf_rv", ntot, nkji, lay_part,
                       KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {rvf(idx, v.s0);}, rr);
           rv = rr.s0;
         } else if (det) {

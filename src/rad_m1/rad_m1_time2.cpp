@@ -45,6 +45,7 @@
 #include "rad_m1/m1_fluid.hpp"
 #include "utils/deep_copy_across.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "utils/recipe.hpp"
 #include "rad_m1/rad_m1_parfor.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
@@ -458,6 +459,19 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_fct_rounds")) {
     t2_k1fct_r = pin->GetInteger("rad_m1", "time2_k1_fct_rounds");
+  }
+  // prod-1108 (USER 11-08 "make some defaults", r8 key set): DEFAULT 0.1 where it is
+  // legal (one radial MeshBlock; column-local), else 0 = the old default, logged; recipe
+  // none keeps 0.  Read only when named as before.
+  {
+    const bool onecol = pmy_pack->pmesh->mesh_indcs.nx1 == pmy_pack->pmesh->mb_indcs.nx1;
+    const bool rnone = recipe::GetMode(pin) == recipe::Mode::none;
+    t2_k1rd = (onecol && !rnone) ? 0.1 : 0.0;
+    if (!pin->DoesParameterExist("rad_m1", "time2_k1_redist")) {
+      recipe::Log(std::string("<rad_m1>/time2_k1_redist = ") + (t2_k1rd > 0.0 ? "0.1" :
+                  "0") + " (default, prod-1108" + (onecol ? (rnone ? "; recipe none)" :
+                  ")") : "; 0: more than one radial MeshBlock)"));
+    }
   }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist")) {   // seamE-1106
     t2_k1rd = pin->GetReal("rad_m1", "time2_k1_redist");

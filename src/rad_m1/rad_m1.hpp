@@ -1433,6 +1433,8 @@ class RadiationM1 {
   Real bcg_r0rel;               // max|b - A x0|/max|b| of the last BiCGStab call
   bool impl_det;                // <rad_m1>/implicit_det_reduce: fixed-order Krylov sums
   DvceArray1D<Real> det_part;   // its level-1 partials and result (4*1024 + 4)
+  DvceArray1D<Real> lay_part;   // prod-1108 layout_invariant_mode = block: per-MeshBlock
+                                // partials of M1LayReduce (4 nmb; sized on first use)
   bool impl_lres_test;          // <rad_m1>/implicit_lres_test (default false*): require
                                 // the pass-to-pass transverse change lresid < lin_tol
   bool impl_src_stable = false;  // <rad_m1>/implicit_src_stable (stall_1002)

@@ -98,6 +98,7 @@
 #include "driver/dt_retry.hpp"
 #include "utils/eint_from_cons.hpp"
 #include "utils/repro_sum.hpp"
+#include "utils/recipe.hpp"
 
 // defaults-1002: <hydro>/fofc defaults to TRUE for this problem generator (every
 // stellar/box input ran it explicitly); see hydro::fofc_pgen_default (hydro.hpp).
@@ -2642,6 +2643,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // top sponge (default off) and hooks
   hs_zflux_ = pin->GetOrAddBoolean("problem","he_wall_zero_flux",true);
+  // prod-1108 (USER 11-08 "make some defaults"): DEFAULT true (was false); window keys
+  // absent it is bitwise the plain branch; recipe none keeps false
+  hs_wbwin_ = recipe::GetMode(pin) != recipe::Mode::none;
   if (pin->DoesParameterExist("problem","he_wb_grav_window")) {
     hs_wbwin_ = pin->GetBoolean("problem","he_wb_grav_window");
   }

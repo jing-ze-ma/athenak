@@ -43,6 +43,7 @@
 #include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "utils/recipe.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_parfor.hpp"
 #include "rad_m1/m1_fluid.hpp"
@@ -60,6 +61,12 @@ void RadiationM1::ImplicitFbKeys(ParameterInput *pin) {
   }
   if (pin->DoesParameterExist("rad_m1", "implicit_seam_dump_stage")) {   // seamE-1106
     sdm_stage = pin->GetBoolean("rad_m1", "implicit_seam_dump_stage");
+  }
+  // prod-1108 (USER 11-08 "make some defaults", r8 key set): implicit_fb_local DEFAULT
+  // true with implicit_fb_local_rounds DEFAULT 4 (were false / 2; recipe none keeps them)
+  if (recipe::GetMode(pin) != recipe::Mode::none) {
+    fbl_on = true;
+    fbl_rounds = 4;
   }
   if (pin->DoesParameterExist("rad_m1", "implicit_fb_local")) {
     fbl_on = pin->GetBoolean("rad_m1", "implicit_fb_local");

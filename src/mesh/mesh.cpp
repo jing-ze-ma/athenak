@@ -19,6 +19,7 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh.hpp"
+#include "utils/repro_sum.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "refinement_criteria.hpp"
 #include "hydro/hydro.hpp"
@@ -184,18 +185,40 @@ Mesh::Mesh(ParameterInput *pin) :
   // from the GLOBAL cell index (<mesh>/sp_theta_global, sp_phi_global follow it unless
   // named).  Fresh-start default true (recipe::NewDefaults), recorded for restarts; a
   // restart whose input lacks the key keeps false = the old block-ordered paths, bitwise.
+  // prod-1108 (USER 11-08 "make some defaults"): default true on a fresh start AND on a
+  // restart whose input lacks the key (recorded); recipe none keeps false (not added).
+  // <mesh>/layout_invariant_mode = block (DEFAULT, prod-1108) | exact (layinv-1105):
+  // block = every sum per MeshBlock in a fixed order, only the per-MeshBlock partials
+  // summed exactly (repro::block_mode; +~0 % cost); exact = every cell term deposited
+  // exactly (+8 % per cycle on HG).  Both are layout / rank-count invariant; they differ
+  // from each other at round-off.  Recorded for restarts.
+  // A RESTART of an SMR/AMR mesh keeps false (the sp vet_gd global geometry is
+  // single-level only and would be fatal; fresh starts as before).
   if (!pin->DoesParameterExist("mesh", "layout_invariant")) {
-    if (recipe::NewDefaults(pin)) {
+    const bool rml = global_variable::restart_run &&
+        pin->DoesParameterExist("mesh_refinement", "refinement") &&
+        pin->GetString("mesh_refinement", "refinement") != "none";
+    if (recipe::GetMode(pin) != recipe::Mode::none && !rml) {
       pin->GetOrAddBoolean("mesh", "layout_invariant", true);
-      recipe::Log("<mesh>/layout_invariant = true (default on a fresh start)");
+      recipe::Log("<mesh>/layout_invariant = true (default, prod-1108; fresh, restart)");
     } else {
-      recipe::Log("<mesh>/layout_invariant = false (" + std::string(
-          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
-          "restart input has no key") + ": the old block-ordered sums, key not added)");
+      recipe::Log(std::string("<mesh>/layout_invariant = false (") +
+                  (rml ? "restart of an SMR/AMR mesh" : "recipe none") +
+                  ": the old block-ordered sums, key not added)");
     }
   }
   layout_invariant = pin->DoesParameterExist("mesh", "layout_invariant") &&
                      pin->GetBoolean("mesh", "layout_invariant");
+  if (layout_invariant) {
+    const std::string lim = pin->GetOrAddString("mesh", "layout_invariant_mode", "block");
+    if (lim != "block" && lim != "exact") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mesh>/layout_invariant_mode = '" << lim
+                << "' is not a choice (block | exact)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    repro::block_mode = (lim == "block");
+  }
   // USER 11-07 make some defaults: <mesh>/cs_seam_pos_global default true (false = old)
   cs_seam_pos_global = pin->GetOrAddBoolean("mesh", "cs_seam_pos_global", true);
   cs_seam_fc_nolimit = use_cubed_sphere &&
@@ -352,21 +375,9 @@ Mesh::Mesh(ParameterInput *pin) :
   // when the key is not named (recipe::NewDefaults); recorded for restarts.  Other flux
   // modes, restarts whose input lacks the key and recipe none keep 4 (bitwise); an
   // explicit key wins.
-  if (use_cubed_sphere && !pin->DoesParameterExist("mesh", "cs_seam_rho_guard")) {
-    const std::string sf0 = pin->DoesParameterExist("mesh", "cs_seam_flux") ?
-                            pin->GetString("mesh", "cs_seam_flux") : "shared";
-    if (sf0 == "shared" || sf0 == "positive") {
-      if (recipe::NewDefaults(pin)) {
-        pin->GetOrAddReal("mesh", "cs_seam_rho_guard", 0.0);
-        recipe::Log("<mesh>/cs_seam_rho_guard = 0 (default on a fresh cs start with "
-                    "cs_seam_flux = shared)");
-      } else {
-        recipe::Log("<mesh>/cs_seam_rho_guard = 4 (" + std::string(
-            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
-            "restart input has no key") + ": the old default)");
-      }
-    }
-  }
+  // prod-1108 (USER 11-08 "make some defaults", r8 key set): 4 everywhere when the key
+  // is not named (fresh starts too; the fresh-start 0 above is retired).  Name
+  // cs_seam_rho_guard = 0 for the old fresh-start default.
   cs_seam_rho_guard = use_cubed_sphere ?
       pin->GetOrAddReal("mesh", "cs_seam_rho_guard", 4.0) : 0.0;
   // `<mesh>/cs_seam_resample = linear (DEFAULT since 09-26) | quadratic (the old halo)`,
