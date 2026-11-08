@@ -3388,6 +3388,10 @@ class RadiationM1 {
   // build n-1 (one cycle lag).  The pending build's source (vlat_cs) and cycle travel
   // in the restart file (kM1VgdRstMagic).  vgd_cur: the instance the sweep/halo use.
   bool vgd_async = false;
+  // speedup-1109 vet_gd_body_global (read only when named, default false; bitwise): the
+  // shell body closure in device memory, called through a pointer (VgdClosureToDevice)
+  bool vgd_bglob = false;
+  DvceArray1D<char> vgd_bbuf0, vgd_bbuf1;
   bool vgd_ainl = false;       // the sweep inline at launch (host backends, or env
                                // VGD_ASYNC_INLINE=1): same numbers, no overlap
   bool vgd_apend = false;      // a swept build whose moments are not yet taken
