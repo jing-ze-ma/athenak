@@ -1,0 +1,2 @@
+start 2026-11-07T04:02:29-08:00 arm T5 bin /resnick/groups/carnegie_poc/jingze/builds_rstfixx/bin/athena_gpu_he_star_m1_dc2dc20c_srclin_fmadoff wall 17149 rst /resnick/groups/carnegie_poc/jingze/r136open_1106/states/r136.00005.rst tlim 433080 keys rad_m1/time2_adm_poslim=true problem/he_sponge_rate=0 output2/dt=540 output3/dt=540 output6/dt=1080 output5/dt=1e9 problem/he_wb_src_linear_rmin=1.9161806480e+12
+end 2026-11-07T04:14:27-08:00 rc=0

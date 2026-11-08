@@ -1,0 +1,2 @@
+start 2026-11-07T03:02:40-08:00 arm T2 wall 20739 rst /resnick/groups/carnegie_poc/jingze/r136open_1106/states/r136.00005.rst tlim 433080 keys rad_m1/time2_adm_poslim=true problem/he_sponge_rate=0 output2/dt=540 output3/dt=540 output6/dt=1080 hydro/wb_option=isothermal
+end 2026-11-07T03:03:14-08:00 rc=134

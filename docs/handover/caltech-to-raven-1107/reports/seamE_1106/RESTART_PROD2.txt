@@ -1,0 +1,3 @@
+predictor none 4 vs 2+2: pn_a vs pn_b2 hegiant.00002.rst hegiant.00003.rst DIFF (/resnick/groups/carnegie_poc/jingze/seamE_1106/rsp2/pn_a/rst/hegiant.00002.rst /) 6010175942
+opac lag none: ln_a vs ln_b2 hegiant.00002.rst hegiant.00003.rst DIFF (/resnick/groups/carnegie_poc/jingze/seamE_1106/rsp2/ln_a/rst/hegiant.00002.rst /) 6669964774
+both: bn_a vs bn_b2 hegiant.00002.rst hegiant.00003.rst DIFF (/resnick/groups/carnegie_poc/jingze/seamE_1106/rsp2/bn_a/rst/hegiant.00002.rst /) 6010175942

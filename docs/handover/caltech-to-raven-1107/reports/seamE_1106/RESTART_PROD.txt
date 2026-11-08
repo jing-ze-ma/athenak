@@ -1,0 +1,4 @@
+hesdirk2 4 vs 2+2: h2_a vs h2_b2 hegiant.00002.rst hegiant.00003.rst DIFF (/resnick/groups/carnegie_poc/jingze/seamE_1106/rsp/h2_a/rst/hegiant.00002.rst /r) 6669964774
+be 4 vs 2+2: be_a vs be_b2 hegiant.00002.rst hegiant.00003.rst IDENTICAL 4030809526
+outputs-only (rst at cycle 2 vs none): h2_a vs out_a hegiant.00002.rst hegiant.00004.rst IDENTICAL 6669964774
+date 2026-11-07T04:09:37-08:00 cH=4

@@ -1,0 +1,2 @@
+start 2026-11-07T00:39:03-08:00 arm M wall 29355 rst /resnick/groups/carnegie_poc/jingze/r136open_1106/states/r136.00005.rst tlim 444960 keys rad_m1/time2_adm_poslim=true problem/he_sponge_mode=all output2/dt=2160 output3/dt=2160 output6/dt=4320
+end 2026-11-07T02:38:54-08:00 rc=0

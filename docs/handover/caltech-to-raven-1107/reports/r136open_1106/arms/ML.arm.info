@@ -1,0 +1,2 @@
+start 2026-11-07T06:17:39-08:00 arm ML hpc-sm-01-05 gpu 0 bin /resnick/groups/carnegie_poc/jingze/builds_rstfixx/bin/athena_gpu_he_star_m1_dc2dc20c_srclin_fmadoff wall 12058 rst /resnick/groups/carnegie_poc/jingze/r136open_1106/states/r136.00005.rst tlim 449280 keys rad_m1/time2_adm_poslim=true problem/he_sponge_mode=all problem/he_wb_src_linear_rmin=1.9161806480e+12 output2/dt=4320 output3/dt=4320 output6/dt=8640 output5/dt=1e9
+end 2026-11-07T08:57:05-08:00 rc=0

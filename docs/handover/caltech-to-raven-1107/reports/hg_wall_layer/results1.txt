@@ -1,0 +1,22 @@
+stale reds dropped 16 of 1720 range t 0.0 573.0
+M_tot steps [(np.float64(315.0), '-6.068e+29'), (np.float64(315.034), '-3.408e+23'), (np.float64(315.038), '-3.293e+23')]
+Etot across step 3.6638e+46 -> 3.6260e+46
+red rho at r: t before/after strip 315.00
+dumps 314.6666666666667 315.33449074074076
+ r   60 Rsun rho 2.609e-08 -> 2.627e-08  mass removed above r 6.488e+29
+ r   80 Rsun rho 9.358e-09 -> 9.371e-09  mass removed above r 6.844e+29
+ r   90 Rsun rho 6.090e-09 -> 6.054e-09  mass removed above r 6.857e+29
+ r  100 Rsun rho 3.382e-09 -> 2.872e-09  mass removed above r 5.962e+29
+ r  110 Rsun rho 1.103e-09 -> 9.121e-10  mass removed above r 4.721e+29
+ r  120 Rsun rho 4.887e-10 -> 3.813e-10  mass removed above r 3.895e+29
+ r  130 Rsun rho 8.810e-11 -> 6.083e-11  mass removed above r 3.390e+29
+ r  140 Rsun rho 8.025e-12 -> 1.042e-14  mass removed above r 3.178e+29
+ r  150 Rsun rho 1.353e-12 -> 9.078e-15  mass removed above r 3.151e+29
+ r  170 Rsun rho 1.121e-12 -> 7.050e-15  mass removed above r 3.124e+29
+ r  200 Rsun rho 8.893e-13 -> 5.080e-15  mass removed above r 3.082e+29
+ r  300 Rsun rho 7.785e-13 -> 2.306e-15  mass removed above r 2.899e+29
+Rph before/after 100.31024173408237 99.58680599061636
+spike 526.8 full-res: t,L_top,L_mid [(np.float64(526.7994), np.float64(2.995), np.float64(1.439)), (np.float64(526.7988), np.float64(2.998), np.float64(1.448)), (np.float64(526.7991), np.float64(3.005), np.float64(1.444))] n rows above 1.42e38 49 span d 0.015658210102856174
+period Rph [(np.float64(53.51), '5.501e+11'), (np.float64(79.67), '1.418e+11'), (np.float64(35.25), '8.682e+10'), (np.float64(27.17), '8.190e+10'), (np.float64(20.37), '4.479e+10')]
+period L_top [(np.float64(52.17), '5.148e+36'), (np.float64(30.96), '2.813e+36'), (np.float64(21.16), '2.284e+36'), (np.float64(20.18), '2.265e+36'), (np.float64(13.63), '1.447e+36')]
+period Pm@60Rs [(np.float64(52.97), '1.370e+24'), (np.float64(26.89), '5.847e+23'), (np.float64(80.9), '3.397e+23'), (np.float64(19.5), '3.278e+23'), (np.float64(37.13), '3.157e+23')]

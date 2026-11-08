@@ -1,0 +1,318 @@
+R136a1 run B production: E_tot-drop timeline around 6.641 d (t=573754-574000 s, cycle 131896) and 6.997 d (cycles 137505-137913).
+Extracted 2026-11-07 on Caltech login node with grep/sed/awk only (no analysis). Source dir: /resnick/groups/carnegie_poc/jingze/r136a1_1104/runB/prod
+run.log = current log since the 11-06 18:30 restart (rad_m1/time2_adm_poslim=true named) up to the 11-07 08:18 end of that allocation;
+the end-of-run counters_rollback line is from that 08:18 stop. Earlier logs run.1106_*.log are older segments (3 earlier dt COLLAPSEs in run.1106_163037.log).
+Output lines cut to 260 chars (cut -c1-260). Each block below is preceded by the exact command that produced it (cwd = source dir).
+
+################################################################
+$ grep -n 'dt COLLAPSE' run.log run.1106_163037.log | cut -c1-260
+################################################################
+run.log:429:### dt COLLAPSE cycle=111543 time=4.726049e+05 dtold=4.878049e+00 dt=1.016660e+00 | hydro=1.016660e+00 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+run.log:1050:### dt COLLAPSE cycle=128260 time=5.560427e+05 dtold=5.333333e+00 dt=1.285790e+00 | hydro=1.285790e+00 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+run.log:1204:### dt COLLAPSE cycle=131896 time=573884 dtold=4.81928 dt=0.13374 | hydro=0.13374 mhd=-1 cond=-1 visc=-1 srcterms=-1  (rank 1)
+run.log:1413:### dt COLLAPSE cycle=137263 time=6.019856e+05 dtold=4.807159e+00 dt=4.521495e-01 | hydro=4.521495e-01 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+run.log:1426:### dt COLLAPSE cycle=137505 time=6.032540e+05 dtold=5.323505e+00 dt=8.597949e-01 | hydro=8.597949e-01 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+run.log:1570:### dt COLLAPSE cycle=139117 time=6.109281e+05 dtold=5.548089e+00 dt=8.516733e-01 | hydro=8.516733e-01 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+run.log:1653:### dt COLLAPSE cycle=141209 time=6.205266e+05 dtold=5.063291e+00 dt=1.084509e+00 | hydro=1.084509e+00 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+run.1106_163037.log:9111:### dt COLLAPSE cycle=44990 time=2.023876e+05 dtold=3.100775e+00 dt=6.250593e-01 | hydro=6.250593e-01 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+run.1106_163037.log:13360:### dt COLLAPSE cycle=61359 time=2.548811e+05 dtold=3.036962e+00 dt=3.333835e-01 | hydro=3.333835e-01 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+run.1106_163037.log:14797:### dt COLLAPSE cycle=69299 time=2.794527e+05 dtold=3.274037e+00 dt=7.933960e-01 | hydro=7.933960e-01 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+
+################################################################
+$ grep -n -A3 'dt COLLAPSE' run.log | cut -c1-260
+################################################################
+429:### dt COLLAPSE cycle=111543 time=4.726049e+05 dtold=4.878049e+00 dt=1.016660e+00 | hydro=1.016660e+00 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+430-    hydro dt is set by cell (m,k,j,i) = (1,47,34,481) gid = 1
+431-    r=2.430513e+12 rho=3.087603e-15 T=1.371886e+12 p=5.751717e-03 cs=1.759495e+06 v=(8.027019e+08,-3.829929e+08,4.571500e+08)
+432-elapsed=8.832325e+03 cycle=111550 time=4.726342e+05 dt=5.525317e+00
+--
+1050:### dt COLLAPSE cycle=128260 time=5.560427e+05 dtold=5.333333e+00 dt=1.285790e+00 | hydro=1.285790e+00 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+1051-    hydro dt is set by cell (m,k,j,i) = (1,44,61,518) gid = 1
+1052-    r=2.533284e+12 rho=1.538719e-16 T=1.371886e+12 p=2.866793e-04 cs=1.717699e+06 v=(6.535240e+08,-1.411039e+06,6.035877e+07)
+1053-elapsed=2.808685e+04 cycle=128300 time=5.562517e+05 dt=5.492938e+00
+--
+1204:### dt COLLAPSE cycle=131896 time=573884 dtold=4.81928 dt=0.13374 | hydro=0.13374 mhd=-1 cond=-1 visc=-1 srcterms=-1  (rank 1)
+1205-    hydro dt is set by cell (m,k,j,i) = (0,36,37,492) gid = 2
+1206-    r=2.46077e+12 rho=1e-17 T=5.24607e+14 p=0.00766552 cs=3.57433e+07 v=(-0,0,-0)
+1207-<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 131896 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+--
+1413:### dt COLLAPSE cycle=137263 time=6.019856e+05 dtold=4.807159e+00 dt=4.521495e-01 | hydro=4.521495e-01 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+1414-    hydro dt is set by cell (m,k,j,i) = (0,59,47,552) gid = 0
+1415-    r=2.629358e+12 rho=1.000000e-17 T=5.246071e+14 p=7.665517e-03 cs=3.574334e+07 v=(0.000000e+00,0.000000e+00,-0.000000e+00)
+1416-<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137263 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+--
+1426:### dt COLLAPSE cycle=137505 time=6.032540e+05 dtold=5.323505e+00 dt=8.597949e-01 | hydro=8.597949e-01 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+1427-    hydro dt is set by cell (m,k,j,i) = (0,59,45,557) gid = 0
+1428-    r=2.643386e+12 rho=1.000000e-17 T=5.246071e+14 p=7.665517e-03 cs=3.574334e+07 v=(0.000000e+00,0.000000e+00,-0.000000e+00)
+1429-<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137505 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+--
+1570:### dt COLLAPSE cycle=139117 time=6.109281e+05 dtold=5.548089e+00 dt=8.516733e-01 | hydro=8.516733e-01 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+1571-    hydro dt is set by cell (m,k,j,i) = (1,26,36,523) gid = 1
+1572-    r=2.547387e+12 rho=1.266075e-16 T=1.371886e+12 p=2.358904e-04 cs=1.709596e+06 v=(-9.857607e+08,1.582114e+08,5.696526e+07)
+1573-elapsed=4.057508e+04 cycle=139150 time=6.110869e+05 dt=4.918809e+00
+--
+1653:### dt COLLAPSE cycle=141209 time=6.205266e+05 dtold=5.063291e+00 dt=1.084509e+00 | hydro=1.084509e+00 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+1654-    hydro dt is set by cell (m,k,j,i) = (0,43,35,599) gid = 0
+1655-    r=2.759127e+12 rho=2.176961e-16 T=5.246071e+14 p=1.668753e-01 cs=3.574334e+07 v=(-7.272705e+08,-1.863343e+07,2.640600e+07)
+1656-<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 141212 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+
+################################################################
+$ grep -nE 'time2_posfix: .*round [0-9]+, [0-9.]+e\+0[4-9] cells' run.log | cut -c1-260
+################################################################
+888:<rad_m1> time2_posfix: stage 1 re-solved at cycle 124584 (round 1, 8.266028e+06 cells without the stage-1 increment)
+910:<rad_m1> time2_posfix: stage 1 re-solved at cycle 124706 (round 1, 4.057408e+06 cells without the stage-1 increment)
+912:<rad_m1> time2_posfix: stage 1 re-solved at cycle 124706 (round 2, 4.523466e+06 cells without the stage-1 increment)
+1210:<rad_m1> time2_posfix: stage 1 re-solved at cycle 131896 (round 2, 1.069400e+04 cells without the stage-1 increment)
+1212:<rad_m1> time2_posfix: stage 1 re-solved at cycle 131896 (round 3, 2.032800e+04 cells without the stage-1 increment)
+1214:<rad_m1> time2_posfix: stage 1 re-solved at cycle 131896 (round 4, 3.320700e+04 cells without the stage-1 increment)
+1443:<rad_m1> time2_posfix: stage 1 re-solved at cycle 137693 (round 2, 1.380300e+04 cells without the stage-1 increment)
+1445:<rad_m1> time2_posfix: stage 1 re-solved at cycle 137693 (round 3, 2.371700e+04 cells without the stage-1 increment)
+1447:<rad_m1> time2_posfix: stage 1 re-solved at cycle 137693 (round 4, 3.665900e+04 cells without the stage-1 increment)
+1474:<rad_m1> time2_posfix: stage 1 re-solved at cycle 137908 (round 1, 2.085600e+04 cells without the stage-1 increment)
+1477:<rad_m1> time2_posfix: stage 1 re-solved at cycle 137913 (round 1, 8.074925e+06 cells without the stage-1 increment)
+
+################################################################
+$ echo 'NOT ADMISSIBLE lines:' $(grep -c 'NOT ADMISSIBLE' run.log) '; backward Euler redo lines:' $(grep -c 'backward Euler' run.log) '; NON-CONVERGED lines:' $(grep -c 'NON-CONVERGED' run.log)
+################################################################
+NOT ADMISSIBLE lines: 159 ; backward Euler redo lines: 160 ; NON-CONVERGED lines: 8
+
+################################################################
+$ sed -n 1195,1225p run.log | cut -c1-260   # 6.641 d window: cycles 131700-132126 incl. the cycle-131896 collapse, 4 posfix rounds 4269->33207 cells, NOT ADMISSIBLE -> BE redo
+################################################################
+elapsed=3.198278e+04 cycle=131700 time=5.729235e+05 dt=4.938272e+00
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 131734 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 131734 (round 1, 1.200000e+01 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 131734 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+elapsed=3.204017e+04 cycle=131750 time=5.731704e+05 dt=4.938272e+00
+elapsed=3.209744e+04 cycle=131800 time=5.734190e+05 dt=4.891304e+00
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 131805 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 131805 (round 1, 1.200000e+01 cells without the stage-1 increment)
+elapsed=3.215514e+04 cycle=131850 time=5.736627e+05 dt=4.819277e+00
+### dt COLLAPSE cycle=131896 time=573884 dtold=4.81928 dt=0.13374 | hydro=0.13374 mhd=-1 cond=-1 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (0,36,37,492) gid = 2
+    r=2.46077e+12 rho=1e-17 T=5.24607e+14 p=0.00766552 cs=3.57433e+07 v=(-0,0,-0)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 131896 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 131896 (round 1, 4.269000e+03 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 131896 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 131896 (round 2, 1.069400e+04 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 131896 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 131896 (round 3, 2.032800e+04 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 131896 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 131896 (round 4, 3.320700e+04 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 1 NOT ADMISSIBLE at cycle 131896 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+elapsed=3.221254e+04 cycle=131900 time=5.738864e+05 dt=2.185382e+00
+elapsed=3.227001e+04 cycle=131950 time=5.741266e+05 dt=4.881865e+00
+elapsed=3.232530e+04 cycle=132000 time=5.743667e+05 dt=4.753395e+00
+elapsed=3.238277e+04 cycle=132050 time=5.746003e+05 dt=4.644767e+00
+elapsed=3.244008e+04 cycle=132100 time=5.748326e+05 dt=4.651163e+00
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 132126 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 132126 (round 1, 4.900000e+01 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 132126 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+elapsed=3.249703e+04 cycle=132150 time=5.750673e+05 dt=4.738921e+00
+elapsed=3.255428e+04 cycle=132200 time=5.753057e+05 dt=4.824561e+00
+
+################################################################
+$ sed -n 1405,1500p run.log | cut -c1-260   # 6.997 d window: collapses 137263/137505, posfix 137693 (36659 cells), 137908 (20856), 137913 (8.07e6 cells), NON-CONVERGED
+################################################################
+elapsed=3.798202e+04 cycle=136950 time=6.004160e+05 dt=5.333333e+00
+elapsed=3.803764e+04 cycle=137000 time=6.006819e+05 dt=5.135802e+00
+elapsed=3.809480e+04 cycle=137050 time=6.009367e+05 dt=5.063291e+00
+elapsed=3.815021e+04 cycle=137100 time=6.011851e+05 dt=4.962025e+00
+<hydro> fofc_report t=6.012000e+05 cycle=137103 stages=1378 fired cell-stages: at-floor=0 other=350 | per x1 bin [i0-i1] floor/other: [434-435] 0/11 [436-437] 0/10 [438-438] 0/5 [439-440] 0/2 [449-450] 0/1 [462-463] 0/2 [464-464] 0/1 [465-466] 0/2 [467-468] 0/
+elapsed=3.820751e+04 cycle=137150 time=6.014390e+05 dt=5.032080e+00
+elapsed=3.826496e+04 cycle=137200 time=6.016900e+05 dt=5.000000e+00
+elapsed=3.832070e+04 cycle=137250 time=6.019279e+05 dt=2.403077e+00
+### dt COLLAPSE cycle=137263 time=6.019856e+05 dtold=4.807159e+00 dt=4.521495e-01 | hydro=4.521495e-01 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (0,59,47,552) gid = 0
+    r=2.629358e+12 rho=1.000000e-17 T=5.246071e+14 p=7.665517e-03 cs=3.574334e+07 v=(0.000000e+00,0.000000e+00,-0.000000e+00)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137263 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137263 (round 1, 1.937000e+03 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137264 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137264 (round 1, 7.000000e+00 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137264 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+elapsed=3.837981e+04 cycle=137300 time=6.021585e+05 dt=5.138863e+00
+elapsed=3.843758e+04 cycle=137350 time=6.024160e+05 dt=5.333333e+00
+elapsed=3.849344e+04 cycle=137400 time=6.026862e+05 dt=5.420765e+00
+elapsed=3.855114e+04 cycle=137450 time=6.029568e+05 dt=5.405405e+00
+elapsed=3.860893e+04 cycle=137500 time=6.032270e+05 dt=5.405405e+00
+### dt COLLAPSE cycle=137505 time=6.032540e+05 dtold=5.323505e+00 dt=8.597949e-01 | hydro=8.597949e-01 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (0,59,45,557) gid = 0
+    r=2.643386e+12 rho=1.000000e-17 T=5.246071e+14 p=7.665517e-03 cs=3.574334e+07 v=(0.000000e+00,0.000000e+00,-0.000000e+00)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137505 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137505 (round 1, 2.655000e+03 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137505 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+elapsed=3.866611e+04 cycle=137550 time=6.034903e+05 dt=5.483422e+00
+elapsed=3.872390e+04 cycle=137600 time=6.037644e+05 dt=5.479452e+00
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137613 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137613 (round 1, 5.594000e+03 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137613 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+elapsed=3.878325e+04 cycle=137650 time=6.040333e+05 dt=5.555556e+00
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137691 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137691 (round 1, 6.100000e+01 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137693 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137693 (round 1, 6.897000e+03 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137693 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137693 (round 2, 1.380300e+04 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137693 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137693 (round 3, 2.371700e+04 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137693 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137693 (round 4, 3.665900e+04 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 1 NOT ADMISSIBLE at cycle 137693 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+elapsed=3.884186e+04 cycle=137700 time=6.042800e+05 dt=1.904239e+00
+elapsed=3.889954e+04 cycle=137750 time=6.045444e+05 dt=5.555556e+00
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137788 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137788 (round 1, 2.310000e+03 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137788 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+elapsed=3.895715e+04 cycle=137800 time=6.047895e+05 dt=5.257982e+00
+<hydro> fofc_report t=6.048000e+05 cycle=137802 stages=1407 fired cell-stages: at-floor=0 other=622 | per x1 bin [i0-i1] floor/other: [434-435] 0/11 [436-437] 0/6 [438-438] 0/3 [439-440] 0/2 [443-443] 0/2 [444-445] 0/6 [446-446] 0/2 [447-448] 0/1 [459-459] 0/1
+elapsed=3.903457e+04 cycle=137850 time=6.050606e+05 dt=5.574138e+00
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137866 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137866 (round 1, 7.000000e+00 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137866 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137893 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137893 (round 1, 3.940000e+03 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137893 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137898 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137898 (round 1, 7.000000e+00 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137898 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+elapsed=3.909704e+04 cycle=137900 time=6.053285e+05 dt=5.777186e+00
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137900 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137900 (round 1, 7.000000e+00 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137905 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137908 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> NC-local rank=0 cycle=137908 max=1.624164e+17 (m,k,j,i)=(0,62,37,319)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=1.624164e+17 (tol 1.000000e-08) lin_resid=3.076161e-05 worst cell of rank 0 (m,k,j,i)=(0,62,37,319)
+<rad_m1> NC-local rank=1 cycle=137908 max=1 (m,k,j,i)=(0,4,35,565)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137908 (round 1, 2.085600e+04 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137908 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137913 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137913 (round 1, 8.074925e+06 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137913 (converged=0 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+<rad_m1> NC-local rank=0 cycle=137913 max=5.918149e+14 (m,k,j,i)=(0,61,38,557)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=5.918149e+14 (tol 1.000000e-08) lin_resid=2.496182e-07 worst cell of rank 0 (m,k,j,i)=(0,61,38,557)
+<rad_m1> NC-local rank=1 cycle=137913 max=0.000307113 (m,k,j,i)=(0,3,42,552)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137916 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137916 (round 1, 6.700000e+01 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137916 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137919 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137928 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+elapsed=3.918329e+04 cycle=137950 time=6.055510e+05 dt=3.769235e+00
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137978 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137978 (round 1, 1.112000e+03 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137978 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 137991 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> time2_posfix: stage 1 re-solved at cycle 137991 (round 1, 7.000000e+00 cells without the stage-1 increment)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137991 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137994 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+<rad_m1> hesdirk2 stage 2 NOT ADMISSIBLE at cycle 137999 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler (time2_reject = retry, dt_retry_t2_be)
+elapsed=3.924639e+04 cycle=138000 time=6.058003e+05 dt=1.358446e+00
+<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle 138002 (min(E,T)=-1.000000e+00): local re-solve (time2_posfix)
+<rad_m1> NC-local rank=0 cycle=138002 max=9.779182e-13 (m,k,j,i)=(1,24,66,560)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=2.812515e+15 (tol 1.000000e-08) lin_resid=1.575252e-05 worst cell of rank 0 (m,k,j,i)=(1,24,66,560)
+<rad_m1> NC-local rank=1 cycle=138002 max=2.81251e+15 (m,k,j,i)=(0,23,62,477)
+
+################################################################
+$ grep -n 'counters_rollback' run.log run.1106_*.log | cut -c1-400
+################################################################
+run.log:1897:<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 157, hesdirk2 helper solves 858; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / inf / inf, vceil_de dropped 0.000000e+00 / inf / inf
+
+################################################################
+$ sed -n 1890,1937p run.log | cut -c1-300   # end of the run.log segment (08:18 stop)
+################################################################
+elapsed=4.947854e+04 cycle=146950 time=6.478506e+05 dt=4.819277e+00
+<hydro> fofc_report t=6.480000e+05 cycle=146981 stages=1462 fired cell-stages: at-floor=0 other=507 | per x1 bin [i0-i1] floor/other: [447-448] 0/2 [449-450] 0/5 [452-453] 0/9 [454-455] 0/14 [456-456] 0/5 [457-458] 0/11 [459-459] 0/6 [460-461] 0/7 [462-463] 0/9 [464-464] 0/7 [465-466] 0/34 [467-468]
+elapsed=4.953744e+04 cycle=147000 time=6.480929e+05 dt=4.874881e+00
+elapsed=4.959354e+04 cycle=147050 time=6.483366e+05 dt=4.874881e+00
+elapsed=4.965138e+04 cycle=147100 time=6.485797e+05 dt=4.788970e+00
+<time> dt_retry: 43245 checkpoints (3.372173e+02 s, 8.999652e+03 MB on rank 0), 0 retries, cap -1.000000e+00
+<time> dt_retry: 316 cycles took the backward-Euler redo (time2_reject = retry, dt_retry_t2_be 0)
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 157, hesdirk2 helper solves 858; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / inf / inf, vceil_de dropped 0.000000e+00 / inf / inf
+
+Terminating on wall clock limit
+time=6.486084e+05 cycle=147106
+tlim=1.728000e+06 nlim=-1
+
+MeshBlock-cycles = 172980
+cpu time used  = 4.964253e+04
+zone-cycles/cpu_second = 1.186050e+07
+particle-updates/cpu_second = 0.000000e+00
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_m1> closure = vet_col: 4.394200e+04 tensor builds (0.000000e+00 skipped), 3.567360e+00 s (rank 0, fenced), 8.118338e-02 ms per build
+<rad_m1> vet_col_lat: 4.448500e+04 sweeps (incl. the first build's 3 inflow iterations), 3.087451e+04 s (rank 0, fenced), 6.940433e+02 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_m1> vet_gd: rank 0 fenced seconds: source 1.000421e+03, sweeps 2.931478e+04 (of which per-shell halo+walls 2.882160e+04, of which MPI wait 9.943889e+02), tables (rotation) 3.577939e-01, uniform twin 0.000000e+00, moments 5.560934e+02; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_m1> vet_rotate_avg = 4: snapshot sweeps 5.430000e+02 (rotations 5.420000e+02, inits 0.000000e+00), 9.827179e+02 s incl. offsets (rank 0, fenced)
+<rad_m1> vet_gd halo (rank 0): exchanges 4.784623e+07, bytes sent 1.780437e+13 (3.721165e+05 per exchange), post 4.268920e+01 s, partners 1; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd vet_path = none: subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main 0.000000e+00 twin 0.000000e+00
+<rad_m1> vet_gd_band_ring (rank 0): sweeps 4.448500e+04, dense band saves 0.000000e+00, save store 5.817570e-02 GB
+<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=0 vet_gd_twin_lowmem=0 vet_gd_twin_det=1 halo mask cache: 0.000000e+00 entries made, 0.000000e+00 MB of 0
+<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists 0.000000e+00 made, 2.408298e+02 MB of 4.096000e+03 (key 4096, GPU: <= free/2); exchanges by list 4.744261e+07, dense 0.000000e+00
+<rad_m1> vgdfuse-1010 (rank 0): vet_gd_halo_exact lists made 1.734302e+06, fallbacks 0.000000e+00 (marked reads outside the masks' region 0.000000e+00), read ghosts with an unsent source 0.000000e+00; received values per list: exact/mask 0.000000e+00
+<rad_m1> vgdrot-1011 (rank 0): exact-list batches 5.786670e+05 (group 3, 2.408122e+02 s, list reallocs 5.718000e+03); table prefetch 1 swapped in 5.430000e+02 of the rotations
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> implicit transport: solves=8.734200e+04 Picard iterations mean=4.077328e+00 max=2.000000e+02 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit_opac_lag=pred passes=2: lagged solves=8.734200e+04
+<rad_m1> implicit_tol_rel=1.000000e-01: predicted solves 8.585200e+04, mean tol_eff 1.000000e-04
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=9.000000e+00
+<rad_m1> implicit_opac_newton_guard=5.000000e-01: Newton face terms dropped (all ranks, all passes)=9.406160e+08 per solve=1.076934e+04
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=7.350618e+09 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=4.955300e+04 energy moved rad->gas=1.214118e+37 | E floor raises cell-solves=1.560000e+02 energy from gas=1.640591e+33 energy created=1.
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual (max|r|/max|b|) mean=8.026639e+205 max=7.010627e+210
+<rad_m1>   (diagnostic; Picard test on it: no; lin_tol=1.000000e-10; inner stop: cnorm=1.000000e-10, loosened by Eisenstat-Walker ew_max=1.000000e-02)
+<rad_m1> bicgstab: outer passes=3.561220e+05 linear solves=3.561220e+05 inner iterations mean=1.957621e+00 max=2.000000e+01 total=6.971520e+05
+<rad_m1> bicgstab: breakdowns=3.700000e+01 line_jacobi fallbacks=1.200000e+01 global reductions=2.803621e+06 (4.021535e+00 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=4.848638e+12 newton fallbacks=1.092659e+10 (2.253538e-03 per cell-pass)
+<rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 1.492000e+03) min E from the solve=-7.878886e+14
+<rad_m1> implicit_vimp positivity fallbacks=1.492000e+03 min E from the solve=-7.878886e+14
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=2.618950e+07 written-back gas eint <= 0 cell-solves=4.258630e+05
+<rad_m1> time_scheme=hesdirk2: stage steps=4.292900e+04 backward-Euler steps=3.160000e+02 stage fallbacks=1.570000e+02 vet clips=0.000000e+00 time2_vet_col=extrap2 fallbacks=0.000000e+00 vet_gd_rotate_slope=correct solves=5.380000e+02 failed=2.000000e+00 Picard passes=3.127000e+03 (frac 2.928932e-01
+<rad_m1> time2_auto_be=16: skipped-stage BE steps=1.590000e+02 stage retries=1.570000e+02 (succeeded 1.550000e+02)
+<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps 4.860355e+04 (posfix 4.441072e+01) | failed stage attempts 2.899544e+02 (posfix 4.009513e+01) | their BE redo 1.689392e+02 | auto_be steps 1.700041e+02 | other BE steps 0.000000e+00 | discarded dt_retry attempts 0.000000e+00
+
+################################################################
+$ sed -n 2p r136.user.hst | tr -s ' ' '\n' | grep -E '\[(1|6|8|9|16|19)\]'   # user.hst columns used below
+################################################################
+[1]=time
+[6]=L_top
+[8]=E_rad
+[9]=e_gas
+[16]=M_tot
+[19]=Etot
+
+################################################################
+$ awk 'NR>2 && $1>5.720e5 && $1<5.760e5 {print $1,$6,$8,$9,$16,$19}' r136.user.hst   # time L_top E_rad e_gas M_tot Etot around 6.641 d
+################################################################
+5.7225457814070862e+05 2.0839056228957546e+39 1.1425701099757986e+47 2.2317817404073443e+46 4.8853762221245838e+31 2.0045201859969553e+47
+5.7250370370370382e+05 2.0817778407665662e+39 1.1425673312994210e+47 2.2317760391481988e+46 4.8853762221239118e+31 2.0045204035167653e+47
+5.7275061728395103e+05 2.0795371141030388e+39 1.1425646788860785e+47 2.2317705270758732e+46 4.8853762221232453e+31 2.0045206251311631e+47
+5.7300246913580270e+05 2.0775821927525697e+39 1.1425620846333550e+47 2.2317650618914197e+46 4.8853762221225644e+31 2.0045208564220785e+47
+5.7325000000000000e+05 2.0790721064358806e+39 1.1425596400884247e+47 2.2317598418670114e+46 4.8853762221218960e+31 2.0045210868362702e+47
+5.7350217391304323e+05 2.0731792938208620e+39 1.1425573122843094e+47 2.2317547687956151e+46 4.8853762221212151e+31 2.0045213293715427e+47
+5.7375421686746925e+05 2.0700515227039161e+39 1.1425551279232044e+47 2.2317499591437686e+46 4.8853762221205332e+31 2.0045215720679929e+47
+5.7400000000000000e+05 2.0700850182096539e+39 1.1424874575336495e+47 2.2316860167567288e+46 4.8853762221199559e+31 2.0044510008021144e+47
+5.7425264475537103e+05 2.0695268117012741e+39 1.1424823381203306e+47 2.2316950665575836e+46 4.8853762221192722e+31 2.0044512550911714e+47
+5.7450273491214588e+05 2.0681589833275391e+39 1.1424810615981109e+47 2.2317028099902108e+46 4.8853762221185940e+31 2.0044515088467657e+47
+5.7475355233002279e+05 2.0661551798330514e+39 1.1424806178603412e+47 2.2317036759846664e+46 4.8853762221179148e+31 2.0044517677370179e+47
+5.7500096533567412e+05 2.0632078230057011e+39 1.1424802357983799e+47 2.2317017226997487e+46 4.8853762221172447e+31 2.0044520287610048e+47
+5.7525263157894718e+05 2.0581881492224149e+39 1.1424801593847982e+47 2.2317000594535372e+46 4.8853762221165611e+31 2.0044523016725493e+47
+5.7550393353155465e+05 2.0558490161120554e+39 1.1424802891216298e+47 2.2316990465772135e+46 4.8853762221158801e+31 2.0044525865356139e+47
+5.7575308291991428e+05 2.0527217545201640e+39 1.1424806122751290e+47 2.2316985751875358e+46 4.8853762221152037e+31 2.0044528760638234e+47
+
+################################################################
+$ awk 'NR>2 && $1>6.030e5 && $1<6.070e5 {print $1,$6,$8,$9,$16,$19}' r136.user.hst   # same around 6.997-7.03 d
+################################################################
+6.0300000000000070e+05 2.0573411296643522e+39 1.1423271860573768e+47 2.2312942743253147e+46 4.8853762220388055e+31 2.0044875393974310e+47
+6.0325397215397249e+05 2.0541919348639503e+39 1.1423242866675330e+47 2.2312881765418558e+46 4.8853762220380777e+31 2.0044877786895664e+47
+6.0350129841057316e+05 2.0513610624548083e+39 1.1423214432691385e+47 2.2312821000425507e+46 4.8853762220373653e+31 2.0044880701291675e+47
+6.0375342465753527e+05 2.0487861499272097e+39 1.1423184848662555e+47 2.2312758009218511e+46 4.8853762220366393e+31 2.0044883739459452e+47
+6.0400000000000000e+05 2.0470232083731902e+39 1.1423152361190032e+47 2.2312694090706783e+46 4.8853762220359349e+31 2.0044883682512636e+47
+6.0424999999999977e+05 2.0458796758134730e+39 1.1423121974819984e+47 2.2312630192092464e+46 4.8853762220352143e+31 2.0044886785836773e+47
+6.0449999999999965e+05 2.0444152460179619e+39 1.1423074309624086e+47 2.2312555802688997e+46 4.8853762220344938e+31 2.0044872370576695e+47
+6.0475267815972818e+05 2.0418649912739095e+39 1.1423042322622898e+47 2.2312491479837100e+46 4.8853762220337660e+31 2.0044875558558645e+47
+6.0500227338968334e+05 2.0416003287297596e+39 1.1423011299466899e+47 2.2312427815993244e+46 4.8853762220330454e+31 2.0044878758700219e+47
+6.0525450160694541e+05 2.0408666871474775e+39 1.1422979911961711e+47 2.2312362472010566e+46 4.8853762220323176e+31 2.0044882012005559e+47
+6.0550347384720424e+05 2.0459277148951157e+39 1.1422947132612015e+47 2.2312294627281380e+46 4.8853762220315989e+31 2.0044884792876524e+47
+6.0575344203098014e+05 2.0349127694972346e+39 1.1422916239010789e+47 2.2312230077645683e+46 4.8853762220308765e+31 2.0044888044216125e+47
+6.0600000000000000e+05 2.0371791122704253e+39 1.1422885310756267e+47 2.2312165304218589e+46 4.8853762220301640e+31 2.0044891287408891e+47
+6.0625478803381696e+05 2.0380501368641261e+39 1.1422854610267245e+47 2.2312099717763925e+46 4.8853762220294263e+31 2.0044894654099374e+47
+6.0650133333333407e+05 2.0382989449253554e+39 1.1422825660855392e+47 2.2312037065195432e+46 4.8853762220287129e+31 2.0044897907870374e+47
+6.0675370899915928e+05 2.0372200480643046e+39 1.1422796488396220e+47 2.2311973426615510e+46 4.8853762220279825e+31 2.0044901257279149e+47

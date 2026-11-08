@@ -1,0 +1,2 @@
+start 2026-11-07T03:03:14-08:00 arm T3 wall 20704 rst /resnick/groups/carnegie_poc/jingze/r136open_1106/states/r136.00005.rst tlim 433080 keys rad_m1/time2_adm_poslim=true problem/he_sponge_rate=0 output2/dt=540 output3/dt=540 output6/dt=1080 rad_m1/dbg_gas_force=false
+end 2026-11-07T03:03:58-08:00 rc=134
