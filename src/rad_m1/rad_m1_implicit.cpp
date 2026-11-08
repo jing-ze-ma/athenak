@@ -2135,8 +2135,35 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   pbool("implicit_pos_floor", impl_pos_floor);
   // defaults-1009 (user 10-09): default = implicit_pos_floor on a fresh run (it needs
   // it); a restart whose file lacks the key keeps false
+  // consfix-1109 (c): a restart whose file lacks the key is no longer silently false: a
+  // WARN line says so, and <rad_m1>/implicit_pos_floor_solve_rst_default = true (read
+  // only when named) gives such a restart the fresh-run default instead
+  {const bool pfsn = pin->DoesParameterExist("rad_m1","implicit_pos_floor_solve");
+  bool pfs_rd = false;
+  if (!pfsn && rst && impl_pos_floor) {
+    pfs_rd = pin->DoesParameterExist("rad_m1","implicit_pos_floor_solve_rst_default") &&
+             pin->GetBoolean("rad_m1","implicit_pos_floor_solve_rst_default");
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> WARN: restart input lacks implicit_pos_floor_solve: "
+                << (pfs_rd ? "true (implicit_pos_floor_solve_rst_default)"
+                           : "false (the S2 -> e_floor raise of the accept is NOT "
+                             "charged; name the key, or "
+                             "implicit_pos_floor_solve_rst_default = true)") << std::endl;
+    }
+  }
   impl_pos_floor_s2 = pin->GetOrAddBoolean("rad_m1","implicit_pos_floor_solve",
-                                           impl_pos_floor && !rst);
+                                           impl_pos_floor && (!rst || pfs_rd));
+  }
+  // consfix-1109 (a) implicit_cons_final, dbg_cons_ledger (rad_m1.hpp): read only when
+  // named; the solver checks are made at the first solve
+  impl_cons_final = pin->DoesParameterExist("rad_m1","implicit_cons_final") &&
+                    pin->GetBoolean("rad_m1","implicit_cons_final");
+  dbg_cons_ledger = pin->DoesParameterExist("rad_m1","dbg_cons_ledger") &&
+                    pin->GetBoolean("rad_m1","dbg_cons_ledger");
+  if (impl_cons_final && !impl_pos_floor) {
+    ImplFatal("<rad_m1>/implicit_cons_final needs implicit_pos_floor = true (an E below "
+              "e_floor is raised with the energy taken from the gas)");
+  }
   if (impl_pos_floor_s2 && !impl_pos_floor) {
     ImplFatal("<rad_m1>/implicit_pos_floor_solve needs implicit_pos_floor = true");
   }
@@ -9899,6 +9926,17 @@ void RadiationM1::EventTotals(Real *v) {
 
 void RadiationM1::ImplicitReport() {
   if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
+  if ((impl_cons_final || dbg_cons_ledger) && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> consfix-1109: implicit_cons_final=" << impl_cons_final
+              << " solves=" << cf_tot[2] << " extra passes after a mode fallback="
+              << cf_tot[3];
+    if (dbg_cons_ledger) {
+      std::cout << "; run sum V (c/chat) r=" << cf_tot[0] << " sum |.|=" << cf_tot[1]
+                << (impl_cons_final ? " (applied to E: removed from the leak)"
+                                    : " (NOT applied: the solves' energy error)");
+    }
+    std::cout << std::endl;
+  }
   if (cs_geom && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> cubed sphere: seam face averages " << cs_seam_avg_n
               << (cs_seam_avg_on ? "" : " (disabled by rad_m1/cs_seam_avg)")
@@ -14085,6 +14123,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool gnw = gnewt && !gnsw;
     int nin = -1;
     bool fbl_tr = false;   // meshfb-1106: this pass solved to E <= 0, mask grown
+    cf_fb_pass = false;    // consfix-1109
     TmrMark((it == 0) ? 4 : 7);
     ew_tight = onep && (it == 0);
     // MILESTONE 3e: x_k, the state this pass maps
@@ -15898,6 +15937,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #endif
         if (vimp_now) {vimp_emin = std::min(vimp_emin, emin);}
         if (muscl_now) {muscl_emin = std::min(muscl_emin, emin);}
+        if (!(emin > 0.0) && (muscl_now || vimp_now)) {cf_fb_pass = true;}   // consfix
         if (!(emin > 0.0) && muscl_now) {
           // Fix B: dc (sig = 0) in the cells within 2 of a cell solved to E <= 0, for
           // the rest of the step; the next pass rebuilds the row from it (counted)
@@ -15961,6 +16001,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         od_emin = std::min(od_emin, emin);
         if (vimp_now) {vimp_emin = std::min(vimp_emin, emin);}
         if (!(emin > 0.0)) {
+          cf_fb_pass = true;   // consfix-1109 (d)
           Time2PosFixMarkFb();
           if (odm == M1_OD_OPERATOR) {
             od_now = M1_OD_NONE;
@@ -16564,6 +16605,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       converged = pc && lc;
     }
     if (fbl_tr) {converged = false;}   // meshfb-1106: the re-solve is not optional
+    // consfix-1109 (d) implicit_cons_final: a pass whose solve dropped the operator form
+    // (implicit_offdiag operator -> none, vet_col_lat, vimp, plm) is not the last one:
+    // the residual r below is taken with the operator of the step's final form, so that
+    // form must also be the one the last solve used
+    if (impl_cons_final && cf_fb_pass && converged && (it + 1 < impl_maxit)) {
+      converged = false;
+      cf_tot[3] += 1.0;
+    }
     // open-ot-1013 implicit_cs2_vimp_npass: with the conservative2 vimp prediction on,
     // at least this many Picard passes, so its lagged neighbour dA (one pass behind)
     // reaches the fixed point
@@ -16656,6 +16705,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
   }
   TmrMark(7);
+  // consfix-1109 implicit_cons_final / dbg_cons_ledger: r = b - A E' of the last pass,
+  // before anything after the loop touches the frozen system
+  cf_r_ok = false;
+  if (impl_cons_final || dbg_cons_ledger) {ImplicitConsResid(bicg, trans);}
   if (fbd_n > 0) {ImplicitFbDiagSolve(it);}   // meshfb-1106
   if (tmr_on) {tmr_cnt[0] += 1.0;}
   ew_tight = false;
@@ -17280,6 +17333,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool pgas = impl_pos_gas && have_hydro && coupling && dbgh;
   const bool pflr = impl_pos_floor;
   const bool pfs = impl_pos_floor_s2;   // F3
+  const bool cfin = impl_cons_final && cf_r_ok;   // consfix-1109 (a)
+  auto cfr_ = cf_r;
   const bool pany = pgas || pflr;
   const Real pgf = impl_pos_gas_frac;
   // csacc-1031 time2_adm_poslim: a stage slope K keeps the solve's own E / gas split (the
@@ -19473,6 +19528,89 @@ int RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy, int it)
     std::cout << o.str();
   }
   return dec;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitConsResid
+//! \brief consfix-1109 implicit_cons_final / dbg_cons_ledger: r = b - A E' of the LAST
+//! pass's frozen system (A, b = M1_IW_KB as the BiCGStab of that pass solved them) at
+//! the accepted iterate E' = M1_IW_EP, into cf_r.  The row is (1 + SRCB) E' + T(E') =
+//! E^n + SRCR with T the divergence of the faces step (g) rebuilt from E', so
+//! E' + r = E^n + q(E') - T(E'), q = SRCR - SRCB E' the exchange the write-back charges
+//! the gas with.  1-D (direct Thomas solve): r = round-off, cf_r stays unset (no-op).
+//! dbg_cons_ledger: rank 0 prints CONSR cycle t2s dt sum(V (c/chat) r) and
+//! sum(V (c/chat) |r|).
+
+void RadiationM1::ImplicitConsResid(bool bicg, bool trans) {
+  if (!trans) {
+    if (impl_cons_final && cf_tot[2] == 0.0 && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_cons_final: 1-D direct solve (residual = "
+                << "round-off), no-op" << std::endl;
+    }
+    cf_tot[2] += 1.0;
+    return;
+  }
+  if (!bicg || rav_on) {
+    if (impl_cons_final) {
+      ImplFatal("<rad_m1>/implicit_cons_final needs implicit_solver = bicgstab on a "
+                "multi-D mesh and no polar_ring_avg");
+    }
+    return;
+  }
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (cf_r.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(cf_r, nmb1 + 1, iw.extent_int(2), iw.extent_int(3), iw.extent_int(4));
+  }
+  // A E' into the Krylov scratch KS (free once the loop has ended); ApplyOp fills the
+  // E' halo itself
+  ImplicitApplyOp(M1_IW_EP, M1_IW_KS);
+  auto iw_ = iw;
+  auto cr_ = cf_r;
+  par_for("m1_cf_r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    cr_(m,k,j,i) = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KS,k,j,i);
+  });
+  cf_r_ok = impl_cons_final;
+  cf_tot[2] += 1.0;
+  if (!dbg_cons_ledger) return;
+  const bool usev = (pmy_pack->pcoord->volume.extent_int(0) >= nmb1 + 1) &&
+                    (pmy_pack->pcoord->volume.extent_int(3) > 1);
+  auto vol = pmy_pack->pcoord->volume;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  const Real cc = c_light/chat;
+  Real s1 = 0.0, s2 = 0.0;
+  const int eni = ie - is + 1, enji = (je - js + 1)*eni, enkji = (ke - ks + 1)*enji;
+  Kokkos::parallel_reduce("m1_cf_sum", Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0,
+                          (nmb1 + 1)*enkji),
+  KOKKOS_LAMBDA(const int idx, Real &a, Real &b) {
+    const int m = idx/enkji;
+    int q = idx - m*enkji;
+    const int k = q/enji + ks;
+    q -= (k - ks)*enji;
+    const int j = q/eni + js;
+    const int i = q - (j - js)*eni + is;
+    const Real v = usev ? vol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                         mbsize.d_view(m).dx3);
+    const Real r = cc*cr_(m,k,j,i)*v;
+    a += r;
+    b += fabs(r);
+  }, Kokkos::Sum<Real>(s1), Kokkos::Sum<Real>(s2));
+#if MPI_PARALLEL_ENABLED
+  {Real lo[2] = {s1, s2}, gl[2];
+  MPI_Allreduce(lo, gl, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  s1 = gl[0];
+  s2 = gl[1];}
+#endif
+  cf_tot[0] += s1;
+  cf_tot[1] += s2;
+  if (global_variable::my_rank == 0) {
+    std::printf("CONSR cycle=%d t2s=%d dt=%.10e sumVr=%.10e sumVabsr=%.10e run=%.10e "
+                "cons_final=%d\n", pmy_pack->pmesh->ncycle, static_cast<int>(t2_solve),
+                dt_sub, s1, s2, cf_tot[0], impl_cons_final ? 1 : 0);
+  }
 }
 
 } // namespace radm1
