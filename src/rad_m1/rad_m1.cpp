@@ -2328,6 +2328,10 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
           std::exit(EXIT_FAILURE);
         }
       }
+      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_dema")) {
+        vra_ema_dema = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_dema");
+        if (vra_ema_dema) {vra_k = 4;}   // raycheap-1109: slot 2 = e2, slot 3 the Delta
+      }
       if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_diag")) {
         vra_ema_diag = pin->GetInteger("rad_m1","vet_rotate_avg_ema_diag");
       }
@@ -2348,7 +2352,8 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
                   + std::to_string(vra_ema_tau) : "") << ((vra_ema_lc > 0.0) ?
                   ", window = " + std::to_string(vra_ema_lc) + " x r/c" : "")
                   << "; change test eps " << vra_ema_eps
-                  << "); vet_rotate_avg is not used"
+                  << ")" << (vra_ema_dema ? "; lag-corrected double EMA 2 e1 - e2 "
+                  "(raycheap-1109)" : "") << "; vet_rotate_avg is not used"
                   << std::endl;
       }
     }
