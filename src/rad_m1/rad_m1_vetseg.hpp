@@ -45,6 +45,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <utility>
 
 #include "athena.hpp"
 
@@ -70,6 +71,24 @@ void VetSegW(const Real dtau, Real &ex, Real &w0, Real &wu) {
 inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
   return Kokkos::Experimental::require(Kokkos::RangePolicy<>(ex, a, b),
                                        Kokkos::Experimental::WorkItemProperty::HintLightWeight);
+}
+
+// speedup-1109 vet_gd_body_global: copy a (host-side) kernel closure byte-wise into the
+// device buffer buf (grown when too small) and return its device address.  The per-shell
+// kernels then call the closure through this pointer instead of carrying it as a kernel
+// argument: a ~2.7 kB argument whose operator() is called is copied by nvcc from the
+// parameter space into every thread's local stack (cuobjdump STACK 2680 B per thread of
+// the shell kernels).  The bytes are those Kokkos itself copies for a global-memory
+// launch; deep_copy fences, so a buffer is never overwritten under a running kernel.
+template <class F>
+inline const F *VgdClosureToDevice(const F &f, DvceArray1D<char> &buf) {
+  const size_t n = sizeof(F);
+  if (buf.extent(0) < n) {buf = DvceArray1D<char>("m1_vgd_body", n);}
+  using HostBytes = Kokkos::View<const char *, Kokkos::HostSpace,
+                                 Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+  HostBytes h(reinterpret_cast<const char *>(&f), n);
+  Kokkos::deep_copy(Kokkos::subview(buf, std::make_pair(static_cast<size_t>(0), n)), h);
+  return reinterpret_cast<const F *>(buf.data());
 }
 
 // the fatal-error exit of the vet_gd setup (sp VgdFatal, cs VgdCsFatal): file, tag, msg
