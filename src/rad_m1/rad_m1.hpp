@@ -614,8 +614,8 @@ class RadiationM1 {
   // floor raises E to e_floor with the energy taken from the gas (FLR_DE) or counted
   // (FLR_UN); what the 1e-6 guard itself raised, (c/ch)(1 + SRCB)(EP - S2), joins it
   bool impl_pos_floor_s2 = false;
-  // consfix-1109 <rad_m1>/implicit_cons_final (prod-1112-cand: DEFAULT true; name false for
-  // the prod-1111 behaviour, bitwise; not recorded when absent): the write-back takes
+  // consfix-1109 <rad_m1>/implicit_cons_final (prod-1112-cand: DEFAULT true; name false
+  // for the prod-1111 behaviour, bitwise; not recorded when absent): the write-back takes
   // E^{n+1} = E' + r, r = b - A E' the residual of the
   // LAST pass's frozen linear system at the accepted iterate, i.e. E^{n+1} = E^n + q(E')
   // - T(E') with the transport T the divergence of the faces rebuilt from E' and q the
