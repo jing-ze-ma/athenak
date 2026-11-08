@@ -36,6 +36,7 @@
   auto cx1v = pmy_pack->pcoord->x1v;
 #if !M1_VLAT_CS
   auto cx2v = pmy_pack->pcoord->x2v;
+  auto cx2t = VtanX2t();   // tensor-sp-1108: theta of the data (M1SphTan)
   auto cx3v = pmy_pack->pcoord->x3v;
 #endif
   auto cx1f = pmy_pack->pcoord->xx1f;
@@ -183,8 +184,8 @@
         if (tanop) {
           // M1SphTan (vet_gd), the same clamps: d = 1: (1/(r sin)) d_ph (D_tp E) +
           // 2 cot a E / r; d = 2: (1/(r sin^2)) d_th (sin^2 D_tp E)
-          const Real sn = sin(cx2v(m,qj));
-          const Real ct = cos(cx2v(m,qj))/sn;
+          const Real sn = sin(cx2t(m,qj));
+          const Real ct = cos(cx2t(m,qj))/sn;
           if (d == 1) {
             const int ka = (thrd && qk + 1 <= hi[2]) ? qk + 1 : qk;
             const int kb = (thrd && qk - 1 >= lo[2]) ? qk - 1 : qk;
@@ -198,7 +199,7 @@
             const int ja = (qj + 1 <= hi[1]) ? qj + 1 : qj;
             const int jb = (qj - 1 >= lo[1]) ? qj - 1 : qj;
             if (ja != jb) {
-              const Real sa = sin(cx2v(m,ja)), sb = sin(cx2v(m,jb));
+              const Real sa = sin(cx2t(m,ja)), sb = sin(cx2t(m,jb));
               const Real f = w/(r*sn*sn*(cx2v(m,ja) - cx2v(m,jb)));
               add(qi, ja, qk, f*sa*sa*tt_(m,c0+4,qk,ja,qi));
               add(qi, jb, qk, -f*sb*sb*tt_(m,c0+4,qk,jb,qi));
