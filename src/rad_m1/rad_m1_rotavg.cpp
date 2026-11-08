@@ -386,7 +386,7 @@ void RadiationM1::RotAvgEmaInit(const int ilo) {
         d_(m,f,kk,jj,ii) = v ? ws*(sv - g)/(1.0 + ws) : 0.0;
       }
     }
-    d_(m,t.nf,kk,jj,ii) = v ? 1.0 : 0.0;
+    d_(m,t.nf,kk,jj,ii) = v ? 2.0 : 0.0   // the flag counts the sets in the EMA (warm-up);
     // the aux slot 1: the current set's raw fields (the change test of the next
     // boundary compares the same set at two times); its flag entry holds the change
     // weight of the coming boundary (-1: none measured)
@@ -466,7 +466,7 @@ void RadiationM1::RotAvgEmaShift(const int ds) {
     const bool vh = d_(m,t.nf,kk,jj,ii) > 0.5;
     if (!vd || !vh) {   // no Delta or no history: restart from the current set alone
       for (int f = 0; f < t.nf; ++f) {d_(m,f,kk,jj,ii) = (t.kind[f] == 2) ? 1.0 : 0.0;}
-      d_(m,t.nf,kk,jj,ii) = vd ? 1.0 : 0.0;
+      d_(m,t.nf,kk,jj,ii) = vd ? 1.0 : 0.0   // count 1: the current set alone;
       return;
     }
     Real rr = 1.0;
@@ -475,7 +475,11 @@ void RadiationM1::RotAvgEmaShift(const int ds) {
       rr = x1min + (static_cast<Real>(ii) + 0.5)*(x1max - x1min)/nx1;
     }
     const Real ach = d_(m,(t.nf+1)+t.nf,kk,jj,ii);   // the change weight (aux slot)
-    const Real aw = fmax(RaEmaA(a0, dtb, tau0, lc, rr, cl), fmin(ach, 1.0));
+    // warm-up: with n sets seen so far the weight is at least 1/(n+1) (the plain mean of
+    // all sets until n reaches N; the flag entry counts them)
+    const Real nset = d_(m,t.nf,kk,jj,ii);
+    const Real aw = fmax(fmax(RaEmaA(a0, dtb, tau0, lc, rr, cl), fmin(ach, 1.0)),
+                         1.0/(nset + 1.0));
     Real fac = 1.0 - aw;
     if (t.jw >= 0) {
       const Real r0 = d_(m,t.jw,kk,jj,ii), R = d_(m,od+t.jw,kk,jj,ii);
@@ -487,7 +491,7 @@ void RadiationM1::RotAvgEmaShift(const int ds) {
       const Real y = d_(m,f,kk,jj,ii);
       d_(m,f,kk,jj,ii) = (t.kind[f] == 2) ? ((1.0 - aw)*y/x + aw) : fac*(y - x);
     }
-    d_(m,t.nf,kk,jj,ii) = 1.0;
+    d_(m,t.nf,kk,jj,ii) = (aw >= 1.0) ? 1.0 : fmin(nset + 1.0, 1.0e9);
   });
 }
 
