@@ -992,6 +992,22 @@
         }
       }
     }
+    // r136e-1107 implicit_wb_vkick_reject (rad_m1.hpp): count the cells whose written-
+    // back speed exceeds V and their old speed (decision after the launch); no change
+    if (wvkr > 0.0 && have_hydro && feedback && !csw) {
+      const bool tk = trans && dbgft;
+      const Real q1 = uh(m,IM1,k,j,i), q2 = uh(m,IM2,k,j,i), q3 = uh(m,IM3,k,j,i);
+      const Real n1 = q1 + dm1 - dmref;
+      const Real n2 = tk ? (q2 + dm2) : q2;
+      const Real n3 = (tk && thrd) ? (q3 + dm3) : q3;
+      const Real pn = n1*n1 + n2*n2 + n3*n3, po = q1*q1 + q2*q2 + q3*q3;
+      const Real pv = SQR(wvkr*dd);
+      if (!(pn <= pv) && !(pn <= po)) {   // NaN counts too
+        Kokkos::atomic_add(&vkc_(0), 1.0);
+        const Real vn = sqrt(pn)/fmax(dd, 1.0e-300);
+        Kokkos::atomic_max(&vkc_(1), (vn == vn) ? vn : 1.0e300);
+      }
+    }
     // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve
     if (t2k) {
       const Real fk = 1.0/dt;

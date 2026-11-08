@@ -631,6 +631,15 @@ class RadiationM1 {
   // print only, nothing is changed (bitwise with the key off); implicit_wb_vcap_print = N
   // (read only when named): the first N cells beyond V per rank are printed (WBVCAP)
   Real impl_wb_vcap = 0.0;
+  // r136e-1107 <rad_m1>/implicit_wb_vkick_reject = V (read only when named; absent or 0
+  // = off, bitwise): a hesdirk2 STAGE whose write-back gives any cell |v| > V with |v|
+  // above its old speed is NOT ADMISSIBLE (the existing redo path: time2_reject,
+  // backward Euler); nothing is capped or moved.  A backward-Euler solve cannot be
+  // rejected: its kicks beyond V are only counted and printed (vkick_cnt_d 2, 3).
+  // vkick_cnt_d: 0 cells this solve, 1 max |v_new| this solve, 2/3 BE totals
+  Real impl_wb_vkrej = 0.0;
+  DvceArray1D<Real> vkick_cnt_d;
+  Real vkick_nrej = 0.0, vkick_nbe = 0.0, vkick_nbecell = 0.0;
   bool impl_wb_vcap_meas = false;
   int impl_wb_vcap_np = 0;
   DvceArray1D<Real> vcap_cnt_d;
