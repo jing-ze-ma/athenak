@@ -1,0 +1,82 @@
+# 14p5M_widebinary_profile14.data (S. Wu, MESA r15140 gfortran 10.2.0, SDK 21.4.1, written 20251124), md5 f4cb70aa30ef4c951b9387803bd939ed
+# copies: viper /viper/ptmp2/jinma/hegiant_large_1014/ic/, Raven /raven/ptmp/jinma/ic_star_cache/raw/mesa/, this dir (.xz)
+# header (name value):
+model_number             500
+num_zones                1714
+initial_mass             2.7540000000000000E+000
+initial_z                2.0000000000000000E-002
+star_age                 2.2696916698440355E+006
+time_step                8.7417833853713027E+000
+Teff                     7.6445046862962927E+003
+photosphere_L            3.7127364526992656E+004
+photosphere_r            1.0985036883323859E+002
+center_eta               5.9599680585057877E+000
+center_h1                0.0000000000000000E+000
+center_he3               4.5000928873019009E-029
+center_he4               1.4895296951961449E-016
+center_c12               1.9021795404297887E-003
+center_n14               4.5461576154429733E-024
+center_o16               4.1000529920130324E-001
+center_ne20              5.1510634736504657E-001
+star_mass                2.7540000000000000E+000
+star_mdot                0.0000000000000000E+000
+star_mass_h1             7.2650689618406668E-005
+star_mass_he3            1.5908019873701267E-013
+star_mass_he4            1.1567312579477351E+000
+star_mass_c12            1.8675247072812870E-001
+star_mass_n14            1.4260213354695453E-002
+star_mass_o16            7.0532788102515109E-001
+star_mass_ne20           6.0233086686304438E-001
+he_core_mass             2.7540000000000000E+000
+c_core_mass              1.5255724365210348E+000
+o_core_mass              5.9585133683384539E-001
+si_core_mass             0.0000000000000000E+000
+fe_core_mass             0.0000000000000000E+000
+neutron_rich_core_mass   0.0000000000000000E+000
+tau10_mass               2.7537294628534670E+000
+tau10_radius             1.0925948304542258E+002
+tau100_mass              2.7536842767296492E+000
+tau100_radius            1.0917031334710703E+002
+dynamic_time             6.9434828569443887E+006
+kh_timescale             4.3793851212506162E+001
+nuc_timescale            7.4177093771300768E+005
+power_nuc_burn           8.2745821429219609E+005
+power_h_burn             5.7795453727613854E-015
+power_he_burn            3.0005916428195920E+004
+power_neu                2.2783896493848697E+006
+burn_min1                5.0000000000000000E+001
+burn_min2                1.0000000000000000E+003
+time_seconds             7.1626021840270141E+013
+version_number           "15140"
+compiler                 "gfortran"
+build                    "10.2.0"
+MESA_SDK_version         "x86_64-linux-21.4.1"
+math_backend             "CRMATH"
+date                     "20251124"
+surface h1 9.8042e-04 he4 9.7902e-01  center logT 8.8674 logRho 6.7898
+# r[Rsun]  m[Msun]  L[Lsun]
+  0.0200 1.373983 1.50534e+04
+  0.0300 1.519581 1.79905e+04
+  0.0412 1.565830 5.49469e+04
+  0.0500 1.587250 5.92849e+04
+  0.1000 1.679174 4.87963e+04
+  0.3000 1.920550 4.29491e+04
+  1.0000 2.328145 4.00049e+04
+  3.0000 2.627060 3.77934e+04
+  5.0000 2.687471 3.73991e+04
+  8.0000 2.719887 3.73088e+04
+ 15.0000 2.732707 3.71402e+04
+ 30.0000 2.737604 3.71064e+04
+ 60.0000 2.744923 3.71209e+04
+100.0000 2.751946 3.71267e+04
+# derived (prof.py, interpolation in r over the profile zones):
+r=3 Rsun: m=2.627060 Msun L=3.779338e+04 Lsun (1.44673e+38 erg/s) T=3.3803e+06 rho=2.7403e-03
+r=8 Rsun: m=2.719887 Msun L=3.730884e+04 Lsun (1.42818e+38 erg/s) T=9.0688e+05 rho=4.1217e-05
+max tri_alfa at r=0.04117 Rsun m=1.56576 L=5.49060e+04 tri_alfa=1.769e+06
+base of He-rich (he4>0.5): r=0.04430 m=1.57402 L=5.86574e+04
+burn_c max 3038994.3998769545 at m 1.5375387510397547 r 0.033234360175128486
+burn_ne max 720338.6697338239 at m 0.8976794835364643 r 0.01022282983836751
+burn_o max 950698.2976853189 at m 0.8976794835364643 r 0.01022282983836751
+c12_c12 max 1294965.469480433 at m 0.8976794835364643 r 0.01022282983836751
+L at m where L first exceeds 0.5 Lsurf 1.0987338624187848
+Lsurf 37127.36452699266 R 109.85036883323855 Lmax 59691.18022753025 at r 0.04744785265205192

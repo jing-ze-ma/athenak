@@ -1,0 +1,99 @@
+
+
+&star_job
+      show_log_description_at_start = .false.
+
+      load_saved_model = .true.
+      saved_model_name = 'after_core_c_burn.mod'
+
+      save_model_when_terminate = .true.
+      save_model_filename = 'lgTmax.mod'
+      required_termination_code_string = 'log_max_temp_upper_limit'
+
+
+/ ! end of star_job namelist
+
+&eos
+/ ! end of eos namelist
+
+&kap      
+      !kap_file_prefix = 'OP_gs98' !'a09'    ! 'gs98' 'a09'  'OP_a09' 'OP_gs98'
+      !kap_CO_prefix   =  'gs98_co' !'a09_co' ! 'gs98_co' 'a09_co'
+      !kap_lowT_prefix = 'AESOPUS'
+      !AESOPUS_filename = 'AESOPUS_GS98_RCrB_Z0.02.h5' ! used only if kap_lowT_prefix = 'AESOPUS'
+      !kap_blend_logT_upper_bdy = 4.1d0
+      !kap_blend_logT_lower_bdy = 4.2d0
+
+      !use_Type2_opacities = .true.
+
+
+      !show_info = .true.
+/ ! end of kap namelist
+
+&controls
+
+      log_max_temp_upper_limit = 9.550d0
+
+      ! limit max_model_number as part of test_suite
+      !max_model_number = 4000
+      !max_number_retries = 37
+
+! wind
+
+! atmosphere
+
+! rotation
+
+! mlt
+      alpha_semiconvection = 0
+      thermohaline_coeff = 0
+
+      gradT_excess_age_fraction = 0.999d0
+
+! mixing
+
+! timesteps
+      delta_HR_limit = 8d-3 
+      dX_nuc_drop_limit = -1
+      delta_lgRho_cntr_limit = 0.01
+      delta_lgRho_cntr_hard_limit = 0.1
+      delta_lgRho_limit = 0.1 
+      
+      !delta_lgT_cntr_limit_only_after_near_zams = .true.
+      !delta_lgT_cntr_limit = 0.001
+      !delta_lgT_cntr_hard_limit = 0.01
+
+      !delta_lgT_max_limit_only_after_near_zams = .true.
+      !delta_lgT_max_limit = 0.001     
+      !delta_lgT_max_hard_limit = 0.01
+
+! mesh
+
+      mesh_delta_coeff = 1.75
+      min_dq_for_xa = 1d-14
+
+! solver
+      
+! GYRE output controls
+      !write_pulse_data_with_profile = .true.
+
+! output
+      terminal_show_age_units = 'days'
+
+      num_trace_history_values = 2
+      trace_history_value_name(1) = 'rel_E_err'
+      trace_history_value_name(2) = 'log_rel_run_E_err'
+
+      !photo_interval = 10
+      !profile_interval = 1
+      !history_interval = 1
+      !terminal_interval = 1
+      star_history_name = 'history3.data'
+
+/ ! end of controls namelist
+
+
+
+&pgstar
+
+/ ! end of pgstar namelist

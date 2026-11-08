@@ -1,0 +1,65 @@
+&binary_job
+
+   inlist_names(1) = 'inlist1' 
+   inlist_names(2) = 'inlist2'
+
+   evolve_both_stars = .false.
+
+/ ! end of binary_job namelist
+
+&binary_controls
+         
+   m1 = 2.754d0  ! donor mass in Msun
+   m2 = 1.4d0 ! companion mass in Msun
+   initial_period_in_days = 1d0 !100d0
+
+   !transfer efficiency controls
+
+   ! be 100% sure MB is always off
+   do_jdot_mb = .false.
+
+   ! not using rotation
+   !do_jdot_ls = .true.
+   !do_tidal_sync = .true.
+   !do_j_accretion = .true.
+   !do_jdot_missing_wind = .true.
+
+   terminate_if_initial_overflow = .false.
+
+   max_implicit_abs_mdot = 1d-0
+
+   mdot_scheme = 'Kolb' !'Ritter'
+
+   mass_transfer_beta = 1d0
+   !mass_transfer_delta = 0.99d0
+   !mass_transfer_gamma = 1d0
+   !mass_transfer_delta = 1d0
+
+
+   limit_retention_by_mdot_edd = .false.
+
+   implicit_scheme_tolerance = 1d-1
+   fr = 1d-1 !timestep scale to keep (r-rl)/rl < fr.  default: 0.1
+   fr_limit = 1d-1  ! lower limit on fr to keep timestep from going to 0.
+   fm = 1d-1
+   fj = 1d-1
+
+   max_tries_to_achieve = 20
+
+   implicit_scheme_tolerance = 1d-2
+   max_tries_to_achieve = 50
+   min_change_factor = 1.002d0
+   max_change_factor = 1.5d0
+   initial_change_factor = 1.5d0
+   change_factor_fraction = 0.8d0
+   implicit_lambda = 0.4d0
+   implicit_scheme_tiny_factor = 1d-4
+
+   min_mdot_for_implicit = 1d-5
+   starting_mdot = 1d-8
+   roche_min_mdot = 1d-10
+
+   terminal_interval = 10
+   write_header_frequency = 10
+/ ! end of binary_controls namelist
+
