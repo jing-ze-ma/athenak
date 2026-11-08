@@ -2143,7 +2143,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_m1>/implicit_wb_vcap must be >= 0 (0 = off)");
     }
     if (impl_wb_vcap > 0.0) {
-      Kokkos::realloc(vcap_cnt_d, 3);
+      Kokkos::realloc(vcap_cnt_d, 4);
       Kokkos::deep_copy(vcap_cnt_d, 0.0);
     }
     if (pin->DoesParameterExist("rad_m1","implicit_wb_vcap_measure")) {
@@ -9857,21 +9857,22 @@ void RadiationM1::ImplicitReport() {
   // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
   // every rank holds the same three numbers and no reduction is needed here
   // r136e-1107 implicit_wb_vcap: the capped cell-solves and the energy returned to E
-  if (impl_wb_vcap > 0.0 && vcap_cnt_d.extent_int(0) == 3) {
+  if (impl_wb_vcap > 0.0 && vcap_cnt_d.extent_int(0) == 4) {
     auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vcap_cnt_d);
-    Real vv[2] = {hv(0), hv(1)};
+    Real vv[3] = {hv(0), hv(1), hv(3)};
 #if MPI_PARALLEL_ENABLED
-    Real gv[2];
-    MPI_Allreduce(vv, gv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    vv[0] = gv[0]; vv[1] = gv[1];
+    Real gv[3];
+    MPI_Allreduce(vv, gv, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    vv[0] = gv[0]; vv[1] = gv[1]; vv[2] = gv[2];
 #endif
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_wb_vcap=" << impl_wb_vcap
                 << (impl_wb_vcap_meas ? " (measure only)" : "")
                 << ": cell-solves beyond it=" << vv[0]
                 << " kinetic energy "
-                << (impl_wb_vcap_meas ? "beyond it=" : "returned to E=") << vv[1]
-                << " (code units x volume)" << std::endl;
+                << (impl_wb_vcap_meas ? "beyond it=" : "taken from the gas=") << vv[1]
+                << " of which not returned to E (bound E)=" << vv[2]
+                << " (code units x volume, all attempts)" << std::endl;
     }
   }
   if (global_variable::my_rank != 0) return;

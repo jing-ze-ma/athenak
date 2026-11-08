@@ -981,8 +981,14 @@
             dm2 = sc*dq[1];
             if (thrd) {dm3 = sc*dq[2];}
           }
+          // the energy back to E is bounded by the cell's own E (gas units): a kick
+          // that is no physical work (a diverged pass: |dv| ~ c) must not create E
+          // (Raven 11-08: unbounded, an accepted stage reached E 1e55); the rest leaves
+          // as with the ceiling and is counted (vcap_cnt_d 3)
+          const Real ret = fmin(dke, (cl/ch)*fmax(ep, 0.0));
           work -= dke;
-          ep += (ch/cl)*dke;
+          ep += (ch/cl)*ret;
+          Kokkos::atomic_add(&vcc_(3), (dke - ret)*vol);
         }
       }
     }
