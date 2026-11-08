@@ -640,6 +640,14 @@ class RadiationM1 {
   Real impl_wb_vkrej = 0.0;
   DvceArray1D<Real> vkick_cnt_d;
   Real vkick_nrej = 0.0, vkick_nbe = 0.0, vkick_nbecell = 0.0;
+  // r136e-1107 <rad_m1>/implicit_wb_vkick_be_retry (read only when named; needs
+  // implicit_wb_vkick_reject and <time>/dt_retry): a backward-Euler solve that kicks a
+  // cell beyond V is a dt_retry failure (reason vkick: cut dt, redo) while the cycle has
+  // cuts left (dtr_ncut < dtr_maxcut, set by DtRetry); after that it is accepted and
+  // counted as before (vkick_nbefall)
+  bool impl_wb_vkbr = false;
+  Real vkick_nberetry = 0.0, vkick_nbefall = 0.0;
+  int dtr_ncut = 0, dtr_maxcut = 8;   // DtRetry bookkeeping (cuts of this cycle, limit)
   bool impl_wb_vcap_meas = false;
   int impl_wb_vcap_np = 0;
   DvceArray1D<Real> vcap_cnt_d;

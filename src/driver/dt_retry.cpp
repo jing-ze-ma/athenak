@@ -355,6 +355,7 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
     t2streak_ = pin->GetBoolean("time", "dt_retry_t2be_now");
   }
   pk->pradm1->dtr_t2be = (t2_be_ == 0) || (t2_be_ > 0 && t2streak_);
+  pk->pradm1->dtr_maxcut = maxcut_;   // r136e-1107 (vkick_be_retry bookkeeping)
   std::string vm = pin->GetOrAddString("time", "dt_retry_views", "minimal");
   all_views_ = (vm == "all");
   if (!all_views_ && vm != "minimal") {
@@ -533,6 +534,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
                  : ((why == 5 && t2_fac_ > 0.0 && ncut_ == 0) ? t2_fac_ : fac_);
   ncut_ += 1;
   nretry_ += 1;
+  m1->dtr_ncut = ncut_;   // r136e-1107 (vkick_be_retry bookkeeping)
   if (ncut_ > maxcut_) {
     if (global_variable::my_rank == 0) {
       std::cout << "### FATAL ERROR: <time> dt_retry: cycle " << pm->ncycle << " failed "
@@ -622,7 +624,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   // used here: a retried cycle is not a failed run
   static const char *whys[] = {"?", "NON-CONVERGED", "resid>implicit_resid_fatal",
                                "masked_resid>implicit_resid_fatal_masked", "eint<=0",
-                               "time2_reject", "?", "?", "?", "forced"};
+                               "time2_reject", "vkick", "?", "?", "forced"};
   if (global_variable::my_rank == 0) {
     std::cout << "DT_RETRY cycle=" << pm->ncycle << " t=" << pm->time << " dt " << dto
               << " -> " << dtn << " reason=" << whys[std::min(std::max(why, 0), 9)]
@@ -638,6 +640,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
 void DtRetry::Accept(Mesh *pm) {
   if (!on) return;
   ncut_ = 0;
+  pm->pmb_pack->pradm1->dtr_ncut = 0;   // r136e-1107
   // t2befb-1020: a cycle that took the backward-Euler redo of time2_reject = retry arms the
   // next cycle to take it at once (a rejection that persists from cycle to cycle costs as
   // much as time2_reject = be); the first cycle without a rejection disarms it
