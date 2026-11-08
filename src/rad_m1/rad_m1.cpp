@@ -2308,6 +2308,22 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
       if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_change")) {
         vra_ema_eps = pin->GetReal("rad_m1","vet_rotate_avg_ema_change");
       }
+      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_change_j")) {
+        vra_ema_chj = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_change_j");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_change_form")) {
+        const std::string fm = pin->GetString("rad_m1","vet_rotate_avg_ema_change_form");
+        if (fm.compare("step") == 0) {
+          vra_ema_chstep = true;
+        } else if (fm.compare("linear") != 0) {
+          std::cout << "### FATAL ERROR <rad_m1>/vet_rotate_avg_ema_change_form = '" << fm
+                    << "' is not a choice (linear | step)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_diag")) {
+        vra_ema_diag = pin->GetInteger("rad_m1","vet_rotate_avg_ema_diag");
+      }
       vra_on = true;
       if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_weight")) {
         vra_eq = (pin->GetString("rad_m1","vet_rotate_avg_weight").compare("equal") == 0);

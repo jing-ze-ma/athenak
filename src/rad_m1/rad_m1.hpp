@@ -2738,6 +2738,10 @@ class RadiationM1 {
   void RotAvgEmaShift(const int ds);
   void RotAvgEmaChange(const int ilo);
   Real vra_ema_eps = 0.05;     // vet_rotate_avg_ema_change (0: no change test)
+  bool vra_ema_chj = true;     // vet_rotate_avg_ema_change_j: the J ratio in the test
+  bool vra_ema_chstep = false; // vet_rotate_avg_ema_change_form = step (default linear)
+  int vra_ema_diag = 0;        // vet_rotate_avg_ema_diag = M: print the change weights
+  int64_t vra_ema_nsh = 0;     // the boundaries seen (diag cadence only)
   void RotAvgEmaApply(const int ilo);
   bool vra_eq = false;         // vet_rotate_avg_weight = equal (default j: J-weighted)
   bool vra_on = false;
