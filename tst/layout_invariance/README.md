@@ -162,3 +162,28 @@ therefore PASSES when (1) its layout pair is no worse (x2) than the OLD binary's
 (`ref_old = True`; bins family `<family>_old`; verdict NOWORSE) AND (2) the same deck with
 `implicit_precond = line` is BITWISE across the layouts (`require_bitwise`, e.g. `acc_sp_th_line`).
 The `tolref` machinery stays for reference.
+
+## Restarts of pre-1105 decks: name `mesh/layout_invariant=true` (layoutdet-1107)
+
+A restart whose input lacks `<mesh>/layout_invariant` keeps `false` (old block-ordered sums).
+The HG and RSG production decks are such restarts. Their rank-count dependence (1 vs 2 vs 4
+ranks, same 24 MeshBlocks: dens ~1e-13, eint ~1e-11, m1_e ~1e-10 after 4 cycles; near-zero
+velocities flip sign) comes from these old sums. The first of them on the solve path are the
+BiCGStab dot products in `ImplicitBiCGStabRun`: a Kokkos reduction over the rank's pack, so its
+order depends on nmb per rank, followed by `M1GlobalSum2`. Adding `mesh/layout_invariant=true`
+to the restart command line (it is then recorded in the next restart) makes them bitwise across
+rank counts, with no code change (prod-1107v 698b82413, layoutdet-1107 gates of 11-08):
+
+- hgb and rsb small C32 states, control and r8-cs + T: 2 vs 1 rank (MI300A), 4 ranks on 2 nodes vs
+  1 rank (MI300A), 4 vs 3 ranks (A100): bins and restart data identical;
+- restart (R+2 -> rst -> +2) identical to R+4, and run-to-run identical;
+- iteration counts unchanged; cost +8 % per cycle on hgb (2 MI300A ranks, 20 cycles, interleaved).
+
+This covers a change of the RANK COUNT with the same MeshBlocks. A different MeshBlock layout
+still differs at the Krylov tolerance with the block-local preconditioners (`mg`, `rbgs`, see
+above).
+
+Diagnostic: env `M1_DTRACE_LAYOUT=1` with `<rad_m1>/implicit_det_trace = N` prints on rank 0
+layout-comparable hashes (global position mixed, exact uint64 sums over all ranks) of the
+solve's arrays at clos_in, opac_in, isolve_in, solve_in, pre_bcg, post_bcg and c2p_in for the
+first N solves; diff the `<dtl>` lines of two layouts to find the first array that differs.
