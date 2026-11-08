@@ -1,0 +1,24 @@
+sp_lo_hot_on               all            N  1079 | E err on 1.370e-01 off 1.367e-01 (on closer in 38 %) | r2 Fr err on 1.414e-01 off 1.411e-01
+sp_lo_hot_on               inside clump   N    84 | E err on 5.763e-02 off 5.760e-02 (on closer in 46 %) | r2 Fr err on 1.723e-01 off 1.723e-01
+sp_lo_hot_on               shell 1-1.5 a  N   103 | E err on 1.424e-01 off 1.419e-01 (on closer in 17 %) | r2 Fr err on 9.168e-02 off 9.151e-02
+sp_lo_hot_on               outside 1.5 a  N   892 | E err on 1.439e-01 off 1.436e-01 (on closer in 40 %) | r2 Fr err on 1.442e-01 off 1.439e-01
+sp_hi_hot_on               all            N  9203 | E err on 1.329e-01 off 1.328e-01 (on closer in 28 %) | r2 Fr err on 1.343e-01 off 1.342e-01
+sp_hi_hot_on               inside clump   N   582 | E err on 6.312e-02 off 6.321e-02 (on closer in 56 %) | r2 Fr err on 1.090e-01 off 1.091e-01
+sp_hi_hot_on               shell 1-1.5 a  N   996 | E err on 1.426e-01 off 1.423e-01 (on closer in 16 %) | r2 Fr err on 1.185e-01 off 1.183e-01
+sp_hi_hot_on               outside 1.5 a  N  7625 | E err on 1.370e-01 off 1.369e-01 (on closer in 27 %) | r2 Fr err on 1.383e-01 off 1.382e-01
+sp_lo_hot_on_hd            all            N  1751 | E err on 5.683e-02 off 5.682e-02 (on closer in 37 %) | r2 Fr err on 5.878e-02 off 5.877e-02
+sp_lo_hot_on_hd            inside clump   N    90 | E err on 7.118e-02 off 7.118e-02 (on closer in 48 %) | r2 Fr err on 1.728e-01 off 1.728e-01
+sp_lo_hot_on_hd            shell 1-1.5 a  N   138 | E err on 1.158e-01 off 1.160e-01 (on closer in 19 %) | r2 Fr err on 6.888e-02 off 6.878e-02
+sp_lo_hot_on_hd            outside 1.5 a  N  1523 | E err on 5.063e-02 off 5.061e-02 (on closer in 38 %) | r2 Fr err on 5.113e-02 off 5.113e-02
+cs_lo_hot_on               all            N  2116 | E err on 1.912e-01 off 1.905e-01 (on closer in 47 %) | r2 Fr err on 1.937e-01 off 1.932e-01
+cs_lo_hot_on               inside clump   N   101 | E err on 7.813e-02 off 7.808e-02 (on closer in 43 %) | r2 Fr err on 1.704e-01 off 1.704e-01
+cs_lo_hot_on               shell 1-1.5 a  N   161 | E err on 1.110e-01 off 1.085e-01 (on closer in 28 %) | r2 Fr err on 7.599e-02 off 7.556e-02
+cs_lo_hot_on               outside 1.5 a  N  1854 | E err on 2.043e-01 off 2.038e-01 (on closer in 49 %) | r2 Fr err on 2.052e-01 off 2.046e-01
+cs_hi_hot_on               all            N 10808 | E err on 2.057e-01 off 2.056e-01 (on closer in 32 %) | r2 Fr err on 2.072e-01 off 2.071e-01
+cs_hi_hot_on               inside clump   N   601 | E err on 6.507e-02 off 6.514e-02 (on closer in 49 %) | r2 Fr err on 9.618e-02 off 9.621e-02
+cs_hi_hot_on               shell 1-1.5 a  N  1132 | E err on 9.951e-02 off 9.928e-02 (on closer in 31 %) | r2 Fr err on 8.849e-02 off 8.832e-02
+cs_hi_hot_on               outside 1.5 a  N  9075 | E err on 2.282e-01 off 2.282e-01 (on closer in 32 %) | r2 Fr err on 2.294e-01 off 2.293e-01
+cs_lo_hot_on_hd            all            N  2096 | E err on 6.163e-02 off 6.117e-02 (on closer in 32 %) | r2 Fr err on 6.230e-02 off 6.192e-02
+cs_lo_hot_on_hd            inside clump   N    94 | E err on 6.495e-02 off 6.491e-02 (on closer in 40 %) | r2 Fr err on 1.708e-01 off 1.708e-01
+cs_lo_hot_on_hd            shell 1-1.5 a  N   153 | E err on 1.190e-01 off 1.177e-01 (on closer in 6 %) | r2 Fr err on 7.102e-02 off 7.077e-02
+cs_lo_hot_on_hd            outside 1.5 a  N  1849 | E err on 5.671e-02 off 5.631e-02 (on closer in 33 %) | r2 Fr err on 5.606e-02 off 5.565e-02

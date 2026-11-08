@@ -1,0 +1,16 @@
+sp_lo_hot5_on              all            N  4187 | E err on 1.366e-01 off 1.364e-01 (on closer in 47 %) | r2 Fr err on 1.341e-01 off 1.340e-01
+sp_lo_hot5_on              inside clump   N   172 | E err on 8.858e-02 off 8.756e-02 (on closer in 35 %) | r2 Fr err on 6.415e-02 off 6.411e-02
+sp_lo_hot5_on              shell 1-1.5 a  N   303 | E err on 9.062e-02 off 8.986e-02 (on closer in 25 %) | r2 Fr err on 7.048e-02 off 6.989e-02
+sp_lo_hot5_on              outside 1.5 a  N  3712 | E err on 1.425e-01 off 1.424e-01 (on closer in 49 %) | r2 Fr err on 1.426e-01 off 1.425e-01
+sp_hi_hot5_on              all            N 27623 | E err on 1.501e-01 off 1.496e-01 (on closer in 43 %) | r2 Fr err on 1.481e-01 off 1.477e-01
+sp_hi_hot5_on              inside clump   N  1378 | E err on 6.479e-02 off 6.350e-02 (on closer in 36 %) | r2 Fr err on 3.809e-02 off 3.847e-02
+sp_hi_hot5_on              shell 1-1.5 a  N  1859 | E err on 8.425e-02 off 8.278e-02 (on closer in 28 %) | r2 Fr err on 7.032e-02 off 6.916e-02
+sp_hi_hot5_on              outside 1.5 a  N 24386 | E err on 1.600e-01 off 1.596e-01 (on closer in 44 %) | r2 Fr err on 1.603e-01 off 1.598e-01
+cs_lo_hot5_on              all            N  3973 | E err on 2.187e-01 off 2.185e-01 (on closer in 41 %) | r2 Fr err on 2.171e-01 off 2.169e-01
+cs_lo_hot5_on              inside clump   N   184 | E err on 1.057e-01 off 1.051e-01 (on closer in 36 %) | r2 Fr err on 7.436e-02 off 7.439e-02
+cs_lo_hot5_on              shell 1-1.5 a  N   317 | E err on 8.824e-02 off 8.762e-02 (on closer in 40 %) | r2 Fr err on 7.459e-02 off 7.424e-02
+cs_lo_hot5_on              outside 1.5 a  N  3472 | E err on 2.366e-01 off 2.364e-01 (on closer in 41 %) | r2 Fr err on 2.377e-01 off 2.375e-01
+cs_hi_hot5_on              all            N 26735 | E err on 2.245e-01 off 2.241e-01 (on closer in 38 %) | r2 Fr err on 2.240e-01 off 2.237e-01
+cs_hi_hot5_on              inside clump   N  1408 | E err on 6.948e-02 off 6.834e-02 (on closer in 40 %) | r2 Fr err on 4.273e-02 off 4.287e-02
+cs_hi_hot5_on              shell 1-1.5 a  N  1881 | E err on 7.014e-02 off 6.890e-02 (on closer in 34 %) | r2 Fr err on 6.464e-02 off 6.384e-02
+cs_hi_hot5_on              outside 1.5 a  N 23446 | E err on 2.462e-01 off 2.459e-01 (on closer in 39 %) | r2 Fr err on 2.476e-01 off 2.474e-01
