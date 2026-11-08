@@ -581,19 +581,29 @@ void RadiationM1::SphFaceSync() {
   dmx = h[0]; fmx = h[1];}
 #endif
   fsync_dmax = fmax(fsync_dmax, dmx/fmax(fmx, 1.0e-300));
+  // sp_face_sync_relax = w in (0, 1] (read only when named, default 1): each copy moves
+  // the fraction w toward the mean.  w = 1 is the exact mean (the same bits on both
+  // sides); w < 1 removes a LARGE inherited mismatch over ~1/w steps (an abrupt 50 %
+  // change of the seam memory made the first Picard solve diverge on the damaged he_tan
+  // ONwi restart), the mismatch decaying by (1 - w) per step.
+  const Real w = fsync_w;
+  const bool wx = (w >= 1.0);
   par_for("m1_fsync_out", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    auto mv = [&](const Real own, const Real mean) {
+      return wx ? mean : own + w*(mean - own);
+    };
     if (j == js && M1FsShared(mbbcs.d_view(m, BoundaryFace::inner_x2))) {
-      f2(m,k,js,i) = 0.5*(f2(m,k,js,i) + fx(m,1,k,js-1,i));
+      f2(m,k,js,i) = mv(f2(m,k,js,i), 0.5*(f2(m,k,js,i) + fx(m,1,k,js-1,i)));
     }
     if (j == je && M1FsShared(mbbcs.d_view(m, BoundaryFace::outer_x2))) {
-      f2(m,k,je+1,i) = 0.5*(fx(m,0,k,je+1,i) + f2(m,k,je+1,i));
+      f2(m,k,je+1,i) = mv(f2(m,k,je+1,i), 0.5*(fx(m,0,k,je+1,i) + f2(m,k,je+1,i)));
     }
     if (thrd && k == ks && M1FsShared(mbbcs.d_view(m, BoundaryFace::inner_x3))) {
-      f3(m,ks,j,i) = 0.5*(f3(m,ks,j,i) + fx(m,3,ks-1,j,i));
+      f3(m,ks,j,i) = mv(f3(m,ks,j,i), 0.5*(f3(m,ks,j,i) + fx(m,3,ks-1,j,i)));
     }
     if (thrd && k == ke && M1FsShared(mbbcs.d_view(m, BoundaryFace::outer_x3))) {
-      f3(m,ke+1,j,i) = 0.5*(fx(m,2,ke+1,j,i) + f3(m,ke+1,j,i));
+      f3(m,ke+1,j,i) = mv(f3(m,ke+1,j,i), 0.5*(fx(m,2,ke+1,j,i) + f3(m,ke+1,j,i)));
     }
   });
   if (fsync_n == 0 && global_variable::my_rank == 0) {

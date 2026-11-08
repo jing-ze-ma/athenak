@@ -2610,6 +2610,7 @@ class RadiationM1 {
   MeshBoundaryValuesCC *pbval_fs = nullptr;
   DvceArray5D<Real> fsync_a, fsync_c;
   Real fsync_dmax = 0.0;
+  Real fsync_w = 1.0;   // <rad_m1>/sp_face_sync_relax
   int fsync_n = 0;
   void SphFaceSync();
   MeshBoundaryValuesCC *pbval_vs = nullptr;   // vlat_cs
