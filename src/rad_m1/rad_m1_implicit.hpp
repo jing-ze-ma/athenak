@@ -1283,20 +1283,27 @@ Real M1SphLat(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v
 //!   d = 1:  2 cot a E / r + (1/(r sin)) d_ph P_tp
 //!   d = 2:  (1/(r sin^2)) d_th (sin^2 P_tp)
 //! centred over the coordinate distances, one-sided at a physical boundary as M1SphLat.
+//! tensor-sp-1108: the trigonometric factors (sin, cot, sin^2) take the theta of the cell
+//! whose DATA the slot holds, x2t (RadiationM1::VtanX2t: = x2v, except in the ghost rows
+//! of a theta-PERIODIC wedge's x2min/x2max blocks, where it is the theta of the periodic
+//! source cell).  With the plain x2v the two blocks at the theta seam evaluated the same
+//! seam face with cot(x2min) ~ +1 and cot(x2max) ~ -1 for the same cells: the face flux
+//! F2 of the seam differed between its two sides and the solve created energy (He 128^2
+//! wedge +0.35 L_in, EAUDIT RSOLVE).  The coordinate distances stay x2v.
 
 template <class V, class A>
 KOKKOS_INLINE_FUNCTION
 Real M1SphTan(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v,
-              const A &x3v, const int m, const int d, const int k, const int j,
-              const int i, const bool thrd, const int jl, const int ju, const int kl,
-              const int ku, const int ec) {
+              const A &x2t, const A &x3v, const int m, const int d, const int k,
+              const int j, const int i, const bool thrd, const int jl, const int ju,
+              const int kl, const int ku, const int ec) {
   const Real r = x1v(m,i);
   const int ja = (j+1 <= ju) ? (j+1) : j;
   const int jb = (j-1 >= jl) ? (j-1) : j;
   const int ka = (thrd && k+1 <= ku) ? (k+1) : k;
   const int kb = (thrd && k-1 >= kl) ? (k-1) : k;
-  const Real sn = sin(x2v(m,j));
-  const Real ct = cos(x2v(m,j))/sn;
+  const Real sn = sin(x2t(m,j));
+  const Real ct = cos(x2t(m,j))/sn;
   Real s = 0.0;
   if (d == 1) {
     if (ka != kb) {
@@ -1306,7 +1313,7 @@ Real M1SphTan(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v
     s += 2.0*ct*tt(m,c0+3,k,j,i)*iw(m,ec,k,j,i)/r;
   } else if (d == 2) {
     if (ja != jb) {
-      const Real sa = sin(x2v(m,ja)), sb = sin(x2v(m,jb));
+      const Real sa = sin(x2t(m,ja)), sb = sin(x2t(m,jb));
       s += (sa*sa*tt(m,c0+4,k,ja,i)*iw(m,ec,k,ja,i)
             - sb*sb*tt(m,c0+4,k,jb,i)*iw(m,ec,k,jb,i))
            /(r*sn*sn*(x2v(m,ja) - x2v(m,jb)));
