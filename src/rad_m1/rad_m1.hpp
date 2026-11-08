@@ -2560,6 +2560,7 @@ class RadiationM1 {
   std::vector<double> vlat_nodes;   // the mu nodes (host)
   int vlat_geo_icut = -1;       // the first shell vlat_geo was built for
   MeshBoundaryValuesCC *pbval_vl = nullptr;   // vlat_i
+  MeshBoundaryValuesCC *pbval_ea = nullptr;   // tsp-1108 EAUDITF diagnostic
   MeshBoundaryValuesCC *pbval_vs = nullptr;   // vlat_cs
   MeshBoundaryValuesCC *pbval_vt = nullptr;   // tau_ten (all slots)
   void VetLatInit();
