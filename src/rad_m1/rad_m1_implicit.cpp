@@ -12795,7 +12795,9 @@ void RadiationM1::EAuditMark(int pt) {
     // ghosts, and D = dt (c/chat) sum (F_mine - F_neighbour) A over the lower faces of
     // each block (each shared face once) is what RSOLVE carries beyond sum r
     Real xd[12] = {0.0};
-    if (pbval_vl != nullptr && tr2) {
+    // pbval_u (M1_NVAR = 4 components, the ordinary ng ghost layers; pbval_vl's arrays
+    // carry the wider vet band and do not fit)
+    if (pbval_u != nullptr && tr2) {
       const int n1c = u0.extent_int(4), n2c = u0.extent_int(3), n3c = u0.extent_int(2);
       if (eaud_fx.extent_int(0) != nmb) {
         Kokkos::realloc(eaud_fx, nmb, 4, n3c, n2c, n1c);
@@ -12810,7 +12812,7 @@ void RadiationM1::EAuditMark(int pt) {
         if (tr3 && k == ks) {fx(m,2,k,j,i) = f3(m,ks,j,i);}
         if (tr3 && k == ke) {fx(m,3,k,j,i) = f3(m,ke+1,j,i);}
       });
-      VetLatExchange(eaud_fx, eaud_fxc, pbval_vl);
+      VetLatExchange(eaud_fx, eaud_fxc, pbval_u);
       const Real x2lo = pmy_pack->pmesh->mesh_size.x2min;
       const Real x3lo = pmy_pack->pmesh->mesh_size.x3min;
       const Real tol = 1.0e-12;
