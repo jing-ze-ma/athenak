@@ -228,43 +228,14 @@ struct ReproVec {
 //! increasing (k, j) order (a plain double sum: a function of the MeshBlock alone); one
 //! thread per (q, i) then deposits the nmb per-MeshBlock partials exactly, and the exact
 //! rank merge follows.  The result depends only on the set of MeshBlock partials.
-//! prod-1109: persistent device / host scratch of ShellSums (a device allocation per call
-//! cost a synchronising malloc/free on every shell sum); grown on demand, released by a
-//! Kokkos finalize hook
-struct ShellScratch {
-  Kokkos::View<Real*, DevMemSpace> bp;
-  Kokkos::View<ReproSum*, DevMemSpace> rs;
-  Kokkos::View<ReproSum*, Kokkos::HostSpace> rsh;
-};
-inline ShellScratch &GetShellScratch() {
-  static ShellScratch *s = nullptr;
-  if (s == nullptr) {
-    s = new ShellScratch;
-    Kokkos::push_finalize_hook([]() {delete s; s = nullptr;});
-  }
-  return *s;
-}
-
 template <class F>
 void ShellSums(const char *name, const int nq, const int c1, const int nmb,
                const int ks, const int ke, const int js, const int je, const int ilo,
                const int ihi, const F &f, std::vector<Real> &out) {
-  ShellScratch &sc = GetShellScratch();
-  if (sc.rs.extent_int(0) < nq*c1) {
-    sc.rs = Kokkos::View<ReproSum*, DevMemSpace>(
-        Kokkos::view_alloc("repro_shell_rs", Kokkos::WithoutInitializing), nq*c1);
-    sc.rsh = Kokkos::View<ReproSum*, Kokkos::HostSpace>(
-        Kokkos::view_alloc("repro_shell_rsh", Kokkos::WithoutInitializing), nq*c1);
-  }
-  Kokkos::View<ReproSum**, DevMemSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-      rs(sc.rs.data(), nq, c1);
+  Kokkos::View<ReproSum**, DevMemSpace> rs(std::string(name), nq, c1);
   if (block_mode) {
-    if (sc.bp.extent_int(0) < nq*nmb*c1) {
-      sc.bp = Kokkos::View<Real*, DevMemSpace>(
-          Kokkos::view_alloc("repro_shell_bp", Kokkos::WithoutInitializing), nq*nmb*c1);
-    }
-    Kokkos::View<Real***, DevMemSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-        bp(sc.bp.data(), nq, nmb, c1);
+    Kokkos::View<Real***, DevMemSpace> bp(Kokkos::view_alloc(std::string(name) + "_blk",
+                                          Kokkos::WithoutInitializing), nq, nmb, c1);
     const int nqm = nq*nmb;
     Kokkos::parallel_for(std::string(name) + "_blk",
                          Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nqm*c1),
@@ -312,10 +283,11 @@ void ShellSums(const char *name, const int nq, const int c1, const int nmb,
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {rs(q, i) = acc.s[0];});
   });
   }
-  auto hs = Kokkos::subview(sc.rsh, Kokkos::make_pair(0, nq*c1));
-  Kokkos::deep_copy(hs, Kokkos::subview(sc.rs, Kokkos::make_pair(0, nq*c1)));
+  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), rs);
   std::vector<ReproSum> v(static_cast<std::size_t>(nq)*c1);
-  for (std::size_t n = 0; n < v.size(); ++n) {v[n] = hs(n);}
+  for (int q = 0; q < nq; ++q) {
+    for (int i = 0; i < c1; ++i) {v[static_cast<std::size_t>(q)*c1 + i] = h(q, i);}
+  }
   AllMerge(v.data(), static_cast<int>(v.size()));
   out.resize(v.size());
   for (std::size_t n = 0; n < v.size(); ++n) {out[n] = v[n].Value();}
