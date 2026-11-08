@@ -1239,6 +1239,8 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
   if (amp) {
     Kokkos::deep_copy(DevExeSpace(), hydro::AmModuleOf(pmy_pack)->am_spin, t2ssv);
   }
+  // r136e-1107 dbg_energy_audit: the put-back is no segment (EAUDIT D=)
+  if (dbg_eaudit) {EAuditMark(6);}
   // grow the marked set (face neighbours) and fill its ghosts: iw slot KZ (Krylov
   // scratch, free between solves) carries it through the width-1 exchange; the ghosts of
   // a physical boundary stay 0

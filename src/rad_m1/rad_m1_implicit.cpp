@@ -2136,6 +2136,37 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   Kokkos::realloc(pos_cnt_d, M1_POS_N);
   Kokkos::deep_copy(pos_cnt_d, 0.0);
+  // r136e-1107 implicit_wb_vkick_reject (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1","implicit_wb_vkick_reject")) {
+    impl_wb_vkrej = pin->GetReal("rad_m1","implicit_wb_vkick_reject");
+    if (!(impl_wb_vkrej >= 0.0)) {
+      ImplFatal("<rad_m1>/implicit_wb_vkick_reject must be >= 0 (0 = off)");
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_wb_vkick_be_retry")) {
+      impl_wb_vkbr = pin->GetBoolean("rad_m1","implicit_wb_vkick_be_retry");
+    }
+    if (impl_wb_vkrej > 0.0) {
+      Kokkos::realloc(vkick_cnt_d, 2);
+      Kokkos::deep_copy(vkick_cnt_d, 0.0);
+    }
+  }
+  // r136e-1107 implicit_wb_vcap (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1","implicit_wb_vcap")) {
+    impl_wb_vcap = pin->GetReal("rad_m1","implicit_wb_vcap");
+    if (!(impl_wb_vcap >= 0.0)) {
+      ImplFatal("<rad_m1>/implicit_wb_vcap must be >= 0 (0 = off)");
+    }
+    if (impl_wb_vcap > 0.0) {
+      Kokkos::realloc(vcap_cnt_d, 4);
+      Kokkos::deep_copy(vcap_cnt_d, 0.0);
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_wb_vcap_measure")) {
+      impl_wb_vcap_meas = pin->GetBoolean("rad_m1","implicit_wb_vcap_measure");
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_wb_vcap_print")) {
+      impl_wb_vcap_np = pin->GetInteger("rad_m1","implicit_wb_vcap_print");
+    }
+  }
   // implicit_opac_newton_guard_mode: 0 = the diagonal test alone; + 1 = also the
   // right-hand side, + 2 = also the sign of the neighbour entry (M1OpnGuardFace; He presn
   // wedge gate: 7 floor clips with the diagonal alone, 0 with both), + 4 (m1-positivity)
@@ -9867,6 +9898,36 @@ void RadiationM1::ImplicitReport() {
   }
   // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
   // every rank holds the same three numbers and no reduction is needed here
+  // r136e-1107 implicit_wb_vcap: the capped cell-solves and the energy returned to E
+  if (impl_wb_vcap > 0.0 && vcap_cnt_d.extent_int(0) == 4) {
+    auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vcap_cnt_d);
+    Real vv[3] = {hv(0), hv(1), hv(3)};
+#if MPI_PARALLEL_ENABLED
+    Real gv[3];
+    MPI_Allreduce(vv, gv, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    vv[0] = gv[0]; vv[1] = gv[1]; vv[2] = gv[2];
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_wb_vcap=" << impl_wb_vcap
+                << (impl_wb_vcap_meas ? " (measure only)" : "")
+                << ": cell-solves beyond it=" << vv[0]
+                << " kinetic energy "
+                << (impl_wb_vcap_meas ? "beyond it=" : "taken from the gas=") << vv[1]
+                << " of which not returned to E (bound E)=" << vv[2]
+                << " (code units x volume, all attempts)" << std::endl;
+    }
+  }
+  if (impl_wb_vkrej > 0.0 && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> implicit_wb_vkick_reject=" << impl_wb_vkrej
+              << ": stages rejected=" << vkick_nrej
+              << " backward-Euler solves with kicks=" << vkick_nbe << " (cells "
+              << vkick_nbecell << ")";
+    if (impl_wb_vkbr) {
+      std::cout << " of which dt_retry=" << vkick_nberetry
+                << " accepted after the last cut=" << vkick_nbefall;
+    }
+    std::cout << std::endl;
+  }
   if (global_variable::my_rank != 0) return;
   if (tmr_c0 > 0) {
     // implicit_timers: seconds per category, then the counters (see TmrMark)
@@ -12668,7 +12729,7 @@ void RadiationM1::EAuditMark(int pt) {
   const Real dfl = hy ? 10.0*fl.eos.dfloor : -1.0;
   const bool init = eaud_init;
   const bool cls = (pt == 2) && (t2_solve != M1_T2S_STAGE2);
-  const bool sete = (pt == 5) || !init;
+  const bool sete = (pt == 5) || (pt == 6) || !init;
   array_sum::GlobalSum s3;
   Kokkos::parallel_reduce("m1_eaudit", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nk*nj*ni),
@@ -12795,6 +12856,10 @@ void RadiationM1::EAuditMark(int pt) {
     for (int r=0; r<4; ++r) {eaud_pd[r] += loc[10 + r] - eaud_pc[r];}
   }
   if (!init) return;
+  if (pt == 6) {   // r136e-1107: a put-back (discarded attempt), no segment
+    eaud_disc += loc[0] + loc[1] + loc[2];
+    return;
+  }
   for (int r=0; r<3; ++r) {eaud_seg[pt][r] += loc[r];}
   if (pt == 3) {
     for (int r=0; r<6; ++r) {eaud_bnd[r] = loc[3 + r];}
@@ -12813,12 +12878,13 @@ void RadiationM1::EAuditMark(int pt) {
                   eaud_seg[q][2]);
     }
     std::printf(" B=%.10e,%.10e,%.10e,%.10e,%.10e T2=%.10e W=%.10e"
-                " P=%.10e,%.10e,%.10e,%.10e RSOLVE=%.10e\n",
+                " P=%.10e,%.10e,%.10e,%.10e RSOLVE=%.10e D=%.10e\n",
                 eaud_bnd[0], eaud_bnd[1], eaud_bnd[2], eaud_bnd[3], eaud_bnd[4],
                 eaud_bnd[5], eaud_w, eaud_pd[0], eaud_pd[1], eaud_pd[2], eaud_pd[3],
-                rsol);
+                rsol, eaud_disc);
   }
   eaud_w = 0.0;
+  eaud_disc = 0.0;
   for (int r=0; r<4; ++r) {eaud_pd[r] = 0.0;}
   for (int q=0; q<6; ++q) {
     for (int r=0; r<3; ++r) {eaud_seg[q][r] = 0.0;}
@@ -16992,6 +17058,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto pc_ = pos_cnt_d;
   const bool psph = sph_geom;
   auto pvol = pmy_pack->pcoord->volume;
+  // r136e-1107 implicit_wb_vcap (rad_m1.hpp): not on the cubed sphere
+  const Real wvcap = cs_geom ? 0.0 : impl_wb_vcap;
+  const bool wvmeas = impl_wb_vcap_meas;
+  const Real wvnp = static_cast<Real>(impl_wb_vcap_np);
+  const int wvrk = global_variable::my_rank, wvcy = pmy_pack->pmesh->ncycle;
+  const int wvts = static_cast<int>(t2s);
+  auto wvx1 = pmy_pack->pcoord->x1v;
+  auto vcc_ = vcap_cnt_d;
+  // r136e-1107 implicit_wb_vkick_reject: not on the cubed sphere
+  const Real wvkr = cs_geom ? 0.0 : impl_wb_vkrej;
+  auto vkc_ = vkick_cnt_d;
+  if (wvkr > 0.0) {Kokkos::deep_copy(vkick_cnt_d, 0.0);}
   // implicit_face_weight = distance (sp): the face kappa_T of the momentum deposit is
   // the one the face equation used
   auto cx1f = pmy_pack->pcoord->xx1f;
@@ -17180,6 +17258,61 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
 #undef M1_RCP
     });
+  }
+  // r136e-1107 implicit_wb_vkick_reject: a stage that kicked a cell beyond V is not
+  // admissible (the same decision path as the admissibility test above); a BE solve is
+  // counted only
+  if (wvkr > 0.0) {
+    auto hk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vkick_cnt_d);
+    Real nk = hk(0), vmx = hk(1);
+#if MPI_PARALLEL_ENABLED
+    {Real g;
+    MPI_Allreduce(&nk, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    nk = g;
+    MPI_Allreduce(&vmx, &g, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    vmx = g;}
+#endif
+    if (nk > 0.0 && t2st && !t2_inprobe) {
+      const bool was = t2_fail;
+      vkick_nrej += 1.0;
+      t2_fail = true;
+      t2_pfix_want = false;
+      if (!was) {
+        const bool t2rk = (t2_reject == 1) && dtr_on && !dtr_t2be;
+        if (t2rk) {
+          if (!dtr_fail) {dtr_why = 5; dtr_resid = -1.0;}
+          dtr_fail = true;
+        }
+        if ((t2_reject == 1) && dtr_on && dtr_t2be) {dtr_t2hit = true;}
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> hesdirk2 stage " << ((t2s == M1_T2S_STAGE1) ? 1 : 2)
+                  << " NOT ADMISSIBLE at cycle " << pmy_pack->pmesh->ncycle
+                  << " (implicit_wb_vkick_reject: " << nk << " cells |v| > "
+                  << impl_wb_vkrej << ", max " << vmx << "): the step is redone"
+                  << (was ? " (already not admissible)" : "") << std::endl;
+      }
+    } else if (nk > 0.0 && !t2st && !t2_inprobe) {
+      vkick_nbe += 1.0;
+      vkick_nbecell += nk;
+      // implicit_wb_vkick_be_retry: a dt_retry failure while the cycle has cuts left
+      const bool rt = impl_wb_vkbr && dtr_on && (dtr_ncut < dtr_maxcut);
+      if (rt) {
+        vkick_nberetry += 1.0;
+        if (!dtr_fail) {dtr_why = 6; dtr_resid = vmx;}
+        dtr_fail = true;
+      } else if (impl_wb_vkbr) {
+        vkick_nbefall += 1.0;
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> implicit_wb_vkick_reject: backward-Euler solve at cycle "
+                  << pmy_pack->pmesh->ncycle << " kicks " << nk << " cells to |v| > "
+                  << impl_wb_vkrej << " (max " << vmx << "); "
+                  << (rt ? "dt_retry (implicit_wb_vkick_be_retry)"
+                         : (impl_wb_vkbr ? "accepted (dt_retry cuts used up)"
+                                         : "accepted (no redo)")) << std::endl;
+      }
+    }
   }
   if (pfcw_) {
     // vtxfix-1029 implicit_pos_floor_cons: one thread per radial column; the uncovered

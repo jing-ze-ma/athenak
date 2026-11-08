@@ -934,6 +934,80 @@
       dm2 = a2;
       dm3 = a3;
     }
+    // r136e-1107 implicit_wb_vcap (rad_m1.hpp): the momentum increment of the solve is
+    // scaled to keep |m + dm| <= V rho; the kinetic energy it no longer gets goes back to
+    // E (gas units -> E: ch/cl), before the slope below so that K takes the same state
+    if (wvcap > 0.0 && have_hydro && feedback && !csw) {
+      const bool tv = trans && dbgft;
+      const Real p0[3] = {uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i)};
+      const Real dq[3] = {dm1 - dmref, tv ? dm2 : 0.0, (tv && thrd) ? dm3 : 0.0};
+      const Real pmax = wvcap*dd;
+      Real pn2 = 0.0, dq2 = 0.0, pd = 0.0, pp2 = 0.0;
+      for (int a = 0; a < 3; ++a) {
+        pn2 += SQR(p0[a] + dq[a]);
+        dq2 += SQR(dq[a]);
+        pd += p0[a]*dq[a];
+        pp2 += SQR(p0[a]);
+      }
+      if (pn2 > SQR(pmax) && dq2 > 0.0) {
+        // s in [0, 1): |p0 + s dq| = pmax (s = 0 when the old speed is already above V)
+        Real sc = 0.0;
+        if (pp2 < SQR(pmax)) {
+          const Real disc = fmax(pd*pd - dq2*(pp2 - SQR(pmax)), 0.0);
+          sc = fmin(fmax((-pd + sqrt(disc))/dq2, 0.0), 1.0);
+        }
+        Real ps2 = 0.0;
+        for (int a = 0; a < 3; ++a) {ps2 += SQR(p0[a] + sc*dq[a]);}
+        const Real idg = 1.0/fmax(dd, 1.0e-300);
+        const Real dke = 0.5*(pn2 - ps2)*idg;   // kinetic energy not given (>= 0)
+        const Real vol = psph ? pvol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                                 mbsize.d_view(m).dx3);
+        Kokkos::atomic_add(&vcc_(0), 1.0);
+        Kokkos::atomic_add(&vcc_(1), dke*vol);
+        if (wvnp > 0.0) {   // DEBUG implicit_wb_vcap_print: the first N cells per rank
+          const Real np = Kokkos::atomic_fetch_add(&vcc_(2), 1.0);
+          if (np < wvnp) {
+            printf("WBVCAP rank %d cycle %d t2s %d m %d k %d j %d i %d r %.5e rho %.4e "
+                   "v_old %.4e %.4e %.4e dv %.4e %.4e %.4e |v_new| %.4e s %.4e dke %.4e "
+                   "E_old %.4e E %.4e egas %.4e\n", wvrk, wvcy, wvts, m, k, j, i,
+                   psph ? wvx1(m,i) : 0.0, dd, p0[0]*idg, p0[1]*idg, p0[2]*idg,
+                   dq[0]*idg, dq[1]*idg, dq[2]*idg, sqrt(pn2)*idg, sc, dke,
+                   iw_(m,M1_IW_EN,k,j,i), ep, eg);
+          }
+        }
+        if (!wvmeas) {
+          dm1 = dmref + sc*dq[0];
+          if (tv) {
+            dm2 = sc*dq[1];
+            if (thrd) {dm3 = sc*dq[2];}
+          }
+          // the energy back to E is bounded by the cell's own E (gas units): a kick
+          // that is no physical work (a diverged pass: |dv| ~ c) must not create E
+          // (Raven 11-08: unbounded, an accepted stage reached E 1e55); the rest leaves
+          // as with the ceiling and is counted (vcap_cnt_d 3)
+          const Real ret = fmin(dke, (cl/ch)*fmax(ep, 0.0));
+          work -= dke;
+          ep += (ch/cl)*ret;
+          Kokkos::atomic_add(&vcc_(3), (dke - ret)*vol);
+        }
+      }
+    }
+    // r136e-1107 implicit_wb_vkick_reject (rad_m1.hpp): count the cells whose written-
+    // back speed exceeds V and their old speed (decision after the launch); no change
+    if (wvkr > 0.0 && have_hydro && feedback && !csw) {
+      const bool tk = trans && dbgft;
+      const Real q1 = uh(m,IM1,k,j,i), q2 = uh(m,IM2,k,j,i), q3 = uh(m,IM3,k,j,i);
+      const Real n1 = q1 + dm1 - dmref;
+      const Real n2 = tk ? (q2 + dm2) : q2;
+      const Real n3 = (tk && thrd) ? (q3 + dm3) : q3;
+      const Real pn = n1*n1 + n2*n2 + n3*n3, po = q1*q1 + q2*q2 + q3*q3;
+      const Real pv = SQR(wvkr*dd);
+      if (!(pn <= pv) && !(pn <= po)) {   // NaN counts too
+        Kokkos::atomic_add(&vkc_(0), 1.0);
+        const Real vn = sqrt(pn)/fmax(dd, 1.0e-300);
+        Kokkos::atomic_max(&vkc_(1), (vn == vn) ? vn : 1.0e300);
+      }
+    }
     // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve
     if (t2k) {
       const Real fk = 1.0/dt;

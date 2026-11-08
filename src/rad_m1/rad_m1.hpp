@@ -614,6 +614,43 @@ class RadiationM1 {
   // floor raises E to e_floor with the energy taken from the gas (FLR_DE) or counted
   // (FLR_UN); what the 1e-6 guard itself raised, (c/ch)(1 + SRCB)(EP - S2), joins it
   bool impl_pos_floor_s2 = false;
+  // r136e-1107 <rad_m1>/implicit_wb_vcap = V (read only when named; absent or 0 = off,
+  // bitwise): the write-back limits the gas momentum change of the solve so that the
+  // written-back speed does not exceed V (code units; e.g. the <hydro>/vceil).  In a cell
+  // at the density floor a change of the stored cell flux that is not an absorption
+  // (closure / limiter / face changes the conservative gas source books as momentum)
+  // gives dv ~ dF/(rho c chat) >> any physical speed; the velocity ceiling of the next
+  // ConToPrim then took (1 - fs^2) KE out of the total (vceil_thermalise = false): the
+  // energy sink of the R136a1 E_tot drops.  Here the increment is scaled, dm -> s dm with
+  // |m + s dm| = V rho, and the kinetic energy it no longer gets (the work the radiation
+  // already paid) goes back to E: e_gas + (c/chat) E of the cell is unchanged.  Momentum:
+  // (1 - s) dm leaves (as the ceiling's clip did).  Sp / Cartesian only (not cs).
+  // vcap_cnt_d: 0 capped cell-solves, 1 energy returned to E (gas units x volume),
+  // 2 cells printed, 3 energy not returned (the return is bounded by the cell's E).
+  // implicit_wb_vcap_measure = true (read only when named): count and
+  // print only, nothing is changed (bitwise with the key off); implicit_wb_vcap_print = N
+  // (read only when named): the first N cells beyond V per rank are printed (WBVCAP)
+  Real impl_wb_vcap = 0.0;
+  // r136e-1107 <rad_m1>/implicit_wb_vkick_reject = V (read only when named; absent or 0
+  // = off, bitwise): a hesdirk2 STAGE whose write-back gives any cell |v| > V with |v|
+  // above its old speed is NOT ADMISSIBLE (the existing redo path: time2_reject,
+  // backward Euler); nothing is capped or moved.  A backward-Euler solve cannot be
+  // rejected: its kicks beyond V are only counted and printed (vkick_cnt_d 2, 3).
+  // vkick_cnt_d: 0 cells this solve, 1 max |v_new| this solve, 2/3 BE totals
+  Real impl_wb_vkrej = 0.0;
+  DvceArray1D<Real> vkick_cnt_d;
+  Real vkick_nrej = 0.0, vkick_nbe = 0.0, vkick_nbecell = 0.0;
+  // r136e-1107 <rad_m1>/implicit_wb_vkick_be_retry (read only when named; needs
+  // implicit_wb_vkick_reject and <time>/dt_retry): a backward-Euler solve that kicks a
+  // cell beyond V is a dt_retry failure (reason vkick: cut dt, redo) while the cycle has
+  // cuts left (dtr_ncut < dtr_maxcut, set by DtRetry); after that it is accepted and
+  // counted as before (vkick_nbefall)
+  bool impl_wb_vkbr = false;
+  Real vkick_nberetry = 0.0, vkick_nbefall = 0.0;
+  int dtr_ncut = 0, dtr_maxcut = 8;   // DtRetry bookkeeping (cuts of this cycle, limit)
+  bool impl_wb_vcap_meas = false;
+  int impl_wb_vcap_np = 0;
+  DvceArray1D<Real> vcap_cnt_d;
   DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
   // picard-1014 implicit_gas_newton_u4: emission-dominated cells take the gas Newton
   // step in u = T^4 (T' = (T^4 + 4 T^3 dT)^(1/4)); implicit_opac_lag = pred: the
@@ -2220,6 +2257,10 @@ class RadiationM1 {
   DvceArray4D<Real> eaud_u, eaud_e, eaud_c;
   Real eaud_seg[6][3] = {};
   Real eaud_bnd[7] = {0.0};
+  // r136e-1107: mark 6 = the state was put back outside the M1 chain (Time2Restore,
+  // Time2PosFix): the change since the last mark (the discarded attempt) is summed here
+  // instead of into a segment; printed as D= at mark 5
+  Real eaud_disc = 0.0;
   Real eaud_w = 0.0;               // force_reference_work = split (be): fref_wacc
   Real eaud_pc[4] = {0.0};         // M1_POS_FLR_UN, FLR_DE, GAS_DE, FLRS at the entry
   Real eaud_pd[4] = {0.0};         // their change over the solve (summed per print)
