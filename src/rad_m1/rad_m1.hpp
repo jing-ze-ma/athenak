@@ -614,6 +614,25 @@ class RadiationM1 {
   // floor raises E to e_floor with the energy taken from the gas (FLR_DE) or counted
   // (FLR_UN); what the 1e-6 guard itself raised, (c/ch)(1 + SRCB)(EP - S2), joins it
   bool impl_pos_floor_s2 = false;
+  // consfix-1109 <rad_m1>/implicit_cons_final (read only when named; absent = false,
+  // bitwise): the write-back takes E^{n+1} = E' + r, r = b - A E' the residual of the
+  // LAST pass's frozen linear system at the accepted iterate, i.e. E^{n+1} = E^n + q(E')
+  // - T(E') with the transport T the divergence of the faces rebuilt from E' and q the
+  // exchange the gas is charged with: e_gas + (c/chat) E then changes by the face fluxes
+  // and the work alone, whatever the inner (Eisenstat-Walker / capped / line-fallback)
+  // solve left.  Needs implicit_solver = bicgstab on a multi-D mesh (1-D: the direct
+  // Thomas solve leaves round-off, no-op) and implicit_pos_floor (an E^{n+1} below
+  // e_floor is raised with the energy taken from the gas, counted as FLR_DE / FLR_UN).
+  bool impl_cons_final = false;
+  // consfix-1109 <rad_m1>/dbg_cons_ledger (DIAGNOSTIC, read only when named): r of every
+  // solve; rank 0 prints CONSR cycle t2s dt sum(V (c/chat) r) sum(V (c/chat) |r|)
+  // sum(V (c/chat) E^{n+1}) applied, and the run totals in the summary
+  bool dbg_cons_ledger = false;
+  bool cf_fb_pass = false;      // a positivity mode fallback fired in this pass
+  bool cf_r_ok = false;         // cf_r holds this solve's residual
+  DvceArray4D<Real> cf_r;       // (m,k,j,i) r = b - A E' (E units), active cells
+  Real cf_tot[4] = {0.0, 0.0, 0.0, 0.0};   // run: sum r, sum |r|, solves, extra passes
+  void ImplicitConsResid(bool bicg, bool trans);
   // r136e-1107 <rad_m1>/implicit_wb_vcap = V (read only when named; absent or 0 = off,
   // bitwise): the write-back limits the gas momentum change of the solve so that the
   // written-back speed does not exceed V (code units; e.g. the <hydro>/vceil).  In a cell

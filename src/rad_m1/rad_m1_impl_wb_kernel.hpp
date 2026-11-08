@@ -29,7 +29,7 @@
     // T-solve / accept; the energy that residual raise created over a solved S2 below it
     // (gas units, per volume; rare) is charged like the e_floor raise below
     Real s2def = 0.0;
-    if (pfs) {
+    if (pfs && !cfin) {   // consfix-1109: under implicit_cons_final r carries the raise
       const Real s2 = iw_(m,M1_IW_S2,k,j,i);
       if (!(ep > 1.0e-6*efl) && s2 < ep) {
         s2def = (cl/ch)*(1.0 + iw_(m,M1_IW_SRCB,k,j,i))*(ep - s2);
@@ -847,6 +847,10 @@
         }
       }
     }
+    // consfix-1109 implicit_cons_final: E^{n+1} = E' + r = E^n + q(E') - T(E') (the gas
+    // was charged q(E') above); the floor below raises a conservative E that fell under
+    // e_floor with the energy taken from the gas (FLR_DE) or counted (FLR_UN)
+    if (cfin && !efc) {ep += cfr_(m,k,j,i);}
     // m1-positivity.  Both moves keep e_gas + (c/chat) E of the cell exactly; eg is the
     // gas internal energy the write-back sets (the kinetic part is ekin + work).
     //  implicit_pos_floor: an E below e_floor is raised to it with the energy taken from
