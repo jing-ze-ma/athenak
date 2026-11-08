@@ -3070,6 +3070,13 @@ class RadiationM1 {
     Kokkos::View<uint32_t *, LayoutWrapper, DevMemSpace> msk;
   };
   bool vgd_cscomp = false;
+  // raycheap-1109: vet_gd_cs_list_pad; the read-mask stride per receive entry (n*nx1, or
+  // rounded up to 16 with the pad); sub-timers of the list build (rank 0, fenced):
+  // mask kernel, mask download + check, mark exchange, host lists, upload
+  bool vgd_cspad = false;
+  int64_t vgd_csper = 0;
+  double vgd_cstb_k = 0.0, vgd_cstb_d = 0.0, vgd_cstb_m = 0.0, vgd_cstb_h = 0.0,
+         vgd_cstb_u = 0.0;
   // mpirace-1101: persistent host buffers of the read-mask exchange (VetGdCsCompact):
   // own marks (sent) and the receivers' marks (received); grown, never freed
   std::vector<uint32_t> vgd_csmw_h, vgd_csmw_r;

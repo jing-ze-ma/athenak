@@ -1264,6 +1264,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
       vgd_hcomp = pin->GetInteger("rad_m1","vet_gd_halo_compact");
     }
+    // raycheap-1109 vet_gd_cs_list_pad (read only when named, default false): the cs read
+    // mask strides every receive entry by n*nx1 rounded up to 16 values, so the compact
+    // lists are always made on the packed-word path (n*nx1 % 16 != 0, e.g. geo2 on
+    // nx1 548, took the byte path: ~4x slower).  The same lists (bitwise)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_cs_list_pad")) {
+      vgd_cspad = pin->GetBoolean("rad_m1","vet_gd_cs_list_pad");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_cs_xgroups")) {
       // xchg-1021: speed only (bitwise any value); 1 = the plain per-shell exchange
       vgd_csxg = std::max(1, pin->GetInteger("rad_m1","vet_gd_cs_xgroups"));

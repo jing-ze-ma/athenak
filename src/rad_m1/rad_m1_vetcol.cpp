@@ -1591,6 +1591,13 @@ void RadiationM1::VetColReport() {
                   << "); list builds " << vgd_csnbuild << " (" << vgd_cstbuild << " s)"
                   << std::endl;
       }
+      if (vgd_csg && vgd_cscomp) {   // raycheap-1109: where the list builds go
+        std::cout << "<rad_m1> raycheap-1109 cs list builds (rank 0 s): mask kernel "
+                  << vgd_cstb_k << ", download+check " << vgd_cstb_d << ", mark exchange "
+                  << vgd_cstb_m << ", host lists " << vgd_cstb_h << ", upload "
+                  << vgd_cstb_u << "; mask stride " << vgd_csper
+                  << (vgd_cspad ? " (padded)" : "") << std::endl;
+      }
       std::cout << "<rad_m1> vet_gd vet_path = " << ((vet_path != 0) ? "cells" : "none")
                 << ": subdivided steps (ALL ranks, all sweeps) " << vgd_npath << std::endl;
       {

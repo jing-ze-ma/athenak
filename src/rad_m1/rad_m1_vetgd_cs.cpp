@@ -688,11 +688,13 @@ void RadiationM1::VetGdCsInit() {
   if (vgd_cscomp) {
     vgd_csncl = std::min(std::max(2, vra_k), static_cast<int>(M1_VGD_CSCL_MAX));
   }
+  vgd_csper = static_cast<int64_t>(vgd_n)*indcs.nx1;
+  if (vgd_cspad) {vgd_csper = 16*((vgd_csper + 15)/16);}   // raycheap-1109
   for (int c = 0; c < vgd_csncl; ++c) {
     vgd_cscl[c].alpha = -9.0;
     vgd_cscl[c].use = 0;
     const int64_t nmv = vgd_cscomp ? static_cast<int64_t>(std::max(vgd_csnrcv, 1))*
-                                     vgd_n*indcs.nx1 : 1;
+                                     vgd_csper : 1;
     Kokkos::realloc(vgd_cscl[c].msk, (nmv + 15)/16);   // memcut-1020: packed 2 bits
   }
   if (me == 0) {
@@ -769,6 +771,8 @@ void RadiationM1::VetGdCsCompact() {
   const Real h = 0.5*M_PI/nc;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
+  const int64_t per_ = vgd_csper;   // raycheap-1109: n*n1, or padded to 16
+  Kokkos::Timer tsub;
   // (1) the read mask (VetGdCsSweep's geometry; the values never matter)
   par_for("m1_vgdcs_rmask", DevExeSpace(), 0, nmb1, ks, ke, js, je, 0, n - 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
@@ -797,7 +801,7 @@ void RadiationM1::VetGdCsCompact() {
         if (!all && !(ok[e] && st.w[e] > 0.0)) {continue;}
         const int x = rx_(m,st.k[e],st.j[e]);
         if (x >= 0) {
-          const int64_t t = (static_cast<int64_t>(x)*n + d)*n1 + (iu - is);
+          const int64_t t = static_cast<int64_t>(x)*per_ + d*n1 + (iu - is);
           Kokkos::atomic_or(&msk_(t >> 4), (want_in ? 1u : 2u) << (2*(t & 15)));
         }
       }
@@ -829,8 +833,10 @@ void RadiationM1::VetGdCsCompact() {
     }
   });
   Kokkos::fence();
+  vgd_cstb_k += tsub.seconds();
+  tsub.reset();
   const int np = static_cast<int>(vgd_csprk.size());
-  const size_t per = static_cast<size_t>(n)*n1;
+  const size_t per = static_cast<size_t>(per_);
   // (3) the lists: counts per (pass, shell, group, partner), offsets, fill in (entry, d)
   // order (xchg-1021: G = vgd_csxg contiguous direction groups; G = 1 as before)
   const int ng = vgd_csxg;
@@ -866,6 +872,8 @@ void RadiationM1::VetGdCsCompact() {
       if (x != 0u && ((x & (x >> 1) & 0x55555555u) != 0u)) {both = true;}
     }
     if (both) {VgdCsFatal("read mask: a value marked both inward and outward");}
+    vgd_cstb_d += tsub.seconds();
+    tsub.reset();
     const size_t nsw = std::max<size_t>(static_cast<size_t>(vgd_csnsnd)*wpe, 1);
     if (vgd_csmw_r.size() < nsw) {vgd_csmw_r.resize(nsw);}
     std::fill(vgd_csmw_r.begin(), vgd_csmw_r.begin() + nsw, 0u);
@@ -919,6 +927,8 @@ void RadiationM1::VetGdCsCompact() {
       }
     }
 #endif
+    vgd_cstb_m += tsub.seconds();
+    tsub.reset();
     auto buildw = [&](const uint32_t *mk, const std::vector<int> &st0,
                       const std::vector<int> &cnt, std::vector<int64_t> &off,
                       std::vector<int> &lst) {
@@ -1062,6 +1072,8 @@ void RadiationM1::VetGdCsCompact() {
     ts = build(sm.data(), vgd_csps, vgd_cspn, E.so, sl_h);
     tr = build(mh.data(), vgd_cspr, vgd_cspm, E.ro, rl_h);
   }
+  vgd_cstb_h += tsub.seconds();
+  tsub.reset();
   // xchg-1021: the largest (pass, shell, group) slice (the pipelined slot size)
   for (size_t q = 0; q < nsl; ++q) {
     vgd_csxmax = std::max(vgd_csxmax, E.so[q*(np + 1) + np] - E.so[q*(np + 1)]);
@@ -1079,6 +1091,7 @@ void RadiationM1::VetGdCsCompact() {
     for (size_t q = 0; q < rl_h.size(); ++q) {b(q) = rl_h[q];}
     Kokkos::deep_copy(E.ri, b);
   }
+  vgd_cstb_u += tsub.seconds();
   E.alpha = vgd_alpha;
   E.ng = ng;
   E.use = ++vgd_csuse;
@@ -1443,6 +1456,7 @@ void RadiationM1::VetGdCsSweep() {
   auto msk_ = vgd_cscl[vgd_cscur].msk;
   auto rx_ = vgd_csrix;
   auto miss_ = vgd_csmiss;
+  const int64_t per_ = vgd_csper;   // raycheap-1109: the mask stride per entry
   // memcut-1020 vet_gd_band_ring on the cubed sphere (VgdRagAlloc / VetGdInit: with the
   // compact lists and an MPI band): the sp ring of rad_m1_vetgd.cpp (VetGdRingFlush, the
   // same slab operations in the same places of the shell loop), its saved inward band
@@ -1835,7 +1849,7 @@ void RadiationM1::VetGdCsSweep() {
               if (ccl && cnt) {
                 const int x = rx_(m,kk,jj);
                 if (x >= 0) {
-                  const int64_t t = (static_cast<int64_t>(x)*n + d)*n1 + (iu - is);
+                  const int64_t t = static_cast<int64_t>(x)*per_ + d*n1 + (iu - is);
                   if (((msk_(t >> 4) >> (2*(t & 15))) & 3u) == 0) {
                     Kokkos::atomic_add(&miss_(0), 1);
                   }
