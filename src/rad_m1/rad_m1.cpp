@@ -2340,7 +2340,8 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
                   << "(a = 1/N per block" << ((vra_ema_tau > 0.0) ? ", time window tau = "
                   + std::to_string(vra_ema_tau) : "") << ((vra_ema_lc > 0.0) ?
                   ", window = " + std::to_string(vra_ema_lc) + " x r/c" : "")
-                  << "; change test eps " << vra_ema_eps << "); vet_rotate_avg is not used"
+                  << "; change test eps " << vra_ema_eps
+                  << "); vet_rotate_avg is not used"
                   << std::endl;
       }
     }
