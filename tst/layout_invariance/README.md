@@ -185,5 +185,5 @@ above).
 
 Diagnostic: env `M1_DTRACE_LAYOUT=1` with `<rad_m1>/implicit_det_trace = N` prints on rank 0
 layout-comparable hashes (global position mixed, exact uint64 sums over all ranks) of the
-solve's arrays at clos_in, opac_in, isolve_in, solve_in, pre_bcg, post_bcg and c2p_in for the
+solve's arrays at clos_in, opac_in, isolve_in, solve_in, pass_pre, vet_built, pre_bcg, post_bcg and c2p_in for the
 first N solves; diff the `<dtl>` lines of two layouts to find the first array that differs.

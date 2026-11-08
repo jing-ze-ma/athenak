@@ -10297,6 +10297,8 @@ void RadiationM1::DetTraceLayout(const char *tag) {
   put("iw", iw);
   put("ifw", ifw);
   put("tau", tau_ten);
+  put("t2i", t2inc);
+  put("vcell", vet_cell);
   if (global_variable::my_rank == 0) {std::cout << os.str() << std::endl;}
 }
 
@@ -13411,6 +13413,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   // closure = vet_sc: the formal solution of the start-of-step state.  (chi, n) are
   // then read by step (b) on every Picard pass: the tensor is lagged by one hydro step.
+  DetTrace("pass_pre");
   TmrMark(2);
   // t2pos-1020 time2_posfix: a stage-1 RE-solve keeps the build of the first attempt
   // (same U^n; the vet_sc / time2_vet_col extrapolation histories move once per step)
@@ -13482,6 +13485,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // cs-s4-1017: the cs half-range data of this solve's closure (|H|/J, seam ghosts),
   // after the build above and before the first face coefficients
   if (cs_geom && impl_beam_hr) {VetGdCsHrPrep();}
+  DetTrace("vet_built");
   TmrMark(3);
 
   // implicit_predictor = step: start the Picard loop from the previous step's implicit
