@@ -8397,6 +8397,7 @@ void M1GlobalBcg(M1BcgVal &v, const bool det = false) {
 
 constexpr int M1_DR_NT = 256;    // slots per team (a power of 2)
 constexpr int M1_DR_NL = 1024;   // level-1 teams (a multiple of M1_DR_NT)
+constexpr int M1_LB_NS = 4096;   // prod-1108 block mode: level-1 slots per MeshBlock
 
 template <class F>
 void M1DetReduce(const char *name, const int n, const F &fn,
@@ -8487,39 +8488,67 @@ void M1DetReduce(const char *name, const int n, const F &fn,
 
 //!
 //! prod-1108 block mode (<mesh>/layout_invariant_mode = block, the default;
-//! repro::block_mode): idx = m*nkji + q (M1BcgIdx).  One team per MeshBlock m; slot t
-//! of the team accumulates fn(m*nkji + q) for q = t, t + M1_DR_NT, ... in increasing q
-//! on a running M1BcgVal (as M1DetReduce), and the M1_DR_NT slots are combined by the
-//! same fixed pairwise tree in team scratch: the MeshBlock's partial is a function of
-//! the MeshBlock alone (any team size, any number of MeshBlocks on the rank).  The nmb
-//! partials are copied to the host and deposited exactly (repro::ReproSum), then merged
-//! over ranks: the result depends only on the set of MeshBlock partials.
-//! bpart: >= 4 nmb Reals.
+//! repro::block_mode): idx = m*nkji + q (M1BcgIdx).  Each MeshBlock's partial is taken in
+//! a fixed code-set order (M1_LB_NS strided slots, then one team per MeshBlock with the
+//! fixed pairwise tree of M1DetReduce), a function of the MeshBlock alone (any team size,
+//! any number of MeshBlocks on the rank).  The nmb partials are copied to the host and
+//! deposited exactly (repro::ReproSum), then merged over ranks with the max in one
+//! Allgather: the result depends only on the set of MeshBlock partials.
+//! bpart / hpart: device / host scratch (sized on first use).
 
 template <class F>
 void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real> &bpart,
-                 const F &fn, M1BcgVal &out) {
+                 Kokkos::View<Real*, Kokkos::HostSpace> &hpart, const F &fn,
+                 M1BcgVal &out) {
   if (repro::block_mode) {
+    // level 1: M1_LB_NS slots per MeshBlock (independent of nmb), slot s accumulates
+    // q = s, s + M1_LB_NS, ... (coalesced over s); level 2: one team per MeshBlock, slot
+    // t of M1_DR_NT accumulates the level-1 slots t, t + M1_DR_NT, ... in order, then
+    // the fixed pairwise tree.  Every order is set by the code.
     const int nmb = n/nkji;
-    if (bpart.extent_int(0) < 4*nmb) {Kokkos::realloc(bpart, 4*nmb);}
+    const int ns = M1_LB_NS;
+    const int off2 = 4*nmb*ns;
+    if (bpart.extent_int(0) < off2 + 4*nmb) {
+      bpart = DvceArray1D<Real>(
+          Kokkos::view_alloc("m1_lay_part", Kokkos::WithoutInitializing), off2 + 4*nmb);
+    }
+    if (hpart.extent_int(0) < 4*nmb) {
+      hpart = Kokkos::View<Real*, Kokkos::HostSpace>("m1_lay_part_h", 4*nmb);
+    }
     auto part = bpart;
+    Kokkos::parallel_for(name, Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*ns),
+    KOKKOS_LAMBDA(const int idx) {
+      const int m = idx/ns, sl = idx - m*ns;
+      M1BcgVal v;
+      v.s0 = v.s1 = v.s2 = v.mx = 0.0;
+      for (int q = sl; q < nkji; q += ns) {fn(m*nkji + q, v);}
+      part(4*idx) = v.s0;
+      part(4*idx + 1) = v.s1;
+      part(4*idx + 2) = v.s2;
+      part(4*idx + 3) = v.mx;
+    });
     using TP = Kokkos::TeamPolicy<DevExeSpace>;
     using Mem = Kokkos::View<Real*, ScratchMemSpace,
                              Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
     const size_t sb = Mem::shmem_size(4*M1_DR_NT);
-    Kokkos::parallel_for(name, TP(DevExeSpace(), nmb, Kokkos::AUTO)
+    Kokkos::parallel_for("m1_lay_red2", TP(DevExeSpace(), nmb, Kokkos::AUTO)
                          .set_scratch_size(0, Kokkos::PerTeam(sb)),
     KOKKOS_LAMBDA(const TP::member_type &tm) {
       Mem sh(tm.team_scratch(0), 4*M1_DR_NT);
       const int m = tm.league_rank();
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, M1_DR_NT), [&](const int t) {
-        M1BcgVal v;
-        v.s0 = v.s1 = v.s2 = v.mx = 0.0;
-        for (int q = t; q < nkji; q += M1_DR_NT) {fn(m*nkji + q, v);}
-        sh(4*t) = v.s0;
-        sh(4*t + 1) = v.s1;
-        sh(4*t + 2) = v.s2;
-        sh(4*t + 3) = v.mx;
+        Real a0 = 0.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
+        for (int q = t; q < ns; q += M1_DR_NT) {
+          const int b = 4*(m*ns + q);
+          a0 += part(b);
+          a1 += part(b + 1);
+          a2 += part(b + 2);
+          a3 = (part(b + 3) > a3) ? part(b + 3) : a3;
+        }
+        sh(4*t) = a0;
+        sh(4*t + 1) = a1;
+        sh(4*t + 2) = a2;
+        sh(4*t + 3) = a3;
       });
       tm.team_barrier();
       for (int w = M1_DR_NT/2; w > 0; w /= 2) {
@@ -8533,11 +8562,11 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
         tm.team_barrier();
       }
       Kokkos::single(Kokkos::PerTeam(tm), [&]() {
-        for (int c = 0; c < 4; ++c) {part(4*m + c) = sh(c);}
+        for (int c = 0; c < 4; ++c) {part(off2 + 4*m + c) = sh(c);}
       });
     });
-    auto hp = Kokkos::create_mirror_view_and_copy(
-        Kokkos::HostSpace(), Kokkos::subview(part, Kokkos::make_pair(0, 4*nmb)));
+    auto hp = Kokkos::subview(hpart, Kokkos::make_pair(0, 4*nmb));
+    Kokkos::deep_copy(hp, Kokkos::subview(part, Kokkos::make_pair(off2, off2 + 4*nmb)));
     repro::ReproSum rs[3];
     for (int c = 0; c < 3; ++c) {rs[c].Init();}
     Real mx = 0.0;
@@ -8545,8 +8574,7 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
       for (int c = 0; c < 3; ++c) {rs[c].Add(hp(4*m + c));}
       mx = (hp(4*m + 3) > mx) ? hp(4*m + 3) : mx;
     }
-    repro::AllMerge(rs, 3);
-    M1GlobalMax(mx);
+    repro::AllMergeMax(rs, 3, mx);
     out.s0 = rs[0].Value();
     out.s1 = rs[1].Value();
     out.s2 = rs[2].Value();
@@ -9137,7 +9165,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   M1BcgVal red;
   auto lred = [&](const char *nm, const auto &fn) {   // this rank's part
     if (lay) {
-      M1LayReduce(nm, ntot, nkji, lay_part, fn, red);   // layinv-1105: over all ranks
+      M1LayReduce(nm, ntot, nkji, lay_part, lay_part_h, fn, red);   // all ranks
     } else if (det) {
       M1DetReduce(nm, ntot, fn, dpart, red);
     } else {
@@ -9259,7 +9287,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
         if (!rvdone) {
         if (lay) {
           M1BcgVal rr;
-          M1LayReduce("m1_impl_bcgf_rv", ntot, nkji, lay_part,
+          M1LayReduce("m1_impl_bcgf_rv", ntot, nkji, lay_part, lay_part_h,
                       KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {rvf(idx, v.s0);}, rr);
           rv = rr.s0;
         } else if (det) {

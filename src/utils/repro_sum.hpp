@@ -177,6 +177,38 @@ inline void AllMerge(ReproSum *v, const int n) {
 #endif
 }
 
+//! AllMerge of n accumulators plus the global max of mx >= 0 in ONE MPI call (prod-1108:
+//! the max rides in the gathered words as its bit pattern)
+inline void AllMergeMax(ReproSum *v, const int n, Real &mx) {
+#if MPI_PARALLEL_ENABLED
+  int nr = 1;
+  MPI_Comm_size(MPI_COMM_WORLD, &nr);
+  if (nr <= 1) {return;}
+  const int nw = static_cast<int>(sizeof(ReproSum)/sizeof(std::int64_t));
+  const int nt = n*nw + 1;
+  std::vector<std::int64_t> mine(nt);
+  std::memcpy(mine.data(), v, static_cast<std::size_t>(n)*sizeof(ReproSum));
+  std::memcpy(mine.data() + n*nw, &mx, sizeof(Real));
+  std::vector<std::int64_t> all(static_cast<std::size_t>(nt)*nr);
+  MPI_Allgather(mine.data(), nt, MPI_INT64_T, all.data(), nt, MPI_INT64_T,
+                MPI_COMM_WORLD);
+  for (int q = 0; q < n; ++q) {v[q].Init();}
+  for (int r = 0; r < nr; ++r) {
+    const std::int64_t *b = all.data() + static_cast<std::size_t>(r)*nt;
+    for (int q = 0; q < n; ++q) {
+      ReproSum o;
+      std::memcpy(&o, b + q*nw, sizeof(ReproSum));
+      v[q].Join(o);
+    }
+    Real m;
+    std::memcpy(&m, b + n*nw, sizeof(Real));
+    mx = (m > mx) ? m : mx;
+  }
+#else
+  (void) v; (void) n; (void) mx;
+#endif
+}
+
 //! convenience: n plain values -> n order-independent sums over all ranks, where each
 //! rank deposits its terms with Add; Values() writes the results
 struct ReproVec {
@@ -202,7 +234,8 @@ void ShellSums(const char *name, const int nq, const int c1, const int nmb,
                const int ihi, const F &f, std::vector<Real> &out) {
   Kokkos::View<ReproSum**, DevMemSpace> rs(std::string(name), nq, c1);
   if (block_mode) {
-    Kokkos::View<Real***, DevMemSpace> bp(std::string(name) + "_blk", nq, nmb, c1);
+    Kokkos::View<Real***, DevMemSpace> bp(Kokkos::view_alloc(std::string(name) + "_blk",
+                                          Kokkos::WithoutInitializing), nq, nmb, c1);
     const int nqm = nq*nmb;
     Kokkos::parallel_for(std::string(name) + "_blk",
                          Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nqm*c1),
