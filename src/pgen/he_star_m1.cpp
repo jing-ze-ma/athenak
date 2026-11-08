@@ -240,6 +240,11 @@ bool hs_ad_ = false;
 // instead of r and moves with the envelope.  hs_plnp_/hs_pfm_: ln P_tot, fm of the IC
 // (ascending in ln P), hs_ftot_: F_r + F_MLT of the IC on the faces.
 bool hs_adp_ = false;
+// speedup-1109 problem/hs_ad_dead_skip (read only when named, default false; bitwise):
+// under mesh/layout_invariant the per-shell serial sums of HsAdaptiveUpdate (a thread per
+// radial index over every column, with the EOS pressure) are overwritten by the
+// order-independent repro::ShellSums: skip them (A100 small RSG/HG: 34-36 ms per cycle)
+bool hs_ad_dskip_ = false;
 std::vector<Real> hs_plnp_, hs_pfm_, hs_ftot_;
 DvceArray2D<Real> hs_shp_;
 Real hs_ad_tau_ = 1500.0, hs_ad_taper_ = 0.01, hs_ad_tl_ = 0.0;
@@ -2527,6 +2532,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_ad_ = (mc == "adaptive" || mc == "pressure");
     hs_adp_ = (mc == "pressure");
   }
+  hs_ad_dskip_ = pin->DoesParameterExist("problem","hs_ad_dead_skip") &&
+                 pin->GetBoolean("problem","hs_ad_dead_skip");   // speedup-1109
   if (hs_ad_) {
     if (!hs_mlt_) {
       HsFatal("problem/mlt_closure = adaptive needs problem/mlt_flux_frozen = true (the "
@@ -4422,6 +4429,9 @@ void HsAdaptiveUpdate(Mesh *pm) {
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
   auto sh = hs_shs_;
+  // speedup-1109 hs_ad_dead_skip: the serial sums only when they are used
+  const bool dead = hs_ad_dskip_ && pm->layout_invariant;
+  if (!dead) {
   par_for("hs_ad_shell", DevExeSpace(), is, ie+1, KOKKOS_LAMBDA(const int i) {
     Real s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0, s4 = 0.0, s5 = 0.0, s6 = 0.0, s7 = 0.0;
     for (int m=0; m<nmb; ++m) {
@@ -4447,7 +4457,9 @@ void HsAdaptiveUpdate(Mesh *pm) {
     sh(i,0) = s0; sh(i,1) = s1; sh(i,2) = s2; sh(i,3) = s3;
     sh(i,4) = s4; sh(i,5) = s5; sh(i,6) = s6; sh(i,7) = s7;
   });
-  auto hsh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sh);
+  }
+  auto hsh = Kokkos::create_mirror_view(HostMemSpace(), sh);
+  if (!dead) {Kokkos::deep_copy(hsh, sh);}
   const int nfc = hsh.extent_int(0);
   if (pm->layout_invariant) {
     // layinv-1105: the same per-cell terms, summed order-independently over all ranks
@@ -4499,6 +4511,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
     auto eo = eos;
     auto uu = ur;
     auto vv = volume;
+    if (!dead) {
     par_for("hs_adp_shell", DevExeSpace(), is, ie, KOKKOS_LAMBDA(const int i) {
       Real s0 = 0.0, s1 = 0.0, s2 = 0.0;
       for (int m=0; m<nmb; ++m) {
@@ -4513,7 +4526,9 @@ void HsAdaptiveUpdate(Mesh *pm) {
       }
       sp(i,0) = s0; sp(i,1) = s1; sp(i,2) = s2;
     });
-    auto hsp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sp);
+    }
+    auto hsp = Kokkos::create_mirror_view(HostMemSpace(), sp);
+    if (!dead) {Kokkos::deep_copy(hsp, sp);}
     if (pm->layout_invariant) {   // layinv-1105: order-independent
       const int nsp = hsp.extent_int(0);
       std::vector<Real> rs;
