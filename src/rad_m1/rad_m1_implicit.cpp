@@ -2136,6 +2136,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   Kokkos::realloc(pos_cnt_d, M1_POS_N);
   Kokkos::deep_copy(pos_cnt_d, 0.0);
+  // r136e-1107 implicit_wb_vkick_reject (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1","implicit_wb_vkick_reject")) {
+    impl_wb_vkrej = pin->GetReal("rad_m1","implicit_wb_vkick_reject");
+    if (!(impl_wb_vkrej >= 0.0)) {
+      ImplFatal("<rad_m1>/implicit_wb_vkick_reject must be >= 0 (0 = off)");
+    }
+    if (impl_wb_vkrej > 0.0) {
+      Kokkos::realloc(vkick_cnt_d, 2);
+      Kokkos::deep_copy(vkick_cnt_d, 0.0);
+    }
+  }
   // r136e-1107 implicit_wb_vcap (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_wb_vcap")) {
     impl_wb_vcap = pin->GetReal("rad_m1","implicit_wb_vcap");
@@ -9875,6 +9886,11 @@ void RadiationM1::ImplicitReport() {
                 << " (code units x volume, all attempts)" << std::endl;
     }
   }
+  if (impl_wb_vkrej > 0.0 && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> implicit_wb_vkick_reject=" << impl_wb_vkrej
+              << ": stages rejected=" << vkick_nrej
+              << " backward-Euler solves with kicks=" << vkick_nbe << " (cells " << vkick_nbecell << ")" << std::endl;
+  }
   if (global_variable::my_rank != 0) return;
   if (tmr_c0 > 0) {
     // implicit_timers: seconds per category, then the counters (see TmrMark)
@@ -17013,6 +17029,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const int wvts = static_cast<int>(t2s);
   auto wvx1 = pmy_pack->pcoord->x1v;
   auto vcc_ = vcap_cnt_d;
+  // r136e-1107 implicit_wb_vkick_reject: not on the cubed sphere
+  const Real wvkr = cs_geom ? 0.0 : impl_wb_vkrej;
+  auto vkc_ = vkick_cnt_d;
+  if (wvkr > 0.0) {Kokkos::deep_copy(vkick_cnt_d, 0.0);}
   // implicit_face_weight = distance (sp): the face kappa_T of the momentum deposit is
   // the one the face equation used
   auto cx1f = pmy_pack->pcoord->xx1f;
@@ -17201,6 +17221,50 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
 #undef M1_RCP
     });
+  }
+  // r136e-1107 implicit_wb_vkick_reject: a stage that kicked a cell beyond V is not
+  // admissible (the same decision path as the admissibility test above); a BE solve is
+  // counted only
+  if (wvkr > 0.0) {
+    auto hk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vkick_cnt_d);
+    Real nk = hk(0), vmx = hk(1);
+#if MPI_PARALLEL_ENABLED
+    {Real g;
+    MPI_Allreduce(&nk, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    nk = g;
+    MPI_Allreduce(&vmx, &g, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    vmx = g;}
+#endif
+    if (nk > 0.0 && t2st && !t2_inprobe) {
+      const bool was = t2_fail;
+      vkick_nrej += 1.0;
+      t2_fail = true;
+      t2_pfix_want = false;
+      if (!was) {
+        const bool t2rk = (t2_reject == 1) && dtr_on && !dtr_t2be;
+        if (t2rk) {
+          if (!dtr_fail) {dtr_why = 5; dtr_resid = -1.0;}
+          dtr_fail = true;
+        }
+        if ((t2_reject == 1) && dtr_on && dtr_t2be) {dtr_t2hit = true;}
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> hesdirk2 stage " << ((t2s == M1_T2S_STAGE1) ? 1 : 2)
+                  << " NOT ADMISSIBLE at cycle " << pmy_pack->pmesh->ncycle
+                  << " (implicit_wb_vkick_reject: " << nk << " cells |v| > "
+                  << impl_wb_vkrej << ", max " << vmx << "): the step is redone"
+                  << (was ? " (already not admissible)" : "") << std::endl;
+      }
+    } else if (nk > 0.0 && !t2st) {
+      vkick_nbe += 1.0;
+      vkick_nbecell += nk;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> implicit_wb_vkick_reject: backward-Euler solve at cycle "
+                  << pmy_pack->pmesh->ncycle << " kicks " << nk << " cells to |v| > "
+                  << impl_wb_vkrej << " (max " << vmx << "); accepted (no redo)"
+                  << std::endl;
+      }
+    }
   }
   if (pfcw_) {
     // vtxfix-1029 implicit_pos_floor_cons: one thread per radial column; the uncovered
