@@ -1156,15 +1156,20 @@ Real M1SphPab(const V &iw, const int m, const int a, const int b, const int k,
          *iw(m,M1_IW_N1+b,k,j,i)*iw(m,ec,k,j,i);
 }
 
+//! tensor-sp-1108: the overload with x2t takes sin / cot of the cell from x2t (the theta
+//! of the data the row holds, RadiationM1::VtanX2t; see M1SphTan): at a theta-PERIODIC
+//! seam the d = 1 curvature cot (P_tt - P_pp)/r of a ghost row is then the value of its
+//! source cell, and the seam face of the two blocks carries one flux.  Coordinate
+//! distances stay x2v.  The overload without x2t is x2t = x2v (bitwise the old form).
 template <class V, class A>
 KOKKOS_INLINE_FUNCTION
-Real M1SphCurv(const V &iw, const A &x1v, const A &x2v, const A &x3v, const int m,
-               const int d, const int k, const int j, const int i, const bool od,
-               const bool thrd, const int il, const int iu, const int jl, const int ju,
-               const int kl, const int ku, const int ec) {
+Real M1SphCurv(const V &iw, const A &x1v, const A &x2v, const A &x2t, const A &x3v,
+               const int m, const int d, const int k, const int j, const int i,
+               const bool od, const bool thrd, const int il, const int iu, const int jl,
+               const int ju, const int kl, const int ku, const int ec) {
   const Real r = x1v(m,i);
-  const Real sn = sin(x2v(m,j));
-  const Real ct = cos(x2v(m,j))/sn;
+  const Real sn = sin(x2t(m,j));
+  const Real ct = cos(x2t(m,j))/sn;
   const Real e = iw(m,ec,k,j,i);
   const Real chi = iw(m,M1_IW_WCHI,k,j,i);
   const Real n1 = iw(m,M1_IW_N1,k,j,i);
@@ -1217,6 +1222,16 @@ Real M1SphCurv(const V &iw, const A &x1v, const A &x2v, const A &x3v, const int 
     s += 2.0*ct*q*n2*n3/r;
   }
   return s;
+}
+
+template <class V, class A>
+KOKKOS_INLINE_FUNCTION
+Real M1SphCurv(const V &iw, const A &x1v, const A &x2v, const A &x3v, const int m,
+               const int d, const int k, const int j, const int i, const bool od,
+               const bool thrd, const int il, const int iu, const int jl, const int ju,
+               const int kl, const int ku, const int ec) {
+  return M1SphCurv(iw, x1v, x2v, x2v, x3v, m, d, k, j, i, od, thrd, il, iu, jl, ju, kl,
+                   ku, ec);
 }
 
 //----------------------------------------------------------------------------------------

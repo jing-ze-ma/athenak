@@ -4745,10 +4745,10 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
         Real gs = (drs*iw_(m,M1_IW_EP,k,j,i) - dls*iw_(m,M1_IW_EP,k,jm,i))
                   /cdxf.x2f(m,k,j,i);
         if (sphq) {
-          gs += 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,1,k,jm,i,odl,thrd,il,iu,jl,ju,kl,ku,
-                               M1_IW_EP)
-                     + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,1,k,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
-                                 M1_IW_EP));
+          gs += 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx2t,cx3v,m,1,k,jm,i,odl,thrd,il,iu,jl,ju,
+                               kl,ku,M1_IW_EP)
+                     + M1SphCurv(iw_,cx1v,cx2v,cx2t,cx3v,m,1,k,j,i,odl,thrd,il,iu,jl,ju,
+                                 kl,ku,M1_IW_EP));
         }
         if (vlat) {
           gs += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,jm,i,thrd,il,iu,jl,ju,
@@ -4839,10 +4839,10 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
         Real gs = (drs*iw_(m,M1_IW_EP,k,j,i) - dls*iw_(m,M1_IW_EP,km,j,i))
                   /cdxf.x3f(m,k,j,i);
         if (sphq) {
-          gs += 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,2,km,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
-                               M1_IW_EP)
-                     + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,2,k,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
-                                 M1_IW_EP));
+          gs += 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx2t,cx3v,m,2,km,j,i,odl,thrd,il,iu,jl,ju,
+                               kl,ku,M1_IW_EP)
+                     + M1SphCurv(iw_,cx1v,cx2v,cx2t,cx3v,m,2,k,j,i,odl,thrd,il,iu,jl,ju,
+                                 kl,ku,M1_IW_EP));
         }
         if (vlat) {
           gs += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,km,j,i,thrd,il,iu,jl,ju,
@@ -5532,10 +5532,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                             dfull, vx));
     }
     if (sphq) {
-      off = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,1,k,jm,i,odl,thrd,il,iu,jl,ju,kl,ku,
-                           M1_IW_EP)
-                 + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,1,k,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
-                             M1_IW_EP));
+      off = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx2t,cx3v,m,1,k,jm,i,odl,thrd,il,iu,jl,ju,
+                           kl,ku,M1_IW_EP)
+                 + M1SphCurv(iw_,cx1v,cx2v,cx2t,cx3v,m,1,k,j,i,odl,thrd,il,iu,jl,ju,
+                             kl,ku,M1_IW_EP));
     }
     if (vlat) {
       off += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,jm,i,thrd,il,iu,jl,
@@ -5740,10 +5740,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                               vd_,dfull, vx));
       }
       if (sphq) {
-        off = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,2,km,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
-                             M1_IW_EP)
-                   + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,2,k,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
-                               M1_IW_EP));
+        off = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx2t,cx3v,m,2,km,j,i,odl,thrd,il,iu,jl,ju,
+                             kl,ku,M1_IW_EP)
+                   + M1SphCurv(iw_,cx1v,cx2v,cx2t,cx3v,m,2,k,j,i,odl,thrd,il,iu,jl,ju,
+                               kl,ku,M1_IW_EP));
       }
       if (vlat) {
         off += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,km,j,i,thrd,il,iu,jl,
