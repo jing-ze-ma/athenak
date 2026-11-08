@@ -9811,7 +9811,8 @@ void RadiationM1::ImplicitReport() {
   if (impl_wb_vkrej > 0.0 && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> implicit_wb_vkick_reject=" << impl_wb_vkrej
               << ": stages rejected=" << vkick_nrej
-              << " backward-Euler solves with kicks=" << vkick_nbe << " (cells " << vkick_nbecell << ")" << std::endl;
+              << " backward-Euler solves with kicks=" << vkick_nbe << " (cells "
+              << vkick_nbecell << ")" << std::endl;
   }
   if (global_variable::my_rank != 0) return;
   if (tmr_c0 > 0) {
