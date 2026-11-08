@@ -2136,19 +2136,32 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   Kokkos::realloc(pos_cnt_d, M1_POS_N);
   Kokkos::deep_copy(pos_cnt_d, 0.0);
-  // r136e-1107 implicit_wb_vkick_reject (rad_m1.hpp; read only when named)
+  // r136e-1107 implicit_wb_vkick_reject (rad_m1.hpp).  prod-1109 (USER 11-08): DEFAULT ON
+  // with V = the fluid's velocity ceiling <hydro|mhd>/vceil when the key is absent (0 =
+  // no ceiling = off); name implicit_wb_vkick_reject = 0 for the prod-1108 behaviour
+  // (bitwise).  Read only when named otherwise; recipe none keeps 0.  Acts on sp and
+  // Cartesian only (never on the cubed sphere).  implicit_wb_vkick_be_retry stays opt-in.
+  {
+    const char *fb = pin->DoesBlockExist("mhd") ? "mhd" : "hydro";
+    if (!pin->DoesParameterExist("rad_m1","implicit_wb_vkick_reject") &&
+        recipe::GetMode(pin) != recipe::Mode::none &&
+        !pmy_pack->pmesh->use_cubed_sphere && pin->DoesParameterExist(fb, "vceil")) {
+      impl_wb_vkrej = pin->GetReal(fb, "vceil");
+      if (!(impl_wb_vkrej > 0.0)) {impl_wb_vkrej = 0.0;}
+    }
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_wb_vkick_reject")) {
     impl_wb_vkrej = pin->GetReal("rad_m1","implicit_wb_vkick_reject");
-    if (!(impl_wb_vkrej >= 0.0)) {
-      ImplFatal("<rad_m1>/implicit_wb_vkick_reject must be >= 0 (0 = off)");
-    }
+  }
+  if (!(impl_wb_vkrej >= 0.0)) {
+    ImplFatal("<rad_m1>/implicit_wb_vkick_reject must be >= 0 (0 = off)");
+  }
+  if (impl_wb_vkrej > 0.0) {
     if (pin->DoesParameterExist("rad_m1","implicit_wb_vkick_be_retry")) {
       impl_wb_vkbr = pin->GetBoolean("rad_m1","implicit_wb_vkick_be_retry");
     }
-    if (impl_wb_vkrej > 0.0) {
-      Kokkos::realloc(vkick_cnt_d, 2);
-      Kokkos::deep_copy(vkick_cnt_d, 0.0);
-    }
+    Kokkos::realloc(vkick_cnt_d, 2);
+    Kokkos::deep_copy(vkick_cnt_d, 0.0);
   }
   // r136e-1107 implicit_wb_vcap (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_wb_vcap")) {
