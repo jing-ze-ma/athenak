@@ -2508,7 +2508,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       blk.resize(blk.size() - nt);
     }
-    if (hs_rmp && !blk.empty()) {
+    // relax-1108: an adaptive-closure remap keeps the adaptive state at the block's
+    // front (read below as a restart reads it); anything else left is refused
+    const bool rmp_ad = hs_rmp && (pin->GetOrAddString("problem","mlt_closure",
+                                                       "frozen") != "frozen");
+    if (hs_rmp && !blk.empty() && !rmp_ad) {
       HsFatal("problem/he_ic_remap_file: the parent's pgen block carries state this "
               "start cannot take (adaptive MLT?)", __LINE__);
     }
@@ -2522,9 +2526,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     hs_ad_ = (mc == "adaptive" || mc == "pressure");
     hs_adp_ = (mc == "pressure");
-  }
-  if (hs_ad_ && hs_rmp) {
-    HsFatal("problem/he_ic_remap_file does not support mlt_closure = adaptive", __LINE__);
   }
   if (hs_ad_) {
     if (!hs_mlt_) {
@@ -2587,7 +2588,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     hs_ad_tl_ = pmy_mesh_->time;
     hs_ad_cyc_ = -1;
-    if (restart) {
+    // relax-1108: a he_ic_remap_file start takes F_sub from the file's adaptive state
+    // (the parent's), and its update clock restarts at this start's time
+    if (restart || hs_rmp) {
       const auto &blk = pgen_rststate;
       if (blk.size() < 2*sizeof(std::int32_t) + sizeof(Real)) {
         if (global_variable::my_rank == 0) {
@@ -2604,7 +2607,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
         std::vector<Real> tmp(nfc + 1);
         std::memcpy(tmp.data(), blk.data() + sizeof(hdr), (nfc + 1)*sizeof(Real));
-        hs_ad_tl_ = tmp[0];
+        hs_ad_tl_ = hs_rmp ? pmy_mesh_->time : tmp[0];
         auto hf = Kokkos::create_mirror_view(hs_fsub_);
         for (int i=0; i<nfc; ++i) hf(i) = tmp[i+1];
         Kokkos::deep_copy(hs_fsub_, hf);
