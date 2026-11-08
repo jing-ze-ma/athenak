@@ -2298,6 +2298,33 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
                 << "last " << vra_k << " rotated sets" << std::endl;
     }
   }
+  // raycorr-1108: vet_rotate_avg_ema = N (read only when named; see rad_m1.hpp): the
+  // exponential moving average over the rotated sets (one offset slot, vra_k = 2)
+  if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema")) {
+    vra_ema_n = pin->GetReal("rad_m1","vet_rotate_avg_ema");
+    if (vra_ema_n >= 1.0 && (vgd_on || vet_sc)) {
+      vra_ema = true;
+      vra_k = 2;
+      vra_on = true;
+      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_weight")) {
+        vra_eq = (pin->GetString("rad_m1","vet_rotate_avg_weight").compare("equal") == 0);
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_tau")) {
+        vra_ema_tau = pin->GetReal("rad_m1","vet_rotate_avg_ema_tau");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_lc")) {
+        vra_ema_lc = pin->GetReal("rad_m1","vet_rotate_avg_ema_lc");
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> vet_rotate_avg_ema = " << vra_ema_n << " (raycorr-1108): "
+                  << "the closure is an exponential moving average over the rotated sets "
+                  << "(a = 1/N per block" << ((vra_ema_tau > 0.0) ? ", time window tau = "
+                  + std::to_string(vra_ema_tau) : "") << ((vra_ema_lc > 0.0) ?
+                  ", window = " + std::to_string(vra_ema_lc) + " x r/c" : "")
+                  << "); vet_rotate_avg is not used" << std::endl;
+      }
+    }
+  }
 }
 
 } // namespace radm1

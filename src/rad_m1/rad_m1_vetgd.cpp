@@ -128,6 +128,19 @@ void VgdFatal(const std::string &msg) {VgdFatalAt(__FILE__, "<rad_m1>/vet_gd: ",
 KOKKOS_INLINE_FUNCTION
 Real VgdLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
 
+// raycorr-1108 vet_gd_rotate_seq = random: a uniform in [0, 1) from (seed, block, comp) by
+// the splitmix64 finaliser (counter-based: a pure function of its arguments, so every rank,
+// rerun and restart draws the same rotation for the same block)
+double VgdRotU(const int64_t seed, const int64_t blk, const int c) {
+  uint64_t z = static_cast<uint64_t>(seed)*0x9E3779B97F4A7C15ULL +
+               static_cast<uint64_t>(blk)*0xD1B54A32D192ED03ULL +
+               static_cast<uint64_t>(c + 1)*0x8CB92BA72F3D8DD7ULL;
+  z = (z ^ (z >> 30))*0xBF58476D1CE4E5B9ULL;
+  z = (z ^ (z >> 27))*0x94D049BB133111EBULL;
+  z = z ^ (z >> 31);
+  return static_cast<double>(z >> 11)*(1.0/9007199254740992.0);
+}
+
 // share3-1031: the sp stencil accessor of the shared upwind core (rad_m1_vgdray.hpp):
 // the four (theta, phi) corners of the bilinear foot (q = 0..3: (k0,j0), (k0,j1),
 // (k1,j0), (k1,j1)), the nested bilinear VgdLerp as before
@@ -1275,6 +1288,16 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
                 << "' is not a choice (z | 3d)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // raycorr-1108 vet_gd_rotate_seq = r3 (default) | random (read only when named)
+    if (pin->DoesParameterExist("rad_m1","vet_gd_rotate_seq")) {
+      const std::string sq = pin->GetString("rad_m1","vet_gd_rotate_seq");
+      if (sq.compare("random") == 0) {
+        vgd_rot_rand = true;
+        vgd_rot_seed = pin->GetOrAddInteger("rad_m1","vet_gd_rotate_seed",12345);
+      } else if (sq.compare("r3") != 0) {
+        VgdFatal("vet_gd_rotate_seq must be r3 or random");
+      }
+    }
   }
 }
 
@@ -1298,6 +1321,20 @@ Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
   // consecutive points of the R_3 sequence (low discrepancy for every start), and the
   // window moves on by one new set per block; the older sets of the window stay pure
   // functions of their block (the restart / first-build re-sweeps of b - j)
+  // raycorr-1108 vet_rotate_avg_ema: a sequence that never repeats (3d: the key of b
+  // itself; z: the golden phase of b on the set's period, or with vet_gd_rotate_seq =
+  // random the hashed uniform of (seed, b))
+  if (vra_ema) {
+    if (vgd_rot3) {
+      const int64_t z = (blk >= 0) ? 2*blk : (-2*blk - 1);
+      return static_cast<Real>(z);
+    }
+    const double per = (vgd_gl_nmu > 0) ? 2.0*M_PI/vgd_gl_nphi : 0.5*M_PI;
+    if (vgd_rot_rand) {return static_cast<Real>(per*VgdRotU(vgd_rot_seed, blk, 0));}
+    const double b = static_cast<double>(blk);
+    const double g = 0.5*(std::sqrt(5.0) - 1.0);
+    return static_cast<Real>(per*(b*g - std::floor(b*g)));
+  }
   if (vgd_rot3) {
     int64_t r = blk;
     if (vra_on && vra_k >= 2 && !g_vra_adv) {r = ((blk % vra_k) + vra_k) % vra_k;}
@@ -1331,13 +1368,17 @@ Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
 void RadiationM1::VgdRot3(const Real key, double r[9]) const {
   const int64_t z = static_cast<int64_t>(std::llround(static_cast<double>(key)));
   const int64_t b = (z % 2 == 0) ? (z/2) : (-(z + 1)/2);
-  auto quat = [](const int64_t bb, double q[4]) {
+  const bool rnd = vgd_rot_rand;
+  const int64_t seed = vgd_rot_seed;
+  auto quat = [rnd, seed](const int64_t bb, double q[4]) {
     const double g = 1.2207440846057594754;   // the real root of x^4 = x + 1
     const double a[3] = {1.0/g, 1.0/(g*g), 1.0/(g*g*g)};
     double u[3];
     for (int c = 0; c < 3; ++c) {
       const double x = static_cast<double>(bb)*a[c];
       u[c] = x - std::floor(x);
+      // raycorr-1108 vet_gd_rotate_seq = random: independent uniforms per block
+      if (rnd) {u[c] = VgdRotU(seed, bb, c);}
     }
     const double s1 = std::sqrt(1.0 - u[0]), s2 = std::sqrt(u[0]);
     q[0] = s1*std::sin(2.0*M_PI*u[1]);
