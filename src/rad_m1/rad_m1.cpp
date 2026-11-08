@@ -1268,6 +1268,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // mask strides every receive entry by n*nx1 rounded up to 16 values, so the compact
     // lists are always made on the packed-word path (n*nx1 % 16 != 0, e.g. geo2 on
     // nx1 548, took the byte path: ~4x slower).  The same lists (bitwise)
+    // prod-1111: DEFAULT true (bitwise, same lists); name false for prod-1110
+    vgd_cspad = vgd_on;
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_cs_list_pad")) {
       vgd_cspad = pin->GetBoolean("rad_m1","vet_gd_cs_list_pad");
     }

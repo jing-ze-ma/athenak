@@ -283,14 +283,14 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // and 1.61x the 1e-12 member spread; -11 % hydro ms/cycle).  The value is recorded
   // (GetOrAdd); a restart whose input lacks the key keeps false (bitwise); an explicit key
   // wins.  With it on, c2p_idempotent is a no-op (bitwise, ckbval_1102 gates_idem).
+  // prod-1111 (USER 11-08): also true on a restart whose input lacks the key (recorded);
+  // only <job>/recipe = none keeps the old false.  Name false for prod-1110.
   if (!pin->DoesParameterExist("hydro","split_c2p_once")) {
-    if (recipe::NewDefaults(pin)) {
+    if (recipe::GetMode(pin) != recipe::Mode::none) {
       pin->GetOrAddBoolean("hydro","split_c2p_once",true);
-      recipe::Log("<hydro>/split_c2p_once = true (default on a fresh start)");
+      recipe::Log("<hydro>/split_c2p_once = true (default, fresh start and restart)");
     } else {
-      recipe::Log("<hydro>/split_c2p_once = false (" + std::string(
-          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
-          "restart input has no key") + ": the old default)");
+      recipe::Log("<hydro>/split_c2p_once = false (recipe none: the old default)");
     }
   }
   scp_once = pin->DoesParameterExist("hydro","split_c2p_once") ?
@@ -371,14 +371,15 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // behaviour (false, bitwise); an explicit key always wins.
   if (!pin->DoesParameterExist("hydro","wall_wb_onesided") &&
       use_wellbalance_dynamic && use_wb_x1) {
-    if (recipe::NewDefaults(pin)) {
+    // prod-1111 (USER 11-08): also on a restart whose input lacks the key (recorded);
+    // only <job>/recipe = none keeps the old wall cell.  Name false for prod-1110.
+    if (recipe::GetMode(pin) != recipe::Mode::none) {
       pin->GetOrAddBoolean("hydro","wall_wb_onesided",true);
       recipe::Log("<hydro>/wall_wb_onesided = true (default with wellbalance_dynamic + "
-                  "wb_x1; acts at closed / reflecting x1 walls)");
+                  "wb_x1, fresh start and restart; acts at closed / reflecting x1 "
+                  "walls)");
     } else {
-      recipe::Log("<hydro>/wall_wb_onesided = false (" + std::string(
-          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
-          "restart input has no key") + ": the old wall cell)");
+      recipe::Log("<hydro>/wall_wb_onesided = false (recipe none: the old wall cell)");
     }
   }
   if (pin->DoesParameterExist("hydro","wall_wb_onesided")) {
