@@ -386,7 +386,7 @@ void RadiationM1::RotAvgEmaInit(const int ilo) {
         d_(m,f,kk,jj,ii) = v ? ws*(sv - g)/(1.0 + ws) : 0.0;
       }
     }
-    d_(m,t.nf,kk,jj,ii) = v ? 2.0 : 0.0   // the flag counts the sets in the EMA (warm-up);
+    d_(m,t.nf,kk,jj,ii) = v ? 2.0 : 0.0;   // the flag counts the sets in the EMA (warm-up)
     // the aux slot 1: the current set's raw fields (the change test of the next
     // boundary compares the same set at two times); its flag entry holds the change
     // weight of the coming boundary (-1: none measured)
@@ -466,7 +466,7 @@ void RadiationM1::RotAvgEmaShift(const int ds) {
     const bool vh = d_(m,t.nf,kk,jj,ii) > 0.5;
     if (!vd || !vh) {   // no Delta or no history: restart from the current set alone
       for (int f = 0; f < t.nf; ++f) {d_(m,f,kk,jj,ii) = (t.kind[f] == 2) ? 1.0 : 0.0;}
-      d_(m,t.nf,kk,jj,ii) = vd ? 1.0 : 0.0   // count 1: the current set alone;
+      d_(m,t.nf,kk,jj,ii) = vd ? 1.0 : 0.0;   // count 1: the current set alone
       return;
     }
     Real rr = 1.0;
