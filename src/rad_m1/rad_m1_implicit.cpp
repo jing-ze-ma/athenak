@@ -8443,7 +8443,7 @@ void M1GlobalBcg(M1BcgVal &v, const bool det = false) {
 
 constexpr int M1_DR_NT = 256;    // slots per team (a power of 2)
 constexpr int M1_DR_NL = 1024;   // level-1 teams (a multiple of M1_DR_NT)
-constexpr int M1_LB_NS = 4096;   // prod-1108 block mode: level-1 slots per MeshBlock
+constexpr int M1_LB_NS = 32768;  // block mode: level-1 slots per MeshBlock (fills the GPU)
 
 template <class F>
 void M1DetReduce(const char *name, const int n, const F &fn,
