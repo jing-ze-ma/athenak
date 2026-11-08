@@ -21,7 +21,7 @@
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
 
-#define NOUTPUT_CHOICES 168
+#define NOUTPUT_CHOICES 169
 // choices for output variables used in <ouput> blocks in input file
 // TO ADD MORE CHOICES:
 //   - add more strings to array below, change NOUTPUT_CHOICES above appropriately
@@ -128,7 +128,11 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
 
   // rkgstrang-1102: the cell resistivity eta_O (+ eta_A = min(ad_coef |B|^2, max_eta_ad)
   // with ambipolar diffusion) the resistive EMF uses, code units (167)
-  "mhd_eta"
+  "mhd_eta",
+
+  // tanacc-1107: the closure tensor handed to the implicit operator (tau_ten slot 0 and
+  // the vet_col_lat slots LAT0..5), the cell unit vector and the vet_gd J, H_r (168)
+  "m1_lat"
 };
 
 

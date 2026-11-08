@@ -2719,6 +2719,30 @@ class RadiationM1 {
     int jw = -1;               // the ratio field weighting the sets (-1: equal)
   };
   int vra_k = 0;               // vet_rotate_avg (K; 0/1 off)
+  // raycorr-1108 <rad_m1>/vet_rotate_avg_ema = N >= 1 (read only when named; default off
+  // = bitwise): the K-window mean replaced by an exponential moving average over the
+  // rotated sets, weight a = 1/N per rotation block, kept in the same offset form (ONE
+  // slot: e = avg - g_b(now), r = Jbar/J_b, + an aux slot for the change test; vra_k = 3
+  // internally): effective window
+  // ~2N - 1 sets at the memory of K = 2.  vet_rotate_avg_ema_tau > 0 (physical time) and
+  // vet_rotate_avg_ema_lc > 0 (x the local light-crossing time r/c) tie a to a time
+  // window instead: a = max(1/N, 1 - exp(-dt_blk/tau)).  The rotation sequence does not
+  // repeat (3d: the R_3 sequence of b, z: golden phases); vet_gd_rotate_seq = random
+  // (with vet_gd_rotate_seed) draws each block's rotation from a counter-based hash of
+  // (seed, b) instead (uniform on SO(3); restart-safe, the same on every rank)
+  bool vra_ema = false;
+  Real vra_ema_n = 0.0, vra_ema_tau = 0.0, vra_ema_lc = 0.0;
+  bool vgd_rot_rand = false;
+  int64_t vgd_rot_seed = 0;
+  void RotAvgEmaInit(const int ilo);
+  void RotAvgEmaShift(const int ds);
+  void RotAvgEmaChange(const int ilo);
+  Real vra_ema_eps = 0.05;     // vet_rotate_avg_ema_change (0: no change test)
+  bool vra_ema_chj = true;     // vet_rotate_avg_ema_change_j: the J ratio in the test
+  bool vra_ema_chstep = false; // vet_rotate_avg_ema_change_form = step (default linear)
+  int vra_ema_diag = 0;        // vet_rotate_avg_ema_diag = M: print the change weights
+  int64_t vra_ema_nsh = 0;     // the boundaries seen (diag cadence only)
+  void RotAvgEmaApply(const int ilo);
   bool vra_eq = false;         // vet_rotate_avg_weight = equal (default j: J-weighted)
   bool vra_on = false;
   RotAvgTab vra_tab;

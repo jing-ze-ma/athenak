@@ -42,6 +42,7 @@
 
 
 #include <algorithm>
+#include <cstdio>
 #include <iostream>
 
 #include "athena.hpp"
@@ -132,6 +133,10 @@ void RadiationM1::RotAvgSnap(const int slot, const int ilo) {
 
 void RadiationM1::RotAvgUpdate(const int ilo) {
   if (vra_pend != 1) return;
+  if (vra_ema) {
+    RotAvgEmaInit(ilo);
+    return;
+  }
   vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -175,6 +180,7 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
 //! of the next block would sample U(t_k + dt): an O(dt) offset on a dt ladder)
 
 void RadiationM1::RotAvgDelta(const int slot, const int ilo) {
+  if (vra_ema) {RotAvgEmaChange(ilo);}
   vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -207,6 +213,10 @@ void RadiationM1::RotAvgDelta(const int slot, const int ilo) {
 //! other d_j -= Delta (/= R)
 
 void RadiationM1::RotAvgShift(const int ds) {
+  if (vra_ema) {
+    RotAvgEmaShift(ds);
+    return;
+  }
   vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -251,6 +261,10 @@ void RadiationM1::RotAvgShift(const int ds) {
 //! the normalised moments of the union of the K sets; kind 3: (X/J)_avg times the mean J)
 
 void RadiationM1::RotAvgApply(const int ilo) {
+  if (vra_ema) {
+    RotAvgEmaApply(ilo);
+    return;
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -303,6 +317,252 @@ void RadiationM1::RotAvgApply(const int ilo) {
         v = g*sm/nv;
       } else {
         v = g + sm/wsum;
+        if (t.kind[f] == 1 || (t.kind[f] == 3 && t.lo[f] < t.hi[f])) {
+          v = fmin(fmax(v, t.lo[f]), t.hi[f]);
+        }
+        if (t.kind[f] == 3) v *= ju;
+      }
+      a.At(t.arr[f], t.comp[f], m, k, j, i) = v;
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! raycorr-1108 vet_rotate_avg_ema = N: the exponential moving average over the rotated
+//! sets in the offset form of the K-window (one ring slot, vra_k = 2).  With weights
+//! w_j = a (1 - a)^j over the sets b - j (J-weighted as the K-window: the normalised
+//! moments of the weighted union of the sets' intensities), slot 0 holds
+//!   e_f = avg_f - g_f(now)  (additive fields),  r_f = avg_f/g_f(now)  (ratio fields: J)
+//! and the boundary b-1 -> b with the same-state Delta (D_f = g_new - g_old, R_f =
+//! g_new/g_old) updates them as
+//!   r' = (1 - a) r/R + a,   e' = (1 - a) (r_jw/R_jw) (e - D)/r'_jw
+//! (the factor r_jw/R_jw / r'_jw is 1 with equal weights).  In a steady state used = the
+//! EMA of the sets; the current set stays live, only pattern differences are carried
+//! (they decay as (1 - a)^blocks).  Init (the first build of a run): the equal mix of the
+//! current and the one previous set (as K = 2).
+
+namespace {
+// the EMA weight of a block boundary for a cell at radius rr:
+// a = max(1/N, 1 - exp(-dtb/tau))
+// with tau = tau0 (physical) and/or lc r/c (local light crossing); 1/N without either
+KOKKOS_INLINE_FUNCTION
+Real RaEmaA(const Real a0, const Real dtb, const Real tau0, const Real lc, const Real rr,
+            const Real cl) {
+  Real a = a0;
+  if (tau0 > 0.0) a = fmax(a, 1.0 - exp(-dtb/tau0));
+  if (lc > 0.0) a = fmax(a, 1.0 - exp(-dtb*cl/(lc*fmax(rr, 1.0e-30))));
+  return fmin(a, 1.0);
+}
+}  // namespace
+
+void RadiationM1::RotAvgEmaInit(const int ilo) {
+  vra_gen += 1;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto d_ = vra_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const Tab t = vra_tab;
+  par_for("m1_ra_ema_init", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool v = RaValid(a, t, ilo, m, k, j, i) && (d_(m,t.nf,kk,jj,ii) > 0.5);
+    const Real jr = RaJ(a, t, m, k, j, i);
+    // the previous set's weight relative to the current one (its J ratio, or 1)
+    Real ws = 1.0;
+    if (v && t.jw >= 0) {
+      Real g;
+      if (RaGet(a, t, t.jw, ie, m, k, j, i, jr, g)) {
+        const Real sv = d_(m,t.jw,kk,jj,ii);
+        ws = (g > 0.0 && sv > 0.0) ? sv/g : 1.0;
+      }
+    }
+    for (int f = 0; f < t.nf; ++f) {
+      Real g;
+      if (!RaGet(a, t, f, ie, m, k, j, i, jr, g)) continue;
+      const Real sv = d_(m,f,kk,jj,ii);
+      if (t.kind[f] == 2) {
+        d_(m,f,kk,jj,ii) = (v && g > 0.0 && sv > 0.0) ? 0.5*(1.0 + sv/g) : 1.0;
+      } else {
+        d_(m,f,kk,jj,ii) = v ? ws*(sv - g)/(1.0 + ws) : 0.0;
+      }
+    }
+    d_(m,t.nf,kk,jj,ii) = v ? 2.0 : 0.0;   // the flag counts the sets (warm-up)
+    // the aux slot 1: the current set's raw fields (the change test of the next
+    // boundary compares the same set at two times); its flag entry holds the change
+    // weight of the coming boundary (-1: none measured)
+    const int o1 = t.nf + 1;
+    for (int f = 0; f < t.nf; ++f) {
+      Real g;
+      if (RaGet(a, t, f, ie, m, k, j, i, jr, g)) d_(m,o1+f,kk,jj,ii) = g;
+    }
+    d_(m,o1+t.nf,kk,jj,ii) = -1.0;
+  });
+  vra_pend = 0;
+}
+
+//! raycorr-1108: the change test on the LAST build of a block, before RotAvgDelta turns
+//! the Delta slot (vra_k - 1, holding the current set b's raw fields g_b(now)) into the
+//! Delta: the same set at the previous boundary is in the aux slot 1 (it was the "next"
+//! set there).  c = max(|ln J_b(now)/J_b(then)|, |D_b(now) - D_b(then)|) (J = the
+//! kind-2 J field, vet_rotate_avg_ema_change_j; D = field 0, the
+//! D_rr part) gives the boundary's weight a_ch = min(1, c/eps) (vet_rotate_avg_ema_change
+//! = eps, 0 = off), stored in the aux flag entry; then the aux slot := the NEXT set's raw
+//! fields (now in place) for the following boundary.  A changed geometry (a source
+//! switched on, a shadow moved) thereby drops the history that belongs to the old one.
+void RadiationM1::RotAvgEmaChange(const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto d_ = vra_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const Tab t = vra_tab;
+  const int o1 = t.nf + 1, od = (vra_k - 1)*(t.nf + 1);
+  const Real eps = vra_ema_eps;
+  const bool usej = vra_ema_chj, step = vra_ema_chstep;
+  // the J field of the test: jf, else the ratio field (kind 2, the set's J; vet_gd
+  // registers it as the weight jw only, so jf alone left the J test dead)
+  int jt = t.jf;
+  for (int f = 0; f < t.nf && jt < 0; ++f) {
+    if (t.kind[f] == 2 && t.arr[f] != 2) jt = f;
+  }
+  par_for("m1_ra_ema_chg", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    Real ach = -1.0;
+    if (eps > 0.0) {
+      Real c = 0.0;
+      if (usej && jt >= 0 && t.arr[jt] != 2) {
+        const Real jn = d_(m,od+jt,kk,jj,ii), jo = d_(m,o1+jt,kk,jj,ii);
+        c = (jn > 0.0 && jo > 0.0) ? fabs(log(jn/jo)) : 1.0e30;
+      }
+      if (t.nf > 0 && t.arr[0] != 2 && t.kind[0] != 2) {
+        c = fmax(c, fabs(d_(m,od,kk,jj,ii) - d_(m,o1,kk,jj,ii)));
+      }
+      // linear: a_ch = c/eps (any drift shortens the memory); step: 0 below eps, 1 at
+      // 2 eps (only a change larger than eps per block drops the history)
+      ach = step ? fmin(1.0, fmax(0.0, c/eps - 1.0)) : fmin(1.0, c/eps);
+    }
+    const Real jr = RaJ(a, t, m, k, j, i);
+    for (int f = 0; f < t.nf; ++f) {
+      Real g;
+      if (RaGet(a, t, f, ie, m, k, j, i, jr, g)) d_(m,o1+f,kk,jj,ii) = g;
+    }
+    d_(m,o1+t.nf,kk,jj,ii) = ach;
+  });
+}
+
+void RadiationM1::RotAvgEmaShift(const int ds) {
+  vra_gen += 1;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto d_ = vra_d;
+  const Tab t = vra_tab;
+  const int od = ds*(t.nf + 1);
+  const Real a0 = 1.0/vra_ema_n;
+  const Real tau0 = vra_ema_tau, lc = vra_ema_lc, cl = c_light;
+  // the block length: the physical rotation clock, else the cycles of a block x dt
+  Mesh *pm = pmy_pack->pmesh;
+  const Real dtb = (vgd_rot_dt > 0.0) ? vgd_rot_dt
+                                      : static_cast<Real>(std::max(vgd_rot, 1))*pm->dt;
+  auto &size = pmy_pack->pmb->mb_size;
+  const int nx1 = indcs.nx1;
+  // raycorr-1108 vet_rotate_avg_ema_diag = M > 0: every M-th boundary, the change
+  // weights of the cells with a history (mean, fraction > 1/N, fraction >= 0.5), printed
+  vra_ema_nsh += 1;
+  if (vra_ema_diag > 0 && vra_ema_nsh % vra_ema_diag == 0) {
+    const int nkji = (ke-ks+1)*(je-js+1)*(ie-is+1);
+    const int nji = (je-js+1)*(ie-is+1), ni = ie-is+1;
+    Real sn = 0.0, sa = 0.0, s1 = 0.0, s2 = 0.0;
+    Kokkos::parallel_reduce("m1_ra_ema_diag",
+    Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &rn, Real &ra, Real &r1, Real &r2) {
+      const int m = idx/nkji;
+      const int kk = (idx - m*nkji)/nji;
+      const int jj = (idx - m*nkji - kk*nji)/ni;
+      const int ii = idx - m*nkji - kk*nji - jj*ni;
+      if (!(d_(m,od+t.nf,kk,jj,ii) > 0.5) || !(d_(m,t.nf,kk,jj,ii) > 0.5)) return;
+      const Real ach = fmax(d_(m,(t.nf+1)+t.nf,kk,jj,ii), 0.0);
+      rn += 1.0;
+      ra += ach;
+      if (ach > a0) r1 += 1.0;
+      if (ach >= 0.5) r2 += 1.0;
+    }, Kokkos::Sum<Real>(sn), Kokkos::Sum<Real>(sa), Kokkos::Sum<Real>(s1),
+       Kokkos::Sum<Real>(s2));
+    Real v[4] = {sn, sa, s1, s2};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, v, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      const Real n = fmax(v[0], 1.0);
+      std::printf("<rad_m1> ema_diag cycle %d: cells %.0f, mean a_ch %.4e, "
+                  "f(a_ch > 1/N) %.4f, f(a_ch >= 0.5) %.4f\n", pm->ncycle, v[0],
+                  v[1]/n, v[2]/n, v[3]/n);
+    }
+  }
+  par_for("m1_ra_ema_shift", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool vd = d_(m,od+t.nf,kk,jj,ii) > 0.5;
+    const bool vh = d_(m,t.nf,kk,jj,ii) > 0.5;
+    if (!vd || !vh) {   // no Delta or no history: restart from the current set alone
+      for (int f = 0; f < t.nf; ++f) {d_(m,f,kk,jj,ii) = (t.kind[f] == 2) ? 1.0 : 0.0;}
+      d_(m,t.nf,kk,jj,ii) = vd ? 1.0 : 0.0;   // count 1: the current set alone
+      return;
+    }
+    Real rr = 1.0;
+    if (lc > 0.0) {   // the cell radius (x1 = r on the sp wedge and the cubed sphere)
+      const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
+      rr = x1min + (static_cast<Real>(ii) + 0.5)*(x1max - x1min)/nx1;
+    }
+    const Real ach = d_(m,(t.nf+1)+t.nf,kk,jj,ii);   // the change weight (aux slot)
+    // warm-up: with n sets seen so far the weight is at least 1/(n+1) (the plain mean of
+    // all sets until n reaches N; the flag entry counts them)
+    const Real nset = d_(m,t.nf,kk,jj,ii);
+    const Real aw = fmax(fmax(RaEmaA(a0, dtb, tau0, lc, rr, cl), fmin(ach, 1.0)),
+                         1.0/(nset + 1.0));
+    Real fac = 1.0 - aw;
+    if (t.jw >= 0) {
+      const Real r0 = d_(m,t.jw,kk,jj,ii), R = d_(m,od+t.jw,kk,jj,ii);
+      const Real r1 = (1.0 - aw)*r0/R + aw;
+      fac = (1.0 - aw)*(r0/R)/r1;
+    }
+    for (int f = 0; f < t.nf; ++f) {
+      const Real x = d_(m,od+f,kk,jj,ii);
+      const Real y = d_(m,f,kk,jj,ii);
+      d_(m,f,kk,jj,ii) = (t.kind[f] == 2) ? ((1.0 - aw)*y/x + aw) : fac*(y - x);
+    }
+    d_(m,t.nf,kk,jj,ii) = (aw >= 1.0) ? 1.0 : fmin(nset + 1.0, 1.0e9);
+  });
+}
+
+void RadiationM1::RotAvgEmaApply(const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto d_ = vra_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const Tab t = vra_tab;
+  par_for("m1_ra_ema_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (!RaValid(a, t, ilo, m, k, j, i)) return;
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    if (!(d_(m,t.nf,kk,jj,ii) > 0.5)) return;
+    const Real jr = RaJ(a, t, m, k, j, i);
+    const Real ju = (t.jf >= 0) ? jr*d_(m,t.jf,kk,jj,ii) : jr;
+    for (int f = 0; f < t.nf; ++f) {
+      Real g;
+      if (!RaGet(a, t, f, ie, m, k, j, i, jr, g)) continue;
+      Real v;
+      if (t.kind[f] == 2) {
+        v = g*d_(m,f,kk,jj,ii);
+      } else {
+        v = g + d_(m,f,kk,jj,ii);
         if (t.kind[f] == 1 || (t.kind[f] == 3 && t.lo[f] < t.hi[f])) {
           v = fmin(fmax(v, t.lo[f]), t.hi[f]);
         }
@@ -384,7 +644,7 @@ void RadiationM1::RotAvgRstHdr(int64_t *h) const {
   h[0] = 1;
   h[2] = vra_k;
   h[3] = RotAvgNf();
-  h[4] = vgd_on ? 1 : 2;
+  h[4] = (vgd_on ? 1 : 2) + (vra_ema ? 16 : 0);   // raycorr-1108: EMA history
   h[5] = vra_head;
   h[6] = vra_pend;
   h[7] = (vra_pend == 3) ? vra_k : vra_k - 1;
@@ -501,7 +761,7 @@ bool RadiationM1::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
                                 const int nmb) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int64_t ncint = static_cast<int64_t>(indcs.nx1)*indcs.nx2*indcs.nx3;
-  const int64_t close = vgd_on ? 1 : 2;
+  const int64_t close = (vgd_on ? 1 : 2) + (vra_ema ? 16 : 0);
   const bool ok = vra_on && h[0] == 1 && h[2] == vra_k && h[4] == close && h[3] > 0 &&
                   h[3] < M1_RA_NF && h[9] == ncint && h[5] >= 0 && h[5] < vra_k - 1 &&
                   (h[6] == 0 || h[6] == 3) && h[7] == ((h[6] == 3) ? vra_k : vra_k - 1) &&
