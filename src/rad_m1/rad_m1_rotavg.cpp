@@ -420,14 +420,20 @@ void RadiationM1::RotAvgEmaChange(const int ilo) {
   const int o1 = t.nf + 1, od = (vra_k - 1)*(t.nf + 1);
   const Real eps = vra_ema_eps;
   const bool usej = vra_ema_chj, step = vra_ema_chstep;
+  // the J field of the test: jf, else the ratio field (kind 2, the set's J; vet_gd
+  // registers it as the weight jw only, so jf alone left the J test dead)
+  int jt = t.jf;
+  for (int f = 0; f < t.nf && jt < 0; ++f) {
+    if (t.kind[f] == 2 && t.arr[f] != 2) jt = f;
+  }
   par_for("m1_ra_ema_chg", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kk = k - ks, jj = j - js, ii = i - is;
     Real ach = -1.0;
     if (eps > 0.0) {
       Real c = 0.0;
-      if (usej && t.jf >= 0 && t.arr[t.jf] != 2) {
-        const Real jn = d_(m,od+t.jf,kk,jj,ii), jo = d_(m,o1+t.jf,kk,jj,ii);
+      if (usej && jt >= 0 && t.arr[jt] != 2) {
+        const Real jn = d_(m,od+jt,kk,jj,ii), jo = d_(m,o1+jt,kk,jj,ii);
         c = (jn > 0.0 && jo > 0.0) ? fabs(log(jn/jo)) : 1.0e30;
       }
       if (t.nf > 0 && t.arr[0] != 2 && t.kind[0] != 2) {
