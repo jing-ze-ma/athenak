@@ -2722,7 +2722,8 @@ class RadiationM1 {
   // raycorr-1108 <rad_m1>/vet_rotate_avg_ema = N >= 1 (read only when named; default off =
   // bitwise): the K-window mean replaced by an exponential moving average over the
   // rotated sets, weight a = 1/N per rotation block, kept in the same offset form (ONE
-  // slot: e = avg - g_b(now), r = Jbar/J_b; vra_k = 2 internally): effective window
+  // slot: e = avg - g_b(now), r = Jbar/J_b, + an aux slot for the change test; vra_k = 3
+  // internally): effective window
   // ~2N - 1 sets at the memory of K = 2.  vet_rotate_avg_ema_tau > 0 (physical time) and
   // vet_rotate_avg_ema_lc > 0 (x the local light-crossing time r/c) tie a to a time
   // window instead: a = max(1/N, 1 - exp(-dt_blk/tau)).  The rotation sequence does not
@@ -2735,6 +2736,8 @@ class RadiationM1 {
   int64_t vgd_rot_seed = 0;
   void RotAvgEmaInit(const int ilo);
   void RotAvgEmaShift(const int ds);
+  void RotAvgEmaChange(const int ilo);
+  Real vra_ema_eps = 0.05;     // vet_rotate_avg_ema_change (0: no change test)
   void RotAvgEmaApply(const int ilo);
   bool vra_eq = false;         // vet_rotate_avg_weight = equal (default j: J-weighted)
   bool vra_on = false;
