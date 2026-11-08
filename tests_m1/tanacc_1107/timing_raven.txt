@@ -1,0 +1,16 @@
+sp_hi_hot off 9.142908e+00 9.122877e+00 
+sp_hi_hot on 9.179602e+00 9.232846e+00 
+sp_hi_hot on_tw 1.652889e+01 1.644896e+01 
+sp_hi_hot on_hd 1.753970e+02 1.753418e+02 
+sp_hi_shd off 1.152583e+01 1.149771e+01 
+sp_hi_shd on 1.159033e+01 1.166998e+01 
+sp_hi_shd on_tw 1.613898e+01 1.614129e+01 
+sp_hi_shd on_hd 1.747689e+02 1.748642e+02 
+cs_hi_hot off 2.834587e+01 2.719543e+01 
+cs_hi_hot on 2.886003e+01 2.835136e+01 
+cs_hi_hot on_tw 5.298418e+01 5.275617e+01 
+cs_hi_hot on_hd 
+cs_hi_shd off 7.646288e+01 7.573627e+01 
+cs_hi_shd on 7.732960e+01 7.703422e+01 
+cs_hi_shd on_tw 1.253022e+02 1.249269e+02 
+cs_hi_shd on_hd 
