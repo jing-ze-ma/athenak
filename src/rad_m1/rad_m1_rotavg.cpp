@@ -542,7 +542,7 @@ void RadiationM1::RotAvgEmaShift(const int ds) {
       const Real r1 = (1.0 - aw)*r0/R + aw;
       fac = (1.0 - aw)*(r0/R)/r1;
     }
-    // raycheap-1109 dema: the second EMA, of the new first one, in the same frame and with
+    // raycheap-1109 dema: the second EMA, of the new first one, in the same frame, with
     // the same (J-) weights: r2' = (1 - aw) r2/R + aw r1', e2' = fac2 (e2 - D) + w1 e1'
     Real fac2 = 1.0 - aw, w1 = aw;
     if (dema && t.jw >= 0) {
