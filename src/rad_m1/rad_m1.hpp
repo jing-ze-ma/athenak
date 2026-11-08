@@ -2777,6 +2777,11 @@ class RadiationM1 {
   bool vra_ema_chj = true;     // vet_rotate_avg_ema_change_j: the J ratio in the test
   bool vra_ema_chstep = false; // vet_rotate_avg_ema_change_form = step (default linear)
   int vra_ema_diag = 0;        // vet_rotate_avg_ema_diag = M: print the change weights
+  // raycheap-1109 vet_rotate_avg_ema_dema (read only when named, default false): the lag-
+  // corrected (double) EMA: slot 2 holds the EMA of the EMA (e2, same weights, same frame
+  // shifts), the closure uses 2 e1 - e2 (ratio fields 2 r1 - r2, kept in [r1/4, 4 r1]);
+  // vra_k = 4 (slot 3 the Delta)
+  bool vra_ema_dema = false;
   int64_t vra_ema_nsh = 0;     // the boundaries seen (diag cadence only)
   void RotAvgEmaApply(const int ilo);
   bool vra_eq = false;         // vet_rotate_avg_weight = equal (default j: J-weighted)

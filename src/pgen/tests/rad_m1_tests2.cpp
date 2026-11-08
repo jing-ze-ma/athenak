@@ -144,6 +144,11 @@ struct M1ShellGasP {
 M1ShellGasP m1_shg = {1.0, 1.0e-8, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0e-8,
                       0.0, 0.0, 1.0, 1.0e-8, 0.0, 0.0, 1.0, 2.0};
 bool m1_shg_hold = false;
+// raycheap-1109 (read only when named): problem/flux_mod_amp = A, flux_mod_period = P > 0:
+// with gas_hold the inner face flux of M1_IBC_FLUX is set at every stage to
+// F0 (1 + A sin(2 pi (t + dt)/P)), F0 = <rad_m1>/implicit_flux_x1min (a time-dependent
+// star for the closure time-order tests)
+Real m1_fmod_amp = 0.0, m1_fmod_per = 0.0, m1_fmod_f0 = 0.0;
 Real m1_shg_gm1 = 2.0/3.0;
 // h2order-1011 (gas_hold_v): the radial flow v_r = vr sin(pi (x1 - x1a)/x1l) re-imposed
 Real m1_shv_vr = 0.0, m1_shv_x1a = 0.0, m1_shv_x1l = 1.0;
@@ -1021,6 +1026,11 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     if (pin->DoesParameterExist("problem","gas_hold")) {
       m1_shg_hold = pin->GetBoolean("problem","gas_hold");
       if (m1_shg_hold) {user_srcs_func = RadM1ShellHold;}
+      if (pin->DoesParameterExist("problem","flux_mod_period")) {
+        m1_fmod_per = pin->GetReal("problem","flux_mod_period");
+        m1_fmod_amp = pin->GetReal("problem","flux_mod_amp");
+        m1_fmod_f0 = pin->GetReal("rad_m1","implicit_flux_x1min");
+      }
     }
     // h2order-1011 (read only when named): gas_hold_v = true re-imposes the IC radial
     // velocity v_r = gas_vr sin(pi (x1 - x1min)/(x1max - x1min)) every stage, keeping
@@ -1811,6 +1821,10 @@ void RadM1SphAtmGas(Mesh *pm, const Real bdt) {
 void RadM1ShellHold(Mesh *pm, const Real bdt) {
   (void) bdt;
   MeshBlockPack *pmbp = pm->pmb_pack;
+  if (m1_fmod_per > 0.0 && pmbp->pradm1 != nullptr) {   // raycheap-1109
+    pmbp->pradm1->iflux_x1min = m1_fmod_f0*(1.0 + m1_fmod_amp*
+                                std::sin(2.0*M_PI*(pm->time + pm->dt)/m1_fmod_per));
+  }
   if (pmbp->phydro == nullptr) return;
   auto &indcs = pm->mb_indcs;
   int &ng = indcs.ng;
