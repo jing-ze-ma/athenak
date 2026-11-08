@@ -128,9 +128,9 @@ void VgdFatal(const std::string &msg) {VgdFatalAt(__FILE__, "<rad_m1>/vet_gd: ",
 KOKKOS_INLINE_FUNCTION
 Real VgdLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
 
-// raycorr-1108 vet_gd_rotate_seq = random: a uniform in [0, 1) from (seed, block, comp) by
-// the splitmix64 finaliser (counter-based: a pure function of its arguments, so every rank,
-// rerun and restart draws the same rotation for the same block)
+// raycorr-1108 vet_gd_rotate_seq = random: a uniform in [0, 1) from (seed, block, comp)
+// by the splitmix64 finaliser (counter-based: a pure function of its arguments, so every
+// rank, rerun and restart draws the same rotation for the same block)
 double VgdRotU(const int64_t seed, const int64_t blk, const int c) {
   uint64_t z = static_cast<uint64_t>(seed)*0x9E3779B97F4A7C15ULL +
                static_cast<uint64_t>(blk)*0xD1B54A32D192ED03ULL +

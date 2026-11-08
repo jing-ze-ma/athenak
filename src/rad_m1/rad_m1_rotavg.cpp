@@ -342,7 +342,8 @@ void RadiationM1::RotAvgApply(const int ilo) {
 //! current and the one previous set (as K = 2).
 
 namespace {
-// the EMA weight of block boundary for a cell at radius rr: a = max(1/N, 1 - exp(-dtb/tau))
+// the EMA weight of a block boundary for a cell at radius rr:
+// a = max(1/N, 1 - exp(-dtb/tau))
 // with tau = tau0 (physical) and/or lc r/c (local light crossing); 1/N without either
 KOKKOS_INLINE_FUNCTION
 Real RaEmaA(const Real a0, const Real dtb, const Real tau0, const Real lc, const Real rr,
@@ -387,7 +388,7 @@ void RadiationM1::RotAvgEmaInit(const int ilo) {
         d_(m,f,kk,jj,ii) = v ? ws*(sv - g)/(1.0 + ws) : 0.0;
       }
     }
-    d_(m,t.nf,kk,jj,ii) = v ? 2.0 : 0.0;   // the flag counts the sets in the EMA (warm-up)
+    d_(m,t.nf,kk,jj,ii) = v ? 2.0 : 0.0;   // the flag counts the sets (warm-up)
     // the aux slot 1: the current set's raw fields (the change test of the next
     // boundary compares the same set at two times); its flag entry holds the change
     // weight of the coming boundary (-1: none measured)
@@ -404,7 +405,8 @@ void RadiationM1::RotAvgEmaInit(const int ilo) {
 //! raycorr-1108: the change test on the LAST build of a block, before RotAvgDelta turns
 //! the Delta slot (vra_k - 1, holding the current set b's raw fields g_b(now)) into the
 //! Delta: the same set at the previous boundary is in the aux slot 1 (it was the "next"
-//! set there).  c = max(|ln J_b(now)/J_b(then)|, |D_b(now) - D_b(then)|) (D = field 0, the
+//! set there).  c = max(|ln J_b(now)/J_b(then)|, |D_b(now) - D_b(then)|) (J = the
+//! kind-2 J field, vet_rotate_avg_ema_change_j; D = field 0, the
 //! D_rr part) gives the boundary's weight a_ch = min(1, c/eps) (vet_rotate_avg_ema_change
 //! = eps, 0 = off), stored in the aux flag entry; then the aux slot := the NEXT set's raw
 //! fields (now in place) for the following boundary.  A changed geometry (a source

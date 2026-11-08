@@ -2719,8 +2719,8 @@ class RadiationM1 {
     int jw = -1;               // the ratio field weighting the sets (-1: equal)
   };
   int vra_k = 0;               // vet_rotate_avg (K; 0/1 off)
-  // raycorr-1108 <rad_m1>/vet_rotate_avg_ema = N >= 1 (read only when named; default off =
-  // bitwise): the K-window mean replaced by an exponential moving average over the
+  // raycorr-1108 <rad_m1>/vet_rotate_avg_ema = N >= 1 (read only when named; default off
+  // = bitwise): the K-window mean replaced by an exponential moving average over the
   // rotated sets, weight a = 1/N per rotation block, kept in the same offset form (ONE
   // slot: e = avg - g_b(now), r = Jbar/J_b, + an aux slot for the change test; vra_k = 3
   // internally): effective window
