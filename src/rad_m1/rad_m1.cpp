@@ -2196,6 +2196,7 @@ RadiationM1::~RadiationM1() {
   if (pbval_sg != nullptr) {delete pbval_sg;}
   if (pbval_vl != nullptr) {delete pbval_vl;}
   if (pbval_ea != nullptr) {delete pbval_ea;}
+  if (pbval_fs != nullptr) {delete pbval_fs;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
   if (pbval_vt != nullptr) {delete pbval_vt;}
   if (pbval_hr != nullptr) {delete pbval_hr;}   // cs-s4-1017

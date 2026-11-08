@@ -1279,6 +1279,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   dbg_etally = pin->GetOrAddBoolean("rad_m1","dbg_energy_tally",false);
   // accbook-1021: read only when named (an input without it is unchanged, also in the
   // parameters a restart file records)
+  // seamsync-1108: <rad_m1>/sp_face_sync (read only when named; off = bitwise)
+  sp_face_sync = sph_geom && !cs_geom &&
+                 pin->DoesParameterExist("rad_m1", "sp_face_sync") &&
+                 pin->GetBoolean("rad_m1", "sp_face_sync");
   dbg_eaudit_map = pin->DoesParameterExist("rad_m1", "dbg_energy_audit_map") &&
                    pin->GetBoolean("rad_m1", "dbg_energy_audit_map");
   dbg_eaudit = pin->DoesParameterExist("rad_m1", "dbg_energy_audit") &&
@@ -13232,6 +13236,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto f3_ = f0x3;
   if (trans) {
     if (cs_geom && thrd) {CubedSeamFaceAverage();}   // STAGE CS1 (C5)
+    if (sp_face_sync) {SphFaceSync();}   // seamsync-1108 (sp, opt-in)
     Kokkos::deep_copy(DevExeSpace(), f0x2n, f0x2);
     if (thrd) {Kokkos::deep_copy(DevExeSpace(), f0x3n, f0x3);}
   }

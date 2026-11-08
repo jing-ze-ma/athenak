@@ -2605,6 +2605,13 @@ class RadiationM1 {
   int vlat_geo_icut = -1;       // the first shell vlat_geo was built for
   MeshBoundaryValuesCC *pbval_vl = nullptr;   // vlat_i
   MeshBoundaryValuesCC *pbval_ea = nullptr;   // tsp-1108 EAUDITF diagnostic
+  // seamsync-1108 <rad_m1>/sp_face_sync (SphFaceSync, rad_m1_sph.cpp)
+  bool sp_face_sync = false;
+  MeshBoundaryValuesCC *pbval_fs = nullptr;
+  DvceArray5D<Real> fsync_a, fsync_c;
+  Real fsync_dmax = 0.0;
+  int fsync_n = 0;
+  void SphFaceSync();
   MeshBoundaryValuesCC *pbval_vs = nullptr;   // vlat_cs
   MeshBoundaryValuesCC *pbval_vt = nullptr;   // tau_ten (all slots)
   void VetLatInit();

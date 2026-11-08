@@ -515,6 +515,96 @@ void RadiationM1::CubedSeamFaceAverage() {
 
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::SphFaceSync
+//! \brief seamsync-1108 <rad_m1>/sp_face_sync (spherical polar, default false, read only
+//! when named): make the stored transverse face fluxes f0x2/f0x3 single valued on every
+//! lateral face two MeshBlocks share (the theta-/phi-periodic seams included), each block
+//! keeping the mean 0.5 (F_mine + F_neighbour) (commutative: both blocks get the same
+//! bits).  Called at the start of each implicit step, before f0x* is copied to the face
+//! memory f0x*n.  Why: the face equation carries its old value, F^{n+1} = th (F^n + ...),
+//! and in thin cells th -> 1, so ANY step in which the two copies of a shared face
+//! differed (the pre-fix theta-seam tangential term, tensor-sp-1108) is remembered for
+//! ~1/(1 - th) steps and the E update stays non-conservative at that face long after the
+//! cause is gone (He wedge restart from the damaged he_tan ONwi state: 0.31 L_in, all of
+//! it at the theta seam, EAUDITF).  The cubed sphere has its own seam average
+//! (CubedSeamFaceAverage).  The exchange uses a dedicated cell-centred boundary object
+//! (4 components: x2 lower/upper and x3 lower/upper boundary-row faces in the cells).
+
+KOKKOS_INLINE_FUNCTION
+bool M1FsShared(const BoundaryFlag bf) {
+  return (bf == BoundaryFlag::block) || (bf == BoundaryFlag::periodic);
+}
+
+void RadiationM1::SphFaceSync() {
+  if (!sp_face_sync || cs_geom || !trans_on) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmy_pack->nmb_thispack;
+  const bool thrd = trans_x3;
+  if (pbval_fs == nullptr) {
+    pbval_fs = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
+    pbval_fs->InitializeBuffers(4);
+    pbval_fs->SetVectorPairs(4, {});
+    if (pbval_u != nullptr) {pbval_fs->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;}
+  }
+  const int n1 = u0.extent_int(4), n2 = u0.extent_int(3), n3 = u0.extent_int(2);
+  if (fsync_a.extent_int(0) != nmb) {
+    Kokkos::realloc(fsync_a, nmb, 4, n3, n2, n1);
+    Kokkos::realloc(fsync_c, nmb, 4, 1, 1, 1);
+  }
+  Kokkos::deep_copy(fsync_a, 0.0);
+  auto fx = fsync_a;
+  auto f2 = f0x2;
+  auto f3 = f0x3;
+  par_for("m1_fsync_in", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (j == js) {fx(m,0,k,j,i) = f2(m,k,js,i);}
+    if (j == je) {fx(m,1,k,j,i) = f2(m,k,je+1,i);}
+    if (thrd && k == ks) {fx(m,2,k,j,i) = f3(m,ks,j,i);}
+    if (thrd && k == ke) {fx(m,3,k,j,i) = f3(m,ke+1,j,i);}
+  });
+  VetLatExchange(fsync_a, fsync_c, pbval_fs);
+  auto &mbbcs = pmy_pack->pmb->mb_bcs;
+  Real dmx = 0.0, fmx = 0.0;
+  Kokkos::parallel_reduce("m1_fsync_d", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ld, Real &lf) {
+    if (j == js && M1FsShared(mbbcs.d_view(m, BoundaryFace::inner_x2))) {
+      ld = fmax(ld, fabs(f2(m,k,js,i) - fx(m,1,k,js-1,i)));
+      lf = fmax(lf, fabs(f2(m,k,js,i)));
+    }
+  }, Kokkos::Max<Real>(dmx), Kokkos::Max<Real>(fmx));
+#if MPI_PARALLEL_ENABLED
+  {Real g[2] = {dmx, fmx}, h[2];
+  MPI_Allreduce(g, h, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  dmx = h[0]; fmx = h[1];}
+#endif
+  fsync_dmax = fmax(fsync_dmax, dmx/fmax(fmx, 1.0e-300));
+  par_for("m1_fsync_out", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (j == js && M1FsShared(mbbcs.d_view(m, BoundaryFace::inner_x2))) {
+      f2(m,k,js,i) = 0.5*(f2(m,k,js,i) + fx(m,1,k,js-1,i));
+    }
+    if (j == je && M1FsShared(mbbcs.d_view(m, BoundaryFace::outer_x2))) {
+      f2(m,k,je+1,i) = 0.5*(fx(m,0,k,je+1,i) + f2(m,k,je+1,i));
+    }
+    if (thrd && k == ks && M1FsShared(mbbcs.d_view(m, BoundaryFace::inner_x3))) {
+      f3(m,ks,j,i) = 0.5*(f3(m,ks,j,i) + fx(m,3,ks-1,j,i));
+    }
+    if (thrd && k == ke && M1FsShared(mbbcs.d_view(m, BoundaryFace::outer_x3))) {
+      f3(m,ke+1,j,i) = 0.5*(fx(m,2,ke+1,j,i) + f3(m,ke+1,j,i));
+    }
+  });
+  if (fsync_n == 0 && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> sp_face_sync: lateral block faces of f0x2/f0x3 averaged at "
+              << "every step start (first relative change " << dmx/fmax(fmx, 1.0e-300)
+              << ")" << std::endl;
+  }
+  ++fsync_n;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CubedVecCheck
 //! \brief cs-s4-1017 (TEST ONLY, cubed sphere, <rad_m1>/cs_vec_check = true read only
 //! when named): the seam/vertex halo of the TANGENTIAL VECTOR PAIRS against an analytic
