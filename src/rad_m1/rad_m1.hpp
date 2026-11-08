@@ -626,7 +626,8 @@ class RadiationM1 {
   // already paid) goes back to E: e_gas + (c/chat) E of the cell is unchanged.  Momentum:
   // (1 - s) dm leaves (as the ceiling's clip did).  Sp / Cartesian only (not cs).
   // vcap_cnt_d: 0 capped cell-solves, 1 energy returned to E (gas units x volume),
-  // 2 cells printed, 3 energy not returned (the return is bounded by the cell's E).  implicit_wb_vcap_measure = true (read only when named): count and
+  // 2 cells printed, 3 energy not returned (the return is bounded by the cell's E).
+  // implicit_wb_vcap_measure = true (read only when named): count and
   // print only, nothing is changed (bitwise with the key off); implicit_wb_vcap_print = N
   // (read only when named): the first N cells beyond V per rank are printed (WBVCAP)
   Real impl_wb_vcap = 0.0;
