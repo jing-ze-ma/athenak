@@ -12789,6 +12789,73 @@ void RadiationM1::EAuditMark(int pt) {
     MPI_Allreduce(xl, xg, 15, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     for (int c=0; c<15; ++c) {xl[c] = xg[c];}}
 #endif
+    // the shared lateral faces: each block puts its own boundary-row face fluxes into a
+    // cell array (0: x2 lower face of row js, 1: x2 upper face of row je, 2/3 the same in
+    // x3), the ordinary cc exchange hands every block its neighbours' values in the
+    // ghosts, and D = dt (c/chat) sum (F_mine - F_neighbour) A over the lower faces of
+    // each block (each shared face once) is what RSOLVE carries beyond sum r
+    Real xd[12] = {0.0};
+    if (pbval_vl != nullptr && tr2) {
+      const int n1c = u0.extent_int(4), n2c = u0.extent_int(3), n3c = u0.extent_int(2);
+      if (eaud_fx.extent_int(0) != nmb) {
+        Kokkos::realloc(eaud_fx, nmb, 4, n3c, n2c, n1c);
+        Kokkos::realloc(eaud_fxc, nmb, 4, 1, 1, 1);
+      }
+      Kokkos::deep_copy(eaud_fx, 0.0);
+      auto fx = eaud_fx;
+      par_for("m1_eaudit_fx", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (j == js) {fx(m,0,k,j,i) = f2(m,k,js,i);}
+        if (j == je) {fx(m,1,k,j,i) = f2(m,k,je+1,i);}
+        if (tr3 && k == ks) {fx(m,2,k,j,i) = f3(m,ks,j,i);}
+        if (tr3 && k == ke) {fx(m,3,k,j,i) = f3(m,ke+1,j,i);}
+      });
+      VetLatExchange(eaud_fx, eaud_fxc, pbval_vl);
+      const Real x2lo = pmy_pack->pmesh->mesh_size.x2min;
+      const Real x3lo = pmy_pack->pmesh->mesh_size.x3min;
+      const Real tol = 1.0e-12;
+      array_sum::GlobalSum xs;
+      Kokkos::parallel_reduce("m1_eaudit_fxd", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              nmb*nk*nj*ni),
+      KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
+        const int m = n/(nk*nj*ni);
+        const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
+        array_sum::GlobalSum q;
+        for (int c=0; c<NREDUCTION_VARIABLES; ++c) q.the_array[c] = 0.0;
+        const int b = ((i - is)*8)/ni;
+        if (j == js) {
+          const BoundaryFlag bf = mbbcs.d_view(m, BoundaryFace::inner_x2);
+          if ((bf == BoundaryFlag::block) || (bf == BoundaryFlag::periodic)) {
+            const Real d = dts*ccr*(f2(m,k,js,i) - fx(m,1,k,js-1,i))*area.x2f(m,k,js,i);
+            const bool seam = fabs(mbsize.d_view(m).x2min - x2lo) < tol;
+            q.the_array[seam ? 0 : 1] += d;
+            q.the_array[4 + b] += d;
+          }
+        }
+        if (tr3 && k == ks) {
+          const BoundaryFlag bf = mbbcs.d_view(m, BoundaryFace::inner_x3);
+          if ((bf == BoundaryFlag::block) || (bf == BoundaryFlag::periodic)) {
+            const Real d = dts*ccr*(f3(m,ks,j,i) - fx(m,3,ks-1,j,i))*area.x3f(m,ks,j,i);
+            const bool seam = fabs(mbsize.d_view(m).x3min - x3lo) < tol;
+            q.the_array[seam ? 2 : 3] += d;
+            q.the_array[4 + b] += d;
+          }
+        }
+        sum += q;
+      }, Kokkos::Sum<array_sum::GlobalSum>(xs));
+      for (int c=0; c<12; ++c) {xd[c] = xs.the_array[c];}
+#if MPI_PARALLEL_ENABLED
+      {Real xg[12];
+      MPI_Allreduce(xd, xg, 12, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      for (int c=0; c<12; ++c) {xd[c] = xg[c];}}
+#endif
+    }
+    if (global_variable::my_rank == 0) {
+      std::printf("EAUDITF cycle=%d D_x2seam=%.6e D_x2blk=%.6e D_x3seam=%.6e D_x3blk=%.6e"
+                  " bins=", pmy_pack->pmesh->ncycle, xd[0], xd[1], xd[2], xd[3]);
+      for (int c=0; c<8; ++c) {std::printf("%s%.4e", c ? "," : "", xd[4 + c]);}
+      std::printf("\n");
+    }
     if (global_variable::my_rank == 0) {
       std::printf("EAUDITX cycle=%d dt=%.10e sum=%.6e abs=%.6e bins=",
                   pmy_pack->pmesh->ncycle, dts, xl[0], xl[1]);
