@@ -3423,7 +3423,8 @@ class RadiationM1 {
   // build n-1 (one cycle lag).  The pending build's source (vlat_cs) and cycle travel
   // in the restart file (kM1VgdRstMagic).  vgd_cur: the instance the sweep/halo use.
   bool vgd_async = false;
-  // speedup-1109 vet_gd_body_global (read only when named, default false; bitwise): the
+  // speedup-1109 vet_gd_body_global (read only when named; prod-1110 default true when
+  // vet_gd is on; bitwise): the
   // shell body closure in device memory, called through a pointer (VgdClosureToDevice)
   bool vgd_bglob = false;
   DvceArray1D<char> vgd_bbuf0, vgd_bbuf1;

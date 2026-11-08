@@ -12874,7 +12874,8 @@ void RadiationM1::EAuditMark(int pt) {
 #if MPI_PARALLEL_ENABLED
     {Real xg[15];
     MPI_Allreduce(xl, xg, 15, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    for (int c=0; c<15; ++c) {xl[c] = xg[c];}}
+    for (int c=0; c<15; ++c) {xl[c] = xg[c];}
+    }
 #endif
     // the shared lateral faces: each block puts its own boundary-row face fluxes into a
     // cell array (0: x2 lower face of row js, 1: x2 upper face of row je, 2/3 the same in
@@ -12943,7 +12944,8 @@ void RadiationM1::EAuditMark(int pt) {
 #if MPI_PARALLEL_ENABLED
       {Real xg[12];
       MPI_Allreduce(xd, xg, 12, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-      for (int c=0; c<12; ++c) {xd[c] = xg[c];}}
+      for (int c=0; c<12; ++c) {xd[c] = xg[c];}
+      }
 #endif
     }
     if (global_variable::my_rank == 0) {

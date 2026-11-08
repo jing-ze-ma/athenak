@@ -240,7 +240,8 @@ bool hs_ad_ = false;
 // instead of r and moves with the envelope.  hs_plnp_/hs_pfm_: ln P_tot, fm of the IC
 // (ascending in ln P), hs_ftot_: F_r + F_MLT of the IC on the faces.
 bool hs_adp_ = false;
-// speedup-1109 problem/hs_ad_dead_skip (read only when named, default false; bitwise):
+// speedup-1109 problem/hs_ad_dead_skip (read only when named; prod-1110 default true;
+// bitwise):
 // under mesh/layout_invariant the per-shell serial sums of HsAdaptiveUpdate (a thread per
 // radial index over every column, with the EOS pressure) are overwritten by the
 // order-independent repro::ShellSums: skip them (A100 small RSG/HG: 34-36 ms per cycle)
@@ -2532,8 +2533,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_ad_ = (mc == "adaptive" || mc == "pressure");
     hs_adp_ = (mc == "pressure");
   }
-  hs_ad_dskip_ = pin->DoesParameterExist("problem","hs_ad_dead_skip") &&
-                 pin->GetBoolean("problem","hs_ad_dead_skip");   // speedup-1109
+  // prod-1110: hs_ad_dead_skip DEFAULT true (acts only under mesh/layout_invariant;
+  // bitwise); name false for prod-1109
+  hs_ad_dskip_ = true;
+  if (pin->DoesParameterExist("problem","hs_ad_dead_skip")) {
+    hs_ad_dskip_ = pin->GetBoolean("problem","hs_ad_dead_skip");   // speedup-1109
+  }
   if (hs_ad_) {
     if (!hs_mlt_) {
       HsFatal("problem/mlt_closure = adaptive needs problem/mlt_flux_frozen = true (the "

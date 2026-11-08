@@ -1569,6 +1569,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_async")) {
       vgd_async = pin->GetBoolean("rad_m1","vet_gd_async");
     }
+    // prod-1110: vet_gd_body_global DEFAULT true (bitwise); name false for prod-1109
+    vgd_bglob = vgd_on;
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_body_global")) {
       vgd_bglob = pin->GetBoolean("rad_m1","vet_gd_body_global");   // speedup-1109
     }
