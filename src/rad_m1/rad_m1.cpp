@@ -2304,7 +2304,10 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
     vra_ema_n = pin->GetReal("rad_m1","vet_rotate_avg_ema");
     if (vra_ema_n >= 1.0 && (vgd_on || vet_sc)) {
       vra_ema = true;
-      vra_k = 2;
+      vra_k = 3;   // slot 0 the EMA, slot 1 the change-test aux, slot 2 the Delta
+      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_change")) {
+        vra_ema_eps = pin->GetReal("rad_m1","vet_rotate_avg_ema_change");
+      }
       vra_on = true;
       if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_weight")) {
         vra_eq = (pin->GetString("rad_m1","vet_rotate_avg_weight").compare("equal") == 0);
@@ -2321,7 +2324,8 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
                   << "(a = 1/N per block" << ((vra_ema_tau > 0.0) ? ", time window tau = "
                   + std::to_string(vra_ema_tau) : "") << ((vra_ema_lc > 0.0) ?
                   ", window = " + std::to_string(vra_ema_lc) + " x r/c" : "")
-                  << "); vet_rotate_avg is not used" << std::endl;
+                  << "; change test eps " << vra_ema_eps << "); vet_rotate_avg is not used"
+                  << std::endl;
       }
     }
   }
