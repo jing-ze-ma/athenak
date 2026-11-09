@@ -631,6 +631,9 @@ class RadiationM1 {
   Real cur_tolcap = 0.0;
   Real impl_lin_tclast = 0.0;   // implicit_lin_tolcap_last (0 = every pass)
   Real impl_tclast_n = 0.0;     // passes the cap was applied on (rank-local count)
+  int impl_lin_tcstage = 0;     // implicit_lin_tolcap_stage (2 = not in hesdirk2 stage 1)
+  Real impl_lin_sktrue = 0.0;   // implicit_lin_skip_true (0 = off)
+  Real impl_sktrue_n = 0.0;     // true-residual checks skipped (rank-local count)
   bool cf_named = false;        // prod-1112-cand: key named (a named true may fatal)
   // consfix-1109 <rad_m1>/dbg_cons_ledger (DIAGNOSTIC, read only when named): r of every
   // solve; rank 0 prints CONSR cycle t2s dt sum(V (c/chat) r) sum(V (c/chat) |r|)

@@ -2167,6 +2167,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_lin_tolcap = pin->DoesParameterExist("rad_m1","implicit_lin_tolcap") ?
                     pin->GetReal("rad_m1","implicit_lin_tolcap") : 0.0;   // lintol-1109
   if (impl_lin_tolcap < 0.0) {ImplFatal("<rad_m1>/implicit_lin_tolcap must be >= 0");}
+  impl_lin_tcstage = pin->DoesParameterExist("rad_m1","implicit_lin_tolcap_stage") ?
+                     pin->GetInteger("rad_m1","implicit_lin_tolcap_stage") : 0;
+  impl_lin_sktrue = pin->DoesParameterExist("rad_m1","implicit_lin_skip_true") ?
+                    pin->GetReal("rad_m1","implicit_lin_skip_true") : 0.0;
   impl_lin_tclast = pin->DoesParameterExist("rad_m1","implicit_lin_tolcap_last") ?
                     pin->GetReal("rad_m1","implicit_lin_tolcap_last") : 0.0;
   dbg_cons_ledger = pin->DoesParameterExist("rad_m1","dbg_cons_ledger") &&
@@ -9493,7 +9497,13 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
         rho = rhon;
         rhon = red.s0;
         rnorm = red.mx;
-        if (lin_done(rnorm)) {
+        // lintol-1109 implicit_lin_skip_true = f (read only when named; 0 = off): a
+        // recurrence residual below f x the target is accepted without the true-residual
+        // operator check (implicit_cons_final takes the true residual of the last pass)
+        if (lin_done(rnorm) && impl_lin_sktrue > 0.0 && rnorm < impl_lin_sktrue*tabs) {
+          done = true;
+          impl_sktrue_n += 1.0;
+        } else if (lin_done(rnorm)) {
           // the TRUE residual, which is what the tolerance is about
           ImplicitApplyOp(M1_IW_KX, M1_IW_KTT);
           bred("m1_impl_bcgf_true",
@@ -9954,10 +9964,13 @@ void RadiationM1::EventTotals(Real *v) {
 
 void RadiationM1::ImplicitReport() {
   if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
-  if (impl_lin_tolcap > 0.0 && global_variable::my_rank == 0) {   // lintol-1109
+  if ((impl_lin_tolcap > 0.0 || impl_lin_sktrue > 0.0) &&
+      global_variable::my_rank == 0) {   // lintol-1109
     std::cout << "<rad_m1> implicit_lin_tolcap=" << impl_lin_tolcap
               << " tolcap_last=" << impl_lin_tclast << " capped passes (rank 0)="
-              << impl_tclast_n << std::endl;
+              << impl_tclast_n << " stage=" << impl_lin_tcstage << " skip_true="
+              << impl_lin_sktrue << " skipped checks (rank 0)=" << impl_sktrue_n
+              << std::endl;
   }
   if ((impl_cons_final || dbg_cons_ledger) && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> consfix-1109: implicit_cons_final=" << impl_cons_final
@@ -14173,6 +14186,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
       if (!lp) {cur_tolcap = 0.0;} else {impl_tclast_n += 1.0;}
     }
+    // lintol-1109 implicit_lin_tolcap_stage = 2: the cap only in the solves whose result
+    // is the step's end state (hesdirk2 stage 2, backward-Euler steps), not in stage 1
+    if (impl_lin_tcstage == 2 && t2s == M1_T2S_STAGE1) {cur_tolcap = 0.0;}
     TmrMark((it == 0) ? 4 : 7);
     ew_tight = onep && (it == 0);
     // MILESTONE 3e: x_k, the state this pass maps
