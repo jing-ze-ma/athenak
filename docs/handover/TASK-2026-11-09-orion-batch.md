@@ -16,5 +16,7 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
    NOTE as the TASK says.
 5. `docs/handover/TASK-2026-11-09-orion-raycheap2.md` - restart fix gates (fork/rstabe-1109 4e9f602c8: hesdirk2
    auto_be back-off in the rst) R1-R4 + convergence reconciliation C1-C3 (24 ranks, tight tolerance). NOTE as the TASK says.
+6. `docs/handover/TASK-2026-11-09-orion-hgblend.md` - HG transverse blend implicit upwind (fork/hgpos-1109b
+   1f314023a): keys-absent / 1 vs 4 ranks / restart gates + active-path check. NOTE as the TASK says.
 
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
