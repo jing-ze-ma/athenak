@@ -3097,6 +3097,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   std::string slg = pin->GetOrAddString("rad_m1","implicit_recon_lag",
                                         splag ? "step" : "picard");
   impl_recon_freeze = (slg.compare("step") == 0);
+  if (pin->DoesParameterExist("rad_m1","implicit_lag_restage")) {   // raycheap2-1109
+    impl_lag_restage = pin->GetBoolean("rad_m1","implicit_lag_restage");
+  }
   // MILESTONE 3c: freeze the deferred correction, and with it the plm limiter's choice,
   // after this many Picard passes.  The 3a2 finding is that the limiter keeps switching
   // on a handful of cells and the iteration is a small limit cycle that never meets
@@ -14185,7 +14188,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // the closure moves only after the first pass, and not at all under
     // implicit_closure_lag = step
     const bool dorel = (crw < 1.0) && (it > 0);
-    const bool dofreeze = clagst && (it > 0);
+    // raycheap2-1109 implicit_lag_restage: pass 1 re-evaluates the per-stage frozen
+    // pieces
+    const bool rst1 = impl_lag_restage && (it == 1);
+    const bool dofreeze = clagst && (it > 0) && !rst1;
     // runs_5c_thinstab: implicit_closure_thin_relax, first pass of the step only
     const bool ctr = (impl_ctrelax > 0.0) && (it == 0);
     const bool ctri = ctr_init;
@@ -14462,7 +14468,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
     // cbfix-1011: the formal-solution half-range block of implicit_hr_face = sf (once per
     // solve: vet_cell is fixed for it)
-    if (it == 0 && impl_hr_sf && aphll) {ImplicitHrSfBuild();}
+    if ((it == 0 || rst1) && impl_hr_sf && aphll) {ImplicitHrSfBuild();}
     // the x1 halo of the LAGGED quantities (w, a, g0, v1, the comoving reduced flux and
     // the transport opacity).  Every face of the stack is then assembled by both of its
     // blocks from bit-identical numbers.
@@ -14474,10 +14480,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (it == 0 && !impl_f0_init_done) {ImplicitF0Init();}
       // (b1) the lagged transverse operator: the x2/x3 face fluxes of this iterate, their
       // diagonal contribution to the matrix and their lagged right-hand side.
-      if (t2dav && (it == 0 || !(edd || vetsc || dofreeze))) {
+      if (t2dav && (it == 0 || rst1 || !(edd || vetsc || dofreeze))) {
         for (int c = 0; c < 3; ++c) {ImplicitHaloExchange(1, t2da + c);}
       }
-      ImplicitTransverseTerms(it == 0);
+      ImplicitTransverseTerms(it == 0 || rst1);
     } else {
       ImplicitX1Halo(false);
       if (it == 0 && !impl_f0_init_done) {ImplicitF0Init();}
@@ -14495,9 +14501,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const int iter = it;
     // thinsw-1010: under implicit_thin_switch every input of the face coefficients is
     // fixed for the solve, and they are built once (the Picard loop sees one operator)
-    const bool doface = aphll && (it == 0 || !(rfreeze || impl_thsw != M1_THSW_NONE));
+    const bool doface = aphll && (it == 0 || rst1 ||
+                                  !(rfreeze || impl_thsw != M1_THSW_NONE));
     if (doface) {
-      const bool dodg = plmdc && (it == 0
+      const bool dodg = plmdc && (it == 0 || rst1
                                   || (!rfreeze && (rnpass <= 0 || it < rnpass)));
       // sp-blend-1008 (spherical-polar wedge): the face optical depth is the SAME face
       // kappa_T the sp row's theta uses (M1FaceAvgX1, distance-weighted under
