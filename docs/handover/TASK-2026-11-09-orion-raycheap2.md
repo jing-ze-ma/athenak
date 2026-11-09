@@ -33,7 +33,7 @@ All runs rc=0, 0 FATAL. Report the fallback cycle lists (NOT ADMISSIBLE / BE cou
 - C1 `Z_Q64_c*.athinput` as they are (the arm that gave p 1.5 / 2.0 on Raven CPU: d 8.7e-5, 3.0e-5, 7.5e-6).
 - C2 `Z_Q128T8_c*.athinput` with `rad_m1/implicit_tol=1.0e-13 rad_m1/implicit_lin_tol=1.0e-14` on the command line
   (your p = 0.84 set, tolerance-floor hypothesis).
-- C3 `Z_Q64_c*.athinput` with the same tighter tolerances.
+- ~~C3~~ dropped (11-09, superseded: viper runs the tight-tolerance Q64 variant on Raven CPU).
 Report d, p, t_end, wall, and the stage/BE/fallback counts per run. No pass criterion: we need the numbers to
 decide whether the d ~ 3e-6 floor is the solver tolerance and whether Q64 reproduces across machines.
 (viper is running, on Raven CPU, a stronger-signal variant: amplitude 0.5 with the change test off, implicit_tol 1e-13.)
