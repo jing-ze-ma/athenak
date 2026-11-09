@@ -89,3 +89,28 @@ p ['0.49', '0.84']
 ## Files
 - Work dir `/orion/ptmp/jinma/raycheap_1109`: run logs, `gates.out`, `conv.out`, the sbatch scripts and the adapted `run_gates_srun.sh`.
 - Restart dumps, bin outputs, source trees and build dirs were deleted after the comparisons (ptmp quota).
+
+## Addendum (Orion, 11-09): G3 restart pair on BASE, deck without mod keys
+
+USER asked for the test that settles whether the G3 failure predates raycheap2. Job 227920 (one p.exclusive node,
+1 rank per run, srun --mem-per-cpu=24G, same launcher as the gates), deck `G_cs_lo_shd_ema16_h2` (no flux-mod keys),
+40 straight vs 20 + restart 20, on BASE 3330bc0dd and NEW a39c9ec49 (rebuilt with the same recipe). All 6 runs rc=0, 0 FATAL. Wall time 1834 s.
+
+```
+G3h2 base: m1: cycles 40/40 bitwise 0/4 vars, max |diff| 1.191e-03 m1_lat: bitwise 12/12, max |diff| 0
+G3h2 new:  m1: cycles 40/40 bitwise 0/4 vars, max |diff| 1.191e-03 m1_lat: bitwise 12/12, max |diff| 0
+full new vs base: m1 bitwise 4/4, m1_lat bitwise 12/12
+```
+Final m1 bin, p2 vs full, max |diff| / max |x| (identical on BASE and NEW): m1_e 8.81e-04, m1_f1 1.27e-03,
+m1_f2 9.68e-03, m1_f3 1.12e-02.
+
+**Both restart-gap symptoms are on BASE, identically on NEW:**
+- The restarted leg prints `### WARNING: restart file has no <rad_m1> implicit_predictor increment ... the first implicit step cold starts and this restart is not bitwise.`
+- The time2_auto_be back-off is not in the restart. The full run fails stages at cycles 1, 3, 6, 11, 20 and then runs backward Euler.
+  - Full run, cycles 1-40: stage steps 3, backward-Euler steps 37.
+  - Restarted leg, cycles 21-40: it fails the stage at 20 and then runs stage steps 18, backward-Euler steps 2.
+  - So the restarted leg starts the back-off over and goes back to hesdirk2.
+
+**Conclusion:** the G3 failure is an existing prod-1112-cand restart gap. raycheap2-1109 did not cause it. NEW and BASE straight runs are bitwise. The new key is not implicated. G3 should be redone after the restart file carries the predictor increment (when valid) and the auto_be back-off counter/state.
+
+Builds, sources and dumps are deleted; only logs remain in /orion/ptmp/jinma/raycheap_1109.
