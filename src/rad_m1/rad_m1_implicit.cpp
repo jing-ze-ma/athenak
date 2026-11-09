@@ -2167,6 +2167,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_lin_tolcap = pin->DoesParameterExist("rad_m1","implicit_lin_tolcap") ?
                     pin->GetReal("rad_m1","implicit_lin_tolcap") : 0.0;   // lintol-1109
   if (impl_lin_tolcap < 0.0) {ImplFatal("<rad_m1>/implicit_lin_tolcap must be >= 0");}
+  impl_lin_tclast = pin->DoesParameterExist("rad_m1","implicit_lin_tolcap_last") ?
+                    pin->GetReal("rad_m1","implicit_lin_tolcap_last") : 0.0;
   dbg_cons_ledger = pin->DoesParameterExist("rad_m1","dbg_cons_ledger") &&
                     pin->GetBoolean("rad_m1","dbg_cons_ledger");
   if (impl_cons_final && !impl_pos_floor && !cf_named) {
@@ -9952,6 +9954,11 @@ void RadiationM1::EventTotals(Real *v) {
 
 void RadiationM1::ImplicitReport() {
   if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
+  if (impl_lin_tolcap > 0.0 && global_variable::my_rank == 0) {   // lintol-1109
+    std::cout << "<rad_m1> implicit_lin_tolcap=" << impl_lin_tolcap
+              << " tolcap_last=" << impl_lin_tclast << " capped passes (rank 0)="
+              << impl_tclast_n << std::endl;
+  }
   if ((impl_cons_final || dbg_cons_ledger) && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> consfix-1109: implicit_cons_final=" << impl_cons_final
               << " solves=" << cf_tot[2] << " extra passes after a mode fallback="
@@ -14017,6 +14024,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   ew_fprev = 0.0;
   ew_etaprev = 0.0;
   Real rprev = -1.0;
+  Real rprev2 = -1.0;   // lintol-1109: the change of the pass before rprev
   const bool rmask = impl_res_mask;   // implicit_res_dmin / _rmax
   Real rexcl_last = 0.0;
   // implicit_one_pass = N (tests_m1/runs_4a_accel).  A solve that starts from the
@@ -14152,6 +14160,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     cf_fb_pass = false;    // consfix-1109
     // lintol-1109: the Picard tolerance this pass's inner solve is capped against
     cur_tolcap = (it == 0 && tolr) ? std::max(impl_tol, impl_tol_rel_max) : tol_eff;
+    // lintol-1109 implicit_lin_tolcap_last = s (> 0; read only when named): the cap only on
+    // a pass the measured contraction predicts to be the last one (predicted change
+    // q rprev, q = rprev/rprev2 or 1/2, within s x tol_eff of the stop); others keep EW
+    if (impl_lin_tclast > 0.0) {
+      bool lp = false;
+      if (it >= 1 && rprev > 0.0) {
+        const Real q = (rprev2 > 0.0) ? std::min(rprev/rprev2, 0.9) : 0.5;
+        const Real rp = q*rprev;
+        lp = (rp < impl_lin_tclast*tol_eff) ||
+             ((q < 0.5) && (rp*q/(1.0 - q) < impl_lin_tclast*tol_eff));
+      }
+      if (!lp) {cur_tolcap = 0.0;} else {impl_tclast_n += 1.0;}
+    }
     TmrMark((it == 0) ? 4 : 7);
     ew_tight = onep && (it == 0);
     // MILESTONE 3e: x_k, the state this pass maps
@@ -16686,6 +16707,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
     }
     const Real frpo = rprev;   // picres-1017: the change of the pass before
+    rprev2 = rprev;
     rprev = resid;
     rnfprev = rnf;
     if (it == 0) {ores0 = resid;}
