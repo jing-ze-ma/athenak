@@ -902,6 +902,7 @@ class RadiationM1 {
   int csplit = 0;
   int csplit_nh2 = 1, csplit_ns = 2;
   bool dbg_hydro_off = false;   // DIAGNOSTIC (ke-dt-0926): the Driver skips hydro stages
+  bool dbg_hydro_skip_t2 = false;   // raycheap2-1109 DIAGNOSTIC: the same on hesdirk2
   // DIAGNOSTIC <rad_m1>/dbg_cell_lo, dbg_cell_hi (read only when named; default off):
   // the implicit write-back prints the per-cell energy budget of active x1 cells
   // lo..hi (offsets from is) of the first (k, j) column of MeshBlock 0
