@@ -325,11 +325,12 @@ def read_rst(fn):
     h['p'] = a[:, 6 + nsc]
     h['eint'] = a[:, 8 + nsc] if 'EINTRST1' in sec else None
     if h['eint'] is not None:
-        g = (h['p'][:, ng:-ng, ng:-ng, ng:-ng]/h['eint'][:, ng:-ng, ng:-ng, ng:-ng]).ravel()
+        act = (slice(None), slice(ng, -ng), slice(ng, -ng), slice(ng, -ng))
+        g = (h['p'][act]/h['eint'][act]).ravel()
         okf = np.mean((g > 0.02) & (g < 1.0))
         if okf < 0.999:
-            raise SystemExit('slab check failed: p/eint in (0.02, 1) for only %.4f of the '
-                             'active cells (nsc = %d): restart layout not understood'
+            raise SystemExit('slab check failed: p/eint in (0.02, 1) for only %.4f of '
+                             'the active cells (nsc = %d): restart layout not understood'
                              % (okf, nsc))
     return h
 
