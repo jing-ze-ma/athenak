@@ -43,4 +43,7 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
    (= prod-1112-cand 4e9f602c8 + fastfloor-1109 floor cap): keys absent vs 4e9f602c8 / cap 1 vs 4 ranks / cap restart
    (incl. auto_be back-off) / cap counters fire. NOTE as the TASK says.
 
+14. `docs/handover/TASK-2026-11-09-orion-raycheap8.md` - evolving-gas time-order test of the VET update (equilibrium IC,
+   gas feedback, stability pre-check inside) + CPU check that the stage-2 rebuild reaches the operator. NOTE as the TASK says.
+
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
