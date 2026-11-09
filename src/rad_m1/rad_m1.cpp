@@ -691,6 +691,48 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   } else {
     arad = pin->GetOrAddReal("rad_m1","arad",0.0);
   }
+  // fastfloor-1109: floor-gas cap (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1","floorcap_rho")) {
+    fcap_rho = pin->GetReal("rad_m1","floorcap_rho");
+    if (pin->DoesParameterExist("rad_m1","floorcap_v")) {
+      fcap_v = pin->GetReal("rad_m1","floorcap_v");
+    }
+    if (pin->DoesParameterExist("rad_m1","floorcap_t")) {
+      fcap_t = pin->GetBoolean("rad_m1","floorcap_t");
+    }
+    if (pin->DoesParameterExist("rad_m1","floorcap_tmin_kelvin")) {
+      fcap_tmin = pin->GetReal("rad_m1","floorcap_tmin_kelvin");
+    }
+    if (pin->DoesParameterExist("rad_m1","floorcap_ke")) {
+      std::string kk = pin->GetString("rad_m1","floorcap_ke");
+      if (kk.compare("rad") == 0) {
+        fcap_ke_rad = true;
+      } else if (kk.compare("thermal") == 0) {
+        fcap_ke_rad = false;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/floorcap_ke must be rad or thermal"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    if (pin->DoesParameterExist("rad_m1","floorcap_report")) {
+      fcap_report = pin->GetInteger("rad_m1","floorcap_report");
+    }
+    if (fcap_rho > 0.0 && (!coupling || !(arad > 0.0))) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/floorcap_rho needs coupling and arad > 0"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    Kokkos::realloc(fcap_cnt, 4);
+    if (global_variable::my_rank == 0 && fcap_rho > 0.0) {
+      std::cout << "<rad_m1> floorcap: rho < " << fcap_rho << ": |v| <= " << fcap_v
+                << " (0 = no cap), T <= max(T_rad, " << fcap_tmin << " K) "
+                << (fcap_t ? "on" : "off") << ", clipped KE -> "
+                << (fcap_ke_rad ? "E_rad" : "thermal") << std::endl;
+    }
+  }
   // Unit audit (units-physical-inputs): c_light, arad, temp_unit_kelvin, rho_unit_cgs and
   // kappa_unit are CODE-unit constants typed into the input, not derived from <units>.
   // Print each next to the value <units> implies (general EOS: T_unit = m_u/k_B per

@@ -384,6 +384,18 @@ class RadiationM1 {
   // verbatim.  MHD: the u-only exchange through pbval_u -- MHD::InitRecv/ClearRecv(-1)
   // would post and then wait on B receives that nobody sends here (deadlock on > 1 rank).
   void FluidRefresh(Driver *pdrive);
+  // fastfloor-1109 <rad_m1>/floorcap_rho (read only when named; 0 = off = bitwise):
+  // FLOOR-GAS CAP after the implicit solve, active cells with rho < floorcap_rho only.
+  // |v| <= floorcap_v (0 = no velocity cap) and T_gas <= max(T_rad, floorcap_tmin_kelvin)
+  // (floorcap_t, default true).  The clipped kinetic energy goes to E_rad
+  // (floorcap_ke = rad, default) or stays as gas internal energy (thermal); the
+  // excess internal energy goes to E_rad (gas + radiation energy conserved per cell).
+  // Counters printed every floorcap_report cycles (0 = never).  See FloorGasCap.
+  Real fcap_rho = 0.0, fcap_v = 0.0, fcap_tmin = 0.0;
+  bool fcap_t = true, fcap_ke_rad = true;
+  int fcap_report = 0;
+  DualArray1D<Real> fcap_cnt;   // 0 n_v, 1 n_t, 2 dKE, 3 dEint (energy units x volume)
+  void FloorGasCap();
 
   // RSLA start-up check (design sect. 2): v_max*tau_max/chat, evaluated once, on the
   // first filled opacity array.  rsla_vmax <= 0 means "measure max |v| over the domain".
