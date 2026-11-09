@@ -1646,8 +1646,8 @@ class RadiationM1 {
   // hgpos-1109 <rad_m1>/time2_adm_eflr (read only when named; default false = bitwise):
   // the hesdirk2 admissibility test does not count a solved E <= 0 as a fault: with
   // implicit_pos_floor, implicit_pos_floor_solve and implicit_pos_floor_cons the
-  // write-back raises such a cell to e_floor and charges the deficit to the cell's gas, then to its column (energy
-  // kept), which is exactly what the backward-Euler redo does with the same cell.  HG
+  // write-back raises such a cell to e_floor and charges the deficit to the cell's
+  // gas, then to its column (energy kept), which is exactly what the backward-Euler redo does with the same cell.  HG
   // 11-09: the faulting cells are radiation-filled cavities (rho/<rho> 1e-6..1e-1) where
   // the stage solve itself goes below zero from a positive old vector; rejecting the
   // stage replaced the whole step (and, with time2_auto_be, the next 1..16 steps) by
