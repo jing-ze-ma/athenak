@@ -2970,6 +2970,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_pos_trans_t = 0;
     }
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_blend_t_upwind")) {   // hgpos-1109b
+    impl_blend_t_up = pin->GetBoolean("rad_m1","implicit_blend_t_upwind");
+    if (impl_blend_t_up && !sph_geom) {
+      ImplFatal("<rad_m1>/implicit_blend_t_upwind needs the cubed sphere or the "
+                "spherical-polar mesh");
+    }
+    if (impl_blend_t_up) {
+      btu_cnt = DvceArray1D<Real>("m1_btu_cnt", 2);
+      Kokkos::deep_copy(btu_cnt, 0.0);
+    }
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_ewf")) {
     impl_vimp_ewf = pin->GetBoolean("rad_m1","implicit_vimp_ewf");
   }
@@ -5036,7 +5047,9 @@ void M1TransRowCore(const G &geo, const V &iw_, const VD &vd_, const bool dfull,
                     const Real dt, const Real fp, const Real fm, const Real gp,
                     const Real gm, Real &dia, Real &tt, const bool blt, const VT &th2,
                     const VT &th3, const V &bw2, const V &bw3, const bool ptt,
-                    const DvceArray4D<Real> &pq2, const DvceArray4D<Real> &pq3) {
+                    const DvceArray4D<Real> &pq2, const DvceArray4D<Real> &pq3,
+                    const bool btu, const DvceArray4D<Real> &bq2,
+                    const DvceArray4D<Real> &bq3) {
   const Real cr = ch/cl;
   const Real iv = dt/cvol(m,k,j,i);
   dia = 0.0;
@@ -5066,6 +5079,11 @@ void M1TransRowCore(const G &geo, const V &iw_, const VD &vd_, const bool dfull,
       if (q > 0.0) {dia += n2p*cr*q;}
       if (q < 0.0) {cjp += n2p*cr*q;}
     }
+    if (btu) {   // hgpos-1109b implicit_blend_t_upwind: q E'_donor of the face
+      const Real q = bq2(m,k,j+1,i);
+      if (q > 0.0) {dia += n2p*cr*q;}
+      if (q < 0.0) {cjp += n2p*cr*q;}
+    }
   }
   if (!(j == js && p2lo)) {
     Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
@@ -5086,6 +5104,11 @@ void M1TransRowCore(const G &geo, const V &iw_, const VD &vd_, const bool dfull,
     cjm -= n2m*g*M1DDiag(iw_,vd_,dfull,m,1,k,j-1,i);
     if (ptt) {
       const Real q = pq2(m,k,j,i);
+      if (q > 0.0) {cjm -= n2m*cr*q;}
+      if (q < 0.0) {dia -= n2m*cr*q;}
+    }
+    if (btu) {
+      const Real q = bq2(m,k,j,i);
       if (q > 0.0) {cjm -= n2m*cr*q;}
       if (q < 0.0) {dia -= n2m*cr*q;}
     }
@@ -5117,6 +5140,11 @@ void M1TransRowCore(const G &geo, const V &iw_, const VD &vd_, const bool dfull,
         if (q > 0.0) {dia += n3p*cr*q;}
         if (q < 0.0) {ckp += n3p*cr*q;}
       }
+      if (btu) {
+        const Real q = bq3(m,k+1,j,i);
+        if (q > 0.0) {dia += n3p*cr*q;}
+        if (q < 0.0) {ckp += n3p*cr*q;}
+      }
     }
     if (!(k == ks && p3lo)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
@@ -5137,6 +5165,11 @@ void M1TransRowCore(const G &geo, const V &iw_, const VD &vd_, const bool dfull,
       ckm -= n3m*g*M1DDiag(iw_,vd_,dfull,m,2,k-1,j,i);
       if (ptt) {
         const Real q = pq3(m,k,j,i);
+        if (q > 0.0) {ckm -= n3m*cr*q;}
+        if (q < 0.0) {dia -= n3m*cr*q;}
+      }
+      if (btu) {
+        const Real q = bq3(m,k,j,i);
         if (q > 0.0) {ckm -= n3m*cr*q;}
         if (q < 0.0) {dia -= n3m*cr*q;}
       }
@@ -5242,13 +5275,14 @@ void M1SphTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol
                    const Real fm, const Real gp, const Real gm, Real &dia, Real &tt,
                    const bool blt, const VT &th2, const VT &th3, const V &bw2,
                    const V &bw3, const bool ptt, const DvceArray4D<Real> &pq2,
-                   const DvceArray4D<Real> &pq3) {
+                   const DvceArray4D<Real> &pq3, const bool btu,
+                   const DvceArray4D<Real> &bq2, const DvceArray4D<Real> &bq3) {
   const bool p3lo = (b5 != BoundaryFlag::block) && (b5 != BoundaryFlag::periodic);
   const bool p3hi = (b6 != BoundaryFlag::block) && (b6 != BoundaryFlag::periodic);
   const M1SphRowGeo<VF> geo{carea, cdxf};
   M1TransRowCore(geo, iw_, vd_, dfull, cvol, m, k, j, i, js, je, ks, ke, p2lo, p2hi, thrd,
                  p3lo, p3hi, bcg, ch, cl, dt, fp, fm, gp, gm, dia, tt, blt, th2, th3,
-                 bw2, bw3, ptt, pq2, pq3);
+                 bw2, bw3, ptt, pq2, pq3, btu, bq2, bq3);
 }
 
 //----------------------------------------------------------------------------------------
@@ -5271,12 +5305,13 @@ void M1CsTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol,
                   const Real fm, const Real gp, const Real gm, Real &dia, Real &tt,
                   const bool blt, const VT &th2, const VT &th3, const V &bw2,
                   const V &bw3, const bool ptt, const DvceArray4D<Real> &pq2,
-                  const DvceArray4D<Real> &pq3) {
+                  const DvceArray4D<Real> &pq3, const bool btu,
+                  const DvceArray4D<Real> &bq2, const DvceArray4D<Real> &bq3) {
   const M1CsRowGeo<VF, VS, VG, VB, VX> geo{carea, cdxf, sn2, sn3, g2, g3, cseam, x1v, x1f,
                                            js, je, ks, ke};
   M1TransRowCore(geo, iw_, vd_, dfull, cvol, m, k, j, i, js, je, ks, ke, p2lo, p2hi, thrd,
                  p3lo, p3hi, bcg, ch, cl, dt, fp, fm, gp, gm, dia, tt, blt, th2, th3,
-                 bw2, bw3, ptt, pq2, pq3);
+                 bw2, bw3, ptt, pq2, pq3, btu, bq2, bq3);
 }
 } // namespace
 
@@ -5448,10 +5483,13 @@ void RadiationM1::ImplicitK1Fct(const Real ca) {
 // hgpos-1109 dbg_t2_admiss: the per-face values ImplicitTransverseTerms keeps (tsp2/tsp3)
 // for the lagged-term split of T2AdmissDebug: theta, the face gradient gr, v_f, g0_f, the
 // lagged off term (final, before the seam v g0 move, its vet_gd_tangential Q part), the
-// face flux as stored, the skew cross derivative ge and F0^n of the face
+// face flux as stored, the skew cross derivative ge and F0^n of the face; hgpos-1109b
+// implicit_blend_t_upwind: q E^k_donor of the face (BQE, in the matrix) and the lagged
+// blend part lbt it replaces (LB)
 constexpr int M1_TSP_TH = 0, M1_TSP_GR = 1, M1_TSP_VF = 2, M1_TSP_G0F = 3;
 constexpr int M1_TSP_OFF = 4, M1_TSP_OFFP = 5, M1_TSP_OFFQ = 6, M1_TSP_F = 7;
-constexpr int M1_TSP_GE = 8, M1_TSP_FN = 9, M1_TSP_N = 10;
+constexpr int M1_TSP_GE = 8, M1_TSP_FN = 9, M1_TSP_BQE = 10, M1_TSP_LB = 11;
+constexpr int M1_TSP_N = 12;
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitTransverseTerms
@@ -5658,6 +5696,31 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto pq3_ = ptq3;
   auto pqe_ = ptqe;
   auto ptct_ = pt_cnt_t;
+  // hgpos-1109b implicit_blend_t_upwind (rad_m1.hpp): the lagged blend part Lb of the
+  // x2/x3 face as q E'_donor, q = Lb/E^k_donor (|q| <= c) of this pass; the post-solve
+  // refresh (btu_refresh) reuses the q of the last pass
+  const bool btu = impl_blend_t_up && blt;
+  const bool brf = btu_refresh;
+  if (btu) {
+    const int nmbt = iw.extent_int(0), nc3 = iw.extent_int(2);
+    const int nc2 = iw.extent_int(3), nc1 = iw.extent_int(4);
+    if (btq2.extent_int(0) != nmbt) {
+      Kokkos::realloc(btq2, nmbt, nc3, nc2+1, nc1);
+      Kokkos::deep_copy(btq2, 0.0);
+      if (thrd) {
+        Kokkos::realloc(btq3, nmbt, nc3+1, nc2, nc1);
+        Kokkos::deep_copy(btq3, 0.0);
+      }
+    }
+    if (!brf) {
+      auto bc_ = btu_cnt;
+      Kokkos::parallel_for("m1_btu_cnt", Kokkos::RangePolicy<DevExeSpace>(0, 1),
+      KOKKOS_LAMBDA(const int) {bc_(1) += 1.0;});
+    }
+  }
+  auto bq2_ = btq2;
+  auto bq3_ = btq3;
+  auto btc_ = btu_cnt;
   // hgpos-1109 dbg_t2_admiss: the face terms of this evaluation (T2AdmissDebug)
   const bool tsd = (t2_dbg_adm > 0) && sph;
   if (tsd) {
@@ -5861,10 +5924,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       if (q != 0.0) {ptd = q*iw_(m,M1_IW_EP,k,(q > 0.0) ? jm : j,i) - fmem;}
     }
     f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+    Real lbt = 0.0;   // hgpos-1109b: the lagged blend part (c/chat)(DG + gm) of the face
     if (blt) {
       f2_(m,k,j,i) += (cl/ch)*(bw2_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,jm,i)
                                + bw2_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,i));
       if (tdg) {f2_(m,k,j,i) += (cl/ch)*bw2_(m,M1_IFW_DG,k,j,i);}
+      if ((btu || tsd) && tdg) {lbt += (cl/ch)*bw2_(m,M1_IFW_DG,k,j,i);}
       if (must) {
         const Real hcl = bw2_(m,M1_IFW_HCL,k,j,i), hcr = bw2_(m,M1_IFW_HCR,k,j,i);
         Real gm = 0.0;
@@ -5896,7 +5961,28 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         }
         }
         f2_(m,k,j,i) += (cl/ch)*gm;
+        if (btu || tsd) {lbt += (cl/ch)*gm;}
       }
+    }
+    // hgpos-1109b implicit_blend_t_upwind: lbt -> q E'_donor (bq2_; the row takes the
+    // same q, btd added at the end)
+    Real btd = 0.0, bqe = 0.0;
+    if (btu) {
+      Real q = 0.0;
+      if (brf) {
+        q = bq2_(m,k,j,i);
+      } else {
+        if (lbt != 0.0) {
+          const Real ed = iw_(m,M1_IW_EP,k,(lbt > 0.0) ? jm : j,i);
+          const Real la = fabs(lbt);
+          q = (la < cl*ed) ? la/ed : cl;
+          if (q == cl) {Kokkos::atomic_add(&btc_(0), 1.0);}
+          if (lbt < 0.0) {q = -q;}
+        }
+        bq2_(m,k,j,i) = q;
+      }
+      if (q != 0.0) {bqe = q*iw_(m,M1_IW_EP,k,(q > 0.0) ? jm : j,i);}
+      btd = bqe - lbt;
     }
     if (gcst) {
       // consrc-1011: Z_f of the x2 face (as x1; om = theta (1 + chat dt kt), which is
@@ -5913,6 +5999,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       f2_(m,k,j,i) += ptd;
       if (gcst) {gz2_(m,k,j,i) -= ptd/(cl*ch);}
     }
+    if (btd != 0.0) {   // hgpos-1109b: q E'_donor in place of lbt (as hh in Z)
+      f2_(m,k,j,i) += btd;
+      if (gcst && !gcft) {gz2_(m,k,j,i) -= (1.0 + ch*dt*ktf)*btd/(cl*ch);}
+    }
     if (tsd) {   // hgpos-1109 dbg_t2_admiss: the face terms (stored values only)
       ts2_(m,M1_TSP_TH,k,j,i) = th;
       ts2_(m,M1_TSP_GR,k,j,i) = gr;
@@ -5924,6 +6014,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       ts2_(m,M1_TSP_F,k,j,i) = f2_(m,k,j,i);
       ts2_(m,M1_TSP_GE,k,j,i) = gev;
       ts2_(m,M1_TSP_FN,k,j,i) = f2n_(m,k,j,i);
+      ts2_(m,M1_TSP_BQE,k,j,i) = bqe;
+      ts2_(m,M1_TSP_LB,k,j,i) = lbt;
     }
   });
 
@@ -6099,10 +6191,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       }
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
                          - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+      Real lbt = 0.0;   // hgpos-1109b (as the x2 face)
       if (blt) {
         f3_(m,k,j,i) += (cl/ch)*(bw3_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,km,j,i)
                                  + bw3_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,i));
         if (tdg) {f3_(m,k,j,i) += (cl/ch)*bw3_(m,M1_IFW_DG,k,j,i);}
+        if ((btu || tsd) && tdg) {lbt += (cl/ch)*bw3_(m,M1_IFW_DG,k,j,i);}
         if (must) {
           const Real hcl = bw3_(m,M1_IFW_HCL,k,j,i), hcr = bw3_(m,M1_IFW_HCR,k,j,i);
           Real gm = 0.0;
@@ -6134,7 +6228,26 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           }
           }
           f3_(m,k,j,i) += (cl/ch)*gm;
+          if (btu || tsd) {lbt += (cl/ch)*gm;}
         }
+      }
+      Real btd = 0.0, bqe = 0.0;   // hgpos-1109b implicit_blend_t_upwind (as x2)
+      if (btu) {
+        Real q = 0.0;
+        if (brf) {
+          q = bq3_(m,k,j,i);
+        } else {
+          if (lbt != 0.0) {
+            const Real ed = iw_(m,M1_IW_EP,(lbt > 0.0) ? km : k,j,i);
+            const Real la = fabs(lbt);
+            q = (la < cl*ed) ? la/ed : cl;
+            if (q == cl) {Kokkos::atomic_add(&btc_(0), 1.0);}
+            if (lbt < 0.0) {q = -q;}
+          }
+          bq3_(m,k,j,i) = q;
+        }
+        if (q != 0.0) {bqe = q*iw_(m,M1_IW_EP,(q > 0.0) ? km : k,j,i);}
+        btd = bqe - lbt;
       }
       if (gcst) {
         const Real fb = th*(wmem*f3n_(m,k,j,i)
@@ -6150,6 +6263,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         f3_(m,k,j,i) += ptd;
         if (gcst) {gz3_(m,k,j,i) -= ptd/(cl*ch);}
       }
+      if (btd != 0.0) {   // hgpos-1109b: q E'_donor in place of lbt (as hh in Z)
+        f3_(m,k,j,i) += btd;
+        if (gcst && !gcft) {gz3_(m,k,j,i) -= (1.0 + ch*dt*ktf)*btd/(cl*ch);}
+      }
       if (tsd) {   // hgpos-1109 dbg_t2_admiss: the face terms (stored values only)
         ts3_(m,M1_TSP_TH,k,j,i) = th;
         ts3_(m,M1_TSP_GR,k,j,i) = gr;
@@ -6161,6 +6278,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         ts3_(m,M1_TSP_F,k,j,i) = f3_(m,k,j,i);
         ts3_(m,M1_TSP_GE,k,j,i) = gev;
         ts3_(m,M1_TSP_FN,k,j,i) = f3n_(m,k,j,i);
+        ts3_(m,M1_TSP_BQE,k,j,i) = bqe;
+        ts3_(m,M1_TSP_LB,k,j,i) = lbt;
       }
     });
   }
@@ -6415,7 +6534,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       M1SphTransRow(iw_, vd_, dfull, cvol, carea, cdxf, m, k, j, i, js, je, ks, ke,
                     p2lo, p2hi, thrd, mbbcs.d_view(m,BoundaryFace::inner_x3),
                     mbbcs.d_view(m,BoundaryFace::outer_x3), bcg, ch, cl, dt, fp, fm,
-                    gps, gms, dia, tt, blt, th2_, th3_, bw2_, bw3_, ptt, pq2_, pq3_);
+                    gps, gms, dia, tt, blt, th2_, th3_, bw2_, bw3_, ptt, pq2_, pq3_,
+                    btu, bq2_, bq3_);
     }
     if (csg) {
       // STAGE CS1: the same row on the skewed panel grid and the seam pairs
@@ -6426,7 +6546,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       M1CsTransRow(iw_, vd_, dfull, cvol, carea, cdxf, csn2, csn3, csg2_, csg3_, cseam,
                    cx1v, cx1f, m, k, j, i, js, je, ks, ke, p2lo, p2hi, thrd, q3lo, q3hi,
                    bcg, ch, cl, dt, fp, fm, gps, gms, dia, tt, blt, th2_, th3_, bw2_,
-                   bw3_, ptt, pq2_, pq3_);
+                   bw3_, ptt, pq2_, pq3_, btu, bq2_, bq3_);
     }
     if ((sph || csg) && ((j == je && p2hi && vm2hi) || (j == js && p2lo && vm2lo) ||
                          (thrd && ((k == ke && vm3hi && (mbbcs.d_view(m,
@@ -10478,6 +10598,11 @@ void RadiationM1::ImplicitReport() {
     std::cout << "<rad_m1> implicit_pos_transport_t = upwind (rank 0): memory-upwinded"
               << " x2/x3 faces (first passes)=" << h(0) << " in solves=" << h(1)
               << std::endl;
+  }
+  if (impl_blend_t_up && btu_cnt.extent_int(0) >= 2) {   // hgpos-1109b
+    auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), btu_cnt);
+    std::cout << "<rad_m1> implicit_blend_t_upwind (rank 0): x2/x3 face evaluations="
+              << h(1) << " faces with |q| capped at c=" << h(0) << std::endl;
   }
   if (impl_muscl && impl_muscl_pred) {
     std::cout << "<rad_m1> implicit_hr_recon_pred: dc-phase passes=" << muscl_pred_dc
@@ -17036,7 +17161,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // refresh the stored transverse face fluxes with the CONVERGED E, so that the
     // persistent state the restart file carries, the momentum deposit and the derived
     // F_2/F_3 are the fluxes the solve ended on (exactly what step (g) does for x1).
+    btu_refresh = impl_blend_t_up;   // hgpos-1109b: keep the q the last solve took
     ImplicitTransverseTerms(false);
+    btu_refresh = false;
     impl_linmax = std::max(impl_linmax, lresid);
     impl_linsum += lresid;
   }
@@ -18659,9 +18786,12 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
   // (gradient + v g0 moved to the face midpoint, theta ratio), 6 other (blend DG/plm, the
   // gradient beyond the row's two-point part on interior faces); 14 X, 15 X - sum of the
   // kinds (the lagged enthalpy correction, vacuum faces), 16 faces taken by
-  // implicit_pos_transport_t (their q E' is in the matrix, not in X)
+  // implicit_pos_transport_t (their q E' is in the matrix, not in X).  hgpos-1109b: 17/18
+  // the implicit_blend_t_upwind part q E^k_donor (in the matrix, NOT in X or in the
+  // kinds), 19/20 the lagged blend part (c/chat)(DG + gm) of the faces (inside "other"
+  // when the key is off, replaced by 17/18 when on), 21 faces with q != 0
   const bool tsx = (tsp2.extent_int(0) > 0) && trans_on && sph_geom && bcg;
-  const int nsp = 17;
+  const int nsp = 22;
   DvceArray2D<Real> spl("m1_t2dbg_spl", tsx ? ncap : 1, nsp);
   auto ts2_ = tsp2;
   auto ts3_ = tsp3;
@@ -18747,8 +18877,8 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
       row(n,42+q) = (ivb >= 0) ? iw_(m,ivb+M1_IV_X1M2+q,k,j,i) : 0.0;
     }
     if (tsx && (flg & 1)) {   // hgpos-1109: the split of X (see above)
-      Real sp[17];
-      for (int q = 0; q < 17; ++q) {sp[q] = 0.0;}
+      Real sp[22];
+      for (int q = 0; q < 22; ++q) {sp[q] = 0.0;}
       const Real cr = ch/cl;
       const Real iv = dts/cvol(m,k,j,i);
       const M1CsRowGeo<decltype(carea), decltype(csn2), decltype(csg2_), decltype(cseam),
@@ -18769,6 +18899,7 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
         const Real g0f = tv(M1_TSP_G0F), off = tv(M1_TSP_OFF), offp = tv(M1_TSP_OFFP);
         const Real offq = tv(M1_TSP_OFFQ), ff = tv(M1_TSP_F), ge = tv(M1_TSP_GE);
         const Real fn = tv(M1_TSP_FN);
+        const Real bqe = tv(M1_TSP_BQE), lbt = tv(M1_TSP_LB);
         const Real elo = iw_(m,M1_IW_EP,kl,jl,i), ehi = iw_(m,M1_IW_EP,kf,jf,i);
         const Real ktf = 0.5*(iw_(m,M1_IW_KT,kl,jl,i) + iw_(m,M1_IW_KT,kf,jf,i));
         Real thr = 1.0/(1.0 + ch*dts*ktf);
@@ -18795,7 +18926,7 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
         const Real gl = -c*gr - fimp;
         const Real ext = ff - th*(wmem*fn - ch*cl*dts*gr - ch*dts*vf*g0f
                                   - ch*cl*dts*off) - fb
-                         - ((q != 0.0) ? (fq - fmem) : 0.0);
+                         - ((q != 0.0) ? (fq - fmem) : 0.0) - bqe;
         const bool seam = csg && ((d == 1) ? ((jf == js && cseam(m,0) != 0) ||
                                               (jf == je+1 && cseam(m,1) != 0))
                                            : ((kf == ks && cseam(m,2) != 0) ||
@@ -18818,6 +18949,12 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
           if (v > 0.0) {sp[2*q7+1] += v;}
         }
         if (q != 0.0) {sp[16] += 1.0;}
+        const Real vb = w*bqe, vl = w*lbt;
+        sp[17] += vb;
+        if (vb > 0.0) {sp[18] += vb;}
+        sp[19] += vl;
+        if (vl > 0.0) {sp[20] += vl;}
+        if (bqe != 0.0) {sp[21] += 1.0;}
       };
       if (!(j == js && pfl(BoundaryFace::inner_x2))) {
         face(1, k, j, -1.0, csg ? geo.A2m(m,k,j,i) : carea.x2f(m,k,j,i),
@@ -18856,6 +18993,7 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
   Real sout[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   int ndom[7] = {0, 0, 0, 0, 0, 0, 0};
   int nsrow = 0, nxgt = 0;
+  Real bsum[2] = {0.0, 0.0};   // hgpos-1109b: outflow sums of the blend part, lagged/impl
   const int nall = std::min(hc(0), ncap);
   auto &msz = pmy_pack->pmesh->mesh_size;
   const int gnx2 = pmy_pack->pmesh->mesh_indcs.nx2;
@@ -18928,7 +19066,12 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
         nsrow += 1;
         if (hs(n,14) > hl(n,14)) {nxgt += 1;}
         std::cout << " | enth+rest " << hs(n,15) << " upwinded_faces " << hs(n,16)
-                  << " dominant(out) " << spn[qd] << std::endl;
+                  << " dominant(out) " << spn[qd] << std::endl
+                  << "      XSPLIT_BLEND net/out: lagged_blend(DG+gm) " << hs(n,19) << "/"
+                  << hs(n,20) << " implicit_bupw(qE, in matrix) " << hs(n,17) << "/"
+                  << hs(n,18) << " bupw_faces " << hs(n,21) << std::endl;
+        bsum[0] += hs(n,20);
+        bsum[1] += hs(n,18);
       }
     }
   }
@@ -18938,7 +19081,8 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
     for (int q = 0; q < 7; ++q) {
       std::cout << " " << spn[q] << " " << sout[q] << "/" << ndom[q];
     }
-    std::cout << std::endl;
+    std::cout << " | blend outflow lagged(DG+gm) " << bsum[0] << " implicit_bupw "
+              << bsum[1] << std::endl;
   }
   std::cout << "  HIST_J rank " << rank << " (global theta index: count)";
   for (int q = 0; q < gnx2; ++q) {

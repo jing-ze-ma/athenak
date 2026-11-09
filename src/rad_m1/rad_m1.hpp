@@ -2088,6 +2088,18 @@ class RadiationM1 {
   // hgpos-1109 dbg_t2_admiss: the transverse face terms of the last evaluation, per face
   // (M1_TSP_* in rad_m1_implicit.cpp), for the lagged-term split T2AdmissDebug prints
   DvceArray5D<Real> tsp2, tsp3;
+  // hgpos-1109b <rad_m1>/implicit_blend_t_upwind (read only when named; default false =
+  // bitwise; cubed sphere and sp only): the LAGGED part of the x2/x3 blend face flux,
+  // Lb = (c/chat)(DG + plm/hq correction gm), is written as q E'_donor, q = Lb/E^k_donor
+  // of the current Picard pass (|q| <= c; the donor is the lower cell for Lb > 0, the
+  // upper one for Lb < 0), on the donor's diagonal (TDIA) and the receiver's coupling
+  // (CJ*/CK*), and in the stored face flux.  btq2/btq3 the face q of the last pass;
+  // btu_refresh: the post-solve refresh of the face fluxes reuses them (the flux the
+  // last solve took); btu_cnt (0) capped faces, (1) evaluations
+  bool impl_blend_t_up = false;
+  bool btu_refresh = false;
+  DvceArray4D<Real> btq2, btq3;
+  DvceArray1D<Real> btu_cnt;
   // kirch-1022 implicit_face_opac = kirchhoff (opt-in; default arith = bitwise): the iw
   // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1
   // off
