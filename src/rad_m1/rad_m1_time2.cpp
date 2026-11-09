@@ -2102,6 +2102,16 @@ void RadiationM1::Time2VetColAt(int which) {
       iw_(m,M1_IW_EN,k,j,i) = fmax(e, efl);
     });
   }
+  // raycheap2-1109 (test forcing keys only): the predicted build sees the inner boundary
+  // flux at the time of the predicted state, t_n + dt (restored after the build)
+  const Real ifx_save = iflux_x1min;
+  if (fmod_per > 0.0 || fmod_rw > 0.0) {
+    const Real ts = pmy_pack->pmesh->time + dt;
+    Real f = fmod_f0;
+    if (fmod_per > 0.0) {f *= 1.0 + fmod_amp*std::sin(2.0*M_PI*ts/fmod_per);}
+    if (fmod_rw > 0.0) {f *= 0.5*(1.0 + std::tanh((ts - fmod_rt0)/fmod_rw));}
+    iflux_x1min = f;
+  }
   if (vcol) {
     // time2_vet_col_source = state (vcpred-1010): the source of P itself, not relaxed
     // by a further dt (vet_col, vet_col_lat and vet_gd all read vcol_srelax)
@@ -2121,6 +2131,7 @@ void RadiationM1::Time2VetColAt(int which) {
     vcol_srelax = srs;
     if (dbg) {Time2PredDebugSc();}
   }
+  iflux_x1min = ifx_save;   // raycheap2-1109
   if (hh) {
     Kokkos::deep_copy(DevExeSpace(), opac, vet_opac);
   }

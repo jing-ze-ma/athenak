@@ -149,6 +149,11 @@ bool m1_shg_hold = false;
 // F0 (1 + A sin(2 pi (t + dt)/P)), F0 = <rad_m1>/implicit_flux_x1min (a time-dependent
 // star for the closure time-order tests)
 Real m1_fmod_amp = 0.0, m1_fmod_per = 0.0, m1_fmod_f0 = 0.0;
+// raycheap2-1109 (read only when named; test only): problem/clump_tmod_amp = A,
+// clump_tmod_period = P > 0: with gas_hold the held clump temperature is
+// T_c (1 + A sin(2 pi (t + dt)/P))^(1/4) (its emission B ~ T^4 varies by the factor), so
+// the closure's time dependence comes from the gas, as in production
+Real m1_ctm_amp = 0.0, m1_ctm_per = 0.0;
 Real m1_shg_gm1 = 2.0/3.0;
 // h2order-1011 (gas_hold_v): the radial flow v_r = vr sin(pi (x1 - x1a)/x1l) re-imposed
 Real m1_shv_vr = 0.0, m1_shv_x1a = 0.0, m1_shv_x1l = 1.0;
@@ -1026,6 +1031,10 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     if (pin->DoesParameterExist("problem","gas_hold")) {
       m1_shg_hold = pin->GetBoolean("problem","gas_hold");
       if (m1_shg_hold) {user_srcs_func = RadM1ShellHold;}
+      if (pin->DoesParameterExist("problem","clump_tmod_period")) {
+        m1_ctm_per = pin->GetReal("problem","clump_tmod_period");
+        m1_ctm_amp = pin->GetReal("problem","clump_tmod_amp");
+      }
       if (pin->DoesParameterExist("problem","flux_mod_period")) {
         m1_fmod_per = pin->GetReal("problem","flux_mod_period");
         m1_fmod_amp = pin->GetReal("problem","flux_mod_amp");
@@ -1836,7 +1845,11 @@ void RadM1ShellHold(Mesh *pm, const Real bdt) {
   auto x1v = pmbp->pcoord->x1v;
   auto x2v = pmbp->pcoord->x2v;
   auto x3v = pmbp->pcoord->x3v;
-  const M1ShellGasP shp = m1_shg;
+  M1ShellGasP shp = m1_shg;
+  if (m1_ctm_per > 0.0) {   // raycheap2-1109: the held clump temperature at t + dt
+    shp.kt = m1_shg.kt*std::pow(1.0 + m1_ctm_amp*std::sin(2.0*M_PI*(pm->time + pm->dt)/
+                                                          m1_ctm_per), 0.25);
+  }
   const Real gm1 = m1_shg_gm1;
   // cs-s4-1017: the cubed sphere's (theta, phi) from the panel chart (M1ShellAngles)
   const bool csm = pm->use_cubed_sphere;
