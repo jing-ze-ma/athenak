@@ -16855,6 +16855,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       ImplFatal("<rad_m1>/time2_adm_poslim needs implicit_pos_gas = true");
     }
     const bool apl = t2_adm_pl && gq;
+    // hgpos-1109 time2_adm_eflr (rad_m1.hpp): a solved E <= 0 that the write-back's
+    // conservative floor takes (pos_floor + pos_floor_solve + pos_floor_cons) is no fault
+    if (t2_adm_ef && !(impl_pos_floor && impl_pos_floor_s2 && impl_pos_flr_cons)) {
+      ImplFatal("<rad_m1>/time2_adm_eflr needs implicit_pos_floor, "
+                "implicit_pos_floor_solve and implicit_pos_floor_cons = true");
+    }
+    const bool aef = t2_adm_ef;
     const Real apl_f = impl_pos_gas_frac, apl_efl = efl;
     auto apl_eos = flr.eos;
     Real apl_n = 0.0;
@@ -16870,7 +16877,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       q -= (k - ks)*nji;
       const int j = q/ni + js;
       const int i = q - (j - js)*ni + is;
-      Real r = iw_(m,M1_IW_S2,k,j,i);
+      Real r = aef ? 1.0e300 : iw_(m,M1_IW_S2,k,j,i);
       if (hh) {r = fmin(r, iw_(m,M1_IW_TP,k,j,i));}
       if (gq) {
         // the gas internal energy the write-back will set (its step (a))
@@ -16946,6 +16953,28 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     apl_n = g;}
 #endif
     if (apl && (vmin > 0.0) && !(apl_n > 0.0)) {t2_adm_pl_n += 1.0;}
+    if (aef && (vmin > 0.0)) {   // hgpos-1109: would the plain test have rejected it?
+      Real v1 = 1.0e300;
+      Kokkos::parallel_reduce("m1_t2_adm_ef",
+      Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+      KOKKOS_LAMBDA(const int idx, Real &lmin) {
+        const int m = idx/nkji;
+        int q = idx - m*nkji;
+        const int k = q/nji + ks;
+        q -= (k - ks)*nji;
+        const int j = q/ni + js;
+        const int i = q - (j - js)*ni + is;
+        Real r = iw_(m,M1_IW_S2,k,j,i);
+        if (rso && rsm_(m,k,j,i) > 0.0) {r = 1.0e300;}
+        lmin = (r < lmin) ? r : lmin;
+      }, Kokkos::Min<Real>(v1));
+#if MPI_PARALLEL_ENABLED
+      {Real g;
+      MPI_Allreduce(&v1, &g, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+      v1 = g;}
+#endif
+      if (!(v1 > 0.0)) {t2_adm_ef_n += 1.0;}
+    }
     t2_fail = !converged || !(vmin > 0.0) || (od_now != impl_offdiag) ||
               (vimp_now != impl_vimp) ||
               ((t2s == M1_T2S_STAGE1) && (pmy_pack->pmesh->ncycle == t2_dbg_fail));
@@ -17407,7 +17436,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // pos_gas / E-floor moves of this write-back stay in the state, not in K): the moved
   // energy is not extrapolated into the next old vectors (fbP 11-01: with the moves in
   // K the lit floor gas was heated step after step, rad->gas 0.32 vs 1e-8, dt / 4-10)
-  const bool kpre = t2_adm_pl && t2st;
+  const bool kpre = (t2_adm_pl || t2_adm_ef) && t2st;   // hgpos-1109: + time2_adm_eflr
   auto peos = flr.eos;
   auto pc_ = pos_cnt_d;
   const bool psph = sph_geom;

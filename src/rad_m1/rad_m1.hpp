@@ -1643,6 +1643,19 @@ class RadiationM1 {
   // E or T <= 0 stays a fault.  Needs implicit_pos_gas = true.
   bool t2_adm_pl = false;
   Real t2_adm_pl_n = 0.0;       // stages admitted by it (would have been rejected)
+  // hgpos-1109 <rad_m1>/time2_adm_eflr (read only when named; default false = bitwise):
+  // the hesdirk2 admissibility test does not count a solved E <= 0 as a fault: with
+  // implicit_pos_floor, implicit_pos_floor_solve and implicit_pos_floor_cons the
+  // write-back raises such a cell to e_floor and charges the deficit to the cell's gas, then to its column (energy
+  // kept), which is exactly what the backward-Euler redo does with the same cell.  HG
+  // 11-09: the faulting cells are radiation-filled cavities (rho/<rho> 1e-6..1e-1) where
+  // the stage solve itself goes below zero from a positive old vector; rejecting the
+  // stage replaced the whole step (and, with time2_auto_be, the next 1..16 steps) by
+  // backward Euler.  T <= 0 and the written-back eint stay faults (see time2_adm_poslim).
+  // Like time2_adm_poslim, the stage slope K keeps the solve's own E (the floor move is
+  // not extrapolated into the next old vectors).
+  bool t2_adm_ef = false;
+  Real t2_adm_ef_n = 0.0;       // stages admitted by it (would have been rejected)
   // csacc-1031 <rad_m1>/time2_floor_eint = rho_cut (read only when named; default 0 =
   // off, bitwise): in cells with rho < rho_cut (the floor class, e.g. env_sponge_rho x
   // rho_amb) the gas part of the hesdirk2 stage increment t2inc (both stages: momentum,
