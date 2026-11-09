@@ -58,4 +58,7 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
 18. `docs/handover/TASK-2026-11-09-orion-raycheap11.md` - R alone 1st order: stage order of the exchange (frozen closure,
    no-VET, Newton opacity, coupling off, TR-BDF2 arms) on Ar4 (fork/raycheap2-1109 addb642d0, REBUILD). NOTE as the TASK says.
 
+19. `docs/handover/TASK-2026-11-09-orion-raycheap12.md` - time order of the M1 scheme on clean 1-D benchmarks (EQUIL
+   non-stiff/stiff, diffusion pulse, Marshak) x hesdirk2 / trbdf2 / be x m1|eddington / vet_col. NOTE as the TASK says.
+
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
