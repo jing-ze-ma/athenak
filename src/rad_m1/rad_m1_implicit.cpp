@@ -9334,7 +9334,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
     ew_fprev = rnorm;
     ew_etaprev = eta;
     tabs = fmax(tabs, eta*rnorm);
-    // lintol-1109 implicit_lin_tolcap = kappa (read only when named; 0 = off, bitwise): the
+    // lintol-1109 implicit_lin_tolcap = kappa (read only when named; 0 = off): the
     // Eisenstat-Walker loosening may not exceed kappa x the Picard tolerance of this pass
     // (per cell under cnorm, else relative to max|b|)
     if (impl_lin_tolcap > 0.0 && cur_tolcap > 0.0) {
