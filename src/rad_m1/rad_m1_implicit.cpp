@@ -3342,6 +3342,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ibc_x3max = tbc("implicit_bc_x3max", BoundaryFace::outer_x3);
   }
   iflux_x1min = pin->GetOrAddReal("rad_m1","implicit_flux_x1min",0.0);
+  // raycheap2-1109 (read only when named; test only): implicit_flux_x1min_mod_amp = A,
+  // implicit_flux_x1min_mod_period = P > 0: the inner face flux F0 (1 + A sin(2 pi t/P)),
+  // F0 = implicit_flux_x1min, set before each hesdirk2 stage solve at its time
+  // (Time2FormStage: t_n + dt), so the forcing of a time-order test is time-consistent
+  if (pin->DoesParameterExist("rad_m1","implicit_flux_x1min_mod_period")) {
+    fmod_per = pin->GetReal("rad_m1","implicit_flux_x1min_mod_period");
+    fmod_amp = pin->GetReal("rad_m1","implicit_flux_x1min_mod_amp");
+    fmod_f0 = iflux_x1min;
+  }
   iflux_x1max = pin->GetOrAddReal("rad_m1","implicit_flux_x1max",0.0);
   iebath_x1min = pin->GetOrAddReal("rad_m1","implicit_ebath_x1min",0.0);
   iebath_x1max = pin->GetOrAddReal("rad_m1","implicit_ebath_x1max",0.0);

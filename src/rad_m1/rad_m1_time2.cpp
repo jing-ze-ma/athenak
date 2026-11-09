@@ -663,6 +663,12 @@ bool RadiationM1::Time2Active() {
 //! into the old vector of the stage solve.  ImplicitSolve applies t2inc.
 
 void RadiationM1::Time2FormStage(int stage, Real dt) {
+  if (fmod_per > 0.0) {   // raycheap2-1109: the modulated inner flux at the stage time
+    // hesdirk2: both stage solves end at t_n + dt (c2 = a21 + g = 1, c3 = 1)
+    const Real ts = pmy_pack->pmesh->time + dt;
+    (void) stage;
+    iflux_x1min = fmod_f0*(1.0 + fmod_amp*std::sin(2.0*M_PI*ts/fmod_per));
+  }
   if (dbg_rst_fp > 0 && stage == 1) {dbg_rst_fp -= 1; RstFingerprint("formstage1");}   // rstbit-1107
   const Real g = kT2G;
   const Real w0 = t2_w0, w1 = t2_w1;
