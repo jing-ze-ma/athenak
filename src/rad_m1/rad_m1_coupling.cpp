@@ -506,8 +506,8 @@ void RadiationM1::FloorGasCap() {
   const int rep = fcap_report;
   const int cyc = pmy_pack->pmesh->ncycle;
   if (rep > 0 && (cyc % rep) == 0) {
-    fcap_cnt.template modify<DevExeSpace>();
-    fcap_cnt.template sync<HostMemSpace>();
+    fcap_cnt.modify_device();
+    fcap_cnt.sync_host();
     Real c[4];
     for (int n = 0; n < 4; ++n) c[n] = fcap_cnt.h_view(n);
 #if MPI_PARALLEL_ENABLED
