@@ -28,4 +28,8 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
 8. `docs/handover/TASK-2026-11-09-orion-hglagt.md` - HG all-lagged transverse upwind (fork/hgpos-1109b
    7fb7af05a): keys-absent / 1 vs 4 ranks / restart gates + active path. NOTE as the TASK says.
 
+10. `docs/handover/TASK-2026-11-09-orion-raycheap5.md` - which VET update restores 2nd order in time: arms U1-U7
+   (rebuild / x2_fields 15 / lag / extrap / predict / lat offdiag none / every 2) on the pulse2 test
+   (fork/raycheap2-1109 fa7103f33 = the ff2ed77f1 build, 24 ranks). NOTE as the TASK says.
+
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
