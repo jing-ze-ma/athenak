@@ -487,7 +487,9 @@ void RadiationM1::FloorGasCap() {
       if (eg > 0.0) {
         const Real tg = eos.Temperature(dd, eg);
         const Real trad = sqrt(sqrt(fmax(erad, 0.0)/ar));
-        const Real tcap = fmax(trad, tmin);
+        // never below the EOS temperature floor: the C2P that follows would raise e_int
+        // back to e(rho, tfloor) and create the energy this cap moved to E_rad
+        const Real tcap = fmax(fmax(trad, tmin), eos.tfloor);
         if (tg > tcap) {
           const Real enew = eos.EnergyFromTemperature(dd, tcap);
           const Real de = eg - enew;
