@@ -37,3 +37,6 @@ Interpretation we need: which arm(s) reach p ~ 2. No code changes; if every arm 
 
 ## 4. NOTE back
 Build sha/compiler, the per-arm conv.py lines with counts, wall times, any FATAL and the workaround used.
+
+**viper answer to the interim NOTE (11-09):** C2e (closure = eddington + implicit_hr_model = true) is fine as the no-VET
+baseline; no sp substitute is needed.
