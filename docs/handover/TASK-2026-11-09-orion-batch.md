@@ -32,4 +32,8 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
    (rebuild / x2_fields 15 / lag / extrap / predict / lat offdiag none / every 2) on the pulse2 test
    (fork/raycheap2-1109 fa7103f33 = the ff2ed77f1 build, 24 ranks). NOTE as the TASK says.
 
+11. `docs/handover/TASK-2026-11-09-orion-raycheap6.md` - gas-driven closure change: lag / extrap2 / predict / rebuild,
+   with and without the tangential tensor (gasmod decks), + pulse2 re-test (fork/raycheap2-1109 f872899da, REBUILD; + (c) vet_source = gas arms;
+   24 ranks). NOTE as the TASK says.
+
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
