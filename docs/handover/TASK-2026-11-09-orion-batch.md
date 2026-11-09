@@ -18,5 +18,7 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
    auto_be back-off in the rst) R1-R4 + convergence reconciliation C1-C3 (24 ranks, tight tolerance). NOTE as the TASK says.
 6. `docs/handover/TASK-2026-11-09-orion-hgblend.md` - HG transverse blend implicit upwind (fork/hgpos-1109b
    1f314023a): keys-absent / 1 vs 4 ranks / restart gates + active-path check. NOTE as the TASK says.
+7. `docs/handover/TASK-2026-11-09-orion-raycheap3.md` - why the base VET/M1 time scheme is 1st order: time-order
+   isolation arms B0 C1 C2 C3 G1 on the forced test star (fork/raycheap2-1109 9b9951606, 24 ranks). NOTE as the TASK says.
 
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
