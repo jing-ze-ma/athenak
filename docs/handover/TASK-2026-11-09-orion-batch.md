@@ -49,4 +49,7 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
 15. `docs/handover/TASK-2026-11-09-orion-hgfct.md` - HG FCT limiter on the lagged transverse remainder (fork/hgpos-1109b
    a4bac617e): keys-absent vs 7fb7af05a / 1 vs 4 ranks / restart + forced active path (alpha 1e-3). NOTE as the TASK says.
 
+16. `docs/handover/TASK-2026-11-09-orion-raycheap9.md` - isolate the common O(dt) term on Ar4: hydro off / Strang /
+   alternate / radiation force off / no clump / be, base PR, 4 levels (reuse the raycheap8 build and Ar4 decks). NOTE as the TASK says.
+
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
