@@ -46,4 +46,7 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
 14. `docs/handover/TASK-2026-11-09-orion-raycheap8.md` - evolving-gas time-order test of the VET update (equilibrium IC,
    gas feedback, stability pre-check inside) + CPU check that the stage-2 rebuild reaches the operator. NOTE as the TASK says.
 
+15. `docs/handover/TASK-2026-11-09-orion-hgfct.md` - HG FCT limiter on the lagged transverse remainder (fork/hgpos-1109b
+   a4bac617e): keys-absent vs 7fb7af05a / 1 vs 4 ranks / restart + forced active path (alpha 1e-3). NOTE as the TASK says.
+
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
