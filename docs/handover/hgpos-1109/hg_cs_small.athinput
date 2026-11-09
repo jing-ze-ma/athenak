@@ -39,6 +39,7 @@ No he_base_heat (adaptive refuses it; wall F_MLT 4.5e11                         
 <job>
 basename = hegiant 
 <mesh>
+layout_invariant          = true                # hgpos-1109: as production (Orion NOTE 35331b94a)
 cs_seam_blockend          = clamp               # mkdeck
 cs_seam_flux              = shared              # csedge-1019 (USER 10-19 seam fix): ONE Riemann problem per seam face (= the new cs default; 09-26 positive drove the cube-edge instability)
 nghost                    = 3                   # mkdeck
