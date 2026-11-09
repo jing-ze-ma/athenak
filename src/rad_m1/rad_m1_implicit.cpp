@@ -14160,7 +14160,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     cf_fb_pass = false;    // consfix-1109
     // lintol-1109: the Picard tolerance this pass's inner solve is capped against
     cur_tolcap = (it == 0 && tolr) ? std::max(impl_tol, impl_tol_rel_max) : tol_eff;
-    // lintol-1109 implicit_lin_tolcap_last = s (> 0; read only when named): the cap only on
+    // lintol-1109 implicit_lin_tolcap_last = s (> 0; read only when named): cap only on
     // a pass the measured contraction predicts to be the last one (predicted change
     // q rprev, q = rprev/rprev2 or 1/2, within s x tol_eff of the stop); others keep EW
     if (impl_lin_tclast > 0.0) {
