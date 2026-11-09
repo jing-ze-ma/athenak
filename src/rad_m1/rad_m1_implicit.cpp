@@ -3010,6 +3010,25 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::deep_copy(ltu_cnt, 0.0);
     }
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_lagged_t_fct")) {   // hgpos-1109d
+    impl_lag_t_fct = pin->GetReal("rad_m1","implicit_lagged_t_fct");
+    if (impl_lag_t_fct < 0.0) {
+      ImplFatal("<rad_m1>/implicit_lagged_t_fct must be >= 0 (0 = off)");
+    }
+    if (impl_lag_t_fct > 0.0) {
+      if (!sph_geom) {
+        ImplFatal("<rad_m1>/implicit_lagged_t_fct needs the cubed sphere or the "
+                  "spherical-polar mesh");
+      }
+      // the limiter acts on the lagged remainder the other keys move into the matrix
+      if (impl_lag_t_up || impl_blend_t_up || impl_pos_trans_t != 0) {
+        ImplFatal("<rad_m1>/implicit_lagged_t_fct excludes implicit_lagged_t_upwind, "
+                  "implicit_blend_t_upwind and implicit_pos_transport_t");
+      }
+      ltf_cnt = DvceArray1D<Real>("m1_ltf_cnt", 18);
+      Kokkos::deep_copy(ltf_cnt, 0.0);
+    }
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_ewf")) {
     impl_vimp_ewf = pin->GetBoolean("rad_m1","implicit_vimp_ewf");
   }
@@ -5521,7 +5540,9 @@ constexpr int M1_TSP_GE = 8, M1_TSP_FN = 9, M1_TSP_BQE = 10, M1_TSP_LB = 11;
 // hgpos-1109c implicit_lagged_t_upwind: q E^k_donor of an upwinded face (LQE, in the
 // matrix; 0 elsewhere) and the face's whole lagged remainder L_f (LL, every face)
 constexpr int M1_TSP_LQE = 12, M1_TSP_LL = 13;
-constexpr int M1_TSP_N = 14;
+// hgpos-1109d implicit_lagged_t_fct: the limited remainder R_donor L_f the face stores
+constexpr int M1_TSP_LR = 14;
+constexpr int M1_TSP_N = 15;
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitTransverseTerms
@@ -5760,6 +5781,50 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   // refresh (brf) reuses them.  The counters bin the face by the global x1 index of its
   // radial cell (ltu_ix1: lx1*nx1 of the block; a uniform x1 partition)
   const int ltg = pmy_pack->pmesh->mesh_indcs.nx1;
+  // hgpos-1109d implicit_lagged_t_fct (rad_m1.hpp): R_donor L_f with R frozen per solve
+  const bool ltf = (impl_lag_t_fct > 0.0);
+  const Real lfa = impl_lag_t_fct;
+  if (ltu || ltf) {
+    if (ltu_ix1.extent_int(0) != nmb1 + 1) {
+      Kokkos::realloc(ltu_ix1, nmb1 + 1);
+      auto hx = Kokkos::create_mirror_view(ltu_ix1);
+      const int g0 = pmy_pack->gids;
+      for (int m = 0; m <= nmb1; ++m) {
+        hx(m) = static_cast<int>(pmy_pack->pmesh->lloc_eachmb[g0+m].lx1)*indcs.nx1;
+      }
+      Kokkos::deep_copy(ltu_ix1, hx);
+    }
+  }
+  if (ltf) {
+    const int nmbt = iw.extent_int(0), nc3 = iw.extent_int(2);
+    const int nc2 = iw.extent_int(3), nc1 = iw.extent_int(4);
+    if (ltfr.extent_int(0) != nmbt) {
+      Kokkos::realloc(ltfr, nmbt, nc3, nc2, nc1);
+      Kokkos::deep_copy(ltfr, 1.0);
+      Kokkos::realloc(ltfe, nmbt, nc3, nc2, nc1);
+      Kokkos::realloc(ltfl2, nmbt, nc3, nc2+1, nc1);
+      Kokkos::deep_copy(ltfl2, 0.0);
+      Kokkos::realloc(ltfn2, nmbt, nc3, nc2+1, nc1);
+      Kokkos::deep_copy(ltfn2, 0.0);
+      if (thrd) {
+        Kokkos::realloc(ltfl3, nmbt, nc3+1, nc2, nc1);
+        Kokkos::deep_copy(ltfl3, 0.0);
+        Kokkos::realloc(ltfn3, nmbt, nc3+1, nc2, nc1);
+        Kokkos::deep_copy(ltfn3, 0.0);
+      }
+    }
+    if (!brf) {
+      auto lc_ = ltf_cnt;
+      Kokkos::parallel_for("m1_ltf_cnt", Kokkos::RangePolicy<DevExeSpace>(0, 1),
+      KOKKOS_LAMBDA(const int) {lc_(10) += 1.0;});
+    }
+  }
+  auto lr_ = ltfr;
+  auto ll2_ = ltfl2;
+  auto ll3_ = ltfl3;
+  auto ln2_ = ltfn2;
+  auto ln3_ = ltfn3;
+  auto lfc_ = ltf_cnt;
   if (ltu) {
     const int nmbt = iw.extent_int(0), nc3 = iw.extent_int(2);
     const int nc2 = iw.extent_int(3), nc1 = iw.extent_int(4);
@@ -5770,15 +5835,6 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         Kokkos::realloc(ltq3, nmbt, nc3+1, nc2, nc1);
         Kokkos::deep_copy(ltq3, 0.0);
       }
-    }
-    if (ltu_ix1.extent_int(0) != nmb1 + 1) {
-      Kokkos::realloc(ltu_ix1, nmb1 + 1);
-      auto hx = Kokkos::create_mirror_view(ltu_ix1);
-      const int g0 = pmy_pack->gids;
-      for (int m = 0; m <= nmb1; ++m) {
-        hx(m) = static_cast<int>(pmy_pack->pmesh->lloc_eachmb[g0+m].lx1)*indcs.nx1;
-      }
-      Kokkos::deep_copy(ltu_ix1, hx);
     }
     if (!brf) {
       auto lc_ = ltu_cnt;
@@ -5820,6 +5876,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
     if ((j == js && plo) || (j == je+1 && phi)) {
       f2_(m,k,j,i) = 0.0;
+      if (ltf && fst) {ll2_(m,k,j,i) = 0.0;}
       return;
     }
     Real dx1 = mbsize.d_view(m).dx1;
@@ -6081,8 +6138,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     // - the row's two-point part (M1TransRowCore: th of the row, D of the two cells,
     // L2 and A2 of M1CsRowGeo / the sp wedge, the berthon HCL/HCR part) -> q E'_donor
     // where its outflow would drain more than pt_gam E^n of the donor (M1LagTUpQ)
-    Real lqe = 0.0, lft = 0.0;
-    if (ltu) {
+    Real lqe = 0.0, lft = 0.0, lfr = 0.0;
+    if (ltu || ltf) {
       const Real elo = iw_(m,M1_IW_EP,k,jm,i), ehi = iw_(m,M1_IW_EP,k,j,i);
       const Real thr = blt ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
       Real lf = cdxf.x2f(m,k,j,i), af = carea.x2f(m,k,j,i);
@@ -6109,8 +6166,31 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         fpt += (cl/ch)*(bw2_(m,M1_IFW_HCL,k,j,i)*elo + bw2_(m,M1_IFW_HCR,k,j,i)*ehi);
       }
       lft = f2_(m,k,j,i) - fpt;
-      Real q;
-      if (brf) {
+      lfr = lft;
+      Real q = 0.0;
+      if (ltf) {
+        // hgpos-1109d implicit_lagged_t_fct: the first pass stores L_f and the donor
+        // drain (R is set after the face kernels, m1_ltf_r); later passes R_donor L_f
+        if (fst) {
+          ll2_(m,k,j,i) = lft;
+          ln2_(m,k,j,i) = (ch/cl)*fabs(lft)*(af*(dt/((lft > 0.0) ? vl : vr)));
+        } else if (lft != 0.0) {
+          const Real rd = (lft > 0.0) ? lr_(m,k,jm,i) : lr_(m,k,j,i);
+          if (rd < 1.0) {
+            const Real ld = (rd - 1.0)*lft;
+            lfr = lft + ld;
+            f2_(m,k,j,i) += ld;
+            if (gcst && !gcft) {gz2_(m,k,j,i) -= (1.0 + ch*dt*ktf)*ld/(cl*ch);}
+            if (!brf) {
+              const int ig = lix_(m) + (i - is);
+              const int bn = (4*ig < ltg) ? 0 : ((2*ig < ltg) ? 1 : 2);
+              Kokkos::atomic_add(&lfc_(bn), 1.0);
+              Kokkos::atomic_add(&lfc_(3+bn), (1.0 - rd)*(ch/cl)*fabs(lft)*
+                                 (af*(dt/((lft > 0.0) ? vl : vr))));
+            }
+          }
+        }
+      } else if (brf) {
         q = lq2_(m,k,j,i);
       } else {
         bool cap;
@@ -6146,6 +6226,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       ts2_(m,M1_TSP_LB,k,j,i) = lbt;
       ts2_(m,M1_TSP_LQE,k,j,i) = lqe;
       ts2_(m,M1_TSP_LL,k,j,i) = lft;
+      ts2_(m,M1_TSP_LR,k,j,i) = lfr;
     }
   });
 
@@ -6161,6 +6242,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
       if ((k == ks && plo) || (k == ke+1 && phi)) {
         f3_(m,k,j,i) = 0.0;
+        if (ltf && fst) {ll3_(m,k,j,i) = 0.0;}
         return;
       }
       Real dx1 = mbsize.d_view(m).dx1;
@@ -6397,8 +6479,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         f3_(m,k,j,i) += btd;
         if (gcst && !gcft) {gz3_(m,k,j,i) -= (1.0 + ch*dt*ktf)*btd/(cl*ch);}
       }
-      Real lqe = 0.0, lft = 0.0;   // hgpos-1109c implicit_lagged_t_upwind (as x2)
-      if (ltu) {
+      Real lqe = 0.0, lft = 0.0, lfr = 0.0;   // hgpos-1109c/d (as x2)
+      if (ltu || ltf) {
         const Real elo = iw_(m,M1_IW_EP,km,j,i), ehi = iw_(m,M1_IW_EP,k,j,i);
         const Real thr = blt ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
         Real lf = cdxf.x3f(m,k,j,i), af = carea.x3f(m,k,j,i);
@@ -6423,8 +6505,29 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           fpt += (cl/ch)*(bw3_(m,M1_IFW_HCL,k,j,i)*elo + bw3_(m,M1_IFW_HCR,k,j,i)*ehi);
         }
         lft = f3_(m,k,j,i) - fpt;
-        Real q;
-        if (brf) {
+        lfr = lft;
+        Real q = 0.0;
+        if (ltf) {   // hgpos-1109d implicit_lagged_t_fct (as x2)
+          if (fst) {
+            ll3_(m,k,j,i) = lft;
+            ln3_(m,k,j,i) = (ch/cl)*fabs(lft)*(af*(dt/((lft > 0.0) ? vl : vr)));
+          } else if (lft != 0.0) {
+            const Real rd = (lft > 0.0) ? lr_(m,km,j,i) : lr_(m,k,j,i);
+            if (rd < 1.0) {
+              const Real ld = (rd - 1.0)*lft;
+              lfr = lft + ld;
+              f3_(m,k,j,i) += ld;
+              if (gcst && !gcft) {gz3_(m,k,j,i) -= (1.0 + ch*dt*ktf)*ld/(cl*ch);}
+              if (!brf) {
+                const int ig = lix_(m) + (i - is);
+                const int bn = (4*ig < ltg) ? 0 : ((2*ig < ltg) ? 1 : 2);
+                Kokkos::atomic_add(&lfc_(bn), 1.0);
+                Kokkos::atomic_add(&lfc_(3+bn), (1.0 - rd)*(ch/cl)*fabs(lft)*
+                                   (af*(dt/((lft > 0.0) ? vl : vr))));
+              }
+            }
+          }
+        } else if (brf) {
           q = lq3_(m,k,j,i);
         } else {
           bool cap;
@@ -6460,10 +6563,97 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         ts3_(m,M1_TSP_LB,k,j,i) = lbt;
         ts3_(m,M1_TSP_LQE,k,j,i) = lqe;
         ts3_(m,M1_TSP_LL,k,j,i) = lft;
+        ts3_(m,M1_TSP_LR,k,j,i) = lfr;
       }
     });
   }
 
+  // hgpos-1109d implicit_lagged_t_fct, first pass of the solve: (a) R of the active cells
+  // from the stored L_f and donor drains, (b) its ghosts by one exchange of a single iw
+  // component (the E^n slot, restored bit for bit), (c) R_donor L_f into this pass's
+  // stored fluxes (the face kernels apply it themselves on every later pass)
+  if (ltf && fst) {
+    Kokkos::deep_copy(ltfr, 1.0);
+    const int bxg = ltg;
+    par_for("m1_ltf_r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real qo = 0.0;
+      if (ll2_(m,k,j,i) < 0.0) {qo += ln2_(m,k,j,i);}
+      if (ll2_(m,k,j+1,i) > 0.0) {qo += ln2_(m,k,j+1,i);}
+      if (thrd) {
+        if (ll3_(m,k,j,i) < 0.0) {qo += ln3_(m,k,j,i);}
+        if (ll3_(m,k+1,j,i) > 0.0) {qo += ln3_(m,k+1,j,i);}
+      }
+      if (qo > 0.0) {
+        const Real en = fmax(iw_(m,M1_IW_EN,k,j,i), 0.0);
+        const Real ea = lfa*en;
+        if (ea < qo) {
+          lr_(m,k,j,i) = ea/qo;
+          const int ig = lix_(m) + (i - is);
+          const int bn = (4*ig < bxg) ? 0 : ((2*ig < bxg) ? 1 : 2);
+          Kokkos::atomic_add(&lfc_(6+bn), 1.0);
+          if (!(en > 0.0)) {Kokkos::atomic_add(&lfc_(11), 1.0);}
+        }
+      }
+      if (m == 0 && k == ks && j == js && i == is) {lfc_(9) += 1.0;}
+    });
+    {
+      const int nmbt = iw.extent_int(0), nc3 = iw.extent_int(2);
+      const int nc2 = iw.extent_int(3), nc1 = iw.extent_int(4);
+      auto le_ = ltfe;
+      par_for("m1_ltf_x0", DevExeSpace(), 0, nmbt-1, 0, nc3-1, 0, nc2-1, 0, nc1-1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        le_(m,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
+        iw_(m,M1_IW_EN,k,j,i) = lr_(m,k,j,i);
+      });
+      ImplicitKrylovHalo(M1_IW_EN);
+      par_for("m1_ltf_x1", DevExeSpace(), 0, nmbt-1, 0, nc3-1, 0, nc2-1, 0, nc1-1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        lr_(m,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
+        iw_(m,M1_IW_EN,k,j,i) = le_(m,k,j,i);
+      });
+    }
+    par_for("m1_ltf_c2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real lft = ll2_(m,k,j,i);
+      if (lft == 0.0) return;
+      const Real rd = (lft > 0.0) ? lr_(m,k,j-1,i) : lr_(m,k,j,i);
+      if (rd < 1.0) {
+        const Real ld = (rd - 1.0)*lft;
+        f2_(m,k,j,i) += ld;
+        if (gcst && !gcft) {
+          const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
+          gz2_(m,k,j,i) -= (1.0 + ch*dt*ktf)*ld/(cl*ch);
+        }
+        const int ig = lix_(m) + (i - is);
+        const int bn = (4*ig < bxg) ? 0 : ((2*ig < bxg) ? 1 : 2);
+        Kokkos::atomic_add(&lfc_(bn), 1.0);
+        Kokkos::atomic_add(&lfc_(3+bn), (1.0 - rd)*ln2_(m,k,j,i));
+        if (tsd) {ts2_(m,M1_TSP_LR,k,j,i) = lft + ld;}
+      }
+    });
+    if (thrd) {
+      par_for("m1_ltf_c3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real lft = ll3_(m,k,j,i);
+        if (lft == 0.0) return;
+        const Real rd = (lft > 0.0) ? lr_(m,k-1,j,i) : lr_(m,k,j,i);
+        if (rd < 1.0) {
+          const Real ld = (rd - 1.0)*lft;
+          f3_(m,k,j,i) += ld;
+          if (gcst && !gcft) {
+            const Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
+            gz3_(m,k,j,i) -= (1.0 + ch*dt*ktf)*ld/(cl*ch);
+          }
+          const int ig = lix_(m) + (i - is);
+          const int bn = (4*ig < bxg) ? 0 : ((2*ig < bxg) ? 1 : 2);
+          Kokkos::atomic_add(&lfc_(bn), 1.0);
+          Kokkos::atomic_add(&lfc_(3+bn), (1.0 - rd)*ln3_(m,k,j,i));
+          if (tsd) {ts3_(m,M1_TSP_LR,k,j,i) = lft + ld;}
+        }
+      });
+    }
+  }
   // (3) the cell terms: the diagonal part, the lagged right-hand side and the residual
   // of the full 7-point system.  implicit_enthalpy adds its deferred correction to the
   // face fluxes fp/fm/gp/gm, which reach only the right-hand side (TRHS), never the row.
@@ -10786,6 +10976,20 @@ void RadiationM1::ImplicitReport() {
               << " [G/2,G): " << h(0) << " " << h(1) << " " << h(2)
               << " of which |q| capped at c: " << h(3) << " " << h(4) << " " << h(5)
               << std::endl;
+  }
+  if (impl_lag_t_fct > 0.0 && ltf_cnt.extent_int(0) >= 18) {   // hgpos-1109d
+    auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), ltf_cnt);
+    std::cout << "<rad_m1> implicit_lagged_t_fct=" << impl_lag_t_fct
+              << " (rank 0): solves=" << h(9) << " x2/x3 face evaluations=" << h(10)
+              << " | limited face-passes (R_donor<1) by global x1 bin [0,G/4) [G/4,G/2)"
+              << " [G/2,G): " << h(0) << " " << h(1) << " " << h(2)
+              << " removed drain (1-R)(chat/c)|L|A dt/V: " << h(3) << " " << h(4) << " "
+              << h(5) << " | cells R<1 (per solve, summed): " << h(6) << " " << h(7)
+              << " " << h(8) << " of which E^n<=0 (R=0): " << h(11) << std::endl;
+    std::cout << "<rad_m1> implicit_lagged_t_fct RHS signs (rank 0, cell-passes="
+              << h(12) << "): SRCR<0 " << h(13) << " E^n+SRCR<0 " << h(14)
+              << " (1-alpha)max(E^n,0)+SRCR<0 " << h(15) << " JRHS<0 " << h(16)
+              << " E^n+SRCR+JRHS<0 " << h(17) << std::endl;
   }
   if (impl_blend_t_up && btu_cnt.extent_int(0) >= 2) {   // hgpos-1109b
     auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), btu_cnt);
@@ -15498,6 +15702,27 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                       (t2st || (time_scheme == M1_TIME_HESDIRK2)) && have_hydro &&
                       feedback && ((t2_fvnew && !fref) || fws);
     if (wvfb) {ImplicitVimpBuild();}
+    // hgpos-1109d implicit_lagged_t_fct: the sign of the emission addition SRCR (and of
+    // the vimp work row JRHS) against E^n of this pass, for b >= (1-alpha)E^n + SRCR
+    if (impl_lag_t_fct > 0.0) {
+      auto lfc_ = ltf_cnt;
+      const Real lfa = impl_lag_t_fct;
+      const bool vjr = vimp_now && (iw_vimp >= 0);
+      const int ivj = vjr ? (iw_vimp + M1_IV_JRHS) : 0;
+      par_for("m1_ltf_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real en = iw_(m,M1_IW_EN,k,j,i), sr = iw_(m,M1_IW_SRCR,k,j,i);
+        Kokkos::atomic_add(&lfc_(12), 1.0);
+        if (sr < 0.0) {Kokkos::atomic_add(&lfc_(13), 1.0);}
+        if (en + sr < 0.0) {Kokkos::atomic_add(&lfc_(14), 1.0);}
+        if ((1.0 - lfa)*fmax(en, 0.0) + sr < 0.0) {Kokkos::atomic_add(&lfc_(15), 1.0);}
+        if (vjr) {
+          const Real jr = iw_(m,ivj,k,j,i);
+          if (jr < 0.0) {Kokkos::atomic_add(&lfc_(16), 1.0);}
+          if (en + sr + jr < 0.0) {Kokkos::atomic_add(&lfc_(17), 1.0);}
+        }
+      });
+    }
     // consfix-1011 (conservative2): this pass's dA into the face equation's F0^n
     if ((Cs2Active() && !(cs2_dbg & 1)) || RinrActive()) {ImplicitCs2Pass(false);}
     if (muscl_now) {ImplicitMusclBuild();}   // xthinfix-1009 Fix B
@@ -17350,7 +17575,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // persistent state the restart file carries, the momentum deposit and the derived
     // F_2/F_3 are the fluxes the solve ended on (exactly what step (g) does for x1).
     // hgpos-1109b/c: keep the q the last solve took
-    btu_refresh = impl_blend_t_up || impl_lag_t_up;
+    // hgpos-1109d: implicit_lagged_t_fct keeps its frozen R (the flag stops counting)
+    btu_refresh = impl_blend_t_up || impl_lag_t_up || (impl_lag_t_fct > 0.0);
     ImplicitTransverseTerms(false);
     btu_refresh = false;
     impl_linmax = std::max(impl_linmax, lresid);
@@ -18982,9 +19208,14 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
   // implicit_lagged_t_upwind: a face it upwinds has its whole lagged remainder in the
   // matrix, so its kinds 0-6 are zero; 22/23 that implicit part q E^k_donor, 24/25 the
   // lagged remainder L_f it replaced, 26 such faces; 27/28 L_f of the faces that stay
-  // lagged (with the key off: every face), i.e. what remains lagged
+  // lagged (with the key off: every face), i.e. what remains lagged.  hgpos-1109d
+  // implicit_lagged_t_fct: 29/30 the limited remainder R_donor L_f the faces store
+  // (= L_f where R_donor = 1 or the key is off), 31 faces with R_donor < 1, 32 R of the
+  // listed cell (1 with the key off)
   const bool tsx = (tsp2.extent_int(0) > 0) && trans_on && sph_geom && bcg;
-  const int nsp = 29;
+  const int nsp = 33;
+  const bool lfon = (impl_lag_t_fct > 0.0) && (ltfr.extent_int(0) > 0);
+  auto lfr_ = ltfr;
   DvceArray2D<Real> spl("m1_t2dbg_spl", tsx ? ncap : 1, nsp);
   auto ts2_ = tsp2;
   auto ts3_ = tsp3;
@@ -19070,8 +19301,9 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
       row(n,42+q) = (ivb >= 0) ? iw_(m,ivb+M1_IV_X1M2+q,k,j,i) : 0.0;
     }
     if (tsx && (flg & 1)) {   // hgpos-1109: the split of X (see above)
-      Real sp[29];
-      for (int q = 0; q < 29; ++q) {sp[q] = 0.0;}
+      Real sp[33];
+      for (int q = 0; q < 33; ++q) {sp[q] = 0.0;}
+      sp[32] = lfon ? lfr_(m,k,j,i) : 1.0;
       const Real cr = ch/cl;
       const Real iv = dts/cvol(m,k,j,i);
       const M1CsRowGeo<decltype(carea), decltype(csn2), decltype(csg2_), decltype(cseam),
@@ -19094,6 +19326,7 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
         const Real fn = tv(M1_TSP_FN);
         const Real bqe = tv(M1_TSP_BQE), lbt = tv(M1_TSP_LB);
         const Real lqe = tv(M1_TSP_LQE), lll = tv(M1_TSP_LL);
+        const Real llr = tv(M1_TSP_LR);
         const Real elo = iw_(m,M1_IW_EP,kl,jl,i), ehi = iw_(m,M1_IW_EP,kf,jf,i);
         const Real ktf = 0.5*(iw_(m,M1_IW_KT,kl,jl,i) + iw_(m,M1_IW_KT,kf,jf,i));
         Real thr = 1.0/(1.0 + ch*dts*ktf);
@@ -19149,6 +19382,12 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
           const Real vr = w*lll;
           sp[27] += vr;
           if (vr > 0.0) {sp[28] += vr;}
+        }
+        {   // hgpos-1109d: the limited remainder
+          const Real vlf = w*(lfon ? llr : lll);
+          sp[29] += vlf;
+          if (vlf > 0.0) {sp[30] += vlf;}
+          if (lfon && llr != lll) {sp[31] += 1.0;}
         }
         for (int q7 = 0; q7 < 7; ++q7) {
           const Real v = w*t[q7];
@@ -19289,6 +19528,9 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
         lsum[0] += hs(n,23);
         lsum[1] += hs(n,25);
         lsum[2] += hs(n,28);
+        std::cout << "      XSPLIT_LAGF net/out: limited_L(R_donor L) " << hs(n,29) << "/"
+                  << hs(n,30) << " limited_faces " << hs(n,31) << " R_cell " << hs(n,32)
+                  << (lfon ? "" : " (key off)") << std::endl;
       }
     }
   }

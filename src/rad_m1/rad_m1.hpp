@@ -2117,6 +2117,29 @@ class RadiationM1 {
   DvceArray4D<Real> ltq2, ltq3;
   DvceArray1D<int> ltu_ix1;
   DvceArray1D<Real> ltu_cnt;
+  // hgpos-1109d <rad_m1>/implicit_lagged_t_fct = alpha (Real, read only when named;
+  // default 0 = off = bitwise; cubed sphere and sp only; exclusive with
+  // implicit_lagged_t_upwind / implicit_blend_t_upwind / implicit_pos_transport_t): a
+  // Zalesak-style donor limiter on the lagged remainder L_f of the x2/x3 face fluxes, NO
+  // matrix change.  On the first Picard pass of a solve every cell gets
+  //   Q_out = sum over its x2/x3 faces of (chat/c) max(outflow part of L_f, 0) A_f dt/V,
+  //   R = min(1, alpha max(E^n, 0)/Q_out)   (R = 1 where Q_out = 0),
+  // E^n = M1_IW_EN (the solve's old vector, clipped at 0: R = 0 where it is <= 0 and the
+  // cell would export lagged energy); R is frozen for the solve (also the post-solve
+  // refresh) and its ghosts come from one exchange of a single iw component per solve.
+  // Every pass then stores (two-point part) + R_donor L_f, the donor being the cell L_f
+  // flows out of (L_f > 0: the lower cell); where R_donor == 1 nothing is touched.
+  // ltfr the R (with ghosts); ltfl2/ltfl3 the first-pass L_f, ltfn2/ltfn3 its donor
+  // drain (chat/c)|L_f| A_f dt/V_donor; ltfe scratch for the exchange.  ltf_cnt (rank
+  // local): 0..2 limited face-passes (R_donor < 1, L_f != 0) by global x1 bin [0,G/4),
+  // [G/4,G/2), [G/2,G), 3..5 the removed drain (1-R_donor)(chat/c)|L_f| A dt/V_donor
+  // summed over those face-passes (E units), 6..8 cells with R < 1 per solve by bin, 9
+  // solves, 10 face evaluations (passes, refresh excluded), 11 cells with Q_out > 0 and
+  // E^n <= 0 (R = 0); 12..17 per Picard pass after the source kernel: cells, SRCR < 0,
+  // E^n + SRCR < 0, (1-alpha)max(E^n,0) + SRCR < 0, (vimp) JRHS < 0, E^n+SRCR+JRHS < 0
+  Real impl_lag_t_fct = 0.0;
+  DvceArray4D<Real> ltfr, ltfe, ltfl2, ltfl3, ltfn2, ltfn3;
+  DvceArray1D<Real> ltf_cnt;
   // kirch-1022 implicit_face_opac = kirchhoff (opt-in; default arith = bitwise): the iw
   // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1
   // off
