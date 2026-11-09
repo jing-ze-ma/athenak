@@ -11,4 +11,6 @@ as the TASK says. Independent of each other; run in parallel if Orion has the co
    (fork/raycheap2-1109 a39c9ec49 vs prod-1112-cand 3330bc0dd). NOTE: NOTE-2026-11-xx-orion-raycheap.md.
 
 Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see NOTE-2026-11-08-orion-viper-hg-mesa-declined.md).
-A 4th TASK (inner-tolerance accuracy, orion-lintol) may follow; it will be listed in a new batch file.
+4. `docs/handover/TASK-2026-11-09-orion-lintol.md` - R136 small (831x8x8) Picard stop-test accuracy: find the cheapest
+   stop setting reaching ~1.5e-8 vs the reference (deck/data in docs/handover/lintol-1109/; fork/prod-1112-cand).
+   NOTE as the TASK says.
