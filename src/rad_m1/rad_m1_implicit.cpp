@@ -3351,6 +3351,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     fmod_amp = pin->GetReal("rad_m1","implicit_flux_x1min_mod_amp");
     fmod_f0 = iflux_x1min;
   }
+  // raycheap2-1109 (read only when named; test only): implicit_flux_x1min_ramp_t0 = t0,
+  // implicit_flux_x1min_ramp_w = w > 0: the inner flux times 0.5 (1 + tanh((t - t0)/w)),
+  // a smooth switch-on (no start-up discontinuity), also at the stage times; the value at
+  // the start time is set here
+  if (pin->DoesParameterExist("rad_m1","implicit_flux_x1min_ramp_w")) {
+    fmod_rw = pin->GetReal("rad_m1","implicit_flux_x1min_ramp_w");
+    fmod_rt0 = pin->GetReal("rad_m1","implicit_flux_x1min_ramp_t0");
+    if (fmod_per <= 0.0) {fmod_f0 = iflux_x1min;}
+    if (fmod_rw > 0.0) {
+      const Real t = pmy_pack->pmesh->time;
+      iflux_x1min = fmod_f0*0.5*(1.0 + std::tanh((t - fmod_rt0)/fmod_rw));
+    }
+  }
   iflux_x1max = pin->GetOrAddReal("rad_m1","implicit_flux_x1max",0.0);
   iebath_x1min = pin->GetOrAddReal("rad_m1","implicit_ebath_x1min",0.0);
   iebath_x1max = pin->GetOrAddReal("rad_m1","implicit_ebath_x1max",0.0);
