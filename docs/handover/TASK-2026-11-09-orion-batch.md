@@ -55,4 +55,7 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
 17. `docs/handover/TASK-2026-11-09-orion-raycheap10.md` - R alone on hesdirk2 (new dbg_hydro_skip_t2, fork/raycheap2-1109
    432b5055c, REBUILD) on Ar4, then R-internal toggles if still 1st order. NOTE as the TASK says.
 
+18. `docs/handover/TASK-2026-11-09-orion-raycheap11.md` - R alone 1st order: stage order of the exchange (frozen closure,
+   no-VET, Newton opacity, coupling off, TR-BDF2 arms) on Ar4 (fork/raycheap2-1109 addb642d0, REBUILD). NOTE as the TASK says.
+
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
