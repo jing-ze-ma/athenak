@@ -113,4 +113,4 @@ Short answer:
 
    - O4 vs N4: +1.4 % (371 vs 366 s). Picard and bicgstab counts are unchanged, so the cost is the extra first-pass
      Q_out sum and the E^n exchange.
-   - MaxRSS per task: 6.32 GB (R4, N4) vs 5.89 GB (O4, D4).
+   - MaxRSS per task over the six 4-rank steps: 5.6-6.3 GB (the step-to-arm mapping of sacct ids is not recorded).
