@@ -2981,6 +2981,35 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::deep_copy(btu_cnt, 0.0);
     }
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_lagged_t_upwind")) {   // hgpos-1109c
+    impl_lag_t_up = pin->GetBoolean("rad_m1","implicit_lagged_t_upwind");
+    if (impl_lag_t_up && !sph_geom) {
+      ImplFatal("<rad_m1>/implicit_lagged_t_upwind needs the cubed sphere or the "
+                "spherical-polar mesh");
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_pos_transport_mem")) {
+      pt_gam = pin->GetReal("rad_m1","implicit_pos_transport_mem");
+    }
+    if (impl_lag_t_up && !(pt_gam > 0.0)) {
+      ImplFatal("<rad_m1>/implicit_lagged_t_upwind needs implicit_pos_transport_mem > 0");
+    }
+    if (impl_lag_t_up) {
+      // the whole lagged remainder contains the memory and the blend parts: the two
+      // narrower keys are superseded (no double counting)
+      if (impl_pos_trans_t != 0 || impl_blend_t_up) {
+        if (global_variable::my_rank == 0) {
+          std::cout << "<rad_m1> implicit_lagged_t_upwind supersedes"
+                    << ((impl_pos_trans_t != 0) ? " implicit_pos_transport_t" : "")
+                    << (impl_blend_t_up ? " implicit_blend_t_upwind" : "")
+                    << ": switched off" << std::endl;
+        }
+        impl_pos_trans_t = 0;
+        impl_blend_t_up = false;
+      }
+      ltu_cnt = DvceArray1D<Real>("m1_ltu_cnt", 7);
+      Kokkos::deep_copy(ltu_cnt, 0.0);
+    }
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_ewf")) {
     impl_vimp_ewf = pin->GetBoolean("rad_m1","implicit_vimp_ewf");
   }
@@ -5489,7 +5518,10 @@ void RadiationM1::ImplicitK1Fct(const Real ca) {
 constexpr int M1_TSP_TH = 0, M1_TSP_GR = 1, M1_TSP_VF = 2, M1_TSP_G0F = 3;
 constexpr int M1_TSP_OFF = 4, M1_TSP_OFFP = 5, M1_TSP_OFFQ = 6, M1_TSP_F = 7;
 constexpr int M1_TSP_GE = 8, M1_TSP_FN = 9, M1_TSP_BQE = 10, M1_TSP_LB = 11;
-constexpr int M1_TSP_N = 12;
+// hgpos-1109c implicit_lagged_t_upwind: q E^k_donor of an upwinded face (LQE, in the
+// matrix; 0 elsewhere) and the face's whole lagged remainder L_f (LL, every face)
+constexpr int M1_TSP_LQE = 12, M1_TSP_LL = 13;
+constexpr int M1_TSP_N = 14;
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitTransverseTerms
@@ -5660,7 +5692,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   // of a dim donor implicitly upwind, q set on the first pass of the solve (fst), frozen
   const bool ptt = (impl_pos_trans_t == 1);
   const Real ptg_ = pt_gam, pte_ = e_floor;
-  if (ptt) {
+  // hgpos-1109c implicit_lagged_t_upwind (rad_m1.hpp) tests against the same E^n with
+  // its ghosts (ptqe, exchanged on the first pass)
+  const bool ltu = impl_lag_t_up;
+  if (ptt || ltu) {
     const int nmbt = iw.extent_int(0), nc3 = iw.extent_int(2);
     const int nc2 = iw.extent_int(3), nc1 = iw.extent_int(4);
     if (ptq2.extent_int(0) != nmbt) {
@@ -5681,7 +5716,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       par_for("m1_ptt_e0", DevExeSpace(), 0, nmbt-1, 0, nc3-1, 0, nc2-1, 0, nc1-1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         pe_(m,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
-        if (m == 0 && k == 0 && j == 0 && i == 0) {ptc_(1) += 1.0;}
+        if (ptt && m == 0 && k == 0 && j == 0 && i == 0) {ptc_(1) += 1.0;}
       });
       ImplicitKrylovHalo(M1_IW_EN);
       par_for("m1_ptt_e1", DevExeSpace(), 0, nmbt-1, 0, nc3-1, 0, nc2-1, 0, nc1-1,
@@ -5721,6 +5756,45 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto bq2_ = btq2;
   auto bq3_ = btq3;
   auto btc_ = btu_cnt;
+  // hgpos-1109c implicit_lagged_t_upwind: the face q (ltq2/ltq3) of this pass; the
+  // refresh (brf) reuses them.  The counters bin the face by the global x1 index of its
+  // radial cell (ltu_ix1: lx1*nx1 of the block; a uniform x1 partition)
+  const int ltg = pmy_pack->pmesh->mesh_indcs.nx1;
+  if (ltu) {
+    const int nmbt = iw.extent_int(0), nc3 = iw.extent_int(2);
+    const int nc2 = iw.extent_int(3), nc1 = iw.extent_int(4);
+    if (ltq2.extent_int(0) != nmbt) {
+      Kokkos::realloc(ltq2, nmbt, nc3, nc2+1, nc1);
+      Kokkos::deep_copy(ltq2, 0.0);
+      if (thrd) {
+        Kokkos::realloc(ltq3, nmbt, nc3+1, nc2, nc1);
+        Kokkos::deep_copy(ltq3, 0.0);
+      }
+    }
+    if (ltu_ix1.extent_int(0) != nmb1 + 1) {
+      Kokkos::realloc(ltu_ix1, nmb1 + 1);
+      auto hx = Kokkos::create_mirror_view(ltu_ix1);
+      const int g0 = pmy_pack->gids;
+      for (int m = 0; m <= nmb1; ++m) {
+        hx(m) = static_cast<int>(pmy_pack->pmesh->lloc_eachmb[g0+m].lx1)*indcs.nx1;
+      }
+      Kokkos::deep_copy(ltu_ix1, hx);
+    }
+    if (!brf) {
+      auto lc_ = ltu_cnt;
+      Kokkos::parallel_for("m1_ltu_cnt", Kokkos::RangePolicy<DevExeSpace>(0, 1),
+      KOKKOS_LAMBDA(const int) {lc_(6) += 1.0;});
+    }
+  }
+  auto lq2_ = ltq2;
+  auto lq3_ = ltq3;
+  auto lix_ = ltu_ix1;
+  auto ltc_ = ltu_cnt;
+  // the row takes the q E'_donor faces through the implicit_blend_t_upwind slot (the two
+  // keys are exclusive, ImplicitInit)
+  const bool rbt = btu || ltu;
+  auto rq2_ = ltu ? ltq2 : btq2;
+  auto rq3_ = ltu ? ltq3 : btq3;
   // hgpos-1109 dbg_t2_admiss: the face terms of this evaluation (T2AdmissDebug)
   const bool tsd = (t2_dbg_adm > 0) && sph;
   if (tsd) {
@@ -6003,6 +6077,60 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       f2_(m,k,j,i) += btd;
       if (gcst && !gcft) {gz2_(m,k,j,i) -= (1.0 + ch*dt*ktf)*btd/(cl*ch);}
     }
+    // hgpos-1109c implicit_lagged_t_upwind: the whole lagged remainder lft = stored flux
+    // - the row's two-point part (M1TransRowCore: th of the row, D of the two cells,
+    // L2 and A2 of M1CsRowGeo / the sp wedge, the berthon HCL/HCR part) -> q E'_donor
+    // where its outflow would drain more than pt_gam E^n of the donor (M1LagTUpQ)
+    Real lqe = 0.0, lft = 0.0;
+    if (ltu) {
+      const Real elo = iw_(m,M1_IW_EP,k,jm,i), ehi = iw_(m,M1_IW_EP,k,j,i);
+      const Real thr = blt ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
+      Real lf = cdxf.x2f(m,k,j,i), af = carea.x2f(m,k,j,i);
+      Real vl = cvol(m,k,jm,i), vr = cvol(m,k,j,i);
+      if (csg) {
+        // a seam face: the canonical pair distance and seam area; the mirror ghost
+        // stands for the cell across the seam, whose volume is the own cell's
+        const Real dsh = 0.5*(cx1f(m,i+1)*cx1f(m,i+1) - cx1f(m,i)*cx1f(m,i));
+        if (j == js && cseam(m,0) != 0) {
+          lf = cx1v(m,i)*csg2_(m,1,k,0);
+          af = dsh*csg2_(m,0,k,0);
+          vl = vr;
+        } else if (j == je+1 && cseam(m,1) != 0) {
+          lf = cx1v(m,i)*csg2_(m,1,k,1);
+          af = dsh*csg2_(m,0,k,1);
+          vr = vl;
+        } else {
+          lf *= csn2(m,k,j);
+        }
+      }
+      Real fpt = -thr*ch*cl*dt*(M1DDiag(iw_,vd_,dfull,m,1,k,j,i)*ehi
+                                - M1DDiag(iw_,vd_,dfull,m,1,k,jm,i)*elo)/lf;
+      if (blt) {
+        fpt += (cl/ch)*(bw2_(m,M1_IFW_HCL,k,j,i)*elo + bw2_(m,M1_IFW_HCR,k,j,i)*ehi);
+      }
+      lft = f2_(m,k,j,i) - fpt;
+      Real q;
+      if (brf) {
+        q = lq2_(m,k,j,i);
+      } else {
+        bool cap;
+        q = M1LagTUpQ(lft, ch/cl, af*(dt/vl), af*(dt/vr), pqe_(m,k,jm,i),
+                      pqe_(m,k,j,i), elo, ehi, pte_, ptg_, cl, cap);
+        lq2_(m,k,j,i) = q;
+        if (q != 0.0) {
+          const int ig = lix_(m) + (i - is);
+          const int bn = (4*ig < ltg) ? 0 : ((2*ig < ltg) ? 1 : 2);
+          Kokkos::atomic_add(&ltc_(bn), 1.0);
+          if (cap) {Kokkos::atomic_add(&ltc_(3+bn), 1.0);}
+        }
+      }
+      if (q != 0.0) {
+        lqe = q*((q > 0.0) ? elo : ehi);
+        const Real ld = lqe - lft;
+        f2_(m,k,j,i) += ld;
+        if (gcst && !gcft) {gz2_(m,k,j,i) -= (1.0 + ch*dt*ktf)*ld/(cl*ch);}
+      }
+    }
     if (tsd) {   // hgpos-1109 dbg_t2_admiss: the face terms (stored values only)
       ts2_(m,M1_TSP_TH,k,j,i) = th;
       ts2_(m,M1_TSP_GR,k,j,i) = gr;
@@ -6016,6 +6144,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       ts2_(m,M1_TSP_FN,k,j,i) = f2n_(m,k,j,i);
       ts2_(m,M1_TSP_BQE,k,j,i) = bqe;
       ts2_(m,M1_TSP_LB,k,j,i) = lbt;
+      ts2_(m,M1_TSP_LQE,k,j,i) = lqe;
+      ts2_(m,M1_TSP_LL,k,j,i) = lft;
     }
   });
 
@@ -6267,6 +6397,54 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         f3_(m,k,j,i) += btd;
         if (gcst && !gcft) {gz3_(m,k,j,i) -= (1.0 + ch*dt*ktf)*btd/(cl*ch);}
       }
+      Real lqe = 0.0, lft = 0.0;   // hgpos-1109c implicit_lagged_t_upwind (as x2)
+      if (ltu) {
+        const Real elo = iw_(m,M1_IW_EP,km,j,i), ehi = iw_(m,M1_IW_EP,k,j,i);
+        const Real thr = blt ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
+        Real lf = cdxf.x3f(m,k,j,i), af = carea.x3f(m,k,j,i);
+        Real vl = cvol(m,km,j,i), vr = cvol(m,k,j,i);
+        if (csg) {
+          const Real dsh = 0.5*(cx1f(m,i+1)*cx1f(m,i+1) - cx1f(m,i)*cx1f(m,i));
+          if (k == ks && cseam(m,2) != 0) {
+            lf = cx1v(m,i)*csg3_(m,1,j,0);
+            af = dsh*csg3_(m,0,j,0);
+            vl = vr;
+          } else if (k == ke+1 && cseam(m,3) != 0) {
+            lf = cx1v(m,i)*csg3_(m,1,j,1);
+            af = dsh*csg3_(m,0,j,1);
+            vr = vl;
+          } else {
+            lf *= csn3(m,k,j);
+          }
+        }
+        Real fpt = -thr*ch*cl*dt*(M1DDiag(iw_,vd_,dfull,m,2,k,j,i)*ehi
+                                  - M1DDiag(iw_,vd_,dfull,m,2,km,j,i)*elo)/lf;
+        if (blt) {
+          fpt += (cl/ch)*(bw3_(m,M1_IFW_HCL,k,j,i)*elo + bw3_(m,M1_IFW_HCR,k,j,i)*ehi);
+        }
+        lft = f3_(m,k,j,i) - fpt;
+        Real q;
+        if (brf) {
+          q = lq3_(m,k,j,i);
+        } else {
+          bool cap;
+          q = M1LagTUpQ(lft, ch/cl, af*(dt/vl), af*(dt/vr), pqe_(m,km,j,i),
+                        pqe_(m,k,j,i), elo, ehi, pte_, ptg_, cl, cap);
+          lq3_(m,k,j,i) = q;
+          if (q != 0.0) {
+            const int ig = lix_(m) + (i - is);
+            const int bn = (4*ig < ltg) ? 0 : ((2*ig < ltg) ? 1 : 2);
+            Kokkos::atomic_add(&ltc_(bn), 1.0);
+            if (cap) {Kokkos::atomic_add(&ltc_(3+bn), 1.0);}
+          }
+        }
+        if (q != 0.0) {
+          lqe = q*((q > 0.0) ? elo : ehi);
+          const Real ld = lqe - lft;
+          f3_(m,k,j,i) += ld;
+          if (gcst && !gcft) {gz3_(m,k,j,i) -= (1.0 + ch*dt*ktf)*ld/(cl*ch);}
+        }
+      }
       if (tsd) {   // hgpos-1109 dbg_t2_admiss: the face terms (stored values only)
         ts3_(m,M1_TSP_TH,k,j,i) = th;
         ts3_(m,M1_TSP_GR,k,j,i) = gr;
@@ -6280,6 +6458,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         ts3_(m,M1_TSP_FN,k,j,i) = f3n_(m,k,j,i);
         ts3_(m,M1_TSP_BQE,k,j,i) = bqe;
         ts3_(m,M1_TSP_LB,k,j,i) = lbt;
+        ts3_(m,M1_TSP_LQE,k,j,i) = lqe;
+        ts3_(m,M1_TSP_LL,k,j,i) = lft;
       }
     });
   }
@@ -6535,7 +6715,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                     p2lo, p2hi, thrd, mbbcs.d_view(m,BoundaryFace::inner_x3),
                     mbbcs.d_view(m,BoundaryFace::outer_x3), bcg, ch, cl, dt, fp, fm,
                     gps, gms, dia, tt, blt, th2_, th3_, bw2_, bw3_, ptt, pq2_, pq3_,
-                    btu, bq2_, bq3_);
+                    rbt, rq2_, rq3_);
     }
     if (csg) {
       // STAGE CS1: the same row on the skewed panel grid and the seam pairs
@@ -6546,7 +6726,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       M1CsTransRow(iw_, vd_, dfull, cvol, carea, cdxf, csn2, csn3, csg2_, csg3_, cseam,
                    cx1v, cx1f, m, k, j, i, js, je, ks, ke, p2lo, p2hi, thrd, q3lo, q3hi,
                    bcg, ch, cl, dt, fp, fm, gps, gms, dia, tt, blt, th2_, th3_, bw2_,
-                   bw3_, ptt, pq2_, pq3_, btu, bq2_, bq3_);
+                   bw3_, ptt, pq2_, pq3_, rbt, rq2_, rq3_);
     }
     if ((sph || csg) && ((j == je && p2hi && vm2hi) || (j == js && p2lo && vm2lo) ||
                          (thrd && ((k == ke && vm3hi && (mbbcs.d_view(m,
@@ -10597,6 +10777,14 @@ void RadiationM1::ImplicitReport() {
     auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pt_cnt_t);
     std::cout << "<rad_m1> implicit_pos_transport_t = upwind (rank 0): memory-upwinded"
               << " x2/x3 faces (first passes)=" << h(0) << " in solves=" << h(1)
+              << std::endl;
+  }
+  if (impl_lag_t_up && ltu_cnt.extent_int(0) >= 7) {   // hgpos-1109c
+    auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), ltu_cnt);
+    std::cout << "<rad_m1> implicit_lagged_t_upwind (rank 0): x2/x3 face evaluations="
+              << h(6) << " upwinded face-passes by global x1 bin [0,G/4) [G/4,G/2)"
+              << " [G/2,G): " << h(0) << " " << h(1) << " " << h(2)
+              << " of which |q| capped at c: " << h(3) << " " << h(4) << " " << h(5)
               << std::endl;
   }
   if (impl_blend_t_up && btu_cnt.extent_int(0) >= 2) {   // hgpos-1109b
@@ -17161,7 +17349,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // refresh the stored transverse face fluxes with the CONVERGED E, so that the
     // persistent state the restart file carries, the momentum deposit and the derived
     // F_2/F_3 are the fluxes the solve ended on (exactly what step (g) does for x1).
-    btu_refresh = impl_blend_t_up;   // hgpos-1109b: keep the q the last solve took
+    // hgpos-1109b/c: keep the q the last solve took
+    btu_refresh = impl_blend_t_up || impl_lag_t_up;
     ImplicitTransverseTerms(false);
     btu_refresh = false;
     impl_linmax = std::max(impl_linmax, lresid);
@@ -18789,9 +18978,13 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
   // implicit_pos_transport_t (their q E' is in the matrix, not in X).  hgpos-1109b: 17/18
   // the implicit_blend_t_upwind part q E^k_donor (in the matrix, NOT in X or in the
   // kinds), 19/20 the lagged blend part (c/chat)(DG + gm) of the faces (inside "other"
-  // when the key is off, replaced by 17/18 when on), 21 faces with q != 0
+  // when the key is off, replaced by 17/18 when on), 21 faces with q != 0.  hgpos-1109c
+  // implicit_lagged_t_upwind: a face it upwinds has its whole lagged remainder in the
+  // matrix, so its kinds 0-6 are zero; 22/23 that implicit part q E^k_donor, 24/25 the
+  // lagged remainder L_f it replaced, 26 such faces; 27/28 L_f of the faces that stay
+  // lagged (with the key off: every face), i.e. what remains lagged
   const bool tsx = (tsp2.extent_int(0) > 0) && trans_on && sph_geom && bcg;
-  const int nsp = 22;
+  const int nsp = 29;
   DvceArray2D<Real> spl("m1_t2dbg_spl", tsx ? ncap : 1, nsp);
   auto ts2_ = tsp2;
   auto ts3_ = tsp3;
@@ -18877,8 +19070,8 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
       row(n,42+q) = (ivb >= 0) ? iw_(m,ivb+M1_IV_X1M2+q,k,j,i) : 0.0;
     }
     if (tsx && (flg & 1)) {   // hgpos-1109: the split of X (see above)
-      Real sp[22];
-      for (int q = 0; q < 22; ++q) {sp[q] = 0.0;}
+      Real sp[29];
+      for (int q = 0; q < 29; ++q) {sp[q] = 0.0;}
       const Real cr = ch/cl;
       const Real iv = dts/cvol(m,k,j,i);
       const M1CsRowGeo<decltype(carea), decltype(csn2), decltype(csg2_), decltype(cseam),
@@ -18900,6 +19093,7 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
         const Real offq = tv(M1_TSP_OFFQ), ff = tv(M1_TSP_F), ge = tv(M1_TSP_GE);
         const Real fn = tv(M1_TSP_FN);
         const Real bqe = tv(M1_TSP_BQE), lbt = tv(M1_TSP_LB);
+        const Real lqe = tv(M1_TSP_LQE), lll = tv(M1_TSP_LL);
         const Real elo = iw_(m,M1_IW_EP,kl,jl,i), ehi = iw_(m,M1_IW_EP,kf,jf,i);
         const Real ktf = 0.5*(iw_(m,M1_IW_KT,kl,jl,i) + iw_(m,M1_IW_KT,kf,jf,i));
         Real thr = 1.0/(1.0 + ch*dts*ktf);
@@ -18943,6 +19137,19 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
           t[6] = gl - cx - c*(off - offp) + ext;
         }
         const Real w = sgn*cr*af*iv;
+        if (lqe != 0.0) {   // hgpos-1109c: in the matrix, nothing of the face lagged
+          for (int q7 = 0; q7 < 7; ++q7) {t[q7] = 0.0;}
+          const Real vq = w*lqe, vr = w*lll;
+          sp[22] += vq;
+          if (vq > 0.0) {sp[23] += vq;}
+          sp[24] += vr;
+          if (vr > 0.0) {sp[25] += vr;}
+          sp[26] += 1.0;
+        } else {
+          const Real vr = w*lll;
+          sp[27] += vr;
+          if (vr > 0.0) {sp[28] += vr;}
+        }
         for (int q7 = 0; q7 < 7; ++q7) {
           const Real v = w*t[q7];
           sp[2*q7] += v;
@@ -18994,6 +19201,8 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
   int ndom[7] = {0, 0, 0, 0, 0, 0, 0};
   int nsrow = 0, nxgt = 0;
   Real bsum[2] = {0.0, 0.0};   // hgpos-1109b: outflow sums of the blend part, lagged/impl
+  Real lsum[3] = {0.0, 0.0, 0.0};   // hgpos-1109c: outflow sums, implicit/replaced/lagged
+  const bool ltx = impl_lag_t_up;
   const int nall = std::min(hc(0), ncap);
   auto &msz = pmy_pack->pmesh->mesh_size;
   const int gnx2 = pmy_pack->pmesh->mesh_indcs.nx2;
@@ -19072,6 +19281,14 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
                   << hs(n,18) << " bupw_faces " << hs(n,21) << std::endl;
         bsum[0] += hs(n,20);
         bsum[1] += hs(n,18);
+        std::cout << "      XSPLIT_LAGT net/out: implicit_lagt(qE, in matrix) "
+                  << hs(n,22) << "/" << hs(n,23) << " replaced_L " << hs(n,24) << "/"
+                  << hs(n,25) << " lagt_faces " << hs(n,26) << " still_lagged_L "
+                  << hs(n,27) << "/" << hs(n,28) << (ltx ? "" : " (key off)")
+                  << std::endl;
+        lsum[0] += hs(n,23);
+        lsum[1] += hs(n,25);
+        lsum[2] += hs(n,28);
       }
     }
   }
@@ -19082,7 +19299,8 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
       std::cout << " " << spn[q] << " " << sout[q] << "/" << ndom[q];
     }
     std::cout << " | blend outflow lagged(DG+gm) " << bsum[0] << " implicit_bupw "
-              << bsum[1] << std::endl;
+              << bsum[1] << " | lagt outflow implicit " << lsum[0] << " replaced "
+              << lsum[1] << " still lagged " << lsum[2] << std::endl;
   }
   std::cout << "  HIST_J rank " << rank << " (global theta index: count)";
   for (int q = 0; q < gnx2; ++q) {

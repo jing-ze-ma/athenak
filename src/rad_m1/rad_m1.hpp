@@ -2100,6 +2100,23 @@ class RadiationM1 {
   bool btu_refresh = false;
   DvceArray4D<Real> btq2, btq3;
   DvceArray1D<Real> btu_cnt;
+  // hgpos-1109c <rad_m1>/implicit_lagged_t_upwind (read only when named; default false =
+  // bitwise; cubed sphere and sp only): the WHOLE lagged remainder L_f of an x2/x3 face
+  // flux (the stored flux minus the row's two-point part: memory, v g0, skew cross, seam
+  // moves, tanQ/lat, blend DG + gm) is written as q E'_donor where its outflow alone
+  // would drain more than pt_gam E^n of the donor ((chat/c)|L_f| A_f dt/V_d > pt_gam
+  // E^n_d, the M1PtMemQ test); q = |L_f|/E^k_donor of the current Picard pass, |q| <= c,
+  // on the donor diagonal (TDIA) and the receiver coupling (CJ*/CK*), the same number in
+  // the stored face flux and Z; every other face keeps the lagged form.  Supersedes
+  // implicit_pos_transport_t and implicit_blend_t_upwind (both switched off with a log
+  // line).  ltq2/ltq3 the face q of the last pass (the post-solve refresh reuses them,
+  // btu_refresh); ltu_ix1 (nmb) the global x1 index of the block's first active cell;
+  // ltu_cnt face-passes upwinded (0..2) and capped at c (3..5) by global x1 bin [0,G/4),
+  // [G/4,G/2), [G/2,G) of the face's radial cell, (6) evaluations
+  bool impl_lag_t_up = false;
+  DvceArray4D<Real> ltq2, ltq3;
+  DvceArray1D<int> ltu_ix1;
+  DvceArray1D<Real> ltu_cnt;
   // kirch-1022 implicit_face_opac = kirchhoff (opt-in; default arith = bitwise): the iw
   // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1
   // off
