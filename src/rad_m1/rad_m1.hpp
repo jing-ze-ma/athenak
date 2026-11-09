@@ -1916,10 +1916,11 @@ class RadiationM1 {
   int rss_stage_mode = -1;       // mode of rss_stage, -1 = nothing staged
   bool impl_clag_step;          // <rad_m1>/implicit_closure_lag = step: freeze chi and n
   // raycheap2-1109 <rad_m1>/implicit_lag_restage (read only when named, default false):
-  // the pieces frozen per stage solve under implicit_recon_lag = step /
-  // implicit_closure_lag = step (face coefficients, plm deferred correction, thin switch, closure, transverse
-  // terms) are evaluated once more on Picard pass 1, at the pass-0 solution (the stage
-  // state to O(dt^2)), then frozen again: 2nd order in time at ~one extra pass
+  // the pieces frozen per stage solve under implicit_recon_lag = step and
+  // implicit_closure_lag = step (face coefficients, plm deferred correction, thin
+  // switch, closure, transverse terms) are evaluated once more on Picard pass 1, at the
+  // pass-0 solution (the stage state to O(dt^2)), then frozen again: 2nd order in time
+  // at about one extra pass
   bool impl_lag_restage = false;
                                 // at the START-of-step state for the whole step, so each
                                 // step is one linear solve plus the T nonlinearity
