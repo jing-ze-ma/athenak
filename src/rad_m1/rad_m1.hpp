@@ -2074,6 +2074,20 @@ class RadiationM1 {
   Real pt_gam = 1.0/6.0;
   DvceArray4D<Real> ptq1;
   DvceArray1D<Real> pt_cnt;
+  // hgpos-1109 <rad_m1>/implicit_pos_transport_t = upwind (read only when named; default
+  // none = bitwise; cubed sphere and sp only): the transverse analogue of M1PtMemQ.  An
+  // x2/x3 face whose lagged memory outflow th (F0^n - c dt v_f g0_f) alone would take
+  // more than pt_gam E^n of the donor takes it implicitly upwind, q E'_donor (q =
+  // fmem/E^n_donor, |q| <= c), on the donor's diagonal (TDIA) and the receiver's
+  // coupling (CJ*/CK*), and in the face flux every later use reads.  ptq2/ptq3 the face
+  // q, set on the first Picard pass of a solve and frozen for its other passes; ptqe E^n
+  // with its ghosts (one exchange per solve); pt_cnt_t(0) faces upwinded, (1) solves
+  int impl_pos_trans_t = 0;
+  DvceArray4D<Real> ptq2, ptq3, ptqe;
+  DvceArray1D<Real> pt_cnt_t;
+  // hgpos-1109 dbg_t2_admiss: the transverse face terms of the last evaluation, per face
+  // (M1_TSP_* in rad_m1_implicit.cpp), for the lagged-term split T2AdmissDebug prints
+  DvceArray5D<Real> tsp2, tsp3;
   // kirch-1022 implicit_face_opac = kirchhoff (opt-in; default arith = bitwise): the iw
   // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1
   // off
