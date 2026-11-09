@@ -39,4 +39,8 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
 12. `docs/handover/TASK-2026-11-09-orion-raycheap7.md` - VET update order with gas_feedback on (source relaxation
    active): X9 / PR / RB / PRg / X9t / PRt, 4 levels (fork/raycheap2-1109 8532af080 = the raycheap6 build). NOTE as the TASK says.
 
+13. `docs/handover/TASK-2026-11-09-orion-r136cap13.md` - gate of the COMBINATION prod-1113-cand bc35bfca8
+   (= prod-1112-cand 4e9f602c8 + fastfloor-1109 floor cap): keys absent vs 4e9f602c8 / cap 1 vs 4 ranks / cap restart
+   (incl. auto_be back-off) / cap counters fire. NOTE as the TASK says.
+
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
