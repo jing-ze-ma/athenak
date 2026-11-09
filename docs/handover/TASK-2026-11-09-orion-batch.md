@@ -36,4 +36,7 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
    with and without the tangential tensor (gasmod decks), + pulse2 re-test (fork/raycheap2-1109 f872899da, REBUILD; + (c) vet_source = gas arms;
    24 ranks). NOTE as the TASK says.
 
+12. `docs/handover/TASK-2026-11-09-orion-raycheap7.md` - VET update order with gas_feedback on (source relaxation
+   active): X9 / PR / RB / PRg / X9t / PRt, 4 levels (fork/raycheap2-1109 8532af080 = the raycheap6 build). NOTE as the TASK says.
+
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
