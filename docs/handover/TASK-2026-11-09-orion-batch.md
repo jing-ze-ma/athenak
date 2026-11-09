@@ -21,7 +21,9 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
 7. `docs/handover/TASK-2026-11-09-orion-raycheap3.md` - why the base VET/M1 time scheme is 1st order: time-order
    isolation arms B0 C1 C2 C3 G1 on the forced test star (fork/raycheap2-1109 9b9951606, 24 ranks). NOTE as the TASK says.
 
-9. `docs/handover/TASK-2026-11-09-orion-raycheap4.md` - forcing-free time-order test of the base VET/M1 scheme
-   (filling transient, arms P0-P3 x 5 levels; fork/raycheap2-1109 5e4b46412, 24 ranks). NOTE as the TASK says.
+9. `docs/handover/TASK-2026-11-09-orion-raycheap4.md` - CORRECTED 11-09 (transient dumps): time-order test of the base
+   VET/M1 scheme on a smoothly ramped filling transient, runs ending at t = 2.5 / 5 / 15, arms P0-P3 x 4 levels
+   (fork/raycheap2-1109 ff2ed77f1, REBUILD; 24 ranks). If you already ran the first version (pulse/ decks, t_end 30),
+   discard it and rerun from this text. NOTE as the TASK says.
 
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
