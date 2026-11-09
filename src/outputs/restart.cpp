@@ -432,6 +432,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     mr_hdr[4] = static_cast<Real>(pradm1->mr_kc);
     mr_hdr[5] = static_cast<Real>(pradm1->mr_kn);
   }
+  // rstabe-1109: the time2_auto_be back-off state, only while a skip run is active
+  const bool wabe = (pradm1 != nullptr) && (pradm1->t2_abe > 0) &&
+                    (pradm1->t2_abe_len > 0 || pradm1->t2_abe_left > 0);
+  std::int32_t abe_hdr[2] = {0, 0};
+  if (wabe) {
+    abe_hdr[0] = static_cast<std::int32_t>(pradm1->t2_abe_len);
+    abe_hdr[1] = static_cast<std::int32_t>(pradm1->t2_abe_left);
+  }
   char t2_hdr[2*sizeof(std::int32_t) + 3*sizeof(Real)];
   {
     const std::int32_t hdr[2] = {(nt2 > 0) ? 1 : 0, static_cast<std::int32_t>(nt2)};
@@ -695,6 +703,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(mr_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    if (wabe) {   // rstabe-1109
+      IOWrapperSizeT nb = sizeof(abe_hdr);
+      resfile.Write_any_type(&(radm1::kM1AutoBeRstMagic[0]),
+                             sizeof(radm1::kM1AutoBeRstMagic), "byte",
+                             single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(abe_hdr[0]), nb, "byte", single_file_per_rank);
+    }
     // the internal energy header, same marked form, behind all the others
     if (neint > 0) {
       IOWrapperSizeT nb = sizeof(eint_hdr);
@@ -878,6 +894,10 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (wmr) {
     step3size += sizeof(radm1::kM1MRRstMagic) + sizeof(IOWrapperSizeT) + sizeof(mr_hdr);
+  }
+  if (wabe) {
+    step3size += sizeof(radm1::kM1AutoBeRstMagic) + sizeof(IOWrapperSizeT)
+                 + sizeof(abe_hdr);
   }
   if (neint > 0) {
     step3size += sizeof(kEintRstMagic) + sizeof(IOWrapperSizeT) + sizeof(eint_hdr);

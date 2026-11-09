@@ -1673,7 +1673,7 @@ class RadiationM1 {
   // from U^n + the BESTORE backward-Euler solve, t2_ok = false, cold predictor, as after
   // Time2Restore); the stages are tried again after 1, 2, 4, ... N skipped steps (the run
   // doubles while the retries keep failing; a stage step that succeeds resets it).  The
-  // state is per run (not in restart files: a restarted run starts in stage mode).
+  // state of a skip run in progress is in the restart file (rstabe-1109).
   int t2_abe = 16;              // N (0 = off; DEFAULT 16 since defaults-1029, USER 10-29)
   int t2_abe_len = 0;           // current skip-run length (0 = stage mode)
   int t2_abe_left = 0;          // skipped steps left in the current run

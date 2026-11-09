@@ -55,6 +55,10 @@ constexpr char kM1OnePassRstMagic[8] = {'M', '1', 'O', 'N', 'E', 'P', '0', '1'};
 // implicit_mr_every > 1 or vet_sc_every > 1 (rad_m1_mr.cpp): the multi-rate window and
 // tensor-cadence state, behind the one-pass header: 10 Reals, no slabs
 constexpr char kM1MRRstMagic[8] = {'M', '1', 'M', 'R', 'W', 'I', 'N', '1'};
+// rstabe-1109: the hesdirk2 time2_auto_be back-off state (int32 len, int32 left), written
+// only when a skip run is active (len > 0 or left > 0), behind the multi-rate header; a
+// file without it restarts in stage mode, as before (and stays readable by older builds)
+constexpr char kM1AutoBeRstMagic[8] = {'M', '1', 'A', 'U', 'T', 'O', 'B', 'E'};
 // implicit_closure_thin_relax (runs_5c_thinstab): the relaxed closure of the last step
 // (ctr_mem: chi, n1, n2, n3), header behind EVERY other one (after kCkRstMagic): int32
 // have, int32 nch = 4; its 4 slabs are the LAST of each MeshBlock record.  Written only

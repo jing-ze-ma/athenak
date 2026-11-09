@@ -713,6 +713,37 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     mr_file = true;
   }
 
+  // --- rstabe-1109: THE <rad_m1> time2_auto_be HEADER (radm1::kM1AutoBeRstMagic), behind
+  // the multi-rate one: int32 len, int32 left, no slabs (absent: stage mode, as before)
+  bool abe_file = false;
+  std::int32_t abe_hv[2] = {0, 0};
+  if (std::memcmp(variabledata, &(radm1::kM1AutoBeRstMagic[0]),
+                  sizeof(radm1::kM1AutoBeRstMagic)) == 0) {
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(abe_hv));
+      ok = ok && (resfile.Read_bytes(&(abe_hv[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(abe_hv[0]), sizeof(abe_hv), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    if (!ok || abe_hv[0] < 0 || abe_hv[1] < 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the <rad_m1> time2_auto_be header of this restart file "
+                << "is broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    abe_file = true;
+  }
+
   // --- THE GENERAL-EOS INTERNAL ENERGY HEADER (kEintRstMagic, pgen.hpp), behind all the
   // others: neint_file slabs of w0(IEN), hydro then mhd, are the LAST slabs of the tail.
   int neint_file = 0;
@@ -1735,6 +1766,16 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   if (t2_want && !t2_read && global_variable::my_rank == 0) {
     std::cout << "### WARNING: restart file has no <rad_m1> hesdirk2 slope; the first "
               << "step is backward Euler and this restart is not bitwise." << std::endl;
+  }
+  // rstabe-1109: the time2_auto_be back-off state of the dumping run (a skip run in
+  // progress continues; the record is written only then)
+  if (abe_file && pradm1 != nullptr) {
+    pradm1->t2_abe_len = static_cast<int>(abe_hv[0]);
+    pradm1->t2_abe_left = static_cast<int>(abe_hv[1]);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> rstabe-1109: time2_auto_be skip run restored (len "
+                << abe_hv[0] << ", left " << abe_hv[1] << ")" << std::endl;
+    }
   }
   if (mr_file && pradm1 != nullptr && pradm1->F4RstHdr()) {
     pradm1->vsc_cnt = static_cast<int>(mr_hv[6] + 0.5);
