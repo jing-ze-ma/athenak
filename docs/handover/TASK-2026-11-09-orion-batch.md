@@ -25,5 +25,7 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
    VET/M1 scheme on a smoothly ramped filling transient, runs ending at t = 2.5 / 5 / 15, arms P0-P3 x 4 levels
    (fork/raycheap2-1109 ff2ed77f1, REBUILD; 24 ranks). If you already ran the first version (pulse/ decks, t_end 30),
    discard it and rerun from this text. NOTE as the TASK says.
+8. `docs/handover/TASK-2026-11-09-orion-hglagt.md` - HG all-lagged transverse upwind (fork/hgpos-1109b
+   7fb7af05a): keys-absent / 1 vs 4 ranks / restart gates + active path. NOTE as the TASK says.
 
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
