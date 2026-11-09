@@ -2,7 +2,13 @@
 
 Answer to `TASK-2026-11-09-orion-raycheap13.md`. No code changes. Binary /orion/ptmp/jinma/raycheap11_1109/athena_addb642d0.
 
-**Summary (Parts 1-2; Part 3 below)**
+**Summary**
+- **Part 3 (cs transport-only, T1 recipe): the lag keys are inert; the answer stays 1st order or worse.** S1 (recon
+  picard), S2 (closure pass) and S3 (both) are bitwise identical to S0 in m1_e at c 0.15 and 0.01875: d 8.979e-04
+  8.028e-04 5.848e-04, p 0.16 / 0.46, same Picard counts. (The raycheap14 rerun of S0/S3 on dea3e3732 gives the same
+  numbers, S0 bitwise across the two builds.) S4 (+ thin_switch none, thin_relax 0) changes the solution (max|dE|/max E
+  0.5-0.6% vs S0) and is worse: d 2.9e-03 2.4e-03 1.8e-03, p 0.30 / 0.41. S5 (+ vet_col lag, frozen) moves it 15% and
+  does not converge (d grows with refinement, p -0.62 / -0.29), at ~0.66-0.82x wall.
 - **2-D Cartesian diffusion pulse: the multi-D defaults are 1st order, and lifting BOTH freezes restores 2nd order.**
   D0 (defaults, recon_lag step + closure_lag step) p 1.22 / 1.12 / 1.06; **D3 (recon_lag picard + closure_lag pass) p 1.96 /
   1.98 / 1.99**. Either toggle ALONE does nothing: D1 (recon picard) and D2 (closure pass) are bitwise identical to D0 at the
@@ -40,6 +46,18 @@ Answer to `TASK-2026-11-09-orion-raycheap13.md`. No code changes. Binary /orion/
 | D2 closure_lag=pass | 2.541e-03 1.094e-03 5.039e-04 2.413e-04 | 1.22 1.12 1.06 | 3.00/3/0 3.00/3/0 3.00/3/0 2.99/3/0 2.99/3/0 | 4/5/7/14/24 |
 | **D3** recon_lag=picard + closure_lag=pass | 8.844e-04 2.279e-04 5.789e-05 1.459e-05 | 1.96 1.98 1.99 | 9.74/12/0 9.05/11/0 8.37/10/0 7.84/10/0 6.99/9/0 | 8/12/19/32/56 |
 
-## Part 3 (cs Ar4 transport-only, S0-S5)
+## Part 3 (cs Ar4 transport-only, S0-S5; job rc13cs, 3 p.exclusive nodes, 24 ranks per run, all concurrent-ish)
 
-PENDING: job rc13cs (3 exclusive nodes) is queued (p.exclusive full); this section will be appended when it finishes.
+| arm | d (3 pairs) | p (2) | Picard mean/max/non-conv (c 0.15 ... 0.01875) | wall (s) | vs S0 (m1_e) |
+|---|---|---|---|---|---|
+| S0 T1 recipe (step / step) | 8.979e-04 8.028e-04 5.848e-04 | 0.16 0.46 | 13.96/24/0 10.76/19/0 7.93/16/0 6.04/12/0 | 308/470/694/1125 | - |
+| S1 recon_lag=picard | 8.979e-04 8.028e-04 5.848e-04 | 0.16 0.46 | same | 296/444/673/1095 | bitwise |
+| S2 closure_lag=pass | 8.979e-04 8.028e-04 5.848e-04 | 0.16 0.46 | same | 304/454/707/1128 | bitwise |
+| S3 both | 8.979e-04 8.028e-04 5.848e-04 | 0.16 0.46 | same | 297/481/732/1178 | bitwise |
+| S4 S3 + thin_switch none + closure_thin_relax 0 | 2.928e-03 2.378e-03 1.791e-03 | 0.30 0.41 | 13.96/24/0 10.77/19/0 7.93/16/0 6.04/12/0 | 311/491/734/1183 | 4.7e-03 / 6.2e-03 |
+| S5 S4 + time2_vet_col lag, vet_col_every 1e6 | 5.393e-04 8.278e-04 1.011e-03 | -0.62 -0.29 | 12.45/24/0 9.25/19/0 6.53/16/0 4.73/12/0 | 252/360/517/743 | 1.5e-01 / 1.5e-01 |
+
+All rc 0, FATAL 0, NOT ADMISSIBLE 0, DT_RETRY 0; all end at tlim 20 (cycles 68/136/271/542). Picard never hit the cap
+(max 24 of 200), no limit cycles, implicit_maxit not raised. Logs: closure_lag=step in S0/S1, pass in S2-S5.
+On this deck (unlike the 2-D pulse) the per-stage freezes are not what holds the order down; the Picard loop already
+iterates 6-14 passes in S0 and the frozen pieces do not move the converged answer.
