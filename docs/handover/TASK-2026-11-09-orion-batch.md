@@ -64,4 +64,8 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
 20. `docs/handover/TASK-2026-11-09-orion-raycheap13.md` - the per-stage frozen operator pieces (recon_lag / closure_lag /
    thin switch): 1-D discriminator, 2-D Cartesian pulse, small cs transport-only deck (existing keys). NOTE as the TASK says.
 
+21. `docs/handover/TASK-2026-11-09-orion-raycheap14.md` - implicit_lag_restage (per-stage frozen pieces re-evaluated once on
+   pass 1): 2-D pulse + small cs deck, p and cost vs defaults and picard/pass; keys-absent gate (fork/raycheap2-1109 dea3e3732,
+   REBUILD). NOTE as the TASK says.
+
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
