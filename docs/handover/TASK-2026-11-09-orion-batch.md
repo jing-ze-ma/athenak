@@ -61,4 +61,7 @@ Not included: TASK-2026-11-08-orion-hg-mesa-lin.md (USER declined on Orion, see 
 19. `docs/handover/TASK-2026-11-09-orion-raycheap12.md` - time order of the M1 scheme on clean 1-D benchmarks (EQUIL
    non-stiff/stiff, diffusion pulse, Marshak) x hesdirk2 / trbdf2 / be x m1|eddington / vet_col. NOTE as the TASK says.
 
+20. `docs/handover/TASK-2026-11-09-orion-raycheap13.md` - the per-stage frozen operator pieces (recon_lag / closure_lag /
+   thin switch): 1-D discriminator, 2-D Cartesian pulse, small cs transport-only deck (existing keys). NOTE as the TASK says.
+
 Already answered (skip): 1 hgpos, 2 r136fast, 3 raycheap.
