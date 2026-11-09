@@ -312,8 +312,25 @@ def read_rst(fn):
              nx1=nx1, nx2=nx2, nx3=nx3, nv=nv, sections=sec, mhd=mhd, bf=bf,
              fluid='mhd' if mhd else 'hydro')
     h['u'] = a[:, 0:5]
-    h['p'] = a[:, 6]
-    h['eint'] = a[:, 8] if 'EINTRST1' in sec else None
+    # w121fresh_1107 mhd fix (11-08): u0 carries nhydro + nscalars slabs, and the passive
+    # scalars include the floor / xe tracers (prod-1108 hydro rst: floor_tracer = 1 ->
+    # u0 has 6 slabs, p at 7, eint at 9). The c62542349 offsets 6 / 8 assumed no scalar
+    # and read a non-thermal slab as eint (MHD start smoke: T at the 200 K floor).
+    fl = par.get('mhd' if mhd else 'hydro', {})
+
+    def _on(k):
+        return str(fl.get(k, '0')).strip().lower() in ('1', 'true')
+    nsc = int(fl.get('nscalars', 0)) + _on('floor_tracer') + _on('xe_tracer')
+    h['nsc'] = nsc
+    h['p'] = a[:, 6 + nsc]
+    h['eint'] = a[:, 8 + nsc] if 'EINTRST1' in sec else None
+    if h['eint'] is not None:
+        g = (h['p'][:, ng:-ng, ng:-ng, ng:-ng]/h['eint'][:, ng:-ng, ng:-ng, ng:-ng]).ravel()
+        okf = np.mean((g > 0.02) & (g < 1.0))
+        if okf < 0.999:
+            raise SystemExit('slab check failed: p/eint in (0.02, 1) for only %.4f of the '
+                             'active cells (nsc = %d): restart layout not understood'
+                             % (okf, nsc))
     return h
 
 
