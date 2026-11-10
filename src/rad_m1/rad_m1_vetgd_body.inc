@@ -37,8 +37,7 @@
           // interpolated directions) shifted along the shell profile of ii from the read
           // value's own n . r_hat (mc) to the ghost's (mt); the symmetric part of the
           // ghost then is that of the ghost's own position and direction.  Opt-in
-          // (vet_gd_upwind_wall); on-rank wall partners only (a remote partner's band
-          // copy is read unshifted, so the result then depends on the decomposition)
+          // (vet_gd_upwind_wall; uniform theta, wedge band only)
           const bool upw = upwl_ && (upf_ == 1 || upf_ == 2) && !twn;
           auto ush = [&](const int ii, const Real mt, const Real mc) -> Real {
             if (!upw || mt == mc || ((mt < 0.0) != (mc < 0.0))) {return 0.0;}
@@ -46,6 +45,31 @@
             if (!VgdUpProf(upp_, ii, upk_, mt < 0.0, mt, ft, f1, f2)) {return 0.0;}
             if (!VgdUpProf(upp_, ii, upk_, mc < 0.0, mc, fc, f1, f2)) {return 0.0;}
             return ft - fc;
+          };
+          // the cosine of direction dq at the partner of wall ghost (kk, jj): the ghost's
+          // own (theta, phi) mirrored into the theta range and wrapped into the phi
+          // range (geometric, from this block's index-linear angles: the same numbers
+          // on every decomposition, on-rank partner or band copy alike)
+          auto mcp = [&](const int kk, const int jj, const int dq) -> Real {
+            Real tp = lg_.Th(mbsize, m, jj, js), pp = lg_.Ph(mbsize, m, kk, ks);
+            if (tp < mt0) {tp = 2.0*mt0 - tp;}
+            if (tp > mt0 + mtl) {tp = 2.0*(mt0 + mtl) - tp;}
+            if (pp < mp0) {pp += mpl;}
+            if (pp > mp0 + mpl) {pp -= mpl;}
+            return dir_(dq,0)*sin(tp)*cos(pp) + dir_(dq,1)*sin(tp)*sin(pp) +
+                   dir_(dq,2)*cos(tp);
+          };
+          // the wall ghost's shift: sum over its components of w (Ibar(mt) - Ibar(mc))
+          auto wsh = [&](const int kk, const int jj, const int ii, const int dq,
+                         const Real mt) -> Real {
+            if (wint) {
+              Real c = 0.0;
+              for (int t = 0; t < 3; ++t) {
+                c += w3_(m,kk,jj,dq,t)*ush(ii, mt, mcp(kk, jj, m3_(m,kk,jj,dq,t)));
+              }
+              return c;
+            }
+            return ush(ii, mt, mcp(kk, jj, mp_(m,kk,jj,dq)));
           };
           // mt: the target cosine (the ghost's own; used when upw)
           auto rd0t = [&](const int kk, const int jj, const int ii, const int dq,
@@ -56,28 +80,29 @@
               const Real v0 = vix(m,dq,kk,jj,ii);
               return upw ? (v0 + ush(ii, mt, mr_(m,kk,jj,dq))) : v0;
             }
+            const bool wsx = upw && (wl_(m,kk,jj) != 0);
             const int oo = 3*(ek + 1) + (ej + 1);
             const int sl = 8*m + ((oo < 4) ? oo : (oo - 1));
             const int nl = hl_(sl);
-            if (nl < 0) {return vix(m,dq,kk,jj,ii);}
+            if (nl < 0) {
+              // the band copy (the unpack applied the wall map)
+              const Real vb = vix(m,dq,kk,jj,ii);
+              return wsx ? (vb + wsh(kk, jj, ii, dq, mt)) : vb;
+            }
             // accsp-1102: an on-rank pole partner: its rows reversed about the pole
             const int jn = (hp_(sl) != 0) ? VgdPoleRow(jj, wb, nx2b) : (jj - ej*nx2b);
             if (wint && wl_(m,kk,jj) != 0) {
               Real v = 0.0;
               for (int t = 0; t < 3; ++t) {
-                const int dt = m3_(m,kk,jj,dq,t);
-                const Real vt = vix(nl,dt,kk - ek*nx3b,jn,ii);
-                v += w3_(m,kk,jj,dq,t)*(upw ? (vt + ush(ii, mt,
-                                                       mr_(nl,kk - ek*nx3b,jn,dt)))
-                                            : vt);
+                v += w3_(m,kk,jj,dq,t)*vix(nl,m3_(m,kk,jj,dq,t),kk - ek*nx3b,
+                                           jn,ii);
               }
-              return v;
+              return wsx ? (v + wsh(kk, jj, ii, dq, mt)) : v;
             }
             const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,dq) : dq;
             const Real vd = vix(nl,dd,kk - ek*nx3b,jn,ii);
             // (a plain neighbour ghost is the same cell: no shift)
-            return (upw && wl_(m,kk,jj) != 0) ?
-                   (vd + ush(ii, mt, mr_(nl,kk - ek*nx3b,jn,dd))) : vd;
+            return wsx ? (vd + wsh(kk, jj, ii, dq, mt)) : vd;
           };
           auto rd0 = [&](const int kk, const int jj, const int ii, const int dq) -> Real {
             return rd0t(kk, jj, ii, dq, upw ? mr_(m,kk,jj,dq) : 0.0);
