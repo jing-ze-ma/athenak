@@ -16157,12 +16157,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #endif
         if (vimp_now) {vimp_emin = std::min(vimp_emin, emin);}
         if (muscl_now) {muscl_emin = std::min(muscl_emin, emin);}
-        if (!(emin > 0.0) && (muscl_now || vimp_now)) {cf_fb_pass = true;}   // consfix
+        if (!(emin > 0.0) && vimp_now) {cf_fb_pass = true;}   // consfix
         if (!(emin > 0.0) && muscl_now) {
           // Fix B: dc (sig = 0) in the cells within 2 of a cell solved to E <= 0, for
-          // the rest of the step; the next pass rebuilds the row from it (counted)
-          if (impl_muscl_kill) {ImplicitMusclKill();}
-          muscl_nfall += 1.0;
+          // the rest of the step; the next pass rebuilds the row from it (counted).
+          // hr2nd-1110: the operator form changed only if a cell was newly set to dc
+          // (consfix (d) then forces another pass).  E <= 0 in dc regions alone (cold
+          // absorbers, vacuum floors: dc gives it too) made every pass a "fallback"
+          // pass and ran the Picard loop to implicit_maxit (beams: mean 56, max 200).
+          Real nk = 1.0;
+          if (impl_muscl_kill) {nk = ImplicitMusclKill();}
+          if (nk > 0.0) {
+            cf_fb_pass = true;
+            muscl_nfall += 1.0;
+          }
         }
         if (!(emin > 0.0) && vimp_now) {
           // DEBUG dbg_t2_admiss (m1-positivity): the rows of the cells this pass solved
@@ -19264,7 +19272,7 @@ void RadiationM1::ImplicitVimpKill() {
 //! each axis, of a cell the pass solved to E <= 0 (M1_IW_S2), for the rest of the step;
 //! the next pass rebuilds the row.  Elsewhere the faces keep plm.
 
-void RadiationM1::ImplicitMusclKill() {
+Real RadiationM1::ImplicitMusclKill() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -19277,8 +19285,11 @@ void RadiationM1::ImplicitMusclKill() {
   const int b = iw_muscl;
   auto mbbcs = (cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs).d_view;   // cs-open-1018
   ImplicitHaloExchange(1, M1_IW_S2);
-  par_for("m1_muscl_kill", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  // hr2nd-1110: the number of cells newly set to dc (summed over ranks): a pass whose
+  // E <= 0 lies only in dc regions does not change the row
+  Real nkill = 0.0;
+  par_reduce_flat("m1_muscl_kill", 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lsum) {
     // physical ghosts are not filled: read only block/periodic ones
     auto open = [&](const BoundaryFace f) {
       const BoundaryFlag q = mbbcs(m,f);
@@ -19315,10 +19326,17 @@ void RadiationM1::ImplicitMusclKill() {
         iw_(m,b+M1_IM_B+d,k,j,i) = 0.0;
       }
       iw_(m,b+M1_IM_KILL,k,j,i) = 1.0;
+      lsum += 1.0;
     }
-  });
+  }, Kokkos::Sum<Real>(nkill));
+#if MPI_PARALLEL_ENABLED
+  {Real g;
+  MPI_Allreduce(&nkill, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  nkill = g;}
+#endif
   ImplicitMusclSigHalo();
   for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_B + q);}
+  return nkill;
 }
 
 //----------------------------------------------------------------------------------------

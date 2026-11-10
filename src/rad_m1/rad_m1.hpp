@@ -2052,7 +2052,7 @@ class RadiationM1 {
   Real muscl_nfall = 0.0;       // how often the positivity fallback dropped it
   Real muscl_emin = 1.0e300;    // the smallest E the linear solve produced with it on
   void ImplicitMusclBuild();    // the limiter and the row of this Picard pass
-  void ImplicitMusclKill();     // positivity: sig = 0 around the cells with E <= 0
+  Real ImplicitMusclKill();     // positivity: sig = 0 around the cells with E <= 0
   // pgrst-comb-1021 <rad_m1>/implicit_vimp_kill (read only when named; default false =
   // bitwise): a pass that solves E <= 0 under implicit_vimp drops the vimp kick (its P
   // rows and dv) only in the cells within 2 of those cells, for the rest of the solve,
