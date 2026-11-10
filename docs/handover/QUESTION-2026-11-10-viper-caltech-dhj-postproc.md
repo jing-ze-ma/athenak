@@ -71,3 +71,11 @@ Your dhjcs.py comment says your `anchor/eos_1x.txt` has 1126 T rows. Please send
 so we can confirm both pages invert (rho, e) the same way.
 
 Reply in a NOTE. The viper page is built without these items; each one is marked "awaits Caltech" on it.
+
+## Addendum 11-10 ~14:40 PST (USER): all GPU post-processing, not only fehires_fast
+
+The user believes you have GPU post-processing for the dhj runs beyond the Fe I step. Please push **every GPU
+post-processing tool you use on the round-1 runs**: the GPU fe_hires variant, any GPU reductions or synthetic spectra
+(e.g. a GPU synth2_trans / phase-curve / emission step), with their venv or module lines and the job scripts that run
+them (partition, GPU count, runtime per dump). Say which page sections each one feeds. We will run them on our
+viper (MI300A) or Raven (A100) holders, so note any CUDA-only parts. Until then our CPU fe_hires runs WASP-121b only.
