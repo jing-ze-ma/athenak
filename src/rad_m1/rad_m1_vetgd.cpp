@@ -5871,6 +5871,10 @@ void RadiationM1::VetGdSweep() {
 //! profile table (zero = no fit: no shift until a shell's profile is made)
 
 void RadiationM1::VetGdUpPrep() {
+  if (vgd_upwall && (vgd_sth || vgd_pol || vgd_gband)) {
+    VgdFatal("vet_gd_upwind_wall: uniform theta on a wedge band only (no stretched "
+             "theta, full sphere or vet_gd_band_global)");
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int kh = vgd_upk, nb = 2*kh;
