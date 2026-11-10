@@ -2775,7 +2775,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // whole ladder drops to ~1.5 (the classic TVD-at-extrema loss).  smooth: sig = 1
       // (the centred slope (E_c+1 - E_c-1)/2) where the second differences d2_c-1, d2_c,
       // d2_c+1 have one strict sign and max|d2| <= C min|d2|
-      // (C = implicit_hr_recon_lim_c, default 2): the data is a resolved parabola there, smooth extremum or not; the
+      // (C = implicit_hr_recon_lim_c, default 2): the data is a resolved parabola
+      // there, smooth extremum or not; the
       // face values then keep E_c +- s/2 >= E_c/2 (else van Leer).  A jump (beam edge,
       // front) has alternating d2 and keeps van Leer.  Needs the cells c-2..c+2 inside
       // the block along the axis (van Leer otherwise).  No dt, no optical depth.
