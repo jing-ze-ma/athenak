@@ -87,3 +87,33 @@ md5 80d03efc610f32b15495b36fa5e63945, 1,014,532 lines. So log rho -18..0 step 0.
 the (rho, e) inversion should agree to interpolation error. To confirm: sample both tables at a few (rho, T) inside
 log rho >= -14 and compare log(e/rho), log(p/rho), mu. The header and md5 are in `P/eos/eos_1x_header.txt`; the
 generator source is `P/eos/eos_dump_dhj.cpp` (copied from w121prod_0930/ana_3x_rot254). The table itself (38 MB) can be pushed gzipped if you want it.
+
+## 5. Addendum answer (9faebd85c): ALL GPU post-processing on the round-1 runs
+
+There are exactly **two GPU tools**. Everything else on the dhj pages is CPU: the page reductions (`pages/dhj_r1/tools/ana.py full`, `budget.py`,
+already pushed in `caltech-to-raven-1107/pages/w121_dhj_r1`) run as `--gres=none` CPU steps. There is no GPU
+synth2_trans or phase-curve step apart from em3d.
+
+| tool | where in P | feeds page section | GPU / runtime per dump (1 H200) | env |
+|---|---|---|---|---|
+| fe_hires fast: `fehires_fast/code/fe3d_gpu.py` (+ fe3d.py `gpu=1`), driven by `run_gpu.sh`, `fe_series.py`, `fe_update.sh`; page hook `page_dhj_r1/fe_step.sh` -> `fe_section.py` | `fehires_fast/`, `page_dhj_r1/` | "Fe I terminator wind vs Seidel et al. 2026" (fe_vs_rot.png, fehires_vs_seidel.png) | 1 GPU + 8 CPU cores, ~100 s for both cuts + ~10 s ana per cut; a few GB GPU memory | venv_fehgpu (Python 3.11.6 + cupy-cuda12x 13.4.1), no modules |
+| MHD Fe I batch (same fe3d_gpu via run_gpu.sh, queue of r1m7/r1m8 MHD and p1 hydro dumps): `fe_mhd_1103/worker.sh <gpu>` claims `queue.txt` lines; `collect.py` -> fe_table.txt/json, fe_vs_rot.png | `fe_mhd_1103/` | "MHD vs hydro" Fe I rows | same as above | same |
+| em3d: `obscheck_1102/tools/em3d.py` (3-D thermal-emission ray tracer, 20 phases), then CPU `bands.py`, `obs_plots.py`, `obs_clouds.py`, `takeaways.py`; `tr_fe.py` is CPU, on the fe_hires outputs | `obscheck_1102/` | "Other observations" (obs_*_phasecurves.png, obs_*_spectra.png, obs_clouds_*.png, obs_fe_timeresolved.png, obs_summary.png) | 1 GPU: the whole run_em.sh (22 passes: W121 + W76 x 5 dumps clear + cloudy, + 2 validation) took 1481 s, ~1 min per pass | obscheck_1102/venv (venv_requirements.txt) |
+
+Job scripts: none of these were sbatch'd. They ran as `srun --overlap --jobid=<held 4-H200 alloc> -N1 -n1 -c8` on
+a free GPU, using an mkdir lock in `lhllc2_1102/dhj/lock_<node>_<gpu>` and a check that the GPU has < 100 MiB in use
+(`gpurun.sh`, `anygpu.sh`, the fe_update.sh loop, `fe_mhd_1103/gpu_hunt*.sh`). On viper/Raven use one GPU + 8 cores
+of any holder.
+
+**CUDA-only parts** (matter on MI300A, not on Raven A100): both tools compile their hot kernels with `cupy.RawKernel`
+from CUDA C source.
+- fe3d_gpu.py: segsum, interp, profR, buildL, fe_gather, fe_gather2, all built with `options=('--fmad=false',)`.
+- em3d.py: trace, trace_cl (no options).
+
+On ROCm CuPy compiles these through hiprtc. The kernels are plain C, so they should port, but `--fmad=false` is an
+NVRTC flag. The hiprtc equivalent is `-ffp-contract=off`, and it is what keeps the GPU spectra bitwise equal to the
+CPU path. Without it, expect round-off differences, not physics differences. The CPU fallbacks need no GPU:
+- fe3d.py without `gpu=1`: ~30-60 min per dump at 16 cores, bitwise the same spectra;
+- em3d.py: numba, slow.
+
+`w121out_1102/code/fe3d_gpu.py` is an older pre-11-03 copy (different md5). It is superseded and not pushed.

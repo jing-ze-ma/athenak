@@ -1,0 +1,7 @@
+w189 /resnick/groups/carnegie_poc/jingze/r1planets_1101/wasp189b/runs/m2/bin/dhj.mhd_w_bcc.00003.bin w189m2_00003 /resnick/groups/carnegie_poc/jingze/fe_mhd_1103/val3 FEHIRES_PROF=1
+w189 /resnick/groups/carnegie_poc/jingze/r1planets_1101/wasp189b/runs/m2/bin/dhj.mhd_w_bcc.00004.bin w189m2_00004
+w189 /resnick/groups/carnegie_poc/jingze/r1planets_1101/wasp189b/runs/m2/bin/dhj.mhd_w_bcc.00005.bin w189m2_00005
+w189 /resnick/groups/carnegie_poc/jingze/r1planets_1101/wasp189b/runs/m2/bin/dhj.mhd_w_bcc.00006.bin w189m2_00006
+w189 /resnick/groups/carnegie_poc/jingze/r1planets_1101/wasp189b/runs/m2/bin/dhj.mhd_w_bcc.00007.bin w189m2_00007
+w189 /resnick/groups/carnegie_poc/jingze/r1planets_1101/wasp189b/runs/m2/bin/dhj.mhd_w_bcc.00008.bin w189m2_00008
+w189 /resnick/groups/carnegie_poc/jingze/r1planets_1101/wasp189b/runs/m2/bin/dhj.mhd_w_bcc.00009.bin w189m2_00009
