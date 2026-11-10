@@ -8934,6 +8934,39 @@ void RadiationM1::VetGdHrSplit() {
   }
   Kokkos::deep_copy(vgd_hrs_m, mh);
   auto mo_ = vgd_hrs_m;
+  // env VGD_HRS_DIAG = N (diagnostic): every N-th call, rank 0 prints per component the
+  // largest shell rms and the largest |.| of the deviation d - <d> (the gd lateral part)
+  static int ndiag = -1, ncall = 0;
+  if (ndiag < 0) {
+    const char *e = std::getenv("VGD_HRS_DIAG");
+    ndiag = (e != nullptr) ? std::max(0, std::atoi(e)) : 0;
+  }
+  if (ndiag > 0 && (ncall++ % ndiag) == 0) {
+    std::vector<Real> s2;
+    repro::ShellSums("m1_vgd_hrs_d", 2, c1, nmb1 + 1, ks, ke, js, je, ilo, ie,
+                     KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
+                                   const int i) {
+      if (hr_(m,0,k,j,i) < 0.0 || hc_(m,0,k,j,i) < 0.0) {return 0.0;}
+      const Real dv = (hr_(m,q,k,j,i) - hc_(m,q,k,j,i)) - mo_(q*c1 + i);
+      return dv*dv;
+    }, s2);
+    Real rx[2] = {0.0, 0.0}, mx[2] = {0.0, 0.0};
+    int ix[2] = {0, 0};
+    for (int q = 0; q < 2; ++q) {
+      for (int i = ilo; i <= ie; ++i) {
+        const Real n = sm[2*c1 + i];
+        const Real r = (n > 0.0) ? std::sqrt(s2[q*c1 + i]/n) : 0.0;
+        if (r > rx[q]) {rx[q] = r; ix[q] = i;}
+        mx[q] = std::max(mx[q], std::fabs(mh(q*c1 + i)));
+      }
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd_hr_split diag cycle " << pmy_pack->pmesh->ncycle
+                << ": max shell rms(d - <d>) r+ " << rx[0] << " (i " << ix[0]
+                << ") r- " << rx[1] << " (i " << ix[1] << "); max |<d>| r+ " << mx[0]
+                << " r- " << mx[1] << std::endl;
+    }
+  }
   const Real dd = vgd_hrs_d, sig = vgd_hrs_sig, rho = vgd_hrs_res;
   const Real dl = sqrt(4.0*M_PI/static_cast<Real>(std::max(vgd_n, 1)));
   par_for("m1_vgd_hrs", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
