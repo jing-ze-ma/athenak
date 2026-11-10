@@ -2071,6 +2071,16 @@ class RadiationM1 {
   // the axial angular-momentum-conservative radiation-gas exchange (rad_m1_implicit.cpp,
   // after the write-back); amw = the pre-write-back gas momentum and cell F (6)
   bool impl_am_cs = false;
+  // hgkmom-1110 <rad_m1>/implicit_am_cs_kecap = f (read only when named; absent or 0 =
+  // off = bitwise): the am_cs deposit of a cell is scaled by s in [0, 1] so that the
+  // kinetic energy it gives the gas (taken from e_int, the total energy is untouched)
+  // is at most f max(e_int, 0) of the cell after the write-back; the stored hesdirk2
+  // slope takes the same scaled momentum (and spin), so a later stage that re-applies
+  // it cannot take more kinetic energy than the cell had.  The L not deposited is
+  // counted (amkc_d: 0 capped cell-solves, 1 KE not given, 2 sum |L_z| not deposited,
+  // 3 sum |L_z| of all deposits; code units x volume where applicable)
+  Real impl_am_kecap = 0.0;
+  DvceArray1D<Real> amkc_d;
   int impl_am_cs_diag = 0;   // amdef-1019 diagnostic (read only when named): solves to print
   DvceArray5D<Real> amw;
   bool am_vec = false;             // + <hydro>/am_vector: the vector form
