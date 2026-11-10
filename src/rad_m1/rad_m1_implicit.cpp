@@ -5365,7 +5365,16 @@ void RadiationM1::ImplicitK1Fct(const Real ca) {
   auto iw_ = iw;
   auto u0_ = u0;
   auto k1_ = t2k1;
-  auto cvol = pmy_pack->pcoord->volume;
+  // k1dir-1110 FIX: volume is 1x1x1x1 off cs / sp (out-of-bounds read before);
+  // Cartesian: the uniform cell volume of the MeshBlock
+  auto cvola = pmy_pack->pcoord->volume;
+  const bool usevk = (cvola.extent_int(0) >= nmb1 + 1) && (cvola.extent_int(3) > 1);
+  auto &mbszk = pmy_pack->pmb->mb_size;
+  auto cvol = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i)
+              -> Real {
+    return usevk ? cvola(m,k,j,i) : (mbszk.d_view(m).dx1*mbszk.d_view(m).dx2*
+                                     mbszk.d_view(m).dx3);
+  };
   auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
   auto bcs = mbbcs.d_view;
   const bool thrd = trans_x3;
