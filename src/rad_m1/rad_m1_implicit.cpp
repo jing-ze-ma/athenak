@@ -2719,10 +2719,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         ImplFatal("<rad_m1>/implicit_thin_switch needs implicit_flux = blend and "
                   "implicit_flux_beam = halfrange");
       }
-      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon") &&
-          pin->GetString("rad_m1","implicit_hr_recon").compare("dc") != 0) {
-        ImplFatal("<rad_m1>/implicit_thin_switch takes implicit_hr_recon = dc only");
-      }
+      // hr2nd-1110: implicit_hr_recon = plm is accepted with the thin switch (its face
+      // coefficients are fixed for the solve; the plm row multiplies them like any other
+      // upwind part).  The thin_corr / thin_recon corrections are checked below.
     }
   }
   if (pin->DoesParameterExist("rad_m1","implicit_hr_recon")) {
@@ -2794,6 +2793,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (impl_muscl && pin->GetOrAddString("rad_m1","implicit_flux",
                                           "central").compare("central") == 0) {
       ImplFatal("<rad_m1>/implicit_hr_recon = plm needs implicit_flux = berthon | blend");
+    }
+    // hr2nd-1110: plm under implicit_thin_switch.  The thin switch's own second-order
+    // patches of the DONOR-CELL upwind flux -- implicit_thin_corr (DG = q w c (H_f -
+    // h+_L J_L - h-_R J_R), the formal solution's central-minus-donor flux) and
+    // implicit_thin_recon = js | jse (face ratios H+-_f/J) -- remove an O(dx) error that
+    // the plm face state no longer has; added to a plm flux they put an O(dx) error back
+    // (first order wherever E ~ J).  They are refused with plm.  implicit_hr_recon_q = h
+    // (H+- = h+- E reconstructed) is the second-order form of both.
+    if (impl_muscl && impl_thsw != M1_THSW_NONE &&
+        (impl_thsw_corr != M1_THCR_NONE || thsw_js)) {
+      ImplFatal("<rad_m1>/implicit_hr_recon = plm with implicit_thin_switch needs "
+                "implicit_thin_corr = none and implicit_thin_recon = dc (the plm face "
+                "state replaces both donor-cell corrections; use implicit_hr_recon_q = h)");
     }
     // cs-open-1018: plm on the cubed sphere too (m1bcs, canonical seam areas, the
     // limiter ghosts across a seam on the receiving block's axes: ImplicitMusclSigHalo);
