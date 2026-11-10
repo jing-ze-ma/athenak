@@ -3361,7 +3361,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // about z of EVERY active cell of the shell (the dense ones too: their radiation
     // carries the zonal flux whose L reaches the seeded cells), KE added to IEN
     const Real vom = pin->GetOrAddReal("problem","dbg_vac_omega",0.0);
-    // dbg_vac_efac (default 1): the seeded cells' internal energy (the IC column's e at r,
+    // dbg_vac_efac (default 1): the seeded cells' internal energy (the IC column's e(r),
     // times f) is further multiplied by efac: cold, hypersonic near-vacuum cells (HG
     // rows: eint/KE ~ 1e-5)
     const Real vef = pin->GetOrAddReal("problem","dbg_vac_efac",1.0);
