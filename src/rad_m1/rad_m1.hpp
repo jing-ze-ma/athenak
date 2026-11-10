@@ -982,6 +982,12 @@ class RadiationM1 {
   // correction DG unchanged (hc = the formal solution's own dissipation at J, with
   // Hf = the mean of H).  Thin-switch faces only.
   bool impl_hr_fci = false;
+  // hr2prod-1110 implicit_hr_cmem_cap = k > 0 (read only when named; 0 = off): the separate
+  // central-branch memory F_c of implicit_hr_cmem clamped to |F_c| <= k c max(E'_L, E'_R) of
+  // the face after each solve.  Where w ~ 1 F_c does not feed back on E, so the plain face
+  // equation integrates -c^2 dt grad P without the wave coupling that bounds it (ws66 at
+  // c dt/dx >> 1 blew up when w later fell); the clamp is inactive in a resolved field.
+  Real impl_hr_cmem_cap = 0.0;
   // hr2prod-1110 implicit_thin_gface = max (default) | mean | jump (read only when named):
   // the face thinness g_f of the implicit_thin_switch weight S(g_f).  max(g_L, g_R) moves
   // the switch by dx/2 against the gradient of g (an O(dx) shift of the blend region: a

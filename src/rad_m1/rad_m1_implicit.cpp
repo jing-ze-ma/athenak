@@ -2500,6 +2500,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                    pin->GetReal("rad_m1","implicit_blend_dtc") : 0.0;
   if (impl_blend_dtc < 0.0) {ImplFatal("<rad_m1>/implicit_blend_dtc must be >= 0");}
   // hr2prod-1110 (diagnostic, read only when named): implicit_hr_wscale_x1 / _lat
+  impl_hr_cmem_cap = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_cap") ?
+                     pin->GetReal("rad_m1","implicit_hr_cmem_cap") : 0.0;   // hr2prod-1110
   impl_hr_fci = pin->DoesParameterExist("rad_m1","implicit_hr_fcimp") &&
                 pin->GetBoolean("rad_m1","implicit_hr_fcimp");   // hr2prod-1110
   impl_hr_ws = pin->DoesParameterExist("rad_m1","implicit_hr_wscale_x1") ||
@@ -5693,6 +5695,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto f3_ = f0x3;
   auto f3n_ = f0x3n;
   const bool cm = impl_hr_cmem;   // rc18-1110: f2_/f3_ = F_c, fa2_/fa3_ = applied
+  const Real cmcap = impl_hr_cmem_cap;   // hr2prod-1110
   auto fa2_ = cm ? fax2 : f0x2;
   auto fa3_ = cm ? fax3 : f0x3;
   // the transverse realizability limiter.  Under `none` the OLD expression for theta is
@@ -6010,6 +6013,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                        : ((alc < 1.0) ? th/(1.0 - alc) : 1.0/(1.0 + ch*dt*ktf));
       f2_(m,k,j,i) = thc*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f
                           - ch*cl*dt*off);
+      if (cmcap > 0.0) {   // hr2prod-1110 implicit_hr_cmem_cap
+        const Real em = cmcap*cl*fmax(fmax(iw_(m,M1_IW_EP,k,jm,i), iw_(m,M1_IW_EP,k,j,i)),
+                                      0.0);
+        f2_(m,k,j,i) = fmin(fmax(f2_(m,k,j,i), -em), em);
+      }
     }
     if (gcst) {
       // consrc-1011: Z_f of the x2 face (as x1; om = theta (1 + chat dt kt), which is
@@ -6213,6 +6221,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                          : ((alc < 1.0) ? th/(1.0 - alc) : 1.0/(1.0 + ch*dt*ktf));
         f3_(m,k,j,i) = thc*(wmem*f3n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f
                             - ch*cl*dt*off);
+        if (cmcap > 0.0) {   // hr2prod-1110 implicit_hr_cmem_cap
+          const Real em = cmcap*cl*fmax(fmax(iw_(m,M1_IW_EP,km,j,i),
+                                             iw_(m,M1_IW_EP,k,j,i)), 0.0);
+          f3_(m,k,j,i) = fmin(fmax(f3_(m,k,j,i), -em), em);
+        }
       }
       if (gcst) {
         const Real fb = th*(wmem*f3n_(m,k,j,i)
@@ -16465,6 +16478,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto lgf_ = lbath_g;
     auto lff_ = lbath_f;
     const bool cmf = impl_hr_cmem;   // rc18-1110: f0_ = F_c, fa1_ = the applied flux
+    const Real cmcap = impl_hr_cmem_cap;   // hr2prod-1110
     auto fa1_ = cmf ? fax1 : f0x1;
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -16706,7 +16720,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // HLL flux and the front would be damped exactly as it is under `central`.
         // (3c) the test is on the FLUX FORM, not on al: with implicit_blend_mode =
         // dissipation the central weight is 1 (al = 0) and the HLL part is still there.
-        const Real fnc = fn;   // rc18-1110 implicit_hr_cmem: F_c (the plain face eq.)
+        Real fnc = fn;   // rc18-1110 implicit_hr_cmem: F_c (the plain face eq.)
+        if (cmcap > 0.0) {   // hr2prod-1110 implicit_hr_cmem_cap
+          const Real em = cmcap*cl*fmax(fmax(iw_(m,M1_IW_EP,k,j,im),
+                                             iw_(m,M1_IW_EP,k,j,ip)), 0.0);
+          fnc = fmin(fmax(fnc, -em), em);
+        }
         Real al = ifw_(m,M1_IFW_AL,k,j,i);
         Real hhz = 0.0;   // consrc-1011: the AP-HLL part (c/chat) gh of the face
         if (aphll) {
