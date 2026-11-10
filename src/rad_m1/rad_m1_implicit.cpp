@@ -11314,7 +11314,7 @@ bool RadiationM1::Cs2Active() {
 //! ghosts.
 
 void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
-  const bool cmd = impl_hr_cmem && impl_aphll_mem;   // aphll-time-1110
+  const bool cmd = impl_hr_cmem;   // aphll-time-1110 (every F_c memory, rc18 too)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
