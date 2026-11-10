@@ -199,4 +199,65 @@ Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
   }
 }
 
+//----------------------------------------------------------------------------------------
+// vetgdup-1110 vet_gd_upwind: the shell's mean angular profile Ibar(mu) of shell iu on
+// the half range of the branch (lo: mu < 0; 2 kh bins over [-1, 1], width 1/kh; bin b holds
+// a0 + a1 t + a2 t^2, t = (mu - c_b) kh, flag pf(iu,b,3) > 0 when fitted); between bin
+// centres the linear blend of the two bins' quadratics (smooth: its second derivative
+// carries the fits' own curvature, not the O(1) jump of a piecewise-linear profile).
+// Returns false when a bin it needs holds no fit.  f1, f2: d/dmu, d^2/dmu^2
+template <typename P>
+KOKKOS_INLINE_FUNCTION
+bool VgdUpProf(const P &pf, const int iu, const int kh, const bool lo, const Real mu,
+               Real &f, Real &f1, Real &f2) {
+  const Real mc = lo ? fmin(fmax(mu, -1.0), 0.0) : fmin(fmax(mu, 0.0), 1.0);
+  const Real p = (mc + 1.0)*kh - 0.5;
+  const int h0 = lo ? 0 : kh, h1 = lo ? (kh - 1) : (2*kh - 1);
+  int b0 = static_cast<int>(floor(p));
+  Real w = p - b0;
+  int b1 = b0 + 1;
+  if (b0 < h0) {b0 = h0; w = 1.0;}
+  if (b1 > h1) {b1 = h1; w = 0.0;}
+  if (b0 > h1) {b0 = h1;}
+  if (b1 < h0) {b1 = h0;}
+  Real q[2], q1[2], q2[2];
+  for (int s = 0; s < 2; ++s) {
+    const int b = (s == 0) ? b0 : b1;
+    if (!(pf(iu,b,3) > 0.0)) {return false;}
+    const Real t = (mc + 1.0)*kh - (b + 0.5);
+    const Real a0 = pf(iu,b,0), a1 = pf(iu,b,1), a2 = pf(iu,b,2);
+    q[s] = a0 + t*(a1 + t*a2);
+    q1[s] = (a1 + 2.0*a2*t)*kh;
+    q2[s] = 2.0*a2*kh*kh;
+  }
+  const Real dw = (b1 > b0) ? static_cast<Real>(kh) : 0.0;
+  f = (1.0 - w)*q[0] + w*q[1];
+  f1 = (1.0 - w)*q1[0] + w*q1[1] + (q[1] - q[0])*dw;
+  f2 = (1.0 - w)*q2[0] + w*q2[1] + 2.0*(q1[1] - q1[0])*dw;
+  return true;
+}
+
+// the additive corrections cq[e] of the stencil cells (cosines mq(e), used where
+// ok[e] or all) for the upwind point of cosine mu: upf 1 Ibar(mu) - Ibar(mq), 2 the
+// Taylor terms of Ibar about mq to second order.  false (no correction anywhere) when a
+// bin it needs holds no fit
+template <typename P, typename A, typename MQ>
+KOKKOS_INLINE_FUNCTION
+bool VgdUpCorr(const P &pf, const int iu, const int kh, const bool lo, const int upf,
+               const Real mu, const A &acc, const MQ &mq, const bool *ok, const bool all,
+               Real *cq) {
+  Real fu = 0.0, f1, f2;
+  if (upf == 1 && !VgdUpProf(pf, iu, kh, lo, mu, fu, f1, f2)) {return false;}
+  for (int e = 0; e < acc.N(); ++e) {
+    cq[e] = 0.0;
+    if (!(all || ok[e])) {continue;}
+    const Real m = mq(e);
+    Real f;
+    if (!VgdUpProf(pf, iu, kh, lo, m, f, f1, f2)) {return false;}
+    const Real dm = mu - m;
+    cq[e] = (upf == 1) ? (fu - f) : dm*(f1 + 0.5*dm*f2);
+  }
+  return true;
+}
+
 #endif  // RAD_M1_RAD_M1_VGDRAY_HPP_

@@ -3224,6 +3224,23 @@ class RadiationM1 {
   DvceArray1D<int> vgd_shl[2];
   int vgd_shn[2] = {0, 0};
   Real vgd_shl_alpha = -3.0;
+  // vetgdup-1110 vet_gd_upwind (read only when named; default bilinear = the code before,
+  // bitwise): the upwind intensity of a stencil cell q shifted by the shell's mean
+  // angular profile Ibar_iu(mu) (per-bin quadratic fits in mu = n_d . r_hat over the
+  // shell, made after each shell kernel, every block in gid order): 1 shellmean, I_q +
+  // Ibar(mu_u) - Ibar(mu_q); 2 taylor, I_q + dmu Ibar'(mu_q) + dmu^2 Ibar''(mu_q)/2
+  // (dmu = mu_u - mu_q).
+  // vet_gd_upwind_nbin: bins per half range of mu (default 32)
+  int vgd_upf = 0, vgd_upk = 32;
+  Real vgd_up_alpha = -3.0;
+  DvceArray1D<int> vgd_up_ofs, vgd_up_code;   // per (m, bin): codes ((k, j) local, d)
+  DvceArray3D<Real> vgd_up_part;              // (m, bin, 8): per-block moment sums
+  DvceArray3D<Real> vgd_up_prof;              // (i, bin, 4): a0, a1, a2 in t, valid flag
+  HostArray3D<Real> vgd_up_proh;
+  std::vector<Real> vgd_up_all;               // every block's sums, gid order
+  double vgd_up_time = 0.0;
+  void VetGdUpPrep();
+  void VetGdUpShell(const int i, const bool inw);
   std::vector<VgdHlEntry> vgd_hle;
   size_t vgd_hl_bytes = 0, vgd_hl_cap = 0;   // cap: bytes (set at the first build)
   int64_t vgd_hl_gen = 0;

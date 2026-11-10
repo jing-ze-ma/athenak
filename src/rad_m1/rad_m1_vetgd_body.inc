@@ -423,8 +423,25 @@
                 ok[q] = want_in ? (mq < 0.0) : (mq >= 0.0);
                 all = all && ok[q];
               }
+              // vetgdup-1110 vet_gd_upwind (rad_m1_vgdray.hpp VgdUpCorr): each stencil
+              // cell's intensity shifted along the shell's mean angular profile from its
+              // own n . r_hat to the upwind point's (main field only; off: no shift)
+              Real cq_[4] = {0.0, 0.0, 0.0, 0.0};
+              bool upo = false;
+              if (upf_ != 0 && !twn) {
+                const Real muu = (nx*xu + ny*yu + nz*zu)/ru;
+                auto mqe = [&](const int e) -> Real {return mrq(st4.K(e), st4.J(e));};
+                upo = VgdUpCorr(upp_, iu, upk_, want_in, upf_, muu, st4, mqe, ok, all,
+                                cq_);
+              }
+              auto fIc = [&](const int kk, const int jj) -> Real {
+                if (!upo) {return fIu(kk,jj);}
+                int e = 0;
+                while (e < 3 && !(st4.K(e) == kk && st4.J(e) == jj)) {++e;}
+                return fIu(kk,jj) + cq_[e];
+              };
               // none (-1): the upwind source (below)
-              const Real ivu = VgdUpwindI(st4, fIu, ok, all);
+              const Real ivu = VgdUpwindI(st4, fIc, ok, all);
               auto lin = [&](const int c) {
                 return VgdLerp(VgdLerp(fC(c,k0,j0,iu), fC(c,k0,j1,iu), uj),
                                VgdLerp(fC(c,k1,j0,iu), fC(c,k1,j1,iu), uj), uk);
@@ -596,7 +613,7 @@
                                         *((q % 2 == 0) ? (1.0 - uj) : uj);
                         if (!(wq > 0.0) || !(ok[q] || ivu < 0.0)) {continue;}
                         const Real cq = exp(csx(m,0,kk,jj,iu)), sq = exp(csx(m,1,kk,jj,iu));
-                        const Real iq = (ivu < 0.0) ? sq : rd(kk,jj,iu);
+                        const Real iq = (ivu < 0.0) ? sq : fIc(kk,jj);
                         ws += wq;
                         vs += wq*seg(iq, cq, sq, ds, cb, sb, qb);
                       }
@@ -627,7 +644,7 @@
                                  const int ii) -> Real {return fC(c,kk,jj,ii);};
                   return VgdCornerEdge(csr, m, k0, k1, j0, j1, iu, uk, uj);
                 };
-                iv = VgdSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
+                iv = VgdSegFinish(st4, fIc, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
                                   s0, ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim);
               }
             }

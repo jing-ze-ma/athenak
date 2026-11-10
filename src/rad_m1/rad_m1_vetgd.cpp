@@ -5249,6 +5249,10 @@ void RadiationM1::VetGdSweep() {
   auto rbi_ = vgd_rbi;
   auto rbc_ = vgd_rbc;
   auto rbth_ = vgd_rbth;
+  // vetgdup-1110 vet_gd_upwind: the shell profiles (VetGdUpShell after each shell kernel)
+  if (vgd_upf != 0) {VetGdUpPrep();}
+  auto upp_ = vgd_up_prof;
+  const int upk_ = vgd_upk, upf_ = vgd_upf;
   vgd_hsweep += 1;
   // vet_gd_shell_list (vgdspeed-1009; read only when named; default true; bitwise): per
   // pass the list of (m, k, j, d) whose n . r_hat (at the face midpoints, as the shell
@@ -5763,6 +5767,9 @@ void RadiationM1::VetGdSweep() {
         if (ovl) {vgd_ovl_nfull += 1.0;}
       }
       pend = false;
+      // vetgdup-1110 vet_gd_upwind: this shell's profile on the pass's half range (read
+      // by the next shell of the pass, and by the turned rays of the outward pass)
+      if (vgd_upf != 0) {VetGdUpShell(i, inw);}
       if (rga) {
         // the previous shell of the pass has been read (stream order): its inward band
         // values saved (inward pass), its interior back to the compact slab; the next
@@ -5853,6 +5860,180 @@ void RadiationM1::VetGdSweep() {
     }
   }
   VetGdRingSweepEnd();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdUpPrep
+//! \brief vetgdup-1110 vet_gd_upwind: the per-(block, mu bin) lists of the interior
+//! (k, j, d) (remade when the direction set changes; host-built from vgd_mr, in (k, j, d)
+//! order, so every block's sums are the same numbers on any decomposition) and the
+//! profile table (zero = no fit: no shift until a shell's profile is made)
+
+void RadiationM1::VetGdUpPrep() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int kh = vgd_upk, nb = 2*kh;
+  const int n1c = indcs.nx1 + 2*indcs.ng;
+  if (vgd_up_prof.extent_int(0) != n1c || vgd_up_prof.extent_int(1) != nb) {
+    Kokkos::realloc(vgd_up_prof, n1c, nb, 4);
+    Kokkos::deep_copy(vgd_up_prof, 0.0);
+    Kokkos::realloc(vgd_up_proh, n1c, nb, 4);
+    Kokkos::deep_copy(vgd_up_proh, 0.0);
+    Kokkos::realloc(vgd_up_part, nmb, nb, 8);
+  }
+  if (vgd_up_alpha == vgd_alpha && vgd_up_ofs.extent_int(0) == nmb*nb + 1) {return;}
+  const int wb = vgd_w, n = vgd_n;
+  const int nk = indcs.nx3, nj = indcs.nx2;
+  auto mrh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_mr);
+  std::vector<int> cnt(static_cast<size_t>(nmb)*nb + 1, 0);
+  std::vector<int> bin(static_cast<size_t>(nmb)*nk*nj*n);
+  auto binof = [&](const Real mu) -> int {
+    const int b = static_cast<int>(std::floor((mu + 1.0)*kh));
+    return (mu < 0.0) ? std::min(std::max(b, 0), kh - 1)
+                      : std::max(std::min(b, nb - 1), kh);
+  };
+  for (int m = 0; m < nmb; ++m) {
+    for (int k = 0; k < nk; ++k) {
+      for (int j = 0; j < nj; ++j) {
+        for (int d = 0; d < n; ++d) {
+          const int b = binof(mrh(m, wb + k, wb + j, d));
+          bin[((static_cast<size_t>(m)*nk + k)*nj + j)*n + d] = b;
+          cnt[static_cast<size_t>(m)*nb + b + 1] += 1;
+        }
+      }
+    }
+  }
+  for (size_t c = 1; c < cnt.size(); ++c) {cnt[c] += cnt[c-1];}
+  const int ntot = cnt.back();
+  Kokkos::realloc(vgd_up_ofs, nmb*nb + 1);
+  Kokkos::realloc(vgd_up_code, std::max(ntot, 1));
+  auto ofh = Kokkos::create_mirror_view(vgd_up_ofs);
+  auto cdh = Kokkos::create_mirror_view(vgd_up_code);
+  std::vector<int> pos(cnt.begin(), cnt.end() - 1);
+  for (int c = 0; c <= nmb*nb; ++c) {ofh(c) = cnt[c];}
+  for (int m = 0; m < nmb; ++m) {
+    for (int k = 0; k < nk; ++k) {
+      for (int j = 0; j < nj; ++j) {
+        for (int d = 0; d < n; ++d) {
+          const size_t s = ((static_cast<size_t>(m)*nk + k)*nj + j)*n + d;
+          cdh(pos[static_cast<size_t>(m)*nb + bin[s]]++) = (k*nj + j)*n + d;
+        }
+      }
+    }
+  }
+  Kokkos::deep_copy(vgd_up_ofs, ofh);
+  Kokkos::deep_copy(vgd_up_code, cdh);
+  vgd_up_alpha = vgd_alpha;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdUpShell
+//! \brief vetgdup-1110 vet_gd_upwind: shell i's mean angular profile on the half range of
+//! the pass (inw: mu < 0) from the intensities its kernel just wrote: per block and bin
+//! the moments sum t^0..4, I t^0..2 (t = (mu - c_b) kh) in list order; every block's sums
+//! gathered in gid order and added in that order (the same numbers on any decomposition);
+//! per bin the least-squares quadratic in t (linear / constant where the bin's cosines do
+//! not support it), copied to vgd_up_prof(i, ...)
+
+void RadiationM1::VetGdUpShell(const int i, const bool inw) {
+  Kokkos::Timer tm;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  Mesh *pm = pmy_pack->pmesh;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int kh = vgd_upk, nb = 2*kh;
+  const int h0 = inw ? 0 : kh;
+  const int wb = vgd_w, n = vgd_n, nj = indcs.nx2;
+  DevExeSpace ex = vgd_csg ? DevExeSpace() : vgd_cur;
+  auto of_ = vgd_up_ofs;
+  auto cd_ = vgd_up_code;
+  auto pt_ = vgd_up_part;
+  auto mr_ = vgd_mr;
+  auto vi_ = vgd_i;
+  par_for("m1_vgd_up_sum", ex, 0, nmb - 1, 0, kh - 1,
+  KOKKOS_LAMBDA(const int m, const int bq) {
+    const int b = h0 + bq;
+    Real s[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    for (int c = of_(m*nb + b); c < of_(m*nb + b + 1); ++c) {
+      int t = cd_(c);
+      const int d = t % n;
+      t /= n;
+      const int k = wb + t/nj, j = wb + t % nj;
+      const Real mu = mr_(m,k,j,d);
+      const Real x = (mu + 1.0)*kh - (b + 0.5);
+      const Real v = vi_(m,d,k,j,i);
+      const Real x2 = x*x;
+      s[0] += 1.0;
+      s[1] += x;
+      s[2] += x2;
+      s[3] += x2*x;
+      s[4] += x2*x2;
+      s[5] += v;
+      s[6] += v*x;
+      s[7] += v*x2;
+    }
+    for (int q = 0; q < 8; ++q) {pt_(m,b,q) = s[q];}
+  });
+  auto ph = Kokkos::create_mirror_view(pt_);
+  Kokkos::deep_copy(ex, ph, pt_);
+  ex.fence();
+  const int ntot = pm->nmb_total;
+  const int per = nb*8;
+  vgd_up_all.resize(static_cast<size_t>(ntot)*per);
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::nranks > 1) {
+    std::vector<int> rc(global_variable::nranks), rd(global_variable::nranks);
+    for (int r = 0; r < global_variable::nranks; ++r) {
+      rc[r] = pm->nmb_eachrank[r]*per;
+      rd[r] = pm->gids_eachrank[r]*per;
+    }
+    MPI_Allgatherv(ph.data(), nmb*per, MPI_ATHENA_REAL, vgd_up_all.data(), rc.data(),
+                   rd.data(), MPI_ATHENA_REAL, MPI_COMM_WORLD);
+  } else {
+    std::copy(ph.data(), ph.data() + static_cast<size_t>(nmb)*per, vgd_up_all.begin());
+  }
+#else
+  std::copy(ph.data(), ph.data() + static_cast<size_t>(nmb)*per, vgd_up_all.begin());
+#endif
+  auto pf = vgd_up_proh;
+  for (int bq = 0; bq < kh; ++bq) {
+    const int b = h0 + bq;
+    double s[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    for (int g = 0; g < ntot; ++g) {
+      const Real *a = &vgd_up_all[static_cast<size_t>(g)*per + b*8];
+      for (int q = 0; q < 8; ++q) {s[q] += a[q];}
+    }
+    double a0 = 0.0, a1 = 0.0, a2 = 0.0, fl = 0.0;
+    if (s[0] > 0.0) {
+      const double w = 1.0/s[0];
+      const double m1 = s[1]*w, m2 = s[2]*w, m3 = s[3]*w, m4 = s[4]*w;
+      const double y0 = s[5]*w, y1 = s[6]*w, y2 = s[7]*w;
+      const double var = m2 - m1*m1;
+      // det of [[1, m1, m2], [m1, m2, m3], [m2, m3, m4]] (uniform t on a bin: 4.6e-4)
+      const double det = (m2*m4 - m3*m3) - m1*(m1*m4 - m3*m2) + m2*(m1*m3 - m2*m2);
+      if (s[0] >= 3.0 && det > 1.0e-9) {
+        a0 = (y0*(m2*m4 - m3*m3) - m1*(y1*m4 - m3*y2) + m2*(y1*m3 - m2*y2))/det;
+        a1 = ((y1*m4 - y2*m3) - y0*(m1*m4 - m3*m2) + m2*(m1*y2 - m2*y1))/det;
+        a2 = ((m2*y2 - m3*y1) - m1*(m1*y2 - m2*y1) + y0*(m1*m3 - m2*m2))/det;
+        fl = 3.0;
+      } else if (var > 1.0e-9) {
+        a1 = (y1 - m1*y0)/var;
+        a0 = y0 - a1*m1;
+        fl = 2.0;
+      } else {
+        a0 = y0;
+        fl = 1.0;
+      }
+    }
+    pf(i,b,0) = a0;
+    pf(i,b,1) = a1;
+    pf(i,b,2) = a2;
+    pf(i,b,3) = fl;
+  }
+  auto dsub = Kokkos::subview(vgd_up_prof, i, Kokkos::ALL, Kokkos::ALL);
+  auto hsub = Kokkos::subview(vgd_up_proh, i, Kokkos::ALL, Kokkos::ALL);
+  Kokkos::deep_copy(ex, dsub, hsub);
+  ex.fence();
+  vgd_up_time += tm.seconds();
 }
 
 //----------------------------------------------------------------------------------------

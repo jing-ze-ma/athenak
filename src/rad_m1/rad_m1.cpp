@@ -1531,6 +1531,33 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_shell_list")) {
       vgd_shl_on = pin->GetBoolean("rad_m1","vet_gd_shell_list");
     }
+    // vetgdup-1110 vet_gd_upwind = bilinear | shellmean | taylor (read only when named;
+    // rad_m1.hpp vgd_upf)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_upwind")) {
+      const std::string up = pin->GetString("rad_m1","vet_gd_upwind");
+      if (up == "bilinear") {
+        vgd_upf = 0;
+      } else if (up == "shellmean") {
+        vgd_upf = 1;
+      } else if (up == "taylor") {
+        vgd_upf = 2;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "rad_m1/vet_gd_upwind = " << up
+                  << " (bilinear | shellmean | taylor)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_gd_upwind_nbin")) {
+        vgd_upk = std::max(1, pin->GetInteger("rad_m1","vet_gd_upwind_nbin"));
+      }
+      if (vgd_upf != 0 &&
+          pmy_pack->pmesh->mesh_indcs.nx1 != pmy_pack->pmesh->mb_indcs.nx1) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "rad_m1/vet_gd_upwind needs one MeshBlock along x1"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_list_mb")) {
       vgd_hl_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_halo_list_mb"));
     }
