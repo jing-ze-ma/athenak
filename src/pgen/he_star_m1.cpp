@@ -3345,6 +3345,54 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       ff0(m,k,j,i) = HsLinInterp(cF, rlo, dr, nf, x1f(m,i));
     });
   }
+  // hgfix-1110 DEBUG problem/dbg_vac_seed = f (read only when named; fresh starts only):
+  // the near-vacuum cells of the HG production (rho/<rho> ~ 1e-9 at r/R_ph 0.82-0.90) as
+  // a small-deck repro: in the active cells with dbg_vac_rlo <= r <= dbg_vac_rhi (code
+  // units) whose layout-independent hash is below dbg_vac_frac (default 0.05), the gas
+  // is scaled by f (rho, momenta, total energy: T and v kept) and then given the radial
+  // speed dbg_vac_vr (code units, default 0; its kinetic energy added to IEN)
+  if (pin->DoesParameterExist("problem","dbg_vac_seed")) {
+    const Real vf = pin->GetReal("problem","dbg_vac_seed");
+    const Real vrl = pin->GetReal("problem","dbg_vac_rlo");
+    const Real vrh = pin->GetReal("problem","dbg_vac_rhi");
+    const Real vfr = pin->GetOrAddReal("problem","dbg_vac_frac",0.05);
+    const Real vvr = pin->GetOrAddReal("problem","dbg_vac_vr",0.0);
+    const int vis = indcs.is, vie = indcs.ie, vjs = indcs.js, vje = indcs.je;
+    const int vks = indcs.ks, vke = indcs.ke;
+    const int vgids = pmbp->gids;
+    auto ugv = ph->u0;
+    auto x1vv = pmbp->pcoord->x1v;
+    Real nseed = 0.0;
+    Kokkos::parallel_reduce("hs_vac_seed", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, vks, vjs, vis}, {nmb1 + 1, vke + 1, vje + 1, vie + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sn) {
+      const Real r = x1vv(m,i);
+      if (r < vrl || r > vrh) return;
+      uint64_t x = (static_cast<uint64_t>(m + vgids) << 48) ^
+                   (static_cast<uint64_t>(k) << 32) ^ (static_cast<uint64_t>(j) << 16) ^
+                   static_cast<uint64_t>(i);
+      x += 0x9E3779B97F4A7C15ULL;   // splitmix64
+      x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+      x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+      x = x ^ (x >> 31);
+      const Real h = static_cast<Real>(x >> 11) * (1.0/9007199254740992.0);
+      if (!(h < vfr)) return;
+      for (int n = 0; n < ugv.extent_int(1); ++n) {ugv(m,n,k,j,i) *= vf;}
+      const Real d = ugv(m,IDN,k,j,i);
+      const Real m1o = ugv(m,IM1,k,j,i), m1n = m1o + d*vvr;
+      ugv(m,IEN,k,j,i) += 0.5*(m1n*m1n - m1o*m1o)/d;
+      ugv(m,IM1,k,j,i) = m1n;
+      sn += 1.0;
+    }, Kokkos::Sum<Real>(nseed));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &nseed, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "dbg_vac_seed (hgfix-1110 DEBUG): " << nseed << " cells in r ["
+                << vrl << ", " << vrh << "] scaled by " << vf << ", v_r += " << vvr
+                << std::endl;
+    }
+  }
   if (!hlin) return;
 
   // ---- bsglinhao-1014: problem/he_ic_linhao = true.  The initial state of L. Ma's
