@@ -5968,12 +5968,12 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw, const int nf) {
   auto vi1_ = (nf > 1) ? vgd_itw : vgd_i;   // f 1: the fused twin's field
   // vetgdrot-1110 (cost): ONE launch for the main and the fused twin (f = 0, 1) and ONE
   // TEAM PER LANE: team (f, block, bin, q).  The NLN fixed lanes keep their sums exactly
-  // as before (lane q adds the samples c0 + q, c0 + q + NLN, ... in that order, from zero);
-  // the team gathers its lane's samples (mu, I) into scratch with all of its threads (the
-  // gathers in flight together, NCL at a time), then one thread adds them in order.  The
-  // lanes' sums go to vgd_up_part(m, f, bin, 9 q + p); the lanes are added in order, from
-  // zero, by the fit (one rank) or by m1_vgd_up_lred before the MPI gather.  The same
-  // numbers as the one-lane-at-a-time loop, for any team size
+  // as before (lane q adds the samples c0 + q, c0 + q + NLN, ... in that order, from
+  // zero); the team gathers its lane's samples (mu, I) into scratch with all of its
+  // threads (the gathers in flight together, NCL at a time), then one thread adds them
+  // in order.  The lanes' sums go to vgd_up_part(m, f, bin, 9 q + p); the lanes are
+  // added in order, from zero, by the fit (one rank) or by m1_vgd_up_lred before the
+  // MPI gather.  The same numbers as the one-lane-at-a-time loop, for any team size
   constexpr int NLN = 32;
   constexpr int NCL = 256;
   const size_t scr = ScrArray1D<Real>::shmem_size(2*NCL + 9);
