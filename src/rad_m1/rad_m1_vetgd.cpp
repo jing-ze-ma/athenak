@@ -5947,29 +5947,45 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
   auto pt_ = vgd_up_part;
   auto mr_ = vgd_mr;
   auto vi_ = vgd_i;
-  par_for("m1_vgd_up_sum", ex, 0, nmb - 1, 0, kh - 1,
-  KOKKOS_LAMBDA(const int m, const int bq) {
+  // one team per (block, bin); NLN fixed lanes, each summing its strided samples in
+  // order, then the lanes in order (the same numbers for any team size / backend)
+  constexpr int NLN = 32;
+  const size_t scr = ScrArray1D<Real>::shmem_size(NLN*8);
+  par_for_outer("m1_vgd_up_sum", ex, scr, 0, 0, nmb - 1, 0, kh - 1,
+  KOKKOS_LAMBDA(TeamMember_t tm, const int m, const int bq) {
     const int b = h0 + bq;
-    Real s[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-    for (int c = of_(m*nb + b); c < of_(m*nb + b + 1); ++c) {
-      int t = cd_(c);
-      const int d = t % n;
-      t /= n;
-      const int k = wb + t/nj, j = wb + t % nj;
-      const Real mu = mr_(m,k,j,d);
-      const Real x = (mu + 1.0)*kh - (b + 0.5);
-      const Real v = vi_(m,d,k,j,i);
-      const Real x2 = x*x;
-      s[0] += 1.0;
-      s[1] += x;
-      s[2] += x2;
-      s[3] += x2*x;
-      s[4] += x2*x2;
-      s[5] += v;
-      s[6] += v*x;
-      s[7] += v*x2;
-    }
-    for (int q = 0; q < 8; ++q) {pt_(m,b,q) = s[q];}
+    ScrArray1D<Real> ls(tm.team_scratch(0), NLN*8);
+    const int c0 = of_(m*nb + b), c1 = of_(m*nb + b + 1);
+    Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, NLN), [&](const int q) {
+      Real s[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      for (int c = c0 + q; c < c1; c += NLN) {
+        int t = cd_(c);
+        const int d = t % n;
+        t /= n;
+        const int k = wb + t/nj, j = wb + t % nj;
+        const Real mu = mr_(m,k,j,d);
+        const Real x = (mu + 1.0)*kh - (b + 0.5);
+        const Real v = vi_(m,d,k,j,i);
+        const Real x2 = x*x;
+        s[0] += 1.0;
+        s[1] += x;
+        s[2] += x2;
+        s[3] += x2*x;
+        s[4] += x2*x2;
+        s[5] += v;
+        s[6] += v*x;
+        s[7] += v*x2;
+      }
+      for (int p = 0; p < 8; ++p) {ls(8*q + p) = s[p];}
+    });
+    tm.team_barrier();
+    Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+      for (int p = 0; p < 8; ++p) {
+        Real a = 0.0;
+        for (int q = 0; q < NLN; ++q) {a += ls(8*q + p);}
+        pt_(m,b,p) = a;
+      }
+    });
   });
   // every block's sums in gid order: on one rank the device array itself (no host
   // round trip); with MPI gathered on the host and copied back.  The fit below is the
