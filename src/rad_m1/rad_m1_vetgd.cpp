@@ -6033,6 +6033,37 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
     pf_(i,b,2) = a2;
     pf_(i,b,3) = fl;
   });
+  // env VGD_UP_DIAG = N: the first N sweeps print each shell's profile residual
+  // sqrt(sum (I - Ibar)^2 / sum I^2) over its samples (this rank's blocks; diagnostic)
+  static int s_diag = -1;
+  if (s_diag < 0) {
+    const char *e = std::getenv("VGD_UP_DIAG");
+    s_diag = (e != nullptr) ? std::atoi(e) : 0;
+  }
+  if (s_diag > 0 && vgd_hsweep <= s_diag) {
+    Kokkos::View<Real[3], DevMemSpace> dg("m1_vgd_up_dg");
+    par_for("m1_vgd_up_diag", ex, 0, nmb - 1, 0, kh - 1,
+    KOKKOS_LAMBDA(const int m, const int bq) {
+      const int b = h0 + bq;
+      for (int c = of_(m*nb + b); c < of_(m*nb + b + 1); ++c) {
+        int t = cd_(c);
+        const int d = t % n;
+        t /= n;
+        const int k = wb + t/nj, j = wb + t % nj;
+        const Real mu = mr_(m,k,j,d);
+        const Real v = vi_(m,d,k,j,i);
+        Real f, f1, f2;
+        if (!VgdUpProf(pf_, i, kh, inw, mu, f, f1, f2)) {f = 0.0;}
+        Kokkos::atomic_add(&dg(0), (v - f)*(v - f));
+        Kokkos::atomic_add(&dg(1), v*v);
+        Kokkos::atomic_add(&dg(2), 1.0);
+      }
+    });
+    auto dh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dg);
+    std::cout << "VGD_UP_DIAG sweep " << vgd_hsweep << " shell " << i << " inw " << inw
+              << " n " << dh(2) << " resid " << std::sqrt(dh(0)/std::max(dh(1), 1e-300))
+              << std::endl;
+  }
   if (vgd_time_halo) {ex.fence();}
   vgd_up_time += tm.seconds();
 }
