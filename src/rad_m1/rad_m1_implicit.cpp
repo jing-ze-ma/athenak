@@ -2796,6 +2796,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
           impl_muscl_smc = pin->GetOrAddReal("rad_m1","implicit_hr_recon_lim_c",2.0);
         }
       }
+      // hr2nd-1110 (read only when named): implicit_hr_recon_xcfl = X0 > 0.  No implicit
+      // 2nd-order upwind row is positive when the light crosses many cells per step
+      // (X = c dt/dx >> 1, Godunov): a beam edge or front in the thin region then gives
+      // E < 0 from the solve and the positivity fallback (KILL, a re-solve) every step.
+      // A slope the limiter has CUT (van Leer, not the smooth branch) is scaled by
+      // 1/(1 + (X/X0)^4), X = c dt / V^(1/3): donor cell at a jump the step jumps over,
+      // unchanged for X << X0, and -> 1 as dt -> 0 (time-consistent: the T ladder sees
+      // plm).  Smooth cells (implicit_hr_recon_lim = smooth) keep sig = 1.  No optical
+      // depth enters.
+      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_xcfl")) {
+        impl_muscl_xcfl = pin->GetReal("rad_m1","implicit_hr_recon_xcfl");
+        if (!(impl_muscl_xcfl > 0.0)) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_xcfl must be positive");
+        }
+      }
       // cs-s7-1019 (read only when named): implicit_hr_recon_seam = centred (default) |
       // onesided: on the cubed sphere the seam cells (and the ghosts beyond a seam) take
       // the one-sided slope of their own panel (M1HqW); the centred slope across a seam
@@ -18788,6 +18803,8 @@ void RadiationM1::ImplicitMusclBuild() {
   const bool osm = impl_muscl_hq && impl_muscl_seam1 && cs_geom;   // cs-s7-1019
   const bool smo = impl_muscl_smooth;   // hr2nd-1110 implicit_hr_recon_lim = smooth
   const Real smc = impl_muscl_smc;
+  const Real xc0 = impl_muscl_xcfl;   // hr2nd-1110 implicit_hr_recon_xcfl
+  const Real cdtx = chat*dt;
   if (led || muscl_nbuild < nfr) {
   const bool first = (muscl_nbuild == 0);
   muscl_nbuild += 1;
@@ -18801,6 +18818,7 @@ void RadiationM1::ImplicitMusclBuild() {
                      (hon_ && hm_(m,k,j,i) > 0.0);
     for (int d = 0; d < 3; ++d) {
       Real sg = 0.0, sb = 0.0;
+      bool smooth = false;   // hr2nd-1110
       bool ok = !efx && ((d == 0) || (d == 1 && l2) || (d == 2 && l3));
       if (ok && d == 0 && !cyclic) {
         ok = !((i == is && botb) || (i == ie && topb));
@@ -18851,7 +18869,6 @@ void RadiationM1::ImplicitMusclBuild() {
         }
         // hr2nd-1110 implicit_hr_recon_lim = smooth: a resolved parabola (smooth extremum
         // or smooth slope) takes the centred slope, sig = 1
-        bool smooth = false;
         if (ok && smo) {
           const int c = (d == 0) ? i : ((d == 1) ? j : k);
           const int cs = (d == 0) ? is : ((d == 1) ? js : ks);
@@ -18902,6 +18919,10 @@ void RadiationM1::ImplicitMusclBuild() {
       } else if (iw_(m,b+M1_IM_KILL,k,j,i) > 0.5) {
         sg = 0.0;
         sb = 0.0;
+      }
+      if (xc0 > 0.0 && !smooth && sg > 0.0) {   // hr2nd-1110 implicit_hr_recon_xcfl
+        const Real x = cdtx/(cbrt(cvol(m,k,j,i))*xc0);
+        sg /= (1.0 + SQR(SQR(x)));
       }
       iw_(m,b+M1_IM_SIG+d,k,j,i) = sg;
       if (led) {iw_(m,b+M1_IM_B+d,k,j,i) = sb;}
