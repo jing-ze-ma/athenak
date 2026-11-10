@@ -46,6 +46,8 @@
   const Real bxwmin = impl_blend_xthin_wmin, bxr0 = impl_blend_xthin_r0;
   const Real bdtc = impl_blend_dtc;   // rc18-1110 (M1BlendDtc)
   const bool hws = impl_hr_ws;   // hr2prod-1110
+  const int tgf = thsw_gface;
+  const Real tgfd = thsw_gfd;
   const Real hwsl = impl_hr_ws_lat;
   if (impl_beam_hr) {
     // hrup-1009: per direction d, h+_d -> S1 and h-_d -> S3 of every active cell
@@ -220,6 +222,10 @@
           if (hsfb >= 0 && hcjh) {
             jcl = fmax(jcl, iw_(m,hsfb+M1_HSF_JH,km,jm,i));
             jcr = fmax(jcr, iw_(m,hsfb+M1_HSF_JH,k,j,i));
+          }
+          if (tgf != 0) {   // hr2prod-1110 implicit_thin_gface
+            gfl = 0.5*(gfl + gfr) + ((tgf == 2) ? SQR(gfr - gfl)/tgfd : 0.0);
+            gfr = gfl;
           }
           M1ThinFace(tmode, tcorr, hpf, hmf, gfl, gfr, tauf,
                      iw_(m,M1_IW_TB,km,jm,i), iw_(m,M1_IW_TB,k,j,i),

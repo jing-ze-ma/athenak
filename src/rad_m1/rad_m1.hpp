@@ -974,6 +974,14 @@ class RadiationM1 {
   // half-range face coefficients AL, HCL, HCR, DG of the x1 / transverse faces times s
   // (0 = central faces there); off = bitwise
   bool impl_hr_ws = false;
+  // hr2prod-1110 implicit_thin_gface = max (default) | mean | jump (read only when named):
+  // the face thinness g_f of the implicit_thin_switch weight S(g_f).  max(g_L, g_R) moves
+  // the switch by dx/2 against the gradient of g (an O(dx) shift of the blend region: a
+  // first-order space error wherever 0 < w < 1); mean = (g_L + g_R)/2 (second order);
+  // jump = mean + (g_R - g_L)^2/implicit_thin_gface_d (O(dx^2) in a smooth field, -> 1 at
+  // a beam edge where g jumps by O(1), as max).  Angular data only (g = |H|/J).
+  int thsw_gface = 0;
+  Real thsw_gfd = 0.1;
   Real impl_hr_ws_x1 = 1.0, impl_hr_ws_lat = 1.0;
   bool impl_hr_cmem = false;   // rc18-1110 implicit_hr_cmem: separate F_c memory
   DvceArray4D<Real> fax1, fax2, fax3;   // rc18-1110: the applied face fluxes (cmem)

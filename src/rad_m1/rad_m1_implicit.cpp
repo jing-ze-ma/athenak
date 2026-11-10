@@ -2568,6 +2568,24 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (impl_thsw != M1_THSW_NONE) {
       thsw_h0 = pin->GetOrAddReal("rad_m1","implicit_thin_h0",0.3);
       thsw_h1 = pin->GetOrAddReal("rad_m1","implicit_thin_h1",0.6);
+      // hr2prod-1110 (read only when named): implicit_thin_gface = max | mean | jump
+      if (pin->DoesParameterExist("rad_m1","implicit_thin_gface")) {
+        std::string sg = pin->GetString("rad_m1","implicit_thin_gface");
+        if (sg.compare("max") == 0) {
+          thsw_gface = 0;
+        } else if (sg.compare("mean") == 0) {
+          thsw_gface = 1;
+        } else if (sg.compare("jump") == 0) {
+          thsw_gface = 2;
+          thsw_gfd = pin->GetOrAddReal("rad_m1","implicit_thin_gface_d",0.1);
+          if (!(thsw_gfd > 0.0)) {
+            ImplFatal("<rad_m1>/implicit_thin_gface_d must be positive");
+          }
+        } else {
+          ImplFatal("<rad_m1>/implicit_thin_gface = '" + sg
+                    + "' is not a choice (max | mean | jump)");
+        }
+      }
       thsw_kn0 = pin->GetOrAddReal("rad_m1","implicit_thin_kn0",1.0);
       thsw_knp = pin->GetOrAddReal("rad_m1","implicit_thin_knp",4.0);
       thsw_fsa = pin->GetOrAddReal("rad_m1","implicit_thin_fsa",0.0);
@@ -14704,6 +14722,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const Real bxwmin = impl_blend_xthin_wmin, bxr0 = impl_blend_xthin_r0;
       const Real bdtc = impl_blend_dtc;   // rc18-1110
       const bool hws = impl_hr_ws;   // hr2prod-1110
+      const int tgf = thsw_gface;
+      const Real tgfd = thsw_gfd;
       const Real hwsx = impl_hr_ws_x1;
       const bool hgd = hrx && vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0);
       const int hsrc = !hrx ? 0 : (vetsc ? 1 : (hgd ? 2 : (!impl_hr_model ? -1 :
@@ -14880,7 +14900,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               jl = fmax(jl, iw_(m,hsfb+M1_HSF_JH,k,j,im));
               jr = fmax(jr, iw_(m,hsfb+M1_HSF_JH,k,j,ip));
             }
-            M1ThinFace(tmode, tcorr, hpl, hmr, gl2, gr2, tauf, iw_(m,M1_IW_EN,k,j,im),
+            Real gl3 = gl2, gr3 = gr2;   // hr2prod-1110 implicit_thin_gface
+            if (tgf != 0) {
+              gl3 = 0.5*(gl2 + gr2) + ((tgf == 2) ? SQR(gr2 - gl2)/tgfd : 0.0);
+              gr3 = gl3;
+            }
+            M1ThinFace(tmode, tcorr, hpl, hmr, gl3, gr3, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr,
                        (tcorr != M1_THCR_HCS) ? 1.0
                        : (sgd ? fmin(1.0 - hgh_(m,M1_VGD_HREP,k,j,im),
