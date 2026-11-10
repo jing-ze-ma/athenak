@@ -2500,6 +2500,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                    pin->GetReal("rad_m1","implicit_blend_dtc") : 0.0;
   if (impl_blend_dtc < 0.0) {ImplFatal("<rad_m1>/implicit_blend_dtc must be >= 0");}
   // hr2prod-1110 (diagnostic, read only when named): implicit_hr_wscale_x1 / _lat
+  impl_hr_fci = pin->DoesParameterExist("rad_m1","implicit_hr_fcimp") &&
+                pin->GetBoolean("rad_m1","implicit_hr_fcimp");   // hr2prod-1110
   impl_hr_ws = pin->DoesParameterExist("rad_m1","implicit_hr_wscale_x1") ||
                pin->DoesParameterExist("rad_m1","implicit_hr_wscale_lat");
   if (impl_hr_ws) {
@@ -14793,6 +14795,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const Real bxwmin = impl_blend_xthin_wmin, bxr0 = impl_blend_xthin_r0;
       const Real bdtc = impl_blend_dtc;   // rc18-1110
       const bool hws = impl_hr_ws;   // hr2prod-1110
+      const bool hfci = impl_hr_fci;
       const int tgf = thsw_gface;
       const Real tgfd = thsw_gfd;
       const Real hwsx = impl_hr_ws_x1;
@@ -14988,6 +14991,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                      1.0 - hvc_(m,M1_VET_EPS,k,j,ip))),
                        th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt, hwl, hwr,
                        ch*dt/dx, bdtc, hcpon ? &hcp_(m,0,k,j,i) : nullptr);
+            if (hfci) {   // hr2prod-1110 implicit_hr_fcimp: dissipation form
+              const Real wf = alb;
+              alb = 0.0;
+              hlb = 0.5*wf*ch*fmax(hpl - hml, 0.0);
+              hrb = -0.5*wf*ch*fmax(hpr - hmr, 0.0);
+            }
             if (hws) {alb *= hwsx; hlb *= hwsx; hrb *= hwsx; dgt *= hwsx;}
             ifw_(m,M1_IFW_AL,k,j,i) = alb;
             ifw_(m,M1_IFW_HCL,k,j,i) = hlb;

@@ -974,6 +974,14 @@ class RadiationM1 {
   // half-range face coefficients AL, HCL, HCR, DG of the x1 / transverse faces times s
   // (0 = central faces there); off = bitwise
   bool impl_hr_ws = false;
+  // hr2prod-1110 implicit_hr_fcimp (read only when named, default false): the half-range
+  // face flux in DISSIPATION form, F = F_c(E') + w (c/2) (s_L E_L - s_R E_R), s = h+ - h-
+  // (the |mu| half-range moment ratio): the advective part is the evolved central face flux
+  // (implicit, as implicit_aphll_fcimp) instead of the lagged formal-solution ratios
+  // h+ + h-; AL = 0, HCL = w c s_L/2 >= 0, HCR = -w c s_R/2 <= 0 (M-matrix kept); the thin
+  // correction DG unchanged (hc = the formal solution's own dissipation at J, with
+  // Hf = the mean of H).  Thin-switch faces only.
+  bool impl_hr_fci = false;
   // hr2prod-1110 implicit_thin_gface = max (default) | mean | jump (read only when named):
   // the face thinness g_f of the implicit_thin_switch weight S(g_f).  max(g_L, g_R) moves
   // the switch by dx/2 against the gradient of g (an O(dx) shift of the blend region: a

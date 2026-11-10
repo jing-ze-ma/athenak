@@ -46,6 +46,7 @@
   const Real bxwmin = impl_blend_xthin_wmin, bxr0 = impl_blend_xthin_r0;
   const Real bdtc = impl_blend_dtc;   // rc18-1110 (M1BlendDtc)
   const bool hws = impl_hr_ws;   // hr2prod-1110
+  const bool hfci = impl_hr_fci;
   const int tgf = thsw_gface;
   const Real tgfd = thsw_gfd;
   const Real hwsl = impl_hr_ws_lat;
@@ -238,6 +239,12 @@
                                                    iw_(m,M1_IW_TR,k,j,i)) : 1.0,
                      th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr,
                      ch*dtl/dx, bdtc, hcpon ? &hcp_(m,2*d,k,j,i) : nullptr);
+          if (hfci) {   // hr2prod-1110 implicit_hr_fcimp: dissipation form
+            const Real wf = al;
+            al = 0.0;
+            hl = 0.5*wf*ch*fmax(hpf - iw_(m,M1_IW_S3,km,jm,i), 0.0);
+            hr = -0.5*wf*ch*fmax(iw_(m,M1_IW_S1,k,j,i) - hmf, 0.0);
+          }
           if (hws) {al *= hwsl; hl *= hwsl; hr *= hwsl; dgt *= hwsl;}
           fw(m,M1_IFW_AL,k,j,i) = al;
           fw(m,M1_IFW_HCL,k,j,i) = hl;
