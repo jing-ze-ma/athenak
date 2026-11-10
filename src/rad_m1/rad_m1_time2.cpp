@@ -739,7 +739,12 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       auto ys_ = t2ys;
       auto k1r_ = t2k1;
       const int ncell = M1_T2_F1;   // E, gas momentum (3), gas energy
+      // k1dir-1110: Coordinates::volume is allocated (and filled) only on the cubed
+      // sphere / spherical polar; elsewhere it is 1x1x1x1 and vol(m,k,j,i) read out of
+      // bounds.  Cartesian: the uniform cell volume of the MeshBlock.
       auto &vol = pmy_pack->pcoord->volume;
+      const bool usev = (vol.extent_int(0) >= nmbr + 1) && (vol.extent_int(3) > 1);
+      auto &mbsz = pmy_pack->pmb->mb_size;
       Real nr = 0.0, de = 0.0;
       // time2_k1_reset = pos: the stage-1 old vector of E and of the gas eint
       if (t2_k1pos) {
@@ -786,7 +791,9 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum,
                     Real &sde) {
         if (u0_(m,M1_E,k,j,i) != ys_(m,k,j,i)) {
-          sde += (k1r_(m,M1_T2_E,k,j,i) + k1r_(m,M1_T2_EN,k,j,i))*vol(m,k,j,i);
+          const Real cv = usev ? vol(m,k,j,i) : (mbsz.d_view(m).dx1*mbsz.d_view(m).dx2*
+                                                 mbsz.d_view(m).dx3);
+          sde += (k1r_(m,M1_T2_E,k,j,i) + k1r_(m,M1_T2_EN,k,j,i))*cv;
           for (int n=0; n<ncell; ++n) {k1r_(m,n,k,j,i) = 0.0;}
           sum += 1.0;
         }
@@ -902,7 +909,18 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       const int nmbr = pmy_pack->nmb_thispack - 1;
       auto k1d_ = t2k1;
       auto ue_ = u0;
-      auto &vol = pmy_pack->pcoord->volume;
+      // k1dir-1110 FIX: pcoord->volume exists only on cs / sp (1x1x1x1 elsewhere: the
+      // old vol(m,k,j,i) read out of bounds on Cartesian decks, so needs and donor rooms
+      // were garbage: beams drained or blown up, results changed run to run).  Cartesian:
+      // the uniform cell volume of the MeshBlock (a column is inside one block).
+      auto &vola = pmy_pack->pcoord->volume;
+      const bool usev = (vola.extent_int(0) >= nmbr + 1) && (vola.extent_int(3) > 1);
+      auto &mbsz = pmy_pack->pmb->mb_size;
+      auto vol = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i)
+                 -> Real {
+        return usev ? vola(m,k,j,i) : (mbsz.d_view(m).dx1*mbsz.d_view(m).dx2*
+                                       mbsz.d_view(m).dx3);
+      };
       const Real th = t2_k1rd, ca = c1;
       const int rr = t2_k1rd_r;
       Real nb = 0.0, nun = 0.0, mvd = 0.0, mvx = 0.0;
