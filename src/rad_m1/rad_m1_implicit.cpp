@@ -2227,6 +2227,22 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(vkick_cnt_d, 2);
     Kokkos::deep_copy(vkick_cnt_d, 0.0);
   }
+  // hgkmom-1110 implicit_am_cs_kecap (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1","implicit_am_cs_kecap")) {
+    impl_am_kecap = pin->GetReal("rad_m1","implicit_am_cs_kecap");
+    if (!(impl_am_kecap >= 0.0 && impl_am_kecap <= 1.0)) {
+      ImplFatal("<rad_m1>/implicit_am_cs_kecap must be in [0, 1] (0 = off)");
+    }
+    if (impl_am_kecap > 0.0) {
+      Kokkos::realloc(amkc_d, 4);
+      Kokkos::deep_copy(amkc_d, 0.0);
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> implicit_am_cs_kecap=" << impl_am_kecap << ": the am_cs "
+                  << "deposit of a cell gives the gas at most this fraction of its e_int "
+                  << "as kinetic energy (state and stored slope)" << std::endl;
+      }
+    }
+  }
   // r136e-1107 implicit_wb_vcap (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_wb_vcap")) {
     impl_wb_vcap = pin->GetReal("rad_m1","implicit_wb_vcap");
@@ -10012,6 +10028,22 @@ void RadiationM1::ImplicitReport() {
   }
   // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
   // every rank holds the same three numbers and no reduction is needed here
+  // hgkmom-1110 implicit_am_cs_kecap: the capped am_cs deposits
+  if (impl_am_kecap > 0.0 && amkc_d.extent_int(0) == 4) {
+    auto ha = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amkc_d);
+    Real av[4] = {ha(0), ha(1), ha(2), ha(3)};
+#if MPI_PARALLEL_ENABLED
+    Real ga[4];
+    MPI_Allreduce(av, ga, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int q = 0; q < 4; ++q) {av[q] = ga[q];}
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_am_cs_kecap=" << impl_am_kecap
+                << ": capped cell-solves=" << av[0] << " kinetic energy not given="
+                << av[1] << " (code units x volume) |L_z| not deposited=" << av[2]
+                << " of all deposits " << av[3] << " (all attempts)" << std::endl;
+    }
+  }
   // r136e-1107 implicit_wb_vcap: the capped cell-solves and the energy returned to E
   if (impl_wb_vcap > 0.0 && vcap_cnt_d.extent_int(0) == 4) {
     auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vcap_cnt_d);
@@ -17871,6 +17903,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto f0np_ = f0x1n;
     auto f2np_ = f0x2n;
     auto f3np_ = f0x3n;
+    // hgkmom-1110 implicit_am_cs_kecap (rad_m1.hpp): the scale s of a cell's deposit
+    // (d2, d3 covariant momentum) with dKE(s) <= f max(e_int, 0); 1 when off
+    const Real akc = impl_am_kecap;
+    auto akc_ = amkc_d;
+    const bool aetg = etg, amhd = mhd;
+    auto aphi_ = phicc;
+    auto aem_ = emag_;
     par_for("m1_am_cs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real x2l = msz.d_view(m).x2min, x2u = msz.d_view(m).x2max;
@@ -18023,15 +18062,55 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
            (hb + c*ha)*si - am_(m,5,k,j,i), dlc);
         for (int q = 0; q < 3; ++q) {dlc[q] *= icc;}
       }
+      auto kecap = [&](const Real d2, const Real d3, const Real lz) -> Real {
+        if (!(akc > 0.0)) return 1.0;
+        const Real ddc = uden_(m,IDN,k,j,i);
+        const Real idc = 1.0/fmax(ddc, 1.0e-300);
+        const Real p1 = uden_(m,IM1,k,j,i), p2 = uden_(m,IM2,k,j,i);
+        const Real p3 = uden_(m,IM3,k,j,i);
+        const Real q0 = CsKeMom(p1, p2, p3, c);
+        const Real q1 = CsKeMom(p1, p2 + d2, p3 + d3, c);
+        const Real qd = CsKeMom(0.0, d2, d3, c);
+        Real eg0 = uden_(m,IEN,k,j,i) - q0*idc;
+        if (aetg) {eg0 -= ddc*aphi_(m,k,j,i);}
+        if (amhd) {eg0 -= aem_(m,k,j,i);}
+        const Real cap = akc*fmax(eg0, 0.0);
+        const Real dk1 = (q1 - q0)*idc;
+        Kokkos::atomic_add(&akc_(3), fabs(lz));
+        if (!(dk1 > cap)) return 1.0;
+        // dKE(s) = A s^2 + B s; the largest s in [0, 1] with dKE(s) <= cap
+        const Real aa = qd*idc, bb = (q1 - q0 - qd)*idc;
+        const Real sq = sqrt(fmax(bb*bb + 4.0*aa*cap, 0.0));
+        Real s = 0.0;
+        if (aa > 0.0) {
+          s = (bb >= 0.0) ? ((bb + sq > 0.0) ? 2.0*cap/(bb + sq) : 0.0)
+                          : (-bb + sq)/(2.0*aa);
+        }
+        s = fmin(fmax(s, 0.0), 1.0);
+        Kokkos::atomic_add(&akc_(0), 1.0);
+        Kokkos::atomic_add(&akc_(1), (dk1 - (aa*s + bb)*s)*dv);
+        Kokkos::atomic_add(&akc_(2), (1.0 - s)*fabs(lz));
+        return s;
+      };
       if (!amv) {
         // L_z only (<hydro>/am_transport): along the zonal direction (-y, x, 0)
         const Real c2v = (-yy*e1[0] + xx*e1[1])/(wc*dv);
         const Real c3v = (-yy*e2[0] + xx*e2[1])/(wc*dv);
-        uh(m,IM2,k,j,i) += del[2]*c2v;
-        uh(m,IM3,k,j,i) += del[2]*c3v;
-        if (t2ka) {
-          kka_(m,M1_T2_M1+1,k,j,i) += (del[2] + dlc[2])*c2v/dt;
-          kka_(m,M1_T2_M1+2,k,j,i) += (del[2] + dlc[2])*c3v/dt;
+        if (akc > 0.0) {   // hgkmom-1110: scaled deposit, the slope takes the same s
+          const Real s = kecap(del[2]*c2v, del[2]*c3v, del[2]);
+          uh(m,IM2,k,j,i) += s*del[2]*c2v;
+          uh(m,IM3,k,j,i) += s*del[2]*c3v;
+          if (t2ka) {
+            kka_(m,M1_T2_M1+1,k,j,i) += s*(del[2] + dlc[2])*c2v/dt;
+            kka_(m,M1_T2_M1+2,k,j,i) += s*(del[2] + dlc[2])*c3v/dt;
+          }
+        } else {
+          uh(m,IM2,k,j,i) += del[2]*c2v;
+          uh(m,IM3,k,j,i) += del[2]*c3v;
+          if (t2ka) {
+            kka_(m,M1_T2_M1+1,k,j,i) += (del[2] + dlc[2])*c2v/dt;
+            kka_(m,M1_T2_M1+2,k,j,i) += (del[2] + dlc[2])*c3v/dt;
+          }
         }
       } else {
         // the L vector (<hydro>/am_vector): the perpendicular part as tangential momentum
@@ -18049,12 +18128,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         };
         Real m2, m3, sr;
         apply(del, m2, m3, sr);
+        // hgkmom-1110 implicit_am_cs_kecap: the deposit (momentum and spin) scaled by s
+        const Real s = (akc > 0.0) ? kecap(m2, m3, del[2]) : 1.0;
+        if (akc > 0.0) {m2 *= s; m3 *= s; sr *= s;}
         uh(m,IM2,k,j,i) += m2;
         uh(m,IM3,k,j,i) += m3;
         spn_(m,k,j,i) += sr;
         if (t2ka) {
           Real dk[3] = {del[0] + dlc[0], del[1] + dlc[1], del[2] + dlc[2]};
           apply(dk, m2, m3, sr);
+          if (akc > 0.0) {m2 *= s; m3 *= s; sr *= s;}
           kka_(m,M1_T2_M1+1,k,j,i) += m2/dt;
           kka_(m,M1_T2_M1+2,k,j,i) += m3/dt;
           ksp_(m,k,j,i) = sr/dt;
