@@ -42,8 +42,8 @@
           auto ush = [&](const int ii, const Real mt, const Real mc) -> Real {
             if (!upw || mt == mc || ((mt < 0.0) != (mc < 0.0))) {return 0.0;}
             Real ft, fc, f1, f2;
-            if (!VgdUpProf(upp_, ii, upk_, mt < 0.0, mt, ft, f1, f2)) {return 0.0;}
-            if (!VgdUpProf(upp_, ii, upk_, mc < 0.0, mc, fc, f1, f2)) {return 0.0;}
+            if (!VgdUpProf(upp_, ii, upk_, mt < 0.0, mt, upt_, ft, f1, f2)) {return 0.0;}
+            if (!VgdUpProf(upp_, ii, upk_, mc < 0.0, mc, upt_, fc, f1, f2)) {return 0.0;}
             return ft - fc;
           };
           // the cosine of direction dq at the partner of wall ghost (kk, jj): the ghost's
@@ -486,7 +486,7 @@
               if ((upf_ == 1 || upf_ == 2) && !twn) {
                 const Real muu = (nx*xu + ny*yu + nz*zu)/ru;
                 auto mqe = [&](const int e) -> Real {return mrq(st4.K(e), st4.J(e));};
-                upo = VgdUpCorr(upp_, iu, upk_, want_in, upf_, muu, st4, mqe, ok, all,
+                upo = VgdUpCorr(upp_, iu, upk_, want_in, upf_, upt_, muu, st4, mqe, ok, all,
                                 cq_);
               }
               auto fIc = [&](const int kk, const int jj) -> Real {

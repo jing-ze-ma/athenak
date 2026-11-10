@@ -5254,6 +5254,7 @@ void RadiationM1::VetGdSweep() {
   auto upp_ = vgd_up_prof;
   const int upk_ = vgd_upk, upf_ = vgd_upf;
   const bool upwl_ = vgd_upwall;
+  const Real upt_ = vgd_uptol;
   vgd_hsweep += 1;
   // vet_gd_shell_list (vgdspeed-1009; read only when named; default true; bitwise): per
   // pass the list of (m, k, j, d) whose n . r_hat (at the face midpoints, as the shell
@@ -5882,7 +5883,7 @@ void RadiationM1::VetGdUpPrep() {
   if (vgd_up_prof.extent_int(0) != n1c || vgd_up_prof.extent_int(1) != nb) {
     Kokkos::realloc(vgd_up_prof, n1c, nb, 4);
     Kokkos::deep_copy(vgd_up_prof, 0.0);
-    Kokkos::realloc(vgd_up_part, nmb, nb, 8);
+    Kokkos::realloc(vgd_up_part, nmb, nb, 9);
   }
   if (vgd_up_alpha == vgd_alpha && vgd_up_ofs.extent_int(0) == nmb*nb + 1) {return;}
   const int wb = vgd_w, n = vgd_n;
@@ -5955,14 +5956,14 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
   // one team per (block, bin); NLN fixed lanes, each summing its strided samples in
   // order, then the lanes in order (the same numbers for any team size / backend)
   constexpr int NLN = 32;
-  const size_t scr = ScrArray1D<Real>::shmem_size(NLN*8);
+  const size_t scr = ScrArray1D<Real>::shmem_size(NLN*9);
   par_for_outer("m1_vgd_up_sum", ex, scr, 0, 0, nmb - 1, 0, kh - 1,
   KOKKOS_LAMBDA(TeamMember_t tm, const int m, const int bq) {
     const int b = h0 + bq;
-    ScrArray1D<Real> ls(tm.team_scratch(0), NLN*8);
+    ScrArray1D<Real> ls(tm.team_scratch(0), NLN*9);
     const int c0 = of_(m*nb + b), c1 = of_(m*nb + b + 1);
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, NLN), [&](const int q) {
-      Real s[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      Real s[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
       for (int c = c0 + q; c < c1; c += NLN) {
         int t = cd_(c);
         const int d = t % n;
@@ -5980,14 +5981,15 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
         s[5] += v;
         s[6] += v*x;
         s[7] += v*x2;
+        s[8] += v*v;
       }
-      for (int p = 0; p < 8; ++p) {ls(8*q + p) = s[p];}
+      for (int p = 0; p < 9; ++p) {ls(9*q + p) = s[p];}
     });
     tm.team_barrier();
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {
-      for (int p = 0; p < 8; ++p) {
+      for (int p = 0; p < 9; ++p) {
         Real a = 0.0;
-        for (int q = 0; q < NLN; ++q) {a += ls(8*q + p);}
+        for (int q = 0; q < NLN; ++q) {a += ls(9*q + p);}
         pt_(m,b,p) = a;
       }
     });
@@ -5996,7 +5998,7 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
   // round trip); with MPI gathered on the host and copied back.  The fit below is the
   // same device kernel either way (1 vs N ranks: the same numbers)
   const int ntot = pm->nmb_total;
-  const int per = nb*8;
+  const int per = nb*9;
   DvceArray3D<Real> ga_ = pt_;
 #if MPI_PARALLEL_ENABLED
   if (global_variable::nranks > 1) {
@@ -6004,7 +6006,7 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
     Kokkos::deep_copy(ex, ph, pt_);
     ex.fence();
     if (vgd_up_gall.extent_int(0) != ntot || vgd_up_gall.extent_int(1) != nb) {
-      Kokkos::realloc(vgd_up_gall, ntot, nb, 8);
+      Kokkos::realloc(vgd_up_gall, ntot, nb, 9);
       vgd_up_galh = Kokkos::create_mirror(HostMemSpace(), vgd_up_gall);
     }
     std::vector<int> rc(global_variable::nranks), rd(global_variable::nranks);
@@ -6020,12 +6022,13 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
   }
 #endif
   auto pf_ = vgd_up_prof;
+  const Real tol_ = vgd_uptol;
   par_for("m1_vgd_up_fit", ex, 0, kh - 1,
   KOKKOS_LAMBDA(const int bq) {
     const int b = h0 + bq;
-    Real s[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    Real s[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     for (int g = 0; g < ntot; ++g) {
-      for (int q = 0; q < 8; ++q) {s[q] += ga_(g,b,q);}
+      for (int q = 0; q < 9; ++q) {s[q] += ga_(g,b,q);}
     }
     Real a0 = 0.0, a1 = 0.0, a2 = 0.0, fl = 0.0;
     if (s[0] > 0.0) {
@@ -6048,6 +6051,10 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
         a0 = y0;
         fl = 1.0;
       }
+      // unresolved: the fit's rms residual > tol x the rms intensity of the bin
+      const Real y2m = s[8]*w;
+      const Real rs = fmax(y2m - (a0*y0 + a1*y1 + a2*y2), 0.0);
+      if (y2m > 0.0 && rs > tol_*tol_*y2m) {fl = 0.0;}
     }
     pf_(i,b,0) = a0;
     pf_(i,b,1) = a1;
@@ -6074,7 +6081,7 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
         const Real mu = mr_(m,k,j,d);
         const Real v = vi_(m,d,k,j,i);
         Real f, f1, f2;
-        if (!VgdUpProf(pf_, i, kh, inw, mu, f, f1, f2)) {f = 0.0;}
+        if (!VgdUpProf(pf_, i, kh, inw, mu, tol_, f, f1, f2)) {f = 0.0;}
         Kokkos::atomic_add(&dg(0), (v - f)*(v - f));
         Kokkos::atomic_add(&dg(1), v*v);
         Kokkos::atomic_add(&dg(2), 1.0);
@@ -6099,7 +6106,7 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
               const Real mu = mh(m,k,j,d);
               if ((mu < 0.0) != inw) {continue;}
               Real f, f1, f2;
-              if (!VgdUpProf(fh, i, kh, inw, mu, f, f1, f2)) {f = -1.0;}
+              if (!VgdUpProf(fh, i, kh, inw, mu, tol_, f, f1, f2)) {f = -1.0;}
               Real mk = 0.0;
               if (!vgd_csg) {
                 auto &tg = vgd_trig;

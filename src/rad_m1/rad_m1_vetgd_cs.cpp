@@ -1429,6 +1429,7 @@ void RadiationM1::VetGdCsSweep() {
   if (vgd_upf != 0) {VetGdUpPrep();}
   auto upp_ = vgd_up_prof;
   const int upk_ = vgd_upk, upf_ = vgd_upf;
+  const Real upt_ = vgd_uptol;
   auto cr_ = vgd_csr;
   auto bl_ = vgd_csblk;
   auto cm_ = vgd_cscm;
@@ -1870,7 +1871,7 @@ void RadiationM1::VetGdCsSweep() {
             bool upo = false;
             if ((upf_ == 1 || upf_ == 2) && f == 0) {
               auto mqe = [&](const int e) -> Real {return mr_(m,st.k[e],st.j[e],d);};
-              upo = VgdUpCorr(upp_, iu, upk_, inw || (typ == 3), upf_, muu, acc, mqe, ok,
+              upo = VgdUpCorr(upp_, iu, upk_, inw || (typ == 3), upf_, upt_, muu, acc, mqe, ok,
                               all, cq_);
             }
             auto rdc = [&](const int kk, const int jj) -> Real {

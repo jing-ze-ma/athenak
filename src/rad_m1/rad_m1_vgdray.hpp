@@ -209,7 +209,7 @@ Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
 template <typename P>
 KOKKOS_INLINE_FUNCTION
 bool VgdUpProf(const P &pf, const int iu, const int kh, const bool lo, const Real mu,
-               Real &f, Real &f1, Real &f2) {
+               const Real tol, Real &f, Real &f1, Real &f2) {
   const Real mc = lo ? fmin(fmax(mu, -1.0), 0.0) : fmin(fmax(mu, 0.0), 1.0);
   const Real p = (mc + 1.0)*kh - 0.5;
   const int h0 = lo ? 0 : kh, h1 = lo ? (kh - 1) : (2*kh - 1);
@@ -230,6 +230,11 @@ bool VgdUpProf(const P &pf, const int iu, const int kh, const bool lo, const Rea
     q1[s] = (a1 + 2.0*a2*t)*kh;
     q2[s] = 2.0*a2*kh*kh;
   }
+  // the two bins' fits must agree at mu (else the profile does not resolve the
+  // angular structure there, e.g. a narrow beam: no shift)
+  if (b1 > b0 && fabs(q[1] - q[0]) > tol*fmax(fmax(fabs(q[0]), fabs(q[1])), 1.0e-300)) {
+    return false;
+  }
   const Real dw = (b1 > b0) ? static_cast<Real>(kh) : 0.0;
   f = (1.0 - w)*q[0] + w*q[1];
   f1 = (1.0 - w)*q1[0] + w*q1[1] + (q[1] - q[0])*dw;
@@ -244,16 +249,16 @@ bool VgdUpProf(const P &pf, const int iu, const int kh, const bool lo, const Rea
 template <typename P, typename A, typename MQ>
 KOKKOS_INLINE_FUNCTION
 bool VgdUpCorr(const P &pf, const int iu, const int kh, const bool lo, const int upf,
-               const Real mu, const A &acc, const MQ &mq, const bool *ok, const bool all,
-               Real *cq) {
+               const Real tol, const Real mu, const A &acc, const MQ &mq, const bool *ok,
+               const bool all, Real *cq) {
   Real fu = 0.0, f1, f2;
-  if (upf == 1 && !VgdUpProf(pf, iu, kh, lo, mu, fu, f1, f2)) {return false;}
+  if (upf == 1 && !VgdUpProf(pf, iu, kh, lo, mu, tol, fu, f1, f2)) {return false;}
   for (int e = 0; e < acc.N(); ++e) {
     cq[e] = 0.0;
     if (!(all || ok[e])) {continue;}
     const Real m = mq(e);
     Real f;
-    if (!VgdUpProf(pf, iu, kh, lo, m, f, f1, f2)) {return false;}
+    if (!VgdUpProf(pf, iu, kh, lo, m, tol, f, f1, f2)) {return false;}
     const Real dm = mu - m;
     cq[e] = (upf == 1) ? (fu - f) : dm*(f1 + 0.5*dm*f2);
   }
