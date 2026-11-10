@@ -1303,11 +1303,11 @@ void RadiationM1::Time2IncFctGas() {
   auto hmi_ = hold_m;
   auto cvol = pmy_pack->pcoord->volume;
   const bool hvol = (cvol.extent_int(0) > nmb1);
-  Real nf = 0.0, nu = 0.0, nh = 0.0, de = 0.0;
+  Real nf = 0.0, nu = 0.0, nh = 0.0, de = 0.0, dr = 0.0;
   Kokkos::parallel_reduce("m1_t2_incfg", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sf, Real &su,
-                Real &sh, Real &sd) {
+                Real &sh, Real &sd, Real &sr) {
     if (hoi_ && hmi_(m,k,j,i) > 0.0) return;
     const Real dd = ug(m,IDN,k,j,i);
     if (!(dd > 0.0)) return;
@@ -1337,18 +1337,22 @@ void RadiationM1::Time2IncFctGas() {
     const Real room = 0.5*(cl/ch)*fmax(u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i), 0.0);
     const Real dg = fmin(need, room);
     if (!(dg > 0.0)) {su += 1.0; return;}
-    in_(m,M1_T2_EN,k,j,i) += dg;
-    in_(m,M1_T2_E,k,j,i) -= (ch/cl)*dg;
+    const Real g0 = in_(m,M1_T2_EN,k,j,i), e0 = in_(m,M1_T2_E,k,j,i);
+    in_(m,M1_T2_EN,k,j,i) = g0 + dg;
+    in_(m,M1_T2_E,k,j,i) = e0 - (ch/cl)*dg;
     sf += 1.0;
     if (dg < need) {su += 1.0;}
-    sd += dg*(hvol ? cvol(m,k,j,i) : 1.0);
+    const Real vv = hvol ? cvol(m,k,j,i) : 1.0;
+    sd += dg*vv;
+    // the round-off of the move: change of e_gas + (c/chat) E as stored
+    sr += ((in_(m,M1_T2_EN,k,j,i) - g0) + (cl/ch)*(in_(m,M1_T2_E,k,j,i) - e0))*vv;
   }, Kokkos::Sum<Real>(nf), Kokkos::Sum<Real>(nu), Kokkos::Sum<Real>(nh),
-     Kokkos::Sum<Real>(de));
+     Kokkos::Sum<Real>(de), Kokkos::Sum<Real>(dr));
 #if MPI_PARALLEL_ENABLED
   {
-    Real a[4] = {nf, nu, nh, de}, g[4];
-    MPI_Allreduce(a, g, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    nf = g[0]; nu = g[1]; nh = g[2]; de = g[3];
+    Real a[5] = {nf, nu, nh, de, dr}, g[5];
+    MPI_Allreduce(a, g, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    nf = g[0]; nu = g[1]; nh = g[2]; de = g[3]; dr = g[4];
   }
 #endif
   t2_incfg_n += nf;
@@ -1360,6 +1364,7 @@ void RadiationM1::Time2IncFctGas() {
     std::cout << "<rad_m1> INCFCTG cycle " << pmy_pack->pmesh->ncycle << " calls "
               << t2_incfg_calls << " fired " << nf << " unpaid " << nu
               << " eint_h<=0 " << nh << " moved(gas units x vol) " << de
+              << " cons_resid " << dr
               << " | total fired " << t2_incfg_n << " unpaid " << t2_incfg_un
               << " eint_h<=0 " << t2_incfg_hn << " moved " << t2_incfg_de << std::endl;
   }

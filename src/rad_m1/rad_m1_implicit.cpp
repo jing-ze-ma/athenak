@@ -19763,7 +19763,7 @@ void RadiationM1::T2KSplitRow(int t2s) {
   if (t2kg1.extent_int(0) < pmy_pack->nmb_thispack) {return;}
   FluidRef flr = FluidRef::Get(pmy_pack);
   auto kg_ = (t2s == M1_T2S_STAGE1) ? t2kg2 : t2kg1;
-  const bool hh = have_hydro && flr.on && gas_feedback;
+  const bool hh = flr.on && gas_feedback;
   const bool gq = hh && coupling && dbg_gas_heat;
   auto uh = hh ? flr.u0 : u0;
   const bool csk = cs_geom;
@@ -19808,7 +19808,7 @@ void RadiationM1::T2KSplitPost(int t2s) {
   if (t2kg1.extent_int(0) >= pmy_pack->nmb_thispack) {
     FluidRef flr = FluidRef::Get(pmy_pack);
     auto kg_ = st1 ? t2kg2 : t2kg1;
-    const bool hh = have_hydro && flr.on && gas_feedback;
+    const bool hh = flr.on && gas_feedback;
     auto uh = hh ? flr.u0 : u0;
     const bool csk = cs_geom;
     auto ccl = pmy_pack->pcoord->cos_cell;
@@ -19993,7 +19993,7 @@ void RadiationM1::T2KSplitCheck(int stage, bool dump) {
 void RadiationM1::T2KSplitGas(DvceArray5D<Real> uh, DvceArray5D<Real> t2i_, int t2s,
                               bool dump) {
   FluidRef flr = FluidRef::Get(pmy_pack);
-  if (t2kg1.extent_int(0) < pmy_pack->nmb_thispack || !have_hydro || !flr.on) {return;}
+  if (t2kg1.extent_int(0) < pmy_pack->nmb_thispack || !flr.on) {return;}
   if (t2i_.extent_int(1) <= M1_T2_EN) {return;}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
