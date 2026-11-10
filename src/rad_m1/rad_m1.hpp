@@ -3236,8 +3236,8 @@ class RadiationM1 {
   DvceArray1D<int> vgd_up_ofs, vgd_up_code;   // per (m, bin): codes ((k, j) local, d)
   DvceArray3D<Real> vgd_up_part;              // (m, bin, 8): per-block moment sums
   DvceArray3D<Real> vgd_up_prof;              // (i, bin, 4): a0, a1, a2 in t, valid flag
-  HostArray3D<Real> vgd_up_proh;
-  std::vector<Real> vgd_up_all;               // every block's sums, gid order
+  DvceArray3D<Real> vgd_up_gall;              // (gid, bin, 8): every block's sums (MPI)
+  HostArray3D<Real> vgd_up_galh;
   double vgd_up_time = 0.0;
   void VetGdUpPrep();
   void VetGdUpShell(const int i, const bool inw);
