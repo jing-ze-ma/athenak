@@ -534,6 +534,10 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_adm_poslim")) {
     t2_adm_pl = pin->GetBoolean("rad_m1", "time2_adm_poslim");
   }
+  // hgpos-1109: <rad_m1>/time2_adm_eflr (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_adm_eflr")) {
+    t2_adm_ef = pin->GetBoolean("rad_m1", "time2_adm_eflr");
+  }
   // autobe-1029: <rad_m1>/time2_auto_be = N (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_auto_be")) {
     t2_abe = pin->GetInteger("rad_m1", "time2_auto_be");
@@ -2657,6 +2661,7 @@ void RadiationM1::Time2Report() {
   }
   if (t2_accfb) {std::cout << " accepted-with-fallback stages=" << t2_accfb_n;}
   if (t2_adm_pl) {std::cout << " time2_adm_poslim admitted stages=" << t2_adm_pl_n;}
+  if (t2_adm_ef) {std::cout << " time2_adm_eflr admitted stages=" << t2_adm_ef_n;}
   if (t2_flr_rho > 0.0) {std::cout << " time2_floor_eint(rho<" << t2_flr_rho << ") cell-stages(rank 0)=" << t2_flr_n;}
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}

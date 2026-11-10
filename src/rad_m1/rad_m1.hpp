@@ -1655,6 +1655,19 @@ class RadiationM1 {
   // E or T <= 0 stays a fault.  Needs implicit_pos_gas = true.
   bool t2_adm_pl = false;
   Real t2_adm_pl_n = 0.0;       // stages admitted by it (would have been rejected)
+  // hgpos-1109 <rad_m1>/time2_adm_eflr (read only when named; default false = bitwise):
+  // the hesdirk2 admissibility test does not count a solved E <= 0 as a fault: with
+  // implicit_pos_floor, implicit_pos_floor_solve and implicit_pos_floor_cons the
+  // write-back raises such a cell to e_floor and charges the deficit to the cell's
+  // gas, then to its column (energy kept), which is exactly what the backward-Euler redo does with the same cell.  HG
+  // 11-09: the faulting cells are radiation-filled cavities (rho/<rho> 1e-6..1e-1) where
+  // the stage solve itself goes below zero from a positive old vector; rejecting the
+  // stage replaced the whole step (and, with time2_auto_be, the next 1..16 steps) by
+  // backward Euler.  T <= 0 and the written-back eint stay faults (see time2_adm_poslim).
+  // Like time2_adm_poslim, the stage slope K keeps the solve's own E (the floor move is
+  // not extrapolated into the next old vectors).
+  bool t2_adm_ef = false;
+  Real t2_adm_ef_n = 0.0;       // stages admitted by it (would have been rejected)
   // csacc-1031 <rad_m1>/time2_floor_eint = rho_cut (read only when named; default 0 =
   // off, bitwise): in cells with rho < rho_cut (the floor class, e.g. env_sponge_rho x
   // rho_amb) the gas part of the hesdirk2 stage increment t2inc (both stages: momentum,
@@ -2073,6 +2086,72 @@ class RadiationM1 {
   Real pt_gam = 1.0/6.0;
   DvceArray4D<Real> ptq1;
   DvceArray1D<Real> pt_cnt;
+  // hgpos-1109 <rad_m1>/implicit_pos_transport_t = upwind (read only when named; default
+  // none = bitwise; cubed sphere and sp only): the transverse analogue of M1PtMemQ.  An
+  // x2/x3 face whose lagged memory outflow th (F0^n - c dt v_f g0_f) alone would take
+  // more than pt_gam E^n of the donor takes it implicitly upwind, q E'_donor (q =
+  // fmem/E^n_donor, |q| <= c), on the donor's diagonal (TDIA) and the receiver's
+  // coupling (CJ*/CK*), and in the face flux every later use reads.  ptq2/ptq3 the face
+  // q, set on the first Picard pass of a solve and frozen for its other passes; ptqe E^n
+  // with its ghosts (one exchange per solve); pt_cnt_t(0) faces upwinded, (1) solves
+  int impl_pos_trans_t = 0;
+  DvceArray4D<Real> ptq2, ptq3, ptqe;
+  DvceArray1D<Real> pt_cnt_t;
+  // hgpos-1109 dbg_t2_admiss: the transverse face terms of the last evaluation, per face
+  // (M1_TSP_* in rad_m1_implicit.cpp), for the lagged-term split T2AdmissDebug prints
+  DvceArray5D<Real> tsp2, tsp3;
+  // hgpos-1109b <rad_m1>/implicit_blend_t_upwind (read only when named; default false =
+  // bitwise; cubed sphere and sp only): the LAGGED part of the x2/x3 blend face flux,
+  // Lb = (c/chat)(DG + plm/hq correction gm), is written as q E'_donor, q = Lb/E^k_donor
+  // of the current Picard pass (|q| <= c; the donor is the lower cell for Lb > 0, the
+  // upper one for Lb < 0), on the donor's diagonal (TDIA) and the receiver's coupling
+  // (CJ*/CK*), and in the stored face flux.  btq2/btq3 the face q of the last pass;
+  // btu_refresh: the post-solve refresh of the face fluxes reuses them (the flux the
+  // last solve took); btu_cnt (0) capped faces, (1) evaluations
+  bool impl_blend_t_up = false;
+  bool btu_refresh = false;
+  DvceArray4D<Real> btq2, btq3;
+  DvceArray1D<Real> btu_cnt;
+  // hgpos-1109c <rad_m1>/implicit_lagged_t_upwind (read only when named; default false =
+  // bitwise; cubed sphere and sp only): the WHOLE lagged remainder L_f of an x2/x3 face
+  // flux (the stored flux minus the row's two-point part: memory, v g0, skew cross, seam
+  // moves, tanQ/lat, blend DG + gm) is written as q E'_donor where its outflow alone
+  // would drain more than pt_gam E^n of the donor ((chat/c)|L_f| A_f dt/V_d > pt_gam
+  // E^n_d, the M1PtMemQ test); q = |L_f|/E^k_donor of the current Picard pass, |q| <= c,
+  // on the donor diagonal (TDIA) and the receiver coupling (CJ*/CK*), the same number in
+  // the stored face flux and Z; every other face keeps the lagged form.  Supersedes
+  // implicit_pos_transport_t and implicit_blend_t_upwind (both switched off with a log
+  // line).  ltq2/ltq3 the face q of the last pass (the post-solve refresh reuses them,
+  // btu_refresh); ltu_ix1 (nmb) the global x1 index of the block's first active cell;
+  // ltu_cnt face-passes upwinded (0..2) and capped at c (3..5) by global x1 bin [0,G/4),
+  // [G/4,G/2), [G/2,G) of the face's radial cell, (6) evaluations
+  bool impl_lag_t_up = false;
+  DvceArray4D<Real> ltq2, ltq3;
+  DvceArray1D<int> ltu_ix1;
+  DvceArray1D<Real> ltu_cnt;
+  // hgpos-1109d <rad_m1>/implicit_lagged_t_fct = alpha (Real, read only when named;
+  // default 0 = off = bitwise; cubed sphere and sp only; exclusive with
+  // implicit_lagged_t_upwind / implicit_blend_t_upwind / implicit_pos_transport_t): a
+  // Zalesak-style donor limiter on the lagged remainder L_f of the x2/x3 face fluxes, NO
+  // matrix change.  On the first Picard pass of a solve every cell gets
+  //   Q_out = sum over its x2/x3 faces of (chat/c) max(outflow part of L_f, 0) A_f dt/V,
+  //   R = min(1, alpha max(E^n, 0)/Q_out)   (R = 1 where Q_out = 0),
+  // E^n = M1_IW_EN (the solve's old vector, clipped at 0: R = 0 where it is <= 0 and the
+  // cell would export lagged energy); R is frozen for the solve (also the post-solve
+  // refresh) and its ghosts come from one exchange of a single iw component per solve.
+  // Every pass then stores (two-point part) + R_donor L_f, the donor being the cell L_f
+  // flows out of (L_f > 0: the lower cell); where R_donor == 1 nothing is touched.
+  // ltfr the R (with ghosts); ltfl2/ltfl3 the first-pass L_f, ltfn2/ltfn3 its donor
+  // drain (chat/c)|L_f| A_f dt/V_donor; ltfe scratch for the exchange.  ltf_cnt (rank
+  // local): 0..2 limited face-passes (R_donor < 1, L_f != 0) by global x1 bin [0,G/4),
+  // [G/4,G/2), [G/2,G), 3..5 the removed drain (1-R_donor)(chat/c)|L_f| A dt/V_donor
+  // summed over those face-passes (E units), 6..8 cells with R < 1 per solve by bin, 9
+  // solves, 10 face evaluations (passes, refresh excluded), 11 cells with Q_out > 0 and
+  // E^n <= 0 (R = 0); 12..17 per Picard pass after the source kernel: cells, SRCR < 0,
+  // E^n + SRCR < 0, (1-alpha)max(E^n,0) + SRCR < 0, (vimp) JRHS < 0, E^n+SRCR+JRHS < 0
+  Real impl_lag_t_fct = 0.0;
+  DvceArray4D<Real> ltfr, ltfe, ltfl2, ltfl3, ltfn2, ltfn3;
+  DvceArray1D<Real> ltf_cnt;
   // kirch-1022 implicit_face_opac = kirchhoff (opt-in; default arith = bitwise): the iw
   // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1
   // off

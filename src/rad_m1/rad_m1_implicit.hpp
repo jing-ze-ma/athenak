@@ -1001,6 +1001,31 @@ Real M1PtMemQ(const Real fmem, const Real cr, const Real nl, const Real nr,
   return (cr*fabs(fmem)*nd > gam*en) ? copysign(fmin(fabs(fmem)/en, qmax), fmem) : 0.0;
 }
 
+//! hgpos-1109c implicit_lagged_t_upwind: the face q of the WHOLE lagged remainder lf of
+//! an x2/x3 face flux.  The test is M1PtMemQ's (cr |lf| dt A_f/V_d > gam E^n_d, E^n
+//! floored at efl); a face that passes takes q = |lf|/E^k_d of the current pass (ekl/ekr,
+//! so that q E^k_d = lf: the pass's flux is unchanged, only the matrix takes it), capped
+//! at qmax = c (cap = true; also for E^k_d <= 0).  Sign of q = the donor (> 0: LEFT).
+KOKKOS_INLINE_FUNCTION
+Real M1LagTUpQ(const Real lf, const Real cr, const Real nl, const Real nr,
+               const Real enl, const Real enr, const Real ekl, const Real ekr,
+               const Real efl, const Real gam, const Real qmax, bool &cap) {
+  cap = false;
+  if (lf == 0.0) return 0.0;
+  const bool dl = (lf > 0.0);
+  const Real en = fmax(dl ? enl : enr, efl);
+  if (!(cr*fabs(lf)*(dl ? nl : nr) > gam*en)) return 0.0;
+  const Real ek = dl ? ekl : ekr;
+  const Real la = fabs(lf);
+  Real q = qmax;
+  if (la < qmax*ek) {
+    q = la/ek;
+  } else {
+    cap = true;
+  }
+  return dl ? q : -q;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn M1GhostBathAB
 //! \brief marelax-1013 <rad_m1>/implicit_ghost_x1min: the inner face flux of the first
