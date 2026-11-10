@@ -3571,9 +3571,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   Kokkos::deep_copy(f0x1, 0.0);
   Kokkos::realloc(f0x1n, nmb, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(f0x1n, 0.0);
+  // rc18-1110: without the half-range beam the stored flux has no blend: inert (echoed)
+  if (impl_hr_cmem && !impl_beam_hr) {
+    impl_hr_cmem = false;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_hr_cmem: inert without implicit_flux_beam = "
+                << "halfrange" << std::endl;
+    }
+  }
   if (impl_hr_cmem) {   // rc18-1110: the applied face flux (F_c lives in f0x1)
-    if (!impl_beam_hr) {ImplFatal("<rad_m1>/implicit_hr_cmem needs implicit_flux_beam = "
-                                  "halfrange");}
     if (impl_gas_src_cons || impl_vimp || impl_rad_inertia || impl_lbath) {
       ImplFatal("<rad_m1>/implicit_hr_cmem: not with implicit_gas_src = conservative, "
                 "implicit_vimp, implicit_rad_inertia or the Linhao bath (they read "
