@@ -5886,7 +5886,7 @@ void RadiationM1::VetGdUpPrep() {
   if (vgd_up_prof.extent_int(0) != n1c || vgd_up_prof.extent_int(1) != nb) {
     Kokkos::realloc(vgd_up_prof, n1c, nb, 4);
     Kokkos::deep_copy(vgd_up_prof, 0.0);
-    Kokkos::realloc(vgd_up_part, nmb, 2, nb, 9);
+    Kokkos::realloc(vgd_up_part, nmb, 2, nb, 32*9);
   }
   if (vgd_sw2 && (vgd_up_prof2.extent_int(0) != n1c || vgd_up_prof2.extent_int(1) != nb)) {
     Kokkos::realloc(vgd_up_prof2, n1c, nb, 4);
@@ -5966,44 +5966,46 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw, const int nf) {
   auto mr_ = vgd_mr;
   auto vi0_ = vgd_i;
   auto vi1_ = (nf > 1) ? vgd_itw : vgd_i;   // f 1: the fused twin's field
-  // vetgdrot-1110 (cost): ONE launch for the main and the fused twin (f = 0, 1), one team
-  // per (f, block, bin).  The NLN fixed lanes keep their sums exactly as before (lane q
-  // adds the samples c0 + q, c0 + q + NLN, ... in that order; then the lanes in order):
-  // only the loads are staged.  The team gathers a chunk of NLN*NCH samples (mu, I) into
-  // scratch with all its threads (the gathers in flight together), then each lane adds its
-  // NCH strided samples of the chunk from scratch; the lane sums live in scratch across
-  // chunks.  The same numbers as the one-lane-at-a-time loop, for any team size
+  // vetgdrot-1110 (cost): ONE launch for the main and the fused twin (f = 0, 1) and ONE
+  // TEAM PER LANE: team (f, block, bin, q).  The NLN fixed lanes keep their sums exactly as
+  // before (lane q adds the samples c0 + q, c0 + q + NLN, ... in that order, from zero);
+  // the team gathers its lane's samples (mu, I) into scratch with all of its threads (the
+  // gathers in flight together, NCL at a time), then one thread adds them in order.  The
+  // lanes' sums go to vgd_up_part(m, f, bin, 9 q + p); the lanes are added in order, from
+  // zero, by the fit (one rank) or by m1_vgd_up_lred before the MPI gather.  The same
+  // numbers as the one-lane-at-a-time loop, for any team size
   constexpr int NLN = 32;
-  constexpr int NCH = 32;
-  constexpr int NST = NLN*NCH;
-  const size_t scr = ScrArray1D<Real>::shmem_size(NLN*9 + 2*NST);
+  constexpr int NCL = 256;
+  const size_t scr = ScrArray1D<Real>::shmem_size(2*NCL + 9);
   par_for_outer("m1_vgd_up_sum", ex, scr, 0, 0, nf - 1, 0, nmb - 1, 0, kh - 1,
-  KOKKOS_LAMBDA(TeamMember_t tm, const int f, const int m, const int bq) {
+                0, NLN - 1,
+  KOKKOS_LAMBDA(TeamMember_t tm, const int f, const int m, const int bq, const int q) {
     const int b = h0 + bq;
-    ScrArray1D<Real> ls(tm.team_scratch(0), NLN*9 + 2*NST);
+    ScrArray1D<Real> ls(tm.team_scratch(0), 2*NCL + 9);
     const int c0 = of_(m*nb + b), c1 = of_(m*nb + b + 1);
-    Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, NLN*9), [&](const int q) {
-      ls(q) = 0.0;
+    const int nq = (c1 - c0 > q) ? (c1 - c0 - q + NLN - 1)/NLN : 0;
+    Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+      for (int p = 0; p < 9; ++p) {ls(2*NCL + p) = 0.0;}
     });
-    for (int cb = c0; cb < c1; cb += NST) {
-      const int ne = (c1 - cb < NST) ? (c1 - cb) : NST;
+    for (int tb = 0; tb < nq; tb += NCL) {
+      const int ne = (nq - tb < NCL) ? (nq - tb) : NCL;
       tm.team_barrier();
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, ne), [&](const int e) {
-        int t = cd_(cb + e);
+        int t = cd_(c0 + q + NLN*(tb + e));
         const int d = t % n;
         t /= n;
         const int k = wb + t/nj, j = wb + t % nj;
-        ls(NLN*9 + e) = mr_(m,k,j,d);
-        ls(NLN*9 + NST + e) = (f == 0) ? vi0_(m,d,k,j,i) : vi1_(m,d,k,j,i);
+        ls(e) = mr_(m,k,j,d);
+        ls(NCL + e) = (f == 0) ? vi0_(m,d,k,j,i) : vi1_(m,d,k,j,i);
       });
       tm.team_barrier();
-      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, NLN), [&](const int q) {
+      Kokkos::single(Kokkos::PerTeam(tm), [&]() {
         Real s[9];
-        for (int p = 0; p < 9; ++p) {s[p] = ls(9*q + p);}
-        for (int e = q; e < ne; e += NLN) {
-          const Real mu = ls(NLN*9 + e);
+        for (int p = 0; p < 9; ++p) {s[p] = ls(2*NCL + p);}
+        for (int e = 0; e < ne; ++e) {
+          const Real mu = ls(e);
           const Real x = (mu + 1.0)*kh - (b + 0.5);
-          const Real v = ls(NLN*9 + NST + e);
+          const Real v = ls(NCL + e);
           const Real x2 = x*x;
           s[0] += 1.0;
           s[1] += x;
@@ -6015,29 +6017,37 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw, const int nf) {
           s[7] += v*x2;
           s[8] += v*v;
         }
-        for (int p = 0; p < 9; ++p) {ls(9*q + p) = s[p];}
+        for (int p = 0; p < 9; ++p) {ls(2*NCL + p) = s[p];}
       });
     }
     tm.team_barrier();
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {
-      for (int p = 0; p < 9; ++p) {
-        Real a = 0.0;
-        for (int q = 0; q < NLN; ++q) {a += ls(9*q + p);}
-        pt_(m,f,b,p) = a;
-      }
+      for (int p = 0; p < 9; ++p) {pt_(m,f,b,9*q + p) = ls(2*NCL + p);}
     });
   });
-  // every block's sums in gid order: on one rank the device array itself (no host
-  // round trip); with MPI gathered on the host and copied back (both fields in one
-  // gather).  The fit below is the same device kernel either way (1 vs N ranks: the same
-  // numbers)
+  // every block's sums in gid order: on one rank the device array itself (the fit adds
+  // each block's lanes); with MPI each block's lanes added first (m1_vgd_up_lred, the
+  // same order), gathered on the host and copied back (both fields in one gather).  The
+  // fit is the same device kernel either way (1 vs N ranks: the same numbers)
   const int ntot = pm->nmb_total;
-  const int per = 2*nb*9;
   DvceArray4D<Real> ga_ = pt_;
+  int gl = NLN;   // lanes per block in ga_ (1: already added)
 #if MPI_PARALLEL_ENABLED
   if (global_variable::nranks > 1) {
-    auto ph = Kokkos::create_mirror_view(pt_);
-    Kokkos::deep_copy(ex, ph, pt_);
+    const int per = 2*nb*9;
+    if (vgd_up_lred.extent_int(0) != nmb || vgd_up_lred.extent_int(2) != nb) {
+      Kokkos::realloc(vgd_up_lred, nmb, 2, nb, 9);
+    }
+    auto lr_ = vgd_up_lred;
+    par_for("m1_vgd_up_lred", ex, 0, nf - 1, 0, nmb - 1, 0, kh - 1, 0, 8,
+    KOKKOS_LAMBDA(const int f, const int m, const int bq, const int p) {
+      const int b = h0 + bq;
+      Real a = 0.0;
+      for (int q = 0; q < NLN; ++q) {a += pt_(m,f,b,9*q + p);}
+      lr_(m,f,b,p) = a;
+    });
+    auto ph = Kokkos::create_mirror_view(lr_);
+    Kokkos::deep_copy(ex, ph, lr_);
     ex.fence();
     if (vgd_up_gall.extent_int(0) != ntot || vgd_up_gall.extent_int(2) != nb) {
       Kokkos::realloc(vgd_up_gall, ntot, 2, nb, 9);
@@ -6053,13 +6063,15 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw, const int nf) {
     Kokkos::deep_copy(ex, vgd_up_gall, vgd_up_galh);
     ex.fence();   // (the host buffer is refilled by the next shell)
     ga_ = vgd_up_gall;
+    gl = 1;
   }
 #endif
   auto pf0_ = vgd_up_prof;
   auto pf1_ = (nf > 1) ? vgd_up_prof2 : vgd_up_prof;
   const Real tol_ = vgd_uptol;
-  // one team per (f, bin): the blocks' sums staged into scratch by the team (NGB blocks
-  // at a time), then added in gid order by one thread, as before
+  // one team per (f, bin): each block's 9 sums (its lanes added in order by one thread
+  // per (block, sum)) staged into scratch NGB blocks at a time, then added in gid order
+  // by one thread, as before
   constexpr int NGB = 64;
   const size_t scf = ScrArray1D<Real>::shmem_size(9*NGB + 9);
   par_for_outer("m1_vgd_up_fit", ex, scf, 0, 0, nf - 1, 0, kh - 1,
@@ -6073,7 +6085,14 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw, const int nf) {
       const int ng = (ntot - gb < NGB) ? (ntot - gb) : NGB;
       tm.team_barrier();
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, 9*ng), [&](const int e) {
-        ls(e) = ga_(gb + e/9,f,b,e % 9);
+        const int g = gb + e/9, p = e % 9;
+        if (gl == 1) {
+          ls(e) = ga_(g,f,b,p);
+        } else {
+          Real a = 0.0;
+          for (int q = 0; q < gl; ++q) {a += ga_(g,f,b,9*q + p);}
+          ls(e) = a;
+        }
       });
       tm.team_barrier();
       Kokkos::single(Kokkos::PerTeam(tm), [&]() {

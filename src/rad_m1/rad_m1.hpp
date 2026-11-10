@@ -3238,7 +3238,8 @@ class RadiationM1 {
   bool vgd_upwall = false;   // vet_gd_upwind_wall: wall ghost reads shifted (sp)
   Real vgd_up_alpha = -3.0;
   DvceArray1D<int> vgd_up_ofs, vgd_up_code;   // per (m, bin): codes ((k, j) local, d)
-  DvceArray4D<Real> vgd_up_part;              // (m, f, bin, 9): per-block moment sums
+  DvceArray4D<Real> vgd_up_part;              // (m, f, bin, 32 lanes x 9): lane sums
+  DvceArray4D<Real> vgd_up_lred;              // (m, f, bin, 9): lanes added (MPI)
   DvceArray3D<Real> vgd_up_prof;              // (i, bin, 4): a0, a1, a2 in t, valid flag
   DvceArray4D<Real> vgd_up_gall;              // (gid, f, bin, 9): every block (MPI)
   HostArray4D<Real> vgd_up_galh;
