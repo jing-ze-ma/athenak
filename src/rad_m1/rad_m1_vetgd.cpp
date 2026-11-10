@@ -5253,6 +5253,7 @@ void RadiationM1::VetGdSweep() {
   if (vgd_upf != 0) {VetGdUpPrep();}
   auto upp_ = vgd_up_prof;
   const int upk_ = vgd_upk, upf_ = vgd_upf;
+  const bool upwl_ = vgd_upwall;
   vgd_hsweep += 1;
   // vet_gd_shell_list (vgdspeed-1009; read only when named; default true; bitwise): per
   // pass the list of (m, k, j, d) whose n . r_hat (at the face midpoints, as the shell

@@ -36,8 +36,10 @@
           // stencil's own (a wall ghost: periodic partner, mirror row, mapped or
           // interpolated directions) shifted along the shell profile of ii from the read
           // value's own n . r_hat (mc) to the ghost's (mt); the symmetric part of the
-          // ghost then is that of the ghost's own position and direction
-          const bool upw = (upf_ == 1 || upf_ == 2) && !twn;
+          // ghost then is that of the ghost's own position and direction.  Opt-in
+          // (vet_gd_upwind_wall); on-rank wall partners only (a remote partner's band
+          // copy is read unshifted, so the result then depends on the decomposition)
+          const bool upw = upwl_ && (upf_ == 1 || upf_ == 2) && !twn;
           auto ush = [&](const int ii, const Real mt, const Real mc) -> Real {
             if (!upw || mt == mc || ((mt < 0.0) != (mc < 0.0))) {return 0.0;}
             Real ft, fc, f1, f2;
@@ -50,7 +52,7 @@
                           const Real mt) -> Real {
             const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
             const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
-            if (ek == 0 && ej == 0) {
+            if (ek == 0 && ej == 0) {   // (a mirror row of the MIR kernel: shifted)
               const Real v0 = vix(m,dq,kk,jj,ii);
               return upw ? (v0 + ush(ii, mt, mr_(m,kk,jj,dq))) : v0;
             }
@@ -73,7 +75,9 @@
             }
             const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,dq) : dq;
             const Real vd = vix(nl,dd,kk - ek*nx3b,jn,ii);
-            return upw ? (vd + ush(ii, mt, mr_(nl,kk - ek*nx3b,jn,dd))) : vd;
+            // (a plain neighbour ghost is the same cell: no shift)
+            return (upw && wl_(m,kk,jj) != 0) ?
+                   (vd + ush(ii, mt, mr_(nl,kk - ek*nx3b,jn,dd))) : vd;
           };
           auto rd0 = [&](const int kk, const int jj, const int ii, const int dq) -> Real {
             return rd0t(kk, jj, ii, dq, upw ? mr_(m,kk,jj,dq) : 0.0);

@@ -1549,6 +1549,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   << " (bilinear | shellmean | taylor)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
+      if (pin->DoesParameterExist("rad_m1","vet_gd_upwind_wall")) {
+        vgd_upwall = pin->GetBoolean("rad_m1","vet_gd_upwind_wall");
+      }
       if (pin->DoesParameterExist("rad_m1","vet_gd_upwind_nbin")) {
         vgd_upk = std::max(1, pin->GetInteger("rad_m1","vet_gd_upwind_nbin"));
       }

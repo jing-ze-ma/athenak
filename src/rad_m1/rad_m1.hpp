@@ -3232,6 +3232,7 @@ class RadiationM1 {
   // (dmu = mu_u - mu_q).
   // vet_gd_upwind_nbin: bins per half range of mu (default 32)
   int vgd_upf = 0, vgd_upk = 32;
+  bool vgd_upwall = false;   // vet_gd_upwind_wall: wall ghost reads shifted (sp)
   Real vgd_up_alpha = -3.0;
   DvceArray1D<int> vgd_up_ofs, vgd_up_code;   // per (m, bin): codes ((k, j) local, d)
   DvceArray3D<Real> vgd_up_part;              // (m, bin, 8): per-block moment sums
