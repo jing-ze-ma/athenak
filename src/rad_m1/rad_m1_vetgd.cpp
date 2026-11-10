@@ -5984,7 +5984,7 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
     ex.fence();
     if (vgd_up_gall.extent_int(0) != ntot || vgd_up_gall.extent_int(1) != nb) {
       Kokkos::realloc(vgd_up_gall, ntot, nb, 8);
-      vgd_up_galh = Kokkos::create_mirror_view(vgd_up_gall);
+      vgd_up_galh = Kokkos::create_mirror(HostMemSpace(), vgd_up_gall);
     }
     std::vector<int> rc(global_variable::nranks), rd(global_variable::nranks);
     for (int r = 0; r < global_variable::nranks; ++r) {
