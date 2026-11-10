@@ -412,6 +412,24 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "dbg_t2_admiss")) {
     t2_dbg_adm = pin->GetInteger("rad_m1", "dbg_t2_admiss");
   }
+  // hgdiag-1110 dbg_t2_ksplit = N (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "dbg_t2_ksplit")) {
+    t2_ksd = pin->GetInteger("rad_m1", "dbg_t2_ksplit");
+    if (t2_ksd < 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/dbg_t2_ksplit must be >= 0" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  // hgdiag-1110 time2_inc_fct = th (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_inc_fct")) {
+    t2_incfct = pin->GetReal("rad_m1", "time2_inc_fct");
+    if (t2_incfct < 0.0 || t2_incfct >= 1.0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_inc_fct must be in [0, 1)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   // t2retry-1020: <rad_m1>/time2_reject = be | retry (read only when named; default be =
   // the backward-Euler redo, bitwise).  retry needs <time>/dt_retry = true (checked at
   // the first rejection: without it the step falls back to backward Euler as before)
@@ -583,6 +601,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   Kokkos::deep_copy(t2k1, 0.0);
   Kokkos::deep_copy(t2k2, 0.0);
   Kokkos::deep_copy(t2inc, 0.0);
+  if (t2_ksd > 0) {   // hgdiag-1110 dbg_t2_ksplit
+    Kokkos::realloc(t2kd1, nmb, M1_KSD_N, n3, n2, n1);
+    Kokkos::realloc(t2kd2, nmb, M1_KSD_N, n3, n2, n1);
+    Kokkos::realloc(t2kdi, nmb, n3, n2, n1);
+    Kokkos::deep_copy(t2kd1, 0.0);
+    Kokkos::deep_copy(t2kd2, 0.0);
+    Kokkos::deep_copy(t2kdi, 0.0);
+    t2_ksd_ok1 = false;
+    t2_ksd_ok2 = false;
+  }
   Kokkos::realloc(t2f1, nmb, n3, n2, n1+1);
   if (trans_on) {
     Kokkos::realloc(t2f2, nmb, n3, n2+1, n1);
@@ -686,6 +714,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     }
     c1 = t2_a21*dt;
     c2 = 0.0;
+    if (t2_ksd > 0 && t2_ksd_ok1) {T2KSplitFs(0);}   // hgdiag-1110 dbg_t2_ksplit
     // pgrst-1021 time2_k1_reset: no K1 where E was overwritten since the stage-loop start
     if (t2_k1reset && t2_ys_ok && t2ys.extent_int(0) >= pmy_pack->nmb_thispack) {
       auto &id = pmy_pack->pmesh->mb_indcs;
@@ -755,6 +784,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       t2_k1reset_de = 0.0;
       t2_ys_face = false;
     }
+    if (t2_ksd > 0 && t2_ksd_ok1) {T2KSplitFs(1);}   // hgdiag-1110 dbg_t2_ksplit
     // stiffk1-1029 time2_k1_stiff = s (> 0): in cells whose gas-radiation relaxation
     // rate k = ch rho kappa_E + 4 cl rho kappa_P a T^3/(rho c_v) (rho c_v ~ eint/T) has
     // k dt > s, the EXCHANGE part of the FSAL slope K1 is moved from the gas energy to
@@ -836,6 +866,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         }
       }
     }
+    if (t2_ksd > 0 && t2_ksd_ok1) {T2KSplitFs(2);}   // hgdiag-1110 dbg_t2_ksplit
     if (t2_k1fct > 0.0) {ImplicitK1Fct(c1);}   // seamE-1106
     // seamE-1106 time2_k1_redist = th (> 0, read only when named): where the explicit
     // increment takes the stage-1 old vector below th E, E + a21 dt K1_E < th E, the
@@ -918,6 +949,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         }
       }
     }
+    if (t2_ksd > 0 && t2_ksd_ok1) {T2KSplitFs(3);}   // hgdiag-1110 dbg_t2_ksplit
     t2_ys_ok = false;
     // t2pos-1020 time2_posfix: the stage-1 start of the gas (and of the closure memory)
     // for a re-solve, and a clean mask
@@ -1019,6 +1051,17 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     if (two) {v += c2*k2_(m,n,k,j,i);}
     in_(m,n,k,j,i) = v;
   });
+  // hgdiag-1110 dbg_t2_ksplit: the weights of this stage's increment, and t2inc_E as
+  // formed from the slopes (the changes below are kept apart in t2kdi)
+  if (t2_ksd > 0) {
+    t2_ksd_c1 = c1;
+    t2_ksd_c2 = two ? c2 : 0.0;
+    auto kdi_ = t2kdi;
+    par_for("m1_t2_kdi0", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      kdi_(m,k,j,i) = in_(m,M1_T2_E,k,j,i);
+    });
+  }
   // t2pos-1020 time2_posfix: where stage 1 dropped its increment t2_a21 dt K1, stage 2
   // takes it back with the weight of Y1 in its start state (heun: 1/2), so that the step
   // is U^n + dt (b1 K1 + b2 K2 + g K3) with the tableau's b everywhere
@@ -1115,6 +1158,18 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       }, Kokkos::Sum<Real>(nf));
       t2_flr_n += nf;
     }
+  }
+  // hgdiag-1110 time2_inc_fct = th: the conservative face corrections of ImplicitK1Fct on
+  // the increment itself (both stages, after every other change of t2inc above)
+  if (t2_incfct > 0.0) {ImplicitK1Fct(1.0, true);}
+  if (t2_ksd > 0) {   // hgdiag-1110 dbg_t2_ksplit: what changed t2inc_E after the slopes
+    auto kdi_ = t2kdi;
+    par_for("m1_t2_kdi1", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      kdi_(m,k,j,i) = in_(m,M1_T2_E,k,j,i) - kdi_(m,k,j,i);
+    });
+    t2_ksd_calls += 1;
+    if (t2_ksd_calls % t2_ksd == 0) {T2KSplitCheck(stage);}
   }
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
   t2_fail = false;

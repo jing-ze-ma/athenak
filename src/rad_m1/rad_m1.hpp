@@ -1557,6 +1557,25 @@ class RadiationM1 {
   int t2_dbg_fail;              // DEBUG time2_dbg_fail: fail stage 1 at this cycle
   int t2_dbg_adm;               // DEBUG dbg_t2_admiss: report the first N non-admissible
   int t2_dbg_adm_n;             // stages (which quantity <= 0, where); 0 = off
+  // hgdiag-1110 <rad_m1>/dbg_t2_ksplit = N (DEBUG, read only when named; 0 = off =
+  // bitwise): the E channel of the stored hesdirk2 slopes K1 / K2 split by operator term
+  // (M1_KSD_*) at every solve that stores one; the dbg_t2_admiss dumps split t2inc of
+  // their cells with it (T2SPLIT, T2SPLIT_SUM); every N-th stage a closure check
+  int t2_ksd = 0, t2_ksd_calls = 0;
+  bool t2_ksd_ok1 = false, t2_ksd_ok2 = false;
+  Real t2_ksd_c1 = 0.0, t2_ksd_c2 = 0.0;
+  DvceArray5D<Real> t2kd1, t2kd2;   // (m,M1_KSD_N,k,j,i): parts of K1 / K2, rate units
+  DvceArray4D<Real> t2kdi;          // t2inc_E changes after its formation (this stage)
+  void T2KSplitRow(int t2s);
+  void T2KSplitPost(int t2s);
+  void T2KSplitFs(int phase);
+  void T2KSplitCheck(int stage, bool dump = false);
+  // hgdiag-1110 <rad_m1>/time2_inc_fct = th (read only when named; 0 = off = bitwise):
+  // ImplicitK1Fct applied to the stage increment t2inc_E of BOTH stages (after every
+  // other change of t2inc), so that E_start + t2inc_E >= th E_start where neighbours
+  // have room
+  Real t2_incfct = 0.0, t2_incfct_n = 0.0, t2_incfct_left = 0.0, t2_incfct_first = 0.0;
+  int t2_incfct_calls = 0;
   // t2retry-1020: <rad_m1>/time2_reject = be (default) | retry (read only when named): a
   // non-admissible hesdirk2 stage raises the dt_retry flag (reason time2_reject) instead
   // of the backward-Euler redo, so the cycle is taken again at a smaller dt with hesdirk2
@@ -1822,7 +1841,7 @@ class RadiationM1 {
   Real t2_k1fct = 0.0, t2_k1fct_n = 0.0, t2_k1fct_left = 0.0, t2_k1fct_first = 0.0;   // seamE-1106
   int t2_k1fct_r = 16, t2_k1fct_calls = 0, t2_k1fct_dbg = 0;
   DvceArray4D<Real> t2fct_cum;
-  void ImplicitK1Fct(const Real ca);
+  void ImplicitK1Fct(const Real ca, const bool on_inc = false);
   bool t2_k1pos_as = false;   // seamE-1106 time2_k1_pos_after_stiff
   Real cs_cross_mono_k = 0.0;   // seamE-1106 front threshold, 0 = clamp always
   bool cs_cross_mono = false;   // seamE-1106: one-sided seam cross derivative clamped

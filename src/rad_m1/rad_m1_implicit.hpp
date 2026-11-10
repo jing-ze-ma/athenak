@@ -42,6 +42,24 @@ constexpr int M1_T2_M1 = 1;
 constexpr int M1_T2_EN = 4;
 constexpr int M1_T2_F1 = 5;
 constexpr int M1_T2_NK = 8;
+// hgdiag-1110 dbg_t2_ksplit: the parts of the E channel of a stored slope K (t2kd1,
+// t2kd2), rate units (/dt of the solve), from the frozen last-pass row and its solution
+// E*:
+// (E* - EN) = EXCH + X1 + T2PT + TLAG + VIMP + REST, K_E = (E* - EN)/dt + POST, and for
+// K1 the stage-1 Time2FormStage changes (STIFF: time2_k1_stiff incl. pos_after_stiff;
+// FSOTH: time2_k1_reset, time2_k1_fct, time2_k1_redist); LIN = (E* - EN)/dt (scratch)
+constexpr int M1_KSD_EXCH = 0;    // SRCR - SRCB E*: gas-radiation exchange
+constexpr int M1_KSD_X1 = 1;      // x1 transport: TR - EN - SRCR - TRHS - JRHS, the x1
+                                  // part of TB - 1 (TB-1-SRCB-TDIA-JD), TA/TC - J1M/J1P
+constexpr int M1_KSD_T2PT = 2;    // x2/x3 two-point (implicit): -TDIA E* - sum C E*_nb
+constexpr int M1_KSD_TLAG = 3;    // x2/x3 lagged remainder: TRHS + (KB - TR)
+constexpr int M1_KSD_VIMP = 4;    // implicit_vimp: JRHS - JD E* - J1M/J1P - the +-2 terms
+constexpr int M1_KSD_REST = 5;    // (E* - EN) - the above (linear residual, MUSCL, ..)
+constexpr int M1_KSD_POST = 6;    // K_E - (E* - EN)/dt: write-back (work, floors, ..)
+constexpr int M1_KSD_STIFF = 7;   // K1 only: time2_k1_stiff move (+ k1_pos_after_stiff)
+constexpr int M1_KSD_FSOTH = 8;   // K1 only: time2_k1_reset / k1_fct / k1_redist
+constexpr int M1_KSD_LIN = 9;     // scratch: (E* - EN)/dt
+constexpr int M1_KSD_N = 10;
 // vet_sc: the extrapolated components of vet_cell, M1_VET_CHI .. M1_VET_D11+5
 constexpr int M1_T2_NVET = 10;
 // the restart block of the stored slope: int32 have, int32 nch, Real pred2_dt,
