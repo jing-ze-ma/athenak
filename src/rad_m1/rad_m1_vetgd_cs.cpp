@@ -1868,7 +1868,7 @@ void RadiationM1::VetGdCsSweep() {
             // field only; off: no shift)
             Real cq_[4] = {0.0, 0.0, 0.0, 0.0};
             bool upo = false;
-            if (upf_ != 0 && f == 0) {
+            if ((upf_ == 1 || upf_ == 2) && f == 0) {
               auto mqe = [&](const int e) -> Real {return mr_(m,st.k[e],st.j[e],d);};
               upo = VgdUpCorr(upp_, iu, upk_, inw || (typ == 3), upf_, muu, acc, mqe, ok,
                               all, cq_);

@@ -428,7 +428,7 @@
               // own n . r_hat to the upwind point's (main field only; off: no shift)
               Real cq_[4] = {0.0, 0.0, 0.0, 0.0};
               bool upo = false;
-              if (upf_ != 0 && !twn) {
+              if ((upf_ == 1 || upf_ == 2) && !twn) {
                 const Real muu = (nx*xu + ny*yu + nz*zu)/ru;
                 auto mqe = [&](const int e) -> Real {return mrq(st4.K(e), st4.J(e));};
                 upo = VgdUpCorr(upp_, iu, upk_, want_in, upf_, muu, st4, mqe, ok, all,

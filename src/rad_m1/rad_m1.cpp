@@ -1541,6 +1541,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         vgd_upf = 1;
       } else if (up == "taylor") {
         vgd_upf = 2;
+      } else if (up == "profile") {
+        vgd_upf = 3;   // the profiles only, no shift (diagnostic: VGD_UP_DIAG / DUMP)
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "rad_m1/vet_gd_upwind = " << up
