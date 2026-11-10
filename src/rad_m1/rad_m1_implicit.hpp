@@ -60,6 +60,19 @@ constexpr int M1_KSD_STIFF = 7;   // K1 only: time2_k1_stiff move (+ k1_pos_afte
 constexpr int M1_KSD_FSOTH = 8;   // K1 only: time2_k1_reset / k1_fct / k1_redist
 constexpr int M1_KSD_LIN = 9;     // scratch: (E* - EN)/dt
 constexpr int M1_KSD_N = 10;
+// hgdiag-1110b dbg_t2_ksplit, GAS: the parts of the gas-energy channel K_EN of a stored
+// slope (t2kg1, t2kg2), rate units: K_EN = EXCH + KE + POST (+ K1: STIFF + FSOTH), with
+// EXCH = -(c/chat)(SRCR - SRCB E')/dt the gas-radiation exchange of the solve, KE =
+// (KE_new - KE_old)/dt the radiation-force work as the change of the gas kinetic
+// energy, POST = the rest (eint write-back changes: kpre / e_floor moves, work cap,
+// vcap, round-off); KEO (scratch) = KE_old of the solve's old vector
+constexpr int M1_KSG_EXCH = 0;
+constexpr int M1_KSG_KE = 1;
+constexpr int M1_KSG_POST = 2;
+constexpr int M1_KSG_STIFF = 3;   // K1 only: time2_k1_stiff (exchange part gas -> E)
+constexpr int M1_KSG_FSOTH = 4;   // K1 only: time2_k1_reset (and any other change)
+constexpr int M1_KSG_KEO = 5;     // scratch
+constexpr int M1_KSG_N = 6;
 // vet_sc: the extrapolated components of vet_cell, M1_VET_CHI .. M1_VET_D11+5
 constexpr int M1_T2_NVET = 10;
 // the restart block of the stored slope: int32 have, int32 nch, Real pred2_dt,

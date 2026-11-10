@@ -430,6 +430,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
+  // hgdiag-1110b time2_inc_fct_gas = th (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_inc_fct_gas")) {
+    t2_incfg = pin->GetReal("rad_m1", "time2_inc_fct_gas");
+    if (t2_incfg < 0.0 || t2_incfg >= 1.0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_inc_fct_gas must be in [0, 1)"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   // t2retry-1020: <rad_m1>/time2_reject = be | retry (read only when named; default be =
   // the backward-Euler redo, bitwise).  retry needs <time>/dt_retry = true (checked at
   // the first rejection: without it the step falls back to backward Euler as before)
@@ -608,6 +618,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     Kokkos::deep_copy(t2kd1, 0.0);
     Kokkos::deep_copy(t2kd2, 0.0);
     Kokkos::deep_copy(t2kdi, 0.0);
+    Kokkos::realloc(t2kg1, nmb, M1_KSG_N, n3, n2, n1);   // hgdiag-1110b gas
+    Kokkos::realloc(t2kg2, nmb, M1_KSG_N, n3, n2, n1);
+    Kokkos::realloc(t2kgi, nmb, n3, n2, n1);
+    Kokkos::deep_copy(t2kg1, 0.0);
+    Kokkos::deep_copy(t2kg2, 0.0);
+    Kokkos::deep_copy(t2kgi, 0.0);
     t2_ksd_ok1 = false;
     t2_ksd_ok2 = false;
   }
@@ -1057,9 +1073,11 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     t2_ksd_c1 = c1;
     t2_ksd_c2 = two ? c2 : 0.0;
     auto kdi_ = t2kdi;
+    auto kgi_ = t2kgi;   // hgdiag-1110b: the gas-energy channel too
     par_for("m1_t2_kdi0", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       kdi_(m,k,j,i) = in_(m,M1_T2_E,k,j,i);
+      kgi_(m,k,j,i) = in_(m,M1_T2_EN,k,j,i);
     });
   }
   // t2pos-1020 time2_posfix: where stage 1 dropped its increment t2_a21 dt K1, stage 2
@@ -1161,12 +1179,17 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
   }
   // hgdiag-1110 time2_inc_fct = th: the conservative face corrections of ImplicitK1Fct on
   // the increment itself (both stages, after every other change of t2inc above)
+  // hgdiag-1110b time2_inc_fct_gas = th: the gas old-vector deficit taken from the E of
+  // the same cell (before time2_inc_fct, which then repairs any E deficit it leaves)
+  if (t2_incfg > 0.0) {Time2IncFctGas();}
   if (t2_incfct > 0.0) {ImplicitK1Fct(1.0, true);}
   if (t2_ksd > 0) {   // hgdiag-1110 dbg_t2_ksplit: what changed t2inc_E after the slopes
     auto kdi_ = t2kdi;
+    auto kgi_ = t2kgi;
     par_for("m1_t2_kdi1", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       kdi_(m,k,j,i) = in_(m,M1_T2_E,k,j,i) - kdi_(m,k,j,i);
+      kgi_(m,k,j,i) = in_(m,M1_T2_EN,k,j,i) - kgi_(m,k,j,i);
     });
     t2_ksd_calls += 1;
     if (t2_ksd_calls % t2_ksd == 0) {T2KSplitCheck(stage);}
@@ -1242,6 +1265,104 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
   pred_ok = false;
   pred2_ok = false;
   t2_solve = M1_T2S_NONE;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2IncFctGas
+//! \brief hgdiag-1110b <rad_m1>/time2_inc_fct_gas = th (> 0, read only when named).  At
+//! either stage, after every other change of t2inc and before time2_inc_fct: the gas
+//! internal energy the stage solve will start from (its old vector, EGN of the solve) is
+//!   eint_p = eint_h + t2inc_EN - [KE(m_h + t2inc_m) - KE(m_h)],
+//! eint_h the hydro's stage state U_h.  Where eint_h > 0 and eint_p < th eint_h, the
+//! deficit d = th eint_h - eint_p (gas units) is moved from the radiation of the SAME
+//! cell: t2inc_EN += d, t2inc_E -= (chat/c) d, with d at most (c/chat)/2 (E_start +
+//! t2inc_E) (unpaid remainder counted; the stage test decides as before).  The cell's
+//! e_gas + (c/chat) E and every momentum are unchanged (round-off), so the step stays
+//! conservative; cells where it does not fire are bitwise unchanged; where it fires the
+//! old vector moves by O(dt K) (a local first-order fallback, consistent: d -> 0 as
+//! dt -> 0).  Cells with eint_h <= 0 (the hydro state itself) are not touched (counted).
+//! Held cells (implicit_hold) are skipped: their t2inc is not applied.
+
+void RadiationM1::Time2IncFctGas() {
+  FluidRef flf = FluidRef::Get(pmy_pack);
+  if (!flf.on || t2inc.extent_int(1) <= M1_T2_EN) {return;}
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto ug = flf.u0;
+  auto in_ = t2inc;
+  auto u0_ = u0;
+  const Real cl = c_light, ch = chat, th = t2_incfg;
+  const bool etg = flf.use_etotgrav;
+  auto phicc = flf.phicc0;
+  const bool mhd = fl_mhd && (emag0.extent_int(0) > nmb1);
+  auto emag_ = emag0;
+  const bool csk = cs_geom;
+  auto ccl = pmy_pack->pcoord->cos_cell;
+  const bool hoi_ = impl_hold && (hold_m.extent_int(0) > nmb1);
+  auto hmi_ = hold_m;
+  auto cvol = pmy_pack->pcoord->volume;
+  const bool hvol = (cvol.extent_int(0) > nmb1);
+  Real nf = 0.0, nu = 0.0, nh = 0.0, de = 0.0;
+  Kokkos::parallel_reduce("m1_t2_incfg", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sf, Real &su,
+                Real &sh, Real &sd) {
+    if (hoi_ && hmi_(m,k,j,i) > 0.0) return;
+    const Real dd = ug(m,IDN,k,j,i);
+    if (!(dd > 0.0)) return;
+    const Real idd = 1.0/fmax(dd, 1.0e-300);
+    const Real q1 = ug(m,IM1,k,j,i), q2 = ug(m,IM2,k,j,i), q3 = ug(m,IM3,k,j,i);
+    const Real p1 = q1 + in_(m,M1_T2_M1,k,j,i), p2 = q2 + in_(m,M1_T2_M1+1,k,j,i);
+    const Real p3 = q3 + in_(m,M1_T2_M1+2,k,j,i);
+    Real keh, kep;
+    if (csk) {
+      const Real c = ccl(m,k,j);
+      keh = CsKeMom(q1, q2, q3, c)*idd;
+      kep = CsKeMom(p1, p2, p3, c)*idd;
+    } else {
+      keh = 0.5*(q1*q1 + q2*q2 + q3*q3)*idd;
+      kep = 0.5*(p1*p1 + p2*p2 + p3*p3)*idd;
+    }
+    Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
+    if (mhd) {egrv += emag_(m,k,j,i);}
+    const Real eh = ug(m,IEN,k,j,i) - keh - egrv;
+    if (!(eh > 0.0)) {
+      if (!(ug(m,IEN,k,j,i) + in_(m,M1_T2_EN,k,j,i) - kep - egrv > 0.0)) {sh += 1.0;}
+      return;
+    }
+    const Real ep = eh + in_(m,M1_T2_EN,k,j,i) - (kep - keh);
+    if (ep >= th*eh) return;   // (NaN: not touched)
+    const Real need = th*eh - ep;
+    const Real room = 0.5*(cl/ch)*fmax(u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i), 0.0);
+    const Real dg = fmin(need, room);
+    if (!(dg > 0.0)) {su += 1.0; return;}
+    in_(m,M1_T2_EN,k,j,i) += dg;
+    in_(m,M1_T2_E,k,j,i) -= (ch/cl)*dg;
+    sf += 1.0;
+    if (dg < need) {su += 1.0;}
+    sd += dg*(hvol ? cvol(m,k,j,i) : 1.0);
+  }, Kokkos::Sum<Real>(nf), Kokkos::Sum<Real>(nu), Kokkos::Sum<Real>(nh),
+     Kokkos::Sum<Real>(de));
+#if MPI_PARALLEL_ENABLED
+  {
+    Real a[4] = {nf, nu, nh, de}, g[4];
+    MPI_Allreduce(a, g, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    nf = g[0]; nu = g[1]; nh = g[2]; de = g[3];
+  }
+#endif
+  t2_incfg_n += nf;
+  t2_incfg_un += nu;
+  t2_incfg_hn += nh;
+  t2_incfg_de += de;
+  t2_incfg_calls += 1;
+  if (global_variable::my_rank == 0 && (nf > 0.0 || t2_incfg_calls % 50 == 0)) {
+    std::cout << "<rad_m1> INCFCTG cycle " << pmy_pack->pmesh->ncycle << " calls "
+              << t2_incfg_calls << " fired " << nf << " unpaid " << nu
+              << " eint_h<=0 " << nh << " moved(gas units x vol) " << de
+              << " | total fired " << t2_incfg_n << " unpaid " << t2_incfg_un
+              << " eint_h<=0 " << t2_incfg_hn << " moved " << t2_incfg_de << std::endl;
+  }
 }
 
 //----------------------------------------------------------------------------------------

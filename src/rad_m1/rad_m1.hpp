@@ -1569,6 +1569,24 @@ class RadiationM1 {
   void T2KSplitRow(int t2s);
   void T2KSplitPost(int t2s);
   void T2KSplitFs(int phase);
+  // hgdiag-1110b dbg_t2_ksplit, GAS: the gas-energy channel K_EN of K1 / K2 by part
+  // (M1_KSG_*), its later t2inc changes (t2kgi), and every N-th stage solve (and each
+  // dbg_t2_admiss dump) the chain eint_wb = eint_h + c K_EN parts - dKE(t2inc_m) +
+  // exch_now over all cells (GSPLIT_CHECK / GSPLIT_DUMP; T2SPLITG per listed row)
+  DvceArray5D<Real> t2kg1, t2kg2;
+  DvceArray4D<Real> t2kgi;
+  int t2_ksg_calls = 0;
+  void T2KSplitGas(DvceArray5D<Real> uh, DvceArray5D<Real> t2i_, int t2s, bool dump);
+  // hgdiag-1110b <rad_m1>/time2_inc_fct_gas = th (read only when named; 0 = off =
+  // bitwise): where the gas old vector of a stage solve, eint(U_h + t2inc), would fall
+  // below th eint(U_h) (U_h the hydro's stage state), the deficit is moved from the
+  // radiation E of the SAME cell into t2inc_EN (t2inc_E -= (chat/c) d: total energy and
+  // momentum kept), at most half of E_start + t2inc_E; both stages, before
+  // time2_inc_fct; t2k1/t2k2 untouched; INCFCTG counters
+  Real t2_incfg = 0.0, t2_incfg_n = 0.0, t2_incfg_un = 0.0, t2_incfg_hn = 0.0;
+  Real t2_incfg_de = 0.0;
+  int t2_incfg_calls = 0;
+  void Time2IncFctGas();
   void T2KSplitCheck(int stage, bool dump = false);
   // hgdiag-1110 <rad_m1>/time2_inc_fct = th (read only when named; 0 = off = bitwise):
   // ImplicitK1Fct applied to the stage increment t2inc_E of BOTH stages (after every

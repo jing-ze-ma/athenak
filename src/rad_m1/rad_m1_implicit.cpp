@@ -17911,6 +17911,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
   // hgdiag-1110 dbg_t2_ksplit: the parts of the slope this solve stores, from its frozen
   // last-pass row (read-only; the write-back below adds POST)
+  // hgdiag-1110b dbg_t2_ksplit GAS: every N-th stage solve, the eint chain (read-only)
+  if (t2_ksd > 0 && (t2s == M1_T2S_STAGE1 || t2s == M1_T2S_STAGE2)) {
+    t2_ksg_calls += 1;
+    if (t2_ksg_calls % t2_ksd == 0) {T2KSplitGas(uh, t2i_, t2s, false);}
+  }
   if (t2_ksd > 0 && t2k) {T2KSplitRow(t2s);}
   if (rmask) {
     impl_res_exmax = std::max(impl_res_exmax, rexcl_last);
@@ -19249,6 +19254,18 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
   auto kd2_ = t2kd2;
   auto kdi_ = t2kdi;
   const Real kc1 = t2_ksd_c1, kc2 = t2_ksd_c2;
+  // hgdiag-1110b GAS: the eint chain of each listed gas row (flag 2 or 4): 0 eint_h,
+  // 1 EGN, 2 eint_wb, 3 t2inc_EN, 4 dKE, 5 exch_K, 6 cK_KE, 7 post, 8 k1stiff, 9 k1fs,
+  // 10 incmods, 11 exch_now
+  const bool kgx = ksx && hh && (t2kg1.extent_int(0) > nmb1) &&
+                   (t2i_.extent_int(1) > M1_T2_EN);
+  const int nkg = 12;
+  DvceArray2D<Real> ksg("m1_t2dbg_ksg", kgx ? ncap : 1, nkg);
+  auto kg1_ = t2kg1;
+  auto kg2_ = t2kg2;
+  auto kgi_ = t2kgi;
+  const bool kcsk = cs_geom;
+  auto kccl = pmy_pack->pcoord->cos_cell;
   auto ts2_ = tsp2;
   auto ts3_ = tsp3;
   const bool pqon = (impl_pos_trans_t == 1) && (ptq2.extent_int(0) > 0);
@@ -19346,6 +19363,34 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
       ksp(n,11) = u0_(m,M1_E,k,j,i);
       ksp(n,12) = s1;
       ksp(n,13) = s2;
+    }
+    if (kgx && (flg & 6)) {   // hgdiag-1110b: the gas eint chain
+      const Real idd = 1.0/fmax(uh(m,IDN,k,j,i), 1.0e-300);
+      const Real p1 = uh(m,IM1,k,j,i), p2 = uh(m,IM2,k,j,i), p3 = uh(m,IM3,k,j,i);
+      const Real q1 = p1 - t2i_(m,M1_T2_M1,k,j,i), q2 = p2 - t2i_(m,M1_T2_M1+1,k,j,i);
+      const Real q3 = p3 - t2i_(m,M1_T2_M1+2,k,j,i);
+      Real kep, keh;
+      if (kcsk) {
+        const Real c = kccl(m,k,j);
+        kep = CsKeMom(p1, p2, p3, c)*idd;
+        keh = CsKeMom(q1, q2, q3, c)*idd;
+      } else {
+        kep = 0.5*(p1*p1 + p2*p2 + p3*p3)*idd;
+        keh = 0.5*(q1*q1 + q2*q2 + q3*q3)*idd;
+      }
+      const Real ten = t2i_(m,M1_T2_EN,k,j,i);
+      ksg(n,0) = ego - ten + (kep - keh);
+      ksg(n,1) = ego;
+      ksg(n,2) = egw;
+      ksg(n,3) = ten;
+      ksg(n,4) = kep - keh;
+      for (int p = 0; p < 3; ++p) {
+        ksg(n,5+p) = kc1*kg1_(m,p,k,j,i) + kc2*kg2_(m,p,k,j,i);
+      }
+      ksg(n,8) = kc1*kg1_(m,M1_KSG_STIFF,k,j,i);
+      ksg(n,9) = kc1*kg1_(m,M1_KSG_FSOTH,k,j,i);
+      ksg(n,10) = kgi_(m,k,j,i);
+      ksg(n,11) = egw - ego;
     }
     if (tsx && (flg & 1)) {   // hgpos-1109: the split of X (see above)
       Real sp[33];
@@ -19483,6 +19528,7 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
   auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), row);
   auto hs = Kokkos::create_mirror_view_and_copy(HostMemSpace(), spl);
   auto hk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ksp);
+  auto hg = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ksg);
   const char *spn[7] = {"mem", "vg0", "tanQ", "lat", "cross", "seam", "other"};
   Real sout[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   int ndom[7] = {0, 0, 0, 0, 0, 0, 0};
@@ -19509,6 +19555,19 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
     for (int f = 0; f < 5; ++f) std::cout << " " << static_cast<int>(hl(n,f));
     for (int f = 5; f < nfld; ++f) std::cout << " " << hl(n,f);
     std::cout << " " << jg << " " << kg << std::endl;
+    if (kgx && (static_cast<int>(hl(n,4)) & 6)) {   // hgdiag-1110b gas
+      const char *gpn[7] = {"exch_K", "cK_KE", "post", "k1stiff", "k1fs", "incmods",
+                            "exch_now"};
+      Real gs = hg(n,0) - hg(n,4);
+      std::cout << "      T2SPLITG eint_h " << hg(n,0) << " EGN " << hg(n,1)
+                << " eint_wb " << hg(n,2) << " t2inc_EN " << hg(n,3) << " dKE "
+                << hg(n,4) << " kemis " << hg(n,6) - hg(n,4) << " |";
+      for (int p = 0; p < 7; ++p) {
+        std::cout << " " << gpn[p] << " " << hg(n,5+p);
+        gs += hg(n,5+p);
+      }
+      std::cout << " | miss(wb) " << hg(n,2) - gs << std::endl;
+    }
     if (static_cast<int>(hl(n,4)) & 1) {
       // the row: diag*E, each neighbour coefficient x neighbour solution, b; M-matrix
       // check: sum |off| / |diag| and the number of positive off-diagonal coefficients
@@ -19616,7 +19675,10 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
   }
   std::cout << std::endl;
   // hgdiag-1110 dbg_t2_ksplit: the seed statistics of this stage over all cells and ranks
-  if (ksx) {T2KSplitCheck((t2s == M1_T2S_STAGE1) ? 1 : 2, true);}
+  if (ksx) {
+    T2KSplitCheck((t2s == M1_T2S_STAGE1) ? 1 : 2, true);
+    T2KSplitGas(uh, t2i_, t2s, true);   // hgdiag-1110b gas
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -19696,6 +19758,30 @@ void RadiationM1::T2KSplitRow(int t2s) {
     kd_(m,M1_KSD_FSOTH,k,j,i) = 0.0;
     kd_(m,M1_KSD_LIN,k,j,i) = lin*fk;
   });
+  // hgdiag-1110b GAS: the exchange part of K_EN from the same frozen row, and KE of the
+  // old vector (the write-back changes the momenta; T2KSplitPost takes the difference)
+  if (t2kg1.extent_int(0) < pmy_pack->nmb_thispack) {return;}
+  FluidRef flr = FluidRef::Get(pmy_pack);
+  auto kg_ = (t2s == M1_T2S_STAGE1) ? t2kg2 : t2kg1;
+  const bool hh = have_hydro && flr.on && gas_feedback;
+  const bool gq = hh && coupling && dbg_gas_heat;
+  auto uh = hh ? flr.u0 : u0;
+  const bool csk = cs_geom;
+  auto ccl = pmy_pack->pcoord->cos_cell;
+  const Real cl = c_light, ch = chat;
+  par_for("m1_t2_ksg_row", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int p = 0; p < M1_KSG_N; ++p) {kg_(m,p,k,j,i) = 0.0;}
+    if (!hh) return;
+    const Real idd = 1.0/fmax(uh(m,IDN,k,j,i), 1.0e-300);
+    const Real q1 = uh(m,IM1,k,j,i), q2 = uh(m,IM2,k,j,i), q3 = uh(m,IM3,k,j,i);
+    kg_(m,M1_KSG_KEO,k,j,i) = csk ? CsKeMom(q1, q2, q3, ccl(m,k,j))*idd
+                                  : 0.5*(q1*q1 + q2*q2 + q3*q3)*idd;
+    if (gq) {
+      kg_(m,M1_KSG_EXCH,k,j,i) = -(cl/ch)*(iw_(m,M1_IW_SRCR,k,j,i) -
+                                 iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i))*fk;
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -19718,6 +19804,31 @@ void RadiationM1::T2KSplitPost(int t2s) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     kd_(m,M1_KSD_POST,k,j,i) = kk_(m,M1_T2_E,k,j,i) - kd_(m,M1_KSD_LIN,k,j,i);
   });
+  // hgdiag-1110b GAS: KE = (KE_new - KE_old)/dt, POST = K_EN - EXCH - KE (exact sum)
+  if (t2kg1.extent_int(0) >= pmy_pack->nmb_thispack) {
+    FluidRef flr = FluidRef::Get(pmy_pack);
+    auto kg_ = st1 ? t2kg2 : t2kg1;
+    const bool hh = have_hydro && flr.on && gas_feedback;
+    auto uh = hh ? flr.u0 : u0;
+    const bool csk = cs_geom;
+    auto ccl = pmy_pack->pcoord->cos_cell;
+    const Real fk = 1.0/dt_sub;
+    par_for("m1_t2_ksg_post", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real ken = kg_(m,M1_KSG_KEO,k,j,i);
+      if (hh) {
+        const Real idd = 1.0/fmax(uh(m,IDN,k,j,i), 1.0e-300);
+        const Real q1 = uh(m,IM1,k,j,i), q2 = uh(m,IM2,k,j,i), q3 = uh(m,IM3,k,j,i);
+        ken = csk ? CsKeMom(q1, q2, q3, ccl(m,k,j))*idd
+                  : 0.5*(q1*q1 + q2*q2 + q3*q3)*idd;
+      }
+      const Real kke = (ken - kg_(m,M1_KSG_KEO,k,j,i))*fk;
+      kg_(m,M1_KSG_KE,k,j,i) = kke;
+      kg_(m,M1_KSG_POST,k,j,i) = kk_(m,M1_T2_EN,k,j,i) - kg_(m,M1_KSG_EXCH,k,j,i) - kke;
+      kg_(m,M1_KSG_STIFF,k,j,i) = 0.0;
+      kg_(m,M1_KSG_FSOTH,k,j,i) = 0.0;
+    });
+  }
   if (st1) {
     t2_ksd_ok2 = true;
   } else {
@@ -19758,6 +19869,28 @@ void RadiationM1::T2KSplitFs(int phase) {
       kd_(m,M1_KSD_FSOTH,k,j,i) -= kv;
     } else {
       kd_(m,M1_KSD_FSOTH,k,j,i) += kv;
+    }
+  });
+  // hgdiag-1110b GAS: the same phases on K1_EN (k1_stiff moves its exchange part to E;
+  // k1_reset zeroes it)
+  if (t2kg1.extent_int(0) < pmy_pack->nmb_thispack) {return;}
+  auto kg_ = t2kg1;
+  par_for("m1_t2_ksg_fs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real kv = kk_(m,M1_T2_EN,k,j,i);
+    if (ph == 0) {
+      const Real base = kg_(m,M1_KSG_EXCH,k,j,i) + kg_(m,M1_KSG_KE,k,j,i) +
+                        kg_(m,M1_KSG_POST,k,j,i);
+      kg_(m,M1_KSG_STIFF,k,j,i) = 0.0;
+      kg_(m,M1_KSG_FSOTH,k,j,i) = -base;
+    } else if (ph == 1) {
+      kg_(m,M1_KSG_FSOTH,k,j,i) += kv;
+      kg_(m,M1_KSG_STIFF,k,j,i) -= kv;
+    } else if (ph == 2) {
+      kg_(m,M1_KSG_STIFF,k,j,i) += kv;
+      kg_(m,M1_KSG_FSOTH,k,j,i) -= kv;
+    } else {
+      kg_(m,M1_KSG_FSOTH,k,j,i) += kv;
     }
   });
 }
@@ -19838,6 +19971,132 @@ void RadiationM1::T2KSplitCheck(int stage, bool dump) {
     }
     std::cout << " | dominant(most negative):";
     for (int p = 0; p < npt; ++p) {std::cout << " " << pn[p] << " " << hs(4+npt+p);}
+    std::cout << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::T2KSplitGas
+//! \brief hgdiag-1110b DEBUG dbg_t2_ksplit, GAS: in a hesdirk2 stage solve after its
+//! Picard loop (before the write-back), over the active cells of all ranks, the chain of
+//! the gas internal energy from the hydro's stage state to the write-back,
+//!   eint_wb = eint_h + t2inc_EN - dKE + exch_now,
+//! eint_h = eint(U_h) (U_h = old vector - t2inc), dKE = KE(m_h + t2inc_m) - KE(m_h),
+//! exch_now = -(c/chat)(SRCR - SRCB E') of this solve, and t2inc_EN by part:
+//!   t2inc_EN = c1 K1_EN + c2 K2_EN + incmods, K_EN = EXCH + KE + POST (+ STIFF, FSOTH)
+//! Prints the closure of the t2inc_EN split (max relative miss; > 1e-8 counted) and,
+//! over the SEEDS (eint_h > 0 and EGN <= 0 or eint_wb <= 0), the mean of each part /
+//! eint_h and the most-negative counts, with the parts exch_K = c K EXCH, kemis = c K KE
+//! - dKE (the kinetic mismatch of the carried momentum and energy), post, k1stiff, k1fs,
+//! incmods, exch_now (they add up to eint_wb - eint_h).  Read-only.
+
+void RadiationM1::T2KSplitGas(DvceArray5D<Real> uh, DvceArray5D<Real> t2i_, int t2s,
+                              bool dump) {
+  FluidRef flr = FluidRef::Get(pmy_pack);
+  if (t2kg1.extent_int(0) < pmy_pack->nmb_thispack || !have_hydro || !flr.on) {return;}
+  if (t2i_.extent_int(1) <= M1_T2_EN) {return;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto kg1_ = t2kg1;
+  auto kg2_ = t2kg2;
+  auto kgi_ = t2kgi;
+  const Real c1 = t2_ksd_c1, c2 = t2_ksd_c2;
+  const bool gq = coupling && dbg_gas_heat;
+  const Real cl = c_light, ch = chat;
+  const bool csk = cs_geom;
+  auto ccl = pmy_pack->pcoord->cos_cell;
+  const bool hoi_ = impl_hold && (hold_m.extent_int(0) > nmb1);
+  auto hmi_ = hold_m;
+  constexpr int npt = 7;
+  constexpr int ns = 8 + 2*npt + 4;
+  DvceArray1D<Real> st("m1_t2_ksg_st", ns);
+  Kokkos::deep_copy(st, 0.0);
+  par_for("m1_t2_ksg_chk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (hoi_ && hmi_(m,k,j,i) > 0.0) return;
+    const Real idd = 1.0/fmax(uh(m,IDN,k,j,i), 1.0e-300);
+    const Real p1 = uh(m,IM1,k,j,i), p2 = uh(m,IM2,k,j,i), p3 = uh(m,IM3,k,j,i);
+    const Real q1 = p1 - t2i_(m,M1_T2_M1,k,j,i), q2 = p2 - t2i_(m,M1_T2_M1+1,k,j,i);
+    const Real q3 = p3 - t2i_(m,M1_T2_M1+2,k,j,i);
+    Real kep, keh;
+    if (csk) {
+      const Real c = ccl(m,k,j);
+      kep = CsKeMom(p1, p2, p3, c)*idd;
+      keh = CsKeMom(q1, q2, q3, c)*idd;
+    } else {
+      kep = 0.5*(p1*p1 + p2*p2 + p3*p3)*idd;
+      keh = 0.5*(q1*q1 + q2*q2 + q3*q3)*idd;
+    }
+    const Real dke = kep - keh;
+    const Real egn = iw_(m,M1_IW_EGN,k,j,i);
+    const Real exn = gq ? -(cl/ch)*(iw_(m,M1_IW_SRCR,k,j,i) -
+                     iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i)) : 0.0;
+    const Real wb = egn + exn;
+    const Real ten = t2i_(m,M1_T2_EN,k,j,i);
+    const Real eh = egn - ten + dke;
+    Real pa[5];
+    for (int p = 0; p < 3; ++p) {pa[p] = c1*kg1_(m,p,k,j,i) + c2*kg2_(m,p,k,j,i);}
+    pa[3] = c1*kg1_(m,M1_KSG_STIFF,k,j,i);
+    pa[4] = c1*kg1_(m,M1_KSG_FSOTH,k,j,i);
+    const Real pin = kgi_(m,k,j,i);
+    const Real sum = pa[0] + pa[1] + pa[2] + pa[3] + pa[4] + pin;
+    const Real sc = fmax(fmax(fabs(ten), fabs(eh)), 1.0e-300);
+    const Real rel = fabs(ten - sum)/sc;
+    if (rel > 1.0e-8) {Kokkos::atomic_add(&st(1), 1.0);}
+    Kokkos::atomic_max(&st(2), rel);
+    if (!(eh > 0.0)) {
+      Kokkos::atomic_add(&st(6), 1.0);
+      if (!(wb > 0.0)) {Kokkos::atomic_add(&st(7), 1.0);}
+      return;
+    }
+    const bool so = !(egn > 0.0), sw = !(wb > 0.0);
+    if (!(so || sw)) return;
+    if (so) {Kokkos::atomic_add(&st(3), 1.0);}
+    if (sw) {Kokkos::atomic_add(&st(4), 1.0);}
+    Kokkos::atomic_add(&st(5), 1.0);
+    // exch_K, kemis, post, k1stiff, k1fs, incmods, exch_now
+    const Real pv[npt] = {pa[0], pa[1] - dke, pa[2], pa[3], pa[4], pin, exn};
+    int qd = 0;
+    for (int p = 0; p < npt; ++p) {
+      Kokkos::atomic_add(&st(8+p), pv[p]/eh);
+      if (pv[p] < pv[qd]) {qd = p;}
+    }
+    Kokkos::atomic_add(&st(8+npt+qd), 1.0);
+    Kokkos::atomic_add(&st(8+2*npt), pa[1]/eh);
+    Kokkos::atomic_add(&st(8+2*npt+1), dke/eh);
+    Kokkos::atomic_add(&st(8+2*npt+2), egn/eh);
+    Kokkos::atomic_add(&st(8+2*npt+3), wb/eh);
+  });
+  auto hs = Kokkos::create_mirror_view_and_copy(HostMemSpace(), st);
+  hs(0) = static_cast<Real>((nmb1 + 1)*(ke - ks + 1)*(je - js + 1)*(ie - is + 1));
+#if MPI_PARALLEL_ENABLED
+  {
+    Real mx = hs(2);
+    MPI_Allreduce(MPI_IN_PLACE, hs.data(), ns, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &mx, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    hs(2) = mx;
+  }
+#endif
+  if (global_variable::my_rank == 0) {
+    const char *pn[npt] = {"exch_K", "kemis", "post", "k1stiff", "k1fs", "incmods",
+                           "exch_now"};
+    const Real nsd = hs(5);
+    auto mn = [&](int q) {return (nsd > 0.0) ? hs(q)/nsd : 0.0;};
+    std::cout << (dump ? "<rad_m1> GSPLIT_DUMP cycle " : "<rad_m1> GSPLIT_CHECK cycle ")
+              << pmy_pack->pmesh->ncycle << " stage "
+              << ((t2s == M1_T2S_STAGE1) ? 1 : 2) << " ok1 " << t2_ksd_ok1 << " ok2 "
+              << t2_ksd_ok2 << " cells " << hs(0) << " miss>1e-8 " << hs(1)
+              << " max_rel_miss " << hs(2) << " | eint_h<=0 " << hs(6) << " (wb<=0 "
+              << hs(7) << ") | seeds " << nsd << " (EGN<=0 " << hs(3) << ", wb<=0 "
+              << hs(4) << ") mean/eint_h: EGN " << mn(8+2*npt+2) << " wb "
+              << mn(8+2*npt+3) << " cK_KE " << mn(8+2*npt) << " dKE "
+              << mn(8+2*npt+1) << " | parts:";
+    for (int p = 0; p < npt; ++p) {std::cout << " " << pn[p] << " " << mn(8+p);}
+    std::cout << " | dominant(most negative):";
+    for (int p = 0; p < npt; ++p) {std::cout << " " << pn[p] << " " << hs(8+npt+p);}
     std::cout << std::endl;
   }
 }
