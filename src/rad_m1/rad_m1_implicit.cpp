@@ -5874,7 +5874,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       // consrc-1011: Z_f of the x2 face (as x1; om = theta (1 + chat dt kt), which is
       // 1 - AL under the blend and < 1 only where the realizability limiter damps)
       const Real fb = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
-      const Real hh = f2_(m,k,j,i) - fb;
+      const Real hh = fa2_(m,k,j,i) - fb;   // rc18-1110: the applied flux (cmem)
       const Real om = th*(1.0 + ch*dt*ktf);
       gz2_(m,k,j,i) = gcft ? (dt*(gr + off))
                       : (-(1.0 + ch*dt*ktf)*hh/(cl*ch) + om*dt*(gr + off)
@@ -6076,7 +6076,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       if (gcst) {
         const Real fb = th*(wmem*f3n_(m,k,j,i)
                             - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
-        const Real hh = f3_(m,k,j,i) - fb;
+        const Real hh = fa3_(m,k,j,i) - fb;   // rc18-1110: the applied flux (cmem)
         const Real om = th*(1.0 + ch*dt*ktf);
         gz3_(m,k,j,i) = gcft ? (dt*(gr + off))
                         : (-(1.0 + ch*dt*ktf)*hh/(cl*ch) + om*dt*(gr + off)
@@ -17648,6 +17648,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto pfd_ = pfc_def;
   // rc18-1110 implicit_hr_cmem: the write-back forms the cell F from the APPLIED face
   // fluxes (fax*); f0_/f2_/f3_ point back at F_c (f0x*) before the stage slopes below
+  // rc18-1110 cmem: F^old of the conservative gas source = the face means of the F_c
+  // memory (+ a E^n), the old flux the face kernels' Z_f were built with, so that the gas
+  // takes exactly the drag on the APPLIED flux dt k F_a'/c + the transport part
+  const bool cmw = impl_hr_cmem;
   if (impl_hr_cmem) {
     f0_ = fax1;
     if (trans) {f2_ = fax2;}
