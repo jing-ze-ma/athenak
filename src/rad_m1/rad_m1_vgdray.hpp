@@ -201,9 +201,9 @@ Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
 
 //----------------------------------------------------------------------------------------
 // vetgdup-1110 vet_gd_upwind: the shell's mean angular profile Ibar(mu) of shell iu on
-// the half range of the branch (lo: mu < 0; 2 kh bins over [-1, 1], width 1/kh; bin b holds
-// a0 + a1 t + a2 t^2, t = (mu - c_b) kh, flag pf(iu,b,3) > 0 when fitted); between bin
-// centres the linear blend of the two bins' quadratics (smooth: its second derivative
+// the half range of the branch (lo: mu < 0; 2 kh bins over [-1, 1], width 1/kh; bin b
+// holds a0 + a1 t + a2 t^2, t = (mu - c_b) kh, flag pf(iu,b,3) > 0 when fitted); between
+// bin centres the linear blend of the two bins' quadratics (smooth: its second derivative
 // carries the fits' own curvature, not the O(1) jump of a piecewise-linear profile).
 // Returns false when a bin it needs holds no fit.  f1, f2: d/dmu, d^2/dmu^2
 template <typename P>
