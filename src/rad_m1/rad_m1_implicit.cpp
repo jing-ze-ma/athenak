@@ -2857,9 +2857,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         std::string sl = pin->GetString("rad_m1","implicit_hr_recon_lim");
         if (sl.compare("smooth") == 0) {
           impl_muscl_smooth = true;
+        } else if (sl.compare("smooth0") == 0) {   // hr2prod-1110
+          impl_muscl_smooth = true;
+          impl_muscl_smooth0 = true;
         } else if (sl.compare("vl") != 0) {
           ImplFatal("<rad_m1>/implicit_hr_recon_lim = '" + sl
-                    + "' is not a choice (vl | smooth)");
+                    + "' is not a choice (vl | smooth | smooth0)");
         }
         if (impl_muscl_smooth && impl_muscl_led) {
           ImplFatal("<rad_m1>/implicit_hr_recon_lim = smooth needs "
@@ -18970,6 +18973,7 @@ void RadiationM1::ImplicitMusclBuild() {
   muscl_nbuild += 1;
   const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
   const bool sfg = impl_sfgate && (iw_hsf >= 0);   // hr2prod-1110
+  const bool smo0 = impl_muscl_smooth0;
   const int hsb = iw_hsf;
   par_for("m1_muscl_sig", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -18981,6 +18985,7 @@ void RadiationM1::ImplicitMusclBuild() {
     for (int d = 0; d < 3; ++d) {
       Real sg = 0.0, sb = 0.0;
       bool smooth = false;   // hr2nd-1110
+      bool evald = false;    // hr2prod-1110
       bool ok = !efx && ((d == 0) || (d == 1 && l2) || (d == 2 && l3));
       if (ok && d == 0 && !cyclic) {
         ok = !((i == is && botb) || (i == ie && topb));
@@ -19036,6 +19041,7 @@ void RadiationM1::ImplicitMusclBuild() {
           const int cs = (d == 0) ? is : ((d == 1) ? js : ks);
           const int ce = (d == 0) ? ie : ((d == 1) ? je : ke);
           if (c - 2 >= cs && c + 2 <= ce) {
+            evald = true;   // hr2prod-1110 smooth0
             const int dk = (d == 2) ? 1 : 0, dj = (d == 1) ? 1 : 0, di = (d == 0) ? 1 : 0;
             const Real em2 = iw_(m,M1_IW_EP,k-2*dk,j-2*dj,i-2*di);
             const Real ep2 = iw_(m,M1_IW_EP,k+2*dk,j+2*dj,i+2*di);
@@ -19090,6 +19096,7 @@ void RadiationM1::ImplicitMusclBuild() {
         const Real x = cdtx/(dxd*xc0);
         sg /= (1.0 + SQR(SQR(x)));
       }
+      if (smo0 && evald && !smooth) {sg = 0.0; sb = 0.0;}   // hr2prod-1110 smooth0
       if (sfg && sg != 0.0) {   // hr2prod-1110 implicit_hr_recon_sfgate
         auto sfc = [&](const int kk, const int jj, const int ii) {
           const Real jh = iw_(m,hsb+M1_HSF_JH,kk,jj,ii);

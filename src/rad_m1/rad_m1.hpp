@@ -995,6 +995,10 @@ class RadiationM1 {
   // else (Jh = J: every smooth field) the plm slopes act.  Allows q = h with the sf face
   // ratios and with implicit_thin_recon = js / jse.  Angular data only.
   bool impl_sfgate = false;
+  // hr2prod-1110 implicit_hr_recon_lim = smooth0: as smooth, but where the smoothness test
+  // was evaluable (cells c-2..c+2 in the block) and FAILED the slope is 0 (donor cell)
+  // instead of van Leer: jumps (beam / shadow edges, fronts) stay first order
+  bool impl_muscl_smooth0 = false;
   // hr2prod-1110 implicit_thin_gface = max (default) | mean | jump (read only when named):
   // the face thinness g_f of the implicit_thin_switch weight S(g_f).  max(g_L, g_R) moves
   // the switch by dx/2 against the gradient of g (an O(dx) shift of the blend region: a
