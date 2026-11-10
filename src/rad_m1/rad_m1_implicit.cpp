@@ -3677,7 +3677,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   if (impl_hr_cmem) {   // rc18-1110: the applied face flux (F_c lives in f0x1)
     // aphll-time-1110: implicit_vimp reads the APPLIED fluxes fax* (ImplicitVimpBuild)
-    if (impl_lbath || (impl_vimp && !impl_aphll_mem)) {
+    if (impl_lbath) {
       ImplFatal("<rad_m1>/implicit_hr_cmem: not with implicit_vimp or the Linhao bath "
                 "(they read f0x* as the applied flux)");
     }
@@ -12025,7 +12025,7 @@ void RadiationM1::ImplicitVimpBuild() {
   auto vd_ = vet_cell;
   const bool dfull = vet_full;
   // aphll-time-1110: under the F_c memory the drag is that of the APPLIED face flux
-  const bool cmv = impl_hr_cmem && impl_aphll_mem;
+  const bool cmv = impl_hr_cmem;
   auto f0_ = cmv ? fax1 : f0x1;
   auto f2_ = cmv ? fax2 : f0x2;
   auto f3_ = cmv ? fax3 : f0x3;
