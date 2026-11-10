@@ -275,6 +275,34 @@ Real M1HrJFlag(const int src, const V &iw, const VC &vc, const int m, const int 
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1BlendDtc
+//! \brief rc18-1110 (implicit_blend_dtc = kappa > 0, opt-in): the dt-CONSISTENT per-step
+//! weight of a blended half-range face.  The face flux of a step is
+//!   F^{n+1} = (1 - w) th (F^n - c^2 dt grad E/3) + w c (h+ E_L + h- E_R),
+//! th = 1/(1 + a_chi), a_chi = c dt chi_f, and F^n is the STORED (blended) face flux of
+//! the previous step.  With a fixed w that relaxes the face-flux memory towards the
+//! half-range flux by the fraction w PER STEP: rate w/dt, which diverges as dt -> 0.
+//! The steady face flux is then w(1 + a_chi)/(w + a_chi) H + ..., i.e. it depends on dt
+//! (-> pure half-range as dt -> 0 wherever w > 0), and faces with 0 < w < 1 behave as
+//! slaved (w >> a_chi) or free central (w << a_chi) according to dt: on a dt ladder the
+//! interface between the two moves and the central part of the thin, near-isotropic
+//! region (fb < implicit_blend_flo / implicit_thin_h0) carries grid-scale waves whose
+//! amplitude is set by the step's numerical damping: no convergence in dt (pulse_u T,
+//! raycheap17).  The consistent weight
+//!   wt = w a/(a + 1 - w),  a = c dt (chi_f + kappa/dx) = cdx (tau_f + kappa)
+//! makes the steady flux the convex blend (1 - w) F_diff + w F_hr for every dt when
+//! kappa = 0, and the relaxation RATE c (chi_f + kappa/dx) w/(1 - w) independent of dt
+//! (a fixed ODE as dt -> 0); a -> infinity (c dt chi >> 1, thick or large steps) gives
+//! wt -> w (the old weight).  kappa > 0 keeps a finite rate in vacuum (chi = 0).
+//! wt <= w, wt(0) = 0, wt(1) = 1: the M-matrix signs are kept.
+
+KOKKOS_INLINE_FUNCTION
+Real M1BlendDtc(const Real w, const Real a) {
+  if (!(w > 0.0) || !(w < 1.0)) {return w;}
+  return w*a/(a + 1.0 - w);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1HrFace
 //! \brief hrup-1009: AL, HCL, HCR of one face from hp of the LEFT cell and hm of the
 //! RIGHT cell: the upwind half-range flux c (hp_L E_L + hm_R E_R) weighted by the AP
@@ -303,7 +331,7 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
               const Real ch, const Real el, const Real er, const Real br0,
               const Real hml, const Real hpr, const Real cdx, const Real bx0,
               const int bxmode, const Real bxwmin, const Real bxr0, const Real bxj,
-              Real &alw, Real &ccl, Real &ccr) {
+              Real &alw, Real &ccl, Real &ccr, const Real dtck = 0.0) {
   if (hpl < 0.0 || hmr > 0.0) {   // no formal solution in one of the two cells
     alw = 0.0;
     ccl = 0.0;
@@ -393,6 +421,7 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
     }
     w = 1.0 - (1.0 - w)*(1.0 - s2);
   }
+  if (dtck > 0.0) {w = M1BlendDtc(w, cdx*(tauf + dtck));}   // rc18-1110
   alw = w;
   ccl = w*ch*hpl;
   ccr = w*ch*hmr;
@@ -653,7 +682,8 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
                 const Real enr, const Real hdl, const Real hdr, const Real jl,
                 const Real jr, const Real esc, const Real h0, const Real h1,
                 const Real kn0, const Real knp, const Real ch, Real &alw, Real &ccl,
-                Real &ccr, Real &dg, const Real hwl = -1.0, const Real hwr = 0.0) {
+                Real &ccr, Real &dg, const Real hwl = -1.0, const Real hwr = 0.0,
+                const Real cdx = 0.0, const Real dtck = 0.0) {
   dg = 0.0;
   // coreL-1012 implicit_thin_hcface = tau: the face value of the formal-solution flux
   // Hf = hwl H_L + hwr H_R (optical-depth weights x (r/r_f)^2, see the x1 kernel);
@@ -681,6 +711,7 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
     }
     w = fmax(w, wk);
   }
+  if (dtck > 0.0) {w = M1BlendDtc(w, cdx*(tauf + dtck));}   // rc18-1110
   alw = w;
   ccl = w*ch*hpl;
   ccr = w*ch*hmr;
@@ -2461,6 +2492,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_blend_alpha = pin->GetOrAddReal("rad_m1","implicit_blend_alpha",1.0);
   impl_blend_r0 = pin->GetOrAddReal("rad_m1","implicit_blend_r0",1.5);
   impl_blend_xthin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin",0.0);
+  // rc18-1110 implicit_blend_dtc = kappa > 0 (opt-in; read only when named, 0 = off,
+  // bitwise): the dt-consistent per-step weight of the half-range faces (M1BlendDtc)
+  impl_blend_dtc = pin->DoesParameterExist("rad_m1","implicit_blend_dtc") ?
+                   pin->GetReal("rad_m1","implicit_blend_dtc") : 0.0;
+  if (impl_blend_dtc < 0.0) {ImplFatal("<rad_m1>/implicit_blend_dtc must be >= 0");}
+  if (impl_blend_dtc > 0.0 && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> implicit_blend_dtc = " << impl_blend_dtc
+              << ": dt-consistent half-range face weights (M1BlendDtc)" << std::endl;
+  }
   {
     // xthinfix-1009: where the xthin override acts (all faces = hrup-1009 behaviour)
     std::string sxm = pin->GetOrAddString("rad_m1","implicit_blend_xthin_mode","all");
@@ -14534,6 +14574,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const Real bx0 = impl_blend_xthin;
       const int bxmode = impl_blend_xthin_mode;
       const Real bxwmin = impl_blend_xthin_wmin, bxr0 = impl_blend_xthin_r0;
+      const Real bdtc = impl_blend_dtc;   // rc18-1110
       const bool hgd = hrx && vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0);
       const int hsrc = !hrx ? 0 : (vetsc ? 1 : (hgd ? 2 : (!impl_hr_model ? -1 :
                                                             (trans ? 0 : 3))));
@@ -14716,7 +14757,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                      1.0 - hgh_(m,M1_VGD_HREP,k,j,ip))
                               : fmin(1.0 - hvc_(m,M1_VET_EPS,k,j,im),
                                      1.0 - hvc_(m,M1_VET_EPS,k,j,ip))),
-                       th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt, hwl, hwr);
+                       th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt, hwl, hwr,
+                       ch*dt/dx, bdtc);
             ifw_(m,M1_IFW_AL,k,j,i) = alb;
             ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
             ifw_(m,M1_IFW_HCR,k,j,i) = hrb;
@@ -14733,7 +14775,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                    ch*dt/dx, bx0, bxmode, bxwmin, bxr0,
                    (bxmode == 2) ? fmax(M1HrJFlag(hsrc, iw_, hvc_, m, k, j, im),
                                         M1HrJFlag(hsrc, iw_, hvc_, m, k, j, ip)) : 0.0,
-                   alb, hlb, hrb);
+                   alb, hlb, hrb, bdtc);
           ifw_(m,M1_IFW_AL,k,j,i) = alb;
           ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
           ifw_(m,M1_IFW_HCR,k,j,i) = hrb;

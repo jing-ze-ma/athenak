@@ -969,6 +969,7 @@ class RadiationM1 {
   int impl_blend_xthin_mode = 0;       // xthinfix-1009: 0 all, 1 beam, 2 beam_kn
   Real impl_blend_xthin_wmin = 0.0;    // xthinfix-1009: threshold of mode = beam
   Real impl_blend_xthin_r0 = 1.5;      // xthinfix-1009: Knudsen R0 of mode = beam_kn
+  Real impl_blend_dtc = 0.0;   // rc18-1110 implicit_blend_dtc: M1BlendDtc kappa (0 off)
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
   // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a
   // dt-free thin/thick weight frozen per solve (formal-solution |H|/J, its non-locality

@@ -44,6 +44,7 @@
   const Real bx0 = impl_blend_xthin, dtl = dt_sub;
   const int bxmode = impl_blend_xthin_mode;
   const Real bxwmin = impl_blend_xthin_wmin, bxr0 = impl_blend_xthin_r0;
+  const Real bdtc = impl_blend_dtc;   // rc18-1110 (M1BlendDtc)
   if (impl_beam_hr) {
     // hrup-1009: per direction d, h+_d -> S1 and h-_d -> S3 of every active cell
     // (M1HrCell), both through the transverse halo, then the faces (M1HrFace)
@@ -224,7 +225,8 @@
                      jcl, jcr,
                      (tcorr == M1_THCR_HCS) ? fmin(iw_(m,M1_IW_TR,km,jm,i),
                                                    iw_(m,M1_IW_TR,k,j,i)) : 1.0,
-                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr);
+                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr,
+                     ch*dtl/dx, bdtc);
           fw(m,M1_IFW_AL,k,j,i) = al;
           fw(m,M1_IFW_HCL,k,j,i) = hl;
           fw(m,M1_IFW_HCR,k,j,i) = hr;
@@ -244,7 +246,7 @@
                  bkind, bfm, btau0, bflo, bfhi, balph,
                  ch, iw_(m,M1_IW_EP,km,jm,i), iw_(m,M1_IW_EP,k,j,i), br0,
                  iw_(m,M1_IW_S3,km,jm,i), iw_(m,M1_IW_S1,k,j,i), ch*dtl/dx, bx0, bxmode,
-                 bxwmin, bxr0, jfl, al, hl, hr);
+                 bxwmin, bxr0, jfl, al, hl, hr, bdtc);
         fw(m,M1_IFW_AL,k,j,i) = al;
         fw(m,M1_IFW_HCL,k,j,i) = hl;
         fw(m,M1_IFW_HCR,k,j,i) = hr;
