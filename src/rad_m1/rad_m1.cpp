@@ -1578,6 +1578,22 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // vgdh-1110 vet_gd_hr_latfit = L (read only when named; -1 = off, rad_m1.hpp)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_hr_latfit")) {
+      vgd_hlf = pin->GetInteger("rad_m1","vet_gd_hr_latfit");
+      if (vgd_hlf > 3) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "rad_m1/vet_gd_hr_latfit = " << vgd_hlf
+                  << " (-1 off, 0..3 the spherical-harmonic degree)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_gd_hr_latfit_d")) {
+        vgd_hlf_d = pin->GetReal("rad_m1","vet_gd_hr_latfit_d");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_gd_hr_latfit_g")) {
+        vgd_hlf_g = pin->GetBoolean("rad_m1","vet_gd_hr_latfit_g");
+      }
+    }
     // hrsplit-1110 vet_gd_hr_split = none | col (read only when named; rad_m1.hpp)
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_hr_split")) {
       const std::string hs = pin->GetString("rad_m1","vet_gd_hr_split");

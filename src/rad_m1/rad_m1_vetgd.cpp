@@ -6586,6 +6586,7 @@ void RadiationM1::VetGdPost() {
   }
   // hrsplit-1110 vet_gd_hr_split (default off): not on a snapshot sweep of another set
   if (vgd_hrs != 0 && !vra_raw) {VetGdHrSplit();}
+  if (vgd_hlf >= 0 && !vra_raw) {VetGdHrLatFit();}   // vgdh-1110 (default off)
   VetLatOdMax();   // D_r,lat in the implicit operator (vet_col_lat_offdiag = operator)
   Kokkos::fence();
   vgd_tmom += tm.seconds();

@@ -64,6 +64,7 @@
 #include "coordinates/coordinates.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "coordinates/cubed_sphere.hpp"
+#include "utils/repro_sum.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
@@ -2883,6 +2884,7 @@ void RadiationM1::VetGdCsHrPrep() {
   const int cfb = nha - 1;
   auto hr_ = vgd_hr;
   auto cn2 = cs_cn2, cn3 = cs_cn3;
+  const bool nolat = vgd_hlf_g && (vgd_hlf >= 0);
   par_for("m1_vgdcs_hrfb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (hr_(m,0,k,j,i) < 0.0) {hr_(m,cfb,k,j,i) = 0.0; return;}
@@ -2890,7 +2892,9 @@ void RadiationM1::VetGdCsHrPrep() {
     const Real rr = hr_(m,0,k,j,i) + hr_(m,1,k,j,i);
     const Real rx = hr_(m,2,k,j,i) + hr_(m,3,k,j,i);
     const Real re = hr_(m,4,k,j,i) + hr_(m,5,k,j,i);
-    const Real lat = fmax((rx*rx + re*re - 2.0*cc*rx*re)/(1.0 - cc*cc), 0.0);
+    // vgdh-1110 vet_gd_hr_latfit_g: the lateral net ratios dropped from |H|/J
+    const Real lat = nolat ? 0.0
+                     : fmax((rx*rx + re*re - 2.0*cc*rx*re)/(1.0 - cc*cc), 0.0);
     hr_(m,cfb,k,j,i) = fmin(sqrt(rr*rr + lat), 1.0);
   });
   if (pbval_hr == nullptr) {
@@ -2906,6 +2910,164 @@ void RadiationM1::VetGdCsHrPrep() {
   while (pbval_hr->RecvAndUnpackCC(vgd_hr, vgd_hr_c) == TaskStatus::incomplete) {}
   while (pbval_hr->ClearSend() == TaskStatus::incomplete) {}
   while (pbval_hr->ClearRecv() == TaskStatus::incomplete) {}
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdHrLatFit
+//! \brief vgdh-1110 vet_gd_hr_latfit = L (rad_m1.hpp): per shell i, the radial half-range
+//! ratios q = r+_r, r-_r (vgd_hr components 0, 1) are fitted by least squares with the
+//! real spherical harmonics of degree <= L (Cartesian polynomials in the cell-centre unit
+//! vector, 1, 4, 9, 16 functions), weighted by the cell's solid angle, over the valid
+//! cells (r+ >= 0) of the shell on every rank (repro::ShellSums: exact, layout
+//! invariant); then q <- fit + D (q - fit), clamped as vgd_hr.  The Gram matrix is solved
+//! on the host (Gauss with partial pivoting, a 1e-12 relative ridge: a sp wedge does not
+//! see every harmonic).  sp: (theta, phi) = (x2, x3); cs: the gnomonic panel map.
+
+namespace {
+KOKKOS_INLINE_FUNCTION
+void LatFitBasis(const Real x, const Real y, const Real z, Real yb[16]) {
+  yb[0] = 1.0;
+  yb[1] = x; yb[2] = y; yb[3] = z;
+  yb[4] = x*y; yb[5] = y*z; yb[6] = x*z; yb[7] = x*x - y*y; yb[8] = 3.0*z*z - 1.0;
+  yb[9] = y*(3.0*x*x - y*y); yb[10] = x*y*z; yb[11] = y*(5.0*z*z - 1.0);
+  yb[12] = z*(5.0*z*z - 3.0); yb[13] = x*(5.0*z*z - 1.0); yb[14] = z*(x*x - y*y);
+  yb[15] = x*(x*x - 3.0*y*y);
+}
+}  // namespace
+
+void RadiationM1::VetGdHrLatFit() {
+  if (vgd_hlf < 0 || !impl_beam_hr || vgd_hr.extent_int(0) == 0) {return;}
+  if (!sph_geom && !cs_geom) {return;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int ilo = is + vlat_icut;
+  const int c1 = indcs.nx1 + 2*indcs.ng;
+  const int n2 = vgd_hr.extent_int(3), n3 = vgd_hr.extent_int(2);
+  const int nb = (vgd_hlf + 1)*(vgd_hlf + 1);
+  // the basis x dOmega at the cell centres (geometry: built once per MeshBlock set)
+  if (vgd_hlf_y.extent_int(0) != nmb || vgd_hlf_y.extent_int(1) != n3 ||
+      vgd_hlf_y.extent_int(2) != n2) {
+    Kokkos::realloc(vgd_hlf_y, nmb, n3, n2, 17);
+    auto yh = Kokkos::create_mirror_view(vgd_hlf_y);
+    auto &msz = pmy_pack->pmb->mb_size;
+    auto &pan = pmy_pack->pmb->mb_panel;
+    const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+    for (int m = 0; m < nmb; ++m) {
+      for (int k = 0; k < n3; ++k) {
+        for (int j = 0; j < n2; ++j) {
+          Real u[3], dom;
+          if (cs_geom) {
+            Real fa[3], fb[3], fq[3];
+            cubed_sphere::PanelFrame(pan.h_view(m), fa, fb, fq);
+            const Real xi = 0.25*M_PI*CellCenterX(j - js, nx2, msz.h_view(m).x2min,
+                                                  msz.h_view(m).x2max);
+            const Real et = 0.25*M_PI*CellCenterX(k - ks, nx3, msz.h_view(m).x3min,
+                                                  msz.h_view(m).x3max);
+            const Real x = std::tan(xi), y = std::tan(et);
+            const Real dl = std::sqrt(1.0 + x*x + y*y);
+            for (int c = 0; c < 3; ++c) {u[c] = (fa[c]*x + fb[c]*y + fq[c])/dl;}
+            const Real dxi = 0.25*M_PI*(msz.h_view(m).x2max - msz.h_view(m).x2min)/nx2;
+            const Real det = 0.25*M_PI*(msz.h_view(m).x3max - msz.h_view(m).x3min)/nx3;
+            dom = (1.0 + x*x)*(1.0 + y*y)/(dl*dl*dl)*dxi*det;
+          } else {
+            const Real th = (nx2 > 1) ? CellCenterX(j - js, nx2, msz.h_view(m).x2min,
+                                                    msz.h_view(m).x2max)
+                                      : 0.5*(msz.h_view(m).x2min + msz.h_view(m).x2max);
+            const Real ph = (nx3 > 1) ? CellCenterX(k - ks, nx3, msz.h_view(m).x3min,
+                                                    msz.h_view(m).x3max)
+                                      : 0.5*(msz.h_view(m).x3min + msz.h_view(m).x3max);
+            u[0] = std::sin(th)*std::cos(ph);
+            u[1] = std::sin(th)*std::sin(ph);
+            u[2] = std::cos(th);
+            const Real dth = (msz.h_view(m).x2max - msz.h_view(m).x2min)/nx2;
+            const Real dph = (msz.h_view(m).x3max - msz.h_view(m).x3min)/nx3;
+            dom = std::sin(th)*dth*dph;
+          }
+          Real yb[16];
+          LatFitBasis(u[0], u[1], u[2], yb);
+          for (int a = 0; a < 16; ++a) {yh(m,k,j,a) = yb[a];}
+          yh(m,k,j,16) = dom;
+        }
+      }
+    }
+    Kokkos::deep_copy(vgd_hlf_y, yh);
+  }
+  auto hr_ = vgd_hr;
+  auto yy_ = vgd_hlf_y;
+  const int ng = nb*(nb + 1)/2;   // the Gram matrix (upper triangle), then 2 nb rhs
+  std::vector<Real> sm;
+  repro::ShellSums("m1_vgd_hlf", ng + 2*nb, c1, nmb, ks, ke, js, je, ilo, ie,
+                   KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
+                                 const int i) {
+    if (hr_(m,0,k,j,i) < 0.0) {return 0.0;}
+    const Real w = yy_(m,k,j,16);
+    if (q >= ng) {
+      const int r = q - ng, c = r/nb, a = r - c*nb;
+      return w*yy_(m,k,j,a)*hr_(m,c,k,j,i);
+    }
+    int a = 0, r = q;
+    while (r >= nb - a) {r -= nb - a; ++a;}
+    return w*yy_(m,k,j,a)*yy_(m,k,j,a + r);
+  }, sm);
+  // per shell: solve G c = b for both components (Gauss, partial pivoting, ridge)
+  DvceArray1D<Real> cf("m1_vgd_hlf_c", 2*nb*c1 + c1);
+  auto ch = Kokkos::create_mirror_view(cf);
+  Kokkos::deep_copy(ch, 0.0);
+  std::vector<Real> g(nb*nb), b(2*nb);
+  for (int i = ilo; i <= ie; ++i) {
+    int q = 0;
+    for (int a = 0; a < nb; ++a) {
+      for (int bb = a; bb < nb; ++bb) {
+        g[a*nb + bb] = g[bb*nb + a] = sm[static_cast<size_t>(q)*c1 + i];
+        ++q;
+      }
+    }
+    if (!(g[0] > 0.0)) {continue;}   // no valid cell on this shell: keep vgd_hr
+    Real tr = 0.0;
+    for (int a = 0; a < nb; ++a) {tr += g[a*nb + a];}
+    for (int a = 0; a < nb; ++a) {g[a*nb + a] += 1.0e-12*tr;}
+    for (int r = 0; r < 2*nb; ++r) {b[r] = sm[static_cast<size_t>(ng + r)*c1 + i];}
+    for (int p = 0; p < nb; ++p) {
+      int piv = p;
+      for (int r = p + 1; r < nb; ++r) {
+        if (std::fabs(g[r*nb + p]) > std::fabs(g[piv*nb + p])) {piv = r;}
+      }
+      if (piv != p) {
+        for (int cc = 0; cc < nb; ++cc) {std::swap(g[p*nb + cc], g[piv*nb + cc]);}
+        std::swap(b[p], b[piv]);
+        std::swap(b[nb + p], b[nb + piv]);
+      }
+      for (int r = p + 1; r < nb; ++r) {
+        const Real f = g[r*nb + p]/g[p*nb + p];
+        for (int cc = p; cc < nb; ++cc) {g[r*nb + cc] -= f*g[p*nb + cc];}
+        b[r] -= f*b[p];
+        b[nb + r] -= f*b[nb + p];
+      }
+    }
+    for (int c = 0; c < 2; ++c) {
+      for (int p = nb - 1; p >= 0; --p) {
+        Real s = b[c*nb + p];
+        for (int cc = p + 1; cc < nb; ++cc) {s -= g[p*nb + cc]*ch(c*nb*c1 + cc*c1 + i);}
+        ch(c*nb*c1 + p*c1 + i) = s/g[p*nb + p];
+      }
+    }
+    ch(2*nb*c1 + i) = 1.0;   // the shell has a fit
+  }
+  Kokkos::deep_copy(cf, ch);
+  const Real dd = vgd_hlf_d;
+  par_for("m1_vgd_hlf_set", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, ilo, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (hr_(m,0,k,j,i) < 0.0 || !(cf(2*nb*c1 + i) > 0.0)) {return;}
+    for (int c = 0; c < 2; ++c) {
+      Real f = 0.0;
+      for (int a = 0; a < nb; ++a) {f += cf(c*nb*c1 + a*c1 + i)*yy_(m,k,j,a);}
+      const Real v = f + dd*(hr_(m,c,k,j,i) - f);
+      hr_(m,c,k,j,i) = (c == 0) ? fmin(fmax(v, 0.0), 1.0) : fmin(fmax(v, -1.0), 0.0);
+    }
+  });
 }
 
 } // namespace radm1
