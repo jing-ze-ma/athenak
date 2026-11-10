@@ -3361,6 +3361,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // about z of EVERY active cell of the shell (the dense ones too: their radiation
     // carries the zonal flux whose L reaches the seeded cells), KE added to IEN
     const Real vom = pin->GetOrAddReal("problem","dbg_vac_omega",0.0);
+    // dbg_vac_efac (default 1): the seeded cells' internal energy (the IC column's e at r,
+    // times f) is further multiplied by efac: cold, hypersonic near-vacuum cells (HG
+    // rows: eint/KE ~ 1e-5)
+    const Real vef = pin->GetOrAddReal("problem","dbg_vac_efac",1.0);
     const bool vcs = hcs;
     auto vpan = pmbp->pmb->mb_panel;
     auto &vmsz = pmbp->pmb->mb_size;
@@ -3400,6 +3404,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real h = static_cast<Real>(x >> 11) * (1.0/9007199254740992.0);
       if (!(h < vfr)) return;
       for (int n = 0; n < ugv.extent_int(1); ++n) {ugv(m,n,k,j,i) *= vf;}
+      if (vef != 1.0) {
+        const Real e0 = bal ? cbe(i) : HsLogInterp(ceint, rlo, dr, nf, r);
+        ugv(m,IEN,k,j,i) -= (1.0 - vef)*vf*e0;
+      }
       const Real d = ugv(m,IDN,k,j,i);
       const Real m1o = ugv(m,IM1,k,j,i), m1n = m1o + d*vvr;
       ugv(m,IEN,k,j,i) += 0.5*(m1n*m1n - m1o*m1o)/d;
