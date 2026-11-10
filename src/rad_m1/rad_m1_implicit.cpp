@@ -3627,7 +3627,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   Kokkos::realloc(f0x1n, nmb, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(f0x1n, 0.0);
   // rc18-1110: without the half-range beam the stored flux has no blend: inert (echoed)
-  if (impl_hr_cmem && !impl_beam_hr) {
+  // aphll-time-1110: also the berthon | blend AP-HLL faces (the lagged reduced flux of
+  // the face coefficients is then F_c/(c E_up), evolved by the face equation, instead of
+  // the applied flux's own ratio, which has no F^n memory at w = 1: a per-STEP map)
+  if (impl_hr_cmem && !impl_beam_hr && impl_flux == M1_IFLUX_CENTRAL) {
     impl_hr_cmem = false;
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_hr_cmem: inert without implicit_flux_beam = "
