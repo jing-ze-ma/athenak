@@ -17741,9 +17741,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // rc18-1110 cmem: F^old of the conservative gas source = the face means of the F_c
   // memory (+ a E^n), the old flux the face kernels' Z_f were built with, so that the gas
   // takes exactly the drag on the APPLIED flux dt k F_a'/c + the transport part
-  // aphll-time-1110: under implicit_aphll_mem the gas takes the change of the APPLIED
-  // cell flux (u0 F, its stage increments): the F_c memory is a closure input only
-  const bool cmw = impl_hr_cmem && !(impl_aphll_mem && (std::getenv("M1_APM_CMW") == nullptr));
+  const bool cmw = impl_hr_cmem;
   if (impl_hr_cmem) {
     f0_ = fax1;
     if (trans) {f2_ = fax2;}
