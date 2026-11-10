@@ -2033,7 +2033,7 @@ class RadiationM1 {
   bool impl_muscl_smooth = false;
   Real impl_muscl_smc = 2.0;
   // hr2nd-1110 implicit_hr_recon_xcfl = X0 > 0: a LIMITED slope (not smooth) is scaled
-  // by 1/(1 + (X/X0)^4), X = c dt / V^(1/3) the cell Courant number of the step
+  // by 1/(1 + (X/X0)^4), X = c dt/dx_d the cell Courant number of the step
   Real impl_muscl_xcfl = 0.0;
   bool muscl_now = false;       // on for this step
   int muscl_nbuild = 0;         // limiter builds this step (then frozen)

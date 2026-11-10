@@ -18921,7 +18921,11 @@ void RadiationM1::ImplicitMusclBuild() {
         sb = 0.0;
       }
       if (xc0 > 0.0 && !smooth && sg > 0.0) {   // hr2nd-1110 implicit_hr_recon_xcfl
-        const Real x = cdtx/(cbrt(cvol(m,k,j,i))*xc0);
+        // the cell width along d: Cartesian dx_d; sp / cs: the radial width (d = 0) or
+        // V^(1/3) (lateral)
+        Real dxd = (d == 0) ? mbsize(m).dx1 : ((d == 1) ? mbsize(m).dx2 : mbsize(m).dx3);
+        if (sph) {dxd = (d == 0) ? (x1fs(m,i+1) - x1fs(m,i)) : cbrt(cvol(m,k,j,i));}
+        const Real x = cdtx/(dxd*xc0);
         sg /= (1.0 + SQR(SQR(x)));
       }
       iw_(m,b+M1_IM_SIG+d,k,j,i) = sg;
