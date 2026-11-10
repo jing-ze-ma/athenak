@@ -6079,8 +6079,15 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
               if ((mu < 0.0) != inw) {continue;}
               Real f, f1, f2;
               if (!VgdUpProf(fh, i, kh, inw, mu, f, f1, f2)) {f = -1.0;}
-              std::fprintf(fp, "%d %d %d %d %.12e %.12e %.12e\n", m, k, j, d, mu,
-                           vh(m,d,k,j,i), f);
+              Real mk = 0.0;
+              if (!vgd_csg) {
+                auto &tg = vgd_trig;
+                const int q0 = k - wb, q1 = j - wb;
+                mk = vgd_dir(d,0)*tg(m,q0,q1,0)*tg(m,q0,q1,3) +
+                     vgd_dir(d,1)*tg(m,q0,q1,0)*tg(m,q0,q1,2) + vgd_dir(d,2)*tg(m,q0,q1,1);
+              }
+              std::fprintf(fp, "%d %d %d %d %.12e %.12e %.12e %.12e\n", m, k, j, d, mu,
+                           vh(m,d,k,j,i), f, mk);
             }
           }
         }
