@@ -32,10 +32,28 @@
         // thread; one launch and one halo per shell for both sweeps
         auto solve = [&](const DvceArray5D<Real> &csx, const VgdIView &vix,
                          const bool twn) -> Real {
-          auto rd0 = [&](const int kk, const int jj, const int ii, const int dq) -> Real {
+          // vetgdup-1110 vet_gd_upwind: a read of another cell / direction than the
+          // stencil's own (a wall ghost: periodic partner, mirror row, mapped or
+          // interpolated directions) shifted along the shell profile of ii from the read
+          // value's own n . r_hat (mc) to the ghost's (mt); the symmetric part of the
+          // ghost then is that of the ghost's own position and direction
+          const bool upw = (upf_ == 1 || upf_ == 2) && !twn;
+          auto ush = [&](const int ii, const Real mt, const Real mc) -> Real {
+            if (!upw || mt == mc || ((mt < 0.0) != (mc < 0.0))) {return 0.0;}
+            Real ft, fc, f1, f2;
+            if (!VgdUpProf(upp_, ii, upk_, mt < 0.0, mt, ft, f1, f2)) {return 0.0;}
+            if (!VgdUpProf(upp_, ii, upk_, mc < 0.0, mc, fc, f1, f2)) {return 0.0;}
+            return ft - fc;
+          };
+          // mt: the target cosine (the ghost's own; used when upw)
+          auto rd0t = [&](const int kk, const int jj, const int ii, const int dq,
+                          const Real mt) -> Real {
             const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
             const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
-            if (ek == 0 && ej == 0) {return vix(m,dq,kk,jj,ii);}
+            if (ek == 0 && ej == 0) {
+              const Real v0 = vix(m,dq,kk,jj,ii);
+              return upw ? (v0 + ush(ii, mt, mr_(m,kk,jj,dq))) : v0;
+            }
             const int oo = 3*(ek + 1) + (ej + 1);
             const int sl = 8*m + ((oo < 4) ? oo : (oo - 1));
             const int nl = hl_(sl);
@@ -45,13 +63,20 @@
             if (wint && wl_(m,kk,jj) != 0) {
               Real v = 0.0;
               for (int t = 0; t < 3; ++t) {
-                v += w3_(m,kk,jj,dq,t)*vix(nl,m3_(m,kk,jj,dq,t),kk - ek*nx3b,
-                                           jn,ii);
+                const int dt = m3_(m,kk,jj,dq,t);
+                const Real vt = vix(nl,dt,kk - ek*nx3b,jn,ii);
+                v += w3_(m,kk,jj,dq,t)*(upw ? (vt + ush(ii, mt,
+                                                       mr_(nl,kk - ek*nx3b,jn,dt)))
+                                            : vt);
               }
               return v;
             }
             const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,dq) : dq;
-            return vix(nl,dd,kk - ek*nx3b,jn,ii);
+            const Real vd = vix(nl,dd,kk - ek*nx3b,jn,ii);
+            return upw ? (vd + ush(ii, mt, mr_(nl,kk - ek*nx3b,jn,dd))) : vd;
+          };
+          auto rd0 = [&](const int kk, const int jj, const int ii, const int dq) -> Real {
+            return rd0t(kk, jj, ii, dq, upw ? mr_(m,kk,jj,dq) : 0.0);
           };
           auto rd = [&](const int kk, const int jj, const int ii) -> Real {
             // wallbug-1027: a theta ghost of vet_gd_theta_wall = mirror (wall flag 2)
@@ -79,11 +104,12 @@
               }
               const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
               const int jm = hi ? (wb + nx2b - 1 - g) : (wb + g);
-              if (!wint) {return rd0(kk,jm,ii,mp_(m,kk,jj,d));}
+              const Real mtg = upw ? mr_(m,kk,jj,d) : 0.0;   // vetgdup-1110
+              if (!wint) {return rd0t(kk,jm,ii,mp_(m,kk,jj,d),mtg);}
               Real v = 0.0;
               for (int t = 0; t < 3; ++t) {
                 const Real wt = w3_(m,kk,jj,d,t);
-                if (t == 0 || wt != 0.0) {v += wt*rd0(kk,jm,ii,m3_(m,kk,jj,d,t));}
+                if (t == 0 || wt != 0.0) {v += wt*rd0t(kk,jm,ii,m3_(m,kk,jj,d,t),mtg);}
               }
               return v;
             }
