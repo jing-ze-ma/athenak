@@ -999,6 +999,11 @@ class RadiationM1 {
   // was evaluable (cells c-2..c+2 in the block) and FAILED the slope is 0 (donor cell)
   // instead of van Leer: jumps (beam / shadow edges, fronts) stay first order
   bool impl_muscl_smooth0 = false;
+  // hr2prod-1110 implicit_hr_recon_hjump = X > 0 (read only when named; 0 off): plm on h off
+  // where the half-range ratios jump between a cell and a neighbour along d,
+  // |h+_c - h+_n| + |h-_c - h-_n| > X (an opaque-body surface: isotropic inside, outward
+  // peaked outside; a shadow edge): those cells keep donor cell.  Angular data only.
+  Real impl_hjump = 0.0;
   // hr2prod-1110 implicit_thin_gface = max (default) | mean | jump (read only when named):
   // the face thinness g_f of the implicit_thin_switch weight S(g_f).  max(g_L, g_R) moves
   // the switch by dx/2 against the gradient of g (an O(dx) shift of the blend region: a
