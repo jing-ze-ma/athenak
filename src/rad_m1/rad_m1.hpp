@@ -3240,16 +3240,20 @@ class RadiationM1 {
   // (dmu = mu_u - mu_q).
   // vet_gd_upwind_nbin: bins per half range of mu (default 32)
   int vgd_upf = 0, vgd_upk = 32;
+  // vet_gd_upwind_tol: a bin whose fit leaves an rms residual > tol x its rms intensity,
+  // or two bins whose fits disagree by > tol at mu, give no shift (unresolved profile)
+  Real vgd_uptol = 0.25;
   bool vgd_upwall = false;   // vet_gd_upwind_wall: wall ghost reads shifted (sp)
   Real vgd_up_alpha = -3.0;
   DvceArray1D<int> vgd_up_ofs, vgd_up_code;   // per (m, bin): codes ((k, j) local, d)
-  DvceArray3D<Real> vgd_up_part;              // (m, bin, 8): per-block moment sums
+  DvceArray3D<Real> vgd_up_part;              // (m, bin, 9): per-block moment sums
   DvceArray3D<Real> vgd_up_prof;              // (i, bin, 4): a0, a1, a2 in t, valid flag
-  DvceArray3D<Real> vgd_up_gall;              // (gid, bin, 8): every block's sums (MPI)
+  DvceArray3D<Real> vgd_up_gall;              // (gid, bin, 9): every block sums (MPI)
   HostArray3D<Real> vgd_up_galh;
   double vgd_up_time = 0.0;
   void VetGdUpPrep();
-  void VetGdUpShell(const int i, const bool inw);
+  void VetGdUpShell(const int i, const bool inw, const int f);
+  DvceArray3D<Real> vgd_up_prof2;             // the fused twin's profiles
   std::vector<VgdHlEntry> vgd_hle;
   size_t vgd_hl_bytes = 0, vgd_hl_cap = 0;   // cap: bytes (set at the first build)
   int64_t vgd_hl_gen = 0;
