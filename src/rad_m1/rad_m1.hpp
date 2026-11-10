@@ -2027,6 +2027,11 @@ class RadiationM1 {
   bool impl_muscl_led = false;  // implicit_hr_recon = led: sign-preserving linearisation
   bool impl_muscl_hq = false;   // cs-s7-1019 implicit_hr_recon_q = h: plm of H+- = h+- E
   bool impl_muscl_seam1 = false;  // cs-s7-1019 implicit_hr_recon_seam = onesided (cs)
+  // hr2nd-1110 implicit_hr_recon_lim = smooth: unlimited centred slope (sig = 1) where
+  // the three second differences around the cell agree in sign within a factor
+  // impl_muscl_smc (smooth extrema and smooth slopes); van Leer elsewhere
+  bool impl_muscl_smooth = false;
+  Real impl_muscl_smc = 2.0;
   bool muscl_now = false;       // on for this step
   int muscl_nbuild = 0;         // limiter builds this step (then frozen)
   int impl_muscl_nfresh = 2;    // implicit_hr_recon_fresh: passes with a fresh limiter

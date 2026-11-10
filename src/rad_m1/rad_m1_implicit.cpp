@@ -2768,6 +2768,33 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                     "implicit_flux_beam = halfrange (no sf face ratios, no hr_excess)");
         }
       }
+      // hr2nd-1110 (read only when named): implicit_hr_recon_lim = vl (default) | smooth.
+      // The van Leer factor clips every extremum (sig = 0 where the one-sided differences
+      // a, b change sign) and flattens the slope next to it (sig = 4ab/(a+b)^2 << 1 for
+      // a << b): a moving pulse peak is donor cell every step and the L1 order of the
+      // whole ladder drops to ~1.5 (the classic TVD-at-extrema loss).  smooth: sig = 1
+      // (the centred slope (E_c+1 - E_c-1)/2) where the second differences d2_c-1, d2_c,
+      // d2_c+1 have one strict sign and max|d2| <= C min|d2|
+      // (C = implicit_hr_recon_lim_c, default 2): the data is a resolved parabola there, smooth extremum or not; the
+      // face values then keep E_c +- s/2 >= E_c/2 (else van Leer).  A jump (beam edge,
+      // front) has alternating d2 and keeps van Leer.  Needs the cells c-2..c+2 inside
+      // the block along the axis (van Leer otherwise).  No dt, no optical depth.
+      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_lim")) {
+        std::string sl = pin->GetString("rad_m1","implicit_hr_recon_lim");
+        if (sl.compare("smooth") == 0) {
+          impl_muscl_smooth = true;
+        } else if (sl.compare("vl") != 0) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_lim = '" + sl
+                    + "' is not a choice (vl | smooth)");
+        }
+        if (impl_muscl_smooth && impl_muscl_led) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_lim = smooth needs "
+                    "implicit_hr_recon = plm");
+        }
+        if (impl_muscl_smooth) {
+          impl_muscl_smc = pin->GetOrAddReal("rad_m1","implicit_hr_recon_lim_c",2.0);
+        }
+      }
       // cs-s7-1019 (read only when named): implicit_hr_recon_seam = centred (default) |
       // onesided: on the cubed sphere the seam cells (and the ghosts beyond a seam) take
       // the one-sided slope of their own panel (M1HqW); the centred slope across a seam
@@ -18758,6 +18785,8 @@ void RadiationM1::ImplicitMusclBuild() {
   const int qref = qstep ? (b + M1_IM_EPREV) : M1_IW_EP;
   const int nfr = qstep ? 1 : impl_muscl_nfresh;
   const bool osm = impl_muscl_hq && impl_muscl_seam1 && cs_geom;   // cs-s7-1019
+  const bool smo = impl_muscl_smooth;   // hr2nd-1110 implicit_hr_recon_lim = smooth
+  const Real smc = impl_muscl_smc;
   if (led || muscl_nbuild < nfr) {
   const bool first = (muscl_nbuild == 0);
   muscl_nbuild += 1;
@@ -18819,7 +18848,33 @@ void RadiationM1::ImplicitMusclBuild() {
           }
           ok = ok && q;
         }
-        if (ok && ea*eb > 0.0) {
+        // hr2nd-1110 implicit_hr_recon_lim = smooth: a resolved parabola (smooth extremum
+        // or smooth slope) takes the centred slope, sig = 1
+        bool smooth = false;
+        if (ok && smo) {
+          const int c = (d == 0) ? i : ((d == 1) ? j : k);
+          const int cs = (d == 0) ? is : ((d == 1) ? js : ks);
+          const int ce = (d == 0) ? ie : ((d == 1) ? je : ke);
+          if (c - 2 >= cs && c + 2 <= ce) {
+            const int dk = (d == 2) ? 1 : 0, dj = (d == 1) ? 1 : 0, di = (d == 0) ? 1 : 0;
+            const Real em2 = iw_(m,M1_IW_EP,k-2*dk,j-2*dj,i-2*di);
+            const Real ep2 = iw_(m,M1_IW_EP,k+2*dk,j+2*dj,i+2*di);
+            const Real em1 = e0 - ea, ep1 = e0 + eb;
+            const Real d2m = (e0 - em1) - (em1 - em2);
+            const Real d2c = eb - ea;
+            const Real d2p = (ep2 - ep1) - eb;
+            const bool sgn = (d2m > 0.0 && d2c > 0.0 && d2p > 0.0) ||
+                             (d2m < 0.0 && d2c < 0.0 && d2p < 0.0);
+            if (sgn) {
+              const Real amin = fmin(fmin(fabs(d2m), fabs(d2c)), fabs(d2p));
+              const Real amax = fmax(fmax(fabs(d2m), fabs(d2c)), fabs(d2p));
+              smooth = (amax <= smc*amin) && (0.25*fabs(ea + eb) <= 0.5*e0);
+            }
+          }
+        }
+        if (smooth) {
+          sg = 1.0;
+        } else if (ok && ea*eb > 0.0) {
           if (led) {   // s = 2 ea eb/(ea + eb) = a ea = b eb
             sg = 2.0*eb/(ea + eb);
             sb = 2.0*ea/(ea + eb);
