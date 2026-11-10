@@ -96,7 +96,7 @@ KOKKOS_INLINE_FUNCTION
 Real VgdInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
                   const Real ie0, const bool bfc, const Real rf, const Real ra,
                   const Real rb, const Real p2, const Real ch0, const Real ds,
-                  const Real s0) {
+                  const Real s0, const bool zf = false) {
   const int i1 = i + 1;
   auto sbt = [&](const int kk, const int jj) {
     return fmax(1.5*exp(fC(1,kk,jj,i)) - 0.5*exp(fC(1,kk,jj,i1)), 1.0e-300);
@@ -110,7 +110,9 @@ Real VgdInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
   const Real muf = sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
   auto ib = [&](const int kk, const int jj) {
     const Real sa = exp(fC(1,kk,jj,i)), sb = exp(fC(1,kk,jj,i1));
-    const Real g0 = -(sb - sa)/(rb - ra)/exp(fC(0,kk,jj,i));
+    // hrsplit-1110 vet_gd_inner_reflect = zeroflux (zf): at a reflecting inner x1 the
+    // diffusion start without the gradient term (H = 0 at the zero-flux face)
+    const Real g0 = zf ? 0.0 : -(sb - sa)/(rb - ra)/exp(fC(0,kk,jj,i));
     return (bfc ? (1.5*sa - 0.5*sb) : sa) + g0*muf;
   };
   Real ex, w0, wu;

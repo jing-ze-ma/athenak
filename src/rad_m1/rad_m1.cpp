@@ -1566,6 +1566,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // hrsplit-1110 vet_gd_inner_reflect = diff | zeroflux (read only when named)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_inner_reflect")) {
+      const std::string ir = pin->GetString("rad_m1","vet_gd_inner_reflect");
+      if (ir == "zeroflux") {
+        vgd_izf = true;
+      } else if (ir != "diff") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "rad_m1/vet_gd_inner_reflect = " << ir
+                  << " (diff | zeroflux)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // hrsplit-1110 vet_gd_hr_split = none | col (read only when named; rad_m1.hpp)
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_hr_split")) {
       const std::string hs = pin->GetString("rad_m1","vet_gd_hr_split");

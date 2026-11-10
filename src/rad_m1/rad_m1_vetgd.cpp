@@ -5166,6 +5166,7 @@ void RadiationM1::VetGdSweep() {
   // wallbug-1027: the wall kernel (bodym) for mirror, vacuum and extrap theta walls
   const bool thm = vgd_thmir || (vgd_thvac > 0);
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
+  const bool izf = vgd_izf && (ibc_x1min == M1_IBC_REFLECT);   // hrsplit-1110
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
   const int spe = VetSegMode();
   const int vim = vet_interp;   // unify-sc-gd-1012 (#6) vet_interp: 2 corner, 3 auto

@@ -3272,6 +3272,10 @@ class RadiationM1 {
   // angular width of the column intensity about r, dl = sqrt(4 pi/n) the spacing of the
   // n vet_gd directions (angular information only)
   int vgd_hrs = 0;
+  // hrsplit-1110 vet_gd_inner_reflect = diff | zeroflux (read only when named; default
+  // diff = the code before): zeroflux drops the gradient term of vet_gd's diffusion start
+  // at a REFLECTING inner x1 (I = S_face isotropic, H = 0 as the M1 face; vet_col mirrors)
+  bool vgd_izf = false;
   Real vgd_hrs_d = 1.0, vgd_hrs_sig = 0.0, vgd_hrs_res = 0.0;
   DvceArray5D<Real> vcol_hr;     // (m, 3, k, j, i): vet_col h+_r, h-_r, f_K (unclamped)
   DvceArray1D<Real> vgd_hrs_m;   // (q c1 + i): <h_gd - h_col>_shell, q = 0, 1
