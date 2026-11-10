@@ -3238,13 +3238,13 @@ class RadiationM1 {
   bool vgd_upwall = false;   // vet_gd_upwind_wall: wall ghost reads shifted (sp)
   Real vgd_up_alpha = -3.0;
   DvceArray1D<int> vgd_up_ofs, vgd_up_code;   // per (m, bin): codes ((k, j) local, d)
-  DvceArray3D<Real> vgd_up_part;              // (m, bin, 9): per-block moment sums
+  DvceArray4D<Real> vgd_up_part;              // (m, f, bin, 9): per-block moment sums
   DvceArray3D<Real> vgd_up_prof;              // (i, bin, 4): a0, a1, a2 in t, valid flag
-  DvceArray3D<Real> vgd_up_gall;              // (gid, bin, 9): every block sums (MPI)
-  HostArray3D<Real> vgd_up_galh;
+  DvceArray4D<Real> vgd_up_gall;              // (gid, f, bin, 9): every block (MPI)
+  HostArray4D<Real> vgd_up_galh;
   double vgd_up_time = 0.0;
   void VetGdUpPrep();
-  void VetGdUpShell(const int i, const bool inw, const int f);
+  void VetGdUpShell(const int i, const bool inw, const int nf);   // nf 2: + twin
   DvceArray3D<Real> vgd_up_prof2;             // the fused twin's profiles
   std::vector<VgdHlEntry> vgd_hle;
   size_t vgd_hl_bytes = 0, vgd_hl_cap = 0;   // cap: bytes (set at the first build)

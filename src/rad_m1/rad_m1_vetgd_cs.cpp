@@ -1985,8 +1985,7 @@ void RadiationM1::VetGdCsSweep() {
       }   // g
       // vetgdup-1110 vet_gd_upwind: this shell's profile on the pass's half range
       if (vgd_upf != 0) {
-        VetGdUpShell(i, inw, 0);
-        if (two) {VetGdUpShell(i, inw, 1);}   // the fused twin: its own profile
+        VetGdUpShell(i, inw, two ? 2 : 1);   // (+ the fused twin: its own profile)
       }
       if (rga) {
         // the previous shell of the pass has been read (stream order): its inward band
