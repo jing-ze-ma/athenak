@@ -486,8 +486,8 @@
               if ((upf_ == 1 || upf_ == 2) && !twn) {
                 const Real muu = (nx*xu + ny*yu + nz*zu)/ru;
                 auto mqe = [&](const int e) -> Real {return mrq(st4.K(e), st4.J(e));};
-                upo = VgdUpCorr(upp_, iu, upk_, want_in, upf_, upt_, muu, st4, mqe, ok, all,
-                                cq_);
+                upo = VgdUpCorr(upp_, iu, upk_, want_in, upf_, upt_, muu, st4, mqe, ok,
+                                all, cq_);
               }
               auto fIc = [&](const int kk, const int jj) -> Real {
                 if (!upo) {return fIu(kk,jj);}
