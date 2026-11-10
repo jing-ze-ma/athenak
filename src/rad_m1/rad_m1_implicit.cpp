@@ -2506,6 +2506,25 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // divergence.  w is unchanged (no dt, no opacity); nothing relaxes per step.
   impl_hr_cmem = pin->DoesParameterExist("rad_m1","implicit_hr_cmem") &&
                  pin->GetBoolean("rad_m1","implicit_hr_cmem");
+  // aphll-time-1110 implicit_aphll_mem (opt-in, read only when named, default false =
+  // bitwise): second order in time for the berthon | blend AP-HLL faces.  Two lags made
+  // them first order (tests at /viper/ptmp2/jinma/aphll_1110): (1) the lagged reduced
+  // flux RF0 of the face coefficients was the APPLIED face flux over c E_up, which at
+  // w = 1 has no F^n memory (HCL E_L + HCR E_R), so f followed a per-step map instead of
+  // the F equation; (2) under implicit_recon_lag = step the coefficients were frozen at
+  // the stage start, so the stage-1 slope (weight b2 in the step) carried an O(dt)
+  // coefficient error.  The key turns on (1) implicit_hr_cmem (F_c, evolved by the face
+  // equation, in f0x*; the applied flux in fax*) and (2) implicit_lag_restage (the face
+  // coefficients rebuilt once after the first pass of each stage) unless that is named.
+  impl_aphll_mem = pin->DoesParameterExist("rad_m1","implicit_aphll_mem") &&
+                   pin->GetBoolean("rad_m1","implicit_aphll_mem");
+  if (impl_aphll_mem) {
+    if (impl_flux == M1_IFLUX_CENTRAL) {
+      ImplFatal("<rad_m1>/implicit_aphll_mem needs implicit_flux = ap_hll | berthon | "
+                "blend");
+    }
+    impl_hr_cmem = true;
+  }
   if (impl_blend_dtc > 0.0 && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> implicit_blend_dtc = " << impl_blend_dtc
               << ": dt-consistent half-range face weights (M1BlendDtc)" << std::endl;
@@ -3203,6 +3222,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_recon_freeze = (slg.compare("step") == 0);
   if (pin->DoesParameterExist("rad_m1","implicit_lag_restage")) {   // raycheap2-1109
     impl_lag_restage = pin->GetBoolean("rad_m1","implicit_lag_restage");
+  } else if (impl_aphll_mem) {   // aphll-time-1110
+    impl_lag_restage = true;
   }
   // MILESTONE 3c: freeze the deferred correction, and with it the plm limiter's choice,
   // after this many Picard passes.  The 3a2 finding is that the limiter keeps switching
@@ -3638,7 +3659,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
   }
   if (impl_hr_cmem) {   // rc18-1110: the applied face flux (F_c lives in f0x1)
-    if (impl_vimp || impl_lbath) {
+    // aphll-time-1110: implicit_vimp reads the APPLIED fluxes fax* (ImplicitVimpBuild)
+    if (impl_lbath || (impl_vimp && !impl_aphll_mem)) {
       ImplFatal("<rad_m1>/implicit_hr_cmem: not with implicit_vimp or the Linhao bath "
                 "(they read f0x* as the applied flux)");
     }
@@ -11982,9 +12004,11 @@ void RadiationM1::ImplicitVimpBuild() {
   auto ifw_ = ifw;
   auto vd_ = vet_cell;
   const bool dfull = vet_full;
-  auto f0_ = f0x1;
-  auto f2_ = f0x2;
-  auto f3_ = f0x3;
+  // aphll-time-1110: under the F_c memory the drag is that of the APPLIED face flux
+  const bool cmv = impl_hr_cmem && impl_aphll_mem;
+  auto f0_ = cmv ? fax1 : f0x1;
+  auto f2_ = cmv ? fax2 : f0x2;
+  auto f3_ = cmv ? fax3 : f0x3;
   auto th2_ = thx2;
   auto th3_ = thx3;
   const bool lm = (impl_tlim != M1_TLIM_NONE) || blat_on;
