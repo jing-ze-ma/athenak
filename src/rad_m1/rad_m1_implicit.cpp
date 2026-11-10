@@ -2254,7 +2254,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::deep_copy(clkc_d, 0.0);
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> implicit_clip_kecap=" << impl_clip_kecap << ": the "
-                  << "conservative write-back's F-clip momentum gives the gas at most this "
+                  << "conservative write-back's F-clip momentum gives the gas at most "
+                  << "this "
                   << "fraction of its e_int as kinetic energy (cs / sp volumes only)"
                   << std::endl;
       }

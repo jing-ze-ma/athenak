@@ -452,7 +452,8 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     if (global_variable::my_rank == 0 && t2_inckc > 0.0) {
       std::cout << "<rad_m1> time2_inc_kecap=" << t2_inckc << ": a stage increment "
                 << "whose momentum would take eint below th eint(U_h) is scaled down "
-                << "(total energy kept, the momentum not applied is counted)" << std::endl;
+                << "(total energy kept, the momentum not applied is counted)"
+                << std::endl;
     }
   }
   // t2retry-1020: <rad_m1>/time2_reject = be | retry (read only when named; default be =
@@ -1409,7 +1410,7 @@ void RadiationM1::Time2IncFctGas() {
 //! \brief hgfix-1110 <rad_m1>/time2_inc_kecap = th (> 0, read only when named).  At
 //! either stage, after every other change of t2inc and before time2_inc_fct_gas: with
 //! eint_h = eint(U_h) > 0 and the old-vector gas internal energy
-//!   eint_p(s) = eint_h + t2inc_EN - [KE(m_h + s t2inc_m) - KE(m_h)] = eint_h + cap - f(s),
+//!   eint_p(s) = eint_h + t2inc_EN - [KE(m_h + s t2inc_m) - KE(m_h)],
 //! f(s) = A s^2 + B s (A = KE(t2inc_m) >= 0), a cell with eint_p(1) < th eint_h gets
 //! t2inc_m -> s t2inc_m, s the largest root in [0, 1) of eint_p(s) = th eint_h (or, if
 //! there is none, the s in [0, 1] of the largest eint_p: counted unfixed).  t2inc_EN
