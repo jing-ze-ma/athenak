@@ -11314,6 +11314,7 @@ bool RadiationM1::Cs2Active() {
 //! ghosts.
 
 void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
+  const bool cmd = impl_hr_cmem && impl_aphll_mem;   // aphll-time-1110
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -11415,7 +11416,9 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
     const Real m3 = thrd ? 0.5*(f3n_(m,k,j,i) + q3_(m,k,j,i) + f3n_(m,k+1,j,i)
                                 + q3_(m,k+1,j,i)) : 0.0;
     Real g1 = u0_(m,M1_F1,k,j,i), g2 = u0_(m,M1_F2,k,j,i), g3 = u0_(m,M1_F3,k,j,i);
-    if (gfst) {
+    // aphll-time-1110: under the F_c memory the write-back's F^old is the face form (the
+    // cmem branch of rad_m1_impl_wb_kernel.hpp), so A^old = a E^old here as well
+    if (gfst || cmd) {
       const Real eo = iw_(m,M1_IW_EN,k,j,i);
       g1 = m1 + iw_(m,M1_IW_ADV,k,j,i)*eo;
       if (trans) {
@@ -11423,7 +11426,7 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
         g3 = thrd ? (m3 + iw_(m,M1_IW_A3,k,j,i)*eo) : 0.0;
       }
     }
-    if (t2st) {
+    if (t2st && !cmd) {
       if (csok) {
         g1 += ci_(m,0,k,j,i);
         g2 += ci_(m,1,k,j,i);
