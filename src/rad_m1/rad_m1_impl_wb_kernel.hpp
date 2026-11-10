@@ -932,11 +932,53 @@
           if (thrd) {wn += 0.5*(v3 + (uh(m,IM3,k,j,i) + a3)*idg)*a3;}
         }
       }
+      Real b1 = a1, b2 = a2, b3 = a3;
+      if (wckc > 0.0) {
+        // hgfix-1110 implicit_clip_kecap = f: the clip's momentum (a - dm) is scaled by
+        // the largest s in [0, 1] (bisection) whose kinetic energy, taken from eint, is
+        // at most f max(eg, 0); the slope below takes the same state
+        auto wq = [&](const Real sc) -> Real {
+          const Real e1 = dm1 + sc*(a1 - dm1), e2 = dm2 + sc*(a2 - dm2);
+          const Real e3 = dm3 + sc*(a3 - dm3);
+          Real w = 0.5*(v1 + (uh(m,IM1,k,j,i) + e1)*idg)*e1;
+          if (tq) {
+            if (csw && thrd) {
+              const Real c = cclw(m,k,j), id2 = 1.0/(1.0 - c*c);
+              const Real n2 = uh(m,IM2,k,j,i) + e2, n3 = uh(m,IM3,k,j,i) + e3;
+              const Real u2 = (n2 - c*n3)*idg*id2, u3 = (n3 - c*n2)*idg*id2;
+              w += 0.5*(v2 + u2)*e2 + 0.5*(v3 + u3)*e3;
+            } else {
+              w += 0.5*(v2 + (uh(m,IM2,k,j,i) + e2)*idg)*e2;
+              if (thrd) {w += 0.5*(v3 + (uh(m,IM3,k,j,i) + e3)*idg)*e3;}
+            }
+          }
+          return w;
+        };
+        const Real w0 = wq(0.0);
+        const Real ccap = wckc*fmax(eg, 0.0);
+        if (!(wn - w0 <= ccap)) {
+          Real lo = 0.0, hi = 1.0;
+          for (int it = 0; it < 40; ++it) {
+            const Real md = 0.5*(lo + hi);
+            if (wq(md) - w0 <= ccap) {lo = md;} else {hi = md;}
+          }
+          const Real sc = lo;
+          b1 = dm1 + sc*(a1 - dm1);
+          b2 = dm2 + sc*(a2 - dm2);
+          b3 = dm3 + sc*(a3 - dm3);
+          const Real wsc = wq(sc);
+          const Real cvv = pvol(m,k,j,i);
+          Kokkos::atomic_add(&ckc_(0), 1.0);
+          Kokkos::atomic_add(&ckc_(1), (wn - wsc)*cvv);
+          Kokkos::atomic_add(&ckc_(2), sqrt(SQR(a1 - b1) + SQR(a2 - b2) + SQR(a3 - b3))*cvv);
+          wn = wsc;
+        }
+      }
       eg -= (wn - work);
       work = wn;
-      dm1 = a1;
-      dm2 = a2;
-      dm3 = a3;
+      dm1 = b1;
+      dm2 = b2;
+      dm3 = b3;
     }
     // r136e-1107 implicit_wb_vcap (rad_m1.hpp): the momentum increment of the solve is
     // scaled to keep |m + dm| <= V rho; the kinetic energy it no longer gets goes back to

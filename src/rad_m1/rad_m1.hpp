@@ -1587,6 +1587,19 @@ class RadiationM1 {
   Real t2_incfg_de = 0.0;
   int t2_incfg_calls = 0;
   void Time2IncFctGas();
+  // hgfix-1110 <rad_m1>/time2_inc_kecap = th (read only when named; 0 = off = bitwise):
+  // where the gas old vector of a stage solve would have eint(U_h + t2inc) < th eint(U_h)
+  // because the momentum part of t2inc carries more kinetic energy than the cell has
+  // (a stored slope whose K_m outgrew its K_EN: the am_cs L deposit and the consrc clip
+  // take their kinetic energy from e_int), the momentum increment t2inc_m (and the
+  // am_vector spin increment) of THAT cell is scaled by the largest s in [0, 1) that
+  // restores th eint(U_h); t2inc_EN is untouched, so the total energy is kept and the
+  // momentum (1 - s) t2inc_m is dropped (counted: INCKECAP).  Both stages, before
+  // time2_inc_fct_gas; cells with eint(U_h) <= 0 are not touched (counted)
+  Real t2_inckc = 0.0, t2_inckc_n = 0.0, t2_inckc_un = 0.0, t2_inckc_hn = 0.0;
+  Real t2_inckc_ke = 0.0, t2_inckc_pm = 0.0;
+  int t2_inckc_calls = 0;
+  void Time2IncKeCap(int stage);
   void T2KSplitCheck(int stage, bool dump = false);
   // hgdiag-1110 <rad_m1>/time2_inc_fct = th (read only when named; 0 = off = bitwise):
   // ImplicitK1Fct applied to the stage increment t2inc_E of BOTH stages (after every
@@ -2081,6 +2094,14 @@ class RadiationM1 {
   // 3 sum |L_z| of all deposits; code units x volume where applicable)
   Real impl_am_kecap = 0.0;
   DvceArray1D<Real> amkc_d;
+  // hgfix-1110 <rad_m1>/implicit_clip_kecap = f (read only when named; absent or 0 = off
+  // = bitwise): the conservative write-back's F-clip correction (the momentum the
+  // limited F hands the gas, its kinetic energy taken from e_int) is scaled so that it
+  // gives the gas at most f max(e_int, 0); the stored slope takes the same state.
+  // Counted (clkc_d: 0 capped cell-solves, 1 KE not given, 2 |dm| not given; x volume).
+  // Needs the cell volume array (cs / sp); off on Cartesian
+  Real impl_clip_kecap = 0.0;
+  DvceArray1D<Real> clkc_d;
   int impl_am_cs_diag = 0;   // amdef-1019 diagnostic (read only when named): solves to print
   DvceArray5D<Real> amw;
   bool am_vec = false;             // + <hydro>/am_vector: the vector form

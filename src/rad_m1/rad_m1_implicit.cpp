@@ -2243,6 +2243,23 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
     }
   }
+  // hgfix-1110 implicit_clip_kecap (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1","implicit_clip_kecap")) {
+    impl_clip_kecap = pin->GetReal("rad_m1","implicit_clip_kecap");
+    if (!(impl_clip_kecap >= 0.0 && impl_clip_kecap <= 1.0)) {
+      ImplFatal("<rad_m1>/implicit_clip_kecap must be in [0, 1] (0 = off)");
+    }
+    if (impl_clip_kecap > 0.0) {
+      Kokkos::realloc(clkc_d, 3);
+      Kokkos::deep_copy(clkc_d, 0.0);
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> implicit_clip_kecap=" << impl_clip_kecap << ": the "
+                  << "conservative write-back's F-clip momentum gives the gas at most this "
+                  << "fraction of its e_int as kinetic energy (cs / sp volumes only)"
+                  << std::endl;
+      }
+    }
+  }
   // r136e-1107 implicit_wb_vcap (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_wb_vcap")) {
     impl_wb_vcap = pin->GetReal("rad_m1","implicit_wb_vcap");
@@ -10764,6 +10781,22 @@ void RadiationM1::ImplicitReport() {
                 << " of all deposits " << av[3] << " (all attempts)" << std::endl;
     }
   }
+  // hgfix-1110 implicit_clip_kecap: the capped clip cell-solves
+  if (impl_clip_kecap > 0.0 && clkc_d.extent_int(0) == 3) {
+    auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), clkc_d);
+    Real cv[3] = {hc(0), hc(1), hc(2)};
+#if MPI_PARALLEL_ENABLED
+    Real gc[3];
+    MPI_Allreduce(cv, gc, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int q = 0; q < 3; ++q) {cv[q] = gc[q];}
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_clip_kecap=" << impl_clip_kecap
+                << ": capped clip cell-solves=" << cv[0] << " kinetic energy not given="
+                << cv[1] << " |dm| not given=" << cv[2] << " (x volume, all attempts)"
+                << std::endl;
+    }
+  }
   // r136e-1107 implicit_wb_vcap: the capped cell-solves and the energy returned to E
   if (impl_wb_vcap > 0.0 && vcap_cnt_d.extent_int(0) == 4) {
     auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vcap_cnt_d);
@@ -18259,6 +18292,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto pc_ = pos_cnt_d;
   const bool psph = sph_geom;
   auto pvol = pmy_pack->pcoord->volume;
+  // hgfix-1110 implicit_clip_kecap (rad_m1.hpp): the consrc clip's kinetic energy cap
+  const Real wckc = (impl_clip_kecap > 0.0 && clkc_d.extent_int(0) == 3 &&
+                     pvol.extent_int(3) > 1) ? impl_clip_kecap : 0.0;
+  auto ckc_ = clkc_d;
   // r136e-1107 implicit_wb_vcap (rad_m1.hpp): not on the cubed sphere
   const Real wvcap = cs_geom ? 0.0 : impl_wb_vcap;
   const bool wvmeas = impl_wb_vcap_meas;
