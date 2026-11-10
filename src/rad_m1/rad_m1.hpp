@@ -988,6 +988,13 @@ class RadiationM1 {
   // equation integrates -c^2 dt grad P without the wave coupling that bounds it (ws66 at
   // c dt/dx >> 1 blew up when w later fell); the clamp is inactive in a resolved field.
   Real impl_hr_cmem_cap = 0.0;
+  // hr2prod-1110 implicit_hr_recon_sfgate (read only when named, default false): plm on h
+  // (implicit_hr_recon_q = h) only OFF the beams.  A cell whose own J does not carry the SC
+  // face flux (Jh > J, the sf state of M1HrSf: a beam passing through) and its two
+  // neighbours along d keep sig = 0 (donor cell, sf ratios, hc, js unchanged); everywhere
+  // else (Jh = J: every smooth field) the plm slopes act.  Allows q = h with the sf face
+  // ratios and with implicit_thin_recon = js / jse.  Angular data only.
+  bool impl_sfgate = false;
   // hr2prod-1110 implicit_thin_gface = max (default) | mean | jump (read only when named):
   // the face thinness g_f of the implicit_thin_switch weight S(g_f).  max(g_L, g_R) moves
   // the switch by dx/2 against the gradient of g (an O(dx) shift of the blend region: a

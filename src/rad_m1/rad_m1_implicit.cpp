@@ -2829,8 +2829,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         } else if (sq.compare("e") != 0) {
           ImplFatal("<rad_m1>/implicit_hr_recon_q = '" + sq + "' is not a choice (e | h)");
         }
-        if (impl_muscl_hq && (!impl_beam_hr || impl_muscl_led || impl_hr_sf ||
-                              impl_hr_xs)) {
+        // hr2prod-1110 implicit_hr_recon_sfgate (read only when named)
+        impl_sfgate = pin->DoesParameterExist("rad_m1","implicit_hr_recon_sfgate") &&
+                      pin->GetBoolean("rad_m1","implicit_hr_recon_sfgate");
+        if (impl_sfgate && !impl_muscl_hq) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_sfgate needs implicit_hr_recon_q = h");
+        }
+        if (impl_muscl_hq && (!impl_beam_hr || impl_muscl_led ||
+                              (impl_hr_sf && !impl_sfgate) || impl_hr_xs)) {
           ImplFatal("<rad_m1>/implicit_hr_recon_q = h needs implicit_hr_recon = plm with "
                     "implicit_flux_beam = halfrange (no sf face ratios, no hr_excess)");
         }
@@ -2927,7 +2933,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
     }
     if (impl_muscl && impl_thsw != M1_THSW_NONE &&
-        ((impl_thsw_corr != M1_THCR_NONE && !impl_hcplm) || thsw_js)) {
+        ((impl_thsw_corr != M1_THCR_NONE && !impl_hcplm) ||
+         (thsw_js && !impl_sfgate))) {
       ImplFatal("<rad_m1>/implicit_hr_recon = plm with implicit_thin_switch needs "
                 "implicit_thin_corr = none and implicit_thin_recon = dc (the plm face "
                 "state replaces both donor-cell corrections; use implicit_hr_recon_q = h)");
@@ -18962,6 +18969,8 @@ void RadiationM1::ImplicitMusclBuild() {
   const bool first = (muscl_nbuild == 0);
   muscl_nbuild += 1;
   const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
+  const bool sfg = impl_sfgate && (iw_hsf >= 0);   // hr2prod-1110
+  const int hsb = iw_hsf;
   par_for("m1_muscl_sig", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_.d_view(m);
@@ -19080,6 +19089,24 @@ void RadiationM1::ImplicitMusclBuild() {
         if (sph) {dxd = (d == 0) ? (x1fs(m,i+1) - x1fs(m,i)) : cbrt(cvol(m,k,j,i));}
         const Real x = cdtx/(dxd*xc0);
         sg /= (1.0 + SQR(SQR(x)));
+      }
+      if (sfg && sg != 0.0) {   // hr2prod-1110 implicit_hr_recon_sfgate
+        auto sfc = [&](const int kk, const int jj, const int ii) {
+          const Real jh = iw_(m,hsb+M1_HSF_JH,kk,jj,ii);
+          const Real j0 = iw_(m,hsb+M1_HSF_J,kk,jj,ii);
+          return (jh > j0 && jh > 0.0);
+        };
+        bool beam = sfc(k,j,i);
+        if (!beam && d == 0) {
+          const int ia = (i > is) ? (i-1) : (cyclic ? ie : i);
+          const int ib = (i < ie) ? (i+1) : (cyclic ? is : i);
+          beam = sfc(k,j,ia) || sfc(k,j,ib);
+        } else if (!beam && d == 1) {
+          beam = sfc(k,j-1,i) || sfc(k,j+1,i);
+        } else if (!beam && d == 2) {
+          beam = sfc(k-1,j,i) || sfc(k+1,j,i);
+        }
+        if (beam) {sg = 0.0;}
       }
       iw_(m,b+M1_IM_SIG+d,k,j,i) = sg;
       if (led) {iw_(m,b+M1_IM_B+d,k,j,i) = sb;}
