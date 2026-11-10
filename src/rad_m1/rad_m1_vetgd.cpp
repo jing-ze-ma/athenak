@@ -8960,6 +8960,26 @@ void RadiationM1::VetGdHrSplit() {
         mx[q] = std::max(mx[q], std::fabs(mh(q*c1 + i)));
       }
     }
+    // VGD_HRS_DIAG_PROF set: the shell profile <h_col>, <h_gd>, rms per component
+    if (std::getenv("VGD_HRS_DIAG_PROF") != nullptr) {
+      std::vector<Real> s4;
+      repro::ShellSums("m1_vgd_hrs_p", 4, c1, nmb1 + 1, ks, ke, js, je, ilo, ie,
+                       KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
+                                     const int i) {
+        if (hr_(m,0,k,j,i) < 0.0 || hc_(m,0,k,j,i) < 0.0) {return 0.0;}
+        return (q < 2) ? hc_(m,q,k,j,i) : hr_(m,q-2,k,j,i);
+      }, s4);
+      if (global_variable::my_rank == 0) {
+        for (int i = ilo; i <= ie; ++i) {
+          const Real n = sm[2*c1 + i];
+          if (!(n > 0.0)) {continue;}
+          std::printf("<rad_m1> hrs prof cyc %d i %d n %.0f col+ %.6f gd+ %.6f col- %.6f"
+                      " gd- %.6f rms+ %.3e rms- %.3e\n", pmy_pack->pmesh->ncycle, i, n,
+                      s4[i]/n, s4[2*c1 + i]/n, s4[c1 + i]/n, s4[3*c1 + i]/n,
+                      std::sqrt(s2[i]/n), std::sqrt(s2[c1 + i]/n));
+        }
+      }
+    }
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd_hr_split diag cycle " << pmy_pack->pmesh->ncycle
                 << ": max shell rms(d - <d>) r+ " << rx[0] << " (i " << ix[0]
