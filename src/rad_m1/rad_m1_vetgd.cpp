@@ -6063,6 +6063,31 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
     std::cout << "VGD_UP_DIAG sweep " << vgd_hsweep << " shell " << i << " inw " << inw
               << " n " << dh(2) << " resid " << std::sqrt(dh(0)/std::max(dh(1), 1e-300))
               << std::endl;
+    // env VGD_UP_DUMP = i: shell i's samples (m, k, j, d, mu, I, Ibar) of the first sweep
+#if !defined(KOKKOS_ENABLE_HIP) && !defined(KOKKOS_ENABLE_CUDA)   // (host builds)
+    const char *ed = std::getenv("VGD_UP_DUMP");
+    if (ed != nullptr && std::atoi(ed) == i && vgd_hsweep == 1) {
+      auto &vh = vi_;
+      auto &mh = mr_;
+      auto &fh = pf_;
+      FILE *fp = std::fopen(inw ? "vgd_up_dump_in.txt" : "vgd_up_dump_out.txt", "w");
+      for (int m = 0; m < nmb; ++m) {
+        for (int k = wb; k < wb + indcs.nx3; ++k) {
+          for (int j = wb; j < wb + nj; ++j) {
+            for (int d = 0; d < n; ++d) {
+              const Real mu = mh(m,k,j,d);
+              if ((mu < 0.0) != inw) {continue;}
+              Real f, f1, f2;
+              if (!VgdUpProf(fh, i, kh, inw, mu, f, f1, f2)) {f = -1.0;}
+              std::fprintf(fp, "%d %d %d %d %.12e %.12e %.12e\n", m, k, j, d, mu,
+                           vh(m,d,k,j,i), f);
+            }
+          }
+        }
+      }
+      std::fclose(fp);
+    }
+#endif
   }
   if (vgd_time_halo) {ex.fence();}
   vgd_up_time += tm.seconds();
