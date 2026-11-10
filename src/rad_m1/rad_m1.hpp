@@ -3244,7 +3244,8 @@ class RadiationM1 {
   HostArray3D<Real> vgd_up_galh;
   double vgd_up_time = 0.0;
   void VetGdUpPrep();
-  void VetGdUpShell(const int i, const bool inw);
+  void VetGdUpShell(const int i, const bool inw, const int f);
+  DvceArray3D<Real> vgd_up_prof2;             // the fused twin's profiles
   std::vector<VgdHlEntry> vgd_hle;
   size_t vgd_hl_bytes = 0, vgd_hl_cap = 0;   // cap: bytes (set at the first build)
   int64_t vgd_hl_gen = 0;

@@ -31,22 +31,22 @@
         // vet_gd_twin_fuse: the same ray for the shell-mean (twin) field in the same
         // thread; one launch and one halo per shell for both sweeps
         auto solve = [&](const DvceArray5D<Real> &csx, const VgdIView &vix,
-                         const bool twn) -> Real {
+                         const bool twn, const DvceArray3D<Real> &upq) -> Real {
           // vetgdup-1110 vet_gd_upwind: a read of another cell / direction than the
           // stencil's own (a wall ghost: periodic partner, mirror row, mapped or
           // interpolated directions) shifted along the shell profile of ii from the read
           // value's own n . r_hat (mc) to the ghost's (mt); the symmetric part of the
           // ghost then is that of the ghost's own position and direction.  Opt-in
           // (vet_gd_upwind_wall; uniform theta, wedge band only)
-          const bool upw = upwl_ && (upf_ == 1 || upf_ == 2) && !twn;
+          const bool upw = upwl_ && (upf_ == 1 || upf_ == 2);   // (twin: own profile)
           // (no shift unless the profile reproduces the read value v at its own cosine
           // to tol: an unresolved angular structure, e.g. a beam edge, keeps the read)
           auto ush = [&](const int ii, const Real mt, const Real mc,
                          const Real v) -> Real {
             if (!upw || mt == mc || ((mt < 0.0) != (mc < 0.0))) {return 0.0;}
             Real ft, fc, f1, f2;
-            if (!VgdUpProf(upp_, ii, upk_, mt < 0.0, mt, upt_, ft, f1, f2)) {return 0.0;}
-            if (!VgdUpProf(upp_, ii, upk_, mc < 0.0, mc, upt_, fc, f1, f2)) {return 0.0;}
+            if (!VgdUpProf(upq, ii, upk_, mt < 0.0, mt, upt_, ft, f1, f2)) {return 0.0;}
+            if (!VgdUpProf(upq, ii, upk_, mc < 0.0, mc, upt_, fc, f1, f2)) {return 0.0;}
             if (fabs(v - fc) > upt_*fmax(fmax(fabs(v), fabs(fc)), 1.0e-300)) {return 0.0;}
             return ft - fc;
           };
@@ -69,14 +69,16 @@
                          const Real mt, const Real v) -> Real {
             const int nt = wint ? 3 : 1;
             Real ft, f1, f2, fb = 0.0, ws = 0.0;
-            if (!VgdUpProf(upp_, ii, upk_, mt < 0.0, mt, upt_, ft, f1, f2)) {return 0.0;}
+            if (!VgdUpProf(upq, ii, upk_, mt < 0.0, mt, upt_, ft, f1, f2)) {return 0.0;}
             for (int t = 0; t < nt; ++t) {
               const Real wt = wint ? w3_(m,kk,jj,dq,t) : 1.0;
               if (wt == 0.0) {continue;}
               const Real mc = mcp(kk, jj, wint ? m3_(m,kk,jj,dq,t) : mp_(m,kk,jj,dq));
               Real fc;
               if ((mc < 0.0) != (mt < 0.0)) {return 0.0;}
-              if (!VgdUpProf(upp_, ii, upk_, mc < 0.0, mc, upt_, fc, f1, f2)) {return 0.0;}
+              if (!VgdUpProf(upq, ii, upk_, mc < 0.0, mc, upt_, fc, f1, f2)) {
+                return 0.0;
+              }
               fb += wt*fc;
               ws += wt;
             }
@@ -495,11 +497,11 @@
               // own n . r_hat to the upwind point's (main field only; off: no shift)
               Real cq_[4] = {0.0, 0.0, 0.0, 0.0};
               bool upo = false;
-              if ((upf_ == 1 || upf_ == 2) && !twn) {
+              if (upf_ == 1 || upf_ == 2) {
                 const Real muu = (nx*xu + ny*yu + nz*zu)/ru;
                 auto mqe = [&](const int e) -> Real {return mrq(st4.K(e), st4.J(e));};
                 auto iqe = [&](const int e) -> Real {return fIu(st4.K(e), st4.J(e));};
-                upo = VgdUpCorr(upp_, iu, upk_, want_in, upf_, upt_, muu, st4, mqe, iqe,
+                upo = VgdUpCorr(upq, iu, upk_, want_in, upf_, upt_, muu, st4, mqe, iqe,
                                 ok, all, cq_);
               }
               auto fIc = [&](const int kk, const int jj) -> Real {
@@ -719,6 +721,6 @@
           }
           return iv;
         };
-        vi_(m,d,k,j,i) = solve(cs_, vi_, tws);
-        if (two) {vt_(m,d,k,j,i) = solve(ct_, vt_, true);}
+        vi_(m,d,k,j,i) = solve(cs_, vi_, tws, upp_);
+        if (two) {vt_(m,d,k,j,i) = solve(ct_, vt_, true, upp2_);}
       };

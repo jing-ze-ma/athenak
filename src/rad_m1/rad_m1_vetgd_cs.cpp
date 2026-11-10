@@ -1428,6 +1428,7 @@ void RadiationM1::VetGdCsSweep() {
   // vetgdup-1110 vet_gd_upwind: the shell profiles (VetGdUpShell after each shell)
   if (vgd_upf != 0) {VetGdUpPrep();}
   auto upp_ = vgd_up_prof;
+  auto upp2_ = vgd_up_prof2;   // the fused twin's profiles
   const int upk_ = vgd_upk, upf_ = vgd_upf;
   const Real upt_ = vgd_uptol;
   auto cr_ = vgd_csr;
@@ -1869,10 +1870,11 @@ void RadiationM1::VetGdCsSweep() {
             // field only; off: no shift)
             Real cq_[4] = {0.0, 0.0, 0.0, 0.0};
             bool upo = false;
-            if ((upf_ == 1 || upf_ == 2) && f == 0) {
+            if (upf_ == 1 || upf_ == 2) {   // main and fused twin, each its own profile
               auto mqe = [&](const int e) -> Real {return mr_(m,st.k[e],st.j[e],d);};
               auto iqe = [&](const int e) -> Real {return rdi(st.k[e], st.j[e]);};
-              upo = VgdUpCorr(upp_, iu, upk_, inw || (typ == 3), upf_, upt_, muu, acc,
+              upo = VgdUpCorr((f == 0) ? upp_ : upp2_, iu, upk_, inw || (typ == 3), upf_,
+                              upt_, muu, acc,
                               mqe, iqe, ok, all, cq_);
             }
             auto rdc = [&](const int kk, const int jj) -> Real {
@@ -1982,7 +1984,10 @@ void RadiationM1::VetGdCsSweep() {
 #endif
       }   // g
       // vetgdup-1110 vet_gd_upwind: this shell's profile on the pass's half range
-      if (vgd_upf != 0) {VetGdUpShell(i, inw);}
+      if (vgd_upf != 0) {
+        VetGdUpShell(i, inw, 0);
+        if (two) {VetGdUpShell(i, inw, 1);}   // the fused twin: its own profile
+      }
       if (rga) {
         // the previous shell of the pass has been read (stream order): its inward band
         // values saved (inward pass), its interior back to the compact slab; the next

@@ -5252,6 +5252,7 @@ void RadiationM1::VetGdSweep() {
   // vetgdup-1110 vet_gd_upwind: the shell profiles (VetGdUpShell after each shell kernel)
   if (vgd_upf != 0) {VetGdUpPrep();}
   auto upp_ = vgd_up_prof;
+  auto upp2_ = vgd_up_prof2;   // the fused twin's profiles
   const int upk_ = vgd_upk, upf_ = vgd_upf;
   const bool upwl_ = vgd_upwall;
   const Real upt_ = vgd_uptol;
@@ -5771,7 +5772,10 @@ void RadiationM1::VetGdSweep() {
       pend = false;
       // vetgdup-1110 vet_gd_upwind: this shell's profile on the pass's half range (read
       // by the next shell of the pass, and by the turned rays of the outward pass)
-      if (vgd_upf != 0) {VetGdUpShell(i, inw);}
+      if (vgd_upf != 0) {
+        VetGdUpShell(i, inw, 0);
+        if (two) {VetGdUpShell(i, inw, 1);}   // the fused twin: its own profile
+      }
       if (rga) {
         // the previous shell of the pass has been read (stream order): its inward band
         // values saved (inward pass), its interior back to the compact slab; the next
@@ -5885,6 +5889,10 @@ void RadiationM1::VetGdUpPrep() {
     Kokkos::deep_copy(vgd_up_prof, 0.0);
     Kokkos::realloc(vgd_up_part, nmb, nb, 9);
   }
+  if (vgd_sw2 && (vgd_up_prof2.extent_int(0) != n1c || vgd_up_prof2.extent_int(1) != nb)) {
+    Kokkos::realloc(vgd_up_prof2, n1c, nb, 4);
+    Kokkos::deep_copy(vgd_up_prof2, 0.0);
+  }
   if (vgd_up_alpha == vgd_alpha && vgd_up_ofs.extent_int(0) == nmb*nb + 1) {return;}
   const int wb = vgd_w, n = vgd_n;
   const int nk = indcs.nx3, nj = indcs.nx2;
@@ -5939,7 +5947,7 @@ void RadiationM1::VetGdUpPrep() {
 //! per bin the least-squares quadratic in t (linear / constant where the bin's cosines do
 //! not support it), copied to vgd_up_prof(i, ...)
 
-void RadiationM1::VetGdUpShell(const int i, const bool inw) {
+void RadiationM1::VetGdUpShell(const int i, const bool inw, const int f) {
   Kokkos::Timer tm;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   Mesh *pm = pmy_pack->pmesh;
@@ -5952,7 +5960,7 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
   auto cd_ = vgd_up_code;
   auto pt_ = vgd_up_part;
   auto mr_ = vgd_mr;
-  auto vi_ = vgd_i;
+  auto vi_ = (f == 0) ? vgd_i : vgd_itw;   // f 1: the fused twin's field
   // one team per (block, bin); NLN fixed lanes, each summing its strided samples in
   // order, then the lanes in order (the same numbers for any team size / backend)
   constexpr int NLN = 32;
@@ -6021,7 +6029,7 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
     ga_ = vgd_up_gall;
   }
 #endif
-  auto pf_ = vgd_up_prof;
+  auto pf_ = (f == 0) ? vgd_up_prof : vgd_up_prof2;
   const Real tol_ = vgd_uptol;
   par_for("m1_vgd_up_fit", ex, 0, kh - 1,
   KOKKOS_LAMBDA(const int bq) {
@@ -6068,7 +6076,7 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw) {
     const char *e = std::getenv("VGD_UP_DIAG");
     s_diag = (e != nullptr) ? std::atoi(e) : 0;
   }
-  if (s_diag > 0 && vgd_hsweep <= s_diag) {
+  if (f == 0 && s_diag > 0 && vgd_hsweep <= s_diag) {
     Kokkos::View<Real[3], DevMemSpace> dg("m1_vgd_up_dg");
     par_for("m1_vgd_up_diag", ex, 0, nmb - 1, 0, kh - 1,
     KOKKOS_LAMBDA(const int m, const int bq) {
