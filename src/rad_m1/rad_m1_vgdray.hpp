@@ -257,7 +257,9 @@ bool VgdUpCorr(const P &pf, const int iu, const int kh, const bool lo, const int
   if (upf == 1 && !VgdUpProf(pf, iu, kh, lo, mu, tol, fu, f1, f2)) {return false;}
   for (int e = 0; e < acc.N(); ++e) {
     cq[e] = 0.0;
-    if (!(all || ok[e])) {continue;}
+    // only the cells the upwind read itself reads (all: every stencil cell; else the
+    // valid ones of nonzero weight): no read outside the halo read masks
+    if (!(all || (ok[e] && acc.W(e) > 0.0))) {continue;}
     const Real m = mq(e);
     Real f;
     if (!VgdUpProf(pf, iu, kh, lo, m, tol, f, f1, f2)) {return false;}
