@@ -972,6 +972,7 @@ class RadiationM1 {
   Real impl_blend_dtc = 0.0;   // rc18-1110 implicit_blend_dtc: M1BlendDtc kappa (0 off)
   bool impl_hr_cmem = false;   // rc18-1110 implicit_hr_cmem: separate F_c memory
   bool impl_aphll_mem = false;   // aphll-time-1110 implicit_aphll_mem (cmem + restage)
+  bool impl_aphll_fci = false;   // aphll-time-1110 implicit_aphll_fcimp (F_c implicit)
   DvceArray4D<Real> fax1, fax2, fax3;   // rc18-1110: the applied face fluxes (cmem)
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
   // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a

@@ -2518,6 +2518,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // coefficients rebuilt once after the first pass of each stage) unless that is named.
   impl_aphll_mem = pin->DoesParameterExist("rad_m1","implicit_aphll_mem") &&
                    pin->GetBoolean("rad_m1","implicit_aphll_mem");
+  // aphll-time-1110 implicit_aphll_fcimp (opt-in, read only when named; implies
+  // implicit_aphll_mem): the LINEARISED form.  At the Picard fixed point of the F_c
+  // memory with a face-local ratio, c f E_up = F_c, so the advective part of the HLL
+  // flux, al (b_R c f_L E_L - b_L c f_R E_R)/(b_R - b_L), IS al F_c(E'): it is put into
+  // the row implicitly, with the face equation's own (M-matrix) coefficients, instead of
+  // lagging f (which is an explicit flux at chat dt/dx >> 1).  The x1 face flux is then
+  // (1 - w + w al) F_c(E') + w al dk (E_L - E_R): AL = w (1 - al), HCL = -HCR = w al dk
+  // (berthon | blend in flux mode; the RF0 path, not halfrange / the Cartesian beam)
+  impl_aphll_fci = pin->DoesParameterExist("rad_m1","implicit_aphll_fcimp") &&
+                   pin->GetBoolean("rad_m1","implicit_aphll_fcimp");
+  if (impl_aphll_fci) {impl_aphll_mem = true;}
   if (impl_aphll_mem) {
     if (impl_flux == M1_IFLUX_CENTRAL) {
       ImplFatal("<rad_m1>/implicit_aphll_mem needs implicit_flux = ap_hll | berthon | "
@@ -14721,6 +14732,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool fktn = impl_face_ktn && (it == 0);   // F2: kappa_T at T^n
       auto ktn_ = ktn;
       const bool bvx = bvec_x1 && !impl_beam_hr;   // blendall-1009
+      const bool fci = impl_aphll_fci && berth && !bdis;   // aphll-time-1110
       const bool bfsx = impl_beam_fs;
       // hrup-1009: the half-range face flux on the x1 faces too (every geometry)
       const bool hrx = impl_beam_hr;
@@ -14995,7 +15007,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real ccl = wf*fmax(wadv*adl + wdsq*dk, 0.0);
         Real ccr = wf*fmin(wadv*adr - wdsq*dk, 0.0);
         // how much of the CENTRAL (face-eliminated) flux the row keeps is 1 - AL.
-        ifw_(m,M1_IFW_AL,k,j,i) = bdis ? 0.0 : (berth ? wf : al);
+        Real alw = bdis ? 0.0 : (berth ? wf : al);
+        if (fci) {   // aphll-time-1110 implicit_aphll_fcimp: al F_c(E') implicit
+          alw = wf*(1.0 - al);
+          ccl = wf*al*dk;
+          ccr = -wf*al*dk;
+        }
+        ifw_(m,M1_IFW_AL,k,j,i) = alw;
         ifw_(m,M1_IFW_HCL,k,j,i) = ccl;
         ifw_(m,M1_IFW_HCR,k,j,i) = ccr;
         // the plm DEFERRED CORRECTION: the difference between the plm and the dc HLL
