@@ -2035,6 +2035,15 @@ class RadiationM1 {
   // hr2nd-1110 implicit_hr_recon_xcfl = X0 > 0: a LIMITED slope (not smooth) is scaled
   // by 1/(1 + (X/X0)^4), X = c dt/dx_d the cell Courant number of the step
   Real impl_muscl_xcfl = 0.0;
+  // hrhc-1110 implicit_thin_corr_plm (read only when named; default false = bitwise):
+  // the thin_corr hc/hcs correction made plm-consistent under implicit_hr_recon = plm,
+  // q = h: DG_f = q w c (H_f - [h+_L J_L + h-_R J_R + plm_f(h J)]), the plm part with
+  // the same limiter as the upwind state, so that the face flux at E = J is exactly
+  // w c H_f.  hcpw: per face direction d, 2d = the gate q of the face (M1ThinFace),
+  // 2d+1 = the plm part already in DG (rebuilt with the limiter: ImplicitHcPlm)
+  bool impl_hcplm = false;
+  DvceArray5D<Real> hcpw, fr_hcpw;
+  void ImplicitHcPlm();
   bool muscl_now = false;       // on for this step
   int muscl_nbuild = 0;         // limiter builds this step (then frozen)
   int impl_muscl_nfresh = 2;    // implicit_hr_recon_fresh: passes with a fresh limiter

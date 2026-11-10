@@ -152,9 +152,12 @@
       const int kup = (d == 2) ? ke + 1 : ke, jup = (d == 1) ? je + 1 : je;
       const int inx = (d == 1) ? BoundaryFace::inner_x2 : BoundaryFace::inner_x3;
       const int onx = (d == 1) ? BoundaryFace::outer_x2 : BoundaryFace::outer_x3;
+      const bool hcpon = impl_hcplm && thsw;   // hrhc-1110
+      auto hcp_ = hcpw;
       par_for("m1_impl_lfchf" M1_LFC_SFX, DevExeSpace(), 0, nmb1, ks, kup, js, jup, is,
               ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (hcpon) {hcp_(m,2*d,k,j,i) = 0.0; hcp_(m,2*d+1,k,j,i) = 0.0;}
         BoundaryFlag blo = mbbcs.d_view(m,inx);
         BoundaryFlag bhi = mbbcs.d_view(m,onx);
         bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
@@ -226,7 +229,7 @@
                      (tcorr == M1_THCR_HCS) ? fmin(iw_(m,M1_IW_TR,km,jm,i),
                                                    iw_(m,M1_IW_TR,k,j,i)) : 1.0,
                      th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr,
-                     ch*dtl/dx, bdtc);
+                     ch*dtl/dx, bdtc, hcpon ? &hcp_(m,2*d,k,j,i) : nullptr);
           fw(m,M1_IFW_AL,k,j,i) = al;
           fw(m,M1_IFW_HCL,k,j,i) = hl;
           fw(m,M1_IFW_HCR,k,j,i) = hr;
