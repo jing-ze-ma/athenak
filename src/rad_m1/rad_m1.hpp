@@ -970,6 +970,11 @@ class RadiationM1 {
   Real impl_blend_xthin_wmin = 0.0;    // xthinfix-1009: threshold of mode = beam
   Real impl_blend_xthin_r0 = 1.5;      // xthinfix-1009: Knudsen R0 of mode = beam_kn
   Real impl_blend_dtc = 0.0;   // rc18-1110 implicit_blend_dtc: M1BlendDtc kappa (0 off)
+  // hr2prod-1110 implicit_hr_wscale_x1 / _lat (diagnostic, read only when named): the
+  // half-range face coefficients AL, HCL, HCR, DG of the x1 / transverse faces times s
+  // (0 = central faces there); off = bitwise
+  bool impl_hr_ws = false;
+  Real impl_hr_ws_x1 = 1.0, impl_hr_ws_lat = 1.0;
   bool impl_hr_cmem = false;   // rc18-1110 implicit_hr_cmem: separate F_c memory
   DvceArray4D<Real> fax1, fax2, fax3;   // rc18-1110: the applied face fluxes (cmem)
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0

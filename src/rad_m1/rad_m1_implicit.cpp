@@ -2497,6 +2497,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_blend_dtc = pin->DoesParameterExist("rad_m1","implicit_blend_dtc") ?
                    pin->GetReal("rad_m1","implicit_blend_dtc") : 0.0;
   if (impl_blend_dtc < 0.0) {ImplFatal("<rad_m1>/implicit_blend_dtc must be >= 0");}
+  // hr2prod-1110 (diagnostic, read only when named): implicit_hr_wscale_x1 / _lat
+  impl_hr_ws = pin->DoesParameterExist("rad_m1","implicit_hr_wscale_x1") ||
+               pin->DoesParameterExist("rad_m1","implicit_hr_wscale_lat");
+  if (impl_hr_ws) {
+    impl_hr_ws_x1 = pin->GetOrAddReal("rad_m1","implicit_hr_wscale_x1",1.0);
+    impl_hr_ws_lat = pin->GetOrAddReal("rad_m1","implicit_hr_wscale_lat",1.0);
+  }
   // rc18-1110 implicit_hr_cmem (opt-in, read only when named, default false = bitwise):
   // a SEPARATE central-branch memory.  The face arrays f0x1..3 (and with them f0x*n,
   // the hesdirk2 copies t2f*, the stage slopes kk / increments t2i, the restart file)
@@ -14696,6 +14703,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const int bxmode = impl_blend_xthin_mode;
       const Real bxwmin = impl_blend_xthin_wmin, bxr0 = impl_blend_xthin_r0;
       const Real bdtc = impl_blend_dtc;   // rc18-1110
+      const bool hws = impl_hr_ws;   // hr2prod-1110
+      const Real hwsx = impl_hr_ws_x1;
       const bool hgd = hrx && vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0);
       const int hsrc = !hrx ? 0 : (vetsc ? 1 : (hgd ? 2 : (!impl_hr_model ? -1 :
                                                             (trans ? 0 : 3))));
@@ -14880,6 +14889,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                      1.0 - hvc_(m,M1_VET_EPS,k,j,ip))),
                        th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt, hwl, hwr,
                        ch*dt/dx, bdtc);
+            if (hws) {alb *= hwsx; hlb *= hwsx; hrb *= hwsx; dgt *= hwsx;}
             ifw_(m,M1_IFW_AL,k,j,i) = alb;
             ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
             ifw_(m,M1_IFW_HCR,k,j,i) = hrb;
@@ -14897,6 +14907,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                    (bxmode == 2) ? fmax(M1HrJFlag(hsrc, iw_, hvc_, m, k, j, im),
                                         M1HrJFlag(hsrc, iw_, hvc_, m, k, j, ip)) : 0.0,
                    alb, hlb, hrb, bdtc);
+          if (hws) {alb *= hwsx; hlb *= hwsx; hrb *= hwsx;}
           ifw_(m,M1_IFW_AL,k,j,i) = alb;
           ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
           ifw_(m,M1_IFW_HCR,k,j,i) = hrb;
