@@ -3265,6 +3265,7 @@ class RadiationM1 {
   // column solution plus vet_gd's lateral deviation (VetGdHrSplit, rad_m1_vetgd.cpp):
   //   h = h_col + D g S_sig[(h_gd - h_col) - <h_gd - h_col>_shell]
   // (D = 1: <h_col> + h_gd - <h_gd>; D = 0: h_col).  vet_gd_hr_split_d = D (default 1);
+  // (with vet_gd_replace the column solve is then run too, for vcol_hr only);
   // vet_gd_hr_split_sig = sig (default 0): soft threshold S_sig(x) = sign(x) max(|x| -
   // sig, 0) in h units; vet_gd_hr_split_res = rho (default 0 = off): the profile
   // resolution weight g = clamp((th - rho dl)/(rho dl), 0, 1), th = sqrt(1 - f_K) the rms

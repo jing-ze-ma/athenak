@@ -765,6 +765,9 @@ void RadiationM1::VetColBuild() {
     // vet_gd_replace (m1-vet-gd): no column solution; the isotropic tensor about r_hat
     // and the default Marshak q here, the gd sweep (VetLatBuild -> VetGdBuild) then
     // overwrites D above its first shell and q at the top
+    // hrsplit-1110 vet_gd_hr_split: the column solution is still made, for its radial
+    // half-range ratios only (vcol_hr); its tensor and q are overwritten just below
+    if (vgd_hrs != 0) {VetColBuildTeam(false);}
     const int ie = indcs.ie;
     par_for("m1_vgd_iso", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
