@@ -476,7 +476,7 @@
               // 1.5 S_a - 0.5 S_b (the S the half-cell carry below starts from), not of
               // the first shell's cell (O(dtau_cell) low isotropic part otherwise)
               iv = VgdInnerFace(st4, fC, i, false, 0.0, bfc, cx1f(m,i), cx1v(m,i),
-                                cx1v(m,i+1), p2, ch0, ds, s0);
+                                cx1v(m,i+1), p2, ch0, ds, s0, izf);
             } else {
               // each (cell, direction) holds ONE intensity, of the pass its n_d . r_hat
               // selects; the ray read here is inward at the upwind point for the inward

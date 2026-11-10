@@ -1439,6 +1439,7 @@ void RadiationM1::VetGdCsSweep() {
   const int nc = vgd_csn;
   const Real h = 0.5*M_PI/nc;
   const bool bfc = vet_bc_face;
+  const bool izf = vgd_izf && (ibc_x1min == M1_IBC_REFLECT);   // hrsplit-1110
   const bool spl = vet_seg_split;
   const int spe = VetSegMode();
   const int vim = vet_interp;
@@ -1848,7 +1849,7 @@ void RadiationM1::VetGdCsSweep() {
         } else {
           if (typ == 2) {
             iv = VgdInnerFace(acc, fC, i, emi, iemit, bfc, cx1f(m,i), cx1v(m,i),
-                              cx1v(m,i+1), p2, ch0, ds, s0);
+                              cx1v(m,i+1), p2, ch0, ds, s0, izf);
           } else {
             // the intensity of a stencil cell: its owner's interior when on this rank
             // (stream order: shell iu is complete; the other branch of shell i, which

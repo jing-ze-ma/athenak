@@ -3305,6 +3305,26 @@ class RadiationM1 {
   DvceArray3D<Real> vgd_up_gall;              // (gid, bin, 9): every block sums (MPI)
   HostArray3D<Real> vgd_up_galh;
   double vgd_up_time = 0.0;
+  // hrsplit-1110 vet_gd_hr_split = col (read only when named; default none = the code
+  // before, bitwise): the RADIAL half-range ratios r+-_r of vgd_hr split into vet_col's
+  // column solution plus vet_gd's lateral deviation (VetGdHrSplit, rad_m1_vetgd.cpp):
+  //   h = h_col + D g S_sig[(h_gd - h_col) - <h_gd - h_col>_shell]
+  // (D = 1: <h_col> + h_gd - <h_gd>; D = 0: h_col).  vet_gd_hr_split_d = D (default 1);
+  // (with vet_gd_replace the column solve is then run too, for vcol_hr only);
+  // vet_gd_hr_split_sig = sig (default 0): soft threshold S_sig(x) = sign(x) max(|x| -
+  // sig, 0) in h units; vet_gd_hr_split_res = rho (default 0 = off): the profile
+  // resolution weight g = clamp((th - rho dl)/(rho dl), 0, 1), th = sqrt(1 - f_K) the rms
+  // angular width of the column intensity about r, dl = sqrt(4 pi/n) the spacing of the
+  // n vet_gd directions (angular information only)
+  int vgd_hrs = 0;
+  // hrsplit-1110 vet_gd_inner_reflect = diff | zeroflux (read only when named; default
+  // diff = the code before): zeroflux drops the gradient term of vet_gd's diffusion start
+  // at a REFLECTING inner x1 (I = S_face isotropic, H = 0 as the M1 face; vet_col mirrors)
+  bool vgd_izf = false;
+  Real vgd_hrs_d = 1.0, vgd_hrs_sig = 0.0, vgd_hrs_res = 0.0;
+  DvceArray5D<Real> vcol_hr;     // (m, 3, k, j, i): vet_col h+_r, h-_r, f_K (unclamped)
+  DvceArray1D<Real> vgd_hrs_m;   // (q c1 + i): <h_gd - h_col>_shell, q = 0, 1
+  void VetGdHrSplit();
   void VetGdUpPrep();
   void VetGdUpShell(const int i, const bool inw, const int f);
   DvceArray3D<Real> vgd_up_prof2;             // the fused twin's profiles
