@@ -3678,8 +3678,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_hr_cmem) {   // rc18-1110: the applied face flux (F_c lives in f0x1)
     // aphll-time-1110: implicit_vimp reads the APPLIED fluxes fax* (ImplicitVimpBuild)
     if (impl_lbath) {
-      ImplFatal("<rad_m1>/implicit_hr_cmem: not with implicit_vimp or the Linhao bath "
-                "(they read f0x* as the applied flux)");
+      ImplFatal("<rad_m1>/implicit_hr_cmem: not with the Linhao bath (it reads f0x* as "
+                "the applied flux)");
     }
     // the conservative gas source (Z_f) and implicit_rad_inertia take f0x* = F_c as the
     // face's old flux: exact without gas momentum exchange (static / no feedback
