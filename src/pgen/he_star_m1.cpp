@@ -3357,6 +3357,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real vrh = pin->GetReal("problem","dbg_vac_rhi");
     const Real vfr = pin->GetOrAddReal("problem","dbg_vac_frac",0.05);
     const Real vvr = pin->GetOrAddReal("problem","dbg_vac_vr",0.0);
+    // dbg_vac_omega (rad/s, default 0, cubed sphere only): first a solid-body rotation
+    // about z of EVERY active cell of the shell (the dense ones too: their radiation
+    // carries the zonal flux whose L reaches the seeded cells), KE added to IEN
+    const Real vom = pin->GetOrAddReal("problem","dbg_vac_omega",0.0);
+    const bool vcs = hcs;
+    auto vpan = pmbp->pmb->mb_panel;
+    auto &vmsz = pmbp->pmb->mb_size;
+    const int vnx2 = indcs.nx2, vnx3 = indcs.nx3;
     const int vis = indcs.is, vie = indcs.ie, vjs = indcs.js, vje = indcs.je;
     const int vks = indcs.ks, vke = indcs.ke;
     const int vgids = pmbp->gids;
@@ -3368,6 +3376,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sn) {
       const Real r = x1vv(m,i);
       if (r < vrl || r > vrh) return;
+      if (vom != 0.0 && vcs) {
+        const Real xi = 0.25*M_PI*CellCenterX(j - vjs, vnx2, vmsz.d_view(m).x2min,
+                                              vmsz.d_view(m).x2max);
+        const Real eta = 0.25*M_PI*CellCenterX(k - vks, vnx3, vmsz.d_view(m).x3min,
+                                               vmsz.d_view(m).x3max);
+        Real rh[3], e1[3], e2[3];
+        cubed_sphere::PanelToCart(vpan.d_view(m), xi, eta, rh);
+        cubed_sphere::PanelTangents(vpan.d_view(m), xi, eta, e1, e2);
+        const Real u0 = -vom*r*rh[1], u1 = vom*r*rh[0];
+        const Real dd = ugv(m,IDN,k,j,i);
+        ugv(m,IM2,k,j,i) += dd*(u0*e1[0] + u1*e1[1]);
+        ugv(m,IM3,k,j,i) += dd*(u0*e2[0] + u1*e2[1]);
+        ugv(m,IEN,k,j,i) += 0.5*dd*(u0*u0 + u1*u1);
+      }
       uint64_t x = (static_cast<uint64_t>(m + vgids) << 48) ^
                    (static_cast<uint64_t>(k) << 32) ^ (static_cast<uint64_t>(j) << 16) ^
                    static_cast<uint64_t>(i);
