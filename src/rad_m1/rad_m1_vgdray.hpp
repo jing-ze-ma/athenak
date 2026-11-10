@@ -242,15 +242,17 @@ bool VgdUpProf(const P &pf, const int iu, const int kh, const bool lo, const Rea
   return true;
 }
 
-// the additive corrections cq[e] of the stencil cells (cosines mq(e), used where
-// ok[e] or all) for the upwind point of cosine mu: upf 1 Ibar(mu) - Ibar(mq), 2 the
-// Taylor terms of Ibar about mq to second order.  false (no correction anywhere) when a
-// bin it needs holds no fit
-template <typename P, typename A, typename MQ>
+// the additive corrections cq[e] of the stencil cells (cosines mq(e), intensities iq(e),
+// used where ok[e] or all) for the upwind point of cosine mu: upf 1 Ibar(mu) - Ibar(mq),
+// 2 the Taylor terms of Ibar about mq to second order.  false (no correction anywhere)
+// when a bin it needs holds no fit, or when the profile does not reproduce a stencil
+// cell's own intensity to tol (|iq - Ibar(mq)| > tol max(|iq|, |Ibar|): the angular
+// structure is not resolved there, e.g. the edge of a beam; the read stays bilinear)
+template <typename P, typename A, typename MQ, typename IQ>
 KOKKOS_INLINE_FUNCTION
 bool VgdUpCorr(const P &pf, const int iu, const int kh, const bool lo, const int upf,
-               const Real tol, const Real mu, const A &acc, const MQ &mq, const bool *ok,
-               const bool all, Real *cq) {
+               const Real tol, const Real mu, const A &acc, const MQ &mq, const IQ &iq,
+               const bool *ok, const bool all, Real *cq) {
   Real fu = 0.0, f1, f2;
   if (upf == 1 && !VgdUpProf(pf, iu, kh, lo, mu, tol, fu, f1, f2)) {return false;}
   for (int e = 0; e < acc.N(); ++e) {
@@ -259,6 +261,8 @@ bool VgdUpCorr(const P &pf, const int iu, const int kh, const bool lo, const int
     const Real m = mq(e);
     Real f;
     if (!VgdUpProf(pf, iu, kh, lo, m, tol, f, f1, f2)) {return false;}
+    const Real v = iq(e);
+    if (fabs(v - f) > tol*fmax(fmax(fabs(v), fabs(f)), 1.0e-300)) {return false;}
     const Real dm = mu - m;
     cq[e] = (upf == 1) ? (fu - f) : dm*(f1 + 0.5*dm*f2);
   }

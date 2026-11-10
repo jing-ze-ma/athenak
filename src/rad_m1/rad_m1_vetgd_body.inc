@@ -39,11 +39,15 @@
           // ghost then is that of the ghost's own position and direction.  Opt-in
           // (vet_gd_upwind_wall; uniform theta, wedge band only)
           const bool upw = upwl_ && (upf_ == 1 || upf_ == 2) && !twn;
-          auto ush = [&](const int ii, const Real mt, const Real mc) -> Real {
+          // (no shift unless the profile reproduces the read value v at its own cosine
+          // to tol: an unresolved angular structure, e.g. a beam edge, keeps the read)
+          auto ush = [&](const int ii, const Real mt, const Real mc,
+                         const Real v) -> Real {
             if (!upw || mt == mc || ((mt < 0.0) != (mc < 0.0))) {return 0.0;}
             Real ft, fc, f1, f2;
             if (!VgdUpProf(upp_, ii, upk_, mt < 0.0, mt, upt_, ft, f1, f2)) {return 0.0;}
             if (!VgdUpProf(upp_, ii, upk_, mc < 0.0, mc, upt_, fc, f1, f2)) {return 0.0;}
+            if (fabs(v - fc) > upt_*fmax(fmax(fabs(v), fabs(fc)), 1.0e-300)) {return 0.0;}
             return ft - fc;
           };
           // the cosine of direction dq at the partner of wall ghost (kk, jj): the ghost's
@@ -59,17 +63,25 @@
             return dir_(dq,0)*sin(tp)*cos(pp) + dir_(dq,1)*sin(tp)*sin(pp) +
                    dir_(dq,2)*cos(tp);
           };
-          // the wall ghost's shift: sum over its components of w (Ibar(mt) - Ibar(mc))
+          // the wall ghost's shift (read value v): Ibar(mt) sum w - sum w Ibar(mc) over
+          // its components, when sum w Ibar(mc) reproduces v to tol
           auto wsh = [&](const int kk, const int jj, const int ii, const int dq,
-                         const Real mt) -> Real {
-            if (wint) {
-              Real c = 0.0;
-              for (int t = 0; t < 3; ++t) {
-                c += w3_(m,kk,jj,dq,t)*ush(ii, mt, mcp(kk, jj, m3_(m,kk,jj,dq,t)));
-              }
-              return c;
+                         const Real mt, const Real v) -> Real {
+            const int nt = wint ? 3 : 1;
+            Real ft, f1, f2, fb = 0.0, ws = 0.0;
+            if (!VgdUpProf(upp_, ii, upk_, mt < 0.0, mt, upt_, ft, f1, f2)) {return 0.0;}
+            for (int t = 0; t < nt; ++t) {
+              const Real wt = wint ? w3_(m,kk,jj,dq,t) : 1.0;
+              if (wt == 0.0) {continue;}
+              const Real mc = mcp(kk, jj, wint ? m3_(m,kk,jj,dq,t) : mp_(m,kk,jj,dq));
+              Real fc;
+              if ((mc < 0.0) != (mt < 0.0)) {return 0.0;}
+              if (!VgdUpProf(upp_, ii, upk_, mc < 0.0, mc, upt_, fc, f1, f2)) {return 0.0;}
+              fb += wt*fc;
+              ws += wt;
             }
-            return ush(ii, mt, mcp(kk, jj, mp_(m,kk,jj,dq)));
+            if (fabs(v - fb) > upt_*fmax(fmax(fabs(v), fabs(fb)), 1.0e-300)) {return 0.0;}
+            return ft*ws - fb;
           };
           // mt: the target cosine (the ghost's own; used when upw)
           auto rd0t = [&](const int kk, const int jj, const int ii, const int dq,
@@ -78,7 +90,7 @@
             const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
             if (ek == 0 && ej == 0) {   // (a mirror row of the MIR kernel: shifted)
               const Real v0 = vix(m,dq,kk,jj,ii);
-              return upw ? (v0 + ush(ii, mt, mr_(m,kk,jj,dq))) : v0;
+              return upw ? (v0 + ush(ii, mt, mr_(m,kk,jj,dq), v0)) : v0;
             }
             const bool wsx = upw && (wl_(m,kk,jj) != 0);
             const int oo = 3*(ek + 1) + (ej + 1);
@@ -87,7 +99,7 @@
             if (nl < 0) {
               // the band copy (the unpack applied the wall map)
               const Real vb = vix(m,dq,kk,jj,ii);
-              return wsx ? (vb + wsh(kk, jj, ii, dq, mt)) : vb;
+              return wsx ? (vb + wsh(kk, jj, ii, dq, mt, vb)) : vb;
             }
             // accsp-1102: an on-rank pole partner: its rows reversed about the pole
             const int jn = (hp_(sl) != 0) ? VgdPoleRow(jj, wb, nx2b) : (jj - ej*nx2b);
@@ -97,12 +109,12 @@
                 v += w3_(m,kk,jj,dq,t)*vix(nl,m3_(m,kk,jj,dq,t),kk - ek*nx3b,
                                            jn,ii);
               }
-              return wsx ? (v + wsh(kk, jj, ii, dq, mt)) : v;
+              return wsx ? (v + wsh(kk, jj, ii, dq, mt, v)) : v;
             }
             const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,dq) : dq;
             const Real vd = vix(nl,dd,kk - ek*nx3b,jn,ii);
             // (a plain neighbour ghost is the same cell: no shift)
-            return wsx ? (vd + wsh(kk, jj, ii, dq, mt)) : vd;
+            return wsx ? (vd + wsh(kk, jj, ii, dq, mt, vd)) : vd;
           };
           auto rd0 = [&](const int kk, const int jj, const int ii, const int dq) -> Real {
             return rd0t(kk, jj, ii, dq, upw ? mr_(m,kk,jj,dq) : 0.0);
@@ -486,8 +498,9 @@
               if ((upf_ == 1 || upf_ == 2) && !twn) {
                 const Real muu = (nx*xu + ny*yu + nz*zu)/ru;
                 auto mqe = [&](const int e) -> Real {return mrq(st4.K(e), st4.J(e));};
-                upo = VgdUpCorr(upp_, iu, upk_, want_in, upf_, upt_, muu, st4, mqe, ok,
-                                all, cq_);
+                auto iqe = [&](const int e) -> Real {return fIu(st4.K(e), st4.J(e));};
+                upo = VgdUpCorr(upp_, iu, upk_, want_in, upf_, upt_, muu, st4, mqe, iqe,
+                                ok, all, cq_);
               }
               auto fIc = [&](const int kk, const int jj) -> Real {
                 if (!upo) {return fIu(kk,jj);}
