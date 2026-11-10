@@ -1,0 +1,5 @@
+{
+  "comment": "WASP-121b for the Caltech 1x hydro runs (w121r1_1101 p1): 1x composition (eos_xh 0.7381, eos_yhe 0.2485, metal_mh 0); system and instrument as wasp121b.json.",
+  "name": "WASP-121b (1x)",
+  "eos_xh": 0.7381, "eos_yhe": 0.2485, "comptab": "data/comptab_1x.bin.gz"
+}

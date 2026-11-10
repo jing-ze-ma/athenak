@@ -1,0 +1,39 @@
+W121  NRS1        model day  3419 night  1151 ppm off +29.3 deg Tday 2578 Tnight 1653 | obs (Mikal-Evans+23) day 3924+-7 night 136+-8 off 3.4+-0.1 Tday 2762+-31 Tnight 926+-12
+W121  NRS2        model day  3989 night  1804 ppm off +32.8 deg Tday 2463 Tnight 1664 | obs (Mikal-Evans+23) day 4924+-9 night 630+-10 off 2.7+-0.1 Tday 2768+-39 Tnight 1122+-10
+W121  IRAC1       model day  3453 night  1394 ppm off +30.8 deg Tday 2499 Tnight 1690 | obs (Morello+23) day 4210+-80 night 220+-260 off -5.9+-1.6 Tday 2670+-48 Tnight 710+-490
+W121  IRAC2       model day  4047 night  1800 ppm off +32.6 deg Tday 2469 Tnight 1652 | obs (Morello+23) day 5080+-90 night 720+-270 off -5.0+-3.2 Tday 2700+-60 Tnight 1130+-145
+W121  WFC3        model day   752 night   192 ppm off +30.8 deg Tday 2426 Tnight 1842 | obs (Mikal-Evans+20/22) day 1150+-20 night nan+-nan off 6.4+-2.0 Tday nan+-nan Tnight nan+-nan
+W121  SOSS        model day   932 night   269 ppm off +30.6 deg Tday 2443 Tnight 1799 | obs (Splinter+25 (T = bolometric)) day 1156+-14 night nan+-nan off 5.1+-1.4 Tday 2717+-17 Tnight 1562+-18
+W76   IRAC1       model day  2439 night  1044 ppm off +30.1 deg Tday 2359 Tnight 1651 | obs (May & Stevenson 21) day 2539+-30 night 931+-96 off 0.7+-0.5 Tday 2471+-27 Tnight 1518+-61
+W76   IRAC2       model day  2914 night  1379 ppm off +31.9 deg Tday 2334 Tnight 1623 | obs (May & Stevenson 21) day 3729+-52 night 801+-89 off 0.7+-0.2 Tday 2699+-32 Tnight 1259+-44
+{
+ "spec121": {
+  "model_h2o_14_over_12": 1.7235530109725,
+  "model_co_45_over_37": 1.188484257737605
+ },
+ "h2o76": 1.9911971788068565,
+ "fe": {
+  "w76": {
+   "rms": 1.747438199247776,
+   "bias": 0.34058435634926926,
+   "mod_first": -4.525834882734837,
+   "mod_last": -10.085242755781973,
+   "obs_first": -3.9,
+   "obs_last": -10.76,
+   "mod_A": 524.9915538201562,
+   "mod_A_first": 485.7927898844328,
+   "mod_A_last": 562.7074189586832
+  },
+  "w121": {
+   "rms": 2.5289070925123056,
+   "bias": -1.4579637042583937,
+   "mod_first": -3.376479222161273,
+   "mod_last": -10.434821385217091,
+   "obs_first": -2.911111111111111,
+   "obs_last": -7.198571428571428,
+   "mod_A": 406.6660424711634,
+   "mod_A_first": 386.5682459973712,
+   "mod_A_last": 425.2103530627229
+  }
+ }
+}

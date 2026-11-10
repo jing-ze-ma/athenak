@@ -1,0 +1,4 @@
+{"comment": "WASP-189b Caltech 1x hydro p1. System: Lendl+2020 (package README; Rp = 0.07045 R*); b 0.478 +0.009-0.012 (Lendl+2020 Table 1, verified arXiv 2009.13403). omega = deck. LSF: fe3d with 2.14; ana run for E 2.14 and MX 3.53, combined by S/N^2 weight.",
+ "name": "WASP-189b (1x)", "R_star_Rsun": 2.362, "R_p_RJ": 1.619, "M_p_MJ": 1.99, "a_over_Rs": 4.600, "b": 0.478,
+ "P_orb_d": 2.724033, "omega": 2.669647e-05, "Kp_kms": null, "lsf_fwhm_kms": 3.53,
+ "eos_xh": 0.7381, "eos_yhe": 0.2485, "comptab": "data/comptab_1x.bin.gz"}

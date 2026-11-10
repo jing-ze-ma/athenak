@@ -1,0 +1,4 @@
+{"comment": "WASP-178b Caltech 1x hydro p1. System: Lothringer+2025 star/a/R*/Rp (package README), Hellier+2019 Mp; b 0.54 (Lothringer+2025 Table 1: 0.5410 +- 0.0027, verified arXiv 2503.15472). omega = deck. ESPRESSO 1-UT LSF 2.14.",
+ "name": "WASP-178b (1x)", "R_star_Rsun": 1.70, "R_p_RJ": 1.77, "M_p_MJ": 1.66, "a_over_Rs": 7.037, "b": 0.54,
+ "P_orb_d": 3.3448394, "omega": 2.174158e-05, "Kp_kms": null, "lsf_fwhm_kms": 2.14,
+ "eos_xh": 0.7381, "eos_yhe": 0.2485, "comptab": "data/comptab_1x.bin.gz"}

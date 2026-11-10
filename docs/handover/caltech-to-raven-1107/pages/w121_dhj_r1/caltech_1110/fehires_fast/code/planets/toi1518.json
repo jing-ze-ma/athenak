@@ -1,0 +1,4 @@
+{"comment": "TOI-1518b Caltech 1x hydro p1. System: Simonnin+2025 (package README); b 0.880 = a/R* cos i with Simonnin+2025 a/R* 4.109, i 77.626 deg (same source as the rest; Cabot+2021 0.9036, b precesses -0.011/yr). omega = deck. MAROON-X LSF 3.53.",
+ "name": "TOI-1518b (1x)", "R_star_Rsun": 1.942, "R_p_RJ": 1.878, "M_p_MJ": 1.83, "a_over_Rs": 4.109, "b": 0.880,
+ "P_orb_d": 1.90261131, "omega": 3.822223e-05, "Kp_kms": null, "lsf_fwhm_kms": 3.53,
+ "eos_xh": 0.7381, "eos_yhe": 0.2485, "comptab": "data/comptab_1x.bin.gz"}

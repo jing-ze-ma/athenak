@@ -1,0 +1,4 @@
+{"comment": "WASP-76b Caltech 1x hydro p1. System: Ehrenreich+2020 (package README); b 0.027 +0.13-0.023 (Ehrenreich+2020, as tabulated by Seidel+2021 Table 1). omega = deck. LSF: fe3d with 2.14; ana run for E 2.14 and MX 3.53, combined by S/N^2 weight.",
+ "name": "WASP-76b (1x)", "R_star_Rsun": 1.756, "R_p_RJ": 1.854, "M_p_MJ": 0.894, "a_over_Rs": 4.08, "b": 0.027,
+ "P_orb_d": 1.80988198, "omega": 4.018055e-05, "Kp_kms": null, "lsf_fwhm_kms": 2.14,
+ "eos_xh": 0.7381, "eos_yhe": 0.2485, "comptab": "data/comptab_1x.bin.gz"}

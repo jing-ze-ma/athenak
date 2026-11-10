@@ -1,0 +1,48 @@
+w178_00177_pc6 rot 88.50
+  KpVsys full  at Kp0: peak  -8.82  wide  -8.77 (FWHM 12.3)  centroid  -6.77  map max Kp 174.4 v -8.90
+  KpVsys rmcut at Kp0: peak  -8.35  wide  -8.28 (FWHM 12.4)  centroid  -6.34  map max Kp 166.4 v -8.10
+  seg mor (n=0): mean per-exp   +nan (sd nan) FWHM nan | stacked: wide   +nan FWHM nan peak   +nan centroid   +nan | limb rays mor   +nan eve   +nan
+  seg eve (n=0): mean per-exp   +nan (sd nan) FWHM nan | stacked: wide   +nan FWHM nan peak   +nan centroid   +nan | limb rays mor   +nan eve   +nan
+  seg hmor (n=3): mean per-exp  -6.39 (sd 0.58) FWHM 12.1 | stacked: wide  -6.52 FWHM 12.4 peak  -6.56 centroid  -4.96 | limb rays mor  -5.87 eve  -9.80
+  seg heve (n=3): mean per-exp  -9.76 (sd 0.18) FWHM 10.2 | stacked: wide  -9.72 FWHM 10.3 peak  -9.73 centroid  -7.80 | limb rays mor  -8.15 eve  -9.99
+  Kp-marg full  Kp 130.4-230.4: (a) posterior mean  -8.79 median  -8.79 [16  -8.82, 84  -8.76] <Kp> 173.8 (S_max 29.8, flat-Kp mean  -8.80) | (b) Kp-avg map: peak  -8.80 wide  -8.74 (FWHM 14.0) centroid  -6.75
+  Kp-marg rmcut Kp 130.4-230.4: (a) posterior mean  -8.14 median  -8.14 [16  -8.17, 84  -8.11] <Kp> 166.5 (S_max 31.8, flat-Kp mean  -8.74) | (b) Kp-avg map: peak  -8.22 wide  -8.13 (FWHM 17.0) centroid  -6.30
+  Kp-marg mor   Kp 130.4-230.4: (a) posterior mean   +nan median   +nan [16   +nan, 84   +nan] <Kp> nan (S_max nan, flat-Kp mean   +nan) | (b) Kp-avg map: peak   +nan wide   +nan (FWHM nan) centroid   +nan
+  Kp-marg eve   Kp 130.4-230.4: (a) posterior mean   +nan median   +nan [16   +nan, 84   +nan] <Kp> nan (S_max nan, flat-Kp mean   +nan) | (b) Kp-avg map: peak   +nan wide   +nan (FWHM nan) centroid   +nan
+  CF (template-weighted absorption) log p_tan 16/50/84 %: -4.17 -3.26 -2.25
+w178_00177_pc0 rot 88.50
+  KpVsys full  at Kp0: peak  -8.96  wide  -8.91 (FWHM 12.6)  centroid  -6.92  map max Kp 174.4 v -9.00
+  KpVsys rmcut at Kp0: peak  -8.45  wide  -8.38 (FWHM 12.6)  centroid  -6.45  map max Kp 166.4 v -8.10
+  seg mor (n=0): mean per-exp   +nan (sd nan) FWHM nan | stacked: wide   +nan FWHM nan peak   +nan centroid   +nan | limb rays mor   +nan eve   +nan
+  seg eve (n=0): mean per-exp   +nan (sd nan) FWHM nan | stacked: wide   +nan FWHM nan peak   +nan centroid   +nan | limb rays mor   +nan eve   +nan
+  seg hmor (n=3): mean per-exp  -6.50 (sd 0.59) FWHM 12.4 | stacked: wide  -6.64 FWHM 12.6 peak  -6.66 centroid  -5.09 | limb rays mor  -5.96 eve  -9.95
+  seg heve (n=3): mean per-exp  -9.84 (sd 0.16) FWHM 10.4 | stacked: wide  -9.80 FWHM 10.5 peak  -9.81 centroid  -7.91 | limb rays mor  -8.32 eve -10.06
+  Kp-marg full  Kp 130.4-230.4: (a) posterior mean  -8.92 median  -8.92 [16  -8.96, 84  -8.89] <Kp> 174.0 (S_max 29.1, flat-Kp mean  -8.95) | (b) Kp-avg map: peak  -8.95 wide  -8.89 (FWHM 14.2) centroid  -6.90
+  Kp-marg rmcut Kp 130.4-230.4: (a) posterior mean  -8.23 median  -8.23 [16  -8.26, 84  -8.20] <Kp> 166.5 (S_max 31.1, flat-Kp mean  -8.82) | (b) Kp-avg map: peak  -8.33 wide  -8.24 (FWHM 17.1) centroid  -6.41
+  Kp-marg mor   Kp 130.4-230.4: (a) posterior mean   +nan median   +nan [16   +nan, 84   +nan] <Kp> nan (S_max nan, flat-Kp mean   +nan) | (b) Kp-avg map: peak   +nan wide   +nan (FWHM nan) centroid   +nan
+  Kp-marg eve   Kp 130.4-230.4: (a) posterior mean   +nan median   +nan [16   +nan, 84   +nan] <Kp> nan (S_max nan, flat-Kp mean   +nan) | (b) Kp-avg map: peak   +nan wide   +nan (FWHM nan) centroid   +nan
+  CF (template-weighted absorption) log p_tan 16/50/84 %: -4.23 -3.28 -2.26
+w121_00600_pc6 rot 300.00
+  KpVsys full  at Kp0: peak  -5.57  wide  -7.49 (FWHM 28.8)  centroid  -5.64  map max Kp 205.2 v -4.00
+  KpVsys rmcut at Kp0: peak  -5.53  wide  -7.36 (FWHM 29.2)  centroid  -5.52  map max Kp 205.2 v -4.00
+  seg mor (n=6): mean per-exp  -5.72 (sd 0.42) FWHM 31.3 | stacked: wide  -5.72 FWHM 31.4 peak  -2.98 centroid  -4.42 | limb rays mor  +0.43 eve -13.11
+  seg eve (n=6): mean per-exp  -9.24 (sd 0.26) FWHM 25.6 | stacked: wide  -9.24 FWHM 25.6 peak  -8.22 centroid  -7.17 | limb rays mor  -3.00 eve -13.05
+  seg hmor (n=9): mean per-exp  -3.36 (sd 3.44) FWHM 26.6 | stacked: wide  -3.66 FWHM 28.4 peak  -1.76 centroid  -3.06 | limb rays mor  +0.88 eve -12.51
+  seg heve (n=9): mean per-exp  -6.24 (sd 10.35) FWHM 26.2 | stacked: wide -10.21 FWHM 25.5 peak  -9.68 centroid  -7.94 | limb rays mor  -3.17 eve -13.25
+  Kp-marg full  Kp 169.2-269.2: (a) posterior mean  -5.60 median  -5.59 [16  -5.74, 84  -5.45] <Kp> 205.1 (S_max 11.4, flat-Kp mean  -7.02) | (b) Kp-avg map: peak  -6.54 wide  -7.51 (FWHM 30.6) centroid  -5.40
+  Kp-marg rmcut Kp 169.2-269.2: (a) posterior mean  -5.58 median  -5.57 [16  -5.77, 84  -5.39] <Kp> 204.9 (S_max 9.3, flat-Kp mean  -8.12) | (b) Kp-avg map: peak  -7.09 wide  -7.35 (FWHM 32.4) centroid  -5.10
+  Kp-marg mor   Kp 169.2-269.2: (a) posterior mean  -6.47 median  -7.40 [16 -10.31, 84  -2.17] <Kp> 198.6 (S_max 5.8, flat-Kp mean  -3.03) | (b) Kp-avg map: peak  -4.69 wide  -5.81 (FWHM 33.8) centroid  -4.09
+  Kp-marg eve   Kp 169.2-269.2: (a) posterior mean  -9.36 median  -9.86 [16 -14.42, 84  -3.93] <Kp> 226.4 (S_max 5.2, flat-Kp mean  -8.19) | (b) Kp-avg map: peak  -9.00 wide  -9.22 (FWHM 28.9) centroid  -6.61
+  CF (template-weighted absorption) log p_tan 16/50/84 %: -4.80 -3.71 -2.61
+w121_00600_pc0 rot 300.00
+  KpVsys full  at Kp0: peak  -5.92  wide  -7.70 (FWHM 29.0)  centroid  -5.70  map max Kp 205.2 v -4.10
+  KpVsys rmcut at Kp0: peak  -5.87  wide  -7.53 (FWHM 29.4)  centroid  -5.56  map max Kp 205.2 v -4.10
+  seg mor (n=6): mean per-exp  -6.48 (sd 0.36) FWHM 32.7 | stacked: wide  -6.48 FWHM 32.7 peak  -3.40 centroid  -4.89 | limb rays mor  +0.45 eve -13.72
+  seg eve (n=6): mean per-exp  -9.03 (sd 0.19) FWHM 25.3 | stacked: wide  -9.03 FWHM 25.3 peak  -8.19 centroid  -6.74 | limb rays mor  -2.93 eve -13.09
+  seg hmor (n=9): mean per-exp  -3.87 (sd 3.79) FWHM 27.6 | stacked: wide  -4.36 FWHM 30.6 peak  -1.99 centroid  -3.48 | limb rays mor  +0.91 eve -13.12
+  seg heve (n=9): mean per-exp -10.29 (sd 2.02) FWHM 24.2 | stacked: wide -10.04 FWHM 25.1 peak  -9.62 centroid  -7.60 | limb rays mor  -3.13 eve -13.27
+  Kp-marg full  Kp 169.2-269.2: (a) posterior mean  -5.83 median  -5.83 [16  -5.97, 84  -5.69] <Kp> 205.2 (S_max 11.1, flat-Kp mean  -7.36) | (b) Kp-avg map: peak  -6.86 wide  -7.70 (FWHM 30.8) centroid  -5.46
+  Kp-marg rmcut Kp 169.2-269.2: (a) posterior mean  -5.75 median  -5.75 [16  -5.93, 84  -5.58] <Kp> 204.9 (S_max 9.1, flat-Kp mean  -8.32) | (b) Kp-avg map: peak  -7.37 wide  -7.50 (FWHM 32.5) centroid  -5.15
+  Kp-marg mor   Kp 169.2-269.2: (a) posterior mean  -6.60 median  -7.55 [16 -10.67, 84  -2.06] <Kp> 200.3 (S_max 5.3, flat-Kp mean  -3.47) | (b) Kp-avg map: peak  -5.45 wide  -6.53 (FWHM 34.8) centroid  -4.52
+  Kp-marg eve   Kp 169.2-269.2: (a) posterior mean  -9.45 median -10.06 [16 -14.58, 84  -3.86] <Kp> 226.8 (S_max 5.3, flat-Kp mean  -8.15) | (b) Kp-avg map: peak  -8.89 wide  -8.96 (FWHM 28.7) centroid  -6.34
+  CF (template-weighted absorption) log p_tan 16/50/84 %: -5.00 -3.78 -2.66

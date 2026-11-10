@@ -1,0 +1,2 @@
+{"comment": "WASP-121b Caltech 1x hydro p1 = wasp121b_1x_caltech.json (W121 defaults, ESPRESSO 4-UT MR LSF 4.28)",
+ "name": "WASP-121b (1x)", "eos_xh": 0.7381, "eos_yhe": 0.2485, "comptab": "data/comptab_1x.bin.gz"}

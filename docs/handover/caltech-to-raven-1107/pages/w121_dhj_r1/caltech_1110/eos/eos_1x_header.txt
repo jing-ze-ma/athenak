@@ -1,0 +1,7 @@
+# AthenaK general-EOS model dump (offline, eos_dump_dhj.cpp)
+# grid: nx ny xmin dx ymin dy   (x = log10 rho[cgs], y = log10 T[K])
+# 901 1126 -18 0.02 1.5 0.004
+# comp: X Y mh = 0.7381 0.2485 0
+# 
+# then ny*nx rows, y (T) slowest: log10(e/rho) log10(p/rho) mu
+80d03efc610f32b15495b36fa5e63945  /resnick/groups/carnegie_poc/jingze/w121r1_1101/anchor/eos_1x.txt
