@@ -5947,6 +5947,11 @@ void RadiationM1::VetGdUpPrep() {
 //! not support it), copied to vgd_up_prof(i, ...)
 
 void RadiationM1::VetGdUpShell(const int i, const bool inw, const int nf) {
+  // env VGD_TIME_UP (diagnostic): the profile kernels fenced on both sides, so that
+  // vgd_up_time is their device time (default: host launch time only, no fence)
+  static int s_tup = -1;
+  if (s_tup < 0) {s_tup = (std::getenv("VGD_TIME_UP") != nullptr) ? 1 : 0;}
+  if (s_tup == 1) {Kokkos::fence();}
   Kokkos::Timer tm;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   Mesh *pm = pmy_pack->pmesh;
@@ -6182,7 +6187,7 @@ void RadiationM1::VetGdUpShell(const int i, const bool inw, const int nf) {
     }
 #endif
   }
-  if (vgd_time_halo) {ex.fence();}
+  if (vgd_time_halo || s_tup == 1) {ex.fence();}
   vgd_up_time += tm.seconds();
 }
 

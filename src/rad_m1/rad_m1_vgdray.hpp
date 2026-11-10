@@ -252,7 +252,7 @@ template <typename P, typename A, typename MQ, typename IQ>
 KOKKOS_INLINE_FUNCTION
 bool VgdUpCorr(const P &pf, const int iu, const int kh, const bool lo, const int upf,
                const Real tol, const Real mu, const A &acc, const MQ &mq, const IQ &iq,
-               const bool *ok, const bool all, Real *cq) {
+               const bool *ok, const bool all, Real *cq, Real *iv) {
   Real fu = 0.0, f1, f2;
   if (upf == 1 && !VgdUpProf(pf, iu, kh, lo, mu, tol, fu, f1, f2)) {return false;}
   for (int e = 0; e < acc.N(); ++e) {
@@ -264,6 +264,7 @@ bool VgdUpCorr(const P &pf, const int iu, const int kh, const bool lo, const int
     Real f;
     if (!VgdUpProf(pf, iu, kh, lo, m, tol, f, f1, f2)) {return false;}
     const Real v = iq(e);
+    iv[e] = v;   // vetgdrot-1110: the read kept (the stencil read reuses it, no re-read)
     if (fabs(v - f) > tol*fmax(fmax(fabs(v), fabs(f)), 1.0e-300)) {return false;}
     const Real dm = mu - m;
     cq[e] = (upf == 1) ? (fu - f) : dm*(f1 + 0.5*dm*f2);

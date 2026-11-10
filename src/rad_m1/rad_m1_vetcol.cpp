@@ -1565,7 +1565,9 @@ void RadiationM1::VetColReport() {
                 << vgd_thalo << ", of which MPI wait " << vgd_tmpi
                 << "), tables (rotation) " << vgd_ttab << ", uniform twin " << vgd_ttwin
                 << ", moments " << vgd_tmom << "; in-solve rebuilds " << vgd_nrb << " ("
-                << vgd_trb << " s)" << std::endl;
+                << vgd_trb << " s)" << ((vgd_upf != 0) ? "; vet_gd_upwind profile kernels "
+                + std::to_string(vgd_up_time) + " s (fenced only with env VGD_TIME_UP)" :
+                std::string()) << std::endl;
       if (vra_on) {
         std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": snapshot sweeps "
                   << vra_nsweep << " (rotations " << vra_nrot << ", inits " << vra_ninit

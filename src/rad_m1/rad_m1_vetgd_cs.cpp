@@ -1869,19 +1869,22 @@ void RadiationM1::VetGdCsSweep() {
             // cells' intensities shifted along the shell's mean angular profile (main
             // field only; off: no shift)
             Real cq_[4] = {0.0, 0.0, 0.0, 0.0};
+            Real iv_[4] = {0.0, 0.0, 0.0, 0.0};   // the values VgdUpCorr read
             bool upo = false;
             if (upf_ == 1 || upf_ == 2) {   // main and fused twin, each its own profile
               auto mqe = [&](const int e) -> Real {return mr_(m,st.k[e],st.j[e],d);};
               auto iqe = [&](const int e) -> Real {return rdi(st.k[e], st.j[e]);};
               upo = VgdUpCorr((f == 0) ? upp_ : upp2_, iu, upk_, inw || (typ == 3), upf_,
                               upt_, muu, acc,
-                              mqe, iqe, ok, all, cq_);
+                              mqe, iqe, ok, all, cq_, iv_);
             }
             auto rdc = [&](const int kk, const int jj) -> Real {
               if (!upo) {return rdi(kk,jj);}
               int e = 0;
               while (e < st.n - 1 && !(st.k[e] == kk && st.j[e] == jj)) {++e;}
-              return rdi(kk,jj) + cq_[e];
+              // (upo: every cell the read uses was read by VgdUpCorr, the same value)
+              const bool rd = all || (ok[e] && st.w[e] > 0.0);
+              return (rd ? iv_[e] : rdi(kk,jj)) + cq_[e];
             };
             const Real ivu = VgdUpwindI(acc, rdc, ok, all);
             auto lin = [&](const int c, const int ii) {

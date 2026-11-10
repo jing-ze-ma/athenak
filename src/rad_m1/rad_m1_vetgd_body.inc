@@ -497,19 +497,22 @@
               // cell's intensity shifted along the shell's mean angular profile from its
               // own n . r_hat to the upwind point's (main field only; off: no shift)
               Real cq_[4] = {0.0, 0.0, 0.0, 0.0};
+              Real iv_[4] = {0.0, 0.0, 0.0, 0.0};   // the values VgdUpCorr read
               bool upo = false;
               if (upf_ == 1 || upf_ == 2) {
                 const Real muu = (nx*xu + ny*yu + nz*zu)/ru;
                 auto mqe = [&](const int e) -> Real {return mrq(st4.K(e), st4.J(e));};
                 auto iqe = [&](const int e) -> Real {return fIu(st4.K(e), st4.J(e));};
                 upo = VgdUpCorr(upq, iu, upk_, want_in, upf_, upt_, muu, st4, mqe, iqe,
-                                ok, all, cq_);
+                                ok, all, cq_, iv_);
               }
               auto fIc = [&](const int kk, const int jj) -> Real {
                 if (!upo) {return fIu(kk,jj);}
                 int e = 0;
                 while (e < 3 && !(st4.K(e) == kk && st4.J(e) == jj)) {++e;}
-                return fIu(kk,jj) + cq_[e];
+                // (upo: every cell the read uses was read by VgdUpCorr, the same value)
+                const bool rd = all || (ok[e] && st4.W(e) > 0.0);
+                return (rd ? iv_[e] : fIu(kk,jj)) + cq_[e];
               };
               // none (-1): the upwind source (below)
               const Real ivu = VgdUpwindI(st4, fIc, ok, all);
