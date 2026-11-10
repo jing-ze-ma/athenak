@@ -51,13 +51,14 @@
             return ft - fc;
           };
           // the cosine of direction dq at the partner of wall ghost (kk, jj): the ghost's
-          // own (theta, phi) mirrored into the theta range and wrapped into the phi
-          // range (geometric, from this block's index-linear angles: the same numbers
-          // on every decomposition, on-rank partner or band copy alike)
+          // own (theta, phi) wrapped into the mesh range (the wall partner is the cell
+          // across the mesh, the wall's reflection lives in the direction map; geometric,
+          // from this block's index-linear angles: the same numbers on every
+          // decomposition, on-rank partner or band copy alike)
           auto mcp = [&](const int kk, const int jj, const int dq) -> Real {
             Real tp = lg_.Th(mbsize, m, jj, js), pp = lg_.Ph(mbsize, m, kk, ks);
-            if (tp < mt0) {tp = 2.0*mt0 - tp;}
-            if (tp > mt0 + mtl) {tp = 2.0*(mt0 + mtl) - tp;}
+            if (tp < mt0) {tp += mtl;}
+            if (tp > mt0 + mtl) {tp -= mtl;}
             if (pp < mp0) {pp += mpl;}
             if (pp > mp0 + mpl) {pp -= mpl;}
             return dir_(dq,0)*sin(tp)*cos(pp) + dir_(dq,1)*sin(tp)*sin(pp) +
