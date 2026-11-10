@@ -2524,6 +2524,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 "blend");
     }
     impl_hr_cmem = true;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_aphll_mem = true: F_c face memory for the AP-HLL "
+                << "reduced flux + restage (aphll-time-1110; TEST key: second order in "
+                << "time at chat dt/dx <~ 1, UNSTABLE in thin media at chat dt/dx >> 1)"
+                << std::endl;
+    }
   }
   if (impl_blend_dtc > 0.0 && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> implicit_blend_dtc = " << impl_blend_dtc
