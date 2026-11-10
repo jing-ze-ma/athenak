@@ -3580,10 +3580,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
   }
   if (impl_hr_cmem) {   // rc18-1110: the applied face flux (F_c lives in f0x1)
-    if (impl_gas_src_cons || impl_vimp || impl_rad_inertia || impl_lbath) {
-      ImplFatal("<rad_m1>/implicit_hr_cmem: not with implicit_gas_src = conservative, "
-                "implicit_vimp, implicit_rad_inertia or the Linhao bath (they read "
-                "f0x* as the applied flux)");
+    if (impl_vimp || impl_lbath) {
+      ImplFatal("<rad_m1>/implicit_hr_cmem: not with implicit_vimp or the Linhao bath "
+                "(they read f0x* as the applied flux)");
+    }
+    // the conservative gas source (Z_f) and implicit_rad_inertia take f0x* = F_c as the
+    // face's old flux: exact without gas momentum exchange (static / no feedback
+    // tests); with feedback the face momentum budget is off by (1 - w)(F_c^n - F_a^n)
+    if ((impl_gas_src_cons || impl_rad_inertia) && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_hr_cmem: WARNING the conservative gas source / "
+                << "rad inertia read F_c as the old face flux (TEST key with feedback)"
+                << std::endl;
     }
     Kokkos::realloc(fax1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(fax1, 0.0);
