@@ -6583,6 +6583,8 @@ void RadiationM1::VetGdPost() {
     Kokkos::fence();
     vra_time += tr.seconds();
   }
+  // hrsplit-1110 vet_gd_hr_split (default off): not on a snapshot sweep of another set
+  if (vgd_hrs != 0 && !vra_raw) {VetGdHrSplit();}
   VetLatOdMax();   // D_r,lat in the implicit operator (vet_col_lat_offdiag = operator)
   Kokkos::fence();
   vgd_tmom += tm.seconds();
@@ -8890,6 +8892,65 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       hr_(m,c,k,j,i) = plus ? fmin(fmax(v, 0.0), 1.0) : fmin(fmax(v, -1.0), 0.0);
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdHrSplit
+//! \brief hrsplit-1110 vet_gd_hr_split = col (rad_m1.hpp): the radial half-range ratios
+//! r+-_r of vgd_hr (components 0, 1) after the build (twin, rotation average applied) as
+//!   h = h_col + D g S_sig[d - <d>_shell],  d = h_gd - h_col,
+//! h_col from vet_col's radial rays of the same build (vcol_hr).  The shell mean <d> is
+//! taken over the cells where both are valid, with repro::ShellSums (exact, the same
+//! for every rank layout).  A cell flagged by either (r+ < 0) keeps vgd_hr.  The lateral
+//! components stay vet_gd's (a column solution has no lateral information).
+
+void RadiationM1::VetGdHrSplit() {
+  if (vgd_hrs == 0 || !impl_beam_hr || vgd_hr.extent_int(0) == 0 ||
+      vcol_hr.extent_int(0) == 0) {return;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int ilo = is + vlat_icut;
+  const int c1 = indcs.nx1 + 2*indcs.ng;
+  auto hr_ = vgd_hr;
+  auto hc_ = vcol_hr;
+  std::vector<Real> sm;
+  repro::ShellSums("m1_vgd_hrs", 3, c1, nmb1 + 1, ks, ke, js, je, ilo, ie,
+                   KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
+                                 const int i) {
+    const bool ok = (hr_(m,0,k,j,i) >= 0.0) && (hc_(m,0,k,j,i) >= 0.0);
+    if (!ok) {return 0.0;}
+    if (q == 2) {return 1.0;}
+    return hr_(m,q,k,j,i) - hc_(m,q,k,j,i);
+  }, sm);
+  if (vgd_hrs_m.extent_int(0) != 2*c1) {Kokkos::realloc(vgd_hrs_m, 2*c1);}
+  auto mh = Kokkos::create_mirror_view(vgd_hrs_m);
+  for (int i = 0; i < c1; ++i) {
+    const Real n = sm[2*c1 + i];
+    mh(i) = (n > 0.0) ? sm[i]/n : 0.0;
+    mh(c1 + i) = (n > 0.0) ? sm[c1 + i]/n : 0.0;
+  }
+  Kokkos::deep_copy(vgd_hrs_m, mh);
+  auto mo_ = vgd_hrs_m;
+  const Real dd = vgd_hrs_d, sig = vgd_hrs_sig, rho = vgd_hrs_res;
+  const Real dl = sqrt(4.0*M_PI/static_cast<Real>(std::max(vgd_n, 1)));
+  par_for("m1_vgd_hrs", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (hr_(m,0,k,j,i) < 0.0 || hc_(m,0,k,j,i) < 0.0) {return;}
+    Real g = 1.0;
+    if (rho > 0.0) {
+      const Real th = sqrt(fmax(1.0 - hc_(m,2,k,j,i), 0.0));
+      g = fmin(fmax((th - rho*dl)/(rho*dl), 0.0), 1.0);
+    }
+    for (int q = 0; q < 2; ++q) {
+      Real dv = (hr_(m,q,k,j,i) - hc_(m,q,k,j,i)) - mo_(q*c1 + i);
+      if (sig > 0.0) {dv = copysign(fmax(fabs(dv) - sig, 0.0), dv);}
+      const Real v = hc_(m,q,k,j,i) + dd*g*dv;
+      hr_(m,q,k,j,i) = (q == 0) ? fmin(fmax(v, 0.0), 1.0) : fmin(fmax(v, -1.0), 0.0);
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------
