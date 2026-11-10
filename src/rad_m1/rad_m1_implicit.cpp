@@ -2515,6 +2515,42 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // divergence.  w is unchanged (no dt, no opacity); nothing relaxes per step.
   impl_hr_cmem = pin->DoesParameterExist("rad_m1","implicit_hr_cmem") &&
                  pin->GetBoolean("rad_m1","implicit_hr_cmem");
+  // aphll-time-1110 implicit_aphll_mem (opt-in, read only when named, default false =
+  // bitwise): second order in time for the berthon | blend AP-HLL faces.  Two lags made
+  // them first order (tests at /viper/ptmp2/jinma/aphll_1110): (1) the lagged reduced
+  // flux RF0 of the face coefficients was the APPLIED face flux over c E_up, which at
+  // w = 1 has no F^n memory (HCL E_L + HCR E_R), so f followed a per-step map instead of
+  // the F equation; (2) under implicit_recon_lag = step the coefficients were frozen at
+  // the stage start, so the stage-1 slope (weight b2 in the step) carried an O(dt)
+  // coefficient error.  The key turns on (1) implicit_hr_cmem (F_c, evolved by the face
+  // equation, in f0x*; the applied flux in fax*) and (2) implicit_lag_restage (the face
+  // coefficients rebuilt once after the first pass of each stage) unless that is named.
+  impl_aphll_mem = pin->DoesParameterExist("rad_m1","implicit_aphll_mem") &&
+                   pin->GetBoolean("rad_m1","implicit_aphll_mem");
+  // aphll-time-1110 implicit_aphll_fcimp (opt-in, read only when named; implies
+  // implicit_aphll_mem): the LINEARISED form.  At the Picard fixed point of the F_c
+  // memory with a face-local ratio, c f E_up = F_c, so the advective part of the HLL
+  // flux, al (b_R c f_L E_L - b_L c f_R E_R)/(b_R - b_L), IS al F_c(E'): it is put into
+  // the row implicitly, with the face equation's own (M-matrix) coefficients, instead of
+  // lagging f (which is an explicit flux at chat dt/dx >> 1).  The x1 face flux is then
+  // (1 - w + w al) F_c(E') + w al dk (E_L - E_R): AL = w (1 - al), HCL = -HCR = w al dk
+  // (berthon | blend in flux mode; the RF0 path, not halfrange / the Cartesian beam)
+  impl_aphll_fci = pin->DoesParameterExist("rad_m1","implicit_aphll_fcimp") &&
+                   pin->GetBoolean("rad_m1","implicit_aphll_fcimp");
+  if (impl_aphll_fci) {impl_aphll_mem = true;}
+  if (impl_aphll_mem) {
+    if (impl_flux == M1_IFLUX_CENTRAL) {
+      ImplFatal("<rad_m1>/implicit_aphll_mem needs implicit_flux = ap_hll | berthon | "
+                "blend");
+    }
+    impl_hr_cmem = true;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_aphll_mem = true: F_c face memory for the AP-HLL "
+                << "reduced flux + restage (aphll-time-1110; TEST key: second order in "
+                << "time at chat dt/dx <~ 1, UNSTABLE in thin media at chat dt/dx >> 1)"
+                << std::endl;
+    }
+  }
   if (impl_blend_dtc > 0.0 && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> implicit_blend_dtc = " << impl_blend_dtc
               << ": dt-consistent half-range face weights (M1BlendDtc)" << std::endl;
@@ -3245,6 +3281,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_recon_freeze = (slg.compare("step") == 0);
   if (pin->DoesParameterExist("rad_m1","implicit_lag_restage")) {   // raycheap2-1109
     impl_lag_restage = pin->GetBoolean("rad_m1","implicit_lag_restage");
+  } else if (impl_aphll_mem) {   // aphll-time-1110
+    impl_lag_restage = true;
   }
   // MILESTONE 3c: freeze the deferred correction, and with it the plm limiter's choice,
   // after this many Picard passes.  The 3a2 finding is that the limiter keeps switching
@@ -3669,7 +3707,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   Kokkos::realloc(f0x1n, nmb, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(f0x1n, 0.0);
   // rc18-1110: without the half-range beam the stored flux has no blend: inert (echoed)
-  if (impl_hr_cmem && !impl_beam_hr) {
+  // aphll-time-1110: also the berthon | blend AP-HLL faces (the lagged reduced flux of
+  // the face coefficients is then F_c/(c E_up), evolved by the face equation, instead of
+  // the applied flux's own ratio, which has no F^n memory at w = 1: a per-STEP map)
+  if (impl_hr_cmem && !impl_beam_hr && impl_flux == M1_IFLUX_CENTRAL) {
     impl_hr_cmem = false;
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_hr_cmem: inert without implicit_flux_beam = "
@@ -3677,9 +3718,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
   }
   if (impl_hr_cmem) {   // rc18-1110: the applied face flux (F_c lives in f0x1)
-    if (impl_vimp || impl_lbath) {
-      ImplFatal("<rad_m1>/implicit_hr_cmem: not with implicit_vimp or the Linhao bath "
-                "(they read f0x* as the applied flux)");
+    // aphll-time-1110: implicit_vimp reads the APPLIED fluxes fax* (ImplicitVimpBuild)
+    if (impl_lbath) {
+      ImplFatal("<rad_m1>/implicit_hr_cmem: not with the Linhao bath (it reads f0x* as "
+                "the applied flux)");
     }
     // the conservative gas source (Z_f) and implicit_rad_inertia take f0x* = F_c as the
     // face's old flux: exact without gas momentum exchange (static / no feedback
@@ -11314,6 +11356,7 @@ bool RadiationM1::Cs2Active() {
 //! ghosts.
 
 void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
+  const bool cmd = impl_hr_cmem;   // aphll-time-1110 (every F_c memory, rc18 too)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -11415,7 +11458,9 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
     const Real m3 = thrd ? 0.5*(f3n_(m,k,j,i) + q3_(m,k,j,i) + f3n_(m,k+1,j,i)
                                 + q3_(m,k+1,j,i)) : 0.0;
     Real g1 = u0_(m,M1_F1,k,j,i), g2 = u0_(m,M1_F2,k,j,i), g3 = u0_(m,M1_F3,k,j,i);
-    if (gfst) {
+    // aphll-time-1110: under the F_c memory the write-back's F^old is the face form (the
+    // cmem branch of rad_m1_impl_wb_kernel.hpp), so A^old = a E^old here as well
+    if (gfst || cmd) {
       const Real eo = iw_(m,M1_IW_EN,k,j,i);
       g1 = m1 + iw_(m,M1_IW_ADV,k,j,i)*eo;
       if (trans) {
@@ -11423,7 +11468,7 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
         g3 = thrd ? (m3 + iw_(m,M1_IW_A3,k,j,i)*eo) : 0.0;
       }
     }
-    if (t2st) {
+    if (t2st && !cmd) {
       if (csok) {
         g1 += ci_(m,0,k,j,i);
         g2 += ci_(m,1,k,j,i);
@@ -12021,9 +12066,11 @@ void RadiationM1::ImplicitVimpBuild() {
   auto ifw_ = ifw;
   auto vd_ = vet_cell;
   const bool dfull = vet_full;
-  auto f0_ = f0x1;
-  auto f2_ = f0x2;
-  auto f3_ = f0x3;
+  // aphll-time-1110: under the F_c memory the drag is that of the APPLIED face flux
+  const bool cmv = impl_hr_cmem;
+  auto f0_ = cmv ? fax1 : f0x1;
+  auto f2_ = cmv ? fax2 : f0x2;
+  auto f3_ = cmv ? fax3 : f0x3;
   auto th2_ = thx2;
   auto th3_ = thx3;
   const bool lm = (impl_tlim != M1_TLIM_NONE) || blat_on;
@@ -14736,6 +14783,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool fktn = impl_face_ktn && (it == 0);   // F2: kappa_T at T^n
       auto ktn_ = ktn;
       const bool bvx = bvec_x1 && !impl_beam_hr;   // blendall-1009
+      const bool fci = impl_aphll_fci && berth && !bdis;   // aphll-time-1110
       const bool bfsx = impl_beam_fs;
       // hrup-1009: the half-range face flux on the x1 faces too (every geometry)
       const bool hrx = impl_beam_hr;
@@ -15024,7 +15072,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real ccl = wf*fmax(wadv*adl + wdsq*dk, 0.0);
         Real ccr = wf*fmin(wadv*adr - wdsq*dk, 0.0);
         // how much of the CENTRAL (face-eliminated) flux the row keeps is 1 - AL.
-        ifw_(m,M1_IFW_AL,k,j,i) = bdis ? 0.0 : (berth ? wf : al);
+        Real alw = bdis ? 0.0 : (berth ? wf : al);
+        if (fci) {   // aphll-time-1110 implicit_aphll_fcimp: al F_c(E') implicit
+          alw = wf*(1.0 - al);
+          ccl = wf*al*dk;
+          ccr = -wf*al*dk;
+        }
+        ifw_(m,M1_IFW_AL,k,j,i) = alw;
         ifw_(m,M1_IFW_HCL,k,j,i) = ccl;
         ifw_(m,M1_IFW_HCR,k,j,i) = ccr;
         // the plm DEFERRED CORRECTION: the difference between the plm and the dc HLL
