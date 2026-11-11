@@ -95,6 +95,7 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("wall_closed_ix1", wall_closed_ix1);
   v.value("diode_ox1", diode_ox1);
   v.value("diode_ox1_btodd", diode_ox1_btodd);
+  v.value("diode_ox1_charout", diode_ox1_charout);
   v.value("use_wb_x2", use_wb_x2);
   v.value("use_wb_rho", use_wb_rho);
   v.value("wb_rmax", wb_rmax);

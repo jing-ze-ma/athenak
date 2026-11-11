@@ -855,6 +855,17 @@ inline int dhj_top_bc = 0;  // 0 = hse, 1 = outflow1 (ghosts + one-way face), 2 
 // cell's faces copied), 1 = sourcesurface (odd: ghost B_t = -mirror, so B_t = 0 on the
 // top face, B_r from div B = 0 as before; potential-field source surface).  Read only
 // when the key is named, so a run without it is bitwise and embeds the same input.
+// mhdtop-1112: 2 = charout, a NON-REFLECTING top for Alfven waves.  The ghost B is the
+// zerograd one; the ghost TANGENTIAL VELOCITY (orthonormal frame, the one bcc lives in)
+// is set to v_t = -s B_t/sqrt(rho), s = sgn(B_r at the top face), so the incoming
+// Elsasser variable z_in = v_t + s B_t/sqrt(rho) is ZERO in the ghost: the Riemann fan at
+// the top face then takes z_out = v_t - s B_t/sqrt(rho) from the interior and z_in = 0
+// from outside (no incoming Alfven wave), and the face EMF is the outgoing-wave one,
+// E_t = B_t (v_r + |B_r|/sqrt(rho)).  Only where an incoming Alfven characteristic
+// exists, v_r(ie) < |B_r|/sqrt(rho); elsewhere (super-Alfvenic outflow) the zerograd
+// copy stays.
+// At diode-closed (inflow) faces the mirrored right state takes the same z_in = 0
+// tangential velocity (MHD::diode_ox1_charout).
 inline int dhj_top_bt = 0;
 
 // ---- problem/rt_test_* : TEST HOOKS for the well-posed checks of the implicit

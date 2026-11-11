@@ -151,6 +151,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     const bool bc_outer_maxwell_ = bc_outer_maxwell;
     const bool top_out_ = (dhj_top_bc != 0);   // problem/top_bc = outflow1 | outflow0
     const bool top_ss_ = top_out_ && (dhj_top_bt == 1);   // mhd/top_bc_bt sourcesurface
+    const bool top_co_ = top_out_ && (dhj_top_bt == 2);   // mhd/top_bc_bt charout
     // for the metric-correct ghost kinetic energy below (cubed sphere only)
     const bool cs_bc_ = pm->use_cubed_sphere;
     auto &ccell_bc_ = pmbp->pcoord->cos_cell;
@@ -578,8 +579,33 @@ void HydrostaticEquilibrium(Mesh *pm) {
             // starts from); the tangential momenta are copied (same rho), the radial one
             // is clipped at zero so the ghost never pushes gas into the domain.
             const Real m1o = fmax(u0_(m,IM1,k,j,ie), 0.0);
-            const Real m2o = u0_(m,IM2,k,j,ie);
-            const Real m3o = u0_(m,IM3,k,j,ie);
+            Real m2o = u0_(m,IM2,k,j,ie);
+            Real m3o = u0_(m,IM3,k,j,ie);
+            // mhdtop-1112 <mhd>/top_bc_bt = charout: ghost tangential velocity with ZERO
+            // incoming Alfven characteristic, z_in = v_t + s B_t/sqrt(rho) = 0, s = sgn
+            // of B_r on the top face, B_t the ghost cell's (zerograd) field, all in the
+            // orthonormal frame bcc lives in (cubed sphere: e_xi, (e_eta - c e_xi)/s;
+            // the covariant momenta give v_on = (m2, (m3 - c m2)/s)/rho).  Only where an
+            // incoming characteristic exists, v_r(ie) < |B_r|/sqrt(rho); the same state
+            // in every ghost cell, so the ghost-side PLM state on the face is this one.
+            if (top_co_ && is_mhd_) {
+              const Real bxf = b0_x1f(m,k,j,ie+1);
+              const Real sgr = (bxf > 0.0) ? 1.0 : ((bxf < 0.0) ? -1.0 : 0.0);
+              const Real isq = 1.0/sqrt(rho_i);
+              const Real var = fabs(bxf)*isq;
+              if (sgr != 0.0 && u0_(m,IM1,k,j,ie)/rho_i < var) {
+                const Real vy = -sgr*bcc0(m,IBY,k,j,ie+1)*isq;
+                const Real vz = -sgr*bcc0(m,IBZ,k,j,ie+1)*isq;
+                if (cs_bc_) {
+                  const Real cg = ccell_bc_(m,k,j), sg = scell_bc_(m,k,j);
+                  m2o = rho_i*vy;
+                  m3o = rho_i*(sg*vz) + cg*m2o;
+                } else {
+                  m2o = rho_i*vy;
+                  m3o = rho_i*vz;
+                }
+              }
+            }
             Real ke_o;
             if (cs_bc_) {
               const Real cg = ccell_bc_(m,k,j);

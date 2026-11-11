@@ -522,9 +522,11 @@ Mesh::Mesh(ParameterInput *pin) :
       const int ij = pin->GetInteger("mesh", "f_stretch_r_tail_ij");
       const int nx1 = pin->GetInteger("mesh", "nx1");
       const Real x1a = pin->GetReal("mesh", "x1min"), x1b = pin->GetReal("mesh", "x1max");
-      if (!(nin > 0 && ij > 0 && ij < nin && ij < nx1 && r1o > x1a && r1o <= x1b)) {
+      // mhdtop-1112: ij = nin allowed (the WHOLE older grid kept, the tail above its
+      // x1max: the radial extension of a restart, mhdtop_1112/tools/rst_extend.py)
+      if (!(nin > 0 && ij > 0 && ij <= nin && ij < nx1 && r1o > x1a && r1o <= x1b)) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "mesh/f_stretch_r_tail_*: need 0 < ij < nin, ij < nx1 "
+                  << std::endl << "mesh/f_stretch_r_tail_*: need 0 < ij <= nin, ij < nx1 "
                   << "and x1min < tail_x1max <= x1max" << std::endl;
         std::exit(EXIT_FAILURE);
       }

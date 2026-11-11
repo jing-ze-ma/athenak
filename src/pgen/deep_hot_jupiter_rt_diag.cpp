@@ -1205,7 +1205,7 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   // others: the radial Poynting flux sum_top (|B_t|^2 v_r - B_r v_t.B_t) dA of the
   // LAST ACTIVE cell (ie; the face value is ~0 by construction), orthonormal frame on cs
   const int NPY = pdata->nhist;
-  bool fpoy = (dhj_top_bt == 1) && (pm->pmb_pack->pmhd != nullptr);
+  bool fpoy = (dhj_top_bt >= 1) && (pm->pmb_pack->pmhd != nullptr);   // + charout
   if (fpoy && NPY + 1 > NHISTORY_VARIABLES) {
     static bool warned_p = false;
     if (!warned_p && global_variable::my_rank == 0) {
