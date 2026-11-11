@@ -233,6 +233,24 @@ struct ViewEntry : public Entry {
                       (k >= ng && k < static_cast<int>(h.extent(2)) - ng));
                 if (g_pcells == 1 && !act) continue;
                 if (g_pcells == 2 && act) continue;
+                if (g_pcells >= 3) {
+                  // ghost depth per direction (0 = active)
+                  const int n1 = h.extent(4), n2 = h.extent(3), n3 = h.extent(2);
+                  const int di = (i < ng) ? ng - i : ((i >= n1 - ng) ? i - (n1 - ng) + 1 : 0);
+                  const int dj = (n2 == 1) ? 0 : ((j < ng) ? ng - j :
+                                 ((j >= n2 - ng) ? j - (n2 - ng) + 1 : 0));
+                  const int dk = (n3 == 1) ? 0 : ((k < ng) ? ng - k :
+                                 ((k >= n3 - ng) ? k - (n3 - ng) + 1 : 0));
+                  const int dt = (dj > dk) ? dj : dk;
+                  bool sel = false;
+                  if (g_pcells == 3) sel = (di > 0 && dt == 0);              // x1 ghosts
+                  if (g_pcells == 4) sel = (di == 0 && dt > 0 && dt <= 2);   // x2/x3, <= 2
+                  if (g_pcells == 5) sel = (di == 0 && dt > 2);              // x2/x3, > 2
+                  if (g_pcells == 6) sel = (di > 0 && dt > 0);               // edges
+                  if (g_pcells == 7) sel = (di == 1 && dt == 0 && i < ng);   // inner x1, 1
+                  if (g_pcells == 8) sel = (di == 1 && dt == 0 && i >= ng);  // outer x1, 1
+                  if (!sel) continue;
+                }
                 h(m,n,k,j,i) = nan;
               }
               }
@@ -445,6 +463,12 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
     if (pin->DoesParameterExist("time", "dt_retry_poison_cells")) {
       std::string r = pin->GetString("time", "dt_retry_poison_cells");
       g_pcells = (r == "active") ? 1 : ((r == "ghost") ? 2 : 0);
+      if (r == "gx1") g_pcells = 3;
+      if (r == "gt2") g_pcells = 4;
+      if (r == "gtdeep") g_pcells = 5;
+      if (r == "gedge") g_pcells = 6;
+      if (r == "gx1in1") g_pcells = 7;
+      if (r == "gx1out1") g_pcells = 8;
     }
     g_png = pm->mb_indcs.ng;
     if (poison_ > 0 && !all_views_) {
