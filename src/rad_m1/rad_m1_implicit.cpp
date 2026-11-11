@@ -2616,6 +2616,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 + "' is not a choice (stored | fa)");
     }
   }
+  if (impl_pf_fa && pin->DoesParameterExist("rad_m1","implicit_physflux_aold")) {
+    const std::string pa = pin->GetString("rad_m1","implicit_physflux_aold");
+    if (pa.compare("fa") == 0) {
+      impl_pf_aold = true;
+    } else if (pa.compare("fc") != 0) {
+      ImplFatal("<rad_m1>/implicit_physflux_aold = '" + pa
+                + "' is not a choice (fc | fa)");
+    }
+  }
   // aphll-time-1110 implicit_aphll_mem (opt-in, read only when named, default false =
   // bitwise): second order in time for the berthon | blend AP-HLL faces.  Two lags made
   // them first order (tests at /viper/ptmp2/jinma/aphll_1110): (1) the lagged reduced
@@ -11613,9 +11622,11 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
   const bool tq = trans && dbg_gas_force_trans;
   auto iw_ = iw;
   auto u0_ = u0;
-  auto f0n_ = f0x1n;
-  auto f2n_ = f0x2n;
-  auto f3n_ = f0x3n;
+  // vkdiag-1111 implicit_physflux_aold = fa: the applied step-start faces (rad_m1.hpp)
+  const bool pao = impl_pf_aold && (fax1n.extent_int(0) > 0);
+  auto f0n_ = pao ? fax1n : f0x1n;
+  auto f2n_ = (pao && fax2n.extent_int(0) > 0) ? fax2n : f0x2n;
+  auto f3n_ = (pao && fax3n.extent_int(0) > 0) ? fax3n : f0x3n;
   auto t2i_ = t2inc;
   auto ci_ = csinc;
   auto q1_ = cs2f1;

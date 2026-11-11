@@ -1137,6 +1137,13 @@ class RadiationM1 {
   // F (whose AP-HLL / enthalpy part is not the fax*n mean, a ~1 % odd-even offset that
   // the budget charged to near-vacuum gas)
   bool impl_pf_fold = false;
+  // vkdiag-1111 <rad_m1>/implicit_physflux_aold = fa (read only when named; needs
+  // physflux_mom = fa; default fc = bitwise): A^old of implicit_cs2_hll = drag
+  // (ImplicitCs2DeltaA) = stored cell F - the face mean of the step-start APPLIED fluxes
+  // fax*n, the faces that cell F is formed from under mom = fa.  With the F_c means
+  // A^old carried mean(fax*n - F_c^n) (~1 %, odd-even in thin shells), which the
+  // (1 - om) dA term charged to the gas: the R136 near-vacuum kicks
+  bool impl_pf_aold = false;
   DvceArray4D<Real> fax1n, fax2n, fax3n;
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
   // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a
