@@ -71,6 +71,8 @@
                     impl_thsw == M1_THSW_FSE);
     const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
     const Real tkn0 = thsw_kn0, tknp = thsw_knp;
+    const Real bknl = (impl_blend == M1_IBLEND_KNF) ? impl_blend_knlo : -1.0;
+    const Real bknh = impl_blend_knhi;   // knblend-1111
     const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
                      : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
     const Real tqi = thsw_qp;
@@ -238,7 +240,8 @@
                      (tcorr == M1_THCR_HCS) ? fmin(iw_(m,M1_IW_TR,km,jm,i),
                                                    iw_(m,M1_IW_TR,k,j,i)) : 1.0,
                      th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr,
-                     ch*dtl/dx, bdtc, hcpon ? &hcp_(m,2*d,k,j,i) : nullptr);
+                     ch*dtl/dx, bdtc, hcpon ? &hcp_(m,2*d,k,j,i) : nullptr, bknl,
+                     bknh);
           if (hfci) {   // hr2prod-1110 implicit_hr_fcimp: dissipation form
             const Real wf = al;
             al = 0.0;

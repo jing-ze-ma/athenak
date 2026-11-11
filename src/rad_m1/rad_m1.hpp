@@ -1154,6 +1154,8 @@ class RadiationM1 {
   bool impl_pf_zfc = false;
   DvceArray4D<Real> fax1n, fax2n, fax3n;
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
+  Real impl_blend_knlo = -1.0;    // knblend-1111 implicit_blend = knf: Kn_lo (< 0 off)
+  Real impl_blend_knhi = 1.0;     // knblend-1111 implicit_blend = knf: Kn_hi
   // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a
   // dt-free thin/thick weight frozen per solve (formal-solution |H|/J, its non-locality
   // C1, the E^n Knudsen number); implicit_thin_corr adds the lagged formal-solution flux

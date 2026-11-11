@@ -683,7 +683,8 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
                 const Real jr, const Real esc, const Real h0, const Real h1,
                 const Real kn0, const Real knp, const Real ch, Real &alw, Real &ccl,
                 Real &ccr, Real &dg, const Real hwl = -1.0, const Real hwr = 0.0,
-                const Real cdx = 0.0, const Real dtck = 0.0, Real *qo = nullptr) {
+                const Real cdx = 0.0, const Real dtck = 0.0, Real *qo = nullptr,
+                const Real knlo = -1.0, const Real knhi = 1.0) {
   dg = 0.0;
   if (qo != nullptr) {*qo = 0.0;}   // hrhc-1110: the hc gate q of the face
   // coreL-1012 implicit_thin_hcface = tau: the face value of the formal-solution flux
@@ -711,6 +712,19 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
       wk = xp/(1.0 + xp);
     }
     w = fmax(w, wk);
+  }
+  // knblend-1111 (implicit_blend = knf, knlo >= 0): w times smoothstep((Kn - lo)/(hi -
+  // lo)) of the face Knudsen number Kn = |E^n_R - E^n_L|/(tau_f Ebar^n), Ebar^n the face
+  // mean: -> |grad E|/(chi E) as dx -> 0 (no tau_f factor of its own), from E^n (frozen
+  // over the step's Picard passes).  Upwind only where the field is beamed (switch) AND in
+  // the transport regime; vacuum / dark faces (tau_f Ebar = 0) keep the switch weight
+  if (knlo >= 0.0 && w > 0.0) {
+    const Real den = tauf*0.5*(fmax(enl, 0.0) + fmax(enr, 0.0));
+    if (den > 0.0) {
+      Real s = (fmin(fabs(enr - enl)/den, 1.0e30) - knlo)/(knhi - knlo);
+      s = fmin(fmax(s, 0.0), 1.0);
+      w *= s*s*(3.0 - 2.0*s);
+    }
   }
   if (dtck > 0.0) {w = M1BlendDtc(w, cdx*(tauf + dtck));}   // rc18-1110
   alw = w;
@@ -2534,10 +2548,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_blend = M1_IBLEND_IDF;     // hrup-1009, half-range only
   } else if (sbl.compare("idort_a") == 0) {
     impl_blend = M1_IBLEND_IDA;     // hrup-1009, half-range only
+  } else if (sbl.compare("knf") == 0) {
+    impl_blend = M1_IBLEND_KNF;     // knblend-1111, thin switch only
   } else {
     ImplFatal("<rad_m1>/implicit_blend = '" + sbl
               + "' is not a choice (tau | f | tau_f | idort | knudsen | idort_f | "
-              "idort_a)");
+              "idort_a | knf)");
   }
   if (impl_blend >= M1_IBLEND_IDORT &&
       pin->GetOrAddString("rad_m1","implicit_flux_beam",
@@ -2721,6 +2737,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_m1>/implicit_thin_switch = '" + sts
                 + "' is not a choice (none | hj | kn | fs | hjkn | fskn | fsq | fsi | "
                 + "fse)");
+    }
+    // knblend-1111 implicit_blend = knf: the thin-switch weight times the smoothstep of
+    // the face Knudsen number of E^n (M1ThinFace); needs the switch (the only live
+    // half-range weight); read only when named
+    if (impl_blend == M1_IBLEND_KNF) {
+      if (impl_thsw == M1_THSW_NONE) {
+        ImplFatal("<rad_m1>/implicit_blend = knf needs implicit_thin_switch != none");
+      }
+      impl_blend_knlo = pin->GetOrAddReal("rad_m1","implicit_blend_kn_lo",0.1);
+      impl_blend_knhi = pin->GetOrAddReal("rad_m1","implicit_blend_kn_hi",0.3);
+      if (!(impl_blend_knlo >= 0.0) || !(impl_blend_knhi > impl_blend_knlo)) {
+        ImplFatal("<rad_m1>/implicit_blend_kn_lo must be >= 0 and < implicit_blend_kn_hi");
+      }
     }
     if (impl_thsw != M1_THSW_NONE) {
       thsw_h0 = pin->GetOrAddReal("rad_m1","implicit_thin_h0",0.3);
@@ -15115,6 +15144,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const int bxmode = impl_blend_xthin_mode;
       const Real bxwmin = impl_blend_xthin_wmin, bxr0 = impl_blend_xthin_r0;
       const Real bdtc = impl_blend_dtc;   // rc18-1110
+      const Real bknl = (impl_blend == M1_IBLEND_KNF) ? impl_blend_knlo : -1.0;
+      const Real bknh = impl_blend_knhi;   // knblend-1111
       const bool hws = impl_hr_ws;   // hr2prod-1110
       const bool hfci = impl_hr_fci;
       const int tgf = thsw_gface;
@@ -15414,7 +15445,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                               : fmin(1.0 - hvc_(m,M1_VET_EPS,k,j,im),
                                      1.0 - hvc_(m,M1_VET_EPS,k,j,ip))),
                        th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt, hwl, hwr,
-                       ch*dt/dx, bdtc, hcpon ? &hcp_(m,0,k,j,i) : nullptr);
+                       ch*dt/dx, bdtc, hcpon ? &hcp_(m,0,k,j,i) : nullptr, bknl,
+                       bknh);
             if (gwon) {
               gwd_(m,0,k,j,i) = gl3;
               gwd_(m,1,k,j,i) = gr3;

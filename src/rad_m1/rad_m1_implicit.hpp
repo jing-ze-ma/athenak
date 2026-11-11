@@ -254,6 +254,9 @@ constexpr int M1_IBLEND_F    = 1;    // w = smoothstep((f_face - f_lo)/(f_hi - f
 constexpr int M1_IBLEND_IDF = 5;     // hrup-1009: idort x smoothstep(|H|/J)
 constexpr int M1_IBLEND_IDA = 6;     // hrup-1009: idort x smoothstep(h asymmetry)
 constexpr int M1_IBLEND_KN = 4;      // hrup-1009 (half-range only): Knudsen x tau
+constexpr int M1_IBLEND_KNF = 7;     // knblend-1111 (thin switch only): the switch weight
+                                     // times smoothstep(Kn_lo..Kn_hi) of the face Knudsen
+                                     // number |E^n_R - E^n_L|/(tau_f (E^n_L + E^n_R)/2)
 constexpr int M1_IBLEND_IDORT = 3;   // hrup-1009 (half-range only): w = 1/(1 + x + x^2/
                                      // tau0), x = implicit_blend_alpha tau_face
 constexpr int M1_IBLEND_TAUF = 2;    // the product of the two: upwind only where the face
