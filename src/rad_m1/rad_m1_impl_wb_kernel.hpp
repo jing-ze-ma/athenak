@@ -421,18 +421,23 @@
         go1 = u0_(m,M1_F1,k,j,i);
         go2 = u0_(m,M1_F2,k,j,i);
         go3 = u0_(m,M1_F3,k,j,i);
-        if (gfst || cmw) {
+        if (gfst || cmw || c2fc) {
           // rc18-1110 cmem: always the face means of the F_c memory (incl. the stage
           // increments, which f0n_ and E^n already carry)
           // the first solve of the run: the problem generator's F is not (yet) the
           // radiation's state (F0 faces + a E), whose old value is taken instead (the
           // difference is a cold-start mismatch, not a source)
           const Real eo = iw_(m,M1_IW_EN,k,j,i);
-          go1 = 0.5*(f0n_(m,k,j,i) + f0n_(m,k,j,i+1)) + iw_(m,M1_IW_ADV,k,j,i)*eo;
+          // vkdiag-1111 cs2 = fc: a^n of the previous write-back (stored), not a^{n+1}
+          const bool an = c2ok && !gfst;
+          const Real ao1 = an ? c2a_(m,0,k,j,i) : iw_(m,M1_IW_ADV,k,j,i);
+          go1 = 0.5*(f0n_(m,k,j,i) + f0n_(m,k,j,i+1)) + ao1*eo;
           if (trans) {
-            Real a = 0.5*(f2nw_(m,k,j,i) + f2nw_(m,k,j+1,i)) + iw_(m,M1_IW_A2,k,j,i)*eo;
+            const Real ao2 = an ? c2a_(m,1,k,j,i) : iw_(m,M1_IW_A2,k,j,i);
+            const Real ao3 = an ? c2a_(m,2,k,j,i) : (thrd ? iw_(m,M1_IW_A3,k,j,i) : 0.0);
+            Real a = 0.5*(f2nw_(m,k,j,i) + f2nw_(m,k,j+1,i)) + ao2*eo;
             Real b = thrd ? (0.5*(f3nw_(m,k,j,i) + f3nw_(m,k+1,j,i))
-                             + iw_(m,M1_IW_A3,k,j,i)*eo) : 0.0;
+                             + ao3*eo) : 0.0;
             if (csw && thrd) {
               const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
               const Real a0 = a;
@@ -443,7 +448,12 @@
             go3 = b;
           }
         }
-        if (t2st && !cmw) {
+        if (c2fc) {   // vkdiag-1111 cs2 = fc: this write-back's a, the next F^old's a^n
+          c2a_(m,0,k,j,i) = iw_(m,M1_IW_ADV,k,j,i);
+          c2a_(m,1,k,j,i) = trans ? iw_(m,M1_IW_A2,k,j,i) : 0.0;
+          c2a_(m,2,k,j,i) = (trans && thrd) ? iw_(m,M1_IW_A3,k,j,i) : 0.0;
+        }
+        if (t2st && !cmw && !c2fc) {
           if (csok) {
             go1 += ciw_(m,0,k,j,i);
             go2 += ciw_(m,1,k,j,i);
@@ -671,6 +681,15 @@
           dm1 = x1 - (e1 - go1)*icc;
           dm2 = tq ? (x2 - (e2 - go2)*icc) : 0.0;
           dm3 = (tq && thrd) ? (x3 - (e3 - go3)*icc) : 0.0;
+          if (c2fc) {   // vkdiag-1111 cs2 = fc: F^new = mean F_c' + a' E' (the e* a' E')
+            dm1 -= (0.5*(cfc1_(m,k,j,i) + cfc1_(m,k,j,i+1)) - 0.5*(fl + fr))*icc;
+            if (tq) {
+              dm2 -= (0.5*(cfc2_(m,k,j,i) + cfc2_(m,k,j+1,i)) - 0.5*(g2l + g2r))*icc;
+              if (thrd) {
+                dm3 -= (0.5*(cfc3_(m,k,j,i) + cfc3_(m,k+1,j,i)) - 0.5*(g3l + g3r))*icc;
+              }
+            }
+          }
 #if M1_CSW
           // cs-open-1018: the same drag rule on the cubed sphere.  A^old (iw_cs2 + 1..2,
           // ImplicitCs2DeltaA) and the face means are face-normal, q the covariant cell

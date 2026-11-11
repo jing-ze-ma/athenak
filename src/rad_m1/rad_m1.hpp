@@ -1094,9 +1094,20 @@ class RadiationM1 {
   // restart continues bitwise.  The reader restores them whenever the file has them and
   // the run has cmem (and then skips implicit_hr_cmem_fainit).
   bool impl_cm_rst = false;
+  // vkdiag-1111 implicit_physflux_cs2 = fc (opt-in, read only when named; physflux, sp /
+  // Cartesian): the conservative2 momentum budget of the write-back uses ONE flux, the
+  // face-equation memory F_c, for both its old and new value: F^old = mean F_c^n (incl.
+  // the stage increments) + a^n E^old with a^n the enthalpy coefficient STORED at the end
+  // of the previous write-back (cs2a, restarted with fax*), F^new = mean F_c' + a' E'.
+  // The cell F (closure, drags) stays the applied one (mom = fa).  In a near-vacuum cell
+  // the budget residual is then the F_c equation's own drag, not the step-to-step jitter
+  // of the applied blend.
+  bool impl_pf_cs2fc = false, cs2a_ok = false;
+  DvceArray5D<Real> cs2a;
   int FaxRstNslab() const {
     if (!impl_hr_cmem || !impl_cm_rst || fax1.extent_int(0) == 0) {return 0;}
-    return 2 + ((fax2.extent_int(0) > 0) ? 2 : 0) + ((fax3.extent_int(0) > 0) ? 2 : 0);
+    return 2 + ((fax2.extent_int(0) > 0) ? 2 : 0) + ((fax3.extent_int(0) > 0) ? 2 : 0)
+           + ((impl_pf_cs2fc && cs2a_ok) ? 3 : 0);
   }
   void FaxRstPack(DvceArray5D<Real> out, int nmb);
   bool FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl);

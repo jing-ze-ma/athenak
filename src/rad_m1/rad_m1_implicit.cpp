@@ -3876,6 +3876,20 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                      pin->GetBoolean("rad_m1","implicit_hr_cmem_fainit");   // vkdiag-1111
     impl_cm_rst = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_rst") &&
                   pin->GetBoolean("rad_m1","implicit_hr_cmem_rst");   // vkdiag-1111
+    if (pin->DoesParameterExist("rad_m1","implicit_physflux_cs2")) {   // vkdiag-1111
+      const std::string c2 = pin->GetString("rad_m1","implicit_physflux_cs2");
+      if (c2.compare("fc") == 0) {
+        impl_pf_cs2fc = true;
+      } else if (c2.compare("cell") != 0) {
+        ImplFatal("<rad_m1>/implicit_physflux_cs2 = '" + c2 + "' is not a choice "
+                  "(cell | fc)");
+      }
+    }
+    if (impl_pf_cs2fc) {
+      Kokkos::realloc(cs2a, nmb, 3, ncells3, ncells2, ncells1);
+      Kokkos::deep_copy(cs2a, 0.0);
+      cs2a_ok = false;
+    }
     // vgdhr-1110 implicit_hr_cmem_gas_fa
     impl_cmgfa = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_gas_fa") &&
                  pin->GetBoolean("rad_m1","implicit_hr_cmem_gas_fa");
@@ -18256,6 +18270,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // memory (+ a E^n), the old flux the face kernels' Z_f were built with, so that the gas
   // takes exactly the drag on the APPLIED flux dt k F_a'/c + the transport part
   const bool cmw = impl_hr_cmem && !impl_physflux;   // physflux-1111: F^old = u0 F
+  // vkdiag-1111 implicit_physflux_cs2 = fc (rad_m1.hpp): the budget's F_c faces + a^n
+  const bool c2fc = impl_physflux && impl_pf_cs2fc && !cs_geom;
+  const bool c2ok = c2fc && cs2a_ok;
+  auto cfc1_ = f0x1, cfc2_ = f0x2, cfc3_ = f0x3;
+  auto c2a_ = cs2a;
   if (impl_hr_cmem && !(impl_physflux && !impl_pf_fa)) {   // physflux: wb reads F_c
     f0_ = fax1;
     if (trans) {f2_ = fax2;}
@@ -18345,6 +18364,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #undef M1_RCP
     });
   }
+  if (c2fc) {cs2a_ok = true;}   // vkdiag-1111: a^n stored by this write-back
   // r136e-1107 implicit_wb_vkick_reject: a stage that kicked a cell beyond V is not
   // admissible (the same decision path as the admissibility test above); a BE solve is
   // counted only
@@ -20832,12 +20852,21 @@ void RadiationM1::FaxRstPack(DvceArray5D<Real> out, int nmb) {
       out(m,s+1,k,j,i) = (k == 0) ? f3(m,n3,j,i) : 0.0;
     }
   });
+  if (impl_pf_cs2fc && cs2a_ok) {   // implicit_physflux_cs2 = fc: a^n behind fax*
+    const int s0 = 2 + (h2 ? 2 : 0) + (h3 ? 2 : 0);
+    auto ca = cs2a;
+    par_for("cs2a_rst_pack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int c = 0; c < 3; ++c) {out(m,s0+c,k,j,i) = ca(m,c,k,j,i);}
+    });
+  }
 }
 
 bool RadiationM1::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
   if (!impl_hr_cmem || fax1.extent_int(0) < nmb) {return false;}
   const bool h2 = fax2.extent_int(0) > 0, h3 = fax3.extent_int(0) > 0;
-  if (nsl != 2 + (h2 ? 2 : 0) + (h3 ? 2 : 0)) {return false;}
+  const int nb = 2 + (h2 ? 2 : 0) + (h3 ? 2 : 0);
+  if (nsl != nb && nsl != nb + 3) {return false;}
   const int n3 = in.extent_int(2), n2 = in.extent_int(3), n1 = in.extent_int(4);
   auto f1 = fax1, f2 = fax2, f3 = fax3;
   par_for("fax_rst_unpack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
@@ -20854,6 +20883,14 @@ bool RadiationM1::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
       if (k == 0) {f3(m,n3,j,i) = in(m,s+1,0,j,i);}
     }
   });
+  if (nsl == nb + 3 && impl_pf_cs2fc && cs2a.extent_int(0) >= nmb) {
+    auto ca = cs2a;
+    par_for("cs2a_rst_unpack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int c = 0; c < 3; ++c) {ca(m,c,k,j,i) = in(m,nb+c,k,j,i);}
+    });
+    cs2a_ok = true;
+  }
   impl_cm_fainit_done = true;   // restored exactly: no fainit
   return true;
 }
