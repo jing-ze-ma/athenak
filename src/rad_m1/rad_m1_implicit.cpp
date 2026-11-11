@@ -1023,13 +1023,25 @@ Real M1HqFace(const int hsrc, const V &iw, const VC &vc, const VH &gh, const int
               const Real wll, const Real wrl, const Real wlr, const Real wrr,
               const int kll, const int jll, const int ill,
               const int kl, const int jl, const int il, const int kr, const int jr,
-              const int ir, const int krr, const int jrr, const int irr) {
+              const int ir, const int krr, const int jrr, const int irr,
+              const int qeb = -1) {
   Real g = 0.0, hp, hm, fb;
+  // vgdhr-1110 qe_tau (qeb >= 0: the iw index of the opaque flag along d): an opaque
+  // slope-centre cell takes its own ratio for the stencil cells (ImplicitMusclBuild row)
+  const bool qel = (qeb >= 0) && (iw(m,qeb,kl,jl,il) > 0.5);
+  const bool qer = (qeb >= 0) && (iw(m,qeb,kr,jr,ir) > 0.5);
+  Real hpl0 = 0.0, hmr0 = 0.0;
+  if (qel) {M1HrCell(hsrc, iw, vc, gh, m, kl, jl, il, d, iw(m,M1_IW_RF0,kl,jl,il), hpl0, hm,
+                     fb); hpl0 = fmax(hpl0, 0.0);}
+  if (qer) {M1HrCell(hsrc, iw, vc, gh, m, kr, jr, ir, d, iw(m,M1_IW_RF0,kr,jr,ir), hp, hmr0,
+                     fb); hmr0 = fmin(hmr0, 0.0);}
   auto hpe = [&](const int k, const int j, const int i) {
+    if (qel) {return hpl0*iw(m,M1_IW_EP,k,j,i);}
     M1HrCell(hsrc, iw, vc, gh, m, k, j, i, d, iw(m,M1_IW_RF0,k,j,i), hp, hm, fb);
     return fmax(hp, 0.0)*iw(m,M1_IW_EP,k,j,i);
   };
   auto hme = [&](const int k, const int j, const int i) {
+    if (qer) {return hmr0*iw(m,M1_IW_EP,k,j,i);}
     M1HrCell(hsrc, iw, vc, gh, m, k, j, i, d, iw(m,M1_IW_RF0,k,j,i), hp, hm, fb);
     return fmin(hm, 0.0)*iw(m,M1_IW_EP,k,j,i);
   };
@@ -2853,6 +2865,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                      pin->GetReal("rad_m1","implicit_hr_recon_kjump") : 0.0;   // vgdhr
         impl_hsm = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hsmooth") ?
                    pin->GetReal("rad_m1","implicit_hr_recon_hsmooth") : 0.0;   // vgdhr
+        impl_qe_tau = pin->DoesParameterExist("rad_m1","implicit_hr_recon_qe_tau") ?
+                      pin->GetReal("rad_m1","implicit_hr_recon_qe_tau") : 0.0;   // vgdhr
         impl_hlim = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hlim") &&
                     pin->GetBoolean("rad_m1","implicit_hr_recon_hlim");   // vgdhr-1110
         if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_hsmooth_eps")) {
@@ -5836,6 +5850,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   // (1) the x2 face fluxes
   const bool must = muscl_now;   // xthinfix-1009 Fix B (sig of the latest build)
   const int imbt = iw_muscl;
+  const Real qetq = impl_qe_tau;   // vgdhr-1110
   const bool ledt = impl_muscl_led;
   // cs-s7-1019 implicit_hr_recon_q = h: the face fluxes as the row (M1HqFace)
   const bool hqt = impl_muscl_hq;
@@ -6019,7 +6034,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           M1HqW(hqos, j, js, je, slo, shi, iw_(m,imbt+M1_IM_SIG+1,k,j,i), wlr, wrr);
           gm = M1HqFace(hqsrc, iw_, hqvc_, hqgh_, m, 1, bw2_(m,M1_IFW_AL,k,j,i), ch, hcl,
                         hcr, wll, wrl, wlr, wrr,
-                        k, jm-1, i, k, jm, i, k, j, i, k, j+1, i);
+                        k, jm-1, i, k, jm, i, k, j, i, k, j+1, i,
+                        (qetq > 0.0) ? (imbt + M1_IM_B + 1) : -1);
         } else if (ledt) {
           if (hcl != 0.0) {
             gm += 0.5*hcl*iw_(m,imbt+M1_IM_SIG+1,k,jm,i)
@@ -6227,7 +6243,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
             M1HqW(hqos, k, ks, ke, slo, shi, iw_(m,imbt+M1_IM_SIG+2,k,j,i), wlr, wrr);
             gm = M1HqFace(hqsrc, iw_, hqvc_, hqgh_, m, 2, bw3_(m,M1_IFW_AL,k,j,i), ch, hcl,
                           hcr, wll, wrl, wlr, wrr,
-                          km-1, j, i, km, j, i, k, j, i, k+1, j, i);
+                          km-1, j, i, km, j, i, k, j, i, k+1, j, i,
+                          (qetq > 0.0) ? (imbt + M1_IM_B + 2) : -1);
           } else if (ledt) {
             if (hcl != 0.0) {
               gm += 0.5*hcl*iw_(m,imbt+M1_IM_SIG+2,km,j,i)
@@ -16605,6 +16622,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto ptqf = ptq1;
     const bool musf = muscl_now;   // xthinfix-1009 Fix B: the plm half-range face values
     const int imbf = iw_muscl;
+    const Real qetf = impl_qe_tau;   // vgdhr-1110
     const bool ledf = impl_muscl_led;
     // cs-s7-1019 implicit_hr_recon_q = h: the face flux as the row (M1HqFace)
     const bool hqf = impl_muscl_hq;
@@ -16892,7 +16910,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             gh += M1HqFace(hqsrc, iw_, hqvc_, hqgh_, m, 0, al, ch,
                            ifw_(m,M1_IFW_HCL,k,j,i), ifw_(m,M1_IFW_HCR,k,j,i),
                            sgl, sgl, sgr, sgr,
-                           k, j, imm, k, j, im, k, j, ip, k, j, ipp);
+                           k, j, imm, k, j, im, k, j, ip, k, j, ipp,
+                           (qetf > 0.0) ? (imbf + M1_IM_B) : -1);
           } else if (musf && ledf) {
             // led: the plm face values s = a dL (the fixed point's single value)
             const Real hcl = ifw_(m,M1_IFW_HCL,k,j,i), hcr = ifw_(m,M1_IFW_HCR,k,j,i);
@@ -19122,6 +19141,7 @@ void RadiationM1::ImplicitMusclBuild() {
   const Real kjx = impl_kjump;
   const Real hsmc = impl_hsm, hsme = impl_hsm_eps;   // vgdhr-1110 hsmooth
   const bool hlim = impl_hlim;   // vgdhr-1110 hlim
+  const Real qet = impl_qe_tau;   // vgdhr-1110 qe_tau
   const int hjsrc = vet_sc ? 1 : ((vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0)) ? 2
                                   : (impl_hr_model ? (pmy_pack->pmesh->multi_d ? 0 : 3) : -1));
   auto hjvc_ = vet_cell;
@@ -19368,10 +19388,15 @@ void RadiationM1::ImplicitMusclBuild() {
       }
       iw_(m,b+M1_IM_SIG+d,k,j,i) = sg;
       if (led) {iw_(m,b+M1_IM_B+d,k,j,i) = sb;}
+      if (qet > 0.0 && !led) {   // vgdhr-1110 implicit_hr_recon_qe_tau: opaque along d
+        Real dxq = (d == 0) ? mbsize(m).dx1 : ((d == 1) ? mbsize(m).dx2 : mbsize(m).dx3);
+        if (sph) {dxq = (d == 0) ? (x1fs(m,i+1) - x1fs(m,i)) : cbrt(cvol(m,k,j,i));}
+        iw_(m,b+M1_IM_B+d,k,j,i) = (iw_(m,M1_IW_KT,k,j,i)*dxq > qet) ? 1.0 : 0.0;
+      }
     }
   });
   ImplicitMusclSigHalo();
-  if (led) {for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_B + q);}}
+  if (led || (qet > 0.0)) {for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_B + q);}}
   if (qstep) {   // remember E^n for the next step's switch
     par_for("m1_muscl_eprev", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -19499,26 +19524,49 @@ void RadiationM1::ImplicitMusclBuild() {
         const Real ap = 0.5*alp*ch*fp, am = 0.5*alm*ch*fm;
         // coefficients on E_c-2 .. E_c+2 (index o + 2)
         Real co[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+        // vgdhr-1110 qe_tau: the ratio of the slope's centre cell oc where it is opaque
+        auto qeo = [&](const int oc) {
+          if (!(qet > 0.0)) {return false;}
+          int kk = k, jj = j, ii = i;
+          if (d == 0) {
+            ii = i + oc;
+            if (cyclic) {
+              while (ii < is) {ii += nx1c;}
+              while (ii > ie) {ii -= nx1c;}
+            }
+          } else if (d == 1) {
+            jj = j + oc;
+          } else {
+            kk = k + oc;
+          }
+          return iw_(m,b+M1_IM_B+d,kk,jj,ii) > 0.5;
+        };
         Real hpo, hmo;
-        auto add = [&](const int o, const Real wq, const bool plus) {
+        auto add = [&](const int o, const Real wq, const bool plus, const int oc) {
+          if (qeo(oc)) {   // donor ratio of the centre cell times E_o
+            Real hpc, hmc;
+            hcell(oc, hpc, hmc);
+            co[o + 2] += wq*(plus ? hpc : hmc);
+            return;
+          }
           hcell(o, hpo, hmo);
           co[o + 2] += wq*(plus ? hpo : hmo);
         };
         if (hlp != 0.0) {   // face +, left state (cell c): + ap s+_c
-          if (wlc != 0.0) {add(0, ap*wlc, true); add(-1, -ap*wlc, true);}
-          if (wrc != 0.0) {add(1, ap*wrc, true); add(0, -ap*wrc, true);}
+          if (wlc != 0.0) {add(0, ap*wlc, true, 0); add(-1, -ap*wlc, true, 0);}
+          if (wrc != 0.0) {add(1, ap*wrc, true, 0); add(0, -ap*wrc, true, 0);}
         }
         if (hrp != 0.0) {   // face +, right state (cell c+1): - ap s-_c+1
-          if (wlp != 0.0) {add(1, -ap*wlp, false); add(0, ap*wlp, false);}
-          if (wrp != 0.0) {add(2, -ap*wrp, false); add(1, ap*wrp, false);}
+          if (wlp != 0.0) {add(1, -ap*wlp, false, 1); add(0, ap*wlp, false, 1);}
+          if (wrp != 0.0) {add(2, -ap*wrp, false, 1); add(1, ap*wrp, false, 1);}
         }
         if (hlm != 0.0) {   // face -, left state (cell c-1): - am s+_c-1
-          if (wlm != 0.0) {add(-1, -am*wlm, true); add(-2, am*wlm, true);}
-          if (wrm != 0.0) {add(0, -am*wrm, true); add(-1, am*wrm, true);}
+          if (wlm != 0.0) {add(-1, -am*wlm, true, -1); add(-2, am*wlm, true, -1);}
+          if (wrm != 0.0) {add(0, -am*wrm, true, -1); add(-1, am*wrm, true, -1);}
         }
         if (hrm != 0.0) {   // face -, right state (cell c): + am s-_c
-          if (wlc != 0.0) {add(0, am*wlc, false); add(-1, -am*wlc, false);}
-          if (wrc != 0.0) {add(1, am*wrc, false); add(0, -am*wrc, false);}
+          if (wlc != 0.0) {add(0, am*wlc, false, 0); add(-1, -am*wlc, false, 0);}
+          if (wrc != 0.0) {add(1, am*wrc, false, 0); add(0, -am*wrc, false, 0);}
         }
         cf[d][0] = co[0];
         cf[d][1] = co[1];

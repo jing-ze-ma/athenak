@@ -1021,6 +1021,11 @@ class RadiationM1 {
   // H- = h- E themselves (sig = min(sig_E, sig_H+, sig_H-)): a ratio-preserving limiter,
   // no H+- overshoot where h jumps under a smooth E (shadow / opaque-body edges)
   bool impl_hlim = false;
+  // vgdhr-1110 implicit_hr_recon_qe_tau = T > 0 (opt-in, read only when named; plm on h,
+  // not led): a slope centred on a cell OPAQUE along d (tau_d = chi dx_d > T) is the donor
+  // ratio times the E slope, h_c (E_c+1 - E_c-1) sig/4, instead of the slope of H = h E
+  // (flag in the M1_IM_B slots, read by the row and every M1HqFace)
+  Real impl_qe_tau = 0.0;
   // hr2prod-1110 implicit_thin_gface = max (default) | mean | jump (read only when named):
   // the face thinness g_f of the implicit_thin_switch weight S(g_f).  max(g_L, g_R) moves
   // the switch by dx/2 against the gradient of g (an O(dx) shift of the blend region: a
