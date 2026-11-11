@@ -1784,9 +1784,11 @@ void RadiationM1::VetInit(ParameterInput *pin) {
       vet_sc_ho = 1;
     } else if (vh.compare("mono3") == 0) {
       vet_sc_ho = 2;
+    } else if (vh.compare("pchip") == 0) {   // scho2-1112: Steffen slopes
+      vet_sc_ho = 3;
     } else {
       VetFatal("<rad_m1>/vet_sc_interp = '" + vh + "' is not a choice (bilinear | "
-               "bezier2 | mono3)");
+               "bezier2 | mono3 | pchip)");
     }
   }
   if (pin->DoesParameterExist("rad_m1", "vet_sc_src")) {

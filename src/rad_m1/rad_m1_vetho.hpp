@@ -19,7 +19,13 @@
 //!            Hennicker et al. 2020): exact for quadratics, bounded by f0, f1.
 //!   mono3:   cubic Hermite with the Fritsch-Butland (harmonic) slopes, zero at an
 //!            extremum (PCHIP-type): monotone, bounded by f0, f1.
-//! Both: I >= 0 and no new extrema inside the interval; a linear profile is exact.
+//!   pchip:   (scho2-1112) cubic Hermite with the Steffen (1990) slopes
+//!            d = (sgn s_- + sgn s_+) min(|s_-|, |s_+|, |s_- + s_+|/4), the parabola
+//!            slope wherever that keeps the cubic monotone, 0 at an extremum.  One
+//!            slope per node (C1 along the plane; so is mono3, whose Fritsch-Butland
+//!            harmonic-mean slopes are the PCHIP slopes of a uniform grid),
+//!            alpha, beta <= 2 (Fritsch-Carlson monotone region), bounded by f0, f1.
+//! All: I >= 0 and no new extrema inside the interval; a linear profile is exact.
 //! chi and S on the upwind plane keep the vet_interp rule (lin / log); at a material
 //! edge (vet_interp corner / auto) the per-point segment OUTCOMES are interpolated with
 //! the same 1-D scheme.
@@ -46,8 +52,16 @@ Real VetHo1(const int ho, const Real fm, const Real f0, const Real f1, const Rea
     return b*b*f0 + 2.0*a*b*c + a*a*f1;
   }
   const Real dm = f0 - fm, dc = f1 - f0, dp = f2 - f1;
-  const Real d0 = (dm*dc > 0.0) ? 2.0*dm*dc/(dm + dc) : 0.0;
-  const Real d1 = (dc*dp > 0.0) ? 2.0*dc*dp/(dc + dp) : 0.0;
+  Real d0, d1;
+  if (ho == 3) {   // scho2-1112 pchip: Steffen slopes
+    d0 = (dm*dc > 0.0) ? copysign(fmin(fmin(fabs(dm), fabs(dc)), 0.25*fabs(dm + dc)),
+                                  dc)*2.0 : 0.0;
+    d1 = (dc*dp > 0.0) ? copysign(fmin(fmin(fabs(dc), fabs(dp)), 0.25*fabs(dc + dp)),
+                                  dc)*2.0 : 0.0;
+  } else {
+    d0 = (dm*dc > 0.0) ? 2.0*dm*dc/(dm + dc) : 0.0;
+    d1 = (dc*dp > 0.0) ? 2.0*dc*dp/(dc + dp) : 0.0;
+  }
   const Real a2 = a*a, a3 = a2*a;
   const Real v = (2.0*a3 - 3.0*a2 + 1.0)*f0 + (a3 - 2.0*a2 + a)*d0
                  + (3.0*a2 - 2.0*a3)*f1 + (a3 - a2)*d1;

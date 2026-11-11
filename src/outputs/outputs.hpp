@@ -21,7 +21,7 @@
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
 
-#define NOUTPUT_CHOICES 170
+#define NOUTPUT_CHOICES 171
 // choices for output variables used in <ouput> blocks in input file
 // TO ADD MORE CHOICES:
 //   - add more strings to array below, change NOUTPUT_CHOICES above appropriately
@@ -133,7 +133,11 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
 
   // tanacc-1107: the closure tensor handed to the implicit operator (tau_ten slot 0 and
   // the vet_col_lat slots LAT0..5), the cell unit vector and the vet_gd J, H_r (168)
-  "m1_lat"
+  "m1_lat",
+
+  // scho2-1112: vet_sc half-range sums H+_1, H+_2 (E units), the guarded D_12 and the
+  // ray non-locality C1 J = sum w |I - S| of the last formal solution (170)
+  "m1_vsch"
 };
 
 
