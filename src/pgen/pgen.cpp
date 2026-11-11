@@ -1080,8 +1080,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (ok) {std::memcpy(&(hdr[0]), &(fax_hdr[0]), sizeof(hdr));}
     if (!ok || hdr[0] != 1 || hdr[1] < 2 || hdr[1] > 6) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the rad_m1 applied face flux header of this restart file "
-                << "is broken." << std::endl;
+                << std::endl << "the rad_m1 applied face flux header of this restart "
+                << "file is broken." << std::endl;
       exit(EXIT_FAILURE);
     }
     nfax_file = static_cast<int>(hdr[1]);
@@ -2192,7 +2192,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
                   + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file
                   + nams_file + npgs_file;
-      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3
+                              *sizeof(Real);
       myoffset = offset_myrank;
       DvceArray5D<Real> faxin("rst-fax-in", nmb, nfax_file, nout3, nout2, nout1);
       for (int n=0; n<nfax_file; ++n) {
@@ -2203,7 +2204,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       const bool got = (pradm1 != nullptr) && pradm1->FaxRstUnpack(faxin, nmb, nfax_file);
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> restart: applied face fluxes fax* (" << nfax_file
-                  << " slabs) " << (got ? "restored" : "IGNORED (no matching cmem arrays)")
+                  << " slabs) "
+                  << (got ? "restored" : "IGNORED (no matching cmem arrays)")
                   << std::endl;
       }
     }

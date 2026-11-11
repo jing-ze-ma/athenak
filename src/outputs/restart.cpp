@@ -883,7 +883,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   data_size += static_cast<IOWrapperSizeT>(nra)*nout1*nout2*nout3*sizeof(Real);      // vet_rotate_avg history
   data_size += static_cast<IOWrapperSizeT>(nams)*nout1*nout2*nout3*sizeof(Real);     // am_vector spin (+ amk1)
   data_size += static_cast<IOWrapperSizeT>(npgs)*nout1*nout2*nout3*sizeof(Real);     // per-cell pgen slabs
-  data_size += static_cast<IOWrapperSizeT>(nfax)*nout1*nout2*nout3*sizeof(Real);     // rad_m1 fax*
+  data_size += static_cast<IOWrapperSizeT>(nfax)*nout1*nout2*nout3*sizeof(Real);  // fax*
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
