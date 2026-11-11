@@ -86,6 +86,10 @@ const char *kDtrMinimal[] = {
   "m1.ibadv_x1max",
 };
 
+// dtretry-1111 debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of
+// 5-D Views to a variable range and to the active or ghost cells (ng ghosts)
+int g_pn_lo = -1, g_pn_hi = -1, g_pcells = 0, g_png = 0;
+
 // copy-assign anything, arrays element by element
 template <class T> void Assign(T &a, const T &b) {
   if constexpr (std::is_array_v<T>) {
@@ -203,8 +207,37 @@ struct ViewEntry : public Entry {
   void Poison() override {
     if constexpr (std::is_floating_point_v<typename T::non_const_value_type>) {
       if (p->data() != nullptr && p->span() > 0) {
-        Kokkos::deep_copy(*p, std::numeric_limits<
-                              typename T::non_const_value_type>::quiet_NaN());
+        using V = typename T::non_const_value_type;
+        const V nan = std::numeric_limits<V>::quiet_NaN();
+        if constexpr (T::rank == 5) {
+          // dtretry-1111 debug: dt_retry_poison_n (lo:hi of the variable index) and
+          // dt_retry_poison_cells (active | ghost) poison part of a 5-D View only
+          if (g_pn_lo >= 0 || g_pcells != 0) {
+            auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), *p);
+            const int ng = g_png;
+            for (int m = 0; m < static_cast<int>(h.extent(0)); ++m) {
+            for (int n = 0; n < static_cast<int>(h.extent(1)); ++n) {
+              if (g_pn_lo >= 0 && (n < g_pn_lo || n > g_pn_hi)) continue;
+              for (int k = 0; k < static_cast<int>(h.extent(2)); ++k) {
+              for (int j = 0; j < static_cast<int>(h.extent(3)); ++j) {
+              for (int i = 0; i < static_cast<int>(h.extent(4)); ++i) {
+                const bool act = (i >= ng && i < static_cast<int>(h.extent(4)) - ng) &&
+                  (h.extent(3) == 1 || (j >= ng && j < static_cast<int>(h.extent(3)) - ng))
+                  && (h.extent(2) == 1 ||
+                      (k >= ng && k < static_cast<int>(h.extent(2)) - ng));
+                if (g_pcells == 1 && !act) continue;
+                if (g_pcells == 2 && act) continue;
+                h(m,n,k,j,i) = nan;
+              }
+              }
+              }
+            }
+            }
+            Kokkos::deep_copy(*p, h);
+            return;
+          }
+        }
+        Kokkos::deep_copy(*p, nan);
       }
     }
   }
@@ -397,6 +430,17 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
       std::string w;
       while (std::getline(ss, w, ',')) {if (!w.empty()) poison_match_.push_back(w);}
     }
+    if (pin->DoesParameterExist("time", "dt_retry_poison_n")) {
+      std::string r = pin->GetString("time", "dt_retry_poison_n");
+      const std::size_t c = r.find(':');
+      g_pn_lo = std::stoi(r.substr(0, c));
+      g_pn_hi = (c == std::string::npos) ? g_pn_lo : std::stoi(r.substr(c + 1));
+    }
+    if (pin->DoesParameterExist("time", "dt_retry_poison_cells")) {
+      std::string r = pin->GetString("time", "dt_retry_poison_cells");
+      g_pcells = (r == "active") ? 1 : ((r == "ghost") ? 2 : 0);
+    }
+    g_png = pm->mb_indcs.ng;
     if (poison_ > 0 && !all_views_) {
       std::cout << "### FATAL ERROR: <time>/dt_retry_poison needs dt_retry_views = all"
                 << std::endl;
