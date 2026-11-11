@@ -221,6 +221,8 @@ struct ViewEntry : public Entry {
           if (g_pn_lo >= 0 || g_pcells != 0) {
             auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), *p);
             const int ng = g_png;
+            std::int64_t ncell = 0, nnz = 0;
+            double amax = 0.0;
             for (int m = 0; m < static_cast<int>(h.extent(0)); ++m) {
             for (int n = 0; n < static_cast<int>(h.extent(1)); ++n) {
               if (g_pn_lo >= 0 && (n < g_pn_lo || n > g_pn_hi)) continue;
@@ -251,6 +253,9 @@ struct ViewEntry : public Entry {
                   if (g_pcells == 8) sel = (di == 1 && dt == 0 && i >= ng);  // outer x1, 1
                   if (!sel) continue;
                 }
+                if (h(m,n,k,j,i) != 0.0) {nnz += 1;}
+                if (std::abs(h(m,n,k,j,i)) > amax) {amax = std::abs(h(m,n,k,j,i));}
+                ncell += 1;
                 h(m,n,k,j,i) = nan;
               }
               }
@@ -258,6 +263,9 @@ struct ViewEntry : public Entry {
             }
             }
             Kokkos::deep_copy(*p, h);
+            std::cout << "<time> dt_retry poison " << name << " rank "
+                      << global_variable::my_rank << ": " << ncell << " cells, " << nnz
+                      << " nonzero before, max |value| " << amax << std::endl;
             return;
           }
         }
