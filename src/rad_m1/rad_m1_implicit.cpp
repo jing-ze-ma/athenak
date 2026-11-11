@@ -19105,6 +19105,7 @@ void RadiationM1::ImplicitMusclBuild() {
   auto cvol = pmy_pack->pcoord->volume;
   auto carea = pmy_pack->pcoord->area;
   const int b = iw_muscl;
+  const Real qet = impl_qe_tau;   // vgdhr-1110 qe_tau
   const bool l2 = twod && (bw2_.extent_int(0) > 0);
   const bool l3 = thrd && (bw3_.extent_int(0) > 0);
   // (1) the limiter: plm on the first implicit_hr_recon_fresh passes, then frozen; led on
@@ -19141,7 +19142,6 @@ void RadiationM1::ImplicitMusclBuild() {
   const Real kjx = impl_kjump;
   const Real hsmc = impl_hsm, hsme = impl_hsm_eps;   // vgdhr-1110 hsmooth
   const bool hlim = impl_hlim;   // vgdhr-1110 hlim
-  const Real qet = impl_qe_tau;   // vgdhr-1110 qe_tau
   const int hjsrc = vet_sc ? 1 : ((vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0)) ? 2
                                   : (impl_hr_model ? (pmy_pack->pmesh->multi_d ? 0 : 3) : -1));
   auto hjvc_ = vet_cell;
