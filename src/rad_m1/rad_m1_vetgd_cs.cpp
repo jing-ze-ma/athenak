@@ -1425,6 +1425,12 @@ void RadiationM1::VetGdCsSweep() {
   auto dir_ = vgd_dir;
   auto cnt_ = vlat_cnt;
   auto mr_ = vgd_mr;
+  // vetgdup-1110 vet_gd_upwind: the shell profiles (VetGdUpShell after each shell)
+  if (vgd_upf != 0) {VetGdUpPrep();}
+  auto upp_ = vgd_up_prof;
+  auto upp2_ = vgd_up_prof2;   // the fused twin's profiles
+  const int upk_ = vgd_upk, upf_ = vgd_upf;
+  const Real upt_ = vgd_uptol;
   auto cr_ = vgd_csr;
   auto bl_ = vgd_csblk;
   auto cm_ = vgd_cscm;
@@ -1788,6 +1794,7 @@ void RadiationM1::VetGdCsSweep() {
         int typ = 1;
         int iu = i + 1;
         Real ds = 0.0, dso = 0.0;
+        Real muu = 0.0;   // vetgdup-1110: n . r_hat at the upwind point
         VgdCsSt st;
         if (br == 0) {
           const Real rtop = cx1f(m,ie+1);
@@ -1801,6 +1808,7 @@ void RadiationM1::VetGdCsSweep() {
           xu[0] /= ru;
           xu[1] /= ru;
           xu[2] /= ru;
+          muu = nx*xu[0] + ny*xu[1] + nz*xu[2];
           const bool sok = VgdCsStencil(xu, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b,
                                         nc, h, cm_, nb_, st);
           // (counted per field swept, as the unfused twin's own sweep)
@@ -1857,7 +1865,25 @@ void RadiationM1::VetGdCsSweep() {
               }
               return va(ow_(m,kk,jj,0),d,ow_(m,kk,jj,1),ow_(m,kk,jj,2),iu);
             };
-            const Real ivu = VgdUpwindI(acc, rdi, ok, all);
+            // vetgdup-1110 vet_gd_upwind (rad_m1_vgdray.hpp VgdUpCorr): the stencil
+            // cells' intensities shifted along the shell's mean angular profile (main
+            // field only; off: no shift)
+            Real cq_[4] = {0.0, 0.0, 0.0, 0.0};
+            bool upo = false;
+            if (upf_ == 1 || upf_ == 2) {   // main and fused twin, each its own profile
+              auto mqe = [&](const int e) -> Real {return mr_(m,st.k[e],st.j[e],d);};
+              auto iqe = [&](const int e) -> Real {return rdi(st.k[e], st.j[e]);};
+              upo = VgdUpCorr((f == 0) ? upp_ : upp2_, iu, upk_, inw || (typ == 3), upf_,
+                              upt_, muu, acc,
+                              mqe, iqe, ok, all, cq_);
+            }
+            auto rdc = [&](const int kk, const int jj) -> Real {
+              if (!upo) {return rdi(kk,jj);}
+              int e = 0;
+              while (e < st.n - 1 && !(st.k[e] == kk && st.j[e] == jj)) {++e;}
+              return rdi(kk,jj) + cq_[e];
+            };
+            const Real ivu = VgdUpwindI(acc, rdc, ok, all);
             auto lin = [&](const int c, const int ii) {
               Real s = 0.0;
               for (int e = 0; e < st.n; ++e) {s += st.w[e]*cv(m,c,st.k[e],st.j[e],ii);}
@@ -1880,7 +1906,7 @@ void RadiationM1::VetGdCsSweep() {
             auto edgef = [&]() {return edge;};
             // the closing segment (vet_seg = jump below the inner face, vet_interp =
             // corner, vet_seg = split, the plain segment: rad_m1_vgdray.hpp)
-            iv = VgdSegFinish(acc, rdi, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0, s0,
+            iv = VgdSegFinish(acc, rdc, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0, s0,
                               ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim);
           }
         }
@@ -1957,6 +1983,11 @@ void RadiationM1::VetGdCsSweep() {
       }
 #endif
       }   // g
+      // vetgdup-1110 vet_gd_upwind: this shell's profile on the pass's half range
+      if (vgd_upf != 0) {
+        VetGdUpShell(i, inw, 0);
+        if (two) {VetGdUpShell(i, inw, 1);}   // the fused twin: its own profile
+      }
       if (rga) {
         // the previous shell of the pass has been read (stream order): its inward band
         // values saved (inward pass), its interior back to the compact slab; the next

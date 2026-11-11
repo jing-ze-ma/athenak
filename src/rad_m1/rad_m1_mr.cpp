@@ -96,6 +96,9 @@ void RadiationM1::MRInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "dbg_hydro_off")) {
     dbg_hydro_off = pin->GetBoolean("rad_m1", "dbg_hydro_off");
   }
+  if (pin->DoesParameterExist("rad_m1", "dbg_hydro_skip_t2")) {   // raycheap2-1109
+    dbg_hydro_skip_t2 = pin->GetBoolean("rad_m1", "dbg_hydro_skip_t2");
+  }
   // implicit_mr_tab (ke-dt-0926, DIAGNOSTIC; read only when named): R(Delta) as the
   // two-stage SDIRK2 (sdirk2, default) or as TR-BDF2 (trbdf2: stage order 2, FSAL slope
   // K0 = the last R's final slope; the first R and any R after a fallback are SDIRK2)
