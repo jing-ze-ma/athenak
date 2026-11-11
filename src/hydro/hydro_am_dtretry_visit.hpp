@@ -19,6 +19,7 @@ void hydro::AmModule::DtRetryVisit(V &v) {
   v.value("frame_on", frame_on);
   v.value("frame_om", frame_om);
   v.value("frame_exact", frame_exact);
+  v.value("frame_cf", frame_cf);
   v.view("frame_ln", frame_ln);
 }
 

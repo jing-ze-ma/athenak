@@ -84,6 +84,12 @@ const char *kDtrMinimal[] = {
   // flux through the outer face of the last solve, read by the pgen's hydro-stage budget
   // accumulator like f0x1; absent (empty) elsewhere
   "m1.ibadv_x1max",
+  // dtretry-1111: implicit_hr_cmem (implied by implicit_physflux / implicit_aphll_mem):
+  // the APPLIED face fluxes of the last solve, read by the next solve as its step-start
+  // value (fax*n, implicit_physflux_mom = fa) and kept by implicit_hr_cmem_rst; they were
+  // not visited (stale generated visitor), so a retry read the failed attempt's; empty
+  // (no entry matches) without cmem
+  "m1.fax1", "m1.fax2", "m1.fax3",
 };
 
 // dtretry-1111 debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of
@@ -578,7 +584,6 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
                  : ((why == 5 && t2_fac_ > 0.0 && ncut_ == 0) ? t2_fac_ : fac_);
   ncut_ += 1;
   nretry_ += 1;
-  m1->dtr_ncut = ncut_;   // r136e-1107 (vkick_be_retry bookkeeping)
   if (ncut_ > maxcut_) {
     if (global_variable::my_rank == 0) {
       std::cout << "### FATAL ERROR: <time> dt_retry: cycle " << pm->ncycle << " failed "
@@ -598,6 +603,9 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   for (auto &e : ent_) {e->Restore();}
   Kokkos::fence();
   m1->DtRetryAfterRestore();
+  // r136e-1107 (vkick_be_retry bookkeeping); dtretry-1111: set after the put-back, which
+  // (generated visitor) rolls dtr_ncut back to its cycle-start value
+  m1->dtr_ncut = ncut_;
   // prod-retry-1022: once this cycle took the backward-Euler redo, it keeps it: a failed
   // redo (NON-CONVERGED) is then cut with the redo still armed, instead of the hesdirk2
   // stage being retried at the cut dt, rejected again and sent back to the cycle dt (the

@@ -19768,10 +19768,13 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
       r -= (k - ks)*nji;
       const int j = r/ni + js;
       const int i = r - (j - js)*ni + is;
+      // dtretry-1111: a NaN (counted as <= 0 above) is the minimum, so the location is
+      // always a counted cell (all-NaN left loc at the identity: out-of-range reads)
       Real v = qval(m,k,j,i);
-      if (v < lm.val) {lm.val = v; lm.loc = idx;}
+      if (!(v == v)) v = -1.0e308;
+      if (v < lm.val || lm.loc < 0 || lm.loc >= ntot) {lm.val = v; lm.loc = idx;}
     }, ML(mloc));
-    const int idx = mloc.loc;
+    const int idx = (mloc.loc >= 0 && mloc.loc < ntot) ? mloc.loc : 0;
     const int m = idx/nkji;
     int r = idx - m*nkji;
     const int k = r/nji + ks;
