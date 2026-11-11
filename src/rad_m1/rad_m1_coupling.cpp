@@ -73,6 +73,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"
 #include "pgen/pgen.hpp"
 
 namespace radm1 {
@@ -456,6 +457,12 @@ void RadiationM1::FloorGasCap() {
   const bool tc = fcap_t, kr = fcap_ke_rad;
   const Real tmin = fcap_tmin/otab.tunit;   // code temperature
   const Real ar = arad;
+  // vkdiag-1111 floorcap_reform_f: D of the last solve (iw_ chi, n; vet_cell if full)
+  const bool rff = fcap_reform_f && (iw.extent_int(0) > 0) && !cs_geom;
+  auto iwf_ = iw;
+  auto vdf_ = vet_cell;
+  const bool dff = vet_full && (vet_cell.extent_int(0) > 0);
+  const Real clf = c_light;
   par_for("m1_floorcap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real dd = uh(m,IDN,k,j,i);
@@ -472,6 +479,40 @@ void RadiationM1::FloorGasCap() {
     if (vc > 0.0 && msq > SQR(vc*dd)) {
       const Real fs = vc*dd/sqrt(msq);
       const Real dke = (1.0 - fs*fs)*ekin;
+      if (rff) {
+        // the comoving flux kept: F_lab -= E (I + D) dv, dv = (fs - 1) v (the stored
+        // cell F's enthalpy part, as the write-back forms it), realisability kept
+        const Real dv1 = (fs - 1.0)*m1/dd, dv2 = (fs - 1.0)*m2/dd;
+        const Real dv3 = (fs - 1.0)*m3/dd;
+        Real d11, d22, d33, d12, d13, d23;
+        if (dff) {
+          d11 = vdf_(m,M1_VET_D11,k,j,i);
+          d22 = vdf_(m,M1_VET_D11+1,k,j,i);
+          d33 = vdf_(m,M1_VET_D11+2,k,j,i);
+          d12 = vdf_(m,M1_VET_D11+3,k,j,i);
+          d13 = vdf_(m,M1_VET_D11+4,k,j,i);
+          d23 = vdf_(m,M1_VET_D11+5,k,j,i);
+        } else {
+          const Real chi = iwf_(m,M1_IW_WCHI,k,j,i);
+          const Real n1 = iwf_(m,M1_IW_N1,k,j,i), n2 = iwf_(m,M1_IW_N2,k,j,i);
+          const Real n3 = iwf_(m,M1_IW_N3,k,j,i);
+          d11 = M1EddDiag(chi,n1); d22 = M1EddDiag(chi,n2); d33 = M1EddDiag(chi,n3);
+          d12 = M1EddOff(chi,n1,n2); d13 = M1EddOff(chi,n1,n3);
+          d23 = M1EddOff(chi,n2,n3);
+        }
+        const Real es = fmax(erad, 0.0);
+        Real g1 = u0_(m,M1_F1,k,j,i) - es*(dv1 + d11*dv1 + d12*dv2 + d13*dv3);
+        Real g2 = u0_(m,M1_F2,k,j,i) - es*(dv2 + d12*dv1 + d22*dv2 + d23*dv3);
+        Real g3 = u0_(m,M1_F3,k,j,i) - es*(dv3 + d13*dv1 + d23*dv2 + d33*dv3);
+        const Real gn = sqrt(g1*g1 + g2*g2 + g3*g3), gc = clf*es;
+        if (gn > gc && gn > 0.0) {
+          const Real sg = gc/gn;
+          g1 *= sg; g2 *= sg; g3 *= sg;
+        }
+        u0_(m,M1_F1,k,j,i) = g1;
+        u0_(m,M1_F2,k,j,i) = g2;
+        u0_(m,M1_F3,k,j,i) = g3;
+      }
       m1 *= fs; m2 *= fs; m3 *= fs;
       uh(m,IM1,k,j,i) = m1; uh(m,IM2,k,j,i) = m2; uh(m,IM3,k,j,i) = m3;
       ekin -= dke;

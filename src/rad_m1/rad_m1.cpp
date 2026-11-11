@@ -716,6 +716,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    if (pin->DoesParameterExist("rad_m1","floorcap_reform_f")) {   // vkdiag-1111
+      fcap_reform_f = pin->GetBoolean("rad_m1","floorcap_reform_f");
+    }
     if (pin->DoesParameterExist("rad_m1","floorcap_report")) {
       fcap_report = pin->GetInteger("rad_m1","floorcap_report");
     }

@@ -393,6 +393,12 @@ class RadiationM1 {
   // Counters printed every floorcap_report cycles (0 = never).  See FloorGasCap.
   Real fcap_rho = 0.0, fcap_v = 0.0, fcap_tmin = 0.0;
   bool fcap_t = true, fcap_ke_rad = true;
+  // vkdiag-1111 <rad_m1>/floorcap_reform_f (read only when named, default false =
+  // bitwise; not on the cubed sphere): a velocity cap keeps the radiation's COMOVING
+  // flux, i.e. the stored lab cell F loses E (I + D) dv with dv the cap's velocity
+  // change.  Without it the enthalpy part of F stays at the uncapped v and the next
+  // conservative budget (F^old = stored F) charges that difference to the gas.
+  bool fcap_reform_f = false;
   int fcap_report = 0;
   DualArray1D<Real> fcap_cnt;   // 0 n_v, 1 n_t, 2 dKE, 3 dEint (energy units x volume)
   void FloorGasCap();
