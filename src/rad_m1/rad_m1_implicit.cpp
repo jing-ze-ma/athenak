@@ -48,6 +48,7 @@
 #include <cstdlib>
 #include <limits>
 #include <iostream>
+#include <iomanip>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -2285,6 +2286,60 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         std::cout << "<rad_m1> implicit_am_cs_kecap=" << impl_am_kecap << ": the am_cs "
                   << "deposit of a cell gives the gas at most this fraction of its e_int "
                   << "as kinetic energy (state and stored slope)" << std::endl;
+      }
+    }
+  }
+  // amcsE-1111 implicit_am_cs_energy / _frac / implicit_am_cs_cons_diag (rad_m1.hpp)
+  if (pin->DoesParameterExist("rad_m1","implicit_am_cs_energy")) {
+    const std::string ae = pin->GetString("rad_m1","implicit_am_cs_energy");
+    if (ae == "gas") {
+      impl_am_en = 0;
+    } else if (ae == "rad") {
+      impl_am_en = 1;
+    } else {
+      ImplFatal("<rad_m1>/implicit_am_cs_energy must be gas or rad");
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_am_cs_energy_frac")) {
+      impl_am_en_frac = pin->GetReal("rad_m1","implicit_am_cs_energy_frac");
+      if (!(impl_am_en_frac >= 0.0 && impl_am_en_frac < 1.0)) {
+        ImplFatal("<rad_m1>/implicit_am_cs_energy_frac must be in [0, 1)");
+      }
+    }
+    if (impl_am_en == 1) {
+      Kokkos::realloc(amen_d, 4);
+      Kokkos::deep_copy(amen_d, 0.0);
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> implicit_am_cs_energy=rad: the kinetic energy of the "
+                  << "am_cs "
+                  << "deposit is paid by the cell's radiation energy (at most "
+                  << impl_am_en_frac << " of E; the rest by e_int)" << std::endl;
+      }
+    }
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_am_cs_cons_diag")) {
+    impl_am_cons_diag = pin->GetInteger("rad_m1","implicit_am_cs_cons_diag");
+    if (impl_am_cons_diag > 0) {Kokkos::realloc(amcd_d, 16);}
+  }
+  // amvec-1111 implicit_am_cs_deposit (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1","implicit_am_cs_deposit")) {
+    const std::string ad = pin->GetString("rad_m1","implicit_am_cs_deposit");
+    if (ad == "local") {
+      impl_am_dep = 0;
+    } else if (ad == "patch") {
+      impl_am_dep = 1;
+    } else {
+      ImplFatal("<rad_m1>/implicit_am_cs_deposit must be local or patch");
+    }
+    if (impl_am_dep == 1) {
+      if (!pmy_pack->pmesh->use_cubed_sphere || !pmy_pack->pmesh->three_d) {
+        ImplFatal("<rad_m1>/implicit_am_cs_deposit = patch needs a 3-D cubed sphere");
+      }
+      Kokkos::realloc(amvp_d, 8);
+      Kokkos::deep_copy(amvp_d, 0.0);
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> implicit_am_cs_deposit=patch: the am_cs L vector is "
+                  << "deposited as the minimum-KE rigid rotation of the lateral 3x3 "
+                  << "patch; capped remainders go to the radial column" << std::endl;
       }
     }
   }
@@ -10453,6 +10508,41 @@ void RadiationM1::ImplicitReport() {
                 << " of all deposits " << av[3] << " (all attempts)" << std::endl;
     }
   }
+  // amcsE-1111 implicit_am_cs_energy = rad: who paid the deposits' kinetic energy
+  if (impl_am_en == 1 && amen_d.extent_int(0) == 4) {
+    auto he = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amen_d);
+    Real ev[4] = {he(0), he(1), he(2), he(3)};
+#if MPI_PARALLEL_ENABLED
+    Real ge[4];
+    MPI_Allreduce(ev, ge, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int q = 0; q < 4; ++q) {ev[q] = ge[q];}
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_am_cs_energy=rad: cell-solves beyond the E share="
+                << ev[0] << " KE paid by E=" << ev[1] << " by e_int=" << ev[2]
+                << " not given=" << ev[3] << " (code units x volume, all attempts)"
+                << std::endl;
+    }
+  }
+  // amvec-1111 implicit_am_cs_deposit = patch: the patch / column bookkeeping
+  if (impl_am_dep == 1 && amvp_d.extent_int(0) == 8) {
+    auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amvp_d);
+    Real pv[8];
+    for (int q = 0; q < 8; ++q) {pv[q] = hp(q);}
+#if MPI_PARALLEL_ENABLED
+    Real gp[8];
+    MPI_Allreduce(pv, gp, 8, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int q = 0; q < 8; ++q) {pv[q] = gp[q];}
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_am_cs_deposit=patch: sum |del|=" << pv[0]
+                << " capped cell-solves=" << pv[1] << " |L| moved to columns=" << pv[2]
+                << " |L| not deposited=" << pv[3] << " singular patches=" << pv[4]
+                << " column KE paid by E=" << pv[5] << " by e_int=" << pv[6]
+                << " column cells beyond the e_int cap=" << pv[7]
+                << " (code units x volume, all attempts)" << std::endl;
+    }
+  }
   // hgfix-1110 implicit_clip_kecap: the capped clip cell-solves
   if (impl_clip_kecap > 0.0 && clkc_d.extent_int(0) == 3) {
     auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), clkc_d);
@@ -18580,6 +18670,28 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool aetg = etg, amhd = mhd;
     auto aphi_ = phicc;
     auto aem_ = emag_;
+    // amcsE-1111 implicit_am_cs_energy = rad and implicit_am_cs_cons_diag (rad_m1.hpp)
+    const bool aen = (impl_am_en == 1);
+    const Real aef = impl_am_en_frac, clch = cl/ch, chcl = ch/cl;
+    auto aed_ = amen_d;
+    const bool acd = (impl_am_cons_diag > 0) && (amcd_d.extent_int(0) == 16);
+    auto acd_ = amcd_d;
+    if (acd) {Kokkos::deep_copy(amcd_d, 0.0);}
+    // amvec-1111 implicit_am_cs_deposit = patch (rad_m1.hpp): this kernel stores the
+    // patch increments omega (state) and omega_k (slope) in amw 0-2 / 3-5 (each cell
+    // reads only its own amw before) and deposits nothing; m1_am_cs_patch gathers them,
+    // m1_am_cs_col moves the capped remainders to the column
+    const bool apt = (impl_am_dep == 1);
+    if (apt && am_vec) {
+      ImplFatal("<rad_m1>/implicit_am_cs_deposit = patch replaces <hydro>/am_vector's "
+                "spin reservoir; use it with am_transport (am_vector false)");
+    }
+    if (apt && amvw.extent_int(0) == 0) {
+      Kokkos::realloc(amvw, amw.extent_int(0), 4, amw.extent_int(2), amw.extent_int(3),
+                      amw.extent_int(4));
+    }
+    auto apc_ = amvp_d;
+    const int jsa = js, jea = je, ksa = ks, kea = ke;
     par_for("m1_am_cs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real x2l = msz.d_view(m).x2min, x2u = msz.d_view(m).x2max;
@@ -18596,7 +18708,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       cubed_sphere::PanelTangents(pnl, xc, ec, e1, e2);
       const Real r = x1va(m,i), rl = x1fa(m,i), rr = x1fa(m,i+1);
       const Real xx = r*rh[0], yy = r*rh[1], wc = xx*xx + yy*yy;
-      if (!(wc > 0.0)) return;
+      if (!(wc > 0.0) && !apt) return;
       const Real dv = vola(m,k,j,i);
       const Real c = cclw(m,k,j), s2 = 1.0 - c*c;
       // the L change (vector) of a covariant cell vector (radial, covariant x2, x3)
@@ -18732,6 +18844,78 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
            (hb + c*ha)*si - am_(m,5,k,j,i), dlc);
         for (int q = 0; q < 3; ++q) {dlc[q] *= icc;}
       }
+      if (apt) {
+        // amvec-1111: the patch's moment-of-inertia tensor (xx yy zz xy xz yz) over the
+        // in-block lateral 3x3 neighbourhood at this radius (the same r_n, rho_n V_n that
+        // m1_am_cs_patch uses for cell n), omega = I^-1 del (+ one refinement step)
+        Real ia[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        const int k0 = (k > ksa) ? k - 1 : k, k1 = (k < kea) ? k + 1 : k;
+        const int j0 = (j > jsa) ? j - 1 : j, j1 = (j < jea) ? j + 1 : j;
+        for (int kk = k0; kk <= k1; ++kk) {
+          for (int jj = j0; jj <= j1; ++jj) {
+            Real rq[3];
+            cubed_sphere::PanelToCart(pnl, 0.25*M_PI*CellCenterX(jj-js, nx2a, x2l, x2u),
+                                      0.25*M_PI*CellCenterX(kk-ks, nx3a, x3l, x3u), rq);
+            const Real w = fmax(uden_(m,IDN,kk,jj,i), 0.0)*vola(m,kk,jj,i);
+            const Real p0 = r*rq[0], p1 = r*rq[1], p2 = r*rq[2];
+            const Real q2 = p0*p0 + p1*p1 + p2*p2;
+            ia[0] += w*(q2 - p0*p0);
+            ia[1] += w*(q2 - p1*p1);
+            ia[2] += w*(q2 - p2*p2);
+            ia[3] -= w*p0*p1;
+            ia[4] -= w*p0*p2;
+            ia[5] -= w*p1*p2;
+          }
+        }
+        const Real tr = ia[0] + ia[1] + ia[2];
+        const Real it = (tr > 0.0) ? 1.0/tr : 0.0;
+        const Real axx = ia[0]*it, ayy = ia[1]*it, azz = ia[2]*it;
+        const Real axy = ia[3]*it, axz = ia[4]*it, ayz = ia[5]*it;
+        const Real c00 = ayy*azz - ayz*ayz, c01 = axz*ayz - axy*azz;
+        const Real c02 = axy*ayz - axz*ayy, c11 = axx*azz - axz*axz;
+        const Real c12 = axy*axz - axx*ayz, c22 = axx*ayy - axy*axy;
+        const Real det = axx*c00 + axy*c01 + axz*c02;
+        const bool okp = (tr > 0.0) && (det > 1.0e-24);
+        auto solve = [&](const Real *b, Real *x) {
+          const Real id = okp ? it/det : 0.0;
+          for (int q = 0; q < 3; ++q) {x[q] = 0.0;}
+          if (!okp) return;
+          x[0] = (c00*b[0] + c01*b[1] + c02*b[2])*id;
+          x[1] = (c01*b[0] + c11*b[1] + c12*b[2])*id;
+          x[2] = (c02*b[0] + c12*b[1] + c22*b[2])*id;
+          const Real rs[3] = {b[0] - (ia[0]*x[0] + ia[3]*x[1] + ia[4]*x[2]),
+                              b[1] - (ia[3]*x[0] + ia[1]*x[1] + ia[5]*x[2]),
+                              b[2] - (ia[4]*x[0] + ia[5]*x[1] + ia[2]*x[2])};
+          x[0] += (c00*rs[0] + c01*rs[1] + c02*rs[2])*id;
+          x[1] += (c01*rs[0] + c11*rs[1] + c12*rs[2])*id;
+          x[2] += (c02*rs[0] + c12*rs[1] + c22*rs[2])*id;
+        };
+        Real om[3], omk[3];
+        const Real dk[3] = {del[0] + dlc[0], del[1] + dlc[1], del[2] + dlc[2]};
+        solve(del, om);
+        solve(dk, omk);
+        for (int q = 0; q < 3; ++q) {
+          am_(m,q,k,j,i) = om[q];
+          am_(m,3+q,k,j,i) = omk[q];
+        }
+        const Real adel = sqrt(del[0]*del[0] + del[1]*del[1] + del[2]*del[2]);
+        Kokkos::atomic_add(&apc_(0), adel);
+        if (!okp) {
+          Kokkos::atomic_add(&apc_(3), adel);
+          Kokkos::atomic_add(&apc_(4), 1.0);
+        }
+        if (acd) {
+          for (int q = 0; q < 3; ++q) {
+            Real ex = dt*tv[q];
+            if (apl || apr) {ex -= dt*ta[q] - da[q];}
+            Kokkos::atomic_add(&acd_(q), dlg[q] + dlr[q]);
+            Kokkos::atomic_add(&acd_(3+q), ex);
+            Kokkos::atomic_add(&acd_(6+q), del[q]);
+          }
+          Kokkos::atomic_add(&acd_(15), fabs(dlg[2]) + fabs(dlr[2]));
+        }
+        return;
+      }
       auto kecap = [&](const Real d2, const Real d3, const Real lz) -> Real {
         if (!(akc > 0.0)) return 1.0;
         const Real ddc = uden_(m,IDN,k,j,i);
@@ -18762,11 +18946,96 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Kokkos::atomic_add(&akc_(2), (1.0 - s)*fabs(lz));
         return s;
       };
+      // amcsE-1111 implicit_am_cs_energy = rad: the deposit (d2, d3 covariant momentum;
+      // k2, k3 the stored slope's x dt) keeps its momentum; its exact kinetic energy
+      // change dKE(s) = KE(m + s d) - KE(m) is paid by E (gas units, pr <= aef (c/ch) E),
+      // the rest (if any) by e_int; s < 1 only when implicit_am_cs_kecap is named and the
+      // e_int share would exceed it.  pr / prk: the E-paid part for the state / slope
+      auto epay = [&](const Real d2, const Real d3, const Real k2, const Real k3,
+                      const Real lz, Real &pr, Real &prk) -> Real {
+        const Real ddc = uden_(m,IDN,k,j,i);
+        const Real idc = 1.0/fmax(ddc, 1.0e-300);
+        const Real p1 = uden_(m,IM1,k,j,i), p2 = uden_(m,IM2,k,j,i);
+        const Real p3 = uden_(m,IM3,k,j,i);
+        const Real q0 = CsKeMom(p1, p2, p3, c);
+        const Real q1 = CsKeMom(p1, p2 + d2, p3 + d3, c);
+        const Real qd = CsKeMom(0.0, d2, d3, c);
+        const Real aa = qd*idc, bb = (q1 - q0 - qd)*idc;
+        const Real dk1 = (q1 - q0)*idc;
+        const Real brad = aef*clch*fmax(u0_(m,M1_E,k,j,i), 0.0);
+        if (akc > 0.0) {Kokkos::atomic_add(&akc_(3), fabs(lz));}
+        Real s = 1.0;
+        if (dk1 > brad) {
+          Kokkos::atomic_add(&aed_(0), 1.0);
+          if (akc > 0.0) {
+            Real eg0 = uden_(m,IEN,k,j,i) - q0*idc;
+            if (aetg) {eg0 -= ddc*aphi_(m,k,j,i);}
+            if (amhd) {eg0 -= aem_(m,k,j,i);}
+            const Real cap = brad + akc*fmax(eg0, 0.0);
+            if (dk1 > cap) {
+              const Real sq = sqrt(fmax(bb*bb + 4.0*aa*cap, 0.0));
+              s = 0.0;
+              if (aa > 0.0) {
+                s = (bb >= 0.0) ? ((bb + sq > 0.0) ? 2.0*cap/(bb + sq) : 0.0)
+                                : (-bb + sq)/(2.0*aa);
+              }
+              s = fmin(fmax(s, 0.0), 1.0);
+              Kokkos::atomic_add(&akc_(0), 1.0);
+              Kokkos::atomic_add(&akc_(1), (dk1 - (aa*s + bb)*s)*dv);
+              Kokkos::atomic_add(&akc_(2), (1.0 - s)*fabs(lz));
+            }
+          }
+        }
+        const Real dks = (s < 1.0) ? (aa*s + bb)*s : dk1;
+        pr = fmin(dks, brad);   // dks < 0 (a decelerating deposit): all of it to E
+        prk = pr;
+        if (!(k2 == d2 && k3 == d3)) {
+          const Real qk = CsKeMom(p1, p2 + s*k2, p3 + s*k3, c);
+          prk = fmin((qk - q0)*idc, brad);
+        }
+        Kokkos::atomic_add(&aed_(1), pr*dv);
+        Kokkos::atomic_add(&aed_(2), (dks - pr)*dv);
+        Kokkos::atomic_add(&aed_(3), (dk1 - dks)*dv);
+        return s;
+      };
+      // amcsE-1111 implicit_am_cs_cons_diag: the cell state before the deposit
+      Real bm1 = 0.0, bm2 = 0.0, bm3 = 0.0, ben = 0.0, ber = 0.0, bsp = 0.0;
+      if (acd) {
+        bm1 = uh(m,IM1,k,j,i);  bm2 = uh(m,IM2,k,j,i);  bm3 = uh(m,IM3,k,j,i);
+        ben = uh(m,IEN,k,j,i);  ber = u0_(m,M1_E,k,j,i);
+        if (amv) {bsp = spn_(m,k,j,i);}
+      }
       if (!amv) {
         // L_z only (<hydro>/am_transport): along the zonal direction (-y, x, 0)
         const Real c2v = (-yy*e1[0] + xx*e1[1])/(wc*dv);
         const Real c3v = (-yy*e2[0] + xx*e2[1])/(wc*dv);
-        if (akc > 0.0) {   // hgkmom-1110: scaled deposit, the slope takes the same s
+        if (aen) {   // amcsE-1111: the momentum kept, its kinetic energy paid by E
+          const Real d2 = del[2]*c2v, d3 = del[2]*c3v;
+          const Real k2 = (del[2] + dlc[2])*c2v, k3 = (del[2] + dlc[2])*c3v;
+          Real pr, prk;
+          const Real s = epay(d2, d3, k2, k3, del[2], pr, prk);
+          uh(m,IM2,k,j,i) += s*d2;
+          uh(m,IM3,k,j,i) += s*d3;
+          {   // the larger of IEN, (c/ch) E takes pr first, the other the change it
+              // actually made: the E_tot error is <= ulp of the smaller one
+            const Real er0 = u0_(m,M1_E,k,j,i), eg0 = uh(m,IEN,k,j,i);
+            if (fabs(eg0) > fabs(clch*er0)) {
+              const Real eg1 = eg0 + pr;
+              uh(m,IEN,k,j,i) = eg1;
+              u0_(m,M1_E,k,j,i) = er0 - chcl*(eg1 - eg0);
+            } else {
+              const Real er1 = er0 - chcl*pr;
+              u0_(m,M1_E,k,j,i) = er1;
+              uh(m,IEN,k,j,i) = eg0 + clch*(er0 - er1);
+            }
+          }
+          if (t2ka) {
+            kka_(m,M1_T2_M1+1,k,j,i) += s*k2/dt;
+            kka_(m,M1_T2_M1+2,k,j,i) += s*k3/dt;
+            kka_(m,M1_T2_EN,k,j,i) += prk/dt;
+            kka_(m,M1_T2_E,k,j,i) -= chcl*prk/dt;
+          }
+        } else if (akc > 0.0) {   // hgkmom-1110: scaled deposit, the slope takes s too
           const Real s = kecap(del[2]*c2v, del[2]*c3v, del[2]);
           uh(m,IM2,k,j,i) += s*del[2]*c2v;
           uh(m,IM3,k,j,i) += s*del[2]*c3v;
@@ -18798,22 +19067,366 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         };
         Real m2, m3, sr;
         apply(del, m2, m3, sr);
-        // hgkmom-1110 implicit_am_cs_kecap: the deposit (momentum and spin) scaled by s
-        const Real s = (akc > 0.0) ? kecap(m2, m3, del[2]) : 1.0;
-        if (akc > 0.0) {m2 *= s; m3 *= s; sr *= s;}
-        uh(m,IM2,k,j,i) += m2;
-        uh(m,IM3,k,j,i) += m3;
-        spn_(m,k,j,i) += sr;
-        if (t2ka) {
-          Real dk[3] = {del[0] + dlc[0], del[1] + dlc[1], del[2] + dlc[2]};
-          apply(dk, m2, m3, sr);
+        if (aen) {   // amcsE-1111: the momentum and spin kept, the KE paid by E
+          Real m2k = m2, m3k = m3, srk = sr;
+          if (t2ka) {
+            Real dk[3] = {del[0] + dlc[0], del[1] + dlc[1], del[2] + dlc[2]};
+            apply(dk, m2k, m3k, srk);
+          }
+          Real pr, prk;
+          const Real s = epay(m2, m3, m2k, m3k, del[2], pr, prk);
+          uh(m,IM2,k,j,i) += s*m2;
+          uh(m,IM3,k,j,i) += s*m3;
+          spn_(m,k,j,i) += s*sr;
+          {   // the larger of IEN, (c/ch) E takes pr first, the other the change it
+              // actually made: the E_tot error is <= ulp of the smaller one
+            const Real er0 = u0_(m,M1_E,k,j,i), eg0 = uh(m,IEN,k,j,i);
+            if (fabs(eg0) > fabs(clch*er0)) {
+              const Real eg1 = eg0 + pr;
+              uh(m,IEN,k,j,i) = eg1;
+              u0_(m,M1_E,k,j,i) = er0 - chcl*(eg1 - eg0);
+            } else {
+              const Real er1 = er0 - chcl*pr;
+              u0_(m,M1_E,k,j,i) = er1;
+              uh(m,IEN,k,j,i) = eg0 + clch*(er0 - er1);
+            }
+          }
+          if (t2ka) {
+            kka_(m,M1_T2_M1+1,k,j,i) += s*m2k/dt;
+            kka_(m,M1_T2_M1+2,k,j,i) += s*m3k/dt;
+            ksp_(m,k,j,i) = s*srk/dt;
+            kka_(m,M1_T2_EN,k,j,i) += prk/dt;
+            kka_(m,M1_T2_E,k,j,i) -= chcl*prk/dt;
+          }
+        } else {
+          // hgkmom-1110 implicit_am_cs_kecap: the deposit (momentum and spin) scaled by s
+          const Real s = (akc > 0.0) ? kecap(m2, m3, del[2]) : 1.0;
           if (akc > 0.0) {m2 *= s; m3 *= s; sr *= s;}
-          kka_(m,M1_T2_M1+1,k,j,i) += m2/dt;
-          kka_(m,M1_T2_M1+2,k,j,i) += m3/dt;
-          ksp_(m,k,j,i) = sr/dt;
+          uh(m,IM2,k,j,i) += m2;
+          uh(m,IM3,k,j,i) += m3;
+          spn_(m,k,j,i) += sr;
+          if (t2ka) {
+            Real dk[3] = {del[0] + dlc[0], del[1] + dlc[1], del[2] + dlc[2]};
+            apply(dk, m2, m3, sr);
+            if (akc > 0.0) {m2 *= s; m3 *= s; sr *= s;}
+            kka_(m,M1_T2_M1+1,k,j,i) += m2/dt;
+            kka_(m,M1_T2_M1+2,k,j,i) += m3/dt;
+            ksp_(m,k,j,i) = sr/dt;
+          }
         }
       }
+      if (acd) {
+        // amcsE-1111 AMCS_CONS: 0-2 the exchange's L change (gas + rad + deposit), 3-5
+        // the face torque it should equal, 6-8 del minus the deposited L, 9 the deposit's
+        // E_tot change, 10 its |d e_gas|, 11 E_tot, 12-14 L of gas + rad (+ spin), 15
+        // |dL_g,z| + |dL_r,z| (all x V, rank sums)
+        Real dla[3], lgn[3], lrn[3];
+        lv(uh(m,IM1,k,j,i) - bm1, uh(m,IM2,k,j,i) - bm2, uh(m,IM3,k,j,i) - bm3, dla);
+        lv(uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i), lgn);
+        lv(u0_(m,M1_F1,k,j,i), u0_(m,M1_F2,k,j,i), u0_(m,M1_F3,k,j,i), lrn);
+        const Real dsp = amv ? (spn_(m,k,j,i) - bsp) : 0.0;
+        const Real sp = amv ? spn_(m,k,j,i) : 0.0;
+        for (int q = 0; q < 3; ++q) {
+          dla[q] += dsp*rh[q];
+          Real ex = dt*tv[q];
+          if (apl || apr) {ex -= dt*ta[q] - da[q];}
+          Kokkos::atomic_add(&acd_(q), dlg[q] + dlr[q] + dla[q]);
+          Kokkos::atomic_add(&acd_(3+q), ex);
+          Kokkos::atomic_add(&acd_(6+q), del[q] - dla[q]);
+          Kokkos::atomic_add(&acd_(12+q), lgn[q] + icc*lrn[q] + sp*rh[q]);
+        }
+        const Real deg = uh(m,IEN,k,j,i) - ben, der = u0_(m,M1_E,k,j,i) - ber;
+        Kokkos::atomic_add(&acd_(9), (deg + clch*der)*dv);
+        Kokkos::atomic_add(&acd_(10), fabs(deg)*dv);
+        Kokkos::atomic_add(&acd_(11), (uh(m,IEN,k,j,i) + clch*u0_(m,M1_E,k,j,i))*dv);
+        Kokkos::atomic_add(&acd_(15), fabs(dlg[2]) + fabs(dlr[2]));
+      }
     });
+    if (apt) {
+      // amvec-1111 m1_am_cs_patch: cell n takes dp = rho_n (sum_c omega_c) x r_n from
+      // the patches it belongs to (the same clipped 3x3, symmetric), so that
+      // sum_n V_n r_n x dp_n = sum_c I_c omega_c = sum_c del_c.  Its kinetic energy is
+      // paid as implicit_am_cs_energy says (rad: by E up to the frac share, the rest by
+      // e_int); a cap (implicit_am_cs_kecap) scales the deposit by s and the withheld
+      // (1 - s) L goes to amvw for the column pass.  The slope takes s dp_k (+ payment)
+      auto avw_ = amvw;
+      par_for("m1_am_cs_patch", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real x2l = msz.d_view(m).x2min, x2u = msz.d_view(m).x2max;
+        const Real x3l = msz.d_view(m).x3min, x3u = msz.d_view(m).x3max;
+        const Real xc = 0.25*M_PI*CellCenterX(j-js, nx2a, x2l, x2u);
+        const Real ec = 0.25*M_PI*CellCenterX(k-ks, nx3a, x3l, x3u);
+        const int pnl = mpn.d_view(m);
+        Real rh[3], e1[3], e2[3];
+        cubed_sphere::PanelToCart(pnl, xc, ec, rh);
+        cubed_sphere::PanelTangents(pnl, xc, ec, e1, e2);
+        const Real r = x1va(m,i);
+        const Real rcv[3] = {r*rh[0], r*rh[1], r*rh[2]};
+        const Real dv = vola(m,k,j,i);
+        const Real c = cclw(m,k,j), s2 = 1.0 - c*c;
+        Real om[3] = {0.0, 0.0, 0.0}, omk[3] = {0.0, 0.0, 0.0};
+        const int k0 = (k > ksa) ? k - 1 : k, k1 = (k < kea) ? k + 1 : k;
+        const int j0 = (j > jsa) ? j - 1 : j, j1 = (j < jea) ? j + 1 : j;
+        for (int kk = k0; kk <= k1; ++kk) {
+          for (int jj = j0; jj <= j1; ++jj) {
+            for (int q = 0; q < 3; ++q) {
+              om[q] += am_(m,q,kk,jj,i);
+              omk[q] += am_(m,3+q,kk,jj,i);
+            }
+          }
+        }
+        const Real ddc = uden_(m,IDN,k,j,i);
+        const Real rw = fmax(ddc, 0.0);
+        const Real dp[3] = {rw*(om[1]*rcv[2] - om[2]*rcv[1]),
+                            rw*(om[2]*rcv[0] - om[0]*rcv[2]),
+                            rw*(om[0]*rcv[1] - om[1]*rcv[0])};
+        const Real dpk[3] = {rw*(omk[1]*rcv[2] - omk[2]*rcv[1]),
+                             rw*(omk[2]*rcv[0] - omk[0]*rcv[2]),
+                             rw*(omk[0]*rcv[1] - omk[1]*rcv[0])};
+        // covariant tangential components (dp . rhat = 0: a rigid rotation)
+        const Real d2 = dp[0]*e1[0] + dp[1]*e1[1] + dp[2]*e1[2];
+        const Real d3 = dp[0]*e2[0] + dp[1]*e2[1] + dp[2]*e2[2];
+        const Real k2 = dpk[0]*e1[0] + dpk[1]*e1[1] + dpk[2]*e1[2];
+        const Real k3 = dpk[0]*e2[0] + dpk[1]*e2[1] + dpk[2]*e2[2];
+        // the L of a covariant tangential momentum (b2, b3) of this cell
+        auto lt = [&](const Real b2, const Real b3, Real *o) {
+          const Real a2 = (b2 - c*b3)/s2, a3 = (b3 - c*b2)/s2;
+          Real p[3];
+          for (int q = 0; q < 3; ++q) {p[q] = a2*e1[q] + a3*e2[q];}
+          o[0] = dv*(rcv[1]*p[2] - rcv[2]*p[1]);
+          o[1] = dv*(rcv[2]*p[0] - rcv[0]*p[2]);
+          o[2] = dv*(rcv[0]*p[1] - rcv[1]*p[0]);
+        };
+        const Real idc = 1.0/fmax(ddc, 1.0e-300);
+        const Real p1 = uden_(m,IM1,k,j,i), p2 = uden_(m,IM2,k,j,i);
+        const Real p3 = uden_(m,IM3,k,j,i);
+        const Real q0 = CsKeMom(p1, p2, p3, c);
+        const Real q1 = CsKeMom(p1, p2 + d2, p3 + d3, c);
+        const Real qd = CsKeMom(0.0, d2, d3, c);
+        const Real aa = qd*idc, bb = (q1 - q0 - qd)*idc;
+        const Real dk1 = (q1 - q0)*idc;
+        const Real brad = aen ? aef*clch*fmax(u0_(m,M1_E,k,j,i), 0.0) : 0.0;
+        Real s = 1.0;
+        if (dk1 > brad) {
+          if (aen) {Kokkos::atomic_add(&aed_(0), 1.0);}
+          if (akc > 0.0) {
+            Real eg0 = uden_(m,IEN,k,j,i) - q0*idc;
+            if (aetg) {eg0 -= ddc*aphi_(m,k,j,i);}
+            if (amhd) {eg0 -= aem_(m,k,j,i);}
+            const Real cap = brad + akc*fmax(eg0, 0.0);
+            if (dk1 > cap) {
+              const Real sq = sqrt(fmax(bb*bb + 4.0*aa*cap, 0.0));
+              s = 0.0;
+              if (aa > 0.0) {
+                s = (bb >= 0.0) ? ((bb + sq > 0.0) ? 2.0*cap/(bb + sq) : 0.0)
+                                : (-bb + sq)/(2.0*aa);
+              }
+              s = fmin(fmax(s, 0.0), 1.0);
+              Kokkos::atomic_add(&akc_(0), 1.0);
+              Kokkos::atomic_add(&akc_(1), (dk1 - (aa*s + bb)*s)*dv);
+              Kokkos::atomic_add(&apc_(1), 1.0);
+            }
+          }
+        }
+        const Real dks = (s < 1.0) ? (aa*s + bb)*s : dk1;
+        Real pr = 0.0, prk = 0.0;
+        if (aen) {
+          pr = fmin(dks, brad);
+          prk = pr;
+          if (!(k2 == d2 && k3 == d3)) {
+            const Real qk = CsKeMom(p1, p2 + s*k2, p3 + s*k3, c);
+            prk = fmin((qk - q0)*idc, brad);
+          }
+          Kokkos::atomic_add(&aed_(1), pr*dv);
+          Kokkos::atomic_add(&aed_(2), (dks - pr)*dv);
+          Kokkos::atomic_add(&aed_(3), (dk1 - dks)*dv);
+        }
+        Real ld[3];
+        lt(d2, d3, ld);
+        if (akc > 0.0) {Kokkos::atomic_add(&akc_(3), fabs(ld[2]));}
+        const Real eb0 = uh(m,IEN,k,j,i), rb0 = u0_(m,M1_E,k,j,i);
+        uh(m,IM2,k,j,i) += s*d2;
+        uh(m,IM3,k,j,i) += s*d3;
+        if (aen) {   // the larger of IEN, (c/ch) E takes pr first (as m1_am_cs)
+          const Real er0 = u0_(m,M1_E,k,j,i), eg0 = uh(m,IEN,k,j,i);
+          if (fabs(eg0) > fabs(clch*er0)) {
+            const Real eg1 = eg0 + pr;
+            uh(m,IEN,k,j,i) = eg1;
+            u0_(m,M1_E,k,j,i) = er0 - chcl*(eg1 - eg0);
+          } else {
+            const Real er1 = er0 - chcl*pr;
+            u0_(m,M1_E,k,j,i) = er1;
+            uh(m,IEN,k,j,i) = eg0 + clch*(er0 - er1);
+          }
+        }
+        if (t2ka) {
+          kka_(m,M1_T2_M1+1,k,j,i) += s*k2/dt;
+          kka_(m,M1_T2_M1+2,k,j,i) += s*k3/dt;
+          if (aen) {
+            kka_(m,M1_T2_EN,k,j,i) += prk/dt;
+            kka_(m,M1_T2_E,k,j,i) -= chcl*prk/dt;
+          }
+        }
+        for (int q = 0; q < 3; ++q) {avw_(m,q,k,j,i) = (1.0 - s)*ld[q];}
+        avw_(m,3,k,j,i) = s;
+        if (s < 1.0) {
+          Kokkos::atomic_add(&apc_(2), (1.0 - s)*sqrt(ld[0]*ld[0] + ld[1]*ld[1]
+                                                      + ld[2]*ld[2]));
+        }
+        if (acd) {
+          const Real deg = uh(m,IEN,k,j,i) - eb0, der = u0_(m,M1_E,k,j,i) - rb0;
+          for (int q = 0; q < 3; ++q) {
+            Kokkos::atomic_add(&acd_(q), s*ld[q]);
+            Kokkos::atomic_add(&acd_(6+q), -s*ld[q]);
+          }
+          Kokkos::atomic_add(&acd_(9), (deg + clch*der)*dv);
+          Kokkos::atomic_add(&acd_(10), fabs(deg)*dv);
+        }
+      });
+      // amvec-1111 m1_am_cs_col: the withheld L of the capped cells of a radial column
+      // (each perpendicular to the column's rhat) as a rigid rotation omega = W_perp /
+      // sum rho V r^2 of the column's uncapped cells (in-block; HG has one block in x1).
+      // Its kinetic energy (minimal for the column) is paid as above but without a cap
+      // (counted where it exceeds the e_int cap).  The slope takes the same momentum
+      const int isa = is, iea = ie;
+      par_for("m1_am_cs_col", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+      KOKKOS_LAMBDA(const int m, const int k, const int j) {
+        const Real x2l = msz.d_view(m).x2min, x2u = msz.d_view(m).x2max;
+        const Real x3l = msz.d_view(m).x3min, x3u = msz.d_view(m).x3max;
+        const Real xc = 0.25*M_PI*CellCenterX(j-js, nx2a, x2l, x2u);
+        const Real ec = 0.25*M_PI*CellCenterX(k-ks, nx3a, x3l, x3u);
+        const int pnl = mpn.d_view(m);
+        Real rh[3], e1[3], e2[3];
+        cubed_sphere::PanelToCart(pnl, xc, ec, rh);
+        cubed_sphere::PanelTangents(pnl, xc, ec, e1, e2);
+        const Real c = cclw(m,k,j), s2 = 1.0 - c*c;
+        Real wv[3] = {0.0, 0.0, 0.0}, isum = 0.0;
+        bool any = false;
+        for (int i = isa; i <= iea; ++i) {
+          if (avw_(m,3,k,j,i) < 1.0) {
+            any = true;
+            for (int q = 0; q < 3; ++q) {wv[q] += avw_(m,q,k,j,i);}
+          } else {
+            const Real r = x1va(m,i);
+            isum += fmax(uden_(m,IDN,k,j,i), 0.0)*vola(m,k,j,i)*r*r;
+          }
+        }
+        Real om[3] = {0.0, 0.0, 0.0};
+        if (any) {
+          const Real wr = wv[0]*rh[0] + wv[1]*rh[1] + wv[2]*rh[2];
+          if (isum > 0.0) {
+            for (int q = 0; q < 3; ++q) {om[q] = (wv[q] - wr*rh[q])/isum;}
+            Kokkos::atomic_add(&apc_(3), fabs(wr));
+          } else {
+            Kokkos::atomic_add(&apc_(3), sqrt(wv[0]*wv[0] + wv[1]*wv[1] + wv[2]*wv[2]));
+            any = false;
+          }
+        }
+        for (int i = isa; i <= iea; ++i) {
+          const Real r = x1va(m,i);
+          const Real rcv[3] = {r*rh[0], r*rh[1], r*rh[2]};
+          const Real dv = vola(m,k,j,i);
+          auto lt = [&](const Real b1, const Real b2, const Real b3, Real *o) {
+            const Real a2 = (b2 - c*b3)/s2, a3 = (b3 - c*b2)/s2;
+            Real p[3];
+            for (int q = 0; q < 3; ++q) {p[q] = b1*rh[q] + a2*e1[q] + a3*e2[q];}
+            o[0] = dv*(rcv[1]*p[2] - rcv[2]*p[1]);
+            o[1] = dv*(rcv[2]*p[0] - rcv[0]*p[2]);
+            o[2] = dv*(rcv[0]*p[1] - rcv[1]*p[0]);
+          };
+          if (any && avw_(m,3,k,j,i) >= 1.0) {
+            const Real ddc = uden_(m,IDN,k,j,i);
+            const Real rw = fmax(ddc, 0.0);
+            const Real dp[3] = {rw*(om[1]*rcv[2] - om[2]*rcv[1]),
+                                rw*(om[2]*rcv[0] - om[0]*rcv[2]),
+                                rw*(om[0]*rcv[1] - om[1]*rcv[0])};
+            const Real d2 = dp[0]*e1[0] + dp[1]*e1[1] + dp[2]*e1[2];
+            const Real d3 = dp[0]*e2[0] + dp[1]*e2[1] + dp[2]*e2[2];
+            const Real idc = 1.0/fmax(ddc, 1.0e-300);
+            const Real p1 = uden_(m,IM1,k,j,i), p2 = uden_(m,IM2,k,j,i);
+            const Real p3 = uden_(m,IM3,k,j,i);
+            const Real q0 = CsKeMom(p1, p2, p3, c);
+            const Real dk1 = (CsKeMom(p1, p2 + d2, p3 + d3, c) - q0)*idc;
+            const Real brad = aen ? aef*clch*fmax(u0_(m,M1_E,k,j,i), 0.0) : 0.0;
+            const Real pr = aen ? fmin(dk1, brad) : 0.0;
+            if (akc > 0.0) {
+              Real eg0 = uden_(m,IEN,k,j,i) - q0*idc;
+              if (aetg) {eg0 -= ddc*aphi_(m,k,j,i);}
+              if (amhd) {eg0 -= aem_(m,k,j,i);}
+              if (dk1 - pr > akc*fmax(eg0, 0.0)) {Kokkos::atomic_add(&apc_(7), 1.0);}
+            }
+            Kokkos::atomic_add(&apc_(5), pr*dv);
+            Kokkos::atomic_add(&apc_(6), (dk1 - pr)*dv);
+            const Real eb0 = uh(m,IEN,k,j,i), rb0 = u0_(m,M1_E,k,j,i);
+            uh(m,IM2,k,j,i) += d2;
+            uh(m,IM3,k,j,i) += d3;
+            if (aen) {
+              const Real er0 = u0_(m,M1_E,k,j,i), eg0 = uh(m,IEN,k,j,i);
+              if (fabs(eg0) > fabs(clch*er0)) {
+                const Real eg1 = eg0 + pr;
+                uh(m,IEN,k,j,i) = eg1;
+                u0_(m,M1_E,k,j,i) = er0 - chcl*(eg1 - eg0);
+              } else {
+                const Real er1 = er0 - chcl*pr;
+                u0_(m,M1_E,k,j,i) = er1;
+                uh(m,IEN,k,j,i) = eg0 + clch*(er0 - er1);
+              }
+            }
+            if (t2ka) {
+              kka_(m,M1_T2_M1+1,k,j,i) += d2/dt;
+              kka_(m,M1_T2_M1+2,k,j,i) += d3/dt;
+              if (aen) {
+                kka_(m,M1_T2_EN,k,j,i) += pr/dt;
+                kka_(m,M1_T2_E,k,j,i) -= chcl*pr/dt;
+              }
+            }
+            if (acd) {
+              Real ld[3];
+              lt(0.0, d2, d3, ld);
+              const Real deg = uh(m,IEN,k,j,i) - eb0, der = u0_(m,M1_E,k,j,i) - rb0;
+              for (int q = 0; q < 3; ++q) {
+                Kokkos::atomic_add(&acd_(q), ld[q]);
+                Kokkos::atomic_add(&acd_(6+q), -ld[q]);
+              }
+              Kokkos::atomic_add(&acd_(9), (deg + clch*der)*dv);
+              Kokkos::atomic_add(&acd_(10), fabs(deg)*dv);
+            }
+          }
+          if (acd) {
+            Real lgn[3], lrn[3];
+            lt(uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i), lgn);
+            lt(u0_(m,M1_F1,k,j,i), u0_(m,M1_F2,k,j,i), u0_(m,M1_F3,k,j,i), lrn);
+            for (int q = 0; q < 3; ++q) {
+              Kokkos::atomic_add(&acd_(12+q), lgn[q] + icc*lrn[q]);
+            }
+            Kokkos::atomic_add(&acd_(11), (uh(m,IEN,k,j,i) + clch*u0_(m,M1_E,k,j,i))*dv);
+          }
+        }
+      });
+    }
+    if (acd) {
+      static int ncd = 0;
+      if (ncd < impl_am_cons_diag) {
+        auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amcd_d);
+        Real b[16], g[16];
+        for (int q = 0; q < 16; ++q) {b[q] = h(q); g[q] = b[q];}
+#if MPI_PARALLEL_ENABLED
+        MPI_Allreduce(b, g, 16, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+        if (global_variable::my_rank == 0) {
+          std::ostringstream os;
+          os << std::scientific << std::setprecision(6) << "AMCS_CONS solve " << ncd
+             << " dL_exch " << g[0] << " " << g[1] << " " << g[2]
+             << " dtT " << g[3] << " " << g[4] << " " << g[5]
+             << " resid " << g[0] - g[3] << " " << g[1] - g[4] << " " << g[2] - g[5]
+             << " withheld " << g[6] << " " << g[7] << " " << g[8]
+             << " scale_z " << g[15] << " dEtot_dep " << g[9] << " |de_gas| " << g[10]
+             << " Etot " << g[11] << " L " << g[12] << " " << g[13] << " " << g[14];
+          std::cout << os.str() << std::endl;
+        }
+      }
+      ncd += 1;
+    }
     if (amdg) {
       static int nprint = 0;
       if (nprint < impl_am_cs_diag) {
