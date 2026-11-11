@@ -2510,6 +2510,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_hr_ws_x1 = pin->GetOrAddReal("rad_m1","implicit_hr_wscale_x1",1.0);
     impl_hr_ws_lat = pin->GetOrAddReal("rad_m1","implicit_hr_wscale_lat",1.0);
   }
+  // vgdhr-1110 (rad_m1.hpp): implicit_thin_gface_shell, implicit_hr_fsc
+  impl_tgsh = pin->DoesParameterExist("rad_m1","implicit_thin_gface_shell") &&
+              pin->GetBoolean("rad_m1","implicit_thin_gface_shell");
+  impl_hrfsc = pin->DoesParameterExist("rad_m1","implicit_hr_fsc") &&
+               pin->GetBoolean("rad_m1","implicit_hr_fsc");
   // rc18-1110 implicit_hr_cmem (opt-in, read only when named, default false = bitwise):
   // a SEPARATE central-branch memory.  The face arrays f0x1..3 (and with them f0x*n,
   // the hesdirk2 copies t2f*, the stage slopes kk / increments t2i, the restart file)
@@ -14864,6 +14869,33 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       auto cx1vv = pmy_pack->pcoord->x1v;
       const bool hcpon = impl_hcplm;   // hrhc-1110
       auto hcp_ = hcpw;
+      // vgdhr-1110 implicit_thin_gface_shell: the shell means of the cell g (vet_gd)
+      const bool tgsh = impl_tgsh && (tmode != M1_THSW_NONE) && (hsrc == 2);
+      const bool hfsc = impl_hrfsc && (tmode != M1_THSW_NONE) && (hsrc == 2);
+      if (tgsh) {
+        const int c1g = indcs.nx1 + 2*indcs.ng;
+        if (impl_gsh.extent_int(0) != c1g) {Kokkos::realloc(impl_gsh, c1g);}
+        std::vector<Real> gsm;
+        repro::ShellSums("m1_tgsh", 2, c1g, nmb1 + 1, ks, ke, js, je, is, ie,
+                         KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
+                                       const int i) {
+          if (hgh_(m,0,k,j,i) < 0.0) {return 0.0;}
+          if (q == 1) {return 1.0;}
+          Real hp, hm, fb, hd, jo;
+          M1HrCell(hsrc, iw_, hvc_, hgh_, m, k, j, i, 0, iw_(m,M1_IW_RF0,k,j,i), hp, hm,
+                   fb);
+          if (hcfb >= 0) {fb = hgh_(m,hcfb,k,j,i);}
+          return M1ThinCellGd(hgh_, m, k, j, i, 0, fb, tfs, tqp, iw_(m,M1_IW_EN,k,j,i),
+                              hd, jo);
+        }, gsm);
+        auto gh = Kokkos::create_mirror_view(impl_gsh);
+        for (int i = 0; i < c1g; ++i) {
+          const Real cnt = gsm[static_cast<size_t>(c1g) + i];
+          gh(i) = (cnt > 0.0) ? gsm[i]/cnt : -1.0;
+        }
+        Kokkos::deep_copy(impl_gsh, gh);
+      }
+      auto gsh_ = impl_gsh;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (hcpon) {hcp_(m,0,k,j,i) = 0.0; hcp_(m,1,k,j,i) = 0.0;}
@@ -14946,6 +14978,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             fbl = hgh_(m,hcfb,k,j,im);
             fbr = hgh_(m,hcfb,k,j,ip);
           }
+          const Real hnl = hpl + hml, hnr = hpr + hmr;   // vgdhr-1110 fsc
           if (hxs) {   // sptests-1011 P2
             M1HrExcess(iw_, hgh_, m, k, j, im, ch*dt/dx, xcfl, hpl, hml);
             M1HrExcess(iw_, hgh_, m, k, j, ip, ch*dt/dx, xcfl, hpr, hmr);
@@ -15012,6 +15045,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               gl3 = 0.5*(gl2 + gr2) + ((tgf == 2) ? SQR(gr2 - gl2)/tgfd : 0.0);
               gr3 = gl3;
             }
+            if (tgsh && gsh_(im) >= 0.0 && gsh_(ip) >= 0.0) {   // vgdhr-1110
+              const Real gsl = gsh_(im), gsr = gsh_(ip);
+              if (tgf != 0) {
+                gl3 = 0.5*(gsl + gsr) + ((tgf == 2) ? SQR(gsr - gsl)/tgfd : 0.0);
+                gr3 = gl3;
+              } else {
+                gl3 = gsl;
+                gr3 = gsr;
+              }
+            }
             M1ThinFace(tmode, tcorr, hpl, hmr, gl3, gr3, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr,
                        (tcorr != M1_THCR_HCS) ? 1.0
@@ -15026,6 +15069,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               alb = 0.0;
               hlb = 0.5*wf*ch*fmax(hpl - hml, 0.0);
               hrb = -0.5*wf*ch*fmax(hpr - hmr, 0.0);
+            }
+            if (hfsc && alb > 0.0 && alb < 1.0) {   // vgdhr-1110 implicit_hr_fsc
+              const Real wb = alb, cw = (1.0 - wb)*wb*0.5*ch;
+              alb = 1.0 - SQR(1.0 - wb);
+              hlb += cw*hnl;
+              hrb += cw*hnr;
             }
             if (hws) {alb *= hwsx; hlb *= hwsx; hrb *= hwsx; dgt *= hwsx;}
             ifw_(m,M1_IFW_AL,k,j,i) = alb;

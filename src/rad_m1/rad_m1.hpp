@@ -1013,6 +1013,15 @@ class RadiationM1 {
   int thsw_gface = 0;
   Real thsw_gfd = 0.1;
   Real impl_hr_ws_x1 = 1.0, impl_hr_ws_lat = 1.0;
+  // vgdhr-1110 (opt-in, read only when named, default false = bitwise):
+  // implicit_thin_gface_shell: the x1-face thinness g of the thin switch from the SHELL
+  // MEANS of the cell g (repro::ShellSums, layout invariant) of the two shells instead of
+  // the two cells (then the gface mean / jump rule on the two shell values);
+  // implicit_hr_fsc: inside the blend band the central branch takes the formal-solution
+  // net flux c (h_L E_L + h_R E_R)/2, h = r+ + r- (M1HrCell), with weight w: F = w F_hr +
+  // (1 - w) [w F_fs + (1 - w) F_central].  vet_gd (src 2) on the x1 faces only.
+  bool impl_tgsh = false, impl_hrfsc = false;
+  DvceArray1D<Real> impl_gsh;
   bool impl_hr_cmem = false;   // rc18-1110 implicit_hr_cmem: separate F_c memory
   bool impl_aphll_mem = false;   // aphll-time-1110 implicit_aphll_mem (cmem + restage)
   bool impl_aphll_fci = false;   // aphll-time-1110 implicit_aphll_fcimp (F_c implicit)
