@@ -808,10 +808,11 @@
             if (nprt < 4.0) {
               Kokkos::printf("<rad_m1> CS2DIAG cyc %d ts %d r %.6e rho %.4e | x1(transport) "
                              "%.4e F_new %.6e F_old(go1) %.6e u0F %.6e | e1-go1 %.4e drag "
-                             "gd1 %.4e dm1 %.4e dv %.4e v_old %.4e t2st %d csok %d\n",
+                             "gd1 %.4e dm1 %.4e dv %.4e v_old %.4e t2st %d csok %d wbex %d c2h %d vfx %d\n",
                              wvcy, wvts, psph ? wvx1(m,i) : 0.0, dd, x1, e1, go1,
                              u0_(m,M1_F1,k,j,i), e1 - go1, gd1, dm1, dm1*idg,
-                             uh(m,IM1,k,j,i)*idg, t2st ? 1 : 0, csok ? 1 : 0);
+                             uh(m,IM1,k,j,i)*idg, t2st ? 1 : 0, csok ? 1 : 0, wbex ? 1 : 0,
+                             c2h ? 1 : 0, vfx ? 1 : 0);
             }
           }
           if (q == 3) break;
