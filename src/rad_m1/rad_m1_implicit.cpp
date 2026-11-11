@@ -18297,7 +18297,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool c2fc = impl_physflux && impl_pf_cs2fc && !cs_geom;
   const bool c2ok = c2fc && cs2a_ok;
   // vkdiag-1111 implicit_wb_inertia = exact: not with the cs2 hll / dacap terms
-  const bool wbex = impl_wb_inex && !cs_geom && !c2h && !gcap;
+  const bool wbex = impl_wb_inex && !cs_geom && !gcap;
   auto cfc1_ = f0x1, cfc2_ = f0x2, cfc3_ = f0x3;
   auto c2a_ = cs2a;
   if (impl_hr_cmem && !(impl_physflux && !impl_pf_fa)) {   // physflux: wb reads F_c

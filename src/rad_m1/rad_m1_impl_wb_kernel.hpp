@@ -681,13 +681,16 @@
           dm1 = x1 - (e1 - go1)*icc;
           dm2 = tq ? (x2 - (e2 - go2)*icc) : 0.0;
           dm3 = (tq && thrd) ? (x3 - (e3 - go3)*icc) : 0.0;
-#if !(defined(M1_C2CR) && M1_C2CR) && !M1_CSW
+#if !M1_CSW
           if (wbex) {
             // vkdiag-1111 implicit_wb_inertia = exact (rad_m1.hpp): the cell F the budget
             // charges is formed at the POST-kick velocity w = (u + dm)/rho, q = F_m +
             // es (I + D) w, so dm = x - (q - go) icc is linear in dm:
-            // [I + (icc es/rho)(I + D)] dm = x - icc (F_m + es (I + D) w0 - go), the gas
-            // responding with its inertia plus the radiation's (E + P)/c^2 at once.
+            // [I + (icc es/rho) om (I + D)] dm = x - icc (F_m + om es (I + D) w0
+            // + (1 - om) A^old - go), the gas responding with its inertia plus the
+            // radiation's (E + P)/c^2 at once.  om, A^old: implicit_cs2_hll = drag
+            // (the AP-HLL part 1 - om of dA stays with the radiation; om = 1 without it).
+            // cs2_clip = rad: e = the pre-limit cell flux, the same linear form.
             const Real chx = iw_(m,M1_IW_WCHI,k,j,i);
             const Real nx1 = iw_(m,M1_IW_N1,k,j,i), nx2 = iw_(m,M1_IW_N2,k,j,i);
             const Real nx3 = iw_(m,M1_IW_N3,k,j,i);
@@ -717,10 +720,12 @@
             Real rh[3] = {0.0, 0.0, 0.0};
             const Real sc = icc*esx*idg;
             for (int c = 0; c < na; ++c) {
+              const Real om = c2h ? iw_(m,c2a+6+c,k,j,i) : 1.0;
+              const Real ao = c2h ? iw_(m,c2a+c,k,j,i) : 0.0;
               Real bw = 0.0;
               for (int kk = 0; kk < 3; ++kk) {bw += b[c][kk]*w0[kk];}
-              rh[c] = xv[c] - icc*(fm[c] + esx*bw - gv[c]);
-              for (int kk = 0; kk < na; ++kk) {am[c][kk] += sc*b[c][kk];}
+              rh[c] = xv[c] - icc*(fm[c] + om*esx*bw + (1.0 - om)*ao - gv[c]);
+              for (int kk = 0; kk < na; ++kk) {am[c][kk] += om*sc*b[c][kk];}
             }
             // Gauss elimination on the na x na block (diagonally dominant: I + PSD)
             for (int p = 0; p < na; ++p) {
@@ -770,7 +775,7 @@
             }
           }
 #else
-          if (c2h) {
+          if (c2h && !wbex) {
             // consfix3 (implicit_cs2_hll = drag): the AP-HLL part of dA stays with the
             // radiation (no face equation there): the gas pays om_bar dA, not dA
             dm1 += (1.0 - iw_(m,c2a+6,k,j,i))
