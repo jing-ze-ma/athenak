@@ -18360,6 +18360,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         const Real deg = uh(m,IEN,k,j,i) - ben, der = u0_(m,M1_E,k,j,i) - ber;
         Kokkos::atomic_add(&acd_(9), (deg + clch*der)*dv);
+        if (fabs(deg + clch*der) > 1.0e-6*fabs(deg) && fabs(deg) > 0.0) {printf("AMCSDBG m %d k %d j %d i %d ben %.17e deg %.17e ber %.17e der %.17e clch %.17e\n", m, k, j, i, ben, deg, ber, der, clch);}
         Kokkos::atomic_add(&acd_(10), fabs(deg)*dv);
         Kokkos::atomic_add(&acd_(11), (uh(m,IEN,k,j,i) + clch*u0_(m,M1_E,k,j,i))*dv);
         Kokkos::atomic_add(&acd_(15), fabs(dlg[2]) + fabs(dlr[2]));
