@@ -11622,11 +11622,11 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
   const bool tq = trans && dbg_gas_force_trans;
   auto iw_ = iw;
   auto u0_ = u0;
-  // vkdiag-1111 implicit_physflux_aold = fa: the applied step-start faces (rad_m1.hpp)
-  const bool pao = impl_pf_aold && (fax1n.extent_int(0) > 0);
-  auto f0n_ = pao ? fax1n : f0x1n;
-  auto f2n_ = (pao && fax2n.extent_int(0) > 0) ? fax2n : f0x2n;
-  auto f3n_ = (pao && fax3n.extent_int(0) > 0) ? fax3n : f0x3n;
+  // vkdiag-1111 implicit_physflux_aold = fa: A^old = a E^old, as under cmd (rad_m1.hpp)
+  const bool pao = impl_pf_aold;
+  auto f0n_ = f0x1n;
+  auto f2n_ = f0x2n;
+  auto f3n_ = f0x3n;
   auto t2i_ = t2inc;
   auto ci_ = csinc;
   auto q1_ = cs2f1;
@@ -11719,7 +11719,7 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
     Real g1 = u0_(m,M1_F1,k,j,i), g2 = u0_(m,M1_F2,k,j,i), g3 = u0_(m,M1_F3,k,j,i);
     // aphll-time-1110: under the F_c memory the write-back's F^old is the face form (the
     // cmem branch of rad_m1_impl_wb_kernel.hpp), so A^old = a E^old here as well
-    if (gfst || cmd) {
+    if (gfst || cmd || pao) {
       const Real eo = iw_(m,M1_IW_EN,k,j,i);
       g1 = m1 + iw_(m,M1_IW_ADV,k,j,i)*eo;
       if (trans) {
@@ -11727,7 +11727,7 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
         g3 = thrd ? (m3 + iw_(m,M1_IW_A3,k,j,i)*eo) : 0.0;
       }
     }
-    if (t2st && !cmd) {
+    if (t2st && !cmd && !pao) {
       if (csok) {
         g1 += ci_(m,0,k,j,i);
         g2 += ci_(m,1,k,j,i);

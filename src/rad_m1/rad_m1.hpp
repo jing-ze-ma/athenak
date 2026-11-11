@@ -1139,10 +1139,10 @@ class RadiationM1 {
   bool impl_pf_fold = false;
   // vkdiag-1111 <rad_m1>/implicit_physflux_aold = fa (read only when named; needs
   // physflux_mom = fa; default fc = bitwise): A^old of implicit_cs2_hll = drag
-  // (ImplicitCs2DeltaA) = stored cell F - the face mean of the step-start APPLIED fluxes
-  // fax*n, the faces that cell F is formed from under mom = fa.  With the F_c means
-  // A^old carried mean(fax*n - F_c^n) (~1 %, odd-even in thin shells), which the
-  // (1 - om) dA term charged to the gas: the R136 near-vacuum kicks
+  // (ImplicitCs2DeltaA) = a E^old, as with cmem without physflux, instead of stored cell
+  // F - mean F_c^n: under mom = fa the stored F is formed from fax, so that difference
+  // carried mean(fax - F_c) (~1 %, odd-even in thin shells), which the (1 - om) dA term
+  // charged to the gas: the R136 near-vacuum kicks
   bool impl_pf_aold = false;
   DvceArray4D<Real> fax1n, fax2n, fax3n;
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
