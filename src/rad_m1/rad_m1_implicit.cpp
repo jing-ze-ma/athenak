@@ -2660,6 +2660,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 + "' is not a choice (fc | fa)");
     }
   }
+  if (impl_pf_fa && pin->DoesParameterExist("rad_m1","implicit_physflux_zold")) {
+    const std::string pz = pin->GetString("rad_m1","implicit_physflux_zold");
+    if (pz.compare("fc") == 0) {
+      impl_pf_zfc = true;
+    } else if (pz.compare("fa") != 0) {
+      ImplFatal("<rad_m1>/implicit_physflux_zold = '" + pz
+                + "' is not a choice (fa | fc)");
+    }
+  }
   // aphll-time-1110 implicit_aphll_mem (opt-in, read only when named, default false =
   // bitwise): second order in time for the berthon | blend AP-HLL faces.  Two lags made
   // them first order (tests at /viper/ptmp2/jinma/aphll_1110): (1) the lagged reduced
@@ -3932,7 +3941,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // vgdhr-1110 implicit_hr_cmem_gas_fa
     impl_cmgfa = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_gas_fa") &&
                  pin->GetBoolean("rad_m1","implicit_hr_cmem_gas_fa");
-    if (impl_pf_fa) {impl_cmgfa = true;}   // physflux-1111 mom = fa
+    if (impl_pf_fa && !impl_pf_zfc) {impl_cmgfa = true;}   // physflux-1111 mom = fa
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_hr_cmem = true: separate central-branch face "
                 << "memory F_c (applied flux in fax*)" << std::endl;
