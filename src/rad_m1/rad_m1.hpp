@@ -1144,6 +1144,14 @@ class RadiationM1 {
   // carried mean(fax - F_c) (~1 %, odd-even in thin shells), which the (1 - om) dA term
   // charged to the gas: the R136 near-vacuum kicks
   bool impl_pf_aold = false;
+  // vkdiag-1111 <rad_m1>/implicit_physflux_zold = fc (read only when named; needs
+  // physflux_mom = fa; default fa = bitwise): Z_f's old face flux = F_c^n (f0x*n), i.e.
+  // mom = fa without forcing implicit_hr_cmem_gas_fa.  The conservative2 gas share at
+  // an AP-HLL face (om = 1 - al) is then x(Z_f) + (go - F_m' - A^old) icc with A^old =
+  // stored F - mean F_c^n: both old fluxes F_c^n, so the gas no longer pays
+  // mean(F_c^n - fax*n) (the R136 near-vacuum kicks at al = 1); at om = 1 Z_f does not
+  // read the old flux (linear waves unchanged)
+  bool impl_pf_zfc = false;
   DvceArray4D<Real> fax1n, fax2n, fax3n;
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
   // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a
