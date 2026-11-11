@@ -1022,6 +1022,10 @@ class RadiationM1 {
   // (1 - w) [w F_fs + (1 - w) F_central].  x1 faces only; gface_shell: vet_gd (src 2),
   // fsc: vet_gd or vet_sc (src 1, the Cartesian / sp vet_sc rays).
   bool impl_tgsh = false, impl_hrfsc = false;
+  // vgdgw-1110 diagnostic implicit_thin_gw_dump: the x1-face g_L, g_R (as fed to
+  // M1ThinFace) and the weight AL of the last thin-switch face build (output m1_gw)
+  bool impl_gwd = false;
+  DvceArray5D<Real> gwd;
   DvceArray1D<Real> impl_gsh;
   bool impl_hr_cmem = false;   // rc18-1110 implicit_hr_cmem: separate F_c memory
   bool impl_aphll_mem = false;   // aphll-time-1110 implicit_aphll_mem (cmem + restage)

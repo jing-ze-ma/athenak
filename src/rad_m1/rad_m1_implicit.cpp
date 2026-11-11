@@ -2515,6 +2515,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               pin->GetBoolean("rad_m1","implicit_thin_gface_shell");
   impl_hrfsc = pin->DoesParameterExist("rad_m1","implicit_hr_fsc") &&
                pin->GetBoolean("rad_m1","implicit_hr_fsc");
+  impl_gwd = pin->DoesParameterExist("rad_m1","implicit_thin_gw_dump") &&
+             pin->GetBoolean("rad_m1","implicit_thin_gw_dump");   // vgdgw-1110
   // rc18-1110 implicit_hr_cmem (opt-in, read only when named, default false = bitwise):
   // a SEPARATE central-branch memory.  The face arrays f0x1..3 (and with them f0x*n,
   // the hesdirk2 copies t2f*, the stage slopes kk / increments t2i, the restart file)
@@ -14896,6 +14898,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Kokkos::deep_copy(impl_gsh, gh);
       }
       auto gsh_ = impl_gsh;
+      const bool gwon = impl_gwd && (tmode != M1_THSW_NONE);   // vgdgw-1110
+      if (gwon && gwd.extent_int(0) != nmb1 + 1) {
+        Kokkos::realloc(gwd, nmb1 + 1, 3, iw.extent_int(2), iw.extent_int(3),
+                        iw.extent_int(4));
+      }
+      auto gwd_ = gwd;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (hcpon) {hcp_(m,0,k,j,i) = 0.0; hcp_(m,1,k,j,i) = 0.0;}
@@ -15064,6 +15072,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                      1.0 - hvc_(m,M1_VET_EPS,k,j,ip))),
                        th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt, hwl, hwr,
                        ch*dt/dx, bdtc, hcpon ? &hcp_(m,0,k,j,i) : nullptr);
+            if (gwon) {gwd_(m,0,k,j,i) = gl3; gwd_(m,1,k,j,i) = gr3; gwd_(m,2,k,j,i) = alb;}
             if (hfci) {   // hr2prod-1110 implicit_hr_fcimp: dissipation form
               const Real wf = alb;
               alb = 0.0;
