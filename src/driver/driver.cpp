@@ -737,8 +737,36 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // mhdfix-1025 Ebnd (energy-budget diagnostic; no-op unless a pgen turned it on)
       if (pm1 != nullptr) {pm1->EbndStart();}
       const bool nohyd = (pm1 != nullptr) && pm1->dbg_hydro_off && m1mr;
+      // raycheap2-1109 DIAGNOSTIC <rad_m1>/dbg_hydro_skip_t2 (read only when named): on
+      // the hesdirk2 path the hydro stages do only their register arithmetic with a zero
+      // flux divergence (stage 1: u1 = u0; stage 2: u0 = gam0 u0 + gam1 u1), so the gas
+      // moves only through the radiation exchange of the stage solves (R alone)
+      const bool nohyd2 = (pm1 != nullptr) && pm1->dbg_hydro_skip_t2 && !m1mr &&
+                          (pmesh->pmb_pack->phydro != nullptr);
       auto hydro_stage = [&](int stage) {
         if (nohyd) return;   // DIAGNOSTIC <rad_m1>/dbg_hydro_off: R alone
+        if (nohyd2) {
+          hydro::Hydro *ph = pmesh->pmb_pack->phydro;
+          if (stage == 1) {
+            Kokkos::deep_copy(DevExeSpace(), ph->u1, ph->u0);
+          } else {
+            const Real g0 = gam0[stage-1], g1 = gam1[stage-1];
+            auto u0_ = ph->u0;
+            auto u1_ = ph->u1;
+            const int nmb = static_cast<int>(u0_.extent(0));
+            const int nv = static_cast<int>(u0_.extent(1));
+            const int n3 = static_cast<int>(u0_.extent(2));
+            const int n2 = static_cast<int>(u0_.extent(3));
+            const int n1 = static_cast<int>(u0_.extent(4));
+            par_for("t2_hskip", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+            KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+              for (int n = 0; n < nv; ++n) {
+                u0_(m,n,k,j,i) = g0*u0_(m,n,k,j,i) + g1*u1_(m,n,k,j,i);
+              }
+            });
+          }
+          return;
+        }
         if (pm1 != nullptr) {   // <rad_m1>/implicit_det_trace (no-op unless named)
           pm1->DetTrace(stage == 1 ? "hyd_in1" : "hyd_in2");
         }
