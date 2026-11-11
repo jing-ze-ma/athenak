@@ -1019,7 +1019,8 @@ class RadiationM1 {
   // the two cells (then the gface mean / jump rule on the two shell values);
   // implicit_hr_fsc: inside the blend band the central branch takes the formal-solution
   // net flux c (h_L E_L + h_R E_R)/2, h = r+ + r- (M1HrCell), with weight w: F = w F_hr +
-  // (1 - w) [w F_fs + (1 - w) F_central].  vet_gd (src 2) on the x1 faces only.
+  // (1 - w) [w F_fs + (1 - w) F_central].  x1 faces only; gface_shell: vet_gd (src 2),
+  // fsc: vet_gd or vet_sc (src 1, the Cartesian / sp vet_sc rays).
   bool impl_tgsh = false, impl_hrfsc = false;
   DvceArray1D<Real> impl_gsh;
   bool impl_hr_cmem = false;   // rc18-1110 implicit_hr_cmem: separate F_c memory

@@ -14871,7 +14871,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       auto hcp_ = hcpw;
       // vgdhr-1110 implicit_thin_gface_shell: the shell means of the cell g (vet_gd)
       const bool tgsh = impl_tgsh && (tmode != M1_THSW_NONE) && (hsrc == 2);
-      const bool hfsc = impl_hrfsc && (tmode != M1_THSW_NONE) && (hsrc == 2);
+      const bool hfsc = impl_hrfsc && (tmode != M1_THSW_NONE) && (hsrc >= 1);
       if (tgsh) {
         const int c1g = indcs.nx1 + 2*indcs.ng;
         if (impl_gsh.extent_int(0) != c1g) {Kokkos::realloc(impl_gsh, c1g);}
