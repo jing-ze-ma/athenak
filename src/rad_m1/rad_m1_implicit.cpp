@@ -2607,6 +2607,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 + "' is not a choice (fc | fa)");
     }
   }
+  if (impl_pf_fa && pin->DoesParameterExist("rad_m1","implicit_physflux_fold")) {
+    const std::string pf = pin->GetString("rad_m1","implicit_physflux_fold");
+    if (pf.compare("fa") == 0) {
+      impl_pf_fold = true;
+    } else if (pf.compare("stored") != 0) {
+      ImplFatal("<rad_m1>/implicit_physflux_fold = '" + pf
+                + "' is not a choice (stored | fa)");
+    }
+  }
   // aphll-time-1110 implicit_aphll_mem (opt-in, read only when named, default false =
   // bitwise): second order in time for the berthon | blend AP-HLL faces.  Two lags made
   // them first order (tests at /viper/ptmp2/jinma/aphll_1110): (1) the lagged reduced
@@ -18292,7 +18301,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // rc18-1110 cmem: F^old of the conservative gas source = the face means of the F_c
   // memory (+ a E^n), the old flux the face kernels' Z_f were built with, so that the gas
   // takes exactly the drag on the APPLIED flux dt k F_a'/c + the transport part
-  const bool cmw = impl_hr_cmem && !impl_physflux;   // physflux-1111: F^old = u0 F
+  // vkdiag-1111 implicit_physflux_fold = fa: F^old (and the wb boundary term) from fax*n
+  const bool pfo = impl_pf_fold && (fax1n.extent_int(0) > 0) && !cs_geom;
+  const bool cmw = (impl_hr_cmem && !impl_physflux) || pfo;   // physflux: F^old = u0 F
+  auto f0n_sv = f0n_;
+  if (pfo) {
+    f0n_ = fax1n;
+    if (trans && fax2n.extent_int(0) > 0) {f2nw_ = fax2n;}
+    if (trans && thrd && fax3n.extent_int(0) > 0) {f3nw_ = fax3n;}
+  }
   // vkdiag-1111 implicit_physflux_cs2 = fc (rad_m1.hpp): the budget's F_c faces + a^n
   const bool c2fc = impl_physflux && impl_pf_cs2fc && !cs_geom;
   const bool c2ok = c2fc && cs2a_ok;
@@ -18390,6 +18407,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     });
   }
   if (c2fc) {cs2a_ok = true;}   // vkdiag-1111: a^n stored by this write-back
+  if (pfo) {f0n_ = f0n_sv;}
   // r136e-1107 implicit_wb_vkick_reject: a stage that kicked a cell beyond V is not
   // admissible (the same decision path as the admissibility test above); a BE solve is
   // counted only

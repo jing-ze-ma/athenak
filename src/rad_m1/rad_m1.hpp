@@ -1130,6 +1130,13 @@ class RadiationM1 {
   bool impl_cmgfa = false;
   bool impl_physflux = false;   // physflux-1111: F_c = the one momentum flux
   bool impl_pf_fa = false;   // physflux-1111 implicit_physflux_mom = fa
+  // vkdiag-1111 <rad_m1>/implicit_physflux_fold = fa (read only when named; needs
+  // physflux_mom = fa; default stored = bitwise): F^old of the conservative2 budget is
+  // the face mean of the step-start APPLIED fluxes fax*n + a^n E^n, the same old flux
+  // as the Z_f (x1) of that budget and the wb boundary term, instead of the stored cell
+  // F (whose AP-HLL / enthalpy part is not the fax*n mean, a ~1 % odd-even offset that
+  // the budget charged to near-vacuum gas)
+  bool impl_pf_fold = false;
   DvceArray4D<Real> fax1n, fax2n, fax3n;
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
   // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a
