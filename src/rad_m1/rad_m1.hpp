@@ -1088,6 +1088,18 @@ class RadiationM1 {
   // Z_f, the drag) -- a spurious F^old - F jump.  With the key, the first solve sets
   // fax* = f0x* (the restart face flux, the flux the gas momentum last saw) once.
   bool impl_cm_fainit = false, impl_cm_fainit_done = false;
+  // vkdiag-1111 implicit_hr_cmem_rst (opt-in, read only when named, default false): the
+  // restart file carries fax* (kM1FaxRstMagic, behind the pgen slabs; each face array
+  // as 2 cell-sized slabs: faces 0..n-1, then face n in the first cell plane), so a
+  // restart continues bitwise.  The reader restores them whenever the file has them and
+  // the run has cmem (and then skips implicit_hr_cmem_fainit).
+  bool impl_cm_rst = false;
+  int FaxRstNslab() const {
+    if (!impl_hr_cmem || !impl_cm_rst || fax1.extent_int(0) == 0) {return 0;}
+    return 2 + ((fax2.extent_int(0) > 0) ? 2 : 0) + ((fax3.extent_int(0) > 0) ? 2 : 0);
+  }
+  void FaxRstPack(DvceArray5D<Real> out, int nmb);
+  bool FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl);
   // vgdhr-1110 implicit_hr_cmem_gas_fa (opt-in, read only when named): with cmem and the
   // conservative gas source, Z_f takes the step-start APPLIED flux fax*n as its old face
   // flux instead of the F_c memory (the cmem feedback warning: off by (1-w)(F_c - F_a))
