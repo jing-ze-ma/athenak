@@ -253,6 +253,10 @@ Real hs_ad_dout_ = 0.0, hs_ad_tout_ = 0.0, hs_lsub_ = 0.0;
 int hs_ad_every_ = 1, hs_ad_cyc_ = -1;
 DvceArray1D<Real> hs_fsub_;
 DvceArray2D<Real> hs_shs_;
+// perf-1111: the enthalpy e + P(d, e) of every active cell, made by one parallel kernel
+// before the per-shell sums of HsAdaptiveUpdate (the sums read it instead of evaluating
+// the EOS in their serial (k, j) loop; the same double, the same order: bitwise)
+DvceArray4D<Real> hs_hcell_;
 std::vector<Real> hs_tap_, hs_r2o_;
 char hs_ad_file_[1024] = {0};
 // Picard counters at the previous history output (HeStarHist)
@@ -4436,6 +4440,23 @@ void HsAdaptiveUpdate(Mesh *pm) {
   auto sh = hs_shs_;
   // speedup-1109 hs_ad_dead_skip: the serial sums only when they are used
   const bool dead = hs_ad_dskip_ && pm->layout_invariant;
+  // perf-1111: h = e + P(d, e) per active cell in parallel (the EOS call was evaluated
+  // inside the serial per-shell loops below: one thread per (q, m, i) walking 4096
+  // cells, 65 ms per cycle on the R136 block); the sums read the stored double
+  {
+    const int n3 = ke - ks + 1, n2 = je - js + 1, n1 = ie - is + 1;
+    if (hs_hcell_.extent_int(0) != nmb || hs_hcell_.extent_int(1) != n3 ||
+        hs_hcell_.extent_int(2) != n2 || hs_hcell_.extent_int(3) != n1) {
+      hs_hcell_ = DvceArray4D<Real>(Kokkos::view_alloc("hs_hcell",
+                                    Kokkos::WithoutInitializing), nmb, n3, n2, n1);
+    }
+  }
+  auto hc = hs_hcell_;
+  par_for("hs_ad_h", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
+    hc(m,k-ks,j-js,i-is) = e + eos.Pressure(d, e);
+  });
   if (!dead) {
   par_for("hs_ad_shell", DevExeSpace(), is, ie+1, KOKKOS_LAMBDA(const int i) {
     Real s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0, s4 = 0.0, s5 = 0.0, s6 = 0.0, s7 = 0.0;
@@ -4446,8 +4467,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
           s1 += area1(m,k,j,i);
           if (i <= ie) {
             const Real vol = volume(m,k,j,i);
-            const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
-            const Real h = e + eos.Pressure(d, e);
+            const Real h = hc(m,k-ks,j-js,i-is);
             const Real v = w0(m,IVX,k,j,i), er = ur(m,radm1::M1_E,k,j,i);
             s2 += vol;
             s3 += vol*v;
@@ -4477,8 +4497,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
       if (i > ie) {return 0.0;}
       const Real vol = volume(m,k,j,i);
       if (q == 2) {return vol;}
-      const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
-      const Real h = e + eos.Pressure(d, e);
+      const Real h = hc(m,k-ks,j-js,i-is);
       const Real v = w0(m,IVX,k,j,i), er = ur(m,radm1::M1_E,k,j,i);
       if (q == 3) {return vol*v;}
       if (q == 4) {return vol*h;}
@@ -5479,6 +5498,7 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_fm_ = DvceArray1D<Real>();
   hs_fsub_ = DvceArray1D<Real>();
   hs_shs_ = DvceArray2D<Real>();
+  hs_hcell_ = DvceArray4D<Real>();
   hs_shp_ = DvceArray2D<Real>();
   hs_be_ = DvceArray1D<Real>();
   hs_phig_ = DvceArray1D<Real>();

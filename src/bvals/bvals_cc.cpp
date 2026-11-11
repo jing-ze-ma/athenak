@@ -95,6 +95,36 @@ static int BvCcVl() {
 }
 
 //----------------------------------------------------------------------------------------
+// perf-1111: the cubed-sphere / polar SendBuff with its functor in GLOBAL memory (CUDA:
+// Kokkos HintHeavyWeight = one stream-ordered cudaMemcpyAsync of the closure into the
+// instance's functor scratch, no host wait).  As a kernel argument the ~4 kB closure,
+// whose members the seam body's nested [&] lambdas take by address, was copied into
+// every thread's local stack (cuobjdump STACK 4208, 255 registers; ncu HG: 820 us per
+// pack vs 160 us per unpack).  The same code on the same values (bitwise).  Elsewhere
+// (HIP: the global-memory launch synchronises the stream) the kernel-argument launch.
+// Env BVALS_PACK_GLOBAL=0: the kernel-argument launch on CUDA too.
+static bool BvPackGlobal() {
+  static int v = -1;
+  if (v < 0) {
+    const char *e = std::getenv("BVALS_PACK_GLOBAL");
+    v = (e != nullptr) ? ((std::atoi(e) != 0) ? 1 : 0) : 1;
+  }
+  return v == 1;
+}
+template <class F>
+inline void BvalsTeamForSeam(const char *name, const Kokkos::TeamPolicy<> &policy,
+                             const F &functor) {
+#if defined(KOKKOS_ENABLE_CUDA)
+  if (BvPackGlobal()) {
+    Kokkos::parallel_for(name, Kokkos::Experimental::require(policy,
+                         Kokkos::Experimental::WorkItemProperty::HintHeavyWeight), functor);
+    return;
+  }
+#endif
+  BvalsTeamFor(name, policy, functor);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void MeshBoundaryValuesCC::PackAndSendCC()
 //! \brief Pack cell-centered variables into boundary buffers and send to neighbors.
 //!
@@ -180,9 +210,11 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // nvcc rejects generic (auto) extended lambdas: under CUDA the flag is a plain bool
   // (and the call sites pass true/false), the same arithmetic.
 #if defined(KOKKOS_ENABLE_CUDA)
-  auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const bool kseam_) {
+  auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const bool kseam_,
+                             const bool kwbs_) {
 #else
-  auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const auto kseam_) {
+  auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const auto kseam_,
+                             const auto kwbs_) {
 #endif
     const int lr_ = tmember.league_rank()/nsp_;
     const int sp_ = tmember.league_rank() - lr_*nsp_;
@@ -727,7 +759,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           };
           // wball-1104 wb_seam: the state of stencil cell s walked to the ghost's potential
           // (density for v = 0, total energy for v = wbsien_); see bvals.hpp
-          const bool wbsv = wbs_ && (cs_seam != 0) && !cs_coar && (v == 0 || v == wbsien_);
+          const bool wbsv = static_cast<bool>(kwbs_) && wbs_ && (cs_seam != 0) &&
+                            !cs_coar && (v == 0 || v == wbsien_);
           Real lw5[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
           int c5 = 0;
           if (wbsv) {
@@ -876,20 +909,32 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     }  // end if-neighbor-exists block
     tmember.team_barrier();
   };
-  if (use_cs || use_pole) {
-    BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  // perf-1111: the seam body is compiled once more WITHOUT the wb_seam walk (its EOS
+  // calls made the seam kernel 255 registers + a 1 kB spill stack: SendBuff 820 us vs
+  // RecvBuff 160 us on the HG cs deck); wbsv is false there anyway when wb_seam is off,
+  // so the arithmetic of every buffer value is the same (bitwise)
+  if ((use_cs || use_pole) && wbs_) {
+    BvalsTeamForSeam("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
 #if defined(KOKKOS_ENABLE_CUDA)
-      pack_(tmember, true);
+      pack_(tmember, true, true);
 #else
-      pack_(tmember, std::true_type());
+      pack_(tmember, std::true_type(), std::true_type());
+#endif
+    });
+  } else if (use_cs || use_pole) {
+    BvalsTeamForSeam("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+#if defined(KOKKOS_ENABLE_CUDA)
+      pack_(tmember, true, false);
+#else
+      pack_(tmember, std::true_type(), std::false_type());
 #endif
     });
   } else {
     BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
 #if defined(KOKKOS_ENABLE_CUDA)
-      pack_(tmember, false);
+      pack_(tmember, false, false);
 #else
-      pack_(tmember, std::false_type());
+      pack_(tmember, std::false_type(), std::false_type());
 #endif
     });
   }  // end par_for_outer
