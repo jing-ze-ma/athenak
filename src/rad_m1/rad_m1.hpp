@@ -454,6 +454,8 @@ class RadiationM1 {
   Real vet_x1_nbuild = 0.0, vet_x1_npsum = 0.0, vet_x1_ncap = 0.0;
   int vet_x1_npmax = 0;
   int vet_path = 0;          // open-od-1013: 1 = the x1 step subdivided at the row nodes
+  int vet_sc_ho = 0;         // scho-1111 vet_sc_interp: 0 bilinear, 1 bezier2, 2 mono3
+  bool vet_sc_besser = false;  // scho-1111 vet_sc_src = besser
   int vet_interp = 0;        // unify-sc-gd-1012 (#6): upwind stencil 0 lin, 1 log, 2 corner
   int vet_mirror_npass = 4;  // unify-sc-gd-1012: passes of a cavity mirrored at both x1
                              // ends (vet_bc_reflect; vet_x1_npass when named)

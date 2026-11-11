@@ -104,6 +104,7 @@
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
+#include "rad_m1/rad_m1_vetho.hpp"
 #include "rad_m1/rad_m1_vetsrc.hpp"
 #include "utils/recipe.hpp"
 
@@ -1771,6 +1772,36 @@ void RadiationM1::VetInit(ParameterInput *pin) {
       VetFatal("<rad_m1>/vet_path = '" + vp + "' is not a choice (cells | none)");
     }
   }
+  // scho-1111 (EXPLORATION, rad_m1_vetho.hpp): vet_sc_interp = bezier2 | mono3, the
+  // monotone higher-order upwind-plane interpolation of I; vet_sc_src = besser, the
+  // quadratic-Bezier source along the segment.  Read only when named (absent: bitwise);
+  // single-MeshBlock sweep (VetShortCharSweep) only, not with vet_path = cells.
+  if (pin->DoesParameterExist("rad_m1", "vet_sc_interp")) {
+    const std::string vh = pin->GetString("rad_m1", "vet_sc_interp");
+    if (vh.compare("bilinear") == 0) {
+      vet_sc_ho = 0;
+    } else if (vh.compare("bezier2") == 0) {
+      vet_sc_ho = 1;
+    } else if (vh.compare("mono3") == 0) {
+      vet_sc_ho = 2;
+    } else {
+      VetFatal("<rad_m1>/vet_sc_interp = '" + vh + "' is not a choice (bilinear | "
+               "bezier2 | mono3)");
+    }
+  }
+  if (pin->DoesParameterExist("rad_m1", "vet_sc_src")) {
+    const std::string vs = pin->GetString("rad_m1", "vet_sc_src");
+    if (vs.compare("linear") == 0) {
+      vet_sc_besser = false;
+    } else if (vs.compare("besser") == 0) {
+      vet_sc_besser = true;
+    } else {
+      VetFatal("<rad_m1>/vet_sc_src = '" + vs + "' is not a choice (linear | besser)");
+    }
+  }
+  if ((vet_sc_ho != 0 || vet_sc_besser) && vet_path != 0) {
+    VetFatal("<rad_m1>/vet_sc_interp / vet_sc_src exclude vet_path = cells");
+  }
   // unify-sc-gd-1012 (#3): vet_source = relaxed | gas, the VET source of a lagged build
   // (and of predict / rebuild unless time2_vet_source overrides it), as vet_col / vet_gd
   // (vet_col_source there).  DEFAULT gas on vet_sc (fresh and restart: its old source).
@@ -2008,6 +2039,9 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   Kokkos::realloc(vet_cell, nmb, M1_VET_NC, ncells3, ncells2, ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
+  if (mbpath && (vet_sc_ho != 0 || vet_sc_besser)) {
+    VetFatal("<rad_m1>/vet_sc_interp / vet_sc_src (scho-1111) need a single MeshBlock");
+  }
   if (mbpath) {
     VetMBInit(pin);   // the banded plane buffers live in vet_mbs
   } else {
@@ -3771,6 +3805,8 @@ void RadiationM1::VetShortCharSweep() {
   const bool x2o = vet_x2open, x3o = vet_x3open;   // bubbles-1012: vacuum x2 (x3) faces
   const int vim = vet_interp;   // unify-sc-gd-1012 (#6)
   const bool vpath = (vet_path != 0);   // open-od-1013
+  const int vho = vet_sc_ho;          // scho-1111 vet_sc_interp
+  const bool vbes = vet_sc_besser;     // scho-1111 vet_sc_src = besser
   // littests-1011: the boundary beam rays (ImplBeamInit)
   const int bmn_ = ibm_nr;
   const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];
@@ -4078,6 +4114,136 @@ void RadiationM1::VetShortCharSweep() {
             Real ex, w0, wu;
             VetSegW(dtau, ex, w0, wu);
             iv = iup_v*ex + wu*su + w0*s0;
+          }
+          if (vho != 0 || vbes) {   // scho-1111 (rad_m1_vetho.hpp; vpath excluded)
+            const Real hl = dx1/am1;
+            const int o3h = thrd ? static_cast<int>(floor(-dx1*m3/(am1*dx3))) : 0;
+            // the stencil point (dk, dj), -1..2 from the foot's lower corner (ka, ja)
+            auto hpt = [&](const int dk, const int dj, Real &iq, Real &cq, Real &sq) {
+              int qj = j - js + o2 + dj;
+              Real g = 1.0;
+              if (x2o) {
+                if (qj < 0 || qj >= nx2) {g = 0.0;}
+                qj = (qj < 0) ? 0 : ((qj >= nx2) ? (nx2 - 1) : qj);
+              } else {
+                qj = VetWrap(qj, nx2);
+              }
+              int kq = k;
+              if (thrd) {
+                int qk = k - ks + o3h + dk;
+                if (x3o) {
+                  if (qk < 0 || qk >= nx3) {g = 0.0;}
+                  qk = (qk < 0) ? 0 : ((qk >= nx3) ? (nx3 - 1) : qk);
+                } else {
+                  qk = VetWrap(qk, nx3);
+                }
+                kq = ks + qk;
+              }
+              iq = g*ip_(m,pr,rb,kq,js + qj);
+              cq = vc_(m,M1_VET_CHX,kq,js + qj,iup);
+              sq = vc_(m,M1_VET_SRC,kq,js + qj,iup);
+            };
+            int md = vim;
+            if (md == 3) {
+              const Real cq4[4] = {vc_(m,M1_VET_CHX,ka,ja,iup),
+                                   vc_(m,M1_VET_CHX,ka,jb,iup),
+                                   vc_(m,M1_VET_CHX,kb,ja,iup),
+                                   vc_(m,M1_VET_CHX,kb,jb,iup)};
+              const Real wq4[4] = {waa, wab, wba, wbb};
+              Real cmn = 1.0e300, cmx = 0.0;
+              for (int q = 0; q < 4; ++q) {
+                if (wq4[q] > 0.0) {cmn = fmin(cmn, cq4[q]); cmx = fmax(cmx, cq4[q]);}
+              }
+              md = (cmx > kVetCornerRatio*cmn) ? 2 : 1;
+            }
+            const int nk4 = thrd ? 4 : 1;
+            if (md == 2) {
+              // material edge: the per-point segment outcomes, interpolated
+              if (vho != 0) {
+                Real row[4] = {0.0, 0.0, 0.0, 0.0};
+                for (int q3 = 0; q3 < nk4; ++q3) {
+                  Real f[4];
+                  for (int q2 = 0; q2 < 4; ++q2) {
+                    Real iq, cq, sq;
+                    hpt(thrd ? (q3 - 1) : 0, q2 - 1, iq, cq, sq);
+                    f[q2] = VetSegOne(iq, sq, s0, cq, c0, hl, spl, spe);
+                  }
+                  row[q3] = VetHo1(vho, f[0], f[1], f[2], f[3], a2);
+                }
+                iv = thrd ? VetHo1(vho, row[0], row[1], row[2], row[3], a3) : row[0];
+              }
+            } else {
+              Real iuh = iup_v;
+              if (vho != 0) {
+                Real row[4] = {0.0, 0.0, 0.0, 0.0};
+                for (int q3 = 0; q3 < nk4; ++q3) {
+                  Real f[4];
+                  for (int q2 = 0; q2 < 4; ++q2) {
+                    Real cq, sq;
+                    hpt(thrd ? (q3 - 1) : 0, q2 - 1, f[q2], cq, sq);
+                  }
+                  row[q3] = VetHo1(vho, f[0], f[1], f[2], f[3], a2);
+                }
+                iuh = thrd ? VetHo1(vho, row[0], row[1], row[2], row[3], a3) : row[0];
+              }
+              Real cuh = cu, suh = su;
+              if (md == 1) {
+                const Real lc = waa*log(fmax(vc_(m,M1_VET_CHX,ka,ja,iup), 1.0e-300))
+                                + wab*log(fmax(vc_(m,M1_VET_CHX,ka,jb,iup), 1.0e-300))
+                                + wba*log(fmax(vc_(m,M1_VET_CHX,kb,ja,iup), 1.0e-300))
+                                + wbb*log(fmax(vc_(m,M1_VET_CHX,kb,jb,iup), 1.0e-300));
+                const Real ls = waa*log(fmax(vc_(m,M1_VET_SRC,ka,ja,iup), 1.0e-300))
+                                + wab*log(fmax(vc_(m,M1_VET_SRC,ka,jb,iup), 1.0e-300))
+                                + wba*log(fmax(vc_(m,M1_VET_SRC,kb,ja,iup), 1.0e-300))
+                                + wbb*log(fmax(vc_(m,M1_VET_SRC,kb,jb,iup), 1.0e-300));
+                cuh = exp(lc);
+                suh = exp(ls);
+              }
+              const int idn = up ? (i + 1) : (i - 1);
+              if (vbes && idn >= is && idn <= ie) {
+                // the downwind point: the foot mirrored onto the plane idn
+                const Real dh2 = dx1*m2/(am1*dx2);
+                const Real fd2 = floor(dh2);
+                const Real b2 = dh2 - fd2;
+                const int od2 = static_cast<int>(fd2);
+                Real b3 = 0.0;
+                int od3 = 0;
+                if (thrd) {
+                  const Real dh3 = dx1*m3/(am1*dx3);
+                  const Real fd3 = floor(dh3);
+                  b3 = dh3 - fd3;
+                  od3 = static_cast<int>(fd3);
+                }
+                Real cd = 0.0, sd = 0.0, lcd = 0.0, lsd = 0.0;
+                for (int q3 = 0; q3 < (thrd ? 2 : 1); ++q3) {
+                  for (int q2 = 0; q2 < 2; ++q2) {
+                    int qj = j - js + od2 + q2;
+                    qj = x2o ? ((qj < 0) ? 0 : ((qj >= nx2) ? (nx2 - 1) : qj))
+                             : VetWrap(qj, nx2);
+                    int kq = k;
+                    if (thrd) {
+                      int qk = k - ks + od3 + q3;
+                      qk = x3o ? ((qk < 0) ? 0 : ((qk >= nx3) ? (nx3 - 1) : qk))
+                               : VetWrap(qk, nx3);
+                      kq = ks + qk;
+                    }
+                    const Real w = (q2 ? b2 : (1.0 - b2))*(q3 ? b3 : (1.0 - b3));
+                    const Real cv = vc_(m,M1_VET_CHX,kq,js + qj,idn);
+                    const Real sv = vc_(m,M1_VET_SRC,kq,js + qj,idn);
+                    cd += w*cv;
+                    sd += w*sv;
+                    lcd += w*log(fmax(cv, 1.0e-300));
+                    lsd += w*log(fmax(sv, 1.0e-300));
+                  }
+                }
+                if (md == 1) {cd = exp(lcd); sd = exp(lsd);}
+                iv = VetSegBesser(iuh, suh, s0, sd, 0.5*(cuh + c0)*hl, 0.5*(c0 + cd)*hl);
+              } else if (vbes) {
+                iv = VetSegBesser(iuh, suh, s0, s0, 0.5*(cuh + c0)*hl, 0.0);
+              } else {
+                iv = VetSegOne(iuh, suh, s0, cuh, c0, hl, spl, spe);
+              }
+            }
           }
           if (vpath) {   // open-od-1013 vet_path = cells (VetPathStep)
             const Real sh3p = thrd ? (-dx1*m3/(am1*dx3)) : 0.0;
