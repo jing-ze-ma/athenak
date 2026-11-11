@@ -76,7 +76,8 @@ inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
 // perf-1111: the same policy with a minimum of MB resident blocks of 128 threads per SM
 // (register cap 65536/(128 MB)); the shell kernel at 255 registers runs 2 blocks per SM.
 // Register allocation only: the same instructions on the same values (bitwise).  Env
-// VGD_SHELL_MINB = 3 or 4 selects it for the default shell kernel (0: the plain policy)
+// VGD_SHELL_MINB = 3 or 4 selects it for the default shell kernel, 0 the plain policy;
+// default 4 (R136 1 A100: shell 327 -> 259 us with the symbol closure, bitwise)
 template <int MB>
 inline auto VgdLightLB(const DevExeSpace &ex, const int a, const int b) {
   return Kokkos::Experimental::require(
@@ -87,7 +88,7 @@ inline int VgdShellMinB() {
   static int v = -1;
   if (v < 0) {
     const char *e = std::getenv("VGD_SHELL_MINB");
-    v = (e != nullptr) ? std::atoi(e) : 0;
+    v = (e != nullptr) ? std::atoi(e) : 4;
     if (v != 3 && v != 4) {v = 0;}
   }
   return v;
