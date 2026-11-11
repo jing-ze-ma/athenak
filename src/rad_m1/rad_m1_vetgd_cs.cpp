@@ -2913,6 +2913,37 @@ void RadiationM1::VetGdCsHrPrep() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdSpHrHalo
+//! \brief vgdlay-1110 (sp wedge, implicit_flux_beam = halfrange with vet_gd): the
+//! lateral (and x1) ghosts of vgd_hr from the neighbour MeshBlocks, at the start of every
+//! implicit solve.  VetGdHalfRange fills the active cells only, and the face kernels read
+//! vgd_hr in the cells next to a face directly (M1HrCell; the plm-on-h stencil LL L | R RR
+//! of M1HqFace / ImplicitMusclBuild, ImplicitHcPlm): at a MeshBlock boundary those were
+//! the zero-initialised ghosts (r+ = r- = 0: a valid-looking, wrong half-range shape), so
+//! the sp result depended on the lateral MeshBlock layout (pulse_u C_128: 9.5e-3 in the
+//! shell-mean E between 8x8 and 4x4 lateral blocks; np at a fixed layout was invariant).
+//! With the exchange a block-boundary face reads its neighbour's cells, as an interior
+//! face does.  Physical-boundary ghosts are left as before (0).  The cubed sphere does
+//! this in VetGdCsHrPrep (seam quad map); a single-block wedge has no ghosts to fill.
+
+void RadiationM1::VetGdSpHrHalo() {
+  if (cs_geom || !vgd_on || !impl_beam_hr || vgd_hr.extent_int(0) == 0) {return;}
+  const int nha = vgd_hr.extent_int(1);
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (pbval_hr == nullptr) {
+    pbval_hr = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
+    pbval_hr->InitializeBuffers(nha);
+    pbval_hr->SetVectorPairs(nha, {});
+    Kokkos::realloc(vgd_hr_c, nmb1 + 1, nha, 1, 1, 1);
+  }
+  while (pbval_hr->InitRecv(nha) == TaskStatus::incomplete) {}
+  while (pbval_hr->PackAndSendCC(vgd_hr, vgd_hr_c) == TaskStatus::incomplete) {}
+  while (pbval_hr->RecvAndUnpackCC(vgd_hr, vgd_hr_c) == TaskStatus::incomplete) {}
+  while (pbval_hr->ClearSend() == TaskStatus::incomplete) {}
+  while (pbval_hr->ClearRecv() == TaskStatus::incomplete) {}
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdHrLatFit
 //! \brief vgdh-1110 vet_gd_hr_latfit = L (rad_m1.hpp): per shell i, the radial half-range
 //! ratios q = r+_r, r-_r (vgd_hr components 0, 1) are fitted by least squares with the

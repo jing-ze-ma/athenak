@@ -14196,6 +14196,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // cs-s4-1017: the cs half-range data of this solve's closure (|H|/J, seam ghosts),
   // after the build above and before the first face coefficients
   if (cs_geom && impl_beam_hr) {VetGdCsHrPrep();}
+  // vgdlay-1110: the sp wedge's vgd_hr ghosts (layout invariance; VetGdSpHrHalo)
+  if (!cs_geom && sph_geom && impl_beam_hr) {VetGdSpHrHalo();}
   TmrMark(3);
 
   // implicit_predictor = step: start the Picard loop from the previous step's implicit

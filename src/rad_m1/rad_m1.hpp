@@ -3125,6 +3125,7 @@ class RadiationM1 {
   void VetGdMmsCs();   // cs-s4-1017 (rad_m1_vetgd_cs.cpp)
   // cs-s4-1017: the cs half-range data at the start of a solve (|H|/J, seam ghosts)
   void VetGdCsHrPrep();
+  void VetGdSpHrHalo();   // vgdlay-1110: sp ghosts of vgd_hr
   MeshBoundaryValuesCC *pbval_hr = nullptr;
   DvceArray5D<Real> vgd_hr_c;
   void VetGdRealDiag();
