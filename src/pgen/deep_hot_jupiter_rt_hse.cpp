@@ -150,6 +150,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     // the switch has to be captured by value like any other host state.
     const bool bc_outer_maxwell_ = bc_outer_maxwell;
     const bool top_out_ = (dhj_top_bc != 0);   // problem/top_bc = outflow1 | outflow0
+    const bool top_ss_ = top_out_ && (dhj_top_bt == 1);   // mhd/top_bc_bt sourcesurface
     // for the metric-correct ghost kinetic energy below (cubed sphere only)
     const bool cs_bc_ = pm->use_cubed_sphere;
     auto &ccell_bc_ = pmbp->pcoord->cos_cell;
@@ -241,12 +242,31 @@ void HydrostaticEquilibrium(Mesh *pm) {
             // problem/top_bc = outflow1 | outflow0: TANGENTIAL face field zero-gradient
             // (the last active cell's faces copied into every ghost); the ghost NORMAL
             // faces follow from div B = 0 in usrboundaryx1_bfield_divb below
-            for (int i=0; i<ng; ++i) {
-              int iex = ie+i+1;
-              b0_x2f(m,k,j,iex) = b0_x2f(m,k,j,ie);
-              if (j == n2-1) {b0_x2f(m,k,j+1,iex) = b0_x2f(m,k,j+1,ie);}
-              b0_x3f(m,k,j,iex) = b0_x3f(m,k,j,ie);
-              if (k == n3-1) {b0_x3f(m,k+1,j,iex) = b0_x3f(m,k+1,j,ie);}
+            // ssbc-1111, mhd/top_bc_bt = sourcesurface: the tangential faces are ODD
+            // about the top face instead (ghost ie+1+i = -cell ie-i), so B_t = 0 on the
+            // face to second order and the field leaving the top is radial (potential-
+            // field source surface).  The face EMF the Riemann solver builds from the
+            // interior B_t and the opposite ghost B_t carries the wound flux out; B_r
+            // follows from div B = 0 as for zerograd.  Unit ratios: the face-normal
+            // projections live on the same angular faces at every r, and the
+            // r-weighting is O(dr/r) at the face.
+            if (top_ss_) {
+              for (int i=0; i<ng; ++i) {
+                const int iex = ie+i+1;
+                const int iin = ie-i;
+                b0_x2f(m,k,j,iex) = -b0_x2f(m,k,j,iin);
+                if (j == n2-1) {b0_x2f(m,k,j+1,iex) = -b0_x2f(m,k,j+1,iin);}
+                b0_x3f(m,k,j,iex) = -b0_x3f(m,k,j,iin);
+                if (k == n3-1) {b0_x3f(m,k+1,j,iex) = -b0_x3f(m,k+1,j,iin);}
+              }
+            } else {
+              for (int i=0; i<ng; ++i) {
+                int iex = ie+i+1;
+                b0_x2f(m,k,j,iex) = b0_x2f(m,k,j,ie);
+                if (j == n2-1) {b0_x2f(m,k,j+1,iex) = b0_x2f(m,k,j+1,ie);}
+                b0_x3f(m,k,j,iex) = b0_x3f(m,k,j,ie);
+                if (k == n3-1) {b0_x3f(m,k+1,j,iex) = b0_x3f(m,k+1,j,ie);}
+              }
             }
           } else if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
             for (int i=0; i<ng; ++i) {

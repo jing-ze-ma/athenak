@@ -465,6 +465,36 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         pmy_mesh_->pmb_pack->pmhd->diode_ox1 = true;
       }
     }
+    // ssbc-1111: <mhd>/top_bc_bt (see deep_hot_jupiter_rt.hpp); read only when named
+    if (pin->DoesParameterExist("mhd", "top_bc_bt")) {
+      const std::string bt = pin->GetString("mhd", "top_bc_bt");
+      if (bt == "zerograd") {
+        dhj_top_bt = 0;
+      } else if (bt == "sourcesurface") {
+        dhj_top_bt = 1;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "mhd/top_bc_bt must be zerograd or sourcesurface, not '"
+                  << bt << "'" << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      if (dhj_top_bt == 1 && (dhj_top_bc == 0 || pmy_mesh_->pmb_pack->pmhd == nullptr)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "mhd/top_bc_bt = sourcesurface needs <mhd> and "
+                  << "problem/top_bc = outflow1 or outflow0 (the hse top already has "
+                  << "odd tangential ghosts)" << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      if (dhj_top_bt == 1 && dhj_top_bc == 1) {
+        pmy_mesh_->pmb_pack->pmhd->diode_ox1_btodd = true;
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "deep_hot_jupiter_rt: mhd/top_bc_bt = " << bt
+                  << (dhj_top_bt == 1 ? " (outer-x1 ghost B_t odd: B_t = 0 on the top "
+                      "face, B_r from div B = 0; Poy_top column in the user history)"
+                      : " (outer-x1 ghost B_t zero-gradient)") << std::endl;
+      }
+    }
   }
   if (global_variable::my_rank == 0) {
     std::cout << "deep_hot_jupiter_rt: outer-x1 Maxwell-stress term in the ghost "

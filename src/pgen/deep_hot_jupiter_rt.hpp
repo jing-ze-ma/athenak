@@ -850,6 +850,12 @@ inline bool bc_outer_maxwell = true;
 //            the ghost (C32 WASP-121b smoke, topbc_1101: Mdot_top -7e11 g/s, 12x the hse
 //            inflow; -2.4e10 g/s even without the tide).
 inline int dhj_top_bc = 0;  // 0 = hse, 1 = outflow1 (ghosts + one-way face), 2 = outflow0
+// ssbc-1111: <mhd>/top_bc_bt, the TANGENTIAL face field in the outer-x1 ghosts of an
+// outflow top (problem/top_bc outflow1 | outflow0): 0 = zerograd (default, the last
+// cell's faces copied), 1 = sourcesurface (odd: ghost B_t = -mirror, so B_t = 0 on the
+// top face, B_r from div B = 0 as before; potential-field source surface).  Read only
+// when the key is named, so a run without it is bitwise and embeds the same input.
+inline int dhj_top_bt = 0;
 
 // ---- problem/rt_test_* : TEST HOOKS for the well-posed checks of the implicit
 // correlated-k solve (tests_ck_implicit/wellposed/README.md).  All default off, and off
