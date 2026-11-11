@@ -120,6 +120,27 @@ bool g_vgd_srw = false;
 bool g_vra_adv = false;
 
 namespace {
+#if defined(KOKKOS_ENABLE_CUDA)
+// perf-1111 vet_gd_body_symbol (CUDA; env VGD_BODY_SYM=0 off): the default shell kernel's
+// closure in a __device__ SYMBOL instead of a runtime buffer.  Through a runtime pointer
+// every member the body's nested [&] lambdas reference is an address "pointer + offset"
+// that nvcc computes once and keeps for the whole body: ~100 64-bit addresses, spilled to
+// a 1 kB per-thread stack (cuobjdump REG 255 STACK 1080; ncu R136: STL/LDL 20 % of the
+// stall samples, 210 MB of DRAM traffic per 360 us launch).  At a fixed symbol address
+// they are link-time constants.  The same bytes are read by the same instructions'
+// arithmetic (bitwise).
+constexpr int kVgdBodySymBytes = 8192;
+__device__ __align__(16) char g_vgd_body_sym[kVgdBodySymBytes];
+#endif
+int VgdBodySymOn() {
+  static int v = -1;
+  if (v < 0) {
+    const char *e = std::getenv("VGD_BODY_SYM");
+    v = (e != nullptr) ? std::atoi(e) : 1;
+    v = (v != 0) ? 1 : 0;
+  }
+  return v;
+}
 // env VGD_ASYNC_POLL_US (diagnostic): the async helper polls its MPI with these sleeps
 int g_vgd_apoll = 0;
 
@@ -5369,11 +5390,20 @@ void RadiationM1::VetGdSweep() {
     using VgdBodymT = decltype(bodym);
     const VgdBodyT *bdp = nullptr;
     const VgdBodymT *bmp = nullptr;
+    bool bsym = false;   // perf-1111 vet_gd_body_symbol (run_list, default kernel only)
     if (vgd_bglob) {
       if (thm) {
         bmp = VgdClosureToDevice(bodym, vgd_bbuf1);
       } else {
         bdp = VgdClosureToDevice(body, vgd_bbuf0);
+#if defined(KOKKOS_ENABLE_CUDA)
+        if (VgdBodySymOn() && !vpa_h && sizeof(VgdBodyT) <= kVgdBodySymBytes) {
+          // as VgdClosureToDevice: fenced, so no running kernel reads the symbol
+          Kokkos::fence();
+          cudaMemcpyToSymbol(g_vgd_body_sym, &body, sizeof(VgdBodyT));
+          bsym = true;
+        }
+#endif
       }
     }
     const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
@@ -5413,8 +5443,7 @@ void RadiationM1::VetGdSweep() {
             (*bp_)(m, k, j, d, i, l, true);
           });
         } else {
-          Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
-          KOKKOS_LAMBDA(const int c) {
+          auto kf_ = KOKKOS_LAMBDA(const int c) {
             int t = L_(c);
             const int d = t % n;
             t /= n;
@@ -5423,7 +5452,41 @@ void RadiationM1::VetGdSweep() {
             const int k = ks + t/nj;
             const int j = js + (t % nj);
             (*bp_)(m, k, j, d, i, l, false);
-          });
+          };
+#if defined(KOKKOS_ENABLE_CUDA)
+          if (bsym) {
+            // perf-1111 vet_gd_body_symbol: the closure at the symbol's fixed address
+            auto kfs_ = KOKKOS_LAMBDA(const int c) {
+              int t = L_(c);
+              const int d = t % n;
+              t /= n;
+              const int m = t/nkj;
+              t -= m*nkj;
+              const int k = ks + t/nj;
+              const int j = js + (t % nj);
+              (*reinterpret_cast<const VgdBodyT *>(g_vgd_body_sym))(m, k, j, d, i, l,
+                                                                      false);
+            };
+            const int mb_ = VgdShellMinB();
+            if (mb_ == 3) {
+              Kokkos::parallel_for(name, VgdLightLB<3>(vgd_cur, c0, c1), kfs_);
+            } else if (mb_ == 4) {
+              Kokkos::parallel_for(name, VgdLightLB<4>(vgd_cur, c0, c1), kfs_);
+            } else {
+              Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1), kfs_);
+            }
+            return;
+          }
+#endif
+          // perf-1111 VGD_SHELL_MINB (rad_m1_vetseg.hpp): launch bounds only (bitwise)
+          const int mb_ = VgdShellMinB();
+          if (mb_ == 3) {
+            Kokkos::parallel_for(name, VgdLightLB<3>(vgd_cur, c0, c1), kf_);
+          } else if (mb_ == 4) {
+            Kokkos::parallel_for(name, VgdLightLB<4>(vgd_cur, c0, c1), kf_);
+          } else {
+            Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1), kf_);
+          }
         }
         return;
       }

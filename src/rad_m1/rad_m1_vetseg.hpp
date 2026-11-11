@@ -73,6 +73,27 @@ inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
                                        Kokkos::Experimental::WorkItemProperty::HintLightWeight);
 }
 
+// perf-1111: the same policy with a minimum of MB resident blocks of 128 threads per SM
+// (register cap 65536/(128 MB)); the shell kernel at 255 registers runs 2 blocks per SM.
+// Register allocation only: the same instructions on the same values (bitwise).  Env
+// VGD_SHELL_MINB = 3 or 4 selects it for the default shell kernel, 0 the plain policy;
+// default 4 (R136 1 A100: shell 327 -> 259 us with the symbol closure, bitwise)
+template <int MB>
+inline auto VgdLightLB(const DevExeSpace &ex, const int a, const int b) {
+  return Kokkos::Experimental::require(
+      Kokkos::RangePolicy<Kokkos::LaunchBounds<128, MB>>(ex, a, b),
+      Kokkos::Experimental::WorkItemProperty::HintLightWeight);
+}
+inline int VgdShellMinB() {
+  static int v = -1;
+  if (v < 0) {
+    const char *e = std::getenv("VGD_SHELL_MINB");
+    v = (e != nullptr) ? std::atoi(e) : 4;
+    if (v != 3 && v != 4) {v = 0;}
+  }
+  return v;
+}
+
 // speedup-1109 vet_gd_body_global: copy a (host-side) kernel closure byte-wise into the
 // device buffer buf (grown when too small) and return its device address.  The per-shell
 // kernels then call the closure through this pointer instead of carrying it as a kernel
