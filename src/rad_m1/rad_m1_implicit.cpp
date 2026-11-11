@@ -2903,8 +2903,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                       pin->GetReal("rad_m1","implicit_hr_recon_qe_tau") : 0.0;   // vgdhr
         impl_hlim = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hlim") &&
                     pin->GetBoolean("rad_m1","implicit_hr_recon_hlim");   // vgdhr-1110
-        impl_dlim = pin->DoesParameterExist("rad_m1","implicit_hr_recon_dlim") &&
-                    pin->GetBoolean("rad_m1","implicit_hr_recon_dlim");   // spacefix-1111
+        if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_dlim")) {   // spacefix
+          const std::string dls = pin->GetString("rad_m1","implicit_hr_recon_dlim");
+          if (dls == "qw") {
+            impl_dlim = 2;
+          } else if (dls == "true" || dls == "1") {
+            impl_dlim = 1;
+          } else if (dls != "false" && dls != "0") {
+            ImplFatal("<rad_m1>/implicit_hr_recon_dlim = true | false | qw");
+          }
+        }
         if (impl_dlim && !(impl_muscl_hq && !impl_muscl_led && (vet_sc || vgd_on))) {
           ImplFatal("<rad_m1>/implicit_hr_recon_dlim needs implicit_hr_recon = plm, "
                     "implicit_hr_recon_q = h and a formal solution (vet_sc | vet_gd)");
@@ -19235,7 +19243,8 @@ void RadiationM1::ImplicitMusclBuild() {
   const Real kjx = impl_kjump;
   const Real hsmc = impl_hsm, hsme = impl_hsm_eps;   // vgdhr-1110 hsmooth
   const bool hlim = impl_hlim;   // vgdhr-1110 hlim
-  const bool dlm = impl_dlim;   // spacefix-1111 dlim
+  const bool dlm = (impl_dlim == 1);   // spacefix-1111 dlim
+  const bool dqw = (impl_dlim == 2);   // spacefix-1111 dlim = qw
   const int hjsrc = vet_sc ? 1 : ((vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0)) ? 2
                                   : (impl_hr_model ? (pmy_pack->pmesh->multi_d ? 0 : 3) : -1));
   const bool dgdj = (hjsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
@@ -19357,12 +19366,12 @@ void RadiationM1::ImplicitMusclBuild() {
       // the small transient remainder and its slope cannot push the face out of the
       // positive formal-solution value; at a moving front (q -> 0) D = H(E), the plm of
       // E itself.  No threshold, no dt.
+      auto jcl = [&](const int kk, const int jj, const int ii) {
+        if (hjsrc == 1) {return fmax(hjvc_(m,M1_VET_J,kk,jj,ii), 0.0);}
+        if (!dgdj || hjgh_(m,0,kk,jj,ii) < 0.0) {return 0.0;}
+        return fmax(hjgh_(m,M1_VGD_HRJ,kk,jj,ii), 0.0);
+      };
       if (dlm && ok && hjsrc >= 0) {
-        auto jcl = [&](const int kk, const int jj, const int ii) {
-          if (hjsrc == 1) {return fmax(hjvc_(m,M1_VET_J,kk,jj,ii), 0.0);}
-          if (!dgdj || hjgh_(m,0,kk,jj,ii) < 0.0) {return 0.0;}
-          return fmax(hjgh_(m,M1_VGD_HRJ,kk,jj,ii), 0.0);
-        };
         const Real en0 = fmax(iw_(m,M1_IW_EN,k,j,i), 0.0), jn0 = jcl(k,j,i);
         const Real rq = (fmax(en0, jn0) > 0.0) ? fmin(en0, jn0)/fmax(en0, jn0) : 1.0;
         const Real qc = rq*rq;
@@ -19542,6 +19551,29 @@ void RadiationM1::ImplicitMusclBuild() {
           beam = sfc(k-1,j,i) || sfc(k+1,j,i);
         }
         if (beam) {sg = 0.0;}
+      }
+      // spacefix-1111 implicit_hr_recon_dlim = qw: the plm correction is weighted by
+      // 1 - q_f, q = r^2 (r = min(E^n/J, J/E^n), the hc quasi-steadiness gate), q_f the
+      // larger q of the two cells of a face; the slope of cell c serves both its faces,
+      // so w = 1 - max(q_c-1, q_c, q_c+1) (in-block neighbours: E^n ghosts are not
+      // exchanged).  q -> 0 (moving front): full plm; q -> 1 (steady shadow / beam):
+      // donor + the formal-solution flux.  No threshold, no dt.
+      if (dqw && sg != 0.0 && hjsrc >= 0) {
+        auto qcl = [&](const int kk, const int jj, const int ii) {
+          const Real en = fmax(iw_(m,M1_IW_EN,kk,jj,ii), 0.0), jn = jcl(kk, jj, ii);
+          const Real r = (fmax(en, jn) > 0.0) ? fmin(en, jn)/fmax(en, jn) : 1.0;
+          return r*r;
+        };
+        Real qf = qcl(k, j, i);
+        const int c = (d == 0) ? i : ((d == 1) ? j : k);
+        const int cs = (d == 0) ? is : ((d == 1) ? js : ks);
+        const int ce = (d == 0) ? ie : ((d == 1) ? je : ke);
+        const int dk = (d == 2) ? 1 : 0, dj = (d == 1) ? 1 : 0, di = (d == 0) ? 1 : 0;
+        if (c > cs) {qf = fmax(qf, qcl(k-dk, j-dj, i-di));}
+        if (c < ce) {qf = fmax(qf, qcl(k+dk, j+dj, i+di));}
+        const Real w = fmax(1.0 - qf, 0.0);
+        sg *= w;
+        sb *= w;
       }
       iw_(m,b+M1_IM_SIG+d,k,j,i) = sg;
       if (led) {iw_(m,b+M1_IM_B+d,k,j,i) = sb;}

@@ -1026,8 +1026,11 @@ class RadiationM1 {
   // slope actually carries, D+- = h+- (E - q J) (q = r^2, r = min(E^n/J, J/E^n) of the
   // slope-centre cell: the quasi-steadiness gate of thin_corr hc), not on E: the steady
   // part q H+-(J) reaches the face through the formal solution (positive by
-  // construction), only the transient remainder is reconstructed
-  bool impl_dlim = false;
+  // construction), only the transient remainder is reconstructed.
+  // implicit_hr_recon_dlim = qw: the plm correction (sig) is weighted by 1 - q_f, q_f the
+  // larger q of the cells sharing the face (both faces of the slope cell): full plm at a
+  // moving front (q -> 0), donor + formal-solution flux where steady (q -> 1)
+  int impl_dlim = 0;   // 0 off, 1 = true (TVD on D), 2 = qw
   // vgdhr-1110 implicit_hr_recon_qe_tau = T > 0 (opt-in, read only when named; plm on h,
   // not led): a slope centred on a cell OPAQUE along d (tau_d = chi dx_d > T) is the donor
   // ratio times the E slope, h_c (E_c+1 - E_c-1) sig/4, instead of the slope of H = h E
