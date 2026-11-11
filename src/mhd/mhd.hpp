@@ -446,6 +446,10 @@ class MHD {
   // ssbc-1111 (dhj <mhd>/top_bc_bt = sourcesurface): at a diode-closed (inflow) top
   // face the mirrored right state takes B_t ODD (B_t = 0 on the face, as the ghosts)
   bool diode_ox1_btodd = false;
+  // mhdtop-1112 (dhj <mhd>/top_bc_bt = charout): at a diode-closed (inflow) top face the
+  // mirrored right state takes the tangential velocity v_t = -sgn(B_r) B_t/sqrt(rho)
+  // (incoming Alfven characteristic zero, as the ghosts)
+  bool diode_ox1_charout = false;
   // wbplm-1103 <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
   bool top_ghost_prim_copy = false;
   // ... and under MHD, the STRESS-FREE wall (dhj problem/wall_mhd_mirror = stress_free;
