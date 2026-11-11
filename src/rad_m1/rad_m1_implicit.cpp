@@ -2540,6 +2540,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // divergence.  w is unchanged (no dt, no opacity); nothing relaxes per step.
   impl_hr_cmem = pin->DoesParameterExist("rad_m1","implicit_hr_cmem") &&
                  pin->GetBoolean("rad_m1","implicit_hr_cmem");
+  // physflux-1111 implicit_physflux (opt-in, read only when named, default false =
+  // bitwise; rc18_1110/PHYSFLUX_DESIGN.md principle 1): implies implicit_hr_cmem and
+  // makes the face-equation flux F_c (f0x*) the ONE radiation momentum flux: the cell F
+  // between iterates and in the write-back, the write-back drag and the vimp drag read
+  // F_c, so the
+  // conservative gas source's old (mean F_c^n + a E^n) and new values are the same
+  // quantity.  The applied flux fax* stays the E-transport flux of the rows only.
+  impl_physflux = pin->DoesParameterExist("rad_m1","implicit_physflux") &&
+                  pin->GetBoolean("rad_m1","implicit_physflux");
+  if (impl_physflux) {impl_hr_cmem = true;}
   // aphll-time-1110 implicit_aphll_mem (opt-in, read only when named, default false =
   // bitwise): second order in time for the berthon | blend AP-HLL faces.  Two lags made
   // them first order (tests at /viper/ptmp2/jinma/aphll_1110): (1) the lagged reduced
@@ -3775,6 +3785,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // the applied flux's own ratio, which has no F^n memory at w = 1: a per-STEP map)
   if (impl_hr_cmem && !impl_beam_hr && impl_flux == M1_IFLUX_CENTRAL) {
     impl_hr_cmem = false;
+    if (impl_physflux) {
+      ImplFatal("<rad_m1>/implicit_physflux needs implicit_flux_beam = halfrange or an "
+                "AP-HLL face (it is cmem's two-flux split made physical)");
+    }
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_hr_cmem: inert without implicit_flux_beam = "
                 << "halfrange" << std::endl;
@@ -3789,6 +3803,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // the conservative gas source (Z_f) and implicit_rad_inertia take f0x* = F_c as the
     // face's old flux: exact without gas momentum exchange (static / no feedback
     // tests); with feedback the face momentum budget is off by (1 - w)(F_c^n - F_a^n)
+    if (impl_physflux && (impl_gas_src_cons || impl_rad_inertia)) {
+      ImplFatal("<rad_m1>/implicit_physflux: prototype not with implicit_gas_src = "
+                "conservative or implicit_rad_inertia (their face Z_f read fax*)");
+    }
+    if (impl_physflux && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_physflux = true: F_c is the momentum flux of the "
+                << "cell F, the drag and the gas source; fax* = E transport only"
+                << std::endl;
+    }
     if ((impl_gas_src_cons || impl_rad_inertia) && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_hr_cmem: WARNING the conservative gas source / "
                 << "rad inertia read F_c as the old face flux (TEST key with feedback)"
@@ -12151,7 +12174,7 @@ void RadiationM1::ImplicitVimpBuild() {
   auto vd_ = vet_cell;
   const bool dfull = vet_full;
   // aphll-time-1110: under the F_c memory the drag is that of the APPLIED face flux
-  const bool cmv = impl_hr_cmem;
+  const bool cmv = impl_hr_cmem && !impl_physflux;   // physflux-1111: F_c
   auto f0_ = cmv ? fax1 : f0x1;
   auto f2_ = cmv ? fax2 : f0x2;
   auto f3_ = cmv ? fax3 : f0x3;
@@ -17032,11 +17055,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (gcsf) {gz1_(m,k,j,ie+1) = gz1_(m,k,j,is);}
       });
     }
-    auto fa2w_ = cmf ? fax2 : f2_;   // rc18-1110: the applied fluxes
-    auto fa3w_ = cmf ? fax3 : f3_;
+    const bool cmc = cmf && !impl_physflux;   // physflux-1111: the cell F from F_c
+    auto fa2w_ = cmc ? fax2 : f2_;   // rc18-1110: the applied fluxes
+    auto fa3w_ = cmc ? fax3 : f3_;
+    auto fc1w_ = cmc ? fax1 : f0x1;
     par_for("m1_impl_f1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      iw_(m,M1_IW_F1,k,j,i) = 0.5*(fa1_(m,k,j,i) + fa1_(m,k,j,i+1))
+      iw_(m,M1_IW_F1,k,j,i) = 0.5*(fc1w_(m,k,j,i) + fc1w_(m,k,j,i+1))
                               + iw_(m,M1_IW_ADV,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
       if (trans) {
         Real ep = iw_(m,M1_IW_EP,k,j,i);
@@ -18072,7 +18097,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // memory (+ a E^n), the old flux the face kernels' Z_f were built with, so that the gas
   // takes exactly the drag on the APPLIED flux dt k F_a'/c + the transport part
   const bool cmw = impl_hr_cmem;
-  if (impl_hr_cmem) {
+  if (impl_hr_cmem && !impl_physflux) {   // physflux-1111: the write-back reads F_c
     f0_ = fax1;
     if (trans) {f2_ = fax2;}
     if (trans && thrd) {f3_ = fax3;}

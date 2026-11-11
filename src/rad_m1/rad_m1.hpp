@@ -1065,6 +1065,7 @@ class RadiationM1 {
   // conservative gas source, Z_f takes the step-start APPLIED flux fax*n as its old face
   // flux instead of the F_c memory (the cmem feedback warning: off by (1-w)(F_c - F_a))
   bool impl_cmgfa = false;
+  bool impl_physflux = false;   // physflux-1111: F_c = the one momentum flux
   DvceArray4D<Real> fax1n, fax2n, fax3n;
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
   // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a
