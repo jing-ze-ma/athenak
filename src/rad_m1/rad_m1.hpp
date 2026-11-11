@@ -1016,6 +1016,11 @@ class RadiationM1 {
   // lateral reach <= ng - 1); r = O(dx) in a smooth field at any resolution, -> 1 at a
   // jump or kink.  eps = implicit_hr_recon_hsmooth_eps (default 1e-3).  Per axis d.
   Real impl_hsm = 0.0, impl_hsm_eps = 1.0e-3;
+  // vgdhr-1110 implicit_hr_recon_hlim = true (opt-in, read only when named): the plm-on-h
+  // slope weight sig (van Leer of E) also limited by the van Leer weights of H+ = h+ E and
+  // H- = h- E themselves (sig = min(sig_E, sig_H+, sig_H-)): a ratio-preserving limiter,
+  // no H+- overshoot where h jumps under a smooth E (shadow / opaque-body edges)
+  bool impl_hlim = false;
   // hr2prod-1110 implicit_thin_gface = max (default) | mean | jump (read only when named):
   // the face thinness g_f of the implicit_thin_switch weight S(g_f).  max(g_L, g_R) moves
   // the switch by dx/2 against the gradient of g (an O(dx) shift of the blend region: a

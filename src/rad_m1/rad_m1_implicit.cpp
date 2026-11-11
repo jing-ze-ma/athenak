@@ -2853,6 +2853,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                      pin->GetReal("rad_m1","implicit_hr_recon_kjump") : 0.0;   // vgdhr
         impl_hsm = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hsmooth") ?
                    pin->GetReal("rad_m1","implicit_hr_recon_hsmooth") : 0.0;   // vgdhr
+        impl_hlim = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hlim") &&
+                    pin->GetBoolean("rad_m1","implicit_hr_recon_hlim");   // vgdhr-1110
         if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_hsmooth_eps")) {
           impl_hsm_eps = pin->GetReal("rad_m1","implicit_hr_recon_hsmooth_eps");
         }
@@ -19119,6 +19121,7 @@ void RadiationM1::ImplicitMusclBuild() {
   const int hjwl = std::min(impl_hjw, pmy_pack->pmesh->mb_indcs.ng);   // lateral: ghosts
   const Real kjx = impl_kjump;
   const Real hsmc = impl_hsm, hsme = impl_hsm_eps;   // vgdhr-1110 hsmooth
+  const bool hlim = impl_hlim;   // vgdhr-1110 hlim
   const int hjsrc = vet_sc ? 1 : ((vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0)) ? 2
                                   : (impl_hr_model ? (pmy_pack->pmesh->multi_d ? 0 : 3) : -1));
   auto hjvc_ = vet_cell;
@@ -19246,6 +19249,34 @@ void RadiationM1::ImplicitMusclBuild() {
         sg /= (1.0 + SQR(SQR(x)));
       }
       if (smo0 && evald && !smooth) {sg = 0.0; sb = 0.0;}   // hr2prod-1110 smooth0
+      if (hlim && sg != 0.0 && hjsrc >= 0) {   // vgdhr-1110 implicit_hr_recon_hlim
+        int km = k, kp = k, jm = j, jp = j, im = i, ip = i;
+        if (d == 0) {
+          im = (i > is) ? (i-1) : (cyclic ? ie : i);
+          ip = (i < ie) ? (i+1) : (cyclic ? is : i);
+        } else if (d == 1) {
+          jm = j - 1; jp = j + 1;
+        } else {
+          km = k - 1; kp = k + 1;
+        }
+        auto hh = [&](const int kk, const int jj, const int ii, Real &hpq, Real &hmq) {
+          Real hp, hm, fb;
+          M1HrCell(hjsrc, iw_, hjvc_, hjgh_, m, kk, jj, ii, d, iw_(m,M1_IW_RF0,kk,jj,ii),
+                   hp, hm, fb);
+          hpq = fmax(hp, 0.0)*iw_(m,M1_IW_EP,kk,jj,ii);
+          hmq = fmin(hm, 0.0)*iw_(m,M1_IW_EP,kk,jj,ii);
+        };
+        Real pa, ma, p0, m0, pb, mb;
+        hh(km, jm, im, pa, ma);
+        hh(k, j, i, p0, m0);
+        hh(kp, jp, ip, pb, mb);
+        auto vl = [](const Real a, const Real b) {
+          return (a*b > 0.0) ? 4.0*a*b/SQR(a + b) : 0.0;
+        };
+        const Real wq = fmin(vl(p0 - pa, pb - p0), vl(m0 - ma, mb - m0));
+        sg = fmin(sg, wq);
+        if (sg <= 0.0) {sg = 0.0; sb = 0.0;}
+      }
       if (hjx > 0.0 && sg != 0.0 && hjsrc >= 0) {   // hr2prod-1110 implicit_hr_recon_hjump
         auto hrd = [&](const int kk, const int jj, const int ii, Real &hp, Real &hm) {
           Real fb;
