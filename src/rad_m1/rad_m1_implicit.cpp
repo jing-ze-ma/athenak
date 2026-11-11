@@ -11461,7 +11461,10 @@ bool RadiationM1::Cs2Active() {
 //! ghosts.
 
 void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
-  const bool cmd = impl_hr_cmem;   // aphll-time-1110 (every F_c memory, rc18 too)
+  const bool cmd = impl_hr_cmem && !impl_physflux;   // aphll-time-1110 (F_c memory)
+  // physflux-1111: the stored cell F IS the F_c form (u0 F = mean F_c + a E, written by
+  // the write-back at the a of its own step): A^old from it, as without cmem, so that a
+  // change of a (gas velocity) between steps is not charged as old-F mismatch
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -18098,7 +18101,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // rc18-1110 cmem: F^old of the conservative gas source = the face means of the F_c
   // memory (+ a E^n), the old flux the face kernels' Z_f were built with, so that the gas
   // takes exactly the drag on the APPLIED flux dt k F_a'/c + the transport part
-  const bool cmw = impl_hr_cmem;
+  const bool cmw = impl_hr_cmem && !impl_physflux;   // physflux-1111: F^old = u0 F
   if (impl_hr_cmem && !impl_physflux) {   // physflux-1111: the write-back reads F_c
     f0_ = fax1;
     if (trans) {f2_ = fax2;}
