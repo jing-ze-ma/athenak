@@ -2515,6 +2515,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               pin->GetBoolean("rad_m1","implicit_thin_gface_shell");
   impl_hrfsc = pin->DoesParameterExist("rad_m1","implicit_hr_fsc") &&
                pin->GetBoolean("rad_m1","implicit_hr_fsc");
+  impl_tgfl = pin->DoesParameterExist("rad_m1","implicit_thin_gface_filter") ?
+              pin->GetReal("rad_m1","implicit_thin_gface_filter") : 0.0;   // vgdhr-1110
   impl_gwd = pin->DoesParameterExist("rad_m1","implicit_thin_gw_dump") &&
              pin->GetBoolean("rad_m1","implicit_thin_gw_dump");   // vgdgw-1110
   // rc18-1110 implicit_hr_cmem (opt-in, read only when named, default false = bitwise):
@@ -14898,6 +14900,51 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Kokkos::deep_copy(impl_gsh, gh);
       }
       auto gsh_ = impl_gsh;
+      // vgdhr-1110 implicit_thin_gface_filter: the cell g, then its x1 hat filter
+      const bool tgfl = (impl_tgfl > 0.0) && (tmode != M1_THSW_NONE);
+      if (tgfl) {
+        if (impl_gfc.extent_int(0) != nmb1 + 1) {
+          Kokkos::realloc(impl_gfc, nmb1 + 1, iw.extent_int(2), iw.extent_int(3),
+                          iw.extent_int(4));
+          Kokkos::realloc(impl_gff, nmb1 + 1, iw.extent_int(2), iw.extent_int(3),
+                          iw.extent_int(4));
+        }
+        auto gfc_ = impl_gfc;
+        auto gff_ = impl_gff;
+        const bool sgdf = (hsrc == 2);
+        par_for("m1_tgfl_c", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          Real hp, hm, fb, hd, jo;
+          M1HrCell(hsrc, iw_, hvc_, hgh_, m, k, j, i, 0, iw_(m,M1_IW_RF0,k,j,i), hp, hm, fb);
+          if (hp < 0.0) {gfc_(m,k,j,i) = -1.0; return;}
+          if (hcfb >= 0) {fb = hgh_(m,hcfb,k,j,i);}
+          gfc_(m,k,j,i) = sgdf ? M1ThinCellGd(hgh_, m, k, j, i, 0, fb, tfs, tqp,
+                                              iw_(m,M1_IW_EN,k,j,i), hd, jo)
+                               : M1ThinCell(hsrc, hvc_, m, k, j, i, 0, fb, tfs, tfsa, tfsj,
+                                            tqp, iw_(m,M1_IW_EN,k,j,i), hd, jo);
+        });
+        const Real fl = impl_tgfl;
+        auto x1v_ = pmy_pack->pcoord->x1v;
+        par_for("m1_tgfl_f", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          const Real g0 = gfc_(m,k,j,i);
+          if (g0 < 0.0) {gff_(m,k,j,i) = g0; return;}
+          const Real r0 = x1v_(m,i);
+          Real sw = 0.0, sg = 0.0;
+          for (int ii = i; ii >= is; --ii) {
+            const Real a = 1.0 - fabs(x1v_(m,ii) - r0)/fl;
+            if (a <= 0.0) {break;}
+            if (gfc_(m,k,j,ii) >= 0.0) {sw += a; sg += a*gfc_(m,k,j,ii);}
+          }
+          for (int ii = i + 1; ii <= ie; ++ii) {
+            const Real a = 1.0 - fabs(x1v_(m,ii) - r0)/fl;
+            if (a <= 0.0) {break;}
+            if (gfc_(m,k,j,ii) >= 0.0) {sw += a; sg += a*gfc_(m,k,j,ii);}
+          }
+          gff_(m,k,j,i) = (sw > 0.0) ? sg/sw : g0;
+        });
+      }
+      auto gff_ = impl_gff;
       const bool gwon = impl_gwd && (tmode != M1_THSW_NONE);   // vgdgw-1110
       if (gwon && gwd.extent_int(0) != nmb1 + 1) {
         Kokkos::realloc(gwd, nmb1 + 1, 5, iw.extent_int(2), iw.extent_int(3),
@@ -15052,6 +15099,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             if (tgf != 0) {
               gl3 = 0.5*(gl2 + gr2) + ((tgf == 2) ? SQR(gr2 - gl2)/tgfd : 0.0);
               gr3 = gl3;
+            }
+            if (tgfl && im >= is && ip <= ie && gff_(m,k,j,im) >= 0.0 &&
+                gff_(m,k,j,ip) >= 0.0) {   // vgdhr-1110 implicit_thin_gface_filter
+              const Real gfl = gff_(m,k,j,im), gfr = gff_(m,k,j,ip);
+              if (tgf != 0) {
+                gl3 = 0.5*(gfl + gfr) + ((tgf == 2) ? SQR(gfr - gfl)/tgfd : 0.0);
+                gr3 = gl3;
+              } else {
+                gl3 = gfl;
+                gr3 = gfr;
+              }
             }
             if (tgsh && gsh_(im) >= 0.0 && gsh_(ip) >= 0.0) {   // vgdhr-1110
               const Real gsl = gsh_(im), gsr = gsh_(ip);

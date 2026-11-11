@@ -1022,6 +1022,14 @@ class RadiationM1 {
   // (1 - w) [w F_fs + (1 - w) F_central].  x1 faces only; gface_shell: vet_gd (src 2),
   // fsc: vet_gd or vet_sc (src 1, the Cartesian / sp vet_sc rays).
   bool impl_tgsh = false, impl_hrfsc = false;
+  // vgdhr-1110 implicit_thin_gface_filter = L > 0 (opt-in, read only when named): the
+  // x1-face thinness g from the cell g FILTERED along x1 with a hat kernel of fixed
+  // physical half-width L (max(0, 1 - |r' - r|/L), renormalised over the valid cells of
+  // the column: a resolution-free g profile, O(dx^2) for a smooth g), then the gface
+  // rule on the two filtered cell values.  x1 faces only; the column is one MeshBlock
+  // along x1 (implicit_x1 needs it).
+  Real impl_tgfl = 0.0;
+  DvceArray4D<Real> impl_gfc, impl_gff;
   // vgdgw-1110 diagnostic implicit_thin_gw_dump: the x1-face g_L, g_R (as fed to
   // M1ThinFace) and the weight AL of the last thin-switch face build (output m1_gw)
   bool impl_gwd = false;
