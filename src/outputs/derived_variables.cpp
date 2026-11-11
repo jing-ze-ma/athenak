@@ -1405,9 +1405,9 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     const bool hv = (gw.extent_int(0) >= nmb);
     par_for("m1_gw_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      for (int c = 0; c < 3; ++c) {dv(m,i_dv+c,k,j,i) = hv ? gw(m,c,k,j,i) : 0.0;}
+      for (int c = 0; c < 5; ++c) {dv(m,i_dv+c,k,j,i) = hv ? gw(m,c,k,j,i) : 0.0;}
     });
-    i_dv += 3;
+    i_dv += 5;
   }
 
   // m1_fs: J and H_r of the vet_gd formal solution (basetype_output.cpp)

@@ -808,7 +808,9 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("m1_gl",0,&(derived_var));
       outvars.emplace_back("m1_gr",1,&(derived_var));
       outvars.emplace_back("m1_w",2,&(derived_var));
-      out_params.n_derived += 3;
+      outvars.emplace_back("m1_fhr",3,&(derived_var));
+      outvars.emplace_back("m1_cef",4,&(derived_var));
+      out_params.n_derived += 5;
     }
     if (variable.compare("m1_fs") == 0) {
       out_params.contains_derived = true;

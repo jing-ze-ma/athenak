@@ -14900,7 +14900,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       auto gsh_ = impl_gsh;
       const bool gwon = impl_gwd && (tmode != M1_THSW_NONE);   // vgdgw-1110
       if (gwon && gwd.extent_int(0) != nmb1 + 1) {
-        Kokkos::realloc(gwd, nmb1 + 1, 3, iw.extent_int(2), iw.extent_int(3),
+        Kokkos::realloc(gwd, nmb1 + 1, 5, iw.extent_int(2), iw.extent_int(3),
                         iw.extent_int(4));
       }
       auto gwd_ = gwd;
@@ -15072,7 +15072,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                      1.0 - hvc_(m,M1_VET_EPS,k,j,ip))),
                        th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt, hwl, hwr,
                        ch*dt/dx, bdtc, hcpon ? &hcp_(m,0,k,j,i) : nullptr);
-            if (gwon) {gwd_(m,0,k,j,i) = gl3; gwd_(m,1,k,j,i) = gr3; gwd_(m,2,k,j,i) = alb;}
+            if (gwon) {
+              gwd_(m,0,k,j,i) = gl3;
+              gwd_(m,1,k,j,i) = gr3;
+              gwd_(m,2,k,j,i) = alb;
+              // the raw half-range face flux with E^n (h as fed to M1ThinFace) and c E_face
+              gwd_(m,3,k,j,i) = ch*(hpl*iw_(m,M1_IW_EN,k,j,im) + hmr*iw_(m,M1_IW_EN,k,j,ip));
+              gwd_(m,4,k,j,i) = 0.5*ch*(iw_(m,M1_IW_EN,k,j,im) + iw_(m,M1_IW_EN,k,j,ip));
+            }
             if (hfci) {   // hr2prod-1110 implicit_hr_fcimp: dissipation form
               const Real wf = alb;
               alb = 0.0;
