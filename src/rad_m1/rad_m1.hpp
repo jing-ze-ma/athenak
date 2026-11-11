@@ -1078,6 +1078,12 @@ class RadiationM1 {
   bool impl_aphll_mem = false;   // aphll-time-1110 implicit_aphll_mem (cmem + restage)
   bool impl_aphll_fci = false;   // aphll-time-1110 implicit_aphll_fcimp (F_c implicit)
   DvceArray4D<Real> fax1, fax2, fax3;   // rc18-1110: the applied face fluxes (cmem)
+  // vkdiag-1111 implicit_hr_cmem_fainit (opt-in, read only when named, default false):
+  // fax* are not in the restart file and start at 0, so the first step after a restart
+  // takes F_a^n = 0 as the old applied flux of the gas-momentum budget (physflux fa:
+  // Z_f, the drag) -- a spurious F^old - F jump.  With the key, the first solve sets
+  // fax* = f0x* (the restart face flux, the flux the gas momentum last saw) once.
+  bool impl_cm_fainit = false, impl_cm_fainit_done = false;
   // vgdhr-1110 implicit_hr_cmem_gas_fa (opt-in, read only when named): with cmem and the
   // conservative gas source, Z_f takes the step-start APPLIED flux fax*n as its old face
   // flux instead of the F_c memory (the cmem feedback warning: off by (1-w)(F_c - F_a))

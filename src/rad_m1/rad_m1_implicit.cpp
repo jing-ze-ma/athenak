@@ -3925,6 +3925,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     Kokkos::realloc(fax1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(fax1, 0.0);
+    impl_cm_fainit = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_fainit") &&
+                     pin->GetBoolean("rad_m1","implicit_hr_cmem_fainit");   // vkdiag-1111
     // vgdhr-1110 implicit_hr_cmem_gas_fa
     impl_cmgfa = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_gas_fa") &&
                  pin->GetBoolean("rad_m1","implicit_hr_cmem_gas_fa");
@@ -13817,6 +13819,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // each new iterate, so the backward-Euler right-hand side needs its own copy
   auto f0n_ = f0x1n;
   // consfix-1011 (conservative2): the explicit -dA/dt of the hydro step into F0 first
+  // vkdiag-1111 implicit_hr_cmem_fainit (rad_m1.hpp): fax* from the restart face flux, once
+  if (impl_hr_cmem && impl_cm_fainit && !impl_cm_fainit_done) {
+    Kokkos::deep_copy(DevExeSpace(), fax1, f0x1);
+    if (fax2.extent(0) > 0 && fax2.extent(0) == f0x2.extent(0)) {
+      Kokkos::deep_copy(DevExeSpace(), fax2, f0x2);
+    }
+    if (fax3.extent(0) > 0 && fax3.extent(0) == f0x3.extent(0)) {
+      Kokkos::deep_copy(DevExeSpace(), fax3, f0x3);
+    }
+    impl_cm_fainit_done = true;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_hr_cmem_fainit: applied face fluxes fax* set from "
+                << "the face flux f0x* at cycle " << pmy_pack->pmesh->ncycle << std::endl;
+    }
+  }
   if (Cs2Active() && cs2_shift && !gcs_first && !(cs2_dbg & 4)) {ImplicitCs2Shift();}
   Kokkos::deep_copy(DevExeSpace(), f0x1n, f0x1);
   if (impl_cmgfa) {   // vgdhr-1110: the step-start applied fluxes
