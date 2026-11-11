@@ -2031,6 +2031,24 @@ class RadiationM1 {
   // 3 sum |L_z| of all deposits; code units x volume where applicable)
   Real impl_am_kecap = 0.0;
   DvceArray1D<Real> amkc_d;
+  // amcsE-1111 <rad_m1>/implicit_am_cs_energy = gas | rad (read only when named; absent
+  // or gas = the deposit above, bitwise).  rad: the kinetic energy change dKE of the
+  // am_cs deposit (exact, KE(m + d) - KE(m)) is the work of the radiation force that
+  // the deposit completes and is paid by the cell's radiation energy: IEN += dKE,
+  // E -= (chat/c) dKE (state and stored slope K_EN / K_E), so e_int is untouched and
+  // gas + (c/chat) E and L are both kept.  The radiation pays at most
+  // implicit_am_cs_energy_frac (default 0.5) of its E per cell; beyond that the gas
+  // pays the rest from e_int (up to implicit_am_cs_kecap when named; the momentum is
+  // withheld only beyond both).  Counted (amen_d).  rad_m1_implicit.cpp m1_am_cs
+  int impl_am_en = 0;
+  Real impl_am_en_frac = 0.5;
+  DvceArray1D<Real> amen_d;
+  // amcsE-1111 <rad_m1>/implicit_am_cs_cons_diag = N (read only when named): for the
+  // first N am_cs solves, one AMCS_CONS line with the exchange's L-vector budget, the
+  // energy change of the deposit, E_tot = sum V (e_gas + (c/chat) E) and the L vector
+  // of gas + radiation after the deposit (amcd_d)
+  int impl_am_cons_diag = 0;
+  DvceArray1D<Real> amcd_d;
   // hgfix-1110 <rad_m1>/implicit_clip_kecap = f (read only when named; absent or 0 = off
   // = bitwise): the conservative write-back's F-clip correction (the momentum the
   // limited F hands the gas, its kinetic energy taken from e_int) is scaled so that it

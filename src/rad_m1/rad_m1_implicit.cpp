@@ -48,6 +48,7 @@
 #include <cstdlib>
 #include <limits>
 #include <iostream>
+#include <iomanip>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -2242,6 +2243,37 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                   << "as kinetic energy (state and stored slope)" << std::endl;
       }
     }
+  }
+  // amcsE-1111 implicit_am_cs_energy / _frac / implicit_am_cs_cons_diag (rad_m1.hpp)
+  if (pin->DoesParameterExist("rad_m1","implicit_am_cs_energy")) {
+    const std::string ae = pin->GetString("rad_m1","implicit_am_cs_energy");
+    if (ae == "gas") {
+      impl_am_en = 0;
+    } else if (ae == "rad") {
+      impl_am_en = 1;
+    } else {
+      ImplFatal("<rad_m1>/implicit_am_cs_energy must be gas or rad");
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_am_cs_energy_frac")) {
+      impl_am_en_frac = pin->GetReal("rad_m1","implicit_am_cs_energy_frac");
+      if (!(impl_am_en_frac >= 0.0 && impl_am_en_frac < 1.0)) {
+        ImplFatal("<rad_m1>/implicit_am_cs_energy_frac must be in [0, 1)");
+      }
+    }
+    if (impl_am_en == 1) {
+      Kokkos::realloc(amen_d, 4);
+      Kokkos::deep_copy(amen_d, 0.0);
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> implicit_am_cs_energy=rad: the kinetic energy of the "
+                  << "am_cs "
+                  << "deposit is paid by the cell's radiation energy (at most "
+                  << impl_am_en_frac << " of E; the rest by e_int)" << std::endl;
+      }
+    }
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_am_cs_cons_diag")) {
+    impl_am_cons_diag = pin->GetInteger("rad_m1","implicit_am_cs_cons_diag");
+    if (impl_am_cons_diag > 0) {Kokkos::realloc(amcd_d, 16);}
   }
   // hgfix-1110 implicit_clip_kecap (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_clip_kecap")) {
@@ -10060,6 +10092,22 @@ void RadiationM1::ImplicitReport() {
                 << ": capped cell-solves=" << av[0] << " kinetic energy not given="
                 << av[1] << " (code units x volume) |L_z| not deposited=" << av[2]
                 << " of all deposits " << av[3] << " (all attempts)" << std::endl;
+    }
+  }
+  // amcsE-1111 implicit_am_cs_energy = rad: who paid the deposits' kinetic energy
+  if (impl_am_en == 1 && amen_d.extent_int(0) == 4) {
+    auto he = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amen_d);
+    Real ev[4] = {he(0), he(1), he(2), he(3)};
+#if MPI_PARALLEL_ENABLED
+    Real ge[4];
+    MPI_Allreduce(ev, ge, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int q = 0; q < 4; ++q) {ev[q] = ge[q];}
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_am_cs_energy=rad: cell-solves beyond the E share="
+                << ev[0] << " KE paid by E=" << ev[1] << " by e_int=" << ev[2]
+                << " not given=" << ev[3] << " (code units x volume, all attempts)"
+                << std::endl;
     }
   }
   // hgfix-1110 implicit_clip_kecap: the capped clip cell-solves
@@ -17948,6 +17996,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool aetg = etg, amhd = mhd;
     auto aphi_ = phicc;
     auto aem_ = emag_;
+    // amcsE-1111 implicit_am_cs_energy = rad and implicit_am_cs_cons_diag (rad_m1.hpp)
+    const bool aen = (impl_am_en == 1);
+    const Real aef = impl_am_en_frac, clch = cl/ch, chcl = ch/cl;
+    auto aed_ = amen_d;
+    const bool acd = (impl_am_cons_diag > 0) && (amcd_d.extent_int(0) == 16);
+    auto acd_ = amcd_d;
+    if (acd) {Kokkos::deep_copy(amcd_d, 0.0);}
     par_for("m1_am_cs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real x2l = msz.d_view(m).x2min, x2u = msz.d_view(m).x2max;
@@ -18130,11 +18185,85 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Kokkos::atomic_add(&akc_(2), (1.0 - s)*fabs(lz));
         return s;
       };
+      // amcsE-1111 implicit_am_cs_energy = rad: the deposit (d2, d3 covariant momentum;
+      // k2, k3 the stored slope's x dt) keeps its momentum; its exact kinetic energy
+      // change dKE(s) = KE(m + s d) - KE(m) is paid by E (gas units, pr <= aef (c/ch) E),
+      // the rest (if any) by e_int; s < 1 only when implicit_am_cs_kecap is named and the
+      // e_int share would exceed it.  pr / prk: the E-paid part for the state / slope
+      auto epay = [&](const Real d2, const Real d3, const Real k2, const Real k3,
+                      const Real lz, Real &pr, Real &prk) -> Real {
+        const Real ddc = uden_(m,IDN,k,j,i);
+        const Real idc = 1.0/fmax(ddc, 1.0e-300);
+        const Real p1 = uden_(m,IM1,k,j,i), p2 = uden_(m,IM2,k,j,i);
+        const Real p3 = uden_(m,IM3,k,j,i);
+        const Real q0 = CsKeMom(p1, p2, p3, c);
+        const Real q1 = CsKeMom(p1, p2 + d2, p3 + d3, c);
+        const Real qd = CsKeMom(0.0, d2, d3, c);
+        const Real aa = qd*idc, bb = (q1 - q0 - qd)*idc;
+        const Real dk1 = (q1 - q0)*idc;
+        const Real brad = aef*clch*fmax(u0_(m,M1_E,k,j,i), 0.0);
+        if (akc > 0.0) {Kokkos::atomic_add(&akc_(3), fabs(lz));}
+        Real s = 1.0;
+        if (dk1 > brad) {
+          Kokkos::atomic_add(&aed_(0), 1.0);
+          if (akc > 0.0) {
+            Real eg0 = uden_(m,IEN,k,j,i) - q0*idc;
+            if (aetg) {eg0 -= ddc*aphi_(m,k,j,i);}
+            if (amhd) {eg0 -= aem_(m,k,j,i);}
+            const Real cap = brad + akc*fmax(eg0, 0.0);
+            if (dk1 > cap) {
+              const Real sq = sqrt(fmax(bb*bb + 4.0*aa*cap, 0.0));
+              s = 0.0;
+              if (aa > 0.0) {
+                s = (bb >= 0.0) ? ((bb + sq > 0.0) ? 2.0*cap/(bb + sq) : 0.0)
+                                : (-bb + sq)/(2.0*aa);
+              }
+              s = fmin(fmax(s, 0.0), 1.0);
+              Kokkos::atomic_add(&akc_(0), 1.0);
+              Kokkos::atomic_add(&akc_(1), (dk1 - (aa*s + bb)*s)*dv);
+              Kokkos::atomic_add(&akc_(2), (1.0 - s)*fabs(lz));
+            }
+          }
+        }
+        const Real dks = (s < 1.0) ? (aa*s + bb)*s : dk1;
+        pr = fmin(dks, brad);   // dks < 0 (a decelerating deposit): all of it to E
+        prk = pr;
+        if (!(k2 == d2 && k3 == d3)) {
+          const Real qk = CsKeMom(p1, p2 + s*k2, p3 + s*k3, c);
+          prk = fmin((qk - q0)*idc, brad);
+        }
+        Kokkos::atomic_add(&aed_(1), pr*dv);
+        Kokkos::atomic_add(&aed_(2), (dks - pr)*dv);
+        Kokkos::atomic_add(&aed_(3), (dk1 - dks)*dv);
+        return s;
+      };
+      // amcsE-1111 implicit_am_cs_cons_diag: the cell state before the deposit
+      Real bm1 = 0.0, bm2 = 0.0, bm3 = 0.0, ben = 0.0, ber = 0.0, bsp = 0.0;
+      if (acd) {
+        bm1 = uh(m,IM1,k,j,i);  bm2 = uh(m,IM2,k,j,i);  bm3 = uh(m,IM3,k,j,i);
+        ben = uh(m,IEN,k,j,i);  ber = u0_(m,M1_E,k,j,i);
+        if (amv) {bsp = spn_(m,k,j,i);}
+      }
       if (!amv) {
         // L_z only (<hydro>/am_transport): along the zonal direction (-y, x, 0)
         const Real c2v = (-yy*e1[0] + xx*e1[1])/(wc*dv);
         const Real c3v = (-yy*e2[0] + xx*e2[1])/(wc*dv);
-        if (akc > 0.0) {   // hgkmom-1110: scaled deposit, the slope takes the same s
+        if (aen) {   // amcsE-1111: the momentum kept, its kinetic energy paid by E
+          const Real d2 = del[2]*c2v, d3 = del[2]*c3v;
+          const Real k2 = (del[2] + dlc[2])*c2v, k3 = (del[2] + dlc[2])*c3v;
+          Real pr, prk;
+          const Real s = epay(d2, d3, k2, k3, del[2], pr, prk);
+          uh(m,IM2,k,j,i) += s*d2;
+          uh(m,IM3,k,j,i) += s*d3;
+          uh(m,IEN,k,j,i) += pr;
+          u0_(m,M1_E,k,j,i) -= chcl*pr;
+          if (t2ka) {
+            kka_(m,M1_T2_M1+1,k,j,i) += s*k2/dt;
+            kka_(m,M1_T2_M1+2,k,j,i) += s*k3/dt;
+            kka_(m,M1_T2_EN,k,j,i) += prk/dt;
+            kka_(m,M1_T2_E,k,j,i) -= chcl*prk/dt;
+          }
+        } else if (akc > 0.0) {   // hgkmom-1110: scaled deposit, the slope takes s too
           const Real s = kecap(del[2]*c2v, del[2]*c3v, del[2]);
           uh(m,IM2,k,j,i) += s*del[2]*c2v;
           uh(m,IM3,k,j,i) += s*del[2]*c3v;
@@ -18166,22 +18295,93 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         };
         Real m2, m3, sr;
         apply(del, m2, m3, sr);
-        // hgkmom-1110 implicit_am_cs_kecap: the deposit (momentum and spin) scaled by s
-        const Real s = (akc > 0.0) ? kecap(m2, m3, del[2]) : 1.0;
-        if (akc > 0.0) {m2 *= s; m3 *= s; sr *= s;}
-        uh(m,IM2,k,j,i) += m2;
-        uh(m,IM3,k,j,i) += m3;
-        spn_(m,k,j,i) += sr;
-        if (t2ka) {
-          Real dk[3] = {del[0] + dlc[0], del[1] + dlc[1], del[2] + dlc[2]};
-          apply(dk, m2, m3, sr);
+        if (aen) {   // amcsE-1111: the momentum and spin kept, the KE paid by E
+          Real m2k = m2, m3k = m3, srk = sr;
+          if (t2ka) {
+            Real dk[3] = {del[0] + dlc[0], del[1] + dlc[1], del[2] + dlc[2]};
+            apply(dk, m2k, m3k, srk);
+          }
+          Real pr, prk;
+          const Real s = epay(m2, m3, m2k, m3k, del[2], pr, prk);
+          uh(m,IM2,k,j,i) += s*m2;
+          uh(m,IM3,k,j,i) += s*m3;
+          spn_(m,k,j,i) += s*sr;
+          uh(m,IEN,k,j,i) += pr;
+          u0_(m,M1_E,k,j,i) -= chcl*pr;
+          if (t2ka) {
+            kka_(m,M1_T2_M1+1,k,j,i) += s*m2k/dt;
+            kka_(m,M1_T2_M1+2,k,j,i) += s*m3k/dt;
+            ksp_(m,k,j,i) = s*srk/dt;
+            kka_(m,M1_T2_EN,k,j,i) += prk/dt;
+            kka_(m,M1_T2_E,k,j,i) -= chcl*prk/dt;
+          }
+        } else {
+          // hgkmom-1110 implicit_am_cs_kecap: the deposit (momentum and spin) scaled by s
+          const Real s = (akc > 0.0) ? kecap(m2, m3, del[2]) : 1.0;
           if (akc > 0.0) {m2 *= s; m3 *= s; sr *= s;}
-          kka_(m,M1_T2_M1+1,k,j,i) += m2/dt;
-          kka_(m,M1_T2_M1+2,k,j,i) += m3/dt;
-          ksp_(m,k,j,i) = sr/dt;
+          uh(m,IM2,k,j,i) += m2;
+          uh(m,IM3,k,j,i) += m3;
+          spn_(m,k,j,i) += sr;
+          if (t2ka) {
+            Real dk[3] = {del[0] + dlc[0], del[1] + dlc[1], del[2] + dlc[2]};
+            apply(dk, m2, m3, sr);
+            if (akc > 0.0) {m2 *= s; m3 *= s; sr *= s;}
+            kka_(m,M1_T2_M1+1,k,j,i) += m2/dt;
+            kka_(m,M1_T2_M1+2,k,j,i) += m3/dt;
+            ksp_(m,k,j,i) = sr/dt;
+          }
         }
       }
+      if (acd) {
+        // amcsE-1111 AMCS_CONS: 0-2 the exchange's L change (gas + rad + deposit), 3-5
+        // the face torque it should equal, 6-8 del minus the deposited L, 9 the deposit's
+        // E_tot change, 10 its |d e_gas|, 11 E_tot, 12-14 L of gas + rad (+ spin), 15
+        // |dL_g,z| + |dL_r,z| (all x V, rank sums)
+        Real dla[3], lgn[3], lrn[3];
+        lv(uh(m,IM1,k,j,i) - bm1, uh(m,IM2,k,j,i) - bm2, uh(m,IM3,k,j,i) - bm3, dla);
+        lv(uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i), lgn);
+        lv(u0_(m,M1_F1,k,j,i), u0_(m,M1_F2,k,j,i), u0_(m,M1_F3,k,j,i), lrn);
+        const Real dsp = amv ? (spn_(m,k,j,i) - bsp) : 0.0;
+        const Real sp = amv ? spn_(m,k,j,i) : 0.0;
+        for (int q = 0; q < 3; ++q) {
+          dla[q] += dsp*rh[q];
+          Real ex = dt*tv[q];
+          if (apl || apr) {ex -= dt*ta[q] - da[q];}
+          Kokkos::atomic_add(&acd_(q), dlg[q] + dlr[q] + dla[q]);
+          Kokkos::atomic_add(&acd_(3+q), ex);
+          Kokkos::atomic_add(&acd_(6+q), del[q] - dla[q]);
+          Kokkos::atomic_add(&acd_(12+q), lgn[q] + icc*lrn[q] + sp*rh[q]);
+        }
+        const Real deg = uh(m,IEN,k,j,i) - ben, der = u0_(m,M1_E,k,j,i) - ber;
+        Kokkos::atomic_add(&acd_(9), (deg + clch*der)*dv);
+        Kokkos::atomic_add(&acd_(10), fabs(deg)*dv);
+        Kokkos::atomic_add(&acd_(11), (uh(m,IEN,k,j,i) + clch*u0_(m,M1_E,k,j,i))*dv);
+        Kokkos::atomic_add(&acd_(15), fabs(dlg[2]) + fabs(dlr[2]));
+      }
     });
+    if (acd) {
+      static int ncd = 0;
+      if (ncd < impl_am_cons_diag) {
+        auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amcd_d);
+        Real b[16], g[16];
+        for (int q = 0; q < 16; ++q) {b[q] = h(q); g[q] = b[q];}
+#if MPI_PARALLEL_ENABLED
+        MPI_Allreduce(b, g, 16, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+        if (global_variable::my_rank == 0) {
+          std::ostringstream os;
+          os << std::scientific << std::setprecision(6) << "AMCS_CONS solve " << ncd
+             << " dL_exch " << g[0] << " " << g[1] << " " << g[2]
+             << " dtT " << g[3] << " " << g[4] << " " << g[5]
+             << " resid " << g[0] - g[3] << " " << g[1] - g[4] << " " << g[2] - g[5]
+             << " withheld " << g[6] << " " << g[7] << " " << g[8]
+             << " scale_z " << g[15] << " dEtot_dep " << g[9] << " |de_gas| " << g[10]
+             << " Etot " << g[11] << " L " << g[12] << " " << g[13] << " " << g[14];
+          std::cout << os.str() << std::endl;
+        }
+      }
+      ncd += 1;
+    }
     if (amdg) {
       static int nprint = 0;
       if (nprint < impl_am_cs_diag) {
