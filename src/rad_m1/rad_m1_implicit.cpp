@@ -19111,6 +19111,7 @@ void RadiationM1::ImplicitMusclBuild() {
   const bool smo0 = impl_muscl_smooth0;
   const Real hjx = impl_hjump;   // hr2prod-1110
   const int hjw = impl_hjw;   // vgdhr-1110
+  const int hjwl = std::min(impl_hjw, pmy_pack->pmesh->mb_indcs.ng);   // lateral: ghosts
   const Real kjx = impl_kjump;
   const int hjsrc = vet_sc ? 1 : ((vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0)) ? 2
                                   : (impl_hr_model ? (pmy_pack->pmesh->multi_d ? 0 : 3) : -1));
@@ -19248,7 +19249,8 @@ void RadiationM1::ImplicitMusclBuild() {
         Real hp0, hm0, hpa, hma, hpb, hmb;
         hrd(k, j, i, hp0, hm0);
         bool off = false;
-        for (int s1 = 1; s1 <= hjw && !off; ++s1) {   // vgdhr-1110 hjump_w (1 = as before)
+        const int hjwd = (d == 0) ? hjw : hjwl;
+        for (int s1 = 1; s1 <= hjwd && !off; ++s1) {   // vgdhr-1110 hjump_w (1 = before)
           int ka = k, kb = k, ja = j, jb = j, ia = i, ib = i;
           if (d == 0) {
             ia = (i - s1 >= is) ? (i - s1) : (cyclic ? (ie + 1 - (is - (i - s1))) : is);
@@ -19269,7 +19271,8 @@ void RadiationM1::ImplicitMusclBuild() {
       if (kjx > 1.0 && sg != 0.0) {   // vgdhr-1110 implicit_hr_recon_kjump
         const Real k0 = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
         bool off = false;
-        for (int s1 = 1; s1 <= hjw && !off; ++s1) {
+        const int hjwk = (d == 0) ? hjw : hjwl;
+        for (int s1 = 1; s1 <= hjwk && !off; ++s1) {
           for (int sd = -1; sd <= 1; sd += 2) {
             int kk = k, jj = j, ii = i;
             if (d == 0) {
