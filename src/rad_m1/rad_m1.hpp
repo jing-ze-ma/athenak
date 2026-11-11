@@ -495,6 +495,14 @@ class RadiationM1 {
   DvceArray2D<Real> vet_ang;   // (nray, 4): mu1, mu2, mu3, weight (sum of weights = 1)
   DvceArray5D<Real> vet_cell;  // (nmb, M1_VET_NC, k, j, i): see M1_VET_* below
   DvceArray5D<Real> vet_ipl;   // (nmb, 2, nray, k, j): intensity of the last two layers
+  // vettd-1111 <rad_m1>/vet_td = ray (read only when named): the TIME-DEPENDENT formal
+  // solution of vet_sc, (I - I^n)/(chat dt) + n.grad I = chi (S - I); vtd_old = I^n per
+  // ray (the last sweep of the previous step), vtd_new = this step's sweep (nmb, nray,
+  // nx3, nx2, nx1 active cells)
+  bool vtd_on = false;
+  bool vtd_init = false;
+  int vtd_cyc = -1;
+  DvceArray5D<Real> vtd_old, vtd_new;
   // several MeshBlocks / MPI ranks (rad_m1_vet.cpp): the halo-banded plane buffers, the
   // neighbour tables and the exchange state of the exact layer-by-layer sweep; null on
   // one MeshBlock (the single-block sweep above is then run unchanged)
