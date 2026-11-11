@@ -2851,6 +2851,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         }
         impl_kjump = pin->DoesParameterExist("rad_m1","implicit_hr_recon_kjump") ?
                      pin->GetReal("rad_m1","implicit_hr_recon_kjump") : 0.0;   // vgdhr
+        impl_hsm = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hsmooth") ?
+                   pin->GetReal("rad_m1","implicit_hr_recon_hsmooth") : 0.0;   // vgdhr
+        if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_hsmooth_eps")) {
+          impl_hsm_eps = pin->GetReal("rad_m1","implicit_hr_recon_hsmooth_eps");
+        }
         if (impl_sfgate && !impl_muscl_hq) {
           ImplFatal("<rad_m1>/implicit_hr_recon_sfgate needs implicit_hr_recon_q = h");
         }
@@ -19113,6 +19118,7 @@ void RadiationM1::ImplicitMusclBuild() {
   const int hjw = impl_hjw;   // vgdhr-1110
   const int hjwl = std::min(impl_hjw, pmy_pack->pmesh->mb_indcs.ng);   // lateral: ghosts
   const Real kjx = impl_kjump;
+  const Real hsmc = impl_hsm, hsme = impl_hsm_eps;   // vgdhr-1110 hsmooth
   const int hjsrc = vet_sc ? 1 : ((vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0)) ? 2
                                   : (impl_hr_model ? (pmy_pack->pmesh->multi_d ? 0 : 3) : -1));
   auto hjvc_ = vet_cell;
@@ -19265,6 +19271,28 @@ void RadiationM1::ImplicitMusclBuild() {
           const Real ja_ = fabs(hp0 - hpa) + fabs(hm0 - hma);
           const Real jb_ = fabs(hp0 - hpb) + fabs(hm0 - hmb);
           if (fmax(ja_, jb_) > hjx) {off = true;}
+        }
+        if (off) {sg = 0.0; sb = 0.0;}
+      }
+      if (hsmc > 0.0 && sg != 0.0 && hjsrc >= 0) {   // vgdhr-1110 implicit_hr_recon_hsmooth
+        auto hq = [&](const int o, Real &hp, Real &hm) {   // h+- at offset o along d
+          Real fb;
+          const int kk = (d == 2) ? k + o : k, jj = (d == 1) ? j + o : j;
+          const int ii = (d == 0) ? i + o : i;
+          M1HrCell(hjsrc, iw_, hjvc_, hjgh_, m, kk, jj, ii, d, iw_(m,M1_IW_RF0,kk,jj,ii),
+                   hp, hm, fb);
+        };
+        const int wd = (d == 0) ? hjw : std::min(hjw, hjwl - 1);
+        bool off = false;
+        for (int o = -wd; o <= wd && !off; ++o) {
+          if (d == 0 && (i + o - 1 < is || i + o + 1 > ie)) {continue;}
+          Real pm, mm, p0, m0, pp, mp;
+          hq(o - 1, pm, mm);
+          hq(o, p0, m0);
+          hq(o + 1, pp, mp);
+          const Real ra = fabs((pp - p0) - (p0 - pm))/(fabs(pp - p0) + fabs(p0 - pm) + hsme);
+          const Real rb = fabs((mp - m0) - (m0 - mm))/(fabs(mp - m0) + fabs(m0 - mm) + hsme);
+          if (fmax(ra, rb) > hsmc) {off = true;}
         }
         if (off) {sg = 0.0; sb = 0.0;}
       }

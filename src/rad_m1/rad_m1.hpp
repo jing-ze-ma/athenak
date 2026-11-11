@@ -1010,6 +1010,12 @@ class RadiationM1 {
   // within W along d differs from the cell's by more than a factor K (opaque surfaces)
   int impl_hjw = 1;
   Real impl_kjump = 0.0;
+  // vgdhr-1110 implicit_hr_recon_hsmooth = C > 0 (opt-in, read only when named): plm on h
+  // off where the RELATIVE smoothness r = |dh+ - dh-| / (|dh+| + |dh-| + eps) of h+ or h-
+  // exceeds C at the cell or within W cells along d (W = implicit_hr_recon_hjump_w;
+  // lateral reach <= ng - 1); r = O(dx) in a smooth field at any resolution, -> 1 at a
+  // jump or kink.  eps = implicit_hr_recon_hsmooth_eps (default 1e-3).  Per axis d.
+  Real impl_hsm = 0.0, impl_hsm_eps = 1.0e-3;
   // hr2prod-1110 implicit_thin_gface = max (default) | mean | jump (read only when named):
   // the face thinness g_f of the implicit_thin_switch weight S(g_f).  max(g_L, g_R) moves
   // the switch by dx/2 against the gradient of g (an O(dx) shift of the blend region: a
