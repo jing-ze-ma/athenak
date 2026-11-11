@@ -2049,6 +2049,20 @@ class RadiationM1 {
   // of gas + radiation after the deposit (amcd_d)
   int impl_am_cons_diag = 0;
   DvceArray1D<Real> amcd_d;
+  // amvec-1111 <rad_m1>/implicit_am_cs_deposit = local | patch (read only when named;
+  // absent or local = the deposit above, bitwise).  patch: the whole L vector del of a
+  // cell (not only del_z) is deposited as the minimum-kinetic-energy rigid-rotation
+  // increment omega_c = I_c^-1 del of the cell's in-block lateral 3x3 patch (I_c the
+  // patch's moment-of-inertia tensor, sum rho V (r^2 1 - r r)), gathered per cell as
+  // dp = rho (sum_c omega_c) x r (deterministic, no atomics; sum_c V r x dp = sum del).
+  // The KE is paid as implicit_am_cs_energy / _kecap say; where the cap scales a cell's
+  // deposit by s < 1, the withheld (1 - s) L (perpendicular to rhat) is redistributed
+  // as a rigid rotation over the uncapped cells of the cell's radial column, so the
+  // vector is kept.  Needs <hydro>/am_transport (not am_vector).  amvw: 0-2 the
+  // withheld L of a cell, 3 its s; amvp_d counters (rad_m1_implicit.cpp m1_am_cs_*)
+  int impl_am_dep = 0;
+  DvceArray5D<Real> amvw;
+  DvceArray1D<Real> amvp_d;
   // hgfix-1110 <rad_m1>/implicit_clip_kecap = f (read only when named; absent or 0 = off
   // = bitwise): the conservative write-back's F-clip correction (the momentum the
   // limited F hands the gas, its kinetic energy taken from e_int) is scaled so that it
