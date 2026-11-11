@@ -1055,6 +1055,15 @@
         Kokkos::atomic_add(&vkc_(0), 1.0);
         const Real vn = sqrt(pn)/fmax(dd, 1.0e-300);
         Kokkos::atomic_max(&vkc_(1), (vn == vn) ? vn : 1.0e300);
+        if (wvdg) {   // vkdiag-1111 (rad_m1.hpp)
+          const Real vo = sqrt(po)/fmax(dd, 1.0e-300), rr = psph ? wvx1(m,i) : 0.0;
+          Kokkos::atomic_min(&vkc_(2), dd);
+          Kokkos::atomic_max(&vkc_(3), dd);
+          Kokkos::atomic_min(&vkc_(4), rr);
+          Kokkos::atomic_max(&vkc_(5), rr);
+          Kokkos::atomic_max(&vkc_(6), vo);
+          Kokkos::atomic_min(&vkc_(7), vo);
+        }
       }
     }
     // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve

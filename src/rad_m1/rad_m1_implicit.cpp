@@ -2269,7 +2269,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (pin->DoesParameterExist("rad_m1","implicit_wb_vkick_be_retry")) {
       impl_wb_vkbr = pin->GetBoolean("rad_m1","implicit_wb_vkick_be_retry");
     }
-    Kokkos::realloc(vkick_cnt_d, 2);
+    impl_wb_vkdiag = pin->DoesParameterExist("rad_m1","implicit_wb_vkick_diag") &&
+                     pin->GetBoolean("rad_m1","implicit_wb_vkick_diag");   // vkdiag-1111
+    Kokkos::realloc(vkick_cnt_d, impl_wb_vkdiag ? 8 : 2);
     Kokkos::deep_copy(vkick_cnt_d, 0.0);
   }
   // hgkmom-1110 implicit_am_cs_kecap (rad_m1.hpp; read only when named)
@@ -18114,7 +18116,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // r136e-1107 implicit_wb_vkick_reject: not on the cubed sphere
   const Real wvkr = cs_geom ? 0.0 : impl_wb_vkrej;
   auto vkc_ = vkick_cnt_d;
-  if (wvkr > 0.0) {Kokkos::deep_copy(vkick_cnt_d, 0.0);}
+  if (wvkr > 0.0) {
+    Kokkos::deep_copy(vkick_cnt_d, 0.0);
+    if (impl_wb_vkdiag) {   // vkdiag-1111: min slots start at +big
+      auto hv = Kokkos::create_mirror_view(vkick_cnt_d);
+      for (int q = 0; q < 8; ++q) {hv(q) = 0.0;}
+      hv(2) = 1.0e300; hv(4) = 1.0e300; hv(7) = 1.0e300;
+      Kokkos::deep_copy(vkick_cnt_d, hv);
+    }
+  }
+  const bool wvdg = impl_wb_vkdiag && (wvkr > 0.0);
   // implicit_face_weight = distance (sp): the face kappa_T of the momentum deposit is
   // the one the face equation used
   auto cx1f = pmy_pack->pcoord->xx1f;
@@ -18328,6 +18339,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     MPI_Allreduce(&vmx, &g, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     vmx = g;}
 #endif
+    if (impl_wb_vkdiag && nk > 0.0) {   // vkdiag-1111: where the kicked cells are
+      Real dmn[4] = {hk(2), hk(4), hk(7), 0.0}, dmx[4] = {hk(3), hk(5), hk(6), 0.0};
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, dmn, 3, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, dmx, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> VKDIAG cycle " << pmy_pack->pmesh->ncycle << " "
+                  << (t2st ? ((t2s == M1_T2S_STAGE1) ? "stage1" : "stage2") : "be")
+                  << " n " << nk << " rho " << dmn[0] << " " << dmx[0] << " r "
+                  << dmn[1] << " " << dmx[1] << " |v_old| " << dmn[2] << " " << dmx[2]
+                  << " |v_new|max " << vmx << std::endl;
+      }
+    }
     if (nk > 0.0 && t2st && !t2_inprobe) {
       const bool was = t2_fail;
       vkick_nrej += 1.0;

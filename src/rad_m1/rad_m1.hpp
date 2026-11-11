@@ -681,6 +681,10 @@ class RadiationM1 {
   // vkick_cnt_d: 0 cells this solve, 1 max |v_new| this solve, 2/3 BE totals
   Real impl_wb_vkrej = 0.0;
   DvceArray1D<Real> vkick_cnt_d;
+  // vkdiag-1111 <rad_m1>/implicit_wb_vkick_diag (read only when named, default false):
+  // where the kicked cells are: vkick_cnt_d 2/3 min/max rho, 4/5 min/max r (sp x1v),
+  // 6 max old |v|, 7 min old |v|; printed with every vkick line.  Diagnostic only.
+  bool impl_wb_vkdiag = false;
   Real vkick_nrej = 0.0, vkick_nbe = 0.0, vkick_nbecell = 0.0;
   // r136e-1107 <rad_m1>/implicit_wb_vkick_be_retry (read only when named; needs
   // implicit_wb_vkick_reject and <time>/dt_retry): a backward-Euler solve that kicks a
