@@ -1094,6 +1094,13 @@ class RadiationM1 {
   // restart continues bitwise.  The reader restores them whenever the file has them and
   // the run has cmem (and then skips implicit_hr_cmem_fainit).
   bool impl_cm_rst = false;
+  // vkdiag-1111 implicit_wb_inertia = exact (opt-in, read only when named; default lag):
+  // the conservative write-back forms the charged cell F at the POST-kick velocity in
+  // every solve (BE too) and solves the linear kick / cell-F relation in closed form,
+  // i.e. the gas responds with rho + (E + P)/c^2 (the radiation enthalpy inertia, with
+  // the code's own D tensor) instead of a lagged a^n / a^{n+1} pair that alternates
+  // where (4/3)E/(rho c^2) ~ 1.  sp / Cartesian, not with cs2 clip / hll / dacap.
+  bool impl_wb_inex = false;
   // vkdiag-1111 implicit_physflux_cs2 = fc (opt-in, read only when named; physflux, sp /
   // Cartesian): the conservative2 momentum budget of the write-back uses ONE flux, the
   // face-equation memory F_c, for both its old and new value: F^old = mean F_c^n (incl.

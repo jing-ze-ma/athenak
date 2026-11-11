@@ -681,6 +681,66 @@
           dm1 = x1 - (e1 - go1)*icc;
           dm2 = tq ? (x2 - (e2 - go2)*icc) : 0.0;
           dm3 = (tq && thrd) ? (x3 - (e3 - go3)*icc) : 0.0;
+#if !(defined(M1_C2CR) && M1_C2CR) && !M1_CSW
+          if (wbex) {
+            // vkdiag-1111 implicit_wb_inertia = exact (rad_m1.hpp): the cell F the budget
+            // charges is formed at the POST-kick velocity w = (u + dm)/rho, q = F_m +
+            // es (I + D) w, so dm = x - (q - go) icc is linear in dm:
+            // [I + (icc es/rho)(I + D)] dm = x - icc (F_m + es (I + D) w0 - go), the gas
+            // responding with its inertia plus the radiation's (E + P)/c^2 at once.
+            const Real chx = iw_(m,M1_IW_WCHI,k,j,i);
+            const Real nx1 = iw_(m,M1_IW_N1,k,j,i), nx2 = iw_(m,M1_IW_N2,k,j,i);
+            const Real nx3 = iw_(m,M1_IW_N3,k,j,i);
+            Real b[3][3];
+            b[0][0] = M1EddDiag(chx,nx1); b[1][1] = M1EddDiag(chx,nx2);
+            b[2][2] = M1EddDiag(chx,nx3);
+            b[0][1] = M1EddOff(chx,nx1,nx2); b[0][2] = M1EddOff(chx,nx1,nx3);
+            b[1][2] = M1EddOff(chx,nx2,nx3);
+            if (dfull) {
+              b[0][0] = vd_(m,M1_VET_D11,k,j,i);
+              b[1][1] = vd_(m,M1_VET_D11+1,k,j,i);
+              b[2][2] = vd_(m,M1_VET_D11+2,k,j,i);
+              b[0][1] = vd_(m,M1_VET_D11+3,k,j,i);
+              b[0][2] = vd_(m,M1_VET_D11+4,k,j,i);
+              b[1][2] = vd_(m,M1_VET_D11+5,k,j,i);
+            }
+            b[1][0] = b[0][1]; b[2][0] = b[0][2]; b[2][1] = b[1][2];
+            for (int c = 0; c < 3; ++c) {b[c][c] += 1.0;}
+            const Real esx = iw_(m,M1_IW_EP,k,j,i);
+            const int na = tq ? (thrd ? 3 : 2) : 1;
+            const Real w0[3] = {(uh(m,IM1,k,j,i) - dmref)*idg,
+                                tq ? uh(m,IM2,k,j,i)*idg : v2,
+                                (tq && thrd) ? uh(m,IM3,k,j,i)*idg : v3};
+            const Real fm[3] = {0.5*(fl + fr), 0.5*(g2l + g2r), 0.5*(g3l + g3r)};
+            const Real xv[3] = {x1, x2, x3}, gv[3] = {go1, go2, go3};
+            Real am[3][3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
+            Real rh[3] = {0.0, 0.0, 0.0};
+            const Real sc = icc*esx*idg;
+            for (int c = 0; c < na; ++c) {
+              Real bw = 0.0;
+              for (int kk = 0; kk < 3; ++kk) {bw += b[c][kk]*w0[kk];}
+              rh[c] = xv[c] - icc*(fm[c] + esx*bw - gv[c]);
+              for (int kk = 0; kk < na; ++kk) {am[c][kk] += sc*b[c][kk];}
+            }
+            // Gauss elimination on the na x na block (diagonally dominant: I + PSD)
+            for (int p = 0; p < na; ++p) {
+              for (int r = p+1; r < na; ++r) {
+                const Real f = am[r][p]/am[p][p];
+                for (int kk = p; kk < na; ++kk) {am[r][kk] -= f*am[p][kk];}
+                rh[r] -= f*rh[p];
+              }
+            }
+            Real so[3] = {0.0, 0.0, 0.0};
+            for (int p = na-1; p >= 0; --p) {
+              Real t = rh[p];
+              for (int kk = p+1; kk < na; ++kk) {t -= am[p][kk]*so[kk];}
+              so[p] = t/am[p][p];
+            }
+            dm1 = so[0];
+            dm2 = (na > 1) ? so[1] : 0.0;
+            dm3 = (na > 2) ? so[2] : 0.0;
+          }
+#endif
           if (c2fc) {   // vkdiag-1111 cs2 = fc: F^new = mean F_c' + a' E' (the e* a' E')
             dm1 -= (0.5*(cfc1_(m,k,j,i) + cfc1_(m,k,j,i+1)) - 0.5*(fl + fr))*icc;
             if (tq) {
@@ -754,7 +814,7 @@
           Real eq = efc ? ep : (ep - (ch/cl)*wq);
           if (wkb_ && !efc) {eq += iw_(m,M1_IW_KZ,k,j,i);}   // kick581-1024
           q1 = r1;  q2 = r2;  q3 = r3;
-          if (vfx && !csw) {
+          if ((vfx || wbex) && !csw) {
             // m1-sp-order2b: the cell F at the velocity the kick gives the gas
             const Real w1 = (uh(m,IM1,k,j,i) + dm1 - dmref)*idg;
             Real w2 = v2, w3 = v3;

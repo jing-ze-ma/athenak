@@ -3874,6 +3874,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(fax1, 0.0);
     impl_cm_fainit = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_fainit") &&
                      pin->GetBoolean("rad_m1","implicit_hr_cmem_fainit");   // vkdiag-1111
+    if (pin->DoesParameterExist("rad_m1","implicit_wb_inertia")) {   // vkdiag-1111
+      const std::string wi = pin->GetString("rad_m1","implicit_wb_inertia");
+      if (wi.compare("exact") == 0) {
+        impl_wb_inex = true;
+      } else if (wi.compare("lag") != 0) {
+        ImplFatal("<rad_m1>/implicit_wb_inertia = '" + wi + "' is not a choice "
+                  "(lag | exact)");
+      }
+    }
     impl_cm_rst = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_rst") &&
                   pin->GetBoolean("rad_m1","implicit_hr_cmem_rst");   // vkdiag-1111
     if (pin->DoesParameterExist("rad_m1","implicit_physflux_cs2")) {   // vkdiag-1111
@@ -18287,6 +18296,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // vkdiag-1111 implicit_physflux_cs2 = fc (rad_m1.hpp): the budget's F_c faces + a^n
   const bool c2fc = impl_physflux && impl_pf_cs2fc && !cs_geom;
   const bool c2ok = c2fc && cs2a_ok;
+  // vkdiag-1111 implicit_wb_inertia = exact: not with the cs2 hll / dacap terms
+  const bool wbex = impl_wb_inex && !cs_geom && !c2h && !gcap;
   auto cfc1_ = f0x1, cfc2_ = f0x2, cfc3_ = f0x3;
   auto c2a_ = cs2a;
   if (impl_hr_cmem && !(impl_physflux && !impl_pf_fa)) {   // physflux: wb reads F_c
