@@ -716,8 +716,8 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
   // knblend-1111 (implicit_blend = knf, knlo >= 0): w times smoothstep((Kn - lo)/(hi -
   // lo)) of the face Knudsen number Kn = |E^n_R - E^n_L|/(tau_f Ebar^n), Ebar^n the face
   // mean: -> |grad E|/(chi E) as dx -> 0 (no tau_f factor of its own), from E^n (frozen
-  // over the step's Picard passes).  Upwind only where the field is beamed (switch) AND in
-  // the transport regime; vacuum / dark faces (tau_f Ebar = 0) keep the switch weight
+  // over the step's Picard passes).  Upwind only where the field is beamed (switch) AND
+  // in the transport regime; vacuum / dark faces (tau_f Ebar = 0) keep the switch weight
   if (knlo >= 0.0 && w > 0.0) {
     const Real den = tauf*0.5*(fmax(enl, 0.0) + fmax(enr, 0.0));
     if (den > 0.0) {
@@ -2748,7 +2748,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_blend_knlo = pin->GetOrAddReal("rad_m1","implicit_blend_kn_lo",0.1);
       impl_blend_knhi = pin->GetOrAddReal("rad_m1","implicit_blend_kn_hi",0.3);
       if (!(impl_blend_knlo >= 0.0) || !(impl_blend_knhi > impl_blend_knlo)) {
-        ImplFatal("<rad_m1>/implicit_blend_kn_lo must be >= 0 and < implicit_blend_kn_hi");
+        ImplFatal("<rad_m1>/implicit_blend_kn_lo must be >= 0 and < "
+                  "implicit_blend_kn_hi");
       }
     }
     if (impl_thsw != M1_THSW_NONE) {
