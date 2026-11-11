@@ -2903,6 +2903,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                       pin->GetReal("rad_m1","implicit_hr_recon_qe_tau") : 0.0;   // vgdhr
         impl_hlim = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hlim") &&
                     pin->GetBoolean("rad_m1","implicit_hr_recon_hlim");   // vgdhr-1110
+        impl_dlim = pin->DoesParameterExist("rad_m1","implicit_hr_recon_dlim") &&
+                    pin->GetBoolean("rad_m1","implicit_hr_recon_dlim");   // spacefix-1111
+        if (impl_dlim && !(impl_muscl_hq && !impl_muscl_led && (vet_sc || vgd_on))) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_dlim needs implicit_hr_recon = plm, "
+                    "implicit_hr_recon_q = h and a formal solution (vet_sc | vet_gd)");
+        }
         if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_hsmooth_eps")) {
           impl_hsm_eps = pin->GetReal("rad_m1","implicit_hr_recon_hsmooth_eps");
         }
@@ -19229,8 +19235,10 @@ void RadiationM1::ImplicitMusclBuild() {
   const Real kjx = impl_kjump;
   const Real hsmc = impl_hsm, hsme = impl_hsm_eps;   // vgdhr-1110 hsmooth
   const bool hlim = impl_hlim;   // vgdhr-1110 hlim
+  const bool dlm = impl_dlim;   // spacefix-1111 dlim
   const int hjsrc = vet_sc ? 1 : ((vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0)) ? 2
                                   : (impl_hr_model ? (pmy_pack->pmesh->multi_d ? 0 : 3) : -1));
+  const bool dgdj = (hjsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
   auto hjvc_ = vet_cell;
   auto hjgh_ = vgd_hr;
   const int hsb = iw_hsf;
@@ -19340,6 +19348,68 @@ void RadiationM1::ImplicitMusclBuild() {
             }
           }
         }
+      }
+      // spacefix-1111 implicit_hr_recon_dlim: the limiter of the reconstructed quantity.
+      // With q = h + thin_corr_plm the face carries q c H_f (formal solution) + the plm
+      // face state of D+- = h+- (E - q J): sig is van Leer (or the smooth branch) of D+
+      // and D- (the smaller), from the cells c-2..c+2 along d.  Where the field is
+      // quasi-steady (q -> 1, E -> J: opaque-body and beam edges at c dt/dx >> 1) D is
+      // the small transient remainder and its slope cannot push the face out of the
+      // positive formal-solution value; at a moving front (q -> 0) D = H(E), the plm of
+      // E itself.  No threshold, no dt.
+      if (dlm && ok && hjsrc >= 0) {
+        auto jcl = [&](const int kk, const int jj, const int ii) {
+          if (hjsrc == 1) {return fmax(hjvc_(m,M1_VET_J,kk,jj,ii), 0.0);}
+          if (!dgdj || hjgh_(m,0,kk,jj,ii) < 0.0) {return 0.0;}
+          return fmax(hjgh_(m,M1_VGD_HRJ,kk,jj,ii), 0.0);
+        };
+        const Real en0 = fmax(iw_(m,M1_IW_EN,k,j,i), 0.0), jn0 = jcl(k,j,i);
+        const Real rq = (fmax(en0, jn0) > 0.0) ? fmin(en0, jn0)/fmax(en0, jn0) : 1.0;
+        const Real qc = rq*rq;
+        const int c = (d == 0) ? i : ((d == 1) ? j : k);
+        const int cs = (d == 0) ? is : ((d == 1) ? js : ks);
+        const int ce = (d == 0) ? ie : ((d == 1) ? je : ke);
+        const bool w2 = smo && (c - 2 >= cs) && (c + 2 <= ce);
+        Real dp[5], dm[5];
+        for (int o = (w2 ? -2 : -1); o <= (w2 ? 2 : 1); ++o) {
+          int kk = k, jj = j, ii = i;
+          if (o == -1 || o == 1) {
+            kk = (o < 0) ? ((d == 2) ? k - 1 : k) : ((d == 2) ? k + 1 : k);
+            jj = (o < 0) ? ((d == 1) ? j - 1 : j) : ((d == 1) ? j + 1 : j);
+            ii = (d != 0) ? i : ((o < 0) ? ((i > is) ? (i-1) : ie)
+                                         : ((i < ie) ? (i+1) : is));
+          } else if (o != 0) {
+            kk = (d == 2) ? k + o : k;
+            jj = (d == 1) ? j + o : j;
+            ii = (d == 0) ? i + o : i;
+          }
+          Real hp, hm, fb;
+          M1HrCell(hjsrc, iw_, hjvc_, hjgh_, m, kk, jj, ii, d, iw_(m,M1_IW_RF0,kk,jj,ii),
+                   hp, hm, fb);
+          const Real dv = iw_(m,M1_IW_EP,kk,jj,ii) - qc*jcl(kk, jj, ii);
+          dp[o+2] = fmax(hp, 0.0)*dv;
+          dm[o+2] = fmin(hm, 0.0)*dv;
+        }
+        auto lim = [&](const Real *v, bool &sm) {
+          const Real a1 = v[2] - v[1], b1 = v[3] - v[2];
+          sm = false;
+          if (w2) {
+            const Real d2m = a1 - (v[1] - v[0]), d2c = b1 - a1, d2p = (v[4] - v[3]) - b1;
+            if ((d2m > 0.0 && d2c > 0.0 && d2p > 0.0) ||
+                (d2m < 0.0 && d2c < 0.0 && d2p < 0.0)) {
+              const Real amin = fmin(fmin(fabs(d2m), fabs(d2c)), fabs(d2p));
+              const Real amax = fmax(fmax(fabs(d2m), fabs(d2c)), fabs(d2p));
+              sm = (amax <= smc*amin);
+            }
+          }
+          if (sm) {return 1.0;}
+          return (a1*b1 > 0.0) ? 4.0*a1*b1/SQR(a1 + b1) : 0.0;
+        };
+        bool smp, smm;
+        const Real sgp = lim(dp, smp), sgm = lim(dm, smm);
+        sg = fmin(sgp, sgm);
+        smooth = smp && smm;
+        sb = 0.0;
       }
       if (first) {
         if (d == 0) {iw_(m,b+M1_IM_KILL,k,j,i) = 0.0;}

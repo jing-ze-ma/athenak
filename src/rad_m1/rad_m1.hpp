@@ -1021,6 +1021,13 @@ class RadiationM1 {
   // H- = h- E themselves (sig = min(sig_E, sig_H+, sig_H-)): a ratio-preserving limiter,
   // no H+- overshoot where h jumps under a smooth E (shadow / opaque-body edges)
   bool impl_hlim = false;
+  // spacefix-1111 implicit_hr_recon_dlim = true (opt-in, read only when named; plm on h
+  // with the formal solution, not led): the limiter sig is TVD on the quantity the plm
+  // slope actually carries, D+- = h+- (E - q J) (q = r^2, r = min(E^n/J, J/E^n) of the
+  // slope-centre cell: the quasi-steadiness gate of thin_corr hc), not on E: the steady
+  // part q H+-(J) reaches the face through the formal solution (positive by
+  // construction), only the transient remainder is reconstructed
+  bool impl_dlim = false;
   // vgdhr-1110 implicit_hr_recon_qe_tau = T > 0 (opt-in, read only when named; plm on h,
   // not led): a slope centred on a cell OPAQUE along d (tau_d = chi dx_d > T) is the donor
   // ratio times the E slope, h_c (E_c+1 - E_c-1) sig/4, instead of the slope of H = h E
