@@ -1007,7 +1007,7 @@ void M1HqW(const bool os, const int c, const int cs, const int ce, const bool sl
 //! \fn M1TvdhR
 //! \brief physrec-1111 (implicit_hr_recon = tvdh): the half-range ratios of cell (k,j,i)
 //! along d whose H+- = h+- E the TVD reconstruction uses, the ratios of the faces the
-//! cell is the upwind donor of: the cell ratios (M1HrCell, clipped h+ >= 0, h- <= 0) with,
+//! cell is the upwind donor of: the cell ratios (M1HrCell, clipped h+ >= 0, h- <= 0),
 //! under implicit_hr_face = sf (hsb >= 0), the sf donor scale of that face (M1HrSf, no
 //! js weight): h+ of the face c|c+1, h- of the face c-1|c, as the face kernels' HCL/HCR.
 //! So the reconstructed face value starts from exactly the donor-cell face flux.
