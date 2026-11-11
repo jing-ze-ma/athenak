@@ -96,6 +96,27 @@ const char *kDtrMinimal[] = {
 // 5-D Views to a variable range and to the active or ghost cells (ng ghosts)
 int g_pn_lo = -1, g_pn_hi = -1, g_pcells = 0, g_png = 0;
 
+// is (i, j, k) of an (n3, n2, n1) block with ng ghosts in the dt_retry_poison_cells region
+bool InRegion(int i, int j, int k, int n1, int n2, int n3, int ng) {
+  const int di = (i < ng) ? ng - i : ((i >= n1 - ng) ? i - (n1 - ng) + 1 : 0);
+  const int dj = (n2 == 1) ? 0 : ((j < ng) ? ng - j :
+                                  ((j >= n2 - ng) ? j - (n2 - ng) + 1 : 0));
+  const int dk = (n3 == 1) ? 0 : ((k < ng) ? ng - k :
+                                  ((k >= n3 - ng) ? k - (n3 - ng) + 1 : 0));
+  const int dt = std::max(dj, dk);
+  switch (g_pcells) {
+    case 1: return di == 0 && dt == 0;               // active
+    case 2: return di > 0 || dt > 0;                 // ghost
+    case 3: return di > 0 && dt == 0;                // x1 ghosts
+    case 4: return di == 0 && dt > 0 && dt <= 2;     // x2/x3 ghosts, depth <= 2
+    case 5: return di == 0 && dt > 2;                // x2/x3 ghosts, depth > 2
+    case 6: return di > 0 && dt > 0;                 // edges and corners
+    case 7: return di == 1 && dt == 0 && i < ng;     // inner x1, first layer
+    case 8: return di == 1 && dt == 0 && i >= ng;    // outer x1, first layer
+    default: return true;
+  }
+}
+
 // copy-assign anything, arrays element by element
 template <class T> void Assign(T &a, const T &b) {
   if constexpr (std::is_array_v<T>) {
@@ -210,68 +231,73 @@ struct ViewEntry : public Entry {
     return std::memcmp(a.data(), b.data(),
                        a.span()*sizeof(typename T::non_const_value_type)) != 0;
   }
-  void Poison() override {
+  // dt_retry_poison (debug): PoisonPrepare runs BEFORE the put-back and stores the
+  // clone with NaN in every element the failed attempt changed (dt_retry_poison = 1; = 2:
+  // every element, the whole View); Poison, after the put-back, writes it.  An element
+  // the attempt did not write (e.g. a ghost that no kernel ever fills, constant since the
+  // allocation) is not poisoned by 1: it holds the same value in the straight run.
+  // dtretry-1111: dt_retry_poison_n (lo:hi of the variable index) and
+  // dt_retry_poison_cells (active | ghost | gx1 | gt2 | gtdeep | gedge | gx1in1 |
+  // gx1out1) restrict a 5-D View's poison to a variable range and a region
+  using HMirror = typename T::HostMirror;
+  HMirror pz;
+  bool pz_have = false;
+  std::int64_t pz_n = 0, pz_tot = 0;
+  void PoisonPrepare(bool whole) override {
+    pz_have = false;
     if constexpr (std::is_floating_point_v<typename T::non_const_value_type>) {
-      if (p->data() != nullptr && p->span() > 0) {
-        using V = typename T::non_const_value_type;
-        const V nan = std::numeric_limits<V>::quiet_NaN();
+      using V = typename T::non_const_value_type;
+      if (!have || p->data() == nullptr || p->span() == 0 || !p->span_is_contiguous()) {
+        return;
+      }
+      if (p->data() != orig.data()) return;   // reallocated: the put-back replaces it
+      auto a = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), *p);
+      pz = Kokkos::create_mirror_view(*p);
+      if (onhost) {
+        Kokkos::deep_copy(pz, hclone);
+      } else {
+        auto b = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), clone);
+        std::memcpy(pz.data(), b.data(), b.span()*sizeof(V));
+      }
+      const V nan = std::numeric_limits<V>::quiet_NaN();
+      const std::size_t ns = pz.span();
+      int ex[5] = {1, 1, 1, 1, 1};
+      if constexpr (T::rank == 5) {
+        for (int r = 0; r < 5; ++r) {ex[r] = static_cast<int>(p->extent(r));}
+      }
+      const int ng = g_png;
+      pz_n = 0; pz_tot = 0;
+      for (std::size_t q = 0; q < ns; ++q) {
         if constexpr (T::rank == 5) {
-          // dtretry-1111 debug: dt_retry_poison_n (lo:hi of the variable index) and
-          // dt_retry_poison_cells (active | ghost) poison part of a 5-D View only
           if (g_pn_lo >= 0 || g_pcells != 0) {
-            auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), *p);
-            const int ng = g_png;
-            std::int64_t ncell = 0, nnz = 0;
-            double amax = 0.0;
-            for (int m = 0; m < static_cast<int>(h.extent(0)); ++m) {
-            for (int n = 0; n < static_cast<int>(h.extent(1)); ++n) {
-              if (g_pn_lo >= 0 && (n < g_pn_lo || n > g_pn_hi)) continue;
-              for (int k = 0; k < static_cast<int>(h.extent(2)); ++k) {
-              for (int j = 0; j < static_cast<int>(h.extent(3)); ++j) {
-              for (int i = 0; i < static_cast<int>(h.extent(4)); ++i) {
-                const bool act = (i >= ng && i < static_cast<int>(h.extent(4)) - ng) &&
-                  (h.extent(3) == 1 || (j >= ng && j < static_cast<int>(h.extent(3)) - ng))
-                  && (h.extent(2) == 1 ||
-                      (k >= ng && k < static_cast<int>(h.extent(2)) - ng));
-                if (g_pcells == 1 && !act) continue;
-                if (g_pcells == 2 && act) continue;
-                if (g_pcells >= 3) {
-                  // ghost depth per direction (0 = active)
-                  const int n1 = h.extent(4), n2 = h.extent(3), n3 = h.extent(2);
-                  const int di = (i < ng) ? ng - i : ((i >= n1 - ng) ? i - (n1 - ng) + 1 : 0);
-                  const int dj = (n2 == 1) ? 0 : ((j < ng) ? ng - j :
-                                 ((j >= n2 - ng) ? j - (n2 - ng) + 1 : 0));
-                  const int dk = (n3 == 1) ? 0 : ((k < ng) ? ng - k :
-                                 ((k >= n3 - ng) ? k - (n3 - ng) + 1 : 0));
-                  const int dt = (dj > dk) ? dj : dk;
-                  bool sel = false;
-                  if (g_pcells == 3) sel = (di > 0 && dt == 0);              // x1 ghosts
-                  if (g_pcells == 4) sel = (di == 0 && dt > 0 && dt <= 2);   // x2/x3, <= 2
-                  if (g_pcells == 5) sel = (di == 0 && dt > 2);              // x2/x3, > 2
-                  if (g_pcells == 6) sel = (di > 0 && dt > 0);               // edges
-                  if (g_pcells == 7) sel = (di == 1 && dt == 0 && i < ng);   // inner x1, 1
-                  if (g_pcells == 8) sel = (di == 1 && dt == 0 && i >= ng);  // outer x1, 1
-                  if (!sel) continue;
-                }
-                if (h(m,n,k,j,i) != 0.0) {nnz += 1;}
-                if (std::abs(h(m,n,k,j,i)) > amax) {amax = std::abs(h(m,n,k,j,i));}
-                ncell += 1;
-                h(m,n,k,j,i) = nan;
-              }
-              }
-              }
-            }
-            }
-            Kokkos::deep_copy(*p, h);
-            std::cout << "<time> dt_retry poison " << name << " rank "
-                      << global_variable::my_rank << ": " << ncell << " cells, " << nnz
-                      << " nonzero before, max |value| " << amax << std::endl;
-            return;
+            std::size_t r = q;
+            const int i = r % ex[4]; r /= ex[4];
+            const int j = r % ex[3]; r /= ex[3];
+            const int k = r % ex[2]; r /= ex[2];
+            const int n = r % ex[1];
+            if (g_pn_lo >= 0 && (n < g_pn_lo || n > g_pn_hi)) continue;
+            if (g_pcells != 0 && !InRegion(i, j, k, ex[4], ex[3], ex[2], ng)) continue;
           }
         }
-        Kokkos::deep_copy(*p, nan);
+        pz_tot += 1;
+        if (whole || std::memcmp(&a.data()[q], &pz.data()[q], sizeof(V)) != 0) {
+          pz.data()[q] = nan;
+          pz_n += 1;
+        }
       }
+      pz_have = true;
     }
+  }
+  void Poison() override {
+    if (!pz_have) return;
+    Kokkos::deep_copy(*p, pz);
+    if (g_pn_lo >= 0 || g_pcells != 0) {
+      std::cout << "<time> dt_retry poison " << name << " rank "
+                << global_variable::my_rank << ": " << pz_n << " of " << pz_tot
+                << " region elements set to NaN" << std::endl;
+    }
+    pz = HMirror();
+    pz_have = false;
   }
 };
 
@@ -631,6 +657,19 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
       if (e->is_view && e->Differs()) {changed.push_back(e.get());}
     }
   }
+  // dt_retry_poison: the candidates (changed, outside the minimal list, matching) are
+  // prepared before the put-back (the attempt's values are needed), written after it
+  std::vector<Entry*> pois;
+  if (poison_ > 0 && why == 9) {
+    for (auto *e : changed) {
+      if (sel_.count(e->name) > 0) continue;
+      bool hit = poison_match_.empty();
+      for (auto &mt : poison_match_) {
+        if (e->name.find(mt) != std::string::npos) {hit = true; break;}
+      }
+      if (hit) {e->PoisonPrepare(poison_ == 2); pois.push_back(e);}
+    }
+  }
   m1->DtRetryQuiesce(true);
   for (auto &e : ent_) {e->Restore();}
   Kokkos::fence();
@@ -669,18 +708,13 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
     return true;
   }
   if (poison_ > 0 && why == 9) {
-    // dt_retry_views = all: every View the failed attempt changed that the minimal list
-    // does NOT checkpoint goes to NaN after the restore; the retried cycle is bitwise the
-    // straight one only if each of them is scratch (written before it is read)
+    // dt_retry_views = all: in every View the failed attempt changed that the minimal
+    // list does NOT checkpoint, the elements the attempt wrote go to NaN after the restore
+    // (dt_retry_poison = 2: the whole View); the retried cycle is bitwise the straight one
+    // only if each of them is scratch (written before it is read).  dtretry-1111: an
+    // element no kernel writes (constant since the allocation) is read alike by both
     int np = 0;
-    for (auto *e : changed) {
-      if (sel_.count(e->name) > 0) continue;
-      bool hit = poison_match_.empty();
-      for (auto &m : poison_match_) {
-        if (e->name.find(m) != std::string::npos) {hit = true; break;}
-      }
-      if (hit) {e->Poison(); np += 1;}
-    }
+    for (auto *e : pois) {e->Poison(); np += 1;}
     Kokkos::fence();
     if (global_variable::my_rank == 0) {
       std::cout << "<time> dt_retry poison: " << np << " changed Views outside the minimal "
