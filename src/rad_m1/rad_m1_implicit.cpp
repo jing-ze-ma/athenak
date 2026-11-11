@@ -20809,7 +20809,6 @@ void RadiationM1::ImplicitConsResid(bool bicg, bool trans) {
   }
 }
 
-} // namespace radm1
 
 //----------------------------------------------------------------------------------------
 //! vkdiag-1111 implicit_hr_cmem_rst: fax1..3 to / from cell-sized restart slabs
@@ -20858,3 +20857,5 @@ bool RadiationM1::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
   impl_cm_fainit_done = true;   // restored exactly: no fainit
   return true;
 }
+
+} // namespace radm1
