@@ -718,6 +718,18 @@
               dm3 = gd3 + sc*x3q;
             }
           }
+          if (q == 3 && wvdg && dd < 1.0e-15 && fabs(dm1) > 3.0e8*dd) {
+            // vkdiag-1111: the conservative2 x1 budget of a near-vacuum kicked cell
+            const Real nprt = Kokkos::atomic_fetch_add(&vkc_(8), 1.0);
+            if (nprt < 4.0) {
+              Kokkos::printf("<rad_m1> CS2DIAG cyc %d ts %d r %.6e rho %.4e | x1(transport) "
+                             "%.4e F_new %.6e F_old(go1) %.6e u0F %.6e | e1-go1 %.4e drag "
+                             "gd1 %.4e dm1 %.4e dv %.4e v_old %.4e t2st %d csok %d\n",
+                             wvcy, wvts, psph ? wvx1(m,i) : 0.0, dd, x1, e1, go1,
+                             u0_(m,M1_F1,k,j,i), e1 - go1, gd1, dm1, dm1*idg,
+                             uh(m,IM1,k,j,i)*idg, t2st ? 1 : 0, csok ? 1 : 0);
+            }
+          }
           if (q == 3) break;
           const Real wq = kew(dm1, dm2, dm3);
           Real eq = efc ? ep : (ep - (ch/cl)*wq);

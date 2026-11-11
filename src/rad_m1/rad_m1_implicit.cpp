@@ -2271,7 +2271,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     impl_wb_vkdiag = pin->DoesParameterExist("rad_m1","implicit_wb_vkick_diag") &&
                      pin->GetBoolean("rad_m1","implicit_wb_vkick_diag");   // vkdiag-1111
-    Kokkos::realloc(vkick_cnt_d, impl_wb_vkdiag ? 8 : 2);
+    Kokkos::realloc(vkick_cnt_d, impl_wb_vkdiag ? 9 : 2);
     Kokkos::deep_copy(vkick_cnt_d, 0.0);
   }
   // hgkmom-1110 implicit_am_cs_kecap (rad_m1.hpp; read only when named)
@@ -18139,7 +18139,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     Kokkos::deep_copy(vkick_cnt_d, 0.0);
     if (impl_wb_vkdiag) {   // vkdiag-1111: min slots start at +big
       auto hv = Kokkos::create_mirror_view(vkick_cnt_d);
-      for (int q = 0; q < 8; ++q) {hv(q) = 0.0;}
+      for (int q = 0; q < 9; ++q) {hv(q) = 0.0;}
       hv(2) = 1.0e300; hv(4) = 1.0e300; hv(7) = 1.0e300;
       Kokkos::deep_copy(vkick_cnt_d, hv);
     }
