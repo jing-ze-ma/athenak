@@ -18255,10 +18255,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real s = epay(d2, d3, k2, k3, del[2], pr, prk);
           uh(m,IM2,k,j,i) += s*d2;
           uh(m,IM3,k,j,i) += s*d3;
-          {   // the gas takes what E actually gave (exact E_tot when pr < ulp(E))
-            const Real er0 = u0_(m,M1_E,k,j,i), er1 = er0 - chcl*pr;
-            u0_(m,M1_E,k,j,i) = er1;
-            uh(m,IEN,k,j,i) += clch*(er0 - er1);
+          {   // the larger of IEN, (c/ch) E takes pr first, the other the change it
+              // actually made: the E_tot error is <= ulp of the smaller one
+            const Real er0 = u0_(m,M1_E,k,j,i), eg0 = uh(m,IEN,k,j,i);
+            if (fabs(eg0) > fabs(clch*er0)) {
+              const Real eg1 = eg0 + pr;
+              uh(m,IEN,k,j,i) = eg1;
+              u0_(m,M1_E,k,j,i) = er0 - chcl*(eg1 - eg0);
+            } else {
+              const Real er1 = er0 - chcl*pr;
+              u0_(m,M1_E,k,j,i) = er1;
+              uh(m,IEN,k,j,i) = eg0 + clch*(er0 - er1);
+            }
           }
           if (t2ka) {
             kka_(m,M1_T2_M1+1,k,j,i) += s*k2/dt;
@@ -18309,10 +18317,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           uh(m,IM2,k,j,i) += s*m2;
           uh(m,IM3,k,j,i) += s*m3;
           spn_(m,k,j,i) += s*sr;
-          {   // the gas takes what E actually gave (exact E_tot when pr < ulp(E))
-            const Real er0 = u0_(m,M1_E,k,j,i), er1 = er0 - chcl*pr;
-            u0_(m,M1_E,k,j,i) = er1;
-            uh(m,IEN,k,j,i) += clch*(er0 - er1);
+          {   // the larger of IEN, (c/ch) E takes pr first, the other the change it
+              // actually made: the E_tot error is <= ulp of the smaller one
+            const Real er0 = u0_(m,M1_E,k,j,i), eg0 = uh(m,IEN,k,j,i);
+            if (fabs(eg0) > fabs(clch*er0)) {
+              const Real eg1 = eg0 + pr;
+              uh(m,IEN,k,j,i) = eg1;
+              u0_(m,M1_E,k,j,i) = er0 - chcl*(eg1 - eg0);
+            } else {
+              const Real er1 = er0 - chcl*pr;
+              u0_(m,M1_E,k,j,i) = er1;
+              uh(m,IEN,k,j,i) = eg0 + clch*(er0 - er1);
+            }
           }
           if (t2ka) {
             kka_(m,M1_T2_M1+1,k,j,i) += s*m2k/dt;
