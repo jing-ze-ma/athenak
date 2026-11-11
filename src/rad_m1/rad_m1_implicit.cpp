@@ -16870,6 +16870,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const Real cmcap = impl_hr_cmem_cap;   // hr2prod-1110
     auto fa1_ = cmf ? fax1 : f0x1;
     auto gzo_ = (impl_cmgfa && fax1n.extent(0) > 0) ? fax1n : f0x1n;   // vgdhr-1110
+    // vkdiag-1111 FCDIAG: the x1 face memory / applied flux of one column in the shell
+    const int fdcy = pmy_pack->pmesh->ncycle, fdts = static_cast<int>(t2s);
+    const bool fdg = impl_wb_vkdiag && (fdcy == 89484 || fdcy == 89485) &&
+                     (global_variable::my_rank == 0);
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
@@ -17181,6 +17185,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             fn += ptd;
             Kokkos::atomic_add(&ptcf_(0), 1.0);
           }
+        }
+        if (fdg && m == 0 && j == js && k == ks && cx1f(m,i) > 2.9e12 &&
+            cx1f(m,i) < 3.5e12) {
+          Kokkos::printf("<rad_m1> FCDIAG cyc %d ts %d i %d r %.6e Fc_n %.6e Fc %.6e Fa %.6e "
+                         "th %.6e al %.4e tau %.4e cdtdx %.4e E_im %.6e E_ip %.6e\n",
+                         fdcy, fdts, i, cx1f(m,i), f0n_(m,k,j,i), fnc, fn, th,
+                         aphll ? al : -1.0,
+                         iw_(m,M1_IW_KT,k,j,ip)*(cx1f(m,ip+1) - cx1f(m,ip)),
+                         ch*dt/(cx1v(m,ip) - cx1v(m,im)), iw_(m,M1_IW_EP,k,j,im),
+                         iw_(m,M1_IW_EP,k,j,ip));
         }
         f0_(m,k,j,i) = fn;
         if (cmf) {
