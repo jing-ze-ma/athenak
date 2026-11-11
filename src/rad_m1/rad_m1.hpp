@@ -1004,6 +1004,12 @@ class RadiationM1 {
   // |h+_c - h+_n| + |h-_c - h-_n| > X (an opaque-body surface: isotropic inside, outward
   // peaked outside; a shadow edge): those cells keep donor cell.  Angular data only.
   Real impl_hjump = 0.0;
+  // vgdhr-1110 (opt-in, read only when named): implicit_hr_recon_hjump_w = W (default 1):
+  // the hjump gate looks W cells each way along d (a dilation of the gate by W - 1);
+  // implicit_hr_recon_kjump = K > 1: plm on h also off where the extinction chi of a cell
+  // within W along d differs from the cell's by more than a factor K (opaque surfaces)
+  int impl_hjw = 1;
+  Real impl_kjump = 0.0;
   // hr2prod-1110 implicit_thin_gface = max (default) | mean | jump (read only when named):
   // the face thinness g_f of the implicit_thin_switch weight S(g_f).  max(g_L, g_R) moves
   // the switch by dx/2 against the gradient of g (an O(dx) shift of the blend region: a

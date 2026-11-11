@@ -2846,6 +2846,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         if (impl_hjump > 0.0 && !impl_muscl_hq) {
           ImplFatal("<rad_m1>/implicit_hr_recon_hjump needs implicit_hr_recon_q = h");
         }
+        if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_hjump_w")) {   // vgdhr
+          impl_hjw = std::max(1, pin->GetInteger("rad_m1","implicit_hr_recon_hjump_w"));
+        }
+        impl_kjump = pin->DoesParameterExist("rad_m1","implicit_hr_recon_kjump") ?
+                     pin->GetReal("rad_m1","implicit_hr_recon_kjump") : 0.0;   // vgdhr
         if (impl_sfgate && !impl_muscl_hq) {
           ImplFatal("<rad_m1>/implicit_hr_recon_sfgate needs implicit_hr_recon_q = h");
         }
@@ -19105,6 +19110,8 @@ void RadiationM1::ImplicitMusclBuild() {
   const bool sfg = impl_sfgate && (iw_hsf >= 0);   // hr2prod-1110
   const bool smo0 = impl_muscl_smooth0;
   const Real hjx = impl_hjump;   // hr2prod-1110
+  const int hjw = impl_hjw;   // vgdhr-1110
+  const Real kjx = impl_kjump;
   const int hjsrc = vet_sc ? 1 : ((vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0)) ? 2
                                   : (impl_hr_model ? (pmy_pack->pmesh->multi_d ? 0 : 3) : -1));
   auto hjvc_ = vet_cell;
@@ -19240,20 +19247,44 @@ void RadiationM1::ImplicitMusclBuild() {
         };
         Real hp0, hm0, hpa, hma, hpb, hmb;
         hrd(k, j, i, hp0, hm0);
-        int ka = k, kb = k, ja = j, jb = j, ia = i, ib = i;
-        if (d == 0) {
-          ia = (i > is) ? (i-1) : (cyclic ? ie : i);
-          ib = (i < ie) ? (i+1) : (cyclic ? is : i);
-        } else if (d == 1) {
-          ja = j - 1; jb = j + 1;
-        } else {
-          ka = k - 1; kb = k + 1;
+        bool off = false;
+        for (int s1 = 1; s1 <= hjw && !off; ++s1) {   // vgdhr-1110 hjump_w (1 = as before)
+          int ka = k, kb = k, ja = j, jb = j, ia = i, ib = i;
+          if (d == 0) {
+            ia = (i - s1 >= is) ? (i - s1) : (cyclic ? (ie + 1 - (is - (i - s1))) : is);
+            ib = (i + s1 <= ie) ? (i + s1) : (cyclic ? (is - 1 + ((i + s1) - ie)) : ie);
+          } else if (d == 1) {
+            ja = j - s1; jb = j + s1;
+          } else {
+            ka = k - s1; kb = k + s1;
+          }
+          hrd(ka, ja, ia, hpa, hma);
+          hrd(kb, jb, ib, hpb, hmb);
+          const Real ja_ = fabs(hp0 - hpa) + fabs(hm0 - hma);
+          const Real jb_ = fabs(hp0 - hpb) + fabs(hm0 - hmb);
+          if (fmax(ja_, jb_) > hjx) {off = true;}
         }
-        hrd(ka, ja, ia, hpa, hma);
-        hrd(kb, jb, ib, hpb, hmb);
-        const Real ja_ = fabs(hp0 - hpa) + fabs(hm0 - hma);
-        const Real jb_ = fabs(hp0 - hpb) + fabs(hm0 - hmb);
-        if (fmax(ja_, jb_) > hjx) {sg = 0.0; sb = 0.0;}
+        if (off) {sg = 0.0; sb = 0.0;}
+      }
+      if (kjx > 1.0 && sg != 0.0) {   // vgdhr-1110 implicit_hr_recon_kjump
+        const Real k0 = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
+        bool off = false;
+        for (int s1 = 1; s1 <= hjw && !off; ++s1) {
+          for (int sd = -1; sd <= 1; sd += 2) {
+            int kk = k, jj = j, ii = i;
+            if (d == 0) {
+              ii = i + sd*s1;
+              if (ii < is || ii > ie) {continue;}
+            } else if (d == 1) {
+              jj = j + sd*s1;
+            } else {
+              kk = k + sd*s1;
+            }
+            const Real kn = fmax(iw_(m,M1_IW_KT,kk,jj,ii), 1.0e-300);
+            if (kn > kjx*k0 || k0 > kjx*kn) {off = true;}
+          }
+        }
+        if (off) {sg = 0.0; sb = 0.0;}
       }
       if (sfg && sg != 0.0) {   // hr2prod-1110 implicit_hr_recon_sfgate
         auto sfc = [&](const int kk, const int jj, const int ii) {
