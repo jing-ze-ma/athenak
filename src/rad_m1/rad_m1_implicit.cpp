@@ -2273,7 +2273,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   if (pin->DoesParameterExist("rad_m1","implicit_am_cs_cons_diag")) {
     impl_am_cons_diag = pin->GetInteger("rad_m1","implicit_am_cs_cons_diag");
-    if (impl_am_cons_diag > 0) {Kokkos::realloc(amcd_d, 16);}
+    if (impl_am_cons_diag > 0) {Kokkos::realloc(amcd_d, 24);}
   }
   // amvec-1111 implicit_am_cs_deposit (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_am_cs_deposit")) {
@@ -18042,7 +18042,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool aen = (impl_am_en == 1);
     const Real aef = impl_am_en_frac, clch = cl/ch, chcl = ch/cl;
     auto aed_ = amen_d;
-    const bool acd = (impl_am_cons_diag > 0) && (amcd_d.extent_int(0) == 16);
+    const bool acd = (impl_am_cons_diag > 0) && (amcd_d.extent_int(0) == 24);
     auto acd_ = amcd_d;
     if (acd) {Kokkos::deep_copy(amcd_d, 0.0);}
     // amvec-1111 implicit_am_cs_deposit = patch (rad_m1.hpp): this kernel stores the
@@ -18088,6 +18088,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         o[0] = dv*(rcv[1]*p[2] - rcv[2]*p[1]);
         o[1] = dv*(rcv[2]*p[0] - rcv[0]*p[2]);
         o[2] = dv*(rcv[0]*p[1] - rcv[1]*p[0]);
+      };
+      // amvec-1111 cons_diag: the Cartesian momentum x V of a covariant cell vector
+      auto pvc = [&](const Real a1, const Real b2, const Real b3, Real *o) {
+        const Real a2 = (b2 - c*b3)/s2, a3 = (b3 - c*b2)/s2;
+        for (int q = 0; q < 3; ++q) {o[q] = dv*(a1*rh[q] + a2*e1[q] + a3*e2[q]);}
       };
       Real dlg[3], dlr[3];
       lv(uh(m,IM1,k,j,i) - am_(m,0,k,j,i), uh(m,IM2,k,j,i) - am_(m,1,k,j,i),
@@ -18281,6 +18286,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             Kokkos::atomic_add(&acd_(6+q), del[q]);
           }
           Kokkos::atomic_add(&acd_(15), fabs(dlg[2]) + fabs(dlr[2]));
+          Real pg[3], pr3[3];
+          pvc(uh(m,IM1,k,j,i) - am_(m,0,k,j,i), uh(m,IM2,k,j,i) - am_(m,1,k,j,i),
+              uh(m,IM3,k,j,i) - am_(m,2,k,j,i), pg);
+          pvc(u0_(m,M1_F1,k,j,i) - am_(m,3,k,j,i), u0_(m,M1_F2,k,j,i) - am_(m,4,k,j,i),
+              u0_(m,M1_F3,k,j,i) - am_(m,5,k,j,i), pr3);
+          Real pa = 0.0;
+          for (int q = 0; q < 3; ++q) {
+            Kokkos::atomic_add(&acd_(16+q), pg[q] + icc*pr3[q]);
+            pa += (pg[q] + icc*pr3[q])*(pg[q] + icc*pr3[q]);
+          }
+          Kokkos::atomic_add(&acd_(23), sqrt(pa));
         }
         return;
       }
@@ -18487,11 +18503,29 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // amcsE-1111 AMCS_CONS: 0-2 the exchange's L change (gas + rad + deposit), 3-5
         // the face torque it should equal, 6-8 del minus the deposited L, 9 the deposit's
         // E_tot change, 10 its |d e_gas|, 11 E_tot, 12-14 L of gas + rad (+ spin), 15
-        // |dL_g,z| + |dL_r,z| (all x V, rank sums)
+        // |dL_g,z| + |dL_r,z| (all x V, rank sums); amvec-1111: 16-18 the exchange's
+        // Cartesian momentum change dm + dF/(c chat) before the deposit, 19-21 the
+        // deposit's, 22 sum |deposit dP|, 23 sum |exchange dP|
         Real dla[3], lgn[3], lrn[3];
         lv(uh(m,IM1,k,j,i) - bm1, uh(m,IM2,k,j,i) - bm2, uh(m,IM3,k,j,i) - bm3, dla);
         lv(uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i), lgn);
         lv(u0_(m,M1_F1,k,j,i), u0_(m,M1_F2,k,j,i), u0_(m,M1_F3,k,j,i), lrn);
+        {
+          Real pg[3], pr3[3], pd[3];
+          pvc(bm1 - am_(m,0,k,j,i), bm2 - am_(m,1,k,j,i), bm3 - am_(m,2,k,j,i), pg);
+          pvc(u0_(m,M1_F1,k,j,i) - am_(m,3,k,j,i), u0_(m,M1_F2,k,j,i) - am_(m,4,k,j,i),
+              u0_(m,M1_F3,k,j,i) - am_(m,5,k,j,i), pr3);
+          pvc(uh(m,IM1,k,j,i) - bm1, uh(m,IM2,k,j,i) - bm2, uh(m,IM3,k,j,i) - bm3, pd);
+          Real pa = 0.0, pb = 0.0;
+          for (int q = 0; q < 3; ++q) {
+            Kokkos::atomic_add(&acd_(16+q), pg[q] + icc*pr3[q]);
+            Kokkos::atomic_add(&acd_(19+q), pd[q]);
+            pa += (pg[q] + icc*pr3[q])*(pg[q] + icc*pr3[q]);
+            pb += pd[q]*pd[q];
+          }
+          Kokkos::atomic_add(&acd_(22), sqrt(pb));
+          Kokkos::atomic_add(&acd_(23), sqrt(pa));
+        }
         const Real dsp = amv ? (spn_(m,k,j,i) - bsp) : 0.0;
         const Real sp = amv ? spn_(m,k,j,i) : 0.0;
         for (int q = 0; q < 3; ++q) {
@@ -18643,10 +18677,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         if (acd) {
           const Real deg = uh(m,IEN,k,j,i) - eb0, der = u0_(m,M1_E,k,j,i) - rb0;
+          const Real a2 = s*(d2 - c*d3)/s2, a3 = s*(d3 - c*d2)/s2;
+          Real pb = 0.0;
           for (int q = 0; q < 3; ++q) {
             Kokkos::atomic_add(&acd_(q), s*ld[q]);
             Kokkos::atomic_add(&acd_(6+q), -s*ld[q]);
+            const Real pq = dv*(a2*e1[q] + a3*e2[q]);
+            Kokkos::atomic_add(&acd_(19+q), pq);
+            pb += pq*pq;
           }
+          Kokkos::atomic_add(&acd_(22), sqrt(pb));
           Kokkos::atomic_add(&acd_(9), (deg + clch*der)*dv);
           Kokkos::atomic_add(&acd_(10), fabs(deg)*dv);
         }
@@ -18752,10 +18792,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               Real ld[3];
               lt(0.0, d2, d3, ld);
               const Real deg = uh(m,IEN,k,j,i) - eb0, der = u0_(m,M1_E,k,j,i) - rb0;
+              const Real a2 = (d2 - c*d3)/s2, a3 = (d3 - c*d2)/s2;
+              Real pb = 0.0;
               for (int q = 0; q < 3; ++q) {
                 Kokkos::atomic_add(&acd_(q), ld[q]);
                 Kokkos::atomic_add(&acd_(6+q), -ld[q]);
+                const Real pq = dv*(a2*e1[q] + a3*e2[q]);
+                Kokkos::atomic_add(&acd_(19+q), pq);
+                pb += pq*pq;
               }
+              Kokkos::atomic_add(&acd_(22), sqrt(pb));
               Kokkos::atomic_add(&acd_(9), (deg + clch*der)*dv);
               Kokkos::atomic_add(&acd_(10), fabs(deg)*dv);
             }
@@ -18776,10 +18822,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       static int ncd = 0;
       if (ncd < impl_am_cons_diag) {
         auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amcd_d);
-        Real b[16], g[16];
-        for (int q = 0; q < 16; ++q) {b[q] = h(q); g[q] = b[q];}
+        Real b[24], g[24];
+        for (int q = 0; q < 24; ++q) {b[q] = h(q); g[q] = b[q];}
 #if MPI_PARALLEL_ENABLED
-        MPI_Allreduce(b, g, 16, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(b, g, 24, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
         if (global_variable::my_rank == 0) {
           std::ostringstream os;
@@ -18789,7 +18835,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
              << " resid " << g[0] - g[3] << " " << g[1] - g[4] << " " << g[2] - g[5]
              << " withheld " << g[6] << " " << g[7] << " " << g[8]
              << " scale_z " << g[15] << " dEtot_dep " << g[9] << " |de_gas| " << g[10]
-             << " Etot " << g[11] << " L " << g[12] << " " << g[13] << " " << g[14];
+             << " Etot " << g[11] << " L " << g[12] << " " << g[13] << " " << g[14]
+             << " dP_exch " << g[16] << " " << g[17] << " " << g[18]
+             << " dP_dep " << g[19] << " " << g[20] << " " << g[21]
+             << " |dP_dep| " << g[22] << " |dP_exch| " << g[23];
           std::cout << os.str() << std::endl;
         }
       }
