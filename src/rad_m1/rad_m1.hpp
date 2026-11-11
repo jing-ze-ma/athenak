@@ -2126,6 +2126,11 @@ class RadiationM1 {
   bool impl_muscl_led = false;  // implicit_hr_recon = led: sign-preserving linearisation
   bool impl_muscl_hq = false;   // cs-s7-1019 implicit_hr_recon_q = h: plm of H+- = h+- E
   bool impl_muscl_seam1 = false;  // cs-s7-1019 implicit_hr_recon_seam = onesided (cs)
+  // physrec-1111 implicit_hr_recon = tvdh (opt-in): the half-range FLUXES H+- = h+- E
+  // reconstructed with the van Leer limiter of H+- themselves, one limiter per
+  // half-range (sig+ in M1_IM_SIG, sig- in M1_IM_B): H+ from the left (upwind) cell,
+  // H- from the right.  No E limiter, no gates (PHYSFLUX_DESIGN principle 3).
+  bool impl_tvdh = false;
   // hr2nd-1110 implicit_hr_recon_lim = smooth: unlimited centred slope (sig = 1) where
   // the three second differences around the cell agree in sign within a factor
   // impl_muscl_smc (smooth extrema and smooth slopes); van Leer elsewhere
