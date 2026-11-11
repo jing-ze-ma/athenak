@@ -2879,12 +2879,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_muscl_hq = true;
       impl_tvdh = true;
       impl_tvdl = (shr.compare("tvdhl") == 0);   // rad_m1.hpp impl_tvdl
+    } else if (shr.compare("afc") == 0) {   // physrec-1111 (rad_m1.hpp impl_afc)
+      impl_afc = true;
+      if (!impl_beam_hr) {
+        ImplFatal("<rad_m1>/implicit_hr_recon = afc needs implicit_flux_beam = "
+                  "halfrange");
+      }
     } else if (shr.compare("led") == 0) {
       impl_muscl = true;
       impl_muscl_led = true;
     } else if (shr.compare("dc") != 0) {
       ImplFatal("<rad_m1>/implicit_hr_recon = '" + shr
-                + "' is not a choice (dc | plm | tvdh | tvdhl | led)");
+                + "' is not a choice (dc | plm | tvdh | tvdhl | afc | led)");
     }
     if (impl_muscl) {
       impl_muscl_nfresh = pin->GetOrAddInteger("rad_m1","implicit_hr_recon_fresh",2);
@@ -3938,6 +3944,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     iw_muscl = niw;
     niw += M1_NIW_MUSCL;
     if (impl_tvdl) {niw += M1_NIW_MUSCL_TV;}   // physrec-1111 tvdhl
+  }
+  if (impl_afc) {   // physrec-1111 afc: Zalesak R+, R-
+    iw_afc = niw;
+    niw += 2;
   }
   if (impl_hr_sfgd != 0) {vgd_thx = true;}   // unify-sc-gd-1012 (#4): J in vgd_hr
   iw_hsf = -1;
@@ -5851,7 +5861,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto bw2_ = ifw2;
   auto bw3_ = ifw3;
   // thinsw-1010 implicit_thin_corr: the fixed formal-solution flux DG of the face
-  const bool tdg = blat_on && (impl_thsw_corr != M1_THCR_NONE);
+  const bool tdg = blat_on && (impl_thsw_corr != M1_THCR_NONE || impl_afc);
   const bool thrd = trans_x3;
   const bool fst = first;
   const Real wmem = dbg_trans_memory;
@@ -10684,6 +10694,10 @@ void RadiationM1::ImplicitReport() {
     std::cout << "<rad_m1> implicit_pos_transport = upwind (rank 0):"
               << " lagged positive x1 off-diagonals=" << h(1)
               << " memory-upwinded x1 face passes=" << h(0) << std::endl;
+  }
+  if (impl_afc) {   // physrec-1111
+    std::cout << "<rad_m1> implicit_hr_recon = afc: face-passes with a correction="
+              << afc_nface << " of them limited (alpha < 1)=" << afc_nlim << std::endl;
   }
   if (impl_muscl && impl_muscl_pred) {
     std::cout << "<rad_m1> implicit_hr_recon_pred: dc-phase passes=" << muscl_pred_dc
@@ -15563,6 +15577,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if ((Cs2Active() && !(cs2_dbg & 1)) || RinrActive()) {ImplicitCs2Pass(false);}
     if (muscl_now) {ImplicitMusclBuild();}   // xthinfix-1009 Fix B
     if (muscl_now && impl_hcplm) {ImplicitHcPlm();}   // hrhc-1110
+    if (impl_afc) {ImplicitAfc();}   // physrec-1111
     // vstarfix-1106 he_bc_linhao_fis = iter (rad_m1.hpp): F_is of the wall face, frozen over
     // this pass (m1_impl_asm and m1_impl_face must see the same value; m1_impl_face overwrites
     // f0x1 while it runs)
@@ -19998,6 +20013,227 @@ void RadiationM1::ImplicitHcPlm() {
       hcp_(m,2*d+1,k,j,i) = cn;
     });
   }
+}
+
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitAfc
+//! \brief physrec-1111 implicit_hr_recon = afc (rad_m1.hpp): once per Picard pass, after
+//! the face coefficients.  (1) per face, the antidiffusive half-range flux of the TVD
+//! faces of the current iterate, g = w c [s+_L - s-_R]/2 (the units of HCL E; s the van
+//! Leer slope of H+- = h+- E, M1TvdhR ratios; a slope only in a cell whose stencil is
+//! inside the domain).  (2) per cell, Zalesak: P+- the sums of the positive / negative
+//! RHS contributions nu g, Q+ = max E - E_c, Q- = max(min E - E_c, -E^n_c) over the cell
+//! and its face neighbours, R+- = min(1, Q/P) (halo).  (3) per face, alpha = min of the
+//! R of the cell it raises and of the cell it lowers; alpha g goes into DG (the previous
+//! pass's part taken out unless DG has been rebuilt since): the x1 rows read DG in the
+//! RHS, the lateral faces through the transverse flux, the stored face flux carries it.
+
+void RadiationM1::ImplicitAfc() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (afcw.extent_int(0) != iw.extent_int(0) || afcw.extent_int(4) != iw.extent_int(4)) {
+    Kokkos::realloc(afcw, iw.extent_int(0), 9, iw.extent_int(2), iw.extent_int(3),
+                    iw.extent_int(4));
+    Kokkos::deep_copy(afcw, 0.0);
+  }
+  auto iw_ = iw;
+  auto afc_ = afcw;
+  const int b = iw_afc;
+  const Real dt = dt_sub, ch = chat;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  const bool twod = pmy_pack->pmesh->multi_d;
+  const bool l2 = twod && (ifw2.extent_int(0) > 0);
+  const bool l3 = trans_x3 && (ifw3.extent_int(0) > 0);
+  const bool sph = sph_geom;
+  auto mbsize = pmy_pack->pmb->mb_size.d_view;
+  auto mbbcs = (cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs).d_view;
+  auto cvol = pmy_pack->pcoord->volume;
+  auto carea = pmy_pack->pcoord->area;
+  const bool hgd = vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0);
+  const int hsrc = vet_sc ? 1 : (hgd ? 2 : (impl_hr_model ? (twod ? 0 : 3) : -1));
+  if (hsrc < 0) {return;}
+  const int hs0 = (impl_hr_sf && (vet_sc || (impl_hr_sfgd & 1))) ? iw_hsf : -1;
+  const int hsl = (impl_hr_sf && (vet_sc || (impl_hr_sfgd & 2))) ? iw_hsf : -1;
+  auto hvc_ = vet_cell;
+  auto hgh_ = vgd_hr;
+  // (1) the raw antidiffusive face fluxes
+  for (int d = 0; d < 3; ++d) {
+    if ((d == 1 && !l2) || (d == 2 && !l3)) {continue;}
+    auto fw = (d == 0) ? ifw : ((d == 1) ? ifw2 : ifw3);
+    const int iu = (d == 0) ? ie + 1 : ie, ju = (d == 1) ? je + 1 : je;
+    const int ku = (d == 2) ? ke + 1 : ke;
+    const int hsb = (d == 0) ? hs0 : hsl;
+    par_for("m1_afc_g", DevExeSpace(), 0, nmb1, ks, ku, js, ju, is, iu,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real hcl = fw(m,M1_IFW_HCL,k,j,i), hcr = fw(m,M1_IFW_HCR,k,j,i);
+      const Real al = fw(m,M1_IFW_AL,k,j,i);
+      Real g = 0.0;
+      if ((hcl != 0.0 || hcr != 0.0) && al > 0.0) {
+        // the cells LL L | R RR along d
+        int c[4][3];
+        for (int q = 0; q < 4; ++q) {c[q][0] = k; c[q][1] = j; c[q][2] = i;}
+        bool okl, okr;
+        if (d == 0) {
+          const int il = i - 1, ir = i;
+          auto wr = [&](const int x) {
+            if (!cyclic) {return x;}
+            int y = x;
+            const int n = ie - is + 1;
+            while (y < is) {y += n;}
+            while (y > ie) {y -= n;}
+            return y;
+          };
+          c[0][2] = wr(il - 1); c[1][2] = wr(il); c[2][2] = wr(ir); c[3][2] = wr(ir + 1);
+          okl = cyclic || (il > is && il < ie);
+          okr = cyclic || (ir > is && ir < ie);
+        } else {   // a lateral cell has a slope if both its neighbours are in the domain
+          const int x = (d == 1) ? 1 : 0;
+          const int f = (d == 1) ? j : k;
+          for (int q = 0; q < 4; ++q) {c[q][x] = f - 2 + q;}
+          const int cs = (d == 1) ? js : ks, ce = (d == 1) ? je : ke;
+          const BoundaryFlag blo = mbbcs(m, (d == 1) ? BoundaryFace::inner_x2
+                                                     : BoundaryFace::inner_x3);
+          const BoundaryFlag bhi = mbbcs(m, (d == 1) ? BoundaryFace::outer_x2
+                                                     : BoundaryFace::outer_x3);
+          const bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
+          const bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
+          okl = !((f - 1 <= cs && plo) || (f - 1 >= ce && phi));
+          okr = !((f <= cs && plo) || (f >= ce && phi));
+        }
+        Real hp[4], hm[4];
+        for (int q = 0; q < 4; ++q) {
+          hp[q] = 0.0; hm[q] = 0.0;
+          if ((q < 3 && okl && hcl != 0.0) || (q > 0 && okr && hcr != 0.0)) {
+            Real a, bb;
+            M1TvdhR(hsrc, hsb, iw_, hvc_, hgh_, m, c[q][0], c[q][1], c[q][2], d, is, ie,
+                    cyclic, a, bb);
+            const Real e = iw_(m,M1_IW_EP,c[q][0],c[q][1],c[q][2]);
+            hp[q] = a*e;
+            hm[q] = bb*e;
+          }
+        }
+        auto vls = [](const Real a, const Real bq) {
+          return (a*bq > 0.0) ? 2.0*a*bq/(a + bq) : 0.0;
+        };
+        if (hcl != 0.0 && okl) {g += 0.5*al*ch*vls(hp[1] - hp[0], hp[2] - hp[1]);}
+        if (hcr != 0.0 && okr) {g -= 0.5*al*ch*vls(hm[2] - hm[1], hm[3] - hm[2]);}
+      }
+      afc_(m,d,k,j,i) = g;
+    });
+  }
+  // (2) Zalesak R+- per cell
+  par_for("m1_afc_r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real e0 = iw_(m,M1_IW_EP,k,j,i);
+    Real pp = 0.0, pm = 0.0, emax = e0, emin = e0;
+    for (int d = 0; d < 3; ++d) {
+      if ((d == 1 && !l2) || (d == 2 && !l3)) {continue;}
+      Real nlo, nhi;
+      if (d == 0) {
+        nlo = nhi = dt/mbsize(m).dx1;
+        if (sph) {
+          const Real iv = dt/cvol(m,k,j,i);
+          nlo = carea.x1f(m,k,j,i)*iv; nhi = carea.x1f(m,k,j,i+1)*iv;
+        }
+      } else if (d == 1) {
+        nlo = nhi = dt/mbsize(m).dx2;
+        if (sph) {
+          const Real iv = dt/cvol(m,k,j,i);
+          nlo = carea.x2f(m,k,j,i)*iv; nhi = carea.x2f(m,k,j+1,i)*iv;
+        }
+      } else {
+        nlo = nhi = dt/mbsize(m).dx3;
+        if (sph) {
+          const Real iv = dt/cvol(m,k,j,i);
+          nlo = carea.x3f(m,k,j,i)*iv; nhi = carea.x3f(m,k+1,j,i)*iv;
+        }
+      }
+      const int dk = (d == 2) ? 1 : 0, dj = (d == 1) ? 1 : 0, di = (d == 0) ? 1 : 0;
+      const Real gl = afc_(m,d,k,j,i), gh = afc_(m,d,k+dk,j+dj,i+di);
+      const Real c1 = nlo*gl, c2 = -nhi*gh;
+      pp += fmax(c1, 0.0) + fmax(c2, 0.0);
+      pm += fmin(c1, 0.0) + fmin(c2, 0.0);
+      // the neighbours along d inside the domain
+      bool hasm = true, hasp = true;
+      int im = i - di, ip = i + di;
+      if (d == 0) {
+        if (cyclic) {
+          if (im < is) {im = ie;}
+          if (ip > ie) {ip = is;}
+        } else {
+          hasm = (im >= is); hasp = (ip <= ie);
+        }
+      } else {
+        const int c = (d == 1) ? j : k;
+        const int cs = (d == 1) ? js : ks, ce = (d == 1) ? je : ke;
+        const BoundaryFlag blo = mbbcs(m, (d == 1) ? BoundaryFace::inner_x2
+                                                   : BoundaryFace::inner_x3);
+        const BoundaryFlag bhi = mbbcs(m, (d == 1) ? BoundaryFace::outer_x2
+                                                   : BoundaryFace::outer_x3);
+        hasm = !(c == cs && blo != BoundaryFlag::block && blo != BoundaryFlag::periodic);
+        hasp = !(c == ce && bhi != BoundaryFlag::block && bhi != BoundaryFlag::periodic);
+      }
+      if (hasm) {
+        const Real en = iw_(m,M1_IW_EP,k-dk,j-dj,im);
+        emax = fmax(emax, en); emin = fmin(emin, en);
+      }
+      if (hasp) {
+        const Real en = iw_(m,M1_IW_EP,k+dk,j+dj,ip);
+        emax = fmax(emax, en); emin = fmin(emin, en);
+      }
+    }
+    const Real qp = fmax(emax - e0, 0.0);
+    const Real qm = fmin(fmax(emin - e0, -fmax(iw_(m,M1_IW_EN,k,j,i), 0.0)), 0.0);
+    iw_(m,b,k,j,i) = (pp > 0.0) ? fmin(1.0, qp/pp) : 1.0;
+    iw_(m,b+1,k,j,i) = (pm < 0.0) ? fmin(1.0, qm/pm) : 1.0;
+  });
+  ImplicitHaloExchange(1, b);
+  ImplicitHaloExchange(1, b + 1);
+  // (3) limit and apply to DG
+  Real nlim = 0.0, nface = 0.0;
+  for (int d = 0; d < 3; ++d) {
+    if ((d == 1 && !l2) || (d == 2 && !l3)) {continue;}
+    auto fw = (d == 0) ? ifw : ((d == 1) ? ifw2 : ifw3);
+    const int iu = (d == 0) ? ie + 1 : ie, ju = (d == 1) ? je + 1 : je;
+    const int ku = (d == 2) ? ke + 1 : ke;
+    Real lsum = 0.0, fsum = 0.0;
+    Kokkos::parallel_reduce("m1_afc_a",
+    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                           {nmb1+1,ku+1,ju+1,iu+1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ls,
+                  Real &fs) {
+      const Real g = afc_(m,d,k,j,i);
+      int kl = k, jl = j, il = i;
+      if (d == 0) {
+        il = (cyclic && i == is) ? ie : (i - 1);
+      } else if (d == 1) {
+        jl = j - 1;
+      } else {
+        kl = k - 1;
+      }
+      Real a = 0.0;
+      if (g > 0.0) {
+        a = fmin(iw_(m,b+1,kl,jl,il), iw_(m,b,k,j,(cyclic && i == ie + 1) ? is : i));
+      } else if (g < 0.0) {
+        a = fmin(iw_(m,b,kl,jl,il), iw_(m,b+1,k,j,(cyclic && i == ie + 1) ? is : i));
+      }
+      a = fmin(fmax(a, 0.0), 1.0);
+      const Real gl = a*g;
+      if (g != 0.0) {fs += 1.0; if (a < 1.0) {ls += 1.0;}}
+      const Real dgv = fw(m,M1_IFW_DG,k,j,i);
+      const Real base = (dgv == afc_(m,6+d,k,j,i)) ? (dgv - afc_(m,3+d,k,j,i)) : dgv;
+      fw(m,M1_IFW_DG,k,j,i) = base + gl;
+      afc_(m,3+d,k,j,i) = gl;
+      afc_(m,6+d,k,j,i) = base + gl;
+    }, Kokkos::Sum<Real>(lsum), Kokkos::Sum<Real>(fsum));
+    nlim += lsum;
+    nface += fsum;
+  }
+  afc_nlim += nlim;
+  afc_nface += nface;
 }
 
 //----------------------------------------------------------------------------------------

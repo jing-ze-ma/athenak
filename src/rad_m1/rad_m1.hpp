@@ -2153,6 +2153,18 @@ class RadiationM1 {
   bool impl_hcplm = false;
   DvceArray5D<Real> hcpw, fr_hcpw;
   void ImplicitHcPlm();
+  // physrec-1111 implicit_hr_recon = afc: algebraic flux correction.  The row stays the
+  // donor-cell M-matrix; every Picard pass adds to the face deferred correction DG the
+  // antidiffusive half-range flux of the TVD H+- faces (van Leer slopes of H+- = h+- E of
+  // the current iterate, M1TvdhR ratios), limited by Zalesak's local bounds (min / max
+  // of E over the cell and its face neighbours; the decrease also <= E^n): the same
+  // value on both sides of a face (conservative), RHS only.  afcw: per axis d, d = raw
+  // flux, 3+d = the part applied to DG, 6+d = DG after it; iw_afc: R+, R- (halo)
+  bool impl_afc = false;
+  int iw_afc = -1;
+  DvceArray5D<Real> afcw;
+  Real afc_nlim = 0.0, afc_nface = 0.0;
+  void ImplicitAfc();
   bool muscl_now = false;       // on for this step
   int muscl_nbuild = 0;         // limiter builds this step (then frozen)
   int impl_muscl_nfresh = 2;    // implicit_hr_recon_fresh: passes with a fresh limiter
