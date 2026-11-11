@@ -3803,10 +3803,6 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // the conservative gas source (Z_f) and implicit_rad_inertia take f0x* = F_c as the
     // face's old flux: exact without gas momentum exchange (static / no feedback
     // tests); with feedback the face momentum budget is off by (1 - w)(F_c^n - F_a^n)
-    if (impl_physflux && (impl_gas_src_cons || impl_rad_inertia)) {
-      ImplFatal("<rad_m1>/implicit_physflux: prototype not with implicit_gas_src = "
-                "conservative or implicit_rad_inertia (their face Z_f read fax*)");
-    }
     if (impl_physflux && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_physflux = true: F_c is the momentum flux of the "
                 << "cell F, the drag and the gas source; fax* = E transport only"
@@ -5784,6 +5780,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto gz2o_ = cmga ? fax2n : f0x2n;
   auto gz3o_ = (cmga && fax3n.extent(0) > 0) ? fax3n : f0x3n;
   const bool cm = impl_hr_cmem;   // rc18-1110: f2_/f3_ = F_c, fa2_/fa3_ = applied
+  const bool pfz = impl_physflux;   // physflux-1111: Z_f of the F_c face equation
   const Real cmcap = impl_hr_cmem_cap;   // hr2prod-1110
   auto fa2_ = cm ? fax2 : f0x2;
   auto fa3_ = cm ? fax3 : f0x3;
@@ -6114,7 +6111,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       // consrc-1011: Z_f of the x2 face (as x1; om = theta (1 + chat dt kt), which is
       // 1 - AL under the blend and < 1 only where the realizability limiter damps)
       const Real fb = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
-      const Real hh = fa2_(m,k,j,i) - fb;   // rc18-1110: the applied flux (cmem)
+      // physflux-1111: the F_c face's own H (its cap / limiter part only)
+      const Real hh = (pfz ? f2_(m,k,j,i) : fa2_(m,k,j,i)) - fb;   // rc18: applied
       const Real om = th*(1.0 + ch*dt*ktf);
       gz2_(m,k,j,i) = gcft ? (dt*(gr + off))
                       : (-(1.0 + ch*dt*ktf)*hh/(cl*ch) + om*dt*(gr + off)
@@ -6322,7 +6320,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       if (gcst) {
         const Real fb = th*(wmem*f3n_(m,k,j,i)
                             - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
-        const Real hh = fa3_(m,k,j,i) - fb;   // rc18-1110: the applied flux (cmem)
+        const Real hh = (pfz ? f3_(m,k,j,i) : fa3_(m,k,j,i)) - fb;   // physflux-1111
         const Real om = th*(1.0 + ch*dt*ktf);
         gz3_(m,k,j,i) = gcft ? (dt*(gr + off))
                         : (-(1.0 + ch*dt*ktf)*hh/(cl*ch) + om*dt*(gr + off)
@@ -16711,6 +16709,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto lgf_ = lbath_g;
     auto lff_ = lbath_f;
     const bool cmf = impl_hr_cmem;   // rc18-1110: f0_ = F_c, fa1_ = the applied flux
+    const bool pfz = impl_physflux;   // physflux-1111: Z_f of the F_c face equation
     const Real cmcap = impl_hr_cmem_cap;   // hr2prod-1110
     auto fa1_ = cmf ? fax1 : f0x1;
     auto gzo_ = (impl_cmgfa && fax1n.extent(0) > 0) ? fax1n : f0x1n;   // vgdhr-1110
@@ -16955,6 +16954,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // (3c) the test is on the FLUX FORM, not on al: with implicit_blend_mode =
         // dissipation the central weight is 1 (al = 0) and the HLL part is still there.
         Real fnc = fn;   // rc18-1110 implicit_hr_cmem: F_c (the plain face eq.)
+        const Real fpl = fn;   // physflux-1111: F_c before the cap
         if (cmcap > 0.0) {   // hr2prod-1110 implicit_hr_cmem_cap
           const Real em = cmcap*cl*fmax(fmax(iw_(m,M1_IW_EP,k,j,im),
                                              iw_(m,M1_IW_EP,k,j,ip)), 0.0);
@@ -17037,9 +17037,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           // chat) (the H part keeps its drag dt kt H/c); Z_f is all of it but -F0'/(c
           // chat), so the write-back takes dm = -dF_c/(c chat) - sum Z_f/2
           const int iq = (i == ie+1 && cyclic) ? is : i;
-          const Real om = aphll ? (1.0 - al) : 1.0;
+          // physflux-1111: the gas share of the F_c face (om 1, H = its cap part)
+          const Real om = (aphll && !pfz) ? (1.0 - al) : 1.0;
+          const Real hz1 = pfz ? (fnc - fpl) : hhz;
           gz1_(m,k,j,i) = gcff ? (dt*(gr + od))
-                          : (-(1.0 + ch*dt*ktf)*hhz/(cl*ch) + om*dt*(gr + od)
+                          : (-(1.0 + ch*dt*ktf)*hz1/(cl*ch) + om*dt*(gr + od)
                              + (1.0 - om)*(gzo_(m,k,j,iq) + (cs2z ? q1z_(m,k,j,iq) : 0.0))
                                /(cl*ch));
           if (ptd != 0.0) {gz1_(m,k,j,i) -= ptd/(cl*ch);}   // postr-1031: not gas momentum
