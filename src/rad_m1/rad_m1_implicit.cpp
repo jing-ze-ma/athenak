@@ -2631,6 +2631,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (impl_thsw != M1_THSW_NONE) {
       thsw_h0 = pin->GetOrAddReal("rad_m1","implicit_thin_h0",0.3);
       thsw_h1 = pin->GetOrAddReal("rad_m1","implicit_thin_h1",0.6);
+      thsw_h0x = pin->DoesParameterExist("rad_m1","implicit_thin_h0_x1") ?
+                 pin->GetReal("rad_m1","implicit_thin_h0_x1") : thsw_h0;   // vgdhr-1110
+      thsw_h1x = pin->DoesParameterExist("rad_m1","implicit_thin_h1_x1") ?
+                 pin->GetReal("rad_m1","implicit_thin_h1_x1") : thsw_h1;
+      thsw_hx_curv = pin->DoesParameterExist("rad_m1","implicit_thin_hx1_curv") &&
+                     pin->GetBoolean("rad_m1","implicit_thin_hx1_curv");
+      if (!(thsw_h1x > thsw_h0x)) {
+        ImplFatal("<rad_m1>/implicit_thin_h1_x1 must exceed implicit_thin_h0_x1");
+      }
       // hr2prod-1110 (read only when named): implicit_thin_gface = max | mean | jump
       if (pin->DoesParameterExist("rad_m1","implicit_thin_gface")) {
         std::string sg = pin->GetString("rad_m1","implicit_thin_gface");
@@ -3787,6 +3796,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     Kokkos::realloc(fax1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(fax1, 0.0);
+    // vgdhr-1110 implicit_hr_cmem_gas_fa
+    impl_cmgfa = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_gas_fa") &&
+                 pin->GetBoolean("rad_m1","implicit_hr_cmem_gas_fa");
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_hr_cmem = true: separate central-branch face "
                 << "memory F_c (applied flux in fax*)" << std::endl;
@@ -5744,6 +5756,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto f2n_ = f0x2n;
   auto f3_ = f0x3;
   auto f3n_ = f0x3n;
+  // vgdhr-1110 implicit_hr_cmem_gas_fa: Z_f's old flux = the step-start applied flux
+  const bool cmga = impl_cmgfa && (fax2n.extent(0) > 0);
+  auto gz2o_ = cmga ? fax2n : f0x2n;
+  auto gz3o_ = (cmga && fax3n.extent(0) > 0) ? fax3n : f0x3n;
   const bool cm = impl_hr_cmem;   // rc18-1110: f2_/f3_ = F_c, fa2_/fa3_ = applied
   const Real cmcap = impl_hr_cmem_cap;   // hr2prod-1110
   auto fa2_ = cm ? fax2 : f0x2;
@@ -6079,7 +6095,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       const Real om = th*(1.0 + ch*dt*ktf);
       gz2_(m,k,j,i) = gcft ? (dt*(gr + off))
                       : (-(1.0 + ch*dt*ktf)*hh/(cl*ch) + om*dt*(gr + off)
-                         + (1.0 - om)*(f2n_(m,k,j,i) + (cs2z ? q2z_(m,k,j,i) : 0.0))
+                         + (1.0 - om)*(gz2o_(m,k,j,i) + (cs2z ? q2z_(m,k,j,i) : 0.0))
                            /(cl*ch));
     }
   });
@@ -6287,7 +6303,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         const Real om = th*(1.0 + ch*dt*ktf);
         gz3_(m,k,j,i) = gcft ? (dt*(gr + off))
                         : (-(1.0 + ch*dt*ktf)*hh/(cl*ch) + om*dt*(gr + off)
-                           + (1.0 - om)*(f3n_(m,k,j,i) + (cs2z ? q3z_(m,k,j,i) : 0.0))
+                           + (1.0 - om)*(gz3o_(m,k,j,i) + (cs2z ? q3z_(m,k,j,i) : 0.0))
                              /(cl*ch));
       }
     });
@@ -13587,6 +13603,27 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // consfix-1011 (conservative2): the explicit -dA/dt of the hydro step into F0 first
   if (Cs2Active() && cs2_shift && !gcs_first && !(cs2_dbg & 4)) {ImplicitCs2Shift();}
   Kokkos::deep_copy(DevExeSpace(), f0x1n, f0x1);
+  if (impl_cmgfa) {   // vgdhr-1110: the step-start applied fluxes
+    if (fax1n.extent(0) != fax1.extent(0)) {
+      Kokkos::realloc(fax1n, fax1.extent(0), fax1.extent(1), fax1.extent(2),
+                      fax1.extent(3));
+    }
+    Kokkos::deep_copy(DevExeSpace(), fax1n, fax1);
+    if (fax2.extent(0) > 0) {
+      if (fax2n.extent(0) != fax2.extent(0)) {
+        Kokkos::realloc(fax2n, fax2.extent(0), fax2.extent(1), fax2.extent(2),
+                        fax2.extent(3));
+      }
+      Kokkos::deep_copy(DevExeSpace(), fax2n, fax2);
+    }
+    if (fax3.extent(0) > 0) {
+      if (fax3n.extent(0) != fax3.extent(0)) {
+        Kokkos::realloc(fax3n, fax3.extent(0), fax3.extent(1), fax3.extent(2),
+                        fax3.extent(3));
+      }
+      Kokkos::deep_copy(DevExeSpace(), fax3n, fax3);
+    }
+  }
   if (impl_gas_src_cs2 || impl_rinr_solve) {   // consfix-1011: no dA in F0^n yet
     Kokkos::deep_copy(DevExeSpace(), cs2f1, 0.0);
     if (trans_on) {
@@ -14882,7 +14919,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool tfs = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                     impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
                     impl_thsw == M1_THSW_FSE);
-      const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
+      // vgdhr-1110: the x1 band (implicit_thin_h0_x1 / _h1_x1; _hx1_curv: sp / cs only)
+      const bool hxb = !thsw_hx_curv || sph_geom;
+      const Real tfsa = thsw_fsa, tfsj = thsw_fsj;
+      const Real th0 = hxb ? thsw_h0x : thsw_h0, th1 = hxb ? thsw_h1x : thsw_h1;
       const Real tkn0 = thsw_kn0, tknp = thsw_knp;
       const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
                        : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
@@ -16650,6 +16690,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool cmf = impl_hr_cmem;   // rc18-1110: f0_ = F_c, fa1_ = the applied flux
     const Real cmcap = impl_hr_cmem_cap;   // hr2prod-1110
     auto fa1_ = cmf ? fax1 : f0x1;
+    auto gzo_ = (impl_cmgfa && fax1n.extent(0) > 0) ? fax1n : f0x1n;   // vgdhr-1110
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
@@ -16976,7 +17017,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real om = aphll ? (1.0 - al) : 1.0;
           gz1_(m,k,j,i) = gcff ? (dt*(gr + od))
                           : (-(1.0 + ch*dt*ktf)*hhz/(cl*ch) + om*dt*(gr + od)
-                             + (1.0 - om)*(f0n_(m,k,j,iq) + (cs2z ? q1z_(m,k,j,iq) : 0.0))
+                             + (1.0 - om)*(gzo_(m,k,j,iq) + (cs2z ? q1z_(m,k,j,iq) : 0.0))
                                /(cl*ch));
           if (ptd != 0.0) {gz1_(m,k,j,i) -= ptd/(cl*ch);}   // postr-1031: not gas momentum
         }

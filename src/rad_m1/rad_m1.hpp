@@ -1061,6 +1061,11 @@ class RadiationM1 {
   bool impl_aphll_mem = false;   // aphll-time-1110 implicit_aphll_mem (cmem + restage)
   bool impl_aphll_fci = false;   // aphll-time-1110 implicit_aphll_fcimp (F_c implicit)
   DvceArray4D<Real> fax1, fax2, fax3;   // rc18-1110: the applied face fluxes (cmem)
+  // vgdhr-1110 implicit_hr_cmem_gas_fa (opt-in, read only when named): with cmem and the
+  // conservative gas source, Z_f takes the step-start APPLIED flux fax*n as its old face
+  // flux instead of the F_c memory (the cmem feedback warning: off by (1-w)(F_c - F_a))
+  bool impl_cmgfa = false;
+  DvceArray4D<Real> fax1n, fax2n, fax3n;
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
   // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a
   // dt-free thin/thick weight frozen per solve (formal-solution |H|/J, its non-locality
@@ -1069,6 +1074,11 @@ class RadiationM1 {
   int impl_thsw_corr = 0;
   bool thsw_c1 = false;           // the sweep accumulates M1_VET_NL
   Real thsw_h0 = 0.3, thsw_h1 = 0.6, thsw_kn0 = 1.0, thsw_knp = 4.0;
+  // vgdhr-1110 implicit_thin_h0_x1 / _h1_x1 (read only when named; default = h0 / h1):
+  // the thin-switch band of the x1 faces only; implicit_thin_hx1_curv = true applies them
+  // only on curvilinear meshes (sp / cs radial faces), Cartesian x1 faces keep h0 / h1
+  Real thsw_h0x = -1.0e30, thsw_h1x = -1.0e30;
+  bool thsw_hx_curv = false;
   Real thsw_fsa = 0.0, thsw_fsj = 0.0, thsw_qp = 8.0;
   // thinfix-1011: implicit_thin_recon = js (M1ThinJs: half-range ratios from the face
   // mean of the formal-solution H+-), implicit_thin_bq = lin (outer Marshak q from the
