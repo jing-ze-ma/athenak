@@ -440,6 +440,9 @@ class MHD {
   // and zero advected energy (pressure only); where it moves outward the ghost-side
   // state is left as the boundary built it.  Default false: nothing changes.
   bool diode_ox1 = false;
+  // ssbc-1111 (dhj <mhd>/top_bc_bt = sourcesurface): at a diode-closed (inflow) top
+  // face the mirrored right state takes B_t ODD (B_t = 0 on the face, as the ghosts)
+  bool diode_ox1_btodd = false;
   // wbplm-1103 <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
   bool top_ghost_prim_copy = false;
   // ... and under MHD, the STRESS-FREE wall (dhj problem/wall_mhd_mirror = stress_free;
