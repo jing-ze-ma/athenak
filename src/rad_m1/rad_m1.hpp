@@ -2131,6 +2131,11 @@ class RadiationM1 {
   // half-range (sig+ in M1_IM_SIG, sig- in M1_IM_B): H+ from the left (upwind) cell,
   // H- from the right.  No E limiter, no gates (PHYSFLUX_DESIGN principle 3).
   bool impl_tvdh = false;
+  // physrec-1111 implicit_hr_recon = tvdhl: tvdh with the sign-preserving linearisation
+  // (rebuilt every pass): s = A a = B b, A = 2b/(a+b), B = 2a/(a+b) (van Leer), the own
+  // donor's face term in A-form, the neighbour donor's in B-form (M-matrix row at any
+  // c dt/dx); A+ M1_IM_SIG, B+ M1_IM_B, A- M1_IM_TV, B- M1_IM_TV+3
+  bool impl_tvdl = false;
   // hr2nd-1110 implicit_hr_recon_lim = smooth: unlimited centred slope (sig = 1) where
   // the three second differences around the cell agree in sign within a factor
   // impl_muscl_smc (smooth extrema and smooth slopes); van Leer elsewhere
