@@ -20098,8 +20098,10 @@ void RadiationM1::ImplicitAfc() {
                                                      : BoundaryFace::inner_x3);
           const BoundaryFlag bhi = mbbcs(m, (d == 1) ? BoundaryFace::outer_x2
                                                      : BoundaryFace::outer_x3);
-          const bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
-          const bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
+          const bool plo = (blo != BoundaryFlag::block) &&
+                           (blo != BoundaryFlag::periodic);
+          const bool phi = (bhi != BoundaryFlag::block) &&
+                           (bhi != BoundaryFlag::periodic);
           okl = !((f - 1 <= cs && plo) || (f - 1 >= ce && phi));
           okr = !((f <= cs && plo) || (f >= ce && phi));
         }
