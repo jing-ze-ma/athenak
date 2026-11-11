@@ -765,6 +765,9 @@ void RadiationM1::VetColBuild() {
     // vet_gd_replace (m1-vet-gd): no column solution; the isotropic tensor about r_hat
     // and the default Marshak q here, the gd sweep (VetLatBuild -> VetGdBuild) then
     // overwrites D above its first shell and q at the top
+    // hrsplit-1110 vet_gd_hr_split: the column solution is still made, for its radial
+    // half-range ratios only (vcol_hr); its tensor and q are overwritten just below
+    if (vgd_hrs != 0) {VetColBuildTeam(false);}
     const int ie = indcs.ie;
     par_for("m1_vgd_iso", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1043,6 +1046,14 @@ void RadiationM1::VetColBuild() {
 
 void RadiationM1::VetColBuildTeam(bool dmp) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
+  // hrsplit-1110 vet_gd_hr_split: the column's radial half-range ratios (vcol_hr)
+  const bool hrs = (vgd_hrs != 0);
+  if (hrs && vcol_hr.extent(0) != tau_ten.extent(0)) {
+    Kokkos::realloc(vcol_hr, tau_ten.extent(0), 3, tau_ten.extent(2), tau_ten.extent(3),
+                    tau_ten.extent(4));
+    Kokkos::deep_copy(vcol_hr, -1.0);
+  }
+  auto vh_ = vcol_hr;
   const int is = indcs.is;
   const int js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -1411,6 +1422,14 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         jj *= 0.5;
         hh *= 0.5;
         kk *= 0.5;
+        if (hrs) {
+          // H+ from the outgoing rays (their group sums), H- from the incoming (pr_)
+          Real hpo = 0.0;
+          for (int g = 0; g < VC_NG; ++g) {hpo += pm_(3*(t0 + g) + 1);}
+          vh_(m,0,k,j,i) = (jj > 0.0) ? fmin(fmax(0.5*hpo/jj, 0.0), 1.0) : -1.0;
+          vh_(m,1,k,j,i) = (jj > 0.0) ? fmin(fmax(0.5*pr_(3*n1 + l)/jj, -1.0), 0.0) : 0.0;
+          vh_(m,2,k,j,i) = (jj > 0.0) ? kk/jj : 1.0/3.0;
+        }
         Real chi = 1.0/3.0;
         if (jj > 0.0) {
           chi = fmin(fmax(kk/jj, fkm), 1.0);
