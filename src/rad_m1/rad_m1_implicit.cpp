@@ -2550,6 +2550,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_physflux = pin->DoesParameterExist("rad_m1","implicit_physflux") &&
                   pin->GetBoolean("rad_m1","implicit_physflux");
   if (impl_physflux) {impl_hr_cmem = true;}
+  // implicit_physflux_mom (read only when named; fc = default): which face flux is the
+  // one momentum flux.  fc: the face-equation F_c (above).  fa: the APPLIED flux fax*
+  // (the upwind one in thin beams) for the cell F, the drags and the gas source, with
+  // every old value of that budget the applied one too (Z_f via fax*n =
+  // implicit_hr_cmem_gas_fa, the cs2 / write-back F^old = the stored cell F); F_c is
+  // then only the face memory.
+  if (impl_physflux && pin->DoesParameterExist("rad_m1","implicit_physflux_mom")) {
+    const std::string pm = pin->GetString("rad_m1","implicit_physflux_mom");
+    if (pm.compare("fa") == 0) {
+      impl_pf_fa = true;
+    } else if (pm.compare("fc") != 0) {
+      ImplFatal("<rad_m1>/implicit_physflux_mom = '" + pm
+                + "' is not a choice (fc | fa)");
+    }
+  }
   // aphll-time-1110 implicit_aphll_mem (opt-in, read only when named, default false =
   // bitwise): second order in time for the berthon | blend AP-HLL faces.  Two lags made
   // them first order (tests at /viper/ptmp2/jinma/aphll_1110): (1) the lagged reduced
@@ -3818,6 +3833,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // vgdhr-1110 implicit_hr_cmem_gas_fa
     impl_cmgfa = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_gas_fa") &&
                  pin->GetBoolean("rad_m1","implicit_hr_cmem_gas_fa");
+    if (impl_pf_fa) {impl_cmgfa = true;}   // physflux-1111 mom = fa
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_hr_cmem = true: separate central-branch face "
                 << "memory F_c (applied flux in fax*)" << std::endl;
@@ -5780,7 +5796,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto gz2o_ = cmga ? fax2n : f0x2n;
   auto gz3o_ = (cmga && fax3n.extent(0) > 0) ? fax3n : f0x3n;
   const bool cm = impl_hr_cmem;   // rc18-1110: f2_/f3_ = F_c, fa2_/fa3_ = applied
-  const bool pfz = impl_physflux;   // physflux-1111: Z_f of the F_c face equation
+  const bool pfz = impl_physflux && !impl_pf_fa;   // physflux-1111: Z_f of F_c
   const Real cmcap = impl_hr_cmem_cap;   // hr2prod-1110
   auto fa2_ = cm ? fax2 : f0x2;
   auto fa3_ = cm ? fax3 : f0x3;
@@ -12175,7 +12191,7 @@ void RadiationM1::ImplicitVimpBuild() {
   auto vd_ = vet_cell;
   const bool dfull = vet_full;
   // aphll-time-1110: under the F_c memory the drag is that of the APPLIED face flux
-  const bool cmv = impl_hr_cmem && !impl_physflux;   // physflux-1111: F_c
+  const bool cmv = impl_hr_cmem && !(impl_physflux && !impl_pf_fa);   // physflux: F_c
   auto f0_ = cmv ? fax1 : f0x1;
   auto f2_ = cmv ? fax2 : f0x2;
   auto f3_ = cmv ? fax3 : f0x3;
@@ -16712,7 +16728,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto lgf_ = lbath_g;
     auto lff_ = lbath_f;
     const bool cmf = impl_hr_cmem;   // rc18-1110: f0_ = F_c, fa1_ = the applied flux
-    const bool pfz = impl_physflux;   // physflux-1111: Z_f of the F_c face equation
+    const bool pfz = impl_physflux && !impl_pf_fa;   // physflux-1111: Z_f of F_c
     const Real cmcap = impl_hr_cmem_cap;   // hr2prod-1110
     auto fa1_ = cmf ? fax1 : f0x1;
     auto gzo_ = (impl_cmgfa && fax1n.extent(0) > 0) ? fax1n : f0x1n;   // vgdhr-1110
@@ -17060,7 +17076,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (gcsf) {gz1_(m,k,j,ie+1) = gz1_(m,k,j,is);}
       });
     }
-    const bool cmc = cmf && !impl_physflux;   // physflux-1111: the cell F from F_c
+    const bool cmc = cmf && !(impl_physflux && !impl_pf_fa);   // physflux: cell F = F_c
     auto fa2w_ = cmc ? fax2 : f2_;   // rc18-1110: the applied fluxes
     auto fa3w_ = cmc ? fax3 : f3_;
     auto fc1w_ = cmc ? fax1 : f0x1;
@@ -18102,7 +18118,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // memory (+ a E^n), the old flux the face kernels' Z_f were built with, so that the gas
   // takes exactly the drag on the APPLIED flux dt k F_a'/c + the transport part
   const bool cmw = impl_hr_cmem && !impl_physflux;   // physflux-1111: F^old = u0 F
-  if (impl_hr_cmem && !impl_physflux) {   // physflux-1111: the write-back reads F_c
+  if (impl_hr_cmem && !(impl_physflux && !impl_pf_fa)) {   // physflux: wb reads F_c
     f0_ = fax1;
     if (trans) {f2_ = fax2;}
     if (trans && thrd) {f3_ = fax3;}

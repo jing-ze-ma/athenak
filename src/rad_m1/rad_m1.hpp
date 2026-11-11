@@ -1066,6 +1066,7 @@ class RadiationM1 {
   // flux instead of the F_c memory (the cmem feedback warning: off by (1-w)(F_c - F_a))
   bool impl_cmgfa = false;
   bool impl_physflux = false;   // physflux-1111: F_c = the one momentum flux
+  bool impl_pf_fa = false;   // physflux-1111 implicit_physflux_mom = fa
   DvceArray4D<Real> fax1n, fax2n, fax3n;
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
   // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a

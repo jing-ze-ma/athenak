@@ -324,6 +324,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("impl_blend_dtc", impl_blend_dtc);
   v.value("impl_hr_cmem", impl_hr_cmem);
   v.value("impl_physflux", impl_physflux);
+  v.value("impl_pf_fa", impl_pf_fa);
   v.value("impl_blend_r0", impl_blend_r0);
   v.value("impl_thsw", impl_thsw);
   v.value("impl_thsw_corr", impl_thsw_corr);
