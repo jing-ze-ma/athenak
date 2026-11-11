@@ -19890,7 +19890,7 @@ void RadiationM1::ImplicitHcPlm() {
   const bool hqos = impl_muscl_hq && impl_muscl_seam1 && cs_geom;
   const int smh = impl_tvdh ? M1_IM_B : M1_IM_SIG;   // physrec-1111 tvdh: sig- of R
   const bool tvh = impl_tvdh;
-  const bool tvhl = impl_tvdl;
+  const bool tvhq = impl_tvdl;
   const int tvh0 = (impl_hr_sf && (vet_sc || (impl_hr_sfgd & 1))) ? iw_hsf : -1;
   const int tvhl = (impl_hr_sf && (vet_sc || (impl_hr_sfgd & 2))) ? iw_hsf : -1;
   const int ies = indcs.ie;
@@ -19927,7 +19927,7 @@ void RadiationM1::ImplicitHcPlm() {
           irr = (cyclic && ir == ie) ? is : (ir + 1);
           wll = wrl = 0.5*iw_(m,b+M1_IM_SIG,k,j,il);
           wlr = wrr = 0.5*iw_(m,b+smh,k,j,ir);
-          if (tvhl) {
+          if (tvhq) {
             wll = iw_(m,b+M1_IM_SIG,k,j,il); wrl = 0.0;
             wlr = iw_(m,b+M1_IM_TV,k,j,ir); wrr = 0.0;
           }
@@ -19936,7 +19936,7 @@ void RadiationM1::ImplicitHcPlm() {
           const bool slo = hqos && (cseam(m,0) != 0), shi = hqos && (cseam(m,1) != 0);
           M1HqW(hqos, jl, js, je, slo, shi, iw_(m,b+M1_IM_SIG+1,k,jl,i), wll, wrl);
           M1HqW(hqos, j, js, je, slo, shi, iw_(m,b+smh+1,k,j,i), wlr, wrr);
-          if (tvhl) {
+          if (tvhq) {
             wll = iw_(m,b+M1_IM_SIG+1,k,jl,i); wrl = 0.0;
             wlr = iw_(m,b+M1_IM_TV+1,k,j,i); wrr = 0.0;
           }
@@ -19945,7 +19945,7 @@ void RadiationM1::ImplicitHcPlm() {
           const bool slo = hqos && (cseam(m,2) != 0), shi = hqos && (cseam(m,3) != 0);
           M1HqW(hqos, kl, ks, ke, slo, shi, iw_(m,b+M1_IM_SIG+2,kl,j,i), wll, wrl);
           M1HqW(hqos, k, ks, ke, slo, shi, iw_(m,b+smh+2,k,j,i), wlr, wrr);
-          if (tvhl) {
+          if (tvhq) {
             wll = iw_(m,b+M1_IM_SIG+2,kl,j,i); wrl = 0.0;
             wlr = iw_(m,b+M1_IM_TV+2,k,j,i); wrr = 0.0;
           }
