@@ -96,7 +96,8 @@ const char *kDtrMinimal[] = {
 // 5-D Views to a variable range and to the active or ghost cells (ng ghosts)
 int g_pn_lo = -1, g_pn_hi = -1, g_pcells = 0, g_png = 0;
 
-// is (i, j, k) of an (n3, n2, n1) block with ng ghosts in the dt_retry_poison_cells region
+// is (i, j, k) of an (n3, n2, n1) block with ng ghosts in the dt_retry_poison_cells
+// region
 bool InRegion(int i, int j, int k, int n1, int n2, int n3, int ng) {
   const int di = (i < ng) ? ng - i : ((i >= n1 - ng) ? i - (n1 - ng) + 1 : 0);
   const int dj = (n2 == 1) ? 0 : ((j < ng) ? ng - j :
@@ -709,10 +710,11 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   }
   if (poison_ > 0 && why == 9) {
     // dt_retry_views = all: in every View the failed attempt changed that the minimal
-    // list does NOT checkpoint, the elements the attempt wrote go to NaN after the restore
-    // (dt_retry_poison = 2: the whole View); the retried cycle is bitwise the straight one
-    // only if each of them is scratch (written before it is read).  dtretry-1111: an
-    // element no kernel writes (constant since the allocation) is read alike by both
+    // list does NOT checkpoint, the elements the attempt wrote go to NaN after the
+    // restore (dt_retry_poison = 2: the whole View); the retried cycle is bitwise the
+    // straight one only if each of them is scratch (written before it is read).
+    // dtretry-1111: an element no kernel writes (constant since the allocation) is read
+    // alike by both
     int np = 0;
     for (auto *e : pois) {e->Poison(); np += 1;}
     Kokkos::fence();
