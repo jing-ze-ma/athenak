@@ -3021,7 +3021,28 @@ class RadiationM1 {
   bool vra_ema_dema = false;
   int64_t vra_ema_nsh = 0;     // the boundaries seen (diag cadence only)
   void RotAvgEmaApply(const int ilo);
-  bool vra_eq = false;         // vet_rotate_avg_weight = equal (default j: J-weighted)
+  // vgdxf-1112 <rad_m1>/vet_gd_rotate_xfade = true (read only when named; default false
+  // = bitwise; needs vet_gd_rotate_dt > 0): the closure handed over is continuous in time
+  // across the ray-set changes.  Every build of block b (t in [t_b, t_b + dt_rot)) also
+  // sweeps the NEXT set b+1 at the same state and hands over H = (1 - s) A_b + s T_{b+1},
+  // s = (t - t_b)/dt_rot: A_b = the closure the run would use (the current set, + the
+  // vet_rotate_avg_ema / K-window offsets), T_{b+1} = the closure the first build of
+  // block b+1 would make at this state (the next set, + the offsets after the boundary
+  // shift: RotAvgEmaShift / RotAvgShift + RotAvgApply, the EMA change weight measured
+  // live).  The two sets' tables
+  // stay on the device (the prefetch set; prefetch off) and are swapped.  time2 extrap2
+  // extrapolates the gd fields across the boundaries (no held step) and
+  // vet_gd_rotate_slope = correct is not used (the closure has no jump)
+  bool vgd_xf = false;
+  Real vgd_xf_alt = -9.0;        // the angle of the tables in the second device set
+  double vgd_xf_nsw = 0.0;       // the next-set sweeps (diagnostic)
+  double vgd_xf_t = 0.0;         // their seconds
+  DvceArray5D<Real> vgd_xf_d;    // (m, 2 (nf+1), nk, nj, ni): slot 0 G (current raw), 1 A
+  void VgdXfTables(const Real alpha);
+  void VetGdXfade(const int64_t blk, const bool last);
+  void RotXfSnap(const int slot, const int ilo);
+  void RotXfBlend(const Real s, const bool last, const int ilo);
+  bool vra_eq = false;        // vet_rotate_avg_weight = equal (default j: J-weighted)
   bool vra_on = false;
   RotAvgTab vra_tab;
   DvceArray5D<Real> vra_a0, vra_a1;   // the closure's field arrays (set per call)

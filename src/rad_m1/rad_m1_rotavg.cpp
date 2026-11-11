@@ -846,4 +846,183 @@ bool RadiationM1::RotAvgRstCheck() {
   return ok;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotXfSnap
+//! \brief vgdxf-1112 (vet_gd_rotate_xfade): the registered fields as they are (no kind-3
+//! transform: vet_gd registers kinds 0-2) -> vgd_xf_d slot (0: the current set's raw
+//! fields G, before the EMA; 1: the closure A this build would hand over), + validity
+
+void RadiationM1::RotXfSnap(const int slot, const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Tab t = vra_tab;
+  const int nf1 = t.nf + 1;
+  if (vgd_xf_d.extent_int(0) != nmb1 + 1 || vgd_xf_d.extent_int(1) != 2*nf1 ||
+      vgd_xf_d.extent_int(2) != ke - ks + 1 || vgd_xf_d.extent_int(3) != je - js + 1 ||
+      vgd_xf_d.extent_int(4) != ie - is + 1) {
+    Kokkos::realloc(vgd_xf_d, nmb1 + 1, 2*nf1, ke - ks + 1, je - js + 1, ie - is + 1);
+  }
+  auto x_ = vgd_xf_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const int o = slot*nf1;
+  par_for("m1_xf_snap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2 && i != ie) continue;
+      x_(m,o+f,kk,jj,ii) = a.At(t.arr[f], t.comp[f], m, k, j, i);
+    }
+    x_(m,o+t.nf,kk,jj,ii) = RaValid(a, t, ilo, m, k, j, i) ? 1.0 : 0.0;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotXfBlend
+//! \brief vgdxf-1112: the registered fields hold the NEXT set's raw sweep S at this
+//! state; vgd_xf_d holds G (slot 0) and A (slot 1).  T = the closure of the first build
+//! of the next block at this state: S, or with the EMA history S + fac (e - Delta) (ratio
+//! fields S ((1 - aw) r/x + aw)), Delta = S - G (x = S/G), exactly RotAvgEmaShift's
+//! update; the change weight is the aux slot's (last = the last build of the block: the
+//! RotAvgEmaChange of this step) or measured here as RotAvgEmaChange does (G against the
+//! aux slot = this set at the previous boundary).  Fields := (1 - s) A + s T where A and
+//! S are valid, else A
+
+void RadiationM1::RotXfBlend(const Real s, const bool last, const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Tab t = vra_tab;
+  const int nf1 = t.nf + 1;
+  auto x_ = vgd_xf_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const bool ema = vra_ema && vra_on && vra_state == 1 && vra_d.extent_int(0) > nmb1 &&
+                   vra_d.extent_int(1) >= 2*nf1;
+  // the K-window (vet_rotate_avg = K): the ring after RotAvgShift of the coming boundary
+  const int nslot = vra_k - 1;
+  const bool kwin = !vra_ema && vra_on && vra_state == 1 && nslot >= 1 &&
+                    vra_d.extent_int(0) > nmb1 && vra_d.extent_int(1) >= nslot*nf1;
+  const int hn = (nslot >= 1) ? (vra_head + nslot - 1) % nslot : 0;
+  auto d_ = vra_d;
+  const Real a0 = (vra_ema_n > 0.0) ? 1.0/vra_ema_n : 1.0;
+  const Real tau0 = vra_ema_tau, lc = vra_ema_lc, cl = c_light;
+  const Real dtb = vgd_rot_dt;
+  auto &size = pmy_pack->pmb->mb_size;
+  const int nx1 = indcs.nx1;
+  const Real eps = vra_ema_eps;
+  const bool usej = vra_ema_chj, step = vra_ema_chstep;
+  int jt = t.jf;
+  for (int f = 0; f < t.nf && jt < 0; ++f) {
+    if (t.kind[f] == 2 && t.arr[f] != 2) jt = f;
+  }
+  const Real sb = fmin(fmax(s, 0.0), 1.0);
+  par_for("m1_xf_blend", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool vs = RaValid(a, t, ilo, m, k, j, i);
+    const bool vg = x_(m,t.nf,kk,jj,ii) > 0.5;
+    const bool va = x_(m,nf1+t.nf,kk,jj,ii) > 0.5;
+    if (!vs || !va) {   // no blend: A as it was
+      for (int f = 0; f < t.nf; ++f) {
+        if (t.arr[f] == 2 && i != ie) continue;
+        a.At(t.arr[f], t.comp[f], m, k, j, i) = x_(m,nf1+f,kk,jj,ii);
+      }
+      return;
+    }
+    // the EMA shift of the coming boundary (RotAvgEmaShift), with Delta from this state
+    bool sh = ema && vg && (d_(m,t.nf,kk,jj,ii) > 0.5);
+    Real aw = 1.0, fac = 0.0;
+    if (sh) {
+      Real ach = -1.0;
+      if (last) {
+        ach = d_(m,nf1+t.nf,kk,jj,ii);
+      } else if (eps > 0.0) {
+        Real c = 0.0;
+        if (usej && jt >= 0 && t.arr[jt] != 2) {
+          const Real jn = x_(m,jt,kk,jj,ii), jo = d_(m,nf1+jt,kk,jj,ii);
+          c = (jn > 0.0 && jo > 0.0) ? fabs(log(jn/jo)) : 1.0e30;
+        }
+        if (t.nf > 0 && t.arr[0] != 2 && t.kind[0] != 2) {
+          c = fmax(c, fabs(x_(m,0,kk,jj,ii) - d_(m,nf1,kk,jj,ii)));
+        }
+        ach = step ? fmin(1.0, fmax(0.0, c/eps - 1.0)) : fmin(1.0, c/eps);
+      }
+      Real rr = 1.0;
+      if (lc > 0.0) {
+        const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
+        rr = x1min + (static_cast<Real>(ii) + 0.5)*(x1max - x1min)/nx1;
+      }
+      const Real nset = d_(m,t.nf,kk,jj,ii);
+      aw = fmax(fmax(RaEmaA(a0, dtb, tau0, lc, rr, cl), fmin(ach, 1.0)),
+                1.0/(nset + 1.0));
+      fac = 1.0 - aw;
+      if (t.jw >= 0) {
+        const Real sj = a.At(t.arr[t.jw], t.comp[t.jw], m, k, j, i);
+        const Real gj = x_(m,t.jw,kk,jj,ii);
+        const Real R = (gj > 0.0 && sj > 0.0) ? sj/gj : 1.0;
+        const Real r0 = d_(m,t.jw,kk,jj,ii);
+        const Real r1 = (1.0 - aw)*r0/R + aw;
+        fac = (1.0 - aw)*(r0/R)/r1;
+      }
+    }
+    // K-window: the shifted offsets d'_s (slot hn: -Delta, the others d_s - Delta; ratio
+    // fields 1/x, d_s/x), valid where Delta and the slot are; then RotAvgApply's mean
+    const bool kw = kwin && vg;
+    Real kws[M1_RA_NF], kwsum = 1.0, knv = 1.0;
+    if (kw) {
+      Real xj = 1.0;
+      if (t.jw >= 0) {
+        const Real sj = a.At(t.arr[t.jw], t.comp[t.jw], m, k, j, i);
+        const Real gj = x_(m,t.jw,kk,jj,ii);
+        xj = (gj > 0.0 && sj > 0.0) ? sj/gj : 1.0;
+      }
+      for (int q = 0; q < nslot; ++q) {
+        const bool vq = (q == hn) || (d_(m,q*nf1+t.nf,kk,jj,ii) > 0.5);
+        knv += vq ? 1.0 : 0.0;
+        kws[q] = vq ? ((t.jw >= 0) ? ((q == hn) ? 1.0/xj : d_(m,q*nf1+t.jw,kk,jj,ii)/xj)
+                                   : 1.0) : 0.0;
+        kwsum += kws[q];
+      }
+    }
+    for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2 && i != ie) continue;
+      Real &fv = a.At(t.arr[f], t.comp[f], m, k, j, i);
+      const Real sv = fv;
+      Real tv = sv;
+      if (kw && knv > 1.5) {
+        const Real gv = x_(m,f,kk,jj,ii);
+        const bool mul = (t.kind[f] == 2);
+        const Real x = mul ? ((gv > 0.0 && sv > 0.0) ? sv/gv : 1.0) : (sv - gv);
+        Real sm = mul ? 1.0 : 0.0;
+        for (int q = 0; q < nslot; ++q) {
+          if (!((q == hn) || d_(m,q*nf1+t.nf,kk,jj,ii) > 0.5)) continue;
+          const Real dq = (q == hn) ? (mul ? 1.0/x : -x)
+                                    : (mul ? d_(m,q*nf1+f,kk,jj,ii)/x
+                                           : d_(m,q*nf1+f,kk,jj,ii) - x);
+          sm += mul ? dq : kws[q]*dq;
+        }
+        if (mul) {
+          tv = sv*sm/knv;
+        } else {
+          tv = sv + sm/kwsum;
+          if (t.kind[f] == 1) tv = fmin(fmax(tv, t.lo[f]), t.hi[f]);
+        }
+      } else if (sh) {
+        const Real gv = x_(m,f,kk,jj,ii);
+        const Real e = d_(m,f,kk,jj,ii);
+        if (t.kind[f] == 2) {
+          const Real xr = (gv > 0.0 && sv > 0.0) ? sv/gv : 1.0;
+          tv = sv*((1.0 - aw)*e/xr + aw);
+        } else {
+          tv = sv + fac*(e - (sv - gv));
+          if (t.kind[f] == 1) tv = fmin(fmax(tv, t.lo[f]), t.hi[f]);
+        }
+      }
+      fv = (1.0 - sb)*x_(m,nf1+f,kk,jj,ii) + sb*tv;
+    }
+  });
+}
+
 }  // namespace radm1
