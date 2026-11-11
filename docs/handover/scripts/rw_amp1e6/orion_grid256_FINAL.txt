@@ -1,0 +1,3 @@
+0.03333333333333333 0.01 x1 256 vetf impl 512 arm=TIME ts=hesdirk2 vimp=true ref=vetqs_d amp=1e-06 rm_implicit_tol=1.0e-12 rm_implicit_lin_tol=1.0e-13 rm_implicit_tol_rel=0 rm_implicit_lin_cnorm=1.0e-13 rm_implicit_physflux_zold=fc rm_implicit_hr_cmem_rst=true
+0.3333333333333333 0.01 x1 256 vetf impl 512 arm=TIME ts=hesdirk2 vimp=true ref=vetqs_d amp=1e-06 rm_implicit_tol=1.0e-12 rm_implicit_lin_tol=1.0e-13 rm_implicit_tol_rel=0 rm_implicit_lin_cnorm=1.0e-13 rm_implicit_physflux_zold=fc rm_implicit_hr_cmem_rst=true
+33.333333333333336 0.01 x1 256 vetf impl 512 arm=TIME ts=hesdirk2 vimp=true ref=vetqs_d amp=1e-06 rm_implicit_tol=1.0e-12 rm_implicit_lin_tol=1.0e-13 rm_implicit_tol_rel=0 rm_implicit_lin_cnorm=1.0e-13 rm_implicit_physflux_zold=fc rm_implicit_hr_cmem_rst=true

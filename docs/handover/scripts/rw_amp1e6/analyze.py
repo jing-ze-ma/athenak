@@ -3,7 +3,7 @@
    python3 analyze.py  -> markdown to stdout.  Reference at amp 1e-5: PROD19 Oct (idort1020/rw/runs)."""
 import glob, json, os, sys, math
 import numpy as np
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.environ.get("RW_HARNESS", os.path.dirname(os.path.abspath(__file__))))
 import run_radwave as rw  # noqa
 B = os.environ.get("RWA_ROOT", "/viper/ptmp2/jinma/rw_amp1e6_1111")
 ARMS = {"PROD": B + "/runs_PROD", "FINAL": B + "/runs_FINAL", "P19_1e-5": os.environ.get("RWA_REF", "/raven/ptmp/jinma/idort1020/rw/runs"), "PROD_tt": B + "/runs_ttPROD", "FINAL_tt": B + "/runs_ttFINAL"}
