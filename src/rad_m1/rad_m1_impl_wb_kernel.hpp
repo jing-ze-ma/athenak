@@ -970,7 +970,8 @@
           const Real cvv = pvol(m,k,j,i);
           Kokkos::atomic_add(&ckc_(0), 1.0);
           Kokkos::atomic_add(&ckc_(1), (wn - wsc)*cvv);
-          Kokkos::atomic_add(&ckc_(2), sqrt(SQR(a1 - b1) + SQR(a2 - b2) + SQR(a3 - b3))*cvv);
+          Kokkos::atomic_add(&ckc_(2),
+                             sqrt(SQR(a1 - b1) + SQR(a2 - b2) + SQR(a3 - b3))*cvv);
           wn = wsc;
         }
       }
