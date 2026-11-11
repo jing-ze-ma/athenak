@@ -117,7 +117,8 @@ inline void BvalsTeamForSeam(const char *name, const Kokkos::TeamPolicy<> &polic
 #if defined(KOKKOS_ENABLE_CUDA)
   if (BvPackGlobal()) {
     Kokkos::parallel_for(name, Kokkos::Experimental::require(policy,
-                         Kokkos::Experimental::WorkItemProperty::HintHeavyWeight), functor);
+                         Kokkos::Experimental::WorkItemProperty::HintHeavyWeight),
+                         functor);
     return;
   }
 #endif
