@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -35,12 +36,18 @@
 #include "rad_m1/rad_m1.hpp"
 #include "hydro/hydro_am.hpp"
 #include "utils/recipe.hpp"
+#include "utils/eint_from_cons.hpp"
+
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
 
 namespace hydro {
 
 bool AmModule::Named(ParameterInput *pin, const std::string &b) {
   return pin->DoesParameterExist(b, "am_transport") ||
          pin->DoesParameterExist(b, "am_vector") ||
+         pin->DoesParameterExist(b, "am_vector_mode") ||
          pin->DoesParameterExist(b, "frame_omega") ||
          pin->DoesParameterExist(b, "am_basis_check");
 }
@@ -117,7 +124,53 @@ AmModule::AmModule(MeshBlockPack *ppack, ParameterInput *pin, const std::string 
       frame_cf = pin->GetBoolean(blk,"frame_centrifugal");
     }
   }
-  if (pin->DoesParameterExist(blk,"am_vector")) {
+  // amvecH-1111 <hydro|mhd>/am_vector_mode (hydro_am.hpp; read only when named)
+  if (pin->DoesParameterExist(blk,"am_vector_mode")) {
+    const std::string md = pin->GetString(blk,"am_vector_mode");
+    if (md == "patch") {
+      am_mode = 1;
+    } else if (md != "spin") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << blk << ">/am_vector_mode must be spin or patch"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  if (am_mode == 1) {
+    Mesh *pm = ppack->pmesh;
+    if (!pm->use_cubed_sphere || !pm->three_d) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << blk << ">/am_vector_mode = patch needs a 3-D "
+                << "cubed sphere" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (pin->DoesParameterExist(blk,"frame_omega")) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << blk << ">/am_vector_mode = patch is not combined "
+                << "with frame_omega" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    am_transport = true;
+    if (pin->DoesParameterExist(blk,"am_vector_kecap")) {
+      am_kecap = pin->GetReal(blk,"am_vector_kecap");
+    }
+    auto &ic = pm->mb_indcs;
+    const int nmbs = std::max(ppack->nmb_thispack, pm->nmb_maxperrank);
+    const int n3 = ic.nx3 + 2*ic.ng, n2 = ic.nx2 + 2*ic.ng, n1 = ic.nx1 + 2*ic.ng;
+    Kokkos::realloc(amp_w, nmbs, 7, n3, n2, n1);
+    Kokkos::deep_copy(amp_w, 0.0);
+    Kokkos::realloc(amp_d, 5);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<" << blk << "> am_vector_mode=patch: the full torque-error vector "
+                << "is deposited as a minimum-KE 3x3 patch rotation (no spin reservoir), "
+                << "kecap " << am_kecap << std::endl;
+    }
+  }
+  if (pin->DoesParameterExist(blk,"am_cons_diag")) {
+    am_cons_diag = pin->GetInteger(blk,"am_cons_diag");
+    if (am_cons_diag > 0) {Kokkos::realloc(amq_d, 13);}
+  }
+  if (am_mode == 0 && pin->DoesParameterExist(blk,"am_vector")) {
     am_vector = pin->GetBoolean(blk,"am_vector");
     if (am_vector) {
       am_transport = true;
@@ -152,12 +205,328 @@ AmModule::AmModule(MeshBlockPack *ppack, ParameterInput *pin, const std::string 
 
 AmModule::~AmModule() {
   if (pbval_spin != nullptr) {delete pbval_spin;}
+  if (am_mode == 1 && global_variable::my_rank == 0) {
+    std::cout << "<" << blk << "> am_vector_mode=patch (rank 0): capped cell-stages "
+              << amp_tot[0] << ", |L| withheld (to columns) " << amp_tot[1]
+              << ", |L| not deposited " << amp_tot[2]
+              << ", column cell-stages over the cap " << amp_tot[3]
+              << ", singular patches " << amp_tot[4] << std::endl;
+  }
 }
 
 void AmModule::Apply(Driver *pdrive, int stage, Real bdt, const AmFluid &fl) {
-  if (am_transport) {AmTransport(bdt, pdrive, stage, fl);}
+  if (am_transport) {
+    // amvecH-1111 am_cons_diag: the deposit's L budget around it
+    const bool dg = (am_cons_diag > 0) && (am_diag_n < am_cons_diag) &&
+                    pmy_pack->pmesh->use_cubed_sphere;
+    if (dg) {AmDiagPre(fl);}
+    if (am_mode == 1) {
+      AmPatch(bdt, fl);
+    } else {
+      AmTransport(bdt, pdrive, stage, fl);
+    }
+    if (dg) {AmDiagPost(bdt, stage, fl);}
+  }
   if (frame_on) {FrameRotation(bdt, pdrive, stage, fl);}
   if (am_vector && am_eta > 0.0 && stage == pdrive->nexp_stages) {AmSpinReturn(fl);}
+}
+
+//----------------------------------------------------------------------------------------
+//! \brief amvecH-1111: the unit radius vector and the covariant tangents (e_xi, e_eta) of
+//! the cs cell centre (m, k, j), with the operations HydroAmVecTorque uses (bitwise rhat)
+
+KOKKOS_INLINE_FUNCTION
+void AmPatchBasis(const HydroAmV &v, const int m, const int k, const int j, Real *rh,
+                  Real *e1, Real *e2) {
+  const Real x2l = v.size.d_view(m).x2min, x2u = v.size.d_view(m).x2max;
+  const Real x3l = v.size.d_view(m).x3min, x3u = v.size.d_view(m).x3max;
+  const Real xc = 0.25*M_PI*CellCenterX(j-v.js, v.nx2, x2l, x2u);
+  const Real ec = 0.25*M_PI*CellCenterX(k-v.ks, v.nx3, x3l, x3u);
+  const int pnl = v.panel.d_view(m);
+  Real qc[3];
+  cubed_sphere::PanelToCart(pnl, xc, ec, qc);
+  const Real qn = 1.0/sqrt(qc[0]*qc[0] + qc[1]*qc[1] + qc[2]*qc[2]);
+  for (int q = 0; q < 3; ++q) {rh[q] = qc[q]*qn;}
+  if (e1 != nullptr) {cubed_sphere::PanelTangents(pnl, xc, ec, e1, e2);}
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void AmModule::AmPatch
+//! \brief amvecH-1111 <hydro|mhd>/am_vector_mode = patch (hydro_am.hpp): the torque error
+//! dT (HydroAmVecTorque, all three components) of every active cell as the minimum-KE
+//! rigid rotation of its in-block lateral 3x3 patch; capped cells hand the withheld L to
+//! their radial column.  Three kernels: omega (hydro_am_patch_om), the gather + cap
+//! (hydro_am_patch), the column (hydro_am_patch_col, only when a cell was capped)
+
+void AmModule::AmPatch(Real bdt, const AmFluid &fl) {
+  Mesh *pm = pmy_pack->pmesh;
+  HydroAmV v;
+  AmFillV(v, fl);
+  auto &ic = pm->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int is = ic.is, ie = ic.ie, js = ic.js, je = ic.je, ks = ic.ks, ke = ic.ke;
+  auto u0_ = fl.u0;
+  auto w_ = amp_w;
+  auto cn_ = amp_d;
+  Kokkos::deep_copy(DevExeSpace(), amp_d, 0.0);
+  const Real akc = am_kecap;
+  const bool hen = v.eos.is_ideal;   // an energy equation (ideal or general): e_int pays
+  // omega_c bdt = I_c^-1 dT_c bdt over the clipped (in-block, symmetric) 3x3 patch
+  par_for("hydro_am_patch_om", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real dT[3], rc[3], b1[3], b2[3], cc;
+    HydroAmVecTorque(v, m, k, j, i, dT, rc, b1, b2, cc);
+    const Real r = v.x1v(m,i);
+    Real ia[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    const int k0 = (k > ks) ? k - 1 : k, k1 = (k < ke) ? k + 1 : k;
+    const int j0 = (j > js) ? j - 1 : j, j1 = (j < je) ? j + 1 : j;
+    for (int kk = k0; kk <= k1; ++kk) {
+      for (int jj = j0; jj <= j1; ++jj) {
+        Real rq[3];
+        AmPatchBasis(v, m, kk, jj, rq, nullptr, nullptr);
+        const Real w = fmax(u0_(m,IDN,kk,jj,i), 0.0)*v.vol(m,kk,jj,i);
+        const Real p0 = r*rq[0], p1 = r*rq[1], p2 = r*rq[2];
+        const Real q2 = p0*p0 + p1*p1 + p2*p2;
+        ia[0] += w*(q2 - p0*p0);
+        ia[1] += w*(q2 - p1*p1);
+        ia[2] += w*(q2 - p2*p2);
+        ia[3] -= w*p0*p1;
+        ia[4] -= w*p0*p2;
+        ia[5] -= w*p1*p2;
+      }
+    }
+    const Real tr = ia[0] + ia[1] + ia[2];
+    const Real it = (tr > 0.0) ? 1.0/tr : 0.0;
+    const Real axx = ia[0]*it, ayy = ia[1]*it, azz = ia[2]*it;
+    const Real axy = ia[3]*it, axz = ia[4]*it, ayz = ia[5]*it;
+    const Real c00 = ayy*azz - ayz*ayz, c01 = axz*ayz - axy*azz;
+    const Real c02 = axy*ayz - axz*ayy, c11 = axx*azz - axz*axz;
+    const Real c12 = axy*axz - axx*ayz, c22 = axx*ayy - axy*axy;
+    const Real det = axx*c00 + axy*c01 + axz*c02;
+    const bool okp = (tr > 0.0) && (det > 1.0e-24);
+    Real om[3] = {0.0, 0.0, 0.0};
+    if (okp) {
+      const Real id = it/det;
+      om[0] = (c00*dT[0] + c01*dT[1] + c02*dT[2])*id;
+      om[1] = (c01*dT[0] + c11*dT[1] + c12*dT[2])*id;
+      om[2] = (c02*dT[0] + c12*dT[1] + c22*dT[2])*id;
+      // one refinement step
+      const Real rs[3] = {dT[0] - (ia[0]*om[0] + ia[3]*om[1] + ia[4]*om[2]),
+                          dT[1] - (ia[3]*om[0] + ia[1]*om[1] + ia[5]*om[2]),
+                          dT[2] - (ia[4]*om[0] + ia[5]*om[1] + ia[2]*om[2])};
+      om[0] += (c00*rs[0] + c01*rs[1] + c02*rs[2])*id;
+      om[1] += (c01*rs[0] + c11*rs[1] + c12*rs[2])*id;
+      om[2] += (c02*rs[0] + c12*rs[1] + c22*rs[2])*id;
+    } else {
+      Kokkos::atomic_add(&cn_(2), sqrt(dT[0]*dT[0] + dT[1]*dT[1] + dT[2]*dT[2])*bdt);
+      Kokkos::atomic_add(&cn_(4), 1.0);
+    }
+    for (int q = 0; q < 3; ++q) {w_(m,q,k,j,i) = om[q]*bdt;}
+    (void) rc; (void) b1; (void) b2; (void) cc;
+  });
+  // the gather: dp_n = rho_n (sum_c omega_c bdt) x r_n, covariant d2 = dp.e_xi, d3 =
+  // dp.e_eta (dp . rhat = 0); the cap scales it by s, the withheld L goes to w_ 3-5
+  par_for("hydro_am_patch", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real rh[3], e1[3], e2[3];
+    AmPatchBasis(v, m, k, j, rh, e1, e2);
+    const Real r = v.x1v(m,i);
+    const Real rcv[3] = {r*rh[0], r*rh[1], r*rh[2]};
+    const Real dv = v.vol(m,k,j,i);
+    const Real c = v.ccell(m,k,j);
+    Real om[3] = {0.0, 0.0, 0.0};
+    const int k0 = (k > ks) ? k - 1 : k, k1 = (k < ke) ? k + 1 : k;
+    const int j0 = (j > js) ? j - 1 : j, j1 = (j < je) ? j + 1 : j;
+    for (int kk = k0; kk <= k1; ++kk) {
+      for (int jj = j0; jj <= j1; ++jj) {
+        for (int q = 0; q < 3; ++q) {om[q] += w_(m,q,kk,jj,i);}
+      }
+    }
+    const Real ddc = u0_(m,IDN,k,j,i);
+    const Real rw = fmax(ddc, 0.0);
+    const Real dp[3] = {rw*(om[1]*rcv[2] - om[2]*rcv[1]),
+                        rw*(om[2]*rcv[0] - om[0]*rcv[2]),
+                        rw*(om[0]*rcv[1] - om[1]*rcv[0])};
+    const Real d2 = dp[0]*e1[0] + dp[1]*e1[1] + dp[2]*e1[2];
+    const Real d3 = dp[0]*e2[0] + dp[1]*e2[1] + dp[2]*e2[2];
+    Real s = 1.0;
+    if (hen && akc > 0.0 && ddc > 0.0) {
+      const Real idc = 1.0/ddc;
+      const Real p1 = u0_(m,IM1,k,j,i), p2 = u0_(m,IM2,k,j,i), p3 = u0_(m,IM3,k,j,i);
+      const Real q0 = CsKeMom(p1, p2, p3, c);
+      const Real q1 = CsKeMom(p1, p2 + d2, p3 + d3, c);
+      const Real qd = CsKeMom(0.0, d2, d3, c);
+      const Real aa = qd*idc, bb = (q1 - q0 - qd)*idc;
+      const Real dk1 = (q1 - q0)*idc;
+      const Real cap = akc*fmax(v.w0(m,IEN,k,j,i), 0.0);
+      if (dk1 > cap) {
+        // the largest s in [0, 1] with aa s^2 + bb s <= cap
+        const Real sq = sqrt(fmax(bb*bb + 4.0*aa*cap, 0.0));
+        s = 0.0;
+        if (aa > 0.0) {
+          s = (bb >= 0.0) ? ((bb + sq > 0.0) ? 2.0*cap/(bb + sq) : 0.0)
+                          : (-bb + sq)/(2.0*aa);
+        }
+        s = fmin(fmax(s, 0.0), 1.0);
+        Kokkos::atomic_add(&cn_(0), 1.0);
+      }
+    }
+    u0_(m,IM2,k,j,i) += s*d2;
+    u0_(m,IM3,k,j,i) += s*d3;
+    Real ld[3] = {dv*(rcv[1]*dp[2] - rcv[2]*dp[1]),
+                  dv*(rcv[2]*dp[0] - rcv[0]*dp[2]),
+                  dv*(rcv[0]*dp[1] - rcv[1]*dp[0])};
+    for (int q = 0; q < 3; ++q) {w_(m,3+q,k,j,i) = (1.0 - s)*ld[q];}
+    w_(m,6,k,j,i) = s;
+    if (s < 1.0) {
+      Kokkos::atomic_add(&cn_(1),
+                         (1.0 - s)*sqrt(ld[0]*ld[0] + ld[1]*ld[1] + ld[2]*ld[2]));
+    }
+  });
+  Kokkos::fence();
+  auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amp_d);
+  if (hc(0) > 0.0) {
+    // the withheld L of a radial column's capped cells (each perpendicular to the
+    // column's rhat) as the rigid rotation omega = W_perp / sum rho V r^2 of its uncapped
+    // cells; their KE is not capped (counted where it exceeds the cap)
+    par_for("hydro_am_patch_col", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      Real rh[3], e1[3], e2[3];
+      AmPatchBasis(v, m, k, j, rh, e1, e2);
+      const Real c = v.ccell(m,k,j);
+      Real wv[3] = {0.0, 0.0, 0.0}, isum = 0.0;
+      bool any = false;
+      for (int i = is; i <= ie; ++i) {
+        if (w_(m,6,k,j,i) < 1.0) {
+          any = true;
+          for (int q = 0; q < 3; ++q) {wv[q] += w_(m,3+q,k,j,i);}
+        } else {
+          const Real r = v.x1v(m,i);
+          isum += fmax(u0_(m,IDN,k,j,i), 0.0)*v.vol(m,k,j,i)*r*r;
+        }
+      }
+      if (!any) return;
+      const Real wr = wv[0]*rh[0] + wv[1]*rh[1] + wv[2]*rh[2];
+      if (!(isum > 0.0)) {
+        Kokkos::atomic_add(&cn_(2), sqrt(wv[0]*wv[0] + wv[1]*wv[1] + wv[2]*wv[2]));
+        return;
+      }
+      Kokkos::atomic_add(&cn_(2), fabs(wr));
+      Real om[3];
+      for (int q = 0; q < 3; ++q) {om[q] = (wv[q] - wr*rh[q])/isum;}
+      for (int i = is; i <= ie; ++i) {
+        if (w_(m,6,k,j,i) < 1.0) continue;
+        const Real r = v.x1v(m,i);
+        const Real rcv[3] = {r*rh[0], r*rh[1], r*rh[2]};
+        const Real ddc = u0_(m,IDN,k,j,i);
+        const Real rw = fmax(ddc, 0.0);
+        const Real dp[3] = {rw*(om[1]*rcv[2] - om[2]*rcv[1]),
+                            rw*(om[2]*rcv[0] - om[0]*rcv[2]),
+                            rw*(om[0]*rcv[1] - om[1]*rcv[0])};
+        const Real d2 = dp[0]*e1[0] + dp[1]*e1[1] + dp[2]*e1[2];
+        const Real d3 = dp[0]*e2[0] + dp[1]*e2[1] + dp[2]*e2[2];
+        if (hen && akc > 0.0 && ddc > 0.0) {
+          const Real p1 = u0_(m,IM1,k,j,i), p2 = u0_(m,IM2,k,j,i);
+          const Real p3 = u0_(m,IM3,k,j,i);
+          const Real dk1 = (CsKeMom(p1, p2 + d2, p3 + d3, c)
+                            - CsKeMom(p1, p2, p3, c))/ddc;
+          if (dk1 > akc*fmax(v.w0(m,IEN,k,j,i), 0.0)) {
+            Kokkos::atomic_add(&cn_(3), 1.0);
+          }
+        }
+        u0_(m,IM2,k,j,i) += d2;
+        u0_(m,IM3,k,j,i) += d3;
+      }
+    });
+    Kokkos::fence();
+    Kokkos::deep_copy(hc, amp_d);
+  }
+  for (int q = 0; q < 5; ++q) {amp_tot[q] += hc(q);}
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void AmModule::AmDiagPre / AmDiagPost
+//! \brief amvecH-1111 <hydro|mhd>/am_cons_diag (cubed sphere): the L vector the deposit
+//! added, V rc x (the Cartesian tangential vector of the change of the stored covariant
+//! IM2/IM3), against sum dT bdt (HydroAmVecTorque of the same stage data); the fluid L
+//! (tangential momentum, arm rc) after the deposit.  AMH_CONS line on rank 0
+
+void AmModule::AmDiagPre(const AmFluid &fl) {
+  auto &ic = pmy_pack->pmesh->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  if (amp_u.extent_int(0) < nmb) {
+    const int n3 = ic.nx3 + 2*ic.ng, n2 = ic.nx2 + 2*ic.ng, n1 = ic.nx1 + 2*ic.ng;
+    Kokkos::realloc(amp_u, std::max(nmb, pmy_pack->pmesh->nmb_maxperrank), 2, n3, n2, n1);
+  }
+  auto u0_ = fl.u0;
+  auto au_ = amp_u;
+  par_for("hydro_am_diag_pre", DevExeSpace(), 0, nmb - 1, ic.ks, ic.ke, ic.js, ic.je,
+          ic.is, ic.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    au_(m,0,k,j,i) = u0_(m,IM2,k,j,i);
+    au_(m,1,k,j,i) = u0_(m,IM3,k,j,i);
+  });
+}
+
+void AmModule::AmDiagPost(Real bdt, int stage, const AmFluid &fl) {
+  HydroAmV v;
+  AmFillV(v, fl);
+  auto &ic = pmy_pack->pmesh->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto u0_ = fl.u0;
+  auto au_ = amp_u;
+  auto aq_ = amq_d;
+  Kokkos::deep_copy(DevExeSpace(), amq_d, 0.0);
+  par_for("hydro_am_diag_post", DevExeSpace(), 0, nmb - 1, ic.ks, ic.ke, ic.js, ic.je,
+          ic.is, ic.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real dT[3], rc[3], b1[3], b2[3], cc;
+    HydroAmVecTorque(v, m, k, j, i, dT, rc, b1, b2, cc);
+    const Real dv = v.vol(m,k,j,i);
+    const Real s2 = 1.0 - cc*cc;
+    auto lt = [&](const Real g2, const Real g3, Real *o) {
+      const Real a2 = (g2 - cc*g3)/s2, a3 = (g3 - cc*g2)/s2;
+      Real p[3];
+      for (int q = 0; q < 3; ++q) {p[q] = a2*b1[q] + a3*b2[q];}
+      o[0] = dv*(rc[1]*p[2] - rc[2]*p[1]);
+      o[1] = dv*(rc[2]*p[0] - rc[0]*p[2]);
+      o[2] = dv*(rc[0]*p[1] - rc[1]*p[0]);
+    };
+    const Real m2 = u0_(m,IM2,k,j,i), m3 = u0_(m,IM3,k,j,i);
+    Real ld[3], lf[3];
+    lt(m2 - au_(m,0,k,j,i), m3 - au_(m,1,k,j,i), ld);
+    lt(m2, m3, lf);
+    for (int q = 0; q < 3; ++q) {
+      Kokkos::atomic_add(&aq_(q), dT[q]*bdt);
+      Kokkos::atomic_add(&aq_(3+q), ld[q]);
+      Kokkos::atomic_add(&aq_(6+q), lf[q]);
+    }
+    Kokkos::atomic_add(&aq_(9), sqrt(dT[0]*dT[0] + dT[1]*dT[1] + dT[2]*dT[2])*bdt);
+    Kokkos::atomic_add(&aq_(10), sqrt(ld[0]*ld[0] + ld[1]*ld[1] + ld[2]*ld[2]));
+  });
+  Kokkos::fence();
+  auto hq = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amq_d);
+  Real s[13];
+  for (int q = 0; q < 13; ++q) {s[q] = hq(q);}
+  Real t[5];
+  for (int q = 0; q < 5; ++q) {t[q] = amp_tot[q];}
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, s, 13, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, t, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0) {
+    const char *md = (am_mode == 1) ? "patch" : (am_vector ? "spin" : "zonal");
+    char buf[1024];
+    std::snprintf(buf, sizeof(buf), "AMH_CONS n=%d stage=%d mode=%s "
+                  "sum_dT=(%.6e %.6e %.6e) dep=(%.6e %.6e %.6e) "
+                  "resid=(%.3e %.3e %.3e) scale=%.3e |dep|=%.3e "
+                  "Lfluid=(%.15e %.15e %.15e) capped=%.0f withheld=%.3e lost=%.3e "
+                  "colover=%.0f singular=%.0f", am_diag_n, stage, md, s[0], s[1], s[2],
+                  s[3], s[4], s[5], s[3] - s[0], s[4] - s[1], s[5] - s[2], s[9], s[10],
+                  s[6], s[7], s[8], t[0], t[1], t[2], t[3], t[4]);
+    std::cout << buf << std::endl;
+  }
+  ++am_diag_n;
 }
 
 //----------------------------------------------------------------------------------------
