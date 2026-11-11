@@ -1,0 +1,159 @@
+<comment>
+problem = tanacc-1107 cs lo shd tan=off geo2: black-body sphere r=1 (F_in = 1) in a
+          thin medium + clump at r = 3 (a = 0.4); exact = ray quadrature (ana/exact.py)
+
+<job>
+basename = ta
+
+<mesh>
+nghost = 2
+nx1 = 32
+x1min = 1.0
+x1max = 6.0
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 48
+x2min = -1.0
+x2max = 1.0
+ix2_bc = panel
+ox2_bc = panel
+nx3 = 48
+x3min = -1.0
+x3max = 1.0
+ix3_bc = panel
+ox3_bc = panel
+use_cubed_sphere = true
+
+<meshblock>
+nx1 = 32
+nx2 = 48
+nx3 = 48
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 40
+tlim = 1e+30
+ndiag = 10
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+rad_signal_speed = false
+
+<rad_m1>
+vet_rotate_avg_ema = 16
+c_light = 1.0
+chat_over_c = 1.0
+e_floor = 1.0e-30
+opacity = const
+kappa_p = 1.0e-30
+kappa_e = 1.0e-30
+kappa_f = 1.0e-30
+kappa_s = 0
+arad = 1.0e16
+coupling = true
+gas_feedback = false
+transport = implicit
+time_scheme = hesdirk2
+time2_vet_col = extrap2
+implicit_cfl = 1000.0
+implicit_solver = bicgstab
+implicit_precond = mg
+implicit_maxit = 200
+implicit_tol = 1.0e-10
+implicit_lin_tol = 1.0e-12
+implicit_closure_lag = step
+marshak_q = 0.5
+ic_rad = none
+implicit_bc_x1min = flux
+implicit_flux_x1min = 1.0
+implicit_bc_x1max = marshak
+implicit_ebath_x1max = 0.0
+vet_bc_inner = emit
+closure = vet_col
+vet_gd = true
+vet_gd_replace = true
+vet_col_lat_taucut = 30.0
+vet_gd_gl_nmu = 0
+vet_gd_geo = 2
+vet_rotate_avg = 8
+vet_gd_rotate_every = 2
+vet_col_lat_offdiag = operator
+implicit_op_stencil = true
+vet_gd_tangential = false
+vet_gd_twin = false
+vet_gd_twin_fuse = false
+vet_gd_symref = none
+vet_source_noesrc = false
+vet_scatter = true
+vet_scatter_form = ma
+vet_scatter_j = relaxed
+implicit_face_opac_n = true
+implicit_pos_floor = true
+implicit_pos_floor_solve = true
+vet_gd_allow_clamp = true
+implicit_flux = blend
+implicit_flux_faces = all
+implicit_flux_beam = halfrange
+implicit_blend = idort_f
+implicit_blend_tau0 = 1
+implicit_blend_alpha = 1
+implicit_blend_flo = 0.3
+implicit_blend_fhi = 0.6
+implicit_blend_xthin = 0
+implicit_thin_switch = fse
+implicit_thin_corr = hc
+implicit_thin_js_face = hcface
+implicit_thin_hcface_gd = x1
+implicit_thin_hcface = tau
+implicit_thin_bq_gd = cell
+implicit_thin_js_gd = x1
+implicit_thin_hcsf = j
+implicit_thin_recon = jse
+implicit_thin_bq = lin
+implicit_hr_face_gd = none
+vet_interp = auto
+vet_col_lat_cut_thin = 1.0
+vet_seg = jump
+vet_bc_diff = face
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test = sph_shell
+gas_rho = 1.0e24
+gas_temp = 1.0e-30
+e_out = 1.0e-8
+e_amp = 0.0
+r0 = 2.0
+width = 0.2
+clump_r = 3.0
+clump_th = 1.5707963267948966
+clump_ph = 0.0
+clump_a = 0.4
+clump_rho = 1e+33
+clump_temp = 1e-30
+gas_hold = true
+user_srcs = true
+
+<output1>
+file_type = bin
+variable = m1
+dt = 1e+30
+
+<output2>
+file_type = bin
+variable = m1_lat
+dt = 1e+30
+
+<output3>
+file_type = bin
+variable = m1_face
+dt = 1e+30
+
+<output4>
+file_type = rst
+dt = 1e+30

@@ -364,6 +364,7 @@ void RadiationM1::RotAvgEmaInit(const int ilo) {
   auto d_ = vra_d;
   const RaArr a{vra_a0, vra_a1, vra_c};
   const Tab t = vra_tab;
+  const bool dema = vra_ema_dema;
   par_for("m1_ra_ema_init", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kk = k - ks, jj = j - js, ii = i - is;
@@ -398,6 +399,11 @@ void RadiationM1::RotAvgEmaInit(const int ilo) {
       if (RaGet(a, t, f, ie, m, k, j, i, jr, g)) d_(m,o1+f,kk,jj,ii) = g;
     }
     d_(m,o1+t.nf,kk,jj,ii) = -1.0;
+    // raycheap-1109 dema: the second EMA starts equal to the first (2 e1 - e2 = e1)
+    if (dema) {
+      const int o2 = 2*(t.nf + 1);
+      for (int f = 0; f <= t.nf; ++f) {d_(m,o2+f,kk,jj,ii) = d_(m,f,kk,jj,ii);}
+    }
   });
   vra_pend = 0;
 }
@@ -504,6 +510,8 @@ void RadiationM1::RotAvgEmaShift(const int ds) {
                   v[1]/n, v[2]/n, v[3]/n);
     }
   }
+  const bool dema = vra_ema_dema;
+  const int o2 = 2*(t.nf + 1);
   par_for("m1_ra_ema_shift", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kk = k - ks, jj = j - js, ii = i - is;
@@ -512,6 +520,9 @@ void RadiationM1::RotAvgEmaShift(const int ds) {
     if (!vd || !vh) {   // no Delta or no history: restart from the current set alone
       for (int f = 0; f < t.nf; ++f) {d_(m,f,kk,jj,ii) = (t.kind[f] == 2) ? 1.0 : 0.0;}
       d_(m,t.nf,kk,jj,ii) = vd ? 1.0 : 0.0;   // count 1: the current set alone
+      if (dema) {
+        for (int f = 0; f <= t.nf; ++f) {d_(m,o2+f,kk,jj,ii) = d_(m,f,kk,jj,ii);}
+      }
       return;
     }
     Real rr = 1.0;
@@ -531,12 +542,30 @@ void RadiationM1::RotAvgEmaShift(const int ds) {
       const Real r1 = (1.0 - aw)*r0/R + aw;
       fac = (1.0 - aw)*(r0/R)/r1;
     }
+    // raycheap-1109 dema: the second EMA, of the new first one, in the same frame, with
+    // the same (J-) weights: r2' = (1 - aw) r2/R + aw r1', e2' = fac2 (e2 - D) + w1 e1'
+    Real fac2 = 1.0 - aw, w1 = aw;
+    if (dema && t.jw >= 0) {
+      const Real r2 = d_(m,o2+t.jw,kk,jj,ii), R = d_(m,od+t.jw,kk,jj,ii);
+      const Real r0 = d_(m,t.jw,kk,jj,ii);
+      const Real r1n = (1.0 - aw)*r0/R + aw;
+      const Real r2n = (1.0 - aw)*r2/R + aw*r1n;
+      fac2 = (1.0 - aw)*(r2/R)/r2n;
+      w1 = aw*r1n/r2n;
+    }
     for (int f = 0; f < t.nf; ++f) {
       const Real x = d_(m,od+f,kk,jj,ii);
       const Real y = d_(m,f,kk,jj,ii);
-      d_(m,f,kk,jj,ii) = (t.kind[f] == 2) ? ((1.0 - aw)*y/x + aw) : fac*(y - x);
+      const Real y1 = (t.kind[f] == 2) ? ((1.0 - aw)*y/x + aw) : fac*(y - x);
+      d_(m,f,kk,jj,ii) = y1;
+      if (dema) {
+        const Real y2 = d_(m,o2+f,kk,jj,ii);
+        d_(m,o2+f,kk,jj,ii) = (t.kind[f] == 2) ? ((1.0 - aw)*y2/x + aw*y1)
+                                                : fac2*(y2 - x) + w1*y1;
+      }
     }
     d_(m,t.nf,kk,jj,ii) = (aw >= 1.0) ? 1.0 : fmin(nset + 1.0, 1.0e9);
+    if (dema) {d_(m,o2+t.nf,kk,jj,ii) = d_(m,t.nf,kk,jj,ii);}
   });
 }
 
@@ -548,21 +577,32 @@ void RadiationM1::RotAvgEmaApply(const int ilo) {
   auto d_ = vra_d;
   const RaArr a{vra_a0, vra_a1, vra_c};
   const Tab t = vra_tab;
+  const bool dema = vra_ema_dema;
+  const int o2 = 2*(t.nf + 1);
   par_for("m1_ra_ema_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (!RaValid(a, t, ilo, m, k, j, i)) return;
     const int kk = k - ks, jj = j - js, ii = i - is;
     if (!(d_(m,t.nf,kk,jj,ii) > 0.5)) return;
     const Real jr = RaJ(a, t, m, k, j, i);
-    const Real ju = (t.jf >= 0) ? jr*d_(m,t.jf,kk,jj,ii) : jr;
+    // raycheap-1109 dema: the lag-corrected offset 2 e1 - e2 (ratios 2 r1 - r2 in
+    // [r1/4, 4 r1]); without dema the EMA itself
+    auto off = [&](const int f) -> Real {
+      const Real e1 = d_(m,f,kk,jj,ii);
+      if (!dema) return e1;
+      const Real e2 = d_(m,o2+f,kk,jj,ii);
+      if (t.kind[f] == 2) return fmin(fmax(2.0*e1 - e2, 0.25*e1), 4.0*e1);
+      return 2.0*e1 - e2;
+    };
+    const Real ju = (t.jf >= 0) ? jr*off(t.jf) : jr;
     for (int f = 0; f < t.nf; ++f) {
       Real g;
       if (!RaGet(a, t, f, ie, m, k, j, i, jr, g)) continue;
       Real v;
       if (t.kind[f] == 2) {
-        v = g*d_(m,f,kk,jj,ii);
+        v = g*off(f);
       } else {
-        v = g + d_(m,f,kk,jj,ii);
+        v = g + off(f);
         if (t.kind[f] == 1 || (t.kind[f] == 3 && t.lo[f] < t.hi[f])) {
           v = fmin(fmax(v, t.lo[f]), t.hi[f]);
         }

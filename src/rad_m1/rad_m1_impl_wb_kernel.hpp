@@ -421,7 +421,9 @@
         go1 = u0_(m,M1_F1,k,j,i);
         go2 = u0_(m,M1_F2,k,j,i);
         go3 = u0_(m,M1_F3,k,j,i);
-        if (gfst) {
+        if (gfst || cmw) {
+          // rc18-1110 cmem: always the face means of the F_c memory (incl. the stage
+          // increments, which f0n_ and E^n already carry)
           // the first solve of the run: the problem generator's F is not (yet) the
           // radiation's state (F0 faces + a E), whose old value is taken instead (the
           // difference is a cold-start mismatch, not a source)
@@ -441,7 +443,7 @@
             go3 = b;
           }
         }
-        if (t2st) {
+        if (t2st && !cmw) {
           if (csok) {
             go1 += ciw_(m,0,k,j,i);
             go2 += ciw_(m,1,k,j,i);
@@ -465,7 +467,7 @@
 #if M1_CSW
         // cs-open-1018: the stage increment without a cell-F increment is the face-normal
         // face mean + A tie: its transverse part to the covariant basis of u0 F
-        if (t2st && !csok && trans && thrd) {
+        if (t2st && !csok && !cmw && trans && thrd) {
           const Real tie = t2i_(m,M1_T2_E,k,j,i);
           const Real a = 0.5*(t2i_(m,M1_T2_F1+1,k,j,i) + t2i_(m,M1_T2_F1+1,k,j+1,i))
                          + iw_(m,M1_IW_A2,k,j,i)*tie;

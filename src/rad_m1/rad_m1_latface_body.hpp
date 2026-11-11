@@ -44,6 +44,12 @@
   const Real bx0 = impl_blend_xthin, dtl = dt_sub;
   const int bxmode = impl_blend_xthin_mode;
   const Real bxwmin = impl_blend_xthin_wmin, bxr0 = impl_blend_xthin_r0;
+  const Real bdtc = impl_blend_dtc;   // rc18-1110 (M1BlendDtc)
+  const bool hws = impl_hr_ws;   // hr2prod-1110
+  const bool hfci = impl_hr_fci;
+  const int tgf = thsw_gface;
+  const Real tgfd = thsw_gfd;
+  const Real hwsl = impl_hr_ws_lat;
   if (impl_beam_hr) {
     // hrup-1009: per direction d, h+_d -> S1 and h-_d -> S3 of every active cell
     // (M1HrCell), both through the transverse halo, then the faces (M1HrFace)
@@ -151,9 +157,12 @@
       const int kup = (d == 2) ? ke + 1 : ke, jup = (d == 1) ? je + 1 : je;
       const int inx = (d == 1) ? BoundaryFace::inner_x2 : BoundaryFace::inner_x3;
       const int onx = (d == 1) ? BoundaryFace::outer_x2 : BoundaryFace::outer_x3;
+      const bool hcpon = impl_hcplm && thsw;   // hrhc-1110
+      auto hcp_ = hcpw;
       par_for("m1_impl_lfchf" M1_LFC_SFX, DevExeSpace(), 0, nmb1, ks, kup, js, jup, is,
               ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (hcpon) {hcp_(m,2*d,k,j,i) = 0.0; hcp_(m,2*d+1,k,j,i) = 0.0;}
         BoundaryFlag blo = mbbcs.d_view(m,inx);
         BoundaryFlag bhi = mbbcs.d_view(m,onx);
         bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
@@ -218,13 +227,25 @@
             jcl = fmax(jcl, iw_(m,hsfb+M1_HSF_JH,km,jm,i));
             jcr = fmax(jcr, iw_(m,hsfb+M1_HSF_JH,k,j,i));
           }
+          if (tgf != 0) {   // hr2prod-1110 implicit_thin_gface
+            gfl = 0.5*(gfl + gfr) + ((tgf == 2) ? SQR(gfr - gfl)/tgfd : 0.0);
+            gfr = gfl;
+          }
           M1ThinFace(tmode, tcorr, hpf, hmf, gfl, gfr, tauf,
                      iw_(m,M1_IW_TB,km,jm,i), iw_(m,M1_IW_TB,k,j,i),
                      iw_(m,M1_IW_TA,km,jm,i), iw_(m,M1_IW_TA,k,j,i),
                      jcl, jcr,
                      (tcorr == M1_THCR_HCS) ? fmin(iw_(m,M1_IW_TR,km,jm,i),
                                                    iw_(m,M1_IW_TR,k,j,i)) : 1.0,
-                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr);
+                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr,
+                     ch*dtl/dx, bdtc, hcpon ? &hcp_(m,2*d,k,j,i) : nullptr);
+          if (hfci) {   // hr2prod-1110 implicit_hr_fcimp: dissipation form
+            const Real wf = al;
+            al = 0.0;
+            hl = 0.5*wf*ch*fmax(hpf - iw_(m,M1_IW_S3,km,jm,i), 0.0);
+            hr = -0.5*wf*ch*fmax(iw_(m,M1_IW_S1,k,j,i) - hmf, 0.0);
+          }
+          if (hws) {al *= hwsl; hl *= hwsl; hr *= hwsl; dgt *= hwsl;}
           fw(m,M1_IFW_AL,k,j,i) = al;
           fw(m,M1_IFW_HCL,k,j,i) = hl;
           fw(m,M1_IFW_HCR,k,j,i) = hr;
@@ -244,7 +265,8 @@
                  bkind, bfm, btau0, bflo, bfhi, balph,
                  ch, iw_(m,M1_IW_EP,km,jm,i), iw_(m,M1_IW_EP,k,j,i), br0,
                  iw_(m,M1_IW_S3,km,jm,i), iw_(m,M1_IW_S1,k,j,i), ch*dtl/dx, bx0, bxmode,
-                 bxwmin, bxr0, jfl, al, hl, hr);
+                 bxwmin, bxr0, jfl, al, hl, hr, bdtc);
+        if (hws) {al *= hwsl; hl *= hwsl; hr *= hwsl;}
         fw(m,M1_IFW_AL,k,j,i) = al;
         fw(m,M1_IFW_HCL,k,j,i) = hl;
         fw(m,M1_IFW_HCR,k,j,i) = hr;
