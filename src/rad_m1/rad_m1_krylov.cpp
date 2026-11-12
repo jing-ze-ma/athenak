@@ -31,6 +31,7 @@
 #include <cmath>
 #include <iostream>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "athena.hpp"
@@ -494,7 +495,16 @@ void RadiationM1::ImplicitHaloMPIFinish(int nq, int c0) {
   // the sender's, with the send buffer fenced and complete; wrong and run-to-run random
   // ghosts), so MPI is handed host copies there.  CUDA builds keep the device buffers.
 #if defined(KOKKOS_ENABLE_HIP)
-  Kokkos::deep_copy(hm_shost, sbuf);
+  // d6fast2-1112: only the nq components in use cross (the buffers are sized for hm_nq
+  // >= 14: a single-component exchange copied 14x the message both ways, ~0.9 ms each
+  // on R136); the messages read entries [0, n*nq) only, so the ghosts are bitwise
+  using HmRange = std::pair<size_t, size_t>;
+  const size_t hm_ns = static_cast<size_t>(hm_nsend)*nq;
+  const size_t hm_nr = static_cast<size_t>(hm_nrecv)*nq;
+  if (hm_ns > 0) {
+    Kokkos::deep_copy(Kokkos::subview(hm_shost, HmRange(0, hm_ns)),
+                      Kokkos::subview(sbuf, HmRange(0, hm_ns)));
+  }
   Real *ssrc = hm_shost.data();
 #else
   Real *ssrc = sbuf.data();
@@ -507,7 +517,10 @@ void RadiationM1::ImplicitHaloMPIFinish(int nq, int c0) {
   }
   MPI_Waitall(nseg, rq.data(), MPI_STATUSES_IGNORE);
 #if defined(KOKKOS_ENABLE_HIP)
-  Kokkos::deep_copy(rbuf, hm_rhost);
+  if (hm_nr > 0) {
+    Kokkos::deep_copy(Kokkos::subview(rbuf, HmRange(0, hm_nr)),
+                      Kokkos::subview(hm_rhost, HmRange(0, hm_nr)));
+  }
 #endif
   if (hm_nrecv > 0) {
     auto em = hm_rm.d_view;
