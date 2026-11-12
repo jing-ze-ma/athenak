@@ -73,6 +73,10 @@
 #include <vector>
 
 #include "athena.hpp"
+// TEST vgdshell-1113 fpon: FMA contraction only within one expression in this TU
+#if defined(__clang__)
+#pragma clang fp contract(on)
+#endif
 #if defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
 #include <nccl.h>
 #define M1_VGD_NCCL_ON 1
