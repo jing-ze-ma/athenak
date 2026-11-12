@@ -2837,6 +2837,7 @@ class RadiationM1 {
   bool vlat_posfix_lag = false;
   bool vlat_lagfb = false;     // this step: the lateral terms lagged after a trigger
   Real vlat_nlag = 0.0;        // triggers that moved the terms to the lagged form
+  int vlat_pf_force = -1;      // DEBUG vet_col_lat_posfix_force = cycle: one forced trigger
   // meshfb-1106 (rad_m1_meshfb.cpp): implicit_fb_diag, implicit_fb_local
   int fbd_n = 0, fbd_done = 0, fbd_first = -1, fbd_kind = 0, fbd_nsolve = 0;
   bool fbd_last_full = false;

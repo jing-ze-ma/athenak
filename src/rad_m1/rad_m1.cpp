@@ -1794,6 +1794,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
           std::exit(EXIT_FAILURE);
         }
       }
+      // DEBUG (csmetric-1112, read only when named): vet_col_lat_posfix_force = N treats
+      // the first positivity check of cycle N as a trigger (the test of the fallback path)
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_posfix_force")) {
+        vlat_pf_force = pin->GetInteger("rad_m1","vet_col_lat_posfix_force");
+      }
       // cs-s4-1017 (stage S4, USER 10-18): on the cubed sphere D_r,lat is the Cartesian
       // vector v (VetGdCsMoments) in the cs forms M1CsLat0 / M1CsLatF (VetLatOpCs /
       // VetLatStencilAddCs): the default is the sp one (operator)

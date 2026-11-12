@@ -16906,7 +16906,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #endif
         od_emin = std::min(od_emin, emin);
         if (vimp_now) {vimp_emin = std::min(vimp_emin, emin);}
-        if (!(emin > 0.0)) {
+        // csmetric-1112 DEBUG vet_col_lat_posfix_force: one forced trigger (the first
+        // check of that cycle with the lateral operator on)
+        const bool pff = vlop && (vlat_pf_force >= 0) &&
+                         (pmy_pack->pmesh->ncycle == vlat_pf_force);
+        if (pff) {vlat_pf_force = -1;}
+        if (!(emin > 0.0) || pff) {
           cf_fb_pass = true;   // consfix-1109 (d)
           Time2PosFixMarkFb();
           if (odm == M1_OD_OPERATOR) {
