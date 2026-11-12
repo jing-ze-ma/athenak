@@ -569,6 +569,7 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm);
 
 void HsStripBackground(ParameterInput *pin, Mesh *pm);   // stripbg-1102 (he_strip_bg.cpp)
 void HsRestartPerturb(ParameterInput *pin, Mesh *pm);    // rstpert-1105 (he_strip_bg.cpp)
+void HsEosReinitFromT(ParameterInput *pin, Mesh *pm);    // eosreinit-1112 (he_strip_bg.cpp)
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
@@ -3021,6 +3022,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // stripbg-1102 (he_strip_bg.cpp): one-shot restart-time background strip, off unless
   // problem/strip_bg_on_restart = true (absent: bitwise)
   if (restart) {
+    HsEosReinitFromT(pin, pmy_mesh_);   // eosreinit-1112 (absent: bitwise)
     HsStripBackground(pin, pmy_mesh_);
     HsRestartPerturb(pin, pmy_mesh_);   // rstpert-1105 (absent: bitwise)
     return;
