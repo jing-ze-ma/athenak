@@ -93,6 +93,8 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
 #include "rad_m1/rad_m1_vgdray.hpp"
+#include "rad_m1/rad_m1_vetdop.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_vgdtheta.hpp"
 #include "utils/recipe.hpp"
 #include "coordinates/grid_stretch.hpp"
@@ -6587,6 +6589,9 @@ void RadiationM1::VetGdPost() {
   // hrsplit-1110 vet_gd_hr_split (default off): not on a snapshot sweep of another set
   if (vgd_hrs != 0 && !vra_raw) {VetGdHrSplit();}
   if (vgd_hlf >= 0 && !vra_raw) {VetGdHrLatFit();}   // vgdh-1110 (default off)
+  // vetdop-1112 vet_doppler = boost: the comoving -> lab boost of the finished tensor
+  // (not on a snapshot sweep of another set: those fields stay raw)
+  if (vdop_mode != 0 && !vra_raw) {VetDopplerLat();}
   VetLatOdMax();   // D_r,lat in the implicit operator (vet_col_lat_offdiag = operator)
   Kokkos::fence();
   vgd_tmom += tm.seconds();
@@ -9087,6 +9092,100 @@ void RadiationM1::DtRetryAfterRestore() {
       VetGdTables(vgd_alpha);
     }
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetDopplerLat
+//! \brief vetdop-1112 <rad_m1>/vet_doppler = boost (sp wedge): the vet_gd tensor of the
+//! static formal solution, D_rr = slot 0 + LAT0, D_rt = LAT1, D_rp = LAT2, D_tt =
+//! (1 - D_rr)/2 + LAT3, D_tp = LAT4, D_pp = (1 - D_rr)/2 + LAT5 (the orthonormal
+//! r, theta, phi basis of the vectors), taken as the COMOVING Eddington tensor and
+//! carried to the lab frame with the cell's gas velocity and the evolved lab E, F
+//! (M1VetDopplerBoost).  Slot 0 (the column f_K) is kept; the change goes to the LAT
+//! slots, so the fold (D_rr), the lateral operator (D_r,lat) and M1SphTan (tangential)
+//! all see it.  Cells below the first gd shell (vet_col_lat_taucut) are left static
+//! (there D is the deep uniaxial f_K and the correction is O(beta/tau, beta^2)).
+
+void RadiationM1::VetDopplerLat() {
+  if (vgd_csg) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/vet_doppler = boost: the cubed sphere is not "
+              << "implemented (prototype: sp wedge)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int ilo = is + vlat_icut;
+  FluidRef flr = FluidRef::Get(pmy_pack);
+  if (!flr.on) {return;}
+  auto uh = flr.u0;
+  auto ur = u0;
+  auto tt_ = tau_ten;
+  const Real cl = c_light;
+  const int nit = vdop_nit;
+  const bool fcap = vdop_fcap;
+  const int ni = ie - ilo + 1, nj = je - js + 1, nk = ke - ks + 1;
+  if (ni <= 0) {return;}
+  const int nc = (nmb1 + 1)*nk*nj*ni;
+  Real nfb = 0.0, dmx = 0.0, bmx = 0.0;
+  Kokkos::parallel_reduce("m1_vdop_lat", Kokkos::RangePolicy<>(DevExeSpace(), 0, nc),
+  KOKKOS_LAMBDA(const int idx, Real &sf, Real &sd, Real &sb) {
+    const int m = idx/(nk*nj*ni);
+    int r = idx - m*(nk*nj*ni);
+    const int k = ks + r/(nj*ni);
+    r -= (k - ks)*(nj*ni);
+    const int j = js + r/ni;
+    const int i = ilo + r - (j - js)*ni;
+    const Real rho = uh(m,IDN,k,j,i);
+    if (!(rho > 0.0)) {return;}
+    const Real ib = 1.0/(rho*cl);
+    const Real b[3] = {uh(m,IM1,k,j,i)*ib, uh(m,IM2,k,j,i)*ib, uh(m,IM3,k,j,i)*ib};
+    const Real e = ur(m,M1_E,k,j,i);
+    const Real ic = 1.0/cl;
+    const Real h[3] = {ur(m,M1_F1,k,j,i)*ic, ur(m,M1_F2,k,j,i)*ic,
+                       ur(m,M1_F3,k,j,i)*ic};
+    const Real fk = tt_(m,0,k,j,i);
+    const Real drr = fk + tt_(m,M1_TT_LAT0,k,j,i);
+    const Real dq = 0.5*(1.0 - drr);
+    // order 11 22 33 12 13 23 = rr tt pp rt rp tp
+    const Real d0[6] = {drr, dq + tt_(m,M1_TT_LAT0+3,k,j,i),
+                        dq + tt_(m,M1_TT_LAT0+5,k,j,i),
+                        tt_(m,M1_TT_LAT0+1,k,j,i), tt_(m,M1_TT_LAT0+2,k,j,i),
+                        tt_(m,M1_TT_LAT0+4,k,j,i)};
+    Real d[6];
+    const int rc = M1VetDopplerBoost(d0, b, e, h, nit, fcap, d);
+    if (rc == 2) {sf += 1.0;}
+    if (rc != 0) {return;}
+    Real dm = 0.0;
+    for (int n = 0; n < 6; ++n) {dm = fmax(dm, fabs(d[n] - d0[n]));}
+    sd = fmax(sd, dm);
+    sb = fmax(sb, sqrt(b[0]*b[0] + b[1]*b[1] + b[2]*b[2]));
+    const Real dq1 = 0.5*(1.0 - d[0]);
+    tt_(m,M1_TT_LAT0,k,j,i) = d[0] - fk;
+    tt_(m,M1_TT_LAT0+1,k,j,i) = d[3];
+    tt_(m,M1_TT_LAT0+2,k,j,i) = d[4];
+    tt_(m,M1_TT_LAT0+3,k,j,i) = d[1] - dq1;
+    tt_(m,M1_TT_LAT0+4,k,j,i) = d[5];
+    tt_(m,M1_TT_LAT0+5,k,j,i) = d[2] - dq1;
+  }, Kokkos::Sum<Real>(nfb), Kokkos::Max<Real>(dmx), Kokkos::Max<Real>(bmx));
+  vdop_nbuild += 1.0;
+  vdop_nfb += nfb;
+  vdop_dmax = std::max(vdop_dmax, dmx);
+  vdop_bmax = std::max(vdop_bmax, bmx);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetDopplerReport
+//! \brief vetdop-1112: one line at the end of the run (rank 0's cells)
+
+void RadiationM1::VetDopplerReport() {
+  if (vdop_mode == 0 || global_variable::my_rank != 0) {return;}
+  std::cout << "<rad_m1> vet_doppler = boost: " << vdop_nbuild << " builds, max |D_lab - "
+            << "D_static| " << vdop_dmax << " at max beta " << vdop_bmax << ", fallbacks "
+            << vdop_nfb << " (rank 0)" << std::endl;
 }
 
 } // namespace radm1

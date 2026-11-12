@@ -1106,6 +1106,31 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_on = pin->GetBoolean("rad_m1","vet_gd");
       if (vgd_on) {vlat_on = true;}
     }
+    // vetdop-1112 vet_doppler (read only when named; default none = bitwise)
+    if (pin->DoesParameterExist("rad_m1","vet_doppler")) {
+      const std::string vd = pin->GetString("rad_m1","vet_doppler");
+      if (vd.compare("boost") == 0) {
+        vdop_mode = 1;
+      } else if (vd.compare("none") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_doppler = " << vd
+                  << " (none | boost)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (vdop_mode != 0 && !vgd_on) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_doppler = boost needs vet_gd = true "
+                  << "(the prototype acts on the vet_gd tensor, spherical polar)"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (vdop_mode != 0 && pin->DoesParameterExist("rad_m1","vet_doppler_nit")) {
+        vdop_nit = pin->GetInteger("rad_m1","vet_doppler_nit");
+      }
+      if (vdop_mode != 0 && pin->DoesParameterExist("rad_m1","vet_doppler_fcap")) {
+        vdop_fcap = pin->GetBoolean("rad_m1","vet_doppler_fcap");
+      }
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_gl_nmu")) {
       vgd_gl_nmu = pin->GetInteger("rad_m1","vet_gd_gl_nmu");
     }

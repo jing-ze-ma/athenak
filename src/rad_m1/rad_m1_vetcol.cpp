@@ -1566,6 +1566,7 @@ void RadiationM1::VetColSpread(int ncall) {
 //! \brief one cost line at the end of the run (rank 0)
 
 void RadiationM1::VetColReport() {
+  VetDopplerReport();   // vetdop-1112
   if (global_variable::my_rank != 0) return;
   std::cout << "<rad_m1> closure = vet_col: " << vcol_ncall << " tensor builds ("
             << vcol_nskip << " skipped), " << vcol_time << " s (rank 0, fenced), "

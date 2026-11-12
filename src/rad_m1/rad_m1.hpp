@@ -2914,6 +2914,16 @@ class RadiationM1 {
   // vet_col_lat interface (sets vlat_on; the vet_col_lat keys apply).  Read only when
   // named; sp wedge only.
   bool vgd_on = false;         // vet_gd
+  // vetdop-1112 vet_doppler (read only when named; absent = none = bitwise): 1 = boost,
+  // the static formal solution's D taken as the comoving Eddington tensor and Lorentz
+  // boosted to the lab with the cell's gas velocity (rad_m1_vetdop.hpp, VetDopplerLat);
+  // vet_doppler_nit passes of the fixed point, vet_doppler_fcap the realisable F0
+  int vdop_mode = 0;
+  int vdop_nit = 3;
+  bool vdop_fcap = true;
+  Real vdop_nbuild = 0.0, vdop_nfb = 0.0, vdop_dmax = 0.0, vdop_bmax = 0.0;
+  void VetDopplerLat();        // vet_gd sp: the boost of the LAT-slot tensor (VetGdPost)
+  void VetDopplerReport();
   int vgd_nside = 3;           // vet_gd_nside: 12 nside^2 directions (3 -> 108)
   bool vgd_tan = true;         // vet_gd_tangential: the lagged M1SphTan term
   // cs-tan-1106: vet_gd_tangential = true on the cubed sphere (vgd_tan itself stays false
