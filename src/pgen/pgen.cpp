@@ -1087,6 +1087,39 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     nfax_file = static_cast<int>(hdr[1]);
   }
 
+  // --- rstbit-1112: THE time2_stage_local_be CARRY HEADER (radm1::kM1ThcRstMagic),
+  // behind the fax one: nthc_file slabs, the last of each record
+  int nthc_file = 0;
+  if (std::memcmp(variabledata, &(radm1::kM1ThcRstMagic[0]),
+                  sizeof(radm1::kM1ThcRstMagic)) == 0) {
+    char thc_hdr[4*sizeof(std::int32_t)];
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(thc_hdr));
+      ok = ok && (resfile.Read_bytes(&(thc_hdr[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(thc_hdr[0]), sizeof(thc_hdr), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    std::int32_t hdr[4] = {0, 0, 0, 0};
+    if (ok) {std::memcpy(&(hdr[0]), &(thc_hdr[0]), sizeof(hdr));}
+    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 16) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the rad_m1 local_be carry header of this restart "
+                << "file is broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    nthc_file = static_cast<int>(hdr[1]);
+  }
+
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 
@@ -1174,7 +1207,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
   IOWrapperSizeT wm_size = static_cast<IOWrapperSizeT>(nwarm_file + npred_file + nt2_file
                             + neint_file + nck_file + nctr_file + nrss_file + nvgd_file
-                            + ncsk_file + nra_file + nams_file + npgs_file + nfax_file)
+                            + ncsk_file + nra_file + nams_file + npgs_file + nfax_file
+                            + nthc_file)
                            *nout1*nout2*nout3
                            *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
@@ -1886,7 +1920,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0 ||
       ctr_read || rss_read || vgd_read || ra_read || csk_read || ams_read ||
-      npgs_file > 0 || nfax_file > 0) {
+      npgs_file > 0 || nfax_file > 0 || nthc_file > 0) {
     const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
@@ -2206,6 +2240,28 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         std::cout << "<rad_m1> restart: applied face fluxes fax* (" << nfax_file
                   << " slabs) "
                   << (got ? "restored" : "IGNORED (no matching cmem arrays)")
+                  << std::endl;
+      }
+    }
+    // rstbit-1112: the time2_stage_local_be carry (kM1ThcRstMagic), last of the record
+    if (nthc_file > 0) {
+      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
+                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file
+                  + nams_file + npgs_file + nfax_file;
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3
+                              *sizeof(Real);
+      myoffset = offset_myrank;
+      DvceArray5D<Real> thcin("rst-thc-in", nmb, nthc_file, nout3, nout2, nout1);
+      for (int n=0; n<nthc_file; ++n) {
+        read_slab("rad_m1 local_be carry");
+        DeepCopyAcross(Kokkos::subview(thcin, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                       Kokkos::ALL), wtin);
+      }
+      const bool got = (pradm1 != nullptr) && pradm1->ThcRstUnpack(thcin, nmb, nthc_file);
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> restart: time2_stage_local_be carry (" << nthc_file
+                  << " slabs) " << (got ? "restored" : "IGNORED (local_be off)")
                   << std::endl;
       }
     }
