@@ -8010,8 +8010,9 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
 //! (1 - lam) F_L in the rows just assembled: per side, TB += w a (L_own,L - L_own),
 //! C_nb += w a (L_nb,L - L_nb) (bicgstab), TR += w a (+-G) - dC E^k_nb, w = 1 - lam, a =
 //! dt A/V of the cell's face, L the coefficient of that side's E in the face flux (upper
-//! face: own = lo; lower face: own = hi, sign -).  F_L = chat ((1 + s) E_lo - (1 - s)
-//! E_hi)/2, s = the face's reduced flux at E^k clamped to [-1,1] (M-matrix).
+//! face: own = lo; lower face: own = hi, sign -).  facetr-1112: F_L = Llo E_lo + Lhi
+//! E_hi, the face's own E'-implicit part, so TB and C stay as assembled and only TR
+//! changes (+- w G): the limiter scales the explicit part G alone (one flux per face).
 
 void RadiationM1::ImplicitFaceMmatTrans(bool bicg, bool first) {
   auto &id = pmy_pack->pmesh->mb_indcs;
