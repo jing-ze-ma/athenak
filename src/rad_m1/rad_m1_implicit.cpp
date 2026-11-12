@@ -14231,6 +14231,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const Real ddt = dt;
     const bool tso = impl_tstart_old;   // rsgdiag-1107
     auto ccl = pmy_pack->pcoord->cos_cell;
+    // rsglock-1112 time2_inc_energy = rad (rad_m1.hpp): the old vector's eint advances
+    // by t2inc_EN - t2inc_KE; the KE remainder is exchanged with E (x ch/cl)
+    const bool ike = t2_ike && (t2mo.extent_int(0) > nmb1);
+    const bool iket = ike && t2st;
+    auto kei_ = t2kei;
+    auto ikd_ = t2ikd;
+    auto imo_ = t2mo;
+    const Real ikc = chat/c_light;
     par_for_lb("m1_impl_i1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dd = uh(m,IDN,k,j,i);
@@ -14249,7 +14257,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_TP,k,j,i) = eos.Temperature(dd, fmax(eg, 1.0e-300));
       // athpp-vstar-1105: the Heun stage momentum before the old-vector increment
       const Real mv1 = uh(m,IM1,k,j,i), mv2 = uh(m,IM2,k,j,i), mv3 = uh(m,IM3,k,j,i);
+      if (iket) {ikd_(m,k,j,i) = 0.0;}
       if (t2st && !(hoi_ && hmi_(m,k,j,i) > 0.0)) {
+        const Real eg_h = eg;   // rsglock-1112: eint of the stage start state
         // the start T is set; now the gas becomes the OLD vector of the stage solve
         uh(m,IM1,k,j,i) += t2i_(m,M1_T2_M1,k,j,i);
         uh(m,IM2,k,j,i) += t2i_(m,M1_T2_M1+1,k,j,i);
@@ -14268,6 +14278,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                  *idd;
         }
         eg = uh(m,IEN,k,j,i) - ekin - egrv;
+        if (iket) {
+          // rsglock-1112: eint_old = eint_h + t2inc_EN - t2inc_KE; the difference to the
+          // nonlinear eg is the KE remainder dl, taken by the gas from E (E -= dl ch/cl)
+          const Real egl = eg_h + t2i_(m,M1_T2_EN,k,j,i) - kei_(m,k,j,i);
+          const Real dl = egl - eg;
+          uh(m,IEN,k,j,i) += dl;
+          iw_(m,M1_IW_EN,k,j,i) -= ikc*dl;
+          ikd_(m,k,j,i) = dl;
+          eg = egl;
+        }
+      }
+      if (ike) {   // rsglock-1112: the old-vector momentum of this solve (slope K_KE)
+        imo_(m,0,k,j,i) = uh(m,IM1,k,j,i);
+        imo_(m,1,k,j,i) = uh(m,IM2,k,j,i);
+        imo_(m,2,k,j,i) = uh(m,IM3,k,j,i);
       }
       iw_(m,M1_IW_EGN,k,j,i) = eg;
       // rsgdiag-1107 implicit_tstart_old (default false): the start T of a stage solve
@@ -14310,6 +14335,32 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         iw_(m,M1_IW_V3,k,j,i) = sn*(m3 - c*m2)*idd/s2;
       }
     });
+    if (iket) {   // rsglock-1112: counters of the KE remainder exchanged with E
+      auto vlk = pmy_pack->pcoord->volume;
+      const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+      Real sde = 0.0, sdp = 0.0, sng = 0.0, snz = 0.0;
+      Kokkos::parallel_reduce("m1_t2_ike_sum",
+      Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+      KOKKOS_LAMBDA(const int idx, Real &a0, Real &a1, Real &a2, Real &a3) {
+        const int m = idx/nkji;
+        int q = idx - m*nkji;
+        const int k = q/nji + ks;
+        q -= (k - ks)*nji;
+        const int j = q/ni + js;
+        const int i = q - (j - js)*ni + is;
+        const Real dl = ikd_(m,k,j,i), v = vlk(m,k,j,i);
+        a0 += dl*v;
+        a1 += fabs(dl)*v;
+        if (!(iw_(m,M1_IW_EN,k,j,i) > 0.0) && dl > 0.0) {a2 += 1.0;}
+        if (dl != 0.0) {a3 += 1.0;}
+      }, Kokkos::Sum<Real>(sde), Kokkos::Sum<Real>(sdp), Kokkos::Sum<Real>(sng),
+         Kokkos::Sum<Real>(snz));
+      t2_ike_de += sde;
+      t2_ike_dp += sdp;
+      t2_ike_neg += sng;
+      t2_ike_cells += snz;
+      t2_ike_calls += 1;
+    }
     // cs-open-1018 <hydro>/am_vector: the spin reservoir takes the hesdirk2 stage
     // increment of its own slopes (as the gas momentum above), so that each stage's
     // radiation-gas exchange is an L-balanced slope
@@ -19622,6 +19673,35 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     f0_ = f0x1;
     f2_ = f0x2;
     f3_ = f0x3;
+  }
+  // rsglock-1112 time2_inc_energy = rad: the KE part of this solve's FINAL slope (after
+  // the write-back, am_cs and the work rows), K_KE = (KE(m_o + dt K_m) - KE(m_o))/dt
+  if (t2k && have_hydro && t2_ike && t2mo.extent_int(0) > nmb1) {
+    auto ke_ = (t2s == M1_T2S_STAGE1) ? t2ke2 : t2ke1;
+    auto mo_ = t2mo;
+    auto kq_ = kk_;
+    auto ud_ = uh;
+    const bool csq = cs_geom;
+    auto ccq = pmy_pack->pcoord->cos_cell;
+    const Real fq = 1.0/dt, dq = dt;
+    par_for("m1_t2_ike_k", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real idd = 1.0/fmax(ud_(m,IDN,k,j,i), 1.0e-300);
+      const Real q1 = mo_(m,0,k,j,i), q2 = mo_(m,1,k,j,i), q3 = mo_(m,2,k,j,i);
+      const Real p1 = q1 + dq*kq_(m,M1_T2_M1,k,j,i);
+      const Real p2 = q2 + dq*kq_(m,M1_T2_M1+1,k,j,i);
+      const Real p3 = q3 + dq*kq_(m,M1_T2_M1+2,k,j,i);
+      Real k0, k1;
+      if (csq) {
+        const Real c = ccq(m,k,j);
+        k0 = CsKeMom(q1, q2, q3, c)*idd;
+        k1 = CsKeMom(p1, p2, p3, c)*idd;
+      } else {
+        k0 = 0.5*(q1*q1 + q2*q2 + q3*q3)*idd;
+        k1 = 0.5*(p1*p1 + p2*p2 + p3*p3)*idd;
+      }
+      ke_(m,k,j,i) = (k1 - k0)*fq;
+    });
   }
   // hesdirk2: the face part of the slope, over the active faces
   if (t2k) {

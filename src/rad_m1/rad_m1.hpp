@@ -2224,6 +2224,20 @@ class RadiationM1 {
   Real t2_inckc_ke = 0.0, t2_inckc_pm = 0.0;
   int t2_inckc_calls = 0;
   void Time2IncKeCap(int stage);
+  // rsglock-1112 <rad_m1>/time2_inc_energy = gas | rad (read only when named; gas =
+  // absent = bitwise).  rad: each slope K also stores its kinetic-energy part
+  // K_KE = (KE(m_o + dt K_m) - KE(m_o))/dt (m_o the solve's old-vector momentum), and
+  // the stage old vector advances the gas INTERNAL energy linearly,
+  // eint_old = eint_h + (t2inc_EN - t2inc_KE), with KE following the momentum; the
+  // nonlinear remainder KE(m_h + dm) - KE(m_h) - t2inc_KE (the cross term
+  // (v_h - v_o).dm and the unpaid KE of momentum-only slopes such as the am_cs deposit)
+  // is exchanged with the cell's radiation E (x ch/cl): total energy exact, momentum
+  // untouched, no cap.
+  bool t2_ike = false;
+  Real t2_ike_de = 0.0, t2_ike_dp = 0.0, t2_ike_neg = 0.0, t2_ike_cells = 0.0;
+  int t2_ike_calls = 0;
+  DvceArray4D<Real> t2ke1, t2ke2, t2kei, t2ikd;   // K_KE slopes, increment, transfer
+  DvceArray5D<Real> t2mo;                          // (m,3,k,j,i) old-vector momentum
   int impl_am_cs_diag = 0;   // amdef-1019 diagnostic (read only when named): solves to print
   DvceArray5D<Real> amw;
   bool am_vec = false;             // + <hydro>/am_vector: the vector form

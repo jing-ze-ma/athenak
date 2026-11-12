@@ -428,6 +428,23 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
                 << std::endl;
     }
   }
+  // rsglock-1112 time2_inc_energy = gas | rad (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_inc_energy")) {
+    const std::string ie = pin->GetString("rad_m1", "time2_inc_energy");
+    if (ie != "gas" && ie != "rad") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_inc_energy = '" << ie
+                << "' (gas | rad)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    t2_ike = (ie == "rad");
+    if (global_variable::my_rank == 0 && t2_ike) {
+      std::cout << "<rad_m1> time2_inc_energy=rad: the stage old vector advances the gas "
+                << "eint linearly (slope K_EN - K_KE); KE follows the momentum and the "
+                << "nonlinear KE remainder is exchanged with the cell's E (total energy "
+                << "exact, no cap)" << std::endl;
+    }
+  }
   // t2retry-1020: <rad_m1>/time2_reject = be | retry (read only when named; default be =
   // the backward-Euler redo, bitwise).  retry needs <time>/dt_retry = true (checked at
   // the first rejection: without it the step falls back to backward Euler as before)
@@ -595,6 +612,18 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   Kokkos::deep_copy(t2k1, 0.0);
   Kokkos::deep_copy(t2k2, 0.0);
   Kokkos::deep_copy(t2inc, 0.0);
+  if (t2_ike) {   // rsglock-1112
+    Kokkos::realloc(t2ke1, nmb, n3, n2, n1);
+    Kokkos::realloc(t2ke2, nmb, n3, n2, n1);
+    Kokkos::realloc(t2kei, nmb, n3, n2, n1);
+    Kokkos::realloc(t2ikd, nmb, n3, n2, n1);
+    Kokkos::realloc(t2mo, nmb, 3, n3, n2, n1);
+    Kokkos::deep_copy(t2ke1, 0.0);
+    Kokkos::deep_copy(t2ke2, 0.0);
+    Kokkos::deep_copy(t2kei, 0.0);
+    Kokkos::deep_copy(t2ikd, 0.0);
+    Kokkos::deep_copy(t2mo, 0.0);
+  }
   Kokkos::realloc(t2f1, nmb, n3, n2, n1+1);
   if (trans_on) {
     Kokkos::realloc(t2f2, nmb, n3, n2+1, n1);
@@ -1041,6 +1070,16 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     if (two) {v += c2*k2_(m,n,k,j,i);}
     in_(m,n,k,j,i) = v;
   });
+  const bool ike = t2_ike && (t2kei.extent_int(0) > nmb1);   // rsglock-1112
+  if (ike) {
+    auto e1_ = t2ke1, e2_ = t2ke2, ei_ = t2kei;
+    par_for("m1_t2_ike_inc", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real v = c1*e1_(m,k,j,i);
+      if (two) {v += c2*e2_(m,k,j,i);}
+      ei_(m,k,j,i) = v;
+    });
+  }
   // t2pos-1020 time2_posfix: where stage 1 dropped its increment t2_a21 dt K1, stage 2
   // takes it back with the weight of Y1 in its start state (heun: 1/2), so that the step
   // is U^n + dt (b1 K1 + b2 K2 + g K3) with the tableau's b everywhere
@@ -1058,6 +1097,13 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       if (n == M1_T2_F1+2) {w = d3 ? ((k > 0) ? fmax(w, pm_(m,k-1,j,i)) : w) : 0.0;}
       if (w > 0.0) {in_(m,n,k,j,i) += ccomp*k1_(m,n,k,j,i);}
     });
+    if (ike) {   // rsglock-1112: the KE part of the same K1 share
+      auto e1_ = t2ke1, ei_ = t2kei;
+      par_for("m1_t2_ike_pcomp", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (pm_(m,k,j,i) > 0.0) {ei_(m,k,j,i) += ccomp*e1_(m,k,j,i);}
+      });
+    }
   }
   // cs-open-1018 <hydro>/am_vector: the spin reservoir's increment from its slopes
   if (am_vec && aminc.extent_int(0) > 0) {
@@ -1113,6 +1159,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
       auto ug = flf.u0;
       const Real cl = c_light, ch = chat, rc = t2_flr_rho;
+      const bool ikf = ike;
+      auto eif_ = t2kei;
       auto ai_ = aminc;
       const bool amz = am_vec && aminc.extent_int(0) == t2inc.extent_int(0) &&
                        aminc.extent_int(1) == t2inc.extent_int(2) &&
@@ -1133,6 +1181,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         in_(m,M1_T2_M1+2,k,j,i) = 0.0;
         in_(m,M1_T2_E,k,j,i) += (ch/cl)*dex;
         if (amz) {ai_(m,k,j,i) = 0.0;}
+        if (ikf) {eif_(m,k,j,i) = 0.0;}   // rsglock-1112
         sum += 1.0;
       }, Kokkos::Sum<Real>(nf));
       t2_flr_n += nf;
@@ -1450,6 +1499,13 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
       if (n == M1_T2_F1+2) {w = d3 ? ((k > 0) ? fmax(w, pm_(m,k-1,j,i)) : w) : 0.0;}
       if (w > 0.0) {in_(m,n,k,j,i) = 0.0;}
     });
+    if (t2_ike && t2kei.extent_int(0) > nmb1) {   // rsglock-1112
+      auto ei_ = t2kei;
+      par_for("m1_t2p_ike_drop", DevExeSpace(), 0, nmb1, 0, q3-1, 0, q2-1, 0, q1-1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (pm_(m,k,j,i) > 0.0) {ei_(m,k,j,i) = 0.0;}
+      });
+    }
     if (csinc_ok) {
       auto ci_ = csinc;
       par_for("m1_t2p_dropc", DevExeSpace(), 0, nmb1, 0, 2, 0, q3-1, 0, q2-1, 0, q1-1,
@@ -1695,6 +1751,13 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
       in_(m,n,k,j,i) = c*k1_(m,n,k,j,i);
     });
+    if (t2_ike && t2kei.extent_int(0) > nmb1) {   // rsglock-1112
+      auto e1_ = t2ke1, ei_ = t2kei;
+      par_for("m1_t2_ike_rcinc", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        ei_(m,k,j,i) = c*e1_(m,k,j,i);
+      });
+    }
     csinc_ok = false;
     if (impl_gas_src_cons && csk1_ok && csk1.extent(0) == t2k1.extent(0)) {
       auto ck1_ = csk1;
@@ -1725,6 +1788,9 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
   const bool ok = !t2_fail;
   if (ok) {
     Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
+    if (t2_ike && t2ke1.extent_int(0) > 0) {   // rsglock-1112
+      Kokkos::deep_copy(DevExeSpace(), t2ke1, t2ke2);
+    }
     if (csok0 && impl_gas_src_cons && csk2.extent(0) == csk1.extent(0)) {
       Kokkos::deep_copy(DevExeSpace(), csk1, csk2);
     }
@@ -2819,6 +2885,18 @@ void RadiationM1::Time2Report() {
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   std::cout << std::endl;
+  if (t2_ike) {   // rsglock-1112
+    Real r[4] = {t2_ike_de, t2_ike_dp, t2_ike_neg, t2_ike_cells};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, r, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> time2_inc_energy=rad: solves " << t2_ike_calls
+                << " sum (KE remainder x V) to E " << r[0] << " sum |.| x V " << r[1]
+                << " cells where the E share would reach E_old " << r[2]
+                << " cells with a nonzero remainder " << r[3] << std::endl;
+    }
+  }
   if (t2_inckc > 0.0 && global_variable::my_rank == 0) {   // hgfix-1110
     std::cout << "<rad_m1> time2_inc_kecap=" << t2_inckc << ": calls " << t2_inckc_calls
               << " fired " << t2_inckc_n << " unfixed " << t2_inckc_un << " eint_h<=0 "
