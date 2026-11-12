@@ -2918,7 +2918,8 @@ class RadiationM1 {
   // the static formal solution's D taken as the comoving Eddington tensor and Lorentz
   // boosted to the lab with the cell's gas velocity (rad_m1_vetdop.hpp, VetDopplerLat);
   // vet_doppler_nit passes of the fixed point, vet_doppler_fcap the realisable F0
-  int vdop_mode = 0;
+  int vdop_mode = 0;           // 1 boost (option c), 2 local (option a, moments)
+  int vdop_ymode = 0;          // local: 0 y from I/S, 1 y = 1, 2 y = 0
   int vdop_nit = 3;
   bool vdop_fcap = true;
   Real vdop_nbuild = 0.0, vdop_nfb = 0.0, vdop_dmax = 0.0, vdop_bmax = 0.0;

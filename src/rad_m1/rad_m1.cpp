@@ -1111,10 +1111,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       const std::string vd = pin->GetString("rad_m1","vet_doppler");
       if (vd.compare("boost") == 0) {
         vdop_mode = 1;
+      } else if (vd.compare("local") == 0) {
+        vdop_mode = 2;
       } else if (vd.compare("none") != 0) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<rad_m1>/vet_doppler = " << vd
-                  << " (none | boost)" << std::endl;
+                  << " (none | boost | local)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
       if (vdop_mode != 0 && !vgd_on) {
@@ -1126,6 +1128,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       if (vdop_mode != 0 && pin->DoesParameterExist("rad_m1","vet_doppler_nit")) {
         vdop_nit = pin->GetInteger("rad_m1","vet_doppler_nit");
+      }
+      if (vdop_mode == 2 && pin->DoesParameterExist("rad_m1","vet_doppler_y")) {
+        const std::string vy = pin->GetString("rad_m1","vet_doppler_y");
+        vdop_ymode = (vy.compare("thick") == 0) ? 1 : ((vy.compare("thin") == 0) ? 2 : 0);
       }
       if (vdop_mode != 0 && pin->DoesParameterExist("rad_m1","vet_doppler_fcap")) {
         vdop_fcap = pin->GetBoolean("rad_m1","vet_doppler_fcap");

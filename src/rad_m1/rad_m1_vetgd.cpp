@@ -6167,9 +6167,71 @@ void RadiationM1::VetGdMoments() {
   // accel-1009: shell-major thread order (j fastest), matching the LayoutLeft vgd_i
   // (cs-vetgd-1017: the cubed sphere's own kernel, D_rr about the cell's r_hat)
   if (vgd_csg) {
+    if (vdop_mode != 0) {
+      VgdFatal("vet_doppler: the cubed sphere is not implemented (prototype: sp wedge)");
+    }
     VetGdCsMoments(0);
   } else {
   const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;   // accpolar-1103
+  if (vdop_mode == 2) {
+    // vetdop-1112 vet_doppler = local (VetDopplerLocalW): the static intensities
+    // re-weighted by the cell's lab Doppler factor, no aberration of the ray geometry
+    FluidRef flr = FluidRef::Get(pmy_pack);
+    auto uh = flr.u0;
+    const bool fon = flr.on;
+    auto lcs_ = vlat_cs;
+    const Real cl = c_light;
+    const int ym = vdop_ymode;
+    par_for("m1_vgd_mom_dop", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
+      for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
+      if (i < ilo) {return;}
+      const Real th = sth_ ? thn_(m,j+og) : lg_.Th(mbsize, m, j, js);
+      const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
+      const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+      Real br = 0.0, bt = 0.0, bp = 0.0;
+      if (fon && uh(m,IDN,k,j,i) > 0.0) {
+        const Real ib = 1.0/(uh(m,IDN,k,j,i)*cl);
+        br = uh(m,IM1,k,j,i)*ib;
+        bt = uh(m,IM2,k,j,i)*ib;
+        bp = uh(m,IM3,k,j,i)*ib;
+      }
+      const Real b2 = br*br + bt*bt + bp*bp;
+      const Real lg = (b2 < 1.0) ? (-0.5*log1p(-b2)) : 0.0;   // ln gamma
+      const Real sc = exp(lcs_(m,1,k,j,i));
+      Real jm = 0.0, rr = 0.0, rt = 0.0, rp = 0.0, tq = 0.0, tp = 0.0, pq = 0.0;
+      for (int d = 0; d < n; ++d) {
+        const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
+        const Real a = nx*st*cp + ny*st*sp + nz*ct;
+        const Real b = nx*ct*cp + ny*ct*sp - nz*st;
+        const Real c = -nx*sp + ny*cp;
+        const Real iv = vi_(m,d,k+og,j+og,i);
+        Real wi = dir_(d,3)*iv;
+        if (b2 > 0.0 && b2 < 1.0) {
+          const Real nb = a*br + b*bt + c*bp;
+          const Real y = VetDopplerLocalY(iv, sc, ym);
+          wi *= exp(-(3.0 + y)*(lg + log1p(-nb)));
+        }
+        jm += wi;
+        rr += wi*a*a;
+        rt += wi*a*b;
+        rp += wi*a*c;
+        tq += wi*b*b;
+        tp += wi*b*c;
+        pq += wi*c*c;
+      }
+      if (jm > 0.0) {
+        const Real fk = tt_(m,0,k,j,i);
+        tt_(m,M1_TT_LAT0,k,j,i) = rr/jm - fk;
+        tt_(m,M1_TT_LAT0+1,k,j,i) = rt/jm;
+        tt_(m,M1_TT_LAT0+2,k,j,i) = rp/jm;
+        tt_(m,M1_TT_LAT0+3,k,j,i) = 0.5*(tq - pq)/jm;
+        tt_(m,M1_TT_LAT0+4,k,j,i) = tp/jm;
+        tt_(m,M1_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;
+      }
+    });
+    vdop_nbuild += 1.0;
+  } else {
   par_for("m1_vgd_mom", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
     for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
@@ -6203,6 +6265,7 @@ void RadiationM1::VetGdMoments() {
       tt_(m,M1_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
     }
   });
+  }  // vdop
   }  // !vgd_csg
   // vet_gd_thin_taumin > 0: taper the LATERAL parts (LAT1..LAT5: D_r,lat and the
   // tangential anisotropy, both lagged terms of the face equations) to 0 in the far thin
@@ -6591,7 +6654,7 @@ void RadiationM1::VetGdPost() {
   if (vgd_hlf >= 0 && !vra_raw) {VetGdHrLatFit();}   // vgdh-1110 (default off)
   // vetdop-1112 vet_doppler = boost: the comoving -> lab boost of the finished tensor
   // (not on a snapshot sweep of another set: those fields stay raw)
-  if (vdop_mode != 0 && !vra_raw) {VetDopplerLat();}
+  if (vdop_mode == 1 && !vra_raw) {VetDopplerLat();}
   VetLatOdMax();   // D_r,lat in the implicit operator (vet_col_lat_offdiag = operator)
   Kokkos::fence();
   vgd_tmom += tm.seconds();
@@ -9183,7 +9246,8 @@ void RadiationM1::VetDopplerLat() {
 
 void RadiationM1::VetDopplerReport() {
   if (vdop_mode == 0 || global_variable::my_rank != 0) {return;}
-  std::cout << "<rad_m1> vet_doppler = boost: " << vdop_nbuild << " builds, max |D_lab - "
+  std::cout << "<rad_m1> vet_doppler = " << ((vdop_mode == 1) ? "boost" : "local")
+            << ": " << vdop_nbuild << " builds, max |D_lab - "
             << "D_static| " << vdop_dmax << " at max beta " << vdop_bmax << ", fallbacks "
             << vdop_nfb << " (rank 0)" << std::endl;
 }

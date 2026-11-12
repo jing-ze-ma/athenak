@@ -112,6 +112,24 @@ int M1VetDopplerBoost(const Real d0[6], const Real b[3], const Real e, const Rea
   return 0;
 }
 
+//! vet_doppler = local: the exponent 3 + y of the lab Doppler factor
+//! (gamma (1 - n.beta))^-(3 + y) applied to a static intensity I of the cell (S the
+//! cell's source function, same units).  Exact for a ray through a uniform medium with
+//! the cell's n.beta: I = S D^4 (1 - exp(-tau/D)), so dI/I = (3 + y) n.beta with
+//! y = 1 - tau e^-tau/(1 - e^-tau) (0 thin, 1 thick); tau from I = S (1 - e^-tau),
+//! i.e. q = I/S, y = 1 + (1 - q) ln(1 - q)/q (q >= 1 or S <= 0: y = 1, the ray sees
+//! a brighter, thick emitter).  ym: 0 that estimate, 1 y = 1, 2 y = 0.
+KOKKOS_INLINE_FUNCTION
+Real VetDopplerLocalY(const Real iv, const Real s, const int ym) {
+  if (ym == 1) {return 1.0;}
+  if (ym == 2) {return 0.0;}
+  if (!(s > 0.0)) {return 1.0;}
+  const Real q = iv/s;
+  if (!(q < 1.0)) {return 1.0;}
+  if (q < 1.0e-6) {return 0.5*fmax(q, 0.0);}
+  return 1.0 + (1.0 - q)*log1p(-q)/q;
+}
+
 }  // namespace radm1
 
 #endif  // RAD_M1_RAD_M1_VETDOP_HPP_
