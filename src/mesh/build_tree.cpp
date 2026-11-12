@@ -21,10 +21,10 @@
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
+#endif
 
 // ckdrift-1102 <time>/dt_collapse_med (mesh.cpp, Mesh::NewTimeStep)
 void SetDtCollapseMed(Real f);
-#endif
 
 //----------------------------------------------------------------------------------------
 //! \fn CheckCubedSphereRefinement
