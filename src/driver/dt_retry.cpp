@@ -90,6 +90,12 @@ const char *kDtrMinimal[] = {
   // not visited (stale generated visitor), so a retry read the failed attempt's; empty
   // (no entry matches) without cmem
   "m1.fax1", "m1.fax2", "m1.fax3",
+  // dtretry-1111: vet_gd's half-range ratios (vgd_hr; the rotation average's field
+  // arrays vra_a0/a1 point into it): the closure of a cycle that does not rebuild them
+  // reads the last build's.  A forced retry at fac 1 on the R136 production restart
+  // (views minimal) was not bitwise the straight run at the next dump; restoring vgd_hr
+  // (or vra_a0/a1/vra_c) alone made it bitwise
+  "m1.vgd_hr",
 };
 
 // dtretry-1111 debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of
