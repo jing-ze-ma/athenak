@@ -300,14 +300,24 @@ struct MeshBufferDv {
 //! static_assert keeps a functor that has grown from silently falling back to the
 //! global-memory (hipStreamSynchronize) path, which HintLightWeight selects above 4 kB.
 
-template <class F>
-inline void BvalsTeamFor(const char *name, const Kokkos::TeamPolicy<> &policy,
-                         const F &functor) {
+template <class F, class P = Kokkos::TeamPolicy<>>
+inline void BvalsTeamFor(const char *name, const P &policy, const F &functor) {
   static_assert(sizeof(F) <= 3072, "boundary kernel functor too large for a kernel-"
                 "argument launch: capture Views, not host structs (see bvals.hpp)");
   Kokkos::parallel_for(name, Kokkos::Experimental::require(policy,
                        Kokkos::Experimental::WorkItemProperty::HintLightWeight), functor);
 }
+
+// d6fast5-1112: the team policy of the cell-centred pack / unpack (SendBuff / RecvBuff).
+// On HIP a TeamPolicy<> kernel is compiled for up to 1024 threads per block, i.e. at most
+// 128 VGPRs on gfx942; the cs / pole pack then spilled 816 B per lane to scratch
+// (rocprofv3, HG small cs deck: SendBuff 0.86 s of 10.0 s GPU time).  LaunchBounds<256, 2>
+// lifts the cap to 256 VGPRs; the copies (and so the result) are unchanged.
+#if defined(KOKKOS_ENABLE_HIP)
+using BvCcTeamPolicy = Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>;
+#else
+using BvCcTeamPolicy = Kokkos::TeamPolicy<>;
+#endif
 
 // Forward declarations
 class MeshBlockPack;

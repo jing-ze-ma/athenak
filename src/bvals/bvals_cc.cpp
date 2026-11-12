@@ -173,7 +173,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   int nmnv = nmb*nnghbr*nvar;
   const int nsp_ = BvCcSplit();
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv*nsp_, Kokkos::AUTO, BvCcVl());
+  BvCcTeamPolicy policy(DevExeSpace(), nmnv*nsp_, Kokkos::AUTO, BvCcVl());
   Kokkos::TeamPolicy<> policy1(DevExeSpace(), nmnv, Kokkos::AUTO);   // (z4c kernel)
   // The seam/pole branch below keeps per-thread arrays (stencil indices, three SeamXform)
   // that give the kernel a PRIVATE SEGMENT (scratch).  A dispatch that needs scratch
@@ -1120,7 +1120,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
 
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   const int nsp_ = BvCcSplit();
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar)*nsp_, Kokkos::AUTO, BvCcVl());
+  BvCcTeamPolicy policy(DevExeSpace(), (nmb*nnghbr*nvar)*nsp_, Kokkos::AUTO, BvCcVl());
   Kokkos::TeamPolicy<> policy1(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);   // (z4c)
   BvalsTeamFor("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int lr_ = tmember.league_rank()/nsp_;
