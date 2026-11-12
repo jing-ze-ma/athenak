@@ -86,6 +86,7 @@ add_executable(
         hydro/hydro_wball.cpp
         hydro/hydro_fluxes.cpp
         hydro/hydro_fofc.cpp
+        hydro/dual_energy.cpp
         hydro/fofc_etotgrav.cpp
         hydro/hydro_newdt.cpp
         hydro/hydro_tasks.cpp

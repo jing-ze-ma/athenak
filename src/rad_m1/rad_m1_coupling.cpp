@@ -416,6 +416,16 @@ TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
   if (fcap_rho > 0.0) {FloorGasCap();}   // fastfloor-1109
   if (dbg_eaudit) {EAuditMark(4);}   // accbook-1021 (output only)
   FluidRefresh(pdrive);
+  // duale-1112 <hydro|mhd>/floor_pay = rad: the energy the fluid floors (and the dual
+  // selection) created in this stage's two ConToPrims is taken from E_rad of the same
+  // cell (hydro/dual_energy.hpp)
+  if (pmy_pack->phydro != nullptr && pmy_pack->phydro->dual.pay) {
+    fluid::DualPayFromRad(pmy_pack, pmy_pack->phydro->dual, u0, M1_E, chat/c_light,
+                          e_floor);
+  } else if (pmy_pack->pmhd != nullptr && pmy_pack->pmhd->dual.pay) {
+    fluid::DualPayFromRad(pmy_pack, pmy_pack->pmhd->dual, u0, M1_E, chat/c_light,
+                          e_floor);
+  }
   eint_ledger::Mark(pmy_pack->pmesh, "m1_c2p");
   if (dbg_eaudit) {EAuditMark(5);}
   TmrMark(9);

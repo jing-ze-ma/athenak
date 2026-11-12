@@ -281,7 +281,31 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // tracer on both sides, or on neither).  Switching it OFF at a restart is refused.
   const bool fl_run = (phydro != nullptr) && phydro->floor_tracer;
   const bool fl_file = (global_variable::rst_hydro_tracers & 2) != 0;
-  if (phydro != nullptr && global_variable::rst_hydro_nscalars >= 0 && fl_run != fl_file) {
+  // duale-1112 <hydro>/dual_energy (two slots after every other scalar, resynced by the
+  // first ConToPrim, so never needed from the file): switching it on or off at a restart
+  // reads the file's other variables and drops / zero-starts the two slots.  Only with
+  // the other scalar layout unchanged.
+  const bool du_run = (phydro != nullptr) && phydro->tracers.du;
+  const bool du_file = (global_variable::rst_hydro_tracers & 4) != 0;
+  if (phydro != nullptr && global_variable::rst_hydro_nscalars >= 0 &&
+      du_run != du_file) {
+    if (fl_run != fl_file ||
+        global_variable::rst_hydro_nscalars != phydro->tracers.nuser) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/dual_energy switched at a restart together with "
+                << "another scalar-layout change (nscalars / floor_tracer): not supported"
+                << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    nhydro_file = nhydro + (du_file ? 2 : 0) - (du_run ? 2 : 0);
+    if (global_variable::my_rank == 0) {
+      std::cout << "hydro: <hydro>/dual_energy " << (du_run ? "on" : "off")
+                << " at a restart written with it " << (du_file ? "on" : "off")
+                << ": the two dual-energy slots are " << (du_run ? "zero-started" :
+                "skipped") << " (resynced by the first ConToPrim)" << std::endl;
+    }
+  } else if (phydro != nullptr && global_variable::rst_hydro_nscalars >= 0 &&
+             fl_run != fl_file) {
     const int nu_run = phydro->tracers.nuser;
     const std::string smode = pin->DoesParameterExist("hydro", "scalars_rst_missing") ?
                               pin->GetString("hydro", "scalars_rst_missing") : "";
@@ -343,6 +367,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     mtl_file.nuser = global_variable::rst_mhd_nscalars;
     mtl_file.xe = (global_variable::rst_mhd_tracers & 1) != 0;
     mtl_file.fl = (global_variable::rst_mhd_tracers & 2) != 0;
+    mtl_file.du = (global_variable::rst_mhd_tracers & 4) != 0;   // duale-1112
     if (mtl_file.nuser != mtl_run.nuser) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mhd>/nscalars = " << mtl_run.nuser << " but the restart"
@@ -1292,6 +1317,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (nhydro_file == nhydro) {
       Kokkos::deep_copy(Kokkos::subview(phydro->u0, std::make_pair(0,nmb), Kokkos::ALL,
                         Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ccin);
+    } else if (nhydro_file > nhydro) {
+      // duale-1112: the file's two dual-energy slots (last) are not read
+      DeepCopyAcross(Kokkos::subview(phydro->u0, std::make_pair(0,nmb), Kokkos::ALL,
+                     Kokkos::ALL, Kokkos::ALL, Kokkos::ALL),
+                     Kokkos::subview(ccin, Kokkos::ALL, std::make_pair(0, nhydro),
+                     Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     } else {
       // acctrc-1019 (scalars_rst_missing = zero): the file's variables into the first
       // nhydro_file slots; the scalar slots are zeroed explicitly

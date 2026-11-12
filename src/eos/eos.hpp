@@ -767,6 +767,11 @@ struct EOS_Data {
   Real TableTempMin() const {
     return tbl.active ? (EOSTable::Pow10(tbl.ymin)/temp_cgs) : -1.0;
   }
+  //! duale-1112: the HIGHEST tabulated temperature, in CODE units; -1 without a table
+  KOKKOS_INLINE_FUNCTION
+  Real TableTempMax() const {
+    return tbl.active ? (EOSTable::Pow10(tbl.ymax)/temp_cgs) : -1.0;
+  }
 
   //! \fn Real EnergyFloorBound
   //! \brief a cheap UPPER bound on EnergyFromPressure(d, pfloor), i.e. on the internal

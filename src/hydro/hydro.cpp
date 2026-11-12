@@ -124,6 +124,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   nscalars = tracers.Total();
   floor_tracer = tracers.fl;
   ifltr = tracers.fl ? (nhydro + tracers.FlOff()) : -1;
+  // duale-1112 (hydro/dual_energy.hpp): every key read only when named
+  dual.Read(pin, "hydro", peos->eos_data, nhydro, tracers.DuOff());
   if (floor_tracer) {
     if (nhydro != 5 || pmy_pack->pcoord->is_special_relativistic ||
         pmy_pack->pcoord->is_general_relativistic) {
@@ -930,7 +932,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       // allocate array of flags used with FOFC
       if (use_fofc) {
         Kokkos::realloc(fofc,  nmb, ncells3, ncells2, ncells1);
-        Kokkos::realloc(utest, nmb, nhydro, ncells3, ncells2, ncells1);
+        // duale-1112: the trial state carries the scalars under <hydro>/dual_energy
+        Kokkos::realloc(utest, nmb, nhydro + (dual.on ? nscalars : 0), ncells3, ncells2,
+                        ncells1);
         // per-cell FOFC flag count for the `hydro_fofc` output variable (hydro.hpp)
         Kokkos::realloc(fofc_cnt, nmb, ncells3, ncells2, ncells1);
         Kokkos::deep_copy(fofc_cnt, 0.0);

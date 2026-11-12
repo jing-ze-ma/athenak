@@ -24,6 +24,7 @@
 #include "utils/fofc_report.hpp"
 #include "mhd/xe_tracer.hpp"
 #include "mhd/mhd_tracers.hpp"
+#include "hydro/dual_energy.hpp"
 
 // forward declarations
 class EquationOfState;
@@ -161,6 +162,8 @@ class MHD {
   bool trc_strang = false;
   void TracerSourceHalf(int half);
   int ifltr = -1;
+  // duale-1112: <mhd>/dual_energy, floor_pay, floor_audit (hydro/dual_energy.hpp)
+  fluid::DualEnergy dual;
   Real fltr_margin = 2.0, fltr_fmax = 0.01;
   Real fltr_dm = 0.0, fltr_de = 0.0;
   void FloorTracerDrain();
