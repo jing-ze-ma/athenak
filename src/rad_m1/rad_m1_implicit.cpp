@@ -3575,6 +3575,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     std::cout << "<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken "
               << "from the radiation of the same column (no energy created)" << std::endl;
   }
+  // facebound-1112 implicit_fclip_diag (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1","implicit_fclip_diag") &&
+      pin->GetBoolean("rad_m1","implicit_fclip_diag")) {
+    impl_fclip_diag = true;
+    Kokkos::realloc(fcd_cnt_d, 20);
+    Kokkos::deep_copy(fcd_cnt_d, 0.0);
+  }
   if (cs_vtx_mono && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> cs_vertex_mono: two-point lateral faces within " << cs_vtx_n
               << " cell(s) of the 8 cube vertices (no skew cross term, seam foot values, "
@@ -10624,6 +10631,37 @@ void RadiationM1::ImplicitReport() {
     }
     std::cout << std::endl;
   }
+  if (impl_fclip_diag && fcd_cnt_d.extent_int(0) == 20) {   // facebound-1112
+    auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fcd_cnt_d);
+    Real fv[20];
+    for (int q = 0; q < 20; ++q) {fv[q] = hf(q);}
+#if MPI_PARALLEL_ENABLED
+    Real gf[20];
+    MPI_Allreduce(fv, gf, 20, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int q = 0; q < 20; ++q) {fv[q] = gf[q];}
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> FCLIPDIAG in-loop (cs2_clip=rad, unpaired): n=" << fv[0]
+                << " mean(|u|/|q|-1)=" << fv[1]/fmax(fv[0], 1.0)
+                << " face-mean>cE n=" << fv[2]
+                << " of which face-mean<=cE^old n=" << fv[3]
+                << " mean(cE/cE^old)=" << fv[4]/fmax(fv[0], 1.0)
+                << " unpaired |dF|/(c chat) x vol=" << fv[5] << std::endl;
+      std::cout << "<rad_m1> FCLIPDIAG final: n(metric)=" << fv[6]
+                << " mean(|F|/cE-1)=" << fv[7]/fmax(fv[6], 1.0)
+                << " n(plain norm)=" << fv[8] << " made by pos moves=" << fv[9]
+                << " made by cons_final=" << fv[10]
+                << " E lowered by pos moves=" << fv[11]
+                << " removed (|F|-cE)/(c chat) x vol=" << fv[12]
+                << " paired (consrc kick) n=" << fv[13]
+                << " face-mean>cE(pre-move) n=" << fv[14] << " E<E^old/2 n=" << fv[15]
+                << std::endl;
+      std::cout << "<rad_m1> FCLIPDIAG implicit_realisable_coupling rescale: lag (beta.F"
+                << " of E0) cell-passes=" << fv[16] << " mean(|F|/cE-1)="
+                << fv[17]/fmax(fv[16], 1.0) << " | write-back drag cell-solves=" << fv[18]
+                << " mean(|F|/cE-1)=" << fv[19]/fmax(fv[18], 1.0) << std::endl;
+    }
+  }
   if (global_variable::my_rank != 0) return;
   if (tmr_c0 > 0) {
     // implicit_timers: seconds per category, then the counters (see TmrMark)
@@ -15131,6 +15169,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool vdv = t2st && impl_vimp && t2_fvnew && (it > 0);
     const int ivd = impl_vimp ? (iw_vimp + M1_IV_DV) : 0;
     const bool rcp = impl_real_couple;
+    // facebound-1112 implicit_fclip_diag: the rescale's firing count (diagnostic only)
+    const bool fcdg = impl_fclip_diag && (fcd_cnt_d.extent_int(0) == 20);
+    auto fcd_ = fcd_cnt_d;
     // rad-beam-1008 implicit_recon_dgpass: the lagged reduced flux of a cell is made from
     // the LOW-ORDER part of its face fluxes (the stored face flux minus the plm deferred
     // correction): the correction's face E is not the donor's, and its ratio to the donor
@@ -18357,6 +18398,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool kpre = t2_adm_pl && t2st;
   auto peos = flr.eos;
   auto pc_ = pos_cnt_d;
+  // facebound-1112 implicit_fclip_diag / time2_stage_theta (rad_m1.hpp)
+  const bool fcdg = impl_fclip_diag && (fcd_cnt_d.extent_int(0) == 20);
+  auto fcd_ = fcd_cnt_d;
+  const bool thre = (t2_theta > 0.0) && t2st && (t2s == M1_T2S_STAGE2) &&
+                    (t2thr.extent_int(0) > nmb1) && (t2th_cnt_d.extent_int(0) == 5);
+  auto t2thr_ = t2thr;
+  auto thc_ = t2th_cnt_d;
+  const Real thx = t2_theta;
+  const bool thlb = t2_lbe && (t2thc.extent_int(0) > nmb1);
+  auto t2thc_ = t2thc;
   const bool psph = sph_geom;
   auto pvol = pmy_pack->pcoord->volume;
   // hgfix-1110 implicit_clip_kecap (rad_m1.hpp): the consrc clip's kinetic energy cap
@@ -19841,6 +19892,33 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         });
       }
     }
+  }
+  // facebound-1112 step 1 time2_face_fct: the E transport flux of this solution per
+  // face, (chat/c) F_applied, next to its slope (rad_m1.hpp)
+  if (t2k && t2_ffct && t2pf1.extent_int(0) > nmb1) {
+    const bool cmp = impl_hr_cmem && fax1.extent_int(0) > 0;
+    auto pf_ = (t2s == M1_T2S_STAGE1) ? t2pf2 : t2pf1;
+    auto a1_ = cmp ? fax1 : f0x1;
+    const Real crp = chat/c_light;
+    par_for("m1_t2_pf1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      pf_(m,0,k,j,i) = crp*a1_(m,k,j,i);
+    });
+    if (trans) {
+      auto a2_ = (cmp && fax2.extent_int(0) > 0) ? fax2 : f0x2;
+      par_for("m1_t2_pf2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        pf_(m,1,k,j,i) = crp*a2_(m,k,j,i);
+      });
+      if (thrd) {
+        auto a3_ = (cmp && fax3.extent_int(0) > 0) ? fax3 : f0x3;
+        par_for("m1_t2_pf3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          pf_(m,2,k,j,i) = crp*a3_(m,k,j,i);
+        });
+      }
+    }
+    if (t2s == M1_T2S_STAGE1) {t2pf2_ok = true;} else {t2pf1_ok = true;}
   }
 
   // DIAGNOSTIC (env VGD_RDIAG = N > 0, vet_gd): realizability of the tensor against the

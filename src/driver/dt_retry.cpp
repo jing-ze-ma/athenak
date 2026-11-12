@@ -68,6 +68,8 @@ const char *kDtrMinimal[] = {
   "m1.vet_prev", "m1.vsc_d0", "m1.vsc_d1", "m1.ctr_mem", "m1.csk1", "m1.csk2",
   "m1.csinc", "m1.vra_d", "m1.opac", "m1.tau_ten", "m1.vet_cell", "m1.vgd_rst",
   "m1.vlat_cs",
+  // facebound-1112 step 1 time2_face_fct: the face E flux of K1 (rotated with it)
+  "m1.t2pf1",
   // mhdfix-1025: time2_vet_col = extrap2 (sph fresh-start default since defaults-1025)
   // keeps the previous closure build (x2_tt, x2_hr, x2_q; x2_t/x2_ok are values) for the
   // next step's extrapolation: a failed attempt that rebuilt it left the retry reading

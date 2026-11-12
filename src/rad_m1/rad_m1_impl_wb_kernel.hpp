@@ -260,6 +260,10 @@
                               : sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
           const Real fc = cl*fmax(ep, efl);
           if (fq > fc) {
+            if (fcdg) {   // facebound-1112 implicit_fclip_diag: the rescale fires
+              Kokkos::atomic_add(&fcd_(18), 1.0);
+              Kokkos::atomic_add(&fcd_(19), fq/fc - 1.0);
+            }
             const Real sc = fc/fq;
             dm1 *= sc;
             dm2 *= sc;
@@ -557,6 +561,10 @@
                                 : sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
             const Real fc = cl*fmax(ep, efl);
             if (fq > fc) {
+              if (fcdg) {   // facebound-1112 implicit_fclip_diag: the rescale fires
+                Kokkos::atomic_add(&fcd_(18), 1.0);
+                Kokkos::atomic_add(&fcd_(19), fq/fc - 1.0);
+              }
               const Real sc = fc/fq;
               gd1 *= sc;
               gd2 *= sc;
@@ -800,6 +808,36 @@
         fp1 = q1;
         fp2 = q2;
         fp3 = q3;
+#if defined(M1_C2CR) && M1_C2CR
+        if (fcdg) {   // facebound-1112 implicit_fclip_diag: the in-loop clip (unpaired)
+          const Real cz = csw ? cclw(m,k,j) : 0.0;
+          auto fnm = [&](const Real a1, const Real a2, const Real a3) -> Real {
+            return csw ? M1FluxNormCs(cz, a1, a2, a3) : sqrt(a1*a1 + a2*a2 + a3*a3);
+          };
+          const Real un = fnm(u1, u2, u3), qn = fnm(q1, q2, q3);
+          if (qn > 0.0 && un > qn*(1.0 + 1.0e-12)) {
+            Real a1 = 0.5*(fl + fr), a2 = 0.5*(g2l + g2r), a3 = 0.5*(g3l + g3r);
+            if (csw && trans && thrd) {
+              const Real si = 1.0/csnw(m,k,j), a = a2, b = a3;
+              a2 = (a + cz*b)*si;
+              a3 = (b + cz*a)*si;
+            }
+            const Real mn = fnm(a1, a2, a3);
+            const Real en = iw_(m,M1_IW_EN,k,j,i);
+            const Real vz = psph ? pvol(m,k,j,i)
+                                 : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                    mbsize.d_view(m).dx3);
+            Kokkos::atomic_add(&fcd_(0), 1.0);
+            Kokkos::atomic_add(&fcd_(1), un/qn - 1.0);
+            if (mn > qn) {
+              Kokkos::atomic_add(&fcd_(2), 1.0);
+              if (!(mn > cl*en)) {Kokkos::atomic_add(&fcd_(3), 1.0);}
+            }
+            Kokkos::atomic_add(&fcd_(4), qn/(cl*fmax(en, 1.0e-300)));
+            Kokkos::atomic_add(&fcd_(5), fnm(u1 - q1, u2 - q2, u3 - q3)*icc*vz);
+          }
+        }
+#endif
         work = kew(dm1, dm2, dm3);
         if (!efc) {
           ep -= (ch/cl)*work;
@@ -852,6 +890,7 @@
     // consfix-1109 implicit_cons_final: E^{n+1} = E' + r = E^n + q(E') - T(E') (the gas
     // was charged q(E') above); the floor below raises a conservative E that fell under
     // e_floor with the energy taken from the gas (FLR_DE) or counted (FLR_UN)
+    const Real fcd_epc = ep;   // facebound-1112 implicit_fclip_diag (read only)
     if (cfin && !efc) {ep += cfr_(m,k,j,i);}
     // m1-positivity.  Both moves keep e_gas + (c/chat) E of the cell exactly; eg is the
     // gas internal energy the write-back sets (the kinetic part is ekin + work).
@@ -860,6 +899,7 @@
     //  implicit_pos_gas: a gas eint below e_min = max(e(rho, tfloor),
     //    implicit_pos_gas_frac x max(e_gas old, 0)) is raised to it with energy taken
     //    from the radiation (down to e_floor).
+    const Real fcd_epd = ep;   // facebound-1112 implicit_fclip_diag (read only)
     Real lim_e = 0.0, lim_g = 0.0;   // csacc-1031 kpre: E and gas changes by the moves
     if (pany && !efc) {
       const Real vol = psph ? pvol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
@@ -905,6 +945,36 @@
       if (ep > efl && fq > cl*ep) {
         Kokkos::atomic_add(&pc_(M1_POS_FCLIP), 1.0);
         Kokkos::atomic_add(&pc_(M1_POS_FCLIPM), fq/(cl*ep) - 1.0);
+      }
+    }
+    if (fcdg && ep > efl) {   // facebound-1112 implicit_fclip_diag: the final clip
+      const Real cz = csw ? cclw(m,k,j) : 0.0;
+      const Real fn = csw ? M1FluxNormCs(cz, fp1, fp2, fp3)
+                          : sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
+      if (sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3) > cl*ep) {Kokkos::atomic_add(&fcd_(8), 1.0);}
+      if (fn > cl*ep) {
+        Real a1 = 0.5*(fl + fr), a2 = 0.5*(g2l + g2r), a3 = 0.5*(g3l + g3r);
+        if (csw && trans && thrd) {
+          const Real si = 1.0/csnw(m,k,j), a = a2, b = a3;
+          a2 = (a + cz*b)*si;
+          a3 = (b + cz*a)*si;
+        }
+        const Real mn = csw ? M1FluxNormCs(cz, a1, a2, a3) : sqrt(a1*a1 + a2*a2 + a3*a3);
+        const Real vz = psph ? pvol(m,k,j,i)
+                             : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                mbsize.d_view(m).dx3);
+        Kokkos::atomic_add(&fcd_(6), 1.0);
+        Kokkos::atomic_add(&fcd_(7), fn/(cl*ep) - 1.0);
+        if (!(fn > cl*fcd_epd)) {
+          Kokkos::atomic_add(&fcd_(9), 1.0);
+        } else if (!(fn > cl*fcd_epc)) {
+          Kokkos::atomic_add(&fcd_(10), 1.0);
+        }
+        if (ep < fcd_epd) {Kokkos::atomic_add(&fcd_(11), 1.0);}
+        Kokkos::atomic_add(&fcd_(12), (fn - cl*ep)/(cl*ch)*vz);
+        if (gcs && coupling_ && dbgf) {Kokkos::atomic_add(&fcd_(13), 1.0);}
+        if (mn > cl*fcd_epd) {Kokkos::atomic_add(&fcd_(14), 1.0);}
+        if (ep < 0.5*iw_(m,M1_IW_EN,k,j,i)) {Kokkos::atomic_add(&fcd_(15), 1.0);}
       }
     }
     const Real cb1 = fp1, cb2 = fp2, cb3 = fp3;
@@ -1088,4 +1158,77 @@
         if (thrd) {uh(m,IM3,k,j,i) = uh(m,IM3,k,j,i) + dm3;}
       }
       uh(m,IEN,k,j,i) = eg + ekin + egrv + work;
+    }
+    // facebound-1112 time2_stage_theta: the stage-2 drop of the old vector re-enters the
+    // new state here (after the slope K above), as far as the cell stays admissible
+    if (thre) {
+      const Real de = t2thr_(m,0,k,j,i), d1 = t2thr_(m,1,k,j,i);
+      const Real d2 = t2thr_(m,2,k,j,i), d3 = t2thr_(m,3,k,j,i);
+      const Real dn = t2thr_(m,4,k,j,i);
+      if (de != 0.0 || d1 != 0.0 || d2 != 0.0 || d3 != 0.0 || dn != 0.0) {
+        Real th = 1.0;
+        const Real e0 = u0_(m,M1_E,k,j,i);
+        if (de < 0.0) {
+          // E + th de >= thx E and c (E + th de) >= |F| (where it holds now)
+          const Real fz = csw ? M1FluxNormCs(cclw(m,k,j), fp1, fp2, fp3)
+                              : sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
+          Real room = thlb ? (e0*(1.0 - 1.0e-12)) : ((1.0 - thx)*e0);
+          if (fz <= cl*e0) {room = fmin(room, e0 - fz/cl);}
+          room = fmax(room, 0.0);
+          if (-de > room) {th = room/(-de);}
+        }
+        const bool gh = have_hydro && feedback;
+        if (gh) {
+          const Real dz = uh(m,IDN,k,j,i), iz = 1.0/fmax(dz, 1.0e-300);
+          const Real cz = csw ? cclw(m,k,j) : 0.0;
+          auto kef = [&](const Real a1, const Real a2, const Real a3) -> Real {
+            return csw ? 0.5*(a1*a1 + (a2*a2 + a3*a3 - 2.0*cz*a2*a3)/(1.0 - cz*cz))*iz
+                       : 0.5*(a1*a1 + a2*a2 + a3*a3)*iz;
+          };
+          const Real p1 = uh(m,IM1,k,j,i), p2 = uh(m,IM2,k,j,i), p3 = uh(m,IM3,k,j,i);
+          const Real keh = kef(p1, p2, p3);
+          const Real eh = uh(m,IEN,k,j,i) - keh - egrv;
+          if (eh > 0.0) {
+            // eint(s) = eh + s dn - (s bb + s^2 aa) >= thx eh
+            const Real aa = kef(d1, d2, d3);
+            const Real bb = kef(p1 + d1, p2 + d2, p3 + d3) - keh - aa - dn;
+            const Real cc = thlb ? (eh*(1.0 - 1.0e-12)) : ((1.0 - thx)*eh);
+            Real r = 1.0e300;
+            if (aa > 0.0) {
+              const Real sq = sqrt(bb*bb + 4.0*aa*cc);
+              r = (bb >= 0.0) ? 2.0*cc/(bb + sq) : (-bb + sq)/(2.0*aa);
+            } else if (bb > 0.0) {
+              r = cc/bb;
+            }
+            th = fmin(th, fmax(r, 0.0));
+          }
+        }
+        th = fmin(fmax(th, 0.0), 1.0);
+        if (thlb) {th = (th < 1.0) ? 0.0 : 1.0;}   // local_be: whole or carried
+        u0_(m,M1_E,k,j,i) = e0 + th*de;
+        if (gh) {
+          uh(m,IM1,k,j,i) += th*d1;
+          uh(m,IM2,k,j,i) += th*d2;
+          uh(m,IM3,k,j,i) += th*d3;
+          uh(m,IEN,k,j,i) += th*dn;
+        }
+        Kokkos::atomic_add(&thc_(0), 1.0);
+        if (th < 1.0) {
+          const Real vz = psph ? pvol(m,k,j,i)
+                               : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                  mbsize.d_view(m).dx3);
+          const Real r = 1.0 - th;
+          Kokkos::atomic_add(&thc_(1), 1.0);
+          Kokkos::atomic_add(&thc_(2), r*de*vz);
+          Kokkos::atomic_add(&thc_(3), r*dn*vz);
+          Kokkos::atomic_add(&thc_(4), r*sqrt(d1*d1 + d2*d2 + d3*d3)*vz);
+          if (thlb) {   // local_be: carried into the next step's stage-1 increment
+            t2thc_(m,0,k,j,i) += r*de;
+            t2thc_(m,1,k,j,i) += r*d1;
+            t2thc_(m,2,k,j,i) += r*d2;
+            t2thc_(m,3,k,j,i) += r*d3;
+            t2thc_(m,4,k,j,i) += r*dn;
+          }
+        }
+      }
     }

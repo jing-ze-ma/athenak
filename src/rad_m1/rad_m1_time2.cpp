@@ -551,6 +551,44 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // facebound-1112 <rad_m1>/time2_stage_theta (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_stage_theta")) {
+    t2_theta = pin->GetReal("rad_m1", "time2_stage_theta");
+    if (!(t2_theta >= 0.0 && t2_theta < 1.0)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_stage_theta must be in [0, 1)"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (t2_theta > 0.0 && pin->DoesParameterExist("rad_m1", "time2_inc_energy") &&
+        pin->GetString("rad_m1", "time2_inc_energy").compare("rad") == 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_stage_theta: not with time2_inc_energy = "
+                << "rad (its KE increment is not scaled)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  // facebound-1112 <rad_m1>/time2_stage_local_be (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_stage_local_be") &&
+      pin->GetBoolean("rad_m1", "time2_stage_local_be")) {
+    t2_lbe = true;
+    if (!(t2_theta > 0.0)) {t2_theta = 0.5;}   // enables the path; not read under lbe
+    if (pin->DoesParameterExist("rad_m1", "time2_inc_energy") &&
+        pin->GetString("rad_m1", "time2_inc_energy").compare("rad") == 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_stage_local_be: not with time2_inc_energy"
+                << " = rad (its KE increment is not scaled)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  if (t2_theta > 0.0) {
+    Kokkos::realloc(t2th_cnt_d, 5);
+    Kokkos::deep_copy(t2th_cnt_d, 0.0);
+  }
+  // facebound-1112 step 1 <rad_m1>/time2_face_fct (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_face_fct")) {
+    t2_ffct = pin->GetBoolean("rad_m1", "time2_face_fct");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
     t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
   }
@@ -661,6 +699,14 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (t2_iex) {   // rsglock-1112 time2_inc_exch
     Kokkos::realloc(t2ixd, nmb, n3, n2, n1);
     Kokkos::deep_copy(t2ixd, 0.0);
+  }
+  if (t2_ffct) {   // facebound-1112 step 1: zero = no face flux known (restart, start)
+    Kokkos::realloc(t2pf1, nmb, 3, n3, n2, n1);
+    Kokkos::realloc(t2pf2, nmb, 3, n3, n2, n1);
+    Kokkos::deep_copy(t2pf1, 0.0);
+    Kokkos::deep_copy(t2pf2, 0.0);
+    t2pf1_ok = false;
+    t2pf2_ok = false;
   }
   if (t2_ike) {   // rsglock-1112
     Kokkos::realloc(t2ke1, nmb, n3, n2, n1);
@@ -1271,6 +1317,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     }
   }
   if (t2_inckc > 0.0) {Time2IncKeCap(stage);}   // hgfix-1110 time2_inc_kecap
+  if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // facebound-1112 step 1
+  if (t2_theta > 0.0) {Time2StageTheta(stage, dt);}   // facebound-1112
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
   t2_fail = false;
   nsub = 1;
@@ -1462,6 +1510,357 @@ void RadiationM1::Time2IncKeCap(int stage) {
               << " eint_h<=0 " << t2_inckc_hn << " KE " << t2_inckc_ke << " |dm| "
               << t2_inckc_pm << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2StageTheta
+//! \brief facebound-1112 <rad_m1>/time2_stage_theta = th (rad_m1.hpp).  Called by
+//! Time2FormStage after every other change of t2inc.  Stage 2 first adds the stage-1 drop
+//! back with the weight of Y1 in the stage-2 start (heun: a21 dt/2), except in the cells
+//! time2_posfix re-solved (its own compensation covers them).  Then, per active cell,
+//! theta = the largest value in [0, 1] with
+//!   E_s + theta t2inc_E >= th E_s                         (E_s > 0)
+//!   eint(U_h + theta t2inc_gas) >= th eint(U_h)            (eint(U_h) > 0 only)
+//! (eint quadratic in theta through the kinetic energy; closed-form root), and the cell
+//! increments E, m1..3, EN become theta x themselves.  The drop (1 - theta) x increment
+//! is
+//! kept: t2thd = 1 - theta1 (stage 1), t2thr = the stage-2 drop, which the stage-2
+//! write-back adds to U^{n+1}.  Face slots, the stored cell F (csinc) and every cell
+//! with theta = 1 are bitwise unchanged.
+
+void RadiationM1::Time2StageTheta(int stage, Real dt) {
+  if (am_vec) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/time2_stage_theta: not with <hydro>/am_vector" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb = pmy_pack->nmb_thispack, nmb1 = nmb - 1;
+  const int n3 = static_cast<int>(t2inc.extent(2));
+  const int n2 = static_cast<int>(t2inc.extent(3));
+  const int n1 = static_cast<int>(t2inc.extent(4));
+  if (t2thd.extent_int(0) != nmb || t2thd.extent_int(1) != n3 ||
+      t2thd.extent_int(2) != n2 || t2thd.extent_int(3) != n1) {
+    Kokkos::realloc(t2thd, nmb, n3, n2, n1);
+    Kokkos::realloc(t2thr, nmb, 5, n3, n2, n1);
+    Kokkos::realloc(t2thc, nmb, 5, n3, n2, n1);   // zero: nothing carried yet
+  }
+  auto thd_ = t2thd;
+  auto thr_ = t2thr;
+  auto in_ = t2inc;
+  auto k1_ = t2k1;
+  auto u0_ = u0;
+  const bool heun = (t2_tab == 0 || t2_tab == 2);
+  const Real ccomp = t2_a21*dt*(heun ? 0.5 : t2_w0);
+  if (stage == 1) {
+    Kokkos::deep_copy(DevExeSpace(), t2thd, 0.0);
+    // the carried drop of earlier steps joins this step's stage-1 increment
+    auto thc_ = t2thc;
+    par_for("m1_t2th_carry", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int n = 0; n < M1_T2_F1; ++n) {
+        const Real c = thc_(m,n,k,j,i);
+        if (c != 0.0) {
+          in_(m,n,k,j,i) += c;
+          thc_(m,n,k,j,i) = 0.0;
+        }
+      }
+    });
+  } else {
+    Kokkos::deep_copy(DevExeSpace(), t2thr, 0.0);
+    const bool pfx = (t2_pfix > 0) && t2_pfix_any && (t2pm.extent_int(0) >= nmb);
+    auto pm_ = t2pm;
+    par_for("m1_t2th_comp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real w = thd_(m,k,j,i);
+      if (!(w > 0.0)) return;
+      if (pfx && pm_(m,k,j,i) > 0.0) return;
+      for (int n = 0; n < M1_T2_F1; ++n) {in_(m,n,k,j,i) += ccomp*w*k1_(m,n,k,j,i);}
+    });
+  }
+  FluidRef flf = FluidRef::Get(pmy_pack);
+  const bool gon = flf.on && (t2inc.extent_int(1) > M1_T2_EN);
+  auto ug = gon ? flf.u0 : u0;
+  const bool etg = gon && flf.use_etotgrav;
+  auto phicc = flf.phicc0;
+  const bool mhd = gon && fl_mhd && (emag0.extent_int(0) > nmb1);
+  auto emag_ = emag0;
+  const bool csk = cs_geom;
+  auto ccl = pmy_pack->pcoord->cos_cell;
+  const bool hoi_ = impl_hold && (hold_m.extent_int(0) > nmb1);
+  auto hmi_ = hold_m;
+  const Real th = t2_theta;
+  const bool lbe = t2_lbe;
+  const bool one = (stage == 1);
+  Real nf = 0.0, sf = 0.0;
+  Kokkos::parallel_reduce("m1_t2th", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sn, Real &ss) {
+    if (hoi_ && hmi_(m,k,j,i) > 0.0) return;
+    Real t = 1.0;
+    const Real es = u0_(m,M1_E,k,j,i), de = in_(m,M1_T2_E,k,j,i);
+    if (lbe) {
+      if (es > 0.0 && !(es + de > 0.0)) {t = 0.0;}
+    } else if (es > 0.0 && de < -(1.0 - th)*es) {
+      t = (1.0 - th)*es/(-de);
+    }
+    if (gon) {
+      const Real dd = ug(m,IDN,k,j,i);
+      if (dd > 0.0) {
+        const Real idd = 1.0/dd;
+        const Real q1 = ug(m,IM1,k,j,i), q2 = ug(m,IM2,k,j,i), q3 = ug(m,IM3,k,j,i);
+        const Real d1 = in_(m,M1_T2_M1,k,j,i), d2 = in_(m,M1_T2_M1+1,k,j,i);
+        const Real d3 = in_(m,M1_T2_M1+2,k,j,i), dn = in_(m,M1_T2_EN,k,j,i);
+        Real keh, kep, kdd;
+        if (csk) {
+          const Real c = ccl(m,k,j);
+          keh = CsKeMom(q1, q2, q3, c)*idd;
+          kep = CsKeMom(q1 + d1, q2 + d2, q3 + d3, c)*idd;
+          kdd = CsKeMom(d1, d2, d3, c)*idd;
+        } else {
+          keh = 0.5*(q1*q1 + q2*q2 + q3*q3)*idd;
+          kep = 0.5*((q1 + d1)*(q1 + d1) + (q2 + d2)*(q2 + d2) + (q3 + d3)*(q3 + d3))*idd;
+          kdd = 0.5*(d1*d1 + d2*d2 + d3*d3)*idd;
+        }
+        Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
+        if (mhd) {egrv += emag_(m,k,j,i);}
+        const Real eh = ug(m,IEN,k,j,i) - keh - egrv;
+        if (eh > 0.0 && lbe) {
+          if (!(eh + dn - (kep - keh) > 0.0)) {t = 0.0;}
+        } else if (eh > 0.0) {
+          // eint(s) = eh + s dn - (s bb + s^2 aa), aa = KE(d), bb = the cross term
+          const Real aa = kdd, bb = kep - keh - kdd - dn, cc = (1.0 - th)*eh;
+          Real r = 1.0e300;
+          if (aa > 0.0) {
+            const Real sq = sqrt(bb*bb + 4.0*aa*cc);
+            r = (bb >= 0.0) ? 2.0*cc/(bb + sq) : (-bb + sq)/(2.0*aa);
+          } else if (bb > 0.0) {
+            r = cc/bb;
+          }
+          t = fmin(t, fmax(r, 0.0));
+        }
+      }
+    }
+    if (!(t < 1.0)) return;   // (NaN increments: not touched)
+    t = fmax(t, 0.0);
+    const Real w = 1.0 - t;
+    for (int n = 0; n < M1_T2_F1; ++n) {
+      const Real v = in_(m,n,k,j,i);
+      in_(m,n,k,j,i) = t*v;
+      if (!one) {thr_(m,n,k,j,i) = w*v;}
+    }
+    if (one) {thd_(m,k,j,i) = w;}
+    sn += 1.0;
+    ss += w;
+  }, Kokkos::Sum<Real>(nf), Kokkos::Sum<Real>(sf));
+  if (one) {
+    t2_th_n1 += nf;
+    t2_th_s1 += sf;
+  } else {
+    t2_th_n2 += nf;
+    t2_th_s2 += sf;
+  }
+  t2_th_calls += 1;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2FaceFct
+//! \brief facebound-1112 step 1 <rad_m1>/time2_face_fct (rad_m1.hpp): Zalesak positivity
+//! limiter on the face fluxes of the explicit stage increment t2inc (E and face F
+//! channels).  G_f = A_f (c1 t2pf1 + c2 t2pf2) is the energy the increment carries across
+//! face f (+ towards +x_d); V_i dE_i = sum_lower G - sum_upper G + V_i s_i with s_i the
+//! cell-local remainder.  Only cells whose old vector E + dE is not > 0 are limited, by
+//! R_i = (1 - 1e-12) Q_i/P_i, Q_i = V (E + dE) + P_i - I_i + I_i(R): what it holds w/o
+//! face transport plus the inflow its donors' current R still let through; a face is
+//! scaled by the R of its donor.  A limited donor cuts its receivers' inflow, so rounds
+//! run until no cell is newly limited (R only decreases; a receiver that loses inflow
+//! is limited again by exactly the deficit, which travels down the beam one cell per
+//! round; cap 4096).  Bitwise wherever no face is limited.
+
+void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
+  const bool two = (stage != 1);
+  // no stored face flux for K1 (first stage step, restart): K1 is the slope of the last
+  // stage-2 solve, whose solution is U^n, so its face flux is the stage-start face flux
+  // t2f* = f0x* (the restart file's F; the cmem applied flux is not used here)
+  if (!two && !t2pf1_ok && t2pf1.extent_int(0) >= pmy_pack->nmb_thispack &&
+      t2f1.extent_int(0) >= pmy_pack->nmb_thispack) {
+    auto pf_ = t2pf1;
+    auto g1_ = t2f1, g2_ = t2f2, g3_ = t2f3;
+    const bool q2 = trans_on && t2f2.extent_int(0) > 0;
+    const bool q3 = trans_on && trans_x3 && t2f3.extent_int(0) > 0;
+    const Real crp = chat/c_light;
+    par_for("m1_t2_ffct_fill", DevExeSpace(), 0, pf_.extent_int(0) - 1,
+            0, pf_.extent_int(2) - 1, 0, pf_.extent_int(3) - 1, 0, pf_.extent_int(4) - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      pf_(m,0,k,j,i) = crp*g1_(m,k,j,i);
+      pf_(m,1,k,j,i) = q2 ? crp*g2_(m,k,j,i) : 0.0;
+      pf_(m,2,k,j,i) = q3 ? crp*g3_(m,k,j,i) : 0.0;
+    });
+    t2pf1_ok = true;
+    t2_ffct_fill += 1.0;
+  }
+  if (!t2pf1_ok || (two && !t2pf2_ok) || t2pf1.extent_int(0) < pmy_pack->nmb_thispack) {
+    t2_ffct_nop += 1.0;   // no stored face flux for this slope (start, restart)
+    return;
+  }
+  if (iw.extent_int(1) <= M1_IW_KZ) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/time2_face_fct needs the Krylov work slots "
+              << "(implicit_solver = bicgstab)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  t2_ffct_calls += 1.0;
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto in_ = t2inc;
+  auto u0_ = u0;
+  auto p1_ = t2pf1;
+  auto p2_ = t2pf2;
+  auto iw_ = iw;
+  const int ca = M1_IW_KZ, cb = M1_IW_KS;
+  const bool tr2 = trans_on, tr3 = trans_on && trans_x3;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto vol = pmy_pack->pcoord->volume;
+  auto ar1 = pmy_pack->pcoord->area.x1f;
+  auto ar2 = pmy_pack->pcoord->area.x2f;
+  auto ar3 = pmy_pack->pcoord->area.x3f;
+  const bool curv = (cs_geom || sph_geom) && vol.extent_int(0) > nmb1 &&
+                    vol.extent_int(3) > 1 && ar1.extent_int(0) > nmb1;
+  const bool hoi = impl_hold && (hold_m.extent_int(0) > nmb1);
+  auto hm_ = hold_m;
+  const Real cc1 = c1, cc2 = two ? c2 : 0.0;
+  // energy across the lower face of cell (k,j,i) in direction d (+ = towards +x_d)
+  auto gf = KOKKOS_LAMBDA(const int m, const int d, const int k, const int j,
+                          const int i) {
+    const Real phi = cc1*p1_(m,d,k,j,i) + cc2*p2_(m,d,k,j,i);
+    Real a;
+    if (curv) {
+      a = (d == 0) ? ar1(m,k,j,i) : ((d == 1) ? ar2(m,k,j,i) : ar3(m,k,j,i));
+    } else {
+      const auto &s = mbsize.d_view(m);
+      a = (d == 0) ? s.dx2*s.dx3 : ((d == 1) ? s.dx1*s.dx3 : s.dx1*s.dx2);
+    }
+    return a*phi;
+  };
+  auto cvol = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const auto &s = mbsize.d_view(m);
+    return curv ? vol(m,k,j,i) : s.dx1*s.dx2*s.dx3;
+  };
+  // V (E + dE) unlimited (w), the full outflow po and inflow pi, the inflow pl that the
+  // current R of the donors lets through, and the change dw of
+  // V E_new by the current R (slot ca, ghosts valid); lim: a face next to it is limited
+  auto cell = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                            Real &w, Real &po, Real &pi, Real &pl, Real &dw,
+                            bool &lim) {
+    const Real rc = iw_(m,ca,k,j,i);
+    po = 0.0;
+    pi = 0.0;
+    pl = 0.0;
+    dw = 0.0;
+    lim = false;
+    for (int d = 0; d < 3; ++d) {
+      if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
+      const int dk = (d == 2) ? 1 : 0, dj = (d == 1) ? 1 : 0, di = (d == 0) ? 1 : 0;
+      // lower face: + = inflow, donor the lower neighbour
+      Real g = gf(m, d, k, j, i);
+      if (g > 0.0) {
+        pi += g;
+        const Real rn = iw_(m,ca,k-dk,j-dj,i-di);
+        pl += rn*g;
+        if (rn < 1.0) {dw -= (1.0 - rn)*g; lim = true;}
+      } else if (g < 0.0) {
+        po -= g;
+        if (rc < 1.0) {dw -= (1.0 - rc)*g; lim = true;}
+      }
+      // upper face: + = outflow, donor this cell
+      g = gf(m, d, k+dk, j+dj, i+di);
+      if (g > 0.0) {
+        po += g;
+        if (rc < 1.0) {dw += (1.0 - rc)*g; lim = true;}
+      } else if (g < 0.0) {
+        pi -= g;
+        const Real rn = iw_(m,ca,k+dk,j+dj,i+di);
+        pl -= rn*g;
+        if (rn < 1.0) {dw += (1.0 - rn)*g; lim = true;}
+      }
+    }
+    w = cvol(m,k,j,i)*(u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i));
+  };
+  // R = 1 everywhere, ghosts included (physical ghosts are never filled: unlimited)
+  Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, ca, Kokkos::ALL,
+                    Kokkos::ALL, Kokkos::ALL), 1.0);
+  Real ncell = 0.0;
+  int nround = 0;
+  for (int r = 0; r < 4096; ++r) {   // until no cell is newly limited
+    Real nn = 0.0;
+    par_reduce_flat("m1_t2_ffct_r", 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+      const Real rc = iw_(m,ca,k,j,i);
+      Real rn = rc;
+      if (!(hoi && hm_(m,k,j,i) > 0.0)) {
+        Real w, po, pi, pl, dw;
+        bool lim;
+        cell(m, k, j, i, w, po, pi, pl, dw, lim);
+        if (!(w + dw > 0.0)) {
+          // what the cell holds without face transport + the inflow it still gets
+          const Real q = w + po - pi + pl;
+          const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
+          if (rq < rc) {
+            rn = rq;
+            a += 1.0;
+          }
+        }
+      }
+      iw_(m,cb,k,j,i) = rn;
+    }, Kokkos::Sum<Real>(nn));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &nn, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (!(nn > 0.0)) {break;}
+    ncell += nn;
+    nround = r + 1;
+    par_for("m1_t2_ffct_c", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      iw_(m,ca,k,j,i) = iw_(m,cb,k,j,i);
+    });
+    ImplicitKrylovHalo(ca);
+  }
+  t2_ffct_cells += ncell;
+  t2_ffct_rmax = std::max(t2_ffct_rmax, static_cast<Real>(nround));
+  if (nround == 0) {return;}   // nothing limited: t2inc untouched (bitwise)
+  // apply: the E channel of every cell next to a limited face, then the face F channels
+  Real lv[2] = {0.0, 0.0};
+  Kokkos::parallel_reduce("m1_t2_ffct_e", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sl,
+                Real &sw) {
+    Real w, po, pi, pl, dw;
+    bool lim;
+    cell(m, k, j, i, w, po, pi, pl, dw, lim);
+    if (lim) {in_(m,M1_T2_E,k,j,i) += dw/cvol(m,k,j,i);}
+    const Real rc = iw_(m,ca,k,j,i);
+    if (rc < 1.0) {sw += (1.0 - rc)*po;}
+    if (!(hoi && hm_(m,k,j,i) > 0.0) && !(w + dw > 0.0)) {sl += 1.0;}
+  }, Kokkos::Sum<Real>(lv[0]), Kokkos::Sum<Real>(lv[1]));
+  for (int d = 0; d < 3; ++d) {
+    if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
+    const int dk = (d == 2) ? 1 : 0, dj = (d == 1) ? 1 : 0, di = (d == 0) ? 1 : 0;
+    par_for("m1_t2_ffct_f", DevExeSpace(), 0, nmb1, ks, ke + dk, js, je + dj, is, ie + di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real g = gf(m, d, k, j, i);
+      Real rd = 1.0;
+      if (g > 0.0) {rd = iw_(m,ca,k-dk,j-dj,i-di);}
+      if (g < 0.0) {rd = iw_(m,ca,k,j,i);}
+      if (rd < 1.0) {in_(m,M1_T2_F1+d,k,j,i) *= rd;}
+    });
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, lv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  t2_ffct_left += lv[0];
+  t2_ffct_de += lv[1];
 }
 
 //----------------------------------------------------------------------------------------
@@ -1871,6 +2270,10 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
   const bool ok = !t2_fail;
   if (ok) {
     Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
+    if (t2_ffct && t2pf1.extent_int(0) > 0) {   // facebound-1112 step 1
+      Kokkos::deep_copy(DevExeSpace(), t2pf1, t2pf2);
+      t2pf1_ok = t2pf2_ok;
+    }
     if (t2_ike && t2ke1.extent_int(0) > 0) {   // rsglock-1112
       Kokkos::deep_copy(DevExeSpace(), t2ke1, t2ke2);
     }
@@ -2929,6 +3332,26 @@ void RadiationM1::Time2Report() {
   }
   if (t2_k1stiff > 0.0) {
     std::cout << " k1_stiff(s=" << t2_k1stiff << ") cells(rank 0)=" << t2_k1stiff_n;
+  }
+  if (t2_theta > 0.0) {   // facebound-1112
+    Real hc[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+    if (t2th_cnt_d.extent_int(0) == 5) {
+      auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), t2th_cnt_d);
+      for (int q = 0; q < 5; ++q) {hc[q] = h(q);}
+    }
+    std::cout << " stage_theta(th=" << t2_theta << ", rank 0) stage-1 cells=" << t2_th_n1
+              << " sum(1-theta1)=" << t2_th_s1 << " stage-2 cells=" << t2_th_n2
+              << " sum(1-theta2)=" << t2_th_s2 << " re-entered=" << hc[0]
+              << (t2_lbe ? " carried" : " unpaid") << " cells=" << hc[1]
+              << (t2_lbe ? " carried E=" : " unpaid E=") << hc[2] << " gas=" << hc[3]
+              << " |dm|=" << hc[4] << (t2_lbe ? " (local_be)" : "");
+  }
+  if (t2_ffct) {   // facebound-1112 step 1 (global sums)
+    std::cout << " face_fct calls=" << t2_ffct_calls << " skipped(no face flux)="
+              << t2_ffct_nop << " K1 flux from U^n=" << t2_ffct_fill << " limited cells="
+              << t2_ffct_cells << " max rounds="
+              << t2_ffct_rmax << " withheld E x vol=" << t2_ffct_de << " left (Q<=0)="
+              << t2_ffct_left;
   }
   if (vet_col && t2_vcmode != 0) {
     std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :

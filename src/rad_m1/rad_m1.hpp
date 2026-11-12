@@ -2266,6 +2266,66 @@ class RadiationM1 {
   Real t2_xsp_de = 0.0, t2_xsp_cells = 0.0;
   int t2_xsp_calls = 0;
   DvceArray4D<Real> t2kx1, t2kx2, t2lx1, t2lx2;    // K_X and lambda of K1, K2
+  // facebound-1112 <rad_m1>/time2_stage_theta = th (read only when named; absent or 0 =
+  // off, bitwise; rc18_1110/FACEBOUND_LOCALBE_1112.md): a LOCAL, conservative limiter of
+  // the hesdirk2 stage old vectors.  Per active cell the largest theta in [0, 1] with
+  // E + theta dE >= th E and eint(gas + theta d) >= th eint (eint > 0 only) scales the
+  // cell increment (E, gas momentum, gas energy); faces and the stored cell F keep
+  // theirs.
+  // Stage 1: the dropped (1 - theta1) a21 dt K1 re-enters the stage-2 old vector with the
+  // weight of Y1 there (as time2_posfix's compensation).  Stage 2: the dropped part is
+  // added to U^{n+1} in the write-back (after the slope K is formed), as far as it keeps
+  // the cell admissible; the rest is counted as unpaid.  No column moves, no BE.
+  Real t2_theta = 0.0;
+  Real t2_th_n1 = 0.0, t2_th_n2 = 0.0, t2_th_s1 = 0.0, t2_th_s2 = 0.0;
+  int t2_th_calls = 0;
+  DvceArray4D<Real> t2thd;       // (m,k,j,i) 1 - theta1 of the current step's stage 1
+  DvceArray5D<Real> t2thr;       // (m,5,k,j,i) the stage-2 drop (E, m1..3, EN)
+  // <rad_m1>/time2_stage_local_be = true (read only when named; no threshold): theta is
+  // 0 (the local backward-Euler stage start, U_s) in exactly the cells whose old vector
+  // is not admissible (E + dE <= 0 or eint(U_h + d) <= 0) and 1 (bitwise) elsewhere; the
+  // stage-2 drop re-enters only as a whole and only if the new state stays admissible.
+  // What cannot re-enter is CARRIED (t2thc) into the next step's stage-1 increment
+  // (energy and momentum exact over steps; the carry is not in the restart file)
+  bool t2_lbe = false;
+  DvceArray5D<Real> t2thc;       // (m,5,k,j,i) the carried stage-2 drop
+  DvceArray1D<Real> t2th_cnt_d;  // 0 re-entered cells, 1 unpaid cells, 2 unpaid E x vol,
+                                 // 3 unpaid gas energy x vol, 4 unpaid |dm| x vol
+  void Time2StageTheta(int stage, Real dt);
+  // facebound-1112 step 1 <rad_m1>/time2_face_fct = true (read only when named; default
+  // false = bitwise; no threshold): Zalesak positivity limiter on the FACE fluxes of the
+  // explicit stage increment t2inc.  Each stage solve also stores the E transport flux of
+  // its solution per face, t2pf (m,d,k,j,i) = (chat/c) F_applied (the cmem applied flux
+  // fax* where it exists), next to its slope (t2pf2 with K2, t2pf1 with K1, rotated).
+  // The increment's face part is G_f = A_f (c1 t2pf1 + c2 t2pf2); the rest of the cell's
+  // E increment (exchange, enthalpy, metric) is the cell-local remainder, so the split is
+  // exact.  A cell whose old vector E + dE is not > 0 gets R = (1 - 1e-12) Q/P (Q = V E +
+  // V dE + P - I + I(R): what it holds without face transport plus the inflow its donors
+  // still let through, P/I = its out/inflow), a face takes the R of its donor cell,
+  // and the E flux and the face F slope of the increment are scaled by it together on
+  // both sides: energy exact, gas momentum/energy and the conservative2 cell F untouched
+  // (momentum exact).  Rounds until no cell is newly limited (a receiver loses inflow),
+  // R halo-exchanged (MeshBlocks, ranks, cs seams).  Unlimited faces/cells bitwise.  What
+  // is left (Q <= 0, gas eint) goes to time2_stage_local_be / posfix as before.
+  bool t2_ffct = false;
+  DvceArray5D<Real> t2pf1, t2pf2;   // (m,3,k,j,i) (chat/c) F_applied of K1's / K2's solve
+  bool t2pf1_ok = false, t2pf2_ok = false;
+  Real t2_ffct_calls = 0.0, t2_ffct_cells = 0.0, t2_ffct_faces = 0.0, t2_ffct_left = 0.0;
+  Real t2_ffct_rmax = 0.0, t2_ffct_de = 0.0, t2_ffct_nop = 0.0, t2_ffct_fill = 0.0;
+  void Time2FaceFct(int stage, Real c1, Real c2);
+  // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,
+  // nothing written back): where the write-back's realisability clip |F| <= c E comes
+  // from.  fcd_cnt_d (20): in-loop clip of the conservative2 kick (cs2_clip = rad): 0 n,
+  // 1 sum(|u|/|q| - 1), 2 n face mean alone > c E, 3 of those with face mean <= c E^old,
+  // 4 sum |q|/(c E^old), 5 unpaired |u - q|/(c chat) x vol; final clip (cs metric norm):
+  // 6 n, 7 sum(|F|/(c E) - 1), 8 n with the plain norm (the M1_POS_FCLIP rule), 9 n made
+  // by the positivity moves, 10 n made by cons_final, 11 n where pos moves lowered E,
+  // 12 sum (|F| - c E)/(c chat) x vol, 13 n momentum-paired (consrc kick), 14 n face
+  // mean alone > c E (before the moves), 15 n with E < E^old/2;
+  // implicit_realisable_coupling rescale: 16 lag cell-passes (beta.F of E0), 17 their
+  // sum(|F|/cE - 1), 18 write-back drag cell-solves, 19 their sum(|F|/cE - 1)
+  bool impl_fclip_diag = false;
+  DvceArray1D<Real> fcd_cnt_d;
   int impl_am_cs_diag = 0;   // amdef-1019 diagnostic (read only when named): solves to print
   DvceArray5D<Real> amw;
   bool am_vec = false;             // + <hydro>/am_vector: the vector form
