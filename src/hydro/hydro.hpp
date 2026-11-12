@@ -23,6 +23,7 @@
 #include "utils/wb_background.hpp"
 #include "utils/fofc_report.hpp"
 #include "mhd/mhd_tracers.hpp"
+#include "hydro/dual_energy.hpp"
 
 // forward declarations
 class EquationOfState;
@@ -137,6 +138,8 @@ class Hydro {
   mhd::TracerLayout tracers;
   bool floor_tracer = false;
   int ifltr = -1;
+  // duale-1112: <hydro>/dual_energy, floor_pay, fofc_retest, floor_audit
+  fluid::DualEnergy dual;
   Real fltr_margin = 2.0, fltr_fmax = 0.01;
   Real fltr_dm = 0.0, fltr_de = 0.0;
   DvceArray5D<Real> u0;   // conserved variables

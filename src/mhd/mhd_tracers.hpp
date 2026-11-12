@@ -37,13 +37,20 @@ struct TracerLayout {
   int nuser = 0;        // <mhd>/nscalars
   bool xe = false;      // <mhd>/xe_tracer
   bool fl = false;      // <mhd>/floor_tracer
-  int Total() const {return nuser + (xe ? 1 : 0) + (fl ? 1 : 0);}
+  // duale-1112 <blk>/dual_energy: TWO slots after every other scalar (the internal
+  // energy e, specific value e/rho, and the volume tracer 1, specific value 1/rho; see
+  // hydro/dual_energy.hpp).  Resynced from the state by every ConToPrim, so their
+  // restart content is never read; NOT counted in NTracer() (no tracer task, no x1-ghost
+  // rule: the ghosts are resynced by the ConToPrim over the ghost range).
+  bool du = false;
+  int Total() const {return nuser + (xe ? 1 : 0) + (fl ? 1 : 0) + (du ? 2 : 0);}
   int NTracer() const {return (xe ? 1 : 0) + (fl ? 1 : 0);}
   // offsets from nmhd (-1 = off)
   int XeOff() const {return xe ? nuser : -1;}
   int FlOff() const {return fl ? nuser + (xe ? 1 : 0) : -1;}
-  // compact code for globals (bit 0 = xe, bit 1 = floor)
-  int Mask() const {return (xe ? 1 : 0) | (fl ? 2 : 0);}
+  int DuOff() const {return du ? nuser + (xe ? 1 : 0) + (fl ? 1 : 0) : -1;}
+  // compact code for globals (bit 0 = xe, bit 1 = floor, bit 2 = dual energy)
+  int Mask() const {return (xe ? 1 : 0) | (fl ? 2 : 0) | (du ? 4 : 0);}
 };
 
 // a boolean key that is named AND true; nothing is added to the input dump
@@ -60,6 +67,7 @@ inline TracerLayout ReadTracerLayout(ParameterInput *pin,
   }
   t.xe = (blk == "mhd") && NamedTrue(pin, blk, "xe_tracer");
   t.fl = NamedTrue(pin, blk, "floor_tracer");
+  t.du = NamedTrue(pin, blk, "dual_energy");
   return t;
 }
 

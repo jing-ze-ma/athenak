@@ -80,6 +80,8 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
     Real beta_dt = (pdriver->beta[stage-1])*(pmy_pack->pmesh->dt);
 
     int &nhyd_ = nhydro;
+    // duale-1112: under <hydro>/dual_energy the trial state includes the scalars
+    const int ntv_ = nhydro + (dual.on ? nscalars : 0);
     auto &u0_ = u0;
     auto &u1_ = u1;
     auto &utest_ = utest;
@@ -114,7 +116,7 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         // the x2 face area is identically zero, so the pole face contributes nothing
         // here, exactly as in the real update.
         const Real dtodv = beta_dt/vol_(m,k,j,i);
-        for (int n=0; n<nhyd_; ++n) {
+        for (int n=0; n<ntv_; ++n) {
           Real divf = dtodv*(flx1(m,n,k,j,i+1)*ar1_(m,k,j,i+1) -
                              flx1(m,n,k,j,i  )*ar1_(m,k,j,i  ));
           if (multi_d && !drop2) {
@@ -133,7 +135,7 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
       Real dtodx3 = beta_dt/size.d_view(m).dx3;
 
       // Estimate conserved variables
-      for (int n=0; n<nhyd_; ++n) {
+      for (int n=0; n<ntv_; ++n) {
         Real divf = dtodx1*(flx1(m,n,k,j,i+1) - flx1(m,n,k,j,i));
         if (multi_d) {
           divf += dtodx2*(flx2(m,n,k,j+1,i) - flx2(m,n,k,j,i));
@@ -212,6 +214,72 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         }
       }, Kokkos::Sum<int>(nflag_));
       pmy_pack->pmesh->ecounter.nfofc += nflag_;
+    }
+    // duale-1112 <hydro>/fofc_retest (and dual_energy): RE-TEST every flagged trial cell
+    // with the metric-correct internal energy (0.5 m_i v^i on the cubed sphere; the
+    // ConsToPrim test above used the orthonormal m^2/2rho there) and, under dual_energy,
+    // the dual selection of DualEnergy::Post; a cell no floor and no ceiling would touch
+    // is unflagged.  Density-floor and non-finite trial cells stay flagged.
+    if (dual.retest || dual.on) {
+      auto eos_ = peos->eos_data;
+      auto fofcr_ = fofc;
+      auto wtempr_ = wtemp;
+      auto pstr_ = dual.pst;
+      const bool sel_ = dual.on && dual.valid;
+      const Real eta_ = dual.eta;
+      const int iden_ = dual.iden, ivol_ = dual.ivol;
+      const Real vceil_ = eos_.vceil;
+      auto coscr_ = cs_ ? pmy_pack->pcoord->cos_cell : DvceArray3D<Real>("dr_c",1,1,1);
+      const int ni   = (iu - il + 1);
+      const int nji  = (ju - jl + 1)*ni;
+      const int nkji = (ku - kl + 1)*nji;
+      Real nret_ = 0.0, nunf_ = 0.0;
+      Kokkos::parallel_reduce("FOFC-retest",
+      Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+      KOKKOS_LAMBDA(const int &idx, Real &sr, Real &su) {
+        const int m = idx/nkji;
+        const int k = (idx - m*nkji)/nji + kl;
+        const int j = (idx - m*nkji - (k - kl)*nji)/ni + jl;
+        const int i = (idx - m*nkji - (k - kl)*nji - (j - jl)*ni) + il;
+        if (!fofcr_(m,k,j,i)) return;
+        sr += 1.0;
+        const Real d = utest_(m,IDN,k,j,i);
+        const Real m1 = utest_(m,IM1,k,j,i), m2 = utest_(m,IM2,k,j,i);
+        const Real m3 = utest_(m,IM3,k,j,i), et = utest_(m,IEN,k,j,i);
+        if (!Kokkos::isfinite(d) || !Kokkos::isfinite(m1) || !Kokkos::isfinite(m2) ||
+            !Kokkos::isfinite(m3) || !Kokkos::isfinite(et)) return;
+        if (!(d >= eos_.dfloor) || !(d > 0.0)) return;
+        Real ekin;
+        if (cs_) {
+          const Real c = coscr_(m,k,j), det = 1.0 - c*c;
+          ekin = 0.5*(m1*m1/d + m2*(m2 - c*m3)/(d*det) + m3*(m3 - c*m2)/(d*det));
+        } else {
+          ekin = 0.5*(m1*m1 + m2*m2 + m3*m3)/d;
+        }
+        if (vceil_ > 0.0 && 2.0*ekin/d > vceil_*vceil_) return;
+        const Real econs = et - ekin;
+        Real esel = econs;
+        if (sel_ && (!(econs > 0.0) || econs < eta_*et)) {
+          const Real se = utest_(m,iden_,k,j,i), sv = utest_(m,ivol_,k,j,i);
+          if (se > 0.0 && sv > 0.0) {
+            const Real ed = se*exp(pstr_(m,k,j,i)*(sv - 1.0)/se);
+            if (ed > 0.0 && Kokkos::isfinite(ed)) esel = ed;
+          }
+        }
+        if (!(esel > 0.0)) return;
+        Real t, p, g1;
+        bool tcl = false;
+        eos_.TemperaturePressureGamma1(d, esel, wtempr_(m,k,j,i), t, p, g1, tcl);
+        if (!(p >= eos_.pfloor) || !(t >= eos_.tfloor)) return;
+        if (eos_.efloor_as_tfloor && tcl) return;
+        Real etry = esel;
+        if (eos_.ApplyEntropyFloor(d, 1.0/d, etry)) return;
+        fofcr_(m,k,j,i) = false;
+        su += 1.0;
+      }, Kokkos::Sum<Real>(nret_), Kokkos::Sum<Real>(nunf_));
+      pmy_pack->pmesh->ecounter.nfofc -= static_cast<int>(nunf_);
+      dual.hc[fluid::DC_RETEST] += nret_;
+      dual.hc[fluid::DC_UNFLAG] += nunf_;
     }
     // cornerfix-1103: the cube-vertex corner-block cells are never flagged (v3_ only)
     if (v3_) {

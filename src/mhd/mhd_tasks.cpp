@@ -220,6 +220,7 @@ TaskStatus MHD::CopyCons(Driver *pdrive, int stage) {
 //! of conserved variables
 
 TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
+  if (dual.on) dual.armed = true;   // duale-1112: the next ConToPrim follows an update
   if (use_wellbalance_static_reconst_perturb) {
     RemoveWbVar(w0wb,w0);
   }
@@ -835,6 +836,7 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
   if (use_etotgrav) {
     RemoveGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }
+  if (dual.any) dual.Pre(pmy_pack, u0);   // duale-1112
   // remembered across the branch below because the cubed-sphere half of the inversion,
   // which owns the cache on that grid, has to be frozen by the SAME call
   const bool frozen = c2p_freeze_derived;
@@ -868,6 +870,8 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
                                                      0, n1m1, 0, n2m1, 0, n3m1);
     }
   }
+  // duale-1112: dual selection, floor audit / payment record, slot resync
+  if (dual.any) dual.Post(pmy_pack, u0, w0, wder, wtemp, peos->eos_data);
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }

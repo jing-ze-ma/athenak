@@ -220,6 +220,14 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   ixe = tracers.xe ? (nmhd + tracers.XeOff()) : -1;
   floor_tracer = tracers.fl;
   ifltr = tracers.fl ? (nmhd + tracers.FlOff()) : -1;
+  // duale-1112 (hydro/dual_energy.hpp): every key read only when named
+  dual.Read(pin, "mhd", peos->eos_data, nmhd, tracers.DuOff());
+  if (dual.retest) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<mhd>/fofc_retest is not implemented (hydro only)"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (floor_tracer) {
     peos->eos_data.ifltr = ifltr;
     if (pin->DoesParameterExist("mhd","floor_tracer_margin")) {
