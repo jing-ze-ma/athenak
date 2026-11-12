@@ -14170,6 +14170,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
   const bool ebadv = ebc || (dbg_eaudit && ibadv_x1max.extent_int(0) > 0);
   auto bdv_ = ibadv_x1max;
+  // marshak-audit-1112: under dbg_energy_audit the audited advective flux also takes the
+  // implicit_vimp_bc part of the end face, E_f ((1 + D_11) dv_1 + D_1e dv_e) (vbface of
+  // ImplicitVimpBuild at the converged iterate); output only
+  const bool vbcq = dbg_eaudit && ebadv && impl_vimp_bc && impl_bc_advect && vimp_now &&
+                    (iw_vimp >= 0);
+  const int ivdq = vbcq ? (iw_vimp + M1_IV_DV) : 0;
   const bool ghx = impl_ghx;   // marelax-1013 ghost bath (see rad_m1.hpp)
   const Real ghe = impl_ghx_e;
   const int bmn_ = ibm_n;   // littests-1011: boundary beams (imposed x1min flux)
@@ -17197,6 +17203,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (hi && ebadv) {
             const Real ae = iw_(m,M1_IW_ADV,k,j,ic);
             bdv_(m,k,j) = badv ? ((iw_(m,M1_IW_V1,k,j,ic) > 0.0) ? ae*eout : ae*ebh) : 0.0;
+            if (vbcq) {
+              const Real efv = (iw_(m,M1_IW_V1,k,j,ic) > 0.0) ? iw_(m,M1_IW_EP,k,j,ic)
+                                                               : ebh;
+              Real pv = (1.0 + M1DDiag(iw_,vd_,dfull,m,0,k,j,ic))*iw_(m,ivdq,k,j,ic);
+              for (int e = 1; e < 3; ++e) {
+                pv += M1DOffC(iw_,vd_,dfull,m,0,e,k,j,ic)*iw_(m,ivdq+e,k,j,ic);
+              }
+              bdv_(m,k,j) += efv*pv;
+            }
           }
         } else if (bc == M1_IBC_FLUX && lo && ghx) {
           Real ga, gb;   // marelax-1013 ghost bath: the flux the row was built with
