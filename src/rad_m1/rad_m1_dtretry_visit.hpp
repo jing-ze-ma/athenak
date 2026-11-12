@@ -299,6 +299,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("impl_res_dmin", impl_res_dmin);
   v.value("impl_res_rmax", impl_res_rmax);
   v.value("impl_real_couple", impl_real_couple);
+  v.value("impl_cs_e0m", impl_cs_e0m);
   v.value("impl_thin_frz", impl_thin_frz);
   v.view("thin_frz", thin_frz);
   v.value("impl_face_ktn", impl_face_ktn);

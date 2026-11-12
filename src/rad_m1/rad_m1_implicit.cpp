@@ -1870,6 +1870,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_realisable_coupling")) {
     impl_real_couple = pin->GetBoolean("rad_m1","implicit_realisable_coupling");
   }
+  // csmetric-1112 implicit_cs_e0_metric (cubed sphere; read only when named): the work
+  //    array's transverse v and F are FACE-NORMAL components (v.n_xi, v.n_eta) on the
+  //    skew panel basis, n_xi.n_eta = -cos_cell.  Their Euclidean products miss the
+  //    metric G^-1 = [[1, c], [c, 1]]/(1 - c^2) in beta.F, beta^2 and beta.P.beta of
+  //    E0 - E (EQ_AUDIT_1112 #4).  With the key the three are built with it, i.e. with
+  //    the same metric as the work v^a dm_a and the KE of the write-back.
+  if (pin->DoesParameterExist("rad_m1","implicit_cs_e0_metric")) {
+    impl_cs_e0m = pin->GetBoolean("rad_m1","implicit_cs_e0_metric");
+  }
   //  implicit_thin_freeze (m1-picard-aa, 095ca6ee): cells with c dt rho kappa_P below it
   //    at pass 0 keep their start-of-solve opacities for every Picard pass and take the
   //    frozen-opacity gas-T find.  DEFAULT 1e-2 on fresh runs (user 10-04): on the He
@@ -15035,6 +15044,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool rcs = cs_geom;
     auto rccl = pmy_pack->pcoord->cos_cell;
     auto rcsn = pmy_pack->pcoord->sin_cell;
+    const bool e0m = impl_cs_e0m && cs_geom;   // csmetric-1112
     if (!rcp) {
       par_for("m1_impl_lag", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
