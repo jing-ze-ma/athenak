@@ -3059,6 +3059,9 @@ class RadiationM1 {
   Real vgd_xf_st[2] = {0.0, 0.0};                   // live sweeps (1: the latest)
   void RotXfEst(const int ilo, const Real r);
   Real VgdXfRe(const int64_t blk) const;
+  void RotXfPreLean(const Real rg, const Real rs, const int ilo);
+  int64_t vgd_xf_gb[2] = {INT64_MIN, INT64_MIN};   // block, time of the last two G
+  Real vgd_xf_gt[2] = {0.0, 0.0};                   // snapshots (slot 0; 1: the latest)
   void RotXfPre(const Real rx, const int ilo);
   Real VgdXfRx(const int64_t blk) const;
   int64_t vgd_xf_pblk = INT64_MIN;   // the block and time of the previous xf build

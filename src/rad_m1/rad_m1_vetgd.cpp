@@ -6559,7 +6559,18 @@ void RadiationM1::VetGdBuild() {
       Kokkos::deep_copy(vra_bk_tt, tau_ten);
       if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_hr, vgd_hr);}
       if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_q, vcol_q);}
-      RotXfPre(VgdXfRx(blk), ilo);
+      if (vgd_xf_lean && vgd_xf_m > 0) {
+        const Real tn = pmy_pack->pmesh->time;
+        const Real tk = vgd_rot_t0 + static_cast<Real>(blk + 1)*vgd_rot_dt;
+        const Real rg = (vgd_xf_gb[0] == blk && tn > vgd_xf_gt[0]) ?
+                        (tk - tn)/(tn - vgd_xf_gt[0]) : -1.0;
+        const Real rs = (vgd_xf_sb[0] == blk && vgd_xf_sb[1] == blk &&
+                         vgd_xf_st[1] > vgd_xf_st[0]) ?
+                        (tk - tn)/(vgd_xf_st[1] - vgd_xf_st[0]) : -1.0;
+        RotXfPreLean(rg, rs, ilo);
+      } else {
+        RotXfPre(VgdXfRx(blk), ilo);
+      }
     }
     RotAvgDelta(vra_k - 1, ilo);
     if (vgd_xf) {
