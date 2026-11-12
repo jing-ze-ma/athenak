@@ -10478,6 +10478,12 @@ void RadiationM1::EventTotals(Real *v) {
 }
 
 void RadiationM1::ImplicitReport() {
+  if (dbg_opac_clamp && global_variable::my_rank == 0) {   // opclamp-1112
+    std::cout << "<rad_m1> dbg_opac_clamp (all ranks, " << opcl_n[5] << " updates, "
+              << opcl_n[4] << " lookups): log T below the table " << opcl_n[0]
+              << " above " << opcl_n[1] << " | log rho below " << opcl_n[2] << " above "
+              << opcl_n[3] << std::endl;
+  }
   if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
   if ((impl_lin_tolcap > 0.0 || impl_lin_sktrue > 0.0) &&
       global_variable::my_rank == 0) {   // lintol-1109

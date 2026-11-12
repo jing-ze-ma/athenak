@@ -501,6 +501,12 @@ class RadiationM1 {
   // multiplied by f inside the box [x1lo,x1hi] x [x2lo,x2hi] -- a horizontally
   // inhomogeneous absorber that casts a shadow (full-tensor VET test)
   Real dbg_opac_patch, dbg_opac_x1lo, dbg_opac_x1hi, dbg_opac_x2lo, dbg_opac_x2hi;
+  // DIAGNOSTIC <rad_m1>/dbg_opac_clamp (opclamp-1112; read only when named, default off):
+  // per opacity update, the active cells whose (log10 T[K], log10 rho) lookup is below /
+  // above the table's T and rho edges (the Rosseland and Planck tables share one grid, so
+  // the counts hold for both); all-rank sums, printed in the run summary
+  bool dbg_opac_clamp = false;
+  Real opcl_n[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};   // T<, T>, rho<, rho>, lookups, calls
   int vet_dump_every;        // column dump every N calls (0 = the first call only)
   std::string vet_dump;      // column dump file stem ("" = no dump)
   Real vet_time, vet_itime, vet_ncall;  // SC seconds, implicit-solve seconds, calls

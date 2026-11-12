@@ -129,6 +129,46 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
     if (osc) {opac_(m,M1_OP_S,k,j,i) = d*os;}
   });
 
+  // DIAGNOSTIC <rad_m1>/dbg_opac_clamp (opclamp-1112): lookups outside the table grid
+  if (dbg_opac_clamp && otype == M1_OPAC_TABLE) {
+    const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+    const int ks = indcs.ks, ke = indcs.ke;
+    const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+    Real c0 = 0.0, c1 = 0.0, c2 = 0.0, c3 = 0.0;
+    Kokkos::parallel_reduce("m1_opac_clamp",
+    Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &a0, Real &a1, Real &a2, Real &a3) {
+      const int m = idx/nkji;
+      int q = idx - m*nkji;
+      const int k = q/nji + ks;
+      q -= (k - ks)*nji;
+      const int j = q/ni + js;
+      const int i = q - (j - js)*ni + is;
+      const Real d = uh(m,IDN,k,j,i);
+      Real kd = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
+                     SQR(uh(m,IM3,k,j,i)))/fmax(d, 1.0e-300);
+      if (csk) {
+        kd = CsKeMom(uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i), ccl(m,k,j))
+             /fmax(d, 1.0e-300);
+      }
+      Real ei = uh(m,IEN,k,j,i) - kd;
+      if (etg) ei -= d*phicc(m,k,j,i);
+      if (mhd) ei -= emag_(m,k,j,i);
+      const Real t = eos.Temperature(d, fmax(ei, 0.0));
+      const Real x = log10(t*ot.tunit), y = log10(d*ot.dunit);
+      if (!(x > ot.lT(0))) {a0 += 1.0;}
+      if (x > ot.lT(ot.nT-1)) {a1 += 1.0;}
+      if (!(y > ot.lD(0))) {a2 += 1.0;}
+      if (y > ot.lD(ot.nD-1)) {a3 += 1.0;}
+    }, Kokkos::Sum<Real>(c0), Kokkos::Sum<Real>(c1), Kokkos::Sum<Real>(c2),
+       Kokkos::Sum<Real>(c3));
+    Real v[5] = {c0, c1, c2, c3, static_cast<Real>((nmb1 + 1)*nkji)};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, v, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    for (int q = 0; q < 5; ++q) {opcl_n[q] += v[q];}
+    opcl_n[5] += 1.0;
+  }
   // DIAGNOSTIC <rad_m1>/dbg_opac_patch: a horizontally inhomogeneous absorber (the three
   // opacities times f inside a box of x1 x x2, ghost cells included).  Off by default.
   if (dbg_opac_patch != 1.0) {

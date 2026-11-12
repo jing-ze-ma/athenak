@@ -871,6 +871,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // read only when given, so that an input without it writes a byte-identical restart
   dbg_opac_patch = 1.0;
   dbg_opac_x1lo = dbg_opac_x1hi = dbg_opac_x2lo = dbg_opac_x2hi = 0.0;
+  dbg_opac_clamp = pin->DoesParameterExist("rad_m1","dbg_opac_clamp") &&
+                   pin->GetBoolean("rad_m1","dbg_opac_clamp");   // opclamp-1112
   if (pin->DoesParameterExist("rad_m1","dbg_opac_patch")) {
     dbg_opac_patch = pin->GetReal("rad_m1","dbg_opac_patch");
     dbg_opac_x1lo = pin->GetReal("rad_m1","dbg_opac_x1lo");
