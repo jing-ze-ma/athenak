@@ -18511,25 +18511,49 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // on the covariant basis), so that both changes are the solve's own slope x dt
     auto am_ = amw;
     const bool t2sa = t2st, csoka = csok;
-    // amlz-1112 implicit_am_cs_fold = applied: under cmem the write-back's F^old (go*),
-    // the face means of the F_c memory (which already carries the stage increment) + A
-    // E^n, on the covariant basis (rad_m1_impl_wb_kernel.hpp, the gfst || cmw branch)
-    const bool afold = impl_am_fold_ap && impl_hr_cmem && !impl_physflux;
+    // amlz-1112 implicit_am_cs_fold = applied: the write-back's own F^old (go*) in every
+    // configuration.  Where the write-back takes the face means of the face memory (+ A
+    // E^n, covariant; the memory already carries the stage increment) -- cmem without
+    // physflux, and the first solve of the run (gfst) -- so does am_cs; everywhere else
+    // (physflux fc | fa, no cmem) the write-back's F^old is the stored cell F + the stage
+    // increment, which the default kernel below already forms
+    // (rad_m1_impl_wb_kernel.hpp, the gfst || cmw branch)
+    const bool afold = impl_am_fold_ap &&
+                       (gfst || (impl_hr_cmem && !impl_physflux));
     if (afold) {
       auto f0n_ = f0x1n;
+      const bool cmwa = impl_hr_cmem && !impl_physflux;
       par_for("m1_am_cs_pre_fold", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         am_(m,0,k,j,i) = uh(m,IM1,k,j,i);
         am_(m,1,k,j,i) = uh(m,IM2,k,j,i);
         am_(m,2,k,j,i) = uh(m,IM3,k,j,i);
         const Real eo = iw_(m,M1_IW_EN,k,j,i);
-        const Real g1 = 0.5*(f0n_(m,k,j,i) + f0n_(m,k,j,i+1)) + iw_(m,M1_IW_ADV,k,j,i)*eo;
+        Real g1 = 0.5*(f0n_(m,k,j,i) + f0n_(m,k,j,i+1)) + iw_(m,M1_IW_ADV,k,j,i)*eo;
         const Real a = 0.5*(f2nw_(m,k,j,i) + f2nw_(m,k,j+1,i)) + iw_(m,M1_IW_A2,k,j,i)*eo;
         const Real b = 0.5*(f3nw_(m,k,j,i) + f3nw_(m,k+1,j,i)) + iw_(m,M1_IW_A3,k,j,i)*eo;
         const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+        Real g2 = (a + c*b)*si, g3 = (b + c*a)*si;
+        if (t2sa && !cmwa) {   // gfst without cmem: + the stage increment, as the wb
+          if (csoka) {
+            g1 += ciw_(m,0,k,j,i);
+            g2 += ciw_(m,1,k,j,i);
+            g3 += ciw_(m,2,k,j,i);
+          } else {
+            const Real tie = t2i_(m,M1_T2_E,k,j,i);
+            g1 += 0.5*(t2i_(m,M1_T2_F1,k,j,i) + t2i_(m,M1_T2_F1,k,j,i+1))
+                  + iw_(m,M1_IW_ADV,k,j,i)*tie;
+            const Real ta = 0.5*(t2i_(m,M1_T2_F1+1,k,j,i) + t2i_(m,M1_T2_F1+1,k,j+1,i))
+                            + iw_(m,M1_IW_A2,k,j,i)*tie;
+            const Real tb = 0.5*(t2i_(m,M1_T2_F1+2,k,j,i) + t2i_(m,M1_T2_F1+2,k+1,j,i))
+                            + iw_(m,M1_IW_A3,k,j,i)*tie;
+            g2 += (ta + c*tb)*si;
+            g3 += (tb + c*ta)*si;
+          }
+        }
         am_(m,3,k,j,i) = g1;
-        am_(m,4,k,j,i) = (a + c*b)*si;
-        am_(m,5,k,j,i) = (b + c*a)*si;
+        am_(m,4,k,j,i) = g2;
+        am_(m,5,k,j,i) = g3;
       });
     } else {
     par_for("m1_am_cs_pre", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
