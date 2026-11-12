@@ -2253,6 +2253,14 @@ class RadiationM1 {
   int t2_th_calls = 0;
   DvceArray4D<Real> t2thd;       // (m,k,j,i) 1 - theta1 of the current step's stage 1
   DvceArray5D<Real> t2thr;       // (m,5,k,j,i) the stage-2 drop (E, m1..3, EN)
+  // <rad_m1>/time2_stage_local_be = true (read only when named; no threshold): theta is
+  // 0 (the local backward-Euler stage start, U_s) in exactly the cells whose old vector
+  // is not admissible (E + dE <= 0 or eint(U_h + d) <= 0) and 1 (bitwise) elsewhere; the
+  // stage-2 drop re-enters only as a whole and only if the new state stays admissible.
+  // What cannot re-enter is CARRIED (t2thc) into the next step's stage-1 increment
+  // (energy and momentum exact over steps; the carry is not in the restart file)
+  bool t2_lbe = false;
+  DvceArray5D<Real> t2thc;       // (m,5,k,j,i) the carried stage-2 drop
   DvceArray1D<Real> t2th_cnt_d;  // 0 re-entered cells, 1 unpaid cells, 2 unpaid E x vol,
                                  // 3 unpaid gas energy x vol, 4 unpaid |dm| x vol
   void Time2StageTheta(int stage, Real dt);

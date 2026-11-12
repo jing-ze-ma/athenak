@@ -531,10 +531,23 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
                 << "rad (its KE increment is not scaled)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (t2_theta > 0.0) {
-      Kokkos::realloc(t2th_cnt_d, 5);
-      Kokkos::deep_copy(t2th_cnt_d, 0.0);
+  }
+  // facebound-1112 <rad_m1>/time2_stage_local_be (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_stage_local_be") &&
+      pin->GetBoolean("rad_m1", "time2_stage_local_be")) {
+    t2_lbe = true;
+    if (!(t2_theta > 0.0)) {t2_theta = 0.5;}   // enables the path; not read under lbe
+    if (pin->DoesParameterExist("rad_m1", "time2_inc_energy") &&
+        pin->GetString("rad_m1", "time2_inc_energy").compare("rad") == 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_stage_local_be: not with time2_inc_energy"
+                << " = rad (its KE increment is not scaled)" << std::endl;
+      std::exit(EXIT_FAILURE);
     }
+  }
+  if (t2_theta > 0.0) {
+    Kokkos::realloc(t2th_cnt_d, 5);
+    Kokkos::deep_copy(t2th_cnt_d, 0.0);
   }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
     t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
@@ -1435,6 +1448,7 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
       t2thd.extent_int(2) != n2 || t2thd.extent_int(3) != n1) {
     Kokkos::realloc(t2thd, nmb, n3, n2, n1);
     Kokkos::realloc(t2thr, nmb, 5, n3, n2, n1);
+    Kokkos::realloc(t2thc, nmb, 5, n3, n2, n1);   // zero: nothing carried yet
   }
   auto thd_ = t2thd;
   auto thr_ = t2thr;
@@ -1445,6 +1459,18 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
   const Real ccomp = t2_a21*dt*(heun ? 0.5 : t2_w0);
   if (stage == 1) {
     Kokkos::deep_copy(DevExeSpace(), t2thd, 0.0);
+    // the carried drop of earlier steps joins this step's stage-1 increment
+    auto thc_ = t2thc;
+    par_for("m1_t2th_carry", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int n = 0; n < M1_T2_F1; ++n) {
+        const Real c = thc_(m,n,k,j,i);
+        if (c != 0.0) {
+          in_(m,n,k,j,i) += c;
+          thc_(m,n,k,j,i) = 0.0;
+        }
+      }
+    });
   } else {
     Kokkos::deep_copy(DevExeSpace(), t2thr, 0.0);
     const bool pfx = (t2_pfix > 0) && t2_pfix_any && (t2pm.extent_int(0) >= nmb);
@@ -1469,6 +1495,7 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
   const bool hoi_ = impl_hold && (hold_m.extent_int(0) > nmb1);
   auto hmi_ = hold_m;
   const Real th = t2_theta;
+  const bool lbe = t2_lbe;
   const bool one = (stage == 1);
   Real nf = 0.0, sf = 0.0;
   Kokkos::parallel_reduce("m1_t2th", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
@@ -1477,7 +1504,11 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
     if (hoi_ && hmi_(m,k,j,i) > 0.0) return;
     Real t = 1.0;
     const Real es = u0_(m,M1_E,k,j,i), de = in_(m,M1_T2_E,k,j,i);
-    if (es > 0.0 && de < -(1.0 - th)*es) {t = (1.0 - th)*es/(-de);}
+    if (lbe) {
+      if (es > 0.0 && !(es + de > 0.0)) {t = 0.0;}
+    } else if (es > 0.0 && de < -(1.0 - th)*es) {
+      t = (1.0 - th)*es/(-de);
+    }
     if (gon) {
       const Real dd = ug(m,IDN,k,j,i);
       if (dd > 0.0) {
@@ -1499,7 +1530,9 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
         Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
         if (mhd) {egrv += emag_(m,k,j,i);}
         const Real eh = ug(m,IEN,k,j,i) - keh - egrv;
-        if (eh > 0.0) {
+        if (eh > 0.0 && lbe) {
+          if (!(eh + dn - (kep - keh) > 0.0)) {t = 0.0;}
+        } else if (eh > 0.0) {
           // eint(s) = eh + s dn - (s bb + s^2 aa), aa = KE(d), bb = the cross term
           const Real aa = kdd, bb = kep - keh - kdd - dn, cc = (1.0 - th)*eh;
           Real r = 1.0e300;
@@ -3006,8 +3039,9 @@ void RadiationM1::Time2Report() {
     std::cout << " stage_theta(th=" << t2_theta << ", rank 0) stage-1 cells=" << t2_th_n1
               << " sum(1-theta1)=" << t2_th_s1 << " stage-2 cells=" << t2_th_n2
               << " sum(1-theta2)=" << t2_th_s2 << " re-entered=" << hc[0]
-              << " unpaid cells=" << hc[1] << " unpaid E=" << hc[2] << " gas=" << hc[3]
-              << " |dm|=" << hc[4];
+              << (t2_lbe ? " carried" : " unpaid") << " cells=" << hc[1]
+              << (t2_lbe ? " carried E=" : " unpaid E=") << hc[2] << " gas=" << hc[3]
+              << " |dm|=" << hc[4] << (t2_lbe ? " (local_be)" : "");
   }
   if (vet_col && t2_vcmode != 0) {
     std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :

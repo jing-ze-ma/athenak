@@ -1172,7 +1172,7 @@
           // E + th de >= thx E and c (E + th de) >= |F| (where it holds now)
           const Real fz = csw ? M1FluxNormCs(cclw(m,k,j), fp1, fp2, fp3)
                               : sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
-          Real room = (1.0 - thx)*e0;
+          Real room = thlb ? (e0*(1.0 - 1.0e-12)) : ((1.0 - thx)*e0);
           if (fz <= cl*e0) {room = fmin(room, e0 - fz/cl);}
           room = fmax(room, 0.0);
           if (-de > room) {th = room/(-de);}
@@ -1192,7 +1192,7 @@
             // eint(s) = eh + s dn - (s bb + s^2 aa) >= thx eh
             const Real aa = kef(d1, d2, d3);
             const Real bb = kef(p1 + d1, p2 + d2, p3 + d3) - keh - aa - dn;
-            const Real cc = (1.0 - thx)*eh;
+            const Real cc = thlb ? (eh*(1.0 - 1.0e-12)) : ((1.0 - thx)*eh);
             Real r = 1.0e300;
             if (aa > 0.0) {
               const Real sq = sqrt(bb*bb + 4.0*aa*cc);
@@ -1204,6 +1204,7 @@
           }
         }
         th = fmin(fmax(th, 0.0), 1.0);
+        if (thlb) {th = (th < 1.0) ? 0.0 : 1.0;}   // local_be: whole or carried
         u0_(m,M1_E,k,j,i) = e0 + th*de;
         if (gh) {
           uh(m,IM1,k,j,i) += th*d1;
@@ -1221,6 +1222,13 @@
           Kokkos::atomic_add(&thc_(2), r*de*vz);
           Kokkos::atomic_add(&thc_(3), r*dn*vz);
           Kokkos::atomic_add(&thc_(4), r*sqrt(d1*d1 + d2*d2 + d3*d3)*vz);
+          if (thlb) {   // local_be: carried into the next step's stage-1 increment
+            t2thc_(m,0,k,j,i) += r*de;
+            t2thc_(m,1,k,j,i) += r*d1;
+            t2thc_(m,2,k,j,i) += r*d2;
+            t2thc_(m,3,k,j,i) += r*d3;
+            t2thc_(m,4,k,j,i) += r*dn;
+          }
         }
       }
     }
