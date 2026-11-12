@@ -552,6 +552,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     std::exit(EXIT_FAILURE);
   }
   // facebound-1112 <rad_m1>/time2_stage_theta (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "dbg_t2_lbe_dump")) {   // lbedump-1112
+    t2_lbe_dump = pin->GetInteger("rad_m1", "dbg_t2_lbe_dump");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_stage_theta")) {
     t2_theta = pin->GetReal("rad_m1", "time2_stage_theta");
     if (!(t2_theta >= 0.0 && t2_theta < 1.0)) {
@@ -1654,6 +1657,51 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
     sn += 1.0;
     ss += w;
   }, Kokkos::Sum<Real>(nf), Kokkos::Sum<Real>(sf));
+  if (one && t2_lbe_dump > 0) {   // lbedump-1112: the cells this stage took to theta < 1
+    t2_lbe_dump -= 1;
+    auto hthd = Kokkos::create_mirror_view_and_copy(HostMemSpace(), t2thd);
+    auto hug = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ug);
+    auto hu0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), u0_);
+    auto hin = Kokkos::create_mirror_view_and_copy(HostMemSpace(), in_);
+    auto hop = Kokkos::create_mirror_view_and_copy(HostMemSpace(), opac);
+    auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
+    auto hcc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ccl);
+    auto eosh = flf.eos;
+    const int rk = global_variable::my_rank, cy = pmy_pack->pmesh->ncycle;
+    const Real clt = c_light;
+    for (int m = 0; m <= nmb1; ++m) {
+      for (int k = ks; k <= ke; ++k) {
+        for (int j = js; j <= je; ++j) {
+          for (int i = is; i <= ie; ++i) {
+            if (!(hthd(m,k,j,i) > 0.0)) continue;
+            const Real dd = gon ? hug(m,IDN,k,j,i) : 0.0;
+            Real eh = 0.0, tg = 0.0;
+            if (gon && dd > 0.0) {
+              Real ke2 = 0.5*(SQR(hug(m,IM1,k,j,i)) + SQR(hug(m,IM2,k,j,i)) +
+                              SQR(hug(m,IM3,k,j,i)))/dd;
+              if (csk) {
+                ke2 = CsKeMom(hug(m,IM1,k,j,i), hug(m,IM2,k,j,i), hug(m,IM3,k,j,i),
+                              hcc(m,k,j))/dd;
+              }
+              eh = hug(m,IEN,k,j,i) - ke2;
+              tg = (eh > 0.0) ? eosh.Temperature(dd, eh) : 0.0;
+            }
+            const Real dx = hx1(m,i+1) - hx1(m,i);
+            const Real es = hu0(m,M1_E,k,j,i), de = hin(m,M1_T2_E,k,j,i);
+            std::printf("LBEDUMP rank %d cycle %d m %d k %d j %d i %d r %.6e rho %.4e "
+                        "T %.4e "
+                        "eint %.4e dEN %.4e E %.4e dE %.4e tauF_cell %.4e tauP_cell %.4e "
+                        "cdt_kP %.4e cause %s\n", rk, cy, m, k - ks, j - js, i - is,
+                        hx1(m,i), dd, tg, eh, gon ? hin(m,M1_T2_EN,k,j,i) : 0.0, es, de,
+                        hop(m,M1_OP_T,k,j,i)*dx, hop(m,M1_OP_P,k,j,i)*dx,
+                        clt*dt*hop(m,M1_OP_P,k,j,i), (es > 0.0 && !(es + de > 0.0)) ?
+                        "E" : "eint");
+          }
+        }
+      }
+    }
+    std::fflush(stdout);
+  }
   if (one) {
     t2_th_n1 += nf;
     t2_th_s1 += sf;

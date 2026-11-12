@@ -2332,6 +2332,9 @@ class RadiationM1 {
   // What cannot re-enter is CARRIED (t2thc) into the next step's stage-1 increment
   // (energy and momentum exact over steps; the carry is not in the restart file)
   bool t2_lbe = false;
+  // lbedump-1112 DIAGNOSTIC <rad_m1>/dbg_t2_lbe_dump = N (read only when named): for the
+  // first N stage-1 Time2StageTheta calls, one LBEDUMP line per cell with theta < 1
+  int t2_lbe_dump = 0;
   DvceArray5D<Real> t2thc;       // (m,5,k,j,i) the carried stage-2 drop
   DvceArray1D<Real> t2th_cnt_d;  // 0 re-entered cells, 1 unpaid cells, 2 unpaid E x vol,
                                  // 3 unpaid gas energy x vol, 4 unpaid |dm| x vol
