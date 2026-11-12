@@ -1423,9 +1423,9 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
   if (t2thc_rst.extent_int(0) > 0) {
     if (t2thc_rst.extent_int(0) <= nmb && t2thc_rst.extent_int(2) == n3 &&
         t2thc_rst.extent_int(3) == n2 && t2thc_rst.extent_int(4) == n1) {
+      auto AL = Kokkos::ALL;
       Kokkos::deep_copy(Kokkos::subview(t2thc, std::make_pair(0, t2thc_rst.extent_int(0)),
-                                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL),
-                        t2thc_rst);
+                                        AL, AL, AL, AL), t2thc_rst);
     }
     t2thc_rst = DvceArray5D<Real>();
   }
