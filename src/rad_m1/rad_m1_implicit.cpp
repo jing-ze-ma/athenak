@@ -4143,7 +4143,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(fmm_lo, nmb, 2, ncells3, ncells2, ncells1+1);
     Kokkos::realloc(fmm_fh, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(fmm_fh, 0.0);
-    if (trans_on) {
+    // DEBUG/ablation implicit_face_mmat_trans = false (read only when named): x1 only
+    const bool fmtr = !pin->DoesParameterExist("rad_m1","implicit_face_mmat_trans") ||
+                      pin->GetBoolean("rad_m1","implicit_face_mmat_trans");
+    if (trans_on && fmtr) {
       Kokkos::realloc(fmm_t, nmb, 12, ncells3+1, ncells2+1, ncells1);
       Kokkos::deep_copy(fmm_t, 0.0);
     }
