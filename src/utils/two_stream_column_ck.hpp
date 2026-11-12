@@ -748,7 +748,7 @@ inline void CkParFor4(const std::string &name, const bool lw, const int nl, cons
   const int nji  = nj*ni;
   const int nnkji = nn*nk*nj*ni;
   auto pol = Kokkos::Experimental::require(
-      Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nnkji),
+      AthenaRangePolicy<DevExeSpace>(DevExeSpace(), 0, nnkji),
       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
   Kokkos::parallel_for(name, pol, KOKKOS_LAMBDA(const int &idx) {
     int n = (idx)/nkji;

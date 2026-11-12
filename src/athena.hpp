@@ -253,6 +253,9 @@ struct DvceEdgeFld4D {
 // lets the register allocator use up to 256 VGPRs; Kokkos launches 256-thread blocks.
 // par_for has no reductions: the arithmetic and the result are unchanged (bitwise).
 // -DATHENA_HIP_PARFOR_LB=0: the old policy.
+// dhjfast-1112 (d6int-1113): src/CMakeLists.txt sets ATHENA_HIP_PARFOR_LB=1 for the dhj build
+// (PROBLEM=deep_hot_jupiter_rt; TOI-1518b 1 MI300A, apudev 13088323: 45.8 -> 42.2 ms/cycle);
+// the ck CkParFor4 uses the same policy.
 #if defined(KOKKOS_ENABLE_HIP) && !defined(ATHENA_HIP_PARFOR_LB)
 #define ATHENA_HIP_PARFOR_LB 2
 #endif
@@ -330,6 +333,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
 #ifndef ATHENA_LW_LAUNCH_MAX
 #define ATHENA_LW_LAUNCH_MAX 3584
 #endif
+
 
 //------------------------------
 // 4D loop using Kokkos 1D Range

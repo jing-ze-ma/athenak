@@ -315,6 +315,11 @@ if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt")
           pgen/deep_hot_jupiter_rt_diag.cpp
   )
 endif()
+# dhjfast-1112: the 4D par_for / ck CkParFor4 with LaunchBounds<256, 1> on HIP for the dhj
+# build only (athena.hpp ATHENA_HIP_PARFOR_LB; bitwise, 8 % faster on 1 MI300A)
+if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt")
+  target_compile_definitions(athena PRIVATE ATHENA_HIP_PARFOR_LB=1)
+endif()
 # stripbg-1102: the he_star_m1 one-shot restart-time background strip (own file)
 if (${PROBLEM} STREQUAL "he_star_m1")
   target_sources(athena PRIVATE pgen/he_strip_bg.cpp)
