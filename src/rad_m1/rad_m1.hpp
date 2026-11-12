@@ -2269,6 +2269,13 @@ class RadiationM1 {
   // vector is kept.  Needs <hydro>/am_transport (not am_vector).  amvw: 0-2 the
   // withheld L of a cell, 3 its s; amvp_d counters (rad_m1_implicit.cpp m1_am_cs_*)
   int impl_am_dep = 0;
+  // amlz-1112 <rad_m1>/implicit_am_cs_fold = stored | applied (read only when named;
+  // absent or stored = bitwise).  applied: under implicit_hr_cmem (not physflux) the
+  // am_cs old cell F (m1_am_cs_pre) is the SAME vector the conservative write-back uses
+  // as F^old, the face means of the F_c memory + A E^n (rad_m1_impl_wb_kernel.hpp go*),
+  // instead of the stored u0 F + the stage increment.  The memory's redefinition of the
+  // cell F is then not read as a radiation torque error and is not deposited as gas spin.
+  bool impl_am_fold_ap = false;
   DvceArray5D<Real> amvw;
   DvceArray1D<Real> amvp_d;
   // hgfix-1110 <rad_m1>/implicit_clip_kecap = f (read only when named; absent or 0 = off
