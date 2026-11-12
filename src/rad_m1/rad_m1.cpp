@@ -1795,7 +1795,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         }
       }
       // DEBUG (csmetric-1112, read only when named): vet_col_lat_posfix_force = N treats
-      // the first positivity check of cycle N as a trigger (the test of the fallback path)
+      // the first positivity check of cycle N as a trigger (tests the fallback path)
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_posfix_force")) {
         vlat_pf_force = pin->GetInteger("rad_m1","vet_col_lat_posfix_force");
       }
