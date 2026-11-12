@@ -4147,7 +4147,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     const bool fmtr = !pin->DoesParameterExist("rad_m1","implicit_face_mmat_trans") ||
                       pin->GetBoolean("rad_m1","implicit_face_mmat_trans");
     if (trans_on && fmtr) {
-      Kokkos::realloc(fmm_t, nmb, 12, ncells3+1, ncells2+1, ncells1);
+      Kokkos::realloc(fmm_t, nmb, 14, ncells3+1, ncells2+1, ncells1);
       Kokkos::deep_copy(fmm_t, 0.0);
     }
     Kokkos::deep_copy(fmm_lam, 1.0);
@@ -6155,6 +6155,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool v3m1_ = cs_geom && pmy_pack->pmesh->cs_vertex_3cell;   // cornerfix-1103
   // facemmat-1112 stage 2b: the post-solve call stores lam F_H + (1 - lam) F_L
   const bool fmmb = impl_fmm && fmm_tfin && (fmm_t.extent_int(0) > nmb1);
+  // facetr-1112: the lagged off-diagonal / lateral part of every transverse face flux,
+  // -th chat c dt off (lab units; slots 12, 13): it stays unscaled (as on x1), since
+  // the operator form re-adds it in the stencil
+  const bool fmmo = impl_fmm && (fmm_t.extent_int(0) > nmb1);
   auto fmt_ = fmm_t;
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -6166,6 +6170,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     if ((j == js && plo) || (j == je+1 && phi)) {
       f2_(m,k,j,i) = 0.0;
       if (cm) {fa2_(m,k,j,i) = 0.0;}
+      if (fmmo) {fmt_(m,12,k,j,i) = 0.0;}
       return;
     }
     Real dx1 = mbsize.d_view(m).dx1;
@@ -6312,6 +6317,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       }
     }
     f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+    if (fmmo) {fmt_(m,12,k,j,i) = -th*ch*cl*dt*off;}   // facetr-1112
     if (blt) {
       f2_(m,k,j,i) += (cl/ch)*(bw2_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,jm,i)
                                + bw2_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,i));
@@ -6383,13 +6389,15 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       const Real fb = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f
                           - ch*cl*dt*off);
       const Real hh = (pfz ? f2_(m,k,j,i) : fa2_(m,k,j,i)) - fb;
-      const Real fnew = lf*fa2_(m,k,j,i) + (1.0 - lf)*fll;
+      // facetr-1112: the lagged off part (slot 12) unscaled, as in the row
+      const Real fod = fmt_(m,12,k,j,i);
+      const Real fnew = lf*(fa2_(m,k,j,i) - fod) + (1.0 - lf)*fll + fod;
       fa2_(m,k,j,i) = fnew;
       if (cm) {f2_(m,k,j,i) = fnew;}
       if (gcst && !gcft) {
         const Real om = th*(1.0 + ch*dt*ktf);
         gz2_(m,k,j,i) = -(1.0 + ch*dt*ktf)*(lf*hh + (1.0 - lf)*fll)/(cl*ch)
-                        + lf*om*dt*(gr + off)
+                        + lf*om*dt*gr + om*dt*off
                         + (1.0 - lf*om)*(gz2o_(m,k,j,i) + (cs2z ? q2z_(m,k,j,i) : 0.0))
                           /(cl*ch);
       }
@@ -6409,6 +6417,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       if ((k == ks && plo) || (k == ke+1 && phi)) {
         f3_(m,k,j,i) = 0.0;
         if (cm) {fa3_(m,k,j,i) = 0.0;}
+        if (fmmo) {fmt_(m,13,k,j,i) = 0.0;}
         return;
       }
       Real dx1 = mbsize.d_view(m).dx1;
@@ -6541,6 +6550,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       }
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
                          - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+      if (fmmo) {fmt_(m,13,k,j,i) = -th*ch*cl*dt*off;}   // facetr-1112
       if (blt) {
         f3_(m,k,j,i) += (cl/ch)*(bw3_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,km,j,i)
                                  + bw3_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,i));
@@ -6610,13 +6620,14 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         const Real fb = th*(wmem*f3n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f
                           - ch*cl*dt*off);
         const Real hh = (pfz ? f3_(m,k,j,i) : fa3_(m,k,j,i)) - fb;
-        const Real fnew = lf*fa3_(m,k,j,i) + (1.0 - lf)*fll;
+        const Real fod = fmt_(m,13,k,j,i);   // facetr-1112: off part unscaled
+        const Real fnew = lf*(fa3_(m,k,j,i) - fod) + (1.0 - lf)*fll + fod;
         fa3_(m,k,j,i) = fnew;
         if (cm) {f3_(m,k,j,i) = fnew;}
         if (gcst && !gcft) {
           const Real om = th*(1.0 + ch*dt*ktf);
           gz3_(m,k,j,i) = -(1.0 + ch*dt*ktf)*(lf*hh + (1.0 - lf)*fll)/(cl*ch)
-                          + lf*om*dt*(gr + off)
+                          + lf*om*dt*gr + om*dt*off
                           + (1.0 - lf*om)*(gz3o_(m,k,j,i) + (cs2z ? q3z_(m,k,j,i) : 0.0))
                             /(cl*ch);
         }
@@ -6915,7 +6926,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     iw_(m,M1_IW_TRHS,k,j,i) = -unew;
   });
   // facemmat-1112 stage 2b: the transverse faces' row coefficients (M1FmmTransCell)
-  if (impl_fmm && fmm_t.extent_int(0) > nmb1) {
+  if (impl_fmm && !fmm_tfin && fmm_t.extent_int(0) > nmb1) {
     auto ft_ = fmm_t;
     for (int q : {0, 1, 4, 5}) {   // the coefficients; lam (3, 7) persists in a solve
       Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(ft_, Kokkos::ALL, q, Kokkos::ALL,
@@ -6947,6 +6958,27 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                        sph ? blt : lmc, blt, th2_, th3_, bw2_, bw3_);
       }
     });
+    // facetr-1112: the explicit part G = (chat/c)(F_applied - F_off) - Llo E_lo - Lhi
+    // E_hi of THIS iterate's faces (the ones TRHS was just built from), so the lam < 1
+    // corrections of this pass (ImplicitFaceMmatTrans at fmq 0) and the Zalesak b0 use
+    // the same G; the lagged off part stays in the unlimited remainder (as on x1)
+    const Real crt = ch/cl;
+    auto fg2_ = fa2_;
+    par_for("m1_fmm_g2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      ft_(m,2,k,j,i) = crt*(fg2_(m,k,j,i) - ft_(m,12,k,j,i))
+                       - ft_(m,0,k,j,i)*iw_(m,M1_IW_EP,k,j-1,i)
+                       - ft_(m,1,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+    });
+    if (thrd) {
+      auto fg3_ = fa3_;
+      par_for("m1_fmm_g3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        ft_(m,6,k,j,i) = crt*(fg3_(m,k,j,i) - ft_(m,13,k,j,i))
+                         - ft_(m,4,k,j,i)*iw_(m,M1_IW_EP,k-1,j,i)
+                         - ft_(m,5,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+      });
+    }
   }
 }
 
@@ -7787,21 +7819,32 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
   const bool tr3 = tr && trans_x3;
   auto ft_ = fmm_t;
   const int ia = iw_fmm + 3;
-  if (tr) {
-    auto fa2_ = impl_hr_cmem ? fax2 : f0x2;
-    auto fa3_ = (impl_hr_cmem && fax3.extent_int(0) > 0) ? fax3 : f0x3;
-    const Real crt = chat/c_light;
-    par_for("m1_fmm_g2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      ft_(m,2,k,j,i) = crt*fa2_(m,k,j,i) - ft_(m,0,k,j,i)*iw_(m,M1_IW_EP,k,j-1,i)
-                       - ft_(m,1,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
-    });
-    if (tr3) {
-      par_for("m1_fmm_g3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        ft_(m,6,k,j,i) = crt*fa3_(m,k,j,i) - ft_(m,4,k,j,i)*iw_(m,M1_IW_EP,k-1,j,i)
-                         - ft_(m,5,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
-      });
+  // (facetr-1112: G of the transverse faces is built with TRHS, ImplicitTransverseTerms)
+  if (tr && std::getenv("FMM_TDBG") != nullptr) {   // facetr-1112 DEBUG (env only)
+    Real sg[4] = {0.0, 0.0, 0.0, 0.0};
+    par_reduce_flat("m1_fmm_tdbg", 0, nmb1, ks, ke, js, je+1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+      a += fabs(ft_(m,2,k,j,i));
+    }, Kokkos::Sum<Real>(sg[0]));
+    par_reduce_flat("m1_fmm_tdbl", 0, nmb1, ks, ke, js, je+1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+      a += fabs(ft_(m,0,k,j,i)*iw_(m,M1_IW_EP,k,j-1,i));
+    }, Kokkos::Sum<Real>(sg[1]));
+    par_reduce_flat("m1_fmm_tdbn", 0, nmb1, ks, ke, js, je+1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+      if (ft_(m,3,k,j,i) < 1.0) {a += 1.0;}
+    }, Kokkos::Sum<Real>(sg[2]));
+    par_reduce_flat("m1_fmm_tdbo", 0, nmb1, ks, ke, js, je+1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+      a += fabs(ft_(m,12,k,j,i));
+    }, Kokkos::Sum<Real>(sg[3]));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, sg, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "FMM_TDBG pass=" << fmm_pass << " sum|G2|=" << sg[0]
+                << " sum|Llo E|=" << sg[1] << " lam<1 x2 faces (prev)=" << sg[2]
+                << " sum|Foff2|=" << sg[3] << std::endl;
     }
   }
   // b(R) of cell (m,k,j,i) with the current R (slot sr, ghosts valid), and P, b0, I(R)
@@ -7986,6 +8029,12 @@ void RadiationM1::ImplicitFaceMmatTrans(bool bicg, bool first) {
   par_for("m1_fmm_tc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (hoi && hm_(m,k,j,i) > 0.0) {return;}
+    // facetr-1112: a replaced (Dirichlet, M1_IBC_EFIX) row keeps its identity row
+    if (iw_(m,M1_IW_TA,k,j,i) == 0.0 && iw_(m,M1_IW_TC,k,j,i) == 0.0 &&
+        iw_(m,M1_IW_TB,k,j,i) == 1.0 && iw_(m,M1_IW_TR,k,j,i) == iw_(m,M1_IW_EN,k,j,i)) {
+      if (bicg) {for (int q = 0; q < 4; ++q) {iw_(m,ic+q,k,j,i) = 0.0;}}
+      return;
+    }
     Real db = 0.0, dr = 0.0;
     Real dc[4] = {0.0, 0.0, 0.0, 0.0};   // CJP, CJM, CKP, CKM
     for (int d = 0; d < (tr3 ? 2 : 1); ++d) {

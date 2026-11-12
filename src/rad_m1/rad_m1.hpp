@@ -1142,6 +1142,9 @@ class RadiationM1 {
   // included), [3] lam; x3 [4..7]; [8..11] the row's F_L coefficients of a limited
   // face (x2, x3), F_L = chat ((1 + s) E_lo - (1 - s) E_hi)/2 with s the face's reduced
   // flux at E^k.  iw slots iw_fmm+3..+6: dt A/V of the cell's x2+, x2-, x3+, x3- face.
+  // facetr-1112: [12], [13] the lagged off-diagonal / lateral part of the x2 / x3 face
+  // flux (lab units), kept out of G and unscaled (the operator form re-adds it), and G
+  // is built with TRHS (the same iterate) in ImplicitTransverseTerms.
   DvceArray5D<Real> fmm_t;
   bool fmm_tfin = false;   // the post-solve ImplicitTransverseTerms: store the blend
   void ImplicitFaceMmatTrans(bool bicg, bool first);
