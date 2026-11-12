@@ -992,7 +992,7 @@ void M1SphDrrUp(const Real chil, const Real n1l, const Real s2l, const Real chir
 //! (face unchanged).
 //! cmemimpl-1112 implicit_hr_cmem_implicit: the memory part mm (= tw F_c^n) of a face
 //! flux (positive = from the LEFT cell l to the right cell r) as q E'_d + R: q =
-//! mm/max(E^n_d, efl), |q| <= qmax (= c), d = l if mm > 0; R = mm - q E^k_d at the
+//! mm/max(E^n_d, E^k_d, |mm|/qmax, efl), d = l if mm > 0; R = mm - q E^k_d at the
 //! iterate.  Returns q; rr = R, ld = true when the donor of q is l, ro = true when R
 //! leaves the LEFT cell (R > 0): R is an explicit flux, scaled by the Zalesak factor of
 //! the cell it leaves (the donor or, where E^k_d > E^n_d makes R < 0, the receiver).
@@ -1002,9 +1002,14 @@ Real M1CmiFace(const Real mm, const Real enl, const Real enr, const Real epl,
                bool &ro) {
   ld = (mm > 0.0);
   if (mm == 0.0) {rr = 0.0; ro = false; return 0.0;}
-  const Real en = fmax(ld ? enl : enr, efl);
-  const Real q = copysign(fmin(fabs(mm)/en, qmax), mm);
-  rr = mm - q*(ld ? epl : epr);
+  // the reference E of the reduced flux: E^n_d, but never below the iterate E^k_d nor
+  // below |mm|/qmax (so |q| <= qmax without a cap): then q E^k_d <= |mm| and R has the
+  // sign of mm (R = mm (1 - E^k_d/E_ref)): the remainder only ever leaves the donor, a
+  // round-off memory cannot become a c E flux, and R = 0 where E^k_d >= E^n_d
+  const Real ek = ld ? epl : epr;
+  const Real en = fmax(fmax(ld ? enl : enr, ek), fmax(fabs(mm)/qmax, efl));
+  const Real q = mm/en;
+  rr = mm - q*ek;
   ro = (rr > 0.0);
   return q;
 }
