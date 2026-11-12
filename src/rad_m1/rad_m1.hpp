@@ -1930,6 +1930,10 @@ class RadiationM1 {
   DvceArray5D<Real> t2k2;       // (m,M1_T2_NK,k,j,i) the stage-2 slope K2
   DvceArray5D<Real> t2inc;      // (m,M1_T2_NK,k,j,i) old vector - stage start state
   DvceArray4D<Real> t2f1, t2f2, t2f3;  // the face fluxes of U^n (Heun average)
+  // accbook-1113: under implicit_hr_cmem the APPLIED x1 face flux fax1 of U^n (f0x1 is
+  // then the F_c memory); history booking only (ry_per_accretor RyPerRadBook), never
+  // read by the solve
+  DvceArray4D<Real> t2fa1;
   DvceArray5D<Real> ipred2;     // the predictor increment of the stage-2 solve
   bool pred2_ok;
   Real pred2_dt;

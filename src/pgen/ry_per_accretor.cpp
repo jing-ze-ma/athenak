@@ -2008,7 +2008,9 @@ void RyPerRadBook(Mesh *pm) {
     // helper solves whose result is put back; a probe's slope may become K1 (rbk1_)
     auto &idp = pm->mb_indcs;
     const int iep = idp.ie;
-    auto ffp = pm1->f0x1;
+    // accbook-1113: under implicit_hr_cmem the solve applies fax1 (f0x1 = F_c memory)
+    const bool cmp = pm1->impl_hr_cmem && pm1->fax1.extent_int(0) > 0;
+    auto ffp = cmp ? pm1->fax1 : pm1->f0x1;
     const bool hbp = pm1->iebath_hi_col_on && (pm1->ibadv_x1max.extent_int(0) > 0);
     DvceArray3D<Real> bdp;
     if (hbp) {bdp = pm1->ibadv_x1max;}
@@ -2042,8 +2044,14 @@ void RyPerRadBook(Mesh *pm) {
   const int nj = je - js + 1, nk = ke - ks + 1;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &mbbcs = pmbp->pmb->mb_bcs;
-  auto ff = pm1->f0x1;
-  auto fk = pm1->t2f1;
+  // accbook-1113: book the face flux the E update APPLIES.  Under implicit_hr_cmem
+  // (and implicit_physflux, which turns it on) that is fax1 (the write-back's applied
+  // flux), f0x1 being the F_c face memory; the K1 part then reads t2fa1, the applied
+  // flux of U^n kept by Time2FormStage.  Without cmem: f0x1 / t2f1 as before (bitwise).
+  const bool cmb = pm1->impl_hr_cmem && pm1->fax1.extent_int(0) > 0;
+  const bool cmk = cmb && pm1->t2fa1.extent_int(0) == pm1->fax1.extent_int(0);
+  auto ff = cmb ? pm1->fax1 : pm1->f0x1;
+  auto fk = cmk ? pm1->t2fa1 : pm1->t2f1;
   auto k1 = pm1->t2k1;
   const bool hk = (wk != 0.0);
   const bool hbdv = pm1->iebath_hi_col_on;
