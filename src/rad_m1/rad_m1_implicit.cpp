@@ -10826,7 +10826,8 @@ void RadiationM1::ImplicitReport() {
   }
   if (vlat_posfix_lag) {   // csmetric-1112
     std::cout << "<rad_m1> vet_col_lat_posfix = lag: triggers moved to the lagged "
-              << "lateral form " << vlat_nlag << ", dropped after a second trigger " << vlat_nfall
+              << "lateral form " << vlat_nlag << ", dropped after a second trigger "
+              << vlat_nfall
               << std::endl;
   }
   if (impl_vimp) {
