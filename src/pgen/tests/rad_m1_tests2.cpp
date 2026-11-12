@@ -989,6 +989,16 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     }
     const bool gteq = pin->DoesParameterExist("problem","gas_teq") ?
                       pin->GetBoolean("problem","gas_teq") : false;
+    // csmetric-1112 (read only when named): rad_eq_boost = true puts the radiation at the
+    // exact fixed point of the implicit source in the gas_rot flow, with D = I/3:
+    // F0 = 0 -> F = (4/3) v E (covariant on cs), E0 = E (1 - (4/3) beta^2) = arad T^4
+    const bool reqb = pin->DoesParameterExist("problem","rad_eq_boost") &&
+                      pin->GetBoolean("problem","rad_eq_boost");
+    // (the chi(f) closures solve f = beta (1 + chi(f)); VET / eddington take chi = 1/3)
+    const bool rqm1 = reqb && (pmbp->pradm1 != nullptr) && !pmbp->pradm1->eddington &&
+                      !pmbp->pradm1->tau_closure && !pmbp->pradm1->vet_sc;
+    const int rqck = (pmbp->pradm1 != nullptr) ? pmbp->pradm1->chi_kind : 0;
+    auto ccl_ = pmbp->pcoord->cos_cell;
     const Real ara = (pmbp->pradm1 != nullptr) ? pmbp->pradm1->arad : 1.0;
     Real gm1 = ((pmbp->phydro != nullptr) ? pmbp->phydro->peos : pmbp->pmhd->peos)
                ->eos_data.gamma - 1.0;
@@ -1364,6 +1374,34 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       }
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
+      if (reqb) {
+        // csmetric-1112: the moving radiative equilibrium of the cell velocity (gas_rot,
+        // gas_vr, gas_vth), the exact fixed point F0 = 0, E0 = arad T^4 for D = chi(f)
+        // about v (1/3 for eddington / VET closures): f = beta (1 + chi), E = arad T^4 /
+        // ((1 + beta^2) - 2 beta f + beta^2 chi), F = c E f vhat (cs: covariant)
+        const Real dd = uh(m,IDN,k,j,i);
+        const Real w1 = uh(m,IM1,k,j,i)/dd, w2 = uh(m,IM2,k,j,i)/dd;
+        const Real w3 = uh(m,IM3,k,j,i)/dd;
+        Real vq = w1*w1 + w2*w2 + w3*w3;
+        if (csm) {
+          const Real c = ccl_(m,k,j);
+          vq = w1*w1 + (w2*w2 + w3*w3 - 2.0*c*w2*w3)/(1.0 - c*c);
+        }
+        const Real bb = sqrt(vq)/cl;
+        Real ff = (4.0/3.0)*bb, chq = 1.0/3.0;
+        if (rqm1) {
+          for (int it = 0; it < 60; ++it) {
+            chq = radm1::M1Chi(fabs(ff), rqck);
+            ff = bb*(1.0 + chq);
+          }
+        }
+        const Real er = ara*SQR(SQR(tgas))/((1.0 + bb*bb) - 2.0*bb*ff + bb*bb*chq);
+        const Real fs = (bb > 0.0) ? cl*er*ff/(bb*cl) : 0.0;   // F = fs v
+        u0(m,radm1::M1_E,k,j,i) = er;
+        u0(m,radm1::M1_F1,k,j,i) = fs*w1;
+        u0(m,radm1::M1_F2,k,j,i) = fs*w2;
+        u0(m,radm1::M1_F3,k,j,i) = fs*w3;
+      }
     });
     // sp-blend-1008 (read only when named): beam_f = f > 0 makes the shell a radially
     // BEAMED pulse, F_r = f c E on the cells and the face-normal comoving flux of the

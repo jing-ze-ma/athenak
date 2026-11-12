@@ -772,6 +772,14 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("m1_tj",4,&(derived_var));
       out_params.n_derived += 5;
     }
+    if (variable.compare("m1_comov") == 0) {   // csmetric-1112
+      out_params.contains_derived = true;
+      outvars.emplace_back("m1_cf1",0,&(derived_var));
+      outvars.emplace_back("m1_cf2",1,&(derived_var));
+      outvars.emplace_back("m1_cf3",2,&(derived_var));
+      outvars.emplace_back("m1_ce0",3,&(derived_var));
+      out_params.n_derived += 4;
+    }
     if (variable.compare("m1_vet") == 0) {
       out_params.contains_derived = true;
       outvars.emplace_back("m1_fk",0,&(derived_var));

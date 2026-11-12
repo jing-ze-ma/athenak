@@ -21,7 +21,7 @@
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
 
-#define NOUTPUT_CHOICES 170
+#define NOUTPUT_CHOICES 171
 // choices for output variables used in <ouput> blocks in input file
 // TO ADD MORE CHOICES:
 //   - add more strings to array below, change NOUTPUT_CHOICES above appropriately
@@ -112,6 +112,7 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
 
   // grey M1 radiation: the closure's Eddington factor and tensor diagonal (161)
   "m1_vet",
+  "m1_comov",   // csmetric-1112
 
   // grey M1 radiation: the TRANSPORTED face-normal comoving fluxes of the implicit
   // solve (f0x1/f0x2/f0x3), the flux whose face sums are the luminosities (162)

@@ -1372,6 +1372,77 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
+  // csmetric-1112 m1_comov (implicit multi-D solve, sp / cs; diagnostic): the comoving
+  // residuals of the last solve's iterate with the FULL Eddington tensor (uniaxial chi,n
+  // + the lateral / tangential slots wherever the solve has them, M1LatDx), metric
+  // products on the cubed sphere, whatever keys the solve itself uses:
+  //   m1_cf1..3 = (F_a - (v_a + (D v)_a) E)/(c E)  (work-array components)
+  //   m1_ce0 = E0/(arad T^4) - 1,  E0 = (1 + b^2) E - 2 b.F/c + b.D.b E,  T = iterate T
+  if (name.compare("m1_comov") == 0) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto prm = pm->pmb_pack->pradm1;
+    auto iw_ = prm->iw;
+    const bool ok = (prm->transport != radm1::M1_TRANSPORT_EXPLICIT) && prm->trans_on &&
+                    (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radm1::M1_IW_N3);
+    const bool cs = prm->cs_geom;
+    auto ccl = pm->pmb_pack->pcoord->cos_cell;
+    auto vlk = prm->VlatTT();
+    const int c0 = radm1::M1_TT_LAT0, ntt = vlk.extent_int(1);
+    const bool lat = prm->vlat_now && prm->vlat_ready && (ntt > c0 + 3);
+    const bool tan = prm->vlat_ready &&
+                     (cs ? (prm->vgd_cstan && prm->vlat_now && ntt > c0 + 5)
+                         : (prm->vgd_on && prm->vgd_tan && ntt > c0 + 4));
+    const bool usel = ok && prm->sph_geom && (lat || tan);
+    auto cn2 = prm->cs_cn2;
+    auto cn3 = prm->cs_cn3;
+    auto qf = prm->cs_qf;
+    const Real cl = prm->c_light, ar = prm->arad, efl = prm->e_floor;
+    par_for("m1_comov_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real r[4] = {0.0, 0.0, 0.0, 0.0};
+      if (ok) {
+        const Real e = fmax(iw_(m,radm1::M1_IW_EP,k,j,i), efl);
+        const Real f[3] = {iw_(m,radm1::M1_IW_F1,k,j,i), iw_(m,radm1::M1_IW_F2,k,j,i),
+                           iw_(m,radm1::M1_IW_F3,k,j,i)};
+        const Real v[3] = {iw_(m,radm1::M1_IW_V1,k,j,i), iw_(m,radm1::M1_IW_V2,k,j,i),
+                           iw_(m,radm1::M1_IW_V3,k,j,i)};
+        const Real chi = iw_(m,radm1::M1_IW_WCHI,k,j,i);
+        Real n[3] = {iw_(m,radm1::M1_IW_N1,k,j,i), iw_(m,radm1::M1_IW_N2,k,j,i),
+                     iw_(m,radm1::M1_IW_N3,k,j,i)};
+        const Real c = cs ? ccl(m,k,j) : 0.0, is2 = 1.0/(1.0 - c*c);
+        // raise a work-array vector (cs: G^-1 on the face-normal pair)
+        auto up = [&](const Real *x, Real *y) {
+          y[0] = x[0]; y[1] = (x[1] + c*x[2])*is2; y[2] = (x[2] + c*x[1])*is2;
+        };
+        Real nm[3], vr[3];
+        up(n, nm);
+        const Real nn = sqrt(fmax(n[0]*nm[0] + n[1]*nm[1] + n[2]*nm[2], 1.0e-300));
+        for (int q = 0; q < 3; ++q) {n[q] /= nn; nm[q] /= nn;}
+        up(v, vr);
+        const Real pi = 0.5*(1.0 - chi), pa = 0.5*(3.0*chi - 1.0);
+        const Real nv = n[0]*vr[0] + n[1]*vr[1] + n[2]*vr[2];
+        Real dvx[3] = {pi*v[0] + pa*n[0]*nv, pi*v[1] + pa*n[1]*nv, pi*v[2] + pa*n[2]*nv};
+        Real vdv = pi*(v[0]*vr[0] + v[1]*vr[1] + v[2]*vr[2]) + pa*nv*nv;
+        if (usel) {
+          Real o[3];
+          vdv += radm1::M1LatDx(cs, lat, tan, vlk, c0, cn2, cn3, qf, m, k, j, i, v[0],
+                                v[1], v[2], o[0], o[1], o[2]);
+          for (int q = 0; q < 3; ++q) {dvx[q] += o[q];}
+        }
+        for (int q = 0; q < 3; ++q) {r[q] = (f[q] - (v[q] + dvx[q])*e)/(cl*e);}
+        const Real b2 = (v[0]*vr[0] + v[1]*vr[1] + v[2]*vr[2])/(cl*cl);
+        const Real bf = (f[0]*vr[0] + f[1]*vr[1] + f[2]*vr[2])/(cl*cl);
+        const Real e0 = (1.0 + b2)*e - 2.0*bf + vdv*e/(cl*cl);
+        const Real tp = iw_(m,radm1::M1_IW_TP,k,j,i);
+        r[3] = e0/(ar*tp*tp*tp*tp) - 1.0;
+      }
+      for (int q = 0; q < 4; ++q) {dv(m,i_dv+q,k,j,i) = r[q];}
+    });
+    i_dv += 4;
+  }
+
   // m1_face: the transported face-normal comoving fluxes (basetype_output.cpp)
   if (name.compare("m1_face") == 0) {
     if (derived_var.extent(4) <= 1)

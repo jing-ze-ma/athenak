@@ -1493,6 +1493,50 @@ Real M1CsQab(const VT &tt, const int c0, const VQ &qf, const int m, const int k,
   return tt(m,c0+4,k,j,i)*(a1*b1 - a2*b2) + tt(m,c0+5,k,j,i)*(a1*b2 + a2*b1);
 }
 
+//! \fn M1LatDx (csmetric-1112 implicit_comoving_lat): the lateral (D_r,lat) and the
+//! tangential trace-free (cs Q; sp a = D_tt - (1 - D_rr)/2, D_tp) part of the VET tensor
+//! applied to a vector x given in the work array's components (cs: FACE-NORMAL, x_a =
+//! x.cn_a; sp: orthonormal r, theta, phi).  o = D_lat x in the same components; returns
+//! the physical x.D_lat.x.  cs: x_t = al cn2 + be cn3 (the Gram system of the two cell
+//! normals), D_lat = r w + w r + Q with w the Cartesian slots c0+1..3, Q about qf
+template <class VT, class VN, class VQ>
+KOKKOS_INLINE_FUNCTION
+Real M1LatDx(const bool cs, const bool lat, const bool tan, const VT &tt, const int c0,
+             const VN &cn2, const VN &cn3, const VQ &qf, const int m, const int k,
+             const int j, const int i, const Real x1, const Real x2, const Real x3,
+             Real &o1, Real &o2, Real &o3) {
+  if (cs) {
+    const Real a2[3] = {cn2(m,j,0), cn2(m,j,1), cn2(m,j,2)};
+    const Real a3[3] = {cn3(m,k,0), cn3(m,k,1), cn3(m,k,2)};
+    const Real g = a2[0]*a3[0] + a2[1]*a3[1] + a2[2]*a3[2];
+    const Real id = 1.0/(1.0 - g*g);
+    const Real al = (x2 - g*x3)*id, be = (x3 - g*x2)*id;
+    Real wn2 = 0.0, wn3 = 0.0, q22 = 0.0, q23 = 0.0, q33 = 0.0;
+    if (lat) {
+      for (int q = 0; q < 3; ++q) {
+        wn2 += tt(m,c0+1+q,k,j,i)*a2[q];
+        wn3 += tt(m,c0+1+q,k,j,i)*a3[q];
+      }
+    }
+    if (tan) {
+      q22 = M1CsQab(tt, c0, qf, m, k, j, i, a2, a2);
+      q23 = M1CsQab(tt, c0, qf, m, k, j, i, a2, a3);
+      q33 = M1CsQab(tt, c0, qf, m, k, j, i, a3, a3);
+    }
+    const Real wx = al*wn2 + be*wn3;
+    o1 = wx;
+    o2 = x1*wn2 + al*q22 + be*q23;
+    o3 = x1*wn3 + al*q23 + be*q33;
+    return 2.0*x1*wx + al*al*q22 + 2.0*al*be*q23 + be*be*q33;
+  }
+  const Real drt = lat ? tt(m,c0+1,k,j,i) : 0.0, drp = lat ? tt(m,c0+2,k,j,i) : 0.0;
+  const Real aa = tan ? tt(m,c0+3,k,j,i) : 0.0, dtp = tan ? tt(m,c0+4,k,j,i) : 0.0;
+  o1 = drt*x2 + drp*x3;
+  o2 = drt*x1 + aa*x2 + dtp*x3;
+  o3 = drp*x1 + dtp*x2 - aa*x3;
+  return 2.0*x1*(drt*x2 + drp*x3) + aa*(x2*x2 - x3*x3) + 2.0*dtp*x2*x3;
+}
+
 // the face's n and t: an x2 face (e = 1) t along +x3 from the x3 plane through the face
 // midpoint (its normal cn3(k) is tangential there), an x3 face (e = 2) t along +x2
 template <class G>
