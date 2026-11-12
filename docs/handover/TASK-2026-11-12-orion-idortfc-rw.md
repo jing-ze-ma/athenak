@@ -1,5 +1,17 @@
 # TASK 2026-11-12 viper -> Orion: IDORT linear-wave grid at amp 1e-6 with the FINAL candidate FC, arms FINAL and FC (CPU)
 
+**UPDATE (11-12, supersedes the binary/arms below; same lists, drivers, analyzers, return format):** 7bc19d109 (cmem v1) is
+defective, do not run it. There are now TWO FC candidates, each on its own binary (both MPI ON, run as singletons):
+- **FC-cmem** on cmemimpl-1112 **aea1cae35** (cmem v2): worktree wt_fcc, binary wt_fcc/build_none/src/athena; arms FINAL and FC
+  exactly as below (`implicit_hr_cmem_implicit=true implicit_cs2_wbsolve=true` on top of X1). Run dirs runs_c4cFINAL_* / runs_c4cFC_*.
+- **FC-fmm** on facemmat-trans-1112 **c6e42d5f1** (face M-matrix, no cmem_implicit; the two keys FATAL together in the cmem code):
+  worktree wt_fcm, arms FINAL and FCM = FINAL + `rm_implicit_hr_cmem_fainit=true rm_time2_stage_local_be=true rm_time2_face_fct=true
+  rm_time2_k1_redist=0 rm_implicit_face_mmat=true rm_implicit_cs2_wbsolve=true`. Run dirs runs_c4mFINAL_* / runs_c4mFCM_*.
+Build each as below with the sha replaced (aea1cae35 / c6e42d5f1). Run the FC-cmem set first, then FC-fmm. Report per binary:
+cmp FC vs FINAL and FCM vs FINAL (cmp_wbs.py + the analyzers through view dirs as below), plus FINAL(aea1cae35) vs FINAL(c6e42d5f1)
+per case (max |dev|, should be round-off), and flag cells as below for both FC and FCM.
+
+
 **Supersedes TASK-2026-11-12-orion-idortx1-rw (05e5a07c9).** USER 11-12: the IDORT suite runs the FINAL method candidate FC,
 not X1. Your X1 grid (NOTE 3ac548804: 360/360, X1 keys inert, max dev 6e-6) stands as the X1 record; this TASK repeats the
 same grid with FC. Same lists, drivers, analyzers and return format as 05e5a07c9; only the binary, the worktree, the run
