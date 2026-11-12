@@ -89,7 +89,9 @@ struct DualEnergy {
 };
 
 //! floor_pay = rad: pay `payv` of the fluid from E_rad (slot ie of urad) of the same
-//! cell, active cells; ch_cl = chat/c; efl = e_floor.  Resets payv.
+//! cell (every cell, ghosts mirror their neighbour); ch_cl = chat/c; efl = e_floor.
+//! Called ONCE PER STEP by the Driver after every radiation stage (so no RK / time2
+//! register of the radiation re-weights or drops the payment); resets payv.
 void DualPayFromRad(MeshBlockPack *pp, DualEnergy &de, DvceArray5D<Real> &urad,
                     const int ie, const Real ch_cl, const Real efl);
 

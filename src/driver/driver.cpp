@@ -900,6 +900,19 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       }
       if (pm1 != nullptr) {pm1->EbndAccept(pmesh->dt, m1t2 && !m1t2fail);}
       eint_ledger::Commit(pmesh);   // floorheat-1029 (no-op unless on)
+      // duale-1112 <hydro|mhd>/floor_pay = rad: the energy this step's fluid floors and
+      // dual selection created is taken from E_rad of the same cell, once, after every
+      // radiation stage (hydro/dual_energy.hpp)
+      if (pm1 != nullptr) {
+        auto *ph = pmesh->pmb_pack->phydro;
+        auto *pmh = pmesh->pmb_pack->pmhd;
+        fluid::DualEnergy *pde = (ph != nullptr && ph->dual.pay) ? &(ph->dual) :
+            ((pmh != nullptr && pmh->dual.pay) ? &(pmh->dual) : nullptr);
+        if (pde != nullptr) {
+          fluid::DualPayFromRad(pmesh->pmb_pack, *pde, pm1->u0, radm1::M1_E,
+                                pm1->chat/pm1->c_light, pm1->e_floor);
+        }
+      }
       if (t2kind == 1) {
         pm1->Time2AutoBeEnd(1, t2sec(t2w0, t2wf), t2sec(t2wf, t2we), t2wp);
       } else if (t2kind >= 0) {

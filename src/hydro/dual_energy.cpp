@@ -222,8 +222,11 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
           if (tmax_ > 0.0 && efin > eos_.EnergyFromTemperature(d, tmax_)) s11 += 1.0;
           if (dsel && tfl_ > 0.0 && esel < eos_.EnergyFromTemperature(d, tfl_)) s9 += 1.0;
         }
-        if (pay_) payv_(m,k,j,i) += efin - econs;
       }
+      // every cell, ghosts included: a ghost holds its neighbour's state and makes the
+      // same selection and floors, so its payment mirrors the neighbour's (the radiation
+      // ghosts then stay consistent without another exchange)
+      if (pay_) payv_(m,k,j,i) += efin - econs;
     } else if (act) {
       s8 += 1.0;
     }
@@ -297,8 +300,10 @@ void DualPayFromRad(MeshBlockPack *pp, DualEnergy &de, DvceArray5D<Real> &urad,
                     const int ie, const Real ch_cl, const Real efl) {
   if (!de.pay || !de.init) return;
   auto &indcs = pp->pmesh->mb_indcs;
-  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  const int ni = indcs.nx1, nj = indcs.nx2, nk = indcs.nx3;
+  const int is = indcs.is, ie_ = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int ni = de.payv.extent_int(3), nj = de.payv.extent_int(2);
+  const int nk = de.payv.extent_int(1);
   const int nmb = pp->nmb_thispack;
   const bool curv = pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar;
   auto vol_ = curv ? pp->pcoord->volume : DvceArray4D<Real>("duale_v", 1, 1, 1, 1);
@@ -309,25 +314,27 @@ void DualPayFromRad(MeshBlockPack *pp, DualEnergy &de, DvceArray5D<Real> &urad,
   Kokkos::parallel_reduce("duale_pay", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int &idx, Real &sp, Real &su, Real &sn, Real &sg) {
     const int m = idx/nkji;
-    const int k = (idx - m*nkji)/nji + ks;
-    const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
-    const int i = (idx - m*nkji - (k - ks)*nji - (j - js)*ni) + is;
+    const int k = (idx - m*nkji)/nji;
+    const int j = (idx - m*nkji - k*nji)/ni;
+    const int i = idx - m*nkji - k*nji - j*ni;
     const Real need = payv_(m,k,j,i);
     if (need == 0.0) return;
     payv_(m,k,j,i) = 0.0;
+    const bool act = (i >= is && i <= ie_ && j >= js && j <= je && k >= ks && k <= ke);
     const Real vol = curv ? vol_(m,k,j,i)
                           : size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
-    sn += 1.0;
     const Real er = urad(m,ie,k,j,i);
+    const Real fa = act ? 1.0 : 0.0;
+    if (act) sn += 1.0;
     if (need > 0.0) {
       const Real want = ch_cl*need;                   // radiation units
       const Real take = fmin(want, fmax(er - efl, 0.0));
       urad(m,ie,k,j,i) = er - take;
-      sp += (take/ch_cl)*vol;
-      su += ((want - take)/ch_cl)*vol;
+      sp += fa*(take/ch_cl)*vol;
+      su += fa*((want - take)/ch_cl)*vol;
     } else {
       urad(m,ie,k,j,i) = er - ch_cl*need;
-      sg += (-need)*vol;
+      sg += fa*(-need)*vol;
     }
   }, Kokkos::Sum<Real>(paid), Kokkos::Sum<Real>(unpaid), Kokkos::Sum<Real>(npay),
      Kokkos::Sum<Real>(given));
