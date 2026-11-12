@@ -6577,9 +6577,12 @@ void RadiationM1::VetGdBuild() {
       const Mesh *pm = pmy_pack->pmesh;
       const Real tb = vgd_rot_t0 + static_cast<Real>(blk)*vgd_rot_dt;
       const int jn = static_cast<int>(std::floor((pm->time - tb)/vgd_rot_dt*vgd_xf_m));
-      const bool pen = pm->time + 2.0*pm->dt >= tb + vgd_rot_dt - 1.0e-9*vgd_rot_dt;
+      // (vet_gd_rotate_xfade_lean: only the part starts and the last build)
+      const Real npen = vgd_xf_lean ? 1.0 : 2.0;
+      const bool pen = pm->time + npen*pm->dt >= tb + vgd_rot_dt - 1.0e-9*vgd_rot_dt;
       if (blk != vgd_xf_sblk) {vgd_xf_sn = 0;}
-      sw = (blk != vgd_xf_sblk) || (jn > vgd_xf_sj) || pen || (vgd_xf_sn < 2);
+      sw = (blk != vgd_xf_sblk) || (jn > vgd_xf_sj) || pen ||
+           (vgd_xf_sn < 2 && !vgd_xf_lean);
       if (sw) {
         vgd_xf_sblk = blk;
         vgd_xf_sj = jn;
