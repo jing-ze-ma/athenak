@@ -3990,10 +3990,6 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         ImplFatal("<rad_m1>/implicit_hr_cmem_implicit: not with implicit_pos_transport = "
                   "upwind (both rewrite the x1 memory term)");
       }
-      if (pin->DoesParameterExist("rad_m1","implicit_face_mmat") &&
-          pin->GetBoolean("rad_m1","implicit_face_mmat")) {
-        ImplFatal("<rad_m1>/implicit_hr_cmem_implicit: not with implicit_face_mmat");
-      }
       cmi_cnt = DvceArray1D<Real>("m1_cmi_cnt", 3);
       Kokkos::deep_copy(cmi_cnt, 0.0);
       auto cch = Kokkos::create_mirror_view(cmi_cnt);
@@ -16767,14 +16763,26 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         cc += nu*ifw_(m,M1_IFW_HCR,k,j,i+1);
         rr -= nu*ifw_(m,M1_IFW_DG,k,j,i+1);
         if (fmm_) {   // facemmat-1112: the explicit flux G; lam < 1 blends in F_L
-          const Real gx = cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f)
-                          + ifw_(m,M1_IFW_DG,k,j,i+1);
+          // combo-cmfm-1112: with implicit_hr_cmem_implicit the memory part is q E'_d (in
+          // the implicit F_H part) + R (in G): the one limiter scales G_nonmem + R
+          Real cq = 0.0, cqr = 0.0; bool cld = false, cro = false;
+          if (cmi) {
+            cq = M1CmiFace(om*th*f0n_(m,k,j,i+1), iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j,ip),
+                           iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,ip), pte_, cl, cqr,
+                           cld, cro);
+          }
+          (void) cro;
+          const Real gx = cmi ? (cr*(cqr - om*th*ch*dt*vf*g0f) + ifw_(m,M1_IFW_DG,k,j,i+1))
+                          : (cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f)
+                             + ifw_(m,M1_IFW_DG,k,j,i+1));
           fmg_(m,k,j,i+1) = gx;
           const Real lf = fml_(m,k,j,i+1);
           if (lf < 1.0) {
             const Real w = 1.0 - lf;
-            bb += w*nu*(fmo_(m,0,k,j,i+1) - df*wi - ifw_(m,M1_IFW_HCL,k,j,i+1));
-            cc += w*nu*(fmo_(m,1,k,j,i+1) + df*wp - ifw_(m,M1_IFW_HCR,k,j,i+1));
+            bb += w*nu*(fmo_(m,0,k,j,i+1) - df*wi - ifw_(m,M1_IFW_HCL,k,j,i+1)
+                        - (cld ? cr*cq : 0.0));
+            cc += w*nu*(fmo_(m,1,k,j,i+1) + df*wp - ifw_(m,M1_IFW_HCR,k,j,i+1)
+                        - (cld ? 0.0 : cr*cq));
             rr += w*nu*gx;
           }
         }
@@ -16875,14 +16883,26 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         bb -= nu*ifw_(m,M1_IFW_HCR,k,j,i);
         rr += nu*ifw_(m,M1_IFW_DG,k,j,i);
         if (fmm_) {   // facemmat-1112 (as at face i+1/2)
-          const Real gx = cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f)
-                          + ifw_(m,M1_IFW_DG,k,j,i);
+          // combo-cmfm-1112: with implicit_hr_cmem_implicit the memory part is q E'_d (in
+          // the implicit F_H part) + R (in G): the one limiter scales G_nonmem + R
+          Real cq = 0.0, cqr = 0.0; bool cld = false, cro = false;
+          if (cmi) {
+            cq = M1CmiFace(om*th*f0n_(m,k,j,i), iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,i),
+                           iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,i), pte_, cl, cqr,
+                           cld, cro);
+          }
+          (void) cro;
+          const Real gx = cmi ? (cr*(cqr - om*th*ch*dt*vf*g0f) + ifw_(m,M1_IFW_DG,k,j,i))
+                          : (cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f)
+                             + ifw_(m,M1_IFW_DG,k,j,i));
           if (i == is) {fmg_(m,k,j,i) = gx;}
           const Real lf = fml_(m,k,j,i);
           if (lf < 1.0) {
             const Real w = 1.0 - lf;
-            aa += w*nu*(df*wm + ifw_(m,M1_IFW_HCL,k,j,i) - fmo_(m,0,k,j,i));
-            bb += w*nu*(ifw_(m,M1_IFW_HCR,k,j,i) - df*wi - fmo_(m,1,k,j,i));
+            aa += w*nu*(df*wm + ifw_(m,M1_IFW_HCL,k,j,i) - fmo_(m,0,k,j,i)
+                        + (cld ? cr*cq : 0.0));
+            bb += w*nu*(ifw_(m,M1_IFW_HCR,k,j,i) - df*wi - fmo_(m,1,k,j,i)
+                        + (cld ? 0.0 : cr*cq));
             rr -= w*nu*gx;
           }
         }
@@ -17080,14 +17100,24 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (fmm_) {   // facemmat-1112 (the Cartesian face i+1/2, sp areas)
             const Real hl = aphll ? ifw_(m,M1_IFW_HCL,k,j,i+1) : 0.0;
             const Real hr = aphll ? ifw_(m,M1_IFW_HCR,k,j,i+1) : 0.0;
-            const Real gx = cr*tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f)
+            // combo-cmfm-1112: with implicit_hr_cmem_implicit the memory part is q E'_d (in
+            // the implicit F_H part) + R (in G): the one limiter scales G_nonmem + R
+            Real cq = 0.0, cqr = 0.0; bool cld = false, cro = false;
+            if (cmi) {
+              cq = M1CmiFace(tw*f0n_(m,k,j,i+1), iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j,ip),
+                             iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,ip), pte_, cl, cqr,
+                             cld, cro);
+            }
+            (void) cro;
+            const Real gx = (cmi ? cr*(cqr - tw*ch*dt*vf*g0f)
+                                 : cr*tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f))
                             + (aphll ? ifw_(m,M1_IFW_DG,k,j,i+1) : 0.0);
             fmg_(m,k,j,i+1) = gx;
             const Real lf = fml_(m,k,j,i+1);
             if (lf < 1.0) {
               const Real w = 1.0 - lf;
-              bb += w*nup*(fmo_(m,0,k,j,i+1) - df*wiu - hl);
-              cc += w*nup*(fmo_(m,1,k,j,i+1) + df*wp - hr);
+              bb += w*nup*(fmo_(m,0,k,j,i+1) - df*wiu - hl - (cld ? cr*cq : 0.0));
+              cc += w*nup*(fmo_(m,1,k,j,i+1) + df*wp - hr - (cld ? 0.0 : cr*cq));
               rr += w*nup*gx;
             }
           }
@@ -17368,14 +17398,24 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (fmm_) {   // facemmat-1112 (as at face i+1/2)
             const Real hl = aphll ? ifw_(m,M1_IFW_HCL,k,j,i) : 0.0;
             const Real hr = aphll ? ifw_(m,M1_IFW_HCR,k,j,i) : 0.0;
-            const Real gx = cr*tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f)
+            // combo-cmfm-1112: with implicit_hr_cmem_implicit the memory part is q E'_d (in
+            // the implicit F_H part) + R (in G): the one limiter scales G_nonmem + R
+            Real cq = 0.0, cqr = 0.0; bool cld = false, cro = false;
+            if (cmi) {
+              cq = M1CmiFace(tw*f0n_(m,k,j,i), iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,i),
+                             iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,i), pte_, cl, cqr,
+                             cld, cro);
+            }
+            (void) cro;
+            const Real gx = (cmi ? cr*(cqr - tw*ch*dt*vf*g0f)
+                                 : cr*tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f))
                             + (aphll ? ifw_(m,M1_IFW_DG,k,j,i) : 0.0);
             if (i == is) {fmg_(m,k,j,i) = gx;}
             const Real lf = fml_(m,k,j,i);
             if (lf < 1.0) {
               const Real w = 1.0 - lf;
-              aa += w*num*(df*wm + hl - fmo_(m,0,k,j,i));
-              bb += w*num*(hr - df*wil - fmo_(m,1,k,j,i));
+              aa += w*num*(df*wm + hl - fmo_(m,0,k,j,i) + (cld ? cr*cq : 0.0));
+              bb += w*num*(hr - df*wil - fmo_(m,1,k,j,i) + (cld ? 0.0 : cr*cq));
               rr -= w*num*gx;
             }
           }
@@ -22702,6 +22742,13 @@ void RadiationM1::ImplicitCmiLimit(bool first) {
     Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, iwc, Kokkos::ALL,
                                                      Kokkos::ALL, Kokkos::ALL), 1.0);
   }
+  // combo-cmfm-1112: with implicit_face_mmat the ONE limiter is face_mmat's Zalesak on
+  // the whole explicit face part G = G_nonmem + R (x1 rows: gx; transverse: fmm_t slot
+  // 2/6 with q moved into the face's implicit coefficients): lam stays 1 here
+  if (impl_fmm) {
+    ImplicitCmiTrans(true);
+    return;
+  }
   auto iw_ = iw;
   auto ifw_ = ifw;
   auto f0n_ = f0x1n;
@@ -22836,6 +22883,11 @@ void RadiationM1::ImplicitCmiTrans(bool rows) {
   auto cd3_ = cmd3;
   auto fa2_ = fax2;
   auto fa3_ = fax3;
+  // combo-cmfm-1112: face_mmat's transverse face coefficients (Llo, Lhi: slots 0/1, 4/5)
+  // take q, its explicit part G (slots 2/6) loses q E^k_d (the Picard pass only)
+  const bool fmt = rows && impl_fmm && (fmm_t.extent_int(0) > nmb1);
+  auto ft_ = fmm_t;
+  const Real crt = chat/c_light;
   const bool gz = impl_gas_src_cons && !impl_gas_src_full &&
                   !(impl_physflux && !impl_pf_fa);
   auto gz2_ = gcz2;
@@ -22850,6 +22902,10 @@ void RadiationM1::ImplicitCmiTrans(bool rows) {
     const Real d = -(1.0 - iw_(m,iwc,k,ro ? (j-1) : j,i))*rr;
     cq2_(m,k,j,i) = q;
     cd2_(m,k,j,i) = d;
+    if (fmt && q != 0.0) {
+      ft_(m,ld ? 0 : 1,k,j,i) += crt*q;
+      ft_(m,2,k,j,i) -= crt*q*iw_(m,M1_IW_EP,k,ld ? (j-1) : j,i);
+    }
     if (d != 0.0) {
       fa2_(m,k,j,i) += d;
       if (gz) {
@@ -22868,6 +22924,10 @@ void RadiationM1::ImplicitCmiTrans(bool rows) {
       const Real d = -(1.0 - iw_(m,iwc,ro ? (k-1) : k,j,i))*rr;
       cq3_(m,k,j,i) = q;
       cd3_(m,k,j,i) = d;
+      if (fmt && q != 0.0) {
+        ft_(m,ld ? 4 : 5,k,j,i) += crt*q;
+        ft_(m,6,k,j,i) -= crt*q*iw_(m,M1_IW_EP,ld ? (k-1) : k,j,i);
+      }
       if (d != 0.0) {
         fa3_(m,k,j,i) += d;
         if (gz) {
