@@ -143,6 +143,7 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   const bool sel_ = on && armed && valid;
   const bool rs_ = on, pay_ = pay, edg_ = (report > 0);
   const Real eta_ = eta;
+  const Real wst_ = wst;   // energies are counted and paid with their end-of-step weight
   const int iden_ = iden, ivol_ = ivol;
   auto pre_ = pre;
   auto pst_ = pst;
@@ -209,11 +210,11 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
         if (!(econs > 0.0)) s1 += 1.0;
         if (dsel) {
           s2 += 1.0;
-          s3 += (esel - econs)*vol;
+          s3 += wst_*(esel - econs)*vol;
         }
         if (efin != esel) {
           s4 += 1.0;
-          s5 += (efin - esel)*vol;
+          s5 += wst_*(efin - esel)*vol;
           if (kedom) s10 += 1.0;
         }
         if (edg_) {
@@ -226,7 +227,7 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
       // every cell, ghosts included: a ghost holds its neighbour's state and makes the
       // same selection and floors, so its payment mirrors the neighbour's (the radiation
       // ghosts then stay consistent without another exchange)
-      if (pay_) payv_(m,k,j,i) += efin - econs;
+      if (pay_) payv_(m,k,j,i) += wst_*(efin - econs);
     } else if (act) {
       s8 += 1.0;
     }

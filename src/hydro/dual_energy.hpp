@@ -67,6 +67,7 @@ struct DualEnergy {
   bool valid = false;   // the slots hold a resynced state
   bool init = false;    // arrays allocated
   Real eta = 1.0e-3;
+  Real wst = 1.0;       // end-of-step weight of a change made after the current stage
   int report = 0;       // <blk>/floor_audit
   int last_report = -1;
   int iden = -1, ivol = -1;
