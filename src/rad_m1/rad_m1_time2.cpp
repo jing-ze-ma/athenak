@@ -1547,6 +1547,16 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
     Kokkos::realloc(t2thr, nmb, 5, n3, n2, n1);
     Kokkos::realloc(t2thc, nmb, 5, n3, n2, n1);   // zero: nothing carried yet
   }
+  // rstbit-1112: the restart file's carry (ThcRstUnpack) replaces the zero once
+  if (t2thc_rst.extent_int(0) > 0) {
+    if (t2thc_rst.extent_int(0) <= nmb && t2thc_rst.extent_int(2) == n3 &&
+        t2thc_rst.extent_int(3) == n2 && t2thc_rst.extent_int(4) == n1) {
+      Kokkos::deep_copy(Kokkos::subview(t2thc, std::make_pair(0, t2thc_rst.extent_int(0)),
+                                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL),
+                        t2thc_rst);
+    }
+    t2thc_rst = DvceArray5D<Real>();
+  }
   auto thd_ = t2thd;
   auto thr_ = t2thr;
   auto in_ = t2inc;
@@ -3162,6 +3172,30 @@ int RadiationM1::Time2RstNchWant() {
   return M1_T2_NK + (impl_pred ? np : 0) + (vet_sc ? M1_T2_NVET : 0)
          + ((vet_sc && vsc_every > 1) ? 2*M1_T2_NVET : 0)    // vet_sc_every: D0, D1
          + ((vet_col && t2_vcmode == 4) ? M1_X2_NCH : 0);    // rbfast-1021 extrap2
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn RadiationM1::ThcRst*
+//! \brief rstbit-1112 time2_stage_local_be: the carried stage-2 drop t2thc (5 cell slabs,
+//! kM1ThcRstMagic) to / from the restart file.  Written once t2thc exists (the first
+//! Time2StageTheta); the reader holds it in t2thc_rst until t2thc is allocated.
+
+int RadiationM1::ThcRstNslab() const {
+  return (t2_lbe && t2thc.extent_int(0) >= pmy_pack->nmb_thispack &&
+          t2thc.extent_int(1) == M1_T2_F1) ? M1_T2_F1 : 0;
+}
+
+void RadiationM1::ThcRstPack(DvceArray5D<Real> out, int nmb) {
+  Kokkos::deep_copy(out, Kokkos::subview(t2thc, std::make_pair(0, nmb), Kokkos::ALL,
+                                         Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+}
+
+bool RadiationM1::ThcRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
+  if (!t2_lbe || nsl != M1_T2_F1) {return false;}
+  Kokkos::realloc(t2thc_rst, nmb, nsl, in.extent_int(2), in.extent_int(3),
+                  in.extent_int(4));
+  Kokkos::deep_copy(t2thc_rst, in);
+  return true;
 }
 
 int RadiationM1::Time2RstNch() {

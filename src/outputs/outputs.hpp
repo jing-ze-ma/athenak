@@ -341,6 +341,7 @@ class BaseTypeOutput {
   HostArray5D<Real> outarray_ams;   // cs-open-1018 am_vector spin (+ amk1)
   HostArray5D<Real> outarray_pgs;   // wbtan-rstg-1101 per-cell pgen slabs
   HostArray5D<Real> outarray_fax;   // vkdiag-1111 rad_m1 applied face fluxes
+  HostArray5D<Real> outarray_thc;   // rstbit-1112 rad_m1 time2_stage_local_be carry
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks

@@ -332,6 +332,14 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     pradm1->FaxRstPack(tmp, nmb);
     Kokkos::deep_copy(outarray_fax, tmp);
   }
+  // rstbit-1112 time2_stage_local_be: the carried stage-2 drop (kM1ThcRstMagic)
+  if (pradm1 != nullptr && pradm1->ThcRstNslab() > 0) {
+    const int nf = pradm1->ThcRstNslab();
+    Kokkos::realloc(outarray_thc, nmb, nf, nout3, nout2, nout1);
+    DvceArray5D<Real> tmp("rst-thc", nmb, nf, nout3, nout2, nout1);
+    pradm1->ThcRstPack(tmp, nmb);
+    Kokkos::deep_copy(outarray_thc, tmp);
+  }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
     Kokkos::deep_copy(outarray_force, Kokkos::subview(pturb->force, std::make_pair(0,nmb),
@@ -540,6 +548,13 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   {
     const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(nfax), 0, 0};
     std::memcpy(&(fax_hdr[0]), &(hdr[0]), sizeof(hdr));
+  }
+  // rstbit-1112: the time2_stage_local_be carry, behind even the fax slabs
+  const int nthc = (pradm1 != nullptr) ? pradm1->ThcRstNslab() : 0;
+  char thc_hdr[4*sizeof(std::int32_t)];
+  {
+    const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(nthc), 0, 0};
+    std::memcpy(&(thc_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
   char eint_hdr[2*sizeof(std::int32_t)];
   {
@@ -807,6 +822,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(fax_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    // the time2_stage_local_be carry header, same marked form, behind the fax one
+    if (nthc > 0) {
+      IOWrapperSizeT nb = sizeof(thc_hdr);
+      resfile.Write_any_type(&(radm1::kM1ThcRstMagic[0]), sizeof(radm1::kM1ThcRstMagic),
+                             "byte", single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(thc_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -884,6 +907,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   data_size += static_cast<IOWrapperSizeT>(nams)*nout1*nout2*nout3*sizeof(Real);     // am_vector spin (+ amk1)
   data_size += static_cast<IOWrapperSizeT>(npgs)*nout1*nout2*nout3*sizeof(Real);     // per-cell pgen slabs
   data_size += static_cast<IOWrapperSizeT>(nfax)*nout1*nout2*nout3*sizeof(Real);  // fax*
+  data_size += static_cast<IOWrapperSizeT>(nthc)*nout1*nout2*nout3*sizeof(Real);  // t2thc
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -953,6 +977,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (nfax > 0) {
     step3size += sizeof(radm1::kM1FaxRstMagic) + sizeof(IOWrapperSizeT) + sizeof(fax_hdr);
+  }
+  if (nthc > 0) {
+    step3size += sizeof(radm1::kM1ThcRstMagic) + sizeof(IOWrapperSizeT) + sizeof(thc_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -1483,6 +1510,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   for (int n=0; n<nfax; ++n) {
     write_wtemp(Kokkos::subview(outarray_fax, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "rad_m1 applied face flux");
+  }
+  // and the time2_stage_local_be carry behind them (kM1ThcRstMagic, rstbit-1112)
+  for (int n=0; n<nthc; ++n) {
+    write_wtemp(Kokkos::subview(outarray_thc, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                                Kokkos::ALL), "rad_m1 local_be carry");
   }
 
   // close file, clean up
