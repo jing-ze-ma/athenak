@@ -8043,13 +8043,15 @@ void RadiationM1::ImplicitFaceMmatTrans(bool bicg, bool first) {
       // flux itself (the same number on both sides of a MeshBlock / seam face)
       auto lowo = [&](const int kl, const int jl, const int kh, const int jh,
                       Real &ll, Real &lr) {
+        // facetr-1112: F_L = the face's own E'-implicit part Llo E_lo + Lhi E_hi (the
+        // row's M-matrix diffusion + HCL/HCR, Llo >= 0 >= Lhi): a limited face keeps
+        // it and only its explicit part G is scaled by lam (the Rusanov F_L replaced
+        // the strong implicit transverse diffusion by chat/2 and so lost the dominance
+        // that keeps the cross-derivative operator positive: E' < 0, od fallback)
         const int kf = kh, jf = jh;
-        const Real el = iw_(m,M1_IW_EP,kl,jl,i), er = iw_(m,M1_IW_EP,kh,jh,i);
-        const Real fc = ft_(m,o+2,kf,jf,i) + ft_(m,o,kf,jf,i)*el + ft_(m,o+1,kf,jf,i)*er;
-        const Real em = fmax(fmax(el, er), 0.0);
-        const Real sr = (em > 0.0) ? fmin(fmax(fc/(chl*em), -1.0), 1.0) : 0.0;
-        ll = 0.5*chl*(1.0 + sr);
-        lr = -0.5*chl*(1.0 - sr);
+        (void) kl; (void) jl; (void) chl;
+        ll = ft_(m,o,kf,jf,i);
+        lr = ft_(m,o+1,kf,jf,i);
       };
       // upper face (own = lo side)
       const Real lu = ft_(m,o+3,k+dk,j+dj,i);
