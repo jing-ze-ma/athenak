@@ -12238,6 +12238,22 @@ void RadiationM1::ImplicitF0Init() {
       if (st1) {td_(m,k,j,i) += dd;}
     });
   }
+  // fmflux-1113 implicit_hr_cmem_fm: F_m starts as this F0 (fresh run: F_m = F_c so far)
+  if (impl_cm_fm && fm_init_done) {
+    Kokkos::deep_copy(DevExeSpace(), fm1, f0x1);
+    Kokkos::deep_copy(DevExeSpace(), fm1n, f0x1n);
+    if (t2fm1.extent_int(0) > 0) {Kokkos::deep_copy(DevExeSpace(), t2fm1, t2f1);}
+    if (trans) {
+      Kokkos::deep_copy(DevExeSpace(), fm2, f0x2);
+      Kokkos::deep_copy(DevExeSpace(), fm2n, f0x2n);
+      if (t2fm2.extent_int(0) > 0) {Kokkos::deep_copy(DevExeSpace(), t2fm2, t2f2);}
+      if (thrd) {
+        Kokkos::deep_copy(DevExeSpace(), fm3, f0x3);
+        Kokkos::deep_copy(DevExeSpace(), fm3n, f0x3n);
+        if (t2fm3.extent_int(0) > 0) {Kokkos::deep_copy(DevExeSpace(), t2fm3, t2f3);}
+      }
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -12701,6 +12717,12 @@ void RadiationM1::ImplicitCs2Pass(bool restore) {
   auto f1_ = f0x1n;
   auto f2_ = f0x2n;
   auto f3_ = f0x3n;
+  // fmflux-1113 implicit_hr_cmem_fm: F_m^n takes the same dA shift (its face equation is
+  // the applied one with its own memory)
+  const bool fmo = impl_cm_fm;
+  auto g1_ = fm1n;
+  auto g2_ = fm2n;
+  auto g3_ = fm3n;
   auto q1_ = cs2f1;
   auto q2_ = cs2f2;
   auto q3_ = cs2f3;
@@ -12724,12 +12746,14 @@ void RadiationM1::ImplicitCs2Pass(bool restore) {
       nf = M1FaceAvgX1(iw_(m,cd,k,j,im), iw_(m,cd,k,j,i), cx1f, m, im, i, fwd);
     }
     f1_(m,k,j,i) -= nf - q1_(m,k,j,i);
+    if (fmo) {g1_(m,k,j,i) -= nf - q1_(m,k,j,i);}
     q1_(m,k,j,i) = nf;
   });
   if (cyclic) {
     par_for("m1_cs2_pwrap", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       f1_(m,k,j,ie+1) = f1_(m,k,j,is);
+      if (fmo) {g1_(m,k,j,ie+1) = g1_(m,k,j,is);}
       q1_(m,k,j,ie+1) = q1_(m,k,j,is);
     });
   }
@@ -12739,6 +12763,7 @@ void RadiationM1::ImplicitCs2Pass(bool restore) {
   for (int d = 1; d < 3; ++d) {
     if (d == 2 && !thrd) break;
     auto fd_ = (d == 1) ? f2_ : f3_;
+    auto gd_ = (d == 1) ? g2_ : g3_;
     auto qd_ = (d == 1) ? q2_ : q3_;
     const int jhi = (d == 1) ? je+1 : je, khi = (d == 2) ? ke+1 : ke;
     par_for("m1_cs2_ptr", DevExeSpace(), 0, nmb1, ks, khi, js, jhi, is, ie,
@@ -12758,6 +12783,7 @@ void RadiationM1::ImplicitCs2Pass(bool restore) {
         nf = 0.5*(iw_(m,cd+d,km,jm,i) + iw_(m,cd+d,k,j,i));
       }
       fd_(m,k,j,i) -= nf - qd_(m,k,j,i);
+      if (fmo) {gd_(m,k,j,i) -= nf - qd_(m,k,j,i);}
       qd_(m,k,j,i) = nf;
     });
   }
@@ -19848,15 +19874,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto ifr_ = ifw;
     auto ifl2_ = apl ? ifw2 : ifw;
     auto ifl3_ = apl ? ifw3 : ifw;
-    auto f2c_ = f0x2;
-    auto f3c_ = f0x3;
+    // fmflux-1113: the face momentum flux is F_m (as f0x* without the F_c memory)
+    auto f2c_ = fmw ? fm2 : f0x2;
+    auto f3c_ = fmw ? fm3 : f0x3;
     auto snw_ = csnw;
     const int n1g = pmy_pack->pmesh->mb_indcs.nx1 + 2*pmy_pack->pmesh->mb_indcs.ng;
     DvceArray2D<Real> amdg_("amdg", amdg ? 8 : 1, amdg ? n1g : 1);
     auto uden_ = uh;
-    auto f0np_ = f0x1n;
-    auto f2np_ = f0x2n;
-    auto f3np_ = f0x3n;
+    auto f0np_ = fmw ? fm1n : f0x1n;
+    auto f2np_ = fmw ? fm2n : f0x2n;
+    auto f3np_ = fmw ? fm3n : f0x3n;
     // hgkmom-1110 implicit_am_cs_kecap (rad_m1.hpp): the scale s of a cell's deposit
     // (d2, d3 covariant momentum) with dKE(s) <= f max(e_int, 0); 1 when off
     const Real akc = impl_am_kecap;
