@@ -1,0 +1,365 @@
+From 70f7d7c5ef03c900e171bad1d6f6705c0afb028d Mon Sep 17 00:00:00 2001
+From: Jingze Ma <jingzema0211@gmail.com>
+Date: Thu, 12 Nov 2026 21:13:59 +0100
+Subject: [PATCH 1/2] consaudit-1112: <rad_m1>/dbg_cons_audit (output only):
+ CAUDIT segment budgets of U, M, L_z, P_r (gas + rad) + CAUDITH hydro x1
+ boundary integrals
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/CMakeLists.txt              |   1 +
+ src/pgen/he_star_m1.cpp         |  77 +++++++++++++++
+ src/rad_m1/rad_m1.hpp           |  14 +++
+ src/rad_m1/rad_m1_consaudit.cpp | 161 ++++++++++++++++++++++++++++++++
+ src/rad_m1/rad_m1_implicit.cpp  |   4 +
+ 5 files changed, 257 insertions(+)
+ create mode 100644 src/rad_m1/rad_m1_consaudit.cpp
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 044b672ef..f9b423a7f 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -189,6 +189,7 @@ add_executable(
+         rad_m1/rad_m1_coupling.cpp
+         rad_m1/rad_m1_fluxes.cpp
+         rad_m1/rad_m1_implicit.cpp
++        rad_m1/rad_m1_consaudit.cpp
+         rad_m1/rad_m1_icrad.cpp
+         rad_m1/rad_m1_sph.cpp
+         rad_m1/rad_m1_krylov.cpp
+diff --git a/src/pgen/he_star_m1.cpp b/src/pgen/he_star_m1.cpp
+index 0366449ba..74684926a 100644
+--- a/src/pgen/he_star_m1.cpp
++++ b/src/pgen/he_star_m1.cpp
+@@ -3675,6 +3675,83 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
+     ht[4] = fb[0];
+     ht[5] = fb[1];
+   }
++  // consaudit-1112 (<rad_m1>/dbg_cons_audit, output only): the hydro fluxes of this stage
++  // through the physical x1 faces (x area x bdt): mass, IEN, L_z (r_f x flux of the
++  // momentum).z, the radial momentum; inner (outward +: -F A at is) and outer, combined
++  // over the stages as the rk2 update combines them (stage 1: bdt = dt, gam0 = 0; stage 2:
++  // 1/2 the stage-1 value + bdt F).  Line CAUDITH (rank 0) after each stage; the last of a
++  // cycle is the step's boundary integral.
++  if ((pmbp->pradm1 != nullptr) && pmbp->pradm1->dbg_caudit) {
++    static Real ch_t[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
++    auto flx1 = ph->uflx->x1f;
++    auto &x1fc = pmbp->pcoord->xx1f;
++    auto &x2vc = pmbp->pcoord->x2v;
++    auto &x3vc = pmbp->pcoord->x3v;
++    auto ccl = pmbp->pcoord->cos_cell;
++    auto &msz = pmbp->pmb->mb_size;
++    auto &mpn = pmbp->pmb->mb_panel;
++    auto &mbcs = pmbp->pmb->mb_bcs;
++    const bool csm = pm->use_cubed_sphere;
++    const int nx2 = je - js + 1, nx3 = ke - ks + 1;
++    array_sum::GlobalSum hb;
++    Kokkos::parallel_reduce("hs_caudit_h", Kokkos::RangePolicy<>(DevExeSpace(), 0,
++                            (nmb1 + 1)*nx3*nx2),
++    KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
++      const int m = n/(nx3*nx2);
++      const int k = (n/nx2)%nx3 + ks, j = n%nx2 + js;
++      array_sum::GlobalSum h;
++      for (int r2=0; r2<NREDUCTION_VARIABLES; ++r2) h.the_array[r2] = 0.0;
++      Real rh[3], ta[3], tb[3];
++      Real c = 0.0;
++      if (csm) {
++        const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, msz.d_view(m).x2min,
++                                               msz.d_view(m).x2max);
++        const Real eta = 0.25*M_PI*CellCenterX(k-ks, nx3, msz.d_view(m).x3min,
++                                                msz.d_view(m).x3max);
++        cubed_sphere::PanelToCart(mpn.d_view(m), xi, eta, rh);
++        cubed_sphere::PanelTangents(mpn.d_view(m), xi, eta, ta, tb);
++        c = ccl(m,k,j);
++      } else {
++        const Real th = x2vc(m,j), ph3 = x3vc(m,k);
++        rh[0] = sin(th)*cos(ph3); rh[1] = sin(th)*sin(ph3); rh[2] = cos(th);
++        ta[0] = cos(th)*cos(ph3); ta[1] = cos(th)*sin(ph3); ta[2] = -sin(th);
++        tb[0] = -sin(ph3); tb[1] = cos(ph3); tb[2] = 0.0;
++      }
++      const Real s2 = 1.0 - c*c;
++      for (int q = 0; q < 2; ++q) {
++        const int ib = (q == 0) ? is : (ie + 1);
++        const BoundaryFlag bf = mbcs.d_view(m, (q == 0) ? BoundaryFace::inner_x1
++                                                        : BoundaryFace::outer_x1);
++        if (bf == BoundaryFlag::block || bf == BoundaryFlag::periodic) continue;
++        const Real sa = ((q == 0) ? -bdt : bdt)*area1(m,k,j,ib);
++        const Real a1 = flx1(m,IM1,k,j,ib), b2 = flx1(m,IM2,k,j,ib);
++        const Real b3 = flx1(m,IM3,k,j,ib);
++        const Real a2 = (b2 - c*b3)/s2, a3 = (b3 - c*b2)/s2;
++        const Real p0 = a1*rh[0] + a2*ta[0] + a3*tb[0];
++        const Real p1 = a1*rh[1] + a2*ta[1] + a3*tb[1];
++        const Real rf = x1fc(m,ib);
++        h.the_array[4*q + 0] = sa*flx1(m,IDN,k,j,ib);
++        h.the_array[4*q + 1] = sa*flx1(m,IEN,k,j,ib);
++        h.the_array[4*q + 2] = sa*rf*(rh[0]*p1 - rh[1]*p0);
++        h.the_array[4*q + 3] = sa*a1;
++      }
++      sum += h;
++    }, Kokkos::Sum<array_sum::GlobalSum>(hb));
++    Real fl8[8];
++    for (int q = 0; q < 8; ++q) {fl8[q] = hb.the_array[q];}
++#if MPI_PARALLEL_ENABLED
++    Real g8[8];
++    MPI_Allreduce(fl8, g8, 8, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
++    for (int q = 0; q < 8; ++q) {fl8[q] = g8[q];}
++#endif
++    const bool st1 = (bdt == pm->dt);
++    for (int q = 0; q < 8; ++q) {ch_t[q] = (st1 ? 0.0 : 0.5*ch_t[q]) + fl8[q];}
++    if (global_variable::my_rank == 0) {
++      std::printf("CAUDITH cycle=%d st=%d dt=%.10e in=%.10e,%.10e,%.10e,%.10e "
++                  "out=%.10e,%.10e,%.10e,%.10e\n", pm->ncycle, st1 ? 1 : 2, pm->dt,
++                  ch_t[0], ch_t[1], ch_t[2], ch_t[3], ch_t[4], ch_t[5], ch_t[6], ch_t[7]);
++    }
++  }
+   if (hs_pm_) {
+     // he_gravity = pointmass (bsg-truerepro-1008): the Athena++ point-mass source
+     // (srcterms PointMass): d(rho v_r) = -dt rho GM coord_src1/x1v, coord_src1 =
+diff --git a/src/rad_m1/rad_m1.hpp b/src/rad_m1/rad_m1.hpp
+index b5fb65c2c..4459b7a58 100644
+--- a/src/rad_m1/rad_m1.hpp
++++ b/src/rad_m1/rad_m1.hpp
+@@ -2535,6 +2535,20 @@ class RadiationM1 {
+   Real eaud_pc[4] = {0.0};         // M1_POS_FLR_UN, FLR_DE, GAS_DE, FLRS at the entry
+   Real eaud_pd[4] = {0.0};         // their change over the solve (summed per print)
+   void EAuditMark(int pt);
++  // consaudit-1112 <rad_m1>/dbg_cons_audit (default false, output only; needs
++  // dbg_energy_audit): at every EAuditMark the change since the previous mark of six
++  // all-rank sums over the active cells (x Coordinates volume) is summed per segment:
++  // U = gas IEN + (c/chat) E, M = rho, L_z of the gas (r_c x m).z and of the radiation
++  // (r_c x F/(c chat)).z, the radial momentum m_r and F_r/(c chat); line CAUDIT at mark 5
++  // (segments 0-5 and the discarded attempts D), and CAUDITB: the solve segment (3) and
++  // the fix segments (1, 2, 4, 5) of U, L_z (gas + rad), P_r (gas + rad) in 8 radial bins
++  // (of i) x 3 bands of |cos theta| (< 0.5, < 0.866, rest)
++  bool dbg_caudit = false;
++  bool caud_init = false;
++  DvceArray5D<Real> caud_q;
++  DvceArray1D<Real> caud_bin;
++  Real caud_seg[7][6] = {};
++  void CAuditMark(int pt);
+   // fixbundle-1009 F4: ApplyClosureLimits clips over ACTIVE cells (0 = E raised to
+   // e_floor, 1 = |F| scaled to c E), every stage, and the event-log totals (collective)
+   DvceArray1D<Real> acl_cnt_d;
+diff --git a/src/rad_m1/rad_m1_consaudit.cpp b/src/rad_m1/rad_m1_consaudit.cpp
+new file mode 100644
+index 000000000..550ce1a86
+--- /dev/null
++++ b/src/rad_m1/rad_m1_consaudit.cpp
+@@ -0,0 +1,161 @@
++//========================================================================================
++// AthenaXXX astrophysical plasma code
++// Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
++// Licensed under the 3-clause BSD License (the "LICENSE")
++//========================================================================================
++//! \file rad_m1_consaudit.cpp
++//! \brief consaudit-1112 <rad_m1>/dbg_cons_audit (output only): the energy, L_z and
++//! radial-momentum change of gas + radiation per segment of the M1 chain (rad_m1.hpp).
++//! Reads the state only: a run with the key on is bitwise the run without it.
++
++#include <cmath>
++#include <cstdio>
++
++#include "athena.hpp"
++#include "globals.hpp"
++#include "mesh/mesh.hpp"
++#include "coordinates/coordinates.hpp"
++#include "coordinates/cell_locations.hpp"
++#include "coordinates/cubed_sphere.hpp"
++#include "rad_m1/m1_fluid.hpp"
++#include "rad_m1/rad_m1.hpp"
++#include "rad_m1/rad_m1_implicit.hpp"
++#if MPI_PARALLEL_ENABLED
++#include <mpi.h>
++#endif
++
++namespace radm1 {
++
++//----------------------------------------------------------------------------------------
++//! \fn void RadiationM1::CAuditMark
++//! \brief consaudit-1112: called at the top of EAuditMark(pt).  Per cell
++//!   q = (U, M, L_z,gas, L_z,rad, P_r,gas, P_r,rad) x V,
++//! U = IEN + (c/chat) E, L_z = (r_c x p).z with p the Cartesian vector of the radial +
++//! contravariant tangential components (cs: covariant m, F raised with cos_cell; sp:
++//! orthonormal), radiation momentum F/(c chat).  The change since the previous mark goes to
++//! segment pt (6 = a discarded attempt).  Mark 5 prints CAUDIT and CAUDITB (rank 0) and
++//! restarts the sums.  Collective (every rank calls it at the same points).
++
++void RadiationM1::CAuditMark(int pt) {
++  auto &indcs = pmy_pack->pmesh->mb_indcs;
++  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
++  const int ni = indcs.nx1, nj = indcs.nx2, nk = indcs.nx3;
++  const int nmb = pmy_pack->nmb_thispack;
++  const int n3 = u0.extent_int(2), n2 = u0.extent_int(3), n1 = u0.extent_int(4);
++  if (caud_q.extent_int(0) != nmb) {
++    Kokkos::realloc(caud_q, nmb, 6, n3, n2, n1);
++    caud_init = false;
++  }
++  if (caud_bin.extent_int(0) != 144) {Kokkos::realloc(caud_bin, 144);}
++  FluidRef fl = FluidRef::Get(pmy_pack);
++  if (!fl.on) return;
++  auto uh = fl.u0;
++  auto ur = u0;
++  auto cq = caud_q;
++  auto cb = caud_bin;
++  auto vol = pmy_pack->pcoord->volume;
++  auto x1v = pmy_pack->pcoord->x1v;
++  auto x2v = pmy_pack->pcoord->x2v;
++  auto x3v = pmy_pack->pcoord->x3v;
++  const bool csm = pmy_pack->pmesh->use_cubed_sphere;
++  auto ccell = pmy_pack->pcoord->cos_cell;
++  auto &size = pmy_pack->pmb->mb_size;
++  auto &mbpan = pmy_pack->pmb->mb_panel;
++  const Real ccr = c_light/chat, icc = 1.0/(c_light*chat);
++  const bool init = caud_init;
++  // bin group: 0 the solve, 1 the fix segments, -1 none
++  const int grp = (pt == 3) ? 0 : ((pt == 1 || pt == 2 || pt == 4 || pt == 5) ? 1 : -1);
++  if (!init) {Kokkos::deep_copy(cb, 0.0);}   // later resets: after each print
++  array_sum::GlobalSum s6;
++  Kokkos::parallel_reduce("m1_caudit", Kokkos::RangePolicy<>(DevExeSpace(), 0,
++                          nmb*nk*nj*ni),
++  KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
++    const int m = n/(nk*nj*ni);
++    const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
++    Real rh[3], ta[3], tb[3];
++    Real c = 0.0;
++    if (csm) {
++      const Real xi = 0.25*M_PI*CellCenterX(j-js, nj, size.d_view(m).x2min,
++                                             size.d_view(m).x2max);
++      const Real eta = 0.25*M_PI*CellCenterX(k-ks, nk, size.d_view(m).x3min,
++                                              size.d_view(m).x3max);
++      cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, rh);
++      cubed_sphere::PanelTangents(mbpan.d_view(m), xi, eta, ta, tb);
++      c = ccell(m,k,j);
++    } else {
++      const Real th = x2v(m,j), ph = x3v(m,k);
++      rh[0] = sin(th)*cos(ph); rh[1] = sin(th)*sin(ph); rh[2] = cos(th);
++      ta[0] = cos(th)*cos(ph); ta[1] = cos(th)*sin(ph); ta[2] = -sin(th);
++      tb[0] = -sin(ph); tb[1] = cos(ph); tb[2] = 0.0;
++    }
++    const Real r = x1v(m,i), v = vol(m,k,j,i), s2 = 1.0 - c*c;
++    auto lz = [&](const Real a1, const Real a2c, const Real a3c) {
++      const Real a2 = (a2c - c*a3c)/s2, a3 = (a3c - c*a2c)/s2;   // contravariant
++      const Real p0 = a1*rh[0] + a2*ta[0] + a3*tb[0];
++      const Real p1 = a1*rh[1] + a2*ta[1] + a3*tb[1];
++      return r*(rh[0]*p1 - rh[1]*p0);
++    };
++    Real q[6];
++    q[0] = (uh(m,IEN,k,j,i) + ccr*ur(m,M1_E,k,j,i))*v;
++    q[1] = uh(m,IDN,k,j,i)*v;
++    q[2] = lz(uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i))*v;
++    q[3] = lz(ur(m,M1_F1,k,j,i), ur(m,M1_F2,k,j,i), ur(m,M1_F3,k,j,i))*v*icc;
++    q[4] = uh(m,IM1,k,j,i)*v;
++    q[5] = ur(m,M1_F1,k,j,i)*v*icc;
++    array_sum::GlobalSum h;
++    for (int r2=0; r2<NREDUCTION_VARIABLES; ++r2) h.the_array[r2] = 0.0;
++    if (init) {
++      Real d[6];
++      for (int a=0; a<6; ++a) {
++        d[a] = q[a] - cq(m,a,k,j,i);
++        h.the_array[a] = d[a];
++      }
++      if (grp >= 0) {
++        const int rb = (8*(i - is))/ni;
++        const Real az = fabs(rh[2]);
++        const int lb = (az < 0.5) ? 0 : ((az < 0.8660254037844386) ? 1 : 2);
++        const int b = rb*3 + lb;
++        Kokkos::atomic_add(&cb(grp*72 + b), d[0]);
++        Kokkos::atomic_add(&cb(grp*72 + 24 + b), d[2] + d[3]);
++        Kokkos::atomic_add(&cb(grp*72 + 48 + b), d[4] + d[5]);
++      }
++    }
++    for (int a=0; a<6; ++a) {cq(m,a,k,j,i) = q[a];}
++    sum += h;
++  }, Kokkos::Sum<array_sum::GlobalSum>(s6));
++  const bool was = caud_init;
++  caud_init = true;
++  if (!was) return;
++  Real loc[6];
++  for (int a=0; a<6; ++a) {loc[a] = s6.the_array[a];}
++#if MPI_PARALLEL_ENABLED
++  Real glb[6];
++  MPI_Allreduce(loc, glb, 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
++  for (int a=0; a<6; ++a) {loc[a] = glb[a];}
++#endif
++  const int sg = (pt >= 0 && pt <= 6) ? pt : 0;
++  for (int a=0; a<6; ++a) {caud_seg[sg][a] += loc[a];}
++  if (pt != 5) return;
++  auto hb = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cb);
++  Real bl[144], bg[144];
++  for (int b=0; b<144; ++b) {bl[b] = hb(b); bg[b] = bl[b];}
++#if MPI_PARALLEL_ENABLED
++  MPI_Allreduce(bl, bg, 144, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
++#endif
++  Kokkos::deep_copy(cb, 0.0);
++  if (global_variable::my_rank == 0) {
++    std::printf("CAUDIT cycle=%d t2s=%d dt=%.10e", pmy_pack->pmesh->ncycle, t2_solve,
++                dt_sub);
++    for (int s=0; s<7; ++s) {
++      std::printf(" s%d=%.10e,%.10e,%.10e,%.10e,%.10e,%.10e", s, caud_seg[s][0],
++                  caud_seg[s][1], caud_seg[s][2], caud_seg[s][3], caud_seg[s][4],
++                  caud_seg[s][5]);
++    }
++    std::printf("\nCAUDITB cycle=%d", pmy_pack->pmesh->ncycle);
++    for (int b=0; b<144; ++b) {std::printf(" %.6e", bg[b]);}
++    std::printf("\n");
++  }
++  for (int s=0; s<7; ++s) {for (int a=0; a<6; ++a) {caud_seg[s][a] = 0.0;}}
++}
++
++}  // namespace radm1
+diff --git a/src/rad_m1/rad_m1_implicit.cpp b/src/rad_m1/rad_m1_implicit.cpp
+index 8f7b40e71..b0c37d323 100644
+--- a/src/rad_m1/rad_m1_implicit.cpp
++++ b/src/rad_m1/rad_m1_implicit.cpp
+@@ -1342,6 +1342,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
+                    pin->GetBoolean("rad_m1", "dbg_energy_audit_map");
+   dbg_eaudit = pin->DoesParameterExist("rad_m1", "dbg_energy_audit") &&
+                pin->GetBoolean("rad_m1", "dbg_energy_audit");
++  // consaudit-1112 (rad_m1.hpp, output only)
++  dbg_caudit = dbg_eaudit && pin->DoesParameterExist("rad_m1", "dbg_cons_audit") &&
++               pin->GetBoolean("rad_m1", "dbg_cons_audit");
+   impl_ecnt = pin->GetOrAddInteger("rad_m1","implicit_eos_cache_nt",2);
+   impl_eccheck = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache_check",true);
+   // the check is a MEASUREMENT only (nothing reads igm or ec_emax/ec_tmax but the final
+@@ -13456,6 +13459,7 @@ DvceArray2D<Real> RadiationM1::VtanX2t() {
+ //! it at the same points).
+ 
+ void RadiationM1::EAuditMark(int pt) {
++  if (dbg_caudit) {CAuditMark(pt);}   // consaudit-1112 (output only)
+   auto &indcs = pmy_pack->pmesh->mb_indcs;
+   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+   const int ks = indcs.ks, ke = indcs.ke;
+-- 
+2.47.3
+
+
+From e8a70f4b121991847d43d29cb8671738af702ca5 Mon Sep 17 00:00:00 2001
+From: Jingze Ma <jingzema0211@gmail.com>
+Date: Thu, 12 Nov 2026 21:33:02 +0100
+Subject: [PATCH 2/2] consaudit-1112: comment line to 90 columns (no code
+ change)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/rad_m1/rad_m1_consaudit.cpp | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/rad_m1/rad_m1_consaudit.cpp b/src/rad_m1/rad_m1_consaudit.cpp
+index 550ce1a86..c31cf520d 100644
+--- a/src/rad_m1/rad_m1_consaudit.cpp
++++ b/src/rad_m1/rad_m1_consaudit.cpp
+@@ -32,8 +32,9 @@ namespace radm1 {
+ //!   q = (U, M, L_z,gas, L_z,rad, P_r,gas, P_r,rad) x V,
+ //! U = IEN + (c/chat) E, L_z = (r_c x p).z with p the Cartesian vector of the radial +
+ //! contravariant tangential components (cs: covariant m, F raised with cos_cell; sp:
+-//! orthonormal), radiation momentum F/(c chat).  The change since the previous mark goes to
+-//! segment pt (6 = a discarded attempt).  Mark 5 prints CAUDIT and CAUDITB (rank 0) and
++//! orthonormal), radiation momentum F/(c chat).  The change since the previous mark
++//! goes to segment pt (6 = a discarded attempt).  Mark 5 prints CAUDIT and CAUDITB
++//! (rank 0) and
+ //! restarts the sums.  Collective (every rank calls it at the same points).
+ 
+ void RadiationM1::CAuditMark(int pt) {
+-- 
+2.47.3
+
