@@ -3879,6 +3879,7 @@ class RadiationM1 {
   Real vgd_hx_nmade = 0.0, vgd_hx_nout = 0.0, vgd_hx_nfall = 0.0, vgd_hx_nun = 0.0;
   Real vgd_hx_vmask = 0.0, vgd_hx_vexact = 0.0;   // received values: mask lists, exact
   std::vector<VgdHlEntry> vgd_hxe;         // (2 n1): the exact lists per (pass, shell)
+  std::vector<VgdHlEntry> vgd_hxe_alt;     // fast2nd-1112: the other xfade set's lists
   bool VetGdHxKey(const int e, const int ws) const;   // record e matches the masks' key
   void VetGdHxBuild2(const int e, const int i, const int ws);
   // vgdrot-1011: the exact lists of many shells in a few collectives (VetGdHxBatch);

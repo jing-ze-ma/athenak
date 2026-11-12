@@ -2120,6 +2120,12 @@ void RadiationM1::VgdXfTables(const Real alpha) {
       std::swap(vgd_m3, vgd_tabd.m3);
       std::swap(vgd_w3, vgd_tabd.w3);
     }
+    // fast2nd-1112: the exact halo lists (keyed by the set's angle, generation numbers
+    // unique over both) go with their set, so the two sets of the cross-fade do not
+    // rebuild each other's lists at every build (the same lists: bitwise).  Not on the
+    // cubed sphere (its compact lists have their own per-set slots; the band ring
+    // rewrites these records at every sweep)
+    if (!vgd_csg) {std::swap(vgd_hxe, vgd_hxe_alt);}
   };
   Kokkos::fence();
   if (alpha == vgd_xf_alt && vgd_tabd.dir.extent(0) == vgd_dir.extent(0)) {
