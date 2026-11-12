@@ -13512,8 +13512,11 @@ void RadiationM1::EAuditMark(int pt) {
   // marshak-audit-1112: the gas IEN at the solve entry, for the map's gas/rad split
   if (pt == 2 && dbg_eaudit_map && hy) {
     if (eaud_g2.extent_int(0) != nmb) {Kokkos::realloc(eaud_g2, nmb, n3, n2, n1);}
-    Kokkos::deep_copy(eaud_g2, Kokkos::subview(uh, Kokkos::ALL, IEN, Kokkos::ALL,
-                                               Kokkos::ALL, Kokkos::ALL));
+    auto g2w = eaud_g2;
+    par_for("m1_eaudit_g2", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      g2w(m,k,j,i) = uh(m,IEN,k,j,i);
+    });
   }
   if (pt == 3 && dbg_eaudit_map && init) {
     auto &area = pmy_pack->pcoord->area;
