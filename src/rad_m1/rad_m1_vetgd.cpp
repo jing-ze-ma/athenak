@@ -6173,9 +6173,11 @@ void RadiationM1::VetGdMoments() {
     VetGdCsMoments(0);
   } else {
   const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;   // accpolar-1103
-  if (vdop_mode == 2) {
+  if (vdop_mode == 2 && !vgd_noq) {
     // vetdop-1112 vet_doppler = local (VetDopplerLocalW): the static intensities
     // re-weighted by the cell's lab Doppler factor, no aberration of the ray geometry
+    // (not the twin's moments, vgd_noq: the twin is the STATIC noise reference that
+    // LAT1..5 subtract; a Doppler twin would cancel the correction)
     FluidRef flr = FluidRef::Get(pmy_pack);
     auto uh = flr.u0;
     const bool fon = flr.on;
