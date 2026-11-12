@@ -1089,6 +1089,10 @@ void RadiationM1::VetGdInit() {
     const char *e2 = std::getenv("VGD_HXB_CUB");
     vgd_hxb_cub = (e2 == nullptr) || (std::atoi(e2) != 0);
   }
+  {   // vgdshell-1113: env VGD_GFAST=0: the shell list always launches the general kernel
+    const char *e = std::getenv("VGD_GFAST");
+    vgd_gfast = (e == nullptr) || (std::atoi(e) != 0);
+  }
   if (vgd_async) {
     // vet_gd_async (GD_ASYNC.md): one exact sweep per build, nothing that rereads the
     // source between builds
@@ -5384,6 +5388,10 @@ void RadiationM1::VetGdSweep() {
         bdp = VgdClosureToDevice(body, vgd_bbuf0);
       }
     }
+    // vgdshell-1113: no cells path, upwind profile shift, polar rings, band exit or fused
+    // twin: the shell list launches the kernel compiled without those branches (bitwise)
+    const bool gfast = !vpa_h && upf_ != 1 && upf_ != 2 && !rbon_ && !bandx && !two &&
+                       vgd_gfast;
     const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
     // the shell kernel over the codes cl(c), c in [c0, c1) (vet_gd_shell_list codes)
     auto run_list = [&](const DvceArray1D<int> &cl, const int c0, const int c1,
@@ -5396,8 +5404,38 @@ void RadiationM1::VetGdSweep() {
         const VgdBodymT *bq_ = bmp;
         const bool vp_ = vpa_h;
         // one kernel per variant, as below (host-side choice)
+        if (gfast) {
+          // vgdshell-1113: the kernel without the gated branches (rad_m1_vetgd_body.inc)
+          const std::false_type f_;
+          if (bq_ != nullptr) {
+            Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
+            KOKKOS_LAMBDA(const int c) {
+              int t = L_(c);
+              const int d = t % n;
+              t /= n;
+              const int m = t/nkj;
+              t -= m*nkj;
+              const int k = ks + t/nj;
+              const int j = js + (t % nj);
+              (*bq_)(m, k, j, d, i, l, f_, f_);
+            });
+          } else {
+            Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
+            KOKKOS_LAMBDA(const int c) {
+              int t = L_(c);
+              const int d = t % n;
+              t /= n;
+              const int m = t/nkj;
+              t -= m*nkj;
+              const int k = ks + t/nj;
+              const int j = js + (t % nj);
+              (*bp_)(m, k, j, d, i, l, f_, f_);
+            });
+          }
+          return;
+        }
         if (bq_ != nullptr) {
-          Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
+          Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
           KOKKOS_LAMBDA(const int c) {
             int t = L_(c);
             const int d = t % n;
@@ -5406,10 +5444,10 @@ void RadiationM1::VetGdSweep() {
             t -= m*nkj;
             const int k = ks + t/nj;
             const int j = js + (t % nj);
-            (*bq_)(m, k, j, d, i, l, vp_);
+            (*bq_)(m, k, j, d, i, l, vp_, true);
           });
         } else if (vp_) {
-          Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
+          Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
           KOKKOS_LAMBDA(const int c) {
             int t = L_(c);
             const int d = t % n;
@@ -5418,10 +5456,10 @@ void RadiationM1::VetGdSweep() {
             t -= m*nkj;
             const int k = ks + t/nj;
             const int j = js + (t % nj);
-            (*bp_)(m, k, j, d, i, l, true);
+            (*bp_)(m, k, j, d, i, l, true, true);
           });
         } else {
-          Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
+          Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
           KOKKOS_LAMBDA(const int c) {
             int t = L_(c);
             const int d = t % n;
@@ -5430,14 +5468,14 @@ void RadiationM1::VetGdSweep() {
             t -= m*nkj;
             const int k = ks + t/nj;
             const int j = js + (t % nj);
-            (*bp_)(m, k, j, d, i, l, false);
+            (*bp_)(m, k, j, d, i, l, false, true);
           });
         }
         return;
       }
       if (thm) {
         // wallbug-1027 vet_gd_theta_wall = mirror: its own kernel (bodym)
-        Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
+        Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
         KOKKOS_LAMBDA(const int c) {
           int t = L_(c);
           const int d = t % n;
@@ -5446,10 +5484,10 @@ void RadiationM1::VetGdSweep() {
           t -= m*nkj;
           const int k = ks + t/nj;
           const int j = js + (t % nj);
-          bodym(m, k, j, d, i, l, vpa_h);
+          bodym(m, k, j, d, i, l, vpa_h, true);
         });
       } else if (vpa_h) {
-        Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
+        Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
         KOKKOS_LAMBDA(const int c) {
           int t = L_(c);
           const int d = t % n;
@@ -5458,10 +5496,10 @@ void RadiationM1::VetGdSweep() {
           t -= m*nkj;
           const int k = ks + t/nj;
           const int j = js + (t % nj);
-          body(m, k, j, d, i, l, true);
+          body(m, k, j, d, i, l, true, true);
         });
       } else {
-        Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
+        Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
         KOKKOS_LAMBDA(const int c) {
           int t = L_(c);
           const int d = t % n;
@@ -5470,7 +5508,7 @@ void RadiationM1::VetGdSweep() {
           t -= m*nkj;
           const int k = ks + t/nj;
           const int j = js + (t % nj);
-          body(m, k, j, d, i, l, false);
+          body(m, k, j, d, i, l, false, true);
         });
       }
     };
@@ -5738,33 +5776,33 @@ void RadiationM1::VetGdSweep() {
             if (bq_ != nullptr) {
               par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
               KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
-                (*bq_)(m, k, j, d, i, l, vp_);
+                (*bq_)(m, k, j, d, i, l, vp_, true);
               });
             } else if (vp_) {
               par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
               KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
-                (*bp_)(m, k, j, d, i, l, true);
+                (*bp_)(m, k, j, d, i, l, true, true);
               });
             } else {
               par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
               KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
-                (*bp_)(m, k, j, d, i, l, false);
+                (*bp_)(m, k, j, d, i, l, false, true);
               });
             }
           } else if (thm) {
             par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
             KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
-              bodym(m, k, j, d, i, l, vpa_h);
+              bodym(m, k, j, d, i, l, vpa_h, true);
             });
           } else if (vpa_h) {
             par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
             KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
-              body(m, k, j, d, i, l, true);
+              body(m, k, j, d, i, l, true, true);
             });
           } else {
             par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
             KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
-              body(m, k, j, d, i, l, false);
+              body(m, k, j, d, i, l, false, true);
             });
           }
         }

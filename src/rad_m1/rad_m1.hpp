@@ -3637,6 +3637,7 @@ class RadiationM1 {
   // vgdrot-1011: the exact lists of many shells in a few collectives (VetGdHxBatch);
   // per-slot scratch pools, the per-depth partner / piece tables, pinned bounds
   bool vgd_hxb_on = true;
+  bool vgd_gfast = true;        // vgdshell-1113 env VGD_GFAST=0: no gx-false shell kernel
   bool vgd_hxb_cub = true;      // env VGD_HXB_CUB=0: the VgdScan2 scans
   DvceArray1D<char> vgd_hxb_tmp;
   int vgd_hxb_g = 0, vgd_hxb_npc = 0;

@@ -73,6 +73,24 @@ inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
                                        Kokkos::Experimental::WorkItemProperty::HintLightWeight);
 }
 
+// vgdshell-1113: the vet_gd shell kernel's policy (VgdLight with launch bounds on HIP).
+// Kokkos compiles a plain HIP RangePolicy kernel for up to 1024 threads per block, which
+// caps it at 128 VGPRs on gfx942 and spills the shell body to scratch; it launches 256
+// per block anyway.  LaunchBounds<256, M1_VGD_LB> lets the register allocator use up to
+// 512 / M1_VGD_LB VGPRs.  The arithmetic is unchanged (register allocation only).
+#ifndef M1_VGD_LB
+#define M1_VGD_LB 2
+#endif
+inline auto VgdShellPol(const DevExeSpace &ex, const int a, const int b) {
+#if defined(KOKKOS_ENABLE_HIP) && (M1_VGD_LB > 0)
+  return Kokkos::Experimental::require(
+      Kokkos::RangePolicy<Kokkos::LaunchBounds<256, M1_VGD_LB>>(ex, a, b),
+      Kokkos::Experimental::WorkItemProperty::HintLightWeight);
+#else
+  return VgdLight(ex, a, b);
+#endif
+}
+
 // speedup-1109 vet_gd_body_global: copy a (host-side) kernel closure byte-wise into the
 // device buffer buf (grown when too small) and return its device address.  The per-shell
 // kernels then call the closure through this pointer instead of carrying it as a kernel
