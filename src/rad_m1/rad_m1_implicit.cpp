@@ -7665,9 +7665,10 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
       if (!(hoi && hm_(m,k,j,i) > 0.0)) {
         Real po, b0, ir;
         const Real br = cell(m, k, j, i, po, b0, ir);
-        if (!(br > 0.0)) {
+        // (no explicit x1 outflow, po = 0: nothing to limit here, counted as left)
+        if (!(br > 0.0) && po > 0.0) {
           const Real q = b0 + ir;
-          const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
+          const Real rq = (q > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
           if (rq < rc) {
             rn = rq;
             a += 1.0;
