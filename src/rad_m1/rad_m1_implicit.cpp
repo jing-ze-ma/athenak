@@ -19795,6 +19795,36 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (t2kw) {kkw_(m,M1_T2_E,k,j,i) += de*fkw;}
       }
     });
+    // marshak-audit-1112: dbg_energy_audit books this solve's own reference-work payment
+    // v' dt rho a_ref x vol (E pays it; the gas got rho a_ref v in the hydro stages) as W,
+    // as the be path books fref_wacc (output only)
+    if (dbg_eaudit) {
+      const bool sphw = sph_geom;
+      auto volw = pmy_pack->pcoord->volume;
+      auto mbsw = pmy_pack->pmb->mb_size;
+      const int niw = indcs.nx1, njw = indcs.nx2, nkw = indcs.nx3;
+      Real sw = 0.0;
+      Kokkos::parallel_reduce("m1_eaudit_wst", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              (nmb1+1)*nkw*njw*niw),
+      KOKKOS_LAMBDA(const int n, Real &acc) {
+        const int m = n/(nkw*njw*niw);
+        const int k = (n/(njw*niw))%nkw + ks, j = (n/niw)%njw + js, i = n%niw + is;
+        const int ipw = posw_.d_view(m);
+        const bool efw = !cycw && ((i == is && ipw == 0 && bclw == M1_IBC_EFIX) ||
+                                   (i == ie && ipw == nbw-1 && bchw == M1_IBC_EFIX)) ||
+                         (hon_ && hm_(m,k,j,i) > 0.0);
+        if (efw) return;
+        const Real dd = uh(m,IDN,k,j,i);
+        const Real v = sphw ? volw(m,k,j,i) : (mbsw.d_view(m).dx1*mbsw.d_view(m).dx2*
+                                               mbsw.d_view(m).dx3);
+        // uh(IM1) is the post-solve momentum m0 + dmr: v' = uh(IM1)/rho
+        acc += uh(m,IM1,k,j,i)/fmax(dd, 1.0e-300)*dt*dd*aref_(m,k,j,i)*v;
+      }, Kokkos::Sum<Real>(sw));
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, &sw, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+      eaud_w += sw;
+    }
     }
   }
 
