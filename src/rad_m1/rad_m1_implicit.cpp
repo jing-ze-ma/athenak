@@ -18275,6 +18275,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto t2thr_ = t2thr;
   auto thc_ = t2th_cnt_d;
   const Real thx = t2_theta;
+  const bool thlb = t2_lbe && (t2thc.extent_int(0) > nmb1);
+  auto t2thc_ = t2thc;
   const bool psph = sph_geom;
   auto pvol = pmy_pack->pcoord->volume;
   // hgfix-1110 implicit_clip_kecap (rad_m1.hpp): the consrc clip's kinetic energy cap
