@@ -22078,7 +22078,8 @@ void RadiationM1::ImplicitCmiLimit(bool first) {
   par_for("m1_cmi_lim", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const M1CsRowGeo<decltype(carea), decltype(csn2), decltype(csg2_), decltype(cseam),
-                     decltype(cx1v)> gc{carea, cdxf, csn2, csn3, csg2_, csg3_, cseam, cx1v,
+                     decltype(cx1v)>
+                       gc{carea, cdxf, csn2, csn3, csg2_, csg3_, cseam, cx1v,
                                         cx1f, js, je, ks, ke};
     const M1SphRowGeo<decltype(carea)> gs{carea, cdxf};
     const Real cr = ch/cl;
@@ -22092,7 +22093,8 @@ void RadiationM1::ImplicitCmiLimit(bool first) {
       const Real ktf = M1KtX1(iw_, kir_, m, k, j, i, ip, cx1f, fwd);
       const Real tw = (1.0 - ifw_(m,M1_IFW_AL,k,j,i+1))/(1.0 + ch*dt*ktf);
       (void) M1CmiFace(tw*f0n_(m,k,j,i+1), iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j,ip),
-                       iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,ip), efl, cl, rr, ld, ro);
+                       iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,ip),
+                       efl, cl, rr, ld, ro);
       if (ld && ro) {
         const Real n = sph ? carea.x1f(m,k,j,i+1)*dt/cvol(m,k,j,i)
                            : dt/mbsize.d_view(m).dx1;
@@ -22105,31 +22107,37 @@ void RadiationM1::ImplicitCmiLimit(bool first) {
       const Real ktf = M1KtX1(iw_, kir_, m, k, j, im, i, cx1f, fwd);
       const Real tw = (1.0 - ifw_(m,M1_IFW_AL,k,j,i))/(1.0 + ch*dt*ktf);
       (void) M1CmiFace(tw*f0n_(m,k,j,i), iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,i),
-                       iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,i), efl, cl, rr, ld, ro);
+                       iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,i),
+                       efl, cl, rr, ld, ro);
       if (!ld && ro) {
-        const Real n = sph ? carea.x1f(m,k,j,i)*dt/cvol(m,k,j,i) : dt/mbsize.d_view(m).dx1;
+        const Real n = sph ? carea.x1f(m,k,j,i)*dt/cvol(m,k,j,i)
+                       : dt/mbsize.d_view(m).dx1;
         pout -= n*cr*rr;
       }
     }
     if (trans) {
       const Real dx2 = mbsize.d_view(m).dx2;
       (void) M1CmiFace(cm2_(m,k,j+1,i), iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j+1,i),
-                       iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j+1,i), efl, cl, rr, ld, ro);
+                       iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j+1,i),
+                       efl, cl, rr, ld, ro);
       if (ld && ro) {pout += M1CmiN(csg, sph, gc, gs, cvol, dt, dx2, 2, true, m, k, j, i)
                              *cr*rr;}
       (void) M1CmiFace(cm2_(m,k,j,i), iw_(m,M1_IW_EN,k,j-1,i), iw_(m,M1_IW_EN,k,j,i),
-                       iw_(m,M1_IW_EP,k,j-1,i), iw_(m,M1_IW_EP,k,j,i), efl, cl, rr, ld, ro);
+                       iw_(m,M1_IW_EP,k,j-1,i), iw_(m,M1_IW_EP,k,j,i),
+                       efl, cl, rr, ld, ro);
       if (!ld && ro) {pout -= M1CmiN(csg, sph, gc, gs, cvol, dt, dx2, 2, false, m, k, j,
                                      i)*cr*rr;}
     }
     if (thrd) {
       const Real dx3 = mbsize.d_view(m).dx3;
       (void) M1CmiFace(cm3_(m,k+1,j,i), iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k+1,j,i),
-                       iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k+1,j,i), efl, cl, rr, ld, ro);
+                       iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k+1,j,i),
+                       efl, cl, rr, ld, ro);
       if (ld && ro) {pout += M1CmiN(csg, sph, gc, gs, cvol, dt, dx3, 3, true, m, k, j, i)
                              *cr*rr;}
       (void) M1CmiFace(cm3_(m,k,j,i), iw_(m,M1_IW_EN,k-1,j,i), iw_(m,M1_IW_EN,k,j,i),
-                       iw_(m,M1_IW_EP,k-1,j,i), iw_(m,M1_IW_EP,k,j,i), efl, cl, rr, ld, ro);
+                       iw_(m,M1_IW_EP,k-1,j,i), iw_(m,M1_IW_EP,k,j,i),
+                       efl, cl, rr, ld, ro);
       if (!ld && ro) {pout -= M1CmiN(csg, sph, gc, gs, cvol, dt, dx3, 3, false, m, k, j,
                                      i)*cr*rr;}
     }
@@ -22177,7 +22185,8 @@ void RadiationM1::ImplicitCmiTrans(bool rows) {
   auto cd3_ = cmd3;
   auto fa2_ = fax2;
   auto fa3_ = fax3;
-  const bool gz = impl_gas_src_cons && !impl_gas_src_full && !(impl_physflux && !impl_pf_fa);
+  const bool gz = impl_gas_src_cons && !impl_gas_src_full &&
+                  !(impl_physflux && !impl_pf_fa);
   auto gz2_ = gcz2;
   auto gz3_ = gcz3;
   const Real cl = c_light, ch = chat, dt = dt_sub, efl = e_floor;
@@ -22235,14 +22244,16 @@ void RadiationM1::ImplicitCmiTrans(bool rows) {
   par_for("m1_cmi_tc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const M1CsRowGeo<decltype(carea), decltype(csn2), decltype(csg2_), decltype(cseam),
-                     decltype(cx1v)> gc{carea, cdxf, csn2, csn3, csg2_, csg3_, cseam, cx1v,
+                     decltype(cx1v)>
+                       gc{carea, cdxf, csn2, csn3, csg2_, csg3_, cseam, cx1v,
                                         cx1f, js, je, ks, ke};
     const M1SphRowGeo<decltype(carea)> gs{carea, cdxf};
     const Real cr = ch/cl;
     const Real ec = iw_(m,M1_IW_EP,k,j,i);
     Real dtd = 0.0, dtr = 0.0;
     // the +side face: flux > 0 leaves this cell (tt += n fp); the -side face: enters
-    auto face = [&](const Real n, const Real q, const Real d, const bool up, const int cc) {
+    auto face = [&](const Real n, const Real q, const Real d, const bool up,
+                    const int cc) {
       if (up) {
         dtr -= n*cr*d;
         if (q > 0.0) {
