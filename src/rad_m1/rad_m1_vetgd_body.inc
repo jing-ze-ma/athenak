@@ -15,6 +15,13 @@
 //! of that kernel (gx false: no upwind profile shifts, polar rings, band exit or fused
 //! twin; VetGdSweep launches it only when those are off).  The arithmetic of every path
 //! taken is unchanged.
+#ifndef M1_VGD_NOINL_T
+#if defined(KOKKOS_ENABLE_HIP)
+#define M1_VGD_NOINL_T __attribute__((noinline))
+#else
+#define M1_VGD_NOINL_T
+#endif
+#endif
 
       auto M1_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                             const int d, const int i, const int l,
@@ -36,7 +43,7 @@
         // vet_gd_twin_fuse: the same ray for the shell-mean (twin) field in the same
         // thread; one launch and one halo per shell for both sweeps
         auto solve = [&](const DvceArray5D<Real> &csx, const VgdIView &vix,
-                         const bool twn, const DvceArray3D<Real> &upq) -> Real {
+                         const bool twn, const DvceArray3D<Real> &upq) M1_VGD_NOINL_T -> Real {
           // vetgdup-1110 vet_gd_upwind: a read of another cell / direction than the
           // stencil's own (a wall ghost: periodic partner, mirror row, mapped or
           // interpolated directions) shifted along the shell profile of ii from the read
