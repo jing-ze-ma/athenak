@@ -2264,6 +2264,27 @@ class RadiationM1 {
   DvceArray1D<Real> t2th_cnt_d;  // 0 re-entered cells, 1 unpaid cells, 2 unpaid E x vol,
                                  // 3 unpaid gas energy x vol, 4 unpaid |dm| x vol
   void Time2StageTheta(int stage, Real dt);
+  // facebound-1112 step 1 <rad_m1>/time2_face_fct = true (read only when named; default
+  // false = bitwise; no threshold): Zalesak positivity limiter on the FACE fluxes of the
+  // explicit stage increment t2inc.  Each stage solve also stores the E transport flux of
+  // its solution per face, t2pf (m,d,k,j,i) = (chat/c) F_applied (the cmem applied flux
+  // fax* where it exists), next to its slope (t2pf2 with K2, t2pf1 with K1, rotated).
+  // The increment's face part is G_f = A_f (c1 t2pf1 + c2 t2pf2); the rest of the cell's
+  // E increment (exchange, enthalpy, metric) is the cell-local remainder, so the split is
+  // exact.  A cell whose old vector E + dE is not > 0 gets R = (1 - 1e-12) Q/P (Q = V E +
+  // V dE + P - I: what it holds without any face transport, P/I = its out/inflow), a face
+  // takes the R of its donor cell (the receiver's bound is 1: the bound ignores inflow),
+  // and the E flux and the face F slope of the increment are scaled by it together on
+  // both sides: energy exact, gas momentum/energy and the conservative2 cell F untouched
+  // (momentum exact).  Rounds until no cell is newly limited (a receiver loses inflow),
+  // R halo-exchanged (MeshBlocks, ranks, cs seams).  Unlimited faces/cells bitwise.  What
+  // is left (Q <= 0, gas eint) goes to time2_stage_local_be / posfix as before.
+  bool t2_ffct = false;
+  DvceArray5D<Real> t2pf1, t2pf2;   // (m,3,k,j,i) (chat/c) F_applied of K1's / K2's solve
+  bool t2pf1_ok = false, t2pf2_ok = false;
+  Real t2_ffct_calls = 0.0, t2_ffct_cells = 0.0, t2_ffct_faces = 0.0, t2_ffct_left = 0.0;
+  Real t2_ffct_rmax = 0.0, t2_ffct_de = 0.0, t2_ffct_nop = 0.0;
+  void Time2FaceFct(int stage, Real c1, Real c2);
   // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,
   // nothing written back): where the write-back's realisability clip |F| <= c E comes
   // from.  fcd_cnt_d (20): in-loop clip of the conservative2 kick (cs2_clip = rad): 0 n,

@@ -19776,6 +19776,33 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
     }
   }
+  // facebound-1112 step 1 time2_face_fct: the E transport flux of this solution per
+  // face, (chat/c) F_applied, next to its slope (rad_m1.hpp)
+  if (t2k && t2_ffct && t2pf1.extent_int(0) > nmb1) {
+    const bool cmp = impl_hr_cmem && fax1.extent_int(0) > 0;
+    auto pf_ = (t2s == M1_T2S_STAGE1) ? t2pf2 : t2pf1;
+    auto a1_ = cmp ? fax1 : f0x1;
+    const Real crp = chat/c_light;
+    par_for("m1_t2_pf1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      pf_(m,0,k,j,i) = crp*a1_(m,k,j,i);
+    });
+    if (trans) {
+      auto a2_ = (cmp && fax2.extent_int(0) > 0) ? fax2 : f0x2;
+      par_for("m1_t2_pf2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        pf_(m,1,k,j,i) = crp*a2_(m,k,j,i);
+      });
+      if (thrd) {
+        auto a3_ = (cmp && fax3.extent_int(0) > 0) ? fax3 : f0x3;
+        par_for("m1_t2_pf3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          pf_(m,2,k,j,i) = crp*a3_(m,k,j,i);
+        });
+      }
+    }
+    if (t2s == M1_T2S_STAGE1) {t2pf2_ok = true;} else {t2pf1_ok = true;}
+  }
 
   // DIAGNOSTIC (env VGD_RDIAG = N > 0, vet_gd): realizability of the tensor against the
   // new (E, F) and the sign structure of the last pass's stencil, every N solves

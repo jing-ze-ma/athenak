@@ -549,6 +549,10 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     Kokkos::realloc(t2th_cnt_d, 5);
     Kokkos::deep_copy(t2th_cnt_d, 0.0);
   }
+  // facebound-1112 step 1 <rad_m1>/time2_face_fct (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_face_fct")) {
+    t2_ffct = pin->GetBoolean("rad_m1", "time2_face_fct");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
     t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
   }
@@ -646,6 +650,14 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   Kokkos::deep_copy(t2k1, 0.0);
   Kokkos::deep_copy(t2k2, 0.0);
   Kokkos::deep_copy(t2inc, 0.0);
+  if (t2_ffct) {   // facebound-1112 step 1: zero = no face flux known (restart, start)
+    Kokkos::realloc(t2pf1, nmb, 3, n3, n2, n1);
+    Kokkos::realloc(t2pf2, nmb, 3, n3, n2, n1);
+    Kokkos::deep_copy(t2pf1, 0.0);
+    Kokkos::deep_copy(t2pf2, 0.0);
+    t2pf1_ok = false;
+    t2pf2_ok = false;
+  }
   if (t2_ike) {   // rsglock-1112
     Kokkos::realloc(t2ke1, nmb, n3, n2, n1);
     Kokkos::realloc(t2ke2, nmb, n3, n2, n1);
@@ -1222,6 +1234,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     }
   }
   if (t2_inckc > 0.0) {Time2IncKeCap(stage);}   // hgfix-1110 time2_inc_kecap
+  if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // facebound-1112 step 1
   if (t2_theta > 0.0) {Time2StageTheta(stage, dt);}   // facebound-1112
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
   t2_fail = false;
@@ -1566,6 +1579,178 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
     t2_th_s2 += sf;
   }
   t2_th_calls += 1;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2FaceFct
+//! \brief facebound-1112 step 1 <rad_m1>/time2_face_fct (rad_m1.hpp): Zalesak positivity
+//! limiter on the face fluxes of the explicit stage increment t2inc (E and face F
+//! channels).  G_f = A_f (c1 t2pf1 + c2 t2pf2) is the energy the increment carries across
+//! face f (+ towards +x_d); V_i dE_i = sum_lower G - sum_upper G + V_i s_i with s_i the
+//! cell-local remainder.  Only cells whose old vector E + dE is not > 0 are limited, by
+//! R_i = (1 - 1e-12) Q_i/P_i, Q_i = V (E + dE) + P_i - I_i (inflow ignored, so the cell
+//! stays admissible whatever its neighbours do); a face is scaled by the R of its donor.
+//! Rounds until no cell is newly limited (a limited donor cuts its receivers' inflow, so
+//! the limit can travel along a beam one cell per round: measured 126 rounds on the stiff
+//! pulse at c dt/dx 16; cap 4096).  Bitwise wherever no face is limited.
+
+void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
+  const bool two = (stage != 1);
+  if (!t2pf1_ok || (two && !t2pf2_ok) || t2pf1.extent_int(0) < pmy_pack->nmb_thispack) {
+    t2_ffct_nop += 1.0;   // no stored face flux for this slope (start, restart)
+    return;
+  }
+  if (iw.extent_int(1) <= M1_IW_KZ) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/time2_face_fct needs the Krylov work slots "
+              << "(implicit_solver = bicgstab)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  t2_ffct_calls += 1.0;
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto in_ = t2inc;
+  auto u0_ = u0;
+  auto p1_ = t2pf1;
+  auto p2_ = t2pf2;
+  auto iw_ = iw;
+  const int ca = M1_IW_KZ, cb = M1_IW_KS;
+  const bool tr2 = trans_on, tr3 = trans_on && trans_x3;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto vol = pmy_pack->pcoord->volume;
+  auto ar1 = pmy_pack->pcoord->area.x1f;
+  auto ar2 = pmy_pack->pcoord->area.x2f;
+  auto ar3 = pmy_pack->pcoord->area.x3f;
+  const bool curv = (cs_geom || sph_geom) && vol.extent_int(0) > nmb1 &&
+                    vol.extent_int(3) > 1 && ar1.extent_int(0) > nmb1;
+  const bool hoi = impl_hold && (hold_m.extent_int(0) > nmb1);
+  auto hm_ = hold_m;
+  const Real cc1 = c1, cc2 = two ? c2 : 0.0;
+  // energy across the lower face of cell (k,j,i) in direction d (+ = towards +x_d)
+  auto gf = KOKKOS_LAMBDA(const int m, const int d, const int k, const int j,
+                          const int i) {
+    const Real phi = cc1*p1_(m,d,k,j,i) + cc2*p2_(m,d,k,j,i);
+    Real a;
+    if (curv) {
+      a = (d == 0) ? ar1(m,k,j,i) : ((d == 1) ? ar2(m,k,j,i) : ar3(m,k,j,i));
+    } else {
+      const auto &s = mbsize.d_view(m);
+      a = (d == 0) ? s.dx2*s.dx3 : ((d == 1) ? s.dx1*s.dx3 : s.dx1*s.dx2);
+    }
+    return a*phi;
+  };
+  auto cvol = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const auto &s = mbsize.d_view(m);
+    return curv ? vol(m,k,j,i) : s.dx1*s.dx2*s.dx3;
+  };
+  // V (E + dE) unlimited (w), the full outflow po and inflow pi, and the change dw of
+  // V E_new by the current R (slot ca, ghosts valid); lim: a face next to it is limited
+  auto cell = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                            Real &w, Real &po, Real &pi, Real &dw, bool &lim) {
+    const Real rc = iw_(m,ca,k,j,i);
+    po = 0.0;
+    pi = 0.0;
+    dw = 0.0;
+    lim = false;
+    for (int d = 0; d < 3; ++d) {
+      if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
+      const int dk = (d == 2) ? 1 : 0, dj = (d == 1) ? 1 : 0, di = (d == 0) ? 1 : 0;
+      // lower face: + = inflow, donor the lower neighbour
+      Real g = gf(m, d, k, j, i);
+      if (g > 0.0) {
+        pi += g;
+        const Real rn = iw_(m,ca,k-dk,j-dj,i-di);
+        if (rn < 1.0) {dw -= (1.0 - rn)*g; lim = true;}
+      } else if (g < 0.0) {
+        po -= g;
+        if (rc < 1.0) {dw -= (1.0 - rc)*g; lim = true;}
+      }
+      // upper face: + = outflow, donor this cell
+      g = gf(m, d, k+dk, j+dj, i+di);
+      if (g > 0.0) {
+        po += g;
+        if (rc < 1.0) {dw += (1.0 - rc)*g; lim = true;}
+      } else if (g < 0.0) {
+        pi -= g;
+        const Real rn = iw_(m,ca,k+dk,j+dj,i+di);
+        if (rn < 1.0) {dw += (1.0 - rn)*g; lim = true;}
+      }
+    }
+    w = cvol(m,k,j,i)*(u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i));
+  };
+  // R = 1 everywhere, ghosts included (physical ghosts are never filled: unlimited)
+  Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, ca, Kokkos::ALL,
+                    Kokkos::ALL, Kokkos::ALL), 1.0);
+  Real ncell = 0.0;
+  int nround = 0;
+  for (int r = 0; r < 4096; ++r) {   // until no cell is newly limited
+    Real nn = 0.0;
+    par_reduce_flat("m1_t2_ffct_r", 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+      const Real rc = iw_(m,ca,k,j,i);
+      Real rn = rc;
+      if (!(hoi && hm_(m,k,j,i) > 0.0)) {
+        Real w, po, pi, dw;
+        bool lim;
+        cell(m, k, j, i, w, po, pi, dw, lim);
+        if (!(w + dw > 0.0)) {
+          const Real q = w + po - pi;
+          const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
+          if (rq < rc) {
+            rn = rq;
+            a += 1.0;
+          }
+        }
+      }
+      iw_(m,cb,k,j,i) = rn;
+    }, Kokkos::Sum<Real>(nn));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &nn, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (!(nn > 0.0)) {break;}
+    ncell += nn;
+    nround = r + 1;
+    par_for("m1_t2_ffct_c", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      iw_(m,ca,k,j,i) = iw_(m,cb,k,j,i);
+    });
+    ImplicitKrylovHalo(ca);
+  }
+  t2_ffct_cells += ncell;
+  t2_ffct_rmax = std::max(t2_ffct_rmax, static_cast<Real>(nround));
+  if (nround == 0) {return;}   // nothing limited: t2inc untouched (bitwise)
+  // apply: the E channel of every cell next to a limited face, then the face F channels
+  Real lv[2] = {0.0, 0.0};
+  Kokkos::parallel_reduce("m1_t2_ffct_e", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sl,
+                Real &sw) {
+    Real w, po, pi, dw;
+    bool lim;
+    cell(m, k, j, i, w, po, pi, dw, lim);
+    if (lim) {in_(m,M1_T2_E,k,j,i) += dw/cvol(m,k,j,i);}
+    const Real rc = iw_(m,ca,k,j,i);
+    if (rc < 1.0) {sw += (1.0 - rc)*po;}
+    if (!(hoi && hm_(m,k,j,i) > 0.0) && !(w + dw > 0.0)) {sl += 1.0;}
+  }, Kokkos::Sum<Real>(lv[0]), Kokkos::Sum<Real>(lv[1]));
+  for (int d = 0; d < 3; ++d) {
+    if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
+    const int dk = (d == 2) ? 1 : 0, dj = (d == 1) ? 1 : 0, di = (d == 0) ? 1 : 0;
+    par_for("m1_t2_ffct_f", DevExeSpace(), 0, nmb1, ks, ke + dk, js, je + dj, is, ie + di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real g = gf(m, d, k, j, i);
+      Real rd = 1.0;
+      if (g > 0.0) {rd = iw_(m,ca,k-dk,j-dj,i-di);}
+      if (g < 0.0) {rd = iw_(m,ca,k,j,i);}
+      if (rd < 1.0) {in_(m,M1_T2_F1+d,k,j,i) *= rd;}
+    });
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, lv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  t2_ffct_left += lv[0];
+  t2_ffct_de += lv[1];
 }
 
 //----------------------------------------------------------------------------------------
@@ -1975,6 +2160,10 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
   const bool ok = !t2_fail;
   if (ok) {
     Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
+    if (t2_ffct && t2pf1.extent_int(0) > 0) {   // facebound-1112 step 1
+      Kokkos::deep_copy(DevExeSpace(), t2pf1, t2pf2);
+      t2pf1_ok = t2pf2_ok;
+    }
     if (t2_ike && t2ke1.extent_int(0) > 0) {   // rsglock-1112
       Kokkos::deep_copy(DevExeSpace(), t2ke1, t2ke2);
     }
@@ -3042,6 +3231,12 @@ void RadiationM1::Time2Report() {
               << (t2_lbe ? " carried" : " unpaid") << " cells=" << hc[1]
               << (t2_lbe ? " carried E=" : " unpaid E=") << hc[2] << " gas=" << hc[3]
               << " |dm|=" << hc[4] << (t2_lbe ? " (local_be)" : "");
+  }
+  if (t2_ffct) {   // facebound-1112 step 1 (global sums)
+    std::cout << " face_fct calls=" << t2_ffct_calls << " skipped(no face flux)="
+              << t2_ffct_nop << " limited cells=" << t2_ffct_cells << " max rounds="
+              << t2_ffct_rmax << " withheld E x vol=" << t2_ffct_de << " left (Q<=0)="
+              << t2_ffct_left;
   }
   if (vet_col && t2_vcmode != 0) {
     std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :
