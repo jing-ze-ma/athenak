@@ -1085,6 +1085,24 @@ class RadiationM1 {
   bool impl_aphll_mem = false;   // aphll-time-1110 implicit_aphll_mem (cmem + restage)
   bool impl_aphll_fci = false;   // aphll-time-1110 implicit_aphll_fcimp (F_c implicit)
   DvceArray4D<Real> fax1, fax2, fax3;   // rc18-1110: the applied face fluxes (cmem)
+  // cmemimpl-1112 implicit_hr_cmem_implicit (opt-in, read only when named, default false
+  // = bitwise; needs implicit_hr_cmem): the explicit memory part M = tw F_c^n of every
+  // applied face flux (x1, x2, x3, cs seams) is split M = q E'_d + R, q = M/E^n_d
+  // (|q| <= c; d the upwind donor) IMPLICIT in the rows (M-matrix entries), the remainder
+  // R = M - q E^k_d on the right-hand side.  Where R is an outflow of its donor it is
+  // scaled by the donor's Zalesak factor lam_d = min(1, E^k_d / sum of the donor's
+  // explicit memory outflows dt A cr R / V) (iw_cmi, halo-exchanged), so the explicit
+  // memory transport cannot overdraw a cell; elsewhere the fixed point is the old one.
+  // The applied face flux is q E'_d + lam R = M - (1 - lam) R (rows, rebuild, Z_f).
+  // cmm2/3: the transverse M of the face build; cmq2/3 their q; cmd2/3 the change
+  // -(1-lam) R of the applied flux; cmtr the last TRHS (LRES); cmi_cnt (rank 0):
+  // limiter passes, cells with lam < 1 (sum over passes), min lam
+  bool impl_cmi = false;
+  int iw_cmi = -1;
+  DvceArray4D<Real> cmm2, cmm3, cmq2, cmq3, cmd2, cmd3, cmtr;
+  DvceArray1D<Real> cmi_cnt;
+  void ImplicitCmiLimit(bool first);
+  void ImplicitCmiTrans(bool rows);
   // vkdiag-1111 implicit_hr_cmem_fainit (opt-in, read only when named, default false):
   // fax* are not in the restart file and start at 0, so the first step after a restart
   // takes F_a^n = 0 as the old applied flux of the gas-momentum budget (physflux fa:

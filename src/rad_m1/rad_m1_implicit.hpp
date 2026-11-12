@@ -990,6 +990,24 @@ void M1SphDrrUp(const Real chil, const Real n1l, const Real s2l, const Real chir
 //! matrix), one number for the face (conservative), = fmem when E' = E^n.  Returns q =
 //! fmem/E^n_d capped at |q| <= qmax (the sign gives the donor: q > 0 the LEFT cell) or 0
 //! (face unchanged).
+//! cmemimpl-1112 implicit_hr_cmem_implicit: the memory part mm (= tw F_c^n) of a face
+//! flux (positive = from the LEFT cell l to the right cell r) as q E'_d + R: q =
+//! mm/max(E^n_d, efl), |q| <= qmax (= c), d = l if mm > 0; R = mm - q E^k_d at the
+//! iterate.  Returns q; rr = R, ld = true when the donor is l, ro = true when R is an
+//! OUTFLOW of the donor (R mm > 0: the part a Zalesak factor of the donor may scale).
+KOKKOS_INLINE_FUNCTION
+Real M1CmiFace(const Real mm, const Real enl, const Real enr, const Real epl,
+               const Real epr, const Real efl, const Real qmax, Real &rr, bool &ld,
+               bool &ro) {
+  ld = (mm > 0.0);
+  if (mm == 0.0) {rr = 0.0; ro = false; return 0.0;}
+  const Real en = fmax(ld ? enl : enr, efl);
+  const Real q = copysign(fmin(fabs(mm)/en, qmax), mm);
+  rr = mm - q*(ld ? epl : epr);
+  ro = (rr*mm > 0.0);
+  return q;
+}
+
 KOKKOS_INLINE_FUNCTION
 Real M1PtMemQ(const Real fmem, const Real cr, const Real nl, const Real nr,
               const Real enl, const Real enr, const Real efl, const Real gam,
