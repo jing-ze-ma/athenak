@@ -314,7 +314,6 @@ implicit_physflux                  = true
 implicit_physflux_mom              = fa
 time2_stage_local_be               = true
 time2_face_fct                     = true
-vet_gd_rotate_xfade                = true
 implicit_face_mmat                 = true
 vet_col_lat_posfix                 = lag
 implicit_cs_e0_metric              = true

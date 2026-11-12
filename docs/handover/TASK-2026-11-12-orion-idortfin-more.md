@@ -32,7 +32,7 @@ PASS per cell: FIN rc=0, 0 FATAL, Picard NON-CONVERGED=0 (last "Picard iteration
 FLAG any FIN metric > 1.05 x X1 or > the P1 value. Paste ev_all.txt whole + the rc / FATAL / NON-CONVERGED of every run.
 
 ## (3) pulse_cs ladders on FIN vs the TIME base B (same binary)
-Decks: `$F/pulse/{B,FIN}_{T_1,T_2,T_4,T_8,C_32,C_64,C_128}/in.athinput` (B = CSP-CM~fA2~norot~wall~x2f15~cap~pf, FIN = B + X1b +
+Decks: `$F/pulse/{B,FIN}_{T_1,T_2,T_4,T_8,C_32,C_64,C_128}/in.athinput` (B = CSP-CM~fA2~norot~wall~x2f15~cap~pf, FIN = B + X1b without xfade (norot deck: xfade FATALs without rotate_dt > 0) +
 face_mmat + posfix lag + cs_e0_metric + cs2_wbsolve + am_cs_fold applied). Ranks: 6 (C_128: 24). All 14 at once:
 ```
 for d in $F/pulse/*; do c=$(basename $d); r=$O/pulse/$c; mkdir -p $r; cp $d/in.athinput $r/; np=6; [ $c = ${c%C_128}C_128 ] && np=24
