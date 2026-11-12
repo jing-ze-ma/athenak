@@ -2283,7 +2283,7 @@ class RadiationM1 {
   DvceArray5D<Real> t2pf1, t2pf2;   // (m,3,k,j,i) (chat/c) F_applied of K1's / K2's solve
   bool t2pf1_ok = false, t2pf2_ok = false;
   Real t2_ffct_calls = 0.0, t2_ffct_cells = 0.0, t2_ffct_faces = 0.0, t2_ffct_left = 0.0;
-  Real t2_ffct_rmax = 0.0, t2_ffct_de = 0.0, t2_ffct_nop = 0.0;
+  Real t2_ffct_rmax = 0.0, t2_ffct_de = 0.0, t2_ffct_nop = 0.0, t2_ffct_fill = 0.0;
   void Time2FaceFct(int stage, Real c1, Real c2);
   // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,
   // nothing written back): where the write-back's realisability clip |F| <= c E comes

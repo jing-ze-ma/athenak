@@ -1597,6 +1597,26 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
 
 void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   const bool two = (stage != 1);
+  // no stored face flux for K1 (first stage step, restart): K1 is the slope of the last
+  // stage-2 solve, whose solution is U^n, so its face flux is the stage-start face flux
+  // t2f* = f0x* (the restart file's F; the cmem applied flux is not used here)
+  if (!two && !t2pf1_ok && t2pf1.extent_int(0) >= pmy_pack->nmb_thispack &&
+      t2f1.extent_int(0) >= pmy_pack->nmb_thispack) {
+    auto pf_ = t2pf1;
+    auto g1_ = t2f1, g2_ = t2f2, g3_ = t2f3;
+    const bool q2 = trans_on && t2f2.extent_int(0) > 0;
+    const bool q3 = trans_on && trans_x3 && t2f3.extent_int(0) > 0;
+    const Real crp = chat/c_light;
+    par_for("m1_t2_ffct_fill", DevExeSpace(), 0, pf_.extent_int(0) - 1,
+            0, pf_.extent_int(2) - 1, 0, pf_.extent_int(3) - 1, 0, pf_.extent_int(4) - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      pf_(m,0,k,j,i) = crp*g1_(m,k,j,i);
+      pf_(m,1,k,j,i) = q2 ? crp*g2_(m,k,j,i) : 0.0;
+      pf_(m,2,k,j,i) = q3 ? crp*g3_(m,k,j,i) : 0.0;
+    });
+    t2pf1_ok = true;
+    t2_ffct_fill += 1.0;
+  }
   if (!t2pf1_ok || (two && !t2pf2_ok) || t2pf1.extent_int(0) < pmy_pack->nmb_thispack) {
     t2_ffct_nop += 1.0;   // no stored face flux for this slope (start, restart)
     return;
@@ -3241,7 +3261,8 @@ void RadiationM1::Time2Report() {
   }
   if (t2_ffct) {   // facebound-1112 step 1 (global sums)
     std::cout << " face_fct calls=" << t2_ffct_calls << " skipped(no face flux)="
-              << t2_ffct_nop << " limited cells=" << t2_ffct_cells << " max rounds="
+              << t2_ffct_nop << " K1 flux from U^n=" << t2_ffct_fill << " limited cells="
+              << t2_ffct_cells << " max rounds="
               << t2_ffct_rmax << " withheld E x vol=" << t2_ffct_de << " left (Q<=0)="
               << t2_ffct_left;
   }
