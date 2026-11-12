@@ -144,6 +144,9 @@ struct M1ShellGasP {
 M1ShellGasP m1_shg = {1.0, 1.0e-8, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0e-8,
                       0.0, 0.0, 1.0, 1.0e-8, 0.0, 0.0, 1.0, 2.0};
 bool m1_shg_hold = false;
+// vetdop-1112 (read only when named): gas_hold_rot = true keeps the IC solid-body
+// rotation v_phi = gas_rot r sin(theta) (sp, z axis) in RadM1ShellHold
+Real m1_shg_rot = 0.0;
 // raycheap-1109 (read only when named): problem/flux_mod_amp = A, flux_mod_period = P:
 // with gas_hold the inner face flux of M1_IBC_FLUX is set at every stage to
 // F0 (1 + A sin(2 pi (t + dt)/P)), F0 = <rad_m1>/implicit_flux_x1min (a time-dependent
@@ -1031,6 +1034,10 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     if (pin->DoesParameterExist("problem","gas_hold")) {
       m1_shg_hold = pin->GetBoolean("problem","gas_hold");
       if (m1_shg_hold) {user_srcs_func = RadM1ShellHold;}
+      if (m1_shg_hold && pin->DoesParameterExist("problem","gas_hold_rot") &&
+          pin->GetBoolean("problem","gas_hold_rot")) {
+        m1_shg_rot = grot;
+      }
       if (pin->DoesParameterExist("problem","clump_tmod_period")) {
         m1_ctm_per = pin->GetReal("problem","clump_tmod_period");
         m1_ctm_amp = pin->GetReal("problem","clump_tmod_amp");
@@ -1851,6 +1858,7 @@ void RadM1ShellHold(Mesh *pm, const Real bdt) {
                                                           m1_ctm_per), 0.25);
   }
   const Real gm1 = m1_shg_gm1;
+  const Real rot = pm->use_cubed_sphere ? 0.0 : m1_shg_rot;   // vetdop-1112 (sp)
   // cs-s4-1017: the cubed sphere's (theta, phi) from the panel chart (M1ShellAngles)
   const bool csm = pm->use_cubed_sphere;
   auto mbpan = pmbp->pmb->mb_panel;
@@ -1868,6 +1876,11 @@ void RadM1ShellHold(Mesh *pm, const Real bdt) {
     uh(m,IM2,k,j,i) = 0.0;
     uh(m,IM3,k,j,i) = 0.0;
     uh(m,IEN,k,j,i) = dd*tt/gm1;
+    if (rot != 0.0) {
+      const Real vp = rot*x1v(m,i)*sin(x2v(m,j));
+      uh(m,IM3,k,j,i) = dd*vp;
+      uh(m,IEN,k,j,i) += 0.5*dd*vp*vp;
+    }
   });
 }
 
