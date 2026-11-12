@@ -37,6 +37,7 @@
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
+#endif
 
 // ckdrift-1102 <time>/dt_collapse_med = F > 0 (read only when named; default 0 = off):
 // the `### dt COLLAPSE` report also fires when dt < (median of the last 100 dt) / F, once
@@ -49,7 +50,6 @@ int dt_hist_n_ = 0;
 bool dt_med_latch_ = false;
 }  // namespace
 void SetDtCollapseMed(Real f) {dt_collapse_med = f;}
-#endif
 
 namespace {
 
