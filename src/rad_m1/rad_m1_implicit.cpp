@@ -1879,6 +1879,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_cs_e0_metric")) {
     impl_cs_e0m = pin->GetBoolean("rad_m1","implicit_cs_e0_metric");
   }
+  // csmetric-1112 (read only when named):
+  //  implicit_cs_closure_metric (cs): |F|, f and the unit n of a chi(f) closure with the
+  //    panel metric, and A = v + D.v, beta.D.beta with D the MIXED tensor on face-normal
+  //    components (the n = F/|F| closures; vet_col's n = r is unchanged by it)
+  //  implicit_comoving_lat (sp, cs): the lateral D_r,lat and tangential (cs Q, sp a and
+  //    D_tp) parts of the VET tensor in A = v + D.v of F0 and in beta.D.beta of E0,
+  //    wherever the face equations carry them (M1LatDx)
+  if (pin->DoesParameterExist("rad_m1","implicit_cs_closure_metric")) {
+    impl_cs_cnm = pin->GetBoolean("rad_m1","implicit_cs_closure_metric");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_comoving_lat")) {
+    impl_comov_lat = pin->GetBoolean("rad_m1","implicit_comoving_lat");
+  }
   //  implicit_thin_freeze (m1-picard-aa, 095ca6ee): cells with c dt rho kappa_P below it
   //    at pass 0 keep their start-of-solve opacities for every Picard pass and take the
   //    frozen-opacity gas-T find.  DEFAULT 1e-2 on fresh runs (user 10-04): on the He
@@ -15094,6 +15107,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto rccl = pmy_pack->pcoord->cos_cell;
     auto rcsn = pmy_pack->pcoord->sin_cell;
     const bool e0m = impl_cs_e0m && cs_geom;   // csmetric-1112
+    // csmetric-1112 implicit_cs_closure_metric / implicit_comoving_lat (M1LatDx)
+    const bool cnm = impl_cs_cnm && cs_geom;
+    auto vlk_ = VlatTT();
+    const int c0k = M1_TT_LAT0;
+    const int ntt = vlk_.extent_int(1);
+    const bool flat = impl_comov_lat && vlat_now && vlat_ready && (ntt > c0k + 3);
+    const bool ftan = impl_comov_lat && vlat_ready &&
+                      (cs_geom ? (vgd_cstan && vlat_now && ntt > c0k + 5)
+                               : (vgd_on && vgd_tan && sph_geom && ntt > c0k + 4));
+    const bool fcl = (flat || ftan) && sph_geom;
+    const bool fcs = cs_geom;
+    auto ccn2 = cs_cn2;
+    auto ccn3 = cs_cn3;
+    auto cqf = cs_qf;
     if (!rcp) {
       par_for("m1_impl_lag", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

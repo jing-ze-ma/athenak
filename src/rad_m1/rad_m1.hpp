@@ -855,6 +855,8 @@ class RadiationM1 {
   // false = bitwise): E0 - E of the implicit solve (beta.F, beta^2, beta.P.beta) with the
   // panel metric of the face-normal components, as the work / deposits / KE take it
   bool impl_cs_e0m = false;
+  bool impl_cs_cnm = false;      // csmetric-1112 implicit_cs_closure_metric
+  bool impl_comov_lat = false;   // csmetric-1112 implicit_comoving_lat
   // implicit_thin_freeze (m1-picard-aa; default 1e-2 on fresh runs, 0 = off): cells with
   // c dt rho kappa_P < this at the start of the solve keep their start-of-step opacities
   // for every pass and take the frozen-opacity gas-T find

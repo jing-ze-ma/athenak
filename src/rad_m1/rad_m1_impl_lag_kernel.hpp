@@ -36,6 +36,12 @@
         Real f2c = iw_(m,M1_IW_F2,k,j,i);
         Real f3c = iw_(m,M1_IW_F3,k,j,i);
         Real fm = sqrt(f1*f1 + f2c*f2c + f3c*f3c);
+        // csmetric-1112 implicit_cs_closure_metric: |F| (and so f, chi, the unit n) with
+        // the panel metric of the face-normal components
+        if (cnm) {
+          const Real c = rccl(m,k,j);
+          fm = sqrt(f1*f1 + (f2c*f2c + f3c*f3c + 2.0*c*f2c*f3c)/(1.0 - c*c));
+        }
         Real rfm = fm/(cl*e);
         if (rfm > 1.0) {rfm = 1.0;}
         chi = edd ? (1.0/3.0) : M1Chi(rfm, chk);
@@ -178,6 +184,29 @@
         iw_(m,M1_IW_ADV,k,j,i) = v1 + (v1*d11 + v2*d12 + v3*d13);
         iw_(m,M1_IW_A2,k,j,i) = v2 + (v1*d12 + v2*d22 + v3*d23);
         iw_(m,M1_IW_A3,k,j,i) = v3 + (v1*d13 + v2*d23 + v3*d33);
+        // csmetric-1112 implicit_cs_closure_metric: d acts on face-normal components as
+        // the MIXED tensor (D x)_a = pi x_a + pa n_a (n.x), n.x the metric product
+        const Real cpi = 0.5*(1.0 - chi), cpa = 0.5*(3.0*chi - 1.0);
+        Real cn2r = n2, cn3r = n3;   // the raised n (metric)
+        if (cnm && !dfull) {
+          const Real c = rccl(m,k,j), is2 = 1.0/(1.0 - c*c);
+          cn2r = (n2 + c*n3)*is2;
+          cn3r = (n3 + c*n2)*is2;
+          const Real nv = n1*v1 + cn2r*v2 + cn3r*v3;
+          iw_(m,M1_IW_ADV,k,j,i) = v1 + cpi*v1 + cpa*n1*nv;
+          iw_(m,M1_IW_A2,k,j,i) = v2 + cpi*v2 + cpa*n2*nv;
+          iw_(m,M1_IW_A3,k,j,i) = v3 + cpi*v3 + cpa*n3*nv;
+        }
+        // csmetric-1112 implicit_comoving_lat: + D_lat v, the lateral / tangential part
+        // of the VET tensor that the face equations carry (M1LatDx)
+        if (fcl) {
+          Real o1, o2, o3;
+          (void) M1LatDx(fcs, flat, ftan, vlk_, c0k, ccn2, ccn3, cqf, m, k, j, i,
+                         v1, v2, v3, o1, o2, o3);
+          iw_(m,M1_IW_ADV,k,j,i) += o1;
+          iw_(m,M1_IW_A2,k,j,i) += o2;
+          iw_(m,M1_IW_A3,k,j,i) += o3;
+        }
         if (t2dav) {
           // hesdirk2: the part of a carried by the old vector's velocity increment
           Real idg = 1.0/fmax(uh(m,IDN,k,j,i), 1.0e-300);
@@ -186,6 +215,20 @@
           iw_(m,t2da,k,j,i) = w1 + (w1*d11 + w2*d12 + w3*d13);
           iw_(m,t2da+1,k,j,i) = w2 + (w1*d12 + w2*d22 + w3*d23);
           iw_(m,t2da+2,k,j,i) = w3 + (w1*d13 + w2*d23 + w3*d33);
+          if (cnm && !dfull) {
+            const Real nw = n1*w1 + cn2r*w2 + cn3r*w3;
+            iw_(m,t2da,k,j,i) = w1 + cpi*w1 + cpa*n1*nw;
+            iw_(m,t2da+1,k,j,i) = w2 + cpi*w2 + cpa*n2*nw;
+            iw_(m,t2da+2,k,j,i) = w3 + cpi*w3 + cpa*n3*nw;
+          }
+          if (fcl) {
+            Real o1, o2, o3;
+            (void) M1LatDx(fcs, flat, ftan, vlk_, c0k, ccn2, ccn3, cqf, m, k, j, i,
+                           w1, w2, w3, o1, o2, o3);
+            iw_(m,t2da,k,j,i) += o1;
+            iw_(m,t2da+1,k,j,i) += o2;
+            iw_(m,t2da+2,k,j,i) += o3;
+          }
         }
         // E0 - E to O(beta^2), with the full pressure tensor.  m1-sp-order2b
         // (time2_vstage): in a hesdirk2 stage under implicit_vimp at the iterate's
@@ -230,6 +273,19 @@
           bpb = (b1*(b1*d11 + b2*d12 + b3*d13) + r2*(b1*d12 + b2*d22 + b3*d23)
                  + r3*(b1*d13 + b2*d23 + b3*d33))*e;
           b2sq = b1*b1 + r2*b2 + r3*b3;
+        }
+        if (cnm && !dfull) {
+          // csmetric-1112: beta.D.beta = pi beta^2 + pa (n.beta)^2, metric products
+          const Real c = rccl(m,k,j), is2 = 1.0/(1.0 - c*c);
+          const Real q2 = (b2 + c*b3)*is2, q3 = (b3 + c*b2)*is2;
+          const Real nb = n1*b1 + cn2r*b2 + cn3r*b3;
+          b2sq = b1*b1 + q2*b2 + q3*b3;
+          bpb = (cpi*b2sq + cpa*nb*nb)*e;
+        }
+        if (fcl) {   // csmetric-1112: + beta.D_lat.beta
+          Real o1, o2, o3;
+          bpb += M1LatDx(fcs, flat, ftan, vlk_, c0k, ccn2, ccn3, cqf, m, k, j, i,
+                         b1, b2, b3, o1, o2, o3)*e;
         }
         de0 = ovc ? (-2.0*bf) : (b2sq*e - 2.0*bf + bpb);
       }
