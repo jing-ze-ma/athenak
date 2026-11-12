@@ -13516,7 +13516,8 @@ void RadiationM1::EAuditMark(int pt) {
     auto f3 = f0x3;
     const bool tr2 = trans_on && (f2.extent_int(0) > 0);
     const bool tr3 = trans_on && trans_x3 && (f3.extent_int(0) > 0);
-    const bool hbd = iebath_hi_col_on && (ibadv_x1max.extent_int(0) > 0);
+    const bool hbd = (iebath_hi_col_on || dbg_eaudit) &&
+                     (ibadv_x1max.extent_int(0) > 0);
     DvceArray3D<Real> bdv;
     if (hbd) {bdv = ibadv_x1max;}
     auto &mbbcs = pmy_pack->pmb->mb_bcs;
@@ -13715,7 +13716,8 @@ void RadiationM1::EAuditMark(int pt) {
     auto f3 = f0x3;
     const bool tr2 = trans_on && (f2.extent_int(0) > 0);
     const bool tr3 = trans_on && trans_x3 && (f3.extent_int(0) > 0);
-    const bool hbd = iebath_hi_col_on && (ibadv_x1max.extent_int(0) > 0);
+    const bool hbd = (iebath_hi_col_on || dbg_eaudit) &&
+                     (ibadv_x1max.extent_int(0) > 0);
     DvceArray3D<Real> bdv;
     if (hbd) {bdv = ibadv_x1max;}
     const bool t2st = (t2_solve == M1_T2S_STAGE1) || (t2_solve == M1_T2S_STAGE2);
@@ -14158,6 +14160,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // per-column outer bath (SetX1maxBathColumns; off: the scalar ebhi, bitwise)
   const bool ebc = iebath_hi_col_on;
   auto ebc_ = iebath_hi_col;
+  // marshak-audit-1112: under dbg_energy_audit the face kernel also fills ibadv_x1max
+  // (the advective energy flux of implicit_bc_advect through the outer x1 face) when no
+  // per-column bath allocated it, so the audit books it (output only)
+  if (dbg_eaudit && !ebc && ibadv_x1max.extent_int(0) != pmy_pack->nmb_thispack) {
+    Kokkos::realloc(ibadv_x1max, pmy_pack->nmb_thispack, u0.extent_int(2),
+                    u0.extent_int(3));
+    Kokkos::deep_copy(ibadv_x1max, 0.0);
+  }
+  const bool ebadv = ebc || (dbg_eaudit && ibadv_x1max.extent_int(0) > 0);
   auto bdv_ = ibadv_x1max;
   const bool ghx = impl_ghx;   // marelax-1013 ghost bath (see rad_m1.hpp)
   const Real ghe = impl_ghx_e;
@@ -17183,7 +17194,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           // per-column bath: the lab-frame advective energy flux a E_up of
           // implicit_bc_advect through the outer face (outflow: the E of the face flux
           // above; inflow: the bath), for the problem's energy budget
-          if (hi && ebc) {
+          if (hi && ebadv) {
             const Real ae = iw_(m,M1_IW_ADV,k,j,ic);
             bdv_(m,k,j) = badv ? ((iw_(m,M1_IW_V1,k,j,ic) > 0.0) ? ae*eout : ae*ebh) : 0.0;
           }
