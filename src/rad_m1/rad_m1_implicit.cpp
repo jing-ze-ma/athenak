@@ -1876,9 +1876,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //    metric G^-1 = [[1, c], [c, 1]]/(1 - c^2) in beta.F, beta^2 and beta.P.beta of
   //    E0 - E (EQ_AUDIT_1112 #4).  With the key the three are built with it, i.e. with
   //    the same metric as the work v^a dm_a and the KE of the write-back.
-  if (pin->DoesParameterExist("rad_m1","implicit_cs_e0_metric")) {
-    impl_cs_e0m = pin->GetBoolean("rad_m1","implicit_cs_e0_metric");
-  }
+  //    prod-1114 (user 11-12): DEFAULT true (recorded); name false for the old E0.
+  impl_cs_e0m = pin->GetOrAddBoolean("rad_m1","implicit_cs_e0_metric",true);
   //  implicit_thin_freeze (m1-picard-aa, 095ca6ee): cells with c dt rho kappa_P below it
   //    at pass 0 keep their start-of-solve opacities for every Picard pass and take the
   //    frozen-opacity gas-T find.  DEFAULT 1e-2 on fresh runs (user 10-04): on the He
@@ -3623,9 +3622,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // up to |F| - cE in free-streaming cells -- is a momentum kick to the gas: ~100 km/s
       // in 1e-8 floor gas, v12lz accretor) | rad (the limit's change stays with the
       // radiation, as on the matched path)
-      if (pin->DoesParameterExist("rad_m1","implicit_cs2_wbsolve")) {
-        cs2_wbs = pin->GetBoolean("rad_m1","implicit_cs2_wbsolve");
-      }
+      // prod-1114 (user 11-12): implicit_cs2_wbsolve DEFAULT true (recorded); name false
+      // for the 3 fixed-point passes of before
+      cs2_wbs = pin->GetOrAddBoolean("rad_m1","implicit_cs2_wbsolve",true);
       if (pin->DoesParameterExist("rad_m1","implicit_cs2_clip")) {
         const std::string cm = pin->GetString("rad_m1","implicit_cs2_clip");
         if (cm.compare("rad") == 0) {

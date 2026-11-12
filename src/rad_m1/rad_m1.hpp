@@ -851,9 +851,10 @@ class RadiationM1 {
   // (steps that would not have stopped there with the full norm).
   Real impl_res_dmin = 0.0, impl_res_rmax = 0.0;
   bool impl_real_couple = false;      // implicit_realisable_coupling (gd_physfix_1005)
-  // csmetric-1112 implicit_cs_e0_metric (cubed sphere, read only when named, default
-  // false = bitwise): E0 - E of the implicit solve (beta.F, beta^2, beta.P.beta) with the
-  // panel metric of the face-normal components, as the work / deposits / KE take it
+  // csmetric-1112 implicit_cs_e0_metric (cubed sphere; prod-1114: DEFAULT true, recorded;
+  // false = the old Euclidean E0, bitwise): E0 - E of the implicit solve (beta.F,
+  // beta^2, beta.P.beta) with the panel metric of the face-normal components, as the
+  // work / deposits / KE take it
   bool impl_cs_e0m = false;
   // implicit_thin_freeze (m1-picard-aa; default 1e-2 on fresh runs, 0 = off): cells with
   // c dt rho kappa_P < this at the start of the solve keep their start-of-step opacities
@@ -1290,9 +1291,10 @@ class RadiationM1 {
   bool cs2_shift = false;               // implicit_cs2_shift: (c) on (default off)
   bool cs2_hll_drag = true;             // implicit_cs2_hll = drag (default) | inertia
   bool cs2_clip_rad = false;            // cs2clip-1020 implicit_cs2_clip = rad (named)
-  // pgrst-vimp-1021 <rad_m1>/implicit_cs2_wbsolve (read only when named; default false =
-  // bitwise): the conservative2 write-back under time2_vstage solves the linear cell
-  // relation dm = C - om (F0 mean + (I + D) w(dm) E)/(c chat) for the kick in closed form
+  // pgrst-vimp-1021 <rad_m1>/implicit_cs2_wbsolve (prod-1114: DEFAULT true, recorded;
+  // false = the old passes, bitwise): the conservative2 write-back under time2_vstage
+  // solves the linear cell relation dm = C - om (F0 mean + (I + D) w(dm) E)/(c chat)
+  // for the kick in closed form
   // (effective inertia rho + om (I + D) E/(c chat)) instead of the 3 fixed-point passes,
   // whose gain om (1 + d11) E/(rho c chat) > 1 amplifies every step (1-D radwave P33)
   bool cs2_wbs = false;
