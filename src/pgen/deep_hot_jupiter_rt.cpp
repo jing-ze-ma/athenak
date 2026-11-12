@@ -465,6 +465,45 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         pmy_mesh_->pmb_pack->pmhd->diode_ox1 = true;
       }
     }
+    // ssbc-1111: <mhd>/top_bc_bt (see deep_hot_jupiter_rt.hpp); read only when named
+    if (pin->DoesParameterExist("mhd", "top_bc_bt")) {
+      const std::string bt = pin->GetString("mhd", "top_bc_bt");
+      if (bt == "zerograd") {
+        dhj_top_bt = 0;
+      } else if (bt == "sourcesurface") {
+        dhj_top_bt = 1;
+      } else if (bt == "charout") {
+        dhj_top_bt = 2;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "mhd/top_bc_bt must be zerograd, sourcesurface or "
+                  << "charout, not '" << bt << "'" << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      if (dhj_top_bt >= 1 && (dhj_top_bc == 0 || pmy_mesh_->pmb_pack->pmhd == nullptr)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "mhd/top_bc_bt = " << bt << " needs <mhd> and "
+                  << "problem/top_bc = outflow1 or outflow0 (the hse top already has "
+                  << "odd tangential ghosts)" << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      if (dhj_top_bt == 1 && dhj_top_bc == 1) {
+        pmy_mesh_->pmb_pack->pmhd->diode_ox1_btodd = true;
+      }
+      // mhdtop-1112: charout, see deep_hot_jupiter_rt.hpp and MHD::diode_ox1_charout
+      if (dhj_top_bt == 2 && dhj_top_bc == 1) {
+        pmy_mesh_->pmb_pack->pmhd->diode_ox1_charout = true;
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "deep_hot_jupiter_rt: mhd/top_bc_bt = " << bt
+                  << (dhj_top_bt == 1 ? " (outer-x1 ghost B_t odd: B_t = 0 on the top "
+                      "face, B_r from div B = 0; Poy_top column in the user history)"
+                      : (dhj_top_bt == 2 ? " (outer-x1 ghost v_t set so that the "
+                         "incoming Alfven characteristic v_t + sgn(B_r) B_t/sqrt(rho) is "
+                         "zero where v_r < |B_r|/sqrt(rho); ghost B zerograd; Poy_top)"
+                         : " (outer-x1 ghost B_t zero-gradient)")) << std::endl;
+      }
+    }
   }
   if (global_variable::my_rank == 0) {
     std::cout << "deep_hot_jupiter_rt: outer-x1 Maxwell-stress term in the ghost "

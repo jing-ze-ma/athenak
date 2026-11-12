@@ -1201,6 +1201,24 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     fdrain = false;
   }
   pdata->nhist = NDR + (fdrain ? 2 : 0);
+  // ssbc-1111: with <mhd>/top_bc_bt = sourcesurface, Poy_top [erg/s] after all the
+  // others: the radial Poynting flux sum_top (|B_t|^2 v_r - B_r v_t.B_t) dA of the
+  // LAST ACTIVE cell (ie; the face value is ~0 by construction), orthonormal frame on cs
+  const int NPY = pdata->nhist;
+  bool fpoy = (dhj_top_bt >= 1) && (pm->pmb_pack->pmhd != nullptr);   // + charout
+  if (fpoy && NPY + 1 > NHISTORY_VARIABLES) {
+    static bool warned_p = false;
+    if (!warned_p && global_variable::my_rank == 0) {
+      std::cout << "### NOTE: dhj flux history: no room for Poy_top (" << NPY + 1
+                << " > NHISTORY_VARIABLES = " << NHISTORY_VARIABLES << ")" << std::endl;
+    }
+    warned_p = true;
+    fpoy = false;
+  }
+  if (fpoy) {
+    pdata->label[NPY] = "Poy_top";
+    pdata->nhist = NPY + 1;
+  }
   if (ttide) pdata->label[NFH] = "Ttide";
   if (amh::on) pdata->label[NTD] = "Tdrag";
   if (fdrain) {
@@ -1380,6 +1398,32 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   if (amh::on) AmHstColumns(pdata, pm, NFL);
   if (ttide) pdata->hdata[NFH] = DhjTideTorque(pm);
   if (amh::on) pdata->hdata[NTD] = amh::tdrag_rate;
+  if (fpoy) {
+    auto u0p = pmbp->pmhd->u0;
+    auto bccp = pmbp->pmhd->bcc0;
+    const bool csp = pm->use_cubed_sphere;
+    auto ccp = pmbp->pcoord->cos_cell;
+    auto scp = pmbp->pcoord->sin_cell;
+    Real poy = 0.0;
+    Kokkos::parallel_reduce("dhj_flux_hist_poy",
+    Kokkos::RangePolicy<>(DevExeSpace(), 0, ncol),
+    KOKKOS_LAMBDA(const int idx, Real &ps) {
+      const int m = idx/(nx3*nx2);
+      const int kj = idx - m*(nx3*nx2);
+      const int k = ks + kj/nx2;
+      const int j = js + kj - (kj/nx2)*nx2;
+      const Real d = u0p(m,IDN,k,j,ie);
+      const Real v1 = u0p(m,IM1,k,j,ie)/d;
+      Real v2 = u0p(m,IM2,k,j,ie)/d, v3 = u0p(m,IM3,k,j,ie)/d;
+      if (csp) {   // covariant momenta -> the (e_2, (e_3 - c e_2)/s) frame of bcc0
+        v3 = (v3 - ccp(m,k,j)*v2)/scp(m,k,j);
+      }
+      const Real b1 = bccp(m,IBX,k,j,ie), b2 = bccp(m,IBY,k,j,ie);
+      const Real b3 = bccp(m,IBZ,k,j,ie);
+      ps += ((b2*b2 + b3*b3)*v1 - b1*(v2*b2 + v3*b3))*area(m,k,j,ie+1);
+    }, Kokkos::Sum<Real>(poy));
+    pdata->hdata[NPY] = poy;
+  }
   if (!fwall) return;
   // problem/flux_hst_wall: the inner-wall in/out split, its own small reduction
   array_sum::GlobalSum wsum;
