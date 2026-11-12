@@ -89,5 +89,33 @@ inline void par_reduce_flat(const std::string &name, const int &nl, const int &n
   }, reducer);
 }
 
+//! par_reduce_flat2 (fast2nd-1112): par_reduce_flat with two reducers in one pass
+template <typename Function, typename Reducer1, typename Reducer2>
+inline void par_reduce_flat2(const std::string &name, const int &nl, const int &nu,
+                             const int &kl, const int &ku, const int &jl, const int &ju,
+                             const int &il, const int &iu, const Function &function,
+                             const Reducer1 &reducer1, const Reducer2 &reducer2) {
+  const int nn = nu - nl + 1;
+  const int nk = ku - kl + 1;
+  const int nj = ju - jl + 1;
+  const int ni = iu - il + 1;
+  const int nnkji = nn * nk * nj * ni;
+  const int nkji  = nk * nj * ni;
+  const int nji   = nj * ni;
+  using VT1 = typename Reducer1::value_type;
+  using VT2 = typename Reducer2::value_type;
+  Kokkos::parallel_reduce(name, Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nnkji),
+  KOKKOS_LAMBDA(const int &idx, VT1 &v1, VT2 &v2) {
+    int n = (idx)/nkji;
+    int k = (idx - n*nkji)/nji;
+    int j = (idx - n*nkji - k*nji)/ni;
+    int i = (idx - n*nkji - k*nji - j*ni) + il;
+    n += nl;
+    k += kl;
+    j += jl;
+    function(n, k, j, i, v1, v2);
+  }, reducer1, reducer2);
+}
+
 } // namespace radm1
 #endif // RAD_M1_RAD_M1_PARFOR_HPP_

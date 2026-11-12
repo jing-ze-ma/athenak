@@ -4176,6 +4176,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // facemmat-1112 implicit_face_mmat (rad_m1.hpp)
   impl_fmm = pin->DoesParameterExist("rad_m1","implicit_face_mmat") &&
              pin->GetBoolean("rad_m1","implicit_face_mmat");
+  // fast2nd-1112 (rad_m1.hpp): halo exchange of the Zalesak R only when it can change
+  if (pin->DoesParameterExist("rad_m1","zalesak_halo_skip")) {
+    zl_hskip = pin->GetBoolean("rad_m1","zalesak_halo_skip");
+  }
+  zl_prof = (std::getenv("M1_FCT_PROF") != nullptr);
   if (impl_fmm) {
     if (impl_pos_trans == 1 || afd_on || impl_muscl_damp > 0.0) {
       ImplFatal("<rad_m1>/implicit_face_mmat is not combined with implicit_pos_transport"
@@ -7980,10 +7985,20 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
   });
   Real ncell = 0.0;
   int nround = 0;
+  // fast2nd-1112: the exchange is skipped after a round that changed no cell within
+  // 2 ng of a MeshBlock face (the send region incl. restriction); the first exchange
+  // always runs (the ghosts hold 1 from the reset, not the exchange of 1)
+  const int zd = 2*id.ng;
+  const bool zx2 = pmy_pack->pmesh->multi_d, zx3 = pmy_pack->pmesh->three_d;
+  const bool zsk = zl_hskip;
+  bool zfirst = true;
+  std::chrono::steady_clock::time_point zt0;
+  if (zl_prof) {Kokkos::fence(); zt0 = std::chrono::steady_clock::now();}
   for (int r = 0; r < 4096; ++r) {   // until no cell is newly limited
-    Real nn = 0.0;
-    par_reduce_flat("m1_fmm_r", 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+    Real nv[2] = {0.0, 0.0};
+    par_reduce_flat2("m1_fmm_r", 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
+                  Real &ab) {
       const Real rc = iw_(m,sr,k,j,i);
       Real rn = rc;
       if (!(hoi && hm_(m,k,j,i) > 0.0)) {
@@ -7996,14 +8011,18 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
           if (rq < rc) {
             rn = rq;
             a += 1.0;
+            if (zsk && (i < is + zd || i > ie - zd ||
+                        (zx2 && (j < js + zd || j > je - zd)) ||
+                        (zx3 && (k < ks + zd || k > ke - zd)))) {ab += 1.0;}
           }
         }
       }
       iw_(m,sn,k,j,i) = rn;
-    }, Kokkos::Sum<Real>(nn));
+    }, Kokkos::Sum<Real>(nv[0]), Kokkos::Sum<Real>(nv[1]));
 #if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, &nn, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, nv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
+    const Real nn = nv[0];
     if (!(nn > 0.0)) {break;}
     ncell += nn;
     nround = r + 1;
@@ -8011,7 +8030,17 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       iw_(m,sr,k,j,i) = iw_(m,sn,k,j,i);
     });
-    ImplicitHaloExchange(1, sr);
+    if (!zsk || zfirst || nv[1] > 0.0) {
+      ImplicitHaloExchange(1, sr);
+      zl_halos[1] += 1.0;
+      zfirst = false;
+    }
+  }
+  zl_rounds[1] += static_cast<Real>(nround);
+  if (zl_prof) {
+    Kokkos::fence();
+    zl_wall[1] += std::chrono::duration<double>(std::chrono::steady_clock::now()
+                                               - zt0).count();
   }
   fmm_cells += ncell;
   fmm_rmax = std::max(fmm_rmax, static_cast<Real>(nround));
@@ -11339,7 +11368,10 @@ void RadiationM1::ImplicitReport() {
               << " limited x1 faces=" << fmm_faces << " max rounds=" << fmm_rmax
               << " left (b<=0 after the limit)=" << fmm_left
               << " realisability-bound faces (|F_H| > c min E)=" << fmm_rfaces
-              << std::endl;
+              << " (rank 0: rounds=" << zl_rounds[1] << " R exchanges=" << zl_halos[1]
+              << " zalesak_halo_skip=" << (zl_hskip ? "on" : "off");
+    if (zl_prof) {std::cout << " round-loop wall=" << zl_wall[1] << " s";}
+    std::cout << ")" << std::endl;
   }
   if (impl_onep > 0) {
     std::cout << "<rad_m1> implicit_one_pass: period=" << impl_onep

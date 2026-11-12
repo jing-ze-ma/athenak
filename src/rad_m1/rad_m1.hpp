@@ -1169,6 +1169,14 @@ class RadiationM1 {
   Real fmm_pass = 0.0, fmm_lpass = 0.0, fmm_cells = 0.0, fmm_faces = 0.0;
   Real fmm_left = 0.0, fmm_rmax = 0.0;
   bool ImplicitFaceMmat(bool bicg, Real dt);
+  // fast2nd-1112: the Zalesak rounds of time2_face_fct / implicit_face_mmat exchange R only
+  // when a cell within 2 ng of a MeshBlock face changed (else the ghosts already hold
+  // what the exchange would write: bitwise).  <rad_m1>/zalesak_halo_skip (default true;
+  // false = exchange every round as before).  Counters: rounds, exchanges done; wall
+  // seconds (env M1_FCT_PROF only, fenced).
+  bool zl_hskip = true;
+  Real zl_rounds[2] = {0.0, 0.0}, zl_halos[2] = {0.0, 0.0}, zl_wall[2] = {0.0, 0.0};
+  bool zl_prof = false;
   bool impl_pf_fa = false;   // physflux-1111 implicit_physflux_mom = fa
   // vkdiag-1111 <rad_m1>/implicit_physflux_zold = fc (read only when named; needs
   // physflux_mom = fa; default fa = bitwise): Z_f's old face flux = F_c^n (f0x*n), i.e.

@@ -24,6 +24,7 @@
 //! stage, which is redone from U^n.
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cmath>
 #include <iostream>
@@ -1793,10 +1794,19 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
                     Kokkos::ALL, Kokkos::ALL), 1.0);
   Real ncell = 0.0;
   int nround = 0;
+  // fast2nd-1112 (rad_m1.hpp zalesak_halo_skip): exchange R only after a round that
+  // changed a cell within 2 ng of a MeshBlock face; the first exchange always runs
+  const int zd = 2*id.ng;
+  const bool zx2 = pmy_pack->pmesh->multi_d, zx3 = pmy_pack->pmesh->three_d;
+  const bool zsk = zl_hskip;
+  bool zfirst = true;
+  std::chrono::steady_clock::time_point zt0;
+  if (zl_prof) {Kokkos::fence(); zt0 = std::chrono::steady_clock::now();}
   for (int r = 0; r < 4096; ++r) {   // until no cell is newly limited
-    Real nn = 0.0;
-    par_reduce_flat("m1_t2_ffct_r", 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+    Real nv[2] = {0.0, 0.0};
+    par_reduce_flat2("m1_t2_ffct_r", 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
+                  Real &ab) {
       const Real rc = iw_(m,ca,k,j,i);
       Real rn = rc;
       if (!(hoi && hm_(m,k,j,i) > 0.0)) {
@@ -1810,14 +1820,18 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
           if (rq < rc) {
             rn = rq;
             a += 1.0;
+            if (zsk && (i < is + zd || i > ie - zd ||
+                        (zx2 && (j < js + zd || j > je - zd)) ||
+                        (zx3 && (k < ks + zd || k > ke - zd)))) {ab += 1.0;}
           }
         }
       }
       iw_(m,cb,k,j,i) = rn;
-    }, Kokkos::Sum<Real>(nn));
+    }, Kokkos::Sum<Real>(nv[0]), Kokkos::Sum<Real>(nv[1]));
 #if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, &nn, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, nv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
+    const Real nn = nv[0];
     if (!(nn > 0.0)) {break;}
     ncell += nn;
     nround = r + 1;
@@ -1825,7 +1839,17 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       iw_(m,ca,k,j,i) = iw_(m,cb,k,j,i);
     });
-    ImplicitKrylovHalo(ca);
+    if (!zsk || zfirst || nv[1] > 0.0) {
+      ImplicitKrylovHalo(ca);
+      zl_halos[0] += 1.0;
+      zfirst = false;
+    }
+  }
+  zl_rounds[0] += static_cast<Real>(nround);
+  if (zl_prof) {
+    Kokkos::fence();
+    zl_wall[0] += std::chrono::duration<double>(std::chrono::steady_clock::now()
+                                               - zt0).count();
   }
   t2_ffct_cells += ncell;
   t2_ffct_rmax = std::max(t2_ffct_rmax, static_cast<Real>(nround));
@@ -3353,7 +3377,10 @@ void RadiationM1::Time2Report() {
               << t2_ffct_nop << " K1 flux from U^n=" << t2_ffct_fill << " limited cells="
               << t2_ffct_cells << " max rounds="
               << t2_ffct_rmax << " withheld E x vol=" << t2_ffct_de << " left (Q<=0)="
-              << t2_ffct_left;
+              << t2_ffct_left << " (rank 0: rounds=" << zl_rounds[0] << " R exchanges="
+              << zl_halos[0];
+    if (zl_prof) {std::cout << " round-loop wall=" << zl_wall[0] << " s";}
+    std::cout << ")";
   }
   if (vet_col && t2_vcmode != 0) {
     std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :
