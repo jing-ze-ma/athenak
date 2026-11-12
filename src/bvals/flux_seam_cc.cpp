@@ -192,13 +192,14 @@ bool SeamFaceGeom(const MeshBufferIndcs &ix, const int is, const int ie,
 static int SeamFluxVl() {
   static int v = -1;
   if (v < 0) {
-#if defined(KOKKOS_ENABLE_CUDA)
+    // fast2nd-1112: the env is read on every backend (HIP default 1 until measured)
     const char *e = std::getenv("BVALS_SEAM_VL");
+#if defined(KOKKOS_ENABLE_CUDA)
     v = (e != nullptr) ? std::atoi(e) : 32;
-    if (v < 1) {v = 1;}
 #else
-    v = 1;
+    v = (e != nullptr) ? std::atoi(e) : 1;
 #endif
+    if (v < 1) {v = 1;}
   }
   return v;
 }
