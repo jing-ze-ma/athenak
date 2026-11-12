@@ -6536,9 +6536,18 @@ void RadiationM1::VetGdBuild() {
     vra_raw = false;
     VetGdRotAvgSetup();
     // vgdxf-1112: the boundary quantities at t_k (RotXfPre), then the Delta of t_k
-    if (vgd_xf) {RotXfPre(VgdXfRx(blk), ilo);}
+    if (vgd_xf) {
+      // (vra_bk_*: A is in vgd_xf_d with xfade; here they keep the live next-set sweep)
+      Kokkos::deep_copy(vra_bk_tt, tau_ten);
+      if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_hr, vgd_hr);}
+      if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_q, vcol_q);}
+      RotXfPre(VgdXfRx(blk), ilo);
+    }
     RotAvgDelta(vra_k - 1, ilo);
     if (vgd_xf) {
+      Kokkos::deep_copy(tau_ten, vra_bk_tt);
+      if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vgd_hr, vra_bk_hr);}
+      if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vcol_q, vra_bk_q);}
       // vgdxf-1112: the next set's sweep at this state is the one the cross-fade needs
       VetGdXfade(blk, true);
     } else {

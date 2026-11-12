@@ -1059,7 +1059,8 @@ void RadiationM1::RotXfBlend(const Real s, const bool last, const int ilo,
 //! the EMA / K-window would carry into the whole next block): the current set's raw
 //! fields (the Delta slot and G) and the next set's sweep (the fields) extrapolated
 //! linearly with the previous build of this block, rx = (t_k - t)/(t - t_prev).  The
-//! EMA change test, the aux slot and the Delta then all refer to t_k
+//! EMA change test, the aux slot and the Delta then all refer to t_k; the fields are
+//! put back to the live sweep afterwards (VetGdBuild) and G (slot 0) is not changed
 
 void RadiationM1::RotXfPre(const Real rx, const int ilo) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1096,8 +1097,7 @@ void RadiationM1::RotXfPre(const Real rx, const int ilo) {
         sk = fmin(fmax(sk, t.lo[f]), t.hi[f]);
       }
       d_(m,od+f,kk,jj,ii) = gk;
-      x_(m,f,kk,jj,ii) = gk;
-      fv = sk;
+      fv = sk;   // put back after RotAvgDelta (VetGdBuild): the blend uses the live S
     }
   });
 }
