@@ -226,6 +226,13 @@ void AmModule::Apply(Driver *pdrive, int stage, Real bdt, const AmFluid &fl) {
       AmTransport(bdt, pdrive, stage, fl);
     }
     if (dg) {AmDiagPost(bdt, stage, fl);}
+  } else if ((am_cons_diag > 0) && (am_diag_n < am_cons_diag) &&
+             pmy_pack->pmesh->use_cubed_sphere) {
+    // amlz-1112: am_transport = false + am_cons_diag: the same AMH_CONS line with no
+    // deposit (dep = 0), so sum_dT is the update's own global torque error per stage and
+    // Lfluid the fluid's L (read-only)
+    AmDiagPre(fl);
+    AmDiagPost(bdt, stage, fl);
   }
   if (frame_on) {FrameRotation(bdt, pdrive, stage, fl);}
   if (am_vector && am_eta > 0.0 && stage == pdrive->nexp_stages) {AmSpinReturn(fl);}
