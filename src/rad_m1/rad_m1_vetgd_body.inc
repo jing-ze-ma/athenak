@@ -10,10 +10,15 @@
 //! row).  Two kernels, so that the mirror read costs the default nothing (compiled into
 //! the one kernel it cost +3.6 % GPU time on the accretor deck, 12414551 vs 12414756).
 //! Needs M1_VGD_BODY_NAME (the lambda's name) and M1_VGD_BODY_MIR defined.
+//! vgdshell-1113: vpa and gx are deduced (generic lambda): a launch passes a bool (the
+//! runtime value; gx true) or std::false_type, which compiles the branches they gate out
+//! of that kernel (gx false: no upwind profile shifts, polar rings, band exit or fused
+//! twin; VetGdSweep launches it only when those are off).  The arithmetic of every path
+//! taken is unchanged.
 
       auto M1_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                             const int d, const int i, const int l,
-                                            const bool vpa) {
+                                            const auto vpa, const auto gx) {
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         // the face midpoints (uniform in index space, as the bilinear reads assume)
         // accsp-1102: a stretched theta / the full sphere: the row's node (sph2.inc)
@@ -38,7 +43,7 @@
           // value's own n . r_hat (mc) to the ghost's (mt); the symmetric part of the
           // ghost then is that of the ghost's own position and direction.  Opt-in
           // (vet_gd_upwind_wall; uniform theta, wedge band only)
-          const bool upw = upwl_ && (upf_ == 1 || upf_ == 2);   // (twin: own profile)
+          const bool upw = gx && upwl_ && (upf_ == 1 || upf_ == 2);   // (twin: own)
           // (no shift unless the profile reproduces the read value v at its own cosine
           // to tol: an unresolved angular structure, e.g. a beam edge, keeps the read)
           auto ush = [&](const int ii, const Real mt, const Real mc,
@@ -210,7 +215,7 @@
             bool rng = false;
             int rk0 = 0, rk1 = 0, rj0 = 0, rj1 = 0;
             Real ruk = 0.0;
-            if (rbon_) {
+            if (gx && rbon_) {
               const int J0 = lxy_(m,0)*nx2b + (j0 - wb);
               int zp = -1;
               if (J0 >= -nzr_ && J0 + 1 <= nzr_ - 1) {
@@ -282,14 +287,14 @@
               return (kk + ((jj - VGD_RB0) & 1)*(nx3t_/2)) % nx3t_;
             };
             auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
-              if (jj >= VGD_RB0) {
+              if (gx && jj >= VGD_RB0) {
                 return rbc_(((static_cast<size_t>(ii)*2 + c)*2*nzr_ + ((jj - VGD_RB0) >> 1))
                             *nx3t_ + rkp(kk,jj));
               }
               return csx(m,c,kk,jj,ii);
             };
             auto fIu = [&](const int kk, const int jj) -> Real {
-              if (jj >= VGD_RB0) {
+              if (gx && jj >= VGD_RB0) {
                 return rbi_(((static_cast<size_t>(iu)*2*nzr_ + ((jj - VGD_RB0) >> 1))*nx3t_
                              + rkp(kk,jj))*n + d);
               }
@@ -297,7 +302,7 @@
             };
             // the branch n . r_hat of a stencil cell (ring: at its true position)
             auto mrq = [&](const int kk, const int jj) -> Real {
-              if (jj >= VGD_RB0) {
+              if (gx && jj >= VGD_RB0) {
                 const int pq = (jj - VGD_RB0) >> 1;
                 const Real tq = rbth_(pq/nzr_, pq % nzr_);
                 const Real pk = mp0 + (rkp(kk,jj) + 0.5)*(mpl/nx3t_);
@@ -378,9 +383,9 @@
               }
               bdone = true;
             }
-            if (!bdone && clp && bandx && typ == 1) {
+            if (!bdone && clp && gx && bandx && typ == 1) {
 #else
-            if (clp && bandx && typ == 1) {
+            if (clp && gx && bandx && typ == 1) {
 #endif
               // vet_gd_band_exit: the upwind point lies beyond the ghost band.  Instead
               // of reading the clamped (wrong) column, stop the segment where the ray
@@ -498,7 +503,7 @@
               // own n . r_hat to the upwind point's (main field only; off: no shift)
               Real cq_[4] = {0.0, 0.0, 0.0, 0.0};
               bool upo = false;
-              if (upf_ == 1 || upf_ == 2) {
+              if (gx && (upf_ == 1 || upf_ == 2)) {
                 const Real muu = (nx*xu + ny*yu + nz*zu)/ru;
                 auto mqe = [&](const int e) -> Real {return mrq(st4.K(e), st4.J(e));};
                 auto iqe = [&](const int e) -> Real {return fIu(st4.K(e), st4.J(e));};
@@ -723,5 +728,5 @@
           return iv;
         };
         vi_(m,d,k,j,i) = solve(cs_, vi_, tws, upp_);
-        if (two) {vt_(m,d,k,j,i) = solve(ct_, vt_, true, upp2_);}
+        if (gx && two) {vt_(m,d,k,j,i) = solve(ct_, vt_, true, upp2_);}
       };
