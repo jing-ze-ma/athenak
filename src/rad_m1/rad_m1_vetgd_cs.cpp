@@ -1975,7 +1975,8 @@ void RadiationM1::VetGdCsSweep() {
             Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 6>>(DevExeSpace(), 0, nper),
             Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
       } else {
-        Kokkos::parallel_for("m1_vgdcs_shell", VgdLight(DevExeSpace(), 0, nper), mainf_);
+        Kokkos::parallel_for("m1_vgdcs_shell", VgdShellPol(DevExeSpace(), 0, nper),
+                             mainf_);
       }
 #if MPI_PARALLEL_ENABLED
       if (pipe) {
