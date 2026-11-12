@@ -23,6 +23,10 @@
 #if M1_RCP
         // implicit_realisable_coupling: |F| <= c E in beta.F
         const Real f1r = fmin(fmax(f1, -cl*e), cl*e);
+        if (fcdg && f1r != f1) {   // facebound-1112 implicit_fclip_diag: rescale fires
+          Kokkos::atomic_add(&fcd_(16), 1.0);
+          Kokkos::atomic_add(&fcd_(17), fabs(f1)/(cl*e) - 1.0);
+        }
         de0 = ovc ? (-2.0*b1*f1r/cl) : (b1*b1*e - 2.0*b1*f1r/cl + b1*b1*chi*e);
 #else
         de0 = ovc ? (-2.0*b1*f1/cl) : (b1*b1*e - 2.0*b1*f1/cl + b1*b1*chi*e);
@@ -208,7 +212,13 @@
           const Real c = rccl(m,k,j), si = 1.0/rcsn(m,k,j);
           fmr = M1FluxNormCs(c, f1, (f2c + c*f3c)*si, (f3c + c*f2c)*si);
         }
-        if (fmr > cl*e) {bf *= cl*e/fmr;}
+        if (fmr > cl*e) {
+          bf *= cl*e/fmr;
+          if (fcdg) {   // facebound-1112 implicit_fclip_diag: the rescale fires
+            Kokkos::atomic_add(&fcd_(16), 1.0);
+            Kokkos::atomic_add(&fcd_(17), fmr/(cl*e) - 1.0);
+          }
+        }
 #endif
         Real bpb = (b1*b1*d11 + b2*b2*d22 + b3*b3*d33
                     + 2.0*(b1*b2*d12 + b1*b3*d13 + b2*b3*d23))*e;

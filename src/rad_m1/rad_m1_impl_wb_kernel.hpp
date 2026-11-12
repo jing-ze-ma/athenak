@@ -260,6 +260,10 @@
                               : sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
           const Real fc = cl*fmax(ep, efl);
           if (fq > fc) {
+            if (fcdg) {   // facebound-1112 implicit_fclip_diag: the rescale fires
+              Kokkos::atomic_add(&fcd_(18), 1.0);
+              Kokkos::atomic_add(&fcd_(19), fq/fc - 1.0);
+            }
             const Real sc = fc/fq;
             dm1 *= sc;
             dm2 *= sc;
@@ -557,6 +561,10 @@
                                 : sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
             const Real fc = cl*fmax(ep, efl);
             if (fq > fc) {
+              if (fcdg) {   // facebound-1112 implicit_fclip_diag: the rescale fires
+                Kokkos::atomic_add(&fcd_(18), 1.0);
+                Kokkos::atomic_add(&fcd_(19), fq/fc - 1.0);
+              }
               const Real sc = fc/fq;
               gd1 *= sc;
               gd2 *= sc;

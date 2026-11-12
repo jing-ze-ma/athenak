@@ -3557,7 +3557,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_fclip_diag") &&
       pin->GetBoolean("rad_m1","implicit_fclip_diag")) {
     impl_fclip_diag = true;
-    Kokkos::realloc(fcd_cnt_d, 16);
+    Kokkos::realloc(fcd_cnt_d, 20);
     Kokkos::deep_copy(fcd_cnt_d, 0.0);
   }
   if (cs_vtx_mono && global_variable::my_rank == 0) {
@@ -10609,14 +10609,14 @@ void RadiationM1::ImplicitReport() {
     }
     std::cout << std::endl;
   }
-  if (impl_fclip_diag && fcd_cnt_d.extent_int(0) == 16) {   // facebound-1112
+  if (impl_fclip_diag && fcd_cnt_d.extent_int(0) == 20) {   // facebound-1112
     auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fcd_cnt_d);
-    Real fv[16];
-    for (int q = 0; q < 16; ++q) {fv[q] = hf(q);}
+    Real fv[20];
+    for (int q = 0; q < 20; ++q) {fv[q] = hf(q);}
 #if MPI_PARALLEL_ENABLED
-    Real gf[16];
-    MPI_Allreduce(fv, gf, 16, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    for (int q = 0; q < 16; ++q) {fv[q] = gf[q];}
+    Real gf[20];
+    MPI_Allreduce(fv, gf, 20, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int q = 0; q < 20; ++q) {fv[q] = gf[q];}
 #endif
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> FCLIPDIAG in-loop (cs2_clip=rad, unpaired): n=" << fv[0]
@@ -10634,6 +10634,10 @@ void RadiationM1::ImplicitReport() {
                 << " paired (consrc kick) n=" << fv[13]
                 << " face-mean>cE(pre-move) n=" << fv[14] << " E<E^old/2 n=" << fv[15]
                 << std::endl;
+      std::cout << "<rad_m1> FCLIPDIAG implicit_realisable_coupling rescale: lag (beta.F"
+                << " of E0) cell-passes=" << fv[16] << " mean(|F|/cE-1)="
+                << fv[17]/fmax(fv[16], 1.0) << " | write-back drag cell-solves=" << fv[18]
+                << " mean(|F|/cE-1)=" << fv[19]/fmax(fv[18], 1.0) << std::endl;
     }
   }
   if (global_variable::my_rank != 0) return;
@@ -15100,6 +15104,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool vdv = t2st && impl_vimp && t2_fvnew && (it > 0);
     const int ivd = impl_vimp ? (iw_vimp + M1_IV_DV) : 0;
     const bool rcp = impl_real_couple;
+    // facebound-1112 implicit_fclip_diag: the rescale's firing count (diagnostic only)
+    const bool fcdg = impl_fclip_diag && (fcd_cnt_d.extent_int(0) == 20);
+    auto fcd_ = fcd_cnt_d;
     // rad-beam-1008 implicit_recon_dgpass: the lagged reduced flux of a cell is made from
     // the LOW-ORDER part of its face fluxes (the stored face flux minus the plm deferred
     // correction): the correction's face E is not the donor's, and its ratio to the donor
@@ -18301,7 +18308,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto peos = flr.eos;
   auto pc_ = pos_cnt_d;
   // facebound-1112 implicit_fclip_diag / time2_stage_theta (rad_m1.hpp)
-  const bool fcdg = impl_fclip_diag && (fcd_cnt_d.extent_int(0) == 16);
+  const bool fcdg = impl_fclip_diag && (fcd_cnt_d.extent_int(0) == 20);
   auto fcd_ = fcd_cnt_d;
   const bool thre = (t2_theta > 0.0) && t2st && (t2s == M1_T2S_STAGE2) &&
                     (t2thr.extent_int(0) > nmb1) && (t2th_cnt_d.extent_int(0) == 5);

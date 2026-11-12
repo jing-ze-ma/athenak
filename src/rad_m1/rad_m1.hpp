@@ -2258,13 +2258,15 @@ class RadiationM1 {
   void Time2StageTheta(int stage, Real dt);
   // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,
   // nothing written back): where the write-back's realisability clip |F| <= c E comes
-  // from.  fcd_cnt_d (16): in-loop clip of the conservative2 kick (cs2_clip = rad): 0 n,
+  // from.  fcd_cnt_d (20): in-loop clip of the conservative2 kick (cs2_clip = rad): 0 n,
   // 1 sum(|u|/|q| - 1), 2 n face mean alone > c E, 3 of those with face mean <= c E^old,
   // 4 sum |q|/(c E^old), 5 unpaired |u - q|/(c chat) x vol; final clip (cs metric norm):
   // 6 n, 7 sum(|F|/(c E) - 1), 8 n with the plain norm (the M1_POS_FCLIP rule), 9 n made
   // by the positivity moves, 10 n made by cons_final, 11 n where pos moves lowered E,
   // 12 sum (|F| - c E)/(c chat) x vol, 13 n momentum-paired (consrc kick), 14 n face
-  // mean alone > c E (before the moves), 15 n with E < E^old/2
+  // mean alone > c E (before the moves), 15 n with E < E^old/2;
+  // implicit_realisable_coupling rescale: 16 lag cell-passes (beta.F of E0), 17 their
+  // sum(|F|/cE - 1), 18 write-back drag cell-solves, 19 their sum(|F|/cE - 1)
   bool impl_fclip_diag = false;
   DvceArray1D<Real> fcd_cnt_d;
   int impl_am_cs_diag = 0;   // amdef-1019 diagnostic (read only when named): solves to print
