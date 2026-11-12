@@ -2148,6 +2148,18 @@ Real RadiationM1::VgdXfRx(const int64_t blk) const {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::VgdXfRe
+//! \brief vgdxf-1112 vet_gd_rotate_xfade_m: (t - t_2)/(t_2 - t_4) for RotXfEst, t_2 / t_4
+//! the times of the last two live next-set sweeps; -1 (hold) unless both are in block blk
+
+Real RadiationM1::VgdXfRe(const int64_t blk) const {
+  if (vgd_xf_sb[0] != blk || vgd_xf_sb[1] != blk || !(vgd_xf_st[1] > vgd_xf_st[0])) {
+    return -1.0;
+  }
+  return (pmy_pack->pmesh->time - vgd_xf_st[1])/(vgd_xf_st[1] - vgd_xf_st[0]);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdXfade
 //! \brief vgdxf-1112: the fields hold the next set's raw sweep at this state (the table
 //! of VetGdRotAvgSetup set): fields := (1 - s) A + s T_{b+1} (RotXfBlend), s = (t - t_b)
@@ -6555,7 +6567,14 @@ void RadiationM1::VetGdBuild() {
       if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vgd_hr, vra_bk_hr);}
       if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vcol_q, vra_bk_q);}
       // vgdxf-1112: the next set's sweep at this state is the one the cross-fade needs
-      VetGdXfade(blk, true);
+      // (vet_gd_rotate_xfade_lean: the blend uses the estimate, as the builds before it,
+      // so that no closure switch sits at the dt-dependent time t_k - dt)
+      if (vgd_xf_lean && vgd_xf_m > 0) {
+        RotXfEst(ilo, VgdXfRe(blk));
+        VetGdXfade(blk, true, false);
+      } else {
+        VetGdXfade(blk, true);
+      }
     } else {
       Kokkos::deep_copy(tau_ten, vra_bk_tt);
       if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vgd_hr, vra_bk_hr);}
@@ -6576,10 +6595,12 @@ void RadiationM1::VetGdBuild() {
     if (vgd_xf_m > 0) {
       const Mesh *pm = pmy_pack->pmesh;
       const Real tb = vgd_rot_t0 + static_cast<Real>(blk)*vgd_rot_dt;
-      const int jn = static_cast<int>(std::floor((pm->time - tb)/vgd_rot_dt*vgd_xf_m));
-      // (vet_gd_rotate_xfade_lean: only the part starts and the last build)
-      const Real npen = vgd_xf_lean ? 1.0 : 2.0;
-      const bool pen = pm->time + npen*pm->dt >= tb + vgd_rot_dt - 1.0e-9*vgd_rot_dt;
+      // (+1e-6: a build at a part start up to round-off belongs to that part)
+      const int jn = static_cast<int>(std::floor((pm->time - tb)/vgd_rot_dt*vgd_xf_m
+                                                 + 1.0e-6));
+      // (vet_gd_rotate_xfade_lean: only the part starts, at the same times for every dt)
+      const bool pen = !vgd_xf_lean &&
+                       pm->time + 2.0*pm->dt >= tb + vgd_rot_dt - 1.0e-9*vgd_rot_dt;
       if (blk != vgd_xf_sblk) {vgd_xf_sn = 0;}
       sw = (blk != vgd_xf_sblk) || (jn > vgd_xf_sj) || pen ||
            (vgd_xf_sn < 2 && !vgd_xf_lean);
@@ -6587,9 +6608,8 @@ void RadiationM1::VetGdBuild() {
         vgd_xf_sblk = blk;
         vgd_xf_sj = jn;
         vgd_xf_sn += 1;
-      } else if (vgd_xf_sb[0] == blk && vgd_xf_sb[1] == blk &&
-                 vgd_xf_st[1] > vgd_xf_st[0]) {
-        rxe = (pm->time - vgd_xf_st[1])/(vgd_xf_st[1] - vgd_xf_st[0]);
+      } else {
+        rxe = VgdXfRe(blk);
       }
     }
     if (sw) {

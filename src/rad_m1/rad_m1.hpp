@@ -3050,13 +3050,15 @@ class RadiationM1 {
   // over the next set as G (+) Delta^, Delta^ the linear extrapolation in time of the
   // last two sweeps' Delta of this block (one: held) (RotXfEst)
   int vgd_xf_m = 0;
-  bool vgd_xf_lean = false;   // vet_gd_rotate_xfade_lean: no second / second-to-last sweep
+  bool vgd_xf_lean = false;   // vet_gd_rotate_xfade_lean: sweeps only at the part starts
+                              // (dt-independent times); the last build blends the estimate
   int64_t vgd_xf_sblk = INT64_MIN;
   int vgd_xf_sj = -1;
   int vgd_xf_sn = 0;                 // the live next-set sweeps in block vgd_xf_sblk
   int64_t vgd_xf_sb[2] = {INT64_MIN, INT64_MIN};   // block, time of the last two
   Real vgd_xf_st[2] = {0.0, 0.0};                   // live sweeps (1: the latest)
   void RotXfEst(const int ilo, const Real r);
+  Real VgdXfRe(const int64_t blk) const;
   void RotXfPre(const Real rx, const int ilo);
   Real VgdXfRx(const int64_t blk) const;
   int64_t vgd_xf_pblk = INT64_MIN;   // the block and time of the previous xf build
