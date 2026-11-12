@@ -1082,6 +1082,12 @@ class RadiationM1 {
   DvceArray5D<Real> gwd;
   DvceArray1D<Real> impl_gsh;
   bool impl_hr_cmem = false;   // rc18-1110 implicit_hr_cmem: separate F_c memory
+  // amlzf-1112 <rad_m1>/implicit_hr_cmem_onemem (read only when named; absent / false =
+  // bitwise): with cmem, the face memory F_c (f0x*) is set to the applied flux fax* at the
+  // end of every solve, before the write-back, so every face update starts from the same
+  // flux variable it produces (no (1 - al)(F_c^n - F_a^n) switch term: radiation momentum
+  // changed without a stress); cmem keeps only its role inside the solve (E rows)
+  bool impl_cm_onemem = false;
   bool impl_aphll_mem = false;   // aphll-time-1110 implicit_aphll_mem (cmem + restage)
   bool impl_aphll_fci = false;   // aphll-time-1110 implicit_aphll_fcimp (F_c implicit)
   DvceArray4D<Real> fax1, fax2, fax3;   // rc18-1110: the applied face fluxes (cmem)

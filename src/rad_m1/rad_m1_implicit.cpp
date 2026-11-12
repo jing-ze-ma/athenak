@@ -2678,6 +2678,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // divergence.  w is unchanged (no dt, no opacity); nothing relaxes per step.
   impl_hr_cmem = pin->DoesParameterExist("rad_m1","implicit_hr_cmem") &&
                  pin->GetBoolean("rad_m1","implicit_hr_cmem");
+  impl_cm_onemem = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_onemem") &&
+                   pin->GetBoolean("rad_m1","implicit_hr_cmem_onemem");
   // physflux-1111 implicit_physflux (opt-in, read only when named, default false =
   // bitwise; rc18_1110/PHYSFLUX_DESIGN.md principle 1): implies implicit_hr_cmem and
   // makes the face-equation flux F_c (f0x*) the ONE radiation momentum flux: the cell F
@@ -19410,6 +19412,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // rc18-1110 cmem: F^old of the conservative gas source = the face means of the F_c
   // memory (+ a E^n), the old flux the face kernels' Z_f were built with, so that the gas
   // takes exactly the drag on the APPLIED flux dt k F_a'/c + the transport part
+  // amlzf-1112 implicit_hr_cmem_onemem: the memory F_c := the applied flux F_a here, so
+  // the write-back, the stage slopes and the next solve see ONE flux variable
+  if (impl_cm_onemem && impl_hr_cmem && fax1.extent_int(0) > 0) {
+    Kokkos::deep_copy(DevExeSpace(), f0x1, fax1);
+    if (trans && fax2.extent_int(0) > 0) {Kokkos::deep_copy(DevExeSpace(), f0x2, fax2);}
+    if (trans && thrd && fax3.extent_int(0) > 0) {
+      Kokkos::deep_copy(DevExeSpace(), f0x3, fax3);
+    }
+  }
   const bool cmw = impl_hr_cmem && !impl_physflux;   // physflux-1111: F^old = u0 F
   if (impl_hr_cmem && !(impl_physflux && !impl_pf_fa)) {   // physflux: wb reads F_c
     f0_ = fax1;
