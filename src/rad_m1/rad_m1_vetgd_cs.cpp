@@ -1974,6 +1974,17 @@ void RadiationM1::VetGdCsSweep() {
         Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
             Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 6>>(DevExeSpace(), 0, nper),
             Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
+      } else if (s_lb == 2) {
+        // d6fast2-1112: on HIP the second bound is the minimum waves per EU, so 6 caps
+        // the body at 80 VGPRs + 800 B scratch per thread (rocprofv3 13082414); 2 and 1
+        // allow 256 / 512 (register allocation only, the same code)
+        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
+            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 2>>(DevExeSpace(), 0, nper),
+            Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
+      } else if (s_lb == 1) {
+        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
+            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 1>>(DevExeSpace(), 0, nper),
+            Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
       } else {
         Kokkos::parallel_for("m1_vgdcs_shell", VgdLight(DevExeSpace(), 0, nper), mainf_);
       }
