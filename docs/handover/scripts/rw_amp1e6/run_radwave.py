@@ -108,6 +108,9 @@ def case_tag(c):
         return t + "_arm%s_bis%s_%s" % (c["extra"].get("arm"), c["extra"]["bis"], h)
     for k in sorted(c["extra"]):
         t += "_%s%s" % (k.split("/")[-1], c["extra"][k])
+    if len(t) > 250:                         # GPFS 255-char names (Orion 11-12 patch)
+        import hashlib
+        t = t[:120] + "_h" + hashlib.md5(t.encode()).hexdigest()[:12]
     return t
 
 
@@ -310,6 +313,17 @@ def analyse(rdir, c, bg, w, vec, nx2, nx3):
             "e_end": ee.tolist()}
 
 
+def analyse_mm(rdir, c, bg, w, vec):
+    """rw-drag-1112: the 4-mode acoustic omega (modefit4); {} if it cannot be formed."""
+    if c["dir"] != "x1":
+        return {}
+    try:
+        import modefit4  # noqa: E402
+        return modefit4.acoustic(rdir, bg, w, vec)
+    except Exception as ex:  # noqa: BLE001
+        return {"w4_error": str(ex)}
+
+
 def run_one(line):
     c = parse_case(line)
     tag = case_tag(c)
@@ -336,6 +350,7 @@ def run_one(line):
         out = analyse(rdir, c, bg, w, vec, nx2, nx3)
     except Exception as ex:  # noqa: BLE001
         return tag, "ANALYSIS FAILED %s" % ex
+    out.update(analyse_mm(rdir, c, bg, w, vec))
     out["case"] = c
     out["ref_key"] = rk
     out["refs"] = {k: [refs[k][0].real, refs[k][0].imag] for k in refs}
@@ -356,8 +371,9 @@ def run_one(line):
                                            or "vet_sc" in s.lower())][-12:]
     with open(res_path, "w") as fp:
         json.dump(out, fp)
-    return tag, "ok w=(%.8g, %.6g) ref=(%.8g, %.6g) l1=%.3e" % (
-        out["w_re"], out["w_im"], w.real, w.imag, out["l1_rho"])
+    return tag, "ok w=(%.8g, %.6g) w4=(%.8g, %.6g) ref=(%.8g, %.6g) l1=%.3e" % (
+        out["w_re"], out["w_im"], out.get("w4_re", float("nan")), out.get("w4_im", float("nan")),
+        w.real, w.imag, out["l1_rho"])
 
 
 def main():
