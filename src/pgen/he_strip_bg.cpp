@@ -298,3 +298,140 @@ void HsRestartPerturb(ParameterInput *pin, Mesh *pm) {
               << " (hash noise) at t = " << pm->time << std::endl;
   }
 }
+
+//----------------------------------------------------------------------------------------
+//! eosreinit-1112 (USER 11-12, RSG eos_h2 switch at a restart): problem/eos_reinit_from_t
+//! (absent or false = nothing, bitwise).  ONE-SHOT, on a restart: re-set the internal
+//! energy from the restart's (rho, T) with THIS run's EOS table, keeping T.  The general
+//! EOS measures e from a composition-dependent zero point (with <hydro>/eos_h2 = true it
+//! is "all H in ground-state H2", so every atomic H carries +chi_d/2), so restarting with
+//! a different table at the file's e jumps T (eos_h2 false -> true: T collapses into the
+//! molecular branch).  T is the restart file's temperature cache (Hydro::wtemp, restored
+//! by the restart reader before UserProblem; the run needs it, the call fatals without
+//! it).  Per cell (ghosts included): u0(IEN) += e_new(rho, T) - e_old, with e_old the
+//! file's internal energy (the eint_rst cache when the file carried it, else u0(IEN)
+//! - KE - rho Phi with the cubed-sphere covariant KE); KE, rho Phi, rho, momenta and the
+//! M1 radiation (E, F) are untouched.  The derived cache (p, Gamma_1) is re-evaluated
+//! with the new table at (rho, e_new, T) and eint_rst set to e_new, so the frozen first
+//! ConToPrim of the restart (Hydro::c2p_freeze_derived) carries the NEW table's state.
+//! The total internal-energy change over the active cells (= the total-energy change,
+//! etotgrav and radiation unchanged) is volume-integrated and printed, with the pressure
+//! change at fixed (rho, T) (the molecular-region mu change).  Hydro only (the pgen
+//! refuses <mhd>); refused under <hydro>/dual_energy (its pressure slots belong to the
+//! old table).  The key is cleared after use, so the restart files this run writes never
+//! re-fire it.
+void HsEosReinitFromT(ParameterInput *pin, Mesh *pm) {
+  if (!pin->DoesParameterExist("problem", "eos_reinit_from_t") ||
+      !pin->GetBoolean("problem", "eos_reinit_from_t")) return;   // absent: bitwise
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  hydro::Hydro *ph = pmbp->phydro;
+  if (ph == nullptr || pmbp->pmhd != nullptr) {
+    std::cout << "### FATAL eos_reinit_from_t: hydro only" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  auto eos = ph->peos->eos_data;
+  auto wtemp = ph->wtemp;
+  auto wder = ph->wder;
+  if (!eos.IsGeneral() || wtemp.extent_int(0) == 0 || wder.extent_int(0) == 0 ||
+      !ph->c2p_freeze_derived) {
+    std::cout << "### FATAL eos_reinit_from_t needs the general EOS and a restart file "
+              << "carrying its T and derived caches" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (ph->dual.on) {
+    std::cout << "### FATAL eos_reinit_from_t is not supported with <hydro>/dual_energy"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, ng = indcs.ng;
+  const int n1m1 = indcs.nx1 + 2*ng - 1;
+  const int n2m1 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng - 1) : 0;
+  const int n3m1 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng - 1) : 0;
+  const int nmb = pmbp->nmb_thispack;
+  const bool hcs = pm->use_cubed_sphere;
+  const bool etg = ph->use_etotgrav;
+  const bool hei = ph->c2p_eint_rst && (ph->eint_rst.extent_int(0) > 0);
+  auto eir = ph->eint_rst;
+  auto u0 = ph->u0;
+  auto phi = ph->phicc0;
+  auto cosc = pmbp->pcoord->cos_cell;
+  auto &volume = pmbp->pcoord->volume;
+  // sums over the ACTIVE cells: 0 dE_int, 1 E_int old, 2 cells changed, 3 int p_old dV,
+  // 4 int p_new dV, 5 cells p_new/p_old < 0.9, 6 int rho dV of those, 7 int rho dV;
+  // 8 min p_new/p_old (as -max of -ratio), 9 skipped cells (no T or e)
+  constexpr int NS = 10;
+  DvceArray1D<Real> sums("eosre_sums", NS);
+  Kokkos::deep_copy(sums, 0.0);
+  Kokkos::deep_copy(Kokkos::subview(sums, 8), -1.0e300);
+  par_for("eos_reinit_from_t", DevExeSpace(), 0, nmb - 1, 0, n3m1, 0, n2m1, 0, n1m1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const bool act = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
+    const Real d = u0(m,IDN,k,j,i);
+    const Real t = wtemp(m,k,j,i);
+    Real eold;
+    if (hei) {
+      eold = eir(m,k,j,i);
+    } else {
+      const Real c = hcs ? cosc(m,k,j) : 0.0;
+      const Real ke2 = hcs ? CsKeMom(u0(m,IM1,k,j,i), u0(m,IM2,k,j,i),
+                                     u0(m,IM3,k,j,i), c)
+                           : 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
+                                  + SQR(u0(m,IM3,k,j,i)));
+      eold = u0(m,IEN,k,j,i) - ke2/d - (etg ? d*phi(m,k,j,i) : 0.0);
+    }
+    if (!(d > 0.0) || !(t > 0.0) || !(eold > 0.0)) {
+      if (act) Kokkos::atomic_add(&sums(9), 1.0);
+      return;
+    }
+    const Real enew = eos.EnergyFromTemperature(d, t);
+    const Real pold = wder(m,IDPR,k,j,i);
+    u0(m,IEN,k,j,i) += enew - eold;
+    Real p, g1;
+    eos.PressureAndGamma1(d, enew, t, p, g1);
+    wder(m,IDPR,k,j,i) = p;
+    wder(m,IDG1,k,j,i) = g1;
+    if (hei) eir(m,k,j,i) = enew;
+    if (act) {
+      const Real v = volume(m,k,j,i);
+      Kokkos::atomic_add(&sums(0), (enew - eold)*v);
+      Kokkos::atomic_add(&sums(1), eold*v);
+      Kokkos::atomic_add(&sums(2), 1.0);
+      Kokkos::atomic_add(&sums(3), pold*v);
+      Kokkos::atomic_add(&sums(4), p*v);
+      Kokkos::atomic_add(&sums(7), d*v);
+      const Real rt = (pold > 0.0) ? p/pold : 1.0;
+      if (rt < 0.9) {
+        Kokkos::atomic_add(&sums(5), 1.0);
+        Kokkos::atomic_add(&sums(6), d*v);
+      }
+      Kokkos::atomic_max(&sums(8), -rt);
+    }
+  });
+  Kokkos::fence();
+  auto hs = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sums);
+  double s[NS];
+  for (int n = 0; n < NS; ++n) s[n] = static_cast<double>(hs(n));
+  double smx = s[8];
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, s, 8, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &s[9], 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &smx, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0) {
+    std::printf("eos_reinit_from_t (eosreinit-1112): APPLIED at t = %.10e, cycle %d "
+                "(e from the restart (rho, T) with this run's EOS table; T, rho, "
+                "momenta, M1 E/F kept; e_old from %s)\n", pm->time, pm->ncycle,
+                hei ? "the restart's eint cache" : "the conserved state");
+    std::printf("eos_reinit_from_t: active cells %.0f (skipped %.0f); int E_int dV old "
+                "%.10e new %.10e erg; dE_total = dE_int = %.10e erg (%.4e of E_int "
+                "old)\n",
+                s[2], s[9], s[1], s[1] + s[0], s[0], (s[1] != 0.0) ? s[0]/s[1] : 0.0);
+    std::printf("eos_reinit_from_t: int p dV old %.10e new %.10e; cells with p_new/p_old "
+                "< 0.9: %.0f (mass %.6e of %.6e g); min p_new/p_old %.6f\n",
+                s[3], s[4], s[5], s[6], s[7], -smx);
+  }
+  // one-shot: never inherited by the restart files this run writes
+  pin->SetBoolean("problem", "eos_reinit_from_t", false);
+}
