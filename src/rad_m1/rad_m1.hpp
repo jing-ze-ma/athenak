@@ -1125,6 +1125,12 @@ class RadiationM1 {
   int iw_fmm = -1;                 // iw slots: R, R new, b
   DvceArray4D<Real> fmm_lam, fmm_g;   // x1 faces (m,k,j,i): lam, explicit flux G (chat)
   DvceArray5D<Real> fmm_lo;        // (m,2,k,j,i) x1 faces: LL, LR (chat units)
+  // facemmat-1112 stage 2 realisability: F_H of the last face rebuild (lab units, before
+  // the blend); a face whose |F_H| > c min(E_L, E_R) at the iterate takes lam_r =
+  // (c min(E_L,E_R) - |F_L|)/(|F_H| - |F_L|) in [0,1] (0 when |F_L| reaches the bound),
+  // and lam = lam_r R_donor
+  DvceArray4D<Real> fmm_fh;
+  Real fmm_rfaces = 0.0;
   Real fmm_pass = 0.0, fmm_lpass = 0.0, fmm_cells = 0.0, fmm_faces = 0.0;
   Real fmm_left = 0.0, fmm_rmax = 0.0;
   bool ImplicitFaceMmat(bool bicg, Real dt);

@@ -4128,6 +4128,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(fmm_lam, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::realloc(fmm_g, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::realloc(fmm_lo, nmb, 2, ncells3, ncells2, ncells1+1);
+    Kokkos::realloc(fmm_fh, nmb, ncells3, ncells2, ncells1+1);
+    Kokkos::deep_copy(fmm_fh, 0.0);
     Kokkos::deep_copy(fmm_lam, 1.0);
     Kokkos::deep_copy(fmm_g, 0.0);
     Kokkos::deep_copy(fmm_lo, 0.0);
@@ -7642,14 +7644,38 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
       au = al;
     }
     const Real gl = g_(m,k,j,i), gu = g_(m,k,j,i+1);
-    po = au*fmax(gu, 0.0) + al*fmax(-gl, 0.0);
+    const Real rl = lam_(m,k,j,i), ru = lam_(m,k,j,i+1);   // lam_r of the two faces
+    const Real p1 = au*fmax(gu, 0.0) + al*fmax(-gl, 0.0);
     const Real i1 = al*fmax(gl, 0.0) + au*fmax(-gu, 0.0);
-    ir = al*iw_(m,sr,k,j,i-1)*fmax(gl, 0.0) + au*iw_(m,sr,k,j,i+1)*fmax(-gu, 0.0);
-    b0 = iw_(m,sb,k,j,i) + po - i1;
+    po = au*ru*fmax(gu, 0.0) + al*rl*fmax(-gl, 0.0);
+    ir = al*rl*iw_(m,sr,k,j,i-1)*fmax(gl, 0.0) + au*ru*iw_(m,sr,k,j,i+1)*fmax(-gu, 0.0);
+    b0 = iw_(m,sb,k,j,i) + p1 - i1;
     return b0 - iw_(m,sr,k,j,i)*po + ir;
   };
   Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sr, Kokkos::ALL,
                     Kokkos::ALL, Kokkos::ALL), 1.0);
+  // stage 2: lam_r per x1 face from F_H of the last rebuild and E of the iterate
+  auto fh_ = fmm_fh;
+  auto lo_ = fmm_lo;
+  const Real clr = c_light, crl = c_light/chat;
+  Real nrf = 0.0;
+  par_reduce_flat("m1_fmm_lr", 0, nmb1, ks, ke, js, je, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+    const Real el = iw_(m,M1_IW_EP,k,j,i-1), er = iw_(m,M1_IW_EP,k,j,i);
+    const Real fb = clr*fmax(fmin(el, er), 0.0);
+    const Real fh = fabs(fh_(m,k,j,i));
+    Real lr = 1.0;
+    if (fh > fb && g_(m,k,j,i) != 0.0) {
+      const Real flo = fabs(crl*(lo_(m,0,k,j,i)*el + lo_(m,1,k,j,i)*er));
+      lr = (flo < fb) ? fmin(1.0, fmax(0.0, (fb - flo)/(fh - flo))) : 0.0;
+      a += 1.0;
+    }
+    lam_(m,k,j,i) = lr;
+  }, Kokkos::Sum<Real>(nrf));
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &nrf, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  fmm_rfaces += nrf;
   par_for("m1_fmm_b", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     iw_(m,sb,k,j,i) = iw_(m,rb,k,j,i);
@@ -7691,22 +7717,28 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
   }
   fmm_cells += ncell;
   fmm_rmax = std::max(fmm_rmax, static_cast<Real>(nround));
-  if (nround == 0) {return false;}   // nothing limited: the rows stand (bitwise)
+  if (nround == 0 && !(nrf > 0.0)) {   // nothing limited: the rows stand (bitwise)
+    Kokkos::deep_copy(DevExeSpace(), fmm_lam, 1.0);
+    return false;
+  }
   fmm_lpass += 1.0;
   Real lv[2] = {0.0, 0.0};
-  Kokkos::parallel_reduce("m1_fmm_lam", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 2}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sf,
-                Real &sl) {
-    const Real g = g_(m,k,j,i);
-    const Real rd = (g > 0.0) ? iw_(m,sr,k,j,i-1) : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
-    lam_(m,k,j,i) = rd;
-    if (rd < 1.0) {sf += 1.0;}
-    if (i <= ie && !(hoi && hm_(m,k,j,i) > 0.0)) {
+  // left: cells whose b is still not > 0 (lam_ still holds lam_r here)
+  par_reduce_flat("m1_fmm_left", 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sl) {
+    if (!(hoi && hm_(m,k,j,i) > 0.0)) {
       Real po, b0, ir;
       if (!(cell(m, k, j, i, po, b0, ir) > 0.0)) {sl += 1.0;}
     }
-  }, Kokkos::Sum<Real>(lv[0]), Kokkos::Sum<Real>(lv[1]));
+  }, Kokkos::Sum<Real>(lv[1]));
+  par_reduce_flat("m1_fmm_lam", 0, nmb1, ks, ke, js, je, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sf) {
+    const Real g = g_(m,k,j,i);
+    const Real rd = lam_(m,k,j,i)*((g > 0.0) ? iw_(m,sr,k,j,i-1)
+                                   : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0));
+    lam_(m,k,j,i) = rd;
+    if (rd < 1.0) {sf += 1.0;}
+  }, Kokkos::Sum<Real>(lv[0]));
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, lv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
@@ -10893,7 +10925,9 @@ void RadiationM1::ImplicitReport() {
     std::cout << "<rad_m1> implicit_face_mmat: checked passes=" << fmm_pass
               << " limited passes=" << fmm_lpass << " limited cells=" << fmm_cells
               << " limited x1 faces=" << fmm_faces << " max rounds=" << fmm_rmax
-              << " left (b<=0 after the limit)=" << fmm_left << std::endl;
+              << " left (b<=0 after the limit)=" << fmm_left
+              << " realisability-bound faces (|F_H| > c min E)=" << fmm_rfaces
+              << std::endl;
   }
   if (impl_onep > 0) {
     std::cout << "<rad_m1> implicit_one_pass: period=" << impl_onep
@@ -17373,6 +17407,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool fmmf = impl_fmm;   // facemmat-1112
     auto fmlf_ = fmm_lam;
     auto fmof_ = fmm_lo;
+    auto fmhf_ = fmm_fh;
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
@@ -17689,6 +17724,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // off-diagonal / curvature part unscaled as in the row; F_c (cmem) takes it too
         const Real flm = fmmf ? fmlf_(m,k,j,i) : 1.0;
         Real fll = 0.0;
+        if (fmmf) {fmhf_(m,k,j,i) = fn;}
         if (flm < 1.0) {
           fll = (cl/ch)*(fmof_(m,0,k,j,i)*iw_(m,M1_IW_EP,k,j,im)
                          + fmof_(m,1,k,j,i)*iw_(m,M1_IW_EP,k,j,ip));
