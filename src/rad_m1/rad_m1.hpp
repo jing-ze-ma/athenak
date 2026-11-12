@@ -1177,6 +1177,18 @@ class RadiationM1 {
   bool zl_hskip = true;
   Real zl_rounds[2] = {0.0, 0.0}, zl_halos[2] = {0.0, 0.0}, zl_wall[2] = {0.0, 0.0};
   bool zl_prof = false;
+  // fast2nd-1112 <rad_m1>/implicit_face_mmat_rowsel (default true; false = the full
+  // second assembly as before): a limited pass assembles again only the rows of cells
+  // with a face whose lam < 1 (x1 lam, transverse fmm_t 3/7); every other row has the
+  // same inputs as in the first assembly of the pass (lam only decreases, so its faces
+  // were 1 then too) and keeps it (bitwise).  The same cells only in the in-place row
+  // updates after the assembly (ImplicitWorkRow, ImplicitFaceMmatTrans); the
+  // opac_newton_guard counter of the skipped rows is added from their first-assembly
+  // value (fmm_ns).
+  bool fmm_rowsel = true;
+  bool fmm_sel_now = false;
+  Kokkos::View<char****, LayoutWrapper, DevMemSpace> fmm_rf, fmm_ns;
+  Real fmm_selrows = 0.0, fmm_selall = 0.0, fmm_asm2_wall = 0.0;
   bool impl_pf_fa = false;   // physflux-1111 implicit_physflux_mom = fa
   // vkdiag-1111 <rad_m1>/implicit_physflux_zold = fc (read only when named; needs
   // physflux_mom = fa; default fa = bitwise): Z_f's old face flux = F_c^n (f0x*n), i.e.

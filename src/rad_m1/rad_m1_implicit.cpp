@@ -4181,6 +4181,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     zl_hskip = pin->GetBoolean("rad_m1","zalesak_halo_skip");
   }
   zl_prof = (std::getenv("M1_FCT_PROF") != nullptr);
+  if (impl_fmm && pin->DoesParameterExist("rad_m1","implicit_face_mmat_rowsel")) {
+    fmm_rowsel = pin->GetBoolean("rad_m1","implicit_face_mmat_rowsel");
+  }
+  if (impl_fmm && fmm_rowsel) {   // fast2nd-1112 (rad_m1.hpp)
+    Kokkos::realloc(fmm_rf, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(fmm_ns, nmb, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(fmm_ns, 0);
+  }
   if (impl_fmm) {
     if (impl_pos_trans == 1 || afd_on || impl_muscl_damp > 0.0) {
       ImplFatal("<rad_m1>/implicit_face_mmat is not combined with implicit_pos_transport"
@@ -8117,8 +8125,11 @@ void RadiationM1::ImplicitFaceMmatTrans(bool bicg, bool first) {
   const bool fst = first;
   const bool hoi = impl_hold && (hold_m.extent_int(0) > nmb1);
   auto hm_ = hold_m;
+  const bool tsel = fmm_sel_now;   // fast2nd-1112: only the re-assembled rows
+  auto trf_ = fmm_rf;
   par_for("m1_fmm_tc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (tsel && trf_(m,k,j,i) == 0) {return;}
     if (hoi && hm_(m,k,j,i) > 0.0) {return;}
     // facetr-1112: a replaced (Dirichlet, M1_IBC_EFIX) row keeps its identity row
     if (iw_(m,M1_IW_TA,k,j,i) == 0.0 && iw_(m,M1_IW_TC,k,j,i) == 0.0 &&
@@ -11369,7 +11380,10 @@ void RadiationM1::ImplicitReport() {
               << " left (b<=0 after the limit)=" << fmm_left
               << " realisability-bound faces (|F_H| > c min E)=" << fmm_rfaces
               << " (rank 0: rounds=" << zl_rounds[1] << " R exchanges=" << zl_halos[1]
-              << " zalesak_halo_skip=" << (zl_hskip ? "on" : "off");
+              << " zalesak_halo_skip=" << (zl_hskip ? "on" : "off")
+              << " rowsel=" << (fmm_rowsel ? "on" : "off") << " re-assembled rows="
+              << fmm_selrows << " of " << fmm_selall;
+    if (zl_prof) {std::cout << " second-assembly wall=" << fmm_asm2_wall << " s";}
     if (zl_prof) {std::cout << " round-loop wall=" << zl_wall[1] << " s";}
     std::cout << ")" << std::endl;
   }
@@ -11882,6 +11896,9 @@ void RadiationM1::ImplicitWorkRow(bool row, bool slot) {
   const bool fws = (force_ref == M1_FREF_WB_ARAD) && fref_wsplit;
   auto aref_ = arad_ref;
   const Real dtw = dt_sub;
+  // fast2nd-1112: under implicit_face_mmat_rowsel only the re-assembled rows
+  const bool wsel = row && !slot && fmm_sel_now;
+  auto wrf_ = fmm_rf;
   // kick581-1024 slot = true (implicit_work_fix): w^k into iw slot KZ (Krylov scratch,
   // free after the solve) for the write-back, nothing else written
   if (slot) {
@@ -11899,6 +11916,7 @@ void RadiationM1::ImplicitWorkRow(bool row, bool slot) {
     const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
     par_for("m1_impl_wk_cs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (wsel && wrf_(m,k,j,i) == 0) {return;}
       const int ipw = pos_.d_view(m);
       if ((hon_ && hm_(m,k,j,i) > 0.0) ||
           (!cyclic && ((i == is && ipw == 0 && elo) ||
@@ -11930,6 +11948,7 @@ void RadiationM1::ImplicitWorkRow(bool row, bool slot) {
   const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
   par_for("m1_impl_wk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (wsel && wrf_(m,k,j,i) == 0) {return;}
     const int ipw = pos_.d_view(m);
     if ((hon_ && hm_(m,k,j,i) > 0.0) ||
         (!cyclic && ((i == is && ipw == 0 && elo) ||
@@ -11965,6 +11984,7 @@ void RadiationM1::ImplicitWorkRow(bool row, bool slot) {
     const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
     par_for("m1_impl_wkref", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (wsel && wrf_(m,k,j,i) == 0) {return;}
       const int ipw = pos_.d_view(m);
       if ((hon_ && hm_(m,k,j,i) > 0.0) ||
           (!cyclic && ((i == is && ipw == 0 && elo) ||
@@ -16700,9 +16720,41 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
       }
     }
+    // fast2nd-1112 implicit_face_mmat_rowsel (rad_m1.hpp): the second assembly of a
+    // limited pass only on the rows with a face lam < 1 (fmm_rf)
+    const bool fsel = fmm_ && fmm_rowsel && !nfwr && (fmm_rf.extent_int(0) > nmb1);
+    auto frf_ = fmm_rf;
+    auto fns_ = fmm_ns;
+    fmm_sel_now = false;
     for (int fmq = 0; fmq < 2; ++fmq) {
+    const bool sel_ = fsel && (fmq == 1);
+    const bool nrec_ = fsel && (fmq == 0) && opgd;
+    std::chrono::steady_clock::time_point fa0;
+    if (fmq == 1 && zl_prof) {Kokkos::fence(); fa0 = std::chrono::steady_clock::now();}
+    if (sel_) {
+      auto fl_ = fmm_lam;
+      auto ftt_ = fmm_t;
+      const bool ftr = trans && (fmm_t.extent_int(0) > nmb1);
+      const bool ft3 = ftr && thrd;
+      Real nrow = 0.0;
+      par_reduce_flat("m1_fmm_rf", 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+        bool f = (fl_(m,k,j,i) < 1.0) || (fl_(m,k,j,i+1) < 1.0);
+        if (ftr) {
+          f = f || (ftt_(m,3,k,j,i) < 1.0) || (ftt_(m,3,k,j+1,i) < 1.0);
+          if (ft3) {f = f || (ftt_(m,7,k,j,i) < 1.0) || (ftt_(m,7,k+1,j,i) < 1.0);}
+        }
+        frf_(m,k,j,i) = f ? 1 : 0;
+        if (f) {a += 1.0;}
+      }, Kokkos::Sum<Real>(nrow));
+      fmm_selrows += nrow;
+      fmm_selall += static_cast<Real>(nmb1 + 1)*(ke - ks + 1)*(je - js + 1)
+                    *(ie - is + 1);
+      fmm_sel_now = true;
+    }
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
+      if (sel_ && frf_(m,k,j,i) == 0) {return;}   // fast2nd-1112: the row stands
       Real dx = mbsize.d_view(m).dx1;
       Real nu = dt/dx;
       Real cr = ch/cl;
@@ -17603,6 +17655,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           }
         }
         if (ns > 0) {Kokkos::atomic_add(&nsk_(0), static_cast<Real>(ns));}
+        if (nrec_) {fns_(m,k,j,i) = static_cast<char>(ns);}   // fast2nd-1112
       }
       // postr-1031 implicit_pos_transport = upwind: a positive x1 off-diagonal still in
       // the row (implicit_vimp, opac_newton) goes to the right-hand side at the
@@ -17642,6 +17695,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_TC,k,j,i) = cc;
       iw_(m,M1_IW_TR,k,j,i) = rr;
     });
+    // fast2nd-1112: the guard counter of the rows that stand, from the first assembly
+    if (sel_ && opgd) {
+      Real nsa = 0.0;
+      par_reduce_flat("m1_fmm_nsa", 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+        if (frf_(m,k,j,i) == 0) {a += static_cast<Real>(fns_(m,k,j,i));}
+      }, Kokkos::Sum<Real>(nsa));
+      if (nsa > 0.0) {
+        par_for("m1_fmm_nsadd", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int q) {
+          nsk_(0) += nsa;
+        });
+      }
+    }
     // time2_vstage: the gas work of the iterate's kick on the right-hand side (its own
     // kernel, so the assembly kernel of every other configuration is untouched)
     if (wimp) {
@@ -17705,8 +17771,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
     // facemmat-1112: limit the x1 faces from this system's right-hand side and assemble
     // again when a face was limited
+    if (fmq == 1 && zl_prof) {
+      Kokkos::fence();
+      fmm_asm2_wall += std::chrono::duration<double>(std::chrono::steady_clock::now()
+                                                    - fa0).count();
+    }
     if (!(fmm_ && fmq == 0 && ImplicitFaceMmat(bicg, dt))) {break;}
     }   // facemmat-1112 assembly loop
+    fmm_sel_now = false;
     if (bicg) {
       // picres-1017 implicit_final_resid_log: the shadow pass stops here (the system
       // of the accepted iterate is assembled), logs b - A x and puts the state back.
