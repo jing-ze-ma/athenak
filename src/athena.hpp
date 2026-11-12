@@ -312,6 +312,25 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
 #define ATHENA_LW_LAUNCH_MAX 3584
 #endif
 
+// dhjfast-1112: ATHENA_HIP_PARFOR_LB = n > 0 launches the 4D par_for (and the ck
+// CkParFor4) on HIP with Kokkos::LaunchBounds<256, n>.  The default bounds (1024 threads)
+// cap a kernel at 128 VGPRs, and the big dhj kernels (well-balance caches, AM vector,
+// sources, ck apply / opacity) spilled up to 3.7 kB of scratch per lane; the range is
+// already launched in 256-thread blocks, so only the register budget changes (same
+// thread -> index map, same arithmetic: bitwise).  Set for PROBLEM=deep_hot_jupiter_rt
+// in src/CMakeLists.txt (TOI-1518b 1 MI300A: 45.8 -> 42.2 ms/cycle, apudev 13088323);
+// 0 (every other build, and CUDA always) = the launch as before.
+#ifndef ATHENA_HIP_PARFOR_LB
+#define ATHENA_HIP_PARFOR_LB 0
+#endif
+#if defined(KOKKOS_ENABLE_HIP) && (ATHENA_HIP_PARFOR_LB > 0)
+template <typename E>
+using AthRangePolicy4 = Kokkos::RangePolicy<E, Kokkos::LaunchBounds<256,
+                                            ATHENA_HIP_PARFOR_LB>>;
+#else
+template <typename E> using AthRangePolicy4 = Kokkos::RangePolicy<E>;
+#endif
+
 //------------------------------
 // 4D loop using Kokkos 1D Range
 template <typename ExeSpace, typename Function>
@@ -346,10 +365,10 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
   // global-memory path).  Only the launch mechanism changes: bitwise.
   if constexpr (sizeof(body) <= ATHENA_LW_LAUNCH_MAX) {
     Kokkos::parallel_for(name, Kokkos::Experimental::require(
-        Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nnkji),
+        AthRangePolicy4<ExeSpace>(exec_space, 0, nnkji),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), body);
   } else {
-    Kokkos::parallel_for(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nnkji), body);
+    Kokkos::parallel_for(name, AthRangePolicy4<ExeSpace>(exec_space, 0, nnkji), body);
   }
 }
 
