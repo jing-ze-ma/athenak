@@ -989,6 +989,11 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     }
     const bool gteq = pin->DoesParameterExist("problem","gas_teq") ?
                       pin->GetBoolean("problem","gas_teq") : false;
+    // csmetric-1112 (read only when named): rad_eq_boost = true puts the radiation at the
+    // exact fixed point of the implicit source in the gas_rot flow, with D = I/3:
+    // F0 = 0 -> F = (4/3) v E (covariant on cs), E0 = E (1 - (4/3) beta^2) = arad T^4
+    const bool reqb = pin->DoesParameterExist("problem","rad_eq_boost") &&
+                      pin->GetBoolean("problem","rad_eq_boost");
     const Real ara = (pmbp->pradm1 != nullptr) ? pmbp->pradm1->arad : 1.0;
     Real gm1 = ((pmbp->phydro != nullptr) ? pmbp->phydro->peos : pmbp->pmhd->peos)
                ->eos_data.gamma - 1.0;
@@ -1339,6 +1344,7 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         uh(m,IM3,k,j,i) = dgas*vp;
         uh(m,IEN,k,j,i) += 0.5*dgas*(vt*vt + vp*vp);
       }
+      Real vq2 = 0.0;   // csmetric-1112: |v|^2 of gas_rot on cs (rad_eq_boost)
       if (grot != 0.0 && csm) {
         const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
                                                size.d_view(m).x2max);
@@ -1356,6 +1362,7 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         uh(m,IM2,k,j,i) = dgas*(w[0]*ta[0] + w[1]*ta[1] + w[2]*ta[2]);
         uh(m,IM3,k,j,i) = dgas*(w[0]*tb[0] + w[1]*tb[1] + w[2]*tb[2]);
         uh(m,IEN,k,j,i) += 0.5*dgas*(w[0]*w[0] + w[1]*w[1] + w[2]*w[2]);
+        vq2 = w[0]*w[0] + w[1]*w[1] + w[2]*w[2];
       }
       u0(m,radm1::M1_F1,k,j,i) = 0.0;
       if (ein > 0.0 && i <= is) {
@@ -1364,6 +1371,12 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       }
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
+      if (reqb && csm) {   // csmetric-1112: the moving radiative equilibrium (cs)
+        const Real er = ara*SQR(SQR(tgas))/(1.0 - (4.0/3.0)*vq2/(cl*cl));
+        u0(m,radm1::M1_E,k,j,i) = er;
+        u0(m,radm1::M1_F2,k,j,i) = (4.0/3.0)*er*uh(m,IM2,k,j,i)/dgas;
+        u0(m,radm1::M1_F3,k,j,i) = (4.0/3.0)*er*uh(m,IM3,k,j,i)/dgas;
+      }
     });
     // sp-blend-1008 (read only when named): beam_f = f > 0 makes the shell a radially
     // BEAMED pulse, F_r = f c E on the cells and the face-normal comoving flux of the

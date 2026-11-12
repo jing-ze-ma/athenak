@@ -1780,6 +1780,20 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
           std::exit(EXIT_FAILURE);
         }
       }
+      // csmetric-1112 vet_col_lat_posfix = drop (default, bitwise) | lag (read only when
+      // named): what the positivity trigger does to the lateral D_r,lat / Q operator
+      // terms (rad_m1.hpp vlat_posfix_lag)
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_posfix")) {
+        std::string sp = pin->GetString("rad_m1","vet_col_lat_posfix");
+        if (sp.compare("lag") == 0) {
+          vlat_posfix_lag = true;
+        } else if (sp.compare("drop") != 0) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/vet_col_lat_posfix = '" << sp
+                    << "' (drop | lag)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      }
       // cs-s4-1017 (stage S4, USER 10-18): on the cubed sphere D_r,lat is the Cartesian
       // vector v (VetGdCsMoments) in the cs forms M1CsLat0 / M1CsLatF (VetLatOpCs /
       // VetLatStencilAddCs): the default is the sp one (operator)

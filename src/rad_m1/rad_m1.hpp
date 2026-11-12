@@ -851,6 +851,10 @@ class RadiationM1 {
   // (steps that would not have stopped there with the full norm).
   Real impl_res_dmin = 0.0, impl_res_rmax = 0.0;
   bool impl_real_couple = false;      // implicit_realisable_coupling (gd_physfix_1005)
+  // csmetric-1112 implicit_cs_e0_metric (cubed sphere, read only when named, default
+  // false = bitwise): E0 - E of the implicit solve (beta.F, beta^2, beta.P.beta) with the
+  // panel metric of the face-normal components, as the work / deposits / KE take it
+  bool impl_cs_e0m = false;
   // implicit_thin_freeze (m1-picard-aa; default 1e-2 on fresh runs, 0 = off): cells with
   // c dt rho kappa_P < this at the start of the solve keep their start-of-step opacities
   // for every pass and take the frozen-opacity gas-T find
@@ -2822,7 +2826,17 @@ class RadiationM1 {
   Real vlat_odmax = 0.0;       // max |D_r,lat| of the last sweep (all ranks)
   // the operator form is active: on in this step and a non-zero D_r,lat (a zero one
   // leaves the operator, its stencil and the right-hand side untouched, bitwise)
-  bool VlatOp() const {return vlat_now && (vlat_odm == 2) && (vlat_odmax > 0.0);}
+  bool VlatOp() const {
+    return vlat_now && !vlat_lagfb && (vlat_odm == 2) && (vlat_odmax > 0.0);
+  }
+  // csmetric-1112 vet_col_lat_posfix = lag (read only when named; default drop =
+  // bitwise): at a positivity trigger the lateral D_r,lat and Q terms leave the OPERATOR
+  // (which is then the M-matrix form) but stay in full as the lagged Picard term of the
+  // face equations, so the fixed point keeps the whole tensor.  Only a second trigger in
+  // the same step drops them (vlat_nfall, as before)
+  bool vlat_posfix_lag = false;
+  bool vlat_lagfb = false;     // this step: the lateral terms lagged after a trigger
+  Real vlat_nlag = 0.0;        // triggers that moved the terms to the lagged form
   // meshfb-1106 (rad_m1_meshfb.cpp): implicit_fb_diag, implicit_fb_local
   int fbd_n = 0, fbd_done = 0, fbd_first = -1, fbd_kind = 0, fbd_nsolve = 0;
   bool fbd_last_full = false;

@@ -153,6 +153,10 @@ bool RadiationM1::ImplicitFbLocal(int it, int odm) {
   Real nb = 0.0;
   const Real emin = ImplicitFbMin(&nb);
   if (emin > 0.0) {return false;}
+  // csmetric-1112 vet_col_lat_posfix = lag: the first trigger of a step takes the global
+  // path, which moves the lateral terms to their lagged form (nothing masked); a later
+  // trigger masks as before
+  if (vlat_posfix_lag && VlatOp()) {return false;}
   fbl_ntrig += 1.0;
   if (!vlat_on || !vlat_ready || (odm == M1_OD_OPERATOR) || (fbl_used >= fbl_rounds)) {
     fbl_nglobal += 1.0;

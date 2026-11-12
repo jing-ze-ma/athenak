@@ -1870,6 +1870,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_realisable_coupling")) {
     impl_real_couple = pin->GetBoolean("rad_m1","implicit_realisable_coupling");
   }
+  // csmetric-1112 implicit_cs_e0_metric (cubed sphere; read only when named): the work
+  //    array's transverse v and F are FACE-NORMAL components (v.n_xi, v.n_eta) on the
+  //    skew panel basis, n_xi.n_eta = -cos_cell.  Their Euclidean products miss the
+  //    metric G^-1 = [[1, c], [c, 1]]/(1 - c^2) in beta.F, beta^2 and beta.P.beta of
+  //    E0 - E (EQ_AUDIT_1112 #4).  With the key the three are built with it, i.e. with
+  //    the same metric as the work v^a dm_a and the KE of the write-back.
+  if (pin->DoesParameterExist("rad_m1","implicit_cs_e0_metric")) {
+    impl_cs_e0m = pin->GetBoolean("rad_m1","implicit_cs_e0_metric");
+  }
   //  implicit_thin_freeze (m1-picard-aa, 095ca6ee): cells with c dt rho kappa_P below it
   //    at pass 0 keep their start-of-solve opacities for every Picard pass and take the
   //    frozen-opacity gas-T find.  DEFAULT 1e-2 on fresh runs (user 10-04): on the He
@@ -10815,6 +10824,11 @@ void RadiationM1::ImplicitReport() {
               << " of " << cstan_np << " transverse assemblies (rank 0); positivity "
               << "fallbacks (vet_col_lat) " << vlat_nfall << std::endl;
   }
+  if (vlat_posfix_lag) {   // csmetric-1112
+    std::cout << "<rad_m1> vet_col_lat_posfix = lag: triggers moved to the lagged "
+              << "lateral form " << vlat_nlag << ", dropped after a second trigger " << vlat_nfall
+              << std::endl;
+  }
   if (impl_vimp) {
     std::cout << "<rad_m1> implicit_vimp positivity fallbacks=" << vimp_nfall
               << " min E from the solve=" << vimp_emin;
@@ -13925,6 +13939,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // vet_col_lat: the D_r,lat term is on at the start of every step (the operator
   // form may drop it for the rest of the step, positivity below)
   vlat_now = vlat_on && (vlat_odm > 0);
+  vlat_lagfb = false;   // csmetric-1112
   // the closure under-relaxation and the start-of-step closure freeze.  Both are inert
   // at their defaults (w = 1, lag = pass), so phase C arithmetic is untouched.
   const Real crw = impl_crelax;
@@ -15077,6 +15092,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool rcs = cs_geom;
     auto rccl = pmy_pack->pcoord->cos_cell;
     auto rcsn = pmy_pack->pcoord->sin_cell;
+    const bool e0m = impl_cs_e0m && cs_geom;   // csmetric-1112
     if (!rcp) {
       par_for("m1_impl_lag", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -16856,7 +16872,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
       }
       const bool vlop = VlatOp();
-      if (!fbl_tr && (odm == M1_OD_OPERATOR || vlop)) {
+      const bool vlag2 = vlat_lagfb && vlat_now;   // csmetric-1112: re-check the lag
+      if (!fbl_tr && (odm == M1_OD_OPERATOR || vlop || vlag2)) {
         // POSITIVITY.  The cross-derivative coefficients have mixed signs, so the
         // 9-/19-point operator is not an M-matrix and E' > 0 is no longer guaranteed.
         // Measure the smallest E the solve produced and, if any cell is non-positive,
@@ -16897,7 +16914,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           }
           // vet_col_lat_offdiag = operator: drop D_r,lat for the rest of the step (the
           // assembly's term too: `none`, the M-matrix form), counted
-          if (vlop) {
+          if (vlop && vlat_posfix_lag) {
+            // csmetric-1112 vet_col_lat_posfix = lag: the M-matrix operator, the full
+            // lateral tensor kept as the lagged term (same fixed point)
+            vlat_lagfb = true;
+            vlat_nlag += 1.0;
+          } else if (vlop || vlag2) {
             vlat_now = false;
             vlat_nfall += 1.0;
           }

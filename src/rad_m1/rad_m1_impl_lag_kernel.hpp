@@ -199,6 +199,16 @@
         }
         Real b1 = u1/cl, b2 = u2/cl, b3 = u3/cl;
         Real bf = (b1*f1 + b2*f2c + b3*f3c)/cl;
+        // csmetric-1112 implicit_cs_e0_metric: (b2, b3), (f2c, f3c) are FACE-NORMAL on
+        // the skew panel basis (n_xi.n_eta = -c); raised with G^-1 = [[1,c],[c,1]]/s^2,
+        // r2, r3 make beta.F, beta^2 and beta.P.beta the metric products
+        Real r2 = b2, r3 = b3;
+        if (e0m) {
+          const Real c = rccl(m,k,j), is2 = 1.0/(1.0 - c*c);
+          r2 = (b2 + c*b3)*is2;
+          r3 = (b3 + c*b2)*is2;
+          bf = (b1*f1 + r2*f2c + r3*f3c)/cl;
+        }
 #if M1_RCP
         // implicit_realisable_coupling: the realisable flux, |F| <= c E, in beta.F.  On
         // the cubed sphere f2c, f3c are face-normal: |F| is the clip's metric norm of the
@@ -213,6 +223,14 @@
         Real bpb = (b1*b1*d11 + b2*b2*d22 + b3*b3*d33
                     + 2.0*(b1*b2*d12 + b1*b3*d13 + b2*b3*d23))*e;
         Real b2sq = b1*b1 + b2*b2 + b3*b3;
+        if (e0m) {
+          // the Eddington tensor d of the kernel acts on face-normal components as a
+          // MIXED tensor (tangential isotropic part (1 - chi)/2 delta): beta.D.beta
+          // = beta^a (d beta)_a with the raised beta^a above
+          bpb = (b1*(b1*d11 + b2*d12 + b3*d13) + r2*(b1*d12 + b2*d22 + b3*d23)
+                 + r3*(b1*d13 + b2*d23 + b3*d33))*e;
+          b2sq = b1*b1 + r2*b2 + r3*b3;
+        }
         de0 = ovc ? (-2.0*bf) : (b2sq*e - 2.0*bf + bpb);
       }
       iw_(m,M1_IW_DE0,k,j,i) = de0;
