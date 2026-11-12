@@ -3677,6 +3677,83 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     ht[4] = fb[0];
     ht[5] = fb[1];
   }
+  // consaudit-1112 (<rad_m1>/dbg_cons_audit, output only): the hydro fluxes of this stage
+  // through the physical x1 faces (x area x bdt): mass, IEN, L_z (r_f x flux of the
+  // momentum).z, the radial momentum; inner (outward +: -F A at is) and outer, combined
+  // over the stages as the rk2 update combines them (stage 1: bdt = dt, gam0 = 0; stage 2:
+  // 1/2 the stage-1 value + bdt F).  Line CAUDITH (rank 0) after each stage; the last of a
+  // cycle is the step's boundary integral.
+  if ((pmbp->pradm1 != nullptr) && pmbp->pradm1->dbg_caudit) {
+    static Real ch_t[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    auto flx1 = ph->uflx->x1f;
+    auto &x1fc = pmbp->pcoord->xx1f;
+    auto &x2vc = pmbp->pcoord->x2v;
+    auto &x3vc = pmbp->pcoord->x3v;
+    auto ccl = pmbp->pcoord->cos_cell;
+    auto &msz = pmbp->pmb->mb_size;
+    auto &mpn = pmbp->pmb->mb_panel;
+    auto &mbcs = pmbp->pmb->mb_bcs;
+    const bool csm = pm->use_cubed_sphere;
+    const int nx2 = je - js + 1, nx3 = ke - ks + 1;
+    array_sum::GlobalSum hb;
+    Kokkos::parallel_reduce("hs_caudit_h", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*nx3*nx2),
+    KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
+      const int m = n/(nx3*nx2);
+      const int k = (n/nx2)%nx3 + ks, j = n%nx2 + js;
+      array_sum::GlobalSum h;
+      for (int r2=0; r2<NREDUCTION_VARIABLES; ++r2) h.the_array[r2] = 0.0;
+      Real rh[3], ta[3], tb[3];
+      Real c = 0.0;
+      if (csm) {
+        const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, msz.d_view(m).x2min,
+                                               msz.d_view(m).x2max);
+        const Real eta = 0.25*M_PI*CellCenterX(k-ks, nx3, msz.d_view(m).x3min,
+                                                msz.d_view(m).x3max);
+        cubed_sphere::PanelToCart(mpn.d_view(m), xi, eta, rh);
+        cubed_sphere::PanelTangents(mpn.d_view(m), xi, eta, ta, tb);
+        c = ccl(m,k,j);
+      } else {
+        const Real th = x2vc(m,j), ph3 = x3vc(m,k);
+        rh[0] = sin(th)*cos(ph3); rh[1] = sin(th)*sin(ph3); rh[2] = cos(th);
+        ta[0] = cos(th)*cos(ph3); ta[1] = cos(th)*sin(ph3); ta[2] = -sin(th);
+        tb[0] = -sin(ph3); tb[1] = cos(ph3); tb[2] = 0.0;
+      }
+      const Real s2 = 1.0 - c*c;
+      for (int q = 0; q < 2; ++q) {
+        const int ib = (q == 0) ? is : (ie + 1);
+        const BoundaryFlag bf = mbcs.d_view(m, (q == 0) ? BoundaryFace::inner_x1
+                                                        : BoundaryFace::outer_x1);
+        if (bf == BoundaryFlag::block || bf == BoundaryFlag::periodic) continue;
+        const Real sa = ((q == 0) ? -bdt : bdt)*area1(m,k,j,ib);
+        const Real a1 = flx1(m,IM1,k,j,ib), b2 = flx1(m,IM2,k,j,ib);
+        const Real b3 = flx1(m,IM3,k,j,ib);
+        const Real a2 = (b2 - c*b3)/s2, a3 = (b3 - c*b2)/s2;
+        const Real p0 = a1*rh[0] + a2*ta[0] + a3*tb[0];
+        const Real p1 = a1*rh[1] + a2*ta[1] + a3*tb[1];
+        const Real rf = x1fc(m,ib);
+        h.the_array[4*q + 0] = sa*flx1(m,IDN,k,j,ib);
+        h.the_array[4*q + 1] = sa*flx1(m,IEN,k,j,ib);
+        h.the_array[4*q + 2] = sa*rf*(rh[0]*p1 - rh[1]*p0);
+        h.the_array[4*q + 3] = sa*a1;
+      }
+      sum += h;
+    }, Kokkos::Sum<array_sum::GlobalSum>(hb));
+    Real fl8[8];
+    for (int q = 0; q < 8; ++q) {fl8[q] = hb.the_array[q];}
+#if MPI_PARALLEL_ENABLED
+    Real g8[8];
+    MPI_Allreduce(fl8, g8, 8, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int q = 0; q < 8; ++q) {fl8[q] = g8[q];}
+#endif
+    const bool st1 = (bdt == pm->dt);
+    for (int q = 0; q < 8; ++q) {ch_t[q] = (st1 ? 0.0 : 0.5*ch_t[q]) + fl8[q];}
+    if (global_variable::my_rank == 0) {
+      std::printf("CAUDITH cycle=%d st=%d dt=%.10e in=%.10e,%.10e,%.10e,%.10e "
+                  "out=%.10e,%.10e,%.10e,%.10e\n", pm->ncycle, st1 ? 1 : 2, pm->dt,
+                  ch_t[0], ch_t[1], ch_t[2], ch_t[3], ch_t[4], ch_t[5], ch_t[6], ch_t[7]);
+    }
+  }
   if (hs_pm_) {
     // he_gravity = pointmass (bsg-truerepro-1008): the Athena++ point-mass source
     // (srcterms PointMass): d(rho v_r) = -dt rho GM coord_src1/x1v, coord_src1 =
