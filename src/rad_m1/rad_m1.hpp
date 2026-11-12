@@ -1129,8 +1129,11 @@ class RadiationM1 {
   // the blend); a face whose |F_H| > c min(E_L, E_R) at the iterate takes lam_r =
   // (c min(E_L,E_R) - |F_L|)/(|F_H| - |F_L|) in [0,1] (0 when |F_L| reaches the bound),
   // and lam = lam_r R_donor
+  // opt-in <rad_m1>/implicit_face_mmat_real = true (read only when named; default false):
+  // measured 11-12 (FACE_MMAT_1112.md sect. 6) not to remove the clip, so off by default
   DvceArray4D<Real> fmm_fh;
   Real fmm_rfaces = 0.0;
+  bool impl_fmm_real = false;
   Real fmm_pass = 0.0, fmm_lpass = 0.0, fmm_cells = 0.0, fmm_faces = 0.0;
   Real fmm_left = 0.0, fmm_rmax = 0.0;
   bool ImplicitFaceMmat(bool bicg, Real dt);

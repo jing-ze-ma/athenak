@@ -4125,6 +4125,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     iw_fmm = niw;
     niw += 3;
+    impl_fmm_real = pin->DoesParameterExist("rad_m1","implicit_face_mmat_real") &&
+                    pin->GetBoolean("rad_m1","implicit_face_mmat_real");
     Kokkos::realloc(fmm_lam, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::realloc(fmm_g, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::realloc(fmm_lo, nmb, 2, ncells3, ncells2, ncells1+1);
@@ -7659,6 +7661,9 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
   auto lo_ = fmm_lo;
   const Real clr = c_light, crl = c_light/chat;
   Real nrf = 0.0;
+  if (!impl_fmm_real) {
+    Kokkos::deep_copy(DevExeSpace(), fmm_lam, 1.0);
+  } else {
   par_reduce_flat("m1_fmm_lr", 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
     const Real el = iw_(m,M1_IW_EP,k,j,i-1), er = iw_(m,M1_IW_EP,k,j,i);
@@ -7675,6 +7680,7 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, &nrf, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
+  }
   fmm_rfaces += nrf;
   par_for("m1_fmm_b", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
