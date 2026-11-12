@@ -859,10 +859,11 @@ void RadiationM1::RotXfSnap(const int slot, const int ilo) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const Tab t = vra_tab;
   const int nf1 = t.nf + 1;
-  if (vgd_xf_d.extent_int(0) != nmb1 + 1 || vgd_xf_d.extent_int(1) != 4*nf1 ||
+  const int nsl = (vgd_xf_m > 0) ? 5 : 4;
+  if (vgd_xf_d.extent_int(0) != nmb1 + 1 || vgd_xf_d.extent_int(1) != nsl*nf1 ||
       vgd_xf_d.extent_int(2) != ke - ks + 1 || vgd_xf_d.extent_int(3) != je - js + 1 ||
       vgd_xf_d.extent_int(4) != ie - is + 1) {
-    Kokkos::realloc(vgd_xf_d, nmb1 + 1, 4*nf1, ke - ks + 1, je - js + 1, ie - is + 1);
+    Kokkos::realloc(vgd_xf_d, nmb1 + 1, nsl*nf1, ke - ks + 1, je - js + 1, ie - is + 1);
   }
   auto x_ = vgd_xf_d;
   const RaArr a{vra_a0, vra_a1, vra_c};
@@ -924,6 +925,9 @@ void RadiationM1::RotXfBlend(const Real s, const bool last, const int ilo,
   // offset carried into the whole next block) extrapolated with the previous build's
   const int od = (vra_k - 1)*nf1;
   const bool dext = last && rx >= 0.0 && (ema || kwin) && vra_d.extent_int(1) >= od + nf1;
+  // vgd_xf_m > 0: slot 4 := the Delta of the previous live sweep (RotXfEst)
+  const bool keep4 = store && vgd_xf_d.extent_int(1) >= 5*nf1;
+  const int o4 = 4*nf1;
   par_for("m1_xf_blend", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kk = k - ks, jj = j - js, ii = i - is;
@@ -946,11 +950,13 @@ void RadiationM1::RotXfBlend(const Real s, const bool last, const int ilo,
           d_(m,od+f,kk,jj,ii) = (mul && !(de > 0.0)) ? dn : de;
         }
         if (store) {
+          if (keep4) {x_(m,o4+f,kk,jj,ii) = x_(m,o2+f,kk,jj,ii);}
           x_(m,o2+f,kk,jj,ii) = dn;
           x_(m,o2+nf1+f,kk,jj,ii) = gv;   // slot 3: G of this build (RotXfPre)
         }
       }
       if (store) {
+        if (keep4) {x_(m,o4+t.nf,kk,jj,ii) = x_(m,o2+t.nf,kk,jj,ii);}
         x_(m,o2+t.nf,kk,jj,ii) = vn ? 1.0 : 0.0;
         x_(m,o2+nf1+t.nf,kk,jj,ii) = vg ? 1.0 : 0.0;
       }
@@ -1073,7 +1079,7 @@ void RadiationM1::RotXfPre(const Real rx, const int ilo) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const Tab t = vra_tab;
   const int nf1 = t.nf + 1;
-  if (!(rx >= 0.0) || vgd_xf_d.extent_int(1) != 4*nf1 ||
+  if (!(rx >= 0.0) || vgd_xf_d.extent_int(1) < 4*nf1 ||
       vra_d.extent_int(1) < vra_k*nf1) {return;}
   auto x_ = vgd_xf_d;
   auto d_ = vra_d;
@@ -1109,11 +1115,13 @@ void RadiationM1::RotXfPre(const Real rx, const int ilo) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::RotXfEst
 //! \brief vgdxf-1112 vet_gd_rotate_xfade_m = M > 0 (the amortized cross-fade): a build
-//! without a next-set sweep: the fields := the next set's estimate G (+) Delta_s (ratio
-//! fields G Delta_s), Delta_s = the last sweep's same-state difference (slot 2); where it
-//! is missing the flag field is set invalid (RotXfBlend then hands over A)
+//! without a next-set sweep: the fields := the next set's estimate G (+) Delta^ (ratio
+//! fields G Delta^), Delta^ = D2 + r (D2 - D4): the last two live sweeps' same-state
+//! differences (slots 2, 4) extrapolated linearly in time, r = (t - t_2)/(t_2 - t_4)
+//! (r < 0 or slot 4 invalid: D2 held; a ratio extrapolation <= 0: D2); where D2 is
+//! missing the flag field is set invalid (RotXfBlend then hands over A)
 
-void RadiationM1::RotXfEst(const int ilo) {
+void RadiationM1::RotXfEst(const int ilo, const Real r) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -1122,15 +1130,22 @@ void RadiationM1::RotXfEst(const int ilo) {
   const int nf1 = t.nf + 1;
   auto x_ = vgd_xf_d;
   const RaArr a{vra_a0, vra_a1, vra_c};
-  const int o2 = 2*nf1;
+  const int o2 = 2*nf1, o4 = 4*nf1;
+  const bool lin = (r >= 0.0) && vgd_xf_d.extent_int(1) >= 5*nf1;
   par_for("m1_xf_est", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kk = k - ks, jj = j - js, ii = i - is;
     const bool v = (i >= ilo) && (x_(m,t.nf,kk,jj,ii) > 0.5) &&
                    (x_(m,o2+t.nf,kk,jj,ii) > 0.5);
+    const bool l2 = lin && (x_(m,o4+t.nf,kk,jj,ii) > 0.5);
     for (int f = 0; f < t.nf; ++f) {
       if (t.arr[f] == 2 && i != ie) continue;
-      const Real gv = x_(m,f,kk,jj,ii), dv = x_(m,o2+f,kk,jj,ii);
+      const Real gv = x_(m,f,kk,jj,ii), d2 = x_(m,o2+f,kk,jj,ii);
+      Real dv = d2;
+      if (l2) {
+        dv = d2 + r*(d2 - x_(m,o4+f,kk,jj,ii));
+        if (t.kind[f] == 2 && !(dv > 0.0)) dv = d2;
+      }
       Real v = (t.kind[f] == 2) ? gv*dv : gv + dv;
       if (t.kind[f] == 1) v = fmin(fmax(v, t.lo[f]), t.hi[f]);
       a.At(t.arr[f], t.comp[f], m, k, j, i) = v;

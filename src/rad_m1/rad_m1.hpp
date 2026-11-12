@@ -3038,6 +3038,7 @@ class RadiationM1 {
   double vgd_xf_nsw = 0.0;       // the next-set sweeps (diagnostic)
   double vgd_xf_t = 0.0;         // their seconds
   DvceArray5D<Real> vgd_xf_d;    // (m, 4 (nf+1), ..): G, A, last Delta, last G
+                                 // (+ slot 4 with vgd_xf_m > 0: the Delta before)
   void VgdXfTables(const Real alpha);
   void VetGdXfade(const int64_t blk, const bool last, const bool store = true);
   void RotXfSnap(const int slot, const int ilo);
@@ -3045,12 +3046,16 @@ class RadiationM1 {
                   const bool store);
   // vet_gd_rotate_xfade_m = M > 0 (read only when named; 0 = a next-set sweep at every
   // build): the next set is swept at the first build of each of M equal parts of the
-  // block and at the last two builds; the builds between hand over the next set as
-  // G (+) the last sweep's Delta (RotXfEst)
+  // block, at the second build and at the last two builds; the builds between hand
+  // over the next set as G (+) Delta^, Delta^ the linear extrapolation in time of the
+  // last two sweeps' Delta of this block (one: held) (RotXfEst)
   int vgd_xf_m = 0;
   int64_t vgd_xf_sblk = INT64_MIN;
   int vgd_xf_sj = -1;
-  void RotXfEst(const int ilo);
+  int vgd_xf_sn = 0;                 // the live next-set sweeps in block vgd_xf_sblk
+  int64_t vgd_xf_sb[2] = {INT64_MIN, INT64_MIN};   // block, time of the last two
+  Real vgd_xf_st[2] = {0.0, 0.0};                   // live sweeps (1: the latest)
+  void RotXfEst(const int ilo, const Real r);
   void RotXfPre(const Real rx, const int ilo);
   Real VgdXfRx(const int64_t blk) const;
   int64_t vgd_xf_pblk = INT64_MIN;   // the block and time of the previous xf build

@@ -2167,9 +2167,13 @@ void RadiationM1::VetGdXfade(const int64_t blk, const bool last, const bool stor
   const Real s = (tn - tb)/vgd_rot_dt;
   // (the boundary extrapolation is RotXfPre's, before RotAvgDelta: none here)
   RotXfBlend(s, last, pmy_pack->pmesh->mb_indcs.is + vlat_icut, -1.0, store);
-  if (store) {   // the previous LIVE sweep (RotXfPre)
+  if (store) {   // the previous LIVE sweep (RotXfPre; RotXfEst: the last two)
     vgd_xf_pblk = blk;
     vgd_xf_pt = tn;
+    vgd_xf_sb[0] = vgd_xf_sb[1];
+    vgd_xf_st[0] = vgd_xf_st[1];
+    vgd_xf_sb[1] = blk;
+    vgd_xf_st[1] = tn;
   }
   vgd_xf_nsw += 1.0;
 }
@@ -6564,18 +6568,25 @@ void RadiationM1::VetGdBuild() {
   } else if (vgd_xf) {
     Kokkos::Timer tx;
     // vet_gd_rotate_xfade_m = M: sweep the next set only at the first build of each of
-    // the M parts of the block (s in [j/M, (j+1)/M)) and at the last two builds (the
-    // second-to-last: RotXfPre's previous build is a live sweep)
+    // the M parts of the block (s in [j/M, (j+1)/M)), at the second build (the first
+    // slope) and at the last two builds (the second-to-last: RotXfPre's previous build
+    // is a live sweep)
     bool sw = true;
+    Real rxe = -1.0;
     if (vgd_xf_m > 0) {
       const Mesh *pm = pmy_pack->pmesh;
       const Real tb = vgd_rot_t0 + static_cast<Real>(blk)*vgd_rot_dt;
       const int jn = static_cast<int>(std::floor((pm->time - tb)/vgd_rot_dt*vgd_xf_m));
       const bool pen = pm->time + 2.0*pm->dt >= tb + vgd_rot_dt - 1.0e-9*vgd_rot_dt;
-      sw = (blk != vgd_xf_sblk) || (jn > vgd_xf_sj) || pen;
+      if (blk != vgd_xf_sblk) {vgd_xf_sn = 0;}
+      sw = (blk != vgd_xf_sblk) || (jn > vgd_xf_sj) || pen || (vgd_xf_sn < 2);
       if (sw) {
         vgd_xf_sblk = blk;
         vgd_xf_sj = jn;
+        vgd_xf_sn += 1;
+      } else if (vgd_xf_sb[0] == blk && vgd_xf_sb[1] == blk &&
+                 vgd_xf_st[1] > vgd_xf_st[0]) {
+        rxe = (pm->time - vgd_xf_st[1])/(vgd_xf_st[1] - vgd_xf_st[0]);
       }
     }
     if (sw) {
@@ -6588,7 +6599,7 @@ void RadiationM1::VetGdBuild() {
       VgdXfTables(al);
     } else {
       VetGdRotAvgSetup();
-      RotXfEst(xilo);
+      RotXfEst(xilo, rxe);
       VetGdXfade(blk, false, false);
     }
     VetLatOdMax();
