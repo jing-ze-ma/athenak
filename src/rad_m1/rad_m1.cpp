@@ -1573,6 +1573,100 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_shell_list")) {
       vgd_shl_on = pin->GetBoolean("rad_m1","vet_gd_shell_list");
     }
+    // vetgdup-1110 vet_gd_upwind = bilinear | shellmean | taylor (read only when named;
+    // rad_m1.hpp vgd_upf)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_upwind")) {
+      const std::string up = pin->GetString("rad_m1","vet_gd_upwind");
+      if (up == "bilinear") {
+        vgd_upf = 0;
+      } else if (up == "shellmean") {
+        vgd_upf = 1;
+      } else if (up == "taylor") {
+        vgd_upf = 2;
+      } else if (up == "profile") {
+        vgd_upf = 3;   // the profiles only, no shift (diagnostic: VGD_UP_DIAG / DUMP)
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "rad_m1/vet_gd_upwind = " << up
+                  << " (bilinear | shellmean | taylor)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_gd_upwind_tol")) {
+        vgd_uptol = pin->GetReal("rad_m1","vet_gd_upwind_tol");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_gd_upwind_wall")) {
+        vgd_upwall = pin->GetBoolean("rad_m1","vet_gd_upwind_wall");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_gd_upwind_nbin")) {
+        vgd_upk = std::max(1, pin->GetInteger("rad_m1","vet_gd_upwind_nbin"));
+      }
+      if (vgd_upf != 0 &&
+          pmy_pack->pmesh->mesh_indcs.nx1 != pmy_pack->pmesh->mb_indcs.nx1) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "rad_m1/vet_gd_upwind needs one MeshBlock along x1"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // hrsplit-1110 vet_gd_inner_reflect = diff | zeroflux (read only when named)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_inner_reflect")) {
+      const std::string ir = pin->GetString("rad_m1","vet_gd_inner_reflect");
+      if (ir == "zeroflux") {
+        vgd_izf = true;
+      } else if (ir != "diff") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "rad_m1/vet_gd_inner_reflect = " << ir
+                  << " (diff | zeroflux)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // vgdh-1110 vet_gd_hr_latfit = L (read only when named; -1 = off, rad_m1.hpp)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_hr_latfit")) {
+      vgd_hlf = pin->GetInteger("rad_m1","vet_gd_hr_latfit");
+      if (vgd_hlf > 3) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "rad_m1/vet_gd_hr_latfit = " << vgd_hlf
+                  << " (-1 off, 0..3 the spherical-harmonic degree)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_gd_hr_latfit_d")) {
+        vgd_hlf_d = pin->GetReal("rad_m1","vet_gd_hr_latfit_d");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_gd_hr_latfit_g")) {
+        vgd_hlf_g = pin->GetBoolean("rad_m1","vet_gd_hr_latfit_g");
+      }
+    }
+    // hrsplit-1110 vet_gd_hr_split = none | col (read only when named; rad_m1.hpp)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_hr_split")) {
+      const std::string hs = pin->GetString("rad_m1","vet_gd_hr_split");
+      if (hs == "none") {
+        vgd_hrs = 0;
+      } else if (hs == "col") {
+        vgd_hrs = 1;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "rad_m1/vet_gd_hr_split = " << hs << " (none | col)"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (vgd_hrs != 0) {
+        if (pin->DoesParameterExist("rad_m1","vet_gd_hr_split_d")) {
+          vgd_hrs_d = pin->GetReal("rad_m1","vet_gd_hr_split_d");
+        }
+        if (pin->DoesParameterExist("rad_m1","vet_gd_hr_split_sig")) {
+          vgd_hrs_sig = std::max(0.0, pin->GetReal("rad_m1","vet_gd_hr_split_sig"));
+        }
+        if (pin->DoesParameterExist("rad_m1","vet_gd_hr_split_res")) {
+          vgd_hrs_res = std::max(0.0, pin->GetReal("rad_m1","vet_gd_hr_split_res"));
+        }
+        if (!vet_col || !vcol_team) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "rad_m1/vet_gd_hr_split = col needs closure = vet_col"
+                    << " (vet_col_team = true)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      }
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_list_mb")) {
       vgd_hl_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_halo_list_mb"));
     }
@@ -2379,6 +2473,10 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
           std::exit(EXIT_FAILURE);
         }
       }
+      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_dema")) {
+        vra_ema_dema = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_dema");
+        if (vra_ema_dema) {vra_k = 4;}   // raycheap-1109: slot 2 = e2, slot 3 the Delta
+      }
       if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_diag")) {
         vra_ema_diag = pin->GetInteger("rad_m1","vet_rotate_avg_ema_diag");
       }
@@ -2399,7 +2497,8 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
                   + std::to_string(vra_ema_tau) : "") << ((vra_ema_lc > 0.0) ?
                   ", window = " + std::to_string(vra_ema_lc) + " x r/c" : "")
                   << "; change test eps " << vra_ema_eps
-                  << "); vet_rotate_avg is not used"
+                  << ")" << (vra_ema_dema ? "; lag-corrected double EMA 2 e1 - e2 "
+                  "(raycheap-1109)" : "") << "; vet_rotate_avg is not used"
                   << std::endl;
       }
     }

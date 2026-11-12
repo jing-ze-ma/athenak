@@ -711,6 +711,8 @@ class RadiationM1 {
   // enters there with I = 0).  Read only when named.
   int ibc_x2min = 2, ibc_x2max = 2, ibc_x3min = 2, ibc_x3max = 2;
   Real iflux_x1min, iflux_x1max;  // the imposed face flux of M1_IBC_FLUX
+  Real fmod_per = 0.0, fmod_amp = 0.0, fmod_f0 = 0.0;   // raycheap2-1109 (test only)
+  Real fmod_rt0 = 0.0, fmod_rw = 0.0;   // raycheap2-1109 smooth switch-on (test only)
   Real iebath_x1min, iebath_x1max;  // M1_IBC_MARSHAK: the INCIDENT bath
   // PER-COLUMN INFLOW columns of the outer x1 Marshak face (accretor-rhd-1008 S5, the
   // stream window's own radiation): a problem generator hands E_in(m,k,j) (nmb, n3, n2)
@@ -917,6 +919,7 @@ class RadiationM1 {
   int csplit = 0;
   int csplit_nh2 = 1, csplit_ns = 2;
   bool dbg_hydro_off = false;   // DIAGNOSTIC (ke-dt-0926): the Driver skips hydro stages
+  bool dbg_hydro_skip_t2 = false;   // raycheap2-1109 DIAGNOSTIC: the same on hesdirk2
   // DIAGNOSTIC <rad_m1>/dbg_cell_lo, dbg_cell_hi (read only when named; default off):
   // the implicit write-back prints the per-cell energy budget of active x1 cells
   // lo..hi (offsets from is) of the first (k, j) column of MeshBlock 0
@@ -983,6 +986,131 @@ class RadiationM1 {
   int impl_blend_xthin_mode = 0;       // xthinfix-1009: 0 all, 1 beam, 2 beam_kn
   Real impl_blend_xthin_wmin = 0.0;    // xthinfix-1009: threshold of mode = beam
   Real impl_blend_xthin_r0 = 1.5;      // xthinfix-1009: Knudsen R0 of mode = beam_kn
+  Real impl_blend_dtc = 0.0;   // rc18-1110 implicit_blend_dtc: M1BlendDtc kappa (0 off)
+  // hr2prod-1110 implicit_hr_wscale_x1 / _lat (diagnostic, read only when named): the
+  // half-range face coefficients AL, HCL, HCR, DG of the x1 / transverse faces times s
+  // (0 = central faces there); off = bitwise
+  bool impl_hr_ws = false;
+  // hr2prod-1110 implicit_hr_fcimp (read only when named, default false): the half-range
+  // face flux in DISSIPATION form, F = F_c(E') + w (c/2) (s_L E_L - s_R E_R), s = h+ - h-
+  // (the |mu| half-range moment ratio): the advective part is the evolved central face flux
+  // (implicit, as implicit_aphll_fcimp) instead of the lagged formal-solution ratios
+  // h+ + h-; AL = 0, HCL = w c s_L/2 >= 0, HCR = -w c s_R/2 <= 0 (M-matrix kept); the thin
+  // correction DG unchanged (hc = the formal solution's own dissipation at J, with
+  // Hf = the mean of H).  Thin-switch faces only.
+  bool impl_hr_fci = false;
+  // hr2prod-1110 implicit_hr_cmem_cap = k > 0 (read only when named; 0 = off): the separate
+  // central-branch memory F_c of implicit_hr_cmem clamped to |F_c| <= k c max(E'_L, E'_R) of
+  // the face after each solve.  Where w ~ 1 F_c does not feed back on E, so the plain face
+  // equation integrates -c^2 dt grad P without the wave coupling that bounds it (ws66 at
+  // c dt/dx >> 1 blew up when w later fell); the clamp is inactive in a resolved field.
+  Real impl_hr_cmem_cap = 0.0;
+  // hr2prod-1110 implicit_hr_recon_sfgate (read only when named, default false): plm on h
+  // (implicit_hr_recon_q = h) only OFF the beams.  A cell whose own J does not carry the SC
+  // face flux (Jh > J, the sf state of M1HrSf: a beam passing through) and its two
+  // neighbours along d keep sig = 0 (donor cell, sf ratios, hc, js unchanged); everywhere
+  // else (Jh = J: every smooth field) the plm slopes act.  Allows q = h with the sf face
+  // ratios and with implicit_thin_recon = js / jse.  Angular data only.
+  bool impl_sfgate = false;
+  // hr2prod-1110 implicit_hr_recon_lim = smooth0: as smooth, but where the smoothness test
+  // was evaluable (cells c-2..c+2 in the block) and FAILED the slope is 0 (donor cell)
+  // instead of van Leer: jumps (beam / shadow edges, fronts) stay first order
+  bool impl_muscl_smooth0 = false;
+  // hr2prod-1110 implicit_hr_recon_hjump = X > 0 (read only when named; 0 off): plm on h off
+  // where the half-range ratios jump between a cell and a neighbour along d,
+  // |h+_c - h+_n| + |h-_c - h-_n| > X (an opaque-body surface: isotropic inside, outward
+  // peaked outside; a shadow edge): those cells keep donor cell.  Angular data only.
+  Real impl_hjump = 0.0;
+  // vgdhr-1110 (opt-in, read only when named): implicit_hr_recon_hjump_w = W (default 1):
+  // the hjump gate looks W cells each way along d (a dilation of the gate by W - 1);
+  // implicit_hr_recon_kjump = K > 1: plm on h also off where the extinction chi of a cell
+  // within W along d differs from the cell's by more than a factor K (opaque surfaces)
+  int impl_hjw = 1;
+  Real impl_kjump = 0.0;
+  // vgdhr-1110 implicit_hr_recon_hsmooth = C > 0 (opt-in, read only when named): plm on h
+  // off where the RELATIVE smoothness r = |dh+ - dh-| / (|dh+| + |dh-| + eps) of h+ or h-
+  // exceeds C at the cell or within W cells along d (W = implicit_hr_recon_hjump_w;
+  // lateral reach <= ng - 1); r = O(dx) in a smooth field at any resolution, -> 1 at a
+  // jump or kink.  eps = implicit_hr_recon_hsmooth_eps (default 1e-3).  Per axis d.
+  Real impl_hsm = 0.0, impl_hsm_eps = 1.0e-3;
+  // vgdhr-1110 implicit_hr_recon_hlim = true (opt-in, read only when named): the plm-on-h
+  // slope weight sig (van Leer of E) also limited by the van Leer weights of H+ = h+ E and
+  // H- = h- E themselves (sig = min(sig_E, sig_H+, sig_H-)): a ratio-preserving limiter,
+  // no H+- overshoot where h jumps under a smooth E (shadow / opaque-body edges)
+  bool impl_hlim = false;
+  // vgdhr-1110 implicit_hr_recon_qe_tau = T > 0 (opt-in, read only when named; plm on h,
+  // not led): a slope centred on a cell OPAQUE along d (tau_d = chi dx_d > T) is the donor
+  // ratio times the E slope, h_c (E_c+1 - E_c-1) sig/4, instead of the slope of H = h E
+  // (flag in the M1_IM_B slots, read by the row and every M1HqFace)
+  Real impl_qe_tau = 0.0;
+  // hr2prod-1110 implicit_thin_gface = max (default) | mean | jump (read only when named):
+  // the face thinness g_f of the implicit_thin_switch weight S(g_f).  max(g_L, g_R) moves
+  // the switch by dx/2 against the gradient of g (an O(dx) shift of the blend region: a
+  // first-order space error wherever 0 < w < 1); mean = (g_L + g_R)/2 (second order);
+  // jump = mean + (g_R - g_L)^2/implicit_thin_gface_d (O(dx^2) in a smooth field, -> 1 at
+  // a beam edge where g jumps by O(1), as max).  Angular data only (g = |H|/J).
+  int thsw_gface = 0;
+  Real thsw_gfd = 0.1;
+  Real impl_hr_ws_x1 = 1.0, impl_hr_ws_lat = 1.0;
+  // vgdhr-1110 (opt-in, read only when named, default false = bitwise):
+  // implicit_thin_gface_shell: the x1-face thinness g of the thin switch from the SHELL
+  // MEANS of the cell g (repro::ShellSums, layout invariant) of the two shells instead of
+  // the two cells (then the gface mean / jump rule on the two shell values);
+  // implicit_hr_fsc: inside the blend band the central branch takes the formal-solution
+  // net flux c (h_L E_L + h_R E_R)/2, h = r+ + r- (M1HrCell), with weight w: F = w F_hr +
+  // (1 - w) [w F_fs + (1 - w) F_central].  x1 faces only; gface_shell: vet_gd (src 2),
+  // fsc: vet_gd or vet_sc (src 1, the Cartesian / sp vet_sc rays).
+  bool impl_tgsh = false, impl_hrfsc = false;
+  // vgdhr-1110 implicit_thin_gface_filter = L > 0 (opt-in, read only when named): the
+  // x1-face thinness g from the cell g FILTERED along x1 with a hat kernel of fixed
+  // physical half-width L (max(0, 1 - |r' - r|/L), renormalised over the valid cells of
+  // the column: a resolution-free g profile, O(dx^2) for a smooth g), then the gface
+  // rule on the two filtered cell values.  x1 faces only; the column is one MeshBlock
+  // along x1 (implicit_x1 needs it).
+  Real impl_tgfl = 0.0;
+  DvceArray4D<Real> impl_gfc, impl_gff;
+  // vgdgw-1110 diagnostic implicit_thin_gw_dump: the x1-face g_L, g_R (as fed to
+  // M1ThinFace) and the weight AL of the last thin-switch face build (output m1_gw)
+  bool impl_gwd = false;
+  DvceArray5D<Real> gwd;
+  DvceArray1D<Real> impl_gsh;
+  bool impl_hr_cmem = false;   // rc18-1110 implicit_hr_cmem: separate F_c memory
+  bool impl_aphll_mem = false;   // aphll-time-1110 implicit_aphll_mem (cmem + restage)
+  bool impl_aphll_fci = false;   // aphll-time-1110 implicit_aphll_fcimp (F_c implicit)
+  DvceArray4D<Real> fax1, fax2, fax3;   // rc18-1110: the applied face fluxes (cmem)
+  // vkdiag-1111 implicit_hr_cmem_fainit (opt-in, read only when named, default false):
+  // fax* are not in the restart file and start at 0, so the first step after a restart
+  // takes F_a^n = 0 as the old applied flux of the gas-momentum budget (physflux fa:
+  // Z_f, the drag) -- a spurious F^old - F jump.  With the key, the first solve sets
+  // fax* = f0x* (the restart face flux, the flux the gas momentum last saw) once.
+  bool impl_cm_fainit = false, impl_cm_fainit_done = false;
+  // vkdiag-1111 implicit_hr_cmem_rst (opt-in, read only when named, default false): the
+  // restart file carries fax* (kM1FaxRstMagic, behind the pgen slabs; each face array
+  // as 2 cell-sized slabs: faces 0..n-1, then face n in the first cell plane), so a
+  // restart continues bitwise.  The reader restores them whenever the file has them and
+  // the run has cmem (and then skips implicit_hr_cmem_fainit).
+  bool impl_cm_rst = false;
+  int FaxRstNslab() const {
+    if (!impl_hr_cmem || !impl_cm_rst || fax1.extent_int(0) == 0) {return 0;}
+    return 2 + ((fax2.extent_int(0) > 0) ? 2 : 0) + ((fax3.extent_int(0) > 0) ? 2 : 0);
+  }
+  void FaxRstPack(DvceArray5D<Real> out, int nmb);
+  bool FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl);
+  // vgdhr-1110 implicit_hr_cmem_gas_fa (opt-in, read only when named): with cmem and the
+  // conservative gas source, Z_f takes the step-start APPLIED flux fax*n as its old face
+  // flux instead of the F_c memory (the cmem feedback warning: off by (1-w)(F_c - F_a))
+  bool impl_cmgfa = false;
+  bool impl_physflux = false;   // physflux-1111: F_c = the one momentum flux
+  bool impl_pf_fa = false;   // physflux-1111 implicit_physflux_mom = fa
+  // vkdiag-1111 <rad_m1>/implicit_physflux_zold = fc (read only when named; needs
+  // physflux_mom = fa; default fa = bitwise): Z_f's old face flux = F_c^n (f0x*n), i.e.
+  // mom = fa without forcing implicit_hr_cmem_gas_fa.  The conservative2 gas share at
+  // an AP-HLL face (om = 1 - al) is then x(Z_f) + (go - F_m' - A^old) icc with A^old =
+  // stored F - mean F_c^n: both old fluxes F_c^n, so the gas no longer pays
+  // mean(F_c^n - fax*n) (the R136 near-vacuum kicks at al = 1); at om = 1 Z_f does not
+  // read the old flux (linear waves unchanged)
+  bool impl_pf_zfc = false;
+  DvceArray4D<Real> fax1n, fax2n, fax3n;
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
   // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a
   // dt-free thin/thick weight frozen per solve (formal-solution |H|/J, its non-locality
@@ -991,6 +1119,11 @@ class RadiationM1 {
   int impl_thsw_corr = 0;
   bool thsw_c1 = false;           // the sweep accumulates M1_VET_NL
   Real thsw_h0 = 0.3, thsw_h1 = 0.6, thsw_kn0 = 1.0, thsw_knp = 4.0;
+  // vgdhr-1110 implicit_thin_h0_x1 / _h1_x1 (read only when named; default = h0 / h1):
+  // the thin-switch band of the x1 faces only; implicit_thin_hx1_curv = true applies them
+  // only on curvilinear meshes (sp / cs radial faces), Cartesian x1 faces keep h0 / h1
+  Real thsw_h0x = -1.0e30, thsw_h1x = -1.0e30;
+  bool thsw_hx_curv = false;
   Real thsw_fsa = 0.0, thsw_fsj = 0.0, thsw_qp = 8.0;
   // thinfix-1011: implicit_thin_recon = js (M1ThinJs: half-range ratios from the face
   // mean of the formal-solution H+-), implicit_thin_bq = lin (outer Marshak q from the
@@ -1929,6 +2062,13 @@ class RadiationM1 {
   DvceArray5D<Real> rss_stage;   // (nmb, nch, k, j, i) read from the restart file
   int rss_stage_mode = -1;       // mode of rss_stage, -1 = nothing staged
   bool impl_clag_step;          // <rad_m1>/implicit_closure_lag = step: freeze chi and n
+  // raycheap2-1109 <rad_m1>/implicit_lag_restage (read only when named, default false):
+  // the pieces frozen per stage solve under implicit_recon_lag = step and
+  // implicit_closure_lag = step (face coefficients, plm deferred correction, thin
+  // switch, closure, transverse terms) are evaluated once more on Picard pass 1, at the
+  // pass-0 solution (the stage state to O(dt^2)), then frozen again: 2nd order in time
+  // at about one extra pass
+  bool impl_lag_restage = false;
                                 // at the START-of-step state for the whole step, so each
                                 // step is one linear solve plus the T nonlinearity
 
@@ -2021,6 +2161,69 @@ class RadiationM1 {
   // the axial angular-momentum-conservative radiation-gas exchange (rad_m1_implicit.cpp,
   // after the write-back); amw = the pre-write-back gas momentum and cell F (6)
   bool impl_am_cs = false;
+  // hgkmom-1110 <rad_m1>/implicit_am_cs_kecap = f (read only when named; absent or 0 =
+  // off = bitwise): the am_cs deposit of a cell is scaled by s in [0, 1] so that the
+  // kinetic energy it gives the gas (taken from e_int, the total energy is untouched)
+  // is at most f max(e_int, 0) of the cell after the write-back; the stored hesdirk2
+  // slope takes the same scaled momentum (and spin), so a later stage that re-applies
+  // it cannot take more kinetic energy than the cell had.  The L not deposited is
+  // counted (amkc_d: 0 capped cell-solves, 1 KE not given, 2 sum |L_z| not deposited,
+  // 3 sum |L_z| of all deposits; code units x volume where applicable)
+  Real impl_am_kecap = 0.0;
+  DvceArray1D<Real> amkc_d;
+  // amcsE-1111 <rad_m1>/implicit_am_cs_energy = gas | rad (read only when named; absent
+  // or gas = the deposit above, bitwise).  rad: the kinetic energy change dKE of the
+  // am_cs deposit (exact, KE(m + d) - KE(m)) is the work of the radiation force that
+  // the deposit completes and is paid by the cell's radiation energy: IEN += dKE,
+  // E -= (chat/c) dKE (state and stored slope K_EN / K_E), so e_int is untouched and
+  // gas + (c/chat) E and L are both kept.  The radiation pays at most
+  // implicit_am_cs_energy_frac (default 0.5) of its E per cell; beyond that the gas
+  // pays the rest from e_int (up to implicit_am_cs_kecap when named; the momentum is
+  // withheld only beyond both).  Counted (amen_d).  rad_m1_implicit.cpp m1_am_cs
+  int impl_am_en = 0;
+  Real impl_am_en_frac = 0.5;
+  DvceArray1D<Real> amen_d;
+  // amcsE-1111 <rad_m1>/implicit_am_cs_cons_diag = N (read only when named): for the
+  // first N am_cs solves, one AMCS_CONS line with the exchange's L-vector budget, the
+  // energy change of the deposit, E_tot = sum V (e_gas + (c/chat) E) and the L vector
+  // of gas + radiation after the deposit (amcd_d)
+  int impl_am_cons_diag = 0;
+  DvceArray1D<Real> amcd_d;
+  // amvec-1111 <rad_m1>/implicit_am_cs_deposit = local | patch (read only when named;
+  // absent or local = the deposit above, bitwise).  patch: the whole L vector del of a
+  // cell (not only del_z) is deposited as the minimum-kinetic-energy rigid-rotation
+  // increment omega_c = I_c^-1 del of the cell's in-block lateral 3x3 patch (I_c the
+  // patch's moment-of-inertia tensor, sum rho V (r^2 1 - r r)), gathered per cell as
+  // dp = rho (sum_c omega_c) x r (deterministic, no atomics; sum_c V r x dp = sum del).
+  // The KE is paid as implicit_am_cs_energy / _kecap say; where the cap scales a cell's
+  // deposit by s < 1, the withheld (1 - s) L (perpendicular to rhat) is redistributed
+  // as a rigid rotation over the uncapped cells of the cell's radial column, so the
+  // vector is kept.  Needs <hydro>/am_transport (not am_vector).  amvw: 0-2 the
+  // withheld L of a cell, 3 its s; amvp_d counters (rad_m1_implicit.cpp m1_am_cs_*)
+  int impl_am_dep = 0;
+  DvceArray5D<Real> amvw;
+  DvceArray1D<Real> amvp_d;
+  // hgfix-1110 <rad_m1>/implicit_clip_kecap = f (read only when named; absent or 0 = off
+  // = bitwise): the conservative write-back's F-clip correction (the momentum the
+  // limited F hands the gas, its kinetic energy taken from e_int) is scaled so that it
+  // gives the gas at most f max(e_int, 0); the stored slope takes the same state.
+  // Counted (clkc_d: 0 capped cell-solves, 1 KE not given, 2 |dm| not given; x volume).
+  // Needs the cell volume array (cs / sp); off on Cartesian
+  Real impl_clip_kecap = 0.0;
+  DvceArray1D<Real> clkc_d;
+  // hgfix-1110 <rad_m1>/time2_inc_kecap = th (read only when named; 0 = off = bitwise):
+  // where the gas old vector of a stage solve would have eint(U_h + t2inc) < th eint(U_h)
+  // because the momentum part of t2inc carries more kinetic energy than the cell has
+  // (a stored slope whose K_m outgrew its K_EN: the am_cs L deposit and the consrc clip
+  // take their kinetic energy from e_int), the momentum increment t2inc_m (and the
+  // am_vector spin increment) of THAT cell is scaled by the largest s in [0, 1) that
+  // restores th eint(U_h); t2inc_EN is untouched, so the total energy is kept and the
+  // momentum (1 - s) t2inc_m is dropped (counted: INCKECAP).  Both stages, before
+  // time2_inc_fct_gas; cells with eint(U_h) <= 0 are not touched (counted)
+  Real t2_inckc = 0.0, t2_inckc_n = 0.0, t2_inckc_un = 0.0, t2_inckc_hn = 0.0;
+  Real t2_inckc_ke = 0.0, t2_inckc_pm = 0.0;
+  int t2_inckc_calls = 0;
+  void Time2IncKeCap(int stage);
   int impl_am_cs_diag = 0;   // amdef-1019 diagnostic (read only when named): solves to print
   DvceArray5D<Real> amw;
   bool am_vec = false;             // + <hydro>/am_vector: the vector form
@@ -2031,6 +2234,23 @@ class RadiationM1 {
   bool impl_muscl_led = false;  // implicit_hr_recon = led: sign-preserving linearisation
   bool impl_muscl_hq = false;   // cs-s7-1019 implicit_hr_recon_q = h: plm of H+- = h+- E
   bool impl_muscl_seam1 = false;  // cs-s7-1019 implicit_hr_recon_seam = onesided (cs)
+  // hr2nd-1110 implicit_hr_recon_lim = smooth: unlimited centred slope (sig = 1) where
+  // the three second differences around the cell agree in sign within a factor
+  // impl_muscl_smc (smooth extrema and smooth slopes); van Leer elsewhere
+  bool impl_muscl_smooth = false;
+  Real impl_muscl_smc = 2.0;
+  // hr2nd-1110 implicit_hr_recon_xcfl = X0 > 0: a LIMITED slope (not smooth) is scaled
+  // by 1/(1 + (X/X0)^4), X = c dt/dx_d the cell Courant number of the step
+  Real impl_muscl_xcfl = 0.0;
+  // hrhc-1110 implicit_thin_corr_plm (read only when named; default false = bitwise):
+  // the thin_corr hc/hcs correction made plm-consistent under implicit_hr_recon = plm,
+  // q = h: DG_f = q w c (H_f - [h+_L J_L + h-_R J_R + plm_f(h J)]), the plm part with
+  // the same limiter as the upwind state, so that the face flux at E = J is exactly
+  // w c H_f.  hcpw: per face direction d, 2d = the gate q of the face (M1ThinFace),
+  // 2d+1 = the plm part already in DG (rebuilt with the limiter: ImplicitHcPlm)
+  bool impl_hcplm = false;
+  DvceArray5D<Real> hcpw, fr_hcpw;
+  void ImplicitHcPlm();
   bool muscl_now = false;       // on for this step
   int muscl_nbuild = 0;         // limiter builds this step (then frozen)
   int impl_muscl_nfresh = 2;    // implicit_hr_recon_fresh: passes with a fresh limiter
@@ -2048,7 +2268,7 @@ class RadiationM1 {
   Real muscl_nfall = 0.0;       // how often the positivity fallback dropped it
   Real muscl_emin = 1.0e300;    // the smallest E the linear solve produced with it on
   void ImplicitMusclBuild();    // the limiter and the row of this Picard pass
-  void ImplicitMusclKill();     // positivity: sig = 0 around the cells with E <= 0
+  Real ImplicitMusclKill();     // positivity: sig = 0 around the cells with E <= 0
   // pgrst-comb-1021 <rad_m1>/implicit_vimp_kill (read only when named; default false =
   // bitwise): a pass that solves E <= 0 under implicit_vimp drops the vimp kick (its P
   // rows and dv) only in the cells within 2 of those cells, for the rest of the solve,
@@ -2794,6 +3014,11 @@ class RadiationM1 {
   bool vra_ema_chj = true;     // vet_rotate_avg_ema_change_j: the J ratio in the test
   bool vra_ema_chstep = false; // vet_rotate_avg_ema_change_form = step (default linear)
   int vra_ema_diag = 0;        // vet_rotate_avg_ema_diag = M: print the change weights
+  // raycheap-1109 vet_rotate_avg_ema_dema (read only when named, default false): the lag-
+  // corrected (double) EMA: slot 2 holds the EMA of the EMA (e2, same weights, same frame
+  // shifts), the closure uses 2 e1 - e2 (ratio fields 2 r1 - r2, kept in [r1/4, 4 r1]);
+  // vra_k = 4 (slot 3 the Delta)
+  bool vra_ema_dema = false;
   int64_t vra_ema_nsh = 0;     // the boundaries seen (diag cadence only)
   void RotAvgEmaApply(const int ilo);
   bool vra_eq = false;         // vet_rotate_avg_weight = equal (default j: J-weighted)
@@ -3062,6 +3287,7 @@ class RadiationM1 {
   void VetGdMmsCs();   // cs-s4-1017 (rad_m1_vetgd_cs.cpp)
   // cs-s4-1017: the cs half-range data at the start of a solve (|H|/J, seam ghosts)
   void VetGdCsHrPrep();
+  void VetGdSpHrHalo();   // vgdlay-1110: sp ghosts of vgd_hr
   MeshBoundaryValuesCC *pbval_hr = nullptr;
   DvceArray5D<Real> vgd_hr_c;
   void VetGdRealDiag();
@@ -3223,6 +3449,62 @@ class RadiationM1 {
   DvceArray1D<int> vgd_shl[2];
   int vgd_shn[2] = {0, 0};
   Real vgd_shl_alpha = -3.0;
+  // vetgdup-1110 vet_gd_upwind (read only when named; default bilinear = the code before,
+  // bitwise): the upwind intensity of a stencil cell q shifted by the shell's mean
+  // angular profile Ibar_iu(mu) (per-bin quadratic fits in mu = n_d . r_hat over the
+  // shell, made after each shell kernel, every block in gid order): 1 shellmean, I_q +
+  // Ibar(mu_u) - Ibar(mu_q); 2 taylor, I_q + dmu Ibar'(mu_q) + dmu^2 Ibar''(mu_q)/2
+  // (dmu = mu_u - mu_q).
+  // vet_gd_upwind_nbin: bins per half range of mu (default 32)
+  int vgd_upf = 0, vgd_upk = 32;
+  // vet_gd_upwind_tol: a bin whose fit leaves an rms residual > tol x its rms intensity,
+  // or two bins whose fits disagree by > tol at mu, give no shift (unresolved profile)
+  Real vgd_uptol = 0.25;
+  bool vgd_upwall = false;   // vet_gd_upwind_wall: wall ghost reads shifted (sp)
+  Real vgd_up_alpha = -3.0;
+  DvceArray1D<int> vgd_up_ofs, vgd_up_code;   // per (m, bin): codes ((k, j) local, d)
+  DvceArray3D<Real> vgd_up_part;              // (m, bin, 9): per-block moment sums
+  DvceArray3D<Real> vgd_up_prof;              // (i, bin, 4): a0, a1, a2 in t, valid flag
+  DvceArray3D<Real> vgd_up_gall;              // (gid, bin, 9): every block sums (MPI)
+  HostArray3D<Real> vgd_up_galh;
+  double vgd_up_time = 0.0;
+  // hrsplit-1110 vet_gd_hr_split = col (read only when named; default none = the code
+  // before, bitwise): the RADIAL half-range ratios r+-_r of vgd_hr split into vet_col's
+  // column solution plus vet_gd's lateral deviation (VetGdHrSplit, rad_m1_vetgd.cpp):
+  //   h = h_col + D g S_sig[(h_gd - h_col) - <h_gd - h_col>_shell]
+  // (D = 1: <h_col> + h_gd - <h_gd>; D = 0: h_col).  vet_gd_hr_split_d = D (default 1);
+  // (with vet_gd_replace the column solve is then run too, for vcol_hr only);
+  // vet_gd_hr_split_sig = sig (default 0): soft threshold S_sig(x) = sign(x) max(|x| -
+  // sig, 0) in h units; vet_gd_hr_split_res = rho (default 0 = off): the profile
+  // resolution weight g = clamp((th - rho dl)/(rho dl), 0, 1), th = sqrt(1 - f_K) the rms
+  // angular width of the column intensity about r, dl = sqrt(4 pi/n) the spacing of the
+  // n vet_gd directions (angular information only)
+  int vgd_hrs = 0;
+  // hrsplit-1110 vet_gd_inner_reflect = diff | zeroflux (read only when named; default
+  // diff = the code before): zeroflux drops the gradient term of vet_gd's diffusion start
+  // at a REFLECTING inner x1 (I = S_face isotropic, H = 0 as the M1 face; vet_col mirrors)
+  bool vgd_izf = false;
+  Real vgd_hrs_d = 1.0, vgd_hrs_sig = 0.0, vgd_hrs_res = 0.0;
+  DvceArray5D<Real> vcol_hr;     // (m, 3, k, j, i): vet_col h+_r, h-_r, f_K (unclamped)
+  DvceArray1D<Real> vgd_hrs_m;   // (q c1 + i): <h_gd - h_col>_shell, q = 0, 1
+  void VetGdHrSplit();
+  // vgdh-1110 vet_gd_hr_latfit = L (read only when named; default -1 = off, bitwise): the
+  // radial half-range ratios r+-_r of vgd_hr (components 0, 1; after the twin, rotation
+  // average and vet_gd_hr_split) replaced shell by shell by their least-squares fit with
+  // the real spherical harmonics of degree <= L (L = 0: the solid-angle-weighted shell
+  // mean) over the cells of the shell (VetGdHrLatFit): lateral ray noise of the fixed
+  // direction set is removed before the ratios enter the radial faces.
+  // vet_gd_hr_latfit_d = D (default 0): h = fit + D (h - fit).  vet_gd_hr_latfit_g = true
+  // (default false): on the cubed sphere the |H|/J of the thin switch is formed with the
+  // lateral net ratios dropped as well (the lateral part of the same ray noise)
+  int vgd_hlf = -1;
+  Real vgd_hlf_d = 0.0;
+  bool vgd_hlf_g = false;
+  DvceArray4D<Real> vgd_hlf_y;   // (m, k, j, 16): the basis at the cell centre x dOmega
+  void VetGdHrLatFit();
+  void VetGdUpPrep();
+  void VetGdUpShell(const int i, const bool inw, const int f);
+  DvceArray3D<Real> vgd_up_prof2;             // the fused twin's profiles
   std::vector<VgdHlEntry> vgd_hle;
   size_t vgd_hl_bytes = 0, vgd_hl_cap = 0;   // cap: bytes (set at the first build)
   int64_t vgd_hl_gen = 0;

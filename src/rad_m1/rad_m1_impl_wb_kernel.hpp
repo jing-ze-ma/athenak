@@ -421,7 +421,9 @@
         go1 = u0_(m,M1_F1,k,j,i);
         go2 = u0_(m,M1_F2,k,j,i);
         go3 = u0_(m,M1_F3,k,j,i);
-        if (gfst) {
+        if (gfst || cmw) {
+          // rc18-1110 cmem: always the face means of the F_c memory (incl. the stage
+          // increments, which f0n_ and E^n already carry)
           // the first solve of the run: the problem generator's F is not (yet) the
           // radiation's state (F0 faces + a E), whose old value is taken instead (the
           // difference is a cold-start mismatch, not a source)
@@ -441,7 +443,7 @@
             go3 = b;
           }
         }
-        if (t2st) {
+        if (t2st && !cmw) {
           if (csok) {
             go1 += ciw_(m,0,k,j,i);
             go2 += ciw_(m,1,k,j,i);
@@ -465,7 +467,7 @@
 #if M1_CSW
         // cs-open-1018: the stage increment without a cell-F increment is the face-normal
         // face mean + A tie: its transverse part to the covariant basis of u0 F
-        if (t2st && !csok && trans && thrd) {
+        if (t2st && !csok && !cmw && trans && thrd) {
           const Real tie = t2i_(m,M1_T2_E,k,j,i);
           const Real a = 0.5*(t2i_(m,M1_T2_F1+1,k,j,i) + t2i_(m,M1_T2_F1+1,k,j+1,i))
                          + iw_(m,M1_IW_A2,k,j,i)*tie;
@@ -932,11 +934,54 @@
           if (thrd) {wn += 0.5*(v3 + (uh(m,IM3,k,j,i) + a3)*idg)*a3;}
         }
       }
+      Real b1 = a1, b2 = a2, b3 = a3;
+      if (wckc > 0.0) {
+        // hgfix-1110 implicit_clip_kecap = f: the clip's momentum (a - dm) is scaled by
+        // the largest s in [0, 1] (bisection) whose kinetic energy, taken from eint, is
+        // at most f max(eg, 0); the slope below takes the same state
+        auto wq = [&](const Real sc) -> Real {
+          const Real e1 = dm1 + sc*(a1 - dm1), e2 = dm2 + sc*(a2 - dm2);
+          const Real e3 = dm3 + sc*(a3 - dm3);
+          Real w = 0.5*(v1 + (uh(m,IM1,k,j,i) + e1)*idg)*e1;
+          if (tq) {
+            if (csw && thrd) {
+              const Real c = cclw(m,k,j), id2 = 1.0/(1.0 - c*c);
+              const Real n2 = uh(m,IM2,k,j,i) + e2, n3 = uh(m,IM3,k,j,i) + e3;
+              const Real u2 = (n2 - c*n3)*idg*id2, u3 = (n3 - c*n2)*idg*id2;
+              w += 0.5*(v2 + u2)*e2 + 0.5*(v3 + u3)*e3;
+            } else {
+              w += 0.5*(v2 + (uh(m,IM2,k,j,i) + e2)*idg)*e2;
+              if (thrd) {w += 0.5*(v3 + (uh(m,IM3,k,j,i) + e3)*idg)*e3;}
+            }
+          }
+          return w;
+        };
+        const Real w0 = wq(0.0);
+        const Real ccap = wckc*fmax(eg, 0.0);
+        if (!(wn - w0 <= ccap)) {
+          Real lo = 0.0, hi = 1.0;
+          for (int it = 0; it < 40; ++it) {
+            const Real md = 0.5*(lo + hi);
+            if (wq(md) - w0 <= ccap) {lo = md;} else {hi = md;}
+          }
+          const Real sc = lo;
+          b1 = dm1 + sc*(a1 - dm1);
+          b2 = dm2 + sc*(a2 - dm2);
+          b3 = dm3 + sc*(a3 - dm3);
+          const Real wsc = wq(sc);
+          const Real cvv = pvol(m,k,j,i);
+          Kokkos::atomic_add(&ckc_(0), 1.0);
+          Kokkos::atomic_add(&ckc_(1), (wn - wsc)*cvv);
+          Kokkos::atomic_add(&ckc_(2),
+                             sqrt(SQR(a1 - b1) + SQR(a2 - b2) + SQR(a3 - b3))*cvv);
+          wn = wsc;
+        }
+      }
       eg -= (wn - work);
       work = wn;
-      dm1 = a1;
-      dm2 = a2;
-      dm3 = a3;
+      dm1 = b1;
+      dm2 = b2;
+      dm3 = b3;
     }
     // r136e-1107 implicit_wb_vcap (rad_m1.hpp): the momentum increment of the solve is
     // scaled to keep |m + dm| <= V rho; the kinetic energy it no longer gets goes back to

@@ -21,7 +21,7 @@
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
 
-#define NOUTPUT_CHOICES 169
+#define NOUTPUT_CHOICES 170
 // choices for output variables used in <ouput> blocks in input file
 // TO ADD MORE CHOICES:
 //   - add more strings to array below, change NOUTPUT_CHOICES above appropriately
@@ -119,6 +119,7 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
 
   // grey M1 radiation: moments of the vet_gd formal solution, J and H_r in E units (163)
   "m1_fs",
+  "m1_gw",
 
   // blendall-1009: the vet_sc formal solution's J and F/c (E units), Cartesian (164)
   "m1_vsc",
@@ -338,6 +339,7 @@ class BaseTypeOutput {
   HostArray5D<Real> outarray_m1k;
   HostArray5D<Real> outarray_ams;   // cs-open-1018 am_vector spin (+ amk1)
   HostArray5D<Real> outarray_pgs;   // wbtan-rstg-1101 per-cell pgen slabs
+  HostArray5D<Real> outarray_fax;   // vkdiag-1111 rad_m1 applied face fluxes
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks

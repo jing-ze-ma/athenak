@@ -89,6 +89,8 @@ constexpr char kM1VgdRstMagic[8] = {'M', '1', 'V', 'G', 'D', 'A', 'S', '1'};
 // without it restarts with the cold-start F^old (gcs_first) and the face/E increments
 // (not bitwise).
 constexpr char kM1CskRstMagic[8] = {'M', '1', 'C', 'S', 'K', '1', 'S', '1'};
+// vkdiag-1111 implicit_hr_cmem_rst: the applied face fluxes fax* (RadiationM1::FaxRst*)
+constexpr char kM1FaxRstMagic[8] = {'M', '1', 'F', 'A', 'X', 'R', 'S', '1'};
 constexpr char kM1RaRstMagic[8] = {'M', '1', 'R', 'O', 'T', 'A', 'V', '1'};
 
 // <rad_m1>/transport

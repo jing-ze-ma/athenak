@@ -412,6 +412,22 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "dbg_t2_admiss")) {
     t2_dbg_adm = pin->GetInteger("rad_m1", "dbg_t2_admiss");
   }
+  // hgfix-1110 time2_inc_kecap = th (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_inc_kecap")) {
+    t2_inckc = pin->GetReal("rad_m1", "time2_inc_kecap");
+    if (t2_inckc < 0.0 || t2_inckc >= 1.0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_inc_kecap must be in [0, 1)"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0 && t2_inckc > 0.0) {
+      std::cout << "<rad_m1> time2_inc_kecap=" << t2_inckc << ": a stage increment "
+                << "whose momentum would take eint below th eint(U_h) is scaled down "
+                << "(total energy kept, the momentum not applied is counted)"
+                << std::endl;
+    }
+  }
   // t2retry-1020: <rad_m1>/time2_reject = be | retry (read only when named; default be =
   // the backward-Euler redo, bitwise).  retry needs <time>/dt_retry = true (checked at
   // the first rejection: without it the step falls back to backward Euler as before)
@@ -663,6 +679,16 @@ bool RadiationM1::Time2Active() {
 //! into the old vector of the stage solve.  ImplicitSolve applies t2inc.
 
 void RadiationM1::Time2FormStage(int stage, Real dt) {
+  if (fmod_per > 0.0 || fmod_rw > 0.0) {   // raycheap2-1109: the inner flux, stage time
+    // hesdirk2 / sdirk2: both stage solves end at t_n + dt (c2 = a21 + g = 1, c3 = 1);
+    // trbdf2: the stage-1 solve ends at t_n + 2 g dt (c2 = 2g)
+    const Real cst = (stage == 1 && t2_tab == 1) ? 2.0*kT2G : 1.0;
+    const Real ts = pmy_pack->pmesh->time + cst*dt;
+    Real f = fmod_f0;
+    if (fmod_per > 0.0) {f *= 1.0 + fmod_amp*std::sin(2.0*M_PI*ts/fmod_per);}
+    if (fmod_rw > 0.0) {f *= 0.5*(1.0 + std::tanh((ts - fmod_rt0)/fmod_rw));}
+    iflux_x1min = f;
+  }
   if (dbg_rst_fp > 0 && stage == 1) {dbg_rst_fp -= 1; RstFingerprint("formstage1");}   // rstbit-1107
   const Real g = kT2G;
   const Real w0 = t2_w0, w1 = t2_w1;
@@ -1112,6 +1138,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       t2_flr_n += nf;
     }
   }
+  if (t2_inckc > 0.0) {Time2IncKeCap(stage);}   // hgfix-1110 time2_inc_kecap
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
   t2_fail = false;
   nsub = 1;
@@ -1183,6 +1210,126 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
   pred_ok = false;
   pred2_ok = false;
   t2_solve = M1_T2S_NONE;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2IncKeCap
+//! \brief hgfix-1110 <rad_m1>/time2_inc_kecap = th (> 0, read only when named).  At
+//! either stage, after every other change of t2inc and before time2_inc_fct_gas: with
+//! eint_h = eint(U_h) > 0 and the old-vector gas internal energy
+//!   eint_p(s) = eint_h + t2inc_EN - [KE(m_h + s t2inc_m) - KE(m_h)],
+//! f(s) = A s^2 + B s (A = KE(t2inc_m) >= 0), a cell with eint_p(1) < th eint_h gets
+//! t2inc_m -> s t2inc_m, s the largest root in [0, 1) of eint_p(s) = th eint_h (or, if
+//! there is none, the s in [0, 1] of the largest eint_p: counted unfixed).  t2inc_EN
+//! and t2inc_E are unchanged (total energy kept); the momentum (1 - s) t2inc_m is not
+//! applied (sum |.| V counted).  Cells where it does not fire are bitwise unchanged.
+
+void RadiationM1::Time2IncKeCap(int stage) {
+  FluidRef flf = FluidRef::Get(pmy_pack);
+  if (!flf.on || t2inc.extent_int(1) <= M1_T2_EN) {return;}
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto ug = flf.u0;
+  auto in_ = t2inc;
+  const Real th = t2_inckc;
+  const bool etg = flf.use_etotgrav;
+  auto phicc = flf.phicc0;
+  const bool mhd = fl_mhd && (emag0.extent_int(0) > nmb1);
+  auto emag_ = emag0;
+  const bool csk = cs_geom;
+  auto ccl = pmy_pack->pcoord->cos_cell;
+  const bool hoi_ = impl_hold && (hold_m.extent_int(0) > nmb1);
+  auto hmi_ = hold_m;
+  auto cvol = pmy_pack->pcoord->volume;
+  const bool hvol = (cvol.extent_int(0) > nmb1) && (cvol.extent_int(3) > 1);
+  auto ai_ = aminc;
+  const bool amz = am_vec && aminc.extent_int(0) == t2inc.extent_int(0) &&
+                   aminc.extent_int(1) == t2inc.extent_int(2) &&
+                   aminc.extent_int(2) == t2inc.extent_int(3) &&
+                   aminc.extent_int(3) == t2inc.extent_int(4);
+  Real nf = 0.0, nu = 0.0, nh = 0.0, dk = 0.0, dp = 0.0;
+  Kokkos::parallel_reduce("m1_t2_inckc", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sf, Real &su,
+                Real &sh, Real &sk, Real &sp) {
+    if (hoi_ && hmi_(m,k,j,i) > 0.0) return;
+    const Real dd = ug(m,IDN,k,j,i);
+    if (!(dd > 0.0)) return;
+    const Real idd = 1.0/dd;
+    const Real q1 = ug(m,IM1,k,j,i), q2 = ug(m,IM2,k,j,i), q3 = ug(m,IM3,k,j,i);
+    const Real d1 = in_(m,M1_T2_M1,k,j,i), d2 = in_(m,M1_T2_M1+1,k,j,i);
+    const Real d3 = in_(m,M1_T2_M1+2,k,j,i);
+    Real keh, kep, kdd;
+    if (csk) {
+      const Real c = ccl(m,k,j);
+      keh = CsKeMom(q1, q2, q3, c)*idd;
+      kep = CsKeMom(q1 + d1, q2 + d2, q3 + d3, c)*idd;
+      kdd = CsKeMom(d1, d2, d3, c)*idd;
+    } else {
+      keh = 0.5*(q1*q1 + q2*q2 + q3*q3)*idd;
+      kep = 0.5*((q1 + d1)*(q1 + d1) + (q2 + d2)*(q2 + d2) + (q3 + d3)*(q3 + d3))*idd;
+      kdd = 0.5*(d1*d1 + d2*d2 + d3*d3)*idd;
+    }
+    Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
+    if (mhd) {egrv += emag_(m,k,j,i);}
+    const Real eh = ug(m,IEN,k,j,i) - keh - egrv;
+    const Real f1 = kep - keh;
+    if (!(eh > 0.0)) {
+      if (!(eh + in_(m,M1_T2_EN,k,j,i) - f1 > 0.0) && kdd > 0.0) {sh += 1.0;}
+      return;
+    }
+    // room for kinetic energy: f(s) <= cap keeps eint_p >= th eint_h
+    const Real cap = eh + in_(m,M1_T2_EN,k,j,i) - th*eh;
+    if (!(f1 > cap)) return;   // (NaN: not touched)
+    if (!(kdd > 0.0)) return;  // no momentum increment: nothing to scale
+    const Real aa = kdd, bb = f1 - kdd;
+    const Real disc = bb*bb + 4.0*aa*cap;
+    Real s = -1.0;
+    if (disc >= 0.0) {
+      const Real sq = sqrt(disc);
+      // the larger root of A s^2 + B s - cap (cancellation-free form where B >= 0)
+      const Real r = (bb >= 0.0) ? ((bb + sq > 0.0) ? 2.0*cap/(bb + sq) : 0.0)
+                                 : (-bb + sq)/(2.0*aa);
+      if (r >= 0.0) {s = fmin(r, 1.0);}
+    }
+    if (s < 0.0) {   // no s reaches th eint_h: the s of the smallest f in [0, 1]
+      s = fmin(fmax(-bb/(2.0*aa), 0.0), 1.0);
+      su += 1.0;
+    }
+    if (!(s < 1.0)) return;
+    in_(m,M1_T2_M1,k,j,i) = s*d1;
+    in_(m,M1_T2_M1+1,k,j,i) = s*d2;
+    in_(m,M1_T2_M1+2,k,j,i) = s*d3;
+    if (amz) {ai_(m,k,j,i) *= s;}
+    sf += 1.0;
+    const Real vv = hvol ? cvol(m,k,j,i) : 1.0;
+    sk += (f1 - (aa*s + bb)*s)*vv;
+    sp += (1.0 - s)*sqrt(d1*d1 + d2*d2 + d3*d3)*vv;
+  }, Kokkos::Sum<Real>(nf), Kokkos::Sum<Real>(nu), Kokkos::Sum<Real>(nh),
+     Kokkos::Sum<Real>(dk), Kokkos::Sum<Real>(dp));
+#if MPI_PARALLEL_ENABLED
+  {
+    Real a[5] = {nf, nu, nh, dk, dp}, g[5];
+    MPI_Allreduce(a, g, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    nf = g[0]; nu = g[1]; nh = g[2]; dk = g[3]; dp = g[4];
+  }
+#endif
+  t2_inckc_n += nf;
+  t2_inckc_un += nu;
+  t2_inckc_hn += nh;
+  t2_inckc_ke += dk;
+  t2_inckc_pm += dp;
+  t2_inckc_calls += 1;
+  if (global_variable::my_rank == 0 && (nf > 0.0 || t2_inckc_calls % 50 == 0)) {
+    std::cout << "<rad_m1> INCKECAP cycle " << pmy_pack->pmesh->ncycle << " stage "
+              << stage << " calls " << t2_inckc_calls
+              << " fired " << nf << " unfixed " << nu << " eint_h<=0 " << nh
+              << " KE_not_given(x vol) " << dk << " |dm|_dropped(x vol) " << dp
+              << " | total fired " << t2_inckc_n << " unfixed " << t2_inckc_un
+              << " eint_h<=0 " << t2_inckc_hn << " KE " << t2_inckc_ke << " |dm| "
+              << t2_inckc_pm << std::endl;
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -2093,6 +2240,16 @@ void RadiationM1::Time2VetColAt(int which) {
       iw_(m,M1_IW_EN,k,j,i) = fmax(e, efl);
     });
   }
+  // raycheap2-1109 (test forcing keys only): the predicted build sees the inner boundary
+  // flux at the time of the predicted state, t_n + dt (restored after the build)
+  const Real ifx_save = iflux_x1min;
+  if (fmod_per > 0.0 || fmod_rw > 0.0) {
+    const Real ts = pmy_pack->pmesh->time + dt;
+    Real f = fmod_f0;
+    if (fmod_per > 0.0) {f *= 1.0 + fmod_amp*std::sin(2.0*M_PI*ts/fmod_per);}
+    if (fmod_rw > 0.0) {f *= 0.5*(1.0 + std::tanh((ts - fmod_rt0)/fmod_rw));}
+    iflux_x1min = f;
+  }
   if (vcol) {
     // time2_vet_col_source = state (vcpred-1010): the source of P itself, not relaxed
     // by a further dt (vet_col, vet_col_lat and vet_gd all read vcol_srelax)
@@ -2112,6 +2269,7 @@ void RadiationM1::Time2VetColAt(int which) {
     vcol_srelax = srs;
     if (dbg) {Time2PredDebugSc();}
   }
+  iflux_x1min = ifx_save;   // raycheap2-1109
   if (hh) {
     Kokkos::deep_copy(DevExeSpace(), opac, vet_opac);
   }
@@ -2661,6 +2819,12 @@ void RadiationM1::Time2Report() {
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   std::cout << std::endl;
+  if (t2_inckc > 0.0 && global_variable::my_rank == 0) {   // hgfix-1110
+    std::cout << "<rad_m1> time2_inc_kecap=" << t2_inckc << ": calls " << t2_inckc_calls
+              << " fired " << t2_inckc_n << " unfixed " << t2_inckc_un << " eint_h<=0 "
+              << t2_inckc_hn << " KE not given " << t2_inckc_ke << " |dm| dropped "
+              << t2_inckc_pm << std::endl;
+  }
   if (t2_abe > 0) {
     std::cout << "<rad_m1> time2_auto_be=" << t2_abe << ": skipped-stage BE steps="
               << t2_abe_n << " stage retries=" << t2_abe_ntry << " (succeeded "

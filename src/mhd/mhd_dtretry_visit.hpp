@@ -10,6 +10,18 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("rsolver_method", rsolver_method);
   v.value("nmhd", nmhd);
   v.value("nscalars", nscalars);
+  v.value("tracers", tracers);
+  v.value("xe_tracer", xe_tracer);
+  v.value("ixe", ixe);
+  v.value("xe_init_pending", xe_init_pending);
+  v.value("xe_par", xe_par);
+  v.value("floor_tracer", floor_tracer);
+  v.value("trc_strang", trc_strang);
+  v.value("ifltr", ifltr);
+  v.value("fltr_margin", fltr_margin);
+  v.value("fltr_fmax", fltr_fmax);
+  v.value("fltr_dm", fltr_dm);
+  v.value("fltr_de", fltr_de);
   v.view("u0", u0);
   v.view("w0", w0);
   v.view("b0.x1f", b0.x1f);
@@ -54,14 +66,27 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.view("bccsaved", bccsaved);
   v.view("fofc", fofc);
   v.value("use_fofc", use_fofc);
+  v.value("boris_on", boris_on);
+  v.view("boris_mref", boris_mref);
+  v.value("boris_ndiag", boris_ndiag);
+  v.value("boris_de_sum", boris_de_sum);
+  v.value("boris_de_abs", boris_de_abs);
+  v.value("boris_dm_abs", boris_dm_abs);
+  v.value("boris_ncell", boris_ncell);
+  v.value("boris_fmin", boris_fmin);
   v.view("fofc_cnt", fofc_cnt);
   v.value("fofc_hlle", fofc_hlle);
   v.value("use_bs_emf", use_bs_emf);
   v.value("emf_smooth", emf_smooth);
   v.value("emf_uct", emf_uct);
   v.value("emf_uct_hlld", emf_uct_hlld);
+  v.value("uct_corner_rec", uct_corner_rec);
+  v.view("uct1", uct1);
+  v.view("uct2", uct2);
+  v.view("uct3", uct3);
   v.value("cs_seam_mhd", cs_seam_mhd);
   v.value("cs_seam_noavg", cs_seam_noavg);
+  v.value("cs_seam_res_own", cs_seam_res_own);
   v.value("cs_seam_nfs", cs_seam_nfs);
   v.value("use_polar_emf_diss", use_polar_emf_diss);
   v.value("cs_lowbeta_fallback", cs_lowbeta_fallback);
@@ -75,6 +100,18 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.view("phicc_wb", phicc_wb);
   v.view("phi_wb_x1f", phi_wb_x1f);
   v.view("wbq0", wbq0);
+  v.value("wb_all", wb_all);
+  v.value("wb_weight", wb_weight);
+  v.value("wbw_r0", wbw_r0);
+  v.value("wbw_r1", wbw_r1);
+  v.value("wbw_m0", wbw_m0);
+  v.value("wbw_m1", wbw_m1);
+  v.value("wbw_eta", wbw_eta);
+  v.view("wbq2", wbq2);
+  v.view("wbq3", wbq3);
+  v.view("wbw", wbw);
+  v.view("wbam_u", wbam_u);
+  v.view("wbam_w", wbam_w);
   v.value("wb_guard_ideal", wb_guard_ideal);
   v.value("wb_clamp_ideal", wb_clamp_ideal);
   v.value("wb_cache_every", wb_cache_every);
@@ -84,7 +121,15 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.view("eint_rst", eint_rst);
   v.value("c2p_track", c2p_track);
   v.value("rkg_skip_u", rkg_skip_u);
+  v.value("rkg_u_vmask", rkg_u_vmask);
   v.value("c2p_split", c2p_split);
+  v.value("sbf_on", sbf_on);
+  v.value("sbf_want", sbf_want);
+  v.value("sbf_valid", sbf_valid);
+  v.view("sbf_s", sbf_s);
+  v.value("sbf_nfast", sbf_nfast);
+  v.value("sbf_nfull", sbf_nfull);
+  v.value("c2p_wt_rkg", c2p_wt_rkg);
   v.view("c2p_acc", c2p_acc);
   v.view("c2p_ref_e", c2p_ref_e);
   v.view("c2p_ref_d", c2p_ref_d);
@@ -93,10 +138,18 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("use_wellbalance_dynamic", use_wellbalance_dynamic);
   v.value("use_wb_x1", use_wb_x1);
   v.value("wall_closed_ix1", wall_closed_ix1);
+  v.value("wall_wb_onesided", wall_wb_onesided);
   v.value("diode_ox1", diode_ox1);
+  v.value("top_ghost_prim_copy", top_ghost_prim_copy);
+  v.value("wall_stress_free", wall_stress_free);
+  v.value("wall_conducting_ix1", wall_conducting_ix1);
+  v.value("wall_conducting", wall_conducting);
+  v.value("any_reflect_face", any_reflect_face);
   v.value("use_wb_x2", use_wb_x2);
   v.value("use_wb_rho", use_wb_rho);
   v.value("wb_rmax", wb_rmax);
+  v.value("wb_phimax", wb_phimax);
+  v.value("wb_poison", wb_poison);
   v.value("wb_rmin", wb_rmin);
   v.value("wb_option", wb_option);
   v.view("u0wb", u0wb);
@@ -125,11 +178,6 @@ void mhd::MHD::DtRetryVisit(V &v) {
 //   peos : EquationOfState *
 //   pbval_u : MeshBoundaryValuesCC *
 //   pbval_b : MeshBoundaryValuesFC *
-//   pbval_fs : MeshBoundaryValuesCC *
-//   pbval_us : MeshBoundaryValuesCC *
-//   pseamfs : DvceFaceFld5D<Real> *
-//   pusown : DvceFaceFld5D<Real> *
-//   pusnbr : DvceFaceFld5D<Real> *
 //   porb_u : OrbitalAdvectionCC *
 //   porb_b : OrbitalAdvectionFC *
 //   psbox_u : ShearingBoxCC *
@@ -139,6 +187,12 @@ void mhd::MHD::DtRetryVisit(V &v) {
 //   pcond : Conduction *
 //   psrc : SourceTerms *
 //   fofc_rep : FofcReport
+//   pbval_fs : MeshBoundaryValuesCC *
+//   pbval_us : MeshBoundaryValuesCC *
+//   pseamfs : DvceFaceFld5D<Real> *
+//   pusown : DvceFaceFld5D<Real> *
+//   pusnbr : DvceFaceFld5D<Real> *
+//   wbam_f : DvceFaceFld5D<Real> *
 //   pam : hydro::AmModule *
 //   id : MHDTaskIDs
 //   pmy_pack : MeshBlockPack *

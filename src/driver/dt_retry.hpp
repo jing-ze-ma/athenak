@@ -55,7 +55,8 @@ struct Entry {
   virtual void SetGen(const std::int64_t *g) {(void) g;}   // gpumem-1022: write counter
   virtual std::int64_t NSkip() const {return 0;}
   virtual bool Differs() {return false;}   // audit: changed since Save (Views only)
-  virtual void Poison() {}                 // audit: fill a View with NaN
+  virtual void PoisonPrepare(bool whole) {(void) whole;}   // audit: before the put-back
+  virtual void Poison() {}                 // audit: NaN where the attempt wrote
 };
 
 // fin51-r-fix: file-scope state of a problem generator that a cycle reads from the cycle
