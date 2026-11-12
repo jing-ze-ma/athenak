@@ -32,8 +32,9 @@ namespace radm1 {
 //!   q = (U, M, L_z,gas, L_z,rad, P_r,gas, P_r,rad) x V,
 //! U = IEN + (c/chat) E, L_z = (r_c x p).z with p the Cartesian vector of the radial +
 //! contravariant tangential components (cs: covariant m, F raised with cos_cell; sp:
-//! orthonormal), radiation momentum F/(c chat).  The change since the previous mark goes to
-//! segment pt (6 = a discarded attempt).  Mark 5 prints CAUDIT and CAUDITB (rank 0) and
+//! orthonormal), radiation momentum F/(c chat).  The change since the previous mark
+//! goes to segment pt (6 = a discarded attempt).  Mark 5 prints CAUDIT and CAUDITB
+//! (rank 0) and
 //! restarts the sums.  Collective (every rank calls it at the same points).
 
 void RadiationM1::CAuditMark(int pt) {
