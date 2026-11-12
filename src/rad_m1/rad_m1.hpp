@@ -1135,6 +1135,15 @@ class RadiationM1 {
   DvceArray4D<Real> fmm_fh;
   Real fmm_rfaces = 0.0;
   bool impl_fmm_real = false;
+  // facemmat-1112 stage 2b: the transverse (x2, x3; cs seams) faces.  fmm_t (m,8,k,j,i)
+  // at the face index: x2 [0] Llo, [1] Lhi (the row's E'-linear coefficients of the face
+  // flux, chat units, as M1TransRowCore / m1_impl_tcell build them), [2] G = cr F(E^k) -
+  // Llo E_lo - Lhi E_hi (its explicit part, the lagged off-diagonal / lateral term
+  // included), [3] lam; x3 [4..7].  iw slots iw_fmm+3..+6: dt A/V of the cell's x2+, x2-,
+  // x3+, x3- face.  F_L = Rusanov from the iterate's cell F_2/F_3.
+  DvceArray5D<Real> fmm_t;
+  bool fmm_tfin = false;   // the post-solve ImplicitTransverseTerms: store the blend
+  void ImplicitFaceMmatTrans(bool bicg);
   Real fmm_pass = 0.0, fmm_lpass = 0.0, fmm_cells = 0.0, fmm_faces = 0.0;
   Real fmm_left = 0.0, fmm_rmax = 0.0;
   bool ImplicitFaceMmat(bool bicg, Real dt);

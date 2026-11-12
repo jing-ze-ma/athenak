@@ -4131,7 +4131,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 " = upwind, athena_face_diss or implicit_hr_damp");
     }
     iw_fmm = niw;
-    niw += 3;
+    niw += 7;
     impl_fmm_real = pin->DoesParameterExist("rad_m1","implicit_face_mmat_real") &&
                     pin->GetBoolean("rad_m1","implicit_face_mmat_real");
     Kokkos::realloc(fmm_lam, nmb, ncells3, ncells2, ncells1+1);
@@ -4139,6 +4139,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(fmm_lo, nmb, 2, ncells3, ncells2, ncells1+1);
     Kokkos::realloc(fmm_fh, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(fmm_fh, 0.0);
+    if (trans_on) {
+      Kokkos::realloc(fmm_t, nmb, 8, ncells3+1, ncells2+1, ncells1);
+      Kokkos::deep_copy(fmm_t, 0.0);
+    }
     Kokkos::deep_copy(fmm_lam, 1.0);
     Kokkos::deep_copy(fmm_g, 0.0);
     Kokkos::deep_copy(fmm_lo, 0.0);
@@ -5744,6 +5748,62 @@ void M1CsTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol,
                  p3lo, p3hi, bcg, ch, cl, dt, fp, fm, gp, gm, dia, tt, blt, th2, th3,
                  bw2, bw3);
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn M1FmmTransCell
+//! \brief facemmat-1112 stage 2b: the E'-linear coefficients (Llo, Lhi) of the cell's
+//! upper x2/x3 faces (and of its lower ones at js / ks) exactly as M1TransRowCore (geo)
+//! or the Cartesian m1_impl_tcell (cart: dt/dx, dx) put them into TDIA and C, and the
+//! cell's dt A/V per transverse face into iw slots ia..ia+3.  Physical faces stay 0.
+
+template <typename G, typename V, typename VD, typename VV, typename VT>
+KOKKOS_INLINE_FUNCTION
+void M1FmmTransCell(const G &geo, const bool cart, const V &iw_, const VD &vd_,
+                    const bool dfull, const VV &cvol, const V &ft, const int ia,
+                    const Real dx2, const Real dx3, const int m, const int k, const int j,
+                    const int i, const int js, const int je, const int ks, const int ke,
+                    const bool p2lo, const bool p2hi, const bool thrd, const bool p3lo,
+                    const bool p3hi, const Real ch, const Real dt, const bool thb,
+                    const bool blt, const VT &th2, const VT &th3, const V &bw2,
+                    const V &bw3) {
+  const Real iv = cart ? 0.0 : dt/cvol(m,k,j,i);
+  const Real n2p = cart ? dt/dx2 : geo.A2p(m,k,j,i)*iv;
+  const Real n2m = cart ? dt/dx2 : geo.A2m(m,k,j,i)*iv;
+  iw_(m,ia,k,j,i) = n2p;
+  iw_(m,ia+1,k,j,i) = n2m;
+  // face between (kl,jl) and (kh,jh), its index (kf,jf), direction d (1: x2, 2: x3)
+  auto face = [&](const int d, const int kl, const int jl, const int kh, const int jh,
+                  const int kf, const int jf, const Real len) {
+    const Real ktf = 0.5*(iw_(m,M1_IW_KT,kl,jl,i) + iw_(m,M1_IW_KT,kh,jh,i));
+    Real th = 1.0/(1.0 + ch*dt*ktf);
+    if (thb) {th = (d == 1) ? th2(m,kf,jf,i) : th3(m,kf,jf,i);}
+    const Real g = th*ch*ch*dt/len;
+    Real llo = g*M1DDiag(iw_,vd_,dfull,m,d,kl,jl,i);
+    Real lhi = -g*M1DDiag(iw_,vd_,dfull,m,d,kh,jh,i);
+    if (blt) {
+      llo += (d == 1) ? bw2(m,M1_IFW_HCL,kf,jf,i) : bw3(m,M1_IFW_HCL,kf,jf,i);
+      lhi += (d == 1) ? bw2(m,M1_IFW_HCR,kf,jf,i) : bw3(m,M1_IFW_HCR,kf,jf,i);
+    }
+    const int o = (d == 1) ? 0 : 4;
+    ft(m,o,kf,jf,i) = llo;
+    ft(m,o+1,kf,jf,i) = lhi;
+  };
+  if (!(j == je && p2hi)) {face(1, k, j, k, j+1, k, j+1, cart ? dx2 : geo.L2p(m,k,j,i));}
+  if (j == js && !p2lo) {face(1, k, j-1, k, j, k, j, cart ? dx2 : geo.L2m(m,k,j,i));}
+  if (thrd) {
+    const Real n3p = cart ? dt/dx3 : geo.A3p(m,k,j,i)*iv;
+    const Real n3m = cart ? dt/dx3 : geo.A3m(m,k,j,i)*iv;
+    iw_(m,ia+2,k,j,i) = n3p;
+    iw_(m,ia+3,k,j,i) = n3m;
+    if (!(k == ke && p3hi)) {
+      face(2, k, j, k+1, j, k+1, j, cart ? dx3 : geo.L3p(m,k,j,i));
+    }
+    if (k == ks && !p3lo) {face(2, k-1, j, k, j, k, j, cart ? dx3 : geo.L3m(m,k,j,i));}
+  } else {
+    iw_(m,ia+2,k,j,i) = 0.0;
+    iw_(m,ia+3,k,j,i) = 0.0;
+  }
+}
 } // namespace
 
 //----------------------------------------------------------------------------------------
@@ -6086,6 +6146,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool vmo = cs_vtx_mono && cs_geom;
   const int vmn = cs_vtx_n;
   const bool v3m1_ = cs_geom && pmy_pack->pmesh->cs_vertex_3cell;   // cornerfix-1103
+  // facemmat-1112 stage 2b: the post-solve call stores lam F_H + (1 - lam) F_L
+  const bool fmmb = impl_fmm && fmm_tfin && (fmm_t.extent_int(0) > nmb1);
+  auto fmt_ = fmm_t;
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const M1Vtx vx = M1VtxOf(v3m1_, mbsize.d_view(m), js, je, ks, ke);   // cornerfix-1103
@@ -6305,6 +6368,29 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                          + (1.0 - om)*(gz2o_(m,k,j,i) + (cs2z ? q2z_(m,k,j,i) : 0.0))
                            /(cl*ch));
     }
+    if (fmmb && fmt_(m,3,k,j,i) < 1.0) {
+      // facemmat-1112 stage 2b: the limited face (Rusanov F_L from the cell fluxes)
+      const Real lf = fmt_(m,3,k,j,i);
+      const Real el = iw_(m,M1_IW_EP,k,jm,i), er = iw_(m,M1_IW_EP,k,j,i);
+      const Real rl = (el > 0.0) ? fmin(fmax(iw_(m,M1_IW_F2,k,jm,i)/(cl*el), -1.0), 1.0)
+                                 : 0.0;
+      const Real rr = (er > 0.0) ? fmin(fmax(iw_(m,M1_IW_F2,k,j,i)/(cl*er), -1.0), 1.0)
+                                 : 0.0;
+      const Real fll = 0.5*cl*((1.0 + rl)*el - (1.0 - rr)*er);
+      const Real fb = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f
+                          - ch*cl*dt*off);
+      const Real hh = (pfz ? f2_(m,k,j,i) : fa2_(m,k,j,i)) - fb;
+      const Real fnew = lf*fa2_(m,k,j,i) + (1.0 - lf)*fll;
+      fa2_(m,k,j,i) = fnew;
+      if (cm) {f2_(m,k,j,i) = fnew;}
+      if (gcst && !gcft) {
+        const Real om = th*(1.0 + ch*dt*ktf);
+        gz2_(m,k,j,i) = -(1.0 + ch*dt*ktf)*(lf*hh + (1.0 - lf)*fll)/(cl*ch)
+                        + lf*om*dt*(gr + off)
+                        + (1.0 - lf*om)*(gz2o_(m,k,j,i) + (cs2z ? q2z_(m,k,j,i) : 0.0))
+                          /(cl*ch);
+      }
+    }
   });
 
   // (2) the x3 face fluxes
@@ -6512,6 +6598,29 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                         : (-(1.0 + ch*dt*ktf)*hh/(cl*ch) + om*dt*(gr + off)
                            + (1.0 - om)*(gz3o_(m,k,j,i) + (cs2z ? q3z_(m,k,j,i) : 0.0))
                              /(cl*ch));
+      }
+      if (fmmb && fmt_(m,7,k,j,i) < 1.0) {
+        // facemmat-1112 stage 2b: the limited face (Rusanov F_L from the cell fluxes)
+        const Real lf = fmt_(m,7,k,j,i);
+        const Real el = iw_(m,M1_IW_EP,km,j,i), er = iw_(m,M1_IW_EP,k,j,i);
+        const Real rl = (el > 0.0) ? fmin(fmax(iw_(m,M1_IW_F3,km,j,i)/(cl*el), -1.0), 1.0)
+                                   : 0.0;
+        const Real rr = (er > 0.0) ? fmin(fmax(iw_(m,M1_IW_F3,k,j,i)/(cl*er), -1.0), 1.0)
+                                   : 0.0;
+        const Real fll = 0.5*cl*((1.0 + rl)*el - (1.0 - rr)*er);
+        const Real fb = th*(wmem*f3n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f
+                          - ch*cl*dt*off);
+        const Real hh = (pfz ? f3_(m,k,j,i) : fa3_(m,k,j,i)) - fb;
+        const Real fnew = lf*fa3_(m,k,j,i) + (1.0 - lf)*fll;
+        fa3_(m,k,j,i) = fnew;
+        if (cm) {f3_(m,k,j,i) = fnew;}
+        if (gcst && !gcft) {
+          const Real om = th*(1.0 + ch*dt*ktf);
+          gz3_(m,k,j,i) = -(1.0 + ch*dt*ktf)*(lf*hh + (1.0 - lf)*fll)/(cl*ch)
+                          + lf*om*dt*(gr + off)
+                          + (1.0 - lf*om)*(gz3o_(m,k,j,i) + (cs2z ? q3z_(m,k,j,i) : 0.0))
+                            /(cl*ch);
+        }
       }
     });
   }
@@ -6806,6 +6915,37 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     iw_(m,M1_IW_TDIA,k,j,i) = dia;
     iw_(m,M1_IW_TRHS,k,j,i) = -unew;
   });
+  // facemmat-1112 stage 2b: the transverse faces' row coefficients (M1FmmTransCell)
+  if (impl_fmm && fmm_t.extent_int(0) > nmb1) {
+    auto ft_ = fmm_t;
+    Kokkos::deep_copy(DevExeSpace(), ft_, 0.0);
+    const int ia = iw_fmm + 3;
+    const bool lmc = lm;
+    par_for("m1_fmm_tl", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      auto pb = [&](const BoundaryFace f) {
+        const BoundaryFlag q = mbbcs.d_view(m,f);
+        return (q != BoundaryFlag::block) && (q != BoundaryFlag::periodic);
+      };
+      const bool q2lo = pb(BoundaryFace::inner_x2), q2hi = pb(BoundaryFace::outer_x2);
+      const bool q3lo = thrd && pb(BoundaryFace::inner_x3);
+      const bool q3hi = thrd && pb(BoundaryFace::outer_x3);
+      const Real dx2 = mbsize.d_view(m).dx2, dx3 = mbsize.d_view(m).dx3;
+      if (csg) {
+        const M1CsRowGeo<decltype(carea), decltype(csn2), decltype(csg2_),
+                         decltype(cseam), decltype(cx1v)>
+            geo{carea, cdxf, csn2, csn3, csg2_, csg3_, cseam, cx1v, cx1f, js, je, ks, ke};
+        M1FmmTransCell(geo, false, iw_, vd_, dfull, cvol, ft_, ia, dx2, dx3, m, k, j, i,
+                       js, je, ks, ke, q2lo, q2hi, thrd, q3lo, q3hi, ch, dt, blt, blt,
+                       th2_, th3_, bw2_, bw3_);
+      } else {
+        const M1SphRowGeo<decltype(carea)> geo{carea, cdxf};
+        M1FmmTransCell(geo, !sph, iw_, vd_, dfull, cvol, ft_, ia, dx2, dx3, m, k, j, i,
+                       js, je, ks, ke, q2lo, q2hi, thrd, q3lo, q3hi, ch, dt,
+                       sph ? blt : lmc, blt, th2_, th3_, bw2_, bw3_);
+      }
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -7640,6 +7780,30 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
   auto carea = pmy_pack->pcoord->area;
   const bool hoi = impl_hold && (hold_m.extent_int(0) > nmb1);
   auto hm_ = hold_m;
+  // stage 2b: the transverse faces' explicit part G = cr F(E^k) - Llo E_lo - Lhi E_hi
+  const bool tr = trans_on && (fmm_t.extent_int(0) > nmb1);
+  const bool tr3 = tr && trans_x3;
+  auto ft_ = fmm_t;
+  const int ia = iw_fmm + 3;
+  if (tr) {
+    auto fa2_ = impl_hr_cmem ? fax2 : f0x2;
+    auto fa3_ = (impl_hr_cmem && fax3.extent_int(0) > 0) ? fax3 : f0x3;
+    const Real crt = chat/c_light;
+    par_for("m1_fmm_g2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      ft_(m,2,k,j,i) = crt*fa2_(m,k,j,i) - ft_(m,0,k,j,i)*iw_(m,M1_IW_EP,k,j-1,i)
+                       - ft_(m,1,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+      ft_(m,3,k,j,i) = 1.0;
+    });
+    if (tr3) {
+      par_for("m1_fmm_g3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        ft_(m,6,k,j,i) = crt*fa3_(m,k,j,i) - ft_(m,4,k,j,i)*iw_(m,M1_IW_EP,k-1,j,i)
+                         - ft_(m,5,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+        ft_(m,7,k,j,i) = 1.0;
+      });
+    }
+  }
   // b(R) of cell (m,k,j,i) with the current R (slot sr, ghosts valid), and P, b0, I(R)
   auto cell = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                             Real &po, Real &b0, Real &ir) {
@@ -7658,7 +7822,22 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     const Real i1 = al*fmax(gl, 0.0) + au*fmax(-gu, 0.0);
     po = au*ru*fmax(gu, 0.0) + al*rl*fmax(-gl, 0.0);
     ir = al*rl*iw_(m,sr,k,j,i-1)*fmax(gl, 0.0) + au*ru*iw_(m,sr,k,j,i+1)*fmax(-gu, 0.0);
-    b0 = iw_(m,sb,k,j,i) + p1 - i1;
+    Real pt = p1, it = i1;
+    if (tr) {   // stage 2b: the x2 (and x3) faces, lam_r = 1
+      for (int d = 0; d < (tr3 ? 2 : 1); ++d) {
+        const int o = 4*d, dk = d, dj = 1 - d;
+        const Real g2l = ft_(m,o+2,k,j,i), g2u = ft_(m,o+2,k+dk,j+dj,i);
+        const Real a2u = iw_(m,ia+2*d,k,j,i), a2l = iw_(m,ia+2*d+1,k,j,i);
+        const Real q1 = a2u*fmax(g2u, 0.0) + a2l*fmax(-g2l, 0.0);
+        const Real q2 = a2l*fmax(g2l, 0.0) + a2u*fmax(-g2u, 0.0);
+        pt += q1;
+        it += q2;
+        po += q1;
+        ir += a2l*iw_(m,sr,k-dk,j-dj,i)*fmax(g2l, 0.0)
+              + a2u*iw_(m,sr,k+dk,j+dj,i)*fmax(-g2u, 0.0);
+      }
+    }
+    b0 = iw_(m,sb,k,j,i) + pt - it;
     return b0 - iw_(m,sr,k,j,i)*po + ir;
   };
   Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sr, Kokkos::ALL,
@@ -7752,12 +7931,108 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     lam_(m,k,j,i) = rd;
     if (rd < 1.0) {sf += 1.0;}
   }, Kokkos::Sum<Real>(lv[0]));
+  if (tr) {   // stage 2b: the transverse faces take their donor's R
+    Real nt = 0.0;
+    par_reduce_flat("m1_fmm_lt", 0, nmb1, ks, ke+(tr3 ? 1 : 0), js, je+1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sf) {
+      if (k <= ke) {
+        const Real g = ft_(m,2,k,j,i);
+        const Real rd = (g > 0.0) ? iw_(m,sr,k,j-1,i)
+                                  : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
+        ft_(m,3,k,j,i) = rd;
+        if (rd < 1.0) {sf += 1.0;}
+      }
+      if (tr3 && j <= je) {
+        const Real g = ft_(m,6,k,j,i);
+        const Real rd = (g > 0.0) ? iw_(m,sr,k-1,j,i)
+                                  : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
+        ft_(m,7,k,j,i) = rd;
+        if (rd < 1.0) {sf += 1.0;}
+      }
+    }, Kokkos::Sum<Real>(nt));
+    lv[0] += nt;
+  }
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, lv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
   fmm_faces += lv[0];
   fmm_left += lv[1];
   return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitFaceMmatTrans
+//! \brief facemmat-1112 stage 2b: a transverse face with lam < 1 (fmm_t) takes lam F_H +
+//! (1 - lam) F_L in the rows just assembled: per side, TB += w a (L_own,L - L_own),
+//! C_nb += w a (L_nb,L - L_nb) (bicgstab), TR += w a (+-G) - dC E^k_nb, w = 1 - lam, a =
+//! dt A/V of the cell's face, L the coefficient of that side's E in the face flux (upper
+//! face: own = lo; lower face: own = hi, sign -).  F_L = chat ((1 + f_lo) E_lo - (1 -
+//! f_hi) E_hi)/2, f = F_d/(c E) of the iterate's cell flux (M-matrix, |F_L| <= chat E).
+
+void RadiationM1::ImplicitFaceMmatTrans(bool bicg) {
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto ft_ = fmm_t;
+  const int ia = iw_fmm + 3;
+  const bool tr3 = trans_x3;
+  const Real chl = chat, cll = c_light;
+  const bool hoi = impl_hold && (hold_m.extent_int(0) > nmb1);
+  auto hm_ = hold_m;
+  par_for("m1_fmm_tc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (hoi && hm_(m,k,j,i) > 0.0) {return;}
+    Real db = 0.0, dr = 0.0;
+    Real dc[4] = {0.0, 0.0, 0.0, 0.0};   // CJP, CJM, CKP, CKM
+    for (int d = 0; d < (tr3 ? 2 : 1); ++d) {
+      const int o = 4*d, dk = d, dj = 1 - d;
+      const int fs = (d == 0) ? M1_IW_F2 : M1_IW_F3;
+      // F_L coefficients of the face between (k-dk.., lo) and (hi)
+      auto lowo = [&](const int kl, const int jl, const int kh, const int jh,
+                      Real &ll, Real &lr) {
+        const Real el = iw_(m,M1_IW_EP,kl,jl,i), er = iw_(m,M1_IW_EP,kh,jh,i);
+        const Real rl = (el > 0.0) ? fmin(fmax(iw_(m,fs,kl,jl,i)/(cll*el), -1.0), 1.0)
+                                   : 0.0;
+        const Real rr = (er > 0.0) ? fmin(fmax(iw_(m,fs,kh,jh,i)/(cll*er), -1.0), 1.0)
+                                   : 0.0;
+        ll = 0.5*chl*(1.0 + rl);
+        lr = -0.5*chl*(1.0 - rr);
+      };
+      // upper face (own = lo side)
+      const Real lu = ft_(m,o+3,k+dk,j+dj,i);
+      if (lu < 1.0) {
+        const Real w = (1.0 - lu)*iw_(m,ia+2*d,k,j,i);
+        Real ll, lr;
+        lowo(k, j, k+dk, j+dj, ll, lr);
+        db += w*(ll - ft_(m,o,k+dk,j+dj,i));
+        const Real dcn = w*(lr - ft_(m,o+1,k+dk,j+dj,i));
+        dc[2*d] += dcn;
+        dr += w*ft_(m,o+2,k+dk,j+dj,i) - dcn*iw_(m,M1_IW_EP,k+dk,j+dj,i);
+      }
+      // lower face (own = hi side)
+      const Real lm = ft_(m,o+3,k,j,i);
+      if (lm < 1.0) {
+        const Real w = (1.0 - lm)*iw_(m,ia+2*d+1,k,j,i);
+        Real ll, lr;
+        lowo(k-dk, j-dj, k, j, ll, lr);
+        db -= w*(lr - ft_(m,o+1,k,j,i));
+        const Real dcn = -w*(ll - ft_(m,o,k,j,i));
+        dc[2*d+1] += dcn;
+        dr += -w*ft_(m,o+2,k,j,i) - dcn*iw_(m,M1_IW_EP,k-dk,j-dj,i);
+      }
+    }
+    if (db != 0.0 || dr != 0.0) {
+      iw_(m,M1_IW_TB,k,j,i) += db;
+      iw_(m,M1_IW_TR,k,j,i) += dr;
+      if (bicg) {
+        iw_(m,M1_IW_CJP,k,j,i) += dc[0];
+        iw_(m,M1_IW_CJM,k,j,i) += dc[1];
+        iw_(m,M1_IW_CKP,k,j,i) += dc[2];
+        iw_(m,M1_IW_CKM,k,j,i) += dc[3];
+      }
+    }
+  });
 }
 
 namespace {
@@ -17116,6 +17391,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
     // moveq-1011: gas_feedback = false, the work at the fixed v in the row as well
     if (nfwr) {ImplicitNofbWorkRow();}
+    // facemmat-1112 stage 2b: the limited transverse faces in TB / C / TR
+    if (fmm_ && fmq == 1 && trans && fmm_t.extent_int(0) > nmb1) {
+      ImplicitFaceMmatTrans(bicg);
+    }
 
     // (e) SOLVE the linear system of this pass.  With implicit_solver = line_jacobi
     // that is ONE x1 line solve with the lagged transverse term already on the
@@ -18120,7 +18399,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // refresh the stored transverse face fluxes with the CONVERGED E, so that the
     // persistent state the restart file carries, the momentum deposit and the derived
     // F_2/F_3 are the fluxes the solve ended on (exactly what step (g) does for x1).
+    fmm_tfin = impl_fmm;   // facemmat-1112 stage 2b: store the limited faces
     ImplicitTransverseTerms(false);
+    fmm_tfin = false;
     impl_linmax = std::max(impl_linmax, lresid);
     impl_linsum += lresid;
   }
