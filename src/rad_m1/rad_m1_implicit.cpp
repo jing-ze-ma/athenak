@@ -3999,6 +3999,25 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // cmemimpl-1112 implicit_hr_cmem_implicit (rad_m1.hpp)
     impl_cmi = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_implicit") &&
                pin->GetBoolean("rad_m1","implicit_hr_cmem_implicit");
+    // fmflux-1113 implicit_hr_cmem_fm (rad_m1.hpp; read only when named, default false)
+    impl_cm_fm = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_fm") &&
+                 pin->GetBoolean("rad_m1","implicit_hr_cmem_fm");
+    if (impl_cm_fm) {
+      if (!(impl_physflux && impl_pf_fa)) {
+        ImplFatal("<rad_m1>/implicit_hr_cmem_fm needs implicit_physflux = true and "
+                  "implicit_physflux_mom = fa");
+      }
+      if (impl_cmi || impl_pos_trans == 1 || sp_face_sync || cs2_shift) {
+        ImplFatal("<rad_m1>/implicit_hr_cmem_fm: not with implicit_hr_cmem_implicit, "
+                  "implicit_pos_transport = upwind, sp_face_sync or implicit_cs2_shift "
+                  "(their rewrites of the face memory are not carried to F_m)");
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> implicit_hr_cmem_fm = true: the momentum face flux F_m "
+                  << "(own memory) for the cell F, the drags and the gas source; "
+                  << "fax* = E transport only" << std::endl;
+      }
+    }
     if (impl_cmi) {
       if (impl_pos_trans != 0) {
         ImplFatal("<rad_m1>/implicit_hr_cmem_implicit: not with implicit_pos_transport = "
@@ -6096,6 +6115,17 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const Real cmcap = impl_hr_cmem_cap;   // hr2prod-1110
   auto fa2_ = cm ? fax2 : f0x2;
   auto fa3_ = cm ? fax3 : f0x3;
+  // fmflux-1113 implicit_hr_cmem_fm: F_m' = F_a' + lam th wmem (F_m^n - F_c^n), Z_f's old
+  // face flux F_m^n
+  const bool fmo = impl_cm_fm;
+  auto fmw2_ = fm2;
+  auto fmw3_ = fm3;
+  auto fmn2_ = fm2n;
+  auto fmn3_ = fm3n;
+  if (fmo) {
+    gz2o_ = fm2n;
+    gz3o_ = fm3n;
+  }
   // the transverse realizability limiter.  Under `none` the OLD expression for theta is
   // taken, term for term, so the arithmetic of every earlier configuration is bitwise
   // unchanged; under `lp` every use below reads the SAME thx2/thx3 the Krylov operator
@@ -6229,6 +6259,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     if ((j == js && plo) || (j == je+1 && phi)) {
       f2_(m,k,j,i) = 0.0;
       if (cm) {fa2_(m,k,j,i) = 0.0;}
+      if (fmo) {fmw2_(m,k,j,i) = 0.0;}
       if (fmmo) {fmt_(m,12,k,j,i) = 0.0;}
       return;
     }
@@ -6462,6 +6493,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                           /(cl*ch);
       }
     }
+    if (fmo) {   // fmflux-1113: the applied flux with F_m's own memory
+      const Real lfm = (fmmb && fmt_(m,3,k,j,i) < 1.0) ? fmt_(m,3,k,j,i) : 1.0;
+      fmw2_(m,k,j,i) = fa2_(m,k,j,i)
+                       + lfm*th*wmem*(fmn2_(m,k,j,i) - f2n_(m,k,j,i));
+    }
   });
 
   // (2) the x3 face fluxes
@@ -6477,6 +6513,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       if ((k == ks && plo) || (k == ke+1 && phi)) {
         f3_(m,k,j,i) = 0.0;
         if (cm) {fa3_(m,k,j,i) = 0.0;}
+        if (fmo) {fmw3_(m,k,j,i) = 0.0;}
         if (fmmo) {fmt_(m,13,k,j,i) = 0.0;}
         return;
       }
@@ -6692,6 +6729,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                           + (1.0 - lf*om)*(gz3o_(m,k,j,i) + (cs2z ? q3z_(m,k,j,i) : 0.0))
                             /(cl*ch);
         }
+      }
+      if (fmo) {   // fmflux-1113: the applied flux with F_m's own memory
+        const Real lfm = (fmmb && fmt_(m,7,k,j,i) < 1.0) ? fmt_(m,7,k,j,i) : 1.0;
+        fmw3_(m,k,j,i) = fa3_(m,k,j,i)
+                         + lfm*th*wmem*(fmn3_(m,k,j,i) - f3n_(m,k,j,i));
       }
     });
   }
@@ -13043,6 +13085,11 @@ void RadiationM1::ImplicitVimpBuild() {
   auto f0_ = cmv ? fax1 : f0x1;
   auto f2_ = cmv ? fax2 : f0x2;
   auto f3_ = cmv ? fax3 : f0x3;
+  if (impl_cm_fm) {   // fmflux-1113: the drag of the momentum flux F_m
+    f0_ = fm1;
+    f2_ = fm2;
+    f3_ = fm3;
+  }
   auto th2_ = thx2;
   auto th3_ = thx3;
   const bool lm = (impl_tlim != M1_TLIM_NONE) || blat_on;
@@ -14733,6 +14780,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
     }
   }
+  // fmflux-1113 implicit_hr_cmem_fm: F_m's solve start as f0x* above (rad_m1_fm.cpp)
+  if (impl_cm_fm) {FmStepStart(t2st);}
   auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;   // CS1: seams open
   auto opac_ = opac;
   auto &mbsize = pmy_pack->pmb->mb_size;
@@ -17925,6 +17974,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const Real cmcap = impl_hr_cmem_cap;   // hr2prod-1110
     auto fa1_ = cmf ? fax1 : f0x1;
     auto gzo_ = (impl_cmgfa && fax1n.extent(0) > 0) ? fax1n : f0x1n;   // vgdhr-1110
+    // fmflux-1113 implicit_hr_cmem_fm: F_m' = F_a' + coef (F_m^n - F_c^n) in fmf_, and
+    // Z_f's old face flux is F_m^n
+    const bool fmon = impl_cm_fm;
+    auto fmf_ = fm1;
+    auto fmn_ = fm1n;
+    if (fmon) {gzo_ = fm1n;}
     const bool fmmf = impl_fmm;   // facemmat-1112
     auto fmlf_ = fmm_lam;
     auto fmof_ = fmm_lo;
@@ -17997,6 +18052,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           fa1_(m,k,j,i) = fn;
           f0_(m,k,j,i) = fnc;
         }
+        if (fmon) {   // fmflux-1113: the memory coef; halfrange: no face memory (0)
+          const Real fmc = lbhrf ? 0.0
+                           : (aphll ? (1.0 - ifw_(m,M1_IFW_AL,k,j,i))*th : th);
+          fmf_(m,k,j,i) = fn + fmc*(fmn_(m,k,j,i) - f0n_(m,k,j,i));
+        }
         // the wall-flux diagnostic: the whole lab flux the row applies, i.e. + the donor
         // enthalpy flux and its plm correction, with the row's own arguments
         Real adf = (vf > 0.0) ? lgf_(m,5,k,j)*eg1
@@ -18026,6 +18086,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         int ic = lo ? is : ie;
         Real sgn = lo ? -1.0 : 1.0;
         Real fb = 0.0;
+        Real fbm = 0.0;   // fmflux-1113: F_m of the face (= fb unless it has a memory)
+        bool fbmy = false;
         if (lo && bmn_ > 0 && bmf_(m,k-ks,j-js) > 0.0) {
           fb = bmf_(m,k-ks,j-js);   // littests-1011: the beam's own face flux
         } else if (bc == M1_IBC_MARSHAK) {
@@ -18055,6 +18117,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           M1GhostBathAB(iw_, f0n_, cx1v, cx1f, m, k, j, is, ghe, ch, cl, dt, sphq, trans,
                         ga, gb);
           fb = ga - gb*iw_(m,M1_IW_EP,k,j,is);
+          if (fmon) {   // fmflux-1113: the same face with F_m's own memory
+            Real gam, gbm;
+            M1GhostBathAB(iw_, fmn_, cx1v, cx1f, m, k, j, is, ghe, ch, cl, dt, sphq,
+                          trans, gam, gbm);
+            fbm = gam - gbm*iw_(m,M1_IW_EP,k,j,is);
+            fbmy = true;
+          }
         } else if (bc == M1_IBC_FLUX) {
           fb = lo ? (bfxm ? bfx_(m,k,j) : fxlo) : fxhi;
         } else if (bc == M1_IBC_EFIX) {
@@ -18063,9 +18132,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           // boundary cell is held fixed anyway, so nothing downstream depends on it.
           fb = f0_(m,k,j,lo ? (is+1) : ie);
           if (cmf) {fb = fa1_(m,k,j,lo ? (is+1) : ie);}
+          if (fmon) {fbm = fmf_(m,k,j,lo ? (is+1) : ie); fbmy = true;}
         }
         f0_(m,k,j,i) = fb;
         if (cmf) {fa1_(m,k,j,i) = fb;}
+        if (fmon) {fmf_(m,k,j,i) = fbmy ? fbm : fb;}   // fmflux-1113
       } else {
         int im = (cyclic && i == is) ? ie : (i-1);
         int ip = (cyclic && i == ie+1) ? is : i;
@@ -18269,6 +18340,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           fa1_(m,k,j,i) = fn;
           f0_(m,k,j,i) = fnc;
         }
+        if (fmon) {
+          // fmflux-1113: the applied flux's memory part is flm twf F_c^n (twf as the
+          // face-equation weight above); F_m takes the same flux with its own memory
+          const int iqm = (i == ie+1 && cyclic) ? is : i;
+          const Real fmc = flm*(aphll ? (1.0 - al)*th : th);
+          fmf_(m,k,j,i) = fn + fmc*(fmn_(m,k,j,iqm) - f0n_(m,k,j,iqm));
+        }
         if (gcsf) {
           // consrc-1011: F0' = om th (F0old - chat c dt G - chat dt v g0) + H, with
           // G = gr + od the face's transport and H the AP-HLL part.  The gas share of
@@ -18302,6 +18380,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       KOKKOS_LAMBDA(const int m, const int k, const int j) {
         f0_(m,k,j,ie+1) = f0_(m,k,j,is);
         if (cmf) {fa1_(m,k,j,ie+1) = fa1_(m,k,j,is);}
+        if (fmon) {fmf_(m,k,j,ie+1) = fmf_(m,k,j,is);}   // fmflux-1113
         if (gcsf) {gz1_(m,k,j,ie+1) = gz1_(m,k,j,is);}
       });
     }
@@ -18309,6 +18388,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto fa2w_ = cmc ? fax2 : f2_;   // rc18-1110: the applied fluxes
     auto fa3w_ = cmc ? fax3 : f3_;
     auto fc1w_ = cmc ? fax1 : f0x1;
+    if (fmon) {   // fmflux-1113: the cell F of the momentum flux F_m
+      fa2w_ = fm2;
+      fa3w_ = fm3;
+      fc1w_ = fm1;
+    }
     par_for("m1_impl_f1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       iw_(m,M1_IW_F1,k,j,i) = 0.5*(fc1w_(m,k,j,i) + fc1w_(m,k,j,i+1))
@@ -19291,6 +19375,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool gfst = gcs_first;
   auto f2nw_ = f0x2n;
   auto f3nw_ = f0x3n;
+  // fmflux-1113 implicit_hr_cmem_fm: the write-back's and am_cs's old face fluxes and
+  // their stage increments are F_m's (f0n_ goes back to F_c^n before the stage slopes)
+  const bool fmw = impl_cm_fm;
+  auto t2fi_ = fmw ? t2incm : t2i_;
+  const int t2fo = fmw ? 0 : M1_T2_F1;
+  if (fmw) {
+    f0n_ = fm1n;
+    f2nw_ = fm2n;
+    f3nw_ = fm3n;
+  }
   // consfix3: implicit_cs2_hll = drag, the AP-HLL part (1 - om_bar) of the cell's own dA
   // is not charged to the gas (A^old in iw_cs2 + 0.., om_bar in iw_cs2 + 6..)
   const bool c2h = gcs && Cs2Active() && (cs2_hll_drag || (cs2_cap > 0.0)) &&
@@ -19328,7 +19422,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool afold = impl_am_fold_ap &&
                        (gfst || (impl_hr_cmem && !impl_physflux));
     if (afold) {
-      auto f0n_ = f0x1n;
+      auto f0n_ = fmw ? fm1n : f0x1n;
       const bool cmwa = impl_hr_cmem && !impl_physflux;
       par_for("m1_am_cs_pre_fold", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -19348,11 +19442,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             g3 += ciw_(m,2,k,j,i);
           } else {
             const Real tie = t2i_(m,M1_T2_E,k,j,i);
-            g1 += 0.5*(t2i_(m,M1_T2_F1,k,j,i) + t2i_(m,M1_T2_F1,k,j,i+1))
+            g1 += 0.5*(t2fi_(m,t2fo,k,j,i) + t2fi_(m,t2fo,k,j,i+1))
                   + iw_(m,M1_IW_ADV,k,j,i)*tie;
-            const Real ta = 0.5*(t2i_(m,M1_T2_F1+1,k,j,i) + t2i_(m,M1_T2_F1+1,k,j+1,i))
+            const Real ta = 0.5*(t2fi_(m,t2fo+1,k,j,i) + t2fi_(m,t2fo+1,k,j+1,i))
                             + iw_(m,M1_IW_A2,k,j,i)*tie;
-            const Real tb = 0.5*(t2i_(m,M1_T2_F1+2,k,j,i) + t2i_(m,M1_T2_F1+2,k+1,j,i))
+            const Real tb = 0.5*(t2fi_(m,t2fo+2,k,j,i) + t2fi_(m,t2fo+2,k+1,j,i))
                             + iw_(m,M1_IW_A3,k,j,i)*tie;
             g2 += (ta + c*tb)*si;
             g3 += (tb + c*ta)*si;
@@ -19376,11 +19470,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           g3 += ciw_(m,2,k,j,i);
         } else {
           const Real tie = t2i_(m,M1_T2_E,k,j,i);
-          g1 += 0.5*(t2i_(m,M1_T2_F1,k,j,i) + t2i_(m,M1_T2_F1,k,j,i+1))
+          g1 += 0.5*(t2fi_(m,t2fo,k,j,i) + t2fi_(m,t2fo,k,j,i+1))
                 + iw_(m,M1_IW_ADV,k,j,i)*tie;
-          const Real a = 0.5*(t2i_(m,M1_T2_F1+1,k,j,i) + t2i_(m,M1_T2_F1+1,k,j+1,i))
+          const Real a = 0.5*(t2fi_(m,t2fo+1,k,j,i) + t2fi_(m,t2fo+1,k,j+1,i))
                          + iw_(m,M1_IW_A2,k,j,i)*tie;
-          const Real b = 0.5*(t2i_(m,M1_T2_F1+2,k,j,i) + t2i_(m,M1_T2_F1+2,k+1,j,i))
+          const Real b = 0.5*(t2fi_(m,t2fo+2,k,j,i) + t2fi_(m,t2fo+2,k+1,j,i))
                          + iw_(m,M1_IW_A3,k,j,i)*tie;
           const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
           g2 += (a + c*b)*si;
@@ -19415,6 +19509,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     f0_ = fax1;
     if (trans) {f2_ = fax2;}
     if (trans && thrd) {f3_ = fax3;}
+  }
+  if (fmw) {   // fmflux-1113: the cell F of the write-back from F_m
+    f0_ = fm1;
+    if (trans) {f2_ = fm2;}
+    if (trans && thrd) {f3_ = fm3;}
   }
   // cs2clip-1020 <rad_m1>/implicit_cs2_clip = rad (read only when named; conservative
   // gas sources): the same fragment with M1_C2CR 1 (the gas is charged with the pre-limit
@@ -20690,6 +20789,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     f2_ = f0x2;
     f3_ = f0x3;
   }
+  if (fmw) {f0n_ = f0x1n;}   // fmflux-1113: F_c^n back for the slopes
   // rsglock-1112 time2_exch_split = psi: this solve's exchange slope K_X and its rate
   if (t2k && have_hydro && t2_xsp && t2kx1.extent_int(0) > nmb1) {
     auto kx_ = (t2s == M1_T2S_STAGE1) ? t2kx2 : t2kx1;
@@ -20766,6 +20866,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         });
       }
     }
+    if (fmw) {FmSlope(t2s == M1_T2S_STAGE1, dt);}   // fmflux-1113 (rad_m1_fm.cpp)
   }
   // facebound-1112 step 1 time2_face_fct: the E transport flux of this solution per
   // face, (chat/c) F_applied, next to its slope (rad_m1.hpp)

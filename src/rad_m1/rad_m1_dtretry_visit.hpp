@@ -724,6 +724,19 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("t2f1", t2f1);
   v.view("t2f2", t2f2);
   v.view("t2f3", t2f3);
+  v.value("fm_init_done", fm_init_done);   // fmflux-1113 (added by hand)
+  v.view("fm1", fm1);
+  v.view("fm2", fm2);
+  v.view("fm3", fm3);
+  v.view("fm1n", fm1n);
+  v.view("fm2n", fm2n);
+  v.view("fm3n", fm3n);
+  v.view("t2fm1", t2fm1);
+  v.view("t2fm2", t2fm2);
+  v.view("t2fm3", t2fm3);
+  v.view("t2km1", t2km1);
+  v.view("t2km2", t2km2);
+  v.view("t2incm", t2incm);
   v.view("ipred2", ipred2);
   v.value("pred2_ok", pred2_ok);
   v.value("pred2_dt", pred2_dt);

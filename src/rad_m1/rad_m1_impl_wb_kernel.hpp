@@ -456,13 +456,13 @@
             // no cell-F increment (restart, multirate): the face means of the F0
             // increments plus a times the E increment
             const Real tie = t2i_(m,M1_T2_E,k,j,i);
-            go1 += 0.5*(t2i_(m,M1_T2_F1,k,j,i) + t2i_(m,M1_T2_F1,k,j,i+1))
+            go1 += 0.5*(t2fi_(m,t2fo,k,j,i) + t2fi_(m,t2fo,k,j,i+1))
                    + iw_(m,M1_IW_ADV,k,j,i)*tie;
             if (trans) {
-              go2 += 0.5*(t2i_(m,M1_T2_F1+1,k,j,i) + t2i_(m,M1_T2_F1+1,k,j+1,i))
+              go2 += 0.5*(t2fi_(m,t2fo+1,k,j,i) + t2fi_(m,t2fo+1,k,j+1,i))
                      + iw_(m,M1_IW_A2,k,j,i)*tie;
               if (thrd) {
-                go3 += 0.5*(t2i_(m,M1_T2_F1+2,k,j,i) + t2i_(m,M1_T2_F1+2,k+1,j,i))
+                go3 += 0.5*(t2fi_(m,t2fo+2,k,j,i) + t2fi_(m,t2fo+2,k+1,j,i))
                        + iw_(m,M1_IW_A3,k,j,i)*tie;
               }
             }
@@ -473,9 +473,9 @@
         // face mean + A tie: its transverse part to the covariant basis of u0 F
         if (t2st && !csok && !cmw && trans && thrd) {
           const Real tie = t2i_(m,M1_T2_E,k,j,i);
-          const Real a = 0.5*(t2i_(m,M1_T2_F1+1,k,j,i) + t2i_(m,M1_T2_F1+1,k,j+1,i))
+          const Real a = 0.5*(t2fi_(m,t2fo+1,k,j,i) + t2fi_(m,t2fo+1,k,j+1,i))
                          + iw_(m,M1_IW_A2,k,j,i)*tie;
-          const Real b = 0.5*(t2i_(m,M1_T2_F1+2,k,j,i) + t2i_(m,M1_T2_F1+2,k+1,j,i))
+          const Real b = 0.5*(t2fi_(m,t2fo+2,k,j,i) + t2fi_(m,t2fo+2,k+1,j,i))
                          + iw_(m,M1_IW_A3,k,j,i)*tie;
           const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
           go2 += (a + c*b)*si - a;

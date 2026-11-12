@@ -70,6 +70,9 @@ const char *kDtrMinimal[] = {
   "m1.vlat_cs",
   // facebound-1112 step 1 time2_face_fct: the face E flux of K1 (rotated with it)
   "m1.t2pf1",
+  // fmflux-1113 implicit_hr_cmem_fm: the momentum face flux F_m and its K1 (empty
+  // unless the key is on)
+  "m1.fm1", "m1.fm2", "m1.fm3", "m1.t2km1",
   // mhdfix-1025: time2_vet_col = extrap2 (sph fresh-start default since defaults-1025)
   // keeps the previous closure build (x2_tt, x2_hr, x2_q; x2_t/x2_ok are values) for the
   // next step's extrapolation: a failed attempt that rebuilt it left the retry reading

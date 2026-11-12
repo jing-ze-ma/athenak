@@ -1179,6 +1179,30 @@ class RadiationM1 {
   // read the old flux (linear waves unchanged)
   bool impl_pf_zfc = false;
   DvceArray4D<Real> fax1n, fax2n, fax3n;
+  // fmflux-1113 <rad_m1>/implicit_hr_cmem_fm (opt-in, read only when named, default false
+  // = bitwise; needs implicit_physflux_mom = fa): the switch-free momentum face flux F_m.
+  // Every applied face flux is F_a' = coef F_c^n + (non-memory terms) (x1: coef = twf
+  // flm, twf = (1 - al) th under AP-HLL else th; x2 / x3: th wmem, x lam of a limited
+  // face), so the momentum budget of F_a carried (1 - al)(F_c^n - F_a^n) with no stress
+  // behind it.  F_m' = F_a' + coef (F_m^n - F_c^n): the same E', H, al and limiter, but
+  // its memory is its own old value.  The E rows keep F_a; the cell F, the drags (vimp,
+  // write-back), Z_f's old flux, the write-back F^old and am_cs read F_m.  fm*n: the
+  // solve-start copy (+ the hesdirk2 stage increment t2incm, slopes t2km1 / t2km2 as the
+  // F channels of t2k1 / t2k2, stage copies t2fm* as t2f*); fm* start from fax* (or f0x*
+  // where implicit_hr_cmem_fainit has not run yet), t2km1 from t2k1's F channels
+  bool impl_cm_fm = false, fm_init_done = false;
+  DvceArray4D<Real> fm1, fm2, fm3, fm1n, fm2n, fm3n, t2fm1, t2fm2, t2fm3;
+  DvceArray5D<Real> t2km1, t2km2, t2incm;   // (m,3,k,j,i), each face at its lower index
+  void FmEnsure();
+  void FmSave();
+  void FmLoad();
+  void FmAvg(bool heun, Real w0, Real w1);
+  void FmFormInc(bool two, Real c1, Real c2, bool pcomp, Real ccomp);
+  void FmIncFromK1(Real c);
+  void FmPfixDrop();
+  void FmK1FromK2();
+  void FmStepStart(bool t2st);
+  void FmSlope(bool stage1, Real dt);
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
   // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a
   // dt-free thin/thick weight frozen per solve (formal-solution |H|/J, its non-locality
@@ -2666,6 +2690,7 @@ class RadiationM1 {
   void CubedVecCheck(ParameterInput *pin);
   //! the seam average of the stored face state f0x2/f0x3 (stage CS1, C5)
   void CubedSeamFaceAverage();
+  void CubedSeamFaceAverageOf(DvceArray4D<Real> f2, DvceArray4D<Real> f3, bool diag);
   int cs_seam_avg_n = 0;   // seam-face-average calls (diagnostic)
   bool cs_seam_avg_on = true;
   Real cs_seam_dmax = 0.0;   // max relative change of an x2 face value by the average

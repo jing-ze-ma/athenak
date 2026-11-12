@@ -831,6 +831,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       Kokkos::deep_copy(DevExeSpace(), t2f2, f0x2);
       if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
     }
+    FmSave();   // fmflux-1113 (rad_m1_fm.cpp; no-op without implicit_hr_cmem_fm)
     c1 = t2_a21*dt;
     c2 = 0.0;
     // pgrst-1021 time2_k1_reset: no K1 where E was overwritten since the stage-loop start
@@ -1149,6 +1150,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       avgf(f0x2, t2f2);
       if (trans_x3) {avgf(f0x3, t2f3);}
     }
+    FmAvg(heun, w0, w1);   // fmflux-1113
     c1 = t2_c31*dt;
     c2 = t2_c32*dt;
   }
@@ -1201,6 +1203,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       });
     }
   }
+  FmFormInc(two, c1, c2, pcomp, ccomp);   // fmflux-1113: F_m's stage increment
   // rsglock-1112 time2_exch_split = psi: the carried exchange terms in bounded form
   if (t2_xsp && t2kx1.extent_int(0) > nmb1 && t2inc.extent_int(1) > M1_T2_EN) {
     auto x1_ = t2kx1, x2_ = t2kx2, l1_ = t2lx1, l2_ = t2lx2;
@@ -1357,6 +1360,7 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
     Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
   }
+  FmLoad();   // fmflux-1113
   FluidRef fl = FluidRef::Get(pmy_pack);
   if (fl.on) {
     Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
@@ -1892,6 +1896,7 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
     Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
   }
+  FmLoad();   // fmflux-1113
   if (t2_pfix_host) {
     // gpumem-1022 time2_posfix_host: the host copies (same bytes)
     if (ctr_mem.extent(0) > 0 && t2csv_h.extent(0) == ctr_mem.extent(0)) {
@@ -1988,6 +1993,7 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
         if (pm_(m,k,j,i) > 0.0) {ei_(m,k,j,i) = 0.0;}
       });
     }
+    FmPfixDrop();   // fmflux-1113
     if (csinc_ok) {
       auto ci_ = csinc;
       par_for("m1_t2p_dropc", DevExeSpace(), 0, nmb1, 0, 2, 0, q3-1, 0, q2-1, 0, q1-1,
@@ -2136,6 +2142,7 @@ bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
     Kokkos::deep_copy(DevExeSpace(), t2f2, f0x2);
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
   }
+  FmSave();   // fmflux-1113
   if (fl.on) {Kokkos::deep_copy(DevExeSpace(), fl.u1, fl.u0);}
   // mhdfix-1025 <mhd>: U^n = (u1, b1) for the solve (emag1, Time2VetStart); b1 still
   // holds the last step's start here (the MHD stage 1 copies b0 into it again)
@@ -2163,6 +2170,7 @@ bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
     Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
   }
+  FmLoad();   // fmflux-1113
   if (fl.on) {
     Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
     FluidRefresh(pdrive);
@@ -2212,6 +2220,7 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
     Kokkos::deep_copy(DevExeSpace(), t2f2, f0x2);
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
   }
+  FmSave();   // fmflux-1113
   if (fl.on) {Kokkos::deep_copy(DevExeSpace(), fl.u1, fl.u0);}
   // mhdfix-1025 <mhd>: U^n = (u1, b1) for the solve (emag1, Time2VetStart); b1 still
   // holds the last step's start here (the MHD stage 1 copies b0 into it again)
@@ -2233,6 +2242,7 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
       in_(m,n,k,j,i) = c*k1_(m,n,k,j,i);
     });
+    FmIncFromK1(c);   // fmflux-1113
     if (t2_ike && t2kei.extent_int(0) > nmb1) {   // rsglock-1112
       auto e1_ = t2ke1, ei_ = t2kei;
       par_for("m1_t2_ike_rcinc", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
@@ -2270,6 +2280,7 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
   const bool ok = !t2_fail;
   if (ok) {
     Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
+    FmK1FromK2();   // fmflux-1113
     if (t2_ffct && t2pf1.extent_int(0) > 0) {   // facebound-1112 step 1
       Kokkos::deep_copy(DevExeSpace(), t2pf1, t2pf2);
       t2pf1_ok = t2pf2_ok;
@@ -2297,6 +2308,7 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
     Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
   }
+  FmLoad();   // fmflux-1113
   if (fl.on) {
     Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
     FluidRefresh(pdrive);

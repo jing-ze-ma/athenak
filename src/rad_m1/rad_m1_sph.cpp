@@ -466,6 +466,12 @@ void RadiationM1::CubedS1Init() {
 //! Called at the start of each implicit step, before f0x* is copied to the old state.
 
 void RadiationM1::CubedSeamFaceAverage() {
+  CubedSeamFaceAverageOf(f0x2, f0x3, true);
+}
+
+// fmflux-1113: the same average of any transverse face pair (F_m: diag = false)
+void RadiationM1::CubedSeamFaceAverageOf(DvceArray4D<Real> f2, DvceArray4D<Real> f3,
+                                         bool diag) {
   if (!cs_geom || pbval_kr == nullptr || !cs_seam_avg_on) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
@@ -473,8 +479,6 @@ void RadiationM1::CubedSeamFaceAverage() {
   const int n2 = indcs.nx2 + 2*indcs.ng;
   const int n3 = indcs.nx3 + 2*indcs.ng;
   DvceFaceFld5D<Real> fl("m1_csfa", nmb, 1, n3, n2, n1);
-  auto f2 = f0x2;
-  auto f3 = f0x3;
   auto x2 = fl.x2f;
   auto x3 = fl.x3f;
   par_for("m1_csfa_in2", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2, 0, n1-1,
@@ -492,13 +496,16 @@ void RadiationM1::CubedSeamFaceAverage() {
   pbval_kr->ClearFluxRecv();
   // diagnostic: the largest change the average makes, relative to max |F0| (cs_seam_dmax)
   Real dmx = 0.0, fmx = 0.0;
-  Kokkos::parallel_reduce("m1_csfa_d2", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-      DevExeSpace(), {0, 0, 0, 0}, {nmb, n3, n2 + 1, n1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ld, Real &lf) {
-    ld = fmax(ld, fabs(f2(m,k,j,i) - x2(m,0,k,j,i)));
-    lf = fmax(lf, fabs(f2(m,k,j,i)));
-  }, Kokkos::Max<Real>(dmx), Kokkos::Max<Real>(fmx));
-  cs_seam_dmax = fmax(cs_seam_dmax, dmx/fmax(fmx, 1.0e-300));
+  if (diag) {
+    Kokkos::parallel_reduce("m1_csfa_d2", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, 0, 0, 0}, {nmb, n3, n2 + 1, n1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ld,
+                  Real &lf) {
+      ld = fmax(ld, fabs(f2(m,k,j,i) - x2(m,0,k,j,i)));
+      lf = fmax(lf, fabs(f2(m,k,j,i)));
+    }, Kokkos::Max<Real>(dmx), Kokkos::Max<Real>(fmx));
+    cs_seam_dmax = fmax(cs_seam_dmax, dmx/fmax(fmx, 1.0e-300));
+  }
   par_for("m1_csfa_out2", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     f2(m,k,j,i) = x2(m,0,k,j,i);
@@ -507,6 +514,7 @@ void RadiationM1::CubedSeamFaceAverage() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     f3(m,k,j,i) = x3(m,0,k,j,i);
   });
+  if (!diag) return;
   if (cs_seam_avg_n == 0 && global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: CS1 seam average of f0x2/f0x3 active" << std::endl;
   }
