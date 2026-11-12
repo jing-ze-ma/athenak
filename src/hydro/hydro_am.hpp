@@ -965,6 +965,33 @@ class AmModule {
   bool frame_exact = false;
   bool frame_cf = true;      // csacc-1031 <hydro>/frame_centrifugal (false: Coriolis only)
   DvceArray5D<Real> frame_ln;
+  // amvecH-1111 <hydro|mhd>/am_vector_mode = patch (read only when named; absent =
+  // the zonal am_transport, or am_vector's spin reservoir, bitwise as before).  patch:
+  // the whole torque error dT = T_cons - T_code of a cell (HydroAmVecTorque, radial
+  // part included) is deposited with NO reservoir, as the minimum-kinetic-energy rigid
+  // rotation omega_c = I_c^-1 dT_c of the cell's in-block lateral 3x3 patch at its
+  // radius (I_c = sum rho V (r^2 1 - r r)), gathered per cell as dp_n = rho_n (sum_c
+  // omega_c) x r_n, so that sum_n V r_n x dp_n = sum_c dT_c (round-off; deterministic,
+  // no atomics, no MPI).  The total energy is not touched (e_int pays the KE, as
+  // am_transport); where the KE increase of a cell exceeds am_vector_kecap (default 0.5)
+  // x its stage-start e_int, its deposit is scaled by s < 1 and the withheld (1 - s) L
+  // (perpendicular to rhat) is deposited as a rigid rotation of the uncapped cells of
+  // its radial column (in-block).  cs 3-D only.  No persistent state (nothing to roll
+  // back on dt_retry or to restart).
+  // <hydro|mhd>/am_cons_diag = N (read only when named): one AMH_CONS line for each of
+  // the first N stages (any am mode, cubed sphere): sum dT bdt, the L the deposit added,
+  // their residual, and the fluid's L vector after it
+  int am_mode = 0;           // 0 = zonal (am_transport) / spin (am_vector); 1 = patch
+  Real am_kecap = 0.5;
+  int am_cons_diag = 0, am_diag_n = 0;
+  DvceArray5D<Real> amp_w;   // patch: 0-2 omega_c, 3-5 withheld L, 6 s
+  DvceArray1D<Real> amp_d;   // patch counters (per stage)
+  DvceArray5D<Real> amp_u;   // diag: IM2, IM3 before the deposit
+  DvceArray1D<Real> amq_d;   // diag sums
+  Real amp_tot[5] = {0.0, 0.0, 0.0, 0.0, 0.0};   // patch counters, cumulative (rank)
+  void AmPatch(Real bdt, const AmFluid &fl);
+  void AmDiagPre(const AmFluid &fl);
+  void AmDiagPost(Real bdt, int stage, const AmFluid &fl);
   void AmTransport(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
   // roche-wbtan-1101: the tangential momentum change rate (bdt = 1) AmTransport would add
   // for fl's state and fluxes, added to fl.u0, with NO side effect (no spin reservoir
