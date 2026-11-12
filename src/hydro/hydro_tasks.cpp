@@ -328,7 +328,14 @@ TaskStatus Hydro::CopyCons(Driver *pdrive, int stage) {
 //! of conserved variables
 
 TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
-  if (dual.on) dual.armed = true;   // duale-1112: the next ConToPrim follows an update
+  // duale-1112: the next ConToPrim follows an update; a change of this stage's state
+  // reaches the end of the step with the weight prod_{s > stage} gam0[s] (the 2S
+  // register update u0 = gam0 u0 + gam1 u1 + ...; u1 is the step-start state)
+  if (dual.any) {
+    if (dual.on) dual.armed = true;
+    dual.wst = 1.0;
+    for (int s = stage + 1; s <= pdrive->nexp_stages; ++s) dual.wst *= pdrive->gam0[s-1];
+  }
   if (use_wellbalance_static_reconst_perturb) {
     RemoveWbVar(w0wb,w0);
   }
