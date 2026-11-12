@@ -13529,6 +13529,10 @@ void RadiationM1::EAuditMark(int pt) {
     const bool eso = esrc_on;
     DvceArray4D<Real> es_;
     if (eso) {es_ = esrc;}
+    // marshak-audit-1112: the hesdirk2 old-vector increment per cell (as T2 below)
+    const bool mt2 = ((t2_solve == M1_T2S_STAGE1) || (t2_solve == M1_T2S_STAGE2)) &&
+                     (t2inc.extent_int(0) == nmb);
+    auto mt2i = t2inc;
     array_sum::GlobalSum xm;
     Kokkos::parallel_reduce("m1_eaudit_map", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                             nmb*nk*nj*ni),
@@ -13550,6 +13554,7 @@ void RadiationM1::EAuditMark(int pt) {
       Real r = (u - au(m,k,j,i)) + dts*ccr*fo;
       if (hw) {r += wc(m,k,j,i)*v*wfac;}
       if (eso) {r -= dts*es_(m,k,j,i)*v;}   // marshak-audit-1112: the explicit esrc
+      if (mt2) {r -= (ccr*mt2i(m,M1_T2_E,k,j,i) + mt2i(m,M1_T2_EN,k,j,i))*v;}   // + T2
       array_sum::GlobalSum q;
       for (int c=0; c<NREDUCTION_VARIABLES; ++c) q.the_array[c] = 0.0;
       q.the_array[0] = r;
