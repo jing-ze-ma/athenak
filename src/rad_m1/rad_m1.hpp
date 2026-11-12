@@ -1123,7 +1123,7 @@ class RadiationM1 {
   // until no cell is newly limited, R halo-exchanged.  b > 0 with the M-matrix row gives
   // E' > 0.  Unlimited faces (lam = 1) take no extra arithmetic (bitwise).
   bool impl_fmm = false;
-  int iw_fmm = -1;                 // iw slots: R, R new, b
+  int iw_fmm = -1;   // iw slots: R, R new, b, 4 x dt A/V, 4 x dC (stage 2b)
   DvceArray4D<Real> fmm_lam, fmm_g;   // x1 faces (m,k,j,i): lam, explicit flux G (chat)
   DvceArray5D<Real> fmm_lo;        // (m,2,k,j,i) x1 faces: LL, LR (chat units)
   // facemmat-1112 stage 2 realisability: F_H of the last face rebuild (lab units, before
@@ -1144,7 +1144,7 @@ class RadiationM1 {
   // flux at E^k.  iw slots iw_fmm+3..+6: dt A/V of the cell's x2+, x2-, x3+, x3- face.
   DvceArray5D<Real> fmm_t;
   bool fmm_tfin = false;   // the post-solve ImplicitTransverseTerms: store the blend
-  void ImplicitFaceMmatTrans(bool bicg);
+  void ImplicitFaceMmatTrans(bool bicg, bool first);
   Real fmm_pass = 0.0, fmm_lpass = 0.0, fmm_cells = 0.0, fmm_faces = 0.0;
   Real fmm_left = 0.0, fmm_rmax = 0.0;
   bool ImplicitFaceMmat(bool bicg, Real dt);
