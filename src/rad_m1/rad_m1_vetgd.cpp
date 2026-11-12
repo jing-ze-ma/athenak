@@ -3457,6 +3457,10 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
           }
         });
       }
+      // d6fast5-1112: the band-ring copies queued for this exchange's hook, after the pack
+      // that reads the slabs and before the scatter that writes the lent slab (as the MPI
+      // path does in this hook); without them the scatter wrote a slab not yet lent
+      VetGdRingFlush();
       if (lean) {
       Kokkos::parallel_for("m1_vgd_ipc_k2", Kokkos::RangePolicy<>(vgd_cur, 0, 1),
       KOKKOS_LAMBDA(const int) {
