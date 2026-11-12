@@ -2153,7 +2153,7 @@ Real RadiationM1::VgdXfRx(const int64_t blk) const {
 //! of VetGdRotAvgSetup set): fields := (1 - s) A + s T_{b+1} (RotXfBlend), s = (t - t_b)
 //! / dt_rot at this build's time
 
-void RadiationM1::VetGdXfade(const int64_t blk, const bool last) {
+void RadiationM1::VetGdXfade(const int64_t blk, const bool last, const bool store) {
   static bool checked = false;
   if (!checked) {
     checked = true;
@@ -2166,9 +2166,11 @@ void RadiationM1::VetGdXfade(const int64_t blk, const bool last) {
   const Real tn = pmy_pack->pmesh->time;
   const Real s = (tn - tb)/vgd_rot_dt;
   // (the boundary extrapolation is RotXfPre's, before RotAvgDelta: none here)
-  RotXfBlend(s, last, pmy_pack->pmesh->mb_indcs.is + vlat_icut, -1.0);
-  vgd_xf_pblk = blk;
-  vgd_xf_pt = tn;
+  RotXfBlend(s, last, pmy_pack->pmesh->mb_indcs.is + vlat_icut, -1.0, store);
+  if (store) {   // the previous LIVE sweep (RotXfPre)
+    vgd_xf_pblk = blk;
+    vgd_xf_pt = tn;
+  }
   vgd_xf_nsw += 1.0;
 }
 
@@ -6561,13 +6563,34 @@ void RadiationM1::VetGdBuild() {
     vra_time += tr.seconds();
   } else if (vgd_xf) {
     Kokkos::Timer tx;
-    VgdXfTables(VetGdAngleBlk(blk + 1));
-    vra_raw = true;
-    VetGdSweepPost();
-    vra_raw = false;
-    VetGdRotAvgSetup();
-    VetGdXfade(blk, false);
-    VgdXfTables(al);
+    // vet_gd_rotate_xfade_m = M: sweep the next set only at the first build of each of
+    // the M parts of the block (s in [j/M, (j+1)/M)) and at the last two builds (the
+    // second-to-last: RotXfPre's previous build is a live sweep)
+    bool sw = true;
+    if (vgd_xf_m > 0) {
+      const Mesh *pm = pmy_pack->pmesh;
+      const Real tb = vgd_rot_t0 + static_cast<Real>(blk)*vgd_rot_dt;
+      const int jn = static_cast<int>(std::floor((pm->time - tb)/vgd_rot_dt*vgd_xf_m));
+      const bool pen = pm->time + 2.0*pm->dt >= tb + vgd_rot_dt - 1.0e-9*vgd_rot_dt;
+      sw = (blk != vgd_xf_sblk) || (jn > vgd_xf_sj) || pen;
+      if (sw) {
+        vgd_xf_sblk = blk;
+        vgd_xf_sj = jn;
+      }
+    }
+    if (sw) {
+      VgdXfTables(VetGdAngleBlk(blk + 1));
+      vra_raw = true;
+      VetGdSweepPost();
+      vra_raw = false;
+      VetGdRotAvgSetup();
+      VetGdXfade(blk, false);
+      VgdXfTables(al);
+    } else {
+      VetGdRotAvgSetup();
+      RotXfEst(xilo);
+      VetGdXfade(blk, false, false);
+    }
     VetLatOdMax();
     vgd_xf_t += tx.seconds();
   }

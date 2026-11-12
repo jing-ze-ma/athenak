@@ -890,7 +890,7 @@ void RadiationM1::RotXfSnap(const int slot, const int ilo) {
 //! S are valid, else A
 
 void RadiationM1::RotXfBlend(const Real s, const bool last, const int ilo,
-                              const Real rx) {
+                              const Real rx, const bool store) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -945,11 +945,15 @@ void RadiationM1::RotXfBlend(const Real s, const bool last, const int ilo,
           const Real de = dn + rx*(dn - x_(m,o2+f,kk,jj,ii));
           d_(m,od+f,kk,jj,ii) = (mul && !(de > 0.0)) ? dn : de;
         }
-        x_(m,o2+f,kk,jj,ii) = dn;
-        x_(m,o2+nf1+f,kk,jj,ii) = gv;   // slot 3: G of this build (RotXfPre)
+        if (store) {
+          x_(m,o2+f,kk,jj,ii) = dn;
+          x_(m,o2+nf1+f,kk,jj,ii) = gv;   // slot 3: G of this build (RotXfPre)
+        }
       }
-      x_(m,o2+t.nf,kk,jj,ii) = vn ? 1.0 : 0.0;
-      x_(m,o2+nf1+t.nf,kk,jj,ii) = vg ? 1.0 : 0.0;
+      if (store) {
+        x_(m,o2+t.nf,kk,jj,ii) = vn ? 1.0 : 0.0;
+        x_(m,o2+nf1+t.nf,kk,jj,ii) = vg ? 1.0 : 0.0;
+      }
     }
     if (!vs || !va) {   // no blend: A as it was
       for (int f = 0; f < t.nf; ++f) {
@@ -1099,6 +1103,39 @@ void RadiationM1::RotXfPre(const Real rx, const int ilo) {
       d_(m,od+f,kk,jj,ii) = gk;
       fv = sk;   // put back after RotAvgDelta (VetGdBuild): the blend uses the live S
     }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotXfEst
+//! \brief vgdxf-1112 vet_gd_rotate_xfade_m = M > 0 (the amortized cross-fade): a build
+//! without a next-set sweep: the fields := the next set's estimate G (+) Delta_s (ratio
+//! fields G Delta_s), Delta_s = the last sweep's same-state difference (slot 2); where it
+//! is missing the flag field is set invalid (RotXfBlend then hands over A)
+
+void RadiationM1::RotXfEst(const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Tab t = vra_tab;
+  const int nf1 = t.nf + 1;
+  auto x_ = vgd_xf_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const int o2 = 2*nf1;
+  par_for("m1_xf_est", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool v = (i >= ilo) && (x_(m,t.nf,kk,jj,ii) > 0.5) &&
+                   (x_(m,o2+t.nf,kk,jj,ii) > 0.5);
+    for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2 && i != ie) continue;
+      const Real gv = x_(m,f,kk,jj,ii), dv = x_(m,o2+f,kk,jj,ii);
+      Real v = (t.kind[f] == 2) ? gv*dv : gv + dv;
+      if (t.kind[f] == 1) v = fmin(fmax(v, t.lo[f]), t.hi[f]);
+      a.At(t.arr[f], t.comp[f], m, k, j, i) = v;
+    }
+    if (!v && t.farr >= 0) {a.At(t.farr, t.fcomp, m, k, j, i) = -1.0;}
   });
 }
 

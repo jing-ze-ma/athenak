@@ -3039,9 +3039,18 @@ class RadiationM1 {
   double vgd_xf_t = 0.0;         // their seconds
   DvceArray5D<Real> vgd_xf_d;    // (m, 4 (nf+1), ..): G, A, last Delta, last G
   void VgdXfTables(const Real alpha);
-  void VetGdXfade(const int64_t blk, const bool last);
+  void VetGdXfade(const int64_t blk, const bool last, const bool store = true);
   void RotXfSnap(const int slot, const int ilo);
-  void RotXfBlend(const Real s, const bool last, const int ilo, const Real rx);
+  void RotXfBlend(const Real s, const bool last, const int ilo, const Real rx,
+                  const bool store);
+  // vet_gd_rotate_xfade_m = M > 0 (read only when named; 0 = a next-set sweep at every
+  // build): the next set is swept at the first build of each of M equal parts of the
+  // block and at the last two builds; the builds between hand over the next set as
+  // G (+) the last sweep's Delta (RotXfEst)
+  int vgd_xf_m = 0;
+  int64_t vgd_xf_sblk = INT64_MIN;
+  int vgd_xf_sj = -1;
+  void RotXfEst(const int ilo);
   void RotXfPre(const Real rx, const int ilo);
   Real VgdXfRx(const int64_t blk) const;
   int64_t vgd_xf_pblk = INT64_MIN;   // the block and time of the previous xf build
