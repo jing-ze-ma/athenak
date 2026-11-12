@@ -9046,6 +9046,96 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       // as below
       auto cr_ = vgd_csr;
       auto cn2 = cs_cn2, cn3 = cs_cn3;
+      if (VgdMomLds()) {
+        // d6fast5-1112: LDS-staged (see VgdMomLds); the same cells, sums and outputs
+      const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
+      const int ncell = (nmb1 + 1)*ni*nj*nk;
+      const int nlg = (ncell + VGD_LDS_TS - 1)/VGD_LDS_TS;
+      const size_t scr = ScrArray1D<Real>::shmem_size(VGD_LDS_TS*VGD_LDS_DC);
+      Kokkos::TeamPolicy<> pol(DevExeSpace(), nlg, VGD_LDS_TS, 1);
+      Kokkos::parallel_for("m1_vgd_hrcs", pol.set_scratch_size(0, Kokkos::PerTeam(scr)),
+      KOKKOS_LAMBDA(const TeamMember_t &tm) {
+        ScrArray1D<Real> sv(tm.team_scratch(0), VGD_LDS_TS*VGD_LDS_DC);
+        const int c0 = tm.league_rank()*VGD_LDS_TS;
+        const int tr = tm.team_rank();
+        auto dec = [&](const int c, int &m, int &i, int &j, int &k) {
+          int t = c;
+          k = ks + t % nk;
+          t /= nk;
+          j = js + t % nj;
+          t /= nj;
+          i = is + t % ni;
+          m = t/ni;
+        };
+        int m = 0, i = 0, j = 0, k = 0;
+        const int c = c0 + tr;
+        const bool val = (c < ncell);
+        if (val) {dec(c, m, i, j, k);}
+        const bool act = val && (i >= ilo);
+        if (val && i < ilo) {
+          for (int cc = 0; cc < 6; ++cc) {hr_(m,cc,k,j,i) = (cc % 2 == 0) ? -1.0 : 0.0;}
+          if (thx) {
+            hr_(m,M1_VGD_HRC1,k,j,i) = 0.0;
+            hr_(m,M1_VGD_HREP,k,j,i) = 1.0;
+            hr_(m,M1_VGD_HRJ,k,j,i) = 0.0;
+          }
+        }
+        Real ax[3][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+        Real s0 = 0.0;
+        if (act) {
+          for (int b = 0; b < 3; ++b) {
+            ax[0][b] = cr_(m,k+og,j+og,b);
+            ax[1][b] = cn2(m,j,b);
+            ax[2][b] = cn3(m,k,b);
+          }
+          if (thx) {s0 = exp(cs_(m,1,k+og,j+og,i));}
+        }
+        Real jm = 0.0, nl = 0.0, h[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        for (int d0 = 0; d0 < n; d0 += VGD_LDS_DC) {
+          const int dn = (n - d0 < VGD_LDS_DC) ? (n - d0) : VGD_LDS_DC;
+          tm.team_barrier();
+          for (int e = tr; e < VGD_LDS_TS*dn; e += VGD_LDS_TS) {
+            const int cc = e/dn, dd = e - (e/dn)*dn;
+            const int c2 = c0 + cc;
+            if (c2 < ncell) {
+              int m2, i2, j2, k2;
+              dec(c2, m2, i2, j2, k2);
+              if (i2 >= ilo) {sv(cc*VGD_LDS_DC + dd) = vi_(m2,d0+dd,k2+og,j2+og,i2);}
+            }
+          }
+          tm.team_barrier();
+          if (act) {
+            for (int dd = 0; dd < dn; ++dd) {
+              const int d = d0 + dd;
+              const Real vv = sv(tr*VGD_LDS_DC + dd);
+              const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
+              const Real wi = dir_(d,3)*vv;
+              jm += wi;
+              for (int a = 0; a < 3; ++a) {
+                const Real mu = nx*ax[a][0] + ny*ax[a][1] + nz*ax[a][2];
+                h[2*a] += wi*fmax(mu, 0.0);
+                h[2*a+1] += wi*fmin(mu, 0.0);
+              }
+              if (thx) {nl += dir_(d,3)*fabs(vv - s0);}
+            }
+          }
+        }
+        if (!act) {return;}
+        for (int cc = 0; cc < 6; ++cc) {
+          hr_(m,cc,k,j,i) = (jm > 0.0) ? h[cc]/jm : ((cc % 2 == 0) ? -1.0 : 0.0);
+        }
+        if (thx) {
+          hr_(m,M1_VGD_HRC1,k,j,i) = (jm > 0.0) ? nl/jm : 0.0;
+          const Real kt = opac_(m,M1_OP_T,k,j,i);
+          hr_(m,M1_VGD_HREP,k,j,i) = !(kt > 0.0) ? 1.0
+                                     : (thermal ? fmin(opac_(m,M1_OP_P,k,j,i)/
+                                                       fmax(kt, 1.0e-300), 1.0) : 0.0);
+          hr_(m,M1_VGD_HREP,k,j,i) = fmin(hr_(m,M1_VGD_HREP,k,j,i), epmax);
+          hr_(m,M1_VGD_HRJ,k,j,i) = jm;
+        }
+      });
+      return;
+      }
       par_for("m1_vgd_hrcs", DevExeSpace(), 0, nmb1, is, ie, js, je, ks, ke,
       KOKKOS_LAMBDA(const int m, const int i, const int j, const int k) {
         if (i < ilo) {

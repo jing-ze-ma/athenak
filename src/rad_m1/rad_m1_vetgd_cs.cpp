@@ -2249,6 +2249,24 @@ void RadiationM1::CsTanDiag() {
 //! Cartesian D_r,lat; LAT4, LAT5 = 0, or Q under vet_gd_tangential: cs-tan-1106);
 //! part 1: the vet_gd_replace surface q of the top cell
 
+namespace {
+// d6fast5-1112: see VgdMomLds (rad_m1_vetgd.cpp); env VGD_MOM_LDS=0: the par_for kernels
+constexpr int VGD_LDS_TS = 64;
+constexpr int VGD_LDS_DC = 16;
+inline bool VgdMomLdsCs() {
+#if defined(KOKKOS_ENABLE_HIP)
+  static int on = -1;
+  if (on < 0) {
+    const char *e = std::getenv("VGD_MOM_LDS");
+    on = (e != nullptr) ? std::atoi(e) : 1;
+  }
+  return on != 0;
+#else
+  return false;
+#endif
+}
+}  // namespace
+
 void RadiationM1::VetGdCsMoments(const int part) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -2266,6 +2284,91 @@ void RadiationM1::VetGdCsMoments(const int part) {
     // cs-tan-1106 vet_gd_tangential: Q in LAT4, LAT5 about the frame cs_qf (M1CsQab)
     const bool ctan = vgd_cstan;
     auto qf_ = cs_qf;
+    if (VgdMomLdsCs()) {
+      // d6fast5-1112: LDS-staged (rad_m1_vetgd.cpp VgdMomLds); same cells, sums, outputs
+      const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
+      const int ncell = (nmb1 + 1)*ni*nj*nk;
+      const int nlg = (ncell + VGD_LDS_TS - 1)/VGD_LDS_TS;
+      const size_t scr = ScrArray1D<Real>::shmem_size(VGD_LDS_TS*VGD_LDS_DC);
+      Kokkos::TeamPolicy<> pol(DevExeSpace(), nlg, VGD_LDS_TS, 1);
+      Kokkos::parallel_for("m1_vgdcs_mom", pol.set_scratch_size(0, Kokkos::PerTeam(scr)),
+      KOKKOS_LAMBDA(const TeamMember_t &tm) {
+        ScrArray1D<Real> sv(tm.team_scratch(0), VGD_LDS_TS*VGD_LDS_DC);
+        const int c0 = tm.league_rank()*VGD_LDS_TS;
+        const int tr = tm.team_rank();
+        auto dec = [&](const int c, int &m, int &i, int &j, int &k) {
+          int t = c;
+          j = js + t % nj;
+          t /= nj;
+          k = ks + t % nk;
+          t /= nk;
+          i = is + t % ni;
+          m = t/ni;
+        };
+        int m = 0, i = 0, j = 0, k = 0;
+        const int c = c0 + tr;
+        const bool val = (c < ncell);
+        if (val) {dec(c, m, i, j, k);}
+        const bool act = val && (i >= ilo);
+        if (val) {
+          for (int cc = 0; cc < M1_TT_NLAT; ++cc) {tt_(m,M1_TT_LAT0+cc,k,j,i) = 0.0;}
+        }
+        Real rx = 0.0, ry = 0.0, rz = 0.0;
+        if (act) {
+          rx = cr_(m,k+og,j+og,0); ry = cr_(m,k+og,j+og,1);
+          rz = cr_(m,k+og,j+og,2);
+        }
+        Real jm = 0.0, rr = 0.0, kx = 0.0, ky = 0.0, kz = 0.0;
+        Real q1m2 = 0.0, q12 = 0.0;
+        for (int d0 = 0; d0 < n; d0 += VGD_LDS_DC) {
+          const int dn = (n - d0 < VGD_LDS_DC) ? (n - d0) : VGD_LDS_DC;
+          tm.team_barrier();
+          for (int e = tr; e < VGD_LDS_TS*dn; e += VGD_LDS_TS) {
+            const int cc = e/dn, dd = e - (e/dn)*dn;
+            const int c2 = c0 + cc;
+            if (c2 < ncell) {
+              int m2, i2, j2, k2;
+              dec(c2, m2, i2, j2, k2);
+              if (i2 >= ilo) {sv(cc*VGD_LDS_DC + dd) = vi_(m2,d0+dd,k2+og,j2+og,i2);}
+            }
+          }
+          tm.team_barrier();
+          if (act) {
+            for (int dd = 0; dd < dn; ++dd) {
+              const int d = d0 + dd;
+              const Real vv = sv(tr*VGD_LDS_DC + dd);
+              const Real a = dir_(d,0)*rx + dir_(d,1)*ry + dir_(d,2)*rz;
+              const Real wi = dir_(d,3)*vv;
+              jm += wi;
+              rr += wi*a*a;
+              kx += wi*a*dir_(d,0);
+              ky += wi*a*dir_(d,1);
+              kz += wi*a*dir_(d,2);
+              if (ctan) {
+                const Real b1 = dir_(d,0)*qf_(m,0,k,j) + dir_(d,1)*qf_(m,1,k,j)
+                                + dir_(d,2)*qf_(m,2,k,j);
+                const Real b2 = dir_(d,0)*qf_(m,3,k,j) + dir_(d,1)*qf_(m,4,k,j)
+                                + dir_(d,2)*qf_(m,5,k,j);
+                q1m2 += wi*(b1*b1 - b2*b2);
+                q12 += wi*b1*b2;
+              }
+            }
+          }
+        }
+        if (act && jm > 0.0) {
+          if (ctan) {
+            tt_(m,M1_TT_LAT0+4,k,j,i) = 0.5*q1m2/jm;
+            tt_(m,M1_TT_LAT0+5,k,j,i) = q12/jm;
+          }
+          tt_(m,M1_TT_LAT0,k,j,i) = rr/jm - tt_(m,0,k,j,i);
+          const Real dr = rr/jm;
+          tt_(m,M1_TT_LAT0+1,k,j,i) = kx/jm - dr*rx;
+          tt_(m,M1_TT_LAT0+2,k,j,i) = ky/jm - dr*ry;
+          tt_(m,M1_TT_LAT0+3,k,j,i) = kz/jm - dr*rz;
+        }
+      });
+      return;
+    }
     par_for("m1_vgdcs_mom", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
       for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
