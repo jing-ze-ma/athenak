@@ -246,6 +246,25 @@ struct DvceEdgeFld4D {
 // 1D-range, and thread teams for use with inner vector threads. Experiments in K-Athena
 // and Parthenon indicate that 1D-range policy is generally faster than multidimensional
 // MD-range policy, so the latter is not used.
+// d6fast5-1112: the policy of the par_for wrappers below.  On HIP a plain RangePolicy
+// kernel is compiled for up to 1024 threads per block, which caps it at 128 VGPRs on
+// gfx942: the heavy per-cell kernels (EOS, opacity tables, Riemann solvers) then SPILL to
+// scratch (rocprofv3: 92-2288 B per lane).  LaunchBounds<256, 2> (as radm1::par_for_lb)
+// lets the register allocator use up to 256 VGPRs; Kokkos launches 256-thread blocks.
+// par_for has no reductions: the arithmetic and the result are unchanged (bitwise).
+// -DATHENA_HIP_PARFOR_LB=0: the old policy.
+#if defined(KOKKOS_ENABLE_HIP) && !defined(ATHENA_HIP_PARFOR_LB)
+#define ATHENA_HIP_PARFOR_LB 2
+#endif
+#if defined(KOKKOS_ENABLE_HIP) && (ATHENA_HIP_PARFOR_LB > 0)
+template <typename ExeSpace>
+using AthenaRangePolicy =
+    Kokkos::RangePolicy<ExeSpace, Kokkos::LaunchBounds<256, ATHENA_HIP_PARFOR_LB>>;
+#else
+template <typename ExeSpace>
+using AthenaRangePolicy = Kokkos::RangePolicy<ExeSpace>;
+#endif
+
 //------------------------------
 // 1D loop using Kokkos 1D Range
 template <typename ExeSpace, typename Function>
@@ -253,7 +272,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
                     const int &il, const int &iu, const Function &function) {
   // compute total number of elements and call Kokkos::parallel_for()
   const int ni = iu - il + 1;
-  Kokkos::parallel_for(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, ni),
+  Kokkos::parallel_for(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, ni),
   KOKKOS_LAMBDA(const int &idx) {
     // compute i indices of thread and call function
     int i = (idx) + il;
@@ -271,7 +290,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
   const int nj = ju - jl + 1;
   const int ni = iu - il + 1;
   const int nji  = nj * ni;
-  Kokkos::parallel_for(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nji),
+  Kokkos::parallel_for(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, nji),
   KOKKOS_LAMBDA(const int &idx) {
     // compute j,i indices of thread and call function
     int j = (idx)/ni;
@@ -293,7 +312,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
   const int ni = iu - il + 1;
   const int nkji = nk * nj * ni;
   const int nji  = nj * ni;
-  Kokkos::parallel_for(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nkji),
+  Kokkos::parallel_for(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, nkji),
   KOKKOS_LAMBDA(const int &idx) {
     // compute k,j,i indices of thread and call function
     int k = (idx)/nji;
@@ -346,10 +365,10 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
   // global-memory path).  Only the launch mechanism changes: bitwise.
   if constexpr (sizeof(body) <= ATHENA_LW_LAUNCH_MAX) {
     Kokkos::parallel_for(name, Kokkos::Experimental::require(
-        Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nnkji),
+        AthenaRangePolicy<ExeSpace>(exec_space, 0, nnkji),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), body);
   } else {
-    Kokkos::parallel_for(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nnkji), body);
+    Kokkos::parallel_for(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, nnkji), body);
   }
 }
 
@@ -371,7 +390,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
   const int nnkji  = nn * nk * nj * ni;
   const int nkji   = nk * nj * ni;
   const int nji    = nj * ni;
-  Kokkos::parallel_for(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nmnkji),
+  Kokkos::parallel_for(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, nmnkji),
   KOKKOS_LAMBDA(const int &idx) {
     // compute m,n,k,j,i indices of thread and call function
     int m = (idx)/nnkji;
