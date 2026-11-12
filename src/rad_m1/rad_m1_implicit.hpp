@@ -93,7 +93,8 @@ constexpr char kM1CskRstMagic[8] = {'M', '1', 'C', 'S', 'K', '1', 'S', '1'};
 constexpr char kM1FaxRstMagic[8] = {'M', '1', 'F', 'A', 'X', 'R', 'S', '1'};
 constexpr char kM1RaRstMagic[8] = {'M', '1', 'R', 'O', 'T', 'A', 'V', '1'};
 // rstbit-1112 time2_stage_local_be: the carried stage-2 drop t2thc (RadiationM1::
-// ThcRst*), behind the fax slabs.  A file without it restarts with nothing carried (not bitwise).
+// ThcRst*), behind the fax slabs.  A file without it restarts with nothing carried (not
+// bitwise).
 constexpr char kM1ThcRstMagic[8] = {'M', '1', 'T', 'H', 'C', 'R', 'S', '1'};
 
 // <rad_m1>/transport
