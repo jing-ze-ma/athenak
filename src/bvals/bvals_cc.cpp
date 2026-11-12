@@ -80,16 +80,18 @@ static int BvCcSplit() {
   }
   return s;
 }
+// fast2nd-1112: BVALS_CC_VL is read on every backend (HIP: was fixed at 1; the HIP
+// default stays 1 until measured; a power of two <= 64 on HIP)
 static int BvCcVl() {
   static int v = -1;
   if (v < 0) {
-#if defined(KOKKOS_ENABLE_CUDA)
     const char *e = std::getenv("BVALS_CC_VL");
+#if defined(KOKKOS_ENABLE_CUDA)
     v = (e != nullptr) ? std::atoi(e) : 32;
-    if (v < 1) {v = 1;}
 #else
-    v = 1;
+    v = (e != nullptr) ? std::atoi(e) : 1;
 #endif
+    if (v < 1) {v = 1;}
   }
   return v;
 }
