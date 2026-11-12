@@ -184,10 +184,17 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // do_pole are false anyway, i.e. the same arithmetic; still one launch per call.
   // nvcc rejects generic (auto) extended lambdas: under CUDA the flag is a plain bool
   // (and the call sites pass true/false), the same arithmetic.
+  // d6fast3-1112: a second compile-time flag kwb_ for the wb_seam branch (WBAdvance with
+  // the EOS): with wb_seam off (every cs deck but the dhj wb runs) it is dead code, but
+  // it took the seam pack from 816 to 4816 bytes of scratch per lane (HIP, 128 VGPRs).
+  // The seam variant without it is launched when wb_seam is off: wbsv is false there
+  // anyway, so the arithmetic is the same (bitwise).
 #if defined(KOKKOS_ENABLE_CUDA)
-  auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const bool kseam_) {
+  auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const bool kseam_,
+                             const bool kwb_) {
 #else
-  auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const auto kseam_) {
+  auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const auto kseam_,
+                             const auto kwb_) {
 #endif
     const int lr_ = tmember.league_rank()/nsp_;
     const int sp_ = tmember.league_rank() - lr_*nsp_;
@@ -732,7 +739,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           };
           // wball-1104 wb_seam: the state of stencil cell s walked to the ghost's potential
           // (density for v = 0, total energy for v = wbsien_); see bvals.hpp
-          const bool wbsv = wbs_ && (cs_seam != 0) && !cs_coar && (v == 0 || v == wbsien_);
+          const bool wbsv = static_cast<bool>(kwb_) && wbs_ && (cs_seam != 0) &&
+                            !cs_coar && (v == 0 || v == wbsien_);
           Real lw5[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
           int c5 = 0;
           if (wbsv) {
@@ -881,20 +889,28 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     }  // end if-neighbor-exists block
     tmember.team_barrier();
   };
-  if (use_cs || use_pole) {
+  if ((use_cs || use_pole) && wbs_) {
     BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
 #if defined(KOKKOS_ENABLE_CUDA)
-      pack_(tmember, true);
+      pack_(tmember, true, true);
 #else
-      pack_(tmember, std::true_type());
+      pack_(tmember, std::true_type(), std::true_type());
+#endif
+    });
+  } else if (use_cs || use_pole) {
+    BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+#if defined(KOKKOS_ENABLE_CUDA)
+      pack_(tmember, true, false);
+#else
+      pack_(tmember, std::true_type(), std::false_type());
 #endif
     });
   } else {
     BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
 #if defined(KOKKOS_ENABLE_CUDA)
-      pack_(tmember, false);
+      pack_(tmember, false, false);
 #else
-      pack_(tmember, std::false_type());
+      pack_(tmember, std::false_type(), std::false_type());
 #endif
     });
   }  // end par_for_outer
