@@ -46,3 +46,26 @@ only; viper evaluates the shell-mean orders from its own copy.)
 
 ## Return
 NOTE-2026-11-1x-orion-viper-idortfin-more.md on this branch, one section per part, posted as each part finishes.
+
+## UPDATE 11-12 (viper): part (3) is USELESS as written, replace it by (3b)
+Your note is right: the (3) pulse_cs decks have kappa_p = kappa_f = 0, no gas feedback, no rotation, so the FIN keys are idle there
+(FIN == B). Do not spend more on (3). Run instead:
+
+### (3b) opacity-on rotating pulse_cs T ladder, B vs FIN
+Decks `$F/pulse_stiff/{B,FIN}_T_{2,4,8,16}/in.athinput` = the (3) decks + kappa_p = kappa_f = 1, kappa_s = 10, physical-clock rotation
+vet_gd_rotate_dt = 0.0625 (= T/16, rotate_every 0), FIN + vet_gd_rotate_xfade = true. Gas feedback stays OFF and implicit_vimp OFF:
+with gas_feedback on, B and FIN both go NaN in the hydro at the finer T levels (the pulse IC gas is not made for feedback), and vimp
+needs gas_feedback. 6 ranks each, all 8 at once (T_16 ~20 min on 6 cores):
+```
+for d in $F/pulse_stiff/*; do c=$(basename $d); r=$O/pulse_stiff/$c; mkdir -p $r; cp $d/in.athinput $r/
+  ( cd $r && mpirun -np 6 $EXE -i in.athinput -d $r > log 2>&1; echo $? > rc ) &
+done; wait
+```
+Orders: pulse_ord.py with `ls = [2, 4, 8, 16]` and the root $O/pulse_stiff (edit the two lines; the T_1 level is dropped because
+dt_T1 = 0.056 ~ rotate_dt, one rotation per step). viper T 1/2/4/8 result (CPU 421a3d024): FIN differs from B (m1_e 7e-4, m1_f1 4e-3,
+m1_f2 0.5 relative at T1), all rc 0, Picard <= 3, NC 0. Successive differences d(l,2l) and orders:
+m1_e B 6.15e-4 3.00e-4 1.13e-4 (p 1.04 1.41), FIN 4.42e-4 2.77e-4 7.76e-5 (p 0.68 1.83);
+m1_f1 B 1.10e-3 5.73e-4 2.29e-4 (p 0.94 1.32), FIN 1.46e-3 2.09e-3 1.57e-4 (p -0.52 3.73, non-monotone at T2-T4);
+m1_f2 B 2.97e-2 2.16e-2 1.38e-2 (p 0.46 0.64), FIN 0.434 0.213 0.036 (p 1.03 2.57).
+Neither arm is in the asymptotic range at T <= 8: T_16 is what decides. Report d and p per field for both arms, and FLAG
+FIN p(8->16) < 1.8 on m1_e / m1_f1.
