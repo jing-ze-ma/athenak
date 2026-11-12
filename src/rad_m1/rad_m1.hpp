@@ -4022,6 +4022,7 @@ class RadiationM1 {
   // shell body closure in device memory, called through a pointer (VgdClosureToDevice)
   bool vgd_bglob = false;
   DvceArray1D<char> vgd_bbuf0, vgd_bbuf1;
+  DvceArray1D<char> vgd_bbuf2, vgd_bbuf3;   // d6fast4-1112: CUDA gx-false closures
   bool vgd_ainl = false;       // the sweep inline at launch (host backends, or env
                                // VGD_ASYNC_INLINE=1): same numbers, no overlap
   bool vgd_apend = false;      // a swept build whose moments are not yet taken

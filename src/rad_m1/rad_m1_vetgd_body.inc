@@ -18,6 +18,16 @@
 
 // nvcc rejects generic __host__ __device__ lambdas: on CUDA vpa / gx are plain bools (a
 // std::false_type converts; the gated branches are then runtime-false, not compiled out)
+// d6fast4-1112: on CUDA, M1_VGD_BODY_GX0 defined gives the gx-false kernel instead: vpa
+// and gx are compile-time false inside (the arguments are ignored), so the gated branches
+// are compiled out there too (as the std::false_type launch does on HIP)
+#if defined(KOKKOS_ENABLE_CUDA) && defined(M1_VGD_BODY_GX0)
+      auto M1_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
+                                            const int d, const int i, const int l,
+                                            const bool, const bool) {
+        constexpr bool vpa = false;
+        constexpr bool gx = false;
+#else
 #if defined(KOKKOS_ENABLE_CUDA)
 #define M1_VGD_TT bool
 #else
@@ -27,6 +37,7 @@
                                             const int d, const int i, const int l,
                                             const M1_VGD_TT vpa, const M1_VGD_TT gx) {
 #undef M1_VGD_TT
+#endif
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         // the face midpoints (uniform in index space, as the bilinear reads assume)
         // accsp-1102: a stretched theta / the full sphere: the row's node (sph2.inc)

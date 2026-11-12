@@ -5523,6 +5523,23 @@ void RadiationM1::VetGdSweep() {
 #include "rad_m1_vetgd_body.inc"
 #undef M1_VGD_BODY_NAME
 #undef M1_VGD_BODY_MIR
+#if defined(KOKKOS_ENABLE_CUDA)
+    // d6fast4-1112: the gx-false kernels on CUDA (rad_m1_vetgd_body.inc): bodyg / bodymg
+    // have vpa = gx = false compiled in (nvcc has no generic device lambda for the
+    // std::false_type launch the HIP build uses)
+#define M1_VGD_BODY_GX0
+#define M1_VGD_BODY_NAME bodyg
+#define M1_VGD_BODY_MIR 0
+#include "rad_m1_vetgd_body.inc"
+#undef M1_VGD_BODY_NAME
+#undef M1_VGD_BODY_MIR
+#define M1_VGD_BODY_NAME bodymg
+#define M1_VGD_BODY_MIR 1
+#include "rad_m1_vetgd_body.inc"
+#undef M1_VGD_BODY_NAME
+#undef M1_VGD_BODY_MIR
+#undef M1_VGD_BODY_GX0
+#endif
     // speedup-1109 vet_gd_body_global: this pass's shell kernel closure copied once
     // to device memory; the launches below then carry only its address (bitwise)
     using VgdBodyT = decltype(body);
@@ -5540,6 +5557,14 @@ void RadiationM1::VetGdSweep() {
     // twin: the shell list launches the kernel compiled without those branches (bitwise)
     const bool gfast = !vpa_h && upf_ != 1 && upf_ != 2 && !rbon_ && !bandx && !two &&
                        vgd_gfast;
+#if defined(KOKKOS_ENABLE_CUDA)
+    using VgdBodygT = decltype(bodyg);
+    using VgdBodymgT = decltype(bodymg);
+    const VgdBodygT *bgp = nullptr;
+    const VgdBodymgT *bgq = nullptr;
+    if (gfast && bmp != nullptr) {bgq = VgdClosureToDevice(bodymg, vgd_bbuf3);}
+    if (gfast && bdp != nullptr) {bgp = VgdClosureToDevice(bodyg, vgd_bbuf2);}
+#endif
     const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
     // the shell kernel over the codes cl(c), c in [c0, c1) (vet_gd_shell_list codes)
     auto run_list = [&](const DvceArray1D<int> &cl, const int c0, const int c1,
@@ -5555,6 +5580,11 @@ void RadiationM1::VetGdSweep() {
         if (gfast) {
           // vgdshell-1113: the kernel without the gated branches (rad_m1_vetgd_body.inc)
           const std::false_type f_;
+#if defined(KOKKOS_ENABLE_CUDA)
+          // d6fast4-1112: on CUDA the gx-false closures bodyg / bodymg
+          const VgdBodygT *bp_ = bgp;
+          const VgdBodymgT *bq_ = bgq;
+#endif
           if (bq_ != nullptr) {
             Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
             KOKKOS_LAMBDA(const int c) {
