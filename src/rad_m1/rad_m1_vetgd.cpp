@@ -2160,6 +2160,16 @@ Real RadiationM1::VgdXfRe(const int64_t blk) const {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::VgdXfLq
+//! \brief vgdxf-1112 vet_gd_rotate_xfade_lean: the fraction (t - t_j)/(T_j - t_j) of the
+//! estimate line of block blk (RotXfSample); -1 without a line in this block
+
+Real RadiationM1::VgdXfLq(const int64_t blk) const {
+  if (vgd_xf_lb != blk || !(vgd_xf_lT > vgd_xf_lt)) {return -1.0;}
+  return (pmy_pack->pmesh->time - vgd_xf_lt)/(vgd_xf_lT - vgd_xf_lt);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdXfade
 //! \brief vgdxf-1112: the fields hold the next set's raw sweep at this state (the table
 //! of VetGdRotAvgSetup set): fields := (1 - s) A + s T_{b+1} (RotXfBlend), s = (t - t_b)
@@ -6564,9 +6574,8 @@ void RadiationM1::VetGdBuild() {
         const Real tk = vgd_rot_t0 + static_cast<Real>(blk + 1)*vgd_rot_dt;
         const Real rg = (vgd_xf_gb[0] == blk && tn > vgd_xf_gt[0]) ?
                         (tk - tn)/(tn - vgd_xf_gt[0]) : -1.0;
-        const Real rs = (vgd_xf_sb[0] == blk && vgd_xf_sb[1] == blk &&
-                         vgd_xf_st[1] > vgd_xf_st[0]) ?
-                        (tk - tn)/(vgd_xf_st[1] - vgd_xf_st[0]) : -1.0;
+        const Real rs = (vgd_xf_lb == blk && vgd_xf_lT > vgd_xf_lt) ?
+                        (tk - tn)/(vgd_xf_lT - vgd_xf_lt) : -1.0;
         RotXfPreLean(rg, rs, ilo);
       } else {
         RotXfPre(VgdXfRx(blk), ilo);
@@ -6581,7 +6590,7 @@ void RadiationM1::VetGdBuild() {
       // (vet_gd_rotate_xfade_lean: the blend uses the estimate, as the builds before it,
       // so that no closure switch sits at the dt-dependent time t_k - dt)
       if (vgd_xf_lean && vgd_xf_m > 0) {
-        RotXfEst(ilo, VgdXfRe(blk));
+        RotXfEst(ilo, VgdXfLq(blk));
         VetGdXfade(blk, true, false);
       } else {
         VetGdXfade(blk, true);
@@ -6602,7 +6611,7 @@ void RadiationM1::VetGdBuild() {
     // slope) and at the last two builds (the second-to-last: RotXfPre's previous build
     // is a live sweep)
     bool sw = true;
-    Real rxe = -1.0;
+    Real rxe = -1.0, lq = -1.0;
     if (vgd_xf_m > 0) {
       const Mesh *pm = pmy_pack->pmesh;
       const Real tb = vgd_rot_t0 + static_cast<Real>(blk)*vgd_rot_dt;
@@ -6620,10 +6629,25 @@ void RadiationM1::VetGdBuild() {
         vgd_xf_sj = jn;
         vgd_xf_sn += 1;
       } else {
-        rxe = VgdXfRe(blk);
+        rxe = vgd_xf_lean ? VgdXfLq(blk) : VgdXfRe(blk);
+      }
+      if (sw && vgd_xf_lean) {
+        lq = VgdXfLq(blk);
+        vgd_xf_lb = blk;
+        vgd_xf_lt = pm->time;
+        vgd_xf_lT = tb + static_cast<Real>(jn + 1)*vgd_rot_dt/vgd_xf_m;
       }
     }
-    if (sw) {
+    if (sw && vgd_xf_lean && vgd_xf_m > 0) {   // the continuous estimate (RotXfSample)
+      VgdXfTables(VetGdAngleBlk(blk + 1));
+      vra_raw = true;
+      VetGdSweepPost();
+      vra_raw = false;
+      VetGdRotAvgSetup();
+      RotXfSample(lq, xilo);
+      VetGdXfade(blk, false, false);
+      VgdXfTables(al);
+    } else if (sw) {
       VgdXfTables(VetGdAngleBlk(blk + 1));
       vra_raw = true;
       VetGdSweepPost();

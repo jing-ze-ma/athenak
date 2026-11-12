@@ -3060,6 +3060,10 @@ class RadiationM1 {
   void RotXfEst(const int ilo, const Real r);
   Real VgdXfRe(const int64_t blk) const;
   void RotXfPreLean(const Real rg, const Real rs, const int ilo);
+  void RotXfSample(const Real q, const int ilo);
+  Real VgdXfLq(const int64_t blk) const;
+  int64_t vgd_xf_lb = INT64_MIN;   // lean: the estimate line's block, start, end time
+  Real vgd_xf_lt = 0.0, vgd_xf_lT = 0.0;
   int64_t vgd_xf_gb[2] = {INT64_MIN, INT64_MIN};   // block, time of the last two G
   Real vgd_xf_gt[2] = {0.0, 0.0};                   // snapshots (slot 0; 1: the latest)
   void RotXfPre(const Real rx, const int ilo);
