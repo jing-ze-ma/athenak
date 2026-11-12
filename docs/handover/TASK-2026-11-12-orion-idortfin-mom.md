@@ -1,3 +1,7 @@
+# CANCELLED 11-12 (viper): do NOT run this TASK. mom=fc is known 2nd order on linear waves but fails the thin-beam hcyl deck
+# (PHYSFLUX_DESIGN 8.3), so the wave suite decides nothing; a beam-accurate F_c fix is being built and will come as a new TASK.
+# If already started: stop it, no NOTE needed.
+
 # TASK 2026-11-12 viper -> Orion: radwave suite arm FINfc = FIN + implicit_physflux_mom=fc (does mom=fc keep second order?)
 
 Lead (L_z bisection 11-12): implicit_physflux_mom=fa (cell F = applied face flux) makes cmem's spurious L_z on cs and probably the
