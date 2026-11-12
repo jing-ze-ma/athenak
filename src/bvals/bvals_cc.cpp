@@ -99,6 +99,20 @@ static int BvCcVl() {
   return v;
 }
 
+// d6fast3-1112: env BVALS_CC_TS = the team size of the CC pack / unpack (default 0 =
+// Kokkos::AUTO, the launch as before).  Each buffer element is the same expression of the
+// same inputs whatever thread handles its (k, j) row: bitwise.
+static Kokkos::TeamPolicy<> BvCcPolicy(const int nleague) {
+  static int t = -1;
+  if (t < 0) {
+    const char *e = std::getenv("BVALS_CC_TS");
+    t = (e != nullptr) ? std::atoi(e) : 0;
+    if (t < 0) {t = 0;}
+  }
+  if (t > 0) {return Kokkos::TeamPolicy<>(DevExeSpace(), nleague, t, BvCcVl());}
+  return Kokkos::TeamPolicy<>(DevExeSpace(), nleague, Kokkos::AUTO, BvCcVl());
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void MeshBoundaryValuesCC::PackAndSendCC()
 //! \brief Pack cell-centered variables into boundary buffers and send to neighbors.
@@ -173,7 +187,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   int nmnv = nmb*nnghbr*nvar;
   const int nsp_ = BvCcSplit();
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv*nsp_, Kokkos::AUTO, BvCcVl());
+  Kokkos::TeamPolicy<> policy = BvCcPolicy(nmnv*nsp_);
   Kokkos::TeamPolicy<> policy1(DevExeSpace(), nmnv, Kokkos::AUTO);   // (z4c kernel)
   // The seam/pole branch below keeps per-thread arrays (stencil indices, three SeamXform)
   // that give the kernel a PRIVATE SEGMENT (scratch).  A dispatch that needs scratch
@@ -1120,7 +1134,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
 
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   const int nsp_ = BvCcSplit();
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar)*nsp_, Kokkos::AUTO, BvCcVl());
+  Kokkos::TeamPolicy<> policy = BvCcPolicy((nmb*nnghbr*nvar)*nsp_);
   Kokkos::TeamPolicy<> policy1(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);   // (z4c)
   BvalsTeamFor("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int lr_ = tmember.league_rank()/nsp_;
