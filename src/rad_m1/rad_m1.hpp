@@ -1552,8 +1552,10 @@ class RadiationM1 {
   DualArray1D<int> hm_segs;     // (4*nseg) soff, slen, roff, rlen
   DvceArray1D<Real> hm_sbuf, hm_rbuf;
   // hmstage-1019: HIP builds hand MPI host copies of the two buffers (see
-  // ImplicitHaloMPIFinish); empty on CUDA / host builds
-  Kokkos::View<Real*, Kokkos::HostSpace> hm_shost, hm_rhost;
+  // ImplicitHaloMPIFinish); empty on CUDA / host builds.  d6fast3-1112: pinned host
+  // memory, written by the pack kernel and read by the unpack kernel directly (no
+  // staging copies; hm_sbuf / hm_rbuf are then unused on HIP)
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> hm_shost, hm_rhost;
   void *hm_comm;                // MPI_Comm* (the dup'ed communicator), opaque here
   void ImplicitHaloMPIInit();
   void ImplicitHaloMPI(int nq, int c0);

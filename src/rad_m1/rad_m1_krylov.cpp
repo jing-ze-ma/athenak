@@ -367,8 +367,10 @@ void RadiationM1::ImplicitHaloMPIInit() {
   hm_sbuf = DvceArray1D<Real>("m1_hm_sbuf", std::max(hm_nsend, 1)*hm_nq);
   hm_rbuf = DvceArray1D<Real>("m1_hm_rbuf", std::max(hm_nrecv, 1)*hm_nq);
 #if defined(KOKKOS_ENABLE_HIP)
-  hm_shost = Kokkos::View<Real*, Kokkos::HostSpace>("m1_hm_shost", hm_sbuf.extent(0));
-  hm_rhost = Kokkos::View<Real*, Kokkos::HostSpace>("m1_hm_rhost", hm_rbuf.extent(0));
+  hm_shost = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>("m1_hm_shost",
+                                                               hm_sbuf.extent(0));
+  hm_rhost = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>("m1_hm_rhost",
+                                                               hm_rbuf.extent(0));
 #endif
   MPI_Comm *c = new MPI_Comm;
   MPI_Comm_dup(MPI_COMM_WORLD, c);
@@ -412,8 +414,13 @@ void RadiationM1::ImplicitHaloMPIPost(int nq, int c0) {
   auto &sq = M1HmReqS();
   rq.assign(nseg, MPI_REQUEST_NULL);
   sq.assign(nseg, MPI_REQUEST_NULL);
+#if defined(KOKKOS_ENABLE_HIP)
+  // d6fast3-1112: the pack kernel writes the pinned host send buffer itself
+  auto sbuf = hm_shost;
+#else
   auto sbuf = hm_sbuf;
   auto rbuf = hm_rbuf;
+#endif
   constexpr int tag = 4242;
   // hrdet-1009: the receive buffer is still being read by the PREVIOUS exchange's unpack
   // kernel until that kernel has run; a receive posted now lets a fast neighbour's
@@ -480,8 +487,13 @@ void RadiationM1::ImplicitHaloMPIFinish(int nq, int c0) {
   const int nseg = static_cast<int>(hm_rank.size());
   auto &rq = M1HmReqR();
   auto &sq = M1HmReqS();
+#if defined(KOKKOS_ENABLE_HIP)
+  // d6fast3-1112: the unpack kernel reads the pinned host receive buffer itself
+  auto rbuf = hm_rhost;
+#else
   auto sbuf = hm_sbuf;
   auto rbuf = hm_rbuf;
+#endif
   constexpr int tag = 4242;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int n1 = indcs.nx1 + 2*indcs.ng;
@@ -495,16 +507,10 @@ void RadiationM1::ImplicitHaloMPIFinish(int nq, int c0) {
   // the sender's, with the send buffer fenced and complete; wrong and run-to-run random
   // ghosts), so MPI is handed host copies there.  CUDA builds keep the device buffers.
 #if defined(KOKKOS_ENABLE_HIP)
-  // d6fast2-1112: only the nq components in use cross (the buffers are sized for hm_nq
-  // >= 14: a single-component exchange copied 14x the message both ways, ~0.9 ms each
-  // on R136); the messages read entries [0, n*nq) only, so the ghosts are bitwise
-  using HmRange = std::pair<size_t, size_t>;
-  const size_t hm_ns = static_cast<size_t>(hm_nsend)*nq;
-  const size_t hm_nr = static_cast<size_t>(hm_nrecv)*nq;
-  if (hm_ns > 0) {
-    Kokkos::deep_copy(Kokkos::subview(hm_shost, HmRange(0, hm_ns)),
-                      Kokkos::subview(sbuf, HmRange(0, hm_ns)));
-  }
+  // d6fast3-1112: the pack kernel wrote hm_shost (pinned host) and is complete (event
+  // above), so the messages go out of it as they did out of the staging copy (was a
+  // D2H deep_copy here and an H2D one after the receives: d6fast2-1112 had cut them to
+  // the [0, n*nq) prefix); the same values cross, the ghosts are bitwise
   Real *ssrc = hm_shost.data();
 #else
   Real *ssrc = sbuf.data();
@@ -516,12 +522,6 @@ void RadiationM1::ImplicitHaloMPIFinish(int nq, int c0) {
     }
   }
   MPI_Waitall(nseg, rq.data(), MPI_STATUSES_IGNORE);
-#if defined(KOKKOS_ENABLE_HIP)
-  if (hm_nr > 0) {
-    Kokkos::deep_copy(Kokkos::subview(rbuf, HmRange(0, hm_nr)),
-                      Kokkos::subview(hm_rhost, HmRange(0, hm_nr)));
-  }
-#endif
   if (hm_nrecv > 0) {
     auto em = hm_rm.d_view;
     auto ek = hm_rkji.d_view;
