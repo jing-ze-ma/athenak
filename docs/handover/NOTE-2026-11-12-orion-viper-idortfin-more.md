@@ -1,4 +1,4 @@
-# NOTE 2026-11-12 Orion -> viper: idortfin-more (posted per part: part 3 first, then part 2 below; part 1 follows)
+# NOTE 2026-11-12 Orion -> viper: idortfin-more (all 3 parts done: part 3, part 2, part 1 below)
 
 Binary for all parts: 421a3d024 (MPI ON, gcc/13 + openmpi/4.1, Release, -ffp-contract=off; md5 e151dc3ba4a930d2d348fee069aa50a0;
 /orion/ptmp/jinma/rwfin_1112/src_421a3d024/build_none/src/athena, the idortfin-rw binary). OMP 1, OMPI_MCA_hwloc_base_binding_policy=none,
@@ -131,3 +131,41 @@ T3sp_hot5_FIN        cyc 30 NA 0 NP 0 NC 0 F 0 st/BE 2.900000e+01/1.000000e+00 s
 T3sp_hot5_P1         cyc 30 NA 0 NP 0 NC 0 F 0 st/BE 2.900000e+01/1.000000e+00 stfb 0 fclip 900353 (0.0834127) realis 1.99954e+06/900353 floor 0/0 Pic 2.42466 | all E_L1 0.1526 | aff N 1127 E_L1 0.1357 bias +0.0656 Fr_L1 0.1313 | aff_far E_L1 0.1731 | umbra N 0 E/J0 nan (ex nan) | inside E_L1 0.1023
 T3sp_hot5_X1         cyc 30 NA 0 NP 0 NC 0 F 0 st/BE 2.900000e+01/1.000000e+00 stfb 0 fclip 747564 (0.0811782) realis 1.6201e+06/747564 floor 0/0 Pic 2.13559 | all E_L1 0.1596 | aff N 1127 E_L1 0.1406 bias +0.0666 Fr_L1 0.1358 | aff_far E_L1 0.1804 | umbra N 0 E/J0 nan (ex nan) | inside E_L1 0.1007
 ```
+
+## (1) Wave key ablation, vetf, P 3.33 x tau 0.01 / 0.1, N 32-256: **same as viper's edd result. cs2_wbsolve is the only key that acts.**
+Lists: the posted fin_FINAL_vetf.txt cells (P 3.33, tau 0.01 / 0.1, N 32, 64, 128, 256), with zold and cmem_rst stripped to the TIME base, then
+each arm's tokens copied from $F/rw/d_<arm>.txt (all 10 arms: FINAL, FIN, FINmwbs, FINnp30, FINmslbe, FINmfct, FINmfmm, FINmfold, FINpzold,
+FINpcrst; the v_FINAL line equals the posted FINAL line token for token). 80 cases, 10 drives at once (--np 8), host orion072,
+wall 4896 s. **80/80 ok, 0 FAILED / FATAL.** tab.py changed only in its rw path, B, and refs["edd"] -> refs["vetqs_d"].
+
+```
+tau 0.01 | arm | L1E 64 128 256 | pE 128->256 | Enm256 | L1rho256 | prho
+FINAL     5.133e-03 1.334e-03 3.088e-04  2.11  3.082e-04  2.719e-04  2.19
+FIN       5.206e-03 1.394e-03 3.577e-04  1.96  3.572e-04  2.720e-04  2.19
+FINmslbe  5.206e-03 1.394e-03 3.577e-04  1.96  3.572e-04  2.720e-04  2.19
+FINmfct   5.206e-03 1.394e-03 3.577e-04  1.96  3.572e-04  2.720e-04  2.19
+FINmfmm   5.206e-03 1.394e-03 3.577e-04  1.96  3.572e-04  2.720e-04  2.19
+FINmwbs   5.133e-03 1.334e-03 3.088e-04  2.11  3.082e-04  2.719e-04  2.19
+FINmfold  5.206e-03 1.394e-03 3.577e-04  1.96  3.572e-04  2.720e-04  2.19
+FINpzold  5.206e-03 1.394e-03 3.577e-04  1.96  3.572e-04  2.720e-04  2.19
+FINpcrst  5.206e-03 1.394e-03 3.577e-04  1.96  3.572e-04  2.720e-04  2.19
+FINnp30   5.136e-03 1.334e-03 3.087e-04  2.11  3.081e-04  2.719e-04  2.19
+tau 0.1 | arm | L1E 64 128 256 | pE 128->256 | Enm256 | L1rho256 | prho
+FINAL     4.641e-03 1.234e-03 3.206e-04  1.94  3.206e-04  1.636e-04  2.02
+FIN       4.642e-03 1.232e-03 3.122e-04  1.98  3.122e-04  1.656e-04  2.01
+FINmslbe  4.642e-03 1.232e-03 3.122e-04  1.98  3.122e-04  1.656e-04  2.01
+FINmfct   4.642e-03 1.232e-03 3.122e-04  1.98  3.122e-04  1.656e-04  2.01
+FINmfmm   4.642e-03 1.232e-03 3.122e-04  1.98  3.122e-04  1.656e-04  2.01
+FINmwbs   4.641e-03 1.234e-03 3.206e-04  1.94  3.206e-04  1.636e-04  2.02
+FINmfold  4.642e-03 1.232e-03 3.122e-04  1.98  3.122e-04  1.656e-04  2.01
+FINpzold  4.642e-03 1.232e-03 3.122e-04  1.98  3.122e-04  1.656e-04  2.01
+FINpcrst  4.642e-03 1.232e-03 3.122e-04  1.98  3.122e-04  1.656e-04  2.01
+FINnp30   4.643e-03 1.234e-03 3.209e-04  1.94  3.209e-04  1.635e-04  2.02
+```
+
+- **FINmwbs = FINAL** to all printed digits at tau 0.01 and 0.1. **FINmslbe, FINmfct, FINmfmm, FINmfold, FINpzold and FINpcrst = FIN** to all printed digits.
+  stage_local_be, face_fct, face_mmat, am_cs_fold, zold and cmem_rst are inert on these cells.
+- **FINnp30 = FINAL** to 0.1 % (L1E 256 3.087e-4 vs 3.088e-4; tau 0.1 3.209e-4 vs 3.206e-4). The 3-pass fixed point is converged; the wbsolve closed
+  form solves a different relation.
+- So for vetf too, the tau 0.01 loss (L1 E 3.09e-4 -> 3.58e-4, pE 2.11 -> 1.96) and the tau 0.1 gain (3.21e-4 -> 3.12e-4, pE 1.94 -> 1.98) both come
+  from wbsolve alone, the same split as edd. Together with idortfin-rw (bb297426b), wbsolve also fixes tau 10 (p 1.12 -> 2.00) and improves tau 1.
