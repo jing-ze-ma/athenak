@@ -4122,6 +4122,32 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     niw += 9;   // + the per-axis mean face-equation weight om (implicit_cs2_hll = drag)
     if (impl_gas_src_cs2 && cs2_cap > 0.0) {niw += 1;}   // gsdrag-1021: s (iw_cs2 + 9)
   }
+  // facemmat-1112 implicit_face_mmat (rad_m1.hpp)
+  impl_fmm = pin->DoesParameterExist("rad_m1","implicit_face_mmat") &&
+             pin->GetBoolean("rad_m1","implicit_face_mmat");
+  if (impl_fmm) {
+    if (impl_pos_trans == 1 || afd_on || impl_muscl_damp > 0.0) {
+      ImplFatal("<rad_m1>/implicit_face_mmat is not combined with implicit_pos_transport"
+                " = upwind, athena_face_diss or implicit_hr_damp");
+    }
+    iw_fmm = niw;
+    niw += 3;
+    impl_fmm_real = pin->DoesParameterExist("rad_m1","implicit_face_mmat_real") &&
+                    pin->GetBoolean("rad_m1","implicit_face_mmat_real");
+    Kokkos::realloc(fmm_lam, nmb, ncells3, ncells2, ncells1+1);
+    Kokkos::realloc(fmm_g, nmb, ncells3, ncells2, ncells1+1);
+    Kokkos::realloc(fmm_lo, nmb, 2, ncells3, ncells2, ncells1+1);
+    Kokkos::realloc(fmm_fh, nmb, ncells3, ncells2, ncells1+1);
+    Kokkos::deep_copy(fmm_fh, 0.0);
+    Kokkos::deep_copy(fmm_lam, 1.0);
+    Kokkos::deep_copy(fmm_g, 0.0);
+    Kokkos::deep_copy(fmm_lo, 0.0);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_face_mmat = true: x1 face flux lam F_H + (1-lam) "
+                << "F_L, lam = Zalesak factor of the explicit face flux (facemmat-1112)"
+                << std::endl;
+    }
+  }
   if (impl_eos_cache) {
     impl_nec = M1EosCacheNComp(impl_ecnt);
     Kokkos::realloc(ecache, nmb, impl_nec, ncells3, ncells2, ncells1);
@@ -7587,6 +7613,153 @@ void RadiationM1::ImplicitKrylovHalo(int comp) {
   ImplicitHaloExchange(1, comp);
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::ImplicitFaceMmat
+//! \brief facemmat-1112 implicit_face_mmat (rad_m1.hpp): the Zalesak factors of the x1
+//! faces' explicit flux G (fmm_g, stored by the assembly) from the right-hand side b
+//! of the system the linear solver gets (KB under bicgstab, else TR).  Row i holds
+//! - a_up lam_{i+1/2} G_{i+1/2} + a_lo lam_{i-1/2} G_{i-1/2} in b, a = dt A/V.  A cell
+//! whose b(R) is not > 0 gets R = (1 - 1e-12) (b0 + I(R))/P, P its explicit outflow,
+//! I(R) the inflow its donors' R let through, b0 = b(1) + P - I(1); rounds until no
+//! cell is newly limited, R halo-exchanged; each face takes the R of its donor.
+//! Returns true when a face was limited (fmm_lam set; the caller assembles again).
+
+bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
+  fmm_pass += 1.0;
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  const int sr = iw_fmm, sn = iw_fmm + 1, sb = iw_fmm + 2;
+  const int rb = bicg ? M1_IW_KB : M1_IW_TR;
+  auto g_ = fmm_g;
+  auto lam_ = fmm_lam;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  const bool sph = sph_geom;
+  auto cvol = pmy_pack->pcoord->volume;
+  auto carea = pmy_pack->pcoord->area;
+  const bool hoi = impl_hold && (hold_m.extent_int(0) > nmb1);
+  auto hm_ = hold_m;
+  // b(R) of cell (m,k,j,i) with the current R (slot sr, ghosts valid), and P, b0, I(R)
+  auto cell = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                            Real &po, Real &b0, Real &ir) {
+    Real al, au;
+    if (sph) {
+      const Real iv = dt/cvol(m,k,j,i);
+      al = carea.x1f(m,k,j,i)*iv;
+      au = carea.x1f(m,k,j,i+1)*iv;
+    } else {
+      al = dt/mbsize.d_view(m).dx1;
+      au = al;
+    }
+    const Real gl = g_(m,k,j,i), gu = g_(m,k,j,i+1);
+    const Real rl = lam_(m,k,j,i), ru = lam_(m,k,j,i+1);   // lam_r of the two faces
+    const Real p1 = au*fmax(gu, 0.0) + al*fmax(-gl, 0.0);
+    const Real i1 = al*fmax(gl, 0.0) + au*fmax(-gu, 0.0);
+    po = au*ru*fmax(gu, 0.0) + al*rl*fmax(-gl, 0.0);
+    ir = al*rl*iw_(m,sr,k,j,i-1)*fmax(gl, 0.0) + au*ru*iw_(m,sr,k,j,i+1)*fmax(-gu, 0.0);
+    b0 = iw_(m,sb,k,j,i) + p1 - i1;
+    return b0 - iw_(m,sr,k,j,i)*po + ir;
+  };
+  Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sr, Kokkos::ALL,
+                    Kokkos::ALL, Kokkos::ALL), 1.0);
+  // stage 2: lam_r per x1 face from F_H of the last rebuild and E of the iterate
+  auto fh_ = fmm_fh;
+  auto lo_ = fmm_lo;
+  const Real clr = c_light, crl = c_light/chat;
+  Real nrf = 0.0;
+  if (!impl_fmm_real) {
+    Kokkos::deep_copy(DevExeSpace(), fmm_lam, 1.0);
+  } else {
+  par_reduce_flat("m1_fmm_lr", 0, nmb1, ks, ke, js, je, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+    const Real el = iw_(m,M1_IW_EP,k,j,i-1), er = iw_(m,M1_IW_EP,k,j,i);
+    const Real fb = clr*fmax(fmin(el, er), 0.0);
+    const Real fh = fabs(fh_(m,k,j,i));
+    Real lr = 1.0;
+    if (fh > fb && g_(m,k,j,i) != 0.0) {
+      const Real flo = fabs(crl*(lo_(m,0,k,j,i)*el + lo_(m,1,k,j,i)*er));
+      lr = (flo < fb) ? fmin(1.0, fmax(0.0, (fb - flo)/(fh - flo))) : 0.0;
+      a += 1.0;
+    }
+    lam_(m,k,j,i) = lr;
+  }, Kokkos::Sum<Real>(nrf));
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &nrf, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  }
+  fmm_rfaces += nrf;
+  par_for("m1_fmm_b", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    iw_(m,sb,k,j,i) = iw_(m,rb,k,j,i);
+  });
+  Real ncell = 0.0;
+  int nround = 0;
+  for (int r = 0; r < 4096; ++r) {   // until no cell is newly limited
+    Real nn = 0.0;
+    par_reduce_flat("m1_fmm_r", 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+      const Real rc = iw_(m,sr,k,j,i);
+      Real rn = rc;
+      if (!(hoi && hm_(m,k,j,i) > 0.0)) {
+        Real po, b0, ir;
+        const Real br = cell(m, k, j, i, po, b0, ir);
+        // (no explicit x1 outflow, po = 0: nothing to limit here, counted as left)
+        if (!(br > 0.0) && po > 0.0) {
+          const Real q = b0 + ir;
+          const Real rq = (q > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
+          if (rq < rc) {
+            rn = rq;
+            a += 1.0;
+          }
+        }
+      }
+      iw_(m,sn,k,j,i) = rn;
+    }, Kokkos::Sum<Real>(nn));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &nn, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (!(nn > 0.0)) {break;}
+    ncell += nn;
+    nround = r + 1;
+    par_for("m1_fmm_c", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      iw_(m,sr,k,j,i) = iw_(m,sn,k,j,i);
+    });
+    ImplicitHaloExchange(1, sr);
+  }
+  fmm_cells += ncell;
+  fmm_rmax = std::max(fmm_rmax, static_cast<Real>(nround));
+  if (nround == 0 && !(nrf > 0.0)) {   // nothing limited: the rows stand (bitwise)
+    Kokkos::deep_copy(DevExeSpace(), fmm_lam, 1.0);
+    return false;
+  }
+  fmm_lpass += 1.0;
+  Real lv[2] = {0.0, 0.0};
+  // left: cells whose b is still not > 0 (lam_ still holds lam_r here)
+  par_reduce_flat("m1_fmm_left", 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sl) {
+    if (!(hoi && hm_(m,k,j,i) > 0.0)) {
+      Real po, b0, ir;
+      if (!(cell(m, k, j, i, po, b0, ir) > 0.0)) {sl += 1.0;}
+    }
+  }, Kokkos::Sum<Real>(lv[1]));
+  par_reduce_flat("m1_fmm_lam", 0, nmb1, ks, ke, js, je, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sf) {
+    const Real g = g_(m,k,j,i);
+    const Real rd = lam_(m,k,j,i)*((g > 0.0) ? iw_(m,sr,k,j,i-1)
+                                   : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0));
+    lam_(m,k,j,i) = rd;
+    if (rd < 1.0) {sf += 1.0;}
+  }, Kokkos::Sum<Real>(lv[0]));
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, lv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  fmm_faces += lv[0];
+  fmm_left += lv[1];
+  return true;
+}
+
 namespace {
 //----------------------------------------------------------------------------------------
 //! \fn M1OdFaces
@@ -10760,6 +10933,14 @@ void RadiationM1::ImplicitReport() {
               << pos_cnt[M1_POS_FLR_MV]
               << " | |F| > c E scaled back cell-solves=" << pos_cnt[M1_POS_FCLIP]
               << " sum(|F|/(cE) - 1)=" << pos_cnt[M1_POS_FCLIPM] << std::endl;
+  }
+  if (impl_fmm) {   // facemmat-1112 (all ranks, all passes)
+    std::cout << "<rad_m1> implicit_face_mmat: checked passes=" << fmm_pass
+              << " limited passes=" << fmm_lpass << " limited cells=" << fmm_cells
+              << " limited x1 faces=" << fmm_faces << " max rounds=" << fmm_rmax
+              << " left (b<=0 after the limit)=" << fmm_left
+              << " realisability-bound faces (|F_H| > c min E)=" << fmm_rfaces
+              << std::endl;
   }
   if (impl_onep > 0) {
     std::cout << "<rad_m1> implicit_one_pass: period=" << impl_onep
@@ -15306,6 +15487,22 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // fixed for the solve, and they are built once (the Picard loop sees one operator)
     const bool doface = aphll && (it == 0 || rst1 ||
                                   !(rfreeze || impl_thsw != M1_THSW_NONE));
+    // facemmat-1112: the low-order face flux F_L = LL E_L + LR E_R, by default from the
+    // lagged reduced cell fluxes (Rusanov at speed chat); the halfrange face overwrites
+    // it below with its half-range moments.  Built when the face coefficients are.
+    if (impl_fmm && (doface || !aphll)) {
+      auto lo_ = fmm_lo;
+      auto iwl_ = iw;
+      const Real chl = chat;
+      const bool rfo = aphll;
+      par_for("m1_fmm_lo", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real fl = rfo ? fmin(fmax(iwl_(m,M1_IW_RF0,k,j,i-1), -1.0), 1.0) : 0.0;
+        const Real fr = rfo ? fmin(fmax(iwl_(m,M1_IW_RF0,k,j,i), -1.0), 1.0) : 0.0;
+        lo_(m,0,k,j,i) = 0.5*chl*(1.0 + fl);
+        lo_(m,1,k,j,i) = -0.5*chl*(1.0 - fr);
+      });
+    }
     if (doface) {
       const bool dodg = plmdc && (it == 0 || rst1
                                   || (!rfreeze && (rnpass <= 0 || it < rnpass)));
@@ -15460,6 +15657,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                         iw.extent_int(4));
       }
       auto gwd_ = gwd;
+      auto fmlo_ = fmm_lo;   // facemmat-1112
+      const bool fmmo_ = impl_fmm;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (hcpon) {hcp_(m,0,k,j,i) = 0.0; hcp_(m,1,k,j,i) = 0.0;}
@@ -15639,6 +15838,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                      1.0 - hvc_(m,M1_VET_EPS,k,j,ip))),
                        th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt, hwl, hwr,
                        ch*dt/dx, bdtc, hcpon ? &hcp_(m,0,k,j,i) : nullptr);
+            if (fmmo_) {   // facemmat-1112: F_L from the half-range moments
+              fmlo_(m,0,k,j,i) = ch*fmax(hpl, 0.0);
+              fmlo_(m,1,k,j,i) = ch*fmin(hmr, 0.0);
+            }
             if (gwon) {
               gwd_(m,0,k,j,i) = gl3;
               gwd_(m,1,k,j,i) = gr3;
@@ -15677,6 +15880,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                    (bxmode == 2) ? fmax(M1HrJFlag(hsrc, iw_, hvc_, m, k, j, im),
                                         M1HrJFlag(hsrc, iw_, hvc_, m, k, j, ip)) : 0.0,
                    alb, hlb, hrb, bdtc);
+          if (fmmo_) {   // facemmat-1112: F_L from the half-range moments
+            fmlo_(m,0,k,j,i) = ch*fmax(hpl, 0.0);
+            fmlo_(m,1,k,j,i) = ch*fmin(hmr, 0.0);
+          }
           if (hws) {alb *= hwsx; hlb *= hwsx; hrb *= hwsx;}
           ifw_(m,M1_IFW_AL,k,j,i) = alb;
           ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
@@ -16034,6 +16241,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const Real lhmu = lbath_mu1, lheg = lbath_heg, lhfg = lbath_hfg;
     const int lhdm = lbath_dmode; const Real lhal = lbath_alpha;
     auto lgr_ = lbath_g;
+    // facemmat-1112 implicit_face_mmat (rad_m1.hpp): the pass assembles with lam = 1;
+    // ImplicitFaceMmat limits the faces from that system's right-hand side and the rows
+    // are assembled once more with its lam (only when a face was limited)
+    auto fml_ = fmm_lam;
+    auto fmg_ = fmm_g;
+    auto fmo_ = fmm_lo;
+    const bool fmm_ = impl_fmm;
+    if (fmm_) {Kokkos::deep_copy(DevExeSpace(), fmm_lam, 1.0);}
+    for (int fmq = 0; fmq < 2; ++fmq) {
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
       Real dx = mbsize.d_view(m).dx1;
@@ -16131,6 +16347,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         bb += nu*ifw_(m,M1_IFW_HCL,k,j,i+1);
         cc += nu*ifw_(m,M1_IFW_HCR,k,j,i+1);
         rr -= nu*ifw_(m,M1_IFW_DG,k,j,i+1);
+        if (fmm_) {   // facemmat-1112: the explicit flux G; lam < 1 blends in F_L
+          const Real gx = cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f)
+                          + ifw_(m,M1_IFW_DG,k,j,i+1);
+          fmg_(m,k,j,i+1) = gx;
+          const Real lf = fml_(m,k,j,i+1);
+          if (lf < 1.0) {
+            const Real w = 1.0 - lf;
+            bb += w*nu*(fmo_(m,0,k,j,i+1) - df*wi - ifw_(m,M1_IFW_HCL,k,j,i+1));
+            cc += w*nu*(fmo_(m,1,k,j,i+1) + df*wp - ifw_(m,M1_IFW_HCR,k,j,i+1));
+            rr += w*nu*gx;
+          }
+        }
         if (dfc_) {   // doface-1105 doppler_face = central: the DO face mean of a E
           bb += nu*cr*0.5*ai;
           cc += nu*cr*0.5*iw_(m,M1_IW_ADV,k,j,ip);
@@ -16217,6 +16445,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         aa -= nu*ifw_(m,M1_IFW_HCL,k,j,i);
         bb -= nu*ifw_(m,M1_IFW_HCR,k,j,i);
         rr += nu*ifw_(m,M1_IFW_DG,k,j,i);
+        if (fmm_) {   // facemmat-1112 (as at face i+1/2)
+          const Real gx = cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f)
+                          + ifw_(m,M1_IFW_DG,k,j,i);
+          if (i == is) {fmg_(m,k,j,i) = gx;}
+          const Real lf = fml_(m,k,j,i);
+          if (lf < 1.0) {
+            const Real w = 1.0 - lf;
+            aa += w*nu*(df*wm + ifw_(m,M1_IFW_HCL,k,j,i) - fmo_(m,0,k,j,i));
+            bb += w*nu*(ifw_(m,M1_IFW_HCR,k,j,i) - df*wi - fmo_(m,1,k,j,i));
+            rr -= w*nu*gx;
+          }
+        }
         if (dfc_) {   // doface-1105 doppler_face = central
           aa -= nu*cr*0.5*iw_(m,M1_IW_ADV,k,j,im);
           bb -= nu*cr*0.5*ai;
@@ -16398,6 +16638,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             bb += nup*ifw_(m,M1_IFW_HCL,k,j,i+1);
             cc += nup*ifw_(m,M1_IFW_HCR,k,j,i+1);
             rr -= nup*ifw_(m,M1_IFW_DG,k,j,i+1);
+          }
+          if (fmm_) {   // facemmat-1112 (the Cartesian face i+1/2, sp areas)
+            const Real hl = aphll ? ifw_(m,M1_IFW_HCL,k,j,i+1) : 0.0;
+            const Real hr = aphll ? ifw_(m,M1_IFW_HCR,k,j,i+1) : 0.0;
+            const Real gx = cr*tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f)
+                            + (aphll ? ifw_(m,M1_IFW_DG,k,j,i+1) : 0.0);
+            fmg_(m,k,j,i+1) = gx;
+            const Real lf = fml_(m,k,j,i+1);
+            if (lf < 1.0) {
+              const Real w = 1.0 - lf;
+              bb += w*nup*(fmo_(m,0,k,j,i+1) - df*wiu - hl);
+              cc += w*nup*(fmo_(m,1,k,j,i+1) + df*wp - hr);
+              rr += w*nup*gx;
+            }
           }
           if (afd) {   // col1d A7: Athena++ HLL tau-factor dissipation, face i+1/2
             const Real ta = iw_(m,M1_IW_KT,k,j,i)*(cx1f(m,i+1) - cx1f(m,i));
@@ -16664,6 +16918,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             bb -= num*ifw_(m,M1_IFW_HCR,k,j,i);
             rr += num*ifw_(m,M1_IFW_DG,k,j,i);
           }
+          if (fmm_) {   // facemmat-1112 (as at face i+1/2)
+            const Real hl = aphll ? ifw_(m,M1_IFW_HCL,k,j,i) : 0.0;
+            const Real hr = aphll ? ifw_(m,M1_IFW_HCR,k,j,i) : 0.0;
+            const Real gx = cr*tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f)
+                            + (aphll ? ifw_(m,M1_IFW_DG,k,j,i) : 0.0);
+            if (i == is) {fmg_(m,k,j,i) = gx;}
+            const Real lf = fml_(m,k,j,i);
+            if (lf < 1.0) {
+              const Real w = 1.0 - lf;
+              aa += w*num*(df*wm + hl - fmo_(m,0,k,j,i));
+              bb += w*num*(hr - df*wil - fmo_(m,1,k,j,i));
+              rr -= w*num*gx;
+            }
+          }
           if (afd) {   // col1d A7: Athena++ HLL tau-factor dissipation, face i-1/2
             const Real ta = iw_(m,M1_IW_KT,k,j,im)*(cx1f(m,im+1) - cx1f(m,im));
             const Real tb = iw_(m,M1_IW_KT,k,j,i)*(cx1f(m,i+1) - cx1f(m,i));
@@ -16897,6 +17165,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           iw_(m,M1_IW_KB,k,j,i) += d*iw_(m,M1_IW_EP,k,j,i);
         });
       }
+    }
+    // facemmat-1112: limit the x1 faces from this system's right-hand side and assemble
+    // again when a face was limited
+    if (!(fmm_ && fmq == 0 && ImplicitFaceMmat(bicg, dt))) {break;}
+    }   // facemmat-1112 assembly loop
+    if (bicg) {
       // picres-1017 implicit_final_resid_log: the shadow pass stops here (the system
       // of the accepted iterate is assembled), logs b - A x and puts the state back.
       // picstop-1017 implicit_final_resid_stop: if the residual is above the threshold
@@ -17143,6 +17417,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const Real cmcap = impl_hr_cmem_cap;   // hr2prod-1110
     auto fa1_ = cmf ? fax1 : f0x1;
     auto gzo_ = (impl_cmgfa && fax1n.extent(0) > 0) ? fax1n : f0x1n;   // vgdhr-1110
+    const bool fmmf = impl_fmm;   // facemmat-1112
+    auto fmlf_ = fmm_lam;
+    auto fmof_ = fmm_lo;
+    auto fmhf_ = fmm_fh;
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
@@ -17455,6 +17733,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             Kokkos::atomic_add(&ptcf_(0), 1.0);
           }
         }
+        // facemmat-1112: a limited face stores lam F_H + (1 - lam) F_L, the lagged
+        // off-diagonal / curvature part unscaled as in the row; F_c (cmem) takes it too
+        const Real flm = fmmf ? fmlf_(m,k,j,i) : 1.0;
+        Real fll = 0.0;
+        if (fmmf) {fmhf_(m,k,j,i) = fn;}
+        if (flm < 1.0) {
+          fll = (cl/ch)*(fmof_(m,0,k,j,i)*iw_(m,M1_IW_EP,k,j,im)
+                         + fmof_(m,1,k,j,i)*iw_(m,M1_IW_EP,k,j,ip));
+          const Real fod = -(aphll ? (1.0 - al) : 1.0)*th*ch*cl*dt*od;
+          fn = flm*(fn - fod) + (1.0 - flm)*fll + fod;
+          fnc = fn;
+        }
         f0_(m,k,j,i) = fn;
         if (cmf) {
           fa1_(m,k,j,i) = fn;
@@ -17475,6 +17765,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                              + (1.0 - om)*(gzo_(m,k,j,iq) + (cs2z ? q1z_(m,k,j,iq) : 0.0))
                                /(cl*ch));
           if (ptd != 0.0) {gz1_(m,k,j,i) -= ptd/(cl*ch);}   // postr-1031: not gas momentum
+          if (flm < 1.0 && !gcff && !pfz) {
+            // facemmat-1112: the face-equation weight om -> lam om, the non-memory part
+            // H -> lam H + (1 - lam) F_L (the lagged od part unscaled)
+            const Real omg = aphll ? (1.0 - al) : 1.0;
+            gz1_(m,k,j,i) = -(1.0 + ch*dt*ktf)*(flm*hhz + (1.0 - flm)*fll)/(cl*ch)
+                            + flm*omg*dt*gr + omg*dt*od
+                            + (1.0 - flm*omg)*(gzo_(m,k,j,iq)
+                                               + (cs2z ? q1z_(m,k,j,iq) : 0.0))/(cl*ch);
+          }
         }
       }
     });
