@@ -2151,8 +2151,15 @@ void RadiationM1::VetGdXfade(const int64_t blk, const bool last) {
     }
   }
   const Real tb = vgd_rot_t0 + static_cast<Real>(blk)*vgd_rot_dt;
-  const Real s = (pmy_pack->pmesh->time - tb)/vgd_rot_dt;
-  RotXfBlend(s, last, pmy_pack->pmesh->mb_indcs.is + vlat_icut);
+  const Real tn = pmy_pack->pmesh->time;
+  const Real s = (tn - tb)/vgd_rot_dt;
+  // the Delta extrapolation to the boundary (RotXfBlend): needs the previous build in
+  // this block (a dt_retry repeats a build at the same time: no extrapolation then)
+  const Real rx = (last && vgd_xf_pblk == blk && tn > vgd_xf_pt) ?
+                  (tb + vgd_rot_dt - tn)/(tn - vgd_xf_pt) : -1.0;
+  RotXfBlend(s, last, pmy_pack->pmesh->mb_indcs.is + vlat_icut, rx);
+  vgd_xf_pblk = blk;
+  vgd_xf_pt = tn;
   vgd_xf_nsw += 1.0;
 }
 

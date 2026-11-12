@@ -859,10 +859,10 @@ void RadiationM1::RotXfSnap(const int slot, const int ilo) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const Tab t = vra_tab;
   const int nf1 = t.nf + 1;
-  if (vgd_xf_d.extent_int(0) != nmb1 + 1 || vgd_xf_d.extent_int(1) != 2*nf1 ||
+  if (vgd_xf_d.extent_int(0) != nmb1 + 1 || vgd_xf_d.extent_int(1) != 3*nf1 ||
       vgd_xf_d.extent_int(2) != ke - ks + 1 || vgd_xf_d.extent_int(3) != je - js + 1 ||
       vgd_xf_d.extent_int(4) != ie - is + 1) {
-    Kokkos::realloc(vgd_xf_d, nmb1 + 1, 2*nf1, ke - ks + 1, je - js + 1, ie - is + 1);
+    Kokkos::realloc(vgd_xf_d, nmb1 + 1, 3*nf1, ke - ks + 1, je - js + 1, ie - is + 1);
   }
   auto x_ = vgd_xf_d;
   const RaArr a{vra_a0, vra_a1, vra_c};
@@ -889,7 +889,8 @@ void RadiationM1::RotXfSnap(const int slot, const int ilo) {
 //! aux slot = this set at the previous boundary).  Fields := (1 - s) A + s T where A and
 //! S are valid, else A
 
-void RadiationM1::RotXfBlend(const Real s, const bool last, const int ilo) {
+void RadiationM1::RotXfBlend(const Real s, const bool last, const int ilo,
+                              const Real rx) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -918,12 +919,36 @@ void RadiationM1::RotXfBlend(const Real s, const bool last, const int ilo) {
     if (t.kind[f] == 2 && t.arr[f] != 2) jt = f;
   }
   const Real sb = fmin(fmax(s, 0.0), 1.0);
+  // the boundary Delta at the boundary time t_k (rx = (t_k - t)/(t - t_prev) >= 0; < 0:
+  // no previous build of this block): the last build's Delta (state t_k - dt, an O(dt)
+  // offset carried into the whole next block) extrapolated with the previous build's
+  const int od = (vra_k - 1)*nf1;
+  const bool dext = last && rx >= 0.0 && (ema || kwin) && vra_d.extent_int(1) >= od + nf1;
   par_for("m1_xf_blend", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kk = k - ks, jj = j - js, ii = i - is;
     const bool vs = RaValid(a, t, ilo, m, k, j, i);
     const bool vg = x_(m,t.nf,kk,jj,ii) > 0.5;
     const bool va = x_(m,nf1+t.nf,kk,jj,ii) > 0.5;
+    {
+      const int o2 = 2*nf1;
+      const bool vn = vs && vg;
+      const bool vp = x_(m,o2+t.nf,kk,jj,ii) > 0.5;
+      const bool ext = dext && vn && vp && (d_(m,od+t.nf,kk,jj,ii) > 0.5);
+      for (int f = 0; f < t.nf; ++f) {
+        if (t.arr[f] == 2 && i != ie) continue;
+        const Real sv = a.At(t.arr[f], t.comp[f], m, k, j, i);
+        const Real gv = x_(m,f,kk,jj,ii);
+        const bool mul = (t.kind[f] == 2);
+        const Real dn = mul ? ((gv > 0.0 && sv > 0.0) ? sv/gv : 1.0) : (sv - gv);
+        if (ext) {
+          const Real de = dn + rx*(dn - x_(m,o2+f,kk,jj,ii));
+          d_(m,od+f,kk,jj,ii) = (mul && !(de > 0.0)) ? dn : de;
+        }
+        x_(m,o2+f,kk,jj,ii) = dn;
+      }
+      x_(m,o2+t.nf,kk,jj,ii) = vn ? 1.0 : 0.0;
+    }
     if (!vs || !va) {   // no blend: A as it was
       for (int f = 0; f < t.nf; ++f) {
         if (t.arr[f] == 2 && i != ie) continue;
