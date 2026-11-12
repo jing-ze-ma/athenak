@@ -851,10 +851,12 @@ inline bool bc_outer_maxwell = true;
 //            inflow; -2.4e10 g/s even without the tide).
 inline int dhj_top_bc = 0;  // 0 = hse, 1 = outflow1 (ghosts + one-way face), 2 = outflow0
 // ssbc-1111: <mhd>/top_bc_bt, the TANGENTIAL face field in the outer-x1 ghosts of an
-// outflow top (problem/top_bc outflow1 | outflow0): 0 = zerograd (default, the last
-// cell's faces copied), 1 = sourcesurface (odd: ghost B_t = -mirror, so B_t = 0 on the
-// top face, B_r from div B = 0 as before; potential-field source surface).  Read only
-// when the key is named, so a run without it is bitwise and embeds the same input.
+// outflow top (problem/top_bc outflow1 | outflow0): 0 = zerograd (the last cell's faces
+// copied; the default before prod-1114), 1 = sourcesurface (odd: ghost B_t = -mirror, so
+// B_t = 0 on the top face, B_r from div B = 0 as before; potential-field source surface).
+// prod-1114 (user 11-12): sourcesurface is the DEFAULT for MHD runs with an outflow top
+// (GetOrAdd, so the restart input records it); name zerograd for the old behaviour.
+// Hydro runs and the hse top read the key only when it is named (hydro unchanged).
 // mhdtop-1112: 2 = charout, a NON-REFLECTING top for Alfven waves.  The ghost B is the
 // zerograd one; the ghost TANGENTIAL VELOCITY (orthonormal frame, the one bcc lives in)
 // is set to v_t = -s B_t/sqrt(rho), s = sgn(B_r at the top face), so the incoming

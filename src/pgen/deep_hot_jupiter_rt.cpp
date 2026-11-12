@@ -465,9 +465,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         pmy_mesh_->pmb_pack->pmhd->diode_ox1 = true;
       }
     }
-    // ssbc-1111: <mhd>/top_bc_bt (see deep_hot_jupiter_rt.hpp); read only when named
-    if (pin->DoesParameterExist("mhd", "top_bc_bt")) {
-      const std::string bt = pin->GetString("mhd", "top_bc_bt");
+    // ssbc-1111: <mhd>/top_bc_bt (see deep_hot_jupiter_rt.hpp).  prod-1114 (user 11-12):
+    // DEFAULT sourcesurface for MHD runs with an outflow top (problem/top_bc = outflow1 |
+    // outflow0), recorded in the input (GetOrAdd); hydro runs and the hse top do not read
+    // the key unless it is named (hydro unchanged; name zerograd for the old MHD top).
+    const bool dhj_mhd_out = (pmy_mesh_->pmb_pack->pmhd != nullptr && dhj_top_bc != 0);
+    if (pin->DoesParameterExist("mhd", "top_bc_bt") || dhj_mhd_out) {
+      const std::string bt = pin->GetOrAddString("mhd", "top_bc_bt", "sourcesurface");
       if (bt == "zerograd") {
         dhj_top_bt = 0;
       } else if (bt == "sourcesurface") {
