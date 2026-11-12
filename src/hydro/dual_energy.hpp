@@ -55,7 +55,7 @@ enum DualCnt {
   DC_FLR_KED = 11,
   DC_REFRESH = 12,   // the same 12 slots for a ConToPrim that follows no hydro update
   DC_PAID = 24, DC_UNPAID = 25, DC_NPAY = 26, DC_RETEST = 27, DC_UNFLAG = 28,
-  DC_GIVEN = 29, DC_NCNT = 32
+  DC_GIVEN = 29, DC_TOPE_U = 30, DC_TOPE_R = 31, DC_NCNT = 32
 };
 
 struct DualEnergy {

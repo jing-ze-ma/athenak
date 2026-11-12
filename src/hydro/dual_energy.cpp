@@ -85,12 +85,13 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
 void DualEnergy::Allocate(MeshBlockPack *pp, const DvceArray5D<Real> &u0) {
   const int nmb = u0.extent_int(0);
   const int n3 = u0.extent_int(2), n2 = u0.extent_int(3), n1 = u0.extent_int(4);
-  if (init && pre.extent_int(0) == nmb && pre.extent_int(2) == n3 &&
+  if (init && pre.extent_int(0) == nmb && pre.extent_int(1) == 5 &&
+      pre.extent_int(2) == n3 &&
       pre.extent_int(3) == n2 && pre.extent_int(4) == n1) return;
   if (pay && pp->pradm1 == nullptr) {
     Fatal("<" + blk + ">/floor_pay = rad needs <rad_m1>");
   }
-  Kokkos::realloc(pre, nmb, 3, n3, n2, n1);
+  Kokkos::realloc(pre, nmb, 5, n3, n2, n1);
   Kokkos::realloc(pst, nmb, n3, n2, n1);
   if (pay) {
     Kokkos::realloc(payv, nmb, n3, n2, n1);
@@ -113,8 +114,11 @@ void DualEnergy::Pre(MeshBlockPack *pp, const DvceArray5D<Real> &u0) {
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     pre_(m,0,k,j,i) = u0(m,IEN,k,j,i);
     pre_(m,1,k,j,i) = u0(m,IDN,k,j,i);
-    pre_(m,2,k,j,i) = SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i)) +
-                      SQR(u0(m,IM3,k,j,i));
+    // the momentum components themselves: a recomputed |m|^2 can differ in the last bit
+    // between two kernels (FMA contraction) and would mark untouched cells as changed
+    pre_(m,2,k,j,i) = u0(m,IM1,k,j,i);
+    pre_(m,3,k,j,i) = u0(m,IM2,k,j,i);
+    pre_(m,4,k,j,i) = u0(m,IM3,k,j,i);
   });
 }
 
@@ -146,11 +150,13 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   auto eos_ = eos;
   const Real tfl_ = eos.tfloor;
   const Real tmin_ = eos.TableTempMin();
+  const Real tmax_ = eos.TableTempMax();
   const int nji = n2*n1, nkji = n3*nji;
-  Real s[11] = {};
+  Real s[12] = {};
   Kokkos::parallel_reduce("duale_post", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int &idx, Real &s0, Real &s1, Real &s2, Real &s3, Real &s4,
-                Real &s5, Real &s6, Real &s7, Real &s8, Real &s9, Real &s10) {
+                Real &s5, Real &s6, Real &s7, Real &s8, Real &s9, Real &s10,
+                Real &s11) {
     const int m = idx/nkji;
     const int k = (idx - m*nkji)/nji;
     const int j = (idx - m*nkji - k*nji)/n1;
@@ -158,8 +164,9 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
     const Real d = u0(m,IDN,k,j,i);
     if (!(d > 0.0)) return;
     const bool act = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
-    const Real msq = SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i)) + SQR(u0(m,IM3,k,j,i));
-    const bool same = (d == pre_(m,1,k,j,i)) && (msq == pre_(m,2,k,j,i));
+    const bool same = (d == pre_(m,1,k,j,i)) && (u0(m,IM1,k,j,i) == pre_(m,2,k,j,i)) &&
+                      (u0(m,IM2,k,j,i) == pre_(m,3,k,j,i)) &&
+                      (u0(m,IM3,k,j,i) == pre_(m,4,k,j,i));
     const Real epost = w0(m,IEN,k,j,i);
     const Real etpost = u0(m,IEN,k,j,i);
     const Real etpre = pre_(m,0,k,j,i);
@@ -212,6 +219,7 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
         if (edg_) {
           if (tfl_ > 0.0 && econs < eos_.EnergyFromTemperature(d, tfl_)) s6 += 1.0;
           if (tmin_ > 0.0 && econs < eos_.EnergyFromTemperature(d, tmin_)) s7 += 1.0;
+          if (tmax_ > 0.0 && efin > eos_.EnergyFromTemperature(d, tmax_)) s11 += 1.0;
           if (dsel && tfl_ > 0.0 && esel < eos_.EnergyFromTemperature(d, tfl_)) s9 += 1.0;
         }
         if (pay_) payv_(m,k,j,i) += efin - econs;
@@ -229,7 +237,7 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   }, Kokkos::Sum<Real>(s[0]), Kokkos::Sum<Real>(s[1]), Kokkos::Sum<Real>(s[2]),
      Kokkos::Sum<Real>(s[3]), Kokkos::Sum<Real>(s[4]), Kokkos::Sum<Real>(s[5]),
      Kokkos::Sum<Real>(s[6]), Kokkos::Sum<Real>(s[7]), Kokkos::Sum<Real>(s[8]),
-     Kokkos::Sum<Real>(s[9]), Kokkos::Sum<Real>(s[10]));
+     Kokkos::Sum<Real>(s[9]), Kokkos::Sum<Real>(s[10]), Kokkos::Sum<Real>(s[11]));
   const int b = armed ? 0 : DC_REFRESH;
   hc[b + DC_N] += static_cast<Real>(pp->nmb_thispack)*indcs.nx1*indcs.nx2*indcs.nx3;
   hc[b + DC_KEDOM] += s[0];
@@ -243,6 +251,7 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   hc[b + DC_SKIP] += s[8];
   hc[b + DC_SUBT_SEL] += s[9];
   hc[b + DC_FLR_KED] += s[10];
+  hc[armed ? DC_TOPE_U : DC_TOPE_R] += s[11];
   const bool was_armed = armed;
   armed = false;
   if (on) valid = true;
@@ -272,7 +281,8 @@ void DualEnergy::Report(MeshBlockPack *pp) {
               << " dual_de " << c[b+DC_SEL_DE] << " dual_sub_tfloor " << c[b+DC_SUBT_SEL]
               << " floored " << c[b+DC_FLR] << " (kedom " << c[b+DC_FLR_KED]
               << ") floor_de " << c[b+DC_FLR_DE] << " skip(dfloor/vceil) "
-              << c[b+DC_SKIP] << std::endl;
+              << c[b+DC_SKIP] << " above_table_top " << c[h ? DC_TOPE_R : DC_TOPE_U]
+              << std::endl;
   }
   std::cout << "<" << blk << "> floor_audit cycle " << cyc << " pay: paid " << c[DC_PAID]
             << " unpaid " << c[DC_UNPAID] << " given_to_rad " << c[DC_GIVEN]
