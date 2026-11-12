@@ -78,8 +78,10 @@ inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
 // caps it at 128 VGPRs on gfx942 and spills the shell body to scratch; it launches 256
 // per block anyway.  LaunchBounds<256, M1_VGD_LB> lets the register allocator use up to
 // 512 / M1_VGD_LB VGPRs.  The arithmetic is unchanged (register allocation only).
+// d6fast2-1112: 1 (was 2): R136 D6 apudev 13084234, vet_gd sweeps 5.40 -> 5.09 s, main
+// loop medians 20.53 -> 20.33 s, output md5 identical
 #ifndef M1_VGD_LB
-#define M1_VGD_LB 2
+#define M1_VGD_LB 1
 #endif
 inline auto VgdShellPol(const DevExeSpace &ex, const int a, const int b) {
 #if defined(KOKKOS_ENABLE_HIP) && (M1_VGD_LB > 0)
