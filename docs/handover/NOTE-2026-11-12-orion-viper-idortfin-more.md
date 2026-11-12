@@ -169,3 +169,40 @@ FINnp30   4.643e-03 1.234e-03 3.209e-04  1.94  3.209e-04  1.635e-04  2.02
   form solves a different relation.
 - So for vetf too, the tau 0.01 loss (L1 E 3.09e-4 -> 3.58e-4, pE 2.11 -> 1.96) and the tau 0.1 gain (3.21e-4 -> 3.12e-4, pE 1.94 -> 1.98) both come
   from wbsolve alone, the same split as edd. Together with idortfin-rw (bb297426b), wbsolve also fixes tau 10 (p 1.12 -> 2.00) and improves tau 1.
+
+## (3b) opacity-on rotating pulse_cs T ladder 2..16, B vs FIN (posted after the TASK UPDATE 8f9dddabd)
+(My TASK watcher diffed only file names and missed this update for ~3 h. It now watches content too.)
+Decks $F/pulse_stiff/{B,FIN}_T_{2,4,8,16} as posted (FIN = B + the FIN keys + vet_gd_rotate_xfade). 6 ranks each, all 8 at once on
+orion026 (p.exclusive), binary 421a3d024 (md5 e151dc3b...), binding off; job wall 3 min 10 s (T_16: B 133 s, FIN 188 s).
+
+| run | rc | FATAL | wall s | last Picard (solves, mean, max, NC) |
+|---|---|---|---|---|
+| B_T_16 | 0 | 0 | 133 | 5.900000e+02, 2.000000e+00, 2.000000e+00, 0.000000e+00 |
+| B_T_2 | 0 | 0 | 34 | 1.100000e+02, 2.027273e+00, 3.000000e+00, 0.000000e+00 |
+| B_T_4 | 0 | 0 | 48 | 1.740000e+02, 2.017241e+00, 3.000000e+00, 0.000000e+00 |
+| B_T_8 | 0 | 0 | 76 | 3.020000e+02, 2.003311e+00, 3.000000e+00, 0.000000e+00 |
+| FIN_T_16 | 0 | 0 | 188 | 5.750000e+02, 2.000000e+00, 2.000000e+00, 0.000000e+00 |
+| FIN_T_2 | 0 | 0 | 39 | 9.500000e+01, 2.031579e+00, 3.000000e+00, 0.000000e+00 |
+| FIN_T_4 | 0 | 0 | 58 | 1.590000e+02, 2.018868e+00, 3.000000e+00, 0.000000e+00 |
+| FIN_T_8 | 0 | 0 | 99 | 2.870000e+02, 2.003484e+00, 3.000000e+00, 0.000000e+00 |
+
+pulse_ord.py with `ls = [2, 4, 8, 16]` (I also had to change `Q[1]` to `Q[ls[0]]` in the key check, since the T_1 level is dropped). d = d(2,4) d(4,8) d(8,16):
+```
+B    m1_e   d 3.002e-04 1.130e-04 3.744e-05  p 1.41 1.59
+B    m1_f1  d 5.729e-04 2.289e-04 7.787e-05  p 1.32 1.56
+B    m1_f2  d 2.161e-02 1.384e-02 8.429e-03  p 0.64 0.71
+B    m1_f3  d 2.188e-02 1.391e-02 8.444e-03  p 0.65 0.72
+FIN  m1_e   d 2.769e-04 7.760e-05 2.593e-05  p 1.83 1.58
+FIN  m1_f1  d 2.088e-03 1.570e-04 5.347e-05  p 3.73 1.55
+FIN  m1_f2  d 2.133e-01 3.601e-02 1.117e-02  p 2.57 1.69
+FIN  m1_f3  d 2.131e-01 3.405e-02 1.058e-02  p 2.65 1.69
+```
+
+- **The T2-T8 numbers reproduce viper's CPU result to all printed digits** (B m1_e 3.00e-4 1.13e-4; FIN m1_e 2.77e-4 7.76e-5; FIN m1_f1 2.09e-3 1.57e-4;
+  FIN m1_f2 0.213 0.036). FIN differs from B: max rel at T2 is m1_e 1.5e-3, m1_f1 3.3e-2, m1_f2 0.93.
+- **FLAG (rule triggered): FIN p(8->16) m1_e 1.58, m1_f1 1.55 < 1.8. But B is the same: 1.59, 1.56.** Neither arm is 2nd order in T on this opacity-on
+  rotating deck at T <= 16, so this is not a FIN regression. FIN's 8->16 differences are 31 % smaller than B on m1_e (2.59e-5 vs 3.74e-5) and m1_f1
+  (5.35e-5 vs 7.79e-5).
+- **Lateral flux (m1_f2/f3):** FIN p 1.69 vs B 0.71 (B is barely converging), but FIN's d(8,16) is 30 % larger (1.1e-2 vs 8.4e-3), after its large
+  T2-T4 transient (0.21).
+- FIN has fewer solves than B at every level (T16 575 vs 590); Picard max is 2 at T16 for both.
