@@ -2542,6 +2542,7 @@ class RadiationM1 {
   DvceArray4D<Real> eaud_u, eaud_e, eaud_c;
   Real eaud_seg[6][3] = {};
   Real eaud_bnd[7] = {0.0};
+  Real eaud_es = 0.0;   // marshak-audit-1112: dt esrc vol of the last solve
   // r136e-1107: mark 6 = the state was put back outside the M1 chain (Time2Restore,
   // Time2PosFix): the change since the last mark (the discarded attempt) is summed here
   // instead of into a segment; printed as D= at mark 5

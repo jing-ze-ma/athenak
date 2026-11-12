@@ -13526,6 +13526,9 @@ void RadiationM1::EAuditMark(int pt) {
     if (hw) {wc = FrefWacc();}
     const Real wfac = dt_sub/pmy_pack->pmesh->dt;
     const Real dts = dt_sub;
+    const bool eso = esrc_on;
+    DvceArray4D<Real> es_;
+    if (eso) {es_ = esrc;}
     array_sum::GlobalSum xm;
     Kokkos::parallel_reduce("m1_eaudit_map", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                             nmb*nk*nj*ni),
@@ -13546,6 +13549,7 @@ void RadiationM1::EAuditMark(int pt) {
       }
       Real r = (u - au(m,k,j,i)) + dts*ccr*fo;
       if (hw) {r += wc(m,k,j,i)*v*wfac;}
+      if (eso) {r -= dts*es_(m,k,j,i)*v;}   // marshak-audit-1112: the explicit esrc
       array_sum::GlobalSum q;
       for (int c=0; c<NREDUCTION_VARIABLES; ++c) q.the_array[c] = 0.0;
       q.the_array[0] = r;
@@ -13762,6 +13766,22 @@ void RadiationM1::EAuditMark(int pt) {
       sum += q;
     }, Kokkos::Sum<array_sum::GlobalSum>(b));
     for (int r=0; r<6; ++r) {loc[3 + r] = b.the_array[r];}
+    // marshak-audit-1112: the explicit energy source of the solve's old vector, dt (chat/c)
+    // esrc x vol x (c/chat) = dt esrc vol (the pgen's frozen MLT deposit, he_esrc_const)
+    if (esrc_on) {
+      auto es_ = esrc;
+      Real se = 0.0;
+      Kokkos::parallel_reduce("m1_eaudit_es", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              nmb*nk*nj*ni),
+      KOKKOS_LAMBDA(const int n, Real &acc) {
+        const int m = n/(nk*nj*ni);
+        const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
+        const Real v = sph ? vol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                             mbsize.d_view(m).dx3);
+        acc += es_(m,k,j,i)*v;
+      }, Kokkos::Sum<Real>(se));
+      loc[15] = se*dt_sub;
+    }
   }
 #if MPI_PARALLEL_ENABLED
   Real glb[16];
@@ -13785,13 +13805,14 @@ void RadiationM1::EAuditMark(int pt) {
   if (pt == 3) {
     for (int r=0; r<6; ++r) {eaud_bnd[r] = loc[3 + r];}
     eaud_bnd[6] = dt_sub;
+    eaud_es = loc[15];
   }
   if (pt != 5) return;
   if (global_variable::my_rank == 0) {
     Real bs = 0.0;
     for (int r=0; r<5; ++r) {bs += eaud_bnd[r];}
     const Real d3 = eaud_seg[3][0] + eaud_seg[3][1] + eaud_seg[3][2];
-    const Real rsol = d3 - eaud_bnd[5] + eaud_bnd[6]*ccr*bs + eaud_w;
+    const Real rsol = d3 - eaud_bnd[5] + eaud_bnd[6]*ccr*bs + eaud_w - eaud_es;
     std::printf("EAUDIT cycle=%d t2s=%d dt=%.10e", pmy_pack->pmesh->ncycle, t2_solve,
                 eaud_bnd[6]);
     for (int q=0; q<6; ++q) {
@@ -13799,12 +13820,13 @@ void RadiationM1::EAuditMark(int pt) {
                   eaud_seg[q][2]);
     }
     std::printf(" B=%.10e,%.10e,%.10e,%.10e,%.10e T2=%.10e W=%.10e"
-                " P=%.10e,%.10e,%.10e,%.10e RSOLVE=%.10e D=%.10e\n",
+                " P=%.10e,%.10e,%.10e,%.10e RSOLVE=%.10e D=%.10e ES=%.10e\n",
                 eaud_bnd[0], eaud_bnd[1], eaud_bnd[2], eaud_bnd[3], eaud_bnd[4],
                 eaud_bnd[5], eaud_w, eaud_pd[0], eaud_pd[1], eaud_pd[2], eaud_pd[3],
-                rsol, eaud_disc);
+                rsol, eaud_disc, eaud_es);
   }
   eaud_w = 0.0;
+  eaud_es = 0.0;
   eaud_disc = 0.0;
   for (int r=0; r<4; ++r) {eaud_pd[r] = 0.0;}
   for (int q=0; q<6; ++q) {
