@@ -14239,6 +14239,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto ikd_ = t2ikd;
     auto imo_ = t2mo;
     const Real ikc = chat/c_light;
+    const bool iex = t2_iex && t2st && (t2ixd.extent_int(0) > nmb1);   // time2_inc_exch
+    auto ixd_ = t2ixd;
+    const Real iy0 = t2_iex_y0;
     par_for_lb("m1_impl_i1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dd = uh(m,IDN,k,j,i);
@@ -14258,6 +14261,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // athpp-vstar-1105: the Heun stage momentum before the old-vector increment
       const Real mv1 = uh(m,IM1,k,j,i), mv2 = uh(m,IM2,k,j,i), mv3 = uh(m,IM3,k,j,i);
       if (iket) {ikd_(m,k,j,i) = 0.0;}
+      if (iex) {ixd_(m,k,j,i) = 0.0;}
       if (t2st && !(hoi_ && hmi_(m,k,j,i) > 0.0)) {
         const Real eg_h = eg;   // rsglock-1112: eint of the stage start state
         // the start T is set; now the gas becomes the OLD vector of the stage solve
@@ -14287,6 +14291,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           iw_(m,M1_IW_EN,k,j,i) -= ikc*dl;
           ikd_(m,k,j,i) = dl;
           eg = egl;
+        }
+        if (iex && eg_h > 0.0 && eg < eg_h) {
+          // rsglock-1112 time2_inc_exch = relax: the falling eint in relaxation form
+          const Real d = eg - eg_h, y = d/eg_h;
+          const Real w = y*y/(y*y + iy0*iy0);
+          const Real dd = w*(eg_h*expm1(y) - d);   // >= 0 (expm1(y) >= y)
+          uh(m,IEN,k,j,i) += dd;
+          iw_(m,M1_IW_EN,k,j,i) -= ikc*dd;
+          ixd_(m,k,j,i) = dd;
+          eg += dd;
         }
       }
       if (ike) {   // rsglock-1112: the old-vector momentum of this solve (slope K_KE)
@@ -14335,6 +14349,28 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         iw_(m,M1_IW_V3,k,j,i) = sn*(m3 - c*m2)*idd/s2;
       }
     });
+    if (iex) {   // rsglock-1112 time2_inc_exch counters
+      auto vlx = pmy_pack->pcoord->volume;
+      const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+      Real sde = 0.0, snz = 0.0, sng = 0.0;
+      Kokkos::parallel_reduce("m1_t2_iex_sum",
+      Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+      KOKKOS_LAMBDA(const int idx, Real &a0, Real &a1, Real &a2) {
+        const int m = idx/nkji;
+        int q = idx - m*nkji;
+        const int k = q/nji + ks;
+        q -= (k - ks)*nji;
+        const int j = q/ni + js;
+        const int i = q - (j - js)*ni + is;
+        const Real dd = ixd_(m,k,j,i);
+        a0 += dd*vlx(m,k,j,i);
+        if (dd > 0.0) {a1 += 1.0;}
+        if (dd > 0.0 && !(iw_(m,M1_IW_EN,k,j,i) > 0.0)) {a2 += 1.0;}
+      }, Kokkos::Sum<Real>(sde), Kokkos::Sum<Real>(snz), Kokkos::Sum<Real>(sng));
+      t2_iex_de += sde;
+      t2_iex_cells += snz;
+      t2_iex_neg += sng;
+    }
     if (iket) {   // rsglock-1112: counters of the KE remainder exchanged with E
       auto vlk = pmy_pack->pcoord->volume;
       const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;

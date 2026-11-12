@@ -445,6 +445,25 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
                 << "exact, no cap)" << std::endl;
     }
   }
+  // rsglock-1112 time2_inc_exch = none | relax (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_inc_exch")) {
+    const std::string ie = pin->GetString("rad_m1", "time2_inc_exch");
+    if (ie != "none" && ie != "relax") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_inc_exch = '" << ie
+                << "' (none | relax)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    t2_iex = (ie == "relax");
+    if (pin->DoesParameterExist("rad_m1", "time2_inc_exch_y0")) {
+      t2_iex_y0 = pin->GetReal("rad_m1", "time2_inc_exch_y0");
+    }
+    if (global_variable::my_rank == 0 && t2_iex) {
+      std::cout << "<rad_m1> time2_inc_exch=relax (y0=" << t2_iex_y0 << "): a falling "
+                << "old-vector eint takes the relaxation form eint_h expm1(d/eint_h), "
+                << "blended in by y^2/(y^2+y0^2); E pays the difference" << std::endl;
+    }
+  }
   // t2retry-1020: <rad_m1>/time2_reject = be | retry (read only when named; default be =
   // the backward-Euler redo, bitwise).  retry needs <time>/dt_retry = true (checked at
   // the first rejection: without it the step falls back to backward Euler as before)
@@ -612,6 +631,10 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   Kokkos::deep_copy(t2k1, 0.0);
   Kokkos::deep_copy(t2k2, 0.0);
   Kokkos::deep_copy(t2inc, 0.0);
+  if (t2_iex) {   // rsglock-1112 time2_inc_exch
+    Kokkos::realloc(t2ixd, nmb, n3, n2, n1);
+    Kokkos::deep_copy(t2ixd, 0.0);
+  }
   if (t2_ike) {   // rsglock-1112
     Kokkos::realloc(t2ke1, nmb, n3, n2, n1);
     Kokkos::realloc(t2ke2, nmb, n3, n2, n1);
@@ -2885,6 +2908,11 @@ void RadiationM1::Time2Report() {
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   std::cout << std::endl;
+  if (t2_iex) {   // rsglock-1112 time2_inc_exch (rank 0)
+    std::cout << "<rad_m1> time2_inc_exch=relax (rank 0): sum (eint given x V, E paid) "
+              << t2_iex_de << " cell-solves " << t2_iex_cells
+              << " cells with E_old <= 0 after paying " << t2_iex_neg << std::endl;
+  }
   if (t2_ike) {   // rsglock-1112 (Time2Report runs on rank 0 only: rank-0 values)
     std::cout << "<rad_m1> time2_inc_energy=rad (rank 0): solves " << t2_ike_calls
               << " sum (KE remainder x V) to E " << t2_ike_de << " sum |.| x V "

@@ -2238,6 +2238,15 @@ class RadiationM1 {
   int t2_ike_calls = 0;
   DvceArray4D<Real> t2ke1, t2ke2, t2kei, t2ikd;   // K_KE slopes, increment, transfer
   DvceArray5D<Real> t2mo;                          // (m,3,k,j,i) old-vector momentum
+  // rsglock-1112 <rad_m1>/time2_inc_exch = none | relax (read only when named; none =
+  // bitwise), time2_inc_exch_y0 (default 0.1): a stage old vector whose gas eint falls
+  // (d = eint_old - eint_h < 0, y = d/eint_h) takes d + w (eint_h expm1(y) - d),
+  // w = y^2/(y^2 + y0^2): the relaxation form, which cannot cross eint = 0, where the
+  // carried (stiff exchange) slope is a large fraction of eint, and d + O(y^4) where it
+  // is small.  The difference is exchanged with the cell E (x ch/cl): energy exact.
+  bool t2_iex = false;
+  Real t2_iex_y0 = 0.1, t2_iex_de = 0.0, t2_iex_cells = 0.0, t2_iex_neg = 0.0;
+  DvceArray4D<Real> t2ixd;                         // the relax transfer of this solve
   int impl_am_cs_diag = 0;   // amdef-1019 diagnostic (read only when named): solves to print
   DvceArray5D<Real> amw;
   bool am_vec = false;             // + <hydro>/am_vector: the vector form
