@@ -1139,8 +1139,9 @@ class RadiationM1 {
   // at the face index: x2 [0] Llo, [1] Lhi (the row's E'-linear coefficients of the face
   // flux, chat units, as M1TransRowCore / m1_impl_tcell build them), [2] G = cr F(E^k) -
   // Llo E_lo - Lhi E_hi (its explicit part, the lagged off-diagonal / lateral term
-  // included), [3] lam; x3 [4..7].  iw slots iw_fmm+3..+6: dt A/V of the cell's x2+, x2-,
-  // x3+, x3- face.  F_L = Rusanov from the iterate's cell F_2/F_3.
+  // included), [3] lam; x3 [4..7]; [8..11] the row's F_L coefficients of a limited
+  // face (x2, x3), F_L = chat ((1 + s) E_lo - (1 - s) E_hi)/2 with s the face's reduced
+  // flux at E^k.  iw slots iw_fmm+3..+6: dt A/V of the cell's x2+, x2-, x3+, x3- face.
   DvceArray5D<Real> fmm_t;
   bool fmm_tfin = false;   // the post-solve ImplicitTransverseTerms: store the blend
   void ImplicitFaceMmatTrans(bool bicg);
