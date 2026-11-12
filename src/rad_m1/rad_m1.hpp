@@ -1126,6 +1126,49 @@ class RadiationM1 {
   // flux instead of the F_c memory (the cmem feedback warning: off by (1-w)(F_c - F_a))
   bool impl_cmgfa = false;
   bool impl_physflux = false;   // physflux-1111: F_c = the one momentum flux
+  // facemmat-1112 <rad_m1>/implicit_face_mmat = true (read only when named; default
+  // false = bitwise; no threshold): positivity-preserving x1 face flux of the implicit
+  // solve.  Each x1 face carries lam in [0,1]; its flux in the row and in the stored
+  // face flux is lam F_H + (1 - lam) F_L, F_H the face flux of the configuration (all
+  // its E'-implicit and explicit parts, the lagged VET off-diagonal / curvature term
+  // excepted) and F_L = LL E'_L + LR E'_R (LL >= 0 >= LR) the low-order M-matrix flux:
+  // chat (h+ E_L + h- E_R) with the half-range moments of the formal solution where the
+  // halfrange face has them, else chat ((1 + f_L) E_L - (1 - f_R) E_R)/2 from the lagged
+  // reduced cell fluxes.  lam is the donor cell's Zalesak factor R of the face's
+  // EXPLICIT flux part G (memory + plm correction): a cell whose right-hand side b (the
+  // RHS of the system the linear solver gets) is not > 0 gets R = (1 - 1e-12) Q/P (Q =
+  // b + its own explicit outflow P, with the inflow its donors' R let through), rounds
+  // until no cell is newly limited, R halo-exchanged.  b > 0 with the M-matrix row gives
+  // E' > 0.  Unlimited faces (lam = 1) take no extra arithmetic (bitwise).
+  bool impl_fmm = false;
+  int iw_fmm = -1;   // iw slots: R, R new, b, 4 x dt A/V, 4 x dC (stage 2b)
+  DvceArray4D<Real> fmm_lam, fmm_g;   // x1 faces (m,k,j,i): lam, explicit flux G (chat)
+  DvceArray5D<Real> fmm_lo;        // (m,2,k,j,i) x1 faces: LL, LR (chat units)
+  // facemmat-1112 stage 2 realisability: F_H of the last face rebuild (lab units, before
+  // the blend); a face whose |F_H| > c min(E_L, E_R) at the iterate takes lam_r =
+  // (c min(E_L,E_R) - |F_L|)/(|F_H| - |F_L|) in [0,1] (0 when |F_L| reaches the bound),
+  // and lam = lam_r R_donor
+  // opt-in <rad_m1>/implicit_face_mmat_real = true (read only when named; default false):
+  // measured 11-12 (FACE_MMAT_1112.md sect. 6) not to remove the clip, so off by default
+  DvceArray4D<Real> fmm_fh;
+  Real fmm_rfaces = 0.0;
+  bool impl_fmm_real = false;
+  // facemmat-1112 stage 2b: the transverse (x2, x3; cs seams) faces.  fmm_t (m,8,k,j,i)
+  // at the face index: x2 [0] Llo, [1] Lhi (the row's E'-linear coefficients of the face
+  // flux, chat units, as M1TransRowCore / m1_impl_tcell build them), [2] G = cr F(E^k) -
+  // Llo E_lo - Lhi E_hi (its explicit part, the lagged off-diagonal / lateral term
+  // included), [3] lam; x3 [4..7]; [8..11] the row's F_L coefficients of a limited
+  // face (x2, x3), F_L = chat ((1 + s) E_lo - (1 - s) E_hi)/2 with s the face's reduced
+  // flux at E^k.  iw slots iw_fmm+3..+6: dt A/V of the cell's x2+, x2-, x3+, x3- face.
+  // facetr-1112: [12], [13] the lagged off-diagonal / lateral part of the x2 / x3 face
+  // flux (lab units), kept out of G and unscaled (the operator form re-adds it), and G
+  // is built with TRHS (the same iterate) in ImplicitTransverseTerms.
+  DvceArray5D<Real> fmm_t;
+  bool fmm_tfin = false;   // the post-solve ImplicitTransverseTerms: store the blend
+  void ImplicitFaceMmatTrans(bool bicg, bool first);
+  Real fmm_pass = 0.0, fmm_lpass = 0.0, fmm_cells = 0.0, fmm_faces = 0.0;
+  Real fmm_left = 0.0, fmm_rmax = 0.0;
+  bool ImplicitFaceMmat(bool bicg, Real dt);
   bool impl_pf_fa = false;   // physflux-1111 implicit_physflux_mom = fa
   // vkdiag-1111 <rad_m1>/implicit_physflux_zold = fc (read only when named; needs
   // physflux_mom = fa; default fa = bitwise): Z_f's old face flux = F_c^n (f0x*n), i.e.
