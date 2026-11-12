@@ -80,7 +80,10 @@ int M1VetDopplerBoost(const Real d0[6], const Real b[3], const Real e, const Rea
   for (int it = 0; it < nit; ++it) {
     Real t[4][4], t0[4][4];
     t[0][0] = e;
-    for (int a = 0; a < 3; ++a) {t[0][a+1] = h[a]; t[a+1][0] = h[a];}
+    for (int a = 0; a < 3; ++a) {
+      t[0][a+1] = h[a];
+      t[a+1][0] = h[a];
+    }
     for (int n = 0; n < 6; ++n) {
       t[ia[n]+1][ib[n]+1] = dc[n]*e;
       t[ib[n]+1][ia[n]+1] = dc[n]*e;
@@ -98,7 +101,10 @@ int M1VetDopplerBoost(const Real d0[6], const Real b[3], const Real e, const Rea
     }
     Real s[4][4], o[4][4];
     s[0][0] = e0;
-    for (int a = 0; a < 3; ++a) {s[0][a+1] = f0[a]; s[a+1][0] = f0[a];}
+    for (int a = 0; a < 3; ++a) {
+      s[0][a+1] = f0[a];
+      s[a+1][0] = f0[a];
+    }
     for (int n = 0; n < 6; ++n) {
       s[ia[n]+1][ib[n]+1] = d0[n]*e0;
       s[ib[n]+1][ia[n]+1] = d0[n]*e0;
