@@ -3051,17 +3051,11 @@ void RadiationM1::Time2Report() {
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   std::cout << std::endl;
-  if (t2_ike) {   // rsglock-1112
-    Real r[4] = {t2_ike_de, t2_ike_dp, t2_ike_neg, t2_ike_cells};
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, r, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-#endif
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> time2_inc_energy=rad: solves " << t2_ike_calls
-                << " sum (KE remainder x V) to E " << r[0] << " sum |.| x V " << r[1]
-                << " cells where the E share would reach E_old " << r[2]
-                << " cells with a nonzero remainder " << r[3] << std::endl;
-    }
+  if (t2_ike) {   // rsglock-1112 (Time2Report runs on rank 0 only: rank-0 values)
+    std::cout << "<rad_m1> time2_inc_energy=rad (rank 0): solves " << t2_ike_calls
+              << " sum (KE remainder x V) to E " << t2_ike_de << " sum |.| x V "
+              << t2_ike_dp << " cells with E_old <= 0 and remainder > 0 " << t2_ike_neg
+              << " cells with a nonzero remainder " << t2_ike_cells << std::endl;
   }
   if (t2_inckc > 0.0 && global_variable::my_rank == 0) {   // hgfix-1110
     std::cout << "<rad_m1> time2_inc_kecap=" << t2_inckc << ": calls " << t2_inckc_calls
