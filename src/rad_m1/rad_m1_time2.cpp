@@ -1157,7 +1157,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
   }
   // rsglock-1112 time2_exch_split = psi: the carried exchange terms in bounded form
   if (t2_xsp && t2kx1.extent_int(0) > nmb1 && t2inc.extent_int(1) > M1_T2_EN) {
-    auto x1_ = t2kx1, x2_ = t2kx2, l1_ = t2lx1, l2_ = t2lx2, ix_ = t2inc;
+    auto x1_ = t2kx1, x2_ = t2kx2, l1_ = t2lx1, l2_ = t2lx2;
+    auto ix_ = t2inc;
     const bool pc = pcomp;
     auto pmx_ = t2pm;
     const Real cc1 = c1, cc2 = c2, ccx = ccomp, chcl = chat/c_light;
