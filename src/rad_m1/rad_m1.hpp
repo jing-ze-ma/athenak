@@ -2230,6 +2230,35 @@ class RadiationM1 {
   Real t2_inckc_ke = 0.0, t2_inckc_pm = 0.0;
   int t2_inckc_calls = 0;
   void Time2IncKeCap(int stage);
+  // facebound-1112 <rad_m1>/time2_stage_theta = th (read only when named; absent or 0 =
+  // off, bitwise; rc18_1110/FACEBOUND_LOCALBE_1112.md): a LOCAL, conservative limiter of
+  // the hesdirk2 stage old vectors.  Per active cell the largest theta in [0, 1] with
+  // E + theta dE >= th E and eint(gas + theta d) >= th eint (eint > 0 only) scales the
+  // cell increment (E, gas momentum, gas energy); faces and the stored cell F keep
+  // theirs.
+  // Stage 1: the dropped (1 - theta1) a21 dt K1 re-enters the stage-2 old vector with the
+  // weight of Y1 there (as time2_posfix's compensation).  Stage 2: the dropped part is
+  // added to U^{n+1} in the write-back (after the slope K is formed), as far as it keeps
+  // the cell admissible; the rest is counted as unpaid.  No column moves, no BE.
+  Real t2_theta = 0.0;
+  Real t2_th_n1 = 0.0, t2_th_n2 = 0.0, t2_th_s1 = 0.0, t2_th_s2 = 0.0;
+  int t2_th_calls = 0;
+  DvceArray4D<Real> t2thd;       // (m,k,j,i) 1 - theta1 of the current step's stage 1
+  DvceArray5D<Real> t2thr;       // (m,5,k,j,i) the stage-2 drop (E, m1..3, EN)
+  DvceArray1D<Real> t2th_cnt_d;  // 0 re-entered cells, 1 unpaid cells, 2 unpaid E x vol,
+                                 // 3 unpaid gas energy x vol, 4 unpaid |dm| x vol
+  void Time2StageTheta(int stage, Real dt);
+  // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,
+  // nothing written back): where the write-back's realisability clip |F| <= c E comes
+  // from.  fcd_cnt_d (16): in-loop clip of the conservative2 kick (cs2_clip = rad): 0 n,
+  // 1 sum(|u|/|q| - 1), 2 n face mean alone > c E, 3 of those with face mean <= c E^old,
+  // 4 sum |q|/(c E^old), 5 unpaired |u - q|/(c chat) x vol; final clip (cs metric norm):
+  // 6 n, 7 sum(|F|/(c E) - 1), 8 n with the plain norm (the M1_POS_FCLIP rule), 9 n made
+  // by the positivity moves, 10 n made by cons_final, 11 n where pos moves lowered E,
+  // 12 sum (|F| - c E)/(c chat) x vol, 13 n momentum-paired (consrc kick), 14 n face
+  // mean alone > c E (before the moves), 15 n with E < E^old/2
+  bool impl_fclip_diag = false;
+  DvceArray1D<Real> fcd_cnt_d;
   int impl_am_cs_diag = 0;   // amdef-1019 diagnostic (read only when named): solves to print
   DvceArray5D<Real> amw;
   bool am_vec = false;             // + <hydro>/am_vector: the vector form

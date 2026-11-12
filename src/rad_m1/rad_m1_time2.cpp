@@ -498,6 +498,27 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // facebound-1112 <rad_m1>/time2_stage_theta (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_stage_theta")) {
+    t2_theta = pin->GetReal("rad_m1", "time2_stage_theta");
+    if (!(t2_theta >= 0.0 && t2_theta < 1.0)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_stage_theta must be in [0, 1)"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (t2_theta > 0.0 && pin->DoesParameterExist("rad_m1", "time2_inc_energy") &&
+        pin->GetString("rad_m1", "time2_inc_energy").compare("rad") == 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_stage_theta: not with time2_inc_energy = "
+                << "rad (its KE increment is not scaled)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (t2_theta > 0.0) {
+      Kokkos::realloc(t2th_cnt_d, 5);
+      Kokkos::deep_copy(t2th_cnt_d, 0.0);
+    }
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
     t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
   }
@@ -1157,6 +1178,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     }
   }
   if (t2_inckc > 0.0) {Time2IncKeCap(stage);}   // hgfix-1110 time2_inc_kecap
+  if (t2_theta > 0.0) {Time2StageTheta(stage, dt);}   // facebound-1112
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
   t2_fail = false;
   nsub = 1;
@@ -1348,6 +1370,138 @@ void RadiationM1::Time2IncKeCap(int stage) {
               << " eint_h<=0 " << t2_inckc_hn << " KE " << t2_inckc_ke << " |dm| "
               << t2_inckc_pm << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2StageTheta
+//! \brief facebound-1112 <rad_m1>/time2_stage_theta = th (rad_m1.hpp).  Called by
+//! Time2FormStage after every other change of t2inc.  Stage 2 first adds the stage-1 drop
+//! back with the weight of Y1 in the stage-2 start (heun: a21 dt/2), except in the cells
+//! time2_posfix re-solved (its own compensation covers them).  Then, per active cell,
+//! theta = the largest value in [0, 1] with
+//!   E_s + theta t2inc_E >= th E_s                         (E_s > 0)
+//!   eint(U_h + theta t2inc_gas) >= th eint(U_h)            (eint(U_h) > 0 only)
+//! (eint quadratic in theta through the kinetic energy; closed-form root), and the cell
+//! increments E, m1..3, EN become theta x themselves.  The drop (1 - theta) x increment
+//! is
+//! kept: t2thd = 1 - theta1 (stage 1), t2thr = the stage-2 drop, which the stage-2
+//! write-back adds to U^{n+1}.  Face slots, the stored cell F (csinc) and every cell
+//! with theta = 1 are bitwise unchanged.
+
+void RadiationM1::Time2StageTheta(int stage, Real dt) {
+  if (am_vec) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/time2_stage_theta: not with <hydro>/am_vector" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb = pmy_pack->nmb_thispack, nmb1 = nmb - 1;
+  const int n3 = static_cast<int>(t2inc.extent(2));
+  const int n2 = static_cast<int>(t2inc.extent(3));
+  const int n1 = static_cast<int>(t2inc.extent(4));
+  if (t2thd.extent_int(0) != nmb || t2thd.extent_int(1) != n3 ||
+      t2thd.extent_int(2) != n2 || t2thd.extent_int(3) != n1) {
+    Kokkos::realloc(t2thd, nmb, n3, n2, n1);
+    Kokkos::realloc(t2thr, nmb, 5, n3, n2, n1);
+  }
+  auto thd_ = t2thd;
+  auto thr_ = t2thr;
+  auto in_ = t2inc;
+  auto k1_ = t2k1;
+  auto u0_ = u0;
+  const bool heun = (t2_tab == 0 || t2_tab == 2);
+  const Real ccomp = t2_a21*dt*(heun ? 0.5 : t2_w0);
+  if (stage == 1) {
+    Kokkos::deep_copy(DevExeSpace(), t2thd, 0.0);
+  } else {
+    Kokkos::deep_copy(DevExeSpace(), t2thr, 0.0);
+    const bool pfx = (t2_pfix > 0) && t2_pfix_any && (t2pm.extent_int(0) >= nmb);
+    auto pm_ = t2pm;
+    par_for("m1_t2th_comp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real w = thd_(m,k,j,i);
+      if (!(w > 0.0)) return;
+      if (pfx && pm_(m,k,j,i) > 0.0) return;
+      for (int n = 0; n < M1_T2_F1; ++n) {in_(m,n,k,j,i) += ccomp*w*k1_(m,n,k,j,i);}
+    });
+  }
+  FluidRef flf = FluidRef::Get(pmy_pack);
+  const bool gon = flf.on && (t2inc.extent_int(1) > M1_T2_EN);
+  auto ug = gon ? flf.u0 : u0;
+  const bool etg = gon && flf.use_etotgrav;
+  auto phicc = flf.phicc0;
+  const bool mhd = gon && fl_mhd && (emag0.extent_int(0) > nmb1);
+  auto emag_ = emag0;
+  const bool csk = cs_geom;
+  auto ccl = pmy_pack->pcoord->cos_cell;
+  const bool hoi_ = impl_hold && (hold_m.extent_int(0) > nmb1);
+  auto hmi_ = hold_m;
+  const Real th = t2_theta;
+  const bool one = (stage == 1);
+  Real nf = 0.0, sf = 0.0;
+  Kokkos::parallel_reduce("m1_t2th", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sn, Real &ss) {
+    if (hoi_ && hmi_(m,k,j,i) > 0.0) return;
+    Real t = 1.0;
+    const Real es = u0_(m,M1_E,k,j,i), de = in_(m,M1_T2_E,k,j,i);
+    if (es > 0.0 && de < -(1.0 - th)*es) {t = (1.0 - th)*es/(-de);}
+    if (gon) {
+      const Real dd = ug(m,IDN,k,j,i);
+      if (dd > 0.0) {
+        const Real idd = 1.0/dd;
+        const Real q1 = ug(m,IM1,k,j,i), q2 = ug(m,IM2,k,j,i), q3 = ug(m,IM3,k,j,i);
+        const Real d1 = in_(m,M1_T2_M1,k,j,i), d2 = in_(m,M1_T2_M1+1,k,j,i);
+        const Real d3 = in_(m,M1_T2_M1+2,k,j,i), dn = in_(m,M1_T2_EN,k,j,i);
+        Real keh, kep, kdd;
+        if (csk) {
+          const Real c = ccl(m,k,j);
+          keh = CsKeMom(q1, q2, q3, c)*idd;
+          kep = CsKeMom(q1 + d1, q2 + d2, q3 + d3, c)*idd;
+          kdd = CsKeMom(d1, d2, d3, c)*idd;
+        } else {
+          keh = 0.5*(q1*q1 + q2*q2 + q3*q3)*idd;
+          kep = 0.5*((q1 + d1)*(q1 + d1) + (q2 + d2)*(q2 + d2) + (q3 + d3)*(q3 + d3))*idd;
+          kdd = 0.5*(d1*d1 + d2*d2 + d3*d3)*idd;
+        }
+        Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
+        if (mhd) {egrv += emag_(m,k,j,i);}
+        const Real eh = ug(m,IEN,k,j,i) - keh - egrv;
+        if (eh > 0.0) {
+          // eint(s) = eh + s dn - (s bb + s^2 aa), aa = KE(d), bb = the cross term
+          const Real aa = kdd, bb = kep - keh - kdd - dn, cc = (1.0 - th)*eh;
+          Real r = 1.0e300;
+          if (aa > 0.0) {
+            const Real sq = sqrt(bb*bb + 4.0*aa*cc);
+            r = (bb >= 0.0) ? 2.0*cc/(bb + sq) : (-bb + sq)/(2.0*aa);
+          } else if (bb > 0.0) {
+            r = cc/bb;
+          }
+          t = fmin(t, fmax(r, 0.0));
+        }
+      }
+    }
+    if (!(t < 1.0)) return;   // (NaN increments: not touched)
+    t = fmax(t, 0.0);
+    const Real w = 1.0 - t;
+    for (int n = 0; n < M1_T2_F1; ++n) {
+      const Real v = in_(m,n,k,j,i);
+      in_(m,n,k,j,i) = t*v;
+      if (!one) {thr_(m,n,k,j,i) = w*v;}
+    }
+    if (one) {thd_(m,k,j,i) = w;}
+    sn += 1.0;
+    ss += w;
+  }, Kokkos::Sum<Real>(nf), Kokkos::Sum<Real>(sf));
+  if (one) {
+    t2_th_n1 += nf;
+    t2_th_s1 += sf;
+  } else {
+    t2_th_n2 += nf;
+    t2_th_s2 += sf;
+  }
+  t2_th_calls += 1;
 }
 
 //----------------------------------------------------------------------------------------
@@ -2794,6 +2948,18 @@ void RadiationM1::Time2Report() {
   }
   if (t2_k1stiff > 0.0) {
     std::cout << " k1_stiff(s=" << t2_k1stiff << ") cells(rank 0)=" << t2_k1stiff_n;
+  }
+  if (t2_theta > 0.0) {   // facebound-1112
+    Real hc[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+    if (t2th_cnt_d.extent_int(0) == 5) {
+      auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), t2th_cnt_d);
+      for (int q = 0; q < 5; ++q) {hc[q] = h(q);}
+    }
+    std::cout << " stage_theta(th=" << t2_theta << ", rank 0) stage-1 cells=" << t2_th_n1
+              << " sum(1-theta1)=" << t2_th_s1 << " stage-2 cells=" << t2_th_n2
+              << " sum(1-theta2)=" << t2_th_s2 << " re-entered=" << hc[0]
+              << " unpaid cells=" << hc[1] << " unpaid E=" << hc[2] << " gas=" << hc[3]
+              << " |dm|=" << hc[4];
   }
   if (vet_col && t2_vcmode != 0) {
     std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :
