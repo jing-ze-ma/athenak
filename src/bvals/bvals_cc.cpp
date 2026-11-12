@@ -69,7 +69,8 @@ void MeshBoundaryValuesCC::SetVectorPairs(const int nvar,
 // VL vector lanes.  Every buffer / ghost value is the same expression of the same inputs
 // (per-element copies / transforms): bitwise.  Env BVALS_CC_SPLIT (default 1 since
 // defaults-1105, USER 11-05: 3.6 % faster than 16 on the 2-GPU dhj restart, bitwise; was 16)
-// and BVALS_CC_VL (default 32 on CUDA, 1 elsewhere); both = 1 is the old launch.  The env
+// and BVALS_CC_VL (default 32 on CUDA, 16 elsewhere since fast2nd-1112); both = 1 is the
+// old launch.  The env
 // variable still overrides (BVALS_CC_SPLIT=16 = the 10-31 split).
 static int BvCcSplit() {
   static int s = -1;
@@ -80,8 +81,9 @@ static int BvCcSplit() {
   }
   return s;
 }
-// fast2nd-1112: BVALS_CC_VL is read on every backend (HIP: was fixed at 1; the HIP
-// default stays 1 until measured; a power of two <= 64 on HIP)
+// fast2nd-1112: BVALS_CC_VL is read on every backend; HIP default 16 (was fixed at 1).
+// Small HG cs deck, P0 keys, 40 cycles, 1 MI300A (apudev 13066772, bitwise identical
+// output): VL 1 27.5 / 28.1 s, VL 16 20.4 s, VL 64 20.6 / 22.0 s (SPLIT 4 + VL 64: 27.7 s)
 static int BvCcVl() {
   static int v = -1;
   if (v < 0) {
@@ -89,7 +91,7 @@ static int BvCcVl() {
 #if defined(KOKKOS_ENABLE_CUDA)
     v = (e != nullptr) ? std::atoi(e) : 32;
 #else
-    v = (e != nullptr) ? std::atoi(e) : 1;
+    v = (e != nullptr) ? std::atoi(e) : 16;
 #endif
     if (v < 1) {v = 1;}
   }
