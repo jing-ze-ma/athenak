@@ -6569,7 +6569,7 @@ void RadiationM1::VetGdBuild() {
       Kokkos::deep_copy(vra_bk_tt, tau_ten);
       if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_hr, vgd_hr);}
       if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_q, vcol_q);}
-      if (vgd_xf_lean && vgd_xf_m > 0) {
+      if (vgd_xf_lean && vgd_xf_m > 0 && !vgd_xf_lpen) {
         const Real tn = pmy_pack->pmesh->time;
         const Real tk = vgd_rot_t0 + static_cast<Real>(blk + 1)*vgd_rot_dt;
         const Real rg = (vgd_xf_gb[0] == blk && tn > vgd_xf_gt[0]) ?
@@ -6589,7 +6589,7 @@ void RadiationM1::VetGdBuild() {
       // vgdxf-1112: the next set's sweep at this state is the one the cross-fade needs
       // (vet_gd_rotate_xfade_lean: the blend uses the estimate, as the builds before it,
       // so that no closure switch sits at the dt-dependent time t_k - dt)
-      if (vgd_xf_lean && vgd_xf_m > 0) {
+      if (vgd_xf_lean && vgd_xf_m > 0 && VgdXfLq(blk) >= 0.0) {
         RotXfEst(ilo, VgdXfLq(blk));
         VetGdXfade(blk, true, false);
       } else {
@@ -6612,6 +6612,7 @@ void RadiationM1::VetGdBuild() {
     // is a live sweep)
     bool sw = true;
     Real rxe = -1.0, lq = -1.0;
+    bool lpen = false;
     if (vgd_xf_m > 0) {
       const Mesh *pm = pmy_pack->pmesh;
       const Real tb = vgd_rot_t0 + static_cast<Real>(blk)*vgd_rot_dt;
@@ -6619,8 +6620,11 @@ void RadiationM1::VetGdBuild() {
       const int jn = static_cast<int>(std::floor((pm->time - tb)/vgd_rot_dt*vgd_xf_m
                                                  + 1.0e-6));
       // (vet_gd_rotate_xfade_lean: only the part starts, at the same times for every dt)
-      const bool pen = !vgd_xf_lean &&
-                       pm->time + 2.0*pm->dt >= tb + vgd_rot_dt - 1.0e-9*vgd_rot_dt;
+      const bool pen0 = pm->time + 2.0*pm->dt >= tb + vgd_rot_dt - 1.0e-9*vgd_rot_dt;
+      const bool pen = !vgd_xf_lean && pen0;
+      // (lean + vet_gd_rotate_xfade_pen: the second-to-last build sweeps for the boundary
+      // quantities only, RotXfPre; the blend keeps the estimate)
+      lpen = vgd_xf_lean && vgd_xf_lpen && pen0 && jn <= vgd_xf_sj;
       if (blk != vgd_xf_sblk) {vgd_xf_sn = 0;}
       sw = (blk != vgd_xf_sblk) || (jn > vgd_xf_sj) || pen ||
            (vgd_xf_sn < 2 && !vgd_xf_lean);
@@ -6638,7 +6642,19 @@ void RadiationM1::VetGdBuild() {
         vgd_xf_lT = tb + static_cast<Real>(jn + 1)*vgd_rot_dt/vgd_xf_m;
       }
     }
-    if (sw && vgd_xf_lean && vgd_xf_m > 0) {   // the continuous estimate (RotXfSample)
+    if (lpen && !sw) {
+      VgdXfTables(VetGdAngleBlk(blk + 1));
+      vra_raw = true;
+      VetGdSweepPost();
+      vra_raw = false;
+      VetGdRotAvgSetup();
+      RotXfKeep(xilo);   // slots 2, 3 (RotXfPre's previous build); fields := estimate
+      vgd_xf_pblk = blk;
+      vgd_xf_pt = pmy_pack->pmesh->time;
+      RotXfEst(xilo, rxe);
+      VetGdXfade(blk, false, false);
+      VgdXfTables(al);
+    } else if (sw && vgd_xf_lean && vgd_xf_m > 0) {   // the continuous estimate
       VgdXfTables(VetGdAngleBlk(blk + 1));
       vra_raw = true;
       VetGdSweepPost();

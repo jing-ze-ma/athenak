@@ -3061,6 +3061,8 @@ class RadiationM1 {
   Real VgdXfRe(const int64_t blk) const;
   void RotXfPreLean(const Real rg, const Real rs, const int ilo);
   void RotXfSample(const Real q, const int ilo);
+  void RotXfKeep(const int ilo);
+  bool vgd_xf_lpen = false;   // vet_gd_rotate_xfade_pen (lean): a boundary-only sweep
   Real VgdXfLq(const int64_t blk) const;
   int64_t vgd_xf_lb = INT64_MIN;   // lean: the estimate line's block, start, end time
   Real vgd_xf_lt = 0.0, vgd_xf_lT = 0.0;

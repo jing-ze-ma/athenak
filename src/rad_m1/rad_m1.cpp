@@ -1151,6 +1151,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       if (vgd_xf_m > 0 && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_lean")) {
         vgd_xf_lean = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade_lean");
       }
+      if (vgd_xf_lean && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_pen")) {
+        vgd_xf_lpen = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade_pen");
+      }
       if (vgd_xf && global_variable::my_rank == 0) {
         std::cout << "<rad_m1> vet_gd_rotate_xfade = true (vgdxf-1112): the closure is "
                   << "cross-faded from the current to the next ray set over each "

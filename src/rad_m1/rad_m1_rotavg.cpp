@@ -870,7 +870,12 @@ void RadiationM1::RotXfSnap(const int slot, const int ilo) {
   auto x_ = vgd_xf_d;
   const RaArr a{vra_a0, vra_a1, vra_c};
   const int o = slot*nf1;
-  const bool k5 = (slot == 0) && (nsl == 7);
+  // (slot 5 / the G times move on only when the time does: a repeated sweep at the
+  // same time, e.g. a retry or a second sweep of the build, replaces the latest G)
+  const Real tnow = pmy_pack->pmesh->time;
+  const bool adv = (slot == 0) && !(tnow == vgd_xf_gt[1] &&
+                                    vgd_xf_gb[1] == VetGdBlock(pmy_pack->pmesh->ncycle));
+  const bool k5 = adv && (nsl == 7);
   const int o5 = 5*nf1;
   par_for("m1_xf_snap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -886,7 +891,7 @@ void RadiationM1::RotXfSnap(const int slot, const int ilo) {
     }
     x_(m,o+t.nf,kk,jj,ii) = RaValid(a, t, ilo, m, k, j, i) ? 1.0 : 0.0;
   });
-  if (slot == 0) {
+  if (adv) {
     vgd_xf_gb[0] = vgd_xf_gb[1];
     vgd_xf_gt[0] = vgd_xf_gt[1];
     vgd_xf_gb[1] = VetGdBlock(pmy_pack->pmesh->ncycle);
@@ -1175,6 +1180,39 @@ void RadiationM1::RotXfPreLean(const Real rg, const Real rs, const int ilo) {
       d_(m,od+f,kk,jj,ii) = gk;
       fv = sk;   // put back after RotAvgDelta (VetGdBuild)
     }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotXfKeep
+//! \brief vgdxf-1112 lean + vet_gd_rotate_xfade_pen: the live next-set sweep of the
+//! second-to-last build only feeds RotXfPre: slot 2 := its Delta, slot 3 := G (+ flags);
+//! (the line slots 4, 6 are untouched)
+
+void RadiationM1::RotXfKeep(const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Tab t = vra_tab;
+  const int nf1 = t.nf + 1;
+  auto x_ = vgd_xf_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const int o2 = 2*nf1, o3 = 3*nf1;
+  par_for("m1_xf_keep", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool vg = x_(m,t.nf,kk,jj,ii) > 0.5;
+    const bool vn = RaValid(a, t, ilo, m, k, j, i) && vg;
+    for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2 && i != ie) continue;
+      const Real sv = a.At(t.arr[f], t.comp[f], m, k, j, i), gv = x_(m,f,kk,jj,ii);
+      x_(m,o2+f,kk,jj,ii) = (t.kind[f] == 2) ? ((gv > 0.0 && sv > 0.0) ? sv/gv : 1.0)
+                                             : (sv - gv);
+      x_(m,o3+f,kk,jj,ii) = gv;
+    }
+    x_(m,o2+t.nf,kk,jj,ii) = vn ? 1.0 : 0.0;
+    x_(m,o3+t.nf,kk,jj,ii) = vg ? 1.0 : 0.0;
   });
 }
 
