@@ -1376,8 +1376,8 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
       if (reqb) {
         // csmetric-1112: the moving radiative equilibrium of the cell velocity (gas_rot,
-        // gas_vr, gas_vth), the exact fixed point F0 = 0, E0 = arad T^4 for D = chi(f) about
-        // v (chi = 1/3 for eddington / VET closures): f = beta (1 + chi), E = arad T^4 /
+        // gas_vr, gas_vth), the exact fixed point F0 = 0, E0 = arad T^4 for D = chi(f)
+        // about v (1/3 for eddington / VET closures): f = beta (1 + chi), E = arad T^4 /
         // ((1 + beta^2) - 2 beta f + beta^2 chi), F = c E f vhat (cs: covariant)
         const Real dd = uh(m,IDN,k,j,i);
         const Real w1 = uh(m,IM1,k,j,i)/dd, w2 = uh(m,IM2,k,j,i)/dd;
