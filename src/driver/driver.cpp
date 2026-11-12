@@ -1211,6 +1211,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
 //!  and printing diagnostic messages
 
 void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
+  // d6fast3-1112: the main loop alone (fenced), before the final outputs and the
+  // restart, which "cpu time used" includes
+  Kokkos::fence();
+  const float loop_time = run_time_.seconds();
   if (pdtr_ != nullptr) {pdtr_->Report(pmesh);}
   if (pctr_ != nullptr) {pctr_->Report(pmesh);}
   // pgrst-1021: the stage-loop copies of the pgen registers hold device Views (a
@@ -1306,6 +1310,8 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
 
       std::cout << std::endl << "MeshBlock-cycles = " << nmb_updated_ << std::endl;
       std::cout << "cpu time used  = " << exe_time << std::endl;
+      std::cout << "main loop time (before the final outputs) = " << loop_time
+                << std::endl;
       std::cout << "zone-cycles/cpu_second = " << zcps << std::endl;
       std::cout << "particle-updates/cpu_second = " << pups << std::endl;
     }
