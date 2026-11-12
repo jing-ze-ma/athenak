@@ -83,7 +83,8 @@ static int BvCcSplit() {
 }
 // fast2nd-1112: BVALS_CC_VL is read on every backend; HIP default 16 (was fixed at 1).
 // Small HG cs deck, P0 keys, 40 cycles, 1 MI300A (apudev 13066772, bitwise identical
-// output): VL 1 27.5 / 28.1 s, VL 16 20.4 s, VL 64 20.6 / 22.0 s (SPLIT 4 + VL 64: 27.7 s)
+// output): VL 1 27.5 / 28.1 s, VL 16 20.4 s, VL 64 20.6 / 22.0 s
+// (SPLIT 4 + VL 64: 27.7 s)
 static int BvCcVl() {
   static int v = -1;
   if (v < 0) {
