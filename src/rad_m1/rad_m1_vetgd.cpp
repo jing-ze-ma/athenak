@@ -220,7 +220,21 @@ Real VgdSrRef(const DvceArray1D<Real> &sr, const int c, const int i, const int c
 // up after ~20 s of GPU clock and raises the error flag (checked after every sweep)
 constexpr int VGD_IPC_NS = 32;
 constexpr long long VGD_IPC_SPIN = 40000000000LL;
+// d6fast5-1112 (HIP): wall_clock64() runs at 100 MHz on gfx942: 2e9 ticks = 20 s
+constexpr long long VGD_IPC_SPIN_HIP = 2000000000LL;
 struct VgdIpcIdx {int v[VGD_IPC_NS + 1];};
+// d6fast5-1112: the HIP port of the IPC halo.  The flags live in uncached (fine-grained)
+// device memory and are read / written with system-scope atomics; the receive buffer is
+// plain device memory written by the partner's pack kernel (remote stores) and read by
+// my scatter kernel, which the stream runs after my k2 has seen the partner's flag (k2's
+// system fences + the kernel boundaries order the data before / after the flag)
+#if defined(KOKKOS_ENABLE_HIP)
+#define M1G(x) hip##x
+#define M1G_STREAM(ex) (ex).hip_stream()
+#elif defined(KOKKOS_ENABLE_CUDA)
+#define M1G(x) cuda##x
+#define M1G_STREAM(ex) (ex).cuda_stream()
+#endif
 
 KOKKOS_INLINE_FUNCTION
 void VgdIpcWaitGE(const long long *f, const long long target, int *err) {
@@ -229,6 +243,13 @@ void VgdIpcWaitGE(const long long *f, const long long target, int *err) {
   const long long t0 = clock64();
   while (*vf < target) {
     if (clock64() - t0 > VGD_IPC_SPIN) {*err = 1; return;}
+  }
+  __threadfence_system();
+#elif defined(__HIP_DEVICE_COMPILE__)
+  const long long t0 = wall_clock64();
+  while (__hip_atomic_load(f, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM) < target) {
+    if (wall_clock64() - t0 > VGD_IPC_SPIN_HIP) {*err = 1; return;}
+    __builtin_amdgcn_s_sleep(1);
   }
   __threadfence_system();
 #else
@@ -242,6 +263,10 @@ void VgdIpcSet(long long *f, const long long v) {
   __threadfence_system();
   volatile long long *vf = f;
   *vf = v;
+  __threadfence_system();
+#elif defined(__HIP_DEVICE_COMPILE__)
+  __threadfence_system();
+  __hip_atomic_store(f, v, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
   __threadfence_system();
 #else
   (void)f; (void)v;
@@ -260,6 +285,12 @@ void VgdIpcSetN(const unsigned long long *psig, const int *pslot, const int np,
     volatile long long *vf = reinterpret_cast<long long *>(psig[p]) + pslot[p];
     *vf = v;
   }
+#elif defined(__HIP_DEVICE_COMPILE__)
+  __threadfence_system();
+  for (int p = 0; p < np; ++p) {
+    long long *vf = reinterpret_cast<long long *>(psig[p]) + pslot[p];
+    __hip_atomic_store(vf, v, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+  }
 #else
   (void)psig; (void)pslot; (void)np; (void)v;
 #endif
@@ -273,6 +304,16 @@ void VgdIpcWaitN(const long long *f, const int np, const long long target, int *
     const volatile long long *vf = f + p;
     while (*vf < target) {
       if (clock64() - t0 > VGD_IPC_SPIN) {*err = 1; return;}
+    }
+  }
+  __threadfence_system();
+#elif defined(__HIP_DEVICE_COMPILE__)
+  const long long t0 = wall_clock64();
+  for (int p = 0; p < np; ++p) {
+    while (__hip_atomic_load(f + p, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM) <
+           target) {
+      if (wall_clock64() - t0 > VGD_IPC_SPIN_HIP) {*err = 1; return;}
+      __builtin_amdgcn_s_sleep(1);
     }
   }
   __threadfence_system();
@@ -3322,7 +3363,7 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
     const VgdHlEntry &X = xe ? vgd_hxe[ex] : vgd_hle[ex];
     auto sl_ = X.sl;
     const int c2_ = c2, c3_ = c3, nv_ = nv;
-#if defined(KOKKOS_ENABLE_CUDA)
+#if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
     // vgdrot-1011 vet_gd_halo_ipc: node-local, GPU-driven (no host wait, no MPI): wait
     // until every partner is done with this parity's buffer (acks), gather my values
     // straight into the partners' receive buffers (where their lists read them), set the
@@ -3380,17 +3421,17 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
           csb_(c) = a_(m,v,kb,jb,i);
           if (two) {csb2_(c) = b_(m,v,kb,jb,i);}
         });
-        cudaStream_t st = vgd_cur.cuda_stream();
+        M1G(Stream_t) st = M1G_STREAM(vgd_cur);
         for (int p = 0; p < np; ++p) {
           const int cnt = X.sp[p+1] - X.sp[p];
           if (cnt <= 0) {continue;}
           Real *rb = reinterpret_cast<Real *>(vgd_ipc_prb.h_view(p)) +
                      par*vgd_ipc_phalf.h_view(p) + X.dsto[p];
-          (void)cudaMemcpyAsync(rb, csb_.data() + X.sp[p], cnt*sizeof(Real),
-                                cudaMemcpyDeviceToDevice, st);
+          (void)M1G(MemcpyAsync)(rb, csb_.data() + X.sp[p], cnt*sizeof(Real),
+                                 M1G(MemcpyDeviceToDevice), st);
           if (two) {
-            (void)cudaMemcpyAsync(rb + vgd_ipc_pcs.h_view(p), csb2_.data() + X.sp[p],
-                                  cnt*sizeof(Real), cudaMemcpyDeviceToDevice, st);
+            (void)M1G(MemcpyAsync)(rb + vgd_ipc_pcs.h_view(p), csb2_.data() + X.sp[p],
+                                   cnt*sizeof(Real), M1G(MemcpyDeviceToDevice), st);
           }
         }
       } else if (X.ns > 0) {
@@ -3410,7 +3451,7 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
           *dst = a_(m,v,kb,jb,i);
           if (two) {dst[pcs(p)] = b_(m,v,kb,jb,i);}
           if (tfs) {
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
             __threadfence_system();
 #endif
           }
@@ -5140,7 +5181,7 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
 
 void RadiationM1::VetGdIpcInit() {
   vgd_ipc_state = -1;
-#if MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
+#if MPI_PARALLEL_ENABLED && (defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP))
   const int me = global_variable::my_rank;
   const int np = static_cast<int>(vgd_prk.size());
   int ok = (np <= VGD_IPC_NS) ? 1 : 0;
@@ -5158,17 +5199,23 @@ void RadiationM1::VetGdIpcInit() {
   vgd_ipc_cs = std::max<size_t>(vgd_crb.extent(0), 1);
   vgd_ipc_half = 2*vgd_ipc_cs;
   if (ok) {
-    if (cudaMalloc(reinterpret_cast<void **>(&vgd_ipc_rbuf), 2*vgd_ipc_half*sizeof(Real))
-        != cudaSuccess) {ok = 0;}
+    if (M1G(Malloc)(reinterpret_cast<void **>(&vgd_ipc_rbuf), 2*vgd_ipc_half*sizeof(Real))
+        != M1G(Success)) {ok = 0;}
+#if defined(KOKKOS_ENABLE_HIP)
+    if (ok && hipExtMallocWithFlags(reinterpret_cast<void **>(&vgd_ipc_sig),
+                                    2*VGD_IPC_NS*sizeof(long long),
+                                    hipDeviceMallocUncached) != hipSuccess) {ok = 0;}
+#else
     if (ok && cudaMalloc(reinterpret_cast<void **>(&vgd_ipc_sig),
                          2*VGD_IPC_NS*sizeof(long long)) != cudaSuccess) {ok = 0;}
-    if (ok && cudaMalloc(reinterpret_cast<void **>(&vgd_ipc_err), sizeof(int))
-        != cudaSuccess) {ok = 0;}
+#endif
+    if (ok && M1G(Malloc)(reinterpret_cast<void **>(&vgd_ipc_err), sizeof(int))
+        != M1G(Success)) {ok = 0;}
     if (ok) {
-      (void)cudaMemset(vgd_ipc_sig, 0, 2*VGD_IPC_NS*sizeof(long long));
-      (void)cudaMemset(vgd_ipc_err, 0, sizeof(int));
-      (void)cudaMemset(vgd_ipc_rbuf, 0, 2*vgd_ipc_half*sizeof(Real));
-      (void)cudaDeviceSynchronize();
+      (void)M1G(Memset)(vgd_ipc_sig, 0, 2*VGD_IPC_NS*sizeof(long long));
+      (void)M1G(Memset)(vgd_ipc_err, 0, sizeof(int));
+      (void)M1G(Memset)(vgd_ipc_rbuf, 0, 2*vgd_ipc_half*sizeof(Real));
+      (void)M1G(DeviceSynchronize)();
     }
   }
   {
@@ -5177,10 +5224,10 @@ void RadiationM1::VetGdIpcInit() {
     ok = g;
   }
   if (ok) {
-    cudaIpcMemHandle_t hb, hs;
-    (void)cudaIpcGetMemHandle(&hb, vgd_ipc_rbuf);
-    (void)cudaIpcGetMemHandle(&hs, vgd_ipc_sig);
-    struct Info {cudaIpcMemHandle_t b, s; long long half, cs; int slot;};
+    M1G(IpcMemHandle_t) hb, hs;
+    (void)M1G(IpcGetMemHandle)(&hb, vgd_ipc_rbuf);
+    (void)M1G(IpcGetMemHandle)(&hs, vgd_ipc_sig);
+    struct Info {M1G(IpcMemHandle_t) b, s; long long half, cs; int slot;};
     std::vector<Info> mine(np), theirs(np);
     std::vector<MPI_Request> rq(2*np);
     for (int p = 0; p < np; ++p) {
@@ -5201,10 +5248,10 @@ void RadiationM1::VetGdIpcInit() {
     vgd_ipc_open.assign(2*np, nullptr);
     for (int p = 0; p < np; ++p) {
       void *pb = nullptr, *ps = nullptr;
-      if (cudaIpcOpenMemHandle(&pb, theirs[p].b, cudaIpcMemLazyEnablePeerAccess)
-          != cudaSuccess) {ok = 0;}
-      if (cudaIpcOpenMemHandle(&ps, theirs[p].s, cudaIpcMemLazyEnablePeerAccess)
-          != cudaSuccess) {ok = 0;}
+      if (M1G(IpcOpenMemHandle)(&pb, theirs[p].b, M1G(IpcMemLazyEnablePeerAccess))
+          != M1G(Success)) {ok = 0;}
+      if (M1G(IpcOpenMemHandle)(&ps, theirs[p].s, M1G(IpcMemLazyEnablePeerAccess))
+          != M1G(Success)) {ok = 0;}
       vgd_ipc_open[2*p] = pb;
       vgd_ipc_open[2*p + 1] = ps;
       vgd_ipc_prb.h_view(p) = reinterpret_cast<unsigned long long>(pb);
@@ -5213,7 +5260,7 @@ void RadiationM1::VetGdIpcInit() {
       vgd_ipc_pcs.h_view(p) = theirs[p].cs;
       vgd_ipc_pslot.h_view(p) = theirs[p].slot;
     }
-    (void)cudaGetLastError();
+    (void)M1G(GetLastError)();
     vgd_ipc_prb.modify_host(); vgd_ipc_prb.sync_device();
     vgd_ipc_psig.modify_host(); vgd_ipc_psig.sync_device();
     vgd_ipc_phalf.modify_host(); vgd_ipc_phalf.sync_device();
@@ -5232,7 +5279,7 @@ void RadiationM1::VetGdIpcInit() {
                 (std::atoi(std::getenv("VGD_IPC_TFS")) != 0);
   if (me == 0) {
     std::cout << "<rad_m1> vgdrot-1011 vet_gd_halo_ipc: "
-              << (ok ? "ON (node-local CUDA IPC, GPU-driven per-shell halo of the exact "
+              << (ok ? "ON (node-local GPU IPC, GPU-driven per-shell halo of the exact "
                        "lists, no host wait)"
                      : "not possible (a partner off-node, or IPC failed): MPI path")
               << std::endl;
@@ -5245,10 +5292,10 @@ void RadiationM1::VetGdIpcInit() {
 //! \brief vet_gd_halo_ipc: after a sweep (fenced), FATAL if a spin timed out
 
 void RadiationM1::VetGdIpcCheck() {
-#if MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
+#if MPI_PARALLEL_ENABLED && (defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP))
   if (vgd_ipc_state != 1) {return;}
   int h = 0;
-  (void)cudaMemcpy(&h, vgd_ipc_err, sizeof(int), cudaMemcpyDeviceToHost);
+  (void)M1G(Memcpy)(&h, vgd_ipc_err, sizeof(int), M1G(MemcpyDeviceToHost));
   if (h != 0) {
     std::cout << "### FATAL ERROR in rad_m1 vet_gd_halo_ipc: a halo spin timed out (rank "
               << global_variable::my_rank << ", exchange " << vgd_ipc_seq << ")"

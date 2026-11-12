@@ -2371,6 +2371,15 @@ RadiationM1::~RadiationM1() {
     (void)cudaFree(vgd_ipc_err);
   }
 #endif
+#if defined(KOKKOS_ENABLE_HIP)
+  if (vgd_ipc_state == 1) {     // d6fast5-1112: the HIP port
+    (void)hipDeviceSynchronize();
+    for (void *q : vgd_ipc_open) {if (q != nullptr) {(void)hipIpcCloseMemHandle(q);}}
+    (void)hipFree(vgd_ipc_rbuf);
+    (void)hipFree(vgd_ipc_sig);
+    (void)hipFree(vgd_ipc_err);
+  }
+#endif
   if (tau_closure) {TauClosureReport();}
   ReportCounters();
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit
