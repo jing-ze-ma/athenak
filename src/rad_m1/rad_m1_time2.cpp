@@ -828,6 +828,13 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
   if (stage == 1) {
     Kokkos::deep_copy(DevExeSpace(), u1, u0);
     Kokkos::deep_copy(DevExeSpace(), t2f1, f0x1);
+    if (impl_hr_cmem && fax1.extent_int(0) > 0) {   // accbook-1113 (booking only)
+      if (t2fa1.extent(0) != fax1.extent(0) || t2fa1.extent(3) != fax1.extent(3)) {
+        Kokkos::realloc(t2fa1, fax1.extent(0), fax1.extent(1), fax1.extent(2),
+                        fax1.extent(3));
+      }
+      Kokkos::deep_copy(DevExeSpace(), t2fa1, fax1);
+    }
     if (trans_on) {
       Kokkos::deep_copy(DevExeSpace(), t2f2, f0x2);
       if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
