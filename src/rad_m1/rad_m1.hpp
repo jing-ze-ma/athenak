@@ -2540,6 +2540,7 @@ class RadiationM1 {
   DvceArray5D<Real> eaud_fx, eaud_fxc;   // tsp-1108: shared-face fluxes (EAUDITF)
   bool eaud_init = false;
   DvceArray4D<Real> eaud_u, eaud_e, eaud_c;
+  DvceArray4D<Real> eaud_g2;   // marshak-audit-1112: gas IEN at mark 2 (map only)
   Real eaud_seg[6][3] = {};
   Real eaud_bnd[7] = {0.0};
   Real eaud_es = 0.0;   // marshak-audit-1112: dt esrc vol of the last solve

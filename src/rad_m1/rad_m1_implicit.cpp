@@ -13509,6 +13509,12 @@ void RadiationM1::EAuditMark(int pt) {
   // top row (i = ie) and the bottom row.  sum r = 0 with RSOLVE != 0 means the faces
   // shared by two MeshBlocks are not single valued; r != 0 localises a solve whose E
   // update is not the divergence of the stored faces.  Line EAUDITX at mark 3, rank 0.
+  // marshak-audit-1112: the gas IEN at the solve entry, for the map's gas/rad split
+  if (pt == 2 && dbg_eaudit_map && hy) {
+    if (eaud_g2.extent_int(0) != nmb) {Kokkos::realloc(eaud_g2, nmb, n3, n2, n1);}
+    Kokkos::deep_copy(eaud_g2, Kokkos::subview(uh, Kokkos::ALL, IEN, Kokkos::ALL,
+                                               Kokkos::ALL, Kokkos::ALL));
+  }
   if (pt == 3 && dbg_eaudit_map && init) {
     auto &area = pmy_pack->pcoord->area;
     auto f1 = f0x1;
@@ -13533,6 +13539,8 @@ void RadiationM1::EAuditMark(int pt) {
     const bool mt2 = ((t2_solve == M1_T2S_STAGE1) || (t2_solve == M1_T2S_STAGE2)) &&
                      (t2inc.extent_int(0) == nmb);
     auto mt2i = t2inc;
+    const bool hg2 = hy && (eaud_g2.extent_int(0) == nmb);
+    auto g2_ = eaud_g2;
     array_sum::GlobalSum xm;
     Kokkos::parallel_reduce("m1_eaudit_map", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                             nmb*nk*nj*ni),
@@ -13555,6 +13563,11 @@ void RadiationM1::EAuditMark(int pt) {
       if (hw) {r += wc(m,k,j,i)*v*wfac;}
       if (eso) {r -= dts*es_(m,k,j,i)*v;}   // marshak-audit-1112: the explicit esrc
       if (mt2) {r -= (ccr*mt2i(m,M1_T2_E,k,j,i) + mt2i(m,M1_T2_EN,k,j,i))*v;}   // + T2
+      // marshak-audit-1112: the first four rows, and row is split into gas / the rest
+      Real rg = 0.0;
+      if (hg2 && i == is) {
+        rg = (uh(m,IEN,k,j,i) - g2_(m,k,j,i) - (mt2 ? mt2i(m,M1_T2_EN,k,j,i) : 0.0))*v;
+      }
       array_sum::GlobalSum q;
       for (int c=0; c<NREDUCTION_VARIABLES; ++c) q.the_array[c] = 0.0;
       q.the_array[0] = r;
@@ -13564,14 +13577,16 @@ void RadiationM1::EAuditMark(int pt) {
       q.the_array[edge ? 10 : 11] = r;
       if (i == ie) {q.the_array[12] = r; q.the_array[13] = fabs(r);}
       if (i == is) {q.the_array[14] = r;}
+      if (i - is >= 1 && i - is <= 3) {q.the_array[14 + i - is] = r;}
+      if (i == is) {q.the_array[18] = rg;}
       sum += q;
     }, Kokkos::Sum<array_sum::GlobalSum>(xm));
-    Real xl[15];
-    for (int c=0; c<15; ++c) {xl[c] = xm.the_array[c];}
+    Real xl[19];
+    for (int c=0; c<19; ++c) {xl[c] = xm.the_array[c];}
 #if MPI_PARALLEL_ENABLED
-    {Real xg[15];
-    MPI_Allreduce(xl, xg, 15, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    for (int c=0; c<15; ++c) {xl[c] = xg[c];}
+    {Real xg[19];
+    MPI_Allreduce(xl, xg, 19, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int c=0; c<19; ++c) {xl[c] = xg[c];}
     }
 #endif
     // the shared lateral faces: each block puts its own boundary-row face fluxes into a
@@ -13655,8 +13670,9 @@ void RadiationM1::EAuditMark(int pt) {
       std::printf("EAUDITX cycle=%d dt=%.10e sum=%.6e abs=%.6e bins=",
                   pmy_pack->pmesh->ncycle, dts, xl[0], xl[1]);
       for (int c=0; c<8; ++c) {std::printf("%s%.4e", c ? "," : "", xl[2 + c]);}
-      std::printf(" edge=%.6e inner=%.6e top=%.6e topabs=%.6e bot=%.6e\n", xl[10], xl[11],
-                  xl[12], xl[13], xl[14]);
+      std::printf(" edge=%.6e inner=%.6e top=%.6e topabs=%.6e bot=%.6e rows1-3=%.6e,%.6e,"
+                  "%.6e botgas=%.6e\n", xl[10], xl[11], xl[12], xl[13], xl[14], xl[15],
+                  xl[16], xl[17], xl[18]);
     }
   }
   array_sum::GlobalSum s3;
