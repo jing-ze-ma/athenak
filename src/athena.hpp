@@ -323,10 +323,19 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
 #ifndef ATHENA_HIP_PARFOR_LB
 #define ATHENA_HIP_PARFOR_LB 0
 #endif
+// dhjcuda-1112: ATHENA_CUDA_PARFOR_LB = n > 0, the same on CUDA (LaunchBounds<256, n>:
+// at most 65536/(256 n) registers per thread instead of 255); 0 = the launch as before
+#ifndef ATHENA_CUDA_PARFOR_LB
+#define ATHENA_CUDA_PARFOR_LB 0
+#endif
 #if defined(KOKKOS_ENABLE_HIP) && (ATHENA_HIP_PARFOR_LB > 0)
 template <typename E>
 using AthRangePolicy4 = Kokkos::RangePolicy<E, Kokkos::LaunchBounds<256,
                                             ATHENA_HIP_PARFOR_LB>>;
+#elif defined(KOKKOS_ENABLE_CUDA) && (ATHENA_CUDA_PARFOR_LB > 0)
+template <typename E>
+using AthRangePolicy4 = Kokkos::RangePolicy<E, Kokkos::LaunchBounds<256,
+                                            ATHENA_CUDA_PARFOR_LB>>;
 #else
 template <typename E> using AthRangePolicy4 = Kokkos::RangePolicy<E>;
 #endif
