@@ -1736,7 +1736,14 @@ void RadiationM1::VetGdCsSweep() {
   static int s_lb = -1;   // speed2-1031 cslb (see the shell kernel)
   if (s_lb < 0) {
     const char *el = std::getenv("VGD_CS_LB");
-    s_lb = (el != nullptr) ? std::atoi(el) : 6;   // defaults-1031: 6 (VGD_CS_LB=0: old launch)
+    // defaults-1031: 6 (VGD_CS_LB=0: old launch); d6fast2-1112: 2 on HIP, where the
+    // bound is min waves per EU and 6 spilled the body (HG small cs deck 13083259: vet_gd
+    // sweeps 5.08 -> 2.73 s, outputs bitwise)
+#if defined(KOKKOS_ENABLE_HIP)
+    s_lb = (el != nullptr) ? std::atoi(el) : 2;
+#else
+    s_lb = (el != nullptr) ? std::atoi(el) : 6;
+#endif
   }
   VetGdRingSweepBegin(two);
   for (int pass = 0; pass < 2; ++pass) {
