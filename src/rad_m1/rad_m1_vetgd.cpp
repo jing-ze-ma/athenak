@@ -2136,6 +2136,18 @@ void RadiationM1::VgdXfTables(const Real alpha) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::VgdXfRx
+//! \brief vgdxf-1112: (t_k - t)/(t - t_prev) for the extrapolation of the last build of
+//! block blk to its boundary t_k (RotXfPre); -1 without a previous build in this block
+//! (a dt_retry repeats a build at the same time: none then)
+
+Real RadiationM1::VgdXfRx(const int64_t blk) const {
+  const Real tn = pmy_pack->pmesh->time;
+  const Real tk = vgd_rot_t0 + static_cast<Real>(blk + 1)*vgd_rot_dt;
+  return (vgd_xf_pblk == blk && tn > vgd_xf_pt) ? (tk - tn)/(tn - vgd_xf_pt) : -1.0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdXfade
 //! \brief vgdxf-1112: the fields hold the next set's raw sweep at this state (the table
 //! of VetGdRotAvgSetup set): fields := (1 - s) A + s T_{b+1} (RotXfBlend), s = (t - t_b)
@@ -2153,11 +2165,8 @@ void RadiationM1::VetGdXfade(const int64_t blk, const bool last) {
   const Real tb = vgd_rot_t0 + static_cast<Real>(blk)*vgd_rot_dt;
   const Real tn = pmy_pack->pmesh->time;
   const Real s = (tn - tb)/vgd_rot_dt;
-  // the Delta extrapolation to the boundary (RotXfBlend): needs the previous build in
-  // this block (a dt_retry repeats a build at the same time: no extrapolation then)
-  const Real rx = (last && vgd_xf_pblk == blk && tn > vgd_xf_pt) ?
-                  (tb + vgd_rot_dt - tn)/(tn - vgd_xf_pt) : -1.0;
-  RotXfBlend(s, last, pmy_pack->pmesh->mb_indcs.is + vlat_icut, rx);
+  // (the boundary extrapolation is RotXfPre's, before RotAvgDelta: none here)
+  RotXfBlend(s, last, pmy_pack->pmesh->mb_indcs.is + vlat_icut, -1.0);
   vgd_xf_pblk = blk;
   vgd_xf_pt = tn;
   vgd_xf_nsw += 1.0;
@@ -6526,6 +6535,8 @@ void RadiationM1::VetGdBuild() {
     VetGdSweepPost();
     vra_raw = false;
     VetGdRotAvgSetup();
+    // vgdxf-1112: the boundary quantities at t_k (RotXfPre), then the Delta of t_k
+    if (vgd_xf) {RotXfPre(VgdXfRx(blk), ilo);}
     RotAvgDelta(vra_k - 1, ilo);
     if (vgd_xf) {
       // vgdxf-1112: the next set's sweep at this state is the one the cross-fade needs

@@ -3037,11 +3037,13 @@ class RadiationM1 {
   Real vgd_xf_alt = -9.0;        // the angle of the tables in the second device set
   double vgd_xf_nsw = 0.0;       // the next-set sweeps (diagnostic)
   double vgd_xf_t = 0.0;         // their seconds
-  DvceArray5D<Real> vgd_xf_d;    // (m, 3 (nf+1), ..): G (current raw), A, last Delta
+  DvceArray5D<Real> vgd_xf_d;    // (m, 4 (nf+1), ..): G, A, last Delta, last G
   void VgdXfTables(const Real alpha);
   void VetGdXfade(const int64_t blk, const bool last);
   void RotXfSnap(const int slot, const int ilo);
   void RotXfBlend(const Real s, const bool last, const int ilo, const Real rx);
+  void RotXfPre(const Real rx, const int ilo);
+  Real VgdXfRx(const int64_t blk) const;
   int64_t vgd_xf_pblk = INT64_MIN;   // the block and time of the previous xf build
   Real vgd_xf_pt = 0.0;
   bool vra_eq = false;        // vet_rotate_avg_weight = equal (default j: J-weighted)
