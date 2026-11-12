@@ -1892,6 +1892,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_comoving_lat")) {
     impl_comov_lat = pin->GetBoolean("rad_m1","implicit_comoving_lat");
   }
+  // csmetric-1112 DEBUG (read only when named): dbg_cs_metric_selftest = true checks
+  // M1CsNormFn, M1CsMixedDx and M1LatDx (cs and sp) against the Cartesian tensor algebra
+  // on random skew bases at startup, prints the errors, and fatals above 1e-12
+  if (pin->DoesParameterExist("rad_m1","dbg_cs_metric_selftest") &&
+      pin->GetBoolean("rad_m1","dbg_cs_metric_selftest")) {
+    CsMetricSelfTest();
+  }
   //  implicit_thin_freeze (m1-picard-aa, 095ca6ee): cells with c dt rho kappa_P below it
   //    at pass 0 keep their start-of-solve opacities for every Picard pass and take the
   //    frozen-opacity gas-T find.  DEFAULT 1e-2 on fresh runs (user 10-04): on the He
@@ -21777,6 +21784,103 @@ bool RadiationM1::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
   });
   impl_cm_fainit_done = true;   // restored exactly: no fainit
   return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn RadiationM1::CsMetricSelfTest (csmetric-1112, dbg_cs_metric_selftest): the unit
+//! test of the face-normal metric algebra.  A skew tangent pair e1 = x, e2 = (c, s, 0),
+//! r = z; face normals n_xi = (s, -c, 0), n_eta = y (n_xi.n_eta = -c).  Random F, v,
+//! chi, w (tangential), Q (trace-free about a random orthonormal tangent frame) and sp
+//! slots; every function result is compared with the same quantity from 3x3 Cartesian
+//! algebra.
+
+void RadiationM1::CsMetricSelfTest() {
+  unsigned long long st = 88172645463325252ULL;   // NOLINT(runtime/int)
+  auto rnd = [&]() {
+    st ^= st << 13; st ^= st >> 7; st ^= st << 17;
+    return static_cast<Real>(st % 2000001ULL)/1.0e6 - 1.0;   // [-1, 1]
+  };
+  const int c0 = M1_TT_LAT0;
+  HostArray5D<Real> tt("m1_cmst_tt", 1, c0 + 6, 1, 1, 1);
+  HostArray3D<Real> cn2("m1_cmst_cn2", 1, 1, 3), cn3("m1_cmst_cn3", 1, 1, 3);
+  HostArray4D<Real> qf("m1_cmst_qf", 1, 6, 1, 1);
+  Real en = 0.0, ed = 0.0, el = 0.0, es = 0.0;
+  auto dot = [](const Real *a, const Real *b) {return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];};
+  for (int it = 0; it < 500; ++it) {
+    const Real c = 0.7*rnd(), s = sqrt(1.0 - c*c);
+    const Real nx[3] = {s, -c, 0.0}, ny[3] = {0.0, 1.0, 0.0}, rz[3] = {0.0, 0.0, 1.0};
+    const Real f[3] = {rnd(), rnd(), rnd()}, v[3] = {rnd(), rnd(), rnd()};
+    auto fnc = [&](const Real *x, Real *y) {y[0] = dot(x, rz); y[1] = dot(x, nx);
+                                            y[2] = dot(x, ny);};
+    Real ff[3], vf[3];
+    fnc(f, ff); fnc(v, vf);
+    // (a) the metric norm
+    en = fmax(en, fabs(M1CsNormFn(c, ff[0], ff[1], ff[2]) - sqrt(dot(f, f))));
+    // (b) the mixed uniaxial tensor about n = F/|F|
+    const Real chi = 1.0/3.0 + (2.0/3.0)*0.5*(1.0 + rnd());
+    const Real fm = sqrt(dot(f, f));
+    const Real n[3] = {f[0]/fm, f[1]/fm, f[2]/fm};
+    Real nf[3];
+    fnc(n, nf);
+    const Real pi = 0.5*(1.0 - chi), pa = 0.5*(3.0*chi - 1.0), nv = dot(n, v);
+    const Real dv[3] = {pi*v[0] + pa*n[0]*nv, pi*v[1] + pa*n[1]*nv, pi*v[2] + pa*n[2]*nv};
+    Real dvf[3], o[3];
+    fnc(dv, dvf);
+    const Real xdx = M1CsMixedDx(c, chi, nf[0], nf[1], nf[2], vf[0], vf[1], vf[2], o[0],
+                                 o[1], o[2]);
+    for (int q = 0; q < 3; ++q) {ed = fmax(ed, fabs(o[q] - dvf[q]));}
+    ed = fmax(ed, fabs(xdx - dot(v, dv)));
+    // (c) cs lateral + Q
+    const Real ph = M_PI*rnd();
+    const Real q1[3] = {cos(ph), sin(ph), 0.0}, q2[3] = {-sin(ph), cos(ph), 0.0};
+    const Real w[3] = {rnd(), rnd(), 0.0}, s1 = rnd(), s2 = rnd();
+    for (int q = 0; q < 3; ++q) {
+      cn2(0,0,q) = nx[q]; cn3(0,0,q) = ny[q];
+      qf(0,q,0,0) = q1[q]; qf(0,3+q,0,0) = q2[q];
+      tt(0,c0+1+q,0,0,0) = w[q];
+    }
+    tt(0,c0+4,0,0,0) = s1;
+    tt(0,c0+5,0,0,0) = s2;
+    Real dl[3];
+    for (int a = 0; a < 3; ++a) {
+      dl[a] = 0.0;
+      for (int b = 0; b < 3; ++b) {
+        const Real dab = rz[a]*w[b] + w[a]*rz[b] + s1*(q1[a]*q1[b] - q2[a]*q2[b])
+                         + s2*(q1[a]*q2[b] + q2[a]*q1[b]);
+        dl[a] += dab*v[b];
+      }
+    }
+    Real dlf[3];
+    fnc(dl, dlf);
+    const Real lx = M1LatDx(true, true, true, tt, c0, cn2, cn3, qf, 0, 0, 0, 0, vf[0],
+                            vf[1], vf[2], o[0], o[1], o[2]);
+    for (int q = 0; q < 3; ++q) {el = fmax(el, fabs(o[q] - dlf[q]));}
+    el = fmax(el, fabs(lx - dot(v, dl)));
+    // (d) sp orthonormal slots
+    const Real drt = rnd(), drp = rnd(), aa = rnd(), dtp = rnd();
+    tt(0,c0+1,0,0,0) = drt; tt(0,c0+2,0,0,0) = drp;
+    tt(0,c0+3,0,0,0) = aa; tt(0,c0+4,0,0,0) = dtp;
+    const Real ds[3][3] = {{0.0, drt, drp}, {drt, aa, dtp}, {drp, dtp, -aa}};
+    const Real sx = M1LatDx(false, true, true, tt, c0, cn2, cn3, qf, 0, 0, 0, 0, v[0],
+                            v[1], v[2], o[0], o[1], o[2]);
+    Real vdv = 0.0;
+    for (int a = 0; a < 3; ++a) {
+      const Real ta = ds[a][0]*v[0] + ds[a][1]*v[1] + ds[a][2]*v[2];
+      es = fmax(es, fabs(o[a] - ta));
+      vdv += v[a]*ta;
+    }
+    es = fmax(es, fabs(sx - vdv));
+  }
+  if (global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> dbg_cs_metric_selftest (500 cases): max error |F| " << en
+              << ", mixed D (A, b.D.b) " << ed << ", cs D_lat + Q " << el
+              << ", sp D_lat + tangential " << es << std::endl;
+  }
+  if (!(fmax(fmax(en, ed), fmax(el, es)) < 1.0e-12)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1> dbg_cs_metric_selftest failed" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
 }
 
 } // namespace radm1

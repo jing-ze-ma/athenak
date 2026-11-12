@@ -103,6 +103,32 @@ Real M1FluxNormCs(const Real c, const Real f1, const Real f2, const Real f3) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1CsNormFn / M1CsMixedDx (csmetric-1112 implicit_cs_closure_metric): vectors given
+//! by FACE-NORMAL components x_a = x.n_a on the skew panel basis (n_xi.n_eta = -c, r
+//! orthogonal to both).  M1CsNormFn = |x| with the metric G^-1 = [[1,c],[c,1]]/(1-c^2).
+//! M1CsMixedDx: o = D x for D = (1-chi)/2 I + (3chi-1)/2 n n (n metric-unit, face-normal
+//! components), returned in face-normal components, and the return value x.D.x.
+
+KOKKOS_INLINE_FUNCTION
+Real M1CsNormFn(const Real c, const Real x1, const Real x2, const Real x3) {
+  return sqrt(x1*x1 + (x2*x2 + x3*x3 + 2.0*c*x2*x3)/(1.0 - c*c));
+}
+
+KOKKOS_INLINE_FUNCTION
+Real M1CsMixedDx(const Real c, const Real chi, const Real n1, const Real n2,
+                 const Real n3, const Real x1, const Real x2, const Real x3, Real &o1,
+                 Real &o2, Real &o3) {
+  const Real is2 = 1.0/(1.0 - c*c);
+  const Real pi = 0.5*(1.0 - chi), pa = 0.5*(3.0*chi - 1.0);
+  const Real nx = n1*x1 + ((n2 + c*n3)*x2 + (n3 + c*n2)*x3)*is2;
+  o1 = pi*x1 + pa*n1*nx;
+  o2 = pi*x2 + pa*n2*nx;
+  o3 = pi*x3 + pa*n3*nx;
+  const Real xx = x1*x1 + (x2*x2 + x3*x3 + 2.0*c*x2*x3)*is2;
+  return pi*xx + pa*nx*nx;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1ApplyLimitsCs
 //! \brief STAGE CS2 (cubed sphere): M1ApplyLimits for a flux whose (f2, f3) are COVARIANT
 //! on the panel basis at the cell angle c = cos_cell, with |F| = M1FluxNormCs.
