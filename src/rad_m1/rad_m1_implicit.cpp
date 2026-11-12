@@ -16177,7 +16177,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real q = M1CmiFace(om*th*f0n_(m,k,j,i+1), iw_(m,M1_IW_EN,k,j,i),
                                    iw_(m,M1_IW_EN,k,j,ip), iw_(m,M1_IW_EP,k,j,i),
                                    iw_(m,M1_IW_EP,k,j,ip), pte_, cl, rmr, ld, ro);
-          if (ro) {rmr *= iw_(m,iwc,k,j,ld ? i : ip);}
+          rmr *= iw_(m,iwc,k,j,ro ? i : ip);
           if (ld) {bb += nu*cr*q;} else {cc += nu*cr*q;}
           rr -= nu*cr*(rmr - om*th*(ch*dt*vf*g0f + ch*cl*dt*od));
         } else {
@@ -16275,7 +16275,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real q = M1CmiFace(om*th*f0n_(m,k,j,i), iw_(m,M1_IW_EN,k,j,im),
                                    iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EP,k,j,im),
                                    iw_(m,M1_IW_EP,k,j,i), pte_, cl, rmr, ld, ro);
-          if (ro) {rmr *= iw_(m,iwc,k,j,ld ? im : i);}
+          rmr *= iw_(m,iwc,k,j,ro ? im : i);
           if (ld) {aa -= nu*cr*q;} else {bb -= nu*cr*q;}
           rr += nu*cr*(rmr - om*th*(ch*dt*vf*g0f + ch*cl*dt*od));
         } else {
@@ -16451,7 +16451,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             const Real q = M1CmiFace(tw*f0n_(m,k,j,i+1), iw_(m,M1_IW_EN,k,j,i),
                                      iw_(m,M1_IW_EN,k,j,ip), iw_(m,M1_IW_EP,k,j,i),
                                      iw_(m,M1_IW_EP,k,j,ip), pte_, cl, rmr, ld, ro);
-            if (ro) {rmr *= iw_(m,iwc,k,j,ld ? i : ip);}
+            rmr *= iw_(m,iwc,k,j,ro ? i : ip);
             if (ld) {bb += nup*cr*q;} else {cc += nup*cr*q;}
             rr -= nup*cr*(rmr - tw*ch*dt*vf*g0f);
             d_[11] -= nup*cr*(rmr - tw*ch*dt*vf*g0f);
@@ -16729,7 +16729,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             const Real q = M1CmiFace(tw*f0n_(m,k,j,i), iw_(m,M1_IW_EN,k,j,im),
                                      iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EP,k,j,im),
                                      iw_(m,M1_IW_EP,k,j,i), pte_, cl, rmr, ld, ro);
-            if (ro) {rmr *= iw_(m,iwc,k,j,ld ? im : i);}
+            rmr *= iw_(m,iwc,k,j,ro ? im : i);
             if (ld) {aa -= num*cr*q;} else {bb -= num*cr*q;}
             rr += num*cr*(rmr - tw*ch*dt*vf*g0f);
             d_[11] += num*cr*(rmr - tw*ch*dt*vf*g0f);
@@ -17568,7 +17568,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                            iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,ip),
                            iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,ip), cmef, cl,
                            rmr, ld, ro);
-          if (ro) {fn -= (1.0 - iw_(m,iwcf,k,j,ld ? im : ip))*rmr;}
+          fn -= (1.0 - iw_(m,iwcf,k,j,ro ? im : ip))*rmr;
         }
         f0_(m,k,j,i) = fn;
         if (cmf) {
@@ -22095,7 +22095,7 @@ void RadiationM1::ImplicitCmiLimit(bool first) {
       (void) M1CmiFace(tw*f0n_(m,k,j,i+1), iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j,ip),
                        iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,ip),
                        efl, cl, rr, ld, ro);
-      if (ld && ro) {
+      if (ro) {
         const Real n = sph ? carea.x1f(m,k,j,i+1)*dt/cvol(m,k,j,i)
                            : dt/mbsize.d_view(m).dx1;
         pout += n*cr*rr;
@@ -22109,7 +22109,7 @@ void RadiationM1::ImplicitCmiLimit(bool first) {
       (void) M1CmiFace(tw*f0n_(m,k,j,i), iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,i),
                        iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,i),
                        efl, cl, rr, ld, ro);
-      if (!ld && ro) {
+      if (rr < 0.0) {
         const Real n = sph ? carea.x1f(m,k,j,i)*dt/cvol(m,k,j,i)
                        : dt/mbsize.d_view(m).dx1;
         pout -= n*cr*rr;
@@ -22120,12 +22120,12 @@ void RadiationM1::ImplicitCmiLimit(bool first) {
       (void) M1CmiFace(cm2_(m,k,j+1,i), iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j+1,i),
                        iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j+1,i),
                        efl, cl, rr, ld, ro);
-      if (ld && ro) {pout += M1CmiN(csg, sph, gc, gs, cvol, dt, dx2, 2, true, m, k, j, i)
+      if (ro) {pout += M1CmiN(csg, sph, gc, gs, cvol, dt, dx2, 2, true, m, k, j, i)
                              *cr*rr;}
       (void) M1CmiFace(cm2_(m,k,j,i), iw_(m,M1_IW_EN,k,j-1,i), iw_(m,M1_IW_EN,k,j,i),
                        iw_(m,M1_IW_EP,k,j-1,i), iw_(m,M1_IW_EP,k,j,i),
                        efl, cl, rr, ld, ro);
-      if (!ld && ro) {pout -= M1CmiN(csg, sph, gc, gs, cvol, dt, dx2, 2, false, m, k, j,
+      if (rr < 0.0) {pout -= M1CmiN(csg, sph, gc, gs, cvol, dt, dx2, 2, false, m, k, j,
                                      i)*cr*rr;}
     }
     if (thrd) {
@@ -22133,12 +22133,12 @@ void RadiationM1::ImplicitCmiLimit(bool first) {
       (void) M1CmiFace(cm3_(m,k+1,j,i), iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k+1,j,i),
                        iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k+1,j,i),
                        efl, cl, rr, ld, ro);
-      if (ld && ro) {pout += M1CmiN(csg, sph, gc, gs, cvol, dt, dx3, 3, true, m, k, j, i)
+      if (ro) {pout += M1CmiN(csg, sph, gc, gs, cvol, dt, dx3, 3, true, m, k, j, i)
                              *cr*rr;}
       (void) M1CmiFace(cm3_(m,k,j,i), iw_(m,M1_IW_EN,k-1,j,i), iw_(m,M1_IW_EN,k,j,i),
                        iw_(m,M1_IW_EP,k-1,j,i), iw_(m,M1_IW_EP,k,j,i),
                        efl, cl, rr, ld, ro);
-      if (!ld && ro) {pout -= M1CmiN(csg, sph, gc, gs, cvol, dt, dx3, 3, false, m, k, j,
+      if (rr < 0.0) {pout -= M1CmiN(csg, sph, gc, gs, cvol, dt, dx3, 3, false, m, k, j,
                                      i)*cr*rr;}
     }
     Real lam = 1.0;
@@ -22196,7 +22196,7 @@ void RadiationM1::ImplicitCmiTrans(bool rows) {
     const Real q = M1CmiFace(cm2_(m,k,j,i), iw_(m,M1_IW_EN,k,j-1,i),
                              iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EP,k,j-1,i),
                              iw_(m,M1_IW_EP,k,j,i), efl, cl, rr, ld, ro);
-    const Real d = ro ? -(1.0 - iw_(m,iwc,k,ld ? (j-1) : j,i))*rr : 0.0;
+    const Real d = -(1.0 - iw_(m,iwc,k,ro ? (j-1) : j,i))*rr;
     cq2_(m,k,j,i) = q;
     cd2_(m,k,j,i) = d;
     if (d != 0.0) {
@@ -22214,7 +22214,7 @@ void RadiationM1::ImplicitCmiTrans(bool rows) {
       const Real q = M1CmiFace(cm3_(m,k,j,i), iw_(m,M1_IW_EN,k-1,j,i),
                                iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EP,k-1,j,i),
                                iw_(m,M1_IW_EP,k,j,i), efl, cl, rr, ld, ro);
-      const Real d = ro ? -(1.0 - iw_(m,iwc,ld ? (k-1) : k,j,i))*rr : 0.0;
+      const Real d = -(1.0 - iw_(m,iwc,ro ? (k-1) : k,j,i))*rr;
       cq3_(m,k,j,i) = q;
       cd3_(m,k,j,i) = d;
       if (d != 0.0) {

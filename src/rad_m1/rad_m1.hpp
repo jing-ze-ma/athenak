@@ -1089,9 +1089,9 @@ class RadiationM1 {
   // = bitwise; needs implicit_hr_cmem): the explicit memory part M = tw F_c^n of every
   // applied face flux (x1, x2, x3, cs seams) is split M = q E'_d + R, q = M/E^n_d
   // (|q| <= c; d the upwind donor) IMPLICIT in the rows (M-matrix entries), the remainder
-  // R = M - q E^k_d on the right-hand side.  Where R is an outflow of its donor it is
-  // scaled by the donor's Zalesak factor lam_d = min(1, E^k_d / sum of the donor's
-  // explicit memory outflows dt A cr R / V) (iw_cmi, halo-exchanged), so the explicit
+  // R = M - q E^k_d on the right-hand side.  R is an explicit flux: it is scaled by the
+  // Zalesak factor of the cell it leaves, lam_c = min(1, E^k_c / sum of the explicit
+  // remainders leaving c, dt A cr |R| / V) (iw_cmi, halo-exchanged), so the explicit
   // memory transport cannot overdraw a cell; elsewhere the fixed point is the old one.
   // The applied face flux is q E'_d + lam R = M - (1 - lam) R (rows, rebuild, Z_f).
   // cmm2/3: the transverse M of the face build; cmq2/3 their q; cmd2/3 the change

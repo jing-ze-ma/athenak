@@ -993,8 +993,9 @@ void M1SphDrrUp(const Real chil, const Real n1l, const Real s2l, const Real chir
 //! cmemimpl-1112 implicit_hr_cmem_implicit: the memory part mm (= tw F_c^n) of a face
 //! flux (positive = from the LEFT cell l to the right cell r) as q E'_d + R: q =
 //! mm/max(E^n_d, efl), |q| <= qmax (= c), d = l if mm > 0; R = mm - q E^k_d at the
-//! iterate.  Returns q; rr = R, ld = true when the donor is l, ro = true when R is an
-//! OUTFLOW of the donor (R mm > 0: the part a Zalesak factor of the donor may scale).
+//! iterate.  Returns q; rr = R, ld = true when the donor of q is l, ro = true when R
+//! leaves the LEFT cell (R > 0): R is an explicit flux, scaled by the Zalesak factor of
+//! the cell it leaves (the donor or, where E^k_d > E^n_d makes R < 0, the receiver).
 KOKKOS_INLINE_FUNCTION
 Real M1CmiFace(const Real mm, const Real enl, const Real enr, const Real epl,
                const Real epr, const Real efl, const Real qmax, Real &rr, bool &ld,
@@ -1004,7 +1005,7 @@ Real M1CmiFace(const Real mm, const Real enl, const Real enr, const Real epl,
   const Real en = fmax(ld ? enl : enr, efl);
   const Real q = copysign(fmin(fabs(mm)/en, qmax), mm);
   rr = mm - q*(ld ? epl : epr);
-  ro = (rr*mm > 0.0);
+  ro = (rr > 0.0);
   return q;
 }
 
