@@ -1141,6 +1141,27 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // restart whose file lacks it).
     VetRotInit(pin);   // bubbles-1012: shared with vet_sc (rad_m1_vetgd.cpp)
     RotAvgParse(pin);   // rotavg-1012 (also after vet_sc's VetRotInit)
+    // vgdxf-1112: vet_gd_rotate_xfade (read only when named; rad_m1.hpp)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade")) {
+      vgd_xf = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade");
+      // (the combination checks: VetGdXfade, after every key is read)
+      if (vgd_xf && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_m")) {
+        vgd_xf_m = pin->GetInteger("rad_m1","vet_gd_rotate_xfade_m");
+      }
+      if (vgd_xf_m > 0 && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_lean")) {
+        vgd_xf_lean = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade_lean");
+      }
+      if (vgd_xf_lean && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_pen")) {
+        vgd_xf_lpen = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade_pen");
+      }
+      if (vgd_xf && global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> vet_gd_rotate_xfade = true (vgdxf-1112): the closure is "
+                  << "cross-faded from the current to the next ray set over each "
+                  << "rotation block (" << ((vgd_xf_m > 0) ? std::to_string(vgd_xf_m) +
+                     " + 2 next-set sweeps per block)" : "two sweeps per build)")
+                  << std::endl;
+      }
+    }
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
     // default: true on a fresh run; a restart whose file lacks the key keeps the vacuum

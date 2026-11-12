@@ -846,4 +846,478 @@ bool RadiationM1::RotAvgRstCheck() {
   return ok;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotXfSnap
+//! \brief vgdxf-1112 (vet_gd_rotate_xfade): the registered fields as they are (no kind-3
+//! transform: vet_gd registers kinds 0-2) -> vgd_xf_d slot (0: the current set's raw
+//! fields G, before the EMA; 1: the closure A this build would hand over), + validity
+
+void RadiationM1::RotXfSnap(const int slot, const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Tab t = vra_tab;
+  const int nf1 = t.nf + 1;
+  // (vgd_xf_m > 0: slot 4 = the Delta before the last; lean: slot 5 = the previous
+  // build's G, RotXfPreLean)
+  const int nsl = (vgd_xf_m > 0) ? (vgd_xf_lean ? 7 : 5) : 4;
+  if (vgd_xf_d.extent_int(0) != nmb1 + 1 || vgd_xf_d.extent_int(1) != nsl*nf1 ||
+      vgd_xf_d.extent_int(2) != ke - ks + 1 || vgd_xf_d.extent_int(3) != je - js + 1 ||
+      vgd_xf_d.extent_int(4) != ie - is + 1) {
+    Kokkos::realloc(vgd_xf_d, nmb1 + 1, nsl*nf1, ke - ks + 1, je - js + 1, ie - is + 1);
+  }
+  auto x_ = vgd_xf_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const int o = slot*nf1;
+  // (slot 5 / the G times move on only when the time does: a repeated sweep at the
+  // same time, e.g. a retry or a second sweep of the build, replaces the latest G)
+  const Real tnow = pmy_pack->pmesh->time;
+  const bool adv = (slot == 0) && !(tnow == vgd_xf_gt[1] &&
+                                    vgd_xf_gb[1] == VetGdBlock(pmy_pack->pmesh->ncycle));
+  const bool k5 = adv && (nsl == 7);
+  const int o5 = 5*nf1;
+  par_for("m1_xf_snap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    for (int f = 0; f <= t.nf; ++f) {
+      if (k5 && (f == t.nf || !(t.arr[f] == 2 && i != ie))) {
+        x_(m,o5+f,kk,jj,ii) = x_(m,o+f,kk,jj,ii);
+      }
+    }
+    for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2 && i != ie) continue;
+      x_(m,o+f,kk,jj,ii) = a.At(t.arr[f], t.comp[f], m, k, j, i);
+    }
+    x_(m,o+t.nf,kk,jj,ii) = RaValid(a, t, ilo, m, k, j, i) ? 1.0 : 0.0;
+  });
+  if (adv) {
+    vgd_xf_gb[0] = vgd_xf_gb[1];
+    vgd_xf_gt[0] = vgd_xf_gt[1];
+    vgd_xf_gb[1] = VetGdBlock(pmy_pack->pmesh->ncycle);
+    vgd_xf_gt[1] = pmy_pack->pmesh->time;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotXfBlend
+//! \brief vgdxf-1112: the registered fields hold the NEXT set's raw sweep S at this
+//! state; vgd_xf_d holds G (slot 0) and A (slot 1).  T = the closure of the first build
+//! of the next block at this state: S, or with the EMA history S + fac (e - Delta) (ratio
+//! fields S ((1 - aw) r/x + aw)), Delta = S - G (x = S/G), exactly RotAvgEmaShift's
+//! update; the change weight is the aux slot's (last = the last build of the block: the
+//! RotAvgEmaChange of this step) or measured here as RotAvgEmaChange does (G against the
+//! aux slot = this set at the previous boundary).  Fields := (1 - s) A + s T where A and
+//! S are valid, else A
+
+void RadiationM1::RotXfBlend(const Real s, const bool last, const int ilo,
+                              const Real rx, const bool store) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Tab t = vra_tab;
+  const int nf1 = t.nf + 1;
+  auto x_ = vgd_xf_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const bool ema = vra_ema && vra_on && vra_state == 1 && vra_d.extent_int(0) > nmb1 &&
+                   vra_d.extent_int(1) >= 2*nf1;
+  // the K-window (vet_rotate_avg = K): the ring after RotAvgShift of the coming boundary
+  const int nslot = vra_k - 1;
+  const bool kwin = !vra_ema && vra_on && vra_state == 1 && nslot >= 1 &&
+                    vra_d.extent_int(0) > nmb1 && vra_d.extent_int(1) >= nslot*nf1;
+  const int hn = (nslot >= 1) ? (vra_head + nslot - 1) % nslot : 0;
+  auto d_ = vra_d;
+  const Real a0 = (vra_ema_n > 0.0) ? 1.0/vra_ema_n : 1.0;
+  const Real tau0 = vra_ema_tau, lc = vra_ema_lc, cl = c_light;
+  const Real dtb = vgd_rot_dt;
+  auto &size = pmy_pack->pmb->mb_size;
+  const int nx1 = indcs.nx1;
+  const Real eps = vra_ema_eps;
+  const bool usej = vra_ema_chj, step = vra_ema_chstep;
+  int jt = t.jf;
+  for (int f = 0; f < t.nf && jt < 0; ++f) {
+    if (t.kind[f] == 2 && t.arr[f] != 2) jt = f;
+  }
+  const Real sb = fmin(fmax(s, 0.0), 1.0);
+  // the boundary Delta at the boundary time t_k (rx = (t_k - t)/(t - t_prev) >= 0; < 0:
+  // no previous build of this block): the last build's Delta (state t_k - dt, an O(dt)
+  // offset carried into the whole next block) extrapolated with the previous build's
+  const int od = (vra_k - 1)*nf1;
+  const bool dext = last && rx >= 0.0 && (ema || kwin) && vra_d.extent_int(1) >= od + nf1;
+  // vgd_xf_m > 0: slot 4 := the Delta of the previous live sweep (RotXfEst)
+  const bool keep4 = store && vgd_xf_d.extent_int(1) >= 5*nf1;
+  const int o4 = 4*nf1;
+  par_for("m1_xf_blend", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool vs = RaValid(a, t, ilo, m, k, j, i);
+    const bool vg = x_(m,t.nf,kk,jj,ii) > 0.5;
+    const bool va = x_(m,nf1+t.nf,kk,jj,ii) > 0.5;
+    {
+      const int o2 = 2*nf1;
+      const bool vn = vs && vg;
+      const bool vp = x_(m,o2+t.nf,kk,jj,ii) > 0.5;
+      const bool ext = dext && vn && vp && (d_(m,od+t.nf,kk,jj,ii) > 0.5);
+      for (int f = 0; f < t.nf; ++f) {
+        if (t.arr[f] == 2 && i != ie) continue;
+        const Real sv = a.At(t.arr[f], t.comp[f], m, k, j, i);
+        const Real gv = x_(m,f,kk,jj,ii);
+        const bool mul = (t.kind[f] == 2);
+        const Real dn = mul ? ((gv > 0.0 && sv > 0.0) ? sv/gv : 1.0) : (sv - gv);
+        if (ext) {
+          const Real de = dn + rx*(dn - x_(m,o2+f,kk,jj,ii));
+          d_(m,od+f,kk,jj,ii) = (mul && !(de > 0.0)) ? dn : de;
+        }
+        if (store) {
+          if (keep4) {x_(m,o4+f,kk,jj,ii) = x_(m,o2+f,kk,jj,ii);}
+          x_(m,o2+f,kk,jj,ii) = dn;
+          x_(m,o2+nf1+f,kk,jj,ii) = gv;   // slot 3: G of this build (RotXfPre)
+        }
+      }
+      if (store) {
+        if (keep4) {x_(m,o4+t.nf,kk,jj,ii) = x_(m,o2+t.nf,kk,jj,ii);}
+        x_(m,o2+t.nf,kk,jj,ii) = vn ? 1.0 : 0.0;
+        x_(m,o2+nf1+t.nf,kk,jj,ii) = vg ? 1.0 : 0.0;
+      }
+    }
+    if (!vs || !va) {   // no blend: A as it was
+      for (int f = 0; f < t.nf; ++f) {
+        if (t.arr[f] == 2 && i != ie) continue;
+        a.At(t.arr[f], t.comp[f], m, k, j, i) = x_(m,nf1+f,kk,jj,ii);
+      }
+      return;
+    }
+    // the EMA shift of the coming boundary (RotAvgEmaShift), with Delta from this state
+    bool sh = ema && vg && (d_(m,t.nf,kk,jj,ii) > 0.5);
+    Real aw = 1.0, fac = 0.0;
+    if (sh) {
+      Real ach = -1.0;
+      if (last) {
+        ach = d_(m,nf1+t.nf,kk,jj,ii);
+      } else if (eps > 0.0) {
+        Real c = 0.0;
+        if (usej && jt >= 0 && t.arr[jt] != 2) {
+          const Real jn = x_(m,jt,kk,jj,ii), jo = d_(m,nf1+jt,kk,jj,ii);
+          c = (jn > 0.0 && jo > 0.0) ? fabs(log(jn/jo)) : 1.0e30;
+        }
+        if (t.nf > 0 && t.arr[0] != 2 && t.kind[0] != 2) {
+          c = fmax(c, fabs(x_(m,0,kk,jj,ii) - d_(m,nf1,kk,jj,ii)));
+        }
+        ach = step ? fmin(1.0, fmax(0.0, c/eps - 1.0)) : fmin(1.0, c/eps);
+      }
+      Real rr = 1.0;
+      if (lc > 0.0) {
+        const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
+        rr = x1min + (static_cast<Real>(ii) + 0.5)*(x1max - x1min)/nx1;
+      }
+      const Real nset = d_(m,t.nf,kk,jj,ii);
+      aw = fmax(fmax(RaEmaA(a0, dtb, tau0, lc, rr, cl), fmin(ach, 1.0)),
+                1.0/(nset + 1.0));
+      fac = 1.0 - aw;
+      if (t.jw >= 0) {
+        const Real sj = a.At(t.arr[t.jw], t.comp[t.jw], m, k, j, i);
+        const Real gj = x_(m,t.jw,kk,jj,ii);
+        const Real R = (gj > 0.0 && sj > 0.0) ? sj/gj : 1.0;
+        const Real r0 = d_(m,t.jw,kk,jj,ii);
+        const Real r1 = (1.0 - aw)*r0/R + aw;
+        fac = (1.0 - aw)*(r0/R)/r1;
+      }
+    }
+    // K-window: the shifted offsets d'_s (slot hn: -Delta, the others d_s - Delta; ratio
+    // fields 1/x, d_s/x), valid where Delta and the slot are; then RotAvgApply's mean
+    const bool kw = kwin && vg;
+    Real kws[M1_RA_NF], kwsum = 1.0, knv = 1.0;
+    if (kw) {
+      Real xj = 1.0;
+      if (t.jw >= 0) {
+        const Real sj = a.At(t.arr[t.jw], t.comp[t.jw], m, k, j, i);
+        const Real gj = x_(m,t.jw,kk,jj,ii);
+        xj = (gj > 0.0 && sj > 0.0) ? sj/gj : 1.0;
+      }
+      for (int q = 0; q < nslot; ++q) {
+        const bool vq = (q == hn) || (d_(m,q*nf1+t.nf,kk,jj,ii) > 0.5);
+        knv += vq ? 1.0 : 0.0;
+        kws[q] = vq ? ((t.jw >= 0) ? ((q == hn) ? 1.0/xj : d_(m,q*nf1+t.jw,kk,jj,ii)/xj)
+                                   : 1.0) : 0.0;
+        kwsum += kws[q];
+      }
+    }
+    for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2 && i != ie) continue;
+      Real &fv = a.At(t.arr[f], t.comp[f], m, k, j, i);
+      const Real sv = fv;
+      Real tv = sv;
+      if (kw && knv > 1.5) {
+        const Real gv = x_(m,f,kk,jj,ii);
+        const bool mul = (t.kind[f] == 2);
+        const Real x = mul ? ((gv > 0.0 && sv > 0.0) ? sv/gv : 1.0) : (sv - gv);
+        Real sm = mul ? 1.0 : 0.0;
+        for (int q = 0; q < nslot; ++q) {
+          if (!((q == hn) || d_(m,q*nf1+t.nf,kk,jj,ii) > 0.5)) continue;
+          const Real dq = (q == hn) ? (mul ? 1.0/x : -x)
+                                    : (mul ? d_(m,q*nf1+f,kk,jj,ii)/x
+                                           : d_(m,q*nf1+f,kk,jj,ii) - x);
+          sm += mul ? dq : kws[q]*dq;
+        }
+        if (mul) {
+          tv = sv*sm/knv;
+        } else {
+          tv = sv + sm/kwsum;
+          if (t.kind[f] == 1) tv = fmin(fmax(tv, t.lo[f]), t.hi[f]);
+        }
+      } else if (sh) {
+        const Real gv = x_(m,f,kk,jj,ii);
+        const Real e = d_(m,f,kk,jj,ii);
+        if (t.kind[f] == 2) {
+          const Real xr = (gv > 0.0 && sv > 0.0) ? sv/gv : 1.0;
+          tv = sv*((1.0 - aw)*e/xr + aw);
+        } else {
+          tv = sv + fac*(e - (sv - gv));
+          if (t.kind[f] == 1) tv = fmin(fmax(tv, t.lo[f]), t.hi[f]);
+        }
+      }
+      fv = (1.0 - sb)*x_(m,nf1+f,kk,jj,ii) + sb*tv;
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotXfPre
+//! \brief vgdxf-1112, the LAST build of a block, before RotAvgDelta: the boundary
+//! quantities at the boundary time t_k instead of this build's t_k - dt (an O(dt) offset
+//! the EMA / K-window would carry into the whole next block): the current set's raw
+//! fields (the Delta slot and G) and the next set's sweep (the fields) extrapolated
+//! linearly with the previous build of this block, rx = (t_k - t)/(t - t_prev).  The
+//! EMA change test, the aux slot and the Delta then all refer to t_k; the fields are
+//! put back to the live sweep afterwards (VetGdBuild) and G (slot 0) is not changed
+
+void RadiationM1::RotXfPre(const Real rx, const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Tab t = vra_tab;
+  const int nf1 = t.nf + 1;
+  if (!(rx >= 0.0) || vgd_xf_d.extent_int(1) < 4*nf1 ||
+      vra_d.extent_int(1) < vra_k*nf1) {return;}
+  auto x_ = vgd_xf_d;
+  auto d_ = vra_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const int od = (vra_k - 1)*nf1, o2 = 2*nf1, o3 = 3*nf1;
+  par_for("m1_xf_pre", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    if (!RaValid(a, t, ilo, m, k, j, i) || !(x_(m,t.nf,kk,jj,ii) > 0.5) ||
+        !(x_(m,o2+t.nf,kk,jj,ii) > 0.5) || !(x_(m,o3+t.nf,kk,jj,ii) > 0.5) ||
+        !(d_(m,od+t.nf,kk,jj,ii) > 0.5)) {return;}
+    for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2 && i != ie) continue;
+      const bool mul = (t.kind[f] == 2);
+      Real &fv = a.At(t.arr[f], t.comp[f], m, k, j, i);
+      const Real sv = fv, gv = x_(m,f,kk,jj,ii);
+      const Real gp = x_(m,o3+f,kk,jj,ii), dp = x_(m,o2+f,kk,jj,ii);
+      const Real sp = mul ? gp*dp : gp + dp;
+      Real gk = gv + rx*(gv - gp), sk = sv + rx*(sv - sp);
+      if (mul) {
+        if (!(gk > 0.0)) gk = gv;
+        if (!(sk > 0.0)) sk = sv;
+      } else if (t.kind[f] == 1) {
+        gk = fmin(fmax(gk, t.lo[f]), t.hi[f]);
+        sk = fmin(fmax(sk, t.lo[f]), t.hi[f]);
+      }
+      d_(m,od+f,kk,jj,ii) = gk;
+      fv = sk;   // put back after RotAvgDelta (VetGdBuild): the blend uses the live S
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotXfPreLean
+//! \brief vgdxf-1112 vet_gd_rotate_xfade_lean: RotXfPre without a live next-set sweep at
+//! the previous build: G_k = G + rg (G - G_prev build) (slot 5, rg = (t_k - t)/(t -
+//! t_prev)); S_k = G_k (+) (D + rs (P - L)), D = the live sweep's Delta at this state,
+//! (P - L) the estimate line's rise (RotXfSample; rs = (t_k - t)/its length; < 0: D held)
+
+void RadiationM1::RotXfPreLean(const Real rg, const Real rs, const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Tab t = vra_tab;
+  const int nf1 = t.nf + 1;
+  if (!(rg >= 0.0) || vgd_xf_d.extent_int(1) < 7*nf1 ||
+      vra_d.extent_int(1) < vra_k*nf1) {return;}
+  auto x_ = vgd_xf_d;
+  auto d_ = vra_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const int od = (vra_k - 1)*nf1, o4 = 4*nf1, o5 = 5*nf1, o6 = 6*nf1;
+  const bool sl = (rs >= 0.0);
+  par_for("m1_xf_prel", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    if (!RaValid(a, t, ilo, m, k, j, i) || !(x_(m,t.nf,kk,jj,ii) > 0.5) ||
+        !(x_(m,o5+t.nf,kk,jj,ii) > 0.5) || !(d_(m,od+t.nf,kk,jj,ii) > 0.5)) {return;}
+    const bool ds = sl && (x_(m,o4+t.nf,kk,jj,ii) > 0.5);
+    for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2 && i != ie) continue;
+      const bool mul = (t.kind[f] == 2);
+      Real &fv = a.At(t.arr[f], t.comp[f], m, k, j, i);
+      const Real sv = fv, gv = x_(m,f,kk,jj,ii), gp = x_(m,o5+f,kk,jj,ii);
+      Real gk = gv + rg*(gv - gp);
+      if (mul && !(gk > 0.0)) gk = gv;
+      const Real dn = mul ? ((gv > 0.0 && sv > 0.0) ? sv/gv : 1.0) : (sv - gv);
+      Real dk = dn;
+      if (ds) {
+        dk = dn + rs*(x_(m,o6+f,kk,jj,ii) - x_(m,o4+f,kk,jj,ii));
+        if (mul && !(dk > 0.0)) dk = dn;
+      }
+      Real sk = mul ? gk*dk : gk + dk;
+      if (t.kind[f] == 1) {
+        gk = fmin(fmax(gk, t.lo[f]), t.hi[f]);
+        sk = fmin(fmax(sk, t.lo[f]), t.hi[f]);
+      }
+      d_(m,od+f,kk,jj,ii) = gk;
+      fv = sk;   // put back after RotAvgDelta (VetGdBuild)
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotXfKeep
+//! \brief vgdxf-1112 lean + vet_gd_rotate_xfade_pen: the live next-set sweep of the
+//! second-to-last build only feeds RotXfPre: slot 2 := its Delta, slot 3 := G (+ flags);
+//! (the line slots 4, 6 are untouched)
+
+void RadiationM1::RotXfKeep(const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Tab t = vra_tab;
+  const int nf1 = t.nf + 1;
+  auto x_ = vgd_xf_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const int o2 = 2*nf1, o3 = 3*nf1;
+  par_for("m1_xf_keep", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool vg = x_(m,t.nf,kk,jj,ii) > 0.5;
+    const bool vn = RaValid(a, t, ilo, m, k, j, i) && vg;
+    for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2 && i != ie) continue;
+      const Real sv = a.At(t.arr[f], t.comp[f], m, k, j, i), gv = x_(m,f,kk,jj,ii);
+      x_(m,o2+f,kk,jj,ii) = (t.kind[f] == 2) ? ((gv > 0.0 && sv > 0.0) ? sv/gv : 1.0)
+                                             : (sv - gv);
+      x_(m,o3+f,kk,jj,ii) = gv;
+    }
+    x_(m,o2+t.nf,kk,jj,ii) = vn ? 1.0 : 0.0;
+    x_(m,o3+t.nf,kk,jj,ii) = vg ? 1.0 : 0.0;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotXfSample
+//! \brief vgdxf-1112 vet_gd_rotate_xfade_lean, a build with a live next-set sweep (the
+//! registered fields): D = its Delta (slot 2).  The estimate stays continuous in time:
+//! the new line starts at the old line's value L = L' + q (P' - L') (first sample of a
+//! block: L = D) and aims at P = 2 D - D_prev (first: D) at the end of this part (slots
+//! 4, 6; ratio fields P <= 0: D).  The fields := G (+) L, the estimate at this time
+
+void RadiationM1::RotXfSample(const Real q, const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Tab t = vra_tab;
+  const int nf1 = t.nf + 1;
+  if (vgd_xf_d.extent_int(1) < 7*nf1) {return;}
+  auto x_ = vgd_xf_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const int o2 = 2*nf1, o4 = 4*nf1, o6 = 6*nf1;
+  const bool first = !(q >= 0.0);
+  par_for("m1_xf_samp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool vg = x_(m,t.nf,kk,jj,ii) > 0.5;
+    const bool vn = RaValid(a, t, ilo, m, k, j, i) && vg;
+    const bool vo = !first && (x_(m,o2+t.nf,kk,jj,ii) > 0.5) &&
+                    (x_(m,o4+t.nf,kk,jj,ii) > 0.5);
+    for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2 && i != ie) continue;
+      const bool mul = (t.kind[f] == 2);
+      Real &fv = a.At(t.arr[f], t.comp[f], m, k, j, i);
+      const Real sv = fv, gv = x_(m,f,kk,jj,ii);
+      const Real dn = mul ? ((gv > 0.0 && sv > 0.0) ? sv/gv : 1.0) : (sv - gv);
+      Real lv = dn, pv = dn;
+      if (vo) {
+        const Real lo = x_(m,o4+f,kk,jj,ii);
+        lv = lo + q*(x_(m,o6+f,kk,jj,ii) - lo);
+        pv = 2.0*dn - x_(m,o2+f,kk,jj,ii);
+        if (mul) {
+          if (!(lv > 0.0)) lv = dn;
+          if (!(pv > 0.0)) pv = dn;
+        }
+      }
+      x_(m,o2+f,kk,jj,ii) = dn;
+      x_(m,o4+f,kk,jj,ii) = lv;
+      x_(m,o6+f,kk,jj,ii) = pv;
+      Real v = mul ? gv*lv : gv + lv;
+      if (t.kind[f] == 1) v = fmin(fmax(v, t.lo[f]), t.hi[f]);
+      fv = v;
+    }
+    x_(m,o2+t.nf,kk,jj,ii) = vn ? 1.0 : 0.0;
+    x_(m,o4+t.nf,kk,jj,ii) = (vn && (first || vo)) ? 1.0 : 0.0;
+    if (!vn && t.farr >= 0) {a.At(t.farr, t.fcomp, m, k, j, i) = -1.0;}
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotXfEst
+//! \brief vgdxf-1112 vet_gd_rotate_xfade_m = M > 0 (the amortized cross-fade): a build
+//! without a next-set sweep: the fields := the next set's estimate G (+) Delta^ (ratio
+//! fields G Delta^), Delta^ = D2 + r (D2 - D4): the last two live sweeps' same-state
+//! differences (slots 2, 4) extrapolated linearly in time, r = (t - t_2)/(t_2 - t_4)
+//! (r < 0 or slot 4 invalid: D2 held; a ratio extrapolation <= 0: D2); where D2 is
+//! missing the flag field is set invalid (RotXfBlend then hands over A)
+
+void RadiationM1::RotXfEst(const int ilo, const Real r) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Tab t = vra_tab;
+  const int nf1 = t.nf + 1;
+  auto x_ = vgd_xf_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const int o2 = 2*nf1, o4 = 4*nf1, o6 = 6*nf1;
+  // lean: Delta^ = L + r (P - L) (slots 4, 6; r = the line's fraction, RotXfSample)
+  const bool ln = vgd_xf_lean && vgd_xf_d.extent_int(1) >= 7*nf1;
+  const bool lin = !ln && (r >= 0.0) && vgd_xf_d.extent_int(1) >= 5*nf1;
+  par_for("m1_xf_est", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool v = (i >= ilo) && (x_(m,t.nf,kk,jj,ii) > 0.5) &&
+                   (x_(m,(ln ? o4 : o2)+t.nf,kk,jj,ii) > 0.5);
+    const bool l2 = lin && (x_(m,o4+t.nf,kk,jj,ii) > 0.5);
+    for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2 && i != ie) continue;
+      const Real gv = x_(m,f,kk,jj,ii), d2 = x_(m,o2+f,kk,jj,ii);
+      Real dv = d2;
+      if (ln) {
+        const Real lv = x_(m,o4+f,kk,jj,ii);
+        dv = lv + r*(x_(m,o6+f,kk,jj,ii) - lv);
+        if (t.kind[f] == 2 && !(dv > 0.0)) dv = lv;
+      } else if (l2) {
+        dv = d2 + r*(d2 - x_(m,o4+f,kk,jj,ii));
+        if (t.kind[f] == 2 && !(dv > 0.0)) dv = d2;
+      }
+      Real v = (t.kind[f] == 2) ? gv*dv : gv + dv;
+      if (t.kind[f] == 1) v = fmin(fmax(v, t.lo[f]), t.hi[f]);
+      a.At(t.arr[f], t.comp[f], m, k, j, i) = v;
+    }
+    if (!v && t.farr >= 0) {a.At(t.farr, t.fcomp, m, k, j, i) = -1.0;}
+  });
+}
+
 }  // namespace radm1

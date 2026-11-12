@@ -3134,7 +3134,58 @@ class RadiationM1 {
   bool vra_ema_dema = false;
   int64_t vra_ema_nsh = 0;     // the boundaries seen (diag cadence only)
   void RotAvgEmaApply(const int ilo);
-  bool vra_eq = false;         // vet_rotate_avg_weight = equal (default j: J-weighted)
+  // vgdxf-1112 <rad_m1>/vet_gd_rotate_xfade = true (read only when named; default false
+  // = bitwise; needs vet_gd_rotate_dt > 0): the closure handed over is continuous in time
+  // across the ray-set changes.  Every build of block b (t in [t_b, t_b + dt_rot)) also
+  // sweeps the NEXT set b+1 at the same state and hands over H = (1 - s) A_b + s T_{b+1},
+  // s = (t - t_b)/dt_rot: A_b = the closure the run would use (the current set, + the
+  // vet_rotate_avg_ema / K-window offsets), T_{b+1} = the closure the first build of
+  // block b+1 would make at this state (the next set, + the offsets after the boundary
+  // shift: RotAvgEmaShift / RotAvgShift + RotAvgApply, the EMA change weight measured
+  // live).  The two sets' tables
+  // stay on the device (the prefetch set; prefetch off) and are swapped.  time2 extrap2
+  // extrapolates the gd fields across the boundaries (no held step) and
+  // vet_gd_rotate_slope = correct is not used (the closure has no jump)
+  bool vgd_xf = false;
+  Real vgd_xf_alt = -9.0;        // the angle of the tables in the second device set
+  double vgd_xf_nsw = 0.0;       // the next-set sweeps (diagnostic)
+  double vgd_xf_t = 0.0;         // their seconds
+  DvceArray5D<Real> vgd_xf_d;    // (m, 4 (nf+1), ..): G, A, last Delta, last G
+                                 // (+ slot 4 with vgd_xf_m > 0: the Delta before)
+  void VgdXfTables(const Real alpha);
+  void VetGdXfade(const int64_t blk, const bool last, const bool store = true);
+  void RotXfSnap(const int slot, const int ilo);
+  void RotXfBlend(const Real s, const bool last, const int ilo, const Real rx,
+                  const bool store);
+  // vet_gd_rotate_xfade_m = M > 0 (read only when named; 0 = a next-set sweep at every
+  // build): the next set is swept at the first build of each of M equal parts of the
+  // block, at the second build and at the last two builds; the builds between hand
+  // over the next set as G (+) Delta^, Delta^ the linear extrapolation in time of the
+  // last two sweeps' Delta of this block (one: held) (RotXfEst)
+  int vgd_xf_m = 0;
+  bool vgd_xf_lean = false;   // vet_gd_rotate_xfade_lean: sweeps only at the part starts
+                              // (dt-independent times); the last build blends the estimate
+  int64_t vgd_xf_sblk = INT64_MIN;
+  int vgd_xf_sj = -1;
+  int vgd_xf_sn = 0;                 // the live next-set sweeps in block vgd_xf_sblk
+  int64_t vgd_xf_sb[2] = {INT64_MIN, INT64_MIN};   // block, time of the last two
+  Real vgd_xf_st[2] = {0.0, 0.0};                   // live sweeps (1: the latest)
+  void RotXfEst(const int ilo, const Real r);
+  Real VgdXfRe(const int64_t blk) const;
+  void RotXfPreLean(const Real rg, const Real rs, const int ilo);
+  void RotXfSample(const Real q, const int ilo);
+  void RotXfKeep(const int ilo);
+  bool vgd_xf_lpen = false;   // vet_gd_rotate_xfade_pen (lean): a boundary-only sweep
+  Real VgdXfLq(const int64_t blk) const;
+  int64_t vgd_xf_lb = INT64_MIN;   // lean: the estimate line's block, start, end time
+  Real vgd_xf_lt = 0.0, vgd_xf_lT = 0.0;
+  int64_t vgd_xf_gb[2] = {INT64_MIN, INT64_MIN};   // block, time of the last two G
+  Real vgd_xf_gt[2] = {0.0, 0.0};                   // snapshots (slot 0; 1: the latest)
+  void RotXfPre(const Real rx, const int ilo);
+  Real VgdXfRx(const int64_t blk) const;
+  int64_t vgd_xf_pblk = INT64_MIN;   // the block and time of the previous xf build
+  Real vgd_xf_pt = 0.0;
+  bool vra_eq = false;        // vet_rotate_avg_weight = equal (default j: J-weighted)
   bool vra_on = false;
   RotAvgTab vra_tab;
   DvceArray5D<Real> vra_a0, vra_a1;   // the closure's field arrays (set per call)

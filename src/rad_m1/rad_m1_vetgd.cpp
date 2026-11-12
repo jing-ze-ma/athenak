@@ -1495,6 +1495,11 @@ void RadiationM1::VetGdRotStep() {
         std::floor((pm->time - vgd_rot_t0)/vgd_rot_dt - 1.0e-9));
   }
   // rotslope-1012: correct keeps the slope and asks Time2RotCorrect for its jump
+  // vgdxf-1112: with vet_gd_rotate_xfade the closure has no jump: no slope correction
+  if (vgd_xf && vgd_on) {
+    vgd_rot_lastblk = b;
+    return;
+  }
   if (b != vgd_rot_lastblk && vgd_rot_slope == 3 && time_scheme == M1_TIME_HESDIRK2 &&
       Time2Active()) {
     t2_rotcorr = true;
@@ -1991,7 +1996,7 @@ void RadiationM1::VgdTabAlloc(const bool dev) {
 //! VetGdTables at the next rotation swaps them in (no host work, no copy, at that point)
 
 void RadiationM1::VetGdTabPrefetch(const int cyc) {
-  if (!vgd_tab_pre || !VgdRotOn() || vgd_tab_state != 0) {return;}
+  if (!vgd_tab_pre || !VgdRotOn() || vgd_tab_state != 0 || vgd_xf) {return;}
   const Real an = VetGdAngleBlk(VetGdBlock(cyc) + 1);
   if (an == vgd_alpha) {return;}
   VgdTabAlloc(true);
@@ -2095,6 +2100,104 @@ void RadiationM1::VetGdTables(const Real alpha) {
               << nexact << " of " << nmap << " (the rest: nearest direction)"
               << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VgdXfTables
+//! \brief vgdxf-1112 (vet_gd_rotate_xfade): the tables of alpha into vgd_dir/...; the two
+//! sets of the cross-fade stay on the device (the current one and vgd_tabd, the prefetch
+//! set: prefetch is off with xfade) and are swapped, no host work; another angle swaps
+//! the current set out and makes the new one (VetGdTables, same numbers)
+
+void RadiationM1::VgdXfTables(const Real alpha) {
+  if (alpha == vgd_alpha && g_vgd_tab_alpha == alpha) {return;}
+  auto swp = [this]() {
+    std::swap(vgd_dir, vgd_tabd.dir);
+    std::swap(vgd_wall, vgd_tabd.wall);
+    std::swap(vgd_map, vgd_tabd.map);
+    std::swap(vgd_mr, vgd_tabd.mr);
+    if (vgd_wint) {
+      std::swap(vgd_m3, vgd_tabd.m3);
+      std::swap(vgd_w3, vgd_tabd.w3);
+    }
+  };
+  Kokkos::fence();
+  if (alpha == vgd_xf_alt && vgd_tabd.dir.extent(0) == vgd_dir.extent(0)) {
+    swp();
+    vgd_xf_alt = g_vgd_tab_alpha;
+    vgd_alpha = alpha;
+    g_vgd_tab_alpha = alpha;
+    return;
+  }
+  VgdTabAlloc(true);
+  swp();
+  vgd_xf_alt = g_vgd_tab_alpha;
+  VetGdTables(alpha);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::VgdXfRx
+//! \brief vgdxf-1112: (t_k - t)/(t - t_prev) for the extrapolation of the last build of
+//! block blk to its boundary t_k (RotXfPre); -1 without a previous build in this block
+//! (a dt_retry repeats a build at the same time: none then)
+
+Real RadiationM1::VgdXfRx(const int64_t blk) const {
+  const Real tn = pmy_pack->pmesh->time;
+  const Real tk = vgd_rot_t0 + static_cast<Real>(blk + 1)*vgd_rot_dt;
+  return (vgd_xf_pblk == blk && tn > vgd_xf_pt) ? (tk - tn)/(tn - vgd_xf_pt) : -1.0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::VgdXfRe
+//! \brief vgdxf-1112 vet_gd_rotate_xfade_m: (t - t_2)/(t_2 - t_4) for RotXfEst, t_2 / t_4
+//! the times of the last two live next-set sweeps; -1 (hold) unless both are in block blk
+
+Real RadiationM1::VgdXfRe(const int64_t blk) const {
+  if (vgd_xf_sb[0] != blk || vgd_xf_sb[1] != blk || !(vgd_xf_st[1] > vgd_xf_st[0])) {
+    return -1.0;
+  }
+  return (pmy_pack->pmesh->time - vgd_xf_st[1])/(vgd_xf_st[1] - vgd_xf_st[0]);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::VgdXfLq
+//! \brief vgdxf-1112 vet_gd_rotate_xfade_lean: the fraction (t - t_j)/(T_j - t_j) of the
+//! estimate line of block blk (RotXfSample); -1 without a line in this block
+
+Real RadiationM1::VgdXfLq(const int64_t blk) const {
+  if (vgd_xf_lb != blk || !(vgd_xf_lT > vgd_xf_lt)) {return -1.0;}
+  return (pmy_pack->pmesh->time - vgd_xf_lt)/(vgd_xf_lT - vgd_xf_lt);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdXfade
+//! \brief vgdxf-1112: the fields hold the next set's raw sweep at this state (the table
+//! of VetGdRotAvgSetup set): fields := (1 - s) A + s T_{b+1} (RotXfBlend), s = (t - t_b)
+//! / dt_rot at this build's time
+
+void RadiationM1::VetGdXfade(const int64_t blk, const bool last, const bool store) {
+  static bool checked = false;
+  if (!checked) {
+    checked = true;
+    if (vgd_async || vgd_hrs != 0 || vgd_hlf >= 0 || (vra_ema && vra_ema_dema)) {
+      VgdFatal("vet_gd_rotate_xfade needs vet_gd_async = false, no "
+               "vet_rotate_avg_ema_dema, no vet_gd_hr_split / vet_gd_hr_latfit");
+    }
+  }
+  const Real tb = vgd_rot_t0 + static_cast<Real>(blk)*vgd_rot_dt;
+  const Real tn = pmy_pack->pmesh->time;
+  const Real s = (tn - tb)/vgd_rot_dt;
+  // (the boundary extrapolation is RotXfPre's, before RotAvgDelta: none here)
+  RotXfBlend(s, last, pmy_pack->pmesh->mb_indcs.is + vlat_icut, -1.0, store);
+  if (store) {   // the previous LIVE sweep (RotXfPre; RotXfEst: the last two)
+    vgd_xf_pblk = blk;
+    vgd_xf_pt = tn;
+    vgd_xf_sb[0] = vgd_xf_sb[1];
+    vgd_xf_st[0] = vgd_xf_st[1];
+    vgd_xf_sb[1] = blk;
+    vgd_xf_st[1] = tn;
+  }
+  vgd_xf_nsw += 1.0;
 }
 
 //----------------------------------------------------------------------------------------
@@ -6400,7 +6503,11 @@ void RadiationM1::VetGdBuild() {
     const int64_t b = VetGdBlock(pmy_pack->pmesh->ncycle);
     vra_head = 0;
     for (int jb = 1; jb < vra_k; ++jb) {
-      VetGdTables(VetGdAngleBlk(b - jb));
+      if (vgd_xf) {
+        VgdXfTables(VetGdAngleBlk(b - jb));
+      } else {
+        VetGdTables(VetGdAngleBlk(b - jb));
+      }
       vra_raw = true;
       VetGdSweepPost();
       vra_raw = false;
@@ -6415,7 +6522,11 @@ void RadiationM1::VetGdBuild() {
   }
   if (al != vgd_alpha) {
     Kokkos::Timer tt;
-    VetGdTables(al);
+    if (vgd_xf) {
+      VgdXfTables(al);
+    } else {
+      VetGdTables(al);
+    }
     vgd_ttab += tt.seconds();
     rotated = true;
   }
@@ -6427,25 +6538,146 @@ void RadiationM1::VetGdBuild() {
   // of this build are put back)
   vra_last = ra && vra_state == 1 && RotLastStep();
   VetGdSweepPost();
+  // vgdxf-1112: the closure this build would hand over (A) for the cross-fade
+  const int xilo = pmy_pack->pmesh->mb_indcs.is + vlat_icut;
+  if (vgd_xf) {
+    if (!(vgd_rot_dt > 0.0)) {
+      VgdFatal("vet_gd_rotate_xfade needs the physical rotation clock (vet_gd_rotate_dt "
+               "> 0)");
+    }
+    VetGdRotAvgSetup();
+    RotXfSnap(1, xilo);
+  }
   if (vra_last) {
     Kokkos::Timer tr;
     const int ilo = pmy_pack->pmesh->mb_indcs.is + vlat_icut;
     Kokkos::deep_copy(vra_bk_tt, tau_ten);
     if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_hr, vgd_hr);}
     if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_q, vcol_q);}
-    VetGdTables(VetGdAngleBlk(blk + 1));
+    if (vgd_xf) {
+      VgdXfTables(VetGdAngleBlk(blk + 1));
+    } else {
+      VetGdTables(VetGdAngleBlk(blk + 1));
+    }
     vra_raw = true;
     VetGdSweepPost();
     vra_raw = false;
     VetGdRotAvgSetup();
+    // vgdxf-1112: the boundary quantities at t_k (RotXfPre), then the Delta of t_k
+    if (vgd_xf) {
+      // (vra_bk_*: A is in vgd_xf_d with xfade; here they keep the live next-set sweep)
+      Kokkos::deep_copy(vra_bk_tt, tau_ten);
+      if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_hr, vgd_hr);}
+      if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_q, vcol_q);}
+      if (vgd_xf_lean && vgd_xf_m > 0 && !vgd_xf_lpen) {
+        const Real tn = pmy_pack->pmesh->time;
+        const Real tk = vgd_rot_t0 + static_cast<Real>(blk + 1)*vgd_rot_dt;
+        const Real rg = (vgd_xf_gb[0] == blk && tn > vgd_xf_gt[0]) ?
+                        (tk - tn)/(tn - vgd_xf_gt[0]) : -1.0;
+        const Real rs = (vgd_xf_lb == blk && vgd_xf_lT > vgd_xf_lt) ?
+                        (tk - tn)/(vgd_xf_lT - vgd_xf_lt) : -1.0;
+        RotXfPreLean(rg, rs, ilo);
+      } else {
+        RotXfPre(VgdXfRx(blk), ilo);
+      }
+    }
     RotAvgDelta(vra_k - 1, ilo);
-    Kokkos::deep_copy(tau_ten, vra_bk_tt);
-    if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vgd_hr, vra_bk_hr);}
-    if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vcol_q, vra_bk_q);}
+    if (vgd_xf) {
+      Kokkos::deep_copy(tau_ten, vra_bk_tt);
+      if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vgd_hr, vra_bk_hr);}
+      if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vcol_q, vra_bk_q);}
+      // vgdxf-1112: the next set's sweep at this state is the one the cross-fade needs
+      // (vet_gd_rotate_xfade_lean: the blend uses the estimate, as the builds before it,
+      // so that no closure switch sits at the dt-dependent time t_k - dt)
+      if (vgd_xf_lean && vgd_xf_m > 0 && VgdXfLq(blk) >= 0.0) {
+        RotXfEst(ilo, VgdXfLq(blk));
+        VetGdXfade(blk, true, false);
+      } else {
+        VetGdXfade(blk, true);
+      }
+    } else {
+      Kokkos::deep_copy(tau_ten, vra_bk_tt);
+      if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vgd_hr, vra_bk_hr);}
+      if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vcol_q, vra_bk_q);}
+    }
     VetLatOdMax();
     vra_pend = 3;
     vra_nsweep += 1.0;
     vra_time += tr.seconds();
+  } else if (vgd_xf) {
+    Kokkos::Timer tx;
+    // vet_gd_rotate_xfade_m = M: sweep the next set only at the first build of each of
+    // the M parts of the block (s in [j/M, (j+1)/M)), at the second build (the first
+    // slope) and at the last two builds (the second-to-last: RotXfPre's previous build
+    // is a live sweep)
+    bool sw = true;
+    Real rxe = -1.0, lq = -1.0;
+    bool lpen = false;
+    if (vgd_xf_m > 0) {
+      const Mesh *pm = pmy_pack->pmesh;
+      const Real tb = vgd_rot_t0 + static_cast<Real>(blk)*vgd_rot_dt;
+      // (+1e-6: a build at a part start up to round-off belongs to that part)
+      const int jn = static_cast<int>(std::floor((pm->time - tb)/vgd_rot_dt*vgd_xf_m
+                                                 + 1.0e-6));
+      // (vet_gd_rotate_xfade_lean: only the part starts, at the same times for every dt)
+      const bool pen0 = pm->time + 2.0*pm->dt >= tb + vgd_rot_dt - 1.0e-9*vgd_rot_dt;
+      const bool pen = !vgd_xf_lean && pen0;
+      // (lean + vet_gd_rotate_xfade_pen: the second-to-last build sweeps for the boundary
+      // quantities only, RotXfPre; the blend keeps the estimate)
+      lpen = vgd_xf_lean && vgd_xf_lpen && pen0 && jn <= vgd_xf_sj;
+      if (blk != vgd_xf_sblk) {vgd_xf_sn = 0;}
+      sw = (blk != vgd_xf_sblk) || (jn > vgd_xf_sj) || pen ||
+           (vgd_xf_sn < 2 && !vgd_xf_lean);
+      if (sw) {
+        vgd_xf_sblk = blk;
+        vgd_xf_sj = jn;
+        vgd_xf_sn += 1;
+      } else {
+        rxe = vgd_xf_lean ? VgdXfLq(blk) : VgdXfRe(blk);
+      }
+      if (sw && vgd_xf_lean) {
+        lq = VgdXfLq(blk);
+        vgd_xf_lb = blk;
+        vgd_xf_lt = pm->time;
+        vgd_xf_lT = tb + static_cast<Real>(jn + 1)*vgd_rot_dt/vgd_xf_m;
+      }
+    }
+    if (lpen && !sw) {
+      VgdXfTables(VetGdAngleBlk(blk + 1));
+      vra_raw = true;
+      VetGdSweepPost();
+      vra_raw = false;
+      VetGdRotAvgSetup();
+      RotXfKeep(xilo);   // slots 2, 3 (RotXfPre's previous build); fields := estimate
+      vgd_xf_pblk = blk;
+      vgd_xf_pt = pmy_pack->pmesh->time;
+      RotXfEst(xilo, rxe);
+      VetGdXfade(blk, false, false);
+      VgdXfTables(al);
+    } else if (sw && vgd_xf_lean && vgd_xf_m > 0) {   // the continuous estimate
+      VgdXfTables(VetGdAngleBlk(blk + 1));
+      vra_raw = true;
+      VetGdSweepPost();
+      vra_raw = false;
+      VetGdRotAvgSetup();
+      RotXfSample(lq, xilo);
+      VetGdXfade(blk, false, false);
+      VgdXfTables(al);
+    } else if (sw) {
+      VgdXfTables(VetGdAngleBlk(blk + 1));
+      vra_raw = true;
+      VetGdSweepPost();
+      vra_raw = false;
+      VetGdRotAvgSetup();
+      VetGdXfade(blk, false);
+      VgdXfTables(al);
+    } else {
+      VetGdRotAvgSetup();
+      RotXfEst(xilo, rxe);
+      VetGdXfade(blk, false, false);
+    }
+    VetLatOdMax();
+    vgd_xf_t += tx.seconds();
   }
   vra_last = false;
   vra_blk = blk;
@@ -6550,6 +6782,11 @@ void RadiationM1::VetGdPost() {
   VetGdMoments();
   if (vgd_twin) {VetGdTwin(1);}
   if (vgd_smooth > 0) {VetGdSmooth();}
+  // vgdxf-1112: the current set's raw fields G (before the EMA) for the cross-fade
+  if (vgd_xf && !vra_raw) {
+    VetGdRotAvgSetup();
+    RotXfSnap(0, pmy_pack->pmesh->mb_indcs.is + vlat_icut);
+  }
   // rotavg-1012 (vet_rotate_avg): the pending offsets from this (current-set) sweep, then
   // the mean over the last K sets into the hand-over fields (not on a snapshot sweep)
   if (vra_on && VgdRotOn() && !vra_raw && vra_state == 1) {

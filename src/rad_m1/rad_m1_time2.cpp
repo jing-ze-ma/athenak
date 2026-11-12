@@ -3050,7 +3050,9 @@ void RadiationM1::Time2VetColExtrap2() {
   const Real dtn = pmy_pack->pmesh->dt;
   const Real r = (x2_ok && tn > x2_t) ? dtn/(tn - x2_t) : 0.0;
   // the vet_gd fields only within one rotated direction set
-  const Real rg = (vgd_on && vgd_alpha == x2_alpha) ? r : 0.0;
+  // (vgdxf-1112 vet_gd_rotate_xfade: the cross-faded closure is continuous across the
+  // set changes, so its fields are extrapolated across them too)
+  const Real rg = (vgd_on && (vgd_alpha == x2_alpha || vgd_xf)) ? r : 0.0;
   const int xf = x2_fields;
   const Real rk = (xf & 1) ? r : 0.0, rl = (xf & 2) ? rg : 0.0, rh = (xf & 4) ? rg : 0.0;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
