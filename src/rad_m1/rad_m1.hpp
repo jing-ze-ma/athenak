@@ -2728,6 +2728,20 @@ class RadiationM1 {
   Real eaud_pc[4] = {0.0};         // M1_POS_FLR_UN, FLR_DE, GAS_DE, FLRS at the entry
   Real eaud_pd[4] = {0.0};         // their change over the solve (summed per print)
   void EAuditMark(int pt);
+  // consaudit-1112 <rad_m1>/dbg_cons_audit (default false, output only; needs
+  // dbg_energy_audit): at every EAuditMark the change since the previous mark of six
+  // all-rank sums over the active cells (x Coordinates volume) is summed per segment:
+  // U = gas IEN + (c/chat) E, M = rho, L_z of the gas (r_c x m).z and of the radiation
+  // (r_c x F/(c chat)).z, the radial momentum m_r and F_r/(c chat); line CAUDIT at mark 5
+  // (segments 0-5 and the discarded attempts D), and CAUDITB: the solve segment (3) and
+  // the fix segments (1, 2, 4, 5) of U, L_z (gas + rad), P_r (gas + rad) in 8 radial bins
+  // (of i) x 3 bands of |cos theta| (< 0.5, < 0.866, rest)
+  bool dbg_caudit = false;
+  bool caud_init = false;
+  DvceArray5D<Real> caud_q;
+  DvceArray1D<Real> caud_bin;
+  Real caud_seg[7][6] = {};
+  void CAuditMark(int pt);
   // fixbundle-1009 F4: ApplyClosureLimits clips over ACTIVE cells (0 = E raised to
   // e_floor, 1 = |F| scaled to c E), every stage, and the event-log totals (collective)
   DvceArray1D<Real> acl_cnt_d;

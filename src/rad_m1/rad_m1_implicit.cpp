@@ -1342,6 +1342,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                    pin->GetBoolean("rad_m1", "dbg_energy_audit_map");
   dbg_eaudit = pin->DoesParameterExist("rad_m1", "dbg_energy_audit") &&
                pin->GetBoolean("rad_m1", "dbg_energy_audit");
+  // consaudit-1112 (rad_m1.hpp, output only)
+  dbg_caudit = dbg_eaudit && pin->DoesParameterExist("rad_m1", "dbg_cons_audit") &&
+               pin->GetBoolean("rad_m1", "dbg_cons_audit");
   impl_ecnt = pin->GetOrAddInteger("rad_m1","implicit_eos_cache_nt",2);
   impl_eccheck = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache_check",true);
   // the check is a MEASUREMENT only (nothing reads igm or ec_emax/ec_tmax but the final
@@ -14150,6 +14153,7 @@ DvceArray2D<Real> RadiationM1::VtanX2t() {
 //! it at the same points).
 
 void RadiationM1::EAuditMark(int pt) {
+  if (dbg_caudit) {CAuditMark(pt);}   // consaudit-1112 (output only)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
