@@ -6313,14 +6313,16 @@ void RadiationM1::VetGdMoments() {
   const bool repq = vgd_replace && vcol_sq;
   auto vq_ = vcol_q;
   const Real qlo = vcol_qmin, qhi = vcol_qmax;
-  // accel-1009: shell-major thread order (j fastest), matching the LayoutLeft vgd_i
+  // accel-1009: shell-major thread order; d6fast2-1112: k fastest, the order of the
+  // rows in the VgdRag slab of vgd_i (d fastest, then k, then j), so that adjacent
+  // threads read adjacent rows (the same per-cell arithmetic: bitwise)
   // (cs-vetgd-1017: the cubed sphere's own kernel, D_rr about the cell's r_hat)
   if (vgd_csg) {
     VetGdCsMoments(0);
   } else {
   const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;   // accpolar-1103
-  par_for("m1_vgd_mom", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
-  KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
+  par_for("m1_vgd_mom", DevExeSpace(), 0, nmb1, is, ie, js, je, ks, ke,
+  KOKKOS_LAMBDA(const int m, const int i, const int j, const int k) {
     for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
     if (i < ilo) {return;}
     const Real th = sth_ ? thn_(m,j+og)   // accsp-1102
@@ -8857,8 +8859,8 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       // as below
       auto cr_ = vgd_csr;
       auto cn2 = cs_cn2, cn3 = cs_cn3;
-      par_for("m1_vgd_hrcs", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
-      KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
+      par_for("m1_vgd_hrcs", DevExeSpace(), 0, nmb1, is, ie, js, je, ks, ke,
+      KOKKOS_LAMBDA(const int m, const int i, const int j, const int k) {
         if (i < ilo) {
           for (int c = 0; c < 6; ++c) {hr_(m,c,k,j,i) = (c % 2 == 0) ? -1.0 : 0.0;}
           if (thx) {
@@ -8902,8 +8904,8 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       return;
     }
     const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;   // accpolar-1103
-    par_for("m1_vgd_hr", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
+    par_for("m1_vgd_hr", DevExeSpace(), 0, nmb1, is, ie, js, je, ks, ke,
+    KOKKOS_LAMBDA(const int m, const int i, const int j, const int k) {
       if (i < ilo) {
         for (int c = 0; c < 6; ++c) {hr_(m,c,k,j,i) = (c % 2 == 0) ? -1.0 : 0.0;}
         if (thx) {
