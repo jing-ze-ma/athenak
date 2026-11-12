@@ -1097,6 +1097,12 @@ void RadiationM1::VetGdInit() {
     const char *e = std::getenv("VGD_GFAST");
     vgd_gfast = (e == nullptr) || (std::atoi(e) != 0);
   }
+#if defined(KOKKOS_ENABLE_CUDA)
+  {   // d6fast4-1112: env VGD_CUDA_LB = launch-bounds variant of the CUDA gx-false kernel
+    const char *e = std::getenv("VGD_CUDA_LB");
+    vgd_cuda_lb = (e == nullptr) ? M1_VGD_CUDA_LB : std::atoi(e);
+  }
+#endif
   if (vgd_async) {
     // vet_gd_async (GD_ASYNC.md): one exact sweep per build, nothing that rereads the
     // source between builds
@@ -5585,6 +5591,44 @@ void RadiationM1::VetGdSweep() {
           const VgdBodygT *bp_ = bgp;
           const VgdBodymgT *bq_ = bgq;
 #endif
+#if defined(KOKKOS_ENABLE_CUDA)
+          // d6fast4-1112: launch-bounds variants of the gx-false kernel on CUDA (env
+          // VGD_CUDA_LB, read once; 0 = the VgdShellPol launch).  Register allocation and
+          // block size only: the same arithmetic, the same bits
+#define M1_VGD_GF_CU(...)                                                    \
+          if (bq_ != nullptr) {                                               \
+            Kokkos::parallel_for(name, __VA_ARGS__, KOKKOS_LAMBDA(const int c) { \
+              int t = L_(c);                                                  \
+              const int d = t % n;                                            \
+              t /= n;                                                         \
+              const int m = t/nkj;                                            \
+              t -= m*nkj;                                                     \
+              const int k = ks + t/nj;                                        \
+              const int j = js + (t % nj);                                    \
+              (*bq_)(m, k, j, d, i, l, f_, f_);                               \
+            });                                                               \
+          } else {                                                            \
+            Kokkos::parallel_for(name, __VA_ARGS__, KOKKOS_LAMBDA(const int c) { \
+              int t = L_(c);                                                  \
+              const int d = t % n;                                            \
+              t /= n;                                                         \
+              const int m = t/nkj;                                            \
+              t -= m*nkj;                                                     \
+              const int k = ks + t/nj;                                        \
+              const int j = js + (t % nj);                                    \
+              (*bp_)(m, k, j, d, i, l, f_, f_);                               \
+            });                                                               \
+          }
+          switch (vgd_cuda_lb) {
+            case 1: M1_VGD_GF_CU(VgdLbPol<128, 4>(vgd_cur, c0, c1)); break;
+            case 2: M1_VGD_GF_CU(VgdLbPol<128, 5>(vgd_cur, c0, c1)); break;
+            case 3: M1_VGD_GF_CU(VgdLbPol<128, 6>(vgd_cur, c0, c1)); break;
+            case 4: M1_VGD_GF_CU(VgdLbPol<256, 2>(vgd_cur, c0, c1)); break;
+            case 5: M1_VGD_GF_CU(VgdLbPol<256, 3>(vgd_cur, c0, c1)); break;
+            default: M1_VGD_GF_CU(VgdShellPol(vgd_cur, c0, c1)); break;
+          }
+#undef M1_VGD_GF_CU
+#else
           if (bq_ != nullptr) {
             Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
             KOKKOS_LAMBDA(const int c) {
@@ -5610,6 +5654,7 @@ void RadiationM1::VetGdSweep() {
               (*bp_)(m, k, j, d, i, l, f_, f_);
             });
           }
+#endif
           return;
         }
         if (bq_ != nullptr) {

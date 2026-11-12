@@ -4024,6 +4024,7 @@ class RadiationM1 {
   DvceArray1D<char> vgd_bbuf0, vgd_bbuf1;
 #if defined(KOKKOS_ENABLE_CUDA)
   DvceArray1D<char> vgd_bbuf2, vgd_bbuf3;   // d6fast4-1112: CUDA gx-false closures
+  int vgd_cuda_lb = 0;   // d6fast4-1112: env VGD_CUDA_LB (rad_m1_vetgd.cpp)
 #endif
   bool vgd_ainl = false;       // the sweep inline at launch (host backends, or env
                                // VGD_ASYNC_INLINE=1): same numbers, no overlap
