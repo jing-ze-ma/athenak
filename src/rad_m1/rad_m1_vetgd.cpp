@@ -3193,6 +3193,34 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
 //! both back to back; the overlap of VetGdSweep runs the next shell's local items between
 
 //----------------------------------------------------------------------------------------
+// d6fast3-1112: an event behind the per-shell halo pack on the sweep stream, so the host
+// waits for the pack alone while the ring copies queued after it run (VetGdHlBegin)
+namespace {
+#if defined(KOKKOS_ENABLE_HIP)
+hipEvent_t g_vgd_pkev = nullptr;
+void VgdPackEvtRecord(const DevExeSpace &ex) {
+  if (g_vgd_pkev == nullptr) {
+    (void)hipEventCreateWithFlags(&g_vgd_pkev, hipEventDisableTiming);
+  }
+  (void)hipEventRecord(g_vgd_pkev, ex.hip_stream());
+}
+void VgdPackEvtWait(const DevExeSpace &) {(void)hipEventSynchronize(g_vgd_pkev);}
+#elif defined(KOKKOS_ENABLE_CUDA)
+cudaEvent_t g_vgd_pkev = nullptr;
+void VgdPackEvtRecord(const DevExeSpace &ex) {
+  if (g_vgd_pkev == nullptr) {
+    (void)cudaEventCreateWithFlags(&g_vgd_pkev, cudaEventDisableTiming);
+  }
+  (void)cudaEventRecord(g_vgd_pkev, ex.cuda_stream());
+}
+void VgdPackEvtWait(const DevExeSpace &) {(void)cudaEventSynchronize(g_vgd_pkev);}
+#else
+void VgdPackEvtRecord(const DevExeSpace &) {}
+void VgdPackEvtWait(const DevExeSpace &ex) {ex.fence();}
+#endif
+}  // namespace
+
+//----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::VgdNcclOn
 //! \brief accel-1014: the NCCL list exchange is used (env ACC_NCCL=1 in a build with
 //! -DM1_VGD_NCCL); the communicator (over vgd_comm) is made at the first call
@@ -3489,7 +3517,14 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
       vgd_tpost += vgd_hlp.tq.seconds();
     } else {
 #endif
-    vgd_cur.fence();
+    // d6fast3-1112: the ring copies (other shells' slabs, pure copies, stream order
+    // unchanged: pack, ring, zero, scatter) are queued BEFORE the host waits, on an
+    // event behind the pack (was a full fence of the sweep stream, then the ring after
+    // the posts): they run while the host posts the messages.  The send buffer is
+    // complete at the event, so the messages carry the same values (bitwise)
+    VgdPackEvtRecord(vgd_cur);
+    VetGdRingFlush();
+    VgdPackEvtWait(vgd_cur);
     vgd_hlp.tq.reset();
     auto &tq = vgd_hlp.tq;
     auto &req = vgd_hlp.req;
