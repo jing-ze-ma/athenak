@@ -2349,6 +2349,20 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_am_cons_diag = pin->GetInteger("rad_m1","implicit_am_cs_cons_diag");
     if (impl_am_cons_diag > 0) {Kokkos::realloc(amcd_d, 24);}
   }
+  // amlz-1112 implicit_am_cs_fold (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1","implicit_am_cs_fold")) {
+    const std::string af = pin->GetString("rad_m1","implicit_am_cs_fold");
+    if (af == "applied") {
+      impl_am_fold_ap = true;
+    } else if (af != "stored") {
+      ImplFatal("<rad_m1>/implicit_am_cs_fold must be stored or applied");
+    }
+    if (impl_am_fold_ap && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_am_cs_fold=applied: am_cs measures the gas+rad L "
+                << "change from the write-back's F^old (cmem: face means of F_c + A E^n)"
+                << std::endl;
+    }
+  }
   // amvec-1111 implicit_am_cs_deposit (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_am_cs_deposit")) {
     const std::string ad = pin->GetString("rad_m1","implicit_am_cs_deposit");
@@ -18497,6 +18511,27 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // on the covariant basis), so that both changes are the solve's own slope x dt
     auto am_ = amw;
     const bool t2sa = t2st, csoka = csok;
+    // amlz-1112 implicit_am_cs_fold = applied: under cmem the write-back's F^old (go*),
+    // the face means of the F_c memory (which already carries the stage increment) + A
+    // E^n, on the covariant basis (rad_m1_impl_wb_kernel.hpp, the gfst || cmw branch)
+    const bool afold = impl_am_fold_ap && impl_hr_cmem && !impl_physflux;
+    if (afold) {
+      auto f0n_ = f0x1n;
+      par_for("m1_am_cs_pre_fold", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        am_(m,0,k,j,i) = uh(m,IM1,k,j,i);
+        am_(m,1,k,j,i) = uh(m,IM2,k,j,i);
+        am_(m,2,k,j,i) = uh(m,IM3,k,j,i);
+        const Real eo = iw_(m,M1_IW_EN,k,j,i);
+        const Real g1 = 0.5*(f0n_(m,k,j,i) + f0n_(m,k,j,i+1)) + iw_(m,M1_IW_ADV,k,j,i)*eo;
+        const Real a = 0.5*(f2nw_(m,k,j,i) + f2nw_(m,k,j+1,i)) + iw_(m,M1_IW_A2,k,j,i)*eo;
+        const Real b = 0.5*(f3nw_(m,k,j,i) + f3nw_(m,k+1,j,i)) + iw_(m,M1_IW_A3,k,j,i)*eo;
+        const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+        am_(m,3,k,j,i) = g1;
+        am_(m,4,k,j,i) = (a + c*b)*si;
+        am_(m,5,k,j,i) = (b + c*a)*si;
+      });
+    } else {
     par_for("m1_am_cs_pre", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       am_(m,0,k,j,i) = uh(m,IM1,k,j,i);
@@ -18525,6 +18560,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       am_(m,4,k,j,i) = g2;
       am_(m,5,k,j,i) = g3;
     });
+    }
   }
   // vtxfix-1029 implicit_pos_floor_cons: the write-back stores each cell's uncovered
   // floor raise (erg) instead of counting it as created; a column pass then moves it
