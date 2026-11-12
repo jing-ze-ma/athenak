@@ -1588,11 +1588,12 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
 //! channels).  G_f = A_f (c1 t2pf1 + c2 t2pf2) is the energy the increment carries across
 //! face f (+ towards +x_d); V_i dE_i = sum_lower G - sum_upper G + V_i s_i with s_i the
 //! cell-local remainder.  Only cells whose old vector E + dE is not > 0 are limited, by
-//! R_i = (1 - 1e-12) Q_i/P_i, Q_i = V (E + dE) + P_i - I_i (inflow ignored, so the cell
-//! stays admissible whatever its neighbours do); a face is scaled by the R of its donor.
-//! Rounds until no cell is newly limited (a limited donor cuts its receivers' inflow, so
-//! the limit can travel along a beam one cell per round: measured 126 rounds on the stiff
-//! pulse at c dt/dx 16; cap 4096).  Bitwise wherever no face is limited.
+//! R_i = (1 - 1e-12) Q_i/P_i, Q_i = V (E + dE) + P_i - I_i + I_i(R): what it holds w/o
+//! face transport plus the inflow its donors' current R still let through; a face is
+//! scaled by the R of its donor.  A limited donor cuts its receivers' inflow, so rounds
+//! run until no cell is newly limited (R only decreases; a receiver that loses inflow
+//! is limited again by exactly the deficit, which travels down the beam one cell per
+//! round; cap 4096).  Bitwise wherever no face is limited.
 
 void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   const bool two = (stage != 1);
@@ -1644,13 +1645,16 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     const auto &s = mbsize.d_view(m);
     return curv ? vol(m,k,j,i) : s.dx1*s.dx2*s.dx3;
   };
-  // V (E + dE) unlimited (w), the full outflow po and inflow pi, and the change dw of
+  // V (E + dE) unlimited (w), the full outflow po and inflow pi, the inflow pl that the
+  // current R of the donors lets through, and the change dw of
   // V E_new by the current R (slot ca, ghosts valid); lim: a face next to it is limited
   auto cell = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
-                            Real &w, Real &po, Real &pi, Real &dw, bool &lim) {
+                            Real &w, Real &po, Real &pi, Real &pl, Real &dw,
+                            bool &lim) {
     const Real rc = iw_(m,ca,k,j,i);
     po = 0.0;
     pi = 0.0;
+    pl = 0.0;
     dw = 0.0;
     lim = false;
     for (int d = 0; d < 3; ++d) {
@@ -1661,6 +1665,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       if (g > 0.0) {
         pi += g;
         const Real rn = iw_(m,ca,k-dk,j-dj,i-di);
+        pl += rn*g;
         if (rn < 1.0) {dw -= (1.0 - rn)*g; lim = true;}
       } else if (g < 0.0) {
         po -= g;
@@ -1674,6 +1679,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       } else if (g < 0.0) {
         pi -= g;
         const Real rn = iw_(m,ca,k+dk,j+dj,i+di);
+        pl -= rn*g;
         if (rn < 1.0) {dw += (1.0 - rn)*g; lim = true;}
       }
     }
@@ -1691,11 +1697,12 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       const Real rc = iw_(m,ca,k,j,i);
       Real rn = rc;
       if (!(hoi && hm_(m,k,j,i) > 0.0)) {
-        Real w, po, pi, dw;
+        Real w, po, pi, pl, dw;
         bool lim;
-        cell(m, k, j, i, w, po, pi, dw, lim);
+        cell(m, k, j, i, w, po, pi, pl, dw, lim);
         if (!(w + dw > 0.0)) {
-          const Real q = w + po - pi;
+          // what the cell holds without face transport + the inflow it still gets
+          const Real q = w + po - pi + pl;
           const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
           if (rq < rc) {
             rn = rq;
@@ -1726,9 +1733,9 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sl,
                 Real &sw) {
-    Real w, po, pi, dw;
+    Real w, po, pi, pl, dw;
     bool lim;
-    cell(m, k, j, i, w, po, pi, dw, lim);
+    cell(m, k, j, i, w, po, pi, pl, dw, lim);
     if (lim) {in_(m,M1_T2_E,k,j,i) += dw/cvol(m,k,j,i);}
     const Real rc = iw_(m,ca,k,j,i);
     if (rc < 1.0) {sw += (1.0 - rc)*po;}

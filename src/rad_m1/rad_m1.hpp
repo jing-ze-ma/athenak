@@ -2272,8 +2272,8 @@ class RadiationM1 {
   // The increment's face part is G_f = A_f (c1 t2pf1 + c2 t2pf2); the rest of the cell's
   // E increment (exchange, enthalpy, metric) is the cell-local remainder, so the split is
   // exact.  A cell whose old vector E + dE is not > 0 gets R = (1 - 1e-12) Q/P (Q = V E +
-  // V dE + P - I: what it holds without any face transport, P/I = its out/inflow), a face
-  // takes the R of its donor cell (the receiver's bound is 1: the bound ignores inflow),
+  // V dE + P - I + I(R): what it holds without face transport plus the inflow its donors
+  // still let through, P/I = its out/inflow), a face takes the R of its donor cell,
   // and the E flux and the face F slope of the increment are scaled by it together on
   // both sides: energy exact, gas momentum/energy and the conservative2 cell F untouched
   // (momentum exact).  Rounds until no cell is newly limited (a receiver loses inflow),
