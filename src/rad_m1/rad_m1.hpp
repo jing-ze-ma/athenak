@@ -2247,6 +2247,19 @@ class RadiationM1 {
   bool t2_iex = false;
   Real t2_iex_y0 = 0.1, t2_iex_de = 0.0, t2_iex_cells = 0.0, t2_iex_neg = 0.0;
   DvceArray4D<Real> t2ixd;                         // the relax transfer of this solve
+  // rsglock-1112 <rad_m1>/time2_exch_split = none | psi (read only when named; none =
+  // bitwise).  psi: each slope also stores its gas-radiation EXCHANGE part
+  // K_X = -(cl/ch) q/dt (q = SRCR - SRCB E', the last pass) and the full linearised
+  // exchange rate lambda = 4 cl rho kappa_P a T^3/(rho c_v) + ch rho kappa_E (the stage
+  // solve's Schur row; kappa frozen as there).  Time2FormStage carries each exchange
+  // term c_j K_X,j with the weight 1/sqrt(1 + (lambda_j c_j)^2): 1 - O(z^2) where the
+  // exchange is not stiff (order 2 kept), <= 1/z where it is (the explicit carry cannot
+  // cross the local equilibrium: hesdirk2's -2.41 overshoot).  Gas EN and E get opposite
+  // corrections: total energy exact.  No free parameter (z = lambda c_j is the scale).
+  bool t2_xsp = false;
+  Real t2_xsp_de = 0.0, t2_xsp_cells = 0.0;
+  int t2_xsp_calls = 0;
+  DvceArray4D<Real> t2kx1, t2kx2, t2lx1, t2lx2;    // K_X and lambda of K1, K2
   int impl_am_cs_diag = 0;   // amdef-1019 diagnostic (read only when named): solves to print
   DvceArray5D<Real> amw;
   bool am_vec = false;             // + <hydro>/am_vector: the vector form

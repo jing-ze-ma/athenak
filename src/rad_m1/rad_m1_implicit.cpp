@@ -19710,6 +19710,32 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     f2_ = f0x2;
     f3_ = f0x3;
   }
+  // rsglock-1112 time2_exch_split = psi: this solve's exchange slope K_X and its rate
+  if (t2k && have_hydro && t2_xsp && t2kx1.extent_int(0) > nmb1) {
+    auto kx_ = (t2s == M1_T2S_STAGE1) ? t2kx2 : t2kx1;
+    auto lx_ = (t2s == M1_T2S_STAGE1) ? t2lx2 : t2lx1;
+    auto iwx = iw;
+    auto opx = opac;
+    auto udx = flr.u0;
+    auto eox = flr.eos;
+    const Real clx = c_light, chx = chat, arx = arad, fx = 1.0/dt;
+    par_for("m1_t2_xsp_k", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real q = iwx(m,M1_IW_SRCR,k,j,i)
+                     - iwx(m,M1_IW_SRCB,k,j,i)*iwx(m,M1_IW_EP,k,j,i);
+      kx_(m,k,j,i) = -(clx/chx)*q*fx;
+      const Real dd = udx(m,IDN,k,j,i), tk = iwx(m,M1_IW_TP,k,j,i);
+      Real lam = 0.0;
+      if (dd > 0.0 && tk > 0.0) {
+        Real ee, pp, cr, ct, cv;
+        eox.ThermoAt(dd, tk, ee, pp, cr, ct, cv);
+        const Real rcv = dd*cv;
+        lam = chx*opx(m,M1_OP_E,k,j,i);
+        if (rcv > 0.0) {lam += 4.0*clx*opx(m,M1_OP_P,k,j,i)*arx*tk*tk*tk/rcv;}
+      }
+      lx_(m,k,j,i) = lam;
+    });
+  }
   // rsglock-1112 time2_inc_energy = rad: the KE part of this solve's FINAL slope (after
   // the write-back, am_cs and the work rows), K_KE = (KE(m_o + dt K_m) - KE(m_o))/dt
   if (t2k && have_hydro && t2_ike && t2mo.extent_int(0) > nmb1) {

@@ -445,6 +445,23 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
                 << "exact, no cap)" << std::endl;
     }
   }
+  // rsglock-1112 time2_exch_split = none | psi (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_exch_split")) {
+    const std::string xs = pin->GetString("rad_m1", "time2_exch_split");
+    if (xs != "none" && xs != "psi") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_exch_split = '" << xs
+                << "' (none | psi)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    t2_xsp = (xs == "psi");
+    if (global_variable::my_rank == 0 && t2_xsp) {
+      std::cout << "<rad_m1> time2_exch_split=psi: the carried gas-radiation exchange "
+                << "terms c K_X take the weight 1/sqrt(1 + (lambda c)^2) (lambda = the "
+                << "stage solve's linearised exchange rate); E and gas EN opposite, "
+                << "energy exact" << std::endl;
+    }
+  }
   // rsglock-1112 time2_inc_exch = none | relax (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_inc_exch")) {
     const std::string ie = pin->GetString("rad_m1", "time2_inc_exch");
@@ -631,6 +648,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   Kokkos::deep_copy(t2k1, 0.0);
   Kokkos::deep_copy(t2k2, 0.0);
   Kokkos::deep_copy(t2inc, 0.0);
+  if (t2_xsp) {   // rsglock-1112 time2_exch_split
+    Kokkos::realloc(t2kx1, nmb, n3, n2, n1);
+    Kokkos::realloc(t2kx2, nmb, n3, n2, n1);
+    Kokkos::realloc(t2lx1, nmb, n3, n2, n1);
+    Kokkos::realloc(t2lx2, nmb, n3, n2, n1);
+    Kokkos::deep_copy(t2kx1, 0.0);
+    Kokkos::deep_copy(t2kx2, 0.0);
+    Kokkos::deep_copy(t2lx1, 0.0);
+    Kokkos::deep_copy(t2lx2, 0.0);
+  }
   if (t2_iex) {   // rsglock-1112 time2_inc_exch
     Kokkos::realloc(t2ixd, nmb, n3, n2, n1);
     Kokkos::deep_copy(t2ixd, 0.0);
@@ -1127,6 +1154,38 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         if (pm_(m,k,j,i) > 0.0) {ei_(m,k,j,i) += ccomp*e1_(m,k,j,i);}
       });
     }
+  }
+  // rsglock-1112 time2_exch_split = psi: the carried exchange terms in bounded form
+  if (t2_xsp && t2kx1.extent_int(0) > nmb1 && t2inc.extent_int(1) > M1_T2_EN) {
+    auto x1_ = t2kx1, x2_ = t2kx2, l1_ = t2lx1, l2_ = t2lx2, ix_ = t2inc;
+    const bool pc = pcomp;
+    auto pmx_ = t2pm;
+    const Real cc1 = c1, cc2 = c2, ccx = ccomp, chcl = chat/c_light;
+    auto vlx = pmy_pack->pcoord->volume;
+    const bool hvx = (vlx.extent_int(0) > nmb1);
+    Real sde = 0.0, snc = 0.0;
+    Kokkos::parallel_reduce("m1_t2_xsp", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, 0, 0, 0}, {nmb1 + 1, n3, n2, n1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sd,
+                  Real &sn) {
+      Real a1 = cc1;
+      if (pc && pmx_(m,k,j,i) > 0.0) {a1 += ccx;}
+      Real z = l1_(m,k,j,i)*a1;
+      Real d = a1*(1.0/sqrt(1.0 + z*z) - 1.0)*x1_(m,k,j,i);
+      if (two) {
+        z = l2_(m,k,j,i)*cc2;
+        d += cc2*(1.0/sqrt(1.0 + z*z) - 1.0)*x2_(m,k,j,i);
+      }
+      if (d != 0.0) {
+        ix_(m,M1_T2_EN,k,j,i) += d;
+        ix_(m,M1_T2_E,k,j,i) -= chcl*d;
+        sd += fabs(d)*(hvx ? vlx(m,k,j,i) : 1.0);
+        sn += 1.0;
+      }
+    }, Kokkos::Sum<Real>(sde), Kokkos::Sum<Real>(snc));
+    t2_xsp_de += sde;
+    t2_xsp_cells += snc;
+    t2_xsp_calls += 1;
   }
   // cs-open-1018 <hydro>/am_vector: the spin reservoir's increment from its slopes
   if (am_vec && aminc.extent_int(0) > 0) {
@@ -1813,6 +1872,10 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
     Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
     if (t2_ike && t2ke1.extent_int(0) > 0) {   // rsglock-1112
       Kokkos::deep_copy(DevExeSpace(), t2ke1, t2ke2);
+    }
+    if (t2_xsp && t2kx1.extent_int(0) > 0) {   // rsglock-1112 time2_exch_split
+      Kokkos::deep_copy(DevExeSpace(), t2kx1, t2kx2);
+      Kokkos::deep_copy(DevExeSpace(), t2lx1, t2lx2);
     }
     if (csok0 && impl_gas_src_cons && csk2.extent(0) == csk1.extent(0)) {
       Kokkos::deep_copy(DevExeSpace(), csk1, csk2);
@@ -2908,6 +2971,11 @@ void RadiationM1::Time2Report() {
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   std::cout << std::endl;
+  if (t2_xsp) {   // rsglock-1112 time2_exch_split (rank 0)
+    std::cout << "<rad_m1> time2_exch_split=psi (rank 0): stages " << t2_xsp_calls
+              << " cells corrected " << t2_xsp_cells << " sum |dEN| x V moved to E "
+              << t2_xsp_de << std::endl;
+  }
   if (t2_iex) {   // rsglock-1112 time2_inc_exch (rank 0)
     std::cout << "<rad_m1> time2_inc_exch=relax (rank 0): sum (eint given x V, E paid) "
               << t2_iex_de << " cell-solves " << t2_iex_cells
