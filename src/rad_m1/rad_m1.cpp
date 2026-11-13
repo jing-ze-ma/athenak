@@ -691,6 +691,32 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   } else {
     arad = pin->GetOrAddReal("rad_m1","arad",0.0);
   }
+  // rsgen-1113: conservative temperature floor at the refresh (rad_m1.hpp)
+  if (pin->DoesParameterExist("rad_m1","refresh_tfloor_cons")) {
+    std::string rv = pin->GetString("rad_m1","refresh_tfloor_cons");
+    if (rv.compare("off") == 0 || rv.compare("false") == 0) {
+      rtf_mode = 0;
+    } else if (rv.compare("diag") == 0) {
+      rtf_mode = 1;
+    } else if (rv.compare("on") == 0 || rv.compare("true") == 0) {
+      rtf_mode = 2;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/refresh_tfloor_cons must be off, diag or on"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (pin->DoesParameterExist("rad_m1","refresh_tfloor_report")) {
+      rtf_report = pin->GetInteger("rad_m1","refresh_tfloor_report");
+    }
+    if (rtf_mode > 0 && (!coupling || pin->DoesBlockExist("mhd") ||
+                         !pin->DoesBlockExist("hydro"))) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/refresh_tfloor_cons needs <hydro> (not <mhd>) "
+                << "and coupling" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   // fastfloor-1109: floor-gas cap (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","floorcap_rho")) {
     fcap_rho = pin->GetReal("rad_m1","floorcap_rho");

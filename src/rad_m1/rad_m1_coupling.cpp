@@ -59,6 +59,7 @@
 
 #include <math.h>
 
+#include <cstdio>
 #include <iostream>
 
 #include "utils/eint_ledger.hpp"
@@ -415,6 +416,7 @@ TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
   eint_ledger::Mark(pmy_pack->pmesh, "m1_post");
   if (fcap_rho > 0.0) {FloorGasCap();}   // fastfloor-1109
   if (dbg_eaudit) {EAuditMark(4);}   // accbook-1021 (output only)
+  if (rtf_mode > 0) {RefreshTfloorCons();}   // rsgen-1113
   FluidRefresh(pdrive);
   eint_ledger::Mark(pmy_pack->pmesh, "m1_c2p");
   if (dbg_eaudit) {EAuditMark(5);}
@@ -521,6 +523,102 @@ void RadiationM1::FloorGasCap() {
                 << " (erg, to E_rad" << (kr ? "" : "; KE thermalised") << ")"
                 << std::endl;
     }
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RefreshTfloorCons
+//! \brief rsgen-1113 <rad_m1>/refresh_tfloor_cons: the temperature floor of the C2P,
+//! applied first and paid from the radiation of the same cell (see rad_m1.hpp).
+//!
+//! Why: the C2P raises e_int to e(rho, tfloor) wherever the solve left the gas colder,
+//! and that energy comes from nowhere.  In an optically thin outer atmosphere whose
+//! radiative-equilibrium temperature sits below tfloor, the solve cools the gas below
+//! the floor in every stage and the C2P puts it back: a steady energy source.  With the
+//! H2 EOS (<hydro>/eos_h2) the e(T) step between the equilibrium T and the floor holds
+//! the H2 recombination energy, and that source grew 20x on the RSG (RSG_ENERGY_1113).
+//! Here the same raise is made with e_gas + (c/chat) E of the cell unchanged; the C2P
+//! then finds T = tfloor and adds nothing (its floor still catches what is left).
+
+void RadiationM1::RefreshTfloorCons() {
+  hydro::Hydro *ph = pmy_pack->phydro;
+  if (ph == nullptr || pmy_pack->pmhd != nullptr) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int ni = indcs.nx1, nj = indcs.nx2, nk = indcs.nx3;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto u0_ = u0;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  auto uh = fl.u0;
+  auto eos = fl.eos;
+  const bool etg = fl.use_etotgrav;
+  auto phicc = fl.phicc0;
+  const bool csw = cs_geom, psph = sph_geom;
+  auto cclw = pmy_pack->pcoord->cos_cell;
+  auto pvol = pmy_pack->pcoord->volume;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  const Real rcc = chat/c_light;      // E change per unit gas energy
+  const Real efl = e_floor;
+  const bool app = (rtf_mode >= 2);
+  const int cyc = pmy_pack->pmesh->ncycle;
+  const bool rep = (rtf_report > 0) && ((cyc % rtf_report) == 0);
+  auto cell = KOKKOS_LAMBDA(const int n, Real &cnt, Real &dfc, Real &mov, Real &unc) {
+    const int m = n/(nk*nj*ni);
+    const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
+    const Real dd = uh(m,IDN,k,j,i);
+    if (!(dd > 0.0)) return;
+    const Real idd = 1.0/dd;
+    const Real m1 = uh(m,IM1,k,j,i), m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
+    Real ekin = 0.5*(m1*m1 + m2*m2 + m3*m3)*idd;
+    if (csw) {
+      const Real c = cclw(m,k,j);
+      ekin = 0.5*(m1*m1 + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))*idd;
+    }
+    const Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
+    const Real eint = uh(m,IEN,k,j,i) - ekin - egrv;
+    const Real etf = eos.EnergyFromTemperature(dd, eos.tfloor);
+    if (!(eint < etf)) return;
+    const Real need = etf - eint;
+    const Real v = psph ? pvol(m,k,j,i)
+                        : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                           mbsize.d_view(m).dx3);
+    cnt += 1.0;
+    dfc += need*v;
+    if (app) {
+      const Real er = u0_(m,M1_E,k,j,i);
+      const Real take = fmin(need, fmax((er - efl)/rcc, 0.0));
+      if (take > 0.0) {
+        uh(m,IEN,k,j,i) += take;
+        u0_(m,M1_E,k,j,i) = er - rcc*take;
+      }
+      mov += take*v;
+      unc += (need - take)*v;
+    } else {
+      unc += need*v;
+    }
+  };
+  const int ntot = nmb*nk*nj*ni;
+  if (!rep) {
+    if (!app) return;
+    Kokkos::parallel_for("m1_rtfcons", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
+    KOKKOS_LAMBDA(const int n) {
+      Real a = 0.0, b = 0.0, c = 0.0, d = 0.0;
+      cell(n, a, b, c, d);
+    });
+    return;
+  }
+  Real r[4] = {0.0, 0.0, 0.0, 0.0};
+  Kokkos::parallel_reduce("m1_rtfcons_r", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
+  KOKKOS_LAMBDA(const int n, Real &a, Real &b, Real &c, Real &d) {
+    cell(n, a, b, c, d);
+  }, r[0], r[1], r[2], r[3]);
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, r, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0) {
+    std::printf("RTFCONS cycle=%d mode=%s cells=%.6e deficit=%.6e moved=%.6e "
+                "uncovered=%.6e (x volume)\n", cyc, app ? "on" : "diag", r[0], r[1], r[2],
+                r[3]);
   }
 }
 

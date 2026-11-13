@@ -396,6 +396,18 @@ class RadiationM1 {
   int fcap_report = 0;
   DualArray1D<Real> fcap_cnt;   // 0 n_v, 1 n_t, 2 dKE, 3 dEint (energy units x volume)
   void FloorGasCap();
+  // rsgen-1113 <rad_m1>/refresh_tfloor_cons (read only when named; off = bitwise):
+  // CONSERVATIVE TEMPERATURE FLOOR before the fluid refresh that follows every solve.
+  // Active hydro cells whose internal energy (metric KE on the cubed sphere, gravity
+  // energy under use_etotgrav) is below e(rho, tfloor) are raised to it with the energy
+  // taken from the radiation of the same cell (down to e_floor), so the C2P's
+  // temperature floor, which creates that energy, no longer fires there.  What the
+  // radiation cannot cover is left to the C2P floor and counted (uncovered).
+  // diag = count only (no change); on = apply.  refresh_tfloor_report = N prints the
+  // RTFCONS line (per call, all ranks) every N cycles (0 = never; diag needs it).
+  int rtf_mode = 0;          // 0 off, 1 diag, 2 on
+  int rtf_report = 0;
+  void RefreshTfloorCons();
 
   // RSLA start-up check (design sect. 2): v_max*tau_max/chat, evaluated once, on the
   // first filled opacity array.  rsla_vmax <= 0 means "measure max |v| over the domain".
