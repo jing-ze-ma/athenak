@@ -4175,6 +4175,92 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // facemmat-1112 implicit_face_mmat (rad_m1.hpp)
   impl_fmm = pin->DoesParameterExist("rad_m1","implicit_face_mmat") &&
              pin->GetBoolean("rad_m1","implicit_face_mmat");
+  // radlz-1113 implicit_lz_form (rad_m1.hpp, AM_CONSERVING_CS_1112.md sect. 10)
+  if (pin->DoesParameterExist("rad_m1","implicit_lz_form") &&
+      pin->GetBoolean("rad_m1","implicit_lz_form")) {
+    impl_lz = true;
+    if (!cs_geom || !trans_on || !trans_x3) {
+      ImplFatal("<rad_m1>/implicit_lz_form needs the cubed sphere in 3-D with implicit "
+                "transport");
+    }
+    if (!impl_gas_src_cons || impl_gas_src_full) {
+      ImplFatal("<rad_m1>/implicit_lz_form needs implicit_gas_src = conservative or "
+                "conservative2 (Z_f books the face transport)");
+    }
+    if (impl_hr_cmem || impl_physflux) {
+      ImplFatal("<rad_m1>/implicit_lz_form is not combined (yet) with implicit_hr_cmem or "
+                "implicit_physflux (their momentum face F_c is not the applied flux)");
+    }
+    iw_lz = niw;
+    niw += 1;
+    if (pin->DoesParameterExist("rad_m1","implicit_lz_mode")) {
+      const std::string lm = pin->GetString("rad_m1","implicit_lz_mode");
+      if (lm.compare("stress") == 0) {
+        impl_lz_mode = 1;
+      } else if (lm.compare("full") != 0) {
+        ImplFatal("<rad_m1>/implicit_lz_mode must be full or stress");
+      }
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_lz_diag")) {
+      impl_lz_diag = pin->GetInteger("rad_m1","implicit_lz_diag");
+    }
+    Kokkos::realloc(lz_d, 6);
+    Kokkos::deep_copy(lz_d, 0.0);
+  }
+  // lzphys-1113 implicit_lzx (rad_m1.hpp, LZPHYS_1113.md); it closes the solve's whole L_z
+  // budget, so the implicit_am_cs deposit (a partial closure, after the write-back) is off
+  // inert (message, no slot) on a Cartesian mesh and with the gas fixed: no gas +
+  // radiation L_z budget to close there; a D6 key set stays usable on every gate deck
+  const bool lzxq = pin->DoesParameterExist("rad_m1","implicit_lzx") &&
+                    pin->GetBoolean("rad_m1","implicit_lzx");
+  if (lzxq && (!(cs_geom || sph_geom) || !(coupling && gas_feedback))) {
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_lzx: inert (needs the cubed sphere or spherical "
+                << "polar and coupling with gas_feedback)" << std::endl;
+    }
+  } else if (lzxq) {
+    impl_lzx = true;
+    if (!trans_on || !trans_x3) {
+      ImplFatal("<rad_m1>/implicit_lzx needs a 3-D mesh with implicit transport");
+    }
+    if (!impl_gas_src_cons || impl_gas_src_full) {
+      ImplFatal("<rad_m1>/implicit_lzx needs implicit_gas_src = conservative or "
+                "conservative2 (Z_f books the face)");
+    }
+    if (impl_hr_cmem || impl_physflux || impl_lz) {
+      ImplFatal("<rad_m1>/implicit_lzx is not combined with implicit_hr_cmem, "
+                "implicit_physflux or implicit_lz_form");
+    }
+    if (impl_am_cs) {
+      impl_am_cs = false;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> implicit_lzx: implicit_am_cs deposit off (lzx closes the "
+                  << "solve's L_z)" << std::endl;
+      }
+    }
+    if (sph_geom && !cs_geom && !(pin->GetString("mesh","ix3_bc") == "periodic" &&
+                      pin->GetString("mesh","ox3_bc") == "periodic")) {
+      ImplFatal("<rad_m1>/implicit_lzx on spherical polar needs periodic x3 (phi walls "
+                "would carry a booked wall torque, not implemented)");
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_lzx_weight")) {
+      const std::string lw = pin->GetString("rad_m1","implicit_lzx_weight");
+      if (lw.compare("energy") == 0) {
+        impl_lzx_w = 1;
+      } else if (lw.compare("none") == 0) {   // diagnostics only (LZX lines)
+        impl_lzx_w = 2;
+      } else if (lw.compare("blend") == 0) {
+        impl_lzx_w = 3;
+      } else if (lw.compare("impulse") != 0) {
+        ImplFatal("<rad_m1>/implicit_lzx_weight must be impulse, blend, energy or none");
+      }
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_lzx_diag")) {
+      impl_lzx_diag = pin->GetInteger("rad_m1","implicit_lzx_diag");
+    }
+    iw_lzx = niw;
+    niw += 1;
+  }
   // fast2nd-1112 (rad_m1.hpp): halo exchange of the Zalesak R only when it can change
   if (pin->DoesParameterExist("rad_m1","zalesak_halo_skip")) {
     zl_hskip = pin->GetBoolean("rad_m1","zalesak_halo_skip");
@@ -6293,6 +6379,20 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   // the operator form re-adds it in the stencil
   const bool fmmo = impl_fmm && (fmm_t.extent_int(0) > nmb1);
   auto fmt_ = fmm_t;
+  // radlz-1113 implicit_lz_form: each face stores om_f G_f and om_f (LzApply)
+  const bool lzf = impl_lz;
+  if (lzf && lz_w2.extent_int(0) == 0) {LzGeom();}
+  auto lzg2_ = lz_g2;
+  auto lzo2_ = lz_o2;
+  auto lzg3_ = lz_g3;
+  auto lzo3_ = lz_o3;
+  // lzphys-1113 implicit_lzx: each face stores dt G_f and th0_f (LzxApply)
+  const bool lzx = impl_lzx;
+  if (lzx && lzx_g2.extent_int(0) == 0) {LzxGeom();}
+  auto lxg2_ = lzx_g2;
+  auto lxt2_ = lzx_t2;
+  auto lxg3_ = lzx_g3;
+  auto lxt3_ = lzx_t3;
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const M1Vtx vx = M1VtxOf(v3m1_, mbsize.d_view(m), js, je, ks, ke);   // cornerfix-1103
@@ -6450,6 +6550,15 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       }
     }
     f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+    if (lzf) {   // radlz-1113: the face's attributed transport (Z_f's om dt (gr + off))
+      const Real oml = th*(1.0 + ch*dt*ktf);
+      lzg2_(m,k,j,i) = oml*(gr + off);
+      lzo2_(m,k,j,i) = oml;
+    }
+    if (lzx) {   // lzphys-1113: the face's whole stress impulse and drag factor
+      lxg2_(m,k,j,i) = dt*(gr + off);
+      lxt2_(m,k,j,i) = 1.0/(1.0 + ch*dt*ktf);
+    }
     if (fmmo) {fmt_(m,12,k,j,i) = -th*ch*cl*dt*off;}   // facetr-1112
     if (blt) {
       f2_(m,k,j,i) += (cl/ch)*(bw2_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,jm,i)
@@ -6684,6 +6793,15 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       }
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
                          - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+      if (lzf) {   // radlz-1113 (as x2)
+        const Real oml = th*(1.0 + ch*dt*ktf);
+        lzg3_(m,k,j,i) = oml*(gr + off);
+        lzo3_(m,k,j,i) = oml;
+      }
+      if (lzx) {   // lzphys-1113 (as x2)
+        lxg3_(m,k,j,i) = dt*(gr + off);
+        lxt3_(m,k,j,i) = 1.0/(1.0 + ch*dt*ktf);
+      }
       if (fmmo) {fmt_(m,13,k,j,i) = -th*ch*cl*dt*off;}   // facetr-1112
       if (blt) {
         f3_(m,k,j,i) += (cl/ch)*(bw3_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,km,j,i)
@@ -15214,6 +15332,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool iket = ike && t2st;
     auto kei_ = t2kei;
     auto ikd_ = t2ikd;
+    // lzphys-1113 implicit_lzx: the solve's start state (gas m2, m3 before the stage
+    // increment, the stored cell F2, F3), against which LzxPost closes the solve's L_z
+    // (the stage increment and the write-back together)
+    if (impl_lzx && lzx_g2.extent_int(0) == 0) {LzxGeom();}
+    const bool lzxs_ = impl_lzx;
+    auto lzs_ = lzx_r;
     auto imo_ = t2mo;
     const Real ikc = chat/c_light;
     const bool iex = t2_iex && t2st && (t2ixd.extent_int(0) > nmb1);   // time2_inc_exch
@@ -15237,6 +15361,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_TP,k,j,i) = eos.Temperature(dd, fmax(eg, 1.0e-300));
       // athpp-vstar-1105: the Heun stage momentum before the old-vector increment
       const Real mv1 = uh(m,IM1,k,j,i), mv2 = uh(m,IM2,k,j,i), mv3 = uh(m,IM3,k,j,i);
+      if (lzxs_) {
+        lzs_(m,0,k,j,i) = mv2;
+        lzs_(m,1,k,j,i) = mv3;
+        lzs_(m,2,k,j,i) = u0_(m,M1_F2,k,j,i);
+        lzs_(m,3,k,j,i) = u0_(m,M1_F3,k,j,i);
+      }
       if (iket) {ikd_(m,k,j,i) = 0.0;}
       if (iex) {ixd_(m,k,j,i) = 0.0;}
       if (t2st && !(hoi_ && hmi_(m,k,j,i) > 0.0)) {
@@ -19984,6 +20114,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (un > 0.0) {Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), un);}
     });
   }
+  // lzphys-1113 implicit_lzx: close the solve's L_z (after the write-back and its floor
+  // follow-ups, on the realised state)
+  if (impl_lzx && trans) {LzxPost(dt, t2s);}
   CbDebugDump();   // cbfix-1011 diagnostic (env M1_CBDBG), no-op otherwise
   // open-ot-1013 DIAGNOSTIC (implicit_cs2_dbg bit 32): the x1 velocity change the
   // write-back gave the gas (uh/rho - the old-vector v) against the vimp dv the E rows

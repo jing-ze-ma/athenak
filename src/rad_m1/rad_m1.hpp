@@ -1875,6 +1875,7 @@ class RadiationM1 {
   // keeps these weights, its dropped K1 part re-enters stage 2); a backward-Euler step
   // applies L of its solve.  Read-only: no number of the run changes.
   bool ebnd_on = false;
+  bool ebnd_adv = false;          // lzphys-1113: + implicit_bc_advect's end-face A E
   Real ebnd_acc = 0.0;            // accumulated energy (code units)
   Real ebnd_l1 = 0.0, ebnd_l2 = 0.0;   // L at the step start / of the stage-1 solve
   Real EbndFluxX1();
@@ -2327,6 +2328,48 @@ class RadiationM1 {
   // instead of the stored u0 F + the stage increment.  The memory's redefinition of the
   // cell F is then not read as a radiation torque error and is not deposited as gas spin.
   bool impl_am_fold_ap = false;
+  // radlz-1113 <rad_m1>/implicit_lz_form = true (read only when named; absent = off =
+  // bitwise; cubed sphere, 3-D, implicit transport, implicit_gas_src = conservative(2)):
+  // exact L_z of gas + radiation by construction (AM_CONSERVING_CS_1112.md sect. 10).
+  // Every lateral face of the face equation takes the extra stress h_f = -W_f (q_L +
+  // q_R), q_c = mu_c / sum_f W_f^2, mu_c = T_c + sum_f a_cf om_f G_f the cell's torque
+  // mismatch between the flux-form face torque (am_cs's T_c) and the cell-mean torque of
+  // the attributed face transport, a_cf = (V/2) (x_c x e_f/sin)_z, W_f = a_L + a_R.  Then
+  // sum_f W_f h_f = -sum_c mu_c and gas + radiation change their L_z by dt sum_c T_c (the
+  // boundary torque) for any E'.  h is lagged (face flux -> TRHS); Z_f books it as a
+  // stress.  implicit_am_cs, if on, only books its diagnostics (no deposit).
+  // implicit_lz_diag = N (read only when named): one LZ_FORM line per pass, first N
+  bool impl_lz = false;
+  int impl_lz_diag = 0, lz_ndiag = 0;
+  int impl_lz_mode = 0;                 // implicit_lz_mode = full (0, default) | stress (1)
+  int iw_lz = -1;                       // q_c (1 slot, exchanged)
+  DvceArray5D<Real> lz_arm;             // (m, 2, k, j, i) a_c for x2 / x3 faces
+  DvceArray4D<Real> lz_w2, lz_w3;       // W_f (x2 / x3 faces, shapes of f0x2 / f0x3)
+  DvceArray4D<Real> lz_t2, lz_t3;       // tau_f = (M_f x n_f)_z
+  DvceArray4D<Real> lz_g2, lz_g3;       // om_f G_f of the last face pass
+  DvceArray4D<Real> lz_o2, lz_o3;       // om_f
+  DvceArray1D<Real> lz_d;               // diagnostic sums
+  void LzGeom();
+  void LzApply();
+  // lzphys-1113 <rad_m1>/implicit_lzx = true (read only when named; absent = off =
+  // bitwise; LZPHYS_1113.md): after every solve's write-back (LzxPost) the realised L_z
+  // change of gas + radiation, Lr, is closed by the stress dZ_f = -Omega mu_f sign(W_f),
+  // Omega = -Lr / sum_c sum_f a_cf mu_f sign(W_f), applied as the write-back would have
+  // (face flux -th0 c chat dZ_f, drag share to the gas, exact KE work from E, hesdirk2
+  // slopes).  implicit_lzx_weight = impulse (mu = |Z_f| + |W_f| (q_L + q_R), default) |
+  // blend | energy | none (diagnostics only); implicit_lzx_diag = N: LZX lines.  Inert
+  // on Cartesian meshes and without coupling + gas_feedback.
+  bool impl_lzx = false;
+  int impl_lzx_w = 0, impl_lzx_diag = 0, lzx_ndiag = 0;
+  DvceArray4D<Real> lzx_g2, lzx_g3;     // dt G_f = dt (gr + off) of the last face pass
+  DvceArray4D<Real> lzx_t2, lzx_t3;     // th0_f = 1/(1 + chat dt kt_f)
+  Real lzx_cum[4] = {0.0, 0.0, 0.0, 0.0};   // sum Lr, sum Lambda_Z, sum Lambda_B, n
+  DvceArray5D<Real> lzx_r;              // (m, 4, k, j, i) solve start: gas m2, m3, F2, F3
+  int iw_lzx = -1;                      // q_c = |t_c| / sum_f W_f^2 (1 slot, exchanged)
+  Real lzx_nbad = 0.0;                  // solves left alone (non-finite budget)
+  void LzxGeom();
+  Real LzxTotal();
+  void LzxPost(Real dt, int t2s);
   DvceArray5D<Real> amvw;
   DvceArray1D<Real> amvp_d;
   // hgfix-1110 <rad_m1>/implicit_clip_kecap = f (read only when named; absent or 0 = off

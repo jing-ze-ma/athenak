@@ -294,6 +294,10 @@ void RadM1ShellReport(ParameterInput *pin, Mesh *pm);
 void RadM1CsHistory(HistoryData *pdata, Mesh *pm);
 void RadM1AmHistory(HistoryData *pdata, Mesh *pm);
 void RadM1RwHistory(HistoryData *pdata, Mesh *pm);
+// lzphys-1113 problem/am_hist_ebnd (read only when named): RadM1AmHistory adds column 15
+// Eb = the accumulated radiation energy the scheme put in through the physical x1 faces
+// (Ebnd, mhdfix-1025: the hesdirk2 stage weights); absent = the 14 columns as before
+static bool m1_am_ebnd = false;
 
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::RadiationM1Tests2()
@@ -1101,6 +1105,12 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     if (spr && pin->DoesParameterExist("problem","am_hist") &&
         pin->GetBoolean("problem","am_hist")) {
       user_hist_func = RadM1AmHistory;
+      if (pin->DoesParameterExist("problem","am_hist_ebnd") &&
+          pin->GetBoolean("problem","am_hist_ebnd") && pmbp->pradm1 != nullptr) {
+        m1_am_ebnd = true;
+        pmbp->pradm1->ebnd_on = true;
+        pmbp->pradm1->ebnd_adv = true;
+      }
     }
     if (restart) return;
     auto uh = (pmbp->phydro != nullptr) ? pmbp->phydro->u0 : pmbp->pmhd->u0;
@@ -2192,10 +2202,10 @@ void RadM1CsHistory(HistoryData *pdata, Mesh *pm) {
 //! e_xi.e_eta; sp: orthonormal.
 
 void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
-  pdata->nhist = 14;
-  const char *lab[14] = {"Eg", "Er", "Lgx", "Lgy", "Lgz", "Lrx", "Lry", "Lrz", "Sx", "Sy",
-                         "Sz", "Lfx", "Lfy", "Lfz"};
-  for (int n = 0; n < 14; ++n) {pdata->label[n] = lab[n];}
+  pdata->nhist = m1_am_ebnd ? 15 : 14;
+  const char *lab[15] = {"Eg", "Er", "Lgx", "Lgy", "Lgz", "Lrx", "Lry", "Lrz", "Sx", "Sy",
+                         "Sz", "Lfx", "Lfy", "Lfz", "Eb"};
+  for (int n = 0; n < pdata->nhist; ++n) {pdata->label[n] = lab[n];}
   MeshBlockPack *pmbp = pm->pmb_pack;
   if (pmbp->pradm1 == nullptr || (pmbp->phydro == nullptr && pmbp->pmhd == nullptr)) return;
   auto u0 = pmbp->pradm1->u0;
@@ -2279,7 +2289,11 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
     }
     mb_sum += hv;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
-  for (int n = 0; n < pdata->nhist; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
+  for (int n = 0; n < 14; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
+  // lzphys-1113: ebnd_acc is global on every rank; the history output sums over ranks
+  if (m1_am_ebnd) {
+    pdata->hdata[14] = (global_variable::my_rank == 0) ? pmbp->pradm1->ebnd_acc : 0.0;
+  }
 }
 
 //----------------------------------------------------------------------------------------
