@@ -314,10 +314,6 @@ if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt")
           pgen/deep_hot_jupiter_rt_diag.cpp
   )
 endif()
-# d6fast4-1112 (dhjcuda-1112 04ef27069): CUDA, 4D par_for bodies / BvalsTeamFor functors
-# >= 512 B launched from device memory (athena.hpp AthBodyToDevice; bitwise; no effect on
-# other backends)
-target_compile_definitions(athena PRIVATE ATHENA_CUDA_BODY_GLOBAL=512)
 # stripbg-1102: the he_star_m1 one-shot restart-time background strip (own file)
 if (${PROBLEM} STREQUAL "he_star_m1")
   target_sources(athena PRIVATE pgen/he_strip_bg.cpp)
