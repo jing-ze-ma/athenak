@@ -541,13 +541,14 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
     // compute fluxes over [is,ie+1]
     // NOTE(@pdmullen): Capture variables prior to if constexpr.  Required for cuda 11.6+.
-    auto eos = eos_;
-    auto rscnt = rscnt_;
-    auto rsrec = rsrec_;
-    auto indcs = indcs_;
-    auto size = size_;
-    auto coord = coord_;
-    auto flx1 = flx1_;
+    // dhjcuda2-1113: const references to the captured copies (see mhd_fluxes.cpp).
+    const auto &eos = eos_;
+    const auto &rscnt = rscnt_;
+    const auto &rsrec = rsrec_;
+    const auto &indcs = indcs_;
+    const auto &size = size_;
+    const auto &coord = coord_;
+    const auto &flx1 = flx1_;
     if constexpr (rsolver_method_ == Hydro_RSolver::advect) {
       Advect(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::llf) {
@@ -871,14 +872,15 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         // compute fluxes over [js,je+1].  RS returns flux in input wr array
         if (j>ja) {
           // NOTE(@pdmullen): Capture variables prior to if constexpr.
-          auto eos = eos_;
+          // dhjcuda2-1113: const references, see the x1 sweep.
+          const auto &eos = eos_;
           const bool nanrep_r = nanrep_r_;
-          auto rscnt = rscnt_;
-          auto rsrec = rsrec_;
-          auto indcs = indcs_;
-          auto size = size_;
-          auto coord = coord_;
-          auto flx2 = flx2_;
+          const auto &rscnt = rscnt_;
+          const auto &rsrec = rsrec_;
+          const auto &indcs = indcs_;
+          const auto &size = size_;
+          const auto &coord = coord_;
+          const auto &flx2 = flx2_;
           // csedge-1019 shared seam: the ghost-side state of a panel-seam face is replaced
           // by the neighbour panel's OWN reconstruction of its edge cell (CsSeamFaceStates),
           // written in this face's frame (after GnomonicEquianglePrimFaceX2: IVY = v.n,
@@ -889,7 +891,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             member.team_barrier();
             const bool lo = (j == js);
             const Real sf = gtrig_xi.sn(m,k,j), cf = gtrig_xi.cs(m,k,j);
-            auto sfs = sfs2_;
+            const auto &sfs = sfs2_;
             const int ia = (il > is) ? il : is, ib = (iu < ie) ? iu : ie;
             cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, ia, ib, lo, sf, cf, nvars, nder,
                                      IVY, IVZ, wl, wr, dl, dr);
@@ -1194,14 +1196,15 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         // compute fluxes over [ks,ke+1].  RS returns flux in input wr array
         if (k>ka) {
           // NOTE(@pdmullen): Capture variables prior to if constexpr.
-          auto eos = eos_;
+          // dhjcuda2-1113: const references, see the x1 sweep.
+          const auto &eos = eos_;
           const bool nanrep_r = nanrep_r_;
-          auto rscnt = rscnt_;
-          auto rsrec = rsrec_;
-          auto indcs = indcs_;
-          auto size = size_;
-          auto coord = coord_;
-          auto flx3 = flx3_;
+          const auto &rscnt = rscnt_;
+          const auto &rsrec = rsrec_;
+          const auto &indcs = indcs_;
+          const auto &size = size_;
+          const auto &coord = coord_;
+          const auto &flx3 = flx3_;
           // csedge-1019 shared seam (see the x2 sweep): after GnomonicEquianglePrimFaceX3
           // IVZ = v.n and IVY = the covariant along-seam component
           if (cs_shr_ && j >= js && j <= je &&
@@ -1210,7 +1213,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             member.team_barrier();
             const bool lo = (k == ks);
             const Real sf = gtrig_eta.sn(m,k,j), cf = gtrig_eta.cs(m,k,j);
-            auto sfs = sfs3_;
+            const auto &sfs = sfs3_;
             const int ia = (il > is) ? il : is, ib = (iu < ie) ? iu : ie;
             cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, ia, ib, lo, sf, cf, nvars, nder,
                                      IVZ, IVY, wl, wr, dl, dr);
