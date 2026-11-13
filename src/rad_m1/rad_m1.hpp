@@ -2108,7 +2108,7 @@ class RadiationM1 {
   void Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0 = 0);
   // gpumem-1022 <rad_m1>/restart_pack_per_mb (read only when named; default true since
   // memcut-1113, was false): the restart writer stages the hesdirk2 channels one
-  // MeshBlock at a time (device buffer of 1 MB instead of all; the same bytes are written)
+  // MeshBlock at a time (a device buffer of one block instead of all; same bytes)
   bool rst_pack_mb = true;
   void Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb);
 
