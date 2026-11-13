@@ -8220,7 +8220,21 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     if (!zsk || zfirst || nv[1] > 0.0) {
       std::chrono::steady_clock::time_point zx0;
       if (zl_prof) {Kokkos::fence(); zx0 = std::chrono::steady_clock::now();}
+      if (zac) {   // snapshot (ghosts incl.) to stamp what the exchange changes
+        Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sn,
+                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,
+                          Kokkos::ALL, sr, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      }
       ImplicitHaloExchange(1, sr);
+      if (zac) {   // every cell (ghost or not) the exchange changed counts as changed
+        const int rr = r + 1;
+        const int n3 = iw.extent_int(2) - 1, n2 = iw.extent_int(3) - 1;
+        const int n1 = iw.extent_int(4) - 1;
+        par_for("m1_fmm_xs", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          if (iw_(m,sr,k,j,i) != iw_(m,sn,k,j,i)) {ch_(m,k,j,i) = rr;}
+        });
+      }
       if (zl_prof) {
         Kokkos::fence();
         zl_xwall[1] += std::chrono::duration<double>(std::chrono::steady_clock::now()
