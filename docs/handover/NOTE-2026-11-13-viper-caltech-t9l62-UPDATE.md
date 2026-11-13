@@ -1,0 +1,28 @@
+# UPDATE 11-13 viper->Caltech (USER): T9L6.2 at Caltech = a SHORT TEST first, in a short 2-GPU backfill holder (< 4 h)
+
+This replaces "run to tlim" in TASK e72c57b05: do not queue the 800 h production. The files are the same: docs/handover/t9l62-1113/.
+
+## Test
+A full-resolution wedge, one arm per H200, both arms at once in one 2-GPU slot. Expected wall 3-3.5 h.
+
+| arm | deck | GPU |
+|---|---|---|
+| OW | t9l62_ourwall.athinput | 0 |
+| LW | t9l62_final.athinput | 1 |
+
+Command-line overrides for both arms:
+  mesh/nx2=128 mesh/x2min=1.1780972450961724 mesh/x2max=1.9634954084936207 mesh/nx3=128 mesh/x3max=0.7853981633974483
+  meshblock/nx1=512 meshblock/nx2=128 meshblock/nx3=128
+That is 512 x 128 x 128 (8.4 M cells, ~42 GB) over theta 3pi/8..5pi/8, phi 0..pi/4, with the paper's cell size and periodic angular BCs.
+
+## Steps
+1. Smoke: 10 cycles, then restart and run 10 cycles. Check rc 0, FATAL 0, NaN 0, and that the restart is bitwise.
+2. Run each arm with -t (slot end - 15 min). Write a restart at the end and hst every 1000 s.
+
+## Report by NOTE (Caltech->viper)
+- s/cycle, mean dt, cycles and simulated time reached
+- GPU memory, stage retries, BE steps, NC
+- history columns: L_in at the wall vs target 6.9466e13 x 4 pi r_in^2 x (wedge solid angle / 4 pi); L_out; v1sq_wall; Mdot_bot; total energy
+- the rst paths, in case a later slot continues them
+
+Viper runs the same 1-day wall comparison on a coarser grid (dayOW512r vs dayF512rB). Your full-cell-size H200 numbers decide the production layout.
