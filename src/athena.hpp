@@ -267,74 +267,6 @@ using AthenaRangePolicy =
 template <typename ExeSpace>
 using AthenaRangePolicy = Kokkos::RangePolicy<ExeSpace>;
 #endif
-
-//------------------------------
-// 1D loop using Kokkos 1D Range
-template <typename ExeSpace, typename Function>
-inline void par_for(const std::string &name, ExeSpace exec_space,
-                    const int &il, const int &iu, const Function &function) {
-  // compute total number of elements and call Kokkos::parallel_for()
-  const int ni = iu - il + 1;
-  Kokkos::parallel_for(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, ni),
-  KOKKOS_LAMBDA(const int &idx) {
-    // compute i indices of thread and call function
-    int i = (idx) + il;
-    function(i);
-  });
-}
-
-//------------------------------
-// 2D loop using Kokkos 1D Range
-template <typename ExeSpace, typename Function>
-inline void par_for(const std::string &name, ExeSpace exec_space,
-                    const int &jl, const int &ju,
-                    const int &il, const int &iu, const Function &function) {
-  // compute total number of elements and call Kokkos::parallel_for()
-  const int nj = ju - jl + 1;
-  const int ni = iu - il + 1;
-  const int nji  = nj * ni;
-  Kokkos::parallel_for(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, nji),
-  KOKKOS_LAMBDA(const int &idx) {
-    // compute j,i indices of thread and call function
-    int j = (idx)/ni;
-    int i = (idx - j*ni) + il;
-    j += jl;
-    function(j, i);
-  });
-}
-
-//------------------------------
-// 3D loop using Kokkos 1D Range
-template <typename ExeSpace, typename Function>
-inline void par_for(const std::string &name, ExeSpace exec_space,
-                    const int &kl, const int &ku, const int &jl, const int &ju,
-                    const int &il, const int &iu, const Function &function) {
-  // compute total number of elements and call Kokkos::parallel_for()
-  const int nk = ku - kl + 1;
-  const int nj = ju - jl + 1;
-  const int ni = iu - il + 1;
-  const int nkji = nk * nj * ni;
-  const int nji  = nj * ni;
-  Kokkos::parallel_for(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, nkji),
-  KOKKOS_LAMBDA(const int &idx) {
-    // compute k,j,i indices of thread and call function
-    int k = (idx)/nji;
-    int j = (idx - k*nji)/ni;
-    int i = (idx - k*nji - j*ni) + il;
-    k += kl;
-    j += jl;
-    function(k, j, i);
-  });
-}
-
-//------------------------------
-// rkghalo-1103: largest 4D par_for body launched as a kernel argument (bytes; CUDA's
-// kernel-argument limit is 4096 incl. the policy); 0 = never (the old launch everywhere)
-#ifndef ATHENA_LW_LAUNCH_MAX
-#define ATHENA_LW_LAUNCH_MAX 3584
-#endif
-
-
 // dhjcuda-1112: ATHENA_CUDA_BODY_GLOBAL = B > 0 (CUDA; set for PROBLEM=deep_hot_jupiter_rt
 // in src/CMakeLists.txt): a 4D par_for body (and a ck CkParFor4 / boundary BvalsTeamFor
 // functor) of >= B bytes is copied to device memory (cudaMemcpyAsync on the launch
@@ -364,7 +296,97 @@ inline const F *AthBodyToDevice(const Kokkos::Cuda &exec, const F &f) {
   }
   return reinterpret_cast<const F *>(buf);
 }
+// dhjcuda-1112: parallel_for(name, policy, body) with that rule (any policy; the
+// RangePolicy / TeamPolicy wrappers below use it for every rank of par_for and
+// par_for_outer that has no light-weight launch of its own)
+template <typename Policy, typename F>
+inline void AthFor(const std::string &name, const Policy &policy, const F &body) {
+  if constexpr (std::is_same_v<typename Policy::execution_space, Kokkos::Cuda> &&
+                sizeof(F) >= ATHENA_CUDA_BODY_GLOBAL) {
+    const F *bp_ = AthBodyToDevice(policy.space(), body);
+    if constexpr (std::is_same_v<typename Policy::member_type, TeamMember_t>) {
+      Kokkos::parallel_for(name, policy, KOKKOS_LAMBDA(TeamMember_t tm) {(*bp_)(tm);});
+    } else {
+      Kokkos::parallel_for(name, policy, KOKKOS_LAMBDA(const int &idx) {(*bp_)(idx);});
+    }
+  } else {
+    Kokkos::parallel_for(name, policy, body);
+  }
+}
+#else
+template <typename Policy, typename F>
+inline void AthFor(const std::string &name, const Policy &policy, const F &body) {
+  Kokkos::parallel_for(name, policy, body);
+}
 #endif
+
+//------------------------------
+// 1D loop using Kokkos 1D Range
+template <typename ExeSpace, typename Function>
+inline void par_for(const std::string &name, ExeSpace exec_space,
+                    const int &il, const int &iu, const Function &function) {
+  // compute total number of elements and call Kokkos::parallel_for()
+  const int ni = iu - il + 1;
+  AthFor(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, ni),
+  KOKKOS_LAMBDA(const int &idx) {
+    // compute i indices of thread and call function
+    int i = (idx) + il;
+    function(i);
+  });
+}
+
+//------------------------------
+// 2D loop using Kokkos 1D Range
+template <typename ExeSpace, typename Function>
+inline void par_for(const std::string &name, ExeSpace exec_space,
+                    const int &jl, const int &ju,
+                    const int &il, const int &iu, const Function &function) {
+  // compute total number of elements and call Kokkos::parallel_for()
+  const int nj = ju - jl + 1;
+  const int ni = iu - il + 1;
+  const int nji  = nj * ni;
+  AthFor(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, nji),
+  KOKKOS_LAMBDA(const int &idx) {
+    // compute j,i indices of thread and call function
+    int j = (idx)/ni;
+    int i = (idx - j*ni) + il;
+    j += jl;
+    function(j, i);
+  });
+}
+
+//------------------------------
+// 3D loop using Kokkos 1D Range
+template <typename ExeSpace, typename Function>
+inline void par_for(const std::string &name, ExeSpace exec_space,
+                    const int &kl, const int &ku, const int &jl, const int &ju,
+                    const int &il, const int &iu, const Function &function) {
+  // compute total number of elements and call Kokkos::parallel_for()
+  const int nk = ku - kl + 1;
+  const int nj = ju - jl + 1;
+  const int ni = iu - il + 1;
+  const int nkji = nk * nj * ni;
+  const int nji  = nj * ni;
+  AthFor(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, nkji),
+  KOKKOS_LAMBDA(const int &idx) {
+    // compute k,j,i indices of thread and call function
+    int k = (idx)/nji;
+    int j = (idx - k*nji)/ni;
+    int i = (idx - k*nji - j*ni) + il;
+    k += kl;
+    j += jl;
+    function(k, j, i);
+  });
+}
+
+//------------------------------
+// rkghalo-1103: largest 4D par_for body launched as a kernel argument (bytes; CUDA's
+// kernel-argument limit is 4096 incl. the policy); 0 = never (the old launch everywhere)
+#ifndef ATHENA_LW_LAUNCH_MAX
+#define ATHENA_LW_LAUNCH_MAX 3584
+#endif
+
+
 
 //------------------------------
 // 4D loop using Kokkos 1D Range
@@ -404,7 +426,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
     // dhjcuda-1112: the body in device memory, the kernel argument its address only
     const auto *bp_ = AthBodyToDevice(exec_space, body);
     Kokkos::parallel_for(name, Kokkos::Experimental::require(
-        AthRangePolicy4<ExeSpace>(exec_space, 0, nnkji),
+        AthenaRangePolicy<ExeSpace>(exec_space, 0, nnkji),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight),
         KOKKOS_LAMBDA(const int &idx) {(*bp_)(idx);});
   } else  // NOLINT (the launches below are not instantiated then)
@@ -436,7 +458,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
   const int nnkji  = nn * nk * nj * ni;
   const int nkji   = nk * nj * ni;
   const int nji    = nj * ni;
-  Kokkos::parallel_for(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, nmnkji),
+  AthFor(name, AthenaRangePolicy<ExeSpace>(exec_space, 0, nmnkji),
   KOKKOS_LAMBDA(const int &idx) {
     // compute m,n,k,j,i indices of thread and call function
     int m = (idx)/nnkji;
@@ -530,7 +552,7 @@ inline void par_for_outer(const std::string &name, DevExeSpace exec_space,
                           const int kl, const int ku, const Function &function) {
   const int nk = ku - kl + 1;
   Kokkos::TeamPolicy<> policy(exec_space, nk, Kokkos::AUTO);
-  Kokkos::parallel_for(name, policy.set_scratch_size(scr_level,Kokkos::PerTeam(scr_size)),
+  AthFor(name, policy.set_scratch_size(scr_level, Kokkos::PerTeam(scr_size)),
   KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int k = tmember.league_rank() + kl;
     function(tmember, k);
@@ -548,7 +570,7 @@ inline void par_for_outer(const std::string &name, DevExeSpace exec_space,
   const int nj = ju - jl + 1;
   const int nkj = nk*nj;
   Kokkos::TeamPolicy<> policy(exec_space, nkj, Kokkos::AUTO);
-  Kokkos::parallel_for(name, policy.set_scratch_size(scr_level,Kokkos::PerTeam(scr_size)),
+  AthFor(name, policy.set_scratch_size(scr_level, Kokkos::PerTeam(scr_size)),
   KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int k = tmember.league_rank()/nj + kl;
     const int j = tmember.league_rank()%nj + jl;
@@ -569,7 +591,7 @@ inline void par_for_outer(const std::string &name, DevExeSpace exec_space,
   const int nkj  = nk*nj;
   const int nnkj = nn*nk*nj;
   Kokkos::TeamPolicy<> policy(exec_space, nnkj, Kokkos::AUTO);
-  Kokkos::parallel_for(name, policy.set_scratch_size(scr_level,Kokkos::PerTeam(scr_size)),
+  AthFor(name, policy.set_scratch_size(scr_level, Kokkos::PerTeam(scr_size)),
   KOKKOS_LAMBDA(TeamMember_t tmember) {
     int n = (tmember.league_rank())/nkj;
     int k = (tmember.league_rank() - n*nkj)/nj;
@@ -596,7 +618,7 @@ inline void par_for_outer(const std::string &name, DevExeSpace exec_space,
   const int nnkj  = nn*nk*nj;
   const int nmnkj = nm*nn*nk*nj;
   Kokkos::TeamPolicy<> policy(exec_space, nmnkj, Kokkos::AUTO);
-  Kokkos::parallel_for(name, policy.set_scratch_size(scr_level,Kokkos::PerTeam(scr_size)),
+  AthFor(name, policy.set_scratch_size(scr_level, Kokkos::PerTeam(scr_size)),
   KOKKOS_LAMBDA(TeamMember_t tmember) {
     int m = (tmember.league_rank())/nnkj;
     int n = (tmember.league_rank() - m*nnkj)/nkj;
