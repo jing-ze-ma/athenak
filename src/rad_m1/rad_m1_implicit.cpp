@@ -8063,6 +8063,10 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
   if (zl_prof) {Kokkos::fence(); zt0 = std::chrono::steady_clock::now();}
   const int zlr = zl_local;
   const bool zac = zl_active;
+  static int fr_calls = 0;   // M1_FMM_FRONT diagnostic (rank 0, first N calls)
+  const char *fre = std::getenv("M1_FMM_FRONT");
+  const bool fr_on = (fre != nullptr) && (fr_calls < std::atoi(fre));
+  if (fr_on) {fr_calls += 1;}
   if (zac) {
     if (zl_chg.extent_int(0) < nmb1 + 1 || zl_chg.extent_int(1) != iw.extent_int(2) ||
         zl_chg.extent_int(2) != iw.extent_int(3) ||
@@ -8126,6 +8130,33 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     }
     }   // zalesak_local_rounds sub-round loop (one pass when off)
     if (zlr > 0) {nv[0] = nl[0]; nv[1] = nl[1];}
+    // zlocal-1113 DIAGNOSTIC (env M1_FMM_FRONT=N, zalesak_active only): for the first N
+    // face_mmat calls, rank 0 prints per round its cells newly limited, their x1 index
+    // range and mean |F_H|/(c E) at the cell's lower x1 face (where the front is).
+    if (zac && fr_on && global_variable::my_rank == 0) {
+      Real fq[4] = {0.0, 1.0e30, -1.0e30, 0.0};
+      const int rr = r + 1;
+      par_reduce_flat("m1_fmm_fr0", 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &q) {
+        if (ch_(m,k,j,i) == rr) {
+          const Real e = fmax(iw_(m,M1_IW_EP,k,j,i), 1.0e-300);
+          q += fabs(fh_(m,k,j,i))/(clr*e);
+        }
+      }, Kokkos::Sum<Real>(fq[3]));
+      par_reduce_flat("m1_fmm_fr1", 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &q) {
+        if (ch_(m,k,j,i) == rr) {q = fmin(q, static_cast<Real>(i));}
+      }, Kokkos::Min<Real>(fq[1]));
+      par_reduce_flat("m1_fmm_fr2", 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &q) {
+        if (ch_(m,k,j,i) == rr) {q = fmax(q, static_cast<Real>(i));}
+      }, Kokkos::Max<Real>(fq[2]));
+      fq[0] = nv[0];
+      std::cout << "FMM_FRONT pass " << fmm_pass << " round " << r << " rank0 newly "
+                << fq[0] << " i " << fq[1] << ".." << fq[2] << " (is " << is << " ie "
+                << ie << ") mean|FH|/cE " << ((fq[0] > 0.0) ? fq[3]/fq[0] : 0.0)
+                << std::endl;
+    }
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, nv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
