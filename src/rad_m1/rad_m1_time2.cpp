@@ -1923,7 +1923,22 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     }
     zxb = false;
     if (!zsk || zfirst || nv[1] > 0.0) {
+      if (zac) {   // snapshot (ghosts incl.) to stamp what the exchange changes
+        Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, cb,
+                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,
+                          Kokkos::ALL, ca, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      }
       ImplicitKrylovHalo(ca);
+      if (zac) {   // every cell (ghost or not) the exchange changed counts as changed
+        const int rr = r + 1;
+        const int n3 = iw.extent_int(2) - 1, n2 = iw.extent_int(3) - 1;
+        const int n1 = iw.extent_int(4) - 1;
+        par_for("m1_t2_ffct_xs", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          if (iw_(m,ca,k,j,i) != iw_(m,cb,k,j,i)) {ch_(m,k,j,i) = rr;}
+        });
+      }
+      zxb = true;
       zl_halos[0] += 1.0;
       zfirst = false;
     }
