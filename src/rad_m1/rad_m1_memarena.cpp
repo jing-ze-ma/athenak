@@ -156,6 +156,23 @@ void RadiationM1::MemcutPoison(const int where) {
   };
   if (where == 0) {
     p5(iw, "iw");
+    // MEMCUT_IW=a-b[,c-d]: only those iw channels (inclusive), for the bisection
+    if (const char *r = std::getenv("MEMCUT_IW")) {
+      std::string q = std::string(r) + ",";
+      size_t p0 = 0, p1;
+      while ((p1 = q.find(',', p0)) != std::string::npos) {
+        const std::string t = q.substr(p0, p1 - p0);
+        p0 = p1 + 1;
+        const size_t h = t.find('-');
+        if (t.empty() || h == std::string::npos) continue;
+        const int a = std::atoi(t.substr(0, h).c_str());
+        const int b = std::min(std::atoi(t.substr(h + 1).c_str()), iw.extent_int(1) - 1);
+        if (a <= b) {
+          Kokkos::deep_copy(Kokkos::subview(iw, Kokkos::ALL, std::make_pair(a, b + 1),
+                                            Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), v);
+        }
+      }
+    }
     p5(ost, "ost");
     p5(thw, "thw");
     p5(thq, "thq");
