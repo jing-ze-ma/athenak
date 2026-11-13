@@ -331,6 +331,11 @@ void RadiationM1::LzApply() {
   ImplicitHaloExchange(1, ilz);
   auto f2_ = f0x2;
   auto f3_ = f0x3;
+  // implicit_face_mmat: h rides the unscaled lagged slots 12 / 13 (as the off part), so
+  // the limited rows (lam G + (1 - lam) F_L, G = F_applied - slot) keep all of it and the
+  // post-solve limited face is the limited face without h, plus h
+  const bool fmo = impl_fmm && (fmm_t.extent_int(0) > nmb1);
+  auto fmt_ = fmm_t;
   par_for("m1_lz_h2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
@@ -340,8 +345,10 @@ void RadiationM1::LzApply() {
     if ((j == js && plo) || (j == je+1 && phi)) return;
     const Real h = -w2_(m,k,j,i)*(iw_(m,ilz,k,j-1,i) + iw_(m,ilz,k,j,i));
     const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
-    f2_(m,k,j,i) -= ch*cl*dt*h/(1.0 + ch*dt*ktf);
+    const Real df = ch*cl*dt*h/(1.0 + ch*dt*ktf);
+    f2_(m,k,j,i) -= df;
     gz2_(m,k,j,i) += dt*h;
+    if (fmo) {fmt_(m,12,k,j,i) -= df;}
   });
   par_for("m1_lz_h3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -352,8 +359,10 @@ void RadiationM1::LzApply() {
     if ((k == ks && plo) || (k == ke+1 && phi)) return;
     const Real h = -w3_(m,k,j,i)*(iw_(m,ilz,k-1,j,i) + iw_(m,ilz,k,j,i));
     const Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
-    f3_(m,k,j,i) -= ch*cl*dt*h/(1.0 + ch*dt*ktf);
+    const Real df = ch*cl*dt*h/(1.0 + ch*dt*ktf);
+    f3_(m,k,j,i) -= df;
     gz3_(m,k,j,i) += dt*h;
+    if (fmo) {fmt_(m,13,k,j,i) -= df;}
   });
   if (!dg) return;
   // diagnostic: the realised cell-mean torque of h, sum_c sum_f a_cf dt h_f (= -sum dt mu)

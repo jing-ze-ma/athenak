@@ -4188,9 +4188,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_m1>/implicit_lz_form needs implicit_gas_src = conservative or "
                 "conservative2 (Z_f books the face transport)");
     }
-    if (impl_hr_cmem || impl_physflux || impl_fmm) {
-      ImplFatal("<rad_m1>/implicit_lz_form is not combined (yet) with implicit_hr_cmem, "
-                "implicit_physflux or implicit_face_mmat");
+    if (impl_hr_cmem || impl_physflux) {
+      ImplFatal("<rad_m1>/implicit_lz_form is not combined (yet) with implicit_hr_cmem or "
+                "implicit_physflux (their momentum face F_c is not the applied flux)");
     }
     iw_lz = niw;
     niw += 1;
