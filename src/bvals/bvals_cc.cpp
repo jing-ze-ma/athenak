@@ -99,6 +99,14 @@ static int BvCcVl() {
   return v;
 }
 
+// dhjcuda-1112: the seam-pack stencil lambdas (sval, seamval, ...) forced inline on CUDA:
+// nvcc kept them as calls, and their [&] captures then lived in local memory (spills)
+#if defined(KOKKOS_ENABLE_CUDA)
+#define BV_CUDA_INLINE __attribute__((always_inline))
+#else
+#define BV_CUDA_INLINE
+#endif
+
 // d6fast3-1112: env BVALS_CC_TS = the team size of the CC pack / unpack (default 0 =
 // Kokkos::AUTO, the launch as before).  Each buffer element is the same expression of the
 // same inputs whatever thread handles its (k, j) row: bitwise.
@@ -186,6 +194,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   const int mbie_ = pmy_pack->pmesh->mb_indcs.ie;
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   int nmnv = nmb*nnghbr*nvar;
+  const int vmask_ = vmask;   // dhjcuda-1112 (BvVarOf, CUDA)
   const int nsp_ = BvCcSplit();
   Kokkos::TeamPolicy<> policy = BvCcPolicy(nmnv*nsp_);
   Kokkos::TeamPolicy<> policy1(DevExeSpace(), nmnv, Kokkos::AUTO);   // (z4c kernel)
@@ -205,7 +214,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // anyway, so the arithmetic is the same (bitwise).
 #if defined(KOKKOS_ENABLE_CUDA)
   auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const bool kseam_,
-                             const bool kwb_) {
+                             const bool kwb_) BV_CUDA_INLINE {
 #else
   auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const auto kseam_,
                              const auto kwb_) {
@@ -215,7 +224,11 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     const int m = (lr_)/(nnghbr*nvar);
     const int n = (lr_ - m*(nnghbr*nvar))/nvar;
     const int vl = (lr_ - m*(nnghbr*nvar) - n*nvar);
+#if defined(KOKKOS_ENABLE_CUDA)
+    const int v = BvVarOf(vmask_, vl);   // dhjcuda-1112 (bvals.hpp)
+#else
     const int v = vlst_.v[vl];
+#endif
 
     // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
@@ -649,7 +662,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           // momenta of the source cell are needed to make either one, so this reads two
           // components and selects. Away from a panel seam it is exactly the old
           // `a(...)*signvar`. Only loads and the O(1) half of the transform remain here.
-          auto sval = [&](const int s, const int i) {
+          auto sval = [&](const int s, const int i) BV_CUDA_INLINE {
             const int kq = kst[s], jq = jst[s];
             if (cs_fxform) {
               Real f2o, f3o;
@@ -730,7 +743,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             const Real etac = 0.25*M_PI*CellCenterX(kk-ks_, nx3_, x3mn, x3mx);
             cubed_sphere::SeamXformAt(cs_srcpanel, cs_dstpanel, xic, etac, xfc);
           }
-          auto rgbad = [&](const int i) {
+          auto rgbad = [&](const int i) BV_CUDA_INLINE {
             const Real d0 = cs_coar ? ca(m,0,kst[0],jst[0],i) : a(m,0,kst[0],jst[0],i);
             const Real d1 = cs_coar ? ca(m,0,kst[1],jst[1],i) : a(m,0,kst[1],jst[1],i);
             const Real d2 = cs_coar ? ca(m,0,kst[2],jst[2],i) : a(m,0,kst[2],jst[2],i);
@@ -741,7 +754,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             const Real dc = cs_coar ? ca(m,0,kk,jj,i) : a(m,0,kk,jj,i);
             return (dq > rg_*dc) || (dc > rg_*dq);
           };
-          auto plainval = [&](const int i) {
+          auto plainval = [&](const int i) BV_CUDA_INLINE {
             if (!cs_xform) {
               return (cs_coar ? ca(m,vv,kk,jj,i) : a(m,vv,kk,jj,i))*signvar;
             }
@@ -768,7 +781,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
               lw5[q] = l;
             }
           }
-          auto wbval = [&](const int s, const int i) {
+          auto wbval = [&](const int s, const int i) BV_CUDA_INLINE {
             const int kq = kst[s], jq = jst[s];
             Real phig = 0.0;
             const int nA = (cs_seam == 2) ? wbsphi_.extent_int(1) : wbsphi_.extent_int(2);
@@ -812,7 +825,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             if (v == 0) return dd;
             return ee + ke + (wbsetg_ ? dd*phig : 0.0);
           };
-          auto seamval = [&](const int i) {
+          auto seamval = [&](const int i) BV_CUDA_INLINE {
             if (cs_seam == 0) return sval(0,i);
             if (wbsv) {
               const Real sv0 = wbval(0,i), sv1 = wbval(1,i), sv2 = wbval(2,i);

@@ -434,6 +434,21 @@ inline BvVarList MakeBvVarList(const int nvar, const int vmask) {
   for (int q=l.n; q<32; ++q) {l.v[q] = 0;}
   return l;
 }
+// dhjcuda-1112: slot vl of MakeBvVarList(nvar, vmask) without indexing the list: the
+// vl-th set bit of vmask (vl itself for vmask = 0; vl < n, so bits >= nvar never count).
+// A CUDA kernel that indexes the by-value list with a run-time vl gets the list copied
+// to its stack (local memory); the integer is the same.
+KOKKOS_INLINE_FUNCTION int BvVarOf(const int vmask, const int vl) {
+  if (vmask == 0) return vl;
+  int c = 0;
+  for (int b=0; b<32; ++b) {
+    if ((vmask >> b) & 1) {
+      if (c == vl) return b;
+      ++c;
+    }
+  }
+  return 0;
+}
 
 //----------------------------------------------------------------------------------------
 //! \class BoundaryValuesCC
