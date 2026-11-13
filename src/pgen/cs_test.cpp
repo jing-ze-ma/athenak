@@ -887,7 +887,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real vn_ = cs_vnoise*sqrt((gm1 + 1.0)*p0/d0);
   // cscorner-1113 (TEST, iprob 13 only, off unless <problem>/cblob_d > 0): a DENSE BLOB
   // on the stratified atmosphere, density cblob_d x ambient, temperature cblob_t x
-  // ambient, radial velocity cblob_vr, centred on the direction (cblob_x, cblob_y,
+  // ambient (<= 0: pressure-matched), radial velocity cblob_vr, centred on the direction (cblob_x, cblob_y,
   // cblob_z) at radius cblob_r, angular radius cblob_ang and radial half width cblob_wr,
   // with tanh edges of width cblob_dw (radians; the radial edge cblob_dw*cblob_r).  The
   // gate: the answer must not depend on where the blob sits (cube vertex, seam, panel).
@@ -1074,7 +1074,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const Real sr = 0.5*(1.0 - tanh((fabs(rad - cbr_) - cbwr_)/(cbdw_*cbr_)));
         const Real s = sa*sr;
         const Real fd = 1.0 + (cbd_ - 1.0)*s;
-        const Real ft = 1.0 + (cbt_ - 1.0)*s;
+        // cblob_t <= 0: pressure-matched (a contact: T = T_ambient / fd)
+        const Real ft = (cbt_ > 0.0) ? 1.0 + (cbt_ - 1.0)*s : 1.0/fd;
         dn *= fd;
         ie_ *= fd*ft;
         vr0 = cbvr_*s;
