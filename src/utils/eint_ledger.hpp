@@ -41,6 +41,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "hydro/hydro.hpp"
+#include "rad_m1/rad_m1.hpp"
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
 #endif
@@ -210,7 +211,79 @@ inline void Take(Mesh *pm, const int op, const bool book) {
   have_base = true;
 }
 
+//! rsgen-1113 <rad_m1>/dbg_utot_ledger (DIAGNOSTIC, read only when named, output only):
+//! a TOTAL-energy ledger at the same marks.  At each Mark the rank-reduced sums
+//! Ug = sum IEN vol, Ur = sum (c/chat) E vol (M1) and M = sum rho vol over the active
+//! cells are differenced with the previous mark and booked to the operator that ran in
+//! between ("name"); at "gap_cycle" rank 0 prints one UTOT line per cycle:
+//! op=dUg/dUr/dM for every operator.  Independent of <problem>/eint_ledger.
+inline bool utot_on = false;
+inline bool utot_base = false;
+inline Real utot_prev[3] = {0.0, 0.0, 0.0};
+inline std::vector<std::string> utot_names;
+inline std::vector<std::vector<Real>> utot_cyc;
+
+inline void UtotMark(Mesh *pm, const char *name) {
+  auto *pmbp = pm->pmb_pack;
+  auto *ph = pmbp->phydro;
+  if (ph == nullptr) return;
+  auto &ic = pm->mb_indcs;
+  const int is = ic.is, js = ic.js, ks = ic.ks;
+  const int ni = ic.nx1, nj = ic.nx2, nk = ic.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  auto uh = ph->u0;
+  auto vol = pmbp->pcoord->volume;
+  const bool hr = (pmbp->pradm1 != nullptr);
+  auto ur = hr ? pmbp->pradm1->u0 : uh;
+  const Real ccr = hr ? (pmbp->pradm1->c_light/pmbp->pradm1->chat) : 0.0;
+  const int nji = nj*ni, nkji = nk*nji;
+  Real a = 0.0, b = 0.0, c = 0.0;
+  Kokkos::parallel_reduce("utot_ledger", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &sa, Real &sb, Real &sc) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + ks;
+    const int j = (idx%nji)/ni + js;
+    const int i = idx%ni + is;
+    const Real v = vol(m,k,j,i);
+    sa += uh(m,IEN,k,j,i)*v;
+    if (hr) {sb += ccr*ur(m,radm1::M1_E,k,j,i)*v;}
+    sc += uh(m,IDN,k,j,i)*v;
+  }, a, b, c);
+  Real r[3] = {a, b, c};
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, r, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  const std::string nm(name);
+  if (utot_base) {
+    int op = -1;
+    for (int n = 0; n < static_cast<int>(utot_names.size()); ++n) {
+      if (utot_names[n] == nm) {op = n; break;}
+    }
+    if (op < 0) {
+      utot_names.push_back(nm);
+      utot_cyc.push_back(std::vector<Real>(3, 0.0));
+      op = static_cast<int>(utot_names.size()) - 1;
+    }
+    for (int q = 0; q < 3; ++q) utot_cyc[op][q] += r[q] - utot_prev[q];
+  }
+  for (int q = 0; q < 3; ++q) utot_prev[q] = r[q];
+  if (nm == "gap_cycle") {
+    if (utot_base && global_variable::my_rank == 0) {
+      std::printf("UTOT cycle=%d", pm->ncycle);
+      for (int n = 0; n < static_cast<int>(utot_names.size()); ++n) {
+        std::printf(" %s=%.10e/%.10e/%.4e", utot_names[n].c_str(), utot_cyc[n][0],
+                    utot_cyc[n][1], utot_cyc[n][2]);
+      }
+      std::printf("\n");
+    }
+    for (auto &v : utot_cyc) for (auto &x : v) x = 0.0;
+    utot_base = true;
+  }
+}
+
 inline void Mark(Mesh *pm, const char *name) {
+  if (utot_on) {UtotMark(pm, name);}
   if (!on) return;
   Take(pm, OpIndex(name), true);
 }

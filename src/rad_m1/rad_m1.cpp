@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "athena.hpp"
+#include "utils/eint_ledger.hpp"
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
@@ -690,6 +691,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
   } else {
     arad = pin->GetOrAddReal("rad_m1","arad",0.0);
+  }
+  // rsgen-1113: total-energy ledger at the eint_ledger marks (utils/eint_ledger.hpp)
+  if (pin->DoesParameterExist("rad_m1","dbg_utot_ledger")) {
+    eint_ledger::utot_on = pin->GetBoolean("rad_m1","dbg_utot_ledger");
   }
   // rsgen-1113: conservative temperature floor at the refresh (rad_m1.hpp)
   if (pin->DoesParameterExist("rad_m1","refresh_tfloor_cons")) {
