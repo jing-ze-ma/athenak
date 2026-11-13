@@ -1766,6 +1766,8 @@ class RadiationM1 {
   bool impl_lres_test;          // <rad_m1>/implicit_lres_test (default false*): require
                                 // the pass-to-pass transverse change lresid < lin_tol
   bool impl_src_stable = false;  // <rad_m1>/implicit_src_stable (stall_1002)
+  bool impl_src_poslin = false;  // rsgposlin-1113 <rad_m1>/implicit_src_poslin
+  DvceArray1D<Real> psl_cnt;     // its firing count (cell-passes, this rank)
   bool impl_conv_est;           // <rad_m1>/implicit_conv_est (default true*): stop when
                                 // the linear-rate estimate of the REMAINING change is
                                 // below implicit_tol

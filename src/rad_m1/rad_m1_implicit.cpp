@@ -1979,6 +1979,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               << "name it to switch the stable source row on)" << std::endl;
   }
   }
+  // rsgposlin-1113 implicit_src_poslin (M1ImplSrcLaunch; read only when named)
+  impl_src_poslin = pin->DoesParameterExist("rad_m1","implicit_src_poslin") &&
+                    pin->GetBoolean("rad_m1","implicit_src_poslin");
+  if (impl_src_poslin) {
+    Kokkos::realloc(psl_cnt, 1);
+    Kokkos::deep_copy(psl_cnt, 0.0);
+  }
   impl_ew_max = pin->GetOrAddReal("rad_m1","implicit_lin_ew_max",
                                   (fixcl && impl_bcg_sync >= 1) ? 1.0e-2 : 0.0);
   impl_ew_gam = pin->GetOrAddReal("rad_m1","implicit_lin_ew_gamma",0.9);
@@ -11868,6 +11875,11 @@ void RadiationM1::ImplicitReport() {
               << " cell-passes=" << gas_ncell
               << " newton fallbacks=" << newt_nfb << " (" << fpc << " per cell-pass)"
               << std::endl;
+    if (impl_src_poslin && psl_cnt.extent_int(0) > 0) {   // rsgposlin-1113
+      auto ph = Kokkos::create_mirror_view_and_copy(HostMemSpace(), psl_cnt);
+      std::cout << "<rad_m1> implicit_src_poslin: cell-passes with the lagged positive "
+                << "exchange (rank 0)=" << ph(0) << std::endl;
+    }
     if (impl_eos_cache) {
       std::cout << "<rad_m1> eos_cache: nt=" << impl_ecnt
                 << " misses=" << ec_nmiss << " (" << mpc << " per cell-pass)"
@@ -14043,6 +14055,8 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
   auto is = std::get<24>(ctx_);
   auto ie = std::get<25>(ctx_);
   auto sstab = std::get<26>(ctx_);
+  auto psl = std::get<27>(ctx_);
+  auto pslc = std::get<28>(ctx_);
   auto srb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -14051,7 +14065,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     // generated; other backends capture exactly what the instantiation reads).
     (void)ar; (void)ch; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)eos; (void)gam;
     (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr; (void)igy;
-    (void)iw_; (void)opac_; (void)uh; (void)usec; (void)sstab;
+    (void)iw_; (void)opac_; (void)uh; (void)usec; (void)sstab; (void)psl; (void)pslc;
 #endif
     Real rkpv = opac_(m,M1_OP_P,k,j,i);
     Real rkev = opac_(m,M1_OP_E,k,j,i);
@@ -14153,15 +14167,46 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
       // with w = rho c_v/bk and q = 1 - w = 4 cl dt k_P a T^3/bk.
       const Real w = dd*cv/bk;
       const Real q = 4.0*cl*dt*rkpv*ar*t3/bk;
+      const Real sr = w*(emis*t4 - dt*ch*rkev*de0)
+                      + (ch/cl)*q*(iw_(m,M1_IW_EGN,k,j,i) - ee);
+      if (psl && sr < 0.0) {
+        // rsgposlin-1113 implicit_src_poslin: see below
+        iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev;
+        iw_(m,M1_IW_SRCR,k,j,i) = emis*t4 - dt*ch*rkev*de0;
+        Kokkos::atomic_add(&pslc(0), 1.0);
+        return;
+      }
       iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev*w;
-      iw_(m,M1_IW_SRCR,k,j,i) = w*(emis*t4 - dt*ch*rkev*de0)
-                                + (ch/cl)*q*(iw_(m,M1_IW_EGN,k,j,i) - ee);
+      iw_(m,M1_IW_SRCR,k,j,i) = sr;
       return;
     }
     Real kk = (bk > 0.0) ? (emis*4.0*t3*cl*dt*rkev/bk) : 0.0;
+    const Real sr = emis*t4 - dt*ch*rkev*de0
+                    + ((bk > 0.0) ? (emis*4.0*t3*rk/bk) : 0.0);
+    if (psl && sr < 0.0) {
+      // rsgposlin-1113 <rad_m1>/implicit_src_poslin (read only when named, default false
+      // = bitwise; bitwise also in every cell where it does not fire).  The row above
+      // eliminates the gas with ONE Newton step in T, i.e. the emission is the tangent
+      // emis (T_k^4 + 4 T_k^3 dT), dT = (R_k + c dt rho kappa_E E')/B_k.  The tangent of
+      // T^4 is negative for dT < -T_k/4, and SRCR < 0 says exactly that the implied gas
+      // response at E' = 0 cools the cell below 3/4 T_k: a Newton step the T update
+      // itself rejects (trust region M1_NEWT_TRUST, bracketed root find instead).  The
+      // row then solves a NEGATIVE emission, E' < 0 is clipped to e_floor, the root find
+      // from the floored E gives a cold T, whose tangent is positive again: a Picard
+      // 2-cycle (RSG rsg.01451 rank 23, RSG_CAUSE_1113).  Where it fires, the row takes
+      // the lagged, non-negative exchange q = emis T_k^4 - c dt rho kappa_E (E' + de0)
+      // (no elimination; emission >= 0), and the T update stays as it is.  Both forms
+      // have the SAME fixed point (the eliminated part is proportional to the gas
+      // residual R_k + c dt rho kappa_E E', zero at convergence), and the write-back
+      // books the gas energy from the assembled q = SRCR - SRCB E', so total energy is
+      // conserved exactly as with the Newton form.
+      iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev;
+      iw_(m,M1_IW_SRCR,k,j,i) = emis*t4 - dt*ch*rkev*de0;
+      Kokkos::atomic_add(&pslc(0), 1.0);
+      return;
+    }
     iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev - kk;
-    iw_(m,M1_IW_SRCR,k,j,i) = emis*t4 - dt*ch*rkev*de0
-                              + ((bk > 0.0) ? (emis*4.0*t3*rk/bk) : 0.0);
+    iw_(m,M1_IW_SRCR,k,j,i) = sr;
   };
   par_for("m1_impl_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -16974,7 +17019,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // (above); srb_ctx is what the helper captured, by value.
       auto srb_ctx = std::make_tuple(ar, ch, cl, dt, ec_, ecnt, eos, gam, gasx, gnw,
                                      igb, igf, igm, igr, igy, iw_, opac_, uh, usec, nmb1,
-                                     ks, ke, js, je, is, ie, impl_src_stable);
+                                     ks, ke, js, je, is, ie, impl_src_stable,
+                                     impl_src_poslin, psl_cnt);
       if (srid) {
         M1ImplSrcLaunch(srb_ctx, std::true_type{});
       } else {
