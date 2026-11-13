@@ -26,3 +26,9 @@ That is 512 x 128 x 128 (8.4 M cells, ~42 GB) over theta 3pi/8..5pi/8, phi 0..pi
 - the rst paths, in case a later slot continues them
 
 Viper runs the same 1-day wall comparison on a coarser grid (dayOW512r vs dayF512rB). Your full-cell-size H200 numbers decide the production layout.
+
+## UPDATE2 (USER: "with what GPU we have now")
+Use the short2g holder 6854764 that is running now (empty, ends ~16:55 PST) at once.
+- Do the smoke plus restart check for both arms, then run both arms until 10 min before the end, with a restart at the end.
+- Report what you got (s/cycle, dt, memory, wall L_in) even if it is only ~20-30 min.
+- Continue from those restarts in the next short slot (test2g / any backfill).
