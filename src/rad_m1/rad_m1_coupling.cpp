@@ -720,7 +720,42 @@ void RadiationM1::RefreshTfloorCons() {
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, r, 18, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
+  // diag only: the minimum gas temperature (kelvin) the solve left, and the cells below
+  // 10^2.6 K (the bottom of the RSG EOS / opacity tables)
+  Real tmin_k = 1.0e300, nlow = 0.0;
+  if (!app) {
+    const Real tk = eos.temp_cgs;
+    const Real tlow = 398.10717055349727/tk;
+    Kokkos::parallel_reduce("m1_rtfcons_t", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            ntot),
+    KOKKOS_LAMBDA(const int n, Real &tm, Real &nl) {
+      const int m = n/(nk*nj*ni);
+      const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
+      const Real dd = uh(m,IDN,k,j,i);
+      if (!(dd > 0.0)) return;
+      const Real idd = 1.0/dd;
+      const Real m1 = uh(m,IM1,k,j,i), m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
+      Real ekin = 0.5*(m1*m1 + m2*m2 + m3*m3)*idd;
+      if (csw) {
+        const Real c = cclw(m,k,j);
+        ekin = 0.5*(m1*m1 + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))*idd;
+      }
+      const Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
+      const Real eint = uh(m,IEN,k,j,i) - ekin - egrv;
+      if (!(eint > 0.0)) {nl += 1.0; tm = 0.0; return;}
+      const Real t = eos.Temperature(dd, eint);
+      tm = fmin(tm, t);
+      if (t < tlow) {nl += 1.0;}
+    }, Kokkos::Min<Real>(tmin_k), Kokkos::Sum<Real>(nlow));
+    tmin_k *= tk;
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &tmin_k, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &nlow, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  }
   if (global_variable::my_rank == 0) {
+    if (!app) {std::printf("RTFCONS_T cycle=%d tmin_K=%.6e n_below_398K=%.6e\n", cyc,
+                           tmin_k, nlow);}
     std::printf("RTFCONS cycle=%d mode=%s cells=%.6e deficit=%.6e moved=%.6e "
                 "uncovered=%.6e E=%.6e etf=%.6e eint=%.6e mass=%.6e nEfl=%.6e "
                 "neint0=%.6e rb=", cyc, app ? "on" : "diag", r[0], r[1], r[2], r[3],
