@@ -1112,6 +1112,14 @@ void RadiationM1::VetGdInit() {
     }
   }
   VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
+  if (vgd_xff && vgd_ring) {
+    // xffuse-1113 (cubed sphere with the band ring): the two sweeps (no second array)
+    vgd_xff = false;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd_rotate_xfade_fuse: off (cubed sphere with "
+                << "vet_gd_band_ring: two sweeps per build)" << std::endl;
+    }
+  }
   if (vgd_xff) {
     // xffuse-1113: the other set's intensities, the same layout (and band sides)
     VgdRagAlloc(vgd_i_xb);
