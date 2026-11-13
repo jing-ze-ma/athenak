@@ -1813,15 +1813,37 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   std::chrono::steady_clock::time_point zt0;
   if (zl_prof) {Kokkos::fence(); zt0 = std::chrono::steady_clock::now();}
   const int zlr = zl_local;   // zlocal-1113 (rad_m1.hpp zalesak_local_rounds)
+  const bool zac = zl_active;   // zlocal-1113 (rad_m1.hpp zalesak_active)
+  if (zac) {
+    if (zl_chg.extent_int(0) < nmb1 + 1 || zl_chg.extent_int(1) != iw.extent_int(2) ||
+        zl_chg.extent_int(2) != iw.extent_int(3) ||
+        zl_chg.extent_int(3) != iw.extent_int(4)) {
+      Kokkos::realloc(zl_chg, nmb1 + 1, iw.extent_int(2), iw.extent_int(3),
+                      iw.extent_int(4));
+    }
+    Kokkos::deep_copy(DevExeSpace(), zl_chg, 0);
+  }
+  auto ch_ = zl_chg;
+  bool zxb = false;
   for (int r = 0; r < 4096; ++r) {   // until no cell is newly limited
     Real nv[2] = {0.0, 0.0};
     Real nl[2] = {0.0, 0.0};
     for (int s = 0; s < (zlr > 0 ? zlr : 1); ++s) {
     nv[0] = 0.0;
     nv[1] = 0.0;
+    const bool xb = zxb;
     par_reduce_flat2("m1_t2_ffct_r", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
                   Real &ab) {
+      if (zac && r > 0) {   // only cells whose stencil changed (stamp r = round r-1)
+        bool act = (ch_(m,k,j,i) == r) || (ch_(m,k,j,i-1) == r) ||
+                   (ch_(m,k,j,i+1) == r);
+        if (tr2) {act = act || (ch_(m,k,j-1,i) == r) || (ch_(m,k,j+1,i) == r);}
+        if (tr3) {act = act || (ch_(m,k-1,j,i) == r) || (ch_(m,k+1,j,i) == r);}
+        if (xb && (i == is || i == ie || (zx2 && (j == js || j == je)) ||
+                   (zx3 && (k == ks || k == ke)))) {act = true;}
+        if (!act) {return;}
+      }
       const Real rc = iw_(m,ca,k,j,i);
       Real rn = rc;
       if (!(hoi && hm_(m,k,j,i) > 0.0)) {
@@ -1838,6 +1860,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
             if (zsk && (i < is + zd || i > ie - zd ||
                         (zx2 && (j < js + zd || j > je - zd)) ||
                         (zx3 && (k < ks + zd || k > ke - zd)))) {ab += 1.0;}
+            if (zac) {ch_(m,k,j,i) = r + 1;}
           }
         }
       }
@@ -1862,12 +1885,18 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     if (!(nn > 0.0)) {break;}
     ncell += nn;
     nround = r + 1;
-    if (zlr == 0) {
+    if (zac) {
+      par_for("m1_t2_ffct_ca", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (ch_(m,k,j,i) == r + 1) {iw_(m,ca,k,j,i) = iw_(m,cb,k,j,i);}
+      });
+    } else if (zlr == 0) {
     par_for("m1_t2_ffct_c", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       iw_(m,ca,k,j,i) = iw_(m,cb,k,j,i);
     });
     }
+    zxb = false;
     if (!zsk || zfirst || nv[1] > 0.0) {
       ImplicitKrylovHalo(ca);
       zl_halos[0] += 1.0;

@@ -1182,6 +1182,13 @@ class RadiationM1 {
   // (1 - 1e-12) margin of the limiter; far fewer exchanges at many ranks.
   int zl_local = 0;
   Real zl_sub[2] = {0.0, 0.0};
+  // zlocal-1113 <rad_m1>/zalesak_active (default false): a Zalesak round evaluates only
+  // the cells whose 7-point stencil changed in the previous round (stamp array zl_chg),
+  // plus the block-face layer after an R exchange.  A cell whose inputs did not change
+  // cannot be newly limited (it was evaluated with the same inputs before): BITWISE.
+  bool zl_active = false;
+  DvceArray4D<int> zl_chg;
+  Real zl_xwall[2] = {0.0, 0.0};   // fenced exchange seconds (M1_FCT_PROF)
   Real zl_rounds[2] = {0.0, 0.0}, zl_halos[2] = {0.0, 0.0}, zl_wall[2] = {0.0, 0.0};
   bool zl_prof = false;
   // fast2nd-1112 <rad_m1>/implicit_face_mmat_rowsel (default true; false = the full
