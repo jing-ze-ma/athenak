@@ -892,7 +892,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // with tanh edges of width cblob_dw (radians; the radial edge cblob_dw*cblob_r).  The
   // gate: the answer must not depend on where the blob sits (cube vertex, seam, panel).
   Real cbd_ = 0.0, cbx_ = 1.0, cby_ = 0.0, cbz_ = 0.0, cbang_ = 0.12, cbr_ = 1.4;
-  Real cbwr_ = 0.1, cbdw_ = 0.02, cbt_ = 1.0, cbvr_ = 0.0;
+  Real cbwr_ = 0.1, cbdw_ = 0.02, cbt_ = 1.0, cbvr_ = 0.0, cbvc_ = 0.0;
   if (iprob == 13 && pin->DoesParameterExist("problem", "cblob_d")) {
     cbd_ = pin->GetReal("problem", "cblob_d");
     const Real hx = pin->GetOrAddReal("problem", "cblob_x", 1.0);
@@ -906,6 +906,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     cbdw_ = pin->GetOrAddReal("problem", "cblob_dw", 0.02);
     cbt_ = pin->GetOrAddReal("problem", "cblob_t", 1.0);
     cbvr_ = pin->GetOrAddReal("problem", "cblob_vr", 0.0);
+    // cblob_vc: a CONVERGING tangential flow toward the blob centre, speed
+    // cblob_vc sin(pi ang/cblob_ang) for ang < cblob_ang, times the radial window
+    cbvc_ = pin->GetOrAddReal("problem", "cblob_vc", 0.0);
   }
   const Real cavd_ = cs_cavd, cavx_ = cs_cavx, cavy_ = cs_cavy, cavz_ = cs_cavz;
   const Real cavw_ = cs_cavw, cavr_ = cs_cavr, cavwr_ = cs_cavwr;
@@ -1065,7 +1068,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // hydrostatic, at rest. See StaticAtmState.
       Real dn, ie_;
       StaticAtmState(rad, d0, p0, hs_, r0_, gm1, dn, ie_);
-      Real vr0 = 0.0;
+      Real vr0 = 0.0, vt2 = 0.0, vt3 = 0.0;
       if (cbd_ > 0.0) {   // cscorner-1113 blob (see above)
         Real qx, qy, qz;
         PanelToCart(mbpanel.d_view(m), xi, eta, qx, qy, qz);
@@ -1079,12 +1082,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         dn *= fd;
         ie_ *= fd*ft;
         vr0 = cbvr_*s;
+        if (cbvc_ != 0.0 && ang < cbang_ && ang > 1.0e-12) {
+          const Real cd = qx*cbx_ + qy*cby_ + qz*cbz_;
+          Real tx = cbx_ - cd*qx, ty = cby_ - cd*qy, tz = cbz_ - cd*qz;
+          const Real tn = sqrt(tx*tx + ty*ty + tz*tz);
+          const Real vt = cbvc_*sin(M_PI*ang/cbang_)*sr/tn;
+          Real a2, a3, cs_;
+          CartToPanelVec(mbpanel.d_view(m), xi, eta, vt*tx, vt*ty, vt*tz, a2, a3, cs_);
+          vt2 = a2; vt3 = a3;
+        }
       }
       w0(m,IDN,k,j,i) = dn;
       w0(m,IEN,k,j,i) = ie_;
       w0(m,IVX,k,j,i) = vr0;
-      w0(m,IVY,k,j,i) = 0.0;
-      w0(m,IVZ,k,j,i) = 0.0;
+      w0(m,IVY,k,j,i) = vt2;
+      w0(m,IVZ,k,j,i) = vt3;
       if (vn_ > 0.0) {
         // csedge-1019 (TEST): deterministic cell noise from the Cartesian position
         Real qx, qy, qz;
