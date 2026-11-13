@@ -267,7 +267,7 @@ using AthenaRangePolicy =
 template <typename ExeSpace>
 using AthenaRangePolicy = Kokkos::RangePolicy<ExeSpace>;
 #endif
-// dhjcuda-1112: ATHENA_CUDA_BODY_GLOBAL = B > 0 (CUDA; set for PROBLEM=deep_hot_jupiter_rt
+// dhjcuda-1112: ATHENA_CUDA_BODY_GLOBAL = B > 0 (CUDA; set for deep_hot_jupiter_rt
 // in src/CMakeLists.txt): a 4D par_for body (and a ck CkParFor4 / boundary BvalsTeamFor
 // functor) of >= B bytes is copied to device memory (cudaMemcpyAsync on the launch
 // stream: a pageable copy this small is staged at once, no host or device sync) and the
