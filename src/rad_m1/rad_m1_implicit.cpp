@@ -1876,9 +1876,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //    metric G^-1 = [[1, c], [c, 1]]/(1 - c^2) in beta.F, beta^2 and beta.P.beta of
   //    E0 - E (EQ_AUDIT_1112 #4).  With the key the three are built with it, i.e. with
   //    the same metric as the work v^a dm_a and the KE of the write-back.
-  if (pin->DoesParameterExist("rad_m1","implicit_cs_e0_metric")) {
-    impl_cs_e0m = pin->GetBoolean("rad_m1","implicit_cs_e0_metric");
-  }
+  //    prod-1114 (user 11-12): DEFAULT true (recorded); name false for the old E0.
+  impl_cs_e0m = pin->GetOrAddBoolean("rad_m1","implicit_cs_e0_metric",true);
   // csmetric-1112 (read only when named):
   //  implicit_cs_closure_metric (cs): |F|, f and the unit n of a chi(f) closure with the
   //    panel metric, and A = v + D.v, beta.D.beta with D the MIXED tensor on face-normal
@@ -3664,9 +3663,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // up to |F| - cE in free-streaming cells -- is a momentum kick to the gas: ~100 km/s
       // in 1e-8 floor gas, v12lz accretor) | rad (the limit's change stays with the
       // radiation, as on the matched path)
-      if (pin->DoesParameterExist("rad_m1","implicit_cs2_wbsolve")) {
-        cs2_wbs = pin->GetBoolean("rad_m1","implicit_cs2_wbsolve");
-      }
+      // prod-1114 (user 11-12): implicit_cs2_wbsolve DEFAULT true (recorded); name false
+      // for the 3 fixed-point passes of before
+      cs2_wbs = pin->GetOrAddBoolean("rad_m1","implicit_cs2_wbsolve",true);
       if (pin->DoesParameterExist("rad_m1","implicit_cs2_clip")) {
         const std::string cm = pin->GetString("rad_m1","implicit_cs2_clip");
         if (cm.compare("rad") == 0) {
@@ -5939,7 +5938,16 @@ void RadiationM1::ImplicitK1Fct(const Real ca) {
   auto iw_ = iw;
   auto u0_ = u0;
   auto k1_ = t2k1;
-  auto cvol = pmy_pack->pcoord->volume;
+  // k1dir-1110 FIX: volume is 1x1x1x1 off cs / sp (out-of-bounds read before);
+  // Cartesian: the uniform cell volume of the MeshBlock
+  auto cvola = pmy_pack->pcoord->volume;
+  const bool usevk = (cvola.extent_int(0) >= nmb1 + 1) && (cvola.extent_int(3) > 1);
+  auto &mbszk = pmy_pack->pmb->mb_size;
+  auto cvol = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i)
+              -> Real {
+    return usevk ? cvola(m,k,j,i) : (mbszk.d_view(m).dx1*mbszk.d_view(m).dx2*
+                                     mbszk.d_view(m).dx3);
+  };
   auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
   auto bcs = mbbcs.d_view;
   const bool thrd = trans_x3;
@@ -21095,10 +21103,13 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
       r -= (k - ks)*nji;
       const int j = r/ni + js;
       const int i = r - (j - js)*ni + is;
+      // dtretry-1111: a NaN (counted as <= 0 above) is the minimum, so the location is
+      // always a counted cell (all-NaN left loc at the identity: out-of-range reads)
       Real v = qval(m,k,j,i);
-      if (v < lm.val) {lm.val = v; lm.loc = idx;}
+      if (!(v == v)) v = -1.0e308;
+      if (v < lm.val || lm.loc < 0 || lm.loc >= ntot) {lm.val = v; lm.loc = idx;}
     }, ML(mloc));
-    const int idx = mloc.loc;
+    const int idx = (mloc.loc >= 0 && mloc.loc < ntot) ? mloc.loc : 0;
     const int m = idx/nkji;
     int r = idx - m*nkji;
     const int k = r/nji + ks;

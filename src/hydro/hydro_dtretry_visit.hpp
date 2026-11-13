@@ -10,6 +10,13 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("rsolver_method", rsolver_method);
   v.value("nhydro", nhydro);
   v.value("nscalars", nscalars);
+  v.value("tracers", tracers);
+  v.value("floor_tracer", floor_tracer);
+  v.value("ifltr", ifltr);
+  v.value("fltr_margin", fltr_margin);
+  v.value("fltr_fmax", fltr_fmax);
+  v.value("fltr_dm", fltr_dm);
+  v.value("fltr_de", fltr_de);
   v.view("u0", u0);
   v.view("w0", w0);
   v.view("coarse_u0", coarse_u0);
@@ -27,6 +34,7 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("dtnew_j", dtnew_j);
   v.value("dtnew_i", dtnew_i);
   v.dual("dt_diag", dt_diag);
+  v.view("dt_cell", dt_cell);
   v.value("dt_diag_valid", dt_diag_valid);
   v.value("dtnew_prev", dtnew_prev);
   v.value("rad_signal_speed", rad_signal_speed);
@@ -41,6 +49,18 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.view("phi0.x3f", phi0.x3f);
   v.view("phicc0", phicc0);
   v.view("wbq0", wbq0);
+  v.value("wb_all", wb_all);
+  v.value("wb_weight", wb_weight);
+  v.value("wbw_r0", wbw_r0);
+  v.value("wbw_r1", wbw_r1);
+  v.value("wbw_m0", wbw_m0);
+  v.value("wbw_m1", wbw_m1);
+  v.value("wbw_eta", wbw_eta);
+  v.view("wbq2", wbq2);
+  v.view("wbq3", wbq3);
+  v.view("wbw", wbw);
+  v.view("wbam_u", wbam_u);
+  v.view("wbam_w", wbam_w);
   v.value("use_phi_wb", use_phi_wb);
   v.view("phicc_wb", phicc_wb);
   v.view("phi_wb_x1f", phi_wb_x1f);
@@ -54,6 +74,21 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.view("eint_rst", eint_rst);
   v.value("c2p_track", c2p_track);
   v.value("c2p_split", c2p_split);
+  v.value("sbf_on", sbf_on);
+  v.value("sbf_want", sbf_want);
+  v.value("sbf_valid", sbf_valid);
+  v.view("sbf_s", sbf_s);
+  v.value("sbf_nfast", sbf_nfast);
+  v.value("sbf_nfull", sbf_nfull);
+  v.value("scp_once", scp_once);
+  v.value("c2pi_on", c2pi_on);
+  v.value("c2pi_valid", c2pi_valid);
+  v.view("c2pi_u", c2pi_u);
+  v.view("c2pi_w", c2pi_w);
+  v.view("c2pi_d", c2pi_d);
+  v.view("c2pi_t", c2pi_t);
+  v.value("c2pi_nskip", c2pi_nskip);
+  v.value("c2pi_nrun", c2pi_nrun);
   v.view("c2p_acc", c2p_acc);
   v.view("c2p_ref_e", c2p_ref_e);
   v.view("c2p_ref_d", c2p_ref_d);
@@ -62,14 +97,20 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("use_wellbalance_dynamic", use_wellbalance_dynamic);
   v.value("use_wb_x1", use_wb_x1);
   v.value("wall_closed_ix1", wall_closed_ix1);
+  v.value("wall_wb_onesided", wall_wb_onesided);
   v.value("diode_ox1", diode_ox1);
+  v.value("top_ghost_prim_copy", top_ghost_prim_copy);
   v.value("cs_seam_hlle", cs_seam_hlle);
   v.value("cs_seam_shared", cs_seam_shared);
+  v.value("mlat_exch", mlat_exch);
+  v.value("mlat_own_rec", mlat_own_rec);
+  v.view("mlat_imask", mlat_imask);
   v.value("use_wb_x2", use_wb_x2);
   v.value("use_wb_rho", use_wb_rho);
   v.value("wb_rmax", wb_rmax);
   v.value("wb_rmin", wb_rmin);
   v.value("wb_phimax", wb_phimax);
+  v.value("wb_poison", wb_poison);
   v.value("wb_option", wb_option);
   v.view("u0wb", u0wb);
   v.view("w0wb", w0wb);
@@ -93,8 +134,12 @@ void hydro::Hydro::DtRetryVisit(V &v) {
 //   fofc_rep : FofcReport
 //   pam : hydro::AmModule *
 //   pmlat : hydro::MergeLat *
+//   pravg : hydro::RingAvg *
+//   wbam_f : DvceFaceFld5D<Real> *
 //   pbval_fs : MeshBoundaryValuesCC *
 //   pseamfs : DvceFaceFld5D<Real> *
+//   pbval_ml : MeshBoundaryValuesCC *
+//   pmlfs : DvceFaceFld5D<Real> *
 //   id : HydroTaskIDs
 //   pmy_pack : MeshBlockPack *
 
