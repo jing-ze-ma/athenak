@@ -2258,6 +2258,54 @@ void VgdPackEvtRecord(const DevExeSpace &ex);   // (defined with VetGdHlBegin)
 void VgdPackEvtWait(const DevExeSpace &ex);
 }  // namespace
 
+// vgdsched-1113: the early send of the fused sweep (VetGdHlXff modes 1-3): two events
+// between the sweep stream and a second, high-priority stream (fork: the shell's inputs
+// complete; done: the early cells and their pack complete)
+namespace {
+#if defined(KOKKOS_ENABLE_HIP)
+using VgdEvT = hipEvent_t;
+void VgdEvRec(VgdEvT &e, const DevExeSpace &ex) {
+  if (e == nullptr) {(void)hipEventCreateWithFlags(&e, hipEventDisableTiming);}
+  (void)hipEventRecord(e, ex.hip_stream());
+}
+void VgdEvStreamWait(const DevExeSpace &ex, VgdEvT e) {
+  (void)hipStreamWaitEvent(ex.hip_stream(), e, 0);
+}
+void VgdEvHostWait(VgdEvT e, const DevExeSpace &) {(void)hipEventSynchronize(e);}
+DevExeSpace VgdPrioSpace() {
+  int lo = 0, hi = 0;
+  (void)hipDeviceGetStreamPriorityRange(&lo, &hi);
+  hipStream_t s;
+  (void)hipStreamCreateWithPriority(&s, hipStreamNonBlocking, hi);
+  return DevExeSpace(s, Kokkos::Impl::ManageStream::yes);
+}
+#elif defined(KOKKOS_ENABLE_CUDA)
+using VgdEvT = cudaEvent_t;
+void VgdEvRec(VgdEvT &e, const DevExeSpace &ex) {
+  if (e == nullptr) {(void)cudaEventCreateWithFlags(&e, cudaEventDisableTiming);}
+  (void)cudaEventRecord(e, ex.cuda_stream());
+}
+void VgdEvStreamWait(const DevExeSpace &ex, VgdEvT e) {
+  (void)cudaStreamWaitEvent(ex.cuda_stream(), e, 0);
+}
+void VgdEvHostWait(VgdEvT e, const DevExeSpace &) {(void)cudaEventSynchronize(e);}
+DevExeSpace VgdPrioSpace() {
+  int lo = 0, hi = 0;
+  (void)cudaDeviceGetStreamPriorityRange(&lo, &hi);
+  cudaStream_t s;
+  (void)cudaStreamCreateWithPriority(&s, cudaStreamNonBlocking, hi);
+  return DevExeSpace(s, Kokkos::Impl::ManageStream::yes);
+}
+#else
+using VgdEvT = int;
+void VgdEvRec(VgdEvT &, const DevExeSpace &) {}
+void VgdEvStreamWait(const DevExeSpace &, VgdEvT) {}
+void VgdEvHostWait(VgdEvT, const DevExeSpace &ex) {ex.fence();}
+DevExeSpace VgdPrioSpace() {return DevExeSpace();}
+#endif
+VgdEvT g_vgd_efork{}, g_vgd_edone{};
+}  // namespace
+
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VgdXffSwap
 //! \brief xffuse-1113: swap the whole set context of the cross-fade (the tables, the
@@ -2319,9 +2367,14 @@ bool RadiationM1::VetGdXffOk() {
 //! partner p, then the other set's (send / receive layouts: piece p = [A_p, B_p]).  The
 //! same values reach the same band cells as the two exact-list exchanges (VetGdHlBegin /
 //! VetGdHlEnd, MPI path), bitwise.  false (nothing done) unless both sets hold exact
-//! records of this exchange
+//! records of this exchange.
+//! vgdsched-1113 early send (env VGD_XFE): mode 1 = stamp this shell's send cells of
+//! both sets (vgd_est) and fork the second stream (it waits for the sweep stream); the
+//! caller then runs those cells' bodies on vgd_es2 (the fused kernel skips them); mode 3
+//! = their pack on vgd_es2 and the done event; mode 2 = the exchange of a packed shell
+//! (the sweep stream waits for the done event; no pack); mode 0 = all of it, as before
 
-bool RadiationM1::VetGdHlXff(const int i, const int ws) {
+bool RadiationM1::VetGdHlXff(const int i, const int ws, const int mode) {
 #if MPI_PARALLEL_ENABLED
   if (!vgd_hmpi || vgd_hlp.on) {return false;}
   Mesh *pm = pmy_pack->pmesh;
@@ -2377,10 +2430,57 @@ bool RadiationM1::VetGdHlXff(const int i, const int ws) {
   auto aB_ = vgd_i_xb;
   const int nsA = XA.ns, nsB = XB.ns;
   const int npk = np;
-  if (nsA + nsB > 0) {
+  if (mode == 1) {
+    // the stamps of this shell's send cells (band index space, as the (m, k, j, d) of
+    // the fused kernel), then the fork: the second stream waits for all work before
+    if (!vgd_es2_made) {
+      vgd_es2 = VgdPrioSpace();
+      vgd_es2_made = true;
+    }
+    for (int s = 0; s < 2; ++s) {
+      if (vgd_est[s].extent_int(0) != nmb1 + 1 || vgd_est[s].extent_int(1) != c3_ ||
+          vgd_est[s].extent_int(2) != c2_ || vgd_est[s].extent_int(3) != nv_) {
+        vgd_est[s] = DvceArray4D<int>("vgd_est", nmb1 + 1, c3_, c2_, nv_);   // (zero)
+        vgd_esid = 0;
+      }
+    }
+    vgd_esid = (vgd_esid >= std::numeric_limits<int>::max() - 1) ? 1 : (vgd_esid + 1);
+    if (vgd_esid == 1) {   // (first use or wrapped: no stale stamp may match)
+      Kokkos::deep_copy(vgd_cur, vgd_est[0], 0);
+      Kokkos::deep_copy(vgd_cur, vgd_est[1], 0);
+    }
+    if (nsA + nsB > 0) {
+      auto slA_ = XA.sl;
+      auto slB_ = XB.sl;
+      auto e0_ = vgd_est[0];
+      auto e1_ = vgd_est[1];
+      const int sid_ = vgd_esid;
+      Kokkos::parallel_for("m1_vgd_xfe_stamp", VgdLight(vgd_cur, 0, nsA + nsB),
+      KOKKOS_LAMBDA(const int c) {
+        const bool b = (c >= nsA);
+        int ad = b ? slB_(c - nsA) : slA_(c);
+        const int jb = ad % c2_;
+        ad /= c2_;
+        const int kb = ad % c3_;
+        ad /= c3_;
+        const int v = ad % nv_;
+        const int m = ad/nv_;
+        if (b) {
+          e1_(m,kb,jb,v) = sid_;
+        } else {
+          e0_(m,kb,jb,v) = sid_;
+        }
+      });
+    }
+    VgdEvRec(g_vgd_efork, vgd_cur);
+    VgdEvStreamWait(vgd_es2, g_vgd_efork);
+    return true;
+  }
+  const DevExeSpace pex = (mode == 3) ? vgd_es2 : vgd_cur;
+  if (nsA + nsB > 0 && mode != 2) {
     auto slA_ = XA.sl;
     auto slB_ = XB.sl;
-    Kokkos::parallel_for("m1_vgd_xff_pack", VgdLight(vgd_cur, 0, nsA + nsB),
+    Kokkos::parallel_for("m1_vgd_xff_pack", VgdLight(pex, 0, nsA + nsB),
     KOKKOS_LAMBDA(const int c) {
       const bool b = (c >= nsA);
       const int cc = b ? (c - nsA) : c;
@@ -2398,11 +2498,24 @@ bool RadiationM1::VetGdHlXff(const int i, const int ws) {
       sbuf_(pos) = b ? aB_(m,v,kb,jb,i) : aA_(m,v,kb,jb,i);
     });
   }
+  if (mode == 3) {
+    VgdEvRec(g_vgd_edone, vgd_es2);
+    return true;
+  }
   // (the band-ring copies of other shells between the pack and the scatter, as in
   // VetGdHlBegin)
-  VgdPackEvtRecord(vgd_cur);
-  VetGdRingFlush();
-  VgdPackEvtWait(vgd_cur);
+  if (mode == 2) {
+    // vgdsched-1113: the early cells and their pack (second stream) before anything
+    // after this point on the sweep stream (the ring copies, the scatter, the next shell)
+    VgdEvStreamWait(vgd_cur, g_vgd_edone);
+    VetGdRingFlush();
+    VgdEvHostWait(g_vgd_edone, vgd_es2);
+    vgd_xfe_n += 1.0;
+  } else {
+    VgdPackEvtRecord(vgd_cur);
+    VetGdRingFlush();
+    VgdPackEvtWait(vgd_cur);
+  }
   Kokkos::Timer tq;
   std::vector<MPI_Request> req;
   for (int p = 0; p < np; ++p) {
@@ -2492,6 +2605,7 @@ bool RadiationM1::VetGdHlXff(const int i, const int ws) {
 #else
   (void) i;
   (void) ws;
+  (void) mode;
   return false;
 #endif
 }
@@ -5864,6 +5978,17 @@ void RadiationM1::VetGdSweep() {
   // xffuse-1113: a list-only preparation of this set (shell lists, exact halo lists)
   if (vgd_xff_prep) {return;}
   const bool xffs = vgd_xff_now;
+  // vgdsched-1113 early send (env VGD_XFE, default 1): the fused sweep's merged
+  // exchange (VetGdHlXff) with the send cells run and packed first on a second stream,
+  // so the host exchanges while the fused kernel runs; not with the overlap, the lagged
+  // exchange cadence or the mark-built lists (vet_gd_halo_exact = 2)
+  static int s_xfe = -1;
+  if (s_xfe < 0) {
+    const char *ee = std::getenv("VGD_XFE");
+    s_xfe = (ee != nullptr) ? std::atoi(ee) : 1;
+  }
+  const bool xfe = xffs && (s_xfe != 0) && vgd_xff_msg && vgd_hmpi && (vgd_ovl_g <= 0) &&
+                   (vgd_fuse_h <= 1) && (vgd_hx_mode != 2);
   // mem2-1014 vet_gd_band_ring: shells lent a wide slab while their band is needed
   // (xffuse-1113: the other set's array as the second one, VetGdRingFlush)
   VetGdRingSweepBegin(vgd_sw2 || xffs);
@@ -6006,12 +6131,17 @@ void RadiationM1::VetGdSweep() {
     // xffuse-1113: the fused shell kernel of shell (i, l): the codes of this pass's list of
     // the current set, then those of the other set, one launch; each thread runs the body
     // of its code's set (the same body code, the same inputs: the values of two launches)
-    auto run_xff = [&](const int i, const int l) {
+    // vgdsched-1113: sid > 0 = the early send ran this shell's stamped send cells of
+    // both sets (run_xfe, second stream): skipped here (each cell's body runs once)
+    auto run_xff = [&](const int i, const int l, const int sid) {
       const int nA = vgd_shn[pass], nB = vgd_shn_xb[pass];
       if (nA + nB <= 0) {return;}
       auto LA_ = vgd_shl[pass];
       auto LB_ = vgd_shl_xb[pass];
       const std::false_type f_;
+      const int sid_ = sid;
+      auto e0_ = vgd_est[0];
+      auto e1_ = vgd_est[1];
       if (thm) {
         const auto *qa = xa1;
         const auto *qb = xq1;
@@ -6025,6 +6155,7 @@ void RadiationM1::VetGdSweep() {
           t -= m*nkj;
           const int k = ks + t/nj;
           const int j = js + (t % nj);
+          if (sid_ > 0 && (sb ? e1_(m,k,j,d) : e0_(m,k,j,d)) == sid_) {return;}
           if (sb) {
             (*qb)(m, k, j, d, i, l, f_, f_);
           } else {
@@ -6044,6 +6175,59 @@ void RadiationM1::VetGdSweep() {
           t -= m*nkj;
           const int k = ks + t/nj;
           const int j = js + (t % nj);
+          if (sid_ > 0 && (sb ? e1_(m,k,j,d) : e0_(m,k,j,d)) == sid_) {return;}
+          if (sb) {
+            (*qb)(m, k, j, d, i, l, f_, f_);
+          } else {
+            (*qa)(m, k, j, d, i, l, f_, f_);
+          }
+        });
+      }
+    };
+    // vgdsched-1113 early send: the bodies of this shell's send cells of both sets (the
+    // exact send lists of the exchange ex, band index space) on the second stream; the
+    // same body, the same inputs as in the fused kernel, which skips them
+    auto run_xfe = [&](const int i, const int l, const int ex) {
+      const VgdHlEntry &XA = vgd_hxe[ex];
+      const VgdHlEntry &XB = vgd_hxe_alt[ex];
+      const int nsA = XA.ns, nsB = XB.ns;
+      if (nsA + nsB <= 0) {return;}
+      auto slA_ = XA.sl;
+      auto slB_ = XB.sl;
+      const int c2_ = indcs.nx2 + 2*vgd_w, c3_ = indcs.nx3 + 2*vgd_w, nv_ = n;
+      const std::false_type f_;
+      if (thm) {
+        const auto *qa = xa1;
+        const auto *qb = xq1;
+        Kokkos::parallel_for("m1_vgd_shell_xfe", VgdShellPol(vgd_es2, 0, nsA + nsB),
+        KOKKOS_LAMBDA(const int c) {
+          const bool sb = (c >= nsA);
+          int ad = sb ? slB_(c - nsA) : slA_(c);
+          const int j = ad % c2_;
+          ad /= c2_;
+          const int k = ad % c3_;
+          ad /= c3_;
+          const int d = ad % nv_;
+          const int m = ad/nv_;
+          if (sb) {
+            (*qb)(m, k, j, d, i, l, f_, f_);
+          } else {
+            (*qa)(m, k, j, d, i, l, f_, f_);
+          }
+        });
+      } else {
+        const auto *qa = xa0;
+        const auto *qb = xq0;
+        Kokkos::parallel_for("m1_vgd_shell_xfe", VgdShellPol(vgd_es2, 0, nsA + nsB),
+        KOKKOS_LAMBDA(const int c) {
+          const bool sb = (c >= nsA);
+          int ad = sb ? slB_(c - nsA) : slA_(c);
+          const int j = ad % c2_;
+          ad /= c2_;
+          const int k = ad % c3_;
+          ad /= c3_;
+          const int d = ad % nv_;
+          const int m = ad/nv_;
           if (sb) {
             (*qb)(m, k, j, d, i, l, f_, f_);
           } else {
@@ -6418,6 +6602,7 @@ void RadiationM1::VetGdSweep() {
     for (int q = 0; q < nsh; ++q) {
       const int l = inw ? (n1 - 1 - q) : (lcut + q);
       const int i = is + l;
+      bool xe = false;               // vgdsched-1113: this shell was sent early
       // vet_gd_halo_pipe: the shell exchanged after this one (its mask is prepared while
       // this shell's messages travel)
       if (q + 1 < n1 - lcut) {
@@ -6468,7 +6653,21 @@ void RadiationM1::VetGdSweep() {
           vgd_thalo += th.seconds();
         }
         if (xffs) {
-          run_xff(i, l);   // xffuse-1113: both sets of the cross-fade, one launch
+          // xffuse-1113: both sets of the cross-fade, one launch.  vgdsched-1113 early
+          // send: first this shell's send cells (stamped) and their pack on the second
+          // stream (when both sets hold exact records of the exchange)
+          int sid = -1;
+          if (xfe) {
+            const int wsx0 = inw ? vgd_wsi[i] : vgd_wso[i];
+            vgd_hinw = inw;
+            if (VetGdHlXff(i, wsx0, 1)) {
+              sid = vgd_esid;
+              run_xfe(i, l, (inw ? 0 : 1)*(indcs.nx1 + 2*indcs.ng) + i);
+              VetGdHlXff(i, wsx0, 3);
+            }
+          }
+          xe = (sid > 0);
+          run_xff(i, l, sid);
         } else if (shl) {
           // vet_gd_shell_list: only the (m, k, j, d) of this pass's branch
           run_list(vgd_shl[pass], 0, vgd_shn[pass], i, l, "m1_vgd_shell");
@@ -6576,7 +6775,10 @@ void RadiationM1::VetGdSweep() {
         // xffuse-1113: one message per partner with both sets' exact lists; else the two
         // exchanges, the other set's first (each writes only its own set's band)
         vgd_rg_lastx = false;
-        const bool hx2 = vgd_xff_msg && VetGdHlXff(i, wsx);
+        const bool hx2 = vgd_xff_msg && VetGdHlXff(i, wsx, xe ? 2 : 0);
+        if (xe && !hx2) {
+          VgdFatal("vgdsched-1113 early send: the exchange of a packed shell failed");
+        }
         if (!hx2 && rga) {
           VgdFatal("vet_gd_rotate_xfade_fuse: the band ring needs the merged exchange");
         }

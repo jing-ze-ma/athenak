@@ -1647,7 +1647,8 @@ void RadiationM1::VetColReport() {
           std::cout << "<rad_m1> vet_gd_rotate_xfade_fuse (rank 0): fused builds "
                     << vgd_xff_n << ", two-sweep fallbacks " << vgd_xff_nfb
                     << ", merged exchanges " << vgd_xff_nmsg << ", out-of-slab accesses "
-                    << "(other set) " << oos2 << std::endl;
+                    << "(other set) " << oos2 << ", early-sent shells " << vgd_xfe_n
+                    << std::endl;
         }
       }
       if (vgd_hc_mb > 0 || vgd_twfuse || vgd_twdet || vgd_twseq) {

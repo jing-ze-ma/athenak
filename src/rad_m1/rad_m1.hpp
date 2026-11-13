@@ -3276,7 +3276,15 @@ class RadiationM1 {
   bool VgdXffAllExact();
   void VetGdXffPostB();
   void VgdXffSwap();
-  bool VetGdHlXff(const int i, const int ws);
+  bool VetGdHlXff(const int i, const int ws, const int mode = 0);
+  // vgdsched-1113 early send of the fused sweep (env VGD_XFE): this shell's SEND cells of
+  // both sets first, on a second high-priority stream, with their pack; the host
+  // exchanges while the fused kernel (which skips the stamped cells) runs
+  DevExeSpace vgd_es2;
+  bool vgd_es2_made = false;
+  DvceArray4D<int> vgd_est[2];     // per set (m, kb, jb, d): the stamp of the early cells
+  int vgd_esid = 0;                // the stamp of the current early shell
+  double vgd_xfe_n = 0.0;          // early-sent shells (diagnostic)
   Real vgd_xf_alt = -9.0;        // the angle of the tables in the second device set
   double vgd_xf_nsw = 0.0;       // the next-set sweeps (diagnostic)
   double vgd_xf_t = 0.0;         // their seconds
