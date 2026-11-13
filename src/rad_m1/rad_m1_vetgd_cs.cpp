@@ -52,6 +52,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <string>
 #include <utility>
@@ -1245,6 +1246,147 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
 #endif
 }
 
+// vgdsched-1113: the per-partner offsets of the merged two-set exchange (VetGdCsHaloCX)
+namespace {
+constexpr int VGD_CSX_NS = 32;
+struct VgdCsXIdx {int v[VGD_CSX_NS + 1];};
+}   // namespace
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::VetGdCsHaloCX
+//! \brief vgdsched-1113: the compact exchanges of shell i after pass `pass` of a fused
+//! two-set sweep (xffuse-1113) in ONE round: one pack kernel, one host fence, ONE message
+//! per partner (piece p = [current set's values of p | next set's values of p], tag
+//! 7107), one unpack kernel.  The values are those of the two VetGdCsHaloC calls (the
+//! same copies into the same band cells: bitwise).  false (nothing done) with NCCL,
+//! direction groups or env VGD_CSXM=0: the caller runs the two exchanges
+
+bool RadiationM1::VetGdCsHaloCX(const int pass, const int i, const int eb) {
+#if MPI_PARALLEL_ENABLED
+  static int s_on = -1;
+  if (s_on < 0) {
+    const char *ev = std::getenv("VGD_CSXM");
+    s_on = (ev != nullptr) ? std::atoi(ev) : 1;
+  }
+  if (s_on == 0 || eb < 0) {return false;}
+#if M1_VGDCS_NCCL
+  if (VgdNcclOn()) {return false;}
+#endif
+  const VgdCsCl &EA = vgd_cscl[vgd_cscur];
+  const VgdCsCl &EB = vgd_cscl[eb];
+  if (EA.ng != 1 || EB.ng != 1) {return false;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1 = indcs.nx1;
+  const int n = vgd_n;
+  const int np = static_cast<int>(vgd_csprk.size());
+  if (np > VGD_CSX_NS) {return false;}
+  const size_t sl = static_cast<size_t>(pass)*n1 + (i - indcs.is);
+  const int64_t *soA = &EA.so[sl*(np + 1)];
+  const int64_t *roA = &EA.ro[sl*(np + 1)];
+  const int64_t *soB = &EB.so[sl*(np + 1)];
+  const int64_t *roB = &EB.ro[sl*(np + 1)];
+  const int64_t s0A = soA[0], nsA = soA[np] - soA[0];
+  const int64_t r0A = roA[0], nrA = roA[np] - roA[0];
+  const int64_t s0B = soB[0], nsB = soB[np] - soB[0];
+  const int64_t r0B = roB[0], nrB = roB[np] - roB[0];
+  if (nsA + nsB >= static_cast<int64_t>(std::numeric_limits<int>::max()) ||
+      nrA + nrB >= static_cast<int64_t>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+  // the buffers hold both sets (grown once when the two lists exceed one dense band)
+  if (static_cast<int64_t>(vgd_cssb.extent(0)) < nsA + nsB) {
+    Kokkos::realloc(vgd_cssb, static_cast<size_t>(nsA + nsB));
+  }
+  if (static_cast<int64_t>(vgd_csrb.extent(0)) < nrA + nrB) {
+    Kokkos::realloc(vgd_csrb, static_cast<size_t>(nrA + nrB));
+  }
+  // per-set list offsets relative to the shell's first value, and the merged offsets
+  VgdCsXIdx sa{}, sb{}, ra{}, rb{}, sm{}, rm{};
+  for (int p = 0; p <= np; ++p) {
+    sa.v[p] = static_cast<int>(soA[p] - s0A);
+    sb.v[p] = static_cast<int>(soB[p] - s0B);
+    ra.v[p] = static_cast<int>(roA[p] - r0A);
+    rb.v[p] = static_cast<int>(roB[p] - r0B);
+    sm.v[p] = sa.v[p] + sb.v[p];
+    rm.v[p] = ra.v[p] + rb.v[p];
+  }
+  auto a_ = vgd_i;
+  auto b_ = vgd_i_xb;
+  auto S_ = vgd_cssl;
+  auto R_ = vgd_csrl;
+  auto siA_ = EA.si;
+  auto riA_ = EA.ri;
+  auto siB_ = EB.si;
+  auto riB_ = EB.ri;
+  Real *sbp = vgd_cssb.data();
+  Real *rbp = vgd_csrb.data();
+  const int nsa = static_cast<int>(nsA), nsb = static_cast<int>(nsB);
+  const int nra = static_cast<int>(nrA), nrb = static_cast<int>(nrB);
+  const int npk = np;
+  if (nsa + nsb > 0) {
+    Kokkos::parallel_for("m1_vgdcs_cpackx", VgdLight(DevExeSpace(), 0, nsa + nsb),
+    KOKKOS_LAMBDA(const int c) {
+      const bool b = (c >= nsa);
+      const int o = b ? (c - nsa) : c;
+      const VgdCsXIdx &sx = b ? sb : sa;
+      int p = 0;
+      while (p + 1 < npk && sx.v[p+1] <= o) {++p;}
+      const int x = b ? siB_(s0B + o) : siA_(s0A + o);
+      const int e = x/n, d = x - e*n;
+      const int pos = sm.v[p] + (b ? (sa.v[p+1] - sa.v[p]) : 0) + (o - sx.v[p]);
+      sbp[pos] = b ? b_(S_(e,0),d,S_(e,1),S_(e,2),i) : a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+    });
+  }
+  Kokkos::fence();
+  Kokkos::Timer tq;
+  std::vector<MPI_Request> req;
+  req.reserve(2*np);
+  for (int p = 0; p < np; ++p) {
+    const int rk = vgd_csprk[p];
+    const int cr = rm.v[p+1] - rm.v[p], cs = sm.v[p+1] - sm.v[p];
+    if (cr > 0) {
+      req.emplace_back();
+      MPI_Irecv(rbp + rm.v[p], cr, MPI_ATHENA_REAL, rk, 7107, MPI_COMM_WORLD,
+                &req.back());
+    }
+    if (cs > 0) {
+      req.emplace_back();
+      MPI_Isend(sbp + sm.v[p], cs, MPI_ATHENA_REAL, rk, 7107, MPI_COMM_WORLD,
+                &req.back());
+      vgd_nbyte += static_cast<Real>(cs)*sizeof(Real);
+    }
+  }
+  MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+  vgd_tmpi += tq.seconds();
+  vgd_nexch += 2.0;
+  vgd_csvsent += static_cast<double>(nsA + nsB);
+  vgd_csvdense += static_cast<double>(vgd_csnsnd)*n*2;
+  if (nra + nrb > 0) {
+    Kokkos::parallel_for("m1_vgdcs_cunpackx", VgdLight(DevExeSpace(), 0, nra + nrb),
+    KOKKOS_LAMBDA(const int c) {
+      const bool b = (c >= nra);
+      const int o = b ? (c - nra) : c;
+      const VgdCsXIdx &rx = b ? rb : ra;
+      int p = 0;
+      while (p + 1 < npk && rx.v[p+1] <= o) {++p;}
+      const int x = b ? riB_(r0B + o) : riA_(r0A + o);
+      const int e = x/n, d = x - e*n;
+      const Real v = rbp[rm.v[p] + (b ? (ra.v[p+1] - ra.v[p]) : 0) + (o - rx.v[p])];
+      if (b) {
+        b_(R_(e,0),d,R_(e,1),R_(e,2),i) = v;
+      } else {
+        a_(R_(e,0),d,R_(e,1),R_(e,2),i) = v;
+      }
+    });
+  }
+  return true;
+#else
+  (void) pass;
+  (void) i;
+  (void) eb;
+  return false;
+#endif
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdCsHalo
 //! \brief fill every band position of a(m, v, k, j, i), v in [0, nv), shells [i0, i1],
@@ -2156,15 +2298,19 @@ void RadiationM1::VetGdCsSweep() {
         }
 #endif
       } else if (ccl) {
-        VetGdCsHaloC(pass, i, two);          // cs-s3b-1017: the read values only
-        if (xffs) {
-          // xffuse-1113: the next set's exchange (its own compact lists and array)
-          const int ca = vgd_cscur;
-          vgd_cscur = xcurb;
-          std::swap(vgd_i, vgd_i_xb);
-          VetGdCsHaloC(pass, i, false);
-          std::swap(vgd_i, vgd_i_xb);
-          vgd_cscur = ca;
+        // vgdsched-1113: in a fused sweep both sets' exchanges in one round (one message
+        // per partner, VetGdCsHaloCX); else the two exchanges
+        if (!(xffs && !two && VetGdCsHaloCX(pass, i, xcurb))) {
+          VetGdCsHaloC(pass, i, two);          // cs-s3b-1017: the read values only
+          if (xffs) {
+            // xffuse-1113: the next set's exchange (its own compact lists and array)
+            const int ca = vgd_cscur;
+            vgd_cscur = xcurb;
+            std::swap(vgd_i, vgd_i_xb);
+            VetGdCsHaloC(pass, i, false);
+            std::swap(vgd_i, vgd_i_xb);
+            vgd_cscur = ca;
+          }
         }
       } else {
         VetGdCsHalo(vgd_i, n, i, i, false);  // remote band only (on-rank: read direct)
