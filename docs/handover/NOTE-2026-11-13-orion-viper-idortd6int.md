@@ -885,3 +885,538 @@ FINAL/PROD L1 at N256 (rho, E):
 - **Raven cross-check on the finished rows:** Orion FIN arm vs Raven FIN (sum_runs_idort_x1_1112): FIN vs Raven FIN: 148 rows compared, 0 with rc mismatch or Picard mean off by > 1 %.
   Orion D6 (d6int) arm vs Raven d6fast (sum_runs_idort_d6_1113, main rows): D6 vs Raven d6fast: 40 rows compared, 0 with rc mismatch or Picard mean off by > 1 %.
   cmp_o.sh, the full row table and the verdict follow when the last rows end.
+
+## (c) Raven IDORT set, D6 (p, d6int) vs FIN (f, wt_fin 421a3d024): **correctness PASS on all 160 rows; accuracy metrics: see the limitation below**
+Lists main 41 / rsx 12 / spxx 100 / OMP 7, one p.exclusive node each (sched.py NC = 224 hardware threads: the binaries are serial singletons,
+so the <cores> column is a reservation only). Started 20:58 PST 11-12; walls: OMP 2425 s, spxx 4635 s, main 20133 s (pipe/FIN3_c220 FIN arm),
+rsx 30704 s (sp/rsx_m5/P_n1024_c0.4, both arms ~8.5 h on Orion; Raven's FIN summary has these two sp n1024 rows EMPTY, i.e. they did not
+finish on Raven).
+
+- **Smoke:** list_smoke 5/5 "p rc=0 fatal=0 ... f rc=0 fatal=0"; OMP 14/14 rc=0 fatal=0; the p timekeys all have implicit_blend_dtc=1e-6.
+  (The first smoke attempt was my error, `srun -n 40` = 40 copies; it was moved aside to smoke_bad40x and rerun as one task.)
+- **cmp_o.sh section (1): 0 FLAG_RC, 0 FLAG_NC, 0 FLAG_PICARD, 0 MISSING over all 160 rows** (153 runs + 7 runs_omp). Every D6 row rc=0, FATAL 0,
+  NON-CONVERGED 0, and no D6 Picard mean > 1.25 x FIN. There is no row where FIN is clean and D6 is not.
+- **Orion FIN arm vs Raven FIN** (sum_runs_idort_x1_1112): 151 rows comparable (the 2 sp rsx n1024 rows are empty on Raven): **0 rc mismatches,
+  0 Picard means off by > 1 %**. Most agree to all printed digits.
+- **Orion D6 (d6int) vs Raven d6fast** (sum_runs_idort_d6_1113, 41 main rows): **0 rc mismatches, 0 Picard means off by > 1 %.**
+- **cmp_o.sh section (2), FIN -> D6 outputs:** 13 rows BITWISE, 147 DIFF. **On the 41 main rows the BITWISE / DIFF class matches Raven's
+  cmp_d6fast_vs_fin.txt row for row, and maxrel matches it to 4 digits wherever Raven printed it** (e.g. ddn 3.223e-07, marsh_c10 1.971,
+  nltek2 1.991, hcyl 7.7e-8 on Orion). The FIN -> D6 difference pattern of d6int is d6fast's.
+- **Limitation (not a pass):** I do not have the per-family IDORT row analyzers (eq/eqts, shockcmp vs refs, hcyl/shd/slab/cb/pipe/marsh, sp evalav,
+  od.py ladders) on Orion, so the rule "every metric <= 1.05 x FIN" is **not evaluated here**. cmpout's maxrel saturates at 2 (it measures
+  |a-b| relative to near-zero fields that change sign: velocities, lateral fluxes) and is not an accuracy metric: 126 of 147 DIFF rows have
+  maxrel >= 0.1, the same as Raven. All outputs are kept for your analyzers (rst removed by one_o.sh):
+  /orion/ptmp/jinma/idortd6int_1113/runs/<row>/{p,f}/ and runs_omp/<row>/{p,f}/ (tab/bin + all.log + timekeys.txt + bin.txt md5).
+  Since d6int = d6fast bitwise on the wave grid (part (a)) and has the same diff signature here, the Raven d6fast metric tables should carry over.
+  That inference is untested on the rsx/spxx rows (no Raven d6fast rows for them).
+
+### Raven comparison (rc / Picard mean per row; Orion FIN vs Raven FIN, Orion D6 vs Raven d6fast)
+| row | Orion FIN rc/mean | Raven FIN rc/mean | FIN mean ratio | Orion D6 rc/mean | Raven d6fast rc/mean | D6 mean ratio |
+|---|---|---|---|---|---|---|
+| cart/cb/FIN3_r12 | 0/2.5128 | 0/2.5128 | 1.0000 | 0/2.5128 | 0/2.5128 | 1.0000 |
+| cart/cb/FIN3_r4 | 0/2.8000 | 0/2.8000 | 1.0000 | 0/2.8000 | 0/2.8000 | 1.0000 |
+| cart/cb/FIN3_r4c0.5 | 0/2.2669 | 0/2.2669 | 1.0000 | 0/2.2669 | 0/2.2669 | 1.0000 |
+| cart/cb/FIN3_r4c32 | 0/2.7021 | 0/2.7021 | 1.0000 | 0/2.7021 | 0/2.7021 | 1.0000 |
+| cart/cbg/FIN3_g8x32 | 0/2.9487 | 0/2.9487 | 1.0000 | 0/2.9487 | 0/2.9487 | 1.0000 |
+| cart/ddf/FIN3_d | 0/4.0000 | 0/4.0000 | 1.0000 | 0/3.9812 | 0/3.9812 | 1.0000 |
+| cart/ddiff/FIN3_d | 0/4.0000 | 0/4.0000 | 1.0000 | 0/3.9812 | 0/3.9812 | 1.0000 |
+| cart/ddn/FIN3_d | 0/3.3685 | 0/3.3685 | 1.0000 | 0/3.3685 | 0/3.3685 | 1.0000 |
+| cart/eq1/FIN3_fine | 0/3.0050 | 0/3.0050 | 1.0000 | 0/3.0050 | 0/3.0050 | 1.0000 |
+| cart/eq2/FIN3_fine | 0/3.0150 | 0/3.0150 | 1.0000 | 0/3.0150 | 0/3.0150 | 1.0000 |
+| cart/eq3t/FIN3_t | 0/6.1982 | 0/6.1982 | 1.0000 | 0/6.1850 | 0/6.1850 | 1.0000 |
+| cart/hcyl/FIN3_g8x32 | 0/2.1732 | 0/2.1732 | 1.0000 | 0/2.1732 | 0/2.1732 | 1.0000 |
+| cart/marsh/FIN3_c1 | 0/3.0001 | 0/3.0001 | 1.0000 | 0/3.0001 | 0/3.0001 | 1.0000 |
+| cart/marsh/FIN3_c10 | 0/3.0106 | 0/3.0106 | 1.0000 | 0/3.0106 | 0/3.0106 | 1.0000 |
+| cart/nltek1/FIN3_d | 0/3.0672 | 0/3.0672 | 1.0000 | 0/3.0504 | 0/3.0504 | 1.0000 |
+| cart/nltek2/FIN3_d | 0/3.0672 | 0/3.0672 | 1.0000 | 0/3.0504 | 0/3.0504 | 1.0000 |
+| cart/nltek3/FIN3_d | 0/3.1429 | 0/3.1429 | 1.0000 | 0/3.1176 | 0/3.1176 | 1.0000 |
+| cart/nltek4/FIN3_d | 0/3.1008 | 0/3.1008 | 1.0000 | 0/3.0252 | 0/3.0252 | 1.0000 |
+| cart/nltek5/FIN3_d | 0/3.1176 | 0/3.1176 | 1.0000 | 0/3.0420 | 0/3.0420 | 1.0000 |
+| cart/nltek6/FIN3_d | 0/3.0588 | 0/3.0588 | 1.0000 | 0/3.0840 | 0/3.0840 | 1.0000 |
+| cart/nltek7/FIN3_d | 0/3.0420 | 0/3.0420 | 1.0000 | 0/3.0336 | 0/3.0336 | 1.0000 |
+| cart/nltek8/FIN3_d | 0/3.1176 | 0/3.1176 | 1.0000 | 0/3.0588 | 0/3.0588 | 1.0000 |
+| cart/oneo/FIN3_b3k3 | 0/2.7595 | 0/2.7595 | 1.0000 | 0/2.7595 | 0/2.7595 | 1.0000 |
+| cart/oneo/FIN3_b3k5 | 0/2.8228 | 0/2.8228 | 1.0000 | 0/2.8228 | 0/2.8228 | 1.0000 |
+| cart/oneo/FIN3_b3k7 | 0/2.8734 | 0/2.8734 | 1.0000 | 0/2.8734 | 0/2.8734 | 1.0000 |
+| cart/pipe/FIN3_c220 | 0/2.9930 | 0/2.9930 | 1.0000 | 0/2.9935 | 0/2.9935 | 1.0000 |
+| cart/pipe/FIN3_c2200 | 0/3.3266 | 0/3.3266 | 1.0000 | 0/3.6080 | 0/3.6080 | 1.0000 |
+| cart/rs_m1.2/FIN3_n512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | 0/3.0000 | 1.0000 |
+| cart/rs_m2/FIN3_n1024 | 0/3.0030 | 0/3.0030 | 1.0000 | 0/3.0000 | 0/3.0000 | 1.0000 |
+| cart/rs_m2/FIN3_n512 | 0/3.0106 | 0/3.0106 | 1.0000 | 0/3.0000 | 0/3.0000 | 1.0000 |
+| cart/rs_m3/FIN3_n1024 | 0/3.0001 | 0/3.0001 | 1.0000 | 0/3.0000 | 0/3.0000 | 1.0000 |
+| cart/rs_m3/FIN3_n512 | 0/3.0160 | 0/3.0160 | 1.0000 | 0/3.4565 | 0/3.4565 | 1.0000 |
+| cart/rsx_m1.05/P_n512_c0.4 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| cart/rsx_m1.2/P_n512_c0.4 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| cart/rsx_m2/P_n512_c0.4 | 0/3.0078 | 0/3.0078 | 1.0000 | 0/3.0000 | - | - |
+| cart/rsx_m27/P_n1024_c0.4 | 0/3.0002 | 0/3.0002 | 1.0000 | 0/3.0002 | - | - |
+| cart/rsx_m3/P_n512_c0.4 | 0/3.0038 | 0/3.0038 | 1.0000 | 0/3.4295 | - | - |
+| cart/rsx_m5/P_n1024_c0.4 | 0/3.0761 | 0/3.0761 | 1.0000 | 0/3.0608 | - | - |
+| cart/rsx_m5/P_n2048_c0.2 | 0/3.0096 | 0/3.0096 | 1.0000 | 0/3.0000 | - | - |
+| cart/rsx_m5/P_n2048_c0.4 | 0/3.4933 | 0/3.4933 | 1.0000 | 0/3.9955 | - | - |
+| cart/rsx_m50/P_n1024_c0.4 | 0/3.7246 | 0/3.7246 | 1.0000 | 0/4.0001 | - | - |
+| cart/sdifk/FIN3_d | 0/2.0000 | 0/2.0000 | 1.0000 | 0/2.0000 | 0/2.0000 | 1.0000 |
+| cart/shd/FIN3_r12g2 | 0/4.0000 | 0/4.0000 | 1.0000 | 0/4.1053 | 0/4.1053 | 1.0000 |
+| cart/shd/FIN3_r36g2 | 0/4.0000 | 0/4.0000 | 1.0000 | 0/4.0000 | 0/4.0000 | 1.0000 |
+| cart/shdg/FIN3_g8x32 | 0/4.0000 | 0/4.0000 | 1.0000 | 0/4.0000 | 0/4.0000 | 1.0000 |
+| cart/slabc/FIN3_n128 | 0/2.0945 | 0/2.0945 | 1.0000 | 0/2.1024 | 0/2.1024 | 1.0000 |
+| cart/slabc/FIN3_n256 | 0/2.0945 | 0/2.0945 | 1.0000 | 0/2.0945 | 0/2.0945 | 1.0000 |
+| cart/slabc/FIN3_n32 | 0/2.0394 | 0/2.0394 | 1.0000 | 0/2.0394 | 0/2.0394 | 1.0000 |
+| cart/slabc/FIN3_n512 | 0/2.1181 | 0/2.1181 | 1.0000 | 0/2.1181 | 0/2.1181 | 1.0000 |
+| cart/slabc/FIN3_n64 | 0/2.0630 | 0/2.0630 | 1.0000 | 0/2.0630 | 0/2.0630 | 1.0000 |
+| sp/rsx_m2/P_n512_c0.4 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| sp/rsx_m27/P_n1024_c0.4 | 0/3.0002 | - | - | 0/3.0002 | - | - |
+| sp/rsx_m5/P_n1024_c0.4 | 0/3.0000 | - | - | 0/3.0000 | - | - |
+| spx/marsh_r1_u/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/marsh_r1_u/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/marsh_r1_u/L32 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/marsh_r1_u/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/marsh_r1_u/L64 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/patmT_L16_s/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/patmT_L16_s/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/patmT_L16_s/L32 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/patmT_L16_s/L512 | 0/3.0126 | 0/3.0126 | 1.0000 | 0/3.0126 | - | - |
+| spx/patmT_L16_s/L64 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rlat/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rlat/L16 | 0/3.0976 | 0/3.0976 | 1.0000 | 0/3.0976 | - | - |
+| spx/rlat/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rlat/L32 | 0/3.0251 | 0/3.0251 | 1.0000 | 0/3.0293 | - | - |
+| spx/rlat/L64 | 0/3.0042 | 0/3.0042 | 1.0000 | 0/3.0063 | - | - |
+| spx/rlat_om5/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rlat_om5/L16 | 0/3.1057 | 0/3.1057 | 1.0000 | 0/3.1057 | - | - |
+| spx/rlat_om5/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rlat_om5/L32 | 0/3.0251 | 0/3.0251 | 1.0000 | 0/3.0293 | - | - |
+| spx/rlat_om5/L64 | 0/3.0063 | 0/3.0063 | 1.0000 | 0/3.0084 | - | - |
+| spx/rlatt/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rlatt/L16 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rlatt/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rlatt/L32 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rlatt/L64 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rlatt_om5/L128 | 0/3.0031 | 0/3.0031 | 1.0000 | 0/3.0031 | - | - |
+| spx/rlatt_om5/L16 | 0/3.0488 | 0/3.0488 | 1.0000 | 0/3.0488 | - | - |
+| spx/rlatt_om5/L256 | 0/3.0010 | 0/3.0010 | 1.0000 | 0/3.0010 | - | - |
+| spx/rlatt_om5/L32 | 0/3.0209 | 0/3.0209 | 1.0000 | 0/3.0209 | - | - |
+| spx/rlatt_om5/L64 | 0/3.0104 | 0/3.0104 | 1.0000 | 0/3.0104 | - | - |
+| spx/rsw/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rsw/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rsw/L32 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rsw/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rsw/L64 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rsw_C/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rsw_C/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rsw_C/L32 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rsw_C/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rsw_C/L64 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt/L32 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt/L64 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt_C/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt_C/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt_C/L32 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt_C/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt_C/L64 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt_dt/L1 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt_dt/L16 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt_dt/L2 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt_dt/L4 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswt_dt/L8 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv/L32 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv/L64 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_C/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_C/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_C/L32 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_C/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_C/L64 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_F/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_F/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_F/L32 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_F/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_F/L64 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_F_C/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_F_C/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_F_C/L32 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_F_C/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswtv_F_C/L64 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswv/L128 | 0/3.0078 | 0/3.0078 | 1.0000 | 0/3.0039 | - | - |
+| spx/rswv/L256 | 0/3.0078 | 0/3.0078 | 1.0000 | 0/3.0039 | - | - |
+| spx/rswv/L32 | 0/3.0078 | 0/3.0078 | 1.0000 | 0/3.0039 | - | - |
+| spx/rswv/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswv/L64 | 0/3.0078 | 0/3.0078 | 1.0000 | 0/3.0039 | - | - |
+| spx/rswv_C/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswv_C/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswv_C/L32 | 0/3.0157 | 0/3.0157 | 1.0000 | 0/3.0157 | - | - |
+| spx/rswv_C/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswv_C/L64 | 0/3.0078 | 0/3.0078 | 1.0000 | 0/3.0039 | - | - |
+| spx/rswv_F/L128 | 0/3.0078 | 0/3.0078 | 1.0000 | 0/3.0039 | - | - |
+| spx/rswv_F/L256 | 0/3.0078 | 0/3.0078 | 1.0000 | 0/3.0039 | - | - |
+| spx/rswv_F/L32 | 0/3.0078 | 0/3.0078 | 1.0000 | 0/3.0039 | - | - |
+| spx/rswv_F/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswv_F/L64 | 0/3.0078 | 0/3.0078 | 1.0000 | 0/3.0039 | - | - |
+| spx/rswv_F_C/L128 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswv_F_C/L256 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswv_F_C/L32 | 0/3.0157 | 0/3.0157 | 1.0000 | 0/3.0157 | - | - |
+| spx/rswv_F_C/L512 | 0/3.0000 | 0/3.0000 | 1.0000 | 0/3.0000 | - | - |
+| spx/rswv_F_C/L64 | 0/3.0078 | 0/3.0078 | 1.0000 | 0/3.0039 | - | - |
+| xtra/g5_k12.8 | 0/2.0000 | 0/2.0000 | 1.0000 | 0/2.0000 | - | - |
+| xtra/g5_k128 | 0/2.0079 | 0/2.0079 | 1.0000 | 0/2.0000 | - | - |
+| xtra/g5_k1280 | 0/2.0000 | 0/2.0000 | 1.0000 | 0/2.0000 | - | - |
+| xtra/g5_k12800 | 0/2.0000 | 0/2.0000 | 1.0000 | 0/2.0000 | - | - |
+| xtra/shd432 | 0/2.0886 | 0/2.0886 | 1.0000 | 0/2.0886 | - | - |
+
+FIN vs Raven FIN: 151 rows compared, 0 with rc mismatch or Picard mean off by > 1 %: []
+D6 vs Raven d6fast: 41 rows compared, 0 with rc mismatch or Picard mean off by > 1 %: []
+
+### cmp_d6i_vs_fin.txt (whole)
+```
+== (1) rows: D6 (p) | FIN (f)
+runs/cart/cb/FIN3_r12 | D6 rc=0 fatal=0 dtr=0 mean=2.512821e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=63 | FIN rc=0 fatal=0 dtr=0 mean=2.512821e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=64 |
+runs/cart/cb/FIN3_r4 | D6 rc=0 fatal=0 dtr=0 mean=2.800000e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=68 | FIN rc=0 fatal=0 dtr=0 mean=2.800000e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=70 |
+runs/cart/cb/FIN3_r4c0.5 | D6 rc=0 fatal=0 dtr=0 mean=2.266940e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=273 | FIN rc=0 fatal=0 dtr=0 mean=2.266940e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=281 |
+runs/cart/cb/FIN3_r4c32 | D6 rc=0 fatal=0 dtr=0 mean=2.702128e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=31 | FIN rc=0 fatal=0 dtr=0 mean=2.702128e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=30 |
+runs/cart/cbg/FIN3_g8x32 | D6 rc=0 fatal=0 dtr=0 mean=2.948718e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=45 | FIN rc=0 fatal=0 dtr=0 mean=2.948718e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=45 |
+runs/cart/ddf/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.981228e+00 max=1.000000e+01 NON-CONVERGED=0.000000e+00 t=4250 | FIN rc=0 fatal=0 dtr=0 mean=4.000000e+00 max=1.000000e+01 NON-CONVERGED=0.000000e+00 t=4271 |
+runs/cart/ddiff/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.981228e+00 max=1.000000e+01 NON-CONVERGED=0.000000e+00 t=4278 | FIN rc=0 fatal=0 dtr=0 mean=4.000000e+00 max=1.000000e+01 NON-CONVERGED=0.000000e+00 t=4269 |
+runs/cart/ddn/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.368488e+00 max=9.000000e+00 NON-CONVERGED=0.000000e+00 t=3853 | FIN rc=0 fatal=0 dtr=0 mean=3.368488e+00 max=9.000000e+00 NON-CONVERGED=0.000000e+00 t=3877 |
+runs/cart/eq1/FIN3_fine | D6 rc=0 fatal=0 dtr=0 mean=3.005013e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=29 | FIN rc=0 fatal=0 dtr=0 mean=3.005013e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=28 |
+runs/cart/eq2/FIN3_fine | D6 rc=0 fatal=0 dtr=0 mean=3.015038e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=30 | FIN rc=0 fatal=0 dtr=0 mean=3.015038e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=34 |
+runs/cart/eq3t/FIN3_t | D6 rc=0 fatal=0 dtr=0 mean=6.185022e+00 max=9.000000e+00 NON-CONVERGED=0.000000e+00 t=57 | FIN rc=0 fatal=0 dtr=0 mean=6.198238e+00 max=1.000000e+01 NON-CONVERGED=0.000000e+00 t=57 |
+runs/cart/hcyl/FIN3_g8x32 | D6 rc=0 fatal=0 dtr=0 mean=2.173228e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=286 | FIN rc=0 fatal=0 dtr=0 mean=2.173228e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=290 |
+runs/cart/marsh/FIN3_c1 | D6 rc=0 fatal=0 dtr=0 mean=3.000097e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=1010 | FIN rc=0 fatal=0 dtr=0 mean=3.000097e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=1021 |
+runs/cart/marsh/FIN3_c10 | D6 rc=0 fatal=0 dtr=0 mean=3.010636e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00 t=110 | FIN rc=0 fatal=0 dtr=0 mean=3.010636e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00 t=111 |
+runs/cart/nltek1/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.050420e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=38 | FIN rc=0 fatal=0 dtr=0 mean=3.067227e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=38 |
+runs/cart/nltek2/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.050420e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=48 | FIN rc=0 fatal=0 dtr=0 mean=3.067227e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=46 |
+runs/cart/nltek3/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.117647e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=47 | FIN rc=0 fatal=0 dtr=0 mean=3.142857e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=48 |
+runs/cart/nltek4/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.025210e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=49 | FIN rc=0 fatal=0 dtr=0 mean=3.100840e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=49 |
+runs/cart/nltek5/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.042017e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=47 | FIN rc=0 fatal=0 dtr=0 mean=3.117647e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=47 |
+runs/cart/nltek6/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.084034e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=50 | FIN rc=0 fatal=0 dtr=0 mean=3.058824e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=47 |
+runs/cart/nltek7/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.033613e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=49 | FIN rc=0 fatal=0 dtr=0 mean=3.042017e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=50 |
+runs/cart/nltek8/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.058824e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=49 | FIN rc=0 fatal=0 dtr=0 mean=3.117647e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=48 |
+runs/cart/oneo/FIN3_b3k3 | D6 rc=0 fatal=0 dtr=0 mean=2.759494e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=412 | FIN rc=0 fatal=0 dtr=0 mean=2.759494e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=416 |
+runs/cart/oneo/FIN3_b3k5 | D6 rc=0 fatal=0 dtr=0 mean=2.822785e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=387 | FIN rc=0 fatal=0 dtr=0 mean=2.822785e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=389 |
+runs/cart/oneo/FIN3_b3k7 | D6 rc=0 fatal=0 dtr=0 mean=2.873418e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=490 | FIN rc=0 fatal=0 dtr=0 mean=2.873418e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=501 |
+runs/cart/pipe/FIN3_c220 | D6 rc=0 fatal=0 dtr=0 mean=2.993484e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=15850 | FIN rc=0 fatal=0 dtr=0 mean=2.992982e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=20128 |
+runs/cart/pipe/FIN3_c2200 | D6 rc=0 fatal=0 dtr=0 mean=3.608040e+00 max=1.300000e+01 NON-CONVERGED=0.000000e+00 t=3970 | FIN rc=0 fatal=0 dtr=0 mean=3.326633e+00 max=1.800000e+01 NON-CONVERGED=0.000000e+00 t=7893 |
+runs/cart/rs_m1.2/FIN3_n512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=963 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=991 |
+runs/cart/rs_m2/FIN3_n1024 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=2611 | FIN rc=0 fatal=0 dtr=0 mean=3.003010e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=2662 |
+runs/cart/rs_m2/FIN3_n512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=917 | FIN rc=0 fatal=0 dtr=0 mean=3.010581e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=933 |
+runs/cart/rs_m3/FIN3_n1024 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=2118 | FIN rc=0 fatal=0 dtr=0 mean=3.000093e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=2253 |
+runs/cart/rs_m3/FIN3_n512 | D6 rc=0 fatal=0 dtr=0 mean=3.456536e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=892 | FIN rc=0 fatal=0 dtr=0 mean=3.015957e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=830 |
+runs/cart/rsx_m1.05/P_n512_c0.4 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1571 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1672 |
+runs/cart/rsx_m1.2/P_n512_c0.4 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1089 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1073 |
+runs/cart/rsx_m27/P_n1024_c0.4 | D6 rc=0 fatal=0 dtr=0 mean=3.000250e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=8969 | FIN rc=0 fatal=0 dtr=0 mean=3.000250e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=9056 |
+runs/cart/rsx_m2/P_n512_c0.4 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1041 | FIN rc=0 fatal=0 dtr=0 mean=3.007828e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=967 |
+runs/cart/rsx_m3/P_n512_c0.4 | D6 rc=0 fatal=0 dtr=0 mean=3.429539e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=917 | FIN rc=0 fatal=0 dtr=0 mean=3.003804e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=794 |
+runs/cart/rsx_m50/P_n1024_c0.4 | D6 rc=0 fatal=0 dtr=0 mean=4.000095e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00 t=4275 | FIN rc=0 fatal=0 dtr=0 mean=3.724557e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00 t=3876 |
+runs/cart/rsx_m5/P_n1024_c0.4 | D6 rc=0 fatal=0 dtr=0 mean=3.060809e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=4317 | FIN rc=0 fatal=0 dtr=0 mean=3.076059e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=4337 |
+runs/cart/rsx_m5/P_n2048_c0.2 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=12674 | FIN rc=0 fatal=0 dtr=0 mean=3.009586e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=12265 |
+runs/cart/rsx_m5/P_n2048_c0.4 | D6 rc=0 fatal=0 dtr=0 mean=3.995498e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=11648 | FIN rc=0 fatal=0 dtr=0 mean=3.493331e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=9758 |
+runs/cart/sdifk/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=2.000000e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00 t=53 | FIN rc=0 fatal=0 dtr=0 mean=2.000000e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00 t=52 |
+runs/cart/shd/FIN3_r12g2 | D6 rc=0 fatal=0 dtr=0 mean=4.105263e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=110 | FIN rc=0 fatal=0 dtr=0 mean=4.000000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=110 |
+runs/cart/shd/FIN3_r36g2 | D6 rc=0 fatal=0 dtr=0 mean=4.000000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=120 | FIN rc=0 fatal=0 dtr=0 mean=4.000000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=122 |
+runs/cart/shdg/FIN3_g8x32 | D6 rc=0 fatal=0 dtr=0 mean=4.000000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=192 | FIN rc=0 fatal=0 dtr=0 mean=4.000000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=174 |
+runs/cart/slabc/FIN3_n128 | D6 rc=0 fatal=0 dtr=0 mean=2.102362e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=11 | FIN rc=0 fatal=0 dtr=0 mean=2.094488e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=14 |
+runs/cart/slabc/FIN3_n256 | D6 rc=0 fatal=0 dtr=0 mean=2.094488e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=17 | FIN rc=0 fatal=0 dtr=0 mean=2.094488e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=17 |
+runs/cart/slabc/FIN3_n32 | D6 rc=0 fatal=0 dtr=0 mean=2.039370e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=10 | FIN rc=0 fatal=0 dtr=0 mean=2.039370e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=10 |
+runs/cart/slabc/FIN3_n512 | D6 rc=0 fatal=0 dtr=0 mean=2.118110e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=26 | FIN rc=0 fatal=0 dtr=0 mean=2.118110e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=26 |
+runs/cart/slabc/FIN3_n64 | D6 rc=0 fatal=0 dtr=0 mean=2.062992e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=12 | FIN rc=0 fatal=0 dtr=0 mean=2.062992e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=11 |
+runs_omp/cart/ddf/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.981228e+00 max=1.000000e+01 NON-CONVERGED=0.000000e+00 t=1896 | FIN rc=0 fatal=0 dtr=0 mean=4.000000e+00 max=1.000000e+01 NON-CONVERGED=0.000000e+00 t=1893 |
+runs_omp/cart/ddn/FIN3_d | D6 rc=0 fatal=0 dtr=0 mean=3.368488e+00 max=9.000000e+00 NON-CONVERGED=0.000000e+00 t=2425 | FIN rc=0 fatal=0 dtr=0 mean=3.368488e+00 max=9.000000e+00 NON-CONVERGED=0.000000e+00 t=2018 |
+runs_omp/cart/rs_m1.2/FIN3_n512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=980 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=976 |
+runs_omp/cart/rs_m2/FIN3_n1024 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1640 | FIN rc=0 fatal=0 dtr=0 mean=3.003010e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=1744 |
+runs_omp/cart/rs_m2/FIN3_n512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=958 | FIN rc=0 fatal=0 dtr=0 mean=3.010581e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=878 |
+runs_omp/cart/rs_m3/FIN3_n1024 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1268 | FIN rc=0 fatal=0 dtr=0 mean=3.000093e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=1589 |
+runs_omp/cart/rs_m3/FIN3_n512 | D6 rc=0 fatal=0 dtr=0 mean=3.456536e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=923 | FIN rc=0 fatal=0 dtr=0 mean=3.015957e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=779 |
+runs/sp/rsx_m27/P_n1024_c0.4 | D6 rc=0 fatal=0 dtr=0 mean=3.000225e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=26607 | FIN rc=0 fatal=0 dtr=0 mean=3.000225e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=26484 |
+runs/sp/rsx_m2/P_n512_c0.4 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=8721 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=8659 |
+runs/sp/rsx_m5/P_n1024_c0.4 | D6 rc=0 fatal=0 dtr=0 mean=3.000048e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=30699 | FIN rc=0 fatal=0 dtr=0 mean=3.000048e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=30518 |
+runs/spx/marsh_r1_u/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=106 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=104 |
+runs/spx/marsh_r1_u/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=195 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=197 |
+runs/spx/marsh_r1_u/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=27 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=29 |
+runs/spx/marsh_r1_u/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=399 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=400 |
+runs/spx/marsh_r1_u/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=53 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=53 |
+runs/spx/patmT_L16_s/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=424 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=424 |
+runs/spx/patmT_L16_s/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=829 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=812 |
+runs/spx/patmT_L16_s/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=127 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=128 |
+runs/spx/patmT_L16_s/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.012579e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=1538 | FIN rc=0 fatal=0 dtr=0 mean=3.012579e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=1544 |
+runs/spx/patmT_L16_s/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=226 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=225 |
+runs/spx/rlat/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=185 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=191 |
+runs/spx/rlat/L16 | D6 rc=0 fatal=0 dtr=0 mean=3.097561e+00 max=8.000000e+00 NON-CONVERGED=0.000000e+00 t=5 | FIN rc=0 fatal=0 dtr=0 mean=3.097561e+00 max=8.000000e+00 NON-CONVERGED=0.000000e+00 t=5 |
+runs/spx/rlat/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=696 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=697 |
+runs/spx/rlat/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.029289e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00 t=12 | FIN rc=0 fatal=0 dtr=0 mean=3.025105e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00 t=13 |
+runs/spx/rlat/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.006263e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=48 | FIN rc=0 fatal=0 dtr=0 mean=3.004175e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=48 |
+runs/spx/rlat_om5/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=188 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=187 |
+runs/spx/rlat_om5/L16 | D6 rc=0 fatal=0 dtr=0 mean=3.105691e+00 max=9.000000e+00 NON-CONVERGED=0.000000e+00 t=4 | FIN rc=0 fatal=0 dtr=0 mean=3.105691e+00 max=9.000000e+00 NON-CONVERGED=0.000000e+00 t=5 |
+runs/spx/rlat_om5/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=705 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=709 |
+runs/spx/rlat_om5/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.029289e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00 t=12 | FIN rc=0 fatal=0 dtr=0 mean=3.025105e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00 t=15 |
+runs/spx/rlat_om5/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.008351e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=48 | FIN rc=0 fatal=0 dtr=0 mean=3.006263e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=47 |
+runs/spx/rlatt/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=776 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=771 |
+runs/spx/rlatt/L16 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=15 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=16 |
+runs/spx/rlatt/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=3046 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=3016 |
+runs/spx/rlatt/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=52 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=51 |
+runs/spx/rlatt/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=197 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=197 |
+runs/spx/rlatt_om5/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.003135e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=780 | FIN rc=0 fatal=0 dtr=0 mean=3.003135e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=774 |
+runs/spx/rlatt_om5/L16 | D6 rc=0 fatal=0 dtr=0 mean=3.048780e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=15 | FIN rc=0 fatal=0 dtr=0 mean=3.048780e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=16 |
+runs/spx/rlatt_om5/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.001045e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=3114 | FIN rc=0 fatal=0 dtr=0 mean=3.001045e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=3031 |
+runs/spx/rlatt_om5/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.020921e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=52 | FIN rc=0 fatal=0 dtr=0 mean=3.020921e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=52 |
+runs/spx/rlatt_om5/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.010438e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=198 | FIN rc=0 fatal=0 dtr=0 mean=3.010438e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=200 |
+runs/spx/rsw_C/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=23 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=24 |
+runs/spx/rsw_C/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=85 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=84 |
+runs/spx/rsw_C/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=3 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=3 |
+runs/spx/rsw_C/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=317 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=323 |
+runs/spx/rsw_C/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=7 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=8 |
+runs/spx/rsw/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=13 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=13 |
+runs/spx/rsw/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=22 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=22 |
+runs/spx/rsw/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=5 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=5 |
+runs/spx/rsw/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=73 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=73 |
+runs/spx/rsw/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=8 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=7 |
+runs/spx/rswt_C/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=114 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=116 |
+runs/spx/rswt_C/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=438 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=435 |
+runs/spx/rswt_C/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=9 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=9 |
+runs/spx/rswt_C/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1603 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1595 |
+runs/spx/rswt_C/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=29 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=29 |
+runs/spx/rswt_dt/L1 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=109 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=110 |
+runs/spx/rswt_dt/L16 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1596 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1604 |
+runs/spx/rswt_dt/L2 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=219 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=224 |
+runs/spx/rswt_dt/L4 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=449 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=444 |
+runs/spx/rswt_dt/L8 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=826 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=822 |
+runs/spx/rswt/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=58 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=58 |
+runs/spx/rswt/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=113 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=116 |
+runs/spx/rswt/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=17 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=17 |
+runs/spx/rswt/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=215 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=217 |
+runs/spx/rswt/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=31 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=29 |
+runs/spx/rswtv_C/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=115 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=114 |
+runs/spx/rswtv_C/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=434 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=433 |
+runs/spx/rswtv_C/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=8 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=8 |
+runs/spx/rswtv_C/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1606 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1585 |
+runs/spx/rswtv_C/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=30 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=30 |
+runs/spx/rswtv_F_C/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=112 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=111 |
+runs/spx/rswtv_F_C/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=429 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=422 |
+runs/spx/rswtv_F_C/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=9 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=9 |
+runs/spx/rswtv_F_C/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1596 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1601 |
+runs/spx/rswtv_F_C/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=29 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=31 |
+runs/spx/rswtv_F/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=59 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=59 |
+runs/spx/rswtv_F/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=113 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=112 |
+runs/spx/rswtv_F/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=16 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=16 |
+runs/spx/rswtv_F/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=228 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=213 |
+runs/spx/rswtv_F/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=31 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=30 |
+runs/spx/rswtv/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=60 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=56 |
+runs/spx/rswtv/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=116 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=114 |
+runs/spx/rswtv/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=17 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=16 |
+runs/spx/rswtv/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=217 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=212 |
+runs/spx/rswtv/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=32 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=31 |
+runs/spx/rswv_C/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=24 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=24 |
+runs/spx/rswv_C/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=89 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=88 |
+runs/spx/rswv_C/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.015748e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=3 | FIN rc=0 fatal=0 dtr=0 mean=3.015748e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=2 |
+runs/spx/rswv_C/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=308 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=320 |
+runs/spx/rswv_C/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.003922e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=8 | FIN rc=0 fatal=0 dtr=0 mean=3.007843e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=7 |
+runs/spx/rswv_F_C/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=24 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=24 |
+runs/spx/rswv_F_C/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=78 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=78 |
+runs/spx/rswv_F_C/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.015748e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=3 | FIN rc=0 fatal=0 dtr=0 mean=3.015748e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=3 |
+runs/spx/rswv_F_C/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=324 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=322 |
+runs/spx/rswv_F_C/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.003922e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=6 | FIN rc=0 fatal=0 dtr=0 mean=3.007843e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=7 |
+runs/spx/rswv_F/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.003922e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=13 | FIN rc=0 fatal=0 dtr=0 mean=3.007843e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=13 |
+runs/spx/rswv_F/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.003922e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=20 | FIN rc=0 fatal=0 dtr=0 mean=3.007843e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=22 |
+runs/spx/rswv_F/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.003922e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=5 | FIN rc=0 fatal=0 dtr=0 mean=3.007843e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=5 |
+runs/spx/rswv_F/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=78 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=80 |
+runs/spx/rswv_F/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.003922e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=8 | FIN rc=0 fatal=0 dtr=0 mean=3.007843e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=6 |
+runs/spx/rswv/L128 | D6 rc=0 fatal=0 dtr=0 mean=3.003922e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=14 | FIN rc=0 fatal=0 dtr=0 mean=3.007843e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=12 |
+runs/spx/rswv/L256 | D6 rc=0 fatal=0 dtr=0 mean=3.003922e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=22 | FIN rc=0 fatal=0 dtr=0 mean=3.007843e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=22 |
+runs/spx/rswv/L32 | D6 rc=0 fatal=0 dtr=0 mean=3.003922e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=4 | FIN rc=0 fatal=0 dtr=0 mean=3.007843e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=4 |
+runs/spx/rswv/L512 | D6 rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=78 | FIN rc=0 fatal=0 dtr=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=78 |
+runs/spx/rswv/L64 | D6 rc=0 fatal=0 dtr=0 mean=3.003922e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=6 | FIN rc=0 fatal=0 dtr=0 mean=3.007843e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=7 |
+runs/xtra/g5_k12.8 | D6 rc=0 fatal=0 dtr=0 mean=2.000000e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00 t=109 | FIN rc=0 fatal=0 dtr=0 mean=2.000000e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00 t=110 |
+runs/xtra/g5_k128 | D6 rc=0 fatal=0 dtr=0 mean=2.000000e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00 t=14 | FIN rc=0 fatal=0 dtr=0 mean=2.007874e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=13 |
+runs/xtra/g5_k1280 | D6 rc=0 fatal=0 dtr=0 mean=2.000000e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00 t=51 | FIN rc=0 fatal=0 dtr=0 mean=2.000000e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00 t=54 |
+runs/xtra/g5_k12800 | D6 rc=0 fatal=0 dtr=0 mean=2.000000e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00 t=456 | FIN rc=0 fatal=0 dtr=0 mean=2.000000e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00 t=459 |
+runs/xtra/shd432 | D6 rc=0 fatal=0 dtr=0 mean=2.088608e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=4631 | FIN rc=0 fatal=0 dtr=0 mean=2.088608e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=4620 |
+== (2) outputs FIN -> D6 (cmpout.py)
+runs/cart/cb/FIN3_r12 BITWISE 4 0 0
+runs/cart/cb/FIN3_r4 BITWISE 4 0 0
+runs/cart/cb/FIN3_r4c0.5 BITWISE 4 0 0
+runs/cart/cb/FIN3_r4c32 BITWISE 4 0 0
+runs/cart/cbg/FIN3_g8x32 BITWISE 4 0 0
+runs/cart/ddf/FIN3_d DIFF 0 10 0 ndiff=8 first=tab/ddf.hydro_w.00001.tab maxrel=2.000e+00
+runs/cart/ddiff/FIN3_d DIFF 0 5 0 ndiff=4 first=tab/ddiff.m1.00001.tab maxrel=2.000e+00
+runs/cart/ddn/FIN3_d DIFF 0 10 0 ndiff=4 first=tab/ddn.m1.00001.tab maxrel=3.223e-07
+runs/cart/eq1/FIN3_fine DIFF 82 0 0 ndiff=80 first=bin/eq1.hydro_w.00001.bin maxrel=2.000e+00
+runs/cart/eq2/FIN3_fine DIFF 82 0 0 ndiff=80 first=bin/eq2.hydro_w.00001.bin maxrel=1.986e+00
+runs/cart/eq3t/FIN3_t DIFF 0 402 0 ndiff=400 first=tab/eq3.hydro_w.00001.tab maxrel=2.000e+00
+runs/cart/hcyl/FIN3_g8x32 DIFF 9 0 0 ndiff=2 first=bin/shd.m1.00001.bin maxrel=7.732e-08
+runs/cart/marsh/FIN3_c1 DIFF 0 4 0 ndiff=2 first=tab/m1_marshak.hydro_w.00001.tab maxrel=1.986e+00
+runs/cart/marsh/FIN3_c10 DIFF 0 4 0 ndiff=2 first=tab/m1_marshak.hydro_w.00001.tab maxrel=1.971e+00
+runs/cart/nltek1/FIN3_d DIFF 0 2 0 ndiff=1 first=tab/nlte1.m1.00001.tab maxrel=1.999e+00
+runs/cart/nltek2/FIN3_d DIFF 0 2 0 ndiff=1 first=tab/nlte2.m1.00001.tab maxrel=1.991e+00
+runs/cart/nltek3/FIN3_d DIFF 0 2 0 ndiff=1 first=tab/nlte3.m1.00001.tab maxrel=1.996e+00
+runs/cart/nltek4/FIN3_d DIFF 0 2 0 ndiff=1 first=tab/nlte4.m1.00001.tab maxrel=2.000e+00
+runs/cart/nltek5/FIN3_d DIFF 0 2 0 ndiff=1 first=tab/nlte5.m1.00001.tab maxrel=1.999e+00
+runs/cart/nltek6/FIN3_d DIFF 0 2 0 ndiff=1 first=tab/nlte6.m1.00001.tab maxrel=2.000e+00
+runs/cart/nltek7/FIN3_d DIFF 0 2 0 ndiff=1 first=tab/nlte7.m1.00001.tab maxrel=1.994e+00
+runs/cart/nltek8/FIN3_d DIFF 0 2 0 ndiff=1 first=tab/nlte8.m1.00001.tab maxrel=2.000e+00
+runs/cart/oneo/FIN3_b3k3 BITWISE 18 0 0
+runs/cart/oneo/FIN3_b3k5 BITWISE 18 0 0
+runs/cart/oneo/FIN3_b3k7 BITWISE 18 0 0
+runs/cart/pipe/FIN3_c220 DIFF 303 0 0 ndiff=300 first=bin/pipe.hydro_w.00001.bin maxrel=2.000e+00
+runs/cart/pipe/FIN3_c2200 DIFF 303 0 0 ndiff=299 first=bin/pipe.hydro_w.00001.bin maxrel=2.000e+00
+runs/cart/rs_m1.2/FIN3_n512 DIFF 0 14 0 ndiff=12 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/cart/rs_m2/FIN3_n1024 DIFF 0 14 0 ndiff=12 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/cart/rs_m2/FIN3_n512 DIFF 0 14 0 ndiff=12 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/cart/rs_m3/FIN3_n1024 DIFF 0 14 0 ndiff=12 first=tab/m1_radshock.hydro_w.00001.tab maxrel=1.999e+00
+runs/cart/rs_m3/FIN3_n512 DIFF 0 14 0 ndiff=12 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/cart/rsx_m1.05/P_n512_c0.4 DIFF 0 8 0 ndiff=6 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/cart/rsx_m1.2/P_n512_c0.4 DIFF 0 8 0 ndiff=6 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/cart/rsx_m27/P_n1024_c0.4 DIFF 0 8 0 ndiff=6 first=tab/m1_radshock.hydro_w.00001.tab maxrel=1.999e+00
+runs/cart/rsx_m2/P_n512_c0.4 DIFF 0 8 0 ndiff=6 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/cart/rsx_m3/P_n512_c0.4 DIFF 0 8 0 ndiff=6 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/cart/rsx_m50/P_n1024_c0.4 DIFF 0 8 0 ndiff=6 first=tab/m1_radshock.hydro_w.00001.tab maxrel=1.999e+00
+runs/cart/rsx_m5/P_n1024_c0.4 DIFF 0 8 0 ndiff=6 first=tab/m1_radshock.hydro_w.00001.tab maxrel=1.998e+00
+runs/cart/rsx_m5/P_n2048_c0.2 DIFF 0 8 0 ndiff=6 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/cart/rsx_m5/P_n2048_c0.4 DIFF 0 8 0 ndiff=6 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/cart/sdifk/FIN3_d BITWISE 0 4 0
+runs/cart/shd/FIN3_r12g2 DIFF 4 0 0 ndiff=2 first=bin/shd.m1.00001.bin maxrel=2.000e+00
+runs/cart/shd/FIN3_r36g2 DIFF 4 0 0 ndiff=2 first=bin/shd.m1.00001.bin maxrel=2.000e+00
+runs/cart/shdg/FIN3_g8x32 DIFF 4 0 0 ndiff=2 first=bin/shdg.m1.00001.bin maxrel=2.000e+00
+runs/cart/slabc/FIN3_n128 DIFF 6 0 0 ndiff=1 first=bin/slab.m1.00001.bin maxrel=1.994e+00
+runs/cart/slabc/FIN3_n256 DIFF 6 0 0 ndiff=1 first=bin/slab.m1.00001.bin maxrel=1.997e+00
+runs/cart/slabc/FIN3_n32 BITWISE 9 0 0
+runs/cart/slabc/FIN3_n512 DIFF 6 0 0 ndiff=1 first=bin/slab.m1.00001.bin maxrel=1.998e+00
+runs/cart/slabc/FIN3_n64 DIFF 9 0 0 ndiff=2 first=bin/slab.m1.00001.bin maxrel=2.000e+00
+runs_omp/cart/ddf/FIN3_d DIFF 0 10 0 ndiff=8 first=tab/ddf.hydro_w.00001.tab maxrel=2.000e+00
+runs_omp/cart/ddn/FIN3_d DIFF 0 10 0 ndiff=4 first=tab/ddn.m1.00001.tab maxrel=3.223e-07
+runs_omp/cart/rs_m1.2/FIN3_n512 DIFF 0 14 0 ndiff=12 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs_omp/cart/rs_m2/FIN3_n1024 DIFF 0 14 0 ndiff=12 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs_omp/cart/rs_m2/FIN3_n512 DIFF 0 14 0 ndiff=12 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs_omp/cart/rs_m3/FIN3_n1024 DIFF 0 14 0 ndiff=12 first=tab/m1_radshock.hydro_w.00001.tab maxrel=1.999e+00
+runs_omp/cart/rs_m3/FIN3_n512 DIFF 0 14 0 ndiff=12 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/sp/rsx_m27/P_n1024_c0.4 DIFF 0 8 0 ndiff=6 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/sp/rsx_m2/P_n512_c0.4 DIFF 0 8 0 ndiff=6 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/sp/rsx_m5/P_n1024_c0.4 DIFF 0 8 0 ndiff=6 first=tab/m1_radshock.hydro_w.00001.tab maxrel=2.000e+00
+runs/spx/marsh_r1_u/L128 DIFF 0 15 0 ndiff=12 first=tab/sp.hydro_u.00001.tab maxrel=1.000e+00
+runs/spx/marsh_r1_u/L256 DIFF 0 15 0 ndiff=12 first=tab/sp.hydro_u.00001.tab maxrel=1.987e+00
+runs/spx/marsh_r1_u/L32 DIFF 0 15 0 ndiff=12 first=tab/sp.hydro_u.00001.tab maxrel=1.976e+00
+runs/spx/marsh_r1_u/L512 DIFF 0 15 0 ndiff=12 first=tab/sp.hydro_u.00001.tab maxrel=1.205e+00
+runs/spx/marsh_r1_u/L64 DIFF 0 15 0 ndiff=12 first=tab/sp.hydro_u.00001.tab maxrel=1.951e+00
+runs/spx/patmT_L16_s/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.986e+00
+runs/spx/patmT_L16_s/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.997e+00
+runs/spx/patmT_L16_s/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.978e+00
+runs/spx/patmT_L16_s/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.999e+00
+runs/spx/patmT_L16_s/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.826e+00
+runs/spx/rlat/L128 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=7.926e-03
+runs/spx/rlat/L16 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=9.895e-02
+runs/spx/rlat/L256 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=1.377e-03
+runs/spx/rlat/L32 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=3.417e-01
+runs/spx/rlat/L64 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=1.917e-01
+runs/spx/rlat_om5/L128 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=5.814e-03
+runs/spx/rlat_om5/L16 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=3.578e-02
+runs/spx/rlat_om5/L256 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=5.113e-03
+runs/spx/rlat_om5/L32 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=8.436e-03
+runs/spx/rlat_om5/L64 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=2.590e-03
+runs/spx/rlatt/L128 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=1.688e-04
+runs/spx/rlatt/L16 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=1.233e-04
+runs/spx/rlatt/L256 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=4.015e-03
+runs/spx/rlatt/L32 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=3.953e-03
+runs/spx/rlatt/L64 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=3.862e-04
+runs/spx/rlatt_om5/L128 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=2.848e-04
+runs/spx/rlatt_om5/L16 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=8.174e-04
+runs/spx/rlatt_om5/L256 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=9.671e-03
+runs/spx/rlatt_om5/L32 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=4.573e-04
+runs/spx/rlatt_om5/L64 DIFF 27 0 0 ndiff=24 first=bin/sp.hydro_u.00001.bin maxrel=6.317e-04
+runs/spx/rsw_C/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.990e+00
+runs/spx/rsw_C/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.987e+00
+runs/spx/rsw_C/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.891e+00
+runs/spx/rsw_C/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.997e+00
+runs/spx/rsw_C/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.954e+00
+runs/spx/rsw/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.991e+00
+runs/spx/rsw/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.999e+00
+runs/spx/rsw/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.992e+00
+runs/spx/rsw/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.999e+00
+runs/spx/rsw/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.954e+00
+runs/spx/rswt_C/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.981e+00
+runs/spx/rswt_C/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.979e+00
+runs/spx/rswt_C/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.995e+00
+runs/spx/rswt_C/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.996e+00
+runs/spx/rswt_C/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.993e+00
+runs/spx/rswt_dt/L1 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.999e+00
+runs/spx/rswt_dt/L16 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.999e+00
+runs/spx/rswt_dt/L2 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=2.000e+00
+runs/spx/rswt_dt/L4 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.979e+00
+runs/spx/rswt_dt/L8 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.999e+00
+runs/spx/rswt/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.991e+00
+runs/spx/rswt/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.999e+00
+runs/spx/rswt/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.929e+00
+runs/spx/rswt/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=2.000e+00
+runs/spx/rswt/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.993e+00
+runs/spx/rswtv_C/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.994e+00
+runs/spx/rswtv_C/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.989e+00
+runs/spx/rswtv_C/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.963e+00
+runs/spx/rswtv_C/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.996e+00
+runs/spx/rswtv_C/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.991e+00
+runs/spx/rswtv_F_C/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.987e+00
+runs/spx/rswtv_F_C/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.997e+00
+runs/spx/rswtv_F_C/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.890e+00
+runs/spx/rswtv_F_C/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.998e+00
+runs/spx/rswtv_F_C/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.992e+00
+runs/spx/rswtv_F/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.962e+00
+runs/spx/rswtv_F/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.988e+00
+runs/spx/rswtv_F/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.982e+00
+runs/spx/rswtv_F/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.998e+00
+runs/spx/rswtv_F/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.992e+00
+runs/spx/rswtv/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.985e+00
+runs/spx/rswtv/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.988e+00
+runs/spx/rswtv/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.954e+00
+runs/spx/rswtv/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.998e+00
+runs/spx/rswtv/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.991e+00
+runs/spx/rswv_C/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.994e+00
+runs/spx/rswv_C/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.999e+00
+runs/spx/rswv_C/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.990e+00
+runs/spx/rswv_C/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=2.000e+00
+runs/spx/rswv_C/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=2.000e+00
+runs/spx/rswv_F_C/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.994e+00
+runs/spx/rswv_F_C/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.994e+00
+runs/spx/rswv_F_C/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.940e+00
+runs/spx/rswv_F_C/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.999e+00
+runs/spx/rswv_F_C/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.986e+00
+runs/spx/rswv_F/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=2.000e+00
+runs/spx/rswv_F/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.952e+00
+runs/spx/rswv_F/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.972e+00
+runs/spx/rswv_F/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.999e+00
+runs/spx/rswv_F/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.986e+00
+runs/spx/rswv/L128 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.996e+00
+runs/spx/rswv/L256 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.997e+00
+runs/spx/rswv/L32 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.900e+00
+runs/spx/rswv/L512 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=1.996e+00
+runs/spx/rswv/L64 DIFF 0 6 0 ndiff=3 first=tab/sp.hydro_u.00001.tab maxrel=2.000e+00
+runs/xtra/g5_k12.8 DIFF 21 0 0 ndiff=20 first=bin/m1_thick_pulse.m1.00001.bin maxrel=2.000e+00
+runs/xtra/g5_k128 DIFF 21 0 0 ndiff=20 first=bin/m1_thick_pulse.m1.00001.bin maxrel=2.000e+00
+runs/xtra/g5_k1280 BITWISE 21 0 0
+runs/xtra/g5_k12800 BITWISE 21 0 0
+runs/xtra/shd432 BITWISE 2 0 0
+```
+
+### OMP rows (omp.out)
+```
+omp cart/ddf/FIN3_d f rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/ddf/FIN3_d p rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/ddn/FIN3_d f rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/ddn/FIN3_d p rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/rs_m1.2/FIN3_n512 f rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/rs_m1.2/FIN3_n512 p rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/rs_m2/FIN3_n1024 f rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/rs_m2/FIN3_n1024 p rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/rs_m2/FIN3_n512 f rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/rs_m2/FIN3_n512 p rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/rs_m3/FIN3_n1024 f rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/rs_m3/FIN3_n1024 p rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/rs_m3/FIN3_n512 f rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+omp cart/rs_m3/FIN3_n512 p rc=0 fatal=0 NON-CONVERGED=0.000000e+00
+OMP_DONE
+```
+
+## Verdict
+- (a) waves: **PASS** (= d6fast bitwise; only flag tau10 L1 rho +1.2-1.4 % vs FIN; tau0.01 wbsolve flag unchanged).
+- (b) 5 sp/cs cells: **PASS**.
+- (c) Raven IDORT set: **correctness PASS** on 160/160 rows (rc / FATAL / NC / Picard); FIN = Raven FIN and D6 = Raven d6fast on rc + Picard;
+  FIN -> D6 diff signature = Raven's. **Accuracy-metric pass rule pending your analyzers** on the Orion outputs above.
