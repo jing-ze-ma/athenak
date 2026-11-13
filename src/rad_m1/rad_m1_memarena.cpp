@@ -96,7 +96,7 @@ bool RadiationM1::MemArenaVgd(VgdRag &a, const int64_t n) {
                       marena);
     const Real *o0 = marena.data(), *o1 = marena.data() + have;
     Real *n0 = nb.data();
-    VgdRag *bound[2] = {&vgd_i, &vgd_itw};   // (+ vgd_i_xb with xffuse-1113)
+    VgdRag *bound[3] = {&vgd_i, &vgd_itw, &vgd_i_xb};
     for (VgdRag *b : bound) {
       if (b->d.data() != nullptr && b->d.data() >= o0 && b->d.data() < o1) {
         b->d = DvceArray1D<Real>(n0 + (b->d.data() - o0), b->d.extent(0));
@@ -148,7 +148,7 @@ void RadiationM1::MemcutPoison(const int where) {
     p5(aa_xp, "aa");
     p5(aa_fp, "aa");
   } else if (EnvListHas("MEMCUT_POISON", "vgd")) {
-    VgdRag *bound[2] = {&vgd_i, &vgd_itw};   // (+ vgd_i_xb with xffuse-1113)
+    VgdRag *bound[3] = {&vgd_i, &vgd_itw, &vgd_i_xb};
     for (VgdRag *b : bound) {
       if (b->d.data() != nullptr) {Kokkos::deep_copy(b->d, v);}
     }
