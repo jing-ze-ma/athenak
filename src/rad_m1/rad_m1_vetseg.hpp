@@ -93,6 +93,20 @@ inline auto VgdShellPol(const DevExeSpace &ex, const int a, const int b) {
 #endif
 }
 
+// d6fast4-1112: the CUDA gx-false shell kernel, launch bounds <T, B> (env VGD_CUDA_LB;
+// default M1_VGD_CUDA_LB = 0: the plain VgdShellPol launch)
+#if defined(KOKKOS_ENABLE_CUDA)
+#ifndef M1_VGD_CUDA_LB
+#define M1_VGD_CUDA_LB 0
+#endif
+template <unsigned T, unsigned B>
+inline auto VgdLbPol(const DevExeSpace &ex, const int a, const int b) {
+  return Kokkos::Experimental::require(
+      Kokkos::RangePolicy<Kokkos::LaunchBounds<T, B>>(ex, a, b),
+      Kokkos::Experimental::WorkItemProperty::HintLightWeight);
+}
+#endif
+
 // speedup-1109 vet_gd_body_global: copy a (host-side) kernel closure byte-wise into the
 // device buffer buf (grown when too small) and return its device address.  The per-shell
 // kernels then call the closure through this pointer instead of carrying it as a kernel
