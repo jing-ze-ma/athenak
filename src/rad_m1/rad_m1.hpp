@@ -2340,7 +2340,7 @@ class RadiationM1 {
   DvceArray4D<Real> lzx_g2, lzx_g3;     // dt G_f = dt (gr + off) of the last face pass
   DvceArray4D<Real> lzx_t2, lzx_t3;     // th0_f = 1/(1 + chat dt kt_f)
   Real lzx_cum[4] = {0.0, 0.0, 0.0, 0.0};   // sum Lr, sum Lambda_Z, sum Lambda_B, n
-  DvceArray5D<Real> lzx_r;              // (m, 2, k, j, i) realised transverse dp of a solve
+  DvceArray5D<Real> lzx_r;              // (m, 4, k, j, i) old vector: gas m2, m3, cell F2, F3
   int iw_lzx = -1;                      // q_c = |t_c| / sum_f W_f^2 (1 slot, exchanged)
   Real lzx_nbad = 0.0;                  // solves left alone (non-finite budget)
   void LzxGeom();
