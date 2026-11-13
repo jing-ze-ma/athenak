@@ -2102,6 +2102,17 @@ Real RadiationM1::EbndFluxX1() {
   auto ff = f0x1;
   auto &a1 = pmy_pack->pcoord->area.x1f;
   auto &bcs = pmy_pack->pmb->mb_bcs;
+  // lzphys-1113 ebnd_adv (problem/am_hist_ebnd): + the advective end-face flux
+  const bool adv = ebnd_adv && impl_bc_advect;
+  const int bclo = ibc_x1min, bchi = ibc_x1max;
+  const bool mfl = impl_mface_lin, sqf = vcol_sqf;
+  const bool vqs = (vet_col && vcol_sq) || hr_q;
+  const Real elo = iebath_x1min, ehi = iebath_x1max;
+  const bool ebc = iebath_hi_col_on;
+  auto ebc_ = iebath_hi_col;
+  auto iw_ = iw;
+  auto cx1v = pmy_pack->pcoord->x1v;
+  auto cx1f = pmy_pack->pcoord->xx1f;
   Real l = 0.0;
   Kokkos::parallel_reduce("m1_ebnd", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
       DevExeSpace(), {0, ks, js}, {nmb1 + 1, ke + 1, je + 1}),
@@ -2111,9 +2122,36 @@ Real RadiationM1::EbndFluxX1() {
                f == BoundaryFlag::shear_periodic || f == BoundaryFlag::panel ||
                f == BoundaryFlag::polar || f == BoundaryFlag::undef);
     };
-    if (phys(bcs.d_view(m, BoundaryFace::inner_x1))) {sum += a1(m,k,j,is)*ff(m,k,j,is);}
-    if (phys(bcs.d_view(m, BoundaryFace::outer_x1))) {
-      sum -= a1(m,k,j,ie+1)*ff(m,k,j,ie+1);
+    const bool plo = phys(bcs.d_view(m, BoundaryFace::inner_x1));
+    const bool phi = phys(bcs.d_view(m, BoundaryFace::outer_x1));
+    if (plo) {sum += a1(m,k,j,is)*ff(m,k,j,is);}
+    if (phi) {sum -= a1(m,k,j,ie+1)*ff(m,k,j,ie+1);}
+    // lzphys-1113 ebnd_adv: the advective enthalpy flux A E of implicit_bc_advect through a
+    // Marshak end face, with the E the row takes (ImplicitSolve's x1 rows): outflow the
+    // face E (implicit_marshak_face = linear) or the end cell's, inflow the bath
+    if (adv && plo && bclo == M1_IBC_MARSHAK) {
+      const Real ai = iw_(m,M1_IW_ADV,k,j,is), vi = iw_(m,M1_IW_V1,k,j,is);
+      Real ee = elo;
+      if (!(vi > 0.0)) {
+        ee = iw_(m,M1_IW_EP,k,j,is);
+        if (mfl && ie > is) {
+          ee = M1SphMarshakFaceE(iw_(m,M1_IW_EP,k,j,is), iw_(m,M1_IW_EP,k,j,is+1),
+                                 cx1v(m,is), cx1v(m,is+1), cx1f(m,is));
+        }
+      }
+      sum += a1(m,k,j,is)*ai*ee;
+    }
+    if (adv && phi && bchi == M1_IBC_MARSHAK) {
+      const Real ai = iw_(m,M1_IW_ADV,k,j,ie), vi = iw_(m,M1_IW_V1,k,j,ie);
+      Real ee = ebc ? ebc_(m,k,j) : ehi;
+      if (vi > 0.0) {
+        ee = iw_(m,M1_IW_EP,k,j,ie);
+        if (mfl && (!vqs || sqf) && ie > is) {
+          ee = M1SphMarshakFaceE(iw_(m,M1_IW_EP,k,j,ie), iw_(m,M1_IW_EP,k,j,ie-1),
+                                 cx1v(m,ie), cx1v(m,ie-1), cx1f(m,ie+1));
+        }
+      }
+      sum -= a1(m,k,j,ie+1)*ai*ee;
     }
   }, Kokkos::Sum<Real>(l));
 #if MPI_PARALLEL_ENABLED

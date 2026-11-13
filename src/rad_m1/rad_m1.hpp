@@ -1851,6 +1851,7 @@ class RadiationM1 {
   // keeps these weights, its dropped K1 part re-enters stage 2); a backward-Euler step
   // applies L of its solve.  Read-only: no number of the run changes.
   bool ebnd_on = false;
+  bool ebnd_adv = false;          // lzphys-1113: + implicit_bc_advect's end-face A E
   Real ebnd_acc = 0.0;            // accumulated energy (code units)
   Real ebnd_l1 = 0.0, ebnd_l2 = 0.0;   // L at the step start / of the stage-1 solve
   Real EbndFluxX1();
@@ -2326,6 +2327,23 @@ class RadiationM1 {
   DvceArray1D<Real> lz_d;               // diagnostic sums
   void LzGeom();
   void LzApply();
+  // lzphys-1113 <rad_m1>/implicit_lzx = true (read only when named; absent = off =
+  // bitwise; LZPHYS_1113.md): once per solve, after the converged post-solve face pass and
+  // before the write-back, the lateral Z_f of conservative2 get the torque-closing stress
+  // dZ_f = -Omega mu_f sign(W_f) (face flux -th0 c chat dZ_f), Omega = Lambda / S,
+  // Lambda = sum_c sum_f a_cf Z_f (= minus the solve's L_z change of gas + radiation),
+  // S = sum_c sum_f a_cf mu_f sign(W_f): gas + radiation L_z exact per solve, the gas
+  // takes the drag share.  implicit_lzx_weight = blend (mu = |Z_f - dt G_f|, default) |
+  // energy (mu = Ebar_f |W_f|); implicit_lzx_diag = N: LZX lines for the first N solves
+  bool impl_lzx = false;
+  int impl_lzx_w = 0, impl_lzx_diag = 0, lzx_ndiag = 0;
+  DvceArray4D<Real> lzx_g2, lzx_g3;     // dt G_f = dt (gr + off) of the last face pass
+  DvceArray4D<Real> lzx_t2, lzx_t3;     // th0_f = 1/(1 + chat dt kt_f)
+  Real lzx_cum[4] = {0.0, 0.0, 0.0, 0.0};   // sum Lr, sum Lambda_Z, sum Lambda_B, n
+  DvceArray5D<Real> lzx_r;              // (m, 2, k, j, i) realised transverse dp of a solve
+  void LzxGeom();
+  Real LzxTotal();
+  void LzxPost(Real dt, int t2s);
   DvceArray5D<Real> amvw;
   DvceArray1D<Real> amvp_d;
   // hgfix-1110 <rad_m1>/implicit_clip_kecap = f (read only when named; absent or 0 = off

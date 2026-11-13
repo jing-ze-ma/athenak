@@ -1147,6 +1147,10 @@
         ckw_(m,2,k,j,i) = (fp3 - go3)*fk;
       }
     }
+    if (lzxw_) {   // lzphys-1113 implicit_lzx: the realised transverse dp of the solve
+      lzr_(m,0,k,j,i) = dm2 + (fp2 - go2)/(cl*ch);
+      lzr_(m,1,k,j,i) = dm3 + (fp3 - go3)/(cl*ch);
+    }
     u0_(m,M1_E,k,j,i) = ep;
     u0_(m,M1_F1,k,j,i) = fp1;
     u0_(m,M1_F2,k,j,i) = fp2;

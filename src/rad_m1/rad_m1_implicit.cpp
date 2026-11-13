@@ -4207,6 +4207,43 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(lz_d, 6);
     Kokkos::deep_copy(lz_d, 0.0);
   }
+  // lzphys-1113 implicit_lzx (rad_m1.hpp, LZPHYS_1113.md)
+  if (pin->DoesParameterExist("rad_m1","implicit_lzx") &&
+      pin->GetBoolean("rad_m1","implicit_lzx")) {
+    impl_lzx = true;
+    if (!(cs_geom || sph_geom) || !trans_on || !trans_x3) {
+      ImplFatal("<rad_m1>/implicit_lzx needs the cubed sphere or spherical polar in 3-D "
+                "with implicit transport");
+    }
+    if (!impl_gas_src_cons || impl_gas_src_full || !(coupling && gas_feedback)) {
+      ImplFatal("<rad_m1>/implicit_lzx needs implicit_gas_src = conservative or "
+                "conservative2 with coupling and gas_feedback (Z_f books the face)");
+    }
+    if (impl_hr_cmem || impl_physflux || impl_lz) {
+      ImplFatal("<rad_m1>/implicit_lzx is not combined with implicit_hr_cmem, "
+                "implicit_physflux or implicit_lz_form");
+    }
+    if (sph_geom && !cs_geom && !(pin->GetString("mesh","ix3_bc") == "periodic" &&
+                      pin->GetString("mesh","ox3_bc") == "periodic")) {
+      ImplFatal("<rad_m1>/implicit_lzx on spherical polar needs periodic x3 (phi walls "
+                "would carry a booked wall torque, not implemented)");
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_lzx_weight")) {
+      const std::string lw = pin->GetString("rad_m1","implicit_lzx_weight");
+      if (lw.compare("energy") == 0) {
+        impl_lzx_w = 1;
+      } else if (lw.compare("none") == 0) {   // diagnostics only (LZX lines)
+        impl_lzx_w = 2;
+      } else if (lw.compare("blend") == 0) {
+        impl_lzx_w = 3;
+      } else if (lw.compare("impulse") != 0) {
+        ImplFatal("<rad_m1>/implicit_lzx_weight must be impulse, blend, energy or none");
+      }
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_lzx_diag")) {
+      impl_lzx_diag = pin->GetInteger("rad_m1","implicit_lzx_diag");
+    }
+  }
   // fast2nd-1112 (rad_m1.hpp): halo exchange of the Zalesak R only when it can change
   if (pin->DoesParameterExist("rad_m1","zalesak_halo_skip")) {
     zl_hskip = pin->GetBoolean("rad_m1","zalesak_halo_skip");
@@ -6279,6 +6316,13 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto lzo2_ = lz_o2;
   auto lzg3_ = lz_g3;
   auto lzo3_ = lz_o3;
+  // lzphys-1113 implicit_lzx: each face stores dt G_f and th0_f (LzxApply)
+  const bool lzx = impl_lzx;
+  if (lzx && lzx_g2.extent_int(0) == 0) {LzxGeom();}
+  auto lxg2_ = lzx_g2;
+  auto lxt2_ = lzx_t2;
+  auto lxg3_ = lzx_g3;
+  auto lxt3_ = lzx_t3;
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const M1Vtx vx = M1VtxOf(v3m1_, mbsize.d_view(m), js, je, ks, ke);   // cornerfix-1103
@@ -6440,6 +6484,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       const Real oml = th*(1.0 + ch*dt*ktf);
       lzg2_(m,k,j,i) = oml*(gr + off);
       lzo2_(m,k,j,i) = oml;
+    }
+    if (lzx) {   // lzphys-1113: the face's whole stress impulse and drag factor
+      lxg2_(m,k,j,i) = dt*(gr + off);
+      lxt2_(m,k,j,i) = 1.0/(1.0 + ch*dt*ktf);
     }
     if (fmmo) {fmt_(m,12,k,j,i) = -th*ch*cl*dt*off;}   // facetr-1112
     if (blt) {
@@ -6679,6 +6727,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         const Real oml = th*(1.0 + ch*dt*ktf);
         lzg3_(m,k,j,i) = oml*(gr + off);
         lzo3_(m,k,j,i) = oml;
+      }
+      if (lzx) {   // lzphys-1113 (as x2)
+        lxg3_(m,k,j,i) = dt*(gr + off);
+        lxt3_(m,k,j,i) = 1.0/(1.0 + ch*dt*ktf);
       }
       if (fmmo) {fmt_(m,13,k,j,i) = -th*ch*cl*dt*off;}   // facetr-1112
       if (blt) {
@@ -18808,6 +18860,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     ImplicitTransverseTerms(false);
     if (impl_cmi) {ImplicitCmiTrans(false);}   // cmemimpl-1112: the applied fluxes
     fmm_tfin = false;
+    // lzphys-1113 implicit_lzx: the write-back stores the realised dp per cell
+    if (impl_lzx && lzx_r.extent_int(0) > 0) {Kokkos::deep_copy(lzx_r, 0.0);}
     impl_linmax = std::max(impl_linmax, lresid);
     impl_linsum += lresid;
   }
@@ -19452,6 +19506,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto gz3w_ = gcz3;
   auto ciw_ = csinc;
   const bool csok = csinc_ok && t2st;
+  const bool lzxw_ = impl_lzx && (lzx_r.extent_int(0) > nmb1);   // lzphys-1113
+  auto lzr_ = lzx_r;
   auto ckw_ = (t2s == M1_T2S_STAGE1) ? csk2 : csk1;
   const bool gfst = gcs_first;
   auto f2nw_ = f0x2n;
@@ -19665,6 +19721,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #undef M1_RCP
     });
   }
+  if (impl_lzx && trans) {LzxPost(dt, t2s);}   // lzphys-1113: close the solve's L_z
   // r136e-1107 implicit_wb_vkick_reject: a stage that kicked a cell beyond V is not
   // admissible (the same decision path as the admissibility test above); a BE solve is
   // counted only
