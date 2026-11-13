@@ -3244,6 +3244,33 @@ class RadiationM1 {
   // extrapolates the gd fields across the boundaries (no held step) and
   // vet_gd_rotate_slope = correct is not used (the closure has no jump)
   bool vgd_xf = false;
+  // xffuse-1113 vet_gd_rotate_xfade_fuse (read only when named; default true with
+  // vet_gd_rotate_xfade; env VGD_XFF=0 off): the two sets of a cross-fade build swept in
+  // ONE sweep: per shell one kernel launch over both sets' (cell, direction) lists and
+  // (sp, MPI exact lists) one message per partner carrying both sets' values.  Every
+  // value is computed by the same code from the same inputs as by the two sweeps, and the
+  // moments / blend run in the same order afterwards (bitwise).  The second set keeps its
+  // own intensities (vgd_i_xb, the size of vgd_i: the extra memory), shell lists and
+  // exact halo lists; they travel with the set's tables (VgdXfTables).  No band ring
+  // (vgd_ring off: the ragged array, as VGD_RING=0).  Falls back to the two sweeps where
+  // a combination is not covered (VetGdXffOk)
+  bool vgd_xff = false;
+  bool vgd_xff_now = false;      // this sweep carries the next set too (VetGdSweep)
+  bool vgd_xff_prep = false;     // VetGdSweep: the set's lists only, no passes
+  bool vgd_xff_msg = true;       // env VGD_XFF_MSG=0: two halo messages per shell
+  DvceArray1D<int> vgd_shl_xb[2];
+  int vgd_shn_xb[2] = {0, 0};
+  Real vgd_shl_alpha_xb = -3.0;
+  DvceArray1D<char> vgd_bbufx;     // the fused shell closure (device copy)
+  DvceArray1D<Real> vgd_xff_sb, vgd_xff_rb;   // the merged messages (sp)
+  double vgd_xff_n = 0.0;          // fused builds (diagnostic)
+  double vgd_xff_nmsg = 0.0;       // merged exchanges (diagnostic)
+  double vgd_xff_nfb = 0.0;        // builds that fell back to two sweeps (diagnostic)
+  bool VetGdXffOk();
+  bool VgdXffAllExact();
+  void VetGdXffPostB();
+  void VgdXffSwap();
+  bool VetGdHlXff(const int i, const int ws);
   Real vgd_xf_alt = -9.0;        // the angle of the tables in the second device set
   double vgd_xf_nsw = 0.0;       // the next-set sweeps (diagnostic)
   double vgd_xf_t = 0.0;         // their seconds
@@ -3390,6 +3417,7 @@ class RadiationM1 {
   };
   using VgdIView = VgdRag;
   VgdIView vgd_i;
+  VgdIView vgd_i_xb;   // xffuse-1113: the other cross-fade set's intensities
   void VgdRagAlloc(VgdRag &a);
   // mem2-1014 vet_gd_band_ring (default true where it applies: MPI band with the exact
   // halo lists, no overlap / async / fused shells; memcut-1020: on the cubed sphere with

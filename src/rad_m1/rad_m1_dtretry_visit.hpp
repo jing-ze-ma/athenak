@@ -1087,6 +1087,12 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_base", vgd_base);
   v.view("vgd_dir", vgd_dir);
   v.value("vgd_i", vgd_i);
+  // xffuse-1113: the other cross-fade set's intensities and shell lists (handles: a
+  // restore must not leave both sets on one array)
+  v.value("vgd_i_xb", vgd_i_xb);
+  for (int q0_ = 0; q0_ < 2; ++q0_) {v.view("vgd_shl_xb[]", vgd_shl_xb[q0_]);}
+  v.value("vgd_shn_xb", vgd_shn_xb);
+  v.value("vgd_shl_alpha_xb", vgd_shl_alpha_xb);
   v.value("vgd_ring", vgd_ring);
   v.value("vgd_ring_named", vgd_ring_named);
   v.value("vgd_ring_par", vgd_ring_par);

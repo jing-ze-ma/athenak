@@ -1095,6 +1095,16 @@ void RadiationM1::VetGdInit() {
     auto hl_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_hloc);
     for (size_t q = 0; q < hl_h.extent(0); ++q) {anyside = anyside || (hl_h(q) < 0);}
     vgd_ring = vgd_ring_par && hxok && (vgd_ovl_g == 0) && (vgd_fuse_h <= 1) && anyside;
+    // xffuse-1113: the fused two-set sweep keeps the ragged band (sp; the ring's slabs
+    // follow one array); on the cubed sphere the ring stays and the fused sweep falls
+    // back to two sweeps where it runs (VetGdXffOk)
+    if (vgd_xff && !vgd_csg && vgd_ring) {
+      vgd_ring = false;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> vet_gd_rotate_xfade_fuse: vet_gd_band_ring off (sp: the "
+                  << "ragged band for both sets)" << std::endl;
+      }
+    }
     if (vgd_ring_named && vgd_ring_par && !vgd_ring && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd_band_ring: does not apply here (needs the exact halo "
                 << "lists, no vet_gd_overlap / fuse_shells / async / band_exit, MPI band; "
@@ -1102,6 +1112,15 @@ void RadiationM1::VetGdInit() {
     }
   }
   VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
+  if (vgd_xff) {
+    // xffuse-1113: the other set's intensities, the same layout (and band sides)
+    VgdRagAlloc(vgd_i_xb);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd_rotate_xfade_fuse: second-set intensities "
+                << static_cast<double>(vgd_i_xb.d.extent(0))*sizeof(Real)/1.0e9
+                << " GB on rank 0" << std::endl;
+    }
+  }
   // vgdfuse-1010: vet_gd_halo_exact marks the reads in the shell-list sweep
   if (vgd_hx_on && (!vgd_shl_on || vgd_bandx || vgd_async || !vgd_hmpi ||
                     vgd_hcomp <= 0 || vgd_hl_mb <= 0)) {
@@ -2203,6 +2222,15 @@ void RadiationM1::VgdXfTables(const Real alpha) {
     // cubed sphere (its compact lists have their own per-set slots; the band ring
     // rewrites these records at every sweep)
     if (!vgd_csg) {std::swap(vgd_hxe, vgd_hxe_alt);}
+    // xffuse-1113: the set's intensities and shell lists go with it too (keyed caches)
+    if (vgd_xff) {
+      std::swap(vgd_i, vgd_i_xb);
+      for (int p = 0; p < 2; ++p) {
+        std::swap(vgd_shl[p], vgd_shl_xb[p]);
+        std::swap(vgd_shn[p], vgd_shn_xb[p]);
+      }
+      std::swap(vgd_shl_alpha, vgd_shl_alpha_xb);
+    }
   };
   Kokkos::fence();
   if (alpha == vgd_xf_alt && vgd_tabd.dir.extent(0) == vgd_dir.extent(0)) {
@@ -2216,6 +2244,240 @@ void RadiationM1::VgdXfTables(const Real alpha) {
   swp();
   vgd_xf_alt = g_vgd_tab_alpha;
   VetGdTables(alpha);
+}
+
+namespace {
+void VgdPackEvtRecord(const DevExeSpace &ex);   // (defined with VetGdHlBegin)
+void VgdPackEvtWait(const DevExeSpace &ex);
+}  // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VgdXffSwap
+//! \brief xffuse-1113: swap the whole set context of the cross-fade (the tables, the
+//! angles, the exact halo lists, the intensities, the shell lists) without a fence: the
+//! handles only (a kernel in flight holds its own copies).  Used between the two halo
+//! exchanges of a fused sweep's shell when the merged message does not apply
+
+void RadiationM1::VgdXffSwap() {
+  std::swap(vgd_dir, vgd_tabd.dir);
+  std::swap(vgd_wall, vgd_tabd.wall);
+  std::swap(vgd_map, vgd_tabd.map);
+  std::swap(vgd_mr, vgd_tabd.mr);
+  if (vgd_wint) {
+    std::swap(vgd_m3, vgd_tabd.m3);
+    std::swap(vgd_w3, vgd_tabd.w3);
+  }
+  if (!vgd_csg) {std::swap(vgd_hxe, vgd_hxe_alt);}
+  std::swap(vgd_i, vgd_i_xb);
+  for (int p = 0; p < 2; ++p) {
+    std::swap(vgd_shl[p], vgd_shl_xb[p]);
+    std::swap(vgd_shn[p], vgd_shn_xb[p]);
+  }
+  std::swap(vgd_shl_alpha, vgd_shl_alpha_xb);
+  std::swap(vgd_alpha, vgd_xf_alt);
+  g_vgd_tab_alpha = vgd_alpha;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::VetGdXffOk
+//! \brief xffuse-1113: the fused two-set sweep covers this configuration (the same answer
+//! on every rank: keys and the halo setup only).  Otherwise the two sweeps run
+
+bool RadiationM1::VetGdXffOk() {
+  if (!vgd_xff || !vgd_xf || vgd_xf_m > 0) {return false;}
+  if (vgd_iter != 1 || vgd_twin || vgd_twfuse || vgd_async || vgd_bandx || vgd_ring) {
+    return false;
+  }
+  if (vgd_csg) {return false;}   // (the cubed-sphere sweep: VetGdCsSweep, not fused here)
+  if (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 || vgd_upf != 0 || vgd_rbon ||
+      vet_path != 0 || vgd_gband || vgd_beam || vgd_lhx_ie > 0.0 || !vgd_gfast) {
+    return false;
+  }
+  if (vgd_ipc_state == 1) {return false;}   // (the IPC halo: one set per exchange)
+#if M1_VGD_NCCL_ON
+  if (VgdNcclOn()) {return false;}
+#endif
+  if (vgd_i_xb.d.extent(0) != vgd_i.d.extent(0)) {return false;}
+  return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::VetGdHlXff
+//! \brief xffuse-1113: the exchange of shell i (pass vgd_hinw, depth ws) for both sets of
+//! the fused sweep in ONE message per partner: the current set's exact-list values of
+//! partner p, then the other set's (send / receive layouts: piece p = [A_p, B_p]).  The
+//! same values reach the same band cells as the two exact-list exchanges (VetGdHlBegin /
+//! VetGdHlEnd, MPI path), bitwise.  false (nothing done) unless both sets hold exact
+//! records of this exchange
+
+bool RadiationM1::VetGdHlXff(const int i, const int ws) {
+#if MPI_PARALLEL_ENABLED
+  if (!vgd_hmpi || vgd_hlp.on) {return false;}
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3, w = vgd_w;
+  const int n1c = indcs.nx1 + 2*indcs.ng;
+  const int c2_ = nx2 + 2*w, c3_ = nx3 + 2*w, nv_ = vgd_n;
+  if (!(vgd_hl_mb > 0) || std::getenv("VGD_COMPACT_NAN") != nullptr || i < 0 || i >= n1c ||
+      static_cast<int64_t>(nmb1 + 1)*nv_*c3_*c2_ >=
+      static_cast<int64_t>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+  const int px = vgd_hinw ? 0 : 1;
+  const int ex = px*n1c + i;
+  if (ex >= static_cast<int>(vgd_hxe.size()) || ex >= static_cast<int>(vgd_hxe_alt.size())) {
+    return false;
+  }
+  const VgdHlEntry &XA = vgd_hxe[ex];
+  const VgdHlEntry &XB = vgd_hxe_alt[ex];
+  auto okx = [&](const VgdHlEntry &X, const Real al) {
+    return X.gen != -1 && X.alpha == al && X.scut == vgd_scut && X.ws == ws && X.exact;
+  };
+  if (!okx(XA, vgd_alpha) || !okx(XB, vgd_xf_alt)) {return false;}
+  const int np = static_cast<int>(vgd_prk.size());
+  if (np > VGD_IPC_NS || static_cast<int>(XA.sp.size()) != np + 1 ||
+      static_cast<int>(XB.sp.size()) != np + 1 || static_cast<int>(XA.rp.size()) != np + 1 ||
+      static_cast<int>(XB.rp.size()) != np + 1) {
+    return false;
+  }
+  // the merged layouts: piece p at so[p] (send) / ro[p] (receive), A's part first
+  std::vector<int> so(np + 1), ro(np + 1);
+  VgdIpcIdx sa{}, sb{}, ra{}, rb{}, sm{}, rm{};
+  for (int p = 0; p <= np; ++p) {
+    so[p] = XA.sp[p] + XB.sp[p];
+    ro[p] = XA.rp[p] + XB.rp[p];
+    sa.v[p] = XA.sp[p];
+    sb.v[p] = XB.sp[p];
+    ra.v[p] = XA.rp[p];
+    rb.v[p] = XB.rp[p];
+    sm.v[p] = so[p];
+    rm.v[p] = ro[p];
+  }
+  if (static_cast<int>(vgd_xff_sb.extent(0)) < std::max(so[np], 1)) {
+    Kokkos::realloc(vgd_xff_sb, std::max(so[np], 1) + so[np]/8);
+  }
+  if (static_cast<int>(vgd_xff_rb.extent(0)) < std::max(ro[np], 1)) {
+    Kokkos::realloc(vgd_xff_rb, std::max(ro[np], 1) + ro[np]/8);
+  }
+  auto sbuf_ = vgd_xff_sb;
+  auto rbuf_ = vgd_xff_rb;
+  auto aA_ = vgd_i;
+  auto aB_ = vgd_i_xb;
+  const int nsA = XA.ns, nsB = XB.ns;
+  const int npk = np;
+  if (nsA + nsB > 0) {
+    auto slA_ = XA.sl;
+    auto slB_ = XB.sl;
+    Kokkos::parallel_for("m1_vgd_xff_pack", VgdLight(vgd_cur, 0, nsA + nsB),
+    KOKKOS_LAMBDA(const int c) {
+      const bool b = (c >= nsA);
+      const int cc = b ? (c - nsA) : c;
+      const VgdIpcIdx &sx = b ? sb : sa;
+      int p = 0;
+      while (p + 1 < npk && sx.v[p+1] <= cc) {++p;}
+      int ad = b ? slB_(cc) : slA_(cc);
+      const int jb = ad % c2_;
+      ad /= c2_;
+      const int kb = ad % c3_;
+      ad /= c3_;
+      const int v = ad % nv_;
+      const int m = ad/nv_;
+      const int pos = sm.v[p] + (b ? (sa.v[p+1] - sa.v[p]) : 0) + (cc - sx.v[p]);
+      sbuf_(pos) = b ? aB_(m,v,kb,jb,i) : aA_(m,v,kb,jb,i);
+    });
+  }
+  VgdPackEvtRecord(vgd_cur);
+  VgdPackEvtWait(vgd_cur);
+  Kokkos::Timer tq;
+  std::vector<MPI_Request> req;
+  for (int p = 0; p < np; ++p) {
+    const int rk = vgd_prk[p];
+    req.emplace_back();
+    MPI_Irecv(rbuf_.data() + ro[p], ro[p+1] - ro[p], MPI_ATHENA_REAL, rk, 7005, vgd_comm,
+              &req.back());
+    req.emplace_back();
+    MPI_Isend(sbuf_.data() + so[p], so[p+1] - so[p], MPI_ATHENA_REAL, rk, 7005, vgd_comm,
+              &req.back());
+  }
+  vgd_tpost += tq.seconds();
+  std::vector<MPI_Status> stat(req.size());
+  MPI_Waitall(static_cast<int>(req.size()), req.data(), stat.data());
+  vgd_tmpi += tq.seconds();
+  vgd_nexch += 2.0;
+  for (int p = 0; p < np; ++p) {
+    int got = 0;
+    MPI_Get_count(&stat[2*p], MPI_ATHENA_REAL, &got);
+    if (got != ro[p+1] - ro[p]) {
+      VgdFatal("vet_gd_rotate_xfade_fuse: sender and receiver lists disagree");
+    }
+    vgd_nbyte += static_cast<Real>(so[p+1] - so[p])*sizeof(Real);
+  }
+  // the scatter of both sets (A's entries, then B's), as VetGdHlEnd per set
+  const int nrA = XA.nr, nwA = XA.nw, nrB = XB.nr, nwB = XB.nw;
+  const int nA = nrA + nwA, nB = nrB + nwB;
+  if (nA + nB > 0) {
+    auto dlA_ = XA.dl;
+    auto srA_ = XA.sr;
+    auto dwA_ = XA.dw;
+    auto swA_ = XA.sw;
+    auto dlB_ = XB.dl;
+    auto srB_ = XB.sr;
+    auto dwB_ = XB.dw;
+    auto swB_ = XB.sw;
+    auto w3A_ = vgd_w3;
+    auto w3B_ = vgd_tabd.w3;
+    Kokkos::parallel_for("m1_vgd_xff_scatter", VgdLight(vgd_cur, 0, nA + nB),
+    KOKKOS_LAMBDA(const int c0) {
+      const bool b = (c0 >= nA);
+      const int c = b ? (c0 - nA) : c0;
+      const int nr = b ? nrB : nrA;
+      const VgdIpcIdx &rx = b ? rb : ra;
+      // the merged receive position of compact source s of this set
+      auto at = [&](const int s) -> int {
+        int p = 0;
+        while (p + 1 < npk && rx.v[p+1] <= s) {++p;}
+        return rm.v[p] + (b ? (ra.v[p+1] - ra.v[p]) : 0) + (s - rx.v[p]);
+      };
+      int ad = (c < nr) ? (b ? dlB_(c) : dlA_(c)) : (b ? dwB_(c - nr) : dwA_(c - nr));
+      const int jb = ad % c2_;
+      ad /= c2_;
+      const int kb = ad % c3_;
+      ad /= c3_;
+      const int v = ad % nv_;
+      const int m = ad/nv_;
+      if (c < nr) {
+        const int s = b ? srB_(c) : srA_(c);
+        const Real x = (s >= 0) ? rbuf_(at(s)) : 0.0;
+        if (b) {
+          aB_(m,v,kb,jb,i) = x;
+        } else {
+          aA_(m,v,kb,jb,i) = x;
+        }
+        return;
+      }
+      const int cw = c - nr;
+      Real val = 0.0;
+      for (int u = 0; u < 3; ++u) {
+        const int s = b ? swB_(3*cw + u) : swA_(3*cw + u);
+        const Real wq = b ? w3B_(m,kb,jb,v,u) : w3A_(m,kb,jb,v,u);
+        val += wq*((s >= 0) ? rbuf_(at(s)) : 0.0);
+      }
+      if (b) {
+        aB_(m,v,kb,jb,i) = val;
+      } else {
+        aA_(m,v,kb,jb,i) = val;
+      }
+    });
+  }
+  vgd_hl_nuse += 2.0;
+  vgd_xff_nmsg += 1.0;
+  return true;
+#else
+  (void) i;
+  (void) ws;
+  return false;
+#endif
 }
 
 //----------------------------------------------------------------------------------------
@@ -5488,7 +5750,9 @@ void RadiationM1::VetGdSweep() {
   const int upk_ = vgd_upk, upf_ = vgd_upf;
   const bool upwl_ = vgd_upwall;
   const Real upt_ = vgd_uptol;
-  vgd_hsweep += 1;
+  // (xffuse-1113: the fused sweep counts as the two sweeps it replaces; a list-only
+  // preparation as none)
+  if (!vgd_xff_prep) {vgd_hsweep += vgd_xff_now ? 2 : 1;}
   // vet_gd_shell_list (vgdspeed-1009; read only when named; default true; bitwise): per
   // pass the list of (m, k, j, d) whose n . r_hat (at the face midpoints, as the shell
   // kernel) lies on the pass's branch, widened by 1e-12 (the kernel's own test still
@@ -5581,6 +5845,9 @@ void RadiationM1::VetGdSweep() {
     }
     VetGdHxBatch(jobs);
   }
+  // xffuse-1113: a list-only preparation of this set (shell lists, exact halo lists)
+  if (vgd_xff_prep) {return;}
+  const bool xffs = vgd_xff_now;
   // mem2-1014 vet_gd_band_ring: shells lent a wide slab while their band is needed
   VetGdRingSweepBegin(vgd_sw2);
   const bool rga = vgd_ring_act;
@@ -5619,6 +5886,46 @@ void RadiationM1::VetGdSweep() {
 #undef M1_VGD_BODY_MIR
 #undef M1_VGD_BODY_GX0
 #endif
+    // xffuse-1113: the same shell bodies over the OTHER set of the cross-fade (its
+    // direction table, wall tables and intensities; every other input shared), for the
+    // fused two-set shell kernel (run_xff below).  Made in a scope where the set's names
+    // are bound to that set: the code is the include above, unchanged
+#if defined(KOKKOS_ENABLE_CUDA)
+#define M1_VGD_BODY_GX0
+#endif
+    auto xb0 = [&]() {
+      auto dir_ = vgd_tabd.dir;
+      auto wl_ = vgd_tabd.wall;
+      auto mp_ = vgd_tabd.map;
+      auto mr_ = vgd_tabd.mr;
+      auto m3_ = vgd_tabd.m3;
+      auto w3_ = vgd_tabd.w3;
+      auto vi_ = vgd_i_xb;
+#define M1_VGD_BODY_NAME bodyx
+#define M1_VGD_BODY_MIR 0
+#include "rad_m1_vetgd_body.inc"
+#undef M1_VGD_BODY_NAME
+#undef M1_VGD_BODY_MIR
+      return bodyx;
+    }();
+    auto xb1 = [&]() {
+      auto dir_ = vgd_tabd.dir;
+      auto wl_ = vgd_tabd.wall;
+      auto mp_ = vgd_tabd.map;
+      auto mr_ = vgd_tabd.mr;
+      auto m3_ = vgd_tabd.m3;
+      auto w3_ = vgd_tabd.w3;
+      auto vi_ = vgd_i_xb;
+#define M1_VGD_BODY_NAME bodyx
+#define M1_VGD_BODY_MIR 1
+#include "rad_m1_vetgd_body.inc"
+#undef M1_VGD_BODY_NAME
+#undef M1_VGD_BODY_MIR
+      return bodyx;
+    }();
+#if defined(KOKKOS_ENABLE_CUDA)
+#undef M1_VGD_BODY_GX0
+#endif
     // speedup-1109 vet_gd_body_global: this pass's shell kernel closure copied once
     // to device memory; the launches below then carry only its address (bitwise)
     using VgdBodyT = decltype(body);
@@ -5644,7 +5951,90 @@ void RadiationM1::VetGdSweep() {
     if (gfast && bmp != nullptr) {bgq = VgdClosureToDevice(bodymg, vgd_bbuf3);}
     if (gfast && bdp != nullptr) {bgp = VgdClosureToDevice(bodyg, vgd_bbuf2);}
 #endif
+    // xffuse-1113: both sets' gx-false closures in device memory (VetGdXffOk: gfast)
+    using VgdXb0T = decltype(xb0);
+    using VgdXb1T = decltype(xb1);
+    const VgdXb0T *xq0 = nullptr;
+    const VgdXb1T *xq1 = nullptr;
+#if defined(KOKKOS_ENABLE_CUDA)
+    const VgdBodygT *xa0 = nullptr;
+    const VgdBodymgT *xa1 = nullptr;
+#else
+    const VgdBodyT *xa0 = nullptr;
+    const VgdBodymT *xa1 = nullptr;
+#endif
+    if (xffs) {
+      if (!gfast) {VgdFatal("vet_gd_rotate_xfade_fuse: the fused sweep needs the gx-false "
+                            "shell kernel");}
+#if defined(KOKKOS_ENABLE_CUDA)
+      if (thm) {
+        xa1 = VgdClosureToDevice(bodymg, vgd_bbuf3);
+      } else {
+        xa0 = VgdClosureToDevice(bodyg, vgd_bbuf2);
+      }
+#else
+      if (thm) {
+        xa1 = VgdClosureToDevice(bodym, vgd_bbuf1);
+      } else {
+        xa0 = VgdClosureToDevice(body, vgd_bbuf0);
+      }
+#endif
+      if (thm) {
+        xq1 = VgdClosureToDevice(xb1, vgd_bbufx);
+      } else {
+        xq0 = VgdClosureToDevice(xb0, vgd_bbufx);
+      }
+    }
     const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
+    // xffuse-1113: the fused shell kernel of shell (i, l): the codes of this pass's list of
+    // the current set, then those of the other set, one launch; each thread runs the body
+    // of its code's set (the same body code, the same inputs: the values of two launches)
+    auto run_xff = [&](const int i, const int l) {
+      const int nA = vgd_shn[pass], nB = vgd_shn_xb[pass];
+      if (nA + nB <= 0) {return;}
+      auto LA_ = vgd_shl[pass];
+      auto LB_ = vgd_shl_xb[pass];
+      const std::false_type f_;
+      if (thm) {
+        const auto *qa = xa1;
+        const auto *qb = xq1;
+        Kokkos::parallel_for("m1_vgd_shell_xff", VgdShellPol(vgd_cur, 0, nA + nB),
+        KOKKOS_LAMBDA(const int c) {
+          const bool sb = (c >= nA);
+          int t = sb ? LB_(c - nA) : LA_(c);
+          const int d = t % n;
+          t /= n;
+          const int m = t/nkj;
+          t -= m*nkj;
+          const int k = ks + t/nj;
+          const int j = js + (t % nj);
+          if (sb) {
+            (*qb)(m, k, j, d, i, l, f_, f_);
+          } else {
+            (*qa)(m, k, j, d, i, l, f_, f_);
+          }
+        });
+      } else {
+        const auto *qa = xa0;
+        const auto *qb = xq0;
+        Kokkos::parallel_for("m1_vgd_shell_xff", VgdShellPol(vgd_cur, 0, nA + nB),
+        KOKKOS_LAMBDA(const int c) {
+          const bool sb = (c >= nA);
+          int t = sb ? LB_(c - nA) : LA_(c);
+          const int d = t % n;
+          t /= n;
+          const int m = t/nkj;
+          t -= m*nkj;
+          const int k = ks + t/nj;
+          const int j = js + (t % nj);
+          if (sb) {
+            (*qb)(m, k, j, d, i, l, f_, f_);
+          } else {
+            (*qa)(m, k, j, d, i, l, f_, f_);
+          }
+        });
+      }
+    };
     // the shell kernel over the codes cl(c), c in [c0, c1) (vet_gd_shell_list codes)
     auto run_list = [&](const DvceArray1D<int> &cl, const int c0, const int c1,
                         const int i, const int l, const char *name) {
@@ -6060,7 +6450,9 @@ void RadiationM1::VetGdSweep() {
           VetGdHlEnd();
           vgd_thalo += th.seconds();
         }
-        if (shl) {
+        if (xffs) {
+          run_xff(i, l);   // xffuse-1113: both sets of the cross-fade, one launch
+        } else if (shl) {
           // vet_gd_shell_list: only the (m, k, j, d) of this pass's branch
           run_list(vgd_shl[pass], 0, vgd_shn[pass], i, l, "m1_vgd_shell");
         } else {
@@ -6163,6 +6555,15 @@ void RadiationM1::VetGdSweep() {
       if (ovl && q + 1 < nsh &&
           VetGdHlBegin(vgd_i, n, i, wsx, two ? &vgd_itw : nullptr)) {
         pend = true;                 // completed by the next shell (VetGdHlEnd)
+      } else if (xffs) {
+        // xffuse-1113: one message per partner with both sets' exact lists; else the two
+        // exchanges, the other set's first (each writes only its own set's band)
+        if (!(vgd_xff_msg && VetGdHlXff(i, wsx))) {
+          VgdXffSwap();
+          VetGdHalo(vgd_i, n, i, i, wsx, true, nullptr);
+          VgdXffSwap();
+          VetGdHalo(vgd_i, n, i, i, wsx, true, nullptr);
+        }
       } else {
         vgd_rg_lastx = false;
         VetGdHalo(vgd_i, n, i, i, wsx, true, two ? &vgd_itw : nullptr);
@@ -6849,7 +7250,30 @@ void RadiationM1::VetGdBuild() {
   // Delta of the coming boundary (the tables stay on the next set; the hand-over fields
   // of this build are put back)
   vra_last = ra && vra_state == 1 && RotLastStep();
+  // xffuse-1113 vet_gd_rotate_xfade_fuse: the next set is swept in the same sweep as the
+  // current one (its lists made first, in its own context; the moments of each set then
+  // as the two sweeps take them: the current set's here, the next set's below)
+  bool xffb = vgd_xf && VetGdXffOk();
+  if (xffb) {
+    if (!(vgd_rot_dt > 0.0)) {
+      VgdFatal("vet_gd_rotate_xfade needs the physical rotation clock (vet_gd_rotate_dt "
+               "> 0)");
+    }
+    vgd_cur = DevExeSpace();
+    vgd_scut = vlat_icut;
+    VgdXfTables(VetGdAngleBlk(blk + 1));
+    vgd_xff_prep = true;
+    VetGdSweep();
+    VgdXfTables(al);
+    VetGdSweep();
+    vgd_xff_prep = false;
+    xffb = VgdXffAllExact();
+    if (!xffb) {vgd_xff_nfb += 1.0;}
+  }
+  vgd_xff_now = xffb;
   VetGdSweepPost();
+  vgd_xff_now = false;
+  if (xffb) {vgd_xff_n += 1.0;}
   // vgdxf-1112: the closure this build would hand over (A) for the cross-fade
   const int xilo = pmy_pack->pmesh->mb_indcs.is + vlat_icut;
   if (vgd_xf) {
@@ -6872,7 +7296,11 @@ void RadiationM1::VetGdBuild() {
       VetGdTables(VetGdAngleBlk(blk + 1));
     }
     vra_raw = true;
-    VetGdSweepPost();
+    if (xffb) {
+      VetGdXffPostB();   // xffuse-1113: swept with the current set above
+    } else {
+      VetGdSweepPost();
+    }
     vra_raw = false;
     VetGdRotAvgSetup();
     // vgdxf-1112: the boundary quantities at t_k (RotXfPre), then the Delta of t_k
@@ -6978,11 +7406,19 @@ void RadiationM1::VetGdBuild() {
     } else if (sw) {
       VgdXfTables(VetGdAngleBlk(blk + 1));
       vra_raw = true;
-      VetGdSweepPost();
+      if (xffb) {
+        VetGdXffPostB();   // xffuse-1113: swept with the current set above
+      } else {
+        VetGdSweepPost();
+      }
       vra_raw = false;
       VetGdRotAvgSetup();
       VetGdXfade(blk, false);
       VgdXfTables(al);
+      // xffuse-1113: vgd_i holds the next set's intensities after the build, as after
+      // the two sweeps (their one array); the arrays are storage only (every value a
+      // sweep reads it writes first)
+      if (xffb) {std::swap(vgd_i, vgd_i_xb);}
     } else {
       VetGdRotAvgSetup();
       RotXfEst(xilo, rxe);
@@ -7031,6 +7467,50 @@ void RadiationM1::VetGdSweepPost() {
   }
   if (vgd_twfuse) {VetGdTwinFusedMoments();}
   VetGdPost();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdXffPostB
+//! \brief xffuse-1113: the next set's part of VetGdSweepPost after a fused sweep (its
+//! intensities and tables are current: VgdXfTables): the moments as after its own sweep
+
+void RadiationM1::VetGdXffPostB() {
+  vgd_cur = DevExeSpace();
+  vgd_scut = vlat_icut;
+  vlat_ncall += 1.0;
+  VetGdPost();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::VgdXffAllExact
+//! \brief xffuse-1113: every exchange of the sweep has an exact list record in both sets
+//! (made by the list-only preparations); the same answer on every rank (all-reduce).
+//! Without an MPI band there is nothing to exchange
+
+bool RadiationM1::VgdXffAllExact() {
+  if (!vgd_hmpi) {return true;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1 = indcs.nx1, is = indcs.is;
+  const int n1c = indcs.nx1 + 2*indcs.ng;
+  int ok = (static_cast<int>(vgd_hxe.size()) == 2*n1c &&
+            static_cast<int>(vgd_hxe_alt.size()) == 2*n1c) ? 1 : 0;
+  for (int pass = 0; pass < 2 && ok; ++pass) {
+    for (int l = vlat_icut; l < n1 && ok; ++l) {
+      const int i = is + l;
+      const int wsx = (pass == 0) ? vgd_wsi[i] : vgd_wso[i];
+      if (wsx < 1 || wsx > vgd_w) {continue;}
+      const VgdHlEntry &A = vgd_hxe[pass*n1c + i];
+      const VgdHlEntry &B = vgd_hxe_alt[pass*n1c + i];
+      if (!(A.gen != -1 && A.alpha == vgd_alpha && A.scut == vgd_scut && A.ws == wsx &&
+            A.exact)) {ok = 0;}
+      if (!(B.gen != -1 && B.alpha == vgd_xf_alt && B.scut == vgd_scut && B.ws == wsx &&
+            B.exact)) {ok = 0;}
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &ok, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+#endif
+  return ok != 0;
 }
 
 //----------------------------------------------------------------------------------------

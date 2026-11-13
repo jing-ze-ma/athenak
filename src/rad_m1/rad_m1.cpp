@@ -1154,6 +1154,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       if (vgd_xf_lean && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_pen")) {
         vgd_xf_lpen = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade_pen");
       }
+      // xffuse-1113: the fused two-set sweep (read only when named; default true)
+      if (vgd_xf) {
+        vgd_xff = true;
+        if (pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_fuse")) {
+          vgd_xff = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade_fuse");
+        }
+        const char *ex = std::getenv("VGD_XFF");
+        if (ex != nullptr && std::atoi(ex) == 0) {vgd_xff = false;}
+        const char *em = std::getenv("VGD_XFF_MSG");
+        vgd_xff_msg = (em == nullptr) || (std::atoi(em) != 0);
+      }
       if (vgd_xf && global_variable::my_rank == 0) {
         std::cout << "<rad_m1> vet_gd_rotate_xfade = true (vgdxf-1112): the closure is "
                   << "cross-faded from the current to the next ray set over each "
