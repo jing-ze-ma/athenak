@@ -312,34 +312,6 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
 #define ATHENA_LW_LAUNCH_MAX 3584
 #endif
 
-// dhjcuda-1112 (04ef27069, ported to d6fast4-1112): ATHENA_CUDA_BODY_GLOBAL = B > 0 (CUDA;
-// set in src/CMakeLists.txt): a 4D par_for body (and a boundary BvalsTeamFor functor) of
-// >= B bytes is copied to device memory (cudaMemcpyAsync on the launch stream) and the
-// kernel gets only its address.  A body passed BY VALUE as the kernel argument is copied
-// by nvcc into every thread's local memory before its first use (a stack frame of about
-// the body's size); through the pointer its fields are read from global memory.  One
-// device copy per body type, reused in stream order, never freed.  Same arithmetic, same
-// index map: bitwise.  0 = the launches as before.
-#ifndef ATHENA_CUDA_BODY_GLOBAL
-#define ATHENA_CUDA_BODY_GLOBAL 0
-#endif
-#if defined(KOKKOS_ENABLE_CUDA) && (ATHENA_CUDA_BODY_GLOBAL > 0)
-template <typename F>
-inline const F *AthBodyToDevice(const Kokkos::Cuda &exec, const F &f) {
-  static void *buf = nullptr;   // one per body type
-  if (buf == nullptr) {
-    if (cudaMalloc(&buf, sizeof(F)) != cudaSuccess) {
-      throw std::runtime_error("AthBodyToDevice: cudaMalloc failed");
-    }
-  }
-  if (cudaMemcpyAsync(buf, &f, sizeof(F), cudaMemcpyHostToDevice, exec.cuda_stream())
-      != cudaSuccess) {
-    throw std::runtime_error("AthBodyToDevice: cudaMemcpyAsync failed");
-  }
-  return reinterpret_cast<const F *>(buf);
-}
-#endif
-
 //------------------------------
 // 4D loop using Kokkos 1D Range
 template <typename ExeSpace, typename Function>
@@ -372,17 +344,6 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
   // launch, ~250 per r1m cycle.  Larger bodies keep the default (constant memory; a
   // light-weight hint above the 4 kB argument limit would fall back to the slower
   // global-memory path).  Only the launch mechanism changes: bitwise.
-#if defined(KOKKOS_ENABLE_CUDA) && (ATHENA_CUDA_BODY_GLOBAL > 0)
-  if constexpr (std::is_same_v<ExeSpace, Kokkos::Cuda> &&
-                sizeof(body) >= ATHENA_CUDA_BODY_GLOBAL) {
-    // dhjcuda-1112: the body in device memory, the kernel argument its address only
-    const auto *bp_ = AthBodyToDevice(exec_space, body);
-    Kokkos::parallel_for(name, Kokkos::Experimental::require(
-        Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nnkji),
-        Kokkos::Experimental::WorkItemProperty::HintLightWeight),
-        KOKKOS_LAMBDA(const int &idx) {(*bp_)(idx);});
-  } else  // NOLINT (the launches below are not instantiated then)
-#endif
   if constexpr (sizeof(body) <= ATHENA_LW_LAUNCH_MAX) {
     Kokkos::parallel_for(name, Kokkos::Experimental::require(
         Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nnkji),
