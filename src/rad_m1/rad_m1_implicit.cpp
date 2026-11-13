@@ -4183,20 +4183,28 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_lz_form") &&
       pin->GetBoolean("rad_m1","implicit_lz_form")) {
     impl_lz = true;
-    if (!(cs_geom || sph_geom) || !trans_on || !trans_x3) {
+    if (!cs_geom && !sph_geom) {
+      // radlz2-1113: a Cartesian mesh has no L_z form (no curvature, no arms): inert
+      impl_lz = false;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1>/implicit_lz_form: inert (Cartesian mesh)" << std::endl;
+      }
+    } else if (!trans_on || !trans_x3) {
       ImplFatal("<rad_m1>/implicit_lz_form needs the cubed sphere or the spherical-polar "
                 "wedge in 3-D with implicit transport");
     }
-    if (!impl_gas_src_cons || impl_gas_src_full) {
+    if (impl_lz && (!impl_gas_src_cons || impl_gas_src_full)) {
       ImplFatal("<rad_m1>/implicit_lz_form needs implicit_gas_src = conservative or "
                 "conservative2 (Z_f books the face transport)");
     }
-    if (impl_hr_cmem || impl_physflux) {
+    if (impl_lz && (impl_hr_cmem || impl_physflux)) {
       ImplFatal("<rad_m1>/implicit_lz_form is not combined (yet) with implicit_hr_cmem or "
                 "implicit_physflux (their momentum face F_c is not the applied flux)");
     }
-    iw_lz = niw;
-    niw += 1;
+    if (impl_lz) {
+      iw_lz = niw;
+      niw += 1;
+    }
     if (pin->DoesParameterExist("rad_m1","implicit_lz_mode")) {
       const std::string lm = pin->GetString("rad_m1","implicit_lz_mode");
       if (lm.compare("stress") == 0) {
