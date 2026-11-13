@@ -750,7 +750,7 @@ inline void CkParFor4(const std::string &name, const bool lw, const int nl, cons
   auto pol = Kokkos::Experimental::require(
       AthRangePolicy4<DevExeSpace>(DevExeSpace(), 0, nnkji),
       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
-  Kokkos::parallel_for(name, pol, KOKKOS_LAMBDA(const int &idx) {
+  auto body = KOKKOS_LAMBDA(const int &idx) {
     int n = (idx)/nkji;
     int k = (idx - n*nkji)/nji;
     int j = (idx - n*nkji - k*nji)/ni;
@@ -759,7 +759,19 @@ inline void CkParFor4(const std::string &name, const bool lw, const int nl, cons
     k += kl;
     j += jl;
     function(n, k, j, i);
-  });
+  };
+#if defined(KOKKOS_ENABLE_CUDA) && (ATHENA_CUDA_BODY_GLOBAL > 0)
+  // dhjcuda-1112: a large body in device memory, its address the kernel argument
+  // (athena.hpp AthBodyToDevice; bitwise)
+  if constexpr (sizeof(body) >= ATHENA_CUDA_BODY_GLOBAL) {
+    const auto *bp_ = AthBodyToDevice(DevExeSpace(), body);
+    Kokkos::parallel_for(name, pol, KOKKOS_LAMBDA(const int &idx) {(*bp_)(idx);});
+  } else {
+    Kokkos::parallel_for(name, pol, body);
+  }
+#else
+  Kokkos::parallel_for(name, pol, body);
+#endif
 }
 
 // dSrc_i/dT_{i-1,i,i+1}, (m, 3, k, j, i), summed over bands and g-points
