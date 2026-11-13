@@ -3262,6 +3262,7 @@ class RadiationM1 {
   int vgd_shn_xb[2] = {0, 0};
   Real vgd_shl_alpha_xb = -3.0;
   DvceArray1D<char> vgd_bbufx;     // the fused shell closure (device copy)
+  DvceArray1D<int> vgd_cslst_xb;   // cs: the other set's pass lists
   DvceArray1D<Real> vgd_xff_sb, vgd_xff_rb;   // the merged messages (sp)
   double vgd_xff_n = 0.0;          // fused builds (diagnostic)
   double vgd_xff_nmsg = 0.0;       // merged exchanges (diagnostic)
