@@ -562,7 +562,10 @@ void RadiationM1::RefreshTfloorCons() {
   const bool app = (rtf_mode >= 2);
   const int cyc = pmy_pack->pmesh->ncycle;
   const bool rep = (rtf_report > 0) && ((cyc % rtf_report) == 0);
-  auto cell = KOKKOS_LAMBDA(const int n, Real &cnt, Real &dfc, Real &mov, Real &unc) {
+  // diag slots (all x volume unless a count): 0 cells, 1 deficit, 2 moved, 3 uncovered,
+  // 4 E, 5 e(rho, tfloor), 6 e_int, 7 mass, 8 cells with E < 1.01 e_floor, 9 cells with
+  // e_int <= 0, 10-17 deficit per radial eighth of the MeshBlock
+  auto cell = KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
     const int m = n/(nk*nj*ni);
     const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
     const Real dd = uh(m,IDN,k,j,i);
@@ -582,43 +585,54 @@ void RadiationM1::RefreshTfloorCons() {
     const Real v = psph ? pvol(m,k,j,i)
                         : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
                            mbsize.d_view(m).dx3);
-    cnt += 1.0;
-    dfc += need*v;
+    const Real er = u0_(m,M1_E,k,j,i);
+    Real take = 0.0;
     if (app) {
-      const Real er = u0_(m,M1_E,k,j,i);
-      const Real take = fmin(need, fmax((er - efl)/rcc, 0.0));
+      take = fmin(need, fmax((er - efl)/rcc, 0.0));
       if (take > 0.0) {
         uh(m,IEN,k,j,i) += take;
         u0_(m,M1_E,k,j,i) = er - rcc*take;
       }
-      mov += take*v;
-      unc += (need - take)*v;
-    } else {
-      unc += need*v;
     }
+    sum.the_array[0] += 1.0;
+    sum.the_array[1] += need*v;
+    sum.the_array[2] += take*v;
+    sum.the_array[3] += (need - take)*v;
+    sum.the_array[4] += er*v;
+    sum.the_array[5] += etf*v;
+    sum.the_array[6] += eint*v;
+    sum.the_array[7] += dd*v;
+    if (er < 1.01*efl) {sum.the_array[8] += 1.0;}
+    if (!(eint > 0.0)) {sum.the_array[9] += 1.0;}
+    sum.the_array[10 + (8*(i - is))/ni] += need*v;
   };
   const int ntot = nmb*nk*nj*ni;
   if (!rep) {
     if (!app) return;
     Kokkos::parallel_for("m1_rtfcons", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
     KOKKOS_LAMBDA(const int n) {
-      Real a = 0.0, b = 0.0, c = 0.0, d = 0.0;
-      cell(n, a, b, c, d);
+      array_sum::GlobalSum h;
+      for (int q=0; q<NREDUCTION_VARIABLES; ++q) h.the_array[q] = 0.0;
+      cell(n, h);
     });
     return;
   }
-  Real r[4] = {0.0, 0.0, 0.0, 0.0};
+  array_sum::GlobalSum gs;
   Kokkos::parallel_reduce("m1_rtfcons_r", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
-  KOKKOS_LAMBDA(const int n, Real &a, Real &b, Real &c, Real &d) {
-    cell(n, a, b, c, d);
-  }, r[0], r[1], r[2], r[3]);
+  KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
+    cell(n, sum);
+  }, Kokkos::Sum<array_sum::GlobalSum>(gs));
+  Real r[18];
+  for (int q=0; q<18; ++q) r[q] = gs.the_array[q];
 #if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, r, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, r, 18, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
   if (global_variable::my_rank == 0) {
     std::printf("RTFCONS cycle=%d mode=%s cells=%.6e deficit=%.6e moved=%.6e "
-                "uncovered=%.6e (x volume)\n", cyc, app ? "on" : "diag", r[0], r[1], r[2],
-                r[3]);
+                "uncovered=%.6e E=%.6e etf=%.6e eint=%.6e mass=%.6e nEfl=%.6e "
+                "neint0=%.6e rb=", cyc, app ? "on" : "diag", r[0], r[1], r[2], r[3],
+                r[4], r[5], r[6], r[7], r[8], r[9]);
+    for (int q=10; q<18; ++q) std::printf("%.3e%s", r[q], (q < 17) ? "," : "\n");
   }
 }
 
