@@ -82,6 +82,13 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
+  // hg262-drive-1113: the flux table is applied at the stage times (Time2FormStage)
+  if (ftab_on && time_scheme != M1_TIME_HESDIRK2 && !t2_beonly) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/implicit_flux_x1min_table needs time_scheme = "
+              << "hesdirk2 (the flux is set at the stage times)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // bematch-1030: plain be with t2_beonly (ImplicitInit) runs as hesdirk2, every step on
   // the backward-Euler path (Time2AutoBeBegin)
   if (time_scheme == M1_TIME_BE && t2_beonly) {
@@ -804,16 +811,32 @@ bool RadiationM1::Time2Active() {
 //! which the hydro has already done for the gas) and the increment t2inc that turns it
 //! into the old vector of the stage solve.  ImplicitSolve applies t2inc.
 
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::InnerFluxAt
+//! \brief the inner face flux of the time hooks at time t: the table value
+//! (hg262-drive-1113, ftab_on) or the constant F0, times the sine / tanh factors when
+//! named (the arithmetic of the raycheap2-1109 hooks, unchanged)
+
+Real RadiationM1::InnerFluxAt(const Real t) const {
+  Real f = ftab_on ? ftab_scale*ftab.At(0, t - ftab_t0) : fmod_f0;
+  if (fmod_per > 0.0) {f *= 1.0 + fmod_amp*std::sin(2.0*M_PI*t/fmod_per);}
+  if (fmod_rw > 0.0) {f *= 0.5*(1.0 + std::tanh((t - fmod_rt0)/fmod_rw));}
+  return f;
+}
+
+//! \brief hg262-drive-1113: the exact integral of the TABLE flux over [t0, t1] (the
+//! energy budget's int F dt; table only, no sine / tanh factors)
+Real RadiationM1::InnerFluxIntegral(const Real t0, const Real t1) const {
+  return ftab_scale*ftab.Integral(0, t0 - ftab_t0, t1 - ftab_t0);
+}
+
 void RadiationM1::Time2FormStage(int stage, Real dt) {
-  if (fmod_per > 0.0 || fmod_rw > 0.0) {   // raycheap2-1109: the inner flux, stage time
+  if (fmod_per > 0.0 || fmod_rw > 0.0 || ftab_on) {   // raycheap2-1109: inner flux
     // hesdirk2 / sdirk2: both stage solves end at t_n + dt (c2 = a21 + g = 1, c3 = 1);
     // trbdf2: the stage-1 solve ends at t_n + 2 g dt (c2 = 2g)
     const Real cst = (stage == 1 && t2_tab == 1) ? 2.0*kT2G : 1.0;
     const Real ts = pmy_pack->pmesh->time + cst*dt;
-    Real f = fmod_f0;
-    if (fmod_per > 0.0) {f *= 1.0 + fmod_amp*std::sin(2.0*M_PI*ts/fmod_per);}
-    if (fmod_rw > 0.0) {f *= 0.5*(1.0 + std::tanh((ts - fmod_rt0)/fmod_rw));}
-    iflux_x1min = f;
+    iflux_x1min = InnerFluxAt(ts);
   }
   if (dbg_rst_fp > 0 && stage == 1) {dbg_rst_fp -= 1; RstFingerprint("formstage1");}   // rstbit-1107
   const Real g = kT2G;
@@ -2959,12 +2982,9 @@ void RadiationM1::Time2VetColAt(int which) {
   // raycheap2-1109 (test forcing keys only): the predicted build sees the inner boundary
   // flux at the time of the predicted state, t_n + dt (restored after the build)
   const Real ifx_save = iflux_x1min;
-  if (fmod_per > 0.0 || fmod_rw > 0.0) {
+  if (fmod_per > 0.0 || fmod_rw > 0.0 || ftab_on) {   // hg262-drive-1113: + table
     const Real ts = pmy_pack->pmesh->time + dt;
-    Real f = fmod_f0;
-    if (fmod_per > 0.0) {f *= 1.0 + fmod_amp*std::sin(2.0*M_PI*ts/fmod_per);}
-    if (fmod_rw > 0.0) {f *= 0.5*(1.0 + std::tanh((ts - fmod_rt0)/fmod_rw));}
-    iflux_x1min = f;
+    iflux_x1min = InnerFluxAt(ts);
   }
   if (vcol) {
     // time2_vet_col_source = state (vcpred-1010): the source of P itself, not relaxed

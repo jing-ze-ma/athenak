@@ -328,6 +328,8 @@ endif()
 # stripbg-1102: the he_star_m1 one-shot restart-time background strip (own file)
 if (${PROBLEM} STREQUAL "he_star_m1")
   target_sources(athena PRIVATE pgen/he_strip_bg.cpp)
+  # hg262-drive-1113: the driven inner boundary (inflow table, live gravity, ledgers)
+  target_sources(athena PRIVATE pgen/he_drive.cpp)
 endif()
 
 # prodcand-1011: the rad_m1 ic_rad = fs_relax default is for the stellar-envelope pgen only

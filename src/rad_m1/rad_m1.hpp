@@ -40,6 +40,7 @@
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 #include "bvals/bvals.hpp"
+#include "utils/time_table.hpp"
 
 // forward declarations
 class Driver;
@@ -713,6 +714,17 @@ class RadiationM1 {
   Real iflux_x1min, iflux_x1max;  // the imposed face flux of M1_IBC_FLUX
   Real fmod_per = 0.0, fmod_amp = 0.0, fmod_f0 = 0.0;   // raycheap2-1109 (test only)
   Real fmod_rt0 = 0.0, fmod_rw = 0.0;   // raycheap2-1109 smooth switch-on (test only)
+  // hg262-drive-1113 <rad_m1>/implicit_flux_x1min_table = <file> (read only when named;
+  // absent = bitwise): the inner face flux F(t) from a (t, value) table, piecewise linear
+  // in t - implicit_flux_x1min_table_t0, held at its end values; value = the flux (units
+  // = flux, default) or the luminosity (units = luminosity: F = L/(4 pi x1min^2)).  It
+  // replaces the constant F0 of the hooks above (the sine / tanh factors, if named, still
+  // multiply it) at the same stage times.  InnerFluxAt(t) = the flux these hooks give.
+  bool ftab_on = false;
+  timetable::Table ftab;
+  Real ftab_t0 = 0.0, ftab_scale = 1.0;
+  Real InnerFluxAt(const Real t) const;
+  Real InnerFluxIntegral(const Real t0, const Real t1) const;   // table only (exact)
   Real iebath_x1min, iebath_x1max;  // M1_IBC_MARSHAK: the INCIDENT bath
   // PER-COLUMN INFLOW columns of the outer x1 Marshak face (accretor-rhd-1008 S5, the
   // stream window's own radiation): a problem generator hands E_in(m,k,j) (nmb, n3, n2)
