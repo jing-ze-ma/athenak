@@ -4931,6 +4931,46 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
     // implicit_halo_direct on a mesh whose neighbours are not all on this rank: the
     // same shell copy with ONE thread per cell (coalesced along i) instead of one per
     // row -- the row loop runs ~13k threads with strided rows on the 3-D box.
+#if defined(KOKKOS_ENABLE_HIP)
+    // d6fast6-1113 (HIP): one 64-lane vector per (m,n,k,j) row, 4 rows per team, i.e.
+    // the same cells, each copied by the same assignment, with the index division paid
+    // per row instead of per cell (rocprofv3, HG small cs deck: m1_impl_hcpyf 0.40 s,
+    // 7466 launches, ~2.6 TB/s).  Bitwise (plain copies).  Env M1_HCOPY_TEAM=0 restores
+    // the flat launch.
+    static int s_hteam = -1;
+    if (s_hteam < 0) {
+      const char *e = std::getenv("M1_HCOPY_TEAM");
+      s_hteam = (e != nullptr) ? std::atoi(e) : 1;
+    }
+    if (s_hteam != 0 && !poi) {
+      const int nr2 = n2, nr3 = n3, nqq = nq;
+      const int nrow = (nmb1 + 1)*nq*n3*n2;
+      constexpr int kTr = 4;
+      Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>
+          pol(DevExeSpace(), (nrow + kTr - 1)/kTr, kTr, 64);
+      Kokkos::parallel_for("m1_impl_hcpyt", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, kTr), [&](const int r) {
+          const int row = tm.league_rank()*kTr + r;
+          if (row >= nrow) return;
+          const int m = row/(nqq*nr3*nr2);
+          const int n = (row - m*(nqq*nr3*nr2))/(nr3*nr2);
+          const int k = (row - (m*nqq + n)*(nr3*nr2))/nr2;
+          const int j = row - ((m*nqq + n)*nr3 + k)*nr2;
+          const bool inr = (k >= kl_) && (k <= ku_) && (j >= jl_) && (j <= ju_);
+          const int nc = (nc0 >= 0) ? (nc0 + n) : M1HaloCompT(n);
+          Kokkos::parallel_for(Kokkos::ThreadVectorRange(tm, nn1), [&](const int i) {
+            if (inr && (i >= il_) && (i <= iu_)) return;
+            if (pack_) {
+              sc_(m,n,k,j,i) = iw_(m,nc,k,j,i);
+            } else {
+              iw_(m,nc,k,j,i) = sc_(m,n,k,j,i);
+            }
+          });
+        });
+      });
+      return;
+    }
+#endif
     par_for("m1_impl_hcpyf", DevExeSpace(), 0, nmb1, 0, nq-1, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
       if ((k >= kl_) && (k <= ku_) && (j >= jl_) && (j <= ju_) && (i >= il_) &&
