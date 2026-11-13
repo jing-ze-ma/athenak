@@ -4182,8 +4182,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","zalesak_local_rounds")) {
     zl_local = pin->GetInteger("rad_m1","zalesak_local_rounds");
   }
+  if (pin->DoesParameterExist("rad_m1","zalesak_colsweep")) {
+    zl_colsweep = pin->GetBoolean("rad_m1","zalesak_colsweep");
+  }
   if (pin->DoesParameterExist("rad_m1","zalesak_active")) {
-    zl_active = pin->GetBoolean("rad_m1","zalesak_active") && (zl_local == 0);
+    zl_active = pin->GetBoolean("rad_m1","zalesak_active") && (zl_local == 0) &&
+                !zl_colsweep;
   }
   zl_prof = (std::getenv("M1_FCT_PROF") != nullptr);
   if (impl_fmm && pin->DoesParameterExist("rad_m1","implicit_face_mmat_rowsel")) {
@@ -7975,6 +7979,10 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
                 << " sum|Foff2|=" << sg[3] << std::endl;
     }
   }
+  // zlocal-1113 <rad_m1>/zalesak_colsweep: transverse R read from the round's snapshot
+  // (slot sn, Jacobi across columns: deterministic), x1 R in place (sequential column)
+  const bool zcs = zl_colsweep;
+  const int st = zcs ? sn : sr;
   // b(R) of cell (m,k,j,i) with the current R (slot sr, ghosts valid), and P, b0, I(R)
   auto cell = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                             Real &po, Real &b0, Real &ir) {
@@ -8005,8 +8013,8 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
         pt += q1;
         it += q2;
         po += q1;
-        ir += a2l*iw_(m,sr,k-dk,j-dj,i)*fmax(g2l, 0.0)
-              + a2u*iw_(m,sr,k+dk,j+dj,i)*fmax(-g2u, 0.0);
+        ir += a2l*iw_(m,st,k-dk,j-dj,i)*fmax(g2l, 0.0)
+              + a2u*iw_(m,st,k+dk,j+dj,i)*fmax(-g2u, 0.0);
       }
     }
     b0 = iw_(m,sb,k,j,i) + pt - it;
@@ -8080,6 +8088,37 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     nv[0] = 0.0;
     nv[1] = 0.0;
     const bool xb = zxb;
+    if (zcs) {
+      // snapshot of R (ghosts included) for the transverse reads, then one x1 sweep up
+      // and one down per column, R updated in place (an x1 chain settles in one round)
+      Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sn, Kokkos::ALL,
+                        Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, sr,
+                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      par_reduce_flat2("m1_fmm_cs", 0, nmb1, ks, ke, js, je, is, is,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i0, Real &a,
+                    Real &ab) {
+        for (int pass = 0; pass < 2; ++pass) {
+          for (int q = 0; q <= ie - is; ++q) {
+            const int i = (pass == 0) ? is + q : ie - q;
+            if (hoi && hm_(m,k,j,i) > 0.0) {continue;}
+            const Real rc = iw_(m,sr,k,j,i);
+            Real po, b0, ir;
+            const Real br = cell(m, k, j, i, po, b0, ir);
+            if (!(br > 0.0) && po > 0.0) {
+              const Real qq = b0 + ir;
+              const Real rq = (qq > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*qq/po) : 0.0;
+              if (rq < rc) {
+                iw_(m,sr,k,j,i) = rq;
+                a += 1.0;
+                if (zsk && (i < is + zd || i > ie - zd ||
+                            (zx2 && (j < js + zd || j > je - zd)) ||
+                            (zx3 && (k < ks + zd || k > ke - zd)))) {ab += 1.0;}
+              }
+            }
+          }
+        }
+      }, Kokkos::Sum<Real>(nv[0]), Kokkos::Sum<Real>(nv[1]));
+    } else {
     par_reduce_flat2("m1_fmm_r", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
                   Real &ab) {
@@ -8113,6 +8152,7 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
       }
       iw_(m,sn,k,j,i) = rn;
     }, Kokkos::Sum<Real>(nv[0]), Kokkos::Sum<Real>(nv[1]));
+    }   // zalesak_colsweep
     if (zlr > 0) {   // local sub-round: keep the changes, no MPI, ghosts held
       if (!(nv[0] > 0.0)) {break;}
       nl[0] += nv[0];
@@ -8159,7 +8199,8 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     if (!(nn > 0.0)) {break;}
     ncell += nn;
     nround = r + 1;
-    if (zac) {   // only the cells changed in this round (the rest: sn not written)
+    if (zcs) {   // colsweep: R already updated in place
+    } else if (zac) {   // only the cells changed in this round (the rest: sn not written)
       par_for("m1_fmm_ca", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (ch_(m,k,j,i) == r + 1) {iw_(m,sr,k,j,i) = iw_(m,sn,k,j,i);}
@@ -11532,6 +11573,7 @@ void RadiationM1::ImplicitReport() {
                 << " s)";
     }
     if (zl_active) {std::cout << " zalesak_active=on";}
+    if (zl_colsweep) {std::cout << " zalesak_colsweep=on";}
     if (zl_local > 0) {std::cout << " local sub-rounds=" << zl_sub[1];}
     std::cout << ")" << std::endl;
   }
