@@ -1405,6 +1405,10 @@ void RadiationM1::VetGdCsTab(const std::vector<double> &d) {
 //! VetGdSweep body with the cs upwind stencil; every band value from VetGdCsHalo)
 
 void RadiationM1::VetGdCsSweep() {
+  if (vgd_xff_prep) {return;}   // xffuse-1113: nothing to prepare (lists made below)
+  // xffuse-1113 vet_gd_rotate_xfade_fuse: the next set swept in the same shell kernels
+  // (its intensities vgd_i_xb, tables vgd_tabd, compact lists and pass lists its own)
+  const bool xffs = vgd_xff_now;
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -1452,13 +1456,28 @@ void RadiationM1::VetGdCsSweep() {
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   const Real lcr = log(kVetCornerRatio);
-  vgd_hsweep += 1;
+  vgd_hsweep += xffs ? 2 : 1;
   // cs-s3b-1017: the compact lists of this set (built on its first sweep); every remote
   // read is checked against the read mask (a miss would be a value the lists did not
   // send: FATAL below, never silent)
   const bool ccl = vgd_cscomp;
+  int xcurb = -1;   // xffuse-1113: the next set's compact-list entry
   if (ccl) {
     VetGdCsCompact();
+    if (xffs) {
+      // (the current set's entry first, then the next set's: the order of the two sweeps,
+      // so the LRU entry is the same)
+      const int ca = vgd_cscur;
+      std::swap(vgd_dir, vgd_tabd.dir);
+      std::swap(vgd_mr, vgd_tabd.mr);
+      std::swap(vgd_alpha, vgd_xf_alt);
+      VetGdCsCompact();
+      xcurb = vgd_cscur;
+      std::swap(vgd_alpha, vgd_xf_alt);
+      std::swap(vgd_mr, vgd_tabd.mr);
+      std::swap(vgd_dir, vgd_tabd.dir);
+      vgd_cscur = ca;
+    }
     Kokkos::deep_copy(vgd_csmiss, 0);
   }
   auto msk_ = vgd_cscl[vgd_cscur].msk;
@@ -1475,6 +1494,10 @@ void RadiationM1::VetGdCsSweep() {
   // values of the dense-band layout (bitwise)
   const bool rga = vgd_ring && ccl;
   if (vgd_ring && !ccl) {VgdCsFatal("vet_gd_band_ring without the compact lists");}
+  if (xffs && (rga || two || upf_ != 0 || (ccl && vgd_csxg > 1))) {
+    VgdCsFatal("vet_gd_rotate_xfade_fuse: not with the band ring / fused twin / upwind "
+               "profile / direction groups (VetGdXffOk)");
+  }
   if (rga) {
     const int n1c = indcs.nx1 + 2*indcs.ng;
     if (static_cast<int>(vgd_hxe.size()) != 2*n1c) {vgd_hxe.resize(2*n1c);}
@@ -1718,6 +1741,38 @@ void RadiationM1::VetGdCsSweep() {
     }
   }
   auto lst_ = vgd_cslst;
+  // xffuse-1113: the next set's pass lists (the same scan over its own n . r_hat)
+  int nlistb[2] = {0, 0};
+  if (xffs) {
+    if (!usel) {VgdCsFatal("vet_gd_rotate_xfade_fuse needs the pass lists (G = 1)");}
+    if (vgd_cslst_xb.extent_int(0) < 2*nlt) {
+      vgd_cslst_xb = DvceArray1D<int>();
+      Kokkos::realloc(vgd_cslst_xb, 2*nlt);
+    }
+    auto L_ = vgd_cslst_xb;
+    auto mrb_ = vgd_tabd.mr;
+    for (int p = 0; p < 2; ++p) {
+      const bool inp = (p == 0);
+      const int off = p*nlt;
+      int cnt = 0;
+      Kokkos::parallel_scan("m1_vgdcs_list", Kokkos::RangePolicy<>(DevExeSpace(), 0, nlt),
+      KOKKOS_LAMBDA(const int c, int &u, const bool fin) {
+        int t = c;
+        const int d = t % n;
+        t /= n;
+        const int j = js + t % njl;
+        t /= njl;
+        const int k = ks + t % nkl;
+        const int m = t/nkl;
+        if (inp != (mrb_(m,k,j,d) >= 0.0)) {
+          if (fin) {L_(off + u) = c;}
+          u += 1;
+        }
+      }, cnt);
+      nlistb[p] = cnt;
+    }
+  }
+  auto lstb_ = vgd_cslst_xb;
   // speed2-1031 cs early send (see the shell loop)
   static int s_early = -1;
   if (s_early < 0) {
@@ -1732,6 +1787,7 @@ void RadiationM1::VetGdCsSweep() {
   if (VgdNcclOn()) {early = false;}
 #endif
   if (early && vgd_cscl[vgd_cscur].ng != 1) {early = false;}
+  if (xffs) {early = false;}   // xffuse-1113 (the early send: one set per shell kernel)
   VgdCsEv eev;
   static int s_lb = -1;   // speed2-1031 cslb (see the shell kernel)
   if (s_lb < 0) {
@@ -1835,6 +1891,68 @@ void RadiationM1::VetGdCsSweep() {
         }
         eev.Record();
       }
+      // xffuse-1113: the fused two-set shell kernel: this pass's list of the current set,
+      // then the next set's, one launch; the next set's body is the include above with
+      // that set's names (direction table, n . r_hat, intensities, read mask)
+#define M1_VGDCS_LAUNCHN(F, N) \
+      if (s_lb == 8) {                                                                 \
+        Kokkos::parallel_for("m1_vgdcs_shell_xff", Kokkos::Experimental::require(      \
+            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 8>>(DevExeSpace(), 0, N),    \
+            Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);              \
+      } else if (s_lb == 6) {                                                          \
+        Kokkos::parallel_for("m1_vgdcs_shell_xff", Kokkos::Experimental::require(      \
+            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 6>>(DevExeSpace(), 0, N),    \
+            Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);              \
+      } else if (s_lb == 2) {                                                          \
+        Kokkos::parallel_for("m1_vgdcs_shell_xff", Kokkos::Experimental::require(      \
+            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 2>>(DevExeSpace(), 0, N),    \
+            Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);              \
+      } else if (s_lb == 1) {                                                          \
+        Kokkos::parallel_for("m1_vgdcs_shell_xff", Kokkos::Experimental::require(      \
+            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 1>>(DevExeSpace(), 0, N),    \
+            Kokkos::Experimental::WorkItemProperty::HintLightWeight), F);              \
+      } else {                                                                         \
+        Kokkos::parallel_for("m1_vgdcs_shell_xff", VgdLight(DevExeSpace(), 0, N), F);  \
+      }
+      if (xffs) {
+        auto xsb_ = [&]() {
+          auto dir_ = vgd_tabd.dir;
+          auto mr_ = vgd_tabd.mr;
+          auto vi_ = vgd_i_xb;
+          auto msk_ = vgd_cscl[(xcurb >= 0) ? xcurb : vgd_cscur].msk;
+#if defined(KOKKOS_ENABLE_CUDA)
+#define M1_VGDCS_SHELL_FAST
+#endif
+#define M1_VGDCS_SHELL_NAME shellx_
+#include "rad_m1_vetgd_cs_shell.inc"
+#undef M1_VGDCS_SHELL_NAME
+#if defined(KOKKOS_ENABLE_CUDA)
+#undef M1_VGDCS_SHELL_FAST
+#endif
+          return shellx_;
+        }();
+        const int nA = nlist[pass], nB = nlistb[pass];
+        auto mainx_ = KOKKOS_LAMBDA(const int c) {
+          const bool sb = (c >= nA);
+          int t = sb ? lstb_(lo + c - nA) : lst_(lo + c);
+          const int d = d0 + t % ndd;
+          t /= ndd;
+          const int j = js + t % njj;
+          t /= njj;
+          const int k = ks + t % nkk;
+          const int m = t/nkk;
+          if (sb) {
+            xsb_(m, k, j, d, true);
+          } else {
+#if defined(KOKKOS_ENABLE_CUDA)
+            shellf_(m, k, j, d, true);
+#else
+            shell_(m, k, j, d, true);
+#endif
+          }
+        };
+        if (nA + nB > 0) {M1_VGDCS_LAUNCHN(mainx_, nA + nB)}
+      } else {
 #if defined(KOKKOS_ENABLE_CUDA)
       auto mainf_ = KOKKOS_LAMBDA(const int c) {
         int t = usel ? lst_(lo + c) : c;   // cslist-1031 (d0 = 0, ndd = n with the list)
@@ -1926,6 +2044,8 @@ void RadiationM1::VetGdCsSweep() {
         Kokkos::parallel_for("m1_vgdcs_shell", VgdLight(DevExeSpace(), 0, nper), mainf_);
       }
 #endif
+      }   // !xffs
+#undef M1_VGDCS_LAUNCHN
 #if MPI_PARALLEL_ENABLED
       if (pipe) {
         Kokkos::Timer tf;
@@ -2032,9 +2152,19 @@ void RadiationM1::VetGdCsSweep() {
 #endif
       } else if (ccl) {
         VetGdCsHaloC(pass, i, two);          // cs-s3b-1017: the read values only
+        if (xffs) {
+          // xffuse-1113: the next set's exchange (its own compact lists and array)
+          const int ca = vgd_cscur;
+          vgd_cscur = xcurb;
+          std::swap(vgd_i, vgd_i_xb);
+          VetGdCsHaloC(pass, i, false);
+          std::swap(vgd_i, vgd_i_xb);
+          vgd_cscur = ca;
+        }
       } else {
         VetGdCsHalo(vgd_i, n, i, i, false);  // remote band only (on-rank: read direct)
         if (two) {VetGdCsHalo(vgd_itw, n, i, i, false);}
+        if (xffs) {VetGdCsHalo(vgd_i_xb, n, i, i, false);}   // xffuse-1113
       }
       if (rga && inw) {
         // the record of the values to save from this shell's inward band: the receive

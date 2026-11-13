@@ -2288,7 +2288,11 @@ bool RadiationM1::VetGdXffOk() {
   if (vgd_iter != 1 || vgd_twin || vgd_twfuse || vgd_async || vgd_bandx || vgd_ring) {
     return false;
   }
-  if (vgd_csg) {return false;}   // (the cubed-sphere sweep: VetGdCsSweep, not fused here)
+  if (vgd_csg) {
+    // the cubed-sphere sweep (VetGdCsSweep): pass lists (G = 1), no early send / pipe
+    return !(vgd_cscomp && vgd_csxg > 1) && vgd_upf == 0 && !vgd_gband &&
+           (vgd_i_xb.d.extent(0) == vgd_i.d.extent(0));
+  }
   if (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 || vgd_upf != 0 || vgd_rbon ||
       vet_path != 0 || vgd_gband || vgd_beam || vgd_lhx_ie > 0.0 || !vgd_gfast) {
     return false;
@@ -7488,7 +7492,7 @@ void RadiationM1::VetGdXffPostB() {
 //! Without an MPI band there is nothing to exchange
 
 bool RadiationM1::VgdXffAllExact() {
-  if (!vgd_hmpi) {return true;}
+  if (!vgd_hmpi || vgd_csg) {return true;}   // (cs: one exchange per set and shell)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int n1 = indcs.nx1, is = indcs.is;
   const int n1c = indcs.nx1 + 2*indcs.ng;
