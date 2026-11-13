@@ -1,0 +1,10 @@
+14b238e6c3a9e7de18099365e921523c  ref_m1.05.txt
+0fd6966f7ee109c6b638b0617bcb90f5  ref_m1.2.txt
+4744d1c7cb024c41e74ad59404f28266  ref_m2.txt
+ea9a23327ad9884779df4ff5d152e63c  ref_m27.txt
+e636b27a15f7e50b6f40dd3244035e6c  ref_m3.txt
+dee65b9f468150fc1be1885a87c08468  ref_m5.txt
+330ed01df0d1ae988cc1e1e09e11940d  ref_m50.txt
+fc8079ae1ba9a92aed1db226c9abcc02  caltech/ref_m1.2.txt
+ff303876b7eed65116d20611356b4664  caltech/ref_m2.txt
+a763d6d28fd97534c378fc1254a3f0a8  caltech/ref_m3.txt

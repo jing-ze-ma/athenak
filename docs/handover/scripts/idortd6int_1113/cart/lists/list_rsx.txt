@@ -1,0 +1,12 @@
+cart/rsx_m1.05/P_n512_c0.4 4 1265
+cart/rsx_m1.2/P_n512_c0.4 4 1227
+cart/rsx_m2/P_n512_c0.4 4 1162
+cart/rsx_m3/P_n512_c0.4 4 802
+cart/rsx_m5/P_n1024_c0.4 4 2440
+cart/rsx_m27/P_n1024_c0.4 6 4836
+cart/rsx_m50/P_n1024_c0.4 4 2194
+sp/rsx_m2/P_n512_c0.4 4 3518
+sp/rsx_m27/P_n1024_c0.4 6 4663
+cart/rsx_m5/P_n2048_c0.4 6 5380
+cart/rsx_m5/P_n2048_c0.2 6 5425
+sp/rsx_m5/P_n1024_c0.4 6 5458

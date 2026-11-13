@@ -1,0 +1,7 @@
+cart/ddf/FIN3_d 10 2267
+cart/ddn/FIN3_d 10 2138
+cart/rs_m1.2/FIN3_n512 10 829
+cart/rs_m2/FIN3_n512 10 807
+cart/rs_m3/FIN3_n512 10 916
+cart/rs_m2/FIN3_n1024 10 1837
+cart/rs_m3/FIN3_n1024 10 1434

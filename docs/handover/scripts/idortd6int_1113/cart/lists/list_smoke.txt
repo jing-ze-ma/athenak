@@ -1,0 +1,5 @@
+cart/cb/FIN3_r12 4 6
+cart/rsx_m2/P_n512_c0.4 4 10
+sp/rsx_m2/P_n512_c0.4 4 10
+spx/rswtv/L64 4 6
+xtra/g5_k128 2 300

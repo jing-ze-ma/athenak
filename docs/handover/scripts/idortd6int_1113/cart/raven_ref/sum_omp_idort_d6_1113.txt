@@ -1,0 +1,7 @@
+omp cart/ddf/FIN3_d | p rc=0 fatal=0 mean=3.981228e+00 max=1.000000e+01 NON-CONVERGED=0.000000e+00 t=2267
+omp cart/ddn/FIN3_d | p rc=0 fatal=0 mean=3.368488e+00 max=9.000000e+00 NON-CONVERGED=0.000000e+00 t=2138
+omp cart/rs_m1.2/FIN3_n512 | p rc=0 fatal=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=829
+omp cart/rs_m2/FIN3_n1024 | p rc=0 fatal=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1837
+omp cart/rs_m2/FIN3_n512 | p rc=0 fatal=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=807
+omp cart/rs_m3/FIN3_n1024 | p rc=0 fatal=0 mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00 t=1434
+omp cart/rs_m3/FIN3_n512 | p rc=0 fatal=0 mean=3.456536e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00 t=916
