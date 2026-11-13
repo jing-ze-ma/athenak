@@ -1175,6 +1175,30 @@ class RadiationM1 {
   // false = exchange every round as before).  Counters: rounds, exchanges done; wall
   // seconds (env M1_FCT_PROF only, fenced).
   bool zl_hskip = true;
+  // zlocal-1113 <rad_m1>/zalesak_local_rounds = N (default 0 = off, the global Jacobi
+  // rounds above): between two R exchanges each rank runs up to N Zalesak rounds on its
+  // own cells with the ghosts held (no MPI), then one global count + one exchange.  The
+  // iteration is monotone from R = 1, so it stops at the same fixed point up to the
+  // (1 - 1e-12) margin of the limiter; far fewer exchanges at many ranks.
+  int zl_local = 0;
+  Real zl_sub[2] = {0.0, 0.0};
+  // zlocal-1113 <rad_m1>/zalesak_active (default false): a Zalesak round evaluates only
+  // the cells whose 7-point stencil changed in the previous round (stamp array zl_chg),
+  // plus the block-face layer after an R exchange.  A cell whose inputs did not change
+  // cannot be newly limited (it was evaluated with the same inputs before): BITWISE.
+  bool zl_active = false;
+  // zlocal-1113 <rad_m1>/zalesak_colsweep (default false; face_mmat only): each round is
+  // one x1 Gauss-Seidel sweep up + down per column (transverse R from the round's
+  // snapshot).  Monotone from R = 1: the same fixed point up to the 1e-12 margin, not
+  // bitwise; a radial chain of n cells settles in one round instead of n.
+  bool zl_colsweep = false;
+  // zlocal-1113 <rad_m1>/zalesak_cap_rounds = K (default 0 = off; face_mmat): at most K
+  // Jacobi rounds, then one safe round with the donors at their zero-inflow bound R0
+  // (see ImplicitFaceMmat).  Positivity kept; more clipping where chains were cut.
+  int zl_cap = 0;
+  Real zl_capped = 0.0;
+  DvceArray4D<int> zl_chg;
+  Real zl_xwall[2] = {0.0, 0.0};   // fenced exchange seconds (M1_FCT_PROF)
   Real zl_rounds[2] = {0.0, 0.0}, zl_halos[2] = {0.0, 0.0}, zl_wall[2] = {0.0, 0.0};
   bool zl_prof = false;
   // fast2nd-1112 <rad_m1>/implicit_face_mmat_rowsel (default true; false = the full

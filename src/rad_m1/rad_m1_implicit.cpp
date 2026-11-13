@@ -4268,6 +4268,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","zalesak_halo_skip")) {
     zl_hskip = pin->GetBoolean("rad_m1","zalesak_halo_skip");
   }
+  if (pin->DoesParameterExist("rad_m1","zalesak_local_rounds")) {
+    zl_local = pin->GetInteger("rad_m1","zalesak_local_rounds");
+  }
+  if (pin->DoesParameterExist("rad_m1","zalesak_cap_rounds")) {
+    zl_cap = pin->GetInteger("rad_m1","zalesak_cap_rounds");
+  }
+  if (pin->DoesParameterExist("rad_m1","zalesak_colsweep")) {
+    zl_colsweep = pin->GetBoolean("rad_m1","zalesak_colsweep");
+  }
+  if (pin->DoesParameterExist("rad_m1","zalesak_active")) {
+    zl_active = pin->GetBoolean("rad_m1","zalesak_active") && (zl_local == 0) &&
+                !zl_colsweep;
+  }
   zl_prof = (std::getenv("M1_FCT_PROF") != nullptr);
   if (impl_fmm && pin->DoesParameterExist("rad_m1","implicit_face_mmat_rowsel")) {
     fmm_rowsel = pin->GetBoolean("rad_m1","implicit_face_mmat_rowsel");
@@ -8054,9 +8067,13 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
                 << " sum|Foff2|=" << sg[3] << std::endl;
     }
   }
+  // zlocal-1113 <rad_m1>/zalesak_colsweep: transverse R read from the round's snapshot
+  // (slot sn, Jacobi across columns: deterministic), x1 R in place (sequential column)
+  const bool zcs = zl_colsweep;
+  const int st = zcs ? sn : sr;
   // b(R) of cell (m,k,j,i) with the current R (slot sr, ghosts valid), and P, b0, I(R)
   auto cell = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
-                            Real &po, Real &b0, Real &ir) {
+                            Real &po, Real &b0, Real &ir, const int nx, const int nt) {
     Real al, au;
     if (sph) {
       const Real iv = dt/cvol(m,k,j,i);
@@ -8071,7 +8088,7 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     const Real p1 = au*ru*fmax(gu, 0.0) + al*rl*fmax(-gl, 0.0);   // as assembled
     const Real i1 = al*rl*fmax(gl, 0.0) + au*ru*fmax(-gu, 0.0);
     po = au*ru*fmax(gu, 0.0) + al*rl*fmax(-gl, 0.0);
-    ir = al*rl*iw_(m,sr,k,j,i-1)*fmax(gl, 0.0) + au*ru*iw_(m,sr,k,j,i+1)*fmax(-gu, 0.0);
+    ir = al*rl*iw_(m,nx,k,j,i-1)*fmax(gl, 0.0) + au*ru*iw_(m,nx,k,j,i+1)*fmax(-gu, 0.0);
     Real pt = p1, it = i1;
     if (tr) {   // stage 2b: the x2 (and x3) faces, lam_r = 1
       for (int d = 0; d < (tr3 ? 2 : 1); ++d) {
@@ -8084,8 +8101,8 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
         pt += q1;
         it += q2;
         po += q1;
-        ir += a2l*iw_(m,sr,k-dk,j-dj,i)*fmax(g2l, 0.0)
-              + a2u*iw_(m,sr,k+dk,j+dj,i)*fmax(-g2u, 0.0);
+        ir += a2l*iw_(m,nt,k-dk,j-dj,i)*fmax(g2l, 0.0)
+              + a2u*iw_(m,nt,k+dk,j+dj,i)*fmax(-g2u, 0.0);
       }
     }
     b0 = iw_(m,sb,k,j,i) + pt - it;
@@ -8135,16 +8152,79 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
   bool zfirst = true;
   std::chrono::steady_clock::time_point zt0;
   if (zl_prof) {Kokkos::fence(); zt0 = std::chrono::steady_clock::now();}
+  const int zlr = zl_local;
+  const bool zac = zl_active;
+  const int zcap = zl_cap;
+  static int fr_calls = 0;   // M1_FMM_FRONT diagnostic (rank 0, first N calls)
+  const char *fre = std::getenv("M1_FMM_FRONT");
+  const bool fr_on = (fre != nullptr) && (fr_calls < std::atoi(fre));
+  if (fr_on) {fr_calls += 1;}
+  if (zac) {
+    if (zl_chg.extent_int(0) < nmb1 + 1 || zl_chg.extent_int(1) != iw.extent_int(2) ||
+        zl_chg.extent_int(2) != iw.extent_int(3) ||
+        zl_chg.extent_int(3) != iw.extent_int(4)) {
+      Kokkos::realloc(zl_chg, nmb1 + 1, iw.extent_int(2), iw.extent_int(3),
+                      iw.extent_int(4));
+    }
+    Kokkos::deep_copy(DevExeSpace(), zl_chg, 0);
+  }
+  auto ch_ = zl_chg;
+  bool zxb = false;   // zalesak_active: R exchanged after the previous round
   for (int r = 0; r < 4096; ++r) {   // until no cell is newly limited
     Real nv[2] = {0.0, 0.0};
+    Real nl[2] = {0.0, 0.0};   // zalesak_local_rounds: this outer round's local changes
+    for (int s = 0; s < (zlr > 0 ? zlr : 1); ++s) {
+    nv[0] = 0.0;
+    nv[1] = 0.0;
+    const bool xb = zxb;
+    if (zcs) {
+      // snapshot of R (ghosts included) for the transverse reads, then one x1 sweep up
+      // and one down per column, R updated in place (an x1 chain settles in one round)
+      Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sn, Kokkos::ALL,
+                        Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, sr,
+                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      par_reduce_flat2("m1_fmm_cs", 0, nmb1, ks, ke, js, je, is, is,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i0, Real &a,
+                    Real &ab) {
+        for (int pass = 0; pass < 2; ++pass) {
+          for (int q = 0; q <= ie - is; ++q) {
+            const int i = (pass == 0) ? is + q : ie - q;
+            if (hoi && hm_(m,k,j,i) > 0.0) {continue;}
+            const Real rc = iw_(m,sr,k,j,i);
+            Real po, b0, ir;
+            const Real br = cell(m, k, j, i, po, b0, ir, sr, st);
+            if (!(br > 0.0) && po > 0.0) {
+              const Real qq = b0 + ir;
+              const Real rq = (qq > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*qq/po) : 0.0;
+              if (rq < rc) {
+                iw_(m,sr,k,j,i) = rq;
+                a += 1.0;
+                if (zsk && (i < is + zd || i > ie - zd ||
+                            (zx2 && (j < js + zd || j > je - zd)) ||
+                            (zx3 && (k < ks + zd || k > ke - zd)))) {ab += 1.0;}
+              }
+            }
+          }
+        }
+      }, Kokkos::Sum<Real>(nv[0]), Kokkos::Sum<Real>(nv[1]));
+    } else {
     par_reduce_flat2("m1_fmm_r", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
                   Real &ab) {
+      if (zac && r > 0) {   // only cells whose stencil changed (stamp r = round r-1)
+        bool act = (ch_(m,k,j,i) == r) || (ch_(m,k,j,i-1) == r) ||
+                   (ch_(m,k,j,i+1) == r);
+        if (zx2) {act = act || (ch_(m,k,j-1,i) == r) || (ch_(m,k,j+1,i) == r);}
+        if (zx3) {act = act || (ch_(m,k-1,j,i) == r) || (ch_(m,k+1,j,i) == r);}
+        if (xb && (i == is || i == ie || (zx2 && (j == js || j == je)) ||
+                   (zx3 && (k == ks || k == ke)))) {act = true;}
+        if (!act) {return;}
+      }
       const Real rc = iw_(m,sr,k,j,i);
       Real rn = rc;
       if (!(hoi && hm_(m,k,j,i) > 0.0)) {
         Real po, b0, ir;
-        const Real br = cell(m, k, j, i, po, b0, ir);
+        const Real br = cell(m, k, j, i, po, b0, ir, sr, st);
         // (no explicit x1 outflow, po = 0: nothing to limit here, counted as left)
         if (!(br > 0.0) && po > 0.0) {
           const Real q = b0 + ir;
@@ -8155,11 +8235,52 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
             if (zsk && (i < is + zd || i > ie - zd ||
                         (zx2 && (j < js + zd || j > je - zd)) ||
                         (zx3 && (k < ks + zd || k > ke - zd)))) {ab += 1.0;}
+            if (zac) {ch_(m,k,j,i) = r + 1;}
           }
         }
       }
       iw_(m,sn,k,j,i) = rn;
     }, Kokkos::Sum<Real>(nv[0]), Kokkos::Sum<Real>(nv[1]));
+    }   // zalesak_colsweep
+    if (zlr > 0) {   // local sub-round: keep the changes, no MPI, ghosts held
+      if (!(nv[0] > 0.0)) {break;}
+      nl[0] += nv[0];
+      nl[1] += nv[1];
+      zl_sub[1] += 1.0;
+      par_for("m1_fmm_cl", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        iw_(m,sr,k,j,i) = iw_(m,sn,k,j,i);
+      });
+    }
+    }   // zalesak_local_rounds sub-round loop (one pass when off)
+    if (zlr > 0) {nv[0] = nl[0]; nv[1] = nl[1];}
+    // zlocal-1113 DIAGNOSTIC (env M1_FMM_FRONT=N, zalesak_active only): for the first N
+    // face_mmat calls, rank 0 prints per round its cells newly limited, their x1 index
+    // range and mean |F_H|/(c E) at the cell's lower x1 face (where the front is).
+    if (zac && fr_on && global_variable::my_rank == 0) {
+      Real fq[4] = {0.0, 1.0e30, -1.0e30, 0.0};
+      const int rr = r + 1;
+      par_reduce_flat("m1_fmm_fr0", 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &q) {
+        if (ch_(m,k,j,i) == rr) {
+          const Real e = fmax(iw_(m,M1_IW_EP,k,j,i), 1.0e-300);
+          q += fabs(fh_(m,k,j,i))/(clr*e);
+        }
+      }, Kokkos::Sum<Real>(fq[3]));
+      par_reduce_flat("m1_fmm_fr1", 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &q) {
+        if (ch_(m,k,j,i) == rr) {q = fmin(q, static_cast<Real>(i));}
+      }, Kokkos::Min<Real>(fq[1]));
+      par_reduce_flat("m1_fmm_fr2", 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &q) {
+        if (ch_(m,k,j,i) == rr) {q = fmax(q, static_cast<Real>(i));}
+      }, Kokkos::Max<Real>(fq[2]));
+      fq[0] = nv[0];
+      std::cout << "FMM_FRONT pass " << fmm_pass << " round " << r << " rank0 newly "
+                << fq[0] << " i " << fq[1] << ".." << fq[2] << " (is " << is << " ie "
+                << ie << ") mean|FH|/cE " << ((fq[0] > 0.0) ? fq[3]/fq[0] : 0.0)
+                << std::endl;
+    }
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, nv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
@@ -8167,14 +8288,99 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     if (!(nn > 0.0)) {break;}
     ncell += nn;
     nround = r + 1;
+    if (zcs) {   // colsweep: R already updated in place
+    } else if (zac) {   // only the cells changed in this round (the rest: sn not written)
+      par_for("m1_fmm_ca", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (ch_(m,k,j,i) == r + 1) {iw_(m,sr,k,j,i) = iw_(m,sn,k,j,i);}
+      });
+    } else if (zlr == 0) {
     par_for("m1_fmm_c", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       iw_(m,sr,k,j,i) = iw_(m,sn,k,j,i);
     });
+    }
+    zxb = false;
     if (!zsk || zfirst || nv[1] > 0.0) {
+      std::chrono::steady_clock::time_point zx0;
+      if (zl_prof) {Kokkos::fence(); zx0 = std::chrono::steady_clock::now();}
+      if (zac) {   // snapshot (ghosts incl.) to stamp what the exchange changes
+        Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sn,
+                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,
+                          Kokkos::ALL, sr, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      }
       ImplicitHaloExchange(1, sr);
+      if (zac) {   // every cell (ghost or not) the exchange changed counts as changed
+        const int rr = r + 1;
+        const int n3 = iw.extent_int(2) - 1, n2 = iw.extent_int(3) - 1;
+        const int n1 = iw.extent_int(4) - 1;
+        par_for("m1_fmm_xs", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          if (iw_(m,sr,k,j,i) != iw_(m,sn,k,j,i)) {ch_(m,k,j,i) = rr;}
+        });
+      }
+      if (zl_prof) {
+        Kokkos::fence();
+        zl_xwall[1] += std::chrono::duration<double>(std::chrono::steady_clock::now()
+                                                    - zx0).count();
+      }
+      zxb = true;
       zl_halos[1] += 1.0;
       zfirst = false;
+    }
+    // zlocal-1113 <rad_m1>/zalesak_cap_rounds = K: after K rounds that still changed a
+    // cell, finish in one round that is safe whatever the donors do later.  R0 = the
+    // zero-inflow bound (b0 - R0 P > 0 with no inflow) is a lower bound of every final R;
+    // a cell whose b with the inflow of its donors at R0 is not > 0 gets that bound,
+    // so b > 0 holds for every donor R >= R0.  Passes that converge within K: unchanged.
+    if (zcap > 0 && r + 1 >= zcap) {
+      // R0 into slot sn (hold cells keep their R), exchanged once; physical ghosts 1
+      // (as R's: never limited)
+      Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sn, Kokkos::ALL,
+                        Kokkos::ALL, Kokkos::ALL), 1.0);
+      par_for("m1_fmm_r0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real rc = iw_(m,sr,k,j,i);
+        Real r0 = rc;
+        if (!(hoi && hm_(m,k,j,i) > 0.0)) {
+          Real po, b0, ir;
+          (void) cell(m, k, j, i, po, b0, ir, sr, st);
+          if (po > 0.0 && !(b0 - po > 0.0)) {
+            r0 = (b0 > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*b0/po) : 0.0;
+          } else {
+            r0 = 1.0;
+          }
+          r0 = fmin(r0, rc);
+        }
+        iw_(m,sn,k,j,i) = r0;
+      });
+      ImplicitHaloExchange(1, sn);
+      zl_halos[1] += 1.0;
+      Real nc = 0.0;
+      par_reduce_flat("m1_fmm_cap", 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+        if (hoi && hm_(m,k,j,i) > 0.0) {return;}
+        const Real rc = iw_(m,sr,k,j,i);
+        Real po, b0, ir;
+        const Real br = cell(m, k, j, i, po, b0, ir, sn, sn);   // donors at R0
+        if (!(br > 0.0) && po > 0.0) {
+          const Real q = b0 + ir;
+          const Real rq = (q > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
+          if (rq < rc) {
+            iw_(m,sr,k,j,i) = rq;   // own value only: neighbours are read from sn
+            a += 1.0;
+          }
+        }
+      }, Kokkos::Sum<Real>(nc));
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, &nc, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+      ncell += nc;
+      nround += 1;
+      zl_capped += 1.0;
+      ImplicitHaloExchange(1, sr);
+      zl_halos[1] += 1.0;
+      break;
     }
   }
   zl_rounds[1] += static_cast<Real>(nround);
@@ -8195,7 +8401,7 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sl) {
     if (!(hoi && hm_(m,k,j,i) > 0.0)) {
       Real po, b0, ir;
-      if (!(cell(m, k, j, i, po, b0, ir) > 0.0)) {sl += 1.0;}
+      if (!(cell(m, k, j, i, po, b0, ir, sr, st) > 0.0)) {sl += 1.0;}
     }
   }, Kokkos::Sum<Real>(lv[1]));
   par_reduce_flat("m1_fmm_lam", 0, nmb1, ks, ke, js, je, is, ie+1,
@@ -11514,10 +11720,21 @@ void RadiationM1::ImplicitReport() {
               << " realisability-bound faces (|F_H| > c min E)=" << fmm_rfaces
               << " (rank 0: rounds=" << zl_rounds[1] << " R exchanges=" << zl_halos[1]
               << " zalesak_halo_skip=" << (zl_hskip ? "on" : "off")
+              << (zl_local > 0 ? " zalesak_local_rounds=" + std::to_string(zl_local)
+                  : std::string(""))
               << " rowsel=" << (fmm_rowsel ? "on" : "off") << " re-assembled rows="
               << fmm_selrows << " of " << fmm_selall;
     if (zl_prof) {std::cout << " second-assembly wall=" << fmm_asm2_wall << " s";}
-    if (zl_prof) {std::cout << " round-loop wall=" << zl_wall[1] << " s";}
+    if (zl_prof) {
+      std::cout << " round-loop wall=" << zl_wall[1] << " s (exchanges " << zl_xwall[1]
+                << " s)";
+    }
+    if (zl_active) {std::cout << " zalesak_active=on";}
+    if (zl_colsweep) {std::cout << " zalesak_colsweep=on";}
+    if (zl_cap > 0) {
+      std::cout << " zalesak_cap_rounds=" << zl_cap << " capped passes=" << zl_capped;
+    }
+    if (zl_local > 0) {std::cout << " local sub-rounds=" << zl_sub[1];}
     std::cout << ")" << std::endl;
   }
   if (impl_onep > 0) {
