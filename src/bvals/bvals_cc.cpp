@@ -121,6 +121,70 @@ static BvCcTeamPolicy BvCcPolicy(const int nleague) {
   return BvCcTeamPolicy(DevExeSpace(), nleague, Kokkos::AUTO, BvCcVl());
 }
 
+#if defined(KOKKOS_ENABLE_HIP)
+// d6fast6-1113 (HIP only): the per-(k,j) seam transforms of the cubed-sphere pack can be
+// kept in a per-THREAD slot of team scratch (LDS) instead of registers / the private
+// segment.  The seam pack holds three SeamXform (stencil cells, an array indexed by the
+// runtime stencil loop: 416 B of scratch per lane), the rho-guard SeamXform and a
+// SeamFieldXform across the radial loop (228 VGPRs, occupancy 2 waves/SIMD on gfx942;
+// rocprofv3, HG small cs deck: SendBuff 0.74 s, RecvBuff 0.19 s for the same grids).
+// The transforms come from the same SeamXformAt / SeamFieldXformAt calls, are stored and
+// re-read exactly (doubles through memory) and applied by the same ApplyMomentumXform /
+// ApplyFieldXform: bitwise.  The loads are volatile so they are not hoisted back into
+// registers.  Slot: xf[0..2] (3 x 14 Reals), xfc (14), fxf (15).
+// env BVALS_CC_LDS (default 1); 0 = the register version (the launch before d6fast6).
+constexpr int kBvXfN = 14, kBvXsSlot = 72;
+KOKKOS_INLINE_FUNCTION
+void BvXfPut(volatile Real *p, const cubed_sphere::SeamXform &t) {
+  for (int c=0; c<3; ++c) {
+    p[c] = t.s1[c]; p[3+c] = t.s2[c]; p[6+c] = t.d1[c]; p[9+c] = t.d2[c];
+  }
+  p[12] = t.cs; p[13] = t.det;
+}
+KOKKOS_INLINE_FUNCTION
+void BvXfGet(const volatile Real *p, cubed_sphere::SeamXform &t) {
+  for (int c=0; c<3; ++c) {
+    t.s1[c] = p[c]; t.s2[c] = p[3+c]; t.d1[c] = p[6+c]; t.d2[c] = p[9+c];
+  }
+  t.cs = p[12]; t.det = p[13];
+}
+KOKKOS_INLINE_FUNCTION
+void BvFxPut(volatile Real *p, const cubed_sphere::SeamFieldXform &t) {
+  for (int c=0; c<3; ++c) {
+    p[c] = t.s1[c]; p[3+c] = t.s2[c]; p[6+c] = t.d1[c]; p[9+c] = t.d2[c];
+  }
+  p[12] = t.sns; p[13] = t.csd; p[14] = t.snd;
+}
+KOKKOS_INLINE_FUNCTION
+void BvFxGet(const volatile Real *p, cubed_sphere::SeamFieldXform &t) {
+  for (int c=0; c<3; ++c) {
+    t.s1[c] = p[c]; t.s2[c] = p[3+c]; t.d1[c] = p[6+c]; t.d2[c] = p[9+c];
+  }
+  t.sns = p[12]; t.csd = p[13]; t.snd = p[14];
+}
+static int BvCcLds() {
+  static int l = -1;
+  if (l < 0) {
+    const char *e = std::getenv("BVALS_CC_LDS");
+    l = (e != nullptr) ? std::atoi(e) : 1;
+  }
+  return l;
+}
+// the team size of the LDS seam pack (it sizes the scratch): env BVALS_CC_TS, default
+// 256 / vector length = what Kokkos::AUTO gives there (rocprofv3: 16 x 16 workgroups).
+// Which thread packs which (k, j) row does not change any value: bitwise.
+static int BvCcTs() {
+  static int t = -1;
+  if (t < 0) {
+    const char *e = std::getenv("BVALS_CC_TS");
+    t = (e != nullptr) ? std::atoi(e) : 0;
+    if (t <= 0) {t = 256/BvCcVl();}
+    if (t < 1) {t = 1;}
+  }
+  return t;
+}
+#endif
+
 //----------------------------------------------------------------------------------------
 //! \fn void MeshBoundaryValuesCC::PackAndSendCC()
 //! \brief Pack cell-centered variables into boundary buffers and send to neighbors.
@@ -240,6 +304,34 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
 #include "bvals_cc_pack.inc"
 #undef BVCC_PACK_NAME
 #endif
+#if defined(KOKKOS_ENABLE_HIP)
+  // d6fast6-1113: the seam variants with the transform slots (explicit team size)
+  if ((use_cs || use_pole) && BvCcLds() != 0) {
+    BvCcTeamPolicy policy_s(DevExeSpace(), nmnv*nsp_, BvCcTs(), BvCcVl());
+    policy_s.set_scratch_size(0, Kokkos::PerTeam(sizeof(Real)*kBvXsSlot*BvCcTs()));
+    if (wbs_) {
+      BvalsTeamFor("SendBuff", policy_s, KOKKOS_LAMBDA(TeamMember_t tmember) {
+        pack_(tmember, std::true_type(), std::true_type(), std::true_type());
+      });
+    } else {
+      BvalsTeamFor("SendBuff", policy_s, KOKKOS_LAMBDA(TeamMember_t tmember) {
+        pack_(tmember, std::true_type(), std::false_type(), std::true_type());
+      });
+    }
+  } else if ((use_cs || use_pole) && wbs_) {
+    BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+      pack_(tmember, std::true_type(), std::true_type(), std::false_type());
+    });
+  } else if (use_cs || use_pole) {
+    BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+      pack_(tmember, std::true_type(), std::false_type(), std::false_type());
+    });
+  } else {
+    BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+      pack_(tmember, std::false_type(), std::false_type(), std::false_type());
+    });
+  }  // end par_for_outer
+#else
   if ((use_cs || use_pole) && wbs_) {
     BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -265,6 +357,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
 #endif
     });
   }  // end par_for_outer
+#endif
 
   // The whole body of this kernel sits under (is_z4c && multilevel), both of which are
   // host-side constants, so when they do not hold the launch has nothing to do at all:

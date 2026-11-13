@@ -14,6 +14,9 @@
   auto BVCC_PACK_NAME = KOKKOS_LAMBDA(const TeamMember_t &tmember) BV_CUDA_INLINE {
     constexpr bool kseam_ = BVCC_PACK_KSEAM;
     constexpr bool kwb_ = BVCC_PACK_KWB;
+#elif defined(KOKKOS_ENABLE_HIP)
+  auto BVCC_PACK_NAME = KOKKOS_LAMBDA(const TeamMember_t &tmember, const auto kseam_,
+                             const auto kwb_, const auto klds_) {
 #else
   auto BVCC_PACK_NAME = KOKKOS_LAMBDA(const TeamMember_t &tmember, const auto kseam_,
                              const auto kwb_) {
@@ -27,6 +30,15 @@
     const int v = BvVarOf(vmask_, vl);   // dhjcuda-1112 (bvals.hpp)
 #else
     const int v = vlst_.v[vl];
+#endif
+#if defined(KOKKOS_ENABLE_HIP)
+    // d6fast6-1113: this thread's transform slot (see BvXfPut), LDS variant only
+    constexpr bool kLds_ = std::decay_t<decltype(klds_)>::value;
+    volatile Real *xsl_ = nullptr;
+    if constexpr (kLds_) {
+      ScrArray1D<Real> xs_(tmember.team_scratch(0), kBvXsSlot*tmember.team_size());
+      xsl_ = xs_.data() + kBvXsSlot*tmember.team_rank();
+    }
 #endif
 
     // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
@@ -442,6 +454,28 @@
           // TransformMomentum. IVX is radial, common to both charts, and passes through,
           // as does every scalar; those take the plain copy path and need no geometry.
           cubed_sphere::SeamXform xf[3];
+          // cs-s4-1017: the face-normal pair (cs_perm_pairs), one source cell (nst = 1)
+          cubed_sphere::SeamFieldXform fxf;
+#if defined(KOKKOS_ENABLE_HIP)
+          if constexpr (kLds_) {   // d6fast6-1113: the same transforms, into the slot
+            if (cs_xform) {
+              for (int s=0; s<nst; ++s) {
+                const Real xis = 0.25*M_PI*CellCenterX(jst[s]-js_, nx2_, x2mn, x2mx);
+                const Real etas = 0.25*M_PI*CellCenterX(kst[s]-ks_, nx3_, x3mn, x3mx);
+                cubed_sphere::SeamXform t_;
+                cubed_sphere::SeamXformAt(cs_srcpanel, cs_dstpanel, xis, etas, t_);
+                BvXfPut(xsl_ + kBvXfN*s, t_);
+              }
+            }
+            if (cs_fxform) {
+              const Real xis = 0.25*M_PI*CellCenterX(jst[0]-js_, nx2_, x2mn, x2mx);
+              const Real etas = 0.25*M_PI*CellCenterX(kst[0]-ks_, nx3_, x3mn, x3mx);
+              cubed_sphere::SeamFieldXform t_;
+              cubed_sphere::SeamFieldXformAt(cs_srcpanel, cs_dstpanel, xis, etas, t_);
+              BvFxPut(xsl_ + 4*kBvXfN, t_);
+            }
+          } else {
+#endif
           if (cs_xform) {
             for (int s=0; s<nst; ++s) {
               const Real xis = 0.25*M_PI*CellCenterX(jst[s]-js_, nx2_, x2mn, x2mx);
@@ -449,13 +483,14 @@
               cubed_sphere::SeamXformAt(cs_srcpanel, cs_dstpanel, xis, etas, xf[s]);
             }
           }
-          // cs-s4-1017: the face-normal pair (cs_perm_pairs), one source cell (nst = 1)
-          cubed_sphere::SeamFieldXform fxf;
           if (cs_fxform) {
             const Real xis = 0.25*M_PI*CellCenterX(jst[0]-js_, nx2_, x2mn, x2mx);
             const Real etas = 0.25*M_PI*CellCenterX(kst[0]-ks_, nx3_, x3mn, x3mx);
             cubed_sphere::SeamFieldXformAt(cs_srcpanel, cs_dstpanel, xis, etas, fxf);
           }
+#if defined(KOKKOS_ENABLE_HIP)
+          }
+#endif
 
           // Value of variable v at stencil cell s, radial index i. Both tangential
           // momenta of the source cell are needed to make either one, so this reads two
@@ -467,6 +502,14 @@
               Real f2o, f3o;
               const Real fy_ = cs_coar ? ca(m,va_,kq,jq,i) : a(m,va_,kq,jq,i);
               const Real fz_ = cs_coar ? ca(m,vb_,kq,jq,i) : a(m,vb_,kq,jq,i);
+#if defined(KOKKOS_ENABLE_HIP)
+              if constexpr (kLds_) {
+                cubed_sphere::SeamFieldXform fx_;
+                BvFxGet(xsl_ + 4*kBvXfN, fx_);
+                cubed_sphere::ApplyFieldXform(fx_, fy_, fz_, f2o, f3o);
+                return (v == va_) ? f2o : f3o;
+              }
+#endif
               cubed_sphere::ApplyFieldXform(fxf, fy_, fz_, f2o, f3o);
               return (v == va_) ? f2o : f3o;
             }
@@ -476,6 +519,14 @@
             Real m2o, m3o;
             const Real my_ = cs_coar ? ca(m,va_,kq,jq,i) : a(m,va_,kq,jq,i);
             const Real mz_ = cs_coar ? ca(m,vb_,kq,jq,i) : a(m,vb_,kq,jq,i);
+#if defined(KOKKOS_ENABLE_HIP)
+            if constexpr (kLds_) {
+              cubed_sphere::SeamXform xs_;
+              BvXfGet(xsl_ + kBvXfN*s, xs_);
+              cubed_sphere::ApplyMomentumXform(xs_, my_, mz_, m2o, m3o);
+              return (v == va_) ? m2o : m3o;
+            }
+#endif
             cubed_sphere::ApplyMomentumXform(xf[s], my_, mz_, m2o, m3o);
             return (v == va_) ? m2o : m3o;
           };
@@ -540,7 +591,17 @@
           if (rgon && cs_xform) {
             const Real xic = 0.25*M_PI*CellCenterX(jj-js_, nx2_, x2mn, x2mx);
             const Real etac = 0.25*M_PI*CellCenterX(kk-ks_, nx3_, x3mn, x3mx);
+#if defined(KOKKOS_ENABLE_HIP)
+            if constexpr (kLds_) {
+              cubed_sphere::SeamXform t_;
+              cubed_sphere::SeamXformAt(cs_srcpanel, cs_dstpanel, xic, etac, t_);
+              BvXfPut(xsl_ + 3*kBvXfN, t_);
+            } else {
+              cubed_sphere::SeamXformAt(cs_srcpanel, cs_dstpanel, xic, etac, xfc);
+            }
+#else
             cubed_sphere::SeamXformAt(cs_srcpanel, cs_dstpanel, xic, etac, xfc);
+#endif
           }
           auto rgbad = [&](const int i) BV_CUDA_INLINE {
             const Real d0 = cs_coar ? ca(m,0,kst[0],jst[0],i) : a(m,0,kst[0],jst[0],i);
@@ -560,6 +621,14 @@
             Real m2o, m3o;
             const Real my_ = cs_coar ? ca(m,va_,kk,jj,i) : a(m,va_,kk,jj,i);
             const Real mz_ = cs_coar ? ca(m,vb_,kk,jj,i) : a(m,vb_,kk,jj,i);
+#if defined(KOKKOS_ENABLE_HIP)
+            if constexpr (kLds_) {
+              cubed_sphere::SeamXform xs_;
+              BvXfGet(xsl_ + 3*kBvXfN, xs_);
+              cubed_sphere::ApplyMomentumXform(xs_, my_, mz_, m2o, m3o);
+              return (v == va_) ? m2o : m3o;
+            }
+#endif
             cubed_sphere::ApplyMomentumXform(xfc, my_, mz_, m2o, m3o);
             return (v == va_) ? m2o : m3o;
           };
