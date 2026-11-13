@@ -97,7 +97,15 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
   }
 
   int nfloord_=0, nfloore_=0, nfloort_=0, ntclamp_=0;
-  Kokkos::parallel_reduce("hyd_c2p_gen",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  // d6fast5-1112: on HIP LaunchBounds<256, 2> (the default 1024-thread bound capped the
+  // body at 128 VGPRs: 924 B/lane of scratch).  Integer sums only: any block size gives
+  // the same totals (bitwise)
+#if defined(KOKKOS_ENABLE_HIP)
+  using C2pPol = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>;
+#else
+  using C2pPol = Kokkos::RangePolicy<>;
+#endif
+  Kokkos::parallel_reduce("hyd_c2p_gen", C2pPol(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt, int &sumc) {
     int m = (idx)/nkji;
     int k = (idx - m*nkji)/nji;
