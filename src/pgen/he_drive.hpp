@@ -29,8 +29,13 @@
 //!  problem/he_drive_t0 (default 0): table time = t - he_drive_t0 (both pgen tables).
 //!  problem/he_drive_ledger (default: true when any drive key is named): the RK-exact
 //!      ledgers of the mass and total energy through the x1 boundary faces, the sponge,
-//!      W_grav and int F_in A dt, written with M_tot, E_tot every
+//!      W_grav, int F_in A dt and the radiation energy through the x1 faces as the
+//!      scheme applies it (RadiationM1 Ebnd, split in / out), written with M_tot, E_tot
+//!      every
 //!      problem/he_drive_log_every cycles to <basename>.hsdrive.txt (rank 0).
+//!  problem/he_drive_closure_lin = const (default) | table (read only with the rad_m1
+//!      flux table): the L_in the adaptive MLT closure targets, the constant
+//!      implicit_flux_x1min or the current table flux.
 //! All state travels in the restart file (trailer HSDRV001, the last one).
 
 #include <string>
@@ -80,6 +85,9 @@ void RstAppend(std::vector<char> *out);
 //! the inner flux the closure / history read: the table flux at t when the rad_m1 flux
 //! table is on, else fconst (bitwise the old constant)
 Real InnerFlux(Mesh *pm, Real fconst);
+//! the L_in target of the adaptive MLT closure: fconst unless the rad_m1 flux table is
+//! on AND problem/he_drive_closure_lin = table (then InnerFlux)
+Real ClosureFlux(Mesh *pm, Real fconst);
 void Final();
 
 }  // namespace hsdrive

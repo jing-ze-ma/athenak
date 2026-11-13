@@ -2180,8 +2180,10 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
 //! \fn Real RadiationM1::EbndFluxX1
 //! \brief mhdfix-1025 Ebnd: L = sum A F1 over the physical inner x1 faces minus the outer
 //! ones (the radiation energy flux into the domain through x1, all ranks).
+//! hg262-drive-1113: side = 1 only the inner faces, side = 2 only the outer faces with
+//! the sign flipped (outward positive); side = 0 is the original sum (bitwise).
 
-Real RadiationM1::EbndFluxX1() {
+Real RadiationM1::EbndFluxX1(const int side) {
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
@@ -2208,8 +2210,8 @@ Real RadiationM1::EbndFluxX1() {
                f == BoundaryFlag::shear_periodic || f == BoundaryFlag::panel ||
                f == BoundaryFlag::polar || f == BoundaryFlag::undef);
     };
-    const bool plo = phys(bcs.d_view(m, BoundaryFace::inner_x1));
-    const bool phi = phys(bcs.d_view(m, BoundaryFace::outer_x1));
+    const bool plo = (side != 2) && phys(bcs.d_view(m, BoundaryFace::inner_x1));
+    const bool phi = (side != 1) && phys(bcs.d_view(m, BoundaryFace::outer_x1));
     if (plo) {sum += a1(m,k,j,is)*ff(m,k,j,is);}
     if (phi) {sum -= a1(m,k,j,ie+1)*ff(m,k,j,ie+1);}
     // lzphys-1113 ebnd_adv: the advective enthalpy flux A E of implicit_bc_advect through
@@ -2245,7 +2247,7 @@ Real RadiationM1::EbndFluxX1() {
   MPI_Allreduce(&l, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
   l = g;
 #endif
-  return l;
+  return (side == 2) ? -l : l;
 }
 
 //! \fn void RadiationM1::EbndStart / EbndStage1 / EbndAccept
@@ -2261,24 +2263,43 @@ void RadiationM1::EbndStart() {
               << "implicit transport without multi-rate / coupling_split" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  if (ebnd_split) {
+    ebnd_l1i = EbndFluxX1(1);
+    ebnd_l1o = EbndFluxX1(2);
+    return;
+  }
   ebnd_l1 = EbndFluxX1();
 }
 
 void RadiationM1::EbndStage1() {
   if (!ebnd_on) return;
+  if (ebnd_split) {
+    ebnd_l2i = EbndFluxX1(1);
+    ebnd_l2o = EbndFluxX1(2);
+    return;
+  }
   ebnd_l2 = EbndFluxX1();
 }
 
 void RadiationM1::EbndAccept(Real dt, bool t2step) {
   if (!ebnd_on) return;
-  const Real l3 = EbndFluxX1();
-  if (t2step) {
-    const Real g = kT2G;
-    const Real wy = (t2_tab != 1) ? 0.5 : t2_w0;   // weight of Y1 in the stage-2 start
-    ebnd_acc += dt*((wy*t2_a21 + t2_c31)*ebnd_l1 + (wy*g + t2_c32)*ebnd_l2 + g*l3);
-  } else {
-    ebnd_acc += dt*l3;
+  // the step's applied energy of the slopes l1 (K1), l2 (K2), l3 (K3)
+  auto applied = [&](const Real l1, const Real l2, const Real l3) {
+    if (t2step) {
+      const Real g = kT2G;
+      const Real wy = (t2_tab != 1) ? 0.5 : t2_w0;   // weight of Y1 in the stage-2 start
+      return dt*((wy*t2_a21 + t2_c31)*l1 + (wy*g + t2_c32)*l2 + g*l3);
+    }
+    return dt*l3;
+  };
+  if (ebnd_split) {
+    const Real l3i = EbndFluxX1(1), l3o = EbndFluxX1(2);
+    ebnd_acc_in += applied(ebnd_l1i, ebnd_l2i, l3i);
+    ebnd_acc_out += applied(ebnd_l1o, ebnd_l2o, l3o);
+    ebnd_acc = ebnd_acc_in - ebnd_acc_out;
+    return;
   }
+  ebnd_acc += applied(ebnd_l1, ebnd_l2, EbndFluxX1());
 }
 
 //----------------------------------------------------------------------------------------

@@ -4586,8 +4586,9 @@ void HsAdaptiveUpdate(Mesh *pm) {
                     + (4.0/3.0)*(hsh(i,7)/sv - vm*hsh(i,5)/sv);
     lc[i] = fc*0.5*(hsh(i,1) + hsh(i+1,1));
   }
-  // hg262-drive-1113: the current inner flux (the table's; else bitwise hs_fin_)
-  const Real lin = hsdrive::InnerFlux(pm, hs_fin_)*hsh(is,1);
+  // hg262-drive-1113: hs_fin_ (bitwise), or the current table flux with
+  // problem/he_drive_closure_lin = table (open items 11-13)
+  const Real lin = hsdrive::ClosureFlux(pm, hs_fin_)*hsh(is,1);
   for (int i=is; i<=ie+1; ++i) {
     lrad[i] = hsh(i,0);
     lcf[i] = (i > is && i <= ie) ? 0.5*(lc[i-1] + lc[i]) : 0.0;

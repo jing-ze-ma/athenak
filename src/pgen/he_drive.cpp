@@ -53,6 +53,14 @@ Real beta_[4] = {0.0, 0.0, 0.0, 0.0};
 Real led_[kNL] = {0.0, 0.0, 0.0, 0.0, 0.0}, ledn_[kNL] = {0.0, 0.0, 0.0, 0.0, 0.0};
 int led_cyc_ = -1;
 Real erad_ = 0.0, wgrav_ = 0.0, tprev_ = 0.0, ain_ = 0.0;
+// open items 11-13: the radiation energy through the physical x1 faces AS THE SCHEME
+// APPLIES IT (RadiationM1 Ebnd with ebnd_split: the hesdirk2 tableau weights of the
+// slopes' face fluxes, incl. implicit_bc_advect's end-face A E): in at x1min, out at
+// x1max (the Marshak top).  ebd_ = false: the transport cannot book it (columns 0).
+bool ebd_ = false;
+// problem/he_drive_closure_lin = const | table: the L_in the adaptive MLT closure targets
+bool cltab_ = false;
+Mesh *pmesh_ = nullptr;
 // the BC time: t_n + dt inside a cycle (set by StageLedger), else the mesh time
 bool bct_set_ = false;
 Real bct_ = 0.0;
@@ -383,10 +391,13 @@ void WriteLog(Mesh *pm, const std::vector<Real> &sh) {
     for (int i = 0; i < nx1_; ++i) {dm += ddm_[i];}
     gdm = a_.gcode*dm;
   }
+  radm1::RadiationM1 *pm1 = pm->pmb_pack->pradm1;
+  const Real ebi = ebd_ ? pm1->ebnd_acc_in : 0.0;
+  const Real ebo = ebd_ ? pm1->ebnd_acc_out : 0.0;
   std::fprintf(fp, "%d %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e "
-               "%.17e %.17e %.17e %.17e %.17e\n", pm->ncycle, pm->time, mt, et, led_[0],
-               led_[1], led_[2], led_[3], led_[4], erad_, wgrav_, gmi,
-               InnerFlux(pm, a_.fconst), ain_, ptop, gdm);
+               "%.17e %.17e %.17e %.17e %.17e %.17e %.17e\n", pm->ncycle, pm->time, mt,
+               et, led_[0], led_[1], led_[2], led_[3], led_[4], erad_, wgrav_, gmi,
+               InnerFlux(pm, a_.fconst), ain_, ptop, gdm, ebi, ebo);
   std::fclose(fp);
 }
 
@@ -413,7 +424,22 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
             "he_gm_live (their state travels with the ledger)");
     }
   }
+  // open items 11-13 (item 2): the adaptive MLT closure targets L_in.  const (default):
+  // the deck's constant implicit_flux_x1min (the relaxed state's target); table: the
+  // current table flux (the first version; it re-targets the closure flux at EVERY
+  // radius to L_in(t) at once, which takes the extra injection out of the base cells
+  // convectively and drops the radiative L_bot, see DRIVE_CODE_1113.md)
+  {
+    const bool cln = pin->DoesParameterExist("problem","he_drive_closure_lin");
+    const std::string cl = (hftab && cln) ?
+        pin->GetString("problem","he_drive_closure_lin") : std::string("const");
+    if (cl != "const" && cl != "table") {
+      Fatal("problem/he_drive_closure_lin must be const or table");
+    }
+    cltab_ = (cl == "table");
+  }
   on_ = led;
+  pmesh_ = pm;
   if (!on_) {
     if (rst_have_ && global_variable::my_rank == 0) {
       std::cout << "he_drive: the restart file carries a drive trailer but no drive key "
@@ -479,6 +505,16 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
     }
     live_ = true;
   }
+  // open items 11-13: the scheme's own x1-face radiation energy (Ebnd, split), so the
+  // Marshak top loss is in the ledger; only where Ebnd is defined (implicit transport,
+  // no multi-rate, no coupling_split)
+  ebd_ = (pm1 != nullptr) && (pm1->transport == radm1::M1_TRANSPORT_IMPLICIT) &&
+         !pm1->MRActive() && (pm1->csplit == 0);
+  if (ebd_) {
+    pm1->ebnd_on = true;
+    pm1->ebnd_adv = true;   // EbndFluxX1 adds A E only where implicit_bc_advect is on
+    pm1->ebnd_split = true;
+  }
   // the inner face area of the whole mesh (Erad ledger)
   {
     MeshBlockPack *pmbp = pm->pmb_pack;
@@ -509,7 +545,9 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
                 << (mtab_on_ ? "on" : "off") << ")";
     }
     std::cout << ", rad_m1 flux table " << (hftab ? "on" : "off") << ", A_in " << ain_
-              << ", table t0 " << t0_ << (restart ? " (restart)" : "") << std::endl;
+              << ", table t0 " << t0_ << ", Ebnd faces " << (ebd_ ? "on" : "off")
+              << ", closure L_in " << (cltab_ ? "table" : "const")
+              << (restart ? " (restart)" : "") << std::endl;
   }
   if (!restart && global_variable::my_rank == 0) {
     FILE *fp = std::fopen(logfn_, "w");
@@ -517,7 +555,10 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
       std::fprintf(fp, "# hg262-drive-1113 ledger: [1]cycle [2]time [3]M_tot [4]E_tot "
                    "(IEN + E_rad, active) [5]Mb_in [6]Mb_out [7]Eb_in [8]Eb_out "
                    "[9]E_sponge [10]Erad_in (A_in int F dt) [11]W_grav [12]GM_int "
-                   "[13]F_in [14]A_in [15]dPhi(x1f(ie+1)) [16]G dm(x1f(ie+1))\n");
+                   "[13]F_in [14]A_in [15]dPhi(x1f(ie+1)) [16]G dm(x1f(ie+1)) "
+                   "[17]ErB_in [18]ErB_out (radiation energy in at x1min / OUT at x1max "
+                   "as the scheme applies it, RadiationM1 Ebnd). Budget: [4]-[4]_0 = "
+                   "[7]-[8]+[9]+[11]+[17]-[18]\n");
       std::fclose(fp);
     }
   }
@@ -544,7 +585,8 @@ void RestartStrip(std::vector<char> *blk) {
 void RstAppend(std::vector<char> *out) {
   if (!on_) return;
   // payload: nx1, ledgers (kNL), ledgers at the stage-loop start (kNL), their cycle,
-  // erad, wgrav, tprev, ref flag, mref, dmint, rhoref (nx1), ddm (nx1)
+  // erad, wgrav, tprev, ref flag, mref, dmint, rhoref (nx1), ddm (nx1), [open items
+  // 11-13] ebnd_acc_in, ebnd_acc_out
   std::vector<Real> p;
   p.push_back(static_cast<Real>(nx1_));
   for (int q = 0; q < kNL; ++q) {p.push_back(led_[q]);}
@@ -558,6 +600,9 @@ void RstAppend(std::vector<char> *out) {
   p.push_back(dmint_);
   for (int i = 0; i < nx1_; ++i) {p.push_back(ref_ ? rhoref_[i] : 0.0);}
   for (int i = 0; i < nx1_; ++i) {p.push_back(ref_ ? ddm_[i] : 0.0);}
+  radm1::RadiationM1 *pm1 = (pmesh_ != nullptr) ? pmesh_->pmb_pack->pradm1 : nullptr;
+  p.push_back(ebd_ ? pm1->ebnd_acc_in : 0.0);
+  p.push_back(ebd_ ? pm1->ebnd_acc_out : 0.0);
   const Real rn = static_cast<Real>(p.size());
   const std::size_t o = out->size();
   out->resize(o + (p.size() + 1)*sizeof(Real) + sizeof(kTag));
@@ -571,7 +616,9 @@ void RestartApply(Mesh *pm) {
   bool have = false;
   if (rst_have_) {
     const std::size_t nexp = 1 + 2*kNL + 7 + 2*static_cast<std::size_t>(nx1_);
-    if (rst_.size() != nexp || static_cast<int>(rst_[0]) != nx1_) {
+    // the first version's trailer (caf4fe6bb) has no Ebnd pair: those start at 0
+    if ((rst_.size() != nexp && rst_.size() != nexp + 2) ||
+        static_cast<int>(rst_[0]) != nx1_) {
       Fatal("the restart file's HSDRV001 trailer does not match this radial grid");
     }
     std::size_t o = 1;
@@ -587,6 +634,13 @@ void RestartApply(Mesh *pm) {
     rhoref_.assign(rst_.begin() + o, rst_.begin() + o + nx1_);
     o += nx1_;
     ddm_.assign(rst_.begin() + o, rst_.begin() + o + nx1_);
+    o += nx1_;
+    if (rst_.size() == nexp + 2 && ebd_) {
+      radm1::RadiationM1 *pm1 = pm->pmb_pack->pradm1;
+      pm1->ebnd_acc_in = rst_[o];
+      pm1->ebnd_acc_out = rst_[o + 1];
+      pm1->ebnd_acc = pm1->ebnd_acc_in - pm1->ebnd_acc_out;
+    }
     have = true;
   }
   if (!live_ && have && ref_ &&
@@ -663,6 +717,10 @@ void CycleBody(Mesh *pm, const bool log) {
 
 void Cycle(Mesh *pm) {
   if (on_) {CycleBody(pm, true);}
+}
+
+Real ClosureFlux(Mesh *pm, const Real fconst) {
+  return cltab_ ? InnerFlux(pm, fconst) : fconst;
 }
 
 Real InnerFlux(Mesh *pm, const Real fconst) {

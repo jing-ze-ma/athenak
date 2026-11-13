@@ -1890,7 +1890,16 @@ class RadiationM1 {
   bool ebnd_adv = false;          // lzphys-1113: + implicit_bc_advect's end-face A E
   Real ebnd_acc = 0.0;            // accumulated energy (code units)
   Real ebnd_l1 = 0.0, ebnd_l2 = 0.0;   // L at the step start / of the stage-1 solve
-  Real EbndFluxX1();
+  // hg262-drive-1113 ebnd_split (set by the he_star_m1 drive ledger only): the inner and
+  // the outer faces accumulated apart with the same weights (ebnd_acc_in = energy put in
+  // through the physical inner x1 faces, ebnd_acc_out = energy LEAVING through the outer
+  // ones, both incl. the ebnd_adv term); ebnd_acc is then their difference
+  bool ebnd_split = false;
+  Real ebnd_acc_in = 0.0, ebnd_acc_out = 0.0;
+  Real ebnd_l1i = 0.0, ebnd_l1o = 0.0, ebnd_l2i = 0.0, ebnd_l2o = 0.0;
+  // side 0: inner minus outer (the original sum); 1: the inner faces only (inward
+  // positive); 2: the outer faces only (OUTWARD positive)
+  Real EbndFluxX1(int side = 0);
   void EbndStart();
   void EbndStage1();
   void EbndAccept(Real dt, bool t2step);
