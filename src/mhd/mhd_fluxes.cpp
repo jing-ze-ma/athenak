@@ -625,14 +625,19 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     // (IBY) component of flx = E_{z} = -(v x B)_{z} = -(v1*b2 - v2*b1)
     // (IBZ) component of flx = E_{y} = -(v x B)_{y} =  (v1*b3 - v3*b1)
     // NOTE(@pdmullen): Capture variables prior to if constexpr.  Required for cuda 11.6+.
-    auto eos = eos_;
-    auto indcs = indcs_;
-    auto size = size_;
-    auto coord = coord_;
-    auto bx = bx_;
-    auto flx1 = flx1_;
-    auto e31 = e31_;
-    auto e21 = e21_;
+    // dhjcuda2-1113: as const references to the captured copies, not new copies: on
+    // CUDA the body sits in device memory, and a reference reads each field where it
+    // is used, while a copy holds every View pointer and stride (and EOS_Data) in
+    // registers through the whole solver (A100 ptxas: 255 registers, spills).  Same
+    // values: bitwise.
+    const auto &eos = eos_;
+    const auto &indcs = indcs_;
+    const auto &size = size_;
+    const auto &coord = coord_;
+    const auto &bx = bx_;
+    const auto &flx1 = flx1_;
+    const auto &e31 = e31_;
+    const auto &e21 = e21_;
     const bool do_pole = polar_hlle_x1_ &&
       ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) ||
        (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je));
@@ -958,21 +963,22 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         // (IBZ) component of flx = E_{z} = -(v x B)_{z} =  (v2*b1 - v1*b2)
         if (j>jl) {
           // NOTE(@pdmullen): Capture variables prior to if constexpr.
-          auto eos = eos_;
-          auto indcs = indcs_;
-          auto size = size_;
-          auto coord = coord_;
-          auto by = by_;
-          auto flx2 = flx2_;
-          auto e12 = e12_;
-          auto e32 = e32_;
+          // dhjcuda2-1113: const references, see the x1 sweep.
+          const auto &eos = eos_;
+          const auto &indcs = indcs_;
+          const auto &size = size_;
+          const auto &coord = coord_;
+          const auto &by = by_;
+          const auto &flx2 = flx2_;
+          const auto &e12 = e12_;
+          const auto &e32 = e32_;
           if (cs_shr_ && k >= ks && k <= ke &&
               ((j == js && size.d_view(m).x2min <= -1.0 + 1.0e-12) ||
                (j == je+1 && size.d_view(m).x2max >= 1.0 - 1.0e-12))) {
             member.team_barrier();
             const bool lo = (j == js);
             const Real sf = gtrig_xi.sn(m,k,j), cf = gtrig_xi.cs(m,k,j);
-            auto sfs = sfs2_;
+            const auto &sfs = sfs2_;
             cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, is-1, ie+1, lo, sf, cf, nvars,
                                      nder, IVY, IVZ, wl, wr, dl, dr);
             par_for_inner(member, is-1, ie+1, [&](const int i) {
@@ -1318,21 +1324,22 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         // (IBZ) component of flx = E_{x} = -(v x B)_{x} =  (v3*b2 - v2*b3)
         if (k>kl) {
           // NOTE(@pdmullen): Capture variables prior to if constexpr.
-          auto eos = eos_;
-          auto indcs = indcs_;
-          auto size = size_;
-          auto coord = coord_;
-          auto bz = bz_;
-          auto flx3 = flx3_;
-          auto e23 = e23_;
-          auto e13 = e13_;
+          // dhjcuda2-1113: const references, see the x1 sweep.
+          const auto &eos = eos_;
+          const auto &indcs = indcs_;
+          const auto &size = size_;
+          const auto &coord = coord_;
+          const auto &bz = bz_;
+          const auto &flx3 = flx3_;
+          const auto &e23 = e23_;
+          const auto &e13 = e13_;
           if (cs_shr_ && j >= js && j <= je &&
               ((k == ks && size.d_view(m).x3min <= -1.0 + 1.0e-12) ||
                (k == ke+1 && size.d_view(m).x3max >= 1.0 - 1.0e-12))) {
             member.team_barrier();
             const bool lo = (k == ks);
             const Real sf = gtrig_eta.sn(m,k,j), cf = gtrig_eta.cs(m,k,j);
-            auto sfs = sfs3_;
+            const auto &sfs = sfs3_;
             cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, is-1, ie+1, lo, sf, cf, nvars,
                                      nder, IVZ, IVY, wl, wr, dl, dr);
             par_for_inner(member, is-1, ie+1, [&](const int i) {
