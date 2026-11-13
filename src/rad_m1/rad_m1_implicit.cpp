@@ -19723,7 +19723,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #undef M1_RCP
     });
   }
-  if (impl_lzx && trans) {LzxPost(dt, t2s);}   // lzphys-1113: close the solve's L_z
   // r136e-1107 implicit_wb_vkick_reject: a stage that kicked a cell beyond V is not
   // admissible (the same decision path as the admissibility test above); a BE solve is
   // counted only
@@ -19839,6 +19838,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (un > 0.0) {Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), un);}
     });
   }
+  // lzphys-1113 implicit_lzx: close the solve's L_z (after the write-back and its floor
+  // follow-ups, on the realised state)
+  if (impl_lzx && trans) {LzxPost(dt, t2s);}
   CbDebugDump();   // cbfix-1011 diagnostic (env M1_CBDBG), no-op otherwise
   // open-ot-1013 DIAGNOSTIC (implicit_cs2_dbg bit 32): the x1 velocity change the
   // write-back gave the gas (uh/rho - the old-vector v) against the vimp dv the E rows

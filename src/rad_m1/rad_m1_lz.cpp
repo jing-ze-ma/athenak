@@ -424,7 +424,7 @@ void RadiationM1::LzxGeom() {
   Kokkos::deep_copy(lzx_t2, 0.0);
   Kokkos::deep_copy(lzx_g3, 0.0);
   Kokkos::deep_copy(lzx_t3, 0.0);
-  Kokkos::realloc(lzx_r, nmb, 2, nc3, nc2, nc1);
+  Kokkos::realloc(lzx_r, nmb, 4, nc3, nc2, nc1);
   Kokkos::deep_copy(lzx_r, 0.0);
   if (cs_geom) {LzGeom(); return;}
   Kokkos::realloc(lz_arm, nmb, 2, nc3, nc2, nc1);
@@ -519,9 +519,10 @@ Real RadiationM1::LzxTotal() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::LzxPost
 //! \brief lzphys-1113 implicit_lzx (LZPHYS_1113.md sect. 1.3/2), once per solve right after
-//! the write-back.  The write-back stored per cell the realised change of gas + radiation
-//! momentum of the solve, dp_c = dm_c + (F'_c - F^old_c)/(c chat) (lzx_r, transverse
-//! components; the radial ones carry no z-torque); its torque Lr = sum_c V (x_c x dp_c)_z
+//! the write-back (and its floor / clip follow-ups).  The write-back stored per cell the old
+//! vector of the solve (lzx_r: transverse gas m and cell F^old), so dp_c = (m_c - m^old_c) +
+//! (F_c - F^old_c)/(c chat) is the realised change of gas + radiation momentum (the radial
+//! components carry no z-torque); its torque Lr = sum_c V (x_c x dp_c)_z
 //! is the solve's L_z change of gas + radiation (Lambda of the lateral Z_f plus whatever
 //! the write-back does not pair: the AP-HLL part of dA under implicit_cs2_hll = drag, the
 //! clips).  The booked boundary torque is 0 (sp x3 periodic, cs closed: no lateral
@@ -591,7 +592,11 @@ void RadiationM1::LzxPost(Real dt, int t2s) {
         tb[0] = -sin(ph); tb[1] = cos(ph); tb[2] = 0.0;
       }
       const Real s2 = 1.0 - c*c;
-      const Real a2c = lr_(m,0,k,j,i), a3c = lr_(m,1,k,j,i);
+      const Real icq = 1.0/(cl*ch);
+      const Real a2c = (uh(m,IM2,k,j,i) - lr_(m,0,k,j,i))
+                       + (u0_(m,M1_F2,k,j,i) - lr_(m,2,k,j,i))*icq;
+      const Real a3c = (uh(m,IM3,k,j,i) - lr_(m,1,k,j,i))
+                       + (u0_(m,M1_F3,k,j,i) - lr_(m,3,k,j,i))*icq;
       const Real a2 = (a2c - c*a3c)/s2, a3 = (a3c - c*a2c)/s2;
       Real p[3];
       for (int n = 0; n < 3; ++n) {p[n] = a2*ta[n] + a3*tb[n];}
