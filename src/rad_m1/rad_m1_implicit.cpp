@@ -5115,6 +5115,22 @@ void RadiationM1::ZalesakHaloExchange(int c0) {
     if (q >= 0) {zl_xpart[q] += std::chrono::duration<double>(t1 - t0).count();}
     t0 = t1;
   };
+  // DIAGNOSTIC env M1_ZX_CMP=N (first N calls): run the generic exchange too and count
+  // the cells where the fast result differs, by ghost class (all ranks summed, rank 0)
+  static int zcmp_n = 0;
+  const char *zce = std::getenv("M1_ZX_CMP");
+  const bool zcmp = (zce != nullptr) && (zcmp_n < std::atoi(zce));
+  DvceArray4D<Real> zsave, zold;
+  if (zcmp) {
+    zcmp_n += 1;
+    auto sl = Kokkos::subview(iw, Kokkos::ALL, c0, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+    Kokkos::realloc(zsave, sl.extent(0), sl.extent(1), sl.extent(2), sl.extent(3));
+    Kokkos::realloc(zold, sl.extent(0), sl.extent(1), sl.extent(2), sl.extent(3));
+    Kokkos::deep_copy(DevExeSpace(), zsave, sl);
+    ImplicitHaloExchange(1, c0);
+    Kokkos::deep_copy(DevExeSpace(), zold, sl);
+    Kokkos::deep_copy(DevExeSpace(), sl, zsave);
+  }
   tick(-1);
   ImplicitHaloCopy(krw, 1, c0, true);
   tick(0);
@@ -5127,6 +5143,43 @@ void RadiationM1::ZalesakHaloExchange(int c0) {
   while (pbval_zr->ClearRecv() == TaskStatus::incomplete) {}
   ImplicitHaloCopy(krw, 1, c0, false);
   tick(3);
+  if (zcmp) {
+    auto &id = pmy_pack->pmesh->mb_indcs;
+    const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+    const int n3 = iw.extent_int(2), n2 = iw.extent_int(3), n1 = iw.extent_int(4);
+    const bool z2 = pmy_pack->pmesh->multi_d, z3 = pmy_pack->pmesh->three_d;
+    auto iw_ = iw;
+    // class c: 0 interior, 1 face ghost layer 1, 2 face ghost deeper, 3 edge/corner
+    // ghost with every outside distance 1, 4 other edge/corner ghost
+    Real nc[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+    for (int c = 0; c < 5; ++c) {
+      Real a = 0.0;
+      par_reduce_flat("m1_zx_cmp", 0, pmy_pack->nmb_thispack - 1, 0, n3 - 1, 0, n2 - 1,
+                      0, n1 - 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &q) {
+        if (iw_(m,c0,k,j,i) == zold(m,k,j,i)) {return;}
+        const int di = (i < is) ? (is - i) : ((i > ie) ? (i - ie) : 0);
+        const int dj = !z2 ? 0 : ((j < js) ? (js - j) : ((j > je) ? (j - je) : 0));
+        const int dk = !z3 ? 0 : ((k < ks) ? (ks - k) : ((k > ke) ? (k - ke) : 0));
+        const int no = (di > 0) + (dj > 0) + (dk > 0);
+        const int mx = (di > dj) ? ((di > dk) ? di : dk) : ((dj > dk) ? dj : dk);
+        int cl = 0;
+        if (no == 1) {cl = (mx == 1) ? 1 : 2;}
+        if (no > 1) {cl = (mx == 1) ? 3 : 4;}
+        if (cl == c) {q += 1.0;}
+      }, Kokkos::Sum<Real>(a));
+      nc[c] = a;
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, nc, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "M1_ZX_CMP call " << zcmp_n << " slot " << c0
+                << " fast != generic: interior " << nc[0] << " face-l1 " << nc[1]
+                << " face-deep " << nc[2] << " edge/corner-l1 " << nc[3]
+                << " edge/corner-deep " << nc[4] << std::endl;
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
