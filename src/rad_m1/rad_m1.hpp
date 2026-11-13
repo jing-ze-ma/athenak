@@ -2319,7 +2319,21 @@ class RadiationM1 {
   DvceArray4D<Real> lz_g2, lz_g3;       // om_f G_f of the last face pass
   DvceArray4D<Real> lz_o2, lz_o3;       // om_f
   DvceArray1D<Real> lz_d;               // diagnostic sums
+  // radlz2-1113 (AM_CONSERVING_CS_1112.md sect. 12): the spherical-polar wedge as well
+  // (phi faces only; T_c = the flux-form torque of P_pp, P_rp, P_tp on all six faces) and
+  // the whole lateral stress on cs (the trace-free tangential Q of vet_gd_tangential).
+  // sp: lz_t3 = the phi-face lever W_f/dxf3, lz_t2 = (r_r^3 - r_l^3)/3 dphi (of s^2 P_tp),
+  // lz_t1 = (int sin^2 dtheta) dphi (of r^3 P_rp).  cs: lz_m2 / lz_m3 = (M_x, M_y) of the
+  // face first moment (Q traction).  T weights: 1 under implicit_lz_mode = full, om_f
+  // (1 - AL on x1) under stress.  implicit_lz_bnd_diag = true (read only when named):
+  // one LZ_BND line per solve (post-solve pass), dt sum_c T_c and its running sum.
+  DvceArray4D<Real> lz_t1;
+  DvceArray5D<Real> lz_m2, lz_m3;
+  bool impl_lz_bnd = false, lz_post = false;
+  int lz_nbnd = 0;
+  Real lz_bnd_cum = 0.0;
   void LzGeom();
+  void LzGeomSp();
   void LzApply();
   DvceArray5D<Real> amvw;
   DvceArray1D<Real> amvp_d;

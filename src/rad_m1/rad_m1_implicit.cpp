@@ -4180,9 +4180,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_lz_form") &&
       pin->GetBoolean("rad_m1","implicit_lz_form")) {
     impl_lz = true;
-    if (!cs_geom || !trans_on || !trans_x3) {
-      ImplFatal("<rad_m1>/implicit_lz_form needs the cubed sphere in 3-D with implicit "
-                "transport");
+    if (!(cs_geom || sph_geom) || !trans_on || !trans_x3) {
+      ImplFatal("<rad_m1>/implicit_lz_form needs the cubed sphere or the spherical-polar "
+                "wedge in 3-D with implicit transport");
     }
     if (!impl_gas_src_cons || impl_gas_src_full) {
       ImplFatal("<rad_m1>/implicit_lz_form needs implicit_gas_src = conservative or "
@@ -4204,6 +4204,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     if (pin->DoesParameterExist("rad_m1","implicit_lz_diag")) {
       impl_lz_diag = pin->GetInteger("rad_m1","implicit_lz_diag");
+    }
+    // radlz2-1113 implicit_lz_bnd_diag (read only when named)
+    if (pin->DoesParameterExist("rad_m1","implicit_lz_bnd_diag")) {
+      impl_lz_bnd = pin->GetBoolean("rad_m1","implicit_lz_bnd_diag");
     }
     Kokkos::realloc(lz_d, 6);
     Kokkos::deep_copy(lz_d, 0.0);
@@ -18797,7 +18801,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // persistent state the restart file carries, the momentum deposit and the derived
     // F_2/F_3 are the fluxes the solve ended on (exactly what step (g) does for x1).
     fmm_tfin = impl_fmm;   // facemmat-1112 stage 2b: store the limited faces
+    lz_post = impl_lz;   // radlz2-1113: the pass the write-back books (LZ_BND)
     ImplicitTransverseTerms(false);
+    lz_post = false;
     if (impl_cmi) {ImplicitCmiTrans(false);}   // cmemimpl-1112: the applied fluxes
     fmm_tfin = false;
     impl_linmax = std::max(impl_linmax, lresid);
