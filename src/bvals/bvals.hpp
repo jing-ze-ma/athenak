@@ -304,8 +304,22 @@ template <class F, class P = Kokkos::TeamPolicy<>>
 inline void BvalsTeamFor(const char *name, const P &policy, const F &functor) {
   static_assert(sizeof(F) <= 3072, "boundary kernel functor too large for a kernel-"
                 "argument launch: capture Views, not host structs (see bvals.hpp)");
+#if defined(KOKKOS_ENABLE_CUDA) && (ATHENA_CUDA_BODY_GLOBAL > 0)
+  // dhjcuda-1112: a large functor in device memory, its address the kernel argument
+  // (athena.hpp AthBodyToDevice: no per-thread local copy of the closure; bitwise)
+  if constexpr (sizeof(F) >= ATHENA_CUDA_BODY_GLOBAL) {
+    const F *fp_ = AthBodyToDevice(DevExeSpace(), functor);
+    Kokkos::parallel_for(name, Kokkos::Experimental::require(policy,
+                         Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+                         KOKKOS_LAMBDA(TeamMember_t tmember) {(*fp_)(tmember);});
+  } else {
+    Kokkos::parallel_for(name, Kokkos::Experimental::require(policy,
+                         Kokkos::Experimental::WorkItemProperty::HintLightWeight), functor);
+  }
+#else
   Kokkos::parallel_for(name, Kokkos::Experimental::require(policy,
                        Kokkos::Experimental::WorkItemProperty::HintLightWeight), functor);
+#endif
 }
 
 // d6fast5-1112: the team policy of the cell-centred pack / unpack (SendBuff / RecvBuff).
