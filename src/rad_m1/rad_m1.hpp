@@ -3445,6 +3445,8 @@ class RadiationM1 {
   bool vgd_ring_act = false;          // the ring runs in this sweep
   bool vgd_ring_poison = false;       // env VGD_RING_POISON=1: NaN in lent slabs (test)
   bool vgd_rg_two = false;            // this sweep carries vgd_itw too
+  bool vgd_rg_xb = false;             // xffuse-1113: ... the other xfade set's array
+  std::vector<int64_t> vgd_rg_sn2;    // xffuse-1113: (i) the other set's saved count
   bool vgd_rg_lastx = false;          // the last halo used an exact list
   int vgd_rg_lastx_e = -1;
   std::vector<int64_t> vgd_rg_offc;   // (m c1 + i): compact slab offsets (host)
