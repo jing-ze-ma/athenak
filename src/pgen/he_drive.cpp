@@ -350,10 +350,20 @@ void WriteLog(Mesh *pm, const std::vector<Real> &sh) {
   FILE *fp = std::fopen(logfn_, "a");
   if (fp == nullptr) return;
   const Real gmi = a_.gm + a_.gcode*dmint_;
+  // the applied potential increment and mass increment at the top face (live gravity)
+  Real ptop = 0.0, gdm = 0.0;
+  if (ref_) {
+    std::vector<Real> pc, pf;
+    DPhi(pm, dmint_, ddm_, &pc, &pf);
+    ptop = pf[ie+1];
+    Real dm = dmint_;
+    for (int i = 0; i < nx1_; ++i) {dm += ddm_[i];}
+    gdm = a_.gcode*dm;
+  }
   std::fprintf(fp, "%d %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e "
-               "%.17e %.17e %.17e\n", pm->ncycle, pm->time, mt, et, led_[0], led_[1],
-               led_[2], led_[3], led_[4], erad_, wgrav_, gmi,
-               InnerFlux(pm, a_.fconst), ain_);
+               "%.17e %.17e %.17e %.17e %.17e\n", pm->ncycle, pm->time, mt, et, led_[0],
+               led_[1], led_[2], led_[3], led_[4], erad_, wgrav_, gmi,
+               InnerFlux(pm, a_.fconst), ain_, ptop, gdm);
   std::fclose(fp);
 }
 
@@ -484,7 +494,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
       std::fprintf(fp, "# hg262-drive-1113 ledger: [1]cycle [2]time [3]M_tot [4]E_tot "
                    "(IEN + E_rad, active) [5]Mb_in [6]Mb_out [7]Eb_in [8]Eb_out "
                    "[9]E_sponge [10]Erad_in (A_in int F dt) [11]W_grav [12]GM_int "
-                   "[13]F_in [14]A_in\n");
+                   "[13]F_in [14]A_in [15]dPhi(x1f(ie+1)) [16]G dm(x1f(ie+1))\n");
       std::fclose(fp);
     }
   }
