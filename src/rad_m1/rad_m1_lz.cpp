@@ -409,14 +409,11 @@ void RadiationM1::LzApply() {
   auto gz2_ = gcz2;
   auto gz3_ = gcz3;
   const Real idt = 1.0/dt;
-  // radlz2-1113: at a reflecting radiation wall the off-diagonal traction (P_rp, P_tp,
-  // the cs D_r,lat v E) is zero (n_r resp. n_t flips, n_p does not); elsewhere the
-  // physical face takes the linear extrapolation of the cell values (the one-sided
-  // difference of the off terms there)
-  const Real x1lo = (ibc_x1min == M1_IBC_REFLECT) ? 0.0 : 1.0;
-  const Real x1hi = (ibc_x1max == M1_IBC_REFLECT) ? 0.0 : 1.0;
-  const Real x2lo = (ibc_x2min == M1_IBC_REFLECT) ? 0.0 : 1.0;
-  const Real x2hi = (ibc_x2max == M1_IBC_REFLECT) ? 0.0 : 1.0;
+  // radlz2-1113: the physical radial / theta faces carry no off-diagonal traction in T_c
+  // (as radlz-1113 on cs): zero at a reflecting wall, and at an open boundary the face
+  // equation applies none either (an extrapolated traction measured +3e41 of spurious
+  // boundary torque on the HG deck, 10x the solve's whole L_z change); sect. 12.0
+  const Real x1lo = 0.0, x1hi = 0.0, x2lo = 0.0, x2hi = 0.0;
   if (!spw) {
     // cubed sphere (sect. 10 + 12): lateral faces p_t tau_f (+ Q traction), radial faces
     // the D_r,lat traction (x x v)_z

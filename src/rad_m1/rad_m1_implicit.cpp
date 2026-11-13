@@ -4204,9 +4204,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     if (pin->DoesParameterExist("rad_m1","implicit_lz_mode")) {
       const std::string lm = pin->GetString("rad_m1","implicit_lz_mode");
-      if (lm.compare("stress") == 0) {
-        impl_lz_mode = 1;
-      } else if (lm.compare("full") != 0) {
+      if (lm.compare("full") == 0) {
+        impl_lz_mode = 0;
+      } else if (lm.compare("stress") != 0) {
         ImplFatal("<rad_m1>/implicit_lz_mode must be full or stress");
       }
     }
