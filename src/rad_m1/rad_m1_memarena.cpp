@@ -20,9 +20,9 @@
 //! without the arena.
 //!
 //! MEMCUT_POISON (diagnostic env, default unset): a comma list of arrays that are filled
-//! with NaN (MEMCUT_PVAL=big: +7.7e22) at the entry of every VetGdBuild (iw, ost, thw, thq,
-//! krw, odc, fmm_t, vmw, d3w, aa) and at its exit (vgd: every intensity array).  A run whose
-//! results stay bitwise with a list poisoned proves the lifetime split for that list.
+//! with NaN (MEMCUT_PVAL=big: +7.7e22) at the entry of every VetGdBuild (iw, ost, thw,
+//! thq, krw, odc, fmm_t, vmw, d3w, aa) and at its exit (vgd: every intensity array).  A
+//! run whose results stay bitwise with a list poisoned shows the lifetime split for it.
 
 #include <algorithm>
 #include <cstdint>
