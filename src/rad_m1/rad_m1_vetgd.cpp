@@ -1105,6 +1105,20 @@ void RadiationM1::VetGdInit() {
     }
   }
   VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
+  // xffuse-1113: the combinations the fused sweep never covers (VetGdXffOk) keep the two
+  // sweeps and allocate no second array (e.g. the fused twin of the RSG decks)
+  if (vgd_xff && (vgd_xf_m > 0 || vgd_iter != 1 || vgd_twin || vgd_twfuse || vgd_async ||
+                  vgd_bandx || vgd_upf != 0 || vgd_gband ||
+                  (vgd_csg && vgd_cscomp && vgd_csxg > 1) ||
+                  (!vgd_csg && (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 ||
+                                vet_path != 0 || vgd_beam || vgd_lhx_ie > 0.0 ||
+                                !vgd_gfast)))) {
+    vgd_xff = false;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd_rotate_xfade_fuse: not covered here (twin, async, "
+                << "xfade_m, ...): two sweeps per build" << std::endl;
+    }
+  }
   if (vgd_xff) {
     // xffuse-1113: the other set's intensities, the same layout (and band sides)
     VgdRagAlloc(vgd_i_xb);
