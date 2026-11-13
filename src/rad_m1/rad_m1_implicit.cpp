@@ -3337,6 +3337,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_kill")) {
     vimp_kill = pin->GetBoolean("rad_m1","implicit_vimp_kill");
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_vimp_lag_local")) {   // hgdt-1113
+    vimp_lag_local = pin->GetBoolean("rad_m1","implicit_vimp_lag_local");
+  }
+  if (pin->DoesParameterExist("rad_m1","time2_dtr_poslim")) {   // hgdt-1113
+    t2_dtr_pl = pin->GetBoolean("rad_m1","time2_dtr_poslim");
+  }
   ImplicitFbKeys(pin);   // meshfb-1106
   if (pin->DoesParameterExist("rad_m1","implicit_pos_transport")) {   // postr-1031
     const std::string pt = pin->GetString("rad_m1","implicit_pos_transport");
@@ -11905,6 +11911,16 @@ void RadiationM1::ImplicitReport() {
     }
     std::cout << std::endl;
   }
+  if (vimp_lag_local) {   // hgdt-1113
+    std::cout << "<rad_m1> implicit_vimp_lag_local: lag-path triggers with the vimp kick"
+              << " dropped locally (not for the whole solve)=" << vimp_lag_local_n
+              << std::endl;
+  }
+  if (t2_dtr_pl) {   // hgdt-1113
+    std::cout << "<rad_m1> time2_dtr_poslim: BE-type solves with written-back eint <= 0"
+              << " all covered by implicit_pos_gas (no dt_retry cut)=" << t2_dtr_pl_n
+              << std::endl;
+  }
   if (impl_pos_trans != 0 && pt_cnt.extent_int(0) >= 2) {   // postr-1031
     auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pt_cnt);
     std::cout << "<rad_m1> implicit_pos_transport = upwind (rank 0):"
@@ -18203,6 +18219,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // meshfb-1106 (rad_m1_meshfb.cpp): measured before any fallback acts; a local
       // trigger skips the two global blocks below and takes another pass
       if (fbd_n > 0) {ImplicitFbDiagPass(it);}
+      // hgdt-1113 implicit_vimp_lag_local: the lag-path trigger of ImplicitFbLocal (it
+      // returns false there) drops the vimp kick locally, not for the whole solve
+      const bool vlk_now = vimp_lag_local && fbl_on && vimp_kill && vlat_posfix_lag &&
+                           VlatOp();
       fbl_tr = ImplicitFbLocal(it, odm);
       if (fbl_tr && muscl_now && impl_muscl_kill) {ImplicitMusclKill(); muscl_nfall += 1.0;}
       if (!fbl_tr && (vimp_now || muscl_now) && odm != M1_OD_OPERATOR) {
@@ -18252,7 +18272,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             T2AdmissDebug(uh, u0_, t2i_, cl, ch, have_hydro,
                           have_hydro && coupling && dbgh, t2s, it);
           }
-          if (vimp_kill && !fbl_on) {
+          if (vimp_kill && (!fbl_on || vlk_now)) {
+            if (vlk_now) {vimp_lag_local_n += 1.0;}   // hgdt-1113
             ImplicitVimpKill();   // local: the cells within 2 lose the kick
           } else {
             Time2PosFixMarkFb();
@@ -18318,7 +18339,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             vlat_now = false;
             vlat_nfall += 1.0;
           }
-          if (vimp_now) {
+          if (vimp_now && !vlk_now) {   // hgdt-1113: vlk_now dropped it locally above
             vimp_now = false;
             vimp_nfall += 1.0;
           }
@@ -19351,10 +19372,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool hh = have_hydro;
     const bool gq = have_hydro && coupling && dbgh;
     const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
-    Real nfe = 0.0, nfg = 0.0;
+    Real nfe = 0.0, nfg = 0.0, nfu = 0.0;
+    // hgdt-1113 time2_dtr_poslim (needs implicit_pos_gas; the BE write-back's move)
+    if (t2_dtr_pl && !impl_pos_gas) {
+      ImplFatal("<rad_m1>/time2_dtr_poslim needs implicit_pos_gas = true");
+    }
+    const bool dpl = t2_dtr_pl && gq;
+    const Real dpl_f = impl_pos_gas_frac, dpl_efl = efl;
+    auto dpl_eos = flr.eos;
     Kokkos::parallel_reduce("m1_flr_cnt",
     Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
-    KOKKOS_LAMBDA(const int idx, Real &se, Real &sg) {
+    KOKKOS_LAMBDA(const int idx, Real &se, Real &sg, Real &su) {
       const int m = idx/nkji;
       int q = idx - m*nkji;
       const int k = q/nji + ks;
@@ -19364,13 +19392,26 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (!(iw_(m,M1_IW_S2,k,j,i) > efl)) se += 1.0;
       if (hh && gq) {
         Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
-        if (!(iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq > 0.0)) sg += 1.0;
+        const Real eg = iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq;
+        if (!(eg > 0.0)) {
+          sg += 1.0;
+          if (dpl) {   // hgdt-1113 time2_dtr_poslim: covered by the pos_gas move?
+            Real emin = dpl_f*fmax(iw_(m,M1_IW_EGN,k,j,i), 0.0);
+            if (dpl_eos.tfloor > 0.0) {
+              Real te, pp, cr, ct, tcv;
+              dpl_eos.ThermoAt(uh(m,IDN,k,j,i), dpl_eos.tfloor, te, pp, cr, ct, tcv);
+              emin = fmax(emin, te);
+            }
+            const Real av = (cl/ch)*fmax(iw_(m,M1_IW_EP,k,j,i) - dpl_efl, 0.0);
+            if (!(emin > 0.0 && eg + av >= emin)) {su += 1.0;}
+          }
+        }
       }
-    }, Kokkos::Sum<Real>(nfe), Kokkos::Sum<Real>(nfg));
+    }, Kokkos::Sum<Real>(nfe), Kokkos::Sum<Real>(nfg), Kokkos::Sum<Real>(nfu));
 #if MPI_PARALLEL_ENABLED
-    {Real a[2] = {nfe, nfg}, g[2];
-    MPI_Allreduce(a, g, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    nfe = g[0]; nfg = g[1];}
+    {Real a[3] = {nfe, nfg, nfu}, g[3];
+    MPI_Allreduce(a, g, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    nfe = g[0]; nfg = g[1]; nfu = g[2];}
 #endif
     flr_ne += nfe;
     if (impl_ncdump > 0 && nfe > 0.0) {
@@ -19409,8 +19450,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
     // fin4-dtretry: a solve outside a hesdirk2 stage (a stage that writes eint <= 0 is not
     // admissible and is redone with backward Euler) that writes back eint <= 0 anywhere
-    if (dtr_on && nfg > 0.0 && !t2st) {
-      if (!dtr_fail) {dtr_why = 4; dtr_resid = nfg;}
+    // hgdt-1113 time2_dtr_poslim: only the cells the pos_gas move does not cover
+    const Real nfd = dpl ? nfu : nfg;
+    if (dpl && !t2st && nfg > 0.0 && !(nfu > 0.0)) {t2_dtr_pl_n += 1.0;}
+    if (dtr_on && nfd > 0.0 && !t2st) {
+      if (!dtr_fail) {dtr_why = 4; dtr_resid = nfd;}
       dtr_fail = true;
     }
     // DEBUG dbg_t2_admiss (m1-positivity): a solve that ENDS with E <= e_floor or a

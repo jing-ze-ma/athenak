@@ -2547,6 +2547,22 @@ class RadiationM1 {
   // non-admissible); counted
   bool vimp_kill = false;
   bool vkill_any = false;
+  // hgdt-1113 <rad_m1>/implicit_vimp_lag_local (read only when named; default false =
+  // bitwise): with implicit_fb_local and vet_col_lat_posfix = lag, the first E <= 0 trigger
+  // of a step takes the global path (the lateral terms move to their lagged form); with
+  // the key that path no longer drops implicit_vimp for the whole solve: the vimp kick
+  // is dropped only in the cells within 2 of the E <= 0 cells (ImplicitVimpKill).  On
+  // real HG the global drop left thin radiation-dominated cells with the linearised
+  // exchange, which wrote back gas eint <= 0 and cut dt 4x (HG_COST_1113)
+  bool vimp_lag_local = false;
+  Real vimp_lag_local_n = 0.0;   // global vimp drops avoided by it
+  // hgdt-1113 <rad_m1>/time2_dtr_poslim (read only when named; default false = bitwise;
+  // needs implicit_pos_gas): the dt_retry eint <= 0 trigger of a solve outside a
+  // hesdirk2 stage (the BE redo) counts only cells whose written-back eint the
+  // write-back's implicit_pos_gas move does not cover from the cell's radiation (the
+  // stage check's time2_adm_poslim rule)
+  bool t2_dtr_pl = false;
+  Real t2_dtr_pl_n = 0.0;   // BE solves not cut because pos_gas covered every cell
   Real vkill_ev = 0.0, vkill_nc = 0.0;
   DvceArray4D<Real> vkill_;
   void ImplicitVimpKill();
