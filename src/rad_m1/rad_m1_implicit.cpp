@@ -4208,14 +4208,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(lz_d, 0.0);
   }
   // lzphys-1113 implicit_lzx (rad_m1.hpp, LZPHYS_1113.md)
-  // inert (message, no slot) on a Cartesian mesh and with the gas fixed: no gas + radiation
-  // L_z budget to close there; a D6 key set stays usable on every gate deck
+  // inert (message, no slot) on a Cartesian mesh and with the gas fixed: no gas +
+  // radiation L_z budget to close there; a D6 key set stays usable on every gate deck
   const bool lzxq = pin->DoesParameterExist("rad_m1","implicit_lzx") &&
                     pin->GetBoolean("rad_m1","implicit_lzx");
   if (lzxq && (!(cs_geom || sph_geom) || !(coupling && gas_feedback))) {
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> implicit_lzx: inert (needs the cubed sphere or spherical polar "
-                << "and coupling with gas_feedback)" << std::endl;
+      std::cout << "<rad_m1> implicit_lzx: inert (needs the cubed sphere or spherical "
+                << "polar and coupling with gas_feedback)" << std::endl;
     }
   } else if (lzxq) {
     impl_lzx = true;

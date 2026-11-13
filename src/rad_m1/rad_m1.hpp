@@ -2328,19 +2328,19 @@ class RadiationM1 {
   void LzGeom();
   void LzApply();
   // lzphys-1113 <rad_m1>/implicit_lzx = true (read only when named; absent = off =
-  // bitwise; LZPHYS_1113.md): once per solve, after the converged post-solve face pass and
-  // before the write-back, the lateral Z_f of conservative2 get the torque-closing stress
-  // dZ_f = -Omega mu_f sign(W_f) (face flux -th0 c chat dZ_f), Omega = Lambda / S,
-  // Lambda = sum_c sum_f a_cf Z_f (= minus the solve's L_z change of gas + radiation),
-  // S = sum_c sum_f a_cf mu_f sign(W_f): gas + radiation L_z exact per solve, the gas
-  // takes the drag share.  implicit_lzx_weight = blend (mu = |Z_f - dt G_f|, default) |
-  // energy (mu = Ebar_f |W_f|); implicit_lzx_diag = N: LZX lines for the first N solves
+  // bitwise; LZPHYS_1113.md): after every solve's write-back (LzxPost) the realised L_z
+  // change of gas + radiation, Lr, is closed by the stress dZ_f = -Omega mu_f sign(W_f),
+  // Omega = -Lr / sum_c sum_f a_cf mu_f sign(W_f), applied as the write-back would have
+  // (face flux -th0 c chat dZ_f, drag share to the gas, exact KE work from E, hesdirk2
+  // slopes).  implicit_lzx_weight = impulse (mu = |Z_f| + |W_f| (q_L + q_R), default) |
+  // blend | energy | none (diagnostics only); implicit_lzx_diag = N: LZX lines.  Inert
+  // on Cartesian meshes and without coupling + gas_feedback.
   bool impl_lzx = false;
   int impl_lzx_w = 0, impl_lzx_diag = 0, lzx_ndiag = 0;
   DvceArray4D<Real> lzx_g2, lzx_g3;     // dt G_f = dt (gr + off) of the last face pass
   DvceArray4D<Real> lzx_t2, lzx_t3;     // th0_f = 1/(1 + chat dt kt_f)
   Real lzx_cum[4] = {0.0, 0.0, 0.0, 0.0};   // sum Lr, sum Lambda_Z, sum Lambda_B, n
-  DvceArray5D<Real> lzx_r;              // (m, 4, k, j, i) old vector: gas m2, m3, cell F2, F3
+  DvceArray5D<Real> lzx_r;              // (m, 4, k, j, i) old vector: gas m2, m3, F2, F3
   int iw_lzx = -1;                      // q_c = |t_c| / sum_f W_f^2 (1 slot, exchanged)
   Real lzx_nbad = 0.0;                  // solves left alone (non-finite budget)
   void LzxGeom();

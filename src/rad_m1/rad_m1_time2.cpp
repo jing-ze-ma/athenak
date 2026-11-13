@@ -2126,8 +2126,8 @@ Real RadiationM1::EbndFluxX1() {
     const bool phi = phys(bcs.d_view(m, BoundaryFace::outer_x1));
     if (plo) {sum += a1(m,k,j,is)*ff(m,k,j,is);}
     if (phi) {sum -= a1(m,k,j,ie+1)*ff(m,k,j,ie+1);}
-    // lzphys-1113 ebnd_adv: the advective enthalpy flux A E of implicit_bc_advect through a
-    // Marshak end face, with the E the row takes (ImplicitSolve's x1 rows): outflow the
+    // lzphys-1113 ebnd_adv: the advective enthalpy flux A E of implicit_bc_advect through
+    // a Marshak end face, with the E the row takes (ImplicitSolve's x1 rows): outflow the
     // face E (implicit_marshak_face = linear) or the end cell's, inflow the bath
     if (adv && plo && bclo == M1_IBC_MARSHAK) {
       const Real ai = iw_(m,M1_IW_ADV,k,j,is), vi = iw_(m,M1_IW_V1,k,j,is);
