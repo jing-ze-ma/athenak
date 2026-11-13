@@ -64,6 +64,9 @@ RestartOutput::RestartOutput(ParameterInput *pin, Mesh *pm, OutputParameters op)
 // variables, including ghost zones.
 
 void RestartOutput::LoadOutputData(Mesh *pm) {
+  // asyncio-1113: the previous restart's background write reads the outarray_* staging
+  // arrays; wait for it before refilling them (no-op without ATHENA_ASYNC_OUTPUT=1)
+  async_io::WaitTag(this);
   // get spatial dimensions of arrays, including ghost zones
   auto &indcs = pm->pmb_pack->pmesh->mb_indcs;
   int nout1 = indcs.nx1 + 2*(indcs.ng);
@@ -630,6 +633,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
 
   // open file and  write the header; this part is serial
   IOWrapper resfile;
+  resfile.SetDeferred(this);  // asyncio-1113: background write if ATHENA_ASYNC_OUTPUT=1
   resfile.Open(fname.c_str(), IOWrapper::FileMode::write, single_file_per_rank);
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     // output the input parameters (input file)

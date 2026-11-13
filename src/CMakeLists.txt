@@ -134,6 +134,7 @@ add_executable(
         mhd/mhd_wball.cpp
 
         outputs/io_wrapper.cpp
+        outputs/async_io.cpp
         outputs/outputs.cpp
         outputs/basetype_output.cpp
         outputs/cartgrid.cpp

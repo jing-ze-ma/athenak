@@ -95,6 +95,7 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
        pm->use_grid_stretch_theta);
 
   IOWrapper binfile;
+  binfile.SetDeferred(this);  // asyncio-1113: background write if ATHENA_ASYNC_OUTPUT=1
   std::size_t header_offset=0;
   binfile.Open(fname.c_str(), IOWrapper::FileMode::write, single_file_per_rank);
 
@@ -366,8 +367,8 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
 
   // close the output file and clean up ptrs to data
+  binfile.AdoptBuffer(data);  // asyncio-1113: freed after the (background) write
   binfile.Close(single_file_per_rank);
-  delete [] data;
   delete [] single_data;
   if (double_data != nullptr) delete [] double_data;
 
