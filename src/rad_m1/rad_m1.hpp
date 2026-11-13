@@ -1192,6 +1192,11 @@ class RadiationM1 {
   // snapshot).  Monotone from R = 1: the same fixed point up to the 1e-12 margin, not
   // bitwise; a radial chain of n cells settles in one round instead of n.
   bool zl_colsweep = false;
+  // zlocal-1113 <rad_m1>/zalesak_cap_rounds = K (default 0 = off; face_mmat): at most K
+  // Jacobi rounds, then one safe round with the donors at their zero-inflow bound R0
+  // (see ImplicitFaceMmat).  Positivity kept; more clipping where chains were cut.
+  int zl_cap = 0;
+  Real zl_capped = 0.0;
   DvceArray4D<int> zl_chg;
   Real zl_xwall[2] = {0.0, 0.0};   // fenced exchange seconds (M1_FCT_PROF)
   Real zl_rounds[2] = {0.0, 0.0}, zl_halos[2] = {0.0, 0.0}, zl_wall[2] = {0.0, 0.0};
