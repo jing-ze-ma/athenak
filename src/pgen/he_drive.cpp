@@ -26,6 +26,7 @@
 #include "mhd/mhd.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"
 #include "utils/repro_sum.hpp"
 #include "utils/time_table.hpp"
 #include "pgen/he_drive.hpp"
