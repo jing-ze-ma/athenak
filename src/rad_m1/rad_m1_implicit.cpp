@@ -4218,6 +4218,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","zalesak_active")) {
     zl_active = pin->GetBoolean("rad_m1","zalesak_active") && (zl_local == 0);
   }
+  if (pin->DoesParameterExist("rad_m1","fmm_warm")) {   // zfast-1113 (rad_m1.hpp)
+    fz_warm = pin->GetBoolean("rad_m1","fmm_warm");
+  }
+  if (pin->DoesParameterExist("rad_m1","fmm_skip_early")) {   // zfast-1113 (rad_m1.hpp)
+    fz_skip = pin->GetInteger("rad_m1","fmm_skip_early");
+  }
   zl_prof = (std::getenv("M1_FCT_PROF") != nullptr);
   if (impl_fmm && pin->DoesParameterExist("rad_m1","implicit_face_mmat_rowsel")) {
     fmm_rowsel = pin->GetBoolean("rad_m1","implicit_face_mmat_rowsel");
@@ -7980,6 +7986,8 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
                 << " sum|Foff2|=" << sg[3] << std::endl;
     }
   }
+  // zfast-1113 fmm_warm (rad_m1.hpp): lam prefactor 1, R from the previous pass
+  const bool fzw = fz_warm && !impl_fmm_real;
   // b(R) of cell (m,k,j,i) with the current R (slot sr, ghosts valid), and P, b0, I(R)
   auto cell = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                             Real &po, Real &b0, Real &ir) {
@@ -7996,8 +8004,9 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     const Real rl = lam_(m,k,j,i), ru = lam_(m,k,j,i+1);   // lam_r of the two faces
     const Real p1 = au*ru*fmax(gu, 0.0) + al*rl*fmax(-gl, 0.0);   // as assembled
     const Real i1 = al*rl*fmax(gl, 0.0) + au*ru*fmax(-gu, 0.0);
-    po = au*ru*fmax(gu, 0.0) + al*rl*fmax(-gl, 0.0);
-    ir = al*rl*iw_(m,sr,k,j,i-1)*fmax(gl, 0.0) + au*ru*iw_(m,sr,k,j,i+1)*fmax(-gu, 0.0);
+    const Real wl = fzw ? 1.0 : rl, wu = fzw ? 1.0 : ru;   // zfast-1113 fmm_warm
+    po = au*wu*fmax(gu, 0.0) + al*wl*fmax(-gl, 0.0);
+    ir = al*wl*iw_(m,sr,k,j,i-1)*fmax(gl, 0.0) + au*wu*iw_(m,sr,k,j,i+1)*fmax(-gu, 0.0);
     Real pt = p1, it = i1;
     if (tr) {   // stage 2b: the x2 (and x3) faces, lam_r = 1
       for (int d = 0; d < (tr3 ? 2 : 1); ++d) {
@@ -8009,16 +8018,30 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
         const Real q2 = a2l*fmax(g2l, 0.0) + a2u*fmax(-g2u, 0.0);
         pt += q1;
         it += q2;
+        if (fzw) {   // zfast-1113 fmm_warm: lam prefactor 1
+          const Real w2u = iw_(m,ia+2*d,k,j,i), w2l = iw_(m,ia+2*d+1,k,j,i);
+          po += w2u*fmax(g2u, 0.0) + w2l*fmax(-g2l, 0.0);
+          ir += w2l*iw_(m,sr,k-dk,j-dj,i)*fmax(g2l, 0.0)
+                + w2u*iw_(m,sr,k+dk,j+dj,i)*fmax(-g2u, 0.0);
+        } else {
         po += q1;
         ir += a2l*iw_(m,sr,k-dk,j-dj,i)*fmax(g2l, 0.0)
               + a2u*iw_(m,sr,k+dk,j+dj,i)*fmax(-g2u, 0.0);
+        }
       }
     }
     b0 = iw_(m,sb,k,j,i) + pt - it;
     return b0 - iw_(m,sr,k,j,i)*po + ir;
   };
-  Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sr, Kokkos::ALL,
-                    Kokkos::ALL, Kokkos::ALL), 1.0);
+  auto rsub = Kokkos::subview(iw, Kokkos::ALL, sr, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+  if (fzw && fz_r.extent_int(0) == rsub.extent_int(0) &&
+      fz_r.extent_int(1) == rsub.extent_int(1) && fz_r.extent_int(2) ==
+      rsub.extent_int(2) && fz_r.extent_int(3) == rsub.extent_int(3) && !fz_reset) {
+    Kokkos::deep_copy(DevExeSpace(), rsub, fz_r);   // zfast-1113: warm start
+  } else {
+    Kokkos::deep_copy(DevExeSpace(), rsub, 1.0);
+  }
+  fz_reset = false;
   // stage 2: lam_r per x1 face from F_H of the last rebuild and E of the iterate
   auto fh_ = fmm_fh;
   auto lo_ = fmm_lo;
@@ -8198,7 +8221,46 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
   }
   fmm_cells += ncell;
   fmm_rmax = std::max(fmm_rmax, static_cast<Real>(nround));
-  if (nround == 0 && !(nrf > 0.0)) {   // nothing newly limited: the rows stand
+  if (fzw) {   // zfast-1113: keep R for the next pass (ghosts incl.)
+    if (fz_r.extent_int(0) != rsub.extent_int(0) || fz_r.extent_int(1) !=
+        rsub.extent_int(1) || fz_r.extent_int(2) != rsub.extent_int(2) ||
+        fz_r.extent_int(3) != rsub.extent_int(3)) {
+      Kokkos::realloc(fz_r, rsub.extent_int(0), rsub.extent_int(1), rsub.extent_int(2),
+                      rsub.extent_int(3));
+    }
+    Kokkos::deep_copy(DevExeSpace(), fz_r, rsub);
+  }
+  if (fzw) {   // zfast-1113: the rows stand only if lam = R_donor = the assembled lam
+    Real nch = 0.0;
+    par_reduce_flat("m1_fz_chk", 0, nmb1, ks, ke, js, je, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+      const Real g = g_(m,k,j,i);
+      const Real rd = (g > 0.0) ? iw_(m,sr,k,j,i-1)
+                                : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
+      if (rd != lam_(m,k,j,i)) {a += 1.0;}
+    }, Kokkos::Sum<Real>(nch));
+    if (tr) {
+      par_reduce_flat("m1_fz_chkt", 0, nmb1, ks, ke+(tr3 ? 1 : 0), js, je+1, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+        if (k <= ke) {
+          const Real g = ft_(m,2,k,j,i);
+          const Real rd = (g > 0.0) ? iw_(m,sr,k,j-1,i)
+                                    : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
+          if (rd != ft_(m,3,k,j,i)) {a += 1.0;}
+        }
+        if (tr3 && j <= je) {
+          const Real g = ft_(m,6,k,j,i);
+          const Real rd = (g > 0.0) ? iw_(m,sr,k-1,j,i)
+                                    : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
+          if (rd != ft_(m,7,k,j,i)) {a += 1.0;}
+        }
+      }, Kokkos::Sum<Real>(nch));
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &nch, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (!(nch > 0.0)) {return false;}
+  } else if (nround == 0 && !(nrf > 0.0)) {   // nothing newly limited: the rows stand
     return false;
   }
   fmm_lpass += 1.0;
@@ -8214,7 +8276,7 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
   par_reduce_flat("m1_fmm_lam", 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sf) {
     const Real g = g_(m,k,j,i);
-    const Real rd = lam_(m,k,j,i)*((g > 0.0) ? iw_(m,sr,k,j,i-1)
+    const Real rd = (fzw ? 1.0 : lam_(m,k,j,i))*((g > 0.0) ? iw_(m,sr,k,j,i-1)
                                    : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0));
     lam_(m,k,j,i) = rd;
     if (rd < 1.0) {sf += 1.0;}
@@ -8227,14 +8289,14 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
         const Real g = ft_(m,2,k,j,i);
         const Real rd = (g > 0.0) ? iw_(m,sr,k,j-1,i)
                                   : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
-        ft_(m,3,k,j,i) *= rd;
+        ft_(m,3,k,j,i) = fzw ? rd : ft_(m,3,k,j,i)*rd;
         if (ft_(m,3,k,j,i) < 1.0) {sf += 1.0;}
       }
       if (tr3 && j <= je) {
         const Real g = ft_(m,6,k,j,i);
         const Real rd = (g > 0.0) ? iw_(m,sr,k-1,j,i)
                                   : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
-        ft_(m,7,k,j,i) *= rd;
+        ft_(m,7,k,j,i) = fzw ? rd : ft_(m,7,k,j,i)*rd;
         if (ft_(m,7,k,j,i) < 1.0) {sf += 1.0;}
       }
     }, Kokkos::Sum<Real>(nt));
@@ -16864,7 +16926,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto fmg_ = fmm_g;
     auto fmo_ = fmm_lo;
     const bool fmm_ = impl_fmm;
+    fz_it = it;   // zfast-1113 fmm_skip_early
     if (fmm_ && it == 0) {   // lam = 1 at the start of a solve
+      fz_reset = true;   // zfast-1113 fmm_warm: this solve's first pass starts at R = 1
       Kokkos::deep_copy(DevExeSpace(), fmm_lam, 1.0);
       if (trans && fmm_t.extent_int(0) > nmb1) {
         for (int q : {3, 7}) {
@@ -17929,7 +17993,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       fmm_asm2_wall += std::chrono::duration<double>(std::chrono::steady_clock::now()
                                                     - fa0).count();
     }
-    if (!(fmm_ && fmq == 0 && ImplicitFaceMmat(bicg, dt))) {break;}
+    // zfast-1113 fmm_skip_early = N: no face_mmat on Picard passes it < N of a solve
+    if (!(fmm_ && fmq == 0 && fz_it >= fz_skip && ImplicitFaceMmat(bicg, dt))) {break;}
     }   // facemmat-1112 assembly loop
     fmm_sel_now = false;
     if (bicg) {
@@ -18740,6 +18805,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       converged = pc && lc;
     }
     if (fbl_tr) {converged = false;}   // meshfb-1106: the re-solve is not optional
+    // zfast-1113 fmm_skip_early = N: the accepted iterate must come from a limited pass
+    if (impl_fmm && fz_skip > 0 && it < fz_skip && it + 1 < impl_maxit) {
+      converged = false;
+    }
     // consfix-1109 (d) implicit_cons_final: a pass whose solve dropped the operator form
     // (implicit_offdiag operator -> none, vet_col_lat, vimp, plm) is not the last one:
     // the residual r below is taken with the operator of the step's final form, so that

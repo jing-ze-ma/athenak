@@ -1188,6 +1188,17 @@ class RadiationM1 {
   // cannot be newly limited (it was evaluated with the same inputs before): BITWISE.
   bool zl_active = false;
   DvceArray4D<int> zl_chg;
+  // zfast-1113 <rad_m1>/fmm_warm (default false = unchanged): face_mmat lam per pass is
+  // NOT the product lam_prev R; each pass starts R from the previous pass's final R
+  // (fz_r, ghosts incl.) with lam prefactor 1, so R_p = the largest admissible R <=
+  // R_{p-1} (monotone in the solve, admissible every pass) and lam = R_donor.
+  bool fz_warm = false;
+  bool fz_reset = true;   // set at the it == 0 lam reset: the pass starts from R = 1
+  DvceArray4D<Real> fz_r;
+  // zfast-1113 <rad_m1>/fmm_skip_early = N (default 0 = off): face_mmat is skipped on
+  // Picard passes it < N of a solve (rows assembled with lam = 1)
+  int fz_skip = 0;
+  int fz_it = 0;
   Real zl_xwall[2] = {0.0, 0.0};   // fenced exchange seconds (M1_FCT_PROF)
   Real zl_rounds[2] = {0.0, 0.0}, zl_halos[2] = {0.0, 0.0}, zl_wall[2] = {0.0, 0.0};
   bool zl_prof = false;
