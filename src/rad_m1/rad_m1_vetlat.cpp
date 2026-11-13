@@ -423,7 +423,9 @@ void RadiationM1::VetGdIterRebuild() {
     tt_(m,0,k,j,i) = f0_(m,k,j,i);
   });
   vlat_src_ep = true;
+  MemcutPoison(0);   // memcut-1113 diagnostic (env MEMCUT_POISON)
   VetGdBuild();
+  MemcutPoison(1);
   vlat_src_ep = false;
   const Real fkm = vcol_fkmin;
   const int ilo = is + vlat_icut;
@@ -504,7 +506,9 @@ void RadiationM1::VetLatBuild() {
     // the twin first (its ghost band is the current part of the 3-D inflow), then the
     // 3-D sweep(s), each followed by the exchange of the lagged lateral difference
     if (vgd_on) {
+      MemcutPoison(0);   // memcut-1113 diagnostic (env MEMCUT_POISON)
       VetGdBuild();
+      MemcutPoison(1);
     } else {
       VetLatSweep(0);
       VetLatExchange(vlat_t, vlat_t_c, pbval_vl);

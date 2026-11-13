@@ -2106,10 +2106,10 @@ class RadiationM1 {
   int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
   int Time2RstNch();            // ...and writes (0 unless a slope is stored)
   void Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0 = 0);
-  // gpumem-1022 <rad_m1>/restart_pack_per_mb (read only when named; default false): the
-  // restart writer stages the hesdirk2 channels one MeshBlock at a time (device buffer
-  // of 1 MB instead of all; the same bytes are written)
-  bool rst_pack_mb = false;
+  // gpumem-1022 <rad_m1>/restart_pack_per_mb (read only when named; default true since
+  // memcut-1113, was false): the restart writer stages the hesdirk2 channels one
+  // MeshBlock at a time (device buffer of 1 MB instead of all; the same bytes are written)
+  bool rst_pack_mb = true;
   void Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb);
 
   // ---- MILESTONE 3b phase D: the OFF-DIAGONAL Eddington terms and the closure lag.
@@ -3443,6 +3443,15 @@ class RadiationM1 {
   VgdIView vgd_i;
   VgdIView vgd_i_xb;   // xffuse-1113: the other cross-fade set's intensities
   void VgdRagAlloc(VgdRag &a);
+  // memcut-1113 <rad_m1>/mem_arena (rad_m1_memarena.cpp; read only when named, default
+  // true with vet_gd; env M1_ARENA=0 off): iw and the intensity arrays in one allocation
+  bool marena_on = false, marena_sealed = false;
+  DvceArray5D<Real> marena;   // (nmb_a >= nmb, niw, k, j, i); iw = its first nmb blocks
+  int64_t marena_sw = 0;      // Reals of the sweep part bound so far
+  void MemArenaIw(ParameterInput *pin, int nmb, int niw, int n3, int n2, int n1);
+  bool MemArenaVgd(VgdRag &a, int64_t n);
+  void MemArenaSeal() {marena_sealed = true;}
+  void MemcutPoison(int where);
   // mem2-1014 vet_gd_band_ring (default true where it applies: MPI band with the exact
   // halo lists, no overlap / async / fused shells; memcut-1020: on the cubed sphere with
   // the cs compact lists, vet_gd_halo_compact > 0; read when named; env VGD_RING=0 off):
