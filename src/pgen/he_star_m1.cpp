@@ -3027,6 +3027,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     HsRestartPerturb(pin, pmy_mesh_);   // rstpert-1105 (absent: bitwise)
     return;
   }
+  // d6int-1113: a fresh start builds e with this run's EOS table already, so
+  // eos_reinit_from_t has nothing to do; mark it done so that the restarts of this run
+  // never fire it (see HsEosReinitFromT).  The state is unchanged.
+  if (pin->DoesParameterExist("problem", "eos_reinit_from_t") &&
+      pin->GetBoolean("problem", "eos_reinit_from_t")) {
+    pin->SetBoolean("problem", "eos_reinit_from_t", false);
+    pin->SetBoolean("problem", "eos_reinit_done", true);
+  }
   if (hs_rmp) {
     // e1remap-1014: no <rad_m1>/ic_rad (the state is an evolved one), then the arrays
     pm1->icr_mode = 0;

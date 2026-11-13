@@ -323,6 +323,26 @@ void HsRestartPerturb(ParameterInput *pin, Mesh *pm) {
 void HsEosReinitFromT(ParameterInput *pin, Mesh *pm) {
   if (!pin->DoesParameterExist("problem", "eos_reinit_from_t") ||
       !pin->GetBoolean("problem", "eos_reinit_from_t")) return;   // absent: bitwise
+  // d6int-1113: one-shot ACROSS restarts.  A run script that passes the key on every
+  // restart link (run.cfg KEYS) would re-fire it on a restart file this code wrote after
+  // applying it: e(rho, T) -> T -> e is not the identity to the last bit, so 5 + restart
+  // + 5 then differs from 10 (real RSG, Raven 32089203).  The applying run records
+  // problem/eos_reinit_done = true in the input its restart files carry; seen there, the
+  // key is ignored.
+  // problem/eos_reinit_force = true re-applies it anyway.
+  const bool force_ = pin->DoesParameterExist("problem", "eos_reinit_force") &&
+                      pin->GetBoolean("problem", "eos_reinit_force");
+  if (!force_ && pin->DoesParameterExist("problem", "eos_reinit_done") &&
+      pin->GetBoolean("problem", "eos_reinit_done")) {
+    if (global_variable::my_rank == 0) {
+      const int c0_ = pin->DoesParameterExist("problem", "eos_reinit_done_cycle") ?
+                      pin->GetInteger("problem", "eos_reinit_done_cycle") : -1;
+      std::printf("eos_reinit_from_t (eosreinit-1112): skipped (already applied at "
+                  "cycle %d; problem/eos_reinit_done = true)\n", c0_);
+    }
+    pin->SetBoolean("problem", "eos_reinit_from_t", false);
+    return;
+  }
   MeshBlockPack *pmbp = pm->pmb_pack;
   hydro::Hydro *ph = pmbp->phydro;
   if (ph == nullptr || pmbp->pmhd != nullptr) {
@@ -434,4 +454,7 @@ void HsEosReinitFromT(ParameterInput *pin, Mesh *pm) {
   }
   // one-shot: never inherited by the restart files this run writes
   pin->SetBoolean("problem", "eos_reinit_from_t", false);
+  pin->SetBoolean("problem", "eos_reinit_done", true);   // d6int-1113 (see above)
+  pin->SetInteger("problem", "eos_reinit_done_cycle", pm->ncycle);
+  if (force_) {pin->SetBoolean("problem", "eos_reinit_force", false);}
 }
