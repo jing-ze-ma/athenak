@@ -48,12 +48,14 @@ void RadiationM1::CAuditMark(int pt) {
     caud_init = false;
   }
   if (caud_bin.extent_int(0) != 144) {Kokkos::realloc(caud_bin, 144);}
+  if (caud_lz.extent_int(0) != 48) {Kokkos::realloc(caud_lz, 48);}
   FluidRef fl = FluidRef::Get(pmy_pack);
   if (!fl.on) return;
   auto uh = fl.u0;
   auto ur = u0;
   auto cq = caud_q;
   auto cb = caud_bin;
+  auto cl = caud_lz;
   auto vol = pmy_pack->pcoord->volume;
   auto x1v = pmy_pack->pcoord->x1v;
   auto x2v = pmy_pack->pcoord->x2v;
@@ -67,6 +69,9 @@ void RadiationM1::CAuditMark(int pt) {
   // bin group: 0 the solve, 1 the fix segments, -1 none
   const int grp = (pt == 3) ? 0 : ((pt == 1 || pt == 2 || pt == 4 || pt == 5) ? 1 : -1);
   if (!init) {Kokkos::deep_copy(cb, 0.0);}   // later resets: after each print
+  // CAUDITL: the state's L_z (gas, rad) per bin, at the first mark and at every mark 5
+  const bool lzp = (pt == 5) || !init;
+  if (lzp) {Kokkos::deep_copy(cl, 0.0);}
   array_sum::GlobalSum s6;
   Kokkos::parallel_reduce("m1_caudit", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nk*nj*ni),
@@ -122,10 +127,29 @@ void RadiationM1::CAuditMark(int pt) {
       }
     }
     for (int a=0; a<6; ++a) {cq(m,a,k,j,i) = q[a];}
+    if (lzp) {
+      const int b = ((8*(i - is))/ni)*3 + ((fabs(rh[2]) < 0.5) ? 0 :
+                    ((fabs(rh[2]) < 0.8660254037844386) ? 1 : 2));
+      Kokkos::atomic_add(&cl(b), q[2]);
+      Kokkos::atomic_add(&cl(24 + b), q[3]);
+    }
     sum += h;
   }, Kokkos::Sum<array_sum::GlobalSum>(s6));
   const bool was = caud_init;
   caud_init = true;
+  if (lzp) {
+    auto hl = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cl);
+    Real ll[48], lg[48];
+    for (int b=0; b<48; ++b) {ll[b] = hl(b); lg[b] = ll[b];}
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(ll, lg, 48, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("CAUDITL%s cycle=%d", was ? "" : "0", pmy_pack->pmesh->ncycle);
+      for (int b=0; b<48; ++b) {std::printf(" %.10e", lg[b]);}
+      std::printf("\n");
+    }
+  }
   if (!was) return;
   Real loc[6];
   for (int a=0; a<6; ++a) {loc[a] = s6.the_array[a];}

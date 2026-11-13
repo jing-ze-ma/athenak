@@ -2547,6 +2547,7 @@ class RadiationM1 {
   bool caud_init = false;
   DvceArray5D<Real> caud_q;
   DvceArray1D<Real> caud_bin;
+  DvceArray1D<Real> caud_lz;   // CAUDITL: L_z gas / rad totals per bin (state)
   Real caud_seg[7][6] = {};
   void CAuditMark(int pt);
   // fixbundle-1009 F4: ApplyClosureLimits clips over ACTIVE cells (0 = E raised to
