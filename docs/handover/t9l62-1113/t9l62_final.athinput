@@ -1,0 +1,298 @@
+# T9L6.2 (Jiang+2018 Nature 561 498; Schultz+2020 ApJ 902 67 Table 1) reproduction deck, arm final: r = 24.2286 - 809.8 Rsun
+# made by /viper/ptmp2/jinma/t9l62_1113/jobs/mkdeck.py from the BSG Ma+2026 reproduction deck; parameter table in T9L62_SETUP_1113.md
+# tags: [PAPER] [IC] [SCRIPT] [NS]=not stated (our choice) [RT]=radiation by necessity [PROD]=prod-1118 numerics [CANNOT]
+# BSG-deck keys without a tag are the BSG reproduction numerics kept as they were (rk2, plm, hllc, no fofc, pointmass gravity,
+# FINAL (USER 11-13 "follow the ic file"): r_in = IC bottom, L_base = IC column L (10^5.811 Lsun). Differences from the papers:
+#   S20 Table 1 r_base 35.0 Rsun and log L 6.20 (S23: global models "boosted by ~50%") are NOT used; Table 1 M_env/r_Fe/R_ph/tau_Fe are 3-D results
+# zero-contact inner ghosts + he_bc_linhao fixed rho/T/F_r ghosts with the half-range DO-style face, marshak top, vet_gd rotation off).
+<job>
+basename                 = t9l62                  # 
+<mesh>
+nghost    = 3
+nx1                      = 512                    # [PAPER] Schultz+2020 sect 2: effective resolution 512 radial (root grid / SMR not stated: uniform here)
+x1min                    = 1.6850984345e+12       # [IC] USER 11-13 "follow the ic file": IC bottom 24.2286 Rsun (= J18 Fig 2 axis); S20 Table 1 r_base 35.0 NOT used
+x1max                    = 5.6321590000e+13       # [PAPER] Schultz+2020 Table 1 r_max 809.8 Rsun
+ix1_bc    = user
+ox1_bc    = user
+nx2                      = 256                    # [PAPER/INFERRED] 256 theta cells over pi/2: d theta = pi/512 (text order 512x512x256 = r,theta,phi literal; see SETUP)
+x2min                    = 0.78539816339744831    # [PAPER] theta = pi/4
+x2max                    = 2.3561944901923448     # [PAPER] theta = 3 pi/4
+ix2_bc                   = periodic               # [NS] global T9L6.2 angular BCs not stated (Schultz+2022 wedges: periodic)
+ox2_bc                   = periodic               # [NS] as ix2
+nx3                      = 512                    # [PAPER/INFERRED] 512 phi cells over pi: d phi = pi/512
+x3min                    = 0.0                    # [PAPER] phi = 0
+x3max                    = 3.1415926535897931     # [PAPER] phi = pi
+ix3_bc                   = periodic               # [NS] as ix2
+ox3_bc                   = periodic               # [NS] as ix2
+use_spherical_polar = true
+# (removed: BSG-only) use_grid_stretch_r_poly = true
+# (removed: BSG-only) f_stretch_r_p_amp = -0.66666666666666667   # [PAPER, his SMR reconstructed] dr 0.3125 Rsun on 20-35 and 55-80, 0.15625 on 35-55 (refinement level 1)
+# (removed: BSG-only) f_stretch_r_p_xa = 0.1875                    # = face 48/256 = 35 Rsun (his refined region starts at a base-block edge)
+# (removed: BSG-only) f_stretch_r_p_xb = 0.6875                    # = face 176/256 = 55 Rsun
+# (removed: BSG-only) f_stretch_r_p_w = 1.0e-12                    # sharp edges: every face equals his piecewise-uniform faces to < 1e-10 Rsun
+use_grid_stretch_r       = true                   # [PAPER-ish] logarithmic radial grid (Schultz+2022 wedges: log bins; T9L6.2 not stated)
+f_stretch_r              = -3.509253962786431     # = -ln(x1max/x1min): StretchR is then exactly r = r0 (r1/r0)^xi (dlnr = 0.006854)
+layout_invariant         = true                   # [PROD] r8 key set
+layout_invariant_mode    = block                  # [PROD]
+<meshblock>
+nx1                      = 512                    # vet_gd: one x1 block
+nx2                      = 128                    # 8 blocks on 8 GPUs (4 viper apu nodes); see jobs/ for other layouts
+nx3                      = 128                    # 
+<time>
+dt_retry                 = true                   # [PROD] r8
+evolution  = dynamic
+integrator = rk2
+cfl_number               = 0.3                    # [NS] Athena++ default-era value
+nlim       = -1
+tlim                     = 2.88e6                 # 800 h (Jiang+2018 Fig 4 T9L6.2 axis 0-800 h, run to ~745 h)
+ndiag      = 50
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu                       = 0.674                  # [SCRIPT] Will id_initial_condition.py mu = 0.674 (Jiang+2018 Fig 2 c_g0 = 4.54e6 -> mu 0.668); IC HSE fit consistent
+<hydro>
+# (removed: BSG-only) merge_lat_rc             = 2.43495e12,3.82635e12,5.5656e12   # USER 11-06 his SMR: 128^2 at 20-35, 256^2 at 35-55, 128^2 at 55-80 Rsun
+# (removed: BSG-only) merge_lat_f              = 2,1,2
+# (removed: BSG-only) merge_lat_mom            = rigid
+# (removed: BSG-only) merge_lat_rad            = true            # USER 11-06: radiation also 128^2 in the merged shells, as his grid
+# (removed: BSG-only) merge_lat_diag           = 1000
+split_c2p_once = true         # [OURS] numerical default kept (user 11-04); not in the 10-14 binary / his code
+am_transport   = true         # [OURS] numerical default kept (user 11-04); Athena++ (his code) has none
+sp_x2_periodic_image = true   # theta-periodic wedge: seam mass/energy fix (mass_1009)
+eos         = ideal
+rad_signal_speed = true
+gamma       = 1.6666666666666667
+reconstruct = plm
+rsolver     = hllc             # paper: HLLC
+fofc        = false            # USER 11-06: as Linhao (no FOFC)
+etotgrav    = true
+wellbalance_dynamic = false      # paper: no well-balanced scheme
+dfloor                   = 3.6e-19                # [NS/IC] = the IC floor 1e-10 rho0 (rho0 3.6e-9)
+tfloor_kelvin            = 1.0e3                  # [NS]
+pfloor                   = 1.0e-12                # [NS]
+dfloor_keep_velocity = true
+vceil                    = 3.0e8                  # [NS] > escape speed at the base (7.8e7)
+<rad_m1>
+vet_gd_ls                = 8                      # [RT/NS] LQ8 level-symmetric = 80 directions (Davis+2012-type set; T9L6.2 count not stated; Schultz+2022 low-res 80, main 100)
+implicit_cs2_vimp_npass  = 3              # [RT] = the 10-14 binary's fresh default (named for the record)
+time2_enth_be            = true           # [RT] = the 10-14 binary's fresh default (named)
+time2_fref_wacc          = true           # [RT] inert (force_reference = none)
+vet_gd_twin_state        = mean   # needed with twin off
+vet_rotate_avg           = 0              # [USER 11-04] no rotated-set averaging (needs rotation)
+vet_gd_twin_weight       = none           # FIN3 (prodswitch-1013, fin3-1012)
+vet_interp               = auto           # FIN3 (prodswitch-1013, fin3-1012)
+vet_col_lat_cut_thin     = 1.0            # FIN3 (prodswitch-1013, fin3-1012)
+implicit_predictor_frozen = false          # FIN3: UN #10 dropped (frozen predictor costs Cartesian T-ladder order; inert on sp). coordinator 2026-10-13, reported to user
+vet_bc_inner             = auto           # FIN3 (prodswitch-1013, fin3-1012)
+vet_bc_reflect           = auto           # FIN3 (prodswitch-1013, fin3-1012)
+implicit_hr_face_gd      = none           # FIN3 (prodswitch-1013, fin3-1012)
+vet_source               = relaxed        # FIN3 (prodswitch-1013, fin3-1012)
+time2_start              = be             # FIN
+time2_vet_sc             = predict        # FIN (inert on vet_col/vet_gd; named for the record)
+time2_vstage             = true           # FIN
+time2_pred_cap           = 0.5            # FIN
+time2_vet_col_source     = blend          # FIN (X sporder-1012)
+implicit_vimp_bc         = true           # FIN (vimpbcdef-1011)
+implicit_gas_src         = conservative2  # FIN (consfix-1011; full BSG OK, DeltaAI 3363656)
+implicit_cs2_hll         = drag           # FIN
+implicit_cs2_shift       = false          # FIN
+implicit_thin_corr       = hc             # FIN
+implicit_thin_hcsf       = j              # FIN
+implicit_thin_recon      = jse            # FIN (unify-1012)
+implicit_thin_js_gd      = x1             # FIN (unify-1012: lateral jse off on vet_gd)
+implicit_thin_bq         = lin            # FIN (unify-1012)
+implicit_thin_bq_gd      = cell           # FIN
+implicit_thin_hcface     = tau            # FIN (coreL-1012)
+implicit_thin_hcface_gd  = x1             # FIN
+implicit_thin_js_face    = hcface         # jsfix-1012 8bfeae8c (bsgcand-1012 d3bf42d7)
+vet_seg                  = jump           # FIN (coreL-1012; was emit)
+vet_bc_diff              = face           # FIN
+vet_gd_symref            = none   # USER 11-06 twin off, as R136a1
+vet_gd_rotate_dt         = 0              # [USER 11-04] rotation OFF to match his fixed rays (0 = no physical-clock rotation; no vet_gd_rotate_every)
+vet_gd_rotate_align      = true           # FIN
+vet_gd_rotate_t0         = 0.0            # FIN
+vet_gd_rotate_stretch    = 0              # inert without rotation
+vet_gd_rotate_slope      = correct        # >>> R2 PENDING <<< set to correct ONLY if NOTE-rotslope validates AND the binary has rotslope 1bfe213a; else keep
+implicit_hr_excess       = none           # bsgrec-R
+implicit_nofb_work       = true           # bsgrec-R
+implicit_rad_inertia     = true           # bsgrec-R
+implicit_f0_init         = auto           # bsgrec-R
+implicit_hr_face         = sf             # bsgrec-R
+vet_source_noesrc_h2be   = true           # bsgrec-R
+vet_gd_allow_clamp       = true           # [OURS-BIN] binary compatibility, not physics: the 10-14 binaries clamped the vet_gd lateral reach silently (band 64, needs 102); prod-1102 FATALs unless allowed (as bsgma-1104)
+vet_gd_halo_ipc          = false                  # multi-node run (Caltech IPC key off)
+ic_rad                   = none           # ORIGINAL IC (fresh default fs_relax would replace the file radiation)
+implicit_thin_switch     = fse            # FIN (replaces the hr_lm PIN none)
+vet_gd_twin_fuse         = false  # twin off, as R136a1
+vet_gd_twin_lowmem       = true           # Caltech: 8 blocks/GPU, as your BSG fin3 deck (bitwise vs false per DeltaAI mem2)
+vet_gd_twin_det          = true   # accel-1009: fixed-order twin shell means (GPU run-to-run bitwise)
+vet_source_noesrc        = true   # F1: never without vet_gd_twin
+vet_gd_twin              = false  # USER 11-06: twin off, as the other productions
+implicit_face_opac_n     = true   # F2
+implicit_pos_floor_solve = true   # F3 (needs implicit_pos_floor = true)
+vet_scatter_form         = ma     # paper split (Jiang 2021 eq. 6)
+vet_scatter_j            = relaxed
+vet_scatter_kappa_e      = const                  # ideal gas, kappa_es const 0.34 (X 0.70)
+implicit_tsolve_opac = true          # R2+B
+implicit_tsolve_opac_mode = 1        # R2+B: nearest root (mode 1 default; no mode 8)
+implicit_gas_newton_switch = 10      # R2+B
+implicit_thin_freeze = 1.0e-2        # R2+B (B)
+implicit_realisable_coupling = true  # fix A (gd-physfix-1005 12b78e4f): realisable flux in E0 - E and the gas deposit
+report_newton_fb = false   # rc-1009: no per-step iw host copy (F4 counters keep the count)
+c_light          = 2.99792458e10
+arad                     = 3.2670356041e-47       # a_cgs (7.5657332e-15) T_unit^4, T_unit = mu m_u/k_B = 8.1063567271e-09 K
+chat_over_c      = 1.0
+closure          = vet_col          # vet_gd rides on the vet_col interface; vet_gd_replace drops the vet_col sweep
+vet_gd           = true
+vet_scatter      = true           # Ma+2026 kappa_a/kappa_e split in the closure source (Jiang 2021 eq. 6, form ma; VET_SCATTER.md: <= 6e-6 effect)
+vet_gd_replace   = true
+vet_col_lat_taucut = 30.0
+vet_gd_gl_nmu            = 0              # [USER 11-04 fixed rays] no GL product set; vet_gd_ls below
+vet_gd_gl_nphi   = 12             # inert (vet_gd_gl_nmu = 0)
+vet_gd_gl_stagger = true          # inert (vet_gd_gl_nmu = 0)
+# vet_gd_rotate_every = 10  # bsgprod-1012: DROPPED (vet_gd_rotate_dt in this block = the physical clock)
+vet_col_lat_offdiag = operator       # T5wihc
+vet_gd_tangential   = true           # USER 11-07: full Eddington tensor (was false, T5wihc)
+vet_gd_wall_interp  = true           # T5wihc
+vet_gd_halo_compact = 2              # T5wihc
+implicit_halo_direct = true         # fast Krylov set
+implicit_od_cache = true
+implicit_krylov_fuse = 1
+implicit_op_stencil = true
+implicit_precond         = mg_gf          # bsgaccel global Fourier coarse space (full BSG 1.6-1.8x; R2 0.239 s/cycle)
+implicit_halo_mpi = true
+implicit_halo_overlap = true
+opacity          = table
+temp_unit_kelvin         = 8.1063567271e-09       # 
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4
+coupling         = true
+gas_feedback     = true
+force_reference = none     # full M1 radiation force (no WB pair)
+transport        = implicit
+implicit_solver  = bicgstab
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_lin_maxit = 200
+implicit_lin_tol = 1.0e-10
+implicit_lin_cnorm = 1.0e-10
+implicit_tol     = 1.0e-8
+implicit_resid_fatal = 1.0e-2
+implicit_maxit   = 200
+implicit_one_pass = 0
+implicit_opac_update = true
+implicit_opac_newton     = false                  # [PROD] prod-1118 R136 key set
+implicit_opac_newton_guard_mode = 6
+implicit_gas_newton = true
+implicit_flux            = blend          # FIN (as hr_lm)
+implicit_flux_faces      = all            # FIN (as hr_lm)
+implicit_flux_beam       = halfrange      # FIN (as hr_lm)
+implicit_blend           = idort_f        # FIN (as hr_lm)
+implicit_blend_tau0      = 1              # FIN (as hr_lm)
+implicit_blend_alpha     = 1              # FIN (as hr_lm)
+implicit_blend_flo       = 0.3            # FIN (as hr_lm)
+implicit_blend_fhi       = 0.6            # FIN (as hr_lm)
+implicit_blend_xthin     = 0              # FIN (was 30 in the 10-09 hr deck)
+implicit_enthalpy = plm
+implicit_vimp            = true           # FIN (was false in the 10-09 hr deck)
+implicit_predictor = step
+implicit_lin_ew_max = 1.0e-2
+implicit_closure_thin_relax = 1.5
+implicit_g0_exchange = true
+implicit_g0_limit = 1.0
+implicit_pos_gas = true
+implicit_pos_floor = true
+time_scheme              = hesdirk2       # FIN (was be in the 10-09 hr deck)
+vet_col_every    = 1
+time2_vet_col            = predict        # FIN
+marshak_q        = 0.5
+implicit_bc_x1min   = flux
+implicit_flux_x1min      = 6.9466003350e+13       # [IC] USER 11-13 "follow the ic file": L_base = L_IC = 10^5.811 Lsun (the IC column diffusion L); S20 Table 1 log L 6.20 NOT used
+implicit_bc_x1max   = marshak
+implicit_flux_x1max = 0.0
+time2_adm_poslim         = true                   # [PROD] prod-1118 R136 key set
+implicit_predictor_tcap  = 1.1                    # [PROD] prod-1118 R136 key set
+implicit_fb_local        = true                   # [PROD] prod-1118 R136 key set
+implicit_fb_local_rounds = 4                      # [PROD] prod-1118 R136 key set
+implicit_opac_lag_passes = 3                      # [PROD] prod-1118 R136 key set
+time2_vet_x2_fields      = 15                     # [PROD] prod-1118 R136 key set
+time2_face_fct           = true                   # [PROD] prod-1118 R136 key set
+time2_k1_redist          = 0                      # [PROD] prod-1118 R136 key set
+implicit_face_mmat       = true                   # [PROD] prod-1118 R136 key set
+vet_col_lat_posfix       = lag                    # [PROD] prod-1118 R136 key set
+implicit_hr_cmem         = false                  # [PROD] prod-1118 R136 key set
+implicit_physflux        = false                  # [PROD] prod-1118 R136 key set
+implicit_blend_dtc       = 1e-6                   # [PROD] prod-1118 R136 key set
+zalesak_cap_rounds       = 4                      # [PROD] prod-1118 R136 key set
+implicit_lzx             = true                   # [PROD] prod-1118 R136 key set
+time2_stage_local_be     = false                  # [PROD] prod-1118 R136 key set
+implicit_cs2_wbsolve     = true                   # [PROD] prod-1118 R136 key set
+<problem>
+he_seed_band             = n2                     # [NS] seed not stated: AthenaK default n2 band seed (amplitude 1e-3)
+# (removed: BSG-only) he_seed                  = 0.0            # LI: the 1e-6 T seed is REPLACED by the Linhao perturbation
+he_ic_linhao             = false                  # IC from he_ic_file (no Ma+2026 IC/seed)
+he_ic_linhao_file        = T9DIR/prof_t9l62_LIC.txt # [IC] ghost T, rho = IC (fixed), F_r = L_IC/(4 pi r^2) (S22 sect 2.1 fixed T, rho, F_r ghosts)
+# (removed: BSG-only) he_ic_linhao_amp         = 0.05           # his rho *= 1 + 0.05 (U - 0.5)
+# (removed: BSG-only) he_ic_linhao_rho_thr     = 6.15245e-7     # his rho > 0.01 code x density_unit 6.15245e-5 (his athinput.bsg_star.rusty)
+# (removed: BSG-only) he_ic_linhao_seed_group = true   # lhxseed-1106: one deviate per merged group, as his coarse cells
+# (removed: BSG-only) he_ic_linhao_rng         = 0              # splitmix64(global cell index) seed
+# (removed: BSG-only) he_ic_linhao_gconst      = 6.67408e-8     # Athena++ Constants::grav_const_cgs (his g(rmax) = G M_rmax / rmax^2)
+# (removed: BSG-only) he_ic_linhao_gext        = invsq          # [USER 11-04] atmosphere above rmax hydrostatic in GM/r^2 (his cpp:429 r^+2 = r2)
+he_bc_linhao             = true           # XB fin4-linhao-bc: L. Ma bsg_star.cpp inner BC (bd_data hydro ghosts + ghost-bath radiation)
+he_bc_linhao_rad         = halfrange      # [HIS] cpp:969-1034 half-range ghost intensities, DO upwind face (M1 face flux + VET outward rays); <mu>_+ of his 120-angle LQ10 set
+he_bc_linhao_diss        = none           # [USER 11-04] inner-face dissipation: none (central average; his stock Athena++ HLLE would add ~1/(taucell tau) x the E jump)
+he_bc_linhao_fis = iter   # vstarfix-1106 (F_is = Picard iterate, not the shifted F0^n)
+he_ic_rad_gas            = column         # ORIGINAL IC
+he_ic_rad_hse            = false          # ORIGINAL IC
+he_ic_rad                = file           # ORIGINAL IC (fresh default sph1d)
+he_ic_eint_from_t        = true                   # eint from the IC T with the code EOS
+user_srcs   = true
+user_bcs    = true
+user_hist   = true
+he_gm                    = 7.4033817458e+27       # [PAPER/IC] M_core 56 Msun (Table 1) = 55.77 Msun of the IC HSE fit (G 6.67408e-8, Msun 1.989e33)
+he_gravity = pointmass   # Athena++ point-mass source (bsg-truerepro-1008)
+he_ic_file               = T9DIR/ic_t9l62_LIC.txt # [IC] Y.-F. Jiang init_outburst.txt (T9L6.2 IC) as is, cgs, F_r = L_IC/(4 pi r^2); below 24.2286 Rsun (ghosts + margin only) RK4 HSE+diffusion extension
+he_opac_table            = T9DIR/rosseland_mesakap_gs98_x0.70_z0.02.txt # [PAPER-closest] OPAL (gs98, MESA kap) X 0.70 Z 0.02; X not stated
+he_planck_table          = T9DIR/planck_ext2_gs98_x0.70_z0.02.txt # [NS source] TOPS/Ferguson Planck X 0.70 Z 0.02 (paper: OPAL Planck, source not given)
+he_nfine                 = 262144                 # 
+he_tau_int  = 1.0
+he_ic_cols               = 5                      # 
+he_wall_zero_flux = false   # paper: no flux surgery (S_M = 0 makes the inner mass flux vanish)
+he_ic_balance = false            # the Ma IC AS IS (paper: no re-balance)
+mlt_flux_frozen = false          # radiative-only IC, no MLT deposit
+he_wall_closed = false      # the zero-contact ghosts, not the mirror wall
+mlt_closure    = frozen
+he_grid_dump   = true
+he_bc_outer              = copy                   # [PAPER] open top (Schultz+2022); outflow ghosts, no inflow
+he_bc_outer_r2           = false                  # plain copy (r^-2 ghost density was Ma+2026-specific)
+he_bc_inner = zerocontact   # paper: zero-mass-flux ghosts (HLLC S_M = 0)
+he_bc_linhao_mu1         = 0.5085136694622286     # <mu>_+ of the LQ8 set (80 dirs)
+<output1>
+file_type   = hst
+dt                       = 3600.0                 # hst every 1 h
+data_format = %24.16e
+<output2>
+file_type = bin
+variable  = hydro_w
+dt                       = 10800.0                # 3 h
+<output3>
+file_type = bin
+variable  = m1
+dt                       = 10800.0                # 3 h
+<output4>
+file_type = log
+dt = 1.0e4
+<output5>
+file_type = rst
+dt                       = 43200.0                # rst every 12 h
+<output6>
+file_type = bin
+variable  = m1_vet
+dt                       = 10800.0                # 3 h
+<output7>
+file_type = bin
+variable  = m1_face       # face fluxes fx1/fx1o/fx2/fx3: the thin-atmosphere check (TRUEREPRO.md sect. atm)
+dt                       = 10800.0                # 3 h
+
