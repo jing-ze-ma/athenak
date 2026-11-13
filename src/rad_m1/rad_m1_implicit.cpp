@@ -8123,6 +8123,20 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     b0 = iw_(m,sb,k,j,i) + pt - it;
     return b0 - iw_(m,sr,k,j,i)*po + ir;
   };
+  // zxch-1113 DIAGNOSTIC env M1_ZX_CMP_FORCE=N (first N calls, zalesak_fast_exchange):
+  // exchange a non-trivial field (E of the iterate, slot EP) through the fast and the
+  // generic path (the M1_ZX_CMP comparison inside ZalesakHaloExchange), then R = 1 below
+  {
+    static int zf_n = 0;
+    const char *zfe = std::getenv("M1_ZX_CMP_FORCE");
+    if (zl_fastx && zfe != nullptr && zf_n < std::atoi(zfe)) {
+      zf_n += 1;
+      Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sr, Kokkos::ALL,
+                        Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL,
+                        M1_IW_EP, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      ZalesakHaloExchange(sr);
+    }
+  }
   Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sr, Kokkos::ALL,
                     Kokkos::ALL, Kokkos::ALL), 1.0);
   // stage 2: lam_r per x1 face from F_H of the last rebuild and E of the iterate
