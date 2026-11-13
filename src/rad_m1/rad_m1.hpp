@@ -2311,7 +2311,8 @@ class RadiationM1 {
   // implicit_lz_diag = N (read only when named): one LZ_FORM line per pass, first N
   bool impl_lz = false;
   int impl_lz_diag = 0, lz_ndiag = 0;
-  int impl_lz_mode = 0;                 // implicit_lz_mode = full (0, default) | stress (1)
+  int impl_lz_mode = 1;                 // implicit_lz_mode = full (0) | stress (1, default;
+                                        // radlz2-1113: full diverged on RSG / IDORT)
   int iw_lz = -1;                       // q_c (1 slot, exchanged)
   DvceArray5D<Real> lz_arm;             // (m, 2, k, j, i) a_c for x2 / x3 faces
   DvceArray4D<Real> lz_w2, lz_w3;       // W_f (x2 / x3 faces, shapes of f0x2 / f0x3)
