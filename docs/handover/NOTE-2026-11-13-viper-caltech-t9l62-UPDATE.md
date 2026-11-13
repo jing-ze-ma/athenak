@@ -32,3 +32,14 @@ Use the short2g holder 6854764 that is running now (empty, ends ~16:55 PST) at o
 - Do the smoke plus restart check for both arms, then run both arms until 10 min before the end, with a restart at the end.
 - Report what you got (s/cycle, dt, memory, wall L_in) even if it is only ~20-30 min.
 - Continue from those restarts in the next short slot (test2g / any backfill).
+
+## UPDATE3 (USER: "use 2 H200"): ONE run on both H200, replacing the two-arm split above
+- Deck: t9l62_ourwall.athinput only. No LW arm.
+- 2 MPI ranks, 1 H200 each, in the short2g holder now (or the next 2-GPU slot).
+- Overrides:
+    mesh/nx2=128 mesh/x2min=1.1780972450961724 mesh/x2max=1.9634954084936207 mesh/nx3=256 mesh/x3max=1.5707963267948966
+    meshblock/nx1=512 meshblock/nx2=128 meshblock/nx3=128
+  That is 512 x 128 x 256 = 16.8 M cells over theta 3pi/8..5pi/8, phi 0..pi/2, at the paper cell size: 2 meshblocks, ~42 GB per GPU.
+  The full grid (67 M cells, ~336 GB) does not fit in 2 x 141 GB.
+- Steps and report: as above (smoke + bitwise restart, run to the slot end - 10 min, restart at the end).
+  Scale the wall L_in target by the wedge solid angle.
