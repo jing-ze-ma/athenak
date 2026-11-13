@@ -11,7 +11,7 @@
 //! the generic (HIP) signature.
 //! Needs BVCC_PACK_NAME defined.
 #if defined(BVCC_PACK_KSEAM)
-  auto BVCC_PACK_NAME = KOKKOS_LAMBDA(const TeamMember_t &tmember) {
+  auto BVCC_PACK_NAME = KOKKOS_LAMBDA(const TeamMember_t &tmember) BV_CUDA_INLINE {
     constexpr bool kseam_ = BVCC_PACK_KSEAM;
     constexpr bool kwb_ = BVCC_PACK_KWB;
 #else
@@ -23,7 +23,11 @@
     const int m = (lr_)/(nnghbr*nvar);
     const int n = (lr_ - m*(nnghbr*nvar))/nvar;
     const int vl = (lr_ - m*(nnghbr*nvar) - n*nvar);
+#if defined(KOKKOS_ENABLE_CUDA)
+    const int v = BvVarOf(vmask_, vl);   // dhjcuda-1112 (bvals.hpp)
+#else
     const int v = vlst_.v[vl];
+#endif
 
     // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
@@ -457,7 +461,7 @@
           // momenta of the source cell are needed to make either one, so this reads two
           // components and selects. Away from a panel seam it is exactly the old
           // `a(...)*signvar`. Only loads and the O(1) half of the transform remain here.
-          auto sval = [&](const int s, const int i) {
+          auto sval = [&](const int s, const int i) BV_CUDA_INLINE {
             const int kq = kst[s], jq = jst[s];
             if (cs_fxform) {
               Real f2o, f3o;
@@ -538,7 +542,7 @@
             const Real etac = 0.25*M_PI*CellCenterX(kk-ks_, nx3_, x3mn, x3mx);
             cubed_sphere::SeamXformAt(cs_srcpanel, cs_dstpanel, xic, etac, xfc);
           }
-          auto rgbad = [&](const int i) {
+          auto rgbad = [&](const int i) BV_CUDA_INLINE {
             const Real d0 = cs_coar ? ca(m,0,kst[0],jst[0],i) : a(m,0,kst[0],jst[0],i);
             const Real d1 = cs_coar ? ca(m,0,kst[1],jst[1],i) : a(m,0,kst[1],jst[1],i);
             const Real d2 = cs_coar ? ca(m,0,kst[2],jst[2],i) : a(m,0,kst[2],jst[2],i);
@@ -549,7 +553,7 @@
             const Real dc = cs_coar ? ca(m,0,kk,jj,i) : a(m,0,kk,jj,i);
             return (dq > rg_*dc) || (dc > rg_*dq);
           };
-          auto plainval = [&](const int i) {
+          auto plainval = [&](const int i) BV_CUDA_INLINE {
             if (!cs_xform) {
               return (cs_coar ? ca(m,vv,kk,jj,i) : a(m,vv,kk,jj,i))*signvar;
             }
@@ -576,7 +580,7 @@
               lw5[q] = l;
             }
           }
-          auto wbval = [&](const int s, const int i) {
+          auto wbval = [&](const int s, const int i) BV_CUDA_INLINE {
             const int kq = kst[s], jq = jst[s];
             Real phig = 0.0;
             const int nA = (cs_seam == 2) ? wbsphi_.extent_int(1) : wbsphi_.extent_int(2);
@@ -620,7 +624,7 @@
             if (v == 0) return dd;
             return ee + ke + (wbsetg_ ? dd*phig : 0.0);
           };
-          auto seamval = [&](const int i) {
+          auto seamval = [&](const int i) BV_CUDA_INLINE {
             if (cs_seam == 0) return sval(0,i);
             if (wbsv) {
               const Real sv0 = wbval(0,i), sv1 = wbval(1,i), sv2 = wbval(2,i);

@@ -99,6 +99,14 @@ static int BvCcVl() {
   return v;
 }
 
+// dhjcuda-1112: the seam-pack stencil lambdas (sval, seamval, ...) forced inline on CUDA:
+// nvcc kept them as calls, and their [&] captures then lived in local memory (spills)
+#if defined(KOKKOS_ENABLE_CUDA)
+#define BV_CUDA_INLINE __attribute__((always_inline))
+#else
+#define BV_CUDA_INLINE
+#endif
+
 // d6fast3-1112: env BVALS_CC_TS = the team size of the CC pack / unpack (default 0 =
 // Kokkos::AUTO, the launch as before).  Each buffer element is the same expression of the
 // same inputs whatever thread handles its (k, j) row: bitwise.
@@ -186,6 +194,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   const int mbie_ = pmy_pack->pmesh->mb_indcs.ie;
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   int nmnv = nmb*nnghbr*nvar;
+  const int vmask_ = vmask;   // dhjcuda-1112 (BvVarOf, CUDA)
   const int nsp_ = BvCcSplit();
   BvCcTeamPolicy policy = BvCcPolicy(nmnv*nsp_);
   Kokkos::TeamPolicy<> policy1(DevExeSpace(), nmnv, Kokkos::AUTO);   // (z4c kernel)
