@@ -593,6 +593,7 @@ void DtRetry::Save(Mesh *pm) {
   ngood0_ = ngood_;
   Kokkos::Timer t;
   pm->pmb_pack->pradm1->DtRetryQuiesce(false);
+  pm->pmb_pack->pradm1->MemArenaSeal();   // memcut-1113: no rebind after a checkpoint
   for (auto &e : ent_) {e->Save();}
   Kokkos::fence();
   tsave_ += t.seconds();

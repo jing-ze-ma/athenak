@@ -1523,6 +1523,18 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
 
   // close file, clean up
   resfile.Close(single_file_per_rank);
+  // memcut-1113: drop the host staging copies (filled again by the next LoadOutputData,
+  // whose Kokkos::realloc allocates anew anyway): on a unified-memory APU (MI300A) they
+  // held a full second copy of the restart data in HBM for the rest of the run
+  outarray = HostArray5D<Real>();
+  outarray_hyd = outarray_mhd = outarray_rad = outarray_m1 = outarray_force =
+      outarray_z4c = outarray_adm = outarray_ck = outarray_m1p = outarray_m1t =
+      outarray_m1c = outarray_m1s = outarray_m1g = outarray_m1r = outarray_m1k =
+      outarray_ams = outarray_pgs = outarray_fax = outarray_thc = HostArray5D<Real>();
+  outarray_m1f = outarray_m1f2 = outarray_m1f3 = outarray_wth = outarray_wtm =
+      outarray_wdp = outarray_wdg = outarray_wdpm = outarray_wdgm = outarray_weh =
+      outarray_wem = outarray_wm1 = outarray_wm2 = HostArray4D<Real>();
+  outfield.x1f = outfield.x2f = outfield.x3f = HostArray4D<Real>();
 
   // BITWISE RESTARTS: the dynamic well-balanced background (hydro/mhd wbq0) is a CACHE
   // rebuilt only every wb_cache_every cycles, and it is NOT restart state.  A restarted

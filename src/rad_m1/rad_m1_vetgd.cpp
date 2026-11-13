@@ -9224,7 +9224,7 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
   Kokkos::deep_copy(a.off, off_h);
   Kokkos::deep_copy(a.wi, wi_h);
   Kokkos::deep_copy(a.sb, sb_h);
-  Kokkos::realloc(a.d, tot + 1);
+  if (!MemArenaVgd(a, tot + 1)) {Kokkos::realloc(a.d, tot + 1);}   // memcut-1113
   Kokkos::deep_copy(a.d, 0.0);
   Kokkos::deep_copy(a.oos, 0.0);
   if (global_variable::my_rank == 0) {
