@@ -4208,16 +4208,23 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(lz_d, 0.0);
   }
   // lzphys-1113 implicit_lzx (rad_m1.hpp, LZPHYS_1113.md)
-  if (pin->DoesParameterExist("rad_m1","implicit_lzx") &&
-      pin->GetBoolean("rad_m1","implicit_lzx")) {
-    impl_lzx = true;
-    if (!(cs_geom || sph_geom) || !trans_on || !trans_x3) {
-      ImplFatal("<rad_m1>/implicit_lzx needs the cubed sphere or spherical polar in 3-D "
-                "with implicit transport");
+  // inert (message, no slot) on a Cartesian mesh and with the gas fixed: no gas + radiation
+  // L_z budget to close there; a D6 key set stays usable on every gate deck
+  const bool lzxq = pin->DoesParameterExist("rad_m1","implicit_lzx") &&
+                    pin->GetBoolean("rad_m1","implicit_lzx");
+  if (lzxq && (!(cs_geom || sph_geom) || !(coupling && gas_feedback))) {
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_lzx: inert (needs the cubed sphere or spherical polar "
+                << "and coupling with gas_feedback)" << std::endl;
     }
-    if (!impl_gas_src_cons || impl_gas_src_full || !(coupling && gas_feedback)) {
+  } else if (lzxq) {
+    impl_lzx = true;
+    if (!trans_on || !trans_x3) {
+      ImplFatal("<rad_m1>/implicit_lzx needs a 3-D mesh with implicit transport");
+    }
+    if (!impl_gas_src_cons || impl_gas_src_full) {
       ImplFatal("<rad_m1>/implicit_lzx needs implicit_gas_src = conservative or "
-                "conservative2 with coupling and gas_feedback (Z_f books the face)");
+                "conservative2 (Z_f books the face)");
     }
     if (impl_hr_cmem || impl_physflux || impl_lz) {
       ImplFatal("<rad_m1>/implicit_lzx is not combined with implicit_hr_cmem, "
