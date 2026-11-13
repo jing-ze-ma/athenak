@@ -13,10 +13,10 @@
 //! iw is NOT shared: some of its channels live across a build (poisoned, the run breaks).
 //!
 //! The intensity arrays are unmanaged 1-D Views at offsets 0, n_0, ... of marena (it
-//! grows by copy + rebind while they are allocated, before the first dt_retry
-//! checkpoint); at the first checkpoint (MemArenaSeal from DtRetry::Save, before it
-//! copies anything) the solve arrays are moved over them (contents copied, members
-//! rebound to unmanaged Views at offsets 0, ... of marena), as many as fit.  No
+//! grows by copy + rebind while they are allocated, until the first dt_retry
+//! checkpoint after they exist); at that checkpoint (MemArenaSeal from DtRetry::Save,
+//! before it copies anything) the solve arrays are moved over them (contents copied,
+//! members rebound to unmanaged Views at offsets 0, ... of marena), as many as fit.  No
 //! rebinding afterwards.
 //!
 //! MEMCUT_POISON (diagnostic env, default unset): a comma list of arrays that are filled
@@ -77,7 +77,7 @@ bool RadiationM1::MemArenaVgd(VgdRag &a, const int64_t n) {
   const int64_t have = static_cast<int64_t>(marena.extent(0));
   if (need > have) {
     // grow: a new allocation, the old bytes copied in front (the arrays bound so far keep
-    // their contents and offsets), then rebind them (before the first checkpoint only)
+    // their contents and offsets), then rebind them (until the move, MemArenaSeal)
     Kokkos::fence();
     DvceArray1D<Real> nb("m1_arena", need);
     if (have > 0) {
@@ -99,15 +99,18 @@ bool RadiationM1::MemArenaVgd(VgdRag &a, const int64_t n) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::MemArenaSeal
-//! \brief called by every DtRetry::Save before it copies; the first call moves the solve
-//! scratch arrays that are dead across a VetGdBuild (MEMCUT_POISON: ost, fmm_t, thw, vmw,
-//! thq, odc, d3w, krw, aa_*, job 13105648) into the arena, over the intensities (contents
-//! copied, member rebound), as many as fit; then no more rebinding
+//! \brief called by every DtRetry::Save before it copies; the first call after the
+//! intensities exist moves the solve scratch arrays that are dead across a VetGdBuild
+//! (MEMCUT_POISON: ost, fmm_t, thw, vmw, thq, odc, d3w, krw, aa_*, job 13105648) into
+//! the arena, over the intensities (contents copied, member rebound), as many as fit;
+//! then no more rebinding
 
 void RadiationM1::MemArenaSeal() {
-  if (marena_sealed) return;
+  // (a fresh run allocates the intensities inside cycle 1: the move waits for the next
+  // checkpoint; every checkpoint takes the members' handles anew, so a retry after the
+  // move restores the moved Views)
+  if (marena_sealed || !marena_on || marena.data() == nullptr) return;
   marena_sealed = true;
-  if (!marena_on || marena.data() == nullptr) return;
   DvceArray5D<Real> *cand[] = {&ost, &fmm_t, &thw, &vmw, &thq, &odc, &d3w, &krw,
                                &aa_xc, &aa_fc, &aa_xp, &aa_fp};
   const char *nm[] = {"ost", "fmm_t", "thw", "vmw", "thq", "odc", "d3w", "krw",
