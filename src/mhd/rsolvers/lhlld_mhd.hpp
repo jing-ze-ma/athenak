@@ -117,8 +117,10 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
      const ScrArray2D<Real> &bl, const ScrArray2D<Real> &br,
      const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr,
      const DvceArray4D<Real> &bx,
-     DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez,
-     const DvceArray5D<Real> &w0) {
+     const DvceArray5D<Real> &flx, const DvceArray4D<Real> &ey,
+     const DvceArray4D<Real> &ez, const DvceArray5D<Real> &w0) {
+  // dhjcuda2-1113: flx, ey, ez by const reference (they were by value): a View copy keeps
+  // its pointer and strides in registers through the face loop until the final stores
   int ivy = IVX + ((ivx-IVX)+1)%3;
   int ivz = IVX + ((ivx-IVX)+2)%3;
   int iby = ((ivx-IVX) + 1)%3;
@@ -126,45 +128,30 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   Real spd[5];         // signal speeds, left to right
 
   //------------------------ ADIABATIC HLLD solver ---------------------------------------
+  // dhjcuda2-1113: the per-face options below are read from eos (and size) where they are
+  // used, inside the face loop, instead of being held in locals across it: on CUDA eos is
+  // the kernel body in device memory, so a read at the point of use is one cached load,
+  // while a local lives in a register through the whole solver (A100 ptxas: the flux
+  // kernels sit at 255 registers and spill).  Same values, same arithmetic: bitwise.
   // <mhd>/lhlld_x1_phi_min (EOS_Data::x1_phi_min): floor on phi on x1 faces only,
   // applied as the equivalent floor on chi (phi >= phi_min <=> chi >= 1-sqrt(1-phi_min))
   // so that phi = chi*(2-chi) keeps its expression tree: a select on phi changed the
   // compiler's FMA contraction of (1-phi) and broke bitwise identity with the key off.
   // <mhd>/lhlld_phi_min (EOS_Data::phi_min_all): the same floor on every face.
-  const Real phi_min_f = fmax((ivx == IVX) ? eos.x1_phi_min : 0.0, eos.phi_min_all);
-  const Real chi_min = (phi_min_f > 0.0) ?
-                       1.0 - sqrt(1.0 - fmin(1.0, phi_min_f)) : 0.0;
   // <mhd>/lhlld_oddeven (EOS_Data::lhlld_oddeven): odd-even sensor floor, see eos.hpp.
   // w0(ivx) is the sweep-normal velocity on Cartesian and sp grids and, on the cubed
   // sphere, the CONTRAVARIANT angular component, = (face-normal velocity)/sin(theta)
   // with a smoothly varying sin(theta), so it detects the same 2-cell pattern.
   // The 4 cells around face index (k,j,i) along the sweep direction, clamped to the
   // allocated range (only the outermost fofc faces can reach past it).
-  const Real oe_pow = eos.lhlld_oddeven;
-  const bool oe_on = (oe_pow > 0.0);
-  const int oe_di = (ivx == IVX) ? 1 : 0;
-  const int oe_dj = (ivx == IVY) ? 1 : 0;
-  const int oe_dk = (ivx == IVZ) ? 1 : 0;
-  const int oe_n1 = static_cast<int>(w0.extent(4)) - 1;
-  const int oe_n2 = static_cast<int>(w0.extent(3)) - 1;
-  const int oe_n3 = static_cast<int>(w0.extent(2)) - 1;
   // <mhd>/lhlld_emf_eta_pos (EOS_Data::lhlld_emf_eta_pos): see eos.hpp and Step 8.
-  const bool eta_pos = eos.lhlld_emf_eta_pos;
-  // <mhd>/lhlld_cb_sensor (EOS_Data::cb_sensor): see eos.hpp and
-  // utils/cb_sensor.hpp.
-  const Real cb_sensor = eos.cb_sensor;
-  const bool cb_cont = eos.cb_cont;   // cbcont-1102 <mhd>/lhlld_cb_cont
+  // <mhd>/lhlld_cb_sensor (EOS_Data::cb_sensor): see eos.hpp and utils/cb_sensor.hpp;
+  // cbcont-1102 <mhd>/lhlld_cb_cont (EOS_Data::cb_cont).
   // lowmach2-1102 <mhd>/lhlld_divdiss (EOS_Data::divdiss, utils/divdiss.hpp): off
   // (default) = legacy LHLLD, bitwise.  Acts on the total pressure p_T* only (dpt);
-  // the transverse-field (EMF) fluxes are untouched.
-  const int divdiss = eos.divdiss;
-  const bool chi_normal = eos.chi_normal;   // lowmach2-1102 TEST key
-  const bool alfmach = eos.alfmach;         // alfmach-1102 <mhd>/lhlld_alfmach
-  const bool alf_rot = eos.alfmach_rot;     // alfmach-1102 <mhd>/lhlld_alfmach_rot
-  const Real alf_rot_min = eos.alfmach_rot_min;
-  const bool dd_act2 = (indcs.nx2 > 1), dd_act3 = (indcs.nx3 > 1);
-  const Real dd_dx1 = size.d_view(m).dx1, dd_dx2 = size.d_view(m).dx2,
-             dd_dx3 = size.d_view(m).dx3;
+  // the transverse-field (EMF) fluxes are untouched.  EOS_Data::chi_normal:
+  // lowmach2-1102 TEST key.  alfmach-1102: <mhd>/lhlld_alfmach (EOS_Data::alfmach),
+  // <mhd>/lhlld_alfmach_rot (alfmach_rot, alfmach_rot_min).
 
   if (eos.is_ideal) {
     Real gm1 = eos.gamma - 1.0;
@@ -250,11 +237,11 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       Real caxsqr = bxsq/wr_idn;
       Real usql = SQR(wl_ivx) + (SQR(wl_ivy) + SQR(wl_ivz));
       Real usqr = SQR(wr_ivx) + (SQR(wr_ivy) + SQR(wr_ivz));
-      if (chi_normal) { usql = SQR(wl_ivx); usqr = SQR(wr_ivx); }
+      if (eos.chi_normal) { usql = SQR(wl_ivx); usqr = SQR(wr_ivx); }
       // alfmach-1102 <mhd>/lhlld_alfmach: Alfven floor scaled by chi_A = min(1, |u|/c_a)
       // per side (c_a^2 -> |u|^2, c_ax^2 -> c_ax^2 |u|^2/c_a^2 where |u| < c_a), so that
       // c_u ~ |u| (1..sqrt 2) at M_A < 1; untouched (bitwise) where M_A >= 1
-      if (alfmach) {
+      if (eos.alfmach) {
         if (usql < casql) { caxsql *= usql/casql; casql = usql; }
         if (usqr < casqr) { caxsqr *= usqr/casqr; casqr = usqr; }
       }
@@ -264,8 +251,20 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       Real cur = sqrt(0.5*(qb + sqrt(fmax(0.0, SQR(qb) - 4.0*usqr*caxsqr))));
       // eqns. (14)-(15) of Minoshima & Miyoshi
       Real chi = fmin(1.0, fmax(cul, cur)/fmax(cfl, cfr));
-      chi = fmax(chi, chi_min);  // chi_min = 0 (no-op) when the keys are off
-      if (oe_on) {
+      {
+        const Real phi_min_f = fmax((ivx == IVX) ? eos.x1_phi_min : 0.0, eos.phi_min_all);
+        const Real chi_min = (phi_min_f > 0.0) ?
+                             1.0 - sqrt(1.0 - fmin(1.0, phi_min_f)) : 0.0;
+        chi = fmax(chi, chi_min);  // chi_min = 0 (no-op) when the keys are off
+      }
+      if (eos.lhlld_oddeven > 0.0) {
+        const Real oe_pow = eos.lhlld_oddeven;
+        const int oe_di = (ivx == IVX) ? 1 : 0;
+        const int oe_dj = (ivx == IVY) ? 1 : 0;
+        const int oe_dk = (ivx == IVZ) ? 1 : 0;
+        const int oe_n1 = static_cast<int>(w0.extent(4)) - 1;
+        const int oe_n2 = static_cast<int>(w0.extent(3)) - 1;
+        const int oe_n3 = static_cast<int>(w0.extent(2)) - 1;
         Real uc[4];
         for (int q=0; q<4; ++q) {
           int ii = i + (q-2)*oe_di;
@@ -287,8 +286,8 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
         }
       }
       // <mhd>/lhlld_cb_sensor: odd-even sensor, default 1 (utils/cb_sensor.hpp)
-      if (cb_sensor > 0.0) chi = fmax(chi, CBSensorChiFloor(w0, m, k, j, i, ivx, chi,
-                                                            cb_sensor, cb_cont));
+      if (eos.cb_sensor > 0.0) chi = fmax(chi, CBSensorChiFloor(w0, m, k, j, i, ivx, chi,
+                                                        eos.cb_sensor, eos.cb_cont));
       Real phi = chi*(2.0 - chi);
 
       // Real cfmax = std::max(cfl,cfr);
@@ -363,8 +362,12 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       // value and dpt is applied to the flux itself in Step 7, which is where p_T*
       // enters (see the note there).  At phi = 1 this is exactly 0.0.
       Real dpt = -(1.0-phi)*ul.d*ur.d*sdl*sdr*(wr_ivx - wl_ivx)/(sdr*ur.d - sdl*ul.d);
-      if (divdiss > 0) {   // lowmach2-1102: m_L m_R/(m_L+m_R) J/rhobar, m_K = rho_K|sd_K|
-        const Real jdd = DivDissJ(w0, m, k, j, i, ivx, divdiss, dd_act2, dd_act3,
+      if (eos.divdiss > 0) {   // lowmach2-1102: m_L m_R/(m_L+m_R) J/rhobar,
+        //                        m_K = rho_K|sd_K|
+        const bool dd_act2 = (indcs.nx2 > 1), dd_act3 = (indcs.nx3 > 1);
+        const Real dd_dx1 = size.d_view(m).dx1, dd_dx2 = size.d_view(m).dx2,
+                   dd_dx3 = size.d_view(m).dx3;
+        const Real jdd = DivDissJ(w0, m, k, j, i, ivx, eos.divdiss, dd_act2, dd_act3,
                                   dd_dx1, dd_dx2, dd_dx3);
         dpt += (1.0-phi)*ul.d*ur.d*sdl*sdr/(sdr*ur.d - sdl*ul.d)
                *jdd/(0.5*(wl_idn + wr_idn));
@@ -592,11 +595,12 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       // min(1, max|u|/max c_ax*), floored by the odd-even sensor on the transverse
       // velocities (full Alfven dissipation of 2dx transverse modes) and by psi_min.
       // The energy flux takes the matching work and Poynting terms (as in Step 8).
-      if (alf_rot && rot_exist && (spd[0] < 0.0) && (spd[4] > 0.0) &&
+      if (eos.alfmach_rot && rot_exist && (spd[0] < 0.0) && (spd[4] > 0.0) &&
           (spd[1] < 0.0) && (spd[3] > 0.0)) {
         const Real caxs = fabs(bxi)*fmax(1.0/sqrtdl, 1.0/sqrtdr);
         const Real psia = LhlldAlfRotPsi(w0, m, k, j, i, ivx, ivy, ivz, fmax(usql, usqr),
-                                         caxs, cb_sensor, cb_cont, alf_rot_min);
+                                         caxs, eos.cb_sensor, eos.cb_cont,
+                                         eos.alfmach_rot_min);
         const Real wgt = 1.0 - psia;
         if (wgt > 0.0) {
           const Real dmy = -wgt*(flxi.my - 0.5*((fl.my + ulst.my) + (fr.my + urst.my)));
@@ -616,7 +620,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       // (default on, EOS_Data::lhlld_emf_eta_pos).  eta_face ~ (|S_M| + du/2) dx/2 for
       // the HLLD B_t flux; on a converging face with -du > 2|S_M| it is negative, and
       // the minimal extra flux -(1/2) max(0, -(|S_M| + du/2)) dB_t brings it to 0.
-      if (eta_pos && (spd[0] < 0.0) && (spd[4] > 0.0)) {
+      if (eos.lhlld_emf_eta_pos && (spd[0] < 0.0) && (spd[4] > 0.0)) {
         Real ceta = fmax(0.0, -(fabs(spd[2]) + 0.5*(wr_ivx - wl_ivx)));
         if (ceta > 0.0) {
           Real dfby = -0.5*ceta*(ur.by - ul.by);
