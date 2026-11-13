@@ -885,6 +885,28 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real blang_ = cs_blang, blp_ = cs_blp;
   const Real hs_ = cs_hscl;
   const Real vn_ = cs_vnoise*sqrt((gm1 + 1.0)*p0/d0);
+  // cscorner-1113 (TEST, iprob 13 only, off unless <problem>/cblob_d > 0): a DENSE BLOB
+  // on the stratified atmosphere, density cblob_d x ambient, temperature cblob_t x
+  // ambient, radial velocity cblob_vr, centred on the direction (cblob_x, cblob_y,
+  // cblob_z) at radius cblob_r, angular radius cblob_ang and radial half width cblob_wr,
+  // with tanh edges of width cblob_dw (radians; the radial edge cblob_dw*cblob_r).  The
+  // gate: the answer must not depend on where the blob sits (cube vertex, seam, panel).
+  Real cbd_ = 0.0, cbx_ = 1.0, cby_ = 0.0, cbz_ = 0.0, cbang_ = 0.12, cbr_ = 1.4;
+  Real cbwr_ = 0.1, cbdw_ = 0.02, cbt_ = 1.0, cbvr_ = 0.0;
+  if (iprob == 13 && pin->DoesParameterExist("problem", "cblob_d")) {
+    cbd_ = pin->GetReal("problem", "cblob_d");
+    const Real hx = pin->GetOrAddReal("problem", "cblob_x", 1.0);
+    const Real hy = pin->GetOrAddReal("problem", "cblob_y", 1.0);
+    const Real hz = pin->GetOrAddReal("problem", "cblob_z", 1.0);
+    const Real hn = std::sqrt(hx*hx + hy*hy + hz*hz);
+    cbx_ = hx/hn; cby_ = hy/hn; cbz_ = hz/hn;
+    cbang_ = pin->GetOrAddReal("problem", "cblob_ang", 0.12);
+    cbr_ = pin->GetOrAddReal("problem", "cblob_r", 1.4);
+    cbwr_ = pin->GetOrAddReal("problem", "cblob_wr", 0.1);
+    cbdw_ = pin->GetOrAddReal("problem", "cblob_dw", 0.02);
+    cbt_ = pin->GetOrAddReal("problem", "cblob_t", 1.0);
+    cbvr_ = pin->GetOrAddReal("problem", "cblob_vr", 0.0);
+  }
   const Real cavd_ = cs_cavd, cavx_ = cs_cavx, cavy_ = cs_cavy, cavz_ = cs_cavz;
   const Real cavw_ = cs_cavw, cavr_ = cs_cavr, cavwr_ = cs_cavwr;
   const int cavp_ = cs_cavp;
@@ -1043,9 +1065,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // hydrostatic, at rest. See StaticAtmState.
       Real dn, ie_;
       StaticAtmState(rad, d0, p0, hs_, r0_, gm1, dn, ie_);
+      Real vr0 = 0.0;
+      if (cbd_ > 0.0) {   // cscorner-1113 blob (see above)
+        Real qx, qy, qz;
+        PanelToCart(mbpanel.d_view(m), xi, eta, qx, qy, qz);
+        const Real ang = acos(fmin(1.0, fmax(-1.0, qx*cbx_ + qy*cby_ + qz*cbz_)));
+        const Real sa = 0.5*(1.0 - tanh((ang - cbang_)/cbdw_));
+        const Real sr = 0.5*(1.0 - tanh((fabs(rad - cbr_) - cbwr_)/(cbdw_*cbr_)));
+        const Real s = sa*sr;
+        const Real fd = 1.0 + (cbd_ - 1.0)*s;
+        const Real ft = 1.0 + (cbt_ - 1.0)*s;
+        dn *= fd;
+        ie_ *= fd*ft;
+        vr0 = cbvr_*s;
+      }
       w0(m,IDN,k,j,i) = dn;
       w0(m,IEN,k,j,i) = ie_;
-      w0(m,IVX,k,j,i) = 0.0;
+      w0(m,IVX,k,j,i) = vr0;
       w0(m,IVY,k,j,i) = 0.0;
       w0(m,IVZ,k,j,i) = 0.0;
       if (vn_ > 0.0) {
