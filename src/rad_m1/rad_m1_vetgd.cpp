@@ -6560,9 +6560,9 @@ void RadiationM1::VetGdSweep() {
         // exchanges, the other set's first (each writes only its own set's band)
         if (!(vgd_xff_msg && VetGdHlXff(i, wsx))) {
           VgdXffSwap();
-          VetGdHalo(vgd_i, n, i, i, wsx, true, nullptr);
+          VetGdHalo(vgd_i, n, i, i, wsx, true, static_cast<VgdIView *>(nullptr));
           VgdXffSwap();
-          VetGdHalo(vgd_i, n, i, i, wsx, true, nullptr);
+          VetGdHalo(vgd_i, n, i, i, wsx, true, static_cast<VgdIView *>(nullptr));
         }
       } else {
         vgd_rg_lastx = false;
