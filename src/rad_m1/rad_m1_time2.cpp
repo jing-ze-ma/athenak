@@ -1837,8 +1837,13 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   bool zfirst = true;
   std::chrono::steady_clock::time_point zt0;
   if (zl_prof) {Kokkos::fence(); zt0 = std::chrono::steady_clock::now();}
+  const int zlr = zl_local;   // zlocal-1113 (rad_m1.hpp zalesak_local_rounds)
   for (int r = 0; r < 4096; ++r) {   // until no cell is newly limited
     Real nv[2] = {0.0, 0.0};
+    Real nl[2] = {0.0, 0.0};
+    for (int s = 0; s < (zlr > 0 ? zlr : 1); ++s) {
+    nv[0] = 0.0;
+    nv[1] = 0.0;
     par_reduce_flat2("m1_t2_ffct_r", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
                   Real &ab) {
@@ -1863,6 +1868,18 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       }
       iw_(m,cb,k,j,i) = rn;
     }, Kokkos::Sum<Real>(nv[0]), Kokkos::Sum<Real>(nv[1]));
+    if (zlr > 0) {   // local sub-round: keep the changes, no MPI, ghosts held
+      if (!(nv[0] > 0.0)) {break;}
+      nl[0] += nv[0];
+      nl[1] += nv[1];
+      zl_sub[0] += 1.0;
+      par_for("m1_t2_ffct_cl", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        iw_(m,ca,k,j,i) = iw_(m,cb,k,j,i);
+      });
+    }
+    }   // zalesak_local_rounds sub-round loop (one pass when off)
+    if (zlr > 0) {nv[0] = nl[0]; nv[1] = nl[1];}
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, nv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
@@ -1870,10 +1887,12 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     if (!(nn > 0.0)) {break;}
     ncell += nn;
     nround = r + 1;
+    if (zlr == 0) {
     par_for("m1_t2_ffct_c", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       iw_(m,ca,k,j,i) = iw_(m,cb,k,j,i);
     });
+    }
     if (!zsk || zfirst || nv[1] > 0.0) {
       ImplicitKrylovHalo(ca);
       zl_halos[0] += 1.0;
@@ -3438,6 +3457,7 @@ void RadiationM1::Time2Report() {
               << t2_ffct_rmax << " withheld E x vol=" << t2_ffct_de << " left (Q<=0)="
               << t2_ffct_left << " (rank 0: rounds=" << zl_rounds[0] << " R exchanges="
               << zl_halos[0];
+    if (zl_local > 0) {std::cout << " local sub-rounds=" << zl_sub[0];}
     if (zl_prof) {std::cout << " round-loop wall=" << zl_wall[0] << " s";}
     std::cout << ")";
   }
