@@ -7988,6 +7988,9 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
   }
   // zfast-1113 fmm_warm (rad_m1.hpp): lam prefactor 1, R from the previous pass
   const bool fzw = fz_warm && !impl_fmm_real;
+  // a face lam that returns to 1 within a solve is stored as 1 - 2^-53, so that
+  // implicit_face_mmat_rowsel (rows with a lam < 1) re-assembles its rows
+  const Real fzom = 1.0 - 1.1102230246251565e-16;
   // b(R) of cell (m,k,j,i) with the current R (slot sr, ghosts valid), and P, b0, I(R)
   auto cell = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                             Real &po, Real &b0, Real &ir) {
@@ -8235,24 +8238,29 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     par_reduce_flat("m1_fz_chk", 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
       const Real g = g_(m,k,j,i);
-      const Real rd = (g > 0.0) ? iw_(m,sr,k,j,i-1)
-                                : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
-      if (rd != lam_(m,k,j,i)) {a += 1.0;}
+      const Real lo = lam_(m,k,j,i);
+      Real rd = (g > 0.0) ? iw_(m,sr,k,j,i-1) : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
+      if (rd == 1.0 && lo < 1.0) {rd = fzom;}
+      if (rd != lo) {a += 1.0;}
     }, Kokkos::Sum<Real>(nch));
     if (tr) {
       par_reduce_flat("m1_fz_chkt", 0, nmb1, ks, ke+(tr3 ? 1 : 0), js, je+1, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
         if (k <= ke) {
           const Real g = ft_(m,2,k,j,i);
-          const Real rd = (g > 0.0) ? iw_(m,sr,k,j-1,i)
-                                    : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
-          if (rd != ft_(m,3,k,j,i)) {a += 1.0;}
+          const Real lo = ft_(m,3,k,j,i);
+          Real rd = (g > 0.0) ? iw_(m,sr,k,j-1,i)
+                              : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
+          if (rd == 1.0 && lo < 1.0) {rd = fzom;}
+          if (rd != lo) {a += 1.0;}
         }
         if (tr3 && j <= je) {
           const Real g = ft_(m,6,k,j,i);
-          const Real rd = (g > 0.0) ? iw_(m,sr,k-1,j,i)
-                                    : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
-          if (rd != ft_(m,7,k,j,i)) {a += 1.0;}
+          const Real lo = ft_(m,7,k,j,i);
+          Real rd = (g > 0.0) ? iw_(m,sr,k-1,j,i)
+                              : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
+          if (rd == 1.0 && lo < 1.0) {rd = fzom;}
+          if (rd != lo) {a += 1.0;}
         }
       }, Kokkos::Sum<Real>(nch));
     }
@@ -8276,8 +8284,9 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
   par_reduce_flat("m1_fmm_lam", 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sf) {
     const Real g = g_(m,k,j,i);
-    const Real rd = (fzw ? 1.0 : lam_(m,k,j,i))*((g > 0.0) ? iw_(m,sr,k,j,i-1)
+    Real rd = (fzw ? 1.0 : lam_(m,k,j,i))*((g > 0.0) ? iw_(m,sr,k,j,i-1)
                                    : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0));
+    if (fzw && rd == 1.0 && lam_(m,k,j,i) < 1.0) {rd = fzom;}   // keep the row selected
     lam_(m,k,j,i) = rd;
     if (rd < 1.0) {sf += 1.0;}
   }, Kokkos::Sum<Real>(lv[0]));
@@ -8289,14 +8298,16 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
         const Real g = ft_(m,2,k,j,i);
         const Real rd = (g > 0.0) ? iw_(m,sr,k,j-1,i)
                                   : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
-        ft_(m,3,k,j,i) = fzw ? rd : ft_(m,3,k,j,i)*rd;
+        ft_(m,3,k,j,i) = fzw ? ((rd == 1.0 && ft_(m,3,k,j,i) < 1.0) ? fzom : rd)
+                             : ft_(m,3,k,j,i)*rd;
         if (ft_(m,3,k,j,i) < 1.0) {sf += 1.0;}
       }
       if (tr3 && j <= je) {
         const Real g = ft_(m,6,k,j,i);
         const Real rd = (g > 0.0) ? iw_(m,sr,k-1,j,i)
                                   : ((g < 0.0) ? iw_(m,sr,k,j,i) : 1.0);
-        ft_(m,7,k,j,i) = fzw ? rd : ft_(m,7,k,j,i)*rd;
+        ft_(m,7,k,j,i) = fzw ? ((rd == 1.0 && ft_(m,7,k,j,i) < 1.0) ? fzom : rd)
+                             : ft_(m,7,k,j,i)*rd;
         if (ft_(m,7,k,j,i) < 1.0) {sf += 1.0;}
       }
     }, Kokkos::Sum<Real>(nt));
