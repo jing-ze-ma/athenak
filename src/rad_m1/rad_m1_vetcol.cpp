@@ -1638,6 +1638,17 @@ void RadiationM1::VetColReport() {
                     << vgd_rg_store.extent(0)*sizeof(Real)/1.0e9 << " GB"
                     << (vgd_ring_poison ? " (POISON test)" : "") << std::endl;
         }
+        if (vgd_xff) {
+          double oos2 = 0.0;
+          if (vgd_i_xb.oos.extent(0) > 0) {
+            auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i_xb.oos);
+            oos2 = h(0);
+          }
+          std::cout << "<rad_m1> vet_gd_rotate_xfade_fuse (rank 0): fused builds "
+                    << vgd_xff_n << ", two-sweep fallbacks " << vgd_xff_nfb
+                    << ", merged exchanges " << vgd_xff_nmsg << ", out-of-slab accesses "
+                    << "(other set) " << oos2 << std::endl;
+        }
       }
       if (vgd_hc_mb > 0 || vgd_twfuse || vgd_twdet || vgd_twseq) {
         std::cout << "<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=" << vgd_twfuse

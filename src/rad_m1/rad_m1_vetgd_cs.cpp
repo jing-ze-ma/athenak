@@ -1494,14 +1494,15 @@ void RadiationM1::VetGdCsSweep() {
   // values of the dense-band layout (bitwise)
   const bool rga = vgd_ring && ccl;
   if (vgd_ring && !ccl) {VgdCsFatal("vet_gd_band_ring without the compact lists");}
-  if (xffs && (rga || two || upf_ != 0 || (ccl && vgd_csxg > 1))) {
-    VgdCsFatal("vet_gd_rotate_xfade_fuse: not with the band ring / fused twin / upwind "
-               "profile / direction groups (VetGdXffOk)");
+  if (xffs && (two || upf_ != 0 || (ccl && vgd_csxg > 1))) {
+    VgdCsFatal("vet_gd_rotate_xfade_fuse: not with the fused twin / upwind profile / "
+               "direction groups (VetGdXffOk)");
   }
-  if (rga) {
+  // (xffuse-1113: the next set's records in vgd_hxe_alt, unused on the cubed sphere
+  // otherwise, from its own compact lists; the ring's second array is its intensities)
+  auto ringrec = [&](std::vector<VgdHlEntry> &hxe, const VgdCsCl &E, const Real alr) {
     const int n1c = indcs.nx1 + 2*indcs.ng;
-    if (static_cast<int>(vgd_hxe.size()) != 2*n1c) {vgd_hxe.resize(2*n1c);}
-    const VgdCsCl &E = vgd_cscl[vgd_cscur];
+    if (static_cast<int>(hxe.size()) != 2*n1c) {hxe.resize(2*n1c);}
     const int np = static_cast<int>(vgd_csprk.size());
     const int64_t a0 = E.ro[0];
     const int G = E.ng;   // xchg-1021: the shell's groups are contiguous in the list
@@ -1511,7 +1512,7 @@ void RadiationM1::VetGdCsSweep() {
         na >= INT32_MAX) {
       VgdCsFatal("vet_gd_band_ring: band addresses >= 2^31 (32-bit records)");
     }
-    VgdHlEntry &B = vgd_hxe[n1c];
+    VgdHlEntry &B = hxe[n1c];
     B.gen = -1;
     B.exact = false;
     if (B.dl.extent_int(0) < na + 1) {
@@ -1530,7 +1531,7 @@ void RadiationM1::VetGdCsSweep() {
       });
     }
     for (int l = 0; l < n1; ++l) {
-      VgdHlEntry &X = vgd_hxe[is + l];
+      VgdHlEntry &X = hxe[is + l];
       const int64_t r0 = E.ro[static_cast<size_t>(l)*G*(np + 1)];
       const int64_t r1 = E.ro[(static_cast<size_t>(l)*G + G - 1)*(np + 1) + np];
       X.dl = DvceArray1D<int>(bd_.data() + (r0 - a0), r1 - r0);
@@ -1539,9 +1540,13 @@ void RadiationM1::VetGdCsSweep() {
       X.nw = 0;
       X.exact = true;
       X.gen = 1;
-      X.alpha = vgd_alpha;
+      X.alpha = alr;
       X.scut = vgd_scut;
     }
+  };
+  if (rga) {
+    ringrec(vgd_hxe, vgd_cscl[vgd_cscur], vgd_alpha);
+    if (xffs) {ringrec(vgd_hxe_alt, vgd_cscl[xcurb], vgd_xf_alt);}
   }
   if (rga) {vgd_cur = DevExeSpace();}   // the ring's copy kernel: this sweep's stream
   // xchg-1021 vet_gd_cs_xgroups = G > 1 (compact lists, MPI band): per (shell, group)
@@ -1801,7 +1806,7 @@ void RadiationM1::VetGdCsSweep() {
     s_lb = (el != nullptr) ? std::atoi(el) : 6;
 #endif
   }
-  VetGdRingSweepBegin(two);
+  VetGdRingSweepBegin(two || xffs);   // (xffuse-1113: the other set's array second)
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
     const int nsh = n1 - lcut;
