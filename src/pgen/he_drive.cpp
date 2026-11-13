@@ -197,8 +197,29 @@ void DPhi(Mesh *pm, const Real dmi, const std::vector<Real> &ddm, std::vector<Re
   }
 }
 
-//! add (dpc, dpf) to every potential array; energy: E += rho dpc (every cell)
-void AddPhi(Mesh *pm, const std::vector<Real> &dpc, const std::vector<Real> &dpf,
+//! the reference potentials (device clones of every potential array when the live
+//! gravity reference is taken; on a restart the rebuilt arrays ARE the reference): the
+//! arrays are always SET to reference + dPhi (never accumulated), so a restart that
+//! rebuilds the reference and applies the stored dPhi reproduces them bitwise
+DvceArray4D<Real> rcc_, rx1_, rx2_, rx3_, rwc_, rwf_;
+
+void TakeRef(Mesh *pm) {
+  radm1::FluidRef fl = radm1::FluidRef::Get(pm->pmb_pack);
+  auto clone = [](const DvceArray4D<Real> &a, DvceArray4D<Real> *c) {
+    *c = DvceArray4D<Real>(Kokkos::view_alloc(std::string("hsdrv_ref"),
+                                              Kokkos::WithoutInitializing), a.layout());
+    Kokkos::deep_copy(*c, a);
+  };
+  clone(fl.phicc0, &rcc_);
+  clone(fl.phi0->x1f, &rx1_);
+  clone(fl.phi0->x2f, &rx2_);
+  clone(fl.phi0->x3f, &rx3_);
+  if (fl.phicc_wb.data() != fl.phicc0.data()) {clone(fl.phicc_wb, &rwc_);}
+  if (fl.phi_wb_x1f.data() != fl.phi0->x1f.data()) {clone(fl.phi_wb_x1f, &rwf_);}
+}
+
+//! set every potential array to reference + (dpc, dpf); energy: E += rho (new - old)
+void SetPhi(Mesh *pm, const std::vector<Real> &dpc, const std::vector<Real> &dpf,
             const bool energy) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
@@ -221,22 +242,24 @@ void AddPhi(Mesh *pm, const std::vector<Real> &dpc, const std::vector<Real> &dpf
   // the effective pair is its own allocation only after EnableWBEffectivePotential
   const bool wbs = (pwc.data() != phicc.data());
   const bool wfs = (pwf.data() != ph1.data());
+  auto rcc = rcc_, rx1 = rx1_, rx2 = rx2_, rx3 = rx3_, rwc = rwc_, rwf = rwf_;
   auto u0 = fl.u0;
-  par_for("hsdrv_addphi", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+  par_for("hsdrv_setphi", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = dc(i);
-    if (energy) {u0(m,IEN,k,j,i) += u0(m,IDN,k,j,i)*d;}
-    phicc(m,k,j,i) += d;
-    ph1(m,k,j,i) += df(i);
-    if (i == n1m1) {ph1(m,k,j,i+1) += df(i+1);}
-    ph2(m,k,j,i) += d;
-    ph3(m,k,j,i) += d;
-    if (j == n2m1) {ph2(m,k,j+1,i) += d;}
-    if (k == n3m1) {ph3(m,k+1,j,i) += d;}
-    if (wbs) {pwc(m,k,j,i) += d;}
+    const Real pn = rcc(m,k,j,i) + d;
+    if (energy) {u0(m,IEN,k,j,i) += u0(m,IDN,k,j,i)*(pn - phicc(m,k,j,i));}
+    phicc(m,k,j,i) = pn;
+    ph1(m,k,j,i) = rx1(m,k,j,i) + df(i);
+    if (i == n1m1) {ph1(m,k,j,i+1) = rx1(m,k,j,i+1) + df(i+1);}
+    ph2(m,k,j,i) = rx2(m,k,j,i) + d;
+    ph3(m,k,j,i) = rx3(m,k,j,i) + d;
+    if (j == n2m1) {ph2(m,k,j+1,i) = rx2(m,k,j+1,i) + d;}
+    if (k == n3m1) {ph3(m,k+1,j,i) = rx3(m,k+1,j,i) + d;}
+    if (wbs) {pwc(m,k,j,i) = rwc(m,k,j,i) + d;}
     if (wfs) {
-      pwf(m,k,j,i) += df(i);
-      if (i == n1m1) {pwf(m,k,j,i+1) += df(i+1);}
+      pwf(m,k,j,i) = rwf(m,k,j,i) + df(i);
+      if (i == n1m1) {pwf(m,k,j,i+1) = rwf(m,k,j,i+1) + df(i+1);}
     }
   });
   if (fl.ph != nullptr) {fl.ph->wb_cache_built = false;}
@@ -260,6 +283,7 @@ Real Refresh(Mesh *pm, const std::vector<Real> &sh, const bool energy) {
     dmint_ = 0.0;
     ddm_.assign(nx1_, 0.0);
     ref_ = true;
+    TakeRef(pm);
     if (global_variable::my_rank == 0) {
       std::cout << "he_drive: live gravity reference taken at cycle " << pm->ncycle
                 << ", t = " << pm->time << " (M_int table " << mref_ << ")" << std::endl;
@@ -276,12 +300,11 @@ Real Refresh(Mesh *pm, const std::vector<Real> &sh, const bool energy) {
   std::vector<Real> pc0, pf0, pc1, pf1;
   DPhi(pm, dmint_, ddm_, &pc0, &pf0);
   DPhi(pm, ndmi, nddm, &pc1, &pf1);
-  std::vector<Real> dc(nc1), df(nc1 + 1);
+  std::vector<Real> dc(nc1);
   Real w = 0.0;
   for (int i = 0; i < nc1; ++i) {dc[i] = pc1[i] - pc0[i];}
-  for (int i = 0; i <= nc1; ++i) {df[i] = pf1[i] - pf0[i];}
   for (int i = is; i <= ie; ++i) {w += dc[i]*sh[i];}
-  AddPhi(pm, dc, df, energy);
+  SetPhi(pm, pc1, pf1, energy);
   ddm_ = nddm;
   dmint_ = ndmi;
   return w;
@@ -577,7 +600,8 @@ void RestartApply(Mesh *pm) {
     if (live_ && ref_) {
       std::vector<Real> pc, pf;
       DPhi(pm, dmint_, ddm_, &pc, &pf);
-      AddPhi(pm, pc, pf, false);
+      TakeRef(pm);   // the rebuilt potentials are the reference
+      SetPhi(pm, pc, pf, false);
     }
     CycleBody(pm, false);
     return;
@@ -648,6 +672,8 @@ Real InnerFlux(Mesh *pm, const Real fconst) {
 }
 
 void Final() {
+  rcc_ = DvceArray4D<Real>(); rx1_ = DvceArray4D<Real>(); rx2_ = DvceArray4D<Real>();
+  rx3_ = DvceArray4D<Real>(); rwc_ = DvceArray4D<Real>(); rwf_ = DvceArray4D<Real>();
   itab_ = timetable::Table();
   mtab_ = timetable::Table();
 }
