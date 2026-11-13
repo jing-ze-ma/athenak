@@ -4176,6 +4176,38 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // facemmat-1112 implicit_face_mmat (rad_m1.hpp)
   impl_fmm = pin->DoesParameterExist("rad_m1","implicit_face_mmat") &&
              pin->GetBoolean("rad_m1","implicit_face_mmat");
+  // radlz-1113 implicit_lz_form (rad_m1.hpp, AM_CONSERVING_CS_1112.md sect. 10)
+  if (pin->DoesParameterExist("rad_m1","implicit_lz_form") &&
+      pin->GetBoolean("rad_m1","implicit_lz_form")) {
+    impl_lz = true;
+    if (!cs_geom || !trans_on || !trans_x3) {
+      ImplFatal("<rad_m1>/implicit_lz_form needs the cubed sphere in 3-D with implicit "
+                "transport");
+    }
+    if (!impl_gas_src_cons || impl_gas_src_full) {
+      ImplFatal("<rad_m1>/implicit_lz_form needs implicit_gas_src = conservative or "
+                "conservative2 (Z_f books the face transport)");
+    }
+    if (impl_hr_cmem || impl_physflux || impl_fmm) {
+      ImplFatal("<rad_m1>/implicit_lz_form is not combined (yet) with implicit_hr_cmem, "
+                "implicit_physflux or implicit_face_mmat");
+    }
+    iw_lz = niw;
+    niw += 1;
+    if (pin->DoesParameterExist("rad_m1","implicit_lz_mode")) {
+      const std::string lm = pin->GetString("rad_m1","implicit_lz_mode");
+      if (lm.compare("stress") == 0) {
+        impl_lz_mode = 1;
+      } else if (lm.compare("full") != 0) {
+        ImplFatal("<rad_m1>/implicit_lz_mode must be full or stress");
+      }
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_lz_diag")) {
+      impl_lz_diag = pin->GetInteger("rad_m1","implicit_lz_diag");
+    }
+    Kokkos::realloc(lz_d, 6);
+    Kokkos::deep_copy(lz_d, 0.0);
+  }
   // fast2nd-1112 (rad_m1.hpp): halo exchange of the Zalesak R only when it can change
   if (pin->DoesParameterExist("rad_m1","zalesak_halo_skip")) {
     zl_hskip = pin->GetBoolean("rad_m1","zalesak_halo_skip");
@@ -6232,6 +6264,13 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   // the operator form re-adds it in the stencil
   const bool fmmo = impl_fmm && (fmm_t.extent_int(0) > nmb1);
   auto fmt_ = fmm_t;
+  // radlz-1113 implicit_lz_form: each face stores om_f G_f and om_f (LzApply)
+  const bool lzf = impl_lz;
+  if (lzf && lz_w2.extent_int(0) == 0) {LzGeom();}
+  auto lzg2_ = lz_g2;
+  auto lzo2_ = lz_o2;
+  auto lzg3_ = lz_g3;
+  auto lzo3_ = lz_o3;
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const M1Vtx vx = M1VtxOf(v3m1_, mbsize.d_view(m), js, je, ks, ke);   // cornerfix-1103
@@ -6389,6 +6428,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       }
     }
     f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+    if (lzf) {   // radlz-1113: the face's attributed transport (Z_f's om dt (gr + off))
+      const Real oml = th*(1.0 + ch*dt*ktf);
+      lzg2_(m,k,j,i) = oml*(gr + off);
+      lzo2_(m,k,j,i) = oml;
+    }
     if (fmmo) {fmt_(m,12,k,j,i) = -th*ch*cl*dt*off;}   // facetr-1112
     if (blt) {
       f2_(m,k,j,i) += (cl/ch)*(bw2_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,jm,i)
@@ -6623,6 +6667,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       }
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
                          - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+      if (lzf) {   // radlz-1113 (as x2)
+        const Real oml = th*(1.0 + ch*dt*ktf);
+        lzg3_(m,k,j,i) = oml*(gr + off);
+        lzo3_(m,k,j,i) = oml;
+      }
       if (fmmo) {fmt_(m,13,k,j,i) = -th*ch*cl*dt*off;}   // facetr-1112
       if (blt) {
         f3_(m,k,j,i) += (cl/ch)*(bw3_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,km,j,i)
@@ -6708,6 +6757,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       }
     });
   }
+
+  // radlz-1113 implicit_lz_form: the torque-closing stress h_f on the x2 / x3 faces (and
+  // in Z_f) before the rows read the face fluxes
+  if (lzf) {LzApply();}
 
   // (3) the cell terms: the diagonal part, the lagged right-hand side and the residual
   // of the full 7-point system.  implicit_enthalpy adds its deferred correction to the
@@ -19880,6 +19933,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // patch increments omega (state) and omega_k (slope) in amw 0-2 / 3-5 (each cell
     // reads only its own amw before) and deposits nothing; m1_am_cs_patch gathers them,
     // m1_am_cs_col moves the capped remainders to the column
+    const bool lzn = impl_lz;   // radlz-1113: diagnostics only, no deposit
     const bool apt = (impl_am_dep == 1);
     if (apt && am_vec) {
       ImplFatal("<rad_m1>/implicit_am_cs_deposit = patch replaces <hydro>/am_vector's "
@@ -20047,6 +20101,26 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         lv(h1 - am_(m,3,k,j,i), (ha + c*hb)*si - am_(m,4,k,j,i),
            (hb + c*ha)*si - am_(m,5,k,j,i), dlc);
         for (int q = 0; q < 3; ++q) {dlc[q] *= icc;}
+      }
+      if (lzn) {
+        // radlz-1113 implicit_lz_form: the radiation transport conserves L_z of gas +
+        // radiation by itself; no deposit, the budget lines only (AMCS_CONS 0-8, 11-15)
+        if (acd) {
+          Real lgn[3], lrn[3];
+          lv(uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i), lgn);
+          lv(u0_(m,M1_F1,k,j,i), u0_(m,M1_F2,k,j,i), u0_(m,M1_F3,k,j,i), lrn);
+          for (int q = 0; q < 3; ++q) {
+            Real ex = dt*tv[q];
+            if (apl || apr) {ex -= dt*ta[q] - da[q];}
+            Kokkos::atomic_add(&acd_(q), dlg[q] + dlr[q]);
+            Kokkos::atomic_add(&acd_(3+q), ex);
+            Kokkos::atomic_add(&acd_(6+q), del[q]);
+            Kokkos::atomic_add(&acd_(12+q), lgn[q] + icc*lrn[q]);
+          }
+          Kokkos::atomic_add(&acd_(11), (uh(m,IEN,k,j,i) + clch*u0_(m,M1_E,k,j,i))*dv);
+          Kokkos::atomic_add(&acd_(15), fabs(dlg[2]) + fabs(dlr[2]));
+        }
+        return;
       }
       if (apt) {
         // amvec-1111: the patch's moment-of-inertia tensor (xx yy zz xy xz yz) over the
