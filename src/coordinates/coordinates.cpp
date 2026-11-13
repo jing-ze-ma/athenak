@@ -994,8 +994,18 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
   const int nkji = (ku - kl + 1)*(ju - jl + 1)*(iu - il + 1);
   const int nji = (ju - jl + 1)*(iu - il + 1);
   const int ni = (iu - il + 1);
+  // d6fast6-1113: on HIP LaunchBounds<256, 2> (the default 1024-thread bound capped the
+  // body at 128 VGPRs: 968 B/lane of scratch, 274 spilled VGPRs).  The two Real sums keep
+  // their order only if the launch shape does: Kokkos picks the block size from the
+  // register use, so the shape (256-thread blocks, 4096 of them on the HG deck, as
+  // before) was checked in rocprofv3 and the floor-energy sums compared bit for bit.
+#if defined(KOKKOS_ENABLE_HIP)
+  using RvPol = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>;
+#else
+  using RvPol = Kokkos::RangePolicy<>;
+#endif
   Kokkos::parallel_reduce("cs_raisev",
-  Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+  RvPol(DevExeSpace(), 0, (nmb1 + 1)*nkji),
   KOKKOS_LAMBDA(const int &idx, int &sumv, int &sumts, Real &sumde, Real &sumvde) {
     const int m = idx/nkji;
     const int k = (idx - m*nkji)/nji + kl;
