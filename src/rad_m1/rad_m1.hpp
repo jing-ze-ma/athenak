@@ -1187,6 +1187,11 @@ class RadiationM1 {
   // plus the block-face layer after an R exchange.  A cell whose inputs did not change
   // cannot be newly limited (it was evaluated with the same inputs before): BITWISE.
   bool zl_active = false;
+  // zlocal-1113 <rad_m1>/zalesak_colsweep (default false; face_mmat only): each round is
+  // one x1 Gauss-Seidel sweep up + down per column (transverse R from the round's
+  // snapshot).  Monotone from R = 1: the same fixed point up to the 1e-12 margin, not
+  // bitwise; a radial chain of n cells settles in one round instead of n.
+  bool zl_colsweep = false;
   DvceArray4D<int> zl_chg;
   Real zl_xwall[2] = {0.0, 0.0};   // fenced exchange seconds (M1_FCT_PROF)
   Real zl_rounds[2] = {0.0, 0.0}, zl_halos[2] = {0.0, 0.0}, zl_wall[2] = {0.0, 0.0};
