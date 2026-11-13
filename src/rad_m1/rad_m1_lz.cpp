@@ -521,14 +521,14 @@ Real RadiationM1::LzxTotal() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::LzxPost
 //! \brief lzphys-1113 implicit_lzx (LZPHYS_1113.md), once per solve right after the
-//! write-back and its floor / clip follow-ups.  The write-back stored per cell the old
-//! vector of the solve (lzx_r: transverse gas m and cell F^old), so
-//! dp_c = (m_c - m^old_c) + (F_c - F^old_c)/(c chat) is the realised change of gas +
+//! write-back and its floor / clip follow-ups.  The solve stored per cell its START state
+//! (lzx_r: transverse gas m before the hesdirk2 stage increment, stored cell F), so
+//! dp_c = (m_c - m^s_c) + (F_c - F^s_c)/(c chat) is the realised change of gas +
 //! radiation momentum (the radial components carry no z-torque); its torque
 //! Lr = sum_c V (x_c x dp_c)_z is the
-//! solve's L_z change of gas + radiation (Lambda of the lateral Z_f plus whatever the
-//! write-back does not pair: the AP-HLL part of dA under implicit_cs2_hll = drag, the
-//! clips).  The booked boundary torque is 0 (sp x3 periodic, cs closed: no lateral
+//! solve's L_z change of gas + radiation (the stage increment's, Lambda of the lateral
+//! Z_f, and whatever the write-back does not pair: the AP-HLL part of dA under
+//! implicit_cs2_hll = drag, the clips).  The booked boundary torque is 0 (sp x3 periodic, cs closed: no lateral
 //! physical face), so the solve's budget is closed with the stress
 //!   dZ_f = -Omega mu_f s_f, s_f = sign(W_f), Omega = -Lr / S,
 //!   S = sum_c sum_f a_cf mu_f s_f
