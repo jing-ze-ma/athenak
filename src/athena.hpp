@@ -246,6 +246,59 @@ struct DvceEdgeFld4D {
 // 1D-range, and thread teams for use with inner vector threads. Experiments in K-Athena
 // and Parthenon indicate that 1D-range policy is generally faster than multidimensional
 // MD-range policy, so the latter is not used.
+// dhjcuda-1112: ATHENA_CUDA_BODY_GLOBAL = B > 0 (CUDA; set for PROBLEM=deep_hot_jupiter_rt
+// in src/CMakeLists.txt): a 4D par_for body (and a ck CkParFor4 / boundary BvalsTeamFor
+// functor) of >= B bytes is copied to device memory (cudaMemcpyAsync on the launch
+// stream: a pageable copy this small is staged at once, no host or device sync) and the
+// kernel gets only its address.  A body passed BY VALUE as the kernel argument (the
+// light-weight launch) is copied by nvcc into every thread's local memory before its
+// first use (ptxas: a stack frame of about the body's size, 1.4-3.5 kB on the dhj
+// kernels); through the pointer its fields are read straight from global memory.  One
+// device copy per body type, reused in stream order (the next copy queues behind the
+// previous kernel), never freed.  Same arithmetic, same index map: bitwise.  0 = the
+// launches as before.
+#ifndef ATHENA_CUDA_BODY_GLOBAL
+#define ATHENA_CUDA_BODY_GLOBAL 0
+#endif
+#if defined(KOKKOS_ENABLE_CUDA) && (ATHENA_CUDA_BODY_GLOBAL > 0)
+template <typename F>
+inline const F *AthBodyToDevice(const Kokkos::Cuda &exec, const F &f) {
+  static void *buf = nullptr;   // one per body type
+  if (buf == nullptr) {
+    if (cudaMalloc(&buf, sizeof(F)) != cudaSuccess) {
+      throw std::runtime_error("AthBodyToDevice: cudaMalloc failed");
+    }
+  }
+  if (cudaMemcpyAsync(buf, &f, sizeof(F), cudaMemcpyHostToDevice, exec.cuda_stream())
+      != cudaSuccess) {
+    throw std::runtime_error("AthBodyToDevice: cudaMemcpyAsync failed");
+  }
+  return reinterpret_cast<const F *>(buf);
+}
+// dhjcuda-1112: parallel_for(name, policy, body) with that rule (any policy; the
+// RangePolicy / TeamPolicy wrappers below use it for every rank of par_for and
+// par_for_outer that has no light-weight launch of its own)
+template <typename Policy, typename F>
+inline void AthFor(const std::string &name, const Policy &policy, const F &body) {
+  if constexpr (std::is_same_v<typename Policy::execution_space, Kokkos::Cuda> &&
+                sizeof(F) >= ATHENA_CUDA_BODY_GLOBAL) {
+    const F *bp_ = AthBodyToDevice(policy.space(), body);
+    if constexpr (std::is_same_v<typename Policy::member_type, TeamMember_t>) {
+      Kokkos::parallel_for(name, policy, KOKKOS_LAMBDA(TeamMember_t tm) {(*bp_)(tm);});
+    } else {
+      Kokkos::parallel_for(name, policy, KOKKOS_LAMBDA(const int &idx) {(*bp_)(idx);});
+    }
+  } else {
+    Kokkos::parallel_for(name, policy, body);
+  }
+}
+#else
+template <typename Policy, typename F>
+inline void AthFor(const std::string &name, const Policy &policy, const F &body) {
+  Kokkos::parallel_for(name, policy, body);
+}
+#endif
+
 //------------------------------
 // 1D loop using Kokkos 1D Range
 template <typename ExeSpace, typename Function>
@@ -253,7 +306,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
                     const int &il, const int &iu, const Function &function) {
   // compute total number of elements and call Kokkos::parallel_for()
   const int ni = iu - il + 1;
-  Kokkos::parallel_for(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, ni),
+  AthFor(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, ni),
   KOKKOS_LAMBDA(const int &idx) {
     // compute i indices of thread and call function
     int i = (idx) + il;
@@ -271,7 +324,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
   const int nj = ju - jl + 1;
   const int ni = iu - il + 1;
   const int nji  = nj * ni;
-  Kokkos::parallel_for(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nji),
+  AthFor(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nji),
   KOKKOS_LAMBDA(const int &idx) {
     // compute j,i indices of thread and call function
     int j = (idx)/ni;
@@ -293,7 +346,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
   const int ni = iu - il + 1;
   const int nkji = nk * nj * ni;
   const int nji  = nj * ni;
-  Kokkos::parallel_for(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nkji),
+  AthFor(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nkji),
   KOKKOS_LAMBDA(const int &idx) {
     // compute k,j,i indices of thread and call function
     int k = (idx)/nji;
@@ -331,36 +384,6 @@ using AthRangePolicy4 = Kokkos::RangePolicy<E, Kokkos::LaunchBounds<256,
 template <typename E> using AthRangePolicy4 = Kokkos::RangePolicy<E>;
 #endif
 
-// dhjcuda-1112: ATHENA_CUDA_BODY_GLOBAL = B > 0 (CUDA; set for PROBLEM=deep_hot_jupiter_rt
-// in src/CMakeLists.txt): a 4D par_for body (and a ck CkParFor4 / boundary BvalsTeamFor
-// functor) of >= B bytes is copied to device memory (cudaMemcpyAsync on the launch
-// stream: a pageable copy this small is staged at once, no host or device sync) and the
-// kernel gets only its address.  A body passed BY VALUE as the kernel argument (the
-// light-weight launch) is copied by nvcc into every thread's local memory before its
-// first use (ptxas: a stack frame of about the body's size, 1.4-3.5 kB on the dhj
-// kernels); through the pointer its fields are read straight from global memory.  One
-// device copy per body type, reused in stream order (the next copy queues behind the
-// previous kernel), never freed.  Same arithmetic, same index map: bitwise.  0 = the
-// launches as before.
-#ifndef ATHENA_CUDA_BODY_GLOBAL
-#define ATHENA_CUDA_BODY_GLOBAL 0
-#endif
-#if defined(KOKKOS_ENABLE_CUDA) && (ATHENA_CUDA_BODY_GLOBAL > 0)
-template <typename F>
-inline const F *AthBodyToDevice(const Kokkos::Cuda &exec, const F &f) {
-  static void *buf = nullptr;   // one per body type
-  if (buf == nullptr) {
-    if (cudaMalloc(&buf, sizeof(F)) != cudaSuccess) {
-      throw std::runtime_error("AthBodyToDevice: cudaMalloc failed");
-    }
-  }
-  if (cudaMemcpyAsync(buf, &f, sizeof(F), cudaMemcpyHostToDevice, exec.cuda_stream())
-      != cudaSuccess) {
-    throw std::runtime_error("AthBodyToDevice: cudaMemcpyAsync failed");
-  }
-  return reinterpret_cast<const F *>(buf);
-}
-#endif
 
 //------------------------------
 // 4D loop using Kokkos 1D Range
@@ -432,7 +455,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
   const int nnkji  = nn * nk * nj * ni;
   const int nkji   = nk * nj * ni;
   const int nji    = nj * ni;
-  Kokkos::parallel_for(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nmnkji),
+  AthFor(name, Kokkos::RangePolicy<ExeSpace>(exec_space, 0, nmnkji),
   KOKKOS_LAMBDA(const int &idx) {
     // compute m,n,k,j,i indices of thread and call function
     int m = (idx)/nnkji;
@@ -526,7 +549,7 @@ inline void par_for_outer(const std::string &name, DevExeSpace exec_space,
                           const int kl, const int ku, const Function &function) {
   const int nk = ku - kl + 1;
   Kokkos::TeamPolicy<> policy(exec_space, nk, Kokkos::AUTO);
-  Kokkos::parallel_for(name, policy.set_scratch_size(scr_level,Kokkos::PerTeam(scr_size)),
+  AthFor(name, policy.set_scratch_size(scr_level, Kokkos::PerTeam(scr_size)),
   KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int k = tmember.league_rank() + kl;
     function(tmember, k);
@@ -544,7 +567,7 @@ inline void par_for_outer(const std::string &name, DevExeSpace exec_space,
   const int nj = ju - jl + 1;
   const int nkj = nk*nj;
   Kokkos::TeamPolicy<> policy(exec_space, nkj, Kokkos::AUTO);
-  Kokkos::parallel_for(name, policy.set_scratch_size(scr_level,Kokkos::PerTeam(scr_size)),
+  AthFor(name, policy.set_scratch_size(scr_level, Kokkos::PerTeam(scr_size)),
   KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int k = tmember.league_rank()/nj + kl;
     const int j = tmember.league_rank()%nj + jl;
@@ -565,7 +588,7 @@ inline void par_for_outer(const std::string &name, DevExeSpace exec_space,
   const int nkj  = nk*nj;
   const int nnkj = nn*nk*nj;
   Kokkos::TeamPolicy<> policy(exec_space, nnkj, Kokkos::AUTO);
-  Kokkos::parallel_for(name, policy.set_scratch_size(scr_level,Kokkos::PerTeam(scr_size)),
+  AthFor(name, policy.set_scratch_size(scr_level, Kokkos::PerTeam(scr_size)),
   KOKKOS_LAMBDA(TeamMember_t tmember) {
     int n = (tmember.league_rank())/nkj;
     int k = (tmember.league_rank() - n*nkj)/nj;
@@ -592,7 +615,7 @@ inline void par_for_outer(const std::string &name, DevExeSpace exec_space,
   const int nnkj  = nn*nk*nj;
   const int nmnkj = nm*nn*nk*nj;
   Kokkos::TeamPolicy<> policy(exec_space, nmnkj, Kokkos::AUTO);
-  Kokkos::parallel_for(name, policy.set_scratch_size(scr_level,Kokkos::PerTeam(scr_size)),
+  AthFor(name, policy.set_scratch_size(scr_level, Kokkos::PerTeam(scr_size)),
   KOKKOS_LAMBDA(TeamMember_t tmember) {
     int m = (tmember.league_rank())/nnkj;
     int n = (tmember.league_rank() - m*nnkj)/nkj;
