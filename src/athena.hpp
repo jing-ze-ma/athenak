@@ -246,7 +246,7 @@ struct DvceEdgeFld4D {
 // 1D-range, and thread teams for use with inner vector threads. Experiments in K-Athena
 // and Parthenon indicate that 1D-range policy is generally faster than multidimensional
 // MD-range policy, so the latter is not used.
-// dhjcuda-1112: ATHENA_CUDA_BODY_GLOBAL = B > 0 (CUDA; set for PROBLEM=deep_hot_jupiter_rt
+// dhjcuda-1112: ATHENA_CUDA_BODY_GLOBAL = B > 0 (CUDA; set for deep_hot_jupiter_rt
 // in src/CMakeLists.txt): a 4D par_for body (and a ck CkParFor4 / boundary BvalsTeamFor
 // functor) of >= B bytes is copied to device memory (cudaMemcpyAsync on the launch
 // stream: a pageable copy this small is staged at once, no host or device sync) and the

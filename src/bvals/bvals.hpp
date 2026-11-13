@@ -315,7 +315,8 @@ inline void BvalsTeamFor(const char *name, const Kokkos::TeamPolicy<> &policy,
                          KOKKOS_LAMBDA(TeamMember_t tmember) {(*fp_)(tmember);});
   } else {
     Kokkos::parallel_for(name, Kokkos::Experimental::require(policy,
-                         Kokkos::Experimental::WorkItemProperty::HintLightWeight), functor);
+                         Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+                         functor);
   }
 #else
   Kokkos::parallel_for(name, Kokkos::Experimental::require(policy,
