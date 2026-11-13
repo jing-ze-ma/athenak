@@ -4243,6 +4243,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (pin->DoesParameterExist("rad_m1","implicit_lzx_diag")) {
       impl_lzx_diag = pin->GetInteger("rad_m1","implicit_lzx_diag");
     }
+    iw_lzx = niw;
+    niw += 1;
   }
   // fast2nd-1112 (rad_m1.hpp): halo exchange of the Zalesak R only when it can change
   if (pin->DoesParameterExist("rad_m1","zalesak_halo_skip")) {

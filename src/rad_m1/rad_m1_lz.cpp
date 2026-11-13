@@ -565,12 +565,14 @@ void RadiationM1::LzxPost(Real dt, int t2s) {
   auto &mbpan = pmy_pack->pmb->mb_panel;
   const Real cl = c_light, ch = chat;
   const int wmode = impl_lzx_w;
-  // (1) the realised torque Lr and the sums of the weights
-  Real lrl = 0.0, lam = 0.0, lamb = 0.0, sw = 0.0, se = 0.0, sab = 0.0;
-  Kokkos::parallel_reduce("m1_lzx_sum", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+  // (1) the realised torque t_c of every cell, Lr = sum_c t_c, and q_c = |t_c| / sum_{lat f
+  // of c} W_f^2 into the iw slot iw_lzx (exchanged: a shared face needs both cells' q)
+  const int iq = iw_lzx;
+  Real lrl = 0.0, sat = 0.0;
+  Kokkos::parallel_reduce("m1_lzx_tq", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &l0, Real &l1,
-                Real &l2, Real &l3, Real &l4, Real &l5) {
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &l0, Real &l1) {
+    Real tc = 0.0;
     {   // the realised torque of the cell (RadM1AmHistory's transform)
       Real rh[3], ta[3], tb[3];
       Real c = 0.0;
@@ -593,8 +595,36 @@ void RadiationM1::LzxPost(Real dt, int t2s) {
       const Real a2 = (a2c - c*a3c)/s2, a3 = (a3c - c*a2c)/s2;
       Real p[3];
       for (int n = 0; n < 3; ++n) {p[n] = a2*ta[n] + a3*tb[n];}
-      l0 += vol(m,k,j,i)*x1v(m,i)*(rh[0]*p[1] - rh[1]*p[0]);
+      tc = vol(m,k,j,i)*x1v(m,i)*(rh[0]*p[1] - rh[1]*p[0]);
     }
+    Real s2w = 0.0;
+    if (csx) {
+      const BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
+      const BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x2);
+      const bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
+      const bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
+      if (!(j == js && plo)) {s2w += SQR(w2_(m,k,j,i));}
+      if (!(j == je && phi)) {s2w += SQR(w2_(m,k,j+1,i));}
+    }
+    {
+      const BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x3);
+      const BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x3);
+      const bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
+      const bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
+      if (!(k == ks && plo)) {s2w += SQR(w3_(m,k,j,i));}
+      if (!(k == ke && phi)) {s2w += SQR(w3_(m,k+1,j,i));}
+    }
+    iw_(m,iq,k,j,i) = (s2w > 0.0 && tc == tc) ? fabs(tc)/s2w : 0.0;
+    l0 += tc;
+    l1 += fabs(tc);
+  }, lrl, sat);
+  ImplicitHaloExchange(1, iq);
+  // (2) the sums of the weights (mu_f = |Z_f| + |W_f| (q_L + q_R) for impulse)
+  Real lam = 0.0, lamb = 0.0, sw = 0.0, se = 0.0, sab = 0.0;
+  Kokkos::parallel_reduce("m1_lzx_sum", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &l1,
+                Real &l2, Real &l3, Real &l4, Real &l5) {
     if (csx) {
       const BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
       const BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x2);
@@ -608,7 +638,8 @@ void RadiationM1::LzxPost(Real dt, int t2s) {
         const Real b = z - g2_(m,k,jf,i);
         l1 += a*z;
         l2 += a*b;
-        l3 += a*((wmode == 0) ? fabs(z) : fabs(b))*LzxSgn(w);
+        l3 += a*((wmode == 0) ? (fabs(z) + fabs(w)*(iw_(m,iq,k,jf-1,i) + iw_(m,iq,k,jf,i)))
+                              : fabs(b))*LzxSgn(w);
         l4 += a*0.5*(iw_(m,M1_IW_EP,k,jf-1,i) + iw_(m,M1_IW_EP,k,jf,i))*fabs(w);
         l5 += fabs(a*z);
       }
@@ -625,21 +656,26 @@ void RadiationM1::LzxPost(Real dt, int t2s) {
       const Real b = z - g3_(m,kf,j,i);
       l1 += a*z;
       l2 += a*b;
-      l3 += a*((wmode == 0) ? fabs(z) : fabs(b))*LzxSgn(w);
+      l3 += a*((wmode == 0) ? (fabs(z) + fabs(w)*(iw_(m,iq,kf-1,j,i) + iw_(m,iq,kf,j,i)))
+                            : fabs(b))*LzxSgn(w);
       l4 += a*0.5*(iw_(m,M1_IW_EP,kf-1,j,i) + iw_(m,M1_IW_EP,kf,j,i))*fabs(w);
       l5 += fabs(a*z);
     }
-  }, lrl, lam, lamb, sw, se, sab);
+  }, lam, lamb, sw, se, sab);
 #if MPI_PARALLEL_ENABLED
   {
-    Real lo[6] = {lrl, lam, lamb, sw, se, sab}, gl[6];
-    MPI_Allreduce(lo, gl, 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    Real lo[7] = {lrl, lam, lamb, sw, se, sab, sat}, gl[7];
+    MPI_Allreduce(lo, gl, 7, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     lrl = gl[0]; lam = gl[1]; lamb = gl[2]; sw = gl[3]; se = gl[4]; sab = gl[5];
+    sat = gl[6];
   }
 #endif
   const bool ue = (wmode == 1) || !(sw > 0.0);
   const Real ss = ue ? se : sw;
-  const Real om = (ss > 0.0 && wmode != 2) ? -lrl/ss : 0.0;
+  // a solve with a non-finite budget (a failing stage, redone by the Driver) is left alone
+  const bool fin = std::isfinite(lrl) && std::isfinite(ss);
+  if (!fin) {lzx_nbad += 1.0;}
+  const Real om = (fin && ss > 0.0 && wmode != 2) ? -lrl/ss : 0.0;
   // (2) the correction: faces, then cells (gas, radiation, slopes)
   if (om != 0.0) {
     const bool t2k = (t2s != M1_T2S_NONE);
@@ -657,7 +693,9 @@ void RadiationM1::LzxPost(Real dt, int t2s) {
         if ((j == js && plo) || (j == je+1 && phi)) {g2_(m,k,j,i) = 0.0; return;}
         const Real w = w2_(m,k,j,i), z = gz2_(m,k,j,i);
         const Real mu = ue ? 0.5*(iw_(m,M1_IW_EP,k,j-1,i) + iw_(m,M1_IW_EP,k,j,i))*fabs(w)
-                           : ((wmode == 0) ? fabs(z) : fabs(z - g2_(m,k,j,i)));
+                           : ((wmode == 0) ? (fabs(z) + fabs(w)*(iw_(m,iq,k,j-1,i)
+                                                                 + iw_(m,iq,k,j,i)))
+                                           : fabs(z - g2_(m,k,j,i)));
         const Real dz = -om*mu*LzxSgn(w);
         g2_(m,k,j,i) = dz;
         gz2_(m,k,j,i) = z + dz;
@@ -673,7 +711,9 @@ void RadiationM1::LzxPost(Real dt, int t2s) {
       if ((k == ks && plo) || (k == ke+1 && phi)) {g3_(m,k,j,i) = 0.0; return;}
       const Real w = w3_(m,k,j,i), z = gz3_(m,k,j,i);
       const Real mu = ue ? 0.5*(iw_(m,M1_IW_EP,k-1,j,i) + iw_(m,M1_IW_EP,k,j,i))*fabs(w)
-                         : ((wmode == 0) ? fabs(z) : fabs(z - g3_(m,k,j,i)));
+                         : ((wmode == 0) ? (fabs(z) + fabs(w)*(iw_(m,iq,k-1,j,i)
+                                                               + iw_(m,iq,k,j,i)))
+                                         : fabs(z - g3_(m,k,j,i)));
       const Real dz = -om*mu*LzxSgn(w);
       g3_(m,k,j,i) = dz;
       gz3_(m,k,j,i) = z + dz;
@@ -728,7 +768,7 @@ void RadiationM1::LzxPost(Real dt, int t2s) {
       }
     });
   }
-  lzx_cum[0] += lrl;
+  if (fin) {lzx_cum[0] += lrl;}
   lzx_cum[1] += lam;
   lzx_cum[2] += lamb;
   lzx_cum[3] += 1.0;
@@ -737,7 +777,8 @@ void RadiationM1::LzxPost(Real dt, int t2s) {
               << pmy_pack->pmesh->ncycle << " t2s " << t2s << " Lr " << lrl
               << " Lambda_Z " << lam << " Lambda_B " << lamb << " S " << ss
               << (ue ? " (energy)" : ((wmode == 0) ? " (impulse)" : " (blend)"))
-              << " Omega " << om << " sum|aZ| " << sab << " | cum Lr " << lzx_cum[0]
+              << " Omega " << om << " sum|aZ| " << sab << " sum|t| " << sat
+              << " nbad " << lzx_nbad << " | cum Lr " << lzx_cum[0]
               << " cum Lambda_Z " << lzx_cum[1] << " cum Lambda_B " << lzx_cum[2]
               << " n " << lzx_cum[3] << std::endl;
   }

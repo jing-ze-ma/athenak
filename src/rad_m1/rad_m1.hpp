@@ -2341,6 +2341,8 @@ class RadiationM1 {
   DvceArray4D<Real> lzx_t2, lzx_t3;     // th0_f = 1/(1 + chat dt kt_f)
   Real lzx_cum[4] = {0.0, 0.0, 0.0, 0.0};   // sum Lr, sum Lambda_Z, sum Lambda_B, n
   DvceArray5D<Real> lzx_r;              // (m, 2, k, j, i) realised transverse dp of a solve
+  int iw_lzx = -1;                      // q_c = |t_c| / sum_f W_f^2 (1 slot, exchanged)
+  Real lzx_nbad = 0.0;                  // solves left alone (non-finite budget)
   void LzxGeom();
   Real LzxTotal();
   void LzxPost(Real dt, int t2s);
