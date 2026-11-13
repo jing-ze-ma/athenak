@@ -2401,6 +2401,7 @@ RadiationM1::~RadiationM1() {
   if (pbval_th != nullptr) {delete pbval_th;}
   if (pbval_tq != nullptr) {delete pbval_tq;}
   if (pbval_kr != nullptr) {delete pbval_kr;}
+  if (pbval_zr != nullptr) {delete pbval_zr;}   // zxch-1113
   if (pbval_vm != nullptr) {delete pbval_vm;}
   if (pbval_d3 != nullptr) {delete pbval_d3;}
   if (pbval_sg != nullptr) {delete pbval_sg;}

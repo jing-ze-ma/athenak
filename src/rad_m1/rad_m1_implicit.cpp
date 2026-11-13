@@ -4478,6 +4478,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       pbval_kr->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
     pbval_kr->InitializeBuffers(1);
       pbval_kr->SetVectorPairs(1, {});   // one scalar Krylov vector
+      // zxch-1113 zalesak_fast_exchange: the one-layer scalar object of the Zalesak R
+      if (pin->DoesParameterExist("rad_m1","zalesak_fast_exchange") &&
+          pin->GetBoolean("rad_m1","zalesak_fast_exchange") && pbval_zr == nullptr) {
+        zl_fastx = true;
+        pbval_zr = new MeshBoundaryValuesCC(pmy_pack, pin, false);
+        pbval_zr->exch_depth = 1;
+        pbval_zr->InitializeBuffers(1);
+        pbval_zr->SetVectorPairs(1, {});
+      }
       // implicit_vimp: the per-pass exchange of the Jacobian rows and dv^k (same
       // sequential-use argument as above)
       if (impl_vimp) {
@@ -5082,6 +5091,42 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
       iw_(m,M1_IW_N3,k,j,i) = d*f;
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ZalesakHaloExchange
+//! \brief zxch-1113 <rad_m1>/zalesak_fast_exchange: the R exchange of the Zalesak
+//! rounds (face_mmat, time2_face_fct) through pbval_zr (exch_depth = 1: the same seam /
+//! periodic / MPI machinery, first ghost layer only; the round stencils and the face
+//! lam read R only at +-1).  The ghost layers beyond the first keep what iw holds (the
+//! reset value 1).  Off, or under implicit_halo_direct / implicit_halo_mpi: the generic
+//! ImplicitHaloExchange(1, c0).
+
+void RadiationM1::ZalesakHaloExchange(int c0) {
+  if (!zl_fastx || pbval_zr == nullptr || halo_direct_on || impl_halo_mpi) {
+    ImplicitHaloExchange(1, c0);
+    return;
+  }
+  std::chrono::steady_clock::time_point t0, t1;
+  auto tick = [&](int q) {
+    if (!zl_prof) {return;}
+    Kokkos::fence();
+    t1 = std::chrono::steady_clock::now();
+    if (q >= 0) {zl_xpart[q] += std::chrono::duration<double>(t1 - t0).count();}
+    t0 = t1;
+  };
+  tick(-1);
+  ImplicitHaloCopy(krw, 1, c0, true);
+  tick(0);
+  while (pbval_zr->InitRecv(1) == TaskStatus::incomplete) {}
+  while (pbval_zr->PackAndSendCC(krw, krw_c) == TaskStatus::incomplete) {}
+  tick(1);
+  while (pbval_zr->RecvAndUnpackCC(krw, krw_c) == TaskStatus::incomplete) {}
+  tick(2);
+  while (pbval_zr->ClearSend() == TaskStatus::incomplete) {}
+  while (pbval_zr->ClearRecv() == TaskStatus::incomplete) {}
+  ImplicitHaloCopy(krw, 1, c0, false);
+  tick(3);
 }
 
 //----------------------------------------------------------------------------------------
@@ -8225,7 +8270,7 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
                           Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,
                           Kokkos::ALL, sr, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
       }
-      ImplicitHaloExchange(1, sr);
+      ZalesakHaloExchange(sr);   // zxch-1113 (generic exchange when the key is off)
       if (zac) {   // every cell (ghost or not) the exchange changed counts as changed
         const int rr = r + 1;
         const int n3 = iw.extent_int(2) - 1, n2 = iw.extent_int(3) - 1;
@@ -11590,6 +11635,11 @@ void RadiationM1::ImplicitReport() {
     if (zl_prof) {
       std::cout << " round-loop wall=" << zl_wall[1] << " s (exchanges " << zl_xwall[1]
                 << " s)";
+      if (zl_fastx) {
+        std::cout << " zalesak_fast_exchange: copy-in " << zl_xpart[0] << " pack+send "
+                  << zl_xpart[1] << " recv+unpack " << zl_xpart[2] << " clear+copy-out "
+                  << zl_xpart[3] << " s (both loops)";
+      }
     }
     if (zl_active) {std::cout << " zalesak_active=on";}
     if (zl_colsweep) {std::cout << " zalesak_colsweep=on";}

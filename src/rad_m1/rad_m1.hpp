@@ -1472,6 +1472,13 @@ class RadiationM1 {
                                 // the same cell-centred machinery thw uses
   DvceArray5D<Real> krw_c;      // its (unused) coarse buffer
   MeshBoundaryValuesCC *pbval_kr;  // the exchange object of krw
+  // zxch-1113 <rad_m1>/zalesak_fast_exchange (default false): the Zalesak R exchanges
+  // of face_mmat / time2_face_fct go through pbval_zr, a scalar exchange object with
+  // exch_depth = 1 (the round stencils read only the first ghost layer), on krw
+  MeshBoundaryValuesCC *pbval_zr = nullptr;
+  bool zl_fastx = false;
+  Real zl_xpart[4] = {0.0, 0.0, 0.0, 0.0};   // M1_FCT_PROF: copy/pack+send/recv/clear
+  void ZalesakHaloExchange(int c0);
   Real bcg_nsolve, bcg_itsum, bcg_itmax;  // inner-iteration statistics
   Real bcg_nbreak, bcg_nfall, bcg_nred;   // breakdowns, line-Jacobi fallbacks, reductions
   Real bcg_nkeep;               // fallbacks that kept the Krylov iterate (fallback best)

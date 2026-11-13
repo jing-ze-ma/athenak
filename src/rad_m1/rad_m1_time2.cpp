@@ -1903,7 +1903,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
                           Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,
                           Kokkos::ALL, ca, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
       }
-      ImplicitKrylovHalo(ca);
+      ZalesakHaloExchange(ca);   // zxch-1113 (= ImplicitKrylovHalo when the key is off)
       if (zac) {   // every cell (ghost or not) the exchange changed counts as changed
         const int rr = r + 1;
         const int n3 = iw.extent_int(2) - 1, n2 = iw.extent_int(3) - 1;
