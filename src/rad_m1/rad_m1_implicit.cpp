@@ -4210,21 +4210,36 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(lz_d, 6);
     Kokkos::deep_copy(lz_d, 0.0);
   }
-  // lzphys-1113 implicit_lzx (rad_m1.hpp, LZPHYS_1113.md)
-  if (pin->DoesParameterExist("rad_m1","implicit_lzx") &&
-      pin->GetBoolean("rad_m1","implicit_lzx")) {
-    impl_lzx = true;
-    if (!(cs_geom || sph_geom) || !trans_on || !trans_x3) {
-      ImplFatal("<rad_m1>/implicit_lzx needs the cubed sphere or spherical polar in 3-D "
-                "with implicit transport");
+  // lzphys-1113 implicit_lzx (rad_m1.hpp, LZPHYS_1113.md); it closes the solve's whole L_z
+  // budget, so the implicit_am_cs deposit (a partial closure, after the write-back) is off
+  // inert (message, no slot) on a Cartesian mesh and with the gas fixed: no gas +
+  // radiation L_z budget to close there; a D6 key set stays usable on every gate deck
+  const bool lzxq = pin->DoesParameterExist("rad_m1","implicit_lzx") &&
+                    pin->GetBoolean("rad_m1","implicit_lzx");
+  if (lzxq && (!(cs_geom || sph_geom) || !(coupling && gas_feedback))) {
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_lzx: inert (needs the cubed sphere or spherical "
+                << "polar and coupling with gas_feedback)" << std::endl;
     }
-    if (!impl_gas_src_cons || impl_gas_src_full || !(coupling && gas_feedback)) {
+  } else if (lzxq) {
+    impl_lzx = true;
+    if (!trans_on || !trans_x3) {
+      ImplFatal("<rad_m1>/implicit_lzx needs a 3-D mesh with implicit transport");
+    }
+    if (!impl_gas_src_cons || impl_gas_src_full) {
       ImplFatal("<rad_m1>/implicit_lzx needs implicit_gas_src = conservative or "
-                "conservative2 with coupling and gas_feedback (Z_f books the face)");
+                "conservative2 (Z_f books the face)");
     }
     if (impl_hr_cmem || impl_physflux || impl_lz) {
       ImplFatal("<rad_m1>/implicit_lzx is not combined with implicit_hr_cmem, "
                 "implicit_physflux or implicit_lz_form");
+    }
+    if (impl_am_cs) {
+      impl_am_cs = false;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> implicit_lzx: implicit_am_cs deposit off (lzx closes the "
+                  << "solve's L_z)" << std::endl;
+      }
     }
     if (sph_geom && !cs_geom && !(pin->GetString("mesh","ix3_bc") == "periodic" &&
                       pin->GetString("mesh","ox3_bc") == "periodic")) {
@@ -15068,6 +15083,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool iket = ike && t2st;
     auto kei_ = t2kei;
     auto ikd_ = t2ikd;
+    // lzphys-1113 implicit_lzx: the solve's start state (gas m2, m3 before the stage
+    // increment, the stored cell F2, F3), against which LzxPost closes the solve's L_z
+    // (the stage increment and the write-back together)
+    if (impl_lzx && lzx_g2.extent_int(0) == 0) {LzxGeom();}
+    const bool lzxs_ = impl_lzx;
+    auto lzs_ = lzx_r;
     auto imo_ = t2mo;
     const Real ikc = chat/c_light;
     const bool iex = t2_iex && t2st && (t2ixd.extent_int(0) > nmb1);   // time2_inc_exch
@@ -15091,6 +15112,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_TP,k,j,i) = eos.Temperature(dd, fmax(eg, 1.0e-300));
       // athpp-vstar-1105: the Heun stage momentum before the old-vector increment
       const Real mv1 = uh(m,IM1,k,j,i), mv2 = uh(m,IM2,k,j,i), mv3 = uh(m,IM3,k,j,i);
+      if (lzxs_) {
+        lzs_(m,0,k,j,i) = mv2;
+        lzs_(m,1,k,j,i) = mv3;
+        lzs_(m,2,k,j,i) = u0_(m,M1_F2,k,j,i);
+        lzs_(m,3,k,j,i) = u0_(m,M1_F3,k,j,i);
+      }
       if (iket) {ikd_(m,k,j,i) = 0.0;}
       if (iex) {ixd_(m,k,j,i) = 0.0;}
       if (t2st && !(hoi_ && hmi_(m,k,j,i) > 0.0)) {
@@ -18866,8 +18893,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     ImplicitTransverseTerms(false);
     if (impl_cmi) {ImplicitCmiTrans(false);}   // cmemimpl-1112: the applied fluxes
     fmm_tfin = false;
-    // lzphys-1113 implicit_lzx: the write-back stores the realised dp per cell
-    if (impl_lzx && lzx_r.extent_int(0) > 0) {Kokkos::deep_copy(lzx_r, 0.0);}
     impl_linmax = std::max(impl_linmax, lresid);
     impl_linsum += lresid;
   }
@@ -19512,8 +19537,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto gz3w_ = gcz3;
   auto ciw_ = csinc;
   const bool csok = csinc_ok && t2st;
-  const bool lzxw_ = impl_lzx && (lzx_r.extent_int(0) > nmb1);   // lzphys-1113
-  auto lzr_ = lzx_r;
   auto ckw_ = (t2s == M1_T2S_STAGE1) ? csk2 : csk1;
   const bool gfst = gcs_first;
   auto f2nw_ = f0x2n;

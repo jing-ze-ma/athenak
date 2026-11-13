@@ -406,7 +406,8 @@ void RadiationM1::LzApply() {
 //! \brief lzphys-1113 implicit_lzx: the arms a_c (lz_arm, (m, 2, k, j, i): x2 / x3 faces)
 //! and W_f = a_L + a_R (lz_w2, lz_w3) -- the cubed sphere by LzGeom (seam mirror arms),
 //! spherical polar here: a = (V/2) r sin(theta) on the x3 (phi) faces (the orthonormal
-//! F_phi of the write-back and of RadM1AmHistory), 0 on the x2 faces ((x x e_theta)_z = 0)
+//! F_phi of the write-back and of RadM1AmHistory), 0 on the x2 faces
+//! ((x x e_theta)_z = 0)
 //! -- and the face stores dt G_f, th0_f of the face kernels.
 
 void RadiationM1::LzxGeom() {
@@ -452,7 +453,8 @@ void RadiationM1::LzxGeom() {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::LzxTotal
-//! \brief lzphys-1113 implicit_lzx_diag: L_z of gas + radiation over all ranks, the formula
+//! \brief lzphys-1113 (diagnostic helper): L_z of gas + radiation over all ranks, the
+//! formula
 //! of RadM1AmHistory (gas m, radiation F/(c chat); cs covariant -> contravariant)
 
 Real RadiationM1::LzxTotal() {
@@ -518,23 +520,26 @@ Real RadiationM1::LzxTotal() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::LzxPost
-//! \brief lzphys-1113 implicit_lzx (LZPHYS_1113.md sect. 1.3/2), once per solve right after
-//! the write-back (and its floor / clip follow-ups).  The write-back stored per cell the old
-//! vector of the solve (lzx_r: transverse gas m and cell F^old), so dp_c = (m_c - m^old_c) +
-//! (F_c - F^old_c)/(c chat) is the realised change of gas + radiation momentum (the radial
-//! components carry no z-torque); its torque Lr = sum_c V (x_c x dp_c)_z
-//! is the solve's L_z change of gas + radiation (Lambda of the lateral Z_f plus whatever
-//! the write-back does not pair: the AP-HLL part of dA under implicit_cs2_hll = drag, the
-//! clips).  The booked boundary torque is 0 (sp x3 periodic, cs closed: no lateral
+//! \brief lzphys-1113 implicit_lzx (LZPHYS_1113.md), once per solve right after the
+//! write-back and its floor / clip follow-ups.  The solve stored per cell its START state
+//! (lzx_r: transverse gas m before the hesdirk2 stage increment, stored cell F), so
+//! dp_c = (m_c - m^s_c) + (F_c - F^s_c)/(c chat) is the realised change of gas +
+//! radiation momentum (the radial components carry no z-torque); its torque
+//! Lr = sum_c V (x_c x dp_c)_z is the
+//! solve's L_z change of gas + radiation (the stage increment's, Lambda of the lateral
+//! Z_f, and whatever the write-back does not pair: the AP-HLL part of dA under
+//! implicit_cs2_hll = drag, the clips).  The booked boundary torque is 0 (sp x3 periodic, cs closed: no lateral
 //! physical face), so the solve's budget is closed with the stress
-//!   dZ_f = -Omega mu_f s_f,  s_f = sign(W_f),  Omega = -Lr / S,  S = sum_c sum_f a_cf mu_f s_f
+//!   dZ_f = -Omega mu_f s_f, s_f = sign(W_f), Omega = -Lr / S,
+//!   S = sum_c sum_f a_cf mu_f s_f
 //! applied to the stored state as the write-back would have: face flux
 //! dF_f = -th0_f c chat dZ_f (also the hesdirk2 face slope, formed after this), cell F
 //! += face mean of dF, gas m += -(1/2) sum_f (1 - th0_f) dZ_f (the drag share; cs: the
 //! covariant transform of the write-back), gas energy += its exact kinetic-energy change
 //! dK, radiation E -= (chat/c) dK; the stage slopes K (E, m, gas energy, cell F) take the
-//! same increments / dt.  mu_f (implicit_lzx_weight): impulse |Z_f| (default), blend
-//! |Z_f - dt G_f|, energy Ebar_f |W_f|; a zero sum falls back to energy.
+//! same increments / dt.  mu_f (implicit_lzx_weight): impulse |Z_f| + |W_f| (q_L + q_R),
+//! q_c = |t_c| / sum_{lat f of c} W_f^2 (default; |Omega| <= 1), blend |Z_f - dt G_f|,
+//! energy Ebar_f |W_f|; a zero sum falls back to energy.
 
 void RadiationM1::LzxPost(Real dt, int t2s) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -566,8 +571,9 @@ void RadiationM1::LzxPost(Real dt, int t2s) {
   auto &mbpan = pmy_pack->pmb->mb_panel;
   const Real cl = c_light, ch = chat;
   const int wmode = impl_lzx_w;
-  // (1) the realised torque t_c of every cell, Lr = sum_c t_c, and q_c = |t_c| / sum_{lat f
-  // of c} W_f^2 into the iw slot iw_lzx (exchanged: a shared face needs both cells' q)
+  // (1) the realised torque t_c of every cell, Lr = sum_c t_c, and
+  // q_c = |t_c| / sum_{lat f of c} W_f^2 into the iw slot iw_lzx (exchanged: a shared
+  // face needs both cells' q)
   const int iq = iw_lzx;
   Real lrl = 0.0, sat = 0.0;
   Kokkos::parallel_reduce("m1_lzx_tq", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
@@ -643,7 +649,8 @@ void RadiationM1::LzxPost(Real dt, int t2s) {
         const Real b = z - g2_(m,k,jf,i);
         l1 += a*z;
         l2 += a*b;
-        l3 += a*((wmode == 0) ? (fabs(z) + fabs(w)*(iw_(m,iq,k,jf-1,i) + iw_(m,iq,k,jf,i)))
+        l3 += a*((wmode == 0) ? (fabs(z) + fabs(w)*(iw_(m,iq,k,jf-1,i)
+                                                    + iw_(m,iq,k,jf,i)))
                               : fabs(b))*LzxSgn(w);
         l4 += a*0.5*(iw_(m,M1_IW_EP,k,jf-1,i) + iw_(m,M1_IW_EP,k,jf,i))*fabs(w);
         l5 += fabs(a*z);
@@ -677,7 +684,7 @@ void RadiationM1::LzxPost(Real dt, int t2s) {
 #endif
   const bool ue = (wmode == 1) || !(sw > 0.0);
   const Real ss = ue ? se : sw;
-  // a solve with a non-finite budget (a failing stage, redone by the Driver) is left alone
+  // a solve with a non-finite budget (a failing stage, redone by the Driver): left alone
   const bool fin = std::isfinite(lrl) && std::isfinite(ss);
   if (!fin) {lzx_nbad += 1.0;}
   const Real om = (fin && ss > 0.0 && wmode != 2) ? -lrl/ss : 0.0;

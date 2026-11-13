@@ -13,12 +13,6 @@
     // pgrst implicit_hold: a held cell keeps the Dirichlet E (= its old vector); its F
     // and gas belong to the problem generator; no stage slope
     if (hwo_ && hwm_(m,k,j,i) > 0.0) {
-      if (lzxw_) {   // lzphys-1113: a held cell's F and gas are not the solve's
-        lzr_(m,0,k,j,i) = uh(m,IM2,k,j,i);
-        lzr_(m,1,k,j,i) = uh(m,IM3,k,j,i);
-        lzr_(m,2,k,j,i) = u0_(m,M1_F2,k,j,i);
-        lzr_(m,3,k,j,i) = u0_(m,M1_F3,k,j,i);
-      }
       u0_(m,M1_E,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
       if (t2k) {
         for (int n = 0; n < M1_T2_F1; ++n) {kk_(m,n,k,j,i) = 0.0;}
@@ -1152,12 +1146,6 @@
         ckw_(m,1,k,j,i) = (fp2 - go2)*fk;
         ckw_(m,2,k,j,i) = (fp3 - go3)*fk;
       }
-    }
-    if (lzxw_) {   // lzphys-1113 implicit_lzx: the old vector (transverse gas m, cell F)
-      lzr_(m,0,k,j,i) = uh(m,IM2,k,j,i);
-      lzr_(m,1,k,j,i) = uh(m,IM3,k,j,i);
-      lzr_(m,2,k,j,i) = go2;
-      lzr_(m,3,k,j,i) = go3;
     }
     u0_(m,M1_E,k,j,i) = ep;
     u0_(m,M1_F1,k,j,i) = fp1;
