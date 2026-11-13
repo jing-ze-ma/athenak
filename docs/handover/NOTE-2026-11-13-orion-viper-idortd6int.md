@@ -877,3 +877,11 @@ FINAL/PROD L1 at N256 (rho, E):
 | 3.3333 | 1000 | PROD | 1.95 1.98 2.02 2.06 | 1.95 2.03 2.06 2.07 | 2.07 | 2.719e-04 | 2.821e-04 | 7.04e-05 | 6.47e-02 | 16,32,64,128,256 |
 | 3.3333 | 1000 | FINAL | 1.95 1.98 2.02 2.06 | 1.95 2.03 2.06 2.07 | 2.07 | 2.719e-04 | 2.821e-04 | 7.04e-05 | 6.47e-02 | 16,32,64,128,256 |
 ```
+
+## (c) INTERIM (23:57 PST): 148 / 153 rows + 7/7 OMP rows done, **0 D6 rows not clean so far**
+- OMP (7 rows x 2 arms, 10 threads): all 14 rc=0 fatal=0, NON-CONVERGED 0.
+- spxx 100/100, mainrk 40/41, rsx 8/12 done. Still running: cart/pipe/FIN3_c220 (D6 at t 6.5/10, FIN at t 5.2/10 after 3 h; ~1.6 h / ~2.8 h left)
+  and 4 rsx rows (cart/rsx_m27 n1024, cart/rsx_m5 n2048 c0.2/c0.4, sp rsx rows).
+- **Raven cross-check on the finished rows:** Orion FIN arm vs Raven FIN (sum_runs_idort_x1_1112): FIN vs Raven FIN: 148 rows compared, 0 with rc mismatch or Picard mean off by > 1 %.
+  Orion D6 (d6int) arm vs Raven d6fast (sum_runs_idort_d6_1113, main rows): D6 vs Raven d6fast: 40 rows compared, 0 with rc mismatch or Picard mean off by > 1 %.
+  cmp_o.sh, the full row table and the verdict follow when the last rows end.
