@@ -403,9 +403,13 @@ class RadiationM1 {
   // taken from the radiation of the same cell (down to e_floor), so the C2P's
   // temperature floor, which creates that energy, no longer fires there.  What the
   // radiation cannot cover is left to the C2P floor and counted (uncovered).
-  // diag = count only (no change); on = apply.  refresh_tfloor_report = N prints the
-  // RTFCONS line (per call, all ranks) every N cycles (0 = never; diag needs it).
-  int rtf_mode = 0;          // 0 off, 1 diag, 2 on
+  // diag = count only (no change); on = apply.  column = on, and what the cell's own
+  // radiation cannot cover is taken from the radiation of the same radial column of the
+  // MeshBlock, from the cells at and outside the innermost deficit cell first (where
+  // the floor gas's emission went), in proportion to E - e_floor; the whole column only
+  // if those cannot cover it.  refresh_tfloor_report = N prints the RTFCONS line (per
+  // call, all ranks) every N cycles (0 = never; diag needs it).
+  int rtf_mode = 0;          // 0 off, 1 diag, 2 on, 3 column
   int rtf_report = 0;
   void RefreshTfloorCons();
 

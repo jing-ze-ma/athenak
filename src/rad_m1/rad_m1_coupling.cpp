@@ -607,6 +607,99 @@ void RadiationM1::RefreshTfloorCons() {
     sum.the_array[10 + (8*(i - is))/ni] += need*v;
   };
   const int ntot = nmb*nk*nj*ni;
+  if (rtf_mode == 3) {
+    // column: per (m,k,j), serial in i.  Pass 1: the local take and the column sums;
+    // pass 2: the uncovered deficit paid from the column's radiation.
+    const int ncol = nmb*nk*nj;
+    auto vlm = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) -> Real {
+      return psph ? pvol(m,k,j,i)
+                  : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*mbsize.d_view(m).dx3);
+    };
+    auto eint_of = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i)
+                   -> Real {
+      const Real dd = uh(m,IDN,k,j,i), idd = 1.0/dd;
+      const Real m1 = uh(m,IM1,k,j,i), m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
+      Real ekin = 0.5*(m1*m1 + m2*m2 + m3*m3)*idd;
+      if (csw) {
+        const Real c = cclw(m,k,j);
+        ekin = 0.5*(m1*m1 + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))*idd;
+      }
+      const Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
+      return uh(m,IEN,k,j,i) - ekin - egrv;
+    };
+    array_sum::GlobalSum gs;
+    Kokkos::parallel_reduce("m1_rtfcons_col", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            ncol),
+    KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
+      const int m = n/(nk*nj);
+      const int k = (n/nj)%nk + ks, j = n%nj + js;
+      // pass 1: the cell's own radiation first (as mode on); D = what is left (x vol)
+      Real dsum = 0.0;
+      int i0 = -1;
+      for (int i=is; i<is+ni; ++i) {
+        const Real dd = uh(m,IDN,k,j,i);
+        if (!(dd > 0.0)) continue;
+        const Real eint = eint_of(m,k,j,i);
+        const Real etf = eos.EnergyFromTemperature(dd, eos.tfloor);
+        if (!(eint < etf)) continue;
+        const Real need = etf - eint, v = vlm(m,k,j,i);
+        const Real er = u0_(m,M1_E,k,j,i);
+        const Real take = fmin(need, fmax((er - efl)/rcc, 0.0));
+        if (take > 0.0) {
+          uh(m,IEN,k,j,i) += take;
+          u0_(m,M1_E,k,j,i) = er - rcc*take;
+        }
+        sum.the_array[0] += 1.0;
+        sum.the_array[1] += need*v;
+        sum.the_array[2] += take*v;
+        sum.the_array[10 + (8*(i - is))/ni] += need*v;
+        if (need - take > 0.0) {
+          dsum += (need - take)*v;
+          if (i0 < 0) {i0 = i;}
+        }
+      }
+      if (!(dsum > 0.0)) return;
+      // pass 2: radiation available at and outside i0, else the whole column
+      Real aout = 0.0, aall = 0.0;
+      for (int i=is; i<is+ni; ++i) {
+        const Real a = fmax((u0_(m,M1_E,k,j,i) - efl)/rcc, 0.0)*vlm(m,k,j,i);
+        aall += a;
+        if (i >= i0) {aout += a;}
+      }
+      const bool outer = (aout >= dsum);
+      const Real ause = outer ? aout : aall;
+      if (!(ause > 0.0)) {sum.the_array[3] += dsum; return;}
+      const Real f = fmin(1.0, dsum/ause);      // fraction of E - e_floor taken
+      const Real g = fmin(1.0, ause/dsum);      // fraction of the deficit paid
+      for (int i=(outer ? i0 : is); i<is+ni; ++i) {
+        const Real er = u0_(m,M1_E,k,j,i);
+        if (er > efl) {u0_(m,M1_E,k,j,i) = er - f*(er - efl);}
+        const Real dd = uh(m,IDN,k,j,i);
+        if (i < i0 || !(dd > 0.0)) continue;
+        const Real eint = eint_of(m,k,j,i);
+        const Real etf = eos.EnergyFromTemperature(dd, eos.tfloor);
+        if (eint < etf) {uh(m,IEN,k,j,i) += g*(etf - eint);}
+      }
+      sum.the_array[4] += g*dsum;               // paid by the column
+      sum.the_array[3] += (1.0 - g)*dsum;       // left to the C2P floor
+      if (!outer) {sum.the_array[5] += 1.0;}    // columns that needed the inner part
+      sum.the_array[6] += 1.0;                  // columns with a column payment
+    }, Kokkos::Sum<array_sum::GlobalSum>(gs));
+    if (rep) {
+      Real r[18];
+      for (int q=0; q<18; ++q) r[q] = gs.the_array[q];
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, r, 18, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+      if (global_variable::my_rank == 0) {
+        std::printf("RTFCONS cycle=%d mode=column cells=%.6e deficit=%.6e moved=%.6e "
+                    "column=%.6e uncovered=%.6e ncol=%.6e ncol_inner=%.6e rb=", cyc,
+                    r[0], r[1], r[2], r[4], r[3], r[6], r[5]);
+        for (int q=10; q<18; ++q) std::printf("%.3e%s", r[q], (q < 17) ? "," : "\n");
+      }
+    }
+    return;
+  }
   if (!rep) {
     if (!app) return;
     Kokkos::parallel_for("m1_rtfcons", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),

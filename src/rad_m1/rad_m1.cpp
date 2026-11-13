@@ -700,9 +700,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       rtf_mode = 1;
     } else if (rv.compare("on") == 0 || rv.compare("true") == 0) {
       rtf_mode = 2;
+    } else if (rv.compare("column") == 0) {
+      rtf_mode = 3;
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/refresh_tfloor_cons must be off, diag or on"
+                << std::endl << "<rad_m1>/refresh_tfloor_cons must be off, diag, on or "
+                << "column"
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
