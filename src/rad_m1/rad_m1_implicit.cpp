@@ -4261,7 +4261,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(ecache, -1.0);
   }
   if (impl_cmi) {iw_cmi = niw; niw += 1;}   // cmemimpl-1112: the donor factor lam
-  MemArenaIw(pin, nmb, niw, ncells3, ncells2, ncells1);   // memcut-1113 (= realloc)
+  MemArenaInit(pin, nmb, niw, ncells3, ncells2, ncells1);   // memcut-1113 (= realloc)
   if (impl_thin_frz > 0.0) {
     Kokkos::realloc(thin_frz, nmb, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(thin_frz, 0.0);

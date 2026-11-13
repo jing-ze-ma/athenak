@@ -3444,13 +3444,14 @@ class RadiationM1 {
   VgdIView vgd_i_xb;   // xffuse-1113: the other cross-fade set's intensities
   void VgdRagAlloc(VgdRag &a);
   // memcut-1113 <rad_m1>/mem_arena (rad_m1_memarena.cpp; read only when named, default
-  // true with vet_gd; env M1_ARENA=0 off): iw and the intensity arrays in one allocation
+  // true with vet_gd; env M1_ARENA=0 off): the intensity arrays and solve scratch that is
+  // dead across a VetGdBuild in one allocation
   bool marena_on = false, marena_sealed = false;
-  DvceArray5D<Real> marena;   // (nmb_a >= nmb, niw, k, j, i); iw = its first nmb blocks
-  int64_t marena_sw = 0;      // Reals of the sweep part bound so far
-  void MemArenaIw(ParameterInput *pin, int nmb, int niw, int n3, int n2, int n1);
+  DvceArray1D<Real> marena;   // the intensities, then (first checkpoint) solve scratch
+  int64_t marena_sw = 0;      // Reals of the intensity arrays bound so far
+  void MemArenaInit(ParameterInput *pin, int nmb, int niw, int n3, int n2, int n1);
   bool MemArenaVgd(VgdRag &a, int64_t n);
-  void MemArenaSeal() {marena_sealed = true;}
+  void MemArenaSeal();
   void MemcutPoison(int where);
   // mem2-1014 vet_gd_band_ring (default true where it applies: MPI band with the exact
   // halo lists, no overlap / async / fused shells; memcut-1020: on the cubed sphere with
