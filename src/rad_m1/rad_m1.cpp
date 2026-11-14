@@ -970,13 +970,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // vet_col_surface_face (m1-sp-order2b, sp only; rad_m1.hpp): sp default true (a
     // restart whose file lacks the key keeps false, echoed); acts only together with
     // vet_col_surface_q and implicit_marshak_face = linear
-    if (sph_geom) {
-      vcol_sqf = pin->GetOrAddBoolean("rad_m1","vet_col_surface_face",
-                                      !global_variable::restart_run);
-    } else if (pin->DoesParameterExist("rad_m1","vet_col_surface_face")) {
-      // unify-1114 (#4): Cartesian when named (needs implicit_marshak_face = linear)
-      vcol_sqf = pin->GetBoolean("rad_m1","vet_col_surface_face");
-    }
+    // unify-1114 (#4): the same default on a Cartesian column (was sp/cs only)
+    vcol_sqf = pin->GetOrAddBoolean("rad_m1","vet_col_surface_face",
+                                    !global_variable::restart_run);
     if (pin->DoesParameterExist("rad_m1","vet_col_reflect_amax")) {
       vcol_amax = pin->GetReal("rad_m1","vet_col_reflect_amax");
     }

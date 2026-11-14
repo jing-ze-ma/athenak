@@ -2448,12 +2448,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // implicit_cfl 1e6, went from 30 round-off NON-CONVERGED solves to 54 with Picard
   // blow-ups).  A restart whose file lacks the key keeps cell; the resolved value is
   // echoed.  Elsewhere read only when named (parameter dump and the cell form kept).
-  if (sph_geom || pin->DoesParameterExist("rad_m1","implicit_marshak_face")) {
+  // unify-1114 (#19): the same default on a Cartesian grid (was read only when named,
+  // cell); Cartesian Milne slab and vet_col pulse ladder: UNIFY_PROGRESS_1114.md step 2
+  {
     const bool mfdef = !global_variable::restart_run &&
                        (eddington || vet_sc || tau_closure);
-    const std::string smf = sph_geom ?
-        pin->GetOrAddString("rad_m1","implicit_marshak_face", mfdef ? "linear" : "cell") :
-        pin->GetString("rad_m1","implicit_marshak_face");
+    const std::string smf =
+        pin->GetOrAddString("rad_m1","implicit_marshak_face", mfdef ? "linear" : "cell");
     if (smf.compare("cell") == 0) {
       impl_mface_lin = false;
     } else if (smf.compare("linear") == 0) {
