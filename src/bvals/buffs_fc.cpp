@@ -31,7 +31,7 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
   auto &mb_indcs  = pmy_pack->pmesh->mb_indcs;
   int ng  = mb_indcs.ng;
   int ng1 = ng - 1;
-  const bool cs_vfill = pmy_pack->pmesh->cs_vertex_fill;
+  const bool cs_vfill = pmy_pack->pmesh->use_cubed_sphere;
 
   // set indices for sends to neighbors on SAME level
   // Formulae same as in LoadBoundaryBufferSameLevel in src/bvals/fc/bvals_fc.cpp
@@ -113,7 +113,7 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
       if (ox3 > 0) {isame[2].bke++;}
       if (ox3 < 0) {isame[2].bks--;}
     }
-    // cube-vertex corner fill (<mesh>/cs_vertex_fill): widen same-level x2/x3 face
+    // cube-vertex corner fill (cubed sphere): widen same-level x2/x3 face
     // buffers by ng along the seam so the corner ghost block (no diagonal neighbour at a
     // cube vertex) is filled by the two flanking face exchanges
     if (cs_vfill) {
@@ -429,7 +429,7 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
                                            int ox1, int ox2, int ox3, int f1, int f2) {
   auto &mb_indcs  = pmy_pack->pmesh->mb_indcs;
   int ng = mb_indcs.ng;
-  const bool cs_vfill = pmy_pack->pmesh->cs_vertex_fill;
+  const bool cs_vfill = pmy_pack->pmesh->use_cubed_sphere;
 
   // set indices for receives from neighbors on SAME level
   // Formulae same as in SetBoundarySameLevel in src/bvals/fc/bvals_fc.cpp
@@ -493,7 +493,7 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
       if (ox3 > 0) {isame[2].bks--;}
       if (ox3 < 0) {isame[2].bke++;}
     }
-    // cube-vertex corner fill (<mesh>/cs_vertex_fill): widen same-level x2/x3 face
+    // cube-vertex corner fill (cubed sphere): widen same-level x2/x3 face
     // buffers by ng along the seam so the corner ghost block (no diagonal neighbour at a
     // cube vertex) is filled by the two flanking face exchanges
     if (cs_vfill) {

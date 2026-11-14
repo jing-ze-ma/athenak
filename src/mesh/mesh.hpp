@@ -314,8 +314,7 @@ class Mesh {
   bool strictly_periodic;     // true if all boundaries are periodic
     
   bool use_cubed_sphere;      // true if using cubed sphere
-  bool cs_vertex_fill;        // true to fill the cube-vertex corner by exchange (FC)
-  bool cs_vertex_fill_cc;     // same for CELL-CENTRED data (see mesh.cpp)
+  bool cs_vertex_fill_cc;     // cube-vertex corner fill for cell-centred data
   bool cs_vertex_3cell = false;   // no operator reads the cube-vertex corner block
   bool cs_seam_fc_nolimit;    // no monotonicity clamp in the FC seam resample (mesh.cpp)
   // <mesh>/layout_invariant: global sums that feed the state use the order-independent
