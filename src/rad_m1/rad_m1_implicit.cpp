@@ -18640,11 +18640,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       for (int q = 0; q < 2; ++q) {
         const int *c = dtr_cell[q];
         if (c[0] < 0 || c[0] > nmb1) {continue;}
-        DvceArray1D<Real> tv("m1_dbg_trc", 32);
+        DvceArray1D<Real> tv("m1_dbg_trc", 44);
         const int tm_ = c[0], tk_ = c[1], tj_ = c[2], ti_ = c[3];
         auto opt_ = opac;
         auto uht = FluidRef::Get(pmy_pack).u0;
         const bool bc_ = bicg;
+        auto ifwt = ifw; auto ifw2t = ifw2; auto ifw3t = ifw3;
+        auto f1t = f0x1; auto f2t = f0x2; auto f3t = f0x3;
         par_for("m1_dbg_trc", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
           tv(0) = iw_(tm_,M1_IW_EN,tk_,tj_,ti_); tv(1) = iw_(tm_,M1_IW_EP,tk_,tj_,ti_);
           tv(2) = iw_(tm_,M1_IW_S2,tk_,tj_,ti_); tv(3) = iw_(tm_,M1_IW_TP,tk_,tj_,ti_);
@@ -18668,14 +18670,31 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           tv(24) = opt_(tm_,M1_OP_P,tk_,tj_,ti_); tv(25) = opt_(tm_,M1_OP_E,tk_,tj_,ti_);
           tv(26) = uht(tm_,IDN,tk_,tj_,ti_); tv(27) = iw_(tm_,M1_IW_F1,tk_,tj_,ti_);
           tv(28) = iw_(tm_,M1_IW_F2,tk_,tj_,ti_); tv(29) = iw_(tm_,M1_IW_F3,tk_,tj_,ti_);
+          // faces: the blend weight (after implicit_blend_dtc) and the face flux
+          const bool h1 = (ifwt.extent_int(0) > tm_), h2 = (ifw2t.extent_int(0) > tm_);
+          const bool h3 = (ifw3t.extent_int(0) > tm_), g1 = (f1t.extent_int(0) > tm_);
+          const bool g2 = (f2t.extent_int(0) > tm_), g3 = (f3t.extent_int(0) > tm_);
+          tv(32) = h1 ? ifwt(tm_,M1_IFW_AL,tk_,tj_,ti_) : -1.0;
+          tv(33) = h1 ? ifwt(tm_,M1_IFW_AL,tk_,tj_,ti_+1) : -1.0;
+          tv(34) = h2 ? ifw2t(tm_,M1_IFW_AL,tk_,tj_,ti_) : -1.0;
+          tv(35) = h2 ? ifw2t(tm_,M1_IFW_AL,tk_,tj_+1,ti_) : -1.0;
+          tv(36) = h3 ? ifw3t(tm_,M1_IFW_AL,tk_,tj_,ti_) : -1.0;
+          tv(37) = h3 ? ifw3t(tm_,M1_IFW_AL,tk_+1,tj_,ti_) : -1.0;
+          tv(38) = g1 ? f1t(tm_,tk_,tj_,ti_) : 0.0;
+          tv(39) = g1 ? f1t(tm_,tk_,tj_,ti_+1) : 0.0;
+          tv(40) = g2 ? f2t(tm_,tk_,tj_,ti_) : 0.0;
+          tv(41) = g2 ? f2t(tm_,tk_,tj_+1,ti_) : 0.0;
+          tv(42) = g3 ? f3t(tm_,tk_,tj_,ti_) : 0.0;
+          tv(43) = g3 ? f3t(tm_,tk_+1,tj_,ti_) : 0.0;
           tv(30) = iw_(tm_,M1_IW_DE0,tk_,tj_,ti_);
           tv(31) = iw_(tm_,M1_IW_RES,tk_,tj_,ti_);
         });
         auto th = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tv);
-        static const char *tn[32] = {"EN", "EP", "S2", "T", "egn", "srcb", "srcr", "TB",
+        static const char *tn[44] = {"EN", "EP", "S2", "T", "egn", "srcb", "srcr", "TB",
           "TA", "TC", "CJM", "CJP", "CKM", "CKP", "KB", "TR", "TRHS", "TDIA", "Sim",
           "Sip", "Sjm", "Sjp", "Skm", "Skp", "rkP", "rkE", "rho", "F1", "F2", "F3", "de0",
-          "res"};
+          "res", "w1m", "w1p", "w2m", "w2p", "w3m", "w3p", "F1m", "F1p", "F2m", "F2p",
+          "F3m", "F3p"};
         std::ostringstream os;
         os.precision(6);
         os << "TRC cyc=" << pmy_pack->pmesh->ncycle
@@ -18683,7 +18702,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
            << " t2s=" << t2s << " pass=" << it << " cell=" << tm_ << "," << tk_
            << "," << tj_
            << "," << ti_ << " cdt=" << c_light*dt;
-        for (int n = 0; n < 32; ++n) {os << " " << tn[n] << "=" << th(n);}
+        for (int n = 0; n < 44; ++n) {os << " " << tn[n] << "=" << th(n);}
         std::cout << os.str() << std::endl;
       }
     }
