@@ -377,6 +377,7 @@ void RadiationM1::CleanClosure(int t2s) {
     auto cc = cln_c;
     auto cp = cln_p;
     auto cs = cln_s;
+    const bool dbge = cln_dbg_edd;
     par_for("cln_vext", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real v[CLN_N];
@@ -400,6 +401,13 @@ void RadiationM1::CleanClosure(int t2s) {
         if (v[CLN_C1] < 0.0) v[CLN_C1] = 0.0;
       }
       for (int n = 0; n < CLN_N; ++n) cs(m,n,k,j,i) = ok ? v[n] : cc(m,n,k,j,i);
+      if (dbge) {   // diagnostic only: frozen isotropic closure
+        for (int a = 0; a < 3; ++a) {
+          cs(m,CLN_D11+a,k,j,i) = 1.0/3.0; cs(m,CLN_D11+3+a,k,j,i) = 0.0;
+          cs(m,CLN_HP+a,k,j,i) = 0.25; cs(m,CLN_HM+a,k,j,i) = -0.25;
+        }
+        cs(m,CLN_C1,k,j,i) = 0.0;
+      }
     });
   }
   int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};

@@ -2897,7 +2897,8 @@ class RadiationM1 {
   int cln_maxnl = 50;           // clean_maxnl: Newton passes (gas feedback)
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: max |dE|/E, |dT|/T of a Newton pass
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
-  bool cln_extrap = true;       // clean_extrap: closure extrapolated to the stage time
+  bool cln_extrap = true;       // clean_extrap
+  bool cln_dbg_edd = false;     // clean_dbg_edd: diagnostic, frozen isotropic closure: closure extrapolated to the stage time
   int cln_bdry_form = 0;        // clean_bc: 0 = ray half-range, 1 = Marshak q (reference form)
   bool cln_init = false, cln_havec = false, cln_havep = false;
   Real cln_tc = -1.0e300;       // mesh time of the current closure build
