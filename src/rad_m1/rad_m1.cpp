@@ -81,6 +81,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_c1 = pin->GetOrAddReal("rad_m1","clean_w_c1",0.5);
     cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
     cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",4000);
+    cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",50);
+    cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
     cln_extrap = pin->GetOrAddBoolean("rad_m1","clean_extrap",true);
     {std::string bf = pin->GetOrAddString("rad_m1","clean_bc","halfrange");
     cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}

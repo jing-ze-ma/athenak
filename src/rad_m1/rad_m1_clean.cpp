@@ -15,7 +15,7 @@
 //! theta = 1/(1 + h c chi_f).  The diagonal-D and half-range parts give an M-matrix.
 //! The closure (D, h+-, C1) is built once per step at U^n and extrapolated linearly to
 //! the stage time from the previous build.  Gate-1 scope: Cartesian, one MeshBlock, one
-//! rank, chat = c, gas_feedback = false (static gas, fixed T).
+//! rank, chat = c.  Gas feedback: Newton on E with the exact local T per cell.
 
 #include <cmath>
 #include <cstdio>
@@ -47,7 +47,11 @@ constexpr int CLW_AP = 5;    // x1 line: coefficient of E_{i+1}
 constexpr int CLW_T = 6;     // gas temperature (fixed)
 constexpr int CLW_R = 7, CLW_R0 = 8, CLW_P = 9, CLW_V = 10, CLW_S = 11, CLW_TT = 12;
 constexpr int CLW_Y = 13, CLW_Z = 14, CLW_CP = 15;
-constexpr int CLW_N = 16;
+constexpr int CLW_RR = 16;   // gas feedback: r = 4 h c kP a T^3/(rho cv + 4 h c kP a T^3)
+constexpr int CLW_EK = 17;   // gas feedback: the Newton iterate E_k
+constexpr int CLW_EI = 18;   // gas feedback: eint of the old vector
+constexpr int CLW_A1 = 19;   // gas feedback: enthalpy coefficients a_d = v_d + D_db v_b
+constexpr int CLW_N = 22;
 
 struct CleanCtx {
   DvceArray5D<Real> cs;          // stage closure
@@ -61,7 +65,29 @@ struct CleanCtx {
   int bform;                     // 0 half-range rays, 1 Marshak q
   int bmn;
   Real q, eb[6];
+  bool fb;                       // gas feedback: r in the diagonal, enthalpy flux
 };
+
+// the cell's exact backward-Euler temperature for a given E (constant opacities):
+//   d T/gm1 + hckpa T^4 = eold + hckeE,  monotone in T, one root in [0, gm1 rhs/d]
+KOKKOS_INLINE_FUNCTION Real CleanTLocal(const Real d, const Real gm1, const Real eold,
+                                        const Real hckpa, const Real hckee, const Real tg) {
+  const Real rhs = eold + hckee;
+  if (!(rhs > 0.0)) return 0.0;
+  Real lo = 0.0, hi = gm1*rhs/d;
+  Real t = fmin(fmax(tg, 0.0), hi);
+  for (int n = 0; n < 200; ++n) {
+    const Real t3 = t*t*t;
+    const Real g = d*t/gm1 + hckpa*t3*t - rhs;
+    if (g > 0.0) {hi = t;} else {lo = t;}
+    const Real dg = d/gm1 + 4.0*hckpa*t3;
+    Real tn = t - g/dg;
+    if (!(tn > lo && tn < hi)) tn = 0.5*(lo + hi);
+    if (fabs(tn - t) <= 1.0e-15*fmax(t, 1.0e-300)) {t = tn; break;}
+    t = tn;
+  }
+  return t;
+}
 
 KOKKOS_INLINE_FUNCTION Real CleanSmooth(Real x) {
   x = fmin(fmax(x, 0.0), 1.0);
@@ -72,7 +98,7 @@ KOKKOS_INLINE_FUNCTION Real CleanSmooth(Real x) {
 // dir) for the E vector in work slot e.  withg: include the E-independent part G.
 KOKKOS_INLINE_FUNCTION Real CleanFlux(const CleanCtx &x, const int e, const int dir,
                                       const int m, const int k, const int j, const int i,
-                                      const bool withg) {
+                                      const bool withg, const bool adv = true) {
   const int kl = (dir == 2) ? k-1 : k;
   const int jl = (dir == 1) ? j-1 : j;
   const int il = (dir == 0) ? i-1 : i;
@@ -129,6 +155,10 @@ KOKKOS_INLINE_FUNCTION Real CleanFlux(const CleanCtx &x, const int e, const int 
   }
   if (wf > 0.0) {
     f += wf*c*(x.cs(m,CLN_HP+dir,kl,jl,il)*el + x.cs(m,CLN_HM+dir,k,j,i)*er);
+  }
+  // enthalpy flux v E + v.P (central, implicit; not part of the comoving face flux)
+  if (adv && x.fb) {
+    f += 0.5*(x.w(m,CLW_A1+dir,kl,jl,il)*el + x.w(m,CLW_A1+dir,k,j,i)*er);
   }
   return f;
 }
@@ -209,10 +239,10 @@ void RadiationM1::CleanAlloc() {
   const bool cart = !pmy_pack->pmesh->use_cubed_sphere &&
                     !pmy_pack->pmesh->use_spherical_polar;
   if (nmb != 1 || nr != 1 || !cart || !vet_sc || !vet_full ||
-      chat != c_light || gas_feedback) {
+      chat != c_light) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
       << "<rad_m1>/scheme = clean (gate 1) needs: one MeshBlock, one rank, a Cartesian "
-      << "mesh, closure = vet_sc with vet_tensor = full, chat = c, gas_feedback = false"
+      << "mesh, closure = vet_sc with vet_tensor = full, chat = c"
       << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -369,10 +399,12 @@ void RadiationM1::CleanApply(int src, int dst) {
   x.bform = cln_bdry_form; x.bmn = ibm_n; x.q = marshak_q;
   for (int n = 0; n < 6; ++n) x.eb[n] = 0.0;
   x.eb[0] = iebath_x1min; x.eb[1] = iebath_x1max;
+  x.fb = gas_feedback;
   auto op = opac;
   par_for("cln_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real a = x.w(m,src,k,j,i)*(1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i));
+    const Real rr = x.fb ? x.w(m,CLW_RR,k,j,i) : 0.0;
+    Real a = x.w(m,src,k,j,i)*(1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*(1.0 - rr));
     a += x.h*x.idx[0]*(CleanFlux(x,src,0,m,k,j,i+1,false) - CleanFlux(x,src,0,m,k,j,i,false));
     if (x.d2) a += x.h*x.idx[1]*(CleanFlux(x,src,1,m,k,j+1,i,false) -
                                  CleanFlux(x,src,1,m,k,j,i,false));
@@ -526,15 +558,23 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
     }
   }
 
-  // gas temperature (fixed: gas_feedback = false) and the old vector of E
+  const bool fb = gas_feedback && hh;
+  const Real gm1 = hh ? eos.gamma - 1.0 : 1.0;
+  // gas: the old vector (stages: + t2inc of the gas channels), T, eint; the old E
   par_for("cln_old", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real t = 0.0;
     if (hh) {
       const Real d = uh(m,IDN,k,j,i);
+      if (fb && t2) {
+        for (int n = 0; n < 3; ++n) uh(m,IM1+n,k,j,i) += inc(m,M1_T2_M1+n,k,j,i);
+        uh(m,IEN,k,j,i) += inc(m,M1_T2_EN,k,j,i);
+      }
       const Real kin = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
                             SQR(uh(m,IM3,k,j,i)))/fmax(d, 1.0e-300);
-      t = eos.Temperature(d, fmax(uh(m,IEN,k,j,i) - kin, 0.0));
+      const Real ei = fmax(uh(m,IEN,k,j,i) - kin, 0.0);
+      t = eos.Temperature(d, ei);
+      w(m,CLW_EI,k,j,i) = ei;
     }
     w(m,CLW_T,k,j,i) = t;
     w(m,CLW_EO,k,j,i) = u0_(m,M1_E,k,j,i) + (t2 ? inc(m,M1_T2_E,k,j,i) : 0.0);
@@ -543,7 +583,6 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
   CleanClosure(t2s);
   CleanFaceCoef();
 
-  // right-hand side B = EO + h c kP a T^4 - h div G, and the preconditioner coefficients
   CleanCtx x;
   x.cs = cln_s; x.w = cln_w; x.fc[0] = cln_fc1; x.fc[1] = cln_fc2; x.fc[2] = cln_fc3;
   x.bmf = ibm_f; x.h = h; x.c = c;
@@ -556,78 +595,167 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
   x.d2 = d2; x.d3 = d3; x.bform = cln_bdry_form; x.bmn = ibm_n; x.q = marshak_q;
   for (int n = 0; n < 6; ++n) x.eb[n] = 0.0;
   x.eb[0] = iebath_x1min; x.eb[1] = iebath_x1max;
-  // G part of each face flux via the zero vector: F(E=0, withg) (CLW_CP is scratch = 0)
-  Kokkos::deep_copy(Kokkos::subview(w, Kokkos::ALL, CLW_CP, Kokkos::ALL, Kokkos::ALL,
-                    Kokkos::ALL), 0.0);
-  par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real t = x.w(m,CLW_T,k,j,i);
-    Real b = x.w(m,CLW_EO,k,j,i) + x.h*x.c*op(m,M1_OP_P,k,j,i)*ar*SQR(SQR(t));
-    const int z = CLW_CP;
-    b -= x.h*x.idx[0]*(CleanFlux(x,z,0,m,k,j,i+1,true) - CleanFlux(x,z,0,m,k,j,i,true));
-    if (x.d2) b -= x.h*x.idx[1]*(CleanFlux(x,z,1,m,k,j+1,i,true) -
-                                 CleanFlux(x,z,1,m,k,j,i,true));
-    if (x.d3) b -= x.h*x.idx[2]*(CleanFlux(x,z,2,m,k+1,j,i,true) -
-                                 CleanFlux(x,z,2,m,k,j,i,true));
-    x.w(m,CLW_B,k,j,i) = b;
-  });
-  // preconditioner: the operator's x1 tridiagonal part and the x2/x3 diagonal parts,
-  // measured by applying the linear face flux to unit vectors (exact for the diagonal-D
-  // and half-range parts; the cross terms are left to the Krylov iteration)
-  par_for("cln_pc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real hx = x.h*x.idx[0];
-    // alpha coefficients of face f: F_f = aL E_L + aR E_R (diagonal D + half range)
-    auto coef = [&](const int dir, const int kk, const int jj, const int ii, Real &al,
-                    Real &arr) {
-      const int kl = (dir == 2) ? kk-1 : kk, jl = (dir == 1) ? jj-1 : jj;
-      const int il = (dir == 0) ? ii-1 : ii;
-      const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
-      const int hi = (dir == 0) ? x.ie+1 : ((dir == 1) ? x.je+1 : x.ke+1);
-      const int pos = (dir == 0) ? ii : ((dir == 1) ? jj : kk);
-      al = 0.0; arr = 0.0;
-      if (pos == lo && x.bc[2*dir] != M1_IBC_PERIODIC) {
-        if (x.bc[2*dir] == M1_IBC_REFLECT) return;
-        bool beam = false;
-        if (dir == 0 && x.bmn > 0) beam = (x.bmf(m,kk-x.ks,jj-x.js) > 0.0);
-        if (x.bform == 1) {arr = beam ? 0.0 : -x.c*x.q; return;}
-        arr = x.c*x.cs(m,CLN_HM+dir,kk,jj,ii);
-        return;
-      }
-      if (pos == hi && x.bc[2*dir+1] != M1_IBC_PERIODIC) {
-        if (x.bc[2*dir+1] == M1_IBC_REFLECT) return;
-        al = (x.bform == 1) ? x.c*x.q : x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
-        return;
-      }
-      const Real wf = x.fc[dir](m,0,kk,jj,ii), th = x.fc[dir](m,1,kk,jj,ii);
-      const Real g = (1.0 - wf)*th*x.h*x.c*x.c*x.idx[dir];
-      al = g*x.cs(m,CLN_D11+dir,kl,jl,il) + wf*x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
-      arr = -g*x.cs(m,CLN_D11+dir,kk,jj,ii) + wf*x.c*x.cs(m,CLN_HM+dir,kk,jj,ii);
-    };
-    Real alp, arp, alm, arm;
-    coef(0, k, j, i+1, alp, arp);
-    coef(0, k, j, i, alm, arm);
-    Real a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i) + hx*(alp - arm);
-    x.w(m,CLW_AM,k,j,i) = -hx*alm;
-    x.w(m,CLW_AP,k,j,i) = hx*arp;
-    if (x.d2) {
-      coef(1, k, j+1, i, alp, arp);
-      coef(1, k, j, i, alm, arm);
-      a0 += x.h*x.idx[1]*(alp - arm);
-    }
-    if (x.d3) {
-      coef(2, k+1, j, i, alp, arp);
-      coef(2, k, j, i, alm, arm);
-      a0 += x.h*x.idx[2]*(alp - arm);
-    }
-    x.w(m,CLW_A0,k,j,i) = a0;
-    x.w(m,CLW_X,k,j,i) = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
-  });
+  x.fb = fb;
 
-  const int nit = CleanBiCGStab();
-  cln_nsolve += 1.0;
-  cln_nit += std::abs(nit);
-  cln_maxitseen = fmax(cln_maxitseen, static_cast<Real>(std::abs(nit)));
+  // gas feedback: enthalpy coefficients a_d = v_d + sum_b D_db v_b (v of the old vector)
+  if (fb) {
+    par_for("cln_aenth", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = fmax(uh(m,IDN,k,j,i), 1.0e-300);
+      Real v[3];
+      for (int n = 0; n < 3; ++n) v[n] = uh(m,IM1+n,k,j,i)/d;
+      const int dmap[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
+      for (int a = 0; a < 3; ++a) {
+        Real s2 = v[a];
+        for (int b = 0; b < 3; ++b) s2 += x.cs(m,CLN_D11+dmap[a][b],k,j,i)*v[b];
+        x.w(m,CLW_A1+a,k,j,i) = s2;
+      }
+    });
+    int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
+    CleanGhost(cln_w, CLW_A1, 3, nmb1, bc, is, ie, js, je, ks, ke, indcs.ng, d2, d3);
+  }
+  // the first iterate: E_k = old E, T_k = the exact local T of E_k (fixed T without
+  // feedback)
+  par_for("cln_it0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real ek = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
+    x.w(m,CLW_EK,k,j,i) = ek;
+    x.w(m,CLW_RR,k,j,i) = 0.0;
+    if (fb) {
+      const Real d = uh(m,IDN,k,j,i);
+      x.w(m,CLW_T,k,j,i) = CleanTLocal(d, gm1, x.w(m,CLW_EI,k,j,i),
+                                       x.h*x.c*op(m,M1_OP_P,k,j,i)*ar,
+                                       x.h*x.c*op(m,M1_OP_E,k,j,i)*ek, x.w(m,CLW_T,k,j,i));
+    }
+  });
+  // G part of each face flux via the zero vector: F(E=0, withg) (CLW_CP is scratch = 0)
+  int nit = 0, nnl = 0;
+  bool nlok = !fb;
+  const int maxnl = fb ? cln_maxnl : 1;
+  for (int inl = 0; inl < maxnl; ++inl) {
+    ++nnl;
+    Kokkos::deep_copy(Kokkos::subview(w, Kokkos::ALL, CLW_CP, Kokkos::ALL, Kokkos::ALL,
+                      Kokkos::ALL), 0.0);
+    // r, B = EO + h c kP a T_k^4 - r h c kE E_k - h div G
+    par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real t = x.w(m,CLW_T,k,j,i);
+      const Real kp = op(m,M1_OP_P,k,j,i), ke2 = op(m,M1_OP_E,k,j,i);
+      Real rr = 0.0;
+      if (fb) {
+        const Real s4 = 4.0*x.h*x.c*kp*ar*t*t*t;
+        rr = s4/(uh(m,IDN,k,j,i)/gm1 + s4);
+      }
+      x.w(m,CLW_RR,k,j,i) = rr;
+      Real b = x.w(m,CLW_EO,k,j,i) + x.h*x.c*kp*ar*SQR(SQR(t)) -
+               rr*x.h*x.c*ke2*x.w(m,CLW_EK,k,j,i);
+      const int z = CLW_CP;
+      b -= x.h*x.idx[0]*(CleanFlux(x,z,0,m,k,j,i+1,true) - CleanFlux(x,z,0,m,k,j,i,true));
+      if (x.d2) b -= x.h*x.idx[1]*(CleanFlux(x,z,1,m,k,j+1,i,true) -
+                                   CleanFlux(x,z,1,m,k,j,i,true));
+      if (x.d3) b -= x.h*x.idx[2]*(CleanFlux(x,z,2,m,k+1,j,i,true) -
+                                   CleanFlux(x,z,2,m,k,j,i,true));
+      x.w(m,CLW_B,k,j,i) = b;
+    });
+    // preconditioner: the operator's x1 tridiagonal part and the x2/x3 diagonal parts
+    // (exact for the diagonal-D, half-range and enthalpy parts; the cross terms are
+    // left to the Krylov iteration)
+    par_for("cln_pc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real hx = x.h*x.idx[0];
+      auto coef = [&](const int dir, const int kk2, const int jj, const int ii, Real &al,
+                      Real &arr) {
+        const int kl = (dir == 2) ? kk2-1 : kk2, jl = (dir == 1) ? jj-1 : jj;
+        const int il = (dir == 0) ? ii-1 : ii;
+        const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
+        const int hi = (dir == 0) ? x.ie+1 : ((dir == 1) ? x.je+1 : x.ke+1);
+        const int pos = (dir == 0) ? ii : ((dir == 1) ? jj : kk2);
+        al = 0.0; arr = 0.0;
+        if (pos == lo && x.bc[2*dir] != M1_IBC_PERIODIC) {
+          if (x.bc[2*dir] == M1_IBC_REFLECT) return;
+          bool beam = false;
+          if (dir == 0 && x.bmn > 0) beam = (x.bmf(m,kk2-x.ks,jj-x.js) > 0.0);
+          if (x.bform == 1) {arr = beam ? 0.0 : -x.c*x.q; return;}
+          arr = x.c*x.cs(m,CLN_HM+dir,kk2,jj,ii);
+          return;
+        }
+        if (pos == hi && x.bc[2*dir+1] != M1_IBC_PERIODIC) {
+          if (x.bc[2*dir+1] == M1_IBC_REFLECT) return;
+          al = (x.bform == 1) ? x.c*x.q : x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
+          return;
+        }
+        const Real wf = x.fc[dir](m,0,kk2,jj,ii), th = x.fc[dir](m,1,kk2,jj,ii);
+        const Real g = (1.0 - wf)*th*x.h*x.c*x.c*x.idx[dir];
+        al = g*x.cs(m,CLN_D11+dir,kl,jl,il) + wf*x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
+        arr = -g*x.cs(m,CLN_D11+dir,kk2,jj,ii) + wf*x.c*x.cs(m,CLN_HM+dir,kk2,jj,ii);
+        if (x.fb) {
+          al += 0.5*x.w(m,CLW_A1+dir,kl,jl,il);
+          arr += 0.5*x.w(m,CLW_A1+dir,kk2,jj,ii);
+        }
+      };
+      Real alp, arp, alm, arm;
+      coef(0, k, j, i+1, alp, arp);
+      coef(0, k, j, i, alm, arm);
+      Real a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*(1.0 - x.w(m,CLW_RR,k,j,i)) +
+                hx*(alp - arm);
+      x.w(m,CLW_AM,k,j,i) = -hx*alm;
+      x.w(m,CLW_AP,k,j,i) = hx*arp;
+      if (x.d2) {
+        coef(1, k, j+1, i, alp, arp);
+        coef(1, k, j, i, alm, arm);
+        a0 += x.h*x.idx[1]*(alp - arm);
+      }
+      if (x.d3) {
+        coef(2, k+1, j, i, alp, arp);
+        coef(2, k, j, i, alm, arm);
+        a0 += x.h*x.idx[2]*(alp - arm);
+      }
+      x.w(m,CLW_A0,k,j,i) = a0;
+      x.w(m,CLW_X,k,j,i) = x.w(m,CLW_EK,k,j,i);
+    });
+    nit = CleanBiCGStab();
+    cln_nsolve += 1.0;
+    cln_nit += std::abs(nit);
+    cln_maxitseen = fmax(cln_maxitseen, static_cast<Real>(std::abs(nit)));
+    if (!fb || nit < 0) break;
+    // Newton update: E_{k+1} = X, damped per cell so that E stays positive; T_{k+1} the
+    // exact local T of E_{k+1}.  Converged when max |dE|/E and max |dT|/T < cln_tol_nl.
+    Real dmax = 0.0;
+    {
+      const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+      const int nkji = nk*nj*ni, nji = nj*ni;
+      Kokkos::parallel_reduce("cln_nlupd", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              (nmb1+1)*nkji),
+      KOKKOS_LAMBDA(const int idx, Real &acc) {
+        int m = idx/nkji, r = idx - m*nkji;
+        int k = r/nji; r -= k*nji;
+        int j = r/ni, i = r - j*ni;
+        k += ks; j += js; i += is;
+        const Real ek = x.w(m,CLW_EK,k,j,i);
+        Real en = x.w(m,CLW_X,k,j,i);
+        if (!(en > 0.0)) en = 0.1*ek;
+        const Real d = uh(m,IDN,k,j,i);
+        const Real told = x.w(m,CLW_T,k,j,i);
+        const Real tn = CleanTLocal(d, gm1, x.w(m,CLW_EI,k,j,i),
+                                    x.h*x.c*op(m,M1_OP_P,k,j,i)*ar,
+                                    x.h*x.c*op(m,M1_OP_E,k,j,i)*en, told);
+        x.w(m,CLW_EK,k,j,i) = en;
+        x.w(m,CLW_T,k,j,i) = tn;
+        const Real de = fabs(en - ek)/fmax(fmax(en, ek), 1.0e-300);
+        const Real dtt = fabs(tn - told)/fmax(fmax(tn, told), 1.0e-300);
+        acc = fmax(acc, fmax(de, dtt));
+      }, Kokkos::Max<Real>(dmax));
+    }
+    if (dmax < cln_tol_nl) {nlok = true; break;}
+  }
+  if (fb) {
+    // the solution is the converged iterate
+    par_for("cln_xek", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      x.w(m,CLW_X,k,j,i) = x.w(m,CLW_EK,k,j,i);
+    });
+    if (!nlok) nit = -std::abs(nit) - 1;
+  }
 
   // positivity check of the solution.  The linear solve is accurate to cln_tol |B|, so
   // values within 10 cln_tol max|B| of zero are zero to solver accuracy (near-vacuum
@@ -709,19 +837,38 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
     const int tf = M1_T2_F1 + dir;
     par_for("cln_fwb", DevExeSpace(), 0, nmb1, ks, khi, js, jhi, is, ihi,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real fn = CleanFlux(x, CLW_X, dir, m, k, j, i, true);
+      const Real fn = CleanFlux(x, CLW_X, dir, m, k, j, i, true, false);
       if (sl) kk(m,tf,k,j,i) = (fn - fcd(m,2,k,j,i))/x.h;
       f0(m,k,j,i) = fn;
     });
   }
   auto f1 = f0x1, f2 = f0x2, f3 = f0x3;
+  auto fc1 = cln_fc1, fc2 = cln_fc2, fc3 = cln_fc3;
   par_for("cln_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real e = w(m,CLW_X,k,j,i);
+    Real dm[3] = {0.0, 0.0, 0.0}, den = 0.0;
+    if (fb) {
+      // momentum: the face-flux relaxation h c chi F (h chi F/c of momentum), half of
+      // each face to each cell; chi_f from theta = 1/(1 + h c chi_f)
+      auto mom = [&](const Real th, const Real f) {return (1.0/th - 1.0)*f/(c*c);};
+      dm[0] = 0.5*(mom(fc1(m,1,k,j,i), f1(m,k,j,i)) + mom(fc1(m,1,k,j,i+1), f1(m,k,j,i+1)));
+      if (d2) dm[1] = 0.5*(mom(fc2(m,1,k,j,i), f2(m,k,j,i)) +
+                           mom(fc2(m,1,k,j+1,i), f2(m,k,j+1,i)));
+      if (d3) dm[2] = 0.5*(mom(fc3(m,1,k,j,i), f3(m,k,j,i)) +
+                           mom(fc3(m,1,k+1,j,i), f3(m,k+1,j,i)));
+      const Real d = uh(m,IDN,k,j,i);
+      const Real ien0 = uh(m,IEN,k,j,i);
+      for (int n = 0; n < 3; ++n) uh(m,IM1+n,k,j,i) += dm[n];
+      const Real kin = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
+                            SQR(uh(m,IM3,k,j,i)))/fmax(d, 1.0e-300);
+      uh(m,IEN,k,j,i) = d*w(m,CLW_T,k,j,i)/gm1 + kin;
+      den = uh(m,IEN,k,j,i) - ien0;
+    }
     if (sl) {
       kk(m,M1_T2_E,k,j,i) = (e - w(m,CLW_EO,k,j,i))/h;
-      for (int n = 0; n < 3; ++n) kk(m,M1_T2_M1+n,k,j,i) = 0.0;
-      kk(m,M1_T2_EN,k,j,i) = 0.0;
+      for (int n = 0; n < 3; ++n) kk(m,M1_T2_M1+n,k,j,i) = dm[n]/h;
+      kk(m,M1_T2_EN,k,j,i) = den/h;
     }
     u0_(m,M1_E,k,j,i) = e;
     u0_(m,M1_F1,k,j,i) = 0.5*(f1(m,k,j,i) + f1(m,k,j,i+1));

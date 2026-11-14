@@ -2894,6 +2894,8 @@ class RadiationM1 {
   Real cln_c0 = 0.1, cln_c1 = 0.5;   // clean_w_c0/c1: blend ramp in C1 (ray non-locality)
   Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear stage solve
   int cln_maxit = 4000;         // clean_maxit
+  int cln_maxnl = 50;           // clean_maxnl: Newton passes (gas feedback)
+  Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: max |dE|/E, |dT|/T of a Newton pass
   bool cln_extrap = true;       // clean_extrap: closure extrapolated to the stage time
   int cln_bdry_form = 0;        // clean_bc: 0 = ray half-range, 1 = Marshak q (reference form)
   bool cln_init = false, cln_havec = false, cln_havep = false;
