@@ -545,7 +545,8 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // time2_face_fct is on by default (cubed sphere / spherical polar, multi-D implicit
   // transport, hesdirk2; below) the face limiter replaces the redistribution and the
   // DEFAULT is 0; elsewhere (Cartesian, 1-D) the prod-1108 rule above stays.
-  const bool ffct14 = recipe::GetMode(pin) != recipe::Mode::none && sph_geom &&
+  // unify-1114 (#17, #18): time2_face_fct (and so k1_redist 0) on every grid (was sp/cs)
+  const bool ffct14 = recipe::GetMode(pin) != recipe::Mode::none &&
                       trans_on && time_scheme == M1_TIME_HESDIRK2;
   {
     const bool onecol = pmy_pack->pmesh->mesh_indcs.nx1 == pmy_pack->pmesh->mb_indcs.nx1;

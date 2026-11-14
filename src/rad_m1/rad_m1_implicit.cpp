@@ -4220,7 +4220,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // athena_face_diss, implicit_hr_damp); false elsewhere (Cartesian) and with recipe
   // none, as before.  Read only when named; an explicit key wins.
   const bool rnone14 = recipe::GetMode(pin) == recipe::Mode::none;
-  impl_fmm = !rnone14 && sph_geom && trans_on && impl_pos_trans != 1 && !afd_on &&
+  // unify-1114 (#15): the same default on a Cartesian grid (was sp/cs only).  The
+  // FACE_MMAT_1112 sect. 8 degradation of the Cartesian IDORT (cb 0.570 -> 0.629, shd
+  // 0.013 -> 0.019, binary 461b668c) does not reproduce on prod-1118 + facetr: cb 0.5700,
+  // shd 0.0131 with the full set, 14x less wall (UNIFY_PROGRESS_1114.md step 3).
+  impl_fmm = !rnone14 && trans_on && impl_pos_trans != 1 && !afd_on &&
              !(impl_muscl_damp > 0.0);
   if (pin->DoesParameterExist("rad_m1","implicit_face_mmat")) {
     impl_fmm = pin->GetBoolean("rad_m1","implicit_face_mmat");
@@ -4333,7 +4337,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // defaults-1114 (USER 11-13): zalesak_cap_rounds DEFAULT 4 on the cubed sphere /
   // spherical polar (inert without implicit_face_mmat); 0 on Cartesian and with recipe
   // none, as before.  Read only when named.
-  if (!rnone14 && sph_geom) {zl_cap = 4;}
+  if (!rnone14) {zl_cap = 4;}   // unify-1114 (#16): every grid (was sp/cs only)
   if (pin->DoesParameterExist("rad_m1","zalesak_cap_rounds")) {
     zl_cap = pin->GetInteger("rad_m1","zalesak_cap_rounds");
   }
