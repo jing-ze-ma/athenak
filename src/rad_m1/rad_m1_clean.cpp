@@ -152,14 +152,17 @@ KOKKOS_INLINE_FUNCTION Real CleanFlux(const CleanCtx &x, const int e, const int 
       grad += 0.25*(sp - sm)*x.idx[b];
     }
     f = (1.0 - wf)*th*(-x.h*c*c*grad + (withg ? x.fc[dir](m,2,k,j,i) : 0.0));
+    // lab-frame flux: the source -c chi (F - A), A = v E + v.P at the face (central),
+    // gives F = theta (Ft - h c^2 grad) + (1 - theta) A
+    if (x.fb) {
+      f += (1.0 - wf)*(1.0 - th)*0.5*(x.w(m,CLW_A1+dir,kl,jl,il)*el +
+                                      x.w(m,CLW_A1+dir,k,j,i)*er);
+    }
   }
   if (wf > 0.0) {
     f += wf*c*(x.cs(m,CLN_HP+dir,kl,jl,il)*el + x.cs(m,CLN_HM+dir,k,j,i)*er);
   }
-  // enthalpy flux v E + v.P (central, implicit; not part of the comoving face flux)
-  if (adv && x.fb) {
-    f += 0.5*(x.w(m,CLW_A1+dir,kl,jl,il)*el + x.w(m,CLW_A1+dir,k,j,i)*er);
-  }
+  (void)adv;
   return f;
 }
 
@@ -689,8 +692,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
         al = g*x.cs(m,CLN_D11+dir,kl,jl,il) + wf*x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
         arr = -g*x.cs(m,CLN_D11+dir,kk2,jj,ii) + wf*x.c*x.cs(m,CLN_HM+dir,kk2,jj,ii);
         if (x.fb) {
-          al += 0.5*x.w(m,CLW_A1+dir,kl,jl,il);
-          arr += 0.5*x.w(m,CLW_A1+dir,kk2,jj,ii);
+          al += (1.0 - wf)*(1.0 - th)*0.5*x.w(m,CLW_A1+dir,kl,jl,il);
+          arr += (1.0 - wf)*(1.0 - th)*0.5*x.w(m,CLW_A1+dir,kk2,jj,ii);
         }
       };
       Real alp, arp, alm, arm;
@@ -851,12 +854,23 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
     if (fb) {
       // momentum: the face-flux relaxation h c chi F (h chi F/c of momentum), half of
       // each face to each cell; chi_f from theta = 1/(1 + h c chi_f)
-      auto mom = [&](const Real th, const Real f) {return (1.0/th - 1.0)*f/(c*c);};
-      dm[0] = 0.5*(mom(fc1(m,1,k,j,i), f1(m,k,j,i)) + mom(fc1(m,1,k,j,i+1), f1(m,k,j,i+1)));
-      if (d2) dm[1] = 0.5*(mom(fc2(m,1,k,j,i), f2(m,k,j,i)) +
-                           mom(fc2(m,1,k,j+1,i), f2(m,k,j+1,i)));
-      if (d3) dm[2] = 0.5*(mom(fc3(m,1,k,j,i), f3(m,k,j,i)) +
-                           mom(fc3(m,1,k+1,j,i), f3(m,k+1,j,i)));
+      // comoving flux F - (1 - w) A_f, A_f = (a_L E_L + a_R E_R)/2 (lab-frame form)
+      auto mom = [&](const Real th, const Real wf, const Real f, const Real af) {
+        return (1.0/th - 1.0)*(f - (1.0 - wf)*af)/(c*c);};
+      auto afc = [&](const int a, const int kl, const int jl, const int il) {
+        return 0.5*(w(m,CLW_A1+a,kl,jl,il)*w(m,CLW_X,kl,jl,il) +
+                    w(m,CLW_A1+a,k,j,i)*w(m,CLW_X,k,j,i));};
+      auto afh = [&](const int a, const int kh, const int jh, const int ih) {
+        return 0.5*(w(m,CLW_A1+a,kh,jh,ih)*w(m,CLW_X,kh,jh,ih) +
+                    w(m,CLW_A1+a,k,j,i)*w(m,CLW_X,k,j,i));};
+      dm[0] = 0.5*(mom(fc1(m,1,k,j,i), fc1(m,0,k,j,i), f1(m,k,j,i), afc(0,k,j,i-1)) +
+                   mom(fc1(m,1,k,j,i+1), fc1(m,0,k,j,i+1), f1(m,k,j,i+1), afh(0,k,j,i+1)));
+      if (d2) dm[1] = 0.5*(mom(fc2(m,1,k,j,i), fc2(m,0,k,j,i), f2(m,k,j,i), afc(1,k,j-1,i)) +
+                           mom(fc2(m,1,k,j+1,i), fc2(m,0,k,j+1,i), f2(m,k,j+1,i),
+                               afh(1,k,j+1,i)));
+      if (d3) dm[2] = 0.5*(mom(fc3(m,1,k,j,i), fc3(m,0,k,j,i), f3(m,k,j,i), afc(2,k-1,j,i)) +
+                           mom(fc3(m,1,k+1,j,i), fc3(m,0,k+1,j,i), f3(m,k+1,j,i),
+                               afh(2,k+1,j,i)));
       const Real d = uh(m,IDN,k,j,i);
       const Real ien0 = uh(m,IEN,k,j,i);
       for (int n = 0; n < 3; ++n) uh(m,IM1+n,k,j,i) += dm[n];
