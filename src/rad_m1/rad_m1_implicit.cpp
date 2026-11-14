@@ -14272,6 +14272,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
   auto tf_ = std::get<31>(ctx_);
   auto tfz = std::get<32>(ctx_);
   auto gu4 = std::get<33>(ctx_);
+  auto psl = std::get<34>(ctx_);   // rsgposlin-1113
   auto tsb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -14282,6 +14283,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     (void)escale; (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr;
     (void)igy; (void)iw_; (void)opac_; (void)plog; (void)uh; (void)usec;
     (void)tso; (void)opf; (void)tsm; (void)tsmin; (void)tf_; (void)tfz; (void)gu4;
+    (void)psl;
 #endif
     Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
     Real eold = iw_(m,M1_IW_EP,k,j,i);
@@ -14322,7 +14324,20 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
             dtk = (u > 0.0) ? (sqrt(sqrt(u)) - told) : (-told);
           }
         }
-        if (bk > 0.0 && fabs(dtk) <= M1_NEWT_TRUST*told && (told + dtk) > 0.0) {
+        if (psl && bk > 0.0 && told > 0.0 &&
+            !(fabs(dtk) <= M1_NEWT_TRUST*told)) {
+          // rsgposlin-1113 implicit_src_poslin: a step outside the trust region is
+          // CLAMPED to it (a damped Newton step on the same linearisation the row
+          // eliminated, with B_k damped there) instead of jumping to the bracketed root
+          // at this pass's E': that jump, T_k -> root(E'(T_k)), is the map whose slope
+          // < -1 made the RSG 2-cycle.  Inside the trust region nothing changes.
+          dtk = fmin(fmax(dtk, -M1_NEWT_TRUST*told), M1_NEWT_TRUST*told);
+          tnew = told + dtk;
+          iw_(m,igy,k,j,i) = fabs(yk);
+          done = true;
+        }
+        if (!done && bk > 0.0 && fabs(dtk) <= M1_NEWT_TRUST*told &&
+            (told + dtk) > 0.0) {
           tnew = told + dtk;
           iw_(m,igy,k,j,i) = fabs(yk);
           done = true;
@@ -18420,7 +18435,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                               kappa_f, kappa_s, opac_rho_ref,
                                               opac_t_ref, opac_a, opac_b},
                                      impl_tsolve_opac_mode, impl_tsolve_opac_smin,
-                                     thin_frz, (impl_thin_frz > 0.0), impl_gn_u4);
+                                     thin_frz, (impl_thin_frz > 0.0), impl_gn_u4,
+                                     impl_src_poslin);
       if (tsid) {
         M1ImplTsolveLaunch(tsb_ctx, std::true_type{});
       } else {
