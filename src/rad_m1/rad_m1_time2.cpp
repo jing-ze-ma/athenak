@@ -277,11 +277,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (vet_col) {
     // defaults-1025 (USER 10-25): the sph fresh-start default is extrap2 (was predict;
     // RSG E / HG production value); a restart whose file lacks the key keeps lag
-    const bool vdef = sph_geom && !global_variable::restart_run;
+    // unify-1114 (#5): extrap2 on every grid (Cartesian was forced lag unless named);
+    // lag when vet_every > 1 (extrap2 needs a build every step: no new FATAL for a deck
+    // that does not name the key)
+    const bool vdef = !global_variable::restart_run && (vcol_every == 1);
     const std::string kvc = M1KeyName(pin, "time2_vet", {"time2_vet_col"});
-    std::string vm = (sph_geom || pin->DoesParameterExist("rad_m1", kvc)) ?
-        pin->GetOrAddString("rad_m1", kvc, vdef ? "extrap2" : "lag") :
-        std::string("lag");
+    std::string vm = pin->GetOrAddString("rad_m1", kvc, vdef ? "extrap2" : "lag");
     if (vm.compare("lag") == 0) {
       t2_vcmode = 0;
     } else if (vm.compare("predict") == 0) {
