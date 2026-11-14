@@ -2250,6 +2250,34 @@ Real RadiationM1::EbndFluxX1(const int side) {
   return (side == 2) ? -l : l;
 }
 
+//! \fn Real RadiationM1::EbndEsrc
+//! \brief hg262-drive-1113 (ebnd_split): (chat/c) sum esrc V over the active cells, all
+//! ranks (0 without esrc)
+
+Real RadiationM1::EbndEsrc() {
+  if (!esrc_on) return 0.0;
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, js = id.js, ks = id.ks;
+  const int ni = id.nx1, nj = id.nx2, nk = id.nx3;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto es_ = esrc;
+  auto &vol = pmy_pack->pcoord->volume;
+  Real l = 0.0;
+  Kokkos::parallel_reduce("m1_ebnd_src", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          nmb*nk*nj*ni),
+  KOKKOS_LAMBDA(const int n, Real &acc) {
+    const int m = n/(nk*nj*ni);
+    const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
+    acc += es_(m,k,j,i)*vol(m,k,j,i);
+  }, Kokkos::Sum<Real>(l));
+#if MPI_PARALLEL_ENABLED
+  Real g;
+  MPI_Allreduce(&l, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  l = g;
+#endif
+  return (chat/c_light)*l;
+}
+
 //! \fn void RadiationM1::EbndStart / EbndStage1 / EbndAccept
 //! \brief mhdfix-1025 Ebnd (rad_m1.hpp): L at the step start (the face flux of the slope
 //! K1), of the accepted stage-1 solve (K2), and the step's applied energy at acceptance
@@ -2266,6 +2294,7 @@ void RadiationM1::EbndStart() {
   if (ebnd_split) {
     ebnd_l1i = EbndFluxX1(1);
     ebnd_l1o = EbndFluxX1(2);
+    ebnd_s1 = EbndEsrc();
     return;
   }
   ebnd_l1 = EbndFluxX1();
@@ -2276,6 +2305,7 @@ void RadiationM1::EbndStage1() {
   if (ebnd_split) {
     ebnd_l2i = EbndFluxX1(1);
     ebnd_l2o = EbndFluxX1(2);
+    ebnd_s2 = EbndEsrc();
     return;
   }
   ebnd_l2 = EbndFluxX1();
@@ -2296,6 +2326,7 @@ void RadiationM1::EbndAccept(Real dt, bool t2step) {
     const Real l3i = EbndFluxX1(1), l3o = EbndFluxX1(2);
     ebnd_acc_in += applied(ebnd_l1i, ebnd_l2i, l3i);
     ebnd_acc_out += applied(ebnd_l1o, ebnd_l2o, l3o);
+    ebnd_acc_src += applied(ebnd_s1, ebnd_s2, EbndEsrc());
     ebnd_acc = ebnd_acc_in - ebnd_acc_out;
     return;
   }

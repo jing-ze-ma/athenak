@@ -1897,6 +1897,13 @@ class RadiationM1 {
   bool ebnd_split = false;
   Real ebnd_acc_in = 0.0, ebnd_acc_out = 0.0;
   Real ebnd_l1i = 0.0, ebnd_l1o = 0.0, ebnd_l2i = 0.0, ebnd_l2o = 0.0;
+  // with ebnd_split also the explicit source esrc as the solves apply it: each solve adds
+  // its dt (chat/c) esrc to the old vector and to its slope, so the step deposits the
+  // slopes' (chat/c) sum esrc V with the same tableau weights (K1 carries the esrc of
+  // the previous step's last solve, FSAL)
+  Real ebnd_acc_src = 0.0;
+  Real ebnd_s1 = 0.0, ebnd_s2 = 0.0;
+  Real EbndEsrc();
   // side 0: inner minus outer (the original sum); 1: the inner faces only (inward
   // positive); 2: the outer faces only (OUTWARD positive)
   Real EbndFluxX1(int side = 0);

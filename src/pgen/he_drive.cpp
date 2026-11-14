@@ -59,13 +59,6 @@ Real erad_ = 0.0, wgrav_ = 0.0, tprev_ = 0.0, ain_ = 0.0;
 // slopes' face fluxes, incl. implicit_bc_advect's end-face A E): in at x1min, out at
 // x1max (the Marshak top).  ebd_ = false: the transport cannot book it (columns 0).
 bool ebd_ = false;
-// open items 11-13: the energy the explicit radiation source <rad_m1>/esrc put in (the
-// frozen / adaptive MLT scaffold: its conservative divergence sums to the scaffold's
-// boundary-face fluxes, not to zero).  ImplicitSolve raises E by exactly
-// dt (chat/c) esrc per step (be and hesdirk2), with esrc fixed over the step (the
-// closure updates it at the first stage, before StageLedger): esp_ = this step's
-// dt (chat/c) sum esrc V, taken at stage 1, booked into esa_ at the end of the cycle
-Real esa_ = 0.0, esp_ = 0.0;
 // problem/he_drive_closure_lin = const | table: the L_in the adaptive MLT closure targets
 bool cltab_ = false;
 Mesh *pmesh_ = nullptr;
@@ -376,29 +369,6 @@ void FaceSums(Mesh *pm, const bool binf, const bool zflux, Real *f) {
 #endif
 }
 
-//! this step's explicit-source deposit dt (chat/c) sum esrc V (0 without esrc)
-Real EsrcStep(Mesh *pm) {
-  radm1::RadiationM1 *pm1 = pm->pmb_pack->pradm1;
-  if (pm1 == nullptr || !pm1->esrc_on) return 0.0;
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  const int nmb = pmbp->nmb_thispack;
-  auto es = pm1->esrc;
-  auto &volume = pmbp->pcoord->volume;
-  Real v = 0.0;
-  Kokkos::parallel_reduce("hsdrv_esrc", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                          nmb*nx3*nx2*nx1),
-  KOKKOS_LAMBDA(const int n, Real &acc) {
-    const int m = n/(nx3*nx2*nx1);
-    const int k = (n/(nx2*nx1))%nx3 + ks, j = (n/nx1)%nx2 + js, i = n%nx1 + is;
-    acc += es(m,k,j,i)*volume(m,k,j,i);
-  }, Kokkos::Sum<Real>(v));
-  DetSum(&v, 1);
-  return pm->dt*pm1->chat_over_c*v;
-}
-
 void WriteLog(Mesh *pm, const std::vector<Real> &sh) {
   if (global_variable::my_rank != 0) return;
   auto &indcs = pm->mb_indcs;
@@ -425,10 +395,11 @@ void WriteLog(Mesh *pm, const std::vector<Real> &sh) {
   radm1::RadiationM1 *pm1 = pm->pmb_pack->pradm1;
   const Real ebi = ebd_ ? pm1->ebnd_acc_in : 0.0;
   const Real ebo = ebd_ ? pm1->ebnd_acc_out : 0.0;
+  const Real esa = ebd_ ? pm1->ebnd_acc_src : 0.0;
   std::fprintf(fp, "%d %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e "
                "%.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e\n", pm->ncycle, pm->time,
                mt, et, led_[0], led_[1], led_[2], led_[3], led_[4], erad_, wgrav_, gmi,
-               InnerFlux(pm, a_.fconst), ain_, ptop, gdm, ebi, ebo, esa_);
+               InnerFlux(pm, a_.fconst), ain_, ptop, gdm, ebi, ebo, esa);
   std::fclose(fp);
 }
 
@@ -588,8 +559,9 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
                    "[9]E_sponge [10]Erad_in (A_in int F dt) [11]W_grav [12]GM_int "
                    "[13]F_in [14]A_in [15]dPhi(x1f(ie+1)) [16]G dm(x1f(ie+1)) "
                    "[17]ErB_in [18]ErB_out (radiation energy in at x1min / OUT at x1max "
-                   "as the scheme applies it, RadiationM1 Ebnd) [19]E_src (dt (chat/c) "
-                   "sum esrc V: the MLT scaffold source). Budget: [4]-[4]_0 = "
+                   "as the scheme applies it, RadiationM1 Ebnd) [19]E_src (the explicit "
+                   "radiation source esrc = the MLT scaffold, as the solves apply it). "
+                   "Budget: [4]-[4]_0 = "
                    "[7]-[8]+[9]+[11]+[17]-[18]+[19]\n");
       std::fclose(fp);
     }
@@ -618,7 +590,7 @@ void RstAppend(std::vector<char> *out) {
   if (!on_) return;
   // payload: nx1, ledgers (kNL), ledgers at the stage-loop start (kNL), their cycle,
   // erad, wgrav, tprev, ref flag, mref, dmint, rhoref (nx1), ddm (nx1), [open items
-  // 11-13] ebnd_acc_in, ebnd_acc_out, esrc booked, esrc of the last step
+  // 11-13] ebnd_acc_in, ebnd_acc_out, ebnd_acc_src, a spare
   std::vector<Real> p;
   p.push_back(static_cast<Real>(nx1_));
   for (int q = 0; q < kNL; ++q) {p.push_back(led_[q]);}
@@ -635,8 +607,8 @@ void RstAppend(std::vector<char> *out) {
   radm1::RadiationM1 *pm1 = (pmesh_ != nullptr) ? pmesh_->pmb_pack->pradm1 : nullptr;
   p.push_back(ebd_ ? pm1->ebnd_acc_in : 0.0);
   p.push_back(ebd_ ? pm1->ebnd_acc_out : 0.0);
-  p.push_back(esa_);
-  p.push_back(esp_);   // this cycle's deposit: CycleBody books it after the file
+  p.push_back(ebd_ ? pm1->ebnd_acc_src : 0.0);
+  p.push_back(0.0);   // spare
   const Real rn = static_cast<Real>(p.size());
   const std::size_t o = out->size();
   out->resize(o + (p.size() + 1)*sizeof(Real) + sizeof(kTag));
@@ -675,9 +647,8 @@ void RestartApply(Mesh *pm) {
         pm1->ebnd_acc_in = rst_[o];
         pm1->ebnd_acc_out = rst_[o + 1];
         pm1->ebnd_acc = pm1->ebnd_acc_in - pm1->ebnd_acc_out;
+        pm1->ebnd_acc_src = rst_[o + 2];
       }
-      esa_ = rst_[o + 2];
-      esp_ = rst_[o + 3];
     }
     have = true;
   }
@@ -722,7 +693,6 @@ void StageLedger(Mesh *pm, const Real bdt, const bool binf, const bool zflux,
     for (int q = 0; q < kNL; ++q) {ledn_[q] = led_[q];}
     led_cyc_ = pm->ncycle;
   }
-  if (s == 0) {esp_ = EsrcStep(pm);}
   Real f[4];
   FaceSums(pm, binf, zflux, f);
   const Real g0 = gam0_[s], g1 = gam1_[s];
@@ -742,8 +712,6 @@ void CycleBody(Mesh *pm, const bool log) {
     erad_ += ain_*a_.fconst*(t - tprev_);
   }
   tprev_ = t;
-  esa_ += esp_;
-  esp_ = 0.0;
   const bool logd = log && (pm->ncycle % logev_ == 0);
   const bool refr = live_ && (pm->ncycle % every_ == 0 || !ref_);
   if (!logd && !refr) return;
