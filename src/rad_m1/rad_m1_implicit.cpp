@@ -2467,14 +2467,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 "spherical-polar wedge only");
     }
   }
-  // implicit_face_weight (see rad_m1.hpp): distance (default on the spherical-polar
-  // wedge) | equal (default elsewhere; the only choice on a Cartesian grid, which is
-  // uniform).  On the wedge the key is recorded (GetOrAdd), so a restart keeps what the
-  // run started with.  A RESTART whose embedded input predates the key keeps `equal`,
-  // the behaviour it was run with, unless the key is given on the command line or in
-  // an -i overlay (ModifyFromCmdline adds absent keys on a restart).  On a Cartesian grid
-  // it is read only when named, so the parameter dump there is unchanged.
-  if (sph_geom || pin->DoesParameterExist("rad_m1","implicit_face_weight")) {
+  // implicit_face_weight (see rad_m1.hpp): distance (default) | equal.  The key is
+  // recorded (GetOrAdd) on every grid, so a restart keeps what the run started with.  A
+  // RESTART whose embedded input predates the key keeps `equal`, the behaviour it was
+  // run with, unless the key is given on the command line or in an -i overlay
+  // (ModifyFromCmdline adds absent keys on a restart).  unify-1114 (#20): on a Cartesian
+  // grid the cells are uniform, so the distance weights ARE the equal weights (1/2,
+  // 1/2); the kernels keep their sph_geom guard and the result is bitwise the same for
+  // either choice there.
+  {
     const bool named = pin->DoesParameterExist("rad_m1","implicit_face_weight");
     const std::string sfw = pin->GetOrAddString("rad_m1","implicit_face_weight",
         global_variable::restart_run ? "equal" : "distance");
@@ -2485,10 +2486,6 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     } else {
       ImplFatal("<rad_m1>/implicit_face_weight = '" + sfw
                 + "' is not a choice (equal | distance)");
-    }
-    if (impl_face_wdist && !sph_geom) {
-      ImplFatal("<rad_m1>/implicit_face_weight = distance is implemented on the "
-                "spherical-polar wedge only (a Cartesian grid is uniform)");
     }
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1>/implicit_face_weight = " << sfw
@@ -3355,6 +3352,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     if (pin->DoesParameterExist("rad_m1","implicit_pos_transport_mem")) {
       pt_gam = pin->GetReal("rad_m1","implicit_pos_transport_mem");
+    }
+    // unify-1114 (#28): the limiter lives in the curvilinear row builder (sph_geom,
+    // and the face part needs the chi closure sph_q, checked in SphericalS1Check).  It
+    // used to be silently inert elsewhere; refuse instead until the one-builder path
+    // (#34) carries it.
+    if (impl_pos_trans == 1 && !sph_geom) {
+      ImplFatal("<rad_m1>/implicit_pos_transport = upwind acts in the spherical-polar /"
+                " cubed-sphere row builder only; on a Cartesian grid it would be a"
+                " silent no-op");
     }
     if (impl_pos_trans != 0) {
       pt_cnt = DvceArray1D<Real>("m1_pt_cnt", 2);

@@ -67,6 +67,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -256,6 +257,16 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     std::string s = pin->GetOrAddString("rad_m1","implicit_offdiag","auto");
     impl_offdiag = (s.compare("lagged") == 0) ? M1_OD_LAGGED : M1_OD_NONE;
     od_now = impl_offdiag;
+  }
+  // unify-1114 (#28): implicit_pos_transport = upwind acts through the chi(f) face
+  // (sph_q) or the memory term (implicit_pos_transport_mem > 0); with neither it was a
+  // silent no-op
+  if (impl_pos_trans == 1 && !sph_q && !(pt_gam > 0.0)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/implicit_pos_transport = upwind needs the chi(f)"
+              << " closure (not eddington) or implicit_pos_transport_mem > 0; otherwise"
+              << " it is a silent no-op" << std::endl;
+    std::exit(EXIT_FAILURE);
   }
   if (global_variable::my_rank == 0 && cs_geom) {
     std::cout << "<rad_m1>: cubed sphere (stage CS2: " << (vet_col ? "vet_col, radial "

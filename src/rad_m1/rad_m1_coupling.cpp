@@ -446,8 +446,14 @@ void RadiationM1::FloorGasCap() {
   auto eos = fl.eos;
   const bool etg = fl.use_etotgrav;
   auto phicc = fl.phicc0;
-  // cell volume for the energy counters (spherical polar; 1 elsewhere)
+  // cell volume for the energy counters (counters only; the state is not touched).
+  // unify-1114 (#42): spherical polar keeps its closed form (bitwise counters), the
+  // cubed sphere takes Coordinates::volume (it used to count volume 1), a Cartesian
+  // block dx1 dx2 dx3 (it used to count volume 1 too)
   const bool hv = pmy_pack->pmesh->use_spherical_polar;
+  const bool hcs = pmy_pack->pmesh->use_cubed_sphere;
+  auto cvol = pmy_pack->pcoord->volume;
+  auto &msz = pmy_pack->pmb->mb_size;
   auto &x1f = pmy_pack->pcoord->xx1f;
   auto &x2f = pmy_pack->pcoord->xx2f;
   auto &x3f = pmy_pack->pcoord->xx3f;
@@ -462,7 +468,8 @@ void RadiationM1::FloorGasCap() {
     if (!(dd < rc) || !(dd > 0.0)) return;
     const Real wv = hv ? ((x1f(m,i+1)*x1f(m,i+1)*x1f(m,i+1) - x1f(m,i)*x1f(m,i)*x1f(m,i))
                           /3.0*(cos(x2f(m,j)) - cos(x2f(m,j+1)))*(x3f(m,k+1) - x3f(m,k)))
-                       : 1.0;
+                       : (hcs ? cvol(m,k,j,i)
+                              : msz.d_view(m).dx1*msz.d_view(m).dx2*msz.d_view(m).dx3);
     Real m1 = uh(m,IM1,k,j,i), m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
     const Real msq = m1*m1 + m2*m2 + m3*m3;
     Real ekin = 0.5*msq/dd;
