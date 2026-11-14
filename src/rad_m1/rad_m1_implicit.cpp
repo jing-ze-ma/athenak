@@ -14197,7 +14197,8 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     if (rbc && tk > 0.0) {
       kapat(tk);
     }
-    Real bk = dd*cv + (rob ? gexch() : 4.0*cl*dt*rkpv*ar*t3);
+    Real bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;   // (key off: the expression as before, bitwise)
+    if (rob) {bk = dd*cv + gexch();}
     Real rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
     // MILESTONE 3g, the Newton SAFEGUARD.  The temperature this pass starts from was
     // produced by the Newton step of the previous pass, whose linearisation dropped
@@ -14257,7 +14258,8 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
             t3 = tk*tk*tk;
             t4 = t3*tk;
             if (rbc) {kapat(tk);}
-            bk = dd*cv + (rob ? gexch() : 4.0*cl*dt*rkpv*ar*t3);
+            bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
+            if (rob) {bk = dd*cv + gexch();}
             rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4
                  + cl*dt*rkev*de0;
             // fixbundle-1009 F4: count the fallback only when it is APPLIED (output only)
@@ -14286,7 +14288,8 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
       //   SRCR = w (emis T^4 - ch dt k_E de0) + (ch/cl) q (e^n - e_k)
       // with w = rho c_v/bk and q = 1 - w = 4 cl dt k_P a T^3/bk.
       const Real w = dd*cv/bk;
-      const Real q = rob ? (1.0 - w) : 4.0*cl*dt*rkpv*ar*t3/bk;
+      Real q = 4.0*cl*dt*rkpv*ar*t3/bk;
+      if (rob) {q = 1.0 - w;}
       iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev*w;
       iw_(m,M1_IW_SRCR,k,j,i) = w*(emis*t4 - dt*ch*rkev*de0)
                                 + (ch/cl)*q*(iw_(m,M1_IW_EGN,k,j,i) - ee);
