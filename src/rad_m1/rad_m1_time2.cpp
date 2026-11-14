@@ -540,14 +540,21 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // prod-1108 (USER 11-08 "make some defaults", r8 key set): DEFAULT 0.1 where it is
   // legal (one radial MeshBlock; column-local), else 0 = the old default, logged; recipe
   // none keeps 0.  Read only when named as before.
+  // defaults-1114 (USER 11-13 "make some defaults", the R136/HG/RSG key set): where
+  // time2_face_fct is on by default (cubed sphere / spherical polar, multi-D implicit
+  // transport, hesdirk2; below) the face limiter replaces the redistribution and the
+  // DEFAULT is 0; elsewhere (Cartesian, 1-D) the prod-1108 rule above stays.
+  const bool ffct14 = recipe::GetMode(pin) != recipe::Mode::none && sph_geom &&
+                      trans_on && time_scheme == M1_TIME_HESDIRK2;
   {
     const bool onecol = pmy_pack->pmesh->mesh_indcs.nx1 == pmy_pack->pmesh->mb_indcs.nx1;
     const bool rnone = recipe::GetMode(pin) == recipe::Mode::none;
-    t2_k1rd = (onecol && !rnone) ? 0.1 : 0.0;
+    t2_k1rd = (onecol && !rnone && !ffct14) ? 0.1 : 0.0;
     if (!pin->DoesParameterExist("rad_m1", "time2_k1_redist")) {
       recipe::Log(std::string("<rad_m1>/time2_k1_redist = ") + (t2_k1rd > 0.0 ? "0.1" :
-                  "0") + " (default, prod-1108" + (onecol ? (rnone ? "; recipe none)" :
-                  ")") : "; 0: more than one radial MeshBlock)"));
+                  "0") + (ffct14 ? " (default, defaults-1114: time2_face_fct)" :
+                  std::string(" (default, prod-1108") + (onecol ? (rnone ?
+                  "; recipe none)" : ")") : "; 0: more than one radial MeshBlock)")));
     }
   }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist")) {   // seamE-1106
@@ -594,6 +601,10 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     Kokkos::deep_copy(t2th_cnt_d, 0.0);
   }
   // facebound-1112 step 1 <rad_m1>/time2_face_fct (rad_m1.hpp; read only when named)
+  // defaults-1114 (USER 11-13): DEFAULT true on the cubed sphere / spherical polar with
+  // multi-D implicit transport and hesdirk2 (ffct14 above); false elsewhere and with
+  // recipe none, as before.  Read only when named; an explicit key wins.
+  t2_ffct = ffct14;
   if (pin->DoesParameterExist("rad_m1", "time2_face_fct")) {
     t2_ffct = pin->GetBoolean("rad_m1", "time2_face_fct");
   }

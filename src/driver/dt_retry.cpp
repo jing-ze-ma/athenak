@@ -410,11 +410,14 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
     on = pin->GetBoolean("time", "dt_retry");
   } else {
     // amdef-1019: the old default (fresh on, restart off) unless <job>/recipe = prod1019,
-    // which also turns it on for a restart whose input lacks the key
-    const bool nd = recipe::NewDefaults(pin);
+    // which also turns it on for a restart whose input lacks the key.
+    // defaults-1114 (USER 11-13 "make some defaults": R136, HG and RSG all name true):
+    // DEFAULT true on a restart whose input lacks the key too; recipe none keeps the old
+    // rule (fresh on, restart off)
+    const bool nd = recipe::GetMode(pin) != recipe::Mode::none;
     on = pin->GetOrAddBoolean("time", "dt_retry", fresh || nd);
     recipe::Log(std::string("<time>/dt_retry = ") + (on ? "true" : "false") +
-                (on ? " (default)" : " (restart input has no key: the old default)"));
+                (on ? " (default)" : " (recipe none, restart: the old default)"));
   }
   if (!on) return;
   // the wiring covers Hydro or MHD (mhdfix-1025) + RadiationM1 (the implicit scheme);

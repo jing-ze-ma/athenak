@@ -4209,8 +4209,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (impl_gas_src_cs2 && cs2_cap > 0.0) {niw += 1;}   // gsdrag-1021: s (iw_cs2 + 9)
   }
   // facemmat-1112 implicit_face_mmat (rad_m1.hpp)
-  impl_fmm = pin->DoesParameterExist("rad_m1","implicit_face_mmat") &&
-             pin->GetBoolean("rad_m1","implicit_face_mmat");
+  // defaults-1114 (USER 11-13 "make some defaults": the key set R136, HG and RSG all
+  // name): DEFAULT true on the cubed sphere / spherical polar with multi-D implicit
+  // transport and none of its excluded options (implicit_pos_transport = upwind,
+  // athena_face_diss, implicit_hr_damp); false elsewhere (Cartesian) and with recipe
+  // none, as before.  Read only when named; an explicit key wins.
+  const bool rnone14 = recipe::GetMode(pin) == recipe::Mode::none;
+  impl_fmm = !rnone14 && sph_geom && trans_on && impl_pos_trans != 1 && !afd_on &&
+             !(impl_muscl_damp > 0.0);
+  if (pin->DoesParameterExist("rad_m1","implicit_face_mmat")) {
+    impl_fmm = pin->GetBoolean("rad_m1","implicit_face_mmat");
+  }
   // radlz-1113 implicit_lz_form (rad_m1.hpp, AM_CONSERVING_CS_1112.md sect. 10)
   if (pin->DoesParameterExist("rad_m1","implicit_lz_form") &&
       pin->GetBoolean("rad_m1","implicit_lz_form")) {
@@ -4247,8 +4256,20 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // budget, so the implicit_am_cs deposit (a partial closure, after the write-back) is off
   // inert (message, no slot) on a Cartesian mesh and with the gas fixed: no gas +
   // radiation L_z budget to close there; a D6 key set stays usable on every gate deck
-  const bool lzxq = pin->DoesParameterExist("rad_m1","implicit_lzx") &&
-                    pin->GetBoolean("rad_m1","implicit_lzx");
+  // defaults-1114 (USER 11-13): DEFAULT true where every prerequisite below holds (cs, or
+  // spherical polar with periodic x3; coupling + gas_feedback; 3-D implicit transport;
+  // implicit_gas_src conservative / conservative2; no implicit_hr_cmem, implicit_physflux
+  // or implicit_lz_form); false elsewhere and with recipe none (no new FATAL, no message
+  // for a deck that does not name it).  Read only when named; an explicit key wins.
+  auto bc3p = [pin](const char *k) {
+    return pin->DoesParameterExist("mesh", k) && pin->GetString("mesh", k) == "periodic";
+  };
+  bool lzxq = !rnone14 && (cs_geom || (sph_geom && bc3p("ix3_bc") && bc3p("ox3_bc"))) &&
+              coupling && gas_feedback && trans_on && trans_x3 && impl_gas_src_cons &&
+              !impl_gas_src_full && !impl_hr_cmem && !impl_physflux && !impl_lz;
+  if (pin->DoesParameterExist("rad_m1","implicit_lzx")) {
+    lzxq = pin->GetBoolean("rad_m1","implicit_lzx");
+  }
   if (lzxq && (!(cs_geom || sph_geom) || !(coupling && gas_feedback))) {
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_lzx: inert (needs the cubed sphere or spherical "
@@ -4304,6 +4325,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","zalesak_local_rounds")) {
     zl_local = pin->GetInteger("rad_m1","zalesak_local_rounds");
   }
+  // defaults-1114 (USER 11-13): zalesak_cap_rounds DEFAULT 4 on the cubed sphere /
+  // spherical polar (inert without implicit_face_mmat); 0 on Cartesian and with recipe
+  // none, as before.  Read only when named.
+  if (!rnone14 && sph_geom) {zl_cap = 4;}
   if (pin->DoesParameterExist("rad_m1","zalesak_cap_rounds")) {
     zl_cap = pin->GetInteger("rad_m1","zalesak_cap_rounds");
   }
