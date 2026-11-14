@@ -82,6 +82,13 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
+  // hg262-drive-1113: the flux table is applied at the stage times (Time2FormStage)
+  if (ftab_on && time_scheme != M1_TIME_HESDIRK2 && !t2_beonly) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/implicit_flux_x1min_table needs time_scheme = "
+              << "hesdirk2 (the flux is set at the stage times)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // bematch-1030: plain be with t2_beonly (ImplicitInit) runs as hesdirk2, every step on
   // the backward-Euler path (Time2AutoBeBegin)
   if (time_scheme == M1_TIME_BE && t2_beonly) {
@@ -804,16 +811,32 @@ bool RadiationM1::Time2Active() {
 //! which the hydro has already done for the gas) and the increment t2inc that turns it
 //! into the old vector of the stage solve.  ImplicitSolve applies t2inc.
 
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::InnerFluxAt
+//! \brief the inner face flux of the time hooks at time t: the table value
+//! (hg262-drive-1113, ftab_on) or the constant F0, times the sine / tanh factors when
+//! named (the arithmetic of the raycheap2-1109 hooks, unchanged)
+
+Real RadiationM1::InnerFluxAt(const Real t) const {
+  Real f = ftab_on ? ftab_scale*ftab.At(0, t - ftab_t0) : fmod_f0;
+  if (fmod_per > 0.0) {f *= 1.0 + fmod_amp*std::sin(2.0*M_PI*t/fmod_per);}
+  if (fmod_rw > 0.0) {f *= 0.5*(1.0 + std::tanh((t - fmod_rt0)/fmod_rw));}
+  return f;
+}
+
+//! \brief hg262-drive-1113: the exact integral of the TABLE flux over [t0, t1] (the
+//! energy budget's int F dt; table only, no sine / tanh factors)
+Real RadiationM1::InnerFluxIntegral(const Real t0, const Real t1) const {
+  return ftab_scale*ftab.Integral(0, t0 - ftab_t0, t1 - ftab_t0);
+}
+
 void RadiationM1::Time2FormStage(int stage, Real dt) {
-  if (fmod_per > 0.0 || fmod_rw > 0.0) {   // raycheap2-1109: the inner flux, stage time
+  if (fmod_per > 0.0 || fmod_rw > 0.0 || ftab_on) {   // raycheap2-1109: inner flux
     // hesdirk2 / sdirk2: both stage solves end at t_n + dt (c2 = a21 + g = 1, c3 = 1);
     // trbdf2: the stage-1 solve ends at t_n + 2 g dt (c2 = 2g)
     const Real cst = (stage == 1 && t2_tab == 1) ? 2.0*kT2G : 1.0;
     const Real ts = pmy_pack->pmesh->time + cst*dt;
-    Real f = fmod_f0;
-    if (fmod_per > 0.0) {f *= 1.0 + fmod_amp*std::sin(2.0*M_PI*ts/fmod_per);}
-    if (fmod_rw > 0.0) {f *= 0.5*(1.0 + std::tanh((ts - fmod_rt0)/fmod_rw));}
-    iflux_x1min = f;
+    iflux_x1min = InnerFluxAt(ts);
   }
   if (dbg_rst_fp > 0 && stage == 1) {dbg_rst_fp -= 1; RstFingerprint("formstage1");}   // rstbit-1107
   const Real g = kT2G;
@@ -2157,8 +2180,10 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
 //! \fn Real RadiationM1::EbndFluxX1
 //! \brief mhdfix-1025 Ebnd: L = sum A F1 over the physical inner x1 faces minus the outer
 //! ones (the radiation energy flux into the domain through x1, all ranks).
+//! hg262-drive-1113: side = 1 only the inner faces, side = 2 only the outer faces with
+//! the sign flipped (outward positive); side = 0 is the original sum (bitwise).
 
-Real RadiationM1::EbndFluxX1() {
+Real RadiationM1::EbndFluxX1(const int side) {
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
@@ -2185,8 +2210,8 @@ Real RadiationM1::EbndFluxX1() {
                f == BoundaryFlag::shear_periodic || f == BoundaryFlag::panel ||
                f == BoundaryFlag::polar || f == BoundaryFlag::undef);
     };
-    const bool plo = phys(bcs.d_view(m, BoundaryFace::inner_x1));
-    const bool phi = phys(bcs.d_view(m, BoundaryFace::outer_x1));
+    const bool plo = (side != 2) && phys(bcs.d_view(m, BoundaryFace::inner_x1));
+    const bool phi = (side != 1) && phys(bcs.d_view(m, BoundaryFace::outer_x1));
     if (plo) {sum += a1(m,k,j,is)*ff(m,k,j,is);}
     if (phi) {sum -= a1(m,k,j,ie+1)*ff(m,k,j,ie+1);}
     // lzphys-1113 ebnd_adv: the advective enthalpy flux A E of implicit_bc_advect through
@@ -2222,7 +2247,35 @@ Real RadiationM1::EbndFluxX1() {
   MPI_Allreduce(&l, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
   l = g;
 #endif
-  return l;
+  return (side == 2) ? -l : l;
+}
+
+//! \fn Real RadiationM1::EbndEsrc
+//! \brief hg262-drive-1113 (ebnd_split): (chat/c) sum esrc V over the active cells, all
+//! ranks (0 without esrc)
+
+Real RadiationM1::EbndEsrc() {
+  if (!esrc_on) return 0.0;
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, js = id.js, ks = id.ks;
+  const int ni = id.nx1, nj = id.nx2, nk = id.nx3;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto es_ = esrc;
+  auto &vol = pmy_pack->pcoord->volume;
+  Real l = 0.0;
+  Kokkos::parallel_reduce("m1_ebnd_src", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          nmb*nk*nj*ni),
+  KOKKOS_LAMBDA(const int n, Real &acc) {
+    const int m = n/(nk*nj*ni);
+    const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
+    acc += es_(m,k,j,i)*vol(m,k,j,i);
+  }, Kokkos::Sum<Real>(l));
+#if MPI_PARALLEL_ENABLED
+  Real g;
+  MPI_Allreduce(&l, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  l = g;
+#endif
+  return (chat/c_light)*l;
 }
 
 //! \fn void RadiationM1::EbndStart / EbndStage1 / EbndAccept
@@ -2238,24 +2291,49 @@ void RadiationM1::EbndStart() {
               << "implicit transport without multi-rate / coupling_split" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  if (ebnd_split) {
+    ebnd_l1i = EbndFluxX1(1);
+    ebnd_l1o = EbndFluxX1(2);
+    ebnd_s1 = ebnd_s3_ok ? ebnd_s3 : EbndEsrc();
+    return;
+  }
   ebnd_l1 = EbndFluxX1();
 }
 
 void RadiationM1::EbndStage1() {
   if (!ebnd_on) return;
+  if (ebnd_split) {
+    ebnd_l2i = EbndFluxX1(1);
+    ebnd_l2o = EbndFluxX1(2);
+    ebnd_s2 = EbndEsrc();
+    return;
+  }
   ebnd_l2 = EbndFluxX1();
 }
 
 void RadiationM1::EbndAccept(Real dt, bool t2step) {
   if (!ebnd_on) return;
-  const Real l3 = EbndFluxX1();
-  if (t2step) {
-    const Real g = kT2G;
-    const Real wy = (t2_tab != 1) ? 0.5 : t2_w0;   // weight of Y1 in the stage-2 start
-    ebnd_acc += dt*((wy*t2_a21 + t2_c31)*ebnd_l1 + (wy*g + t2_c32)*ebnd_l2 + g*l3);
-  } else {
-    ebnd_acc += dt*l3;
+  // the step's applied energy of the slopes l1 (K1), l2 (K2), l3 (K3)
+  auto applied = [&](const Real l1, const Real l2, const Real l3) {
+    if (t2step) {
+      const Real g = kT2G;
+      const Real wy = (t2_tab != 1) ? 0.5 : t2_w0;   // weight of Y1 in the stage-2 start
+      return dt*((wy*t2_a21 + t2_c31)*l1 + (wy*g + t2_c32)*l2 + g*l3);
+    }
+    return dt*l3;
+  };
+  if (ebnd_split) {
+    const Real l3i = EbndFluxX1(1), l3o = EbndFluxX1(2);
+    ebnd_acc_in += applied(ebnd_l1i, ebnd_l2i, l3i);
+    ebnd_acc_out += applied(ebnd_l1o, ebnd_l2o, l3o);
+    const Real s3 = EbndEsrc();
+    ebnd_acc_src += applied(ebnd_s1, ebnd_s2, s3);
+    ebnd_s3 = s3;
+    ebnd_s3_ok = true;
+    ebnd_acc = ebnd_acc_in - ebnd_acc_out;
+    return;
   }
+  ebnd_acc += applied(ebnd_l1, ebnd_l2, EbndFluxX1());
 }
 
 //----------------------------------------------------------------------------------------
@@ -2959,12 +3037,9 @@ void RadiationM1::Time2VetColAt(int which) {
   // raycheap2-1109 (test forcing keys only): the predicted build sees the inner boundary
   // flux at the time of the predicted state, t_n + dt (restored after the build)
   const Real ifx_save = iflux_x1min;
-  if (fmod_per > 0.0 || fmod_rw > 0.0) {
+  if (fmod_per > 0.0 || fmod_rw > 0.0 || ftab_on) {   // hg262-drive-1113: + table
     const Real ts = pmy_pack->pmesh->time + dt;
-    Real f = fmod_f0;
-    if (fmod_per > 0.0) {f *= 1.0 + fmod_amp*std::sin(2.0*M_PI*ts/fmod_per);}
-    if (fmod_rw > 0.0) {f *= 0.5*(1.0 + std::tanh((ts - fmod_rt0)/fmod_rw));}
-    iflux_x1min = f;
+    iflux_x1min = InnerFluxAt(ts);
   }
   if (vcol) {
     // time2_vet_col_source = state (vcpred-1010): the source of P itself, not relaxed
