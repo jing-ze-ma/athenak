@@ -1356,7 +1356,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_twin = pin->GetBoolean("rad_m1","vet_gd_twin");
     } else if (vgd_on && fresh && !vgd_async_named) {
       // prod1104b (USER 11-04): the fresh default is FALSE on the cubed sphere (every cs
-      // production runs without the twin); spherical polar keeps true (BSG fin3 lineage)
+      // production runs without the twin); spherical polar kept true (BSG fin3 lineage)
       // A deck that names a twin-only setting (twin_state trans, twin_weight j,
       // twin_full, twin_fuse, symref col) keeps the old default true, so a default never
       // FATALs a fresh deck.
@@ -1367,12 +1367,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       const bool twkeys = nv("vet_gd_twin_state", "mean") || nv("vet_gd_twin_weight", "none") ||
                           nv("vet_gd_twin_full", "false") || nv("vet_gd_twin_fuse", "false") ||
                           nv("vet_gd_symref", "none");
-      const bool cs_tw = ppack->pmesh->use_cubed_sphere && !twkeys;
-      vgd_twin = pin->GetOrAddBoolean("rad_m1","vet_gd_twin",!cs_tw);
-      if (cs_tw) {
-        recipe::Log("<rad_m1>/vet_gd_twin = false (default with vet_gd on the cubed sphere)");
-      } else if (ppack->pmesh->use_cubed_sphere) {
-        recipe::Log("<rad_m1>/vet_gd_twin = true (cs default false skipped: the deck names "
+      // unify-1114 step 6 (#6): the fresh default is FALSE on every grid (was cs only;
+      // every production, sp R136/T9 and cs HG/RSG, names vet_gd_twin = false)
+      vgd_twin = pin->GetOrAddBoolean("rad_m1","vet_gd_twin",twkeys);
+      if (!twkeys) {
+        recipe::Log("<rad_m1>/vet_gd_twin = false (fresh vet_gd default)");
+      } else {
+        recipe::Log("<rad_m1>/vet_gd_twin = true (default false skipped: the deck names "
                     "twin-only keys)");
       }
     }

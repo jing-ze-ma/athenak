@@ -102,6 +102,17 @@ Real M1FluxNormCs(const Real c, const Real f1, const Real f2, const Real f3) {
   return sqrt(f1*f1 + (f2*f2 + f3*f3 - 2.0*c*f2*f3)/(1.0 - c*c));
 }
 
+//! \fn M1CsDot
+//! \brief unify-1114 step 6: the inner product x.y of two vectors with COVARIANT (x2, x3)
+//! on the cubed-sphere panel basis (the metric of M1FluxNormCs: M1CsDot(c,x,x) =
+//! M1FluxNormCs(c,x)^2).  The write-back speed cap / kick test (implicit_wb_vcap,
+//! implicit_wb_vkick_reject) use it on the cubed sphere.
+
+KOKKOS_INLINE_FUNCTION
+Real M1CsDot(const Real c, const Real *x, const Real *y) {
+  return x[0]*y[0] + (x[1]*y[1] + x[2]*y[2] - c*(x[1]*y[2] + x[2]*y[1]))/(1.0 - c*c);
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn M1CsNormFn / M1CsMixedDx (csmetric-1112 implicit_cs_closure_metric): vectors given
 //! by FACE-NORMAL components x_a = x.n_a on the skew panel basis (n_xi.n_eta = -c, r

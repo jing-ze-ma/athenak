@@ -1845,7 +1845,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //  bcg_sync = 0, so an input that asks for the original BiCGStab loop still runs.
   //  implicit_res_dmin, implicit_res_rmax (read only when named; default 0 = off): the
   //    Picard convergence norm (resid and lresid) leaves out the cells with gas density
-  //    rho < res_dmin (needs <hydro>) or radius x1v > res_rmax (spherical polar only),
+  //    rho < res_dmin (needs <hydro>) or radius x1v > res_rmax (sp or cs),
   //    e.g. the density-floor top whose residual stalls at 1e-7..1e-6.  Those cells are
   //    still solved on every pass; only the stopping test ignores them.  Off: bitwise.
   if (pin->DoesParameterExist("rad_m1","implicit_res_dmin")) {
@@ -1946,8 +1946,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_res_dmin < 0.0 || impl_res_rmax < 0.0) {
     ImplFatal("<rad_m1>/implicit_res_dmin and implicit_res_rmax must be >= 0");
   }
-  if (impl_res_rmax > 0.0 && !pmy_pack->pmesh->use_spherical_polar) {
-    ImplFatal("<rad_m1>/implicit_res_rmax needs a spherical-polar mesh");
+  // unify-1114 step 6 (#30): the cubed sphere too (its x1v is the radius, as on sp)
+  if (impl_res_rmax > 0.0 && !pmy_pack->pmesh->use_spherical_polar &&
+      !pmy_pack->pmesh->use_cubed_sphere) {
+    ImplFatal("<rad_m1>/implicit_res_rmax needs a spherical-polar or cubed-sphere mesh");
   }
   if (impl_res_dmin > 0.0 && pmy_pack->phydro == nullptr) {
     ImplFatal("<rad_m1>/implicit_res_dmin needs <hydro> (the gas density)");
@@ -2277,13 +2279,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // r136e-1107 implicit_wb_vkick_reject (rad_m1.hpp).  prod-1109 (USER 11-08): DEFAULT ON
   // with V = the fluid's velocity ceiling <hydro|mhd>/vceil when the key is absent (0 =
   // no ceiling = off); name implicit_wb_vkick_reject = 0 for the prod-1108 behaviour
-  // (bitwise).  Read only when named otherwise; recipe none keeps 0.  Acts on sp and
-  // Cartesian only (never on the cubed sphere).  implicit_wb_vkick_be_retry stays opt-in.
+  // (bitwise).  Read only when named otherwise; recipe none keeps 0.  unify-1114 step 6:
+  // on every grid (was sp and Cartesian only; the cubed sphere tests the metric speed of
+  // the covariant momentum).  implicit_wb_vkick_be_retry stays opt-in.
   {
     const char *fb = pin->DoesBlockExist("mhd") ? "mhd" : "hydro";
     if (!pin->DoesParameterExist("rad_m1","implicit_wb_vkick_reject") &&
         recipe::GetMode(pin) != recipe::Mode::none &&
-        !pmy_pack->pmesh->use_cubed_sphere && pin->DoesParameterExist(fb, "vceil")) {
+        pin->DoesParameterExist(fb, "vceil")) {
       impl_wb_vkrej = pin->GetReal(fb, "vceil");
       if (!(impl_wb_vkrej > 0.0)) {impl_wb_vkrej = 0.0;}
     }
@@ -19513,16 +19516,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const Real wckc = (impl_clip_kecap > 0.0 && clkc_d.extent_int(0) == 3 &&
                      pvol.extent_int(3) > 1) ? impl_clip_kecap : 0.0;
   auto ckc_ = clkc_d;
-  // r136e-1107 implicit_wb_vcap (rad_m1.hpp): not on the cubed sphere
-  const Real wvcap = cs_geom ? 0.0 : impl_wb_vcap;
+  // r136e-1107 implicit_wb_vcap (rad_m1.hpp); unify-1114 step 6: every grid (cubed
+  // sphere with the metric norm of the covariant momentum)
+  const Real wvcap = impl_wb_vcap;
   const bool wvmeas = impl_wb_vcap_meas;
   const Real wvnp = static_cast<Real>(impl_wb_vcap_np);
   const int wvrk = global_variable::my_rank, wvcy = pmy_pack->pmesh->ncycle;
   const int wvts = static_cast<int>(t2s);
   auto wvx1 = pmy_pack->pcoord->x1v;
   auto vcc_ = vcap_cnt_d;
-  // r136e-1107 implicit_wb_vkick_reject: not on the cubed sphere
-  const Real wvkr = cs_geom ? 0.0 : impl_wb_vkrej;
+  // r136e-1107 implicit_wb_vkick_reject; unify-1114 step 6: every grid
+  const Real wvkr = impl_wb_vkrej;
   auto vkc_ = vkick_cnt_d;
   if (wvkr > 0.0) {Kokkos::deep_copy(vkick_cnt_d, 0.0);}
   // implicit_face_weight = distance (sp): the face kappa_T of the momentum deposit is

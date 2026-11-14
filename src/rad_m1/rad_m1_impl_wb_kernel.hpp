@@ -1056,17 +1056,28 @@
     // r136e-1107 implicit_wb_vcap (rad_m1.hpp): the momentum increment of the solve is
     // scaled to keep |m + dm| <= V rho; the kinetic energy it no longer gets goes back to
     // E (gas units -> E: ch/cl), before the slope below so that K takes the same state
-    if (wvcap > 0.0 && have_hydro && feedback && !csw) {
+    // unify-1114 step 6: on the cubed sphere too, with the metric inner product of the
+    // covariant (m2, m3) and dm2, dm3 (M1CsDot); sp and Cartesian unchanged (bitwise)
+    if (wvcap > 0.0 && have_hydro && feedback) {
       const bool tv = trans && dbgft;
       const Real p0[3] = {uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i)};
       const Real dq[3] = {dm1 - dmref, tv ? dm2 : 0.0, (tv && thrd) ? dm3 : 0.0};
       const Real pmax = wvcap*dd;
       Real pn2 = 0.0, dq2 = 0.0, pd = 0.0, pp2 = 0.0;
-      for (int a = 0; a < 3; ++a) {
-        pn2 += SQR(p0[a] + dq[a]);
-        dq2 += SQR(dq[a]);
-        pd += p0[a]*dq[a];
-        pp2 += SQR(p0[a]);
+      const Real ccw = csw ? cclw(m,k,j) : 0.0;
+      if (csw) {
+        const Real pq[3] = {p0[0] + dq[0], p0[1] + dq[1], p0[2] + dq[2]};
+        pn2 = M1CsDot(ccw, pq, pq);
+        dq2 = M1CsDot(ccw, dq, dq);
+        pd = M1CsDot(ccw, p0, dq);
+        pp2 = M1CsDot(ccw, p0, p0);
+      } else {
+        for (int a = 0; a < 3; ++a) {
+          pn2 += SQR(p0[a] + dq[a]);
+          dq2 += SQR(dq[a]);
+          pd += p0[a]*dq[a];
+          pp2 += SQR(p0[a]);
+        }
       }
       if (pn2 > SQR(pmax) && dq2 > 0.0) {
         // s in [0, 1): |p0 + s dq| = pmax (s = 0 when the old speed is already above V)
@@ -1076,7 +1087,12 @@
           sc = fmin(fmax((-pd + sqrt(disc))/dq2, 0.0), 1.0);
         }
         Real ps2 = 0.0;
-        for (int a = 0; a < 3; ++a) {ps2 += SQR(p0[a] + sc*dq[a]);}
+        if (csw) {
+          const Real ps[3] = {p0[0] + sc*dq[0], p0[1] + sc*dq[1], p0[2] + sc*dq[2]};
+          ps2 = M1CsDot(ccw, ps, ps);
+        } else {
+          for (int a = 0; a < 3; ++a) {ps2 += SQR(p0[a] + sc*dq[a]);}
+        }
         const Real idg = 1.0/fmax(dd, 1.0e-300);
         const Real dke = 0.5*(pn2 - ps2)*idg;   // kinetic energy not given (>= 0)
         const Real vol = psph ? pvol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
@@ -1113,13 +1129,19 @@
     }
     // r136e-1107 implicit_wb_vkick_reject (rad_m1.hpp): count the cells whose written-
     // back speed exceeds V and their old speed (decision after the launch); no change
-    if (wvkr > 0.0 && have_hydro && feedback && !csw) {
+    // unify-1114 step 6: on the cubed sphere with the metric norm (M1CsDot)
+    if (wvkr > 0.0 && have_hydro && feedback) {
       const bool tk = trans && dbgft;
       const Real q1 = uh(m,IM1,k,j,i), q2 = uh(m,IM2,k,j,i), q3 = uh(m,IM3,k,j,i);
       const Real n1 = q1 + dm1 - dmref;
       const Real n2 = tk ? (q2 + dm2) : q2;
       const Real n3 = (tk && thrd) ? (q3 + dm3) : q3;
-      const Real pn = n1*n1 + n2*n2 + n3*n3, po = q1*q1 + q2*q2 + q3*q3;
+      Real pn = n1*n1 + n2*n2 + n3*n3, po = q1*q1 + q2*q2 + q3*q3;
+      if (csw) {
+        const Real nv[3] = {n1, n2, n3}, ov[3] = {q1, q2, q3};
+        pn = M1CsDot(cclw(m,k,j), nv, nv);
+        po = M1CsDot(cclw(m,k,j), ov, ov);
+      }
       const Real pv = SQR(wvkr*dd);
       if (!(pn <= pv) && !(pn <= po)) {   // NaN counts too
         Kokkos::atomic_add(&vkc_(0), 1.0);
