@@ -51,7 +51,8 @@ constexpr int CLW_RR = 16;   // gas feedback: r = 4 h c kP a T^3/(rho cv + 4 h c
 constexpr int CLW_EK = 17;   // gas feedback: the Newton iterate E_k
 constexpr int CLW_EI = 18;   // gas feedback: eint of the old vector
 constexpr int CLW_A1 = 19;   // gas feedback: enthalpy coefficients a_d = v_d + D_db v_b
-constexpr int CLW_N = 22;
+constexpr int CLW_DM = 22;   // gas feedback: momentum change of the iterate (3)
+constexpr int CLW_N = 25;
 
 struct CleanCtx {
   DvceArray5D<Real> cs;          // stage closure
@@ -164,6 +165,27 @@ KOKKOS_INLINE_FUNCTION Real CleanFlux(const CleanCtx &x, const int e, const int 
   }
   (void)adv;
   return f;
+}
+
+
+// gas feedback: the momentum change dm of the iterate in work slot e (face-flux
+// relaxation h c chi (F - (1 - w) A_f) of momentum h chi (F - (1-w) A_f)/c, half of each
+// face to each cell) into CLW_DM, and the enthalpy coefficients a_d = v_d + D_db v_b of
+// v = (m_old + dm)/rho into CLW_A1 (implicit velocity).  Returns max |dv| change.
+KOKKOS_INLINE_FUNCTION Real CleanCellMom(const CleanCtx &x, const int e, const int m,
+                                         const int k, const int j, const int i,
+                                         const int dir) {
+  const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+  Real s = 0.0;
+  for (int side = 0; side < 2; ++side) {
+    const int kf = k + side*dk, jf = j + side*dj, if_ = i + side*di;
+    const Real th = x.fc[dir](m,1,kf,jf,if_), wf = x.fc[dir](m,0,kf,jf,if_);
+    const Real f = CleanFlux(x, e, dir, m, kf, jf, if_, true);
+    const Real af = 0.5*(x.w(m,CLW_A1+dir,kf-dk,jf-dj,if_-di)*x.w(m,e,kf-dk,jf-dj,if_-di) +
+                         x.w(m,CLW_A1+dir,kf,jf,if_)*x.w(m,e,kf,jf,if_));
+    s += 0.5*(1.0/th - 1.0)*(f - (1.0 - wf)*af)/(x.c*x.c);
+  }
+  return s;
 }
 
 // ghost fill of components [c0, c0+nc) of a 5D view: periodic wrap or edge copy
@@ -652,6 +674,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
     const Real ek = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
     x.w(m,CLW_EK,k,j,i) = ek;
     x.w(m,CLW_RR,k,j,i) = 0.0;
+    for (int n = 0; n < 3; ++n) x.w(m,CLW_DM+n,k,j,i) = 0.0;
     if (fb) {
       const Real d = uh(m,IDN,k,j,i);
       x.w(m,CLW_T,k,j,i) = CleanTLocal(d, gm1, x.w(m,CLW_EI,k,j,i),
@@ -777,7 +800,61 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
         acc = fmax(acc, fmax(de, dtt));
       }, Kokkos::Max<Real>(dmax));
     }
-    if (dmax < cln_tol_nl) {nlok = true; break;}
+    // implicit velocity: dm of the new iterate, v = (m_old + dm)/rho, new a_d
+    CleanFillGhost(CLW_EK);
+    Real dvmax = 0.0, vmax = 0.0;
+    {
+      const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+      const int nkji = nk*nj*ni, nji = nj*ni;
+      Kokkos::parallel_reduce("cln_dm", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              (nmb1+1)*nkji),
+      KOKKOS_LAMBDA(const int idx, Real &acc) {
+        int m = idx/nkji, r = idx - m*nkji;
+        int k = r/nji; r -= k*nji;
+        int j = r/ni, i = r - j*ni;
+        k += ks; j += js; i += is;
+        Real dmn[3] = {0.0, 0.0, 0.0};
+        dmn[0] = CleanCellMom(x, CLW_EK, m, k, j, i, 0);
+        if (x.d2) dmn[1] = CleanCellMom(x, CLW_EK, m, k, j, i, 1);
+        if (x.d3) dmn[2] = CleanCellMom(x, CLW_EK, m, k, j, i, 2);
+        const Real d = fmax(uh(m,IDN,k,j,i), 1.0e-300);
+        Real dv = 0.0;
+        for (int n = 0; n < 3; ++n) {
+          dv = fmax(dv, fabs(dmn[n] - x.w(m,CLW_DM+n,k,j,i))/d);
+          x.w(m,CLW_DM+n,k,j,i) = dmn[n];
+        }
+        acc = fmax(acc, dv);
+      }, Kokkos::Max<Real>(dvmax));
+      Kokkos::parallel_reduce("cln_vmax", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              (nmb1+1)*nkji),
+      KOKKOS_LAMBDA(const int idx, Real &acc) {
+        int m = idx/nkji, r = idx - m*nkji;
+        int k = r/nji; r -= k*nji;
+        int j = r/ni, i = r - j*ni;
+        k += ks; j += js; i += is;
+        const Real d = fmax(uh(m,IDN,k,j,i), 1.0e-300);
+        Real v2 = 0.0;
+        for (int n = 0; n < 3; ++n) v2 += SQR((uh(m,IM1+n,k,j,i) + x.w(m,CLW_DM+n,k,j,i))/d);
+        acc = fmax(acc, std::sqrt(v2));
+      }, Kokkos::Max<Real>(vmax));
+    }
+    par_for("cln_anew", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = fmax(uh(m,IDN,k,j,i), 1.0e-300);
+      Real v[3];
+      for (int n = 0; n < 3; ++n) v[n] = (uh(m,IM1+n,k,j,i) + x.w(m,CLW_DM+n,k,j,i))/d;
+      const int dmap[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
+      for (int a = 0; a < 3; ++a) {
+        Real s2 = v[a];
+        for (int b = 0; b < 3; ++b) s2 += x.cs(m,CLN_D11+dmap[a][b],k,j,i)*v[b];
+        x.w(m,CLW_A1+a,k,j,i) = s2;
+      }
+    });
+    {
+      int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
+      CleanGhost(cln_w, CLW_A1, 3, nmb1, bc, is, ie, js, je, ks, ke, indcs.ng, d2, d3);
+    }
+    if (dmax < cln_tol_nl && dvmax <= cln_tol_nl*fmax(vmax, 1.0e-300)) {nlok = true; break;}
   }
   if (fb) {
     // the solution is the converged iterate
