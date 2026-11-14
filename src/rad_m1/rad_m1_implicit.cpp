@@ -16169,6 +16169,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // xchg-1114: the root-find failure counter of this solve (output only)
   if (tsf_cnt_d.extent_int(0) != 2) {Kokkos::realloc(tsf_cnt_d, 2);}
   Kokkos::deep_copy(tsf_cnt_d, 0.0);
+  const bool tsf_dtr0 = dtr_fail;   // xchg-1114: a retry already raised before this solve
   for (it = 0; (it < impl_maxit || impl_fr_sh) && !converged; ++it) {
     // vet_gd_rebuild_every = k: the gd tensor from the Picard iterate at passes k, 2k
     // (not in the shadow pass of implicit_final_resid_log: its state is not put back)
@@ -19884,6 +19885,24 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                 << " root-find failures (cell-passes): tsolve=" << tf[0]
                 << " safeguard=" << tf[1] << " run total=" << tsf_run[0] << "/"
                 << tsf_run[1] << (impl_tsf_res ? " (fail_res on)" : "") << std::endl;
+    }
+    // xchg-1114 implicit_tsolve_robust: a hesdirk2 stage whose gas has NO temperature
+    // root (the robust find fails only if y(T) keeps one sign over 1e-300..1e300, i.e.
+    // the old vector rho e^n + c dt rho kappa_E E0' <= e(0): the explicit a21 dt K1
+    // increment drove the stage's old gas energy negative -- Milne cold start: EGN -16.9
+    // against eint 0.02) is not admissible, and a smaller dt does not cure it (the slope
+    // K1 stays): the step is redone with backward Euler from U^n (time2_auto_be then
+    // keeps the next steps BE), instead of dt_retry cuts that end in dt_retry_max.
+    if (impl_ts_robust && t2st && t2_fail && !t2_inprobe && (tf[0] + tf[1]) > 0.0 &&
+        !tsf_dtr0) {
+      dtr_fail = false;
+      t2_pfix_want = false;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> hesdirk2 stage " << ((t2s == M1_T2S_STAGE1) ? 1 : 2)
+                  << " has gas cells without a temperature root at cycle "
+                  << pmy_pack->pmesh->ncycle << " (implicit_tsolve_robust): the step is "
+                  << "redone with backward Euler" << std::endl;
+      }
     }
   }
 
