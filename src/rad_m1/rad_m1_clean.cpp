@@ -315,6 +315,12 @@ void RadiationM1::CleanClosure(int t2s) {
       iw_(m,M1_IW_F3,k,j,i) = u0_(m,M1_F1+2,k,j,i);
     });
   }
+  // the formal solution of the STATE itself: no dt-dependent relaxed source or relaxed
+  // scattering J (those shift the closure in time by O(dt))
+  vcol_srelax = false;
+  vcol_sbl = false;
+  vcol_sesc = false;
+  vscat_jrel = false;
   VetShortChar();
   const bool newstep = (tnow > cln_tc);
   if (newstep && cln_havec) {
