@@ -10,7 +10,7 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <iomanip>    // std::setprecision()
+#include <iomanip>    // std::setprecision
 
 #include "athena.hpp"
 #include "parameter_input.hpp"
@@ -21,7 +21,7 @@
 
 #include "coordinates/cell_locations.hpp"
 //----------------------------------------------------------------------------------------
-//! \fn void FillCoarseInBndryCC()
+//! \fn void FillCoarseInBndryCC
 //! \brief To ensure that the coarse array is up-to-date in all neighboring cells touched
 //! by the prolongation interpolation stencil, data is restricted to coarse array in
 //! boundaries between MeshBlocks at the same level.
@@ -50,7 +50,7 @@ void MeshBoundaryValuesCC::FillCoarseInBndryCC(DvceArray5D<Real> &a,
   auto& restrict_4th_edge = pmy_pack->pmesh->pmr->weights.restrict_4th_edge;
 
   // Restrict data into coarse array in any boundary filled with data from the same
-  // level.  This ensures data in the coarse array at corners where one direction is a
+  // level. This ensures data in the coarse array at corners where one direction is a
   // coarser level and the other the same level is filled properly.
   // (Only needed in multidimensions)
 
@@ -90,7 +90,7 @@ void MeshBoundaryValuesCC::FillCoarseInBndryCC(DvceArray5D<Real> &a,
           j += jl;
           k += kl;
 
-          // indices refer to coarse array.  So must compute indices for fine array
+          // indices refer to coarse array. So must compute indices for fine array
           int finei = (i - indcs.cis)*2 + indcs.is;
           int finej = (j - indcs.cjs)*2 + indcs.js;
           int finek = (k - indcs.cks)*2 + indcs.ks;
@@ -127,9 +127,9 @@ void MeshBoundaryValuesCC::FillCoarseInBndryCC(DvceArray5D<Real> &a,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void ProlongateCC()
+//! \fn void ProlongateCC
 //! \brief Prolongate data at boundaries for cell-centered data.
-//! Code here is based on MeshRefinement::ProlongateCellCenteredValues() in C++ version
+//! Code here is based on MeshRefinement::ProlongateCellCenteredValues in C++ version
 
 void MeshBoundaryValuesCC::ProlongateCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca,
     bool is_z4c) {
@@ -192,7 +192,7 @@ void MeshBoundaryValuesCC::ProlongateCC(DvceArray5D<Real> &a, DvceArray5D<Real> 
         j += jl;
         k += kl;
 
-        // indices for prolongation refer to coarse array.  So must compute
+        // indices for prolongation refer to coarse array. So must compute
         // indices for fine array
         int fi = (i - indcs.cis)*2 + indcs.is;
         int fj = (j - indcs.cjs)*2 + indcs.js;
@@ -225,7 +225,7 @@ void MeshBoundaryValuesCC::ProlongateCC(DvceArray5D<Real> &a, DvceArray5D<Real> 
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void FillCoarseInBndryFC()
+//! \fn void FillCoarseInBndryFC
 //! \brief As in the case of cell-centered variables, to ensure that the coarse field is
 //! up-to-date in all neighboring cells touched by the prolongation interpolation stencil,
 //! data is also restricted to coarse array in boundaries between MeshBlocks at the same
@@ -292,7 +292,7 @@ void MeshBoundaryValuesFC::FillCoarseInBndryFC(DvceFaceFld4D<Real> &b,
           j += jl;
           k += kl;
 
-          // indices refer to coarse array.  So must compute indices for fine array
+          // indices refer to coarse array. So must compute indices for fine array
           int fk = (k - indcs.cks)*2 + indcs.ks;
           int fj = (j - indcs.cjs)*2 + indcs.js;
           int fi = (i - indcs.cis)*2 + indcs.is;
@@ -362,7 +362,7 @@ void MeshBoundaryValuesFC::FillCoarseInBndryFC(DvceFaceFld4D<Real> &b,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void ProlongateFC()
+//! \fn void ProlongateFC
 //! \brief Prolongate data at boundaries for face-centered data (e.g. magnetic fields).
 
 void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb) {
@@ -390,8 +390,8 @@ void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Re
   bool &three_d = pmy_pack->pmesh->three_d;
 
   // Prolongate b.x1f/b.x2f/b.x3f at all shared coarse/fine cell edges
-  // Code here is based on MeshRefinement::ProlongateSharedFieldX1/2/3() and
-  // MeshRefinement::ProlongateInternalField() in C++ version
+  // Code here is based on MeshRefinement::ProlongateSharedFieldX1/2/3 and
+  // MeshRefinement::ProlongateInternalField in C++ version
 
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(three field components)
   {int nmnv = 3*nmb*nnghbr;

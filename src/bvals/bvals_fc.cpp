@@ -6,7 +6,7 @@
 //! \file bvals_fc.cpp
 //! \brief functions to pack/send and recv/unpack boundary values for face-centered (FC)
 //! Mesh variables.
-//! Prolongation of FC variables  occurs in ProlongateFC() function called from task list
+//! Prolongation of FC variables occurs in ProlongateFC function called from task list
 
 #include <algorithm>
 #include <cmath>
@@ -16,7 +16,7 @@
 #include <map>
 #include <utility>
 #include <vector>
-#include <iomanip>    // std::setprecision()
+#include <iomanip>    // std::setprecision
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -36,63 +36,29 @@ MeshBoundaryValuesFC::MeshBoundaryValuesFC(MeshBlockPack *pp, ParameterInput *pi
 }
 
 //----------------------------------------------------------------------------------------
-//! \!fn void MeshBoundaryValuesFC::BuildCubedSphereSeamTables()
-//! \brief Precompute everything the cubed-sphere seam packer derives from (xi,eta).
-//!
-//! x1 is RADIAL on the cubed sphere and no seam crosses it, so every geometric quantity
-//! the seam branch of PackAndSendFC evaluates is a function of (kk,jj) only and is
-//! recomputed identically for all nx1 cells of the radial loop.  Profiled on a 300-cycle
-//! dhj MHD run that made "SendBuff" cost 1432 ms, a quarter of the GPU time, almost all
-//! of it trigonometry: three TransformFieldToDstNormals per output cell (the resample
-//! needs one per stencil cell), each with four PanelFrame switches, four tan/sqrt pairs,
-//! a PanelToCart and a CartToPanel with two atan, plus the resample's own atan/tan and
-//! the shear term's two sin.
-//!
-//! HOISTING IT INTO A NESTED LOOP -- which is what bvals_cc.cpp does, 8.9x there -- does
-//! NOT work here: the face-centred pack needs THREE transforms per column rather than
-//! one, and turning the flat (k,j,i) loop into TeamThreadRange(k,j) x
-//! ThreadVectorRange(i) both serialises the radial direction (the TeamPolicy's vector
-//! length is 1) and pushes the per-thread private segment from 908 to 2224 bytes.
-//! Measured 1432 -> 8596 ms.
-//! So the geometry goes into a TABLE instead and the loop structure is left alone.  The
-//! table is indexed by (block, destination-panel slot, staggering kind, kk, jj); the
-//! packer reads it with the (kk,jj) of each sample.  Consecutive threads of a team differ
-//! only in i, so they all read the SAME table row and it broadcasts out of cache.
-//!
-//! BITWISE IDENTITY is the point: the fill below evaluates the SAME expressions, in the
-//! same order, with the same inputs as the kernel used to inline, and the kernel then
-//! calls ApplyFieldXform on the stored SeamFieldXform.  Nothing is refactored into a
-//! smaller form (the 2x2 matrix ApplyFieldXform effectively builds would re-associate the
-//! sums and change the last bits), so all 15 fields are stored.
-//!
-//! WHEN IT IS BUILT.  The table depends on the neighbour table, the panel of each block
-//! and mb_size -- none of which change after startup on a cubed sphere: ADAPTIVE
-//! refinement is refused outright (mesh.cpp), and static refinement is refused wherever a
-//! coarse/fine interface would lie on a seam (build_tree.cpp's
-//! CheckCubedSphereRefinement), so no regrid can alter it.  It is therefore built lazily
-//! on the first PackAndSendFC call, once, and never invalidated.  Cross-level SEAM
-//! buffers still exist on the diagonals, so the coarse staggering variants are built
-//! whenever the mesh is multilevel.
+//! \fn void MeshBoundaryValuesFC::BuildCubedSphereSeamTables
+//! \brief Precomputes the (xi,eta)-dependent geometry and stencil tables of the
+//! cubed-sphere seam packer, which do not depend on the radial index.
 
 void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int nnghbr = pmy_pack->pmb->nnghbr;
   const bool ml_ = pmy_pack->pmesh->multilevel;
-  // TWO KIND AXES.  The transform is needed only for the two ANGULAR components, the
+  // TWO KIND AXES. The transform is needed only for the two ANGULAR components, the
   // resample for all three -- b.x1f crosses a seam as a scalar but is still resampled
   // along it -- so the geometry table carries 2 staggerings and the stencil table 3,
   // doubled when the mesh is multilevel and cross-level seam buffers exist.
   const int nkg = ml_ ? 4 : 2;
   const int nks = ml_ ? 6 : 3;
-  // The tables are indexed by the ABSOLUTE (kk,jj) of the sample, GHOSTS INCLUDED.  On a
+  // The tables are indexed by the ABSOLUTE (kk,jj) of the sample, GHOSTS INCLUDED. On a
   // multilevel mesh a same-level send buffer is widened by ng in its transverse
   // directions -- that is what feeds the neighbour's prolongation -- so the packer reads
   // source cells outside the active range, and indexing the table from the active corner
-  // ran it off the end.  One entry per face index of the block array covers everything.
+  // ran it off the end. One entry per face index of the block array covers everything.
   const int nk2 = indcs.nx2 + 2*indcs.ng + 1;
   const int nk3 = indcs.nx3 + 2*indcs.ng + 1;
-  // fcorder3-1103: <mesh>/cs_seam_fc_order = 3 needs one level, ng >= 2 and >= 4 cells
+  // <mesh>/cs_seam_fc_order = 3 needs one level, ng >= 2 and >= 4 cells
   // per block side (3 cells / 4 faces next to the seam, 3-4 along it)
   if (pmy_pack->pmesh->cs_seam_fc_order == 3 &&
       (ml_ || indcs.ng < 2 || indcs.nx2 < 4 || indcs.nx3 < 4)) {
@@ -102,7 +68,7 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
     std::exit(EXIT_FAILURE);
   }
 
-  // Which destination panels does each block actually send to?  At most four (the four
+  // Which destination panels does each block actually send to? At most four (the four
   // edge neighbours of a panel; the cube-vertex diagonals are skipped on both sides), so
   // a slot map keeps the table a quarter of the size of one indexed by panel.
   Kokkos::realloc(cs_seam_slot, nmb, 6);
@@ -127,7 +93,7 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
     if (ns > nslot) nslot = ns;
   }
   cs_seam_nslot = nslot;
-  // modify_host()/sync_device(), not the explicit-space templates: those fail the
+  // modify_host/sync_device, not the explicit-space templates: those fail the
   // DualView static_assert under hipcc (same trap as cdd7d2a5, and the same fix the
   // radiation tetrads already carry).
   cs_seam_slot.modify_host();
@@ -135,7 +101,7 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
 
   Kokkos::realloc(cs_seam_geom, nmb, nslot, nkg, nk3, nk2, 15);
   Kokkos::realloc(cs_seam_stnc, nmb, nks, 2, nk3, nk2, 7);
-  // layoutbug-1103: the stencil of the second (extended) pass, <mesh>/cs_seam_blockend
+  // the stencil of the second (extended) pass, <mesh>/cs_seam_blockend
   if (cs_blockend_ext_) {
     Kokkos::realloc(cs_seam_stnc_x, nmb, nks, 2, nk3, nk2, 7);
     Kokkos::realloc(cs_ext_jk, nmb, 4);
@@ -152,13 +118,13 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
       hx(m,2) = (ib3 > 0) ? indcs.ng : 0;  hx(m,3) = (ib3 < nb3-1) ? indcs.ng : 0;
     }
     Kokkos::deep_copy(cs_ext_jk, hx);
-    // seamexact-1103: with > 2 blocks per panel side a block end lies off the panel
+    // with > 2 blocks per panel side a block end lies off the panel
     // midline, the along-seam resample shifts there and reaches the outermost along-seam
     // ghost, whose partner interpolation needs one face more than this block holds: those
     // interpolants come from the owning same-panel neighbour (CsSeamExtPartner).
     auto &pmi = pmy_pack->pmesh->mesh_indcs;
     cs_ext_q_ = (pmi.nx2 > 2*indcs.nx2) || (pmi.nx3 > 2*indcs.nx3);
-    // fcorder3-1103: order 3 keeps every stencil within ng of the sample (srcval3), so
+    // order 3 keeps every stencil within ng of the sample (srcval3), so
     // it needs no partner interpolants from the neighbour
     if (pmy_pack->pmesh->cs_seam_fc_order == 3) cs_ext_q_ = false;
     if (cs_ext_q_) {
@@ -184,7 +150,7 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
   par_for("cs_seam_tbl", DevExeSpace(), 0, nmb-1, 0, nks-1, 0, nk3-1, 0, nk2-1,
   KOKKOS_LAMBDA(const int m, const int kd, const int kk, const int jj) {
     // kind = (coarse ? 3 : 0) + vv: the staggering of the SOURCE component vv the packer
-    // reads, which is what fixes whether xi/eta are a face or a centre.  vv = 0 is a real
+    // reads, which is what fixes whether xi/eta are a face or a centre. vv = 0 is a real
     // kind and not a spare: b.x1f crosses a seam as a SCALAR and needs no transform, but
     // it IS resampled along the seam, and it lives at BOTH cell centres.
     const int vv = kd % 3;
@@ -230,7 +196,7 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
     }
 
     // the along-seam resample's stencil and the shear term's sigma, for both seam
-    // orientations (cs_seam = 2 stored at sidx 0, cs_seam = 3 at sidx 1).  Neither
+    // orientations (cs_seam = 2 stored at sidx 0, cs_seam = 3 at sidx 1). Neither
     // depends on the destination panel.
     for (int sidx=0; sidx<2; ++sidx) {
       Real ang, nrm, dang;
@@ -250,13 +216,14 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
       const int spn_ = static_cast<int>(floor((xp_ + 1.0)/wp_ + 0.5))
                        *((sidx == 0) ? nx3_ : nx2_);
       const Real pos = cs_seam::SeamPos(sc, spn_, (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang);
-      // fc2vtx-1103: TIE-SAFE stencil choice.  At a panel END face (ang = +-pi/4, the
+      // TIE-SAFE stencil choice. At a panel END face (ang = +-pi/4, the
       // along-staggered component) the map shifts by exactly the normal offset, so at a
-      // ghost cell centre pos is a HALF-INTEGER mathematically, and round(pos) went either
-      // way with the last bit of pos -- which depends on the block's own coordinates.
-      // That picked different 3-point stencils in different layouts (1x1 vs 4x4: 4e-4 in
-      // x2f(ks-2,js) / x3f(ks,js-2) at 12 cube vertices).  cs_seam::SeamRound (cs_seam_round.hpp) breaks
-      // the tie the same way in every layout; any pos not within 1e-9 of a tie is unchanged.
+      // ghost cell centre pos is a HALF-INTEGER mathematically, and round(pos) went
+      // either way with the last bit of pos -- which depends on the block's own
+      // coordinates. That picked different 3-point stencils in different layouts (1x1 vs
+      // 4x4: 4e-4 in x2f(ks-2,js) / x3f(ks,js-2) at 12 cube vertices). cs_seam::SeamRound
+      // (cs_seam_round.hpp) breaks the tie the same way in every layout; any pos not
+      // within 1e-9 of a tie is unchanged.
       int bs = cs_seam::SeamRound(pos) - 1;
       bs = (bs < blo) ? blo : ((bs > bhi) ? bhi : bs);
       const Real u = pos - static_cast<Real>(bs + 1);
@@ -265,9 +232,9 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
       stnc_(m,kd,sidx,kk,jj,2) = 1.0 - u*u;
       stnc_(m,kd,sidx,kk,jj,3) = 0.5*u*(u + 1.0);
       stnc_(m,kd,sidx,kk,jj,4) = pos - static_cast<Real>(bs);
-      // SHEAR CORRECTION geometry.  `along_eta` is (cs_seam == 2), i.e. sidx == 0, and
+      // SHEAR CORRECTION geometry. `along_eta` is (cs_seam == 2), i.e. sidx == 0, and
       // its (ang_,nrm_) are exactly the (ang,nrm) the resample already picked, so one
-      // pair serves both.  sigma is stored unconditionally; the packer keeps the
+      // pair serves both. sigma is stored unconditionally; the packer keeps the
       // |sin(2 nrm)| > 1e-8 guard, so a division by zero here is never read back.
       const Real sden = sin(2.0*nrm);
       stnc_(m,kd,sidx,kk,jj,5) = sden;
@@ -303,32 +270,13 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \!fn void MeshBoundaryValuesFC::BuildPackSegmentsFC()
-//! \brief halofc-1102: resolve the per-(m,n,v) setup of the cubed-sphere face-field pack
-//! ONCE.
-//!
-//! WHERE THE TIME WENT (r1m, 1 H200, developed state, ncu on the old team kernel): 1.36-
-//! 1.50 ms per call, 4032 teams of 128 threads, 128 registers and a 2720-byte STACK per
-//! thread.  The nested by-reference lambdas of the seam path (seamval -> srcval ->
-//! x3f_at_etacentre -> x3f_at_xiface, each capturing the team's locals by reference)
-//! kept every setup variable addressable, so the kernel issued 15.1 M local loads and
-//! 6.1 M local stores (60 M + 24 M sectors, the stores mostly L1 misses) against 1.9 M
-//! global load requests; achieved occupancy 13 % (theoretical 25 %, register bound),
-//! SMs active 47 % of the elapsed cycles (a few teams carry ~3600 seam samples each,
-//! most of the 4032 are empty).  Nothing of it is bandwidth: 50 MB of DRAM per call.
-//!
-//! So: (1) the setup -- which depends only on the neighbour table, the block levels and
-//! panels and the buffer index ranges, none of which change on a cubed sphere (adaptive
-//! refinement is refused, see BuildCubedSphereSeamTables) -- is evaluated here by the
-//! SAME code the team kernel ran, into one PackSegFC per active triple; (2) the samples
-//! are walked flat, one thread each, in chunks of FC_PACK_CHUNK samples of one triple, so
-//! the load balances and no thread repeats any setup; (3) the seam arithmetic is a
-//! functor with by-value arguments (FCSeamPack below), every expression unchanged in
-//! form and order, so the buffers are bitwise those of the team kernel.
+//! \fn void MeshBoundaryValuesFC::BuildPackSegmentsFC
+//! \brief Resolves the per-(m,n,v) setup of the cubed-sphere face-field pack once into
+//! segment tables, so the pack kernel does not recompute it per call.
 
 namespace {
 constexpr int FC_PACK_CHUNK = 128;
-constexpr int kFc3Max = 48;   // fcorder3-1103: max distinct faces of one order-3 sample
+constexpr int kFc3Max = 48;   // max distinct faces of one order-3 sample
 }  // namespace
 
 void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
@@ -534,10 +482,10 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
   Kokkos::deep_copy(fc_chunk_seg, h_cs);
   Kokkos::deep_copy(fc_chunk_beg, h_cb);
 
-  // r1mspeed-1102: the two walk sets (all layers / depth 1) with the seam srcval boxes
+  // the two walk sets (all layers / depth 1) with the seam srcval boxes
   {
     const int js_ = cs_indcs.js, je_ = cs_indcs.je, ks_ = cs_indcs.ks, ke_ = cs_indcs.ke;
-    // fcorder3-1103: order 3 evaluates every seam sample itself (srcval3, no resample box)
+    // order 3 evaluates every seam sample itself (srcval3, no resample box)
     const bool fc3_ = (pmy_pack->pmesh->cs_seam_fc_order == 3);
     int64_t npv_max = 0;
     for (int d=0; d<2; ++d) {
@@ -587,7 +535,7 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
           // the samples' resample reads srcval at (bs..bs+2) along the seam, bs within
           // [lo, hi-2] (BuildCubedSphereSeamTables), at the sample's own normal index
           u.pil = u.il; u.pni = u.ni;
-          // layoutbug-1103: with cs_seam_blockend = extend the box also covers ng cells
+          // with cs_seam_blockend = extend the box also covers ng cells
           // on each side (the second pass's stencil reaches the along-seam ghosts)
           const int bxg_ = cs_blockend_ext_ ? cs_indcs.ng : 0;
           if (g.cs_seam == 2) {   // along eta (k); normal index jj = aj*j + bj
@@ -649,16 +597,15 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
 }
 
 namespace {
-
 //----------------------------------------------------------------------------------------
 //! \struct FCPlainPack
-//! \brief halofc-1102: one thread per sample of a plain (same-panel) face-field buffer.
+//! \brief one thread per sample of a plain (same-panel) face-field buffer.
 
 struct FCPlainPack {
   DvceFaceFld4D<Real> b, cb;
   DvceArray1D<MeshBufferDv> sbuf, rbuf;
   DvceArray1D<PackSegFC> seg;
-  DvceArray1D<SubSegFC> sub;   // r1mspeed-1102: chunk -> sample box (all / depth 1)
+  DvceArray1D<SubSegFC> sub;   // chunk -> sample box (all / depth 1)
   DvceArray1D<int> cseg, cbeg;
   int c0;   // first chunk of this launch
 
@@ -702,10 +649,10 @@ struct FCPlainPack {
 
 //----------------------------------------------------------------------------------------
 //! \struct FCSeamPack
-//! \brief halofc-1102: one thread per sample of a cross-panel (or polar) face-field
-//! buffer.  The member functions are the old kernel's lambdas (bx1..bx3, lag4, the four
+//! \brief one thread per sample of a cross-panel (or polar) face-field
+//! buffer. The member functions are the old kernel's lambdas (bx1..bx3, lag4, the four
 //! partner interpolations, srcval, seamval) with every captured setup variable passed BY
-//! VALUE in a SeamArgs; each expression is copied unchanged in form and order.  See the
+//! VALUE in a SeamArgs; each expression is copied unchanged in form and order. See the
 //! long comments at the old kernel (PackAndSendFC, non-cubed-sphere path) for the
 //! physics of every step.
 
@@ -713,17 +660,17 @@ struct SeamArgs {
   int m, v, vv, signvar, cs_xform, cs_coar, cs_slotidx, cs_gkind, cs_skind, cs_seam;
   int js_, ks_, je_, ke_;
   bool wide2, wide3;
-  int pvoff, ptlo, pnt, pnlo, pil, pni;   // r1mspeed-1102 (SubSegFC); pvoff < 0: none
+  int pvoff, ptlo, pnt, pnlo, pil, pni;   // (SubSegFC); pvoff < 0: none
 };
 
-struct FCSeamPre {};   // r1mspeed-1102: tag of the srcval precompute pass
-struct FCSeamQ {};     // seamexact-1103: tag of the partner-interpolant pass
-struct FCSeamPre3 {};  // fcorder3-1103: tag of the order-3 precompute pass
-struct FCSeamTab {};   // fcorder3-1103: tag of the order-3 coefficient-table build
+struct FCSeamPre {};   // tag of the srcval precompute pass
+struct FCSeamQ {};     // tag of the partner-interpolant pass
+struct FCSeamPre3 {};  // tag of the order-3 precompute pass
+struct FCSeamTab {};   // tag of the order-3 coefficient-table build
 
-// fcorder3-1103: the order-3 coefficient tables, one row per (seam segment, sample k,j),
+// the order-3 coefficient tables, one row per (seam segment, sample k,j),
 // [0] with the first pass's bounds, [1] with the extended pass's (cs_seam_blockend =
-// extend).  Kept here, keyed by the boundary object, so bvals.hpp is untouched.
+// extend). Kept here, keyed by the boundary object, so bvals.hpp is untouched.
 struct Fc3Tables {
   bool ready[2] = {false, false};
   int nrow = 0;
@@ -742,27 +689,27 @@ struct FCSeamPack {
   DvceArray1D<SubSegFC> sub;
   DvceArray1D<int> cseg, cbeg;
   DvceArray6D<Real> cs_gtbl, cs_stbl;
-  DvceArray1D<Real> pre;   // r1mspeed-1102: srcval scratch (SubSegFC pv* boxes)
+  DvceArray1D<Real> pre;   // srcval scratch (SubSegFC pv* boxes)
   int c0;
   RegionIndcs cs_indcs;
   Real cs_shear_sgn;
   bool cs_nolim_;
-  // layoutbug-1103: second pass of <mesh>/cs_seam_blockend = extend -- the source index
+  // second pass of <mesh>/cs_seam_blockend = extend -- the source index
   // bounds are widened by (j lo, j hi, k lo, k hi) = ext_jk(m,:) at interior block ends
   bool ext_ = false;
   DvceArray2D<int> ext_jk;
-  // seamexact-1103: the extended pass reads the partner interpolants at the along-seam
+  // the extended pass reads the partner interpolants at the along-seam
   // ghost positions of an interior block end from q (CsSeamExtPartner) instead of
   // evaluating them on this block's own faces (one-sided at the outermost ghost)
   bool useq_ = false;
   DvceArray5D<Real> q;
-  // fcorder3-1103 <mesh>/cs_seam_fc_order = 3: srcval3 (block sizes for the angles)
+  // <mesh>/cs_seam_fc_order = 3: srcval3 (block sizes for the angles)
   bool fc3_ = false;
   DualArray1D<RegionSize>::t_dev mbsz;
   bool fc3tab_ = false;            // evaluate from the coefficient table
-  // fcorder3-1103 DIAGNOSTIC (env FC3_OVS): ghost-face OVERSHOOT beyond the range its own
+  // DIAGNOSTIC (env FC3_OVS): ghost-face OVERSHOOT beyond the range its own
   // stencil data allows (order 2: the 3 resample nodes; order 3: per source component,
-  // weight sum x [min, max] of the faces read).  ovsv: max abs, max relative to the
+  // weight sum x [min, max] of the faces read). ovsv: max abs, max relative to the
   // stencil's max |face|, count relative > 1e-2, samples
   bool ovs_ = false;
   DvceArray1D<Real> ovsv;
@@ -861,8 +808,8 @@ struct FCSeamPack {
                 x2f_at_etaface(a,kk,w,i),   x2f_at_etaface(a,kk,w+1,i),
                 x2f_at_etaface(a,kk,w+2,i), x2f_at_etaface(a,kk,w+3,i));
   }
-  // seamexact-1103: the partner component at (kk,jj) -- x3f at an x2-face centre (x2 =
-  // true) or x2f at an x3-face centre.  In the extended pass, at an along-seam ghost
+  // the partner component at (kk,jj) -- x3f at an x2-face centre (x2 =
+  // true) or x2f at an x3-face centre. In the extended pass, at an along-seam ghost
   // position beyond an INTERIOR block end, the owning neighbour's value (q, see
   // CsSeamExtPartner); everywhere else this block's own interpolation, as before.
   KOKKOS_FORCEINLINE_FUNCTION
@@ -954,35 +901,15 @@ struct FCSeamPack {
     return (a.v == 1) ? oxi : oet;
   }
   //--------------------------------------------------------------------------------------
-  // fcorder3-1103 <mesh>/cs_seam_fc_order = 3: the destination ghost face fed by the
-  // source sample (kk,jj,i) of component vv, as the THIRD-ORDER average over the
-  // receiver's own ghost face (see cs_seam_fc3.hpp for the why).  All in the SOURCE chart:
-  //   n = seam-normal angle, a = along-seam angle, u = offset from the seam in normal
-  //   cells (the two charts share it exactly: the ghost layers ARE the source layers);
-  //   the receiver's along angle at the sample's along index equals the source's grid
-  //   angle there (the grids coincide on the seam; reversal is in the index map), and a
-  //   receiver point at (u, a~) is the source point a = atan(tan a~ tan|n|) -- the
-  //   along-seam resample's own map (BuildCubedSphereSeamTables).
-  // The receiver's face is one of three kinds, fixed by vv's staggering:
-  //   T1 vv staggered across the seam: the face at normal face u, along cell [a~0,a~1];
-  //   T2 vv staggered along it: the face at along face a~, normal cell [u0,u0+1];
-  //   T3 vv = 0 (x1f): the radial face over the cell [u0,u0+1] x [a~0,a~1].
-  // 2-point Gauss per extended direction of B.n_dst at points rebuilt from the source's
-  // face integrals (PtN: the across-staggered component, PtA: the along-staggered one,
-  // PtR: x1f), weighted by the receiver face's arc / solid-angle density.
-  // STENCILS (layout independence under cs_seam_blockend = extend): the along window is
-  // centred on the target but clamped to within ng cells/faces of the SAMPLE's own along
-  // index (a sample is never more than ng outside its block's active range, so with the
-  // extended pass's bounds this never binds at an interior block end and every layout
-  // picks the same window), then to the source bounds (binding only at a panel end, or
-  // at a block end in the clamp mode).  Across the seam: the 4 faces / 3 cells next to it.
+  // <mesh>/cs_seam_fc_order = 3: third-order average of the destination ghost face fed
+  // by source sample (kk,jj,i) of component vv (cs_seam_fc3.hpp), in the source chart
   struct Fc3Geo {
     int m, i, aeta, low, dir, nseam, ns, ne, as0, alo, ahi, clo, chi, flo, fhi, nxa, npan, ga0, off;
     Real dn, da, a0, amin, amax;
   };
   KOKKOS_FORCEINLINE_FUNCTION
   Real fc3_aface(const Fc3Geo &g, const int f) const {
-    // fc3blk-1103: from the GLOBAL along face index (f - as0 + ga0), so every MeshBlock
+    // from the GLOBAL along face index (f - as0 + ga0), so every MeshBlock
     // layout computes the very same bits (block-local LeftEdgeX differs in the last bit,
     // and the order-3 lever arms near a panel end amplified that to ~1e-13 in the ghosts)
     return 0.5*M_PI*static_cast<Real>(f - g.as0 + g.ga0)/static_cast<Real>(g.npan)
@@ -1008,7 +935,7 @@ struct FCSeamPack {
   KOKKOS_FORCEINLINE_FUNCTION
   int fc3_cwin(const Fc3Geo &g, const Real xabs) const {   // first of 3 along cells
     // xabs: the GLOBAL along face coordinate; off = as0 - ga0 turns global into local
-    // (fc3blk-1103), rounded with the tie-safe seam helpers (fc2vtx-1103, cs_seam_round.hpp)
+    // rounded with the tie-safe seam helpers (, cs_seam_round.hpp)
     int c0 = cs_seam::SeamFloor(xabs - 0.5) - 1 + g.off;
     c0 = (c0 < g.clo) ? g.clo : ((c0 > g.chi) ? g.chi : c0);
     c0 = (c0 < g.alo) ? g.alo : ((c0 > g.ahi - 2) ? g.ahi - 2 : c0);
@@ -1024,7 +951,7 @@ struct FCSeamPack {
   // The point values are LINEAR in the source faces and every weight is geometry only,
   // so each reconstruction hands (component, along index, normal index, weight) terms to
   // an accumulator: Fc3Direct sums them on the fly, Fc3Tab records them (the per-sample
-  // coefficient table of PackAndSendFCFlat, evaluated once per run).  comp: 0 = x1f,
+  // coefficient table of PackAndSendFCFlat, evaluated once per run). comp: 0 = x1f,
   // 1 = the across-staggered component, 2 = the along-staggered one.
   // across-staggered component (normal faces 0..3 from the seam) at (u, along face
   // coordinate xabs, along angle tangent Aa), times sc
@@ -1112,7 +1039,7 @@ struct FCSeamPack {
     g.low = (elo && (!ehi || (nn - g.ns <= g.ne + 1 - nn))) ? 1 : 0;
     g.dir = g.low ? 1 : -1;
     g.nseam = g.low ? g.ns : (g.ne + 1);
-    // fc3blk-1103: the panel resolution and this block's global along offset; every
+    // the panel resolution and this block's global along offset; every
     // angle below from global indices (layout-independent bits)
     g.npan = static_cast<int>(floor(2.0*g.nxa/(g.amax - g.amin) + 0.5));
     g.ga0 = static_cast<int>(floor(0.5*(g.amin + 1.0)*g.npan + 0.5));
@@ -1161,7 +1088,7 @@ struct FCSeamPack {
         const Real sc = wgt/acc.den;
         const Real Aa = Y*Nn;
         const Real asrc = atan(Aa);
-        // global along face coordinate: the same bits in every layout (fc3blk-1103)
+        // global along face coordinate: the same bits in every layout
         const Real xabs = (asrc + 0.25*M_PI)/g.da;
         if (kind == 3) {
           fc3_PtR(g, u, xabs, Nn, Aa, sc, acc);
@@ -1226,7 +1153,7 @@ struct FCSeamPack {
     const Real wm = cs_stbl(m,a.cs_skind,sidx_,kk,jj,1);
     const Real w0 = cs_stbl(m,a.cs_skind,sidx_,kk,jj,2);
     const Real wp = cs_stbl(m,a.cs_skind,sidx_,kk,jj,3);
-    // r1mspeed-1102: the srcval values evaluated once by the FCSeamPre pass
+    // the srcval values evaluated once by the FCSeamPre pass
     const int nn = (cs_seam == 2) ? jj : kk;
     const int64_t base = a.pvoff + (static_cast<int64_t>(nn - a.pnlo)*a.pnt
                                     + (bs - a.ptlo))*a.pni + (i - a.pil);
@@ -1282,9 +1209,9 @@ struct FCSeamPack {
     int kk = s.ak*k + s.bk;
     int jj = s.aj*j + s.bj;
     const int ix = s.ndat*s.v + i-s.il + ni*(s.sj*(j-s.jl) + s.sk*(k-s.kl));
-    // r1mspeed-1102: never srcval here (FCSeamPre did it): small, stack-free kernel
+    // never srcval here (FCSeamPre did it): small, stack-free kernel
     const Real val = (u.pnt == 0) ? pre(u.pvoff + idx) : seamval_pre(a,kk,jj,i);
-    if (ovs_ && u.pnt != 0) {   // fcorder3-1103 diagnostic: the order-2 resample nodes
+    if (ovs_ && u.pnt != 0) {   // diagnostic: the order-2 resample nodes
       const int sidx_ = (a.cs_seam == 2) ? 0 : 1;
       const int bs = static_cast<int>(cs_stbl(a.m,a.cs_skind,sidx_,kk,jj,0));
       const int nn = (a.cs_seam == 2) ? jj : kk;
@@ -1301,7 +1228,7 @@ struct FCSeamPack {
     }
   }
 
-  // seamexact-1103: the partner interpolants of every ACTIVE face of block m, with the
+  // the partner interpolants of every ACTIVE face of block m, with the
   // extended pass's (panel-clamped) bounds -- the values that pass would compute here
   KOKKOS_INLINE_FUNCTION
   void operator()(const FCSeamQ &, const int t) const {
@@ -1328,9 +1255,9 @@ struct FCSeamPack {
     }
   }
 
-  // fcorder3-1103: the precompute pass of <mesh>/cs_seam_fc_order = 3 -- every seam
+  // the precompute pass of <mesh>/cs_seam_fc_order = 3 -- every seam
   // segment is sample-indexed (BuildPackSegmentsFC) and its cross-panel samples go
-  // through srcval3.  A kernel of its own, so the order-2 pass keeps its registers.
+  // through srcval3. A kernel of its own, so the order-2 pass keeps its registers.
   KOKKOS_INLINE_FUNCTION
   void operator()(const FCSeamPre3 &, const int t) const {
     const int c = c0 + t/FC_PACK_CHUNK;
@@ -1362,7 +1289,7 @@ struct FCSeamPack {
           sum += t_w(row,q)*v;
         }
         pre(u.pvoff + idx) = sum;
-        if (ovs_) {   // fcorder3-1103 diagnostic: per-component weight sum x data range
+        if (ovs_) {   // diagnostic: per-component weight sum x data range
           Real W[3] = {0.0, 0.0, 0.0}, vl[3] = {1e300, 1e300, 1e300};
           Real vh[3] = {-1e300, -1e300, -1e300}, sc = 0.0;
           for (int q=0; q<nc; ++q) {
@@ -1390,7 +1317,7 @@ struct FCSeamPack {
     }
   }
 
-  // fcorder3-1103: one coefficient-table row (seam segment, sample k,j); cnt -1: the
+  // one coefficient-table row (seam segment, sample k,j); cnt -1: the
   // sample is evaluated directly (not an order-3 sample, or > kFc3Max faces)
   KOKKOS_INLINE_FUNCTION
   void operator()(const FCSeamTab &, const int t) const {
@@ -1411,7 +1338,7 @@ struct FCSeamPack {
     for (int n=0; n<acc.n; ++n) { t_code(t,n) = acc.code[n]; t_w(t,n) = acc.w[n]; }
   }
 
-  // r1mspeed-1102: srcval over a SubSegFC's (normal, tangent, i) box, once per pack
+  // srcval over a SubSegFC's (normal, tangent, i) box, once per pack
   KOKKOS_INLINE_FUNCTION
   void operator()(const FCSeamPre &, const int t) const {
     const int c = c0 + t/FC_PACK_CHUNK;
@@ -1446,8 +1373,8 @@ struct FCSeamPack {
 }  // namespace
 
 //----------------------------------------------------------------------------------------
-//! \!fn void MeshBoundaryValuesFC::PackAndSendFCFlat()
-//! \brief halofc-1102: the cubed-sphere face-field pack (see BuildPackSegmentsFC).
+//! \!fn void MeshBoundaryValuesFC::PackAndSendFCFlat
+//! \brief the cubed-sphere face-field pack (see BuildPackSegmentsFC).
 
 void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
                                              DvceFaceFld4D<Real> &cb) {
@@ -1459,21 +1386,11 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
   const bool cs_nolim_ = pmy_pack->pmesh->cs_seam_fc_nolimit;
   auto sbuf = SendBufDv();
   auto rbuf = RecvBufDv();
-  // r1mspeed-1102: walk set 0 (all ng layers) or 1 (depth 1), see bvals.hpp
-  // seamexact-1103: with cs_seam_blockend = extend and > 2 blocks per panel side the
-  // extended pass and its partner interpolants (CsSeamExtPartner) read the along-seam
-  // ghosts to depth ng, which a depth-1 pack (<mhd>/rkg_halo_d1) leaves stale: full depth
-  // fcorder3-1103: order 3's along stencils read the along-seam ghosts to depth ng in the
-  // extended pass, so it too needs the full-depth pack there
-  // (only where a panel side is split between blocks: with one block per panel side no
-  // stencil reaches an along-seam ghost)
-  // fc3blk-1103: for order 3 ALWAYS, independent of the layout and of the blockend mode.
-  // Keying it on "a panel side is split" (f780bc3bf) made the depth itself layout
-  // dependent: with a depth-1 pack (<mhd>/rkg_halo_d1) the deeper seam ghosts would be
-  // stale in one layout and fresh in another.
+  // walk set 0 (all ng layers) or 1 (depth 1, <mhd>/rkg_halo_d1), see bvals.hpp; the
+  // extended seam pass needs full depth
   const bool fc3_ = (pmy_pack->pmesh->cs_seam_fc_order == 3);
   const int d = (pack_depth == 1 && !(cs_blockend_ext_ && cs_ext_q_) && !fc3_) ? 1 : 0;
-  last_pack_depth_ = pack_depth;   // layoutbug-1103
+  last_pack_depth_ = pack_depth;
   const int np = fc_np[d], ns = fc_ns[d], nr = fc_npre[d];
   if (np > 0) {
     FCPlainPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub[d], fc_cs[d], fc_cb[d], 0);
@@ -1481,9 +1398,9 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
         Kokkos::RangePolicy<>(DevExeSpace(), 0, np*FC_PACK_CHUNK),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
   }
-  // layoutbug-1103: the second pass of <mesh>/cs_seam_blockend = extend
+  // the second pass of <mesh>/cs_seam_blockend = extend
   auto stbl_ = cs_ext_pass_ ? cs_seam_stnc_x : cs_seam_stnc;
-  // fcorder3-1103 DIAGNOSTIC env FC3_OVS=<every>: ghost-face overshoot, printed by rank 0
+  // DIAGNOSTIC env FC3_OVS=<every>: ghost-face overshoot, printed by rank 0
   static const char *ovse_ = std::getenv("FC3_OVS");
   static DvceArray1D<Real> *ovsv_ = nullptr;
   if (ovse_ != nullptr && ovsv_ == nullptr) ovsv_ = new DvceArray1D<Real>("fc3_ovs", 4);
@@ -1492,9 +1409,9 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
                  stbl_, fc_preval, np + ns, pmy_pack->pmesh->mb_indcs,
                  cs_shear_sgn, cs_nolim_);
     f.ext_ = cs_ext_pass_; f.ext_jk = cs_ext_jk;
-    f.useq_ = cs_ext_pass_ && cs_ext_q_; f.q = cs_ext_q;   // seamexact-1103
+    f.useq_ = cs_ext_pass_ && cs_ext_q_; f.q = cs_ext_q;
     if (ovse_ != nullptr) {f.ovs_ = true; f.ovsv = *ovsv_;}
-    if (fc3_) {   // fcorder3-1103
+    if (fc3_) {
       f.fc3_ = true; f.mbsz = pmy_pack->pmb->mb_size.d_view;
       // the coefficient table of this pass (built once; env FC3_DIRECT = the direct sum)
       static const bool fc3dir_ = (std::getenv("FC3_DIRECT") != nullptr);
@@ -1551,7 +1468,7 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
                  stbl_, fc_preval, np, pmy_pack->pmesh->mb_indcs, cs_shear_sgn,
                  cs_nolim_);
     f.ext_ = cs_ext_pass_; f.ext_jk = cs_ext_jk;
-    f.useq_ = cs_ext_pass_ && cs_ext_q_; f.q = cs_ext_q;   // seamexact-1103
+    f.useq_ = cs_ext_pass_ && cs_ext_q_; f.q = cs_ext_q;
     if (ovse_ != nullptr) {f.ovs_ = true; f.ovsv = *ovsv_;}
     Kokkos::parallel_for("SendBuffFCseam", Kokkos::Experimental::require(
         Kokkos::RangePolicy<>(DevExeSpace(), 0, ns*FC_PACK_CHUNK),
@@ -1576,15 +1493,10 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
 }
 
 //----------------------------------------------------------------------------------------
-//! \!fn void MeshBoundaryValuesFC::PackAndSendFC()
-//! \brief Pack face-centered Mesh variables into boundary buffers and send to neighbors.
-//!
-//! As for cell-centered data, this routine packs ALL the buffers on ALL the faces, edges,
-//! and corners simultaneously for all three components of face-fields on ALL the
-//! MeshBlocks.
-//!
-//! Input array must be DvceFaceFld4D dimensioned (nmb, nx3, nx2, nx1)
-//! DvceFaceFld4D of coarsened (restricted) fields also required with SMR/AMR
+//! \fn void MeshBoundaryValuesFC::PackAndSendFC
+//! \brief Packs face-centred fields into boundary buffers and sends them to neighbours
+//! (all buffers of all MeshBlocks at once), including the cubed-sphere seam transform
+//! and resample.
 
 TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
                                                DvceFaceFld4D<Real> &cb) {
@@ -1592,15 +1504,15 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
 
-  // CUBED-SPHERE SEAM GEOMETRY TABLE.  Built once, lazily, on the first call: it needs
+  // CUBED-SPHERE SEAM GEOMETRY TABLE. Built once, lazily, on the first call: it needs
   // the neighbour table, which is not yet set when this object is constructed, and it
   // can never go stale because a cubed sphere refuses adaptive refinement and refuses
-  // any static level boundary that would lie on a seam.  See BuildCubedSphereSeamTables.
+  // any static level boundary that would lie on a seam. See BuildCubedSphereSeamTables.
   if (pmy_pack->pmesh->use_cubed_sphere && !cs_seam_tbl_ready) {
     BuildCubedSphereSeamTables();
   }
 
-  // halofc-1102: on a cubed sphere the pack is the flat, load-balanced pair of kernels
+  // on a cubed sphere the pack is the flat, load-balanced pair of kernels
   // (bitwise the same buffers); every other mesh keeps the team kernel below.
   if (pmy_pack->pmesh->use_cubed_sphere) {
     PackAndSendFCFlat(b, cb);
@@ -1613,14 +1525,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   const bool ml_ = pmy_pack->pmesh->multilevel;
   const bool use_pole = pmy_pack->pmesh->use_polar_boundary;
   const bool cs_nolim_ = pmy_pack->pmesh->cs_seam_fc_nolimit;   // see mesh.cpp
-  // Sign/enable switch for the seam SHEAR CORRECTION, while its orientation is being
-  // pinned down empirically.  The derivation fixes the magnitude; which way the
-  // receiver's face tilts relative to the source's depends on the seam orientation and
-  // reversal, and the seam-jump gate settles it in one run.  0 disables it entirely.
-  // Read the environment ONCE on the host, then take a LOCAL copy: a function-scope
-  // `static` is a host variable, and a device lambda that references one fails to compile
-  // on HIP/CUDA ("reference to __host__ variable in __host__ __device__ function").  The
-  // local const is captured BY VALUE and works on every backend.  Same trap as f493c209.
+  // seam shear correction factor (env CS_SHEAR, default 0 = off), read once on the host
   static const Real cs_shear_env = (std::getenv("CS_SHEAR") != nullptr)
                                  ? std::atof(std::getenv("CS_SHEAR")) : 0.0;
   const Real cs_shear_sgn = cs_shear_env;
@@ -1632,14 +1537,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   auto sbuf = SendBufDv();
   auto rbuf = RecvBufDv();
 
-  // Outer loop over (# of MeshBlocks)*(# of buffers)*(three field components), one team
-  // each, as in PackAndSendCC.  This used to be 3*nmb teams, each walking the neighbours
-  // serially with a team_barrier after every one ("to prevent race condition in
-  // overlapping assignments", a comment that belongs to the UNPACK, where ghost faces are
-  // shared between buffers).  The pack only READS b/cb and every (m,n,v) writes its own
-  // slice ndat*v.. of its own buffer (sbuf[n] row m, or rbuf[dn] row dm), so the triples
-  // are independent.  With 3*nmb = 72 teams on a 132-SM GH200 the serial walk made this
-  // the most expensive kernel of a cubed-sphere MHD cycle (0.93 ms per call; 09-30).
+  // outer loop over (# of MeshBlocks)*(# of buffers)*(three field components)
   int nmnv = 3*nmb*nnghbr;
   Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv, Kokkos::AUTO);
   BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
@@ -1648,7 +1546,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
     const int v = tmember.league_rank()%3;
 
     {
-      // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
+      // only load buffers when neighbor exists. CUBED-SPHERE CUBE VERTEX: skipped on
       // both sides; FillPanelCornersFC overwrites this corner block. See bvals.hpp.
       if (nghbr.d_view(m,n).gid >= 0 &&
         !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
@@ -1656,18 +1554,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         // Note indices can be different for each component of face-centered field.
         int il, iu, jl, ju, kl, ku, ndat;
 
-        // WHICH COMPONENT'S INDEX RANGE DO WE READ THE SOURCE WITH?
-        //
-        // v is the RECEIVER's component: the packer writes into buffer slot v but reads
-        // this block's array vv, and the two differ on a panel seam whose tangential axes
-        // are interchanged (swap_ax) -- every equatorial-to-polar seam. Ranges are per
-        // component and genuinely different: for a -x2 neighbour isame[1] (x2f) is ng
-        // FACES in j by nx3 CELLS in k, while isame[2] (x3f) is ng CELLS in j by nx3+1
-        // FACES in k. Reading array vv over isame[v] therefore took the wrong index set
-        // AND the wrong NUMBER of elements, so the receiver unpacked a differently sized
-        // region -- an O(1) error that did not converge under refinement. Read the source
-        // with its OWN component's range; the sj/sk transposition below still lays it out
-        // the way the receiver expects, and the counts match because nx2 == nx3 here.
+        // v is the receiver's component; the source component vv differs across a swap
+        // seam, and its index range is used to read the source
         int vsrc = v;
         if (use_cs &&
             nghbr.d_view(m,n).panel != mbpanel.d_view(m) && v > 0) {
@@ -1727,9 +1615,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             int vv = v;
             bool cs_xform = false;
             // A cross-panel neighbour at a COARSER level is served from the restricted
-            // field cb, not b.  Before this existed the branch packed NOTHING, so the
+            // field cb, not b. Before this existed the branch packed NOTHING, so the
             // buffer kept its zero-initialised contents and the coarse block read a
-            // ghost field of exactly ZERO across the seam.  See the note in bvals_cc.cpp.
+            // ghost field of exactly ZERO across the seam. See the note in bvals_cc.cpp.
             const bool cs_coar = (nghbr.d_view(m,n).lev < mblev.d_view(m));
             int cs_srcpanel = 0, cs_dstpanel = 0;
             // where this (destination panel, staggering) pair sits in the seam tables
@@ -1766,15 +1654,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               if (v == 1) vv = map_vy;
               if (v == 2) vv = map_vz;
 
-              // x1 is RADIAL and rhat is common to both charts, so b.x1f crosses a seam
-              // as a SCALAR: index map only. The two angular components do not. They are
-              // projections on the panel's own FACE NORMALS, and the two charts carry
-              // different normals at the same physical point -- differing by a shear that
-              // is O(1) away from the seam midline, exactly as for the cell-centred
-              // momentum (see cubed_sphere::TransformMomentum). A signed axis permutation
-              // is exact for the INDICES and exact for the components only on the seam
-              // midline, so it left an O(1) error in the halo field. Measured: it made a
-              // uniform Cartesian field, an exact static state, blow up in one step.
+          // x1 is radial: b.x1f crosses a seam unchanged; the tangential pair is
+          // transformed to the destination face normals
               cs_xform = (v == 1) || (v == 2);
               cs_srcpanel = my_panel;
               cs_dstpanel = ngh.panel;
@@ -1782,31 +1663,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               cs_gkind = (cs_coar ? 2 : 0) + ((vv > 0) ? (vv - 1) : 0);
               cs_skind = (cs_coar ? 3 : 0) + vv;
 
-              // Which buffer is this? A same-level FACE buffer is ng deep in its own
-              // normal direction and spans the full active range in the other tangential
-              // one; that is the only case the along-seam resample applies to. The edge
-              // and corner buffers (ng x ng) stay a plain copy, as in bvals_cc.cpp.
-              // WHICH BUFFER IS THIS, and therefore which way does the along-seam
-              // resample run?  Read it off the SLOT INDEX, not off the buffer extents.
-              // Slots are laid out (nghbr_index.hpp): 0-7 x1 faces, 8-15 x2 faces,
-              // 16-23 x1x2 edges, 24-31 x3 faces, 32-39 x3x1 edges, 40-47 x2x3 edges,
-              // 48-55 corners.  A buffer whose only tangential ghost direction is x2 has
-              // its seam normal along x2 and resamples in x3 (cs_seam = 2), and vice
-              // versa; one that is ghost in BOTH tangential directions -- the x2x3 edges
-              // and the corners -- has no single along-seam axis and stays a plain copy.
-              //
-              // This USED TO BE INFERRED from the extents, as `nj == ng && nk > ng`.
-              // That test is only valid at a SAME-LEVEL boundary.  At a coarse/fine
-              // boundary a face-centred buffer carries one EXTRA layer in the direction
-              // its component is staggered in, so the ghost-direction extent is ng+1 = 3
-              // rather than ng, the equality fails, and cs_seam silently fell to 0 --
-              // skipping the resample for exactly ONE of the two angular components on
-              // every cross-level seam edge buffer.  Measured: the resampled source
-              // sample then sat 1.82 CELLS away from the destination cell it fed (against
-              // 0.0000 whenever the resample does run), which is O(h) and was the whole
-              // of the first-order cross-level seam halo error.  The radial component is
-              // not staggered in either tangential direction, kept its extent of ng, and
-              // so kept the resample -- which is exactly why it was ten times less wrong.
+              // only same-level face buffers are resampled along the seam; edge and
+              // corner buffers are plain copies
               if (n >= 8 && n < 24) {
                 cs_seam = 2;
               } else if (n >= 24 && n < 40) {
@@ -1814,7 +1672,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               }
               // DOUBLY-GHOST BUFFERS (x2x3 edges 40-47, corners 48-55) are ghost in
               // BOTH tangential directions, so the slot alone does not name an along-seam
-              // axis -- but the NEIGHBOUR TABLE does.  Only one of the two flanking faces
+              // axis -- but the NEIGHBOUR TABLE does. Only one of the two flanking faces
               // is a panel seam (if both were, this is a cube vertex whose exchange is
               // skipped as non-reciprocal), and that one fixes the seam normal exactly as
               // for a face buffer.
@@ -1840,18 +1698,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
                 }
               }
 
-              // THE RESAMPLE NEEDS 3 CELLS ALONG THE SEAM.  Its quadratic stencil is
-              // clamped to [blo, bhi] = [start, start + extent - 3], which INVERTS when
-              // the source's along-seam ACTIVE extent is under 3 -- the clamp then pins
-              // the stencil one cell outside the active zone and it reads unfilled ghost.
-              // That happens on the COARSE array as soon as cnx = nx/2 < 3, i.e. for a
-              // MeshBlock under 6 cells wide, and MeshBlocks are allowed down to 4.
-              // Measured on a refined 4x4 block: halo Linf 7.7e-01 against 2.4e-02 before
-              // the resample was extended to these buffers -- the degeneracy predates
-              // this session, but a01ace75 and e4be92c0 widened its blast radius by
-              // resampling many more buffers, so it has to be guarded here.  Falling back
-              // to the plain index copy costs the O(dx) seam offset the resample exists
-              // to remove, which is bad but bounded; reading unfilled memory is not.
+              // the resample needs 3 cells along the seam
               const int seam_extent = cs_coar
                   ? ((cs_seam == 2) ? cs_indcs.cnx3 : cs_indcs.cnx2)
                   : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
@@ -1863,25 +1710,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               if (v == 2) signvar = -1;
             }
 
-            // Value of destination component v, read from the source at (kk,jj,i).
-            //
-            // Producing either angular component needs BOTH source angular components at
-            // the SAME point, and they are staggered differently: b.x2f sits on a xi face
-            // and b.x3f on an eta face. The one the index map selects (vv) is taken where
-            // it lives and the other is interpolated onto that location, which is second
-            // order. The radial component is untouched.
-            //
-            // THAT INTERPOLATION MUST NOT REACH INTO THE SOURCE BLOCK'S OWN GHOSTS. The
-            // secondary component is averaged across the ALONG-SEAM index, and the packed
-            // range spans the whole seam, so at its two END faces one of the two cells is
-            // the source block's ghost -- which on a panel seam is itself halo data, in
-            // general stale and in a first exchange uninitialised. That produced an O(1)
-            // error at exactly the two end faces of every seam and nowhere else
-            // (measured: interior faces 3e-3..1.7e-2 at nx=32, end faces 0.38), and
-            // since the halo check maxes over the seam that made all 24 seams look
-            // O(1) and non-convergent.
-            // At an end face the two nearest ACTIVE cells are extrapolated instead, which
-            // keeps the same second-order accuracy without leaving the active zone.
+            // value of destination component v from the source at (kk,jj,i): both source
+            // angular components are needed at the same point, so the partner component
+            // is interpolated onto the primary's staggered location
             const int js_ = cs_coar ? cs_indcs.cjs : cs_indcs.js;
             const int ks_ = cs_coar ? cs_indcs.cks : cs_indcs.ks;
             const int je_ = cs_coar ? cs_indcs.cje : cs_indcs.je;
@@ -1897,40 +1728,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             auto bx3 = [&](const int kk, const int jj, const int i) {
               return cs_coar ? cb.x3f(m,kk,jj,i) : b.x3f(m,kk,jj,i);
             };
-            //
-            // CO-LOCATING THE PARTNER COMPONENT MUST BE 4th ORDER ON *BOTH* AXES.
-            //
-            // The partner is moved onto the primary's location by two successive
-            // interpolations on ORTHOGONAL axes (see `srcval`). A 2-point midpoint
-            // average is second order in VALUE, and the resistive curl differences the
-            // halo over h, so an O(h^2) ghost value is a FIRST ORDER current -- which is
-            // exactly the measured seam order of 1.00. Two comparable O(h^2) terms on
-            // orthogonal axes means raising ONE of them halves the amplitude and cannot
-            // move the order; that was measured, and it is why the earlier one-axis
-            // experiment failed. Both axes are raised here.
-            //
-            // PROVED BEFORE IT WAS WRITTEN, by an oracle A/B that replaced only the
-            // partner with the analytic field at the primary's own (xi,eta): every
-            // category that sat at 1.75-1.90 -- including the two SWAP ones that were
-            // immune to every earlier switch -- went to 2.92-3.26, with the amplitude
-            // down 9-78x, while x1f (which has no partner) stayed bitwise identical.
-            // So the co-location is the WHOLE binding term in the seam halo.
-            //
-            // A CENTRED wide stencil is NOT ENOUGH, and the reason is structural: a
-            // seam buffer packs the cells at the EDGE of the active range, so in the
-            // seam-NORMAL direction a centred 4-point formula never fits and silently
-            // degrades to the 2-point average over the WHOLE packed range -- which
-            // measured 1.80/1.90, i.e. exactly the baseline, for a strictly more
-            // expensive stencil. What is needed is a fourth-order interpolation whose
-            // WINDOW SLIDES INWARD instead of degrading.
-            //
-            // `lag4` is the cubic through four consecutive samples starting at index w,
-            // evaluated at offset t = target - w. The window is CLAMPED into the active
-            // range, so it never reads the source block's own ghosts -- which on a panel
-            // seam are themselves halo data, in general stale and uninitialised in a
-            // first exchange -- and it stays fourth order right up to the edge, becoming
-            // one-sided rather than low order. At the two ends of a seam the target lies
-            // outside the active samples and the same window extrapolates, still cubic.
+            // the partner component is moved to the primary's location by fourth-order
+            // interpolation on both axes (lag4)
             auto lag4 = [](const Real t, const Real f0, const Real f1,
                                          const Real f2, const Real f3) {
               return -(t-1.0)*(t-2.0)*(t-3.0)/6.0*f0
@@ -1991,17 +1790,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
                           x2f_at_etaface(kk,w,i),   x2f_at_etaface(kk,w+1,i),
                           x2f_at_etaface(kk,w+2,i), x2f_at_etaface(kk,w+3,i));
             };
-            //
-            // The (xi,eta) of a source sample, with the STAGGERING of component vv:
-            // b.x2f sits on a xi face and b.x3f on an eta face, b.x1f on neither.  That
-            // is what `cs_gkind` and `cs_skind` name, and everything the seam branch
-            // used to compute from (xi,eta) per CELL -- the transform geometry, the
-            // resample stencil and the shear term's sigma -- is read out of the tables
-            // below at the sample's own (kk,jj).  The rows are indexed by the ABSOLUTE
-            // (kk,jj), ghosts included: on a multilevel mesh a same-level send buffer is
-            // widened by ng in its transverse directions and the packer reads source
-            // cells outside the active range.  The fill evaluates exactly what this
-            // lambda used to hand to LeftEdgeX/CellCenterX.
+            // (xi,eta) of a source sample with the staggering of component vv (b.x2f on
+            // a xi face, b.x3f on an eta face): cs_gkind / cs_skind
             auto srcval = [&](const int kk, const int jj, const int i) {
               if (!cs_xform) {
                 if (vv == 0) return bx1(kk,jj,i)*signvar;
@@ -2018,82 +1808,19 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
                 bet = bx3(kk,jj,i);
                 bxi = x2f_at_xicentre(kk,jj,i);
               }
-              // ---- SHEAR CORRECTION: the two charts' faces are not the same surface --
-              //
-              // The stored quantity is a FACE AVERAGE, and the receiver's ghost face is
-              // not the source face that feeds it.  Take the non-swap +x / +y seam.  The
-              // seam-NORMAL coordinate maps exactly -- xi_A + xi_B = pi/2 -- so the ghost
-              // LAYERS coincide with the source's active layers and nothing is wrong in
-              // that direction.  The faces are bounded in the other one, and there the
-              // receiver's face is a surface of constant eta_A = atan(z/x) while the
-              // source's is constant eta_B = atan(z/y).  Off the seam those are DIFFERENT
-              // SURFACES, sheared relative to each other.
-              //
-              // Write the receiver's face in the source's chart: constant eta_A means
-              // Y_B = X_B*tan(eta_A), so along the face eta_B drifts with xi_B at a rate
-              //     sigma = d eta_B / d xi_B = sin(2 eta_B) / sin(2 xi_B),
-              // which is ZERO at the seam midpoint (eta_B = 0) and grows monotonically to
-              // 1 at the cube vertex.  Averaging f over a line tilted by sigma instead of
-              // a flat one gives, with the linear term killed by centring,
-              //  <f>_recv - <f>_src = sigma*(dxi^2/12)*d2f/dxi deta + O(sigma^2 h^2)
-              //
-              // MEASURED before this was written (cs_test's seam-jump gate, nlim=0, so
-              // the halo machinery alone): the component whose face is the SHARED seam
-              // surface reaches 3.13/3.13, while the other one sits at 1.77/1.89 and its
-              // error grows 7.5x monotonically from the seam midpoint to the cube vertex
-              // -- the sigma profile.  A halo that is second order in VALUE is a FIRST
-              // order current, because the resistive curl differences it over h.
-              //
-              // Only the component whose face NORMAL is the ALONG-SEAM direction needs
-              // this: the other tangential face IS the seam surface, shared by both
-              // charts, and b.x1f's radial face is r = const in every chart.
+              // shear correction (env CS_SHEAR, default 0 = off): the receiver's ghost
+              // face and the source face are sheared surfaces off the seam; adds
+              // cs_shear_sgn*sig*d2f/(dn da)/24 to the transformed component
               if (cs_seam != 0) {
-                // WHICH AXIS IS ALONG THE SEAM, IN THE SOURCE'S FRAME.  cs_seam is read
-                // off the DESTINATION's slot, and across a SWAP seam the neighbour
-                // reaches this face through a face of its OTHER tangential axis, so the
-                // source's normal and along-seam roles are exchanged.  A swap is exactly
-                // vv != v (the component index the source is read with, set above).
-                // Getting this wrong silently corrects the WRONG component -- which is
-                // why the first version fired on only 4 of the 12 seams and moved the
-                // ring EMF by 10%.
-                // THE ANGLE AND INDEX ROLES COME FROM cs_seam, NOT FROM THE SWAP.  The
-                // buffer's index map already absorbs the axis exchange, and the
-                // along-seam resample -- validated to place its samples exactly -- reads
-                // its normal and along-seam angles straight off cs_seam in the SOURCE's
-                // (jj,kk) space.  Swapping the roles here instead made nrm the angle that
-                // is NOT pinned at +-pi/4, so sin(2*nrm) went small and sigma blew up:
-                // both signs then made the swap seams WORSE by the same amount, which is
-                // an over-large term rather than a sign error.
+                // along-seam axis in the source frame (exchanged across a swap seam)
                 const bool along_eta = (cs_seam == 2);
-                // The corrected component is the one whose face NORMAL is the along-seam
-                // direction; the other tangential face IS the shared seam surface.
-                // ONLY THE COMPONENT FLIPS.  The face that must be corrected is the one
-                // whose normal is the along-seam direction -- but the transform maps
-                // source components to destination components THROUGH the swap, so on a
-                // swap seam it is the source's OTHER tangential face that lands on it.
-                // MEASURED: the component rule does NOT change across a swap seam, and
-                // neither does the sign.  Flipping it (the obvious guess, since the
-                // transform maps components through the swap) measured WORSE on the swap
-                // seams with either sign.  What had made the swap seams look untouched
-                // was the stencil bug above, not the component choice.
+                // corrected component: the one whose face normal is the along-seam
+                // direction
                 const int vwant = along_eta ? 2 : 1;
                 const bool corr_et = (vwant == 2) && (vv == 2);
                 const bool corr_xi = (vwant == 1) && (vv == 1);
-                // THE SOURCE CELLS SIT AT THE EDGE OF THE ACTIVE RANGE -- that is what a
-                // seam buffer packs -- so a CENTRED difference in the seam-NORMAL
-                // direction reaches outside the data and never fires, silently and at any
-                // amplitude.  One-sided stepping INWARD there, centred along the seam
-                // where the full range is available.  One-sided is first order, but the
-                // whole term is already O(h^2), so the residual is O(h^3).
-                //
-                // The NORMAL index is jj when the along-seam axis is eta, and kk when it
-                // is xi -- it follows `along_eta`, not the slot.
-                // THE STENCIL FOLLOWS THE AXIS ROLES, THE COMPONENT IS CHOSEN
-                // SEPARATELY.  Keying the difference on which COMPONENT is corrected
-                // instead silently indexes a j-neighbour as a k-neighbour the moment the
-                // two disagree, which is exactly what the swap case does.
-                //   along index  a = kk when along_eta, else jj
-                //   normal index n = jj when along_eta, else kk
+                // the source cells sit at the edge of the active range: the cross
+                // derivative is centred along the seam and one-sided (inward) across it
                 const int an0 = along_eta ? kk : jj;          // along index, centre
                 const int nn0 = along_eta ? jj : kk;          // normal index, at the edge
                 const int alo = along_eta ? ks_ : js_;
@@ -2115,7 +1842,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
                       const int jq = along_eta ? nn : aa;
                       return corr_et ? bx3(kq,jq,i) : bx2(kq,jq,i);
                     };
-                    // d2f/dn da: centred ALONG the seam, one-sided ACROSS it.  sgn_n
+                    // d2f/dn da: centred ALONG the seam, one-sided ACROSS it. sgn_n
                     // undoes the sign of the inward step so the derivative keeps its
                     // orientation whichever end of the block the source cells sit at.
                     const Real mx = sgn_n*((fv(an0+1,nn0) - fv(an0-1,nn0))
@@ -2143,25 +1870,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               return (v == 1) ? oxi : oet;
             };
 
-            // ALONG-SEAM RESAMPLE, the face-centred twin of the one in bvals_cc.cpp.
-            // Across a seam the two charts share the seam-NORMAL coordinate exactly but
-            // not the seam-PARALLEL one: a source sample at seam-normal angle n and
-            // seam-parallel angle a sits at seam-parallel angle atan(tan(a)/tan|n|) in
-            // the destination chart. Inverting that, the value a ghost needs is the
-            // source field at atan(tan(a)*tan|n|), always closer to the seam midline than
-            // the sample's own angle, so the stencil never leaves the source block. The
-            // offset is a fixed fraction of a cell -- resolution-INDEPENDENT in cell
-            // units -- so the plain index copy leaves the halo field O(dx) wrong on every
-            // component, b.x1f included, even though b.x1f crosses the seam as a scalar.
-            // Quadratic (3-point) Lagrange, on the source's own index axis; the reversal
-            // needs no special case because the map is odd in a and the index reversal
-            // already carries the sign.
-            //
-            // The staggering matters here and it is not the same for the two angular
-            // components: on a x3-face seam the along-seam axis is xi, which b.x2f
-            // samples on FACES and b.x1f/b.x3f on cell CENTRES. The offset in INDEX units
-            // is the same either way, so only the angle that enters the map changes,
-            // which `angles` already knows.
+            // along-seam resample (face-centred version of the one in bvals_cc.cpp): the
+            // ghost face value is interpolated along the seam from 3 source faces
             auto seamval = [&](const int kk, const int jj, const int i) {
               if (cs_seam == 0) return srcval(kk,jj,i);
               // The stencil is geometry: its index and its three weights come out of the
@@ -2179,27 +1889,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               const Real sv0 = (cs_seam == 2) ? srcval(bs,jj,i)   : srcval(kk,bs,i);
               const Real sv1 = (cs_seam == 2) ? srcval(bs+1,jj,i) : srcval(kk,bs+1,i);
               const Real sv2 = (cs_seam == 2) ? srcval(bs+2,jj,i) : srcval(kk,bs+2,i);
-              // MONOTONICITY LIMIT, threshold-free.
-              //
-              // The rule is the standard one: monotone data must give a monotone
-              // interpolant.  A SHOCK is monotone across the stencil, so clamping to the
-              // stencil's own range stops the overshoot that puts a negative density in a
-              // ghost cell.  A smooth EXTREMUM is NOT monotone, and is left alone --
-              // clipping there is the classic way a limiter destroys accuracy (measured:
-              // 1.4x on the smooth tangent-seam halo).  On smooth monotone data the
-              // clamp is a numerical NO-OP, because the quadratic already lies inside the
-              // range, so nothing is paid for it.
-              //
-              // It must also be skipped when the resample is EXTRAPOLATING -- `bs` is
-              // clamped at the ends of the source range, so `pos` can fall outside
-              // [bs, bs+2], where the correct value legitimately lies outside the node
-              // range; clamping there cost 3.5x on the smooth seam halo.
-              //
-              // TWO EARLIER ATTEMPTS FAILED and are recorded so they are not retried: an
-              // UNCONDITIONAL clamp (cost 3.5x, the extrapolation case), and a
-              // second-difference roughness test gated on a RELATIVE span
-              // (hi-lo) > 0.1*(|hi|+|lo|), which fires spuriously wherever the stencil
-              // straddles ZERO -- it triggered ten million times on a smooth run.
+                // monotonicity limit: clamp to the stencil range where the data are
+                // monotone; smooth extrema are left unlimited
               const Real qq = wm*sv0 + w0*sv1 + wp*sv2;
               const Real dd1 = sv1 - sv0, dd2 = sv2 - sv1;
               const Real fpos = cs_stbl(m,cs_skind,sidx_,kk,jj,4);
@@ -2212,7 +1903,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             };
 
           // copy field components directly into recv buffer if MeshBlocks on same rank
-          // seamval() reads b0 or coarse_b0 according to cs_coar, so one expression
+          // seamval reads b0 or coarse_b0 according to cs_coar, so one expression
           // serves a neighbour at ANY level.
           if (nghbr.d_view(m,n).rank == my_rank) {
             Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
@@ -2384,53 +2075,11 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
 
 
 //----------------------------------------------------------------------------------------
-// \!fn void MeshBoundaryValuesFC::FillPanelCornersFC()
-// \brief Fill the ng x ng corner ghost blocks of a cubed-sphere panel corner.
-//
-// A panel corner is a CUBE VERTEX, where only THREE panels meet. There is no fourth
-// block diagonally across it, so the generic corner buffer -- which assumes a rectangular
-// index region of a single neighbour and applies the face seam's signed permutation to it
-// -- reaches somewhere meaningless. Measured on the uniform-Cartesian-field gate: the
-// corner ghosts were wrong by ~0.7 of |B| on EVERY component, the radial one included and
-// flat in resolution, i.e. not a basis error but garbage. That is what drove the residual
-// one-step velocity after the face halo was fixed: the max was in a corner cell on all
-// six panels.
-//
-// The panel's own gnomonic map is perfectly well defined out there, though -- the ghost
-// zone IS that map extended -- and the two face halos flanking the corner are now
-// accurate. So each corner ghost is extrapolated quadratically from the face halo on one
-// side, again from the one on the other side, and the two are averaged. Quadratic keeps
-// the O(dx^3) local error the face halo already has, and the stencil only ever reads the
-// two flanking face-halo strips, never the corner block being written.
-//
-// EACH EXTRAPOLANT GETS A SIGN-PRESERVING FALLBACK, the same rule as in
-// FillPanelCornersCC and applied to every field component: if the three stencil nodes all
-// share a strict sign and the extrapolant comes out with the opposite sign, or exactly
-// zero, it is replaced by the node adjacent to the ghost (constant extrapolation);
-// otherwise it is kept bit for bit. The raw quadratic weights are not positivity
-// preserving -- with nghost = 3 the third ghost carries (10, -15, 6) -- which on the
-// cell-centred side drove the red-giant density extrapolant NEGATIVE above the
-// star/corona join. Because a smooth profile never trips the sign test, nothing changes
-// there and the corner ghost keeps its order; the earlier [min,max] node clamp did not
-// have that property. See the numbers quoted above FillPanelCornersCC.
-//
-// Called once at the end of RecvAndUnpackFC, when every face buffer is guaranteed
-// unpacked. Same-panel corners are left entirely alone.
-//
-// THE RADIAL GHOST LAYERS ARE PART OF THIS CORNER BLOCK. The i loop below runs over the
-// whole array, ghost zones included, not just the active radial range -- exactly as the
-// cell-centred FillPanelCornersCC always has. With ONE MeshBlock spanning the radial
-// direction the difference is invisible: x1 ends on a physical boundary at both ends, the
-// corner slot has no neighbour at all, and the physical BC fills those cells afterwards.
-// Split the radial direction and the (radial ghost) x (cube-vertex corner) block is a
-// real ghost region that nothing else writes -- the generic 3D corner buffer that would
-// have served it is skipped as non-reciprocal (see IsCubeVertexCorner in bvals.hpp) --
-// so it kept whatever stale values it happened to hold, ~0.2 of |B| off the exact
-// solution on the uniform-field gate against 6e-4 for the same block unsplit. The
-// flanking strips the extrapolation reads there are the x1x2 and x3x1 EDGE halos, which
-// are filled by their own buffers and were measured accurate. Ideal MHD never reaches
-// this block, but the resistive curl does: it is why cubed-sphere resistivity did not
-// reproduce its Linf under a plain radial split.
+//! \fn void MeshBoundaryValuesFC::FillPanelCornersFC
+//! \brief Fills the ng x ng corner ghost faces at a cube vertex, where only three panels
+//! meet and the generic corner buffer has no meaningful source: each component is
+//! extrapolated from the two flanking face halos in the panel's own chart and averaged
+//! (unless the sampled fill of cs_vertex_fill already wrote it).
 
 //----------------------------------------------------------------------------------------
 //! \fn SignPreserveCS
@@ -2474,9 +2123,9 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     const int nj_id = (sj < 0) ? 8 : 12;
     const int nk_id = (sk < 0) ? 24 : 28;
     const int mp = mbpanel.d_view(m);
-    // ONLY A TRUE CUBE VERTEX.  The condition is that BOTH flanking faces are panel
+    // ONLY A TRUE CUBE VERTEX. The condition is that BOTH flanking faces are panel
     // seams -- exactly IsCubeVertexCorner's test, and exactly the case whose exchange is
-    // skipped.  It used to fire when EITHER face was a seam, which with more than one
+    // skipped. It used to fire when EITHER face was a seam, which with more than one
     // MeshBlock per panel also caught ordinary corners that DO have a real diagonal
     // neighbour, overwriting properly exchanged, seam-transformed data with a one-sided
     // extrapolation.
@@ -2484,20 +2133,8 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     if (nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp) seamj = true;
     if (nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp) seamk = true;
     if (!(seamj && seamk)) return;
-    // THE CORNER FILL SUPERSEDES THIS.  When the flanking neighbours are at the SAME
-    // level their widened buffers have already written this corner block with REAL data
-    // sampled from the two panels that cover it (see buffs_fc.cpp), which is strictly
-    // better than any extrapolation -- so do not overwrite it.  At a level boundary the
-    // widening does not apply (only `isame` was widened) and the extrapolation below is
-    // still the best available.
-    //
-    // WHICH BUFFER REACHES WHICH RADIAL LAYER.  Over the ACTIVE radial range the two
-    // widened FACE buffers cover the block.  A RADIAL GHOST layer is triply ghost, so
-    // only a buffer that is already ghost in x1 can reach it: the x1x2 and x3x1 EDGE
-    // buffers, widened by the same rule.  Both must exist and be at this level, because
-    // ownership splits the block between them along the diagonal and one alone would
-    // leave half of it written by NOTHING -- the same trap as 397b4ad3, which put 0.2 of
-    // |B| in the r x CORNER SEAM category.
+    // the sampled corner fill (same-level flanking neighbours) already wrote this block;
+    // extrapolate only otherwise
     const bool vfill_here = (vfill_ && !coar_ &&
         nghbr.d_view(m,nj_id).lev == mblev_.d_view(m) &&
         nghbr.d_view(m,nk_id).lev == mblev_.d_view(m));
@@ -2516,13 +2153,13 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     const Real dk = static_cast<Real>(gk + 1);
     // QUADRATIC is the optimum of this family, measured: LINEAR (amplification 3 and 5
     // against quadratic's 7 and 17) loses to truncation -- corner 1.98e-03 -> 5.44e-03 --
-    // and CUBIC (15 and 49) loses to amplification -- 1.98e-03 -> 2.46e-03.  Do not
+    // and CUBIC (15 and 49) loses to amplification -- 1.98e-03 -> 2.46e-03. Do not
     // re-propose either.
     const Real wj0 = 0.5*(dj+1.0)*(dj+2.0), wj1 = -dj*(dj+2.0), wj2 = 0.5*dj*(dj+1.0);
     const Real wk0 = 0.5*(dk+1.0)*(dk+2.0), wk1 = -dk*(dk+2.0), wk2 = 0.5*dk*(dk+1.0);
     const int stj = -sj, stk = -sk;       // step INWARD from the anchor
     // The two extrapolations do not reach equally far: the one along j travels dj cells
-    // and the one along k travels dk.  A plain average weights them the same even when
+    // and the one along k travels dk. A plain average weights them the same even when
     // one is a 1-cell reach and the other a 2-cell reach; weighting each by the OTHER's
     // distance favours the shorter, more accurate one.
     const Real wblend = dj/(dj + dk);
@@ -2587,7 +2224,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
 
 
 //----------------------------------------------------------------------------------------
-// \!fn void RecvBuffers()
+// \!fn void RecvBuffers
 // \brief Unpack boundary buffers
 
 TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
@@ -2641,8 +2278,8 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
   //----- STEP 2: buffers have all completed, so unpack 3-components of field
 
   // Outer loop over (# of MeshBlocks)*(three field components)*(radial chunks)
-  // r1mspeed-1102: the radial index range is cut into chunks of FC_UNP_CHUNK, one team
-  // each.  Buffers overlap only at the SAME (k,j,i), which stays in one team, so each
+  // the radial index range is cut into chunks of FC_UNP_CHUNK, one team
+  // each. Buffers overlap only at the SAME (k,j,i), which stays in one team, so each
   // element still takes its writes in the buffer order n (bitwise); 72 teams were
   // ~half the device.
   constexpr int FC_UNP_CHUNK = 16;
@@ -2691,7 +2328,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
         }
         const int ni = iu - il + 1;
         const int nj = ju - jl + 1;
-        // r1mspeed-1102: this team's radial slice [cl, cu] of [il, iu]
+        // this team's radial slice [cl, cu] of [il, iu]
         const int cl = (il > ic0) ? il : ic0;
         const int cu = (iu < ic1) ? iu : ic1;
         const int nci = (cu >= cl) ? (cu - cl + 1) : 0;
@@ -2708,32 +2345,18 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
             int i = (idx - k*nji - j*nci) + cl;
             k += kl;
             j += jl;
-            // CUBE-VERTEX CORNER FILL: OWNERSHIP.  The face buffers were widened by ng
-            // along the seam (see buffs_fc.cpp) so the doubly-ghost corner block rides
-            // the face exchange.  Both flanking face buffers reach that block, but each
-            // panel only genuinely COVERS the half of it on its own side of the diagonal
-            // -- so write a doubly-ghost cell only from the neighbour whose panel
-            // actually contains that direction.  Decided here, from the RECEIVER's own
-            // geometry, which needs nothing from the sender.  Cells outside the corner
-            // block are unaffected, and a non-cubed-sphere run never enters this.
-            // ONLY the slots that were actually widened (buffs_fc.cpp): the x2 faces
-            // 8-15 and the x1x2 edges 16-23, whose seam normal is x2, and the x3 faces
-            // 24-31 and the x3x1 edges 32-39, whose seam normal is x3.  The edges are the
-            // ones that carry the fill into the corner's RADIAL GHOST layers.
-            // This test MUST NOT reach the x2x3 edge (40-47) or corner (48-55) buffers:
-            // their destinations are legitimately doubly-ghost, and gating them here
-            // SUPPRESSES the real edge and corner exchange -- which is exactly the bug
-            // that made a widening of ZERO cells still destroy the solution.
+        // cube-vertex corner fill: the face buffers were widened by ng along the seam, so
+        // both flanking buffers reach the corner block; each writes its own half
             const bool face_wide = (n >= 8 && n < 40);
-            // STAGGERING.  b.x2f lives on x2 FACES and b.x3f on x3 faces, so for those
-            // components je+1 / ke+1 is a REAL interior face, not a ghost.  Testing the
+            // STAGGERING. b.x2f lives on x2 FACES and b.x3f on x3 faces, so for those
+            // components je+1 / ke+1 is a REAL interior face, not a ghost. Testing the
             // cell bounds alone misclassifies it and suppresses a legitimate write --
             // which is why a widening of ZERO cells still destroyed the solution.
             const int jghi = je_ + ((v == 1) ? 1 : 0);
             const int kghi = ke_ + ((v == 2) ? 1 : 0);
             if (cs_vfill_ && face_wide &&
                 (j < js_ || j > jghi) && (k < ks_ || k > kghi)) {
-              // ONLY a CUBE VERTEX needs the fill.  At an ordinary corner the diagonal
+              // ONLY a CUBE VERTEX needs the fill. At an ordinary corner the diagonal
               // neighbour exists and its own buffer (40..55, unpacked LATER in this same
               // scalar n loop) is the correct filler; the panel-edge geometry used below
               // is not even valid there, because the block edge is not the panel edge.
@@ -2741,24 +2364,8 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
               const int sk = (k < ks_) ? 0 : 1;
               if (!IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m,
                                       40 + 2*(sj + 2*sk))) return;
-              // OWNERSHIP, exactly.  The corner ghost block is covered by the two
-              // flanking panels, split by the seam BETWEEN THEM, and in this panel's own
-              // gnomonic chart that seam is exactly the DIAGONAL.  Take P0 = +z, so
-              // tan(xi) = x/z and tan(eta) = y/z; the +x/+y panel boundary is the plane
-              // x = y, i.e. xi = eta.  So with a = s2*xi - pi/4 and b = s3*eta - pi/4
-              // measuring how far the cell lies beyond each panel edge, a > b means the
-              // direction belongs to the panel across the x2 face and a < b to the one
-              // across the x3 face.  The other seven vertices follow by reflection, which
-              // is what the s2, s3 signs are.  The test is COMPLEMENTARY by construction:
-              // one of the two flanking buffers writes every cell of the block, and
-              // neither writes a cell the other owns.  That matters because
-              // FillPanelCornersFC stops extrapolating the whole block once the fill is
-              // on -- a predicate with a gap would leave cells written by NOTHING.
-              //
-              // STAGGERING: b.x2f lives on x2 faces and b.x3f on x3 faces, so the
-              // component being written decides whether its own index is a face or a
-              // cell centre.  Half a cell is not negligible here: the two panels meet
-              // AT this diagonal.
+            // ownership: in this panel's gnomonic chart the seam between the two flanking
+            // panels is the diagonal of the corner block; each panel writes its own side
               const Real xi  = 0.25*M_PI*((v == 1)
                              ? LeftEdgeX(j-js_, nx2_, mbsz.d_view(m).x2min,
                                                       mbsz.d_view(m).x2max)
@@ -2804,28 +2411,18 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
     }
   });  // end par_for_outer
 
-  // Every face buffer is unpacked by this point, which is what the corner fill needs.
-  //
-  // THE COARSE ARRAY NEEDS THE SAME FILL.  cb's cube-vertex corner is written by NOTHING:
-  // its exchange is skipped as non-reciprocal exactly like the fine array's, but the fill
-  // only ever ran on b.  ProlongateFC then interpolates that block into the fine ghosts.
-  // A poison test -- setting cb's cube-vertex corner to 1e30 -- moves the prolongated
-  // fine EDGE halo by 24% and the fine corner likewise, so it IS read; nothing blew up
-  // only because the prolongation limiter clips it.  Measured on the refined iprob=11
-  // halo, cb's corner goes 2.09e-01 (i.e. |B| -- garbage) to 1.86e-03, and the fine halo
-  // follows: r x EDGE SEAM 2.3278e-03 -> 4.6508e-04, r x CORNER SEAM 1.8152e-02 ->
-  // 2.0911e-03.  Both then land at the SAME-LEVEL halo's own accuracy, which is the
-  // statement that a level boundary no longer degrades the seam halo.
+  // all face buffers are unpacked: fill the cube-vertex corners of the fine and (with
+  // multilevel) the coarse array
   if (pmy_pack->pmesh->use_cubed_sphere) {
     FillPanelCornersFC(b, false);
     if (pmy_pack->pmesh->multilevel) { FillPanelCornersFC(cb, true); }
   }
 
-  // layoutbug-1103: <mesh>/cs_seam_blockend = extend, the second pass (see the note in
+  // <mesh>/cs_seam_blockend = extend, the second pass (see the note in
   // RecvAndUnpackCC): repeat the exchange with the panel-clamped stencil table, at the
   // depth of the pack it repeats.
   if (cs_blockend_ext_ && !cs_ext_pass_ && pmy_pack->pmesh->use_cubed_sphere) {
-    if (cs_ext_q_) CsSeamExtPartner(b);   // seamexact-1103
+    if (cs_ext_q_) CsSeamExtPartner(b);
     cs_ext_pass_ = true;
     const int pd0 = pack_depth;
     pack_depth = last_pack_depth_;
@@ -2833,7 +2430,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
     (void) InitRecv(3);
     while (PackAndSendFC(b, cb) != TaskStatus::complete) {}
     while (RecvAndUnpackFC(b, cb) != TaskStatus::complete) {}
-    // seamexact-1103: wait on this pass's own sends here.  A caller that cleared its
+    // wait on this pass's own sends here. A caller that cleared its
     // sends before unpacking (rad_m1_coupling.cpp FluidRefresh) would otherwise leave
     // them in flight into its next exchange, which reuses the buffers and the requests.
     (void) ClearSend();
@@ -2846,20 +2443,9 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
 
 //----------------------------------------------------------------------------------------
 //! \fn void MeshBoundaryValuesFC::CsSeamExtPartner
-//! \brief seamexact-1103: <mesh>/cs_seam_blockend = extend with > 2 MeshBlocks per panel
-//! side.  The extended pass's partner interpolation (x3f at an x2-face centre, x2f at an
-//! x3-face centre: a 4-point Lagrange in the along-seam direction of a 4-point Lagrange
-//! across it) is centred only up to ng-1 cells into the sender's along-seam ghosts; at
-//! the outermost ghost it would need face ng+2 beyond the block end and is one-sided,
-//! where one block per panel interpolates.  The resample reaches that ghost wherever the
-//! block end is off the panel midline (the seam map shifts the source position by up to
-//! ~a cell there), so 4x4 and finer layouts differed from 1x1 at truncation level
-//! (~1e-7 in B per exchange at nghost = 2; nghost = 3 hid it).  Here every block
-//! evaluates the interpolants on its ACTIVE faces with the extended pass's own bounds,
-//! and a same-panel ghost exchange (plain scalars) hands each block its neighbours'
-//! values at the along-seam ghost positions; the extended pass reads them there
-//! (FCSeamPack::q_partner): the very numbers one block per panel computes.  Called after
-//! the first pass, so every face it reads is in place.
+//! \brief With <mesh>/cs_seam_blockend = extend and more than 2 MeshBlocks per panel
+//! side, recomputes the partner-component interpolation of the extended seam pass where
+//! its 4-point stencils reach beyond the sender's valid along-seam ghosts.
 
 void MeshBoundaryValuesFC::CsSeamExtPartner(DvceFaceFld4D<Real> &b) {
   auto &id = pmy_pack->pmesh->mb_indcs;

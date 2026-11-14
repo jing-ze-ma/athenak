@@ -1,15 +1,12 @@
 //========================================================================================
-// AthenaK astrophysical fluid dynamics code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file bvals_cc_pack.inc
-//! \brief d6fast4-1112: the body of the PackAndSendCC team kernel (pack_, moved
-//! verbatim from bvals_cc.cpp).  With BVCC_PACK_KSEAM / BVCC_PACK_KWB defined (CUDA)
-//! kseam_ and kwb_ are compile-time constants inside, so nvcc drops the dead seam /
-//! wb_seam branches as the std::true_type / false_type arguments do on HIP; otherwise
-//! the generic (HIP) signature.
-//! Needs BVCC_PACK_NAME defined.
+//! \brief Body of the PackAndSendCC team kernel, including the cubed-sphere seam
+//! transform and along-seam resample. With BVCC_PACK_KSEAM / BVCC_PACK_KWB defined
+//! (CUDA) kseam_ and kwb_ are compile-time constants. Needs BVCC_PACK_NAME defined.
 #if defined(BVCC_PACK_KSEAM)
   auto BVCC_PACK_NAME = KOKKOS_LAMBDA(const TeamMember_t &tmember) BV_CUDA_INLINE {
     constexpr bool kseam_ = BVCC_PACK_KSEAM;
@@ -24,12 +21,12 @@
     const int n = (lr_ - m*(nnghbr*nvar))/nvar;
     const int vl = (lr_ - m*(nnghbr*nvar) - n*nvar);
 #if defined(KOKKOS_ENABLE_CUDA)
-    const int v = BvVarOf(vmask_, vl);   // dhjcuda-1112 (bvals.hpp)
+    const int v = BvVarOf(vmask_, vl);   // (bvals.hpp)
 #else
     const int v = vlst_.v[vl];
 #endif
 
-    // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
+    // only load buffers when neighbor exists. CUBED-SPHERE CUBE VERTEX: skipped on
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
     if (nghbr.d_view(m,n).gid >= 0 &&
         !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n)) &&
@@ -64,7 +61,7 @@
       int nj = ju - jl + 1;
       int nk = ku - kl + 1;
       int nkj  = nk*nj;
-      // speed2-1031 bvsplit: this team's chunk of the (k, j) range
+      // bvsplit: this team's chunk of the (k, j) range
       const int q0_ = static_cast<int>((static_cast<int64_t>(nkj)*sp_)/nsp_);
       const int q1_ = static_cast<int>((static_cast<int64_t>(nkj)*(sp_ + 1))/nsp_);
       // the window narrows the LOOP only: ni and the index map stay as they were
@@ -94,13 +91,11 @@
         int sj = 1, sk = nj;
         int vv = v;
         bool cs_xform = false;
-        // cs-s4-1017: the FACE-NORMAL pair transform of cs_perm_pairs (see below) and
+        // cs- the FACE-NORMAL pair transform of cs_perm_pairs (see below) and
         // the half-range quad of cs_hrq0
         bool cs_fxform = false;
         bool cs_hrquad = false;
-        // THE COMPONENT ROLE of slot v: is it a member of a tangential vector pair, and
-        // which slots hold the pair's x2 (va_) and x3 (vb_) members.  Without a table
-        // (SetVectorPairs) this is the historical rule, slots (IVY, IVZ) of any array.
+          // component role of slot v: member of a tangential vector pair?
         bool vec_ = (v == IVY) || (v == IVZ);
         int va_ = IVY, vb_ = IVZ;
         if (vtab_) {
@@ -114,13 +109,8 @@
             }
           }
         }
-        // A cross-panel neighbour at a COARSER level is served from the restricted
-        // array ca, not a.  Before this existed the whole branch packed NOTHING, so the
-        // buffer kept its zero-initialised contents and the coarse block read a ghost
-        // state of exactly ZERO across the seam.  Invisible to any gate with v = 0
-        // (zero IS the right answer there) and invisible to hydro (a dimensionally
-        // split PLM sweep never reconstructs through a corner ghost), but the corner
-        // EMF of the CT update reads DIAGONALLY, which is why it only showed in MHD.
+          // a cross-panel neighbour at a coarser level is served from the restricted
+          // (coarse) array
         const bool cs_coar = (nghbr.d_view(m,n).lev < mblev.d_view(m));
         int cs_srcpanel = 0, cs_dstpanel = 0;
         // 0 = no along-seam resample; 2 = x2-face seam (resample in k);
@@ -133,15 +123,8 @@
           PanelBoundaries pb;
           pb = GetPanelBoundary(my_panel, ngh.panel);
 
-          // x1 is RADIAL on the cubed sphere and no seam crosses it, so i and IVX pass
-          // through untouched. The panel-tangential pair is a = x2 (j, IVY) and
-          // b = x3 (k, IVZ). See the axis note in mesh.hpp.
-          // The INDEX map across a seam is a signed permutation and is handled below.
-          // The VECTOR COMPONENTS are not: the two charts carry different tangent bases
-          // at the same physical point, differing by a shear that is O(1) away from the
-          // seam midline. They are transformed properly, per source cell, by
-          // cubed_sphere::TransformMomentum -- see the note there. IVX is radial and
-          // common to both charts, so it passes through.
+          // x1 is radial and no seam crosses it: i and IVX pass unchanged; the
+          // tangential pair is transformed to the destination basis
           cs_xform = vec_;
           cs_dstpanel = ngh.panel;
           cs_srcpanel = my_panel;
@@ -151,10 +134,8 @@
           int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
           int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
           if (pb.swap_ax == 1) {
-            // Transpose the two tangential axes IN THE BUFFER, so the receiver's generic
-            // unpack lands them on its own j,k. The receiver's (nj,nk) are this block's
-            // (nk,nj), which is why the i stride ni and the per-variable stride are the
-            // same either way.
+          // transpose the two tangential axes in the buffer across a swap seam, so the
+          // receiver's generic unpack lands the data on its own j,k
             sj = nk;
             sk = 1;
           }
@@ -166,27 +147,13 @@
             ak = -1;
             bk = kl + ku;
           }
-          // cs_perm_pairs (default false): the tangential pairs of this object are
-          // FACE-NORMAL components (v.nhat_xi, v.nhat_eta: the implicit M1 work array,
-          // stage CS2), not covariant ones.  cs-s4-1017: they are re-expressed on the
-          // DESTINATION panel's face normals at the source cell's own point
-          // (cubed_sphere::TransformFieldToDstNormals: normals -> contravariant ->
-          // Cartesian -> destination normals), the face-centred field's transform.
-          // Until cs-s4-1017 they took the signed AXIS permutation of the index map
-          // instead: exact for the SEAM-NORMAL component (the seam plane is common to
-          // both charts), but the ALONG-SEAM one came out in the source panel's mirrored
-          // basis, O(1) wrong where the vector has a seam-normal part (rad_m1
-          // cs_vec_check: 0.95-1.07 of |v| at N = 8..64, not converging).  No cs
-          // operator reads the along-seam component of a seam ghost today, so the change
-          // is round-off in what runs (the seam-normal component, now through the
-          // arithmetic).  These
-          // objects run without the along-seam resample (cs_noresample), so the
-          // transform is taken at the single source cell (cs_seam = 0 below).
+          // cs_perm_pairs: the tangential pairs are face-normal components (implicit M1
+          // work array), transformed with cubed_sphere::TransformFieldToDstNormals
           if (cperm_ && vec_) {
             cs_xform = false;
             cs_fxform = true;
           }
-          // cs-s4-1017: the half-range quad (cs_hrq0, see bvals.hpp)
+          // cs- the half-range quad (cs_hrq0, see bvals.hpp)
           if (hrq_ >= 0 && v >= hrq_ && v < hrq_ + 4) {
             cs_xform = false;
             cs_fxform = false;
@@ -201,61 +168,15 @@
             signvar = rv ? -1 : 1;
           }
 
-          // WHICH BUFFER IS THIS, and therefore which way does the along-seam resample
-          // run?  Read it off the SLOT INDEX.  Slots are laid out (nghbr_index.hpp):
-          // 0-7 x1 faces, 8-15 x2 faces, 16-23 x1x2 edges, 24-31 x3 faces, 32-39 x3x1
-          // edges, 40-47 x2x3 edges, 48-55 corners.  A buffer whose only tangential
-          // ghost direction is x2 has its seam normal along x2 and resamples in x3
-          // (cs_seam = 2), and vice versa; one that is ghost in BOTH tangential
-          // directions -- the x2x3 edges and the corners -- has no single along-seam
-          // axis and stays a plain copy.
-          //
-          // This used to be inferred from the buffer EXTENTS, as `nj == ng && nk > ng`.
-          // For cell-centred data that happens to give the same answer, but the identical
-          // test in bvals_fc.cpp did NOT: a face-centred buffer at a coarse/fine boundary
-          // carries one extra layer in the direction its component is staggered in, so
-          // the equality failed and the resample was silently skipped there.  Both are
-          // written the same way now so the two cannot drift apart again.
+          // along-seam direction from the buffer slot (nghbr_index.hpp): x2-face type
+          // buffers resample in x3 (cs_seam = 2), x3-face type in x2 (cs_seam = 3)
           if (n >= 8 && n < 24) {
             cs_seam = 2;
           } else if (n >= 24 && n < 40) {
             cs_seam = 3;
           } else if (n >= 40 && n < 56) {
-            // x2x3 EDGE (40-47) and x1x2x3 CORNER (48-55) buffers.  Both are ghost in
-            // BOTH tangential directions, so the slot alone does not name an along-seam
-            // axis -- but the NEIGHBOUR TABLE does, and the treatment is identical.
-            //
-            // The CORNER half was added after the edges: x1 is RADIAL, so a corner ghost
-            // is a radial ghost cell that is also tangentially ghost in x2 and x3, read
-            // by multi-D stencils near a radial block boundary at a seam and by
-            // prolongation.  bvals_fc.cpp already covered slots 40-55 in one test; this
-            // brings bvals_cc.cpp to the same coverage.  Measured (static corner scan,
-            // iprob 15, max |ghost - exact| over corner ghosts with exactly one seam
-            // flank, 2 radial blocks): n = 32 per panel, 2x2 blocks 1.407e-4 -> 7.99e-8,
-            // 4x4 blocks 7.414e-4 -> 5.08e-6; n = 64, 2x2 3.498e-5 -> 4.28e-9, 4x4
-            // 3.538e-4 -> 5.64e-7 -- i.e. onto the x2x3 EDGE-seam bin to every digit.
-            // At 1 x 1 block per panel every cross-panel corner is a CUBE VERTEX (both
-            // flanks are seams), so cs_seam stays 0 there and 1 x 1 is bitwise unchanged.
-            //
-            // x2x3 EDGE buffers.  These used to be left as a plain copy, on the grounds
-            // that a doubly-ghost buffer "has no single along-seam axis".  It does:
-            // EXACTLY ONE of the two flanking faces is a panel seam, because if both were
-            // this would be a CUBE VERTEX and the exchange is skipped altogether
-            // (IsCubeVertexCorner).  The seam normal is that face's axis and the resample
-            // runs along the other one, exactly as for the face buffer next to it.
-            //
-            // Leaving it a plain copy is the SECOND half of the 4x4-blocks-per-panel
-            // defect (tests_seam4/README.md): with one block per panel every cross-panel
-            // x2x3 edge IS a cube vertex, so nothing was ever wrong there, but as soon as
-            // a panel is split these are ordinary diagonal ghosts with a real donor --
-            // and they are what the metric cross term of the transverse operator reads,
-            // which is why the EXPLICIT operator did not improve when only the face
-            // halo was fixed.  Measured (static halo scan, n = 64 per panel, max
-            // |ghost - exact| over the x2x3 edge ghosts that have a seam flank):
-            // 2 x 2 blocks 3.50e-5 -> 5.6e-7, 4 x 4 blocks 3.54e-4 -> 5.6e-7.
-            // Slot -> flanking tangential faces.  x2x3 edge: n = 40 + n1 + 2*(iy>0) +
-            // 4*(iz>0).  Corner: n = 48 + (ix>0) + 2*(iy>0) + 4*(iz>0) -- bit 0 is the
-            // RADIAL side and carries no tangential information.
+            // x2x3 edge (40-47) and corner (48-55) buffers are ghost in both tangential
+            // directions; the along-seam axis is taken from the neighbour table
             int fj, fk;
             if (n < 48) {
               const int q = n - 40;
@@ -278,12 +199,7 @@
               cs_seam = 3;
             }
           }
-          // THE RESAMPLE NEEDS 3 CELLS ALONG THE SEAM -- see the note in bvals_fc.cpp,
-          // where this degeneracy was measured.  The stencil bounds invert when the
-          // source's along-seam ACTIVE extent is under 3, which happens on the COARSE
-          // array as soon as cnx = nx/2 < 3, and MeshBlocks are allowed down to 4 cells.
-          // No cell-centred gate resolves a difference here, but the code shape is the
-          // same and reading unfilled ghost is not something to leave to luck.
+          // the resample needs 3 cells along the seam
           const int seam_extent = cs_coar
               ? ((cs_seam == 2) ? cs_indcs.cnx3 : cs_indcs.cnx2)
               : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
@@ -296,29 +212,8 @@
           if (vec_) signvar = -1;
         }
 
-        // THE SEAM GEOMETRY IS HOISTED OUT OF THE RADIAL LOOP.
-        //
-        // x1 is RADIAL on the cubed sphere and no seam crosses it, so (xi,eta) -- and
-        // therefore EVERYTHING the transform and the resample compute from it -- is the
-        // same for every cell in the i loop. It used to be recomputed per cell: four
-        // PanelFrame switches, four tan/sqrt pairs, a PanelToCart and a CartToPanel with
-        // two atan, plus the resample's own atan/tan, once for every radial cell of every
-        // seam buffer. Profiled on a 300-cycle dhj MHD run, this pack cost 14.9x per call
-        // on the cubed sphere against spherical polar, a quarter of the whole GPU time.
-        //
-        // Everything below is per (kk,jj) and none of it depends on the data, so the
-        // hoist is BITWISE EXACT: each per-cell floating-point expression is unchanged
-        // and still evaluated in the same order.  MEASURED on that run: this kernel went
-        // 2267 ms -> 254 ms, 8.9x, for no change in any output byte.
-        //
-        // THE SAME HOIST IN bvals_fc.cpp MADE IT 6x SLOWER and is deliberately NOT there.
-        // The face-centred pack needs THREE transforms per column (one per resample
-        // stencil cell) rather than one, and its loop is flat over (k,j,i); turning it
-        // into TeamThreadRange(k,j) x ThreadVectorRange(i) to get a place to hoist into
-        // both serialises the radial direction (the TeamPolicy's vector length is 1) and
-        // pushes the per-thread private segment from 908 to 2224 bytes.  Measured
-        // 1432 ms -> 8596 ms.  Any retry needs an explicit vector length on the policy
-        // and a way to carry the three transforms without a per-thread array.
+          // seam geometry depends on (xi,eta) only and is computed once per (k,j),
+          // outside the radial loop
         const int js_ = cs_coar ? cs_indcs.cjs : cs_indcs.js;
         const int ks_ = cs_coar ? cs_indcs.cks : cs_indcs.ks;
         const int nx2_ = cs_coar ? cs_indcs.cnx2 : cs_indcs.nx2;
@@ -334,36 +229,18 @@
           int kk = ak*k + bk;
           int jj = aj*j + bj;
 
-          // ALONG-SEAM RESAMPLE. Across a panel seam the two charts share the seam-normal
-          // coordinate exactly but NOT the seam-parallel one. Writing the seam-normal
-          // angle of a source cell as n and its seam-parallel angle as a, the physical
-          // point of that cell sits at seam-parallel angle atan(tan(a)/tan|n|) in the
-          // DESTINATION chart, not at a. So the plain index copy hands each ghost cell
-          // the state of a point up to half a cell (layer 0) or ~1.5 cells (layer 1) away
-          // along the seam -- an offset that does NOT shrink with resolution in cell
-          // units, which makes the ghost value O(dx) wrong and the acceleration it drives
-          // O(1)... i.e. the seam is only first-order accurate.
-          //
-          // Inverting that map, the value a ghost needs is the source field at
-          // seam-parallel angle atan(tan(a)*tan|n|), which is always INSIDE the source
-          // cell's own angle (|tan n| < 1), so the stencil never leaves the source block.
-          // The same formula covers both orientations: a reversed seam flips the sign of
-          // both a and the target, and the index reversal above already carries that.
-          // Quadratic (3-point) Lagrange keeps the ghost error O(dx^3), which is what the
-          // second-order flux difference needs.
-          //
-          // The stencil cells and their weights are a function of (kk,jj) alone. With no
-          // resample there is a single "stencil cell", the source cell itself.
+          // along-seam resample: the two charts share the seam-normal coordinate but not
+          // the seam-parallel one; a source cell at (n, a) lies at seam-parallel angle
+          // atan(tan(a)/tan|n|) of the destination chart, so ghost values are
+          // interpolated along the seam (3-point stencil, or linear with cs_lin_resample)
           int kst[3] = {kk, kk, kk};
           int jst[3] = {jj, jj, jj};
           int nst = 1;
           Real wm = 1.0, w0 = 0.0, wp = 0.0;
-          // Is the stencil INTERPOLATING?  `b` below is clamped to the source's active
-          // range, so `pos` can fall outside [b, b+2] and the quadratic then
-          // EXTRAPOLATES -- see the note on the monotonicity limit in seamval().
+          // is the stencil interpolating (b is clamped to the source's active range)?
           bool cs_interp = true;
-          Real wpos = 0.0;    // wball-1104 wb_seam: the target's along-seam index position
-          int winw = 0;       //   and the inward seam-normal step in the source chart
+          Real wpos = 0.0;    // wb_seam: the target's along-seam index position
+          int winw = 0;       // and the inward seam-normal step in the source chart
           if (cs_seam != 0) {
             const Real xi  = 0.25*M_PI*CellCenterX(jj-js_, nx2_, x2mn, x2mx);
             const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, nx3_, x3mn, x3mx);
@@ -380,11 +257,8 @@
               sc = jj;
               blo = js_; bhi = js_ + nx2_ - 3;
             }
-            // layoutbug-1103 (<mesh>/cs_seam_blockend = extend, second pass): at an
-            // INTERIOR block end along the seam the stencil continues into this block's
-            // own along-seam ghosts (same-panel copies of the next block's active cells,
-            // fresh after the first pass), up to ng cells, so the stencil is the one a
-            // single block per panel would use: clamped to the PANEL, not the block.
+          // <mesh>/cs_seam_blockend = extend (second pass): at an internal block end the
+          // stencil may extend into the source block's ghost cells
             if (ext_ && !cs_coar) {
               const Real w_ = (cs_seam == 2) ? (x3mx - x3mn) : (x2mx - x2mn);
               const Real x0_ = (cs_seam == 2) ? x3mn : x2mn;
@@ -393,14 +267,8 @@
               if (ib_ > 0) {blo -= ngx_;}
               if (ib_ < nbp_ - 1) {bhi += ngx_;}
             }
-            // THE CLAMP IS TO THE SOURCE'S ACTIVE RANGE, NOT THE BUFFER'S.  For a face or
-            // x1-edge buffer the two coincide (the along-seam extent of such a buffer IS
-            // the active range), so this is bitwise for everything that resampled before;
-            // an x2x3 edge buffer is only ng deep along the seam and clamping to that
-            // would extrapolate from two cells while the source block holds the data.
-            // The stencil reads the array directly, not the buffer, so any active cell is
-            // available.  bvals_fc.cpp says the same thing about its own stencil table.
-            // offset of this block in the panel, for a layout-independent seam position
+          // the stencil is clamped to the active range of the source block (not of the
+          // buffer), since it reads the array directly
             const Real wp_ = (cs_seam == 2) ? (x3mx - x3mn) : (x2mx - x2mn);
             const Real xp_ = (cs_seam == 2) ? x3mn : x2mn;
             const int spn_ = static_cast<int>(floor((xp_ + 1.0)/wp_ + 0.5))
@@ -409,7 +277,7 @@
                                               (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang);
             wpos = pos;
             winw = (nrm > 0.0) ? -1 : 1;
-            int b = cs_seam::SeamRound(pos) - 1;   // fc2vtx-1103: tie-safe
+            int b = cs_seam::SeamRound(pos) - 1;   // tie-safe
             b = (b < blo) ? blo : ((b > bhi) ? bhi : b);
             const Real u = pos - static_cast<Real>(b + 1);
             cs_interp = (u >= -1.0) && (u <= 1.0);
@@ -432,12 +300,8 @@
             }
           }
 
-          // The tangent-basis geometry of each stencil cell. Across a panel seam the two
-          // charts carry different tangent bases at the same physical point, differing by
-          // a shear that is O(1) away from the seam midline, so the two tangential
-          // momenta must be re-expressed rather than permuted -- see cubed_sphere::
-          // TransformMomentum. IVX is radial, common to both charts, and passes through,
-          // as does every scalar; those take the plain copy path and need no geometry.
+          // tangent-basis geometry of each stencil cell (the two charts have different
+          // tangent bases at the same point)
           cubed_sphere::SeamXform xf[3];
           if (cs_xform) {
             for (int s=0; s<nst; ++s) {
@@ -446,7 +310,7 @@
               cubed_sphere::SeamXformAt(cs_srcpanel, cs_dstpanel, xis, etas, xf[s]);
             }
           }
-          // cs-s4-1017: the face-normal pair (cs_perm_pairs), one source cell (nst = 1)
+          // cs- the face-normal pair (cs_perm_pairs), one source cell (nst = 1)
           cubed_sphere::SeamFieldXform fxf;
           if (cs_fxform) {
             const Real xis = 0.25*M_PI*CellCenterX(jst[0]-js_, nx2_, x2mn, x2mx);
@@ -454,10 +318,8 @@
             cubed_sphere::SeamFieldXformAt(cs_srcpanel, cs_dstpanel, xis, etas, fxf);
           }
 
-          // Value of variable v at stencil cell s, radial index i. Both tangential
-          // momenta of the source cell are needed to make either one, so this reads two
-          // components and selects. Away from a panel seam it is exactly the old
-          // `a(...)*signvar`. Only loads and the O(1) half of the transform remain here.
+          // value of variable v at stencil cell s, radial index i (tangential pairs
+          // transformed to the destination basis)
           auto sval = [&](const int s, const int i) BV_CUDA_INLINE {
             const int kq = kst[s], jq = jst[s];
             if (cs_fxform) {
@@ -477,61 +339,9 @@
             return (v == va_) ? m2o : m3o;
           };
 
-          // MONOTONICITY LIMIT, threshold-free.
-          //
-          // The rule is the standard one: monotone data must give a monotone
-          // interpolant.  A SHOCK is monotone across the stencil, so clamping to the
-          // stencil's own range stops the overshoot that puts a negative density in a
-          // ghost cell.  A smooth EXTREMUM is NOT monotone, and is left alone --
-          // clipping there is the classic way a limiter destroys accuracy (measured:
-          // 1.4x on the smooth tangent-seam halo).  On smooth monotone data the
-          // clamp is a numerical NO-OP, because the quadratic already lies inside the
-          // range, so nothing is paid for it.
-          //
-          // It must also be skipped when the resample is EXTRAPOLATING -- `b` is
-          // clamped at the ends of the source range, so `pos` can fall outside
-          // [b, b+2], where the correct value legitimately lies outside the node
-          // range; clamping there cost 3.5x on the smooth seam halo.
-          //
-          // TWO EARLIER ATTEMPTS FAILED and are recorded so they are not retried: an
-          // UNCONDITIONAL clamp (cost 3.5x, the extrapolation case), and a
-          // second-difference roughness test gated on a RELATIVE span
-          // (hi-lo) > 0.1*(|hi|+|lo|), which fires spuriously wherever the stencil
-          // straddles ZERO -- it triggered ten million times on a smooth run.
-          //
-          // CELL-CENTRED: clamp for every INTERPOLATING stencil.  The face-centred twin
-          // guards this with "monotone stencil AND interpolating"; here the MONOTONE half
-          // must be dropped, because a blast cap has a FLAT TOP, so a stencil astride its
-          // edge is NOT monotone, and a guard meant for smooth extrema was then skipping
-          // exactly the cells that needed clamping.  Non-monotone does not imply smooth.
-          // Measured on iprob=12: with the monotone guard, a VERTEX-centred blast still
-          // went entirely NaN at contrast 100; without it, it survives 1000.
-          //
-          // The INTERPOLATING half must stay.  It used to be dropped as well, and that is
-          // HALF of the 4x4-MeshBlocks-per-panel seam defect (the other half is the x2x3
-          // edge buffers above; see tests_seam4/README.md): `b` is clamped to the
-          // source's ACTIVE range, which is one MeshBlock, not the panel.  The
-          // along-seam resample pulls the donor position toward the PANEL CENTRE by up
-          // to (layer + 1/2) cells, so at an
-          // interior block end -- an end that exists only when a panel is split more
-          // finely than 2 x 2, since at 2 x 2 the interior end sits exactly on the panel
-          // midline where the pull is zero -- the stencil runs off the block and the
-          // quadratic extrapolates.  Clamping an
-          // EXTRAPOLANT to its node range replaces it by the nearest node, i.e. by a
-          // FIRST-ORDER value, and that is what wrecked the halo.  Measured on the static
-          // halo scan (cs_test iprob 15, <problem>/seam_halo_scan, n = 32 per panel,
-          // max |ghost - exact|):
-          //
-          //   blocks/panel   clamped unconditionally   clamped only when interpolating
-          //   1 x 1          4.103e-6                  4.103e-6   (unchanged, bitwise)
-          //   2 x 2          4.671e-5                  4.103e-6   (= 1 x 1 exactly)
-          //   4 x 4          6.950e-4                  5.077e-6
-          //
-          // The residual 1.2x at 4 x 4 is the extrapolation itself, which is O(dx^3) and
-          // harmless; the 137x was the clamp.
-          // <mesh>/cs_seam_rho_guard (see mesh.cpp): the plain copy of the source cell,
-          // with its own basis transform, when the resampled DENSITY and the source
-          // cell's density differ by more than the factor rg_.  Off (rg_ = 0): bitwise.
+          // monotonicity limit: where the stencil data are monotone the resampled value
+          // is clamped to their range (prevents overshoot at shocks); smooth extrema are
+          // left unlimited
           cubed_sphere::SeamXform xfc;
           const bool rgon = (rg_ > 0.0) && (cs_seam != 0) && (v >= 0);
           if (rgon && cs_xform) {
@@ -560,7 +370,7 @@
             cubed_sphere::ApplyMomentumXform(xfc, my_, mz_, m2o, m3o);
             return (v == va_) ? m2o : m3o;
           };
-          // wball-1104 wb_seam: the state of stencil cell s walked to the ghost's potential
+          // wb_seam: the state of stencil cell s walked to the ghost's potential
           // (density for v = 0, total energy for v = wbsien_); see bvals.hpp
           const bool wbsv = static_cast<bool>(kwb_) && wbs_ && (cs_seam != 0) &&
                             !cs_coar && (v == 0 || v == wbsien_);
@@ -643,7 +453,7 @@
           // Inner (vector) loop over i
           // copy directly into recv buffer if MeshBlocks on same rank
 
-          // seamval() reads u0 or coarse_u0 according to cs_coar, so one expression
+          // seamval reads u0 or coarse_u0 according to cs_coar, so one expression
           // serves a neighbour at ANY level.
           if (nghbr.d_view(m,n).rank == my_rank) {
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
@@ -664,7 +474,6 @@
             });
           }
         });
-
       } else {   // normal boundary exchange
       // Middle loop over k,j
       Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, q0_, q1_), [&](const int idx) {

@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License, see LICENSE file for details
 //========================================================================================
 //! \file bfield_bcs.cpp
-//  \brief
+// \brief
 
 #include <cstdlib>
 #include <iostream>
@@ -15,7 +15,7 @@
 #include "mhd/mhd.hpp"
 
 //----------------------------------------------------------------------------------------
-//! \!fn void BoundaryValues::BFieldBCs()
+//! \!fn void BoundaryValues::BFieldBCs
 //! \brief Apply physical boundary conditions for all field variables at faces of MB which
 //! are at the edge of the computational domain
 

@@ -17,9 +17,9 @@
 #include "bvals.hpp"
 
 //----------------------------------------------------------------------------------------
-//! \fn void MeshBoundaryValuesCC::PackAndSendFlux()
+//! \fn void MeshBoundaryValuesCC::PackAndSendFlux
 //! \brief Pack restricted fluxes of cell-centered variables at fine/coarse boundaries
-//! into boundary buffers and send to neighbors for flux-correction step.  These fluxes
+//! into boundary buffers and send to neighbors for flux-correction step. These fluxes
 //! (e.g. for the conserved hydro variables) live at cell faces.
 //!
 //! This routine packs ALL the buffers on ALL the faces simultaneously for ALL the
@@ -244,7 +244,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxCC(DvceFaceFld5D<Real> &flx) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RecvBuffers()
+//! \fn void RecvBuffers
 //! \brief Unpack boundary buffers for flux correction of CC variables.
 
 TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxCC(DvceFaceFld5D<Real> &flx) {
@@ -358,21 +358,21 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxCC(DvceFaceFld5D<Real> &flx) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void BoundaryValuesCC::InitRecvFlux
+//! \fn void BoundaryValuesCC::InitRecvFlux
 //! \brief Posts non-blocking receives (with MPI) for boundary communication of fluxes of
 //! cell-centered variables, which are communicated at FACES of MeshBlocks at the SAME
-//! levels.  This is different than for fluxes of face-centered vars.
+//! levels. This is different than for fluxes of face-centered vars.
 
 TaskStatus MeshBoundaryValuesCC::InitFluxRecv(const int nvars) {
 #if MPI_PARALLEL_ENABLED
-  // detfence-1020: the receive buffers are still READ by the previous exchange's unpack
+  // the receive buffers are still READ by the previous exchange's unpack
   // kernel (queued on the device stream, not yet run when the host gets here), and a
   // receive posted now lets an early neighbour's NEXT message (GPU-aware MPI writes the
   // device buffer directly) overwrite them first: the ghosts then take some of the next
-  // exchange's values.  Back-to-back exchanges of one boundary object with no host sync
+  // exchange's values. Back-to-back exchanges of one boundary object with no host sync
   // in between (the implicit Krylov / transverse halos) hit this at >= 12 ranks on
   // several nodes (global He giant, Viper 24 ranks: run-to-run differences from the
-  // first ic_rad relax pass).  Wait for the queued kernels before the first receive is
+  // first ic_rad relax pass). Wait for the queued kernels before the first receive is
   // posted; no arithmetic changes (bitwise the old binary whenever it was not raced).
   if (global_variable::nranks > 1) {Kokkos::fence();}
   int &nmb = pmy_pack->nmb_thispack;
@@ -384,7 +384,7 @@ TaskStatus MeshBoundaryValuesCC::InitFluxRecv(const int nvars) {
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       // only post receives for neighbors on FACES at FINER level
-      // this is the only thing different from BoundaryValuesFC::InitRecvFlux()
+      // this is the only thing different from BoundaryValuesFC::InitRecvFlux
       if ( (nghbr.h_view(m,n).gid >=0) &&
            (nghbr.h_view(m,n).lev > pmy_pack->pmb->mb_lev.h_view(m)) &&
            ((n<16) || ((n>=24) && (n<32))) ) {

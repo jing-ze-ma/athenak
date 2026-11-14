@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License, see LICENSE file for details
 //========================================================================================
 //! \file buffs_fc.cpp
-//  \brief functions to allocate and initialize buffers for face-centered variables
+// \brief functions to allocate and initialize buffers for face-centered variables
 
 #include <cstdlib>
 #include <iostream>
@@ -19,11 +19,11 @@
 //----------------------------------------------------------------------------------------
 //! \fn void MeshBoundaryValuesFC::InitSendIndices
 //! \brief Calculates indices of cells used to pack buffers and send FC data for buffers
-//! on same/coarser and finer levels.  Three sets of indices are needed for each of the
+//! on same/coarser and finer levels. Three sets of indices are needed for each of the
 //! three components (x1f,x2f,x3f) of face-centered fields.
 //!
 //! The arguments ox1/2/3 are integer (+/- 1) offsets in each dir that specifies buffer
-//! relative to center of MeshBlock (0,0,0).  The arguments f1/2 are the coordinates
+//! relative to center of MeshBlock (0,0,0). The arguments f1/2 are the coordinates
 //! of subblocks within faces/edges (only relevant with SMR/AMR)
 
 void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
@@ -34,7 +34,7 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
   const bool cs_vfill = pmy_pack->pmesh->cs_vertex_fill;
 
   // set indices for sends to neighbors on SAME level
-  // Formulae same as in LoadBoundaryBufferSameLevel() in src/bvals/fc/bvals_fc.cpp
+  // Formulae same as in LoadBoundaryBufferSameLevel in src/bvals/fc/bvals_fc.cpp
   // for uniform grid: face-neighbors take care of the overlapping faces
   if ((f1 == 0) && (f2 == 0)) {  // this buffer used for same level (e.g. #0,4,8,12,...)
     auto &isame = buf.isame;       // indices of buffer for neighbor same level
@@ -113,28 +113,28 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
       if (ox3 > 0) {isame[2].bke++;}
       if (ox3 < 0) {isame[2].bks--;}
     }
-    // CUBE-VERTEX CORNER FILL.  A cubed-sphere panel corner is a CUBE VERTEX where only
+    // CUBE-VERTEX CORNER FILL. A cubed-sphere panel corner is a CUBE VERTEX where only
     // THREE panels meet, so its ng x ng corner ghost block has no diagonal neighbour and
-    // its exchange is skipped (see IsCubeVertexCorner).  That block is covered by the
+    // its exchange is skipped (see IsCubeVertexCorner). That block is covered by the
     // TWO FLANKING panels, split by a diagonal, and each flanking panel's data for it
     // lies INSIDE that panel's own active corner block -- but the face buffer's
     // destination stops at the active along-seam range, so it is never sent and the
-    // corner has to be extrapolated.  Widen the x2/x3 FACE buffers by ng at BOTH ends of
+    // corner has to be extrapolated. Widen the x2/x3 FACE buffers by ng at BOTH ends of
     // the along-seam direction so the corner block rides the existing face exchange:
     // MPI-safe by construction, no new slot, no new tag.
     //
-    // Send and receive apply the SAME rule, so ndat matches on both sides.  The pack
+    // Send and receive apply the SAME rule, so ndat matches on both sides. The pack
     // reads only ACTIVE source data even for these cells, because the along-seam
     // resample clamps its stencil to the source's active bounds (see `bs` in
-    // bvals_fc.cpp).  Ownership -- which of the two flanking panels supplies a given
+    // bvals_fc.cpp). Ownership -- which of the two flanking panels supplies a given
     // corner cell -- is decided at UNPACK from the receiver's own geometry.
     if (cs_vfill) {
       // The x1x2 and x3x1 EDGE buffers are widened by the same rule, which is what
       // carries the fill into the corner block's RADIAL GHOST layers -- the buffer that
-      // reaches a triply-ghost cell has to be ghost in x1 already.  Their seam normal is
+      // reaches a triply-ghost cell has to be ghost in x1 already. Their seam normal is
       // the same as the flanking face's (bvals_fc.cpp reads cs_seam off the slot index,
       // and 16-23 go with the x2 faces, 32-39 with the x3 faces), so the along-seam
-      // resample carries them unchanged.  The x2x3 edges and the corners are ghost in
+      // resample carries them unchanged. The x2x3 edges and the corners are ghost in
       // BOTH tangential directions and have no along-seam axis -- they are never widened.
       for (int i=0; i<=2; ++i) {
         if (ox2 != 0 && ox3 == 0) {          // x2 face or x1x2 edge: widen along x3
@@ -152,7 +152,7 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
   }
 
   // set indices for sends to neighbors on COARSER level (matches recv from FINER)
-  // Formulae same as in LoadBoundaryBufferToCoarser() in src/bvals/fc/bvals_fc.cpp
+  // Formulae same as in LoadBoundaryBufferToCoarser in src/bvals/fc/bvals_fc.cpp
   // Identical to send indices for same level replacing is,ie,.. with cis,cie,...
   {auto &icoar = buf.icoar;   // indices of buffer for neighbor coarser level
   if (ox1 == 0) {
@@ -215,7 +215,7 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
   }
 
   // set indices for sends to neighbors on FINER level (matches recv from COARSER)
-  // Formulae same as in LoadBoundaryBufferToFiner() in src/bvals/fc/bvals_fc.cpp
+  // Formulae same as in LoadBoundaryBufferToFiner in src/bvals/fc/bvals_fc.cpp
   //
   // Subtle issue: shared face fields on edges of MeshBlock (B1 at [is,ie+1],
   // B2 at [js;je+1], B3 at [ks;ke+1]) are communicated, replacing values on coarse mesh
@@ -326,7 +326,7 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
   }
 
   // set indices for sends for FLUX CORRECTION to COARSER level
-  // same as in LoadFluxBoundaryBufferToCoarser() in src/bvals/fc/flux_correction_fc.cpp
+  // same as in LoadFluxBoundaryBufferToCoarser in src/bvals/fc/flux_correction_fc.cpp
   {auto &iflxc = buf.iflux_coar;    // indices of buffer for flux correction
   if (ox1 == 0) {
     iflxc[0].bis = mb_indcs.cis,          iflxc[0].bie = mb_indcs.cie;
@@ -375,7 +375,7 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
   }
 
   // set indices for sends for FLUX CORRECTION to SAME level
-  // same as in LoadFluxBoundaryBufferSameLevel() in src/bvals/fc/flux_correction_fc.cpp
+  // same as in LoadFluxBoundaryBufferSameLevel in src/bvals/fc/flux_correction_fc.cpp
   {auto &iflxs = buf.iflux_same;    // indices of buffer for flux correction
   if (ox1 == 0) {
     iflxs[0].bis = mb_indcs.is,          iflxs[0].bie = mb_indcs.ie;
@@ -429,12 +429,12 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
 //----------------------------------------------------------------------------------------
 //! \fn void MeshBoundaryValuesFC::InitRecvIndices
 //! \brief Calculates indices of cells into which receive buffers are unpacked for FC data
-//! on same/coarser/finer levels, and for prolongation from coarse to fine.  Three sets of
+//! on same/coarser/finer levels, and for prolongation from coarse to fine. Three sets of
 //! indices are needed for each of the three components (x1f,x2f,x3f) of face-centered
 //! fields.
 //!
 //! The arguments ox1/2/3 are integer (+/- 1) offsets in each dir that specifies buffer
-//! relative to center of MeshBlock (0,0,0).  The arguments f1/2 are the coordinates
+//! relative to center of MeshBlock (0,0,0). The arguments f1/2 are the coordinates
 //! of subblocks within faces/edges (only relevant with SMR/AMR)
 
 void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
@@ -444,7 +444,7 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
   const bool cs_vfill = pmy_pack->pmesh->cs_vertex_fill;
 
   // set indices for receives from neighbors on SAME level
-  // Formulae same as in SetBoundarySameLevel() in src/bvals/fc/bvals_fc.cpp
+  // Formulae same as in SetBoundarySameLevel in src/bvals/fc/bvals_fc.cpp
   if ((f1 == 0) && (f2 == 0)) {  // this buffer used for same level (e.g. #0,4,8,12,...)
     auto &isame = buf.isame;       // indices of buffer for neighbor same level
     if (ox1 == 0) {
@@ -505,28 +505,28 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
       if (ox3 > 0) {isame[2].bks--;}
       if (ox3 < 0) {isame[2].bke++;}
     }
-    // CUBE-VERTEX CORNER FILL.  A cubed-sphere panel corner is a CUBE VERTEX where only
+    // CUBE-VERTEX CORNER FILL. A cubed-sphere panel corner is a CUBE VERTEX where only
     // THREE panels meet, so its ng x ng corner ghost block has no diagonal neighbour and
-    // its exchange is skipped (see IsCubeVertexCorner).  That block is covered by the
+    // its exchange is skipped (see IsCubeVertexCorner). That block is covered by the
     // TWO FLANKING panels, split by a diagonal, and each flanking panel's data for it
     // lies INSIDE that panel's own active corner block -- but the face buffer's
     // destination stops at the active along-seam range, so it is never sent and the
-    // corner has to be extrapolated.  Widen the x2/x3 FACE buffers by ng at BOTH ends of
+    // corner has to be extrapolated. Widen the x2/x3 FACE buffers by ng at BOTH ends of
     // the along-seam direction so the corner block rides the existing face exchange:
     // MPI-safe by construction, no new slot, no new tag.
     //
-    // Send and receive apply the SAME rule, so ndat matches on both sides.  The pack
+    // Send and receive apply the SAME rule, so ndat matches on both sides. The pack
     // reads only ACTIVE source data even for these cells, because the along-seam
     // resample clamps its stencil to the source's active bounds (see `bs` in
-    // bvals_fc.cpp).  Ownership -- which of the two flanking panels supplies a given
+    // bvals_fc.cpp). Ownership -- which of the two flanking panels supplies a given
     // corner cell -- is decided at UNPACK from the receiver's own geometry.
     if (cs_vfill) {
       // The x1x2 and x3x1 EDGE buffers are widened by the same rule, which is what
       // carries the fill into the corner block's RADIAL GHOST layers -- the buffer that
-      // reaches a triply-ghost cell has to be ghost in x1 already.  Their seam normal is
+      // reaches a triply-ghost cell has to be ghost in x1 already. Their seam normal is
       // the same as the flanking face's (bvals_fc.cpp reads cs_seam off the slot index,
       // and 16-23 go with the x2 faces, 32-39 with the x3 faces), so the along-seam
-      // resample carries them unchanged.  The x2x3 edges and the corners are ghost in
+      // resample carries them unchanged. The x2x3 edges and the corners are ghost in
       // BOTH tangential directions and have no along-seam axis -- they are never widened.
       for (int i=0; i<=2; ++i) {
         if (ox2 != 0 && ox3 == 0) {          // x2 face or x1x2 edge: widen along x3
@@ -544,7 +544,7 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
   }
 
   // set indices for receives from neighbors on COARSER level (matches send to FINER)
-  // Formulae same as in SetBoundaryFromCoarser() in src/bvals/fc/bvals_fc.cpp
+  // Formulae same as in SetBoundaryFromCoarser in src/bvals/fc/bvals_fc.cpp
   {auto &icoar = buf.icoar;   // indices of buffer for neighbor coarser level
   if (ox1 == 0) {
     icoar[0].bis = mb_indcs.cis,         icoar[0].bie = mb_indcs.cie + 1;
@@ -648,7 +648,7 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
   }
 
   // set indices for receives from neighbors on FINER level (matches send to COARSER)
-  // Formulae same as in SetBoundaryFromFiner() in src/bvals/cc/bvals_cc.cpp
+  // Formulae same as in SetBoundaryFromFiner in src/bvals/cc/bvals_cc.cpp
   {auto &ifine = buf.ifine;   // indices of buffer for neighbor finer level
   if (ox1 == 0) {
     ifine[0].bis = mb_indcs.is;               ifine[0].bie = mb_indcs.ie + 1;
@@ -765,7 +765,7 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
   }
 
   // set indices for PROLONGATION in coarse cell buffers. Indices refer to coarse cells.
-  // Formulae same as in ProlongateBoundaries() in src/bvals/bvals_refine.cpp
+  // Formulae same as in ProlongateBoundaries in src/bvals/bvals_refine.cpp
   //
   // Subtle issue: NOT the same as receives from coarser level (with ng --> ng/2) since
   // latter sends face fields on edges of MeshBlock, but prolongation only occurs within
@@ -868,10 +868,10 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
   }
   }
 
-  // set indices for receives for flux-correction from FINER level.  Similar to send,
+  // set indices for receives for flux-correction from FINER level. Similar to send,
   // except data loaded into appropriate sub-block of coarse buffer (similar to receive
   // from FINER level).
-  // Formulae same as in SetFluxBoundaryFromFiner() in src/bvals/fc/flux_correction_fc.cpp
+  // Formulae same as in SetFluxBoundaryFromFiner in src/bvals/fc/flux_correction_fc.cpp
   {auto &iflxc = buf.iflux_coar;   // indices of buffer for flux correction
   if (ox1 == 0) {
     iflxc[0].bis = mb_indcs.is;             iflxc[0].bie = mb_indcs.ie;
@@ -975,7 +975,7 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
   }
 
   // set indices for receives for flux-correction at SAME level.
-  // Formulae same as in SetFluxSameLevel() in src/bvals/fc/flux_correction_fc.cpp
+  // Formulae same as in SetFluxSameLevel in src/bvals/fc/flux_correction_fc.cpp
   {auto &iflxs = buf.iflux_same;   // indices of buffer for flux correction
   if (ox1 == 0) {
     iflxs[0].bis = mb_indcs.is;             iflxs[0].bie = mb_indcs.ie;
