@@ -1328,6 +1328,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // file records).
   impl_tsf_res = pin->DoesParameterExist("rad_m1","implicit_tsolve_fail_res") &&
                  pin->GetBoolean("rad_m1","implicit_tsolve_fail_res");
+  // xchg-1114 implicit_tsolve_robust (default off, read only when named): the exchange
+  // takes kappa_P, kappa_E at the gas temperature iterate inside the source row (step
+  // (c)), with their T derivatives in the gas Newton denominator B_k, and the fallback
+  // T root find (steps (c) and (f)) has an uncapped bracket and kappa at the trial T.
+  impl_ts_robust = pin->DoesParameterExist("rad_m1","implicit_tsolve_robust") &&
+                   pin->GetBoolean("rad_m1","implicit_tsolve_robust");
   dbg_etally = pin->GetOrAddBoolean("rad_m1","dbg_energy_tally",false);
   // accbook-1021: read only when named (an input without it is unchanged, also in the
   // parameters a restart file records)
@@ -14108,6 +14114,10 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
   auto ie = std::get<25>(ctx_);
   auto sstab = std::get<26>(ctx_);
   auto tsf = std::get<27>(ctx_);   // xchg-1114: root-find failure counter (output only)
+  auto opf = std::get<28>(ctx_);   // xchg-1114 implicit_tsolve_robust: kappa(d, T)
+  auto rob = std::get<29>(ctx_);
+  auto tfc = std::get<30>(ctx_);   // implicit_thin_freeze marks
+  auto tfzc = std::get<31>(ctx_);
   auto srb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -14117,6 +14127,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     (void)ar; (void)ch; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)eos; (void)gam;
     (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr; (void)igy;
     (void)iw_; (void)opac_; (void)uh; (void)usec; (void)sstab; (void)tsf;
+    (void)opf; (void)rob; (void)tfc; (void)tfzc;
 #endif
     Real rkpv = opac_(m,M1_OP_P,k,j,i);
     Real rkev = opac_(m,M1_OP_E,k,j,i);
@@ -14152,7 +14163,41 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     Real t3 = tk*tk*tk;
     Real t4 = t3*tk;
     Real de0 = iw_(m,M1_IW_DE0,k,j,i);
-    Real bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
+    // xchg-1114 implicit_tsolve_robust: rho kappa_P, rho kappa_E AT the iterate T_k
+    // (written back to opac_, so that step (f) and the write-back read the same
+    // numbers) and their T derivatives, which enter the gas Newton denominator
+    //   B_k = rho c_v + c dt a (kappa_P' T^4 + 4 kappa_P T^3) - c dt kappa_E' (E_k + de0)
+    // (floored at rho c_v).  The row below is the exact elimination for ANY B_k > 0:
+    // SRCB = ch dt k_E w, SRCR = w (emis T^4 - ch dt k_E de0) + (ch/cl)(1 - w)(e^n - e_k),
+    // w = rho c_v/B_k, so the gas energy the write-back sets keeps e + (c/ch) E exact.
+    const bool rbc = rob && !(tfzc && tfc(m,k,j,i) > 0.5);
+    Real dkp = 0.0, dke = 0.0;
+    auto kapat = [&](const Real t) {
+      if (rbc) {
+        opf(dd, t, rkpv, rkev);
+        opac_(m,M1_OP_P,k,j,i) = rkpv;
+        opac_(m,M1_OP_E,k,j,i) = rkev;
+        const Real hh = 1.0e-4;
+        Real kp1, ke1, kp2, ke2;
+        opf(dd, t*(1.0 + hh), kp1, ke1);
+        opf(dd, t*(1.0 - hh), kp2, ke2);
+        dkp = (kp1 - kp2)/(2.0*hh*t);
+        dke = (ke1 - ke2)/(2.0*hh*t);
+      }
+    };
+    auto gexch = [&]() {
+      Real g = 4.0*cl*dt*rkpv*ar*t3;
+      if (rbc) {
+        g += cl*dt*ar*dkp*t4
+             - cl*dt*dke*(fmax(iw_(m,M1_IW_EP,k,j,i), 0.0) + de0);
+        g = fmax(g, 0.0);
+      }
+      return g;
+    };
+    if (rbc && tk > 0.0) {
+      kapat(tk);
+    }
+    Real bk = dd*cv + (rob ? gexch() : 4.0*cl*dt*rkpv*ar*t3);
     Real rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
     // MILESTONE 3g, the Newton SAFEGUARD.  The temperature this pass starts from was
     // produced by the Newton step of the previous pass, whose linearisation dropped
@@ -14177,7 +14222,28 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
         if (!(ynow < yprev) && ynow > M1_IMPL_TRTOL*ysc) {
           Real tn = tk;
           bool ok = true;
-          if (usec) {
+          if (rob) {
+            // xchg-1114: uncapped bracket, kappa at the trial T
+            const M1OpacConst opz{rkpv, rkev};
+            const Real egv = iw_(m,M1_IW_EGN,k,j,i);
+            if (usec) {
+              if (rbc) {
+                (void) M1ImplTemperatureRobust(thc, opf, dd, tk, egv, cl*dt*ar, cl*dt,
+                                               ep + de0, tn, ok);
+              } else {
+                (void) M1ImplTemperatureRobust(thc, opz, dd, tk, egv, cl*dt*ar, cl*dt,
+                                               ep + de0, tn, ok);
+              }
+            } else {
+              if (rbc) {
+                (void) M1ImplTemperatureRobust(thd, opf, dd, tk, egv, cl*dt*ar, cl*dt,
+                                               ep + de0, tn, ok);
+              } else {
+                (void) M1ImplTemperatureRobust(thd, opz, dd, tk, egv, cl*dt*ar, cl*dt,
+                                               ep + de0, tn, ok);
+              }
+            }
+          } else if (usec) {
             (void) M1ImplTemperatureT(thc, dd, tk, iw_(m,M1_IW_EGN,k,j,i),
                                       cl*dt*rkpv*ar, cl*dt*rkev*(ep + de0), tn, ok);
           } else {
@@ -14190,7 +14256,8 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
             if (usec) {thc(dd, tk, ee, cv);} else {thd(dd, tk, ee, cv);}
             t3 = tk*tk*tk;
             t4 = t3*tk;
-            bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
+            if (rbc) {kapat(tk);}
+            bk = dd*cv + (rob ? gexch() : 4.0*cl*dt*rkpv*ar*t3);
             rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4
                  + cl*dt*rkev*de0;
             // fixbundle-1009 F4: count the fallback only when it is APPLIED (output only)
@@ -14207,7 +14274,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
       iw_(m,igm,k,j,i) += nmiss;
     }
     Real emis = dt*ch*rkpv*ar;
-    if (sstab && bk > 0.0) {
+    if ((sstab || rob) && bk > 0.0) {
       // implicit_src_stable (stall_1002): the SAME Schur-eliminated row in a form
       // without cancellation.  With K = c dt rho kappa (2e8 at the BSG wall) the plain
       // form takes SRCB = c dt k_E - c dt k_E (bk - rho c_v)/bk, a difference of two
@@ -14219,7 +14286,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
       //   SRCR = w (emis T^4 - ch dt k_E de0) + (ch/cl) q (e^n - e_k)
       // with w = rho c_v/bk and q = 1 - w = 4 cl dt k_P a T^3/bk.
       const Real w = dd*cv/bk;
-      const Real q = 4.0*cl*dt*rkpv*ar*t3/bk;
+      const Real q = rob ? (1.0 - w) : 4.0*cl*dt*rkpv*ar*t3/bk;
       iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev*w;
       iw_(m,M1_IW_SRCR,k,j,i) = w*(emis*t4 - dt*ch*rkev*de0)
                                 + (ch/cl)*q*(iw_(m,M1_IW_EGN,k,j,i) - ee);
@@ -14300,6 +14367,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
   auto gu4 = std::get<33>(ctx_);
   auto tsf = std::get<34>(ctx_);   // xchg-1114: root-find failure counter (output only)
   auto tfres = std::get<35>(ctx_);   // xchg-1114 implicit_tsolve_fail_res
+  auto rob = std::get<36>(ctx_);   // xchg-1114 implicit_tsolve_robust
   auto tsb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -14310,7 +14378,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     (void)escale; (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr;
     (void)igy; (void)iw_; (void)opac_; (void)plog; (void)uh; (void)usec;
     (void)tso; (void)opf; (void)tsm; (void)tsmin; (void)tf_; (void)tfz; (void)gu4;
-    (void)tsf; (void)tfres;
+    (void)tsf; (void)tfres; (void)rob;
 #endif
     bool tfail = false;
     Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
@@ -14366,13 +14434,54 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
         // implicit_thin_freeze: a frozen cell never takes the kappa(T) find
         // implicit_tsolve_opac_mode bit 2: the slope guard sends a cell whose kappa_P
         // falls faster than T^smin at the lagged T to the frozen-opacity find below
-        bool tsu = tso && !(tfz && tf_(m,k,j,i) > 0.5);
+        const bool tfrz = tfz && tf_(m,k,j,i) > 0.5;
+        bool tsu = tso && !tfrz;
         if (tsu && (tsm & 2)) {tsu = (M1TsoSlope(opf, dd, told) >= tsmin);}
+        if (rob) {
+          // xchg-1114 implicit_tsolve_robust: uncapped bracket, kappa at the trial T
+          // (frozen at the row's values in a thin-frozen cell)
+          const M1OpacConst opz{rkpv, rkev};
+          const Real egv = iw_(m,M1_IW_EGN,k,j,i);
+          if constexpr (decltype(idl)::value) {
+            M1EosIdeal th{eos.gamma};
+            if (tfrz) {
+              (void) M1ImplTemperatureRobust(th, opz, dd, told, egv, cl*dt*ar, cl*dt,
+                                             enew + de0, tnew, ok);
+            } else {
+              (void) M1ImplTemperatureRobust(th, opf, dd, told, egv, cl*dt*ar, cl*dt,
+                                             enew + de0, tnew, ok);
+            }
+          } else if (usec) {
+            Real nmiss = 0.0;
+            M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
+                                                          &nmiss};
+            if (tfrz) {
+              (void) M1ImplTemperatureRobust(thc, opz, dd, told, egv, cl*dt*ar, cl*dt,
+                                             enew + de0, tnew, ok);
+            } else {
+              (void) M1ImplTemperatureRobust(thc, opf, dd, told, egv, cl*dt*ar, cl*dt,
+                                             enew + de0, tnew, ok);
+            }
+            if (gasx) {iw_(m,igm,k,j,i) += nmiss;}
+          } else {
+            M1EosDirect<decltype(eos)> th{eos};
+            if (tfrz) {
+              (void) M1ImplTemperatureRobust(th, opz, dd, told, egv, cl*dt*ar, cl*dt,
+                                             enew + de0, tnew, ok);
+            } else {
+              (void) M1ImplTemperatureRobust(th, opf, dd, told, egv, cl*dt*ar, cl*dt,
+                                             enew + de0, tnew, ok);
+            }
+          }
+          tsu = false;
+        }
         const bool tnear = ((tsm & 1) != 0);
         // implicit_tsolve_opac_mode bit 4 (value 8): the stable root nearest the end
         // point of the exact exchange ODE (M1ImplTemperatureOpacOde); wins over bit 1
         const bool trd = ((tsm & 8) != 0);
-        if (tsu && (tnear || trd)) {
+        if (rob) {
+          // done above
+        } else if (tsu && (tnear || trd)) {
           if constexpr (decltype(idl)::value) {
             M1EosIdeal th{eos.gamma};
             if (trd) {
@@ -17055,7 +17164,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       auto srb_ctx = std::make_tuple(ar, ch, cl, dt, ec_, ecnt, eos, gam, gasx, gnw,
                                      igb, igf, igm, igr, igy, iw_, opac_, uh, usec, nmb1,
                                      ks, ke, js, je, is, ie, impl_src_stable,
-                                     tsf_cnt_d);
+                                     tsf_cnt_d,
+                                     M1OpacFn{opacity_type, otab, kappa_p, kappa_e,
+                                              kappa_f, kappa_s, opac_rho_ref,
+                                              opac_t_ref, opac_a, opac_b},
+                                     impl_ts_robust, thin_frz, (impl_thin_frz > 0.0));
       if (srid) {
         M1ImplSrcLaunch(srb_ctx, std::true_type{});
       } else {
@@ -18460,7 +18573,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                               opac_t_ref, opac_a, opac_b},
                                      impl_tsolve_opac_mode, impl_tsolve_opac_smin,
                                      thin_frz, (impl_thin_frz > 0.0), impl_gn_u4,
-                                     tsf_cnt_d, impl_tsf_res);
+                                     tsf_cnt_d, impl_tsf_res, impl_ts_robust);
       if (tsid) {
         M1ImplTsolveLaunch(tsb_ctx, std::true_type{});
       } else {

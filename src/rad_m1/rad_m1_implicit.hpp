@@ -2043,6 +2043,91 @@ int M1ImplTemperatureT(const ThermoT &th, const Real dd, const Real tguess,
   return nev;
 }
 
+// xchg-1114: frozen opacities in the M1ImplTemperatureRobust interface (thin-frozen cells)
+struct M1OpacConst {
+  Real kp, ke;
+  KOKKOS_INLINE_FUNCTION
+  void operator()(const Real, const Real, Real &rkp, Real &rke) const {
+    rkp = kp;
+    rke = ke;
+  }
+};
+
+//----------------------------------------------------------------------------------------
+//! \fn M1ImplTemperatureRobust
+//! \brief xchg-1114 <rad_m1>/implicit_tsolve_robust: the gas temperature of the local
+//! backward-Euler exchange at fixed E',
+//!   y(T) = rho e(T) + c dt rho kappa_P(T) a T^4 - rho e^n - c dt rho kappa_E(T) E0' = 0,
+//! with the opacities AT the trial T (opf, as M1ImplTemperatureOpac) and a bracket that
+//! has no growth cap: the factor squares after every failed probe (2, 4, 16, 256, ...,
+//! at most 1e16 per probe), so a cold cell (T 1e-38 on the Milne cold start, the root
+//! 3.6e-3) is bracketed in a handful of probes instead of failing after 80 doublings
+//! (2^80 = 1.2e24) and keeping the old T.  The root is then found by Illinois regula
+//! falsi in u = log T on the sign-change bracket (y need not be monotone with kappa(T);
+//! any root inside the bracket nearest the guess side is accepted).  ok = false only if
+//! y keeps one sign up to T = 1e300 / down to 1e-300, or is not finite.
+
+template <class ThermoT, class OpF>
+KOKKOS_INLINE_FUNCTION
+int M1ImplTemperatureRobust(const ThermoT &th, const OpF &opf, const Real dd,
+                            const Real tguess, const Real egn, const Real cdta,
+                            const Real cdt, const Real erhs, Real &tout, bool &ok) {
+  auto yfn = [&](const Real t) {
+    Real ee, cv, rkp, rke;
+    th(dd, t, ee, cv);
+    opf(dd, t, rkp, rke);
+    const Real t2 = t*t;
+    return ee + cdta*rkp*t2*t2 - egn - cdt*rke*erhs;
+  };
+  ok = false;
+  tout = tguess;
+  Real t0 = (tguess > 0.0 && tguess < 1.0e300) ? tguess : 1.0;
+  Real y0 = yfn(t0);
+  int nev = 1;
+  if (!(fabs(y0) <= 1.0e308)) {return nev;}
+  if (y0 == 0.0) {ok = true; tout = t0; return nev;}
+  Real ta = t0, ya = y0, tb = t0, yb = y0;
+  Real f = 2.0;
+  const bool up = (y0 < 0.0);
+  for (int it = 0; it < 64; ++it) {
+    const Real tn = up ? tb*f : tb/f;
+    if (!(tn > 1.0e-300 && tn < 1.0e300)) {break;}
+    const Real yn = yfn(tn);
+    ++nev;
+    if (!(fabs(yn) <= 1.0e308)) {break;}
+    ta = tb; ya = yb;
+    tb = tn; yb = yn;
+    if ((yb > 0.0) != (ya > 0.0) || yb == 0.0) {ok = true; break;}
+    f = fmin(f*f, 1.0e16);
+  }
+  if (!ok) {return nev;}
+  if (yb == 0.0) {tout = tb; return nev;}
+  // Illinois in u = log T between (ua, ya) and (ub, yb), opposite signs
+  Real ua = log(ta), ub = log(tb);
+  int side = 0;
+  Real uc = ub;
+  for (int it = 0; it < 200; ++it) {
+    uc = (ua*yb - ub*ya)/(yb - ya);
+    if (!(uc > fmin(ua, ub) && uc < fmax(ua, ub))) {uc = 0.5*(ua + ub);}
+    const Real yc = yfn(exp(uc));
+    ++nev;
+    if (!(fabs(yc) <= 1.0e308)) {ok = false; return nev;}
+    if (yc == 0.0 || fabs(ub - ua) <= 1.0e-13*fmax(1.0, fabs(uc))) {break;}
+    if ((yc > 0.0) == (yb > 0.0)) {
+      ub = uc; yb = yc;
+      if (side == -1) {ya *= 0.5;}
+      side = -1;
+    } else {
+      ua = uc; ya = yc;
+      if (side == 1) {yb *= 0.5;}
+      side = 1;
+    }
+    if (fabs(ub - ua) <= 1.0e-13*fmax(1.0, fabs(uc))) {uc = 0.5*(ua + ub); break;}
+  }
+  tout = exp(uc);
+  return nev;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn M1ImplTemperatureOpac
 //! \brief <rad_m1>/implicit_tsolve_opac (nc_cure_1002): the bracketed gas-temperature
