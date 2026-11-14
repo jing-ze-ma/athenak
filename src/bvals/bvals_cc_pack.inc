@@ -400,14 +400,11 @@
             // would extrapolate from two cells while the source block holds the data.
             // The stencil reads the array directly, not the buffer, so any active cell is
             // available.  bvals_fc.cpp says the same thing about its own stencil table.
-            // layoutfix-1106: cs_seam_pos_global, the offset of this block in the panel
-            int spn_ = 0;
-            if (posg_) {
-              const Real wp_ = (cs_seam == 2) ? (x3mx - x3mn) : (x2mx - x2mn);
-              const Real xp_ = (cs_seam == 2) ? x3mn : x2mn;
-              spn_ = static_cast<int>(floor((xp_ + 1.0)/wp_ + 0.5))
-                     *((cs_seam == 2) ? nx3_ : nx2_);
-            }
+            // offset of this block in the panel, for a layout-independent seam position
+            const Real wp_ = (cs_seam == 2) ? (x3mx - x3mn) : (x2mx - x2mn);
+            const Real xp_ = (cs_seam == 2) ? x3mn : x2mn;
+            const int spn_ = static_cast<int>(floor((xp_ + 1.0)/wp_ + 0.5))
+                             *((cs_seam == 2) ? nx3_ : nx2_);
             const Real pos = cs_seam::SeamPos(sc, spn_,
                                               (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang);
             wpos = pos;

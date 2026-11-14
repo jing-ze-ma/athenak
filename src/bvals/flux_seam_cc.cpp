@@ -1,56 +1,18 @@
 //========================================================================================
-// Athena++ astrophysical MHD code
-// Copyright(C) 2014 James M. Stone <jmstone@princeton.edu> and other code contributors
-// Licensed under the 3-clause BSD License, see LICENSE file for details
+// AthenaK astrophysical fluid dynamics and numerical relativity code
+// Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
+// Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file flux_seam_cc.cpp
-//! \brief makes the flux of cell-centered variables through a cubed-sphere PANEL SEAM
-//! single-valued, so that the seam is exactly conservative.
-//!
-//! WHY THIS IS NEEDED. A finite-volume update telescopes -- what leaves one cell enters
-//! its neighbour, to round-off -- only because both cells multiply the SAME stored flux
-//! by the SAME stored area. Inside a panel that is true by construction, and it is true
-//! between MeshBlocks of one panel as well, because their ghost zones are COPIES and so
-//! reproduce the neighbour's Riemann solve bit for bit. At a panel seam it is false: the
-//! ghosts there are INTERPOLATED (see the along-seam resample in bvals_cc.cpp), so the
-//! two panels reconstruct slightly different states either side of the one physical face
-//! and their fluxes disagree at the order of the halo's interpolation error. The
-//! difference is mass, momentum and energy created out of nothing, and it accumulates
-//! secularly. Measured before this exchange existed, it was the dominant term in the
-//! global mass and energy drift of the rigid-rotation test, and it was worst at the cube
-//! vertices. Note this is exactly the role `SendFlux`/`RecvFlux` already play at a
-//! fine/coarse boundary -- but that path runs only when `multilevel`, and a uniform
-//! cubed-sphere grid is not multilevel, so nothing reconciled a seam.
-//!
-//! WHAT IS EXCHANGED. Each panel packs the OUTWARD flux through its copy of the shared
-//! face, `sgn*flx`, and each replaces its own with the average of the two outward values,
-//!     F_out <- 0.5*(F_out - F_out_neighbour).
-//! Both sides evaluate the same expression, so afterwards what leaves one panel is
-//! exactly minus what leaves the other and the sum over the sphere telescopes to the
-//! physical boundaries alone. No ordering or single-owner rule is needed.
-//!
-//! THE MOMENTUM COMPONENTS NEED THE BASIS TRANSFORM, the scalars do not. Mass and total
-//! energy flux densities are true scalars, and so is the radial momentum flux, since rhat
-//! is common to both charts. The two TANGENTIAL momentum fluxes are components on the
-//! local gnomonic basis, and the two charts carry different tangent bases at the same
-//! physical point, so they go through `cubed_sphere::TransformMomentum` -- the same
-//! transform the halo applies to the momentum itself.
-//!
-//! NO ALONG-SEAM RESAMPLE IS NEEDED, unlike the halo. The halo interpolates because a
-//! ghost CELL CENTRE of one panel does not sit at a cell centre of the other. The seam
-//! FACES do coincide: both charts parameterise the shared cube edge identically, so the
-//! faces pair one-to-one and a signed index map is exact. (Verified geometrically by the
-//! `CS SEAM FLUX MISMATCH` gate in `pgen/cs_test.cpp`, which pairs faces by physical
-//! position and reports a max area mismatch at round-off.)
-//!
-//! It is safe to share the `flux` buffers, `comm_flux` and `flux_req` with the
-//! fine/coarse path in `flux_correct_cc.cpp`, which CAN now be live at the same time
-//! (hydro static refinement is supported on the cubed sphere). The two never touch the
-//! same slot: a given (MeshBlock, neighbour) is either a cross-panel SAME-LEVEL seam,
-//! handled here, or a level boundary, handled there -- and one that lies on a seam is
-//! refused at startup by CheckCubedSphereRefinement. The buffers are sized for the
-//! larger of the two, and the requests are indexed by the same (m, n), so the neighbour
-//! sets keep the requests disjoint too.
+//! \brief Makes the flux of cell-centred variables through a cubed-sphere panel seam
+//! single-valued, so the seam is exactly conservative. The seam ghosts are interpolated,
+//! so the two panels compute slightly different fluxes through the shared face. Each
+//! panel sends its outward flux sgn*flx through its copy of the face, and both replace
+//! their own by F_out <- 0.5*(F_out - F_out_neighbour). The tangential momentum fluxes
+//! are transformed between the panel bases (cubed_sphere::TransformMomentum); scalar and
+//! radial fluxes are copied. Seam faces pair one-to-one, so no resample is needed. The
+//! flux buffers are shared with the fine/coarse flux correction, which never serves the
+//! same (MeshBlock, neighbour).
 
 #include <cstdlib>
 #include <map>
@@ -66,16 +28,15 @@
 #include "bvals.hpp"
 
 //----------------------------------------------------------------------------------------
-//! r1mspeed-1102: the (block, buffer) pairs whose neighbour is on ANOTHER panel, as
-//! m*nnghbr + n, once per boundary object (the neighbour table of a cubed sphere is
-//! static: no adaptive refinement).  The seam-face kernels below launch one team per
-//! (pair, variable) over this list instead of over every (block, buffer, variable),
-//! most of which returned at once; each team's work is unchanged (bitwise).
+//! \fn DvceArray1D<int> CrossPanelPairs
+//! \brief (block, buffer) pairs whose neighbour is on another panel, as m*nnghbr + n,
+//! cached per boundary object (the cubed-sphere neighbour table is static). The seam
+//! kernels launch one team per (pair, variable) over this list.
 
 namespace {
 DvceArray1D<int> CrossPanelPairs(MeshBlockPack *pp, const void *key) {
   static std::map<const void*, DvceArray1D<int>> cache;
-  // the Views must go before Kokkos::finalize, not at static destruction
+  // the Views must be freed before Kokkos::finalize
   static const bool hook_ = [] {
     Kokkos::push_finalize_hook([] {cache.clear();});
     return true;
@@ -104,9 +65,10 @@ DvceArray1D<int> CrossPanelPairs(MeshBlockPack *pp, const void *key) {
   return d;
 }
 
-//! layoutaudit-1103: the (block, buffer) pairs of a seam_same_panel exchange -- every
-//! same-panel, same-level, non-polar neighbour (the kernels keep only the x2/x3 FACE
-//! buffers, SeamFaceGeom).  Cached per boundary object like CrossPanelPairs.
+//----------------------------------------------------------------------------------------
+//! \fn DvceArray1D<int> SamePanelFacePairs
+//! \brief (block, buffer) pairs of a seam_same_panel exchange: every same-panel,
+//! same-level, non-polar neighbour. Cached per boundary object.
 DvceArray1D<int> SamePanelFacePairs(MeshBlockPack *pp, const void *key) {
   static std::map<const void*, DvceArray1D<int>> cache;
   static const bool hook_ = [] {
@@ -140,8 +102,8 @@ DvceArray1D<int> SamePanelFacePairs(MeshBlockPack *pp, const void *key) {
   return d;
 }
 
-//! host: is (m,n) a neighbour this exchange serves?  Cross-panel seams, or (layoutaudit-
-//! 1103 seam_same_panel) same-panel same-level non-polar neighbours.
+//! \brief Host check: is (m,n) a neighbour served by this exchange (cross-panel seam, or
+//! same-panel same-level non-polar neighbour with seam_same_panel)?
 inline bool SeamPairWantedH(MeshBlockPack *pp, const int m, const int n, const bool ssp) {
   const auto nb = pp->pmb->nghbr.h_view(m,n);
   const int myp = pp->pmb->mb_panel.h_view(m);
@@ -151,26 +113,15 @@ inline bool SeamPairWantedH(MeshBlockPack *pp, const int m, const int n, const b
 }  // namespace
 
 namespace {
-//! Classify a boundary buffer from its own stored index range, rather than from the
-//! buffer NUMBER. The numbering is not what it looks like -- x1 faces are 0-7, x2 faces
-//! 8-15, then the x1x2 EDGES are 16-23 and the x3 faces do not start until 24 -- so a
-//! plain "n < 24 is a face" test silently drops every x3 seam. The index range says it
-//! unambiguously: a face buffer is one cell thick along its own normal and spans the full
-//! active range along the other two axes.
-//!
-//! Returns false unless this is an x2 or x3 FACE. Only those can be a seam: x1 is radial
-//! and no seam crosses it, and an edge or corner buffer carries no face flux at all.
-//! `x2face` says which of the two it is, and `sgn` is the sign that turns the stored flux
-//! (always the flux in the +x2 or +x3 direction) into the OUTWARD flux.
+//! \fn bool SeamFaceGeom
+//! \brief Classifies a boundary buffer from its index range: true for an x2 or x3 face
+//! buffer (x2face tells which), with sgn the sign turning the stored +x2/+x3 flux into
+//! the outward flux. x1 faces, edges and corners return false.
 KOKKOS_INLINE_FUNCTION
 bool SeamFaceGeom(const MeshBufferIndcs &ix, const int is, const int ie,
                   const int js, const int ks, bool &x2face, Real &sgn) {
-  // A face buffer spans the FULL active range in x1. Testing only "thin in j XOR thin in
-  // k" is not enough: an x1x2 edge buffer is thin in j and full in k, and so looks
-  // exactly like an x2 face. That costs nothing while x1 is a single MeshBlock -- the
-  // radial direction is bounded by physical boundaries, so those edge buffers have no
-  // neighbour -- but it would hand an edge buffer to the face packer the moment x1 is
-  // split, with the wrong extents and the wrong flux array.
+  // a face buffer spans the full active range in x1 (an x1x2 edge buffer is also thin in
+  // j and full in k)
   if (ix.bis != is || ix.bie != ie) {return false;}
   const bool jthin = (ix.bjs == ix.bje);
   const bool kthin = (ix.bks == ix.bke);
@@ -182,17 +133,12 @@ bool SeamFaceGeom(const MeshBufferIndcs &ix, const int is, const int ie,
 } // namespace
 
 //----------------------------------------------------------------------------------------
-//! rkghalo-1103: vector length of the seam-flux team kernels (SeamFluxSendLocal/MPI,
-//! SeamFluxRecv, SeamFluxRecvUpw).  Their inner loop is ThreadVectorRange over the
-//! radial index; with the default vector length 1 every thread walked the whole radial
-//! column serially while only nk*nj (= 16) threads of a team had work.  32 lanes run the
-//! column in parallel (as bvsplit-1031 did for the CC pack, BvCcVl in bvals_cc.cpp).
-//! Every element is still written once by the same expression: bitwise.  CUDA only
-//! (env BVALS_SEAM_VL, default 32; 1 = the old launch); 1 on other backends.
+//! \fn static int SeamFluxVl
+//! \brief Vector length of the seam-flux team kernels (env BVALS_SEAM_VL; default 32 on
+//! CUDA, 1 otherwise).
 static int SeamFluxVl() {
   static int v = -1;
   if (v < 0) {
-    // fast2nd-1112: the env is read on every backend (HIP default 1 until measured)
     const char *e = std::getenv("BVALS_SEAM_VL");
 #if defined(KOKKOS_ENABLE_CUDA)
     v = (e != nullptr) ? std::atoi(e) : 32;
@@ -210,15 +156,8 @@ static int SeamFluxVl() {
 
 TaskStatus MeshBoundaryValuesCC::InitFluxSeamRecv(const int nvars) {
 #if MPI_PARALLEL_ENABLED
-  // detfence-1020: the receive buffers are still READ by the previous exchange's unpack
-  // kernel (queued on the device stream, not yet run when the host gets here), and a
-  // receive posted now lets an early neighbour's NEXT message (GPU-aware MPI writes the
-  // device buffer directly) overwrite them first: the ghosts then take some of the next
-  // exchange's values.  Back-to-back exchanges of one boundary object with no host sync
-  // in between (the implicit Krylov / transverse halos) hit this at >= 12 ranks on
-  // several nodes (global He giant, Viper 24 ranks: run-to-run differences from the
-  // first ic_rad relax pass).  Wait for the queued kernels before the first receive is
-  // posted; no arithmetic changes (bitwise the old binary whenever it was not raced).
+  // wait for queued kernels that still read the receive buffers before posting receives
+  // (GPU-aware MPI writes the device buffers directly)
   if (global_variable::nranks > 1) {Kokkos::fence();}
   int &nmb = pmy_pack->nmb_thispack;
   int &nnghbr = pmy_pack->pmb->nnghbr;
@@ -260,13 +199,9 @@ TaskStatus MeshBoundaryValuesCC::InitFluxSeamRecv(const int nvars) {
 
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC
-//! \brief Pack the OUTWARD flux through each panel-seam face and send it to the panel on
-//! the other side.
-//!
-//! The index map across a seam is the same signed permutation the halo uses -- the
-//! along-seam index may reverse, and across a "swap" seam the two tangential axes
-//! exchange roles, which is absorbed here by transposing the buffer strides so that the
-//! receiver's generic unpack lands the data on its own j,k.
+//! \brief Packs the outward flux through each panel-seam face and sends it to the panel
+//! on the other side, using the signed index map of the halo exchange (buffer strides
+//! transposed across a swap seam).
 
 TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx) {
   int nmb = pmy_pack->nmb_thispack;
@@ -278,23 +213,22 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   auto &mbgid = pmy_pack->pmb->mb_gid;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto &mbsize = pmy_pack->pmb->mb_size;
-  const bool sraw = seam_raw;   // csedge-1019 (bvals.hpp)
-  const int sxs_ = seam_xform_stride, sxb_ = seam_xform_b;   // ucthshare-1102
+  const bool sraw = seam_raw;   // (bvals.hpp)
+  const int sxs_ = seam_xform_stride, sxb_ = seam_xform_b;
   const bool sxoff_ = seam_xform_off;
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
   auto rbuf = RecvBufDv();
-  // r1mspeed-1102: only variable sfv_ (see bvals.hpp); averaging modes only
+  // only variable sfv_ (see bvals.hpp); averaging modes only
   const int sfm_ = pmy_pack->pmesh->cs_seam_flux;
-  const int sfv_ = (seam_flux_var >= 0 && !sraw && sfm_ != 1 && sfm_ != 2)
-                   ? seam_flux_var : -1;
+  const int sfv_ = (seam_flux_var >= 0 && !sraw) ? seam_flux_var : -1;
 
-  const bool ssp_ = seam_same_panel;   // layoutaudit-1103
+  const bool ssp_ = seam_same_panel;
   auto xpp_ = ssp_ ? SamePanelFacePairs(pmy_pack, this)
-                   : CrossPanelPairs(pmy_pack, this);   // r1mspeed-1102
+                   : CrossPanelPairs(pmy_pack, this);
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO,
-                              SeamFluxVl());   // rkghalo-1103
+                              SeamFluxVl());
   BvalsTeamFor("SeamFluxSendLocal", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
-    const int mn_ = xpp_(tmember.league_rank()/nvar);   // r1mspeed-1102
+    const int mn_ = xpp_(tmember.league_rank()/nvar);
     if (mn_ < 0) {return;}
     const int m = mn_/nnghbr;
     const int n = mn_ - m*nnghbr;
@@ -309,7 +243,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     }
     const int my_panel = mbpanel.d_view(m);
     const int dst_panel = nghbr.d_view(m,n).panel;
-    if ((dst_panel == my_panel) != ssp_) {return;}   // layoutaudit-1103 seam_same_panel
+    if ((dst_panel == my_panel) != ssp_) {return;}   // seam_same_panel
     if (nghbr.d_view(m,n).rank != my_rank) {return;}   // off-rank: second kernel
 
     const int il = rbuf[n].iflux_same[0].bis;
@@ -328,7 +262,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
 
     // the seam index map, exactly as in MeshBoundaryValuesCC::PackAndSendCC
     int aj = 1, bj = 0, ak = 1, bk = 0, sj = 1, sk = nj;
-    if (!ssp_) {   // layoutaudit-1103: one chart (seam_same_panel) = the identity map
+    if (!ssp_) {   // one chart (seam_same_panel) = the identity map
       const PanelBoundaries pb = GetPanelBoundary(my_panel, dst_panel);
       const int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
       const int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
@@ -337,10 +271,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
       if (rev_b_preswap) {ak = -1; bk = kl + ku;}
     }
 
-    // Mass and energy fluxes are true scalars, and so is the RADIAL momentum flux since
-    // rhat is common to both charts. Only the two tangential momentum fluxes are
-    // components on a basis the seam changes.
-    // ucthshare-1102: the vector pairs of this record (bvals.hpp seam_xform_*)
+      // mass, energy and radial momentum fluxes are scalars across the seam; only the
+      // tangential momentum pair is transformed (pairs given by seam_xform_*)
     const int vv = (sxs_ > 0) ? (v % sxs_) : v;
     const int vb = v - vv;
     const bool vpair = (vv == IM2) || (vv == IM3);
@@ -355,12 +287,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
       k += kl;
       const int jj = aj*j + bj;
       const int kk = ak*k + bk;
-      // THE SEAM GEOMETRY IS HOISTED OUT OF THE RADIAL LOOP.  x1 is radial and no seam
-      // crosses it, so (xi,eta) and every tangent vector built from it are the same for
-      // every cell of the i loop; the transform used to recompute all of it per cell.
-      // Only the loads and the O(1) raise/lower are left inside, so the result is
-      // bitwise what it was.  MEASURED on a 300-cycle dhj MHD run: SeamFluxSendLocal
-      // 444 ms -> 79 ms and SeamFluxSendMPI 502 ms -> 78 ms, 6x each.
+      // seam geometry depends on (xi,eta) only: computed once per (k,j), outside the
+      // radial loop
       cubed_sphere::SeamXform xf;
       if (xform) {
         // (xi,eta) of the FACE CENTRE: the seam-normal coordinate is a cell EDGE.
@@ -393,18 +321,11 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   });
 
 #if MPI_PARALLEL_ENABLED
-  // The off-rank half, as a SEPARATE kernel, so that neither closure carries both buffer
-  // arrays. `sendbuf` and `recvbuf` are MeshBoundaryBuffer[56], and each element holds
-  // several Views and six index triples, so each array is tens of kilobytes: capturing
-  // BOTH pushed this launch's functor over what it can carry and the run died
-  // intermittently (10 of 20) with "Memory access fault by GPU node-2 ... Reason:
-  // Unknown", only once a panel was split into several MeshBlocks. Capturing either one
-  // alone is clean (0 of 20), including the version that keeps writing across blocks --
-  // so it is the captured state, not the cross-block write. Same lesson as the gnomonic
-  // trig POD: give a kernel only what it uses.
+  // off-rank part as a separate kernel, so no closure captures both buffer arrays (too
+  // large for the kernel argument space)
   auto sbuf = SendBufDv();
   BvalsTeamFor("SeamFluxSendMPI", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
-    const int mn_ = xpp_(tmember.league_rank()/nvar);   // r1mspeed-1102
+    const int mn_ = xpp_(tmember.league_rank()/nvar);
     if (mn_ < 0) {return;}
     const int m = mn_/nnghbr;
     const int n = mn_ - m*nnghbr;
@@ -419,7 +340,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     }
     const int my_panel = mbpanel.d_view(m);
     const int dst_panel = nghbr.d_view(m,n).panel;
-    if ((dst_panel == my_panel) != ssp_) {return;}   // layoutaudit-1103 seam_same_panel
+    if ((dst_panel == my_panel) != ssp_) {return;}   // seam_same_panel
     if (nghbr.d_view(m,n).rank == my_rank) {return;}   // on-rank: first kernel
 
     const int il = sbuf[n].iflux_same[0].bis;
@@ -436,7 +357,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
 
     // the seam index map, exactly as in MeshBoundaryValuesCC::PackAndSendCC
     int aj = 1, bj = 0, ak = 1, bk = 0, sj = 1, sk = nj;
-    if (!ssp_) {   // layoutaudit-1103: one chart (seam_same_panel) = the identity map
+    if (!ssp_) {   // one chart (seam_same_panel) = the identity map
       const PanelBoundaries pb = GetPanelBoundary(my_panel, dst_panel);
       const int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
       const int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
@@ -445,10 +366,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
       if (rev_b_preswap) {ak = -1; bk = kl + ku;}
     }
 
-    // Mass and energy fluxes are true scalars, and so is the RADIAL momentum flux since
-    // rhat is common to both charts. Only the two tangential momentum fluxes are
-    // components on a basis the seam changes.
-    // ucthshare-1102: the vector pairs of this record (bvals.hpp seam_xform_*)
+      // mass, energy and radial momentum fluxes are scalars across the seam; only the
+      // tangential momentum pair is transformed (pairs given by seam_xform_*)
     const int vv = (sxs_ > 0) ? (v % sxs_) : v;
     const int vb = v - vv;
     const bool vpair = (vv == IM2) || (vv == IM3);
@@ -463,12 +382,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
       k += kl;
       const int jj = aj*j + bj;
       const int kk = ak*k + bk;
-      // THE SEAM GEOMETRY IS HOISTED OUT OF THE RADIAL LOOP.  x1 is radial and no seam
-      // crosses it, so (xi,eta) and every tangent vector built from it are the same for
-      // every cell of the i loop; the transform used to recompute all of it per cell.
-      // Only the loads and the O(1) raise/lower are left inside, so the result is
-      // bitwise what it was.  MEASURED on a 300-cycle dhj MHD run: SeamFluxSendLocal
-      // 444 ms -> 79 ms and SeamFluxSendMPI 502 ms -> 78 ms, 6x each.
+      // seam geometry depends on (xi,eta) only: computed once per (k,j), outside the
+      // radial loop
       cubed_sphere::SeamXform xf;
       if (xform) {
         // (xi,eta) of the FACE CENTRE: the seam-normal coordinate is a cell EDGE.
@@ -503,8 +418,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
 #endif
 
 #if MPI_PARALLEL_ENABLED
-  // fence only before the first MPI_Isend: an exchange with no off-rank neighbour
-  // (1 rank) has nothing to wait for -- the unpack kernel is on the same stream.
+  // fence before the first MPI_Isend only (on-rank exchanges share the device stream)
   bool fenced_ = false;
   bool no_errors=true;
   auto &nghbr_h = pmy_pack->pmb->nghbr;
@@ -548,12 +462,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
 
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC
-//! \brief Replace the flux on each seam face by the average of the two panels' OUTWARD
-//! values, so that what leaves one panel is exactly minus what enters the other.
-//!
-//! Each side computes F_out <- 0.5*(F_out - F_out_neighbour) from its own stored flux and
-//! the buffer, so the two results are exact negatives of each other by construction and
-//! no side has to own the face.
+//! \brief Replaces the flux on each seam face by F_out <- 0.5*(F_out - F_out_neighbour),
+//! so the outward fluxes of the two panels are exact negatives (with seam_raw, copies the
+//! neighbour's face record instead).
 
 TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &flx) {
   int nmb = pmy_pack->nmb_thispack;
@@ -592,18 +503,14 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
   int nvar = flx.x1f.extent_int(1);
   const int sfmode = seam_raw ? -1 : pmy_pack->pmesh->cs_seam_flux;
   if (sfmode == -1) {
-    // csedge-1019 seam_raw: every variable of the face takes the NEIGHBOUR's value (the
-    // pack already re-expressed the tangential pair IM2/IM3 on this panel's basis)
-    // ucthshare-1102: one team per (MeshBlock, buffer, variable) over the flattened
-    // (k, j, i) range -- a pure copy, so the mapping cannot change a value; the old
-    // (MeshBlock, buffer) teams looped every variable serially per thread (profiled at
-    // 2.9 ms per call with the 54-variable MHD UCT seam record on an H200)
-    const bool ssp_ = seam_same_panel;   // layoutaudit-1103
+    // seam_raw: every variable of the face takes the neighbour's value (the pack already
+    // transformed the tangential pair); one team per (MeshBlock, buffer, variable)
+    const bool ssp_ = seam_same_panel;
     auto xpp_ = ssp_ ? SamePanelFacePairs(pmy_pack, this)
-                     : CrossPanelPairs(pmy_pack, this);   // r1mspeed-1102
+                     : CrossPanelPairs(pmy_pack, this);
     Kokkos::TeamPolicy<> pol_r(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO);
     BvalsTeamFor("SeamStateRecvRaw", pol_r, KOKKOS_LAMBDA(TeamMember_t tmember) {
-      const int mn_ = xpp_(tmember.league_rank()/nvar);   // r1mspeed-1102
+      const int mn_ = xpp_(tmember.league_rank()/nvar);
       if (mn_ < 0) {return;}
       const int m = mn_/nnghbr;
       const int n = mn_ - m*nnghbr;
@@ -639,87 +546,13 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
     });
     return TaskStatus::complete;
   }
-  if (sfmode == 1 || sfmode == 2) {
-    // <mesh>/cs_seam_flux = upwind (1) or positive_donor (2, the 09-26 default; since
-    // csedge-1019 the default is average, see mesh.cpp).  One team per
-    // (MeshBlock, buffer): the choice is made ONCE per face from the MASS flux of both
-    // sides and applied to every variable (deciding per variable would mix fluxes from
-    // two different Riemann solves in one face, and would race on IDN).  a = this side's
-    // OUTWARD mass flux, b = the neighbour's.  The neighbour decides with (a, b) swapped,
-    // which gives it weight 1 - wa on its own flux: both sides write the same value, so
-    // the update stays exactly conservative.
-    Kokkos::TeamPolicy<> pol_u(DevExeSpace(), (nmb*nnghbr), Kokkos::AUTO,
-                               SeamFluxVl());   // rkghalo-1103
-    BvalsTeamFor("SeamFluxRecvUpw", pol_u, KOKKOS_LAMBDA(TeamMember_t tmember) {
-      const int m = (tmember.league_rank())/nnghbr;
-      const int n = (tmember.league_rank() - m*nnghbr);
-      if (nghbr.d_view(m,n).gid < 0) {return;}
-      bool x2face; Real sgn;
-      if (!SeamFaceGeom(rbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
-                        cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
-        return;
-      }
-      if (nghbr.d_view(m,n).panel == mbpanel.d_view(m)) {return;}
-      const int il = rbuf[n].iflux_same[0].bis;
-      const int iu = rbuf[n].iflux_same[0].bie;
-      const int jl = rbuf[n].iflux_same[0].bjs;
-      const int ju = rbuf[n].iflux_same[0].bje;
-      const int kl = rbuf[n].iflux_same[0].bks;
-      const int ku = rbuf[n].iflux_same[0].bke;
-      const int ni = iu - il + 1;
-      const int nj = ju - jl + 1;
-      const int nk = ku - kl + 1;
-      const int nkj = nk*nj;
-      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
-        int k = idx / nj;
-        int j = (idx - k * nj) + jl;
-        k += kl;
-        Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
-                             [&](const int i) {
-          const int i0 = i-il + ni*((j-jl) + nj*(k-kl));
-          const int nvs = ni*nj*nk;          // buffer stride of one variable
-          const Real a = sgn*(x2face ? flx.x2f(m,IDN,k,j,i) : flx.x3f(m,IDN,k,j,i));
-          const Real b = rbuf[n].flux(m, i0 + nvs*IDN);
-          // weight of THIS side's flux
-          Real wa = 0.5;
-          if (a > 0.0 && b < 0.0) {
-            wa = 1.0;                        // both: mass leaves this side -> donor = us
-          } else if (a < 0.0 && b > 0.0) {
-            wa = 0.0;                        // both: mass enters -> donor = neighbour
-          } else if (sfmode == 2) {
-            // positive: the zero-flux edges of the two cases above, and the case the
-            // mean gets wrong -- BOTH claim inflow, so the mean drains the side whose
-            // own solve says it gains.  The convex weights below make the mass flux
-            // exactly zero and keep a convex mix of the momentum (pressure) and energy
-            // fluxes.
-            if (a > 0.0 && b == 0.0) {
-              wa = 1.0;
-            } else if (a == 0.0 && b > 0.0) {
-              wa = 0.0;
-            } else if (a < 0.0 && b < 0.0) {
-              wa = b/(a + b);
-            }
-          }
-          for (int v=0; v<nvar; ++v) {
-            const Real recv = rbuf[n].flux(m, i0 + nvs*v);
-            if (x2face) {
-              flx.x2f(m,v,k,j,i) = wa*flx.x2f(m,v,k,j,i) - (1.0 - wa)*sgn*recv;
-            } else {
-              flx.x3f(m,v,k,j,i) = wa*flx.x3f(m,v,k,j,i) - (1.0 - wa)*sgn*recv;
-            }
-          }
-        });
-      });
-    });
-    return TaskStatus::complete;
-  }
-  // r1mspeed-1102: only variable sfv_ (see bvals.hpp; this is an averaging mode)
+  // only variable sfv_ (see bvals.hpp; this is an averaging mode)
   const int sfv_ = seam_flux_var;
-  auto xpp_ = CrossPanelPairs(pmy_pack, this);   // r1mspeed-1102
+  auto xpp_ = CrossPanelPairs(pmy_pack, this);
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO,
-                              SeamFluxVl());   // rkghalo-1103
+                              SeamFluxVl());
   BvalsTeamFor("SeamFluxRecv", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
-    const int mn_ = xpp_(tmember.league_rank()/nvar);   // r1mspeed-1102
+    const int mn_ = xpp_(tmember.league_rank()/nvar);
     if (mn_ < 0) {return;}
     const int m = mn_/nnghbr;
     const int n = mn_ - m*nnghbr;
