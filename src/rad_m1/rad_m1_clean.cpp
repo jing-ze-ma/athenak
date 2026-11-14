@@ -643,6 +643,30 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
       if (!(w(m,CLW_X,k+ks,j+js,i+is) > 0.0)) acc += 1.0;
     }, nneg);
   }
+  if (nneg > 0.0 && global_variable::my_rank == 0) {
+    // diagnostic: the first negative cells
+    auto hw = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cln_w);
+    auto hs = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cln_s);
+    auto hf = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cln_fc1);
+    auto hg = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cln_fc2);
+    int np = 0;
+    for (int k = ks; k <= ke && np < 4; ++k) {
+      for (int j = js; j <= je && np < 4; ++j) {
+        for (int i = is; i <= ie && np < 4; ++i) {
+          if (hw(0,CLW_X,k,j,i) > 0.0) continue;
+          ++np;
+          std::printf("CLEANNEG j %d i %d EO %.3e B %.3e X %.3e C1 %.3f w1 %.2f/%.2f "
+                      "w2 %.2f/%.2f G1 %.3e/%.3e G2 %.3e/%.3e hp1 %.3f hm1 %.3f D11 %.3f\n",
+                      j-js, i-is, hw(0,CLW_EO,k,j,i), hw(0,CLW_B,k,j,i), hw(0,CLW_X,k,j,i),
+                      hs(0,CLN_C1,k,j,i), hf(0,0,k,j,i), hf(0,0,k,j,i+1),
+                      d2 ? hg(0,0,k,j,i) : 0.0, d2 ? hg(0,0,k,j+1,i) : 0.0,
+                      hf(0,2,k,j,i), hf(0,2,k,j,i+1), d2 ? hg(0,2,k,j,i) : 0.0,
+                      d2 ? hg(0,2,k,j+1,i) : 0.0, hs(0,CLN_HP,k,j,i), hs(0,CLN_HM,k,j,i),
+                      hs(0,CLN_D11,k,j,i));
+        }
+      }
+    }
+  }
   if (nit < 0) cln_nfail += 1.0;
   if (nneg > 0.0) cln_nneg += 1.0;
   if (global_variable::my_rank == 0) {
