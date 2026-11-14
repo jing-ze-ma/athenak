@@ -14556,25 +14556,47 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     // assembled, energy-conserving row (write-back from q = SRCR - SRCB E'); the fixed
     // point is unchanged.  Slots: 0 T of the last pass, 1 its step, 2/3 bracket, 4 flag.
     if (tos && tosc_.extent_int(0) > m && tnew > 0.0 && told > 0.0) {
+      // v7: flagged only on a GENUINE 2-cycle -- two consecutive reversals of the T step,
+      // each > 10 % of T -- and then Illinois false position on g(T) = map(T) - T with
+      // g kept at both bracket ends (slots 5 / 6; 7 = the previous step), superlinear.
       if (tpass == 0) {
         tosc_(m,0,k,j,i) = told; tosc_(m,1,k,j,i) = 0.0; tosc_(m,4,k,j,i) = 0.0;
+        tosc_(m,7,k,j,i) = 0.0;
       }
-      const Real dnow = tnew - told, dprv = tosc_(m,1,k,j,i);
+      const Real dnow = tnew - told, dprv = tosc_(m,1,k,j,i), dpp = tosc_(m,7,k,j,i);
       if (tosc_(m,4,k,j,i) > 0.5) {
-        // g(told) = tnew - told: the root is above told when the map pushes up
-        if (dnow > 0.0) {tosc_(m,2,k,j,i) = told;} else {tosc_(m,3,k,j,i) = told;}
-        tnew = 0.5*(tosc_(m,2,k,j,i) + tosc_(m,3,k,j,i));
+        Real lo = tosc_(m,2,k,j,i), hi = tosc_(m,3,k,j,i);
+        Real glo = tosc_(m,5,k,j,i), ghi = tosc_(m,6,k,j,i);
+        const Real gn = dnow;   // g(told)
+        if (gn > 0.0) {
+          lo = told; glo = gn;
+          if (tosc_(m,4,k,j,i) > 1.5) {ghi *= 0.5;}   // Illinois: same side twice
+          tosc_(m,4,k,j,i) = 2.0;
+        } else {
+          hi = told; ghi = gn;
+          if (tosc_(m,4,k,j,i) < 1.5) {glo *= 0.5;}
+          tosc_(m,4,k,j,i) = 1.0;
+        }
+        const Real den = glo - ghi;
+        tnew = (den > 0.0) ? (lo + glo*(hi - lo)/den) : 0.5*(lo + hi);
+        if (!(tnew > lo && tnew < hi)) {tnew = 0.5*(lo + hi);}
+        tosc_(m,2,k,j,i) = lo; tosc_(m,3,k,j,i) = hi;
+        tosc_(m,5,k,j,i) = glo; tosc_(m,6,k,j,i) = ghi;
         if (gnewt) {iw_(m,igy,k,j,i) = 0.0;}
         Kokkos::atomic_add(&tosn(0), 1.0);
-      } else if (tpass >= 2 && dnow*dprv < 0.0 && fabs(dnow) > 0.05*told &&
-                 fabs(dprv) > 0.05*told) {
-        tosc_(m,2,k,j,i) = fmin(told, told + dnow);
-        tosc_(m,3,k,j,i) = fmax(told, told + dnow);
+      } else if (tpass >= 3 && dnow*dprv < 0.0 && dprv*dpp < 0.0 &&
+                 fabs(dnow) > 0.1*told && fabs(dprv) > 0.1*told && fabs(dpp) > 0.1*told) {
+        // told and told + dnow bracket the root: g(told) = dnow, g(told + dnow) ~ -dnow
+        // (the 2-cycle's other iterate maps back to told)
+        const Real a = told, b = told + dnow;
+        tosc_(m,2,k,j,i) = fmin(a, b); tosc_(m,3,k,j,i) = fmax(a, b);
+        tosc_(m,5,k,j,i) = fabs(dnow); tosc_(m,6,k,j,i) = -fabs(dnow);
         tosc_(m,4,k,j,i) = 1.0;
-        tnew = 0.5*(tosc_(m,2,k,j,i) + tosc_(m,3,k,j,i));
+        tnew = 0.5*(a + b);
         if (gnewt) {iw_(m,igy,k,j,i) = 0.0;}
         Kokkos::atomic_add(&tosn(0), 1.0);
       }
+      tosc_(m,7,k,j,i) = dprv;
       tosc_(m,1,k,j,i) = tnew - told;
       tosc_(m,0,k,j,i) = tnew;
     }
@@ -18576,7 +18598,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // helper and its kernel are the function template M1ImplTsolveLaunch
       // (above); tsb_ctx is what the helper captured, by value.
       if (impl_tosc && tosc.extent_int(0) < nmb1 + 1) {   // rsgposlin-1113
-        Kokkos::realloc(tosc, nmb1 + 1, 5, iw.extent_int(2), iw.extent_int(3),
+        Kokkos::realloc(tosc, nmb1 + 1, 8, iw.extent_int(2), iw.extent_int(3),
                         iw.extent_int(4));
         Kokkos::deep_copy(tosc, 0.0);
       }
