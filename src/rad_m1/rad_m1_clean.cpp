@@ -295,8 +295,7 @@ void RadiationM1::CleanClosure(int t2s) {
     // closure of each cell from the rays where they carry the cell's radiation
     // (J >= cln_raymin E); else (the moment field holds radiation the rays do not, e.g.
     // next to a beam the first-order moment transport has widened) from the moment
-    // state's own flux factor f = F/(c E): h+- = +-(1 +- f)/2 (the upwind two-wave flux),
-    // D = 1/3, C1 = 1.  No optical depth enters.
+    // state's own flux: the beam + isotropic closure with al = |F|/(c E), C1 = 1.  No optical depth enters.
     auto vc = vet_cell;
     auto cc = cln_c;
     auto uu = u0;
@@ -315,20 +314,26 @@ void RadiationM1::CleanClosure(int t2s) {
         }
         cc(m,CLN_C1,k,j,i) = fmax(vc(m,M1_VET_NL,k,j,i)/jr, 0.0);
       } else {
+        // beam + isotropic closure of the moment state: a fraction al = |f| streams
+        // along n = f/|f|, the rest is isotropic (exact for both limits; a beam never
+        // flows backward)
         Real f[3], fm = 0.0;
         for (int a = 0; a < 3; ++a) {
           f[a] = (em > 0.0) ? uu(m,M1_F1+a,k,j,i)/(cl*em) : 0.0;
           fm += f[a]*f[a];
         }
         fm = std::sqrt(fm);
-        const Real sc = (fm > 1.0) ? 1.0/fm : 1.0;
+        const Real al = fmin(fm, 1.0);
+        Real n[3];
+        for (int a = 0; a < 3; ++a) n[a] = (fm > 0.0) ? f[a]/fm : 0.0;
         for (int a = 0; a < 3; ++a) {
-          const Real fa = f[a]*sc;
-          cc(m,CLN_HP+a,k,j,i) = 0.5*(1.0 + fa);
-          cc(m,CLN_HM+a,k,j,i) = -0.5*(1.0 - fa);
-          cc(m,CLN_D11+a,k,j,i) = 1.0/3.0;
-          cc(m,CLN_D11+3+a,k,j,i) = 0.0;
+          cc(m,CLN_HP+a,k,j,i) = al*fmax(n[a], 0.0) + 0.25*(1.0 - al);
+          cc(m,CLN_HM+a,k,j,i) = al*fmin(n[a], 0.0) - 0.25*(1.0 - al);
+          cc(m,CLN_D11+a,k,j,i) = al*n[a]*n[a] + (1.0 - al)/3.0;
         }
+        cc(m,CLN_D11+3,k,j,i) = al*n[0]*n[1];
+        cc(m,CLN_D11+4,k,j,i) = al*n[0]*n[2];
+        cc(m,CLN_D11+5,k,j,i) = al*n[1]*n[2];
         cc(m,CLN_C1,k,j,i) = 1.0;
       }
     });
