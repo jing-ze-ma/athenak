@@ -17285,521 +17285,315 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
       }
 
-      // ---- face i+1/2
-      if (i < ie || cyclic || !topb) {
-        int ip = (i < ie) ? (i+1) : (cyclic ? is : (ie+1));
-        Real om = 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);
-        Real ktf = M1KtX1(iw_, kir_, m, k, j, i, ip, cx1f_k, false);
-        Real th = 1.0/(1.0 + ch*dt*ktf);
-        Real df = om*th*ch*ch*dt/dx;
-        bb += nu*df*wi;
-        Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
-        if (trans) {wp = M1DDiag(iw_,vd_,dfull,m,0,k,j,ip);}
-        cc -= nu*df*wp;
-        Real vf = 0.5*(vi + iw_(m,M1_IW_V1,k,j,ip));
-        Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,i) + iw_(m,M1_IW_G0,k,j,ip));
-        // the OFF-diagonal Eddington terms of the x1 flux equation, d_2 P_12 + d_3 P_13,
-        // fully lagged and therefore a right-hand-side term
-        Real od = 0.0;
-        if (trans && odm != M1_OD_NONE) {
-          od = 0.5*(M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,vd_,
-                             dfull)
-                    + M1OffDiv(iw_,m,0,k,j,ip,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,
-                               M1_IW_EP,vd_,dfull));
-        }
-        if (cmi) {   // cmemimpl-1112: the memory implicit upwind, remainder limited
-          Real rmr; bool ld, ro;
-          const Real q = M1CmiFace(om*th*f0n_(m,k,j,i+1), iw_(m,M1_IW_EN,k,j,i),
-                                   iw_(m,M1_IW_EN,k,j,ip), iw_(m,M1_IW_EP,k,j,i),
-                                   iw_(m,M1_IW_EP,k,j,ip), pte_, cl, rmr, ld, ro);
-          rmr *= iw_(m,iwc,k,j,ro ? i : ip);
-          if (ld) {bb += nu*cr*q;} else {cc += nu*cr*q;}
-          rr -= nu*cr*(rmr - om*th*(ch*dt*vf*g0f + ch*cl*dt*od));
-        } else {
-        rr -= nu*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*od);
-        }
-        if (opnr && ip >= is && ip <= ie) {
-          const Real gf = nu*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*od)
-                          + nu*df*(wi*iw_(m,M1_IW_EP,k,j,i) - wp*iw_(m,M1_IW_EP,k,j,ip));
-          const Real q = -0.5*ch*dt*th*gf;
-          if (opgd) {
-            M1OpnCellRec(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
-                         opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr, gpd, gpr);
-            M1OpnCellRec(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
-                         opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr, gpo, gpr);
-          } else {
-            M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
-                      opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
-            M1OpnCell(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
-                      opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr);
-          }
-        }
-        // the HLL part: its E'_L coefficient is >= 0 (diagonal) and its E'_R coefficient
-        // <= 0 (upper off-diagonal), so the blend keeps the M-matrix.
-        bb += nu*ifw_(m,M1_IFW_HCL,k,j,i+1);
-        cc += nu*ifw_(m,M1_IFW_HCR,k,j,i+1);
-        rr -= nu*ifw_(m,M1_IFW_DG,k,j,i+1);
-        if (fmm_) {   // facemmat-1112: the explicit flux G; lam < 1 blends in F_L
-          // combo-cmfm-1112: with implicit_hr_cmem_implicit the memory part is q E'_d (in
-          // the implicit F_H part) + R (in G): the one limiter scales G_nonmem + R
-          Real cq = 0.0, cqr = 0.0; bool cld = false, cro = false;
-          if (cmi) {
-            cq = M1CmiFace(om*th*f0n_(m,k,j,i+1), iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j,ip),
-                           iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,ip), pte_, cl, cqr,
-                           cld, cro);
-          }
-          (void) cro;
-          const Real gx = cmi ? (cr*(cqr - om*th*ch*dt*vf*g0f) + ifw_(m,M1_IFW_DG,k,j,i+1))
-                          : (cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f)
-                             + ifw_(m,M1_IFW_DG,k,j,i+1));
-          fmg_(m,k,j,i+1) = gx;
-          const Real lf = fml_(m,k,j,i+1);
-          if (lf < 1.0) {
-            const Real w = 1.0 - lf;
-            bb += w*nu*(fmo_(m,0,k,j,i+1) - df*wi - ifw_(m,M1_IFW_HCL,k,j,i+1)
-                        - (cld ? cr*cq : 0.0));
-            cc += w*nu*(fmo_(m,1,k,j,i+1) + df*wp - ifw_(m,M1_IFW_HCR,k,j,i+1)
-                        - (cld ? 0.0 : cr*cq));
-            rr += w*nu*gx;
-          }
-        }
-        if (dfc_) {   // doface-1105 doppler_face = central: the DO face mean of a E
-          bb += nu*cr*0.5*ai;
-          cc += nu*cr*0.5*iw_(m,M1_IW_ADV,k,j,ip);
-        } else if (vf > 0.0) {
-          bb += nu*cr*ai;
-        } else {
-          cc += nu*cr*iw_(m,M1_IW_ADV,k,j,ip);
-        }
-        if (enth2 && !dfc_) {
-          bool o0, o3;
-          int i0 = M1EnthIdx(i-1, is, ie, cyclic, hxl, hxh, o0);
-          int i3 = M1EnthIdx(i+2, is, ie, cyclic, hxl, hxh, o3);
-          if (t2vs) {
-            rr -= nu*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,i),
-                                    iw_(m,M1_IW_EP,k,j,ip), iw_(m,M1_IW_EP,k,j,i3),
-                                    o0 && o3, iw_(m,M1_IW_ADV,k,j,i0), ai,
-                                    iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3),
-                                    iw_(m,t2da,k,j,i0), iw_(m,t2da,k,j,i),
-                                    iw_(m,t2da,k,j,ip), iw_(m,t2da,k,j,i3), vf, t2afc);
-          } else {
-          rr -= nu*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,i),
-                                 iw_(m,M1_IW_EP,k,j,ip), iw_(m,M1_IW_EP,k,j,i3),
-                                 o0 && o3, iw_(m,M1_IW_ADV,k,j,i0), ai,
-                                 iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3), vf);
-          }
-        }
-      } else if (bchi == M1_IBC_MARSHAK) {
-        const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
-        const Real ebh = ebc ? ebc_(m,k,j) : ebhi;
-        // per-column INFLOW face (E_bath > 0): no comoving flux, only the inflow enthalpy
-        const Real mqw = (ebc && ebh > 0.0) ? 0.0 : mq;
-        bb += nu*ch*mqw;
-        rr += nu*ch*mqw*ebh;
-        if (mfl && !sph && (!vqs || sqf) && ie > is) {
-          // unify-1114 (#19) implicit_marshak_face = linear on a Cartesian column: the
-          // sp/cs form below with E linear (M1MarshakCoefG)
-          Real ca, cb;
-          M1MarshakCoefG(false, 0.0, 0.0, 0.0, ca, cb);
-          const Real e0 = iw_(m,M1_IW_EP,k,j,ie), e1 = iw_(m,M1_IW_EP,k,j,ie-1);
-          const Real dl = M1MarshakFaceEG(false, e0, e1, 0.0, 0.0, 0.0) - (ca*e0 - cb*e1);
-          Real wq = nu*ch*mqw;
-          if (badv && vi > 0.0) {wq += nu*cr*ai;}
-          bb += wq*(ca - 1.0);
-          aa -= wq*cb;
-          rr -= wq*dl;
-        }
-        // implicit_bc_advect: the enthalpy flux A E through the end face, upwinded with
-        // the end cell's velocity (outflow: this cell's E; inflow: the bath)
-        if (badv) {
-          if (vi > 0.0) {
-            bb += nu*cr*ai;
-          } else {
-            rr -= nu*cr*ai*ebh;
-          }
-        }
-      } else if (bchi == M1_IBC_FLUX) {
-        rr -= nu*cr*fxhi;
-      }
-
-      // ---- face i-1/2
-      if (i > is || cyclic || !botb) {
-        int im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
-        Real om = 1.0 - ifw_(m,M1_IFW_AL,k,j,i);
-        Real ktf = M1KtX1(iw_, kir_, m, k, j, im, i, cx1f_k, false);
-        Real th = 1.0/(1.0 + ch*dt*ktf);
-        Real df = om*th*ch*ch*dt/dx;
-        bb += nu*df*wi;
-        Real wm = iw_(m,M1_IW_WCHI,k,j,im);
-        if (trans) {wm = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);}
-        aa -= nu*df*wm;
-        Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + vi);
-        Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,i));
-        Real od = 0.0;
-        if (trans && odm != M1_OD_NONE) {
-          od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
-                             vd_,dfull)
-                    + M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
-                               vd_,dfull));
-        }
-        if (cmi) {   // cmemimpl-1112 (as at face i+1/2)
-          Real rmr; bool ld, ro;
-          const Real q = M1CmiFace(om*th*f0n_(m,k,j,i), iw_(m,M1_IW_EN,k,j,im),
-                                   iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EP,k,j,im),
-                                   iw_(m,M1_IW_EP,k,j,i), pte_, cl, rmr, ld, ro);
-          rmr *= iw_(m,iwc,k,j,ro ? im : i);
-          if (ld) {aa -= nu*cr*q;} else {bb -= nu*cr*q;}
-          rr += nu*cr*(rmr - om*th*(ch*dt*vf*g0f + ch*cl*dt*od));
-        } else {
-        rr += nu*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*od);
-        }
-        if (opnr && im >= is && im <= ie) {
-          const Real gf = -nu*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*od)
-                          + nu*df*(wi*iw_(m,M1_IW_EP,k,j,i) - wm*iw_(m,M1_IW_EP,k,j,im));
-          const Real q = -0.5*ch*dt*th*gf;
-          if (opgd) {
-            M1OpnCellRec(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
-                         opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr, gmd, gmr);
-            M1OpnCellRec(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
-                         opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr, gmo, gmr);
-          } else {
-            M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
-                      opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
-            M1OpnCell(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
-                      opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr);
-          }
-        }
-        aa -= nu*ifw_(m,M1_IFW_HCL,k,j,i);
-        bb -= nu*ifw_(m,M1_IFW_HCR,k,j,i);
-        rr += nu*ifw_(m,M1_IFW_DG,k,j,i);
-        if (fmm_) {   // facemmat-1112 (as at face i+1/2)
-          // combo-cmfm-1112: with implicit_hr_cmem_implicit the memory part is q E'_d (in
-          // the implicit F_H part) + R (in G): the one limiter scales G_nonmem + R
-          Real cq = 0.0, cqr = 0.0; bool cld = false, cro = false;
-          if (cmi) {
-            cq = M1CmiFace(om*th*f0n_(m,k,j,i), iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,i),
-                           iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,i), pte_, cl, cqr,
-                           cld, cro);
-          }
-          (void) cro;
-          const Real gx = cmi ? (cr*(cqr - om*th*ch*dt*vf*g0f) + ifw_(m,M1_IFW_DG,k,j,i))
-                          : (cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f)
-                             + ifw_(m,M1_IFW_DG,k,j,i));
-          if (i == is) {fmg_(m,k,j,i) = gx;}
-          const Real lf = fml_(m,k,j,i);
-          if (lf < 1.0) {
-            const Real w = 1.0 - lf;
-            aa += w*nu*(df*wm + ifw_(m,M1_IFW_HCL,k,j,i) - fmo_(m,0,k,j,i)
-                        + (cld ? cr*cq : 0.0));
-            bb += w*nu*(ifw_(m,M1_IFW_HCR,k,j,i) - df*wi - fmo_(m,1,k,j,i)
-                        + (cld ? 0.0 : cr*cq));
-            rr -= w*nu*gx;
-          }
-        }
-        if (dfc_) {   // doface-1105 doppler_face = central
-          aa -= nu*cr*0.5*iw_(m,M1_IW_ADV,k,j,im);
-          bb -= nu*cr*0.5*ai;
-        } else if (vf > 0.0) {
-          aa -= nu*cr*iw_(m,M1_IW_ADV,k,j,im);
-        } else {
-          bb -= nu*cr*ai;
-        }
-        if (enth2 && !dfc_) {
-          bool o0, o3;
-          int i0 = M1EnthIdx(i-2, is, ie, cyclic, hxl, hxh, o0);
-          int i3 = M1EnthIdx(i+1, is, ie, cyclic, hxl, hxh, o3);
-          if (t2vs) {
-            rr += nu*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,im),
-                                    iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,i3),
-                                    o0 && o3, iw_(m,M1_IW_ADV,k,j,i0),
-                                    iw_(m,M1_IW_ADV,k,j,im), ai,
-                                    iw_(m,M1_IW_ADV,k,j,i3), iw_(m,t2da,k,j,i0),
-                                    iw_(m,t2da,k,j,im), iw_(m,t2da,k,j,i),
-                                    iw_(m,t2da,k,j,i3), vf, t2afc);
-          } else {
-          rr += nu*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,im),
-                                 iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,i3),
-                                 o0 && o3, iw_(m,M1_IW_ADV,k,j,i0),
-                                 iw_(m,M1_IW_ADV,k,j,im), ai, iw_(m,M1_IW_ADV,k,j,i3),
-                                 vf);
-          }
-        }
-      } else if (bmn_ > 0 && bmf_(m,k-ks,j-js) > 0.0) {
-        rr += nu*cr*bmf_(m,k-ks,j-js);   // littests-1011: the beam's own face flux
-      } else if (bclo == M1_IBC_MARSHAK) {
-        bb += nu*ch*mq;
-        rr += nu*ch*mq*eblo;
-        if (mfl && !sph && ie > is) {   // unify-1114 (#19), as the hi face above
-          Real ca, cb;
-          M1MarshakCoefG(false, 0.0, 0.0, 0.0, ca, cb);
-          const Real e0 = iw_(m,M1_IW_EP,k,j,is), e1 = iw_(m,M1_IW_EP,k,j,is+1);
-          const Real dl = M1MarshakFaceEG(false, e0, e1, 0.0, 0.0, 0.0) - (ca*e0 - cb*e1);
-          Real wq = nu*ch*mq;
-          if (badv && vi < 0.0) {wq -= nu*cr*ai;}
-          bb += wq*(ca - 1.0);
-          cc -= wq*cb;
-          rr -= wq*dl;
-        }
-        if (badv) {
-          if (vi > 0.0) {
-            rr += nu*cr*ai*eblo;
-          } else {
-            bb -= nu*cr*ai;
-          }
-        }
-      } else if (bclo == M1_IBC_FLUX) {
-        rr += nu*cr*(bfxm ? bfx_(m,k,j) : fxlo);
-      }
-
-      // implicit_vimp: the diagonal and x1 +-1 part of the implicit enthalpy velocity
-      // goes into the row (and so into the line preconditioner), its lagged part and
-      // J E^k into the right-hand side; the rest is applied by M1VimpRow
-      if (vim) {
-        aa += iw_(m,ivb+M1_IV_J1M,k,j,i);
-        bb += iw_(m,ivb+M1_IV_JD,k,j,i);
-        cc += iw_(m,ivb+M1_IV_J1P,k,j,i);
-        rr += iw_(m,ivb+M1_IV_JRHS,k,j,i);
-      }
-
-      // STAGE S1 (sp): the row rebuilt with dt A_f/V_i per face and the centroid
-      // distance dxface.x1f in the face-flux gradient.  The Cartesian row above is left
-      // textually untouched and overwritten here.  On sp (SphericalS1Check) the flux is
-      // central (om = 1, no HLL/DG part; sp-blend-1008: or berthon | blend, the x1
-      // HLL part with dt A_f/V_i) and offdiag none or lagged; m1-sph2 adds the
-      // hesdirk2 stage solves (the old vector is generic) and implicit_vimp.
-      if (sph) {
-        Real iv = dt/cvol(m,k,j,i);
-        Real nup = carea.x1f(m,k,j,i+1)*iv, num = carea.x1f(m,k,j,i)*iv;
-        aa = 0.0;
-        bb = 1.0 + iw_(m,M1_IW_SRCB,k,j,i);
-        cc = 0.0;
-        rr = iw_(m,M1_IW_EN,k,j,i) + iw_(m,M1_IW_SRCR,k,j,i);
-        if (trans) {
-          bb += iw_(m,M1_IW_TDIA,k,j,i);
-          rr += iw_(m,M1_IW_TRHS,k,j,i);
-        }
-        // DEBUG dbg_t2_admiss: the row by term (d_[0..6] of bb, d_[7..15] of rr)
-        Real d_[16] = {0.0};
-        Real pb_ = bb, pr_ = rr;
-        if (i < ie || !topb) {
-          int ip = (i < ie) ? (i+1) : (ie+1);
-          Real ktf = M1KtX1(iw_, kir_, m, k, j, i, ip, cx1f, fwd);
-          Real th = 1.0/(1.0 + ch*dt*ktf);
+      // ---- the x1 faces: ONE row builder for every grid (unify-1114 step 4, #12/#34).
+      // Each face enters with nuf = dt A_f/V_i (sp/cs: carea.x1f dt/cvol; Cartesian:
+      // dt/dx exactly, the uniform-grid value) and the centre distance dxf (sp/cs cdxf;
+      // Cartesian dx).  sd = 0 is face i+1/2 (s = +1: the row gets -F), sd = 1 face i-1/2
+      // (s = -1: +F); cL / cR are the row entries of the face's left / right cell and cn
+      // the neighbour's.  Bitwise with both former builders (the Cartesian row and the sp
+      // rebuild that overwrote it): where the two summed a term in a different order the
+      // order is kept per grid (sph):
+      //   - Cartesian weights the face terms as ((x*om)*th), sp/cs as x*tw (tw = om*th);
+      //   - the lagged off-diagonal divergence od sits inside the memory term on
+      //     Cartesian (M1OffDiv), a separate right-hand-side term on sp/cs
+      //     (M1SphCurv/Lat, CsLat0);
+      //   - the cmem remainder of the memory term (implicit_hr_cmem_implicit) likewise.
+      // Grid-specific by geometry or by data that exists on one grid only: the S2
+      // integrating factor and pos_transport (sphq, ptu, ptm), col1d A7 afd (cell
+      // widths),
+      // the Linhao inner bath and the ghost bath (sp/cs), the littests boundary beams
+      // (Cartesian pgen), the HLL part on sp/cs only with implicit_flux != central
+      // (aphll; Cartesian always adds it, its coefficients are 0 with central).
+      const Real iv = sph ? dt/cvol(m,k,j,i) : 0.0;
+      const bool hlx = aphll || !sph;
+      // DEBUG dbg_t2_admiss: the sp/cs row by term (d_[0..6] of bb, d_[7..15] of rr)
+      Real d_[16] = {0.0};
+      const Real pb_ = bb, pr_ = rr;
+      // the face body is a generic lambda instantiated for each face, so hi is a
+      // compile-time constant and cL / cR / cn bind to fixed registers
+      auto x1face = [&](auto hit) {
+        constexpr bool hi = decltype(hit)::value;
+        const Real s = hi ? 1.0 : -1.0;
+        const int fi = hi ? (i+1) : i;   // the face's x1 index
+        const Real nuf = sph ? carea.x1f(m,k,j,fi)*iv : nu;
+        const bool inr = hi ? (i < ie || cyclic || !topb) : (i > is || cyclic || !botb);
+        if (inr) {
+          const int in = hi ? ((i < ie) ? (i+1) : (cyclic ? is : (ie+1)))
+                            : ((i > is) ? (i-1) : (cyclic ? ie : (is-1)));
+          const int iL = hi ? i : in, iR = hi ? in : i;
+          Real &cL = hi ? bb : aa;
+          Real &cR = hi ? cc : bb;
+          Real &cn = hi ? cc : aa;
+          const bool nin = (in >= is) && (in <= ie);   // neighbour in this block
+          const Real om = hlx ? (1.0 - ifw_(m,M1_IFW_AL,k,j,fi)) : 1.0;
+          const Real ktf = M1KtX1(iw_, kir_, m, k, j, iL, iR, cx1f, fwd);
+          const Real th = 1.0/(1.0 + ch*dt*ktf);
           // sp-blend-1008: the central (face-eliminated) part of the face flux keeps the
           // weight 1 - AL of the blend (exactly th when implicit_flux = central)
-          Real tw = th;
-          if (aphll) {tw = (1.0 - ifw_(m,M1_IFW_AL,k,j,i+1))*th;}
-          Real df = tw*ch*ch*dt/cdxf.x1f(m,k,j,i+1);
-          Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
-          if (trans) {wp = M1DDiag(iw_,vd_,dfull,m,0,k,j,ip);}
-          Real wiu = wi;
-          Real ods = 0.0;   // the S2 curvature term (implicit_opac_newton needs it)
-          if (sphq) {
-            // S2: the integrating factor, (r_c/r_f)^2 on the q n_r^2 part of each cell
-            Real rf = cx1f(m,i+1);
-            Real si = SQR(cx1v(m,i)/rf), sp = SQR(cx1v(m,ip)/rf);
-            Real n1i = trans ? iw_(m,M1_IW_N1,k,j,i) : 1.0;
-            Real n1p = trans ? iw_(m,M1_IW_N1,k,j,ip) : 1.0;
-            wiu = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,i), n1i, si);
-            wp = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,ip), n1p, sp);
-            if (ptu && M1SphDrrUpNeed(iw_(m,M1_IW_WCHI,k,j,i),
-                                      iw_(m,M1_IW_WCHI,k,j,ip))) {
-              M1SphDrrUp(iw_(m,M1_IW_WCHI,k,j,i), n1i, si, iw_(m,M1_IW_WCHI,k,j,ip),
-                         n1p, sp, wiu, wp);
+          const Real tw = hlx ? om*th : th;
+          const Real dxf = sph ? cdxf.x1f(m,k,j,fi) : dx;
+          const Real df = tw*ch*ch*dt/dxf;
+          Real wn = iw_(m,M1_IW_WCHI,k,j,in);
+          if (trans) {wn = M1DDiag(iw_,vd_,dfull,m,0,k,j,in);}
+          Real wo = wi;
+          // the OFF-diagonal Eddington terms of the x1 flux equation, fully lagged
+          Real od = 0.0;
+          if (!sph) {
+            // Cartesian: d_2 P_12 + d_3 P_13 (implicit_offdiag)
+            if (trans && odm != M1_OD_NONE) {
+              od = 0.5*(M1OffDiv(iw_,m,0,k,j,iL,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,
+                                 M1_IW_EP,vd_,dfull)
+                        + M1OffDiv(iw_,m,0,k,j,iR,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,
+                                   M1_IW_EP,vd_,dfull));
             }
-            if (trans) {
-              Real od = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,i,odl,thrd,il,iu,jl,ju,
-                                       kl,ku,M1_IW_EP)
-                             + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,ip,odl,thrd,il,iu,jl,
-                                         ju,kl,ku,M1_IW_EP));
+          } else if (sphq) {
+            // S2: the integrating factor, (r_c/r_f)^2 on the q n_r^2 part of each cell
+            const Real rf = cx1f(m,fi);
+            const Real so = SQR(cx1v(m,i)/rf), sn = SQR(cx1v(m,in)/rf);
+            const Real n1o = trans ? iw_(m,M1_IW_N1,k,j,i) : 1.0;
+            const Real n1n = trans ? iw_(m,M1_IW_N1,k,j,in) : 1.0;
+            wo = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,i), n1o, so);
+            wn = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,in), n1n, sn);
+            if (ptu && M1SphDrrUpNeed(iw_(m,M1_IW_WCHI,k,j,iL),
+                                      iw_(m,M1_IW_WCHI,k,j,iR))) {
+              if (hi) {
+                M1SphDrrUp(iw_(m,M1_IW_WCHI,k,j,i), n1o, so, iw_(m,M1_IW_WCHI,k,j,in),
+                           n1n, sn, wo, wn);
+              } else {
+                M1SphDrrUp(iw_(m,M1_IW_WCHI,k,j,in), n1n, sn, iw_(m,M1_IW_WCHI,k,j,i),
+                           n1o, so, wn, wo);
+              }
+            }
+            if (trans) {   // S2 curvature (+ vet_col_lat) term, right-hand side
+              od = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,iL,odl,thrd,il,iu,jl,ju,
+                                  kl,ku,M1_IW_EP)
+                        + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,iR,odl,thrd,il,iu,jl,
+                                    ju,kl,ku,M1_IW_EP));
               if (vlat) {
-                od += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,i,thrd,il,iu,jl,
-                                       ju,kl,ku,M1_IW_EP)
-                           + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,ip,thrd,
+                od += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,iL,thrd,il,iu,jl,
+                                    ju,kl,ku,M1_IW_EP)
+                           + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,iR,thrd,
                                       il,iu,jl,ju,kl,ku,M1_IW_EP));
               }
               if (vlatc) {   // cs-s4-1017
-                od += 0.5*(M1CsLat0(iw_,vlt_,c0l,cvol,carf,cfn2,cfn3,m,k,j,i,thrd,
+                od += 0.5*(M1CsLat0(iw_,vlt_,c0l,cvol,carf,cfn2,cfn3,m,k,j,iL,thrd,
                                     M1_IW_EP,true,cse_,cg2_,cg3_,js,je,ks,ke)
-                           + M1CsLat0(iw_,vlt_,c0l,cvol,carf,cfn2,cfn3,m,k,j,ip,thrd,
+                           + M1CsLat0(iw_,vlt_,c0l,cvol,carf,cfn2,cfn3,m,k,j,iR,thrd,
                                       M1_IW_EP,true,cse_,cg2_,cg3_,js,je,ks,ke));
               }
-              rr += nup*cr*tw*ch*cl*dt*od;
-              d_[10] += nup*cr*tw*ch*cl*dt*od;
-              ods = od;
+              rr += s*nuf*cr*tw*ch*cl*dt*od;
+              if (dbgr) {d_[10] += s*nuf*cr*tw*ch*cl*dt*od;}
             }
           }
-          bb += nup*df*wiu;
-          d_[0] += nup*df*wiu;
-          cc -= nup*df*wp;
-          Real vf = M1FaceAvgX1(vi, iw_(m,M1_IW_V1,k,j,ip), cx1f, m, i, ip, fwd);
-          Real g0f = M1FaceAvgX1(iw_(m,M1_IW_G0,k,j,i), iw_(m,M1_IW_G0,k,j,ip), cx1f, m,
-                                 i, ip, fwd);
+          bb += nuf*df*wo;
+          if (dbgr) {d_[0] += nuf*df*wo;}
+          cn -= nuf*df*wn;
+          const Real vf = M1FaceAvgX1(iw_(m,M1_IW_V1,k,j,iL), iw_(m,M1_IW_V1,k,j,iR),
+                                      cx1f, m, iL, iR, fwd);
+          const Real g0f = M1FaceAvgX1(iw_(m,M1_IW_G0,k,j,iL), iw_(m,M1_IW_G0,k,j,iR),
+                                       cx1f, m, iL, iR, fwd);
+          // the face weight of the memory / Newton terms (order kept per grid, above)
+          const Real mt = sph ? s*nuf*cr*tw : s*nu*cr*om*th;
+          const Real odi = sph ? 0.0 : od;   // od inside the memory term (Cartesian)
           // postr-1031 implicit_pos_transport = upwind: the memory outflow of a dim
           // donor implicitly upwind (M1PtMemQ; the face kernel applies the same q)
           Real ptq_ = 0.0;
-          if (ptm && ip <= ie) {
-            if (pt0_) {
-              ptq_ = M1PtMemQ(tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f), cr, nup,
-                              carea.x1f(m,k,j,i+1)*(dt/cvol(m,k,j,ip)),
-                              iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j,ip), pte_, ptg_,
-                              cl);
-              ptq_a(m,k,j,i+1) = ptq_;
+          if (ptm && nin) {
+            if (hi) {
+              if (pt0_) {
+                ptq_ = M1PtMemQ(tw*(f0n_(m,k,j,fi) - ch*dt*vf*g0f), cr, nuf,
+                                carea.x1f(m,k,j,fi)*(dt/cvol(m,k,j,in)),
+                                iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j,in), pte_, ptg_,
+                                cl);
+                ptq_a(m,k,j,fi) = ptq_;
+              } else {
+                ptq_ = ptq_a(m,k,j,fi);
+              }
             } else {
-              ptq_ = ptq_a(m,k,j,i+1);
+              // pass 0: the same expression the row of im stores for this face
+              ptq_ = pt0_ ? M1PtMemQ(tw*(f0n_(m,k,j,fi) - ch*dt*vf*g0f), cr,
+                                     carea.x1f(m,k,j,fi)*(dt/cvol(m,k,j,in)), nuf,
+                                     iw_(m,M1_IW_EN,k,j,in), iw_(m,M1_IW_EN,k,j,i), pte_,
+                                     ptg_, cl)
+                          : ptq_a(m,k,j,fi);
             }
           }
           if (ptq_ > 0.0) {
-            bb += nup*cr*ptq_;
+            cL += s*nuf*cr*ptq_;
           } else if (ptq_ < 0.0) {
-            cc += nup*cr*ptq_;
-          } else if (cmi) {   // cmemimpl-1112
+            cR += s*nuf*cr*ptq_;
+          } else if (cmi) {   // cmemimpl-1112: memory implicit upwind, remainder limited
             Real rmr; bool ld, ro;
-            const Real q = M1CmiFace(tw*f0n_(m,k,j,i+1), iw_(m,M1_IW_EN,k,j,i),
-                                     iw_(m,M1_IW_EN,k,j,ip), iw_(m,M1_IW_EP,k,j,i),
-                                     iw_(m,M1_IW_EP,k,j,ip), pte_, cl, rmr, ld, ro);
-            rmr *= iw_(m,iwc,k,j,ro ? i : ip);
-            if (ld) {bb += nup*cr*q;} else {cc += nup*cr*q;}
-            rr -= nup*cr*(rmr - tw*ch*dt*vf*g0f);
-            d_[11] -= nup*cr*(rmr - tw*ch*dt*vf*g0f);
+            const Real q = M1CmiFace(tw*f0n_(m,k,j,fi), iw_(m,M1_IW_EN,k,j,iL),
+                                     iw_(m,M1_IW_EN,k,j,iR), iw_(m,M1_IW_EP,k,j,iL),
+                                     iw_(m,M1_IW_EP,k,j,iR), pte_, cl, rmr, ld, ro);
+            rmr *= iw_(m,iwc,k,j,ro ? iL : iR);
+            if (ld) {cL += s*nuf*cr*q;} else {cR += s*nuf*cr*q;}
+            const Real rq = sph ? (rmr - tw*ch*dt*vf*g0f)
+                                : (rmr - tw*(ch*dt*vf*g0f + ch*cl*dt*od));
+            rr -= s*nuf*cr*rq;
+            if (dbgr) {d_[11] -= s*nuf*cr*rq;}
           } else {
-          rr -= nup*cr*tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
-          d_[11] -= nup*cr*tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
+            rr -= mt*(f0n_(m,k,j,fi) - ch*dt*vf*g0f - ch*cl*dt*odi);
+            if (dbgr) {d_[11] -= mt*(f0n_(m,k,j,fi) - ch*dt*vf*g0f - ch*cl*dt*odi);}
           }
-          // implicit_opac_newton on sp: the same face term G (every part of it is
-          // proportional to th), with the sp area factor and the S2 row coefficients
-          if (opns && ip <= ie) {
-            const Real gf = nup*cr*tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*ods)
-                            + nup*df*(wiu*iw_(m,M1_IW_EP,k,j,i)
-                                      - wp*iw_(m,M1_IW_EP,k,j,ip));
+          // implicit_opac_newton: the Newton term of the face opacity.  A face term of
+          // the row G is proportional to th = 1/(1 + chat dt ktf): dG/dktf = -ch dt th G
+          if ((opnr || opns) && nin) {
+            const Real gf = mt*(f0n_(m,k,j,fi) - ch*dt*vf*g0f - ch*cl*dt*od)
+                            + nuf*df*(wo*iw_(m,M1_IW_EP,k,j,i)
+                                      - wn*iw_(m,M1_IW_EP,k,j,in));
             const Real q = -0.5*ch*dt*th*gf;
+            Real &god = hi ? gpd : gmd;
+            Real &gon = hi ? gpo : gmo;
+            Real &gor = hi ? gpr : gmr;
             if (opgd) {
               const Real b0 = bb, r0 = rr;
               M1OpnCellRec(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
-                           opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr, gpd, gpr);
-              M1OpnCellRec(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
-                           opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr, gpo, gpr);
-              d_[1] += bb - b0; d_[12] += rr - r0;
+                           opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr, god, gor);
+              M1OpnCellRec(q, ktdv(m,k,j,in), iw_(m,igb,k,j,in), iw_(m,igr,k,j,in),
+                           opac_(m,M1_OP_E,k,j,in), cl, dt, cn, rr, gon, gor);
+              if (dbgr) {d_[1] += bb - b0; d_[12] += rr - r0;}
             } else {
               {const Real b0 = bb, r0 = rr;
               M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
                         opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
-              d_[1] += bb - b0; d_[12] += rr - r0;}
+              if (dbgr) {d_[1] += bb - b0; d_[12] += rr - r0;}}
               {const Real r0 = rr;
-              M1OpnCell(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
-                        opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr);
-              d_[12] += rr - r0;}
+              M1OpnCell(q, ktdv(m,k,j,in), iw_(m,igb,k,j,in), iw_(m,igr,k,j,in),
+                        opac_(m,M1_OP_E,k,j,in), cl, dt, cn, rr);
+              if (dbgr) {d_[12] += rr - r0;}}
             }
           }
-          // sp-blend-1008: the berthon part of the face flux, ifw HCL E_i + HCR E_ip + DG
-          // (HCL >= 0 on the diagonal, HCR <= 0 off it), times dt A_f/V_i
-          if (aphll) {
-            bb += nup*ifw_(m,M1_IFW_HCL,k,j,i+1);
-            cc += nup*ifw_(m,M1_IFW_HCR,k,j,i+1);
-            rr -= nup*ifw_(m,M1_IFW_DG,k,j,i+1);
+          // the HLL / berthon part, ifw HCL E_L + HCR E_R + DG (HCL >= 0, HCR <= 0: the
+          // M-matrix stays)
+          if (hlx) {
+            cL += s*nuf*ifw_(m,M1_IFW_HCL,k,j,fi);
+            cR += s*nuf*ifw_(m,M1_IFW_HCR,k,j,fi);
+            rr -= s*nuf*ifw_(m,M1_IFW_DG,k,j,fi);
           }
-          if (fmm_) {   // facemmat-1112 (the Cartesian face i+1/2, sp areas)
-            const Real hl = aphll ? ifw_(m,M1_IFW_HCL,k,j,i+1) : 0.0;
-            const Real hr = aphll ? ifw_(m,M1_IFW_HCR,k,j,i+1) : 0.0;
+          if (fmm_) {   // facemmat-1112: the explicit flux G; lam < 1 blends in F_L
+            const Real hl = hlx ? ifw_(m,M1_IFW_HCL,k,j,fi) : 0.0;
+            const Real hr = hlx ? ifw_(m,M1_IFW_HCR,k,j,fi) : 0.0;
             // combo-cmfm-1112: with implicit_hr_cmem_implicit the memory part is q E'_d (in
             // the implicit F_H part) + R (in G): the one limiter scales G_nonmem + R
             Real cq = 0.0, cqr = 0.0; bool cld = false, cro = false;
             if (cmi) {
-              cq = M1CmiFace(tw*f0n_(m,k,j,i+1), iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j,ip),
-                             iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,ip), pte_, cl, cqr,
-                             cld, cro);
+              cq = M1CmiFace(tw*f0n_(m,k,j,fi), iw_(m,M1_IW_EN,k,j,iL),
+                             iw_(m,M1_IW_EN,k,j,iR), iw_(m,M1_IW_EP,k,j,iL),
+                             iw_(m,M1_IW_EP,k,j,iR), pte_, cl, cqr, cld, cro);
             }
             (void) cro;
+            const Real gm = sph ? cr*tw : cr*om*th;
             const Real gx = (cmi ? cr*(cqr - tw*ch*dt*vf*g0f)
-                                 : cr*tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f))
-                            + (aphll ? ifw_(m,M1_IFW_DG,k,j,i+1) : 0.0);
-            fmg_(m,k,j,i+1) = gx;
-            const Real lf = fml_(m,k,j,i+1);
+                                 : gm*(f0n_(m,k,j,fi) - ch*dt*vf*g0f))
+                            + (hlx ? ifw_(m,M1_IFW_DG,k,j,fi) : 0.0);
+            if (hi || i == is) {fmg_(m,k,j,fi) = gx;}
+            const Real lf = fml_(m,k,j,fi);
             if (lf < 1.0) {
               const Real w = 1.0 - lf;
-              bb += w*nup*(fmo_(m,0,k,j,i+1) - df*wiu - hl - (cld ? cr*cq : 0.0));
-              cc += w*nup*(fmo_(m,1,k,j,i+1) + df*wp - hr - (cld ? 0.0 : cr*cq));
-              rr += w*nup*gx;
+              if (hi) {
+                bb += w*nuf*(fmo_(m,0,k,j,fi) - df*wo - hl - (cld ? cr*cq : 0.0));
+                cc += w*nuf*(fmo_(m,1,k,j,fi) + df*wn - hr - (cld ? 0.0 : cr*cq));
+                rr += w*nuf*gx;
+              } else {
+                aa += w*nuf*(df*wn + hl - fmo_(m,0,k,j,fi) + (cld ? cr*cq : 0.0));
+                bb += w*nuf*(hr - df*wo - fmo_(m,1,k,j,fi) + (cld ? 0.0 : cr*cq));
+                rr -= w*nuf*gx;
+              }
             }
           }
-          if (afd) {   // col1d A7: Athena++ HLL tau-factor dissipation, face i+1/2
-            const Real ta = iw_(m,M1_IW_KT,k,j,i)*(cx1f(m,i+1) - cx1f(m,i));
-            const Real tb = iw_(m,M1_IW_KT,k,j,ip)*(cx1f(m,ip+1) - cx1f(m,ip));
+          if (afd && sph) {   // col1d A7: Athena++ HLL tau-factor dissipation
+            const Real ta = iw_(m,M1_IW_KT,k,j,iL)*(cx1f(m,iL+1) - cx1f(m,iL));
+            const Real tb = iw_(m,M1_IW_KT,k,j,iR)*(cx1f(m,iR+1) - cx1f(m,iR));
             const Real kc = (fmin(ta, tb) >= afdq) ? 0.5*ch*afdm*M1LbathDiss(3, afdt*(ta + tb))
                                                    : 0.0;
-            bb += nup*kc;
-            cc -= nup*kc;
+            bb += nuf*kc;
+            cn -= nuf*kc;
           }
           if (dfc_) {   // doface-1105 doppler_face = central: the DO face mean of a E
-            bb += nup*cr*0.5*ai;
-            d_[2] += nup*cr*0.5*ai;
-            cc += nup*cr*0.5*iw_(m,M1_IW_ADV,k,j,ip);
+            cL += s*nuf*cr*0.5*iw_(m,M1_IW_ADV,k,j,iL);
+            cR += s*nuf*cr*0.5*iw_(m,M1_IW_ADV,k,j,iR);
+            if (dbgr) {d_[2] += s*nuf*cr*0.5*ai;}
           } else if (vf > 0.0) {
-            bb += nup*cr*ai;
-            d_[2] += nup*cr*ai;
+            cL += s*nuf*cr*iw_(m,M1_IW_ADV,k,j,iL);
+            if (dbgr && hi) {d_[2] += nuf*cr*ai;}
           } else {
-            cc += nup*cr*iw_(m,M1_IW_ADV,k,j,ip);
+            cR += s*nuf*cr*iw_(m,M1_IW_ADV,k,j,iR);
+            if (dbgr && !hi) {d_[2] -= nuf*cr*ai;}
           }
           const Real re0_ = rr;
           if (enth2 && !dfc_) {
             bool o0, o3;
-            int i0 = M1EnthIdx(i-1, is, ie, false, hxl, hxh, o0);
-            int i3 = M1EnthIdx(i+2, is, ie, false, hxl, hxh, o3);
+            const int i0 = M1EnthIdx(hi ? (i-1) : (i-2), is, ie, cyclic, hxl, hxh, o0);
+            const int i3 = M1EnthIdx(hi ? (i+2) : (i+1), is, ie, cyclic, hxl, hxh, o3);
             if (t2vs) {
-              // m1-sph2: a hesdirk2 stage solve under implicit_vimp, as the Cartesian row
-              rr -= nup*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0),
-                                       iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,ip),
-                                       iw_(m,M1_IW_EP,k,j,i3), o0 && o3,
-                                       iw_(m,M1_IW_ADV,k,j,i0), ai,
-                                       iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3),
-                                       iw_(m,t2da,k,j,i0), iw_(m,t2da,k,j,i),
-                                       iw_(m,t2da,k,j,ip), iw_(m,t2da,k,j,i3), vf, t2afc);
+              rr -= s*nuf*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0),
+                                         iw_(m,M1_IW_EP,k,j,iL), iw_(m,M1_IW_EP,k,j,iR),
+                                         iw_(m,M1_IW_EP,k,j,i3), o0 && o3,
+                                         iw_(m,M1_IW_ADV,k,j,i0), iw_(m,M1_IW_ADV,k,j,iL),
+                                         iw_(m,M1_IW_ADV,k,j,iR), iw_(m,M1_IW_ADV,k,j,i3),
+                                         iw_(m,t2da,k,j,i0), iw_(m,t2da,k,j,iL),
+                                         iw_(m,t2da,k,j,iR), iw_(m,t2da,k,j,i3), vf,
+                                         t2afc);
             } else {
-            rr -= nup*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,i),
-                                    iw_(m,M1_IW_EP,k,j,ip), iw_(m,M1_IW_EP,k,j,i3),
-                                    o0 && o3, iw_(m,M1_IW_ADV,k,j,i0), ai,
-                                    iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3), vf);
+              rr -= s*nuf*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0),
+                                        iw_(m,M1_IW_EP,k,j,iL), iw_(m,M1_IW_EP,k,j,iR),
+                                        iw_(m,M1_IW_EP,k,j,i3), o0 && o3,
+                                        iw_(m,M1_IW_ADV,k,j,i0), iw_(m,M1_IW_ADV,k,j,iL),
+                                        iw_(m,M1_IW_ADV,k,j,iR), iw_(m,M1_IW_ADV,k,j,i3),
+                                        vf);
             }
           }
-          d_[13] += rr - re0_;
-        } else if (bchi == M1_IBC_MARSHAK) {
-          const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
-          const Real ebh = ebc ? ebc_(m,k,j) : ebhi;
-          // per-column INFLOW face (E_bath > 0): no comoving flux, only the inflow enthalpy
-          const Real mqw = (ebc && ebh > 0.0) ? 0.0 : mq;
-          bb += nup*ch*mqw;
-          rr += nup*ch*mqw*ebh;
-          if (mfl && (!vqs || sqf) && ie > is) {
-            // implicit_marshak_face = linear: c q (E_f - E_bath) with E_f the face E.
-            // Not with vet_col_surface_q: its q = H(face)/J(top cell) already makes the
-            // face flux the formal solution's H with the CELL E (runs_5e); the face J it
-            // would need instead is first order (the grazing layer at the top face)
-            // The linear face E is implicit (ca, -cb in the row), the limiter remainder a
-            // deferred correction.
-            Real ca, cb;
-            M1SphMarshakCoef(cx1v(m,ie), cx1v(m,ie-1), cx1f(m,ie+1), ca, cb);
-            const Real e0 = iw_(m,M1_IW_EP,k,j,ie), e1 = iw_(m,M1_IW_EP,k,j,ie-1);
-            const Real dl = M1SphMarshakFaceE(e0, e1, cx1v(m,ie), cx1v(m,ie-1),
-                                              cx1f(m,ie+1)) - (ca*e0 - cb*e1);
-            // the face flux c q E_f, and the outflowing enthalpy flux of
-            // implicit_bc_advect at the same face E
-            Real wq = nup*ch*mqw;
-            if (badv && vi > 0.0) {wq += nup*cr*ai;}
-            bb += wq*(ca - 1.0);
-            aa -= wq*cb;
-            rr -= wq*dl;
-          }
-          if (badv) {
-            if (vi > 0.0) {
-              bb += nup*cr*ai;
-            } else {
-              rr -= nup*cr*ai*ebh;
+          if (dbgr) {d_[13] += rr - re0_;}
+        } else if (hi) {
+          // ---- the outer x1 end face
+          if (bchi == M1_IBC_MARSHAK) {
+            const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
+            const Real ebh = ebc ? ebc_(m,k,j) : ebhi;
+            // per-column INFLOW face (E_bath > 0): no comoving flux, only the inflow
+            // enthalpy
+            const Real mqw = (ebc && ebh > 0.0) ? 0.0 : mq;
+            bb += nuf*ch*mqw;
+            rr += nuf*ch*mqw*ebh;
+            if (mfl && (!vqs || sqf) && ie > is) {
+              // implicit_marshak_face = linear: c q (E_f - E_bath) with E_f the face E
+              // (M1MarshakCoefG: sp/cs G = r^2 E linear, Cartesian E linear).  Not with
+              // vet_col_surface_q unless surface_face: its q = H(face)/J(top cell)
+              // already makes the face flux the formal solution's H with the CELL E
+              // (runs_5e).
+              // The linear face E is implicit (ca, -cb in the row), the limiter remainder
+              // a deferred correction.
+              const Real rc = sph ? cx1v(m,ie) : 0.0, rn = sph ? cx1v(m,ie-1) : 0.0;
+              const Real rf = sph ? cx1f(m,ie+1) : 0.0;
+              Real ca, cb;
+              M1MarshakCoefG(sph, rc, rn, rf, ca, cb);
+              const Real e0 = iw_(m,M1_IW_EP,k,j,ie), e1 = iw_(m,M1_IW_EP,k,j,ie-1);
+              const Real dl = M1MarshakFaceEG(sph, e0, e1, rc, rn, rf) - (ca*e0 - cb*e1);
+              // the face flux c q E_f, and the outflowing enthalpy flux of
+              // implicit_bc_advect at the same face E
+              Real wq = nuf*ch*mqw;
+              if (badv && vi > 0.0) {wq += nuf*cr*ai;}
+              bb += wq*(ca - 1.0);
+              aa -= wq*cb;
+              rr -= wq*dl;
             }
+            // implicit_bc_advect: the enthalpy flux A E through the end face, upwinded
+            // with the end cell's velocity (outflow: this cell's E; inflow: the bath)
+            if (badv) {
+              if (vi > 0.0) {
+                bb += nuf*cr*ai;
+              } else {
+                rr -= nuf*cr*ai*ebh;
+              }
+            }
+          } else if (bchi == M1_IBC_FLUX) {
+            rr -= nuf*cr*fxhi;
           }
-        } else if (bchi == M1_IBC_FLUX) {
-          rr -= nup*cr*fxhi;
-        }
-        if (lbath && i == is && botb && lbhr) {
+        } else {
+          // ---- the inner x1 end face
+          const Real num = nuf;
+          if (sph && lbath && i == is && botb && lbhr) {
           // linhao-prod-1104 he_bc_linhao_rad = halfrange: the inner face flux of his DO
           // upwind with half-range intensities, F = A - B E_is (rad_m1.hpp)
           const Real eg1 = lgr_(m,0,k,j), ag1 = lgr_(m,5,k,j);
@@ -17822,7 +17616,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           bb -= num*cr*0.5*ai;
           d_[2] -= num*cr*0.5*ai;
           d_[13] += rr - re1_;
-        } else if (lbath && i == is && botb) {
+        } else if (sph && lbath && i == is && botb) {
           // fin4-linhao-bc: the face i-1/2 of the branch below (an interior face whose
           // other cell is a ghost) with the ghost's own quantities (lgr_, rad_m1.hpp):
           // D = 1/3 and no curvature / lateral term on the ghost side; its E is fixed,
@@ -17891,198 +17685,32 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             }
           }
           d_[13] += rr - re1_;
-        } else if (i > is || !botb) {
-          int im = (i > is) ? (i-1) : (is-1);
-          Real ktf = M1KtX1(iw_, kir_, m, k, j, im, i, cx1f, fwd);
-          Real th = 1.0/(1.0 + ch*dt*ktf);
-          Real tw = th;   // sp-blend-1008, as at face i+1/2
-          if (aphll) {tw = (1.0 - ifw_(m,M1_IFW_AL,k,j,i))*th;}
-          Real df = tw*ch*ch*dt/cdxf.x1f(m,k,j,i);
-          Real wm = iw_(m,M1_IW_WCHI,k,j,im);
-          if (trans) {wm = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);}
-          Real wil = wi;
-          Real ods = 0.0;
-          if (sphq) {
-            Real rf = cx1f(m,i);
-            Real si = SQR(cx1v(m,i)/rf), sm = SQR(cx1v(m,im)/rf);
-            Real n1i = trans ? iw_(m,M1_IW_N1,k,j,i) : 1.0;
-            Real n1m = trans ? iw_(m,M1_IW_N1,k,j,im) : 1.0;
-            wil = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,i), n1i, si);
-            wm = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,im), n1m, sm);
-            if (ptu && M1SphDrrUpNeed(iw_(m,M1_IW_WCHI,k,j,im),
-                                      iw_(m,M1_IW_WCHI,k,j,i))) {
-              M1SphDrrUp(iw_(m,M1_IW_WCHI,k,j,im), n1m, sm, iw_(m,M1_IW_WCHI,k,j,i),
-                         n1i, si, wm, wil);
+          } else if (!sph && bmn_ > 0 && bmf_(m,k-ks,j-js) > 0.0) {
+            rr += nu*cr*bmf_(m,k-ks,j-js);   // littests-1011: the beam's own face flux
+          } else if (bclo == M1_IBC_MARSHAK) {
+            bb += num*ch*mq;
+            rr += num*ch*mq*eblo;
+            if (mfl && ie > is) {   // implicit_marshak_face = linear, as the outer face
+              const Real rc = sph ? cx1v(m,is) : 0.0, rn = sph ? cx1v(m,is+1) : 0.0;
+              const Real rf = sph ? cx1f(m,is) : 0.0;
+              Real ca, cb;
+              M1MarshakCoefG(sph, rc, rn, rf, ca, cb);
+              const Real e0 = iw_(m,M1_IW_EP,k,j,is), e1 = iw_(m,M1_IW_EP,k,j,is+1);
+              const Real dl = M1MarshakFaceEG(sph, e0, e1, rc, rn, rf) - (ca*e0 - cb*e1);
+              Real wq = num*ch*mq;
+              if (badv && vi < 0.0) {wq -= num*cr*ai;}
+              bb += wq*(ca - 1.0);
+              cc -= wq*cb;
+              rr -= wq*dl;
             }
-            if (trans) {
-              Real od = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,im,odl,thrd,il,iu,jl,ju,
-                                       kl,ku,M1_IW_EP)
-                             + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,i,odl,thrd,il,iu,jl,
-                                         ju,kl,ku,M1_IW_EP));
-              if (vlat) {
-                od += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,im,thrd,il,iu,jl,
-                                       ju,kl,ku,M1_IW_EP)
-                           + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,i,thrd,il,iu,jl,
-                                      ju,kl,ku,M1_IW_EP));
+            if (badv) {
+              if (vi > 0.0) {
+                rr += num*cr*ai*eblo;
+              } else {
+                bb -= num*cr*ai;
               }
-              if (vlatc) {   // cs-s4-1017
-                od += 0.5*(M1CsLat0(iw_,vlt_,c0l,cvol,carf,cfn2,cfn3,m,k,j,im,thrd,
-                                    M1_IW_EP,true,cse_,cg2_,cg3_,js,je,ks,ke)
-                           + M1CsLat0(iw_,vlt_,c0l,cvol,carf,cfn2,cfn3,m,k,j,i,thrd,
-                                      M1_IW_EP,true,cse_,cg2_,cg3_,js,je,ks,ke));
-              }
-              rr -= num*cr*tw*ch*cl*dt*od;
-              d_[10] -= num*cr*tw*ch*cl*dt*od;
-              ods = od;
             }
-          }
-          bb += num*df*wil;
-          d_[0] += num*df*wil;
-          aa -= num*df*wm;
-          Real vf = M1FaceAvgX1(iw_(m,M1_IW_V1,k,j,im), vi, cx1f, m, im, i, fwd);
-          Real g0f = M1FaceAvgX1(iw_(m,M1_IW_G0,k,j,im), iw_(m,M1_IW_G0,k,j,i), cx1f, m,
-                                 im, i, fwd);
-          Real ptq_ = 0.0;   // postr-1031 (as at face i+1/2)
-          if (ptm && im >= is) {
-            // pass 0: the same expression the row of im stores for this face
-            ptq_ = pt0_ ? M1PtMemQ(tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f), cr,
-                                   carea.x1f(m,k,j,i)*(dt/cvol(m,k,j,im)), num,
-                                   iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,i), pte_,
-                                   ptg_, cl)
-                        : ptq_a(m,k,j,i);
-          }
-          if (ptq_ > 0.0) {
-            aa -= num*cr*ptq_;
-          } else if (ptq_ < 0.0) {
-            bb -= num*cr*ptq_;
-          } else if (cmi) {   // cmemimpl-1112
-            Real rmr; bool ld, ro;
-            const Real q = M1CmiFace(tw*f0n_(m,k,j,i), iw_(m,M1_IW_EN,k,j,im),
-                                     iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EP,k,j,im),
-                                     iw_(m,M1_IW_EP,k,j,i), pte_, cl, rmr, ld, ro);
-            rmr *= iw_(m,iwc,k,j,ro ? im : i);
-            if (ld) {aa -= num*cr*q;} else {bb -= num*cr*q;}
-            rr += num*cr*(rmr - tw*ch*dt*vf*g0f);
-            d_[11] += num*cr*(rmr - tw*ch*dt*vf*g0f);
-          } else {
-          rr += num*cr*tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
-          d_[11] += num*cr*tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
-          }
-          if (opns && im >= is) {
-            const Real gf = -num*cr*tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*ods)
-                            + num*df*(wil*iw_(m,M1_IW_EP,k,j,i)
-                                      - wm*iw_(m,M1_IW_EP,k,j,im));
-            const Real q = -0.5*ch*dt*th*gf;
-            if (opgd) {
-              const Real b0 = bb, r0 = rr;
-              M1OpnCellRec(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
-                           opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr, gmd, gmr);
-              M1OpnCellRec(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
-                           opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr, gmo, gmr);
-              d_[1] += bb - b0; d_[12] += rr - r0;
-            } else {
-              {const Real b0 = bb, r0 = rr;
-              M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
-                        opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
-              d_[1] += bb - b0; d_[12] += rr - r0;}
-              {const Real r0 = rr;
-              M1OpnCell(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
-                        opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr);
-              d_[12] += rr - r0;}
-            }
-          }
-          if (aphll) {
-            aa -= num*ifw_(m,M1_IFW_HCL,k,j,i);
-            bb -= num*ifw_(m,M1_IFW_HCR,k,j,i);
-            rr += num*ifw_(m,M1_IFW_DG,k,j,i);
-          }
-          if (fmm_) {   // facemmat-1112 (as at face i+1/2)
-            const Real hl = aphll ? ifw_(m,M1_IFW_HCL,k,j,i) : 0.0;
-            const Real hr = aphll ? ifw_(m,M1_IFW_HCR,k,j,i) : 0.0;
-            // combo-cmfm-1112: with implicit_hr_cmem_implicit the memory part is q E'_d (in
-            // the implicit F_H part) + R (in G): the one limiter scales G_nonmem + R
-            Real cq = 0.0, cqr = 0.0; bool cld = false, cro = false;
-            if (cmi) {
-              cq = M1CmiFace(tw*f0n_(m,k,j,i), iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,i),
-                             iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,i), pte_, cl, cqr,
-                             cld, cro);
-            }
-            (void) cro;
-            const Real gx = (cmi ? cr*(cqr - tw*ch*dt*vf*g0f)
-                                 : cr*tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f))
-                            + (aphll ? ifw_(m,M1_IFW_DG,k,j,i) : 0.0);
-            if (i == is) {fmg_(m,k,j,i) = gx;}
-            const Real lf = fml_(m,k,j,i);
-            if (lf < 1.0) {
-              const Real w = 1.0 - lf;
-              aa += w*num*(df*wm + hl - fmo_(m,0,k,j,i) + (cld ? cr*cq : 0.0));
-              bb += w*num*(hr - df*wil - fmo_(m,1,k,j,i) + (cld ? 0.0 : cr*cq));
-              rr -= w*num*gx;
-            }
-          }
-          if (afd) {   // col1d A7: Athena++ HLL tau-factor dissipation, face i-1/2
-            const Real ta = iw_(m,M1_IW_KT,k,j,im)*(cx1f(m,im+1) - cx1f(m,im));
-            const Real tb = iw_(m,M1_IW_KT,k,j,i)*(cx1f(m,i+1) - cx1f(m,i));
-            const Real kc = (fmin(ta, tb) >= afdq) ? 0.5*ch*afdm*M1LbathDiss(3, afdt*(ta + tb))
-                                                   : 0.0;
-            aa -= num*kc;
-            bb += num*kc;
-          }
-          if (dfc_) {   // doface-1105 doppler_face = central
-            aa -= num*cr*0.5*iw_(m,M1_IW_ADV,k,j,im);
-            bb -= num*cr*0.5*ai;
-            d_[2] -= num*cr*0.5*ai;
-          } else if (vf > 0.0) {
-            aa -= num*cr*iw_(m,M1_IW_ADV,k,j,im);
-          } else {
-            bb -= num*cr*ai;
-            d_[2] -= num*cr*ai;
-          }
-          const Real re1_ = rr;
-          if (enth2 && !dfc_) {
-            bool o0, o3;
-            int i0 = M1EnthIdx(i-2, is, ie, false, hxl, hxh, o0);
-            int i3 = M1EnthIdx(i+1, is, ie, false, hxl, hxh, o3);
-            if (t2vs) {
-              rr += num*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0),
-                                       iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,i),
-                                       iw_(m,M1_IW_EP,k,j,i3), o0 && o3,
-                                       iw_(m,M1_IW_ADV,k,j,i0), iw_(m,M1_IW_ADV,k,j,im),
-                                       ai, iw_(m,M1_IW_ADV,k,j,i3), iw_(m,t2da,k,j,i0),
-                                       iw_(m,t2da,k,j,im), iw_(m,t2da,k,j,i),
-                                       iw_(m,t2da,k,j,i3), vf, t2afc);
-            } else {
-            rr += num*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,im),
-                                    iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,i3),
-                                    o0 && o3, iw_(m,M1_IW_ADV,k,j,i0),
-                                    iw_(m,M1_IW_ADV,k,j,im), ai,
-                                    iw_(m,M1_IW_ADV,k,j,i3), vf);
-            }
-          }
-          d_[13] += rr - re1_;
-        } else if (bclo == M1_IBC_MARSHAK) {
-          bb += num*ch*mq;
-          rr += num*ch*mq*eblo;
-          if (mfl && ie > is) {
-            Real ca, cb;
-            M1SphMarshakCoef(cx1v(m,is), cx1v(m,is+1), cx1f(m,is), ca, cb);
-            const Real e0 = iw_(m,M1_IW_EP,k,j,is), e1 = iw_(m,M1_IW_EP,k,j,is+1);
-            const Real dl = M1SphMarshakFaceE(e0, e1, cx1v(m,is), cx1v(m,is+1),
-                                              cx1f(m,is)) - (ca*e0 - cb*e1);
-            Real wq = num*ch*mq;
-            if (badv && vi < 0.0) {wq -= num*cr*ai;}
-            bb += wq*(ca - 1.0);
-            cc -= wq*cb;
-            rr -= wq*dl;
-          }
-          if (badv) {
-            if (vi > 0.0) {
-              rr += num*cr*ai*eblo;
-            } else {
-              bb -= num*cr*ai;
-            }
-          }
-        } else if (bclo == M1_IBC_FLUX && ghx) {
+          } else if (sph && bclo == M1_IBC_FLUX && ghx) {
           // marelax-1013 ghost bath: F = A - B E_is, the face formula of the interior
           // (central part) with the fixed ghost E (ghe) at x1v(is-1) and the cell's
           // own opacity, Eddington weight and velocity standing in for the ghost's
@@ -18091,30 +17719,36 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                         ga, gb);
           bb += num*cr*gb;
           rr += num*cr*ga;
-        } else if (bclo == M1_IBC_FLUX) {
-          rr += num*cr*(bfxm ? bfx_(m,k,j) : fxlo);
-        }
-        // m1-sph2: implicit_vimp, as in the Cartesian row above (ImplicitVimpBuild
-        // builds its coefficients with the sp areas, volumes and face distances)
-        if (vim) {
-          aa += iw_(m,ivb+M1_IV_J1M,k,j,i);
-          bb += iw_(m,ivb+M1_IV_JD,k,j,i);
-          cc += iw_(m,ivb+M1_IV_J1P,k,j,i);
-          rr += iw_(m,ivb+M1_IV_JRHS,k,j,i);
-        }
-        if (dbgr) {
-          if (vim) {
-            d_[4] = iw_(m,ivb+M1_IV_JD,k,j,i);
-            d_[14] = iw_(m,ivb+M1_IV_JRHS,k,j,i);
+          } else if (bclo == M1_IBC_FLUX) {
+            rr += num*cr*(bfxm ? bfx_(m,k,j) : fxlo);
           }
-          d_[5] = pb_;
-          d_[6] = bb - pb_ - d_[0] - d_[1] - d_[2] - d_[4];
-          d_[7] = pr_;
-          d_[15] = rr - pr_ - d_[10] - d_[11] - d_[12] - d_[13] - d_[14];
-          for (int q = 0; q < 16; ++q) {dbrow_(m,q,k,j,i) = d_[q];}
         }
-      }
+      };
+      x1face(std::true_type{});
+      x1face(std::false_type{});
 
+      // implicit_vimp: the diagonal and x1 +-1 part of the implicit enthalpy velocity
+      // goes into the row (and so into the line preconditioner), its lagged part and
+      // J E^k into the right-hand side; the rest is applied by M1VimpRow (on sp/cs
+      // ImplicitVimpBuild builds the coefficients with the sp areas, volumes and face
+      // distances)
+      if (vim) {
+        aa += iw_(m,ivb+M1_IV_J1M,k,j,i);
+        bb += iw_(m,ivb+M1_IV_JD,k,j,i);
+        cc += iw_(m,ivb+M1_IV_J1P,k,j,i);
+        rr += iw_(m,ivb+M1_IV_JRHS,k,j,i);
+      }
+      if (dbgr) {
+        if (vim) {
+          d_[4] = iw_(m,ivb+M1_IV_JD,k,j,i);
+          d_[14] = iw_(m,ivb+M1_IV_JRHS,k,j,i);
+        }
+        d_[5] = pb_;
+        d_[6] = bb - pb_ - d_[0] - d_[1] - d_[2] - d_[4];
+        d_[7] = pr_;
+        d_[15] = rr - pr_ - d_[10] - d_[11] - d_[12] - d_[13] - d_[14];
+        for (int q = 0; q < 16; ++q) {dbrow_(m,q,k,j,i) = d_[q];}
+      }
       // implicit_opac_newton_guard: face i+1/2 first, then i-1/2 against the diagonal
       // left by the first (the two can together take it no lower than opg^2 x b0)
       if (opgd) {
