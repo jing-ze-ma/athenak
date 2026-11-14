@@ -1785,6 +1785,8 @@ class RadiationM1 {
   bool impl_thin_cmin = false;     // rsgposlin-1113 <rad_m1>/implicit_thin_combine=min
   bool impl_thin_cani = false;     // ... = aniso (half-range asymmetry measure)
   bool impl_thin_cgate = false;    // ... = gate (min only at strong g contrast)
+  Real dbg_cc1_t = 0.0;            // DEBUG dbg_coldc1 (rsgposlin-1113)
+  DvceArray1D<Real> cc1_cnt;
   DvceArray5D<Real> tosc;          // (m, 8, k, j, i) per-cell bracket state
   DvceArray1D<Real> tosc_cnt;      // firing count (cell-passes, this rank)
   int dtr_cell[2][4] = {{-1, 0, 0, 0}, {-1, 0, 0, 0}};

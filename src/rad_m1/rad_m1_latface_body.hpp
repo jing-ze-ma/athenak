@@ -51,6 +51,7 @@
   const Real tgfd = thsw_gfd;
   const Real hwsl = impl_hr_ws_lat;
   const bool tcmin = impl_thin_cmin;   // rsgposlin-1113 implicit_thin_combine = min
+  const bool cc1on = (dbg_cc1_t > 0.0); const Real cc1t = dbg_cc1_t; auto cc1_ = cc1_cnt;
   const bool tcani = impl_thin_cani;   // ... = aniso
   const bool tcgat = impl_thin_cgate;   // ... = gate
   // DEBUG rsgposlin-1113 dbg_trace_*: the thin-switch inputs of the traced cell's faces
@@ -133,6 +134,11 @@
           if (hsrc == 2) {   // gdthin-1011
             fb = M1ThinCellGd(hgh_, m, k, j, i, d, fb, tfs, tqp, iw_(m,M1_IW_EN,k,j,i),
                               hd, jo);
+            // DEBUG rsgposlin-1113 dbg_coldc1: cold cells the thin switch reads as streaming
+            if (cc1on && d == 1 && fb > 0.6 && iw_(m,M1_IW_TP,k,j,i) < cc1t &&
+                i >= is && i <= ie) {
+              Kokkos::atomic_add(&cc1_(0), 1.0);
+            }
           } else {
           fb = M1ThinCell(hsrc, hvc_, m, k, j, i, d, fb, tfs, tfsa, tfsj, tqp,
                           iw_(m,M1_IW_EN,k,j,i), hd, jo);

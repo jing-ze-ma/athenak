@@ -2018,6 +2018,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_m1>/implicit_thin_combine must be max | min | gate | aniso");
     }
   }
+  // DEBUG rsgposlin-1113 dbg_coldc1 = T (code units, read only when named): per solve and
+  // rank, the cell-passes whose thin-switch g (vet_gd, after M1ThinCellGd) > 0.6 with
+  // T < dbg_coldc1 (the cold "streaming" cells of RSG_CAUSE_1113); output only
+  dbg_cc1_t = pin->DoesParameterExist("rad_m1","dbg_coldc1") ?
+              pin->GetReal("rad_m1","dbg_coldc1") : 0.0;
+  if (dbg_cc1_t > 0.0) {Kokkos::realloc(cc1_cnt, 1); Kokkos::deep_copy(cc1_cnt, 0.0);}
   // rsgposlin-1113 implicit_tosc_bisect (M1ImplTsolveLaunch; read only when named)
   impl_tosc = pin->DoesParameterExist("rad_m1","implicit_tosc_bisect") &&
               pin->GetBoolean("rad_m1","implicit_tosc_bisect");
@@ -19823,6 +19829,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if (rexcl_last >= impl_tol) {impl_res_nex += 1.0;}
   }
   impl_nstep += 1.0;
+  if (dbg_cc1_t > 0.0 && cc1_cnt.extent_int(0) > 0) {   // DEBUG rsgposlin-1113
+    auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cc1_cnt);
+    if (hc(0) > 0.0) {
+      std::cout << "COLDC1 rank=" << global_variable::my_rank << " cycle="
+                << pmy_pack->pmesh->ncycle << " t2s=" << t2s << " cell-passes=" << hc(0)
+                << std::endl;
+    }
+    Kokkos::deep_copy(cc1_cnt, 0.0);
+  }
   impl_itsum += static_cast<Real>(it);
   impl_itmax = std::max(impl_itmax, static_cast<Real>(it));
   if (!converged) {
