@@ -72,6 +72,7 @@ struct CleanCtx {
   bool hmus;                     // ray face flux: limited upwind reconstruction (else mean)
   bool cfct = true;              // correction limited for positivity (else the q gate)
   bool addc = true;              // add the consistency correction (G part)
+  bool hrr = true;               // half-range factors from face ray fluxes (fc 3, 4)
 };
 
 // the cell's exact backward-Euler temperature for a given E (constant opacities):
@@ -202,7 +203,12 @@ KOKKOS_INLINE_FUNCTION Real CleanFlux(const CleanCtx &x, const int e, const int 
                                       x.w(m,CLW_A1+dir,k,j,i)*er);
     }
   }
-  if (wf > 0.0) {
+  if (wf > 0.0 && x.hrr) {
+    // consistent half-range face: c (h+_f E_L + h-_f E_R) with h+_f = H+_f/J_L,
+    // h-_f = H-_f/J_R from the rays' half-range fluxes at the face (= the rays' face flux
+    // when E = J); h+_f >= 0 >= h-_f keeps the M-matrix (positive by construction)
+    f += wf*c*(x.fc[dir](m,3,k,j,i)*el + x.fc[dir](m,4,k,j,i)*er);
+  } else if (wf > 0.0) {
     f += wf*c*(x.cs(m,CLN_HP+dir,kl,jl,il)*el + x.cs(m,CLN_HM+dir,k,j,i)*er);
     // ray-moment consistency (high-order/low-order), see CleanCorr: gate mode q*corr,
     // fct mode the limited correction stored per face
@@ -553,6 +559,7 @@ void RadiationM1::CleanFaceCoef() {
   auto inc = t2inc;
   auto cw = cln_w;
   const bool gate = cln_gate;
+  const bool hrr = cln_hrr, mus = cln_hmus;
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !d2) continue;
     if (dir == 2 && !d3) continue;
@@ -579,6 +586,31 @@ void RadiationM1::CleanFaceCoef() {
       const Real r = fmin(rat(cw(m,CLW_EO,k,j,i), cs(m,CLN_J,k,j,i)),
                           rat(cw(m,CLW_EO,kl,jl,il), cs(m,CLN_J,kl,jl,il)));
       fc(m,3,k,j,i) = gate ? r*r : 1.0;
+      if (hrr) {
+        // the rays' half-range fluxes HP = h+ J (rightward) and HM = h- J at the face:
+        // limited upwind reconstruction (HP from the left, HM from the right) or mean
+        const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+        auto hpj = [&](const int kk, const int jj, const int ii) {
+          return cs(m,CLN_HP+dir,kk,jj,ii)*cs(m,CLN_J,kk,jj,ii);};
+        auto hmj = [&](const int kk, const int jj, const int ii) {
+          return cs(m,CLN_HM+dir,kk,jj,ii)*cs(m,CLN_J,kk,jj,ii);};
+        auto mm = [](const Real a, const Real b) {
+          return (a*b <= 0.0) ? 0.0 : ((fabs(a) < fabs(b)) ? a : b);};
+        Real hpf, hmf;
+        if (mus) {
+          const Real pl = hpj(kl,jl,il);
+          hpf = pl + 0.5*mm(pl - hpj(kl-dk,jl-dj,il-di), hpj(k,j,i) - pl);
+          const Real mr = hmj(k,j,i);
+          hmf = mr - 0.5*mm(mr - hmj(kl,jl,il), hmj(k+dk,j+dj,i+di) - mr);
+        } else {
+          hpf = 0.5*(hpj(kl,jl,il) + hpj(k,j,i));
+          hmf = 0.5*(hmj(kl,jl,il) + hmj(k,j,i));
+        }
+        const Real jlv = cs(m,CLN_J,kl,jl,il), jrv = cs(m,CLN_J,k,j,i);
+        // donor ratios; a donor without ray radiation keeps its own (filled) h
+        fc(m,3,k,j,i) = (jlv > 0.0) ? fmin(fmax(hpf/jlv, 0.0), 1.0) : cs(m,CLN_HP+dir,kl,jl,il);
+        fc(m,4,k,j,i) = (jrv > 0.0) ? fmax(fmin(hmf/jrv, 0.0), -1.0) : cs(m,CLN_HM+dir,k,j,i);
+      }
     });
   }
 }
@@ -607,6 +639,8 @@ void RadiationM1::CleanApply(int src, int dst) {
   x.fb = gas_feedback;
   x.hmus = cln_hmus;
   x.cfct = !cln_gate;
+  x.hrr = cln_hrr;
+  x.addc = !cln_hrr;
   auto op = opac;
   par_for("cln_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -839,8 +873,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
   });
   // G part of each face flux via the zero vector: F(E=0, withg) (CLW_CP is scratch = 0)
   // the raw consistency correction of every interior / periodic face (fct mode)
-  x.cfct = !cln_gate;
-  x.addc = true;
+  x.hrr = cln_hrr;
+  x.cfct = !cln_gate && !cln_hrr;
+  x.addc = !cln_hrr;
   if (x.cfct) {
     for (int dir = 0; dir < 3; ++dir) {
       if (dir == 1 && !d2) continue;
@@ -870,7 +905,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
     // of the consistency correction: B0 without it, then each face's correction scaled so
     // that no cell gives away more than B0 (the M-matrix keeps E >= 0 for B >= 0)
     for (int prh = 0; prh < (x.cfct ? 2 : 1); ++prh) {
-    x.addc = !(x.cfct && prh == 0);
+    x.addc = !cln_hrr && !(x.cfct && prh == 0);
     par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real t = x.w(m,CLW_T,k,j,i);
@@ -949,8 +984,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
         }
         const Real wf = x.fc[dir](m,0,kk2,jj,ii), th = x.fc[dir](m,1,kk2,jj,ii);
         const Real g = (1.0 - wf)*th*x.h*x.c*x.c*x.idx[dir];
-        al = g*x.cs(m,CLN_D11+dir,kl,jl,il) + wf*x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
-        arr = -g*x.cs(m,CLN_D11+dir,kk2,jj,ii) + wf*x.c*x.cs(m,CLN_HM+dir,kk2,jj,ii);
+        const Real hpf = x.hrr ? x.fc[dir](m,3,kk2,jj,ii) : x.cs(m,CLN_HP+dir,kl,jl,il);
+        const Real hmf = x.hrr ? x.fc[dir](m,4,kk2,jj,ii) : x.cs(m,CLN_HM+dir,kk2,jj,ii);
+        al = g*x.cs(m,CLN_D11+dir,kl,jl,il) + wf*x.c*hpf;
+        arr = -g*x.cs(m,CLN_D11+dir,kk2,jj,ii) + wf*x.c*hmf;
         if (x.fb) {
           al += (1.0 - wf)*(1.0 - th)*0.5*x.w(m,CLW_A1+dir,kl,jl,il);
           arr += (1.0 - wf)*(1.0 - th)*0.5*x.w(m,CLW_A1+dir,kk2,jj,ii);
