@@ -590,7 +590,7 @@ void RstAppend(std::vector<char> *out) {
   if (!on_) return;
   // payload: nx1, ledgers (kNL), ledgers at the stage-loop start (kNL), their cycle,
   // erad, wgrav, tprev, ref flag, mref, dmint, rhoref (nx1), ddm (nx1), [open items
-  // 11-13] ebnd_acc_in, ebnd_acc_out, ebnd_acc_src, a spare
+  // 11-13] ebnd_acc_in, ebnd_acc_out, ebnd_acc_src, ebnd_s3
   std::vector<Real> p;
   p.push_back(static_cast<Real>(nx1_));
   for (int q = 0; q < kNL; ++q) {p.push_back(led_[q]);}
@@ -608,7 +608,7 @@ void RstAppend(std::vector<char> *out) {
   p.push_back(ebd_ ? pm1->ebnd_acc_in : 0.0);
   p.push_back(ebd_ ? pm1->ebnd_acc_out : 0.0);
   p.push_back(ebd_ ? pm1->ebnd_acc_src : 0.0);
-  p.push_back(0.0);   // spare
+  p.push_back(ebd_ ? pm1->ebnd_s3 : 0.0);   // the esrc inside the next step's K1
   const Real rn = static_cast<Real>(p.size());
   const std::size_t o = out->size();
   out->resize(o + (p.size() + 1)*sizeof(Real) + sizeof(kTag));
@@ -648,6 +648,8 @@ void RestartApply(Mesh *pm) {
         pm1->ebnd_acc_out = rst_[o + 1];
         pm1->ebnd_acc = pm1->ebnd_acc_in - pm1->ebnd_acc_out;
         pm1->ebnd_acc_src = rst_[o + 2];
+        pm1->ebnd_s3 = rst_[o + 3];
+        pm1->ebnd_s3_ok = true;
       }
     }
     have = true;

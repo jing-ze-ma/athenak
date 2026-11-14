@@ -1903,6 +1903,11 @@ class RadiationM1 {
   // the previous step's last solve, FSAL)
   Real ebnd_acc_src = 0.0;
   Real ebnd_s1 = 0.0, ebnd_s2 = 0.0;
+  // the esrc sum of the last accepted solve = the one inside the next step's K1 (a
+  // restart sets it from the drive trailer: the esrc array rebuilt at a restart need not
+  // be the one the stored K1 carries)
+  Real ebnd_s3 = 0.0;
+  bool ebnd_s3_ok = false;
   Real EbndEsrc();
   // side 0: inner minus outer (the original sum); 1: the inner faces only (inward
   // positive); 2: the outer faces only (OUTWARD positive)

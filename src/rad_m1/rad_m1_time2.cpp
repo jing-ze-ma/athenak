@@ -2294,7 +2294,7 @@ void RadiationM1::EbndStart() {
   if (ebnd_split) {
     ebnd_l1i = EbndFluxX1(1);
     ebnd_l1o = EbndFluxX1(2);
-    ebnd_s1 = EbndEsrc();
+    ebnd_s1 = ebnd_s3_ok ? ebnd_s3 : EbndEsrc();
     return;
   }
   ebnd_l1 = EbndFluxX1();
@@ -2326,7 +2326,10 @@ void RadiationM1::EbndAccept(Real dt, bool t2step) {
     const Real l3i = EbndFluxX1(1), l3o = EbndFluxX1(2);
     ebnd_acc_in += applied(ebnd_l1i, ebnd_l2i, l3i);
     ebnd_acc_out += applied(ebnd_l1o, ebnd_l2o, l3o);
-    ebnd_acc_src += applied(ebnd_s1, ebnd_s2, EbndEsrc());
+    const Real s3 = EbndEsrc();
+    ebnd_acc_src += applied(ebnd_s1, ebnd_s2, s3);
+    ebnd_s3 = s3;
+    ebnd_s3_ok = true;
     ebnd_acc = ebnd_acc_in - ebnd_acc_out;
     return;
   }
