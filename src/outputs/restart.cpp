@@ -161,13 +161,13 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                    Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
   // the internal energy the last inversion produced, see kEintRstMagic in pgen.hpp
-  if (phydro != nullptr && phydro->peos->eos_data.IsGeneral()) {
+  if (phydro != nullptr && phydro->RstEint()) {   // t9rst-1113: + ideal gas
     Kokkos::realloc(outarray_weh, nmb, nout3, nout2, nout1);
     DeepCopyAcross(outarray_weh, Kokkos::subview(phydro->w0,
                    std::make_pair(0,nmb), static_cast<int>(IEN),
                    Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
-  if (pmhd != nullptr && pmhd->peos->eos_data.IsGeneral()) {
+  if (pmhd != nullptr && pmhd->RstEint()) {   // t9rst-1113: + ideal gas
     Kokkos::realloc(outarray_wem, nmb, nout3, nout2, nout1);
     DeepCopyAcross(outarray_wem, Kokkos::subview(pmhd->w0,
                    std::make_pair(0,nmb), static_cast<int>(IEN),
@@ -472,8 +472,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     std::memcpy(&(t2_hdr[0]) + sizeof(hdr), &(hv[0]), sizeof(hv));
   }
   // the general-EOS internal energy slabs (kEintRstMagic): one per general-EOS module
-  const bool we_hyd = (phydro != nullptr) && phydro->peos->eos_data.IsGeneral();
-  const bool we_mhd = (pmhd != nullptr) && pmhd->peos->eos_data.IsGeneral();
+  // t9rst-1113: and every ideal-gas module (RstEint, <hydro|mhd>/rst_eint)
+  const bool we_hyd = (phydro != nullptr) && phydro->RstEint();
+  const bool we_mhd = (pmhd != nullptr) && pmhd->RstEint();
   const int neint = (we_hyd ? 1 : 0) + (we_mhd ? 1 : 0);
   // the implicit-ck state block (utils/two_stream_ck_rst.hpp), behind even that one
   const int nck = ck_rst_hdr_bytes.empty() ? 0

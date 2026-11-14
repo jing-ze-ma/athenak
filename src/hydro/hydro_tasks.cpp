@@ -962,7 +962,9 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   // as the file had it.  Re-deriving the internal energy from the file's u0 goes through
   // (E - rho phi) + rho phi - rho phi with etotgrav, which is not the E - rho phi of the
   // straight run's last inversion; the restart then stopped being bitwise.
-  const bool eint_fix = c2p_freeze_derived && c2p_eint_rst;
+  // t9rst-1113: also the ideal-gas EOS (no derived state to freeze), see RstEint
+  const bool eint_fix = c2p_eint_rst &&
+                        (c2p_freeze_derived || !peos->eos_data.IsGeneral());
   DvceArray4D<Real> ekeep;
   if (eint_fix) {
     Kokkos::realloc(ekeep, eint_rst.extent(0), eint_rst.extent(1), eint_rst.extent(2),

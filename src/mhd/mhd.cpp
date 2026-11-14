@@ -460,6 +460,9 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     }
     use_etotgrav = pin->GetOrAddBoolean("mhd","etotgrav",false);
+    if (pin->DoesParameterExist("mhd","rst_eint")) {   // t9rst-1113 (mhd.hpp)
+      rst_eint_ideal = pin->GetBoolean("mhd","rst_eint");
+    }
     // ckbval-1102 (read only when named; see MHD::SplitBvalFastOK in mhd_splitbval.cpp).
     // prod1103 default (USER 11-02/11-03): true on a FRESH start (recipe::NewDefaults), as
     // the hydro twin; ckbval_1102 + prod_1103 gates: r1m bitwise 40/300 and restart split

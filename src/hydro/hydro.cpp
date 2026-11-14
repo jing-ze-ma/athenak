@@ -295,6 +295,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       recipe::Log("<hydro>/split_c2p_once = false (recipe none: the old default)");
     }
   }
+  if (pin->DoesParameterExist("hydro","rst_eint")) {   // t9rst-1113 (hydro.hpp)
+    rst_eint_ideal = pin->GetBoolean("hydro","rst_eint");
+  }
   scp_once = pin->DoesParameterExist("hydro","split_c2p_once") ?
              pin->GetBoolean("hydro","split_c2p_once") : false;
   // prod1104b default (USER 11-04) WITHDRAWN by defaults-1105 (USER 11-05: GPU timing showed

@@ -1950,6 +1950,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "history is then not bitwise)." << std::endl;
   }
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0 ||
+      neint_file > 0 ||   // t9rst-1113: an ideal-gas eint slab alone
       ctr_read || rss_read || vgd_read || ra_read || csk_read || ams_read ||
       npgs_file > 0 || nfax_file > 0 || nthc_file > 0) {
     const IOWrapperSizeT tail0 = offset_myrank;
@@ -2071,20 +2072,25 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     // the internal energy (kEintRstMagic): only with the full general-EOS tail, which is
     // what makes the first conversion frozen; it goes into w0 in that conversion
-    const int neint_want = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0);
+    // t9rst-1113: an ideal-gas module carries it too (RstEint); it has no general tail
+    const bool ei_hyd = wt_hyd || ((phydro != nullptr) && phydro->RstEint() &&
+                                   !phydro->peos->eos_data.IsGeneral());
+    const bool ei_mhd = wt_mhd || ((pmhd != nullptr) && pmhd->RstEint() &&
+                                   !pmhd->peos->eos_data.IsGeneral());
+    const int neint_want = (ei_hyd ? 1 : 0) + (ei_mhd ? 1 : 0);
     if (neint_file > 0 && neint_file == neint_want && wd_hyd == wt_hyd &&
         wd_mhd == wt_mhd) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file;
       offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
-      if (wt_hyd) {
+      if (ei_hyd) {
         read_slab("hydro internal energy");
         Kokkos::realloc(phydro->eint_rst, nmb, nout3, nout2, nout1);
         Kokkos::deep_copy(phydro->eint_rst, wtin);
         phydro->c2p_eint_rst = true;
       }
-      if (wt_mhd) {
+      if (ei_mhd) {
         read_slab("mhd internal energy");
         Kokkos::realloc(pmhd->eint_rst, nmb, nout3, nout2, nout1);
         Kokkos::deep_copy(pmhd->eint_rst, wtin);

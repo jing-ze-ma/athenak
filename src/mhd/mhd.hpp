@@ -382,6 +382,16 @@ class MHD {
   // then released.  Empty (and c2p_eint_rst false) otherwise.
   bool c2p_eint_rst = false;
   DvceArray4D<Real> eint_rst;
+  // t9rst-1113 <mhd>/rst_eint (read only when named; default true): the IDEAL-gas
+  // EOS carries w0(IEN) in the restart file too (as the general EOS always did) and
+  // the first ConToPrim of the restarted run takes it from there.  Re-deriving it
+  // from u0 is not bitwise where the last inversion of the straight run applied a
+  // floor or etotgrav rounded (T9L6.2: 210 cells near the top after a BE redo, rel
+  // 3e-12, so a restart diverged at round-off).  Changes no fresh run.
+  bool rst_eint_ideal = true;
+  bool RstEint() const {
+    return peos->eos_data.IsGeneral() || (peos->eos_data.is_ideal && rst_eint_ideal);
+  }
 
   // FLOOR BOOKKEEPING (off unless a problem generator calls EnableC2PTrack): the energy
   // and mass ConToPrim adds to the ACTIVE cells (density/energy/temperature floors, the
