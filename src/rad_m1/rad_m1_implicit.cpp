@@ -14103,6 +14103,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     Real de0 = iw_(m,M1_IW_DE0,k,j,i);
     Real bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
     Real rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
+    bool pdmp = false;   // rsgposlin-1113
     // MILESTONE 3g, the Newton SAFEGUARD.  The temperature this pass starts from was
     // produced by the Newton step of the previous pass, whose linearisation dropped
     // the curvature of e(T) and of T^4.  Here -- where e(T_k) has just been
@@ -14147,14 +14148,40 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
           }
         }
       }
+      // rsgposlin-1113 (below): the damped B_k is the one the T update reads
+      if (psl && bk > 0.0) {
+        const Real yk = rk + cl*dt*rkev*fmax(iw_(m,M1_IW_EP,k,j,i), 0.0);
+        const Real lim = ((yk < 0.0) ? 0.2 : M1_NEWT_TRUST)*tk;
+        if (fabs(yk) > lim*bk) {bk = fabs(yk)/lim; pdmp = true;}
+      }
       iw_(m,igb,k,j,i) = bk;
       iw_(m,igr,k,j,i) = rk;
     }
     if (gasx) {
       iw_(m,igm,k,j,i) += nmiss;
     }
+    // rsgposlin-1113 <rad_m1>/implicit_src_poslin (read only when named, default false =
+    // bitwise; bitwise also in every cell-pass where it does not fire).  The row
+    // eliminates the gas with ONE Newton step in T: the emission it solves is the tangent
+    // emis (T_k^4 + 4 T_k^3 dT), dT = (R_k + c dt rho kappa_E E')/B_k.  Far from the
+    // fixed point that step can leave the trust region the T update itself enforces
+    // (|dT| <= M1_NEWT_TRUST T_k, else the bracketed root find): the row then solves a
+    // gas response that is never applied, and for dT < -T_k/4 a NEGATIVE emission.  On
+    // RSG (rsg.01451, rank 23, RSG_CAUSE_1113) E' < 0 is clipped to e_floor, the root
+    // find from the floored E gives the other T, whose tangent flips back: a Picard
+    // 2-cycle to the 200-pass cap.  With the key, B_k is raised to |y_k|/lim where the
+    // step at the current iterate, y_k = R_k + c dt rho kappa_E E^k, exceeds lim =
+    // 0.2 T_k
+    // (cooling: tangent emission >= 0.2 emis T_k^4) or M1_NEWT_TRUST T_k (heating): a
+    // damped Newton step, the SAME one the row eliminates and the T update applies.  B_k
+    // only multiplies the gas residual, which is zero at convergence, so the fixed point
+    // is unchanged; the write-back books q = SRCR - SRCB E', so energy is exact as
+    // before.  Fires only with implicit_gas_newton (the T update that reads B_k).
+    // A damped cell takes the plain form (the stable form assumes B_k = rho c_v + 4 c dt
+    // rho kappa_P a T^3).
     Real emis = dt*ch*rkpv*ar;
-    if (sstab && bk > 0.0) {
+    if (pdmp) {Kokkos::atomic_add(&pslc(0), 1.0);}
+    if (sstab && bk > 0.0 && !pdmp) {
       // implicit_src_stable (stall_1002): the SAME Schur-eliminated row in a form
       // without cancellation.  With K = c dt rho kappa (2e8 at the BSG wall) the plain
       // form takes SRCB = c dt k_E - c dt k_E (bk - rho c_v)/bk, a difference of two
@@ -14167,46 +14194,15 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
       // with w = rho c_v/bk and q = 1 - w = 4 cl dt k_P a T^3/bk.
       const Real w = dd*cv/bk;
       const Real q = 4.0*cl*dt*rkpv*ar*t3/bk;
-      const Real sr = w*(emis*t4 - dt*ch*rkev*de0)
-                      + (ch/cl)*q*(iw_(m,M1_IW_EGN,k,j,i) - ee);
-      if (psl && sr < 0.0) {
-        // rsgposlin-1113 implicit_src_poslin: see below
-        iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev;
-        iw_(m,M1_IW_SRCR,k,j,i) = emis*t4 - dt*ch*rkev*de0;
-        Kokkos::atomic_add(&pslc(0), 1.0);
-        return;
-      }
       iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev*w;
-      iw_(m,M1_IW_SRCR,k,j,i) = sr;
+      iw_(m,M1_IW_SRCR,k,j,i) = w*(emis*t4 - dt*ch*rkev*de0)
+                                + (ch/cl)*q*(iw_(m,M1_IW_EGN,k,j,i) - ee);
       return;
     }
     Real kk = (bk > 0.0) ? (emis*4.0*t3*cl*dt*rkev/bk) : 0.0;
-    const Real sr = emis*t4 - dt*ch*rkev*de0
-                    + ((bk > 0.0) ? (emis*4.0*t3*rk/bk) : 0.0);
-    if (psl && sr < 0.0) {
-      // rsgposlin-1113 <rad_m1>/implicit_src_poslin (read only when named, default false
-      // = bitwise; bitwise also in every cell where it does not fire).  The row above
-      // eliminates the gas with ONE Newton step in T, i.e. the emission is the tangent
-      // emis (T_k^4 + 4 T_k^3 dT), dT = (R_k + c dt rho kappa_E E')/B_k.  The tangent of
-      // T^4 is negative for dT < -T_k/4, and SRCR < 0 says exactly that the implied gas
-      // response at E' = 0 cools the cell below 3/4 T_k: a Newton step the T update
-      // itself rejects (trust region M1_NEWT_TRUST, bracketed root find instead).  The
-      // row then solves a NEGATIVE emission, E' < 0 is clipped to e_floor, the root find
-      // from the floored E gives a cold T, whose tangent is positive again: a Picard
-      // 2-cycle (RSG rsg.01451 rank 23, RSG_CAUSE_1113).  Where it fires, the row takes
-      // the lagged, non-negative exchange q = emis T_k^4 - c dt rho kappa_E (E' + de0)
-      // (no elimination; emission >= 0), and the T update stays as it is.  Both forms
-      // have the SAME fixed point (the eliminated part is proportional to the gas
-      // residual R_k + c dt rho kappa_E E', zero at convergence), and the write-back
-      // books the gas energy from the assembled q = SRCR - SRCB E', so total energy is
-      // conserved exactly as with the Newton form.
-      iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev;
-      iw_(m,M1_IW_SRCR,k,j,i) = emis*t4 - dt*ch*rkev*de0;
-      Kokkos::atomic_add(&pslc(0), 1.0);
-      return;
-    }
     iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev - kk;
-    iw_(m,M1_IW_SRCR,k,j,i) = sr;
+    iw_(m,M1_IW_SRCR,k,j,i) = emis*t4 - dt*ch*rkev*de0
+                              + ((bk > 0.0) ? (emis*4.0*t3*rk/bk) : 0.0);
   };
   par_for("m1_impl_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
