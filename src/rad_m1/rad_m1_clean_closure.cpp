@@ -59,13 +59,11 @@ void RadiationM1::CleanClosure() {
 //! rates at U^n:
 //!  1. momentum: hydro + dt K1_M.  Where radiation supports the gas this cancels the
 //!     explicit gravity kick; the kinetic energy is taken from this momentum.
-//!  2. sources: the hydro heating s_g (explicit eint minus eint at t^n) and the radiation
-//!     transport s_e = K1_E + K1_EN (= -div F) less the work of the radiation force.
-//!  3. exchange: solved exactly over dt with s_g and s_e acting during it, linearised
-//!     about t^n: gas + radiation energy grows at s_g + s_e while the exchange rate relaxes
-//!     exponentially to its source-driven value, accurate to O(dt^2) for any stiffness and
-//!     without overshoot.  A loss larger than the content is applied at constant relative
+//!  2. radiation transport: dt (K1_E + K1_EN) = -dt div F, less the work of the radiation
+//!     force on the gas.  A loss larger than the content is applied at constant relative
 //!     rate.
+//!  3. exchange: the implicit local relaxation of (eint, E) over dt, from the hydro eint
+//!     and the transported E (stiff and local, so solved as such; no overshoot).
 //! Without gas feedback the gas is held fixed and E advances at its own rate.
 //! Density is not changed by radiation within a step.  The prediction is within O(dt^2)
 //! of U^{n+1}.  Without a valid K1 (first step) the coupling rates are zero.
@@ -99,7 +97,6 @@ void RadiationM1::CleanPredictState() {
   auto iw_ = iw;
   auto u0_ = u0;
   auto uh = fl.u0;
-  auto un = fl.u1;
   auto eos = fl.eos;
   auto k1 = t2k1;
   auto opac_ = opac;
@@ -129,34 +126,19 @@ void RadiationM1::CleanPredictState() {
         const Real de = dt*k1(m,M1_T2_E,k,j,i);
         e = (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
       } else if (use_rates) {
-        // gas at t^n and the rates of this step: hydro heating s_g, radiation transport s_e
-        const Real dn = un(m,IDN,k,j,i);
-        const Real eint_n = fmax(un(m,IEN,k,j,i) - 0.5*(SQR(un(m,IM1,k,j,i)) +
-                                 SQR(un(m,IM2,k,j,i)) + SQR(un(m,IM3,k,j,i)))/dn, 0.0);
+        // radiation transport over dt, less the work of the radiation force on the gas,
+        // then the implicit local exchange of (eint, E) over dt
         for (int n = 0; n < 3; ++n) mom[n] += dt*k1(m,M1_T2_M1+n,k,j,i);
         const Real ekin_new = 0.5*(SQR(mom[0]) + SQR(mom[1]) + SQR(mom[2]))/d;
-        const Real s_g = (eint_h - eint_n)/dt;
-        const Real s_e = k1(m,M1_T2_E,k,j,i) + k1(m,M1_T2_EN,k,j,i) - (ekin_new - ekin)/dt;
-        // exchange q = c kE E - c kP a T^4, linearised in eint about t^n: it relaxes at
-        // rate lambda toward q_inf while gas + radiation energy grows at s_g + s_e
-        const Real tn = eos.Temperature(dn, eint_n);
-        Real en, p, chi_rho, chi_t, cv;
-        eos.ThermoAt(dn, tn, en, p, chi_rho, chi_t, cv);
-        const Real k_e = cl*opac_(m,M1_OP_E,k,j,i);
-        const Real k_p = cl*opac_(m,M1_OP_P,k,j,i);
-        const Real beta = 4.0*arad_*tn*tn*tn/(dn*cv);
-        const Real lambda = k_e + k_p*beta;
-        const Real q0 = k_e*e0 - k_p*arad_*SQR(SQR(tn));
-        const Real q_inf = (lambda > 0.0) ? (k_e*s_e - k_p*beta*s_g)/lambda : 0.0;
-        const Real x = lambda*dt;
-        const Real decay = (x > 1.0e-6) ? (1.0 - exp(-x))/lambda : dt*(1.0 - 0.5*x);
-        const Real q_int = q_inf*dt + (q0 - q_inf)*decay;
-        // a loss larger than the content is applied at constant relative rate
-        const Real de = s_e*dt - q_int, du = s_g*dt + q_int;
+        const Real de = dt*(k1(m,M1_T2_E,k,j,i) + k1(m,M1_T2_EN,k,j,i))
+                        - (ekin_new - ekin);
         e = (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
-        const Real eint = (eint_n + du > 0.0) ? eint_n + du
-                          : ((eint_n > 0.0) ? eint_n*exp(du/eint_n) : 0.0);
-        t = eos.Temperature(d, eint);
+        // E (1 + h c kE) = e + h c kP a T^4,  eint(T) + E = eint_h + e
+        const Real hce = dt*cl*opac_(m,M1_OP_E,k,j,i);
+        const Real hcp = dt*cl*opac_(m,M1_OP_P,k,j,i)*arad_;
+        t = CleanExchangeTemperature(eos, d, hcp/(1.0 + hce), eint_h + e*hce/(1.0 + hce),
+                                     t);
+        e = (e + hcp*SQR(SQR(t)))/(1.0 + hce);
       }
     } else if (use_rates) {
       const Real de = dt*k1(m,M1_T2_E,k,j,i);
