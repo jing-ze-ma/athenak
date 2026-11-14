@@ -77,9 +77,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     if (pmy_pack->pmesh->ncycle == 0) CleanInitFaceFluxes();
   }
 
-  // 2. old vector, closure, face coefficients
-  CleanOldVector();
+  // 2. closure (from the gas before the stage increments are added), old vector, face
+  //    coefficients
   CleanClosure();
+  CleanOldVector();
   CleanFaceCoefficients();
   CleanFirstIterate();
   if (cln_feedback) CleanAdvectiveCoefficients();
