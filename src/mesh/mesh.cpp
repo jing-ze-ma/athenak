@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file mesh.cpp
-//  \brief implementation of constructor and functions in Mesh class
+// \brief implementation of constructor and functions in Mesh class
 
 #include <algorithm>
 #include <cinttypes>
@@ -39,9 +39,9 @@
 #include <mpi.h>
 #endif
 
-// ckdrift-1102 <time>/dt_collapse_med = F > 0 (read only when named; default 0 = off):
+// <time>/dt_collapse_med = F > 0 (read only when named; default 0 = off):
 // the `### dt COLLAPSE` report also fires when dt < (median of the last 100 dt) / F, once
-// per episode (re-armed when dt is back above median / 2).  The 4x-per-step test misses a
+// per episode (re-armed when dt is back above median / 2). The 4x-per-step test misses a
 // slide of a few x per step (fresh r1m 11-02: 10.8 -> 0.15 s in ~10 steps, silent).
 namespace {
 Real dt_collapse_med = 0.0;
@@ -52,10 +52,9 @@ bool dt_med_latch_ = false;
 void SetDtCollapseMed(Real f) {dt_collapse_med = f;}
 
 namespace {
-
 //----------------------------------------------------------------------------------------
 //! \fn CSSrcTermOn / CSConstAccelOffRadial
-//! Helpers for the cubed-sphere support gate below.  Source-term switches are read with
+//! Helpers for the cubed-sphere support gate below. Source-term switches are read with
 //! GetOrAddBoolean, so they are legitimately PRESENT AND FALSE in an input that spells
 //! out what it is not using; testing DoesParameterExist alone would refuse such a run.
 //! Test the VALUE, and only for the blocks SrcTerms is actually constructed with.
@@ -67,8 +66,8 @@ bool CSSrcTermOn(ParameterInput *pin, const std::string &name) {
   return false;
 }
 
-//! Constant acceleration is only supported along x1, which is RADIAL.  Directions 2 and
-//! 3 are panel-tangential.  An input naming a direction it never enables is not an error.
+//! Constant acceleration is only supported along x1, which is RADIAL. Directions 2 and
+//! 3 are panel-tangential. An input naming a direction it never enables is not an error.
 
 bool CSConstAccelOffRadial(ParameterInput *pin, const std::string &blk) {
   if (!(pin->DoesParameterExist(blk, "const_accel") &&
@@ -87,8 +86,8 @@ namespace cs_vertex_diag { Real cc_perturb = 0.0; }
 //! Mesh constructor:
 //! initializes some mesh variables using parameters in input file.
 //! The MeshBlockPack, MeshRefinement, and ShearingBox objects are constructed in
-//! BuildTreeFromScratch() or BuildTreeFromRestart()
-//! The MeshBlockTree and ProblemGenerator objects are constructed in main().
+//! BuildTreeFromScratch or BuildTreeFromRestart
+//! The MeshBlockTree and ProblemGenerator objects are constructed in main.
 //! This is so that they can store a pointer to the Mesh which can be reliably referenced
 //! only after the Mesh constructor has finished.
 
@@ -134,22 +133,14 @@ Mesh::Mesh(ParameterInput *pin) :
   }
 
   use_cubed_sphere = pin->GetOrAddBoolean("mesh", "use_cubed_sphere", false);
-  // csvertex-1101: `<mesh>/cs_seam_fc_nolimit`.  DEFAULT (USER 11-01): true on a FRESH
-  // cubed-sphere MHD start, written into the input so the run's restarts embed it; a
-  // restart whose input lacks the key keeps the OLD behaviour (clamp on) and is not
-  // given the key, so it stays bitwise.  This is the shared fresh-vs-restart rule of
-  // utils/recipe.hpp (recipe::NewDefaults: <job>/recipe = none -> never, prod1019 ->
-  // fresh and restart).  An explicit key always wins.
-  // The face-centred along-seam resample
-  // (bvals_fc.cpp, seamval) clamps its quadratic to the stencil's node range whenever
-  // the three nodes are monotone.  On SMOOTH data that is not a no-op: where the
-  // along-seam derivative is small next to the curvature (dd1, dd2 same sign but very
-  // different) the quadratic legitimately leaves the node range by O(h^2), and the clamp
-  // puts an O(h^2) error into that ONE ghost face.  The resistive curl differences it
-  // over one cell, so the edge current gets an O(h) spike: it is the whole slow x1e
-  // maximum at the cube vertices on cs_test iprob 11 (1.19e-2, 9.0e-3, 3.7e-3 at nx2
-  // 16/32/64; with the clamp off 3.06e-3, 8.0e-4, 2.07e-4, i.e. second order).  true
-  // drops the clamp for the FIELD halo only; the cell-centred resample is untouched.
+  // <mesh>/cs_seam_fc_nolimit: the face-centred along-seam resample (bvals_fc.cpp,
+  // seamval) clamps its quadratic to the stencil's node range where the three nodes are
+  // monotone. On smooth data the quadratic can legitimately leave that range by O(h^2);
+  // the clamp then puts an O(h^2) error into one ghost face, which the resistive curl
+  // turns into an O(h) edge-current spike at the cube vertices. true drops the clamp for
+  // the field halo only (the cell-centred resample is untouched). Fresh-start default
+  // true on cubed-sphere MHD (recipe::NewDefaults, recorded for restarts); a restart
+  // whose input lacks the key keeps the clamp and is not given the key.
   if (use_cubed_sphere && pin->DoesBlockExist("mhd") &&
       !pin->DoesParameterExist("mesh", "cs_seam_fc_nolimit")) {
     if (recipe::NewDefaults(pin)) {
@@ -161,21 +152,21 @@ Mesh::Mesh(ParameterInput *pin) :
           "restart input has no key") + ": the old default, key not added)");
     }
   }
-  // layinv-1105 (USER 11-05 "fix invariant") `<mesh>/layout_invariant`: results independent
-  // of the MeshBlock layout and the rank count.  true: every global / shell SUM that feeds
-  // the state (M1 Krylov dot products, coarse-space band sums, vet_gd / ic_rad shell sums,
-  // problem-generator IC shell sums) uses the order-independent exact accumulator
+  // (USER 11-05 "fix invariant") `<mesh>/layout_invariant`: results independent
+  // of the MeshBlock layout and the rank count. true: every global / shell SUM that feeds
+  // the state (M1 Krylov dot products, coarse-space band sums, vet_gd / ic_rad shell
+  // sums, problem-generator IC shell sums) uses the order-independent exact accumulator
   // utils/repro_sum.hpp, and the spherical-polar theta and phi coordinates are computed
   // from the GLOBAL cell index (<mesh>/sp_theta_global, sp_phi_global follow it unless
-  // named).  Fresh-start default true (recipe::NewDefaults), recorded for restarts; a
+  // named). Fresh-start default true (recipe::NewDefaults), recorded for restarts; a
   // restart whose input lacks the key keeps false = the old block-ordered paths, bitwise.
-  // prod-1108 (USER 11-08 "make some defaults"): default true on a fresh start AND on a
+  // (USER 11-08 "make some defaults"): default true on a fresh start AND on a
   // restart whose input lacks the key (recorded); recipe none keeps false (not added).
-  // <mesh>/layout_invariant_mode = block (DEFAULT, prod-1108) | exact (layinv-1105):
+  // <mesh>/layout_invariant_mode = block (DEFAULT, ) | exact :
   // block = every sum per MeshBlock in a fixed order, only the per-MeshBlock partials
   // summed exactly (repro::block_mode; +~0 % cost); exact = every cell term deposited
-  // exactly (+8 % per cycle on HG).  Both are layout / rank-count invariant; they differ
-  // from each other at round-off.  Recorded for restarts.
+  // exactly (+8 % per cycle on HG). Both are layout / rank-count invariant; they differ
+  // from each other at round-off. Recorded for restarts.
   // A RESTART of an SMR/AMR mesh keeps false (the sp vet_gd global geometry is
   // single-level only and would be fatal; fresh starts as before).
   if (!pin->DoesParameterExist("mesh", "layout_invariant")) {
@@ -206,17 +197,13 @@ Mesh::Mesh(ParameterInput *pin) :
   cs_seam_fc_nolimit = use_cubed_sphere &&
                        pin->DoesParameterExist("mesh", "cs_seam_fc_nolimit") &&
                        pin->GetBoolean("mesh", "cs_seam_fc_nolimit");
-  // fcorder3-1103 `<mesh>/cs_seam_fc_order` = 2 (old default, bitwise; fresh default 3 on
-  // resistive cs MHD, prod1103e below)
-  // | 3: the cubed-sphere seam ghost FACE fields as third-order face averages over the
-  // receiving chart's ghost faces (bvals_fc.cpp FCSeamPack::srcval3, weights in
-  // bvals/cs_seam_fc3.hpp), so every per-panel stencil that reads them (the resistive /
-  // ambipolar curl at seam edges, Joule heating, bcc beside the seam) is second order
-  // there.  Same-level cubed sphere only.
-  // prod1103e default (USER 11-03): cs_seam_fc_order = 3 on a FRESH same-level cubed-sphere
-  // MHD start with resistivity (<mhd>/ohmic_resistivity named, or <mhd>/ambipolar named and
-  // not none; recipe::NewDefaults) when the key is not named; recorded for restarts.  A
-  // restart whose input lacks the key keeps 2 (bitwise); an explicit key always wins.
+  // <mesh>/cs_seam_fc_order = 2 | 3: 3 makes the cubed-sphere seam ghost face fields
+  // third-order face averages over the receiving chart's ghost faces (bvals_fc.cpp
+  // FCSeamPack::srcval3, weights in bvals/cs_seam_fc3.hpp), so every per-panel stencil
+  // that reads them (resistive / ambipolar curl at seam edges, Joule heating, bcc beside
+  // the seam) is second order there. Same-level cubed sphere only. Fresh-start default
+  // 3 on resistive cubed-sphere MHD (<mhd>/ohmic_resistivity named, or <mhd>/ambipolar
+  // not none; recorded for restarts) when the key is not named; otherwise 2.
   if (use_cubed_sphere && pin->DoesBlockExist("mhd") &&
       !pin->DoesParameterExist("mesh", "cs_seam_fc_order") &&
       (pin->DoesParameterExist("mhd", "ohmic_resistivity") ||
@@ -382,14 +369,15 @@ Mesh::Mesh(ParameterInput *pin) :
       }
     }
     // optional log tail (StretchRPoly): mesh/f_stretch_r_tail_nin (the older grid's nx1;
-    // read only when given), _x1max (its x1max), _ij (the junction face of the older grid)
+    // read only when given), _x1max (its x1max), _ij (the junction face of the older
+    // grid)
     if (pin->DoesParameterExist("mesh", "f_stretch_r_tail_nin")) {
       const int nin = pin->GetInteger("mesh", "f_stretch_r_tail_nin");
       const Real r1o = pin->GetReal("mesh", "f_stretch_r_tail_x1max");
       const int ij = pin->GetInteger("mesh", "f_stretch_r_tail_ij");
       const int nx1 = pin->GetInteger("mesh", "nx1");
       const Real x1a = pin->GetReal("mesh", "x1min"), x1b = pin->GetReal("mesh", "x1max");
-      // mhdtop-1112: ij = nin allowed (the WHOLE older grid kept, the tail above its
+      // ij = nin allowed (the WHOLE older grid kept, the tail above its
       // x1max: the radial extension of a restart, mhdtop_1112/tools/rst_extend.py)
       if (!(nin > 0 && ij > 0 && ij <= nin && ij < nx1 && r1o > x1a && r1o <= x1b)) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -402,9 +390,9 @@ Mesh::Mesh(ParameterInput *pin) :
       ct[1] = static_cast<Real>(ij)/static_cast<Real>(nx1);
       ct[2] = r1o;
     }
-    // mrglat-rsg-1019: optional GEOMETRIC HEAD (StretchRPoly): mesh/f_stretch_r_head_nin
+    // mrglat- optional GEOMETRIC HEAD (StretchRPoly): mesh/f_stretch_r_head_nin
     // (the older grid's nx1) and _ij (its junction face, kept with every face above);
-    // read only when given.  nh = nx1 - (nin - ij) head cells of constant ratio q below
+    // read only when given. nh = nx1 - (nin - ij) head cells of constant ratio q below
     // r_j, q such that the top head cell = the old cell ij-1 (bisection, host)
     if (pin->DoesParameterExist("mesh", "f_stretch_r_head_nin")) {
       const int nin = pin->GetInteger("mesh", "f_stretch_r_head_nin");
@@ -554,12 +542,12 @@ Mesh::Mesh(ParameterInput *pin) :
     }
   }
 
-  // fullsph-1027: mesh/theta_plateau = true -> theta map with a UNIFORM equatorial core
+  // mesh/theta_plateau = true -> theta map with a UNIFORM equatorial core
   // of theta_plateau_ncore cells of exactly theta_plateau_dth (default 2 pi/512, i.e.
   // the 0.703125 deg wedge cells) and geometric caps to the mesh edges (the poles with
   // use_polar_boundary); the growth q is solved so that the cap faces land exactly on
-  // the edges, and must not exceed theta_plateau_qmax.  Ghosts mirror the first cells
-  // (StretchThetaPlateau).  It is a theta stretch: everything that treats
+  // the edges, and must not exceed theta_plateau_qmax. Ghosts mirror the first cells
+  // (StretchThetaPlateau). It is a theta stretch: everything that treats
   // use_grid_stretch_theta (outputs, rad_m1 refusals, BuildX2vRecon) sees it as one.
   // Absent key: nothing changes (fStretchThetaPlat[2] = 0 selects the sinh map).
   for (int n=0; n<8; ++n) fStretchThetaPlat[n] = 0.0;
@@ -742,45 +730,45 @@ Mesh::Mesh(ParameterInput *pin) :
     std::string missing;
     // STATIC refinement is supported, for HYDRO and for MHD, where the level boundaries
     // do not touch a panel seam; see the note in BuildTreeFromScratch, which checks the
-    // seam condition once the tree exists.  The face-centred half is curvilinear
+    // seam condition once the tree exists. The face-centred half is curvilinear
     // throughout -- RestrictFC and the flux correction are AREA-weighted, the EMF
     // restriction LENGTH-weighted, the Toth & Roe prolongation works on the face flux
     // A*B -- so the constraint it preserves is sum(area*B), which is the right one here.
     // The former `mesh/cs_dev_allow_mhd_refinement` development switch is GONE: it
     // existed only to run the diagnostics that were chasing the defect, and that defect
-    // is fixed (74cbc8df).  An input that still sets it is simply ignored.
-    // RESISTIVITY + REFINEMENT was refused here, and the refusal is now LIFTED.  It
+    // is fixed (74cbc8df). An input that still sets it is simply ignored.
+    // RESISTIVITY + REFINEMENT was refused here, and the refusal is now LIFTED. It
     // rested on one observation, that splitting x1 moved the answer, and that turned out
     // to be a halo bug with nothing to do with the resistive EMF: the cube-vertex corner
     // extrapolation ran only over the ACTIVE radial range, so a radial split left its
-    // radial-ghost layers written by nothing (397b4ad3).  Ideal MHD never reads that
-    // block; the gnomonic resistive curl does.  With it fixed, iprob=11 gives the SAME
+    // radial-ghost layers written by nothing (397b4ad3). Ideal MHD never reads that
+    // block; the gnomonic resistive curl does. With it fixed, iprob=11 gives the SAME
     // Linf(B) and the same Ohmic heating ratio at 1, 2 and 4 radial MeshBlocks, and
     // refinement now meets the bar that certified ideal MHD (cf0eb77c):
     //
-    //   converges at the control's rate and lands below it -- Linf(B) 5.6994e-04 ->
-    //     2.2986e-04 over nx2 16 -> 32 against a control of 5.8853e-04 -> 2.3112e-04,
-    //     with the heating ratio 1.019297 -> 1.004858 against 1.025322 -> 1.006357;
-    //   level-boundary flux telescoping at round-off (max|dM| 5.3e-23 on 1536 coarse/fine
-    //     faces, scale 3.2e-07) and the seam flux likewise (dM/dt 2.6e-19);
-    //   BITWISE identical over all five binary dumps at 1, 2, 3 and 6 MPI ranks, and on
-    //     1 and 2 MI300A GPUs, matching CPU in every printed digit.
+    // converges at the control's rate and lands below it -- Linf(B) 5.6994e-04 ->
+    // 2.2986e-04 over nx2 16 -> 32 against a control of 5.8853e-04 -> 2.3112e-04,
+    // with the heating ratio 1.019297 -> 1.004858 against 1.025322 -> 1.006357;
+    // level-boundary flux telescoping at round-off (max|dM| 5.3e-23 on 1536 coarse/fine
+    // faces, scale 3.2e-07) and the seam flux likewise (dM/dt 2.6e-19);
+    // BITWISE identical over all five binary dumps at 1, 2, 3 and 6 MPI ranks, and on
+    // 1 and 2 MI300A GPUs, matching CPU in every printed digit.
     //
-    // KNOWN LIMITATION, and it is NOT specific to resistivity.  A halo region that is
+    // KNOWN LIMITATION, and it is NOT specific to resistivity. A halo region that is
     // BOTH a panel seam and a level boundary is still FIRST order, even after a01ace75
     // removed one of the two mechanisms behind it: over nx2 16 -> 32 the x1x2 / x3x1 edge
     // halo goes 2.3278e-03 -> 1.1447e-03 and the cube-vertex corner downstream of it
     // 1.8152e-02 -> 9.0263e-03, both ratio ~2.0, against 2.7e-04 for a same-panel level
-    // boundary and 3.9e-04 for a same-level seam.  It is a property of the FACE-CENTRED
+    // boundary and 3.9e-04 for a same-level seam. It is a property of the FACE-CENTRED
     // halo -- identical with eta = 1e-10, and the cell-centred path is verifiably not
     // affected -- so the already-supported ideal refinement path has carried it all
-    // along; ideal stencils simply never reach those cells.  The domain norms above are
-    // unaffected because the region shrinks with h.  See cs_test's GHOST SCAN.
+    // along; ideal stencils simply never reach those cells. The domain norms above are
+    // unaffected because the region shrinks with h. See cs_test's GHOST SCAN.
     if (adaptive) {
       missing = "ADAPTIVE mesh refinement (mesh_refinement = adaptive): refinement "
                 "flags are walked through a single MeshBlockTree and a cubed sphere has "
                 "one tree per panel. Static refinement is supported";
-    // FOFC: BOTH <hydro>/fofc and <mhd>/fofc are SUPPORTED on this grid.  {Hydro,MHD}::
+    // FOFC: BOTH <hydro>/fofc and <mhd>/fofc are SUPPORTED on this grid. {Hydro,MHD}::
     // FOFC do their trial update with the face areas and cell volumes (the same form as
     // RKUpdate), their single-state solves apply the gnomonic rotations to the velocity,
     // the field and the returned momentum flux / face EMF, and the floor-TEST pass runs
@@ -801,9 +789,9 @@ Mesh::Mesh(ParameterInput *pin) :
                 pin->GetString("mhd", "isotropic_conduction") != "none")) {
       missing = "thermal conduction (isotropic_conduction): diffusion/conduction.cpp "
                 "has no curvilinear form at all";
-    // RADIATION.  src/radiation/ contains not one mention of use_cubed_sphere, and not
+    // RADIATION. src/radiation/ contains not one mention of use_cubed_sphere, and not
     // even the use_spherical_polar branch other modules carry -- it is written for an
-    // orthogonal grid throughout.  Unlike fofc/viscosity/conduction this was never
+    // orthogonal grid throughout. Unlike fofc/viscosity/conduction this was never
     // refused, so a <radiation> block on this grid ran to completion and returned a
     // wrong answer, which is exactly how the resistive curl behaved before 4bfacdd8.
     } else if (pin->DoesBlockExist("radiation")) {
@@ -815,7 +803,7 @@ Mesh::Mesh(ParameterInput *pin) :
     // rejected before this runs -- on every grid, which looks like a separate
     // pre-existing oddity given srcterms/turb_driver.cpp reads exactly that name.
     // SOURCE TERMS, and only the ones that are ACTUALLY geometry-dependent -- see below
-    // for the two that are not, which are deliberately still allowed.  NOTE the block is
+    // for the two that are not, which are deliberately still allowed. NOTE the block is
     // <hydro_srcterms> / <mhd_srcterms>, NOT <hydro> / <mhd>: probing the latter is a
     // guard that can never fire, and a test that puts the parameter in the wrong block
     // agrees with it and looks like a pass.
@@ -835,11 +823,11 @@ Mesh::Mesh(ParameterInput *pin) :
                 "RADIAL and is allowed";
     }
     // DELIBERATELY STILL ALLOWED, because they are basis-INDEPENDENT:
-    //   const_accel with dir = 1  -- x1 is radial and rhat is orthogonal to the tangent
-    //     plane, so this is an honest radial gravity.
-    //   ism_cooling               -- the drag it applies is -k*rho*v, whose components
-    //     are -k*rho*v_i in ANY basis, and its temperature comes from the EOS pointwise.
-    //   the EOS itself            -- p(rho,e) is pointwise, so geometry never enters.
+    // const_accel with dir = 1 -- x1 is radial and rhat is orthogonal to the tangent
+    // plane, so this is an honest radial gravity.
+    // ism_cooling -- the drag it applies is -k*rho*v, whose components
+    // are -k*rho*v_i in ANY basis, and its temperature comes from the EOS pointwise.
+    // the EOS itself -- p(rho,e) is pointwise, so geometry never enters.
     // None of the three has been VALIDATED on this grid; they are allowed because their
     // expressions carry no geometry, not because anyone has measured them.
     if (!missing.empty()) {
@@ -1030,9 +1018,9 @@ Mesh::~Mesh() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void Mesh::PrintMeshDiagnostics()
-//  \brief prints information about mesh structure, always called at start of every
-//  calculation at end of BuildTree
+//! \fn void Mesh::PrintMeshDiagnostics
+// \brief prints information about mesh structure, always called at start of every
+// calculation at end of BuildTree
 
 void Mesh::PrintMeshDiagnostics() {
   std::cout << std::endl;
@@ -1105,9 +1093,9 @@ void Mesh::PrintMeshDiagnostics() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void Mesh::WriteMeshStructure(int ndim)
-//  \brief writes file containing MeshBlock positions and sizes that can be used to create
-//  plots using 'plot_mesh.py' script.  Only works for 2D/3D data.  Called from main if
-//  '-m' option is given on command line.
+// \brief writes file containing MeshBlock positions and sizes that can be used to create
+// plots using 'plot_mesh.py' script. Only works for 2D/3D data. Called from main if
+// '-m' option is given on command line.
 
 void Mesh::WriteMeshStructure() {
   if (one_d) {
@@ -1185,8 +1173,8 @@ void Mesh::WriteMeshStructure() {
 
 //----------------------------------------------------------------------------------------
 //! \fn GetBoundaryFlag(std::string input_string)
-//  \brief Parses input string to return scoped enumerator flag specifying boundary
-//  condition. Typically called in Mesh() ctor and in pgen/*.cpp files.
+// \brief Parses input string to return scoped enumerator flag specifying boundary
+// condition. Typically called in Mesh ctor and in pgen/*.cpp files.
 
 BoundaryFlag Mesh::GetBoundaryFlag(const std::string& input_string) {
   if (input_string == "reflect") {
@@ -1221,9 +1209,9 @@ BoundaryFlag Mesh::GetBoundaryFlag(const std::string& input_string) {
 
 //----------------------------------------------------------------------------------------
 //! \fn GetBoundaryString(BoundaryFlag input_flag)
-//  \brief Parses enumerated type BoundaryFlag internal integer representation to return
-//  string describing the boundary condition. Typicall used to format descriptive errors
-//  or diagnostics. Inverse of GetBoundaryFlag().
+// \brief Parses enumerated type BoundaryFlag internal integer representation to return
+// string describing the boundary condition. Typicall used to format descriptive errors
+// or diagnostics. Inverse of GetBoundaryFlag.
 
 std::string Mesh::GetBoundaryString(BoundaryFlag input_flag) {
   switch (input_flag) {
@@ -1259,7 +1247,7 @@ std::string Mesh::GetBoundaryString(BoundaryFlag input_flag) {
 }
 
 //----------------------------------------------------------------------------------------
-// \fn Mesh::NewTimeStep()
+// \fn Mesh::NewTimeStep
 
 void Mesh::NewTimeStep(const Real tlim) {
   // save old timestep
@@ -1274,7 +1262,7 @@ void Mesh::NewTimeStep(const Real tlim) {
   dt = 2.0*dt;
 
   // A dt that falls off a cliff is nearly always one physics module going unstable, and
-  // the cycle line alone does not say which.  Keep each candidate so a collapse can name
+  // the cycle line alone does not say which. Keep each candidate so a collapse can name
   // its owner; the report is at the end of this function.
   Real dbg_hyd = -1.0, dbg_cnd = -1.0, dbg_vis = -1.0, dbg_src = -1.0, dbg_mhd = -1.0;
   if (pmb_pack->pmhd != nullptr) {
@@ -1328,7 +1316,7 @@ void Mesh::NewTimeStep(const Real tlim) {
     // resistivity timestep
     if (pmb_pack->pmhd->presist != nullptr) {
       if (pmb_pack->pmhd->presist->use_rkg_sts) {
-        // rkgdt-1101: with <mhd>/rkg_dt_safety dtnew is already safety x the forward-Euler
+        // with <mhd>/rkg_dt_safety dtnew is already safety x the forward-Euler
         // limit; the hyperbolic CFL number does not apply to it
         dt_diff = (pmb_pack->pmhd->presist->rkg_dt_fe) ? (pmb_pack->pmhd->presist->dtnew)
                   : (cfl_no)*(pmb_pack->pmhd->presist->dtnew);
@@ -1353,7 +1341,7 @@ void Mesh::NewTimeStep(const Real tlim) {
   if (pmb_pack->prad != nullptr) {
     dt = std::min(dt, (cfl_no)*(pmb_pack->prad->dtnew) );
   }
-  // rad_m1 timestep.  Only folded in when the module owns the mesh step (sub-cycling
+  // rad_m1 timestep. Only folded in when the module owns the mesh step (sub-cycling
   // off, or nothing else sets a dt); its own <rad_m1>/cfl_rad is already in dtnew, so
   // <time>/cfl_number is NOT applied a second time here.
   if (pmb_pack->pradm1 != nullptr) {
@@ -1420,12 +1408,12 @@ void Mesh::NewTimeStep(const Real tlim) {
     std::exit(EXIT_FAILURE);
   }
 
-  // If dt just collapsed, say which module owns it.  Only the rank holding the
+  // If dt just collapsed, say which module owns it. Only the rank holding the
   // global minimum reports, so the components printed are the ones that actually set
-  // dt; every other rank's candidates are larger and would mislead.  At most 20 lines.
+  // dt; every other rank's candidates are larger and would mislead. At most 20 lines.
   {
     static int ndbg = 0;
-    // ckdrift-1102 <time>/dt_collapse_med: dt against the running median of 100 dt
+    // <time>/dt_collapse_med: dt against the running median of 100 dt
     bool med_hit = false;
     if (dt_collapse_med > 0.0) {
       if (dt_hist_.empty()) dt_hist_.assign(100, 0.0);
@@ -1535,7 +1523,7 @@ void Mesh::NewTimeStep(const Real tlim) {
   dt_uncapped = dt;
   if (dt_cap > 0.0 && dt > dt_cap) {dt = dt_cap;}
 
-  // vgdrot2-1012: vet_gd_rotate_dt + vet_gd_rotate_align: land on the rotation times
+  // vet_gd_rotate_dt + vet_gd_rotate_align: land on the rotation times
   if (pmb_pack->pradm1 != nullptr) {dt = pmb_pack->pradm1->VetGdAlignDt(time, dt);}
 
   // limit last time step to stop at tlim *exactly*

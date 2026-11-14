@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file mhd.hpp
-//  \brief definitions for MHD class
+// \brief definitions for MHD class
 
 #include <map>
 #include <memory>
@@ -47,7 +47,7 @@ using MHDBoundaryFnPtr = void (*)(int m, Mesh* pm, MHD* pmhd, DvceArray5D<Real> 
 // An input that names the key is unchanged; a RESTART whose embedded input lacks the key
 // keeps the old default (off).
 inline bool fofc_pgen_default = false;
-// amdef-1019: <mhd>/etotgrav pgen-level support flag (hydro::etotgrav_pgen_default)
+// <mhd>/etotgrav pgen-level support flag (hydro::etotgrav_pgen_default)
 inline bool etotgrav_pgen_default = false;
 }
 
@@ -58,7 +58,7 @@ enum class MHD_RSolver {advect, llf, hlle, hlld, lhlld, roe,   // non-relativist
 
 //----------------------------------------------------------------------------------------
 //! \struct MHDTaskIDs
-//  \brief container to hold TaskIDs of all mhd tasks
+// \brief container to hold TaskIDs of all mhd tasks
 
 struct MHDTaskIDs {
   TaskID splitpre;
@@ -100,14 +100,13 @@ struct MHDTaskIDs {
   TaskID crecv;
 };
 
-namespace hydro {class AmModule; struct WbAllCtx;}   // cs-open-1018 / wball-1104
+namespace hydro {class AmModule; struct WbAllCtx;}   // cs- /
 
 namespace mhd {
-
 //----------------------------------------------------------------------------------------
 //! \class MHD
 
-void CsSeamRelease();   // ucthshare-1102 (mhd_cs_seam.cpp)
+void CsSeamRelease();   // (mhd_cs_seam.cpp)
 
 class MHD {
  public:
@@ -131,10 +130,10 @@ class MHD {
 
   int nmhd;                // number of mhd variables (5/4 for ideal/isothermal EOS)
   int nscalars;            // number of passive scalars
-  // tracer-1101: the passive-tracer slot layout (mhd_tracers.hpp): user scalars, then
-  // x_e (ixe), then the floor mass (ifltr, always last).  nscalars counts all of them.
+  // the passive-tracer slot layout (mhd_tracers.hpp): user scalars, then
+  // x_e (ixe), then the floor mass (ifltr, always last). nscalars counts all of them.
   TracerLayout tracers;
-  // xetracer-1101: <mhd>/xe_tracer = true adds ONE passive scalar (index ixe) carrying
+  // <mhd>/xe_tracer = true adds ONE passive scalar (index ixe) carrying
   // y = n_e/n_H (electrons per H nucleus; per mass), relaxed to Saha once per cycle
   // (mhd_tracers.cpp); the Ohmic/ambipolar eos paths then read it instead of Saha.
   bool xe_tracer = false;
@@ -143,26 +142,26 @@ class MHD {
                                   // a restart file written without the tracer)
   xetracer::XeTracerParams xe_par;
   void XeTracerUpdate(Real dt, bool init);
-  // floortrc-1101: <mhd>/floor_tracer = true adds ONE passive scalar (index ifltr, the
+  // <mhd>/floor_tracer = true adds ONE passive scalar (index ifltr, the
   // last slot) holding the mass density the density floors added (dfloor and the
-  // Alfven floor, booked in Ideal/GeneralMHD::ConsToPrim).  FloorTracerDrain removes it
+  // Alfven floor, booked in Ideal/GeneralMHD::ConsToPrim). FloorTracerDrain removes it
   // once per cycle where the floor does not bind (rho > fltr_margin x rho_floor), at the
   // same velocity and specific internal energy, at most fltr_fmax of the cell mass per
-  // cycle.  fltr_dm/fltr_de: the drained mass/energy (volume integrated, this rank's
+  // cycle. fltr_dm/fltr_de: the drained mass/energy (volume integrated, this rank's
   // active cells) since the owner last zeroed them (dhj history Mdrain/Edrain).
   bool floor_tracer = false;
-  // rkgfuse-1102 <mhd>/tracer_strang (default false, read only when named): the
+  // <mhd>/tracer_strang (default false, read only when named): the
   // per-cycle tracer pass (TracerSource) Strang-split, x_e relaxation dt/2 before and
   // dt/2 after, both called by the Driver INSIDE the RKG halves:
-  //   R(dt/2) Tr(dt/2) [ck(dt/2)] H [ck(dt/2)] Tr(dt/2) R(dt/2).
-  // The floor-tracer drain (not a rate) runs in the first half only.  false: the task in
-  // "before_timeintegrator" (full dt, Lie), bitwise as before.  FRESH-start default true
+  // R(dt/2) Tr(dt/2) [ck(dt/2)] H [ck(dt/2)] Tr(dt/2) R(dt/2).
+  // The floor-tracer drain (not a rate) runs in the first half only. false: the task in
+  // "before_timeintegrator" (full dt, Lie), bitwise as before. FRESH-start default true
   // whenever rkg_strang_fuse is on and a tracer exists (prod1103b, USER 11-03: removes
-  // the O(dt) tracer-split error at +0.5 %; restart-bitwise since trcrst-1103; mhd.cpp).
+  // the O(dt) tracer-split error at +0.5 %; restart-bitwise since ; mhd.cpp).
   bool trc_strang = false;
   void TracerSourceHalf(int half);
   int ifltr = -1;
-  // duale-1112: <mhd>/dual_energy, floor_pay, floor_audit (hydro/dual_energy.hpp)
+  // <mhd>/dual_energy, floor_pay, floor_audit (hydro/dual_energy.hpp)
   fluid::DualEnergy dual;
   Real fltr_margin = 2.0, fltr_fmax = 0.01;
   Real fltr_dm = 0.0, fltr_de = 0.0;
@@ -215,9 +214,9 @@ class MHD {
   DvceArray4D<Real> e2x3, e1x3;
   Real dtnew;
   // The cell that set dtnew, and its state, for the `### dt COLLAPSE` report in
-  // Mesh::NewTimeStep.  Mirror of the hydro machinery in hydro.hpp: a dt set by the fast
+  // Mesh::NewTimeStep. Mirror of the hydro machinery in hydro.hpp: a dt set by the fast
   // speed says nothing about WHERE, and on an MHD run the usual answer is one cell whose
-  // beta has gone to nothing.  Filled by one extra single-cell kernel, and only when
+  // beta has gone to nothing. Filled by one extra single-cell kernel, and only when
   // dtnew has just collapsed (or on the first call), so a healthy run pays nothing.
   int dtnew_m = -1, dtnew_k = -1, dtnew_j = -1, dtnew_i = -1;
   static constexpr int ndtdiag = 10;
@@ -226,7 +225,7 @@ class MHD {
   Real dtnew_prev = -1.0;
   // <mhd>/rad_signal_speed: the CFL fast speed takes the radiation-modified sound speed
   // of the M1 field in optically thick cells (mhd_newdt.cpp; the MHD form of
-  // <hydro>/rad_signal_speed).  Default on with an implicit M1 transport.
+  // <hydro>/rad_signal_speed). Default on with an implicit M1 transport.
   bool rad_signal_speed = false;
 
   // following used for time derivatives in computation of jcon
@@ -237,7 +236,7 @@ class MHD {
   // following used for FOFC algorithm
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed
   bool use_fofc = false;   // flag to enable FOFC
-  // boris-1102 <mhd>/boris_c (EOS_Data::boris_c2inv): momentum of the RK-stage
+  // <mhd>/boris_c (EOS_Data::boris_c2inv): momentum of the RK-stage
   // reference gam0 u0 + gam1 u1 (IM1..IM3), saved by RKUpdate, read by BorisCorrect;
   // diagnostics accumulated over the run (printed every ndiag cycles)
   bool boris_on = false;
@@ -253,23 +252,23 @@ class MHD {
   void BorisCorrect(Driver *d, int stage);
   // Per-cell count of FOFC flags, for the `mhd_fofc` output variable: incremented by
   // one in every stage in which the cell was flagged, so a dump answers "WHERE did FOFC
-  // fire", which the scalar <output>/file_type=log column cannot.  Allocated only when
+  // fire", which the scalar <output>/file_type=log column cannot. Allocated only when
   // use_fofc is true, and RESET TO ZERO each time the output variable is loaded, so a
-  // dump holds the flags accumulated since the previous dump of it.  Not carried in
+  // dump holds the flags accumulated since the previous dump of it. Not carried in
   // restart files.
   DvceArray4D<Real> fofc_cnt;
   FofcReport fofc_rep;     // <mhd>/fofc_report (diagnostic, read only when named)
   // <mhd>/fofc_rsolver = llf (default) | hlle -- which SINGLE-STATE solver the
-  // first-order fallback uses.  LLF is the most diffusive and the traditional FOFC
+  // first-order fallback uses. LLF is the most diffusive and the traditional FOFC
   // fallback; HLLE restores the contact-adjacent accuracy at a small cost in
   // robustness, and is the same solver the cubed-sphere low-beta fallback already
-  // drops to.  Non-relativistic only: there is no single-state HLLE for SR/GR MHD.
+  // drops to. Non-relativistic only: there is no single-state HLLE for SR/GR MHD.
   bool fofc_hlle = false;
 
   // CUBED SPHERE: use the GS07 upwind corner EMF instead of the plain four-face average.
   // Needs the gnomonic cell-centred EMF, e_cc_3d_cs in mhd_corner_e.cpp.
   bool use_bs_emf = false;
-  // lhlld2-1102 <mhd>/emf_smooth (read only when named; < 0 = off): smooth GS07 corner
+  // <mhd>/emf_smooth (read only when named; < 0 = off): smooth GS07 corner
   // EMF upwind weights, see EmfSmoothW in mhd_corner_e.cpp
   Real emf_smooth = -1.0;
   // <mhd>/emf_scheme = gs07 (default) | uct | uct_hlld (read only when named; mhd.cpp):
@@ -299,10 +298,12 @@ class MHD {
   void SeamXRecord();
   void CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta,
                     const DvceEdgeFld4D<Real> &jnorm, DvceEdgeFld4D<Real> &efld_);
-  bool use_polar_emf_diss = false; // Rusanov face-field dissipation on e2 in the polar rows        // plain 4-face average corner EMF (Balsara-Spicer) on ANY grid
+  // Rusanov face-field dissipation on e2 in the polar rows // plain 4-face average corner
+  // EMF (Balsara-Spicer) on ANY grid
+  bool use_polar_emf_diss = false;
 
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per
-  // FACE.  <= 0 disables it.  See rsolvers/cs_lowbeta_fallback.hpp for why this exists.
+  // FACE. <= 0 disables it. See rsolvers/cs_lowbeta_fallback.hpp for why this exists.
   Real cs_lowbeta_fallback = 0.0;
   // Spherical polar: the ORIGINAL polar-boundary code swaps HLLD for HLLE on the rows
   // adjacent to each pole (all three directions). The hydro module has no such swap, and
@@ -319,20 +320,21 @@ class MHD {
   int polar_hlle_rows = 6;
 
 
-  // following only used for including time-independent gravity in the conserved energy equation
+  // following only used for including time-independent gravity in the conserved energy
+  // equation
   bool use_etotgrav = false;   // flag to enable etotgrav
   DvceFaceFld4D<Real> phi0;     // face-centered gravitational potential energy
   DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
   // the potential the x1 well-balanced scheme (BuildWBCache and the x1 WB
   // reconstruction) sees: the TRUE potential (these ARE phicc0 / phi0.x1f, shallow
-  // copies) unless EnableWBEffectivePotential() gives it its own, e.g. the effective
-  // potential of g - a_rad_ref that <rad_m1>/force_reference = wb_arad needs.  Mirror of
+  // copies) unless EnableWBEffectivePotential gives it its own, e.g. the effective
+  // potential of g - a_rad_ref that <rad_m1>/force_reference = wb_arad needs. Mirror of
   // Hydro::phicc_wb (m1-mhd).
   bool use_phi_wb = false;
   DvceArray4D<Real> phicc_wb;    // cell-centered potential seen by the x1 WB scheme
   DvceArray4D<Real> phi_wb_x1f;  // x1-face potential seen by the x1 WB scheme
   DvceArray5D<Real> wbq0;       // per-cell well-balanced background (BuildWBCache)
-  // wball-1104 <mhd>/wb_dirs = all (hydro/hydro_wball.hpp, the shared routines)
+  // <mhd>/wb_dirs = all (hydro/hydro_wball.hpp, the shared routines)
   bool wb_all = false;
   bool wb_weight = true;
   Real wbw_r0 = 0.1, wbw_r1 = 0.3, wbw_m0 = 0.2, wbw_m1 = 0.5, wbw_eta = 1.0e-4;
@@ -345,31 +347,31 @@ class MHD {
   bool wb_guard_ideal = false;  // <mhd>/wb_guard_ideal (mhd.cpp)
   bool wb_clamp_ideal = false;  // <mhd>/wb_clamp_ideal (mhd.cpp)
   int wb_cache_every = 0;       // rebuild wbq0 every stage (0) or every N-th cycle
-  // Has wbq0 ever been filled in this process?  With wb_cache_every > 1 the rebuild is
+  // Has wbq0 ever been filled in this process? With wb_cache_every > 1 the rebuild is
   // gated on (ncycle % wb_cache_every == 0), and ncycle is RESTORED from the restart
   // file -- so a restart at a cycle that is not a multiple of wb_cache_every ran up to
-  // wb_cache_every-1 cycles against a freshly allocated (all-zero) background.  The
+  // wb_cache_every-1 cycles against a freshly allocated (all-zero) background. The
   // reconstruction then subtracts nothing and the scheme silently stops being
-  // well-balanced for those cycles, which kicks a deep hydrostatic star hard.  Force the
+  // well-balanced for those cycles, which kicks a deep hydrostatic star hard. Force the
   // first call after start OR restart to build it.
   bool wb_cache_built = false;
   // Set by the restart reader when the file carried BOTH general-EOS caches (wtemp and
-  // the derived p, Gamma_1).  The very first ConToPrim of a restarted run must then not
+  // the derived p, Gamma_1). The very first ConToPrim of a restarted run must then not
   // re-derive them -- the inversion is not idempotent and would move them by a few ULP,
-  // which is enough to make the restart stop being a bitwise continuation.  Cleared by
+  // which is enough to make the restart stop being a bitwise continuation. Cleared by
   // that call; see GeneralMHD::ConsToPrimFrozen.
   bool c2p_freeze_derived = false;
   // The internal energy w0(IEN) the restart file carried (pgen/pgen.hpp kEintRstMagic).
   // The frozen first ConToPrim puts it into w0 and leaves u0(IEN) as the file had it;
-  // then released.  Empty (and c2p_eint_rst false) otherwise.
+  // then released. Empty (and c2p_eint_rst false) otherwise.
   bool c2p_eint_rst = false;
   DvceArray4D<Real> eint_rst;
-  // t9rst-1113 <mhd>/rst_eint (read only when named; default true): the IDEAL-gas
+  // <mhd>/rst_eint (read only when named; default true): the IDEAL-gas
   // EOS carries w0(IEN) in the restart file too (as the general EOS always did) and
-  // the first ConToPrim of the restarted run takes it from there.  Re-deriving it
+  // the first ConToPrim of the restarted run takes it from there. Re-deriving it
   // from u0 is not bitwise where the last inversion of the straight run applied a
   // floor or etotgrav rounded (T9L6.2: 210 cells near the top after a BE redo, rel
-  // 3e-12, so a restart diverged at round-off).  Changes no fresh run.
+  // 3e-12, so a restart diverged at round-off). Changes no fresh run.
   bool rst_eint_ideal = true;
   bool RstEint() const {
     return peos->eos_data.IsGeneral() || (peos->eos_data.is_ideal && rst_eint_ideal);
@@ -379,11 +381,11 @@ class MHD {
   // and mass ConToPrim adds to the ACTIVE cells (density/energy/temperature floors, the
   // cubed-sphere deferred floors, and the rounding of the etotgrav rho*Phi round trip),
   // volume integrated and weighted by the fraction that survives to the end of the step
-  // (the product of the later stages' gam0; 1 outside the RK stages).  c2p_acc(0, i-is)
+  // (the product of the later stages' gam0; 1 outside the RK stages). c2p_acc(0, i-is)
   // is energy, c2p_acc(1, i-is) mass, per x1 index (conversions inside the RK
   // stages), summed over this rank's MeshBlocks
   // since the owner last zeroed it; rows 2/3 the same for the operator-split conversion
-  // after the split radiation.  Diagnostic only: the state is not touched.
+  // after the split radiation. Diagnostic only: the state is not touched.
   bool c2p_track = false;
   // set by Resistivity::RKGCoeff under <mhd>/rkg_lean for the intermediate RKG
   // super-stages: no conserved-variable halo exchange (InitRecv/SendU/RecvU skip u0)
@@ -393,8 +395,8 @@ class MHD {
   // set in rkg_u_vmask (0 = all, the default)
   int rkg_u_vmask = 0;
   bool c2p_split = false;   // true while the operator-split ConToPrim task runs
-  // ckbval-1102 <mhd>/split_bval_fast: the MHD twin of the hydro energy-only refresh
-  // after the operator-split source (see mhd_splitbval.cpp).  sbf_s = u0 at the input of
+  // <mhd>/split_bval_fast: the MHD twin of the hydro energy-only refresh
+  // after the operator-split source (see mhd_splitbval.cpp). sbf_s = u0 at the input of
   // the first ConToPrim after the last u0 refresh (RK stage, RKG super-stage or split).
   bool sbf_on = false;
   bool sbf_want = false;
@@ -403,7 +405,7 @@ class MHD {
   long sbf_nfast = 0, sbf_nfull = 0;
   bool SplitBvalFastOK();
   void SplitBvalSnap();
-  // stswall-1029: >= 0 while Resistivity::ConToPrimRKG runs: the weight of this super-
+  // >= 0 while Resistivity::ConToPrimRKG runs: the weight of this super-
   // stage's IEN change in the state the RKG super-step ends with (1: ConToPrimRKG adds
   // the change to every register of the recurrence); the IDN change is carried in full
   Real c2p_wt_rkg = -1.0;
@@ -414,38 +416,41 @@ class MHD {
 
   // following used for well-balanced scheme
   bool use_wellbalance_static = false;    // flag to enable static wellbalance
-  // cs-open-1018: the angular-momentum module (hydro/hydro_am.hpp; nullptr unless one of
+  // cs- the angular-momentum module (hydro/hydro_am.hpp; nullptr unless one of
   // <mhd>/am_transport | am_vector | frame_omega is named)
   hydro::AmModule *pam = nullptr;
-  bool use_wellbalance_static_reconst_perturb = false;    // flag to enable reconstructing perturbed primitive variables (less robust against large deviations)
-  bool use_wellbalance_dynamic = false;    // flag to enable dynamical well-balanced method by Kappeli & Mishra 2014, 2016
+  // flag to enable reconstructing perturbed primitive variables (less robust against
+  // large deviations)
+  bool use_wellbalance_static_reconst_perturb = false;
+  // flag to enable dynamical well-balanced method by Kappeli & Mishra 2014, 2016
+  bool use_wellbalance_dynamic = false;
   bool use_wb_x1 = false;    // flag for directions
   // closed inner radial wall under a USER inner-x1 boundary (set by a problem
   // generator, e.g. dhj problem/wall_closed): the x1 flux at the is face is computed
   // from the mirror of the interior-side state, exactly as for ix1_bc = reflect, so
   // it carries zero mass and zero advected energy whatever the ghost cells hold.
   bool wall_closed_ix1 = false;
-  // wallwb-1105 <mhd>/wall_wb_onesided: as <hydro>/wall_wb_onesided (hydro.hpp,
+  // <mhd>/wall_wb_onesided: as <hydro>/wall_wb_onesided (hydro.hpp,
   // reconstruct/wb_wall.hpp), the same helper; default true on a FRESH start with WB x1
   bool wall_wb_onesided = false;
-  // topbc-1101 ONE-WAY (diode) outer radial face under a USER outer-x1 boundary (set by
+  // ONE-WAY (diode) outer radial face under a USER outer-x1 boundary (set by
   // a problem generator, e.g. dhj problem/top_bc = outflow1): where the interior-side
   // state at the ie+1 face moves INWARD (v_r < 0) the ghost-side state is replaced by
   // its mirror image, exactly as for ox1_bc = reflect, so that face carries zero mass
   // and zero advected energy (pressure only); where it moves outward the ghost-side
-  // state is left as the boundary built it.  Default false: nothing changes.
+  // state is left as the boundary built it. Default false: nothing changes.
   bool diode_ox1 = false;
-  // ssbc-1111 (dhj <mhd>/top_bc_bt = sourcesurface): at a diode-closed (inflow) top
+  // (dhj <mhd>/top_bc_bt = sourcesurface): at a diode-closed (inflow) top
   // face the mirrored right state takes B_t ODD (B_t = 0 on the face, as the ghosts)
   bool diode_ox1_btodd = false;
-  // mhdtop-1112 (dhj <mhd>/top_bc_bt = charout): at a diode-closed (inflow) top face the
+  // (dhj <mhd>/top_bc_bt = charout): at a diode-closed (inflow) top face the
   // mirrored right state takes the tangential velocity v_t = -sgn(B_r) B_t/sqrt(rho)
   // (incoming Alfven characteristic zero, as the ghosts)
   bool diode_ox1_charout = false;
-  // wbplm-1103 <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
+  // <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
   bool top_ghost_prim_copy = false;
   // ... and under MHD, the STRESS-FREE wall (dhj problem/wall_mhd_mirror = stress_free;
-  // the dhj default is conducting since condwall-1028): the mirror flips B_t as well,
+  // the dhj default is conducting since ): the mirror flips B_t as well,
   // matching the odd ghost B_t of the user boundary, so the wall carries neither Maxwell
   // stress nor Poynting flux, and the wall-edge corner EMFs read the interior row as the
   // ghost row (mhd_corner_e.cpp)
@@ -453,39 +458,40 @@ class MHD {
   // ... and the CONDUCTING wall (dhj problem/wall_mhd_mirror = conducting, the default):
   // the edge EMFs tangential to the is face of the user inner x1 boundary are 0 (ideal
   // and resistive), so B_r on the wall is held, and the Riemann mass+energy fluxes are 0
-  // (no Poynting flux; v_n = 0 already removes the advected part).  Mirror as legacy.
+  // (no Poynting flux; v_n = 0 already removes the advected part). Mirror as legacy.
   bool wall_conducting_ix1 = false;
-  // <mhd>/wall_conducting (condwall-1028): what a REFLECTING face is for the field.
-  //   0 off       legacy (wall edge EMFs as the corner / resistive EMF give them)
-  //   1 resistive the RESISTIVE tangential edge EMF and the resistive Poynting
-  //               flux are 0 on reflect faces (ideal MHD is bitwise unchanged)
-  //   2 full      DEFAULT (user 10-29): also the IDEAL tangential edge EMF and the
-  //               Riemann mass+energy fluxes (perfectly conducting wall at rest:
-  //               no Poynting flux at all)
+  // <mhd>/wall_conducting : what a REFLECTING face is for the field.
+  // 0 off legacy (wall edge EMFs as the corner / resistive EMF give them)
+  // 1 resistive the RESISTIVE tangential edge EMF and the resistive Poynting
+  // flux are 0 on reflect faces (ideal MHD is bitwise unchanged)
+  // 2 full DEFAULT (user 10-29): also the IDEAL tangential edge EMF and the
+  // Riemann mass+energy fluxes (perfectly conducting wall at rest:
+  // no Poynting flux at all)
   int wall_conducting = 2;
   bool any_reflect_face = false;   // some mesh face is reflect (host, set in the ctor)
   bool use_wb_x2 = false;    // flag for directions
-  bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
+  // flag to enable local well-balanced method also in reconstructing rho
+  bool use_wb_rho = false;
   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic
-  // well-balanced x1 reconstruction is switched off cell by cell; 0 = never.  The
+  // well-balanced x1 reconstruction is switched off cell by cell; 0 = never. The
   // hydrostatic background is a statement about a SUPPORTED atmosphere: over an
   // unsupported ambient medium (a uniform cold background above the star) the
   // background the stencil builds has nothing to do with the state, and the deviation
-  // it reconstructs is the whole state.  Above wb_rmax those cells take the plain
+  // it reconstructs is the whole state. Above wb_rmax those cells take the plain
   // reconstruction and the plain -rho g source, exactly as wellbalance_dynamic = false.
   // Mirror of Hydro::wb_rmax; see the note there.
   Real wb_rmax = 0.0;
-  // dhjwball-1106: cells whose x1 WB potential exceeds it take plain PLM (Hydro::wb_phimax;
-  // wb_dirs = all: w = 0).  1e300 = never.  Set by the pgen.
+  // cells whose x1 WB potential exceeds it take plain PLM (Hydro::wb_phimax;
+  // wb_dirs = all: w = 0). 1e300 = never. Set by the pgen.
   Real wb_phimax = 1.0e300;
-  bool wb_poison = false;   // dhjwball-1106 TEST ONLY <block>/wb_poison_test: hydro_wball WbPoison
+  bool wb_poison = false;   // TEST ONLY <block>/wb_poison_test: hydro_wball WbPoison
   // Mirror of wb_rmax at the bottom of the domain: below wb_rmin the dynamic x1
   // well-balanced reconstruction and the matching well-balanced gravity source are
-  // switched off cell by cell; 0 = never.  Same failure mode from the other side --
+  // switched off cell by cell; 0 = never. Same failure mode from the other side --
   // where the background the stencil builds is not the state the star is actually in
   // (a deep radiative interior the polytropic/isentropic background does not describe),
   // the "deviation" it reconstructs is not small, and the scheme can DRIVE the very
-  // buoyancy mode it is meant to leave alone.  Below wb_rmin those cells take the plain
+  // buoyancy mode it is meant to leave alone. Below wb_rmin those cells take the plain
   // reconstruction and the plain -rho g source, exactly as wellbalance_dynamic = false.
   Real wb_rmin = 0.0;
   WBOption wb_option;
@@ -498,7 +504,7 @@ class MHD {
   // the EOS for the background pressure inside the reconstruction, the flux correction
   // and the coordinate source terms -- roughly twenty calls per cell per stage -- would
   // cost more than the rest of the well-balanced scheme put together. The background does
-  // not evolve, so none of that work is ever different. See SetWbBackgroundPressure().
+  // not evolve, so none of that work is ever different. See SetWbBackgroundPressure.
   DvceArray4D<Real> pwb;        // cell-centered background gas pressure
   DvceFaceFld4D<Real> pfacewb;  // face-centered background gas pressure
 
@@ -559,7 +565,7 @@ class MHD {
   void FOFC(Driver *d, int stage);
 
   DvceArray5D<Real> utest, bcctest;  // scratch arrays for FOFC
-    
+
     void PolarAzimuthalAverageEr(void);
     // zero the edge EMFs of `e` tangential to the reflect faces (refl) and/or to the is
     // face of a user inner x1 boundary (usr_ix1); mhd_corner_e.cpp
@@ -569,23 +575,23 @@ class MHD {
     void WallFluxZero(const bool refl, const bool usr_ix1);
     DvceArray1D<Real> inner_local;
     DvceArray1D<Real> outer_local;
-    // per-MeshBlock partial sums for the polar average, so the reduction can be spread over
-    // (block, radius) instead of radius alone.  Members, not locals, to keep the polar
-    // average from allocating four Views on every call.
+    // per-MeshBlock partial sums for the polar average, so the reduction can be spread
+    // over (block, radius) instead of radius alone. Members, not locals, to keep the
+    // polar average from allocating four Views on every call.
     DvceArray2D<Real> polar_part_in;
     DvceArray2D<Real> polar_part_out;
     HostArray1D<Real> polar_inner_h;
     HostArray1D<Real> polar_outer_h;
-    
+
     void AddGravFlux(const DvceFaceFld4D<Real> &phi0, DvceFaceFld5D<Real> &flx);
     void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
     void RemoveGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
-    
+
     // evaluate the background pressure from the static background state
     void SetWbBackgroundPressure();
     void BuildWBCache(const int jl, const int ju, const int kl, const int ku);
     // the x1 well-balanced scheme's own potential (see phicc_wb); on EVERY start incl. a
-    // restart, before the problem generator fills it.  Mirror of the Hydro methods.
+    // restart, before the problem generator fills it. Mirror of the Hydro methods.
     void EnableWBEffectivePotential();
     void SetWBEffectivePotential(const HostArray4D<Real> &phicc_in,
                                  const HostArray4D<Real> &phix1f_in);
@@ -594,7 +600,7 @@ class MHD {
     void RemoveWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
 
       //----------------------------------------------------------------------------------------
-      //! \fn AddWbPrimFace()
+      //! \fn AddWbPrimFace
       //! \brief Adds background face-centered variables onto ql(i+1) and qr(i).
 
       KOKKOS_INLINE_FUNCTION
@@ -606,9 +612,10 @@ class MHD {
       };
 
       //----------------------------------------------------------------------------------------
-      //! \fn AddWbPrimFaceX1()
-      //! \brief Adds background states onto face-centered primitive variables in x1-direction.
-      //! This function should be called over [is-1,ie+1] to get BOTH L/R states over [is,ie]
+      //! \fn AddWbPrimFaceX1
+      //! \brief Adds background states onto face-centered primitive variables in
+      //! x1-direction. This function should be called over [is-1,ie+1] to get BOTH L/R
+      //! states over [is,ie]
 
       KOKKOS_INLINE_FUNCTION
       static void AddWbPrimFaceX1(TeamMember_t const &member, const int m, const int k, const int j,
@@ -624,9 +631,10 @@ class MHD {
       };
 
       //----------------------------------------------------------------------------------------
-      //! \fn AddWbPrimFaceX2()
-      //! \brief Adds background states onto face-centered primitive variables in x2-direction.
-      //! This function should be called over [js-1,je+1] to get BOTH L/R states over [js,je]
+      //! \fn AddWbPrimFaceX2
+      //! \brief Adds background states onto face-centered primitive variables in
+      //! x2-direction. This function should be called over [js-1,je+1] to get BOTH L/R
+      //! states over [js,je]
 
       KOKKOS_INLINE_FUNCTION
       static void AddWbPrimFaceX2(TeamMember_t const &member, const int m, const int k, const int j,
@@ -642,9 +650,10 @@ class MHD {
       };
 
       //----------------------------------------------------------------------------------------
-      //! \fn AddWbPrimFaceX3()
-      //! \brief Adds background states onto face-centered primitive variables in x3-direction.
-      //! This function should be called over [ks-1,ke+1] to get BOTH L/R states over [ks,ke]
+      //! \fn AddWbPrimFaceX3
+      //! \brief Adds background states onto face-centered primitive variables in
+      //! x3-direction. This function should be called over [ks-1,ke+1] to get BOTH L/R
+      //! states over [ks,ke]
 
       KOKKOS_INLINE_FUNCTION
       static void AddWbPrimFaceX3(TeamMember_t const &member, const int m, const int k, const int j,
@@ -666,9 +675,8 @@ class MHD {
            const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          const DvceArray5D<Real> &wbq0,
            ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
-          
         const auto wb_option_ = wb_option;
-          
+
         Real igm1 = 1.0/(eos.gamma-1.0);
         int nvar = q.extent_int(1);
         for (int n=0; n<nvar; ++n) {
@@ -678,20 +686,20 @@ class MHD {
               WBReadCache(wbq0, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                      m, k, j, i,
                      q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
-                
+
               Real q1_im1 = q(m,n,k,j,i-1) - q0_im1;
               Real q1_i = q(m,n,k,j,i) - q0_i;
               Real q1_ip1 = q(m,n,k,j,i+1) - q0_ip1;
-                
+
               PLM(q1_im1, q1_i, q1_ip1, ql(n,i+1), qr(n,i));
-                
+
               ql(n,i+1) += q0_iph;
               qr(n,i) += q0_imh;
-                
+
                 // Left/right slopes (properly scaled)
                 Real sL = q(m,n,k,j,i)   - q(m,n,k,j,i-1);
                 Real sR = q(m,n,k,j,i+1) - q(m,n,k,j,i);
-                
+
                 if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 || sL * sR <= 0.0) {
                     PLM(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), ql(n,i+1), qr(n,i));
                 }
@@ -704,7 +712,7 @@ class MHD {
         }
         return;
       };
-      
+
       KOKKOS_INLINE_FUNCTION
       static void WbLocalPiecewiseLinearX2(TeamMember_t const &member,
            const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
@@ -722,20 +730,20 @@ class MHD {
                        q(m,IEN,k,j-1,i),q(m,IEN,k,j,i),q(m,IEN,k,j+1,i),
                        phicc(m,k,j-1,i),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j+1,i),phicc(m,k,j+1,i),
                        q0_jm1, q0_jmh, q0_j, q0_jph, q0_jp1);
-                
+
               Real q1_jm1 = q(m,n,k,j-1,i) - q0_jm1;
               Real q1_j = q(m,n,k,j,i) - q0_j;
               Real q1_jp1 = q(m,n,k,j+1,i) - q0_jp1;
-                
+
               PLM(q1_jm1, q1_j, q1_jp1, ql_jp1(n,i), qr_j(n,i));
-                
+
               ql_jp1(n,i) += q0_jph;
               qr_j(n,i) += q0_jmh;
-                
+
                 // Left/right slopes (properly scaled)
                 Real sL = q(m,n,k,j,i)   - q(m,n,k,j-1,i);
                 Real sR = q(m,n,k,j+1,i) - q(m,n,k,j,i);
-                
+
                 if (ql_jp1(n,i) < 0.0 || qr_j(n,i) < 0.0 || sL * sR <= 0.0) {
                     PLM(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), ql_jp1(n,i), qr_j(n,i));
                 }
@@ -748,9 +756,9 @@ class MHD {
         }
         return;
       };
-      
+
     //------------------------------------------------------------------------------------
-    //! \fn WbStaticPiecewiseLinearDerX1()
+    //! \fn WbStaticPiecewiseLinearDerX1
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
     //!
     //! The static scheme reconstructs the perturbation of the primitives about a
@@ -762,7 +770,7 @@ class MHD {
     //! nothing. The background pressure is not written as (gamma-1)*e_bg -- it depends on
     //! the background density too -- but neither is it asked of the EOS here: the
     //! background is static, so its pressure is evaluated once into pwb/pfwb at startup
-    //! by SetWbBackgroundPressure(). Under a general EOS each of these five reads would
+    //! by SetWbBackgroundPressure. Under a general EOS each of these five reads would
     //! otherwise be a temperature root find, in every cell of every stage.
 
     KOKKOS_INLINE_FUNCTION
@@ -794,7 +802,7 @@ class MHD {
     };
 
     //------------------------------------------------------------------------------------
-    //! \fn WbStaticPiecewiseLinearDerX2()
+    //! \fn WbStaticPiecewiseLinearDerX2
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
     //!
     //! The static scheme reconstructs the perturbation of the primitives about a
@@ -806,7 +814,7 @@ class MHD {
     //! nothing. The background pressure is not written as (gamma-1)*e_bg -- it depends on
     //! the background density too -- but neither is it asked of the EOS here: the
     //! background is static, so its pressure is evaluated once into pwb/pfwb at startup
-    //! by SetWbBackgroundPressure(). Under a general EOS each of these five reads would
+    //! by SetWbBackgroundPressure. Under a general EOS each of these five reads would
     //! otherwise be a temperature root find, in every cell of every stage.
 
     KOKKOS_INLINE_FUNCTION
@@ -838,7 +846,7 @@ class MHD {
     };
 
     //------------------------------------------------------------------------------------
-    //! \fn WbStaticPiecewiseLinearDerX3()
+    //! \fn WbStaticPiecewiseLinearDerX3
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
     //!
     //! The static scheme reconstructs the perturbation of the primitives about a
@@ -850,7 +858,7 @@ class MHD {
     //! nothing. The background pressure is not written as (gamma-1)*e_bg -- it depends on
     //! the background density too -- but neither is it asked of the EOS here: the
     //! background is static, so its pressure is evaluated once into pwb/pfwb at startup
-    //! by SetWbBackgroundPressure(). Under a general EOS each of these five reads would
+    //! by SetWbBackgroundPressure. Under a general EOS each of these five reads would
     //! otherwise be a temperature root find, in every cell of every stage.
 
     KOKKOS_INLINE_FUNCTION
@@ -882,7 +890,7 @@ class MHD {
     };
 
     //------------------------------------------------------------------------------------
-    //! \fn WbPiecewiseLinearDerX1/X2/X3()
+    //! \fn WbPiecewiseLinearDerX1/X2/X3
     //! \brief well-balanced reconstruction of the DERIVED thermodynamic variables.
     //!
     //! Under a general EOS the Riemann solvers do not recompute pressure from the
@@ -996,7 +1004,7 @@ class MHD {
       // modified van Leer (Mignone 2014)
       Real slope = sL*sR*(cR*sL+cL*sR) / (SQR(sL)+(cR+cL-2.0)*sL*sR+SQR(sR));
       slope = (sL * sR > 0.0) ? slope : 0.0;
-      // lhllc2nd-1102 <mhd>/plm_c1: C1 limiter (reconstruct/plm_c1.hpp)
+      // <mhd>/plm_c1: C1 limiter (reconstruct/plm_c1.hpp)
       if (c1 && slope != 0.0) {
         const Real th = 2.0*sL*sR/(SQR(sL) + SQR(sR));
         slope *= th*(2.0 - th);
@@ -1007,7 +1015,7 @@ class MHD {
       qr_i   = q_i - slope * dxLh;
       return;
     };
-    
+
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX1(TeamMember_t const &member, const EOS_Data &eos,
          const WBOption wb_option,
@@ -1037,7 +1045,7 @@ class MHD {
 
               // outside [wb_rmin, wb_rmax] the background is meaningless (see
               // MHD::wb_rmax / MHD::wb_rmin), so this cell reconstructs its state
-              // directly, like the non-well-balanced branch below.  Per CELL, not per
+              // directly, like the non-well-balanced branch below. Per CELL, not per
               // MeshBlock: a radial block spans both.
               if ((wb_rmax > 0.0 && x_i > wb_rmax) ||
                   (wb_rmin > 0.0 && x_i < wb_rmin) ||
@@ -1051,21 +1059,21 @@ class MHD {
               WBReadCache(wbq0, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                      m, k, j, i,
                      q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
-                
+
               Real q1_im1 = q(m,n,k,j,i-1) - q0_im1;
               Real q1_i = q(m,n,k,j,i) - q0_i;
               Real q1_ip1 = q(m,n,k,j,i+1) - q0_ip1;
-                  
+
               PLM_nonuniform(q1_im1, q1_i, q1_ip1, dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
-                  
+
               ql(n,i+1) += q0_iph;
               qr(n,i) += q0_imh;
-                
+
                 // Left/right slopes (properly scaled)
                 Real sL = (q(m,n,k,j,i)   - q(m,n,k,j,i-1)) / dxL;
                 Real sR = (q(m,n,k,j,i+1) - q(m,n,k,j,i)  ) / dxR;
-                
-                if (eos.wb_plm_smooth) {   // wbplm-1103: continuous (reconstruct/wb_plm_blend.hpp)
+
+                if (eos.wb_plm_smooth) {   // continuous (reconstruct/wb_plm_blend.hpp)
                   Real pl_, pr_;
                   PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
                   wbplm::WbPlmBlend(q(m,n,k,j,i), sL, sR, pl_, pr_, eos.plm_c1, ql(n,i+1), qr(n,i));
@@ -1088,14 +1096,14 @@ class MHD {
               Real dxRh = x_iph-x_i;
               Real dxL = x_i-x_im1;
               Real dxR = x_ip1-x_i;
-                      
+
               PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
             });
           }
       }
       return;
     };
-    
+
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX2(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
         const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
@@ -1114,12 +1122,12 @@ class MHD {
         // POLAR ROW: the mirror ghost sits at -x_j, so every profile even across the pole
         // has q(j-1) == q(j) and a limited slope reads that as an extremum and flattens
         // the cell -- first order at the pole for B_r of an axial field, B_phi of a
-        // transverse one, rho, p, ...  When the cell IS an extremum, use the quadratic
+        // transverse one, rho, p, ... When the cell IS an extremum, use the quadratic
         // through the three cell values at their centroids, with its curvature limited
-        // (Colella & Sekora 2008 style) by the curvature of the next triple (j, j+1, j+2):
-        // a smooth extremum keeps its parabola, a discontinuity is clipped to the limited
-        // slope.  Monotone profiles keep the ordinary limited slope.  Face values are
-        // clamped to the range of the three cells, so no new extremum is created.
+        // (Colella & Sekora 2008 style) by the curvature of the next triple (j, j+1,
+        // j+2): a smooth extremum keeps its parabola, a discontinuity is clipped to the
+        // limited slope. Monotone profiles keep the ordinary limited slope. Face values
+        // are clamped to the range of the three cells, so no new extremum is created.
         const Real x_jp2 = xv(m,j+2), x_jm2 = xv(m,j-2);
         // quadratic through (x_jm1,qm),(x_j,q0),(x_jp1,qp): slope and curvature at x_j
         const Real dl = x_j - x_jm1, dr = x_jp1 - x_j;
@@ -1162,7 +1170,7 @@ class MHD {
       }
       return;
     };
-    
+
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX3(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
         const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
@@ -1184,9 +1192,9 @@ class MHD {
       }
       return;
     };
-    
+
     //------------------------------------------------------------------------------------
-    //! \fn GridPiecewiseLinearDerX1()
+    //! \fn GridPiecewiseLinearDerX1
     //! \brief non-uniform-grid counterpart of WbPiecewiseLinearDerX1, for the derived
     //! thermodynamic variables on a spherical-polar mesh. GridPiecewiseLinearX2/X3 are
     //! already generic in the array they reconstruct and do no well-balancing, so wder
@@ -1222,7 +1230,7 @@ class MHD {
 
           // the STATIC background is a field the problem generator supplied, so it
           // needs no cache walk: subtract it, reconstruct the deviation on this grid's
-          // own non-uniform stencil, and add the FACE background back.  See the twin in
+          // own non-uniform stencil, and add the FACE background back. See the twin in
           // Hydro::GridPiecewiseLinearDerX1.
           if (n == (IDPR) && use_wb_static_perturb) {
             const Real q0_im1 = pwb(m,k,j,i-1);
@@ -1258,7 +1266,7 @@ class MHD {
 
             Real sL = (qd(m,n,k,j,i)   - qd(m,n,k,j,i-1)) / dxL;
             Real sR = (qd(m,n,k,j,i+1) - qd(m,n,k,j,i)  ) / dxR;
-            if (eos.wb_plm_smooth) {   // wbplm-1103: continuous (reconstruct/wb_plm_blend.hpp)
+            if (eos.wb_plm_smooth) {   // continuous (reconstruct/wb_plm_blend.hpp)
               Real pl_, pr_;
               PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
                              dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
@@ -1282,11 +1290,11 @@ class MHD {
     };
 
     //------------------------------------------------------------------------------------
-    //! \fn getWBq0()
+    //! \fn getWBq0
     //! \brief background values of ONE reconstruction channel at the five stencil points
-    //! {i-1, i-1/2, i, i+1/2, i+1}.  Dispatches to the ideal-gas closed forms in
-    //! getWBerho() below, or, for a general EOS, to the integrated background in
-    //! utils/wb_background.hpp.  Every well-balanced reconstruction and every
+    //! {i-1, i-1/2, i, i+1/2, i+1}. Dispatches to the ideal-gas closed forms in
+    //! getWBerho below, or, for a general EOS, to the integrated background in
+    //! utils/wb_background.hpp. Every well-balanced reconstruction and every
     //! gravitational source term must go through here, so that the background subtracted
     //! before reconstruction and the background differenced by the source term are the
     //! same object -- that consistency, not the background's accuracy, is what makes the
@@ -1335,7 +1343,7 @@ class MHD {
           q0_iph = s_iph.p; q0_ip1 = s_ip1.p;
         }
       } else {
-        // ideal gas: unchanged closed forms.  The pressure channel is never reconstructed
+        // ideal gas: unchanged closed forms. The pressure channel is never reconstructed
         // for an ideal gas (nder is 0), but p = (gamma-1)e keeps this total anyway.
         int n = (var == WBVar::wb_dens) ? IDN : IEN;
         getWBerho(n, eos.gamma, wb_option, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
@@ -1377,7 +1385,7 @@ class MHD {
       Real gigm1 = gamma*igm1;
       Real gm1ig = (gamma-1.0)/gamma;
       Real ig = 1.0/gamma;
-        
+
       switch (wb_option_) {
         case WBOption::isodensity:
           {
@@ -1405,8 +1413,8 @@ class MHD {
             // Walked in two segments like the other branches: anchor -> interface, then
             // interface -> neighbour continuing from the interface state.
             // T LINEAR in Phi with slope b from the two neighbours is the exact
-            // polytrope:  d(dT)/dPhi = -d  =>  dln d/dPhi = -(1 + b)/T
-            //             =>  d = d_0 (T/T_0)^(-(1+b)/b)
+            // polytrope: d(dT)/dPhi = -d => dln d/dPhi = -(1 + b)/T
+            // => d = d_0 (T/T_0)^(-(1+b)/b)
             // (isothermal, b -> 0: d = d_0 exp(-dPhi/T_0)); e = d T/(gamma-1).
             const Real dphis = phi_ip1 - phi_im1;
             const Real gm1_ = gamma - 1.0;
@@ -1460,7 +1468,7 @@ class MHD {
         default:
           break;
       }
-        
+
         Real factor_im1, factor_i, factor_ip1;
         if (n == (IEN)) {    // reconstructing e
           if (wb_option_num == 0)
@@ -1509,17 +1517,17 @@ class MHD {
                 q0_i = pow(rho_i,gamma-1.0);
               }
         }
-          
+
         Real dphi_im1 = phi_imh-phi_im1;
         Real dphi_imh = phi_i-phi_imh;
         Real dphi_i = phi_iph-phi_i;
         Real dphi_iph = phi_ip1-phi_iph;
-        
+
         q0_im1 = q0_i + factor_im1 * dphi_im1 + factor_i * dphi_imh;
         q0_ip1 = q0_i - factor_i * dphi_i - factor_ip1 * dphi_iph;
         q0_imh = q0_i + factor_i * dphi_imh;
         q0_iph = q0_i - factor_i * dphi_i;
-          
+
         if (n == (IEN)) {    // reconstructing e
             q0_i = e_i;
             if (wb_option_num == 1)
@@ -1553,7 +1561,7 @@ class MHD {
                   q0_iph = pow(q0_iph,igm1);
                 }
         }
-      
+
       return;
     };
 

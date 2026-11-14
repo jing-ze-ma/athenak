@@ -4,9 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file mhd_corner_e.cpp
-//  \brief
-//  Also includes contributions to electric field from "source terms" such as the
-//  shearing box.
+// \brief
+// Also includes contributions to electric field from "source terms" such as the
+// shearing box.
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -22,9 +22,9 @@
 #include "mhd/emf_smooth.hpp"
 
 namespace mhd {
-// EmfSmoothW: mhd/emf_smooth.hpp (cornerfix-1103: shared with MHD::CsVertexEmf3)
+// EmfSmoothW: mhd/emf_smooth.hpp ( shared with MHD::CsVertexEmf3)
 
-//! \brief lhlld2-1102: the GS07 upwind choice with smooth weights: a is the choice for
+//! \brief the GS07 upwind choice with smooth weights: a is the choice for
 //! fd >= 0 (its reference EMF in cell A), b the one for fd < 0 (cell B); rA, rB = rho*e
 //! (rho*c_iso^2 isothermal) of those two cells.
 KOKKOS_INLINE_FUNCTION
@@ -34,30 +34,30 @@ Real EmfPick(const Real fd, const Real eps, const Real ra, const Real rb,
 }
 
 //----------------------------------------------------------------------------------------
-//! <mhd>/emf_scheme = uct | uct_hlld (lhlld2-1102, ucthlld-1102): the UCT corner EMF of
+//! <mhd>/emf_scheme = uct | uct_hlld (, ): the UCT corner EMF of
 //! Mignone & Del Zanna 2021 (JCP 424, 109748, "MD21", eq. 35 with eq. 36 face averages),
 //! evaluated per corner inside the GS07 corner kernels of MHD::CornerE (same loops, same
 //! wall handling; the resistive/RKG EMFs, the cubed-sphere seam sum/average and the
-//! vertex average of flux_correct_fc act on its result exactly as on GS07's).  For an
+//! vertex average of flux_correct_fc act on its result exactly as on GS07's). For an
 //! edge along t with face families p, q (E3: p=x1,q=x2; E1: p=x2,q=x3; E2: p=x3,q=x1):
-//!   E.t = { -[a_p^W (v_p B_q)^W + a_p^E (v_p B_q)^E] + [a_q^S (v_q B_p)^S + a_q^N (v_q B_p)^N]
-//!           + (d_p^E B_q^E - d_p^W B_q^W) - (d_q^N B_p^N - d_q^S B_p^S) } / sin(p,q)
+//! E.t = { -[a_p^W (v_p B_q)^W + a_p^E (v_p B_q)^E] + [a_q^S (v_q B_p)^S + a_q^N (v_q
+//! B_p)^N] + (d_p^E B_q^E - d_p^W B_q^W) - (d_q^N B_p^N - d_q^S B_p^S) } / sin(p,q)
 //! W/E = the lower/upper side along p, S/N along q; a, d = the means over the two p- (q-)
 //! faces at the edge of the coefficients UctFaceStore saved (a^W = a^L, a^E = 1 - a^L,
 //! d^W = d^L, d^E = d^R); B_q = the staggered field of the q faces (B.n_q), PLM along p
 //! to the edge; v_p = v.n_p of the q faces (built from their a-weighted face-frame
 //! velocity) carried to the edge with half the PLM slope of the cell-centred v.n_p of the
-//! two cells sharing the face.  In 1-D this is exactly the face flux.  Writing E.t with
+//! two cells sharing the face. In 1-D this is exactly the face flux. Writing E.t with
 //! the NORMAL components v.n and B.n of the two face families makes it frame-free:
-//!   (v x B).t = [(v.n_p)(B.n_q) - (v.n_q)(B.n_p)] / sin(p,q)  for n_p, n_q ⊥ t,
+//! (v x B).t = [(v.n_p)(B.n_q) - (v.n_q)(B.n_p)] / sin(p,q) for n_p, n_q ⊥ t,
 //! and a jump of B.n_q across a p-face Riemann fan is sin(p,q) times the jump of the
 //! face-parallel B_t that the a/d coefficients act on, so the d terms carry the same
-//! 1/sin.  Cartesian: sin = 1 and v.n = the velocity component.  CUBED SPHERE (gnomonic
+//! 1/sin. Cartesian: sin = 1 and v.n = the velocity component. CUBED SPHERE (gnomonic
 //! frames, gnomonic_kernels.hpp; c, s = cos, sin of the xi-eta angle; w0 holds the
-//! contravariant (v^xi, v^eta) on the unit tangents, so v.n_xi = s v^xi, v.n_eta = s v^eta):
-//!   x1 face {rhat, e_xi, f2 = n_eta}: v.n_eta = slot 5, v.n_xi = s slot 4 - c slot 5;
-//!   x2 face {n_xi, e_eta, rhat}: v.rhat = slot 5, v.n_eta = s slot 4 - c slot 3;
-//!   x3 face {n_eta, rhat, e_xi}: v.rhat = slot 4, v.n_xi = s slot 5 - c slot 3;
+//! contravariant (v^xi, v^eta) on the unit tangents, so v.n_xi = s v^xi, v.n_eta = s
+//! v^eta): x1 face {rhat, e_xi, f2 = n_eta}: v.n_eta = slot 5, v.n_xi = s slot 4 - c slot
+//! 5; x2 face {n_xi, e_eta, rhat}: v.rhat = slot 5, v.n_eta = s slot 4 - c slot 3;
+//! x3 face {n_eta, rhat, e_xi}: v.rhat = slot 4, v.n_xi = s slot 5 - c slot 3;
 //! E1 = E.rhat has sin(xi,eta) = s at the corner; E2 = E.e_xi and E3 = E.e_eta have
 //! sin = 1 (rhat is orthogonal to n_xi, n_eta), and those are the edge projections the
 //! face EMFs and the GS07 corner EMF carry (GnomonicEquiangleEmfX1).
@@ -131,8 +131,8 @@ Real UctE3(const UctCorner &d, const int m, const int k, const int j, const int 
 }
 
 // E1 (x1 edge at x2 face j, x3 face k): p = x2, q = x3; / sin(xi,eta) at the corner
-// cornerfix-1103: templated on CELL-index maps K(kk), J(jj) applied to every array read
-// (identity: UctE1, bitwise).  MHD::CornerE passes the seam MIRROR at the seam radial
+// templated on CELL-index maps K(kk), J(jj) applied to every array read
+// (identity: UctE1). MHD::CornerE passes the seam MIRROR at the seam radial
 // edges within ng-1 of a cube vertex under <mesh>/cs_vertex_3cell, so the ghost row /
 // column (whose stencils reach the corner block) is replaced by the own one.
 struct UctIdx {
@@ -231,8 +231,8 @@ Real UctE2(const UctCorner &d, const int m, const int k, const int j, const int 
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void MHD::CornerE
-//  \brief calculate the corner electric fields.
+//! \fn void MHD::CornerE
+// \brief calculate the corner electric fields.
 
 TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -246,29 +246,29 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   const bool use_bs = use_bs_emf;
-  const Real emf_sm_ = emf_smooth;   // lhlld2-1102: < 0 = off (GS07 sign switch)
+  const Real emf_sm_ = emf_smooth;   // < 0 = off (GS07 sign switch)
   // rho*e of a cell for EmfSmoothW (isothermal: rho*c_iso^2); unused when emf_sm_ < 0
   const bool emf_has_e_ = (nmhd == 5);
   const Real emf_cs2_ = (emf_has_e_ ? 0.0 : SQR(peos->eos_data.iso_cs));
   // A REFLECTING radial wall (spherical polar or cubed sphere): the x1 mass flux there
   // is zero (the two wall states are mirror images, mhd_fluxes.cpp), so GS07 has no
-  // upwind side.  ">= 0" then always took the GHOST cell's EMF gradient, which behind a
+  // upwind side. ">= 0" then always took the GHOST cell's EMF gradient, which behind a
   // mirror wall is minus the interior one: the wall-edge EMF picked up an O(v_r B_t)
   // term, and CT turned it into a growing B.rhat at a closed wall (closed MHD vertex
-  // blast, cs_test iprob=12: ~3e-3 of |B|, rising with resolution).  At such a wall the
+  // blast, cs_test iprob=12: ~3e-3 of |B|, rising with resolution). At such a wall the
   // x1 choices take the average of the two sides -- the GS07 rule for a zero contact
-  // speed -- which cancels exactly for mirrored states.  The transverse (x2/x3) choices
+  // speed -- which cancels exactly for mirrored states. The transverse (x2/x3) choices
   // at a wall edge read the mass flux of the INTERIOR row on both sides: the ghost-row
   // flux is the mirror of it everywhere except on a cubed-sphere seam face, where the
   // shared seam flux is applied to the active rows only, and there the two sides picked
-  // different upwind cells.  Each piece is needed: with the x1 average, the interior
+  // different upwind cells. Each piece is needed: with the x1 average, the interior
   // row, or the mirrored ghost bcc1 (CellCenteredRadialFldWall) left out, the blast wall
   // B.rhat/|B| at nx2 = 32 is 1.6e-3, 2.9e-3, 4.1e-4 (6.7e-5 with all three).
   const bool sph_wall_ = use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar;
   const BoundaryFlag rflag_ = BoundaryFlag::reflect;
   // STRESS-FREE closed USER inner wall (dhj wall_mhd_mirror = stress_free; mhd_fluxes):
   // its mirror state has v_t and B_n even, v_n and B_t odd, so every tangential EMF of
-  // the mirror row equals the interior one.  The ghost row itself holds the problem's
+  // the mirror row equals the interior one. The ghost row itself holds the problem's
   // own state (the dhj ghosts are the initial column at rest), so at a wall edge the
   // GS07 terms read the INTERIOR row in place of the ghost row (im_ = i), and the x1
   // choices are those of a zero-mass-flux wall (wall_in, as for reflect).
@@ -276,7 +276,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   const BoundaryFlag uflag_ = BoundaryFlag::user;
   // <mhd>/emf_scheme = uct | uct_hlld: the MD21 corner formula (UctE1/E2/E3) replaces
   // the GS07 weights per corner inside the kernels below; the cell-centred EMFs are not
-  // needed then.  At a reflecting / stress-free wall edge it takes the mean of the two
+  // needed then. At a reflecting / stress-free wall edge it takes the mean of the two
   // wall-face EMFs (the solver's mirror-state flux), reading no ghost row.
   const bool uct_ = emf_uct || emf_uct_hlld;
   // UCT near-vertex seam edges without the shared seam (CsVertexEmf3 below)
@@ -298,9 +298,9 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   }
 
   //---- 1-D problem:
-  //  copy face-centered E-fields to edges and return.
-  //  Note e2[is:ie+1,js:je,  ks:ke+1]
-  //       e3[is:ie+1,js:je+1,ks:ke  ]
+  // copy face-centered E-fields to edges and return.
+  // Note e2[is:ie+1,js:je, ks:ke+1]
+  // e3[is:ie+1,js:je+1,ks:ke ]
 
   if (pmy_pack->pmesh->one_d) {
     // capture class variables for the kernels
@@ -430,9 +430,9 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     auto flx2 = uflx.x2f;
 
     // integrate E3 to corner using SG07
-    //  Note e1[is:ie,  js:je+1,ks:ke+1]
-    //       e2[is:ie+1,js:je,  ks:ke+1]
-    //       e3[is:ie+1,js:je+1,ks:ke  ]
+    // Note e1[is:ie, js:je+1,ks:ke+1]
+    // e2[is:ie+1,js:je, ks:ke+1]
+    // e3[is:ie+1,js:je+1,ks:ke ]
     par_for("emf2", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int j, const int i) {
       // reflecting radial wall: GS07 x1 upwind choices averaged (see sph_wall_)
@@ -487,7 +487,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
         e3_r1 = e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,i  );
       }
       if (emf_sm_ >= 0.0) {
-        // lhlld2-1102 <mhd>/emf_smooth: smooth GS07 upwind weights (see EmfSmoothW)
+        // <mhd>/emf_smooth: smooth GS07 upwind weights (see EmfSmoothW)
         auto re = [&](const int jj, const int ii) {
           return w0_(m,IDN,ks,jj,ii)*(emf_has_e_ ? fabs(w0_(m,IEN,ks,jj,ii)) : emf_cs2_);
         };
@@ -617,10 +617,10 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
         e3cc_(m,k,j,i) = (u2 * bcc_(m,IBX,k,j,i) - u1 * bcc_(m,IBY,k,j,i)) / u0;
       });
 
-    // CUBED SPHERE, the gnomonic form of the same thing.  v x B is only a cross product
+    // CUBED SPHERE, the gnomonic form of the same thing. v x B is only a cross product
     // in an ORTHONORMAL frame, and w0's velocity is CONTRAVARIANT on the non-orthogonal
     // unit tangent basis while bcc is already in the orthonormal triple
-    // (B.rhat, B.e_xi, B.f2), f2 = (e_eta - c e_xi)/s.  So put the velocity in that same
+    // (B.rhat, B.e_xi, B.f2), f2 = (e_eta - c e_xi)/s. So put the velocity in that same
     // triple first -- u = (v1, v2 + c v3, s v3), exactly what GnomonicEquianglePrimFaceX1
     // does -- take the cross product there, and project the result onto the EDGE
     // directions, which is what the face EMFs carry and what the corner EMF must be: the
@@ -684,17 +684,15 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     auto wder_ = wder;
 
     // Integrate E1, E2, E3 to corners
-    //  Note e1[is:ie,  js:je+1,ks:ke+1]
-    //       e2[is:ie+1,js:je,  ks:ke+1]
-    //       e3[is:ie+1,js:je+1,ks:ke  ]
+    // Note e1[is:ie, js:je+1,ks:ke+1]
+    // e2[is:ie+1,js:je, ks:ke+1]
+    // e3[is:ie+1,js:je+1,ks:ke ]
     // CUBED SPHERE: the GS07 upwind correction below needs a CELL-CENTRED reference EMF,
     // and the flat-space v x B is not valid there (contravariant velocity, orthonormal
     // bcc); e_cc_3d_cs above supplies the gnomonic form, so the cubed sphere takes the
-    // same GS07 branch as every other grid (a user decision, 2026-09-05; on the cs_test
-    // gate: same order, 1.8x the smooth-field L1(B) of the plain average).
-    // The plain four-face average (Balsara-Spicer) survives only as the <mhd>/bs_emf
-    // diagnostic: it does not reduce to the upwind flux in 1D and leaves the odd-even
-    // field mode undamped (it collapsed dt 5x on the spherical-polar dhj run).
+    // same GS07 branch as every other grid.
+    // The plain four-face average (Balsara-Spicer) remains as <mhd>/bs_emf: it does not
+    // reduce to the upwind flux in 1D and leaves the odd-even field mode undamped.
     if (use_bs) {
       par_for("emf3_cs", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -711,7 +709,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 
     par_for("emf3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      // lhlld2-1102 emf_smooth: rho*e of a cell (EmfSmoothW); unused when emf_sm_ < 0
+      // emf_smooth: rho*e of a cell (EmfSmoothW); unused when emf_sm_ < 0
       auto re3 = [&](const int kk, const int jj, const int ii) {
         return w0_(m,IDN,kk,jj,ii)*(emf_has_e_ ? fabs(w0_(m,IEN,kk,jj,ii)) : emf_cs2_);
       };
@@ -746,7 +744,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
               // radial: ACTIVE cells only (the physical radial ghosts); phi: the ghost
               // cell itself -- a copy of the neighbour's active cell, w0 / bcc / wder
               // included (ConsToPrim runs over all cells after the halo exchange).
-              // layoutaudit-1103: the phi index used to be clamped to THIS MeshBlock's
+              // the phi index used to be clamped to THIS MeshBlock's
               // ks..ke, so at an internal phi block edge the fast speed came from one
               // side only: the polar-row e2 (and B) depended on the phi decomposition
               // (sp_test resistive/MHD decks, 2 vs 4 phi blocks: B 6e-8 after 1 cycle).
@@ -770,13 +768,13 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
               ap = fmax(ap, fabs(w0_(m,IVZ,kc,j,ic)) + cf);
             }
           }
-          // THIRD differences, not first.  The first-difference (Rusanov) form damps a
+          // THIRD differences, not first. The first-difference (Rusanov) form damps a
           // mode of wavenumber kappa at the rate a*kappa^2*dx/2, and in the polar row
           // dx_phi = r sin(theta) dphi ~ dtheta*dphi while the smooth m = 1 pattern of
           // B_r has kappa ~ 1/(r sin theta): the rate is a*dphi/(2 r sin theta) = O(1),
-          // INDEPENDENT of resolution.  That distorted every smooth field threading the
+          // INDEPENDENT of resolution. That distorted every smooth field threading the
           // pole (sp_test iprob=11: polar-row v_r error 2.5e-2 at nx2 = 16 AND 32, and
-          // 100x smaller with the term off).  -D3/4 equals D1 exactly on the (-1)^k
+          // 100x smaller with the term off). -D3/4 equals D1 exactly on the (-1)^k
           // checkerboard this term exists to damp and is O(kappa^3 dx^3) on smooth modes.
           e2v -= 0.5*ar*0.25*(-b3_(m,k,j,i+1) + 3.0*b3_(m,k,j,i)
                                       - 3.0*b3_(m,k,j,i-1) + b3_(m,k,j,i-2));
@@ -787,7 +785,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       };
       if (uct_) {   // emf_scheme = uct | uct_hlld (UctE1/E2/E3)
         e1(m,k,j,i) = UctE1(ucd, m, k, j, i);
-        // cornerfix-1103 <mesh>/cs_vertex_3cell (no shared seam): a seam radial edge
+        // <mesh>/cs_vertex_3cell (no shared seam): a seam radial edge
         // within ng-1 of a cube vertex takes the seam MIRROR of its ghost row / column
         // (whose stencils reach the corner block); the vertex itself: CsVertexEmf3
         if (v3n_) {
@@ -808,7 +806,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
                             : UctE2(ucd, m, k, j, i);
         e3(m,k,j,i) = wall1 ? 0.5*(e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i))
                             : UctE3(ucd, m, k, j, i);
-        // spdef-1103: the polar-row face-field dissipation acts on the UCT corner e2
+        // the polar-row face-field dissipation acts on the UCT corner e2
         // too (UCT's d-terms do not see the (-1)^(i+k) mode that closes through the
         // polar ghost row; same term, same <mhd>/polar_emf_diss key as GS07)
         polar_diss_e2(e2(m,k,j,i));
@@ -816,7 +814,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       }
       // integrate E1 to corner using SG07
       Real e1_l3, e1_r3, e1_l2, e1_r2;
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
+      if (emf_sm_ >= 0.0) {  // emf_smooth
         e1_l3 = EmfPick(flx2(m,IDN,k-1,j,i), emf_sm_, re3(k-1,j-1,i), re3(k-1,j  ,i),
                         e1x3_(m,k,j-1,i) - e1cc_(m,k-1,j-1,i),
                         e1x3_(m,k,j  ,i) - e1cc_(m,k-1,j  ,i));
@@ -825,7 +823,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e1_l3 = e1x3_(m,k,j  ,i) - e1cc_(m,k-1,j  ,i);
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
+      if (emf_sm_ >= 0.0) {  // emf_smooth
         e1_r3 = EmfPick(flx2(m,IDN,k,j,i), emf_sm_, re3(k  ,j-1,i), re3(k  ,j  ,i),
                         e1x3_(m,k,j-1,i) - e1cc_(m,k  ,j-1,i),
                         e1x3_(m,k,j  ,i) - e1cc_(m,k  ,j  ,i));
@@ -834,7 +832,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e1_r3 = e1x3_(m,k,j  ,i) - e1cc_(m,k  ,j  ,i);
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
+      if (emf_sm_ >= 0.0) {  // emf_smooth
         e1_l2 = EmfPick(flx3(m,IDN,k,j-1,i), emf_sm_, re3(k-1,j-1,i), re3(k  ,j-1,i),
                         e1x2_(m,k-1,j,i) - e1cc_(m,k-1,j-1,i),
                         e1x2_(m,k  ,j,i) - e1cc_(m,k  ,j-1,i));
@@ -843,7 +841,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e1_l2 = e1x2_(m,k  ,j,i) - e1cc_(m,k  ,j-1,i);
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
+      if (emf_sm_ >= 0.0) {  // emf_smooth
         e1_r2 = EmfPick(flx3(m,IDN,k,j,i), emf_sm_, re3(k-1,j  ,i), re3(k  ,j  ,i),
                         e1x2_(m,k-1,j,i) - e1cc_(m,k-1,j  ,i),
                         e1x2_(m,k  ,j,i) - e1cc_(m,k  ,j  ,i));
@@ -860,7 +858,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       if (wall1) {  // reflecting radial wall: no upwind side, see above
         e2_l3 = 0.5*((e2x3_(m,k,j,im_) - e2cc_(m,k-1,j,im_)) +
               (e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  )));
-      } else if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
+      } else if (emf_sm_ >= 0.0) {  // emf_smooth
         e2_l3 = EmfPick(flx1(m,IDN,k-1,j,i), emf_sm_, re3(k-1,j,im_), re3(k-1,j,i  ),
                         e2x3_(m,k,j,im_) - e2cc_(m,k-1,j,im_),
                         e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  ));
@@ -872,7 +870,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       if (wall1) {  // reflecting radial wall: no upwind side, see above
         e2_r3 = 0.5*((e2x3_(m,k,j,im_) - e2cc_(m,k  ,j,im_)) +
               (e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  )));
-      } else if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
+      } else if (emf_sm_ >= 0.0) {  // emf_smooth
         e2_r3 = EmfPick(flx1(m,IDN,k,j,i), emf_sm_, re3(k  ,j,im_), re3(k  ,j,i  ),
                         e2x3_(m,k,j,im_) - e2cc_(m,k  ,j,im_),
                         e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  ));
@@ -881,7 +879,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e2_r3 = e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  );
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
+      if (emf_sm_ >= 0.0) {  // emf_smooth
         e2_l1 = EmfPick(flx3(m,IDN,k,j,il_), emf_sm_, re3(k-1,j,im_), re3(k  ,j,im_),
                         e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,im_),
                         e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,im_));
@@ -890,7 +888,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e2_l1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,im_);
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
+      if (emf_sm_ >= 0.0) {  // emf_smooth
         e2_r1 = EmfPick(flx3(m,IDN,k,j,ir_), emf_sm_, re3(k-1,j,i  ), re3(k  ,j,i  ),
                         e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,i  ),
                         e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,i  ));
@@ -909,7 +907,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       if (wall1) {  // reflecting radial wall: no upwind side, see above
         e3_l2 = 0.5*((e3x2_(m,k,j,im_) - e3cc_(m,k,j-1,im_)) +
               (e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  )));
-      } else if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
+      } else if (emf_sm_ >= 0.0) {  // emf_smooth
         e3_l2 = EmfPick(flx1(m,IDN,k,j-1,i), emf_sm_, re3(k,j-1,im_), re3(k,j-1,i  ),
                         e3x2_(m,k,j,im_) - e3cc_(m,k,j-1,im_),
                         e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  ));
@@ -921,7 +919,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       if (wall1) {  // reflecting radial wall: no upwind side, see above
         e3_r2 = 0.5*((e3x2_(m,k,j,im_) - e3cc_(m,k,j  ,im_)) +
               (e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  )));
-      } else if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
+      } else if (emf_sm_ >= 0.0) {  // emf_smooth
         e3_r2 = EmfPick(flx1(m,IDN,k,j,i), emf_sm_, re3(k,j  ,im_), re3(k,j  ,i  ),
                         e3x2_(m,k,j,im_) - e3cc_(m,k,j  ,im_),
                         e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  ));
@@ -930,7 +928,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e3_r2 = e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  );
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
+      if (emf_sm_ >= 0.0) {  // emf_smooth
         e3_l1 = EmfPick(flx2(m,IDN,k,j,il_), emf_sm_, re3(k,j-1,im_), re3(k,j  ,im_),
                         e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,im_),
                         e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,im_));
@@ -939,7 +937,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       } else {
         e3_l1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,im_);
       }
-      if (emf_sm_ >= 0.0) {  // lhlld2-1102 emf_smooth
+      if (emf_sm_ >= 0.0) {  // emf_smooth
         e3_r1 = EmfPick(flx2(m,IDN,k,j,ir_), emf_sm_, re3(k,j-1,i  ), re3(k,j  ,i  ),
                         e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,i  ),
                         e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,i  ));
@@ -967,14 +965,14 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::WallEmfZero
-//! \brief condwall-1028: perfectly conducting wall at rest.  On every REFLECT mesh face
+//! \brief perfectly conducting wall at rest. On every REFLECT mesh face
 //! of a MeshBlock (refl) and/or on the is face of a USER inner x1 boundary (usr_ix1, the
 //! dhj closed wall under wall_mhd_mirror = conducting) the edge EMFs of `e` tangential to
 //! that face are set to exactly 0, so CT leaves the face-normal field of the wall faces
-//! unchanged.  Generic: Cartesian, spherical polar, cubed sphere (x1 = r there; the panel
-//! faces are never reflect).  Edge extents: e1(k: ks..ke+1, j: js..je+1, i: is..ie),
+//! unchanged. Generic: Cartesian, spherical polar, cubed sphere (x1 = r there; the panel
+//! faces are never reflect). Edge extents: e1(k: ks..ke+1, j: js..je+1, i: is..ie),
 //! e2(k: ks..ke+1, j: js..je, i: is..ie+1), e3(k: ks..ke, j: js..je+1, i: is..ie+1); in
-//! 1-D/2-D the degenerate ke+1 / je+1 copies are zeroed as well.  Called on the ideal
+//! 1-D/2-D the degenerate ke+1 / je+1 copies are zeroed as well. Called on the ideal
 //! corner EMF (wall_conducting = full, or the dhj conducting wall) and on the resistive
 //! EMF (Resistivity::AddFluxGeneralResist): the explicit and the RKG paths both see it.
 
@@ -1034,17 +1032,17 @@ void MHD::WallEmfZero(DvceEdgeFld4D<Real> &e, const bool refl, const bool usr_ix
 
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::WallFluxZero
-//! \brief condwall-1028: the Riemann MASS, ENERGY and passive-scalar fluxes through a
+//! \brief the Riemann MASS, ENERGY and passive-scalar fluxes through a
 //! conducting wall are set to 0: every REFLECT mesh face (refl, <mhd>/wall_conducting =
 //! full) and/or the is face of a USER inner x1 boundary (usr_ix1, the dhj conducting
-//! wall).  At a closed wall at rest v_n = 0, and E_t = 0 (WallEmfZero) removes the
-//! Poynting flux E x B . n, so the exact mass and energy fluxes are 0.  The Riemann flux
+//! wall). At a closed wall at rest v_n = 0, and E_t = 0 (WallEmfZero) removes the
+//! Poynting flux E x B . n, so the exact mass and energy fluxes are 0. The Riemann flux
 //! is not: the mirror state (v_n odd, B_t even) is a symmetry of MHD only when B_n = 0.
 //! With B_n != 0 the exact mirror would need B_t ODD (a stress-free wall), so the solver
 //! returned S_M != 0, a mass flux O(B_n B_t) (cw_test threaded box: 2.6e-2 of M through
-//! the walls in t = 1 on Cartesian, 2e-3 on sp) and the work -B_n (v_t . B_t).  Called on
+//! the walls in t = 1 on Cartesian, 2e-3 on sp) and the work -B_n (v_t . B_t). Called on
 //! the Riemann (+FOFC) fluxes only, before any diffusive flux (conduction / viscosity
-//! through the wall are kept).  The momentum fluxes (pressure and Maxwell stress) stay.
+//! through the wall are kept). The momentum fluxes (pressure and Maxwell stress) stay.
 
 void MHD::WallFluxZero(const bool refl, const bool usr_ix1) {
   auto f1 = uflx.x1f;
@@ -1113,12 +1111,12 @@ void MHD::PolarAzimuthalAverageEr() {
 
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
 
-  // Work arrays are members, sized once.  The previous version allocated four Views, a
+  // Work arrays are members, sized once. The previous version allocated four Views, a
   // pair of host mirrors and two std::vectors on EVERY call -- twice per cycle.
   // The host mirrors must be in the SAME guard condition as the device arrays and are
   // tested separately, because the MHD constructor pre-sizes inner_local/outer_local
-  // (mhd.cpp) but not these two.  A guard on inner_local alone therefore never fires and
-  // leaves the mirrors at their default extent 0.  Nothing notices in serial -- only the
+  // (mhd.cpp) but not these two. A guard on inner_local alone therefore never fires and
+  // leaves the mirrors at their default extent 0. Nothing notices in serial -- only the
   // MPI branch below touches them -- so every multi-rank run with polar boundaries died
   // on the first cycle with "deep_copy extents of views don't match: (0) inner(n)".
   if (static_cast<int>(inner_local.extent(0)) != ncells1 ||
@@ -1141,9 +1139,9 @@ void MHD::PolarAzimuthalAverageEr() {
   // =====================================================
   // stage 1: per-(MeshBlock, radius) partial sums over phi
   // =====================================================
-  // One thread per (m,i) rather than one per i.  The old kernel launched ncells1 threads
+  // One thread per (m,i) rather than one per i. The old kernel launched ncells1 threads
   // -- 68 on this problem, well under a single MI300A workgroup -- and made each of them
-  // walk every MeshBlock and every phi cell serially.  The sum over phi within one block
+  // walk every MeshBlock and every phi cell serially. The sum over phi within one block
   // is left serial and in ascending k, exactly as before.
   par_for("polar_partial", DevExeSpace(), 0, nmb-1, 0, ncells1-1,
   KOKKOS_LAMBDA(const int m, const int i) {
@@ -1166,7 +1164,7 @@ void MHD::PolarAzimuthalAverageEr() {
   // stage 2: combine the per-block partials
   // =====================================================
   // Ascending block order, so the result does not depend on how the runtime scheduled
-  // stage 1.  (It is NOT bit-identical to the old single-loop accumulation, which carried
+  // stage 1. (It is NOT bit-identical to the old single-loop accumulation, which carried
   // one running total across block boundaries -- see the branch notes.)
   par_for("polar_combine", DevExeSpace(), 0, ncells1-1,
   KOKKOS_LAMBDA(const int i) {
@@ -1181,7 +1179,7 @@ void MHD::PolarAzimuthalAverageEr() {
   });
 
 #if MPI_PARALLEL_ENABLED
-  // Only a genuinely distributed run needs the device->host->device round trip.  On one
+  // Only a genuinely distributed run needs the device->host->device round trip. On one
   // rank the old code paid it anyway, twice per cycle, for an Allreduce over itself.
   if (global_variable::nranks > 1) {
     Kokkos::deep_copy(polar_inner_h, inner_local);
@@ -1199,7 +1197,7 @@ void MHD::PolarAzimuthalAverageEr() {
   // refill polar EMFs with the azimuthal average
   // =====================================================
   // Parallel over (m,k,i); the old kernel ran one thread per MeshBlock and looped k and i
-  // inside it.  Pure writes, so this is bit-identical to before.
+  // inside it. Pure writes, so this is bit-identical to before.
   par_for("polar_refill", DevExeSpace(), 0, nmb-1, ks, ke+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int i) {
     bool do_inner = (mb_bcs.d_view(m, BoundaryFace::inner_x2) == BoundaryFlag::polar);
