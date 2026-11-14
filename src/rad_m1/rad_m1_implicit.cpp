@@ -2004,6 +2004,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     const std::string tc = pin->GetString("rad_m1","implicit_thin_combine");
     if (tc.compare("min") == 0) {
       impl_thin_cmin = true;
+    } else if (tc.compare("gate") == 0) {
+      // gate (diagnostic intervention): min only where the two sides disagree strongly
+      // (one g > 0.3, the other < 0.05), max elsewhere
+      impl_thin_cgate = true;
     } else if (tc.compare("aniso") == 0) {
       // aniso: each cell's measure is the angular ANISOTROPY of its own rays about their
       // mean along the face normal, |h+ + h-|/(h+ - h-) (0 isotropic, 1 one-sided),
@@ -2011,7 +2015,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // which are out of LTE but not streaming); combined with max as before
       impl_thin_cani = true;
     } else if (tc.compare("max") != 0) {
-      ImplFatal("<rad_m1>/implicit_thin_combine must be max | min | aniso");
+      ImplFatal("<rad_m1>/implicit_thin_combine must be max | min | gate | aniso");
     }
   }
   // rsgposlin-1113 implicit_tosc_bisect (M1ImplTsolveLaunch; read only when named)
@@ -16659,6 +16663,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const Real hwsx = impl_hr_ws_x1;
       const bool tcmin = impl_thin_cmin;   // rsgposlin-1113
       const bool tcani = impl_thin_cani;
+      const bool tcgat = impl_thin_cgate;
       const bool hgd = hrx && vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0);
       const int hsrc = !hrx ? 0 : (vetsc ? 1 : (hgd ? 2 : (!impl_hr_model ? -1 :
                                                             (trans ? 0 : 3))));
@@ -16948,6 +16953,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               }
             }
             if (tcmin) {gl3 = fmin(gl3, gr3); gr3 = gl3;}   // rsgposlin-1113
+            if (tcgat && fmax(gl3, gr3) > 0.3 && fmin(gl3, gr3) < 0.05) {
+              gl3 = fmin(gl3, gr3); gr3 = gl3;   // rsgposlin-1113 gate
+            }
             if (tcani) {   // rsgposlin-1113 aniso: half-range asymmetry of each cell
               gl3 = fabs(hpl + hml)/fmax(hpl - hml, 1.0e-300);
               gr3 = fabs(hpr + hmr)/fmax(hpr - hmr, 1.0e-300);

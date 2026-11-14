@@ -52,6 +52,7 @@
   const Real hwsl = impl_hr_ws_lat;
   const bool tcmin = impl_thin_cmin;   // rsgposlin-1113 implicit_thin_combine = min
   const bool tcani = impl_thin_cani;   // ... = aniso
+  const bool tcgat = impl_thin_cgate;   // ... = gate
   // DEBUG rsgposlin-1113 dbg_trace_*: the thin-switch inputs of the traced cell's faces
   const bool trf = (dtr_rank == global_variable::my_rank) && (dtr_cell[0][0] >= 0) &&
                    (pmy_pack->pmesh->ncycle >= dtr_c0);
@@ -240,6 +241,9 @@
             gfr = gfl;
           }
           if (tcmin) {gfl = fmin(gfl, gfr); gfr = gfl;}   // rsgposlin-1113
+          if (tcgat && fmax(gfl, gfr) > 0.3 && fmin(gfl, gfr) < 0.05) {
+            gfl = fmin(gfl, gfr); gfr = gfl;   // rsgposlin-1113 gate
+          }
           if (tcani) {   // rsgposlin-1113 aniso: half-range asymmetry of each cell
             const Real pl = iw_(m,M1_IW_S1,km,jm,i), ql = iw_(m,M1_IW_S3,km,jm,i);
             const Real pr = iw_(m,M1_IW_S1,k,j,i), qr = iw_(m,M1_IW_S3,k,j,i);
