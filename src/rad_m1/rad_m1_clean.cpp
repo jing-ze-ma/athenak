@@ -517,6 +517,7 @@ void RadiationM1::CleanFaceCoef() {
   auto op = opac;
   auto inc = t2inc;
   auto cw = cln_w;
+  const bool gate = cln_gate;
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !d2) continue;
     if (dir == 2 && !d3) continue;
@@ -542,7 +543,7 @@ void RadiationM1::CleanFaceCoef() {
         return (fmax(a, b) > 0.0) ? fmin(a, b)/fmax(a, b) : 1.0;};
       const Real r = fmin(rat(cw(m,CLW_EO,k,j,i), cs(m,CLN_J,k,j,i)),
                           rat(cw(m,CLW_EO,kl,jl,il), cs(m,CLN_J,kl,jl,il)));
-      fc(m,3,k,j,i) = r*r;
+      fc(m,3,k,j,i) = gate ? r*r : 1.0;
     });
   }
 }
