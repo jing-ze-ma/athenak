@@ -1551,7 +1551,18 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
                                            size.d_view(m).x1max);
       Real d = (sah > 0.0) ? rho0*exp(-(r - rin)/sah) : rho0*pow(r/rin, -en);
       Real e = fmax(eout, efl), f = 0.0, tt = tgas;
-      if (edd0) {
+      if (edd0 && !sp) {
+        // xchg-1114: the Cartesian slab is plane parallel, F = F_in and E = 3 F_in
+        // tau(x)/c + F_in/(c q) with tau the optical depth to x1max (exponential
+        // atm_scale_h profile or uniform density).  The spherical form below took
+        // r_in = x1min = 0 on the slab and started from E = 0, T_gas = 0.
+        const Real tau = (sah > 0.0)
+            ? rho0*kt*sah*(exp(-(r - rin)/sah) - exp(-(rout - rin)/sah))
+            : d*kt*(rout - r);
+        f = fin;
+        e = 3.0*fin*tau/cl + fin/(cl*qm);
+        if (teq) {tt = pow(e/ar, 0.25);}
+      } else if (edd0) {
         f = fin*rin*rin/(r*r);
         e = 3.0*rho0*kt*fin*pow(rin, en + 2.0)/(cl*(en + 1.0))
             *(pow(r, -(en + 1.0)) - pow(rout, -(en + 1.0)))
@@ -1588,7 +1599,7 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       KOKKOS_LAMBDA(int m, int k, int j, int i) {
         Real r = sp ? xf(m,i) : LeftEdgeX(i-is, nx1, size.d_view(m).x1min,
                                           size.d_view(m).x1max);
-        ff0(m,k,j,i) = fin*rin*rin/(r*r);
+        ff0(m,k,j,i) = sp ? fin*rin*rin/(r*r) : fin;   // xchg-1114: slab F = F_in
       });
     }
   } else if (test.compare("sph_wedge") == 0) {
