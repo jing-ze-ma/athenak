@@ -180,17 +180,22 @@ bool CleanBoundaryFace(const CleanArgs &x, const int dir, const int k, const int
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanFaceCross
-//! \brief flux of the off-diagonal Eddington terms, -(1-w) theta h c^2 d_b(D_{dir,b} E)
-//! for b != dir, with the transverse derivative averaged over the four cells around the
-//! face.  E is work vector e.
+//! \fn Real CleanFaceStress
+//! \brief divergence of the radiation stress D E at face (k,j,i) normal to dir,
+//! d_b(D_{dir,b} E): the normal derivative from the two adjacent cells (if normal is
+//! set) and, away from physical boundaries, the transverse derivatives averaged over the
+//! four cells around the face.  E is work vector e.
 
 KOKKOS_INLINE_FUNCTION
-Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
-                    const int k, const int j, const int i) {
-  if (!x.multi_d || CleanBoundaryFace(x, dir, k, j, i)) return 0.0;
+Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m,
+                     const int k, const int j, const int i, const bool normal) {
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
-  Real grad = 0.0;
+  Real div = 0.0;
+  if (normal) {
+    div = x.idx[dir]*(x.cs(m,CLN_D11+dir,k,j,i)*x.w(m,e,k,j,i) -
+                      x.cs(m,CLN_D11+dir,kl,jl,il)*x.w(m,e,kl,jl,il));
+  }
+  if (!x.multi_d || CleanBoundaryFace(x, dir, k, j, i)) return div;
   for (int b = 0; b < 3; ++b) {
     if (b == dir || (b == 1 && !x.multi_d) || (b == 2 && !x.three_d)) continue;
     const int ab = (dir + b == 1) ? 3 : ((dir + b == 2) ? 4 : 5);   // D12, D13, D23
@@ -198,12 +203,24 @@ Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
     auto de = [&](const int kk, const int jj, const int ii) {
       return x.cs(m,ab,kk,jj,ii)*x.w(m,e,kk,jj,ii);
     };
-    grad += 0.25*x.idx[b]*(de(k+dk,j+dj,i+di) + de(kl+dk,jl+dj,il+di)
-                           - de(k-dk,j-dj,i-di) - de(kl-dk,jl-dj,il-di));
+    div += 0.25*x.idx[b]*(de(k+dk,j+dj,i+di) + de(kl+dk,jl+dj,il+di)
+                          - de(k-dk,j-dj,i-di) - de(kl-dk,jl-dj,il-di));
   }
+  return div;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanFaceCross
+//! \brief flux of the off-diagonal Eddington terms, -(1-w) theta h c^2 d_b(D_{dir,b} E)
+//! for b != dir.  E is work vector e.
+
+KOKKOS_INLINE_FUNCTION
+Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
+                    const int k, const int j, const int i) {
+  if (!x.multi_d || CleanBoundaryFace(x, dir, k, j, i)) return 0.0;
   const Real w = x.fc[dir](m,CLF_W,k,j,i);
   const Real th = x.fc[dir](m,CLF_TH,k,j,i);
-  return -(1.0 - w)*th*x.h*x.c*x.c*grad;
+  return -(1.0 - w)*th*x.h*x.c*x.c*CleanFaceStress(x, e, dir, m, k, j, i, false);
 }
 
 //----------------------------------------------------------------------------------------
@@ -292,9 +309,9 @@ Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const i
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanMomentumChange
-//! \brief the momentum the radiation gives to cell (k,j,i) along dir over the stage: the
-//! flux source h c chi (F - A) of each face, as h chi (F - A)/c of momentum, half of each
-//! face to each neighbour, with h c chi_f = 1/theta - 1.  E is work vector e.
+//! \brief the momentum the radiation gives to cell (k,j,i) along dir over the stage, in
+//! conservative form: at each face, minus the left side of the radiation flux equation,
+//! -[(F - G)/c^2 + h div(D E)], half of each face to each neighbour.  E is work vector e.
 
 KOKKOS_INLINE_FUNCTION
 Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const int m,
@@ -303,12 +320,9 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
   Real dm = 0.0;
   for (int side = 0; side < 2; ++side) {
     const int kf = k + side*dk, jf = j + side*dj, iff = i + side*di;
-    const Real w = x.fc[dir](m,CLF_W,kf,jf,iff);
-    const Real th = x.fc[dir](m,CLF_TH,kf,jf,iff);
     const Real f = CleanFaceFlux(x, e, dir, m, kf, jf, iff, true);
-    const Real af = 0.5*(x.w(m,CLW_A1+dir,kf-dk,jf-dj,iff-di)*x.w(m,e,kf-dk,jf-dj,iff-di)
-                         + x.w(m,CLW_A1+dir,kf,jf,iff)*x.w(m,e,kf,jf,iff));
-    dm += 0.5*(1.0/th - 1.0)*(f - (1.0 - w)*af)/(x.c*x.c);
+    const Real g = x.fc[dir](m,CLF_G,kf,jf,iff);
+    dm -= 0.5*((f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff, true));
   }
   return dm;
 }
