@@ -66,6 +66,7 @@ void RadiationM1::CleanClosure() {
 //!     exponentially to its source-driven value, accurate to O(dt^2) for any stiffness and
 //!     without overshoot.  A loss larger than the content is applied at constant relative
 //!     rate.
+//! Without gas feedback the gas is held fixed and E advances at its own rate.
 //! Density is not changed by radiation within a step.  The prediction is within O(dt^2)
 //! of U^{n+1}.  Without a valid K1 (first step) the coupling rates are zero.
 
@@ -108,6 +109,7 @@ void RadiationM1::CleanPredictState() {
   M1OpacTab otab_ = otab;
   bool scat = vscat;
   Real arad_ = arad, cl = c_light;
+  const bool feedback = cln_feedback;
 
   par_for("cln_predict", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -122,7 +124,11 @@ void RadiationM1::CleanPredictState() {
       const Real ekin = 0.5*(SQR(mom[0]) + SQR(mom[1]) + SQR(mom[2]))/d;
       const Real eint_h = fmax(uh(m,IEN,k,j,i) - ekin, 0.0);
       t = eos.Temperature(d, eint_h);
-      if (use_rates) {
+      if (use_rates && !feedback) {
+        // gas held fixed: E advances at its own rate, which includes the exchange
+        const Real de = dt*k1(m,M1_T2_E,k,j,i);
+        e = (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
+      } else if (use_rates) {
         // gas at t^n and the rates of this step: hydro heating s_g, radiation transport s_e
         const Real dn = un(m,IDN,k,j,i);
         const Real eint_n = fmax(un(m,IEN,k,j,i) - 0.5*(SQR(un(m,IM1,k,j,i)) +
