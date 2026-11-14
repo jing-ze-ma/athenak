@@ -545,7 +545,6 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFluxFC(DvceEdgeFld4D<Real> &flx) {
   if (bflag) {return TaskStatus::incomplete;}
 #endif
 
-  if (skip_emf_reconcile) {return TaskStatus::complete;}   // diagnostic
   //----- STEP 2: buffers have all completed, so unpack and perform appropriate averaging
 
   // 2D array to store number of fluxes summed into corner buffers

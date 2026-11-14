@@ -591,10 +591,6 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
 class MeshBoundaryValuesFC : public MeshBoundaryValues {
  public:
   MeshBoundaryValuesFC(MeshBlockPack *ppack, ParameterInput *pin);
-  // <mhd>/cs_seam_emf_avg = false (diagnostic): RecvAndUnpackFluxFC leaves
-  // every edge EMF as this block computed it (no same-level sum/average, no cube-vertex
-  // average). Single-block-per-panel cubed sphere only (the gate of the shared seam EMF).
-  bool skip_emf_reconcile = false;
 
   //functions
   void InitSendIndices(MeshBoundaryBuffer &b,int o1,int o2,int o3,int f1,int f2) override;

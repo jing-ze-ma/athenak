@@ -392,9 +392,9 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   // needed then.  At a reflecting / stress-free wall edge it takes the mean of the two
   // wall-face EMFs (the solver's mirror-state flux), reading no ghost row.
   const bool uct_ = emf_uct || emf_uct_hlld;
-  // cornerfix-1103: near-vertex seam edges of UCT without the shared seam (see below)
+  // UCT near-vertex seam edges without the shared seam (CsVertexEmf3 below)
   const bool v3n_ = uct_ && use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell &&
-                    pmy_pack->pmesh->three_d && cs_seam_mhd < 2;
+                    pmy_pack->pmesh->three_d && !cs_seam_mhd;
   const int ng_ = indcs.ng;
   UctCorner ucd;
   if (uct_) {
@@ -1066,14 +1066,15 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
                 e3x2_(m,k,j,im_) + e3x2_(m,k,j,i) + e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i));
     });
   }
-  // ucthshare-1102 <mhd>/cs_seam_mhd = shared: the seam-edge / cube-vertex UCT EMFs from
-  // shared inputs (mhd_cs_seam.cpp)
-  if (cs_seam_mhd >= 2 && pmy_pack->pmesh->three_d) {UctSeamEdges();}
-  // cornerfix-1103 <mesh>/cs_vertex_3cell: without the shared seam the cube-vertex
-  // radial EMF took a 4-cell stencil whose 4th cell is the made-up corner block; the
-  // 3-cell vertex rule replaces it (mhd_cs_seam.cpp, GS07 and UCT alike)
-  else if (use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell &&
-           pmy_pack->pmesh->three_d) {CsVertexEmf3();}
+  // cs_seam_mhd: the seam-edge / cube-vertex UCT EMFs as the sum of each panel's
+  // own-grid parts; otherwise <mesh>/cs_vertex_3cell: the cube-vertex radial EMF from
+  // the three real cells (both in mhd_cs_seam.cpp)
+  if (cs_seam_mhd && pmy_pack->pmesh->three_d) {
+    UctSeamOwnSide();
+  } else if (use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell &&
+             pmy_pack->pmesh->three_d) {
+    CsVertexEmf3();
+  }
   if (pmy_pack->pmesh->use_polar_boundary) PolarAzimuthalAverageEr();
   return TaskStatus::complete;
 }

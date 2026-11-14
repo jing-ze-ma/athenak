@@ -285,19 +285,11 @@ class MHD {
   // along the face uses <mhd>/reconstruct: 1 ppm4, 2 ppmx, 3 wenoz (mhd_corner_e.cpp)
   int uct_corner_rec = 0;
   DvceArray5D<Real> uct1, uct2, uct3;
-  // ucthshare-1102 <mhd>/cs_seam_mhd = none (default) | faces | shared | shared_g | shared_o (read only when
-  // named; cubed sphere).  faces (1): each panel-seam face is ONE Riemann problem -- the
-  // ghost-side state is the neighbour panel's OWN PLM state (primitives, derived, bcc),
-  // exchanged through pbval_fs (cs_seam_states.hpp, shared with the hydro), radial ghost
-  // rows included.  shared (1)+(2)+(3), emf_scheme = uct | uct_hlld only: the seam-edge
-  // and cube-vertex UCT EMFs evaluated from the SAME inputs on every panel (UctSeamEdges,
-  // mhd_cs_seam.cpp; neighbour packets through pbval_us).  <mhd>/cs_seam_emf_avg = false
-  // (diagnostic, read only when named) skips the edge-EMF reconciliation entirely.
-  // FRESH-start default shared_o on the cubed sphere where supported (prod1103, USER
-  // 11-03; recipe::NewDefaults, mhd.cpp); a restart whose input lacks the key: none.
-  int cs_seam_mhd = 0;
-  bool cs_seam_noavg = false;
-  bool cs_seam_res_own = false;   // <mhd>/cs_seam_res = own (default mean; shared modes)
+  // <mhd>/cs_seam_mhd = shared_o (cubed sphere, emf_scheme = uct | uct_hlld): each
+  // seam face is one Riemann problem on both panels' own PLM states, and the
+  // seam-edge / cube-vertex EMFs are the sum of each panel's own-grid parts
+  // (mhd_cs_seam.cpp). Fresh-start default on the cubed sphere (mhd.cpp).
+  bool cs_seam_mhd = false;
   MeshBoundaryValuesCC *pbval_fs = nullptr;
   MeshBoundaryValuesCC *pbval_us = nullptr;
   DvceFaceFld5D<Real> *pseamfs = nullptr;
@@ -306,17 +298,11 @@ class MHD {
   int cs_seam_nfs = 0;
   void CsSeamInit(ParameterInput *pin);
   void CsSeamFaceStates();
-  void UctSeamPackets();
-  void UctSeamEdges();
   void UctSeamOwnSide();
-  void CsVertexEmf3();   // cornerfix-1103 (mhd_cs_seam.cpp)
-  void SeamXRecord(const bool packets);
+  void CsVertexEmf3();
+  void SeamXRecord();
   void CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta,
-                    const DvceEdgeFld4D<Real> &jnorm, DvceEdgeFld4D<Real> &efld_,
-                    const bool mean_only = false);
-  // seamexact-1103 <mhd>/cs_seam_res = mean_j: the single-valued seam current
-  void CsSeamResJ(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta,
-                  const DvceEdgeFld4D<Real> &jnorm, DvceEdgeFld4D<Real> &efld_);
+                    const DvceEdgeFld4D<Real> &jnorm, DvceEdgeFld4D<Real> &efld_);
   bool use_polar_emf_diss = false; // Rusanov face-field dissipation on e2 in the polar rows        // plain 4-face average corner EMF (Balsara-Spicer) on ANY grid
 
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per

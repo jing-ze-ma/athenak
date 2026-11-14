@@ -313,10 +313,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto &uct1_ = uct1;
   auto &uct2_ = uct2;
   auto &uct3_ = uct3;
-  // ucthshare-1102 <mhd>/cs_seam_mhd = faces | shared: the neighbour's own seam face
-  // states (MHD::CsSeamFaceStates, mhd_cs_seam.cpp), substituted on the ghost side of
-  // every panel-seam face (rows is-1..ie+1) after the gnomonic face rotation
-  const bool cs_shr_ = (cs_seam_mhd > 0);
+  // cs_seam_mhd: the neighbour's own seam face states (MHD::CsSeamFaceStates),
+  // substituted on the ghost side of every panel-seam face (rows is-1..ie+1) after
+  // the gnomonic face rotation
+  const bool cs_shr_ = cs_seam_mhd;
   if (wb_all) BuildWBCacheAll();   // wball-1104 (before the seam face states)
   if (wb_all && wb_poison) {   // dhjwball-1106 TEST ONLY
     hydro::WbPoison(pmy_pack, wbq2, phicc_wb, wb_phimax);

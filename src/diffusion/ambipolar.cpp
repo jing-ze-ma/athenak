@@ -428,13 +428,10 @@ void Resistivity::AddEMFAmbipolarGnomonic(const DvceFaceFld4D<Real> &b0,
     // ---- x3 edge (r face i, xi face j, eta centre k): along e_eta
     if (k <= ke) {ops.X3(m,k,j,i,ia,ib,s); e3(m,k,j,i) += CsEdgeAdEmf(3, s);}
   });
-  // the stage field for the shared seam current (cs_seam_res = mean_j)
-  CsSeamResJBcc(&bc);
-  // ucthshare-1102 cs_seam_mhd = shared_g | shared_o: the seam edges take the TWO-CHART
-  // MEAN of the Ohmic + ambipolar EMF (MHD::CsSeamResist, mean), single-valued without
-  // the edge-EMF averaging (the Ohmic call skipped its mean so it is taken once, here)
-  if (pmy_pack->pmhd != nullptr && pmy_pack->pmhd->cs_seam_mhd >= 3) {
-    pmy_pack->pmhd->CsSeamResist(b0, eta_b, jnorm, efld, true);
+  // cs_seam_mhd: the seam edges take the two-chart mean of the Ohmic + ambipolar EMF
+  // (MHD::CsSeamResist), taken once here
+  if (pmy_pack->pmhd != nullptr && pmy_pack->pmhd->cs_seam_mhd) {
+    pmy_pack->pmhd->CsSeamResist(b0, eta_b, jnorm, efld);
   }
   return;
 }

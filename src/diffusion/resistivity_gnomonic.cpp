@@ -334,18 +334,12 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   auto e2 = efld.x2e;
   auto e3 = efld.x3e;
   auto eta_b_ = eta_b;
-  // ucthshare-1102 <mhd>/cs_seam_mhd = shared_g | shared_o: the seam edges take the SHARED
-  // resistive EMF (MHD::CsSeamResist, after pass 2).  cs_seam_res = own: pass 2 skips
-  // them; mean (default): pass 2 computes them and CsSeamResist takes the two-chart mean
-  const bool rsc_ = (pmy_pack->pmhd != nullptr && pmy_pack->pmhd->cs_seam_mhd >= 3);
-  const bool rsh_ = rsc_ && pmy_pack->pmhd->cs_seam_res_own;
+  // cs_seam_mhd: the seam edges take the two-chart mean of the resistive EMF
+  // (MHD::CsSeamResist, after the edge EMFs below)
+  const bool rsc_ = (pmy_pack->pmhd != nullptr && pmy_pack->pmhd->cs_seam_mhd);
   auto &msz_ = pmy_pack->pmb->mb_size;
 
   auto e1_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    if (rsh_ && ((k == ks && msz_.d_view(m).x3min <= -1.0 + 1.0e-12) ||
-                 (k == ke+1 && msz_.d_view(m).x3max >= 1.0 - 1.0e-12))) return;
-    if (rsh_ && ((j == js && msz_.d_view(m).x2min <= -1.0 + 1.0e-12) ||
-                 (j == je+1 && msz_.d_view(m).x2max >= 1.0 - 1.0e-12))) return;
     Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j-1,i)
                   + eta_b_(m,k-1,j,i) + eta_b_(m,k-1,j-1,i));
     CsVtx3 vx;   // cornerfix-1103: a cube vertex has three cells, not four
@@ -356,8 +350,6 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   };
 
   auto e2_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    if (rsh_ && ((k == ks && msz_.d_view(m).x3min <= -1.0 + 1.0e-12) ||
-                 (k == ke+1 && msz_.d_view(m).x3max >= 1.0 - 1.0e-12))) return;
     const Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j,i-1)
                         + eta_b_(m,k-1,j,i) + eta_b_(m,k-1,j,i-1));
     const Real j3a = 0.25*(jn3(m,k,j,i) + jn3(m,k,j+1,i)
@@ -366,8 +358,6 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   };
 
   auto e3_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    if (rsh_ && ((j == js && msz_.d_view(m).x2min <= -1.0 + 1.0e-12) ||
-                 (j == je+1 && msz_.d_view(m).x2max >= 1.0 - 1.0e-12))) return;
     const Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j-1,i)
                         + eta_b_(m,k,j,i-1) + eta_b_(m,k,j-1,i-1));
     const Real j2a = 0.25*(jn2(m,k,j,i) + jn2(m,k+1,j,i)
@@ -380,7 +370,7 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
                  LoopBox3{ks, ke, js, je+1, is, ie+1}, e3_);
   // with ambipolar diffusion the two-chart mean is taken once, after the ambipolar EMF
   // has been added too (AddEMFAmbipolarGnomonic); the own-grid Ohmic part is added here
-  if (rsc_ && (rsh_ || ad_type == 0)) {
+  if (rsc_ && ad_type == 0) {
     pmy_pack->pmhd->CsSeamResist(b0, eta_b, jnorm, efld);
   }
 

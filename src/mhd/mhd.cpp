@@ -1197,8 +1197,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       // value is recorded (GetOrAdd); a restart whose input lacks the key keeps none
       // (bitwise); an explicit key wins.
       if (pmy_pack->pmesh->use_cubed_sphere &&
-          !pin->DoesParameterExist("mhd","cs_seam_mhd") &&
-          !pin->DoesParameterExist("mhd","cs_seam_emf_avg")) {
+          !pin->DoesParameterExist("mhd","cs_seam_mhd")) {
         std::string no;
         if (!pmy_pack->pmesh->three_d || recon_method != ReconstructionMethod::plm ||
             (use_wellbalance_dynamic && use_wb_x2) ||
@@ -1221,9 +1220,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
           recipe::Log("<mhd>/cs_seam_mhd = shared_o (default on the cubed sphere)");
         }
       }
-      // ucthshare-1102 <mhd>/cs_seam_mhd (read only when named; mhd_cs_seam.cpp)
-      if (pin->DoesParameterExist("mhd","cs_seam_mhd") ||
-          pin->DoesParameterExist("mhd","cs_seam_emf_avg")) {
+      // <mhd>/cs_seam_mhd (read only when named; mhd_cs_seam.cpp)
+      if (pin->DoesParameterExist("mhd","cs_seam_mhd")) {
         CsSeamInit(pin);
       }
 
