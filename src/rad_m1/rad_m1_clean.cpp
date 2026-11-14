@@ -389,7 +389,8 @@ void RadiationM1::CleanClosure(int t2s) {
     const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
     M1OpacTab ot = otab;
     const bool osc = vscat, nop = need_op;
-    const Real ar = arad;
+    const Real ar = arad, cl = c_light;
+    const Real gm1 = hh ? fl.eos.gamma - 1.0 : 1.0;
     const int is_ = is, ie_ = ie, js_ = js, je_ = je, ks2 = ks, ke2 = ke;
     par_for("cln_vin", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -397,36 +398,41 @@ void RadiationM1::CleanClosure(int t2s) {
       const bool act = (k >= ks2 && k <= ke2 && j >= js_ && j <= je_ &&
                         i >= is_ && i <= ie_);
       const bool rk = k1 && act;
+      // (a) momentum: the explicit kick (gravity, gas pressure) plus dt K1_M, the
+      //     radiation force that balances it where radiation supports the gas; the
+      //     kinetic energy is taken from this corrected momentum (else the kick's KE
+      //     would come out of eint).  Density: radiation does not change it in a step.
+      // (b) transport: dt (K1_E + K1_EN) = -dt div F (the exchange cancels in the sum),
+      //     minus the work the radiation force does on the gas (to its KE); a loss is
+      //     applied as E^n exp(rate dt/E^n) (constant relative loss rate; E > 0).
+      // (c) exchange: the local implicit relaxation of (eint, E) over dt, from the hydro
+      //     eint and E after transport (the stiff local process solved as such; it can
+      //     not overshoot equilibrium; O(dt^2) since transport is included).
       const Real e0 = u0_(m,M1_E,k,j,i);
-      Real e = e0;
-      if (rk) {
-        const Real de = dt*kr(m,M1_T2_E,k,j,i);
-        e = (de >= 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : e0);
-      }
-      Real d = 1.0, t = 0.0;
+      Real e = e0, d = 1.0, t = 0.0;
       if (hh) {
         d = uh(m,IDN,k,j,i);
         const Real id = 1.0/fmax(d, 1.0e-300);
-        Real mx[3], eg = uh(m,IEN,k,j,i);
+        Real mx[3];
         for (int n = 0; n < 3; ++n) mx[n] = uh(m,IM1+n,k,j,i);
-        const Real eint_h = fmax(eg - 0.5*(mx[0]*mx[0] + mx[1]*mx[1] + mx[2]*mx[2])*id,
-                                 0.0);
-        const Real th = eos.Temperature(d, eint_h);
-        t = th;
+        const Real kh = 0.5*(mx[0]*mx[0] + mx[1]*mx[1] + mx[2]*mx[2])*id;
+        const Real eih = fmax(uh(m,IEN,k,j,i) - kh, 0.0);
+        t = eos.Temperature(d, eih);
         if (rk) {
           for (int n = 0; n < 3; ++n) mx[n] += dt*kr(m,M1_T2_M1+n,k,j,i);
-          eg += dt*kr(m,M1_T2_EN,k,j,i);
-          const Real eint = eg - 0.5*(mx[0]*mx[0] + mx[1]*mx[1] + mx[2]*mx[2])*id;
-          const Real tp = eos.Temperature(d, fmax(eint, 0.0));
-          const Real tr = sqrt(sqrt(fmax(e, 0.0)/ar));
-          t = tp;
-          if (th <= tr) {
-            t = fmin(tp, tr);
-          } else {
-            t = fmax(tp, tr);
-          }
-          if (!(eint > 0.0)) t = th;   // the rate would empty the gas: keep the explicit T
+          const Real kp_ = 0.5*(mx[0]*mx[0] + mx[1]*mx[1] + mx[2]*mx[2])*id;
+          const Real tr = dt*(kr(m,M1_T2_E,k,j,i) + kr(m,M1_T2_EN,k,j,i)) - (kp_ - kh);
+          e = (tr >= 0.0) ? e0 + tr : ((e0 > 0.0) ? e0*exp(tr/e0) : 0.0);
+          const Real hce = dt*cl*opac_(m,M1_OP_E,k,j,i);
+          const Real hcp = dt*cl*opac_(m,M1_OP_P,k,j,i)*ar;
+          // E (1 + hce) = e + hcp T^4;  d T/gm1 + E = eih + e
+          t = CleanTLocal(d, gm1, eih, hcp/(1.0 + hce), e*hce/(1.0 + hce), t);
+          const Real t2 = t*t;
+          e = (e + hcp*t2*t2)/(1.0 + hce);
         }
+      } else if (rk) {
+        const Real tr = dt*kr(m,M1_T2_E,k,j,i);
+        e = (tr >= 0.0) ? e0 + tr : ((e0 > 0.0) ? e0*exp(tr/e0) : 0.0);
       }
       if (act) {
         iw_(m,M1_IW_EN,k,j,i) = e;
