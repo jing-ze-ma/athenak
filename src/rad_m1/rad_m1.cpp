@@ -73,6 +73,28 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   }
+  // ---- <rad_m1>/scheme = clean (clean-1114): the clean stage solve (rad_m1_clean.cpp)
+  {std::string sc = pin->GetOrAddString("rad_m1","scheme","default");
+  if (sc.compare("clean") == 0) {
+    clean = true;
+    cln_c0 = pin->GetOrAddReal("rad_m1","clean_w_c0",0.1);
+    cln_c1 = pin->GetOrAddReal("rad_m1","clean_w_c1",0.5);
+    cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
+    cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",4000);
+    cln_extrap = pin->GetOrAddBoolean("rad_m1","clean_extrap",true);
+    {std::string bf = pin->GetOrAddString("rad_m1","clean_bc","halfrange");
+    cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
+    if (transport != M1_TRANSPORT_IMPLICIT) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/scheme = clean needs transport = implicit" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  } else if (sc.compare("default") != 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/scheme = '" << sc << "' (default | clean)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  }
   // GEOMETRY GUARD (docs/dev/rad_m1_curvilinear_design.md sect. 0).  Every M1 kernel,
   // explicit and implicit, is CARTESIAN with a UNIFORM cell: divergences divide by
   // mb_size.dx1..3 (rad_m1_update.cpp, rad_m1_fluxes.cpp, rad_m1_implicit.cpp), the

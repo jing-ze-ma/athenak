@@ -43,7 +43,11 @@ void RadiationM1::AssembleRadM1Tasks(std::map<std::string,
   if (transport >= M1_TRANSPORT_IMPLICIT_X1) {
     id.closure = tl["m1_stagen"]->AddTask(&RadiationM1::ApplyClosureLimits,this,none);
     id.opac    = tl["m1_stagen"]->AddTask(&RadiationM1::Opacity, this, id.closure);
-    id.update  = tl["m1_stagen"]->AddTask(&RadiationM1::ImplicitSolve, this, id.opac);
+    if (clean) {
+      id.update = tl["m1_stagen"]->AddTask(&RadiationM1::CleanSolve, this, id.opac);
+    } else {
+      id.update = tl["m1_stagen"]->AddTask(&RadiationM1::ImplicitSolve, this, id.opac);
+    }
     id.c2p     = tl["m1_stagen"]->AddTask(&RadiationM1::HydroConToPrim,this,id.update);
     id.restu   = tl["m1_stagen"]->AddTask(&RadiationM1::RestrictU, this, id.c2p);
     id.sendu   = tl["m1_stagen"]->AddTask(&RadiationM1::SendU, this, id.restu);

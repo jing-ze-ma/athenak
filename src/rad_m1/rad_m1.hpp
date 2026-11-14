@@ -2879,6 +2879,30 @@ class RadiationM1 {
                      DvceArray5D<Real> t2i_, const Real cl, const Real ch,
                      const bool hh, const bool gq, const int t2s, const int it);
   TaskStatus ImplicitSolve(Driver *d, int stage);
+  // ---- <rad_m1>/scheme = clean (docs/dev/rad_clean_scheme_design.md): the clean stage
+  // solve that replaces ImplicitSolve.  Cartesian, one MeshBlock, one rank (gate 1).
+  TaskStatus CleanSolve(Driver *d, int stage);
+  void CleanAlloc();
+  void CleanClosure(int t2s);
+  void CleanFaceCoef();
+  void CleanApply(int src, int dst);
+  void CleanPrecond(int src, int dst);
+  void CleanFillGhost(int comp);
+  int CleanBiCGStab();
+  void CleanReport();
+  bool clean = false;           // <rad_m1>/scheme = clean
+  Real cln_c0 = 0.1, cln_c1 = 0.5;   // clean_w_c0/c1: blend ramp in C1 (ray non-locality)
+  Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear stage solve
+  int cln_maxit = 4000;         // clean_maxit
+  bool cln_extrap = true;       // clean_extrap: closure extrapolated to the stage time
+  int cln_bdry_form = 0;        // clean_bc: 0 = ray half-range, 1 = Marshak q (reference form)
+  bool cln_init = false, cln_havec = false, cln_havep = false;
+  Real cln_tc = -1.0e300;       // mesh time of the current closure build
+  Real cln_dtp = 0.0;           // dt between the two builds
+  DvceArray5D<Real> cln_c, cln_p, cln_s;   // closure: current, previous, stage (CLN_*)
+  DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
+  DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // (m,4,k,j,i): w, theta, G, spare
+  Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0, cln_maxitseen = 0.0;
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
   void ImplicitPartitionInit();
   //! exchange the x1 ghost layers the multi-block solve needs; `eponly` picks the
