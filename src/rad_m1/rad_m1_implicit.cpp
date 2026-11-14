@@ -3818,6 +3818,36 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       iflux_x1min = fmod_f0*0.5*(1.0 + std::tanh((t - fmod_rt0)/fmod_rw));
     }
   }
+  // hg262-drive-1113 (read only when named; absent = bitwise): the inner face flux from
+  // a (t, F or L) table (rad_m1.hpp ftab_on), set here at the start time and at the
+  // stage times by the hooks above
+  if (pin->DoesParameterExist("rad_m1","implicit_flux_x1min_table")) {
+    const std::string fn = pin->GetString("rad_m1","implicit_flux_x1min_table");
+    const std::string err = ftab.Read(fn, 1);
+    if (!err.empty()) {ImplFatal("<rad_m1>/implicit_flux_x1min_table: " + err);}
+    if (ibc_x1min != M1_IBC_FLUX) {
+      ImplFatal("<rad_m1>/implicit_flux_x1min_table needs implicit_bc_x1min = flux");
+    }
+    ftab_t0 = pin->GetOrAddReal("rad_m1","implicit_flux_x1min_table_t0",0.0);
+    const std::string un = pin->GetOrAddString("rad_m1","implicit_flux_x1min_table_units",
+                                               "flux");
+    if (un == "flux") {
+      ftab_scale = 1.0;
+    } else if (un == "luminosity") {
+      const Real r0 = pmy_pack->pmesh->mesh_size.x1min;
+      ftab_scale = 1.0/(4.0*M_PI*r0*r0);
+    } else {
+      ImplFatal("<rad_m1>/implicit_flux_x1min_table_units must be flux|luminosity");
+    }
+    ftab_on = true;
+    if (fmod_per <= 0.0 && fmod_rw <= 0.0) {fmod_f0 = iflux_x1min;}
+    iflux_x1min = InnerFluxAt(pmy_pack->pmesh->time);
+    if (global_variable::my_rank == 0) {
+      std::cout << "rad_m1: implicit_flux_x1min_table " << fn << ": " << ftab.t.size()
+                << " rows, t0 " << ftab_t0 << ", units " << un << ", F(t = "
+                << pmy_pack->pmesh->time << ") = " << iflux_x1min << std::endl;
+    }
+  }
   iflux_x1max = pin->GetOrAddReal("rad_m1","implicit_flux_x1max",0.0);
   iebath_x1min = pin->GetOrAddReal("rad_m1","implicit_ebath_x1min",0.0);
   iebath_x1max = pin->GetOrAddReal("rad_m1","implicit_ebath_x1max",0.0);

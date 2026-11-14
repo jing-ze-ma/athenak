@@ -95,6 +95,7 @@
 #include "rad_m1/m1_fluid.hpp"
 #include "units/units.hpp"
 #include "pgen/pgen.hpp"
+#include "pgen/he_drive.hpp"
 #include "driver/dt_retry.hpp"
 #include "utils/eint_from_cons.hpp"
 #include "utils/repro_sum.hpp"
@@ -152,6 +153,8 @@ Real hs_cl_d_ = 0.0, hs_cl_e_ = 0.0;
 // he-wind-bc: problem/he_bc_inner = inflow (hs_binf_) and he_bc_outer = outflow
 // (hs_bout_); defaults wall / noinflow = the he-presn-m1 behaviour
 bool hs_binf_ = false, hs_bout_ = false;
+// hg262-drive-1113: the initial column's rho, eint at r_in (scales of the table ghosts)
+Real hs_drv_d0_ = 1.0, hs_drv_e0_ = 1.0;
 // bsg-arm2: problem/he_bc_outer = hse (hs_bhse_): the top ghosts are the HYDROSTATIC
 // continuation of the last active cell (HeStarBC); he_bc_hse_gmax clamps the Eddington
 // factor used there, he_bc_hse_tgrad continues T along the interior's dT/dPhi_eff
@@ -2375,6 +2378,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // restart reuses (never recomputed).  A restart (or he_ic_remap_file start) with auto
   // and no stored numbers keeps NO ramp (an old restart file carries the old binary's
   // explicit default -1 anyway).
+  // hg262-drive-1113: the drive's trailer is the LAST one: strip it first (he_drive.cpp)
+  if (restart || hs_rmp) {hsdrive::RestartStrip(&pgen_rststate);}
   {
     const std::string ms = pin->GetOrAddString("problem","mlt_ramp_start","auto");
     const std::string mt = pin->GetOrAddString("problem","mlt_ramp_time","auto");
@@ -3019,9 +3024,43 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << ", sponge rate = " << hs_sp_rate_ << " above r = " << hs_sp_r0_
               << std::endl;
   }
+  // hg262-drive-1113 (he_drive.hpp; every key read only when named, absent = bitwise):
+  // the inflow table, the live monopole gravity and the boundary ledgers
+  {
+    hsdrive::SetupArgs da;
+    if (pmbp->punit != nullptr) {
+      const Real lu = pmbp->punit->length_cgs(), tu = pmbp->punit->time_cgs();
+      da.gcode = units::Units::grav_constant_cgs*pmbp->punit->mass_cgs()*tu*tu/
+                 (lu*lu*lu);
+    }
+    da.tk = hs_tk;
+    da.gm = hs_gm_;
+    da.fconst = hs_fin_;
+    da.binf = hs_binf_;
+    da.pointmass = hs_pm_;
+    da.bc_hse = hs_bhse_;
+    if (pin->DoesParameterExist("problem","he_bc_inner_table")) {
+      DvceArray1D<Real> c2("hs_drv_c", 2);
+      auto crho = hs_rho_, ceint = hs_eint_;
+      const Real rlo = hs_rlo_, dr = hs_dr_, rin = hs_rin_;
+      const int nf2 = hs_nf_;
+      par_for("hs_drv_col", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int n) {
+        c2(0) = HsLogInterp(crho, rlo, dr, nf2, rin);
+        c2(1) = HsLogInterp(ceint, rlo, dr, nf2, rin);
+      });
+      auto hc2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), c2);
+      da.rho_rin = hc2(0);
+      da.eint_rin = hc2(1);
+      hs_drv_d0_ = hc2(0);
+      hs_drv_e0_ = hc2(1);
+    }
+    hsdrive::Setup(pin, pmy_mesh_, restart, da);
+    if (hsdrive::On()) {user_cycle_func = hsdrive::Cycle;}
+  }
   // stripbg-1102 (he_strip_bg.cpp): one-shot restart-time background strip, off unless
   // problem/strip_bg_on_restart = true (absent: bitwise)
   if (restart) {
+    hsdrive::RestartApply(pmy_mesh_);   // hg262-drive-1113 (absent: nothing)
     HsEosReinitFromT(pin, pmy_mesh_);   // eosreinit-1112 (absent: bitwise)
     HsStripBackground(pin, pmy_mesh_);
     HsRestartPerturb(pin, pmy_mesh_);   // rstpert-1105 (absent: bitwise)
@@ -3806,7 +3845,13 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
                   ht[2] - ht[1], 0.0, ht[4], ht[5], ht[0], ht[3]);
     }
   }
-  if (hs_sp_rate_ <= 0.0) return;
+  // hg262-drive-1113: the RK-exact boundary/sponge ledgers of this stage (he_drive.cpp)
+  const bool hdrv = hsdrive::On();
+  if (hs_sp_rate_ <= 0.0) {
+    if (hdrv) {hsdrive::StageLedger(pm, bdt, hs_binf_, hs_zflux_, 0.0);}
+    return;
+  }
+  const Real hdsp0 = hdrv ? htsum() : 0.0;
   // top sponge: the velocity relaxes to zero at the rate he_sponge_rate*w,
   // w = ((r - r0)/(r_top - r0))^2 above r0; the kinetic energy removed leaves the total
   // energy (the heat is not kept, so that the sponge adds no buoyancy).
@@ -3834,6 +3879,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
                     ht[2] - ht[1], ht[3] - ht[2], ht[4], ht[5], ht[0], ht[3]);
       }
     }
+    if (hdrv) {hsdrive::StageLedger(pm, bdt, hs_binf_, hs_zflux_, htsum() - hdsp0);}
     return;
   }
   const bool hcsg = pm->use_cubed_sphere;   // cs-port-1016: metric KE (HsKeCs)
@@ -3864,6 +3910,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
                   ht[2] - ht[1], ht[3] - ht[2], ht[4], ht[5], ht[0], ht[3]);
     }
   }
+  if (hdrv) {hsdrive::StageLedger(pm, bdt, hs_binf_, hs_zflux_, htsum() - hdsp0);}
 }
 
 //----------------------------------------------------------------------------------------
@@ -3950,6 +3997,12 @@ void HeStarBC(Mesh *pm) {
   auto hcclb = pmbp->pcoord->cos_cell;
   const bool lbc = hs_lbc_;   // fin4-linhao-bc
   auto lbd = hs_lbc_d_;
+  // hg262-drive-1113 problem/he_bc_inner_table (he_bc_inner = inflow): the table's rho,
+  // T (code units) and v_r at r_in at the BC time
+  const bool itab = hsdrive::InflowOn();
+  Real tbd = 0.0, tbt = 0.0, tbv = 0.0;
+  if (itab) {hsdrive::InflowAt(pm, &tbd, &tbt, &tbv);}
+  const Real tbd0 = hs_drv_d0_, tbe0 = hs_drv_e0_, tbr2 = SQR(hs_rin_);
   par_for("hs_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     for (int side=0; side<2; ++side) {
@@ -4181,6 +4234,28 @@ void HeStarBC(Mesh *pm) {
         }
         continue;
       }
+      if (inflo && itab) {
+        // hg262-drive-1113: the initial column's shape scaled to the table's (rho,
+        // e(rho, T)) at r_in; v_r carries the table's mass flux rho v r^2 through every
+        // ghost; v_t = 0 (non-rotating interior)
+        Real tbe, tbp, tcr, tct, tcv;
+        eos.ThermoAt(tbd, tbt, tbe, tbp, tcr, tct, tcv);
+        const Real sdt = tbd/tbd0, set = tbe/tbe0;
+        for (int g=0; g<ng; ++g) {
+          const int ig = is - 1 - g;
+          const Real rg = x1v(m,ig);
+          const Real dg = sdt*HsLogInterp(crho, rlo, dr, nf, rg);
+          const Real eg = set*HsLogInterp(ceint, rlo, dr, nf, rg);
+          const Real v1 = tbv*tbr2*tbd/(SQR(rg)*dg);
+          uh(m,IDN,k,j,ig) = dg;
+          uh(m,IM1,k,j,ig) = dg*v1;
+          uh(m,IM2,k,j,ig) = 0.0;
+          uh(m,IM3,k,j,ig) = 0.0;
+          uh(m,IEN,k,j,ig) = eg + 0.5*dg*v1*v1 + dg*phicc(m,k,j,ig);
+          radm1::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 0, -1.0, cl, efl);
+        }
+        continue;
+      }
       const Real sd = inflo ? 1.0 :
                       da/(bal ? cbd(ia) : HsLogInterp(crho, rlo, dr, nf, x1v(m,ia)));
       const Real se = inflo ? 1.0 :
@@ -4254,7 +4329,7 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   auto &x1f = pmbp->pcoord->xx1f;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
-  const Real rint = hs_rint_, fin = hs_fin_;
+  const Real rint = hs_rint_, fin = hsdrive::InnerFlux(pm, hs_fin_);   // hg262-drive
   const bool lbcd = hs_lbc_ && (pmbp->pradm1->lbath_f.extent_int(0) > 0);
   auto lbf = pmbp->pradm1->lbath_f;
   // fin4-linhao-bc: after a hesdirk2 step L_in = L1/2 + b2 L(stage 1) + g L(stage 2)
@@ -4511,7 +4586,9 @@ void HsAdaptiveUpdate(Mesh *pm) {
                     + (4.0/3.0)*(hsh(i,7)/sv - vm*hsh(i,5)/sv);
     lc[i] = fc*0.5*(hsh(i,1) + hsh(i+1,1));
   }
-  const Real lin = hs_fin_*hsh(is,1);
+  // hg262-drive-1113: hs_fin_ (bitwise), or the current table flux with
+  // problem/he_drive_closure_lin = table (open items 11-13)
+  const Real lin = hsdrive::ClosureFlux(pm, hs_fin_)*hsh(is,1);
   for (int i=is; i<=ie+1; ++i) {
     lrad[i] = hsh(i,0);
     lcf[i] = (i > is && i <= ie) ? 0.5*(lc[i-1] + lc[i]) : 0.0;
@@ -4678,7 +4755,11 @@ std::vector<char> HsAdaptiveRstWrite() {
     std::memcpy(out.data() + o, &(w[0]), sizeof(w));
     std::memcpy(out.data() + o + sizeof(w), &(kHsRmpTag[0]), sizeof(kHsRmpTag));
   };
-  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) {pic(); dic(); lbt(); rmp(); return out;}
+  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) {
+    pic(); dic(); lbt(); rmp();
+    hsdrive::RstAppend(&out);   // hg262-drive-1113: the very last trailer (if on)
+    return out;
+  }
   const int nfc = hs_fsub_.extent_int(0);
   auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
   const std::int32_t hdr[2] = {static_cast<std::int32_t>(nfc), 0};
@@ -4692,6 +4773,7 @@ std::vector<char> HsAdaptiveRstWrite() {
   dic();
   lbt();
   rmp();
+  hsdrive::RstAppend(&out);   // hg262-drive-1113: the very last trailer (if on)
   return out;
 }
 
@@ -5496,6 +5578,7 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_fb_ = DvceArray1D<Real>();
   hs_sfac_ = DvceArray4D<Real>();
   hs_lbc_d_ = DvceArray3D<Real>();   // fin4-linhao-bc
+  hsdrive::Final();   // hg262-drive-1113
 }
 
 //----------------------------------------------------------------------------------------

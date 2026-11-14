@@ -40,6 +40,7 @@
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 #include "bvals/bvals.hpp"
+#include "utils/time_table.hpp"
 
 // forward declarations
 class Driver;
@@ -713,6 +714,17 @@ class RadiationM1 {
   Real iflux_x1min, iflux_x1max;  // the imposed face flux of M1_IBC_FLUX
   Real fmod_per = 0.0, fmod_amp = 0.0, fmod_f0 = 0.0;   // raycheap2-1109 (test only)
   Real fmod_rt0 = 0.0, fmod_rw = 0.0;   // raycheap2-1109 smooth switch-on (test only)
+  // hg262-drive-1113 <rad_m1>/implicit_flux_x1min_table = <file> (read only when named;
+  // absent = bitwise): the inner face flux F(t) from a (t, value) table, piecewise linear
+  // in t - implicit_flux_x1min_table_t0, held at its end values; value = the flux (units
+  // = flux, default) or the luminosity (units = luminosity: F = L/(4 pi x1min^2)).  It
+  // replaces the constant F0 of the hooks above (the sine / tanh factors, if named, still
+  // multiply it) at the same stage times.  InnerFluxAt(t) = the flux these hooks give.
+  bool ftab_on = false;
+  timetable::Table ftab;
+  Real ftab_t0 = 0.0, ftab_scale = 1.0;
+  Real InnerFluxAt(const Real t) const;
+  Real InnerFluxIntegral(const Real t0, const Real t1) const;   // table only (exact)
   Real iebath_x1min, iebath_x1max;  // M1_IBC_MARSHAK: the INCIDENT bath
   // PER-COLUMN INFLOW columns of the outer x1 Marshak face (accretor-rhd-1008 S5, the
   // stream window's own radiation): a problem generator hands E_in(m,k,j) (nmb, n3, n2)
@@ -1882,7 +1894,28 @@ class RadiationM1 {
   bool ebnd_adv = false;          // lzphys-1113: + implicit_bc_advect's end-face A E
   Real ebnd_acc = 0.0;            // accumulated energy (code units)
   Real ebnd_l1 = 0.0, ebnd_l2 = 0.0;   // L at the step start / of the stage-1 solve
-  Real EbndFluxX1();
+  // hg262-drive-1113 ebnd_split (set by the he_star_m1 drive ledger only): the inner and
+  // the outer faces accumulated apart with the same weights (ebnd_acc_in = energy put in
+  // through the physical inner x1 faces, ebnd_acc_out = energy LEAVING through the outer
+  // ones, both incl. the ebnd_adv term); ebnd_acc is then their difference
+  bool ebnd_split = false;
+  Real ebnd_acc_in = 0.0, ebnd_acc_out = 0.0;
+  Real ebnd_l1i = 0.0, ebnd_l1o = 0.0, ebnd_l2i = 0.0, ebnd_l2o = 0.0;
+  // with ebnd_split also the explicit source esrc as the solves apply it: each solve adds
+  // its dt (chat/c) esrc to the old vector and to its slope, so the step deposits the
+  // slopes' (chat/c) sum esrc V with the same tableau weights (K1 carries the esrc of
+  // the previous step's last solve, FSAL)
+  Real ebnd_acc_src = 0.0;
+  Real ebnd_s1 = 0.0, ebnd_s2 = 0.0;
+  // the esrc sum of the last accepted solve = the one inside the next step's K1 (a
+  // restart sets it from the drive trailer: the esrc array rebuilt at a restart need not
+  // be the one the stored K1 carries)
+  Real ebnd_s3 = 0.0;
+  bool ebnd_s3_ok = false;
+  Real EbndEsrc();
+  // side 0: inner minus outer (the original sum); 1: the inner faces only (inward
+  // positive); 2: the outer faces only (OUTWARD positive)
+  Real EbndFluxX1(int side = 0);
   void EbndStart();
   void EbndStage1();
   void EbndAccept(Real dt, bool t2step);
