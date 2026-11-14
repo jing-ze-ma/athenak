@@ -2854,7 +2854,7 @@ class RadiationM1 {
   DvceArray1D<Real> acl_cnt_d;
   void EventTotals(Real *v);
   // xchg-1114: gas temperature root-find FAILURES (ok = false: no bracket, T' kept at the
-  // previous iterate) in the implicit exchange, cell-passes, ALWAYS counted (output only):
+  // previous iterate) in the implicit exchange, cell-passes, ALWAYS counted (output only)
   // [0] step (f) T solve, [1] step (c) Newton safeguard.  tsf_run: whole run, all ranks.
   DvceArray1D<Real> tsf_cnt_d;
   Real tsf_run[2] = {0.0, 0.0};

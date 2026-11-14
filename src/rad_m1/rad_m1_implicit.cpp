@@ -14168,7 +14168,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     // numbers) and their T derivatives, which enter the gas Newton denominator
     //   B_k = rho c_v + c dt a (kappa_P' T^4 + 4 kappa_P T^3) - c dt kappa_E' (E_k + de0)
     // (floored at rho c_v).  The row below is the exact elimination for ANY B_k > 0:
-    // SRCB = ch dt k_E w, SRCR = w (emis T^4 - ch dt k_E de0) + (ch/cl)(1 - w)(e^n - e_k),
+    // SRCB = ch dt k_E w, SRCR = w (emis T^4 - ch dt k_E de0) + (ch/cl)(1-w)(e^n - e_k),
     // w = rho c_v/B_k, so the gas energy the write-back sets keeps e + (c/ch) E exact.
     const bool rbc = rob && !(tfzc && tfc(m,k,j,i) > 0.5);
     Real dkp = 0.0, dke = 0.0;
@@ -14197,7 +14197,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     if (rbc && tk > 0.0) {
       kapat(tk);
     }
-    Real bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;   // (key off: the expression as before, bitwise)
+    Real bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;   // key off: the expression as before
     if (rob) {bk = dd*cv + gexch();}
     Real rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
     // MILESTONE 3g, the Newton SAFEGUARD.  The temperature this pass starts from was

@@ -2043,7 +2043,7 @@ int M1ImplTemperatureT(const ThermoT &th, const Real dd, const Real tguess,
   return nev;
 }
 
-// xchg-1114: frozen opacities in the M1ImplTemperatureRobust interface (thin-frozen cells)
+// xchg-1114: frozen opacities in the M1ImplTemperatureRobust interface (thin-frozen)
 struct M1OpacConst {
   Real kp, ke;
   KOKKOS_INLINE_FUNCTION
