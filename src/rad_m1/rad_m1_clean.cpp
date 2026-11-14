@@ -290,15 +290,26 @@ void RadiationM1::CleanClosure(int t2s) {
   if (t2s == M1_T2S_STAGE2) return;
   const Real tnow = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
-  // inputs of the formal solution: E^n, T^n, F^n of the step start
+  // inputs of the formal solution: E^n, T^n, F^n of the step start.  The gas at U^n is
+  // the hydro's u1 (its stage-1 start); u0 has already been moved by the explicit stage.
   {
     auto iw_ = iw;
     auto u0_ = u0;
-    auto cw_ = cln_w;
+    FluidRef fl = FluidRef::Get(pmy_pack);
+    auto un = fl.u1;
+    auto eos = fl.eos;
+    const bool hh = fl.on;
     par_for("cln_vin", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       iw_(m,M1_IW_EN,k,j,i) = u0_(m,M1_E,k,j,i);
-      iw_(m,M1_IW_TP,k,j,i) = cw_(m,CLW_T,k,j,i);
+      Real t = 0.0;
+      if (hh) {
+        const Real d = un(m,IDN,k,j,i);
+        const Real kin = 0.5*(SQR(un(m,IM1,k,j,i)) + SQR(un(m,IM2,k,j,i)) +
+                              SQR(un(m,IM3,k,j,i)))/fmax(d, 1.0e-300);
+        t = eos.Temperature(d, fmax(un(m,IEN,k,j,i) - kin, 0.0));
+      }
+      iw_(m,M1_IW_TP,k,j,i) = t;
       iw_(m,M1_IW_F1,k,j,i) = u0_(m,M1_F1,k,j,i);
       iw_(m,M1_IW_F2,k,j,i) = u0_(m,M1_F1+1,k,j,i);
       iw_(m,M1_IW_F3,k,j,i) = u0_(m,M1_F1+2,k,j,i);
