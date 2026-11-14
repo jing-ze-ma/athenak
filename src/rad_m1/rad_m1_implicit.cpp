@@ -1979,6 +1979,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               << "name it to switch the stable source row on)" << std::endl;
   }
   }
+  // DEBUG rsgposlin-1113 dbg_trace_rank / dbg_trace_cell1 / dbg_trace_cell2 / _c0
+  if (pin->DoesParameterExist("rad_m1","dbg_trace_rank")) {
+    dtr_rank = pin->GetInteger("rad_m1","dbg_trace_rank");
+    dtr_c0 = pin->GetOrAddInteger("rad_m1","dbg_trace_c0",0);
+    for (int q = 0; q < 2; ++q) {
+      const std::string kn = (q == 0) ? "dbg_trace_cell1" : "dbg_trace_cell2";
+      if (!pin->DoesParameterExist("rad_m1", kn)) {continue;}
+      std::string v = pin->GetString("rad_m1", kn);
+      for (char &ch : v) {if (ch == ',') {ch = ' ';}}
+      std::istringstream is(v);
+      is >> dtr_cell[q][0] >> dtr_cell[q][1] >> dtr_cell[q][2] >> dtr_cell[q][3];
+    }
+  }
   // rsgposlin-1113 implicit_src_poslin (M1ImplSrcLaunch; read only when named)
   impl_src_poslin = pin->DoesParameterExist("rad_m1","implicit_src_poslin") &&
                     pin->GetBoolean("rad_m1","implicit_src_poslin");
@@ -18454,6 +18467,63 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       });
     }
 
+    // DEBUG rsgposlin-1113 <rad_m1>/dbg_trace_rank + dbg_trace_cell1/2 = "m,k,j,i" (read
+    // only when named; output only): one line per Picard pass, from cycle dbg_trace_c0,
+    // with the 7-point row of the cell (diagonal TB, x1 TA/TC, lateral CJM/CJP/CKM/CKP,
+    // right-hand side KB, its lagged transverse part TRHS and diagonal TDIA, the gas
+    // exchange SRCB/SRCR), the solved E (S2) and its neighbours, the old vector and T.
+    if (dtr_rank == global_variable::my_rank &&
+        pmy_pack->pmesh->ncycle >= dtr_c0) {
+      for (int q = 0; q < 2; ++q) {
+        const int *c = dtr_cell[q];
+        if (c[0] < 0 || c[0] > nmb1) {continue;}
+        DvceArray1D<Real> tv("m1_dbg_trc", 32);
+        const int tm_ = c[0], tk_ = c[1], tj_ = c[2], ti_ = c[3];
+        auto opt_ = opac;
+        auto uht = FluidRef::Get(pmy_pack).u0;
+        const bool bc_ = bicg;
+        par_for("m1_dbg_trc", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
+          tv(0) = iw_(tm_,M1_IW_EN,tk_,tj_,ti_); tv(1) = iw_(tm_,M1_IW_EP,tk_,tj_,ti_);
+          tv(2) = iw_(tm_,M1_IW_S2,tk_,tj_,ti_); tv(3) = iw_(tm_,M1_IW_TP,tk_,tj_,ti_);
+          tv(4) = iw_(tm_,M1_IW_EGN,tk_,tj_,ti_); tv(5) = iw_(tm_,M1_IW_SRCB,tk_,tj_,ti_);
+          tv(6) = iw_(tm_,M1_IW_SRCR,tk_,tj_,ti_); tv(7) = iw_(tm_,M1_IW_TB,tk_,tj_,ti_);
+          tv(8) = iw_(tm_,M1_IW_TA,tk_,tj_,ti_); tv(9) = iw_(tm_,M1_IW_TC,tk_,tj_,ti_);
+          tv(10) = bc_ ? iw_(tm_,M1_IW_CJM,tk_,tj_,ti_) : 0.0;
+          tv(11) = bc_ ? iw_(tm_,M1_IW_CJP,tk_,tj_,ti_) : 0.0;
+          tv(12) = bc_ ? iw_(tm_,M1_IW_CKM,tk_,tj_,ti_) : 0.0;
+          tv(13) = bc_ ? iw_(tm_,M1_IW_CKP,tk_,tj_,ti_) : 0.0;
+          tv(14) = bc_ ? iw_(tm_,M1_IW_KB,tk_,tj_,ti_) : 0.0;
+          tv(15) = iw_(tm_,M1_IW_TR,tk_,tj_,ti_);
+          tv(16) = iw_(tm_,M1_IW_TRHS,tk_,tj_,ti_);
+          tv(17) = iw_(tm_,M1_IW_TDIA,tk_,tj_,ti_);
+          tv(18) = iw_(tm_,M1_IW_S2,tk_,tj_,ti_-1);
+          tv(19) = iw_(tm_,M1_IW_S2,tk_,tj_,ti_+1);
+          tv(20) = iw_(tm_,M1_IW_S2,tk_,tj_-1,ti_);
+          tv(21) = iw_(tm_,M1_IW_S2,tk_,tj_+1,ti_);
+          tv(22) = iw_(tm_,M1_IW_S2,tk_-1,tj_,ti_);
+          tv(23) = iw_(tm_,M1_IW_S2,tk_+1,tj_,ti_);
+          tv(24) = opt_(tm_,M1_OP_P,tk_,tj_,ti_); tv(25) = opt_(tm_,M1_OP_E,tk_,tj_,ti_);
+          tv(26) = uht(tm_,IDN,tk_,tj_,ti_); tv(27) = iw_(tm_,M1_IW_F1,tk_,tj_,ti_);
+          tv(28) = iw_(tm_,M1_IW_F2,tk_,tj_,ti_); tv(29) = iw_(tm_,M1_IW_F3,tk_,tj_,ti_);
+          tv(30) = iw_(tm_,M1_IW_DE0,tk_,tj_,ti_);
+          tv(31) = iw_(tm_,M1_IW_RES,tk_,tj_,ti_);
+        });
+        auto th = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tv);
+        static const char *tn[32] = {"EN", "EP", "S2", "T", "egn", "srcb", "srcr", "TB",
+          "TA", "TC", "CJM", "CJP", "CKM", "CKP", "KB", "TR", "TRHS", "TDIA", "Sim",
+          "Sip", "Sjm", "Sjp", "Skm", "Skp", "rkP", "rkE", "rho", "F1", "F2", "F3", "de0",
+          "res"};
+        std::ostringstream os;
+        os.precision(6);
+        os << "TRC cyc=" << pmy_pack->pmesh->ncycle
+           << " step=" << static_cast<int>(impl_nstep)
+           << " t2s=" << t2s << " pass=" << it << " cell=" << tm_ << "," << tk_
+           << "," << tj_
+           << "," << ti_ << " cdt=" << c_light*dt;
+        for (int n = 0; n < 32; ++n) {os << " " << tn[n] << "=" << th(n);}
+        std::cout << os.str() << std::endl;
+      }
+    }
     // the new iterate's E has to reach the ghost cells before the FACE update, or the
     // two blocks that share a face would build it from different states.
     if (trans) {
