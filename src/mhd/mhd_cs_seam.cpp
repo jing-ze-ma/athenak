@@ -1,60 +1,26 @@
 //========================================================================================
-// AthenaXXX astrophysical plasma code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file mhd_cs_seam.cpp
-//! \brief ucthshare-1102: the SHARED cubed-sphere seam treatment for MHD,
-//! <mhd>/cs_seam_mhd = faces | shared (read only when named).
-//!
-//! (1) faces: every panel-seam face is ONE Riemann problem.  The ghost-side state the
-//!     sweep would build from the resampled seam ghosts is replaced by the neighbour
-//!     panel's OWN PLM state of its edge cell (primitives, derived thermodynamics, bcc),
-//!     the same machinery as the hydro <mesh>/cs_seam_flux = shared
-//!     (bvals/cs_seam_states.hpp), extended to the radial ghost rows is-1 / ie+1 (they
-//!     feed the seam EMFs on the radial boundary edges).  Both panels then solve mirror
-//!     images; the existing mean of the two outward fluxes stays (conservation).
-//! (2)+(3) shared (emf_scheme = uct | uct_hlld): the seam-edge and cube-vertex UCT EMFs
-//!     are evaluated by every panel from the SAME inputs: its own faces on its side, the
-//!     neighbour panel's OWN faces on the other (never the resampled ghosts), the shared
-//!     seam faces between.  One general rule for an edge along t with faces f (unit
-//!     normals n_f, L -> R), exact for any set of face directions:
-//!       (v x B).t = sum_f (v.n_f) B.(t x g_f),   g_f = S^-1 n_f,  S = sum_f n_f n_f^T
-//!     (S restricted to the plane normal to t), upwinded per face with its own fan,
-//!       E.t = -sum_f [ a_f^L vn^L X^L + a_f^R vn^R X^R - (d_f^R X^R - d_f^L X^L) ],
-//!     X^s = B^s.(t x g_f), B^s the in-plane field of the cell on side s solved from the
-//!     staggered B.n of its two faces at the edge, vn^s = V.n_f with V the face velocity
-//!     of the cell's OTHER face carried to the edge.  For the four faces of a regular
-//!     edge (two normal pairs) this is MD21 eq. 35 with the 1/sin(p,q) of the cubed-
-//!     sphere port exactly (MHD::CornerE, UctEdge); for three faces at 120 deg (a cube
-//!     vertex: the gnomonic grid has the exact 3-fold symmetry there) g_f = (2/3) n_f
-//!     and it is the 3-face rule E.t = -(2/3) sum_f [...] (B_w only).  At a seam radial
-//!     edge the two own faces are kinked (mirror images about the seam plane): the
-//!     general S^-1 takes the actual normals.
-//!     Neighbour data (UctSeamPackets): per seam face position, the radial faces and
-//!     along-seam faces of its first row with a, d^L, d^R, B.n carried to the seam edge,
-//!     the face velocity carried to the edge (Cartesian), its normal (Cartesian), and its
-//!     cells' half slopes of the Cartesian velocity (radial and along the seam).  Moved
-//!     verbatim by the seam_raw face exchange (pbval_us); the along-seam reversal of the
-//!     index map is undone here (lower <-> upper, the along-seam EMF sign).  A stencil
-//!     that would reach past a cube vertex (the three panels' corner ghosts differ) takes
-//!     the ONE-SIDED slope of the two in-panel values instead: B.n of the seam faces
-//!     along a seam (values shared by both panels), each panel's own corner-cell
-//!     velocity; the face velocities of the three vertex faces are used uncarried.  (A
-//!     zero slope there was measured first order at the vertex: cs_test iprob=9 per-step
-//!     vertex/interior L1(B) 3.0 / 6.7 / 12.8 at nx2 = 16/32/64; one-sided 2.1/2.7/3.1.)
-//!     Four-block seam edges (block corners on a seam that are not a cube vertex) keep
-//!     the per-block value; the edge-EMF sum/average reconciles them as before.
-//! shared_g (USER 11-02 option 1): every seam edge (along-seam and radial) is the MEAN of
-//!     the two charts' 4-face evaluations, chart P = P's own first-row faces on its side
-//!     and P's resampled ghost-row faces (its own view) on the other side, chart Q the
-//!     same from Q; the seam faces carried with the half slopes of the chart's own cell
-//!     and its ghost cell.  Both panels hold all four records (own + ghost-row view, sent
-//!     both), so both compute the same mean: single-valued by construction, with the
-//!     per-chart (kink-free, resampled) inputs that measured better than the neighbour's
-//!     own radial-face B.r (cs_test iprob 9 per-step).  Cube vertices: the 3-face rule.
-//!     The existing seam/vertex EMF exchange + averaging stays as a guard; with shared
-//!     inputs it is a no-op to round-off (<mhd>/cs_seam_emf_avg = false skips it).
+//! \brief Shared cubed-sphere seam treatment for MHD (<mhd>/cs_seam_mhd):
+//! - faces: every panel-seam face is one Riemann problem; the ghost-side state is the
+//!   neighbour panel's own PLM state of its edge cell (as the hydro shared seam,
+//!   bvals/cs_seam_states.hpp), including the radial ghost rows is-1 / ie+1.
+//! - shared / shared_o (emf_scheme = uct | uct_hlld): the seam-edge and cube-vertex UCT
+//!   EMFs are evaluated by every panel from the same inputs (own faces on its side, the
+//!   neighbour's own faces on the other, the shared seam faces between), with the
+//!   general upwind rule for an edge along t with faces f,
+//!     E.t = -sum_f [ a_f^L vn^L X^L + a_f^R vn^R X^R - (d_f^R X^R - d_f^L X^L) ],
+//!     X^s = B^s.(t x g_f), g_f = S^-1 n_f, S = sum_f n_f n_f^T (in the plane normal
+//!     to t),
+//!   which is the 4-face UCT rule on a regular edge and the 3-face rule
+//!   (g_f = (2/3) n_f) at a cube vertex. Neighbour data are exchanged as face records
+//!   (UctSeamPackets); stencils that would reach past a cube vertex are one-sided.
+//! - shared_g: every seam edge is the mean of the two charts' 4-face evaluations.
+//! The seam/vertex EMF exchange and averaging is kept as a guard (a no-op to round-off
+//! with shared inputs).
 
 #include <algorithm>
 #include <cmath>
@@ -82,10 +48,10 @@
 
 namespace mhd {
 
-// ucthshare-1102 speed: every seam kernel captures a SeamCtx (13 Views + 3 DualViews,
+// speed: every seam kernel captures a SeamCtx (13 Views + 3 DualViews,
 // ~1 kB), over Kokkos' 512 B constant-memory threshold, so the default launch went
 // through the constant-memory path, which waits on the previous constant-memory launch
-// (a host stall per kernel; nsys: +18 ms of cudaEventSynchronize per r1m cycle).  The
+// (a host stall per kernel; nsys: +18 ms of cudaEventSynchronize per r1m cycle). The
 // same loops launched with HintLightWeight pass the functor as a kernel argument
 // (< 4 kB) with no host synchronisation; the arithmetic is unchanged (as BvalsTeamFor).
 template <typename Function>
@@ -141,11 +107,11 @@ constexpr int kEXL = 2*kNU, kEXU = 2*kNU + 12, kNUG = 2*kNU + 24;
 // (0 = x2 seams, 1 = x3 seams) at offset 38*fam: 0-2 the seam face's a, dL, dR, 3-5
 // its face velocity (Cartesian), 6-11 the cell's along-seam half slopes (HL, HU) set 0,
 // 12-17 set 1 (ghost row), 18-27 the cell's lower along-seam face record set 0, 28-37
-// set 1.  So the block on the other side of a four-block seam edge sees this block's
+// set 1. So the block on the other side of a four-block seam edge sees this block's
 // shared seam-face store and end records exactly (copies), and both evaluate the edge
 // from the same inputs.
 // Two arrays (a cell-centred exchange moves at most 32 variables, BvVarList): XA = 0-17,
-// XB = the two face records (18-37 above, stored from 0).  One set of slots serves both
+// XB = the two face records (18-37 above, stored from 0). One set of slots serves both
 // families: a cell in a seam row of both is a cube-vertex corner cell, never read here.
 constexpr int kNXA = 18, kNXB = 20;
 
@@ -220,8 +186,8 @@ KOKKOS_INLINE_FUNCTION void CellV(const SeamCtx &d, const Frame &f, const int m,
   for (int q=0; q<3; ++q) v[q] = a*f.r[q] + b*f.e1[q] + c*f.e2[q];
 }
 // Cartesian a-weighted face velocity of a UctFaceStore slot triple (3,4,5)
-//   dir 1: x1 face {rhat, e_xi, f2 = neta}; 2: x2 face {nxi, e_eta, rhat};
-//   3: x3 face {neta, rhat, e_xi}
+// dir 1: x1 face {rhat, e_xi, f2 = neta}; 2: x2 face {nxi, e_eta, rhat};
+// 3: x3 face {neta, rhat, e_xi}
 KOKKOS_INLINE_FUNCTION void FaceV(const DvceArray5D<Real> &u, const Frame &f,
                                   const int dir, const int m, const int k, const int j,
                                   const int i, Real v[3]) {
@@ -237,7 +203,7 @@ KOKKOS_INLINE_FUNCTION void FaceV(const DvceArray5D<Real> &u, const Frame &f,
   }
 }
 
-// the general per-face UCT edge EMF (see the file header).  oL[f], oR[f]: the OTHER face
+// the general per-face UCT edge EMF (see the file header). oL[f], oR[f]: the OTHER face
 // of the cell on the L / R side of face f.
 KOKKOS_INLINE_FUNCTION Real EdgeEmfN(const Real t[3], const int nf, const UF *f,
                                      const int *oL, const int *oR) {
@@ -318,7 +284,7 @@ KOKKOS_INLINE_FUNCTION Real MinMod(const Real a, const Real b) {
   return (a*b <= 0.0) ? 0.0 : ((fabs(a) < fabs(b)) ? a : b);
 }
 // own-grid carry to the seam: value at the seam side of row r0 from rows r0, r1, r2
-// (r1, r2 = one and two rows away from the seam).  shared_o uses mode 3, the one-sided
+// (r1, r2 = one and two rows away from the seam). shared_o uses mode 3, the one-sided
 // QUADRATIC through the three own rows where they are monotone, else the row value (the
 // minmod-linear mode 0 was measured 3x worse at the seam, plain linear 2x: cs_test iprob
 // 9 per-step n64 seam L1(B) 1.86e-6 / 1.06e-6 / 5.77e-7 for modes 0 / 1 / 3)
@@ -370,10 +336,10 @@ KOKKOS_INLINE_FUNCTION Real HalfC(const bool left, const Real a, const Real dl,
   return left ? (a*vn*x + dl*x) : ((1.0 - a)*vn*x - dr*x);
 }
 
-// cornerfix-1103: the OWN partial of the 3-face UCT vertex rule (shared_o, MD21 at three
+// the OWN partial of the 3-face UCT vertex rule (shared_o, MD21 at three
 // faces at 120 deg, g = (2/3) n): this panel's half-terms of its two seam faces at the
-// cube-vertex radial edge (kc, jc, i) of block m, corner (jlo, klo).  E.r = -(own sum of
-// the three panels' partials).  Used by UctSeamOwnSide (shared_o) and MHD::CsVertexEmf3.
+// cube-vertex radial edge (kc, jc, i) of block m, corner (jlo, klo). E.r = -(own sum of
+// the three panels' partials). Used by UctSeamOwnSide (shared_o) and MHD::CsVertexEmf3.
 KOKKOS_INLINE_FUNCTION Real VertexOwnUct(const SeamCtx &d, const int m, const int p,
                                          const int i, const bool jlo, const bool klo) {
   const int jc = jlo ? d.js : d.je+1, kc = klo ? d.ks : d.ke+1;
@@ -412,7 +378,7 @@ DvceArray5D<Real> xrec_, xrecb_;
 constexpr int kNR = 18;
 DvceFaceFld5D<Real> *rsown_ = nullptr, *rsnbr_ = nullptr;
 MeshBoundaryValuesCC *pbrs_ = nullptr;
-// seamexact-1103 <mhd>/cs_seam_res = mean_j: the single-valued seam CURRENT.  Per seam
+// <mhd>/cs_seam_res = mean_j: the single-valued seam CURRENT. Per seam
 // cell, four edges (0 along-seam at radial face i, 1 the same at ie+1 (i = ie only), 2 / 3
 // radial at the lower / upper along-seam face), 8 slots each: J (Cartesian), B
 // (Cartesian), eta_Ohm, eta_A at the edge, from this panel's own grid + halo.
@@ -470,7 +436,7 @@ struct ResJK {
     if (g.dir == 1) {
       ops.X1(m,k,j,i,s);
       eo = 0.25*(etb(m,k,j,i) + etb(m,k,j-1,i) + etb(m,k-1,j,i) + etb(m,k-1,j-1,i));
-      CsVtx3 vx;   // cornerfix-1103: a cube vertex has three cells (cs_vertex_3cell)
+      CsVtx3 vx;   // a cube vertex has three cells (cs_vertex_3cell)
       if (ops.v3 && CsVertexAt(sz(m), k, j, js, je, ks, ke, vx)) eo = CsVertex3(etb, m, vx, i);
     } else if (g.dir == 2) {
       ops.X2(m,k,j,i,ia,ib,s);
@@ -509,7 +475,7 @@ MeshBoundaryValuesCC *pbx_ = nullptr, *pbxb_ = nullptr, *pbxr_ = nullptr;
 DvceArray5D<Real> xrr_;   // 3-variable four-block patch record (own-side / resistive)
 // LOCAL fast path for the four-block records: the along-seam same-panel neighbour block of
 // each block as a LOCAL index (columns: x2 inner, x2 outer, x3 inner, x3 outer; -1 = none
-// or off-rank).  When every needed neighbour is on its own rank (all ranks agree), the
+// or off-rank). When every needed neighbour is on its own rank (all ranks agree), the
 // one-cell record copy is a direct device copy instead of a halo exchange (bitwise the
 // same values: the halo copy is exact within a panel).
 DvceArray2D<int> nbloc_;
@@ -597,7 +563,7 @@ void MHD::CsSeamInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("mhd","cs_seam_res")) {
     const std::string v = pin->GetString("mhd","cs_seam_res");
     if (v == "own") {cs_seam_res_own = true;}
-    else if (v == "mean_j") {cs_uct::res_j_ = true;}   // seamexact-1103
+    else if (v == "mean_j") {cs_uct::res_j_ = true;}
     else if (v != "mean") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mhd>/cs_seam_res = '" << v << "' (mean | mean_j | own)"
@@ -708,7 +674,7 @@ void MHD::CsSeamInit(ParameterInput *pin) {
       rsnbr_ = new DvceFaceFld5D<Real>("cs_resseam_nbr", nmb, nr, n3, n2, n1);
       Kokkos::realloc(rsown_->x1f, nmb, nr, 1, 1, 1);
       Kokkos::realloc(rsnbr_->x1f, nmb, nr, 1, 1, 1);
-      if (res_j_) {   // seamexact-1103: the shared seam current record
+      if (res_j_) {   // the shared seam current record
         pbrj_ = new MeshBoundaryValuesCC(pp, pin, false);
         pbrj_->seam_raw = true;
         pbrj_->seam_xform_off = true;
@@ -744,7 +710,7 @@ void MHD::CsSeamInit(ParameterInput *pin) {
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::CsSeamFaceStates
 //! \brief (1): fill pseamfs with this panel's own seam face states (rows is-1..ie+1), move
-//! the radial ghost rows into the second record set, exchange, move them back.  After it
+//! the radial ghost rows into the second record set, exchange, move them back. After it
 //! pseamfs holds, at every seam face of this rank, the NEIGHBOUR's own state.
 
 // copy the record X (variables v0 .. v0+nv-1) of the along-seam same-panel neighbour's end
@@ -790,7 +756,7 @@ void MHD::CsSeamFaceStates() {
                          *pseamfs, false, nomlat, is-1, ie+1);
   cs_seam::CsSeamPLMFill(pmy_pack, bcc0, 3, ob, -1, eos_.pfloor, eos_.plm_c1, *pseamfs,
                          false, nomlat, is-1, ie+1);
-  if (wb_all) {   // wball-1104: the edge cells' own WB seam face states (shared code)
+  if (wb_all) {   // the edge cells' own WB seam face states (shared code)
     hydro::WbAllCtx c = WbCtx();
     hydro::WbAllSeamFaces(c, *pseamfs, nvars, nder, use_wb_rho, is-1, ie+1);
   }
@@ -841,7 +807,7 @@ void MHD::UctSeamPackets() {
       return x2t ? d.o2(m, v + og, cb + c, lo ? d.js : d.je+1, i)
                    : d.o3(m, v + og, lo ? d.ks : d.ke+1, cb + c, i);
     };
-    // ucthshare-1102 shared_g: set 0 = this panel's own first row (toward the seam), set
+    // shared_g: set 0 = this panel's own first row (toward the seam), set
     // 1 = its GHOST row, i.e. its own resampled view of the neighbour's first row (toward
     // the seam from the other side), at offset kNU
     for (int gs=0; gs<nset_; ++gs) {
@@ -1064,7 +1030,7 @@ void MHD::SeamXRecord(const bool packets) {
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::UctSeamEdges
 //! \brief (2)+(3): overwrite the seam-edge and cube-vertex EMFs of efld with the shared
-//! evaluation (file header).  Called at the end of the 3-D UCT branch of CornerE.
+//! evaluation (file header). Called at the end of the 3-D UCT branch of CornerE.
 
 void MHD::UctSeamEdges() {
   if (cs_seam_mhd == 4) {UctSeamOwnSide(); return;}
@@ -1366,20 +1332,20 @@ void MHD::UctSeamEdges() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::CsVertexEmf3
-//! \brief cornerfix-1103 <mesh>/cs_vertex_3cell (without the shared seam, cs_seam_mhd <
+//! \brief <mesh>/cs_vertex_3cell (without the shared seam, cs_seam_mhd <
 //! shared): the cube-vertex radial EMF from the THREE real cells and the three seam faces
-//! that meet there, for every emf_scheme.  Each panel P writes its OWN estimate E_P into
+//! that meet there, for every emf_scheme. Each panel P writes its OWN estimate E_P into
 //! x1e at the vertex edge, formed from its corner cell and its two seam faces only, and
 //! the existing three-way vertex mean (flux_correct_fc AveragePanelCornerEMF) of the
 //! three panels' estimates IS the 3-cell rule:
-//!   UCT / UCT-HLLD: E_P = -3 x (P's partial of the shared_o 3-face rule, VertexOwnUct),
-//!     so the mean is exactly shared_o's E = -(own + q + r).
-//!   GS07: E = (1/3) [ sum_f E_f + sum_f (E_g(X_f) - E_cc(X_f)) ] over the three seam faces
-//!     f, X_f = the upwind cell of f (mass flux; emf_smooth weights; 1/2 at zero flux)
-//!     and g(X_f) its other vertex face -- the GS07 corner rule with three faces in
-//!     place of four (constant E exact; each pick owned by its upwind cell), so
-//!     E_P = (E_a + E_b)/2 + w_a (E_b - E_cc) + w_b (E_a - E_cc), w_f = P's upwind
-//!     weight on its seam face f (a = x2 seam face, b = x3 seam face).
+//! UCT / UCT-HLLD: E_P = -3 x (P's partial of the shared_o 3-face rule, VertexOwnUct),
+//! so the mean is exactly shared_o's E = -(own + q + r).
+//! GS07: E = (1/3) [ sum_f E_f + sum_f (E_g(X_f) - E_cc(X_f)) ] over the three seam faces
+//! f, X_f = the upwind cell of f (mass flux; emf_smooth weights; 1/2 at zero flux)
+//! and g(X_f) its other vertex face -- the GS07 corner rule with three faces in
+//! place of four (constant E exact; each pick owned by its upwind cell), so
+//! E_P = (E_a + E_b)/2 + w_a (E_b - E_cc) + w_b (E_a - E_cc), w_f = P's upwind
+//! weight on its seam face f (a = x2 seam face, b = x3 seam face).
 //! The old 4-cell stencil read the corner block (e1_cc and the ghost-ghost face EMFs).
 
 void MHD::CsVertexEmf3() {
@@ -1427,12 +1393,12 @@ void MHD::CsVertexEmf3() {
     e1(m,kc,jc,i) = 0.5*(ea + eb) + wa*(eb - ec) + wb*(ea - ec);
   });
   if (uct_) return;
-  // GS07: the seam radial edges within ng-1 cells of a vertex.  Their 4-cell stencil
+  // GS07: the seam radial edges within ng-1 cells of a vertex. Their 4-cell stencil
   // takes the transverse face EMF of the seam GHOST row (column), whose reconstruction
-  // reaches into the corner block.  Each panel evaluates the same GS07 formula with the
+  // reaches into the corner block. Each panel evaluates the same GS07 formula with the
   // ghost row (column) replaced by its own seam row (column) -- a mirror image across
   // the seam -- and the seam-edge average of the two panels' values combines their own
-  // rows.  Edges farther along the seam are unchanged.
+  // rows. Edges farther along the seam are unchanged.
   const int ng = indcs.ng;
   seam_for("cs_vertex_emf3_adj", DevExeSpace(), 0, nmb1, 0, 7, 1, ng-1, d.is, d.ie,
   KOKKOS_LAMBDA(const int m, const int cs, const int s, const int i) {
@@ -1480,9 +1446,9 @@ void MHD::CsVertexEmf3() {
 //! form on its own grid: the full term of its own non-seam face, and the own-side half of
 //! each shared seam face's term (a^s vn^s X^s +- d^s X^s), every side state built from the
 //! two faces of ONE of its own cells (no stencil across the kink: own-face carries to the
-//! seam are one-sided, minmod of the two own-row slopes).  The partial sums are exchanged
+//! seam are one-sided, minmod of the two own-row slopes). The partial sums are exchanged
 //! as scalars (E.t is a line integral; only the along-seam edge orientation can flip) and
-//! added on both panels: single-valued by construction.  Normals: S = sum of the actual
+//! added on both panels: single-valued by construction. Normals: S = sum of the actual
 //! face normals (the neighbour's own face = the mirror of this panel's about the seam
 //! plane, exact by the cube's symmetry); at a vertex the three seam faces at 120 deg,
 //! g = (2/3) n.
@@ -1717,7 +1683,7 @@ void MHD::UctSeamOwnSide() {
     for (int s=0; s<2; ++s) {
       const bool isv = (s == 0) ? (c == 0 && vlo) : (c == nc-1 && vhi);
       if (!isv) {out(4+s) = 0.0; continue;}
-      // corner: x2-seam index jc/jv, x3-seam index kc/kv (cornerfix-1103: shared helper)
+      // corner: x2-seam index jc/jv, x3-seam index kc/kv ( shared helper)
       const bool jlo = x2t ? lo : (s == 0), klo = x2t ? (s == 0) : lo;
       out(4+s) = VertexOwnUct(d, m, p, i, jlo, klo);
     }
@@ -1815,26 +1781,26 @@ void MHD::UctSeamOwnSide() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void CsSeamResJBcc
-//! \brief seamexact-1103: the stage cell-centred field AddEMFAmbipolarGnomonic used, for
+//! \brief the stage cell-centred field AddEMFAmbipolarGnomonic used, for
 //! the shared seam current (nullptr = MHD::bcc0).
 
 
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::CsSeamResJ
-//! \brief seamexact-1103 <mhd>/cs_seam_res = mean_j: a SINGLE-VALUED CURRENT on every seam
-//! edge (along-seam, radial, cube vertex).  With cs_seam_res = mean every panel forms its
+//! \brief <mhd>/cs_seam_res = mean_j: a SINGLE-VALUED CURRENT on every seam
+//! edge (along-seam, radial, cube vertex). With cs_seam_res = mean every panel forms its
 //! own J (and B, eta) at a seam edge from its own grid and its resampled halo, its own
 //! EMF eta J + eta_A (J - (J.B) B/B^2) from them, and the EMFs are averaged: J itself is
 //! two-valued (1.3e-2 of |J| at N = 16, a truncation-level difference of the two charts)
-//! and the nonlinear ambipolar term is evaluated on each panel's own J and B.  Here each
+//! and the nonlinear ambipolar term is evaluated on each panel's own J and B. Here each
 //! panel exchanges J and B (Cartesian: no basis or orientation mapping) and eta_Ohm,
 //! eta_A at the edge (CsEdgeOps, the ambipolar kernel's own expressions); all panels take
 //! the same mean (two panels: (P + Q)/2, commutative; three at a cube vertex: sorted,
 //! then summed) and evaluate ONE EMF vector E = eta J + eta_A (J - (J.B) B/B^2) from it,
-//! projected on their own edge tangent.  The EMF mean that follows (CsSeamResist, mean)
+//! projected on their own edge tangent. The EMF mean that follows (CsSeamResist, mean)
 //! then only removes the last-bit difference of the two tangents, so the EMF, the
 //! ambipolar term and the resistive Poynting flux (the Joule heating, built from these
-//! edge EMFs) all derive from the one shared current.  Without ambipolar diffusion
+//! edge EMFs) all derive from the one shared current. Without ambipolar diffusion
 //! (Ohmic only) the radial current does not enter (J.t on a tangential edge) and B is
 //! carried but unused.
 
@@ -1867,7 +1833,7 @@ void MHD::CsSeamResJ(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta
   K.ops.cxi = pmy_pack->pcoord->cos_face_xi; K.ops.sxi = pmy_pack->pcoord->sin_face_xi;
   K.ops.cet = pmy_pack->pcoord->cos_face_eta; K.ops.set = pmy_pack->pcoord->sin_face_eta;
   K.ops.ccl = pmy_pack->pcoord->cos_cell; K.ops.scl = pmy_pack->pcoord->sin_cell;
-  {auto &ind = pmy_pack->pmesh->mb_indcs;   // cornerfix-1103: 3-cell vertex edge
+  {auto &ind = pmy_pack->pmesh->mb_indcs;   // 3-cell vertex edge
    K.ops.SetVertex(pmy_pack->pmesh->cs_vertex_3cell, pmy_pack->pmb->mb_size, ind.js, ind.je,
                    ind.ks, ind.ke);}
   K.etb = eta; K.fl = fl;
@@ -1953,18 +1919,18 @@ void MHD::CsSeamResJ(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::CsSeamResist
 //! \brief shared_g / shared_o with a resistivity: the RESISTIVE EMF eta J.t on every seam
-//! edge (along-seam, radial, cube vertex), single-valued by construction.  J.t is the
+//! edge (along-seam, radial, cube vertex), single-valued by construction. J.t is the
 //! circulation of B around the edge through the cell centres around it (Stokes, as in
 //! AddEMFGnomonicResist) split by panel: each panel adds the loop segments on ITS side --
 //! the full segment across its own face and HALF of each segment across a shared seam
 //! face, B along it from its own grid only (the seam-face normal field, shared, plus the
 //! partner component extrapolated from its own two rows: no resampled ghost) -- and half
 //! of the enclosed area (a quarter at a cube vertex; along-seam edges: times the sine of
-//! the gnomonic angle, the projection on the plane normal to the edge).  The partial
+//! the gnomonic angle, the projection on the plane normal to the edge). The partial
 //! circulations, areas and the eta of its own cells next to the edge are exchanged as
 //! scalars (the along-seam edge orientation sign only) and combined identically:
-//!     E_res.t = (eta_P + eta_Q)/2 * (H_P + H_Q)/(A_P + A_Q),
-//! three panels at a vertex.  AddEMFGnomonicResist skips the seam edges in this mode.
+//! E_res.t = (eta_P + eta_Q)/2 * (H_P + H_Q)/(A_P + A_Q),
+//! three panels at a vertex. AddEMFGnomonicResist skips the seam edges in this mode.
 //! The radial edges at four-block seam ends use the same-panel ghost copies (exact).
 
 void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &eta,
@@ -1986,13 +1952,13 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
     // EMF (pass 2 computed every seam edge from each panel's own + ghost cells), the
     // shared_g idea applied to eta J: each panel exchanges its TOTAL seam-edge EMF (the
     // ideal part is already single-valued, so the mean leaves it unchanged) and both take
-    //   E = (E_P + s E_Q)/2,  three panels at a cube vertex (sorted, then summed),
+    // E = (E_P + s E_Q)/2, three panels at a cube vertex (sorted, then summed),
     // the same numbers in the same order -> single-valued without the post-hoc averaging.
     // Four-block seam ends: the upper block's value is canonical (one-layer record).
     auto e1 = efld_.x1e;
     auto e2 = efld_.x2e;
     auto e3 = efld_.x3e;
-    if (res_j_) CsSeamResJ(b0, eta, jnorm, efld_);   // seamexact-1103: cs_seam_res = mean_j
+    if (res_j_) CsSeamResJ(b0, eta, jnorm, efld_);   // cs_seam_res = mean_j
     auto XR = xrr_;
     seam_for("res_mean_xp", DevExeSpace(), 0, nmb1, 0, 3, is, ie,
     KOKKOS_LAMBDA(const int m, const int sd, const int i) {
@@ -2064,10 +2030,10 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
         if (x2t) {e1(m,cb+nc,sf,i) = er;} else {e1(m,sf,cb+nc,i) = er;}
       }
     });
-    // fcorder3-1103 DIAGNOSTIC (env CS_SEAMRES_DIAG, off unless set; no data change):
+    // DIAGNOSTIC (env CS_SEAMRES_DIAG, off unless set; no data change):
     // the TWO-CHART difference of the seam-edge resistive EMF before the mean, max over
     // the along-seam edges (E_t, radial faces is..ie) and the radial seam edges off the
-    // cube vertices: |E_P - s E_Q|.  Printed by rank 0 on every call.
+    // cube vertices: |E_P - s E_Q|. Printed by rank 0 on every call.
     static const bool sdiag_ = (std::getenv("CS_SEAMRES_DIAG") != nullptr);
     if (sdiag_) {
       Real dmx[3] = {0.0, 0.0, 0.0};
@@ -2330,5 +2296,5 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
 
 }  // namespace mhd
 
-// seamexact-1103 (cs_edge_jb.hpp): the stage field for the shared seam current
+// (cs_edge_jb.hpp): the stage field for the shared seam current
 void CsSeamResJBcc(const DvceArray5D<Real> *bc) {mhd::cs_uct::rj_bc_ = bc;}
