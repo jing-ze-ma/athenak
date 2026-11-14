@@ -166,7 +166,10 @@ void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
         lsr > 0.0) {
       Real usql = SQR(vl) + (SQR(wl(ivy,i)) + SQR(wl(ivz,i)));
       Real usqr = SQR(vr) + (SQR(wr(ivy,i)) + SQR(wr(ivz,i)));
-      if (eos.chi_normal) { usql = SQR(vl); usqr = SQR(vr); }
+      if (eos.chi_normal) {
+        usql = SQR(vl);
+        usqr = SQR(vr);
+      }
       const Real caxs = fabs(bxi)*fmax(1.0/sqrt(rl*sdl/sdml), 1.0/sqrt(rr*sdr/sdmr));
       const Real psia = LhlldAlfRotPsi(w0, m, k, j, i, ivx, ivy, ivz, fmax(usql, usqr),
                                        caxs, eos.cb_sensor, eos.cb_cont,
@@ -322,9 +325,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     hydro::WbPoison(pmy_pack, wbq2, phicc_wb, wb_phimax);
     if (wbq3.extent_int(2) > 1) hydro::WbPoison(pmy_pack, wbq3, phicc_wb, wb_phimax);
   }
-  if (cs_shr_) {CsSeamFaceStates();}
+  if (cs_shr_) {
+    CsSeamFaceStates();
+  }
   DvceArray5D<Real> sfs2_, sfs3_;
-  if (cs_shr_) {sfs2_ = pseamfs->x2f; sfs3_ = pseamfs->x3f;}
+  if (cs_shr_) {
+    sfs2_ = pseamfs->x2f;
+    sfs3_ = pseamfs->x3f;
+  }
   const int sfob_ = nvars + NDERIVED;   // record slots of (B.r, B.e_xi, B.e_eta)
 
   auto &x1v_ = pmy_pack->pcoord->x1v;
@@ -340,7 +348,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     jl = js-1, ju = je+1, kl = ks-1, ku = ke+1;
   }
   int il = is, iu = ie+1;
-  if (use_fofc) { il = is-1, iu = ie+2; }
+  if (use_fofc) {
+    il = is-1, iu = ie+2;
+  }
   // TRANSVERSE WIDENING. FOFC replaces the fluxes on all six faces of every flagged
   // cell, and cells are flagged over [js-1,je+1] x [ks-1,ke+1] (MHD::FOFC), so the x1
   // fluxes are needed one row beyond the active zone in x2 and x3 as well. Unlike
@@ -582,7 +592,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         }
         if ((curv_ && bix1 == BoundaryFlag::reflect) ||
             (wall_ix1_ && bix1 == BoundaryFlag::user)) {
-          for (int n=0; n<nvars; ++n) { wl(n,is) = wr(n,is); }
+          for (int n=0; n<nvars; ++n) {
+            wl(n,is) = wr(n,is);
+          }
           wl(IVX,is) = -wr(IVX,is);
           bl(1,is) = br(1,is);  bl(2,is) = br(2,is);
           if (bix1 == BoundaryFlag::user || wwb_) {  // reflect stays bitwise (key off)
@@ -595,11 +607,15 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           }
         }
         if (curv_ && box1 == BoundaryFlag::reflect) {
-          for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
+          for (int n=0; n<nvars; ++n) {
+            wr(n,ie+1) = wl(n,ie+1);
+          }
           wr(IVX,ie+1) = -wl(IVX,ie+1);
           br(1,ie+1) = bl(1,ie+1);  br(2,ie+1) = bl(2,ie+1);
           if (wwb_) {
-            for (int n=0; n<nder; ++n) { dr(n,ie+1) = dl(n,ie+1); }
+            for (int n=0; n<nder; ++n) {
+              dr(n,ie+1) = dl(n,ie+1);
+            }
           }
         }
       });
@@ -610,10 +626,15 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       Kokkos::single(Kokkos::PerTeam(member), [&]() {
         if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user &&
             wl(IVX,ie+1) < 0.0) {
-          for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
+          for (int n=0; n<nvars; ++n) {
+            wr(n,ie+1) = wl(n,ie+1);
+          }
           wr(IVX,ie+1) = -wl(IVX,ie+1);
           br(1,ie+1) = bl(1,ie+1);  br(2,ie+1) = bl(2,ie+1);
-          if (diode_btodd_) {br(1,ie+1) = -bl(1,ie+1);  br(2,ie+1) = -bl(2,ie+1);}
+          if (diode_btodd_) {
+            br(1,ie+1) = -bl(1,ie+1);
+            br(2,ie+1) = -bl(2,ie+1);
+          }
           if (diode_chout_) {
             // incoming Alfven characteristic zero on the mirrored side: v_t = -s b_t
             const Real bxf = bx_(m,k,j,ie+1);
@@ -624,7 +645,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
               wr(IVZ,ie+1) = -sg*br(2,ie+1)*isq;
             }
           }
-          for (int n=0; n<nder; ++n) { dr(n,ie+1) = dl(n,ie+1); }
+          for (int n=0; n<nder; ++n) {
+            dr(n,ie+1) = dl(n,ie+1);
+          }
         }
       });
     }
@@ -758,7 +781,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       kl = ks-1, ku = ke+1;
     }
     jl = js-1, ju = je+1;
-    if (use_fofc) { jl = js-2, ju = je+2; }
+    if (use_fofc) {
+      jl = js-2, ju = je+2;
+    }
 
     scr_level = TeamScratchLevel(scr_size, 0);
     par_for_outer("mhd_flux2",DevExeSpace(),scr_size,scr_level,0,nmb1, kl, ku,
@@ -944,14 +969,30 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           const bool in2 = (j == js);
           par_for_inner(member, is-1, ie+1, [&](const int i) {
             for (int n=0; n<nvars; ++n) {
-              if (in2) {wl(n,i) = wr(n,i);} else {wr(n,i) = wl(n,i);}
+              if (in2) {
+                wl(n,i) = wr(n,i);
+              } else {
+                wr(n,i) = wl(n,i);
+              }
             }
-            if (in2) {wl(IVY,i) = -wr(IVY,i);} else {wr(IVY,i) = -wl(IVY,i);}
+            if (in2) {
+              wl(IVY,i) = -wr(IVY,i);
+            } else {
+              wr(IVY,i) = -wl(IVY,i);
+            }
             for (int n=0; n<3; ++n) {   // bcc in x1,x2,x3 order (slot 1 unused: by)
-              if (in2) {bl(n,i) = br(n,i);} else {br(n,i) = bl(n,i);}
+              if (in2) {
+                bl(n,i) = br(n,i);
+              } else {
+                br(n,i) = bl(n,i);
+              }
             }
             for (int n=0; n<nder; ++n) {
-              if (in2) {dl(n,i) = dr(n,i);} else {dr(n,i) = dl(n,i);}
+              if (in2) {
+                dl(n,i) = dr(n,i);
+              } else {
+                dr(n,i) = dl(n,i);
+              }
             }
           });
           member.team_barrier();
@@ -1106,7 +1147,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
     // set the loop limits
     kl = ks-1, ku = ke+1;
-    if (use_fofc) { kl = ks-2, ku = ke+2; }
+    if (use_fofc) {
+      kl = ks-2, ku = ke+2;
+    }
 
     scr_level = TeamScratchLevel(scr_size, 0);
     par_for_outer("mhd_flux3",DevExeSpace(), scr_size, scr_level, 0, nmb1, js-1, je+1,

@@ -293,7 +293,10 @@ KOKKOS_INLINE_FUNCTION Real VertexOwnUct(const SeamCtx &d, const int m, const in
   tga[2] = t[0]*fa.nxi[1] - t[1]*fa.nxi[0];
   tgb[0] = t[1]*fb.neta[2] - t[2]*fb.neta[1]; tgb[1] = t[2]*fb.neta[0] - t[0]*fb.neta[2];
   tgb[2] = t[0]*fb.neta[1] - t[1]*fb.neta[0];
-  for (int q=0; q<3; ++q) {tga[q] *= 2.0/3.0; tgb[q] *= 2.0/3.0;}
+  for (int q=0; q<3; ++q) {
+    tga[q] *= 2.0/3.0;
+    tgb[q] *= 2.0/3.0;
+  }
   return HalfC(!jlo, d.u2(m,0,kv,jc,i), d.u2(m,1,kv,jc,i), d.u2(m,2,kv,jc,i),
                Dot3(vB, fa.nxi), Dot3(Bv, tga))
        + HalfC(!klo, d.u3(m,0,kc,jv,i), d.u3(m,1,kc,jv,i), d.u3(m,2,kc,jv,i),
@@ -320,13 +323,28 @@ bool xlocal_ = false;
 
 void CsSeamRelease() {
   cs_uct::xrec_ = DvceArray5D<Real>();
-  if (cs_uct::pbx_ != nullptr) {delete cs_uct::pbx_; cs_uct::pbx_ = nullptr;}
-  if (cs_uct::pbxr_ != nullptr) {delete cs_uct::pbxr_; cs_uct::pbxr_ = nullptr;}
+  if (cs_uct::pbx_ != nullptr) {
+    delete cs_uct::pbx_;
+    cs_uct::pbx_ = nullptr;
+  }
+  if (cs_uct::pbxr_ != nullptr) {
+    delete cs_uct::pbxr_;
+    cs_uct::pbxr_ = nullptr;
+  }
   cs_uct::xrr_ = DvceArray5D<Real>();
   cs_uct::nbloc_ = DvceArray2D<int>();
-  if (cs_uct::rsown_ != nullptr) {delete cs_uct::rsown_; cs_uct::rsown_ = nullptr;}
-  if (cs_uct::rsnbr_ != nullptr) {delete cs_uct::rsnbr_; cs_uct::rsnbr_ = nullptr;}
-  if (cs_uct::pbrs_ != nullptr) {delete cs_uct::pbrs_; cs_uct::pbrs_ = nullptr;}
+  if (cs_uct::rsown_ != nullptr) {
+    delete cs_uct::rsown_;
+    cs_uct::rsown_ = nullptr;
+  }
+  if (cs_uct::rsnbr_ != nullptr) {
+    delete cs_uct::rsnbr_;
+    cs_uct::rsnbr_ = nullptr;
+  }
+  if (cs_uct::pbrs_ != nullptr) {
+    delete cs_uct::pbrs_;
+    cs_uct::pbrs_ = nullptr;
+  }
 }
 using namespace cs_uct;  // NOLINT
 
@@ -349,8 +367,11 @@ void CsSeamMoveRadialGhosts(MeshBlockPack *pp, DvceFaceFld5D<Real> &fs, const in
     if (!lo && !(size.d_view(m).x2max >= 1.0 - 1.0e-12)) return;
     const int jf = lo ? js : je+1;
     const int ig = up ? ie+1 : is-1, ib = up ? ie : is;
-    if (fwd) {f2(m,nfs1+n,k,jf,ib) = f2(m,n,k,jf,ig);}
-    else {f2(m,n,k,jf,ig) = f2(m,nfs1+n,k,jf,ib);}
+    if (fwd) {
+      f2(m,nfs1+n,k,jf,ib) = f2(m,n,k,jf,ig);
+    } else {
+      f2(m,n,k,jf,ig) = f2(m,nfs1+n,k,jf,ib);
+    }
   });
   seam_for("cs_seamfs_rg3", DevExeSpace(), 0, nmb1, js, je, 0, 3, 0, nfs1-1,
   KOKKOS_LAMBDA(const int m, const int j, const int c, const int n) {
@@ -360,8 +381,11 @@ void CsSeamMoveRadialGhosts(MeshBlockPack *pp, DvceFaceFld5D<Real> &fs, const in
     if (!lo && !(size.d_view(m).x3max >= 1.0 - 1.0e-12)) return;
     const int kf = lo ? ks : ke+1;
     const int ig = up ? ie+1 : is-1, ib = up ? ie : is;
-    if (fwd) {f3(m,nfs1+n,kf,j,ib) = f3(m,n,kf,j,ig);}
-    else {f3(m,n,kf,j,ig) = f3(m,nfs1+n,kf,j,ib);}
+    if (fwd) {
+      f3(m,nfs1+n,kf,j,ib) = f3(m,n,kf,j,ig);
+    } else {
+      f3(m,n,kf,j,ig) = f3(m,nfs1+n,kf,j,ib);
+    }
   });
 }
 
@@ -443,7 +467,9 @@ void MHD::CsSeamInit(ParameterInput *pin) {
         const NeighborBlock &nb = ng_.h_view(m,nid[c]);
         if (nb.gid >= 0 && nb.rank == global_variable::my_rank &&
             nb.panel == pan_.h_view(m) && nb.lev == lev_.h_view(m)) {
-          for (int mm=0; mm<nmb; ++mm) {if (gid_.h_view(mm) == nb.gid) hnb(m,c) = mm;}
+          for (int mm=0; mm<nmb; ++mm) {
+            if (gid_.h_view(mm) == nb.gid) hnb(m,c) = mm;
+          }
         }
       }
       // needed: the along-seam neighbours of a seam-side block whose end is not a
@@ -511,8 +537,11 @@ void SeamXLocalCopy(MeshBlockPack *pp, DvceArray5D<Real> X, const int v0, const 
     const int cb = x2t ? d.ks : d.js;
     const int g = up ? nc : -1, sc = up ? 0 : nc-1;
     for (int v=v0; v<v0+nv; ++v) {
-      if (x2t) {X(m,v,cb+g,r0,i) = X(mn,v,cb+sc,r0,i);}
-      else     {X(m,v,r0,cb+g,i) = X(mn,v,r0,cb+sc,i);}
+      if (x2t) {
+        X(m,v,cb+g,r0,i) = X(mn,v,cb+sc,r0,i);
+      } else {
+        X(m,v,r0,cb+g,i) = X(mn,v,r0,cb+sc,i);
+      }
     }
   });
 }
@@ -590,8 +619,11 @@ void MHD::SeamXRecord() {
     X(m,f+1,k0,j0,i) = us(m,1,ksf,jsf,i);
     X(m,f+2,k0,j0,i) = us(m,2,ksf,jsf,i);
     Frame fs;
-    if (x2t) {MakeFrame(p, XiF(d, m, sf), EtaC(d, m, k0), fs);}
-    else     {MakeFrame(p, XiC(d, m, j0), EtaF(d, m, sf), fs);}
+    if (x2t) {
+      MakeFrame(p, XiF(d, m, sf), EtaC(d, m, k0), fs);
+    } else {
+      MakeFrame(p, XiC(d, m, j0), EtaF(d, m, sf), fs);
+    }
     Real v[3];
     FaceV(us, fs, x2t ? 2 : 3, m, ksf, jsf, i, v);
     for (int q=0; q<3; ++q) X(m,f+3+q,k0,j0,i) = v[q];
@@ -825,7 +857,10 @@ void MHD::UctSeamOwnSide() {
     };
     // --- along-seam edges at radial faces i (slot 0) and ie+1 (slot 1)
     for (int s=0; s<2; ++s) {
-      if (s == 1 && i != d.ie) {out(1) = 0.0; break;}
+      if (s == 1 && i != d.ie) {
+        out(1) = 0.0;
+        break;
+      }
       const int ifc = (s == 0) ? i : d.ie+1;
       const bool wall_in = ifc == d.is &&
           ((mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_) ||
@@ -838,8 +873,11 @@ void MHD::UctSeamOwnSide() {
         continue;
       }
       Frame fe;
-      if (x2t) {MakeFrame(p, XiF(d, m, sf), EtaC(d, m, cb+c), fe);}
-      else     {MakeFrame(p, XiC(d, m, cb+c), EtaF(d, m, sf), fe);}
+      if (x2t) {
+        MakeFrame(p, XiF(d, m, sf), EtaC(d, m, cb+c), fe);
+      } else {
+        MakeFrame(p, XiC(d, m, cb+c), EtaF(d, m, sf), fe);
+      }
       const Real *t = x2t ? fe.e2 : fe.e1;
       const Real *nS = x2t ? fe.nxi : fe.neta;
       const Real *nE = fe.r;
@@ -898,8 +936,11 @@ void MHD::UctSeamOwnSide() {
       // own along-seam face fa
       const int kf = x2t ? (cb + fa) : r0, jf = x2t ? r0 : (cb + fa);
       Frame ff;
-      if (x2t) {MakeFrame(p, XiC(d, m, jf), EtaF(d, m, kf), ff);}
-      else     {MakeFrame(p, XiF(d, m, jf), EtaC(d, m, kf), ff);}
+      if (x2t) {
+        MakeFrame(p, XiC(d, m, jf), EtaF(d, m, kf), ff);
+      } else {
+        MakeFrame(p, XiF(d, m, jf), EtaC(d, m, kf), ff);
+      }
       const DvceArray5D<Real> &ua = x2t ? d.u3 : d.u2;
       const DvceArray4D<Real> &ba = x2t ? d.b3 : d.b2;
       Real nE[3], nW[3];
@@ -924,8 +965,11 @@ void MHD::UctSeamOwnSide() {
       for (int h=0; h<2; ++h) {
         const int cc = (h == 0) ? fa-1 : fa;
         Frame fs;
-        if (x2t) {MakeFrame(p, XiF(d, m, sf), EtaC(d, m, cb+cc), fs);}
-        else     {MakeFrame(p, XiC(d, m, cb+cc), EtaF(d, m, sf), fs);}
+        if (x2t) {
+          MakeFrame(p, XiF(d, m, sf), EtaC(d, m, cb+cc), fs);
+        } else {
+          MakeFrame(p, XiC(d, m, cb+cc), EtaF(d, m, sf), fs);
+        }
         const bool inb = (cc >= 0 && cc < nc);
         if (inb) {
           FaceV(us, fs, dirs, m, SK(cc), SJ(cc), i, vS[h]);
@@ -957,7 +1001,10 @@ void MHD::UctSeamOwnSide() {
     // --- cube-vertex radial edges at the lower (slot 4) / upper (slot 5) end of the seam
     for (int s=0; s<2; ++s) {
       const bool isv = (s == 0) ? (c == 0 && vlo) : (c == nc-1 && vhi);
-      if (!isv) {out(4+s) = 0.0; continue;}
+      if (!isv) {
+        out(4+s) = 0.0;
+        continue;
+      }
       // corner: x2-seam index jc/jv, x3-seam index kc/kv ( shared helper)
       const bool jlo = x2t ? lo : (s == 0), klo = x2t ? (s == 0) : lo;
       out(4+s) = VertexOwnUct(d, m, p, i, jlo, klo);
@@ -995,8 +1042,11 @@ void MHD::UctSeamOwnSide() {
     const int cb = x2t ? d.ks : d.js;
     const int sf = x2t ? (lo ? d.js : d.je+1) : (lo ? d.ks : d.ke+1);
     const int kg = x2t ? (cb + nc) : r0, jg = x2t ? r0 : (cb + nc);
-    if (x2t) {d.o2(m,3,cb+nc-1,sf,i) = XR(m,0,kg,jg,i);}
-    else     {d.o3(m,3,sf,cb+nc-1,i) = XR(m,0,kg,jg,i);}
+    if (x2t) {
+      d.o2(m,3,cb+nc-1,sf,i) = XR(m,0,kg,jg,i);
+    } else {
+      d.o3(m,3,sf,cb+nc-1,i) = XR(m,0,kg,jg,i);
+    }
   });
   pbval_us->InitFluxSeamRecv(6);   // (the X record was exchanged at the top)
   pbval_us->PackAndSendFluxSeamCC(*pusown);
@@ -1025,16 +1075,28 @@ void MHD::UctSeamOwnSide() {
       if (s == 1 && i != d.ie) break;
       const int ifc = (s == 0) ? i : d.ie+1;
       const Real e = -(O(s) + sg*N(s));
-      if (x2t) {e3(m,cb+c,sf,ifc) = e;} else {e2(m,sf,cb+c,ifc) = e;}
+      if (x2t) {
+        e3(m,cb+c,sf,ifc) = e;
+      } else {
+        e2(m,sf,cb+c,ifc) = e;
+      }
     }
     const bool vlo = OnPanelEdge(d, m, x2t ? 2 : 0), vhi = OnPanelEdge(d, m, x2t ? 3 : 1);
     if (c >= 1 || !vlo) {   // radial edge at the lower face of cell c (c = 0: four-block)
       const Real e = -(O(2) + N(rev ? 3 : 2));
-      if (x2t) {e1(m,cb+c,sf,i) = e;} else {e1(m,sf,cb+c,i) = e;}
+      if (x2t) {
+        e1(m,cb+c,sf,i) = e;
+      } else {
+        e1(m,sf,cb+c,i) = e;
+      }
     }
     if (c == nc-1 && !vhi) {   // the four-block edge at the upper end
       const Real e = -(O(3) + N(rev ? 2 : 3));
-      if (x2t) {e1(m,cb+nc,sf,i) = e;} else {e1(m,sf,cb+nc,i) = e;}
+      if (x2t) {
+        e1(m,cb+nc,sf,i) = e;
+      } else {
+        e1(m,sf,cb+nc,i) = e;
+      }
     }
   });
   seam_for("uct_seam_own_vtx", DevExeSpace(), 0, nmb1, 0, 3, d.is, d.ie,
@@ -1087,7 +1149,11 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
     const int r0 = x2t ? (lo ? js : je) : (lo ? ks : ke);
     const int cb = x2t ? ks : js;
     const int sf = x2t ? (lo ? js : je+1) : (lo ? ks : ke+1);
-    if (x2t) {XR(m,0,cb,r0,i) = e1(m,cb,sf,i);} else {XR(m,0,r0,cb,i) = e1(m,sf,cb,i);}
+    if (x2t) {
+      XR(m,0,cb,r0,i) = e1(m,cb,sf,i);
+    } else {
+      XR(m,0,r0,cb,i) = e1(m,sf,cb,i);
+    }
   });
   if (xlocal_) {
     SeamXLocalCopy(pmy_pack, XR, 0, 1);
@@ -1135,19 +1201,35 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
     auto N = [&](const int v) { return x2t ? n2(m, v, cb + c, sf, i) : n3(m, v, sf, cb + c, i); };
     const Real sg = rev ? -1.0 : 1.0;
     const Real ea = 0.5*(O(0) + sg*N(0));
-    if (x2t) {e3(m,cb+c,sf,i) = ea;} else {e2(m,sf,cb+c,i) = ea;}
+    if (x2t) {
+      e3(m,cb+c,sf,i) = ea;
+    } else {
+      e2(m,sf,cb+c,i) = ea;
+    }
     if (i == ie) {
       const Real eb = 0.5*(O(1) + sg*N(1));
-      if (x2t) {e3(m,cb+c,sf,ie+1) = eb;} else {e2(m,sf,cb+c,ie+1) = eb;}
+      if (x2t) {
+        e3(m,cb+c,sf,ie+1) = eb;
+      } else {
+        e2(m,sf,cb+c,ie+1) = eb;
+      }
     }
     const bool vlo = OnPanelEdge(d, m, x2t ? 2 : 0), vhi = OnPanelEdge(d, m, x2t ? 3 : 1);
     if (!(c == 0 && vlo)) {
       const Real er = 0.5*(O(2) + N(rev ? 3 : 2));
-      if (x2t) {e1(m,cb+c,sf,i) = er;} else {e1(m,sf,cb+c,i) = er;}
+      if (x2t) {
+        e1(m,cb+c,sf,i) = er;
+      } else {
+        e1(m,sf,cb+c,i) = er;
+      }
     }
     if (c == nc-1 && !vhi) {
       const Real er = 0.5*(O(3) + N(rev ? 2 : 3));
-      if (x2t) {e1(m,cb+nc,sf,i) = er;} else {e1(m,sf,cb+nc,i) = er;}
+      if (x2t) {
+        e1(m,cb+nc,sf,i) = er;
+      } else {
+        e1(m,sf,cb+nc,i) = er;
+      }
     }
   });
   seam_for("res_mean_vtx", DevExeSpace(), 0, nmb1, 0, 3, is, ie,
@@ -1162,9 +1244,21 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
     Real b_ = n2(m, (klo != r2) ? 2 : 3, kv, jc, i);
     Real c_ = n3(m, (jlo != r3) ? 2 : 3, kc, jv, i);
     // sort, so that all three panels add the same numbers in the same order
-    if (a > b_) {const Real t = a; a = b_; b_ = t;}
-    if (b_ > c_) {const Real t = b_; b_ = c_; c_ = t;}
-    if (a > b_) {const Real t = a; a = b_; b_ = t;}
+    if (a > b_) {
+      const Real t = a;
+      a = b_;
+      b_ = t;
+    }
+    if (b_ > c_) {
+      const Real t = b_;
+      b_ = c_;
+      c_ = t;
+    }
+    if (a > b_) {
+      const Real t = a;
+      a = b_;
+      b_ = t;
+    }
     e1(m,kc,jc,i) = ((a + b_) + c_)/3.0;
   });
 }

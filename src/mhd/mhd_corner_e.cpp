@@ -994,12 +994,20 @@ void MHD::WallEmfZero(DvceEdgeFld4D<Real> &e, const bool refl, const bool usr_ix
     const BoundaryFlag bi = mb_bcs.d_view(m,BoundaryFace::inner_x1);
     const BoundaryFlag bo = mb_bcs.d_view(m,BoundaryFace::outer_x1);
     if ((refl && bi == rf) || (usr_ix1 && bi == uf)) {
-      if (j <= je) {e2(m,k,j,is) = 0.0;}
-      if (k <= ke) {e3(m,k,j,is) = 0.0;}
+      if (j <= je) {
+        e2(m,k,j,is) = 0.0;
+      }
+      if (k <= ke) {
+        e3(m,k,j,is) = 0.0;
+      }
     }
     if (refl && bo == rf) {
-      if (j <= je) {e2(m,k,j,ie+1) = 0.0;}
-      if (k <= ke) {e3(m,k,j,ie+1) = 0.0;}
+      if (j <= je) {
+        e2(m,k,j,ie+1) = 0.0;
+      }
+      if (k <= ke) {
+        e3(m,k,j,ie+1) = 0.0;
+      }
     }
   });
   if (!refl || !md) return;
@@ -1007,12 +1015,20 @@ void MHD::WallEmfZero(DvceEdgeFld4D<Real> &e, const bool refl, const bool usr_ix
   par_for("wall_emf0_x2", DevExeSpace(), 0, nmb1, ks, ke+1, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int i) {
     if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == rf) {
-      if (i <= ie) {e1(m,k,js,i) = 0.0;}
-      if (k <= ke) {e3(m,k,js,i) = 0.0;}
+      if (i <= ie) {
+        e1(m,k,js,i) = 0.0;
+      }
+      if (k <= ke) {
+        e3(m,k,js,i) = 0.0;
+      }
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == rf) {
-      if (i <= ie) {e1(m,k,je+1,i) = 0.0;}
-      if (k <= ke) {e3(m,k,je+1,i) = 0.0;}
+      if (i <= ie) {
+        e1(m,k,je+1,i) = 0.0;
+      }
+      if (k <= ke) {
+        e3(m,k,je+1,i) = 0.0;
+      }
     }
   });
   if (!td) return;
@@ -1020,12 +1036,20 @@ void MHD::WallEmfZero(DvceEdgeFld4D<Real> &e, const bool refl, const bool usr_ix
   par_for("wall_emf0_x3", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int j, const int i) {
     if (mb_bcs.d_view(m,BoundaryFace::inner_x3) == rf) {
-      if (i <= ie) {e1(m,ks,j,i) = 0.0;}
-      if (j <= je) {e2(m,ks,j,i) = 0.0;}
+      if (i <= ie) {
+        e1(m,ks,j,i) = 0.0;
+      }
+      if (j <= je) {
+        e2(m,ks,j,i) = 0.0;
+      }
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == rf) {
-      if (i <= ie) {e1(m,ke+1,j,i) = 0.0;}
-      if (j <= je) {e2(m,ke+1,j,i) = 0.0;}
+      if (i <= ie) {
+        e1(m,ke+1,j,i) = 0.0;
+      }
+      if (j <= je) {
+        e2(m,ke+1,j,i) = 0.0;
+      }
     }
   });
 }
@@ -1066,8 +1090,12 @@ void MHD::WallFluxZero(const bool refl, const bool usr_ix1) {
     const bool zo = refl && mb_bcs.d_view(m,BoundaryFace::outer_x1) == rf;
     for (int n=0; n<ns1; ++n) {
       if (n != IDN && n != ien && n < ns0) continue;
-      if (zi) {f1(m,n,k,j,is) = 0.0;}
-      if (zo) {f1(m,n,k,j,ie+1) = 0.0;}
+      if (zi) {
+        f1(m,n,k,j,is) = 0.0;
+      }
+      if (zo) {
+        f1(m,n,k,j,ie+1) = 0.0;
+      }
     }
   });
   if (!refl || !md) return;
@@ -1077,8 +1105,12 @@ void MHD::WallFluxZero(const bool refl, const bool usr_ix1) {
     const bool zo = mb_bcs.d_view(m,BoundaryFace::outer_x2) == rf;
     for (int n=0; n<ns1; ++n) {
       if (n != IDN && n != ien && n < ns0) continue;
-      if (zi) {f2(m,n,k,js,i) = 0.0;}
-      if (zo) {f2(m,n,k,je+1,i) = 0.0;}
+      if (zi) {
+        f2(m,n,k,js,i) = 0.0;
+      }
+      if (zo) {
+        f2(m,n,k,je+1,i) = 0.0;
+      }
     }
   });
   if (!td) return;
@@ -1088,8 +1120,12 @@ void MHD::WallFluxZero(const bool refl, const bool usr_ix1) {
     const bool zo = mb_bcs.d_view(m,BoundaryFace::outer_x3) == rf;
     for (int n=0; n<ns1; ++n) {
       if (n != IDN && n != ien && n < ns0) continue;
-      if (zi) {f3(m,n,ks,j,i) = 0.0;}
-      if (zo) {f3(m,n,ke+1,j,i) = 0.0;}
+      if (zi) {
+        f3(m,n,ks,j,i) = 0.0;
+      }
+      if (zo) {
+        f3(m,n,ke+1,j,i) = 0.0;
+      }
     }
   });
 }

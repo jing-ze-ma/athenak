@@ -418,7 +418,11 @@ Mesh::Mesh(ParameterInput *pin) :
       Real lo = 1.0e-3, hi = 1.0e3;
       for (int it = 0; it < 200; ++it) {
         const Real mq = std::sqrt(lo*hi);
-        if (topf(mq) > tgt) {hi = mq;} else {lo = mq;}
+        if (topf(mq) > tgt) {
+          hi = mq;
+        } else {
+          lo = mq;
+        }
       }
       const Real q = std::sqrt(lo*hi);
       Real *chd = fStretchRPoly + NSTRETCH_R_HEAD_OFF;
@@ -580,7 +584,11 @@ Mesh::Mesh(ParameterInput *pin) :
     Real qlo = 1.0 + 1.0e-12, qhi = 3.0;
     for (int it=0; it<200; ++it) {
       const Real qm = 0.5*(qlo + qhi);
-      if (f(qm) > 0.0) {qlo = qm;} else {qhi = qm;}
+      if (f(qm) > 0.0) {
+        qlo = qm;
+      } else {
+        qhi = qm;
+      }
     }
     const Real q = 0.5*(qlo + qhi);
     if (q > qmax) {
@@ -1521,13 +1529,19 @@ void Mesh::NewTimeStep(const Real tlim) {
   // fin4-dtretry: the cap a dt-retry left (driver/dt_retry.cpp; none = -1, and then dt is
   // untouched, bit for bit)
   dt_uncapped = dt;
-  if (dt_cap > 0.0 && dt > dt_cap) {dt = dt_cap;}
+  if (dt_cap > 0.0 && dt > dt_cap) {
+    dt = dt_cap;
+  }
 
   // vet_gd_rotate_dt + vet_gd_rotate_align: land on the rotation times
-  if (pmb_pack->pradm1 != nullptr) {dt = pmb_pack->pradm1->VetGdAlignDt(time, dt);}
+  if (pmb_pack->pradm1 != nullptr) {
+    dt = pmb_pack->pradm1->VetGdAlignDt(time, dt);
+  }
 
   // limit last time step to stop at tlim *exactly*
-  if ( (time < tlim) && ((time + dt) > tlim) ) {dt = tlim - time;}
+  if ( (time < tlim) && ((time + dt) > tlim) ) {
+    dt = tlim - time;
+  }
 
   return;
 }

@@ -70,10 +70,15 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     WbPoison(pmy_pack, wbq2, phicc_wb, wb_phimax);
     if (wbq3.extent_int(2) > 1) WbPoison(pmy_pack, wbq3, phicc_wb, wb_phimax);
   }
-  if (cs_seam_shared) {CsSeamFaceStates();}
+  if (cs_seam_shared) {
+    CsSeamFaceStates();
+  }
   const bool cs_shr_ = cs_seam_shared;
   DvceArray5D<Real> sfs2_, sfs3_;
-  if (cs_shr_) {sfs2_ = pseamfs->x2f; sfs3_ = pseamfs->x3f;}
+  if (cs_shr_) {
+    sfs2_ = pseamfs->x2f;
+    sfs3_ = pseamfs->x3f;
+  }
   bool extrema = false;
   if (recon_method == ReconstructionMethod::ppmx) {
     extrema = true;
@@ -502,7 +507,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           }
         }
         if (bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user)) {
-          for (int n=0; n<nvars; ++n) { wl(n,is) = wr(n,is); }
+          for (int n=0; n<nvars; ++n) {
+            wl(n,is) = wr(n,is);
+          }
           wl(IVX,is) = -wr(IVX,is);
           if (bix1 == BoundaryFlag::user || wwb_) {  // reflect stays bitwise (key off)
             for (int n=0; n<nder; ++n) {
@@ -511,10 +518,14 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           }
         }
         if (box1 == BoundaryFlag::reflect) {
-          for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
+          for (int n=0; n<nvars; ++n) {
+            wr(n,ie+1) = wl(n,ie+1);
+          }
           wr(IVX,ie+1) = -wl(IVX,ie+1);
           if (wwb_) {
-            for (int n=0; n<nder; ++n) { dr(n,ie+1) = dl(n,ie+1); }
+            for (int n=0; n<nder; ++n) {
+              dr(n,ie+1) = dl(n,ie+1);
+            }
           }
         }
       });
@@ -525,9 +536,13 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       Kokkos::single(Kokkos::PerTeam(member), [&]() {
         if (mb_bcs_pq.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user &&
             wl(IVX,ie+1) < 0.0) {
-          for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
+          for (int n=0; n<nvars; ++n) {
+            wr(n,ie+1) = wl(n,ie+1);
+          }
           wr(IVX,ie+1) = -wl(IVX,ie+1);
-          for (int n=0; n<nder; ++n) { dr(n,ie+1) = dl(n,ie+1); }
+          for (int n=0; n<nder; ++n) {
+            dr(n,ie+1) = dl(n,ie+1);
+          }
         }
       });
     }
@@ -632,8 +647,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     // UNION so that it stays correct if either widening changes.)
     if (use_fofc || sp_favg_) {
       il = is-1, iu = ie+1;
-      if (use_fofc) { jl = js-2, ju = je+2; }
-      if (!pmy_pack->pmesh->two_d) { kl = ks-1, ku = ke+1; }
+      if (use_fofc) {
+        jl = js-2, ju = je+2;
+      }
+      if (!pmy_pack->pmesh->two_d) {
+        kl = ks-1, ku = ke+1;
+      }
     }
 
     scr_level = TeamScratchLevel(scr_size, scratch_level);
@@ -799,9 +818,15 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               const int msk = mlmask_(m);
               const bool loi = (msk & 1) != 0, hii = (msk & 2) != 0;
               if (jlo < js) {
-                if (loi) {flat = false; src = 1;}
+                if (loi) {
+                  flat = false;
+                  src = 1;
+                }
               } else if (jlo > je) {
-                if (hii) {flat = false; src = 2;}
+                if (hii) {
+                  flat = false;
+                  src = 2;
+                }
               } else {
                 flat = ((jlo <= js) && !loi) || ((jlo + f - 1 >= je) && !hii);
               }
@@ -851,11 +876,23 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           const bool in2 = (j == js);
           par_for_inner(member, il, iu, [&](const int i) {
             for (int n=0; n<nvars; ++n) {
-              if (in2) {wl(n,i) = wr(n,i);} else {wr(n,i) = wl(n,i);}
+              if (in2) {
+                wl(n,i) = wr(n,i);
+              } else {
+                wr(n,i) = wl(n,i);
+              }
             }
-            if (in2) {wl(IVY,i) = -wr(IVY,i);} else {wr(IVY,i) = -wl(IVY,i);}
+            if (in2) {
+              wl(IVY,i) = -wr(IVY,i);
+            } else {
+              wr(IVY,i) = -wl(IVY,i);
+            }
             for (int n=0; n<nder; ++n) {
-              if (in2) {dl(n,i) = dr(n,i);} else {dr(n,i) = dl(n,i);}
+              if (in2) {
+                dl(n,i) = dr(n,i);
+              } else {
+                dr(n,i) = dl(n,i);
+              }
             }
           });
           member.team_barrier();
@@ -965,7 +1002,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     // stencils read the x3 fluxes at i +- 1 and j +- 1 (the polar ghost row included).
     if (use_fofc || sp_favg_) {
       il = is-1, iu = ie+1, jl = js-1, ju = je+1;
-      if (use_fofc) { kl = ks-2, ku = ke+2; }
+      if (use_fofc) {
+        kl = ks-2, ku = ke+2;
+      }
     }
 
     scr_level = TeamScratchLevel(scr_size, scratch_level);
@@ -1105,9 +1144,15 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               const int msk = mlmask_(m);
               const bool loi = (msk & 4) != 0, hii = (msk & 8) != 0;
               if (klo < ks) {
-                if (loi) {flat = false; src = 1;}
+                if (loi) {
+                  flat = false;
+                  src = 1;
+                }
               } else if (klo > ke) {
-                if (hii) {flat = false; src = 2;}
+                if (hii) {
+                  flat = false;
+                  src = 2;
+                }
               } else {
                 flat = ((klo <= ks) && !loi) || ((klo + f - 1 >= ke) && !hii);
               }

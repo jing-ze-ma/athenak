@@ -248,8 +248,12 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
           const Real x0_ = (sidx == 0) ? x3mn : x2mn;
           const int nbp_ = static_cast<int>(floor(2.0/w_ + 0.5));
           const int ib_ = static_cast<int>(floor((x0_ + 1.0)/w_ + 0.5));
-          if (ib_ > 0) {blx -= ngx_;}
-          if (ib_ < nbp_ - 1) {bhx += ngx_;}
+          if (ib_ > 0) {
+            blx -= ngx_;
+          }
+          if (ib_ < nbp_ - 1) {
+            bhx += ngx_;
+          }
         }
         int bx = cs_seam::SeamRound(pos) - 1;   // tie-safe, as bs
         bx = (bx < blx) ? blx : ((bx > bhx) ? bhx : bx);
@@ -423,7 +427,9 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
           const int seam_extent = cs_coar
               ? ((cs_seam == 2) ? cs_indcs.cnx3 : cs_indcs.cnx2)
               : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
-          if (cs_seam != 0 && seam_extent < 3) { cs_seam = 0; }
+          if (cs_seam != 0 && seam_extent < 3) {
+            cs_seam = 0;
+          }
         } else if (do_pole) {
           aj = -1;
           bj = jl + ju;
@@ -477,7 +483,10 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
   Kokkos::realloc(fc_chunk_beg, (nch > 0) ? nch : 1);
   auto h_cs = Kokkos::create_mirror_view(fc_chunk_seg);
   auto h_cb = Kokkos::create_mirror_view(fc_chunk_beg);
-  for (int c=0; c<nch; ++c) { h_cs(c) = cseg[c]; h_cb(c) = cbeg[c]; }
+  for (int c=0; c<nch; ++c) {
+    h_cs(c) = cseg[c];
+    h_cb(c) = cbeg[c];
+  }
   Kokkos::deep_copy(fc_seg, h_seg);
   Kokkos::deep_copy(fc_chunk_seg, h_cs);
   Kokkos::deep_copy(fc_chunk_beg, h_cb);
@@ -521,7 +530,10 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
             o1 = ((n-48) & 1) ? 1 : -1;  o2 = (((n-48) >> 1) & 1) ? 1 : -1;
             o3 = (((n-48) >> 2) & 1) ? 1 : -1;
           }
-          if (o1 != 0) {u.il = (o1 < 0) ? g.il : g.il + g.ni - 1; u.ni = 1;}
+          if (o1 != 0) {
+            u.il = (o1 < 0) ? g.il : g.il + g.ni - 1;
+            u.ni = 1;
+          }
           if (o2 != 0) {
             const int jt = (o2 < 0) ? g.jl : g.jl + g.nj - 1;
             u.jl = (g.aj == 1) ? jt : (g.bj - jt); u.nj = 1;
@@ -550,7 +562,10 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
           u.pvoff = static_cast<int>(pv);
           const int npts = u.pnn*u.pnt*u.pni;
           const int us = static_cast<int>(sub.size());
-          for (int c0=0; c0<npts; c0+=FC_PACK_CHUNK) {cs_r.push_back(us); cb_r.push_back(c0);}
+          for (int c0=0; c0<npts; c0+=FC_PACK_CHUNK) {
+            cs_r.push_back(us);
+            cb_r.push_back(c0);
+          }
           pv += npts;
         } else if (g.mode == 2) {
           // every other seam / pole segment: srcval at each sample itself, indexed by the
@@ -558,14 +573,22 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
           u.pvoff = static_cast<int>(pv); u.pnt = 0;
           const int npts = u.nk*u.nj*u.ni;
           const int us = static_cast<int>(sub.size());
-          for (int c0=0; c0<npts; c0+=FC_PACK_CHUNK) {cs_r.push_back(us); cb_r.push_back(c0);}
+          for (int c0=0; c0<npts; c0+=FC_PACK_CHUNK) {
+            cs_r.push_back(us);
+            cb_r.push_back(c0);
+          }
           pv += npts;
         }
         const int us = static_cast<int>(sub.size());
         const int nkji = u.nk*u.nj*u.ni;
         for (int c0=0; c0<nkji; c0+=FC_PACK_CHUNK) {
-          if (g.mode != 2) {cs_p.push_back(us); cb_p.push_back(c0);}
-          else {cs_s.push_back(us); cb_s.push_back(c0);}
+          if (g.mode != 2) {
+            cs_p.push_back(us);
+            cb_p.push_back(c0);
+          } else {
+            cs_s.push_back(us);
+            cb_s.push_back(c0);
+          }
         }
         sub.push_back(u);
       }
@@ -580,14 +603,19 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
       const int nsub = static_cast<int>(sub.size());
       Kokkos::realloc(fc_sub[d], (nsub > 0) ? nsub : 1);
       auto h_sub = Kokkos::create_mirror_view(fc_sub[d]);
-      for (int u=0; u<nsub; ++u) {h_sub(u) = sub[u];}
+      for (int u=0; u<nsub; ++u) {
+        h_sub(u) = sub[u];
+      }
       Kokkos::deep_copy(fc_sub[d], h_sub);
       const int nc = static_cast<int>(ca.size());
       Kokkos::realloc(fc_cs[d], (nc > 0) ? nc : 1);
       Kokkos::realloc(fc_cb[d], (nc > 0) ? nc : 1);
       auto h_a = Kokkos::create_mirror_view(fc_cs[d]);
       auto h_b = Kokkos::create_mirror_view(fc_cb[d]);
-      for (int c=0; c<nc; ++c) {h_a(c) = ca[c]; h_b(c) = cb[c];}
+      for (int c=0; c<nc; ++c) {
+        h_a(c) = ca[c];
+        h_b(c) = cb[c];
+      }
       Kokkos::deep_copy(fc_cs[d], h_a);
       Kokkos::deep_copy(fc_cb[d], h_b);
     }
@@ -744,8 +772,12 @@ struct FCSeamPack {
   Real x3f_at_xiface(const SeamArgs &a, const int kf, const int jf, const int i) const {
     const int js_ = a.js_, je_ = a.je_;
     if (!a.wide2) {
-      if (jf-1 < js_) { return 1.5*bx3(a,kf,js_,i) - 0.5*bx3(a,kf,js_+1,i); }
-      if (jf   > je_) { return 1.5*bx3(a,kf,je_,i) - 0.5*bx3(a,kf,je_-1,i); }
+      if (jf-1 < js_) {
+        return 1.5*bx3(a,kf,js_,i) - 0.5*bx3(a,kf,js_+1,i);
+      }
+      if (jf   > je_) {
+        return 1.5*bx3(a,kf,je_,i) - 0.5*bx3(a,kf,je_-1,i);
+      }
       return 0.5*(bx3(a,kf,jf-1,i) + bx3(a,kf,jf,i));
     }
     int w = jf-2;
@@ -757,8 +789,12 @@ struct FCSeamPack {
   Real x2f_at_etaface(const SeamArgs &a, const int kf, const int jf, const int i) const {
     const int ks_ = a.ks_, ke_ = a.ke_;
     if (!a.wide3) {
-      if (kf-1 < ks_) { return 1.5*bx2(a,ks_,jf,i) - 0.5*bx2(a,ks_+1,jf,i); }
-      if (kf   > ke_) { return 1.5*bx2(a,ke_,jf,i) - 0.5*bx2(a,ke_-1,jf,i); }
+      if (kf-1 < ks_) {
+        return 1.5*bx2(a,ks_,jf,i) - 0.5*bx2(a,ks_+1,jf,i);
+      }
+      if (kf   > ke_) {
+        return 1.5*bx2(a,ke_,jf,i) - 0.5*bx2(a,ke_-1,jf,i);
+      }
       return 0.5*(bx2(a,kf-1,jf,i) + bx2(a,kf,jf,i));
     }
     int w = kf-2;
@@ -1034,7 +1070,10 @@ struct FCSeamPack {
         const Real Y = tan(at);
         const Real wgt = (kind == 3) ? cs_fc3::SolidDens(X, Y)
                        : ((kind == 1) ? cs_fc3::ArcDens(X, Y) : cs_fc3::ArcDens(Y, X));
-        if (pass == 0) {den += wgt; continue;}
+        if (pass == 0) {
+          den += wgt;
+          continue;
+        }
         const Real sc = wgt/acc.den;
         const Real Aa = Y*Nn;
         const Real asrc = atan(Aa);
@@ -1083,7 +1122,13 @@ struct FCSeamPack {
       const int k = g.aeta ? aa : nn, j = g.aeta ? nn : aa;
       const int c = (arr << 26) | (k << 13) | j;
       for (int q=0; q<n; ++q) { if (code[q] == c) { w[q] += wt; return; } }
-      if (n < kFc3Max) { code[n] = c; w[n] = wt; ++n; } else { n = kFc3Max + 1; }
+      if (n < kFc3Max) {
+        code[n] = c;
+        w[n] = wt;
+        ++n;
+      } else {
+        n = kFc3Max + 1;
+      }
     }
   };
   KOKKOS_INLINE_FUNCTION
@@ -1254,9 +1299,15 @@ struct FCSeamPack {
     Fc3Tab acc;
     const bool ok = srcval3_acc(a, s.cs_psrc, s.cs_pdst, s.ak*k + s.bk, s.aj*j + s.bj,
                                 s.il, acc);
-    if (!ok || acc.n > kFc3Max) { t_cnt(t) = -1; return; }
+    if (!ok || acc.n > kFc3Max) {
+      t_cnt(t) = -1;
+      return;
+    }
     t_cnt(t) = acc.n;
-    for (int n=0; n<acc.n; ++n) { t_code(t,n) = acc.code[n]; t_w(t,n) = acc.w[n]; }
+    for (int n=0; n<acc.n; ++n) {
+      t_code(t,n) = acc.code[n];
+      t_w(t,n) = acc.w[n];
+    }
   }
 
   // srcval over a SubSegFC's (normal, tangent, i) box, once per pack
@@ -1588,7 +1639,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               const int seam_extent = cs_coar
                   ? ((cs_seam == 2) ? cs_indcs.cnx3 : cs_indcs.cnx2)
                   : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
-              if (cs_seam != 0 && seam_extent < 3) { cs_seam = 0; }
+              if (cs_seam != 0 && seam_extent < 3) {
+                cs_seam = 0;
+              }
             } else if (do_pole) {
               aj = -1;
               bj = jl + ju;
@@ -1632,8 +1685,12 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             // xi CELL CENTRES, and xi face jf sits at cell-index jf-0.5.
             auto x3f_at_xiface = [&](const int kf, const int jf, const int i) {
               if (!wide2) {
-                if (jf-1 < js_) { return 1.5*bx3(kf,js_,i) - 0.5*bx3(kf,js_+1,i); }
-                if (jf   > je_) { return 1.5*bx3(kf,je_,i) - 0.5*bx3(kf,je_-1,i); }
+                if (jf-1 < js_) {
+                  return 1.5*bx3(kf,js_,i) - 0.5*bx3(kf,js_+1,i);
+                }
+                if (jf   > je_) {
+                  return 1.5*bx3(kf,je_,i) - 0.5*bx3(kf,je_-1,i);
+                }
                 return 0.5*(bx3(kf,jf-1,i) + bx3(kf,jf,i));
               }
               int w = jf-2;
@@ -1644,8 +1701,12 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             // b.x2f at (eta FACE kf, xi face jf), interpolated across eta
             auto x2f_at_etaface = [&](const int kf, const int jf, const int i) {
               if (!wide3) {
-                if (kf-1 < ks_) { return 1.5*bx2(ks_,jf,i) - 0.5*bx2(ks_+1,jf,i); }
-                if (kf   > ke_) { return 1.5*bx2(ke_,jf,i) - 0.5*bx2(ke_-1,jf,i); }
+                if (kf-1 < ks_) {
+                  return 1.5*bx2(ks_,jf,i) - 0.5*bx2(ks_+1,jf,i);
+                }
+                if (kf   > ke_) {
+                  return 1.5*bx2(ke_,jf,i) - 0.5*bx2(ke_-1,jf,i);
+                }
                 return 0.5*(bx2(kf-1,jf,i) + bx2(kf,jf,i));
               }
               int w = kf-2;
@@ -1900,7 +1961,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
 
           int ierr = MPI_Isend(send_ptr.data(), data_size, MPI_ATHENA_REAL, drank, tag,
                                comm_vars, &(sendbuf[n].vars_req[m]));
-          if (ierr != MPI_SUCCESS) {no_errors=false;}
+          if (ierr != MPI_SUCCESS) {
+            no_errors=false;
+          }
         }
       }
     }
@@ -2098,7 +2161,9 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
         if (nghbr.h_view(m,n).rank != global_variable::my_rank) {
           int test;
           int ierr = MPI_Test(&(recvbuf[n].vars_req[m]), &test, MPI_STATUS_IGNORE);
-          if (ierr != MPI_SUCCESS) {no_errors=false;}
+          if (ierr != MPI_SUCCESS) {
+            no_errors=false;
+          }
           if (!(static_cast<bool>(test))) {
             bflag = true;
           }
@@ -2114,7 +2179,9 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
     std::exit(EXIT_FAILURE);
   }
   // exit if recv boundary buffer communications have not completed
-  if (bflag) {return TaskStatus::incomplete;}
+  if (bflag) {
+    return TaskStatus::incomplete;
+  }
 #endif
 
   //----- STEP 2: buffers have all completed, so unpack 3-components of field
@@ -2257,7 +2324,9 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
   // multilevel) the coarse array
   if (pmy_pack->pmesh->use_cubed_sphere) {
     FillPanelCornersFC(b, false);
-    if (pmy_pack->pmesh->multilevel) { FillPanelCornersFC(cb, true); }
+    if (pmy_pack->pmesh->multilevel) {
+      FillPanelCornersFC(cb, true);
+    }
   }
 
   // <mesh>/cs_seam_blockend = extend, the second pass (see the note in

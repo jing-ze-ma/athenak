@@ -58,8 +58,12 @@ DvceArray1D<int> CrossPanelPairs(MeshBlockPack *pp, const void *key) {
   const int np = static_cast<int>(l.size());
   DvceArray1D<int> d("cs_xpanel_pairs", (np > 0) ? np : 1);
   auto h = Kokkos::create_mirror_view(d);
-  for (int q=0; q<np; ++q) {h(q) = l[q];}
-  if (np == 0) {h(0) = -1;}
+  for (int q=0; q<np; ++q) {
+    h(q) = l[q];
+  }
+  if (np == 0) {
+    h(0) = -1;
+  }
   Kokkos::deep_copy(d, h);
   cache[key] = d;
   return d;
@@ -95,8 +99,12 @@ DvceArray1D<int> SamePanelFacePairs(MeshBlockPack *pp, const void *key) {
   const int np = static_cast<int>(l.size());
   DvceArray1D<int> d("cs_spanel_pairs", (np > 0) ? np : 1);
   auto h = Kokkos::create_mirror_view(d);
-  for (int q=0; q<np; ++q) {h(q) = l[q];}
-  if (np == 0) {h(0) = -1;}
+  for (int q=0; q<np; ++q) {
+    h(q) = l[q];
+  }
+  if (np == 0) {
+    h(0) = -1;
+  }
   Kokkos::deep_copy(d, h);
   cache[key] = d;
   return d;
@@ -107,7 +115,9 @@ DvceArray1D<int> SamePanelFacePairs(MeshBlockPack *pp, const void *key) {
 inline bool SeamPairWantedH(MeshBlockPack *pp, const int m, const int n, const bool ssp) {
   const auto nb = pp->pmb->nghbr.h_view(m,n);
   const int myp = pp->pmb->mb_panel.h_view(m);
-  if (!ssp) {return nb.panel != myp;}
+  if (!ssp) {
+    return nb.panel != myp;
+  }
   return nb.panel == myp && nb.lev == pp->pmb->mb_lev.h_view(m) && nb.polar <= 0;
 }
 }  // namespace
@@ -122,7 +132,9 @@ bool SeamFaceGeom(const MeshBufferIndcs &ix, const int is, const int ie,
                   const int js, const int ks, bool &x2face, Real &sgn) {
   // a face buffer spans the full active range in x1 (an x1x2 edge buffer is also thin in
   // j and full in k)
-  if (ix.bis != is || ix.bie != ie) {return false;}
+  if (ix.bis != is || ix.bie != ie) {
+    return false;
+  }
   const bool jthin = (ix.bjs == ix.bje);
   const bool kthin = (ix.bks == ix.bke);
   if (jthin == kthin) {return false;}     // x1 face, or an x2x3 edge
@@ -145,7 +157,9 @@ static int SeamFluxVl() {
 #else
     v = (e != nullptr) ? std::atoi(e) : 1;
 #endif
-    if (v < 1) {v = 1;}
+    if (v < 1) {
+      v = 1;
+    }
   }
   return v;
 }
@@ -158,7 +172,9 @@ TaskStatus MeshBoundaryValuesCC::InitFluxSeamRecv(const int nvars) {
 #if MPI_PARALLEL_ENABLED
   // wait for queued kernels that still read the receive buffers before posting receives
   // (GPU-aware MPI writes the device buffers directly)
-  if (global_variable::nranks > 1) {Kokkos::fence();}
+  if (global_variable::nranks > 1) {
+    Kokkos::fence();
+  }
   int &nmb = pmy_pack->nmb_thispack;
   int &nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
@@ -183,7 +199,9 @@ TaskStatus MeshBoundaryValuesCC::InitFluxSeamRecv(const int nvars) {
           auto recv_ptr = Kokkos::subview(recvbuf[n].flux, m, Kokkos::ALL);
           int ierr = MPI_Irecv(recv_ptr.data(), data_size, MPI_ATHENA_REAL, drank, tag,
                                comm_flux, &(recvbuf[n].flux_req[m]));
-          if (ierr != MPI_SUCCESS) {no_errors=false;}
+          if (ierr != MPI_SUCCESS) {
+            no_errors=false;
+          }
         }
       }
     }
@@ -229,13 +247,19 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
                               SeamFluxVl());
   BvalsTeamFor("SeamFluxSendLocal", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int mn_ = xpp_(tmember.league_rank()/nvar);
-    if (mn_ < 0) {return;}
+    if (mn_ < 0) {
+      return;
+    }
     const int m = mn_/nnghbr;
     const int n = mn_ - m*nnghbr;
     const int v = tmember.league_rank() - (tmember.league_rank()/nvar)*nvar;
-    if (sfv_ >= 0 && v != sfv_) {return;}
+    if (sfv_ >= 0 && v != sfv_) {
+      return;
+    }
 
-    if (nghbr.d_view(m,n).gid < 0) {return;}
+    if (nghbr.d_view(m,n).gid < 0) {
+      return;
+    }
     bool x2face; Real sgn;
     if (!SeamFaceGeom(rbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
                       cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
@@ -266,9 +290,18 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
       const PanelBoundaries pb = GetPanelBoundary(my_panel, dst_panel);
       const int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
       const int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
-      if (pb.swap_ax == 1) {sj = nk; sk = 1;}
-      if (rev_a_preswap) {aj = -1; bj = jl + ju;}
-      if (rev_b_preswap) {ak = -1; bk = kl + ku;}
+      if (pb.swap_ax == 1) {
+        sj = nk;
+        sk = 1;
+      }
+      if (rev_a_preswap) {
+        aj = -1;
+        bj = jl + ju;
+      }
+      if (rev_b_preswap) {
+        ak = -1;
+        bk = kl + ku;
+      }
     }
 
       // mass, energy and radial momentum fluxes are scalars across the seam; only the
@@ -326,13 +359,19 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   auto sbuf = SendBufDv();
   BvalsTeamFor("SeamFluxSendMPI", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int mn_ = xpp_(tmember.league_rank()/nvar);
-    if (mn_ < 0) {return;}
+    if (mn_ < 0) {
+      return;
+    }
     const int m = mn_/nnghbr;
     const int n = mn_ - m*nnghbr;
     const int v = tmember.league_rank() - (tmember.league_rank()/nvar)*nvar;
-    if (sfv_ >= 0 && v != sfv_) {return;}
+    if (sfv_ >= 0 && v != sfv_) {
+      return;
+    }
 
-    if (nghbr.d_view(m,n).gid < 0) {return;}
+    if (nghbr.d_view(m,n).gid < 0) {
+      return;
+    }
     bool x2face; Real sgn;
     if (!SeamFaceGeom(sbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
                       cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
@@ -361,9 +400,18 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
       const PanelBoundaries pb = GetPanelBoundary(my_panel, dst_panel);
       const int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
       const int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
-      if (pb.swap_ax == 1) {sj = nk; sk = 1;}
-      if (rev_a_preswap) {aj = -1; bj = jl + ju;}
-      if (rev_b_preswap) {ak = -1; bk = kl + ku;}
+      if (pb.swap_ax == 1) {
+        sj = nk;
+        sk = 1;
+      }
+      if (rev_a_preswap) {
+        aj = -1;
+        bj = jl + ju;
+      }
+      if (rev_b_preswap) {
+        ak = -1;
+        bk = kl + ku;
+      }
     }
 
       // mass, energy and radial momentum fluxes are scalars across the seam; only the
@@ -446,7 +494,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
           auto send_ptr = Kokkos::subview(sendbuf[n].flux, m, Kokkos::ALL);
           int ierr = MPI_Isend(send_ptr.data(), data_size, MPI_ATHENA_REAL, drank, tag,
                                comm_flux, &(sendbuf[n].flux_req[m]));
-          if (ierr != MPI_SUCCESS) {no_errors=false;}
+          if (ierr != MPI_SUCCESS) {
+            no_errors=false;
+          }
         }
       }
     }
@@ -487,8 +537,12 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
           (nghbr.h_view(m,n).rank != global_variable::my_rank)) {
         int test;
         int ierr = MPI_Test(&(recvbuf[n].flux_req[m]), &test, MPI_STATUS_IGNORE);
-        if (ierr != MPI_SUCCESS) {no_errors=false;}
-        if (!(static_cast<bool>(test))) {bflag = true;}
+        if (ierr != MPI_SUCCESS) {
+          no_errors=false;
+        }
+        if (!(static_cast<bool>(test))) {
+          bflag = true;
+        }
       }
     }
   }
@@ -497,7 +551,9 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
               << std::endl << "MPI error in testing non-blocking receives" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (bflag) {return TaskStatus::incomplete;}
+  if (bflag) {
+    return TaskStatus::incomplete;
+  }
 #endif
 
   int nvar = flx.x1f.extent_int(1);
@@ -511,17 +567,23 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
     Kokkos::TeamPolicy<> pol_r(DevExeSpace(), (xpp_.extent_int(0)*nvar), Kokkos::AUTO);
     BvalsTeamFor("SeamStateRecvRaw", pol_r, KOKKOS_LAMBDA(TeamMember_t tmember) {
       const int mn_ = xpp_(tmember.league_rank()/nvar);
-      if (mn_ < 0) {return;}
+      if (mn_ < 0) {
+        return;
+      }
       const int m = mn_/nnghbr;
       const int n = mn_ - m*nnghbr;
       const int v = tmember.league_rank() - (tmember.league_rank()/nvar)*nvar;
-      if (nghbr.d_view(m,n).gid < 0) {return;}
+      if (nghbr.d_view(m,n).gid < 0) {
+        return;
+      }
       bool x2face; Real sgn;
       if (!SeamFaceGeom(rbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
                         cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
         return;
       }
-      if ((nghbr.d_view(m,n).panel == mbpanel.d_view(m)) != ssp_) {return;}
+      if ((nghbr.d_view(m,n).panel == mbpanel.d_view(m)) != ssp_) {
+        return;
+      }
       const int il = rbuf[n].iflux_same[0].bis;
       const int iu = rbuf[n].iflux_same[0].bie;
       const int jl = rbuf[n].iflux_same[0].bjs;
@@ -553,19 +615,27 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
                               SeamFluxVl());
   BvalsTeamFor("SeamFluxRecv", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int mn_ = xpp_(tmember.league_rank()/nvar);
-    if (mn_ < 0) {return;}
+    if (mn_ < 0) {
+      return;
+    }
     const int m = mn_/nnghbr;
     const int n = mn_ - m*nnghbr;
     const int v = tmember.league_rank() - (tmember.league_rank()/nvar)*nvar;
-    if (sfv_ >= 0 && v != sfv_) {return;}
+    if (sfv_ >= 0 && v != sfv_) {
+      return;
+    }
 
-    if (nghbr.d_view(m,n).gid < 0) {return;}
+    if (nghbr.d_view(m,n).gid < 0) {
+      return;
+    }
     bool x2face; Real sgn;
     if (!SeamFaceGeom(rbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
                       cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
       return;
     }
-    if (nghbr.d_view(m,n).panel == mbpanel.d_view(m)) {return;}
+    if (nghbr.d_view(m,n).panel == mbpanel.d_view(m)) {
+      return;
+    }
 
     const int il = rbuf[n].iflux_same[0].bis;
     const int iu = rbuf[n].iflux_same[0].bie;

@@ -55,7 +55,9 @@ void MeshBoundaryValuesCC::SetVectorPairs(const int nvar,
   }
   Kokkos::realloc(vrole_, std::max(nvar, 1));
   auto h = Kokkos::create_mirror_view(vrole_);
-  for (int v=0; v<nvar; ++v) {h(v) = r[v];}
+  for (int v=0; v<nvar; ++v) {
+    h(v) = r[v];
+  }
   Kokkos::deep_copy(vrole_, h);
   vrole_set_ = true;
 }
@@ -69,7 +71,9 @@ static int BvCcSplit() {
   if (s < 0) {
     const char *e = std::getenv("BVALS_CC_SPLIT");
     s = (e != nullptr) ? std::atoi(e) : 1;
-    if (s < 1) {s = 1;}
+    if (s < 1) {
+      s = 1;
+    }
   }
   return s;
 }
@@ -86,7 +90,9 @@ static int BvCcVl() {
 #else
     v = (e != nullptr) ? std::atoi(e) : 16;
 #endif
-    if (v < 1) {v = 1;}
+    if (v < 1) {
+      v = 1;
+    }
   }
   return v;
 }
@@ -106,9 +112,13 @@ static BvCcTeamPolicy BvCcPolicy(const int nleague) {
   if (t < 0) {
     const char *e = std::getenv("BVALS_CC_TS");
     t = (e != nullptr) ? std::atoi(e) : 0;
-    if (t < 0) {t = 0;}
+    if (t < 0) {
+      t = 0;
+    }
   }
-  if (t > 0) {return BvCcTeamPolicy(DevExeSpace(), nleague, t, BvCcVl());}
+  if (t > 0) {
+    return BvCcTeamPolicy(DevExeSpace(), nleague, t, BvCcVl());
+  }
   return BvCcTeamPolicy(DevExeSpace(), nleague, Kokkos::AUTO, BvCcVl());
 }
 
@@ -362,7 +372,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           // variable list: the selected variables are the first nvar chunks
           int ierr = MPI_Isend(send_ptr.data(), data_size, MPI_ATHENA_REAL,
                                drank, tag, comm_vars, &(sendbuf[n].vars_req[m]));
-          if (ierr != MPI_SUCCESS) {no_errors=false;}
+          if (ierr != MPI_SUCCESS) {
+            no_errors=false;
+          }
         }
       }
     }
@@ -420,7 +432,9 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
         if (nghbr.h_view(m,n).rank != global_variable::my_rank) {
           int test;
           int ierr = MPI_Test(&(recvbuf[n].vars_req[m]), &test, MPI_STATUS_IGNORE);
-          if (ierr != MPI_SUCCESS) {no_errors=false;}
+          if (ierr != MPI_SUCCESS) {
+            no_errors=false;
+          }
           if (!(static_cast<bool>(test))) {
             bflag = true;
           }
@@ -436,7 +450,9 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     std::exit(EXIT_FAILURE);
   }
   // exit if recv boundary buffer communications have not completed
-  if (bflag) {return TaskStatus::incomplete;}
+  if (bflag) {
+    return TaskStatus::incomplete;
+  }
 #endif
 
   //----- STEP 2: buffers have all completed, so unpack
@@ -603,7 +619,9 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   // The COARSE array needs it too -- see the note in bvals_fc.cpp's RecvAndUnpackFC.
   if (pmy_pack->pmesh->use_cubed_sphere) {
     FillPanelCornersCC(a, false, vmask);
-    if (pmy_pack->pmesh->multilevel) { FillPanelCornersCC(ca, true, vmask); }
+    if (pmy_pack->pmesh->multilevel) {
+      FillPanelCornersCC(ca, true, vmask);
+    }
   }
 
   // <mesh>/cs_seam_blockend = extend: a second pass re-packs the seam halo with the
