@@ -385,7 +385,8 @@ void RadiationM1::VetColInit() {
   vcol_sph = sph_geom;
   // vet_col_reflect_top: only on sp with a reflecting outer x1 of the M1 solve
   vcol_rtop = vcol_rtop && vcol_sph && (ibc_x1max == M1_IBC_REFLECT);
-  vcol_sqf = vcol_sqf && vcol_sph && vcol_sq && impl_mface_lin;
+  // unify-1114 (#4): surface_face on a Cartesian column too (J linear, uniform cells)
+  vcol_sqf = vcol_sqf && vcol_sq && impl_mface_lin;
   if (vcol_rtop && !(vcol_amax >= 0.0 && vcol_amax < 1.0)) {
     VcolFatal("vet_col_reflect_amax must be in [0, 1)");
   }
@@ -411,6 +412,9 @@ void RadiationM1::VetColInit() {
     for (int l = 0; l < n1; ++l) {rc[l] = sz.x1min + (l + 0.5)*dx1;}
     rin = sz.x1min;
     rtop = sz.x1max;
+    // vet_col_surface_face on a Cartesian column (M1MarshakCoefG: J linear)
+    M1MarshakCoefG(false, 0.0, 0.0, 0.0, vcol_jca, vcol_jcb);
+    vcol_jcap = 2.0;
   }
   vcol_rc = rc;
 

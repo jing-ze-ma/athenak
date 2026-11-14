@@ -2462,10 +2462,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_m1>/implicit_marshak_face = '" + smf
                 + "' is not a choice (cell | linear)");
     }
-    if (impl_mface_lin && !sph_geom) {
-      ImplFatal("<rad_m1>/implicit_marshak_face = linear is implemented on the "
-                "spherical-polar wedge only");
-    }
+    // unify-1114 (#19): linear on a Cartesian grid too (M1MarshakCoefG: E linear,
+    // uniform cells); read there only when named
   }
   // implicit_face_weight (see rad_m1.hpp): distance (default) | equal.  The key is
   // recorded (GetOrAdd) on every grid, so a restart keeps what the run started with.  A
@@ -17389,6 +17387,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         const Real mqw = (ebc && ebh > 0.0) ? 0.0 : mq;
         bb += nu*ch*mqw;
         rr += nu*ch*mqw*ebh;
+        if (mfl && !sph && (!vqs || sqf) && ie > is) {
+          // unify-1114 (#19) implicit_marshak_face = linear on a Cartesian column: the
+          // sp/cs form below with E linear (M1MarshakCoefG)
+          Real ca, cb;
+          M1MarshakCoefG(false, 0.0, 0.0, 0.0, ca, cb);
+          const Real e0 = iw_(m,M1_IW_EP,k,j,ie), e1 = iw_(m,M1_IW_EP,k,j,ie-1);
+          const Real dl = M1MarshakFaceEG(false, e0, e1, 0.0, 0.0, 0.0) - (ca*e0 - cb*e1);
+          Real wq = nu*ch*mqw;
+          if (badv && vi > 0.0) {wq += nu*cr*ai;}
+          bb += wq*(ca - 1.0);
+          aa -= wq*cb;
+          rr -= wq*dl;
+        }
         // implicit_bc_advect: the enthalpy flux A E through the end face, upwinded with
         // the end cell's velocity (outflow: this cell's E; inflow: the bath)
         if (badv) {
@@ -17509,6 +17520,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       } else if (bclo == M1_IBC_MARSHAK) {
         bb += nu*ch*mq;
         rr += nu*ch*mq*eblo;
+        if (mfl && !sph && ie > is) {   // unify-1114 (#19), as the hi face above
+          Real ca, cb;
+          M1MarshakCoefG(false, 0.0, 0.0, 0.0, ca, cb);
+          const Real e0 = iw_(m,M1_IW_EP,k,j,is), e1 = iw_(m,M1_IW_EP,k,j,is+1);
+          const Real dl = M1MarshakFaceEG(false, e0, e1, 0.0, 0.0, 0.0) - (ca*e0 - cb*e1);
+          Real wq = nu*ch*mq;
+          if (badv && vi < 0.0) {wq -= nu*cr*ai;}
+          bb += wq*(ca - 1.0);
+          cc -= wq*cb;
+          rr -= wq*dl;
+        }
         if (badv) {
           if (vi > 0.0) {
             rr += nu*cr*ai*eblo;
@@ -18618,9 +18640,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (mfl && !(hi && vqs && !sqf) && ie > is) {
             // implicit_marshak_face = linear: the face E of the solved iterate
             const int in = lo ? (is+1) : (ie-1);
-            const Real ef = M1SphMarshakFaceE(iw_(m,M1_IW_EP,k,j,ic),
-                                              iw_(m,M1_IW_EP,k,j,in), cx1v(m,ic),
-                                              cx1v(m,in), cx1f(m,i));
+            const Real ef = M1MarshakFaceEG(sph, iw_(m,M1_IW_EP,k,j,ic),
+                                            iw_(m,M1_IW_EP,k,j,in),
+                                            sph ? cx1v(m,ic) : 0.0,
+                                            sph ? cx1v(m,in) : 0.0,
+                                            sph ? cx1f(m,i) : 0.0);
             fb = sgn*cl*mqw*(ef - (lo ? eblo : ebh));
             eout = ef;
           }

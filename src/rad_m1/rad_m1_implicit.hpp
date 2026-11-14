@@ -1166,6 +1166,31 @@ Real M1SphMarshakFaceE(const Real ec, const Real en, const Real rc, const Real r
   return fmin(fmax(ca*ec - cb*en, 0.0), ecap);
 }
 
+//! \fn M1MarshakCoefG / M1MarshakFaceEG
+//! \brief unify-1114 (#19): implicit_marshak_face = linear on any grid.  curv: the
+//! spherical-polar / cubed-sphere form above (G = r^2 E linear); otherwise a uniform
+//! Cartesian column (G = E linear, alpha = 1/2): ca = 3/2, cb = 1/2, E_f limited to
+//! [0, 2 E_end] (the same bound: G_f in [0, 2 G_end]).  The positions are not read on a
+//! Cartesian grid (pass anything).
+
+KOKKOS_INLINE_FUNCTION
+void M1MarshakCoefG(const bool curv, const Real rc, const Real rn, const Real rf,
+                    Real &ca, Real &cb) {
+  if (curv) {
+    M1SphMarshakCoef(rc, rn, rf, ca, cb);
+  } else {
+    ca = 1.5;
+    cb = 0.5;
+  }
+}
+
+KOKKOS_INLINE_FUNCTION
+Real M1MarshakFaceEG(const bool curv, const Real ec, const Real en, const Real rc,
+                     const Real rn, const Real rf) {
+  if (curv) return M1SphMarshakFaceE(ec, en, rc, rn, rf);
+  return fmin(fmax(1.5*ec - 0.5*en, 0.0), 2.0*ec);
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn M1SphCurv
 //! \brief STAGE S2: the LAGGED part of (div P)_d at one cell centre of the

@@ -973,6 +973,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (sph_geom) {
       vcol_sqf = pin->GetOrAddBoolean("rad_m1","vet_col_surface_face",
                                       !global_variable::restart_run);
+    } else if (pin->DoesParameterExist("rad_m1","vet_col_surface_face")) {
+      // unify-1114 (#4): Cartesian when named (needs implicit_marshak_face = linear)
+      vcol_sqf = pin->GetBoolean("rad_m1","vet_col_surface_face");
     }
     if (pin->DoesParameterExist("rad_m1","vet_col_reflect_amax")) {
       vcol_amax = pin->GetReal("rad_m1","vet_col_reflect_amax");
