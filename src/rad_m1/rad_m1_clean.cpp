@@ -69,6 +69,7 @@ struct CleanCtx {
   int bmn;
   Real q, eb[6];
   bool fb;                       // gas feedback: r in the diagonal, enthalpy flux
+  bool hmus;                     // ray face flux: limited upwind reconstruction (else mean)
 };
 
 // the cell's exact backward-Euler temperature for a given E (constant opacities):
@@ -170,8 +171,27 @@ KOKKOS_INLINE_FUNCTION Real CleanFlux(const CleanCtx &x, const int e, const int 
     if (withg) {
       const Real jlv = x.cs(m,CLN_J,kl,jl,il), jrv = x.cs(m,CLN_J,k,j,i);
       const Real hup = x.cs(m,CLN_HP+dir,kl,jl,il)*jlv + x.cs(m,CLN_HM+dir,k,j,i)*jrv;
-      const Real hf = fmin(fmax(0.5*(x.cs(m,CLN_H+dir,kl,jl,il) + x.cs(m,CLN_H+dir,k,j,i)),
-                                -jrv), jlv);
+      Real hf;
+      if (x.hmus) {
+        // upwind-biased limited reconstruction of the rays' half-range fluxes to the
+        // face: H+ from the left cell (HP = h+ J), H- from the right (HM = h- J);
+        // minmod slopes: 2nd order where smooth, the donor value at a jump
+        const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+        auto hpj = [&](const int kk, const int jj, const int ii) {
+          return x.cs(m,CLN_HP+dir,kk,jj,ii)*x.cs(m,CLN_J,kk,jj,ii);};
+        auto hmj = [&](const int kk, const int jj, const int ii) {
+          return x.cs(m,CLN_HM+dir,kk,jj,ii)*x.cs(m,CLN_J,kk,jj,ii);};
+        auto mm = [](const Real a, const Real b) {
+          return (a*b <= 0.0) ? 0.0 : ((fabs(a) < fabs(b)) ? a : b);};
+        const Real pl = hpj(kl,jl,il);
+        const Real sp = mm(pl - hpj(kl-dk,jl-dj,il-di), hpj(k,j,i) - pl);
+        const Real mr = hmj(k,j,i);
+        const Real sm = mm(mr - hmj(kl,jl,il), hmj(k+dk,j+dj,i+di) - mr);
+        hf = fmin(fmax((pl + 0.5*sp) + (mr - 0.5*sm), -jrv), jlv);
+      } else {
+        hf = fmin(fmax(0.5*(x.cs(m,CLN_H+dir,kl,jl,il) + x.cs(m,CLN_H+dir,k,j,i)),
+                       -jrv), jlv);
+      }
       f += x.fc[dir](m,3,k,j,i)*wf*c*(hf - hup);
     }
   }
@@ -570,6 +590,7 @@ void RadiationM1::CleanApply(int src, int dst) {
   for (int n = 0; n < 6; ++n) x.eb[n] = 0.0;
   x.eb[0] = iebath_x1min; x.eb[1] = iebath_x1max;
   x.fb = gas_feedback;
+  x.hmus = cln_hmus;
   auto op = opac;
   par_for("cln_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -766,6 +787,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
   for (int n = 0; n < 6; ++n) x.eb[n] = 0.0;
   x.eb[0] = iebath_x1min; x.eb[1] = iebath_x1max;
   x.fb = fb;
+  x.hmus = cln_hmus;
 
   // gas feedback: enthalpy coefficients a_d = v_d + sum_b D_db v_b (v of the old vector)
   if (fb) {
