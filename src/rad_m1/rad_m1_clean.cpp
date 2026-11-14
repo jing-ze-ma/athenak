@@ -216,6 +216,9 @@ void RadiationM1::CleanAlloc() {
       << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // the formal solution must accumulate the half-range sums and C1 for this scheme
+  impl_beam_hr = true;
+  thsw_c1 = true;
   cln_init = true;
 }
 
@@ -268,7 +271,10 @@ void RadiationM1::CleanClosure(int t2s) {
         cc(m,CLN_HP+a,k,j,i) = fmax(hp, 0.0);
         cc(m,CLN_HM+a,k,j,i) = fmin(hh - hp, 0.0);
       }
-      cc(m,CLN_C1,k,j,i) = fmax(vc(m,M1_VET_NL,k,j,i)/jj, 0.0);
+      // no radiation reaches the cell (J = 0): no angular information, take C1 = 1 (the
+      // half-range, upwind face), never the central one
+      const Real jr = vc(m,M1_VET_J,k,j,i);
+      cc(m,CLN_C1,k,j,i) = (jr > 0.0) ? fmax(vc(m,M1_VET_NL,k,j,i)/jr, 0.0) : 1.0;
     });
   }
   const bool ext = cln_extrap && cln_havep && (t2s == M1_T2S_STAGE1) && cln_dtp > 0.0;
