@@ -378,7 +378,9 @@ void RadiationM1::CleanClosure(int t2s) {
           fm += f[a]*f[a];
         }
         fm = std::sqrt(fm);
-        const Real al = fmin(fm, 1.0);
+        // isotropic (al = 0): a closure built from the cell's own flux feeds back on
+        // itself (a sideways stream along a boundary row sustained itself, cbg 11-14)
+        const Real al = 0.0*fmin(fm, 1.0);
         Real n[3];
         for (int a = 0; a < 3; ++a) n[a] = (fm > 0.0) ? f[a]/fm : 0.0;
         for (int a = 0; a < 3; ++a) {
