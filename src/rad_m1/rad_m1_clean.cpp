@@ -629,7 +629,28 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
   cln_nit += std::abs(nit);
   cln_maxitseen = fmax(cln_maxitseen, static_cast<Real>(std::abs(nit)));
 
-  // positivity check of the solution
+  // positivity check of the solution.  The linear solve is accurate to cln_tol |B|, so
+  // values within 10 cln_tol max|B| of zero are zero to solver accuracy (near-vacuum
+  // cells next to a beam): they are set to 0.  Anything below that is a negative.
+  Real bmax = 0.0;
+  {
+    const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+    const int nkji = nk*nj*ni, nji = nj*ni;
+    Kokkos::parallel_reduce("cln_bmax", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1+1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &acc) {
+      int m = idx/nkji, r = idx - m*nkji;
+      int k = r/nji; r -= k*nji;
+      int j = r/ni, i = r - j*ni;
+      acc = fmax(acc, fabs(w(m,CLW_B,k+ks,j+js,i+is)));
+    }, Kokkos::Max<Real>(bmax));
+  }
+  const Real thr = 10.0*cln_tol*bmax;
+  par_for("cln_zero", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real e = w(m,CLW_X,k,j,i);
+    if (e < 0.0 && e >= -thr) w(m,CLW_X,k,j,i) = 0.0;
+  });
   Real nneg = 0.0;
   {
     const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
@@ -640,7 +661,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
       int m = idx/nkji, r = idx - m*nkji;
       int k = r/nji; r -= k*nji;
       int j = r/ni, i = r - j*ni;
-      if (!(w(m,CLW_X,k+ks,j+js,i+is) > 0.0)) acc += 1.0;
+      if (!(w(m,CLW_X,k+ks,j+js,i+is) >= 0.0)) acc += 1.0;
     }, nneg);
   }
   if (nneg > 0.0 && global_variable::my_rank == 0) {
@@ -653,7 +674,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
     for (int k = ks; k <= ke && np < 4; ++k) {
       for (int j = js; j <= je && np < 4; ++j) {
         for (int i = is; i <= ie && np < 4; ++i) {
-          if (hw(0,CLW_X,k,j,i) > 0.0) continue;
+          if (hw(0,CLW_X,k,j,i) >= 0.0) continue;
           ++np;
           std::printf("CLEANNEG j %d i %d EO %.3e B %.3e X %.3e C1 %.3f w1 %.2f/%.2f "
                       "w2 %.2f/%.2f G1 %.3e/%.3e G2 %.3e/%.3e hp1 %.3f hm1 %.3f D11 %.3f\n",
