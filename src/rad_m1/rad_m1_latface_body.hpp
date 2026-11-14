@@ -50,6 +50,13 @@
   const int tgf = thsw_gface;
   const Real tgfd = thsw_gfd;
   const Real hwsl = impl_hr_ws_lat;
+  // rsgposlin-1113 <rad_m1>/implicit_thin_taucap = tau0 (read only when named, 0 = off):
+  // the half-range (upwind, streaming) weight of a face is capped by the optical depth of
+  // its THICK side, w_tau = 1/(1 + x + x^2/tau0), x = max(kappa_L, kappa_R) dx (the IDORT
+  // form), so a face into an unresolved opaque cell carries the diffusion flux of the
+  // central branch, not c E/4 of a thin neighbour (RSG_CAUSE_1113); thin faces unchanged
+  const Real tcap0 = impl_thin_taucap;
+  auto tcn_ = tcap_cnt;
   if (impl_beam_hr) {
     // hrup-1009: per direction d, h+_d -> S1 and h-_d -> S3 of every active cell
     // (M1HrCell), both through the transverse halo, then the faces (M1HrFace)
@@ -245,6 +252,12 @@
             hl = 0.5*wf*ch*fmax(hpf - iw_(m,M1_IW_S3,km,jm,i), 0.0);
             hr = -0.5*wf*ch*fmax(iw_(m,M1_IW_S1,k,j,i) - hmf, 0.0);
           }
+          if (tcap0 > 0.0) {   // rsgposlin-1113 implicit_thin_taucap
+            const Real x = fmax(iw_(m,M1_IW_KT,km,jm,i), iw_(m,M1_IW_KT,k,j,i))*dx;
+            const Real ws = 1.0/(1.0 + x + x*x/tcap0);
+            if (al > 0.01 && ws < 0.99) {Kokkos::atomic_add(&tcn_(0), 1.0);}
+            al *= ws; hl *= ws; hr *= ws; dgt *= ws;
+          }
           if (hws) {al *= hwsl; hl *= hwsl; hr *= hwsl; dgt *= hwsl;}
           fw(m,M1_IFW_AL,k,j,i) = al;
           fw(m,M1_IFW_HCL,k,j,i) = hl;
@@ -266,6 +279,12 @@
                  ch, iw_(m,M1_IW_EP,km,jm,i), iw_(m,M1_IW_EP,k,j,i), br0,
                  iw_(m,M1_IW_S3,km,jm,i), iw_(m,M1_IW_S1,k,j,i), ch*dtl/dx, bx0, bxmode,
                  bxwmin, bxr0, jfl, al, hl, hr, bdtc);
+        if (tcap0 > 0.0) {   // rsgposlin-1113 implicit_thin_taucap
+          const Real x = fmax(iw_(m,M1_IW_KT,km,jm,i), iw_(m,M1_IW_KT,k,j,i))*dx;
+          const Real ws = 1.0/(1.0 + x + x*x/tcap0);
+          if (al > 0.01 && ws < 0.99) {Kokkos::atomic_add(&tcn_(0), 1.0);}
+          al *= ws; hl *= ws; hr *= ws;
+        }
         if (hws) {al *= hwsl; hl *= hwsl; hr *= hwsl;}
         fw(m,M1_IFW_AL,k,j,i) = al;
         fw(m,M1_IFW_HCL,k,j,i) = hl;

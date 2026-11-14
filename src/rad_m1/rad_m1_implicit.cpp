@@ -1992,6 +1992,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       is >> dtr_cell[q][0] >> dtr_cell[q][1] >> dtr_cell[q][2] >> dtr_cell[q][3];
     }
   }
+  // rsgposlin-1113 implicit_thin_taucap = tau0 (face weight cap by the thick side's
+  // optical depth; read only when named, 0 = off)
+  impl_thin_taucap = pin->DoesParameterExist("rad_m1","implicit_thin_taucap") ?
+                     pin->GetReal("rad_m1","implicit_thin_taucap") : 0.0;
+  Kokkos::realloc(tcap_cnt, 1);
+  Kokkos::deep_copy(tcap_cnt, 0.0);
   // rsgposlin-1113 implicit_tosc_bisect (M1ImplTsolveLaunch; read only when named)
   impl_tosc = pin->DoesParameterExist("rad_m1","implicit_tosc_bisect") &&
               pin->GetBoolean("rad_m1","implicit_tosc_bisect");
@@ -11925,6 +11931,11 @@ void RadiationM1::ImplicitReport() {
               << " cell-passes=" << gas_ncell
               << " newton fallbacks=" << newt_nfb << " (" << fpc << " per cell-pass)"
               << std::endl;
+    if (impl_thin_taucap > 0.0) {   // rsgposlin-1113
+      auto th = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tcap_cnt);
+      std::cout << "<rad_m1> implicit_thin_taucap: capped face-assemblies with w > 0.01 "
+                << "(rank 0)=" << th(0) << std::endl;
+    }
     if (impl_tosc && tosc_cnt.extent_int(0) > 0) {   // rsgposlin-1113
       auto th = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tosc_cnt);
       std::cout << "<rad_m1> implicit_tosc_bisect: bracketed cell-passes (rank 0)="
@@ -16635,6 +16646,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const int tgf = thsw_gface;
       const Real tgfd = thsw_gfd;
       const Real hwsx = impl_hr_ws_x1;
+      const Real tcap0 = impl_thin_taucap;   // rsgposlin-1113
+      auto tcn_ = tcap_cnt;
       const bool hgd = hrx && vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0);
       const int hsrc = !hrx ? 0 : (vetsc ? 1 : (hgd ? 2 : (!impl_hr_model ? -1 :
                                                             (trans ? 0 : 3))));
@@ -16956,6 +16969,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               hlb += cw*hnl;
               hrb += cw*hnr;
             }
+            if (tcap0 > 0.0) {   // rsgposlin-1113 implicit_thin_taucap (thick side)
+              const Real x = fmax(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,ip))*dx;
+              const Real ws = 1.0/(1.0 + x + x*x/tcap0);
+              if (alb > 0.01 && ws < 0.99) {Kokkos::atomic_add(&tcn_(0), 1.0);}
+              alb *= ws; hlb *= ws; hrb *= ws; dgt *= ws;
+            }
             if (hws) {alb *= hwsx; hlb *= hwsx; hrb *= hwsx; dgt *= hwsx;}
             ifw_(m,M1_IFW_AL,k,j,i) = alb;
             ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
@@ -16977,6 +16996,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (fmmo_) {   // facemmat-1112: F_L from the half-range moments
             fmlo_(m,0,k,j,i) = ch*fmax(hpl, 0.0);
             fmlo_(m,1,k,j,i) = ch*fmin(hmr, 0.0);
+          }
+          if (tcap0 > 0.0) {   // rsgposlin-1113 implicit_thin_taucap (thick side)
+            const Real x = fmax(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,ip))*dx;
+            const Real ws = 1.0/(1.0 + x + x*x/tcap0);
+            if (alb > 0.01 && ws < 0.99) {Kokkos::atomic_add(&tcn_(0), 1.0);}
+            alb *= ws; hlb *= ws; hrb *= ws;
           }
           if (hws) {alb *= hwsx; hlb *= hwsx; hrb *= hwsx;}
           ifw_(m,M1_IFW_AL,k,j,i) = alb;
