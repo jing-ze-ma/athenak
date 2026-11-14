@@ -254,9 +254,9 @@ void RadiationM1::CleanFirstIterate() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanRightHandSide
-//! \brief B = E_old + h c kP a T^4 - r h c kE E_k - h div F_source, with the exchange
-//! linearised about the iterate (r = s/(d cv + s), s = 4 h c kP a T^3), and the initial
-//! guess X = E_k
+//! \brief B = E_old + h c kP a T^4 - r h c kE E_k - W - h div F_source, with the exchange
+//! linearised about the iterate (r = s/(d cv + s), s = 4 h c kP a T^3), W the work of
+//! the radiation force of the iterate on the gas, and the initial guess X = E_k
 
 void RadiationM1::CleanRightHandSide() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -276,17 +276,23 @@ void RadiationM1::CleanRightHandSide() {
     const Real t = x.w(m,CLW_T,k,j,i);
     const Real hckp = x.h*x.c*op(m,M1_OP_P,k,j,i);
     const Real hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
-    Real rr = 0.0;
+    Real rr = 0.0, work = 0.0;
     if (x.feedback) {
       const Real d = uh(m,IDN,k,j,i);
       Real e, p, chi_rho, chi_t, cv;
       eos.ThermoAt(d, t, e, p, chi_rho, chi_t, cv);
       const Real s = 4.0*hckp*arad_*t*t*t;
       rr = s/(d*cv + s);
+      // work of the radiation force on the gas, (v_old + dm/(2 rho)).dm: exactly the
+      // kinetic energy the gas gains, taken from the radiation
+      for (int n = 0; n < 3; ++n) {
+        const Real dm = x.w(m,CLW_DM+n,k,j,i);
+        work += (uh(m,IM1+n,k,j,i) + 0.5*dm)*dm/d;
+      }
     }
     x.w(m,CLW_RR,k,j,i) = rr;
     x.w(m,CLW_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
-                         - rr*hcke*x.w(m,CLW_EK,k,j,i)
+                         - rr*hcke*x.w(m,CLW_EK,k,j,i) - work
                          - CleanSourceDivergence(x, m, k, j, i);
     x.w(m,CLW_X,k,j,i) = x.w(m,CLW_EK,k,j,i);
   });
