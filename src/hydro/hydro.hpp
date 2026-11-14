@@ -362,9 +362,6 @@ class Hydro {
   bool diode_ox1 = false;
   // wbplm-1103 <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
   bool top_ghost_prim_copy = false;
-  // csedge-1019 <hydro>/cs_seam_rsolver = hlle: the cubed-sphere PANEL-SEAM faces take the
-  // HLLE flux (contact/shear dissipation) whatever <hydro>/rsolver is (hydro.cpp)
-  bool cs_seam_hlle = false;
   // csedge-1019 <mesh>/cs_seam_flux = shared: each panel-seam face is ONE Riemann problem
   // whose two states are the two panels' OWN interior-side reconstructions (exchanged as
   // face states, tangential velocity re-expressed on the receiver's basis), instead of

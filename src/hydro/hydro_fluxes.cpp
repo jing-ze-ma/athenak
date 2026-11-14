@@ -176,7 +176,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                      !(pmy_pack->pmesh->use_spherical_polar || str_r1_));
   const bool curv1_ = pmy_pack->pmesh->use_spherical_polar || str_r1_;
   const bool diode_ox1_ = diode_ox1;   // topbc-1101 (hydro.hpp)
-  const bool cs_seam_hlle_ = cs_seam_hlle;   // csedge-1019 (hydro.hpp)
   // <hydro>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see hydro.hpp).
   const auto recon_method_x1_ = recon_method_x1;
   auto &mb_bcs_pq = pmy_pack->pmb->mb_bcs;
@@ -930,14 +929,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle_gr) {
             HLLE_GR(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
           }
-          if (cs_seam_hlle_ &&
-              ((j == js && size.d_view(m).x2min <= -1.0 + 1.0e-12) ||
-               (j == je+1 && size.d_view(m).x2max >= 1.0 - 1.0e-12))) {
-            // csedge-1019: a panel-seam face takes the HLLE flux (hydro.hpp)
-            member.team_barrier();
-            HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
-            member.team_barrier();
-          }
             if (use_cubed_sphere) {
                 GnomonicEquiangleFluxX2(gtrig_xi,member,m,k,j,il,iu,flx2);
             }
@@ -1251,14 +1242,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             LLF_GR(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle_gr) {
             HLLE_GR(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
-          }
-          if (cs_seam_hlle_ &&
-              ((k == ks && size.d_view(m).x3min <= -1.0 + 1.0e-12) ||
-               (k == ke+1 && size.d_view(m).x3max >= 1.0 - 1.0e-12))) {
-            // csedge-1019: a panel-seam face takes the HLLE flux (hydro.hpp)
-            member.team_barrier();
-            HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
-            member.team_barrier();
           }
             if (use_cubed_sphere) {
                 GnomonicEquiangleFluxX3(gtrig_eta,member,m,k,j,il,iu,flx3);
