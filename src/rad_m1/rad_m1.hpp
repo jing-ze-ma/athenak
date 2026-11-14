@@ -2904,6 +2904,8 @@ class RadiationM1 {
   Real cln_tc = -1.0e300;       // mesh time of the current closure build
   Real cln_dtp = 0.0;           // dt between the two builds
   DvceArray5D<Real> cln_c, cln_p, cln_s;   // closure: current, previous, stage (CLN_*)
+  DvceArray5D<Real> cln_v;      // (m,2,..) ray-described flag of the closure fill
+  int cln_fillpass = 8;         // clean_fill_passes
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // (m,4,k,j,i): w, theta, G, spare
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0, cln_maxitseen = 0.0;

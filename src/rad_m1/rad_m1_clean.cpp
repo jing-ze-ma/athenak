@@ -261,6 +261,7 @@ void RadiationM1::CleanAlloc() {
   Kokkos::realloc(cln_c, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_p, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
+  Kokkos::realloc(cln_v, nmb, 2, n3, n2, n1);
   Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
   Kokkos::realloc(cln_fc1, nmb, 4, n3, n2, n1);
   Kokkos::realloc(cln_fc2, nmb, 4, n3, n2, n1);
@@ -350,6 +351,7 @@ void RadiationM1::CleanClosure(int t2s) {
     auto vc = vet_cell;
     auto cc = cln_c;
     auto uu = u0;
+    auto fv = cln_v;
     const Real rmin = cln_raymin, cl = c_light;
     par_for("cln_vcopy", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -366,7 +368,9 @@ void RadiationM1::CleanClosure(int t2s) {
         cc(m,CLN_C1,k,j,i) = fmax(vc(m,M1_VET_NL,k,j,i)/jr, 0.0);
         cc(m,CLN_J,k,j,i) = jr;
         for (int a = 0; a < 3; ++a) cc(m,CLN_H+a,k,j,i) = vc(m,M1_VET_H1+a,k,j,i);
+        fv(m,0,k,j,i) = 1.0;
       } else {
+        fv(m,0,k,j,i) = 0.0;
         cc(m,CLN_J,k,j,i) = 0.0;
         for (int a = 0; a < 3; ++a) cc(m,CLN_H+a,k,j,i) = 0.0;
         // beam + isotropic closure of the moment state: a fraction al = |f| streams
@@ -394,6 +398,64 @@ void RadiationM1::CleanClosure(int t2s) {
         cc(m,CLN_C1,k,j,i) = 1.0;
       }
     });
+  }
+  // cells the rays leave empty take the closure (D, h+-) of their ray-described
+  // neighbours, spreading one cell per pass (cln_fillpass passes); the moment transport
+  // widens a beam by a few cells, and its radiation there keeps the rays' direction.
+  // Cells still empty keep the isotropic closure.  J = H = 0 there (no consistency term).
+  {
+    int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
+    auto cc = cln_c;
+    auto fv = cln_v;
+    for (int pass = 0; pass < cln_fillpass; ++pass) {
+      CleanGhost(cln_c, 0, CLN_N, nmb1, bc, is, ie, js, je, ks, ke, ng, d2, d3);
+      CleanGhost(cln_v, 0, 2, nmb1, bc, is, ie, js, je, ks, ke, ng, d2, d3);
+      par_for("cln_fill", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        fv(m,1,k,j,i) = fv(m,0,k,j,i);
+        if (fv(m,0,k,j,i) > 0.0) return;
+        Real acc[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+        int nv = 0;
+        const int dk = d3 ? 1 : 0, dj = d2 ? 1 : 0;
+        for (int kk = -dk; kk <= dk; ++kk) {
+          for (int jj = -dj; jj <= dj; ++jj) {
+            for (int ii = -1; ii <= 1; ++ii) {
+              if (fv(m,0,k+kk,j+jj,i+ii) <= 0.0) continue;
+              ++nv;
+              for (int a = 0; a < 6; ++a) acc[a] += cc(m,CLN_D11+a,k+kk,j+jj,i+ii);
+              for (int a = 0; a < 3; ++a) acc[6+a] += cc(m,CLN_HP+a,k+kk,j+jj,i+ii);
+            }
+          }
+        }
+        if (nv == 0) return;
+        fv(m,1,k,j,i) = 1.0;
+        // only cells empty before this pass are written, only valid ones are read
+        for (int a = 0; a < 6; ++a) cc(m,CLN_D11+a,k,j,i) = acc[a]/nv;
+        for (int a = 0; a < 3; ++a) cc(m,CLN_HP+a,k,j,i) = acc[6+a]/nv;
+      });
+      // h- of the filled cells from the neighbours' h- (second sweep, same neighbours)
+      par_for("cln_fill2", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (fv(m,0,k,j,i) > 0.0 || fv(m,1,k,j,i) <= 0.0) return;
+        Real acc[3] = {0, 0, 0};
+        int nv = 0;
+        const int dk = d3 ? 1 : 0, dj = d2 ? 1 : 0;
+        for (int kk = -dk; kk <= dk; ++kk) {
+          for (int jj = -dj; jj <= dj; ++jj) {
+            for (int ii = -1; ii <= 1; ++ii) {
+              if (fv(m,0,k+kk,j+jj,i+ii) <= 0.0) continue;
+              ++nv;
+              for (int a = 0; a < 3; ++a) acc[a] += cc(m,CLN_HM+a,k+kk,j+jj,i+ii);
+            }
+          }
+        }
+        for (int a = 0; a < 3; ++a) cc(m,CLN_HM+a,k,j,i) = acc[a]/fmax(nv, 1);
+      });
+      par_for("cln_fill3", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        fv(m,0,k,j,i) = fv(m,1,k,j,i);
+      });
+    }
   }
   const bool ext = cln_extrap && cln_havep && (t2s == M1_T2S_STAGE1) && cln_dtp > 0.0;
   const Real r = ext ? dt/cln_dtp : 0.0;
