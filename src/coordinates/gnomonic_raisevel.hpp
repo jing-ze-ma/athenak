@@ -1,30 +1,15 @@
 #ifndef COORDINATES_GNOMONIC_RAISEVEL_HPP_
 #define COORDINATES_GNOMONIC_RAISEVEL_HPP_
 //========================================================================================
-// AthenaXXX astrophysical plasma code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file gnomonic_raisevel.hpp
-//! \brief the per-cell body of Coordinates::GnomonicEquiangleRaiseVel, as a free
-//! device function.
-//!
-//! WHY IT LIVES HERE.  On the cubed sphere the conserved-to-primitive inversion is split
-//! in two: EquationOfState::ConsToPrim does the part that needs no metric, and
-//! GnomonicEquiangleRaiseVel does the part that does -- raising the covariant momentum,
-//! forming the metric kinetic energy, applying the velocity CEILING and RE-APPLYING the
-//! pressure/temperature/energy floors against the corrected internal energy
-//! (EOS_Data::defer_cons_floors).  A cell that needs one of those deferred floors is
-//! therefore invisible to ConsToPrim, and the FOFC floor-TEST pass, which is nothing but
-//! a ConsToPrim over a trial state, never flagged it.  Factoring the body out lets the
-//! test pass run exactly the same arithmetic on the trial state (Hydro::FOFC), with
-//! `testonly` suppressing nothing: the caller simply discards the state instead of
-//! writing it back.
-//!
-//! EVERYTHING IS LOCAL.  The caller loads d,m1,m2,m3,etot out of its conserved array and
-//! writes the (possibly modified) m1,m2,m3,etot back.  Writing them back unconditionally
-//! is bit-for-bit what the old kernel did, which wrote them only when something fired:
-//! when nothing fires the locals still hold the bits that were loaded.
+//! \brief Per-cell metric part of the cons-to-prim inversion on the cubed sphere, used by
+//! Coordinates::GnomonicEquiangleRaiseVel and by the FOFC floor test. It raises the
+//! covariant momentum, forms the metric kinetic energy, applies the velocity ceiling and
+//! re-applies the energy/temperature floors to the corrected internal energy.
 
 #include "athena.hpp"
 #include "eos/eos.hpp"
@@ -33,7 +18,8 @@
 
 //----------------------------------------------------------------------------------------
 //! \fn void GnomonicRaiseVelFloors
-//! \brief metric velocity raise + deferred ceiling/floors for one cubed-sphere cell.
+//! \brief Metric velocity raise plus the deferred ceiling and floors for one cell. The
+//! caller loads d,m1,m2,m3,etot from the conserved array and writes m1,m2,m3,etot back.
 //!
 //! \param[in]     c        cos_cell, the angle between the two tangent basis vectors
 //! \param[in]     fv       dfl_fv for this cell (the density floor's d_old/dfloor)
@@ -68,33 +54,24 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
   g1new = 0.0;
   temp = -1.0;
   const Real det = 1.0 - c*c;
-  // v^i = g^{ij} m_j / rho, with the metric acting on the ANGULAR pair only
+  // contravariant velocity v^i = g^{ij} m_j / rho (metric acts on the angular pair)
   v1 = m1/d;
   v2 = (m2 - c*m3)/(d*det);
   v3 = (m3 - c*m2)/(d*det);
-  // KE = 0.5 rho g_ij v^i v^j = 0.5 m_i v^i, which is the cross-term-correct form.
+  // kinetic energy 0.5 rho g_ij v^i v^j = 0.5 m_i v^i
   Real ekin = 0.5*(m1*v1 + m2*v2 + m3*v3);
-  // <hydro>/dfloor_keep_velocity: ConsToPrim scaled this cell's momentum by
-  // fv = d_old/dfloor and raised rho to dfloor, so the kinetic energy it now carries is
-  // fv^3 of what it had.  The matching reduction of the TOTAL energy could not be made
-  // there -- the orthonormal e_k in the c2p is not the kinetic energy on this grid --
-  // so it is made here from the metric-correct ekin: KE_old = ekin/fv^3, and removing
-  // KE_old - ekin leaves the internal energy exactly where it was.
+  // dfloor_keep_velocity: ConsToPrim scaled the momentum by fv = d_old/dfloor, so remove
+  // the kinetic energy lost, KE_old - ekin = ekin*(1/fv^3 - 1), from the total energy
   if (keepv_) {
     if (fv > 0.0 && fv < 1.0) {
       etot -= ekin*(1.0/(fv*fv*fv) - 1.0);
     } else if (!(fv > 0.0)) {
-      etot -= ekin;     // the momentum was zeroed: remove all of it
+      etot -= ekin;     // momentum was zeroed
     }
   }
-  // <hydro>/vceil, the deferred half.  |v|^2 = g_ij v^i v^j = 2 KE/rho with the
-  // metric-correct kinetic energy formed above, which is the quantity ConsToPrim
-  // cannot build on this grid.  Scale the momentum by fs = vceil/|v| and remove
-  // (1 - fs^2) KE from the conserved total, so the INTERNAL energy below is exactly
-  // what it would have been.  Under <hydro>/vceil_thermalise the conserved total is
-  // left alone instead and the clipped kinetic energy lands in `eint` below; the
-  // floors that follow then run on that larger internal energy, exactly as they do in
-  // SingleC2P_GeneralHyd.  See EOS_Data::vceil_thermalise.
+  // velocity ceiling: scale the momentum by fs = vceil/|v| with |v|^2 = 2 KE/rho, and
+  // remove (1 - fs^2) KE from the total energy (or keep it as internal energy under
+  // vceil_thermalise)
   if (vceil_ > 0.0 && act_ && ekin > 0.0 && d > 0.0) {
     const Real vsq = 2.0*ekin/d;
     if (vsq > vceil_*vceil_) {
@@ -108,12 +85,7 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
     }
   }
   eint = etot - ekin;
-  // <hydro>/dfloor_keep_temperature, the deferred half.  ConsToPrim raised rho to
-  // dfloor from d_old = fv*dfloor and left the internal energy alone; scale it by fv
-  // here, once the metric kinetic energy (and the ceiling above) have fixed what the
-  // internal energy actually is.  fv = 1 in every cell the floor did not touch, and
-  // fv = 0 marks d_old <= 0, which keeps the old behaviour.  The energy floors below
-  // then run on the corrected value.
+  // dfloor_keep_temperature: scale the internal energy by fv = d_old/dfloor
   if (keept_) {
     if (fv > 0.0 && fv < 1.0) {
       eint *= fv;
@@ -121,26 +93,10 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
     }
   }
   bool mom_scaled = false;
-  // -----------------------------------------------------------------------------------
-  // RE-APPLY THE FLOORS.  ConsToPrim floored the state it inverted, but that state
-  // carried an ORTHONORMAL kinetic energy; the metric cross term above MOVES the
-  // internal energy, so a cell ConsToPrim left comfortably above the floor can land
-  // below it -- or below zero -- here.  Leaving that unfloored hands a non-positive
-  // internal energy straight to the tabulated inversion below, which is undefined
-  // there and returns NaN in T, p and Gamma_1; the NaN then leaves the cell through
-  // the reconstruction stencil and takes the whole grid down within ~100 cycles.
-  // The sequence deliberately mirrors SingleC2P_GeneralHyd, including its guard
-  // against inverting a non-positive energy.  NOTE the pressure floor alone is NOT
-  // sufficient under a tabulated EOS: at upper-atmosphere densities e(d,pfloor) lies
-  // far below the table's lowest temperature, so it is the TEMPERATURE floor that
-  // actually keeps the lookup in range.  The conserved state is updated in step,
-  // exactly as ConsToPrim updates cons when a floor fires, so the conserved energy
-  // cannot keep sinking and re-trip the floor on every cycle.
+  // Re-apply the floors to the internal energy corrected by the metric kinetic energy,
+  // updating the conserved state consistently (as in SingleC2P_GeneralHyd/IdealHyd).
   if (gen_) {
-    // share2-1031: the floors of SingleC2P_GeneralHyd (GeneralHydFloorsPost) on the
-    // metric-correct energy; own = true (the accounting, the conserved total and the
-    // kinetic payment are made here); the entropy floor is not applied on this path
-    // (sflr = false, as before)
+    // general EOS: energy/temperature floors of GeneralHydFloorsPost (no entropy floor)
     bool tclamped = false, efl_used = false, tfl_used = false, stale = false;
     bool floor_fired = false;
     Real fvk = 1.0;
@@ -157,8 +113,7 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
     }
     if (mom_scaled) { floored = true; }
   } else {
-    // share3-1031: the ideal floors of SingleC2P_IdealHyd (IdealFloorsPost); on this path
-    // only the pressure floor (tflr = sflr = false, as before)
+    // ideal EOS: pressure floor of IdealFloorsPost
     const Real eold = eint;
     bool efl_used = false, tfl_used = false;
     IdealFloorsPost<false>(eos_, d, 1.0/d, true, false, false, ekin, 0.0, eint, etot,

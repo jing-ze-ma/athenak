@@ -93,7 +93,7 @@ MeshBoundaryValues::~MeshBoundaryValues() {
 //! \fn void MeshBoundaryValues::InitializeBuffers
 //! \brief initialize each element of send/recv MeshBoundaryBuffers fixed-length arrays
 //!
-//! NOTE: order of vector elements is crucial and cannot be changed.  It must match
+//! NOTE: order of vector elements is crucial and cannot be changed. It must match
 //! order of boundaries in nghbr vector
 //! NOTE2: work here cannot be done in MeshBoundaryValues constructor since it calls pure
 //! virtual functions that only get instantiated when the derived classes are constructed
@@ -321,18 +321,18 @@ particles::ParticlesBoundaryValues::~ParticlesBoundaryValues() {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool CsSeamBlockendExtend
-//! \brief layoutbug-1103: <mesh>/cs_seam_blockend = clamp (default, the old halo) |
-//! extend.  The along-seam resample of the cubed-sphere halo (bvals_cc.cpp, bvals_fc.cpp)
-//! clamps its stencil to the SENDING MeshBlock's active range; at an interior block end on
-//! a seam -- only with more than one MeshBlock per panel side -- the ghost is then
+//! \brief <mesh>/cs_seam_blockend = clamp (default, the old halo) |
+//! extend. The along-seam resample of the cubed-sphere halo (bvals_cc.cpp, bvals_fc.cpp)
+//! clamps its stencil to the SENDING MeshBlock's active range; at an interior block end
+//! on a seam -- only with more than one MeshBlock per panel side -- the ghost is then
 //! extrapolated from that block where one block per panel interpolates, i.e. the answer
-//! depends on the MeshBlock layout at truncation level.  extend repeats the exchange once,
+//! depends on the MeshBlock layout at truncation level. extend repeats the exchange once,
 //! after it has completed, with the stencil allowed into the sender's own along-seam
 //! ghosts (same-panel copies), clamped to the PANEL: layout independent to round-off.
 //! prod1103 default (USER 11-03): extend on a FRESH start (recipe::NewDefaults) whenever
 //! a panel side has more than one MeshBlock and the key is not named; the value is
-//! recorded (GetOrAdd) so the run's restarts carry it.  A restart whose input lacks the
-//! key keeps clamp (bitwise); an explicit key always wins.  One MeshBlock per panel side:
+//! recorded (GetOrAdd) so the run's restarts carry it. A restart whose input lacks the
+//! key keeps clamp (bitwise); an explicit key always wins. One MeshBlock per panel side:
 //! no interior block end, extend is a no-op and the key stays clamp unless named.
 
 bool CsSeamBlockendExtend(MeshBlockPack *ppack, ParameterInput *pin) {

@@ -1,10 +1,14 @@
 //========================================================================================
-// AthenaXXX astrophysical plasma code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file coordinates.cpp
-//! \brief
+//! \brief Implementation of the Coordinates class: geometry of the curvilinear grids
+//! (cubed sphere, spherical polar), the metric velocity conversions on the cubed sphere,
+//! and the geometric source terms (GR, cubed sphere, spherical polar).
+
+#include <algorithm>
 #include <cmath>
 #include <iostream> // cout
 #include <string>
@@ -34,12 +38,12 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     area("area",1,1,1,1), areaedge("areae",1,1,1,1),
     dx1("dx1",1,1,1,1), dx2("dx2",1,1,1,1), dx3("dx3",1,1,1,1),
     x1v("x1v",1,1), x2v("x2v",1,1), x3v("x3v",1,1),
-    xx1f("xx1f",1,1), xx2f("xx2f",1,1), xx3f("xx3f",1,1), dxedge("dxe",1,1,1,1), dxface("dxf",1,1,1,1),
+    xx1f("xx1f",1,1), xx2f("xx2f",1,1), xx3f("xx3f",1,1), dxedge("dxe",1,1,1,1),
+    dxface("dxf",1,1,1,1),
     sin_cell("sin_cell",1,1,1), cos_cell("cos_cell",1,1,1),
     sin_face_xi("sin_face_xi",1,1,1), cos_face_xi("cos_face_xi",1,1,1),
     sin_face_eta("sin_face_eta",1,1,1), cos_face_eta("cos_face_eta",1,1,1),
     x_ov_rD("x_ov_rD",1,1,1,1), y_ov_rC("y_ov_rC",1,1,1,1), z_ov_rE("z_ov_rC",1,1,1,1) {
-        
   // defaults-1009 (user 10-09): sp_x2_periodic_image defaults ON on a FRESH run on a
   // theta-PERIODIC spherical-polar mesh (the only place it acts, BuildX2vRecon); a
   // restart whose file lacks the key and every other mesh keep the old default (off)
@@ -47,8 +51,8 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
       pmy_pack->pmesh->use_spherical_polar && pmy_pack->pmesh->multi_d &&
       pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic &&
       !pmy_pack->pmesh->use_grid_stretch_theta;
-  // Read only if <mhd> already exists: GetOrAdd would CREATE the block, and
-  // MeshBlockPack::AddPhysics decides which modules to build from which blocks exist.
+  // curvilinear source-term options, from <mhd> or <hydro> (read only from an existing
+  // block, since AddPhysics builds modules from the blocks present)
   if (pin->DoesBlockExist("mhd")) {
     cs_wellbalanced_src = pin->GetOrAddBoolean("mhd","cs_wellbalanced_src",false);
     sp_wellbalanced_src = pin->GetOrAddBoolean("mhd","sp_wellbalanced_src",false);
@@ -59,8 +63,6 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     sp_face_avg_terms = pin->GetOrAddInteger("mhd","sp_face_avg_terms",3);
     sp_x2_periodic_image = pin->GetOrAddBoolean("mhd","sp_x2_periodic_image",img_def);
   } else if (pin->DoesBlockExist("hydro")) {
-    // pure hydro: the same well-balanced source, through the same shared
-    // SrcTermsGnomonicEquiangleImpl -> SrcTermsCurvilinearWB path (is_mhd = false)
     cs_wellbalanced_src = pin->GetOrAddBoolean("hydro","cs_wellbalanced_src",false);
     sp_wellbalanced_src = pin->GetOrAddBoolean("hydro","sp_wellbalanced_src",false);
     sp_cart_polar_momentum = pin->GetOrAddBoolean("hydro","sp_cart_polar_momentum",
@@ -107,10 +109,8 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     Kokkos::realloc(y_ov_rC, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(z_ov_rE, nmb, ncells3, ncells2, ncells1);
   if (pmy_pack->pmesh->use_cubed_sphere) {
-    // The gnomonic angles depend on the two PANEL-TANGENTIAL axes only -- xi = x2 and
-    // eta = x3 -- so these are 3D arrays indexed (m,k,j), with no i (radial) extent.
-    // +1 in the STAGGERED direction: the xi-face arrays live on x2 faces and are written
-    // at j+1 for the last cell, the eta-face arrays on x3 faces and written at k+1.
+    // gnomonic trig depends on (xi, eta) only, indexed (m,k,j); face arrays are
+    // staggered in j (xi faces) or k (eta faces)
     Kokkos::realloc(sin_cell, nmb, ncells3, ncells2);
     Kokkos::realloc(cos_cell, nmb, ncells3, ncells2);
     Kokkos::realloc(sin_face_xi, nmb, ncells3, ncells2+1);
@@ -156,7 +156,7 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     CoordSphericalPolar();
   }
   }
-        
+
   // Check for relativistic dynamics
   // WGC: idea for handling new EOS
   is_dynamical_relativistic = (pin->DoesBlockExist("adm") || pin->DoesBlockExist("z4c"))
@@ -344,26 +344,12 @@ void Coordinates::CoordSrcTerms(const DvceArray5D<Real> &prim, const EOS_Data &e
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn GnomonicCornerOmega / GnomonicSolidAngle
-//! \brief EXACT solid angle of the gnomonic cell bounded by X = xl,xr and Y = yl,yr,
-//! where X = tan(xi) and Y = tan(eta).
-//!
-//! A cell of the equiangular cubed sphere is a spherical quadrilateral bounded by four
-//! GREAT circles (a curve of constant xi spans the plane through the origin containing
-//! (1,X,0) and (0,0,1)), so its area is the classical solid angle of a rectangular
-//! pyramid: one potential evaluated at the four corners.  Being a corner difference it
-//! TELESCOPES -- subdividing a cell gives sub-areas summing to the parent to round-off.
-//!
-//! That property is the whole point.  The midpoint form this replaces,
-//! dth_xi*dth_eta*sin_cell, is a perfectly good O(h^2) quadrature but is NOT additive
-//! across a refinement level: four fine faces overshoot their parent by ~3e-4 relative
-//! at nx2 = 32.  On a uniform grid that is invisible -- the radial momentum balance
-//! cancels identically for ANY area values, because the geometric source term is built
-//! as z_ov_rE = (area1r - area.x1f)/volume.  At a coarse/fine boundary it does not:
-//! conservative flux correction hands the coarse cell sum(A_fine*F), while its source
-//! term still uses A_coarse, and the leftover p*(sum(A_fine) - A_coarse)/V drives a
-//! spurious radial acceleration out of a state that ought to be exactly static.
-//! With the exact solid angle the two agree, and Omega cancels out of z_ov_rE entirely.
+//! \fn Real GnomonicCornerOmega, GnomonicSolidAngle
+//! \brief Exact solid angle of the gnomonic cell bounded by X = xl,xr and Y = yl,yr
+//! (X = tan(xi), Y = tan(eta)), as a difference of a corner potential. Unlike the
+//! midpoint form it is additive across refinement levels, so flux correction at
+//! coarse/fine boundaries stays consistent with the geometric source term.
+
 
 KOKKOS_INLINE_FUNCTION
 Real GnomonicCornerOmega(Real X, Real Y) {
@@ -520,8 +506,14 @@ void Coordinates::CoordSrcTerms(const DvceArray5D<Real> &prim,
   return;
 }
 
-void Coordinates::CoordGnomonicEquiangle() {
+//----------------------------------------------------------------------------------------
+//! \fn void Coordinates::CoordGnomonicEquiangle
+//! \brief Computes the geometry of the gnomonic equiangular cubed sphere (x1 radial,
+//! x2 = xi, x3 = eta): coordinate arrays, face areas, volumes, edge lengths, dual-mesh
+//! lengths and areas, the trig of the angle between the tangent basis vectors and the
+//! geometric source coefficients.
 
+void Coordinates::CoordGnomonicEquiangle() {
   auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &is = indcs.is; int &ie = indcs.ie;
@@ -530,21 +522,13 @@ void Coordinates::CoordGnomonicEquiangle() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   (void)ie; (void)je; (void)ke;
 
-  // AXES. x1 is the RADIAL direction, matching CoordSphericalPolar; the two
-  // panel-tangential angles are xi = x2 and eta = x3. See the note in mesh.hpp.
-  //
-  // Cover the GHOST zones too: leaving sin/cos_cell, the areas and the volume at zero in
-  // the ghosts breaks reconstruction and the momentum raise, both of which read them.
+  // x1 = radius, xi = x2, eta = x3 (see mesh.hpp). Geometry covers the ghost zones too.
   int &ng = indcs.ng;
   int n1m1 = indcs.nx1 + 2*ng - 1;
   int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
 
-  // THE RADIAL GRID STRETCH.  x1 is radial on this grid exactly as it is in spherical
-  // polar, so the SAME 1-D map applies -- it is a function of the radial coordinate
-  // alone and knows nothing about the angular grid, which is why it transplants
-  // unchanged.  Only use_grid_stretch_theta stays refused (mesh.cpp): theta is not a
-  // coordinate of this grid.
+  // radial grid stretch (same map as on the spherical-polar grid)
   const bool str_r_ = pmy_pack->pmesh->use_grid_stretch_r;
   const bool str_rp_ = pmy_pack->pmesh->use_grid_stretch_r_poly;
   const Real fstr_r_ = pmy_pack->pmesh->fStretchR;
@@ -553,17 +537,8 @@ void Coordinates::CoordGnomonicEquiangle() {
   Real cpoly_[NSTRETCH_R_POLY];
   for (int n=0; n<NSTRETCH_R_POLY; ++n) { cpoly_[n] = pmy_pack->pmesh->fStretchRPoly[n]; }
 
-  // THE 1-D COORDINATE ARRAYS.  They are ALLOCATED for the cubed sphere (the constructor
-  // guard covers both curvilinear grids) but were never FILLED here, so every consumer
-  // read ZEROS.  That is not a quiet inaccuracy: the hot-Jupiter pgen's hydrostatic outer
-  // boundary forms (x1f[i+1] - x1v[i])/(x1f[i+1] - x1f[i]), which is 0/0, and it turned
-  // the entire domain to NaN in ONE cycle while the run reported a normal exit.
-  //
-  // x1 is the RADIUS, exactly as in CoordSphericalPolar, so it gets the same volume-
-  // centroid definition (Mignone 2014) and the two grids agree cell for cell.  x2 and x3
-  // are the PANEL coordinates on [-1,1] and are NOT angles -- anything that needs an
-  // angle must go through the panel chart, because the direction depends on which panel
-  // the cell is on.
+  // 1-D coordinate arrays: x1 is the radius with the volume-centroid centre (as in
+  // CoordSphericalPolar); x2 and x3 are the panel coordinates (not angles)
   {
     auto x1v_ = x1v;  auto xx1f_ = xx1f;
     auto x2v_ = x2v;  auto xx2f_ = xx2f;
@@ -629,18 +604,11 @@ void Coordinates::CoordGnomonicEquiangle() {
   auto z_ov_rE_ = z_ov_rE;
   par_for("cscoord", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-
-    // --- radial (x1) ---
-    // With a single radial cell CellCenterX/LeftEdgeX return the midpoint and the two
-    // ends
-    // of [x1min,x1max], i.e. a shell of finite thickness. Do NOT collapse this to
-    // r_l = r_r: every face area below carries a factor (r_r^2 - r_l^2) and the volume a
-    // factor (r_r^3 - r_l^3), so a zero-thickness shell makes them identically zero and
-    // x_ov_rD / y_ov_rC / z_ov_rE then divide by that zero.
+    // radial (x1) faces and centre
     Real r_c = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
     Real r_l = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
     Real r_r = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    // the radial stretch, applied exactly as CoordSphericalPolar applies it
+    // radial stretch
     if (str_r_) {
       StretchR(fstr_r_, rmin_, rmax_, r_c);
       StretchR(fstr_r_, rmin_, rmax_, r_l);
@@ -650,12 +618,10 @@ void Coordinates::CoordGnomonicEquiangle() {
       StretchRPoly(cpoly_, rmin_, rmax_, r_l);
       StretchRPoly(cpoly_, rmin_, rmax_, r_r);
     }
-    // the cell CENTRE is the volume centroid of the shell, exactly as x1v stores it and
-    // as CoordSphericalPolar uses it for every radial length below; the stretch-mapped
-    // midpoint computed above is not where a cell value lives
+    // cell centre at the volume centroid of the shell
     r_c = RadialCentroid(r_l, r_r);
 
-    // --- angles: xi on x2, eta on x3 ---
+    // angles: xi on x2, eta on x3
     Real &x2min = size.d_view(m).x2min; Real &x2max = size.d_view(m).x2max;
     Real &x3min = size.d_view(m).x3min; Real &x3max = size.d_view(m).x3max;
     Real xi   = M_PI/4.0 * CellCenterX(j-js, indcs.nx2, x2min, x2max);
@@ -696,50 +662,44 @@ void Coordinates::CoordGnomonicEquiangle() {
       cos_face_eta_(m,k+1,j) = - x * yr / (C * Dr);
     }
 
-    // --- angular face widths ---
-    Real dth_xi = acos((1.0 + xl*xr + y*y) / sqrt(1.0 + xl*xl + y*y) / sqrt(1.0 + xr*xr + y*y));
-    Real dth_xil = acos((1.0 + xl*xr + yl*yl) / sqrt(1.0 + xl*xl + yl*yl) / sqrt(1.0 + xr*xr + yl*yl));
-    Real dth_xir = acos((1.0 + xl*xr + yr*yr) / sqrt(1.0 + xl*xl + yr*yr) / sqrt(1.0 + xr*xr + yr*yr));
-    Real dth_eta = acos((1.0 + x*x + yl*yr) / sqrt(1.0 + x*x + yl*yl) / sqrt(1.0 + x*x + yr*yr));
-    Real dth_etal = acos((1.0 + xl*xl + yl*yr) / sqrt(1.0 + xl*xl + yl*yl) / sqrt(1.0 + xl*xl + yr*yr));
-    Real dth_etar = acos((1.0 + xr*xr + yl*yr) / sqrt(1.0 + xr*xr + yl*yl) / sqrt(1.0 + xr*xr + yr*yr));
+    // angular face widths
+    Real dth_xi = acos((1.0 + xl*xr + y*y) / sqrt(1.0 + xl*xl + y*y)
+                    / sqrt(1.0 + xr*xr + y*y));
+    Real dth_xil = acos((1.0 + xl*xr + yl*yl) / sqrt(1.0 + xl*xl + yl*yl)
+                    / sqrt(1.0 + xr*xr + yl*yl));
+    Real dth_xir = acos((1.0 + xl*xr + yr*yr) / sqrt(1.0 + xl*xl + yr*yr)
+                    / sqrt(1.0 + xr*xr + yr*yr));
+    Real dth_eta = acos((1.0 + x*x + yl*yr) / sqrt(1.0 + x*x + yl*yl)
+                    / sqrt(1.0 + x*x + yr*yr));
+    Real dth_etal = acos((1.0 + xl*xl + yl*yr) / sqrt(1.0 + xl*xl + yl*yl)
+                    / sqrt(1.0 + xl*xl + yr*yr));
+    Real dth_etar = acos((1.0 + xr*xr + yl*yr) / sqrt(1.0 + xr*xr + yl*yl)
+                    / sqrt(1.0 + xr*xr + yr*yr));
 
-    // --- radial faces (x1) ---
-    // EXACT solid angle, not dth_xi*dth_eta*sin_cell: only the exact form is additive
-    // across a refinement level.  See GnomonicSolidAngle above.
+    // radial faces (x1): exact solid angle, additive across refinement levels
     const Real domega = GnomonicSolidAngle(xl, xr, yl, yr);
     area_.x1f(m,k,j,i) = SQR(r_l) * domega;
     Real area1r = SQR(r_r) * domega;
     if (i == n1m1) area_.x1f(m,k,j,i+1) = area1r;
 
-    // --- xi faces (x2) ---
+    // xi faces (x2)
     area_.x2f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_etal;
     Real area2r = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_etar;
     if (j == n2m1) area_.x2f(m,k,j+1,i) = area2r;
 
-    // --- eta faces (x3) ---
+    // eta faces (x3)
     area_.x3f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_xil;
     Real area3r = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_xir;
     if (k == n3m1) area_.x3f(m,k+1,j,i) = area3r;
 
-    // --- volume_ (exact solid angle x exact radial shell) ---
+    // volume (exact solid angle x radial shell)
     volume_(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l) * domega;
     dx1_(m,k,j,i) = r_r - r_l;
     dx2_(m,k,j,i) = r_c * dth_xi;
     dx3_(m,k,j,i) = r_c * dth_eta;
 
-    // --- edge lengths, consumed by the curvilinear CT update in mhd_ct.cpp -------------
-    // Without these the CT branch multiplies every EMF by an uninitialised (zero) edge
-    // length, so B is left exactly unchanged and the field silently never evolves.
-    // Each edge takes its length from the SAME arc the adjoining face area uses, so the
-    // two stay consistent by construction:
-    //   x1e is radial, so it is just r_r - r_l and depends on neither angle;
-    //   x2e runs along xi  and is evaluated at an ETA face, hence dth_xi{l,r} -- the same
-    //     arcs that give area_.x3f;
-    //   x3e runs along eta and is evaluated at a XI  face, hence dth_eta{l,r} -- the same
-    //     arcs that give area_.x2f.
-    // The i / j / k == n*m1 clauses fill the far edge of the last cell, exactly as
-    // CoordSphericalPolar does.
+    // edge lengths for the CT update, from the same arcs as the adjoining face areas:
+    // x1e radial, x2e along xi at an eta face, x3e along eta at a xi face
     dxedge_.x1e(m,k,j,i) = r_r - r_l;
     if (j == n2m1) dxedge_.x1e(m,k,j+1,i) = r_r - r_l;
     if (k == n3m1) dxedge_.x1e(m,k+1,j,i) = r_r - r_l;
@@ -755,21 +715,13 @@ void Coordinates::CoordGnomonicEquiangle() {
     if (j == n2m1) dxedge_.x3e(m,k,j+1,i) = r_l * dth_etar;
     if (i == n1m1 && j == n2m1) dxedge_.x3e(m,k,j+1,i+1) = r_r * dth_etar;
 
-    // --- DUAL mesh: edge-centred areas and centre-to-centre lengths ------------------
-    // Consumed by the resistive current density (diffusion/current_density.hpp), which
-    // applies Stokes' theorem on the loop joining the four cell CENTRES around an edge.
-    // Every side of that loop passes through a face centre, so its length is the
-    // centre-to-centre distance stored in dxface, and the area it encloses is areaedge_.
-    // The x1 loop lies in the tangent surface, where the two basis vectors are NOT
-    // orthogonal, so its area carries the sin of the angle between them -- exactly as
-    // area_.x1f does. The x2 and x3 loops each contain rhat, which IS orthogonal to both
-    // tangent directions, so they carry no such factor.
+    // dual mesh: edge-centred areas (areaedge) and centre-to-centre lengths (dxface) of
+    // the loop joining the four cell centres around an edge, used by the current density.
+    // The x1 loop lies in the tangent surface and carries the sin of the angle between
+    // the basis vectors; the x2 and x3 loops contain rhat and do not.
     Real r_cm = CellCenterX(i-1-is, indcs.nx1, size.d_view(m).x1min,
                                             size.d_view(m).x1max);
-    // the SAME radial stretch r_c received above: with it left out, dxface.x1f and the
-    // x2e/x3e loop areas mixed a stretched centre with an unstretched one, and on the
-    // production stretch the centre-to-centre length even changed sign near the top
-    // (anti-diffusive resistive EMF; cs_test iprob=11 + use_grid_stretch_r_poly blew up)
+    // radial centre-to-centre lengths use the stretched centroids
     Real r_lm = LeftEdgeX(i-1-is, indcs.nx1, size.d_view(m).x1min,
                                              size.d_view(m).x1max);
     if (str_r_) {
@@ -777,7 +729,7 @@ void Coordinates::CoordGnomonicEquiangle() {
     } else if (str_rp_) {
       StretchRPoly(cpoly_, rmin_, rmax_, r_lm);
     }
-    r_cm = RadialCentroid(r_lm, r_l);   // the centroid of cell i-1, as x1v(i-1) is
+    r_cm = RadialCentroid(r_lm, r_l);   // centroid of cell i-1
     Real xim  = M_PI/4.0 * CellCenterX(j-1-js, indcs.nx2, x2min, x2max);
     Real etam = M_PI/4.0 * CellCenterX(k-1-ks, indcs.nx3, x3min, x3max);
     Real xm = tan(xim);
@@ -805,8 +757,7 @@ void Coordinates::CoordGnomonicEquiangle() {
       areaedge_.x3e(m,k,j,i) = 0.5*(SQR(r_c) - SQR(r_cm)) * arc_xi(xm, x, y);
     }
 
-    // Geometric coefficients consumed by SrcTermsGnomonicEquiangle. z_ov_rE is the RADIAL
-    // one, matching its meaning in CoordSphericalPolar/SrcTermsSphericalPolar.
+    // geometric source coefficients for SrcTermsGnomonicEquiangle (z_ov_rE is radial)
     x_ov_rD_(m,k,j,i) = (area2r * sin_face_xir
                         - area_.x2f(m,k,j,i) * sin_face_xi_(m,k,j)) / volume_(m,k,j,i);
     y_ov_rC_(m,k,j,i) = (area3r * sin_face_etar
@@ -816,36 +767,13 @@ void Coordinates::CoordGnomonicEquiangle() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Coordinates::GnomonicEquiangleRaiseVel
-//! \brief Recompute the primitive velocity and internal energy from the conserved state
-//! on the cubed sphere, using the metric of the non-orthogonal gnomonic tangent basis.
-//!
-//! WHY THIS EXISTS. On the cubed sphere the two angular basis vectors are unit vectors
-//! separated by an angle theta with cos(theta) = cos_cell = -xy/(CD), so the metric on
-//! that basis is g = [[1, c],[c, 1]] and is NOT the identity. The rest of the scheme is
-//! built on a consistent split:
-//!   * GnomonicEquianglePrimFaceX* rotate w0's velocity into a locally ORTHONORMAL frame
-//!     before the Riemann solve, treating (IVX,IVY) as CONTRAVARIANT components v^1, v^2;
-//!   * GnomonicEquiangleFluxX* rotate the returned flux back and then LOWER the index, so
-//!     what the update accumulates in u0(IM1,IM2) is the COVARIANT momentum rho*v_i;
-//!   * SrcTermsGnomonicEquiangle reads w0 as contravariant and forms v_i = v^i + c v^j
-//!     itself, i.e. it agrees with both of the above.
-//! The generic EOS does not, and cannot: SingleC2P_IdealHyd sets v = m/rho and subtracts
-//! a kinetic energy 0.5*(m.m)/rho, both of which assume an orthonormal basis. Applying it
-//! unchanged leaves the primitive velocity holding COVARIANT components where every
-//! consumer expects contravariant ones, and the internal energy short by the cross term
-//! rho c v^1 v^2. The resulting scheme is inconsistent, not merely inaccurate: a rigid
-//! rotation, which is an exact steady solution of the Euler equations, drifts by an
-//! amount that does NOT decrease under grid refinement.
-//!
-//! This runs immediately after ConsToPrim and overwrites what it wrote for IVX/IVY/IVZ
-//! and IEN. Density and the scalars are left exactly as ConsToPrim left them. The ENERGY
-//! FLOORS are re-applied here rather than inherited: ConsToPrim floored an internal
-//! energy computed with an orthonormal kinetic energy, and the metric cross term added
-//! below moves it, so the floor has to be retested against the corrected value (and u0
-//! updated to match). See the note at the floor itself.
-//! Non-relativistic ideal/general hydro only -- the relativistic inversions are coupled
-//! and would need the metric inside the root find, not after it.
+//! \fn void Coordinates::GnomonicEquiangleRaiseVel
+//! \brief Recomputes the contravariant primitive velocity and the internal energy from
+//! the covariant conserved momentum on the cubed sphere, using the metric
+//! g = [[1, c],[c, 1]] of the non-orthogonal gnomonic tangent basis (c = cos_cell).
+//! Runs after ConsToPrim and overwrites IVX/IVY/IVZ and IEN; the energy floors and the
+//! velocity ceiling are re-applied to the corrected internal energy.
+//! Non-relativistic ideal/general hydro only.
 
 void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
     DvceArray5D<Real> &w0, const EOS_Data &eos_data, const DvceArray5D<Real> &wder,
@@ -866,9 +794,8 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
   auto wder_ = wder;
   auto wtemp_ = wtemp;
 
-  // ISOTHERMAL EOS: there is no energy slot (IEN is out of range in u0 and w0) and no
-  // energy floor, so only the velocity is raised with the metric.  A separate kernel, so
-  // that the ideal/general kernels below are compiled exactly as before.
+  // isothermal EOS: no energy, only the velocity is raised
+
   if (!eos_data.is_ideal) {
     par_for("cs_raisev_iso", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -884,13 +811,8 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
     return;
   }
 
-  // THE LEGACY KERNEL.  See the note on EOS_Data::floors_legacy: with no floor switch
-  // enabled the kernel below is algebraically the same as this one, but not bitwise --
-  // hoisting the kinetic energy, moving the w0 writes and turning the par_for into a
-  // parallel_reduce change how the device compiler contracts the expressions.  This copy
-  // is kept identical to the pre-switch version so that such a run is reproduced exactly.
-  // Any change to the floors below that is meant to apply by DEFAULT has to be made here
-  // too.
+  // default kernel when no floor switch is enabled (EOS_Data::floors_legacy): kept
+  // separate to preserve its floating-point results
   if (eos_data.floors_legacy) {
     par_for("cs_raisev", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -900,30 +822,17 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
       const Real m1 = u0(m,IM1,k,j,i);   // radial: orthogonal to both angles
       const Real m2 = u0(m,IM2,k,j,i);   // xi
       const Real m3 = u0(m,IM3,k,j,i);   // eta
-      // v^i = g^{ij} m_j / rho, with the metric acting on the ANGULAR pair only
+      // contravariant velocity v^i = g^{ij} m_j / rho
       const Real v1 = m1/d;
       const Real v2 = (m2 - c*m3)/(d*det);
       const Real v3 = (m3 - c*m2)/(d*det);
       w0(m,IVX,k,j,i) = v1;
       w0(m,IVY,k,j,i) = v2;
       w0(m,IVZ,k,j,i) = v3;
-      // KE = 0.5 rho g_ij v^i v^j = 0.5 m_i v^i, which is the cross-term-correct form.
+      // kinetic energy 0.5 m_i v^i
       Real eint = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3);
-      // ---------------------------------------------------------------------------------
-      // RE-APPLY THE FLOORS.  ConsToPrim floored the state it inverted, but that state
-      // carried an ORTHONORMAL kinetic energy; the metric cross term above MOVES the
-      // internal energy, so a cell ConsToPrim left comfortably above the floor can land
-      // below it -- or below zero -- here.  Leaving that unfloored hands a non-positive
-      // internal energy straight to the tabulated inversion below, which is undefined
-      // there and returns NaN in T, p and Gamma_1; the NaN then leaves the cell through
-      // the reconstruction stencil and takes the whole grid down within ~100 cycles.
-      // The sequence deliberately mirrors SingleC2P_GeneralHyd, including its guard
-      // against inverting a non-positive energy.  NOTE the pressure floor alone is NOT
-      // sufficient under a tabulated EOS: at upper-atmosphere densities e(d,pfloor) lies
-      // far below the table's lowest temperature, so it is the TEMPERATURE floor that
-      // actually keeps the lookup in range.  u0 is updated in step, exactly as ConsToPrim
-      // updates cons when a floor fires, so the conserved energy cannot keep sinking and
-      // re-trip the floor on every cycle.
+      // re-apply the floors to the internal energy corrected by the metric kinetic
+      // energy (as in SingleC2P_GeneralHyd), updating u0 consistently
       if (gen_) {
         Real temp = -1.0, pnew = 0.0, g1new = 0.0;
         const bool e_positive = (eint > 0.0);
@@ -957,22 +866,11 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
     return;
   }
 
-  // see the dfloor_keep_velocity note at the kinetic energy below
+  // density-floor corrections and velocity ceiling that need the metric kinetic energy
   const bool keepv_ = eos_data.dfloor_keep_velocity && eos_data.defer_cons_floors;
-  // <hydro>/dfloor_keep_temperature, deferred for the same reason: the internal energy
-  // is E minus the METRIC kinetic energy, which only this routine can form.
   const bool keept_ = eos_data.dfloor_keep_temperature && eos_data.defer_cons_floors;
-  // <hydro>/vceil: the velocity ceiling is applied HERE on the cubed sphere, for the
-  // same reason the density floor's energy correction is -- |v| and the kinetic energy
-  // are the METRIC ones and ConsToPrim cannot form them.  See the note on EOS_Data::vceil
-  // and the block at the ceiling itself below.
   const Real vceil_ = eos_data.vceil;
-  // ...and only in ACTIVE cells.  This kernel is called over a range that includes the
-  // ghost zones, and a ghost filled by a boundary condition can carry a velocity the
-  // interior never has (the red-giant open ghosts do: ~8000 firings over 2000 cycles on
-  // a star whose active max |v| is 20x below the ceiling).  Clipping those is pointless
-  // -- the ghosts are overwritten on the next exchange -- and it makes the eos_vceil
-  // counter read as an event when nothing happened.
+  // the ceiling acts in active cells only (ghosts are overwritten by the next exchange)
   auto &aidx = pmy_pack->pmesh->mb_indcs;
   const int ais = aidx.is, aie = aidx.ie;
   const int ajs = aidx.js, aje = aidx.je;
@@ -980,25 +878,18 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
   auto dflfv_ = (pmy_pack->phydro != nullptr) ? pmy_pack->phydro->dfl_fv
                                               : DvceArray4D<Real>("cs_fv_dm",1,1,1,1);
 
-  // The energy the floors below CREATE is summed out of the kernel: on the cubed sphere
-  // this routine, not ConsToPrim, is where the energy floor is actually applied (see
-  // EOS_Data::defer_cons_floors), so it is the only place that number exists.
+  // energy created by the floors (applied here on the cubed sphere, see
+  // EOS_Data::defer_cons_floors)
   Real efloor_de_ = 0.0;
-  // the energy the velocity ceiling clipped, which on the cubed sphere is likewise only
-  // formed here: see EventCounters::vceil_de
+  // energy removed by the velocity ceiling (EventCounters::vceil_de)
   Real vceil_de_ = 0.0;
   int nceilv_ = 0;
-  // <hydro>/efloor_as_tfloor fires HERE on the cubed sphere, for the same reason the
-  // energy floor does (EOS_Data::defer_cons_floors), so this is where it is counted.
+  // count of cells where efloor_as_tfloor rebuilt e from T
   int ntset_ = 0;
   const int nkji = (ku - kl + 1)*(ju - jl + 1)*(iu - il + 1);
   const int nji = (ju - jl + 1)*(iu - il + 1);
   const int ni = (iu - il + 1);
-  // d6fast6-1113: on HIP LaunchBounds<256, 2> (the default 1024-thread bound capped the
-  // body at 128 VGPRs: 968 B/lane of scratch, 274 spilled VGPRs).  The two Real sums keep
-  // their order only if the launch shape does: Kokkos picks the block size from the
-  // register use, so the shape (256-thread blocks, 4096 of them on the HG deck, as
-  // before) was checked in rocprofv3 and the floor-energy sums compared bit for bit.
+  // HIP: LaunchBounds<256, 2> avoids register spills of the default 1024-thread bound
 #if defined(KOKKOS_ENABLE_HIP)
   using RvPol = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>;
 #else
@@ -1011,19 +902,14 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
     const int k = (idx - m*nkji)/nji + kl;
     const int j = (idx - m*nkji - (k - kl)*nji)/ni + jl;
     const int i = (idx - m*nkji - (k - kl)*nji - (j - jl)*ni) + il;
-    // THE PER-CELL BODY LIVES IN coordinates/gnomonic_raisevel.hpp, so that the FOFC
-    // floor-TEST pass can run exactly this arithmetic on its trial state (see the note
-    // there and Hydro::FOFC).  The loads and stores stay here: m1..m3 and etot are
-    // written back unconditionally, which is bit-for-bit what the in-line version did
-    // (it wrote them only when something fired, and when nothing fires the locals still
-    // hold the bits that were loaded).
+    // per-cell metric inversion, floors and ceiling (gnomonic_raisevel.hpp)
     const Real c = cos_cell_(m,k,j);
     const Real d = u0(m,IDN,k,j,i);
     Real m1 = u0(m,IM1,k,j,i);   // radial: orthogonal to both angles
     Real m2 = u0(m,IM2,k,j,i);   // xi
     Real m3 = u0(m,IM3,k,j,i);   // eta
     Real etot = u0(m,IEN,k,j,i);
-    // ...and only in ACTIVE cells: see the note on act_ above.
+    // ceiling only in active cells
     const bool act_ = (i >= ais && i <= aie && j >= ajs && j <= aje &&
                        k >= aks && k <= ake);
     Real v1, v2, v3, eint, pnew, g1new, temp, de, vde;
@@ -1060,29 +946,11 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Coordinates::GnomonicEquiangleRaiseVelMHD
-//! \brief The MHD counterpart of GnomonicEquiangleRaiseVel: it does everything that
-//! routine does, and additionally puts the CELL-CENTRED FIELD into an orthonormal frame
-//! and subtracts the correct magnetic energy.
-//!
-//! WHY THE FIELD NEEDS THIS TOO. b0.x*f holds the flux density B.nhat through its own
-//! face -- the convention forced by the curvilinear CT update in mhd_ct.cpp, which uses
-//! area/dxedge -- so the plain face average that ConsToPrim forms is
-//! (B.rhat, B.nhat_xi, B.nhat_eta). Those three directions are NOT mutually orthogonal:
-//! nhat_xi.nhat_eta = -c. Summing their squares therefore does not give |B|^2, and the
-//! error is O(1) near a panel corner where c is largest. Every consumer that squares and
-//! sums bcc -- the magnetic energy here, PrimToCons, the fast speed in mhd_newdt -- is
-//! wrong by that amount.
-//!
-//! The fix is to store bcc in the ORTHONORMAL frame {rhat, e_xi, (e_eta - c e_xi)/s}
-//! instead, which costs one rotation of a single component and makes every one of those
-//! sums correct with no further change. It also SIMPLIFIES the flux path: the x1 and x3
-//! sweeps then need no field rotation at all, and only the x2 sweep does.
-//!
-//! Recomputing bcc from the faces rather than transforming what ConsToPrim wrote keeps
-//! this idempotent. As in the hydro version, the floors are left exactly as ConsToPrim
-//! applied them -- it tested them against an internal energy that lacked both the metric
-//! cross term and the corrected magnetic energy.
+//! \fn void Coordinates::GnomonicEquiangleRaiseVelMHD
+//! \brief MHD version of GnomonicEquiangleRaiseVel. In addition, rebuilds the
+//! cell-centred field from the faces in the orthonormal frame
+//! {rhat, e_xi, (e_eta - c e_xi)/s}, since the face-normal triple
+//! (B.rhat, B.nhat_xi, B.nhat_eta) held in b0 is not orthogonal, and subtracts the corresponding magnetic energy.
 
 void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
     const DvceFaceFld4D<Real> &b0, DvceArray5D<Real> &bcc0, DvceArray5D<Real> &w0,
@@ -1092,17 +960,13 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto &cos_cell_ = cos_cell;
   auto &sin_cell_ = sin_cell;
-  // See the note in GnomonicEquiangleRaiseVel: a general EOS's cached p, Gamma_1 and T
-  // were solved for BEFORE this correction and are written nowhere else, so they have to
-  // be re-solved from the corrected internal energy.  Here the magnetic energy is also
-  // rebuilt, since ConsToPrim formed it from the NON-ORTHOGONAL face-normal triple.
+  // a general EOS re-solves p, Gamma_1 and T from the corrected internal energy, which
+  // also uses the magnetic energy of the orthonormal cell-centred field
   const bool gen_ = eos_data.IsGeneral();
   auto eos_ = eos_data;
   auto wder_ = wder;
   auto wtemp_ = wtemp;
-  // ISOTHERMAL EOS: no energy slot (IEN is out of range in u0 and w0), so only the
-  // orthonormal cell-centred field and the raised velocity are formed, with the same
-  // expressions as the kernel below; a separate kernel keeps that one unchanged.
+  // isothermal EOS (no energy): only the orthonormal field and the raised velocity
   if (!eos_data.is_ideal) {
     auto &x1v_i = x1v;
     auto &x1f_i = xx1f;
@@ -1126,29 +990,17 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
     });
     return;
   }
-  // On a STRETCHED radial grid the cell centre is not the midpoint of its two faces, so
-  // the radial field at the centre is a weighted interpolation, not the plain average --
-  // see CellCenteredRadialFld.  Only when the grid really is stretched: on a uniform one
-  // the weighted form differs from 0.5*(bl+br) only by round-off, and paying that would
-  // perturb every unstretched cubed-sphere answer in the last bits for nothing.
-  // x1v is the volume CENTROID, never the midpoint of the two faces, on every radial
-  // grid -- so the weighted form is the right one unconditionally, as on spherical polar
+  // radial field at the volume centroid by weighted face interpolation; ghosts behind a
+  // reflecting radial wall use mirror-consistent weights (CellCenteredRadialFldWall)
   const bool str_x1_ = true;
-  // ghosts behind a REFLECTING radial wall take mirror-consistent radial weights; see
-  // CellCenteredRadialFldWall
   auto &wbc_ = pmy_pack->pmb->mb_bcs;
   const int wis_ = pmy_pack->pmesh->mb_indcs.is, wie_ = pmy_pack->pmesh->mb_indcs.ie;
   auto &x1v_ = x1v;
   auto &x1f_ = xx1f;
 
-  // <mhd>/vceil: the velocity ceiling is applied HERE on the cubed sphere, for exactly
-  // the reason the hydro one is -- |v| and the kinetic energy are the METRIC ones and
-  // ConsToPrim cannot form them.  See the note on EOS_Data::vceil and the block in
-  // coordinates/gnomonic_raisevel_mhd.hpp.
+  // velocity ceiling on the metric |v| (applied here on the cubed sphere)
   const Real vceil_ = eos_data.vceil;
-  // ...and only in ACTIVE cells: this kernel runs over the ghost zones too, and a ghost
-  // filled by a boundary condition can carry a velocity the interior never has.  Same
-  // gate, same reason, as GnomonicEquiangleRaiseVel above.
+  // the ceiling acts in active cells only
   auto &aidx = pmy_pack->pmesh->mb_indcs;
   const int ais = aidx.is, aie = aidx.ie;
   const int ajs = aidx.js, aje = aidx.je;
@@ -1168,11 +1020,9 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
     const Real c = cos_cell_(m,k,j);
     const Real sn = sin_cell_(m,k,j);
 
-    // cell-centred field, then into the orthonormal frame. The eta slot already IS the
-    // third axis of that frame (B.(e_eta - c e_xi)/s = s B^eta), so only the xi slot
-    // moves: B.e_xi = B^xi + c B^eta = (b_xi + c b_eta)/s.
-    // x2/x3 stay plain averages: the panel coordinates are uniform (mesh.cpp refuses
-    // use_grid_stretch_theta), so a weighted form there would return the same number.
+    // cell-centred field in the orthonormal frame {rhat, e_xi, (e_eta - c e_xi)/s}: only
+    // the xi slot changes, B.e_xi = (b_xi + c b_eta)/s. x2/x3 are plain face averages
+    // (the panel coordinates are uniform).
     const bool rin_ = wbc_.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::reflect;
     const bool rout_ = wbc_.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect;
     const Real bx = str_x1_ ?
@@ -1187,9 +1037,7 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
     bcc0(m,IBY,k,j,i) = by;
     bcc0(m,IBZ,k,j,i) = bz;
 
-    // THE PER-CELL BODY LIVES IN coordinates/gnomonic_raisevel_mhd.hpp, so that the FOFC
-    // floor-TEST pass can run exactly this arithmetic on its trial state (see MHD::FOFC).
-    // The loads and stores stay here.
+    // per-cell metric inversion, floors and ceiling (gnomonic_raisevel_mhd.hpp)
     const Real d = u0(m,IDN,k,j,i);
     Real m1 = u0(m,IM1,k,j,i);   // radial: orthogonal to both angles
     Real m2 = u0(m,IM2,k,j,i);   // xi
@@ -1225,12 +1073,11 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void Coordinates::GnomonicCellCenteredB()
-//! \brief The cell-centred field of GnomonicEquiangleRaiseVelMHD and nothing else (same
-//! expressions, so bcc0 is bitwise what the full inversion would write).  Used by the
-//! intermediate RKG super-stages under <mhd>/rkg_lean: those stages change only the face
-//! field and the total energy, and the resistive energy fluxes read only bcc0, so the
-//! EOS inversion (twice per call under a general EOS) is not needed until the last one.
+//! \fn void Coordinates::GnomonicCellCenteredB
+//! \brief Cell-centred field of GnomonicEquiangleRaiseVelMHD only (same expressions), for
+//! the intermediate RKG super-stages (<mhd>/rkg_lean), which change only B and the total
+//! energy.
+
 
 void Coordinates::GnomonicCellCenteredB(const DvceFaceFld4D<Real> &b0,
     DvceArray5D<Real> &bcc0, const int il, const int iu, const int jl, const int ju,
@@ -1238,8 +1085,7 @@ void Coordinates::GnomonicCellCenteredB(const DvceFaceFld4D<Real> &b0,
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto &cos_cell_ = cos_cell;
   auto &sin_cell_ = sin_cell;
-  // ghosts behind a REFLECTING radial wall take mirror-consistent radial weights; see
-  // CellCenteredRadialFldWall
+  // ghosts behind a reflecting radial wall use mirror-consistent radial weights
   auto &wbc_ = pmy_pack->pmb->mb_bcs;
   const int wis_ = pmy_pack->pmesh->mb_indcs.is, wie_ = pmy_pack->pmesh->mb_indcs.ie;
   auto &x1v_ = x1v;
@@ -1262,10 +1108,9 @@ void Coordinates::GnomonicCellCenteredB(const DvceFaceFld4D<Real> &b0,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Coordinates::GnomonicEquiangleLowerMom
-//! \brief The inverse of GnomonicEquiangleRaiseVel: build the conserved state from
-//! primitives on the cubed sphere. Use this wherever a problem generator would otherwise
-//! call EquationOfState::PrimToCons, which assumes an orthonormal basis.
+//! \fn void Coordinates::GnomonicEquiangleLowerMom
+//! \brief Computes the conserved state from primitives on the cubed sphere (inverse of
+//! GnomonicEquiangleRaiseVel), lowering the velocity index with the metric.
 
 void Coordinates::GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0,
     DvceArray5D<Real> &u0, const int il, const int iu, const int jl, const int ju,
@@ -1273,7 +1118,7 @@ void Coordinates::GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0,
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto &cos_cell_ = cos_cell;
 
-  // ISOTHERMAL EOS: no energy slot (IEN is out of range), so only d and the momentum
+  // isothermal EOS: only density and momentum
   bool iso_ = false;
   if (pmy_pack->phydro != nullptr) {
     iso_ = !pmy_pack->phydro->peos->eos_data.is_ideal;
@@ -1312,9 +1157,9 @@ void Coordinates::GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0,
   return;
 }
 
-// Hydro and MHD share one implementation; the MHD entry point differs only in adding the
-// Maxwell stress, so the two are kept in the same kernel rather than duplicated the way
-// SrcTermsSphericalPolar{Hydro,MHD} are.
+//----------------------------------------------------------------------------------------
+//! \fn void Coordinates::SrcTermsGnomonicEquiangle
+//! \brief Hydro geometric source terms on the cubed sphere.
 void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0,
     const DvceArray5D<Real> &wder, const DvceArray4D<Real> &pwb,
     const DvceFaceFld5D<Real> uflx,
@@ -1324,7 +1169,9 @@ void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0,
                                 uflx, eos_data, bdt, u0);
   return;
 }
-
+//----------------------------------------------------------------------------------------
+//! \fn void Coordinates::SrcTermsGnomonicEquiangleMHD
+//! \brief MHD geometric source terms on the cubed sphere.
 void Coordinates::SrcTermsGnomonicEquiangleMHD(const DvceArray5D<Real> &w0,
     const DvceArray5D<Real> &bcc0, const DvceArray5D<Real> &wder,
     const DvceArray4D<Real> &pwb,
@@ -1632,26 +1479,26 @@ void Coordinates::SrcTermsCurvilinearWB(const DvceArray5D<Real> &w0,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void Coordinates::SrcTermsGnomonicEquiangleImpl
+//! \brief Geometric source terms of the momentum equation on the cubed sphere, shared by
+//! hydro and MHD (is_mhd adds the Maxwell stress). Dispatches to SrcTermsCurvilinearWB
+//! when cs_wellbalanced_src is set.
 void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
     const DvceArray5D<Real> &bcc0, const bool is_mhd,
     const DvceArray5D<Real> &wder, const DvceArray4D<Real> &pwb,
     const bool use_wb_static, const DvceFaceFld5D<Real> uflx,
     const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
-
   auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &is = indcs.is; int &ie = indcs.ie;
   int &js = indcs.js; int &je = indcs.je;
   int &ks = indcs.ks; int &ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-    
+
   // by-value copy of the EOS, capturable in the device lambda below
   auto eos_ = eos_data;
-  // The live gas pressure is read from the derived-variable cache rather than recomputed:
-  // p(d,e) is a root find for a general EOS, and ConsToPrim has already evaluated it once
-  // for this very state. An ideal gas allocates no wder array, and (gamma-1)*e is free.
-  // This routine serves both Hydro and MHD, so it cannot pick the module's wder itself --
-  // a two-fluid run has both -- and takes it as an argument instead.
+  // gas pressure from the derived-variable cache (wder) for a general EOS, (gamma-1)*e
+  // for an ideal gas
   const bool gen_ = eos_.IsGeneral();
   auto &wder_ = wder;
   auto &bcc_ = bcc0;
@@ -1675,11 +1522,7 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
   auto xx1f_ = xx1f;
   par_for("cssrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      
-    // x1 is RADIAL; xi = x2 and eta = x3 are the panel-tangential angles.
-    // the STRETCHED faces, exactly as SrcTermsSphericalPolar{Hydro,MHD} take them:
-    // CellCenterX and size.dx1 are index-space quantities, and on the production stretch
-    // the factor below was off by 0.57x to 2.1x across the radial grid
+    // radial factors from the stretched faces
     const Real r_l = xx1f_(m,i);
     const Real r_r = xx1f_(m,i+1);
     const Real factor = (r_r-r_l)/(r_r+r_l);
@@ -1691,32 +1534,25 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
     Real pr = (!eos_.is_ideal) ? w0(m,IDN,k,j,i)*SQR(eos_.iso_cs)
               : gen_ ? wder_(m,IDPR,k,j,i)
               : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
-    // subtract the STATIC well-balanced background pressure, precomputed once by
-    // SetWbBackgroundPressure(): the flux path already had it removed (RemoveWbFlux), so
-    // leaving it in the geometric source would leave the two halves of the momentum RHS
-    // describing different states, and the background would no longer be balanced.  Same
-    // substitution as SrcTermsSphericalPolarHydro / SrcTermsCurvilinearWB.
+    // subtract the static well-balanced background pressure (also removed from the
+    // fluxes by RemoveWbFlux)
     if (wbs_) pr -= pwb_(m,k,j,i);
     Real rho = w0(m,IDN,k,j,i);
 
     Real sine = sin_cell_(m,k,j);
     Real cosine = cos_cell_(m,k,j);
     Real sine2 = SQR(sine);
-    // lower the index on the two ANGULAR components with g = [[1,c],[c,1]]
+    // lower the index of the angular components with g = [[1,c],[c,1]]
     Real v_2 = v2 + v3 * cosine;
     Real v_3 = v3 + v2 * cosine;
 
-    // MHD adds the Maxwell stress: T^ij = rho v^i v^j + (p + B^2/2) g^ij - B^i B^j, so
-    // every p that multiplies a metric derivative below becomes the TOTAL pressure and
-    // every Reynolds stress becomes Reynolds minus Maxwell. This is the same substitution
-    // that separates SrcTermsSphericalPolarMHD from ...Hydro.
+    // MHD: T^ij = rho v^i v^j + (p + B^2/2) g^ij - B^i B^j, so p becomes the total
+    // pressure and the Reynolds stress becomes Reynolds minus Maxwell
     Real ptot = pr;
     Real b_tsq = 0.0, bb_2 = 0.0, bb_3 = 0.0;
     if (mhd_) {
-      // bcc is the ORTHONORMAL triple (B.rhat, B.e_xi, B.(e_eta - c e_xi)/s) -- see
-      // GnomonicEquiangleRaiseVelMHD -- so |B|^2 really is the sum of squares. The
-      // Maxwell partners of rho*v3^2*sine2 and rho*v2^2*sine2 are (s*B^eta)^2 and
-      // (s*B^xi)^2, and B^eta = b3/s while s*B^xi = s*b2 - c*b3.
+      // bcc is the orthonormal triple (B.rhat, B.e_xi, B.(e_eta - c e_xi)/s), so |B|^2 is
+      // the sum of squares; B^eta = b3/s and s*B^xi = s*b2 - c*b3
       const Real b1 = bcc_(m,IBX,k,j,i);
       const Real b2 = bcc_(m,IBY,k,j,i);
       const Real b3 = bcc_(m,IBZ,k,j,i);
@@ -1726,15 +1562,13 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
       ptot += 0.5*(b1*b1 + b_tsq);
     }
 
-    // radial source: (A_out - A_in)/V * (p + angular kinetic energy), the same form as
-    // SrcTermsSphericalPolar's src1. For MHD the tangential Maxwell stress cancels all
-    // but the RADIAL magnetic pressure, leaving z_ov_rE*(p + B_r^2/2 + rho|v_t|^2/2).
+    // radial source z_ov_rE*(p + rho|v_t|^2/2), for MHD with p -> p + B_r^2/2
     Real src1 = z_ov_rE_(m,k,j,i) * (ptot + 0.5*(rho*(v2*v_2+v3*v_3) - b_tsq));
     Real src2 = x_ov_rD_(m,k,j,i) * (ptot + rho*SQR(v3)*sine2 - bb_3);
     Real src3 = y_ov_rC_(m,k,j,i) * (ptot + rho*SQR(v2)*sine2 - bb_2);
 
-    // the radial-face flux of each ANGULAR momentum, which the r-dependence of the
-    // angular basis converts into a source
+    // radial-face flux of each angular momentum, converted into a source by the
+    // r-dependence of the angular basis
     src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)
              + uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
     src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)
@@ -1743,12 +1577,10 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
     u0(m,IM1,k,j,i) += src1*bdt;
     u0(m,IM2,k,j,i) += src2*bdt;
     u0(m,IM3,k,j,i) += src3*bdt;
-    
   });
 }
 
 void Coordinates::CoordSphericalPolar() {
-
   auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
@@ -1829,7 +1661,6 @@ void Coordinates::CoordSphericalPolar() {
   for (int n=0; n<8; ++n) tplat[n] = pmy_pack->pmesh->fStretchThetaPlat[n];
   par_for("spcoord", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,//ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-
     // --- radial ---
     Real r_c, r_l, r_r;
     r_c  = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
@@ -1881,7 +1712,7 @@ void Coordinates::CoordSphericalPolar() {
     Real sinc   = fabs(sin(theta));
     Real cosl   = cos(thetal);
     Real cosr   = cos(thetar);
-      
+
     if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) {
       if (j == js) {
         thetal = 0.0;
@@ -1910,19 +1741,19 @@ void Coordinates::CoordSphericalPolar() {
         cosl = -1.0;
       }
     }
-      
+
     // --- radial edge lengths ---
     dxedge_.x1e(m,k,j,i) = r_r - r_l;
     if (j == n2m1) dxedge_.x1e(m,k,j+1,i) = r_r - r_l;
     if (k == n3m1) dxedge_.x1e(m,k+1,j,i) = r_r - r_l;
     if (j == n2m1 && k == n3m1) dxedge_.x1e(m,k+1,j+1,i) = r_r - r_l;
-      
+
     // --- theta edge lengths ---
     dxedge_.x2e(m,k,j,i) = r_l * (thetar-thetal);
     if (i == n1m1) dxedge_.x2e(m,k,j,i+1) = r_r * (thetar-thetal);
     if (k == n3m1) dxedge_.x2e(m,k+1,j,i) = r_l * (thetar-thetal);
     if (i == n1m1 && k == n3m1) dxedge_.x2e(m,k+1,j,i+1) = r_r * (thetar-thetal);
-      
+
     // --- phi edge lengths ---
     dxedge_.x3e(m,k,j,i) = r_l * sinl * (phir-phil);
     if (i == n1m1) dxedge_.x3e(m,k,j,i+1) = r_r * sinl * (phir-phil);
@@ -1953,15 +1784,15 @@ void Coordinates::CoordSphericalPolar() {
     // --- volume ---
 
     volume_(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l) * fabs(cosl-cosr) * (phir-phil);
-      
+
     // Mignone 2014 correction
     x1v_(m,i) = 1.0/4.0*(SQR(r_l/r_r)+1.0) / (1.0/3.0*(SQR(r_l/r_r)+(r_l/r_r)+1.0)) *(r_r+r_l); // 1.0/4.0*(SQR(SQR(r_r))-SQR(SQR(r_l))) / (1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l)); //0.5*(r_r+r_l); //
-    x2v_(m,j) = -((sintr-thetar*cosr) - (sintl-thetal*cosl)) / (cosr-cosl); // 0.5*(thetar+thetal); // 
+    x2v_(m,j) = -((sintr-thetar*cosr) - (sintl-thetal*cosl)) / (cosr-cosl); // 0.5*(thetar+thetal); //
     x3v_(m,k) = 0.5*(phir+phil);
     dx2_(m,k,j,i) = x1v_(m,i) * (thetar-thetal);
     dx3_(m,k,j,i) = x1v_(m,i) * fabs(sin(x2v_(m,j))) * (phir-phil);
     dx1_(m,k,j,i) = r_r-r_l;
-      
+
     z_ov_rE_(m,k,j,i) = (area1r - area_.x1f(m,k,j,i)) / volume_(m,k,j,i);
     x_ov_rD_(m,k,j,i) = (area2r - area_.x2f(m,k,j,i)) / volume_(m,k,j,i);
     y_ov_rC_(m,k,j,i) = (sinr-sinl)/(sinr+sinl);
@@ -2317,14 +2148,13 @@ void Coordinates::SphericalPolarFaceAverageFluxes(DvceFaceFld5D<Real> &uflx,
 void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
     const DvceArray4D<Real> &pwb, const DvceFaceFld5D<Real> uflx,
     const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
-
   auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &is = indcs.is; int &ie = indcs.ie;
   int &js = indcs.js; int &je = indcs.je;
   int &ks = indcs.ks; int &ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
- 
+
   // by-value copy of the EOS, capturable in the device lambda below
   auto eos_ = eos_data;
   // The live gas pressure is read from the derived-variable cache rather than recomputed:
@@ -2354,11 +2184,10 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
   auto &mb_bcs_ = pmy_pack->pmb->mb_bcs;
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      
     Real r_l = xx1f_(m,i);
     Real r_r = xx1f_(m,i+1);
     Real factor = (r_r-r_l)/(r_r+r_l);
-      
+
     Real v1 = w0(m,IVX,k,j,i);
     Real v2 = w0(m,IVY,k,j,i);
     Real v3 = w0(m,IVZ,k,j,i);
@@ -2375,14 +2204,14 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
     }
     Real m_ii_h = pr + 0.5*rho*(v2*v2+v3*v3);
     Real m_pp = pr + rho*SQR(v3);
-      
+
     Real src1 = z_ov_rE_(m,k,j,i) * m_ii_h;
     Real src2 = x_ov_rD_(m,k,j,i) * m_pp;
     Real src3 = -y_ov_rC_(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area_.x2f(m,k,j,i)+uflx.x2f(m,IM3,k,j+1,i)*area_.x2f(m,k,j+1,i))/volume_(m,k,j,i);
-      
+
     src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
     src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM3,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
-      
+
     if (cart_ && (all_ ||
         (j == js && mb_bcs_.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
         (j == je && mb_bcs_.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar))) {
@@ -2391,7 +2220,6 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
     u0(m,IM1,k,j,i) += src1*bdt;
     u0(m,IM2,k,j,i) += src2*bdt;
     u0(m,IM3,k,j,i) += src3*bdt;
-    
   });
   if (cart_) {
     SrcTermsSphericalPolarCartRows(w0, DvceArray5D<Real>(), false, wder_, uflx, eos_data, bdt, u0);
@@ -2402,14 +2230,13 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
     const DvceArray5D<Real> &bcc0, const DvceArray4D<Real> &pwb,
     const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt,
     DvceArray5D<Real> &u0) {
-
   auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &is = indcs.is; int &ie = indcs.ie;
   int &js = indcs.js; int &je = indcs.je;
   int &ks = indcs.ks; int &ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-    
+
   // by-value copy of the EOS, capturable in the device lambda below
   auto eos_ = eos_data;
   // The live gas pressure is read from the derived-variable cache rather than recomputed:
@@ -2438,11 +2265,10 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
   auto &mb_bcs_ = pmy_pack->pmb->mb_bcs;
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      
     Real r_l = xx1f_(m,i);
     Real r_r = xx1f_(m,i+1);
     Real factor = (r_r-r_l)/(r_r+r_l);
-      
+
     Real v1 = w0(m,IVX,k,j,i);
     Real v2 = w0(m,IVY,k,j,i);
     Real v3 = w0(m,IVZ,k,j,i);
@@ -2460,14 +2286,14 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
     Real m_pp = pr + rho*SQR(v3);
     m_ii_h += 0.5*SQR(bcc0(m,IBX,k,j,i));
     m_pp += 0.5*( SQR(bcc0(m,IBX,k,j,i)) + SQR(bcc0(m,IBY,k,j,i)) - SQR(bcc0(m,IBZ,k,j,i)) );
-      
+
     Real src1 = z_ov_rE_(m,k,j,i) * m_ii_h;
     Real src2 = x_ov_rD_(m,k,j,i) * m_pp;
     Real src3 = -y_ov_rC_(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area_.x2f(m,k,j,i)+uflx.x2f(m,IM3,k,j+1,i)*area_.x2f(m,k,j+1,i))/volume_(m,k,j,i);
-      
+
     src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
     src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM3,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
-      
+
     if (cart_ && (all_ ||
         (j == js && mb_bcs_.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
         (j == je && mb_bcs_.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar))) {
@@ -2476,7 +2302,6 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
     u0(m,IM1,k,j,i) += src1*bdt;
     u0(m,IM2,k,j,i) += src2*bdt;
     u0(m,IM3,k,j,i) += src3*bdt;
-    
   });
   if (cart_) {
     SrcTermsSphericalPolarCartRows(w0, bcc0, true, wder_, uflx, eos_data, bdt, u0);

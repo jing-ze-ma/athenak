@@ -7,9 +7,9 @@
 //! \brief functions included in task lists to post/clear non-blocking MPI calls for
 //! Mesh variables. These are generic functions that work for both CC and FC variables.
 //!
-//! Note: InitFluxRecv() functions for flux correction step are specific to CC/FC vars,
-//! and are implemented in flux_correct_XX.cpp files respectively. The ClearFluxRecv()
-//! and ClearFluxSend() functions are generic and implemented below.
+//! Note: InitFluxRecv functions for flux correction step are specific to CC/FC vars,
+//! and are implemented in flux_correct_XX.cpp files respectively. The ClearFluxRecv
+//! and ClearFluxSend functions are generic and implemented below.
 //!
 //! Note2: task list functions for particle communication are all implemented in
 //! bvals_part.cpp file.
@@ -25,19 +25,19 @@
 #include "bvals.hpp"
 
 //----------------------------------------------------------------------------------------
-//! \fn  void MeshBoundaryValues::InitRecv
+//! \fn void MeshBoundaryValues::InitRecv
 //! \brief Posts non-blocking receives (with MPI) for boundary communications of vars.
 
 TaskStatus MeshBoundaryValues::InitRecv(const int nvars, const int vmask) {
 #if MPI_PARALLEL_ENABLED
-  // detfence-1020: the receive buffers are still READ by the previous exchange's unpack
+  // the receive buffers are still READ by the previous exchange's unpack
   // kernel (queued on the device stream, not yet run when the host gets here), and a
   // receive posted now lets an early neighbour's NEXT message (GPU-aware MPI writes the
   // device buffer directly) overwrite them first: the ghosts then take some of the next
-  // exchange's values.  Back-to-back exchanges of one boundary object with no host sync
+  // exchange's values. Back-to-back exchanges of one boundary object with no host sync
   // in between (the implicit Krylov / transverse halos) hit this at >= 12 ranks on
   // several nodes (global He giant, Viper 24 ranks: run-to-run differences from the
-  // first ic_rad relax pass).  Wait for the queued kernels before the first receive is
+  // first ic_rad relax pass). Wait for the queued kernels before the first receive is
   // posted; no arithmetic changes (bitwise the old binary whenever it was not raced).
   if (global_variable::nranks > 1) {Kokkos::fence();}
   int &nmb = pmy_pack->nmb_thispack;
@@ -103,7 +103,7 @@ TaskStatus MeshBoundaryValues::InitRecv(const int nvars, const int vmask) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void MeshBoundaryValues::ClearRecv
+//! \fn void MeshBoundaryValues::ClearRecv
 //! \brief Waits for all MPI receives associated with communcation of boundary variables
 //! to complete before allowing execution to continue
 
@@ -143,7 +143,7 @@ TaskStatus MeshBoundaryValues::ClearRecv() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void MeshBoundaryValues::ClearSend
+//! \fn void MeshBoundaryValues::ClearSend
 //! \brief Waits for all MPI sends associated with communcation of boundary variables
 //! to complete before allowing execution to continue
 
@@ -183,7 +183,7 @@ TaskStatus MeshBoundaryValues::ClearSend() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void MeshBoundaryValues::ClearFluxRecv
+//! \fn void MeshBoundaryValues::ClearFluxRecv
 //! \brief Waits for all MPI receives associated with communcation of boundary fluxes
 //! to complete before allowing execution to continue
 
@@ -212,9 +212,9 @@ TaskStatus MeshBoundaryValues::ClearFluxRecv() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void MeshBoundaryValues::ClearFluxSend
+//! \fn void MeshBoundaryValues::ClearFluxSend
 //! \brief Waits for all MPI sends associated with communcation of boundary fluxes to
-//!  complete before allowing execution to continue
+//! complete before allowing execution to continue
 
 TaskStatus MeshBoundaryValues::ClearFluxSend() {
   bool no_errors=true;

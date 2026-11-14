@@ -1,28 +1,15 @@
 #ifndef BVALS_CS_SEAM_STATES_HPP_
 #define BVALS_CS_SEAM_STATES_HPP_
 //========================================================================================
-// AthenaXXX astrophysical plasma code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file cs_seam_states.hpp
-//! \brief the cubed-sphere SHARED seam face states (csedge-1019 hydro, ucthshare-1102
-//! MHD), one copy for both modules.
-//!
-//! Each panel's OWN interior-side face state at its panel-seam faces -- the PLM of its
-//! edge cell over (ghost, edge, inner), exactly the reconstruction the sweep makes there
-//! -- is written into a face record (DvceFaceFld5D, x2f / x3f at the seam faces) and
-//! exchanged with a seam_raw MeshBoundaryValuesCC; the sweep then solves each seam face
-//! with (neighbour's own, this panel's own) states, i.e. ONE Riemann problem per face.
-//!   CsSeamPLMFill        PLM of nv variables of q into the record at offset out_off
-//!                        (rows i in [ia,ib]); floor_n >= 0 floors that variable at pfl.
-//!                        mlat: the hydro merged-latitude group PLM (hydro_mergelat.hpp).
-//!   CsSeamCovariant      the tangential pair at slot p -> COVARIANT components on the
-//!                        face's unit basis (mode 0: contravariant velocity, mode 1: the
-//!                        orthonormal (B.e_xi, B.f2) of bcc), which the seam exchange
-//!                        re-expresses on the neighbour's basis.
-//!   CsSeamGhostPrim      in a sweep (after the gnomonic face rotation): the ghost-side
-//!                        primitive / derived state of a seam face <- the record.
+//! \brief Shared cubed-sphere seam face states for hydro and MHD. Each panel writes its
+//! own PLM face state at its panel-seam faces into a face record (x2f/x3f), which is
+//! exchanged with the neighbour panel; the sweep then solves one Riemann problem per seam
+//! face with the two panels' own states.
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
@@ -31,6 +18,12 @@
 #include "hydro/hydro_mergelat.hpp"
 
 namespace cs_seam {
+
+//----------------------------------------------------------------------------------------
+//! \fn void cs_seam::CsSeamPLMFill
+//! \brief PLM face states of nv variables of q at the panel-seam faces, written into the
+//! record fs at offset out_off for rows i in [ia,ib]. floor_n >= 0 floors that variable
+//! at pfl; mlat uses the merged-latitude group PLM (hydro_mergelat.hpp).
 
 inline void CsSeamPLMFill(MeshBlockPack *pp, const DvceArray5D<Real> &q, const int nv,
                           const int out_off, const int floor_n, const Real pfl,
@@ -48,7 +41,7 @@ inline void CsSeamPLMFill(MeshBlockPack *pp, const DvceArray5D<Real> &q, const i
   const int mlng_ = indcs.ng;
   const int mln2_ = indcs.nx2 + 2*indcs.ng;
   const int mln3_ = indcs.nx3 + 2*indcs.ng;
-  // x2 (xi) seams: side 0 = the face js (x2min = -1), side 1 = the face je+1 (x2max = 1)
+  // x2 (xi) seams: side 0 = face js (x2min = -1), side 1 = face je+1 (x2max = 1)
   par_for("cs_seamfs_x2", DevExeSpace(), 0, nmb1, ks, ke, 0, 1, ia, ib,
   KOKKOS_LAMBDA(const int m, const int k, const int sd, const int i) {
     const bool lo = (sd == 0);
@@ -57,7 +50,7 @@ inline void CsSeamPLMFill(MeshBlockPack *pp, const DvceArray5D<Real> &q, const i
     const int jc = lo ? js : je, jf = lo ? js : je+1;
     const int f = mlat_ ? mlfi_(m,i) : 1;
     if (f > 1) {
-      // the x2 sweep's merged branch at row jc (hydro_fluxes.cpp, mrglat-1019)
+      // merged-latitude branch of the x2 sweep at row jc (as in hydro_fluxes.cpp)
       const int jlo = js + ((jc - js)/f)*f;
       const int jm = jlo - 1, jp = jlo + f;
       const bool narrow = (f*((f + 1)/f) > mlng_ - 1);
@@ -94,7 +87,7 @@ inline void CsSeamPLMFill(MeshBlockPack *pp, const DvceArray5D<Real> &q, const i
     const int kc = lo ? ks : ke, kf = lo ? ks : ke+1;
     const int f = mlat_ ? mlfi_(m,i) : 1;
     if (f > 1) {
-      // the x3 sweep's merged branch at row kc (hydro_fluxes.cpp, mrglat-1019)
+      // merged-latitude branch of the x3 sweep at row kc (as in hydro_fluxes.cpp)
       const int klo = ks + ((kc - ks)/f)*f;
       const int km = klo - 1, kp = klo + f;
       const bool narrow = (f*((f + 1)/f) > mlng_ - 1);
@@ -125,9 +118,12 @@ inline void CsSeamPLMFill(MeshBlockPack *pp, const DvceArray5D<Real> &q, const i
   });
 }
 
-// the tangential pair (p, p+1) of the record -> covariant on the face's unit basis.
-// mode 0: contravariant (v^xi, v^eta) -> (v.e_xi, v.e_eta) = (v2 + c v3, v3 + c v2);
-// mode 1: orthonormal (B.e_xi, B.f2) -> (B.e_xi, B.e_eta) = (b1, c b1 + s b2).
+//----------------------------------------------------------------------------------------
+//! \fn void cs_seam::CsSeamCovariant
+//! \brief Converts the tangential pair (p, p+1) of the record to covariant components on
+//! the face unit basis: mode 0 contravariant velocity, (v2 + c v3, v3 + c v2); mode 1
+//! orthonormal field (B.e_xi, B.f2) -> (B.e_xi, c B.e_xi + s B.f2).
+
 inline void CsSeamCovariant(MeshBlockPack *pp, DvceFaceFld5D<Real> &fs, const int p,
                             const int mode, const int ia, const int ib) {
   auto &indcs = pp->pmesh->mb_indcs;
@@ -171,12 +167,14 @@ inline void CsSeamCovariant(MeshBlockPack *pp, DvceFaceFld5D<Real> &fs, const in
   });
 }
 
-// In a sweep, after the gnomonic face rotation: the ghost-side state of a seam face
-// (wl at the lower face lo, wr at the upper) <- the neighbour's own record.  ivn is the
-// face-normal velocity slot (x2: IVY, x3: IVZ) and ivt the along-seam one: the record
-// holds covariant components, v.n = (v.e_n - c v.e_t)/s; every other slot is in the
-// sweep's frame already (IVX = v.r; the along-seam slot IS the covariant one).
-// soff: record offset of this row's set (0, or the radial-ghost-row set).
+//----------------------------------------------------------------------------------------
+//! \fn void cs_seam::CsSeamGhostPrim
+//! \brief Sets the ghost-side state of a seam face (wl at the lower face, wr at the
+//! upper)
+//! from the neighbour's record, after the gnomonic face rotation. ivn/ivt are the
+//! face-normal and along-seam velocity slots; the normal component is recovered from the
+//! covariant pair as v.n = (v.e_n - c v.e_t)/s. soff is the record offset of the row set.
+
 template <class TM, class SA, class SB>
 KOKKOS_INLINE_FUNCTION
 void CsSeamGhostPrim(const TM &member, const DvceArray5D<Real> &sfs, const int m,

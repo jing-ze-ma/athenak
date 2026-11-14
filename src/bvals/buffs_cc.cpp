@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License, see LICENSE file for details
 //========================================================================================
 //! \file buffs_cc.cpp
-//  \brief functions to allocate and initialize buffers for cell-centered variables
+// \brief functions to allocate and initialize buffers for cell-centered variables
 
 #include <cstdlib>
 #include <iostream>
@@ -17,24 +17,10 @@
 
 //----------------------------------------------------------------------------------------
 //! \fn void WidenForCubeVertex
-//! \brief CUBE-VERTEX CORNER FILL for CELL-CENTRED data (`<mesh>/cs_vertex_fill_cc`).
-//!
-//! A cubed-sphere panel corner is a CUBE VERTEX where only THREE panels meet, so its
-//! ng x ng corner ghost block has no diagonal neighbour and that exchange is skipped as
-//! non-reciprocal (IsCubeVertexCorner, bvals.hpp).  The block is covered by the TWO
-//! FLANKING panels, split by a diagonal, and the cells it needs are those panels' own
-//! ACTIVE corner cells -- which the face buffer's ng-deep strip already reaches along
-//! the seam.  Widening the strip by ng at BOTH ends of the along-seam direction is
-//! therefore enough to carry the corner block on the existing exchange: no new slot, no
-//! new tag, MPI-safe by construction.  This is the cell-centred twin of the rule in
-//! buffs_fc.cpp, applied to the SAME slots -- the x2 faces and x1x2 edges (widened along
-//! x3) and the x3 faces and x3x1 edges (widened along x2); the x2x3 edges and the
-//! corners are ghost in BOTH tangential directions, have no along-seam axis, and are
-//! never widened.  Send and receive apply the identical rule, so `ndat` matches on both
-//! sides.  The pack reads only ACTIVE source data for the extra cells, because the
-//! along-seam resample clamps its stencil to the source's active bounds (bvals_cc.cpp),
-//! and ownership -- which flanking panel supplies a given corner cell -- is decided at
-//! UNPACK from the receiver's own geometry.
+//! \brief Cube-vertex corner fill for cell-centred data (<mesh>/cs_vertex_fill_cc):
+//! widens a same-level x2/x3 face or edge buffer by ng along the seam, so the ng x ng
+//! corner ghost block (which has no diagonal neighbour at a cube vertex) is filled by the
+//! two flanking face exchanges.
 
 static void WidenForCubeVertex(MeshBufferIndcs &idx, int ox2, int ox3, int ng,
                                bool cs_vfill_cc) {
@@ -54,20 +40,20 @@ static void WidenForCubeVertex(MeshBufferIndcs &idx, int ox2, int ox3, int ng,
 //! component of each index array is used.
 //!
 //! The arguments ox1/2/3 are integer (+/- 1) offsets in each dir that specifies buffer
-//! relative to center of MeshBlock (0,0,0).  The arguments f1/2 are the coordinates
+//! relative to center of MeshBlock (0,0,0). The arguments f1/2 are the coordinates
 //! of subblocks within faces/edges (only relevant with SMR/AMR)
 
 void MeshBoundaryValuesCC::InitSendIndices(MeshBoundaryBuffer &buf,
                                           int ox1, int ox2, int ox3, int f1, int f2) {
   auto &mb_indcs  = pmy_pack->pmesh->mb_indcs;
   int ng  = mb_indcs.ng;
-  // implhalo-1031: the exchange depth of this object (same-level strips only)
+  // the exchange depth of this object (same-level strips only)
   if (exch_depth > 0 && exch_depth < ng && !pmy_pack->pmesh->multilevel) {ng = exch_depth;}
   int ng1 = ng - 1;
   const bool cs_vfill_cc = pmy_pack->pmesh->cs_vertex_fill_cc;
 
   // set indices for sends to neighbors on SAME level
-  // Formulae taken from LoadBoundaryBufferSameLevel() in src/bvals/cc/bvals_cc.cpp
+  // Formulae taken from LoadBoundaryBufferSameLevel in src/bvals/cc/bvals_cc.cpp
   if ((f1 == 0) && (f2 == 0)) {  // this buffer used for same level (e.g. #0,4,8,12,...)
     auto &isame = buf.isame[0];    // indices of buffer for neighbor same level
     isame.bis = (ox1 > 0) ? (mb_indcs.ie - ng1) : mb_indcs.is;
@@ -96,7 +82,7 @@ void MeshBoundaryValuesCC::InitSendIndices(MeshBoundaryBuffer &buf,
 
 
   // set indices for sends to neighbors on COARSER level (matches recvs from FINER)
-  // Formulae taken from LoadBoundaryBufferToCoarser() in src/bvals/cc/bvals_cc.cpp
+  // Formulae taken from LoadBoundaryBufferToCoarser in src/bvals/cc/bvals_cc.cpp
   {auto &icoar = buf.icoar[0];  // indices of buffer for neighbor coarser level
   icoar.bis = (ox1 > 0) ? (mb_indcs.cie - ng1) : mb_indcs.cis;
   icoar.bie = (ox1 < 0) ? (mb_indcs.cis + ng1) : mb_indcs.cie;
@@ -109,7 +95,7 @@ void MeshBoundaryValuesCC::InitSendIndices(MeshBoundaryBuffer &buf,
   }
 
   // set indices for sends to neighbors on FINER level (matches recvs from COARSER)
-  // Formulae taken from LoadBoundaryBufferToFiner() src/bvals/cc/bvals_cc.cpp
+  // Formulae taken from LoadBoundaryBufferToFiner src/bvals/cc/bvals_cc.cpp
   {auto &ifine = buf.ifine[0];  // indices of buffer for neighbor finer level
   ifine.bis = (ox1 > 0) ? (mb_indcs.ie - ng1) : mb_indcs.is;
   ifine.bie = (ox1 < 0) ? (mb_indcs.is + ng1) : mb_indcs.ie;
@@ -229,19 +215,19 @@ void MeshBoundaryValuesCC::InitSendIndices(MeshBoundaryBuffer &buf,
 //! first [0] component of each index array is used.
 //!
 //! The arguments ox1/2/3 are integer (+/- 1) offsets in each dir that specifies buffer
-//! relative to center of MeshBlock (0,0,0).  The arguments f1/2 are the coordinates
+//! relative to center of MeshBlock (0,0,0). The arguments f1/2 are the coordinates
 //! of subblocks within faces/edges (only relevant with SMR/AMR)
 
 void MeshBoundaryValuesCC::InitRecvIndices(MeshBoundaryBuffer &buf,
                                            int ox1, int ox2, int ox3, int f1, int f2) {
   auto &mb_indcs  = pmy_pack->pmesh->mb_indcs;
   int ng = mb_indcs.ng;
-  // implhalo-1031: the exchange depth of this object (same-level strips only)
+  // the exchange depth of this object (same-level strips only)
   if (exch_depth > 0 && exch_depth < ng && !pmy_pack->pmesh->multilevel) {ng = exch_depth;}
   const bool cs_vfill_cc = pmy_pack->pmesh->cs_vertex_fill_cc;
 
   // set indices for receives from neighbors on SAME level
-  // Formulae taken from SetBoundarySameLevel() in src/bvals/cc/bvals_cc.cpp
+  // Formulae taken from SetBoundarySameLevel in src/bvals/cc/bvals_cc.cpp
   if ((f1 == 0) && (f2 == 0)) {  // this buffer used for same level (e.g. #0,4,8,12,...)
     auto &isame = buf.isame[0];    // indices of buffer for neighbor same level
     if (ox1 == 0) {
@@ -304,7 +290,7 @@ void MeshBoundaryValuesCC::InitRecvIndices(MeshBoundaryBuffer &buf,
   }
 
   // set indices for receives from neighbors on COARSER level (matches send to FINER)
-  // Formulae taken from SetBoundaryFromCoarser() in src/bvals/cc/bvals_cc.cpp
+  // Formulae taken from SetBoundaryFromCoarser in src/bvals/cc/bvals_cc.cpp
   {auto &icoar = buf.icoar[0];   // indices of buffer for neighbor coarser level
   if (ox1 == 0) {
     icoar.bis = mb_indcs.cis;          icoar.bie = mb_indcs.cie;
@@ -367,7 +353,7 @@ void MeshBoundaryValuesCC::InitRecvIndices(MeshBoundaryBuffer &buf,
   }
 
   // set indices for receives from neighbors on FINER level (matches send to COARSER)
-  // Formulae taken from SetBoundaryFromFiner() in src/bvals/cc/bvals_cc.cpp
+  // Formulae taken from SetBoundaryFromFiner in src/bvals/cc/bvals_cc.cpp
   {auto &ifine = buf.ifine[0];   // indices of buffer for neighbor finer level
   if (ox1 == 0) {
     ifine.bis = mb_indcs.is;           ifine.bie = mb_indcs.ie;
@@ -432,7 +418,7 @@ void MeshBoundaryValuesCC::InitRecvIndices(MeshBoundaryBuffer &buf,
   }
 
   // set indices for PROLONGATION in coarse cell buffers. Indices refer to coarse cells.
-  // Formulae taken from ProlongateBoundaries() in src/bvals/bvals_refine.cpp
+  // Formulae taken from ProlongateBoundaries in src/bvals/bvals_refine.cpp
   // Identical to receives from coarser level, except ng --> ng/2
   {auto &iprol = buf.iprol[0];   // indices for prolongation
   int cn = mb_indcs.ng/2;      // nghost must be multiple of 2 with SMR/AMR
@@ -494,7 +480,7 @@ void MeshBoundaryValuesCC::InitRecvIndices(MeshBoundaryBuffer &buf,
   }
   }
 
-  // set indices for receives for flux-correction.  Similar to send, except data loaded
+  // set indices for receives for flux-correction. Similar to send, except data loaded
   // into appropriate sub-block of coarse buffer (similar to receive from FINER level)
   {auto &iflux = buf.iflux_coar[0];   // indices of buffer for flux correction
   if (ox1 == 0) {

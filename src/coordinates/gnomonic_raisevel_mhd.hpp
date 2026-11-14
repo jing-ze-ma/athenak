@@ -1,29 +1,15 @@
 #ifndef COORDINATES_GNOMONIC_RAISEVEL_MHD_HPP_
 #define COORDINATES_GNOMONIC_RAISEVEL_MHD_HPP_
 //========================================================================================
-// AthenaXXX astrophysical plasma code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file gnomonic_raisevel_mhd.hpp
-//! \brief the per-cell body of Coordinates::GnomonicEquiangleRaiseVelMHD, as a free
-//! device function.
-//!
-//! WHY IT LIVES HERE.  Exactly the reason gnomonic_raisevel.hpp exists for hydro: on the
-//! cubed sphere the conserved-to-primitive inversion is split in two, and the half that
-//! needs the metric -- raising the covariant momentum, forming the metric kinetic energy
-//! and the ORTHONORMAL magnetic energy, applying the velocity CEILING and re-applying the
-//! pressure/temperature/energy floors to the corrected internal energy -- lives in
-//! Coordinates, not in ConsToPrim (EOS_Data::defer_cons_floors).  A cell that needs one
-//! of those deferred floors is therefore invisible to ConsToPrim, and the FOFC
-//! floor-TEST pass, which is nothing but a ConsToPrim over a trial state, never flagged
-//! it.  Factoring the body out lets MHD::FOFC run exactly the same arithmetic on its
-//! trial state and discard it.
-//!
-//! EVERYTHING IS LOCAL.  The caller forms the cell-centred field itself (it is rebuilt
-//! from the faces, which this function has no business reading), loads d,m1,m2,m3,etot
-//! out of its conserved array, and writes m1,m2,m3,etot back only when `ceil_used` or
-//! `floored` says something changed -- which is bit-for-bit what the in-line kernel did.
+//! \brief Per-cell metric part of the MHD cons-to-prim inversion on the cubed sphere,
+//! used by Coordinates::GnomonicEquiangleRaiseVelMHD and by the MHD FOFC floor test.
+//! The caller forms the cell-centred field, loads d,m1,m2,m3,etot and writes back
+//! m1,m2,m3,etot when the ceiling or a floor fired.
 
 #include "athena.hpp"
 #include "eos/eos.hpp"
@@ -32,7 +18,7 @@
 
 //----------------------------------------------------------------------------------------
 //! \fn void GnomonicRaiseVelMHDFloors
-//! \brief metric velocity raise + deferred ceiling/floors for one cubed-sphere MHD cell.
+//! \brief Metric velocity raise plus the deferred ceiling and floors for one MHD cell.
 //!
 //! \param[in]     c        cos_cell, the angle between the two tangent basis vectors
 //! \param[in]     twarm    the temperature ConsToPrim found, used to warm-start the
@@ -59,28 +45,23 @@ void GnomonicRaiseVelMHDFloors(const Real c, const EOS_Data &eos_, const bool ge
   g1new = 0.0;
   temp = -1.0;
   const Real det = 1.0 - c*c;
-  // v^i = g^{ij} m_j / rho, with the metric acting on the ANGULAR pair only
+  // contravariant velocity v^i = g^{ij} m_j / rho (metric acts on the angular pair)
   v1 = m1/d;
   v2 = (m2 - c*m3)/(d*det);
   v3 = (m3 - c*m2)/(d*det);
-  // Keep the two energies separate and subtract them in this order: folding them into a
-  // single (kinetic + magnetic) sum re-associates the rounding and perturbs every
-  // ideal-EOS cubed-sphere answer in the last bits, for nothing.
+  // kinetic and magnetic energies are kept separate and subtracted in this order
   Real ekin = 0.5*(m1*v1 + m2*v2 + m3*v3);
-  // the frame is orthonormal, so the magnetic energy IS the sum of squares
+  // magnetic energy in the orthonormal frame
   const Real emag = 0.5*(bx*bx + by*by + bz*bz);
-  // <mhd>/vceil, the deferred half.  |v|^2 = g_ij v^i v^j = 2 KE/rho with the
-  // metric-correct kinetic energy formed above, which is the quantity ConsToPrim cannot
-  // build on this grid.  Scale the momentum by fs = vceil/|v| and remove (1 - fs^2) KE
-  // from the conserved total; the MAGNETIC energy is not involved, so the internal
-  // energy below is exactly what it would have been -- the same bookkeeping the
-  // Cartesian MHD c2p does in ideal_c2p_mhd.hpp.
+  // velocity ceiling: scale the momentum by fs = vceil/|v| with |v|^2 = 2 KE/rho and
+  // remove (1 - fs^2) KE from the total energy
   if (vceil_ > 0.0 && act_ && ekin > 0.0 && d > 0.0) {
     const Real vsq = 2.0*ekin/d;
     if (vsq > vceil_*vceil_) {
       const Real fs = vceil_/sqrt(vsq);
       m1 *= fs; m2 *= fs; m3 *= fs;
       v1 *= fs; v2 *= fs; v3 *= fs;
+      // vceil_thermalise: keep the clipped kinetic energy as internal energy
       // <mhd>/vceil_thermalise: leave the conserved total alone instead, so the clipped
       // kinetic energy lands in `eint` below (see EOS_Data::vceil_thermalise).  Not
       // accumulated: the MHD inversion has no energy accumulator.
@@ -90,10 +71,9 @@ void GnomonicRaiseVelMHDFloors(const Real c, const EOS_Data &eos_, const bool ge
     }
   }
   eint = etot - ekin - emag;
-  // Re-apply the floors to the CORRECTED internal energy; see the extended note in
-  // gnomonic_raisevel.hpp.  Without this the tabulated inversion below is handed a
-  // non-positive energy and returns NaN.
+  // re-apply the floors to the internal energy corrected by the metric kinetic energy
   if (gen_) {
+    // general EOS: energy/temperature floors of GeneralMHDFloorsPost (no entropy floor)
     // share3-1031: the floors of SingleC2P_GeneralMHD (GeneralMHDFloorsPost) on the
     // metric-correct energy; own = true; the entropy floor is not applied on this path
     // (sflr = false, as before); the table clamp is not counted here (as before)
@@ -105,6 +85,7 @@ void GnomonicRaiseVelMHDFloors(const Real c, const EOS_Data &eos_, const bool ge
       floored = true;
     }
   } else {
+    // ideal EOS: pressure floor of IdealFloorsPost
     // share3-1031: the ideal floors of SingleC2P_IdealMHD (IdealFloorsPost); on this path
     // only the pressure floor (tflr = sflr = false, as before)
     bool efl_used = false, tfl_used = false;

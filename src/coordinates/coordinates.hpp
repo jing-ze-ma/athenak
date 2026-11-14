@@ -1,7 +1,7 @@
 #ifndef COORDINATES_COORDINATES_HPP_
 #define COORDINATES_COORDINATES_HPP_
 //========================================================================================
-// AthenaXXX astrophysical plasma code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
@@ -33,9 +33,8 @@ enum class ExcisionScheme {
 //! inside kernels.
 
 struct CoordData {
-  // following data is only used in GR calculations to compute metric.  Coordinates sets
-  // them only for GR runs, but kernels copy the whole struct in every run, so they need
-  // defaults: an uninitialized bool is undefined behaviour (UBSan, DeltaAI 10-01)
+  // following data is only used in GR calculations to compute metric (initialized,
+  // since kernels copy the whole struct in every run)
   bool is_minkowski = false;                            // flag to specify Minkowski space
   Real bh_spin = 0.0;                                   // needed for GR metric
   bool bh_excise = false;                               // flag to specify excision
@@ -67,7 +66,8 @@ class Coordinates {
   // excision masks
   DvceArray4D<bool> excision_floor;  // cell-centered mask for C2P flooring about horizon
   DvceArray4D<bool> excision_flux;   // cell-centered mask for FOFC about horizon
-    
+
+  // geometry of the curvilinear grids (cubed sphere, spherical polar)
   DvceArray4D<Real> volume;
   DvceFaceFld4D<Real> area;
   DvceArray4D<Real> dx1;
@@ -87,9 +87,8 @@ class Coordinates {
   DvceEdgeFld4D<Real> dxedge;
   DvceFaceFld4D<Real> dxface;
   DvceEdgeFld4D<Real> areaedge;
-  // Gnomonic-equiangle geometry. These depend on the two PANEL-TANGENTIAL angles only --
-  // xi = x2 and eta = x3 -- so they are indexed (m,k,j) with no radial extent. The
-  // _xi arrays live on x2 faces (staggered in j), the _eta arrays on x3 faces (in k).
+  // gnomonic-equiangle trig of the angle between the tangent basis vectors, indexed
+  // (m,k,j): cell centres, xi faces (staggered in j), eta faces (staggered in k)
   DvceArray3D<Real> sin_cell;
   DvceArray3D<Real> cos_cell;
   DvceArray3D<Real> sin_face_xi;
@@ -99,7 +98,7 @@ class Coordinates {
   DvceArray4D<Real> x_ov_rD;
   DvceArray4D<Real> y_ov_rC;
   DvceArray4D<Real> z_ov_rE;
-    
+
   void CoordSphericalPolar();
   // accpolar-1103 <mesh>/sp_phi_global (read only when named; default false = bitwise):
   // the spherical-polar phi faces/centres from the GLOBAL phi index (LeftEdgeX(K, nx3 of
@@ -117,11 +116,8 @@ class Coordinates {
       const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt,
       DvceArray5D<Real> &u0);
   void CoordGnomonicEquiangle();
-  // The gnomonic tangent basis is NOT orthogonal, so the conserved momentum (covariant,
-  // which is what GnomonicEquiangleFluxX* produces) and the primitive velocity
-  // (contravariant, which is what GnomonicEquianglePrimFaceX* and the gnomonic source
-  // terms consume) are different objects. These two convert between them with the metric
-  // g = [[1, cos],[cos, 1]] on the unit-normalised basis, plus g_33 = 1 radially.
+  // conversions between covariant conserved momentum and contravariant primitive
+  // velocity on the non-orthogonal gnomonic basis, g = [[1, cos],[cos, 1]], g_33 = 1
   void GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0, DvceArray5D<Real> &w0,
                                  const EOS_Data &eos_data,
                                  const DvceArray5D<Real> &wder,
@@ -136,16 +132,12 @@ class Coordinates {
                                     const DvceArray4D<Real> &wtemp,
                                     const int il, const int iu, const int jl,
                                     const int ju, const int kl, const int ku);
-  // The cell-centred-field part of GnomonicEquiangleRaiseVelMHD ALONE, bitwise the same
-  // arithmetic: for the intermediate RKG super-stages (<mhd>/rkg_lean), which change
-  // only B and the total energy and read nothing but the cell-centred field.
+  // cell-centred field part of GnomonicEquiangleRaiseVelMHD only (<mhd>/rkg_lean)
   void GnomonicCellCenteredB(const DvceFaceFld4D<Real> &b0, DvceArray5D<Real> &bcc0,
                              const int il, const int iu, const int jl, const int ju,
                              const int kl, const int ku);
-  // The FROZEN half of the two routines above, for the first conversion of a RESTARTED
-  // run under a general EOS: the metric velocity raise and the metric internal energy,
-  // with the thermodynamic cache (wtemp, wder) neither read nor written.  See
-  // coordinates/gnomonic_raisevel_frozen.cpp.
+  // metric part of the two routines above with the EOS cache frozen, for the first
+  // conversion of a restarted run under a general EOS (gnomonic_raisevel_frozen.cpp)
   void GnomonicEquiangleRaiseVelFrozen(DvceArray5D<Real> &u0, DvceArray5D<Real> &w0,
                                        const int il, const int iu, const int jl,
                                        const int ju, const int kl, const int ku);
@@ -157,10 +149,8 @@ class Coordinates {
   void GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0, DvceArray5D<Real> &u0,
                                  const int il, const int iu, const int jl, const int ju,
                                  const int kl, const int ku);
-  // pwb is the STATIC well-balanced background pressure (zero-sized and ignored unless
-  // the module's use_wellbalance_static is set); the cubed sphere subtracts it from the
-  // geometric source for exactly the reason spherical polar does -- see
-  // SrcTermsSphericalPolarHydro.
+  // geometric source terms; pwb is the static well-balanced background pressure (used
+  // only with use_wellbalance_static)
   void SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0,
       const DvceArray5D<Real> &wder, const DvceArray4D<Real> &pwb,
       const DvceFaceFld5D<Real> uflx,
@@ -170,8 +160,7 @@ class Coordinates {
       const DvceArray4D<Real> &pwb,
       const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt,
       DvceArray5D<Real> &u0);
-  // The face-sum (well-balanced) geometric source, shared by the cubed sphere and the
-  // spherical-polar grid; the grid enters only through the geometry cache.
+  // well-balanced (face-sum) geometric source, shared by cubed sphere and spherical polar
   void SrcTermsCurvilinearWB(const DvceArray5D<Real> &w0,
        const DvceArray5D<Real> &bcc0, const bool is_mhd,
        const DvceArray5D<Real> &wder, const EOS_Data &eos_data, const Real bdt,
@@ -181,27 +170,9 @@ class Coordinates {
       const DvceArray5D<Real> &wder, const DvceArray4D<Real> &pwb,
       const bool use_wb_static, const DvceFaceFld5D<Real> uflx,
       const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
-    
-    // GNOMONIC EQUIANGLE, x1 = RADIAL, xi = x2, eta = x3.
-    //
-    // The two angular basis vectors e_xi, e_eta are unit vectors separated by an angle
-    // theta with cos(theta) = cos_cell, so the angular metric is g = [[1,c],[c,1]] and is
-    // NOT the identity. The PrimFace* routines rotate the CONTRAVARIANT velocity held in
-    // w0 into the locally ORTHONORMAL frame the Riemann solver needs; the Flux* routines
-    // invert that rotation on the returned flux and then LOWER the index, so what the
-    // update accumulates in u0(IM1,IM2,IM3) is the COVARIANT momentum. The radial
-    // component is orthogonal to both angles and is never touched by these rotations.
-    // See Coordinates::GnomonicEquiangleRaiseVel for the matching inversion.
 
-    // --- x1 sweep: RADIAL face. Its normal is r-hat, so the normal component IVX passes
-    // through untouched and only the angular pair is put in an orthonormal frame. The
-    // coefficients depend on (k,j) alone, so they are loop-invariant in i.
-    // The eight device helpers that used to live here are now FREE functions in
-    // coordinates/gnomonic_kernels.hpp, taking the GnomonicTrig below. Reaching them
-    // through `pmy_pack->pcoord->` made every flux kernel capture `this` and dereference
-    // a host pointer on the device; see the note in that header.
-    // One pair per sweep -- see the note in gnomonic_kernels.hpp on why a kernel must not
-    // be handed all six.
+    // trig pairs captured by the cubed-sphere flux kernels (gnomonic_kernels.hpp): one
+    // pair per sweep (cell centres for x1, xi faces for x2, eta faces for x3)
     GnomonicTrig GnomonicTrigCell() const {
       GnomonicTrig gt; gt.sn = sin_cell; gt.cs = cos_cell; return gt;
     }

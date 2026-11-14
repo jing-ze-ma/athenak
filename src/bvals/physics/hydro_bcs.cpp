@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License, see LICENSE file for details
 //========================================================================================
 //! \file hydro_bcs.cpp
-//  \brief
+// \brief
 
 #include <cstdlib>
 #include <iostream>
@@ -15,20 +15,20 @@
 #include "eos/eos.hpp"
 
 //----------------------------------------------------------------------------------------
-//! \fn void GravEtotGhosts()
+//! \fn void GravEtotGhosts
 //! \brief <hydro|mhd>/etotgrav: re-reference the potential energy of the ghost cells a
 //! built-in BC just filled along direction `dir`.
 //!
-//! With etotgrav the conserved energy is E = e + KE (+ emag) + rho*Phi.  The reflect,
+//! With etotgrav the conserved energy is E = e + KE (+ emag) + rho*Phi. The reflect,
 //! outflow and diode BCs COPY u0 from an active cell, so the ghost inherits rho*Phi of
 //! the SOURCE cell, and ConToPrim then removes rho*Phi of the GHOST: the ghost's internal
 //! energy came out wrong by rho*(Phi_src - Phi_ghost), i.e. rho g dz per ghost layer
 //! wherever the potential varies across the face (a bottom wall is heated, an outflow top
-//! can go negative).  After the copy the ghost's density is the source's, so
-//!     E_ghost += rho_ghost*(Phi_ghost - Phi_src)
-//! makes it the source's e + KE plus the ghost's own potential energy.  Inflow ghosts
+//! can go negative). After the copy the ghost's density is the source's, so
+//! E_ghost += rho_ghost*(Phi_ghost - Phi_src)
+//! makes it the source's e + KE plus the ghost's own potential energy. Inflow ghosts
 //! are set from u_in, which carries no potential energy: they get + rho_ghost*Phi_ghost.
-//! Vacuum ghosts are zero (rho = 0) and need nothing.  Where the potential does not vary
+//! Vacuum ghosts are zero (rho = 0) and need nothing. Where the potential does not vary
 //! across the face the correction is rho*0 = +0.0 and E is unchanged bit for bit.
 
 namespace {
@@ -94,7 +94,7 @@ void GravEtotGhosts(MeshBlockPack *ppack, DvceArray5D<Real> u0, DvceArray4D<Real
 }  // namespace
 
 //----------------------------------------------------------------------------------------
-//! \!fn void BoundaryValues::HydroBCs()
+//! \!fn void BoundaryValues::HydroBCs
 //! \brief Apply physical boundary conditions for all Hydro variables at faces of MB which
 //! are at the edge of the computational domain
 

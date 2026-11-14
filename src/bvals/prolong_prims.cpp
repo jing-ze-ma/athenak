@@ -5,7 +5,7 @@
 //========================================================================================
 //! \file prolong_prims.cpp
 //! \brief functions to convert conserved to primitive variables (and vice-versa) in
-//! boundary buffers where prolongation is used at fine/coarse level boundaries.  This
+//! boundary buffers where prolongation is used at fine/coarse level boundaries. This
 //! enables prolongation in either the conserved or primitive variables.
 #include <cstdlib>
 #include <iostream>
@@ -28,7 +28,7 @@
 #include "coordinates/cell_locations.hpp"
 
 //----------------------------------------------------------------------------------------
-//! \fn void ConsToPrimCoarseBndry()
+//! \fn void ConsToPrimCoarseBndry
 //! \brief Converts Hydro conserved variables in coarse level boundary buffers into
 //! Hydro primitive variables for prolongation. Coarse arrays should be passed in through
 //! arguments.
@@ -217,7 +217,7 @@ void MeshBoundaryValuesCC::ConsToPrimCoarseBndry(const DvceArray5D<Real> &cons,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void PrimToConsFineBndry()
+//! \fn void PrimToConsFineBndry
 //! \brief Converts prolongated Hydro primitive variables at fine level in boundary
 //! buffers into Hydro conservative variables.
 //! Note same function for MHD has different argument list.
@@ -329,7 +329,7 @@ void MeshBoundaryValuesCC::PrimToConsFineBndry(const DvceArray5D<Real> &prim,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void ConsToPrimCoarseBndry()
+//! \fn void ConsToPrimCoarseBndry
 //! \brief Converts MHD conserved variables in coarse level boundary buffers into
 //! MHD primitive variables for prolongation. Coarse arrays should be passed in through
 //! arguments.
@@ -507,7 +507,7 @@ void MeshBoundaryValuesCC::ConsToPrimCoarseBndry(const DvceArray5D<Real> &cons,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void PrimToConsFineBndry()
+//! \fn void PrimToConsFineBndry
 //! \brief Converts prolongated MHD primitive variables at fine level in boundary buffers
 //! into MHD conservative variables.
 //! Note same function for Hydrodynamics has different argument list.

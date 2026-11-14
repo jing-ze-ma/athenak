@@ -51,26 +51,8 @@ static int CellCenterIndex(Real x, int n, Real xmin, Real xmax) {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CellCenteredRadialFld()
-//! \brief the cell-centred value of a face-centred field in the RADIAL direction, as a
-//! linear interpolation to the cell centre rather than the plain average of its faces.
-//!
-//! WHY THIS IS NOT 0.5*(bl + br).  On a STRETCHED radial grid the cell centre is not the
-//! midpoint of its two faces: x1v is S(midpoint of the uniform cell) while the faces are
-//! S(left) and S(right), and S is nonlinear, so S(mid) != 0.5*(S(l) + S(r)).  The plain
-//! average therefore returns the field at the FACE MIDPOINT, not at x1v.  Spherical polar
-//! has always used the weighted form; the cubed sphere used the plain average even though
-//! its x1 is radial and stretched in exactly the same way.
-//!
-//! HOW BIG.  On the production hot-Jupiter grid (128 radial cells, 4.07x spread in cell
-//! width, the 4-coefficient polynomial stretch) the weight departs from 0.5 by at most
-//! 4.4e-3 and on average 1.9e-3.  This is a second-order accuracy fix, not a bug fix --
-//! it will not move a dynamical result.  The reason to make it is CONSISTENCY: everything
-//! that rebuilds bcc must agree cell for cell, or the difference reappears as an energy
-//! mismatch that the C2P floors then bake into u.e.
-//!
-//! Reduces to exactly 0.5*(bl + br) only up to round-off on a uniform grid, so it is
-//! applied ONLY where x1 really is a stretched radial coordinate; everywhere else keeps
-//! the plain average and its bit-for-bit answers.
+//! \brief Cell-centred value of a radial face-centred field by linear interpolation to
+//! x1v, which on a stretched radial grid is not the midpoint of the two faces.
 
 KOKKOS_INLINE_FUNCTION
 static Real CellCenteredRadialFld(const Real bl, const Real br, const Real x1f_l,
@@ -81,28 +63,16 @@ static Real CellCenteredRadialFld(const Real bl, const Real br, const Real x1f_l
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CellCenteredRadialFldWall()
-//! \brief CellCenteredRadialFld, made MIRROR-CONSISTENT in the ghost cells behind a
-//! REFLECTING radial wall.
-//!
-//! The reflect BC fills a ghost x1 face with minus its mirror image, b1f(is-1-n) =
-//! -b1f(is+1+n).  The centroid weights of the ghost shell, however, are not the mirror of
-//! the interior ones (both centroids sit OUTWARD of their face midpoints), so the plain
-//! CellCenteredRadialFld returns a ghost bcc1 that is not minus the interior bcc1: on the
-//! closed MHD vertex blast (cs_test iprob=12, cubed_sphere_mhd_blast.athinput) the error
-//! is 4 % of the interior B_r one cell in from the wall.  It enters the ghost-row x2/x3
-//! EMFs, and through them the wall-edge EMFs that CT uses to update the wall x1 face, so
-//! B.rhat at a "closed" wall grew from the O(h^2) initial residual to ~3e-3 of |B| and
-//! did not converge (it rose with resolution).  Here the ghost cell takes the weights of
-//! its interior image cell, exchanged: the ghost value is then exactly minus the image
-//! value (up to the shared wall face), whatever the radial stretch.  Active cells and
-//! ghosts that are not behind a reflecting wall are unchanged.
+//! \brief CellCenteredRadialFld with mirror-consistent weights behind a reflecting
+//! radial wall: a ghost cell uses the exchanged weights of its interior image cell, so
+//! the ghost value is exactly minus the image value.
 template <typename FaceView, typename PosView>
 KOKKOS_INLINE_FUNCTION
 Real CellCenteredRadialFldWall(const FaceView &b1f, const PosView &x1f,
                                const PosView &x1v, const int m, const int k,
                                const int j, const int i, const int is, const int ie,
                                const bool refl_in, const bool refl_out) {
-  int ii = i;                 // the cell whose weights are used
+  int ii = i;                 // cell whose weights are used
   bool mirror = false;
   if (refl_in && i < is) {
     ii = 2*is - 1 - i;  mirror = true;
@@ -113,7 +83,7 @@ Real CellCenteredRadialFldWall(const FaceView &b1f, const PosView &x1f,
   const Real wl = (x1f(m,ii+1) - x1v(m,ii))*idx;    // weight of the image's inner face
   const Real wr = (x1v(m,ii) - x1f(m,ii))*idx;      // weight of the image's outer face
   if (!mirror) return wl*b1f(m,k,j,i) + wr*b1f(m,k,j,i+1);
-  // the ghost's inner face is the mirror of the image's OUTER face, and vice versa
+  // ghost inner face is the mirror of the image outer face, and vice versa
   return wr*b1f(m,k,j,i) + wl*b1f(m,k,j,i+1);
 }
 

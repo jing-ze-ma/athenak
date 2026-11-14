@@ -79,12 +79,9 @@ bool CSConstAccelOffRadial(ParameterInput *pin, const std::string &blk) {
 
 }  // namespace
 
-// vertexacc-1103: the `<mesh>/cs_vertex_cc_perturb` diagnostic, read by bvals_cc.cpp
-// cornerfix-1103: + `cs_vertex_fc_perturb` (the face-centred corner block, both the sampled
-// and the extrapolated fill) and `cs_vertex_perturb_add` (an offset added to both, so a
-// corner block that is exactly zero is perturbed too); the CC factor now also acts on the
-// sampled (cs_vertex_fill_cc) corner block.  All 0 unless named: bitwise.
-namespace cs_vertex_diag { Real cc_perturb = 0.0, fc_perturb = 0.0, perturb_add = 0.0; }
+// <mesh>/cs_vertex_cc_perturb diagnostic (read by bvals_cc.cpp): the cell-centred
+// cube-vertex corner block is multiplied by (1 + cc_perturb); 0 unless named
+namespace cs_vertex_diag { Real cc_perturb = 0.0; }
 
 //----------------------------------------------------------------------------------------
 //! Mesh constructor:
@@ -219,8 +216,6 @@ Mesh::Mesh(ParameterInput *pin) :
     }
     repro::block_mode = (lim == "block");
   }
-  // USER 11-07 make some defaults: <mesh>/cs_seam_pos_global default true (false = old)
-  cs_seam_pos_global = pin->GetOrAddBoolean("mesh", "cs_seam_pos_global", true);
   cs_seam_fc_nolimit = use_cubed_sphere &&
                        pin->DoesParameterExist("mesh", "cs_seam_fc_nolimit") &&
                        pin->GetBoolean("mesh", "cs_seam_fc_nolimit");
@@ -259,35 +254,15 @@ Mesh::Mesh(ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
   }
-  // THE SAME FILL FOR CELL-CENTRED DATA, `<mesh>/cs_vertex_fill_cc`, DEFAULT OFF.
-  // `cs_vertex_fill` above widens only the FACE-CENTRED buffers; every cell-centred
-  // variable (the conserved state, the primitives, radiation, ...) still gets its
-  // cube-vertex corner block from the one-sided extrapolation in FillPanelCornersCC.
-  // With this on, the cell-centred x2/x3 face and x1x2/x3x1 edge buffers are widened by
-  // the SAME rule, the corner block rides the existing exchange, and the ownership test
-  // at unpack (bvals_cc.cpp) splits it between the two flanking panels along the
-  // receiving panel's own diagonal -- so it is MPI-safe by construction, exactly as the
-  // face-centred fill is.  It is read as a separate switch, and OFF by default, because
-  // it changes every cell-centred halo message on the grid: turning it on is not
-  // bitwise, and the measured payoff is in the corner ghosts themselves (see
-  // tests_cs_vertex/README.md), not yet in an evolved domain gate.  In the language of
-  // the two spellings: `extrapolate` is false here, `sample` is true.
+  // <mesh>/cs_vertex_fill_cc (default false): the cube-vertex corner fill of
+  // cs_vertex_fill for cell-centred data (otherwise one-sided extrapolation in
+  // FillPanelCornersCC)
   cs_vertex_fill_cc = use_cubed_sphere &&
                       pin->GetOrAddBoolean("mesh", "cs_vertex_fill_cc", false);
-  // cornerfix-1103 `<mesh>/cs_vertex_3cell` (USER 11-03 "no operator may read the cube-
-  // vertex corner block"): at the 8 cube vertices only THREE panels meet, so the ng x ng
-  // diagonal ghost block beyond a block corner there (cell- and face-centred) has no
-  // physical counterpart (Ivan et al. JCP 2013 "collapsed" ghosts) and holds made-up
-  // values (FillPanelCorners*, cs_vertex_fill*).  true: every operator that read it
-  // takes a 3-cell / one-sided rule there instead:
-  //   MHD vertex radial EMF without the shared seam (GS07 and UCT: MHD::CsVertexEmf3;
-  //   GS07 also on the seam edges within ng-1 of a vertex), hydro / MHD FOFC trial
-  //   state, the cubed-sphere resistive J and eta at a vertex (Ohmic + ambipolar:
-  //   Resistivity::CsVertexJFix), the M1 implicit off-diagonal VET terms (M1Vtx).
-  //   Diagnostic: <mesh>/cs_vertex_cc_perturb / cs_vertex_fc_perturb /
-  //   cs_vertex_perturb_add (below) -- a run that is BITWISE under them never reads it.
-  // DEFAULT: true on a FRESH cubed-sphere start (recipe != none), false on a restart
-  // whose input lacks the key (running chains bitwise); an explicit key wins.
+  // <mesh>/cs_vertex_3cell: at the 8 cube vertices only three panels meet, so the ng x ng
+  // ghost block beyond a block corner has no physical counterpart; operators that would
+  // read it use a 3-cell / one-sided rule instead. Default true on a fresh cubed-sphere
+  // start, false on a restart whose input lacks the key.
   if (use_cubed_sphere) {
     if (pin->DoesParameterExist("mesh", "cs_vertex_3cell")) {
       cs_vertex_3cell = pin->GetBoolean("mesh", "cs_vertex_3cell");
@@ -301,96 +276,23 @@ Mesh::Mesh(ParameterInput *pin) :
           "restart input has no key") + ": the old corner-block reads, key not added)");
     }
   }
-  // vertexacc-1103 DIAGNOSTIC `<mesh>/cs_vertex_cc_perturb` (read only when named): the
-  // extrapolated cell-centred cube-vertex corner block is multiplied by (1 + this), so a
-  // run that stays BITWISE equal to the unperturbed one proves no operator reads that
-  // block into the active cells, and the size of the change says how much it matters.
+  // <mesh>/cs_vertex_cc_perturb (diagnostic, read only when named): multiplies the
+  // cell-centred cube-vertex corner block by (1 + value)
   if (use_cubed_sphere && pin->DoesParameterExist("mesh", "cs_vertex_cc_perturb")) {
     cs_vertex_diag::cc_perturb = pin->GetReal("mesh", "cs_vertex_cc_perturb");
   }
-  if (use_cubed_sphere && pin->DoesParameterExist("mesh", "cs_vertex_fc_perturb")) {
-    cs_vertex_diag::fc_perturb = pin->GetReal("mesh", "cs_vertex_fc_perturb");
-  }
-  if (use_cubed_sphere && pin->DoesParameterExist("mesh", "cs_vertex_perturb_add")) {
-    cs_vertex_diag::perturb_add = pin->GetReal("mesh", "cs_vertex_perturb_add");
-  }
-  // csedge-1019 (USER 10-19 "go ahead with the seam fix" / "the seam should behave the
-  // same as the interior", default for every cs run, fresh AND restart): DEFAULT `shared`
-  // = ONE Riemann problem per seam face from the two panels' OWN reconstructions (the
-  // neighbour's edge-cell face state is exchanged, Hydro::CsSeamFaceStates), the same HLLC
-  // as an interior face; the two panels' (round-off equal) fluxes are then averaged, which
-  // keeps the seam exactly conservative.  The previous seam was TWO different Riemann
-  // problems (each panel against ghosts resampled from the other) reconciled afterwards;
-  // that difference, not the radiation, forced the RSG g25 cube-edge mode (N=128 restart
-  // from 5 d: corner along-edge v x10/d under positive, x2 slower seeding under average,
-  // flat under shared; csedge_1019/NOTE.md).  shared needs hydro PLM, no x2/x3
-  // well-balanced reconstruction and a uniform mesh; otherwise (and for MHD) the seam
-  // falls back to `average` (logged).  First csedge-1019 step (superseded) was `average`.  The 09-26 default `positive` (and `upwind`) takes the
-  // DONOR panel's whole flux whenever the two panels agree on the sign of the mass flux.
-  // On a near-static seam (a deep radiative layer, |v| ~ cm/s) that sign is set by
-  // round-off-level mass fluxes, the face flips between the two panels' Riemann solves,
-  // and with HLLC (no shear dissipation at S_M ~ 0) it drove a growing one-cell jet along
-  // every cube edge, seeded in the cube-vertex cell (RSG g25 cs production: KE 1e41 ->
-  // 1e45 erg in 31 d at r < 0.12 R_ph; N=48 arms, csedge_1019/NOTE.md: corner v_r 9 -> 486
-  // cm/s from 4 to 7 d under positive, flat 7 -> 10 under average; the old halo
-  // (quadratic, no guard) also grows, later).  The positivity protection of the empty-seam-
-  // cell case is kept by the HALO keys below (linear resample + rho guard: the 0926 cavity
-  // arms, average + halo keys, were all clean).  The old rule stays selectable as
-  // `positive_donor`; the legacy spelling `positive` -- the value every pre-1019 restart
-  // file and the 0926-era decks carry -- now means `average` (logged), so restarts switch.
-  // HISTORY (09-26 text): DEFAULT `positive` (since 09-26; the three cs seam keys
-  // below were made default-on together).  `average` (the historical answer before 09-26,
-  // select it explicitly for the old scheme) takes the mean of the two outward fluxes.
-  // Each panel computes its flux from INTERPOLATED ghosts of the other, so near a
-  // cell-scale structure along the seam the two disagree, and the mean can take out of a
-  // near-empty seam cell far more than its own Riemann solve allows (a positivity
-  // violation; docs/dev/cs_seam_defect_0926.md: up to 40x the cell's mass per step, the
-  // cause of the seam dt collapses of the WASP-121b arms). `upwind`: when both panels
-  // agree on the direction of the MASS flux, every variable takes the DONOR panel's own
-  // flux (computed from the donor's true state); otherwise the mean.  `positive`: as
-  // upwind, and when both claim INFLOW the convex weights that make the mass flux zero.
-  // All three are exactly conservative; on smooth flow they differ at the
-  // truncation-error level.
-  // RESTART NOTE: all three keys are GetOrAdd, so a restart file written by this code
-  // carries its values; an OLD restart (written before 09-26, no such keys in its input
-  // section) picks up the NEW defaults, i.e. restarting an old run changes its seam
-  // scheme.  Give cs_seam_flux = average, cs_seam_resample = quadratic and
-  // cs_seam_rho_guard = 0 (in an -i overlay) to continue it with the old one.
-  // `<mesh>/cs_seam_rho_guard` = R (DEFAULT 4 since 09-26; 0 = off, the old halo). The
-  // along-seam resample interpolates the seam ghost from three cells of the other panel.
-  // Across a density edge only a cell or two wide -- an emptied seam cell, a hole at a
-  // cube vertex -- the quadratic lands between the empty and the full cells, and the
-  // ghost next to an empty cell comes out dense (measured 0.37 next to 1e-4).  Both
-  // panels then see a dense neighbour and both claim INFLOW through their common face; no
-  // reconciliation of the two fluxes is then right (docs/dev/cs_seam_defect_0926.md,
-  // "Vertex").  With R > 1, a ghost cell whose resampled density differs from its
-  // plain-copy source cell -- the cell that actually shares the face -- by more than a
-  // factor R takes the plain copy for EVERY variable (first order there, the pre-resample
-  // halo).  Smooth data never differ by a factor R > 1.5 at resolution, so the smooth
-  // answer is untouched.  It acts in the halo only, so the seam update stays exactly
-  // conservative.
-  // prod1103f default (USER 11-03; seamguard_ab_1103: guard 0 + linear = the reference
-  // within noise over 10 rot of W121 hydro): cs_seam_rho_guard = 0 on a FRESH cubed-sphere
-  // start with <mesh>/cs_seam_flux = shared (the default; or its legacy spelling positive)
-  // when the key is not named (recipe::NewDefaults); recorded for restarts.  Other flux
-  // modes, restarts whose input lacks the key and recipe none keep 4 (bitwise); an
-  // explicit key wins.
-  // prod-1108 (USER 11-08 "make some defaults", r8 key set): 4 everywhere when the key
-  // is not named (fresh starts too; the fresh-start 0 above is retired).  Name
-  // cs_seam_rho_guard = 0 for the old fresh-start default.
+  // <mesh>/cs_seam_flux = shared: one Riemann problem per seam face from the two panels'
+  // own reconstructions (Hydro::CsSeamFaceStates); the two results are averaged so the
+  // seam is exactly conservative (setups the shared states do not cover fall back to the
+  // plain average of the two outward fluxes).
+  // <mesh>/cs_seam_rho_guard = R (default 4, 0 = off): a seam ghost cell whose resampled
+  // density differs from its plain-copy source cell by more than a factor R takes the
+  // plain copy for every variable.
   cs_seam_rho_guard = use_cubed_sphere ?
       pin->GetOrAddReal("mesh", "cs_seam_rho_guard", 4.0) : 0.0;
-  // `<mesh>/cs_seam_resample = linear (DEFAULT since 09-26) | quadratic (the old halo)`,
-  // again for the fluid's conserved state only.  The quadratic along-seam resample has a
-  // NEGATIVE weight whenever it interpolates, and it is clamped variable by variable, so
-  // the ghost it builds is not a convex combination of the donor cells: next to a cell
-  // the floors have just reset (p at the floor, momentum kept) it can hand out a ghost
-  // with E < KE, which ConToPrim floors again with a large velocity, and the seam Riemann
-  // solve then drains the neighbour (the cube-vertex hole of
-  // docs/dev/cs_seam_defect_0926.md).  `linear` interpolates between the two donor cells
-  // that bracket the target, weights >= 0: a convex combination of admissible states is
-  // admissible.  Measured cost on the smooth rigid rotation (n32): L1(v) +0.9 %, L1(p)
-  // -0.6 % against the quadratic.  Use it together with cs_seam_rho_guard.
+  // <mesh>/cs_seam_resample = linear (default) | quadratic: along-seam resample of the
+  // fluid conserved state in the seam halo; linear uses the two bracketing donor cells
+  // with non-negative weights (a convex combination of admissible states)
   cs_seam_resample_linear = false;
   if (use_cubed_sphere) {
     std::string rs = pin->GetOrAddString("mesh", "cs_seam_resample", "linear");
@@ -407,37 +309,15 @@ Mesh::Mesh(ParameterInput *pin) :
   if (use_cubed_sphere) {
     cs_seam_flux_named = pin->DoesParameterExist("mesh", "cs_seam_flux");
     std::string sf = pin->GetOrAddString("mesh", "cs_seam_flux", "shared");
-    bool legacy = false;
-    if (sf == "average") {
-      cs_seam_flux = 0;
-    } else if (sf == "upwind") {
-      cs_seam_flux = 1;
-    } else if (sf == "positive_donor") {
-      cs_seam_flux = 2;
-    } else if (sf == "shared") {
-      // csedge-1019: ONE Riemann problem per seam face from the two panels' OWN interior
-      // reconstructions (Hydro::CsSeamFaceStates), so a seam face is solved like an
-      // interior face; the two (round-off different) results are then averaged (exact
-      // conservation), as `average`
-      cs_seam_flux = 3;
-    } else if (sf == "positive") {
-      // csedge-1019: the legacy (09-26 default) spelling, carried by every older restart
-      // file and the 0926-era decks -> the new default
-      cs_seam_flux = 3;
-      legacy = true;
-      cs_seam_flux_named = false;
-      pin->SetString("mesh", "cs_seam_flux", "shared");
-    } else {
+    if (sf != "shared") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<mesh>/cs_seam_flux = '" << sf
-                << "' must be average, upwind, positive_donor or shared" << std::endl;
+                << std::endl << "<mesh>/cs_seam_flux = '" << sf << "' must be shared"
+                << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    cs_seam_flux = 3;
     if (global_variable::my_rank == 0) {
-      const char *nm[4] = {"average", "upwind", "positive_donor", "shared"};
-      std::cout << "Mesh: cubed-sphere seam flux = " << nm[cs_seam_flux]
-                << (legacy ? " (csedge-1019: legacy 'positive' read as the new default "
-                             "'shared'; 'positive_donor' selects the 09-26 rule)" : "")
+      std::cout << "Mesh: cubed-sphere seam flux = shared"
                 << ", resample = " << (cs_seam_resample_linear ? "linear" : "quadratic")
                 << ", rho_guard = " << cs_seam_rho_guard << std::endl;
     }

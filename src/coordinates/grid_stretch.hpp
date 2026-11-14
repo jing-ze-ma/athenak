@@ -1,95 +1,71 @@
 #ifndef COORDINATES_GRID_STRETCH_HPP_
 #define COORDINATES_GRID_STRETCH_HPP_
 //========================================================================================
-// Athena++K astrophysical plasma code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file grid_stretch.hpp
-//! \brief coordinate stretching maps for the spherical-polar grid.
-//!
-//! Kept in their own header, free of any dependency beyond athena.hpp, because both
-//! Coordinates and problem generators need them: Coordinates stretches x1v/x1f/dx1, while
-//! a problem generator that rebuilds radii with CellCenterX/LeftEdgeX to lay down an
-//! initial condition must apply the identical map or the two end up on different grids.
+//! \brief Coordinate stretching maps for the radial (x1) and polar (x2) directions of the
+//! spherical grids, shared by Coordinates and the problem generators so both build the
+//! same grid.
 
 #include <cmath>
 
 #include "athena.hpp"
 
-// Number of coefficients in the polynomial radial stretch (see StretchRPoly):
-//     u(xi) = xi + sum_{k=1}^{NSTRETCH_R_POLY} c_k xi^k (1-xi).
-// Inputs give mesh/f_stretch_r_c1..c8; missing ones are zero, which adds exact zeros
-// (a 4-coefficient input gives the same grid bit for bit as when this was 4).
-// Storage size of Mesh::fStretchRPoly: NSTRETCH_R_PCOEF polynomial coefficients, then
-// NSTRETCH_R_BUMP local "bumps" of (amplitude, centre, width) each, then NSTRETCH_R_NPLAT
-// "plateaus" of (amplitude, xa, xb, width) each (see StretchRPoly).
+// Layout of Mesh::fStretchRPoly (see StretchRPoly): NSTRETCH_R_PCOEF polynomial
+// coefficients, NSTRETCH_R_BUMP bumps of (amplitude, centre, width), NSTRETCH_R_NPLAT
+// plateaus of (amplitude, xa, xb, width), the log tail (s, xi_j, r1_old) and the
+// geometric head (xi_h, s, xi_j, q, nh).
 #define NSTRETCH_R_PCOEF 8
 #define NSTRETCH_R_BUMP 2
 #define NSTRETCH_R_NPLAT 2
 #define NSTRETCH_R_PLAT (4*NSTRETCH_R_NPLAT)
-// the optional LOG TAIL (mesh/f_stretch_r_tail_*, see StretchRPoly): 3 slots after the
-// plateaus, (s, xi_j, r1_old); s = 0 = off
 #define NSTRETCH_R_TAIL 3
-// mrglat-rsg-1019: the optional GEOMETRIC HEAD (mesh/f_stretch_r_head_*, see StretchRPoly):
-// 5 slots after the tail, (xi_h, s, xi_j, q, nh); xi_h = 0 = off
 #define NSTRETCH_R_HEAD 5
 #define NSTRETCH_R_POLY (NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP + NSTRETCH_R_PLAT + \
                          NSTRETCH_R_TAIL + NSTRETCH_R_HEAD)
 #define NSTRETCH_R_TAIL_OFF (NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP + NSTRETCH_R_PLAT)
 #define NSTRETCH_R_HEAD_OFF (NSTRETCH_R_TAIL_OFF + NSTRETCH_R_TAIL)
 
-//! ln cosh(x) without overflow: |x| + ln(1 + exp(-2|x|)) - ln 2
+//----------------------------------------------------------------------------------------
+//! \fn Real LogCoshStable
+//! \brief ln cosh(x) without overflow: |x| + ln(1 + exp(-2|x|)) - ln 2
 KOKKOS_INLINE_FUNCTION
 Real LogCoshStable(const Real x) {
   const Real ax = fabs(x);
   return ax + log1p(exp(-2.0*ax)) - 0.69314718055994530942;
 }
 
-//! the plateau term of StretchRPoly (mesh/f_stretch_r_p_amp, _xa, _xb, _w):
-//!   du/dxi += a [g(xi) - G(1)],  g = (tanh((xi - xa)/w) - tanh((xi - xb)/w))/2,
-//!   u      += a [G(xi) - xi G(1)], G(xi) = int_0^xi g (closed form in ln cosh),
-//! so u(0) = 0 and u(1) = 1 stay fixed.  g is ~1 on [xa, xb] and ~0 outside, with tanh
-//! edges of half-width w: du/dxi is FLAT inside and outside (the ratio of the two cell
-//! widths is 1 + a/(1 - a G(1))), unlike a sech^2 bump or a polynomial.  a < 0 = finer
-//! cells on [xa, xb].
+//----------------------------------------------------------------------------------------
+//! \fn Real StretchRPlateauG
+//! \brief Integral G(xi) of the plateau profile g = (tanh((xi-xa)/w) - tanh((xi-xb)/w))/2
+//! used by StretchRPoly: du/dxi += a [g(xi) - G(1)], u += a [G(xi) - xi G(1)], so that
+//! u(0) = 0 and u(1) = 1. a < 0 gives finer cells on [xa, xb].
 KOKKOS_INLINE_FUNCTION
 Real StretchRPlateauG(const Real xa, const Real xb, const Real w, const Real xi) {
   return 0.5*w*(LogCoshStable((xi - xa)/w) - LogCoshStable(-xa/w)
                 - LogCoshStable((xi - xb)/w) + LogCoshStable(-xb/w));
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void StretchR
+//! \brief Exponential radial stretch r = r0 + (r1-r0) (1 - exp(-a xi))/(1 - exp(-a)).
 
 KOKKOS_INLINE_FUNCTION
 void StretchR(const Real a, const Real r0, const Real r1, Real &r) {
   Real xi = (r-r0)/(r1-r0);
   Real denom = 1.0 - exp(-a);
   r = r0 + (r1 - r0)*(1.0 - exp(-a*xi))/denom;
-//    r = r0*pow(r1/r0,xi);
 }
 //--------------------------------------------------------------------------------------
-//! \fn StretchRPoly
-//! \brief polynomial radial grid stretch, an alternative to the exponential StretchR.
-//!
-//! Maps the uniform coordinate onto
-//!     r = r0 + (r1 - r0) * u(xi),   xi = (r - r0)/(r1 - r0),
-//!     u(xi) = xi + sum_{k=1}^{NSTRETCH_R_POLY} c_k xi^k (1 - xi),
-//! so that u(0) = 0 and u(1) = 1 for ANY coefficients: the domain end points are fixed
-//! and only the interior distribution moves. c = 0 recovers the uniform grid.
-//!
-//! WHY A POLYNOMIAL AND NOT THE EXPONENTIAL. StretchR is monotonic in cell width, so it
-//! can only coarsen (or only refine) outwards. A stratified atmosphere does not want
-//! that: the pressure scale height H is large at depth, collapses across a dissociation
-//! front, then grows steadily aloft, so the cell width that resolves H equally
-//! everywhere is NON-MONOTONIC. This family can represent that.
-//!
-//! HOW TO CHOOSE THE COEFFICIENTS. Constant cells-per-scale-height means dr ~ H(r),
-//! which is exactly uniform spacing in ln p. Take a relaxed snapshot, form the
-//! cumulative scale-height coordinate N_H(r) = int dr'/H(r'), and least-squares fit
-//! u_target(xi) = (r(xi N_H^tot) - r0)/(r1 - r0) in the basis xi^k (1-xi).
-//!
-//! The mapping must be strictly increasing; Mesh's constructor samples du/dxi over
-//! [0,1] and fatals if it is not, since a fold-over gives negative cell widths.
+//! \fn Real StretchRPolyU
+//! \brief Map u(xi) of the polynomial radial stretch r = r0 + (r1 - r0) u(xi),
+//! xi = (r - r0)/(r1 - r0),
+//! u(xi) = xi + sum_k c_k xi^k (1 - xi), plus optional bumps and plateaus. u(0) = 0 and
+//! u(1) = 1 for any coefficients. Allows a non-monotonic cell width (e.g. constant cells
+//! per pressure scale height). Mesh checks that the map is strictly increasing.
 KOKKOS_INLINE_FUNCTION
 Real StretchRPolyU(const Real *c, const Real xi) {
   Real u = xi;
@@ -98,20 +74,15 @@ Real StretchRPolyU(const Real *c, const Real xi) {
     u += c[k-1]*xik*(1.0-xi);
     xik *= xi;
   }
-  // optional local bumps (mesh/f_stretch_r_b<n>_amp, _x, _w; skipped when amp = 0, so a
-  // grid without them is bit for bit the plain polynomial): with a < 0 the cells near
-  // xi = xb are narrower, du/dxi changes by a sech^2((xi - xb)/w) (minus the small
-  // constant a w [tanh((1-xb)/w) + tanh(xb/w)] that keeps u(0) = 0 and u(1) = 1)
+  // optional bumps: du/dxi changes by a sech^2((xi - xb)/w), corrected so u(0) = 0 and
+  // u(1) = 1; a < 0 gives finer cells near xb
   for (int b=0; b<NSTRETCH_R_BUMP; ++b) {
     const Real a = c[NSTRETCH_R_PCOEF + 3*b];
     if (a == 0.0) continue;
     const Real xb = c[NSTRETCH_R_PCOEF + 3*b + 1], w = c[NSTRETCH_R_PCOEF + 3*b + 2];
     u += a*w*(tanh((xi - xb)/w) - (1.0 - xi)*tanh(-xb/w) - xi*tanh((1.0 - xb)/w));
   }
-  // optional plateaus (mesh/f_stretch_r_p_amp, _xa, _xb, _w and the second one
-  // mesh/f_stretch_r_p2_*; each skipped when its amp = 0, so a grid without it is bit for
-  // bit the one above): see StretchRPlateauG.  Two plateaus give three flat levels, e.g.
-  // coarse deep, medium envelope, fine photosphere (BSG PHOTO_RES_1003).
+  // optional plateaus (see StretchRPlateauG)
   for (int q=0; q<NSTRETCH_R_NPLAT; ++q) {
     const Real *cp = c + NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP + 4*q;
     if (cp[0] != 0.0) {
@@ -122,22 +93,15 @@ Real StretchRPolyU(const Real *c, const Real xi) {
   return u;
 }
 
-//! StretchRPoly with the optional LOG TAIL (accretor-bigdom-1015, mesh/f_stretch_r_tail_nin,
-//! _x1max, _ij): the grid of an OLDER, smaller run (the same polynomial/plateau map on
-//! [r0, r1_old] with nin cells) is kept face for face up to its face ij (r_j), and the
-//! domain continues above r_j to r1 = x1max with a constant face ratio (log spacing),
-//!     r = r_j (r1/r_j)^((xi - xi_j)/(1 - xi_j)),   xi_j = ij/nx1.
-//! Slots c[NSTRETCH_R_TAIL_OFF + 0..2] = (s = nx1/nin, xi_j, r1_old), set by Mesh; s = 0
-//! (default) is the plain map, bit for bit.  Choose nx1 so that the tail's ratio matches
-//! the old grid's at r_j (no jump in dr).
-//! mrglat-rsg-1019: GEOMETRIC HEAD (mesh/f_stretch_r_head_nin, _ij): the grid of an OLDER
-//! run (the same polynomial/plateau map on [r0, r1] with nin cells) is kept face for face
-//! from its face ij (r_j) UP, and the domain below r_j is covered by nh = nx1 - (nin - ij)
-//! cells of constant width ratio q (dr_{k+1} = q dr_k outward; q < 1: coarser inward),
-//!     r = r0 + (r_j - r0) (1 - q^k)/(1 - q^nh),   k = xi nx1 = (xi/xi_h) nh,
-//! with q set by Mesh so that the head's top cell has the old cell ij-1's width (no jump).
-//! Slots c[NSTRETCH_R_HEAD_OFF + 0..4] = (xi_h = nh/nx1, s = nx1/nin, xi_j = ij/nin, q, nh);
-//! xi_h = 0 (default) is the plain map, bit for bit.  Not combinable with the tail.
+//----------------------------------------------------------------------------------------
+//! \fn void StretchRPoly
+//! \brief Polynomial radial stretch with an optional geometric head or log tail, which
+//! keep the faces of an older run's grid (nin cells) and extend the domain:
+//! - head (xi_h > 0): faces of the old grid kept from face ij up; below, nh cells of
+//!   constant width ratio q, r = r0 + (r_j - r0) (1 - q^k)/(1 - q^nh), k = (xi/xi_h) nh.
+//! - tail (s > 0): faces of the old grid kept up to face ij; above, constant face ratio,
+//!   r = r_j (r1/r_j)^((xi - xi_j)/(1 - xi_j)).
+//! The slot values are set by Mesh.
 KOKKOS_INLINE_FUNCTION
 void StretchRPoly(const Real *c, const Real r0, const Real r1, Real &r) {
   const Real xi = (r-r0)/(r1-r0);
@@ -169,10 +133,10 @@ void StretchRPoly(const Real *c, const Real r0, const Real r1, Real &r) {
   r = r0 + (r1-r0)*StretchRPolyU(c, xi);
 }
 //----------------------------------------------------------------------------------------
-//! \fn ApplyRStretch()
-//! \brief Apply whichever radial stretch is active to a position built by
-//! CellCenterX/LeftEdgeX (which always come out UNSTRETCHED). Same definitions as
-//! Coordinates uses, so a problem generator and the coordinate arrays cannot drift apart.
+//! \fn void ApplyRStretch
+//! \brief Applies the active radial stretch to an unstretched position from
+//! CellCenterX/LeftEdgeX.
+
 KOKKOS_INLINE_FUNCTION
 void ApplyRStretch(const bool str_r, const Real fstr_r, const bool str_rp, const Real *c,
                    const Real r0, const Real r1, Real &r) {
@@ -184,14 +148,19 @@ void ApplyRStretch(const bool str_r, const Real fstr_r, const bool str_rp, const
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn RadialCentroid()
-//! \brief The volume centroid of the shell [r_l, r_r] -- what Coordinates::x1v stores on
-//! BOTH spherical grids, and hence where a cell value lives.  NOT the midpoint.
+//! \fn Real RadialCentroid
+//! \brief Volume centroid of the shell [r_l, r_r], stored in Coordinates::x1v on both
+//! spherical grids.
+
 KOKKOS_INLINE_FUNCTION
 Real RadialCentroid(const Real r_l, const Real r_r) {
   const Real q = r_l/r_r;
   return 0.25*(q*q + 1.0)/((1.0/3.0)*(q*q + q + 1.0))*(r_r + r_l);
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn void StretchTheta
+//! \brief Sinh polar-angle stretch t = pi/2 (1 + sinh(a (2 t/pi - 1))/sinh(a)).
 
 KOKKOS_INLINE_FUNCTION
 void StretchTheta(const Real a, Real &t) {
@@ -200,17 +169,11 @@ void StretchTheta(const Real a, Real &t) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn StretchThetaPlateau()
-//! \brief theta map with a UNIFORM equatorial core and geometric caps (fullsph-1027,
-//! mesh/theta_plateau).  p[] (Mesh::fStretchThetaPlat, filled in mesh.cpp):
-//!   p[0] x2min, p[1] x2max of the MESH, p[2] = nx2/2 (mesh cells per half),
-//!   p[3] ec = core cells per half, p[4] d = core cell width, p[5] q = growth per cap
-//!   cell, p[6] Np = cap cells per side (= p[2] - p[3]).
-//! The logical (uniform) position t is turned into a signed cell count e from the mesh
-//! centre; |e| <= ec maps to d*e (cells exactly d), beyond it the cap cell k (1..Np) has
-//! width w1 q^(k-1), normalised so the face count nx2/2 lands EXACTLY on the mesh edge.
-//! Beyond the edge (ghosts) the map is MIRRORED about the edge, so polar ghost cells are
-//! exact images of the first active cells.  Symmetric about the mesh centre.
+//! \fn Real ThetaPlateauHalf
+//! \brief Polar-angle offset from the mesh centre for e >= 0 cells of the theta-plateau
+//! map: a uniform core of ec cells of width d, then Np geometric cap cells (ratio q)
+//! ending exactly at the mesh edge, mirrored about the edge in the ghost zones.
+//! p[] = Mesh::fStretchThetaPlat: (x2min, x2max, nx2/2, ec, d, q, Np).
 KOKKOS_INLINE_FUNCTION
 Real ThetaPlateauHalf(const Real *p, Real e) {   // e >= 0, e <= 2*nh
   const Real nh = p[2], ec = p[3], d = p[4], q = p[5], np = p[6];
@@ -227,6 +190,12 @@ Real ThetaPlateauHalf(const Real *p, Real e) {   // e >= 0, e <= 2*nh
   }
   return mirror ? 2.0*half - h : h;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn void StretchThetaPlateau
+//! \brief Theta map with a uniform equatorial core and geometric caps
+//! (mesh/theta_plateau), symmetric about the mesh centre.
+
 KOKKOS_INLINE_FUNCTION
 void StretchThetaPlateau(const Real *p, Real &t) {
   const Real mid = 0.5*(p[0] + p[1]);
@@ -234,7 +203,11 @@ void StretchThetaPlateau(const Real *p, Real &t) {
   const Real h = ThetaPlateauHalf(p, fabs(e));
   t = (e < 0.0) ? mid - h : mid + h;
 }
-// dispatcher used by Coordinates and the outputs: p == nullptr or p[2] <= 0 -> sinh map
+
+//----------------------------------------------------------------------------------------
+//! \fn void ApplyThetaStretch
+//! \brief Applies the theta-plateau map if p is set (p[2] > 0), else the sinh map.
+
 KOKKOS_INLINE_FUNCTION
 void ApplyThetaStretch(const Real a, const Real *p, Real &t) {
   if (p != nullptr && p[2] > 0.0) {
@@ -243,7 +216,5 @@ void ApplyThetaStretch(const Real a, const Real *p, Real &t) {
     StretchTheta(a, t);
   }
 }
-  
-
 
 #endif // COORDINATES_GRID_STRETCH_HPP_

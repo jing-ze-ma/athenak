@@ -1,44 +1,28 @@
 #ifndef COORDINATES_CUBED_SPHERE_HPP_
 #define COORDINATES_CUBED_SPHERE_HPP_
 //========================================================================================
-// AthenaXXX astrophysical plasma code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file cubed_sphere.hpp
-//! \brief Global geometry of the gnomonic equiangular cubed sphere: where each panel
-//! sits on the cube, and the tangent basis it carries.
-//!
-//! Coordinates::CoordGnomonicEquiangle only ever works INSIDE one panel, and every
-//! panel's metric is the same function of (xi,eta) -- nothing there knows how a panel is
-//! oriented in space. The orientation lives in exactly two places: Mesh::panel_neighbors
-//! (which panel you reach across which face, and how the two tangential indices line up)
-//! and the frames below. They must agree, and they do: propagating panel_neighbors around
-//! the cube starting from panel 0's frame reproduces all six frames uniquely, and the
-//! resulting 24 directed edges reproduce Mesh::GetPanelBoundary entry for entry.
-//!
+//! \brief Global geometry of the gnomonic equiangular cubed sphere: the orientation of
+//! each panel on the cube and its tangent basis, plus the transformations of vectors
+//! between the charts of two neighbouring panels used at panel seams.
 //! On panel p a point is the unit vector (a*x + b*y + n)/delta, with x = tan(xi),
-//! y = tan(eta), delta = sqrt(1 + x^2 + y^2), and (a,b,n) the right-handed frame below;
-//! xi = x2 and eta = x3 both run over [-pi/4, pi/4], and n is the outward face normal.
-//! The map is used OUTSIDE that range too: a panel's ghost zone is its own gnomonic map
-//! extended past the seam, which is what makes the halo geometry well defined.
-//!
-//! WHY THIS IS SHARED. Two panel frames written out twice drift apart: an independent
-//! copy in a problem generator had panels 3 and 4 interchanged, which is self-consistent
-//! within each panel and therefore invisible to any single-panel test, but silently makes
-//! a global initial condition a different field on two of the six panels. There must be
-//! one copy, and this is it.
+//! y = tan(eta), delta = sqrt(1 + x^2 + y^2), (a,b,n) the right-handed panel frame, and
+//! xi = x2, eta = x3 in [-pi/4, pi/4]. The map is also used beyond that range, in the
+//! ghost zones of a panel. The frames are consistent with Mesh::panel_neighbors.
 
 #include <math.h>
 
 #include "athena.hpp"
 
 namespace cubed_sphere {
-
 //----------------------------------------------------------------------------------------
-//! \brief The right-handed frame (a,b,n) of panel p. Panels 4,0,1,2 walk in longitude
-//! (normals +x, +y, -x, -y) and 3/5 are the two poles (+z, -z), matching the face diagram
-//! in mesh.hpp.
+//! \fn void cubed_sphere::PanelFrame
+//! \brief Right-handed frame (a,b,n) of panel p. Panels 0,1,2,4 lie on the equator,
+//! panels 3 and 5 are the +z and -z poles (see the face diagram in mesh.hpp).
 
 KOKKOS_INLINE_FUNCTION
 void PanelFrame(const int p, Real a[3], Real b[3], Real n[3]) {
@@ -78,8 +62,8 @@ void PanelFrame(const int p, Real a[3], Real b[3], Real n[3]) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \brief Panel coordinates (xi,eta) on panel p to a Cartesian unit vector. Valid for
-//! |xi|,|eta| beyond pi/4, i.e. in the ghost zones.
+//! \fn void cubed_sphere::PanelToCart
+//! \brief Converts panel coordinates (xi,eta) on panel p to a Cartesian unit vector.
 
 KOKKOS_INLINE_FUNCTION
 void PanelToCart(const int p, const Real xi, const Real eta, Real q[3]) {
@@ -95,8 +79,9 @@ void PanelToCart(const int p, const Real xi, const Real eta, Real q[3]) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \brief The inverse: the (xi,eta) of the direction q in panel p's chart. Well defined
-//! whenever q.n > 0, which includes a neighbouring panel's near ghost zones.
+//! \fn void cubed_sphere::CartToPanel
+//! \brief Converts a Cartesian direction q to (xi,eta) in the chart of panel p (valid
+//! for q.n > 0).
 
 KOKKOS_INLINE_FUNCTION
 void CartToPanel(const int p, const Real q[3], Real &xi, Real &eta) {
@@ -114,8 +99,8 @@ void CartToPanel(const int p, const Real q[3], Real &xi, Real &eta) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \brief Which panel the direction q belongs to: the one whose outward normal it is
-//! most aligned with.
+//! \fn int cubed_sphere::FindPanel
+//! \brief Returns the panel whose outward normal is most aligned with direction q.
 
 KOKKOS_INLINE_FUNCTION
 int FindPanel(const Real q[3]) {
@@ -131,10 +116,10 @@ int FindPanel(const Real q[3]) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \brief The two UNIT tangent vectors of panel p at (xi,eta), in Cartesian components.
-//! These are d(rhat)/d(xi) and d(rhat)/d(eta) normalised, which is the basis the code
-//! stores velocity components on -- see the note above GnomonicEquianglePrimFaceX1.
-//! They are NOT orthogonal: e1.e2 = -sin(xi) sin(eta), which is Coordinates::cos_cell.
+//! \fn void cubed_sphere::PanelTangents
+//! \brief Unit tangent vectors e1 = d(rhat)/d(xi), e2 = d(rhat)/d(eta) (normalized) of
+//! panel p at (xi,eta) in Cartesian components. This is the basis of the stored velocity
+//! components; it is not orthogonal (e1.e2 = -sin(xi) sin(eta)).
 
 KOKKOS_INLINE_FUNCTION
 void PanelTangents(const int p, const Real xi, const Real eta,
@@ -155,38 +140,21 @@ void PanelTangents(const int p, const Real xi, const Real eta,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn cubed_sphere::TransformMomentum
-//! \brief Re-express the two tangential COVARIANT momentum components of a cell on panel
-//! `psrc` at (xi,eta) in the tangent basis of panel `pdst` at the SAME physical point.
-//!
-//! Across a panel seam the two charts do NOT share a tangent basis. Their eta axes agree
-//! along the shared edge, but the xi axes differ by a shear that grows away from the edge
-//! midpoint (for the 0/1 seam, e_xi = e_xi' - sqrt(2) sin(eta) e_eta'), reaching O(1) at
-//! the panel corners. Copying the components across with a signed axis permutation -- the
-//! permutation is exact for the INDICES, and exact for the components only on the seam
-//! midline -- therefore leaves an O(1) error in the halo velocity, which makes the scheme
-//! inconsistent at every seam. The radial component is untouched: rhat is common to both
-//! charts.
-//!
-//! m_i = V.e_i, so the round trip is: raise with the source Gram matrix to get the
-//! contravariant pair, rebuild V in Cartesian, then dot into the destination basis.
-
-//! THE GEOMETRY IS SPLIT OFF FROM THE ARITHMETIC, and the reason is performance, not
-//! taste.  Everything above the "raise on the source panel" line -- four PanelFrame
-//! switches, four tan/sqrt pairs, a PanelToCart and a CartToPanel with two atan -- is a
-//! function of (psrc, pdst, xi, eta) ONLY.  The seam packers call this per CELL, i.e.
-//! inside the RADIAL loop, where xi and eta do not change: x1 is radial on the cubed
-//! sphere and no seam crosses it.  Profiled, that made the boundary pack 14.9x more
-//! expensive per call on the cubed sphere than on spherical polar, a quarter of the whole
-//! GPU time.  SeamXformAt computes the geometry once per (kk,jj) and ApplyMomentumXform
-//! does the O(1) work per cell.  TransformMomentum is exactly the two called back to
-//! back, so there is ONE copy of the arithmetic and the split cannot drift.
+//! \struct cubed_sphere::SeamXform
+//! \brief Transforms the two tangential covariant momentum components of a cell on panel
+//! psrc at (xi,eta) into the tangent basis of panel pdst at the same physical point.
+//! The components are raised with the source metric, rebuilt as a Cartesian vector and
+//! projected onto the destination basis. The radial component is common to both charts.
+//! The geometry (SeamXformAt) depends only on (psrc,pdst,xi,eta) and is computed once per
+//! (k,j) by the seam packers; ApplyMomentumXform does the per-cell arithmetic.
 
 struct SeamXform {
   Real s1[3], s2[3], d1[3], d2[3], cs, det;
 };
 
-//! \brief The per-(panel pair, xi, eta) geometry of TransformMomentum.
+//----------------------------------------------------------------------------------------
+//! \fn void cubed_sphere::SeamXformAt
+//! \brief Geometry of TransformMomentum for one panel pair and (xi,eta).
 
 KOKKOS_INLINE_FUNCTION
 void SeamXformAt(const int psrc, const int pdst, const Real xi, const Real eta,
@@ -205,7 +173,10 @@ void SeamXformAt(const int psrc, const int pdst, const Real xi, const Real eta,
   return;
 }
 
-//! \brief The per-cell half: raise, rebuild V, lower on the destination panel.
+//----------------------------------------------------------------------------------------
+//! \fn void cubed_sphere::ApplyMomentumXform
+//! \brief Per-cell part of TransformMomentum: raise, rebuild V, project on the
+//! destination basis.
 
 KOKKOS_INLINE_FUNCTION
 void ApplyMomentumXform(const SeamXform &t, const Real m2, const Real m3,
@@ -224,6 +195,10 @@ void ApplyMomentumXform(const SeamXform &t, const Real m2, const Real m3,
   return;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void cubed_sphere::TransformMomentum
+//! \brief Full momentum transformation: SeamXformAt followed by ApplyMomentumXform.
+
 KOKKOS_INLINE_FUNCTION
 void TransformMomentum(const int psrc, const int pdst, const Real xi, const Real eta,
                        const Real m2, const Real m3, Real &m2_out, Real &m3_out) {
@@ -234,32 +209,21 @@ void TransformMomentum(const int psrc, const int pdst, const Real xi, const Real
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn cubed_sphere::TransformFieldToDstNormals
-//! \brief Re-express a tangential MAGNETIC FIELD known on panel `psrc` at (xi,eta) as its
-//! projections on the destination panel's two FACE NORMALS at the same physical point.
-//!
-//! This is the face-centred counterpart of TransformMomentum, and it differs from it in
-//! both what it takes and what it returns, because the field is not stored the way the
-//! momentum is. The input is the pair of source FACE-NORMAL projections
-//! (B.nhat_xi, B.nhat_eta) -- what b0.x2f/x3f hold -- and the output is the same pair in
-//! the destination chart, which is what the destination's ghost x2f/x3f need. The two
-//! charts share rhat, so the radial component is a plain copy and is not handled here.
-//!
-//! Neither pair is an orthonormal frame: nhat_xi.nhat_eta = -c on both panels. The route
-//! is therefore normals -> contravariant on the source unit basis -> Cartesian ->
-//! projections on the destination normals. The source cos/sin are recomputed here from
-//! PanelTangents rather than read from the geometry arrays, so the caller cannot pass the
-//! wrong staggering by accident.
-
-//! It is split into geometry and arithmetic for the same reason as TransformMomentum --
-//! the face-centred seam packer also calls it inside the radial loop -- and in the same
-//! shape: SeamFieldXformAt once per (kk,jj), ApplyFieldXform per cell.
+//! \struct cubed_sphere::SeamFieldXform
+//! \brief Transforms the tangential magnetic field given as its projections on the face
+//! normals of panel psrc at (xi,eta), (B.nhat_xi, B.nhat_eta) as stored in b0.x2f/x3f,
+//! into its projections on the face normals of panel pdst at the same point. The route is
+//! normals -> contravariant components -> Cartesian -> destination normals. The radial
+//! component is common to both charts and is not handled here. As for TransformMomentum,
+//! the geometry (SeamFieldXformAt) is split from the per-cell work (ApplyFieldXform).
 
 struct SeamFieldXform {
   Real s1[3], s2[3], d1[3], d2[3], sns, csd, snd;
 };
 
-//! \brief The per-(panel pair, xi, eta) geometry of TransformFieldToDstNormals.
+//----------------------------------------------------------------------------------------
+//! \fn void cubed_sphere::SeamFieldXformAt
+//! \brief Geometry of TransformFieldToDstNormals for one panel pair and (xi,eta).
 
 KOKKOS_INLINE_FUNCTION
 void SeamFieldXformAt(const int psrc, const int pdst, const Real xi, const Real eta,
@@ -278,8 +242,9 @@ void SeamFieldXformAt(const int psrc, const int pdst, const Real xi, const Real 
   return;
 }
 
-//! \brief The per-cell half: normals -> contravariant -> Cartesian -> destination
-//! normals.
+//----------------------------------------------------------------------------------------
+//! \fn void cubed_sphere::ApplyFieldXform
+//! \brief Per-cell part of TransformFieldToDstNormals.
 
 KOKKOS_INLINE_FUNCTION
 void ApplyFieldXform(const SeamFieldXform &t, const Real bn_xi, const Real bn_eta,
@@ -301,6 +266,10 @@ void ApplyFieldXform(const SeamFieldXform &t, const Real bn_xi, const Real bn_et
   bn_eta_out /= t.snd;
   return;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn void cubed_sphere::TransformFieldToDstNormals
+//! \brief Full field transformation: SeamFieldXformAt followed by ApplyFieldXform.
 
 KOKKOS_INLINE_FUNCTION
 void TransformFieldToDstNormals(const int psrc, const int pdst, const Real xi,

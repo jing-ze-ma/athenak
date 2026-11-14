@@ -100,7 +100,6 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("wall_wb_onesided", wall_wb_onesided);
   v.value("diode_ox1", diode_ox1);
   v.value("top_ghost_prim_copy", top_ghost_prim_copy);
-  v.value("cs_seam_hlle", cs_seam_hlle);
   v.value("cs_seam_shared", cs_seam_shared);
   v.value("mlat_exch", mlat_exch);
   v.value("mlat_own_rec", mlat_own_rec);

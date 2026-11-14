@@ -6,7 +6,7 @@
 //! \file bvals_cc.cpp
 //! \brief functions to pack/send and recv/unpack boundary values for cell-centered (CC)
 //! Mesh variables.
-//! Prolongation of CC variables  occurs in ProlongateCC() function called from task list
+//! Prolongation of CC variables occurs in ProlongateCC function called from task list
 
 #include <algorithm>
 #include <cstdlib>
@@ -34,7 +34,7 @@ MeshBoundaryValuesCC::MeshBoundaryValuesCC(MeshBlockPack *pp, ParameterInput *pi
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void MeshBoundaryValuesCC::SetVectorPairs()
+//! \fn void MeshBoundaryValuesCC::SetVectorPairs
 //! \brief Replace the default (IVY, IVZ) tangential-pair rule of this exchange by an
 //! explicit table: each {a,b} is a pair (a = x2 member, b = x3 member), every other slot
 //! of the nvar exchanged is a scalar (no polar sign flip, no seam basis transform).
@@ -61,17 +61,9 @@ void MeshBoundaryValuesCC::SetVectorPairs(const int nvar,
 }
 
 //----------------------------------------------------------------------------------------
-// speed2-1031 (bvsplit): the team decomposition of the CC pack / unpack.  They ran one
-// team per (block, buffer, variable) with vector length 1: each thread walked the whole
-// radial i range of its (k, j) column serially, and only the few teams of the populated
-// buffers worked (HG cs, 3 blocks/rank: ~600 us per 1-variable pack on 168 teams).  Now
-// each team is split into S teams over chunks of its (k, j) range and the i loop runs on
-// VL vector lanes.  Every buffer / ghost value is the same expression of the same inputs
-// (per-element copies / transforms): bitwise.  Env BVALS_CC_SPLIT (default 1 since
-// defaults-1105, USER 11-05: 3.6 % faster than 16 on the 2-GPU dhj restart, bitwise; was 16)
-// and BVALS_CC_VL (default 32 on CUDA, 16 elsewhere since fast2nd-1112); both = 1 is the
-// old launch.  The env
-// variable still overrides (BVALS_CC_SPLIT=16 = the 10-31 split).
+//! \fn static int BvCcSplit
+//! \brief Number of teams each (block, buffer, variable) of the CC pack/unpack is split
+//! into over its (k,j) range (env BVALS_CC_SPLIT, default 1).
 static int BvCcSplit() {
   static int s = -1;
   if (s < 0) {
@@ -81,10 +73,10 @@ static int BvCcSplit() {
   }
   return s;
 }
-// fast2nd-1112: BVALS_CC_VL is read on every backend; HIP default 16 (was fixed at 1).
-// Small HG cs deck, P0 keys, 40 cycles, 1 MI300A (apudev 13066772, bitwise identical
-// output): VL 1 27.5 / 28.1 s, VL 16 20.4 s, VL 64 20.6 / 22.0 s
-// (SPLIT 4 + VL 64: 27.7 s)
+//----------------------------------------------------------------------------------------
+//! \fn static int BvCcVl
+//! \brief Vector length of the CC pack/unpack (env BVALS_CC_VL; default 32 on CUDA, 16
+//! otherwise).
 static int BvCcVl() {
   static int v = -1;
   if (v < 0) {
@@ -99,17 +91,16 @@ static int BvCcVl() {
   return v;
 }
 
-// dhjcuda-1112: the seam-pack stencil lambdas (sval, seamval, ...) forced inline on CUDA:
-// nvcc kept them as calls, and their [&] captures then lived in local memory (spills)
+// force-inline the seam-pack stencil lambdas on CUDA (avoids local-memory spills)
 #if defined(KOKKOS_ENABLE_CUDA)
 #define BV_CUDA_INLINE __attribute__((always_inline))
 #else
 #define BV_CUDA_INLINE
 #endif
 
-// d6fast3-1112: env BVALS_CC_TS = the team size of the CC pack / unpack (default 0 =
-// Kokkos::AUTO, the launch as before).  Each buffer element is the same expression of the
-// same inputs whatever thread handles its (k, j) row: bitwise.
+//----------------------------------------------------------------------------------------
+//! \fn static BvCcTeamPolicy BvCcPolicy
+//! \brief Team policy of the CC pack/unpack (env BVALS_CC_TS = team size, 0 = AUTO).
 static BvCcTeamPolicy BvCcPolicy(const int nleague) {
   static int t = -1;
   if (t < 0) {
@@ -122,7 +113,7 @@ static BvCcTeamPolicy BvCcPolicy(const int nleague) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void MeshBoundaryValuesCC::PackAndSendCC()
+//! \fn void MeshBoundaryValuesCC::PackAndSendCC
 //! \brief Pack cell-centered variables into boundary buffers and send to neighbors.
 //!
 //! This routine packs ALL the buffers on ALL the faces, edges, and corners simultaneously
@@ -168,7 +159,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   const Real rg_ = cs_rho_guard;
   const bool rs_lin = cs_lin_resample;
   const bool nors_ = cs_noresample;
-  // wball-1104 wb_seam (see bvals.hpp)
+  // wb_seam (see bvals.hpp)
   const bool wbs_ = wb_seam;
   auto wbsphi_ = wbs_phi;
   const EOS_Data wbseos_ = wbs_eos;
@@ -176,8 +167,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   const bool wbsetg_ = wbs_etg;
   auto wbsbcc_ = wbs_bcc;
   const bool wbsmhd_ = (wbs_bcc.extent_int(0) > 0);
-  const bool ext_ = cs_ext_pass_;   // layoutbug-1103: second pass, see cs_seam_blockend
-  const bool posg_ = pmy_pack->pmesh->cs_seam_pos_global;   // layoutfix-1106
+  const bool ext_ = cs_ext_pass_;   // second pass, see cs_seam_blockend
   const int ngx_ = pmy_pack->pmesh->mb_indcs.ng;
   const bool cperm_ = cs_perm_pairs;
   const int hrq_ = cs_hrq0;
@@ -194,26 +184,14 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   const int mbie_ = pmy_pack->pmesh->mb_indcs.ie;
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   int nmnv = nmb*nnghbr*nvar;
-  const int vmask_ = vmask;   // dhjcuda-1112 (BvVarOf, CUDA)
+  const int vmask_ = vmask;   // (BvVarOf, CUDA)
   const int nsp_ = BvCcSplit();
   BvCcTeamPolicy policy = BvCcPolicy(nmnv*nsp_);
   Kokkos::TeamPolicy<> policy1(DevExeSpace(), nmnv, Kokkos::AUTO);   // (z4c kernel)
-  // The seam/pole branch below keeps per-thread arrays (stencil indices, three SeamXform)
-  // that give the kernel a PRIVATE SEGMENT (scratch).  A dispatch that needs scratch
-  // right after ones that do not stalls the GPU queue ~140 us while the runtime
-  // (re)attaches scratch -- measured before every pack of the implicit M1 halo exchange
-  // (tests_m1/runs_3k_gpu3d/README_HALO.md).  So the body is compiled twice: with the
-  // branch (cubed sphere / polar) and without it (everything else), where do_cs and
-  // do_pole are false anyway, i.e. the same arithmetic; still one launch per call.
-  // nvcc rejects generic (auto) extended lambdas: under CUDA the flag is a plain bool
-  // (and the call sites pass true/false), the same arithmetic.
-  // d6fast3-1112: a second compile-time flag kwb_ for the wb_seam branch (WBAdvance with
-  // the EOS): with wb_seam off (every cs deck but the dhj wb runs) it is dead code, but
-  // it took the seam pack from 816 to 4816 bytes of scratch per lane (HIP, 128 VGPRs).
-  // The seam variant without it is launched when wb_seam is off: wbsv is false there
-  // anyway, so the arithmetic is the same (bitwise).
+  // the seam/pole branch needs per-thread scratch; the body is compiled twice (with and
+  // without it, selected at launch) so ordinary packs do not pay the scratch attach
 #if defined(KOKKOS_ENABLE_CUDA)
-  // d6fast4-1112: nvcc has no generic extended lambda, and the bool flags did not compile
+  // nvcc has no generic extended lambda, and the bool flags did not compile
   // the dead branches out (the CUDA pack had 255 registers + 3 kB stack): three kernels
   // with kseam_ / kwb_ compile-time constants (bvals_cc_pack.inc), the same arithmetic
 #define BVCC_PACK_NAME pack_tt_
@@ -266,9 +244,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     });
   }  // end par_for_outer
 
-  // The whole body of this kernel sits under (is_z4c && multilevel), both of which are
-  // host-side constants, so when they do not hold the launch has nothing to do at all:
-  // skip it.  It is otherwise a full-size empty team launch on EVERY halo exchange.
+  // the kernel body only acts for z4c with multilevel: skip the launch otherwise
   if (is_z4c_ && ml_) {
   BvalsTeamFor("SendBuffZ4c", policy1, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
@@ -276,7 +252,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     const int vl = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
     const int v = vlst_.v[vl];
 
-    // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
+    // only load buffers when neighbor exists. CUBED-SPHERE CUBE VERTEX: skipped on
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
     if (nghbr.d_view(m,n).gid >= 0 &&
         !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n)) &&
@@ -402,7 +378,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
 }
 
 //----------------------------------------------------------------------------------------
-// \!fn void RecvBuffers()
+// \!fn void RecvBuffers
 // \brief Unpack boundary buffers
 
 TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
@@ -515,7 +491,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
       int nj = ju - jl + 1;
       int nk = ku - kl + 1;
       int nkj  = nk*nj;
-      // speed2-1031 bvsplit: this team's chunk of the (k, j) range
+      // bvsplit: this team's chunk of the (k, j) range
       const int q0_ = static_cast<int>((static_cast<int64_t>(nkj)*sp_)/nsp_);
       const int q1_ = static_cast<int>((static_cast<int64_t>(nkj)*(sp_ + 1))/nsp_);
       // the window narrows the LOOP only: ni and the index map stay as they were
@@ -534,41 +510,20 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
         int j = (idx - k * nj) + jl;
         k += kl;
 
-        // CUBE-VERTEX CORNER FILL: OWNERSHIP.  With `<mesh>/cs_vertex_fill_cc` the x2/x3
-        // face and x1x2/x3x1 edge buffers were widened by ng along the seam (see
-        // WidenForCubeVertex in buffs_cc.cpp) so the doubly-ghost corner block rides the
-        // face exchange.  Both flanking buffers reach that block, but each panel only
-        // genuinely COVERS the half of it on its own side of the diagonal, so write a
-        // doubly-ghost cell only from the neighbour whose panel contains that direction.
-        // Decided here, from the RECEIVER's own geometry, so it needs nothing from the
-        // sender and is identical on every rank.  ONLY the slots that were widened:
-        // 8-23 (x2 faces and x1x2 edges) and 24-39 (x3 faces and x3x1 edges).  The test
-        // MUST NOT reach the x2x3 edge (40-47) or corner (48-55) buffers, whose
-        // destinations are legitimately doubly-ghost -- gating them here would suppress
-        // the real edge and corner exchange.  Cells outside the corner block, and any
-        // grid that is not a cubed sphere, never enter this.
+        // cube-vertex corner fill (<mesh>/cs_vertex_fill_cc): the widened x2/x3 face and
+        // edge buffers both reach the corner block; each panel writes the half on its own
+        // side of the diagonal
         if (cs_vfill_cc_ && (n >= 8) && (n < 40) &&
             (nghbr.d_view(m,n).lev == mblev.d_view(m)) &&
             ((j < js_) || (j > je_)) && ((k < ks_) || (k > ke_))) {
-          // ONLY a CUBE VERTEX needs the fill.  At an ordinary block corner the diagonal
-          // neighbour exists and its own buffer (40..55, unpacked LATER in this same
-          // scalar n loop) is the correct filler, and the panel-edge geometry below is
-          // not even valid there.
+          // only a cube vertex needs the fill (an ordinary corner has a diagonal
+          // neighbour whose buffer is unpacked later)
           const int sj = (j < js_) ? 0 : 1;
           const int sk = (k < ks_) ? 0 : 1;
           if (!IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m,
                                   40 + 2*(sj + 2*sk))) return;
-          // OWNERSHIP, exactly.  The corner ghost block is covered by the two flanking
-          // panels, split by the seam BETWEEN THEM, and in this panel's own gnomonic
-          // chart that seam is exactly the DIAGONAL.  Take P = +z: tan(xi) = x/z and
-          // tan(eta) = y/z, and the +x/+y panel boundary is the plane x = y, i.e.
-          // xi = eta.  With a = s2*xi - pi/4 and b = s3*eta - pi/4 measuring how far the
-          // cell lies beyond each panel edge, a > b means the direction belongs to the
-          // panel across the x2 face and a < b to the one across the x3 face; the other
-          // seven vertices follow by reflection, which is what the signs are.  The test
-          // is COMPLEMENTARY by construction, so one of the two buffers writes every
-          // cell of the block and neither writes a cell the other owns -- which matters
-          // because FillPanelCornersCC stops extrapolating the block once the fill is on.
+          // ownership: in this panel's gnomonic chart the seam between the two flanking
+          // panels is the diagonal of the corner block; each panel writes its own side
           const Real xi  = 0.25*M_PI*CellCenterX(j-js_, nx2_, mbsz.d_view(m).x2min,
                                                               mbsz.d_view(m).x2max);
           const Real eta = 0.25*M_PI*CellCenterX(k-ks_, nx3_, mbsz.d_view(m).x3min,
@@ -597,7 +552,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     tmember.team_barrier();
   });  // end par_for_outer
 
-  // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables).  Whole body is
+  // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables). Whole body is
   // under the host-side (is_z4c && multilevel): skip the launch when it cannot fire.
   if (is_z4c_ && ml_) {
   BvalsTeamFor("RecvBuffZ4c", policy1, KOKKOS_LAMBDA(TeamMember_t tmember) {
@@ -651,15 +606,9 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     if (pmy_pack->pmesh->multilevel) { FillPanelCornersCC(ca, true, vmask); }
   }
 
-  // layoutbug-1103: <mesh>/cs_seam_blockend = extend.  The along-seam resample of the
-  // pack above was clamped to the SENDING block's active range, so at an interior block
-  // end on a seam (more than one MeshBlock per panel side) the ghost was EXTRAPOLATED
-  // from that block alone while a single block per panel interpolates: a MeshBlock-
-  // layout dependence of the seam halo at truncation level.  Every ghost is now in place,
-  // in particular each sender's along-seam ghosts next to such an end (same-panel copies),
-  // so the whole exchange is repeated once with the stencil allowed into them (blocking;
-  // same buffers, same variables and window).  Non-seam buffers and every stencil that
-  // did not reach a block end come out bitwise as in the first pass.
+  // <mesh>/cs_seam_blockend = extend: a second pass re-packs the seam halo with the
+  // ghosts of the sending block filled, so at an internal block end the along-seam
+  // resample interpolates instead of extrapolating (layout-independent seam halo)
   if (cs_blockend_ext_ && !cs_ext_pass_ && !cs_noresample &&
       pmy_pack->pmesh->use_cubed_sphere) {
     cs_ext_pass_ = true;
@@ -667,9 +616,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     (void) InitRecv(a.extent_int(1), vmask);
     while (PackAndSendCC(a, ca, iwl, iwu, vmask) != TaskStatus::complete) {}
     while (RecvAndUnpackCC(a, ca, iwl, iwu, vmask) != TaskStatus::complete) {}
-    // seamexact-1103: wait on this pass's own sends here.  A caller that cleared its
-    // sends before unpacking (rad_m1_coupling.cpp FluidRefresh) would otherwise leave
-    // them in flight into its next exchange, which reuses the buffers and the requests.
+    // wait on this pass's own sends (callers may reuse the buffers and requests)
     (void) ClearSend();
     cs_ext_pass_ = false;
   }
@@ -678,55 +625,21 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
 }
 
 //----------------------------------------------------------------------------------------
-// \!fn void MeshBoundaryValuesCC::FillPanelCornersCC()
-// \brief Fill the ng x ng corner ghost cells of a cubed-sphere panel corner.
-//
-// The cell-centred twin of MeshBoundaryValuesFC::FillPanelCornersFC, and needed for the
-// same reason: a panel corner is a CUBE VERTEX where only THREE panels meet, so the
-// generic corner buffer -- a rectangular index region of one diagonal neighbour under the
-// face seam's signed permutation -- reaches somewhere meaningless. The value copied there
-// is wrong by O(1) in EVERY variable, density included, so it is not a basis error that
-// TransformMomentum could repair.
-//
-// For hydro this was measured not to matter: a dimensionally split PLM+HLLC sweep never
-// reconstructs through the ng x ng diagonal block. MHD does. The edge-centred EMF at a
-// panel-corner edge is built from fluxes on the faces meeting there, whose reconstruction
-// does read the diagonal cells, so O(1) garbage in these ghosts becomes an O(1) EMF on a
-// corner edge and the CT update then drives the corner field away in a single step. That
-// is what made the uniform-field gate -- an exact static state -- lose 1.3% of its
-// magnetic energy on cycle 1 and blow up on cycle 2.
-//
-// The panel's own gnomonic map is well defined out there and the two flanking face halos
-// are accurate, so each corner ghost is extrapolated quadratically from one, again from
-// the other, and the two are averaged. The stencil reads only the flanking strips, never
-// the corner block being written. Same-panel corners are left entirely alone.
-//
-// EACH EXTRAPOLANT GETS A SIGN-PRESERVING FALLBACK. The raw quadratic weights are not
-// positivity preserving -- with nghost = 3 the third ghost carries (10, -15, 6) -- and in
-// the red-giant run the density extrapolant went NEGATIVE in the layer above the
-// star-corona join, firing the density and energy floors ~1e6 times per output interval
-// in these ghost cells. The rule applied here is the weakest one that rules that out: if
-// the three stencil nodes all share a STRICT sign and the extrapolant comes out with the
-// opposite sign, or exactly zero, the extrapolant is replaced by the node ADJACENT to the
-// ghost -- it falls back to constant extrapolation there. In every other case it is kept
-// bit for bit. A positive density or internal energy above the red-giant star/corona join
-// therefore stays positive, while a smooth profile, where the quadratic never crosses
-// zero, is untouched, so the angular diffusion operator that reads this block through the
-// conduction cross term keeps its order. An earlier version instead CLAMPED every
-// extrapolant to the [min,max] of its three nodes; that also truncates smooth MONOTONE
-// data, which is what that operator is built from, and it pushed the nx = 32 Linf
-// residual of tst/test_suite/rad/test_rad_cs_raddiff_cpu.py from 0.0363 to 0.189 against
-// a 0.1 gate. The sign fallback leaves that test where it was.
+//! \fn void MeshBoundaryValuesCC::FillPanelCornersCC
+//! \brief Fills the ng x ng corner ghost cells at a cube vertex, where only three panels
+//! meet and the generic corner buffer has no meaningful source. Each corner ghost is
+//! extrapolated quadratically from each of the two flanking face halos (in the panel's
+//! own gnomonic chart) and the two are averaged, with a sign-preserving fallback.
+//! Same-panel corners are not touched.
 
 //----------------------------------------------------------------------------------------
-//! \fn SignPreserveCS
-//! \brief Sign-preserving fallback for a one-sided quadratic cube-vertex extrapolant.
-//! q is the extrapolant and (n0,n1,n2) the three stencil nodes it was built from, with n0
-//! the node ADJACENT to the ghost being filled. If n0, n1 and n2 all share a strict sign
-//! and q has the opposite sign or is exactly zero, q is discarded for n0, i.e. constant
-//! extrapolation; otherwise q is returned unchanged. See the note above the caller.
+//! \fn Real SignPreserveCS
+//! \brief Sign-preserving fallback for a one-sided quadratic cube-vertex extrapolant q
+//! built from the nodes (n0,n1,n2), n0 adjacent to the ghost: if the nodes share a strict
+//! sign and q has the opposite sign or is zero, n0 is returned (constant extrapolation);
+//! otherwise q.
 
-namespace cs_vertex_diag { extern Real cc_perturb, perturb_add; }   // vertexacc-1103 (mesh.cpp)
+namespace cs_vertex_diag { extern Real cc_perturb; }   // mesh.cpp
 
 KOKKOS_INLINE_FUNCTION
 static Real SignPreserveCS(const Real q, const Real n0, const Real n1, const Real n2) {
@@ -756,9 +669,8 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
   auto a_ = a;
   const bool vfill_ = pmy_pack->pmesh->cs_vertex_fill_cc;
   const bool coar_ = coarse;
-  const Real vpert_ = cs_vertex_diag::cc_perturb;   // vertexacc-1103 (mesh.cpp)
-  const Real vadd_ = cs_vertex_diag::perturb_add;   // cornerfix-1103 (mesh.cpp)
-  const bool vpon_ = (vpert_ != 0.0) || (vadd_ != 0.0);
+  const Real vpert_ = cs_vertex_diag::cc_perturb;   // (mesh.cpp)
+  const bool vpon_ = (vpert_ != 0.0);
   const int is_ = indcs.is, ie_ = indcs.ie;
 
   // par_for takes at most five ranges, so the ng x ng corner block is flattened into g
@@ -774,29 +686,13 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
     const int nj_id = (sj < 0) ? 8 : 12;
     const int nk_id = (sk < 0) ? 24 : 28;
     const int mp = mbpanel.d_view(m);
-    // ONLY A TRUE CUBE VERTEX.  The condition is that BOTH flanking faces are panel
-    // seams -- exactly IsCubeVertexCorner's test, and exactly the case whose exchange is
-    // skipped.  It used to fire when EITHER face was a seam, which with more than one
-    // MeshBlock per panel also caught ordinary corners that DO have a real diagonal
-    // neighbour, overwriting properly exchanged, seam-transformed data with a one-sided
-    // extrapolation.
+    // only a true cube vertex: both flanking faces are panel seams
     bool seamj = false, seamk = false;
     if (nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp) seamj = true;
     if (nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp) seamk = true;
     if (!(seamj && seamk)) return;
-    // THE SAMPLED FILL SUPERSEDES THIS, exactly as in FillPanelCornersFC.  When the two
-    // flanking neighbours are at the SAME level their widened buffers have already
-    // written this corner block with REAL data from the two panels that cover it, which
-    // is strictly better than any extrapolation, so do not overwrite it.  At a level
-    // boundary only `isame` was widened, so the extrapolation below is still the best
-    // available, and the same holds on the COARSE array, which is never widened.
-    //
-    // WHICH BUFFER REACHES WHICH RADIAL LAYER.  Over the ACTIVE radial range the two
-    // widened FACE buffers cover the block.  A RADIAL GHOST layer is triply ghost, so
-    // only a buffer already ghost in x1 can reach it: the x1x2 and x3x1 EDGE buffers,
-    // widened by the same rule.  BOTH must exist at this level, because ownership splits
-    // the block along the diagonal and one alone would leave half of it written by
-    // nothing.
+    // the sampled fill (same-level flanking neighbours with widened buffers) already
+    // wrote this block with real data; extrapolate only otherwise
     const bool vfill_here = (vfill_ && !coar_ &&
         nghbr.d_view(m,nj_id).lev == mblev.d_view(m) &&
         nghbr.d_view(m,nk_id).lev == mblev.d_view(m));
@@ -808,10 +704,10 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
           nghbr.d_view(m,e12).gid >= 0 && nghbr.d_view(m,e12).lev == mblev.d_view(m) &&
           nghbr.d_view(m,e31).gid >= 0 && nghbr.d_view(m,e31).lev == mblev.d_view(m);
       if ((i >= is_ && i <= ie_) || vfill_rg) {
-        if (vpon_) {   // cornerfix-1103 diagnostic: the sampled block is perturbed too
+        if (vpon_) {   // diagnostic: the sampled block is perturbed too
           const int jt = (sj < 0) ? (js-1-gj) : (je+1+gj);
           const int kt = (sk < 0) ? (ks-1-gk) : (ke+1+gk);
-          a_(m,v,kt,jt,i) = a_(m,v,kt,jt,i)*(1.0 + vpert_) + vadd_;
+          a_(m,v,kt,jt,i) = a_(m,v,kt,jt,i)*(1.0 + vpert_);
         }
         return;
       }
@@ -836,13 +732,10 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
     const Real j2 = a_(m,v,kt,aj+2*stj,i);
     Real ek = wk0*k0 + wk1*k1 + wk2*k2;
     Real ej = wj0*j0 + wj1*j1 + wj2*j2;
-    // SIGN-PRESERVING FALLBACK -- see the note above the function.  It only fires when
-    // the three nodes share a strict sign and the extrapolant flips it (or zeroes it),
-    // and then drops to the node next to the ghost; smooth data is kept exactly.
+    // sign-preserving fallback (see SignPreserveCS)
     ek = SignPreserveCS(ek, k0, k1, k2);
     ej = SignPreserveCS(ej, j0, j1, j2);
     a_(m,v,kt,jt,i) = 0.5*(ek + ej)*(1.0 + vpert_);   // vpert_ = 0: bitwise
-    if (vadd_ != 0.0) a_(m,v,kt,jt,i) += vadd_;
   });
   return;
 }

@@ -1,29 +1,27 @@
 #ifndef BVALS_TOP_GHOST_PRIM_COPY_HPP_
 #define BVALS_TOP_GHOST_PRIM_COPY_HPP_
 //========================================================================================
-// AthenaK astrophysical fluid dynamics code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file top_ghost_prim_copy.hpp
-//! \brief wbplm-1103 <hydro|mhd>/top_ghost_prim_copy (default false = bitwise; acts only
-//! with the one-way zero-gradient top, diode_ox1 = problem/top_bc outflow1): after
-//! ConsToPrim, the outer-x1 user-BC ghost cells take the internal energy, temperature and
-//! derived EOS quantities (p, Gamma_1, ...) of the last active cell BITWISE.
-//!
-//! outflow1 means a zero-gradient copy of rho and e, but the ghost conserved energy is
-//! assembled as e + KE + rho phi_ghost (+ B_ghost^2/2) and the inversion takes those terms
-//! back off, so the ghost pressure came back as the cell's plus a few ulp of either sign.
-//! The x1 well-balanced PLM tests the sign of sR = (p_ghost - p_ie)/dx and switched the top
-//! face between two reconstructions on that roundoff (wbplm-1103 notes).  With the copy
-//! sR is exactly 0 and the choice is deterministic.  rho and the velocities are already
-//! bitwise copies (same rho, copied/clipped momenta) and are not touched.
+//! \brief <hydro|mhd>/top_ghost_prim_copy: with the zero-gradient outer-x1 user boundary
+//! (problem/top_bc = outflow1), copies the internal energy, temperature and derived EOS
+//! quantities of the last active cell exactly into the ghost cells after ConsToPrim, so
+//! the ghost pressure equals the cell pressure (deterministic well-balanced PLM choice).
+
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 
+//----------------------------------------------------------------------------------------
+//! \fn void TopGhostPrimCopy
+//! \brief Copies e (or p), T and the derived EOS variables of cell ie into the outer-x1
+//! ghost cells.
+
 inline void TopGhostPrimCopy(MeshBlockPack *pp, const DvceArray5D<Real> &w0,
-                             const DvceArray5D<Real> &wder, const DvceArray4D<Real> &wtemp,
-                             const bool gen) {
+                             const DvceArray5D<Real> &wder,
+                             const DvceArray4D<Real> &wtemp, const bool gen) {
   auto &indcs = pp->pmesh->mb_indcs;
   const int ie = indcs.ie, ng = indcs.ng;
   const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;

@@ -17,7 +17,7 @@
 #include "bvals.hpp"
 
 //----------------------------------------------------------------------------------------
-//! \fn void MeshBoundaryValuesFC::PackAndSendFluxFC()
+//! \fn void MeshBoundaryValuesFC::PackAndSendFluxFC
 //! \brief Pack restricted fluxes of face-centered fields at fine/coarse boundaries
 //! into boundary buffers and send to neighbors for flux-correction step. These fluxes
 //! (e.g. EMFs) live at cell edges.
@@ -26,52 +26,10 @@
 //! MeshBlocks. Buffer data are then sent (via MPI) or copied directly for periodic or
 //! block boundaries.
 
-//! CUBED SPHERE. This exchange is what keeps the magnetic field SINGLE-VALUED on a
-//! panel seam. A seam face is one physical face stored twice, as an active face of each
-//! of the two panels meeting there, and it is never communicated (see InitRecvIndices:
-//! the shared face is deliberately excluded from the halo). Each panel evolves its own
-//! copy with its own EMFs, so the copies stay equal only if every edge bounding that face
-//! carries the same line integral on both -- which is precisely what averaging the EMFs
-//! here achieves. Panel-blind, it did the opposite: the seam copies drifted apart
-//! secularly, reaching 2.1e-3 of |B| after 200 cycles of an exactly static state.
-//!
-//! Unlike the halo field, the EMF needs NO basis transform. The CT update consumes
-//! dxedge*E, the line integral of E along the edge, and a seam edge is the same physical
-//! curve in both charts -- the two charts' along-seam maps coincide on the seam -- so the
-//! integral is a plain scalar. Three things do change: the along-seam INDEX may be
-//! reversed; the along-seam EMF then flips SIGN, because a reversed index means the
-//! reversed unit tangent; and across a swap seam the neighbour reaches this face through
-//! a face of its OTHER tangential axis, so the along-seam EMF must be written into the
-//! buffer slot that neighbour will read it from (x2e <-> x3e). The radial component x1e
-//! is untouched: rhat is common to both charts and so is its orientation.
-//!
-//! Only the FACE buffers get that treatment. The x2x3 EDGE buffers, which carry x1e on
-//! the radial edge at a block corner, need no transform at all -- x1e is a plain scalar
-//! and the buffer is a bare 1D array over the radial index -- but the exchange is SKIPPED
-//! outright when the corner is a CUBE VERTEX (IsCubeVertexCorner, in bvals.hpp).
-//!
-//! A cube vertex is a corner where only THREE panels meet, so there is no fourth block
-//! diagonally across it and the generic pairing is meaningless: it points at the WRONG
-//! CORNER of the right panel. What makes that fatal rather than merely noisy is where the
-//! bogus value LANDS. The pairing still carries a destination slot, and that slot is a
-//! legitimate four-block seam edge of the receiving block -- so the vertex send COLLIDES
-//! with the correct sender for that edge, and one of the two is lost. That is why the
-//! four-block seam edges were multi-valued (7.5e-5 in x1e, 6.7e-4 in the seam field) with
-//! several MeshBlocks per panel, while both cube vertices and four-block edges in a
-//! panel's INTERIOR were already exact. Under MPI the same collision is two sends racing
-//! for one posted receive on the same tag.
-//!
-//! Skipping costs nothing: the vertex edge itself is fixed afterwards by
-//! AveragePanelCornerEMF, which needs only the two FACE buffers. The predicate is purely
-//! local and symmetric, so a slot is skipped on the send and receive sides together and
-//! every surviving slot has exactly one sender.
-//!
-//! x1x2 and x3x1 edge buffers exist ONLY when the radial direction is split across
-//! MeshBlocks, which on this grid means refinement: with one block spanning x1 the
-//! radial physical boundaries leave a block with no x1-direction neighbour at all, so
-//! those slots have no partner. That is why they carried no seam transform for so long;
-//! they now do (see the branches below), because a radial level boundary creates them
-//! and they land exactly on the ring where the level boundary meets a seam.
+//! On the cubed sphere this exchange also keeps the magnetic field single-valued on a
+//! panel seam: the seam face is stored by both panels and never communicated, so the
+//! EMFs on the edges bounding it are averaged between the two panels (with the seam index
+//! map and sign changes), at every level.
 
 TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
   // create local references for variables in kernel
@@ -86,14 +44,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbgid = pmy_pack->pmb->mb_gid;
   auto &mblev = pmy_pack->pmb->mb_lev;
-  // The CT update consumes dxedge*E, not E, so on a curvilinear grid restricting the
-  // EMF to a coarse edge is a LENGTH-weighted sum, not an average: send sum(L_f E_f)
-  // and let the coarse side divide by its own edge length. The coarse update then
-  // multiplies by that same length, so the coarse edge receives exactly the line
-  // integral the two fine edges carried -- and, as with the cell-centred flux
-  // correction, this is exact without the coarse length having to equal the sum of the
-  // fine ones. The same-level (panel seam) branch above is a direct copy and is left
-  // alone: that edge is not restricted, it is shared.
+  // CT uses dxedge*E: on a curvilinear grid the restricted EMF is the length-weighted sum
+  // sum(L_f E_f), divided by the coarse edge length on the receiving side
   const bool curvi_ = (pmy_pack->pmesh->use_cubed_sphere ||
                        pmy_pack->pmesh->use_spherical_polar);
   auto dxe1_ = pmy_pack->pcoord->dxedge.x1e;
@@ -299,16 +251,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
         const int j = jl;
         const int fi = 2*il - cis;
         const int fj = 2*jl - cjs;
-        // CUBED-SPHERE PANEL SEAM. The edge runs along x3, so k is the along-seam index
-        // and the seam being crossed is the x2 one -- the same geometry as the x1face
-        // branch above, and the transform is the same: reverse the along-edge index,
-        // flip the SIGN of the along-edge EMF with it, and write it into whichever slot
-        // the neighbour will read it from.
-        //
-        // These edge slots EXIST ONLY WHEN THE RADIAL DIRECTION IS SPLIT: with one block
-        // spanning x1 a block has no x1-direction neighbour, so an x1x2 (or x3x1) edge
-        // has no partner at all. That is why the seam was never handled here, and why
-        // the gap could not show up until refinement put a level boundary in x1.
+        // cubed-sphere panel seam (edge along x3, k along the seam): reverse the
+        // along-edge index and flip the sign of the along-edge EMF with it, as for
+        // x1faces
         int vout = v;
         int ak = 1, bk = 0;
         Real sgn = 1.0;
@@ -555,8 +500,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RecvAndUnpackFluxFC()
-//! \brief Unpack boundary buffers for flux correction of FC variables.  This requires
+//! \fn void RecvAndUnpackFluxFC
+//! \brief Unpack boundary buffers for flux correction of FC variables. This requires
 //! averaging together fluxes from MeshBlocks at the same level, or replacing the fluxes
 //! with the average from MeshBlocks at finer levels.
 
@@ -600,11 +545,11 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFluxFC(DvceEdgeFld4D<Real> &flx) {
   if (bflag) {return TaskStatus::incomplete;}
 #endif
 
-  if (skip_emf_reconcile) {return TaskStatus::complete;}   // ucthshare-1102 diagnostic
+  if (skip_emf_reconcile) {return TaskStatus::complete;}   // diagnostic
   //----- STEP 2: buffers have all completed, so unpack and perform appropriate averaging
 
   // 2D array to store number of fluxes summed into corner buffers
-  // r1mspeed-1102: both work arrays are members, allocated once; cnr_e1 is zeroed here as
+  // both work arrays are members, allocated once; cnr_e1 is zeroed here as
   // its allocation did (bitwise the per-call arrays)
   const int nx1_ = pmy_pack->pmesh->mb_indcs.nx1;
   if (nflx_buf.extent_int(0) != nmb) {
@@ -653,7 +598,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFluxFC(DvceEdgeFld4D<Real> &flx) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void MeshBoundaryValuesFC::SavePanelCornerEMF
+//! \fn void MeshBoundaryValuesFC::SavePanelCornerEMF
 //! \brief Stash this block's OWN x1e on each cube-vertex radial edge, before
 //! SumBoundaryFluxes overwrites it with a sum. See AveragePanelCornerEMF.
 
@@ -687,25 +632,10 @@ void MeshBoundaryValuesFC::SavePanelCornerEMF(DvceEdgeFld4D<Real> &flx,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void MeshBoundaryValuesFC::AveragePanelCornerEMF
-//! \brief Make the radial EMF on a cube-vertex edge single-valued, by a genuine THREE-WAY
-//! average of the three panels that meet there.
-//!
-//! A panel corner is a cube vertex: only THREE panels meet, and its radial edge belongs
-//! to all three. The generic edge machinery cannot express that. It pairs the corner with
-//! ONE diagonal neighbour, and on this grid that pairing is to the WRONG CORNER of the
-//! right panel -- panel 0's (-x2,-x3) edge at (0.577,-0.577,-0.577) is paired with panel
-//! 5's (+x2,+x3) edge at (0.577,+0.577,-0.577), which is a different vertex -- so the
-//! value it mixes in is not even from the same edge. Measured spread among the three
-//! panels sharing a vertex: 4.6e-5 of |E|, and identical whether that diagonal buffer is
-//! used or dropped, so it contributes nothing but noise.
-//!
-//! The two FACE buffers, however, already carry exactly what is needed: each spans its
-//! whole seam INCLUDING both end edges, so a block's two seam buffers hold the other two
-//! panels' values on this very edge, correctly index-mapped by the seam packer. Averaging
-//! own + those two gives all three panels the mean of the SAME three numbers, which is
-//! single-valued by construction. Its own value has to be stashed first, because
-//! SumBoundaryFluxes has already replaced x1e by a sum by the time this runs.
+//! \fn void MeshBoundaryValuesFC::AveragePanelCornerEMF
+//! \brief Makes the radial EMF on a cube-vertex edge single-valued by a three-way average
+//! of the three panels that meet there (the generic edge exchange pairs the corner with
+//! only one diagonal neighbour).
 
 void MeshBoundaryValuesFC::AveragePanelCornerEMF(DvceEdgeFld4D<Real> &flx,
                                                  DvceArray3D<Real> &save) {
@@ -745,7 +675,7 @@ void MeshBoundaryValuesFC::AveragePanelCornerEMF(DvceEdgeFld4D<Real> &flx,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void BoundaryValuesFC::SumBoundaryFluxes
+//! \fn void BoundaryValuesFC::SumBoundaryFluxes
 //! \brief Sums boundary buffer fluxes from neighboring MeshBlocks at the same level into
 //! flux (e.g. EMF) array if input argument 'same_level=true', or sums boundary buffer
 //! fluxes from neighboring MeshBlocks at a finer level into flux array otherwise.
@@ -774,9 +704,9 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
 
   // Sum recieve buffers into EMFs stored on MeshBlocks
   // Outer loop over (# of MeshBlocks)*(3 field components)
-  // r1mspeed-1102: and radial chunks of FLX_SUM_CHUNK, one team each.  The sums onto one
+  // and radial chunks of FLX_SUM_CHUNK, one team each. The sums onto one
   // edge element stay in one team, in the buffer order n (bitwise): the loops at a fixed
-  // radial index il run in the chunk containing il (flxrace-1104); the nflx counts run in
+  // radial index il run in the chunk containing il ; the nflx counts run in
   // chunk 0 only.
   constexpr int FLX_SUM_CHUNK = 16;
   const int nic = (pmy_pack->pmesh->mb_indcs.nx1 + 2*pmy_pack->pmesh->mb_indcs.ng + 1
@@ -806,10 +736,10 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
         }
 
       // only unpack buffers when
-      //   (both innerx1 AND outerx1 BCs are NOT shear_periodic) OR
-      //   (only innerx1 BC is shear_periodic AND n!=0,16,20,32,33,36,37) OR
-      //   (only outerx1 BC is shear_periodic AND n!=4,18,22,34,35,38,39) OR
-      //   (both innerx1 AND outerx1 BC are shear_periodic AND n!=...)
+      // (both innerx1 AND outerx1 BCs are NOT shear_periodic) OR
+      // (only innerx1 BC is shear_periodic AND n!=0,16,20,32,33,36,37) OR
+      // (only outerx1 BC is shear_periodic AND n!=4,18,22,34,35,38,39) OR
+      // (both innerx1 AND outerx1 BC are shear_periodic AND n!=...)
       if ( ((mbbcs.d_view(m,0)!=BoundaryFlag::shear_periodic) &&
             (mbbcs.d_view(m,1)!=BoundaryFlag::shear_periodic)) ||
            ((mbbcs.d_view(m,0)==BoundaryFlag::shear_periodic) && !(inner_bufs) &&
@@ -841,16 +771,16 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
         const int ni = iu - il + 1;
         const int nj = ju - jl + 1;
         const int nk = ku - kl + 1;
-        // this team's radial slice [cl, cu] of [il, iu] (r1mspeed-1102)
+        // this team's radial slice [cl, cu] of [il, iu]
         const int cl = (il > ic0) ? il : ic0;
         const int cu = (iu < ic1) ? iu : ic1;
         const int nci = (cu >= cl) ? (cu - cl + 1) : 0;
         const int nji  = nj*nci;
-        // flxrace-1104: the loops at the FIXED radial index il (x1-face neighbours, the
-        // x1-x2 and x1-x3 edge neighbours) run in the team whose radial chunk contains il,
-        // the same team that sums the x2/x3-face neighbours' edges at i = il; running them
-        // in chunk 0 raced with that team on GPUs (two teams += the same edge EMF).  The
-        // nflx counts stay in chunk 0 (one team per block; they are not edge EMFs).
+        // the loops at the FIXED radial index il (x1-face neighbours, the
+        // x1-x2 and x1-x3 edge neighbours) run in the team whose radial chunk contains
+        // il, the same team that sums the x2/x3-face neighbours' edges at i = il; running
+        // them in chunk 0 raced with that team on GPUs (two teams += the same edge EMF).
+        // The nflx counts stay in chunk 0 (one team per block; they are not edge EMFs).
         const bool own_il = (il >= ic0) && (il <= ic1);
         const int nkj  = own_il ? nk*nj : 0;
         const int nki  = nk*nci;
@@ -1001,7 +931,7 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void MeshBoundaryValuesFC::ZeroFluxesAtBoundaryWithFiner
+//! \fn void MeshBoundaryValuesFC::ZeroFluxesAtBoundaryWithFiner
 //! \brief Zeroes out fluxes of face-centered variables (e.g. EMFs) at boundaries with
 //! MeshBlocks at a finer level, so that boundary buffer fluxes from finer level can be
 //! summed (averaged) in place.
@@ -1148,7 +1078,7 @@ void MeshBoundaryValuesFC::ZeroFluxesAtBoundaryWithFiner(DvceEdgeFld4D<Real> &fl
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void MeshBoundaryValuesFC::AverageBoundaryFluxes
+//! \fn void MeshBoundaryValuesFC::AverageBoundaryFluxes
 //! \brief Applies appropriate average to summed boundary fluxes, depending on number of
 //! elements being averaged together.
 
@@ -1171,10 +1101,10 @@ void MeshBoundaryValuesFC::AverageBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
     const int n = (tmember.league_rank() - m*(3*nnghbr))/3;
     const int v = (tmember.league_rank() - m*(3*nnghbr) - 3*n);
     // only average when
-    //   (both innerx1 AND outerx1 BCs are NOT shear_periodic) OR
-    //   (only innerx1 BC is shear_periodic AND n!=0) OR
-    //   (only outerx1 BC is shear_periodic AND n!=4) OR
-    //   (both innerx1 AND outerx1 BC are shear_periodic AND n!=0,4)
+    // (both innerx1 AND outerx1 BCs are NOT shear_periodic) OR
+    // (only innerx1 BC is shear_periodic AND n!=0) OR
+    // (only outerx1 BC is shear_periodic AND n!=4) OR
+    // (both innerx1 AND outerx1 BC are shear_periodic AND n!=0,4)
     if ( ((mbbcs.d_view(m,0)!=BoundaryFlag::shear_periodic) &&
           (mbbcs.d_view(m,1)!=BoundaryFlag::shear_periodic)) ||
          ((mbbcs.d_view(m,0)==BoundaryFlag::shear_periodic) && (n!=0) &&
@@ -1391,21 +1321,21 @@ void MeshBoundaryValuesFC::AverageBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void MeshBoundaryValuesFC::InitRecvFlux
+//! \fn void MeshBoundaryValuesFC::InitRecvFlux
 //! \brief Posts non-blocking receives (with MPI) for boundary communication of fluxes of
 //! face-centered variables, which are communicated at FACES and EDGES of MeshBlocks at
-//! the SAME or FINER levels.  This is different than for fluxes of cell-centered vars.
+//! the SAME or FINER levels. This is different than for fluxes of cell-centered vars.
 
 TaskStatus MeshBoundaryValuesFC::InitFluxRecv(const int nvars) {
 #if MPI_PARALLEL_ENABLED
-  // detfence-1020: the receive buffers are still READ by the previous exchange's unpack
+  // the receive buffers are still READ by the previous exchange's unpack
   // kernel (queued on the device stream, not yet run when the host gets here), and a
   // receive posted now lets an early neighbour's NEXT message (GPU-aware MPI writes the
   // device buffer directly) overwrite them first: the ghosts then take some of the next
-  // exchange's values.  Back-to-back exchanges of one boundary object with no host sync
+  // exchange's values. Back-to-back exchanges of one boundary object with no host sync
   // in between (the implicit Krylov / transverse halos) hit this at >= 12 ranks on
   // several nodes (global He giant, Viper 24 ranks: run-to-run differences from the
-  // first ic_rad relax pass).  Wait for the queued kernels before the first receive is
+  // first ic_rad relax pass). Wait for the queued kernels before the first receive is
   // posted; no arithmetic changes (bitwise the old binary whenever it was not raced).
   if (global_variable::nranks > 1) {Kokkos::fence();}
   int &nmb = pmy_pack->nmb_thispack;
@@ -1417,7 +1347,7 @@ TaskStatus MeshBoundaryValuesFC::InitFluxRecv(const int nvars) {
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       // only post receives for neighbors on FACES and EDGES at FINER and SAME levels
-      // this is the only thing different from BoundaryValuesCC::InitRecvFlux()
+      // this is the only thing different from BoundaryValuesCC::InitRecvFlux
       if ( (nghbr.h_view(m,n).gid >=0) &&
            (nghbr.h_view(m,n).lev >= pmy_pack->pmb->mb_lev.h_view(m)) &&
            (n<48) &&
