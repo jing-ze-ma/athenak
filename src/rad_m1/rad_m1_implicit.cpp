@@ -11877,8 +11877,8 @@ void RadiationM1::ImplicitReport() {
               << std::endl;
     if (impl_src_poslin && psl_cnt.extent_int(0) > 0) {   // rsgposlin-1113
       auto ph = Kokkos::create_mirror_view_and_copy(HostMemSpace(), psl_cnt);
-      std::cout << "<rad_m1> implicit_src_poslin: cell-passes with the lagged positive "
-                << "exchange (rank 0)=" << ph(0) << std::endl;
+      std::cout << "<rad_m1> implicit_src_poslin: cell-passes re-linearised about the "
+                << "local equilibrium T (rank 0)=" << ph(0) << std::endl;
     }
     if (impl_eos_cache) {
       std::cout << "<rad_m1> eos_cache: nt=" << impl_ecnt
@@ -14057,6 +14057,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
   auto sstab = std::get<26>(ctx_);
   auto psl = std::get<27>(ctx_);
   auto pslc = std::get<28>(ctx_);
+  auto pefl = std::get<29>(ctx_);
   auto srb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -14066,6 +14067,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     (void)ar; (void)ch; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)eos; (void)gam;
     (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr; (void)igy;
     (void)iw_; (void)opac_; (void)uh; (void)usec; (void)sstab; (void)psl; (void)pslc;
+    (void)pefl;
 #endif
     Real rkpv = opac_(m,M1_OP_P,k,j,i);
     Real rkev = opac_(m,M1_OP_E,k,j,i);
@@ -14103,7 +14105,47 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     Real de0 = iw_(m,M1_IW_DE0,k,j,i);
     Real bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
     Real rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
-    bool pdmp = false;   // rsgposlin-1113
+    // rsgposlin-1113 <rad_m1>/implicit_src_poslin (read only when named, default false =
+    // bitwise; bitwise in every cell-pass where it does not fire).  The row eliminates
+    // the gas with ONE Newton step in T about T_k.  In a stiff cell (c dt rho kappa_P >=
+    // 1) whose iterate E^k sits at e_floor -- the signature of the RSG Picard 2-cycle
+    // (rsg.01451 rank 23, RSG_CAUSE_1113: a T_k far from the cell's state makes the
+    // tangent emission negative, E' is clipped to the floor, the root find from the
+    // floored E gives the other far T, and so on) -- the linearisation point is moved
+    // to the cell's LOCAL radiation-gas equilibrium temperature T*, transport frozen
+    // (no net transport over the step):
+    //   rho e(T*) + (c/chat)(kappa_P/kappa_E) a T*^4 = e_gas^old + (c/chat)(E^old + de0),
+    // i.e. the energy-conserving exchange to E* = (kappa_P/kappa_E) a T*^4 - de0 (one
+    // scalar bracketed root, the gas-solve routine).  The row then eliminates the gas
+    // about T* as usual: same fixed point (the elimination is exact at convergence),
+    // energy booked from the assembled q = SRCR - SRCB E' as before.
+    bool pfire = false;
+    if (psl && rkev > 0.0 && cl*dt*rkpv >= 1.0 &&
+        iw_(m,M1_IW_EP,k,j,i) <= pefl) {
+      const Real en0 = iw_(m,M1_IW_EN,k,j,i) + de0;
+      const Real egn0 = iw_(m,M1_IW_EGN,k,j,i);
+      if (egn0 + (cl/ch)*en0 > 0.0) {
+        const Real a4 = (cl/ch)*(rkpv/rkev)*ar;
+        Real ts = tk;
+        bool ok = true;
+        if (usec) {
+          (void) M1ImplTemperatureT(thc, dd, tk, egn0, a4, (cl/ch)*en0, ts, ok);
+        } else {
+          (void) M1ImplTemperatureT(thd, dd, tk, egn0, a4, (cl/ch)*en0, ts, ok);
+        }
+        if (ok && ts > 0.0) {
+          tk = ts;
+          iw_(m,M1_IW_TP,k,j,i) = tk;
+          if (usec) {thc(dd, tk, ee, cv);} else {thd(dd, tk, ee, cv);}
+          t3 = tk*tk*tk;
+          t4 = t3*tk;
+          bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
+          rk = egn0 - ee - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
+          pfire = true;
+          Kokkos::atomic_add(&pslc(0), 1.0);
+        }
+      }
+    }
     // MILESTONE 3g, the Newton SAFEGUARD.  The temperature this pass starts from was
     // produced by the Newton step of the previous pass, whose linearisation dropped
     // the curvature of e(T) and of T^4.  Here -- where e(T_k) has just been
@@ -14115,7 +14157,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     // and the bracketed root find of the pre-3g scheme is run for this cell.
     if (gnewt) {
       Real yprev = iw_(m,igy,k,j,i);
-      if (yprev > 0.0) {
+      if (yprev > 0.0 && !pfire) {
         Real ep = iw_(m,M1_IW_EP,k,j,i);
         Real ynow = fabs(rk + cl*dt*rkev*ep);
         // ...but only where the residual still MEANS something.  Once the cell has
@@ -14148,40 +14190,14 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
           }
         }
       }
-      // rsgposlin-1113 (below): the damped B_k is the one the T update reads
-      if (psl && bk > 0.0) {
-        const Real yk = rk + cl*dt*rkev*fmax(iw_(m,M1_IW_EP,k,j,i), 0.0);
-        const Real lim = ((yk < 0.0) ? 0.2 : M1_NEWT_TRUST)*tk;
-        if (fabs(yk) > lim*bk) {bk = fabs(yk)/lim; pdmp = true;}
-      }
       iw_(m,igb,k,j,i) = bk;
       iw_(m,igr,k,j,i) = rk;
     }
     if (gasx) {
       iw_(m,igm,k,j,i) += nmiss;
     }
-    // rsgposlin-1113 <rad_m1>/implicit_src_poslin (read only when named, default false =
-    // bitwise; bitwise also in every cell-pass where it does not fire).  The row
-    // eliminates the gas with ONE Newton step in T: the emission it solves is the tangent
-    // emis (T_k^4 + 4 T_k^3 dT), dT = (R_k + c dt rho kappa_E E')/B_k.  Far from the
-    // fixed point that step can leave the trust region the T update itself enforces
-    // (|dT| <= M1_NEWT_TRUST T_k, else the bracketed root find): the row then solves a
-    // gas response that is never applied, and for dT < -T_k/4 a NEGATIVE emission.  On
-    // RSG (rsg.01451, rank 23, RSG_CAUSE_1113) E' < 0 is clipped to e_floor, the root
-    // find from the floored E gives the other T, whose tangent flips back: a Picard
-    // 2-cycle to the 200-pass cap.  With the key, B_k is raised to |y_k|/lim where the
-    // step at the current iterate, y_k = R_k + c dt rho kappa_E E^k, exceeds lim =
-    // 0.2 T_k
-    // (cooling: tangent emission >= 0.2 emis T_k^4) or M1_NEWT_TRUST T_k (heating): a
-    // damped Newton step, the SAME one the row eliminates and the T update applies.  B_k
-    // only multiplies the gas residual, which is zero at convergence, so the fixed point
-    // is unchanged; the write-back books q = SRCR - SRCB E', so energy is exact as
-    // before.  Fires only with implicit_gas_newton (the T update that reads B_k).
-    // A damped cell takes the plain form (the stable form assumes B_k = rho c_v + 4 c dt
-    // rho kappa_P a T^3).
     Real emis = dt*ch*rkpv*ar;
-    if (pdmp) {Kokkos::atomic_add(&pslc(0), 1.0);}
-    if (sstab && bk > 0.0 && !pdmp) {
+    if (sstab && bk > 0.0) {
       // implicit_src_stable (stall_1002): the SAME Schur-eliminated row in a form
       // without cancellation.  With K = c dt rho kappa (2e8 at the BSG wall) the plain
       // form takes SRCB = c dt k_E - c dt k_E (bk - rho c_v)/bk, a difference of two
@@ -14272,7 +14288,6 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
   auto tf_ = std::get<31>(ctx_);
   auto tfz = std::get<32>(ctx_);
   auto gu4 = std::get<33>(ctx_);
-  auto psl = std::get<34>(ctx_);   // rsgposlin-1113
   auto tsb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -14283,7 +14298,6 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     (void)escale; (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr;
     (void)igy; (void)iw_; (void)opac_; (void)plog; (void)uh; (void)usec;
     (void)tso; (void)opf; (void)tsm; (void)tsmin; (void)tf_; (void)tfz; (void)gu4;
-    (void)psl;
 #endif
     Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
     Real eold = iw_(m,M1_IW_EP,k,j,i);
@@ -14324,20 +14338,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
             dtk = (u > 0.0) ? (sqrt(sqrt(u)) - told) : (-told);
           }
         }
-        if (psl && bk > 0.0 && told > 0.0 &&
-            !(fabs(dtk) <= M1_NEWT_TRUST*told)) {
-          // rsgposlin-1113 implicit_src_poslin: a step outside the trust region is
-          // CLAMPED to it (a damped Newton step on the same linearisation the row
-          // eliminated, with B_k damped there) instead of jumping to the bracketed root
-          // at this pass's E': that jump, T_k -> root(E'(T_k)), is the map whose slope
-          // < -1 made the RSG 2-cycle.  Inside the trust region nothing changes.
-          dtk = fmin(fmax(dtk, -M1_NEWT_TRUST*told), M1_NEWT_TRUST*told);
-          tnew = told + dtk;
-          iw_(m,igy,k,j,i) = fabs(yk);
-          done = true;
-        }
-        if (!done && bk > 0.0 && fabs(dtk) <= M1_NEWT_TRUST*told &&
-            (told + dtk) > 0.0) {
+        if (bk > 0.0 && fabs(dtk) <= M1_NEWT_TRUST*told && (told + dtk) > 0.0) {
           tnew = told + dtk;
           iw_(m,igy,k,j,i) = fabs(yk);
           done = true;
@@ -17031,7 +17032,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       auto srb_ctx = std::make_tuple(ar, ch, cl, dt, ec_, ecnt, eos, gam, gasx, gnw,
                                      igb, igf, igm, igr, igy, iw_, opac_, uh, usec, nmb1,
                                      ks, ke, js, je, is, ie, impl_src_stable,
-                                     impl_src_poslin, psl_cnt);
+                                     impl_src_poslin, psl_cnt,
+                                     impl_pos_floor_s2 ? 1.0e-6*efl : efl);
       if (srid) {
         M1ImplSrcLaunch(srb_ctx, std::true_type{});
       } else {
@@ -18435,8 +18437,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                               kappa_f, kappa_s, opac_rho_ref,
                                               opac_t_ref, opac_a, opac_b},
                                      impl_tsolve_opac_mode, impl_tsolve_opac_smin,
-                                     thin_frz, (impl_thin_frz > 0.0), impl_gn_u4,
-                                     impl_src_poslin);
+                                     thin_frz, (impl_thin_frz > 0.0), impl_gn_u4);
       if (tsid) {
         M1ImplTsolveLaunch(tsb_ctx, std::true_type{});
       } else {
