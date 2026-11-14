@@ -50,6 +50,12 @@
   const int tgf = thsw_gface;
   const Real tgfd = thsw_gfd;
   const Real hwsl = impl_hr_ws_lat;
+  // DEBUG rsgposlin-1113 dbg_trace_*: the thin-switch inputs of the traced cell's faces
+  const bool trf = (dtr_rank == global_variable::my_rank) && (dtr_cell[0][0] >= 0) &&
+                   (pmy_pack->pmesh->ncycle >= dtr_c0);
+  const int tcm = dtr_cell[0][0], tck = dtr_cell[0][1], tcj = dtr_cell[0][2];
+  const int tci = dtr_cell[0][3];
+  const int tcyc = pmy_pack->pmesh->ncycle;
   if (impl_beam_hr) {
     // hrup-1009: per direction d, h+_d -> S1 and h-_d -> S3 of every active cell
     // (M1HrCell), both through the transverse halo, then the faces (M1HrFace)
@@ -239,6 +245,14 @@
                                                    iw_(m,M1_IW_TR,k,j,i)) : 1.0,
                      th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr,
                      ch*dtl/dx, bdtc, hcpon ? &hcp_(m,2*d,k,j,i) : nullptr);
+          if (trf && m == tcm && i == tci &&
+              ((k == tck && j == tcj) || (d == 1 && k == tck && j == tcj + 1) ||
+               (d == 2 && k == tck + 1 && j == tcj))) {
+            Kokkos::printf("TRF cyc=%d d=%d k=%d j=%d i=%d gfl=%.4e gfr=%.4e hpf=%.4e "
+                           "hmf=%.4e jcl=%.4e jcr=%.4e tauf=%.4e al=%.4e hl=%.4e hr=%.4e "
+                           "dgt=%.4e\n", tcyc, d, k, j, i, gfl, gfr, hpf, hmf, jcl, jcr,
+                           tauf, al, hl, hr, dgt);
+          }
           if (hfci) {   // hr2prod-1110 implicit_hr_fcimp: dissipation form
             const Real wf = al;
             al = 0.0;
