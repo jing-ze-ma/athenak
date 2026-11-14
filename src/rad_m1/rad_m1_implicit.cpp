@@ -1322,6 +1322,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                                          full && !global_variable::restart_run);
   impl_eos_cache = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache",false);
   pin_report_newton_fb = pin->GetOrAddBoolean("rad_m1","report_newton_fb",false);
+  // xchg-1114: a failed T root find (no bracket) kept T' at the previous iterate and the
+  // pass counted it as converged (|dT| = 0); this key makes it a residual of 1 instead.
+  // Read only when named (an input without it is unchanged, also in what a restart
+  // file records).
+  impl_tsf_res = pin->DoesParameterExist("rad_m1","implicit_tsolve_fail_res") &&
+                 pin->GetBoolean("rad_m1","implicit_tsolve_fail_res");
   dbg_etally = pin->GetOrAddBoolean("rad_m1","dbg_energy_tally",false);
   // accbook-1021: read only when named (an input without it is unchanged, also in the
   // parameters a restart file records)
@@ -11930,6 +11936,9 @@ void RadiationM1::ImplicitReport() {
                 << " max |dq|/q of the exchanged energy=" << ec_tmax << std::endl;
     }
   }
+  // xchg-1114 (output only)
+  std::cout << "<rad_m1> gas T root-find failures (cell-passes, run): tsolve="
+            << tsf_run[0] << " safeguard=" << tsf_run[1] << std::endl;
   if (fbd_n > 0 || fbl_on) {ImplicitFbSummary();}   // meshfb-1106
   if (impl_pcr_check) {
     std::cout << "<rad_m1> line solver=" << ((impl_line_solver == 1) ? "pcr" : "thomas")
@@ -14098,6 +14107,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
   auto is = std::get<24>(ctx_);
   auto ie = std::get<25>(ctx_);
   auto sstab = std::get<26>(ctx_);
+  auto tsf = std::get<27>(ctx_);   // xchg-1114: root-find failure counter (output only)
   auto srb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -14106,7 +14116,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     // generated; other backends capture exactly what the instantiation reads).
     (void)ar; (void)ch; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)eos; (void)gam;
     (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr; (void)igy;
-    (void)iw_; (void)opac_; (void)uh; (void)usec; (void)sstab;
+    (void)iw_; (void)opac_; (void)uh; (void)usec; (void)sstab; (void)tsf;
 #endif
     Real rkpv = opac_(m,M1_OP_P,k,j,i);
     Real rkev = opac_(m,M1_OP_E,k,j,i);
@@ -14185,6 +14195,8 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
                  + cl*dt*rkev*de0;
             // fixbundle-1009 F4: count the fallback only when it is APPLIED (output only)
             iw_(m,igf,k,j,i) += 1.0;
+          } else {
+            Kokkos::atomic_add(&tsf(1), 1.0);   // xchg-1114: no bracket (output only)
           }
         }
       }
@@ -14286,6 +14298,8 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
   auto tf_ = std::get<31>(ctx_);
   auto tfz = std::get<32>(ctx_);
   auto gu4 = std::get<33>(ctx_);
+  auto tsf = std::get<34>(ctx_);   // xchg-1114: root-find failure counter (output only)
+  auto tfres = std::get<35>(ctx_);   // xchg-1114 implicit_tsolve_fail_res
   auto tsb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -14296,7 +14310,9 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     (void)escale; (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr;
     (void)igy; (void)iw_; (void)opac_; (void)plog; (void)uh; (void)usec;
     (void)tso; (void)opf; (void)tsm; (void)tsmin; (void)tf_; (void)tfz; (void)gu4;
+    (void)tsf; (void)tfres;
 #endif
+    bool tfail = false;
     Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
     Real eold = iw_(m,M1_IW_EP,k,j,i);
     Real rkpv = opac_(m,M1_OP_P,k,j,i);
@@ -14422,7 +14438,12 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
           (void) M1ImplTemperature(eos, dd, told, iw_(m,M1_IW_EGN,k,j,i),
                                    cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew, ok);
         }
-        if (!ok) {tnew = told;}
+        if (!ok) {
+          tnew = told;
+          // xchg-1114: no bracket -- T' is NOT a solution; count it (always)
+          tfail = true;
+          Kokkos::atomic_add(&tsf(0), 1.0);
+        }
         if (gnewt) {
           iw_(m,igy,k,j,i) = 0.0;
           iw_(m,igf,k,j,i) += 1.0;
@@ -14433,6 +14454,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     iw_(m,M1_IW_TP,k,j,i) = tnew;
     Real re = fabs(enew - eold)/fmax(fmax(fabs(enew), escale), 1.0e-300);
     Real rt = fabs(tnew - told)/fmax(fabs(tnew), 1.0e-300);
+    if (tfail && tfres) {rt = 1.0;}   // xchg-1114: never converged on a failed find
     iw_(m,M1_IW_RES,k,j,i) = fmax(re, rt);
     if (plog) {
       iw_(m,M1_IW_S1,k,j,i) = re;
@@ -16035,6 +16057,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // picstop-1017 implicit_conv_est_nofloor: the change over the cells above e_floor of
   // this pass and of the pass before
   Real rnf = 0.0, rnfprev = -1.0;
+  // xchg-1114: the root-find failure counter of this solve (output only)
+  if (tsf_cnt_d.extent_int(0) != 2) {Kokkos::realloc(tsf_cnt_d, 2);}
+  Kokkos::deep_copy(tsf_cnt_d, 0.0);
   for (it = 0; (it < impl_maxit || impl_fr_sh) && !converged; ++it) {
     // vet_gd_rebuild_every = k: the gd tensor from the Picard iterate at passes k, 2k
     // (not in the shadow pass of implicit_final_resid_log: its state is not put back)
@@ -17029,7 +17054,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // (above); srb_ctx is what the helper captured, by value.
       auto srb_ctx = std::make_tuple(ar, ch, cl, dt, ec_, ecnt, eos, gam, gasx, gnw,
                                      igb, igf, igm, igr, igy, iw_, opac_, uh, usec, nmb1,
-                                     ks, ke, js, je, is, ie, impl_src_stable);
+                                     ks, ke, js, je, is, ie, impl_src_stable,
+                                     tsf_cnt_d);
       if (srid) {
         M1ImplSrcLaunch(srb_ctx, std::true_type{});
       } else {
@@ -18433,7 +18459,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                               kappa_f, kappa_s, opac_rho_ref,
                                               opac_t_ref, opac_a, opac_b},
                                      impl_tsolve_opac_mode, impl_tsolve_opac_smin,
-                                     thin_frz, (impl_thin_frz > 0.0), impl_gn_u4);
+                                     thin_frz, (impl_thin_frz > 0.0), impl_gn_u4,
+                                     tsf_cnt_d, impl_tsf_res);
       if (tsid) {
         M1ImplTsolveLaunch(tsb_ctx, std::true_type{});
       } else {
@@ -19721,6 +19748,30 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     newt_nfb += sfb;
     ec_nmiss += sms;
     gas_ncell += ncell*static_cast<Real>(it);
+  }
+
+  // xchg-1114: gas temperature root-find failures of this solve, every solve, all ranks
+  // (output only).  A failure leaves T' at the previous iterate, so without
+  // implicit_tsolve_fail_res the Picard test can count the cell as converged.
+  if (tsf_cnt_d.extent_int(0) == 2) {
+    auto htf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tsf_cnt_d);
+    Real tf[2] = {htf(0), htf(1)};
+#if MPI_PARALLEL_ENABLED
+    {Real gl[2];
+    MPI_Allreduce(tf, gl, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    tf[0] = gl[0];
+    tf[1] = gl[1];}
+#endif
+    tsf_run[0] += tf[0];
+    tsf_run[1] += tf[1];
+    if ((tf[0] > 0.0 || tf[1] > 0.0) && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> TSOLVE-FAIL cycle=" << pmy_pack->pmesh->ncycle
+                << " time=" << pmy_pack->pmesh->time << " passes=" << it
+                << " converged=" << (converged ? 1 : 0)
+                << " root-find failures (cell-passes): tsolve=" << tf[0]
+                << " safeguard=" << tf[1] << " run total=" << tsf_run[0] << "/"
+                << tsf_run[1] << (impl_tsf_res ? " (fail_res on)" : "") << std::endl;
+    }
   }
 
   // MILESTONE 3g: ONE TRUE-TABLE evaluation per cell at the state the step ends on, to

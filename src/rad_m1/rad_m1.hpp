@@ -2853,6 +2853,17 @@ class RadiationM1 {
   // e_floor, 1 = |F| scaled to c E), every stage, and the event-log totals (collective)
   DvceArray1D<Real> acl_cnt_d;
   void EventTotals(Real *v);
+  // xchg-1114: gas temperature root-find FAILURES (ok = false: no bracket, T' kept at the
+  // previous iterate) in the implicit exchange, cell-passes, ALWAYS counted (output only):
+  // [0] step (f) T solve, [1] step (c) Newton safeguard.  tsf_run: whole run, all ranks.
+  DvceArray1D<Real> tsf_cnt_d;
+  Real tsf_run[2] = {0.0, 0.0};
+  // <rad_m1>/implicit_tsolve_fail_res (default false): a failed cell's Picard residual is
+  // set to 1, so the solve cannot be counted as converged on it (changes results)
+  bool impl_tsf_res = false;
+  // <rad_m1>/implicit_tsolve_robust (default false): the T root find grows its bracket
+  // without the 2^80 cap and takes kappa_P, kappa_E at the trial T (changes results)
+  bool impl_ts_robust = false;
   void OnePassAuto(const int t, const bool on, const bool one);
   //! VET (rad_m1_vet.cpp): read <rad_m1>/vet_*, check the mesh, allocate
   void VetInit(ParameterInput *pin);

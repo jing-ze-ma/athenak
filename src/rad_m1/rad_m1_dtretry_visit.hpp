@@ -1132,6 +1132,10 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("eaud_pc", eaud_pc);
   v.value("eaud_pd", eaud_pd);
   v.view("acl_cnt_d", acl_cnt_d);
+  v.view("tsf_cnt_d", tsf_cnt_d);
+  v.value("tsf_run", tsf_run);
+  v.value("impl_tsf_res", impl_tsf_res);
+  v.value("impl_ts_robust", impl_ts_robust);
   v.value("tau_closure", tau_closure);
   v.value("tau_ready", tau_ready);
   v.value("tau_nblk", tau_nblk);
