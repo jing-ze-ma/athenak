@@ -59,7 +59,7 @@ constexpr int CLW_N = 25;
 struct CleanCtx {
   DvceArray5D<Real> cs;          // stage closure
   DvceArray5D<Real> w;           // work
-  DvceArray5D<Real> fc[3];       // face coefficients (m,4,k,j,i): w, theta, G, q
+  DvceArray5D<Real> fc[3];       // face coeff. (m,5,..): w, theta, G, q | corr, raw corr
   DvceArray3D<Real> bmf;         // beam face flux at x1min (m, k-ks, j-js)
   Real h, c, idx[3];
   int bc[6];                     // M1_IBC_* x1min x1max x2min x2max x3min x3max
@@ -70,6 +70,8 @@ struct CleanCtx {
   Real q, eb[6];
   bool fb;                       // gas feedback: r in the diagonal, enthalpy flux
   bool hmus;                     // ray face flux: limited upwind reconstruction (else mean)
+  bool cfct = true;              // correction limited for positivity (else the q gate)
+  bool addc = true;              // add the consistency correction (G part)
 };
 
 // the cell's exact backward-Euler temperature for a given E (constant opacities):
@@ -96,6 +98,43 @@ KOKKOS_INLINE_FUNCTION Real CleanTLocal(const Real d, const Real gm1, const Real
 KOKKOS_INLINE_FUNCTION Real CleanSmooth(Real x) {
   x = fmin(fmax(x, 0.0), 1.0);
   return x*x*(3.0 - 2.0*x);
+}
+
+// the ray-moment consistency correction of the half-range part of face (dir, k, j, i):
+// w c (H_face - (h+_L J_L + h-_R J_R)), H_face the rays' flux at the face (limited upwind
+// reconstruction of the half-range fluxes, or the face mean), clamped to [-J_R, J_L];
+// with it the upwind part acts on E - J only (E = J in a steady streaming field)
+KOKKOS_INLINE_FUNCTION Real CleanCorr(const CleanCtx &x, const int dir, const int m,
+                                      const int k, const int j, const int i) {
+  const int kl = (dir == 2) ? k-1 : k;
+  const int jl = (dir == 1) ? j-1 : j;
+  const int il = (dir == 0) ? i-1 : i;
+  const Real wf = x.fc[dir](m,0,k,j,i);
+  if (!(wf > 0.0)) return 0.0;
+    const Real jlv = x.cs(m,CLN_J,kl,jl,il), jrv = x.cs(m,CLN_J,k,j,i);
+    const Real hup = x.cs(m,CLN_HP+dir,kl,jl,il)*jlv + x.cs(m,CLN_HM+dir,k,j,i)*jrv;
+    Real hf;
+    if (x.hmus) {
+      // upwind-biased limited reconstruction of the rays' half-range fluxes to the
+      // face: H+ from the left cell (HP = h+ J), H- from the right (HM = h- J);
+      // minmod slopes: 2nd order where smooth, the donor value at a jump
+      const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+      auto hpj = [&](const int kk, const int jj, const int ii) {
+        return x.cs(m,CLN_HP+dir,kk,jj,ii)*x.cs(m,CLN_J,kk,jj,ii);};
+      auto hmj = [&](const int kk, const int jj, const int ii) {
+        return x.cs(m,CLN_HM+dir,kk,jj,ii)*x.cs(m,CLN_J,kk,jj,ii);};
+      auto mm = [](const Real a, const Real b) {
+        return (a*b <= 0.0) ? 0.0 : ((fabs(a) < fabs(b)) ? a : b);};
+      const Real pl = hpj(kl,jl,il);
+      const Real sp = mm(pl - hpj(kl-dk,jl-dj,il-di), hpj(k,j,i) - pl);
+      const Real mr = hmj(k,j,i);
+      const Real sm = mm(mr - hmj(kl,jl,il), hmj(k+dk,j+dj,i+di) - mr);
+      hf = fmin(fmax((pl + 0.5*sp) + (mr - 0.5*sm), -jrv), jlv);
+    } else {
+      hf = fmin(fmax(0.5*(x.cs(m,CLN_H+dir,kl,jl,il) + x.cs(m,CLN_H+dir,k,j,i)),
+                     -jrv), jlv);
+    }
+  return wf*x.c*(hf - hup);
 }
 
 // face flux of direction dir (0,1,2) at face (k,j,i) (face between cell-1 and cell along
@@ -165,34 +204,10 @@ KOKKOS_INLINE_FUNCTION Real CleanFlux(const CleanCtx &x, const int e, const int 
   }
   if (wf > 0.0) {
     f += wf*c*(x.cs(m,CLN_HP+dir,kl,jl,il)*el + x.cs(m,CLN_HM+dir,k,j,i)*er);
-    // ray-moment consistency (high-order/low-order): + q w c (H_face - upwind of J),
-    // H_face the face mean of the formal solution's flux clamped to the donor bound
-    // [-J_R, J_L]; the upwind part then acts on E - J only (E = J in a steady field)
-    if (withg) {
-      const Real jlv = x.cs(m,CLN_J,kl,jl,il), jrv = x.cs(m,CLN_J,k,j,i);
-      const Real hup = x.cs(m,CLN_HP+dir,kl,jl,il)*jlv + x.cs(m,CLN_HM+dir,k,j,i)*jrv;
-      Real hf;
-      if (x.hmus) {
-        // upwind-biased limited reconstruction of the rays' half-range fluxes to the
-        // face: H+ from the left cell (HP = h+ J), H- from the right (HM = h- J);
-        // minmod slopes: 2nd order where smooth, the donor value at a jump
-        const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-        auto hpj = [&](const int kk, const int jj, const int ii) {
-          return x.cs(m,CLN_HP+dir,kk,jj,ii)*x.cs(m,CLN_J,kk,jj,ii);};
-        auto hmj = [&](const int kk, const int jj, const int ii) {
-          return x.cs(m,CLN_HM+dir,kk,jj,ii)*x.cs(m,CLN_J,kk,jj,ii);};
-        auto mm = [](const Real a, const Real b) {
-          return (a*b <= 0.0) ? 0.0 : ((fabs(a) < fabs(b)) ? a : b);};
-        const Real pl = hpj(kl,jl,il);
-        const Real sp = mm(pl - hpj(kl-dk,jl-dj,il-di), hpj(k,j,i) - pl);
-        const Real mr = hmj(k,j,i);
-        const Real sm = mm(mr - hmj(kl,jl,il), hmj(k+dk,j+dj,i+di) - mr);
-        hf = fmin(fmax((pl + 0.5*sp) + (mr - 0.5*sm), -jrv), jlv);
-      } else {
-        hf = fmin(fmax(0.5*(x.cs(m,CLN_H+dir,kl,jl,il) + x.cs(m,CLN_H+dir,k,j,i)),
-                       -jrv), jlv);
-      }
-      f += x.fc[dir](m,3,k,j,i)*wf*c*(hf - hup);
+    // ray-moment consistency (high-order/low-order), see CleanCorr: gate mode q*corr,
+    // fct mode the limited correction stored per face
+    if (withg && x.addc) {
+      f += x.cfct ? x.fc[dir](m,3,k,j,i) : x.fc[dir](m,3,k,j,i)*CleanCorr(x, dir, m, k, j, i);
     }
   }
   (void)adv;
@@ -283,9 +298,9 @@ void RadiationM1::CleanAlloc() {
   Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_v, nmb, 2, n3, n2, n1);
   Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
-  Kokkos::realloc(cln_fc1, nmb, 4, n3, n2, n1);
-  Kokkos::realloc(cln_fc2, nmb, 4, n3, n2, n1);
-  Kokkos::realloc(cln_fc3, nmb, 4, n3, n2, n1);
+  Kokkos::realloc(cln_fc1, nmb, 5, n3, n2, n1);
+  Kokkos::realloc(cln_fc2, nmb, 5, n3, n2, n1);
+  Kokkos::realloc(cln_fc3, nmb, 5, n3, n2, n1);
   Kokkos::deep_copy(cln_w, 0.0);
   Kokkos::deep_copy(cln_fc1, 0.0);
   Kokkos::deep_copy(cln_fc2, 0.0);
@@ -591,6 +606,7 @@ void RadiationM1::CleanApply(int src, int dst) {
   x.eb[0] = iebath_x1min; x.eb[1] = iebath_x1max;
   x.fb = gas_feedback;
   x.hmus = cln_hmus;
+  x.cfct = !cln_gate;
   auto op = opac;
   par_for("cln_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -822,6 +838,27 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
     }
   });
   // G part of each face flux via the zero vector: F(E=0, withg) (CLW_CP is scratch = 0)
+  // the raw consistency correction of every interior / periodic face (fct mode)
+  x.cfct = !cln_gate;
+  x.addc = true;
+  if (x.cfct) {
+    for (int dir = 0; dir < 3; ++dir) {
+      if (dir == 1 && !d2) continue;
+      if (dir == 2 && !d3) continue;
+      const int ihi = (dir == 0) ? ie+1 : ie, jhi = (dir == 1) ? je+1 : je;
+      const int khi = (dir == 2) ? ke+1 : ke;
+      par_for("cln_corr", DevExeSpace(), 0, nmb1, ks, khi, js, jhi, is, ihi,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
+        const int hi = (dir == 0) ? x.ie+1 : ((dir == 1) ? x.je+1 : x.ke+1);
+        const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
+        const bool bnd = (pos == lo && x.bc[2*dir] != M1_IBC_PERIODIC) ||
+                         (pos == hi && x.bc[2*dir+1] != M1_IBC_PERIODIC);
+        x.fc[dir](m,4,k,j,i) = bnd ? 0.0 : CleanCorr(x, dir, m, k, j, i);
+        x.fc[dir](m,3,k,j,i) = x.fc[dir](m,4,k,j,i);
+      });
+    }
+  }
   int nit = 0, nnl = 0;
   bool nlok = !fb;
   const int maxnl = fb ? cln_maxnl : 1;
@@ -829,7 +866,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
     ++nnl;
     Kokkos::deep_copy(Kokkos::subview(w, Kokkos::ALL, CLW_CP, Kokkos::ALL, Kokkos::ALL,
                       Kokkos::ALL), 0.0);
-    // r, B = EO + h c kP a T_k^4 - r h c kE E_k - h div G
+    // r, B = EO + h c kP a T_k^4 - r h c kE E_k - h div G.  With the positivity limit
+    // of the consistency correction: B0 without it, then each face's correction scaled so
+    // that no cell gives away more than B0 (the M-matrix keeps E >= 0 for B >= 0)
+    for (int prh = 0; prh < (x.cfct ? 2 : 1); ++prh) {
+    x.addc = !(x.cfct && prh == 0);
     par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real t = x.w(m,CLW_T,k,j,i);
@@ -850,6 +891,35 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdrive, int stage) {
                                    CleanFlux(x,z,2,m,k,j,i,true));
       x.w(m,CLW_B,k,j,i) = b;
     });
+    if (x.cfct && prh == 0) {
+      par_for("cln_fctr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real pout = x.idx[0]*(fmax(x.fc[0](m,4,k,j,i+1), 0.0) + fmax(-x.fc[0](m,4,k,j,i), 0.0));
+        if (x.d2) pout += x.idx[1]*(fmax(x.fc[1](m,4,k,j+1,i), 0.0) +
+                                    fmax(-x.fc[1](m,4,k,j,i), 0.0));
+        if (x.d3) pout += x.idx[2]*(fmax(x.fc[2](m,4,k+1,j,i), 0.0) +
+                                    fmax(-x.fc[2](m,4,k,j,i), 0.0));
+        pout *= x.h;
+        x.w(m,CLW_TT,k,j,i) = (pout > 0.0) ? fmin(1.0, fmax(x.w(m,CLW_B,k,j,i), 0.0)/pout)
+                                           : 1.0;
+      });
+      CleanFillGhost(CLW_TT);
+      for (int dir = 0; dir < 3; ++dir) {
+        if (dir == 1 && !d2) continue;
+        if (dir == 2 && !d3) continue;
+        const int ihi = (dir == 0) ? ie+1 : ie, jhi = (dir == 1) ? je+1 : je;
+        const int khi = (dir == 2) ? ke+1 : ke;
+        par_for("cln_fctf", DevExeSpace(), 0, nmb1, ks, khi, js, jhi, is, ihi,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          const int kl = (dir == 2) ? k-1 : k, jl = (dir == 1) ? j-1 : j;
+          const int il = (dir == 0) ? i-1 : i;
+          const Real d = x.fc[dir](m,4,k,j,i);
+          x.fc[dir](m,3,k,j,i) = d*((d > 0.0) ? x.w(m,CLW_TT,kl,jl,il)
+                                              : x.w(m,CLW_TT,k,j,i));
+        });
+      }
+    }
+    }
     // preconditioner: the operator's x1 tridiagonal part and the x2/x3 diagonal parts
     // (exact for the diagonal-D, half-range and enthalpy parts; the cross terms are
     // left to the Krylov iteration)
