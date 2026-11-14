@@ -1781,6 +1781,9 @@ class RadiationM1 {
   bool impl_src_poslin = false;  // rsgposlin-1113 <rad_m1>/implicit_src_poslin
   DvceArray1D<Real> psl_cnt;     // its firing count (cell-passes, this rank)
   int dtr_rank = -1, dtr_c0 = 0;   // DEBUG dbg_trace_* (rsgposlin-1113)
+  bool impl_tosc = false;          // rsgposlin-1113 <rad_m1>/implicit_tosc_bisect
+  DvceArray5D<Real> tosc;          // (m, 5, k, j, i) per-cell bracket state
+  DvceArray1D<Real> tosc_cnt;      // firing count (cell-passes, this rank)
   int dtr_cell[2][4] = {{-1, 0, 0, 0}, {-1, 0, 0, 0}};
   bool impl_conv_est;           // <rad_m1>/implicit_conv_est (default true*): stop when
                                 // the linear-rate estimate of the REMAINING change is

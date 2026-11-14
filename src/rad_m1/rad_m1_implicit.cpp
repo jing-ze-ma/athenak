@@ -1992,6 +1992,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       is >> dtr_cell[q][0] >> dtr_cell[q][1] >> dtr_cell[q][2] >> dtr_cell[q][3];
     }
   }
+  // rsgposlin-1113 implicit_tosc_bisect (M1ImplTsolveLaunch; read only when named)
+  impl_tosc = pin->DoesParameterExist("rad_m1","implicit_tosc_bisect") &&
+              pin->GetBoolean("rad_m1","implicit_tosc_bisect");
+  if (impl_tosc) {
+    Kokkos::realloc(tosc_cnt, 1);
+    Kokkos::deep_copy(tosc_cnt, 0.0);
+  }
   // rsgposlin-1113 implicit_src_poslin (M1ImplSrcLaunch; read only when named)
   impl_src_poslin = pin->DoesParameterExist("rad_m1","implicit_src_poslin") &&
                     pin->GetBoolean("rad_m1","implicit_src_poslin");
@@ -11918,6 +11925,11 @@ void RadiationM1::ImplicitReport() {
               << " cell-passes=" << gas_ncell
               << " newton fallbacks=" << newt_nfb << " (" << fpc << " per cell-pass)"
               << std::endl;
+    if (impl_tosc && tosc_cnt.extent_int(0) > 0) {   // rsgposlin-1113
+      auto th = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tosc_cnt);
+      std::cout << "<rad_m1> implicit_tosc_bisect: bracketed cell-passes (rank 0)="
+                << th(0) << std::endl;
+    }
     if (impl_src_poslin && psl_cnt.extent_int(0) > 0) {   // rsgposlin-1113
       auto ph = Kokkos::create_mirror_view_and_copy(HostMemSpace(), psl_cnt);
       std::cout << "<rad_m1> implicit_src_poslin: cell-passes re-linearised about the "
@@ -14333,6 +14345,10 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
   auto psl = std::get<34>(ctx_);   // rsgposlin-1113 (implicit_src_poslin && bicgstab)
   auto pslc = std::get<35>(ctx_);
   auto ch = std::get<36>(ctx_);
+  auto tos = std::get<37>(ctx_);    // rsgposlin-1113 implicit_tosc_bisect
+  auto tosc_ = std::get<38>(ctx_);
+  auto tpass = std::get<39>(ctx_);
+  auto tosn = std::get<40>(ctx_);
   auto tsb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -14343,7 +14359,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     (void)escale; (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr;
     (void)igy; (void)iw_; (void)opac_; (void)plog; (void)uh; (void)usec;
     (void)tso; (void)opf; (void)tsm; (void)tsmin; (void)tf_; (void)tfz; (void)gu4;
-    (void)psl; (void)pslc; (void)ch;
+    (void)psl; (void)pslc; (void)ch; (void)tos; (void)tosc_; (void)tpass; (void)tosn;
 #endif
     Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
     Real eold = iw_(m,M1_IW_EP,k,j,i);
@@ -14526,6 +14542,41 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
           iw_(m,igf,k,j,i) += 1.0;
         }
       }
+    }
+    // rsgposlin-1113 <rad_m1>/implicit_tosc_bisect (read only when named, default false =
+    // bitwise; bitwise in every cell-pass where it does not fire).  RSG_CAUSE_1113: in
+    // a stiff radiation-dominated cell flooded by implicit inflow the Picard map of the
+    // gas temperature, T_k -> (exchange linearised about T_k) -> E' -> T(E'), has slope
+    // < -1 and settles on a 2-cycle (rsg.01451 rank 23: T alternates 2.67e11 / 1.22e11,
+    // E' 0.94 / floor, for 190 passes).  A cell whose T step reverses with |dT| > 5 % in
+    // two consecutive passes is flagged: [min, max] of the two iterates brackets the
+    // fixed point (g(T) = map(T) - T changes sign across a 2-cycle), and from then on
+    // its T is the bracket midpoint, the bracket halving by the sign of g each pass
+    // (bisection: unconditionally convergent).  The exchange of every pass is still the
+    // assembled, energy-conserving row (write-back from q = SRCR - SRCB E'); the fixed
+    // point is unchanged.  Slots: 0 T of the last pass, 1 its step, 2/3 bracket, 4 flag.
+    if (tos && tosc_.extent_int(0) > m && tnew > 0.0 && told > 0.0) {
+      if (tpass == 0) {
+        tosc_(m,0,k,j,i) = told; tosc_(m,1,k,j,i) = 0.0; tosc_(m,4,k,j,i) = 0.0;
+      }
+      const Real dnow = tnew - told, dprv = tosc_(m,1,k,j,i);
+      if (tosc_(m,4,k,j,i) > 0.5) {
+        // g(told) = tnew - told: the root is above told when the map pushes up
+        if (dnow > 0.0) {tosc_(m,2,k,j,i) = told;} else {tosc_(m,3,k,j,i) = told;}
+        tnew = 0.5*(tosc_(m,2,k,j,i) + tosc_(m,3,k,j,i));
+        if (gnewt) {iw_(m,igy,k,j,i) = 0.0;}
+        Kokkos::atomic_add(&tosn(0), 1.0);
+      } else if (tpass >= 2 && dnow*dprv < 0.0 && fabs(dnow) > 0.05*told &&
+                 fabs(dprv) > 0.05*told) {
+        tosc_(m,2,k,j,i) = fmin(told, told + dnow);
+        tosc_(m,3,k,j,i) = fmax(told, told + dnow);
+        tosc_(m,4,k,j,i) = 1.0;
+        tnew = 0.5*(tosc_(m,2,k,j,i) + tosc_(m,3,k,j,i));
+        if (gnewt) {iw_(m,igy,k,j,i) = 0.0;}
+        Kokkos::atomic_add(&tosn(0), 1.0);
+      }
+      tosc_(m,1,k,j,i) = tnew - told;
+      tosc_(m,0,k,j,i) = tnew;
     }
     iw_(m,M1_IW_EP,k,j,i) = enew;
     iw_(m,M1_IW_TP,k,j,i) = tnew;
@@ -18524,6 +18575,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // nvcc forbids generic (auto) extended lambdas, so the tag-dependent
       // helper and its kernel are the function template M1ImplTsolveLaunch
       // (above); tsb_ctx is what the helper captured, by value.
+      if (impl_tosc && tosc.extent_int(0) < nmb1 + 1) {   // rsgposlin-1113
+        Kokkos::realloc(tosc, nmb1 + 1, 5, iw.extent_int(2), iw.extent_int(3),
+                        iw.extent_int(4));
+        Kokkos::deep_copy(tosc, 0.0);
+      }
       auto tsb_ctx = std::make_tuple(ar, cl, dt, ec_, ecnt, efls, eos, escale, gasx, gnw,
                                      igb, igf, igm, igr, igy, iw_, opac_, plog, uh, usec,
                                      nmb1, ks, ke, js, je, is, ie,
@@ -18534,7 +18590,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                               opac_t_ref, opac_a, opac_b},
                                      impl_tsolve_opac_mode, impl_tsolve_opac_smin,
                                      thin_frz, (impl_thin_frz > 0.0), impl_gn_u4,
-                                     impl_src_poslin && bicg, psl_cnt, ch);
+                                     impl_src_poslin && bicg, psl_cnt, ch, impl_tosc,
+                                     tosc, it, tosc_cnt);
       if (tsid) {
         M1ImplTsolveLaunch(tsb_ctx, std::true_type{});
       } else {
