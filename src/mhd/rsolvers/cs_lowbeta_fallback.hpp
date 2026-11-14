@@ -1,53 +1,15 @@
 #ifndef MHD_RSOLVERS_CS_LOWBETA_FALLBACK_HPP_
 #define MHD_RSOLVERS_CS_LOWBETA_FALLBACK_HPP_
 //========================================================================================
-// AthenaXXX astrophysical plasma code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file cs_lowbeta_fallback.hpp
-//! \brief CUBED SPHERE: replace the HLLD flux by an HLLE one on FACES whose plasma beta
-//! is below a threshold.
-//!
-//! WHY. On the cubed sphere a uniform medium at rest carrying a uniform (hence
-//! force-free) field is linearly UNSTABLE below beta ~ 0.05: kinetic energy grows out of
-//! truncation noise until dt collapses. Measured on
-//! inputs/tests/cubed_sphere_mhd_strat.athinput, iprob = 8, the arm that stops it is
-//! DISSIPATION, not accuracy -- hlle (which for a state at rest is identical to LLF)
-//! takes nx2 = 32, beta = 0.02 from "dt collapses, dead at t = 2.5" to saturated at
-//! KE/V ~ 2.4e-6 with dt still at 81% of its starting value, while ppm4 changes nothing
-//! and a well-balanced geometric source changes nothing on its own. HLLD is the least
-//! dissipative of the solvers on exactly the modes involved (its Alfven and slow-mode
-//! structure degenerates as the NORMAL field weakens, which on a curvilinear grid with a
-//! strong TANGENTIAL field is the common case).
-//!
-//! PER FACE, WHICH IS THE ONLY CHOICE THAT CONSERVES. The decision is made from the two
-//! RECONSTRUCTED states at a face, and one flux is written to that face, so both cells
-//! sharing it see the same number and the update telescopes exactly. A per-CELL switch
-//! could not do that: two cells either side of a face would disagree about the solver
-//! and the face would carry two different fluxes. The criterion is symmetric in L<->R
-//! (it uses pl + pr and the mean B^2), so it cannot depend on which side is left.
-//! Measured on a 24-block run with the fallback firing everywhere: the same-panel
-//! block-face NULL control is EXACTLY 0.0 over 6144 shared faces, i.e. the two blocks
-//! that each compute an interior face agree bitwise; across a panel SEAM, where the halo
-//! goes through the gnomonic transform and the two sides' states are not bitwise equal,
-//! the flux mismatch is 1.2e-19 against a flux scale of 8.0e-08.
-//!
-//! WHY NOT JUST RUN HLLE. The deep atmosphere of the problems this grid exists for is
-//! high beta, subsonic and long-lived, and that is where HLLD's smaller dissipation on
-//! contacts and Alfven waves is worth having. Switching per FACE keeps it there and
-//! spends the dissipation only where the scheme is not trustworthy anyway. This is the
-//! same trade mhd_fluxes.cpp already makes at a POLAR boundary, where it falls back from
-//! HLLD to HLLE for the whole row.
-//!
-//! WHY HLLE AND NOT LLF. Either stabilises it -- for a state at REST they are identical,
-//! because with v = 0 and symmetric states HLLE's fan is +/- c_f and degenerates to
-//! Rusanov -- but they part company as soon as the flow moves, and the atmospheres this
-//! grid is for have fast zonal winds. LLF spreads both sides at |v| + c_f regardless of
-//! direction; HLLE keeps the signed fan and reduces to full upwinding once the flow is
-//! supersonic. Same stabilisation, less smearing of everything else.
-//!
-//! The L/R states are the RECONSTRUCTED ones, so the switch costs dissipation, not order.
+//! \brief Cubed sphere: replaces the HLLD flux by the more dissipative HLLE flux on faces
+//! whose plasma beta (averaged over the two face states) is below
+//! <mhd>/cs_lowbeta_fallback. Suppresses the low-beta instability of near force-free
+//! fields on the cubed sphere.
 
 #include "athena.hpp"
 #include "eos/eos.hpp"
