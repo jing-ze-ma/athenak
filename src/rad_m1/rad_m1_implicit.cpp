@@ -2004,8 +2004,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     const std::string tc = pin->GetString("rad_m1","implicit_thin_combine");
     if (tc.compare("min") == 0) {
       impl_thin_cmin = true;
+    } else if (tc.compare("aniso") == 0) {
+      // aniso: each cell's measure is the angular ANISOTROPY of its own rays about their
+      // mean along the face normal, |h+ + h-|/(h+ - h-) (0 isotropic, 1 one-sided),
+      // instead of |H|/J, eps C1/1.5 (C1 = <|I - S|>/J also fires in heating fronts,
+      // which are out of LTE but not streaming); combined with max as before
+      impl_thin_cani = true;
     } else if (tc.compare("max") != 0) {
-      ImplFatal("<rad_m1>/implicit_thin_combine must be max | min");
+      ImplFatal("<rad_m1>/implicit_thin_combine must be max | min | aniso");
     }
   }
   // rsgposlin-1113 implicit_tosc_bisect (M1ImplTsolveLaunch; read only when named)
@@ -16652,6 +16658,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const Real tgfd = thsw_gfd;
       const Real hwsx = impl_hr_ws_x1;
       const bool tcmin = impl_thin_cmin;   // rsgposlin-1113
+      const bool tcani = impl_thin_cani;
       const bool hgd = hrx && vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0);
       const int hsrc = !hrx ? 0 : (vetsc ? 1 : (hgd ? 2 : (!impl_hr_model ? -1 :
                                                             (trans ? 0 : 3))));
@@ -16941,6 +16948,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               }
             }
             if (tcmin) {gl3 = fmin(gl3, gr3); gr3 = gl3;}   // rsgposlin-1113
+            if (tcani) {   // rsgposlin-1113 aniso: half-range asymmetry of each cell
+              gl3 = fabs(hpl + hml)/fmax(hpl - hml, 1.0e-300);
+              gr3 = fabs(hpr + hmr)/fmax(hpr - hmr, 1.0e-300);
+            }
             M1ThinFace(tmode, tcorr, hpl, hmr, gl3, gr3, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr,
                        (tcorr != M1_THCR_HCS) ? 1.0
