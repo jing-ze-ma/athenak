@@ -21,6 +21,7 @@
 
 #include "athena.hpp"
 #include "eos/eos.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"
 
 namespace radm1 {
 
