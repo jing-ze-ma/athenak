@@ -69,3 +69,61 @@ m1_f3  dL1(T1-2,2-4,4-8,8-16) 2.793e-07 8.559e-08 1.882e-08 5.383e-09  orders 1.
     At the finest pair aniso is better on the lateral fluxes (1.82 vs 1.69) but worse on E.
 - **FLAGs (finest successive difference > 1.05 x base):** min m1_e dL1(8-16) 1.587e-6 (+5.5 %); m1_f1 3.426e-7 (+4.5 %, ok);
   **aniso m1_e 1.899e-6 (+26 %), m1_f1 3.575e-7 (+9 %), m1_f2 5.49e-9 (+41 %)**. min is the closer of the two to base on this ladder.
+
+---
+**Correction to the header above:** the 4 nodes started at 07:41 CET = **22:41 PST on 11-13** (sacct), not "~05:30 PST 11-14".
+
+## (2b) sp-wedge G1 (TASK UPDATE, your request): **PASS for base and min at all cfl, aniso PASS at cfl 1 / 1e2 but NON-STEADY at cfl 1e4**
+Built by an Orion sub-agent and checked by me against the run outputs. Deck: /orion/ptmp/jinma/thincomb_1114/g1sp/g1sp.athinput (generator
+mkdeck.py; arm decks deck_{base,min,aniso}.athinput, with implicit_thin_combine inserted into the deck).
+**Deck changes to make it legal on sp** (radiation block = the IDORT d6 sp production block of decks_d6/sp/rsx_m2/P_n512_c0.4; mesh and problem
+keys after runs_5e_vetcol2/inp/sph_atm_vc.athinput):
+- Mesh:
+  - use_spherical_polar, r = 1000..1001 with 128 cells (z = r - r_in; curvature across the shell 1e-3, r^2 F varies by 2e-3);
+  - theta = pi/2 +- 0.004 with 4 cells, reflect walls;
+  - phi = 0..pi/6 with 4 cells, periodic (vet_gd needs 2 pi/nphi to divide the phi period: nphi 12 -> pi/6);
+  - 1 MeshBlock = 1 rank (vet_gd_upwind needs one MeshBlock along x1, and MeshBlocks need >= 4 cells per dimension).
+- Problem: m1_test=sph_atm, atm_rho0 = 0.128 e^(1/0.113) = 892.32687 with atm_scale_h 0.113, i.e. the Cartesian rho(z), tau_bot 100.8;
+  e_out 1e-10 (vacuum start); atm_temp 1e-12 (cold held gas, see below).
+- rad_m1 physics set to the G1 values: c 1, kappa_s 1, kappa_p = kappa_e = kappa_f = 0; implicit_bc_x1min flux 1.0; x1max marshak q 0.5.
+- **gas_feedback false and implicit_vimp false** (radiation only, as the Cartesian G1).
+- Kept: closure vet_col + vet_gd (GL 10x12) + vet_col_surface_q; implicit_flux blend (faces all), flux_beam halfrange, blend idort_f;
+  thin_switch fse (h0 0.3, h1 0.6, hcface tau / x1, hcsf j); hr_recon dc; wbsolve; face_mmat; face_fct; blend_dtc 1e-6; k1_redist 0;
+  hesdirk2; implicit_marshak_face linear.
+- EXTRA_HG in the deck (time2_stage_local_be false, changed from the production true).
+- Two tab radial slices at (theta, phi) cells (1, 1) and (3, 3) to check lateral uniformity.
+**FATALs met and fixed:**
+- tab output needs 1-D slices -> slice_x2 / slice_x3;
+- vet_gd nphi / phi-period rule -> phi width pi/6;
+- implicit_vimp needs gas_feedback -> with feedback on, the held pure-scattering gas went eint <= 0 / NaN at cycles 1-4 -> vimp and feedback off;
+- held-gas explicit hydro NaN at huge CFL (cycle 535, cfl 1e2; also seen in a minimal deck) -> atm_temp 1e-12 (radiation result unchanged).
+Not legal: a 2-D wedge (implicit_lzx needs 3-D) and a 1-D sp mesh (implicit transport needs multi-D).
+**Scorer** g1sp/t9_sp.py (copy of t9_atmosphere.py): z = r - r_in; F_loc = F_in (r_in/r)^2; reference = Hopf/Milne with the exact-E_n VET q(tau)
+(q(0) 0.577350, q(inf) 0.710446, from runs_5e_vetcol2/milne_v.py), the correct target for vet_col / vet_gd. The Levermore-M1 form stays available
+as --ref m1. --hist prints the score of every dump.
+Job 229566, p.exclusive orion039, 9 runs at once, 5 h 16 min. tlim 2000 at cfl 1e2 / 1e4 and 500 at cfl 1 (time-accurate; the score is final to
+< 1e-7 by t 450, and dE/E between dumps is 1.3e-8 at t 500).
+
+| arm | cfl | rc / FATAL / NC | Picard mean / max | max\|dE/E\| | max\|df/f\| |
+|---|---|---|---|---|---|
+| base | 1 / 1e2 / 1e4 | 0 / 0 / 0 | 1.015 / 2, 1.101 / 3, 1.902 / 4 | 6.475e-4, 6.475e-4, 6.473e-4 | 6.48e-4 |
+| min | 1 / 1e2 / 1e4 | 0 / 0 / 0 | 1.015 / 2, 1.101 / 3, 1.902 / 4 | 5.650e-4, 5.649e-4, 5.647e-4 | 5.65e-4 |
+| aniso | 1 / 1e2 | 0 / 0 / 0 | 1.015 / 2, 1.101 / 3 | 2.277e-3, 2.277e-3 | 2.28e-3 |
+| aniso | 1e4 | 0 / 0 / 0 | 2.059 / 3 | **8.83e-3 at t 2000 = snapshot, not steady** | 1.11e-2 |
+
+- **The combine key is active on the sp wedge** (the arms are not bitwise). min vs base: max|dE/E| 1.05e-4 at every cfl (F equal to 1e-11).
+  aniso vs base: 1.70e-3 at cfl 1 and 1e2; 8.8e-3 at cfl 1e4.
+- **Accuracy: min 5.65e-4 < base 6.48e-4 < aniso 2.28e-3** (3.5x base). All converged runs pass 2e-2.
+- **aniso at cfl 1e4 never reaches steady state.** Score history: t 547 7.5e-2, 781 5.0e-2, 1016 3.3e-2, 1250 2.8e-2, 1562 3.1e-2, 1797 2.7e-2,
+  2000 8.8e-3. E still changes 3e-2 between the last two dumps, flux conservation is off by 2.5e-3 (<= 2e-9 in every other run), and it is the only
+  cfl-dependent arm. Count it as FAIL (it fails 2e-2 at most late dumps).
+- Lateral spread between the two slices <= 2.5e-10. In every converged run the worst cell is in the top layer (tau 2e-3 to 5e-3).
+- **Geometry reference:**
+  - the minimal plain sph_atm_vc deck (vet_col + central + surface_q, G1 physics) scores 2.287e-3 with r^2 F conserved to 8e-11 (Cartesian G1
+    M1-central: 1.353e-3), so curvature is under control at the 1e-3 level;
+  - **possible missing interlock:** the production block with implicit_flux central / flux_beam closure / thin_switch none (plus the two interlock
+    fixes faces x1, blend tau_f) converges to a **wrong steady state with no FATAL**: max|dE/E| 3.35 (E ~ +8 too high for tau <~ 1, f_top 0.49).
+    A 16-key flip bisection isolates **implicit_face_mmat = true**: flipping only it gives 8.4e-4 (cref runs: 8.384e-4 at cfl 1e2 and 1e4).
+    face_mmat with central flux probably should FATAL.
+
+Verdict (2b): **base PASS, min PASS (and best), aniso PASS at cfl 1 / 1e2 but FAIL at cfl 1e4 (non-steady).** Files: /orion/ptmp/jinma/thincomb_1114/g1sp/.
