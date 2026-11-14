@@ -2907,7 +2907,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_v;      // (m,2,..) ray-described flag of the closure fill
   int cln_fillpass = 8;         // clean_fill_passes
   bool cln_gate = true;         // clean_gate: ray-moment consistency gate q = r^2
-  bool cln_hmus = false;        // clean_hface = muscl (else mean): ray flux at the faces
+  bool cln_hmus = true;         // clean_hface = muscl (default) or mean: ray flux at faces
   bool cln_hrr = true;          // clean_hr = ratio (consistent face h+-; else additive)
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // (m,4,k,j,i): w, theta, G, spare
