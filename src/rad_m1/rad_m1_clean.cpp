@@ -13,8 +13,8 @@
 //!   cell  : E (1 + h c kE) + h div F = Et + h c kP a T^4
 //! w = smoothstep in C1 = <|I-S|>/J of the formal solution (no optical depth enters),
 //! theta = 1/(1 + h c chi_f).  The diagonal-D and half-range parts give an M-matrix.
-//! The closure (D, h+-, C1) is built once per step at U^n and extrapolated linearly to
-//! the stage time from the previous build.  Gate-1 scope: Cartesian, one MeshBlock, one
+//! The closure (D, h+-, C1) is built once per step, for t^{n+1}, by the formal solution
+//! of the state predicted by this step's physics (no extrapolation).  Gate-1 scope: Cartesian, one MeshBlock, one
 //! rank, chat = c.  Gas feedback: Newton on E with the exact local T per cell.
 
 #include <cmath>
@@ -27,11 +27,12 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/m1_fluid.hpp"
+#include "rad_m1/rad_m1_opacity.hpp"
 
 namespace radm1 {
 
 namespace {
-// closure slots (cln_c / cln_p / cln_s)
+// closure slots (cln_c / cln_s)
 constexpr int CLN_D11 = 0;   // D11 D22 D33 D12 D13 D23
 constexpr int CLN_HP = 6;    // h+_a = HP_a/J, a = 1 2 3
 constexpr int CLN_HM = 9;    // h-_a = H_a/J - h+_a (<= 0)
@@ -300,7 +301,6 @@ void RadiationM1::CleanAlloc() {
   const int n3 = (indcs.nx3 > 1) ? indcs.nx3 + 2*indcs.ng : 1;
   const int nmb = pmy_pack->nmb_thispack;
   Kokkos::realloc(cln_c, nmb, CLN_N, n3, n2, n1);
-  Kokkos::realloc(cln_p, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_v, nmb, 2, n3, n2, n1);
   Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
@@ -332,9 +332,9 @@ void RadiationM1::CleanAlloc() {
 }
 
 //----------------------------------------------------------------------------------------
-//! closure: formal solution at U^n once per step (STAGE1 or a BE solve), copied to
-//! cln_c; the stage closure cln_s = c + r (c - p), r = dt/(t_c - t_p), per cell kept
-//! realisable (else c).  STAGE2 keeps the stage-1 cln_s.
+//! closure: formal solution of the state predicted at t^{n+1}, once per step (STAGE1, or
+//! a BE solve with a new dt), into cln_c and the stage closure cln_s.  STAGE2 and a BE
+//! redo with the same dt keep it.
 void RadiationM1::CleanClosure(int t2s) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -344,45 +344,122 @@ void RadiationM1::CleanClosure(int t2s) {
   if (t2s == M1_T2S_STAGE2) return;
   const Real tnow = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
-  // inputs of the formal solution: E^n, T^n, F^n of the step start.  The gas at U^n is
-  // the hydro's u1 (its stage-1 start); u0 has already been moved by the explicit stage.
+  // One closure per step, for t^{n+1} (both hesdirk2 stage solves, and a backward-Euler
+  // redo, end at t^{n+1}).  A redo with the same dt keeps it; a new step or a new dt
+  // rebuilds it.
+  if (cln_havec && tnow == cln_tc && dt == cln_dtb) return;
+  // The closure belongs to a radiation field, so it is never extrapolated: the formal
+  // solution runs on the state PREDICTED at t^{n+1} by the physics of this step, no
+  // differences of past states:
+  //  - gas rho, momentum, energy: the hydro's explicit (Heun stage-1) state, which is
+  //    already at t^{n+1}, plus dt K1 of the radiation coupling (K1 = f(U^n), the FSAL
+  //    rate of the implicit part: exchange, radiation force, their work);
+  //  - T from that gas; the exchange can only relax T toward the radiation temperature
+  //    (E/a)^{1/4}, so the predicted T never crosses it (the physical bound, active
+  //    only where dt K1 would carry T past equilibrium);
+  //  - E: dt K1_E; a decrease is applied as exp(dt K1_E/E^n) (loss at the rate of U^n:
+  //    exact for constant-rate absorption/escape, E > 0); an increase linearly;
+  //  - opacities at the predicted (rho, T).
+  // Second order: the predicted state is within O(dt^2) of U^{n+1}.  Without a valid
+  // K1 (first step, after a restart without slope) the rates are zero.  The flux enters
+  // only the diffusion boundary rays: F^n.
+  const bool k1 = cln_pred && t2_ok && (t2k1.extent_int(0) > nmb1);
+  auto &indcs_ = pmy_pack->pmesh->mb_indcs;
+  const int n1 = indcs_.nx1 + 2*ng;
+  const int n2 = (indcs_.nx2 > 1) ? indcs_.nx2 + 2*ng : 1;
+  const int n3 = (indcs_.nx3 > 1) ? indcs_.nx3 + 2*ng : 1;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  const bool hh = fl.on;
+  const bool need_op = hh && !opac_zero && (opacity_type != M1_OPAC_CONST);
+  if (need_op && (cln_opb.extent_int(0) != opac.extent_int(0) ||
+                  cln_opb.extent_int(1) != opac.extent_int(1))) {
+    Kokkos::realloc(cln_opb, opac.extent_int(0), opac.extent_int(1), opac.extent_int(2),
+                    opac.extent_int(3), opac.extent_int(4));
+  }
+  if (need_op) Kokkos::deep_copy(cln_opb, opac);
   {
     auto iw_ = iw;
     auto u0_ = u0;
-    FluidRef fl = FluidRef::Get(pmy_pack);
-    auto un = fl.u1;
+    auto uh = fl.u0;
     auto eos = fl.eos;
-    const bool hh = fl.on;
-    par_for("cln_vin", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    auto kr = t2k1;
+    auto opac_ = opac;
+    const int otype = opacity_type;
+    const Real kp = kappa_p, ke = kappa_e, kf = kappa_f, ks_ = kappa_s;
+    const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
+    M1OpacTab ot = otab;
+    const bool osc = vscat, nop = need_op;
+    const Real ar = arad;
+    const int is_ = is, ie_ = ie, js_ = js, je_ = je, ks2 = ks, ke2 = ke;
+    par_for("cln_vin", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      iw_(m,M1_IW_EN,k,j,i) = u0_(m,M1_E,k,j,i);
-      Real t = 0.0;
-      if (hh) {
-        const Real d = un(m,IDN,k,j,i);
-        const Real kin = 0.5*(SQR(un(m,IM1,k,j,i)) + SQR(un(m,IM2,k,j,i)) +
-                              SQR(un(m,IM3,k,j,i)))/fmax(d, 1.0e-300);
-        t = eos.Temperature(d, fmax(un(m,IEN,k,j,i) - kin, 0.0));
+      // K1 lives on active cells only; ghosts take the explicit state alone
+      const bool act = (k >= ks2 && k <= ke2 && j >= js_ && j <= je_ &&
+                        i >= is_ && i <= ie_);
+      const bool rk = k1 && act;
+      const Real e0 = u0_(m,M1_E,k,j,i);
+      Real e = e0;
+      if (rk) {
+        const Real de = dt*kr(m,M1_T2_E,k,j,i);
+        e = (de >= 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : e0);
       }
-      iw_(m,M1_IW_TP,k,j,i) = t;
-      iw_(m,M1_IW_F1,k,j,i) = u0_(m,M1_F1,k,j,i);
-      iw_(m,M1_IW_F2,k,j,i) = u0_(m,M1_F1+1,k,j,i);
-      iw_(m,M1_IW_F3,k,j,i) = u0_(m,M1_F1+2,k,j,i);
+      Real d = 1.0, t = 0.0;
+      if (hh) {
+        d = uh(m,IDN,k,j,i);
+        const Real id = 1.0/fmax(d, 1.0e-300);
+        Real mx[3], eg = uh(m,IEN,k,j,i);
+        for (int n = 0; n < 3; ++n) mx[n] = uh(m,IM1+n,k,j,i);
+        const Real eint_h = fmax(eg - 0.5*(mx[0]*mx[0] + mx[1]*mx[1] + mx[2]*mx[2])*id,
+                                 0.0);
+        const Real th = eos.Temperature(d, eint_h);
+        t = th;
+        if (rk) {
+          for (int n = 0; n < 3; ++n) mx[n] += dt*kr(m,M1_T2_M1+n,k,j,i);
+          eg += dt*kr(m,M1_T2_EN,k,j,i);
+          const Real eint = eg - 0.5*(mx[0]*mx[0] + mx[1]*mx[1] + mx[2]*mx[2])*id;
+          const Real tp = eos.Temperature(d, fmax(eint, 0.0));
+          const Real tr = sqrt(sqrt(fmax(e, 0.0)/ar));
+          t = tp;
+          if (th <= tr) {
+            t = fmin(tp, tr);
+          } else {
+            t = fmax(tp, tr);
+          }
+          if (!(eint > 0.0)) t = th;   // the rate would empty the gas: keep the explicit T
+        }
+      }
+      if (act) {
+        iw_(m,M1_IW_EN,k,j,i) = e;
+        iw_(m,M1_IW_TP,k,j,i) = t;
+        iw_(m,M1_IW_F1,k,j,i) = u0_(m,M1_F1,k,j,i);
+        iw_(m,M1_IW_F2,k,j,i) = u0_(m,M1_F1+1,k,j,i);
+        iw_(m,M1_IW_F3,k,j,i) = u0_(m,M1_F1+2,k,j,i);
+      }
+      if (nop) {
+        Real op, oe, of, os;
+        if (otype == M1_OPAC_TABLE) {
+          M1TableOpacities(ot, d, t, op, oe, of, os);
+          M1ScatterEos(ot, eos, d, t, of, os);
+        } else {
+          M1Opacities(otype, d, t, kp, ke, kf, ks_, rref, tref, aa, bb, op, oe, of, os);
+        }
+        opac_(m,M1_OP_P,k,j,i) = d*op;
+        opac_(m,M1_OP_E,k,j,i) = d*oe;
+        opac_(m,M1_OP_T,k,j,i) = d*(of + os);
+        if (osc) {opac_(m,M1_OP_S,k,j,i) = d*os;}
+      }
     });
   }
-  // the formal solution of the STATE itself: no dt-dependent relaxed source or relaxed
-  // scattering J (those shift the closure in time by O(dt))
+  // the formal solution of the (predicted) state itself: no dt-dependent relaxed source
+  // or relaxed scattering J
   vcol_srelax = false;
   vcol_sbl = false;
   vcol_sesc = false;
   vscat_jrel = false;
   VetShortChar();
-  const bool newstep = (tnow > cln_tc);
-  if (newstep && cln_havec) {
-    Kokkos::deep_copy(cln_p, cln_c);
-    cln_havep = true;
-    cln_dtp = tnow - cln_tc;
-  }
+  if (need_op) Kokkos::deep_copy(opac, cln_opb);   // the solve uses the stage opacity
   cln_tc = tnow;
+  cln_dtb = dt;
   cln_havec = true;
   {
     // closure of each cell from the rays where they carry the cell's radiation
@@ -392,12 +469,13 @@ void RadiationM1::CleanClosure(int t2s) {
     auto vc = vet_cell;
     auto cc = cln_c;
     auto uu = u0;
+    auto iwc = iw;
     auto fv = cln_v;
     const Real rmin = cln_raymin, cl = c_light;
     par_for("cln_vcopy", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real jr = vc(m,M1_VET_J,k,j,i);
-      const Real em = uu(m,M1_E,k,j,i);
+      const Real em = iwc(m,M1_IW_EN,k,j,i);   // E of the predicted state
       if (jr > 0.0 && jr >= rmin*em) {
         for (int a = 0; a < 6; ++a) cc(m,CLN_D11+a,k,j,i) = vc(m,M1_VET_D11+a,k,j,i);
         for (int a = 0; a < 3; ++a) {
@@ -498,37 +576,14 @@ void RadiationM1::CleanClosure(int t2s) {
       });
     }
   }
-  const bool ext = cln_extrap && cln_havep && (t2s == M1_T2S_STAGE1) && cln_dtp > 0.0;
-  const Real r = ext ? dt/cln_dtp : 0.0;
   {
+    // the stage closure is the closure of the predicted state (no extrapolation)
     auto cc = cln_c;
-    auto cp = cln_p;
     auto cs = cln_s;
     const bool dbge = cln_dbg_edd;
-    par_for("cln_vext", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    par_for("cln_cset", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real v[CLN_N];
-      bool ok = true;
-      for (int n = 0; n < CLN_N; ++n) {
-        v[n] = cc(m,n,k,j,i) + r*(cc(m,n,k,j,i) - cp(m,n,k,j,i));
-      }
-      if (r > 0.0) {
-        // realisability: positive diagonal, |D_ab| <= sqrt(D_aa D_bb), trace <= 1,
-        // h+ >= 0 >= h-, C1 >= 0
-        for (int a = 0; a < 3; ++a) {
-          if (!(v[CLN_D11+a] > 0.0)) ok = false;
-          if (v[CLN_HP+a] < 0.0 || v[CLN_HM+a] > 0.0) ok = false;
-        }
-        if (v[0] + v[1] + v[2] > 1.0 + 1.0e-12) ok = false;
-        if (ok) {
-          if (v[3]*v[3] > v[0]*v[1] || v[4]*v[4] > v[0]*v[2] || v[5]*v[5] > v[1]*v[2]) {
-            ok = false;
-          }
-        }
-        if (v[CLN_C1] < 0.0) v[CLN_C1] = 0.0;
-        if (v[CLN_J] < 0.0) ok = false;
-      }
-      for (int n = 0; n < CLN_N; ++n) cs(m,n,k,j,i) = ok ? v[n] : cc(m,n,k,j,i);
+      for (int n = 0; n < CLN_N; ++n) cs(m,n,k,j,i) = cc(m,n,k,j,i);
       if (dbge) {   // diagnostic only: frozen isotropic closure
         for (int a = 0; a < 3; ++a) {
           cs(m,CLN_D11+a,k,j,i) = 1.0/3.0; cs(m,CLN_D11+3+a,k,j,i) = 0.0;

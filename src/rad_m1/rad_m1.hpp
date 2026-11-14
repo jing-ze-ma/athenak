@@ -2897,13 +2897,14 @@ class RadiationM1 {
   int cln_maxnl = 50;           // clean_maxnl: Newton passes (gas feedback)
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: max |dE|/E, |dT|/T of a Newton pass
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
-  bool cln_extrap = true;       // clean_extrap
+  bool cln_pred = true;         // clean_predict (closure of the predicted state)
   bool cln_dbg_edd = false;     // clean_dbg_edd: diagnostic, frozen isotropic closure: closure extrapolated to the stage time
   int cln_bdry_form = 0;        // clean_bc: 0 = ray half-range, 1 = Marshak q (reference form)
-  bool cln_init = false, cln_havec = false, cln_havep = false;
+  bool cln_init = false, cln_havec = false;
   Real cln_tc = -1.0e300;       // mesh time of the current closure build
-  Real cln_dtp = 0.0;           // dt between the two builds
-  DvceArray5D<Real> cln_c, cln_p, cln_s;   // closure: current, previous, stage (CLN_*)
+  Real cln_dtb = 0.0;           // dt the current closure was built for
+  DvceArray5D<Real> cln_c, cln_s;   // closure: built, stage (CLN_*)
+  DvceArray5D<Real> cln_opb;        // opacities of the stage, kept over the closure build
   DvceArray5D<Real> cln_v;      // (m,2,..) ray-described flag of the closure fill
   int cln_fillpass = 8;         // clean_fill_passes
   bool cln_gate = true;         // clean_gate: ray-moment consistency gate q = r^2
