@@ -36,7 +36,9 @@ constexpr int CLN_D11 = 0;   // D11 D22 D33 D12 D13 D23
 constexpr int CLN_HP = 6;    // h+_a = HP_a/J, a = 1 2 3
 constexpr int CLN_HM = 9;    // h-_a = H_a/J - h+_a (<= 0)
 constexpr int CLN_C1 = 12;   // C1 = NL/J
-constexpr int CLN_N = 13;
+constexpr int CLN_J = 13;    // J of the formal solution (E units)
+constexpr int CLN_H = 14;    // H_a of the formal solution (F_a/c, E units), a = 1 2 3
+constexpr int CLN_N = 17;
 // work slots (cln_w)
 constexpr int CLW_EO = 0;    // old vector E
 constexpr int CLW_X = 1;     // solution
@@ -57,7 +59,7 @@ constexpr int CLW_N = 25;
 struct CleanCtx {
   DvceArray5D<Real> cs;          // stage closure
   DvceArray5D<Real> w;           // work
-  DvceArray5D<Real> fc[3];       // face coefficients (m,3,k,j,i): w, theta, G
+  DvceArray5D<Real> fc[3];       // face coefficients (m,4,k,j,i): w, theta, G, q
   DvceArray3D<Real> bmf;         // beam face flux at x1min (m, k-ks, j-js)
   Real h, c, idx[3];
   int bc[6];                     // M1_IBC_* x1min x1max x2min x2max x3min x3max
@@ -162,6 +164,16 @@ KOKKOS_INLINE_FUNCTION Real CleanFlux(const CleanCtx &x, const int e, const int 
   }
   if (wf > 0.0) {
     f += wf*c*(x.cs(m,CLN_HP+dir,kl,jl,il)*el + x.cs(m,CLN_HM+dir,k,j,i)*er);
+    // ray-moment consistency (high-order/low-order): + q w c (H_face - upwind of J),
+    // H_face the face mean of the formal solution's flux clamped to the donor bound
+    // [-J_R, J_L]; the upwind part then acts on E - J only (E = J in a steady field)
+    if (withg) {
+      const Real jlv = x.cs(m,CLN_J,kl,jl,il), jrv = x.cs(m,CLN_J,k,j,i);
+      const Real hup = x.cs(m,CLN_HP+dir,kl,jl,il)*jlv + x.cs(m,CLN_HM+dir,k,j,i)*jrv;
+      const Real hf = fmin(fmax(0.5*(x.cs(m,CLN_H+dir,kl,jl,il) + x.cs(m,CLN_H+dir,k,j,i)),
+                                -jrv), jlv);
+      f += x.fc[dir](m,3,k,j,i)*wf*c*(hf - hup);
+    }
   }
   (void)adv;
   return f;
@@ -250,9 +262,9 @@ void RadiationM1::CleanAlloc() {
   Kokkos::realloc(cln_p, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
-  Kokkos::realloc(cln_fc1, nmb, 3, n3, n2, n1);
-  Kokkos::realloc(cln_fc2, nmb, 3, n3, n2, n1);
-  Kokkos::realloc(cln_fc3, nmb, 3, n3, n2, n1);
+  Kokkos::realloc(cln_fc1, nmb, 4, n3, n2, n1);
+  Kokkos::realloc(cln_fc2, nmb, 4, n3, n2, n1);
+  Kokkos::realloc(cln_fc3, nmb, 4, n3, n2, n1);
   Kokkos::deep_copy(cln_w, 0.0);
   Kokkos::deep_copy(cln_fc1, 0.0);
   Kokkos::deep_copy(cln_fc2, 0.0);
@@ -352,7 +364,11 @@ void RadiationM1::CleanClosure(int t2s) {
           cc(m,CLN_HM+a,k,j,i) = fmin(hh - hp, 0.0);
         }
         cc(m,CLN_C1,k,j,i) = fmax(vc(m,M1_VET_NL,k,j,i)/jr, 0.0);
+        cc(m,CLN_J,k,j,i) = jr;
+        for (int a = 0; a < 3; ++a) cc(m,CLN_H+a,k,j,i) = vc(m,M1_VET_H1+a,k,j,i);
       } else {
+        cc(m,CLN_J,k,j,i) = 0.0;
+        for (int a = 0; a < 3; ++a) cc(m,CLN_H+a,k,j,i) = 0.0;
         // beam + isotropic closure of the moment state: a fraction al = |f| streams
         // along n = f/|f|, the rest is isotropic (exact for both limits; a beam never
         // flows backward)
@@ -405,6 +421,7 @@ void RadiationM1::CleanClosure(int t2s) {
           }
         }
         if (v[CLN_C1] < 0.0) v[CLN_C1] = 0.0;
+        if (v[CLN_J] < 0.0) ok = false;
       }
       for (int n = 0; n < CLN_N; ++n) cs(m,n,k,j,i) = ok ? v[n] : cc(m,n,k,j,i);
       if (dbge) {   // diagnostic only: frozen isotropic closure
@@ -435,6 +452,7 @@ void RadiationM1::CleanFaceCoef() {
   auto cs = cln_s;
   auto op = opac;
   auto inc = t2inc;
+  auto cw = cln_w;
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !d2) continue;
     if (dir == 2 && !d3) continue;
@@ -452,6 +470,15 @@ void RadiationM1::CleanFaceCoef() {
       fc(m,0,k,j,i) = CleanSmooth((cmax - c0)/(c1 - c0));
       fc(m,1,k,j,i) = 1.0/(1.0 + h*c*chi);
       fc(m,2,k,j,i) = f0(m,k,j,i) + (t2 ? inc(m,tf,k,j,i) : 0.0);
+      // ray-moment consistency gate q = r^2, r = the worse of min(E,J)/max(E,J) of the
+      // two cells (E of the old vector, J of the stage closure): the quasi-static ray
+      // flux describes the moment field only where the two agree
+      auto rat = [&](const Real e, const Real jj) {
+        const Real a = fmax(e, 0.0), b = fmax(jj, 0.0);
+        return (fmax(a, b) > 0.0) ? fmin(a, b)/fmax(a, b) : 1.0;};
+      const Real r = fmin(rat(cw(m,CLW_EO,k,j,i), cs(m,CLN_J,k,j,i)),
+                          rat(cw(m,CLW_EO,kl,jl,il), cs(m,CLN_J,kl,jl,il)));
+      fc(m,3,k,j,i) = r*r;
     });
   }
 }
