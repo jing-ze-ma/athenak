@@ -1,48 +1,32 @@
 #ifndef COORDINATES_GNOMONIC_KERNELS_HPP_
 #define COORDINATES_GNOMONIC_KERNELS_HPP_
 //========================================================================================
-// AthenaXXX astrophysical plasma code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file gnomonic_kernels.hpp
-//! \brief the cubed-sphere rotations a flux kernel applies, as FREE functions.
-//!
-//! These were members of Coordinates, reached from inside the flux kernels as
-//! `pmy_pack->pcoord->GnomonicEquiangle...`. That made each of those lambdas capture
-//! `this` and dereference two host pointers on the device -- hipcc says so
-//! (-Wgpu-maybe-wrong-side: "capture host side class data member by this pointer in
-//! device or host device lambda function may result in invalid memory access if this
-//! pointer is not accessible on device side"), and it is an illegal access on a GPU not
-//! share memory with the host. It survived only because the machine this was developed on
-//! has unified-memory APUs.
-//!
-//! Between them the eight helpers read just SIX Views, so they need no Coordinates
-//! object at all -- only `GnomonicTrig`, a small POD of those Views a kernel captures
-//! BY VALUE the way it captures any other View. Build one on the host with
-//! `Coordinates::GnomonicTrigData()` before the parallel dispatch and pass it in.
+//! \brief Device functions that rotate reconstructed states, magnetic fields, EMFs and
+//! fluxes between the non-orthogonal gnomonic equiangle basis and the orthonormal frame
+//! of each sweep of the cubed-sphere Riemann solver. They read only the trig arrays held
+//! in a GnomonicTrig, which kernels capture by value.
 
 #include "athena.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \struct GnomonicTrig
-//! \brief the gnomonic-equiangle trig a device kernel needs, capturable by value.
-//!
-//! Indexed (m,k,j): these depend on the two PANEL-TANGENTIAL angles only -- xi = x2 and
-//! eta = x3 -- so they have no radial extent.
-//!
-//! It holds just ONE (sin, cos) pair, not all six arrays, because each sweep needs
-//! exactly one pair: the x1 sweep the CELL-centred pair, the x2 sweep the xi-FACE pair
-//! (staggered in j), the x3 sweep the eta-FACE pair (staggered in k). That is not merely
-//! tidier. Everything a kernel captures travels in the launch's constant-memory buffer,
-//! which is size-limited, and MHD::CalculateFluxes already captures a great many Views:
-//! handing it all six pushed that buffer over the edge and the x1 sweep died with
-//! HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION on the first cycle. Two Views fit; six did
-//! not. Build the one you need with Coordinates::GnomonicTrig{Cell,FaceXi,FaceEta}().
+//! \brief One (sin, cos) pair of the angle between the xi and eta axes, indexed (m,k,j),
+//! for the cell centres (x1 sweep), the xi faces (x2 sweep) or the eta faces (x3 sweep).
+//! Built on the host by Coordinates::GnomonicTrig{Cell,FaceXi,FaceEta}().
 
 struct GnomonicTrig {
   DvceArray3D<Real> sn, cs;
 };
+
+//----------------------------------------------------------------------------------------
+//! \fn void GnomonicEquianglePrimFaceX1
+//! \brief Rotates the tangential velocities of the x1-face states into the orthonormal
+//! frame {rhat, e_xi, (e_eta - c e_xi)/s}.
 
 KOKKOS_INLINE_FUNCTION
 void GnomonicEquianglePrimFaceX1(const GnomonicTrig &gt, TeamMember_t const &member,
@@ -60,7 +44,11 @@ void GnomonicEquianglePrimFaceX1(const GnomonicTrig &gt, TeamMember_t const &mem
   return;
 }
 
-// --- x2 sweep: XI face, normal component is IVY, tangential is IVZ
+//----------------------------------------------------------------------------------------
+//! \fn void GnomonicEquianglePrimFaceX2
+//! \brief Rotates the velocities of the xi-face states (normal IVY, tangential IVZ) into
+//! the orthonormal frame of the x2 sweep.
+
 KOKKOS_INLINE_FUNCTION
 void GnomonicEquianglePrimFaceX2(const GnomonicTrig &gt, TeamMember_t const &member,
      const int m, const int k, const int j, const int il, const int iu,
@@ -79,7 +67,11 @@ void GnomonicEquianglePrimFaceX2(const GnomonicTrig &gt, TeamMember_t const &mem
   return;
 }
 
-// --- x3 sweep: ETA face, normal component is IVZ, tangential is IVY
+//----------------------------------------------------------------------------------------
+//! \fn void GnomonicEquianglePrimFaceX3
+//! \brief Rotates the velocities of the eta-face states (normal IVZ, tangential IVY) into
+//! the orthonormal frame of the x3 sweep.
+
 KOKKOS_INLINE_FUNCTION
 void GnomonicEquianglePrimFaceX3(const GnomonicTrig &gt, TeamMember_t const &member,
      const int m, const int k, const int j, const int il, const int iu,
@@ -98,21 +90,13 @@ void GnomonicEquianglePrimFaceX3(const GnomonicTrig &gt, TeamMember_t const &mem
   return;
 }
 
-// --- MAGNETIC FIELD into the sweep's orthonormal frame ----------------------------
-//
-// bcc holds the ORTHONORMAL triple (B.rhat, B.e_xi, B.f2), f2 = (e_eta - c e_xi)/s
-// -- see Coordinates::GnomonicEquiangleRaiseVelMHD for why the field is stored that
-// way and not as the raw face-normal average. Slot ordering matches wl/wr.
-//
-// Each sweep's frame is {nhat, then its two face-parallel axes}, and in every sweep
-// the NORMAL component is taken from b0.x*f rather than from bcc, so only the two
-// face-parallel slots matter:
-//   x1, frame {rhat, e_xi, f2}      -> slots 1,2 are already exactly right;
-//   x2, frame {nhat_xi, e_eta, rhat} -> slot 0 is right, slot 2 must become B.e_eta;
-//   x3, frame {nhat_eta, rhat, e_xi} -> slots 0,1 are already exactly right.
-// So x1 and x3 need nothing at all, and only this one routine exists.
-//
-// B.e_eta = c*(B.e_xi) + s*(B.f2), the same projection the x1 EMF needs below.
+//----------------------------------------------------------------------------------------
+//! \fn void GnomonicEquiangleFaceBX2
+//! \brief Rotates the face-parallel magnetic field of the xi-face states into the x2
+//! sweep frame {nhat_xi, e_eta, rhat}. bcc holds the orthonormal triple
+//! (B.rhat, B.e_xi, B.f2) with f2 = (e_eta - c e_xi)/s, so only slot 2 changes, to
+//! B.e_eta = c*(B.e_xi) + s*(B.f2). The x1 and x3 sweep frames need no rotation.
+
 KOKKOS_INLINE_FUNCTION
 void GnomonicEquiangleFaceBX2(const GnomonicTrig &gt, TeamMember_t const &member,
      const int m, const int k, const int j, const int il, const int iu,
@@ -129,14 +113,11 @@ void GnomonicEquiangleFaceBX2(const GnomonicTrig &gt, TeamMember_t const &member
   return;
 }
 
-// --- EMF returned by the x1 sweep -------------------------------------------------
-// CT integrates E around a face, so e2/e3 must be E projected on the EDGE directions
-// e_xi and e_eta, whose lengths dxedge.x2e/x3e it multiplies them by. Of the three
-// sweeps only x1 returns something else: its orthonormal frame is
-// {rhat, e_xi, (e_eta - c e_xi)/s}, whose third axis is NOT the eta edge, so
-//   E.e_eta = c*(E.e_xi) + s*(E.f2)  =  c*e21 + s*e31.
-// The x2 and x3 frames are {nhat, e_eta, rhat} and {nhat, rhat, e_xi}: both of their
-// face-parallel axes ARE edge directions, so those EMFs need no rotation.
+//----------------------------------------------------------------------------------------
+//! \fn void GnomonicEquiangleEmfX1
+//! \brief Projects the x1-sweep EMF onto the eta edge, E.e_eta = c*e21 + s*e31, as needed
+//! by CT. The x2 and x3 sweep EMFs are already along edge directions.
+
 KOKKOS_INLINE_FUNCTION
 void GnomonicEquiangleEmfX1(const GnomonicTrig &gt, TeamMember_t const &member,
      const int m, const int k, const int j, const int il, const int iu,
@@ -150,9 +131,11 @@ void GnomonicEquiangleEmfX1(const GnomonicTrig &gt, TeamMember_t const &member,
   return;
 }
 
-// --- x1 flux: radial. IM2 comes back unchanged, which is correct: the orthonormal
-// frame used above is {e_xi, n-hat} with n-hat perpendicular to e_xi, so the first
-// component already IS the covariant m_2.
+//----------------------------------------------------------------------------------------
+//! \fn void GnomonicEquiangleFluxX1
+//! \brief Converts the tangential momentum fluxes of the x1 sweep from the orthonormal
+//! frame back to covariant components.
+
 KOKKOS_INLINE_FUNCTION
 void GnomonicEquiangleFluxX1(const GnomonicTrig &gt, TeamMember_t const &member,
      const int m, const int k, const int j, const int il, const int iu,
@@ -167,6 +150,11 @@ void GnomonicEquiangleFluxX1(const GnomonicTrig &gt, TeamMember_t const &member,
     });
   return;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn void GnomonicEquiangleFluxX2
+//! \brief Converts the tangential momentum fluxes of the x2 sweep from the orthonormal
+//! frame back to covariant components.
 
 KOKKOS_INLINE_FUNCTION
 void GnomonicEquiangleFluxX2(const GnomonicTrig &gt, TeamMember_t const &member,
@@ -184,6 +172,11 @@ void GnomonicEquiangleFluxX2(const GnomonicTrig &gt, TeamMember_t const &member,
     });
   return;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn void GnomonicEquiangleFluxX3
+//! \brief Converts the tangential momentum fluxes of the x3 sweep from the orthonormal
+//! frame back to covariant components.
 
 KOKKOS_INLINE_FUNCTION
 void GnomonicEquiangleFluxX3(const GnomonicTrig &gt, TeamMember_t const &member,
