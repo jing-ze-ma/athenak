@@ -1992,6 +1992,22 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       is >> dtr_cell[q][0] >> dtr_cell[q][1] >> dtr_cell[q][2] >> dtr_cell[q][3];
     }
   }
+  // rsgposlin-1113 <rad_m1>/implicit_thin_combine = max (default, bitwise) | min (read
+  // only when named): how the thin switch combines the two cells' formal-solution
+  // measures g_L, g_R (|H|/J, eps C1/1.5) into the face's half-range weight.  max lets a
+  // cell whose rays deviate from its OWN source function (C1 ~ 1: cold gas bathed by
+  // hotter radiation, a heating front, not a beam) pin w = 1 on all its faces: the RSG
+  // stall cell (rank 23) has g = 0.667 next to opaque isotropic neighbours with g 1e-4 ..
+  // 5e-2 and takes the full streaming flux c E/4 from both (RSG_CAUSE_1113).  min:
+  // a face streams only if BOTH sides say so (tau-free, angular data only)
+  if (pin->DoesParameterExist("rad_m1","implicit_thin_combine")) {
+    const std::string tc = pin->GetString("rad_m1","implicit_thin_combine");
+    if (tc.compare("min") == 0) {
+      impl_thin_cmin = true;
+    } else if (tc.compare("max") != 0) {
+      ImplFatal("<rad_m1>/implicit_thin_combine must be max | min");
+    }
+  }
   // rsgposlin-1113 implicit_tosc_bisect (M1ImplTsolveLaunch; read only when named)
   impl_tosc = pin->DoesParameterExist("rad_m1","implicit_tosc_bisect") &&
               pin->GetBoolean("rad_m1","implicit_tosc_bisect");
@@ -16635,6 +16651,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const int tgf = thsw_gface;
       const Real tgfd = thsw_gfd;
       const Real hwsx = impl_hr_ws_x1;
+      const bool tcmin = impl_thin_cmin;   // rsgposlin-1113
       const bool hgd = hrx && vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0);
       const int hsrc = !hrx ? 0 : (vetsc ? 1 : (hgd ? 2 : (!impl_hr_model ? -1 :
                                                             (trans ? 0 : 3))));
@@ -16923,6 +16940,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                 gr3 = gsr;
               }
             }
+            if (tcmin) {gl3 = fmin(gl3, gr3); gr3 = gl3;}   // rsgposlin-1113
             M1ThinFace(tmode, tcorr, hpl, hmr, gl3, gr3, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr,
                        (tcorr != M1_THCR_HCS) ? 1.0

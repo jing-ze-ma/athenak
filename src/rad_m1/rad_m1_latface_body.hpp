@@ -50,6 +50,7 @@
   const int tgf = thsw_gface;
   const Real tgfd = thsw_gfd;
   const Real hwsl = impl_hr_ws_lat;
+  const bool tcmin = impl_thin_cmin;   // rsgposlin-1113 implicit_thin_combine = min
   // DEBUG rsgposlin-1113 dbg_trace_*: the thin-switch inputs of the traced cell's faces
   const bool trf = (dtr_rank == global_variable::my_rank) && (dtr_cell[0][0] >= 0) &&
                    (pmy_pack->pmesh->ncycle >= dtr_c0);
@@ -237,6 +238,7 @@
             gfl = 0.5*(gfl + gfr) + ((tgf == 2) ? SQR(gfr - gfl)/tgfd : 0.0);
             gfr = gfl;
           }
+          if (tcmin) {gfl = fmin(gfl, gfr); gfr = gfl;}   // rsgposlin-1113
           M1ThinFace(tmode, tcorr, hpf, hmf, gfl, gfr, tauf,
                      iw_(m,M1_IW_TB,km,jm,i), iw_(m,M1_IW_TB,k,j,i),
                      iw_(m,M1_IW_TA,km,jm,i), iw_(m,M1_IW_TA,k,j,i),
