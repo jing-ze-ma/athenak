@@ -134,7 +134,7 @@
           if (hsrc == 2) {   // gdthin-1011
             fb = M1ThinCellGd(hgh_, m, k, j, i, d, fb, tfs, tqp, iw_(m,M1_IW_EN,k,j,i),
                               hd, jo);
-            // DEBUG rsgposlin-1113 dbg_coldc1: cold cells the thin switch reads as streaming
+            // DEBUG rsgposlin-1113 dbg_coldc1: cold cells read as streaming
             if (cc1on && d == 1 && fb > 0.6 && iw_(m,M1_IW_TP,k,j,i) < cc1t &&
                 i >= is && i <= ie) {
               Kokkos::atomic_add(&cc1_(0), 1.0);
