@@ -444,7 +444,8 @@ int RadiationM1::CleanCountNegative() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanWriteBack
 //! \brief stores the solution: face fluxes, E, cell fluxes (face means), the gas momentum
-//! and energy, and the stage slopes K = (U - U_old)/h
+//! and energy, and the stage slopes K = (U - U_old)/h.  The gas takes exactly the momentum
+//! and energy the radiation gives up, so both totals change only by face fluxes.
 
 void RadiationM1::CleanWriteBack() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -480,7 +481,6 @@ void RadiationM1::CleanWriteBack() {
   // E, cell fluxes, gas
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
-  auto eos = fl.eos;
   auto u0_ = u0;
   auto f1 = f0x1, f2 = f0x2, f3 = f0x3;
   par_for("cln_wbcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -492,13 +492,14 @@ void RadiationM1::CleanWriteBack() {
       dm[0] = CleanMomentumChange(x, CLW_X, 0, m, k, j, i);
       if (multi_d) dm[1] = CleanMomentumChange(x, CLW_X, 1, m, k, j, i);
       if (three_d) dm[2] = CleanMomentumChange(x, CLW_X, 2, m, k, j, i);
-      const Real d = uh(m,IDN,k,j,i);
-      const Real en_old = uh(m,IEN,k,j,i);
       for (int n = 0; n < 3; ++n) uh(m,IM1+n,k,j,i) += dm[n];
-      const Real ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
-                             SQR(uh(m,IM3,k,j,i)))/d;
-      uh(m,IEN,k,j,i) = eos.EnergyFromTemperature(d, x.w(m,CLW_T,k,j,i)) + ekin;
-      den = uh(m,IEN,k,j,i) - en_old;
+      // gas energy: exactly what the radiation gives up besides its flux divergence, so
+      // that total energy changes only by the face fluxes
+      Real div = x.idx[0]*(f1(m,k,j,i+1) - f1(m,k,j,i));
+      if (multi_d) div += x.idx[1]*(f2(m,k,j+1,i) - f2(m,k,j,i));
+      if (three_d) div += x.idx[2]*(f3(m,k+1,j,i) - f3(m,k,j,i));
+      den = -(e - x.w(m,CLW_EO,k,j,i)) - h*div;
+      uh(m,IEN,k,j,i) += den;
     }
     if (slopes) {
       kk(m,M1_T2_E,k,j,i) = (e - x.w(m,CLW_EO,k,j,i))/h;
