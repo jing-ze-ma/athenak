@@ -47,6 +47,7 @@ class Driver;
 namespace hydro {class RingAvg;}   // ringavg-1029: hydro_ringavg.hpp
 
 namespace radm1 {
+struct CleanArgs;   // rad_m1_clean.hpp
 
 // indices of the evolved moments in u0(m,n,k,j,i)
 constexpr int M1_E  = 0;
@@ -2879,40 +2880,57 @@ class RadiationM1 {
                      DvceArray5D<Real> t2i_, const Real cl, const Real ch,
                      const bool hh, const bool gq, const int t2s, const int it);
   TaskStatus ImplicitSolve(Driver *d, int stage);
-  // ---- <rad_m1>/scheme = clean (docs/dev/rad_clean_scheme_design.md): the clean stage
-  // solve that replaces ImplicitSolve.  Cartesian, one MeshBlock, one rank (gate 1).
+  // <rad_m1>/scheme = clean: implicit stage solve that replaces ImplicitSolve
+  // (rad_m1_clean*.cpp, docs/dev/rad_clean_scheme_design.md)
   TaskStatus CleanSolve(Driver *d, int stage);
-  void CleanAlloc();
-  void CleanClosure(int t2s);
-  void CleanFaceCoef();
-  void CleanApply(int src, int dst);
-  void CleanPrecond(int src, int dst);
-  void CleanFillGhost(int comp);
+  void CleanInit();
+  void CleanInitFaceFluxes();
+  void CleanOldVector();
+  void CleanClosure();
+  void CleanPredictState();
+  void CleanClosureFromRays();
+  void CleanClosureFill();
+  void CleanFaceCoefficients();
+  void CleanAdvectiveCoefficients();
+  void CleanFirstIterate();
+  void CleanRightHandSide();
+  void CleanPreconditionerSetup();
+  void CleanPrecondition(const int src, const int dst);
+  void CleanApply(const int src, const int dst);
   int CleanBiCGStab();
-  void CleanReport();
+  Real CleanNewtonUpdate();
+  Real CleanVelocityUpdate();
+  void CleanCopyIterate();
+  int CleanCountNegative();
+  void CleanWriteBack();
+  CleanArgs CleanMakeArgs();
+  void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc);
+  Real CleanDot(const int a, const int b);
+
   bool clean = false;           // <rad_m1>/scheme = clean
-  Real cln_c0 = 0.1, cln_c1 = 0.5;   // clean_w_c0/c1: blend ramp in C1 (ray non-locality)
-  Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear stage solve
-  int cln_maxit = 4000;         // clean_maxit
-  int cln_maxnl = 50;           // clean_maxnl: Newton passes (gas feedback)
-  Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: max |dE|/E, |dT|/T of a Newton pass
+  Real cln_c0 = 0.1;            // clean_w_c0: C1 below which w = 0
+  Real cln_c1 = 0.5;            // clean_w_c1: C1 above which w = 1
+  Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear solve
+  int cln_maxit = 4000;         // clean_maxit: BiCGStab iterations
+  int cln_maxnl = 50;           // clean_maxnl: Newton iterations
+  Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
-  bool cln_pred = true;         // clean_predict (closure of the predicted state)
-  bool cln_dbg_edd = false;     // clean_dbg_edd: diagnostic, frozen isotropic closure: closure extrapolated to the stage time
-  int cln_bdry_form = 0;        // clean_bc: 0 = ray half-range, 1 = Marshak q (reference form)
-  bool cln_init = false, cln_havec = false;
-  Real cln_tc = -1.0e300;       // mesh time of the current closure build
-  Real cln_dtb = 0.0;           // dt the current closure was built for
-  DvceArray5D<Real> cln_c, cln_s;   // closure: built, stage (CLN_*)
-  DvceArray5D<Real> cln_opb;        // opacities of the stage, kept over the closure build
-  DvceArray5D<Real> cln_v;      // (m,2,..) ray-described flag of the closure fill
-  int cln_fillpass = 8;         // clean_fill_passes
-  bool cln_gate = true;         // clean_gate: ray-moment consistency gate q = r^2
-  bool cln_hmus = true;         // clean_hface = muscl (default) or mean: ray flux at faces
-  bool cln_hrr = true;          // clean_hr = ratio (consistent face h+-; else additive)
+  int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
+  bool cln_pred = true;         // clean_predict: closure of the predicted state
+  int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
+  bool cln_feedback = false;    // gas coupling active
+  bool cln_init = false;        // arrays allocated
+  bool cln_faces_set = false;   // starting face fluxes set
+  bool cln_havec = false;       // a closure has been built
+  bool cln_opsaved = false;     // opac holds predicted opacities during the formal solution
+  Real cln_tc = -1.0e300;       // time of the closure build
+  Real cln_dtb = 0.0;           // dt of the closure build
+  DvceArray5D<Real> cln_s;      // closure (CLN_*)
+  DvceArray5D<Real> cln_v;      // closure fill flags (m,2,k,j,i)
+  DvceArray5D<Real> cln_opb;    // opacities of the stage, kept during the closure build
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
-  DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // (m,4,k,j,i): w, theta, G, spare
-  Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0, cln_maxitseen = 0.0;
+  DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
+  Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
   void ImplicitPartitionInit();
   //! exchange the x1 ghost layers the multi-block solve needs; `eponly` picks the
