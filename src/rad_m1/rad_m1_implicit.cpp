@@ -14118,47 +14118,6 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     Real de0 = iw_(m,M1_IW_DE0,k,j,i);
     Real bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
     Real rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
-    // rsgposlin-1113 <rad_m1>/implicit_src_poslin (read only when named, default false =
-    // bitwise; bitwise in every cell-pass where it does not fire).  The row eliminates
-    // the gas with ONE Newton step in T about T_k.  In a stiff cell (c dt rho kappa_P >=
-    // 1) whose iterate E^k sits at e_floor -- the signature of the RSG Picard 2-cycle
-    // (rsg.01451 rank 23, RSG_CAUSE_1113: a T_k far from the cell's state makes the
-    // tangent emission negative, E' is clipped to the floor, the root find from the
-    // floored E gives the other far T, and so on) -- the linearisation point is moved
-    // to the cell's LOCAL radiation-gas equilibrium temperature T*, transport frozen
-    // (no net transport over the step):
-    //   rho e(T*) + (c/chat)(kappa_P/kappa_E) a T*^4 = e_gas^old + (c/chat)(E^old + de0),
-    // i.e. the energy-conserving exchange to E* = (kappa_P/kappa_E) a T*^4 - de0 (one
-    // scalar bracketed root, the gas-solve routine).  The row then eliminates the gas
-    // about T* as usual: same fixed point (the elimination is exact at convergence),
-    // energy booked from the assembled q = SRCR - SRCB E' as before.
-    bool pfire = false;
-    if (psl && rkev > 0.0 && cl*dt*rkpv >= 1.0 &&
-        iw_(m,M1_IW_EP,k,j,i) <= pefl) {
-      const Real en0 = iw_(m,M1_IW_EN,k,j,i) + de0;
-      const Real egn0 = iw_(m,M1_IW_EGN,k,j,i);
-      if (egn0 + (cl/ch)*en0 > 0.0) {
-        const Real a4 = (cl/ch)*(rkpv/rkev)*ar;
-        Real ts = tk;
-        bool ok = true;
-        if (usec) {
-          (void) M1ImplTemperatureT(thc, dd, tk, egn0, a4, (cl/ch)*en0, ts, ok);
-        } else {
-          (void) M1ImplTemperatureT(thd, dd, tk, egn0, a4, (cl/ch)*en0, ts, ok);
-        }
-        if (ok && ts > 0.0) {
-          tk = ts;
-          iw_(m,M1_IW_TP,k,j,i) = tk;
-          if (usec) {thc(dd, tk, ee, cv);} else {thd(dd, tk, ee, cv);}
-          t3 = tk*tk*tk;
-          t4 = t3*tk;
-          bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
-          rk = egn0 - ee - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
-          pfire = true;
-          Kokkos::atomic_add(&pslc(0), 1.0);
-        }
-      }
-    }
     // MILESTONE 3g, the Newton SAFEGUARD.  The temperature this pass starts from was
     // produced by the Newton step of the previous pass, whose linearisation dropped
     // the curvature of e(T) and of T^4.  Here -- where e(T_k) has just been
@@ -14170,7 +14129,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     // and the bracketed root find of the pre-3g scheme is run for this cell.
     if (gnewt) {
       Real yprev = iw_(m,igy,k,j,i);
-      if (yprev > 0.0 && !pfire) {
+      if (yprev > 0.0) {
         Real ep = iw_(m,M1_IW_EP,k,j,i);
         Real ynow = fabs(rk + cl*dt*rkev*ep);
         // ...but only where the residual still MEANS something.  Once the cell has
@@ -14265,6 +14224,46 @@ struct M1OpacFn {
 //! \fn M1ImplTsolveLaunch
 //! \brief step (f) of RadiationM1::ImplicitSolve: accept E', solve for T'
 //! (m1_impl_tsolve), instantiated on the ideal-gas tag.
+//----------------------------------------------------------------------------------------
+//! \fn M1LocalRowEq
+//! \brief rsgposlin-1113 (implicit_src_poslin): the cell's OWN nonlinear row with its
+//! neighbours frozen at this pass's solution.  The linear row is
+//!   (D_t + SRCB) E' + sum_nb c_nb E_nb = b_t + SRCR,
+//! D_t / b_t its transport parts, SRCB / SRCR the gas exchange linearised about T_k.  The
+//! exact exchange is q(T, E) = emis T^4 - ch dt kappa_E (E + de0) (radiation units), the
+//! gas keeping rho e(T) = e_gas^old - (c/chat) q.  With R = b_t - sum_nb c_nb E_nb:
+//!   E(T) = (R + emis T^4 - ch dt kappa_E de0)/(D_t + ch dt kappa_E),
+//!   f(T) = rho e(T) + (c/chat) q(T, E(T)) - e_gas^old = 0,
+//! f strictly increasing in T (one root): bracket by doubling/halving from T_k, then
+//! bisection.  Returns false when no bracket is found or E(T*) <= efl.
+template <class ThermoT>
+KOKKOS_INLINE_FUNCTION
+bool M1LocalRowEq(const ThermoT &th, const Real dd, const Real egn, const Real emis,
+                  const Real dka, const Real de0, const Real dtr, const Real rr,
+                  const Real cc, const Real efl, const Real tg, Real &ts, Real &es) {
+  if (!(dtr + dka > 0.0) || !(tg > 0.0)) {return false;}
+  auto f = [&](const Real t, Real &e) -> Real {
+    Real ee, cv;
+    th(dd, t, ee, cv);
+    const Real t4 = SQR(SQR(t));
+    e = (rr + emis*t4 - dka*de0)/(dtr + dka);
+    return ee + cc*(emis*t4 - dka*(e + de0)) - egn;
+  };
+  Real e, tlo = tg, thi = tg;
+  Real flo = f(tlo, e), fhi = flo;
+  int n = 0;
+  while (flo > 0.0 && n < 80) {thi = tlo; fhi = flo; tlo *= 0.5; flo = f(tlo, e); ++n;}
+  while (fhi < 0.0 && n < 160) {tlo = thi; flo = fhi; thi *= 2.0; fhi = f(thi, e); ++n;}
+  if (!(flo <= 0.0 && fhi >= 0.0)) {return false;}
+  for (int q = 0; q < 100 && (thi - tlo) > 1.0e-13*thi; ++q) {
+    const Real tm = 0.5*(tlo + thi);
+    if (f(tm, e) > 0.0) {thi = tm;} else {tlo = tm;}
+  }
+  ts = 0.5*(tlo + thi);
+  (void) f(ts, es);
+  return (es > efl);
+}
+
 template <typename Ctx, typename Idl>
 void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
   auto ar = std::get<0>(ctx_);
@@ -14301,6 +14300,9 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
   auto tf_ = std::get<31>(ctx_);
   auto tfz = std::get<32>(ctx_);
   auto gu4 = std::get<33>(ctx_);
+  auto psl = std::get<34>(ctx_);   // rsgposlin-1113 (implicit_src_poslin && bicgstab)
+  auto pslc = std::get<35>(ctx_);
+  auto ch = std::get<36>(ctx_);
   auto tsb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -14311,6 +14313,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     (void)escale; (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr;
     (void)igy; (void)iw_; (void)opac_; (void)plog; (void)uh; (void)usec;
     (void)tso; (void)opf; (void)tsm; (void)tsmin; (void)tf_; (void)tfz; (void)gu4;
+    (void)psl; (void)pslc; (void)ch;
 #endif
     Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
     Real eold = iw_(m,M1_IW_EP,k,j,i);
@@ -14337,7 +14340,57 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
       // coefficient 4 a T^3 c dt rho kappa_E emis/B_k is >= 0 whenever B_k > 0), so
       // the M-matrix property of sect. 7 is untouched by it.
       bool done = false;
-      if (gnewt) {
+      // rsgposlin-1113 <rad_m1>/implicit_src_poslin (read only when named, default false
+      // = bitwise; bitwise in every cell-pass where it does not fire).  A stiff cell
+      // (c dt rho kappa_P >= 1) whose linear solution is not above e_floor would be
+      // CLIPPED to the floor here, and the next pass re-linearises the exchange about the
+      // temperature of that clipped state: on RSG (rsg.01451 rank 23, RSG_CAUSE_1113) a
+      // radiation-dominated cell with E ~ 0.3-0.9 fed ~440 per step by its neighbours
+      // flips between E' = 0.94 and the floor for 200 passes (the T^4 tangent at the hot
+      // T_k makes SRCR < 0, the clipped E gives a cold T_k, whose tangent is positive).
+      // Instead the cell takes the root of its own NONLINEAR row with the neighbours
+      // frozen at this pass's solution (M1LocalRowEq): the energy-conserving local
+      // radiation-gas balance including the transport it receives.  It is the iterate
+      // only: the next pass re-linearises about (E*, T*), the fixed point is unchanged
+      // and the write-back still books q = SRCR - SRCB E' of the last pass.
+      if (psl && !(iw_(m,M1_IW_S2,k,j,i) > efl) && cl*dt*rkpv >= 1.0) {
+        const Real srb = iw_(m,M1_IW_SRCB,k,j,i), srr = iw_(m,M1_IW_SRCR,k,j,i);
+        const Real dtr = iw_(m,M1_IW_TB,k,j,i) - srb;
+        Real rr = iw_(m,M1_IW_KB,k,j,i) - srr;
+        rr -= iw_(m,M1_IW_TA,k,j,i)*fmax(iw_(m,M1_IW_S2,k,j,i-1), efl)
+              + iw_(m,M1_IW_TC,k,j,i)*fmax(iw_(m,M1_IW_S2,k,j,i+1), efl)
+              + iw_(m,M1_IW_CJM,k,j,i)*fmax(iw_(m,M1_IW_S2,k,j-1,i), efl)
+              + iw_(m,M1_IW_CJP,k,j,i)*fmax(iw_(m,M1_IW_S2,k,j+1,i), efl)
+              + iw_(m,M1_IW_CKM,k,j,i)*fmax(iw_(m,M1_IW_S2,k-1,j,i), efl)
+              + iw_(m,M1_IW_CKP,k,j,i)*fmax(iw_(m,M1_IW_S2,k+1,j,i), efl);
+        const Real emis = dt*ch*rkpv*ar, dka = dt*ch*rkev;
+        const Real egn = iw_(m,M1_IW_EGN,k,j,i);
+        Real ts = told, es = enew;
+        bool okl = false;
+        if constexpr (decltype(idl)::value) {
+          M1EosIdeal th{eos.gamma};
+          okl = M1LocalRowEq(th, dd, egn, emis, dka, de0, dtr, rr, cl/ch, efl, told, ts,
+                             es);
+        } else if (usec) {
+          Real nmiss = 0.0;
+          M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
+                                                        &nmiss};
+          okl = M1LocalRowEq(thc, dd, egn, emis, dka, de0, dtr, rr, cl/ch, efl, told,
+                             ts, es);
+        } else {
+          M1EosDirect<decltype(eos)> th{eos};
+          okl = M1LocalRowEq(th, dd, egn, emis, dka, de0, dtr, rr, cl/ch, efl, told, ts,
+                             es);
+        }
+        if (okl && ts > 0.0) {
+          enew = es;
+          tnew = ts;
+          if (gnewt) {iw_(m,igy,k,j,i) = 0.0;}
+          done = true;
+          Kokkos::atomic_add(&pslc(0), 1.0);
+        }
+      }
+      if (gnewt && !done) {
         Real bk = iw_(m,igb,k,j,i);
         Real rk = iw_(m,igr,k,j,i);
         Real yk = rk + cl*dt*rkev*enew;
@@ -18450,7 +18503,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                               kappa_f, kappa_s, opac_rho_ref,
                                               opac_t_ref, opac_a, opac_b},
                                      impl_tsolve_opac_mode, impl_tsolve_opac_smin,
-                                     thin_frz, (impl_thin_frz > 0.0), impl_gn_u4);
+                                     thin_frz, (impl_thin_frz > 0.0), impl_gn_u4,
+                                     impl_src_poslin && bicg, psl_cnt, ch);
       if (tsid) {
         M1ImplTsolveLaunch(tsb_ctx, std::true_type{});
       } else {
