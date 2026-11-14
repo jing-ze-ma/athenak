@@ -17,24 +17,10 @@
 
 //----------------------------------------------------------------------------------------
 //! \fn void WidenForCubeVertex
-//! \brief CUBE-VERTEX CORNER FILL for CELL-CENTRED data (`<mesh>/cs_vertex_fill_cc`).
-//!
-//! A cubed-sphere panel corner is a CUBE VERTEX where only THREE panels meet, so its
-//! ng x ng corner ghost block has no diagonal neighbour and that exchange is skipped as
-//! non-reciprocal (IsCubeVertexCorner, bvals.hpp). The block is covered by the TWO
-//! FLANKING panels, split by a diagonal, and the cells it needs are those panels' own
-//! ACTIVE corner cells -- which the face buffer's ng-deep strip already reaches along
-//! the seam. Widening the strip by ng at BOTH ends of the along-seam direction is
-//! therefore enough to carry the corner block on the existing exchange: no new slot, no
-//! new tag, MPI-safe by construction. This is the cell-centred twin of the rule in
-//! buffs_fc.cpp, applied to the SAME slots -- the x2 faces and x1x2 edges (widened along
-//! x3) and the x3 faces and x3x1 edges (widened along x2); the x2x3 edges and the
-//! corners are ghost in BOTH tangential directions, have no along-seam axis, and are
-//! never widened. Send and receive apply the identical rule, so `ndat` matches on both
-//! sides. The pack reads only ACTIVE source data for the extra cells, because the
-//! along-seam resample clamps its stencil to the source's active bounds (bvals_cc.cpp),
-//! and ownership -- which flanking panel supplies a given corner cell -- is decided at
-//! UNPACK from the receiver's own geometry.
+//! \brief Cube-vertex corner fill for cell-centred data (<mesh>/cs_vertex_fill_cc):
+//! widens a same-level x2/x3 face or edge buffer by ng along the seam, so the ng x ng
+//! corner ghost block (which has no diagonal neighbour at a cube vertex) is filled by the
+//! two flanking face exchanges.
 
 static void WidenForCubeVertex(MeshBufferIndcs &idx, int ox2, int ox3, int ng,
                                bool cs_vfill_cc) {

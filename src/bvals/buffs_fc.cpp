@@ -113,21 +113,9 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
       if (ox3 > 0) {isame[2].bke++;}
       if (ox3 < 0) {isame[2].bks--;}
     }
-    // CUBE-VERTEX CORNER FILL. A cubed-sphere panel corner is a CUBE VERTEX where only
-    // THREE panels meet, so its ng x ng corner ghost block has no diagonal neighbour and
-    // its exchange is skipped (see IsCubeVertexCorner). That block is covered by the
-    // TWO FLANKING panels, split by a diagonal, and each flanking panel's data for it
-    // lies INSIDE that panel's own active corner block -- but the face buffer's
-    // destination stops at the active along-seam range, so it is never sent and the
-    // corner has to be extrapolated. Widen the x2/x3 FACE buffers by ng at BOTH ends of
-    // the along-seam direction so the corner block rides the existing face exchange:
-    // MPI-safe by construction, no new slot, no new tag.
-    //
-    // Send and receive apply the SAME rule, so ndat matches on both sides. The pack
-    // reads only ACTIVE source data even for these cells, because the along-seam
-    // resample clamps its stencil to the source's active bounds (see `bs` in
-    // bvals_fc.cpp). Ownership -- which of the two flanking panels supplies a given
-    // corner cell -- is decided at UNPACK from the receiver's own geometry.
+    // cube-vertex corner fill (<mesh>/cs_vertex_fill): widen same-level x2/x3 face
+    // buffers by ng along the seam so the corner ghost block (no diagonal neighbour at a
+    // cube vertex) is filled by the two flanking face exchanges
     if (cs_vfill) {
       // The x1x2 and x3x1 EDGE buffers are widened by the same rule, which is what
       // carries the fill into the corner block's RADIAL GHOST layers -- the buffer that
@@ -505,21 +493,9 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
       if (ox3 > 0) {isame[2].bks--;}
       if (ox3 < 0) {isame[2].bke++;}
     }
-    // CUBE-VERTEX CORNER FILL. A cubed-sphere panel corner is a CUBE VERTEX where only
-    // THREE panels meet, so its ng x ng corner ghost block has no diagonal neighbour and
-    // its exchange is skipped (see IsCubeVertexCorner). That block is covered by the
-    // TWO FLANKING panels, split by a diagonal, and each flanking panel's data for it
-    // lies INSIDE that panel's own active corner block -- but the face buffer's
-    // destination stops at the active along-seam range, so it is never sent and the
-    // corner has to be extrapolated. Widen the x2/x3 FACE buffers by ng at BOTH ends of
-    // the along-seam direction so the corner block rides the existing face exchange:
-    // MPI-safe by construction, no new slot, no new tag.
-    //
-    // Send and receive apply the SAME rule, so ndat matches on both sides. The pack
-    // reads only ACTIVE source data even for these cells, because the along-seam
-    // resample clamps its stencil to the source's active bounds (see `bs` in
-    // bvals_fc.cpp). Ownership -- which of the two flanking panels supplies a given
-    // corner cell -- is decided at UNPACK from the receiver's own geometry.
+    // cube-vertex corner fill (<mesh>/cs_vertex_fill): widen same-level x2/x3 face
+    // buffers by ng along the seam so the corner ghost block (no diagonal neighbour at a
+    // cube vertex) is filled by the two flanking face exchanges
     if (cs_vfill) {
       // The x1x2 and x3x1 EDGE buffers are widened by the same rule, which is what
       // carries the fill into the corner block's RADIAL GHOST layers -- the buffer that
