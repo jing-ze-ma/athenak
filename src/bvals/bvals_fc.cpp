@@ -2294,7 +2294,7 @@ void MeshBoundaryValuesFC::CsSeamExtPartner(DvceFaceFld4D<Real> &b) {
   const int nmb = pmy_pack->nmb_thispack;
   const int ncell = nmb*(id.nx3 + 2*id.ng)*(id.nx2 + 2*id.ng)*(id.nx1 + 2*id.ng);
   FCSeamPack f(b, b, SendBufDv(), RecvBufDv(), fc_seg, fc_sub[0], fc_cs[0], fc_cb[0],
-               cs_seam_geom, cs_seam_stnc_x, fc_preval, 0, id, 0.0, false);
+               cs_seam_geom, cs_seam_stnc_x, fc_preval, 0, id, false);
   f.ext_ = true; f.ext_jk = cs_ext_jk; f.q = cs_ext_q;
   Kokkos::parallel_for("CsSeamExtPartner",
       Kokkos::RangePolicy<FCSeamQ>(DevExeSpace(), 0, ncell), f);
