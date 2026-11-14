@@ -96,6 +96,12 @@ constexpr char kM1RaRstMagic[8] = {'M', '1', 'R', 'O', 'T', 'A', 'V', '1'};
 // ThcRst*), behind the fax slabs.  A file without it restarts with nothing carried (not
 // bitwise).
 constexpr char kM1ThcRstMagic[8] = {'M', '1', 'T', 'H', 'C', 'R', 'S', '1'};
+// t9rst-1113 vet_gd_rotate_xfade: the cross-fade state (vgd_xf_d + its block/time
+// scalars, RadiationM1::XfdRst*), behind the thc slabs.  A file without it restarts
+// the cross-fade cold (not bitwise inside a rotation block)
+constexpr char kM1XfdRstMagic[8] = {'M', '1', 'X', 'F', 'D', 'R', 'S', '1'};
+constexpr int kM1XfdRstNi = 24;   // int64 header words
+constexpr int kM1XfdRstNr = 8;    // Real header words
 
 // <rad_m1>/transport
 constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled

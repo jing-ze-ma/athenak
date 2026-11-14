@@ -3439,6 +3439,13 @@ class RadiationM1 {
   Real VgdXfRx(const int64_t blk) const;
   int64_t vgd_xf_pblk = INT64_MIN;   // the block and time of the previous xf build
   Real vgd_xf_pt = 0.0;
+  // t9rst-1113: the cross-fade state in the restart file (kM1XfdRstMagic): vgd_xf_d
+  // flattened per MeshBlock into nslab cell slabs of ncell values, and the scalars
+  int XfdRstNslab(const int ncell) const;
+  void XfdRstHdr(std::int64_t *hi, Real *hr, const int ncell) const;
+  void XfdRstPack(DvceArray5D<Real> &dst, const int nmb) const;
+  bool XfdRstUnpack(const DvceArray5D<Real> &src, const int nmb, const std::int64_t *hi,
+                    const Real *hr);
   bool vra_eq = false;        // vet_rotate_avg_weight = equal (default j: J-weighted)
   bool vra_on = false;
   RotAvgTab vra_tab;

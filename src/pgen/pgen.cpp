@@ -1144,6 +1144,42 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     nthc_file = static_cast<int>(hdr[1]);
   }
+  // --- t9rst-1113: THE vet_gd_rotate_xfade HEADER (radm1::kM1XfdRstMagic), behind the
+  // thc one: nxfd_file slabs, the last of each record
+  int nxfd_file = 0;
+  std::int64_t xfd_hi[radm1::kM1XfdRstNi] = {};
+  Real xfd_hr[radm1::kM1XfdRstNr] = {};
+  if (std::memcmp(variabledata, &(radm1::kM1XfdRstMagic[0]),
+                  sizeof(radm1::kM1XfdRstMagic)) == 0) {
+    char xfd_hdr[sizeof(xfd_hi) + sizeof(xfd_hr)];
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(xfd_hdr));
+      ok = ok && (resfile.Read_bytes(&(xfd_hdr[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(xfd_hdr[0]), sizeof(xfd_hdr), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    if (ok) {
+      std::memcpy(&(xfd_hi[0]), &(xfd_hdr[0]), sizeof(xfd_hi));
+      std::memcpy(&(xfd_hr[0]), &(xfd_hdr[0]) + sizeof(xfd_hi), sizeof(xfd_hr));
+    }
+    if (!ok || xfd_hi[0] != 1 || xfd_hi[1] < 1 || xfd_hi[1] > 4096) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the rad_m1 xfade header of this restart file is broken."
+                << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    nxfd_file = static_cast<int>(xfd_hi[1]);
+  }
 
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
@@ -1233,7 +1269,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   IOWrapperSizeT wm_size = static_cast<IOWrapperSizeT>(nwarm_file + npred_file + nt2_file
                             + neint_file + nck_file + nctr_file + nrss_file + nvgd_file
                             + ncsk_file + nra_file + nams_file + npgs_file + nfax_file
-                            + nthc_file)
+                            + nthc_file + nxfd_file)
                            *nout1*nout2*nout3
                            *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
@@ -1952,7 +1988,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0 ||
       neint_file > 0 ||   // t9rst-1113: an ideal-gas eint slab alone
       ctr_read || rss_read || vgd_read || ra_read || csk_read || ams_read ||
-      npgs_file > 0 || nfax_file > 0 || nthc_file > 0) {
+      npgs_file > 0 || nfax_file > 0 || nthc_file > 0 || nxfd_file > 0) {
     const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
@@ -2299,6 +2335,30 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> restart: time2_stage_local_be carry (" << nthc_file
                   << " slabs) " << (got ? "restored" : "IGNORED (local_be off)")
+                  << std::endl;
+      }
+    }
+    // t9rst-1113: the vet_gd_rotate_xfade state (kM1XfdRstMagic), last of the record
+    if (nxfd_file > 0) {
+      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
+                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file
+                  + nams_file + npgs_file + nfax_file + nthc_file;
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3
+                              *sizeof(Real);
+      myoffset = offset_myrank;
+      DvceArray5D<Real> xfdin("rst-xfd-in", nmb, nxfd_file, nout3, nout2, nout1);
+      for (int n=0; n<nxfd_file; ++n) {
+        read_slab("rad_m1 xfade state");
+        DeepCopyAcross(Kokkos::subview(xfdin, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                       Kokkos::ALL), wtin);
+      }
+      const bool got = (pradm1 != nullptr) &&
+                       pradm1->XfdRstUnpack(xfdin, nmb, xfd_hi, xfd_hr);
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> restart: vet_gd_rotate_xfade state (" << nxfd_file
+                  << " slabs) "
+                  << (got ? "restored" : "IGNORED (xfade off or other shape)")
                   << std::endl;
       }
     }

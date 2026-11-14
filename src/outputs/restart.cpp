@@ -343,6 +343,14 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     pradm1->ThcRstPack(tmp, nmb);
     Kokkos::deep_copy(outarray_thc, tmp);
   }
+  // t9rst-1113 vet_gd_rotate_xfade: the cross-fade state (kM1XfdRstMagic)
+  if (pradm1 != nullptr && pradm1->XfdRstNslab(nout1*nout2*nout3) > 0) {
+    const int nf = pradm1->XfdRstNslab(nout1*nout2*nout3);
+    Kokkos::realloc(outarray_xfd, nmb, nf, nout3, nout2, nout1);
+    DvceArray5D<Real> tmp("rst-xfd", nmb, nf, nout3, nout2, nout1);
+    pradm1->XfdRstPack(tmp, nmb);
+    Kokkos::deep_copy(outarray_xfd, tmp);
+  }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
     Kokkos::deep_copy(outarray_force, Kokkos::subview(pturb->force, std::make_pair(0,nmb),
@@ -559,6 +567,21 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   {
     const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(nthc), 0, 0};
     std::memcpy(&(thc_hdr[0]), &(hdr[0]), sizeof(hdr));
+  }
+  // t9rst-1113: the vet_gd_rotate_xfade state, behind the thc slabs
+  const int nxfd = (pradm1 != nullptr) ? pradm1->XfdRstNslab(nout1*nout2*nout3) : 0;
+  char xfd_hdr[radm1::kM1XfdRstNi*sizeof(std::int64_t) + radm1::kM1XfdRstNr*sizeof(Real)];
+  {
+    std::int64_t hi[radm1::kM1XfdRstNi];
+    Real hr[radm1::kM1XfdRstNr];
+    if (nxfd > 0) {
+      pradm1->XfdRstHdr(hi, hr, nout1*nout2*nout3);
+    } else {
+      for (int n = 0; n < radm1::kM1XfdRstNi; ++n) {hi[n] = 0;}
+      for (int n = 0; n < radm1::kM1XfdRstNr; ++n) {hr[n] = 0.0;}
+    }
+    std::memcpy(&(xfd_hdr[0]), &(hi[0]), sizeof(hi));
+    std::memcpy(&(xfd_hdr[0]) + sizeof(hi), &(hr[0]), sizeof(hr));
   }
   char eint_hdr[2*sizeof(std::int32_t)];
   {
@@ -835,6 +858,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(thc_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    // t9rst-1113: the vet_gd_rotate_xfade header, behind the thc one
+    if (nxfd > 0) {
+      IOWrapperSizeT nb = sizeof(xfd_hdr);
+      resfile.Write_any_type(&(radm1::kM1XfdRstMagic[0]), sizeof(radm1::kM1XfdRstMagic),
+                             "byte", single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(xfd_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -913,6 +944,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   data_size += static_cast<IOWrapperSizeT>(npgs)*nout1*nout2*nout3*sizeof(Real);     // per-cell pgen slabs
   data_size += static_cast<IOWrapperSizeT>(nfax)*nout1*nout2*nout3*sizeof(Real);  // fax*
   data_size += static_cast<IOWrapperSizeT>(nthc)*nout1*nout2*nout3*sizeof(Real);  // t2thc
+  data_size += static_cast<IOWrapperSizeT>(nxfd)*nout1*nout2*nout3*sizeof(Real);  // xfade
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -985,6 +1017,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (nthc > 0) {
     step3size += sizeof(radm1::kM1ThcRstMagic) + sizeof(IOWrapperSizeT) + sizeof(thc_hdr);
+  }
+  if (nxfd > 0) {
+    step3size += sizeof(radm1::kM1XfdRstMagic) + sizeof(IOWrapperSizeT) + sizeof(xfd_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -1521,6 +1556,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     write_wtemp(Kokkos::subview(outarray_thc, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "rad_m1 local_be carry");
   }
+  // and the vet_gd_rotate_xfade state behind them (kM1XfdRstMagic, t9rst-1113)
+  for (int n=0; n<nxfd; ++n) {
+    write_wtemp(Kokkos::subview(outarray_xfd, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                                Kokkos::ALL), "rad_m1 xfade state");
+  }
 
   // close file, clean up
   resfile.Close(single_file_per_rank);
@@ -1531,7 +1571,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   outarray_hyd = outarray_mhd = outarray_rad = outarray_m1 = outarray_force =
       outarray_z4c = outarray_adm = outarray_ck = outarray_m1p = outarray_m1t =
       outarray_m1c = outarray_m1s = outarray_m1g = outarray_m1r = outarray_m1k =
-      outarray_ams = outarray_pgs = outarray_fax = outarray_thc = HostArray5D<Real>();
+      outarray_ams = outarray_pgs = outarray_fax = outarray_thc = outarray_xfd =
+      HostArray5D<Real>();
   outarray_m1f = outarray_m1f2 = outarray_m1f3 = outarray_wth = outarray_wtm =
       outarray_wdp = outarray_wdg = outarray_wdpm = outarray_wdgm = outarray_weh =
       outarray_wem = outarray_wm1 = outarray_wm2 = HostArray4D<Real>();

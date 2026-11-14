@@ -49,6 +49,7 @@
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"   // t9rst-1113 kM1XfdRst*
 
 namespace radm1 {
 
@@ -1318,6 +1319,114 @@ void RadiationM1::RotXfEst(const int ilo, const Real r) {
     }
     if (!v && t.farr >= 0) {a.At(t.farr, t.fcomp, m, k, j, i) = -1.0;}
   });
+}
+
+
+//----------------------------------------------------------------------------------------
+//! \fn RadiationM1::XfdRst*
+//! \brief t9rst-1113 vet_gd_rotate_xfade: vgd_xf_d (G, A, the last Delta / G of the
+//! block) and the block/time scalars of the cross-fade travel in the restart file
+//! (kM1XfdRstMagic).  Without them a restart inside a rotation block blends against an
+//! empty A and is not a bitwise continuation (HG262 c5 restart, rstbit-1113).  vgd_xf_d
+//! (LayoutRight, interior cells) is copied flat per MeshBlock into nslab slabs of ncell.
+
+int RadiationM1::XfdRstNslab(const int ncell) const {
+  if (!vgd_xf || vgd_xf_d.extent_int(0) < pmy_pack->nmb_thispack || ncell <= 0) {
+    return 0;
+  }
+  const std::int64_t nper = static_cast<std::int64_t>(vgd_xf_d.extent(1))*
+                            vgd_xf_d.extent(2)*vgd_xf_d.extent(3)*vgd_xf_d.extent(4);
+  return static_cast<int>((nper + ncell - 1)/ncell);
+}
+
+void RadiationM1::XfdRstHdr(std::int64_t *hi, Real *hr, const int ncell) const {
+  for (int n = 0; n < kM1XfdRstNi; ++n) {hi[n] = 0;}
+  for (int n = 0; n < kM1XfdRstNr; ++n) {hr[n] = 0.0;}
+  hi[0] = 1;
+  hi[1] = XfdRstNslab(ncell);
+  for (int r = 0; r < 4; ++r) {hi[2 + r] = vgd_xf_d.extent(1 + r);}
+  hi[6] = ncell;
+  hi[7] = vgd_xf_pblk;
+  hi[8] = vgd_xf_sb[0];
+  hi[9] = vgd_xf_sb[1];
+  hi[10] = vgd_xf_gb[0];
+  hi[11] = vgd_xf_gb[1];
+  hi[12] = vgd_xf_lb;
+  hi[13] = vgd_xf_sblk;
+  hi[14] = vgd_xf_sj;
+  hi[15] = vgd_xf_sn;
+  hr[0] = vgd_xf_pt;
+  hr[1] = vgd_xf_st[0];
+  hr[2] = vgd_xf_st[1];
+  hr[3] = vgd_xf_gt[0];
+  hr[4] = vgd_xf_gt[1];
+  hr[5] = vgd_xf_lt;
+  hr[6] = vgd_xf_lT;
+}
+
+void RadiationM1::XfdRstPack(DvceArray5D<Real> &dst, const int nmb) const {
+  const DvceArray5D<Real> x = vgd_xf_d;
+  const std::int64_t nper = static_cast<std::int64_t>(x.extent(1))*x.extent(2)*
+                            x.extent(3)*x.extent(4);
+  const int n1 = dst.extent_int(4), n2 = dst.extent_int(3), n3 = dst.extent_int(2);
+  const std::int64_t ncell = static_cast<std::int64_t>(n1)*n2*n3;
+  const std::int64_t ntot = static_cast<std::int64_t>(dst.extent_int(1))*ncell;
+  for (int m = 0; m < nmb; ++m) {
+    const Real *px = x.data() + static_cast<std::int64_t>(m)*nper;
+    Real *pd = dst.data() + static_cast<std::int64_t>(m)*ntot;
+    Kokkos::parallel_for("m1_xfd_rst_pack",
+    Kokkos::RangePolicy<DevExeSpace, Kokkos::IndexType<std::int64_t>>(DevExeSpace(), 0,
+                                                                      ntot),
+    KOKKOS_LAMBDA(const std::int64_t q) {
+      pd[q] = (q < nper) ? px[q] : 0.0;
+    });
+  }
+  Kokkos::fence();
+}
+
+bool RadiationM1::XfdRstUnpack(const DvceArray5D<Real> &src, const int nmb,
+                               const std::int64_t *hi, const Real *hr) {
+  if (!vgd_xf || hi[0] != 1) {return false;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  // the interior shape of this run (RotXfSnap allocates vgd_xf_d with it)
+  if (hi[3] != indcs.ke - indcs.ks + 1 || hi[4] != indcs.je - indcs.js + 1 ||
+      hi[5] != indcs.ie - indcs.is + 1 || hi[2] <= 0) {
+    return false;
+  }
+  Kokkos::realloc(vgd_xf_d, nmb, hi[2], hi[3], hi[4], hi[5]);
+  const DvceArray5D<Real> x = vgd_xf_d;
+  const std::int64_t nper = hi[2]*hi[3]*hi[4]*hi[5];
+  const int n1 = src.extent_int(4), n2 = src.extent_int(3), n3 = src.extent_int(2);
+  const std::int64_t ntot = static_cast<std::int64_t>(src.extent_int(1))*n1*n2*n3;
+  if (ntot < nper) {return false;}
+  for (int m = 0; m < nmb; ++m) {
+    Real *px = x.data() + static_cast<std::int64_t>(m)*nper;
+    const Real *ps = src.data() + static_cast<std::int64_t>(m)*ntot;
+    Kokkos::parallel_for("m1_xfd_rst_unpack",
+    Kokkos::RangePolicy<DevExeSpace, Kokkos::IndexType<std::int64_t>>(DevExeSpace(), 0,
+                                                                      nper),
+    KOKKOS_LAMBDA(const std::int64_t q) {
+      px[q] = ps[q];
+    });
+  }
+  Kokkos::fence();
+  vgd_xf_pblk = hi[7];
+  vgd_xf_sb[0] = hi[8];
+  vgd_xf_sb[1] = hi[9];
+  vgd_xf_gb[0] = hi[10];
+  vgd_xf_gb[1] = hi[11];
+  vgd_xf_lb = hi[12];
+  vgd_xf_sblk = hi[13];
+  vgd_xf_sj = static_cast<int>(hi[14]);
+  vgd_xf_sn = static_cast<int>(hi[15]);
+  vgd_xf_pt = hr[0];
+  vgd_xf_st[0] = hr[1];
+  vgd_xf_st[1] = hr[2];
+  vgd_xf_gt[0] = hr[3];
+  vgd_xf_gt[1] = hr[4];
+  vgd_xf_lt = hr[5];
+  vgd_xf_lT = hr[6];
+  return true;
 }
 
 }  // namespace radm1
