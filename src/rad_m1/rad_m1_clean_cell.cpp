@@ -1069,8 +1069,9 @@ void RadiationM1::CleanCellDiagnose() {
 //! \brief stores the solution: E and F of the cells, the face fluxes of E (f0x*), the gas
 //! momentum and energy, and the stage slopes K = (U - U_old)/h.  The gas takes exactly
 //! the momentum and energy the radiation gives up besides its face fluxes, so both
-//! totals change only by the fluxes through the boundary.  cln_neint counts the cells
-//! left with negative internal energy (the fluid's floor would create energy there).
+//! totals change only by the fluxes through the boundary.  A gas left with eint < 0 takes
+//! the deficit from the cell's radiation E; cln_neint counts the cells where E did not
+//! cover it (the fluid's floor would create energy there).
 
 void RadiationM1::CleanCellWriteBack() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1111,7 +1112,7 @@ void RadiationM1::CleanCellWriteBack() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &nb) {
     Real div[4];
     CleanCellDivergence(x, CLC_X, m, k, j, i, true, div);
-    const Real e = x.u(m,CLC_X,k,j,i);
+    Real e = x.u(m,CLC_X,k,j,i);
     const Real e_old = x.w(m,CLW_EO,k,j,i);
     Real dm[3] = {0.0, 0.0, 0.0};
     Real den = 0.0;
@@ -1121,9 +1122,17 @@ void RadiationM1::CleanCellWriteBack() {
         uh(m,IM1+b,k,j,i) += dm[b];
       }
       den = -(e - e_old) - div[0];
+      // an unconverged iterate's work differs from the kinetic energy of dm: a gas
+      // left with eint < 0 takes the deficit from the cell's radiation
+      const Real def = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
+                            SQR(uh(m,IM3,k,j,i)))/uh(m,IDN,k,j,i) - uh(m,IEN,k,j,i) - den;
+      if (def > 0.0) {
+        const Real tk = fmin(def, fmax(e, 0.0));
+        e -= tk;
+        den += tk;
+        if (tk < def) nb += 1.0;
+      }
       uh(m,IEN,k,j,i) += den;
-      if (!(uh(m,IEN,k,j,i) >= 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
-                                    SQR(uh(m,IM3,k,j,i)))/uh(m,IDN,k,j,i))) nb += 1.0;
     }
     if (slopes) {
       kk(m,M1_T2_E,k,j,i) = (e - e_old)/h;
