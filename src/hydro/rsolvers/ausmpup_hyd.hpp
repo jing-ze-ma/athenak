@@ -6,10 +6,12 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file ausmpup_hyd.hpp
-//! \brief The AUSM+-up Riemann solver for hydrodynamics.  Only works for ideal gas EOS in hydrodynamics.
+//! \brief The AUSM+-up Riemann solver for hydrodynamics.  Only works for ideal gas EOS in
+//! hydrodynamics.
 //!
 //! REFERENCES:
-//! - M.-S. Liou, "A sequel to AUSM, Part II: AUSM +-up for all speeds", JCP, 214, 137, (2006).
+//! - M.-S. Liou, "A sequel to AUSM, Part II: AUSM +-up for all speeds", JCP, 214, 137,
+//! (2006).
 
 #include <algorithm>  // max(), min()
 #include <cmath>      // sqrt()
@@ -18,7 +20,8 @@
 namespace hydro {
 //----------------------------------------------------------------------------------------
 //! \fn void AUSMPUP
-//! \brief The AUSMPUP Riemann solver for ideal gas hydrodynamics (use HLLE for isothermal)
+//! \brief The AUSMPUP Riemann solver for ideal gas hydrodynamics (use HLLE for
+//! isothermal)
 
 KOKKOS_INLINE_FUNCTION
 void AUSMPUP(TeamMember_t const &member, const EOS_Data &eos,
@@ -32,7 +35,7 @@ void AUSMPUP(TeamMember_t const &member, const EOS_Data &eos,
   Real gm1 = eos.gamma - 1.0;
   Real igm1 = 1.0/gm1;
   Real alpha = 2.0*gm1/(eos.gamma+1.0);
-    
+
   const Real Mcut = eos.ausm_mcut;      // cut-off of f_a (p_u term)
   const Real Mref = eos.ausm_mcut_p;    // cut-off of f_a^p (M_p term); 1 = no 1/f_a
 
@@ -83,16 +86,16 @@ void AUSMPUP(TeamMember_t const &member, const EOS_Data &eos,
       el = wl_ipr*igm1 + 0.5*wl_idn*(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz));
       er = wr_ipr*igm1 + 0.5*wr_idn*(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz));
     }
-      
+
     // Liou 2.3
     qc = sqrt(alpl * (el+wl_ipr)/wl_idn);  // a_star left
     qd = sqrt(alpr * (er+wr_ipr)/wr_idn);  // a_star right
     qe = SQR(qc)/fmax(qc,wl_ivx);
     qf = SQR(qd)/fmax(qd,-wr_ivx);
     qc = fmin(qe,qf);  // average sound speed
-      
+
     qd = 0.5 * (wl_idn + wr_idn);  // average density
-    
+
     qe = sqrt((SQR(wl_ivx)+SQR(wr_ivx))/(2.0*SQR(qc))); // M_bar
     qf = fmin(1.0,fmax(qe,Mcut)); // M_o
     Real fa = qf * (2.0 - qf);
@@ -100,12 +103,12 @@ void AUSMPUP(TeamMember_t const &member, const EOS_Data &eos,
     Real fap = qf * (2.0 - qf);
     Real alp = 3.0/16.0*(-4.0+5.0*SQR(fa));
     Real bet = 1.0/8.0;
-      
+
     //--- Step 3.  Compute the mass flux and pressure flux
-      
+
     Real Mhalf = - 0.25/fap * fmax(1.0-SQR(qe),0.0) * (wr_ipr - wl_ipr) / (qd*SQR(qc));
     Real pu = - 0.75 * (wl_idn + wr_idn) * fa * qc * (wr_ivx - wl_ivx);
-      
+
     qa = wl_ivx/qc; // left Mach
     qb = 0.5*(qa+fabs(qa));
     qd = 0.25*SQR(qa+1.0);
@@ -115,7 +118,7 @@ void AUSMPUP(TeamMember_t const &member, const EOS_Data &eos,
     qf = (fabs(qa) >= 1.0) ? (qb/qa) : (qd*(2.0-qa-16.0*alp*qa*qe));
     pu *= qf;
     Real phalf = qf*wl_ipr;
-    
+
     qa = wr_ivx/qc; // right Mach
     qb = 0.5*(qa-fabs(qa));
     qd = -0.25*SQR(qa-1.0);
@@ -125,7 +128,7 @@ void AUSMPUP(TeamMember_t const &member, const EOS_Data &eos,
     qf = (fabs(qa) >= 1.0) ? (qb/qa) : (qd*(-2.0-qa+16.0*alp*qa*qe));
     pu *= qf;
     phalf += qf*wr_ipr + pu; // pressure flux
-                                    
+
     qa = (Mhalf > 0.0) ? wl_idn : wr_idn;
     qa *= qc * Mhalf; // mass flux
 

@@ -6,7 +6,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file hllclm_hyd.hpp
-//! \brief The HLLC Riemann solver for hydrodynamics with a low-Mach fix in the central form.  Only works for ideal gas EOS in hydrodynamics.
+//! \brief The HLLC Riemann solver for hydrodynamics with a low-Mach fix in the central
+//! form.  Only works for ideal gas EOS in hydrodynamics.
 //!
 //! REFERENCES:
 //! - E.F. Toro, "Riemann Solvers and numerical methods for fluid dynamics", 2nd ed.,
@@ -15,7 +16,8 @@
 //! - P. Batten, N. Clarke, C. Lambert, and D. M. Causon, "On the Choice of Wavespeeds
 //!   for the HLLC Riemann Solver", SIAM J. Sci. & Stat. Comp. 18, 6, 1553-1570, (1997).
 //!
-//! - N. Fleischmann, S. Adami, and N. A. Adams, "A shock-stable modification of the HLLC Riemann solver with reduced numerical dissipation", JCP, 423, 109762, (2020).
+//! - N. Fleischmann, S. Adami, and N. A. Adams, "A shock-stable modification of the HLLC
+//! Riemann solver with reduced numerical dissipation", JCP, 423, 109762, (2020).
 
 #include <algorithm>  // max(), min()
 #include <cmath>      // sqrt()
@@ -87,7 +89,7 @@ void HLLCLM(TeamMember_t const &member, const EOS_Data &eos,
     }
     qc = 0.25*(wl_idn + wr_idn)*(qa + qb);  // average density * average sound speed
     qd = 0.5 * (wl_ipr + wr_ipr + (wl_ivx - wr_ivx) * qc);  // P_mid
-      
+
     // coefficients for the low-Mach fix
     qe = fmax(fabs(wl_ivx/qa),fabs(wr_ivx/qb)); // maximum local Mach number
       Real phi = 1.0; // sin(fmin(1.0,qe/0.01)*M_PI/2.0);
@@ -118,26 +120,26 @@ void HLLCLM(TeamMember_t const &member, const EOS_Data &eos,
     // ...and the pressure at the contact surface
     Real cp = (ml*qb + mr*qa)/(ml + mr);
     cp = cp > 0.0 ? cp : 0.0;
-      
+
     //--- Step 6. Compute L/R U_star
-      
+
     qa = wl_idn*qe/(am - qc);
     qb = wr_idn*qf/(am - qd);
-        
+
     HydCons1D usl, usr;
-      
+
     usl.d = qa;
     usr.d = qb;
-      
+
     usl.mx = qa*am;
     usr.mx = qb*am;
-      
+
     usl.my = qa*wl_ivy;
     usr.my = qb*wl_ivy;
-      
+
     usl.mz = qa*wl_ivz;
     usr.mz = qb*wl_ivz;
-      
+
     usl.e = qe/(am - qc)*(el + (am - wl_ivx)*(wl_idn*am - wl_ipr/qe));
     usr.e = qf/(am - qd)*(er + (am - wr_ivx)*(wr_idn*am - wr_ipr/qf));
 
@@ -163,19 +165,27 @@ void HLLCLM(TeamMember_t const &member, const EOS_Data &eos,
     fr.e  = (er + wr_ipr)*wr_ivx;
 
     //--- Step 8. Compute flux star
-      
+
     // Low-Mach fix (Fleischmann et al. 2020)
     qa = phi*qc;
     qb = phi*qd;
 
-    fs.d = 0.5*(fl.d+fr.d) + 0.5*(qa*(usl.d - wl_idn) + fabs(am)*(usl.d - usr.d) + qb*(usr.d - wr_idn));
-    fs.mx = 0.5*(fl.mx+fr.mx) + 0.5*(qa*(usl.mx - wl_idn*wl_ivx) + fabs(am)*(usl.mx - usr.mx) + qb*(usr.mx - wr_idn*wr_ivx));
-    fs.my = 0.5*(fl.my+fr.my) + 0.5*(qa*(usl.my - wl_idn*wl_ivy) + fabs(am)*(usl.my - usr.my) + qb*(usr.my - wr_idn*wr_ivy));
-    fs.mz = 0.5*(fl.mz+fr.mz) + 0.5*(qa*(usl.mz - wl_idn*wl_ivz) + fabs(am)*(usl.mz - usr.mz) + qb*(usr.mz - wr_idn*wr_ivz));
-    fs.e = 0.5*(fl.e+fr.e) + 0.5*(qa*(usl.e - el) + fabs(am)*(usl.e - usr.e) + qb*(usr.e - er));
-      
+    fs.d = 0.5*(fl.d+fr.d) + 0.5*(qa*(usl.d - wl_idn) + fabs(am)*(usl.d - usr.d)
+                                  + qb*(usr.d - wr_idn));
+    fs.mx = 0.5*(fl.mx+fr.mx) + 0.5*(qa*(usl.mx - wl_idn*wl_ivx)
+                                     + fabs(am)*(usl.mx - usr.mx)
+                                     + qb*(usr.mx - wr_idn*wr_ivx));
+    fs.my = 0.5*(fl.my+fr.my) + 0.5*(qa*(usl.my - wl_idn*wl_ivy)
+                                     + fabs(am)*(usl.my - usr.my)
+                                     + qb*(usr.my - wr_idn*wr_ivy));
+    fs.mz = 0.5*(fl.mz+fr.mz) + 0.5*(qa*(usl.mz - wl_idn*wl_ivz)
+                                     + fabs(am)*(usl.mz - usr.mz)
+                                     + qb*(usr.mz - wr_idn*wr_ivz));
+    fs.e = 0.5*(fl.e+fr.e) + 0.5*(qa*(usl.e - el) + fabs(am)*(usl.e - usr.e)
+                                  + qb*(usr.e - er));
+
     //--- Step 9. Compute flux weights or scales
-      
+
     qa = (qc >= 0.0);
     qb = (qd <= 0.0);
     qe = 1.0 - qa - qb;
