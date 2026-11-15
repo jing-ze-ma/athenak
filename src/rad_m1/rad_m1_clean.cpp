@@ -19,6 +19,9 @@
 
 #include "athena.hpp"
 #include "globals.hpp"
+#include "coordinates/cell_locations.hpp"
+#include "coordinates/coordinates.hpp"
+#include "coordinates/cubed_sphere.hpp"
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
@@ -98,7 +101,19 @@ void RadiationM1::CleanInit() {
                "(force_reference_work = split)");
   }
   if (pm->use_cubed_sphere) {
-    CleanFatal("<rad_m1>/scheme = clean does not run on the cubed sphere yet");
+    // eddington is the sphere closure of infinite radius; an even panel resolution
+    // keeps the cell centres off the z axis (the frame of y, CleanCsFrame)
+    if (!cln_cell || !(cln_sphere || cln_edd) || cln_consist || cln_milne ||
+        pm->mesh_indcs.nx2 % 2 != 0) {
+      CleanFatal("<rad_m1>/scheme = clean on the cubed sphere needs clean_layout = cell, "
+                 "clean_closure = sphere | eddington, no clean_consistency or "
+                 "clean_face_model = milne and an even <mesh>/nx2");
+    }
+    if (cln_edd) cln_sph_r = std::numeric_limits<Real>::max();
+    cln_sphere = true;
+    CleanCsGeometry();
+    cln_init = true;
+    return;
   }
   if (pm->use_spherical_polar) {
     // the rays are vet_gd's (closure = vet_col with vet_gd) on its fixed direction set,
@@ -131,6 +146,124 @@ void RadiationM1::CleanInit() {
   impl_beam_hr = true;
   thsw_c1 = true;
   cln_init = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCsGeometry
+//! \brief cubed sphere: the cell geometry of the finite-volume divergence with Cartesian
+//! y.  A lateral face lies in the great-circle plane through the origin and its two
+//! edge points P, P' on the cube surface: normal along P x P', area (r_r^2 - r_l^2) th/2
+//! with th the angle between P and P'.  A radial face takes r_f^2 S with S the vector
+//! solid angle, minus half the sum of th n over the lateral faces (outward), so that the
+//! six vector areas of a cell sum to zero to round-off; the centroid is
+//! (r_r^4 - r_l^4) S/(4 V).  The cube points come from the global index on the panel,
+//! exactly +-1 on its edges, so that both panels at a seam build the face from the same
+//! Cartesian numbers (single-valued to the bit).  A lateral face's first moment int x dA
+//! is (r_r^3 - r_l^3)/3 2 sin(th/2) along the bisector of P, P'.  The frame of y is that
+//! of the hydro (hydro_am.hpp): r_hat of the cell centre and the unit panel tangents
+//! e_xi, e_eta (cubed_sphere::PanelTangents).  The centroids and r_hat take the halo
+//! exchange (a seam ghost is the neighbour's cell), then the centroid distances.
+
+void RadiationM1::CleanCsGeometry() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int js = indcs.js, ks = indcs.ks, nmb1 = pmy_pack->nmb_thispack - 1;
+  const int n1 = indcs.nx1 + 2*indcs.ng, n2 = indcs.nx2 + 2*indcs.ng;
+  const int n3 = indcs.nx3 + 2*indcs.ng, np = pmy_pack->pmesh->mesh_indcs.nx2;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+  for (int d = 0; d < 3; ++d) {
+    Kokkos::realloc(cln_ga[d], nmb1 + 1, n3, n2, n1);
+    Kokkos::realloc(cln_gd[d], nmb1 + 1, n3, n2, n1);
+  }
+  Kokkos::realloc(cln_gn, nmb1 + 1, CLG_NV, n3, n2, n1);
+  auto ga0 = cln_ga[0], ga1 = cln_ga[1], ga2 = cln_ga[2];
+  auto gd0 = cln_gd[0], gd1 = cln_gd[1], gd2 = cln_gd[2];
+  auto gn = cln_gn;
+  auto size = pmy_pack->pmb->mb_size.d_view;
+  auto pnl = pmy_pack->pmb->mb_panel.d_view;
+  auto rf = pmy_pack->pcoord->xx1f;
+  auto vol = pmy_pack->pcoord->volume;
+  par_for("cln_csgeo", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real fa[3], fb[3], fn[3];
+    cubed_sphere::PanelFrame(pnl(m), fa, fb, fn);
+    // tangent of the panel angle at face q along x2 (d = 0) or x3 (d = 1)
+    auto tq = [&](const int d, const int q) {
+      const Real x0 = (d == 0) ? size(m).x2min : size(m).x3min;
+      const int s = 2*(q - ((d == 0) ? js : ks) +
+                       static_cast<int>(floor(0.5*(x0 + 1.0)*np + 0.5))) - np;
+      return (s == np || s == -np) ? static_cast<Real>(s/np)
+                                   : tan(0.25*M_PI*static_cast<Real>(s)/np);
+    };
+    // angle and unit normal (+index) of face q along x2 (d = 0) or x3 (d = 1) across
+    // cell o of the other direction: P(eta_r) x P(eta_l), P(xi_l) x P(xi_r)
+    auto lat = [&](const int d, const int q, const int o, Real &th, Real nv[3],
+                   Real bv[3]) {
+      const Real t = tq(d, q), u0 = tq(1 - d, o), u1 = tq(1 - d, o + 1);
+      Real p[3], pp[3];
+      for (int c = 0; c < 3; ++c) {
+        p[c] = (d == 0) ? fa[c]*t + fb[c]*u1 + fn[c] : fa[c]*u0 + fb[c]*t + fn[c];
+        pp[c] = (d == 0) ? fa[c]*t + fb[c]*u0 + fn[c] : fa[c]*u1 + fb[c]*t + fn[c];
+      }
+      nv[0] = p[1]*pp[2] - p[2]*pp[1];
+      nv[1] = p[2]*pp[0] - p[0]*pp[2];
+      nv[2] = p[0]*pp[1] - p[1]*pp[0];
+      const Real s = std::sqrt(nv[0]*nv[0] + nv[1]*nv[1] + nv[2]*nv[2]);
+      th = atan2(s, p[0]*pp[0] + p[1]*pp[1] + p[2]*pp[2]);
+      const Real ip = 1.0/std::sqrt(p[0]*p[0] + p[1]*p[1] + p[2]*p[2]);
+      const Real ipp = 1.0/std::sqrt(pp[0]*pp[0] + pp[1]*pp[1] + pp[2]*pp[2]);
+      for (int c = 0; c < 3; ++c) {
+        nv[c] /= s;
+        bv[c] = p[c]*ip + pp[c]*ipp;
+      }
+      const Real ib = 2.0*sin(0.5*th)/std::sqrt(bv[0]*bv[0] + bv[1]*bv[1] + bv[2]*bv[2]);
+      for (int c = 0; c < 3; ++c) bv[c] *= ib;
+    };
+    Real th[4], nv[4][3], bv[4][3], sv[3];
+    lat(0, j, k, th[0], nv[0], bv[0]);
+    lat(0, j + 1, k, th[1], nv[1], bv[1]);
+    lat(1, k, j, th[2], nv[2], bv[2]);
+    lat(1, k + 1, j, th[3], nv[3], bv[3]);
+    for (int c = 0; c < 3; ++c) {
+      sv[c] = -0.5*(th[1]*nv[1][c] - th[0]*nv[0][c] + th[3]*nv[3][c] - th[2]*nv[2][c]);
+    }
+    const Real ss = std::sqrt(sv[0]*sv[0] + sv[1]*sv[1] + sv[2]*sv[2]);
+    const Real rl = rf(m,i), rr = rf(m,i+1), al = 0.5*(rr*rr - rl*rl);
+    ga0(m,k,j,i) = rl*rl*ss;
+    ga1(m,k,j,i) = al*th[0];
+    ga2(m,k,j,i) = al*th[2];
+    for (int c = 0; c < 3; ++c) {
+      gn(m,CLG_N+c,k,j,i) = sv[c]/ss;
+      gn(m,CLG_N+3+c,k,j,i) = nv[0][c];
+      gn(m,CLG_N+6+c,k,j,i) = nv[2][c];
+      gn(m,CLG_X+c,k,j,i) = 0.25*(rr*rr*rr*rr - rl*rl*rl*rl)*sv[c]/vol(m,k,j,i);
+      gn(m,CLG_M+c,k,j,i) = (rr*rr*rr - rl*rl*rl)/3.0*bv[0][c];
+      gn(m,CLG_M+3+c,k,j,i) = (rr*rr*rr - rl*rl*rl)/3.0*bv[2][c];
+    }
+    const Real xc = 0.25*M_PI*CellCenterX(j - js, nx2, size(m).x2min, size(m).x2max);
+    const Real ec = 0.25*M_PI*CellCenterX(k - ks, nx3, size(m).x3min, size(m).x3max);
+    Real qc[3], e1[3], e2[3];
+    cubed_sphere::PanelToCart(pnl(m), xc, ec, qc);
+    cubed_sphere::PanelTangents(pnl(m), xc, ec, e1, e2);
+    const Real qn = 1.0/sqrt(qc[0]*qc[0] + qc[1]*qc[1] + qc[2]*qc[2]);
+    for (int c = 0; c < 3; ++c) {
+      gn(m,CLG_R+c,k,j,i) = qc[c]*qn;
+      gn(m,CLG_E+c,k,j,i) = e1[c];
+      gn(m,CLG_E+3+c,k,j,i) = e2[c];
+    }
+  });
+  CleanGhostFill(cln_gn, CLG_X, 6, false);
+  par_for("cln_csdist", DevExeSpace(), 0, nmb1, 1, n3-1, 1, n2-1, 1, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int d = 0; d < 3; ++d) {
+      const int kl = k - (d == 2), jl = j - (d == 1), il = i - (d == 0);
+      Real s = 0.0;
+      for (int c = 0; c < 3; ++c) {
+        s += SQR(gn(m,CLG_X+c,k,j,i) - gn(m,CLG_X+c,kl,jl,il));
+      }
+      auto gd = (d == 0) ? gd0 : ((d == 1) ? gd1 : gd2);
+      gd(m,k,j,i) = std::sqrt(s);
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -532,6 +665,7 @@ void RadiationM1::CleanOldVector() {
   auto u0_ = u0;
   auto inc = t2inc;
   auto w = cln_w;
+  CleanArgs x = CleanMakeArgs();
 
   par_for("cln_old", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -542,8 +676,9 @@ void RadiationM1::CleanOldVector() {
         uh(m,IEN,k,j,i) += inc(m,M1_T2_EN,k,j,i);
       }
       const Real d = uh(m,IDN,k,j,i);
-      const Real ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
-                             SQR(uh(m,IM3,k,j,i)))/d;
+      Real p[3];
+      CleanGasMomentum(x, uh, m, k, j, i, p);
+      const Real ekin = 0.5*(SQR(p[0]) + SQR(p[1]) + SQR(p[2]))/d;
       const Real eint = fmax(uh(m,IEN,k,j,i) - ekin, 0.0);
       t = eos.Temperature(d, eint);
       w(m,CLW_EI,k,j,i) = eint;
@@ -566,20 +701,17 @@ void RadiationM1::CleanAdvectiveCoefficients() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
-  auto cs = cln_s;
   auto w = cln_w;
+  CleanArgs x = CleanMakeArgs();
 
   par_for("cln_advcoef", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = uh(m,IDN,k,j,i);
-    Real v[3];
-    for (int n = 0; n < 3; ++n) v[n] = (uh(m,IM1+n,k,j,i) + w(m,CLW_DM+n,k,j,i))/d;
-    const int dab[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
-    for (int a = 0; a < 3; ++a) {
-      Real s = v[a];
-      for (int b = 0; b < 3; ++b) s += cs(m,CLN_D11+dab[a][b],k,j,i)*v[b];
-      w(m,CLW_A1+a,k,j,i) = s;
-    }
+    Real v[3], a[3];
+    CleanGasMomentum(x, uh, m, k, j, i, v);
+    for (int n = 0; n < 3; ++n) v[n] = (v[n] + w(m,CLW_DM+n,k,j,i))/d;
+    CleanAdvect(x, m, k, j, i, v, a);
+    for (int n = 0; n < 3; ++n) w(m,CLW_A1+n,k,j,i) = a[n];
   });
   CleanGhostFill(cln_w, CLW_A1, 3);
 }

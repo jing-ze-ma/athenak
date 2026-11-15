@@ -87,19 +87,33 @@ CleanArgs RadiationM1::CleanMakeArgs() {
     x.x2v = pc->x2v;
     x.x2f = pc->xx2f;
   }
+  x.cub = pmy_pack->pmesh->use_cubed_sphere;
+  if (x.cub) {
+    x.vol = pmy_pack->pcoord->volume;
+    for (int d = 0; d < 3; ++d) {
+      x.area[d] = cln_ga[d];
+      x.dxf[d] = cln_gd[d];
+    }
+    x.g = cln_gn;
+    x.x1v = pmy_pack->pcoord->x1v;
+    x.x1f = pmy_pack->pcoord->xx1f;
+  }
   return x;
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanGhostFill
 //! \brief ghost cells of components [c0, c0+nc) of a work array: the neighbours' cells
-//! (other MeshBlocks, periodic wrap) by the cell-centred boundary exchange on a scratch
-//! array of nc components, then a copy of the edge cell on physical boundaries
+//! (other MeshBlocks, periodic wrap; across a cubed-sphere seam the neighbour's own
+//! cells, without the along-seam resample) by the cell-centred boundary exchange on a
+//! scratch array of nc components, then (phys) a copy of the edge cell on physical
+//! boundaries
 
-void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc) {
+void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
+                                 const bool phys) {
   if (nc > 32) {   // the exchange moves at most 32 variables at once
-    CleanGhostFill(a, c0, 32);
-    CleanGhostFill(a, c0 + 32, nc - 32);
+    CleanGhostFill(a, c0, 32, phys);
+    CleanGhostFill(a, c0 + 32, nc - 32, phys);
     return;
   }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -116,6 +130,7 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
     hl.pb.reset(new MeshBoundaryValuesCC(pmy_pack, nullptr, false));
     hl.pb->InitializeBuffers(nc);
     hl.pb->SetVectorPairs(nc, {});
+    hl.pb->cs_noresample = true;
   }
   auto h = hl.a;
   par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
@@ -132,28 +147,30 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
   KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
     a(m,c0+n,k,j,i) = h(m,n,k,j,i);
   });
+  if (!phys) return;
 
   auto bc = pmy_pack->pmb->mb_bcs.d_view;
-  auto phys = [] KOKKOS_FUNCTION (const BoundaryFlag f) {
-    return f != BoundaryFlag::block && f != BoundaryFlag::periodic;
+  auto pf = [] KOKKOS_FUNCTION (const BoundaryFlag f) {
+    return f != BoundaryFlag::block && f != BoundaryFlag::periodic &&
+           f != BoundaryFlag::panel;
   };
   par_for("cln_ghost1", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, ng-1,
   KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int g) {
-    if (phys(bc(m,BoundaryFace::inner_x1))) a(m,c0+n,k,j,is-1-g) = a(m,c0+n,k,j,is);
-    if (phys(bc(m,BoundaryFace::outer_x1))) a(m,c0+n,k,j,ie+1+g) = a(m,c0+n,k,j,ie);
+    if (pf(bc(m,BoundaryFace::inner_x1))) a(m,c0+n,k,j,is-1-g) = a(m,c0+n,k,j,is);
+    if (pf(bc(m,BoundaryFace::outer_x1))) a(m,c0+n,k,j,ie+1+g) = a(m,c0+n,k,j,ie);
   });
   if (pmy_pack->pmesh->multi_d) {
     par_for("cln_ghost2", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, ng-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int g, const int i) {
-      if (phys(bc(m,BoundaryFace::inner_x2))) a(m,c0+n,k,js-1-g,i) = a(m,c0+n,k,js,i);
-      if (phys(bc(m,BoundaryFace::outer_x2))) a(m,c0+n,k,je+1+g,i) = a(m,c0+n,k,je,i);
+      if (pf(bc(m,BoundaryFace::inner_x2))) a(m,c0+n,k,js-1-g,i) = a(m,c0+n,k,js,i);
+      if (pf(bc(m,BoundaryFace::outer_x2))) a(m,c0+n,k,je+1+g,i) = a(m,c0+n,k,je,i);
     });
   }
   if (pmy_pack->pmesh->three_d) {
     par_for("cln_ghost3", DevExeSpace(), 0, nmb1, 0, nc-1, 0, ng-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int g, const int j, const int i) {
-      if (phys(bc(m,BoundaryFace::inner_x3))) a(m,c0+n,ks-1-g,j,i) = a(m,c0+n,ks,j,i);
-      if (phys(bc(m,BoundaryFace::outer_x3))) a(m,c0+n,ke+1+g,j,i) = a(m,c0+n,ke,j,i);
+      if (pf(bc(m,BoundaryFace::inner_x3))) a(m,c0+n,ks-1-g,j,i) = a(m,c0+n,ks,j,i);
+      if (pf(bc(m,BoundaryFace::outer_x3))) a(m,c0+n,ke+1+g,j,i) = a(m,c0+n,ke,j,i);
     });
   }
 }

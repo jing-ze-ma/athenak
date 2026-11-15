@@ -538,6 +538,9 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
 //! and the half-range stress columns k+^r = (D_rr, 0, 0), k+^t = (k, D_tt/2, 0),
 //! k+^p = (k, 0, D_pp/2) with k = (R/r) (1 + mu_c)/(3 pi); R -> 0 is the point source.
 //! Inside (r <= R) the radiation is isotropic: D = I/3, h+- = +-1/4, k+ = I/6, C1 = 0.
+//! On the cubed sphere D and the stress columns take Cartesian components about
+//! r_hat (that of the frame of y) and the mean normals n_d of the lateral families:
+//! k+^r = k_rr r_hat, k+^d = k r_hat + D_tt n_d/2.
 
 void RadiationM1::CleanClosureSphere() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -546,8 +549,10 @@ void RadiationM1::CleanClosureSphere() {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const Real rs = cln_sph_r;
+  const bool cub = pmy_pack->pmesh->use_cubed_sphere;
   auto x1v = pmy_pack->pcoord->x1v;
   auto cs = cln_s;
+  auto gn = cln_gn;
 
   par_for("cln_sphere", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -585,6 +590,30 @@ void RadiationM1::CleanClosureSphere() {
     cs(m,CLN_KP+8,k,j,i) = 0.25*(1.0 - drr);
     cs(m,CLN_C1,k,j,i) = c1;
     cs(m,CLN_J,k,j,i) = 1.0;
+    if (!cub) return;
+    const Real dt = 0.5*(1.0 - drr);
+    Real nd[3][3];
+    for (int d = 0; d < 3; ++d) {
+      const int dk = (d == 2), dj = (d == 1);
+      Real s = 0.0;
+      for (int c = 0; c < 3; ++c) {
+        nd[d][c] = (d == 0) ? gn(m,CLG_R+c,k,j,i) :
+                   gn(m,CLG_N+3*d+c,k,j,i) + gn(m,CLG_N+3*d+c,k+dk,j+dj,i);
+        s += nd[d][c]*nd[d][c];
+      }
+      for (int c = 0; c < 3; ++c) nd[d][c] /= std::sqrt(s);
+    }
+    const int ab[6][2] = {{0, 0}, {1, 1}, {2, 2}, {0, 1}, {0, 2}, {1, 2}};
+    for (int a = 0; a < 6; ++a) {
+      cs(m,CLN_D11+a,k,j,i) = (drr - dt)*nd[0][ab[a][0]]*nd[0][ab[a][1]] +
+                              ((a < 3) ? dt : 0.0);
+    }
+    for (int b = 0; b < 3; ++b) {
+      cs(m,CLN_KP+b,k,j,i) = krr*nd[0][b];
+      for (int d = 1; d < 3; ++d) {
+        cs(m,CLN_KP+3*d+b,k,j,i) = kr*nd[0][b] + 0.5*dt*nd[d][b];
+      }
+    }
   });
   CleanGhostFill(cln_s, 0, CLN_N);
 }
