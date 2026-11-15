@@ -114,6 +114,7 @@ void RadiationM1::CleanCellFaceCoefficients() {
       fc(m,CLF_AL,k,j,i) = CleanDissipationWeight(mode, chi*dxd, psi, sray);
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);
       fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
+      fc(m,CLF_LO,k,j,i) = 0.0;
     });
   }
 }
@@ -531,7 +532,7 @@ void RadiationM1::CleanCellCopyIterate() {
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanCellCountNegative
 //! \brief CleanCountNegative on E of the solution; also counts the cells with
-//! |F| > c E (cln_nnreal, diagnostic only).  Returns the number of negative cells.
+//! |F| > c E beyond the solver tolerance (cln_nnreal, diagnostic only).  Returns the number of negative cells.
 
 int RadiationM1::CleanCellCountNegative() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -551,6 +552,16 @@ int RadiationM1::CleanCellCountNegative() {
     w(m,CLW_B,k,j,i) = u(m,CLC_B,k,j,i);
   });
   const int nneg = CleanCountNegative();
+  Real bmax = 0.0;
+  Kokkos::parallel_reduce("clc_bmax", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &b_max) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/nx1;
+    int i = idx - m*nkji - k*nji - j*nx1;
+    b_max = fmax(b_max, fabs(w(m,CLW_B,k+ks,j+js,i+is)));
+  }, Kokkos::Max<Real>(bmax));
+  const Real zero = 10.0*cln_tol*bmax;
   Real nreal = 0.0;
   Kokkos::parallel_reduce("clc_neg_out", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nkji),
@@ -566,10 +577,66 @@ int RadiationM1::CleanCellCountNegative() {
     u(m,CLC_X,k,j,i) = e;
     const Real y = std::sqrt(SQR(u(m,CLC_X+1,k,j,i)) + SQR(u(m,CLC_X+2,k,j,i)) +
                              SQR(u(m,CLC_X+3,k,j,i)));
-    if (y > (1.0 + 1.0e-12)*e) n += 1.0;
+    if (y > (1.0 + 1.0e-12)*e + zero) n += 1.0;
   }, Kokkos::Sum<Real>(nreal));
   cln_nnreal = static_cast<int>(nreal);
   return nneg;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::CleanCellMarkFaces
+//! \brief marks every face of the cells whose solution has E < 0 or |F| > c E (beyond
+//! the solver tolerance, 10 clean_tol max|B_E|) as low-order.  Returns the number of
+//! such cells.
+
+int RadiationM1::CleanCellMarkFaces() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  int nmb = pmy_pack->nmb_thispack;
+  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  const bool multi_d = pmy_pack->pmesh->multi_d;
+  const bool three_d = pmy_pack->pmesh->three_d;
+  auto u = cln_x;
+  auto fc1 = cln_fc1, fc2 = cln_fc2, fc3 = cln_fc3;
+
+  Real bmax = 0.0;
+  Kokkos::parallel_reduce("clc_bmax", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &b_max) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/nx1;
+    int i = idx - m*nkji - k*nji - j*nx1;
+    b_max = fmax(b_max, fabs(u(m,CLC_B,k+ks,j+js,i+is)));
+  }, Kokkos::Max<Real>(bmax));
+  const Real zero = 10.0*cln_tol*bmax;
+  Real nbad = 0.0;
+  Kokkos::parallel_reduce("clc_mark", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &n) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/nx1;
+    int i = idx - m*nkji - k*nji - j*nx1;
+    k += ks;
+    j += js;
+    i += is;
+    const Real e = u(m,CLC_X,k,j,i);
+    const Real y = std::sqrt(SQR(u(m,CLC_X+1,k,j,i)) + SQR(u(m,CLC_X+2,k,j,i)) +
+                             SQR(u(m,CLC_X+3,k,j,i)));
+    if (e >= -zero && y <= (1.0 + 1.0e-12)*e + zero) return;
+    n += 1.0;
+    fc1(m,CLF_LO,k,j,i) = 1.0;
+    fc1(m,CLF_LO,k,j,i+1) = 1.0;
+    if (multi_d) {
+      fc2(m,CLF_LO,k,j,i) = 1.0;
+      fc2(m,CLF_LO,k,j+1,i) = 1.0;
+    }
+    if (three_d) {
+      fc3(m,CLF_LO,k,j,i) = 1.0;
+      fc3(m,CLF_LO,k+1,j,i) = 1.0;
+    }
+  }, Kokkos::Sum<Real>(nbad));
+  return static_cast<int>(nbad);
 }
 
 //----------------------------------------------------------------------------------------

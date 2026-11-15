@@ -36,6 +36,7 @@ namespace radm1 {
 // face variables of the cell layout (arrays cln_fc1..3; CLF_TH as in the staggered one)
 constexpr int CLF_AL = 0;    // dissipation weight al
 constexpr int CLF_AF = 2;    // dissipation speed s = c sqrt(max(D_dd,L, D_dd,R))
+constexpr int CLF_LO = 3;    // 1: low-order face (first-order jumps, al = 1, s = c)
 
 // cell vectors (array cln_x), 4 components (E, y1, y2, y3) each
 constexpr int CLC_O = 0;     // old vector
@@ -145,6 +146,20 @@ void CleanJumpCoefficients(const CleanArgs &x, const int dir, const int c, const
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool CleanFaceDissipation
+//! \brief dissipation weight al and al s/2 of the interior face (k,j,i) normal to dir;
+//! a low-order face takes al = 1, s = c.  Returns true for a low-order face.
+
+KOKKOS_INLINE_FUNCTION
+bool CleanFaceDissipation(const CleanArgs &x, const int dir, const int m, const int k,
+                          const int j, const int i, Real &al, Real &hs) {
+  const bool lo = x.fc[dir](m,CLF_LO,k,j,i) > 0.0;
+  al = lo ? 1.0 : x.fc[dir](m,CLF_AL,k,j,i);
+  hs = 0.5*al*(lo ? x.c : x.fc[dir](m,CLF_AF,k,j,i));
+  return lo;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanCellGhost
 //! \brief incoming state outside the open physical boundary face (k,j,i) normal to dir:
 //! the beam at x1min (E_g = F_b/(c sqrt(D_11)), y_g,b = D_1b F_b/(c D_11) with D of the
@@ -238,18 +253,18 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
     }
     return;
   }
-  const Real al = x.fc[dir](m,CLF_AL,k,j,i);
+  Real al, hs;
+  const bool lo = CleanFaceDissipation(x, dir, m, k, j, i, al, hs);
   const Real th = x.fc[dir](m,CLF_TH,k,j,i);
-  const Real hs = 0.5*al*x.fc[dir](m,CLF_AF,k,j,i);
   const Real q = 0.75*(1.0 - al)*th*x.h*x.c*x.c*x.idx[dir];
-  Real cj[4];
-  CleanJumpCoefficients(x, dir, 0, m, k, j, i, cj);
+  Real cj[4] = {0.0, -1.0, 1.0, 0.0};
+  if (!lo) CleanJumpCoefficients(x, dir, 0, m, k, j, i, cj);
   jl[0][0] = -hs*cj[1] + q*CleanDiag(x, dir, dir, m, kl, jl_, il);
   jr[0][0] = -hs*cj[2] - q*CleanDiag(x, dir, dir, m, k, j, i);
   jl[0][1+dir] = 0.5*x.c;
   jr[0][1+dir] = 0.5*x.c;
   for (int b = 0; b < x.nf; ++b) {
-    CleanJumpCoefficients(x, dir, 1+b, m, k, j, i, cj);
+    if (!lo) CleanJumpCoefficients(x, dir, 1+b, m, k, j, i, cj);
     jl[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, kl, jl_, il);
     jr[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, k, j, i);
     jl[1+b][1+b] = -hs*cj[1];
@@ -287,14 +302,14 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
   // RC terms in E_{L-1} and E_{R+1}
   const int kp = k + dk, jp = j + dj, ip = i + di;
   const int km = kl - dk, jm = jl_ - dj, im = il - di;
-  const Real al = x.fc[dir](m,CLF_AL,k,j,i);
+  Real al, hs;
+  const bool lo = CleanFaceDissipation(x, dir, m, k, j, i, al, hs);
   const Real th = x.fc[dir](m,CLF_TH,k,j,i);
   const Real q = 0.25*(1.0 - al)*th*x.h*x.c*x.c*x.idx[dir];
   f[0] += q*(CleanDiag(x, dir, dir, m, kp, jp, ip)*x.u(m,v,kp,jp,ip) -
              CleanDiag(x, dir, dir, m, km, jm, im)*x.u(m,v,km,jm,im));
   // reconstruction terms of the dissipation in the states of L-1 and R+1
-  if (!x.recon) return;
-  const Real hs = 0.5*al*x.fc[dir](m,CLF_AF,k,j,i);
+  if (!x.recon || lo) return;
   for (int c = 0; c <= x.nf; ++c) {
     Real cj[4];
     CleanJumpCoefficients(x, dir, c, m, k, j, i, cj);

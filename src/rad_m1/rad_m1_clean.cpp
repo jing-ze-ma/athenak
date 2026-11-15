@@ -94,52 +94,60 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   } else {
     CleanFaceCoefficients();
   }
-  CleanFirstIterate();
-  if (cell) CleanCellFirstIterate();
-  if (cln_feedback) CleanAdvectiveCoefficients();
 
   // 3. Newton iteration on the gas coupling and, with reconstruction, Picard passes on
   //    the lagged slopes (at most clean_maxpic, then the slopes are frozen and only the
-  //    gas coupling iterates on); one linear solve without either
+  //    gas coupling iterates on); one linear solve without either.  In the cell layout
+  //    a solution with cells E <= 0 or |F| > c E switches their faces to the low-order
+  //    flux and is solved again (at most clean_maxpos times).
   const bool iterate = cln_feedback || (cell && cln_recon);
-  int nit = 0, nit_sum = 0, npic = 0;
+  int nit = 0, nit_sum = 0, npic = 0, npos = 0;
   Real dpic = 0.0;
   bool converged = !iterate;
   const int maxnl = iterate ? cln_maxnl : 1;
   // the lagged slopes settle only to the accuracy of the linear solve
   const Real tol_nl = cell ? fmax(cln_tol_nl, 10.0*cln_tol) : cln_tol_nl;
-  for (int inl = 0; inl < maxnl; ++inl) {
-    if (cell) {
-      if (cln_recon && inl < cln_maxpic) {
-        CleanCellSlopeWeights();
-        ++npic;
+  for (int ipos = 0; ; ++ipos) {
+    CleanFirstIterate();
+    if (cell) CleanCellFirstIterate();
+    if (cln_feedback) CleanAdvectiveCoefficients();
+    converged = !iterate;
+    npic = 0;
+    for (int inl = 0; inl < maxnl; ++inl) {
+      if (cell) {
+        if (cln_recon && inl < cln_maxpic) {
+          CleanCellSlopeWeights();
+          ++npic;
+        }
+        CleanCellRightHandSide();
+        CleanCellPreconditionerSetup();
+      } else {
+        CleanRightHandSide();
+        CleanPreconditionerSetup();
       }
-      CleanCellRightHandSide();
-      CleanCellPreconditionerSetup();
-    } else {
-      CleanRightHandSide();
-      CleanPreconditionerSetup();
+      nit = CleanBiCGStab();
+      nit_sum += std::abs(nit);
+      cln_nsolve += 1.0;
+      cln_nit += std::abs(nit);
+      if (!iterate || nit < 0) break;
+      const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
+      if (cell && cln_recon && inl < cln_maxpic) dpic = de;
+      Real dv = 0.0;
+      if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
+      if (de < tol_nl && dv < tol_nl) {
+        converged = true;
+        break;
+      }
     }
-    nit = CleanBiCGStab();
-    nit_sum += std::abs(nit);
-    cln_nsolve += 1.0;
-    cln_nit += std::abs(nit);
-    if (!iterate || nit < 0) break;
-    const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
-    if (cell && cln_recon && inl < cln_maxpic) dpic = de;
-    Real dv = 0.0;
-    if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
-    if (de < tol_nl && dv < tol_nl) {
-      converged = true;
-      break;
+    if (iterate) {
+      if (cell) {
+        CleanCellCopyIterate();
+      } else {
+        CleanCopyIterate();
+      }
     }
-  }
-  if (iterate) {
-    if (cell) {
-      CleanCellCopyIterate();
-    } else {
-      CleanCopyIterate();
-    }
+    if (!cell || ipos >= cln_maxpos || CleanCellMarkFaces() == 0) break;
+    ++npos;
   }
   if (!converged) nit = -std::abs(nit) - 1;
 
@@ -149,9 +157,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (nneg > 0) cln_nneg += 1.0;
   if (global_variable::my_rank == 0) {
     if (cell) {
-      std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pic %d %.2e neg %d nreal %d\n",
-                  pmy_pack->pmesh->ncycle, t2_solve, nit, nit_sum, npic, dpic, nneg,
-                  cln_nnreal);
+      std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pic %d %.2e pos %d neg %d "
+                  "nreal %d\n", pmy_pack->pmesh->ncycle, t2_solve, nit, nit_sum, npic,
+                  dpic, npos, nneg, cln_nnreal);
     } else {
       std::printf("CLEAN cycle %d t2s %d it %d neg %d\n", pmy_pack->pmesh->ncycle,
                   t2_solve, nit, nneg);
