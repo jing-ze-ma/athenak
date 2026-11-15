@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <string>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -24,6 +25,15 @@
 #include "rad_m1/rad_m1_clean_cell.hpp"
 
 namespace radm1 {
+//----------------------------------------------------------------------------------------
+//! \fn void CleanFatal
+//! \brief stops the run with a message about an unsupported clean-scheme setup
+
+static void CleanFatal(const std::string &msg) {
+  std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << msg << std::endl;
+  std::exit(EXIT_FAILURE);
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanInit
 //! \brief allocates the arrays of the clean solve and checks that the setup is supported
@@ -72,18 +82,29 @@ void RadiationM1::CleanInit() {
     Kokkos::realloc(cln_mc, nmb, CLN_N, n3, n2, n1);
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
   }
-
   Mesh *pm = pmy_pack->pmesh;
-  const bool cartesian = !pm->use_cubed_sphere && !pm->use_spherical_polar;
-  const bool one_block = (pm->nmb_total == 1);
-  if (pm->multilevel || (!one_block && !cln_cell) || !cartesian || !vet_sc ||
-      !vet_full || chat != c_light || (cln_consist && vet_path != 0)) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<rad_m1>/scheme = clean currently needs a uniform Cartesian mesh "
-              << "(several MeshBlocks: clean_layout = cell), closure = vet_sc with "
-              << "vet_tensor = full, and chat = c; clean_consistency vet_path = none"
-              << std::endl;
-    std::exit(EXIT_FAILURE);
+  if (pm->multilevel || (pm->nmb_total > 1 && !cln_cell) || chat != c_light) {
+    CleanFatal("<rad_m1>/scheme = clean currently needs a uniform mesh (several "
+               "MeshBlocks: clean_layout = cell) and chat = c");
+  }
+  if (pm->use_cubed_sphere) {
+    CleanFatal("<rad_m1>/scheme = clean does not run on the cubed sphere yet");
+  }
+  if (pm->use_spherical_polar) {
+    // the vet_sc rays are Cartesian: the closure is the sphere's until the spherical
+    // ray solver is connected
+    if (!cln_cell || !cln_sphere || cln_consist || pm->use_polar_boundary) {
+      CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_layout = cell "
+                 "and clean_closure = sphere (no clean_consistency) and a wedge clear of "
+                 "the poles");
+    }
+    cln_init = true;
+    return;
+  }
+  if (cln_sphere || !vet_sc || !vet_full || (cln_consist && vet_path != 0)) {
+    CleanFatal("<rad_m1>/scheme = clean on a Cartesian mesh needs closure = vet_sc with "
+               "vet_tensor = full and, with clean_consistency, vet_path = none "
+               "(clean_closure = sphere is for spherical polar)");
   }
   // the formal solution must provide the half-range sums and C1
   impl_beam_hr = true;

@@ -118,12 +118,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_extrap = (cl.compare("extrap") == 0) ? 1 : ((cl.compare("extrap2") == 0) ? 2 :
                  ((cl.compare("extrap1") == 0) ? 3 : 0));
     cln_edd = (cl.compare("eddington") == 0);
-    if (!cln_closit && cln_extrap == 0 && !cln_edd && cl.compare("predict") != 0) {
+    cln_sphere = (cl.compare("sphere") == 0);
+    if (!cln_closit && cln_extrap == 0 && !cln_edd && !cln_sphere &&
+        cl.compare("predict") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1>/clean_closure = predict | iterate | extrap | extrap1 | "
-        << "extrap2 | eddington" << std::endl;
+        << "extrap2 | eddington | sphere" << std::endl;
       std::exit(EXIT_FAILURE);
-    }}
+    }
+    if (cln_sphere) cln_sph_r = pin->GetReal("rad_m1","clean_sphere_radius");}
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_maxpos = pin->GetOrAddInteger("rad_m1","clean_maxpos",3);
     cln_pcsweeps = pin->GetOrAddInteger("rad_m1","clean_pc_sweeps",1);
