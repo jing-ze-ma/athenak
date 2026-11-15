@@ -21,7 +21,6 @@ ix3_bc = periodic
 ox3_bc = periodic
 use_spherical_polar = true
 use_polar_boundary = true
-polar_quadratic_recon = false
 <meshblock>
 nx1 = 8
 nx2 = 32

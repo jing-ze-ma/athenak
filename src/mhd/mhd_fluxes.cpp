@@ -293,8 +293,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // <mhd>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see mhd.hpp).
   const auto recon_method_x1_ = recon_method_x1;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
-  const bool pquad_ = pmy_pack->pmesh->use_polar_quadratic_recon;
-  const int px3_ = pmy_pack->pmesh->polar_x3_shift;
 
   //--------------------------------------------------------------------------------------
   // i-direction
@@ -817,14 +815,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           dl_jp1 = dscr1;
         }
 
-        const bool pq = pquad_ &&
-          ((j == js && mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
-           (j == je && mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar));
         if (use_spherical_polar) {
-          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_, wl_jp1, wr,
-                                pq);
-          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, x2v_, x2f_, bl_jp1, br,
-                                pq);
+          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_, wl_jp1, wr);
+          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, x2v_, x2f_, bl_jp1, br);
           if (wb_all_) {
             hydro::WbAllBlendGrid(member, use_wb_rho_, 2, false, m, k, j, is-1, ie+1, w0_,
                                   x2v_, x2f_, wbq2_, wbw_, wl_jp1, wr);
@@ -888,8 +881,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         if (nder > 0) {
           if (use_spherical_polar) {
             GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, wder_, x2v_, x2f_,
-                                  dl_jp1, dr,
-                                  pq);
+                                  dl_jp1, dr);
           } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX2(member, m, k, j, is-1, ie+1,
                                      pwb_, pfacewb_x2f,
@@ -1290,72 +1282,35 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
         // SPHERICAL POLAR: the states were reconstructed along phi at the cell's volume
         // centroid theta = x2v, but an x3 face (area element r dr dtheta) is centred at
-        // the theta MIDPOINT of the cell. The two differ by O(dtheta^2 cot theta),
+        // the theta midpoint of the cell.  The two differ by O(dtheta^2 cot theta),
         // negligible in the interior, but in the polar row the midpoint is dtheta/2
-        // against a centroid of 2 dtheta/3 and the phi-face fluxes enter the balance
-        // with weight ~2/(r dtheta dphi): the r-components of v and B (~ sin theta) were
-        // 4/3 too large -- a resolution-independent spurious radial force of ~0.5
-        // (B^2/2)/r (sp_test iprob=11) -- and any scalar with a gradient across the pole
-        // (p = p0 + g x, say) was read dtheta/6 off, an O(1) error in the polar cell's
-        // phi-force. Shift EVERY reconstructed variable to the midpoint with the
-        // centred theta-derivative of the cell values; the polar ghosts hold the analytic
-        // continuation through the axis (the exchange flips the tangential components),
-        // so the centred difference is valid in the polar row too. For a vector this
-        // shift includes the basis rotation rhat' = rhat cos d + thhat sin d.
-        // <mesh>/polar_x3_shift selects the form: 1 = "rotate", the exact basis rotation
-        // of the (r,theta) pairs of v and B alone (a8cfb83e); 2 = "shift", the unlimited
-        // centred-difference shift of every variable above (863e8337) -- BISECTED to the
-        // polar-row radial-field blow-up of the sp MHD production run (2026-09-10);
-        // 3 = "scalar", rotate the vectors and shift only the remaining variables;
-        // 0 = "off".
+        // against a centroid of 2 dtheta/3, and the phi-face fluxes enter the balance with
+        // weight ~2/(r dtheta dphi): unrotated, the r-components of v and B would be 4/3
+        // too large there, a resolution-independent spurious radial force.  So rotate the
+        // (r,theta) pairs of v and B into the face's own basis,
+        // rhat' = rhat cos d + thhat sin d.
         if (use_spherical_polar) {
-          if (px3_ == 1 || px3_ == 3) {
-            const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
-            const Real cd = cos(dang), sd0 = sin(dang);
-            // A REFLECTING radial wall: the ghost row holds the MIRROR image (v_r, B_r
-            // flipped) of the interior row, and its phi-face EMFs enter the wall-edge EMF
-            // (CornerE), which vanishes only if they are minus the interior ones.
-            // Rotating the mirrored (r,theta) pair by +dang is not the mirror of the
-            // rotated interior pair; rotating it by -dang is. With +dang the wall-edge
-            // E_theta was off by O(sin(dang) v_theta B_phi): B.rhat grew at the closed
-            // wall wherever the flow is not axisymmetric, and the Poynting flux through
-            // it drained energy (equator MHD blast, -5e-8 at nx2 = 32; now round-off).
-            const bool gin_ = mb_bcs.d_view(m,BoundaryFace::inner_x1) ==
-                              BoundaryFlag::reflect;
-            const bool gout_ = mb_bcs.d_view(m,BoundaryFace::outer_x1) ==
-                               BoundaryFlag::reflect;
-            par_for_inner(member, is-1, ie+1, [&](const int i) {
-              const Real sd = ((gin_ && i < is) || (gout_ && i > ie)) ? -sd0 : sd0;
-              Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
-              wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
-              a = wr(IVX,i); b = wr(IVY,i);
-              wr(IVX,i) = a*cd + b*sd;  wr(IVY,i) = -a*sd + b*cd;
-              a = bl_kp1(0,i); b = bl_kp1(1,i);
-              bl_kp1(0,i) = a*cd + b*sd;  bl_kp1(1,i) = -a*sd + b*cd;
-              a = br(0,i); b = br(1,i);
-              br(0,i) = a*cd + b*sd;  br(1,i) = -a*sd + b*cd;
-            });
-          }
-          if (px3_ == 2 || px3_ == 3) {
-            const Real fac = (0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j))
-                             /(x2v3_(m,j+1) - x2v3_(m,j-1));
-            for (int n=0; n<nvars; ++n) {
-              if (px3_ == 3 && (n == IVX || n == IVY)) continue;
-              par_for_inner(member, is-1, ie+1, [&](const int i) {
-                const Real sh = fac*(w0_(m,n,k,j+1,i) - w0_(m,n,k,j-1,i));
-                wl_kp1(n,i) += sh;
-                wr(n,i) += sh;
-              });
-            }
-            for (int n=0; n<3; ++n) {
-              if (px3_ == 3 && n != 2) continue;
-              par_for_inner(member, is-1, ie+1, [&](const int i) {
-                const Real sh = fac*(b0_(m,n,k,j+1,i) - b0_(m,n,k,j-1,i));
-                bl_kp1(n,i) += sh;
-                br(n,i) += sh;
-              });
-            }
-          }
+          const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
+          const Real cd = cos(dang), sd0 = sin(dang);
+          // At a reflecting radial wall the ghost row holds the mirror image (v_r, B_r
+          // flipped) of the interior row, and its phi-face EMFs enter the wall-edge EMF
+          // (CornerE), which vanishes only if they are minus the interior ones: the
+          // mirrored pair is therefore rotated by -dang.
+          const bool gin_ = mb_bcs.d_view(m,BoundaryFace::inner_x1) ==
+                            BoundaryFlag::reflect;
+          const bool gout_ = mb_bcs.d_view(m,BoundaryFace::outer_x1) ==
+                             BoundaryFlag::reflect;
+          par_for_inner(member, is-1, ie+1, [&](const int i) {
+            const Real sd = ((gin_ && i < is) || (gout_ && i > ie)) ? -sd0 : sd0;
+            Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
+            wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
+            a = wr(IVX,i); b = wr(IVY,i);
+            wr(IVX,i) = a*cd + b*sd;  wr(IVY,i) = -a*sd + b*cd;
+            a = bl_kp1(0,i); b = bl_kp1(1,i);
+            bl_kp1(0,i) = a*cd + b*sd;  bl_kp1(1,i) = -a*sd + b*cd;
+            a = br(0,i); b = br(1,i);
+            br(0,i) = a*cd + b*sd;  br(1,i) = -a*sd + b*cd;
+          });
         }
 
         member.team_barrier();
