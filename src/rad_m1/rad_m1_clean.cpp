@@ -77,13 +77,12 @@ void RadiationM1::CleanInit() {
   const bool cartesian = !pm->use_cubed_sphere && !pm->use_spherical_polar;
   const bool one_block = (pm->nmb_total == 1);
   if (pm->multilevel || (!one_block && !cln_cell) || !cartesian || !vet_sc ||
-      !vet_full || chat != c_light ||
-      (cln_consist && (pm->three_d || vet_path != 0))) {
+      !vet_full || chat != c_light || (cln_consist && vet_path != 0)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<rad_m1>/scheme = clean currently needs a uniform Cartesian mesh "
               << "(several MeshBlocks: clean_layout = cell), closure = vet_sc with "
-              << "vet_tensor = full, and chat = c; clean_consistency a 1-D or 2-D mesh "
-              << "and vet_path = none" << std::endl;
+              << "vet_tensor = full, and chat = c; clean_consistency vet_path = none"
+              << std::endl;
     std::exit(EXIT_FAILURE);
   }
   // the formal solution must provide the half-range sums and C1

@@ -109,10 +109,12 @@ constexpr int M1_VET_NKP = 9;
 // dx2/dx1 and Phi the intensity of the cell's plane the foot interpolation shifts across
 // the face; their flux sum w mu_1 I and sum w mu_1 I Omega_b through the x1 boundary face
 // of the cell (entering and leaving) and through its low x1 face, I the intensity of the
-// segment where it crosses the face
+// segment where it crosses the face; the flux through the low x3 face as that of x2
 constexpr int M1_VET_F2  = 37;
 constexpr int M1_VET_F1  = 41;
 constexpr int M1_VET_FX  = 45;
+constexpr int M1_VET_F3  = 49;
+constexpr int M1_VET_NFS = 16;  // the face sums F2, F1, FX, F3
 // tau_ten slots of the LATERAL correction (vet_col_lat; the cs CS2 interface): dD_ab in
 // the mesh basis, order rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
 constexpr int M1_TT_LAT0 = 4;

@@ -169,7 +169,7 @@ void RadiationM1::CleanCellFaceSpeeds() {
 //! half-segments inside the cell, less the face flux of the solve (marks, weights) of
 //! Ur = (J, J h), h = h+ + h-, with the slopes of Ur: the bracket is fixed for given
 //! closure and marks.  Reflecting and x2, x3 boundary faces carry none.  The slopes of
-//! the iterate are restored.
+//! the iterate are restored.  x3 faces take CLN_F3 as x2 faces CLN_F2.
 
 void RadiationM1::CleanCellConsistency() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -204,7 +204,8 @@ void RadiationM1::CleanCellConsistency() {
       const bool bdry = CleanBoundaryFace(x, dir, m, k, j, i), blo = (i == x.is);
       if (bdry && (dir != 0 || CleanBc(x, m, blo ? 0 : 1) == M1_IBC_REFLECT)) return;
       const int kl = k - dk, jl = j - dj, il = i - di;
-      const int n = bdry ? CLN_F1 : ((dir == 0) ? CLN_FX : CLN_F2);
+      const int nd = (dir == 0) ? CLN_FX : ((dir == 1) ? CLN_F2 : CLN_F3);
+      const int n = bdry ? CLN_F1 : nd;
       Real f[4], fr[4] = {0.0, 0.0, 0.0, 0.0};
       CleanCellFaceFlux(x, CLC_U, dir, m, k, j, i, bdry, f);
       for (int r = 0; r <= x.nf; ++r) fr[r] = x.c*x.cs(m,n+r,k,j,(bdry && !blo) ? il : i);

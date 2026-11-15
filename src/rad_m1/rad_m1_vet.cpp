@@ -272,7 +272,7 @@ struct VetMBState {
   DvceArray5D<Real> csw;       // (nmb, nx1+2, 2, n3w, n2w) extinction and source, banded,
                                // layers 0 and nx1+1 = the x1 neighbours' face layers
   DvceArray5D<Real> ipl;       // (nmb, nring, nray, n3w, n2w) I of the last layers
-  DvceArray5D<Real> spl;       // (nmb, 4, 12, n3w, n2w) clean_consistency: face sums
+  DvceArray5D<Real> spl;       // (nmb, 4, NFS, n3w, n2w) clean_consistency: face sums
                                // of the x1 neighbours' cells, for the lower (0) and the
                                // upper (1) one, received from the upper (2), lower (3)
   DvceArray3D<Real> sbuf, rbuf;  // (nmb, nof, maxcnt) message buffers
@@ -2009,7 +2009,7 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   Kokkos::realloc(vet_cell, nmb, M1_VET_NC + (clean ? M1_VET_NKP : 0) +
-                  (cln_consist ? 12 : 0), ncells3, ncells2, ncells1);
+                  (cln_consist ? M1_VET_NFS : 0), ncells3, ncells2, ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
   if (mbpath) {
     VetMBInit(pin);   // the banded plane buffers live in vet_mbs
@@ -2756,7 +2756,7 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
   Kokkos::deep_copy(st.csw, 0.0);
   Kokkos::realloc(st.ipl, nsb, st.nring, st.nrl, st.n3w, st.n2w);
   Kokkos::deep_copy(st.ipl, 0.0);
-  if (cln_consist) Kokkos::realloc(st.spl, nsb, 4, 12, st.n3w, st.n2w);
+  if (cln_consist) Kokkos::realloc(st.spl, nsb, 4, M1_VET_NFS, st.n3w, st.n2w);
   if (!st.agg) {
     Kokkos::realloc(st.sbuf, nsb, st.nof, st.maxcnt);
     Kokkos::realloc(st.rbuf, nsb, st.nof, st.maxcnt);
@@ -3397,8 +3397,9 @@ void RadiationM1::VetSweepMB(bool lagged) {
         Real nlu = 0.0, nld = 0.0;   // thinsw-1010
         Real kpu[M1_VET_NKP], kpd[M1_VET_NKP];
         for (int n = 0; n < M1_VET_NKP; ++n) {kpu[n] = 0.0; kpd[n] = 0.0;}
-        // face fluxes into the cells iu, id (F1, FX) and their upwind cells (F2, FX)
-        Real f2u[12] = {0.0}, f2d[12] = {0.0}, fnu[12] = {0.0}, fnd[12] = {0.0};
+        // face fluxes into the cells iu, id (F1, FX) and their upwind cells (F2, FX, F3)
+        Real f2u[M1_VET_NFS] = {0.0}, f2d[M1_VET_NFS] = {0.0};
+        Real fnu[M1_VET_NFS] = {0.0}, fnd[M1_VET_NFS] = {0.0};
         for (int r = 0; r < nray; ++r) {
           const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
           const bool up = (m1 > 0.0);
@@ -3454,26 +3455,37 @@ void RadiationM1::VetSweepMB(bool lagged) {
             const int o2 = static_cast<int>(fl2);
             const int ja = jc + o2;
             const int jb = ja + 1;
-            int ka = kc, kb = kc;
+            int ka = kc, kb = kc, o3 = 0;
             Real a3 = 0.0;
+            const Real sh3 = thrd ? -dx1*m3/(am1*dx3) : 0.0;
             if (thrd) {
-              const Real sh3 = -dx1*m3/(am1*dx3);
               const Real fl3 = floor(sh3);
               a3 = sh3 - fl3;
-              const int o3 = static_cast<int>(fl3);
+              o3 = static_cast<int>(fl3);
               ka = kc + o3;
               kb = ka + 1;
             }
             if (f2s_) {
-              // the upwind plane's intensity carried across the low x2 face by the shift
-              // of the foot interpolation (VetShortCharSweep)
-              const Real sa = fabs(sh2), fa = sa - floor(sa);
-              const int na = static_cast<int>(floor(sa)), sg = (sh2 < 0.0) ? 1 : -1;
-              Real phi = fa*ip_(m,pr,r,kc,jc + ((sg > 0) ? -1 - na : na));
-              for (int q = 0; q < na; ++q) {
-                phi += ip_(m,pr,r,kc,jc + ((sg > 0) ? -1 - q : q));
-              }
-              add4(up ? fnu : fnd, sg*wr*am1*dx2/dx1*phi);
+              // the upwind plane's intensity carried across the low x2 (x3) face by the
+              // shift of the foot interpolation (VetShortCharSweep)
+              auto g2 = [&](const int d) {
+                if (!thrd) return ip_(m,pr,r,kc,jc + d);
+                return 0.5*(ip_(m,pr,r,kc,jc + d) + (1.0 - a3)*ip_(m,pr,r,ka,jc + d)
+                            + a3*ip_(m,pr,r,kb,jc + d));
+              };
+              auto g3 = [&](const int d) {
+                return 0.5*(ip_(m,pr,r,kc + d,jc) + (1.0 - a2)*ip_(m,pr,r,kc + d,ja)
+                            + a2*ip_(m,pr,r,kc + d,jb));
+              };
+              auto phi = [&](const Real sh, const auto &g) {
+                const Real sa = fabs(sh), fa = sa - floor(sa);
+                const int na = static_cast<int>(floor(sa)), sg = (sh < 0.0) ? 1 : -1;
+                Real p = fa*g((sg > 0) ? -1 - na : na);
+                for (int q = 0; q < na; ++q) p += g((sg > 0) ? -1 - q : q);
+                return sg*p;
+              };
+              add4(up ? fnu : fnd, wr*am1*dx2/dx1*phi(sh2, g2));
+              if (thrd) add4((up ? fnu : fnd) + 12, wr*am1*dx3/dx1*phi(sh3, g3));
             }
             const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
             const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
@@ -3590,7 +3602,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
           }
         }
         if (f2s_) {
-          for (int n = 0; n < 12; ++n) {
+          for (int n = 0; n < M1_VET_NFS; ++n) {
             if (ua) {
               vc_(m,M1_VET_F2+n,k,j,iu) += f2u[n];
               if (lu > 0) {
@@ -3637,9 +3649,10 @@ void RadiationM1::VetSweepMB(bool lagged) {
   }
   if (f2s_) {
     // the face sums of the x1 neighbours' boundary cells
-    VetX1Move(st, st.spl, 1, -2, 2, 0, 0, 12, nsb);
-    VetX1Move(st, st.spl, 0, -2, 3, 1, 0, 12, nsb);
-    par_for("m1_vet_mb_spill", DevExeSpace(), 0, nmb-1, 0, 11, ks, ke, js, je,
+    VetX1Move(st, st.spl, 1, -2, 2, 0, 0, M1_VET_NFS, nsb);
+    VetX1Move(st, st.spl, 0, -2, 3, 1, 0, M1_VET_NFS, nsb);
+    par_for("m1_vet_mb_spill", DevExeSpace(), 0, nmb-1, 0, M1_VET_NFS-1, ks, ke, js,
+            je,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j) {
       vc_(m,M1_VET_F2+n,k,j,ie) += sp_(m,2,n,k-ks+w3,j-js+w2);
       vc_(m,M1_VET_F2+n,k,j,is) += sp_(m,3,n,k-ks+w3,j-js+w2);
@@ -3965,7 +3978,7 @@ void RadiationM1::VetShortCharSweep() {
         for (int n = 0; n < M1_VET_NKP; ++n) {vcd_(m,M1_VET_KP+n,k,j,i) = 0.0;}
       }
       if (f2s_) {
-        for (int n = 0; n < 12; ++n) {vcd_(m,M1_VET_F2+n,k,j,i) = 0.0;}
+        for (int n = 0; n < M1_VET_NFS; ++n) {vcd_(m,M1_VET_F2+n,k,j,i) = 0.0;}
       }
       if (nls_) {
         vcd_(m,M1_VET_NL,k,j,i) = 0.0;
@@ -4059,7 +4072,7 @@ void RadiationM1::VetShortCharSweep() {
       for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {vc_(m,n,k,j,i) = 0.0;}
       if (hrs_) {for (int n = 0; n < 3; ++n) {vc_(m,M1_VET_HP1+n,k,j,i) = 0.0;}}
       if (kps_) {for (int n = 0; n < M1_VET_NKP; ++n) {vc_(m,M1_VET_KP+n,k,j,i) = 0.0;}}
-      if (f2s_) {for (int n = 0; n < 12; ++n) {vc_(m,M1_VET_F2+n,k,j,i) = 0.0;}}
+      if (f2s_) {for (int n = 0; n < M1_VET_NFS; ++n) {vc_(m,M1_VET_F2+n,k,j,i) = 0.0;}}
       if (nls_) {vc_(m,M1_VET_NL,k,j,i) = 0.0;}
     });
   }
@@ -4078,8 +4091,9 @@ void RadiationM1::VetShortCharSweep() {
       Real kpu[M1_VET_NKP], kpd[M1_VET_NKP];
       for (int n = 0; n < M1_VET_NKP; ++n) {kpu[n] = 0.0; kpd[n] = 0.0;}
       Real nlu = 0.0, nld = 0.0;   // thinsw-1010
-      // face fluxes into the cells iu, id (F1, FX) and their upwind cells (F2, FX)
-      Real f2u[12] = {0.0}, f2d[12] = {0.0}, fnu[12] = {0.0}, fnd[12] = {0.0};
+      // face fluxes into the cells iu, id (F1, FX) and their upwind cells (F2, FX, F3)
+      Real f2u[M1_VET_NFS] = {0.0}, f2d[M1_VET_NFS] = {0.0};
+      Real fnu[M1_VET_NFS] = {0.0}, fnd[M1_VET_NFS] = {0.0};
       for (int r = 0; r < nray; ++r) {
         const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
         const bool up = (m1 > 0.0);
@@ -4155,13 +4169,13 @@ void RadiationM1::VetShortCharSweep() {
             ja = js + ((qa < 0) ? 0 : ((qa >= nx2) ? (nx2 - 1) : qa));
             jb = js + ((qb < 0) ? 0 : ((qb >= nx2) ? (nx2 - 1) : qb));
           }
-          int ka = k, kb = k;
+          int ka = k, kb = k, o3 = 0;
           Real a3 = 0.0, ka_g = 1.0, kb_g = 1.0;
+          const Real sh3 = thrd ? -dx1*m3/(am1*dx3) : 0.0;
           if (thrd) {
-            const Real sh3 = -dx1*m3/(am1*dx3);
             const Real fl3 = floor(sh3);
             a3 = sh3 - fl3;
-            const int o3 = static_cast<int>(fl3);
+            o3 = static_cast<int>(fl3);
             ka = ks + VetWrap(k - ks + o3, nx3);
             kb = ks + VetWrap(k - ks + o3 + 1, nx3);
             if (x3o) {
@@ -4173,18 +4187,36 @@ void RadiationM1::VetShortCharSweep() {
             }
           }
           if (f2s_) {
-            // Phi: the upwind plane's intensity carried across the low x2 face by the
-            // shift s = -sh2 cells of the foot interpolation (I = 0 beyond a vacuum face)
-            auto ipj = [&](const int d) {
-              const int q = j - js + d;
-              if (x2o && (q < 0 || q >= nx2)) return 0.0;
-              return ip_(m,pr,rb,k,js + VetWrap(q, nx2));
+            // Phi: the upwind plane's intensity carried across the low x2 (x3) face by
+            // the shift -sh2 (-sh3) cells of the foot interpolation (I = 0 beyond a
+            // vacuum face).  The x2 and x3 parts S2, S3 of the interpolation commute:
+            // the x2 face carries (I + S3 I)/2, the x3 face (I + S2 I)/2, and the cell
+            // balance of the two is S3 S2 I - I.
+            auto ipq = [&](const int dk, const int dj) {
+              const int qj = j - js + dj, qk = k - ks + dk;
+              if ((x2o && (qj < 0 || qj >= nx2)) || (x3o && (qk < 0 || qk >= nx3))) {
+                return 0.0;
+              }
+              return ip_(m,pr,rb,thrd ? ks + VetWrap(qk, nx3) : k,js + VetWrap(qj, nx2));
             };
-            const Real s = fabs(sh2), f = s - floor(s);
-            const int n = static_cast<int>(floor(s)), sg = (sh2 < 0.0) ? 1 : -1;
-            Real phi = f*ipj(sg > 0 ? -1 - n : n);
-            for (int q = 0; q < n; ++q) phi += ipj(sg > 0 ? -1 - q : q);
-            if (!mimg) add4(up ? fnu : fnd, sg*wr*am1*dx2/dx1*phi);
+            auto g2 = [&](const int d) {
+              return thrd ? 0.5*(ipq(0,d) + (1.0 - a3)*ipq(o3,d) + a3*ipq(o3+1,d))
+                          : ipq(0,d);
+            };
+            auto g3 = [&](const int d) {
+              return 0.5*(ipq(d,0) + (1.0 - a2)*ipq(d,o2) + a2*ipq(d,o2+1));
+            };
+            auto phi = [&](const Real sh, const auto &g) {
+              const Real s = fabs(sh), f = s - floor(s);
+              const int n = static_cast<int>(floor(s)), sg = (sh < 0.0) ? 1 : -1;
+              Real p = f*g(sg > 0 ? -1 - n : n);
+              for (int q = 0; q < n; ++q) p += g(sg > 0 ? -1 - q : q);
+              return sg*p;
+            };
+            if (!mimg) {
+              add4(up ? fnu : fnd, wr*am1*dx2/dx1*phi(sh2, g2));
+              if (thrd) add4((up ? fnu : fnd) + 12, wr*am1*dx3/dx1*phi(sh3, g3));
+            }
           }
           const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
           const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
@@ -4330,7 +4362,7 @@ void RadiationM1::VetShortCharSweep() {
         }
         if (f2s_) {
           const int ium = (iu > is) ? iu - 1 : ie, idp = (id < ie) ? id + 1 : is;
-          for (int n = 0; n < 12; ++n) {
+          for (int n = 0; n < M1_VET_NFS; ++n) {
             vc_(m,M1_VET_F2+n,k,j,iu) += f2u[n];
             vc_(m,M1_VET_F2+n,k,j,id) += f2d[n];
             vc_(m,M1_VET_F2+n,k,j,ium) += fnu[n];
