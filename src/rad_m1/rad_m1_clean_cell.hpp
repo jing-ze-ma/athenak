@@ -190,6 +190,18 @@ void CleanCellGhost(const CleanArgs &x, const int dir, const int m, const int k,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool CleanCellNoInflow
+//! \brief true on an open boundary face without incoming radiation (no beam, zero bath):
+//! the stress there is the outgoing half-range stress of the inner cell, c D E
+
+KOKKOS_INLINE_FUNCTION
+bool CleanCellNoInflow(const CleanArgs &x, const int dir, const int m, const int k,
+                       const int j, const bool low) {
+  if (low && dir == 0 && x.use_beam && x.beam(m,k-x.ks,j-x.js) > 0.0) return false;
+  return x.ebath[2*dir + (low ? 0 : 1)] == 0.0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanCellFaceSource
 //! \brief the E-independent part of the face fluxes on a physical boundary: the
 //! incoming E flux of CleanFaceSource and the ghost part of the upwind stress flux
@@ -214,6 +226,7 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
     return;
   }
   s[0] = CleanFaceSource(x, dir, m, k, j, i);
+  if (CleanCellNoInflow(x, dir, m, kc, jc, low)) return;
   for (int b = 0; b < x.nf; ++b) s[1+b] = 0.5*x.c*pg[b] + sg*yg[b];
 }
 
@@ -264,6 +277,10 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
     Real al, ar;
     CleanFaceWeights(x, dir, m, k, j, i, al, ar);
     jj[0][0] = blo ? ar : al;
+    if (CleanCellNoInflow(x, dir, m, kc, jc, blo)) {
+      for (int b = 0; b < x.nf; ++b) jj[1+b][0] = x.c*CleanDiag(x, b, dir, m, kc, jc, ic);
+      return;
+    }
     for (int b = 0; b < x.nf; ++b) {
       jj[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, kc, jc, ic);
       jj[1+b][1+b] = sg;
