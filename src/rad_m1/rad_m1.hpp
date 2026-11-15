@@ -2944,7 +2944,7 @@ class RadiationM1 {
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
   bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
-  bool cln_posbdry = true;      // clean_pos_boundary: the limiter also marks boundary faces
+  bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
   bool cln_closit = false;      // clean_closure: predict | iterate (default for cell)
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
