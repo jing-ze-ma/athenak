@@ -78,9 +78,9 @@
 //!                        A reflecting wall there bounces plumes, forces the convective
 //!                        flux to zero and pins the envelope entropy at its initial
 //!                        value.  `open` replaces it with the Stein-Nordlund / CO5BOLD
-//!                        (Freytag+ 2012) treatment that solar_convection.cpp already
-//!                        uses: the ghosts continue hydrostatically at the interior
-//!                        temperature with the velocity copied, so plumes pass through,
+//!                        (Freytag+ 2012) treatment: the ghosts continue
+//!                        hydrostatically at the interior temperature with the
+//!                        velocity copied, so plumes pass through,
 //!                        and the lowest active layer is relaxed each step -- upflows
 //!                        toward a prescribed deep adiabat (this is the energy input and
 //!                        it sets the emergent flux), pressure toward the shell mean,
@@ -3807,11 +3807,11 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   }
 
   // --- OPEN INNER BOUNDARY: the CO5BOLD (Freytag+ 2012) relaxation of the lowest active
-  // layer, the same treatment solar_convection.cpp uses, on a spherical shell.  Four
-  // steps: relax UPFLOWING gas toward the deep adiabat (this is the energy input and it
-  // sets the emergent luminosity), damp pressure toward the shell mean, restore the mean
-  // density, and remove the net radial mass flux.  The means are global over the whole
-  // shell at i = is, so they need a reduction across ranks.
+  // layer, on a spherical shell.  Four steps: relax UPFLOWING gas toward the deep
+  // adiabat (this is the energy input and it sets the emergent luminosity), damp
+  // pressure toward the shell mean, restore the mean density, and remove the net radial
+  // mass flux.  The means are global over the whole shell at i = is, so they need a
+  // reduction across ranks.
   if (open_inner_) {
     auto &mb_bcs = pmbp->pmb->mb_bcs;
     const Real rgas = rgas_, igm1 = 1.0/gm1_, gamma = gm1_ + 1.0;

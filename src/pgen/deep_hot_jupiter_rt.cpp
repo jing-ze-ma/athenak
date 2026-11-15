@@ -3,7 +3,7 @@
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file deep_hot_jupiter.cpp
+//! \file deep_hot_jupiter_rt.cpp
 //! \brief Problem generator for the deep hot Jupiter.
 //!
 //! REFERENCE: Heng, Menou, Phillipps, MNRAS, 413, 2380 (2011); Deitrick, Mendonça,

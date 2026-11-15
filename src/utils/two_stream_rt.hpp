@@ -585,7 +585,7 @@ inline Real rt_force_grav = 0.0;    // |g| used only to normalise that print
 // of a stratification and the cells above it are not part of the problem; more to the
 // point, a box with weak gravity would be handed p/g = a huge column and sealed.  With
 // this flag the downward intensity entering the top face is exactly zero, which is the
-// standard grey-atmosphere boundary and the one solar_convection.cpp's local solver uses.
+// standard grey-atmosphere boundary.
 inline bool rt_top_vacuum = false;
 
 // --- read-only access to the band solver's radial face flux, for diagnostics ---------
@@ -811,7 +811,7 @@ inline Real ck_test_kgrey = 0.0;
 // problem/rt_bface: the emissivity-weighted far-endpoint Planck source (see BFace).
 // It is a red-giant fix -- it exists because the corona/star join put a cell's emission
 // on a neighbour's Planck function 1e9 times its own -- and this header is shared with
-// solar_convection and the hot-Jupiter problems, which have no such join.  DEFAULT FALSE
+// the hot-Jupiter problems, which have no such join.  DEFAULT FALSE
 // therefore returns the plain endpoint b_far bit for bit at every one of the seven call
 // sites; the red-giant inputs set it true.
 inline bool rt_bface = false;
