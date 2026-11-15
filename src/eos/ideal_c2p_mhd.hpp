@@ -42,13 +42,8 @@ void SingleC2P_IdealMHD(MHDCons1D &u, const EOS_Data &eos,
   // set internal energy, apply floor, correcting total energy
   Real e_k = 0.5*di*(SQR(u.mx) + SQR(u.my) + SQR(u.mz));
   Real e_m = 0.5*(SQR(u.bx) + SQR(u.by) + SQR(u.bz));
-  // THE VELOCITY CEILING: see the note in eos.hpp and the identical block in
-  // ideal_c2p_hyd.hpp.  Scale the momentum by fs = vceil/|v| and take (1 - fs^2) KE out
-  // of the total; the MAGNETIC energy is not involved, so the internal energy
-  // E - e_k - e_m is left exactly unchanged.  `vceil_test` is the DECISION alone, which
-  // the FOFC floor-test pass reads; it performs no write.  On the cubed sphere the
-  // decision is all this can make -- |v| there is the METRIC norm -- so under
-  // defer_cons_floors the application is left to GnomonicEquiangleRaiseVelMHD.
+  // velocity ceiling (EOS_Data::vceil), as in ideal_c2p_hyd.hpp; the magnetic energy is
+  // not involved.  Deferred to GnomonicEquiangleRaiseVelMHD on the cubed sphere
   if (eos.vceil > 0.0) {
     const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
     if (vsq > SQR(eos.vceil)) {

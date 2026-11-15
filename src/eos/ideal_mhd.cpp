@@ -39,7 +39,7 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
   int &nmb = pmy_pack->nmb_thispack;
   auto &eos = eos_data;
   auto &fofc_ = pmy_pack->pmhd->fofc;
-    
+
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   // cubed sphere AND a stretched radial grid: the one case where the plain face
   // average is not the field at the cell centre.  See CellCenteredRadialFld.
