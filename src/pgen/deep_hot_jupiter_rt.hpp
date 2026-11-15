@@ -7,7 +7,7 @@
 //========================================================================================
 //! \file deep_hot_jupiter_rt.hpp
 //! \brief PRIVATE header of the deep_hot_jupiter_rt problem generator
-//! (tusplit-1102): the includes, declarations, file-scope state and the inline
+//! the includes, declarations, file-scope state and the inline
 //! device/IC helpers shared by deep_hot_jupiter_rt.cpp (UserProblem) and its
 //! deep_hot_jupiter_rt_{hse,src,diag}.cpp pieces.  Moved verbatim out of the old
 //! single file; what changed: the file-scope variables are `inline` (still one copy
@@ -44,8 +44,8 @@
 #include "srcterms/srcterms.hpp"
 #include "utils/random.hpp"
 #include "pgen.hpp"
-#include "roche_common.hpp"   // roche-dhj-1031: problem/roche
-#include "wbtan_common.hpp"   // roche-wbtan-1101: problem/roche_wb_tan
+#include "roche_common.hpp"   // problem/roche
+#include "wbtan_common.hpp"   // problem/roche_wb_tan
 #include "utils/rosseland.hpp"
 #include "utils/correlated_k.hpp"
 #include "utils/atm_column.hpp"
@@ -57,7 +57,7 @@
 #include "diffusion/resistivity.hpp"
 #include "coordinates/cubed_sphere.hpp"
 #include "outputs/outputs.hpp"
-#include "utils/recipe.hpp"   // proddef-1101: fresh-start defaults
+#include "utils/recipe.hpp"   // fresh-start defaults
 
 #include <Kokkos_Random.hpp>
 
@@ -166,7 +166,7 @@ void DhjFinalDumps(ParameterInput *pin, Mesh *pm);
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm);
 // problem/flux_hst_floor: two floor-bookkeeping columns (set in UserProblem)
 inline bool dhj_flux_hst_floor = false;
-// relaxdrag-1101 problem/relax_drag (default true), problem/relax_drag_rot (default 5):
+// problem/relax_drag (default true), problem/relax_drag_rot (default 5):
 // the start-up Rayleigh drag of SourceFunc (tau = P/10 for t < 0.4 R rot, log ramp to
 // tau = P at R rot, off after; R = relax_drag_rot).  Fresh starts default relax_drag to
 // false (recipe::NewDefaults); a restart without the key keeps the drag, bitwise.
@@ -240,7 +240,7 @@ void DhjCycleDiag(Mesh *pm);
 // and AmHstStage. problem/am_hst_split (DIAGNOSTIC, default false, needs am_hst and what
 // am_transport needs): the last two columns become five: the torques of the x1 (with its
 // r-factor source), x2 and x3 flux divergences and of the angular metric source (T_code
-// is their sum), and T_cons; then (condwall-1028) Twall, the inner-wall part of T_cons:
+// is their sum), and T_cons; then Twall, the inner-wall part of T_cons:
 //     the angular-momentum flux IN through the inner wall (the wall torque, Maxwell
 //     stress included).  The rest, Ttop = Tcons - Twall, comes in through the top, and
 //     the L_z ledger reads dLrel/dt = Tcor + Twall + Ttop.  (Ttop has no column of its
@@ -257,12 +257,11 @@ inline Real w[3] = {0.0, 0.0, 0.0};
 inline int stage = 0;
 inline int64_t cyc = -1;
 // Tcc Tcont Tbnd Tdif_deep Tdif_rad | Tx1 Tx2 Tx3 Tsrc Tcons Twall | Tdrag
-// (relaxdrag-1101)
 constexpr int NACC = 12;
 // since last
 inline Real acc[NACC] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 inline Real t0 = 0.0;
-inline Real tdrag_rate = 0.0;      // relaxdrag-1101: Tdrag of the last AmHstColumns call
+inline Real tdrag_rate = 0.0;      // Tdrag of the last AmHstColumns call
 }  // namespace amh
 void AmHstStage(Mesh *pm);
 Real DhjRelaxDragRate(const Real time, const Real omega);
@@ -518,7 +517,7 @@ void AmCell(const AmV &v, const int m, const int k, const int j, const int i, Am
     if (i == v.is) o.twall = fl1*rl*rb1;
   }
 }
-// roche-wbtan-1101 problem/roche_wb_tan (default false): the TANGENTIAL (x2/x3) part of
+// problem/roche_wb_tan (default false): the TANGENTIAL (x2/x3) part of
 // the potential force (centrifugal of rot_potential + the Roche tide) as the hydro's OWN
 // discrete tangential momentum residual of the equipotential equilibrium W_eq, instead of
 // the analytic -rho grad_t Phi_tot at the cell centre:
@@ -540,7 +539,7 @@ void DhjCkRtSplit(Mesh *pm, const Real dt);
 // PER-CYCLE SINGLE-MESHBLOCK DIAGNOSTIC (problem/diag_gid, default -1 = off).  Which
 // global meshblock to dump, and the inclusive cycle window.  File-scope because the
 // per-cycle hook takes only the Mesh.
-namespace dhj_rt_local {   // tusplit-1102: was an anonymous namespace
+namespace dhj_rt_local {   // was an anonymous namespace
 inline int diag_gid = -1;
 inline int diag_cycle_min = 0;
 inline int diag_cycle_max = 2147483647;
@@ -657,7 +656,7 @@ Real ZEffFromPot(const Real grav_acc, const Real ap, const Real phi, const bool 
   return ap/(1.0 - phi/(g*ap)) - ap;
 }
 
-//! \fn TotPotAt (Roche overload, roche-dhj-1031)
+//! \fn TotPotAt (Roche overload)
 //! \brief TotPotAt plus the host star's tidal potential (roche_common.hpp TidePot:
 //! companion + indirect term, 0 at the planet centre), with the substellar direction
 //! cosine mu = sin(theta) cos(phi) -- the convention of the stellar beam (rt_pre_geom
@@ -795,7 +794,7 @@ using correlated_k::ck_build_rosseland_table;
 // clamped, so it is bounded at any field strength -- see the use site. DEFAULT ON, since
 // in that form it is the better physics; set false to drop the magnetic force entirely.
 inline bool bc_outer_maxwell = true;
-// problem/top_bc (topbc-1101): the outer-x1 boundary.
+// problem/top_bc: the outer-x1 boundary.
 //   hse      (DEFAULT, bitwise) hydrostatic isothermal extrapolation of rho, e in the
 //            full potential phicc0 (gravity + centrifugal + tide), momenta scaled with
 // rho, v_r copied from the last active cell (inflow allowed).  The right top when
@@ -821,14 +820,14 @@ inline bool bc_outer_maxwell = true;
 //            the ghost (C32 WASP-121b smoke, topbc_1101: Mdot_top -7e11 g/s, 12x the hse
 //            inflow; -2.4e10 g/s even without the tide).
 inline int dhj_top_bc = 0;  // 0 = hse, 1 = outflow1 (ghosts + one-way face), 2 = outflow0
-// ssbc-1111: <mhd>/top_bc_bt, the TANGENTIAL face field in the outer-x1 ghosts of an
+// <mhd>/top_bc_bt, the TANGENTIAL face field in the outer-x1 ghosts of an
 // outflow top (problem/top_bc outflow1 | outflow0): 0 = zerograd (the last cell's faces
-// copied; the default before prod-1114), 1 = sourcesurface (odd: ghost B_t = -mirror, so
+// copied), 1 = sourcesurface (odd: ghost B_t = -mirror, so
 // B_t = 0 on the top face, B_r from div B = 0 as before; potential-field source surface).
-// prod-1114 (user 11-12): sourcesurface is the DEFAULT for MHD runs with an outflow top
+// (user 11-12): sourcesurface is the DEFAULT for MHD runs with an outflow top
 // (GetOrAdd, so the restart input records it); name zerograd for the old behaviour.
 // Hydro runs and the hse top read the key only when it is named (hydro unchanged).
-// mhdtop-1112: 2 = charout, a NON-REFLECTING top for Alfven waves.  The ghost B is the
+// 2 = charout, a NON-REFLECTING top for Alfven waves.  The ghost B is the
 // zerograd one; the ghost TANGENTIAL VELOCITY (orthonormal frame, the one bcc lives in)
 // is set to v_t = -s B_t/sqrt(rho), s = sgn(B_r at the top face), so the incoming
 // Elsasser variable z_in = v_t + s B_t/sqrt(rho) is ZERO in the ghost: the Riemann fan at
@@ -855,7 +854,7 @@ inline int dhj_top_bt = 0;
 //  rt_test_dT, rt_test_nwave   initial perturbation T -> T (1 + dT sin(nwave pi xi)),
 //                  xi = (r - x1min)/(x1max - x1min); nwave = 0 is a uniform dT.
 //  rt_test_out, rt_test_every  per-cycle diagnostic file (serial runs only).
-namespace dhj_rt_local {   // tusplit-1102: was an anonymous namespace
+namespace dhj_rt_local {   // was an anonymous namespace
 // problem/dtloc_every = N > 0: every N cycles print the cell that set the hydro/MHD dt
 // (gid, i, j, k) with its pressure from the ck sweep.  Print only; 0 (default) = off.
 inline int dtloc_every = 0;
@@ -901,7 +900,7 @@ std::uint64_t SplitMix64Mix(std::uint64_t x) {
 //  \brief Problem Generator for the shallow hot Jupiter test
 
 //----------------------------------------------------------------------------------------
-// tusplit-1102: the device and IC-profile helpers (moved from the end of the old
+// the device and IC-profile helpers (moved from the end of the old
 // single file; every piece that builds an initial or boundary state reads them)
 
 KOKKOS_INLINE_FUNCTION

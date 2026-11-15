@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file repro_sum.hpp
-//! \brief layinv-1105 (USER 11-05 "fix invariant"): an ORDER-INDEPENDENT sum of doubles.
+//! \brief (USER 11-05 "fix invariant"): an ORDER-INDEPENDENT sum of doubles.
 //!
 //! A plain floating-point sum depends on the order of its terms, so every global or
 //! shell sum taken in (MeshBlock, k, j, i) order changes in the last bits with the
@@ -36,12 +36,12 @@
 
 namespace repro {
 
-//! prod-1108 <mesh>/layout_invariant_mode: true = "block" (DEFAULT): every sum is taken
+//! <mesh>/layout_invariant_mode: true = "block" (DEFAULT): every sum is taken
 //! per MeshBlock in a FIXED order set by the code (independent of how many MeshBlocks a
 //! rank holds and of the launch configuration), and only the per-MeshBlock partials go
 //! into the exact accumulator below (a restart changes the rank assignment of the
 //! MeshBlocks, never the MeshBlocks themselves).  false = "exact": every cell term
-//! deposited exactly (layinv-1105).  Set once by the Mesh constructor.
+//! deposited exactly.  Set once by the Mesh constructor.
 inline bool block_mode = true;
 
 constexpr int RS_K = 3;      // folds
@@ -177,7 +177,7 @@ inline void AllMerge(ReproSum *v, const int n) {
 #endif
 }
 
-//! AllMerge of n accumulators plus the global max of mx >= 0 in ONE MPI call (prod-1108:
+//! AllMerge of n accumulators plus the global max of mx >= 0 in ONE MPI call (
 //! the max rides in the gathered words as its bit pattern)
 inline void AllMergeMax(ReproSum *v, const int n, Real &mx) {
 #if MPI_PARALLEL_ENABLED
@@ -224,7 +224,7 @@ struct ReproVec {
 //! (0 elsewhere).  One device thread per (q, i), serial over (m, k, j) (any order would
 //! do: the accumulator is exact), then the exact rank merge on the host.
 //! f is a device functor Real f(int q, int m, int k, int j, int i).
-//! block_mode (prod-1108): one thread per (q, m, i) sums its MeshBlock's (k, j) cells in
+//! block_mode: one thread per (q, m, i) sums its MeshBlock's (k, j) cells in
 //! increasing (k, j) order (a plain double sum: a function of the MeshBlock alone); one
 //! thread per (q, i) then deposits the nmb per-MeshBlock partials exactly, and the exact
 //! rank merge follows.  The result depends only on the set of MeshBlock partials.
@@ -260,9 +260,10 @@ void ShellSums(const char *name, const int nq, const int c1, const int nmb,
       rs(q, i) = acc;
     });
   } else {
-  // one team per (q, i), its threads over the (m, k, j) cells: the exact accumulator makes
-  // the team's combination order irrelevant (a serial loop per shell was latency-bound on
-  // the GPU: +7 % per cycle on the BSG deck with the vet_gd twin / half-range means)
+  // one team per (q, i), its threads over the (m, k, j) cells: the exact accumulator
+  // makes the team's combination order irrelevant (a serial loop per shell was
+  // latency-bound on the GPU: +7 % per cycle on the BSG deck with the vet_gd twin /
+  // half-range means)
   const int nk = ke - ks + 1, nj = je - js + 1;
   const int ncell = nmb*nk*nj;
   using TP = Kokkos::TeamPolicy<DevExeSpace>;

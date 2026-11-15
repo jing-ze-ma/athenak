@@ -112,7 +112,7 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
 
   // grey M1 radiation: the closure's Eddington factor and tensor diagonal (161)
   "m1_vet",
-  "m1_comov",   // csmetric-1112
+  "m1_comov",
 
   // grey M1 radiation: the TRANSPORTED face-normal comoving fluxes of the implicit
   // solve (f0x1/f0x2/f0x3), the flux whose face sums are the luminosities (162)
@@ -122,17 +122,17 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
   "m1_fs",
   "m1_gw",
 
-  // blendall-1009: the vet_sc formal solution's J and F/c (E units), Cartesian (164)
+  // the vet_sc formal solution's J and F/c (E units), Cartesian (164)
   "m1_vsc",
 
-  // gdthin-1011: the thin switch's cell inputs |H|/J, C1, eps, the cell weight, J (165)
+  // the thin switch's cell inputs |H|/J, C1, eps, the cell weight, J (165)
   "m1_thsw", "m1_gdhr",
 
-  // rkgstrang-1102: the cell resistivity eta_O (+ eta_A = min(ad_coef |B|^2, max_eta_ad)
+  // the cell resistivity eta_O (+ eta_A = min(ad_coef |B|^2, max_eta_ad)
   // with ambipolar diffusion) the resistive EMF uses, code units (167)
   "mhd_eta",
 
-  // tanacc-1107: the closure tensor handed to the implicit operator (tau_ten slot 0 and
+  // the closure tensor handed to the implicit operator (tau_ten slot 0 and
   // the vet_col_lat slots LAT0..5), the cell unit vector and the vet_gd J, H_r (168)
   "m1_lat"
 };
@@ -333,16 +333,16 @@ class BaseTypeOutput {
   // <rad_m1>/vet_gd_async: the pending gd build's source (vlat_cs, 2 channels); empty
   // unless one is pending.  radm1::kM1VgdRstMagic.
   HostArray5D<Real> outarray_m1g;
-  // <rad_m1>/vet_rotate_avg: the averaging history (rotavg-rst-1012), densely packed
+  // <rad_m1>/vet_rotate_avg: the averaging history, densely packed
   // slabs; empty without a complete history.  radm1::kM1RaRstMagic.
   HostArray5D<Real> outarray_m1r;
-  // implicit_gas_src = conservative(2): the cell-F slope csk1 (rotavg-rst-1012)
+  // implicit_gas_src = conservative(2): the cell-F slope csk1
   HostArray5D<Real> outarray_m1k;
-  HostArray5D<Real> outarray_ams;   // cs-open-1018 am_vector spin (+ amk1)
-  HostArray5D<Real> outarray_pgs;   // wbtan-rstg-1101 per-cell pgen slabs
-  HostArray5D<Real> outarray_fax;   // vkdiag-1111 rad_m1 applied face fluxes
-  HostArray5D<Real> outarray_thc;   // rstbit-1112 rad_m1 time2_stage_local_be carry
-  HostArray5D<Real> outarray_xfd;   // t9rst-1113 rad_m1 vet_gd_rotate_xfade state
+  HostArray5D<Real> outarray_ams;   // am_vector spin (+ amk1)
+  HostArray5D<Real> outarray_pgs;   // per-cell pgen slabs
+  HostArray5D<Real> outarray_fax;   // rad_m1 applied face fluxes
+  HostArray5D<Real> outarray_thc;   // rad_m1 time2_stage_local_be carry
+  HostArray5D<Real> outarray_xfd;   // rad_m1 vet_gd_rotate_xfade state
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks

@@ -80,7 +80,7 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
     Real beta_dt = (pdriver->beta[stage-1])*(pmy_pack->pmesh->dt);
 
     int &nhyd_ = nhydro;
-    // duale-1112: under <hydro>/dual_energy the trial state includes the scalars
+    // under <hydro>/dual_energy the trial state includes the scalars
     const int ntv_ = nhydro + (dual.on ? nscalars : 0);
     auto &u0_ = u0;
     auto &u1_ = u1;
@@ -91,7 +91,7 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
     if (multi_d) { jl = js-1, ju = je+1; }
     if (three_d) { kl = ks-1, ku = ke+1; }
 
-    // cornerfix-1103 <mesh>/cs_vertex_3cell: at a CUBE VERTEX the ng x ng corner ghost
+    // <mesh>/cs_vertex_3cell: at a CUBE VERTEX the ng x ng corner ghost
     // block has no physical counterpart.  The trial state of a seam GHOST cell within ng
     // of a vertex corner along its row took the along-seam flux divergence from faces
     // whose reconstruction stencils reach into that block; those terms are left out of
@@ -107,7 +107,7 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
     par_for("FOFC-newu", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       if (curv_) {
-        bool drop2 = false, drop3 = false;   // cornerfix-1103 (v3_ only)
+        bool drop2 = false, drop3 = false;   // (v3_ only)
         if (v3_) {
           CsVertexFofcDrop(vnb_.d_view, vpn_.d_view, m, k, j, js, je, ks, ke, ng_,
                            drop2, drop3);
@@ -215,7 +215,7 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
       }, Kokkos::Sum<int>(nflag_));
       pmy_pack->pmesh->ecounter.nfofc += nflag_;
     }
-    // duale-1112 <hydro>/fofc_retest (and dual_energy): RE-TEST every flagged trial cell
+    // <hydro>/fofc_retest (and dual_energy): RE-TEST every flagged trial cell
     // with the metric-correct internal energy (0.5 m_i v^i on the cubed sphere; the
     // ConsToPrim test above used the orthonormal m^2/2rho there) and, under dual_energy,
     // the dual selection of DualEnergy::Post; a cell no floor and no ceiling would touch
@@ -281,7 +281,7 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
       dual.hc[fluid::DC_RETEST] += nret_;
       dual.hc[fluid::DC_UNFLAG] += nunf_;
     }
-    // cornerfix-1103: the cube-vertex corner-block cells are never flagged (v3_ only)
+    // the cube-vertex corner-block cells are never flagged (v3_ only)
     if (v3_) {
       auto fofcv_ = fofc;
       par_for("FOFC-vtxclr", DevExeSpace(), 0, nmb-1, 0, 3, 0, ng_-1, 0, ng_-1, il, iu,
