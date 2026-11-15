@@ -435,11 +435,14 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   }
 
   //---- Step 2b. icrad-1011: <rad_m1>/ic_rad (opt-in; FRESH STARTS ONLY, never on a
-  // restart): the IC radiation passes (rad_m1_icrad.cpp) at the first dt, then the
+  // restart): the IC radiation passes (rad_m1_icrad.cpp) or the steady radiation of
+  // <rad_m1>/clean_init = steady (rad_m1_clean.cpp) at the first dt, then the
   // boundaries, primitives and dt of the new state exactly as Steps 1-2 do on any start
   if (!res_flag && time_evolution != TimeEvolution::tstatic &&
-      pmesh->pmb_pack->pradm1 != nullptr && pmesh->pmb_pack->pradm1->icr_mode != 0) {
+      pmesh->pmb_pack->pradm1 != nullptr && (pmesh->pmb_pack->pradm1->icr_mode != 0 ||
+      pmesh->pmb_pack->pradm1->cln_steady)) {
     pmesh->pmb_pack->pradm1->IcRadRun(this);
+    pmesh->pmb_pack->pradm1->CleanSteadyStart(this);
     // reatm-1011: the pgen's post-ic_rad hook (null = nothing; pgen.hpp)
     if (pmesh->pgen->user_icpost_func != nullptr) {
       (pmesh->pgen->user_icpost_func)(pmesh);

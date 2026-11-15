@@ -9,6 +9,7 @@
 //! gas by Newton iteration on the exchange and a fixed-point iteration on the velocity.
 //! See rad_m1_clean.hpp for the discrete equations.
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -19,6 +20,7 @@
 #include "athena.hpp"
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
+#include "driver/driver.hpp"
 #include "eos/eos.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
@@ -115,6 +117,119 @@ void RadiationM1::CleanInit() {
   impl_beam_hr = true;
   thsw_c1 = true;
   cln_init = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanSteadyStart
+//! \brief <rad_m1>/clean_init = steady (fresh starts; Driver::Initialize at the first
+//! dt): the initial radiation relaxed to the initial matter and sources.  The gas is
+//! frozen (no hydro stage, no feedback: its emission and opacity stay those of the
+//! initial state) and backward-Euler radiation steps of clean_init_dtfac x dt are taken
+//! until the state stops changing, max(|dE|, |dF|/c) < clean_init_tol max E.  A step of
+//! dt -> infinity drops the time term, so the fixed point is the steady solution of the
+//! scheme itself (rays, closure, consistency and kinetic face sums of that state); the
+//! closure is a function of the state, so it has converged with it.  The large step
+//! weights the moment rows over the algebraic flux rows of the streaming share (y = h E),
+//! so the passes then go on at the run's dt, to the tolerance or until the change
+//! contracts by less than 1/2 per pass: the jump of the streaming rows is then gone and
+//! what is left is the slow evolution of the scheme at that dt, which the run carries
+//! on (the first step moves y by no more than a pass does).  The radiation
+//! energy and momentum are thereby redefined (reported); the gas is not touched.  The
+//! closure history is then dropped, so the first step starts from this state alone.
+
+void RadiationM1::CleanSteadyStart(Driver *pdrive) {
+  if (!cln_steady) return;
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
+  const Real dt0 = pm->dt, cl = c_light;
+  const bool sfb = gas_feedback;
+  const int st2 = t2_solve;
+  const Real nc0 = vet_ncall;
+  // gas frozen, plain backward-Euler steps without substeps; big: the large step
+  gas_feedback = false;
+  t2_solve = M1_T2S_NONE;
+  nsub = 1;
+  bool big = true;
+  int n2 = 0;
+  Real dp = 0.0;
+  DvceArray5D<Real> uo("cln_steady_u", nmb1 + 1, 4, ke + 1, je + 1, ie + 1);
+  auto u0_ = u0;
+  const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+  const int ntot = (nmb1 + 1)*nk*nj*ni;
+  auto &sz = pmy_pack->pmb->mb_size.h_view(0);
+  const Real vol = sz.dx1*sz.dx2*sz.dx3;
+  // totals of E and F (code units x volume)
+  auto sums = [&](Real t[4]) {
+    for (int c = 0; c < 4; ++c) {
+      Real a = 0.0;
+      Kokkos::parallel_reduce("cln_steady_sum", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              ntot),
+      KOKKOS_LAMBDA(const int q, Real &sl) {
+        sl += u0_(q/(ni*nj*nk), M1_E+c, ks + (q/(ni*nj))%nk, js + (q/ni)%nj, is + q%ni);
+      }, Kokkos::Sum<Real>(a));
+      t[c] = vol*CleanReduce(a, false);
+    }
+  };
+  Real t0[4], t1[4];
+  sums(t0);
+  int n = 0;
+  Real d = 0.0;
+  for (; n < cln_steady_n; ++n) {
+    pm->dt = big ? cln_steady_dtfac*dt0 : dt0;
+    dt_sub = pm->dt;
+    par_for("cln_steady_save", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int c = 0; c < 4; ++c) uo(m,c,k,j,i) = u0_(m,M1_E+c,k,j,i);
+    });
+    // one radiation step: the ordinary m1 task lists (closure, solve, ghost exchange)
+    for (int stage = 1; stage <= nstage; ++stage) {
+      pdrive->ExecuteTaskList(pm, "m1_before_stagen", stage);
+      pdrive->ExecuteTaskList(pm, "m1_stagen", stage);
+      pdrive->ExecuteTaskList(pm, "m1_after_stagen", stage);
+    }
+    (void) ApplyClosureLimits(pdrive, 1);
+    // its largest change of E and F/c over max E
+    Real dm = 0.0, em = 0.0;
+    Kokkos::parallel_reduce("cln_steady_chg", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            ntot),
+    KOKKOS_LAMBDA(const int q, Real &dl, Real &el) {
+      const int m = q/(ni*nj*nk), k = ks + (q/(ni*nj))%nk;
+      const int j = js + (q/ni)%nj, i = is + q%ni;
+      Real x = fabs(u0_(m,M1_E,k,j,i) - uo(m,0,k,j,i));
+      for (int c = 1; c < 4; ++c) {
+        x = fmax(x, fabs(u0_(m,M1_E+c,k,j,i) - uo(m,c,k,j,i))/cl);
+      }
+      dl = fmax(dl, x);
+      el = fmax(el, u0_(m,M1_E,k,j,i));
+    }, Kokkos::Max<Real>(dm), Kokkos::Max<Real>(em));
+    d = CleanReduce(dm, true)/fmax(CleanReduce(em, true), 1.0e-300);
+    if (global_variable::my_rank == 0) {
+      std::printf("<rad_m1> clean_init steady pass %d: max(|dE|, |dF|/c)/max E = %.3e\n",
+                  n, d);
+    }
+    if (!big && (d < cln_steady_tol || (++n2 > 2 && d > 0.5*dp))) break;
+    if (d < cln_steady_tol) big = false;
+    dp = d;
+  }
+  // restore the run's setup; the first step starts from this state without history
+  sums(t1);
+  gas_feedback = sfb;
+  t2_solve = st2;
+  t2_ok = false;
+  dtr_fail = false;
+  cln_have_n = cln_have_p = cln_have_c = cln_have_1 = false;
+  pm->dt = dt0;
+  (void) SetSubsteps(dt0);
+  if (global_variable::my_rank == 0) {
+    std::printf("<rad_m1> clean_init steady: %s after %d passes (%.0f formal solutions); "
+                "radiation E %.10e -> %.10e, F/c %.4e %.4e %.4e -> %.4e %.4e %.4e "
+                "(volume sums)\n",
+                (!big && n < cln_steady_n) ? "converged" : "NOT converged",
+                std::min(n + 1, cln_steady_n), vet_ncall - nc0, t0[0], t1[0], t0[1]/cl,
+                t0[2]/cl, t0[3]/cl, t1[1]/cl, t1[2]/cl, t1[3]/cl);
+  }
 }
 
 //----------------------------------------------------------------------------------------

@@ -134,6 +134,22 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_maxpos = pin->GetOrAddInteger("rad_m1","clean_maxpos",3);
     cln_pcsweeps = pin->GetOrAddInteger("rad_m1","clean_pc_sweeps",1);
+    // clean_init = given | steady (read only when named: an input without it keeps a
+    // byte-identical parameter dump)
+    if (pin->DoesParameterExist("rad_m1","clean_init")) {
+      const std::string ci = pin->GetString("rad_m1","clean_init");
+      if (ci != "given" && ci != "steady") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_init = given | steady" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      cln_steady = (ci == "steady");
+    }
+    if (cln_steady) {
+      cln_steady_n = pin->GetOrAddInteger("rad_m1","clean_init_n",50);
+      cln_steady_dtfac = pin->GetOrAddReal("rad_m1","clean_init_dtfac",1.0e6);
+      cln_steady_tol = pin->GetOrAddReal("rad_m1","clean_init_tol",1.0e-8);
+    }
     if (transport != M1_TRANSPORT_IMPLICIT) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1>/scheme = clean needs transport = implicit" << std::endl;

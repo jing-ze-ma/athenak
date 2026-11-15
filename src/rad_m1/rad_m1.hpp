@@ -2901,6 +2901,7 @@ class RadiationM1 {
   // (rad_m1_clean*.cpp, docs/dev/rad_clean_scheme_design.md)
   TaskStatus CleanSolve(Driver *d, int stage);
   void CleanInit();
+  void CleanSteadyStart(Driver *pdrive);
   void CleanInitFaceFluxes();
   void CleanOldVector();
   void CleanClosure();
@@ -2993,6 +2994,9 @@ class RadiationM1 {
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
+  bool cln_steady = false;      // clean_init = steady: radiation relaxed before step 1
+  int cln_steady_n = 50;        // clean_init_n: most pre-solve passes
+  Real cln_steady_dtfac = 1.0e6, cln_steady_tol = 1.0e-8;  // clean_init_dtfac, _tol
   std::vector<DvceArray5D<Real>> cln_mg;          // coarse levels of the multigrid
   std::vector<std::array<int, 3>> cln_mgn;        //   and their cells along x1..x3
   Real cln_psi_eps = 1.0e-12;   // clean_psi_eps: floor of the smoothness sensor
