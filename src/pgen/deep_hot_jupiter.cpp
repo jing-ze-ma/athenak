@@ -89,13 +89,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   int &ks = indcs.ks; int &ke = indcs.ke;
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
-    
+
     Real r0, r1;
     if (use_grid_stretch) {
         r0 = pmy_mesh_->mesh_size.x1min;
         r1 = pmy_mesh_->mesh_size.x1max;
     }
-    
+
     int &ng = indcs.ng;
     int n1m1 = indcs.nx1 + 2*ng - 1;
     int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
@@ -103,13 +103,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // Select either Hydro or MHD
   DvceArray5D<Real> u0_;
-    
+
     auto phi0_x1f = pmbp->phydro->phi0.x1f;
     auto phi0_x2f = pmbp->phydro->phi0.x2f;
     auto phi0_x3f = pmbp->phydro->phi0.x3f;
 
     auto phicc0 = pmbp->phydro->phicc0;
-    
+
     auto u0wb = pmbp->phydro->u0wb;
     auto w0wb = pmbp->phydro->w0wb;
     auto w0facewb_x1f = pmbp->phydro->w0facewb.x1f;
@@ -130,7 +130,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   Real ap = 9.44e9;
   Real iap = 1.0/ap;
   Real omega = 2.06e-5;
-    
+
     const int N = 10000;
     DualArray1D<Real> zarr("zarr", N);
     DualArray1D<Real> logparr("logparr", N);
@@ -143,7 +143,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     zarr.sync_device();
     logparr.modify_host();
     logparr.sync_device();
-    
+
 //    DvceArray1D<Real> zinitarr("zinitarr", N);
 //    DvceArray1D<Real> logpinitarr("logpinitarr", N);
     DualArray1D<Real> zarr_init("zarrinit", N);
@@ -153,7 +153,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     zarr_init.sync_device();
     logparr_init.modify_host();
     logparr_init.sync_device();
-  
+
     par_for("probini", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real &x1min = size.d_view(m).x1min;
@@ -168,12 +168,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real &x2max = size.d_view(m).x2max;
       int nx2 = indcs.nx2;
       Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-        
+
       Real &x3min = size.d_view(m).x3min;
       Real &x3max = size.d_view(m).x3max;
       int nx3 = indcs.nx3;
       Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-        
+
       Real lam, theta, phi;
       if (use_spherical_polar) {
         theta = x2v;
@@ -184,10 +184,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         lam = x2v*iap;
         phi = x1v*iap;
       }
-        
+
       Real pwb, denwb;
       get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
-        
+
       Real p, den;
       get_init_eos(zarr_init.d_view,logparr_init.d_view,x1v,den,p);
 //      get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
@@ -200,13 +200,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       u0_(m,IM2,k,j,i) = 0.0;
       u0_(m,IM3,k,j,i) = 0.0;
       u0_(m,IEN,k,j,i) = p*igm1;
-        
+
         Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
         if (use_etotgrav) {
             u0_(m,IEN,k,j,i) += den*phicc;
         }
     });
-            
+
     par_for("probwb", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
         Real &x1min = size.d_view(m).x1min;
@@ -221,12 +221,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         Real &x2max = size.d_view(m).x2max;
         int nx2 = indcs.nx2;
         Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-          
+
         Real &x3min = size.d_view(m).x3min;
         Real &x3max = size.d_view(m).x3max;
         int nx3 = indcs.nx3;
         Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-          
+
         Real lam, theta, phi;
         if (use_spherical_polar) {
           theta = x2v;
@@ -237,19 +237,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           lam = x3v*iap;
           phi = x2v*iap;
         }
-          
+
         Real pwb, denwb;
         get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
-        
+
         Real p, den;
         get_init_eos(zarr_init.d_view,logparr_init.d_view,x1v,den,p);
 //        get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
 //        get_init_eos(zinitarr,logpinitarr,x1v,lam,phi,den,p);
 //        p = pwb;
 //        den = denwb;
-        
+
         Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
-        
+
       if (use_etotgrav || use_wellbalance_dynamic) {
           x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
           x2v = CellCenterX(j-js, nx2, x2min, x2max);
@@ -285,7 +285,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
               phi0_x1f(m,k,j,i+1) = phicc;
           }
-          
+
           x1v = CellCenterX(i-is, nx1, x1min, x1max);
           x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
           x3v = CellCenterX(k-ks, nx3, x3min, x3max);
@@ -317,7 +317,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
               phi0_x2f(m,k,j+1,i) = phicc;
           }
-          
+
           x1v = CellCenterX(i-is, nx1, x1min, x1max);
           x2v = CellCenterX(j-js, nx2, x2min, x2max);
           x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
@@ -376,7 +376,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x1f(m,IM3,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IEN,k,j,i+1) = pwb*igm1;
             }
-            
+
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
             x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
@@ -401,7 +401,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x2f(m,IM3,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IEN,k,j+1,i) = pwb*igm1;
             }
-            
+
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
             x2v = CellCenterX(j-js, nx2, x2min, x2max);
             x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
@@ -447,12 +447,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             Real &x2max = size.d_view(m).x2max;
             int nx2 = indcs.nx2;
             Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-              
+
             Real &x3min = size.d_view(m).x3min;
             Real &x3max = size.d_view(m).x3max;
             int nx3 = indcs.nx3;
             Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-              
+
             Real lam, theta, phi;
             if (use_spherical_polar) {
               theta = x2v;
@@ -463,7 +463,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               lam = x3v*iap;
               phi = x2v*iap;
             }
-            
+
             Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
             phicc0(m,k,j,i) = phicc;
         });
@@ -486,12 +486,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           Real &x2max = size.d_view(m).x2max;
           int nx2 = indcs.nx2;
           Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-            
+
           Real &x3min = size.d_view(m).x3min;
           Real &x3max = size.d_view(m).x3max;
           int nx3 = indcs.nx3;
           Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-            
+
           Real pwb, denwb;
           get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
           u0wb(m,IDN,k,j,i) = denwb;
@@ -550,7 +550,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     DvceArray5D<Real> w0_;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
     const bool use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
-    
+
     auto phi0_x1f = pmbp->phydro->phi0.x1f;
     auto phicc0 = pmbp->phydro->phicc0;
 
@@ -561,13 +561,13 @@ void HydrostaticEquilibrium(Mesh *pm) {
       u0_ = pmbp->pmhd->u0;
       w0_ = pmbp->pmhd->w0;
     }
-    
+
     Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real igm1 = 1.0/(gamma-1.0);
     Real gigm1 = gamma*igm1;
     Real gm1ig = (gamma-1.0)/gamma;
     Real ig = 1.0/gamma;
-    
+
     par_for("usrboundaryx1", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
     KOKKOS_LAMBDA(int m, int k, int j) {
         if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
@@ -638,13 +638,13 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const bool use_spherical_polar = pm->use_spherical_polar;
     const bool use_grid_stretch = pm->use_grid_stretch;
     const bool use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
-    
+
     Real r0, r1;
     if (use_grid_stretch) {
         r0 = pm->mesh_size.x1min;
         r1 = pm->mesh_size.x1max;
     }
-    
+
     Real ap = 9.44e9;
     Real iap = 1.0/ap;
     Real omega = 2.06e-5;
@@ -652,7 +652,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
     Real Rgas = 4.593e7;
     Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
-    
+
     Real time = pm->time;
 
     par_for("usrsource", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -660,16 +660,16 @@ void SourceFunc(Mesh *pm, Real bdt) {
         Real &x1min = size.d_view(m).x1min;
         Real &x1max = size.d_view(m).x1max;
         Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
-        
+
         Real &x2min = size.d_view(m).x2min;
         Real &x2max = size.d_view(m).x2max;
         Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
-        
+
         Real &x3min = size.d_view(m).x3min;
         Real &x3max = size.d_view(m).x3max;
         Real x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
         if (use_grid_stretch) StretchR(r0,r1,x1v);
-        
+
         Real lam, phi, z, theta, r;
         if (use_spherical_polar) {
           theta = x2v;
@@ -685,11 +685,11 @@ void SourceFunc(Mesh *pm, Real bdt) {
         Real rho = w0(m,IDN,k,j,i);
         Real p = w0(m,IEN,k,j,i)*gm1;
         Real T = p/Rgas/rho;
-        
+
         Real area_r = area1(m,k,j,i+1);
         Real area_l = area1(m,k,j,i);
         Real vol = volume(m,k,j,i);
-        
+
         // gravity
         Real src = bdt*grav_acc*w0(m,IDN,k,j,i);
         if (!use_etotgrav) {
@@ -713,7 +713,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           src = bdt*(area_r*(pr-p)+area_l*(p-pl))/vol;
         }
         u0(m,IM1,k,j,i) += src;
-        
+
         // Forces in the corotating frame
         if (use_spherical_polar) {
           Real vtheta = w0(m,IVY,k,j,i);
@@ -746,7 +746,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
 //        itrad /= pow(10.0,gg);
         Real Tnew = (T + Teq*itrad*bdt)/(1.0 + itrad*bdt);
         u0(m,IEN,k,j,i) -= w0(m,IEN,k,j,i)*(Tnew-Teq)/T*itrad*bdt;
-        
+
         // Rayleigh drag (initial relaxation)
         Real dyntime = 2.0*M_PI/omega;
         Real tau1 = dyntime / 10.0;
@@ -770,7 +770,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
           u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
         }
-        
+
 ////        // Top sponge layer
 ////        Real bar = 1.0e6;
 ////        Real logpl = log(1.0e-4*bar);
@@ -792,15 +792,15 @@ void SourceFunc(Mesh *pm, Real bdt) {
 
 KOKKOS_INLINE_FUNCTION
 void get_daynight_Tp(const Real &p, Real &Tn, Real &Td) {
-    
+
     Real bar = 1.0e6;
     Real pl = 1.0e-3*bar;
     Real pt = log10(p/bar);
     Real ptl = log10(pl/bar);
-    
+
     Real fn[13];
     Real fd[14];
-    
+
     fn[0] = 1388.77348;
     fn[1] = 279.575848;
     fn[2] = -213.835822;
@@ -829,7 +829,7 @@ void get_daynight_Tp(const Real &p, Real &Tn, Real &Td) {
     fd[11]= -0.0590629443;
     fd[12]= -5.38679474e-3;
     fd[13]= -1.89972415e-4;
-    
+
     Real Tnstar = 0.0;
     Real Tdstar = 0.0;
     Real Tnstar_pl = 0.0;
@@ -886,20 +886,20 @@ void get_daynight_Tp(const Real &p, Real &Tn, Real &Td) {
 
 KOKKOS_INLINE_FUNCTION
 void get_itrad(const Real &p, Real &itrad) {
-    
+
     Real bar = 1.0e6;
     Real pl = 1.0e-5*bar;
     Real pt = log10(p/bar);
     Real ptl = log10(pl/bar);
-    
+
     Real ft[5];
-    
+
     ft[0] = 5.4659686;
     ft[1] = 1.4940124;
     ft[2] = 0.66079196;
     ft[3] = 0.16475329;
     ft[4] = 0.014241552;
-    
+
     Real logtrad = 0.0;
     Real logtrad_pl = 0.0;
     Real ptn = 1.0;
@@ -931,12 +931,12 @@ void get_itrad(const Real &p, Real &itrad) {
 
 KOKKOS_INLINE_FUNCTION
 void get_wb_Tp(const Real &p, Real &T) {
-    
+
     Real Tn, Td;
     get_daynight_Tp(p, Tn, Td);
-    
+
     T = Tn;
-    
+
 //    Real Tn2 = Tn*Tn;
 //    Real Tn4 = Tn2*Tn2;
 //    Real Td2 = Td*Td;
@@ -955,18 +955,18 @@ void get_wb_Tp(const Real &p, Real &T) {
 //    Real btrop = (logp < logpl)? 0.0 : ((logp-logpl)/(logph-logpl));
 //    btrop = (logp < logph)? btrop : 1.0;
 //    T = btrop*Tmid + (1.0-btrop)*Tn;
-    
+
     return;
 }
 
 KOKKOS_INLINE_FUNCTION
 void get_init_Tp(const Real &p, Real &T) {
-    
+
     Real Tn, Td;
     get_daynight_Tp(p, Tn, Td);
-    
+
 //    T = Tn;
-    
+
     Real Tn2 = Tn*Tn;
     Real Tn4 = Tn2*Tn2;
     Real Td2 = Td*Td;
@@ -985,31 +985,31 @@ void get_init_Tp(const Real &p, Real &T) {
 //    Real btrop = (logp < logpl)? 0.0 : ((logp-logpl)/(logph-logpl));
 //    btrop = (logp < logph)? btrop : 1.0;
 //    T = btrop*Tmid + (1.0-btrop)*Tn;
-    
+
     return;
 }
 
 KOKKOS_INLINE_FUNCTION
 void get_eq_Tp(const Real &lam, const Real &phi, const Real &p, Real &Teq) {
-    
+
     Real Tn, Td;
     get_daynight_Tp(p, Tn, Td);
-    
+
     Real Tn2 = Tn*Tn;
     Real Tn4 = Tn2*Tn2;
     Real Td2 = Td*Td;
     Real Td4 = Td2*Td2;
     Real Teq4 = Tn4 + (Td4-Tn4) * cos(lam) * cos(phi);
-    
+
     Teq = sqrt(sqrt(Teq4));
     Teq = (phi > -M_PI/2.0 && phi < M_PI/2.0) ? Teq : Tn;
-    
+
     return;
 }
 
 template <typename View1D>
 void get_wb_eos_arr(const int &N, View1D zarr, View1D logparr) {
-    
+
     Real Rgas = 4.593e7;
     Real grav_acc = -942.0;
     Real bar = 1.0e6;
@@ -1031,13 +1031,13 @@ void get_wb_eos_arr(const int &N, View1D zarr, View1D logparr) {
         logparr(n+1) = logparr(n) + fac/T;
     }
 
-    
+
     return;
 }
 
 KOKKOS_INLINE_FUNCTION
 void get_wb_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
-    
+
     Real Rgas = 4.593e7;
     Real bar = 1.0e6;
     Real p0 = 220.0*bar;

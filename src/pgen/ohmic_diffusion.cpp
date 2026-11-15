@@ -38,7 +38,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
   auto &panel = pmbp->pmb->mb_panel;
-    
+
     Real dens = 1.0;
     Real pres = 1.0;
     Real bx0 = 1.0;

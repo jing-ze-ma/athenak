@@ -8,6 +8,7 @@
 //! \file hydro.hpp
 // \brief definitions for Hydro class
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -316,7 +317,7 @@ class Hydro {
   bool sbf_want = false;
   bool sbf_valid = false;
   DvceArray5D<Real> sbf_s;
-  long sbf_nfast = 0, sbf_nfull = 0;
+  std::int64_t sbf_nfast = 0, sbf_nfull = 0;
   bool SplitBvalFastOK();
   void SplitBvalSnap(Driver *pdrive, int stage);
   // <hydro>/split_c2p_once: skip the two ConToPrimSplit tasks when the
@@ -331,7 +332,7 @@ class Hydro {
   bool c2pi_valid = false;
   DvceArray5D<Real> c2pi_u, c2pi_w, c2pi_d;
   DvceArray4D<Real> c2pi_t;
-  long c2pi_nskip = 0, c2pi_nrun = 0;
+  std::int64_t c2pi_nskip = 0, c2pi_nrun = 0;
   bool C2PIdemSkip();
   void C2PIdemSave();
   DvceArray2D<Real> c2p_acc;
@@ -498,7 +499,7 @@ class Hydro {
       ql_ip1 += qlwb_ip1;
       qr_i   += qrwb_i;
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn AddWbPrimFaceX1
@@ -518,7 +519,7 @@ class Hydro {
         });
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn AddWbPrimFaceX2
@@ -538,7 +539,7 @@ class Hydro {
         });
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn AddWbPrimFaceX3
@@ -558,7 +559,7 @@ class Hydro {
         });
       }
       return;
-    };
+    }
 
     KOKKOS_INLINE_FUNCTION
     static void WbLocalPiecewiseLinearX1(TeamMember_t const &member,
@@ -603,7 +604,7 @@ class Hydro {
         }
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX1
@@ -647,7 +648,7 @@ class Hydro {
         }
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX2
@@ -691,7 +692,7 @@ class Hydro {
         }
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX3
@@ -735,7 +736,7 @@ class Hydro {
         }
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn WbPiecewiseLinearDerX1/X2/X3
@@ -792,7 +793,7 @@ class Hydro {
         }
       }
       return;
-    };
+    }
 
     KOKKOS_INLINE_FUNCTION
     static void PLM_nonuniform(const Real &q_im1, const Real &q_i, const Real &q_ip1,
@@ -814,7 +815,7 @@ class Hydro {
       ql_ip1 = q_i + slope * dxRh;
       qr_i   = q_i - slope * dxLh;
       return;
-    };
+    }
 
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX1(TeamMember_t const &member, const EOS_Data &eos,
@@ -910,7 +911,7 @@ class Hydro {
           }
       }
       return;
-    };
+    }
 
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX2(TeamMember_t const &member, const int m,
@@ -936,7 +937,7 @@ class Hydro {
         });
       }
       return;
-    };
+    }
 
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX3(TeamMember_t const &member, const int m,
@@ -962,7 +963,7 @@ class Hydro {
         });
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn GridPiecewiseLinearDerX1
@@ -1061,7 +1062,7 @@ class Hydro {
         });
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn getWBq0
@@ -1129,7 +1130,7 @@ class Hydro {
         }
       }
       return;
-    };
+    }
 
     //! As with getWBq0, the static overload takes wb_option explicitly so that a static
     //! caller needs no object; the member version supplies the object's own.
@@ -1325,7 +1326,7 @@ class Hydro {
       }
 
       return;
-    };
+    }
 
  private:
   MeshBlockPack* pmy_pack;  // ptr to MeshBlockPack containing this Hydro

@@ -741,7 +741,9 @@ void MHD::RTOpSplitBvals() {
   // <mhd>/split_bval_fast: u0(IEN) alone when SplitBvalFastOK proves it exact
   const bool fast = sbf_on && SplitBvalFastOK();
   const int vm = fast ? (1 << IEN) : 0;
-  if (sbf_on) {if (fast) {++sbf_nfast;} else {++sbf_nfull;}}
+  if (sbf_on) {
+    if (fast) {++sbf_nfast;} else {++sbf_nfull;}
+  }
   while (pbval_u->InitRecv(nmhd+nscalars, vm) != TaskStatus::complete) {}
   if (pmy_pack->pmesh->multilevel) {
     pmy_pack->pmesh->pmr->RestrictCC(u0, coarse_u0);
@@ -899,7 +901,9 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
   }
   if (presist != nullptr) {
     if (presist->OhmicNeedsUpdate() && (!presist->use_rkg_sts || stage == 0)) {
-      presist->SetResistivity(w0, peos->eos_data, pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas, presist->eta_b, 0, n1m1, 0, n2m1, 0, n3m1);
+      presist->SetResistivity(w0, peos->eos_data,
+                              pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas,
+                              presist->eta_b, 0, n1m1, 0, n2m1, 0, n3m1);
     }
     if (presist->AmbipolarNeedsUpdate() && (!presist->use_rkg_sts || stage == 0)) {
       presist->SetAmbipolar(w0, peos->eos_data,

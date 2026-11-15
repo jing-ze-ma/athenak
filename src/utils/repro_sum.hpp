@@ -24,18 +24,18 @@
 //! the int64 folds take 2^31 deposits of 2^32 units.  Non-finite terms go to a plain
 //! side sum (inf/nan propagate).  Usable on host and device (Kokkos reducer below).
 
-#include "athena.hpp"
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <string>
 #include <vector>
+
+#include "athena.hpp"
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
 #endif
 
 namespace repro {
-
 //! <mesh>/layout_invariant_mode: true = "block" (DEFAULT): every sum is taken
 //! per MeshBlock in a FIXED order set by the code (independent of how many MeshBlocks a
 //! rank holds and of the launch configuration), and only the per-MeshBlock partials go
@@ -213,7 +213,9 @@ inline void AllMergeMax(ReproSum *v, const int n, Real &mx) {
 //! rank deposits its terms with Add; Values() writes the results
 struct ReproVec {
   std::vector<ReproSum> a;
-  explicit ReproVec(const int n) : a(n) {for (auto &x : a) {x.Init();}}
+  explicit ReproVec(const int n) : a(n) {
+    for (auto &x : a) {x.Init();}
+  }
   void Add(const int q, const Real x) {a[q].Add(x);}
   void Merge() {AllMerge(a.data(), static_cast<int>(a.size()));}
   Real Value(const int q) const {return a[q].Value();}

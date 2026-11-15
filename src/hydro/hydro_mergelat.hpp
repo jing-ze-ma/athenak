@@ -57,7 +57,9 @@
 //! M, Etot(IEN), P (Cartesian), L (Cartesian) sums (may be
 //! named without merge_lat_rc: diagnostic of a fine run)
 
+#include <cstdint>
 #include <string>
+
 #include "athena.hpp"
 #include "coordinates/cubed_sphere.hpp"
 #include "coordinates/cell_locations.hpp"
@@ -164,7 +166,7 @@ class MergeLat {
   // per (m, i) merge factor (1 = not merged), incl. the x1 ghosts
   DvceArray2D<int> fi;
   int imax_loc = -1;        // largest merged interior i on this rank (-1 none)
-  long ncall = 0, nfallback = 0;
+  std::int64_t ncall = 0, nfallback = 0;
 
   MergeLatGeo Geo();
   void Build();

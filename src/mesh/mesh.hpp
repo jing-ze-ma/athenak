@@ -14,6 +14,7 @@
 #include <cstdint>  // int32_t
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "athena.hpp"
 #include "coordinates/grid_stretch.hpp"
@@ -395,7 +396,8 @@ class Mesh {
   std::string GetBoundaryString(BoundaryFlag input_flag);
 
     KOKKOS_INLINE_FUNCTION
-    int NeighborIndexPanel(int ix, int iy, int iz, int n1, int n2, int panel_start, int panel_end) {
+    int NeighborIndexPanel(int ix, int iy, int iz, int n1, int n2, int panel_start,
+                           int panel_end) {
         // ix is the RADIAL (x1) offset and is passed through untouched: a panel seam
         // never crosses it. Only the tangential pair a = x2 (iy), b = x3 (iz) is
         // remapped.

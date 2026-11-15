@@ -25,11 +25,12 @@
 //! _reconst remove pwb from the cell pressure, as the source does). DEFAULT on the
 //! cubed sphere and on multi-D spherical polar for fresh runs (AmModule::DefaultOn).
 
+#include <string>
+
 #include "athena.hpp"
 #include "coordinates/cubed_sphere.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "eos/eos.hpp"
-#include <string>
 
 class MeshBlockPack;
 class ParameterInput;

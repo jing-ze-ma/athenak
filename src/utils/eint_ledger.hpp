@@ -46,7 +46,6 @@
 #endif
 
 namespace eint_ledger {
-
 constexpr int kNcls = 5;   // + class 4: the region
 constexpr int kNq = 5;
 constexpr int kNs = kNcls*kNq;
@@ -71,7 +70,6 @@ struct reduction_identity<eint_ledger::Sums> {
 }  // namespace Kokkos
 
 namespace eint_ledger {
-
 inline bool on = false;
 inline Real rho_cut = 1.0e-7;
 inline Real hot_cut = 1.0e4;
@@ -388,8 +386,9 @@ inline void Commit(Mesh *pm) {
     auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
     Real hd;
     Kokkos::deep_copy(hd, Kokkos::subview(dp, m, kk, jj, ii));
-    std::printf("ELHOT c=%d gid %d (k,j,i) (%d,%d,%d) r %.4f th %.3f deg ph %.4f rho %.3e "
-                "e/rho %.4e :", pm->ncycle, pmbp->gids + m, kk, jj, ii, hx1(m, ii + is),
+    std::printf("ELHOT c=%d gid %d (k,j,i) (%d,%d,%d) r %.4f th %.3f deg ph %.4f rho "
+                "%.3e e/rho %.4e :",
+                pm->ncycle, pmbp->gids + m, kk, jj, ii, hx1(m, ii + is),
                 hx2(m, jj + ic.js)*180.0/M_PI, hx3(m, kk + ic.ks), hd,
                 static_cast<double>(ml.val));
     for (int n = 0; n < nop; ++n) {

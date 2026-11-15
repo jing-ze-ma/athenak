@@ -164,8 +164,15 @@ KOKKOS_INLINE_FUNCTION
 void GL4(int n, Real &x, Real &w) {
   const Real xa = 0.3399810435848563, xb = 0.8611363115940526;
   const Real wa = 0.6521451548625461, wb = 0.3478548451374538;
-  if (n == 0) { x = -xb; w = wb; } else if (n == 1) { x = -xa; w = wa; }
-  else if (n == 2) { x = xa; w = wa; } else { x = xb; w = wb; }
+  if (n == 0) {
+    x = -xb; w = wb;
+  } else if (n == 1) {
+    x = -xa; w = wa;
+  } else if (n == 2) {
+    x = xa; w = wa;
+  } else {
+    x = xb; w = wb;
+  }
 }
 
 //! spherical components of the force-free vector potential A = B/alpha,
@@ -1064,16 +1071,25 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
               Real ex, code, area;
               if (f == 0 || f == 3) {
                 const Real rf = (f == 0) ? rl : rr;
-                if (iprob == 11) { ex = FFFaceB1(rf, tl, tr, pl, pr, b0, alpha); }
-                else if (iprob == 12) { ex = 0.0; }
-                else { Real bb; UniformZFaces(b0, tl, tr, ex, bb); }
+                if (iprob == 11) {
+                  ex = FFFaceB1(rf, tl, tr, pl, pr, b0, alpha);
+                } else if (iprob == 12) {
+                  ex = 0.0;
+                } else {
+                  Real bb;
+                  UniformZFaces(b0, tl, tr, ex, bb);
+                }
                 code = b1(m,k,j,(f == 0) ? i : i+1);
                 area = rf*rf*std::fabs(std::cos(tl) - std::cos(tr))*(pr - pl);
               } else if (f == 1 || f == 4) {
                 const Real tf = (f == 1) ? tl : tr;
-                if (iprob == 11) { ex = FFFaceB2(rl, rr, tf, pl, pr, b0, alpha); }
-                else if (iprob == 12) { ex = 0.0; }
-                else { ex = -b0*std::sin(tf); }
+                if (iprob == 11) {
+                  ex = FFFaceB2(rl, rr, tf, pl, pr, b0, alpha);
+                } else if (iprob == 12) {
+                  ex = 0.0;
+                } else {
+                  ex = -b0*std::sin(tf);
+                }
                 code = b2(m,k,(f == 1) ? j : j+1,i);
                 area = 0.5*(rr*rr - rl*rl)*std::fabs(std::sin(tf))*(pr - pl);
               } else {
@@ -1120,9 +1136,11 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
   std::printf("###   L1 (per unit volume):  v %.6e  p %.6e  rho %.6e  B(faces) %.6e\n",
               l1(sT,0), l1(sT,1), l1(sT,2), l1(sT,3));
   std::printf("###   Linf:                  v %.6e  p %.6e  B %.6e  (B max on this rank"
-              " at face type %d, j-js=%d, i-is=%d)\n", mxv, mxp, mxb, mxb_f, mxb_j, mxb_i);
+              " at face type %d, j-js=%d, i-is=%d)\n", mxv, mxp, mxb, mxb_f,
+                  mxb_j, mxb_i);
   std::printf("###   POLAR rows:   L1 v %.6e  p %.6e  B %.6e   Linf v %.6e  B %.6e"
-              "  (%.2f%% of the volume)\n", l1(sP,0), l1(sP,1), l1(sP,3), mxv_pol, mxb_pol,
+              "  (%.2f%% of the volume)\n", l1(sP,0), l1(sP,1), l1(sP,3),
+                  mxv_pol, mxb_pol,
               100.0*sP[4]/sT[4]);
   std::printf("###   INTERIOR:     L1 v %.6e  p %.6e  B %.6e\n", l1(sI,0), l1(sI,1),
               l1(sI,3));
@@ -1290,17 +1308,28 @@ void SPTestFluxProbe(Mesh *pm, const Real bdt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  auto x1f = Kokkos::create_mirror_view(pmbp->pcoord->xx1f); Kokkos::deep_copy(x1f, pmbp->pcoord->xx1f);
-  auto x2f = Kokkos::create_mirror_view(pmbp->pcoord->xx2f); Kokkos::deep_copy(x2f, pmbp->pcoord->xx2f);
-  auto x2v = Kokkos::create_mirror_view(pmbp->pcoord->x2v);  Kokkos::deep_copy(x2v, pmbp->pcoord->x2v);
-  auto a1 = Kokkos::create_mirror_view(pmbp->pcoord->area.x1f); Kokkos::deep_copy(a1, pmbp->pcoord->area.x1f);
-  auto a2 = Kokkos::create_mirror_view(pmbp->pcoord->area.x2f); Kokkos::deep_copy(a2, pmbp->pcoord->area.x2f);
-  auto vol = Kokkos::create_mirror_view(pmbp->pcoord->volume); Kokkos::deep_copy(vol, pmbp->pcoord->volume);
-  auto f1 = Kokkos::create_mirror_view(pmbp->pmhd->uflx.x1f); Kokkos::deep_copy(f1, pmbp->pmhd->uflx.x1f);
-  auto f2 = Kokkos::create_mirror_view(pmbp->pmhd->uflx.x2f); Kokkos::deep_copy(f2, pmbp->pmhd->uflx.x2f);
-  auto bcc = Kokkos::create_mirror_view(pmbp->pmhd->bcc0); Kokkos::deep_copy(bcc, pmbp->pmhd->bcc0);
-  auto b2f = Kokkos::create_mirror_view(pmbp->pmhd->b0.x2f); Kokkos::deep_copy(b2f, pmbp->pmhd->b0.x2f);
-  auto w = Kokkos::create_mirror_view(pmbp->pmhd->w0); Kokkos::deep_copy(w, pmbp->pmhd->w0);
+  auto x1f = Kokkos::create_mirror_view(pmbp->pcoord->xx1f);
+  Kokkos::deep_copy(x1f, pmbp->pcoord->xx1f);
+  auto x2f = Kokkos::create_mirror_view(pmbp->pcoord->xx2f);
+  Kokkos::deep_copy(x2f, pmbp->pcoord->xx2f);
+  auto x2v = Kokkos::create_mirror_view(pmbp->pcoord->x2v);
+  Kokkos::deep_copy(x2v, pmbp->pcoord->x2v);
+  auto a1 = Kokkos::create_mirror_view(pmbp->pcoord->area.x1f);
+  Kokkos::deep_copy(a1, pmbp->pcoord->area.x1f);
+  auto a2 = Kokkos::create_mirror_view(pmbp->pcoord->area.x2f);
+  Kokkos::deep_copy(a2, pmbp->pcoord->area.x2f);
+  auto vol = Kokkos::create_mirror_view(pmbp->pcoord->volume);
+  Kokkos::deep_copy(vol, pmbp->pcoord->volume);
+  auto f1 = Kokkos::create_mirror_view(pmbp->pmhd->uflx.x1f);
+  Kokkos::deep_copy(f1, pmbp->pmhd->uflx.x1f);
+  auto f2 = Kokkos::create_mirror_view(pmbp->pmhd->uflx.x2f);
+  Kokkos::deep_copy(f2, pmbp->pmhd->uflx.x2f);
+  auto bcc = Kokkos::create_mirror_view(pmbp->pmhd->bcc0);
+  Kokkos::deep_copy(bcc, pmbp->pmhd->bcc0);
+  auto b2f = Kokkos::create_mirror_view(pmbp->pmhd->b0.x2f);
+  Kokkos::deep_copy(b2f, pmbp->pmhd->b0.x2f);
+  auto w = Kokkos::create_mirror_view(pmbp->pmhd->w0);
+  Kokkos::deep_copy(w, pmbp->pmhd->w0);
   const int m = 0, k = ks, i = is + 3;
   const Real b0 = sp_b0, p0 = sp_p0;
   std::printf("### SP FLUX PROBE (bdir=%d, b0=%g, p0=%g) block %d k=%d i=%d, cell j=js\n",
@@ -1310,14 +1339,17 @@ void SPTestFluxProbe(Mesh *pm, const Real bdt) {
   std::printf("###   cell bcc: Br=%.8e Bth=%.8e Bph=%.8e  p(w)=%.8e\n", bcc(m,IBX,k,js,i),
               bcc(m,IBY,k,js,i), bcc(m,IBZ,k,js,i), w(m,IEN,k,js,i)*(5.0/3.0-1.0));
   // exact stress projections for B = b0 zhat, v = 0:
-  //   theta-face (n = thhat):  F_r = -B_th B_r = b0^2 sin cos,  F_th = p + b0^2 cos(2th)/2, F_ph = 0
-  //   r-face     (n = rhat):   F_r = p + b0^2 (sin^2 - cos^2)/2 = p - b0^2 cos(2th)/2,  F_th = -B_r B_th = b0^2 sin cos
+  //   theta-face (n = thhat):  F_r = -B_th B_r = b0^2 sin cos,  F_th = p + b0^2
+  // cos(2th)/2, F_ph = 0 r-face     (n = rhat):   F_r = p + b0^2 (sin^2 - cos^2)/2 = p -
+  // b0^2 cos(2th)/2,  F_th = -B_r B_th = b0^2 sin cos
   for (int jf = js; jf <= js + 2; ++jf) {
     const Real th = x2f(m,jf);
-    const Real exr = b0*b0*std::sin(th)*std::cos(th), exth = p0 + 0.5*b0*b0*std::cos(2.0*th);
-    std::printf("###   THETA face j=%d (th=%.6f) A/V=%.6e  B_n(face)=%.8e\n"
-                "###       code F_r=%.8e F_th=%.8e F_ph=%.3e | exact F_r=%.8e F_th=%.8e\n"
-                "###       (code-exact)*A/V: r %.3e  th %.3e   in units (b0^2/2)/r: r %.3e th %.3e\n",
+    const Real exr = b0*b0*std::sin(th)*std::cos(th), exth = p0
+        + 0.5*b0*b0*std::cos(2.0*th);
+    std::printf("###   THETA face j=%d (th=%.6f) A/V=%.6e  B_n(face)=%.8e\n###       "
+                "code F_r=%.8e F_th=%.8e F_ph=%.3e | exact F_r=%.8e F_th=%.8e\n###       "
+                "(code-exact)*A/V: r %.3e  th %.3e   in units (b0^2/2)/r: r %.3e th "
+                "%.3e\n",
                 jf, th, a2(m,k,jf,i)/vol(m,k,js,i), b2f(m,k,jf,i),
                 f2(m,IM1,k,jf,i), f2(m,IM2,k,jf,i), f2(m,IM3,k,jf,i), exr, exth,
                 (f2(m,IM1,k,jf,i)-exr)*a2(m,k,jf,i)/vol(m,k,js,i),
@@ -1325,29 +1357,34 @@ void SPTestFluxProbe(Mesh *pm, const Real bdt) {
                 (f2(m,IM1,k,jf,i)-exr)*a2(m,k,jf,i)/vol(m,k,js,i)/(0.5*b0*b0/x1f(m,i)),
                 (f2(m,IM2,k,jf,i)-exth)*a2(m,k,jf,i)/vol(m,k,js,i)/(0.5*b0*b0/x1f(m,i)));
   }
-  // r-faces of the polar cell: the exact flux is the AREA MEAN over the face's theta range
+  // r-faces of the polar cell: the exact flux is the AREA MEAN over the face's theta
+  // range
   const Real tl = x2f(m,js), tr = x2f(m,js+1);
   const Real isin = std::cos(tl) - std::cos(tr);
   // <cos 2th> over the r-face with weight sin th: Int (2cos^2-1) sin dth / Int sin dth
-  const Real icos2sin = (std::cos(tl)*std::cos(tl)*std::cos(tl) - std::cos(tr)*std::cos(tr)*std::cos(tr))/3.0;
+  const Real icos2sin = (std::cos(tl)*std::cos(tl)*std::cos(tl)
+                         - std::cos(tr)*std::cos(tr)*std::cos(tr))/3.0;
   const Real avg_cos2 = 2.0*icos2sin/isin - 1.0;
   // <sin cos> = Int sin^2 cos / Int sin = (sin^3 tr - sin^3 tl)/3 / isin
   const Real avg_sc = (std::pow(std::sin(tr),3) - std::pow(std::sin(tl),3))/3.0/isin;
   for (int ii = i; ii <= i+1; ++ii) {
     const Real exr = p0 - 0.5*b0*b0*avg_cos2, exth = b0*b0*avg_sc;
-    std::printf("###   R face i=%d (r=%.4f) A/V=%.6e\n"
-                "###       code F_r=%.8e F_th=%.8e | exact(area-mean) F_r=%.8e F_th=%.8e\n"
-                "###       (code-exact)*A/V in (b0^2/2)/r: r %.3e th %.3e\n",
+    std::printf("###   R face i=%d (r=%.4f) A/V=%.6e\n###       code F_r=%.8e F_th=%.8e "
+                "| exact(area-mean) F_r=%.8e F_th=%.8e\n###       (code-exact)*A/V in "
+                "(b0^2/2)/r: r %.3e th %.3e\n",
                 ii, x1f(m,ii), a1(m,k,js,ii)/vol(m,k,js,i),
                 f1(m,IM1,k,js,ii), f1(m,IM2,k,js,ii), exr, exth,
                 (f1(m,IM1,k,js,ii)-exr)*a1(m,k,js,ii)/vol(m,k,js,i)/(0.5*b0*b0/x1f(m,i)),
-                (f1(m,IM2,k,js,ii)-exth)*a1(m,k,js,ii)/vol(m,k,js,i)/(0.5*b0*b0/x1f(m,i)));
+                (f1(m,IM2,k,js,ii)-exth)*a1(m,k,js,ii)/vol(m,k,js,i)/
+                (0.5*b0*b0/x1f(m,i)));
   }
   // and the interior cell j = js+4 for reference (its outer theta-face)
   {
     const int jc = js + 4, jf = jc + 1; const Real th = x2f(m,jf);
-    const Real exr = b0*b0*std::sin(th)*std::cos(th), exth = p0 + 0.5*b0*b0*std::cos(2.0*th);
-    std::printf("###   INTERIOR ref: theta face j=%d (th=%.6f) A/V=%.6e  (code-exact)*A/V in (b0^2/2)/r: r %.3e th %.3e\n",
+    const Real exr = b0*b0*std::sin(th)*std::cos(th), exth = p0
+        + 0.5*b0*b0*std::cos(2.0*th);
+    std::printf("###   INTERIOR ref: theta face j=%d (th=%.6f) A/V=%.6e  "
+                "(code-exact)*A/V in (b0^2/2)/r: r %.3e th %.3e\n",
                 jf, th, a2(m,k,jf,i)/vol(m,k,jc,i),
                 (f2(m,IM1,k,jf,i)-exr)*a2(m,k,jf,i)/vol(m,k,jc,i)/(0.5*b0*b0/x1f(m,i)),
                 (f2(m,IM2,k,jf,i)-exth)*a2(m,k,jf,i)/vol(m,k,jc,i)/(0.5*b0*b0/x1f(m,i)));
@@ -1357,8 +1394,8 @@ void SPTestFluxProbe(Mesh *pm, const Real bdt) {
 //----------------------------------------------------------------------------------------
 //! \fn SPTestBlastProfile
 //! \brief iprob 13: bin the state in (radial cell, angular distance from the blast
-//! centre) and write <basename>-blast.dat: i  dbin  volume  <rho>  <p>  <|v|>  <|B|>.  The two
-//! placements (pole, equator) are compared with vis/python or the session script.
+//! centre) and write <basename>-blast.dat: i  dbin  volume  <rho>  <p>  <|v|>  <|B|>.
+//! The two placements (pole, equator) are compared with vis/python or the session script.
 
 void SPTestBlastProfile(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;

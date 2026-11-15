@@ -128,8 +128,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto *pbd = new MeshBoundaryValuesCC(pmbp, pin, false);
   pba->InitializeBuffers(nvar); pbb->InitializeBuffers(nvar);
   pbc->InitializeBuffers(nvar); pbd->InitializeBuffers(nvar);
-  pba->SetVectorPairs(nvar, {{4, 5}});
-  pbd->SetVectorPairs(nvar, {{2, 3}});
+  pba->SetVectorPairs(nvar, {std::make_pair(4, 5)});
+  pbd->SetVectorPairs(nvar, {std::make_pair(2, 3)});
   Exchange(pba, a, dum, nvar);
   Exchange(pbb, b, dum, nvar);
   Exchange(pbc, c, dum, nvar);

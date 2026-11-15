@@ -103,7 +103,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real &x2max = size.d_view(m).x2max;
     int nx2 = indcs.nx2;
     Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-      
+
     int &pan = panel.d_view(m);
       if (pan == 1) {
           x1v = CellCenterX(j-js, nx2, x2min, x2max) - 0.5;

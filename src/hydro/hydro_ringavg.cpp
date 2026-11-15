@@ -6,6 +6,7 @@
 //! \file hydro_ringavg.cpp
 //! \brief conservative polar ring averaging (see hydro_ringavg.hpp).
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>

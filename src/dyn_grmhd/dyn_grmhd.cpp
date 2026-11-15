@@ -36,7 +36,6 @@
 #include "eos/primitive-solver/reset_floor.hpp"
 
 namespace dyngr {
-
 // A dumb template function containing the switch statement needed to select an EOS.
 template<class ErrorPolicy>
 DynGRMHD* SelectDynGRMHDEOS(MeshBlockPack *ppack, ParameterInput *pin,
@@ -681,10 +680,12 @@ INSTANTIATE_COORD_TERMS(Primitive::IdealGas, Primitive::ResetFloor);
 INSTANTIATE_COORD_TERMS(Primitive::PiecewisePolytrope, Primitive::ResetFloor);
 //INSTANTIATE_COORD_TERMS(Primitive::EOSCompOSE<Primitive::NormalLogs>,
 //                        Primitive::ResetFloor);
-//INSTANTIATE_COORD_TERMS(Primitive::EOSCompOSE<Primitive::NQTLogs>, Primitive::ResetFloor);
+//INSTANTIATE_COORD_TERMS(Primitive::EOSCompOSE<Primitive::NQTLogs>,
+//Primitive::ResetFloor);
 //INSTANTIATE_COORD_TERMS(Primitive::EOSHybrid<Primitive::NormalLogs>,
 //                        Primitive::ResetFloor);
-//INSTANTIATE_COORD_TERMS(Primitive::EOSHybrid<Primitive::NQTLogs>, Primitive::ResetFloor);
+//INSTANTIATE_COORD_TERMS(Primitive::EOSHybrid<Primitive::NQTLogs>,
+//Primitive::ResetFloor);
 
 #undef INSTANTIATE_COORD_TERMS
 

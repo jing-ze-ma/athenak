@@ -400,7 +400,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       mlat_exch = true;
     } else if (mb != "flat") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<hydro>/merge_lat_blockend = flat | exchange" << std::endl;
+                << std::endl
+                << "<hydro>/merge_lat_blockend = flat | exchange" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     auto &ind = ppack->pmesh->mb_indcs;
@@ -571,7 +572,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // determine if static wellbalance is enabled
   use_wellbalance_static = pin->GetOrAddBoolean("hydro","wellbalance_static",false);
-  use_wellbalance_static_reconst_perturb = pin->GetOrAddBoolean("hydro","wellbalance_static_reconst",false);
+  use_wellbalance_static_reconst_perturb =
+      pin->GetOrAddBoolean("hydro","wellbalance_static_reconst",false);
   // the deviation reconstruction reads the background arrays, which only
   // wellbalance_static allocates -- the pair is one scheme, not two options
   if (use_wellbalance_static_reconst_perturb && !use_wellbalance_static) {

@@ -109,7 +109,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm) :
     user_srcs(false),
     user_hist(false),
     pmy_mesh_(pm) {
-        
   hot_jupiter = pin->GetOrAddBoolean("problem","hot_jupiter",false);
   if (hot_jupiter) {
       hot_jupiter_param.Teq = pin->GetReal("problem","Teq");
@@ -192,7 +191,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     user_srcs(false),
     user_hist(false),
     pmy_mesh_(pm) {
-        
   hot_jupiter = pin->GetOrAddBoolean("problem","hot_jupiter",false);
   if (hot_jupiter) {
     hot_jupiter_param.Teq = pin->GetReal("problem","Teq");
@@ -217,7 +215,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     hot_jupiter_param.sponge_bottom =
         pin->GetOrAddBoolean("problem","sponge_bottom",false);
   }
-        
+
   // check for user-defined boundary conditions
   for (int dir=0; dir<6; ++dir) {
     if (pm->mesh_bcs[dir] == BoundaryFlag::user) {
@@ -1974,13 +1972,15 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   if (pam_rst != nullptr && pam_rst->am_vector && nams_file == 0 &&
       global_variable::my_rank == 0) {
     std::cout << "### WARNING: restart file has no am_vector spin; it restarts from 0 "
-              << "(the total L budget then jumps by the spin, and with am_spin_return the "
+              << "(the total L budget then jumps by the spin, and with am_spin_return "
+                 "the "
               << "restart is not bitwise)." << std::endl;
   }
   if (pradm1 != nullptr && pradm1->vra_on && nra_file == 0 &&
       global_variable::my_rank == 0) {
     std::cout << "<rad_m1> vet_rotate_avg: the restart file has no averaging history; it "
-              << "is re-measured at the first build (a restart from a run with a complete "
+              << "is re-measured at the first build (a restart from a run with a "
+                 "complete "
               << "history is then not bitwise)." << std::endl;
   }
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0 ||
