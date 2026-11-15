@@ -251,21 +251,32 @@ void CleanCellSphWeights(const CleanArgs &x, const int dir, const int m, const i
 //! of cell (k,j,i) per unit E of the cell, g_b for the rows y_b: -(P_tt + P_pp)/r in y_r
 //! and -cot(theta) P_pp/r in y_theta, in the face-area form -c (D_tt + D_pp)
 //! (A_r+ - A_r-)/(2V) and -c D_pp (A_t+ - A_t-)/V that cancels the area terms of a
-//! uniform isotropic stress exactly.  The share of a low-order face, whose stress is
-//! that of D = I, takes D_tt = D_pp = 1, so that it cancels that face's area term too.
-//! With clean_consistency an interior face's streaming share w carries the stress of
-//! the rays' moments (F_ray) and moves only y beyond them: its share of the curvature
-//! terms is that of J (kin = true, per unit J), the rest that of E.
+//! uniform isotropic stress exactly.  The moment share of a low-order face, whose stress
+//! is that of D = I, takes D_tt = D_pp = 1, so that it cancels that face's area term too.
+//! With clean_consistency the streaming share w of the faces that carry the rays' flux
+//! F_ray (low-order or not) moves only y beyond the rays' moments: its curvature terms
+//! are the rays' own, CLN_G (kin = true, independent of E, shared by the r faces' w as
+//! the area terms), so that the rays' moments (J, J h) are its steady state.
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int j,
                         const int i, Real g[3], const bool kin = false) {
   const Real hv = x.h*x.c/x.vol(m,k,j,i);
+  // w of the faces that carry the rays' flux (interior and open x1 faces)
+  auto wf = [&](const int dir, const int kk, const int jj, const int ii) {
+    const bool on = !CleanBoundaryFace(x, dir, m, kk, jj, ii) ||
+                    (dir == 0 && CleanBc(x, m, (ii == x.is) ? 0 : 1) != M1_IBC_REFLECT);
+    return (x.consist && on) ? x.fc[dir](m,CLF_WK,kk,jj,ii) : 0.0;
+  };
+  const Real am = x.area[0](m,k,j,i), ap = x.area[0](m,k,j,i+1);
+  if (kin) {
+    const Real w = (wf(0, k, j, i+1)*ap - wf(0, k, j, i)*am)/(ap - am);
+    for (int b = 0; b < 3; ++b) g[b] = w*hv*x.cs(m,CLN_G+b,k,j,i);
+    return;
+  }
   const Real dtt = CleanDiag(x, 1, 1, m, k, j, i), dpp = CleanDiag(x, 2, 2, m, k, j, i);
   auto d = [&](const int dir, const int kk, const int jj, const int ii, const Real dc) {
-    const Real w = (x.consist && !CleanBoundaryFace(x, dir, m, kk, jj, ii)) ?
-                   x.fc[dir](m,CLF_WK,kk,jj,ii) : 0.0;
-    return (kin ? w : 1.0 - w)*(x.fc[dir](m,CLF_LO,kk,jj,ii) > 0.0 ? 1.0 : dc)*
+    return (1.0 - wf(dir, kk, jj, ii))*(x.fc[dir](m,CLF_LO,kk,jj,ii) > 0.0 ? 1.0 : dc)*
            x.area[dir](m,kk,jj,ii);
   };
   const Real dr = 0.5*(dtt + dpp);
@@ -565,7 +576,7 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
     for (int b = 0; b < x.nf; ++b) div[1+b] += g[b]*x.u(m,v,k,j,i);
     if (with_source && x.consist) {
       CleanCellSphSource(x, m, k, j, i, g, true);
-      for (int b = 0; b < x.nf; ++b) div[1+b] += g[b]*x.cs(m,CLN_J,k,j,i);
+      for (int b = 0; b < x.nf; ++b) div[1+b] += g[b];
     }
   }
 }
@@ -599,7 +610,7 @@ void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, con
   if (x.sph && x.consist) {
     Real g[3];
     CleanCellSphSource(x, m, k, j, i, g, true);
-    for (int b = 0; b < x.nf; ++b) div[1+b] += g[b]*x.cs(m,CLN_J,k,j,i);
+    for (int b = 0; b < x.nf; ++b) div[1+b] += g[b];
   }
 }
 

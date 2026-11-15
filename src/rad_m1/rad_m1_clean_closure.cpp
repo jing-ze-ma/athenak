@@ -885,7 +885,9 @@ void RadiationM1::CleanClosureFromGd() {
 //! r faces of a column take the cell balances from the inner face: the outer r face of a
 //! cell gets what its inner one carries plus the exchange V chi (S - J, -H) less the
 //! lateral outflow (the momentum in the column's basis), so that the energy balance of
-//! every cell is the vet_gd exchange to round-off.  Several MeshBlocks along x1: a level
+//! every cell is the vet_gd exchange to round-off.  CLN_G is what the momentum balance of
+//! the rays (in the cell's basis) differs by from the cell layout's divergence of these
+//! face components: the curvature of their stress.  Several MeshBlocks along x1: a level
 //! starts from the top face of the level below (vgd_x1b -> vgd_x1r), one level per pass;
 //! at a reflecting top the remainder is spread over the outermost level (zero wall flux).
 
@@ -1034,6 +1036,7 @@ void RadiationM1::CleanGdFaceSums() {
       const Real vb = in ? 0.0 : qr_(m,4*nkj + kj);   // the column's volume below
       for (int i = is; i <= ie; ++i) {
         for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
+        Real g[3] = {0.0, 0.0, 0.0}, qi[3] = {q[1], q[2], q[3]};
         // the exchange V chi (S - J, -H_b) and the lateral outflow of the cell
         const Real chi = x.vol(m,k,j,i)*exp(cw_(m,0,k+ok,j+og,i));
         const Real s0 = exp(cw_(m,1,k+ok,j+og,i));
@@ -1054,13 +1057,24 @@ void RadiationM1::CleanGdFaceSums() {
             const int kc = (axi && dir == 2) ? k : kk;
             q[0] += sg*cs(m,nf,kc,jj,i);
             for (int b = 0; b < 3; ++b) {
+              const Real wt = (dir == 2 && axi) ? 0.0 : ((dir == 1 && b == 2) ?
+                              sin(x.x2f(m,jj))/sin(x.x2v(m,j)) : 1.0);
+              g[b] += sg*wt*cs(m,nf+1+b,kc,jj,i);
               for (int c = 0; c < 3; ++c) {
-                q[1+b] += sg*cs(m,nf+1+c,kc,jj,i)*(ef[c][0]*e[b][0] + ef[c][1]*e[b][1] +
-                                                   ef[c][2]*e[b][2]);
+                const Real r = sg*cs(m,nf+1+c,kc,jj,i)*(ef[c][0]*e[b][0] +
+                               ef[c][1]*e[b][1] + ef[c][2]*e[b][2]);
+                q[1+b] += r;
+                g[b] -= r;
               }
             }
           }
         }
+        // the angular-momentum weights r_f/r of the y_theta, y_phi rows on the r faces
+        for (int b = 1; b < 3; ++b) {
+          g[b] += q[1+b]*(1.0 - x.x1f(m,i+1)/x.x1v(m,i)) -
+                  qi[b]*(1.0 - x.x1f(m,i)/x.x1v(m,i));
+        }
+        for (int b = 0; b < 3; ++b) cs(m,CLN_G+b,k,j,i) = g[b];
       }
       if (xf_(m) & 4) {
         // a reflecting top: the rays' remainder at the wall (their non-conservation, all
