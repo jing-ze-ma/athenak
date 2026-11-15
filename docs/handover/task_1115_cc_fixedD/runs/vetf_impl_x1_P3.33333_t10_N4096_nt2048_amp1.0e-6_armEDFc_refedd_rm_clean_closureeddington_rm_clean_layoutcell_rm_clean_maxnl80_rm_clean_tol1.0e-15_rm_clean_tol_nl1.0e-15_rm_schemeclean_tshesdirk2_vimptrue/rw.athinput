@@ -1,0 +1,115 @@
+<comment>
+problem = runs_3r_radwave vetf_impl_x1_P3.33333_t10_N4096_nt2048_amp1.0e-6_armEDFc_refedd_rm_clean_closureeddington_rm_clean_layoutcell_rm_clean_maxnl80_rm_clean_tol1.0e-15_rm_clean_tol_nl1.0e-15_rm_schemeclean_tshesdirk2_vimptrue
+
+<job>
+basename = rw
+
+<mesh>
+nghost = 2
+nx1 = 4096
+x1min = 0.0
+x1max = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+nx2 = 4
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 4096
+nx2 = 4
+nx3 = 1
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.8
+nlim = -1
+tlim = 0.45858248267438823
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+
+<rad_m1>
+c_light = 10
+chat_over_c = 1.0
+cfl_rad = 0.4
+thick_flux = none
+closure = vet_sc
+e_floor = 1.0e-30
+subcycle = true
+opacity = const
+kappa_p = 10
+kappa_e = 10
+kappa_f = 10
+kappa_s = 0.0
+arad = 10
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 9.1716496534877638
+implicit_tol = 1.0e-11
+implicit_maxit = 200
+implicit_lin_tol = 1.0e-13
+implicit_lin_maxit = 400
+implicit_solver = bicgstab
+implicit_offdiag = operator
+implicit_closure_lag = step
+implicit_recon = dc
+implicit_vimp = true
+time_scheme = hesdirk2
+clean_closure = eddington
+clean_layout = cell
+clean_maxnl = 80
+clean_tol = 1.0e-15
+clean_tol_nl = 1.0e-15
+scheme = clean
+vet_nmu = 4
+vet_nphi = 8
+vet_tensor = full
+vet_x1_periodic = true
+vet_x1_npass = 3
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test = radwave
+radwave_dir = x1
+radwave_amp = 9.9999999999999995e-07
+radwave_rho = 1.0
+radwave_t = 1.0
+radwave_eig = true
+radwave_eig_e_im = -0.98511317201684712
+radwave_eig_e_re = 0.95673167538290815
+radwave_eig_f_im = -0.28101514316292586
+radwave_eig_f_re = 0.12816968396550463
+radwave_eig_t_im = -0.2488528325534386
+radwave_eig_t_re = 0.23980740989164159
+radwave_eig_v_im = -0.65036522277485675
+radwave_eig_v_re = 2.1806327929670268
+
+<output1>
+file_type = tab
+variable = hydro_w
+data_format = %.16e
+dt = 0.028661405167149264
+slice_x2 = 0.125
+
+
+<output2>
+file_type = tab
+variable = m1
+data_format = %.16e
+dt = 0.028661405167149264
+slice_x2 = 0.125
+
