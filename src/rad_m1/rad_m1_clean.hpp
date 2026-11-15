@@ -86,6 +86,7 @@ struct CleanArgs {
   bool feedback;               // gas coupling (advective flux, exchange linearisation)
   bool recon;                  // cell layout: reconstructed face states in the jumps
   bool all_low;                // cell layout: every interior face low-order
+  bool consist;                // cell layout: face fluxes carry the consistency bracket
   int nf;                      // cell layout: number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
   bool multi_d, three_d;

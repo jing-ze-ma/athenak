@@ -37,9 +37,10 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_v, nmb, 2, n3, n2, n1);
   Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
-  Kokkos::realloc(cln_fc1, nmb, CLF_N, n3, n2, n1);
-  Kokkos::realloc(cln_fc2, nmb, CLF_N, n3, n2, n1);
-  Kokkos::realloc(cln_fc3, nmb, CLF_N, n3, n2, n1);
+  const int nfc = cln_consist ? CLF_CB + 4 : CLF_N;
+  Kokkos::realloc(cln_fc1, nmb, nfc, n3, n2, n1);
+  Kokkos::realloc(cln_fc2, nmb, nfc, n3, n2, n1);
+  Kokkos::realloc(cln_fc3, nmb, nfc, n3, n2, n1);
   Kokkos::deep_copy(cln_w, 0.0);
   Kokkos::deep_copy(cln_fc1, 0.0);
   Kokkos::deep_copy(cln_fc2, 0.0);
@@ -263,6 +264,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       CleanClosureFill();
       CleanGhostFill(cln_s, 0, CLN_N);
       CleanCellFaceSpeeds();
+      if (cln_consist) CleanCellConsistency();
       CleanCellClosureSlope(1.0);
     }
   }

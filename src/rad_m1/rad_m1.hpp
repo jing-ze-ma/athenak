@@ -2921,6 +2921,7 @@ class RadiationM1 {
   // cell-centred layout (<rad_m1>/clean_layout = cell, rad_m1_clean_cell.cpp)
   void CleanCellOldVector();
   void CleanCellFaceCoefficients();
+  void CleanCellConsistency();
   void CleanCellSlopeWeights();
   void CleanCellFirstIterate();
   void CleanCellRightHandSide();
@@ -2964,6 +2965,7 @@ class RadiationM1 {
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
   bool cln_all_low = false;     // the solve has every interior face low-order
+  bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell
   bool cln_closit = false;      // clean_closure: predict | iterate
   int cln_extrap = 0;           // clean_closure = extrap (1, cell default) | extrap2 (2)
   bool cln_edd = false;         // clean_closure = eddington (D = I/3, no rays)

@@ -160,6 +160,57 @@ void RadiationM1::CleanCellFaceSpeeds() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellConsistency
+//! \brief consistency bracket C = F_ray - f(Ur) of every interior face
+//! (clean_consistency): the rays' kinetic upwind flux of their cell moments, E row
+//! c (h+_L J_L + h-_R J_R) and stress rows c (k+_L J_L + (D - k+)_R J_R)
+//! (CleanCellOutStress), less the face flux of the solve (current marks, weights and
+//! slopes) of Ur = (J, J h), h = h+ + h-.  Physical boundary faces carry none.
+
+void RadiationM1::CleanCellConsistency() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+
+  // the rays' cell moments Ur
+  par_for("clc_raymom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real jr = x.cs(m,CLN_J,k,j,i);
+    x.u(m,CLC_U,k,j,i) = jr;
+    for (int b = 0; b < 3; ++b) {
+      x.u(m,CLC_U+1+b,k,j,i) = jr*(x.cs(m,CLN_HP+b,k,j,i) + x.cs(m,CLN_HM+b,k,j,i));
+    }
+  });
+  CleanGhostFill(cln_x, CLC_U, 4);
+
+  // the bracket of every interior face
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    par_for("clc_bracket", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (CleanBoundaryFace(x, dir, k, j, i)) return;
+      const int kl = k - dk, jl = j - dj, il = i - di;
+      const Real el = x.cs(m,CLN_J,kl,jl,il), er = x.cs(m,CLN_J,k,j,i);
+      Real f[4];
+      CleanCellFaceFlux(x, CLC_U, dir, m, k, j, i, false, f);
+      x.fc[dir](m,CLF_CB,k,j,i) = x.c*(x.cs(m,CLN_HP+dir,kl,jl,il)*el +
+                                       x.cs(m,CLN_HM+dir,k,j,i)*er) - f[0];
+      for (int b = 0; b < 3; ++b) {
+        Real fr = 0.0;
+        if (b < x.nf) {
+          fr = x.c*(CleanCellOutStress(x, dir, b, m, kl, jl, il, false)*el +
+                    CleanCellOutStress(x, dir, b, m, k, j, i, true)*er);
+        }
+        x.fc[dir](m,CLF_CB+1+b,k,j,i) = fr - f[1+b];
+      }
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellSlopeWeights
 //! \brief lagged weights of the van Leer slopes of the Newton iterate:
 //! pl = dr/(dl + dr), pr = dl/(dl + dr) where dl dr > 0, else 0, so that the half-slope
@@ -221,7 +272,7 @@ void RadiationM1::CleanCellFirstIterate() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellRightHandSide
 //! \brief B_E = E_old + h c kP a T^4 - r h c kE E_k - W, B_y = y_old, each less h div of
-//! the incoming boundary fluxes (exchange linearised about the iterate as in
+//! the E-independent face fluxes (exchange linearised about the iterate as in
 //! CleanRightHandSide), and the initial guess X = the iterate
 
 void RadiationM1::CleanCellRightHandSide() {
@@ -230,6 +281,7 @@ void RadiationM1::CleanCellRightHandSide() {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (cln_consist) CleanCellConsistency();
   CleanArgs x = CleanMakeArgs();
   const Real arad_ = arad;
   FluidRef fl = FluidRef::Get(pmy_pack);

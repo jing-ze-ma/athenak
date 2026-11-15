@@ -93,14 +93,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     std::string rc = pin->GetOrAddString("rad_m1","clean_recon","plm");
     cln_cell = (ly.compare("cell") == 0);
     cln_recon = (rc.compare("plm") == 0);
+    cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",false);
     cln_alpha = (al.compare("tau") == 0) ? 0 : (al.compare("tau_sensor") == 0) ? 1 :
                 (al.compare("tau_ray") == 0) ? 2 : (al.compare("one") == 0) ? 3 :
                 (al.compare("zero") == 0) ? 4 : -1;
     if ((!cln_cell && ly.compare("staggered") != 0) || cln_alpha < 0 ||
-        (!cln_recon && rc.compare("none") != 0)) {
+        (!cln_recon && rc.compare("none") != 0) || (cln_consist && !cln_cell)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1>/clean_layout = staggered | cell, clean_alpha = tau | "
-        << "tau_sensor | tau_ray | one | zero, clean_recon = plm | none" << std::endl;
+        << "tau_sensor | tau_ray | one | zero, clean_recon = plm | none; "
+        << "clean_consistency needs clean_layout = cell" << std::endl;
       std::exit(EXIT_FAILURE);
     }}
     cln_psi_eps = pin->GetOrAddReal("rad_m1","clean_psi_eps",1.0e-12);
