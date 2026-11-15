@@ -133,9 +133,8 @@ void RadiationM1::CleanClosureAfterSolve() {
   const Real dt = pmy_pack->pmesh->dt;
   if (t2_solve == M1_T2S_STAGE1) {
     if (cln_extrap != 2) return;
-    const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
     CleanRayMoments(cln_m1);
-    cln_t1 = time + (tb.a21 + tb.g)*dt;
+    cln_t1 = time + CleanStageOffset();
     cln_have_1 = true;
     return;
   }
@@ -162,7 +161,6 @@ void RadiationM1::CleanClosureAfterSolve() {
 
 void RadiationM1::CleanClosureExtrap() {
   const Real time = pmy_pack->pmesh->time;
-  const Real dt = pmy_pack->pmesh->dt;
   cln_nguard = 0;
 
   // a new step: the end of the last step becomes t^n
@@ -183,11 +181,7 @@ void RadiationM1::CleanClosureExtrap() {
 
   // the line M(t) = Mb + (t - tb)/(tb - ta) (Mb - Ma) at the stage time ts
   const bool stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
-  Real ts = time + dt;
-  if (t2_solve == M1_T2S_STAGE1) {
-    const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
-    ts = time + (tb.a21 + tb.g)*dt;
-  }
+  const Real ts = time + CleanStageOffset();
   const bool use1 = (cln_extrap == 2) && (t2_solve == M1_T2S_STAGE2) && cln_have_1 &&
                     (cln_t1 > cln_tn);
   const bool line = stage && (use1 || cln_have_p);
@@ -276,6 +270,63 @@ void RadiationM1::CleanClosureExtrap() {
 
   CleanClosureFill();
   CleanGhostFill(cln_s, 0, CLN_N);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::CleanStageOffset
+//! \brief time from the step start to the end of the current solve: the stage-1 abscissa
+//! (a21 + g) dt for stage 1, dt for stage 2 and backward Euler
+
+Real RadiationM1::CleanStageOffset() {
+  const Real dt = pmy_pack->pmesh->dt;
+  if (t2_solve == M1_T2S_STAGE1) {
+    const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
+    return (tb.a21 + tb.g)*dt;
+  }
+  return dt;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanRetardSetup
+//! \brief clean_ray_retard: the ray intensities at the step start, I_old.  The first
+//! formal solution of a new step takes those of the last formal solution (of the state
+//! the step starts from); the first of a run (or after a restart) the intensity of the
+//! moments of U^n, I = max(E + 3 F.Omega/c, 0).
+
+void RadiationM1::CleanRetardSetup() {
+  const Real time = pmy_pack->pmesh->time;
+  if (cln_iold.extent_int(0) == 0) {
+    auto &indcs = pmy_pack->pmesh->mb_indcs;
+    int is = indcs.is, ie = indcs.ie;
+    int js = indcs.js, je = indcs.je;
+    int ks = indcs.ks, ke = indcs.ke;
+    int n1 = indcs.nx1 + 2*indcs.ng;
+    int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+    int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+    int nmb1 = pmy_pack->nmb_thispack - 1;
+    const int nray = vet_nray;
+    Kokkos::realloc(cln_iold, nmb1 + 1, nray, n3, n2, n1);
+    Kokkos::realloc(cln_inew, nmb1 + 1, nray, n3, n2, n1);
+    auto io = cln_iold;
+    auto u0_ = u0;
+    auto ang_ = vet_ang;
+    const Real cl = c_light;
+    par_for("cln_iold0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real e = u0_(m,M1_E,k,j,i);
+      for (int r = 0; r < nray; ++r) {
+        const Real fo = u0_(m,M1_F1,k,j,i)*ang_(r,0) + u0_(m,M1_F1+1,k,j,i)*ang_(r,1)
+                        + u0_(m,M1_F1+2,k,j,i)*ang_(r,2);
+        io(m,r,k,j,i) = fmax(e + 3.0*fo/cl, 0.0);
+      }
+    });
+    cln_rt_t = time;
+    cln_rt_new = false;
+  } else if (time != cln_rt_t) {
+    if (cln_rt_new) std::swap(cln_iold, cln_inew);
+    cln_rt_t = time;
+  }
+  cln_rt_new = true;
 }
 
 //----------------------------------------------------------------------------------------

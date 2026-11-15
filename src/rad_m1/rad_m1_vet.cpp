@@ -3775,6 +3775,13 @@ void RadiationM1::VetShortCharSweep() {
   const int bmn_ = ibm_nr;
   const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];
   auto bmi_ = ibm_i;
+  // clean_ray_retard: the retarded formal solution over the time h from the step start
+  // to the stage (CleanRetardSetup keeps I_old, the ray intensities at the step start)
+  const bool ret = clean && cln_retard;
+  if (ret) CleanRetardSetup();
+  const Real irh = ret ? 1.0/(cl*CleanStageOffset()) : 0.0;
+  auto io_ = cln_iold;
+  auto in_ = cln_inew;
 
   // (1) extinction and source: cell by cell, or column by column for the Milne
   // diagnostic, which needs tau (the same arithmetic; a column loop per thread leaves
@@ -3959,8 +3966,19 @@ void RadiationM1::VetShortCharSweep() {
         const bool up = (m1 > 0.0);
         const int i = up ? iu : id;
         const Real am1 = fabs(m1);
-        const Real c0 = vc_(m,M1_VET_CHX,k,j,i);
-        const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
+        // extinction and source along the ray; clean_ray_retard: chi + 1/(c h) and
+        // (chi S + I_old/(c h))/(chi + 1/(c h)) (I_old of this ray at the step start)
+        auto chr = [&](const int kk, const int jj, const int ii) -> Real {
+          return vc_(m,M1_VET_CHX,kk,jj,ii) + irh;
+        };
+        auto sr = [&](const int kk, const int jj, const int ii) -> Real {
+          const Real sv = vc_(m,M1_VET_SRC,kk,jj,ii);
+          if (!ret) return sv;
+          const Real cv = vc_(m,M1_VET_CHX,kk,jj,ii);
+          return (cv*sv + irh*io_(m,r,kk,jj,ii))/(cv + irh);
+        };
+        const Real c0 = chr(k,j,i);
+        const Real s0 = sr(k,j,i);
         Real iv;
         const bool mimg = (l == 0) && (up ? mrlo : mrhi);   // vet_bc_reflect = mirror
         if (l == 0 && !wrap && !mimg) {
@@ -3968,7 +3986,7 @@ void RadiationM1::VetShortCharSweep() {
           // from the two boundary cells (exact for the deep linear S of a diffusion
           // regime), and linear in tau along the segment
           const int iin = up ? (i + 1) : (i - 1);
-          const Real s1 = vc_(m,M1_VET_SRC,k,j,iin);
+          const Real s1 = sr(k,j,iin);
           const Real su = fmax(1.5*s0 - 0.5*s1, 0.0);
           Real ib = up ? 0.0 : bbhi;
           if (x1src) {
@@ -4051,24 +4069,24 @@ void RadiationM1::VetShortCharSweep() {
             iup_v = waa*ip_(m,pr,rb,ka,ja) + wab*ip_(m,pr,rb,ka,jb)
                     + wba*ip_(m,pr,rb,kb,ja) + wbb*ip_(m,pr,rb,kb,jb);
           }
-          const Real cu = waa*vc_(m,M1_VET_CHX,ka,ja,iup)
-                          + wab*vc_(m,M1_VET_CHX,ka,jb,iup)
-                          + wba*vc_(m,M1_VET_CHX,kb,ja,iup)
-                          + wbb*vc_(m,M1_VET_CHX,kb,jb,iup);
-          const Real su = waa*vc_(m,M1_VET_SRC,ka,ja,iup)
-                          + wab*vc_(m,M1_VET_SRC,ka,jb,iup)
-                          + wba*vc_(m,M1_VET_SRC,kb,ja,iup)
-                          + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
+          const Real cu = waa*chr(ka,ja,iup)
+                          + wab*chr(ka,jb,iup)
+                          + wba*chr(kb,ja,iup)
+                          + wbb*chr(kb,jb,iup);
+          const Real su = waa*sr(ka,ja,iup)
+                          + wab*sr(ka,jb,iup)
+                          + wba*sr(kb,ja,iup)
+                          + wbb*sr(kb,jb,iup);
           if (vim != 0) {   // unify-sc-gd-1012 (#6) vet_interp: log | corner
             const Real wq[4] = {waa, wab, wba, wbb};
             // fin3-1012: a corner outside a vacuum face carries I = 0 (gate exactly 1
             // elsewhere, bitwise), its segment the edge cell's chi and S, as lin above
             const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja), gab*ip_(m,pr,rb,ka,jb),
                                 gba*ip_(m,pr,rb,kb,ja), gbb*ip_(m,pr,rb,kb,jb)};
-            const Real cq[4] = {vc_(m,M1_VET_CHX,ka,ja,iup), vc_(m,M1_VET_CHX,ka,jb,iup),
-                                vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
-            const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
-                                vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
+            const Real cq[4] = {chr(ka,ja,iup), chr(ka,jb,iup),
+                                chr(kb,ja,iup), chr(kb,jb,iup)};
+            const Real sq[4] = {sr(ka,ja,iup), sr(ka,jb,iup),
+                                sr(kb,ja,iup), sr(kb,jb,iup)};
             iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe);
           } else if (spl) {
             // segfix-1011: vet_seg = split, the two halves at the x1 face
@@ -4102,17 +4120,17 @@ void RadiationM1::VetShortCharSweep() {
                 qk = 0;
               }
               const int ic = (c == 0) ? iup : i;
-              cv = vc_(m,M1_VET_CHX,ks + qk,js + qj,ic);
-              sv = vc_(m,M1_VET_SRC,ks + qk,js + qj,ic);
+              cv = chr(ks + qk,js + qj,ic);
+              sv = sr(ks + qk,js + qj,ic);
               return in;
             };
             const Real wq[4] = {waa, wab, wba, wbb};
             const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja), gab*ip_(m,pr,rb,ka,jb),
                                 gba*ip_(m,pr,rb,kb,ja), gbb*ip_(m,pr,rb,kb,jb)};
-            const Real cq[4] = {vc_(m,M1_VET_CHX,ka,ja,iup), vc_(m,M1_VET_CHX,ka,jb,iup),
-                                vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
-            const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
-                                vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
+            const Real cq[4] = {chr(ka,ja,iup), chr(ka,jb,iup),
+                                chr(kb,ja,iup), chr(kb,jb,iup)};
+            const Real sq[4] = {sr(ka,ja,iup), sr(ka,jb,iup),
+                                sr(kb,ja,iup), sr(kb,jb,iup)};
             VetPathStep(acc, vim, wq, iq, cq, sq, iup_v, cu, su, s0, c0, dx1/am1, spl, spe,
                         sh2, sh3p, iv);
           }
@@ -4120,6 +4138,7 @@ void RadiationM1::VetShortCharSweep() {
         if (dbgc && iv < 0.0) {Kokkos::atomic_add(&dcl_(0), 1.0);}   // DEBUG
         iv = fmax(iv, 0.0);
         ip_(m,pw,r,k,j) = iv;
+        if (ret) in_(m,r,k,j,i) = iv;
         Real *ac = up ? acu : acd;
         const Real a = wr*iv;
         ac[0] += a;
@@ -4139,7 +4158,8 @@ void RadiationM1::VetShortCharSweep() {
           hp[2] += a*fmax(m3, 0.0);
         }
         if (nls_) {
-          if (up) {nlu += wr*fabs(iv - s0);} else {nld += wr*fabs(iv - s0);}
+          const Real sp = vc_(m,M1_VET_SRC,k,j,i);
+          if (up) {nlu += wr*fabs(iv - sp);} else {nld += wr*fabs(iv - sp);}
         }
       }
       if (accum) {

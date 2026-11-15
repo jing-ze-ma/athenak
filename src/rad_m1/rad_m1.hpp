@@ -2891,6 +2891,8 @@ class RadiationM1 {
   void CleanRayMoments(DvceArray5D<Real> dst);
   void CleanClosureExtrap();
   void CleanClosureAfterSolve();
+  Real CleanStageOffset();
+  void CleanRetardSetup();
   void CleanClosureIterate();
   void CleanCellFaceSpeeds();
   void CleanClosureFromRays();
@@ -2950,6 +2952,7 @@ class RadiationM1 {
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
   bool cln_closit = false;      // clean_closure: predict | iterate (default for cell)
   int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
+  bool cln_retard = false;      // clean_ray_retard: retarded formal solution
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: line-relaxation sweeps (preconditioner)
@@ -2974,6 +2977,11 @@ class RadiationM1 {
   bool cln_cand_be = false;     // the step that made cln_mc ended with backward Euler
   int cln_nguard = 0;           // cells whose extrapolated moments fell back to t^n
   Real cln_nguard_sum = 0.0, cln_next_sum = 0.0;   // guard falls, extrapolated closures
+  // clean_ray_retard: ray intensities (m,ray,k,j,i) at the step start (cln_iold) and of
+  // the last formal solution (cln_inew), the time of the step start
+  DvceArray5D<Real> cln_iold, cln_inew;
+  Real cln_rt_t = -1.0e300;
+  bool cln_rt_new = false;      // cln_inew holds a formal solution
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
