@@ -4,34 +4,17 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file resistivity_gnomonic.cpp
-//! \brief The resistive EMF on the CUBED SPHERE.
-//!
-//! WHY THIS NEEDS ITS OWN FILE. `current_density.hpp` branches on `use_spherical_polar`
-//! only, so on the cubed sphere it fell through to the Cartesian formula and divided by
-//! `size.dx1/dx2/dx3` -- which on this grid are index spacings, not lengths (x2 and x3
-//! are equiangular coordinates on [-1,1]). That is wrong by an O(1) factor everywhere.
-//! Its curvilinear branch is not usable either, for a reason that is not a matter of
-//! filling in different metric coefficients:
-//!
-//!   THE TANGENT BASIS IS NOT ORTHOGONAL. `b0.x2f` and `b0.x3f` hold B.nhat, the flux
-//!   density through the face, and on the cubed sphere nhat_xi is perpendicular to
-//!   e_eta, NOT parallel to e_xi. Stokes' theorem needs the component ALONG each edge,
-//!   B.e_xi, and the two differ by the metric:
-//!       B.e_xi = (B.nhat_xi + c B.nhat_eta)/s,   c = cos_cell, s = sin_cell,
-//!   so the correction is O(c) -- O(1) near a panel corner, not O(h). This is the same
-//!   trap that made the cell-centred EMF inconsistent in mhd_corner_e.cpp.
-//!
-//! The curl is therefore taken in two passes. Pass one applies Stokes' theorem on the
-//! loop through the four cell CENTRES around each edge (lengths from Coordinates::dxface,
-//! enclosed area from Coordinates::areaedge), which yields J in the FACE-NORMAL frame
-//! {rhat, nhat_xi, nhat_eta}. Pass two rotates it into the frame the edge EMFs are stored
-//! in -- E.that along the edge, which is what mhd_ct.cpp's dxedge*E/area consumes and
-//! what GnomonicEquiangleEmfX1 produces for the ideal EMF -- and multiplies by eta. The
-//! two passes cannot be fused: the rotation mixes J at x2-edges with J at x3-edges, which
-//! are different points.
+//! \brief The resistive EMF on the cubed sphere. The face fields b0.x2f / b0.x3f hold
+//! B.nhat, and the tangent basis is not orthogonal: Stokes' theorem needs the component
+//! along each edge, B.e_xi = (B.nhat_xi + c B.nhat_eta)/s (c = cos_cell, s = sin_cell).
+//! The curl is taken in two passes. Pass one applies Stokes' theorem on the loop through
+//! the four cell centres around each edge (lengths from Coordinates::dxface, area from
+//! Coordinates::areaedge), which gives J in the face-normal frame {rhat, nhat_xi,
+//! nhat_eta}. Pass two rotates it into the frame of the edge EMFs (E.that along the
+//! edge, as GnomonicEquiangleEmfX1 produces for the ideal EMF) and multiplies by eta.
+//! The rotation mixes J at x2 edges with J at x3 edges, so the passes are separate.
 
 #include <iostream>
-
 #include <cstdio>
 #include <cstdlib>
 #include <algorithm>
@@ -46,6 +29,7 @@
 #include "diffusion/radial_face_weights.hpp"
 
 //----------------------------------------------------------------------------------------
+//! \fn Real BcovXi
 //! \brief B.e_xi at the centre of an x2 face, from the face-normal components. The
 //! partner component lives on the four x3 faces that share this face's corners.
 
@@ -59,6 +43,7 @@ Real BcovXi(const DvceFaceFld4D<Real> &b, const DvceArray3D<Real> &cosf,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real BcovEta
 //! \brief B.e_eta at the centre of an x3 face.
 
 KOKKOS_INLINE_FUNCTION
@@ -71,8 +56,8 @@ Real BcovEta(const DvceFaceFld4D<Real> &b, const DvceArray3D<Real> &cosf,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Resistivity::CsVertexJFix
-//! \brief cornerfix-1103 <mesh>/cs_vertex_3cell.  Pass 1's dual loops at a cube vertex
+//! \fn void Resistivity::CsVertexJFix
+//! \brief <mesh>/cs_vertex_3cell: pass 1's dual loops at a cube vertex
 //! run through the made-up corner block (ng x ng diagonal ghosts: no physical cells).
 //! j1 = true: the vertex RADIAL current from the 3-cell loop through this block's corner
 //! cell and the two seam ghost cells.  Each panel forms the part of the loop it owns,
@@ -119,7 +104,7 @@ void Resistivity::CsVertexJFix(const DvceFaceFld4D<Real> &b0, const int il,
       // the vertex is the midpoint of the point-reflected pair (one step into the x3-seam
       // ghost row, one into the x2-seam ghost column, diagonally)
       const Real p1 = j1at(kc-dk, jc+dj), p2 = j1at(kc+dk, jc-dj);
-      // cornerfix3-1103: the pair's curvature term (half the second difference along the
+      // the pair's curvature term (half the second difference along the
       // pair's direction, centred on the own interior edge (kc+dk, jc+dj), from the two
       // own seam edges next to the vertex), smoothness-gated and bounded (cs_fc3)
       const Real fa = jn1(m,kc,jc+2*dj,i), fb = jn1(m,kc+dk,jc+dj,i);
@@ -140,7 +125,7 @@ void Resistivity::CsVertexJFix(const DvceFaceFld4D<Real> &b0, const int il,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Resistivity::AddEMFGnomonicResist
+//! \fn void Resistivity::AddEMFGnomonicResist
 //! \brief Adds E_resistive = eta J to the edge-centred electric fields, cubed sphere.
 
 void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
@@ -172,9 +157,8 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   auto jn2 = jnorm.x2e;
   auto jn3 = jnorm.x3e;
 
-  // cornerfix2-1103 <mesh>/cs_vertex_3cell: jn2 one layer further in k and jn3 in j (the
-  // vertex point-reflection pairs of the ambipolar / mean_j vertex J, CsEdgeOps::X1);
-  // extra entries only, every value computed before is unchanged
+  // <mesh>/cs_vertex_3cell: jn2 one layer further in k and jn3 in j (the vertex
+  // point-reflection pairs of the ambipolar / mean_j vertex J, CsEdgeOps::X1)
   const int v3w = pmy_pack->pmesh->cs_vertex_3cell ? 1 : 0;
   // ---- pass 1: J in the face-normal frame, by Stokes' theorem on the dual loop --------
   // Each loop is bounded by the four cell centres around the edge, so every side passes
@@ -187,9 +171,8 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
                   + dxf2(m,k-1,j,i)*BcovXi(b,cxi,sxi,m,k-1,j,i))/ae1(m,k,j,i);
   };
 
-  // STRETCHED radial grid: the radial difference is taken AT the x1 face (see
-  // RadialFaceWeights).  Off, or on an unstretched grid, this is the two-point loop,
-  // bit for bit.
+  // stretched radial grid: the radial difference is taken at the x1 face (see
+  // RadialFaceWeights); otherwise the two-point loop
   const bool x1c = cs_resist_x1_centred && (pmy_pack->pmesh->use_grid_stretch_r ||
                                             pmy_pack->pmesh->use_grid_stretch_r_poly);
   if (!x1c) {
@@ -206,7 +189,7 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
                     - dxf1(m,k,j,i)*b.x1f(m,k,j,i)
                     + dxf1(m,k,j-1,i)*b.x1f(m,k,j-1,i))/ae3(m,k,j,i);
     };
-    // r1mspeed-1102: pass 1 as ONE launch (independent loops; bitwise)
+    // pass 1 as one launch (independent loops)
     par_for_fused3("res_cs_j", DevExeSpace(), nmb1,
                    LoopBox3{ks, ke+1, js, je+1, is, ie}, j1_,
                    LoopBox3{ks-v3w, ke+1+v3w, js-1, je+1, is, ie+1}, j2_,
@@ -270,13 +253,12 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
                    LoopBox3{ks-1, ke+1, js-v3w, je+1+v3w, is, ie+1}, j3c_);
   }
 
-  // cornerfix-1103 <mesh>/cs_vertex_3cell: no J entry may read the cube-vertex corner
+  // <mesh>/cs_vertex_3cell: no J entry may read the cube-vertex corner
   if (pmy_pack->pmesh->cs_vertex_3cell) {
     CsVertexJFix(b0, is, ie+1, false);
     CsVertexJFix(b0, is, ie, true);
   }
   const bool v3_ = pmy_pack->pmesh->cs_vertex_3cell;
-
 
   // ---- pass 2: rotate into the edge (covariant) frame and multiply by eta -------------
   // J.e_xi = (J.nhat_xi + c J.nhat_eta)/s and likewise for eta, the same transform
@@ -294,7 +276,7 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   auto e1_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
     Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j-1,i)
                   + eta_b_(m,k-1,j,i) + eta_b_(m,k-1,j-1,i));
-    CsVtx3 vx;   // cornerfix-1103: a cube vertex has three cells, not four
+    CsVtx3 vx;   // a cube vertex has three cells, not four
     if (v3_ && CsVertexAt(msz_.d_view(m), k, j, js, je, ks, ke, vx)) {
       et = CsVertex3(eta_b_, m, vx, i);
     }
@@ -316,8 +298,9 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
                          + jn2(m,k,j-1,i) + jn2(m,k+1,j-1,i));
     e3(m,k,j,i) += et*(jn3(m,k,j,i) + cxi(m,k,j)*j2a)/sxi(m,k,j);
   };
-  // r1mspeed-1102: pass 2 as ONE launch (each edge loop reads only J; bitwise)
-  par_for_fused3("res_cs_e", DevExeSpace(), nmb1, LoopBox3{ks, ke+1, js, je+1, is, ie}, e1_,
+  // pass 2 as one launch (each edge loop reads only J)
+  par_for_fused3("res_cs_e", DevExeSpace(), nmb1,
+                 LoopBox3{ks, ke+1, js, je+1, is, ie}, e1_,
                  LoopBox3{ks, ke+1, js, je, is, ie+1}, e2_,
                  LoopBox3{ks, ke, js, je+1, is, ie+1}, e3_);
   // with ambipolar diffusion the two-chart mean is taken once, after the ambipolar EMF
