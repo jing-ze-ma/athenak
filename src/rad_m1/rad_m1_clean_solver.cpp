@@ -11,6 +11,7 @@
 #include <cmath>
 
 #include "athena.hpp"
+#include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
@@ -60,6 +61,17 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.ke = indcs.ke;
   x.multi_d = pmy_pack->pmesh->multi_d;
   x.three_d = pmy_pack->pmesh->three_d;
+  x.sph = pmy_pack->pmesh->use_spherical_polar;
+  if (x.sph) {
+    auto *pc = pmy_pack->pcoord;
+    x.vol = pc->volume;
+    x.area = pc->area;
+    x.dxf = pc->dxface;
+    x.x1v = pc->x1v;
+    x.x1f = pc->xx1f;
+    x.x2v = pc->x2v;
+    x.x2f = pc->xx2f;
+  }
   return x;
 }
 

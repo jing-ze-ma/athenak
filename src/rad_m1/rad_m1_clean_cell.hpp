@@ -18,13 +18,20 @@
 //!   fE   = c (y_d,L + y_d,R)/2 - al (s/2) (E_R - E_L) + (1 - al) RC
 //!   fY_b = c (D_bd,L E_L + D_bd,R E_R)/2 - al (s/2) (y_b,R - y_b,L)
 //!   RC   = th h c^2 [(g_L + g_R)/2 - ((D_dd E)_R - (D_dd E)_L)/dx_d]
-//! with g_i = ((D_dd E)_{i+1} - (D_dd E)_{i-1})/(2 dx_d), th = 1/(1 + h c chi_f),
+//! with g_i = ((D_dd E)_{i+1} - (D_dd E)_{i-1})/(x_{i+1} - x_{i-1}), dx_d the distance
+//! between the cell centres across the face, th = 1/(1 + h c chi_f),
 //! s = c sqrt(max(D_dd,L, D_dd,R)) and al the dissipation weight.  RC is the momentum
 //! interpolation of the flux to the face: where h c chi >> 1 it turns fE into the compact
 //! diffusion flux.  The jumps (E_R - E_L, y_R - y_L) are those of the face states: first
 //! order, or (clean_recon = plm) the van Leer reconstruction of src/reconstruct/plm.hpp,
 //! u_L^+ = u_L + dl dr/(dl + dr), whose weights dr/(dl + dr), dl/(dl + dr) are taken
 //! from the Newton iterate (lagged) so that every pass stays a linear solve.
+//!
+//! On a spherical-polar mesh y holds the physical components (y_r, y_theta, y_phi), div
+//! is the finite-volume divergence sum A_f f/V, with the angular-momentum conserving
+//! weights of CleanCellSphWeights, and the stress rows carry the curvature terms of
+//! CleanCellSphSource.  E changes only by face fluxes, so the total energy is conserved
+//! to round-off.
 
 #include <cmath>
 
@@ -161,6 +168,100 @@ bool CleanFaceDissipation(const CleanArgs &x, const int dir, const int m, const 
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanCellFaceDistance
+//! \brief distance between the centres of the two cells across face (k,j,i) normal to
+//! dir: dx_d on a Cartesian mesh; on spherical polar dr, r dtheta and r sin(theta) dphi
+//! between the volume centroids
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCellFaceDistance(const CleanArgs &x, const int dir, const int m, const int k,
+                           const int j, const int i) {
+  if (!x.sph) return 1.0/x.idx[dir];
+  if (dir == 0) return x.dxf.x1f(m,k,j,i);
+  return (dir == 1) ? x.dxf.x2f(m,k,j,i) : x.dxf.x3f(m,k,j,i);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCellRhieChow
+//! \brief coefficients q of (D_dd E) in the cells L-1, L, R, R+1 of the RC term of the
+//! interior face (k,j,i) normal to dir with dissipation weight al.  The cell gradients
+//! g_L, g_R are central over the centre distances, the face gradient compact.
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellRhieChow(const CleanArgs &x, const int dir, const Real al, const int m,
+                       const int k, const int j, const int i, Real q[4]) {
+  const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+  const Real a = (1.0 - al)*x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c;
+  const Real d0 = CleanCellFaceDistance(x, dir, m, k, j, i);
+  const Real dm = CleanCellFaceDistance(x, dir, m, k-dk, j-dj, i-di);
+  const Real dp = CleanCellFaceDistance(x, dir, m, k+dk, j+dj, i+di);
+  const Real gl = 0.5*a/(dm + d0), gr = 0.5*a/(d0 + dp);
+  q[0] = -gl;
+  q[1] = a/d0 - gr;
+  q[2] = gl - a/d0;
+  q[3] = gr;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCellSphWeights
+//! \brief spherical polar: weights of the fluxes through the lower (wm) and upper (wp)
+//! faces of cell (k,j,i) normal to dir in h div f, per row (E, y_r, y_theta, y_phi):
+//! h A_f/V, times r_f/r on the r faces of the y_theta and y_phi rows and
+//! sin(theta_f)/sin(theta) on the theta faces of the y_phi row.  These are the
+//! angular-momentum conserving forms r^-3 d_r(r^3 P_ra) and sin^-2 d_theta(sin^2 P_tp),
+//! which contain the curvature terms P_rt/r, P_rp/r and cot(theta) P_tp/r.
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellSphWeights(const CleanArgs &x, const int dir, const int m, const int k,
+                         const int j, const int i, Real wm[4], Real wp[4]) {
+  const Real hv = x.h/x.vol(m,k,j,i);
+  Real am, ap;
+  if (dir == 0) {
+    am = x.area.x1f(m,k,j,i);
+    ap = x.area.x1f(m,k,j,i+1);
+  } else if (dir == 1) {
+    am = x.area.x2f(m,k,j,i);
+    ap = x.area.x2f(m,k,j+1,i);
+  } else {
+    am = x.area.x3f(m,k,j,i);
+    ap = x.area.x3f(m,k+1,j,i);
+  }
+  for (int r = 0; r < 4; ++r) {
+    wm[r] = hv*am;
+    wp[r] = hv*ap;
+  }
+  if (dir == 0) {
+    const Real rm = x.x1f(m,i)/x.x1v(m,i), rp = x.x1f(m,i+1)/x.x1v(m,i);
+    for (int r = 2; r < 4; ++r) {
+      wm[r] *= rm;
+      wp[r] *= rp;
+    }
+  } else if (dir == 1) {
+    const Real sc = sin(x.x2v(m,j));
+    wm[3] *= sin(x.x2f(m,j))/sc;
+    wp[3] *= sin(x.x2f(m,j+1))/sc;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCellSphSource
+//! \brief spherical polar: h times the remaining curvature terms of the stress divergence
+//! of cell (k,j,i) per unit E of the cell, g_b for the rows y_b: -(P_tt + P_pp)/r in y_r
+//! and -cot(theta) P_pp/r in y_theta, in the face-area form -c (D_tt + D_pp)
+//! (A_r+ - A_r-)/(2V) and -c D_pp (A_t+ - A_t-)/V that cancels the area terms of a
+//! uniform isotropic stress exactly
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int j,
+                        const int i, Real g[3]) {
+  const Real hv = x.h*x.c/x.vol(m,k,j,i);
+  const Real dtt = CleanDiag(x, 1, 1, m, k, j, i), dpp = CleanDiag(x, 2, 2, m, k, j, i);
+  g[0] = -0.5*hv*(dtt + dpp)*(x.area.x1f(m,k,j,i+1) - x.area.x1f(m,k,j,i));
+  g[1] = (x.nf > 1) ? -hv*dpp*(x.area.x2f(m,k,j+1,i) - x.area.x2f(m,k,j,i)) : 0.0;
+  g[2] = 0.0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanCellGhost
 //! \brief incoming state outside the open physical boundary face (k,j,i) normal to dir:
 //! the beam at x1min (E_g = F_b/(c sqrt(D_11)), y_g,b = D_1b F_b/(c D_11) with D of the
@@ -289,12 +390,12 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
   }
   Real al, hs;
   const bool low = CleanFaceDissipation(x, dir, m, k, j, i, al, hs);
-  const Real th = x.fc[dir](m,CLF_TH,k,j,i);
-  const Real q = 0.75*(1.0 - al)*th*x.h*x.c*x.c*x.idx[dir];
+  Real q[4];
+  CleanCellRhieChow(x, dir, al, m, k, j, i, q);
   Real cj[4] = {0.0, -1.0, 1.0, 0.0};
   if (!low) CleanJumpCoefficients(x, dir, 0, m, k, j, i, cj);
-  jl[0][0] = -hs*cj[1] + q*CleanDiag(x, dir, dir, m, kl, jl_, il);
-  jr[0][0] = -hs*cj[2] - q*CleanDiag(x, dir, dir, m, k, j, i);
+  jl[0][0] = -hs*cj[1] + q[1]*CleanDiag(x, dir, dir, m, kl, jl_, il);
+  jr[0][0] = -hs*cj[2] + q[2]*CleanDiag(x, dir, dir, m, k, j, i);
   jl[0][1+dir] = 0.5*x.c;
   jr[0][1+dir] = 0.5*x.c;
   for (int b = 0; b < x.nf; ++b) {
@@ -341,10 +442,10 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
   const int km = kl - dk, jm = jl_ - dj, im = il - di;
   Real al, hs;
   const bool lo = CleanFaceDissipation(x, dir, m, k, j, i, al, hs);
-  const Real th = x.fc[dir](m,CLF_TH,k,j,i);
-  const Real q = 0.25*(1.0 - al)*th*x.h*x.c*x.c*x.idx[dir];
-  f[0] += q*(CleanDiag(x, dir, dir, m, kp, jp, ip)*x.u(m,v,kp,jp,ip) -
-             CleanDiag(x, dir, dir, m, km, jm, im)*x.u(m,v,km,jm,im));
+  Real q[4];
+  CleanCellRhieChow(x, dir, al, m, k, j, i, q);
+  f[0] += q[3]*CleanDiag(x, dir, dir, m, kp, jp, ip)*x.u(m,v,kp,jp,ip) +
+          q[0]*CleanDiag(x, dir, dir, m, km, jm, im)*x.u(m,v,km,jm,im);
   // reconstruction terms of the dissipation in the states of L-1 and R+1
   if (!x.recon || lo) return;
   for (int c = 0; c <= x.nf; ++c) {
@@ -368,7 +469,19 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
     Real fp[4], fm[4];
     CleanCellFaceFlux(x, v, dir, m, k+dk, j+dj, i+di, with_source, fp);
     CleanCellFaceFlux(x, v, dir, m, k, j, i, with_source, fm);
-    for (int r = 0; r < 4; ++r) div[r] += x.h*x.idx[dir]*(fp[r] - fm[r]);
+    if (x.sph) {
+      Real wm[4], wp[4];
+      CleanCellSphWeights(x, dir, m, k, j, i, wm, wp);
+      for (int r = 0; r < 4; ++r) div[r] += wp[r]*fp[r] - wm[r]*fm[r];
+    } else {
+      for (int r = 0; r < 4; ++r) div[r] += x.h*x.idx[dir]*(fp[r] - fm[r]);
+    }
+  }
+  // the curvature terms of the stress divergence (linear in E of the cell)
+  if (x.sph) {
+    Real g[3];
+    CleanCellSphSource(x, m, k, j, i, g);
+    for (int b = 0; b < x.nf; ++b) div[1+b] += g[b]*x.u(m,v,k,j,i);
   }
 }
 
@@ -383,14 +496,19 @@ void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, con
   for (int dir = 0; dir < 3; ++dir) {
     if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
     const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-    Real s[4];
+    Real s[4], wm[4], wp[4];
+    for (int r = 0; r < 4; ++r) {
+      wm[r] = x.h*x.idx[dir];
+      wp[r] = wm[r];
+    }
+    if (x.sph) CleanCellSphWeights(x, dir, m, k, j, i, wm, wp);
     if (CleanBoundaryFace(x, dir, k+dk, j+dj, i+di)) {
       CleanCellFaceSource(x, dir, m, k+dk, j+dj, i+di, s);
-      for (int r = 0; r < 4; ++r) div[r] += x.h*x.idx[dir]*s[r];
+      for (int r = 0; r < 4; ++r) div[r] += wp[r]*s[r];
     }
     if (CleanBoundaryFace(x, dir, k, j, i)) {
       CleanCellFaceSource(x, dir, m, k, j, i, s);
-      for (int r = 0; r < 4; ++r) div[r] -= x.h*x.idx[dir]*s[r];
+      for (int r = 0; r < 4; ++r) div[r] -= wm[r]*s[r];
     }
   }
 }

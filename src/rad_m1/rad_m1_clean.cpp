@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <string>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -23,6 +24,15 @@
 #include "rad_m1/rad_m1_clean_cell.hpp"
 
 namespace radm1 {
+//----------------------------------------------------------------------------------------
+//! \fn void CleanFatal
+//! \brief stops the run with a message about an unsupported clean-scheme setup
+
+static void CleanFatal(const std::string &msg) {
+  std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << msg << std::endl;
+  std::exit(EXIT_FAILURE);
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanInit
 //! \brief allocates the arrays of the clean solve and checks that the setup is supported
@@ -54,24 +64,35 @@ void RadiationM1::CleanInit() {
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
   }
   if (cln_retard && (vet_mbs != nullptr || vsc_rot || vet_milne)) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<rad_m1>/clean_ray_retard needs the single-MeshBlock vet_sc sweep with "
-              << "a fixed direction set (no rotation, no vet_milne)" << std::endl;
-    std::exit(EXIT_FAILURE);
+    CleanFatal("<rad_m1>/clean_ray_retard needs the single-MeshBlock vet_sc sweep with a "
+               "fixed direction set (no rotation, no vet_milne)");
   }
 
   int nranks = 1;
 #if MPI_PARALLEL_ENABLED
   nranks = global_variable::nranks;
 #endif
-  const bool cartesian = !pmy_pack->pmesh->use_cubed_sphere &&
-                         !pmy_pack->pmesh->use_spherical_polar;
-  if (nmb != 1 || nranks != 1 || !cartesian || !vet_sc || !vet_full || chat != c_light) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<rad_m1>/scheme = clean currently needs one MeshBlock on one rank, a "
-              << "Cartesian mesh, closure = vet_sc with vet_tensor = full, and chat = c"
-              << std::endl;
-    std::exit(EXIT_FAILURE);
+  Mesh *pm = pmy_pack->pmesh;
+  if (nmb != 1 || nranks != 1 || chat != c_light) {
+    CleanFatal("<rad_m1>/scheme = clean currently needs one MeshBlock on one rank and "
+               "chat = c");
+  }
+  if (pm->use_cubed_sphere) {
+    CleanFatal("<rad_m1>/scheme = clean does not run on the cubed sphere yet");
+  }
+  if (pm->use_spherical_polar) {
+    // the vet_sc rays are Cartesian: the closure is the sphere's until the spherical
+    // ray solver is connected
+    if (!cln_cell || !cln_sphere || pm->use_polar_boundary || pm->multilevel) {
+      CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_layout = cell "
+                 "and clean_closure = sphere, a wedge clear of the poles and no SMR/AMR");
+    }
+    cln_init = true;
+    return;
+  }
+  if (cln_sphere || !vet_sc || !vet_full) {
+    CleanFatal("<rad_m1>/scheme = clean on a Cartesian mesh needs closure = vet_sc with "
+               "vet_tensor = full (clean_closure = sphere is for spherical polar)");
   }
   // the formal solution must provide the half-range sums and C1
   impl_beam_hr = true;

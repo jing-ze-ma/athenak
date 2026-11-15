@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "athena.hpp"
+#include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "rad_m1/rad_m1.hpp"
@@ -29,6 +30,11 @@ namespace radm1 {
 //! new dt.
 
 void RadiationM1::CleanClosure() {
+  if (cln_sphere) {
+    if (!cln_havec) CleanClosureSphere();
+    cln_havec = true;
+    return;
+  }
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
   if (cln_havec && time == cln_tc && dt == cln_dtb) return;
@@ -447,6 +453,56 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
       if (scat) opac_(m,M1_OP_S,k,j,i) = d*os;
     }
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanClosureSphere
+//! \brief spherical polar: the exact ray moments of a uniformly bright sphere of radius
+//! R = clean_sphere_radius about the origin seen through vacuum.  Outside it the rays
+//! fill the cone mu > mu_c = sqrt(1 - R^2/r^2) about r_hat: D_rr = (1 + mu_c + mu_c^2)/3,
+//! D_tt = D_pp = (1 - D_rr)/2, h+_r = (1 + mu_c)/2, h-_r = 0, h+-_t,p = +-S/(pi (1 - mu_c))
+//! with S = int_{mu_c}^1 sqrt(1 - mu^2) dmu, C1 = 1; R -> 0 is the point source.  Inside
+//! (r <= R) the radiation is isotropic: D = I/3, h+- = +-1/4, C1 = 0.
+
+void RadiationM1::CleanClosureSphere() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Real rs = cln_sph_r;
+  auto x1v = pmy_pack->pcoord->x1v;
+  auto cs = cln_s;
+
+  par_for("cln_sphere", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real r = x1v(m,i);
+    Real drr = 1.0/3.0, hpr = 0.25, hmr = -0.25, ht = 0.25, c1 = 0.0;
+    if (r > rs) {
+      const Real q = rs/r;
+      const Real mc = std::sqrt(fmax(1.0 - q*q, 0.0));
+      drr = (1.0 + mc + mc*mc)/3.0;
+      hpr = 0.5*(1.0 + mc);
+      hmr = 0.0;
+      // S/(pi (1 - mu_c)) with 1 - mu_c = q^2/(1 + mu_c); S ~ 2 q^3/3 for small q
+      const Real s = 0.5*(std::asin(q) - mc*q);
+      ht = (q > 1.0e-4) ? s*(1.0 + mc)/(M_PI*q*q) : 2.0*q/(3.0*M_PI);
+      c1 = 1.0;
+    }
+    cs(m,CLN_D11,k,j,i) = drr;
+    cs(m,CLN_D11+1,k,j,i) = 0.5*(1.0 - drr);
+    cs(m,CLN_D11+2,k,j,i) = 0.5*(1.0 - drr);
+    for (int a = 3; a < 6; ++a) cs(m,CLN_D11+a,k,j,i) = 0.0;
+    cs(m,CLN_HP,k,j,i) = hpr;
+    cs(m,CLN_HM,k,j,i) = hmr;
+    for (int a = 1; a < 3; ++a) {
+      cs(m,CLN_HP+a,k,j,i) = ht;
+      cs(m,CLN_HM+a,k,j,i) = -ht;
+    }
+    cs(m,CLN_C1,k,j,i) = c1;
+    cs(m,CLN_J,k,j,i) = 1.0;
+  });
+  CleanGhostFill(cln_s, 0, CLN_N);
 }
 
 //----------------------------------------------------------------------------------------
