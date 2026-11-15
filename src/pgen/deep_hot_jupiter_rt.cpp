@@ -275,31 +275,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
   }
-  // problem/budget_dt > 0 (DIAGNOSTIC): the per-shell ledger (EBudCk).  Read only if the
-  // key exists, so a run without it is untouched (also its restart files).
-  ebud::dt_out = pin->DoesParameterExist("problem","budget_dt")
-                 ? pin->GetReal("problem","budget_dt") : 0.0;
-  ebud::on = (ebud::dt_out > 0.0);
-  if (ebud::on) {
-    MeshBlockPack *peb = pmy_mesh_->pmb_pack;
-    if (peb->phydro == nullptr || peb->pmhd != nullptr
-        || pin->GetString("time","integrator") != "rk2") {
-      std::cout << "### FATAL ERROR: problem/budget_dt needs pure hydro and rk2"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    const int n1 = pmy_mesh_->mb_indcs.nx1;
-    ebud::acc = new DvceArray2D<Real>("eb_acc", ebud::NQ, n1 + 1);
-    ebud::tmp = new DvceArray2D<Real>("eb_tmp", 2, n1 + 1);
-    ebud::fhst = new DvceArray2D<Real>("eb_fhst", 4, n1);
-    {
-      auto &ic = pmy_mesh_->mb_indcs;
-      ebud::cpre = new DvceArray5D<Real>("eb_cpre", peb->nmb_thispack, 2,
-                                         ic.nx3 + 2*ic.ng, ic.nx2 + 2*ic.ng,
-                                         ic.nx1 + 2*ic.ng);
-    }
-    if (!peb->phydro->c2p_track) peb->phydro->EnableC2PTrack();
-  }
   // problem/wall_closed (DEFAULT TRUE, user 09-27; false = the old reservoir wall): make
   // the inner radial boundary a CLOSED wall.
   // The user boundary (HydrostaticEquilibrium) leaves the inner ghosts at the state the
@@ -1156,12 +1131,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << "problem/ck_impl_once = true" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (ebud::on) {
-      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_strang is not "
-                << "supported with the energy-budget diagnostic (ebud, one call per "
-                << "cycle)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     user_split_once = false;
     user_split_pre_late = (pmy_mesh_->pmb_pack->pmhd != nullptr);
   }
@@ -1207,7 +1176,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (!two_stream_rt::ck_implicit) why += " ck_implicit = false;";
     if (pin->GetString("time","integrator").compare("rk2") != 0) why += " integrator != rk2;";
     if (rt_test_freeze) why += " rt_test_freeze;";
-    if (ebud::on) why += " budget_dt;";
     if (two_stream_rt::rt_rad_force) why += " rt_rad_force;";
     if (two_stream_rt::ck_impl_warm) why += " ck_impl_warm;";
     // prod-1102: ck_strang (operator-split ck halves) and the in-stage hesdirk2 ck are

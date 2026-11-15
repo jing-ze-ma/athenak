@@ -91,7 +91,6 @@ void WbTanProbe(Mesh *pm, const Real bdt) {
 
 void SourceFunc(Mesh *pm, Real bdt) {
   if (dhj_wbt.on && !dhj_wbt.ready) WbTanProbe(pm, bdt);
-  EBudStage(pm, bdt);
   DhjFluxStage(pm);
   if (amh::on) AmHstStage(pm);
   if (amh::fix || amh::trans) AmFix(pm, bdt);
@@ -240,16 +239,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // inside a device lambda is illegal on a discrete GPU (see CLAUDE.md).
     const bool is_hydro_ = (pmbp->phydro != nullptr);
     const bool is_mhd_ = (pmbp->pmhd != nullptr);
-    // problem/budget_dt: the whole kernel's energy and mass change per shell, weighted
-    // by what survives the rk2 combination (0.5 dt/bdt: 0.5 in stage 1, 1 in stage 2)
-    const bool eb_on = ebud::on && ebud::started;
-    DvceArray2D<Real> ebacc;
-    if (eb_on) ebacc = *ebud::acc;
-    const Real eb_w = 0.5*pm->dt/bdt;
     par_for("usrsource", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const Real eb_e0 = u0(m,IEN,k,j,i);
-        const Real eb_d0 = u0(m,IDN,k,j,i);
         
         Real x1v, x2v, x3v;
         if (use_spherical_polar) {
@@ -542,12 +533,6 @@ void SourceFunc(Mesh *pm, Real bdt) {
         if (sponge_bottom_) {
           u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
           u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
-        }
-        if (eb_on) {
-          Kokkos::atomic_add(&ebacc(4, i-is),
-                             (u0(m,IEN,k,j,i) - eb_e0)*volume(m,k,j,i)*eb_w);
-          Kokkos::atomic_add(&ebacc(5, i-is),
-                             (u0(m,IDN,k,j,i) - eb_d0)*volume(m,k,j,i)*eb_w);
         }
     });
     // dhjwball-1106: x2/x3 (x1: the WB fg of this kernel); reads this stage's caches
@@ -1098,7 +1083,6 @@ void DhjCkRtSplit(Mesh *pm, const Real dt) {
   }
   // problem/ck_impl_every > 1: the cadence (full call every N cycles, linearised step in
   // between); see utils/two_stream_column_ck.hpp
-  EBudCk(pm, dt, true);
   const int64_t nf0 = two_stream_rt::ck_cad_nfull;
   two_stream_rt::ck_cad_half = pm->pgen->user_split_half;   // rkgfuse-1102 ck_strang
   if (two_stream_rt::ck_impl_every > 1) {
@@ -1106,7 +1090,6 @@ void DhjCkRtSplit(Mesh *pm, const Real dt) {
   } else {
     picket_fence_two_stream_RT(pm, dt);
   }
-  EBudCk(pm, dt, false);
   if (dhj_ck_count_every > 0) {
     DhjCkCount((two_stream_rt::ck_impl_every <= 1) || (two_stream_rt::ck_cad_nfull != nf0));
     if (pm->ncycle % dhj_ck_count_every == 0) DhjCkT2Report(pm, false);

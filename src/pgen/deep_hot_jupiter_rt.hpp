@@ -510,21 +510,6 @@ void AmCell(const AmV &v, const int m, const int k, const int j, const int i, Am
     if (i == v.is) o.twall = fl1*rl*rb1;
   }
 }
-// problem/budget_dt (DIAGNOSTIC, branch dhj-budget-0929; off unless the key exists and
-// is > 0): per-shell energy and mass ledger, see EBudCk
-namespace ebud {
-constexpr int NQ = 20;
-inline bool on = false;
-inline bool started = false;
-inline Real dt_out = 0.0;
-inline Real t_next = 0.0;
-inline DvceArray2D<Real> *acc = nullptr;    // (NQ, nx1+1)
-inline DvceArray2D<Real> *tmp = nullptr;    // (2, nx1+1): shell E and M
-inline DvceArray2D<Real> *fhst = nullptr;  // (4, nx1): floors pending for the hst columns
-// (nmb, 2, n3, n2, n1): u0(IEN) and e_int before ck
-inline DvceArray5D<Real> *cpre = nullptr;
-inline int64_t nfull0 = 0;                  // ck_cad_nfull before the call
-}  // namespace ebud
 // roche-wbtan-1101 problem/roche_wb_tan (default false): the TANGENTIAL (x2/x3) part of
 // the potential force (centrifugal of rot_potential + the Roche tide) as the hydro's OWN
 // discrete tangential momentum residual of the equipotential equilibrium W_eq, instead of
@@ -540,9 +525,6 @@ inline int64_t nfull0 = 0;                  // ck_cad_nfull before the call
 // between rho g_t . v and the flux-form potential work lands in e_int, as before.
 inline wbtan::WbTan dhj_wbt;   // wbtan_common.hpp
 void WbTanProbe(Mesh *pm, const Real bdt);
-void EBudStage(Mesh *pm, const Real bdt);
-void EBudCk(Mesh *pm, const Real dt, const bool before);
-void EBudDrainFloors(Mesh *pm);
 // problem/ck_impl_once: the whole correlated-k radiation, once per hydro step,
 // with the full cycle dt, after the last RK stage
 void DhjCkRtSplit(Mesh *pm, const Real dt);
