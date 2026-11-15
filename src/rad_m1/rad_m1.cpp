@@ -100,8 +100,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the consistency term is the cell default on Cartesian meshes and, with the vet_gd
     // rays transported conservatively (clean_rays = fv1 by default), on spherical polar,
     // always with the streaming weight (an optically thick cell keeps the moment flux:
-    // the rays' face sums there are not those of the diffusion limit); none on the cubed
-    // sphere yet
+    // the rays' face sums there are not those of the diffusion limit); opt-in on the
+    // cubed sphere
     const bool sp = pmy_pack->pmesh->use_spherical_polar;
     const bool cs = pmy_pack->pmesh->use_cubed_sphere;
     const bool gd = sp && pin->DoesParameterExist("rad_m1","vet_gd") &&
@@ -109,8 +109,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (cln_cell && gd && !pin->DoesParameterExist("rad_m1","clean_rays")) cln_rfv = 1;
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",
                                        cln_cell && !cs && (!sp || gd));
-    cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",
-                                      cln_cell && !cs);
+    cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",cln_cell);
     std::string fm = pin->GetOrAddString("rad_m1","clean_face_model","none");
     cln_milne = (fm.compare("milne") == 0);
     cln_alpha = (al.compare("tau") == 0) ? 0 : (al.compare("tau_sensor") == 0) ? 1 :

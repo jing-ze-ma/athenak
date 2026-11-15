@@ -229,8 +229,8 @@ void RadiationM1::CleanCellMilneSetup() {
 //! boundary face takes w of its inner cell (C1 copied to the ghost) for the momentum
 //! deviation it carries out.  On the cubed sphere the high x2, x3 faces of a MeshBlock
 //! take CLN_FH of its last cell and F_kin the half ranges about the face normal from
-//! the two cells' FV intensities (CLF_HK): every term of a seam face is computed alike
-//! on both sides.
+//! the two cells' FV intensities (CLF_HK; with clean_face_model = milne also the stress
+//! half ranges, CLF_KK): every term of a seam face is computed alike on both sides.
 
 void RadiationM1::CleanCellConsistency() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -241,6 +241,7 @@ void RadiationM1::CleanCellConsistency() {
   const bool cwt = cln_conswt;
   const Real c1lo = cln_c0, c1hi = cln_c1;
   CleanArgs x = CleanMakeArgs();
+  const bool ml = x.milne;
   x.milne = false;   // the bracket is that of the moment scheme
   auto fi = cln_fvi;
   auto dir_ = vgd_dir;
@@ -280,6 +281,7 @@ void RadiationM1::CleanCellConsistency() {
       }
       x.fc[dir](m,CLF_WK,k,j,i) = wb;
       Real nv[3], hj[4] = {0.0, 0.0, 0.0, 0.0};   // J_L, J_R, H+_L, H-_R
+      Real kk[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};  // K+_L, K-_R
       for (int b = 0; b < 3; ++b) nv[b] = CleanNf(x, b, dir, m, k, j, i);
       for (int d = 0; d < nd; ++d) {
         const Real mu = dir_(d,0)*nv[0] + dir_(d,1)*nv[1] + dir_(d,2)*nv[2];
@@ -287,10 +289,17 @@ void RadiationM1::CleanCellConsistency() {
         hj[0] += wl;
         hj[1] += wr;
         hj[(mu > 0.0) ? 2 : 3] += ((mu > 0.0) ? wl : wr)*mu;
+        for (int b = 0; b < 3 && ml; ++b) {
+          kk[(mu > 0.0) ? b : 3 + b] += ((mu > 0.0) ? wl : wr)*mu*dir_(d,b);
+        }
       }
       if (nd > 0) {
         x.fc[dir](m,CLF_HK,k,j,i) = (hj[0] > 0.0) ? hj[2]/hj[0] : 0.25;
         x.fc[dir](m,CLF_HK+1,k,j,i) = (hj[1] > 0.0) ? hj[3]/hj[1] : -0.25;
+        for (int b = 0; b < 3 && ml; ++b) {
+          x.fc[dir](m,CLF_KK+b,k,j,i) = (hj[0] > 0.0) ? kk[b]/hj[0] : nv[b]/6.0;
+          x.fc[dir](m,CLF_KK+3+b,k,j,i) = (hj[1] > 0.0) ? kk[3+b]/hj[1] : nv[b]/6.0;
+        }
       }
       if (bdry && (dir != 0 || CleanBc(x, m, blo ? 0 : 1) == M1_IBC_REFLECT)) return;
       // the rays' flux: of the face's own cell, an x1 boundary's or the high face of a
