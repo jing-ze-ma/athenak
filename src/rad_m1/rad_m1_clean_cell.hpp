@@ -44,6 +44,7 @@ constexpr int CLF_LO = 3;    // 1: low-order face (first-order jumps, al = 1, s 
 constexpr int CLF_UG = 4;    // 1: physical boundary face of a marked cell, upwind stress
                              //    against the ghost (clean_pos_ghost)
 constexpr int CLF_CB = CLF_N;  // consistency bracket of (fE, fY_1..3)
+constexpr int CLF_WK = CLF_CB + 4;  // weight w of the rays' kinetic flux of U - Ur
 
 // cell vectors (array cln_x), 4 components (E, y1, y2, y3) each
 constexpr int CLC_O = 0;     // old vector
@@ -72,7 +73,8 @@ constexpr int CLC_KP = 187;
 constexpr int CLC_T1 = 203;  // preconditioner scratch vectors
 constexpr int CLC_T2 = 207;
 constexpr int CLC_U = 211;   // the rays' cell moments (J, J h)
-constexpr int CLC_N = 215;
+constexpr int CLC_WC = 215;  // the rays' streaming weight of the cell
+constexpr int CLC_N = 216;
 
 // dissipation weight candidates (<rad_m1>/clean_alpha)
 constexpr int CLA_TAU = 0;          // A(tau) = (1 - exp(-tau))/tau
@@ -337,6 +339,22 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
     jl[1+b][1+b] = -hs*cj[1];
     jr[1+b][1+b] = -hs*cj[2];
   }
+  if (!x.consist) return;
+  // clean_consistency: w of the face takes the rays' kinetic upwind flux, the cells'
+  // half-range factors on E (c h+_L E_L + c h-_R E_R, stress CleanCellOutStress)
+  const Real w = x.fc[dir](m,CLF_WK,k,j,i);
+  for (int r = 0; r < 4; ++r) {
+    for (int c = 0; c < 4; ++c) {
+      jl[r][c] *= 1.0 - w;
+      jr[r][c] *= 1.0 - w;
+    }
+  }
+  jl[0][0] += w*x.c*x.cs(m,CLN_HP+dir,kl,jl_,il);
+  jr[0][0] += w*x.c*x.cs(m,CLN_HM+dir,k,j,i);
+  for (int b = 0; b < x.nf; ++b) {
+    jl[1+b][0] += w*x.c*CleanCellOutStress(x, dir, b, m, kl, jl_, il, false);
+    jr[1+b][0] += w*x.c*CleanCellOutStress(x, dir, b, m, k, j, i, true);
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -372,7 +390,9 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
   Real al, hs;
   const bool lo = CleanFaceDissipation(x, dir, m, k, j, i, al, hs);
   const Real th = x.fc[dir](m,CLF_TH,k,j,i);
-  const Real q = 0.25*(1.0 - al)*th*x.h*x.c*x.c*x.idx[dir];
+  const Real s = x.consist ? 1.0 - x.fc[dir](m,CLF_WK,k,j,i) : 1.0;
+  const Real q = 0.25*(1.0 - al)*th*x.h*x.c*x.c*x.idx[dir]*s;
+  hs *= s;
   f[0] += q*(CleanDiag(x, dir, dir, m, kp, jp, ip)*x.u(m,v,kp,jp,ip) -
              CleanDiag(x, dir, dir, m, km, jm, im)*x.u(m,v,km,jm,im));
   // reconstruction terms of the dissipation in the states of L-1 and R+1
@@ -382,6 +402,21 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
     CleanJumpCoefficients(x, dir, c, m, k, j, i, cj);
     f[c] -= hs*(cj[0]*x.u(m,v+c,km,jm,im) + cj[3]*x.u(m,v+c,kp,jp,ip));
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanCellKineticRow
+//! \brief the y_b row of cell (k,j,i) for the cell vector at slot v (clean_consistency):
+//! its streaming share wc takes y_b = h_b E, the rays' flux factor on E (the deviation
+//! from the rays' moments carries their angular shape); row is that of the moment
+//! equation
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCellKineticRow(const CleanArgs &x, const int v, const int b, const int m,
+                         const int k, const int j, const int i, const Real row) {
+  const Real wc = x.u(m,CLC_WC,k,j,i);
+  const Real hb = x.cs(m,CLN_HP+b,k,j,i) + x.cs(m,CLN_HM+b,k,j,i);
+  return (1.0 - wc)*row + wc*(x.u(m,v+1+b,k,j,i) - hb*x.u(m,v,k,j,i));
 }
 
 //----------------------------------------------------------------------------------------

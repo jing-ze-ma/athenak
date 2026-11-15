@@ -37,7 +37,7 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_v, nmb, 2, n3, n2, n1);
   Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
-  const int nfc = cln_consist ? CLF_CB + 4 : CLF_N;
+  const int nfc = cln_consist ? CLF_WK + 1 : CLF_N;
   Kokkos::realloc(cln_fc1, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc2, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc3, nmb, nfc, n3, n2, n1);
