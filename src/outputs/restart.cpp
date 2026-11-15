@@ -64,7 +64,7 @@ RestartOutput::RestartOutput(ParameterInput *pin, Mesh *pm, OutputParameters op)
 // variables, including ghost zones.
 
 void RestartOutput::LoadOutputData(Mesh *pm) {
-  // asyncio-1113: the previous restart's background write reads the outarray_* staging
+  // the previous restart's background write reads the outarray_* staging
   // arrays; wait for it before refilling them (no-op without ATHENA_ASYNC_OUTPUT=1)
   async_io::WaitTag(this);
   // get spatial dimensions of arrays, including ghost zones
@@ -161,13 +161,13 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                    Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
   // the internal energy the last inversion produced, see kEintRstMagic in pgen.hpp
-  if (phydro != nullptr && phydro->RstEint()) {   // t9rst-1113: + ideal gas
+  if (phydro != nullptr && phydro->RstEint()) {   // + ideal gas
     Kokkos::realloc(outarray_weh, nmb, nout3, nout2, nout1);
     DeepCopyAcross(outarray_weh, Kokkos::subview(phydro->w0,
                    std::make_pair(0,nmb), static_cast<int>(IEN),
                    Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
-  if (pmhd != nullptr && pmhd->RstEint()) {   // t9rst-1113: + ideal gas
+  if (pmhd != nullptr && pmhd->RstEint()) {   // + ideal gas
     Kokkos::realloc(outarray_wem, nmb, nout3, nout2, nout1);
     DeepCopyAcross(outarray_wem, Kokkos::subview(pmhd->w0,
                    std::make_pair(0,nmb), static_cast<int>(IEN),
@@ -237,7 +237,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     if (pradm1->Time2RstNch() > 0) {
       const int nct = pradm1->Time2RstNch();
       if (pradm1->rst_pack_mb) {
-        // gpumem-1022 restart_pack_per_mb: one MeshBlock at a time (same bytes)
+        // restart_pack_per_mb: one MeshBlock at a time (same bytes)
         Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
         DvceArray5D<Real> tmp("rst-m1t-mb", 1, nct, nout3, nout2, nout1);
         for (int m = 0; m < nmb; ++m) {
@@ -279,22 +279,22 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       Kokkos::realloc(outarray_m1g, nmb, 2, nout3, nout2, nout1);
       Kokkos::deep_copy(outarray_m1g, tmp);
     }
-    // implicit_gas_src = conservative(2) (rotavg-rst-1012): the cell-F slope csk1
+    // implicit_gas_src = conservative(2): the cell-F slope csk1
     if (pradm1->CskRstNch() > 0) {
       Kokkos::realloc(outarray_m1k, nmb, 3, nout3, nout2, nout1);
       Kokkos::deep_copy(outarray_m1k, Kokkos::subview(pradm1->csk1, std::make_pair(0,nmb),
                         Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     }
-    // vet_rotate_avg (rotavg-rst-1012): the averaging history, densely packed slabs
+    // vet_rotate_avg: the averaging history, densely packed slabs
     const int nra = pradm1->RotAvgRstNslab(nout1*nout2*nout3);
     if (nra > 0) {
-      // mem-1014: packed per MeshBlock in chunks of 4 slabs (was a device copy of the
+      // packed per MeshBlock in chunks of 4 slabs (was a device copy of the
       // whole record, the largest transient on top of the steady state); same bytes
       Kokkos::realloc(outarray_m1r, nmb, nra, nout3, nout2, nout1);
       pradm1->RotAvgRstPackHost(outarray_m1r, nmb, 4);
     }
   }
-  // cs-open-1018 <hydro|mhd>/am_vector: the spin reservoir (+ the radiation's hesdirk2
+  // <hydro|mhd>/am_vector: the spin reservoir (+ the radiation's hesdirk2
   // spin slope amk1), kAmSpinRstMagic, the last slabs of each record
   {
     hydro::AmModule *pam = hydro::AmModuleOf(pm->pmb_pack);
@@ -315,7 +315,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       Kokkos::deep_copy(outarray_ams, tmp);
     }
   }
-  // wbtan-rstg-1101: the per-cell pgen slabs (kPgenSlabRstMagic), behind the spin ones
+  // the per-cell pgen slabs (kPgenSlabRstMagic), behind the spin ones
   {
     DvceArray5D<Real> *ps = (pm->pgen != nullptr) ? pm->pgen->pgen_rst_slabs : nullptr;
     const int nps = (ps != nullptr) ? ps->extent_int(1) : 0;
@@ -327,7 +327,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       Kokkos::deep_copy(outarray_pgs, tmp);
     }
   }
-  // vkdiag-1111 implicit_hr_cmem_rst: the applied face fluxes (kM1FaxRstMagic)
+  // implicit_hr_cmem_rst: the applied face fluxes (kM1FaxRstMagic)
   if (pradm1 != nullptr && pradm1->FaxRstNslab() > 0) {
     const int nf = pradm1->FaxRstNslab();
     Kokkos::realloc(outarray_fax, nmb, nf, nout3, nout2, nout1);
@@ -335,7 +335,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     pradm1->FaxRstPack(tmp, nmb);
     Kokkos::deep_copy(outarray_fax, tmp);
   }
-  // rstbit-1112 time2_stage_local_be: the carried stage-2 drop (kM1ThcRstMagic)
+  // time2_stage_local_be: the carried stage-2 drop (kM1ThcRstMagic)
   if (pradm1 != nullptr && pradm1->ThcRstNslab() > 0) {
     const int nf = pradm1->ThcRstNslab();
     Kokkos::realloc(outarray_thc, nmb, nf, nout3, nout2, nout1);
@@ -343,7 +343,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     pradm1->ThcRstPack(tmp, nmb);
     Kokkos::deep_copy(outarray_thc, tmp);
   }
-  // t9rst-1113 vet_gd_rotate_xfade: the cross-fade state (kM1XfdRstMagic)
+  // vet_gd_rotate_xfade: the cross-fade state (kM1XfdRstMagic)
   if (pradm1 != nullptr && pradm1->XfdRstNslab(nout1*nout2*nout3) > 0) {
     const int nf = pradm1->XfdRstNslab(nout1*nout2*nout3);
     Kokkos::realloc(outarray_xfd, nmb, nf, nout3, nout2, nout1);
@@ -459,7 +459,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     mr_hdr[4] = static_cast<Real>(pradm1->mr_kc);
     mr_hdr[5] = static_cast<Real>(pradm1->mr_kn);
   }
-  // rstabe-1109: the time2_auto_be back-off state, only while a skip run is active
+  // the time2_auto_be back-off state, only while a skip run is active
   const bool wabe = (pradm1 != nullptr) && (pradm1->t2_abe > 0) &&
                     (pradm1->t2_abe_len > 0 || pradm1->t2_abe_left > 0);
   std::int32_t abe_hdr[2] = {0, 0};
@@ -480,7 +480,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     std::memcpy(&(t2_hdr[0]) + sizeof(hdr), &(hv[0]), sizeof(hv));
   }
   // the general-EOS internal energy slabs (kEintRstMagic): one per general-EOS module
-  // t9rst-1113: and every ideal-gas module (RstEint, <hydro|mhd>/rst_eint)
+  // and every ideal-gas module (RstEint, <hydro|mhd>/rst_eint)
   const bool we_hyd = (phydro != nullptr) && phydro->RstEint();
   const bool we_mhd = (pmhd != nullptr) && pmhd->RstEint();
   const int neint = (we_hyd ? 1 : 0) + (we_mhd ? 1 : 0);
@@ -518,7 +518,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                                                            pradm1->vgd_acyc : -1), 0};
     std::memcpy(&(vgd_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // <rad_m1>/implicit_gas_src = conservative(2) (rotavg-rst-1012): csk1 + the flags,
+  // <rad_m1>/implicit_gas_src = conservative(2): csk1 + the flags,
   // ncsk slabs behind the vet_gd_async ones (radm1::kM1CskRstMagic)
   const bool wcsk = (pradm1 != nullptr) && pradm1->CskRstHdr();
   const int ncsk = wcsk ? pradm1->CskRstNch() : 0;
@@ -528,12 +528,12 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                                  (wcsk && pradm1->csk1_ok) ? 1 : 0, 0};
     std::memcpy(&(csk_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // <rad_m1>/vet_rotate_avg (rotavg-rst-1012): the averaging history, nra slabs behind
+  // <rad_m1>/vet_rotate_avg: the averaging history, nra slabs behind
   // even the csk ones (radm1::kM1RaRstMagic; RadiationM1::RotAvgRstHdr)
   std::int64_t ra_hdr[radm1::RadiationM1::M1_RA_RST_NH] = {0};
   if (pradm1 != nullptr) {pradm1->RotAvgRstHdr(&(ra_hdr[0]));}
   const int nra = static_cast<int>(ra_hdr[1]);
-  // cs-open-1018 am_vector spin slabs (hydro::kAmSpinRstMagic), behind even the nra ones
+  // am_vector spin slabs (hydro::kAmSpinRstMagic), behind even the nra ones
   int nams = 0;
   {
     hydro::AmModule *pam = hydro::AmModuleOf(pm->pmb_pack);
@@ -546,7 +546,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(nams), 0, 0};
     std::memcpy(&(ams_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // wbtan-rstg-1101: the per-cell pgen slabs, behind even the spin ones
+  // the per-cell pgen slabs, behind even the spin ones
   const int npgs = (pm->pgen != nullptr && pm->pgen->pgen_rst_slabs != nullptr) ?
                    pm->pgen->pgen_rst_slabs->extent_int(1) : 0;
   char pgs_hdr[4*sizeof(std::int32_t)];
@@ -554,21 +554,21 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(npgs), 0, 0};
     std::memcpy(&(pgs_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // vkdiag-1111: the rad_m1 applied face fluxes, behind even the pgen slabs
+  // the rad_m1 applied face fluxes, behind even the pgen slabs
   const int nfax = (pradm1 != nullptr) ? pradm1->FaxRstNslab() : 0;
   char fax_hdr[4*sizeof(std::int32_t)];
   {
     const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(nfax), 0, 0};
     std::memcpy(&(fax_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // rstbit-1112: the time2_stage_local_be carry, behind even the fax slabs
+  // the time2_stage_local_be carry, behind even the fax slabs
   const int nthc = (pradm1 != nullptr) ? pradm1->ThcRstNslab() : 0;
   char thc_hdr[4*sizeof(std::int32_t)];
   {
     const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(nthc), 0, 0};
     std::memcpy(&(thc_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // t9rst-1113: the vet_gd_rotate_xfade state, behind the thc slabs
+  // the vet_gd_rotate_xfade state, behind the thc slabs
   const int nxfd = (pradm1 != nullptr) ? pradm1->XfdRstNslab(nout1*nout2*nout3) : 0;
   char xfd_hdr[radm1::kM1XfdRstNi*sizeof(std::int64_t) + radm1::kM1XfdRstNr*sizeof(Real)];
   {
@@ -634,7 +634,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   // increment counters now so values for *next* dump are stored in restart file
   out_params.file_number++;
-  // rotavg-rst-1012: Driver::Finalize's restart file before tlim keeps the schedule
+  // Driver::Finalize's restart file before tlim keeps the schedule
   // (the next link writes its next restart file when the continuous run would)
   if (global_variable::final_outputs && out_params.last_time >= 0.0) {
     // last_time unchanged
@@ -657,7 +657,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
 
   // open file and  write the header; this part is serial
   IOWrapper resfile;
-  resfile.SetDeferred(this);  // asyncio-1113: background write if ATHENA_ASYNC_OUTPUT=1
+  resfile.SetDeferred(this);  // background write if ATHENA_ASYNC_OUTPUT=1
   resfile.Open(fname.c_str(), IOWrapper::FileMode::write, single_file_per_rank);
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     // output the input parameters (input file)
@@ -761,7 +761,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(mr_hdr[0]), nb, "byte", single_file_per_rank);
     }
-    if (wabe) {   // rstabe-1109
+    if (wabe) {
       IOWrapperSizeT nb = sizeof(abe_hdr);
       resfile.Write_any_type(&(radm1::kM1AutoBeRstMagic[0]),
                              sizeof(radm1::kM1AutoBeRstMagic), "byte",
@@ -858,7 +858,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(thc_hdr[0]), nb, "byte", single_file_per_rank);
     }
-    // t9rst-1113: the vet_gd_rotate_xfade header, behind the thc one
+    // the vet_gd_rotate_xfade header, behind the thc one
     if (nxfd > 0) {
       IOWrapperSizeT nb = sizeof(xfd_hdr);
       resfile.Write_any_type(&(radm1::kM1XfdRstMagic[0]), sizeof(radm1::kM1XfdRstMagic),
@@ -880,6 +880,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   bool wt_hyd = (phydro != nullptr) && phydro->peos->eos_data.IsGeneral();
   bool wt_mhd = (pmhd != nullptr) && pmhd->peos->eos_data.IsGeneral();
   IOWrapperSizeT data_size = 0;
+  // bytes of one cell-centred variable over one MeshBlock
+  const IOWrapperSizeT cell_bytes =
+      static_cast<IOWrapperSizeT>(nout1)*nout2*nout3*sizeof(Real);
   if (phydro != nullptr) {
     data_size += nout1*nout2*nout3*nhydro*sizeof(Real); // hydro u0
   }
@@ -925,26 +928,26 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     data_size += 2*nout1*nout2*nout3*sizeof(Real);      // mhd wder (IDPR, IDG1)
   }
   if (nwarm > 0) {
-    data_size += static_cast<IOWrapperSizeT>(nwarm)*nout1*nout2*nout3*sizeof(Real);  // rt_c3bp (+ rt_c3bp2)
+    data_size += nwarm*cell_bytes;   // rt_c3bp (+ rt_c3bp2)
   }
   if (npred > 0) {
-    data_size += static_cast<IOWrapperSizeT>(npred)*nout1*nout2*nout3*sizeof(Real);  // rad_m1 ipred
+    data_size += npred*cell_bytes;   // rad_m1 ipred
   }
   if (nt2 > 0) {
-    data_size += static_cast<IOWrapperSizeT>(nt2)*nout1*nout2*nout3*sizeof(Real);    // rad_m1 hesdirk2 slope
+    data_size += nt2*cell_bytes;   // rad_m1 hesdirk2 slope
   }
-  data_size += static_cast<IOWrapperSizeT>(neint)*nout1*nout2*nout3*sizeof(Real);    // hydro / mhd w0(IEN)
-  data_size += static_cast<IOWrapperSizeT>(nck)*nout1*nout2*nout3*sizeof(Real);      // implicit-ck state
-  data_size += static_cast<IOWrapperSizeT>(nctr)*nout1*nout2*nout3*sizeof(Real);     // rad_m1 thin_relax ctr_mem
-  data_size += static_cast<IOWrapperSizeT>(nrss)*nout1*nout2*nout3*sizeof(Real);     // rad_signal_speed inputs
-  data_size += static_cast<IOWrapperSizeT>(nvgd)*nout1*nout2*nout3*sizeof(Real);     // vet_gd_async source
-  data_size += static_cast<IOWrapperSizeT>(ncsk)*nout1*nout2*nout3*sizeof(Real);     // conservative csk1
-  data_size += static_cast<IOWrapperSizeT>(nra)*nout1*nout2*nout3*sizeof(Real);      // vet_rotate_avg history
-  data_size += static_cast<IOWrapperSizeT>(nams)*nout1*nout2*nout3*sizeof(Real);     // am_vector spin (+ amk1)
-  data_size += static_cast<IOWrapperSizeT>(npgs)*nout1*nout2*nout3*sizeof(Real);     // per-cell pgen slabs
-  data_size += static_cast<IOWrapperSizeT>(nfax)*nout1*nout2*nout3*sizeof(Real);  // fax*
-  data_size += static_cast<IOWrapperSizeT>(nthc)*nout1*nout2*nout3*sizeof(Real);  // t2thc
-  data_size += static_cast<IOWrapperSizeT>(nxfd)*nout1*nout2*nout3*sizeof(Real);  // xfade
+  data_size += neint*cell_bytes;   // hydro / mhd w0(IEN)
+  data_size += nck*cell_bytes;   // implicit-ck state
+  data_size += nctr*cell_bytes;   // rad_m1 thin_relax ctr_mem
+  data_size += nrss*cell_bytes;   // rad_signal_speed inputs
+  data_size += nvgd*cell_bytes;   // vet_gd_async source
+  data_size += ncsk*cell_bytes;   // conservative csk1
+  data_size += nra*cell_bytes;   // vet_rotate_avg history
+  data_size += nams*cell_bytes;   // am_vector spin (+ amk1)
+  data_size += npgs*cell_bytes;   // per-cell pgen slabs
+  data_size += nfax*cell_bytes;   // fax*
+  data_size += nthc*cell_bytes;   // t2thc
+  data_size += nxfd*cell_bytes;   // xfade
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -1007,7 +1010,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     step3size += sizeof(radm1::kM1RaRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ra_hdr);
   }
   if (nams > 0) {
-    step3size += sizeof(hydro::kAmSpinRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ams_hdr);
+    step3size += sizeof(hydro::kAmSpinRstMagic) + sizeof(IOWrapperSizeT) +
+                 sizeof(ams_hdr);
   }
   if (npgs > 0) {
     step3size += sizeof(kPgenSlabRstMagic) + sizeof(IOWrapperSizeT) + sizeof(pgs_hdr);
@@ -1546,17 +1550,17 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     write_wtemp(Kokkos::subview(outarray_pgs, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "pgen slab");
   }
-  // and the rad_m1 applied face fluxes last of all (kM1FaxRstMagic, vkdiag-1111)
+  // and the rad_m1 applied face fluxes last of all (kM1FaxRstMagic)
   for (int n=0; n<nfax; ++n) {
     write_wtemp(Kokkos::subview(outarray_fax, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "rad_m1 applied face flux");
   }
-  // and the time2_stage_local_be carry behind them (kM1ThcRstMagic, rstbit-1112)
+  // and the time2_stage_local_be carry behind them (kM1ThcRstMagic)
   for (int n=0; n<nthc; ++n) {
     write_wtemp(Kokkos::subview(outarray_thc, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "rad_m1 local_be carry");
   }
-  // and the vet_gd_rotate_xfade state behind them (kM1XfdRstMagic, t9rst-1113)
+  // and the vet_gd_rotate_xfade state behind them (kM1XfdRstMagic)
   for (int n=0; n<nxfd; ++n) {
     write_wtemp(Kokkos::subview(outarray_xfd, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "rad_m1 xfade state");
@@ -1564,7 +1568,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
 
   // close file, clean up
   resfile.Close(single_file_per_rank);
-  // memcut-1113: drop the host staging copies (filled again by the next LoadOutputData,
+  // drop the host staging copies (filled again by the next LoadOutputData,
   // whose Kokkos::realloc allocates anew anyway): on a unified-memory APU (MI300A) they
   // held a full second copy of the restart data in HBM for the rest of the run
   outarray = HostArray5D<Real>();

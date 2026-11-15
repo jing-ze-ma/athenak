@@ -23,7 +23,7 @@
 #include <mpi.h>
 #endif
 
-// ckdrift-1102 <time>/dt_collapse_med (mesh.cpp, Mesh::NewTimeStep)
+// <time>/dt_collapse_med (mesh.cpp, Mesh::NewTimeStep)
 void SetDtCollapseMed(Real f);
 
 //----------------------------------------------------------------------------------------
@@ -56,8 +56,8 @@ void CheckCubedSphereRefinement(MeshBlockPack *pmbp) {
       // radial -- the block at the outer edge of a refined shell meets, diagonally, the
       // coarse block of the next panel -- and refusing those would rule out radial
       // refinement altogether. Those mixed-level cross-panel diagonals ARE exchanged,
-      // with the seam transform, on both the halo and the flux-correction side
-      // (0626f1c9, 74cbc8df); the CT corner EMF reads them and needs them to be right.
+      // with the seam transform, on both the halo and the flux-correction side; the CT
+      // corner EMF reads them and needs them to be right.
       // What is still missing, and what this check is really about, is PROLONGATION and
       // RESTRICTION across a seam: those operators have no tangent-basis transform and
       // no along-seam resample, so a level boundary lying ON a seam would be wrong by
