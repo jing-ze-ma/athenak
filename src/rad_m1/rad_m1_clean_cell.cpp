@@ -259,10 +259,10 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellPreconditionerSetup
-//! \brief 4x4 blocks of the preconditioner: the x1-line block-tridiagonal part of A
-//! with first-order jumps (states of cells i-1, i, i+1) plus the diagonal blocks of its
-//! x2 and x3 parts.  The RC terms in cells i+-2 and the reconstruction are left to the
-//! Krylov solve.
+//! \brief 4x4 blocks of the preconditioner, from A with first-order jumps: the diagonal
+//! block of every cell (all directions) and the blocks of its two neighbours along each
+//! direction (states of cells i-1, i, i+1).  The RC terms in cells i+-2 and the
+//! reconstruction are left to the Krylov solve.
 
 void RadiationM1::CleanCellPreconditionerSetup() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -276,7 +276,7 @@ void RadiationM1::CleanCellPreconditionerSetup() {
 
   par_for("clc_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real a0[4][4], am[4][4], ap[4][4];
+    Real a0[4][4];
     Real jlp[4][4], jrp[4][4], jlm[4][4], jrm[4][4];
     for (int r = 0; r < 4; ++r) {
       for (int c = 0; c < 4; ++c) a0[r][c] = 0.0;
@@ -292,58 +292,66 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
       const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
       const Real s = x.h*x.idx[dir];
+      const int sm = CleanLineSlotM(dir), sp = CleanLineSlotP(dir);
       CleanCellFaceJacobian(x, dir, m, k+dk, j+dj, i+di, jlp, jrp);
       CleanCellFaceJacobian(x, dir, m, k, j, i, jlm, jrm);
       for (int r = 0; r < 4; ++r) {
         for (int c = 0; c < 4; ++c) {
           a0[r][c] += s*(jlp[r][c] - jrm[r][c]);
-          if (dir == 0) {
-            ap[r][c] = s*jrp[r][c];
-            am[r][c] = -s*jlm[r][c];
-          }
+          x.u(m,sp+4*r+c,k,j,i) = s*jrp[r][c];
+          x.u(m,sm+4*r+c,k,j,i) = -s*jlm[r][c];
         }
       }
     }
     for (int r = 0; r < 4; ++r) {
-      for (int c = 0; c < 4; ++c) {
-        x.u(m,CLC_A0+4*r+c,k,j,i) = a0[r][c];
-        x.u(m,CLC_AM+4*r+c,k,j,i) = am[r][c];
-        x.u(m,CLC_AP+4*r+c,k,j,i) = ap[r][c];
-      }
+      for (int c = 0; c < 4; ++c) x.u(m,CLC_A0+4*r+c,k,j,i) = a0[r][c];
     }
   });
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::CleanCellPrecondition
-//! \brief u(dst) = M^{-1} u(src): block-tridiagonal (block Thomas) solve along every x1
-//! line
+//! \fn void RadiationM1::CleanCellLineSolve
+//! \brief u(dst) = L^{-1} u(src), L the block-tridiagonal part of the preconditioner
+//! along direction dir (diagonal blocks and the neighbour blocks along dir): block Thomas
+//! solve on every line
 
-void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
+void RadiationM1::CleanCellLineSolve(const int dir, const int src, const int dst) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, ie = indcs.ie;
-  int js = indcs.js, je = indcs.je;
-  int ks = indcs.ks, ke = indcs.ke;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx[3] = {indcs.nx1, indcs.nx2, indcs.nx3};
   int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int sm = CleanLineSlotM(dir), sp = CleanLineSlotP(dir);
+  // lines run along dir; (p, q) label them
+  const int np = (dir == 2) ? nx[1] : nx[2];
+  const int nq = (dir == 0) ? nx[1] : nx[0];
+  const int nl = nx[dir];
   auto u = cln_x;
 
-  par_for("clc_thomas", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-  KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    // forward: D = A0 - Am C_i-1, C_i = D^-1 Ap, d_i = D^-1 (r_i - Am d_i-1)
-    for (int i = is; i <= ie; ++i) {
+  par_for("clc_thomas", DevExeSpace(), 0, nmb1, 0, np-1, 0, nq-1,
+  KOKKOS_LAMBDA(const int m, const int p, const int q) {
+    auto cell = [&](const int n, int &k, int &j, int &i) {
+      k = (dir == 2) ? ks + n : ks + p;
+      j = (dir == 1) ? js + n : ((dir == 2) ? js + p : js + q);
+      i = (dir == 0) ? is + n : is + q;
+    };
+    // forward: D = A0 - Am C_n-1, C_n = D^-1 Ap, d_n = D^-1 (r_n - Am d_n-1)
+    int kp = 0, jp = 0, ip = 0;
+    for (int n = 0; n < nl; ++n) {
+      int k, j, i;
+      cell(n, k, j, i);
       Real a[4][4], b[4][5];
       for (int r = 0; r < 4; ++r) {
         Real rhs = u(m,src+r,k,j,i);
         for (int c = 0; c < 4; ++c) {
           a[r][c] = u(m,CLC_A0+4*r+c,k,j,i);
-          b[r][c] = (i < ie) ? u(m,CLC_AP+4*r+c,k,j,i) : 0.0;
+          b[r][c] = (n < nl - 1) ? u(m,sp+4*r+c,k,j,i) : 0.0;
         }
-        if (i > is) {
-          for (int n = 0; n < 4; ++n) {
-            const Real amn = u(m,CLC_AM+4*r+n,k,j,i);
-            if (amn == 0.0) continue;
-            for (int c = 0; c < 4; ++c) a[r][c] -= amn*u(m,CLC_CP+4*n+c,k,j,i-1);
-            rhs -= amn*u(m,dst+n,k,j,i-1);
+        if (n > 0) {
+          for (int l = 0; l < 4; ++l) {
+            const Real aml = u(m,sm+4*r+l,k,j,i);
+            if (aml == 0.0) continue;
+            for (int c = 0; c < 4; ++c) a[r][c] -= aml*u(m,CLC_CP+4*l+c,kp,jp,ip);
+            rhs -= aml*u(m,dst+l,kp,jp,ip);
           }
         }
         b[r][4] = rhs;
@@ -353,17 +361,56 @@ void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
         for (int c = 0; c < 4; ++c) u(m,CLC_CP+4*r+c,k,j,i) = b[r][c];
         u(m,dst+r,k,j,i) = b[r][4];
       }
+      kp = k;
+      jp = j;
+      ip = i;
     }
-    // backward: x_i = d_i - C_i x_{i+1}
-    for (int i = ie-1; i >= is; --i) {
+    // backward: x_n = d_n - C_n x_n+1
+    for (int n = nl - 2; n >= 0; --n) {
+      int k, j, i, kn, jn, in;
+      cell(n, k, j, i);
+      cell(n+1, kn, jn, in);
       Real d[4];
       for (int r = 0; r < 4; ++r) {
         d[r] = u(m,dst+r,k,j,i);
-        for (int c = 0; c < 4; ++c) d[r] -= u(m,CLC_CP+4*r+c,k,j,i)*u(m,dst+c,k,j,i+1);
+        for (int c = 0; c < 4; ++c) {
+          d[r] -= u(m,CLC_CP+4*r+c,k,j,i)*u(m,dst+c,kn,jn,in);
+        }
       }
       for (int r = 0; r < 4; ++r) u(m,dst+r,k,j,i) = d[r];
     }
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellPrecondition
+//! \brief u(dst) = M^{-1} u(src): x1-line solve, then (multi-D) one line-solve correction
+//! of the residual along x2 and along x3 (multiplicative line relaxation)
+
+void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto u = cln_x;
+  CleanCellLineSolve(0, src, dst);
+  for (int dir = 1; dir < 3; ++dir) {
+    if ((dir == 1 && !pmy_pack->pmesh->multi_d) ||
+        (dir == 2 && !pmy_pack->pmesh->three_d)) continue;
+    CleanCellApply(dst, CLC_T1);
+    par_for("clc_pcres", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int c = 0; c < 4; ++c) {
+        u(m,CLC_T1+c,k,j,i) = u(m,src+c,k,j,i) - u(m,CLC_T1+c,k,j,i);
+      }
+    });
+    CleanCellLineSolve(dir, CLC_T1, CLC_T2);
+    par_for("clc_pccor", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int c = 0; c < 4; ++c) u(m,dst+c,k,j,i) += u(m,CLC_T2+c,k,j,i);
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------

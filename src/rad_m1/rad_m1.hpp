@@ -2915,6 +2915,7 @@ class RadiationM1 {
   void CleanCellApply(const int src, const int dst);
   void CleanCellPreconditionerSetup();
   void CleanCellPrecondition(const int src, const int dst);
+  void CleanCellLineSolve(const int dir, const int src, const int dst);
   Real CleanCellNewtonUpdate();
   Real CleanCellVelocityUpdate();
   void CleanCellCopyIterate();

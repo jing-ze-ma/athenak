@@ -48,14 +48,20 @@ constexpr int CLC_S = 32;
 constexpr int CLC_Q = 36;
 constexpr int CLC_Y = 40;
 constexpr int CLC_Z = 44;
-constexpr int CLC_AM = 48;   // x1-line preconditioner: 4x4 block of cell i-1 (row major)
+constexpr int CLC_AM = 48;   // preconditioner: 4x4 block of cell i-1 (row major)
 constexpr int CLC_A0 = 64;   // diagonal block
 constexpr int CLC_AP = 80;   // block of cell i+1
 constexpr int CLC_CP = 96;   // block-tridiagonal solve scratch
 constexpr int CLC_PSI = 112; // smoothness sensor of the old vector along x1, x2, x3
 constexpr int CLC_PL = 115;  // lagged slope weights pl, pr of (dir, component):
 constexpr int CLC_PR = 127;  //   slot + 4 dir + component
-constexpr int CLC_N = 139;
+constexpr int CLC_JM = 139;  // preconditioner blocks of cells j-1, j+1, k-1, k+1
+constexpr int CLC_JP = 155;
+constexpr int CLC_KM = 171;
+constexpr int CLC_KP = 187;
+constexpr int CLC_T1 = 203;  // preconditioner scratch vectors
+constexpr int CLC_T2 = 207;
+constexpr int CLC_N = 211;
 
 // dissipation weight candidates (<rad_m1>/clean_alpha)
 constexpr int CLA_TAU = 0;          // A(tau) = (1 - exp(-tau))/tau
@@ -63,6 +69,24 @@ constexpr int CLA_TAU_SENSOR = 1;   // max(A(tau) psi, s_ray)
 constexpr int CLA_TAU_RAY = 2;      // max(A(tau), s_ray)
 constexpr int CLA_ONE = 3;          // 1
 constexpr int CLA_ZERO = 4;         // 0
+
+//----------------------------------------------------------------------------------------
+//! \fn int CleanLineSlotM
+//! \brief slot of the preconditioner block of the lower neighbour along dir
+
+KOKKOS_INLINE_FUNCTION
+int CleanLineSlotM(const int dir) {
+  return (dir == 0) ? CLC_AM : ((dir == 1) ? CLC_JM : CLC_KM);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int CleanLineSlotP
+//! \brief slot of the preconditioner block of the upper neighbour along dir
+
+KOKKOS_INLINE_FUNCTION
+int CleanLineSlotP(const int dir) {
+  return (dir == 0) ? CLC_AP : ((dir == 1) ? CLC_JP : CLC_KP);
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanDissipationWeight
