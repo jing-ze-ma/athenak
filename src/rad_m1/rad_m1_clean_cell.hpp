@@ -414,12 +414,13 @@ Real CleanRefForce(const int fref, const DvceArray5D<Real> &fr,
 //! the advective source -h chi a_b E of row y_b per unit change of y_c + h div fY_c, the
 //! gas momentum the cell gives up (dv = -(dy + h div fY)/(c rho)): the gas velocity taken
 //! implicit in the solve (radiation force and drag), so that the velocity iteration
-//! contracts where the gas responds within h (rows and columns in the frame of y)
+//! contracts where the gas responds within h (rows and columns in the frame of y);
+//! zero while the gas momentum is frozen (steady start)
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellDrag(const CleanArgs &x, const Real chi, const Real rho, const int m,
                    const int k, const int j, const int i, Real g[3][3]) {
-  const Real s = x.h*chi*x.u(m,CLC_K,k,j,i)/(x.c*rho);
+  const Real s = x.vzero ? 0.0 : x.h*chi*x.u(m,CLC_K,k,j,i)/(x.c*rho);
   Real q[3][3];
   if (x.cub) CleanCsFrame(x, m, k, j, i, q);
   for (int b = 0; b < 3; ++b) {

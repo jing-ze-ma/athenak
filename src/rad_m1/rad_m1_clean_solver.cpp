@@ -58,6 +58,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.marshak = (cln_bdry_form == 1);
   x.use_beam = (ibm_n > 0);
   x.feedback = cln_feedback;
+  x.vzero = cln_vzero;
   x.recon = cln_recon;
   x.all_low = cln_all_low;
   x.consist = cln_consist;

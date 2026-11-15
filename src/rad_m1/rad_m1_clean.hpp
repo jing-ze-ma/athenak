@@ -92,6 +92,7 @@ struct CleanArgs {
   bool marshak;                // Marshak boundary form (else the rays' half range)
   bool use_beam;
   bool feedback;               // gas coupling (advective flux, exchange linearisation)
+  bool vzero;                  // the gas momentum is frozen (cln_vzero, steady start)
   bool recon;                  // cell layout: reconstructed face states in the jumps
   bool all_low;                // cell layout: every interior face low-order
   bool consist;                // cell layout: face fluxes carry the consistency bracket
