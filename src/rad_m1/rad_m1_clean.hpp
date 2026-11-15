@@ -34,8 +34,9 @@ constexpr int CLN_C1 = 21;   // non-locality C1 = <|I - S|>/J
 constexpr int CLN_J = 22;    // J of the rays (energy-density units)
 constexpr int CLN_F2 = 23;   // the rays' flux through the low x2 face (M1_VET_F2, not
                              // normalised; clean_consistency)
-constexpr int CLN_F1 = 27;   // their flux entering through an x1 boundary face (VET_F1)
-constexpr int CLN_N = 31;
+constexpr int CLN_F1 = 27;   // their flux through an x1 boundary face (M1_VET_F1)
+constexpr int CLN_FX = 31;   // their flux through the low x1 face (M1_VET_FX)
+constexpr int CLN_N = 35;
 
 // face variables (arrays cln_fc1, cln_fc2, cln_fc3)
 constexpr int CLF_W = 0;     // blend weight w
