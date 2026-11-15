@@ -594,6 +594,7 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
   const CleanLevel f = CleanCellLevel(l), c = CleanCellLevel(l+1);
   const int t1 = (l == 0) ? CLC_T1 : CLM_T1;
   const int r[3] = {f.n[0]/c.n[0], f.n[1]/c.n[1], f.n[2]/c.n[2]};
+  const Real wc = cln_pcwc;
 
   // pre-smoothing and the residual
   CleanCellSmooth(l, src, dst, true, cln_pcsweeps);
@@ -628,7 +629,7 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
           f.o[1], f.o[1]+f.n[1]-1, f.o[0], f.o[0]+f.n[0]-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kc = (k - f.o[2])/r[2], jc = (j - f.o[1])/r[1], ic = (i - f.o[0])/r[0];
-    for (int q = 0; q < 4; ++q) uf(m,dst+q,k,j,i) += uc(m,CLM_X+q,kc,jc,ic);
+    for (int q = 0; q < 4; ++q) uf(m,dst+q,k,j,i) += wc*uc(m,CLM_X+q,kc,jc,ic);
   });
 
   // post-smoothing

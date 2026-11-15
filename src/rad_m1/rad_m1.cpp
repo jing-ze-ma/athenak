@@ -122,6 +122,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_maxpos = pin->GetOrAddInteger("rad_m1","clean_maxpos",3);
     cln_pcsweeps = pin->GetOrAddInteger("rad_m1","clean_pc_sweeps",1);
+    cln_pcwc = pin->GetOrAddReal("rad_m1","clean_pc_wc",1.0);
     {std::string pc = pin->GetOrAddString("rad_m1","clean_pc","line");
     cln_pc = (pc.compare("mg") == 0) ? 1 : 0;
     if (!cln_pc && pc.compare("line") != 0) {

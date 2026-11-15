@@ -2964,6 +2964,7 @@ class RadiationM1 {
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: line-relaxation sweeps (preconditioner)
+  Real cln_pcwc = 1.0;          // clean_pc_wc: coarse-correction factor (experiment)
   int cln_pc = 0;               // clean_pc: 0 line relaxation, 1 multigrid V-cycle
   std::vector<DvceArray5D<Real>> cln_mg;          // coarse levels of the multigrid
   std::vector<std::array<int, 3>> cln_mgn;        //   and their cells along x1..x3
