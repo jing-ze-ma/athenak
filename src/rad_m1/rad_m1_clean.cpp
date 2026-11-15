@@ -101,7 +101,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   //    a solution with cells E <= 0 or |F| > c E switches their faces to the low-order
   //    flux and is solved again (at most clean_maxpos times).
   const bool iterate = cln_feedback || (cell && cln_recon);
-  const bool stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
+  const bool t2stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   int nit = 0, nit_sum = 0, npic = 0, npos = 0, nmark = 0;
   bool all_low = false;
   Real dpic = 0.0;
@@ -155,7 +155,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     if (ipos >= cln_maxpos) {
       // a stage gives up (the step is redone by backward Euler); a backward-Euler step
       // is solved once more with every face low-order
-      if (stage || all_low) break;
+      if (t2stage || all_low) break;
       CleanCellAllLowOrder();
       all_low = true;
     }
