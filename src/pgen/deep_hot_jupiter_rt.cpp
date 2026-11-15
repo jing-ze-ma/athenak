@@ -839,15 +839,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // they bind (both WASP-121b productions, every call) the unconstrained Newton cannot
   // converge: 1x 466/500 calls NOT-CONVERGED off vs 6/500 on, 10x 500/500 vs 133/500
   // Set either line explicitly to override.
-  {const bool fbdef = !restart && two_stream_rt::ck_implicit &&
-       two_stream_rt::ck_impl_fuse && two_stream_rt::ck_impl_debug <= 0 &&
-       two_stream_rt::ck_impl_glob == 0 && two_stream_rt::ck_impl_aa == 0;
-  two_stream_rt::ck_impl_floorbound =
-      pin->GetOrAddBoolean("problem","ck_impl_floorbound",fbdef);
-  two_stream_rt::ck_impl_kkt_demax =
-      pin->GetOrAddBoolean("problem","ck_impl_kkt_demax",fbdef);}
-  two_stream_rt::ck_impl_stalldbg =
-      pin->GetOrAddInteger("problem","ck_impl_stalldbg",0);
+  {
+    const bool fbdef = !restart && two_stream_rt::ck_implicit &&
+        two_stream_rt::ck_impl_fuse && two_stream_rt::ck_impl_debug <= 0 &&
+        two_stream_rt::ck_impl_glob == 0 && two_stream_rt::ck_impl_aa == 0;
+    two_stream_rt::ck_impl_floorbound =
+        pin->GetOrAddBoolean("problem","ck_impl_floorbound",fbdef);
+    two_stream_rt::ck_impl_kkt_demax =
+        pin->GetOrAddBoolean("problem","ck_impl_kkt_demax",fbdef);
+  }
   two_stream_rt::ck_impl_negdbg = pin->GetOrAddInteger("problem","ck_impl_negdbg",0);
   two_stream_rt::ck_impl_jfd = pin->GetOrAddInteger("problem","ck_impl_jfd",0);
   two_stream_rt::ck_impl_rowfb = pin->GetOrAddBoolean("problem","ck_impl_rowfb",
@@ -1096,9 +1096,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     rt_test_dt = pin->GetOrAddReal("problem","rt_test_dt",0.0);
     rt_test_out = pin->GetOrAddString("problem","rt_test_out","");
     rt_test_every = pin->GetOrAddInteger("problem","rt_test_every",1);
-    rt_test_col[0] = pin->GetOrAddInteger("problem","rt_test_col_m",0);
-    rt_test_col[1] = pin->GetOrAddInteger("problem","rt_test_col_k",-1);
-    rt_test_col[2] = pin->GetOrAddInteger("problem","rt_test_col_j",-1);
     user_split_func = DhjRtFreezeSplit;
     user_split_once = true;
   }

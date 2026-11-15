@@ -177,16 +177,13 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
                       ? pm->pmb_pack->pmhd->peos->eos_data
                       : pm->pmb_pack->phydro->peos->eos_data;
     const bool aarst_ = ck_impl_aa_rst;
-    // ck_impl_stalldbg / ck_impl_kkt_row (see their notes)
-    const bool sdbg_ = (ck_impl_stalldbg > 0) && (ck_impl_pass >= ck_impl_stalldbg)
-                       && !glb_;
+    // ck_impl_kkt_row (see its note)
     const bool krow_ = ck_impl_kkt_row && (fb_ || kd_) && !glb_;
     // ck_impl_osc (1-element dummy when off)
     const bool osc_ = (ck_impl_osc > 0) && !glb_ && (naa_ == 0);
     const bool oscp_ = osc_ && (ck_impl_pass >= ck_impl_osc);
     auto osa_ = osc_ ? *ck_osc_ptr : CkDum<DvceArray4D<Real>>("ck_osc_d");
     const int pass_ = ck_impl_pass;
-    const bool csph_ = pm->use_cubed_sphere;
     // ck_impl_negdbg (1-element counter when off)
     const int ngd_ = ck_impl_negdbg;
     const bool rfb_ = ck_impl_rowfb;
@@ -195,9 +192,6 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     const Real ept_ = ck_impl_norm_eps_top;
     auto pbr_ = (ptp_ > 0.0) ? *ck_pbar_ptr : CkDum<DvceArray4D<Real>>("ck_pbar_d");
     DvceArray1D<int> ngc_("ck_negdbg_cnt", 1);
-    auto &mbpan_ = pm->pmb_pack->pmb->mb_panel;
-    auto &x2v_ = pm->pmb_pack->pcoord->x2v;
-    auto &x3v_ = pm->pmb_pack->pcoord->x3v;
     // ck_impl_every_thr: a column masked out of this call (ck_done = 2) is not touched
     const bool msk_ = ck_cad_partial;
     auto aah_ = (naa_ > 0) ? *ck_aah_ptr : CkDum<DvceArray5D<Real>>("ck_aah_d");
@@ -243,7 +237,6 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       // of this call (its arrays hold the state BEFORE that last step, so its residual
       // here is stale and must not steer anything)
       const bool pdone = pred_ && (done_(m,k,j) > 0.0);
-      int iwd = -1;                     // ck_impl_stalldbg: the worst cell
       if (!glb_) {
         // KKT (ck_impl_floorbound / ck_impl_kkt_demax): a cell on a bound whose
         // residual points through it is at its constrained solution (see the notes)
@@ -285,21 +278,6 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           if (t0rec_) t0_(m,k,j,i) = T_(m,k,j,i);
         }, Kokkos::Max<Real>(rn));
         if (!(rn > 0.0)) rn = 0.0;             // the unfused max starts from 0
-        if (sdbg_) {
-          using MLc = Kokkos::MaxLoc<Real, int>;
-          typename MLc::value_type vw;
-          Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
-          [&](const int i, typename MLc::value_type &u) {
-            const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
-            Real s = snrm(i, r);
-            if (kk_ && s > tol && kktcell(i, r)) s = 0.0;
-            if (s > u.val) {
-              u.val = s;
-              u.loc = i;
-            }
-          }, MLc(vw));
-          iwd = vw.loc;
-        }
         if (kk_) {
           Real nkk = 0.0;
           Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
@@ -976,36 +954,6 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           if (ei + de < efl) {
             de = (ei > efl) ? (efl - ei) : 0.0;
             Kokkos::atomic_add(&cnv_(16), 1.0);
-          }
-        }
-        if (sdbg_) {
-          const bool clp = (de != sx(q));
-          if (i == iwd || i == iwd - 1 || i == iwd + 1 || clp) {
-            const Real rho = u0(m,IDN,k,j,i);
-            const Real r = ei - es - bdt*src_(m,k,j,i);
-            const Real Ti = T_(m,k,j,i);
-            Real efl = eosfb_.EnergyFromTemperature(rho, eosfb_.tfloor);
-            const Real ep = eosfb_.EnergyFromPressure(rho, eosfb_.pfloor);
-            if (ep > efl) efl = ep;
-            const bool kk = CkKktCell(eosfb_, fb_, kd_, detot, rho, ei, es, r);
-            Real pth = 0.0, plat = 0.0, plon = 0.0;
-            if (csph_) {
-              atm_column::CSCellAngles(mbpan_.d_view(m), x2v_(m,j), x3v_(m,k), pth, plat,
-                                       plon);
-            }
-            Kokkos::printf("### ckstall pass=%d m=%d k=%d j=%d i=%d w=%d lat=%.2f "
-                           "lon=%.2f "
-                           "T=%.5e rho=%.4e p=%.4e r/e=%.4e e=%.10e est=%.6e hS/e=%.4e "
-                           "hEm/e=%.4e Etot/e=%.4e efl/e=%.6e cvT=%.4e cvEOS=%.4e "
-                           "thick=%d kkt=%d b=%.4e dx/e=%.4e de/e=%.4e cap=%d\n",
-                           pass_, m, k, j, i, (i == iwd) ? 1 : 0,
-                           plat*57.29577951308232, plon*57.29577951308232, Ti, rho,
-                           eosfb_.Pressure(rho, ei, Ti), r/ei, ei, es,
-                           bdt*src_(m,k,j,i)/ei, bdt*em_(m,k,j,i)/ei,
-                           u0(m,IEN,k,j,i)/ei, efl/ei, (Ti > 0.0) ? ei/Ti : 0.0,
-                           eosfb_.SpecificHeatCv(rho, ei, Ti)*rho,
-                           (thk_(m,k,j,i) > 0.0) ? 1 : 0, kk ? 1 : 0, sb(q),
-                           sx(q)/ei, de/ei, cap ? 1 : 0);
           }
         }
         u0(m,IEN,k,j,i) += de;

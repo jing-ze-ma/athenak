@@ -84,7 +84,6 @@ Real cs_amp = 0.5, cs_r0 = 1.0;
 Real cs_b0r = 0.0;
 Real cs_bc_tfrac = 0.0;   // ghost time offset, in units of dt (problem/bc_time_frac)
 int  cs_bc_bcc_match = 0; // ghost x1f matched to bcc (problem/bc_bcc_match)
-int  cs_bc_probe = 0;     // print the interior boundary-layer PHASE (problem/bc_probe)
 Real cs_bazi = 0.0;       // iprob=11 azimuthal amplitude; curl B = 2*cs_bazi*zhat
 int  cs_hist_nband = 2;   // region band half-width in cells for CSTestLoopHistory
 // iprob 3/9 EVACUATION test (<problem>/cav_d < 1): a top-hat density hole; UserProblem
@@ -674,7 +673,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   cs_amp = pin->GetOrAddReal("problem", "amp", 0.5);
   cs_bc_tfrac = pin->GetOrAddReal("problem", "bc_time_frac", 0.0);
   cs_bc_bcc_match = pin->GetOrAddInteger("problem", "bc_bcc_match", 0);
-  cs_bc_probe = pin->GetOrAddInteger("problem", "bc_probe", 0);
   cs_exact_panel_ghosts = pin->GetOrAddInteger("problem",
                                               "exact_panel_ghosts", 0);
   cs_r0 = pmy_mesh_->mesh_size.x1min;
@@ -2179,83 +2177,12 @@ void CSTestRadialBC(Mesh *pm) {
       //      it dilutes as 1/L.
       // So the clock cannot BOTH null the phase and keep the field a rigid rotation, and
       // that is why "advance the ghosts to t^n + dt" fails. What is still unexplained is
-      // the offset -0.41: problem/bc_probe measures the interior's own phase at the first
-      // active radial layer and it sits at omega*(t^n + dt), i.e. exactly where SSP-RK2
-      // puts both of its stage outputs, so the ghost that nulls the lag is 1.41*dt BEHIND
-      // the interior it faces, not level with it.
+      // the offset -0.41: the interior's own phase at the first active radial layer
+      // sits at omega*(t^n + dt), i.e. exactly where SSP-RK2 puts both of its stage
+      // outputs, so the ghost that nulls the lag is 1.41*dt BEHIND the interior it
+      // faces, not level with it.
       RotatingUniformField(omega, pm->time + cs_bc_tfrac*pm->dt, cs_bvx, cs_bvy, cs_bvz,
                            bvx, bvy, bvz, cs_axx, cs_axy, cs_axz);
-    }
-    // -------------------------------------------------------------------------------
-    // problem/bc_probe. WHAT TIME IS THE INTERIOR AT, as seen from the radial boundary?
-    // The whole bc_time_frac question turns on this and it is directly measurable. The
-    // exact field is Rz(theta) B0 = cos(theta) P + sin(theta) Q + Z with
-    // P = (B0x,B0y,0), Q = (-B0y,B0x,0), Z = (0,0,B0z), and the FACE fields are linear
-    // projections of it, so a 2-parameter least squares over the first ACTIVE radial
-    // layer recovers the phase theta the interior is actually carrying. Compare it with
-    // omega*t^n (bc_time_frac = 0) and omega*(t^n + dt) (bc_time_frac = 1).
-    if (iprob == 9 && cs_bc_probe > 0 && (pm->ncycle % cs_bc_probe) == 0) {
-      int &je_p = indcs.je; int &ke_p = indcs.ke;
-      const int nj = indcs.nx2, nk = indcs.nx3;
-      const int nmb = pmbp->nmb_thispack;
-      const Real p0x = cs_bvx, p0y = cs_bvy, p0z = cs_bvz;
-      Real app = 0.0, apq = 0.0, aqq = 0.0, bp = 0.0, bq = 0.0;
-      const int nn = nmb*nk*nj;
-      // one reduce per normal-equation entry: this is a low-frequency diagnostic
-      for (int which=0; which<5; ++which) {
-        Real sum = 0.0;
-        Kokkos::parallel_reduce("cs_bc_probe", Kokkos::RangePolicy<>(DevExeSpace(),0,nn),
-        KOKKOS_LAMBDA(const int idx, Real &lsum) {
-          const int m = idx/(nk*nj);
-          const int k = (idx - m*nk*nj)/nj + ks;
-          const int j = (idx - m*nk*nj) % nj + js;
-          if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
-          const Real x2c = 0.25*M_PI*CellCenterX(j-js, nj, size.d_view(m).x2min,
-                                                           size.d_view(m).x2max);
-          const Real x3c = 0.25*M_PI*CellCenterX(k-ks, nk, size.d_view(m).x3min,
-                                                           size.d_view(m).x3max);
-          const Real x2f = 0.25*M_PI*LeftEdgeX(j-js, nj, size.d_view(m).x2min,
-                                                         size.d_view(m).x2max);
-          const Real x3f = 0.25*M_PI*LeftEdgeX(k-ks, nk, size.d_view(m).x3min,
-                                                         size.d_view(m).x3max);
-          const int p = mbpanel.d_view(m);
-          Real n1[3], n2[3];
-          // the two ANGULAR faces of the first active cell: these are what a phase
-          // mismatch across the boundary would shear
-          for (int f=0; f<2; ++f) {
-            if (f == 0) {
-              PanelNormals(p, x2f, x3c, n1, n2);
-            } else {
-              PanelNormals(p, x2c, x3f, n1, n2);
-            }
-            const Real *nh = (f == 0) ? n1 : n2;
-            const Real pn = p0x*nh[0] + p0y*nh[1];
-            const Real qn = -p0y*nh[0] + p0x*nh[1];
-            const Real zn = p0z*nh[2];
-            const Real meas = (f == 0) ? b0f.x2f(m,k,j,is) : b0f.x3f(m,k,j,is);
-            const Real r = meas - zn;
-            if (which == 0) lsum += pn*pn;
-            if (which == 1) lsum += pn*qn;
-            if (which == 2) lsum += qn*qn;
-            if (which == 3) lsum += pn*r;
-            if (which == 4) lsum += qn*r;
-          }
-        }, sum);
-        if (which == 0) app = sum;
-        if (which == 1) apq = sum;
-        if (which == 2) aqq = sum;
-        if (which == 3) bp = sum;
-        if (which == 4) bq = sum;
-      }
-      const Real det = app*aqq - apq*apq;
-      const Real ca = (bp*aqq - bq*apq)/det;
-      const Real sa = (bq*app - bp*apq)/det;
-      const Real th = std::atan2(sa, ca);
-      std::printf("### CS BC PROBE  ncycle=%d  t=%.8f dt=%.6e  theta_int=%.9e"
-                  "  w*t=%.9e  th-w*t=%+.4e  (th-w*t)/(w*dt)=%+.4f  |B|fit=%.9f\n",
-                  pm->ncycle, pm->time, pm->dt, th, omega*pm->time,
-                  th - omega*pm->time,
-                  (th - omega*pm->time)/(omega*pm->dt), std::sqrt(ca*ca + sa*sa));
     }
 
     const Real bsq = SQR(cs_b0r);
@@ -8115,13 +8042,8 @@ void CSTestSeamHaloScanFC(ParameterInput *pin, Mesh *pm) {
   Real cpoly_[NSTRETCH_R_POLY];
   for (int n=0; n<NSTRETCH_R_POLY; ++n) { cpoly_[n] = pmbp->pmesh->fStretchRPoly[n]; }
   const Real bazi = cs_bazi, bux = cs_bvx, buy = cs_bvy, buz = cs_bvz;
-  // WHICH RADIAL SHELL IS SCANNED.  0 = the middle ACTIVE shell, which isolates the
-  // tangential halo; a NEGATIVE value scans `is + ioff`, i.e. a RADIAL GHOST shell, which
-  // is where the x1x2x3 CORNER buffers (slots 48-55) live -- the only ghosts that are
-  // ghost in all three directions.  A radial ghost is only a real halo when x1 is split
-  // into more than one MeshBlock; otherwise it is the physical boundary.
-  const int ioff = pin->GetOrAddInteger("problem", "seam_halo_scan_fc_i", 0);
-  const int imid = (ioff == 0) ? (is + ie)/2 : (is + ioff);
+  // the middle ACTIVE radial shell is scanned, which isolates the tangential halo
+  const int imid = (is + ie)/2;
 
   // exact face-normal projection of B at a chart-continued (xi, eta), for component c,
   // on the radial face (c == 0) or at the radial centroid (c = 1, 2) of radial cell i

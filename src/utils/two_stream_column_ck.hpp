@@ -157,13 +157,6 @@ inline bool ck_impl_floorbound = false;
 // false = bitwise (default true on fresh fused ck_implicit dhj runs).  Counted in slot 17
 // with (b).
 inline bool ck_impl_kkt_demax = false;
-// problem/ck_impl_stalldbg: diagnosis of columns that stall at a fixed residual.  0 =
-// off (bitwise).  N > 0: on every fused pass with index >= N, each column still active
-// prints its worst cell, that cell's neighbours and every cell whose step was clipped
-// (dtmax / demax / floor), with the unclipped Newton step, the applied step, the KKT
-// flag and the magnitudes that set the round-off floor of the residual.  Nothing reads
-// it.
-inline int ck_impl_stalldbg = 0;
 // problem/ck_impl_negdbg = N > 0 (diagnostic): on every fused pass print up to N Newton
 // rows whose diagonal b = 1 - h J_ii/cv is not positive (they send the whole column to
 // the bounded per-cell fallback), with the three Jacobian entries.  Print only.
@@ -1271,7 +1264,7 @@ void CkWarmSeed(Mesh *pm, DvceArray5D<Real> u0);
 //----------------------------------------------------------------------------------------
 //! \fn bool CkKktCell
 //! \brief the KKT test of ck_impl_floorbound / ck_impl_kkt_demax for one cell (the rule
-//! of the fused kernel's kktcell), for ck_impl_kkt_row and ck_impl_stalldbg.
+//! of the fused kernel's kktcell), for ck_impl_kkt_row.
 
 KOKKOS_INLINE_FUNCTION
 bool CkKktCell(const EOS_Data &eos, const bool fb, const bool kd, const Real detot,
