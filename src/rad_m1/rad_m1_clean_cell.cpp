@@ -305,8 +305,7 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
 //! \brief 4x4 blocks of the preconditioner, from A with first-order jumps: the diagonal
 //! block of every cell (all directions) and the blocks of its two neighbours along each
 //! direction (states of cells i-1, i, i+1).  The RC terms in cells i+-2 and the
-//! reconstruction are left to the Krylov solve.  With clean_pc = mg also the blocks of
-//! the coarse levels.
+//! reconstruction are left to the Krylov solve.  Then the blocks of the coarse levels.
 
 void RadiationM1::CleanCellPreconditionerSetup() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -315,7 +314,7 @@ void RadiationM1::CleanCellPreconditionerSetup() {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
-  x.recon = x.recon && cln_pcrecon;
+  x.recon = false;
   auto op = opac;
 
   par_for("clc_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -351,7 +350,7 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       for (int c = 0; c < 4; ++c) x.u(m,CLC_A0+4*r+c,k,j,i) = a0[r][c];
     }
   });
-  if (cln_pc == 1) CleanCellCoarseSetup();
+  CleanCellCoarseSetup();
 }
 
 //----------------------------------------------------------------------------------------
@@ -594,7 +593,6 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
   const CleanLevel f = CleanCellLevel(l), c = CleanCellLevel(l+1);
   const int t1 = (l == 0) ? CLC_T1 : CLM_T1;
   const int r[3] = {f.n[0]/c.n[0], f.n[1]/c.n[1], f.n[2]/c.n[2]};
-  const Real wc = cln_pcwc;
 
   // pre-smoothing and the residual
   CleanCellSmooth(l, src, dst, true, cln_pcsweeps);
@@ -625,26 +623,11 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
 
   // coarse-level correction
   CleanCellVCycle(l+1, CLM_B, CLM_X);
-  if (cln_pccyc == 2 && l + 2 < nlev) {
-    // W-cycle: a second cycle on the coarse residual
-    CleanCellLevelApply(c, CLM_X, CLM_T1);
-    par_for("clc_wres", DevExeSpace(), 0, nmb1, 0, c.n[2]-1, 0, c.n[1]-1, 0, c.n[0]-1,
-    KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int ic) {
-      for (int q = 0; q < 4; ++q) {
-        uc(m,CLM_R2+q,kc,jc,ic) = uc(m,CLM_B+q,kc,jc,ic) - uc(m,CLM_T1+q,kc,jc,ic);
-      }
-    });
-    CleanCellVCycle(l+1, CLM_R2, CLM_X2);
-    par_for("clc_wadd", DevExeSpace(), 0, nmb1, 0, c.n[2]-1, 0, c.n[1]-1, 0, c.n[0]-1,
-    KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int ic) {
-      for (int q = 0; q < 4; ++q) uc(m,CLM_X+q,kc,jc,ic) += uc(m,CLM_X2+q,kc,jc,ic);
-    });
-  }
   par_for("clc_prolong", DevExeSpace(), 0, nmb1, f.o[2], f.o[2]+f.n[2]-1,
           f.o[1], f.o[1]+f.n[1]-1, f.o[0], f.o[0]+f.n[0]-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kc = (k - f.o[2])/r[2], jc = (j - f.o[1])/r[1], ic = (i - f.o[0])/r[0];
-    for (int q = 0; q < 4; ++q) uf(m,dst+q,k,j,i) += wc*uc(m,CLM_X+q,kc,jc,ic);
+    for (int q = 0; q < 4; ++q) uf(m,dst+q,k,j,i) += uc(m,CLM_X+q,kc,jc,ic);
   });
 
   // post-smoothing
@@ -653,15 +636,10 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellPrecondition
-//! \brief u(dst) = M^{-1} u(src): clean_pc_sweeps sweeps of x1/x2/x3 line relaxation
-//! (clean_pc = line) or a multigrid V-cycle with these as smoother (clean_pc = mg)
+//! \brief u(dst) = M^{-1} u(src): one multigrid V-cycle from the mesh level
 
 void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
-  if (cln_pc == 1) {
-    CleanCellVCycle(0, src, dst);
-  } else {
-    CleanCellSmooth(0, src, dst, true, cln_pcsweeps);
-  }
+  CleanCellVCycle(0, src, dst);
 }
 
 //----------------------------------------------------------------------------------------

@@ -9,7 +9,6 @@
 //! preconditioner and right-preconditioned BiCGStab.
 
 #include <cmath>
-#include <vector>
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
@@ -369,128 +368,6 @@ int RadiationM1::CleanBiCGStab() {
     if (omega == 0.0) return -it;
   }
   return -cln_maxit;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn int RadiationM1::CleanGMRES
-//! \brief right-preconditioned restarted GMRES(clean_gmres_m) for A X = B of the cell
-//! layout, starting from the X it is given: Arnoldi basis (modified Gram-Schmidt) in
-//! cln_kv, Givens rotations for the least-squares problem.  Returns the number of
-//! iterations, negative if not converged.
-
-int RadiationM1::CleanGMRES() {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, ie = indcs.ie;
-  int js = indcs.js, je = indcs.je;
-  int ks = indcs.ks, ke = indcs.ke;
-  int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
-  const int mr = cln_gmres_m;
-  auto u = cln_x;
-  auto v = cln_kv;
-
-  // sum over the active cells of u(a) v(b) (4 components)
-  auto dot = [&](const int a, const int b) {
-    Real sum = 0.0;
-    Kokkos::parallel_reduce("clc_gdot", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                            (nmb1 + 1)*nkji),
-    KOKKOS_LAMBDA(const int idx, Real &sl) {
-      int m = idx/nkji;
-      int k = (idx - m*nkji)/nji;
-      int j = (idx - m*nkji - k*nji)/nx1;
-      int i = idx - m*nkji - k*nji - j*nx1;
-      for (int c = 0; c < 4; ++c) {
-        sl += u(m,a+c,k+ks,j+js,i+is)*v(m,b+c,k+ks,j+js,i+is);
-      }
-    }, Kokkos::Sum<Real>(sum));
-    return sum;
-  };
-  // u(a) = su u(a) + sv v(b)
-  auto uaxpy = [&](const int a, const Real su, const Real sv, const int b) {
-    par_for("clc_gaxpy", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      for (int c = 0; c < 4; ++c) {
-        u(m,a+c,k,j,i) = su*u(m,a+c,k,j,i) + sv*v(m,b+c,k,j,i);
-      }
-    });
-  };
-  // v(b) = s u(a)
-  auto store = [&](const int b, const Real s, const int a) {
-    par_for("clc_gstore", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      for (int c = 0; c < 4; ++c) v(m,b+c,k,j,i) = s*u(m,a+c,k,j,i);
-    });
-  };
-
-  const Real tol = cln_tol*fmax(std::sqrt(CleanDot(u, 4, CLC_B, CLC_B)), 1.0e-300);
-  std::vector<Real> h((mr + 1)*mr), cs(mr), sn(mr), g(mr + 1), y(mr);
-  int it = 0;
-  while (true) {
-    // residual r = B - A X, the first basis vector
-    CleanCellApply(CLC_X, CLC_R);
-    par_for("clc_gres", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      for (int c = 0; c < 4; ++c) {
-        u(m,CLC_R+c,k,j,i) = u(m,CLC_B+c,k,j,i) - u(m,CLC_R+c,k,j,i);
-      }
-    });
-    const Real beta = std::sqrt(CleanDot(u, 4, CLC_R, CLC_R));
-    if (beta <= tol) return it;
-    if (it >= cln_maxit) return -it;
-    store(0, 1.0/beta, CLC_R);
-    for (int n = 0; n <= mr; ++n) g[n] = 0.0;
-    g[0] = beta;
-    int nk = 0;
-    bool done = false;
-    // Arnoldi steps: w = A M^-1 v_n, orthogonalised against v_0..v_n
-    for (int n = 0; n < mr && it < cln_maxit; ++n) {
-      ++it;
-      uaxpy(CLC_P, 0.0, 1.0, 4*n);
-      CleanCellPrecondition(CLC_P, CLC_Y);
-      CleanCellApply(CLC_Y, CLC_V);
-      for (int l = 0; l <= n; ++l) {
-        h[l*mr + n] = dot(CLC_V, 4*l);
-        uaxpy(CLC_V, 1.0, -h[l*mr + n], 4*l);
-      }
-      const Real hn = std::sqrt(CleanDot(u, 4, CLC_V, CLC_V));
-      h[(n + 1)*mr + n] = hn;
-      if (hn > 0.0) store(4*(n + 1), 1.0/hn, CLC_V);
-      // the previous rotations on the new column, then a new rotation
-      for (int l = 0; l < n; ++l) {
-        const Real a = h[l*mr + n], b = h[(l + 1)*mr + n];
-        h[l*mr + n] = cs[l]*a + sn[l]*b;
-        h[(l + 1)*mr + n] = -sn[l]*a + cs[l]*b;
-      }
-      const Real a = h[n*mr + n], b = h[(n + 1)*mr + n];
-      const Real d = std::sqrt(a*a + b*b);
-      cs[n] = (d > 0.0) ? a/d : 1.0;
-      sn[n] = (d > 0.0) ? b/d : 0.0;
-      h[n*mr + n] = d;
-      h[(n + 1)*mr + n] = 0.0;
-      g[n + 1] = -sn[n]*g[n];
-      g[n] = cs[n]*g[n];
-      nk = n + 1;
-      if (std::fabs(g[n + 1]) <= tol || hn == 0.0) {
-        done = true;
-        break;
-      }
-    }
-    // X += M^-1 V y, y from the triangular system
-    for (int l = nk - 1; l >= 0; --l) {
-      Real s = g[l];
-      for (int q = l + 1; q < nk; ++q) s -= h[l*mr + q]*y[q];
-      y[l] = s/h[l*mr + l];
-    }
-    uaxpy(CLC_P, 0.0, y[0], 0);
-    for (int l = 1; l < nk; ++l) uaxpy(CLC_P, 1.0, y[l], 4*l);
-    CleanCellPrecondition(CLC_P, CLC_Y);
-    par_for("clc_gx", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      for (int c = 0; c < 4; ++c) u(m,CLC_X+c,k,j,i) += u(m,CLC_Y+c,k,j,i);
-    });
-    if (done) return it;
-  }
 }
 
 }  // namespace radm1

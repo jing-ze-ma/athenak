@@ -112,9 +112,7 @@ constexpr int CLM_B = 128;   // right-hand side
 constexpr int CLM_X = 132;   // solution
 constexpr int CLM_T1 = 136;  // residual
 constexpr int CLM_T2 = 140;  // line-solve correction
-constexpr int CLM_R2 = 144;  // W-cycle residual and correction
-constexpr int CLM_X2 = 148;
-constexpr int CLM_N = 152;
+constexpr int CLM_N = 144;
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanSmoothStep
