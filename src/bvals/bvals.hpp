@@ -484,8 +484,7 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // cs_noresample (default false): this object's cross-panel ghosts are the plain signed
   // index copy of the neighbour's own cells (no along-seam resample), i.e. the mirror
   // images of this block's cells across the seam. Set by the implicit M1 on its scratch
-  // exchanges (stage CS1, rad_m1_sph.cpp), whose seam faces pair cell to cell; the
-  // global diagnostic env CS_NORESAMP_CC does the same for every object.
+  // exchanges (stage CS1, rad_m1_sph.cpp), whose seam faces pair cell to cell.
   bool cs_noresample = false;
   // >= 0 = the *FluxSeamCC exchange (averaging modes only) packs and
   // reconciles only this variable. Set by an RKG super-stage around its flux exchange
