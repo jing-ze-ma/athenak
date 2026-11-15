@@ -305,8 +305,8 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
 //! \brief 4x4 blocks of the preconditioner, from A with first-order jumps: the diagonal
 //! block of every cell (all directions) and the blocks of its two neighbours along each
 //! direction (states of cells i-1, i, i+1).  The RC terms in cells i+-2 and the
-//! reconstruction are left to the Krylov solve  With clean_pc = mg also the blocks of the coarse
-//! levels.
+//! reconstruction are left to the Krylov solve.  With clean_pc = mg also the blocks of
+//! the coarse levels.
 
 void RadiationM1::CleanCellPreconditionerSetup() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
