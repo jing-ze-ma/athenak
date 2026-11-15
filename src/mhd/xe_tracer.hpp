@@ -39,7 +39,7 @@
 
 namespace xetracer {
 
-constexpr int kNDonor = eos_cgs::n_metal_donor;
+constexpr int kNDonor = eos_cgs::kNumMetalDonor;
 
 //! everything the source kernel needs, captured by value (no host pointers)
 struct XeTracerParams {

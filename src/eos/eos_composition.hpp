@@ -89,8 +89,8 @@ struct MetalDonor {
   double tc_c;
   double tc_d;
 };
-constexpr int n_metal_donor = 6;
-constexpr MetalDonor metal_donor[n_metal_donor] = {
+constexpr int kNumMetalDonor = 6;
+constexpr MetalDonor metal_donor[kNumMetalDonor] = {
   // abundance  chi        2g+/g0     tc_a   tc_b    tc_c   tc_d   phase / source / 1 bar
   {2.0e-6, 5.139*ev, 1.0,     10.045, 0.72,   1.08,  0.0},      // Na Na2S    Mo12   995 K
   {1.2e-7, 4.341*ev, 1.0,     12.479, 0.879,  0.879, 0.0},      // K  KCl     Mo12   801 K
@@ -264,7 +264,7 @@ struct EOSCompositionModel {
     if (nmion != nullptr) {
       double sum = 0.0;
       if (kmet != nullptr) {
-        for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
+        for (int s=0; s<eos_cgs::kNumMetalDonor; ++s) {
           double rm = kmet[s]/nel;
           double fc = (fcond != nullptr) ? fcond[s] : 1.0;
           sum += eos_cgs::metal_donor[s].abun*nmet_base*fc*rm/(1.0 + rm);
@@ -282,7 +282,7 @@ struct EOSCompositionModel {
     // clamp p to 1e-8..1e3 bar, where the quadratic fits are valid
     double lgp = log10(p_cgs/1.0e6);                    // 1 bar = 1e6 barye
     lgp = (lgp < -8.0) ? -8.0 : ((lgp > 3.0) ? 3.0 : lgp);
-    for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
+    for (int s=0; s<eos_cgs::kNumMetalDonor; ++s) {
       const eos_cgs::MetalDonor &m = eos_cgs::metal_donor[s];
       double denom = m.tc_a - m.tc_b*lgp + m.tc_d*lgp*lgp - m.tc_c*metal_mh;
       // a non-positive denominator means the curve has run off its range of validity;
@@ -299,7 +299,7 @@ struct EOSCompositionModel {
   EOSCompositionState Evaluate(const double rho, const double t) const {
     if (include_metal_ion && include_metal_cond) {
       EOSCompositionState s0 = EvaluateAt(rho, t, nullptr);
-      double fcond[eos_cgs::n_metal_donor];
+      double fcond[eos_cgs::kNumMetalDonor];
       CondensationFactors(t, rho*s0.p_spec, fcond);
       return EvaluateAt(rho, t, fcond);
     }
@@ -333,17 +333,17 @@ struct EOSCompositionModel {
 
     // metal donors. The T-dependent factors are hoisted out of the bisection below, so
     // the extra cost inside it is one divide per species per iteration.
-    double kmet[eos_cgs::n_metal_donor];
+    double kmet[eos_cgs::kNumMetalDonor];
     double nmet_base = 0.0;
     const bool has_metal = include_metal_ion && (nh_tot > 0.0);
     if (has_metal) {
       nmet_base = nh_tot*pow(10.0, metal_mh);
-      for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
+      for (int s=0; s<eos_cgs::kNumMetalDonor; ++s) {
         double bm = -eos_cgs::metal_donor[s].chi/(kboltz*t);
         kmet[s] = (bm > -700.0) ? eos_cgs::metal_donor[s].gfac*sf*exp(bm) : 0.0;
       }
     } else {
-      for (int s=0; s<eos_cgs::n_metal_donor; ++s) kmet[s] = 0.0;
+      for (int s=0; s<eos_cgs::kNumMetalDonor; ++s) kmet[s] = 0.0;
     }
 
     // charge neutrality by bisection in log n_e: the residual is positive at small n_e
@@ -354,7 +354,7 @@ struct EOSCompositionModel {
     double nel = 0.0;
     bool any_ion = (kh > 0.0 || khe1 > 0.0);
     if (has_metal) {
-      for (int s=0; s<eos_cgs::n_metal_donor; ++s) any_ion = any_ion || (kmet[s] > 0.0);
+      for (int s=0; s<eos_cgs::kNumMetalDonor; ++s) any_ion = any_ion || (kmet[s] > 0.0);
     }
     if (any_ion) {
       double lo = log(nmax) - 40.0*M_LN10;
@@ -401,7 +401,7 @@ struct EOSCompositionModel {
     // metal ionization energy from neutral (keeps c_v consistent across the metal
     // ionization zone)
     if (has_metal) {
-      for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
+      for (int s=0; s<eos_cgs::kNumMetalDonor; ++s) {
         double rm = kmet[s]/nel;
         double fc = (fcond != nullptr) ? fcond[s] : 1.0;
         eint += eos_cgs::metal_donor[s].abun*nmet_base*fc*(rm/(1.0 + rm))
