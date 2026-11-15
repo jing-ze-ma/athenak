@@ -212,9 +212,8 @@ void RadiationM1::CleanCellConsistency() {
                        CleanCellOutStress(x, dir, r-1, m, k, j, i, true)*er);
         }
       }
-      // none on a low-order face or in an all-low solve (the positivity fallback acts
-      // on U itself); clean_consistency_weight: the rays' streaming weight of the face
-      Real wb = (x.all_low || x.fc[dir](m,CLF_LO,k,j,i) > 0.0) ? 0.0 : 1.0;
+      // clean_consistency_weight: the rays' streaming weight of the face
+      Real wb = 1.0;
       if (cwt) {
         const Real c1 = 0.5*(x.cs(m,CLN_C1,kl,jl,il) + x.cs(m,CLN_C1,k,j,i));
         wb *= CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
