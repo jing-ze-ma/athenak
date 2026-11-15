@@ -52,6 +52,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.use_beam = (ibm_n > 0);
   x.feedback = cln_feedback;
   x.recon = cln_recon;
+  x.all_low = cln_all_low;
   x.nf = pmy_pack->pmesh->three_d ? 3 : (pmy_pack->pmesh->multi_d ? 2 : 1);
   x.is = indcs.is;
   x.ie = indcs.ie;

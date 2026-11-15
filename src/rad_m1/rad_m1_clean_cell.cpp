@@ -875,9 +875,10 @@ int RadiationM1::CleanCellMarkFaces() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellAllLowOrder
 //! \brief marks every face low-order (faces on a physical boundary only with
-//! clean_pos_boundary)
+//! clean_pos_boundary; otherwise their stress takes the upwind form, CleanCellFaceJacobian)
 
 void RadiationM1::CleanCellAllLowOrder() {
+  cln_all_low = true;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;

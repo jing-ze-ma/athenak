@@ -206,8 +206,9 @@ Real CleanCellOutStress(const CleanArgs &x, const int dir, const int b, const in
 //! \fn void CleanCellFaceSource
 //! \brief the E-independent part of the face fluxes on a physical boundary: the
 //! incoming E flux of CleanFaceSource and the stress of the incoming radiation (beam:
-//! its stress column; isotropic bath: c E_bath/6 on the normal row); a low-order face the
-//! ghost part of the upwind characteristic flux
+//! its stress column; isotropic bath: c E_bath/6 on the normal row); in a first-order
+//! solve the ghost part of the upwind stress, on a low-order face that of the upwind
+//! characteristic flux
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const int k,
@@ -229,6 +230,16 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
     return;
   }
   s[0] = CleanFaceSource(x, dir, m, k, j, i);
+  if (x.all_low) {
+    // ghost part of the upwind stress of a first-order solve
+    const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
+    const int ic = low ? i : i - (dir == 0);
+    Real eg, yg[3], pg[3];
+    CleanCellGhost(x, dir, m, kc, jc, ic, low, eg, yg, pg);
+    const Real sg = low ? 0.5*x.c : -0.5*x.c;
+    for (int b = 0; b < x.nf; ++b) s[1+b] = 0.5*x.c*pg[b] + sg*yg[b];
+    return;
+  }
   if (low && dir == 0 && x.use_beam && x.beam(m,k-x.ks,j-x.js) > 0.0) {
     for (int b = 0; b < x.nf; ++b) s[1+b] = x.bstress(m,b,k-x.ks,j-x.js);
     return;
@@ -243,10 +254,11 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
 //! states of L-1 and R+1 (RC, reconstruction) are left to CleanCellFaceFlux.  On
 //! physical boundaries fE takes the boundary form of CleanFaceWeights and fY the stress
 //! of the radiation leaving through the face, c k_out E of the inner cell
-//! (CleanCellOutStress; the incoming part is in CleanCellFaceSource); a low-order
-//! boundary face takes the upwind characteristic flux (D = I) against the ghost of
-//! CleanCellGhost for both; a reflecting wall carries only the normal stress of the
-//! inner cell.
+//! (CleanCellOutStress; the incoming part is in CleanCellFaceSource).  In a solve with
+//! every interior face low-order fY is the upwind (a = c) flux between the inner cell and
+//! the ghost of CleanCellGhost, a low-order boundary face (clean_pos_boundary) the upwind
+//! characteristic flux (D = I) for both; a reflecting wall carries only the normal stress
+//! of the inner cell.
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const int k,
@@ -286,7 +298,13 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
     CleanFaceWeights(x, dir, m, k, j, i, al, ar);
     jj[0][0] = blo ? ar : al;
     for (int b = 0; b < x.nf; ++b) {
-      jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, kc, jc, ic, blo);
+      if (x.all_low) {
+        // first-order solve: upwind (a = c) stress between the inner cell and the ghost
+        jj[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, kc, jc, ic);
+        jj[1+b][1+b] = sg;
+      } else {
+        jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, kc, jc, ic, blo);
+      }
     }
     return;
   }

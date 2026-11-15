@@ -134,6 +134,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   const bool t2stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   int nit = 0, nit_sum = 0, nsolve = 0, npic = 0, npos = 0, nmark = 0;
   bool all_low = false;
+  cln_all_low = false;
   Real dpic = 0.0;
   bool converged = !iterate;
   const int maxnl = iterate ? cln_maxnl : 1;
