@@ -62,6 +62,7 @@ void RadiationM1::CleanInit() {
     Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
     Kokkos::deep_copy(cln_x, 0.0);
   }
+  if (force_ref == M1_FREF_CLEAN) Kokkos::realloc(cln_fref, nmb, 3, n3, n2, n1);
   // multigrid levels of the cell layout: halve every direction with an even number
   // (>= 4) of cells, down to the level where no direction can be halved
   if (cln_cell) {
@@ -89,6 +90,12 @@ void RadiationM1::CleanInit() {
   if (pm->multilevel || (pm->nmb_total > 1 && !cln_cell) || chat != c_light) {
     CleanFatal("<rad_m1>/scheme = clean currently needs a uniform mesh (several "
                "MeshBlocks: clean_layout = cell) and chat = c");
+  }
+  if ((force_ref != M1_FREF_NONE && !cln_cell) ||
+      (force_ref == M1_FREF_WB_ARAD && !fref_wsplit)) {
+    CleanFatal("<rad_m1>/force_reference with scheme = clean needs clean_layout = cell "
+               "and, for wb_arad, the reference work given by the problem generator "
+               "(force_reference_work = split)");
   }
   if (pm->use_cubed_sphere) {
     CleanFatal("<rad_m1>/scheme = clean does not run on the cubed sphere yet");
@@ -142,8 +149,9 @@ void RadiationM1::CleanInit() {
 //! until the change contracts by less than 1/2 per pass: what is left is the slow
 //! evolution of the scheme at that dt, which the run carries on.  The radiation energy
 //! and momentum are thereby redefined (reported as volume sums, F in the local basis on
-//! spherical polar); the gas is not touched.  The closure history is then dropped, so
-//! the first step starts from this state alone.
+//! spherical polar); the gas is not touched, except its internal energy with
+//! force_reference = clean.  The closure history is then dropped, so the first step
+//! starts from this state alone.
 
 void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   if (!cln_steady) return;
@@ -155,8 +163,14 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   const bool sfb = gas_feedback;
   const int st2 = t2_solve;
   const Real nc0 = vet_ncall;
-  // gas frozen, plain backward-Euler steps without substeps; big: the large step
-  gas_feedback = false;
+  // gas frozen, plain backward-Euler steps without substeps; big: the large step.  With
+  // force_reference = clean the gas internal energy relaxes with E (rho and momentum
+  // frozen), so that the reference state is in radiative equilibrium
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  const bool relax = (force_ref == M1_FREF_CLEAN) && sfb && fl.on;
+  auto uh = fl.u0;
+  gas_feedback = relax;
+  cln_vzero = relax;
   t2_solve = M1_T2S_NONE;
   nsub = 1;
   bool big = true, ok = false;
@@ -165,6 +179,8 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   auto u0_ = u0;
   DvceArray5D<Real> uo("cln_steady_u", nmb1 + 1, 4, u0.extent(2), u0.extent(3),
                        u0.extent(4));
+  DvceArray5D<Real> ug("cln_steady_g", relax ? nmb1 + 1 : 1, 4, u0.extent(2),
+                       u0.extent(3), u0.extent(4));
   const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
   const int ntot = (nmb1 + 1)*nk*nj*ni;
   auto &sz = pmy_pack->pmb->mb_size.h_view(0);
@@ -193,12 +209,16 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
       const int n4 = uo.extent(4), n3 = uo.extent(3), n2 = uo.extent(2);
       const int i = q%n4, j = (q/n4)%n3, k = (q/(n4*n3))%n2, c = (q/(n4*n3*n2))%4;
       const int m = q/(n4*n3*n2*4);
+      const int g = (c == 0) ? IEN : IM1 + c - 1;
       if (save) {
         uo(m,c,k,j,i) = u0_(m,M1_E+c,k,j,i);
+        if (relax) ug(m,c,k,j,i) = uh(m,g,k,j,i);
       } else {
         u0_(m,M1_E+c,k,j,i) = uo(m,c,k,j,i);
+        if (relax) uh(m,g,k,j,i) = ug(m,c,k,j,i);
       }
     });
+    if (relax && !save) FluidRefresh(pdrive);
   };
   Real t0[4], t1[4];
   sums(t0);
@@ -256,6 +276,7 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   // restore the run's setup; the first step starts from this state without history
   sums(t1);
   gas_feedback = sfb;
+  cln_vzero = false;
   t2_solve = st2;
   t2_ok = false;
   dtr_fail = false;

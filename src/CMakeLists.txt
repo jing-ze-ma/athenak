@@ -180,6 +180,7 @@ add_executable(
         pgen/tests/rad_m1_tests.cpp
         pgen/tests/rad_m1_tests2.cpp
         pgen/tests/rad_m1_wedge.cpp
+        pgen/tests/rad_m1_rhse.cpp
         pgen/tests/rad_linear_wave.cpp
         pgen/tests/z4c_boosted_puncture.cpp
         pgen/tests/z4c_linear_wave.cpp

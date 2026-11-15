@@ -72,6 +72,7 @@ void RadiationM1::CleanCellFaceCoefficients() {
   const Real h = dt_sub, c = c_light, eps = cln_psi_eps;
   const Real c1lo = cln_c0, c1hi = cln_c1;
   const int mode = cln_alpha;
+  const bool wb = (force_ref == M1_FREF_CLEAN);
   CleanArgs x = CleanMakeArgs();
   auto cs = cln_s;
   auto op = opac;
@@ -124,7 +125,9 @@ void RadiationM1::CleanCellFaceCoefficients() {
       const Real dd = fmax(cs(m,CLN_D11+dir,k,j,i), cs(m,CLN_D11+dir,kl,jl,il));
       const Real dxd = CleanCellFaceDistance(x, dir, m, k, j, i);
       fc(m,CLF_AL,k,j,i) = CleanDissipationWeight(mode, chi*dxd, psi, sray);
-      fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);
+      // force_reference = clean: theta h c^2 = c/max(chi, 2/dx), the steady RC
+      // coefficient, so that the scheme's steady states do not depend on h
+      fc(m,CLF_TH,k,j,i) = wb ? 1.0/(h*c*fmax(chi, 2.0/dxd)) : 1.0/(1.0 + h*c*chi);
       fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
       fc(m,CLF_LO,k,j,i) = 0.0;
       fc(m,CLF_UG,k,j,i) = 0.0;
@@ -831,8 +834,10 @@ Real RadiationM1::CleanCellNewtonUpdate() {
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::CleanCellVelocityUpdate
 //! \brief momentum change of the iterate, -[(y - y_old) + h div fY]/c per cell (minus the
-//! radiation momentum change besides its flux divergence), and the advective
-//! coefficients of the new velocity.  Returns max |dv| over max |v|.
+//! radiation momentum change besides its flux divergence) less h times the reference
+//! force (CleanRefForce; force_reference = clean takes it from the first iterate of the
+//! first coupled solve), and the advective coefficients of the new velocity.  Returns
+//! max |dv| over max |v|.
 
 Real RadiationM1::CleanCellVelocityUpdate() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -846,6 +851,11 @@ Real RadiationM1::CleanCellVelocityUpdate() {
   auto uh = fl.u0;
   auto op = opac;
   const Real arad_ = arad;
+  const int fref = force_ref;
+  const bool vzero = cln_vzero;
+  const bool cap = (fref == M1_FREF_CLEAN) && !cln_fref_set && !vzero;
+  auto fr = cln_fref;
+  auto aref = arad_ref;
 
   Real dvmax = 0.0, vmax = 0.0, femax = 0.0, fvmax = 0.0;
   Kokkos::parallel_reduce("clc_velocity", Kokkos::RangePolicy<>(DevExeSpace(), 0,
@@ -875,6 +885,12 @@ Real RadiationM1::CleanCellVelocityUpdate() {
       if (b < x.nf) {
         const Real y = x.u(m,CLC_K+1+b,k,j,i), yo = x.u(m,CLC_O+1+b,k,j,i);
         dm = -(y - yo + div[1+b])/x.c;
+        if (cap || vzero) {
+          if (cap) fr(m,b,k,j,i) = dm/x.h;
+          dm = 0.0;
+        } else {
+          dm -= x.h*CleanRefForce(fref, fr, aref, d, b, m, k, j, i);
+        }
         fv_max = fmax(fv_max, (fabs(y)*(1.0 + hc*chi) + fabs(yo) + adiv[1+b]*(1.0 + re)
                                + x.h*chi*fabs(x.w(m,CLW_A1+b,k,j,i)*e))/(x.c*d));
       }
@@ -885,6 +901,7 @@ Real RadiationM1::CleanCellVelocityUpdate() {
     v_max = fmax(v_max, std::sqrt(v2));
   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(femax),
   Kokkos::Max<Real>(fvmax));
+  if (cap) cln_fref_set = true;
   cln_fe = std::numeric_limits<Real>::epsilon()*femax;
   cln_fv = std::numeric_limits<Real>::epsilon()*fvmax/fmax(vmax, 1.0e-300);
   if (cln_vfreeze != 1) CleanAdvectiveCoefficients();
@@ -1116,7 +1133,9 @@ void RadiationM1::CleanCellDiagnose() {
 //! \brief stores the solution: E and F of the cells, the face fluxes of E (f0x*), the gas
 //! momentum and energy, and the stage slopes K = (U - U_old)/h.  The gas takes exactly
 //! the momentum and energy the radiation gives up besides its face fluxes, so both
-//! totals change only by the fluxes through the boundary.  A gas left with eint < 0 takes
+//! totals change only by the fluxes through the boundary; with force_reference the
+//! reference force is withheld from the gas momentum (an external source, like gravity),
+//! and the radiation pays only the work of the residual.  A gas left with eint < 0 takes
 //! the deficit from the cell's radiation E; cln_neint counts the cells where E did not
 //! cover it (the fluid's floor would create energy there).
 
@@ -1134,6 +1153,10 @@ void RadiationM1::CleanCellWriteBack() {
   CleanGhostFill(cln_x, CLC_X, 4);
   CleanArgs x = CleanMakeArgs();
   auto kk = (t2_solve == M1_T2S_STAGE1) ? t2k2 : t2k1;
+  const int fref = force_ref;
+  const bool vzero = cln_vzero;
+  auto fr = cln_fref;
+  auto aref = arad_ref;
 
   // face fluxes of E
   for (int dir = 0; dir < 3; ++dir) {
@@ -1152,6 +1175,7 @@ void RadiationM1::CleanCellWriteBack() {
   // E, F, gas, slopes
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
+  auto eos = fl.eos;
   auto u0_ = u0;
   Real neint = 0.0;
   Kokkos::parallel_reduce("clc_wbcell", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
@@ -1164,20 +1188,30 @@ void RadiationM1::CleanCellWriteBack() {
     Real dm[3] = {0.0, 0.0, 0.0};
     Real den = 0.0;
     if (feedback) {
-      for (int b = 0; b < x.nf; ++b) {
-        dm[b] = -(x.u(m,CLC_X+1+b,k,j,i) - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c;
+      for (int b = 0; b < x.nf && !vzero; ++b) {
+        dm[b] = -(x.u(m,CLC_X+1+b,k,j,i) - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c
+                - h*CleanRefForce(fref, fr, aref, uh(m,IDN,k,j,i), b, m, k, j, i);
         uh(m,IM1+b,k,j,i) += dm[b];
       }
       den = -(e - e_old) - div[0];
-      // an unconverged iterate's work differs from the kinetic energy of dm: a gas
-      // left with eint < 0 takes the deficit from the cell's radiation
-      const Real def = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
-                            SQR(uh(m,IM3,k,j,i)))/uh(m,IDN,k,j,i) - uh(m,IEN,k,j,i) - den;
-      if (def > 0.0) {
-        const Real tk = fmin(def, fmax(e, 0.0));
-        e -= tk;
-        den += tk;
-        if (tk < def) nb += 1.0;
+      if (vzero) {
+        // steady start: the internal energy of the gas temperature of the iterate, not
+        // the residual of a step h -> infinity
+        Real ei, p, chi_rho, chi_t, cv;
+        eos.ThermoAt(uh(m,IDN,k,j,i), x.w(m,CLW_T,k,j,i), ei, p, chi_rho, chi_t, cv);
+        den = ei - x.w(m,CLW_EI,k,j,i);
+      } else {
+        // an unconverged iterate's work differs from the kinetic energy of dm: a gas
+        // left with eint < 0 takes the deficit from the cell's radiation
+        const Real def = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
+                              SQR(uh(m,IM3,k,j,i)))/uh(m,IDN,k,j,i) - uh(m,IEN,k,j,i)
+                         - den;
+        if (def > 0.0) {
+          const Real tk = fmin(def, fmax(e, 0.0));
+          e -= tk;
+          den += tk;
+          if (tk < def) nb += 1.0;
+        }
       }
       uh(m,IEN,k,j,i) += den;
     }
