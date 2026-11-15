@@ -266,7 +266,7 @@ void ParameterInput::LoadFromFile(IOWrapper &input, bool single_file_per_rank) {
       break;
     }
     // rst header limit raised 10 -> 256 buffers (~1 MB): commented decks + FIN5.1/ROL2U
-    // keys reached 45 KB (Caltech 10-15, He giant LARGE restart FATAL); the search is
+    // keys reached 45 KB (a He giant LARGE restart FATAL); the search is
     // cheap and only runs once.
     if (header > kBufSize*256) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

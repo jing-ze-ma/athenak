@@ -42,7 +42,7 @@
 // <time>/dt_collapse_med = F > 0 (read only when named; default 0 = off):
 // the `### dt COLLAPSE` report also fires when dt < (median of the last 100 dt) / F, once
 // per episode (re-armed when dt is back above median / 2). The 4x-per-step test misses a
-// slide of a few x per step (fresh r1m 11-02: 10.8 -> 0.15 s in ~10 steps, silent).
+// slide of a few x per step (10.8 -> 0.15 s in ~10 steps, silent).
 namespace {
 Real dt_collapse_med = 0.0;
 std::vector<Real> dt_hist_;
@@ -379,7 +379,7 @@ Mesh::Mesh(ParameterInput *pin) :
       const int nx1 = pin->GetInteger("mesh", "nx1");
       const Real x1a = pin->GetReal("mesh", "x1min"), x1b = pin->GetReal("mesh", "x1max");
       // ij = nin allowed (the WHOLE older grid kept, the tail above its
-      // x1max: the radial extension of a restart, mhdtop_1112/tools/rst_extend.py)
+      // x1max: the radial extension of a restart)
       if (!(nin > 0 && ij > 0 && ij <= nin && ij < nx1 && r1o > x1a && r1o <= x1b)) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "mesh/f_stretch_r_tail_*: need 0 < ij <= nin, ij < nx1 "

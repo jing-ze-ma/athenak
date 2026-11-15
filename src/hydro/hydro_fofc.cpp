@@ -426,7 +426,7 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
     // first-order fluxes are the same algebra on the same states but are compiled as
     // two inlined copies, which the GPU compiler may contract (FMA) differently, so they
     // can differ in the last bit -- and which store lands last is up to the scheduler:
-    // GPU runs were not bitwise reproducible (bsg_1001/DETERMINISM.md).  So a cell
+    // GPU runs were not bitwise reproducible.  So a cell
     // replaces its UPPER face only when the cell above is not itself replacing it (it
     // is outside this kernel's range or not flagged).  The cell above writes the face
     // as its LOWER face, which is also the store that lands last in the serial loop

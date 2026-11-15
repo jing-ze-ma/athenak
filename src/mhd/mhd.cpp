@@ -30,9 +30,9 @@
 
 namespace {
 //----------------------------------------------------------------------------------------
-//! defaults (user 11-01). Each applies only when its key is NOT named and
+//! defaults. Each applies only when its key is NOT named and
 //! recipe::NewDefaults(pin) holds, i.e. on a FRESH start (or <job>/recipe = prod1019);
-//! a restart whose embedded input lacks the key keeps the old behaviour (off). The
+//! a restart whose embedded input lacks the key keeps the plain behaviour (off). The
 //! resolved value is written into the ParameterInput (GetOrAdd), so it is embedded in
 //! every restart the run writes and the restart continues with it. An explicit key in
 //! the deck or on the command line always wins. Every decision goes to the recipe log.
@@ -84,7 +84,7 @@ void DefaultXeTracer(ParameterInput *pin, const EOS_Data &eos) {
   if (recipe::NewDefaults(pin)) pin->GetOrAddBoolean("mhd","xe_tracer",true);
 }
 
-//! (user 11-01): <mhd>/ambipolar = eos on a fresh start (same rules as
+//! <mhd>/ambipolar = eos on a fresh start (same rules as
 //! above) when ohmic_resistivity = eos AND the x_e tracer is on (after DefaultXeTracer).
 //! AD with the local Saha x_e costs +31 % RKG stages: not defaulted without the tracer.
 void DefaultAmbipolar(ParameterInput *pin) {
@@ -327,10 +327,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   // face is a conducting wall for the field. The resistive tangential edge EMF eta J_t
   // at a reflect wall grew the wall B.n by 1e3-3e4x, which then carried a Maxwell torque
   // (dLz 3e-5..7e-5, not converging) and, with the resistive Poynting flux, an energy
-  // loss (dE/E -1.4 %) on the closed cs shell (csam_1028/RESULTS.md). `resistive` zeroes
+  // loss (dE/E -1.4 %) on the closed cs shell. `resistive` zeroes
   // only the resistive part (ideal MHD bitwise unchanged); `full` also the ideal edge EMF
   // (the former <mhd>/wall_emf_zero, which this key replaces) and the
-  // Riemann mass+energy fluxes through the wall. Default `full` (user 10-29): it
+  // Riemann mass+energy fluxes through the wall. Default `full`: it
   // changes ideal MHD with reflect walls (the wall B.n is frozen, E closes to round-off).
   if (pin->DoesParameterExist("mhd","wall_emf_zero")) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -502,7 +502,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // radiative timescale the profile changes on. N = 1 halves the walk cost, N = 10
     // removes it.
     wb_cache_every = pin->GetOrAddInteger("mhd","wb_cache_every",0);
-    // Ideal-gas x1 WB cache (BuildWBCache) safety keys, BSG arm 1 crash (10-02):
+    // Ideal-gas x1 WB cache (BuildWBCache) safety keys:
     // <mhd>/wb_clamp_ideal: polytropic closed form limits the T DECREASE over a
     // segment to t0/2, as the general-EOS walk does (getWBerho, clamp_dt);
     // <mhd>/wb_guard_ideal: WBGuard flattens a non-finite, non-positive or absurd
@@ -768,7 +768,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         pin->DoesParameterExist("mhd","rsolver") &&
         (pin->GetString("mhd","rsolver") == "hlld" ||
          pin->GetString("mhd","rsolver") == "lhlld")) {
-      constexpr bool UCT_SP_DEFAULT = true;   // sp port gated (prod_1103/sp)
+      constexpr bool UCT_SP_DEFAULT = true;
       std::string no;
       if (ppack->pmesh->one_d) {
         no = "1-D (no corner EMF)";

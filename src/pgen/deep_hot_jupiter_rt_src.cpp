@@ -332,8 +332,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
           // The centrifugal WORK: with rot_potential AND etotgrav the face potentials
           // phi0.x1f/x2f/x3f are TotPotAt (gravity + centrifugal, theta-dependent), so
           // the etotgrav energy flux rho v Phi_tot already does ALL of it, radial and
-          // horizontal; adding the theta part here counted it twice (dhj-rotpot-energy,
-          // 09-28: a spurious ~1e31 erg/s source/sink pair in the WASP-121b runs).
+          // horizontal; adding the theta part here counted it twice (a
+          // spurious ~1e31 erg/s source/sink pair in the WASP-121b runs).
           // Without etotgrav (or without rot_potential) the source does all of it.
           if (!(rotpot && use_etotgrav)) {
             u0(m,IEN,k,j,i) += rho*oor*(((rotpot && use_etotgrav) ? 0.0 : vr*sine)

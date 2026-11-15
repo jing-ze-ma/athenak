@@ -24,7 +24,7 @@
 //! STRETCHED grid they differ by ~(dr_i - dr_(i-1))/4, a truncation error that is only
 //! as small as the cell-to-cell width ratio is close to 1.  On the WASP-121b grid (8-term
 //! polynomial, width ratio up to 1.09 below 1e-6 bar and 1.31 at the top) it dominated
-//! the resistive diffusion error: a 1-D replica of this operator (csresist_0928) gave a
+//! the resistive diffusion error: a 1-D replica of this operator gave a
 //! 1.2e-2 field error below 1e-6 bar against 2.3e-4 with these weights (and the
 //! loop normalized at r_l, the rsc factor in pass 1).
 //!

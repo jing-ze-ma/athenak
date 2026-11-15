@@ -1200,8 +1200,8 @@ class Hydro {
             // clamp_dt (<hydro>/wb_clamp_ideal, x1 cache only): BOUND THE TEMPERATURE
             // EXTRAPOLATION as the general-EOS walk does (wb_background.hpp): limit the
             // DECREASE of T over a segment to half the starting temperature, so a small
-            // positive t1 cannot overflow pow(t1/t0, -(1+b)/b) across a steep T jump (BSG
-            // arm 1, 10-02); the branch degrades toward its isothermal member instead.
+            // positive t1 cannot overflow pow(t1/t0, -(1+b)/b) across a steep T jump;
+            // the branch degrades toward its isothermal member instead.
             // Where the clamp does not bite, be IS b bit for bit.
             auto step = [&](const Real d0, const Real t0, const Real dphi,
                             Real &d1, Real &t1) {

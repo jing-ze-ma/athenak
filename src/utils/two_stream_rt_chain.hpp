@@ -118,7 +118,7 @@ void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
   // the five stored-operator Views fold away and this kernel is the one the
   // explicit sweep compiled to before the flag existed.  A default-off switch
   // that stays a runtime bool inside this kernel costs ~28 % of the whole RT
-  // loop; that is measured in bench/bisect_cost/README.md.
+  // loop.
   constexpr bool FOP = decltype(fop_tag)::value;   // see ck_impl_frozen_op
   // problem/ck_implicit on the tm sweep (ck_sweep_form = 1): the tridiagonal
   // assembly of the probe-free recurrence, a COMPILE-TIME tag for the same reason
@@ -359,7 +359,7 @@ void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
         // matter (see BFace).  The neighbour's kappa costs a second table lookup,
         // so it is paid only where the two Planck functions differ by more than
         // 4x
-        // -- a smooth column takes the old expression and is bit-identical.
+        // -- a smooth column takes the plain expression and is bit-identical.
         const int ir1 = (i+1 > ie) ? ie : i+1;
         const Real rhf = rhoN(m,k,j,ir1);
         const Real xTf = xT_g(m,k,j,i+1);
@@ -2279,7 +2279,7 @@ void TsrtGreyRt(Ctx &ctx_, NnTag nn_tag) {
         // and lost about 24 % of the incident stellar flux. Found by comparing the
         // correlated-k version of the same expression against Exo-FMS on an identical
         // column. Written this way the column integral telescopes to
-        // mu F (1 - e^-tau_total) exactly, and it still reduces to the old expression
+        // mu F (1 - e^-tau_total) exactly, and it still reduces to the plain expression
         // as dtau -> 0.
         Real Qv = (1.0-albedo)*Fstar*(1.0/3.0)
                 * ((trp1-trans1)+(trp2-trans2)+(trp3-trans3))/(fac*dr);

@@ -6,7 +6,6 @@
 //! \file ry_per_accretor.cpp
 //! \brief The mass-gaining star of an Algol binary (RY Per first): the L1 stream hitting
 //! a rigid, absorbing, rotating stellar surface, in the r-phi plane of the orbit.
-//! Design: /viper/ptmp2/jinma/accretor_1006/DESIGN.md.
 //! Build: -D PROBLEM=ry_per_accretor.
 //!
 //! GEOMETRY.  Spherical polar (mesh/use_spherical_polar), origin at the ACCRETOR centre,
@@ -43,7 +42,7 @@
 //! key problem/thermo = adiabatic is RESERVED for the gamma = 5/3 option and is FATAL
 //! today.  Building it: put Phi into phicc0/phi0 with <hydro>/etotgrav (he_star_m1.cpp
 //! hs_phi fill), keep Coriolis explicit, do NOT add the centrifugal work as an explicit
-//! energy source when the potential carries it (the 09-28 rot_potential double-count
+//! energy source when the potential carries it (the rot_potential double-count
 //! guard, deep_hot_jupiter_rt.cpp `if (!(rotpot && use_etotgrav))`), and give the user
 //! BCs a pressure.  With the isothermal EOS there is no energy equation, so neither the
 //! etotgrav machinery nor that guard applies here.
@@ -348,7 +347,7 @@ bool msk_ = false;             // donor_mask = roche
 Real msk_phl1_ = 0.0, msk_xl1_ = 0.0;   // Phi(L1) and the L1 distance from the accretor
 bool mirr_ = false;            // problem/donor_irr: the mask radiates at T_d
 Real mirr_e_ = 0.0;            // a T_d^4 (code), x donor_irr_scale
-// accretor-bigdom-v4 (10-16): donor_irr_scale (2-D band: auto = physical 3-D dilution),
+// donor_irr_scale (2-D band: auto = physical 3-D dilution),
 // donor_gdark (von Zeipel beta: E = s a T_loc^4, T_loc^4 = C g_eff^(4 beta), floored),
 // sink_zero_v (zero v in the sink cells after the M1 coupling)
 Real mirr_sc_ = 1.0;
@@ -453,8 +452,7 @@ bool env_sp_spin_ = false;
 // capped at env_v_floor_max, KE removed from E; booked in Erel / Jspf) also acts on EVERY
 // cell with rho < env_sponge_thin_rho, whatever the inside-envelope flag.  For the thin
 // atmosphere far above the photosphere (rho_ph ~ 0.013 code), which otherwise falls back
-// at 100-170 km/s after the spin ramp's surface overshoot and sets the hydro dt (S1,
-// 10-29).
+// at 100-170 km/s after the spin ramp's surface overshoot and sets the hydro dt.
 Real env_thin_rho_ = 0.0;
 DvceArray4D<Real> gr4_, gt4_, gp4_, gpl4_;
 // 3-D: g_r remainder, g_theta, g_phi, plain g_r
@@ -487,7 +485,7 @@ Real spr_vzdep_ = 0.0, spr_rhoamb_ = 0.0;
 Real spr_dlt_t_ = 0.0, spr_phis_t_ = 0.0, spr_phtop_t_ = 1.0e300;
 Real spr_xin_ = 0.0;
 // min(r_in, r_top, r_spin): the spin term's radius at r_in, phi 90
-// ramp v2 (coordinator 10-28): the column is BLENDED with the ramp weight w = (s -
+// ramp: the column is BLENDED with the ramp weight w = (s -
 // 1)/(s_tgt - 1) = R(x): Q(psi) = (1 - w) Q0(psi) + w Q1(psi) for ln T, ln rho, r_eq, F
 // and G (each column's own G, from its own kappa_t), Q0 = problem/spin_ramp_col0 (the
 // spin-1 star's column), Q1 = env_ic_file (the target's); both on the union of their psi
@@ -525,7 +523,7 @@ DvceArray4D<Real> spr_aref_;   // the module's a_ref (= pm1->arad_ref, refreshed
 Real t2s1_[2] = {0.0, 0.0};
 Real t2nf_ = -1.0;
 // problem/sink_kick_book (default true; history only): the audit
-// (<rad_m1>/dbg_energy_audit, runs budget_acc_1021) found that the kinetic energy
+// (<rad_m1>/dbg_energy_audit) found that the kinetic energy
 // RyPerM1Post removes from the sink cells is NOT all unpaid work: the M1 write-back pays
 // the kick's work from E, and only where that drives E below e_floor does the
 // implicit_pos_floor raise create the energy (M1_POS_FLR_UN).  With the key, every
@@ -638,7 +636,7 @@ Real RochePot3(const RocheParams &p, const Real r, const Real sth, const Real ph
          - 0.5*SQR(p.omega)*(r*r*sth*sth + p.xcm*p.xcm - 2.0*p.xcm*xs);
 }
 
-//! accretor-bigdom-v4 (10-16): the Roche potential and |grad Phi| (effective gravity) at
+//! The Roche potential and |grad Phi| (effective gravity) at
 //! a Cartesian point (accretor at the origin, donor at (a, 0, 0), centrifugal about the z
 //! axis through the CM at (xcm, 0, 0)), and the donor's von Zeipel gravity: |grad Phi| at
 //! the point where the ray from the donor centre through (x, y, z) leaves the L1 lobe
@@ -998,7 +996,7 @@ void RySpinScalars(const Real s) {
   env_dlt_ = 0.5*(spin_*spin_ - 1.0)*SQR(rp_.omega);
   spr_w_ = (s - 1.0)/(spr_stgt_ - 1.0);
   const Real w = spr_w_;
-  // (coordinator 10-28, ramp v2) the psi zero point is set so that psi(r_in, theta 90,
+  // The psi zero point is set so that psi(r_in, theta 90,
   // phi 90) = (1 - w) psi_in0 + w psi_in1, psi_in0 = Phi(R_acc) - Phi(r_in) (the spin-1
   // star, R_acc anchor, dlt 0), psi_in1 = the target's; Phi_wb(r_in) = Phi(x_in) - dlt
   // x_in^2 (the Roche part cancels): w = 0 is the spin-1 star exactly (phis = Phi(R_acc,
@@ -1604,7 +1602,7 @@ void RyPerBCEnv(Mesh *pm) {
   // e^hse_cap), so the wall face carries the hydrostatic pressure (a plain reflecting
   // wall gives the face the edge cell's own pressure and leaves the theta component of
   // the tidal and centrifugal force unbalanced there: v_theta ~ 7 km/s in the deep
-  // envelope at the walls, Raven s3dA 10-17).  outflow: v_theta a diode (outflow only),
+  // envelope at the walls).  outflow: v_theta a diode (outflow only),
   // v_r, v_phi copied from the edge cell; hse: a closed wall, v (all three, v_theta
   // sign-flipped) from the mirror cell.  Radiation ghosts: reflecting (as the implicit
   // default for these faces; the star's interior reaches the walls, a dark face there
@@ -1899,12 +1897,12 @@ void RyPerLzMark(MeshBlockPack *pmbp) {
 //! thermal relaxation toward P/rho = cref2 (exact exponential over the stage), and the
 //! RK-weighted boundary flux integrals incl. the face r = R_acc and the stream AM.
 //! The work of gravity is in the etotgrav energy flux (TRUE Phi incl. the orbital
-//! centrifugal term); no explicit centrifugal work is added (09-28 double-count guard).
+//! centrifugal term); no explicit centrifugal work is added (double-count guard).
 //----------------------------------------------------------------------------------------
-//! accretor-bigdom-v4 (10-16): the sink cells (the donor lobe and the back-sink sector)
+//! The sink cells (the donor lobe and the back-sink sector)
 //! are reset to floor gas AT REST after the other sources of every stage, but the M1
 //! implicit coupling that follows gives that 1e-8 floor gas the radiation momentum of the
-//! light it holds (Raven 10-16: v_r 2e5-1e6 km/s in the first back-sink row behind the
+//! light it holds (v_r 2e5-1e6 km/s in the first back-sink row behind the
 //! nozzle, in every output and in Emsk).  This hook (RadiationM1::HydroConToPrim, after
 //! the coupling, before the fluid refresh) zeroes their momentum again (the kinetic
 //! energy it removes is the coupling's unpaid work and is not booked, see the end of the
@@ -2427,7 +2425,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     // stream/atmosphere gas (c_ph^2), the rest is the hot ambient (c_amb^2).  Choosing
     // by temperature or by an absolute density instead heated the stream's thin
     // leading edge and the atmosphere's top to c_amb (precursor jets at 1700 km/s and
-    // an evaporation wind; tests g_half, a2, 10-06/07).
+    // an evaporation wind).
     Real ct = p3 ? c2r4(m,k,j,i) : c2r(m,k,i);
     // Time constants: env_t_relax_env inside, env_t_relax_stream for the
     // stream/atmosphere gas, env_t_relax for the hot ambient; t <= 0 switches the
@@ -2591,7 +2589,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         // (nozzle/mask runs only): the added gas is at REST, i.e. momentum is
         // kept (v = m/rho_amb), and |v| is capped at env_v_floor_max.  Next to the dense
         // L1 nozzle a near-vacuum cell can lose mass to the HLLC flux while the pressure
-        // term gives it momentum: m/du then reached 7e5 km/s (dt collapse, g7 10-15)
+        // term gives it momentum: m/du then reached 7e5 km/s (dt collapse)
         v1 = u0(m,IM1,k,j,i)/rfl; v2 = u0(m,IM2,k,j,i)/rfl; v3 = u0(m,IM3,k,j,i)/rfl;
         const Real vv = sqrt(AccQ(csf, ccf, v1, v2, v3));
         if (vv > vcf) {
@@ -2839,7 +2837,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         // stream_inject = l1: the sector BEHIND the nozzle (r above its outer face,
         // |dphi| < 3 sigma + 1 sigma) joins the sink.  The sonic L1 state expands
         // backward into the near-vacuum beyond L1 (v + 3 c_s > 0), where the floor gas
-        // got garbage energies and 1e5-1e9 km/s (dt collapse, g8/g9 10-15); the donor's
+        // got garbage energies and 1e5-1e9 km/s (dt collapse); the donor's
         // atmosphere that really lies there is not modelled, so it is a sink like the
         // lobe.
         if (!inmk && nzbk && r > nhi && fabs(dph) < ww + sg
@@ -2938,7 +2936,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
           // stream_t_surf), at rest (F = 0), within the nozzle's width (3 sigma); outside
           // it, its radiation is left to the transport (dark, as the ambient).  Not
           // scaled (not donor light); booked with the nozzle's radiation (register 3).
-          // stream_sector_light (10-17): full = this; scaled = x donor_irr_scale (the
+          // stream_sector_light: full = this; scaled = x donor_irr_scale (the
           // band's 2-D -> 3-D factor of the held donor light); dark = no light held (all
           // of the sector left to the transport); surface = the lobe rule below (donor
           // light)
@@ -3896,7 +3894,7 @@ Real RadSpinArrays(MeshBlockPack *pmbp, const std::vector<Real> &crq, const bool
         // column's F capped at the top over the whole outer wall drained the star (the
         // first try imposed 1.4x L_r out sideways; eint <= 0 retries at the walls)
         if (!(phis - w > 0.0)) return 0.0;
-        // von Zeipel (10-18): on an equipotential F ~ g_eff, so the column's F (taken at
+        // von Zeipel: on an equipotential F ~ g_eff, so the column's F (taken at
         // its own position r_eq(psi), theta = pi/2, phi = pi/2) scales by g/g_col(psi);
         // the lateral component is then F_col (g/g_col) gt/g = F_col gt/g_col
         return RadColAt(rcol_f_, phis - w)*gt/std::fmax(RadColAt(gcol, phis - w),
@@ -6569,7 +6567,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (!g3d_) rho_s_ = mdot/sum;
     }
   }
-  // the two stabilisers added for the L1 nozzle (10-15), keys default: on for l1, off for
+  // the two stabilisers added for the L1 nozzle, keys default: on for l1, off for
   // volume (stream_back_sink); on with any nozzle/mask (floor_keep_momentum)
   nzback_ = stvol_ && pin->GetOrAddBoolean("problem", "stream_back_sink", true);
   // problem/stream_sector_light (read, not added:

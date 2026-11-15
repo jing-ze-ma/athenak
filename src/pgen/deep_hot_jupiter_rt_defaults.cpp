@@ -13,8 +13,7 @@
 //! named (deck, command line, restart input) always wins; the value is recorded
 //! (GetOrAdd) so the run's restarts carry it; each decision is logged in the start-up
 //! defaults block. A restart whose input lacks a key keeps the old default (nothing is
-//! added here). The values are those of every Caltech dhj production deck
-//! (prod_1103/DEFAULTS_1103.txt section A2).
+//! added here). The values are those of every Caltech dhj production deck.
 
 #include <string>
 
@@ -85,7 +84,7 @@ void PgenEarlyDefaults(ParameterInput *pin) {
     }
   }
   // <mhd>/max_eta = 1e15 cm^2/s with ohmic_resistivity = eos (a required key until now;
-  // user 10-03 test 1e13/1e14/1e15, every dhj MHD production deck)
+  // tested 1e13/1e14/1e15, every dhj MHD production deck)
   if (fb == "mhd" && named("mhd", "ohmic_resistivity") &&
       pin->GetString("mhd", "ohmic_resistivity") == "eos" && !named("mhd", "max_eta")) {
     pin->GetOrAddReal("mhd", "max_eta", 1.0e15);

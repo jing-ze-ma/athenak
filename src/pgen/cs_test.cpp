@@ -416,7 +416,7 @@ void StaticAtmState(const Real r, const Real d0, const Real p0, const Real hs,
 //!          rho = p = r^-5/2,  v = r^(1/2) rhat + kappa r^(5/2) zhat,
 //!          B = rhat/r^2 + kappa zhat  ( = r^(-5/2) v, so v x B = 0 ),
 //!      steady with the source Q_O of eq 12 on the momentum and energy (mass and
-//! induction sources are zero).  Verified 11-03 by finite-differencing the ideal-MHD
+//! induction sources are zero).  Verified by finite-differencing the ideal-MHD
 //! fluxes (B^2/2 units, as here): residual - Q_O = 1e-12 at random points, so eq 12 has
 //! NO typo.  It is also gamma-independent: the energy flux is
 //!      (gamma/(gamma-1) p + rho v^2/2) v = (gamma/(gamma-1) + r^5 B^2/2) B and the

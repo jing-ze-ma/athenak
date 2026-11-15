@@ -734,7 +734,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the two interpolants (agcar/geos B: 5.8e-6, vs 4.6e-7 for the ideal gas); E = aT^4 of
   // the file is then out of equilibrium with the gas by 4x that.  With this key the
   // code's T equals the column T to round-off (the log-linear resampling aside).
-  // (user 10-09): default true on a fresh run whose file carries the T
+  // Default true on a fresh run whose file carries the T
   // column (he_ic_cols = 5 and >= 7 columns on its first data line); otherwise (4-column
   // files, a restart whose file lacks the key) the old default false.  Recorded.
   bool eft_def = false;
@@ -2814,7 +2814,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           // kappa_T dx of the first cell)
           const std::string dm =
               pin->GetOrAddString("problem","he_bc_linhao_diss","athena");
-          // none (user 11-04, the production choice): no E-jump term at all, the face is
+          // none (the production choice): no E-jump term at all, the face is
           // the central average 0.5 (F_g + F_is) plus his Doppler / advective part
           if (dm != "upwind" && dm != "tau" && dm != "tau2" && dm != "athena"
               && dm != "none") {
@@ -4591,7 +4591,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
     lc[i] = fc*0.5*(hsh(i,1) + hsh(i+1,1));
   }
   // hs_fin_ (bitwise), or the current table flux with
-  // problem/he_drive_closure_lin = table (open items 11-13)
+  // problem/he_drive_closure_lin = table
   const Real lin = hsdrive::ClosureFlux(pm, hs_fin_)*hsh(is,1);
   for (int i=is; i<=ie+1; ++i) {
     lrad[i] = hsh(i,0);
