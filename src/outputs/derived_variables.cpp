@@ -1419,7 +1419,10 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
         Real nm[3], vr[3];
         up(n, nm);
         const Real nn = sqrt(fmax(n[0]*nm[0] + n[1]*nm[1] + n[2]*nm[2], 1.0e-300));
-        for (int q = 0; q < 3; ++q) {n[q] /= nn; nm[q] /= nn;}
+        for (int q = 0; q < 3; ++q) {
+          n[q] /= nn;
+          nm[q] /= nn;
+        }
         up(v, vr);
         const Real pi = 0.5*(1.0 - chi), pa = 0.5*(3.0*chi - 1.0);
         const Real nv = n[0]*vr[0] + n[1]*vr[1] + n[2]*vr[2];
@@ -1429,16 +1432,22 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
           Real o[3];
           vdv += radm1::M1LatDx(cs, lat, tan, vlk, c0, cn2, cn3, qf, m, k, j, i, v[0],
                                 v[1], v[2], o[0], o[1], o[2]);
-          for (int q = 0; q < 3; ++q) {dvx[q] += o[q];}
+          for (int q = 0; q < 3; ++q) {
+            dvx[q] += o[q];
+          }
         }
-        for (int q = 0; q < 3; ++q) {r[q] = (f[q] - (v[q] + dvx[q])*e)/(cl*e);}
+        for (int q = 0; q < 3; ++q) {
+          r[q] = (f[q] - (v[q] + dvx[q])*e)/(cl*e);
+        }
         const Real b2 = (v[0]*vr[0] + v[1]*vr[1] + v[2]*vr[2])/(cl*cl);
         const Real bf = (f[0]*vr[0] + f[1]*vr[1] + f[2]*vr[2])/(cl*cl);
         const Real e0 = (1.0 + b2)*e - 2.0*bf + vdv*e/(cl*cl);
         const Real tp = iw_(m,radm1::M1_IW_TP,k,j,i);
         r[3] = e0/(ar*tp*tp*tp*tp) - 1.0;
       }
-      for (int q = 0; q < 4; ++q) {dv(m,i_dv+q,k,j,i) = r[q];}
+      for (int q = 0; q < 4; ++q) {
+        dv(m,i_dv+q,k,j,i) = r[q];
+      }
     });
     i_dv += 4;
   }
@@ -1476,7 +1485,9 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     const bool hv = (gw.extent_int(0) >= nmb);
     par_for("m1_gw_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      for (int c = 0; c < 5; ++c) {dv(m,i_dv+c,k,j,i) = hv ? gw(m,c,k,j,i) : 0.0;}
+      for (int c = 0; c < 5; ++c) {
+        dv(m,i_dv+c,k,j,i) = hv ? gw(m,c,k,j,i) : 0.0;
+      }
     });
     i_dv += 5;
   }
@@ -1629,7 +1640,9 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
         }
       } else if (hgd && gh_(m,0,k,j,i) >= 0.0) {
         Real f2 = 0.0;
-        for (int a = 0; a < 3; ++a) {f2 += SQR(gh_(m,2*a,k,j,i) + gh_(m,2*a+1,k,j,i));}
+        for (int a = 0; a < 3; ++a) {
+          f2 += SQR(gh_(m,2*a,k,j,i) + gh_(m,2*a+1,k,j,i));
+        }
         fb = fmin(sqrt(f2), 1.0);
         if (gx) {
           c1 = gh_(m,radm1::M1_VGD_HRC1,k,j,i);
