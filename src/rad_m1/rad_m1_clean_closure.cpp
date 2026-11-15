@@ -97,39 +97,56 @@ void CleanFaceVector(const CleanArgs &x, const DvceArray2D<Real> &x3f, const int
 //! \fn Real CleanFvFace
 //! \brief clean_rays = fv: the intensity of direction d on the low face of cell (k,j,i)
 //! normal to dir for a beam along +e_dir (pos) or -e_dir: that of the upwind cell, with
-//! o2 its minmod slope towards the face (second order in index space, positive)
+//! o2 its minmod slope towards the face (second order in index space, positive), the
+//! downwind cell's intensity read from fd
 
 KOKKOS_INLINE_FUNCTION
-Real CleanFvFace(const DvceArray5D<Real> &fi, const bool o2, const int m, const int d,
-                 const int dir, const int k, const int j, const int i, const bool pos) {
+Real CleanFvFace(const DvceArray5D<Real> &fi, const DvceArray5D<Real> &fd, const bool o2,
+                 const int m, const int d, const int dir, const int k, const int j,
+                 const int i, const bool pos) {
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
   const int su = pos ? -1 : 0, sd = pos ? 0 : -1, sf = pos ? -2 : 1;
   const Real u = fi(m,d,k+su*dk,j+su*dj,i+su*di);
   if (!o2) return u;
   const Real a = u - fi(m,d,k+sf*dk,j+sf*dj,i+sf*di);
-  const Real b = fi(m,d,k+sd*dk,j+sd*dj,i+sd*di) - u;
+  const Real b = fd(m,d,k+sd*dk,j+sd*dj,i+sd*di) - u;
   return u + ((a*b > 0.0) ? 0.5*((fabs(a) < fabs(b)) ? a : b) : 0.0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanFvNbr
+//! \brief clean_rays = fv: the intensity of direction d in the cell s cells along dir
+//! from (k,j,i) (2-D axisymmetric phi: the own cell rotated, as CleanFvFaceAxi)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanFvNbr(const DvceArray5D<Real> &fi, const DvceArray4D<int> &mp, const bool ax,
+                const int m, const int d, const int dir, const int k, const int j,
+                const int i, const int s) {
+  if (!ax) return fi(m,d,k+s*(dir == 2),j+s*(dir == 1),i+s*(dir == 0));
+  int e = d;
+  for (int q = 0; q < ((s < 0) ? -s : s); ++q) e = mp(m,(s < 0) ? 2 : 3,k,e);
+  return fi(m,e,k,j,i);
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanFvFaceAxi
 //! \brief CleanFvFace on a phi face (index k + o) of a 2-D axisymmetric mesh: the cell s
 //! columns away is the own cell with the directions rotated by s phi extents (mp: the
-//! seam maps cln_fvm, side 2 below, 3 above)
+//! seam maps cln_fvm, side 2 below, 3 above); the downwind intensity from fd
 
 KOKKOS_INLINE_FUNCTION
-Real CleanFvFaceAxi(const DvceArray5D<Real> &fi, const DvceArray4D<int> &mp,
-                    const bool o2, const int m, const int d, const int k, const int j,
-                    const int i, const int o, const bool pos) {
-  auto at = [&](const int s) {
+Real CleanFvFaceAxi(const DvceArray5D<Real> &fi, const DvceArray5D<Real> &fd,
+                    const DvceArray4D<int> &mp, const bool o2, const int m, const int d,
+                    const int k, const int j, const int i, const int o, const bool pos) {
+  auto at = [&](const DvceArray5D<Real> &f, const int s) {
     int e = d;
     for (int q = 0; q < ((s < 0) ? -s : s); ++q) e = mp(m, (s < 0) ? 2 : 3, k, e);
-    return fi(m,e,k,j,i);
+    return f(m,e,k,j,i);
   };
-  const Real u = at(o - (pos ? 1 : 0));
+  const Real u = at(fi, o - (pos ? 1 : 0));
   if (!o2) return u;
-  const Real a = u - at(o + (pos ? -2 : 1));
-  const Real b = at(o - (pos ? 0 : 1)) - u;
+  const Real a = u - at(fi, o + (pos ? -2 : 1));
+  const Real b = at(fd, o - (pos ? 0 : 1)) - u;
   return u + ((a*b > 0.0) ? 0.5*((fabs(a) < fabs(b)) ? a : b) : 0.0);
 }
 
@@ -900,9 +917,15 @@ void RadiationM1::CleanFvSweep() {
   auto cw_ = vgd_cs;
   const bool emi = VetBcEmit();
   const Real iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
-  // (fv: the slopes make the sweep nonlinear and the passes contract slowly, ~0.6 each;
-  // it too is iterated to convergence, else the closure carries the unconverged part
-  // of the build and no steady state is reached)
+  // fv: the downwind cell of a slope is read from the last build (the own cell's outflow
+  // slopes are implicit), so that a pass is a complete upwind sweep as in fv1; the slopes
+  // settle with the run, exactly at a steady state
+  if (o2 && cln_fvp.extent_int(1) != n) {
+    Kokkos::realloc(cln_fvp, fi.extent_int(0), n, fi.extent_int(2), fi.extent_int(3),
+                    fi.extent_int(4));
+  }
+  if (o2) Kokkos::deep_copy(cln_fvp, fi);
+  auto fp = o2 ? cln_fvp : fi;
   for (int it = 0; it < 100; ++it) {
     Real dmax = 0.0, imax = 0.0;
     Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*n),
@@ -912,9 +935,11 @@ void RadiationM1::CleanFvSweep() {
       for (int p = 0; p < ncell; ++p) {
         const int c = o_(m,d,p);
         const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
-        // the outflow faces' slope parts are taken at the current iterate
-        Real in = 0.0, out = 0.0, cor = 0.0;
-        const Real ic = fi(m,d,k,j,i);
+        // fv: the outflow faces carry the cell's own minmod slope, I + mm(I - U, D - I)/2
+        // (U, D the neighbours up- and downstream), solved with the cell: the residual
+        // increases with I (slope >= (out + vc)/2), a few Newton steps on its pieces
+        Real in = 0.0, out = 0.0, ou[6], ud[6][2];
+        int no = 0;
         for (int f = 0; f < 6; ++f) {
           const int dir = f/2, up = f%2;
           const int kf = k + (up && dir == 2), jf = j + (up && dir == 1);
@@ -933,18 +958,38 @@ void RadiationM1::CleanFvSweep() {
           }
           if (a >= 0.0) {
             out += a;
-            cor += a*((ax ? CleanFvFaceAxi(fi, fm, o2, m, d, k, j, i, up, up)
-                          : CleanFvFace(fi, o2, m, d, dir, kf, jf, i_f, up)) - ic);
+            if (o2) {
+              const int sg = up ? 1 : -1;
+              ou[no] = a;
+              ud[no][0] = CleanFvNbr(fi, fm, ax, m, d, dir, k, j, i, -sg);
+              ud[no][1] = CleanFvNbr(fp, fm, ax, m, d, dir, k, j, i, sg);
+              ++no;
+            }
           } else if (!bdry) {
-            in -= a*(ax ? CleanFvFaceAxi(fi, fm, o2, m, d, k, j, i, up, !up)
-                        : CleanFvFace(fi, o2, m, d, dir, kf, jf, i_f, !up));
+            in -= a*(ax ? CleanFvFaceAxi(fi, fp, fm, o2, m, d, k, j, i, up, !up)
+                        : CleanFvFace(fi, fp, o2, m, d, dir, kf, jf, i_f, !up));
           } else if (!up) {
             in -= a*(emi ? iemit : exp(cw_(m,1,k+ok,j+og,i)));
           }
         }
         const Real vc = x.vol(m,k,j,i)*exp(cw_(m,0,k+ok,j+og,i));
         const Real sc = vc*exp(cw_(m,1,k+ok,j+og,i));
-        const Real iv = (out + vc > 0.0) ? fmax((in - cor + sc)/(out + vc), 0.0) : 0.0;
+        Real iv = (out + vc > 0.0) ? (in + sc)/(out + vc) : 0.0;
+        for (int q = 0; q < 8 && no > 0 && out + vc > 0.0; ++q) {
+          Real g = (out + vc)*iv - in - sc, dg = out + vc;
+          for (int o = 0; o < no; ++o) {
+            const Real p1 = iv - ud[o][0], p2 = ud[o][1] - iv;
+            if (p1*p2 > 0.0) {
+              const bool sm = fabs(p1) < fabs(p2);
+              g += 0.5*ou[o]*(sm ? p1 : p2);
+              dg += 0.5*ou[o]*(sm ? 1.0 : -1.0);
+            }
+          }
+          const Real dv = g/dg;
+          iv -= dv;
+          if (fabs(dv) <= 1.0e-15*fabs(iv)) break;
+        }
+        iv = fmax(iv, 0.0);
         dm = fmax(dm, fabs(iv - fi(m,d,k,j,i)));
         im = fmax(im, iv);
         fi(m,d,k,j,i) = iv;
@@ -1104,9 +1149,9 @@ void RadiationM1::CleanGdFaceSums() {
     const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
     const int kl = k - (dir == 2), jl = j - (dir == 1);
     if (fv && axi && dir == 2) {
-      return f*CleanFvFaceAxi(fi_, fm_, o2, m, d, k, j, i, 0, f > 0.0);
+      return f*CleanFvFaceAxi(fi_, fi_, fm_, o2, m, d, k, j, i, 0, f > 0.0);
     }
-    if (fv) return f*CleanFvFace(fi_, o2, m, d, dir, k, j, i, f > 0.0);
+    if (fv) return f*CleanFvFace(fi_, fi_, o2, m, d, dir, k, j, i, f > 0.0);
     if (!(f > 0.0)) return f*inten(m, d, k, j, i);
     if (axi && dir == 2) return f*inten(m, mp_(m,kl+ok,j+og,d), k, j, i);
     const bool seam = (dir == 1) ? (j == js && x.mbc(m,2) == BoundaryFlag::periodic)
@@ -1166,7 +1211,7 @@ void RadiationM1::CleanGdFaceSums() {
     face(0, m, k, j, i, a, e);
     for (int d = 0; d < n; ++d) {
       const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
-      Real iv = CleanFvFace(fi_, o2, m, d, 0, k, j, i, f > 0.0);
+      Real iv = CleanFvFace(fi_, fi_, o2, m, d, 0, k, j, i, f > 0.0);
       if (CleanBoundaryFace(x, 0, m, k, j, i)) {   // the sweep's x1 boundary
         iv = (i == is) ? ((f > 0.0) ? (emi ? iemit : exp(cw_(m,1,k+ok,j+og,is))) : iv)
                        : ((f > 0.0) ? iv : 0.0);
