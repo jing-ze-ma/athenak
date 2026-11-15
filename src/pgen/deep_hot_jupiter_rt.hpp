@@ -233,8 +233,8 @@ void DhjCycleDiag(Mesh *pm);
 //     cubed sphere or spherical polar), OFF otherwise, so non-rotating runs are bitwise
 //     unchanged.  A rotating run with a source variant am_transport does not
 //     replicate (wellbalance_static) stops with a FATAL naming it, unless
-//     problem/am_transport = false is set explicitly; a rotating run with either key false prints a WARNING that L_abs
-//     drifts.  Read without recording; the startup log prints the effective values.
+//     problem/am_transport = false is set explicitly; a rotating run with either key
+//     false prints a WARNING that L_abs drifts.  Read without recording; the startup log prints the effective values.
 //   problem/am_hst (DIAGNOSTIC, default false; read without recording it): eight more
 //     history columns after the flux columns, see DhjFluxHistory and AmHstStage.
 //   problem/am_hst_split (DIAGNOSTIC, default false, needs am_hst and what am_transport
