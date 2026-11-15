@@ -6,8 +6,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file eint_ledger.hpp
-//! \brief <problem>/eint_ledger (DIAGNOSTIC, opt-in, default off): a
-//! per-operator INTERNAL-ENERGY ledger of the low-density (floor) gas.
+//! \brief Diagnostic per-operator internal-energy ledger of the low-density (floor)
+//! gas, switched on by <problem>/eint_ledger (default off).
 //!
 //! Mark(pm, "name") is called at the task boundaries (hydro flux update, coordinate
 //! sources, am_transport, polar ring averaging, the pgen's source kernel / density floor
@@ -21,7 +21,8 @@
 //!     from either pole), and the HOT floor gas (e/rho > eint_ledger_hot) off / near
 //!     the poles; per class: d(e) vol, d(KE) vol, d(rho) vol, H vol with
 //!     H = d(e) - (e/rho)_prev d(rho) (heating at fixed specific energy), cell count;
-//!   - per cell, the specific heating d(e/rho), accumulated over the run.
+//!   - per cell, the specific heating d(e/rho), accumulated over the run;
+//!   - class 4: the cells of a polar region (any density), see reg_rmin below.
 //! A cycle's entries are committed only when the cycle is accepted (a dt_retry or a
 //! hesdirk2 backward-Euler redo discards the attempt and takes a new baseline).
 //! Output (rank 0): per cycle, one ELEDGER line per operator with the cycle's class sums,
@@ -46,14 +47,16 @@
 #endif
 
 namespace eint_ledger {
-constexpr int kNcls = 5;   // + class 4: the region
+constexpr int kNcls = 5;
 constexpr int kNq = 5;
 constexpr int kNs = kNcls*kNq;
 constexpr int kNopMax = 24;
 
 struct Sums {
   Real v[kNs];
-  KOKKOS_INLINE_FUNCTION Sums() {for (int n = 0; n < kNs; ++n) v[n] = 0.0;}
+  KOKKOS_INLINE_FUNCTION Sums() {
+    for (int n = 0; n < kNs; ++n) v[n] = 0.0;
+  }
   KOKKOS_INLINE_FUNCTION Sums &operator+=(const Sums &o) {
     for (int n = 0; n < kNs; ++n) v[n] += o.v[n];
     return *this;
@@ -65,7 +68,9 @@ struct Sums {
 namespace Kokkos {
 template <>
 struct reduction_identity<eint_ledger::Sums> {
-  KOKKOS_FORCEINLINE_FUNCTION static eint_ledger::Sums sum() {return eint_ledger::Sums();}
+  KOKKOS_FORCEINLINE_FUNCTION static eint_ledger::Sums sum() {
+    return eint_ledger::Sums();
+  }
 };
 }  // namespace Kokkos
 
@@ -164,8 +169,8 @@ inline void Take(Mesh *pm, const int op, const bool book) {
     const Real ei = u0(m,IEN,k,j,i) - ke - (grav ? d*phi(m,k,j,i) : 0.0);
     if (bk) {
       const Real d0 = dp(m,kk,jj,ii), e0 = ep(m,kk,jj,ii), k0 = kp(m,kk,jj,ii);
+      const Real r = rx1(m,i), th = x2v(m,j);
       if (d0 < rc) {
-        const Real th = x2v(m,j);
         const bool pol = (th < tc) || (th > M_PI - tc);
         const Real eps0 = (d0 > 0.0) ? e0/d0 : 0.0;
         const Real v = vol(m,k,j,i);
@@ -177,24 +182,20 @@ inline void Take(Mesh *pm, const int op, const bool book) {
           for (int n = 0; n < kNq; ++n) sum.v[(c0 + 2)*kNq + n] += q[n];
         }
       }
-      {
-        const Real r = rx1(m,i), th = x2v(m,j);
-        if (r >= rr0 && r <= rr1 && (th < rth || th > M_PI - rth) && d > 0.0
-            && d0 > 0.0) {
-          const Real v = vol(m,k,j,i);
-          const Real b1 = a1(m,kk,jj,ii), b2 = a2(m,kk,jj,ii), b3 = a3(m,kk,jj,ii);
-          sum.v[4*kNq + 0] += 0.5*(m1*m1/d - d0*b1*b1)*v;
-          sum.v[4*kNq + 1] += 0.5*(m2*m2/d - d0*b2*b2)*v;
-          sum.v[4*kNq + 2] += (ei - e0)*v;
-          sum.v[4*kNq + 3] += 0.5*(m3*m3/d - d0*b3*b3)*v;
-          sum.v[4*kNq + 4] += 1.0;
-        }
+      if (r >= rr0 && r <= rr1 && (th < rth || th > M_PI - rth) && d > 0.0 && d0 > 0.0) {
+        const Real v = vol(m,k,j,i);
+        const Real b1 = a1(m,kk,jj,ii), b2 = a2(m,kk,jj,ii), b3 = a3(m,kk,jj,ii);
+        sum.v[4*kNq + 0] += 0.5*(m1*m1/d - d0*b1*b1)*v;
+        sum.v[4*kNq + 1] += 0.5*(m2*m2/d - d0*b2*b2)*v;
+        sum.v[4*kNq + 2] += (ei - e0)*v;
+        sum.v[4*kNq + 3] += 0.5*(m3*m3/d - d0*b3*b3)*v;
+        sum.v[4*kNq + 4] += 1.0;
       }
       if (d > 0.0 && d0 > 0.0) {
         cy(op,m,kk,jj,ii) += ei/d - e0/d0;
         cv(3*op,m,kk,jj,ii) += static_cast<float>(m1/d - a1(m,kk,jj,ii));
-        cv(3*op+1,m,kk,jj,ii) += static_cast<float>(m2/d - a2(m,kk,jj,ii));
-        cv(3*op+2,m,kk,jj,ii) += static_cast<float>(m3/d - a3(m,kk,jj,ii));
+        cv(3*op + 1,m,kk,jj,ii) += static_cast<float>(m2/d - a2(m,kk,jj,ii));
+        cv(3*op + 2,m,kk,jj,ii) += static_cast<float>(m3/d - a3(m,kk,jj,ii));
       }
     }
     dp(m,kk,jj,ii) = d;
@@ -221,7 +222,9 @@ inline void Discard(Mesh *pm) {
   Alloc(pm);
   Kokkos::deep_copy(cyc, 0.0);
   Kokkos::deep_copy(cyv, 0.0f);
-  for (auto &v : cyc_sums) for (auto &x : v) x = 0.0;
+  for (auto &v : cyc_sums) {
+    for (auto &x : v) x = 0.0;
+  }
   Take(pm, 0, false);
 }
 
@@ -264,17 +267,20 @@ inline void WriteDump(Mesh *pm) {
     buf.resize(static_cast<size_t>(nk)*nj*ni);
     for (int n = 0; n < nop + 2; ++n) {
       size_t p = 0;
-      for (int k = 0; k < nk; ++k) for (int j = 0; j < nj; ++j) for (int i = 0;
-                                                                     i < ni; ++i) {
-        Real v;
-        if (n < nop) {
-          v = ht(n,m,k,j,i);
-        } else if (n == nop) {
-          v = hd(m,k,j,i);
-        } else {
-          v = (hd(m,k,j,i) > 0.0) ? he(m,k,j,i)/hd(m,k,j,i) : 0.0;
+      for (int k = 0; k < nk; ++k) {
+        for (int j = 0; j < nj; ++j) {
+          for (int i = 0; i < ni; ++i) {
+            Real v;
+            if (n < nop) {
+              v = ht(n,m,k,j,i);
+            } else if (n == nop) {
+              v = hd(m,k,j,i);
+            } else {
+              v = (hd(m,k,j,i) > 0.0) ? he(m,k,j,i)/hd(m,k,j,i) : 0.0;
+            }
+            buf[p++] = static_cast<float>(v);
+          }
         }
-        buf[p++] = static_cast<float>(v);
       }
       std::fwrite(buf.data(), sizeof(float), buf.size(), f);
     }
@@ -287,8 +293,9 @@ inline void Commit(Mesh *pm) {
   if (!on || !have_base) return;
   const int nop = static_cast<int>(names.size());
   std::vector<Real> loc(static_cast<size_t>(nop)*kNs), glb(loc.size());
-  for (int n = 0; n < nop; ++n) for (int q = 0; q < kNs; ++q) loc[n*kNs
-                                                                  + q] = cyc_sums[n][q];
+  for (int n = 0; n < nop; ++n) {
+    for (int q = 0; q < kNs; ++q) loc[n*kNs + q] = cyc_sums[n][q];
+  }
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(loc.data(), glb.data(), static_cast<int>(loc.size()), MPI_ATHENA_REAL,
                 MPI_SUM, MPI_COMM_WORLD);
@@ -313,8 +320,9 @@ inline void Commit(Mesh *pm) {
     auto &icr = pm->mb_indcs;
     const int ni = icr.nx1, nj = icr.nx2, nk = icr.nx3, nmb = pmbp->nmb_thispack;
     const int nji = nj*ni, nkji = nk*nji;
-    auto dp = d_prv; auto b1 = v1_prv, b2 = v2_prv;
-    auto &x1 = pmbp->pcoord->x1v; auto &x2 = pmbp->pcoord->x2v;
+    auto dp = d_prv, b1 = v1_prv, b2 = v2_prv;
+    auto &x1 = pmbp->pcoord->x1v;
+    auto &x2 = pmbp->pcoord->x2v;
     auto vol = pmbp->pcoord->volume;
     const int is = icr.is, js = icr.js, ks = icr.ks;
     const Real rr0 = reg_rmin, rr1 = reg_rmax, rth = reg_th;
@@ -330,8 +338,11 @@ inline void Commit(Mesh *pm) {
       if (!(r >= rr0 && r <= rr1 && (th < rth || th > M_PI - rth))) return;
       const Real d = dp(m,kk,jj,ii), v = vol(m, kk + ks, jj + js, ii + is);
       const Real u1 = b1(m,kk,jj,ii), u2 = b2(m,kk,jj,ii);
-      sm.v[0] += 0.5*d*u1*u1*v; sm.v[1] += 0.5*d*u2*u2*v; sm.v[2] += d*v;
-      sm.v[3] += d*u1*v; sm.v[4] += 1.0;
+      sm.v[0] += 0.5*d*u1*u1*v;
+      sm.v[1] += 0.5*d*u2*u2*v;
+      sm.v[2] += d*v;
+      sm.v[3] += d*u1*v;
+      sm.v[4] += 1.0;
     }, Kokkos::Sum<Sums>(st));
     double g[5];
     double l5[5] = {st.v[0], st.v[1], st.v[2], st.v[3], st.v[4]};
@@ -343,7 +354,7 @@ inline void Commit(Mesh *pm) {
     if (global_variable::my_rank == 0) {
       std::printf("ELREG c=%d t=%.7e KEr %.6e KEth %.6e M %.6e <v_r> %+.4e vrms_r %.4e "
                   "vrms_th %.4e n %.0f\n", pm->ncycle, pm->time, g[0], g[1], g[2],
-                  g[3]/g[2], sqrt(2.0*g[0]/g[2]), sqrt(2.0*g[1]/g[2]), g[4]);
+                  g[3]/g[2], std::sqrt(2.0*g[0]/g[2]), std::sqrt(2.0*g[1]/g[2]), g[4]);
     }
   }
   // the hottest floor cell of this rank (state at the last mark), then the global max
@@ -370,8 +381,11 @@ inline void Commit(Mesh *pm) {
       v.loc = idx;
     }
   }, Kokkos::MaxLoc<Real, int>(ml));
-  struct {double v; int r;} in{static_cast<double>(ml.val), global_variable::my_rank},
-      out;
+  struct DoubleInt {
+    double v;
+    int r;
+  };
+  DoubleInt in{static_cast<double>(ml.val), global_variable::my_rank}, out;
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(&in, &out, 1, MPI_DOUBLE_INT, MPI_MAXLOC, MPI_COMM_WORLD);
 #else
@@ -412,8 +426,8 @@ inline void Commit(Mesh *pm) {
         float w1, w2, w3;
         Kokkos::deep_copy(de, Kokkos::subview(cyc, n, m, kq, jj, ii));
         Kokkos::deep_copy(w1, Kokkos::subview(cyv, 3*n, m, kq, jj, ii));
-        Kokkos::deep_copy(w2, Kokkos::subview(cyv, 3*n+1, m, kq, jj, ii));
-        Kokkos::deep_copy(w3, Kokkos::subview(cyv, 3*n+2, m, kq, jj, ii));
+        Kokkos::deep_copy(w2, Kokkos::subview(cyv, 3*n + 1, m, kq, jj, ii));
+        Kokkos::deep_copy(w3, Kokkos::subview(cyv, 3*n + 2, m, kq, jj, ii));
         if (de != 0.0 || w1 != 0.0f || w2 != 0.0f || w3 != 0.0f) {
           std::printf(" %s [%+.2e %+.1f %+.1f %+.1f]", names[n].c_str(), de, w1, w2, w3);
         }
@@ -452,10 +466,14 @@ inline void Commit(Mesh *pm) {
 
 //! free the device views before Kokkos::finalize (pgen final hook)
 inline void Free() {
-  d_prv = DvceArray4D<Real>(); e_prv = DvceArray4D<Real>(); k_prv = DvceArray4D<Real>();
-  v1_prv = DvceArray4D<Real>(); v2_prv = DvceArray4D<Real>();
+  d_prv = DvceArray4D<Real>();
+  e_prv = DvceArray4D<Real>();
+  k_prv = DvceArray4D<Real>();
+  v1_prv = DvceArray4D<Real>();
+  v2_prv = DvceArray4D<Real>();
   v3_prv = DvceArray4D<Real>();
-  cyc = DvceArray5D<Real>(); tot = DvceArray5D<Real>();
+  cyc = DvceArray5D<Real>();
+  tot = DvceArray5D<Real>();
   cyv = Kokkos::View<float*****, DevMemSpace>();
 }
 
