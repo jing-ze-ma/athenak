@@ -47,7 +47,6 @@ struct XeTracerParams {
   Real time_cgs = 1.0;      // s per code time unit
   Real xh = 0.7381;         // <mhd>/eos_xh (hydrogen mass fraction)
   Real metal_mh = 0.0;      // [M/H] of the donors
-  Real metal_tcond = 0.0;   // single-temperature rainout override
   bool metal_cond = false;  // per-species condensation curves
   bool metal_ion = false;   // donors present at all
   Real abun[kNDonor];
@@ -80,12 +79,6 @@ Real DonorCap(const XeTracerParams &p, const Real t, const Real p_cgs, const Rea
   if (!p.metal_ion) return 0.0;
   const Real nbase = nh*pow(10.0, p.metal_mh);
   Real sum = 0.0;
-  if (p.metal_tcond > 0.0) {
-    Real f = log10(t/(0.1*p.metal_tcond));
-    f = (f < 0.0) ? 0.0 : ((f > 1.0) ? 1.0 : f);
-    for (int s=0; s<kNDonor; ++s) sum += p.abun[s]*f;
-    return nbase*sum;
-  }
   Real lgp = log10(p_cgs/1.0e6);
   lgp = (lgp < -8.0) ? -8.0 : ((lgp > 3.0) ? 3.0 : lgp);
   for (int s=0; s<kNDonor; ++s) {

@@ -99,7 +99,6 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   }
   model.metal_mh = pin->GetOrAddReal(block, "eos_metal_mh", mh_default);
   model.include_metal_cond = pin->GetOrAddBoolean(block, "eos_metal_condensation", false);
-  model.metal_tcond = pin->GetOrAddReal(block, "eos_metal_tcond", 0.0);
   tbl.radiation = pin->GetOrAddBoolean(block, "eos_radiation", false);
 
   // ------------------------------------------------------ thin-region radiation taper
@@ -315,30 +314,6 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   }
   tbl.efmax = efmax;
 
-  // -------------------------------------------------- sub-floor gate, in CGS specific e
-  // The largest e(rho, 10^ymin)/rho anywhere on the table's density range. The j = 0 row
-  // already holds log10(e_gas/rho) there; radiation, which is not tabulated, is added at
-  // the LOWEST density, where its contribution per gram is largest.
-  double emsp = 0.0;
-  for (int i=0; i<nx; ++i) {
-    double es = pow(10.0, static_cast<double>(h_tbl(0,i,ITE)));
-    if (tbl.radiation) {
-      const double xi = xlo + i*tbl.dx;
-      double wr = tbl.rad_taper
-          ? rad_taper::WeightOnly(xi, tbl.rad_lrho_lo, tbl.rad_lrho_hi) : 1.0;
-      // the gate is evaluated at the table's own lowest row, which is where this bound
-      // lives and where EvalTMin() will evaluate it too, so this is exact, not a bound
-      if (tbl.rad_tgate) {
-        wr = std::max(wr, static_cast<double>(
-                 rad_taper::WeightOnly(ylo, tbl.rad_lt_lo, tbl.rad_lt_hi)));
-      }
-      const double tmin = pow(10.0, ylo);
-      es += wr*eos_cgs::a_rad*tmin*tmin*tmin*tmin/pow(10.0, xi);
-    }
-    emsp = std::max(emsp, es);
-  }
-  tbl.eminspec = emsp;
-
   Kokkos::deep_copy(tbl.tbl, h_tbl);
   Kokkos::deep_copy(tbl.efbnd, h_efb);
   tbl.tbl_h = h_tbl;       // host-side copies for host callers (see eos_table.hpp)
@@ -402,9 +377,7 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
             << (model.include_metal_ion ? "on" : "off");
   if (model.include_metal_ion) {
     std::cout << " ([M/H] = " << model.metal_mh;
-    if (model.metal_tcond > 0.0) {
-      std::cout << ", rainout below " << model.metal_tcond << " K";
-    } else if (model.include_metal_cond) {
+    if (model.include_metal_cond) {
       std::cout << ", condensation on";
     }
     std::cout << ")";

@@ -6,7 +6,7 @@
 //! \file general_hyd_floors.cpp
 //! \brief GeneralHydro::ConsToPrimFloors(), the conserved-to-primitive inversion used
 //! when any of the floor switches of EOS_Data (dfloor_keep_velocity, vceil,
-//! eos_floor_consistent, efloor_from_ekin) is enabled.
+//! efloor_from_ekin, efloor_as_tfloor) is enabled.
 //!
 //! WHY IT IS A FILE OF ITS OWN.  The default path is GeneralHydro::ConsToPrim() in
 //! general_hyd.cpp, which is kept exactly as it was before these switches existed so
@@ -46,8 +46,7 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
   auto &fofc_ = pmy_pack->phydro->fofc;
   auto &wder_ = pmy_pack->phydro->wder;
   auto &wtemp_ = pmy_pack->phydro->wtemp;
-  const bool keepv_defer_ = (eos.dfloor_keep_velocity ||
-                             eos.dfloor_keep_temperature) && eos.defer_cons_floors;
+  const bool keepv_defer_ = eos.dfloor_keep_velocity && eos.defer_cons_floors;
   auto dfl_fv_ = pmy_pack->phydro->dfl_fv;
 
   const int ni   = (iu - il + 1);

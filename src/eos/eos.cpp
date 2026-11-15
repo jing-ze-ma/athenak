@@ -48,16 +48,6 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
               << "for hydrodynamics" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // <hydro>/dfloor_keep_temperature: see the note on EOS_Data::dfloor_keep_temperature.
-  // Implemented in the same places as dfloor_keep_velocity, refused in the same way.
-  eos_data.dfloor_keep_temperature =
-      pin->GetOrAddBoolean(bk,"dfloor_keep_temperature",false);
-  if (eos_data.dfloor_keep_temperature && bk.compare("hydro") != 0) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<" << bk << ">/dfloor_keep_temperature is implemented "
-              << "only for hydrodynamics" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   // <hydro>/vceil and <mhd>/vceil: see the note on EOS_Data::vceil.  NON-RELATIVISTIC
   // hydro and MHD only -- the relativistic inversions have their own ceiling
   // (gamma_max), and reading this there would silently ignore it, so refuse it instead.
@@ -425,26 +415,10 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       }
     }
   }
-  // <block>/vceil_thermalise: see the note on EOS_Data::vceil_thermalise.  Default off,
-  // so every existing run is bit-for-bit unchanged.  Meaningless without a ceiling, and
-  // a silently ignored switch is worse than a refusal, so refuse that combination.
-  eos_data.vceil_thermalise = pin->GetOrAddBoolean(bk,"vceil_thermalise",false);
-  if (eos_data.vceil_thermalise && !(eos_data.vceil > 0.0)) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<" << bk << ">/vceil_thermalise is set but <" << bk
-              << ">/vceil is not: there is no ceiling to thermalise" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   eos_data.pfloor = pin->GetOrAddReal(bk,"pfloor",(FLT_MIN));
   eos_data.tfloor = pin->GetOrAddReal(bk,"tfloor",(FLT_MIN));
 
-  // See the notes on EOS_Data::floor_consistent and EOS_Data::efloor_from_ekin.  Both
-  // default OFF so that every existing run is bit-for-bit unchanged; both are meaningful
-  // only for the tabulated general EOS (the ideal branch has neither a table floor nor a
-  // root find), and floor_consistent additionally changes what `pfloor` MEANS there --
-  // with it on the pressure floor is the pressure it names, without it the tabulated
-  // inversion silently replaces it by e(rho, 10^(eos_logt_min - 3)).
-  eos_data.floor_consistent = pin->GetOrAddBoolean(bk,"eos_floor_consistent",false);
+  // See the note on EOS_Data::efloor_from_ekin (tabulated general EOS only).
   eos_data.efloor_from_ekin = pin->GetOrAddBoolean(bk,"efloor_from_ekin",false);
   // See the note on EOS_Data::efloor_as_tfloor.  Also default OFF, also meaningful only
   // for the tabulated general EOS, and it additionally RAISES tfloor to the table's own
@@ -454,9 +428,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   // efloor_from_ekin and efloor_as_tfloor are implemented only in the HYDRO general-EOS
   // inversion (general_c2p_hyd.hpp); general_c2p_mhd.hpp never reads them, so in <mhd>
   // they would be silent no-ops (efloor_as_tfloor would only raise tfloor).  Refuse them
-  // there, as dfloor_keep_velocity/temperature above.  eos_floor_consistent is NOT
-  // refused: it acts inside the shared EOS_Data functions (SubFloorState,
-  // EnergyBelowFloor, ThermoAt, EnergyFromTemperature) that the MHD inversion calls.
+  // there, as dfloor_keep_velocity above.
   if ((eos_data.efloor_from_ekin || eos_data.efloor_as_tfloor) &&
       bk.compare("hydro") != 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -475,9 +447,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   // enabled the kernels take the pre-existing code path VERBATIM, so that a build
   // carrying these features reproduces an older run bit for bit.
   eos_data.floors_legacy = !(eos_data.dfloor_keep_velocity ||
-                             eos_data.dfloor_keep_temperature ||
                              (eos_data.vceil > 0.0) ||
-                             eos_data.floor_consistent ||
                              eos_data.efloor_from_ekin ||
                              eos_data.efloor_as_tfloor);
 

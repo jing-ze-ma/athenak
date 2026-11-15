@@ -254,10 +254,8 @@ void GeneralHydFloorsPost(const EOS_Data &eos, const Real d, const Real di,
 //! floor, and `mom_scaled` says whether the momentum was rescaled to pay for it
 //! (<block>/efloor_from_ekin), in which case the caller must write u.mx/my/mz back.
 
-//! `vceil_de` accumulates the kinetic energy density the VELOCITY CEILING clipped --
-//! removed from the conserved total by default, converted to internal energy under
-//! <block>/vceil_thermalise.  It is the same number either way; what changes is where
-//! it goes.  See EOS_Data::vceil_thermalise.
+//! `vceil_de` accumulates the kinetic energy density the VELOCITY CEILING removed from
+//! the conserved total.
 
 KOKKOS_INLINE_FUNCTION
 void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
@@ -276,17 +274,12 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // handed fv through dfloor_fv and applies (1/fv^3 - 1) times the metric KE there.
   dfloor_fv = 1.0;
   if (u.d < eos.dfloor) {
-    if (eos.dfloor_keep_velocity || eos.dfloor_keep_temperature) {
+    if (eos.dfloor_keep_velocity) {
       const Real fv = (u.d > 0.0) ? u.d/eos.dfloor : 0.0;
       if (!eos.defer_cons_floors) {
         const Real ke_old = (u.d > 0.0)
             ? 0.5*(SQR(u.mx) + SQR(u.my) + SQR(u.mz))/u.d : 0.0;
-        const Real eint_old = u.e - ke_old;
         if (eos.dfloor_keep_velocity) u.e -= (1.0 - fv*fv*fv)*ke_old;
-        // <block>/dfloor_keep_temperature: e -> fv e, which holds e/rho at the value the
-        // plain floor would have inflated.  EXACT only for an ideal gas; the tabulated
-        // EOS is not called here (see the note in eos.hpp).
-        if (eos.dfloor_keep_temperature && fv > 0.0) u.e -= (1.0 - fv)*eint_old;
       }
       if (eos.dfloor_keep_velocity) {
         u.mx *= fv;
@@ -316,8 +309,6 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // GnomonicEquiangleRaiseVel instead, which owns the metric.
   // `vceil_test` is the DECISION alone, recorded even where the ceiling itself is
   // deferred, so that the FOFC floor-test pass can flag the cell.  It performs no write.
-  // <block>/vceil_thermalise instead leaves the TOTAL energy alone, so that w.e below
-  // picks the clipped kinetic energy up as internal energy; see EOS_Data.
   if (eos.vceil > 0.0) {
     const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
     if (vsq > SQR(eos.vceil)) {
@@ -326,7 +317,7 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
         const Real fs = eos.vceil/sqrt(vsq);
         u.mx *= fs; u.my *= fs; u.mz *= fs;
         w.vx *= fs; w.vy *= fs; w.vz *= fs;
-        if (!eos.vceil_thermalise) u.e -= (1.0 - fs*fs)*e_k;
+        u.e -= (1.0 - fs*fs)*e_k;
         vceil_de += (1.0 - fs*fs)*e_k;
         e_k *= fs*fs;
         vceil_used = true;

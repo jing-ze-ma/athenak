@@ -213,16 +213,6 @@ struct EOSCompositionModel {
   //! is a transport question this local model cannot answer, and the mass involved is
   //! ~1e-4 of the gas, so leaving it in place is both simpler and the smaller error.
   bool include_metal_cond = false;
-  //! Crude alternative to the above: a single temperature, below which ALL tracked metals
-  //! are removed over one decade in T. Overrides include_metal_cond when positive.
-  //!
-  //! Real condensation is species-specific and pressure-dependent -- Fe near 1800 K,
-  //! Na2S near 1200 K, KCl near 1000 K at 1 bar, all shifting with pressure -- and this
-  //! single knob captures none of that structure. It exists so that a run which reaches
-  //! into the condensation regime is not silently given full gas-phase abundances, which
-  //! would overstate n_e by orders of magnitude there. Leave it off if the domain stays
-  //! hot.
-  double metal_tcond = 0.0;
 
   //! \fn double MetalFraction
   //! \brief metal mass fraction Z = 1 - X - Y
@@ -378,12 +368,6 @@ struct EOSCompositionModel {
   //! table, and a discontinuity would give node derivatives that make the bicubic Hermite
   //! patch ring.
   void CondensationFactors(const double t, const double p_cgs, double *fcond) const {
-    if (metal_tcond > 0.0) {              // crude single-temperature override
-      double f = log10(t/(0.1*metal_tcond));
-      f = (f < 0.0) ? 0.0 : ((f > 1.0) ? 1.0 : f);
-      for (int s=0; s<eos_cgs::n_metal_donor; ++s) fcond[s] = f;
-      return;
-    }
     // The published fits are for planetary atmospheres and are quadratic in log p for the
     // refractories, so the argument is clamped to 1e-8..1e3 bar. Outside that the
     // quadratic term would run away, and no real atmosphere is there anyway; the table
@@ -410,7 +394,7 @@ struct EOSCompositionModel {
   //! they have condensed -- and this is host-side table-build code, where a factor of two
   //! costs nothing.
   EOSCompositionState Evaluate(const double rho, const double t) const {
-    if (include_metal_ion && (include_metal_cond || metal_tcond > 0.0)) {
+    if (include_metal_ion && include_metal_cond) {
       EOSCompositionState s0 = EvaluateAt(rho, t, nullptr);
       double fcond[eos_cgs::n_metal_donor];
       CondensationFactors(t, rho*s0.p_spec, fcond);

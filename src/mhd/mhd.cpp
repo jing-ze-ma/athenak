@@ -307,7 +307,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     xe_par.time_cgs = (ppack->punit != nullptr) ? ppack->punit->time_cgs() : 1.0;
     xe_par.xh = pin->GetOrAddReal("mhd", "eos_xh", 0.7381);
     xe_par.metal_mh = peos->eos_data.tbl.metal_mh;
-    xe_par.metal_tcond = pin->GetOrAddReal("mhd", "eos_metal_tcond", 0.0);
     xe_par.metal_cond = pin->GetOrAddBoolean("mhd", "eos_metal_condensation", false);
     xe_par.metal_ion = pin->GetOrAddBoolean("mhd", "eos_metal_ionization", false);
     xetracer::FillDonors(xe_par);

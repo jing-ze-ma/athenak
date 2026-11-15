@@ -87,16 +87,12 @@ void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
   // value and the same amount is taken out of the total, leaving e untouched.
   dfloor_fv = 1.0;
   if (u.d < dfloor_) {
-    if (eos.dfloor_keep_velocity || eos.dfloor_keep_temperature) {
+    if (eos.dfloor_keep_velocity) {
       const Real fv = (u.d > 0.0) ? u.d/dfloor_ : 0.0;
       if (!eos.defer_cons_floors) {
         const Real ke_old = (u.d > 0.0)
             ? 0.5*(SQR(u.mx) + SQR(u.my) + SQR(u.mz))/u.d : 0.0;
-        const Real eint_old = u.e - ke_old;
         if (eos.dfloor_keep_velocity) u.e -= (1.0 - fv*fv*fv)*ke_old;
-        // <block>/dfloor_keep_temperature: e -> fv e (see the note in eos.hpp).  Both
-        // corrections are additive on the total, so they compose.
-        if (eos.dfloor_keep_temperature && fv > 0.0) u.e -= (1.0 - fv)*eint_old;
       }
       if (eos.dfloor_keep_velocity) {
         u.mx *= fv;
@@ -133,10 +129,7 @@ void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
         const Real fs = eos.vceil/sqrt(vsq);
         u.mx *= fs; u.my *= fs; u.mz *= fs;
         w.vx *= fs; w.vy *= fs; w.vz *= fs;
-        // <block>/vceil_thermalise: leave the TOTAL energy alone, so that w.e below
-        // picks the clipped kinetic energy up as internal energy.  Not accumulated:
-        // this kernel has no energy accumulator (see EOS_Data::vceil_thermalise).
-        if (!eos.vceil_thermalise) u.e -= (1.0 - fs*fs)*e_k;
+        u.e -= (1.0 - fs*fs)*e_k;
         e_k *= fs*fs;
         vceil_used = true;
       }
