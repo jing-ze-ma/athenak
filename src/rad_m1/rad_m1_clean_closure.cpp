@@ -1155,6 +1155,25 @@ void RadiationM1::CleanGdFaceSums() {
   }
   CleanGhostFill(cln_s, CLN_F2, 4);
   CleanGhostFill(cln_s, CLN_F3, 4);
+  // the conservative rays (clean_rays = fv | fv1): the r face i carries their own upwind
+  // fluxes (area times the per-area sums), not the balance march, which loses the
+  // diffusion flux in the difference V chi (S - J) of thick cells
+  auto rflux = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
+                                    Real q[4]) {
+    Real a[3], e[3][3];
+    for (int c = 0; c < 4; ++c) q[c] = 0.0;
+    face(0, m, k, j, i, a, e);
+    for (int d = 0; d < n; ++d) {
+      const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
+      Real iv = CleanFvFace(fi_, o2, m, d, 0, k, j, i, f > 0.0);
+      if (CleanBoundaryFace(x, 0, m, k, j, i)) {   // the sweep's x1 boundary
+        iv = (i == is) ? ((f > 0.0) ? (emi ? iemit : exp(cw_(m,1,k+ok,j+og,is))) : iv)
+                       : ((f > 0.0) ? iv : 0.0);
+      }
+      add(0, m, k, j, i, d, f*iv, q);
+    }
+    for (int c = 0; c < 4; ++c) q[c] *= x.area[0](m,k,j,i);
+  };
   auto xf_ = vgd_x1f;
   auto qb_ = vgd_x1b;
   auto qr_ = vgd_x1r;
@@ -1164,29 +1183,6 @@ void RadiationM1::CleanGdFaceSums() {
     par_for("cln_gd_col", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       Real a[3], e[3][3], ef[3][3], q[4] = {0.0};
-      if (fv) {
-        // the conservative rays: the r faces carry their own fluxes (no balance march,
-        // which loses the diffusion flux in the difference V chi (S - J) of thick cells)
-        for (int i = is; i <= ie + 1; ++i) {
-          for (int c = 0; c < 4; ++c) q[c] = 0.0;
-          face(0, m, k, j, i, a, e);
-          for (int d = 0; d < n; ++d) {
-            const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
-            Real iv = CleanFvFace(fi_, o2, m, d, 0, k, j, i, f > 0.0);
-            if (CleanBoundaryFace(x, 0, m, k, j, i)) {   // the sweep's x1 boundary
-              iv = (i == is) ? ((f > 0.0) ? (emi ? iemit : exp(cw_(m,1,k+ok,j+og,is)))
-                                          : iv) : ((f > 0.0) ? iv : 0.0);
-            }
-            add(0, m, k, j, i, d, f*iv, q);
-          }
-          for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,(i <= ie) ? i : ie + 1) = q[c];
-        }
-        for (int c = 0; c < 4; ++c) {
-          cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
-          cs(m,CLN_F1+c,k,j,ie) = q[c];
-        }
-        return;
-      }
       const bool in = (xf_(m) & 1);
       const int kj = (k - ks)*nj + j - js;
       face(0, m, k, j, is, a, e);
@@ -1199,6 +1195,7 @@ void RadiationM1::CleanGdFaceSums() {
       for (int c = 0; c < 4; ++c) {
         q[c] = in ? q[c]*x.area[0](m,k,j,is) : qr_(m,c*nkj + kj);
       }
+      if (fv) rflux(m, k, j, is, q);
       const Real vb = in ? 0.0 : qr_(m,4*nkj + kj);   // the column's volume below
       for (int i = is; i <= ie; ++i) {
         for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
@@ -1235,6 +1232,7 @@ void RadiationM1::CleanGdFaceSums() {
             }
           }
         }
+        if (fv) rflux(m, k, j, i + 1, q);
         // the angular-momentum weights r_f/r of the y_theta, y_phi rows on the r faces
         for (int b = 1; b < 3; ++b) {
           g[b] += q[1+b]*(1.0 - x.x1f(m,i+1)/x.x1v(m,i)) -
