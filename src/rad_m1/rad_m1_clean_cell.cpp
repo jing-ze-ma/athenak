@@ -97,6 +97,17 @@ void RadiationM1::CleanCellFaceCoefficients() {
     }
   });
   CleanGhostFill(cln_x, CLC_PSI, 3);
+  // clean_face_model = milne: B = kP a T^4/kE of the old vector, fixed during the stage
+  if (cln_milne) {
+    const Real arad_ = arad;
+    par_for("clc_milneb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real kap = op(m,M1_OP_E,k,j,i);
+      u(m,CLC_MB,k,j,i) = (kap > 0.0) ?
+          op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(x.w(m,CLW_T,k,j,i)))/kap : 0.0;
+    });
+    CleanGhostFill(cln_x, CLC_MB, 1);
+  }
 
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !multi_d) continue;
@@ -160,6 +171,40 @@ void RadiationM1::CleanCellFaceSpeeds() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellMilneSetup
+//! \brief clean_face_model = milne: the weight mu of every face and the terms
+//! CleanCellMilne adds to the derivatives of the E column (CLF_ML + 1 + row for L,
+//! + 5 + row for R), fixed while the closure, the face flags and B are
+
+void RadiationM1::CleanCellMilneSetup() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    par_for("clc_milne", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real jl[4][4], jr[4][4], bl[4], br[4];
+      CleanCellM1Jacobian(x, dir, m, k, j, i, jl, jr);
+      for (int r = 0; r < 4; ++r) {
+        bl[r] = jl[r][0];
+        br[r] = jr[r][0];
+      }
+      const Real mu = CleanCellMilneWeight(x, dir, m, k, j, i);
+      CleanCellMilne(x, dir, m, k, j, i, jl, jr, nullptr);
+      x.fc[dir](m,CLF_ML,k,j,i) = mu;
+      for (int r = 0; r < 4; ++r) {
+        x.fc[dir](m,CLF_ML+1+r,k,j,i) = jl[r][0] - (1.0 - mu)*bl[r];
+        x.fc[dir](m,CLF_ML+5+r,k,j,i) = jr[r][0] - (1.0 - mu)*br[r];
+      }
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellConsistency
 //! \brief consistency bracket of every interior and open x1 face (clean_consistency).
 //! An interior face takes the share w (the rays' streaming weight) of its flux from the
@@ -182,6 +227,7 @@ void RadiationM1::CleanCellConsistency() {
   const bool cwt = cln_conswt;
   const Real c1lo = cln_c0, c1hi = cln_c1;
   CleanArgs x = CleanMakeArgs();
+  x.milne = false;   // the bracket is that of the moment scheme
 
   // the rays' cell moments Ur
   par_for("clc_raymom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -310,6 +356,7 @@ void RadiationM1::CleanCellRightHandSide() {
   auto op = opac;
 
   const int vfreeze = cln_vfreeze;
+  if (cln_milne) CleanCellMilneSetup();
   par_for("clc_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = x.w(m,CLW_T,k,j,i);
