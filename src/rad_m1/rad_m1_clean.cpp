@@ -129,14 +129,14 @@ void RadiationM1::CleanInit() {
 //! E of the passes).  A step of dt -> infinity drops the time term, so the fixed point is
 //! the steady solution of the scheme itself (rays, closure, consistency and kinetic face
 //! sums of that state); the closure is a function of the state, so it has converged
-//! with it.  A pass whose solve fails is undone and the step shrinks by 1000, down to
-//! dt.  The large step weights the RC term (theta h) and the moment rows over the flux
-//! rows, so the passes then go on at the run's dt, to the tolerance or until the change
-//! contracts by less than 1/2 per pass: what is left is the slow evolution of the scheme
-//! at that dt, which the run carries on.  The radiation energy and momentum are thereby
-//! redefined (reported as volume sums, F in the local basis on spherical polar); the gas
-//! is not touched.  The closure history is then dropped, so the first step starts from
-//! this state alone.
+//! with it.  A pass whose solve fails or leaves E < 0 is undone and the step shrinks by
+//! 1000, down to dt.  The large step weights the RC term (theta h) and the moment rows
+//! over the flux rows, so the passes then go on at the run's dt, to the tolerance or
+//! until the change contracts by less than 1/2 per pass: what is left is the slow
+//! evolution of the scheme at that dt, which the run carries on.  The radiation energy
+//! and momentum are thereby redefined (reported as volume sums, F in the local basis on
+//! spherical polar); the gas is not touched.  The closure history is then dropped, so
+//! the first step starts from this state alone.
 
 void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   if (!cln_steady) return;
@@ -201,7 +201,7 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
     pm->dt = big ? fac*dt0 : dt0;
     dt_sub = pm->dt;
     copy(true);
-    const Real nf = cln_nfail;
+    const Real nf = cln_nfail + cln_nneg;
     // one radiation step: the ordinary m1 task lists (closure, solve, ghost exchange)
     for (int stage = 1; stage <= nstage; ++stage) {
       pdrive->ExecuteTaskList(pm, "m1_before_stagen", stage);
@@ -209,13 +209,13 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
       pdrive->ExecuteTaskList(pm, "m1_after_stagen", stage);
     }
     (void) ApplyClosureLimits(pdrive, 1);
-    if (cln_nfail > nf) {
+    if (cln_nfail + cln_nneg > nf) {
       copy(false);
       dtr_fail = false;
       cln_have_n = cln_have_p = cln_have_c = cln_have_1 = false;
       if (global_variable::my_rank == 0) {
-        std::printf("<rad_m1> clean_init steady pass %d: solve failed at %.0e dt, "
-                    "undone\n", n, big ? fac : 1.0);
+        std::printf("<rad_m1> clean_init steady pass %d: solve failed or E < 0 at %.0e "
+                    "dt, undone\n", n, big ? fac : 1.0);
       }
       if (!big || fac <= 1.0) break;
       fac = fmax(1.0e-3*fac, 1.0);
