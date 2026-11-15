@@ -114,7 +114,7 @@ void BalsaraVortexErrors(ParameterInput *pin, Mesh *pm);
 
 void ProblemGenerator::BalsaraVortex(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  // lhllc2nd-1102: also runs in hydro (<hydro> block, no field, Btil = 0): a SMOOTH
+  // also runs in hydro (<hydro> block, no field, Btil = 0): a SMOOTH
   // low-Mach vortex (Gaussian, exact stationary + advected) for the LHLLC order tests
   const bool is_mhd = (pmbp->pmhd != nullptr);
   if (!is_mhd && pmbp->phydro == nullptr) {

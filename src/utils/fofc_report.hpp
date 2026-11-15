@@ -55,8 +55,7 @@ struct FofcReport {
     Mesh *pm = pp->pmesh;
     auto &indcs = pm->mb_indcs;
     const int nmb = pp->nmb_thispack;
-    // vgdrot-1011: ioff copied to the device only when it changes (was a host mirror and
-    // a blocking copy every stage)
+    // ioff copied to the device only when it changes
     std::vector<int> io(nmb);
     for (int m = 0; m < nmb; ++m) {
       io[m] = static_cast<int>(pm->lloc_eachmb[pp->gids + m].lx1)*indcs.nx1;

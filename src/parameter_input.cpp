@@ -464,7 +464,7 @@ bool ParameterInput::DoesParameterExist(std::string block, std::string name) {
   pb = GetPtrToBlock(block);
   if (pb == nullptr) return 0;
   pl = pb->GetPtrToLine(name);
-  if (pl != nullptr) pl->accessed = true;   // a probe counts as a read (unkkey-1017)
+  if (pl != nullptr) pl->accessed = true;   // a probe counts as a read
   return (pl == nullptr ? false : true);
 }
 
@@ -874,7 +874,7 @@ void ParameterInput::MarkAllAsRestart() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void ParameterInput::ReportUnreadParameters()
-//  \brief unkkey-1017: WARNING (rank 0, once) listing every parameter given in the input
+//  \brief WARNING (rank 0, once) listing every parameter given in the input
 //  file or on the command line that the code never read or probed (Get*, GetOrAdd*,
 //  DoesParameterExist, IsParameterDefaulted, Set*): typos and keys AthenaK does not have
 //  (e.g. the Athena++ mesh/x2rat) are otherwise silently ignored.  Called by the Driver

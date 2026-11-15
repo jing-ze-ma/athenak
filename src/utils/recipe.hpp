@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file recipe.hpp
-//! \brief amdef-1019 (USER 10-19): the default set of a run and <job>/recipe.
+//! \brief the default set of a run and <job>/recipe.
 //!
 //! The defaults introduced 10-19 (<hydro|mhd>/am_transport where supported,
 //! <hydro|mhd>/etotgrav where supported, <rad_m1>/implicit_solver = bicgstab,

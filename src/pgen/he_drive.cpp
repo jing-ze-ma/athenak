@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file he_drive.cpp
-//! \brief hg262-drive-1113: the driven inner boundary of he_star_m1 (see he_drive.hpp
+//! \brief the driven inner boundary of he_star_m1 (see he_drive.hpp
 //! for the keys): the inflow table, the live monopole gravity and the RK-exact boundary
 //! ledgers.  State lives in this file; the pgen calls the functions of he_drive.hpp.
 

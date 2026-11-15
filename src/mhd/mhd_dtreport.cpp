@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file mhd_dtreport.cpp
-//! \brief dtdiag-1103: opt-in report of WHAT sets the MHD CFL time step.
+//! \brief opt-in report of WHAT sets the MHD CFL time step.
 //!
 //! <mhd>/dt_report = N (default 0 = off; read only when named): every N-th call of
 //! MHD::NewTimeStep (last stage, i.e. once per cycle) one extra pass over all cells
@@ -65,7 +65,7 @@ void DtReportInit(ParameterInput *pin, MeshBlockPack *pp, const bool rss) {
     rep_p2 = pin->GetOrAddReal("mhd", "dt_report_p2", 1.0e3);
   } else if (std::getenv("ATHENA_DT_REPORT") != nullptr &&
              std::atoi(std::getenv("ATHENA_DT_REPORT")) > 0) {
-    // share-1104 P6: the hydro env ATHENA_DT_REPORT = N is an alias of <mhd>/dt_report
+    // the hydro env ATHENA_DT_REPORT = N is an alias of <mhd>/dt_report
     // when the key is absent (the key wins).  Where the report is unsupported the alias
     // is ignored with a note (no FATAL: an env must not stop a run); nothing is added to
     // the input dump (p1/p2 keep their defaults unless named).

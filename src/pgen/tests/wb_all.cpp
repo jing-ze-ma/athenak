@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file wb_all.cpp
-//! \brief wball-1104 test problem (<problem>/pgen_name = wb_all): a hydrostatic
+//! \brief test problem (<problem>/pgen_name = wb_all): a hydrostatic
 //! atmosphere in an arbitrary, grid-OBLIQUE potential on a Cartesian 2-D/3-D mesh, for
 //! the all-direction dynamic well-balanced scheme (<hydro>/wb_dirs = all).
 //!

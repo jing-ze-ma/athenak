@@ -8,7 +8,7 @@
 //! \file roche_common.hpp
 //! \brief Roche (restricted three-body) potential helpers in a frame CENTRED ON BODY 1
 //! (the body the grid is centred on) and corotating with the circular orbit, shared by
-//! problem generators (roche-dhj-1031: deep_hot_jupiter_rt.cpp, problem/roche).
+//! problem generators (deep_hot_jupiter_rt.cpp, problem/roche).
 //!
 //! FRAME.  Origin at body 1 (mass M1, G M1 = gm1), companion (G M2 = gm2) at distance a
 //! along the unit vector e_s, z = orbital (= spin, synchronous) axis, frame angular
@@ -30,7 +30,7 @@
 //!
 //! The accretor (ry_per_accretor.cpp RocheParams/RochePotXYZ/RocheGeffXYZ, centrifugal
 //! about x_cm written directly) is the same potential up to the constant; it can move
-//! to these helpers once csacc-r-1031 has landed (kept unchanged there for now).
+//! to these helpers.
 
 #include <math.h>
 
@@ -84,7 +84,7 @@ void TideGrad(const Real gm2, const Real a, const Real s, const Real y, const Re
 
 //! the arc (radians, on the unit sphere) between the cubed-sphere panel points (a2, a3)
 //! and (b2, b3), code coordinates x2, x3 in [-1, 1] (angle pi/4 x).  Same as the
-//! accretor's CsArc (csacc-1031).
+//! accretor's CsArc.
 KOKKOS_INLINE_FUNCTION
 Real CsArc(const int pnl, const Real a2, const Real a3, const Real b2, const Real b3) {
   Real qa[3], qb[3];

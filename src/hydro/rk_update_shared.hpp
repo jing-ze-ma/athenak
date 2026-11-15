@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rk_update_shared.hpp
-//! \brief share-1104 P6: the explicit RK stage update shared by Hydro and MHD (defined in
+//! \brief the explicit RK stage update shared by Hydro and MHD (defined in
 //! hydro/hydro_update.cpp).
 
 #include "athena.hpp"

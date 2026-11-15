@@ -21,7 +21,7 @@
 namespace fluid {
 //----------------------------------------------------------------------------------------
 //! \fn void fluid::RKUpdateCore
-//! \brief share-1104 P6: the explicit RK stage update u0 = gam0 u0 + gam1 u1 - beta dt
+//! \brief the explicit RK stage update u0 = gam0 u0 + gam1 u1 - beta dt
 //! div(F) of the first nvar variables, ONE implementation for Hydro::RKUpdate and
 //! MHD::RKUpdate (which keep their own hooks: eint_ledger + DetTrace).
 
@@ -132,7 +132,7 @@ namespace hydro {
 //  \brief Explicit RK update including flux divergence terms
 
 TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
-  eint_ledger::Mark(pmy_pack->pmesh, "gap_pre");   // floorheat-1029 (no-op unless on)
+  eint_ledger::Mark(pmy_pack->pmesh, "gap_pre");   // (no-op unless on)
   if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_preupd");}
   fluid::RKUpdateCore(pmy_pack, pdriver, stage, nhydro + nscalars, uflx, u0, u1);
   return TaskStatus::complete;

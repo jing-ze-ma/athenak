@@ -6,16 +6,15 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file emf_smooth.hpp
-//! \brief the GS07 upwind weight (EmfSmoothW, lhlld2-1102), shared by MHD::CornerE and
-//! the cube-vertex EMF of MHD::CsVertexEmf3 (cornerfix-1103).  Moved verbatim from
-//! mhd_corner_e.cpp.
+//! \brief the GS07 upwind weight (EmfSmoothW), shared by MHD::CornerE and the cube-vertex
+//! EMF of MHD::CsVertexEmf3.
 
 #include "athena.hpp"
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
 //! \fn Real EmfSmoothW(fd, eps, rhoe)
-//! \brief lhlld2-1102, <mhd>/emf_smooth = eps (read only when named; default off =
+//! \brief <mhd>/emf_smooth = eps (read only when named; default off =
 //! the GS07 sign switch, bitwise).  Weight of the LEFT (lower-index) upwind choice in the
 //! GS07 corner EMF, as a smooth function of the face mass flux fd:
 //!   w = 0.5*(1 + fd/sqrt(fd^2 + delta^2)),  delta = eps*sqrt(rho*e)  (~ eps*rho*c_s),

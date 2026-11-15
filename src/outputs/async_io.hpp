@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file async_io.hpp
-//! \brief asyncio-1113: background writing of restart and binary output files.
+//! \brief background writing of restart and binary output files.
 //!
 //! Opt-in by the environment variable ATHENA_ASYNC_OUTPUT=1 (no input key, so that the
 //! parameter dump inside a restart file stays byte-identical).  With it set, an IOWrapper

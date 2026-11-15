@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file hydro_c2p_idem.cpp
-//! \brief ckbval-1102 <hydro>/c2p_idempotent (read only when named, default false).
+//! \brief <hydro>/c2p_idempotent (read only when named, default false).
 //!
 //! WHY.  A conversion of a state that has already been converted is not a no-op today:
 //! under etotgrav every call does u0(IEN) = (E - rho Phi) + rho Phi in place, the T(d,e)

@@ -50,7 +50,7 @@ MeshBinaryOutput::MeshBinaryOutput(ParameterInput *pin, Mesh *pm, OutputParamete
 //   All MeshBlocks are written to the same file.
 
 void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
-  // lhllc2nd-1102 <outputN>/bin_double (TEST key, read only when named; default float):
+  // <outputN>/bin_double (TEST key, read only when named; default float):
   // write the variables in double precision ("size of variable=8", which
   // vis/python/bin_convert.py reads), for convergence tests below float round-off
   const bool bin_dbl = pin->DoesParameterExist(out_params.block_name, "bin_double") &&
@@ -95,7 +95,7 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
        pm->use_grid_stretch_theta);
 
   IOWrapper binfile;
-  binfile.SetDeferred(this);  // asyncio-1113: background write if ATHENA_ASYNC_OUTPUT=1
+  binfile.SetDeferred(this);  // background write if ATHENA_ASYNC_OUTPUT=1
   std::size_t header_offset=0;
   binfile.Open(fname.c_str(), IOWrapper::FileMode::write, single_file_per_rank);
 
@@ -367,7 +367,7 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
 
   // close the output file and clean up ptrs to data
-  binfile.AdoptBuffer(data);  // asyncio-1113: freed after the (background) write
+  binfile.AdoptBuffer(data);  // freed after the (background) write
   binfile.Close(single_file_per_rank);
   delete [] single_data;
   if (double_data != nullptr) delete [] double_data;

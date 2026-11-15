@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file he_drive.hpp
-//! \brief hg262-drive-1113: the time-dependent DRIVEN inner boundary of he_star_m1
+//! \brief the time-dependent DRIVEN inner boundary of he_star_m1
 //! (he_drive.cpp).  Every key is read only when named; with none of them the problem
 //! generator never calls into this file beyond the cheap On() queries (bitwise).
 //!
