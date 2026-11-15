@@ -26,6 +26,8 @@
 //! u_L^+ = u_L + dl dr/(dl + dr), whose weights dr/(dl + dr), dl/(dl + dr) are taken
 //! from the Newton iterate (lagged) so that every pass stays a linear solve.
 
+#include <cmath>
+
 #include "athena.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 
@@ -143,12 +145,66 @@ void CleanJumpCoefficients(const CleanArgs &x, const int dir, const int c, const
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanCellGhost
+//! \brief incoming state outside the open physical boundary face (k,j,i) normal to dir:
+//! the beam at x1min (E_g = F_b/(c sqrt(D_11)), y_g,b = D_1b F_b/(c D_11) with D of the
+//! inner cell, exact for a collimated beam), else the isotropic bath (D = 1/3, y = 0).
+//! Returns E_g, y_g and the stress column D_g,bd E_g.
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellGhost(const CleanArgs &x, const int dir, const int m, const int k,
+                    const int j, const int i, const bool low, Real &eg, Real yg[3],
+                    Real pg[3]) {
+  for (int b = 0; b < 3; ++b) {
+    yg[b] = 0.0;
+    pg[b] = 0.0;
+  }
+  if (low && dir == 0 && x.use_beam && x.beam(m,k-x.ks,j-x.js) > 0.0) {
+    const Real yb = x.beam(m,k-x.ks,j-x.js)/x.c;
+    const Real d11 = fmax(CleanDiag(x, 0, 0, m, k, j, i), 1.0e-12);
+    eg = yb/std::sqrt(d11);
+    for (int b = 0; b < x.nf; ++b) {
+      yg[b] = CleanDiag(x, 0, b, m, k, j, i)*yb/d11;
+      pg[b] = CleanDiag(x, b, 0, m, k, j, i)*eg;
+    }
+    return;
+  }
+  eg = x.ebath[2*dir + (low ? 0 : 1)];
+  pg[dir] = eg/3.0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCellFaceSource
+//! \brief the E-independent part of the face fluxes on a physical boundary: the
+//! incoming E flux of CleanFaceSource and the ghost part of the upwind stress flux
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const int k,
+                         const int j, const int i, Real s[4]) {
+  for (int r = 0; r < 4; ++r) s[r] = 0.0;
+  const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
+  const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
+  const bool low = (pos == lo);
+  if (x.bc[2*dir + (low ? 0 : 1)] == M1_IBC_REFLECT) return;
+  s[0] = CleanFaceSource(x, dir, m, k, j, i);
+  // the ghost sits outside the face; its closure is read from the inner cell
+  const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
+  const int ic = low ? i : i - (dir == 0);
+  Real eg, yg[3], pg[3];
+  CleanCellGhost(x, dir, m, kc, jc, ic, low, eg, yg, pg);
+  for (int b = 0; b < x.nf; ++b) {
+    s[1+b] = 0.5*x.c*pg[b] + (low ? 0.5 : -0.5)*x.c*yg[b];
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanCellFaceJacobian
 //! \brief derivatives jl, jr of the face fluxes (fE, fY_1..3) at face (k,j,i) normal to
 //! dir with respect to the states (E, y_1..3) of the cells L and R.  The terms in the
 //! states of L-1 and R+1 (RC, reconstruction) are left to CleanCellFaceFlux.  On
-//! physical boundaries fE takes the boundary form of CleanFaceWeights and fY the stress
-//! of the inner cell (zero gradient; a reflecting wall carries only the normal stress).
+//! physical boundaries fE takes the boundary form of CleanFaceWeights and fY the
+//! upwind (a = c) flux between the inner cell and the incoming ghost state of
+//! CleanCellGhost; a reflecting wall carries only the normal stress of the inner cell.
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const int k,
@@ -176,7 +232,10 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
     Real al, ar;
     CleanFaceWeights(x, dir, m, k, j, i, al, ar);
     jj[0][0] = blo ? ar : al;
-    for (int b = 0; b < x.nf; ++b) jj[1+b][0] = x.c*CleanDiag(x, b, dir, m, kc, jc, ic);
+    for (int b = 0; b < x.nf; ++b) {
+      jj[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, kc, jc, ic);
+      jj[1+b][1+b] = blo ? -0.5*x.c : 0.5*x.c;
+    }
     return;
   }
   const Real al = x.fc[dir](m,CLF_AL,k,j,i);
@@ -218,7 +277,11 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
     }
   }
   if (CleanBoundaryFace(x, dir, k, j, i)) {
-    if (with_source) f[0] += CleanFaceSource(x, dir, m, k, j, i);
+    if (with_source) {
+      Real s[4];
+      CleanCellFaceSource(x, dir, m, k, j, i, s);
+      for (int r = 0; r < 4; ++r) f[r] += s[r];
+    }
     return;
   }
   // RC terms in E_{L-1} and E_{R+1}
@@ -258,24 +321,26 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanCellSourceDivergence
-//! \brief h div of the incoming boundary fluxes of cell (k,j,i) (E equation only)
+//! \fn void CleanCellSourceDivergence
+//! \brief h div of the E-independent boundary fluxes of cell (k,j,i)
 
 KOKKOS_INLINE_FUNCTION
-Real CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, const int j,
-                               const int i) {
-  Real div = 0.0;
+void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, const int j,
+                               const int i, Real div[4]) {
+  for (int r = 0; r < 4; ++r) div[r] = 0.0;
   for (int dir = 0; dir < 3; ++dir) {
     if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
     const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-    Real s = 0.0;
+    Real s[4];
     if (CleanBoundaryFace(x, dir, k+dk, j+dj, i+di)) {
-      s += CleanFaceSource(x, dir, m, k+dk, j+dj, i+di);
+      CleanCellFaceSource(x, dir, m, k+dk, j+dj, i+di, s);
+      for (int r = 0; r < 4; ++r) div[r] += x.h*x.idx[dir]*s[r];
     }
-    if (CleanBoundaryFace(x, dir, k, j, i)) s -= CleanFaceSource(x, dir, m, k, j, i);
-    div += x.idx[dir]*s;
+    if (CleanBoundaryFace(x, dir, k, j, i)) {
+      CleanCellFaceSource(x, dir, m, k, j, i, s);
+      for (int r = 0; r < 4; ++r) div[r] -= x.h*x.idx[dir]*s[r];
+    }
   }
-  return x.h*div;
 }
 
 //----------------------------------------------------------------------------------------

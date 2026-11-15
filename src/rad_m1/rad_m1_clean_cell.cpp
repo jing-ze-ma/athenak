@@ -179,9 +179,9 @@ void RadiationM1::CleanCellFirstIterate() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellRightHandSide
-//! \brief B_E = E_old + h c kP a T^4 - r h c kE E_k - W - h div(incoming boundary flux)
-//! (exchange linearised about the iterate as in CleanRightHandSide), B_y = y_old, and the
-//! initial guess X = the iterate
+//! \brief B_E = E_old + h c kP a T^4 - r h c kE E_k - W, B_y = y_old, each less h div of
+//! the incoming boundary fluxes (exchange linearised about the iterate as in
+//! CleanRightHandSide), and the initial guess X = the iterate
 
 void RadiationM1::CleanCellRightHandSide() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -214,11 +214,12 @@ void RadiationM1::CleanCellRightHandSide() {
         work += (uh(m,IM1+n,k,j,i) + 0.5*dm)*dm/d;
       }
     }
+    Real sdiv[4];
+    CleanCellSourceDivergence(x, m, k, j, i, sdiv);
     x.w(m,CLW_RR,k,j,i) = rr;
     x.u(m,CLC_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
-                         - rr*hcke*x.w(m,CLW_EK,k,j,i) - work
-                         - CleanCellSourceDivergence(x, m, k, j, i);
-    for (int b = 1; b < 4; ++b) x.u(m,CLC_B+b,k,j,i) = x.u(m,CLC_O+b,k,j,i);
+                         - rr*hcke*x.w(m,CLW_EK,k,j,i) - work - sdiv[0];
+    for (int b = 1; b < 4; ++b) x.u(m,CLC_B+b,k,j,i) = x.u(m,CLC_O+b,k,j,i) - sdiv[b];
     for (int b = 0; b < 4; ++b) x.u(m,CLC_X+b,k,j,i) = x.u(m,CLC_K+b,k,j,i);
   });
 }
