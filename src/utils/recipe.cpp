@@ -30,7 +30,8 @@ Mode GetMode(ParameterInput *pin) {
   if (r == "prod1019") return Mode::prod1019;
   if (r == "none") return Mode::none;
   std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-            << "<job>/recipe = '" << r << "' is not a choice (prod1019 | none)" << std::endl;
+            << "<job>/recipe = '" << r
+            << "' is not a choice (prod1019 | none)" << std::endl;
   std::exit(EXIT_FAILURE);
 }
 
@@ -46,7 +47,8 @@ void Log(const std::string &line) {Lines().push_back(line);}
 void PrintLog() {
   auto &v = Lines();
   if (global_variable::my_rank == 0 && !v.empty()) {
-    std::cout << "--- defaults (amdef-1019; <job>/recipe sets the default set: prod1019 | "
+    std::cout
+        << "--- defaults (amdef-1019; <job>/recipe sets the default set: prod1019 | "
               << "none) ---" << std::endl;
     for (const auto &s : v) {std::cout << "  " << s << std::endl;}
     std::cout << "--- end defaults ---" << std::endl;

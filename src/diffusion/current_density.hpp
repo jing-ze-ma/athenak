@@ -140,7 +140,8 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
   auto fw = [&](const int i, Real w[4], Real &rsc) {
     if (!x1c || i < geom.is || i > geom.ie+1) return false;
     int sd = 0;
-    if (i == geom.is && geom.bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::block) {
+    if (i == geom.is
+        && geom.bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::block) {
       sd = 1;
     }
     if (i == geom.ie+1 &&
@@ -167,8 +168,10 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
           j2(i) = -rsc*d3/area2(m,k,j,i);
           j3(i) =  rsc*d2/area3(m,k,j,i);
         } else {
-          j2(i) = -(dx3(m,k,j,i)*b.x3f(m,k,j,i) - dx3(m,k,j,i-1)*b.x3f(m,k,j,i-1))/area2(m,k,j,i);
-          j3(i) =  (dx2(m,k,j,i)*b.x2f(m,k,j,i) - dx2(m,k,j,i-1)*b.x2f(m,k,j,i-1))/area3(m,k,j,i);
+          j2(i) = -(dx3(m,k,j,i)*b.x3f(m,k,j,i)
+                    - dx3(m,k,j,i-1)*b.x3f(m,k,j,i-1))/area2(m,k,j,i);
+          j3(i) =  (dx2(m,k,j,i)*b.x2f(m,k,j,i)
+                    - dx2(m,k,j,i-1)*b.x2f(m,k,j,i-1))/area3(m,k,j,i);
         }
       });
       member.team_barrier();
@@ -188,7 +191,8 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
             j3(i) -= rsc*(dx1(m,k,j,i)*b.x1f(m,k,j,i)
                          - dx1(m,k,j-1,i)*b.x1f(m,k,j-1,i))/area3(m,k,j,i);
           } else {
-            j3(i) -= (dx1(m,k,j,i)*b.x1f(m,k,j,i) - dx1(m,k,j-1,i)*b.x1f(m,k,j-1,i))/area3(m,k,j,i);
+            j3(i) -= (dx1(m,k,j,i)*b.x1f(m,k,j,i)
+                      - dx1(m,k,j-1,i)*b.x1f(m,k,j-1,i))/area3(m,k,j,i);
           }
         });
         member.team_barrier();
@@ -216,7 +220,8 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
             j2(i) += rsc*(dx1(m,k,j,i)*b.x1f(m,k,j,i)
                           - dx1(m,k-1,j,i)*b.x1f(m,k-1,j,i))/area2(m,k,j,i);
           } else {
-            j2(i) += (dx1(m,k,j,i)*b.x1f(m,k,j,i) - dx1(m,k-1,j,i)*b.x1f(m,k-1,j,i))/area2(m,k,j,i);
+            j2(i) += (dx1(m,k,j,i)*b.x1f(m,k,j,i)
+                      - dx1(m,k-1,j,i)*b.x1f(m,k-1,j,i))/area2(m,k,j,i);
           }
         });
         member.team_barrier();

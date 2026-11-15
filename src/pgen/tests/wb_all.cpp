@@ -30,6 +30,8 @@
 //! of v against the exact solution: "WBALL_DIAG ...".
 
 #include <cmath>
+#include <cstdio>
+#include <functional>
 #include <iostream>
 #include <string>
 
@@ -42,7 +44,6 @@
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
-#include <functional>
 #include "pgen/pgen.hpp"
 
 namespace {
@@ -75,13 +76,15 @@ WbFl WbFluid(MeshBlockPack *pmbp) {
     auto *p = pmbp->pmhd;
     f.u0 = p->u0; f.w0 = p->w0; f.wbq0 = p->wbq0; f.all = p->wb_all;
     f.dyn = p->use_wellbalance_dynamic; f.wbx1 = p->use_wb_x1; f.mhd = true;
-    f.phicc = p->phicc0; f.phi1 = p->phi0.x1f; f.phi2 = p->phi0.x2f; f.phi3 = p->phi0.x3f; f.eos = p->peos->eos_data;
+    f.phicc = p->phicc0; f.phi1 = p->phi0.x1f; f.phi2 = p->phi0.x2f;
+    f.phi3 = p->phi0.x3f; f.eos = p->peos->eos_data;
     f.addgrav = [p](Real b, bool x1) {p->AddWbGravity(b, x1);};
   } else {
     auto *p = pmbp->phydro;
     f.u0 = p->u0; f.w0 = p->w0; f.wbq0 = p->wbq0; f.all = p->wb_all;
     f.dyn = p->use_wellbalance_dynamic; f.wbx1 = p->use_wb_x1;
-    f.phicc = p->phicc0; f.phi1 = p->phi0.x1f; f.phi2 = p->phi0.x2f; f.phi3 = p->phi0.x3f; f.eos = p->peos->eos_data;
+    f.phicc = p->phicc0; f.phi1 = p->phi0.x1f; f.phi2 = p->phi0.x2f;
+    f.phi3 = p->phi0.x3f; f.eos = p->peos->eos_data;
     f.addgrav = [p](Real b, bool x1) {p->AddWbGravity(b, x1);};
   }
   return f;
@@ -97,7 +100,8 @@ Real WbAllPhiRaw(const WbAllV &v, const Real x1, const Real x2, const Real x3) {
   const Real cf = -0.5*v.om*v.om*(x*x + y*y);
   if (v.phi == 0) return -(v.gx*x + v.gy*y + v.gz*z) + cf;
   const Real X = x - v.x0, Y = y - v.y0, Z = z - v.z0;
-  return -v.gm/sqrt(X*X + Y*Y + Z*Z + v.soft*v.soft) - 0.5*v.kt*(2.0*X*X - Y*Y - Z*Z) + cf;
+  return -v.gm/sqrt(X*X + Y*Y + Z*Z + v.soft*v.soft) - 0.5*v.kt*(2.0*X*X - Y*Y - Z*Z)
+      + cf;
 }
 KOKKOS_INLINE_FUNCTION
 Real WbAllPhi(const WbAllV &v, const Real x, const Real y, const Real z) {
@@ -281,7 +285,8 @@ void ProblemGenerator::WbAll(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   if ((pmbp->phydro == nullptr && pmbp->pmhd == nullptr) ||
       (pmy_mesh_->one_d && !pmy_mesh_->use_cubed_sphere)) {
-    std::cout << "### FATAL ERROR in wb_all: needs <hydro> on a 2-D/3-D mesh" << std::endl;
+    std::cout << "### FATAL ERROR in wb_all: needs <hydro> on a 2-D/3-D mesh"
+        << std::endl;
     std::exit(EXIT_FAILURE);
   }
   WbFl fl = WbFluid(pmbp);
@@ -315,7 +320,8 @@ void ProblemGenerator::WbAll(ParameterInput *pin, const bool restart) {
   v.phiref = v.sp ? WbAllPhiRaw(v, pin->GetOrAddReal("problem", "r_ref", 1.0), 0.5*M_PI,
                                 0.0)
                   : (pmy_mesh_->use_cubed_sphere
-                     ? WbAllPhiRaw(v, pin->GetOrAddReal("problem", "r_ref", 1.0), 0.0, 0.0)
+                     ? WbAllPhiRaw(v,
+                                   pin->GetOrAddReal("problem", "r_ref", 1.0), 0.0, 0.0)
                      : WbAllPhiRaw(v, 0.0, 0.0, 0.0));
   const std::string flw = pin->GetOrAddString("problem", "flow", "none");
   v.flow = (flw.compare("shear") == 0) ? 1 : ((flw.compare("jet") == 0) ? 2 : 0);

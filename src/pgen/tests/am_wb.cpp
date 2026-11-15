@@ -18,9 +18,9 @@
 //! angular momentum may change only through the transport (L_z budget), and a static
 //! hydrostatic state (rot = pert = 0) for the well-balanced property.
 //! With <hydro>/wellbalance_static the same profile is the static background (u0wb, w0wb,
-//! w0facewb; radial faces at x1f, lateral faces at the cell-centre radius) and gravity acts
-//! on rho - rho_background (as wb_atm).  ix1_bc / ox1_bc = user hold the ghosts at the
-//! analytic profile (v = 0).
+//! w0facewb; radial faces at x1f, lateral faces at the cell-centre radius) and gravity
+//! acts on rho - rho_background (as wb_atm).  ix1_bc / ox1_bc = user hold the ghosts at
+//! the analytic profile (v = 0).
 //! History (problem/user_hist = true, hst data_format %.17e): M, E (total incl. the
 //! potential energy sum V rho Phi), Lx, Ly, Lz (sum V r_c x m, arm r_c = x1v rhat_c as
 //! am_transport), KE, and KEin = KE over 1.1 x1min < r < 0.9 x1max (away from the walls).

@@ -67,7 +67,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   const int nmkji = (pmy_pack->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji  = nx2*nx1;
-    
+
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   auto &dx1_ = pmy_pack->pcoord->dx1;

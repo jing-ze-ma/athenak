@@ -52,8 +52,9 @@ void DtReportInit(ParameterInput *pin, MeshBlockPack *pp, const bool rss) {
   if (pin->DoesParameterExist("mhd", "dt_report")) {
     rep_every = pin->GetInteger("mhd", "dt_report");
     // the report reads the curvilinear cell widths (pcoord dx1/dx2/dx3, sin of
-    // the cs cell angle), so it is 3-D cubed sphere / spherical polar only; refuse the key
-    // elsewhere at start-up instead of switching it off silently.  Hydro has no dt_report.
+    // the cs cell angle), so it is 3-D cubed sphere / spherical polar only; refuse the
+    // key elsewhere at start-up instead of switching it off silently.  Hydro has no
+    // dt_report.
     if (rep_every > 0 && (!pp->pmesh->three_d || rss ||
         !(pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar))) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -123,8 +124,13 @@ void DtReport(MHD *pm, MeshBlockPack *pp) {
     const Real d = w0_(m,IDN,k,j,i);
     const Real bx = bcc_(m,IBX,k,j,i), by = bcc_(m,IBY,k,j,i), bz = bcc_(m,IBZ,k,j,i);
     Real p, g1;
-    if (gen) { p = wder_(m,IDPR,k,j,i); g1 = wder_(m,IDG1,k,j,i); }
-    else { p = eos.IdealGasPressure(w0_(m,ipr,k,j,i)); g1 = eos.gamma; }
+    if (gen) {
+      p = wder_(m,IDPR,k,j,i);
+      g1 = wder_(m,IDG1,k,j,i);
+    } else {
+      p = eos.IdealGasPressure(w0_(m,ipr,k,j,i));
+      g1 = eos.gamma;
+    }
     pr = p;
     const Real cs = sqrt(g1*p/d);
     const Real sn = cs_ ? sn_(m,k,j) : 1.0;
@@ -174,7 +180,13 @@ void DtReport(MHD *pm, MeshBlockPack *pp) {
     Real dtf, dts, dtv, pr, vab; int dir;
     cell(m, k, j, i, dtf, dts, dtv, pr, dir, vab);
     if (dtf < thr) {
-      if (pr < p1) ++c0; else if (pr < p2) ++c1; else ++c2;
+      if (pr < p1) {
+        ++c0;
+      } else if (pr < p2) {
+        ++c1;
+      } else {
+        ++c2;
+      }
     }
     if (pr >= p1 && dtf < thr1) ++cb1;
     if (va2i > 0.0 && vab*va2i >= 0.99) { ++cc; if (pr < p1) ++cct; }
