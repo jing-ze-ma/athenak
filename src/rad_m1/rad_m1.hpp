@@ -2914,6 +2914,8 @@ class RadiationM1 {
   void CleanClosureFromRays();
   void CleanClosureFromGd();
   void CleanGdFaceSums();
+  void CleanFvSweep();
+  void CleanFvSeams();
   void CleanClosureFill();
   void CleanClosureEddington();
   void CleanFaceCoefficients();
@@ -3006,6 +3008,12 @@ class RadiationM1 {
   Real cln_tc = -1.0e300;       // time of the closure build
   Real cln_dtb = 0.0;           // dt of the closure build
   DvceArray5D<Real> cln_s;      // closure (CLN_*)
+  int cln_rfv = 0;              // clean_rays = fv1 | fv: the conservative sweep (1st, 2nd order)
+  DvceArray5D<Real> cln_fvi;    // its intensities (m, d, k, j, i)
+  DvceArray5D<Real> cln_fva;    // the outward vector areas of the six faces of a cell
+  DvceArray3D<int> cln_fvo;     // the cell order of each direction (m, d, cell)
+  DvceArray4D<int> cln_fvm;     // the direction maps of the periodic seams (m, side, k, d)
+  DvceArray4D<Real> cln_fvt;    // scratch of CleanFvSeams
   DvceArray5D<Real> cln_v;      // closure fill flags (m,2,k,j,i)
   DvceArray5D<Real> cln_opb;    // opacities of the stage, kept during the closure build
   // clean_closure = extrap(2): ray moments (CLN_* layout, not normalised by J) of the
