@@ -114,8 +114,14 @@
             return ft*ws - fb;
           };
           // mt: the target cosine (the ghost's own; used when upw)
-          auto rd0t = [&](const int kk, const int jj, const int ii, const int dq,
+          auto rd0t = [&](int kk, const int jj, const int ii, int dq,
                           const Real mt) -> Real {
+            // axisymmetric (nx3 = 1): a phi band column is the own column, direction
+            // rotated by the column's phi offset (the wall map of its interior row)
+            if (nx3b == 1 && kk != wb) {
+              dq = mp_(m,kk,wb,dq);
+              kk = wb;
+            }
             const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
             const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
             if (ek == 0 && ej == 0) {   // (a mirror row of the MIR kernel: shifted)

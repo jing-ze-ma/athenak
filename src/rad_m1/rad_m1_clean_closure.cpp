@@ -552,7 +552,7 @@ void RadiationM1::CleanClosureFromGd() {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int n = vgd_n, og = vgd_w - indcs.ng;
+  const int n = vgd_n, og = vgd_w - indcs.ng, ok = vgd_w - ks;
   auto vi_ = vgd_i;
   auto dir_ = vgd_dir;
   auto cw_ = vgd_cs;
@@ -566,13 +566,13 @@ void RadiationM1::CleanClosureFromGd() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real st = sin(x2v(m,j)), ct = cos(x2v(m,j));
     const Real sp = sin(x3v(m,k)), cp = cos(x3v(m,k));
-    const Real s0 = exp(cw_(m,1,k+og,j+og,i));
+    const Real s0 = exp(cw_(m,1,k+ok,j+og,i));
     Real q[CLN_N] = {0.0};
     for (int d = 0; d < n; ++d) {
       const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
       const Real mu[3] = {nx*st*cp + ny*st*sp + nz*ct, nx*ct*cp + ny*ct*sp - nz*st,
                           -nx*sp + ny*cp};
-      const Real iv = vi_(m,d,k+og,j+og,i);
+      const Real iv = vi_(m,d,k+ok,j+og,i);
       const Real a = dir_(d,3)*iv;
       q[CLN_J] += a;
       for (int b = 0; b < 3; ++b) {
@@ -609,7 +609,7 @@ void RadiationM1::CleanGdFaceSums() {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int n = vgd_n, og = vgd_w - indcs.ng;
+  const int n = vgd_n, og = vgd_w - indcs.ng, ok = vgd_w - ks;
   auto vi_ = vgd_i;
   auto dir_ = vgd_dir;
   auto cw_ = vgd_cs;
@@ -617,6 +617,15 @@ void RadiationM1::CleanGdFaceSums() {
   auto x3v = pmy_pack->pcoord->x3v;
   auto cs = cln_s;
   CleanArgs x = CleanMakeArgs();
+  // nx3 = 1 (axisymmetric): no phi face is a boundary; the upwind cell of the low one is
+  // the own cell with the directions rotated back by the phi extent (the wall map), the
+  // high one carries the low one's sums in its own basis
+  const bool axi = !pmy_pack->pmesh->three_d;
+  auto mp_ = vgd_map;
+  auto bnd = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
+                                  const int i) {
+    return !(axi && dir == 2) && CleanBoundaryFace(x, dir, m, k, j, i);
+  };
   // the inner face: no flux at a reflecting one, else the outward beams of the sweep's
   // emission (vet_bc_inner emit) or of the first cell, the inward ones of the first cell
   const bool open = (ibc_x1min != M1_IBC_REFLECT);
@@ -653,12 +662,14 @@ void RadiationM1::CleanGdFaceSums() {
   // beam of direction d through the low theta or phi face of cell (k,j,i)
   auto lat = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
                                   const int i, const int d) {
-    if (CleanBoundaryFace(x, dir, m, k, j, i)) return 0.0;
+    if (bnd(dir, m, k, j, i)) return 0.0;
     Real a[3], e[3][3];
     face(dir, m, k, j, i, a, e);
     const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
     const int kl = k - (dir == 2), jl = j - (dir == 1);
-    return f*((f > 0.0) ? vi_(m,d,kl+og,jl+og,i) : vi_(m,d,k+og,j+og,i));
+    const bool rot = axi && dir == 2;
+    const int du = rot ? mp_(m,kl+ok,j+og,d) : d;
+    return f*((f > 0.0) ? vi_(m,du,(rot ? k : kl)+ok,jl+og,i) : vi_(m,d,k+ok,j+og,i));
   };
   // sums of the beams of every direction through the face, per unit area
   auto add = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
@@ -696,7 +707,7 @@ void RadiationM1::CleanGdFaceSums() {
       face(0, m, k, j, is, a, e);
       for (int d = 0; open && in && d < n; ++d) {
         const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
-        const Real iv = (emi && f > 0.0) ? iemit : vi_(m,d,k+og,j+og,is);
+        const Real iv = (emi && f > 0.0) ? iemit : vi_(m,d,k+ok,j+og,is);
         add(0, m, k, j, is, d, f*iv, q);
       }
       for (int c = 0; c < 4; ++c) {
@@ -705,10 +716,10 @@ void RadiationM1::CleanGdFaceSums() {
       for (int i = is; i <= ie; ++i) {
         for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
         // the exchange V chi (S - J, -H_b) and the lateral outflow of the cell
-        const Real chi = x.vol(m,k,j,i)*exp(cw_(m,0,k+og,j+og,i));
-        const Real s0 = exp(cw_(m,1,k+og,j+og,i));
+        const Real chi = x.vol(m,k,j,i)*exp(cw_(m,0,k+ok,j+og,i));
+        const Real s0 = exp(cw_(m,1,k+ok,j+og,i));
         for (int d = 0; d < n; ++d) {
-          const Real di = dir_(d,3)*vi_(m,d,k+og,j+og,i);
+          const Real di = dir_(d,3)*vi_(m,d,k+ok,j+og,i);
           q[0] += chi*(dir_(d,3)*s0 - di);
           for (int b = 0; b < 3; ++b) {
             q[1+b] -= chi*di*(dir_(d,0)*e[b][0] + dir_(d,1)*e[b][1] + dir_(d,2)*e[b][2]);
@@ -718,13 +729,14 @@ void RadiationM1::CleanGdFaceSums() {
           const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
           for (int up = 0; up < 2; ++up) {
             const int kk = k + (up && dir == 2), jj = j + (up && dir == 1);
-            if (CleanBoundaryFace(x, dir, m, kk, jj, i)) continue;
+            if (bnd(dir, m, kk, jj, i)) continue;
             face(dir, m, kk, jj, i, a, ef);
             const Real sg = (up ? -1.0 : 1.0)*x.area[dir](m,kk,jj,i);
-            q[0] += sg*cs(m,nf,kk,jj,i);
+            const int kc = (axi && dir == 2) ? k : kk;
+            q[0] += sg*cs(m,nf,kc,jj,i);
             for (int b = 0; b < 3; ++b) {
               for (int c = 0; c < 3; ++c) {
-                q[1+b] += sg*cs(m,nf+1+c,kk,jj,i)*(ef[c][0]*e[b][0] + ef[c][1]*e[b][1] +
+                q[1+b] += sg*cs(m,nf+1+c,kc,jj,i)*(ef[c][0]*e[b][0] + ef[c][1]*e[b][1] +
                                                    ef[c][2]*e[b][2]);
               }
             }
