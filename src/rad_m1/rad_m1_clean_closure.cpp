@@ -943,6 +943,21 @@ void RadiationM1::CleanGdFaceSums() {
       q[1+b] += w*(dir_(d,0)*e[b][0] + dir_(d,1)*e[b][1] + dir_(d,2)*e[b][2]);
     }
   };
+  // a mirror at the r face i, per unit area: no energy, the normal momentum of the
+  // beams of cell ic that hit it (f of sign sg) doubled, no tangential part
+  auto mirror = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
+                                     const int ic, const Real sg, Real q[4]) {
+    Real a[3], e[3][3], w[4] = {0.0};
+    face(0, m, k, j, i, a, e);
+    for (int d = 0; d < n; ++d) {
+      const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
+      if (sg*f > 0.0) add(0, m, k, j, i, d, 2.0*f*inten(m, d, k, j, ic), w);
+    }
+    q[0] = 0.0;
+    q[1] = w[1];
+    q[2] = 0.0;
+    q[3] = 0.0;
+  };
   for (int dir = 1; dir < 3; ++dir) {
     const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
     par_for("cln_gd_lat", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -971,9 +986,11 @@ void RadiationM1::CleanGdFaceSums() {
         const Real iv = (emi && f > 0.0) ? iemit : inten(m, d, k, j, is);
         add(0, m, k, j, is, d, f*iv, q);
       }
+      if (in && !open) mirror(m, k, j, is, is, -1.0, q);
       for (int c = 0; c < 4; ++c) {
         q[c] = in ? q[c]*x.area[0](m,k,j,is) : qr_(m,c*nkj + kj);
       }
+      const Real vb = in ? 0.0 : qr_(m,4*nkj + kj);   // the column's volume below
       for (int i = is; i <= ie; ++i) {
         for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
         // the exchange V chi (S - J, -H_b) and the lateral outflow of the cell
@@ -1004,22 +1021,58 @@ void RadiationM1::CleanGdFaceSums() {
         }
       }
       if (xf_(m) & 4) {
-        // a reflecting top: the rays' remainder at the wall (their non-conservation)
-        // spread over the cells of the level by volume, so that none leaves through it
-        Real vt = 0.0, vc = 0.0;
+        // a reflecting top: the rays' remainder at the wall (their non-conservation, all
+        // but the mirror's momentum) spread over the cells of the column by volume, so
+        // that no energy leaves through it (the levels below: in the pass down)
+        Real qw[4];
+        mirror(m, k, j, ie + 1, ie, 1.0, qw);
+        for (int c = 0; c < 4; ++c) q[c] -= qw[c]*x.area[0](m,k,j,ie+1);
+        Real vt = vb, vc = vb;
         for (int i = is; i <= ie; ++i) vt += x.vol(m,k,j,i);
-        for (int i = is + 1; i <= ie; ++i) {
-          vc += x.vol(m,k,j,i-1);
+        for (int i = is + (in ? 1 : 0); i <= ie; ++i) {
+          if (i > is) vc += x.vol(m,k,j,i-1);
           for (int c = 0; c < 4; ++c) {
             cs(m,CLN_FX+c,k,j,i) -= q[c]*vc/(vt*x.area[0](m,k,j,i));
           }
         }
-        for (int c = 0; c < 4; ++c) q[c] = 0.0;
+        for (int c = 0; c < 4; ++c) qb_(m,c*nkj + kj) = q[c];
+        qb_(m,4*nkj + kj) = vt;
+        qb_(m,5*nkj + kj) = vb;
+        for (int c = 0; c < 4; ++c) q[c] = qw[c]*x.area[0](m,k,j,ie+1);
       }
       for (int c = 0; c < 4; ++c) {
         cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
         cs(m,CLN_F1+c,k,j,ie) = q[c]/x.area[0](m,k,j,ie+1);
-        qb_(m,c*nkj + kj) = q[c];
+        if (!(xf_(m) & 4)) qb_(m,c*nkj + kj) = q[c];
+      }
+      if (!(xf_(m) & 4)) {
+        Real v = vb;
+        for (int i = is; i <= ie; ++i) v += x.vol(m,k,j,i);
+        qb_(m,4*nkj + kj) = v;
+      }
+    });
+  }
+  // a reflecting top over several levels: the remainder, the column volume and the
+  // volume below the level above handed down; each level takes its share
+  for (int lev = vgd_nb1 - 2; lev >= 0 && ibc_x1max == M1_IBC_REFLECT; --lev) {
+    VetGdX1Pass(false);
+    par_for("cln_gd_top", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      if ((xf_(m) >> 3) != lev) return;
+      const int kj = (k - ks)*nj + j - js;
+      const Real vt = qr_(m,4*nkj + kj);
+      Real vc = qr_(m,5*nkj + kj);
+      for (int i = is; i <= ie; ++i) vc -= x.vol(m,k,j,i);
+      for (int c = 0; c < 6; ++c) qb_(m,c*nkj + kj) = qr_(m,c*nkj + kj);
+      qb_(m,5*nkj + kj) = vc;
+      for (int i = is; i <= ie + 1; ++i) {
+        if (i > is) vc += x.vol(m,k,j,i-1);
+        for (int c = 0; c < 4; ++c) {
+          const Real dq = qr_(m,c*nkj + kj)*vc/vt;
+          if (i <= ie) cs(m,CLN_FX+c,k,j,i) -= dq/x.area[0](m,k,j,i);
+          if (i == is) cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
+          if (i == ie + 1) cs(m,CLN_F1+c,k,j,ie) -= dq/x.area[0](m,k,j,ie+1);
+        }
       }
     });
   }
