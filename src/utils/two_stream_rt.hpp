@@ -368,18 +368,17 @@ inline int rt_nchain = 4;
 // problem/rt_split: run the RT as three kernels with the chain-block index promoted to
 // a parallel dimension, instead of one kernel that loops over chains serially. Same
 // arithmetic, same block-summation order -- see the use site.
-// DEFAULT TRUE in deep_hot_jupiter_rt since 2026-09-22; box_convection and red_giant
+// DEFAULT TRUE in deep_hot_jupiter_rt; box_convection and red_giant
 // force it true (the grey kernel lives on the split path).  The monolithic path is
 // therefore reachable only as the grey PICKET FENCE (rt_ck = false) with the flag set
 // false by hand, and is kept for that case: the split grey sweep sizes its column at
 // compile time and fatals when n1 > RT_NNC, which the monolithic one does not.
 //
 // THE "BITWISE IDENTICAL" CLAIM BELOW HOLDS FOR THE CORRELATED-K AND GREY KERNELS, NOT
-// FOR THE PICKET FENCE.  MEASURED 2026-09-22 on inputs/mhd/deep_hot_jupiter_rt_ideal_xe
-// (rt_ck = false, 20 cycles, same binary, deterministic on rerun): the two paths agree
-// on mass and total energy to the printed digits but differ by 7.1 % in the 1-KE
-// history column, so a picket-fence run that relied on the old default answers
-// differently now.  Unexplained; the difference is confined to that path.
+// FOR THE PICKET FENCE.  Measured on inputs/mhd/deep_hot_jupiter_rt_ideal_xe (rt_ck =
+// false, 20 cycles, same binary, deterministic on rerun): the two paths agree on mass
+// and total energy to the printed digits but differ by 7.1 % in the 1-KE history
+// column.  Unexplained; the difference is confined to that path.
 inline bool rt_split = false;
 // PER-CYCLE RT DIAGNOSTIC (deep_hot_jupiter_rt's problem/diag_gid).  Off by default and
 // costing nothing when off: the array is not even allocated.  (m,slot,k,j,i) with
@@ -938,7 +937,7 @@ inline int rt_impl_maxit = 5;
 // two_stream_column_implicit.hpp, step 4a'.  Off = bitwise the frozen handover.
 // Read ONLY at the c3.ex_iter assignment below, inside the rt_implicit_column = 3
 // branch, so it is inert in every other mode.  problem/rt_col3_ex_iter defaults TRUE in
-// box_convection and red_giant since 2026-09-22; deep_hot_jupiter_rt never reads it
+// box_convection and red_giant; deep_hot_jupiter_rt never reads it
 // (it refuses rt_implicit_column != 0 outright).
 inline bool rt_col3_ex_iter = false;
 // problem/rt_col3_skip_sweep: under rt_implicit_column = 3 with the tau blend weight w
@@ -1419,18 +1418,18 @@ inline int ck_sweep_cache = 2;
 // NOT CONVERTED, and refused at startup: ck_spherical = false (with no face coupling
 // there is nothing to solve and the plane-parallel sweep is already the exact two-pass
 // form), rt_layer_legacy, and ck_implicit with sd (2).  ck_implicit with tm (1) carries
-// its own tridiagonal, the JAC instantiation of the kernel (2026-09-22, phase T1 of
-// tests_ck_implicit/DESIGN_tm.md); ck_impl_frozen_op is instantiated for it (phase T2),
-// and ck_impl_lin re-applies its stored factorisation in a separate kernel (phase T3).
+// its own tridiagonal, the JAC instantiation of the kernel (tests_ck_implicit/
+// DESIGN_tm.md); ck_impl_frozen_op is instantiated for it, and ck_impl_lin re-applies
+// its stored factorisation in a separate kernel.
 //
-// THE DEFAULT.  Since 2026-09-22 deep_hot_jupiter_rt defaults this to 1 (tm) wherever it
-// can run, i.e. under ck_spherical, and to 0 in exactly the cases refused above, so that
-// no working input is turned into a startup fatal by the flip.  The reason is that the
+// THE DEFAULT.  deep_hot_jupiter_rt defaults this to 1 (tm) wherever it can run, i.e.
+// under ck_spherical, and to 0 in exactly the cases refused above, so that no working
+// input is turned into a startup fatal by the default.  The reason is that the
 // four-pass form's probe-lagged mixing constant is only O(beta^2) -- 2.3e-2 of the face
 // flux at the production area ratio 3.45 -- while tm and sd solve the coupled column
 // exactly (they agree to 3.5e-17), and tm is 1.36x faster on the GPU.  The value below
-// remains the flag's own zero-initialisation, i.e. the historical form: it is what any
-// other caller gets, and what the pgen falls back to.  See
+// is the flag's own zero-initialisation, the four-pass form: it is what any other
+// caller gets, and what the pgen falls back to.  See
 // tests_ck_sweep_form/README.md and README_default.md.
 inline int ck_sweep_form = 0;
 // problem/ck_sph_dilute (PROTOTYPE, default false = bitwise the face above): replace the

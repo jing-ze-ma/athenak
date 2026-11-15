@@ -1935,7 +1935,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
   // implicit_closure_thin_relax: the relaxed closure of the last step, when this run
   // relaxes too.  A file without it leaves ctr_init = false: the first step after the
-  // restart is unrelaxed (the behaviour before 2026-09-27) and the restart not bitwise.
+  // restart is unrelaxed and the restart not bitwise.
   const bool ctr_want = (pradm1 != nullptr) && (pradm1->impl_ctrelax > 0.0);
   const bool ctr_read = ctr_want && (nctr_file == 4) &&
                         (static_cast<int>(pradm1->ctr_mem.extent(0)) >= nmb);

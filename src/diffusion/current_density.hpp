@@ -55,12 +55,9 @@ inline CurrentDensityGeom MakeCurrentDensityGeom(MeshBlockPack *pmy_pack,
                                                  const bool sp_x1c = false) {
   CurrentDensityGeom geom;
   geom.use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
-  // Mesh::two_d is EXCLUSIVE (nx2 > 1 and nx3 == 1), so a 3D run has two_d == false.
-  // Gating the x2-derivative terms on it dropped d(B3)/dx2 from J1 and d(B1)/dx2 from J3
-  // in every 3D run between 1123736f (2026-06-20) and this fix: curl B was missing two
-  // of its six terms on the Cartesian and spherical-polar grids (the cubed sphere has
-  // its own curl in resistivity_gnomonic.cpp).  Found by sp_test iprob = 11, whose
-  // force-free field decayed at half the exact rate, slower still with resolution.
+  // The x2-derivative terms are gated on multi_d, not on Mesh::two_d, which is EXCLUSIVE
+  // (nx2 > 1 and nx3 == 1) and would drop d(B3)/dx2 from J1 and d(B1)/dx2 from J3 in 3D
+  // (the cubed sphere has its own curl in resistivity_gnomonic.cpp).
   geom.multi_d = pmy_pack->pmesh->multi_d;
   geom.three_d = pmy_pack->pmesh->three_d;
   geom.area1 = pmy_pack->pcoord->areaedge.x1e;

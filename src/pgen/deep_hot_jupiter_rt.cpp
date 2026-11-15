@@ -9,7 +9,7 @@
 //! REFERENCE: Heng, Menou, Phillipps, MNRAS, 413, 2380 (2011); Deitrick, Mendonça,
 //! Schroffenegger, Grimm, Tsai, Heng, ApJS, 248, 30 (2020)
 //!
-//! problem/rt_use_cons (default TRUE here since 2026-09-22, as in box_convection;
+//! problem/rt_use_cons (default TRUE here, as in box_convection;
 //! red_giant defaults it to its mode-3 flag).  Where the two-stream sweep reads the
 //! cell's thermodynamic state from.  With it FALSE the sweep reads w0, the primitives the
 //! PREVIOUS ConToPrim wrote, i.e. the state at the START of the stage: the RK update,
@@ -22,11 +22,9 @@
 //! rt-source-dt-forcing.md), which is why box_convection hands the sweep the post-RK
 //! state and why TRUE is the recommended setting for new runs here as well.
 //!
-//! IT WAS FALSE UNTIL 2026-09-22, so that every run ever made from these inputs
-//! reproduced bit for bit.  The default is now TRUE: the two states differ by O(dt) in
-//! the radiative source and the lagged one is the wrong physics, so an input that wants
-//! the old answer has to say rt_use_cons = false.  sp_mhd_prod3-type inputs, which never
-//! set the line, therefore change; cs_mhd_prod3 already set it true and does not.
+//! The default is TRUE: the two states differ by O(dt) in the radiative source and the
+//! lagged one is the wrong physics; an input that wants the lagged state says
+//! rt_use_cons = false.
 //! (The conserved state is not guaranteed positive after an RK stage; the sweep's
 //! EintFromCons path carries its own non-positive guard -- see utils/two_stream_rt.hpp.)
 
@@ -406,7 +404,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "extrapolation is " << (bc_outer_maxwell ? "ON" : "off") << std::endl;
   }
   // blocked-band RT scaling harness: sized once, before any RT call.
-  // problem/rt_split: DEFAULT TRUE since 2026-09-22.  The three-kernel chain-parallel
+  // problem/rt_split: DEFAULT TRUE.  The three-kernel chain-parallel
   // path is the same arithmetic in the same block-summation order as the monolithic
   // loop, so it is bitwise identical, and rt_ck (here) / rt_grey (box_convection,
   // red_giant) force it true anyway.  The serial path is kept -- the grey picket fence
@@ -423,8 +421,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddBoolean("problem","rt_layer_legacy",false);
   // problem/ck_spherical and problem/ck_beam_sph: the SPHERICAL thermal two-stream and
   // the PSEUDO-SPHERICAL direct beam of the correlated-k kernel (see
-  // two_stream_rt::ck_spherical / ::ck_beam_sph).  They are pure GEOMETRY, so since
-  // 2026-09-22 they DEFAULT TRUE on a curvilinear mesh -- pmesh->use_spherical_polar or
+  // two_stream_rt::ck_spherical / ::ck_beam_sph).  They are pure GEOMETRY, so they
+  // DEFAULT TRUE on a curvilinear mesh -- pmesh->use_spherical_polar or
   // pmesh->use_cubed_sphere -- and are REFUSED on a Cartesian one, where the
   // plane-parallel form is the only one with a meaning.  The default is additionally
   // conditioned on the two things the flags' own guards in two_stream_rt.hpp require,
@@ -457,7 +455,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // refusals (ck_spherical off, ck_sweep_cache != 2, ck_implicit) are stated at the
   // first RT call, where those flags are all final.
   //
-  // Since 2026-09-22 this DEFAULTS TO 1 (tm) wherever it can run, i.e. under
+  // This DEFAULTS TO 1 (tm) wherever it can run, i.e. under
   // ck_spherical.  The four-pass form's probe carries a mixing constant that is right
   // only to O(beta^2) -- 2.3e-2 of the face flux at the production area ratio 3.45 --
   // while tm and sd solve the coupled column exactly (they agree to 3.5e-17) and tm is
@@ -466,10 +464,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // cannot turn a working input into a startup fatal: it falls back to 0 with
   // ck_spherical off (plane-parallel: the two-pass sweep IS the exact form there) and at
   // ck_sweep_cache != 2 (the only setting the probe-free forms are instantiated at).
-  // Until (2026-09-27) it also fell back to 0 under ck_implicit; tm is now
-  // the default there too (the T4 linear path needs it, tm carries its own tridiagonal
-  // since phase T1), so an implicit input that does not name the key moves from the
-  // four-pass to the tm form.  Set the line explicitly to override.
+  // Under ck_implicit tm is the default too (the T4 linear path needs it; tm carries its
+  // own tridiagonal).  Set the line explicitly to override.
   const bool cksweepform_set = pin->DoesParameterExist("problem","ck_sweep_form");
   const int cksweepform_default =
       (ck_spherical && two_stream_rt::ck_sweep_cache == 2) ? 1 : 0;
@@ -626,13 +622,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // layer coefficients are stored as well as kappa rho (memory against expm1); and
   // ck_impl_warm starts the Newton from the previous call's converged increment.  See
   // utils/two_stream_column_ck.hpp.
-  // (2026-09-27): the T4 set -- ck_impl_frozen_op, ck_impl_lin,
-  // ck_impl_fuse, ck_impl_jac_lin, ck_impl_cvsec -- DEFAULTS ON under ck_implicit
+  // The T4 set -- ck_impl_frozen_op, ck_impl_lin, ck_impl_fuse, ck_impl_jac_lin,
+  // ck_impl_cvsec -- DEFAULTS ON under ck_implicit
   // wherever their own refusals are met (tm sweep on a spherical ck run, sweep cache 2,
   // no ck_impl_refresh_kappa, a double-precision chain, ck_impl_debug <= 0); they are
   // reformulations of the same Newton (same fixed point; lin vs chain 4e-15; see
-  // docs/dev/switch_inventory_2026-09-24.md sect. 3 and tests_ck_implicit/README_T4.md).
-  // Without ck_implicit they stay off, as before.  An explicit value always wins; the
+  // tests_ck_implicit/README_T4.md).  Without ck_implicit they stay off.  An explicit
+  // value always wins; the
   // values are recorded, so a restart keeps what its file stored.
   const bool t4def = two_stream_rt::ck_implicit && ck_spherical &&
                      two_stream_rt::ck_sweep_form == 1 &&
@@ -1221,9 +1217,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // problem/rt_use_cons: read the RT solver's thermodynamic state from the CONSERVED
   // u0 instead of w0 (the previous stage's ConToPrim output, which the explicit source
   // terms and the implicit radial conduction have since moved).  See the long note in
-  // utils/two_stream_rt.hpp.  DEFAULT TRUE since 2026-09-22 (it was false): the lagged
-  // w0 state is a delayed thermostat whose forcing is linear in dt, so an input that
-  // wants the old answer has to say rt_use_cons = false.  Read here, the one site both
+  // utils/two_stream_rt.hpp.  DEFAULT TRUE: the lagged w0 state is a delayed thermostat
+  // whose forcing is linear in dt.  Read here, the one site both
   // the from-scratch and the restart path go through.
   rt_use_cons = pin->GetOrAddBoolean("problem","rt_use_cons",true);
   // per-cycle single-meshblock diagnostic dump. Read here, which is the one place both
@@ -1265,11 +1260,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // problem/ck_nquad: DEFAULT 2 (two-point Gauss) since (2026-09-27; user
-  // 09-25 "ck_nquad = 2 for dhj production": the exact diffusion limit, nquad 1 is ~10 %
-  // low there; rms eint vs a tight reference 1.0e-2 vs 1.6e-2; +6 % ms/cycle at nx1 256).
-  // 1 restores the diffusivity-factor form.  The value is recorded, so a restart keeps
-  // what its file stored; an input that does not name it changes.
+  // problem/ck_nquad: DEFAULT 2 (two-point Gauss: the exact diffusion limit, where
+  // nquad 1 is ~10 % low; rms eint vs a tight reference 1.0e-2 vs 1.6e-2; +6 % ms/cycle
+  // at nx1 256).  1 = the diffusivity-factor form.  The value is recorded, so a restart
+  // keeps what its file stored.
   ck_nq = pin->GetOrAddInteger("problem","ck_nquad",2);
   if (ck_nq != 1 && ck_nq != 2) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_nquad must be 1 "
