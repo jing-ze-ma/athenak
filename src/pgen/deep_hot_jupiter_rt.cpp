@@ -739,9 +739,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                                      vef5 ? 150 : 1);
   two_stream_rt::ck_vef_ncore = pin->GetOrAddInteger("problem","ck_vef_ncore",8);
   two_stream_rt::ck_vef_sync = pin->GetOrAddBoolean("problem","ck_vef_sync",true);
-  if (pin->DoesParameterExist("problem", "ck_vef_xlim")) {
-    two_stream_rt::ck_vef_xlim = pin->GetReal("problem", "ck_vef_xlim");
-  }
   // face 5 runs on the production linear path (ck_impl_lin, the paired tier, its
   // Jacobian from the factorisation); faces 1-4 on the chain kernel only
   const bool vef_lin_ok = two_stream_rt::ck_impl_lin_thr == 1 &&

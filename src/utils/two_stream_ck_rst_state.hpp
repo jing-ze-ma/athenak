@@ -188,10 +188,8 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
   if (need) {
     ids.push_back(kCkSlabXsW);
     ids.push_back(kCkSlabXsK);
-    // tracer-1101: the GAS variables only (nhydro/nmhd).  The ck pass never reads the
-    // passive scalars, and counting them made the slab list depend on the tracer keys:
-    // a 7th variable dropped the whole VEF section (6 slots) and a tracer switched on at
-    // a restart read the unallocated VEF snapshot (segfault in CkRstCollect)
+    // the GAS variables only (nhydro/nmhd): the ck pass never reads the passive
+    // scalars, so the slab list does not depend on the tracer keys
     const int nv = hyd ? pmbp->phydro->nhydro : pmbp->pmhd->nmhd;
     for (int n=0; n<nv; ++n) ids.push_back(kCkSlabXsU0 + n);
     if (!hyd) {

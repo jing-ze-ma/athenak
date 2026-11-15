@@ -7,9 +7,8 @@
 #define UTILS_TWO_STREAM_RT_CHAIN_HPP_
 //! \file two_stream_rt_chain.hpp
 //! \brief the BODIES of TsrtCkChain and TsrtGreyRt (declared in two_stream_rt.hpp).
-//! tusplit-1102: moved out of two_stream_rt.hpp verbatim, so that their instantiations
-//! (the bulk of the device compile of the old single translation unit) are compiled in
-//! their own translation units, utils/two_stream_rt_chain_*.cpp.  Include it ONLY there.
+//! Their instantiations, the bulk of the device compile, are spread over their own
+//! translation units, utils/two_stream_rt_chain_*.cpp.  Include it ONLY there.
 
 #include <algorithm>
 #include <iostream>
@@ -129,7 +128,7 @@ void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
   // pass that reuses the Jacobian run the JAC = 0 code, which is the tm sweep
   // exactly as it was.  See the JAC blocks in the tm body.
   static constexpr bool JAC = decltype(jac_tag)::value;
-  // ck-scratch: the whole-column arrays' groups in rt_ckscr_ptr (see CkScrColI).
+  // the whole-column arrays' groups in rt_ckscr_ptr (see CkScrColI).
   // gI..gJ are this instantiation's group numbers; a switched-off array has none.
   constexpr int gI = 0;
   constexpr int gC = 1;
@@ -229,7 +228,7 @@ void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
       // the shortwave weights by the g-point alone: it is a direct beam, not an
       // angular quadrature, and with nquad = 2 each angular point would otherwise
       // double-count the incident flux
-      // ck-nq2: with nquad = 2 the two angles of a (band, g) pair are
+      // with nquad = 2 the two angles of a (band, g) pair are
       // adjacent chains of the same block (c = 2 (band CK_NG + g) + q, RT_NB
       // even), and the beam depends on neither, so the q = 0 chain carries the
       // pair's whole weight and the q = 1 chain skips the beam entirely (tm
@@ -268,7 +267,7 @@ void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
     // because
     // the extra flux traffic it adds was uncoalesced. On the fixed layout it is
     // neutral (454 vs 457 ms), which confirms the diagnosis. Neutral is not a
-    // reason to change it, so the column stays.  (ck-scratch: it, and the other
+    // reason to change it, so the column stays.  (It, and the other
     // whole-column arrays below, now live in rt_ckscr_ptr, not on the stack.)
     auto I_down = CkScrGetI<RtF, true, nScS>(scbuf, gI, sctsz, sct);
     // THE FACE MIXING, STORED.  Conservation needs the two rays to use the SAME
@@ -517,8 +516,8 @@ void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
       // BEFORE the multiplication by rho, so that the beam's kappa and every
       // kappa rho are still formed by the expression that formed them) for the
       // whole column, which is what lets the three later passes skip the table.
-      // That one costs NC x n1 of column storage (in rt_ckscr_ptr since
-      // ck-scratch) and is a one-element private array otherwise.
+      // That one costs NC x n1 of column storage (in rt_ckscr_ptr)
+      // and is a one-element private array otherwise.
       RtF cry0[NC], cryi[NC], cryo[NC];
       constexpr bool CC2 = (CCH >= 2);
       auto Kpc = CkScrGetI<Real, CC2, nScS>(scbuf, gP, sctsz, sct);
@@ -647,7 +646,7 @@ void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                        const Real fT, const int iP, const Real fP,
                        const bool first) {
         if (CCH >= 2 && !first) return Kpc[cc][ic];
-        // ck-nq2: the q = 1 chain of a (band, g) pair has the SAME kappa as the
+        // the q = 1 chain of a (band, g) pair has the SAME kappa as the
         // q = 0 chain the same loop filled just before it (every first-pass
         // call site walks cc upward at a fixed cell), so it is copied, not
         // looked up again: bitwise the same value, half the table traffic
@@ -1237,7 +1236,7 @@ void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             Real suv = bown, sfv = bown, snl = bown, krl = kro;
             Real dtfc = dth;   // ck_sph_face = 2: face i's depth, as pass 1 formed it
             if (i > icut) {
-              // ck-store: krof without its store -- pass 1 stored this very
+              // krof without its store -- pass 1 stored this very
               // product (the same cached kappa times the same rho) at cell il
               krl = ckfus ? ckkro_g(m,blk*NC+cc,il,k,j)
                           : kapof(cc, il, b, iTl, fTl, iPl, fPl, false)*rhol;
@@ -2184,20 +2183,10 @@ void TsrtGreyRt(Ctx &ctx_, NnTag nn_tag) {
   constexpr int NN = decltype(nn_tag)::value;
   par_reduce_clip3("2stream_rt", 0, nmb1, ks, ke, js, je, nclip_grey,
   KOKKOS_LAMBDA(const int m, const int k, const int j, int &nc) {
-//        ScrArray1D<Real> tau_down_r_f(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> F_v_down_f(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> B(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> I_ir_down_f(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> I_ir_up_f(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> F_ir_f(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> Q_v(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> kapJ_ir(member.team_scratch(scr_level), n1);
       Real tau_down_r_f[NN];
-//        Real F_v_down_f[NN];
       Real B[NN];
       Real F_ir_f[NN];
       Real Q_v[NN];
-//        Real kapJ_ir[NN];
 
       Real x2v = x2v_(m,j);
       Real x3v = x3v_(m,k);
@@ -2258,8 +2247,6 @@ void TsrtGreyRt(Ctx &ctx_, NnTag nn_tag) {
       Real trp1 = trans1;
       Real trp2 = trans2;
       Real trp3 = trans3;
-//        F_v_down_f[ie+1] = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
-//        F_v_down_f(ie+1) = (mu0 > 0.0)? F_v_down_f(ie+1) : 0.0;
       // down-sweep
       for (int i=ie; i>is-1; --i) {
         Real rho = rhoN(m,k,j,i);
@@ -2278,18 +2265,10 @@ void TsrtGreyRt(Ctx &ctx_, NnTag nn_tag) {
         Real dr = dx1(m,k,j,i);
         tau_down_r_f[i] = tau_down_r_f[i+1] + kapr*rho*dr;
         Real r = x1f_(m,i);
-////          Real delta = (drtop+(rtop-r))/r;
-//          Real delta = dr/r;
-//          Real fac = (sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0)/delta;
-//          tausl += kapr*rho*r*(sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0);
         Real fac = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
         Real trans1 = exp(-gamv1*tau_down_r_f[i]*fac);
         Real trans2 = exp(-gamv2*tau_down_r_f[i]*fac);
         Real trans3 = exp(-gamv3*tau_down_r_f[i]*fac);
-//          Real trans1 = exp(-gamv1*tausl);
-//          Real trans2 = exp(-gamv2*tausl);
-//          Real trans3 = exp(-gamv3*tausl);
-//          F_v_down_f[i] = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
         Real mucr = 0.0; //sqrt(1.0-SQR(r0/r));
         // Deposit the flux DIFFERENCE across the cell. The old form,
         // kappa rho F exp(-tau) with tau at the lower face, is right only for a thin
@@ -2389,10 +2368,6 @@ void TsrtGreyRt(Ctx &ctx_, NnTag nn_tag) {
         }
       }
 
-//        // Sync all threads in the team so that scratch memory is consistent
-//        member.team_barrier();
-
-//        par_for_inner(member, is, ie, [&](const int i) {
       for (int i=is; i<ie+1; ++i) {
         // source term as flux divergence
         Real area_t = area1(m,k,j,i+1);
@@ -2407,62 +2382,14 @@ void TsrtGreyRt(Ctx &ctx_, NnTag nn_tag) {
           src += Q_v[i];
         Real du_flux = src*bdt;
 
-//          // source term semi-implicit
-//          Real p = PresFromEint(eos,gm1,rhoN(m,k,j,i),eiN(m,k,j,i));
-//          Real rho = rhoN(m,k,j,i);
-//          Real T = TempKelvin(eos,Rgas,rho,eiN(m,k,j,i),p);
-//          Real kapr;
-//          get_kapr(T, p, met, kapr);
-//          Real cv = Rgas*rho*igm1;
-//          Real e0 = eos.IsGeneral() ? eiN(m,k,j,i) : cv*T;
-//          Real kk = 0.0;
-//          Real bb = du_flux + e0;
-////          Real bb = Q_v(i)*bdt + e0;
-//          for (int vir=0; vir<2; ++vir) {
-//            Real gamir, fb;
-//            if (vir == 0) {
-//              gamir = gamir1;
-//              fb = beta;
-//            } else {
-//              gamir = gamir2;
-//              fb = 1.0-beta;
-//            }
-//            kk += -4.0*M_PI*gamir*kapr*rho*fb*boltz_sigma/M_PI*bdt;
-//            bb += 4.0*M_PI*gamir*kapr*rho*fb*B[i]*bdt;
-//          }
-////          bb += 4.0*M_PI*rho*kapJ_ir(i)*bdt;
-//          int ierr=0;
-//          Real e = e0;
-//          // Newton-Raphson. A general EOS has no e = c_v T with constant c_v, so the
-//          // iteration runs on the internal energy directly rather than on T:
-//          // F(e) = e - kk T(e)^4 - bb, with dT/de = temp_cgs/(d c_v) since T is in K.
-//          for (int n=0; n<100; ++n) {
-//            Real de;
-//            if (eos.IsGeneral()) {
-//              Real dTde = eos.temp_cgs/(rho*eos.SpecificHeatCv(rho,e));
-//              de = e - kk*SQR(SQR(T)) - bb;
-//              e -= de / (1.0 - 4.0*kk*T*T*T*dTde);
-//              T = eos.Temperature(rho,e)*eos.temp_cgs;
-//            } else {
-//              e = cv*T;
-//              de = e - kk*SQR(SQR(T)) - bb;
-//              T -= de / (cv - 4.0*kk*T*T*T);
-//            }
-//            if (T < 0.0) {
-//              e = e0;
-//              ierr = 1;
-//              break;
-//            }
-//            if (fabs(de) <= 1.0e-10*e)
-//              break;
-//          }
-//          Real du_src = e-e0;
 //
-//          Real du = (fabs(du_flux) < e0 && ierr == 1) ? du_flux : du_src;
         Real du = du_flux;
         if (demax_grey > 0.0) {
           const Real dl = LimitRTSource(du, eiN(m,k,j,i), demax_grey);
-          if (dl != du) { ++nc; du = dl; }
+          if (dl != du) {
+            ++nc;
+            du = dl;
+          }
         }
         u0(m,IEN,k,j,i) += du;
         // --- the nan_report catcher.  Record the cell the grey apply just made
@@ -2499,11 +2426,6 @@ void TsrtGreyRt(Ctx &ctx_, NnTag nn_tag) {
           }
         }
       }
-//        });
-
-//        // Sync all threads in the team so that scratch memory is consistent
-//        member.team_barrier();
-
   });
 }
 

@@ -6,9 +6,8 @@
 //! \file two_stream_rt_col3.cpp
 //! \brief the rt_implicit_column = 3 column-solve launchers (RTCol3Launch,
 //! RTCol3TeamLaunch).
-//! tusplit-1102: moved verbatim out of the two-stream headers (which keep the
-//! declarations and the doc comments) so that they are compiled once, in their
-//! own translation unit.
+//! The two-stream headers keep the declarations and the doc comments, so that the
+//! bodies are compiled once, in their own translation unit.
 
 #include <algorithm>
 #include <cstdio>

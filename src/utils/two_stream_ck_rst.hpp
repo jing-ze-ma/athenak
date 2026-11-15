@@ -18,13 +18,13 @@
 //!     (rt_pre_opac)                                                   -> slab THK
 //!   * the cadence's Q0, D, T0, rho0 (ck_cad slots 0-3)                 -> slabs CAD0-3
 //!   * ck_cv, the secant cv the call ended on (ck_impl_cvkeep only)     -> slab CV
-//!   * the ck_impl_xstep STORED OPERATOR (kappa rho, coefficient triple, tm factorisation,
-//!     cut, frozen beam, ...): O(100) Reals per cell, far too large to write.  It is a
-//!     deterministic function of the state the storing call's pass 0 saw, so THAT state
-//!     is written (u0, wtemp, bcc0 for MHD, and ck_thk at the start of that call) with
-//!     the call's bdt, and the first call after the restart re-runs that pass 0 on it
-//!     before it starts (CkRstRebuild).  Only written when the next call can re-apply
-//!     the operator (xs_cyc >= 0 and ncycle - xs_cyc < xstep).       -> slabs XS*
+//!   * the ck_impl_xstep STORED OPERATOR (kappa rho, coefficient triple, tm
+//!     factorisation, cut, frozen beam, ...): O(100) Reals per cell, far too large to
+//!     write.  It is a deterministic function of the state the storing call's pass 0
+//!     saw, so THAT state is written (u0, wtemp, bcc0 for MHD, and ck_thk at the start of
+//!     that call) with the call's bdt, and the first call after the restart re-runs that
+//!     pass 0 on it before it starts (CkRstRebuild).  Only written when the next call
+//!     can re-apply the operator (xs_cyc >= 0 and ncycle - xs_cyc < xstep). -> slabs XS*
 //!   * ck_impl_xs_cyc per rank (a rank-local quantity under ck_impl_xstep_thr and the
 //!     cadence guard)                                                   -> slab XSCYC
 //!   * host scalars: ck_impl_jac_built, the xstep store bdt, and the run counters that
@@ -105,7 +105,8 @@ using CkRstCollectFn = int (*)(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &hdr,
                                int nmb, int n3, int n2, int n1);
 inline CkRstCollectFn ck_rst_collect_fn = nullptr;
 
-// set by deep_hot_jupiter_rt.cpp (flux history && ck_implicit): carry the flux history's face-flux cache in this block (slabs kCkSlabFh*)
+// set by deep_hot_jupiter_rt.cpp (flux history && ck_implicit): carry the flux
+// history's face-flux cache in this block (slabs kCkSlabFh*)
 inline bool rt_fhst_rst = false;
 
 // the restart staging, filled by pgen.cpp, consumed by the first RT call(s).  Plain

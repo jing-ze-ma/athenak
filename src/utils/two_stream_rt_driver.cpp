@@ -8,11 +8,11 @@
 //! implicit column step (CkImplStep, CkWarmSeed), the flux conservation /
 //! non-convergence diagnostics and the ck_impl_every cadence (CkCadStore, CkCadLin,
 //! CkCadStep).
-//! tusplit-1102: moved verbatim out of the two-stream headers (which keep the
-//! declarations and the doc comments) so that they are compiled once, in their
-//! own translation unit.
+//! The two-stream headers keep the declarations and the doc comments, so that the
+//! bodies are compiled once, in their own translation unit.
 
 #include <algorithm>
+#include <cinttypes>
 #include <cstdio>
 #include <iostream>
 #include <string>
@@ -59,7 +59,7 @@ void CkWarmSeed(Mesh *pm, DvceArray5D<Real> u0) {
   });
 }
 
-// layoutfix-1106 ck_impl_global_ctl: the convergence slots over all ranks (0, 1 maxima, the
+// ck_impl_global_ctl: the convergence slots over all ranks (0, 1 maxima, the
 // rest sums of counts and report-only sums)
 template <class H>
 static void CkCnvGlobal(H &h) {
@@ -1061,7 +1061,7 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     }
     auto hcf = ck_impl_nosync ? *hcf_c : Kokkos::create_mirror_view(cnv_);
     Kokkos::deep_copy(hcf, cnv_);
-    CkCnvGlobal(hcf);   // layoutfix-1106
+    CkCnvGlobal(hcf);
     ck_impl_last_res = hcf(0);
     ck_impl_last_gap = (hcf(5) != 0.0) ? (hcf(4)/hcf(5) - 1.0) : 0.0;
     ck_impl_nactive = static_cast<int>(hcf(6));
@@ -1134,7 +1134,7 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
   });
   auto hc = Kokkos::create_mirror_view(cnv_);
   Kokkos::deep_copy(hc, cnv_);
-  CkCnvGlobal(hc);   // layoutfix-1106
+  CkCnvGlobal(hc);
   ck_impl_last_res = hc(0);
   ck_impl_last_gap = (hc(5) != 0.0) ? (hc(4)/hc(5) - 1.0) : 0.0;
   ck_impl_nactive = static_cast<int>(hc(6));
@@ -1365,7 +1365,7 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     if (cap) Kokkos::atomic_add(&cnv_(2), 1.0);
   });
   Kokkos::deep_copy(hc, cnv_);
-  CkCnvGlobal(hc);   // layoutfix-1106
+  CkCnvGlobal(hc);
   ck_impl_last_dst = hc(1);
   ck_impl_ncap = static_cast<int>(hc(2));
   ck_impl_nfall = static_cast<int>(hc(3));
@@ -1770,7 +1770,7 @@ void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt) {
         // Jacobian kernels skip converged columns), and the few slow columns are the
         // ones a stale chord holds back, so rebuild whatever the max residual did
         const int ncol_ = (ck_impl_global_ctl ? pm->nmb_total : pp->nmb_thispack)
-                          *pm->mb_indcs.nx2*pm->mb_indcs.nx3;   // layoutfix-1106
+                          *pm->mb_indcs.nx2*pm->mb_indcs.nx3;
         if (ck_impl_jreuse_act > 0.0 &&
             static_cast<Real>(ck_impl_nactive) < ck_impl_jreuse_act*ncol_) {
           ck_impl_jac_again = true;
@@ -2085,13 +2085,12 @@ void CkCadStep(Mesh *pm, const Real dt) {
     auto hs = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), *ck_cad_stat_ptr);
     std::printf("### ck_cadence ncycle=%d rank=%d mode=%s nref=%d ncol=%d fref=%.4e "
                 "dvmax=%.3e edef=%.4e sde=%.6e sq=%.6e ncap=%d linerr=%.4e "
-                "nfull=%lld nlin=%lld nguard=%lld\n",
+                "nfull=%" PRId64 " nlin=%" PRId64 " nguard=%" PRId64 "\n",
                 pm->ncycle, global_variable::my_rank, full ? "F" : (nref > 0 ? "G" : "L"),
                 nref, ncol, static_cast<double>(nref)/ncol, hs(4),
                 (hs(5) > 0.0) ? (hs(1) - hs(2))/hs(5) : 0.0, hs(1), hs(2),
                 static_cast<int>(hs(3)), (hs(7) > 0.0) ? hs(6)/hs(7) : -1.0,
-                static_cast<long long>(ck_cad_nfull), static_cast<long long>(ck_cad_nlin),
-                static_cast<long long>(ck_cad_nguard));
+                ck_cad_nfull, ck_cad_nlin, ck_cad_nguard);
   }
 }
 
