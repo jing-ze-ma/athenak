@@ -74,7 +74,7 @@ class Resistivity {
   // usual cfl x (1/6) min_d dx_d^2/eta. See NewTimeStepRKGFE.
   Real rkg_dt_safety = 0.0;
   bool rkg_dt_fe = false;
-  Real LambdaBoundMax(Real *rloc = nullptr, Real *etaloc = nullptr);
+  Real LambdaBoundMax();
   void NewTimeStepRKGFE();
   // stress-free closed inner wall: B_t = 0 on the is face of a user inner x1 boundary,
   // so the resistive Poynting flux there is 0
