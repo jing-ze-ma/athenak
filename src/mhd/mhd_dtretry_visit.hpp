@@ -66,14 +66,6 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.view("bccsaved", bccsaved);
   v.view("fofc", fofc);
   v.value("use_fofc", use_fofc);
-  v.value("boris_on", boris_on);
-  v.view("boris_mref", boris_mref);
-  v.value("boris_ndiag", boris_ndiag);
-  v.value("boris_de_sum", boris_de_sum);
-  v.value("boris_de_abs", boris_de_abs);
-  v.value("boris_dm_abs", boris_dm_abs);
-  v.value("boris_ncell", boris_ncell);
-  v.value("boris_fmin", boris_fmin);
   v.view("fofc_cnt", fofc_cnt);
   v.value("fofc_hlle", fofc_hlle);
   v.value("use_bs_emf", use_bs_emf);

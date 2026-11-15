@@ -23,7 +23,7 @@ namespace fluid {
 //! \fn void fluid::RKUpdateCore
 //! \brief share-1104 P6: the explicit RK stage update u0 = gam0 u0 + gam1 u1 - beta dt
 //! div(F) of the first nvar variables, ONE implementation for Hydro::RKUpdate and
-//! MHD::RKUpdate (which keep their own hooks: eint_ledger + DetTrace / Boris).
+//! MHD::RKUpdate (which keep their own hooks: eint_ledger + DetTrace).
 
 void RKUpdateCore(MeshBlockPack *pmy_pack, Driver *pdriver, const int stage,
                   const int nvar, const DvceFaceFld5D<Real> &uflx,

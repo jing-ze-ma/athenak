@@ -1167,9 +1167,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         CsSeamInit(pin);
       }
 
-      // <mhd>/boris_c (mhd_boris.cpp)
-      if (peos->eos_data.boris_c2inv > 0.0) BorisInit(pin);
-
       // allocate array of flags used with FOFC
       if (use_fofc) {
         int nvars = (pmy_pack->pcoord->is_dynamical_relativistic) ? nmhd+nscalars : nmhd;

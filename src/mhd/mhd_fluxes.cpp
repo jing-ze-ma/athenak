@@ -30,7 +30,6 @@
 #include "reconstruct/mignone_curvilinear.hpp"
 #include "mhd/rsolvers/advect_mhd.hpp"
 #include "mhd/rsolvers/cs_lowbeta_fallback.hpp"
-#include "mhd/rsolvers/boris_hlle_mhd.hpp"
 #include "mhd/rsolvers/llf_mhd.hpp"
 #include "mhd/rsolvers/hlle_mhd.hpp"
 #include "mhd/rsolvers/hlld_mhd.hpp"
@@ -95,30 +94,13 @@ void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
   const Real btr = SQR(br(iby,i)) + SQR(br(ibz,i));
   const Real ptl = pl + 0.5*(bxsq + btl);
   const Real ptr = pr + 0.5*(bxsq + btr);
-  Real cfl = eos.FastSpeedFromP(rl, pl, g1l, bxi, bl(iby,i), bl(ibz,i));
-  Real cfr = eos.FastSpeedFromP(rr, pr, g1r, bxi, br(iby,i), br(ibz,i));
-  // <mhd>/boris_c: the faces BorisHLLEFace took over carry an HLLE flux with
-  // the limited (B -> sqrt(f) B) fast speeds: same test, same speeds, HLL weights
-  // ( the one test BorisFaceTest, same |B|^2 / |v|^2 expressions)
-  bool boris_face = false;
-  if (eos.boris_c2inv > 0.0) {
-    Real ffl, ffr;
-    boris_face = BorisFaceTest(eos,
-        rl, bxi*bxi + bl(iby,i)*bl(iby,i) + bl(ibz,i)*bl(ibz,i), pl,
-        SQR(wl(IVX,i)) + SQR(wl(IVY,i)) + SQR(wl(IVZ,i)),
-        rr, bxi*bxi + br(iby,i)*br(iby,i) + br(ibz,i)*br(ibz,i), pr,
-        SQR(wr(IVX,i)) + SQR(wr(IVY,i)) + SQR(wr(IVZ,i)), ffl, ffr);
-    if (boris_face) {
-      const Real sfl = sqrt(ffl), sfr = sqrt(ffr);
-      cfl = eos.FastSpeedFromP(rl, pl, g1l, sfl*bxi, sfl*bl(iby,i), sfl*bl(ibz,i));
-      cfr = eos.FastSpeedFromP(rr, pr, g1r, sfr*bxi, sfr*br(iby,i), sfr*br(ibz,i));
-    }
-  }
+  const Real cfl = eos.FastSpeedFromP(rl, pl, g1l, bxi, bl(iby,i), bl(ibz,i));
+  const Real cfr = eos.FastSpeedFromP(rr, pr, g1r, bxi, br(iby,i), br(ibz,i));
   const Real sl = fmin(vl - cfl, vr - cfr);
   const Real sr = fmax(vl + cfl, vr + cfr);
   // CSLowBetaFallback's test, the shared CSLowBetaFires (lb_beta = 0 off the cubed
   // sphere)
-  const bool hll = hll_in || boris_face ||
+  const bool hll = hll_in ||
                    ((lb_beta > 0.0) && CSLowBetaFires(pl, pr, bxi, bl(iby,i), bl(ibz,i),
                                                       br(iby,i), br(ibz,i), lb_beta));
   Real al, dlc, drc;
@@ -245,8 +227,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   const Real cs_lb_beta = cs_lowbeta_fallback;
-  // <mhd>/boris_c: limited-speed HLLE on the faces the limiter acts on
-  const bool boris_on_ = (peos->eos_data.boris_c2inv > 0.0);
   const auto wb_option_ = wb_option;
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
@@ -687,22 +667,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                         wl,wr,bl,br,dl,dr,bx,flx1,e31,e21);
       member.team_barrier();
     }
-    if (boris_on_ && !use_cubed_sphere) {
-      member.team_barrier();
-      BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
-                    bx,flx1,e31,e21);
-    }
     if (use_cubed_sphere) {
       // low-beta dissipation fallback, BEFORE the rotation into covariant slots
       if (cs_lb_beta > 0.0) {
         CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,il,iu,IVX,cs_lb_beta,
                      wl,wr,bl,br,dl,dr,bx,flx1,e31,e21);
-        member.team_barrier();
-      }
-      if (boris_on_) {
-        member.team_barrier();
-        BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
-                      bx,flx1,e31,e21);
         member.team_barrier();
       }
       GnomonicEquiangleFluxX1(gtrig_cell,member,m,k,j,il,iu,flx1);
@@ -1031,21 +1000,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                               wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
             member.team_barrier();
           }
-          if (boris_on_ && !use_cubed_sphere) {
-            member.team_barrier();
-            BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,
-                          dl,dr,by,flx2,e12,e32);
-          }
           if (use_cubed_sphere) {
             if (cs_lb_beta > 0.0) {
               CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,cs_lb_beta,
                            wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
-              member.team_barrier();
-            }
-            if (boris_on_) {
-              member.team_barrier();
-              BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,
-                            dl,dr,by,flx2,e12,e32);
               member.team_barrier();
             }
             GnomonicEquiangleFluxX2(gtrig_xi,member,m,k,j,is-1,ie+1,flx2);
@@ -1357,21 +1315,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                               wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
             member.team_barrier();
           }
-          if (boris_on_ && !use_cubed_sphere) {
-            member.team_barrier();
-            BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,
-                          dl,dr,bz,flx3,e23,e13);
-          }
           if (use_cubed_sphere) {
             if (cs_lb_beta > 0.0) {
               CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,cs_lb_beta,
                            wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
-              member.team_barrier();
-            }
-            if (boris_on_) {
-              member.team_barrier();
-              BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,
-                            dl,dr,bz,flx3,e23,e13);
               member.team_barrier();
             }
             GnomonicEquiangleFluxX3(gtrig_eta,member,m,k,j,is-1,ie+1,flx3);
