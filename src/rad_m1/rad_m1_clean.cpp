@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <limits>
 #include <string>
 
 #include "athena.hpp"
@@ -91,13 +92,18 @@ void RadiationM1::CleanInit() {
     CleanFatal("<rad_m1>/scheme = clean does not run on the cubed sphere yet");
   }
   if (pm->use_spherical_polar) {
-    // the vet_sc rays are Cartesian: the closure is the sphere's until the spherical
-    // ray solver is connected
-    if (!cln_cell || !cln_sphere || cln_consist || pm->use_polar_boundary) {
-      CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_layout = cell "
-                 "and clean_closure = sphere (no clean_consistency) and a wedge clear of "
-                 "the poles");
+    // the rays are vet_gd's (closure = vet_col with vet_gd) on its fixed direction set,
+    // swept from the first shell, or the analytic sphere (clean_closure = sphere)
+    if (!cln_cell || !(cln_sphere || vgd_on) || cln_consist || pm->use_polar_boundary ||
+        vgd_twin || VgdRotOn() || vra_on || vgd_async) {
+      CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_layout = cell, "
+                 "clean_closure = sphere or closure = vet_col with vet_gd (vet_gd_twin = "
+                 "false, vet_gd_rotate_dt = 0, no vet_rotate_avg or vet_gd_async), no "
+                 "clean_consistency and a wedge clear of the poles");
     }
+    // (the sweep starts at the first shell; its intensities keep their own memory)
+    vlat_taucut = std::numeric_limits<Real>::max();
+    marena_on = false;
     cln_init = true;
     return;
   }

@@ -2910,7 +2910,9 @@ class RadiationM1 {
   void CleanClosureAfterSolve();
   void CleanClosureIterate();
   void CleanCellFaceSpeeds();
+  void CleanRays();
   void CleanClosureFromRays();
+  void CleanClosureFromGd();
   void CleanClosureFill();
   void CleanClosureEddington();
   void CleanFaceCoefficients();
