@@ -104,13 +104,15 @@ constexpr int M1_VET_NC  = 28;
 // the NC slots above (allocated only for the clean scheme)
 constexpr int M1_VET_KP  = 28;
 constexpr int M1_VET_NKP = 9;
-// clean_consistency: the rays' flux through the low x2 face of the cell, sum w g Phi and
-// sum w g Phi Omega_b (b = 1 2 3), g = |mu_1| dx2/dx1 and Phi the upwind intensity the
-// foot interpolation shifts across the face, after the KP slots (VetShortCharSweep);
-// then the flux of the rays entering through the x1 boundary face of the cell,
-// sum w mu_1 I and sum w mu_1 I Omega_b
+// clean_consistency, after the KP slots (VetShortCharSweep): the rays' flux through the
+// low x2 face of the cell, sum w g Phi and sum w g Phi Omega_b (b = 1 2 3), g = |mu_1|
+// dx2/dx1 and Phi the intensity of the cell's plane the foot interpolation shifts across
+// the face; their flux sum w mu_1 I and sum w mu_1 I Omega_b through the x1 boundary face
+// of the cell (entering and leaving) and through its low x1 face, I the intensity of the
+// segment where it crosses the face
 constexpr int M1_VET_F2  = 37;
 constexpr int M1_VET_F1  = 41;
+constexpr int M1_VET_FX  = 45;
 // tau_ten slots of the LATERAL correction (vet_col_lat; the cs CS2 interface): dD_ab in
 // the mesh basis, order rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
 constexpr int M1_TT_LAT0 = 4;
@@ -2971,6 +2973,7 @@ class RadiationM1 {
   bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
+  bool cln_posghost = false;    // clean_pos_ghost: marked boundary faces, upwind ghost
   bool cln_all_low = false;     // the solve has every interior face low-order
   bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell
   bool cln_conswt = false;      // clean_consistency_weight: bracket times w(C1)

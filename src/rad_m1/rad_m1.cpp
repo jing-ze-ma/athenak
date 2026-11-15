@@ -111,6 +111,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_poslim = pin->GetOrAddBoolean("rad_m1","clean_pos_limit",true);
     cln_diagcells = pin->GetOrAddBoolean("rad_m1","clean_diag_cells",false);
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
+    cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);
     {std::string cl = pin->GetOrAddString("rad_m1","clean_closure",
                                           cln_cell ? "extrap" : "predict");
     cln_closit = (cl.compare("iterate") == 0);

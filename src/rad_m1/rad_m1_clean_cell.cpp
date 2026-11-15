@@ -116,6 +116,7 @@ void RadiationM1::CleanCellFaceCoefficients() {
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);
       fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
       fc(m,CLF_LO,k,j,i) = 0.0;
+      fc(m,CLF_UG,k,j,i) = 0.0;
     });
   }
 }
@@ -162,10 +163,9 @@ void RadiationM1::CleanCellFaceSpeeds() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellConsistency
 //! \brief consistency bracket C = F_ray - f(Ur) of every interior and open x1 face
-//! (clean_consistency): the rays' face flux, whose cell balance is their exchange (on x1
-//! faces the kinetic upwind flux of the cell moments, E row c (h+_L J_L + h-_R J_R),
-//! stress rows c (k+_L J_L + (D - k+)_R J_R) (CleanCellOutStress); on x2 faces the sums
-//! of the sweep, CLN_F2), less the face flux of the solve (current marks and weights) of
+//! (clean_consistency): the rays' face flux of the sweep (CLN_FX at x1 faces, CLN_F1 at
+//! open x1 boundaries, CLN_F2 at x2 faces), whose cell balance is the exchange of the
+//! half-segments inside the cell, less the face flux of the solve (marks, weights) of
 //! Ur = (J, J h), h = h+ + h-, with the slopes of Ur: the bracket is fixed for given
 //! closure and marks.  Reflecting and x2, x3 boundary faces carry none.  The slopes of
 //! the iterate are restored.
@@ -197,27 +197,16 @@ void RadiationM1::CleanCellConsistency() {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     par_for("clc_bracket", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      // an open x1 boundary face: the inner cell's outgoing flux and the incoming flux
-      // of the sweep (CLN_F1), against the boundary flux of Ur with its source
+      // an open x1 boundary face: the rays' flux through it (CLN_F1 of the inner cell),
+      // against the boundary flux of Ur with its source
       for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = 0.0;
       const bool bdry = CleanBoundaryFace(x, dir, k, j, i), blo = (i == x.is);
       if (bdry && (dir != 0 || x.bc[blo ? 0 : 1] == M1_IBC_REFLECT)) return;
       const int kl = k - dk, jl = j - dj, il = i - di;
-      const Real el = (bdry && blo) ? 0.0 : x.cs(m,CLN_J,kl,jl,il);
-      const Real er = (bdry && !blo) ? 0.0 : x.cs(m,CLN_J,k,j,i);
+      const int n = bdry ? CLN_F1 : ((dir == 0) ? CLN_FX : CLN_F2);
       Real f[4], fr[4] = {0.0, 0.0, 0.0, 0.0};
       CleanCellFaceFlux(x, CLC_U, dir, m, k, j, i, bdry, f);
-      for (int r = 0; r <= x.nf; ++r) {
-        if (bdry) fr[r] = x.c*x.cs(m,CLN_F1+r,k,j,blo ? i : il);
-        if (dir == 1) {
-          fr[r] = x.c*x.cs(m,CLN_F2+r,k,j,i);
-        } else if (r == 0) {
-          fr[r] += x.c*(x.cs(m,CLN_HP+dir,kl,jl,il)*el + x.cs(m,CLN_HM+dir,k,j,i)*er);
-        } else {
-          fr[r] += x.c*(CleanCellOutStress(x, dir, r-1, m, kl, jl, il, false)*el +
-                        CleanCellOutStress(x, dir, r-1, m, k, j, i, true)*er);
-        }
-      }
+      for (int r = 0; r <= x.nf; ++r) fr[r] = x.c*x.cs(m,n+r,k,j,(bdry && !blo) ? il : i);
       // clean_consistency_weight: the rays' streaming weight of the face
       Real wb = 1.0;
       if (cwt) {
@@ -898,7 +887,9 @@ int RadiationM1::CleanCellMarkFaces() {
   const bool multi_d = pmy_pack->pmesh->multi_d;
   const bool three_d = pmy_pack->pmesh->three_d;
   const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
-  // faces on a physical boundary are marked only with clean_pos_boundary
+  // faces on a physical boundary are marked only with clean_pos_boundary; with
+  // clean_pos_ghost they take the upwind stress against the ghost instead
+  const bool ug = cln_posghost;
   const bool b1 = cln_posbdry || ibc_x1min == M1_IBC_PERIODIC;
   const bool b2 = cln_posbdry || ibc_x2min == M1_IBC_PERIODIC;
   const bool b3 = cln_posbdry || ibc_x3min == M1_IBC_PERIODIC;
@@ -930,15 +921,19 @@ int RadiationM1::CleanCellMarkFaces() {
                              SQR(u(m,CLC_X+3,k,j,i)));
     if (e >= -zero && y <= (1.0 + 1.0e-12)*e + zero) return;
     n += 1.0;
-    if (b1 || i > is) fc1(m,CLF_LO,k,j,i) = 1.0;
-    if (b1 || i < ie) fc1(m,CLF_LO,k,j,i+1) = 1.0;
+    auto mark = [&](const DvceArray5D<Real> &fc, const bool in, const int kk,
+                    const int jj, const int ii) {
+      if (in || ug) fc(m,in ? CLF_LO : CLF_UG,kk,jj,ii) = 1.0;
+    };
+    mark(fc1, b1 || i > is, k, j, i);
+    mark(fc1, b1 || i < ie, k, j, i+1);
     if (multi_d) {
-      if (b2 || j > js) fc2(m,CLF_LO,k,j,i) = 1.0;
-      if (b2 || j < je) fc2(m,CLF_LO,k,j+1,i) = 1.0;
+      mark(fc2, b2 || j > js, k, j, i);
+      mark(fc2, b2 || j < je, k, j+1, i);
     }
     if (three_d) {
-      if (b3 || k > ks) fc3(m,CLF_LO,k,j,i) = 1.0;
-      if (b3 || k < ke) fc3(m,CLF_LO,k+1,j,i) = 1.0;
+      mark(fc3, b3 || k > ks, k, j, i);
+      mark(fc3, b3 || k < ke, k+1, j, i);
     }
   }, Kokkos::Sum<Real>(nbad));
   return static_cast<int>(nbad);

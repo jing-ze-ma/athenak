@@ -194,15 +194,26 @@ Real VetSegFace(const Real iu, const Real su, const Real s0, const Real hu,
   return su + hu*g;
 }
 
-// the intensity at the cell centre from I_u at the upwind point, the split segment
+// the intensity at the face of the split segment (its upwind part)
+KOKKOS_INLINE_FUNCTION
+Real VetSegFaceI(const Real iu, const Real su, const Real s0, const Real hu,
+                 const Real h0, const int emit) {
+  const Real sf = VetSegFace(iu, su, s0, hu, h0, emit);
+  Real ex, w0, wu;
+  VetSegW(hu, ex, w0, wu);
+  return iu*ex + wu*su + w0*sf;
+}
+// the intensity at the cell centre from I_u at the upwind point, the split segment;
+// ifc (if given) takes the intensity at the face
 KOKKOS_INLINE_FUNCTION
 Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
-                 const Real h0, const int emit) {
+                 const Real h0, const int emit, Real *ifc = nullptr) {
   const Real sf = VetSegFace(iu, su, s0, hu, h0, emit);
   Real exu, w0u, wuu, ex0, w00, wu0;
   VetSegW(hu, exu, w0u, wuu);
   VetSegW(h0, ex0, w00, wu0);
   const Real ia = iu*exu + wuu*su + w0u*sf;
+  if (ifc != nullptr) *ifc = ia;
   if (emit == 2 && h0 > hu && s0 > su) {
     // coreL-1012 jump: the OWN cell the thicker and the hotter (a ray entering an
     // emitting body): its side of the face keeps S_0 by the contrast (S may jump at
@@ -214,11 +225,14 @@ Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
 }
 
 // unify-sc-gd-1012 (#6): one SC segment from the upwind point (I_u, chi_u, S_u) to the
-// cell centre (chi_0, S_0) over the path length hl = dx1/|mu1|, vet_seg split or mean
+// cell centre (chi_0, S_0) over the path length hl = dx1/|mu1|, vet_seg split or mean;
+// ifc (if given) takes the intensity at the face (half the path)
 KOKKOS_INLINE_FUNCTION
 Real VetSegOne(const Real iu, const Real su, const Real s0, const Real cu, const Real c0,
-               const Real hl, const bool spl, const int spe) {
-  if (spl) {return VetSegSplit(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, spe);}
+               const Real hl, const bool spl, const int spe, Real *ifc = nullptr) {
+  if (spl) {return VetSegSplit(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, spe, ifc);}
+  const Real hh = 0.25*(cu + c0)*hl;
+  if (ifc != nullptr) *ifc = VetSegFaceI(iu, su, s0, hh, hh, 0);
   Real ex, w0, wu;
   VetSegW(0.5*(cu + c0)*hl, ex, w0, wu);
   return iu*ex + wu*su + w0*s0;
@@ -238,12 +252,13 @@ Real VetSegOne(const Real iu, const Real su, const Real s0, const Real cu, const
 //   3 auto:   corner where the stencil's extinction contrast max/min chi exceeds
 //             kVetCornerRatio (a material edge), log elsewhere (a smooth field: the two
 //             agree to O(dx^2) there, and log costs one segment instead of up to four)
+// ifc (if given) takes the intensity at the face.
 constexpr Real kVetCornerRatio = 4.0;
 
 KOKKOS_INLINE_FUNCTION
 Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
                  const Real sq[4], const Real s0, const Real c0, const Real hl,
-                 const bool spl, const int spe) {
+                 const bool spl, const int spe, Real *ifc = nullptr) {
   if (mode == 3) {
     Real cmn = 1.0e300, cmx = 0.0;
     for (int q = 0; q < 4; ++q) {
@@ -252,9 +267,13 @@ Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
     mode = (cmx > kVetCornerRatio*cmn) ? 2 : 1;
   }
   if (mode == 2) {
-    Real iv = 0.0;
+    Real iv = 0.0, fq = 0.0;
+    if (ifc != nullptr) *ifc = 0.0;
     for (int q = 0; q < 4; ++q) {
-      if (w[q] > 0.0) {iv += w[q]*VetSegOne(iq[q], sq[q], s0, cq[q], c0, hl, spl, spe);}
+      if (!(w[q] > 0.0)) continue;
+      iv += w[q]*VetSegOne(iq[q], sq[q], s0, cq[q], c0, hl, spl, spe,
+                           (ifc != nullptr) ? &fq : nullptr);
+      if (ifc != nullptr) *ifc += w[q]*fq;
     }
     return iv;
   }
@@ -264,7 +283,7 @@ Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
     lc += w[q]*log(fmax(cq[q], 1.0e-300));
     ls += w[q]*log(fmax(sq[q], 1.0e-300));
   }
-  return VetSegOne(iu, exp(ls), s0, exp(lc), c0, hl, spl, spe);
+  return VetSegOne(iu, exp(ls), s0, exp(lc), c0, hl, spl, spe, ifc);
 }
 
 

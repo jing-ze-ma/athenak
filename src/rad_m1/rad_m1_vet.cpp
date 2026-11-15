@@ -2007,7 +2007,7 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   Kokkos::realloc(vet_cell, nmb, M1_VET_NC + (clean ? M1_VET_NKP : 0) +
-                  (cln_consist ? 8 : 0), ncells3, ncells2, ncells1);
+                  (cln_consist ? 12 : 0), ncells3, ncells2, ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
   if (mbpath) {
     VetMBInit(pin);   // the banded plane buffers live in vet_mbs
@@ -3740,10 +3740,12 @@ void RadiationM1::VetShortCharSweep() {
   // thinsw-1010 (implicit_thin_switch = fs | fskn): the non-locality sum w |I - S| of the
   // rays at each cell (M1_VET_NL, C1 of M1ThinCell)
   const bool nls_ = thsw_c1;
-  // clean_consistency: the rays' x2-face fluxes (M1_VET_F2), the transverse part of the
-  // linear foot interpolation written as a flux, so that the cell balance of the rays'
-  // face fluxes is their exchange along the segment; the entering x1 flux (M1_VET_F1)
+  // clean_consistency: the rays' face fluxes (M1_VET_F2, F1, FX): the x1 flux of the
+  // intensity where the segment crosses the face, the transverse part of the linear foot
+  // interpolation as an x2 flux of the upwind plane's layer, so that the cell balance of
+  // the face fluxes is the exchange of the two half-segments inside the cell
   const bool f2s_ = cln_consist;
+  const bool x1per = vet_x1per;
   Kokkos::fence();
   Kokkos::Timer timer;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -3858,7 +3860,7 @@ void RadiationM1::VetShortCharSweep() {
         for (int n = 0; n < M1_VET_NKP; ++n) {vcd_(m,M1_VET_KP+n,k,j,i) = 0.0;}
       }
       if (f2s_) {
-        for (int n = 0; n < 8; ++n) {vcd_(m,M1_VET_F2+n,k,j,i) = 0.0;}
+        for (int n = 0; n < 12; ++n) {vcd_(m,M1_VET_F2+n,k,j,i) = 0.0;}
       }
       if (nls_) {
         vcd_(m,M1_VET_NL,k,j,i) = 0.0;
@@ -3952,7 +3954,7 @@ void RadiationM1::VetShortCharSweep() {
       for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {vc_(m,n,k,j,i) = 0.0;}
       if (hrs_) {for (int n = 0; n < 3; ++n) {vc_(m,M1_VET_HP1+n,k,j,i) = 0.0;}}
       if (kps_) {for (int n = 0; n < M1_VET_NKP; ++n) {vc_(m,M1_VET_KP+n,k,j,i) = 0.0;}}
-      if (f2s_) {for (int n = 0; n < 8; ++n) {vc_(m,M1_VET_F2+n,k,j,i) = 0.0;}}
+      if (f2s_) {for (int n = 0; n < 12; ++n) {vc_(m,M1_VET_F2+n,k,j,i) = 0.0;}}
       if (nls_) {vc_(m,M1_VET_NL,k,j,i) = 0.0;}
     });
   }
@@ -3971,7 +3973,8 @@ void RadiationM1::VetShortCharSweep() {
       Real kpu[M1_VET_NKP], kpd[M1_VET_NKP];
       for (int n = 0; n < M1_VET_NKP; ++n) {kpu[n] = 0.0; kpd[n] = 0.0;}
       Real nlu = 0.0, nld = 0.0;   // thinsw-1010
-      Real f2u[8] = {0.0}, f2d[8] = {0.0};
+      // face fluxes into the cells iu, id (F1, FX) and their upwind cells (F2, FX)
+      Real f2u[12] = {0.0}, f2d[12] = {0.0}, fnu[12] = {0.0}, fnd[12] = {0.0};
       for (int r = 0; r < nray; ++r) {
         const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
         const bool up = (m1 > 0.0);
@@ -3981,6 +3984,13 @@ void RadiationM1::VetShortCharSweep() {
         const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
         Real iv;
         const bool mimg = (l == 0) && (up ? mrlo : mrhi);   // vet_bc_reflect = mirror
+        auto add4 = [&](Real *fx, const Real g) {
+          fx[0] += g;
+          fx[1] += g*m1;
+          fx[2] += g*m2;
+          fx[3] += g*m3;
+        };
+        Real ifc = 0.0;   // clean_consistency: the intensity at the face crossing
         if (l == 0 && !wrap && !mimg) {
           // half a cell from the boundary face; S at the face linearly extrapolated
           // from the two boundary cells (exact for the deep linear S of a diffusion
@@ -4015,13 +4025,7 @@ void RadiationM1::VetShortCharSweep() {
               if (q >= 0 && q < bmn_) {ib += bmi_(m,q,k-ks,j-js);}
             }
           }
-          if (f2s_) {
-            Real *fx = up ? f2u : f2d;
-            fx[4] += wr*m1*ib;
-            fx[5] += wr*m1*m1*ib;
-            fx[6] += wr*m1*m2*ib;
-            fx[7] += wr*m1*m3*ib;
-          }
+          if (f2s_) add4((up ? f2u : f2d) + 4, wr*m1*ib);
           const Real dtau = 0.5*c0*dx1/am1;
           Real ex, w0, wu;
           VetSegW(dtau, ex, w0, wu);
@@ -4075,12 +4079,7 @@ void RadiationM1::VetShortCharSweep() {
             const int n = static_cast<int>(floor(s)), sg = (sh2 < 0.0) ? 1 : -1;
             Real phi = f*ipj(sg > 0 ? -1 - n : n);
             for (int q = 0; q < n; ++q) phi += ipj(sg > 0 ? -1 - q : q);
-            const Real g = sg*wr*am1*dx2/dx1*phi;
-            Real *fx = up ? f2u : f2d;
-            fx[0] += g;
-            fx[1] += g*m1;
-            fx[2] += g*m2;
-            fx[3] += g*m3;
+            if (!mimg) add4(up ? fnu : fnd, sg*wr*am1*dx2/dx1*phi);
           }
           const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
           const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
@@ -4113,16 +4112,20 @@ void RadiationM1::VetShortCharSweep() {
                                 vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
             const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
                                 vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
-            iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe);
+            iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
+                             f2s_ ? &ifc : nullptr);
           } else if (spl) {
             // segfix-1011: vet_seg = split, the two halves at the x1 face
-            iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
+            iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,
+                             f2s_ ? &ifc : nullptr);
           } else {
             const Real dtau = 0.5*(cu + c0)*dx1/am1;
             Real ex, w0, wu;
             VetSegW(dtau, ex, w0, wu);
             iv = iup_v*ex + wu*su + w0*s0;
+            if (f2s_) ifc = VetSegFaceI(iup_v, su, s0, 0.5*dtau, 0.5*dtau, 0);
           }
+          if (f2s_ && !mimg) add4(up ? f2u + 8 : fnd + 8, wr*m1*fmax(ifc, 0.0));
           if (vpath) {   // open-od-1013 vet_path = cells (VetPathStep)
             const Real sh3p = thrd ? (-dx1*m3/(am1*dx3)) : 0.0;
             auto acc = [&](const int c, const int dk, const int dj, Real &cv,
@@ -4164,6 +4167,11 @@ void RadiationM1::VetShortCharSweep() {
         if (dbgc && iv < 0.0) {Kokkos::atomic_add(&dcl_(0), 1.0);}   // DEBUG
         iv = fmax(iv, 0.0);
         ip_(m,pw,r,k,j) = iv;
+        if (f2s_ && !x1per && i == (up ? ie : is)) {
+          // the ray leaving through the x1 boundary face: the half cell at chi_0, S_0
+          const Real ex = exp(-0.5*c0*dx1/am1);
+          add4((up ? f2u : f2d) + 4, wr*m1*(iv*ex + (1.0 - ex)*s0));
+        }
         Real *ac = up ? acu : acd;
         const Real a = wr*iv;
         ac[0] += a;
@@ -4216,9 +4224,12 @@ void RadiationM1::VetShortCharSweep() {
           vc_(m,M1_VET_NL,k,j,id) += nld;
         }
         if (f2s_) {
-          for (int n = 0; n < 8; ++n) {
+          const int ium = (iu > is) ? iu - 1 : ie, idp = (id < ie) ? id + 1 : is;
+          for (int n = 0; n < 12; ++n) {
             vc_(m,M1_VET_F2+n,k,j,iu) += f2u[n];
             vc_(m,M1_VET_F2+n,k,j,id) += f2d[n];
+            vc_(m,M1_VET_F2+n,k,j,ium) += fnu[n];
+            vc_(m,M1_VET_F2+n,k,j,idp) += fnd[n];
           }
         }
       }
