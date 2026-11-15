@@ -368,18 +368,17 @@ inline int rt_nchain = 4;
 // problem/rt_split: run the RT as three kernels with the chain-block index promoted to
 // a parallel dimension, instead of one kernel that loops over chains serially. Same
 // arithmetic, same block-summation order -- see the use site.
-// DEFAULT TRUE in deep_hot_jupiter_rt since 2026-09-22; box_convection and red_giant
+// DEFAULT TRUE in deep_hot_jupiter_rt; box_convection and red_giant
 // force it true (the grey kernel lives on the split path).  The monolithic path is
 // therefore reachable only as the grey PICKET FENCE (rt_ck = false) with the flag set
 // false by hand, and is kept for that case: the split grey sweep sizes its column at
 // compile time and fatals when n1 > RT_NNC, which the monolithic one does not.
 //
 // THE "BITWISE IDENTICAL" CLAIM BELOW HOLDS FOR THE CORRELATED-K AND GREY KERNELS, NOT
-// FOR THE PICKET FENCE.  MEASURED 2026-09-22 on inputs/mhd/deep_hot_jupiter_rt_ideal_xe
-// (rt_ck = false, 20 cycles, same binary, deterministic on rerun): the two paths agree
-// on mass and total energy to the printed digits but differ by 7.1 % in the 1-KE
-// history column, so a picket-fence run that relied on the old default answers
-// differently now.  Unexplained; the difference is confined to that path.
+// FOR THE PICKET FENCE.  Measured on inputs/mhd/deep_hot_jupiter_rt_ideal_xe (rt_ck =
+// false, 20 cycles, same binary, deterministic on rerun): the two paths agree on mass
+// and total energy to the printed digits but differ by 7.1 % in the 1-KE history
+// column.  Unexplained; the difference is confined to that path.
 inline bool rt_split = false;
 // PER-CYCLE RT DIAGNOSTIC (deep_hot_jupiter_rt's problem/diag_gid).  Off by default and
 // costing nothing when off: the array is not even allocated.  (m,slot,k,j,i) with
@@ -779,13 +778,13 @@ inline Real rt_de_max = 0.5;
 // so the change is confined to exactly the cells the floor was catching.  It costs one
 // EOS evaluation per COOLING cell and stage.
 inline bool rt_floor_consistent = false;
-// problem/rt_semi_lin: recover the OLD semi-implicit step, which linearized the emission
-// about the current state and relaxed at lambda = 4E/e.  See the long note in rt_apply:
-// that form bounds cooling but leaves heating explicit and unbounded, so a cold optically
-// thin cell overshoots its equilibrium badly.  Kept only to reproduce runs made before
-// the fix.  DEFAULT TRUE, i.e. the old linearization, so that every problem generator
-// sharing this header reproduces its pre-fix runs bit for bit; the red-giant inputs set
-// it false to select the new equilibrium-relaxation step.
+// problem/rt_semi_lin: true = the semi-implicit step that linearizes the emission about
+// the current state and relaxes at lambda = 4E/e.  See the long note in rt_apply: that
+// form bounds cooling but leaves heating explicit and unbounded, so a cold optically thin
+// cell overshoots its equilibrium.  false = the equilibrium-relaxation step, which bounds
+// both.  The namespace value is the default of the problem generators that do not read
+// the key; box_convection defaults to false, red_giant to false with the mode-3 column
+// solve (true otherwise), and the red-giant inputs set it false.
 inline bool rt_semi_lin = true;
 // problem/rt_use_cons: take the cell's internal energy and density from the CONSERVED
 // state u0 instead of from w0.  w0 is the previous stage's ConToPrim output, and by the
@@ -797,9 +796,8 @@ inline bool rt_semi_lin = true;
 // which is how a cell is driven to a negative internal energy, repaired by the floor,
 // and handed to the next Riemann solve as a 0.1 K cell beside a 1e4 K one.  The
 // namespace value below is only the pre-pgen initialiser: every problem generator that
-// uses this header sets it from problem/rt_use_cons, and since 2026-09-22 the default
-// there is TRUE in box_convection and deep_hot_jupiter_rt, and the mode-3 flag in
-// red_giant.
+// uses this header sets it from problem/rt_use_cons, whose default is TRUE in
+// box_convection and deep_hot_jupiter_rt, and the mode-3 flag in red_giant.
 inline bool rt_use_cons = false;
 // problem/rt_test_mu0 and problem/ck_test_kgrey: TEST HOOKS for the well-posed checks
 // of the implicit correlated-k solve (tests_ck_implicit/wellposed).  rt_test_mu0 >= -1
@@ -939,7 +937,7 @@ inline int rt_impl_maxit = 5;
 // two_stream_column_implicit.hpp, step 4a'.  Off = bitwise the frozen handover.
 // Read ONLY at the c3.ex_iter assignment below, inside the rt_implicit_column = 3
 // branch, so it is inert in every other mode.  problem/rt_col3_ex_iter defaults TRUE in
-// box_convection and red_giant since 2026-09-22; deep_hot_jupiter_rt never reads it
+// box_convection and red_giant; deep_hot_jupiter_rt never reads it
 // (it refuses rt_implicit_column != 0 outright).
 inline bool rt_col3_ex_iter = false;
 // problem/rt_col3_skip_sweep: under rt_implicit_column = 3 with the tau blend weight w
@@ -1002,7 +1000,7 @@ inline bool rt_impl_rescheck = false;
 // evaluation and two small matrix-vector products instead of the whole assembly,
 // factorisation and reduced elimination.  1 = reuse with a contraction check (the pass
 // refactorises when the residual failed to fall by a factor 0.3), 2 = reuse always
-// (diagnostic).  0 (the default) is the old code, bitwise.  The converged answer is the
+// (diagnostic).  0 (the default) refactorises every pass.  The converged answer is the
 // same root of the same residual to the same tolerance; only the iterates between the
 // first and the last differ, at O(the frozen de/db).  The
 // PARTITIONED path (rt_impl_solver = pcr) only; thomas is refused.
@@ -1070,7 +1068,7 @@ inline bool rt_impl_redpar = false;
 // system has mixed block sizes.  See two_stream_column_partition.hpp.
 inline Real rt_col3_hybrid_tau = 0.0;
 // problem/rt_impl_warm: WARM-START the mode-3 Newton from the previous call's converged
-// Planck function instead of from the entry state's.  0 = off (bitwise the old code),
+// Planck function instead of from the entry state's.  0 = off (the entry state),
 // 1 = the previous converged b per cell, 2 = linear extrapolation in time from the last
 // two.  Only the ITERATE moves; the residual, the Jacobian, the tolerance and the entry
 // state are untouched, so the converged root is the same one and the answer is equal to
@@ -1108,19 +1106,20 @@ inline bool rt_int_at_cut = true;
 // from <hydro>/rad_flux_inner under <problem>/rt_bottom_flux, and zeroes rad_flux_inner
 // at the same time so the flux is not also injected at the conduction wall face.
 inline Real rt_bot_flux = 0.0;
-// problem/rt_layer_legacy: the STAGGERED layer the grey and correlated-k sweeps used.
+// problem/rt_layer_legacy: true = the STAGGERED whole-cell layer of the grey and
+// correlated-k sweeps; false (DEFAULT) = the centre-to-centre layer described below.
 //
-// Every layer was integrated over a WHOLE cell in optical depth, dtau = kappa rho dz of
-// cell i, but with its source running linearly in tau from that cell's CENTRE Planck
-// function to the NEIGHBOUR CELL'S CENTRE one.  The interval the optical depth measures
-// and the interval the source runs over are then offset by half a cell, and the two
-// endpoints of the source are two cells apart while the layer is one cell thick.  The
-// error is O(dtau^2) and smooth, but it is not small where it matters: MEASURED against
-// an accurate formal solution on the He-star column, the emergent flux came out ~4 % low
-// at dtau/cell of 1-3 and wandered between 0.73 and 1.06 of the true flux at dtau/cell
-// 3-6, which is exactly the handover ramp of the He and B-star boxes.
+// The staggered layer is integrated over a WHOLE cell in optical depth, dtau = kappa rho
+// dz of cell i, but with its source running linearly in tau from that cell's CENTRE
+// Planck function to the NEIGHBOUR CELL'S CENTRE one.  The interval the optical depth
+// measures and the interval the source runs over are then offset by half a cell, and the
+// two endpoints of the source are two cells apart while the layer is one cell thick.  The
+// error is O(dtau^2) and smooth, but it is not small where it matters: against an
+// accurate formal solution on the He-star column the emergent flux comes out ~4 % low at
+// dtau/cell of 1-3 and wanders between 0.73 and 1.06 of the true flux at dtau/cell 3-6,
+// which is exactly the handover ramp of the He and B-star boxes.
 //
-// THE FIX.  The layers now run between cell CENTRES: layer (i, i+1) has
+// The centre-to-centre layers run between cell CENTRES: layer (i, i+1) has
 //     dtau = 0.5 (kappa rho dz)_i + 0.5 (kappa rho dz)_{i+1},
 // each half with its OWN opacity, and a source linear in tau between B_i and B_{i+1} --
 // which is exact for that layer, since the source really is (piecewise) linear there.
@@ -1138,7 +1137,6 @@ inline Real rt_bot_flux = 0.0;
 // two halves.  Em_g, the relaxation rate, becomes the cell's own 4 sigma kappa rho T^4
 // instead of the centre-to-centre average of two Planck functions.
 //
-// Default false, i.e. THE FIX IS ON.  Set true to reproduce a pre-fix run bitwise.
 inline bool rt_layer_legacy = false;
 // problem/ck_spherical: give the CORRELATED-K thermal two-stream the SPHERICAL form
 // the grey centre-to-centre sweep and the mode-3 column solve carry.  problem/
@@ -1198,10 +1196,10 @@ inline bool rt_layer_legacy = false;
 // NOT CONVERTED, and refused: rt_layer_legacy (the staggered whole-cell ck layers) and
 // the mode-1/2 nearest-neighbour Jacobian, which the ck path never fills anyway.
 inline bool ck_spherical = false;
-// problem/ck_beam_sph: the PSEUDO-SPHERICAL direct stellar beam.  Since 2026-09-22 it
-// follows the same rule as ck_spherical: DEFAULT TRUE on a spherical-polar or
-// cubed-sphere mesh (under rt_ck && !rt_layer_legacy), REFUSED on a Cartesian one.
-// False is bitwise the plane-parallel slant path the correlated-k kernel used to use.
+// problem/ck_beam_sph: the PSEUDO-SPHERICAL direct stellar beam.  It follows the same
+// rule as ck_spherical: DEFAULT TRUE on a spherical-polar or cubed-sphere mesh (under
+// rt_ck && !rt_layer_legacy), REFUSED on a Cartesian one.  False = the plane-parallel
+// slant path.
 // Independent of ck_spherical (that switch converts the THERMAL two-stream; this one the
 // BEAM), and the two compose.
 //
@@ -1420,18 +1418,18 @@ inline int ck_sweep_cache = 2;
 // NOT CONVERTED, and refused at startup: ck_spherical = false (with no face coupling
 // there is nothing to solve and the plane-parallel sweep is already the exact two-pass
 // form), rt_layer_legacy, and ck_implicit with sd (2).  ck_implicit with tm (1) carries
-// its own tridiagonal, the JAC instantiation of the kernel (2026-09-22, phase T1 of
-// tests_ck_implicit/DESIGN_tm.md); ck_impl_frozen_op is instantiated for it (phase T2),
-// and ck_impl_lin re-applies its stored factorisation in a separate kernel (phase T3).
+// its own tridiagonal, the JAC instantiation of the kernel (tests_ck_implicit/
+// DESIGN_tm.md); ck_impl_frozen_op is instantiated for it, and ck_impl_lin re-applies
+// its stored factorisation in a separate kernel.
 //
-// THE DEFAULT.  Since 2026-09-22 deep_hot_jupiter_rt defaults this to 1 (tm) wherever it
-// can run, i.e. under ck_spherical, and to 0 in exactly the cases refused above, so that
-// no working input is turned into a startup fatal by the flip.  The reason is that the
+// THE DEFAULT.  deep_hot_jupiter_rt defaults this to 1 (tm) wherever it can run, i.e.
+// under ck_spherical, and to 0 in exactly the cases refused above, so that no working
+// input is turned into a startup fatal by the default.  The reason is that the
 // four-pass form's probe-lagged mixing constant is only O(beta^2) -- 2.3e-2 of the face
 // flux at the production area ratio 3.45 -- while tm and sd solve the coupled column
 // exactly (they agree to 3.5e-17), and tm is 1.36x faster on the GPU.  The value below
-// remains the flag's own zero-initialisation, i.e. the historical form: it is what any
-// other caller gets, and what the pgen falls back to.  See
+// is the flag's own zero-initialisation, the four-pass form: it is what any other
+// caller gets, and what the pgen falls back to.  See
 // tests_ck_sweep_form/README.md and README_default.md.
 inline int ck_sweep_form = 0;
 // problem/ck_sph_dilute (PROTOTYPE, default false = bitwise the face above): replace the
@@ -1777,9 +1775,8 @@ Real RTTopDtau(const Real kap, const Real pcgs, const Real geff) {
 //!
 //! This is called from inside the pass (picket_fence_two_stream_RT_pass), whose number
 //! of calls is RANK-LOCAL under ck_implicit (the Newton loop stops per rank), so it must
-//! not hold a collective: it only accumulates.  The count used to be printed from here
-//! on rank 0 with rank 0's share alone, so a run whose clipping sat on other ranks
-//! showed a clean log.
+//! not hold a collective: it only accumulates (a count printed from here on rank 0
+//! would show rank 0's share alone).
 inline void RTSourceLimiterWarn(const int nclip) {
   if (rt_srclim_warned || nclip <= 0) return;
   rt_srclim_acc += nclip;

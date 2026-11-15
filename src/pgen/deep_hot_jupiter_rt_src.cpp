@@ -18,7 +18,6 @@
 #include "driver/dt_retry.hpp"
 #include "hydro/hydro_wball.hpp"
 
-
 //----------------------------------------------------------------------------------------
 //! \fn void AmFix
 //! \brief Coriolis fix (amh::fix) and problem/am_transport: add the zonal torque
@@ -156,12 +155,6 @@ void SourceFunc(Mesh *pm, Real bdt) {
     r0 = pm->mesh_size.x1min;
     r1 = pm->mesh_size.x1max;
 
-//    Real ap = 9.44e9;
-//    Real omega = 2.06e-5;
-//    Real grav_acc = -942.0;
-//    Real Rgas = 4.593e7;
-
-//    ParameterInput* pin;
     Real grav_acc = -pm->pgen->hot_jupiter_param.grav;
     Real ap = pm->pgen->hot_jupiter_param.ap;
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
@@ -463,18 +456,6 @@ void SourceFunc(Mesh *pm, Real bdt) {
           u0(m,IM3,k,j,i) += rho*wbt_a3*bdt;
         }
 
-//        // Newtonian cooling
-//        Real Teq, itrad;
-//        get_eq_Tp(lam, phi, p, Teq);
-//        get_itrad(p,itrad);
-////        Real t0 = 2.16e6;
-////        Real ff = (t0-time)/t0;
-////        ff = (ff < 0.0) ? 0.0 : ff;
-////        Real gg = 2.0*ff;
-////        itrad /= pow(10.0,gg);
-//        Real Tnew = (T + Teq*itrad*bdt)/(1.0 + itrad*bdt);
-//        u0(m,IEN,k,j,i) -= w0(m,IEN,k,j,i)*(Tnew-Teq)/T*itrad*bdt;
-
         // Rayleigh drag (initial relaxation)
         Real dyntime = 2.0*M_PI/omega;
         Real tau1 = dyntime / 10.0;
@@ -519,7 +500,6 @@ void SourceFunc(Mesh *pm, Real bdt) {
         fdrag = (fdrag > 1.0) ? 1.0 : fdrag;
         itdrag = fdrag/1.0e3;
         fredux = itdrag*bdt; ///(1.0+itdrag*bdt);
-//        u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
         if (sponge_bottom_) {
           u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
           u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
@@ -591,11 +571,6 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     auto volume = pmbp->pcoord->volume;
     auto dx1 = pmbp->pcoord->dx1;
 
-//    Real Teq = 1469.0;
-//    Real grav = 942.0;
-//    Real ap = 9.44e9;
-//    Real Rgas = 4.593e7;
-//    ParameterInput* pin;
     Real grav = pm->pgen->hot_jupiter_param.grav;
     Real ap = pm->pgen->hot_jupiter_param.ap;
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
@@ -613,15 +588,6 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     Real Iint = boltz_sigma/M_PI*SQR(SQR(Tint));
     Real mu1 = 1.0/1.66; //sqrt(3);
 
-//    size_t scr_size = ScrArray1D<Real>::shmem_size(n1) * 5;
-//    par_for_outer("2stream_rt", DevExeSpace(), scr_size, 0,
-//                  0, nmb1, ks, ke, js, je,
-//    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
-//        ScrArray1D<Real> tau_ir_down_f(member.team_scratch(0), n1);
-//        ScrArray1D<Real> F_v_down_f(member.team_scratch(0), n1);
-//        ScrArray1D<Real> I_ir_down_f(member.team_scratch(0), n1);
-//        ScrArray1D<Real> I_ir_up_f(member.team_scratch(0), n1);
-//        ScrArray1D<Real> B(member.team_scratch(0), n1);
     int nclip = 0;
     const Real demax = rt_de_max;
     par_reduce_clip3("2stream_rt", 0, nmb1, ks, ke, js, je, nclip,
@@ -696,7 +662,6 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           Real rf = x1f_(m,i);
           Real rf1 = x1f_(m,i+1);
 
-//          Real muf = sqrt(1.0-SQR(ap/rf)*(1.0-SQR(mu0))); // Li & Shibata 2006
           Real mucr = sqrt(1.0-SQR(r0/r1));
           Real muf = (mu0 < mucr) ? mucr : mu0;
           if (test_oned) muf = mu0;
@@ -814,11 +779,6 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     r1 = pm->mesh_size.x1max;
     auto dx1 = pmbp->pcoord->dx1;
 
-//    Real Teq = 1469.0;
-//    Real ap = 9.44e9;
-//    Real Rgas = 4.593e7;
-//    Real grav = 942.0;
-//    ParameterInput* pin;
     Real grav = pm->pgen->hot_jupiter_param.grav;
     Real ap = pm->pgen->hot_jupiter_param.ap;
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
@@ -837,16 +797,8 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     Real Iint = boltz_sigma/M_PI*SQR(SQR(Tint));
     Real mu1 = 1.0/1.66; //sqrt(3);
 
-//    size_t scr_size = ScrArray1D<Real>::shmem_size(n1) * 4;
-//    par_for_outer("2stream_rt", DevExeSpace(), scr_size, 0,
-//                  0, nmb1, ks, ke, js, je,
-//    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     par_for("2stream_rt", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
-//        ScrArray1D<Real> tau_ir_down(member.team_scratch(0), n1);
-//        ScrArray1D<Real> I_down(member.team_scratch(0), n1);
-//        ScrArray1D<Real> B(member.team_scratch(0), n1);
-//        ScrArray1D<Real> Q_v(member.team_scratch(0), n1);
         constexpr int NN = 270;
         Real tau_ir_down[NN];
         Real I_down[NN];
@@ -880,12 +832,8 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
         B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
         Real kap_v = 4.0e-3;
         Real kap_ir = 1.0e-2;
-        Real tau_v = 0.0;//p/(grav/kap_v);
-        Real tau_ir = 0.0;//p/(grav/kap_ir);
-//        if (test_oned) {
-//          tau_v = p/(grav/kap_v)/mu0;
-//          tau_ir = p/(grav/kap_ir)/mu1;
-//        }
+        Real tau_v = 0.0;
+        Real tau_ir = 0.0;
         tau_ir_down[ie+1] = tau_ir;
         for (int i=ie; i>is-1; --i) {
           Real rho = w0(m,IDN,k,j,i);
@@ -894,7 +842,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
                            TGuess(wtemp_, m, k, j, i),p,T);
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kap_v = 4.0e-3; // Rauscher & Menou 2012; Guillot 2010
-            Real kap_ir = 1.0e-2; // 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
+          Real kap_ir = 1.0e-2;
           if (test_oned) kap_ir = 1.0e-2;
           Real dr = dx1(m,k,j,i);
 
@@ -907,11 +855,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           } else {
             z = x1v;
           }
-////          Real mu = sqrt(1.0-SQR(r1/r)*(1.0-SQR(mu0))); // Li & Shibata 2006
           Real mucr = sqrt(1.0-SQR(r0/r));
-//          Real mu = (mu0 < mucr) ? mucr : mu0;
-//          if (test_oned) mu = mu0;
-//          Real dtau_v = kap_v*rho*dr;
           Real delta = dr/r;
           Real drcor = r*(sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0);
           if (test_oned) drcor = dr/mu0;
@@ -920,12 +864,8 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
 
           tau_v += dtau_v;
           Real fac = 1.0;
-//          if (correct_spherical) fac = SQR(r1/r); // Zhang+2023
-//          Real Q_v = kap_v*rho*Fstar*fac*exp(-tau_v/mu); // Zhang+2023
-//          Q_v = (mu0 > 0.0) ? Q_v : 0.0;
           Real Qv = kap_v*rho*Fstar*fac*exp(-tau_v);
           Q_v[i] = (mu0 > -mucr) ? Qv : 0.0;
-//          u0(m,IEN,k,j,i) += Q_v*bdt;
 
           tau_ir_down[i] = tau_ir;
           tau_ir += dtau_ir/mu1;
@@ -969,8 +909,6 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
                            TGuess(wtemp_, m, k, j, i),p,T);
             Real kap_ir = 1.0e-2; //2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
           if (test_oned) kap_ir = 1.0e-2;
-//          Real Q_ir = 4.0*M_PI*kap_ir*rho*(J-B(i));
-//          u0(m,IEN,k,j,i) += Q_ir*bdt;
 
           Real kk = -4.0*M_PI*kap_ir*rho*boltz_sigma/M_PI*bdt;
           Real e0, e;
@@ -1019,9 +957,6 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
 
     return;
 }
-
-
-
 
 //----------------------------------------------------------------------------------------
 //! \fn void DhjCycleDiag

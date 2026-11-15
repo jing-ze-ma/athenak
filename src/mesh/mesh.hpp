@@ -129,9 +129,8 @@ struct EventCounters {
 // CoordSphericalPolar, and the two PANEL-TANGENTIAL axes are x2 (xi) and x3 (eta). A
 // panel seam therefore permutes and reflects x2 and x3 only; x1 is never touched by
 // one. The two tangential axes are named `a` (= x2) and `b` (= x3) throughout the
-// panel tables below, deliberately NOT `x1`/`x2`: they used to be, under an earlier
-// convention in which the radius was x3, and reading those names as mesh axes is what
-// silently reversed the radial index across every seam.
+// panel tables below, deliberately NOT `x1`/`x2`, which would read as mesh axes (and
+// reversing the radial index across a seam is the error such a reading produces).
 // Face ordering everywhere in the panel tables: 0:-x2, 1:+x2, 2:-x3, 3:+x3.
 
 struct PanelNeighbors {
@@ -244,8 +243,8 @@ class Mesh;
 //! \struct PanelEdgeMap
 //! \brief How a cubed-sphere EDGE direction looks from the neighbouring panel.
 //!
-//! Everything a mixed-level cross-panel diagonal needs and did not have. Three things
-//! differ across a seam and all three were previously ignored at a level boundary:
+//! Everything a mixed-level cross-panel diagonal needs. Three things differ across a
+//! seam, and all three matter at a level boundary:
 //!
 //! * the OFFSETS pointing back at this block, which decide which of the neighbour's
 //! children touch it (`GetLeaf` is indexed in the NEIGHBOUR's axes, not ours);
@@ -572,10 +571,10 @@ class Mesh {
   // The panel trees OWN every node. There is one panel for an ordinary mesh and six for a
   // cubed sphere, each with its own root and its own z-ordering.
   std::vector<std::unique_ptr<MeshBlockTree>> panel_trees;
-  // Non-owning pointer to the root of the first panel tree. Most of the code predates the
-  // panel decomposition and reaches the tree through this; it is the whole tree unless
-  // the mesh is a cubed sphere. It MUST be set wherever panel_trees is built -- leaving
-  // it null is what made adaptive refinement segfault in MeshBlockTree::FindMeshBlock.
+  // Non-owning pointer to the root of the first panel tree; most of the code reaches the
+  // tree through this, and it is the whole tree unless the mesh is a cubed sphere. It
+  // MUST be set wherever panel_trees is built (adaptive refinement dereferences it in
+  // MeshBlockTree::FindMeshBlock).
   MeshBlockTree *ptree = nullptr;
   void LoadBalance(float *clist, int *rlist, int *slist, int *nlist, int nb);
   int amr_lb_seq_ = 0;

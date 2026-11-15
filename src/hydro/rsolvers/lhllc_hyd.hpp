@@ -97,32 +97,6 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
       er = wr_ipr*igm1 + 0.5*wr_idn*(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz));
     }
 
-//      qc = sqrt(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz))/qa;
-//      qd = sqrt(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz))/qb;
-//      Real chi = fmax(qc,qd);
-//      Real phi = chi*(2.0-chi);
-//
-//    qc = fmin(wl_ivx,wr_ivx);
-//    qd = fmax(wl_ivx,wr_ivx);
-//    qe = fmax(qa,qb);
-//    Real sl = qc - qe;
-//    Real sr = qd - qe;
-//
-//    qc = sl - wl_ivx;
-//    qd = sr - wr_ivx;
-//      qe = wl_idn*qc - wr_idn*qd;
-//      Real ustar = (wr_ipr-wl_ipr+wl_idn*wl_ivx*qc-wr_idn*wr_ivx*qd)/qe;
-//
-//      Real rhobar = 0.5*(wl_idn + wr_idn);
-//      Real abar = 0.5*(qa + qb);
-//      Real pstar = 0.5*(wl_ipr+wr_ipr) - 0.5*phi*(wr_ivx-wl_ivx)*rhobar*abar;
-//
-//      Real ustaralpha;
-//      if ((sl < 0.0) and (ustar >= 0.0)) {
-//          ustaralpha = ustar*wl_idn*qc/(sl-ustar);
-//      }
-
-
     qc = 0.25*(wl_idn + wr_idn)*(qa + qb);  // average density * average sound speed
     qd = 0.5 * (wl_ipr + wr_ipr + (wl_ivx - wr_ivx) * qc);  // P_mid
 

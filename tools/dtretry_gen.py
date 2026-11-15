@@ -21,7 +21,7 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # members that count the exchanges of a peer-to-peer protocol (CUDA IPC halos): the peers'
 # flags in device memory have moved on with the failed attempt, so these stay monotonic
 # (rolled back, the next exchange would wait for -- or accept -- a stale flag)
-# fin51-1014: acc_nccl is the lazily made NCCL communicator's state (with acc_ncomm, a
+# acc_nccl is the lazily made NCCL communicator's state (with acc_ncomm, a
 # pointer, not visited): rolled back to -1 a retry would make a second communicator
 SKIP_NAMES = {'hi_seq', 'vgd_ipc_seq', 'acc_nccl'}
 NESTED = ['VgdTabHost', 'VgdTabDev', 'M1OpacTab']   # structs holding Views: recurse
@@ -68,7 +68,7 @@ def emit(fields, pre, out, skipped):
             for c in ('x1f', 'x2f', 'x3f'):
                 out.append('  v.view("%s.%s", %s.%s);' % (nm, c, nm, c))
             continue
-        if base.startswith('DvceEdgeFld'):   # mhdfix-1025: MHD efld
+        if base.startswith('DvceEdgeFld'):   # MHD efld
             for c in ('x1e', 'x2e', 'x3e'):
                 out.append('  v.view("%s.%s", %s.%s);' % (nm, c, nm, c))
             continue
