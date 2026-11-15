@@ -4,9 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file mhd_tracers.cpp
-//! \brief the MHD passive tracers (tracer-1101): the advected electron fraction
-//! <mhd>/xe_tracer (xetracer-1101; model in xe_tracer.hpp) and the floor-mass tracer
-//! <mhd>/floor_tracer (floortrc-1101).  Slot layout in mhd_tracers.hpp.
+//! \brief the MHD passive tracers: the advected electron fraction <mhd>/xe_tracer
+//! (model in xe_tracer.hpp) and the floor-mass tracer <mhd>/floor_tracer. Slot layout
+//! in mhd_tracers.hpp.
 //!
 //! One task, TracerSource, runs once per cycle in "before_timeintegrator" (after the RT
 //! half step, before SaveMHDState), over EVERY cell including ghosts (pointwise, so a
@@ -37,8 +37,8 @@ namespace mhd {
 
 //----------------------------------------------------------------------------------------
 //! \fn void TracerPrimFromCons (file scope)
-//! \brief trcrst-1103: w0 = u0/u0(IDN) in the tracer slots, every cell incl. ghosts (the
-//! expression ConsToPrim and ConsToPrimFrozen use for the scalars)
+//! \brief w0 = u0/u0(IDN) in the tracer slots, every cell incl. ghosts (the expression
+//! ConsToPrim and ConsToPrimFrozen use for the scalars)
 
 static void TracerPrimFromCons(MHD *pm) {
   if (pm->tracers.NTracer() == 0) return;
@@ -67,18 +67,14 @@ static void TracerPrimFromCons(MHD *pm) {
 
 TaskStatus MHD::TracerSource(Driver *pdrive, int stage) {
   if (trc_strang && stage == 0) return TaskStatus::complete;   // Driver: TracerSourceHalf
-  // rkgfuse-1102 tracer_strang: stage = -1|-2 = first|second half (TracerSourceHalf)
+  // tracer_strang: stage = -1|-2 = first|second half (TracerSourceHalf)
   if (floor_tracer && stage >= -1) FloorTracerDrain();
   if (xe_tracer) XeTracerUpdate(pmy_pack->pmesh->dt*((stage < 0) ? 0.5 : 1.0), false);
   TracerX1Ghosts(true);
-  // trcrst-1103: the second tracer half closes the cycle, so the state it leaves is the
-  // one a restart file stores -- and the file holds u0 only: a restart rebuilds the
-  // tracer primitives as u0(n)/u0(IDN) (ConsToPrim[Frozen]).  XeTracerUpdate and
-  // TracerX1Ghosts set w0(n) = y and u0(n) = rho y, and (rho y)/rho != y in the last
-  // bit, which went into eta (here, and the RefreshEta of the next leading RKG step) and
-  // made a restart differ from the straight run.  Re-derive w0 of the tracer slots from
-  // u0 exactly as the restart does, every cell incl. ghosts (half 2 only: the first
-  // half is followed by the RK stages, whose ConToPrim overwrites w0 anyway).
+  // the second tracer half closes the cycle, so the state it leaves is the one a restart
+  // file stores (u0 only): re-derive w0 of the tracer slots from u0 exactly as a restart
+  // does, so eta and a restarted run see the same tracer primitives (half 2 only: the
+  // first half is followed by the RK stages, whose ConToPrim overwrites w0)
   if (stage == -2) TracerPrimFromCons(this);
   if (xe_tracer && presist != nullptr) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -100,7 +96,7 @@ TaskStatus MHD::TracerSource(Driver *pdrive, int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::TracerSourceHalf
-//! \brief rkgfuse-1102 <mhd>/tracer_strang: one half (1|2) of the Strang-split tracer pass
+//! \brief <mhd>/tracer_strang: one half (1|2) of the Strang-split tracer pass
 
 void MHD::TracerSourceHalf(int half) {
   (void) TracerSource(nullptr, -half);
@@ -204,7 +200,7 @@ void MHD::TracerX1Ghosts(bool set_w) {
   if (tracers.NTracer() == 0) return;
   const int t0 = (ixe >= 0) ? ixe : ifltr;
   const int t1 = (ifltr >= 0) ? ifltr : ixe;
-  fluid::TracerX1GhostsCore(pmy_pack, u0, w0, t0, t1, set_w);   // share-1104 P4
+  fluid::TracerX1GhostsCore(pmy_pack, u0, w0, t0, t1, set_w);
 }
 
 //----------------------------------------------------------------------------------------
@@ -237,7 +233,7 @@ void MHD::FloorTracerDrain() {
   DvceArray4D<Real> phi_;
   if (use_etotgrav) phi_ = phicc0;
   Real sum_dm = 0.0, sum_de = 0.0;
-  // share-1104 P4: the kernel is shared with Hydro::FloorTracerDrain
+  // the kernel is shared with Hydro::FloorTracerDrain
   fluid::FloorTracerDrainCore(pmy_pack, u0, w0, bcc0, wder, phi_, ifltr, nmhd,
                               nmhd + nscalars, peos->eos_data.dfloor,
                               peos->eos_data.va2max_inv, fltr_margin, fltr_fmax,
@@ -254,7 +250,7 @@ void MHD::FloorTracerDrain() {
 namespace fluid {
 //----------------------------------------------------------------------------------------
 //! \fn void fluid::TracerX1GhostsCore
-//! \brief share-1104 P4: see MHD::TracerX1Ghosts
+//! \brief the kernel of MHD::TracerX1Ghosts, shared with Hydro::TracerX1Ghosts
 
 void TracerX1GhostsCore(MeshBlockPack *pmy_pack, const DvceArray5D<Real> &u0,
                         const DvceArray5D<Real> &w0, const int t0, const int t1,
@@ -297,7 +293,7 @@ void TracerX1GhostsCore(MeshBlockPack *pmy_pack, const DvceArray5D<Real> &u0,
 
 //----------------------------------------------------------------------------------------
 //! \fn void fluid::FloorTracerDrainCore
-//! \brief share-1104 P4: the kernel of MHD::FloorTracerDrain (see there), shared with
+//! \brief the kernel of MHD::FloorTracerDrain (see there), shared with
 //! Hydro::FloorTracerDrain (bcc empty: floor density dfloor alone)
 
 void FloorTracerDrainCore(MeshBlockPack *pmy_pack, const DvceArray5D<Real> &u0,
@@ -382,7 +378,7 @@ void FloorTracerDrainCore(MeshBlockPack *pmy_pack, const DvceArray5D<Real> &u0,
 namespace hydro {
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus Hydro::TracerSource
-//! \brief share-1104 P4 <hydro>/floor_tracer: the per-cycle tracer pass of the hydro
+//! \brief <hydro>/floor_tracer: the per-cycle tracer pass of the hydro
 //! ("before_timeintegrator", after the split source and its ConToPrim): the floor drain,
 //! then the x1 ghosts -- MHD::TracerSource without x_e and without tracer_strang (hydro
 //! has no RKG super-steps to split it into).
