@@ -600,7 +600,8 @@ void RadiationM1::CleanClosureFromGd() {
 //! r faces of a column take the cell balances from the inner face: the outer r face of a
 //! cell gets what its inner one carries plus the exchange V chi (S - J, -H) less the
 //! lateral outflow (the momentum in the column's basis), so that the energy balance of
-//! every cell is the vet_gd exchange to round-off.
+//! every cell is the vet_gd exchange to round-off.  Several MeshBlocks along x1: a level
+//! starts from the top face of the level below (vgd_x1b -> vgd_x1r), one level per pass.
 
 void RadiationM1::CleanGdFaceSums() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -681,49 +682,62 @@ void RadiationM1::CleanGdFaceSums() {
   }
   CleanGhostFill(cln_s, CLN_F2, 4);
   CleanGhostFill(cln_s, CLN_F3, 4);
-  par_for("cln_gd_col", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-  KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    Real a[3], e[3][3], ef[3][3], q[4] = {0.0};
-    face(0, m, k, j, is, a, e);
-    for (int d = 0; open && d < n; ++d) {
-      const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
-      add(0, m, k, j, is, d, f*((emi && f > 0.0) ? iemit : vi_(m,d,k+og,j+og,is)), q);
-    }
-    for (int c = 0; c < 4; ++c) q[c] *= x.area[0](m,k,j,is);
-    for (int i = is; i <= ie; ++i) {
-      for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
-      // the exchange V chi (S - J, -H_b) and the lateral outflow of the cell
-      const Real chi = x.vol(m,k,j,i)*exp(cw_(m,0,k+og,j+og,i));
-      const Real s0 = exp(cw_(m,1,k+og,j+og,i));
-      for (int d = 0; d < n; ++d) {
-        const Real di = dir_(d,3)*vi_(m,d,k+og,j+og,i);
-        q[0] += chi*(dir_(d,3)*s0 - di);
-        for (int b = 0; b < 3; ++b) {
-          q[1+b] -= chi*di*(dir_(d,0)*e[b][0] + dir_(d,1)*e[b][1] + dir_(d,2)*e[b][2]);
-        }
+  auto xf_ = vgd_x1f;
+  auto qb_ = vgd_x1b;
+  auto qr_ = vgd_x1r;
+  const int nj = je - js + 1, nkj = (ke - ks + 1)*nj;
+  for (int lev = 0; lev < vgd_nb1; ++lev) {
+    if (lev > 0) VetGdX1Pass(true);
+    par_for("cln_gd_col", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      Real a[3], e[3][3], ef[3][3], q[4] = {0.0};
+      const bool in = (xf_(m) & 1);
+      const int kj = (k - ks)*nj + j - js;
+      face(0, m, k, j, is, a, e);
+      for (int d = 0; open && in && d < n; ++d) {
+        const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
+        const Real iv = (emi && f > 0.0) ? iemit : vi_(m,d,k+og,j+og,is);
+        add(0, m, k, j, is, d, f*iv, q);
       }
-      for (int dir = 1; dir < 3; ++dir) {
-        const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
-        for (int up = 0; up < 2; ++up) {
-          const int kk = k + (up && dir == 2), jj = j + (up && dir == 1);
-          if (CleanBoundaryFace(x, dir, m, kk, jj, i)) continue;
-          face(dir, m, kk, jj, i, a, ef);
-          const Real sg = (up ? -1.0 : 1.0)*x.area[dir](m,kk,jj,i);
-          q[0] += sg*cs(m,nf,kk,jj,i);
+      for (int c = 0; c < 4; ++c) {
+        q[c] = in ? q[c]*x.area[0](m,k,j,is) : qr_(m,c*nkj + kj);
+      }
+      for (int i = is; i <= ie; ++i) {
+        for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
+        // the exchange V chi (S - J, -H_b) and the lateral outflow of the cell
+        const Real chi = x.vol(m,k,j,i)*exp(cw_(m,0,k+og,j+og,i));
+        const Real s0 = exp(cw_(m,1,k+og,j+og,i));
+        for (int d = 0; d < n; ++d) {
+          const Real di = dir_(d,3)*vi_(m,d,k+og,j+og,i);
+          q[0] += chi*(dir_(d,3)*s0 - di);
           for (int b = 0; b < 3; ++b) {
-            for (int c = 0; c < 3; ++c) {
-              q[1+b] += sg*cs(m,nf+1+c,kk,jj,i)*(ef[c][0]*e[b][0] + ef[c][1]*e[b][1] +
-                                                 ef[c][2]*e[b][2]);
+            q[1+b] -= chi*di*(dir_(d,0)*e[b][0] + dir_(d,1)*e[b][1] + dir_(d,2)*e[b][2]);
+          }
+        }
+        for (int dir = 1; dir < 3; ++dir) {
+          const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
+          for (int up = 0; up < 2; ++up) {
+            const int kk = k + (up && dir == 2), jj = j + (up && dir == 1);
+            if (CleanBoundaryFace(x, dir, m, kk, jj, i)) continue;
+            face(dir, m, kk, jj, i, a, ef);
+            const Real sg = (up ? -1.0 : 1.0)*x.area[dir](m,kk,jj,i);
+            q[0] += sg*cs(m,nf,kk,jj,i);
+            for (int b = 0; b < 3; ++b) {
+              for (int c = 0; c < 3; ++c) {
+                q[1+b] += sg*cs(m,nf+1+c,kk,jj,i)*(ef[c][0]*e[b][0] + ef[c][1]*e[b][1] +
+                                                   ef[c][2]*e[b][2]);
+              }
             }
           }
         }
       }
-    }
-    for (int c = 0; c < 4; ++c) {
-      cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
-      cs(m,CLN_F1+c,k,j,ie) = q[c]/x.area[0](m,k,j,ie+1);
-    }
-  });
+      for (int c = 0; c < 4; ++c) {
+        cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
+        cs(m,CLN_F1+c,k,j,ie) = q[c]/x.area[0](m,k,j,ie+1);
+        qb_(m,c*nkj + kj) = q[c];
+      }
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------

@@ -208,7 +208,7 @@ void RadiationM1::VetLatInit() {
     }
   }
   if (vcol_axis_flux) {VlatFatal("needs vet_col_axis = radial");}
-  if (vlat_odm == 2 && !(bicg_on && impl_stencil)) {
+  if (vlat_odm == 2 && !clean && !(bicg_on && impl_stencil)) {   // (clean: from the rays)
     VlatFatal("vet_col_lat_offdiag = operator needs implicit_solver = bicgstab and "
               "implicit_op_stencil = true (the lateral terms go into the stencil)");
   }

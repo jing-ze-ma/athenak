@@ -38,6 +38,9 @@
                                             const M1_VGD_TT vpa, const M1_VGD_TT gx) {
 #undef M1_VGD_TT
 #endif
+        // several MeshBlocks along x1: the first shell and the top face are those of the
+        // innermost and outermost levels
+        const int lcb = (x1f_(m) & 1) ? lcut : -1;
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         // the face midpoints (uniform in index space, as the bilinear reads assume)
         // accsp-1102: a stretched theta / the full sphere: the row's node (sph2.inc)
@@ -190,7 +193,7 @@
           const Real ch0 = exp(csx(m,0,k,j,i));
           const Real s0 = exp(csx(m,1,k,j,i));
           Real iv;
-          if (inw && l == n1 - 1) {
+          if (inw && l == n1 - 1 && (x1f_(m) & 2)) {
             // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat),
             // or with the top bath (vgdbath-1011) its incident intensity attenuated
             const Real rtop = cx1f(m,ie+1);
@@ -203,7 +206,7 @@
             // typ 1 upwind shell, 2 inner face, 3 own shell
             int typ, iu;
             Real ds, dso;
-            VgdRayChord(inw, l, lcut, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
+            VgdRayChord(inw, l, lcb, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
             // the upwind point, its lateral cell and bilinear fractions (index space)
             const Real xu = r*st*cp - ds*nx;
             const Real yu = r*st*sp - ds*ny;
@@ -564,7 +567,7 @@
               // on a clamped foot or on the turned ray that dips below its inner face
               // (vet_seg = jump branch below: piecewise per cell in radius already).
               bool pdone = false;
-              if (vpa && !clp && !(spl && spe == 2 && typ == 3 && l > lcut &&
+              if (vpa && !clp && !(spl && spe == 2 && typ == 3 && l > lcb &&
                                    p2 < rfi*rfi)) {
                 const Real gj = fjg - (j + sj_), gk = fkg - (k + sk_);   // layinv-1105
                 const Real a2 = fabs(gj), a3 = fabs(gk);
@@ -740,7 +743,7 @@
                   return VgdCornerEdge(csr, m, k0, k1, j0, j1, iu, uk, uj);
                 };
                 iv = VgdSegFinish(st4, fIc, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
-                                  s0, ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim);
+                                  s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim);
               }
             }
           }

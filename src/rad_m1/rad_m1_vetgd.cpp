@@ -933,6 +933,44 @@ void RadiationM1::VetGdInit() {
     }
     vgd_ipc_on = false;
   }
+  // several MeshBlocks along x1: the levels are swept one after the other, the boundary
+  // shell of a level handed to the next (VetGdX1Hand), the lateral halo per shell as on
+  // one level; flags 1 innermost, 2 outermost
+  vgd_nb1 = 1;
+  for (int g = 0; g < pm->nmb_total; ++g) {
+    vgd_nb1 = std::max(vgd_nb1, pm->lloc_eachmb[g].lx1 + 1);
+  }
+  vgd_x1nb.assign(2*nmb, -1);
+  vgd_x1lv.assign(nmb, 0);
+  Kokkos::realloc(vgd_x1f, nmb);
+  auto xf_h = Kokkos::create_mirror_view(vgd_x1f);
+  for (int m = 0; m < nmb; ++m) {
+    const LogicalLocation &l = pm->lloc_eachmb[pmy_pack->gids + m];
+    vgd_x1lv[m] = l.lx1;
+    xf_h(m) = (l.lx1 == 0 ? 1 : 0) + (l.lx1 == vgd_nb1 - 1 ? 2 : 0);
+    for (int g = 0; g < pm->nmb_total; ++g) {
+      const LogicalLocation &o = pm->lloc_eachmb[g];
+      if (o.level == l.level && o.lx2 == l.lx2 && o.lx3 == l.lx3 &&
+          std::abs(o.lx1 - l.lx1) == 1) {
+        vgd_x1nb[2*m + (o.lx1 > l.lx1 ? 1 : 0)] = g;
+      }
+    }
+  }
+  Kokkos::deep_copy(vgd_x1f, xf_h);
+  Kokkos::realloc(vgd_x1mo, nmb);
+  auto mo_h = Kokkos::create_mirror_view(vgd_x1mo);
+  for (int m = 0; m < nmb; ++m) {mo_h(m) = m;}
+  std::stable_sort(mo_h.data(), mo_h.data() + nmb,
+                   [&](const int a, const int b) {return vgd_x1lv[a] < vgd_x1lv[b];});
+  Kokkos::deep_copy(vgd_x1mo, mo_h);
+  if (vgd_nb1 > 1) {
+    if (vgd_csg || vgd_async || vgd_twin || vgd_upf != 0 || vgd_pol || !vgd_shl_on ||
+        indcs.nx1 < 2) {
+      VgdFatal("several MeshBlocks along x1 need a wedge, MeshBlock nx1 >= 2, "
+               "vet_gd_shell_list and no vet_gd_async / twin / upwind / full sphere");
+    }
+    vgd_hcomp = 0;   // the dense per-shell halo (the compact lists assume one level)
+  }
   // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
   // sum w nn = I/3; the sweep never looks inside it)
   if (vgd_gl_nmu > 0) {
@@ -979,6 +1017,8 @@ void RadiationM1::VetGdInit() {
   if (vgd_n > M1_VGD_NMAX) {VgdFatal("too many directions");}
   const int n = vgd_n;
   Kokkos::realloc(vgd_dir, n, 4);
+  Kokkos::realloc(vgd_x1b, nmb, std::max(n, 4)*indcs.nx3*indcs.nx2);
+  Kokkos::realloc(vgd_x1r, nmb, std::max(n, 4)*indcs.nx3*indcs.nx2);
   // the lateral band: the deepest reach of an upwind point in cells, over every shell:
   // a NORM segment reaches sqrt(r_{l+1}^2 - r_l^2), a TURN segment 2 sqrt(r_l^2 -
   // r_{l-1}^2) sideways at most; cell sizes r dtheta and r sin(theta) dphi
@@ -1017,25 +1057,39 @@ void RadiationM1::VetGdInit() {
     vgd_wsi.assign(indcs.nx1 + 2*indcs.ng, 0);
     vgd_wso.assign(indcs.nx1 + 2*indcs.ng, 0);
     int wneed = 0;
-    for (int l = indcs.is; l <= indcs.ie; ++l) {
-      const double r = x1v_h(0,l);
-      const double rlo = (l > indcs.is) ? x1v_h(0,l-1) : x1f_h(0,l);
-      double a = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
-      if (l < indcs.ie) {
-        a = std::max(a, std::sqrt(x1v_h(0,l+1)*x1v_h(0,l+1) - r*r));
+    for (int m = 0; m < ((vgd_nb1 > 1) ? nmb : 1); ++m) {
+      // (the shells next to another level: its radii from the x1 ghosts)
+      const bool lo = (xf_h(m) & 1), hi = (xf_h(m) & 2);
+      for (int l = indcs.is; l <= indcs.ie; ++l) {
+        const double r = x1v_h(m,l);
+        const double rlo = (l > indcs.is || !lo) ? x1v_h(m,l-1) : x1f_h(m,l);
+        const bool up = (l < indcs.ie || !hi);
+        double a = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
+        if (up) {
+          a = std::max(a, std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r));
+        }
+        const int wl = static_cast<int>(std::ceil(a/(rlo*dmin))) + 2;
+        wneed = std::max(wneed, wl);
+        vgd_wsh[l] = std::min(wl, nmax);
+        // per pass: the INWARD-pass halo of shell s serves (a) and (c) (inward values),
+        // the OUTWARD-pass halo only (b) (outward values read by shell s+1)
+        const double ain = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
+        const double aout = up ? std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r) : 0.0;
+        vgd_wsi[l] = std::min(static_cast<int>(std::ceil(ain/(rlo*dmin))) + 2, nmax);
+        vgd_wso[l] = std::min(static_cast<int>(std::ceil(aout/(rlo*dmin))) + 2, nmax);
       }
-      const int wl = static_cast<int>(std::ceil(a/(rlo*dmin))) + 2;
-      wneed = std::max(wneed, wl);
-      vgd_wsh[l] = std::min(wl, nmax);
-      // per pass: the INWARD-pass halo of shell s serves (a) and (c) (inward values),
-      // the OUTWARD-pass halo only (b) (outward values read by shell s+1)
-      const double ain = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
-      const double aout = (l < indcs.ie) ? std::sqrt(x1v_h(0,l+1)*x1v_h(0,l+1) - r*r)
-                                          : 0.0;
-      vgd_wsi[l] = std::min(static_cast<int>(std::ceil(ain/(rlo*dmin))) + 2, nmax);
-      vgd_wso[l] = std::min(static_cast<int>(std::ceil(aout/(rlo*dmin))) + 2, nmax);
     }
+#if MPI_PARALLEL_ENABLED
+    if (vgd_nb1 > 1) {
+      MPI_Allreduce(MPI_IN_PLACE, &wneed, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+    }
+#endif
     vgd_w = std::min(wneed, nmax);
+    if (vgd_nb1 > 1) {   // every shell at the full band, the x1 ghosts (hand-off) too
+      vgd_wsh.assign(c1, vgd_w);
+      vgd_wsi = vgd_wsh;
+      vgd_wso = vgd_wsh;
+    }
     vgd_capped = (vgd_w < wneed);
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd: exact per-shell lateral halo, band " << vgd_w
@@ -1108,7 +1162,7 @@ void RadiationM1::VetGdInit() {
   // xffuse-1113: the combinations the fused sweep never covers (VetGdXffOk) keep the two
   // sweeps and allocate no second array (e.g. the fused twin of the RSG decks)
   if (vgd_xff && (vgd_xf_m > 0 || vgd_iter != 1 || vgd_twin || vgd_twfuse || vgd_async ||
-                  vgd_bandx || vgd_upf != 0 || vgd_gband ||
+                  vgd_bandx || vgd_upf != 0 || vgd_gband || vgd_nb1 > 1 ||
                   (vgd_csg && vgd_cscomp && vgd_csxg > 1) ||
                   (!vgd_csg && (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 ||
                                 vet_path != 0 || vgd_beam || vgd_lhx_ie > 0.0 ||
@@ -2764,7 +2818,7 @@ void RadiationM1::VetGdBeamInit(const std::vector<double> &d) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdHaloInit
-//! \brief the 8 lateral neighbour slots of every local MeshBlock (one x1 block, uniform
+//! \brief the 8 lateral neighbour slots of every local MeshBlock (same x1 level, uniform
 //! level; theta and phi periodic: the wrap of the logical location), message buffers
 
 void RadiationM1::VetGdHaloInit() {
@@ -2778,13 +2832,12 @@ void RadiationM1::VetGdHaloInit() {
     nb2 = std::max(nb2, pm->lloc_eachmb[g].lx2 + 1);
     nb3 = std::max(nb3, pm->lloc_eachmb[g].lx3 + 1);
   }
-  std::vector<int> gof(nb2*nb3, -1);
+  std::vector<int> gof(vgd_nb1*nb2*nb3, -1);
   for (int g = 0; g < pm->nmb_total; ++g) {
     LogicalLocation &l = pm->lloc_eachmb[g];
-    if (l.lx1 != 0) {VgdFatal("needs ONE MeshBlock along x1");}
-    gof[l.lx3*nb2 + l.lx2] = g;
+    gof[(l.lx1*nb3 + l.lx3)*nb2 + l.lx2] = g;
   }
-  for (int t = 0; t < nb2*nb3; ++t) {
+  for (int t = 0; t < vgd_nb1*nb2*nb3; ++t) {
     if (gof[t] < 0) {VgdFatal("incomplete MeshBlock grid (SMR/AMR not supported)");}
   }
   Kokkos::realloc(vgd_hloc, 8*nmb);
@@ -2820,7 +2873,7 @@ void RadiationM1::VetGdHaloInit() {
       const int l2 = (pol != 0) ? l.lx2 : (l.lx2 + dj + nb2) % nb2;
       const int l3 = (pol != 0) ? (l.lx3 + dk + nb3/2 + nb3) % nb3
                                 : (l.lx3 + dk + nb3) % nb3;
-      const int g = gof[l3*nb2 + l2];
+      const int g = gof[(l.lx1*nb3 + l3)*nb2 + l2];
       const int rk = pm->rank_eachmb[g];
       if (rk == me) {
         hl_h(8*m + o) = g - g0;
@@ -5751,6 +5804,73 @@ void RadiationM1::VetGdWall(const int i0, const int i1) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdX1Hand
+//! \brief several MeshBlocks along x1: the boundary shell of every level to the x1 ghost
+//! shell of the level above (up) or below, its lateral band exchanged as a shell of the
+//! sweep
+
+void RadiationM1::VetGdX1Hand(const bool up) {
+  if (vgd_scut != 0) {VgdFatal("several MeshBlocks along x1 need vlat_icut = 0 (the "
+                               "sweep from the inner face: vet_col_lat_taucut large)");}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1, n = vgd_n, w = vgd_w;
+  const int nx2 = indcs.nx2, nk = indcs.nx3*nx2;
+  const int isrc = up ? indcs.ie : indcs.is, idst = up ? (indcs.is - 1) : (indcs.ie + 1);
+  auto vi_ = vgd_i;
+  auto b_ = vgd_x1b;
+  auto r_ = vgd_x1r;
+  par_for("m1_vgd_x1pack", vgd_cur, 0, nmb1, 0, n - 1, 0, nk - 1,
+  KOKKOS_LAMBDA(const int m, const int d, const int t) {
+    b_(m,d*nk + t) = vi_(m,d,w + t/nx2,w + t % nx2,isrc);
+  });
+  VetGdX1Pass(up);
+  par_for("m1_vgd_x1unpack", vgd_cur, 0, nmb1, 0, n - 1, 0, nk - 1,
+  KOKKOS_LAMBDA(const int m, const int d, const int t) {
+    vi_(m,d,w + t/nx2,w + t % nx2,idst) = r_(m,d*nk + t);
+  });
+  VetGdHalo(vgd_i, n, idst, idst, w, true, static_cast<VgdIView *>(nullptr));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdX1Pass
+//! \brief vgd_x1b(m, :) of every MeshBlock to vgd_x1r of its x1 neighbour above (up) or
+//! below (an on-rank copy or one message per block)
+
+void RadiationM1::VetGdX1Pass(const bool up) {
+  Mesh *pm = pmy_pack->pmesh;
+  const int nmb = pmy_pack->nmb_thispack, g0 = pmy_pack->gids;
+  const int cnt = vgd_x1b.extent_int(1);
+  Kokkos::fence();
+  auto bh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_x1b);
+  auto rh = Kokkos::create_mirror_view(vgd_x1r);
+#if MPI_PARALLEL_ENABLED
+  std::vector<MPI_Request> req;
+#endif
+  for (int m = 0; m < nmb; ++m) {
+    const int gr = vgd_x1nb[2*m + (up ? 1 : 0)], gs = vgd_x1nb[2*m + (up ? 0 : 1)];
+    if (gr >= 0 && pm->rank_eachmb[gr] == global_variable::my_rank) {
+      for (int t = 0; t < cnt; ++t) {rh(gr - g0,t) = bh(m,t);}
+    }
+#if MPI_PARALLEL_ENABLED
+    if (gr >= 0 && pm->rank_eachmb[gr] != global_variable::my_rank) {
+      req.emplace_back();
+      MPI_Isend(&bh(m,0), cnt, MPI_ATHENA_REAL, pm->rank_eachmb[gr], gr, vgd_comm,
+                &req.back());
+    }
+    if (gs >= 0 && pm->rank_eachmb[gs] != global_variable::my_rank) {
+      req.emplace_back();
+      MPI_Irecv(&rh(m,0), cnt, MPI_ATHENA_REAL, pm->rank_eachmb[gs], g0 + m, vgd_comm,
+                &req.back());
+    }
+#endif
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+#endif
+  Kokkos::deep_copy(vgd_x1r, rh);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdSweep
 //! \brief one sweep (inward then outward) of every direction
 
@@ -5775,6 +5895,7 @@ void RadiationM1::VetGdSweep() {
   auto dir_ = vgd_dir;
   auto cnt_ = vlat_cnt;
   auto mr_ = vgd_mr;
+  auto x1f_ = vgd_x1f;
   // intensities outside the block (band index) of an ON-RANK neighbour are read from its
   // interior directly (direction re-indexed at a wall); remote ones from the band, filled
   // per shell by VetGdHalo
@@ -5898,6 +6019,7 @@ void RadiationM1::VetGdSweep() {
         Kokkos::realloc(vgd_shl[p], ntot);
       }
       auto L_ = vgd_shl[p];
+      auto mo_ = vgd_x1mo;
       int cnt = 0;
       const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;   // accpolar-1103
       Kokkos::parallel_scan("m1_vgd_shl", Kokkos::RangePolicy<>(vgd_cur, 0, ntot),
@@ -5905,8 +6027,8 @@ void RadiationM1::VetGdSweep() {
         int t = c;
         const int d = t % n;
         t /= n;
-        const int m = t/nkj;
-        t -= m*nkj;
+        const int m = mo_(t/nkj);
+        t -= (t/nkj)*nkj;
         const int k = ks + t/nj;
         const int j = js + (t % nj);
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
@@ -5917,11 +6039,21 @@ void RadiationM1::VetGdSweep() {
         const Real mr = nx*st*cp + ny*st*sp + nz*ct;
         const bool keep = inw ? (mr < 1.0e-12) : (mr >= -1.0e-12);
         if (keep) {
-          if (fin) {L_(acc) = c;}
+          if (fin) {L_(acc) = (m*nkj + t)*n + d;}
           acc += 1;
         }
       }, cnt);
       vgd_shn[p] = cnt;
+      // several MeshBlocks along x1: the code range of each level
+      vgd_shlv[p].assign(vgd_nb1 + 1, cnt);
+      vgd_shlv[p][0] = 0;
+      if (vgd_nb1 > 1) {
+        auto lh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), L_);
+        for (int q = cnt - 1; q >= 0; --q) {vgd_shlv[p][vgd_x1lv[lh(q)/(n*nkj)]] = q;}
+        for (int lv = vgd_nb1 - 1; lv > 0; --lv) {
+          vgd_shlv[p][lv] = std::min(vgd_shlv[p][lv], vgd_shlv[p][lv + 1]);
+        }
+      }
     }
     vgd_shl_alpha = vgd_alpha;
   }
@@ -6599,7 +6731,12 @@ void RadiationM1::VetGdSweep() {
     const bool hxm = vgd_hx_on && vgd_hmpi && (vgd_hcomp > 0) && (vgd_hl_mb > 0) && shl &&
                      !bandx;
     bool pend = false;               // a list-path exchange begun, not ended
-    for (int q = 0; q < nsh; ++q) {
+    // several MeshBlocks along x1: the levels in the pass's order, each from the boundary
+    // shell the previous one handed on (wall maps couple all directions: no wavefront)
+    const int nst = vgd_nb1;
+    for (int qq = 0; qq < nst*nsh; ++qq) {
+      const int q = qq % nsh, lv = inw ? (nst - 1 - qq/nsh) : qq/nsh;
+      if (nst > 1 && q == 0 && qq > 0) {VetGdX1Hand(!inw);}
       const int l = inw ? (n1 - 1 - q) : (lcut + q);
       const int i = is + l;
       bool xe = false;               // vgdsched-1113: this shell was sent early
@@ -6669,8 +6806,9 @@ void RadiationM1::VetGdSweep() {
           xe = (sid > 0);
           run_xff(i, l, sid);
         } else if (shl) {
-          // vet_gd_shell_list: only the (m, k, j, d) of this pass's branch
-          run_list(vgd_shl[pass], 0, vgd_shn[pass], i, l, "m1_vgd_shell");
+          // vet_gd_shell_list: only the (m, k, j, d) of this pass's branch (and level)
+          run_list(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], i, l,
+                   "m1_vgd_shell");
         } else {
           if (bmp != nullptr || bdp != nullptr) {
             // speedup-1109 vet_gd_body_global (see run_list)
@@ -7377,14 +7515,15 @@ void RadiationM1::VetGdSmooth() {
 //! \fn void RadiationM1::VetGdSource
 //! \brief the source of a gd build: ln chi, ln S of every cell (VetLatSweep(0), with the
 //! first shell vlat_icut), copied into the band index space of vgd_cs and its lateral
-//! band filled exactly (one multi-shell exchange, on the default instance)
+//! band filled exactly (one multi-shell exchange, on the default instance); with several
+//! MeshBlocks along x1 also the x1 ghost shells (the neighbour level's boundary shells)
 
 void RadiationM1::VetGdSource() {
   VetLatSweep(0);
   // ln chi, ln S in the band index space, the lateral band filled exactly
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int og = vgd_w - indcs.ng;
-  const int ilo = indcs.is + vlat_icut, ie = indcs.ie;
+  const int og = vgd_w - indcs.ng, x1g = (vgd_nb1 > 1) ? 1 : 0;
+  const int ilo = indcs.is + vlat_icut - x1g, ie = indcs.ie + x1g;
   auto cs_ = vlat_cs;
   auto cw_ = vgd_cs;
   par_for("m1_vgd_csw", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks,
@@ -9149,7 +9288,7 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
   }
   for (int i = 0; i < c1; ++i) {
     int wl = 0;
-    if (i >= indcs.is && i <= indcs.ie) {
+    if ((i >= indcs.is && i <= indcs.ie) || vgd_nb1 > 1) {
       wl = std::max(vgd_wsh[i], std::max(vgd_wsi[i], vgd_wso[i]));
       wl = std::min(wl, vgd_w);
     }
