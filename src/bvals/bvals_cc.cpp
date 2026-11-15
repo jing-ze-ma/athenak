@@ -23,7 +23,6 @@
 #include "coordinates/cubed_sphere.hpp"
 #include "bvals.hpp"
 #include "bvals/cs_seam_round.hpp"
-#include "utils/wb_background.hpp"
 
 //----------------------------------------------------------------------------------------
 // BValCC constructor:
@@ -166,14 +165,6 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   const Real rg_ = cs_rho_guard;
   const bool rs_lin = cs_lin_resample;
   const bool nors_ = cs_noresample;
-  // wb_seam (see bvals.hpp)
-  const bool wbs_ = wb_seam;
-  auto wbsphi_ = wbs_phi;
-  const EOS_Data wbseos_ = wbs_eos;
-  const int wbsopt_ = wbs_opt, wbsien_ = wbs_ien;
-  const bool wbsetg_ = wbs_etg;
-  auto wbsbcc_ = wbs_bcc;
-  const bool wbsmhd_ = (wbs_bcc.extent_int(0) > 0);
   const bool ext_ = cs_ext_pass_;   // second pass, see cs_seam_blockend
   const int ngx_ = pmy_pack->pmesh->mb_indcs.ng;
   const bool cperm_ = cs_perm_pairs;
@@ -198,26 +189,17 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // the seam/pole branch needs per-thread scratch; the body is compiled twice (with and
   // without it, selected at launch) so ordinary packs do not pay the scratch attach
 #if defined(KOKKOS_ENABLE_CUDA)
-  // nvcc has no generic extended lambda, and the bool flags did not compile
-  // the dead branches out (the CUDA pack had 255 registers + 3 kB stack): three kernels
-  // with kseam_ / kwb_ compile-time constants (bvals_cc_pack.inc), the same arithmetic
-#define BVCC_PACK_NAME pack_tt_
+  // nvcc has no generic extended lambda, and a bool flag did not compile the dead
+  // branches out: two kernels with kseam_ a compile-time constant (bvals_cc_pack.inc),
+  // the same arithmetic
+#define BVCC_PACK_NAME pack_t_
 #define BVCC_PACK_KSEAM true
-#define BVCC_PACK_KWB true
 #include "bvals_cc_pack.inc"
-#undef BVCC_PACK_KWB
-#undef BVCC_PACK_NAME
-#define BVCC_PACK_NAME pack_tf_
-#define BVCC_PACK_KWB false
-#include "bvals_cc_pack.inc"
-#undef BVCC_PACK_KWB
 #undef BVCC_PACK_KSEAM
 #undef BVCC_PACK_NAME
-#define BVCC_PACK_NAME pack_ff_
+#define BVCC_PACK_NAME pack_f_
 #define BVCC_PACK_KSEAM false
-#define BVCC_PACK_KWB false
 #include "bvals_cc_pack.inc"
-#undef BVCC_PACK_KWB
 #undef BVCC_PACK_KSEAM
 #undef BVCC_PACK_NAME
 #else
@@ -225,28 +207,20 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
 #include "bvals_cc_pack.inc"
 #undef BVCC_PACK_NAME
 #endif
-  if ((use_cs || use_pole) && wbs_) {
+  if (use_cs || use_pole) {
     BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
 #if defined(KOKKOS_ENABLE_CUDA)
-      pack_tt_(tmember);
+      pack_t_(tmember);
 #else
-      pack_(tmember, std::true_type(), std::true_type());
-#endif
-    });
-  } else if (use_cs || use_pole) {
-    BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
-#if defined(KOKKOS_ENABLE_CUDA)
-      pack_tf_(tmember);
-#else
-      pack_(tmember, std::true_type(), std::false_type());
+      pack_(tmember, std::true_type());
 #endif
     });
   } else {
     BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
 #if defined(KOKKOS_ENABLE_CUDA)
-      pack_ff_(tmember);
+      pack_f_(tmember);
 #else
-      pack_(tmember, std::false_type(), std::false_type());
+      pack_(tmember, std::false_type());
 #endif
     });
   }  // end par_for_outer
