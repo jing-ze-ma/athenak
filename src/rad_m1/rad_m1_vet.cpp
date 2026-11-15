@@ -4277,6 +4277,8 @@ void RadiationM1::VetShortCharSweep() {
             iv = iup_v*ex + wu*su + w0*s0;
             if (f2s_) ifc = VetSegFaceI(iup_v, su, s0, 0.5*dtau, 0.5*dtau, 0);
           }
+          // the face crossing of the single segment, also with vet_path = cells: a face
+          // flux, so the conservation of the update does not depend on the path
           if (f2s_ && !mimg) add4(up ? f2u + 8 : fnd + 8, wr*m1*fmax(ifc, 0.0));
           if (vpath) {   // open-od-1013 vet_path = cells (VetPathStep)
             const Real sh3p = thrd ? (-dx1*m3/(am1*dx3)) : 0.0;
