@@ -100,7 +100,7 @@ class ProblemGenerator {
   ProblemGenerator(ParameterInput *pin, Mesh *pmesh, IOWrapper resfile,
                    bool single_file_per_rank=false);
   ~ProblemGenerator() = default;
-    
+
   bool hot_jupiter;
   HotJupiterParam hot_jupiter_param;
 

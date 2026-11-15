@@ -275,7 +275,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       presist->rkg_strang_fuse) {
     if (recipe::NewDefaults(pin)) {
       pin->GetOrAddBoolean("mhd","tracer_strang",true);
-      recipe::Log("<mhd>/tracer_strang = true (default with rkg_strang_fuse and a tracer)");
+      recipe::Log("<mhd>/tracer_strang = true (default with rkg_strang_fuse and a "
+                  "tracer)");
     } else {
       recipe::Log("<mhd>/tracer_strang = false (" + std::string(
           recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
@@ -634,7 +635,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
           const int c1 = ic.nx1 + 2*ic.ng;
           const int c2 = (ic.nx2 > 1) ? (ic.nx2 + 2*ic.ng) : 1;
           const int c3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
-          const int nmbw = std::max((pmy_pack->nmb_thispack), (pmy_pack->pmesh->nmb_maxperrank));
+          const int nmbw = std::max((pmy_pack->nmb_thispack),
+                                    (pmy_pack->pmesh->nmb_maxperrank));
           Kokkos::realloc(wbq2, nmbw, 15, c3, c2, c1);
           if (c3 > 1) Kokkos::realloc(wbq3, nmbw, 15, c3, c2, c1);
           Kokkos::realloc(wbw, nmbw, 7, c3, c2, c1);
@@ -655,7 +657,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
 
     // determine if static wellbalance is enabled
     use_wellbalance_static = pin->GetOrAddBoolean("mhd","wellbalance_static",false);
-    use_wellbalance_static_reconst_perturb = pin->GetOrAddBoolean("mhd","wellbalance_static_reconst",false);
+    use_wellbalance_static_reconst_perturb =
+        pin->GetOrAddBoolean("mhd","wellbalance_static_reconst",false);
   // the deviation reconstruction reads the background arrays, which only
   // wellbalance_static allocates -- the pair is one scheme, not two options
   if (use_wellbalance_static_reconst_perturb && !use_wellbalance_static) {
@@ -814,7 +817,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                       use_fofc || emf_smooth >= 0.0 || use_bs_emf)) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<mhd>/emf_scheme = " << es << " is implemented only "
-                  << "for 2-D/3-D Cartesian, cubed-sphere or spherical-polar Newtonian MHD "
+                  << "for 2-D/3-D Cartesian, cubed-sphere or spherical-polar Newtonian "
+                     "MHD "
                   << "with an ideal or general EOS, without fofc, emf_smooth or bs_emf"
                   << std::endl;
         std::exit(EXIT_FAILURE);
@@ -847,7 +851,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl << "<mesh>/cs_vertex_fill_cc = true is not supported with "
                 << (use_fofc ? "<mhd>/fofc = true" : "the GS07 corner EMF (<mhd>/"
                     "emf_scheme = gs07, named or by fallback)")
-                << ": the vertex dt collapses (~1e-28 at low beta) or the run goes NaN by "
+                << ": the vertex dt collapses (~1e-28 at low beta) or the run goes NaN "
+                   "by "
                 << "cycle 2 (vertexacc-1103).  Use emf_scheme = uct or uct_hlld without "
                 << "fofc, or leave cs_vertex_fill_cc off." << std::endl;
       std::exit(EXIT_FAILURE);
@@ -1109,7 +1114,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       Kokkos::realloc(e2_cc, nmb, ncells3, ncells2, ncells1);
       Kokkos::realloc(e3_cc, nmb, ncells3, ncells2, ncells1);
       if (emf_uct || emf_uct_hlld) {   // UCT face store (UctFaceStore); rsolver now known
-        if (!(rsolver_method == MHD_RSolver::hlld || rsolver_method == MHD_RSolver::lhlld ||
+        if (!(rsolver_method == MHD_RSolver::hlld
+              || rsolver_method == MHD_RSolver::lhlld ||
               (emf_uct && rsolver_method == MHD_RSolver::hlle))) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                     << std::endl << "<mhd>/emf_scheme = uct_hlld needs rsolver = hlld or "
@@ -1118,7 +1124,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         }
         Kokkos::realloc(uct1, nmb, 6, ncells3, ncells2, ncells1);
         Kokkos::realloc(uct2, nmb, 6, ncells3, ncells2, ncells1);
-        if (ppack->pmesh->three_d) Kokkos::realloc(uct3, nmb, 6, ncells3, ncells2, ncells1);
+        if (ppack->pmesh->three_d) Kokkos::realloc(uct3, nmb, 6, ncells3, ncells2,
+                                                   ncells1);
       }
       // fresh-start default (recipe::NewDefaults) of cubed-sphere MHD when the key is not
       // named: cs_seam_mhd = shared_o where supported (CsSeamInit's conditions: 3-D,

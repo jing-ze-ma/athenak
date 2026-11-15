@@ -18,7 +18,6 @@
 #include "utils/two_stream_rt.hpp"
 
 namespace two_stream_rt {
-
 //----------------------------------------------------------------------------------------
 //! \fn TsrtCkChain
 //! \brief the correlated-k chain launch of picket_fence_two_stream_RT_pass

@@ -25,7 +25,9 @@
 //! passes when both mins (the second with the uniform share dE/nphi added when dE is gas
 //! heat) are >= 0, and gets e_f + dE/nphi; else the old group average on that ring.
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -212,7 +214,7 @@ void RingAvg::Filter(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Rea
             x -= 0.5*(m1*m1 + m2*m2 + m3*m3)/d;
             if (gr) x -= d*phi_(m,k,j,ii);
           }
-          const int t = static_cast<int>((static_cast<long>(mm)*(k0 + kk)) % np);
+          const int t = static_cast<int>((static_cast<std::int64_t>(mm)*(k0 + kk)) % np);
           a += x*tc_(t);
           b += x*ts_(t);
         }
@@ -248,7 +250,8 @@ void RingAvg::Filter(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Rea
           const int o = ro_(r) + ((ig*nvar + v)*(mc + 1))*2;
           Real x = cf(o);
           for (int mm = 1; mm <= mc; ++mm) {
-            const int t = static_cast<int>((static_cast<long>(mm)*(k0 + kk)) % np);
+            const int t =
+                static_cast<int>((static_cast<std::int64_t>(mm)*(k0 + kk)) % np);
             x += 2.0*(cf(o + 2*mm)*tc_(t) + cf(o + 2*mm + 1)*ts_(t));
           }
           sc(e*nvar + v, kk, 0, i) = x*rn;

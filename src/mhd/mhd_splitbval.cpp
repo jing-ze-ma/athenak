@@ -15,12 +15,12 @@
 //! whichever it was: an RK stage, an RKG super-stage (MHD::RecvU also serves the RKG
 //! list) or the split refresh itself. Under rkg_lean the intermediate super-stages skip
 //! both the exchange and the conversion, so the snapshot is taken at the final
-//! super-stage's conversion, right after its exchange. The fused-Strang order (rkg_strang_fuse: leading RKG after
-//! before_timeintegrator) changes only which refresh is the last one;
-//! - anything that writes a slot other than IEN after the snapshot -- the tracer pass
-//! (TracerSource), a ConToPrim tracer rescale, the Alfven-speed density floor (not a
-//! constant), the no-infall momentum removal -- fails the bitwise test, and the
-//! refresh is then the full one;
+//! super-stage's conversion, right after its exchange. The fused-Strang order
+//! (rkg_strang_fuse: leading RKG after before_timeintegrator) changes only which refresh
+//! is the last one; - anything that writes a slot other than IEN after the snapshot --
+//! the tracer pass (TracerSource), a ConToPrim tracer rescale, the Alfven-speed density
+//! floor (not a constant), the no-infall momentum removal -- fails the bitwise test, and
+//! the refresh is then the full one;
 //! - hesdirk2 (no split source): RTOpSplitBvals is never called.
 
 #include <cstdint>

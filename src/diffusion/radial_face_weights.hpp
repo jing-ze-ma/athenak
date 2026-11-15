@@ -7,8 +7,9 @@
 //========================================================================================
 //! \file radial_face_weights.hpp
 //! \brief RadialFaceWeights, the radial-face derivative weights of
-//! resistivity_gnomonic.cpp, so that the spherical-polar current (current_density.hpp, <mhd>/sp_resist_x1_centred)
-//! shares the cubed sphere's radial-face derivative (<mhd>/cs_resist_x1_centred).
+//! resistivity_gnomonic.cpp, so that the spherical-polar current (current_density.hpp,
+//! <mhd>/sp_resist_x1_centred) shares the cubed sphere's radial-face derivative
+//! (<mhd>/cs_resist_x1_centred).
 
 #include "athena.hpp"
 

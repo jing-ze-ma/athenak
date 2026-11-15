@@ -6,6 +6,9 @@
 //! \file hydro_mergelat.cpp
 //! \brief merged lateral cells near r_in (see hydro_mergelat.hpp).
 
+#include <algorithm>
+#include <cinttypes>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -493,19 +496,19 @@ void MergeLat::Diag(const DvceArray5D<Real> &u, const char *tag) {
   for (int n = 0; n < 8; ++n) h[n] = s.the_array[n];
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, h, 8, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-  long nf = nfallback;
-  MPI_Allreduce(MPI_IN_PLACE, &nf, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
+  std::int64_t nf = nfallback;
+  MPI_Allreduce(MPI_IN_PLACE, &nf, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
   double ce[4] = {chkerr[0], chkerr[1], chkerr[2], chkerr[3]};
   MPI_Allreduce(MPI_IN_PLACE, ce, 4, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 #else
-  long nf = nfallback;
+  std::int64_t nf = nfallback;
   double ce[4] = {chkerr[0], chkerr[1], chkerr[2], chkerr[3]};
 #endif
   if (global_variable::my_rank == 0) {
     std::printf("MLATDIAG %s cyc %d t %.10e dt %.6e M %.16e E %.16e P %.10e %.10e %.10e "
-                "L %.16e %.16e %.16e nfb %ld chk %.2e %.2e %.2e %.2e\n", tag, pm->ncycle,
-                pm->time, pm->dt, h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], nf,
-                ce[0], ce[1], ce[2], ce[3]);
+                "L %.16e %.16e %.16e nfb %" PRId64 " chk %.2e %.2e %.2e %.2e\n", tag,
+                pm->ncycle, pm->time, pm->dt, h[0], h[1], h[2], h[3], h[4], h[5], h[6],
+                h[7], nf, ce[0], ce[1], ce[2], ce[3]);
     std::fflush(stdout);
   }
 }
