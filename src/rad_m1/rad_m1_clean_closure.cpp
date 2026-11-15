@@ -1123,6 +1123,29 @@ void RadiationM1::CleanGdFaceSums() {
     par_for("cln_gd_col", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       Real a[3], e[3][3], ef[3][3], q[4] = {0.0};
+      if (fv) {
+        // the conservative rays: the r faces carry their own fluxes (no balance march,
+        // which loses the diffusion flux in the difference V chi (S - J) of thick cells)
+        for (int i = is; i <= ie + 1; ++i) {
+          for (int c = 0; c < 4; ++c) q[c] = 0.0;
+          face(0, m, k, j, i, a, e);
+          for (int d = 0; d < n; ++d) {
+            const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
+            Real iv = CleanFvFace(fi_, o2, m, d, 0, k, j, i, f > 0.0);
+            if (CleanBoundaryFace(x, 0, m, k, j, i)) {   // the sweep's x1 boundary
+              iv = (i == is) ? ((f > 0.0) ? (emi ? iemit : exp(cw_(m,1,k+ok,j+og,is)))
+                                          : iv) : ((f > 0.0) ? iv : 0.0);
+            }
+            add(0, m, k, j, i, d, f*iv, q);
+          }
+          for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,(i <= ie) ? i : ie + 1) = q[c];
+        }
+        for (int c = 0; c < 4; ++c) {
+          cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
+          cs(m,CLN_F1+c,k,j,ie) = q[c];
+        }
+        return;
+      }
       const bool in = (xf_(m) & 1);
       const int kj = (k - ks)*nj + j - js;
       face(0, m, k, j, is, a, e);
