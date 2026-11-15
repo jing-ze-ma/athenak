@@ -98,9 +98,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // 3. Newton iteration on the gas coupling and Picard passes on the lagged quantities:
   //    the slopes (reconstruction) and, with clean_closure = iterate, the closure from
   //    the rays of the iterate (at most clean_maxpic, then they are frozen and only the
-  //    gas coupling iterates on); one linear solve without any of these.  In the cell layout
-  //    a solution with cells E <= 0 or |F| > c E switches their faces to the low-order
-  //    flux and is solved again (at most clean_maxpos times).
+  //    gas coupling iterates on); one linear solve without any of these.  In the cell
+  //    layout a solution with cells E < 0 or |F| > c E switches their faces to the
+  //    low-order flux and is solved again (at most clean_maxpos times).
   const bool iterate = cln_feedback || (cell && cln_recon) || cln_closit;
   const bool lagged = (cell && cln_recon) || cln_closit;
   const bool t2stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
