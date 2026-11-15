@@ -99,16 +99,21 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (cln_feedback) CleanAdvectiveCoefficients();
 
   // 3. Newton iteration on the gas coupling and, with reconstruction, Picard passes on
-  //    the lagged slopes; one linear solve without either
+  //    the lagged slopes (at most clean_maxpic, then the slopes are frozen and only the
+  //    gas coupling iterates on); one linear solve without either
   const bool iterate = cln_feedback || (cell && cln_recon);
-  int nit = 0;
+  int nit = 0, nit_sum = 0, npic = 0;
+  Real dpic = 0.0;
   bool converged = !iterate;
   const int maxnl = iterate ? cln_maxnl : 1;
   // the lagged slopes settle only to the accuracy of the linear solve
   const Real tol_nl = cell ? fmax(cln_tol_nl, 10.0*cln_tol) : cln_tol_nl;
   for (int inl = 0; inl < maxnl; ++inl) {
     if (cell) {
-      if (cln_recon) CleanCellSlopeWeights();
+      if (cln_recon && inl < cln_maxpic) {
+        CleanCellSlopeWeights();
+        ++npic;
+      }
       CleanCellRightHandSide();
       CleanCellPreconditionerSetup();
     } else {
@@ -116,10 +121,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       CleanPreconditionerSetup();
     }
     nit = CleanBiCGStab();
+    nit_sum += std::abs(nit);
     cln_nsolve += 1.0;
     cln_nit += std::abs(nit);
     if (!iterate || nit < 0) break;
     const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
+    if (cell && cln_recon && inl < cln_maxpic) dpic = de;
     Real dv = 0.0;
     if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
     if (de < tol_nl && dv < tol_nl) {
@@ -142,8 +149,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (nneg > 0) cln_nneg += 1.0;
   if (global_variable::my_rank == 0) {
     if (cell) {
-      std::printf("CLEAN cycle %d t2s %d it %d neg %d nreal %d\n",
-                  pmy_pack->pmesh->ncycle, t2_solve, nit, nneg, cln_nnreal);
+      std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pic %d %.2e neg %d nreal %d\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, nit, nit_sum, npic, dpic, nneg,
+                  cln_nnreal);
     } else {
       std::printf("CLEAN cycle %d t2s %d it %d neg %d\n", pmy_pack->pmesh->ncycle,
                   t2_solve, nit, nneg);

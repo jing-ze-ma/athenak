@@ -260,8 +260,9 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellPreconditionerSetup
 //! \brief 4x4 blocks of the preconditioner: the x1-line block-tridiagonal part of A
-//! (states of cells i-1, i, i+1) plus the diagonal blocks of its x2 and x3 parts.  The
-//! terms in the states of cells i+-2 (RC, reconstruction) are left to the Krylov solve.
+//! with first-order jumps (states of cells i-1, i, i+1) plus the diagonal blocks of its
+//! x2 and x3 parts.  The RC terms in cells i+-2 and the reconstruction are left to the
+//! Krylov solve.
 
 void RadiationM1::CleanCellPreconditionerSetup() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -270,6 +271,7 @@ void RadiationM1::CleanCellPreconditionerSetup() {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
+  x.recon = false;
   auto op = opac;
 
   par_for("clc_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -327,7 +329,7 @@ void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
 
   par_for("clc_thomas", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    // forward: D_i = A0_i - Am_i C_i-1, C_i = D_i^-1 Ap_i, d_i = D_i^-1 (r_i - Am_i d_i-1)
+    // forward: D = A0 - Am C_i-1, C_i = D^-1 Ap, d_i = D^-1 (r_i - Am d_i-1)
     for (int i = is; i <= ie; ++i) {
       Real a[4][4], b[4][5];
       for (int r = 0; r < 4; ++r) {
@@ -367,8 +369,8 @@ void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::CleanCellNewtonUpdate
 //! \brief new iterate from the solution X: with gas coupling E and T by
-//! CleanNewtonUpdate, F/c from X.  Returns the largest relative change: that of CleanNewtonUpdate and
-//! max |dE|, |dy| over max E.
+//! CleanNewtonUpdate, F/c from X.  Returns the largest relative change: that of
+//! CleanNewtonUpdate and max |dE|, |dy| over max E.
 
 Real RadiationM1::CleanCellNewtonUpdate() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
