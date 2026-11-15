@@ -62,10 +62,6 @@ bool AmModule::DefaultOn(MeshBlockPack *ppack, ParameterInput *pin, const std::s
   std::string why = "";
   if (ev != "dynamic") why = "<time>/evolution is not dynamic";
   if (pm->use_spherical_polar && pm->mb_indcs.nx2 < 2) why = "1-D spherical polar";
-  if (pm->use_spherical_polar && pm->mb_indcs.nx2 >= 2 && !pm->three_d &&
-      ppack->pcoord->sp_cart_polar_momentum) {
-    why = "2-D spherical polar with sp_cart_polar_momentum";
-  }
   if (!why.empty()) {
     recipe::Log(key + " = false (not supported: " + why + ")");
     return false;
@@ -537,19 +533,14 @@ void AmModule::AmDiagPost(Real bdt, int stage, const AmFluid &fl) {
 
 void AmModule::AmTransport(Real bdt, Driver *pdrive, int stage, const AmFluid &fl) {
   Mesh *pm = pmy_pack->pmesh;
-  Coordinates *pco = pmy_pack->pcoord;
   if (!am_checked) {
-    // amdef-1019: T_code re-evaluates every source variant (wellbalance_static[_reconst],
-    // cs/sp_wellbalanced_src, sp_cart_polar/all_momentum; sp_face_avg only rewrites the
-    // fluxes the update and T_cons both read); what is left is the mesh
+    // T_code re-evaluates every source variant (wellbalance_static[_reconst]); what is
+    // left to check is the mesh
     std::string bad = "";
     if (!(pm->use_cubed_sphere || pm->use_spherical_polar)) {
       bad = "a mesh that is neither cubed sphere nor spherical polar";
     }
     if (pm->use_spherical_polar && pm->mb_indcs.nx2 < 2) bad = "a 1-D spherical-polar mesh";
-    if (pm->use_spherical_polar && !pm->three_d && pco->sp_cart_polar_momentum) {
-      bad = "sp_cart_polar_momentum in 2-D";
-    }
     if (!bad.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<" << blk << ">/am_transport does not support " << bad
@@ -601,7 +592,7 @@ void AmModule::AmTransport(Real bdt, Driver *pdrive, int stage, const AmFluid &f
     return;
   }
   // amdef-1019: the plain source keeps the ab758e94 kernel verbatim (HydroAmTorqueBase)
-  const bool plain = !v.wbs && !v.wbsrc && !v.spcart && v.three_d && v.eos.is_ideal;
+  const bool plain = !v.wbs && v.three_d && v.eos.is_ideal;
   if (plain) {
     par_for("hydro_am_transport", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
             ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
@@ -660,7 +651,7 @@ void AmModule::AmTransportProbe(const AmFluid &fl, const DvceArray5D<Real> *wmas
     });
     return;
   }
-  const bool plain = !v.wbs && !v.wbsrc && !v.spcart && v.three_d && v.eos.is_ideal;
+  const bool plain = !v.wbs && v.three_d && v.eos.is_ideal;
   par_for("hydro_am_transport_probe", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
           ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1006,16 +997,6 @@ void AmModule::AmFillV(HydroAmV &v, const AmFluid &fl) {
   v.three_d = pm->three_d;
   v.wbs = fl.wbs;
   v.pwb = fl.pwb;
-  v.wbsrc = v.cs ? pco->cs_wellbalanced_src : pco->sp_wellbalanced_src;
-  v.spcart = (!v.cs) && pco->sp_cart_polar_momentum;
-  v.spall = v.spcart && pco->sp_cart_all_momentum;
-  if (v.wbsrc || v.spcart) {
-    // (the coordinate source of this stage built it; AMR rebuilds it there every call)
-    if (static_cast<int>(pco->wb_geom.extent(0)) != pmy_pack->nmb_thispack) {
-      pco->BuildWBGeometry();
-    }
-    v.geom = pco->wb_geom;
-  }
   v.bcs = pmy_pack->pmb->mb_bcs;
 }
 

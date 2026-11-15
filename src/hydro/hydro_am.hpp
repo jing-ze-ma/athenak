@@ -21,12 +21,8 @@
 //! Rbar_f).  sum_c T_cons is the boundary flux alone, so L_z changes only by boundary
 //! fluxes and real torques (to round-off).  Applied as a force along (-y, x, 0): no
 //! radial or meridional part; the total energy is not touched.
-//! amdef-1019: T_code re-evaluates the source every variant applies:
-//! wellbalance_static (+ _reconst) [pwb removed from the cell pressure, as the source],
-//! cs/sp_wellbalanced_src [plain flux divergences + the face-sum source of
-//! SrcTermsCurvilinearWB, HydroAmWBSrc], sp_cart_polar_momentum / sp_cart_all_momentum
-//! [the Cartesian polar-row update of SrcTermsSphericalPolarCartRows, HydroAmCartRows],
-//! sp_face_avg [rewrites the fluxes before the update: nothing to add].  DEFAULT on the
+//! T_code re-evaluates the source every variant applies (wellbalance_static and
+//! _reconst remove pwb from the cell pressure, as the source does).  DEFAULT on the
 //! cubed sphere and on multi-D spherical polar for fresh runs (AmModule::DefaultOn).
 
 #include "athena.hpp"
@@ -59,10 +55,6 @@ struct HydroAmV {
   bool three_d = true;     // false: 2-D spherical polar (no x3 fluxes, x3f extent 1)
   bool wbs = false;        // <hydro|mhd>/wellbalance_static: pwb out of the source
   DvceArray4D<Real> pwb;   //   its background pressure (cell)
-  bool wbsrc = false;      // cs_wellbalanced_src (cs) | sp_wellbalanced_src (sp)
-  bool spcart = false;     // sp_cart_polar_momentum (or sp_cart_all_momentum)
-  bool spall = false;      // sp_cart_all_momentum
-  DvceArray4D<Real> geom;  // Coordinates::wb_geom (wbsrc | spcart)
   DualArray2D<BoundaryFlag> bcs;
 };
 
@@ -73,181 +65,6 @@ Real HydroAmPres(const HydroAmV &v, const int m, const int k, const int j, const
   return (!v.eos.is_ideal) ? v.w0(m,IDN,k,j,i)*v.eos.iso_cs*v.eos.iso_cs
          : v.gen ? v.wder(m,IDPR,k,j,i)
          : v.eos.Pressure(v.w0(m,IDN,k,j,i), v.w0(m,IEN,k,j,i));
-}
-
-//! \brief amdef-1019: true where sp_cart_polar_momentum replaces the local-component
-//! update by the Cartesian one (Coordinates::SrcTermsSphericalPolarCartRows): every cell
-//! under sp_cart_all_momentum, else the two polar rows
-KOKKOS_INLINE_FUNCTION
-bool HydroAmCartCell(const HydroAmV &v, const int m, const int j) {
-  if (!v.spcart) return false;
-  return v.spall ||
-      (j == v.js && v.bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
-      (j == v.je && v.bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar);
-}
-
-//! \brief amdef-1019: the well-balanced (face-sum) geometric source of cell (m,k,j,i) as
-//! Coordinates::SrcTermsCurvilinearWB forms it (cs and sp), NOT divided by the volume:
-//! src[d] = sum_f sig A_f [ptot (n.e_d) + rho (v.n)(v.e_d) - (B.n)(B.e_d)], e_d the face's
-//! triad (cache wb_geom), the cell's own state (pwb removed under wellbalance_static)
-KOKKOS_INLINE_FUNCTION
-void HydroAmWBSrc(const HydroAmV &v, const int m, const int k, const int j, const int i,
-                  Real *src) {
-  Real rc[3], e1c[3], e2c[3];
-  for (int c=0; c<3; ++c) {
-    rc[c] = v.geom(m,k,j,c); e1c[c] = v.geom(m,k,j,3+c); e2c[c] = v.geom(m,k,j,6+c);
-  }
-  const Real cc = v.geom(m,k,j,9);
-  const Real ss = v.geom(m,k,j,10);
-  const Real rho = v.w0(m,IDN,k,j,i);
-  Real pr = HydroAmPres(v, m, k, j, i);
-  if (v.wbs) pr -= v.pwb(m,k,j,i);
-  const Real v1 = v.w0(m,IVX,k,j,i), v2 = v.w0(m,IVY,k,j,i), v3 = v.w0(m,IVZ,k,j,i);
-  Real vv[3], bb[3];
-  for (int c=0; c<3; ++c) vv[c] = v1*rc[c] + v2*e1c[c] + v3*e2c[c];
-  Real bsq = 0.0;
-  if (v.mhd) {
-    const Real b1 = v.bcc(m,IBX,k,j,i), b2 = v.bcc(m,IBY,k,j,i), b3 = v.bcc(m,IBZ,k,j,i);
-    for (int c=0; c<3; ++c) bb[c] = b1*rc[c] + b2*e1c[c] + b3*(e2c[c] - cc*e1c[c])/ss;
-    bsq = b1*b1 + b2*b2 + b3*b3;
-  } else {
-    bb[0] = 0.0; bb[1] = 0.0; bb[2] = 0.0;
-  }
-  const Real ptot = pr + 0.5*bsq;
-  for (int d=0; d<3; ++d) src[d] = 0.0;
-  auto addface = [&](const Real sig, const Real ar, const Real nh[3],
-                     const Real f1[3], const Real f2[3], const Real f3[3]) {
-    Real vn = 0.0, bn = 0.0;
-    for (int c=0; c<3; ++c) { vn += vv[c]*nh[c]; bn += bb[c]*nh[c]; }
-    const Real *ee[3] = {f1, f2, f3};
-    for (int d=0; d<3; ++d) {
-      Real ne = 0.0, ve = 0.0, be = 0.0;
-      for (int c=0; c<3; ++c) {
-        ne += nh[c]*ee[d][c];
-        ve += vv[c]*ee[d][c];
-        be += bb[c]*ee[d][c];
-      }
-      src[d] += sig*ar*(ptot*ne + rho*vn*ve - bn*be);
-    }
-  };
-  addface( 1.0, v.a1(m,k,j,i+1), rc, rc, e1c, e2c);
-  addface(-1.0, v.a1(m,k,j,i  ), rc, rc, e1c, e2c);
-  for (int f=0; f<4; ++f) {
-    Real nh[3], rf[3], e1f[3], e2f[3];
-    const int b = 11 + 12*f;
-    for (int c=0; c<3; ++c) {
-      nh[c] = v.geom(m,k,j,b+c);    rf[c] = v.geom(m,k,j,b+3+c);
-      e1f[c] = v.geom(m,k,j,b+6+c); e2f[c] = v.geom(m,k,j,b+9+c);
-    }
-    const Real ar = (f == 0) ? v.a2(m,k,j,i) : (f == 1) ? v.a2(m,k,j+1,i) :
-                    (f == 2) ? v.a3(m,k,j,i) : v.a3(m,k+1,j,i);
-    addface((f % 2 == 0) ? -1.0 : 1.0, ar, nh, rf, e1f, e2f);
-  }
-}
-
-//! \brief amdef-1019: the Cartesian momentum update of a polar-row cell (sp_cart_polar_
-//! momentum), as Coordinates::SrcTermsSphericalPolarCartRows forms it: dcart = sum_f sig
-//! [A_f Fvec_f + T~_f.(Avec_f - A_f n_f)] (Cartesian, NOT divided by the volume).  The
-//! cell's momentum then changes by -dcart/V in total (RK update + that kernel).
-KOKKOS_INLINE_FUNCTION
-void HydroAmCartRows(const HydroAmV &v, const int m, const int k, const int j,
-                     const int i, Real *dcart) {
-  auto stress = [&](const int kk, const int jj, const int ii, Real T[3][3]) {
-    Real rh[3], th[3], ph[3];
-    for (int c=0; c<3; ++c) {
-      rh[c] = v.geom(m,kk,jj,c); th[c] = v.geom(m,kk,jj,3+c); ph[c] = v.geom(m,kk,jj,6+c);
-    }
-    const Real rho = v.w0(m,IDN,kk,jj,ii);
-    const Real pr = HydroAmPres(v, m, kk, jj, ii);
-    Real vv[3], bb[3] = {0.0, 0.0, 0.0};
-    for (int c=0; c<3; ++c) {
-      vv[c] = v.w0(m,IVX,kk,jj,ii)*rh[c] + v.w0(m,IVY,kk,jj,ii)*th[c]
-            + v.w0(m,IVZ,kk,jj,ii)*ph[c];
-    }
-    Real bsq = 0.0;
-    if (v.mhd) {
-      const Real b1 = v.bcc(m,IBX,kk,jj,ii), b2 = v.bcc(m,IBY,kk,jj,ii);
-      const Real b3 = v.bcc(m,IBZ,kk,jj,ii);
-      for (int c=0; c<3; ++c) bb[c] = b1*rh[c] + b2*th[c] + b3*ph[c];
-      bsq = b1*b1 + b2*b2 + b3*b3;
-    }
-    const Real ptot = pr + 0.5*bsq;
-    for (int a=0; a<3; ++a) {
-      for (int b=0; b<3; ++b) {
-        T[a][b] = ((a == b) ? ptot : 0.0) + rho*vv[a]*vv[b] - bb[a]*bb[b];
-      }
-    }
-  };
-  const Real th_l = v.x2f(m,j), th_r = v.x2f(m,j+1);
-  const Real ph_l = v.x3f(m,k), ph_r = v.x3f(m,k+1);
-  const Real r_l = v.x1f(m,i), r_r = v.x1f(m,i+1);
-  const Real dph = ph_r - ph_l;
-  const Real sph = sin(ph_r) - sin(ph_l), cph = -(cos(ph_r) - cos(ph_l));
-  auto avec_r = [&](const Real rr, Real A[3]) {
-    const Real i2 = 0.5*(th_r - th_l) - 0.25*(sin(2.0*th_r) - sin(2.0*th_l));
-    const Real iz = 0.5*(sin(th_r)*sin(th_r) - sin(th_l)*sin(th_l));
-    A[0] = rr*rr*i2*sph; A[1] = rr*rr*i2*cph; A[2] = rr*rr*iz*dph;
-  };
-  auto avec_th = [&](const Real tf, Real A[3]) {
-    const Real fr = 0.5*(r_r*r_r - r_l*r_l);
-    A[0] = fr*sin(tf)*cos(tf)*sph; A[1] = fr*sin(tf)*cos(tf)*cph;
-    A[2] = -fr*sin(tf)*sin(tf)*dph;
-  };
-  for (int c=0; c<3; ++c) dcart[c] = 0.0;
-  auto addface = [&](const Real sig, const Real ar, const Real fl[3],
-                     const Real rf[3], const Real e1f[3], const Real e2f[3],
-                     const Real nh[3], const Real av[3],
-                     const int ka, const int ja, const int ia,
-                     const int kb, const int jb, const int ib) {
-    Real Ta[3][3], Tb[3][3];
-    stress(ka, ja, ia, Ta);
-    stress(kb, jb, ib, Tb);
-    for (int c=0; c<3; ++c) {
-      const Real fvec = fl[0]*rf[c] + fl[1]*e1f[c] + fl[2]*e2f[c];
-      Real corr = 0.0;
-      for (int d=0; d<3; ++d) corr += 0.5*(Ta[c][d] + Tb[c][d])*(av[d] - ar*nh[d]);
-      dcart[c] += sig*(ar*fvec + corr);
-    }
-  };
-  Real rc[3], e1c[3], e2c[3];
-  for (int c=0; c<3; ++c) {
-    rc[c] = v.geom(m,k,j,c); e1c[c] = v.geom(m,k,j,3+c); e2c[c] = v.geom(m,k,j,6+c);
-  }
-  Real av[3], fl[3];
-  for (int f=0; f<2; ++f) {
-    const int ii = i + f;
-    for (int c=0; c<3; ++c) fl[c] = v.f1(m,IM1+c,k,j,ii);
-    avec_r((f == 0) ? r_l : r_r, av);
-    addface((f == 0) ? -1.0 : 1.0, v.a1(m,k,j,ii), fl, rc, e1c, e2c, rc, av,
-            k, j, ii-1, k, j, ii);
-  }
-  for (int f=0; f<2; ++f) {
-    const int jj = j + f;
-    const int b = 11 + 12*f;
-    Real nh[3], rf[3], e1f[3], e2f[3];
-    for (int c=0; c<3; ++c) {
-      nh[c] = v.geom(m,k,j,b+c);    rf[c] = v.geom(m,k,j,b+3+c);
-      e1f[c] = v.geom(m,k,j,b+6+c); e2f[c] = v.geom(m,k,j,b+9+c);
-    }
-    for (int c=0; c<3; ++c) fl[c] = v.f2(m,IM1+c,k,jj,i);
-    avec_th((f == 0) ? th_l : th_r, av);
-    addface((f == 0) ? -1.0 : 1.0, v.a2(m,k,jj,i), fl, rf, e1f, e2f, nh, av,
-            k, jj-1, i, k, jj, i);
-  }
-  for (int f=0; f<2; ++f) {
-    const int kk = k + f;
-    const int b = 11 + 12*(2+f);
-    Real nh[3], rf[3], e1f[3], e2f[3];
-    for (int c=0; c<3; ++c) {
-      nh[c] = v.geom(m,k,j,b+c);    rf[c] = v.geom(m,k,j,b+3+c);
-      e1f[c] = v.geom(m,k,j,b+6+c); e2f[c] = v.geom(m,k,j,b+9+c);
-    }
-    for (int c=0; c<3; ++c) fl[c] = v.f3(m,IM1+c,kk,j,i);
-    const Real ar = v.a3(m,kk,j,i);
-    for (int c=0; c<3; ++c) av[c] = ar*nh[c];
-    addface((f == 0) ? -1.0 : 1.0, ar, fl, rf, e1f, e2f, nh, av,
-            kk-1, j, i, kk, j, i);
-  }
 }
 
 //! \brief the zonal torque correction dT = T_cons - T_code of cell (m,k,j,i) (already x
@@ -289,13 +106,9 @@ bool HydroAmTorque(const HydroAmV &v, const int m, const int k, const int j,
     Real dx1[2], dx2[2], dx3[2];
     for (int n=0; n<2; ++n) {
       const int nm = IM2 + n;
-      if (v.wbsrc) {   // amdef-1019: the WB source carries the radial-face r-factor
-        dx1[n] = -(v.f1(m,nm,k,j,i+1)*v.a1(m,k,j,i+1) - v.f1(m,nm,k,j,i)*v.a1(m,k,j,i))*ia;
-      } else {
       dx1[n] = -(v.f1(m,nm,k,j,i+1)*v.a1(m,k,j,i+1) - v.f1(m,nm,k,j,i)*v.a1(m,k,j,i))*ia
                - fac*(v.f1(m,nm,k,j,i)*v.a1(m,k,j,i)
                       + v.f1(m,nm,k,j,i+1)*v.a1(m,k,j,i+1))*ia;
-      }
       dx2[n] = -(v.f2(m,nm,k,j+1,i)*v.a2(m,k,j+1,i) - v.f2(m,nm,k,j,i)*v.a2(m,k,j,i))*ia;
       dx3[n] = -(v.f3(m,nm,k+1,j,i)*v.a3(m,k+1,j,i) - v.f3(m,nm,k,j,i)*v.a3(m,k,j,i))*ia;
     }
@@ -314,16 +127,8 @@ bool HydroAmTorque(const HydroAmV &v, const int m, const int k, const int j,
       bb3 = b3*b3;
       ptot += 0.5*(b1*b1 + b2*b2 + b3*b3);
     }
-    Real src2, src3;
-    if (v.wbsrc) {   // amdef-1019: cs_wellbalanced_src (SrcTermsCurvilinearWB)
-      Real sw[3];
-      HydroAmWBSrc(v, m, k, j, i, sw);
-      src2 = sw[1]*ia;
-      src3 = sw[2]*ia;
-    } else {
-      src2 = v.xovr(m,k,j,i)*(ptot + rho*v3*v3*sine2 - bb3);
-      src3 = v.yovr(m,k,j,i)*(ptot + rho*v2*v2*sine2 - bb2);
-    }
+    const Real src2 = v.xovr(m,k,j,i)*(ptot + rho*v3*v3*sine2 - bb3);
+    const Real src3 = v.yovr(m,k,j,i)*(ptot + rho*v2*v2*sine2 - bb2);
     const Real d2[4] = {dx1[0], dx2[0], dx3[0], src2};
     const Real d3[4] = {dx1[1], dx2[1], dx3[1], src3};
     Real tcode = 0.0;
@@ -389,23 +194,8 @@ bool HydroAmTorque(const HydroAmV &v, const int m, const int k, const int j,
   // (2-D: no x3 fluxes; the x3f flux array has extent 1 in k)
   const Real fl3 = v.three_d ? v.f3(m,IM3,k,j,i)*v.a3(m,k,j,i) : 0.0;
   const Real fr3 = v.three_d ? v.f3(m,IM3,k+1,j,i)*v.a3(m,k+1,j,i) : 0.0;
-  Real tcode;
-  if (HydroAmCartCell(v, m, j)) {
-    // amdef-1019 sp_cart_polar_momentum: the cell's momentum changed by -dcart/V in all
-    // (RK update + SrcTermsSphericalPolarCartRows), its torque -(V rc x dcart/V)_z
-    Real dc[3];
-    HydroAmCartRows(v, m, k, j, i, dc);
-    const Real xc = r*v.geom(m,k,j,0), yc = r*v.geom(m,k,j,1);
-    tcode = -(xc*dc[1] - yc*dc[0]);
-  } else if (v.wbsrc) {
-    // amdef-1019 sp_wellbalanced_src: plain flux divergences + the WB source
-    Real sw[3];
-    HydroAmWBSrc(v, m, k, j, i, sw);
-    tcode = rc*(-(fr1 - fl1) - (fr2 - fl2) - (fr3 - fl3) + sw[2]);
-  } else {
-    tcode = rc*(-(fr1 - fl1) - fac*(fl1 + fr1)) + rc*(-(fr2 - fl2))
-            + rc*(-(fr3 - fl3)) + rc*(-v.yovr(m,k,j,i)*(fl2 + fr2));
-  }
+  const Real tcode = rc*(-(fr1 - fl1) - fac*(fl1 + fr1)) + rc*(-(fr2 - fl2))
+                    + rc*(-(fr3 - fl3)) + rc*(-v.yovr(m,k,j,i)*(fl2 + fr2));
   const Real cl = cos(thl), cr = cos(thr);
   const Real sin2int = 0.5*(thr - thl) - 0.25*(sin(2.0*thr) - sin(2.0*thl));
   const Real dcos = cl - cr;
@@ -421,7 +211,7 @@ bool HydroAmTorque(const HydroAmV &v, const int m, const int k, const int j,
 
 
 //! \brief amdef-1019: the ab758e94 HydroAmTorque VERBATIM, for the plain source (no
-//! wellbalance_static / WB source / Cartesian polar rows, 3-D, an energy equation): a
+//! wellbalance_static, 3-D, an energy equation): a
 //! separate kernel, so the default path keeps its exact code generation (device FMA
 //! contraction) and stays bitwise with the previous production binary.
 KOKKOS_INLINE_FUNCTION
@@ -619,33 +409,25 @@ bool HydroAmVecTorque(const HydroAmV &v, const int m, const int k, const int j,
     Real d2 = 0.0, d3 = 0.0;
     for (int n=0; n<2; ++n) {
       const int nm = IM2 + n;
-      // (amdef-1019: under cs_wellbalanced_src the r-factor term is the WB source's)
-      const Real dfac = v.wbsrc ? 0.0 : fac;
       Real dd = -(v.f1(m,nm,k,j,i+1)*v.a1(m,k,j,i+1) - v.f1(m,nm,k,j,i)*v.a1(m,k,j,i))*ia
-                - dfac*(v.f1(m,nm,k,j,i)*v.a1(m,k,j,i)
-                        + v.f1(m,nm,k,j,i+1)*v.a1(m,k,j,i+1))*ia
+                - fac*(v.f1(m,nm,k,j,i)*v.a1(m,k,j,i)
+                       + v.f1(m,nm,k,j,i+1)*v.a1(m,k,j,i+1))*ia
                 - (v.f2(m,nm,k,j+1,i)*v.a2(m,k,j+1,i) - v.f2(m,nm,k,j,i)*v.a2(m,k,j,i))*ia
                 - (v.f3(m,nm,k+1,j,i)*v.a3(m,k+1,j,i) - v.f3(m,nm,k,j,i)*v.a3(m,k,j,i))*ia;
       if (n == 0) {d2 = dd;} else {d3 = dd;}
     }
     const Real sine = v.scell(m,k,j), sine2 = sine*sine;
-    if (v.wbsrc) {   // amdef-1019: cs_wellbalanced_src (SrcTermsCurvilinearWB)
-      Real sw[3];
-      HydroAmWBSrc(v, m, k, j, i, sw);
-      d2 += sw[1]*ia;
-      d3 += sw[2]*ia;
-    } else {   // the angular source incl. the Maxwell part (as HydroAmTorque)
-      Real ptot = pr, bb2 = 0.0, bb3 = 0.0;
-      if (v.mhd) {
-        const Real b1 = v.bcc(m,IBX,k,j,i), b2 = v.bcc(m,IBY,k,j,i);
-        const Real b3 = v.bcc(m,IBZ,k,j,i);
-        bb2 = (sine*b2 - c*b3)*(sine*b2 - c*b3);
-        bb3 = b3*b3;
-        ptot += 0.5*(b1*b1 + b2*b2 + b3*b3);
-      }
-      d2 += v.xovr(m,k,j,i)*(ptot + rho*v3*v3*sine2 - bb3);
-      d3 += v.yovr(m,k,j,i)*(ptot + rho*v2*v2*sine2 - bb2);
+    // the angular source incl. the Maxwell part (as HydroAmTorque)
+    Real ptot = pr, bb2 = 0.0, bb3 = 0.0;
+    if (v.mhd) {
+      const Real b1 = v.bcc(m,IBX,k,j,i), b2 = v.bcc(m,IBY,k,j,i);
+      const Real b3 = v.bcc(m,IBZ,k,j,i);
+      bb2 = (sine*b2 - c*b3)*(sine*b2 - c*b3);
+      bb3 = b3*b3;
+      ptot += 0.5*(b1*b1 + b2*b2 + b3*b3);
     }
+    d2 += v.xovr(m,k,j,i)*(ptot + rho*v3*v3*sine2 - bb3);
+    d3 += v.yovr(m,k,j,i)*(ptot + rho*v2*v2*sine2 - bb2);
     {
       const Real u2 = (d2 - c*d3)/s2, u3 = (d3 - c*d2)/s2;
       Real dp[3];
@@ -723,19 +505,6 @@ bool HydroAmVecTorque(const HydroAmV &v, const int m, const int k, const int j,
       d2 += -(v.f3(m,IM2,k+1,j,i)*v.a3(m,k+1,j,i) - v.f3(m,IM2,k,j,i)*v.a3(m,k,j,i))*ia;
       d3 += -(v.f3(m,IM3,k+1,j,i)*v.a3(m,k+1,j,i) - v.f3(m,IM3,k,j,i)*v.a3(m,k,j,i))*ia;
     }
-    if (HydroAmCartCell(v, m, j)) {
-      // amdef-1019 sp_cart_polar_momentum: the total change is -dcart/V (orthonormal)
-      Real dc[3];
-      HydroAmCartRows(v, m, k, j, i, dc);
-      d2 = -(dc[0]*b1[0] + dc[1]*b1[1] + dc[2]*b1[2])*ia;
-      d3 = -(dc[0]*b2[0] + dc[1]*b2[1] + dc[2]*b2[2])*ia;
-    } else if (v.wbsrc) {
-      // amdef-1019 sp_wellbalanced_src: plain flux divergences + the WB source
-      Real sw[3];
-      HydroAmWBSrc(v, m, k, j, i, sw);
-      d2 += sw[1]*ia;
-      d3 += sw[2]*ia;
-    } else {
     // SrcTermsSphericalPolar{Hydro,MHD}: m_pp = p + rho v3^2 (+ (b1^2 + b2^2 - b3^2)/2)
     Real mpp = pr + rho*v3*v3;
     if (v.mhd) {
@@ -746,7 +515,6 @@ bool HydroAmVecTorque(const HydroAmV &v, const int m, const int k, const int j,
     d3 += -v.yovr(m,k,j,i)*(v.f2(m,IM3,k,j,i)*v.a2(m,k,j,i)
                             + v.f2(m,IM3,k,j+1,i)*v.a2(m,k,j+1,i))*ia
           - fac*(fl1p + fr1p)*ia;
-    }
     {
       Real dp[3];
       for (int q = 0; q < 3; ++q) {dp[q] = (d2*b1[q] + d3*b2[q])*dv;}
@@ -942,8 +710,8 @@ class AmModule {
   // amdef-1019: am_transport DEFAULT (key not named): true on a fresh run on the cubed
   // sphere or on a multi-D spherical-polar mesh with <time>/evolution = dynamic (written
   // into the input so the restart file records it); false on a restart whose input lacks
-  // the key (the old default kept), on a 1-D spherical-polar mesh, in 2-D with
-  // sp_cart_polar_momentum, and (silently) on every other mesh.  The module exists when
+  // the key (the old default kept), on a 1-D spherical-polar mesh, and (silently) on
+  // every other mesh.  The module exists when
   // DefaultOn || Named.  Prints one line (rank 0) on cs / sp when it decides.
   static bool DefaultOn(MeshBlockPack *ppack, ParameterInput *pin, const std::string &blk);
   bool am_default = false;   // am_transport set by DefaultOn (not named)

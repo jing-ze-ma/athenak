@@ -62,8 +62,8 @@ void PgenEarlyDefaults(ParameterInput *pin) {
   // <fluid>/am_vector = true with problem/am_transport = false (the angular-momentum
   // vector form + spin reservoir, as every dhj production deck; the pgen correction must
   // be off with it, YieldToPgen FATAL otherwise).  Only as the PAIR, on the cubed sphere
-  // or the spherical-polar mesh (share-1104 G4; AmModule's own exclusions: 1-D sp and
-  // 2-D sp with sp_cart_polar_momentum; no angular momentum on the Cartesian box), when
+  // or the spherical-polar mesh (share-1104 G4; AmModule's own exclusion: 1-D sp; no
+  // angular momentum on the Cartesian box), when
   // neither the fluid's AM keys nor problem/am_transport are named.
   if (fluid && !named(fb, "am_vector") && !named(fb, "am_transport") &&
       !named(fb, "frame_omega") && !named("problem", "am_transport")) {
@@ -72,15 +72,7 @@ void PgenEarlyDefaults(ParameterInput *pin) {
       why = "Cartesian mesh";
     } else if (sp) {
       const int nx2 = named("mesh", "nx2") ? pin->GetInteger("mesh", "nx2") : 1;
-      const int nx3 = named("mesh", "nx3") ? pin->GetInteger("mesh", "nx3") : 1;
-      auto on = [pin, &named, &fb](const char *k) {
-        return named(fb, k) && pin->GetBoolean(fb, k);
-      };
-      if (nx2 < 2) {
-        why = "1-D spherical polar";
-      } else if (nx3 < 2 && (on("sp_cart_polar_momentum") || on("sp_cart_all_momentum"))) {
-        why = "2-D spherical polar with sp_cart_polar_momentum";
-      }
+      if (nx2 < 2) why = "1-D spherical polar";
     }
     if (why.empty()) {
       pin->GetOrAddBoolean(fb, "am_vector", true);

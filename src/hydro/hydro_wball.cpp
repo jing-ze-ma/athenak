@@ -45,13 +45,6 @@ namespace hydro {
 
 void WbAllBuild(WbAllCtx &c) {
   WBALL_ALIASES;
-  if (pmy_pack->pmesh->use_spherical_polar &&
-      (pmy_pack->pcoord->sp_cart_polar_momentum || pmy_pack->pcoord->sp_wellbalanced_src)) {
-    std::cout << "### FATAL ERROR in hydro_wball: <hydro>/wb_dirs = all on spherical "
-              << "polar needs the default sp momentum/source (no sp_cart_polar_momentum, "
-              << "sp_cart_all_momentum, sp_wellbalanced_src)" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int ng = indcs.ng;
   const int n1 = indcs.nx1 + 2*ng;
@@ -317,11 +310,6 @@ void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1) {
     // (GnomonicEquiangleFluxX2/X3) and the coordinate source x_ov_rD / y_ov_rC take it:
     // S_a = [A+ s+ (p_bg,+ - p_c) - A- s- (p_bg,- - p_c)]/V (+ the linearised analytic
     // part with the same weights)
-    if (pmy_pack->pcoord->cs_wellbalanced_src) {
-      std::cout << "### FATAL ERROR in hydro_wball: <hydro>/wb_dirs = all on the cubed "
-                << "sphere needs cs_wellbalanced_src = false" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     auto vol = pmy_pack->pcoord->volume;
     auto a1 = pmy_pack->pcoord->area.x1f, a2 = pmy_pack->pcoord->area.x2f;
     auto a3 = pmy_pack->pcoord->area.x3f;

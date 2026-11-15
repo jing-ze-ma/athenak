@@ -159,19 +159,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const bool mhd = (pam->pmhd != nullptr);
     const bool wbs = mhd ? pam->pmhd->use_wellbalance_static
                          : pam->phydro->use_wellbalance_static;
-    Coordinates *pco = pam->pcoord;
     // the source variants AmCell replicates: the plain cs / sp angular sources.  Any
     // other one is named here (user 10-01: explicit, never a silent default off)
     std::string bad = "";
     if (wbs) bad = mhd ? "<mhd>/wellbalance_static" : "<hydro>/wellbalance_static";
-    if (pmy_mesh_->use_cubed_sphere && pco->cs_wellbalanced_src) {
-      bad = "cs_wellbalanced_src";
-    }
-    if (use_spherical_polar && pco->sp_wellbalanced_src) bad = "sp_wellbalanced_src";
-    if (use_spherical_polar && pco->sp_cart_polar_momentum) {
-      bad = "sp_cart_polar_momentum";
-    }
-    if (use_spherical_polar && pco->sp_face_avg) bad = "sp_face_avg";
     const bool trq_ok = curv && bad.empty();
     {
       const std::string sm = pin->DoesParameterExist("problem","sponge_top_mode")
@@ -248,8 +239,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if ((amh::trans || amh::split) && !trq_ok) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "problem/am_transport and am_hst_split replicate the "
-                << "plain angular source only: not with cs/sp_wellbalanced_src, "
-                << "wellbalance_static, sp_cart_polar_momentum or sp_face_avg"
+                << "plain angular source only: not with wellbalance_static"
                 << std::endl;
       exit(EXIT_FAILURE);
     }

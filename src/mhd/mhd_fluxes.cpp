@@ -357,8 +357,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // hydro, MHD already computes this sweep over exactly those transverse ranges
   // UNCONDITIONALLY -- the corner-EMF stencil needs them -- so no fofc widening is
   // required here (nor in the x2/x3 sweeps, which run over is-1,ie+1 in x1 and
-  // js-1,je+1 in x2 for the same reason). There is no MHD counterpart of the
-  // spherical-polar face-average (sp_favg) widening, so there is nothing to union with.
+  // js-1,je+1 in x2 for the same reason).
 
   // the well-balanced background of every cell in this sweep, walked once
 
@@ -1488,12 +1487,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         }
       } // end loop over k
     });
-  }
-
-  // whole-mesh Cartesian momentum on spherical polar: fourth-order face averages of the
-  // hydrodynamic fluxes (see Coordinates::SphericalPolarFaceAverageFluxes)
-  if (pmy_pack->pcoord->sp_cart_all_momentum) {
-    pmy_pack->pcoord->SphericalPolarFaceAverageFluxes(uflx, IEN+1);
   }
 
   return;

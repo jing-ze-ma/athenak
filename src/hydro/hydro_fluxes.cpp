@@ -219,8 +219,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
 
-  const bool sp_favg_ = pmy_pack->pcoord->sp_cart_all_momentum &&
-                        pmy_pack->pcoord->sp_face_avg;
   // set the loop limits for 1D/2D/3D problems
   int il = is, iu = ie+1, jl = js, ju = je, kl = ks, ku = ke;
   if (use_fofc) {
@@ -639,17 +637,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
     // set the loop limits for 1D/2D/3D problems
     il = is, iu = ie, jl = js-1, ju = je+1, kl = ks, ku = ke;
-    // BOTH widenings apply when both are on: FOFC needs the flux one cell beyond every
-    // flagged cell, and the sp face-average stencils read the x2 fluxes at i +- 1 and
-    // k +- 1. Written as `else if` the sp widening was dropped whenever fofc was on and
-    // the face averages then read stale x2 fluxes. (The FOFC ranges happen to contain
-    // the sp ones in every direction, so this is a no-op today; it is written as a
-    // UNION so that it stays correct if either widening changes.)
-    if (use_fofc || sp_favg_) {
-      il = is-1, iu = ie+1;
-      if (use_fofc) {
-        jl = js-2, ju = je+2;
-      }
+    // FOFC needs the flux one cell beyond every flagged cell
+    if (use_fofc) {
+      il = is-1, iu = ie+1, jl = js-2, ju = je+2;
       if (!pmy_pack->pmesh->two_d) {
         kl = ks-1, ku = ke+1;
       }
@@ -998,13 +988,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
     // set the loop limits
     il = is, iu = ie, jl = js, ju = je, kl = ks-1, ku = ke+1;
-    // the union of both widenings; see the note in the x2 sweep. The face-average
-    // stencils read the x3 fluxes at i +- 1 and j +- 1 (the polar ghost row included).
-    if (use_fofc || sp_favg_) {
-      il = is-1, iu = ie+1, jl = js-1, ju = je+1;
-      if (use_fofc) {
-        kl = ks-2, ku = ke+2;
-      }
+    if (use_fofc) {
+      il = is-1, iu = ie+1, jl = js-1, ju = je+1, kl = ks-2, ku = ke+2;
     }
 
     scr_level = TeamScratchLevel(scr_size, scratch_level);
@@ -1302,12 +1287,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         }
       } // end loop over k
     });
-  }
-
-  // whole-mesh Cartesian momentum on spherical polar: fourth-order face averages of the
-  // fluxes (see Coordinates::SphericalPolarFaceAverageFluxes)
-  if (pmy_pack->pcoord->sp_cart_all_momentum) {
-    pmy_pack->pcoord->SphericalPolarFaceAverageFluxes(uflx, nhydro);
   }
 
   return;

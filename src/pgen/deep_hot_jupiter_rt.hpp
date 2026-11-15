@@ -232,9 +232,8 @@ void DhjCycleDiag(Mesh *pm);
 //   DEFAULTS (user 10-01): both ON whenever the rotating frame is (user_srcs, omega != 0,
 //     cubed sphere or spherical polar), OFF otherwise, so non-rotating runs are bitwise
 //     unchanged.  A rotating run with a source variant am_transport does not
-//     replicate (cs/sp_wellbalanced_src, wellbalance_static, sp_cart_polar_momentum,
-//     sp_face_avg) stops with a FATAL naming it, unless problem/am_transport = false is
-//     set explicitly; a rotating run with either key false prints a WARNING that L_abs
+//     replicate (wellbalance_static) stops with a FATAL naming it, unless
+//     problem/am_transport = false is set explicitly; a rotating run with either key false prints a WARNING that L_abs
 //     drifts.  Read without recording; the startup log prints the effective values.
 //   problem/am_hst (DIAGNOSTIC, default false; read without recording it): eight more
 //     history columns after the flux columns, see DhjFluxHistory and AmHstStage.
