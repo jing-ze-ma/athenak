@@ -159,23 +159,19 @@ void RadiationM1::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
 //! \fn void RadiationM1::CleanClosureAfterSolve
 //! \brief clean_closure = extrap(2): the ray moments of a converged solution.  The last
 //! solve of a step gives the moments at t^{n+1} (used from the next step on); with
-//! extrap2 the stage-1 solve gives those at the stage-1 time.  extrap1 runs no formal
-//! solution here: the closure of the stage-1 solve (rays of its first iterate, a state at
-//! t^{n+1}) gives the moments at t^{n+1}; a backward-Euler step leaves none and the
-//! history starts again.
+//! extrap2 the stage-1 solve gives those at the stage-1 time.  With extrap1 only a
+//! backward-Euler step runs the formal solution here; after a stage step the closure of
+//! the stage-1 solve (rays of its first iterate, a state at t^{n+1}) gives the moments.
 
 void RadiationM1::CleanClosureAfterSolve() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
-  if (cln_extrap == 3) {
-    if (t2_solve == M1_T2S_STAGE1) {
-      CleanRayMoments(cln_mc, false);
-      cln_tm = time + dt;
-      cln_have_c = true;
-    } else if (t2_solve != M1_T2S_STAGE2) {
-      cln_have_c = false;
-      cln_have_n = false;
-    }
+  if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE2) return;
+  if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE1) {
+    CleanRayMoments(cln_mc, false);
+    cln_tm = time + dt;
+    cln_have_c = true;
+    cln_cand_be = false;
     return;
   }
   if (t2_solve == M1_T2S_STAGE1) {
