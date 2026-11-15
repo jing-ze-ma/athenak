@@ -191,16 +191,17 @@ int WBOptionNumber(const EOS_Data &eos, const WBOption wb_option,
 //! \brief solves (e + p(d,e))/d = h for e at fixed d, by Newton iteration.
 //!
 //! This is what turns h + Phi = const from an identity into something usable.  Along a
-//! hydrostatic isentrope dh = dp/d and dp/dPhi = -d, so h + Phi is EXACTLY conserved, with
-//! no EOS entering at all.  That single relation does not determine the state -- it is one
-//! equation in (d,e), and the missing half is which adiabat -- but once d has been obtained
-//! some other way, it pins e down exactly, and the background then satisfies hydrostatic
-//! equilibrium to machine precision rather than to the accuracy of the density step.
+//! hydrostatic isentrope dh = dp/d and dp/dPhi = -d, so h + Phi is EXACTLY conserved,
+//! with no EOS entering at all.  That single relation does not determine the state -- it
+//! is one equation in (d,e), and the missing half is which adiabat -- but once d has been
+//! obtained some other way, it pins e down exactly, and the background then satisfies
+//! hydrostatic equilibrium to machine precision rather than to the accuracy of the
+//! density step.
 //!
-//! f(e) = e + p(d,e) - d h is monotonically increasing in e, and f'(e) = 1 + (dp/de)_d with
-//! (dp/de)_d = p chi_T/(d T c_v).  For an ideal gas f is linear and the first iteration is
-//! exact, after which the residual is zero and the loop leaves e untouched -- so a gamma
-//! law reproduces the closed-form answer bitwise.
+//! f(e) = e + p(d,e) - d h is monotonically increasing in e, and f'(e) = 1 + (dp/de)_d
+//! with (dp/de)_d = p chi_T/(d T c_v).  For an ideal gas f is linear and the first
+//! iteration is exact, after which the residual is zero and the loop leaves e untouched
+//! -- so a gamma law reproduces the closed-form answer bitwise.
 
 //! `t_out` receives the temperature of the last iterate, which the caller reuses instead
 //! of solving the root find again on the converged e. The two differ only by the residual
@@ -245,15 +246,15 @@ Real WBEnergyFromEnthalpy(const EOS_Data &eos, const Real d, const Real h,
 //! \brief advances the background state by dphi along one segment of the stencil walk,
 //! with the thermodynamic coefficient frozen at (d_c,e_c).
 //!
-//! The ideal-gas getWBerho() reaches a neighbouring cell centre in TWO segments: the inner
-//! half cell uses the anchor cell's own coefficient, the outer half cell the neighbour's.
-//! That is not an accident -- when the flow does not exactly satisfy the assumed
-//! constraint, letting the neighbour speak for its own half cell tracks the real profile
-//! more closely and leaves a smaller deviation to reconstruct.  Measured on an isothermal
-//! atmosphere reconstructed with the (deliberately wrong) isodensity and isentropic
-//! backgrounds, integrating everything from the anchor instead inflates the residual
-//! hydrostatic imbalance by about a factor of three.  So the general-EOS background walks
-//! the same two segments, and this is the single-segment step.
+//! The ideal-gas getWBerho() reaches a neighbouring cell centre in TWO segments: the
+//! inner half cell uses the anchor cell's own coefficient, the outer half cell the
+//! neighbour's. That is not an accident -- when the flow does not exactly satisfy the
+//! assumed constraint, letting the neighbour speak for its own half cell tracks the real
+//! profile more closely and leaves a smaller deviation to reconstruct.  Measured on an
+//! isothermal atmosphere reconstructed with the (deliberately wrong) isodensity and
+//! isentropic backgrounds, integrating everything from the anchor instead inflates the
+//! residual hydrostatic imbalance by about a factor of three.  So the general-EOS
+//! background walks the same two segments, and this is the single-segment step.
 //!
 //! `t` returns the temperature of the state this leaves behind, which every branch knows
 //! for free: the isodensity branch gets it out of the pressure inversion, the isothermal
@@ -376,20 +377,20 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real
   } else {
     // ISENTROPIC.  Two steps, neither of which needs an entropy function.
     //
-    // (a) DENSITY, from a local power-law adiabat.  For a gamma law the exact statement is
-    // that d^(gamma-1) is linear in Phi with slope -(gamma-1)/gamma * d_c^gamma/p_c, which
-    // is getWBerho's isentropic branch.  Gamma_1 is precisely the exponent that plays
-    // gamma's role here -- (dln p/dln d) at constant entropy -- so using Gamma_1 of the
-    // COEFFICIENT CELL gives the same step for a general EOS.  This is not the discredited
-    // "substitute Gamma_1 into the closed form" move: that failed because p = (gamma-1)e
-    // is an ideal-gas identity applied globally, whereas Gamma_1 is used here only as a
-    // local coefficient over half a cell, exactly the role the adiabat constant plays in
-    // the ideal-gas expression.  It reduces to that expression identically when Gamma_1 is
-    // constant, and re-anchors to the neighbouring cell in the same way.
+    // (a) DENSITY, from a local power-law adiabat.  For a gamma law the exact statement
+    // is that d^(gamma-1) is linear in Phi with slope -(gamma-1)/gamma * d_c^gamma/p_c,
+    // which is getWBerho's isentropic branch.  Gamma_1 is precisely the exponent that
+    // plays gamma's role here -- (dln p/dln d) at constant entropy -- so using Gamma_1 of
+    // the COEFFICIENT CELL gives the same step for a general EOS.  This is not the
+    // discredited "substitute Gamma_1 into the closed form" move: that failed because p =
+    // (gamma-1)e is an ideal-gas identity applied globally, whereas Gamma_1 is used here
+    // only as a local coefficient over half a cell, exactly the role the adiabat constant
+    // plays in the ideal-gas expression.  It reduces to that expression identically when
+    // Gamma_1 is constant, and re-anchors to the neighbouring cell in the same way.
     //
     // (b) ENERGY, from the exact invariant h + Phi = const.  The density step carries the
-    // error of freezing Gamma_1; projecting the energy onto the invariant keeps that error
-    // out of the pressure-gravity balance entirely.
+    // error of freezing Gamma_1; projecting the energy onto the invariant keeps that
+    // error out of the pressure-gravity balance entirely.
     Real t_h = (tstart > 0.0) ? tstart : eos.Temperature(d, e, tguess);
     Real h_target = eos.Enthalpy(d, e, t_h) - dphi;
     // Gamma_1 and p are both wanted at the coefficient cell; one temperature serves both

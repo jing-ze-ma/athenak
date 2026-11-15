@@ -4,7 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file mhd_etotgrav.cpp
-//! \brief Implements functions for including time-independent gravitational potential energy in the energy conservation.
+//! \brief Implements functions for including time-independent gravitational potential
+//! energy in the energy conservation.
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"

@@ -12,8 +12,8 @@
 //! <hydro|mhd>/etotgrav where supported, <rad_m1>/implicit_solver = bicgstab,
 //! <rad_m1>/implicit_resid_fatal = 1e-2, problem/theta_wall_closed with theta_bc = hse;
 //! <time>/dt_retry = true was already the fresh default) apply when NewDefaults():
-//!   <job>/recipe not named    : a FRESH run (a restart whose input lacks a key keeps that
-//!                               key's OLD default and says so: running chains unchanged)
+//!   <job>/recipe not named    : a FRESH run (a restart whose input lacks a key keeps
+//! that key's OLD default and says so: running chains unchanged)
 //!   <job>/recipe = prod1019   : fresh AND restart (a preset: the same values; explicit
 //!                               keys in the deck / on the command line still win)
 //!   <job>/recipe = none       : never: every key takes its pre-10-19 default exactly

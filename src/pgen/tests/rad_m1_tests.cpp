@@ -614,7 +614,8 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     // region in a thinner, cooler medium, gas at rest, E = arad T^4, F = 0, evolved as
     // rad-hydro.  The region is an ellipsoid with semi-axes blob_a1..a3 about
     // (blob_x1, blob_x2, blob_x3); a semi-axis <= 0 drops that direction, so (a, 0, 0) is
-    // a slab normal to x1 and (a, a, a) a sphere.  Smooth edge: s = (1 - tanh((r-1)/w))/2.
+    // a slab normal to x1 and (a, a, a) a sphere.  Smooth edge: s = (1 -
+    // tanh((r-1)/w))/2.
     m1_test_id = 10;
     Real rc = pin->GetReal("problem","blob_rho");
     Real tc = pin->GetReal("problem","blob_temp");

@@ -71,8 +71,10 @@ struct CsEdgeOps {
       // the transverse J at the vertex point from the point-reflected
       // pairs (one in each seam ghost region), not through the corner cell's edges
       const int dj = (vx.jn < vx.jv) ? 1 : -1, dk = (vx.kn < vx.kv) ? 1 : -1;
-      auto p2 = [&](const int ii) {return 0.5*(jn.x2e(m,k-dk,vx.jv,ii) + jn.x2e(m,k+dk,vx.jn,ii));};
-      auto p3 = [&](const int ii) {return 0.5*(jn.x3e(m,vx.kn,j+dj,ii) + jn.x3e(m,vx.kv,j-dj,ii));};
+      auto p2 = [&](const int ii) {return 0.5*(jn.x2e(m,k-dk,vx.jv,ii)
+                                               + jn.x2e(m,k+dk,vx.jn,ii));};
+      auto p3 = [&](const int ii) {return 0.5*(jn.x3e(m,vx.kn,j+dj,ii)
+                                               + jn.x3e(m,vx.kv,j-dj,ii));};
       s.ju1 = 0.5*(p2(i) + p2(i+1))/s.sn;
       s.ju2 = 0.5*(p3(i) + p3(i+1))/s.sn;
     }

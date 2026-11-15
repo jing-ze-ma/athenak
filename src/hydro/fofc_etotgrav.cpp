@@ -37,7 +37,8 @@ void FofcTrialRemoveGrav(MeshBlockPack *pp, DvceArray5D<Real> utest,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     bool drop2 = false, drop3 = false;
     if (v3_) {
-      CsVertexFofcDrop(vnb_.d_view, vpn_.d_view, m, k, j, js, je, ks, ke, ng_, drop2, drop3);
+      CsVertexFofcDrop(vnb_.d_view, vpn_.d_view, m, k, j, js, je, ks, ke, ng_, drop2,
+                       drop3);
     }
     const Real divg = FofcGravDiv(m, k, j, i, curv, multi_d && !drop2, three_d && !drop3,
                                   beta_dt, flx_,
