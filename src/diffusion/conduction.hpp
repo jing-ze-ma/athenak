@@ -217,7 +217,7 @@ class Conduction {
   //     spherical-polar paths included, since those live inside the same two kernels;
   //   * BuildAngularCoeffs returns immediately, so no frozen transverse conductance,
   //     no cap_x/cap_c2/cap_c3 and no rad_cap_ang report are built (this also covers the
-  //     problem generators that call it themselves under problem/rt_split_transverse);
+  //     problem generators that call it themselves under an operator split);
   //   * NewTimeStep drops the transverse conduction limits dt2 and dt3.
   // Everything RADIAL is untouched: the x1 face flux, rad_implicit_x1, the tau blend
   // (rad_tau_lo/hi), rad_flux_inner and the two-stream hand-over
@@ -276,8 +276,7 @@ class Conduction {
   bool rad_implicit_ang = false;
   // rad_tr_split_out (set by a problem generator, not by the input file): the TRANSVERSE
   // operator has been taken OUT of the RK stage and is run by the same operator-split
-  // step that runs the radiation column (red_giant's problem/rt_strang, through
-  // problem/rt_split_transverse; box_convection's problem/rt_col3_sub).  Hydro::/MHD::
+  // step that runs the radiation column (red_giant's problem/rt_strang).  Hydro::/MHD::
   // ImplicitTransverseConduction is then a no-op: solving here as well would apply the
   // operator twice a stage.
   bool rad_tr_split_out = false;
