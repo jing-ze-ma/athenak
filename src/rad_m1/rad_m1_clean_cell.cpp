@@ -201,8 +201,8 @@ void RadiationM1::CleanCellConsistency() {
       // an open x1 boundary face: the rays' flux through it (CLN_F1 of the inner cell),
       // against the boundary flux of Ur with its source
       for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = 0.0;
-      const bool bdry = CleanBoundaryFace(x, dir, k, j, i), blo = (i == x.is);
-      if (bdry && (dir != 0 || x.bc[blo ? 0 : 1] == M1_IBC_REFLECT)) return;
+      const bool bdry = CleanBoundaryFace(x, dir, m, k, j, i), blo = (i == x.is);
+      if (bdry && (dir != 0 || CleanBc(x, m, blo ? 0 : 1) == M1_IBC_REFLECT)) return;
       const int kl = k - dk, jl = j - dj, il = i - di;
       const int n = bdry ? CLN_F1 : ((dir == 0) ? CLN_FX : CLN_F2);
       Real f[4], fr[4] = {0.0, 0.0, 0.0, 0.0};
@@ -751,7 +751,7 @@ Real RadiationM1::CleanCellNewtonUpdate() {
     d_max = fmax(d_max, d);
     e_max = fmax(e_max, fabs(e));
   }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(emax));
-  return fmax(de_newton, dmax/fmax(emax, 1.0e-300));
+  return fmax(de_newton, CleanReduce(dmax, true)/fmax(CleanReduce(emax, true), 1.0e-300));
 }
 
 //----------------------------------------------------------------------------------------
@@ -814,7 +814,7 @@ Real RadiationM1::CleanCellVelocityUpdate() {
   cln_fe = std::numeric_limits<Real>::epsilon()*femax;
   cln_fv = std::numeric_limits<Real>::epsilon()*fvmax/fmax(vmax, 1.0e-300);
   if (cln_vfreeze != 1) CleanAdvectiveCoefficients();
-  return dvmax/fmax(vmax, 1.0e-300);
+  return CleanReduce(dvmax, true)/fmax(CleanReduce(vmax, true), 1.0e-300);
 }
 
 //----------------------------------------------------------------------------------------
@@ -867,7 +867,7 @@ int RadiationM1::CleanCellCountNegative() {
     int i = idx - m*nkji - k*nji - j*nx1;
     b_max = fmax(b_max, fabs(w(m,CLW_B,k+ks,j+js,i+is)));
   }, Kokkos::Max<Real>(bmax));
-  const Real zero = 10.0*cln_tol*bmax;
+  const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
   Real nreal = 0.0;
   Kokkos::parallel_reduce("clc_neg_out", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nkji),
@@ -885,33 +885,27 @@ int RadiationM1::CleanCellCountNegative() {
                              SQR(u(m,CLC_X+3,k,j,i)));
     if (y > (1.0 + 1.0e-12)*e + zero) n += 1.0;
   }, Kokkos::Sum<Real>(nreal));
-  cln_nnreal = static_cast<int>(nreal);
+  cln_nnreal = static_cast<int>(CleanReduce(nreal, false));
   return nneg;
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanCellMarkFaces
 //! \brief marks every face of the cells whose solution has E < 0 or |F| > c E (beyond
-//! the solver tolerance, 10 clean_tol max|B_E|) as low-order.  Returns the number of
-//! such cells.
+//! the solver tolerance, 10 clean_tol max|B_E|) as low-order.  The flags of these cells
+//! (cln_v slot 1) take the ghost exchange, so that a face shared by two MeshBlocks is
+//! marked on both.  Returns the number of such cells.
 
 int RadiationM1::CleanCellMarkFaces() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
   int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   int nmb = pmy_pack->nmb_thispack;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
-  const bool multi_d = pmy_pack->pmesh->multi_d;
-  const bool three_d = pmy_pack->pmesh->three_d;
-  const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
-  // faces on a physical boundary are marked only with clean_pos_boundary; with
-  // clean_pos_ghost they take the upwind stress against the ghost instead
-  const bool ug = cln_posghost;
-  const bool b1 = cln_posbdry || ibc_x1min == M1_IBC_PERIODIC;
-  const bool b2 = cln_posbdry || ibc_x2min == M1_IBC_PERIODIC;
-  const bool b3 = cln_posbdry || ibc_x3min == M1_IBC_PERIODIC;
   auto u = cln_x;
-  auto fc1 = cln_fc1, fc2 = cln_fc2, fc3 = cln_fc3;
+  auto bad = cln_v;
 
   Real bmax = 0.0;
   Kokkos::parallel_reduce("clc_bmax", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
@@ -922,9 +916,9 @@ int RadiationM1::CleanCellMarkFaces() {
     int i = idx - m*nkji - k*nji - j*nx1;
     b_max = fmax(b_max, fabs(u(m,CLC_B,k+ks,j+js,i+is)));
   }, Kokkos::Max<Real>(bmax));
-  const Real zero = 10.0*cln_tol*bmax;
+  const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
   Real nbad = 0.0;
-  Kokkos::parallel_reduce("clc_mark", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  Kokkos::parallel_reduce("clc_bad", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &n) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
@@ -936,23 +930,35 @@ int RadiationM1::CleanCellMarkFaces() {
     const Real e = u(m,CLC_X,k,j,i);
     const Real y = std::sqrt(SQR(u(m,CLC_X+1,k,j,i)) + SQR(u(m,CLC_X+2,k,j,i)) +
                              SQR(u(m,CLC_X+3,k,j,i)));
-    if (e >= -zero && y <= (1.0 + 1.0e-12)*e + zero) return;
-    n += 1.0;
-    auto mark = [&](const DvceArray5D<Real> &fc, const bool in, const int kk,
-                    const int jj, const int ii) {
-      if (in || ug) fc(m,in ? CLF_LO : CLF_UG,kk,jj,ii) = 1.0;
-    };
-    mark(fc1, b1 || i > is, k, j, i);
-    mark(fc1, b1 || i < ie, k, j, i+1);
-    if (multi_d) {
-      mark(fc2, b2 || j > js, k, j, i);
-      mark(fc2, b2 || j < je, k, j+1, i);
-    }
-    if (three_d) {
-      mark(fc3, b3 || k > ks, k, j, i);
-      mark(fc3, b3 || k < ke, k+1, j, i);
-    }
+    const bool b = !(e >= -zero && y <= (1.0 + 1.0e-12)*e + zero);
+    bad(m,1,k,j,i) = b ? 1.0 : 0.0;
+    if (b) n += 1.0;
   }, Kokkos::Sum<Real>(nbad));
+  nbad = CleanReduce(nbad, false);
+  if (nbad == 0.0) return 0;
+  CleanGhostFill(cln_v, 1, 1);
+
+  // faces on a physical boundary are marked only with clean_pos_boundary; with
+  // clean_pos_ghost they take the upwind stress against the ghost instead
+  const bool posbdry = cln_posbdry, ug = cln_posghost;
+  CleanArgs x = CleanMakeArgs();
+  for (int dir = 0; dir < x.nf; ++dir) {
+    auto fc = x.fc[dir];
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    par_for("clc_mark", DevExeSpace(), 0, nmb-1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real bl = bad(m,1,k-dk,j-dj,i-di), br = bad(m,1,k,j,i);
+      if (!CleanBoundaryFace(x, dir, m, k, j, i)) {
+        if (bl > 0.0 || br > 0.0) fc(m,CLF_LO,k,j,i) = 1.0;
+        return;
+      }
+      const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
+      const int lo = (dir == 0) ? is : ((dir == 1) ? js : ks);
+      if (((pos == lo) ? br : bl) > 0.0 && (posbdry || ug)) {
+        fc(m,posbdry ? CLF_LO : CLF_UG,k,j,i) = 1.0;
+      }
+    });
+  }
   return static_cast<int>(nbad);
 }
 
@@ -968,17 +974,14 @@ void RadiationM1::CleanCellAllLowOrder() {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  for (int dir = 0; dir < 3; ++dir) {
-    if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;
-    if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
-    auto fc = (dir == 0) ? cln_fc1 : ((dir == 1) ? cln_fc2 : cln_fc3);
+  const bool posbdry = cln_posbdry;
+  CleanArgs x = CleanMakeArgs();
+  for (int dir = 0; dir < x.nf; ++dir) {
+    auto fc = x.fc[dir];
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    const int bc = (dir == 0) ? ibc_x1min : ((dir == 1) ? ibc_x2min : ibc_x3min);
-    const int off = (cln_posbdry || bc == M1_IBC_PERIODIC) ? 0 : 1;
-    par_for("clc_alllow", DevExeSpace(), 0, nmb1, ks + off*dk, ke + (1-off)*dk,
-            js + off*dj, je + (1-off)*dj, is + off*di, ie + (1-off)*di,
+    par_for("clc_alllow", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      fc(m,CLF_LO,k,j,i) = 1.0;
+      if (posbdry || !CleanBoundaryFace(x, dir, m, k, j, i)) fc(m,CLF_LO,k,j,i) = 1.0;
     });
   }
 }

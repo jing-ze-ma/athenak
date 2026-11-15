@@ -3889,7 +3889,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   auto &mindcs = pmy_pack->pmesh->mesh_indcs;
   part_nblk = 1;
-  if (mindcs.nx1 != indcs.nx1) {
+  if (!clean && mindcs.nx1 != indcs.nx1) {   // the clean solve has its own exchange
     if (impl_part != M1_IPART_GATHER) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1>/transport = implicit_x1 with implicit_partition = none "

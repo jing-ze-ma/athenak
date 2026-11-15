@@ -2927,6 +2927,7 @@ class RadiationM1 {
   CleanArgs CleanMakeArgs();
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc);
   Real CleanDot(DvceArray5D<Real> w, const int nc, const int a, const int b);
+  Real CleanReduce(Real v, const bool max);
   // cell-centred layout (<rad_m1>/clean_layout = cell, rad_m1_clean_cell.cpp)
   void CleanCellOldVector();
   void CleanCellFaceCoefficients();
@@ -3011,6 +3012,11 @@ class RadiationM1 {
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
+  struct CleanHalo {            // ghost exchange of nc components: scratch array,
+    DvceArray5D<Real> a, ca;    // its coarse dummy and the exchange object
+    std::unique_ptr<MeshBoundaryValuesCC> pb;
+  };
+  std::map<int, CleanHalo> cln_halo;   // by nc
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
   void ImplicitPartitionInit();

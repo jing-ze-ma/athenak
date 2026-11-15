@@ -221,11 +221,11 @@ KOKKOS_INLINE_FUNCTION
 void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const int k,
                          const int j, const int i, Real s[4]) {
   for (int r = 0; r < 4; ++r) s[r] = x.consist ? x.fc[dir](m,CLF_CB+r,k,j,i) : 0.0;
-  if (!CleanBoundaryFace(x, dir, k, j, i)) return;
+  if (!CleanBoundaryFace(x, dir, m, k, j, i)) return;
   const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
   const bool low = (pos == lo);
-  if (x.bc[2*dir + (low ? 0 : 1)] == M1_IBC_REFLECT) return;
+  if (CleanBc(x, m, 2*dir + (low ? 0 : 1)) == M1_IBC_REFLECT) return;
   if (x.fc[dir](m,CLF_LO,k,j,i) > 0.0) {
     // the ghost sits outside the face; its closure is read from the inner cell
     const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
@@ -281,10 +281,10 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
       jr[r][c] = 0.0;
     }
   }
-  const bool blo = (pos == lo && x.bc[2*dir] != M1_IBC_PERIODIC);
-  const bool bhi = (pos == hi && x.bc[2*dir+1] != M1_IBC_PERIODIC);
+  const bool blo = (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC);
+  const bool bhi = (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC);
   if (blo || bhi) {
-    const int bc = blo ? x.bc[2*dir] : x.bc[2*dir+1];
+    const int bc = blo ? CleanBc(x, m, 2*dir) : CleanBc(x, m, 2*dir+1);
     Real (*jj)[4] = blo ? jr : jl;
     const int kc = blo ? k : kl, jc = blo ? j : jl_, ic = blo ? i : il;
     if (bc == M1_IBC_REFLECT) {
@@ -359,7 +359,7 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
       f[r] += jl[r][c]*x.u(m,v+c,kl,jl_,il) + jr[r][c]*x.u(m,v+c,k,j,i);
     }
   }
-  const bool bdry = CleanBoundaryFace(x, dir, k, j, i);
+  const bool bdry = CleanBoundaryFace(x, dir, m, k, j, i);
   if (with_source && (bdry || x.consist)) {
     Real s[4];
     CleanCellFaceSource(x, dir, m, k, j, i, s);
@@ -419,11 +419,11 @@ void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, con
     if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
     const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
     Real s[4];
-    if (x.consist || CleanBoundaryFace(x, dir, k+dk, j+dj, i+di)) {
+    if (x.consist || CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di)) {
       CleanCellFaceSource(x, dir, m, k+dk, j+dj, i+di, s);
       for (int r = 0; r < 4; ++r) div[r] += x.h*x.idx[dir]*s[r];
     }
-    if (x.consist || CleanBoundaryFace(x, dir, k, j, i)) {
+    if (x.consist || CleanBoundaryFace(x, dir, m, k, j, i)) {
       CleanCellFaceSource(x, dir, m, k, j, i, s);
       for (int r = 0; r < 4; ++r) div[r] -= x.h*x.idx[dir]*s[r];
     }

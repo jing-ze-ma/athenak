@@ -17,6 +17,10 @@
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_clean_cell.hpp"
 
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
+
 namespace radm1 {
 //----------------------------------------------------------------------------------------
 //! \fn CleanArgs RadiationM1::CleanMakeArgs
@@ -45,6 +49,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.bc[3] = ibc_x2max;
   x.bc[4] = ibc_x3min;
   x.bc[5] = ibc_x3max;
+  x.mbc = pmy_pack->pmb->mb_bcs.d_view;
   for (int n = 0; n < 6; ++n) x.ebath[n] = 0.0;
   x.ebath[0] = iebath_x1min;
   x.ebath[1] = iebath_x1max;
@@ -69,40 +74,82 @@ CleanArgs RadiationM1::CleanMakeArgs() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanGhostFill
-//! \brief ghost cells of components [c0, c0+nc) of a work array: periodic wrap, else a
-//! copy of the edge cell
+//! \brief ghost cells of components [c0, c0+nc) of a work array: the neighbours' cells
+//! (other MeshBlocks, periodic wrap) by the cell-centred boundary exchange on a scratch
+//! array of nc components, then a copy of the edge cell on physical boundaries
 
 void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc) {
+  if (nc > 32) {   // the exchange moves at most 32 variables at once
+    CleanGhostFill(a, c0, 32);
+    CleanGhostFill(a, c0 + 32, nc - 32);
+    return;
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int ng = indcs.ng;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  const bool per1 = (ibc_x1min == M1_IBC_PERIODIC);
-  const bool per2 = (ibc_x2min == M1_IBC_PERIODIC);
-  const bool per3 = (ibc_x3min == M1_IBC_PERIODIC);
+  const int n1 = a.extent_int(4), n2 = a.extent_int(3), n3 = a.extent_int(2);
+  CleanHalo &hl = cln_halo[nc];
+  if (!hl.pb) {
+    Kokkos::realloc(hl.a, nmb1 + 1, nc, n3, n2, n1);
+    Kokkos::realloc(hl.ca, nmb1 + 1, nc, 1, 1, 1);
+    hl.pb.reset(new MeshBoundaryValuesCC(pmy_pack, nullptr, false));
+    hl.pb->InitializeBuffers(nc);
+    hl.pb->SetVectorPairs(nc, {});
+  }
+  auto h = hl.a;
+  par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+    h(m,n,k,j,i) = a(m,c0+n,k,j,i);
+  });
+  MeshBoundaryValuesCC *pb = hl.pb.get();
+  while (pb->InitRecv(nc) == TaskStatus::incomplete) {}
+  while (pb->PackAndSendCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
+  while (pb->RecvAndUnpackCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
+  while (pb->ClearSend() == TaskStatus::incomplete) {}
+  while (pb->ClearRecv() == TaskStatus::incomplete) {}
+  par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+    a(m,c0+n,k,j,i) = h(m,n,k,j,i);
+  });
 
-  par_for("cln_ghost1", DevExeSpace(), 0, nmb1, 0, nc-1, ks, ke, js, je, 0, ng-1,
+  auto bc = pmy_pack->pmb->mb_bcs.d_view;
+  auto phys = [] KOKKOS_FUNCTION (const BoundaryFlag f) {
+    return f != BoundaryFlag::block && f != BoundaryFlag::periodic;
+  };
+  par_for("cln_ghost1", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, ng-1,
   KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int g) {
-    a(m,c0+n,k,j,is-1-g) = per1 ? a(m,c0+n,k,j,ie-g) : a(m,c0+n,k,j,is);
-    a(m,c0+n,k,j,ie+1+g) = per1 ? a(m,c0+n,k,j,is+g) : a(m,c0+n,k,j,ie);
+    if (phys(bc(m,BoundaryFace::inner_x1))) a(m,c0+n,k,j,is-1-g) = a(m,c0+n,k,j,is);
+    if (phys(bc(m,BoundaryFace::outer_x1))) a(m,c0+n,k,j,ie+1+g) = a(m,c0+n,k,j,ie);
   });
   if (pmy_pack->pmesh->multi_d) {
-    par_for("cln_ghost2", DevExeSpace(), 0, nmb1, 0, nc-1, ks, ke, 0, ng-1, is-ng, ie+ng,
+    par_for("cln_ghost2", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, ng-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int g, const int i) {
-      a(m,c0+n,k,js-1-g,i) = per2 ? a(m,c0+n,k,je-g,i) : a(m,c0+n,k,js,i);
-      a(m,c0+n,k,je+1+g,i) = per2 ? a(m,c0+n,k,js+g,i) : a(m,c0+n,k,je,i);
+      if (phys(bc(m,BoundaryFace::inner_x2))) a(m,c0+n,k,js-1-g,i) = a(m,c0+n,k,js,i);
+      if (phys(bc(m,BoundaryFace::outer_x2))) a(m,c0+n,k,je+1+g,i) = a(m,c0+n,k,je,i);
     });
   }
   if (pmy_pack->pmesh->three_d) {
-    par_for("cln_ghost3", DevExeSpace(), 0, nmb1, 0, nc-1, 0, ng-1, js-ng, je+ng,
-            is-ng, ie+ng,
+    par_for("cln_ghost3", DevExeSpace(), 0, nmb1, 0, nc-1, 0, ng-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int g, const int j, const int i) {
-      a(m,c0+n,ks-1-g,j,i) = per3 ? a(m,c0+n,ke-g,j,i) : a(m,c0+n,ks,j,i);
-      a(m,c0+n,ke+1+g,j,i) = per3 ? a(m,c0+n,ks+g,j,i) : a(m,c0+n,ke,j,i);
+      if (phys(bc(m,BoundaryFace::inner_x3))) a(m,c0+n,ks-1-g,j,i) = a(m,c0+n,ks,j,i);
+      if (phys(bc(m,BoundaryFace::outer_x3))) a(m,c0+n,ke+1+g,j,i) = a(m,c0+n,ke,j,i);
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::CleanReduce
+//! \brief maximum (max) or sum of v over all ranks
+
+Real RadiationM1::CleanReduce(Real v, const bool max) {
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &v, 1, MPI_ATHENA_REAL, max ? MPI_MAX : MPI_SUM,
+                MPI_COMM_WORLD);
+#endif
+  return v;
 }
 
 //----------------------------------------------------------------------------------------
@@ -126,7 +173,7 @@ Real RadiationM1::CleanDot(DvceArray5D<Real> w, const int nc, const int a, const
       s += w(m,a+c,k+ks,j+js,i+is)*w(m,b+c,k+ks,j+js,i+is);
     }
   }, Kokkos::Sum<Real>(sum));
-  return sum;
+  return CleanReduce(sum, false);
 }
 
 //----------------------------------------------------------------------------------------
