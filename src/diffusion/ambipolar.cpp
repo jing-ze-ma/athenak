@@ -4,12 +4,11 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file ambipolar.cpp
-//! \brief Ambipolar diffusion (ambipolar-1101): the edge EMF
+//! \brief Ambipolar diffusion: the edge EMF
 //!     E_AD = eta_A (J - (J.B) B / B^2),   eta_A = ad_coef |B|^2,
 //! added to the resistive edge EMF (efld_resist) before the walls and the Poynting flux
-//! are formed from it.  The explicit stage, the RKG super-step (both go through
-//! AddFluxGeneralResist), the conducting / stress-free walls and the dhj x1 energy
-//! ledger therefore see the total Ohmic + ambipolar EMF without further changes.
+//! are formed from it, so the explicit stage, the RKG super-step (both through
+//! AddFluxGeneralResist) and the walls see the total Ohmic + ambipolar EMF.
 //!
 //! Stencils follow Athena++ FieldDiffusion::AmbipolarEMF: J along the edge from the
 //! curl, the two other J components averaged over the 2 (2-D) or 4 neighbouring edges;
@@ -23,9 +22,9 @@
 //! axis (x1 and x3 edges of the polar face) uses the in-domain row only, and J3 on the
 //! phi edges of the polar face (zero length, phi undefined there) is replaced by J3 of
 //! the next face in wherever an average would read it (x1 edges on the axis, x2 edges of
-//! the polar row).  The ghost B and
-//! eta_A across the axis are the polar mirror (B_theta, B_phi sign-flipped), i.e. the
-//! same vector in the local basis, and enter the averages as usual.
+//! the polar row). The ghost B and eta_A across the axis are the polar mirror (B_theta,
+//! B_phi sign-flipped), i.e. the same vector in the local basis, and enter the averages
+//! as usual.
 
 #include <algorithm>
 #include <iostream>
@@ -51,7 +50,7 @@
 //! has B^2/2 = magnetic pressure, so B_G^2 = 4 pi pres_cgs B^2 and
 //!     ad_coef = pres_cgs/(gamma_in rho_i rho_n)       (rho in g/cm^3),
 //! returned in cm^2/s per code B^2, the same convention as the Ohmic eos path (eta in
-//! cm^2/s, i.e. code units for length_cgs = time_cgs = 1, as in the dhj).
+//! cm^2/s, i.e. code units for length_cgs = time_cgs = 1).
 //!   x_e    = n_e/n_tot from the same Saha table the Ohmic eos path reads
 //!   rho_i  = x_e n_tot m_ion,  m_ion = <mhd>/ad_mion_amu amu (default 30: a Na+/K+/Fe+
 //!            mix; Na 23, K 39, Fe 56, Mg 24, Ca 40, Al 27, H+ would be 1)
@@ -83,7 +82,7 @@ void Resistivity::SetAmbipolar(const DvceArray5D<Real> &w, const EOS_Data &eos,
   const Real amu = 1.66053906660e-24;
   const Real mion = ad_mion_amu*amu;
   const Real sigv = ad_sigv_in;
-  const int ixe = xe_idx;   // xetracer-1101: advected y = n_e/n_H when >= 0
+  const int ixe = xe_idx;   // advected y = n_e/n_H when >= 0
   const Real nhfac = xe_nhfac;
   par_for("ad_coef", DevExeSpace(), 0, (nmb-1), kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -380,7 +379,7 @@ void Resistivity::AddEMFAmbipolarGnomonic(const DvceFaceFld4D<Real> &b0,
                   - dxf2(m,k,j,i)*bxi(k,j) + dxf2(m,k-1,j,i)*bxi(k-1,j))/ae1(m,k,j,i);
   });
 
-  // cornerfix-1103 <mesh>/cs_vertex_3cell: the vertex radial J of the extra layers too
+  // <mesh>/cs_vertex_3cell: the vertex radial J of the extra layers too
   const bool v3_ = pmy_pack->pmesh->cs_vertex_3cell;
   if (v3_) {
     CsVertexJFix(b0, is-1, is-1, true);
@@ -392,8 +391,8 @@ void Resistivity::AddEMFAmbipolarGnomonic(const DvceFaceFld4D<Real> &b0,
   const Real cap = max_eta_ad;
   auto e1 = efld.x1e, e2 = efld.x2e, e3 = efld.x3e;
   auto &mbbcs = pmy_pack->pmb->mb_bcs;
-  // r1mspeed-1102: the cell eta_A, evaluated once per cell (the edge loop below reads
-  // each cell's value 12 times); the same expression, so bitwise
+  // the cell eta_A, evaluated once per cell (the edge loop below reads each cell's
+  // value 12 times)
   if (ad_eta_c.extent_int(0) != ad_coef.extent_int(0) ||
       ad_eta_c.extent_int(3) != ad_coef.extent_int(3)) {
     ad_eta_c = DvceArray4D<Real>("ad_eta_c", ad_coef.extent_int(0), ad_coef.extent_int(1),
@@ -406,12 +405,13 @@ void Resistivity::AddEMFAmbipolarGnomonic(const DvceFaceFld4D<Real> &b0,
                   + SQR(bc(m,IBZ,kk,jj,ii));
     etc_(m,kk,jj,ii) = fmin(coef_(m,kk,jj,ii)*b2, cap);
   });
-  // seamexact-1103: J and B at the edge from CsEdgeOps (cs_edge_jb.hpp, shared with the
-  // single-valued seam current of cs_seam_res = mean_j); the same expressions, bitwise
+  // J and B at the edge from CsEdgeOps (cs_edge_jb.hpp, shared with the single-valued
+  // seam current of cs_seam_res = mean_j)
   CsEdgeOps ops(b, bc, jnorm);
   ops.etc = etc_; ops.has_ad = true;
-  ops.cxi = cxi; ops.sxi = sxi; ops.cet = cet; ops.set = set; ops.ccl = ccl; ops.scl = scl;
-  ops.SetVertex(v3_, msz_, js, je, ks, ke);   // cornerfix-1103: 3-cell vertex edge
+  ops.cxi = cxi; ops.sxi = sxi; ops.cet = cet; ops.set = set;
+  ops.ccl = ccl; ops.scl = scl;
+  ops.SetVertex(v3_, msz_, js, je, ks, ke);   // 3-cell vertex edge
   par_for("ad_cs_emf", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     // physical radial boundary face: the radial-edge J average uses the active column
@@ -422,11 +422,20 @@ void Resistivity::AddEMFAmbipolarGnomonic(const DvceFaceFld4D<Real> &b0,
     const int ib = (i == ie+1 && rout) ? i-1 : i;
     CsEdgeJB s;
     // ---- x1 edge (r centre, xi face j, eta face k): along rhat
-    if (i <= ie) {ops.X1(m,k,j,i,s); e1(m,k,j,i) += CsEdgeAdEmf(1, s);}
+    if (i <= ie) {
+      ops.X1(m,k,j,i,s);
+      e1(m,k,j,i) += CsEdgeAdEmf(1, s);
+    }
     // ---- x2 edge (r face i, xi centre j, eta face k): along e_xi
-    if (j <= je) {ops.X2(m,k,j,i,ia,ib,s); e2(m,k,j,i) += CsEdgeAdEmf(2, s);}
+    if (j <= je) {
+      ops.X2(m,k,j,i,ia,ib,s);
+      e2(m,k,j,i) += CsEdgeAdEmf(2, s);
+    }
     // ---- x3 edge (r face i, xi face j, eta centre k): along e_eta
-    if (k <= ke) {ops.X3(m,k,j,i,ia,ib,s); e3(m,k,j,i) += CsEdgeAdEmf(3, s);}
+    if (k <= ke) {
+      ops.X3(m,k,j,i,ia,ib,s);
+      e3(m,k,j,i) += CsEdgeAdEmf(3, s);
+    }
   });
   // cs_seam_mhd: the seam edges take the two-chart mean of the Ohmic + ambipolar EMF
   // (MHD::CsSeamResist), taken once here
