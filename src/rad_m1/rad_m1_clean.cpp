@@ -126,11 +126,15 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // 3. Newton iteration on the gas coupling and Picard passes on the lagged quantities:
   //    the slopes (reconstruction) and, with clean_closure = iterate, the closure from
   //    the rays of the iterate (at most clean_maxpic, then they are frozen and only the
-  //    gas coupling iterates on); one linear solve without any of these.  In the cell
+  //    gas coupling iterates on); one linear solve without any of these.  With
+  //    clean_closure = extrap(2) the stage-1 solve, whose state Y1 differs from
+  //    U(t^{n+1}) at O(dt^2), takes the closure of its own first iterate once (pass 1):
+  //    the extrapolated closure alone makes the step first order in time.  In the cell
   //    layout a solution with cells E < 0 or |F| > c E switches their faces to the
   //    low-order flux and is solved again (at most clean_maxpos times).
-  const bool iterate = cln_feedback || (cell && cln_recon) || cln_closit;
-  const bool lagged = (cell && cln_recon) || cln_closit;
+  const bool clos1 = (cln_extrap > 0) && (t2_solve == M1_T2S_STAGE1);
+  const bool iterate = cln_feedback || (cell && cln_recon) || cln_closit || clos1;
+  const bool lagged = (cell && cln_recon) || cln_closit || clos1;
   const bool t2stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   int nit = 0, nit_sum = 0, nsolve = 0, npic = 0, npos = 0, nmark = 0;
   bool all_low = false;
@@ -148,7 +152,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     npic = 0;
     for (int inl = 0; inl < maxnl; ++inl) {
       if (lagged && inl < cln_maxpic) ++npic;
-      if (cln_closit && inl < cln_maxpic) {
+      if ((cln_closit && inl < cln_maxpic) || (clos1 && inl == 1)) {
         CleanClosureIterate();
         if (cell) {
           CleanCellFaceSpeeds();
@@ -175,7 +179,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (lagged && inl < cln_maxpic) dpic = de;
       Real dv = 0.0;
       if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
-      if (de < tol_nl && dv < tol_nl) {
+      if (de < tol_nl && dv < tol_nl && !(clos1 && inl == 0)) {
         converged = true;
         break;
       }
