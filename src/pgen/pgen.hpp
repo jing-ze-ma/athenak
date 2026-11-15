@@ -20,7 +20,7 @@
 // deficit over problem/mlt_relax_time -- has to store it, or every restart re-seeds that
 // state from scratch and hits the star with an impulse (measured: the radial kinetic
 // energy jumped 2.5-4.6x in the one history interval containing the restart,
-// bench/wt_he4/tests_r6/README.md section 3).  The block is OPTIONAL and MARKED: a pgen
+// in a He-star test).  The block is OPTIONAL and MARKED: a pgen
 // that leaves `pgen_rst_write_func` null writes nothing at all, so every restart file
 // this code has ever written is unchanged and still readable.  The reader peeks eight
 // bytes; when they are not the marker they are the variable data size that follows in
@@ -142,7 +142,7 @@ class ProblemGenerator {
   DvceArray5D<Real> pgen_rst_slabs_in;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
   UserCycleFnPtr user_cycle_func=nullptr;
-  // accretor-bigdom-v4 (10-16): called once per stage by RadiationM1::HydroConToPrim
+  // Called once per stage by RadiationM1::HydroConToPrim
   // right AFTER the M1 implicit coupling wrote the gas u0 and BEFORE the fluid refresh
   // (exchange, BCs, ConToPrim), so a pgen can clean cells the radiation force touched
   // (ry_per_accretor: zero v in the sink cells).  Null = never called (all other pgens).

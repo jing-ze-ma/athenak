@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_wedge.cpp
-//! \brief <problem>/m1_test = sph_wedge (branch m1-wedge, docs/dev/m1_wedge_0926.md):
+//! \brief <problem>/m1_test = sph_wedge (docs/dev/m1_wedge_0926.md):
 //! a GRAVITY-BEARING radiation-hydrodynamics wedge on the spherical-polar mesh with the
 //! implicit M1 module.  Reached from RadiationM1Tests2(); every other m1_test value is
 //! untouched.
@@ -262,7 +262,7 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       << "true (the well-balanced pair must carry the reference)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // energy_audit_0928 item 3: with wg_phi_eff the WB pair already gives the gas the
+  // With wg_phi_eff the WB pair already gives the gas the
   // reference force rho a_ref; force_reference = none would then apply the FULL force on
   // top of it (counted twice) and its work once
   if (phieff && !fref) {
@@ -557,8 +557,8 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       std::exit(EXIT_FAILURE);
     }
     wg_bot_res_ = (bb == "reservoir");
-    // DEFAULT ON (user 09-26): the closed outer wall traps a domain acoustic mode that
-    // a dt-dependent anti-damping drives (docs/dev/m1_wedge_0926.md 7.3); 0 = old scheme
+    // DEFAULT ON: the closed outer wall traps a domain acoustic mode that
+    // a dt-dependent anti-damping drives (docs/dev/m1_wedge_0926.md 7.3); 0 = no sponge
     wg_sp_rate_ = pin->GetOrAddReal("problem","wg_sponge_rate",0.02);
     wg_sp_r0_ = pin->GetOrAddReal("problem","wg_sponge_r0",wg_rint_);
     wg_rtop_ = rtop;

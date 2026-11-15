@@ -133,7 +133,7 @@ inline Real ck_impl_demax = 0.5;
 //
 // e_floor = max(e(rho, tfloor), e(rho, pfloor)) is the state ConsToPrim restores a cell
 // to anyway (problem/rt_floor_consistent applies the same rule to the semi-implicit
-// apply).  In the night-side top slab of a fresh WASP-121b start (SMOKE_DIAG.md, 09-25)
+// apply).  In the night-side top slab of a fresh WASP-121b start
 // the backward-Euler root of the coldest top cells lies below that state: the Newton
 // drives them down, the caps clip the step, the column never converges, and the floors
 // put the energy straight back (eos_efloor ~1e7 events per 400 cycles).  With this on:
@@ -224,7 +224,7 @@ inline int64_t ck_cons_ncell = 0;          // cells corrected, last call (verbos
 inline Real ck_cons_de = 0.0;              // their sum r V [erg], last call, this rank
 // problem/ck_impl_osc = N > 0: PER-CELL AITKEN DAMPING of oscillating cells, from pass N
 // of a call on.  0 = off (default, bitwise).  Measured on the 10x WASP-121b production
-// (cknewton_0928/RESULTS.md): the calls that do not converge even with 24 or 60 passes
+// the calls that do not converge even with 24 or 60 passes
 // sit in a period-2/4 limit cycle of the top cells (p ~ 1e-10 bar, T swinging 1700 <->
 // 5300 K): the band Planck emission there rises far faster than its linearisation, so
 // the Newton step of the hot iterate and of the cold one overshoot each other, and the
@@ -447,7 +447,7 @@ inline double ck_dif_fsum = 0.0;                  // ... and the sum of (ich - i
 
 //! \fn CkDum
 //! \brief a 1-element View for a capture that is never read.  CkDum<V>(label) builds a
-//! fresh one (the old behaviour: an allocation, a zero fill and a free, each with a
+//! fresh one (the plain behaviour: an allocation, a zero fill and a free, each with a
 //! device synchronisation) unless problem/ck_impl_nosync, in which case one cached View
 //! per type is returned (never freed: it is leaked on purpose so that no View outlives
 //! Kokkos::finalize).
@@ -605,7 +605,7 @@ inline bool ck_impl_cvsec = false;
 // item iv).  In the 10x WASP-121b day-side upper layers (T 5000-6500 K, t_rad 1-4 % of
 // the stage) that term makes the true dR_i/de_i larger than the modelled one, so the
 // Newton overshoots: a period-2 limit cycle with the e/T Jacobian, ~1e-6 residual stalls
-// with cvsec (SMOKE_DIAG.md section 6).  With rsec > 0, from pass 1 of a call on, each
+// with cvsec.  With rsec > 0, from pass 1 of a call on, each
 // thick row compares its diagonal b with the secant of its OWN residual over the last
 // pass, (R_p - R_{p-1})/(e_p - e_{p-1}), and takes the secant where it is LARGER, capped
 // at rsec*b.  A larger diagonal keeps the M-matrix and only shortens a step; the

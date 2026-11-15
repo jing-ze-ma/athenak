@@ -12,7 +12,7 @@
 //! well-balanced tangential force g_t (roche_wb_tan: the fine operator's own residual of
 //! the smooth tidal IC) and the radiation keep fine-grid smooth fields: the staircase
 //! state is never the discrete equilibrium, and the polar rows of the sp accretor grow a
-//! v_phi pattern at the tidal m = 1, 2 (accsp_1102 test: lateral KE +41 % at t 0.005,
+//! v_phi pattern at the tidal m = 1, 2 (lateral KE +41 % at t 0.005,
 //! confined to the averaged rows). The truncation leaves the low modes exactly alone.
 //!
 //! HOW. Rings are global: (pole, row from the pole, global i). For every ring and

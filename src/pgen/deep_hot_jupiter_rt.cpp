@@ -135,7 +135,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const bool wbs = mhd ? pam->pmhd->use_wellbalance_static
                          : pam->phydro->use_wellbalance_static;
     // the source variants AmCell replicates: the plain cs / sp angular sources.  Any
-    // other one is named here (user 10-01: explicit, never a silent default off)
+    // other one is named here (explicit, never a silent default off)
     std::string bad = "";
     if (wbs) bad = mhd ? "<mhd>/wellbalance_static" : "<hydro>/wellbalance_static";
     const bool trq_ok = curv && bad.empty();
@@ -271,7 +271,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
   }
-  // problem/wall_closed (DEFAULT TRUE, user 09-27; false = the old reservoir wall): make
+  // problem/wall_closed (DEFAULT TRUE; false = a reservoir wall): make
   // the inner radial boundary a CLOSED wall.
   // The user boundary (HydrostaticEquilibrium) leaves the inner ghosts at the state the
   // problem generator gave them -- the initial hydrostatic column at rest -- so the is
@@ -355,7 +355,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         pmy_mesh_->pmb_pack->pmhd->diode_ox1 = true;
       }
     }
-    // <mhd>/top_bc_bt (see deep_hot_jupiter_rt.hpp).  (user 11-12):
+    // <mhd>/top_bc_bt (see deep_hot_jupiter_rt.hpp).
     // DEFAULT sourcesurface for MHD runs with an outflow top (problem/top_bc = outflow1 |
     // outflow0), recorded in the input (GetOrAdd); hydro runs and the hse top do not read
     // the key unless it is named (hydro unchanged; name zerograd for the old MHD top).
@@ -508,7 +508,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // receives exactly the converged flux divergence -- no relaxation factor, no rt_de_max
   // clip -- at ck_impl_maxit ck sweeps per RK stage instead of one; false = the
   // semi-implicit per-cell apply.  DEFAULT TRUE for FRESH runs
-  // (user decision 09-27: the production scheme), and with it the T4 set, ck_impl_arat
+  // (the production scheme), and with it the T4 set, ck_impl_arat
   // 1e30 and ck_impl_nosync, whose defaults below are conditional on it.  The default
   // is conditioned on the switch's own refusal in two_stream_rt.hpp (rt_ck,
   // rt_use_cons, !rt_layer_legacy; rt_implicit_column is refused by this pgen anyway)
@@ -663,10 +663,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       t4def && two_stream_rt::ck_impl_lin && two_stream_rt::ck_impl_lin_thr == 1);
   // problem/ck_sph_face: see two_stream_rt::ck_sph_face.  problem/ck_sph_dilute = true
   // is the older spelling of ck_sph_face = 1.
-  // f6-default (user 10-02): on a FRESH spherical ck run (rt_ck, ck_spherical, tm sweep)
+  // On a FRESH spherical ck run (rt_ck, ck_spherical, tm sweep)
   // the default is 6, the monotone VEF ladder, with its companions ck_sph_top = 1 and
   // (via ck_vef_on below) ck_vef_every = 150, ck_impl_rowfb = true, ck_impl_rsec = 4: the
-  // validated WASP-121b production combination (ckf6_mono_1001, ckf6_cs_mhd_1001).
+  // validated WASP-121b production combination.
   // Face 6 needs the production linear Newton (f6_ok below).  When a key that face 6
   // cannot run with is set (or defaults off) and ck_sph_face is not named, the default
   // falls back to 0 (the historical Eddington face) with a WARNING; the regression
@@ -731,8 +731,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // problem/ck_vef_every, ck_vef_ncore: the formal solution of ck_sph_face = 5.  With
   // face 5 the DEFAULTS of ck_vef_every (150), ck_impl_rowfb (true) and ck_impl_rsec (4)
-  // are the measured cheapest accuracy-neutral setting (cksph_test_0930/PORT.md);
-  // explicit keys override; face 0 keeps the old defaults (bitwise)
+  // are the measured cheapest accuracy-neutral setting;
+  // explicit keys override; face 0 keeps the plain defaults (bitwise)
   const bool vef5 = two_stream_rt::ck_vef_on;
   two_stream_rt::ck_vef_every = pin->GetOrAddInteger("problem","ck_vef_every",
                                                      vef5 ? 150 : 1);
@@ -838,7 +838,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // (dhj_ck_spherical and the 64x8x8 gate input, 20 cycles, floor = kkt = 0).  Where
   // they bind (both WASP-121b productions, every call) the unconstrained Newton cannot
   // converge: 1x 466/500 calls NOT-CONVERGED off vs 6/500 on, 10x 500/500 vs 133/500
-  // (defaults2_0927/B).  Set either line explicitly to override.
+  // Set either line explicitly to override.
   {const bool fbdef = !restart && two_stream_rt::ck_implicit &&
        two_stream_rt::ck_impl_fuse && two_stream_rt::ck_impl_debug <= 0 &&
        two_stream_rt::ck_impl_glob == 0 && two_stream_rt::ck_impl_aa == 0;
@@ -873,7 +873,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "ck_impl_negpiv live in the fused step (ck_impl_fuse)." << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // problem/ck_impl_kkt_row: DEFAULT TRUE since default-flips (09-26; 1x production
+  // problem/ck_impl_kkt_row: DEFAULT TRUE (1x production
   // NOT-CONVERGED 20/2113 -> 0 at the same cost).  It acts only with ck_impl_floorbound
   // or ck_impl_kkt_demax on the fused glob = 0 path; false restores the old rows.  The
   // value is recorded, so a restart keeps its stored value; a restart file written
@@ -902,10 +902,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << ", ck_impl_conserve " << two_stream_rt::ck_impl_conserve
               << ", sponge_top " << hot_jupiter_param.sponge_top
               << ", sponge_bottom " << hot_jupiter_param.sponge_bottom
-              << " (defaults 24, 1, 1, 0 since 09-30)" << std::endl;
+              << " (defaults 24, 1, 1, 0)" << std::endl;
   }
   // problem/ck_impl_osc = N: per-cell Aitken damping of oscillating cells from pass N
-  // on (utils/two_stream_column_ck.hpp; cknewton_0928).  0 = off (default, bitwise).
+  // on (utils/two_stream_column_ck.hpp).  0 = off (default, bitwise).
   two_stream_rt::ck_impl_osc = pin->GetOrAddInteger("problem","ck_impl_osc",0);
   if (two_stream_rt::ck_impl_osc < 0 || (two_stream_rt::ck_impl_osc > 0 &&
       two_stream_rt::ck_impl_aa > 0)) {
@@ -958,7 +958,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   //   predictor), ck_impl_every = 4 (E4 cadence; only with ck_impl_once on).
   // Otherwise (restart input without the key, recipe none, another ck configuration) the
   // old default (false / 0 / false / 1) is recorded as before.  An explicit key wins.
-  // ck_impl_xstep is NOT defaulted (audit_dhj_0928, below).
+  // ck_impl_xstep is NOT defaulted (see below).
   {
     const bool nd = recipe::NewDefaults(pin);
     const bool c2ok = two_stream_rt::ck_implicit && two_stream_rt::ck_impl_fuse &&
@@ -996,8 +996,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
   // problem/ck_impl_xstep: keep the stored operator of ck_impl_frozen_op over k CYCLES
-  // (under ck_impl_every = 4, k <= 4 is bitwise off).  DEFAULT 0 (off) since
-  // audit_dhj_0928: on MI300A (WASP-121b nx1 76/74, current tip) k = 8 gains only
+  // (under ck_impl_every = 4, k <= 4 is bitwise off).  DEFAULT 0 (off):
+  // on MI300A (WASP-121b nx1 76/74, current tip) k = 8 gains only
   // 3.2 % (1x) / 3.9 % (10x) per simulated second, and its deviation reaches 1.3-2x the
   // 1e-14-kick spread at 1e-3..1 bar and > 1 bar within the first rotation (it settles
   // into the noise by ~1 rotation), so it is a RELAXATION-PHASE option only.  Set it
@@ -1909,7 +1909,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     logparr_init.modify_host();
     logparr_init.sync_device();
 
-    // problem/remap_file (default empty = off; remap_0929): a FROM-SCRATCH start whose
+    // problem/remap_file (default empty = off): a FROM-SCRATCH start whose
     // active cells come from a file written by docs/handover/scripts/dhj_remap.py, i.e.
     // a restart radially remapped onto THIS grid (spin up on a coarse radial grid, then
     // continue on a fine one; the tool also refines the cubed sphere C(n) -> C(f n)).

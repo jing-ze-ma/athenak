@@ -1960,7 +1960,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << std::endl;
   }
   // <rad_m1>/vet_rotate_avg: the averaging history, when this run averages (a file
-  // without it, or a run without averaging, keeps the old behaviour: the first build
+  // without it, or a run without averaging, keeps the plain behaviour: the first build
   // re-measures the history, or averaging is off)
   const bool ra_read = (nra_file > 0) && (pradm1 != nullptr) && pradm1->vra_on;
   // implicit_gas_src = conservative(2): csk1 and the flags, when this run is one too

@@ -327,8 +327,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
                  + (cs_ ? cs3/sncell_(m,k,j) : cs3);
       }
       // NON-FINITE GUARD: a NaN/inf state gives a NaN dx/v, which fmin DROPS, so dt
-      // would be set by the finite cells alone and could keep doubling (BSG production
-      // 10-01: the whole domain NaN, dt doubled per step to tlim, rc 0).  Flag the cell
+      // would be set by the finite cells alone and could keep doubling (the whole domain
+      // NaN, dt doubled per step to tlim, rc 0).  Flag the cell
       // with a negative dt instead; Mesh::NewTimeStep stops the run on dt <= 0.
       if (!(max_dv1 + max_dv2 + max_dv3 < 1.0e300)) {
         min_dt1 = -1.0;
@@ -430,7 +430,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     pmlat->Diag(u0, "h");
   }
 
-  // DEBUG dt report (r2b_shift_1003; env ATHENA_DT_REPORT = N > 0, every N cycles,
+  // DEBUG dt report (env ATHENA_DT_REPORT = N > 0, every N cycles,
   // no key, no state change): the rank holding the global minimum hydro dt prints the
   // limiting cell, its direction, gas and radiation-modified signal speeds, the taper
   // optical depth rho kappa_T dx, E_rad, c dt rho kappa_P and the thin-freeze flag; the

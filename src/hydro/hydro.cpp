@@ -321,7 +321,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // radiative timescale the profile changes on. N = 1 halves the walk cost, N = 10
   // removes it.
   wb_cache_every = pin->GetOrAddInteger("hydro","wb_cache_every",0);
-  // Ideal-gas x1 WB cache (BuildWBCache) safety keys, BSG arm 1 crash (10-02):
+  // Ideal-gas x1 WB cache (BuildWBCache) safety keys:
   // <hydro>/wb_clamp_ideal: polytropic closed form limits the T DECREASE over a
   // segment to t0/2, as the general-EOS walk does (getWBerho, clamp_dt);
   // <hydro>/wb_guard_ideal: WBGuard flattens a non-finite, non-positive or absurd

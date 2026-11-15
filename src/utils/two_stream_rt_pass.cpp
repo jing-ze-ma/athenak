@@ -464,7 +464,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
     // added to BOTH sides.  Inside a cell the frame area is constant (A_i = V_i/dx_i),
     // so the layer solve and the deposit are the plane-parallel ones they always were.
     // Both helpers are identically inert under rt_plane_parallel: beta is exactly 0 and
-    // AUN/ACN are the very area factors the old expressions read.
+    // AUN/ACN are the very area factors the plain expressions read.
     auto BTF = TsrtBTF{pp_, area1, volume, dx1, ie};
     auto MIXF = TsrtMIXF{};
     // the area factors the OLD expression still spells out and the spherical form no
@@ -1421,7 +1421,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           // and lost about 24 % of the incident stellar flux. Found by comparing the
           // correlated-k version of the same expression against Exo-FMS on an identical
           // column. Written this way the column integral telescopes to
-          // mu F (1 - e^-tau_total) exactly, and it still reduces to the old expression
+          // mu F (1 - e^-tau_total) exactly, and it still reduces to the plain expression
           // as dtau -> 0.
           Real Qv = (1.0-albedo)*Fstar*(1.0/3.0)
                   * ((trp1-trans1)+(trp2-trans2)+(trp3-trans3))/(fac*dr);
@@ -4872,7 +4872,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // emissivity-weighted far endpoint of the layer's source function: dtau/dr
               // is kappa rho, so the two layers' optical thicknesses per unit length are
               // the weights (see BFace).  The ghost above ie has no dtau in the array, so
-              // the topmost layer keeps the old endpoint exactly.
+              // the topmost layer keeps the plain endpoint exactly.
               const Real kro_g = dtau_i/dx1(m,k,j,i);
               const Real krf_g = (i < ie) ? (tau_down_r_f[i+1]-tau_down_r_f[i+2])
                                           / dx1(m,k,j,i+1) : kro_g;
@@ -4917,7 +4917,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               Real dtau_i = tau_down_r_f[i-1]-tau_down_r_f[i];
 #endif
               // the same emissivity-weighted far endpoint for the upward stream and for
-              // Em; the topmost layer keeps the old endpoint (see the down-sweep)
+              // Em; the topmost layer keeps the plain endpoint (see the down-sweep)
               const Real krou = (tau_down_r_f[i-1]-tau_down_r_f[i])/dx1(m,k,j,i-1);
               const Real krfu = (i < ie+1) ? (tau_down_r_f[i]-tau_down_r_f[i+1])
                                            / dx1(m,k,j,i) : krou;
@@ -5183,7 +5183,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       const bool tg_f = eos.tbl.rad_tgate;
       const bool md_f = pm->multi_d, td_f = pm->three_d;
       // problem/rt_force_tau_gate: the optical-depth gate s(tau) on the force above.
-      // OFF (or s = 0) executes the old expressions verbatim -- see rt_force_tau_gate.
+      // OFF (or s = 0) executes the plain expressions verbatim -- see rt_force_tau_gate.
       const bool ftg_ = radforce && rt_force_tau_gate;
       const Real ftlg_lo = log10(rt_force_tau_lo);
       const Real ftlg_hi = log10(rt_force_tau_hi);
@@ -5219,7 +5219,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         }
         // the face fluxes are PER UNIT AREA; every divergence below is therefore
         // (A_top F_top - A_bot F_bot)/V (the dilution note above), which under
-        // rt_plane_parallel is A = 1, V = DX1 and bitwise the old expression
+        // rt_plane_parallel is A = 1, V = DX1 and bitwise the plain expression
         // ---- THE CORRELATED-K APPLY IS PLANE-PARALLEL UNLESS ck_spherical IS ON ------
         // The ck sweep builds Fb_g with the PLANE-PARALLEL divergence unless
         // ck_spherical is set, so the apply must difference it the same way: areas 1,
@@ -5356,18 +5356,18 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // above the photosphere.  Cooling was safe (A = 0 gives -e/4); heating was not.
         //
         // WHAT THIS DOES INSTEAD.  Relax toward the TRUE fixed point.  E ~ T^4 and, under
-        // the same e ~ rho c_v T the old rate assumed, e ~ T, so E(T_eq) = A puts the
+        // the same e ~ rho c_v T the plain rate assumed, e ~ T, so E(T_eq) = A puts the
         // equilibrium at e_eq = e (A/E)^(1/4) and deq = e_eq - e.  Then take the rate
         // from the initial slope rather than from lambda -- x = src*bdt/deq -- so that
         //     de = deq (1 - exp(-x))
         // is exactly src*bdt for small bdt and exactly deq for large bdt.  src and deq
         // always share a sign (A > E <=> e_eq > e), so x >= 0 and the step is monotone
         // and can never cross the equilibrium from either side.  Where the departure is
-        // small it agrees with the old linearized form, since deq -> src/lambda there.
+        // small it agrees with the linearized form, since deq -> src/lambda there.
         //
-        // The e ~ T behind e_eq is the same approximation the old rate made, and it
+        // The e ~ T behind e_eq is the same approximation the plain rate made, and it
         // UNDER-estimates e_eq wherever H2 or H is partly dissociated, i.e. it errs
-        // toward a smaller step.  problem/rt_semi_lin recovers the old linearization.
+        // toward a smaller step.  problem/rt_semi_lin recovers the plain linearization.
         // ck_implicit deposits nothing here: the column solve owns the energy update,
         // and it takes the CONVERGED flux divergence with no relaxation factor and no
         // rt_de_max clip.  de below is kept only for the diagnostics.
@@ -5505,7 +5505,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 if (newton_on && eos.IsGeneral()) {
                   // both terms carry the same (1 - Lambda*), so F(de) = de -
                   // bdt*src_relax + ome*bdt*Em*(r4 - 1): explicit at r4 = 1, zero at the
-                  // ALI equilibrium E(T) = A_eff.  ome_ = 1 is the old expression.
+                  // ALI equilibrium E(T) = A_eff.  ome_ = 1 is the plain expression.
                   const Real abdt = ome_*absn*sub_bdt, embdt = ome_*Em*sub_bdt;
                   // SAFEGUARDED, because a bare Newton here does not converge.  F is
                   // MONOTONE INCREASING in de -- both de and E(T(e+de)) rise with de --
@@ -5579,7 +5579,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     const Real de_nt = des;        // what Newton left, for the report
                     // problem/rt_rescue_eq: land on the equilibrium the cell actually
                     // sees rather than on a fixed 99.9 % drop.  deq is e_eq - e from the
-                    // closed form above, i.e. Em(T_eq) = A = src + Em; the old floor is
+                    // closed form above, i.e. Em(T_eq) = A = src + Em; the plain floor is
                     // kept underneath it, so this can only make the rescue gentler.
                     const Real defl = -(1.0 - 1.0e-3)*ec;
                     if (resc_eq && deq < 0.0 && deq > defl) {

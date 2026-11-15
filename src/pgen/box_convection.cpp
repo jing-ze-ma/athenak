@@ -476,7 +476,7 @@ bool rt_split_tr_ = false;
 // with beta_dt/N each.
 //
 // WHY.  Every reordering of the step (rk2/rk3/imex2/imex2+/Strang, force and heating
-// centering, weights, top BC: ARMS 1-9 in plaid/fmode_README.txt) leaves the surface
+// centering, weights, top BC) leaves the surface
 // f-mode growing at gamma = 0.615 x dt[s] per turnover.  The favoured reading is that the
 // lid relaxes FULLY within one application of the operator, so the radiative work
 // integral over the mode's cycle is evaluated with an effective thermal time equal to the
@@ -536,7 +536,7 @@ bool prof_alloc_ = false;
 //! writes are not the ones an uninterrupted run writes -- an extra record right after
 //! every restart, and the whole series shifted from there on.  Carrying the two numbers
 //! makes the series resume exactly.  Layout: int32 count (= 2), int32 pad, then the two
-//! Reals.  A file written without the block leaves them at -1, i.e. the old behaviour.
+//! Reals.  A file written without the block leaves them at -1, i.e. the plain behaviour.
 
 std::vector<char> BoxConvRestartState() {
   std::vector<char> out;
@@ -1438,7 +1438,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   wb_phi_eff_ = pin->GetOrAddBoolean("problem", "wb_phi_eff", false);
   arad_force_ = pin->GetOrAddBoolean("problem", "wb_arad_force", false);
   const std::string aradf = pin->GetOrAddString("problem", "wb_arad_file", "");
-  // ENERGY CONSISTENCY (energy_audit_0928 item 2).  With Phi_eff the WB source gives
+  // ENERGY CONSISTENCY.  With Phi_eff the WB source gives
   // the gas -rho g + rho a_ref in IM1 but NO energy: the work rho a_ref v1 must come
   // from the radiation module, and the module must then apply only the RESIDUAL force.
   // Only <rad_m1> with force_reference = wb_arad does both (work mode split: the WB
@@ -1664,8 +1664,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
-  // --- THE GREY M1 MODULE (<rad_m1>), milestone 2a.  docs/dev/rad_m1_design.md and
-  // bench/m1_stage2/PLAN.md.  The module replaces the whole two-stream + radiative
+  // --- THE GREY M1 MODULE (<rad_m1>), milestone 2a.  docs/dev/rad_m1_design.md.
+  // The module replaces the whole two-stream + radiative
   // conduction + rt_rad_force stack, so those are refused outright rather than left to
   // interact; <hydro>/eos_radiation is already refused by the module itself.
   m1_on_ = (pmbp->pradm1 != nullptr);
@@ -2582,7 +2582,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     auto ru0 = pmbp->pradm1->u0;
     const Real zlo_r = zlo, dzf_r = dzf;
     const int nf_r = nfine;
-    // problem/m1_seed_consistent (default false, i.e. bitwise the old behaviour): the
+    // problem/m1_seed_consistent (default false, i.e. bitwise the plain behaviour): the
     // entropy seed scales the gas internal energy by efac at fixed density and leaves
     // the radiation field at its file value, so the seeded cells start OUT of radiative
     // equilibrium by construction.  With this switch the initial E is scaled by the

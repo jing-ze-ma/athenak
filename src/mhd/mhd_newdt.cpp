@@ -338,7 +338,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
 
       // NON-FINITE GUARD (the MHD port of hydro_newdt.cpp): a NaN/inf state gives a NaN
       // dx/v, which fmin DROPS, so dt would be set by the finite cells alone and could
-      // keep doubling (BSG production 10-01: the whole domain NaN, dt doubled per step
+      // keep doubling (the whole domain NaN, dt doubled per step
       // to tlim, rc 0).  Flag the cell with a negative dt instead; Mesh::NewTimeStep
       // stops the run on dt <= 0 and reports the cell.
       if (!(max_dv1 + max_dv2 + max_dv3 < 1.0e300)) {

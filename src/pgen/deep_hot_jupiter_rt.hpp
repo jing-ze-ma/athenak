@@ -196,13 +196,13 @@ inline DvceArray4D<Real> *dhj_fhst_ptr = nullptr;
 void DhjFluxStage(Mesh *pm);
 void DhjCycleDiag(Mesh *pm);
 
-// AXIAL ANGULAR MOMENTUM (branch am-coriolis, 10-01).  In the corotating frame the
+// AXIAL ANGULAR MOMENTUM.  In the corotating frame the
 // conserved quantity is L_abs = L_rel + Omega I, I = sum M R^2 (R = distance from the
 // rotation axis), and the Coriolis torque on L_rel, -2 Omega rho R v_R, is exactly
 // -Omega dI/dt by continuity.  The rotating-frame source applies it with the CELL-CENTRE
 // rho v, while I changes by the RIEMANN mass fluxes; the two differ (numerical mass
 // diffusion moves I without moving the cell-centre momentum), and the difference is an
-// angular-momentum source (w121prod_0929/angmom_1001: ~2.5 % of the gross torque, a
+// angular-momentum source (~2.5 % of the gross torque, a
 // monotonic L_abs loss).  Both corrections below are applied by AmFix, a separate kernel
 // after the rotating-frame source, as a force along the zonal direction (-y, x, 0):
 // no radial or meridional part, and the total energy is not touched (the Coriolis force
@@ -229,7 +229,7 @@ void DhjCycleDiag(Mesh *pm);
 //     Rbar_f the face's area-mean R.  sum_c T_cons is the boundary flux alone, so L_rel
 //     changes only by Coriolis, boundaries and sponges, and a uniform pressure (or a
 //     uniform Maxwell stress on the planar faces) exerts no T_cons on a cell.
-//   DEFAULTS (user 10-01): both ON whenever the rotating frame is (user_srcs, omega != 0,
+//   DEFAULTS: both ON whenever the rotating frame is (user_srcs, omega != 0,
 //     cubed sphere or spherical polar), OFF otherwise, so non-rotating runs are bitwise
 //     unchanged.  A rotating run with a source variant am_transport does not
 //     replicate (wellbalance_static) stops with a FATAL naming it, unless
@@ -817,15 +817,15 @@ inline bool bc_outer_maxwell = true;
 //   outflow0 (a) alone -- DIAGNOSTIC ONLY, NOT one-way: the ghost pressure p_ie at the
 //            top face exceeds the hydrostatic face value, pushes the top cell inward
 //            (v_r ~ -900 m/s over the whole shell) and the Riemann solver refills it from
-//            the ghost (C32 WASP-121b smoke, topbc_1101: Mdot_top -7e11 g/s, 12x the hse
+//            the ghost (C32 WASP-121b smoke: Mdot_top -7e11 g/s, 12x the hse
 //            inflow; -2.4e10 g/s even without the tide).
 inline int dhj_top_bc = 0;  // 0 = hse, 1 = outflow1 (ghosts + one-way face), 2 = outflow0
 // <mhd>/top_bc_bt, the TANGENTIAL face field in the outer-x1 ghosts of an
 // outflow top (problem/top_bc outflow1 | outflow0): 0 = zerograd (the last cell's faces
 // copied), 1 = sourcesurface (odd: ghost B_t = -mirror, so
 // B_t = 0 on the top face, B_r from div B = 0 as before; potential-field source surface).
-// (user 11-12): sourcesurface is the DEFAULT for MHD runs with an outflow top
-// (GetOrAdd, so the restart input records it); name zerograd for the old behaviour.
+// sourcesurface is the DEFAULT for MHD runs with an outflow top
+// (GetOrAdd, so the restart input records it); name zerograd for the plain behaviour.
 // Hydro runs and the hse top read the key only when it is named (hydro unchanged).
 // 2 = charout, a NON-REFLECTING top for Alfven waves.  The ghost B is the
 // zerograd one; the ghost TANGENTIAL VELOCITY (orthonormal frame, the one bcc lives in)

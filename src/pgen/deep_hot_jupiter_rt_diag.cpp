@@ -706,8 +706,7 @@ void DhjOlrDump(ParameterInput *pin, Mesh *pm) {
 //!             (B + I_int)(1/2 + beta/4) with the pair at mu_eff) carry
 //!             2 pi mu (1 + beta/2)/(1 + beta mu) I_int, = 4/(2 + sqrt 3) = 1.0718
 //!             sigma T_int^4 in the isotropic deep limit (beta = 2, mu = 1/sqrt 3):
-//!             a real 7.2 % larger internal heating, not a diagnostic offset
-//!             (f6default_1002/RESULTS.md).
+//!             a real 7.2 % larger internal heating, not a diagnostic offset.
 //!   Mdot_top  mass flux out through the top face,  Mdot_bot  up through the inner wall
 //!   Lsw_in    stellar power incident on the DOMAIN TOP sphere, F_star sum max(mu0,0)
 //!             A(ie+1) = F_star pi r_top^2.  Starlight bookkeeping closes as

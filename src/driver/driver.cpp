@@ -351,7 +351,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   // 6144, an exact one-to-one match -- came back with different outer ghosts, and one
   // cycle later the active cells had moved.  Keeping what the file restored makes the
   // restart a bitwise continuation; the primitives are still rebuilt below.
-  // <time>/restart_refill_ghosts=true restores the old behaviour.
+  // <time>/restart_refill_ghosts=true restores the plain behaviour.
   bool refill = pin->GetOrAddBoolean("time", "restart_refill_ghosts", false);
   // a state that is not yet group-uniform in the merged lateral cells (a
   // fresh start, or a restart from a run without merging) is averaged here, and its

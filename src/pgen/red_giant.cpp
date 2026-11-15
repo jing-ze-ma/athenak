@@ -463,7 +463,7 @@ Real vdb_time_ = 20.0;
 //                           cell-centre gnomonic coordinates on that panel in [-1,1], and
 //                           F_top the net radial two-stream flux on the cell's top face.
 // The box writes 3 doubles per row (x2, x3, F) with no panel column, so a reader such
-// as analysis_0916/fmode_w7_t10 needs one change: read 4 columns and carry the panel.
+// as an f-mode analysis needs one change: read 4 columns and carry the panel.
 Real surf_dt_ = 0.0;             // <= 0 disables it
 Real surf_next_ = -1.0;          // next dump time; armed at the first source call
 char surf_file_[256] = "rt_surface.bin";
@@ -1386,7 +1386,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   bg_hydrostatic_ = pin->GetOrAddBoolean("problem", "bg_hydrostatic", false);
   // problem/bg_rtop: the radius at which the column is anchored at problem/ptop.  The
   // column is integrated DOWNWARD from here, so this -- not x1max -- is what fixes where
-  // the star's photosphere lands.  Default x1max reproduces the old behaviour exactly;
+  // the star's photosphere lands.  Default x1max reproduces the plain behaviour exactly;
   // with a background, set it to the top of the STAR and let x1max sit far above it.
   const Real bg_rtop = pin->GetOrAddReal("problem", "bg_rtop", 0.0);
   vpert_mach_max_ = pin->GetOrAddReal("problem", "vpert_mach_max", 0.3);

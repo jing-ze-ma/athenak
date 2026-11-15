@@ -54,7 +54,7 @@ Real beta_[4] = {0.0, 0.0, 0.0, 0.0};
 Real led_[kNL] = {0.0, 0.0, 0.0, 0.0, 0.0}, ledn_[kNL] = {0.0, 0.0, 0.0, 0.0, 0.0};
 int led_cyc_ = -1;
 Real erad_ = 0.0, wgrav_ = 0.0, tprev_ = 0.0, ain_ = 0.0;
-// open items 11-13: the radiation energy through the physical x1 faces AS THE SCHEME
+// The radiation energy through the physical x1 faces AS THE SCHEME
 // APPLIES IT (RadiationM1 Ebnd with ebnd_split: the hesdirk2 tableau weights of the
 // slopes' face fluxes, incl. implicit_bc_advect's end-face A E): in at x1min, out at
 // x1max (the Marshak top).  ebd_ = false: the transport cannot book it (columns 0).
@@ -426,11 +426,11 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
             "he_gm_live (their state travels with the ledger)");
     }
   }
-  // open items 11-13 (item 2): the adaptive MLT closure targets L_in.  const (default):
+  // The adaptive MLT closure targets L_in.  const (default):
   // the deck's constant implicit_flux_x1min (the relaxed state's target); table: the
   // current table flux (the first version; it re-targets the closure flux at EVERY
   // radius to L_in(t) at once, which takes the extra injection out of the base cells
-  // convectively and drops the radiative L_bot, see DRIVE_CODE_1113.md)
+  // convectively and drops the radiative L_bot)
   {
     const bool cln = pin->DoesParameterExist("problem","he_drive_closure_lin");
     const std::string cl = (hftab && cln) ?
@@ -507,7 +507,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
     }
     live_ = true;
   }
-  // open items 11-13: the scheme's own x1-face radiation energy (Ebnd, split), so the
+  // The scheme's own x1-face radiation energy (Ebnd, split), so the
   // Marshak top loss is in the ledger; only where Ebnd is defined (implicit transport,
   // no multi-rate, no coupling_split)
   ebd_ = (pm1 != nullptr) && (pm1->transport == radm1::M1_TRANSPORT_IMPLICIT) &&
@@ -589,8 +589,8 @@ void RestartStrip(std::vector<char> *blk) {
 void RstAppend(std::vector<char> *out) {
   if (!on_) return;
   // payload: nx1, ledgers (kNL), ledgers at the stage-loop start (kNL), their cycle,
-  // erad, wgrav, tprev, ref flag, mref, dmint, rhoref (nx1), ddm (nx1), [open items
-  // 11-13] ebnd_acc_in, ebnd_acc_out, ebnd_acc_src, ebnd_s3
+  // erad, wgrav, tprev, ref flag, mref, dmint, rhoref (nx1), ddm (nx1),
+  // ebnd_acc_in, ebnd_acc_out, ebnd_acc_src, ebnd_s3
   std::vector<Real> p;
   p.push_back(static_cast<Real>(nx1_));
   for (int q = 0; q < kNL; ++q) {p.push_back(led_[q]);}
