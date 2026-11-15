@@ -229,9 +229,6 @@ void WbAllBlendGrid(TeamMember_t const &member, const bool use_wb_rho, const int
 
 //! the fluid-independent view of a Hydro or MHD for the wb_dirs = all routines (shared
 //! code: Hydro:: and MHD:: members fill it and call the WbAll* functions below)
-void WbPoison(MeshBlockPack *pmbp, DvceArray5D<Real> &cache, const DvceArray4D<Real> &phiwb,
-              const Real phimax);
-void WbFluxDiag(MeshBlockPack *pmbp, DvceFaceFld5D<Real> &uflx);
 struct WbAllCtx {
   MeshBlockPack *pmbp = nullptr;
   EOS_Data eos;

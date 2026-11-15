@@ -147,7 +147,6 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("use_wb_rho", use_wb_rho);
   v.value("wb_rmax", wb_rmax);
   v.value("wb_phimax", wb_phimax);
-  v.value("wb_poison", wb_poison);
   v.value("wb_rmin", wb_rmin);
   v.value("wb_option", wb_option);
   v.view("u0wb", u0wb);

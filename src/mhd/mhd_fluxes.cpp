@@ -316,10 +316,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // the gnomonic face rotation
   const bool cs_shr_ = cs_seam_mhd;
   if (wb_all) BuildWBCacheAll();   // (before the seam face states)
-  if (wb_all && wb_poison) {   // TEST ONLY
-    hydro::WbPoison(pmy_pack, wbq2, phicc_wb, wb_phimax);
-    if (wbq3.extent_int(2) > 1) hydro::WbPoison(pmy_pack, wbq3, phicc_wb, wb_phimax);
-  }
   if (cs_shr_) {
     CsSeamFaceStates();
   }
@@ -361,7 +357,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     if (wb_cache_every <= 0 || !wb_cache_built ||
         (stage == 1 && (ncyc % wb_cache_every) == 0)) {
       BuildWBCache(jl, ju, kl, ku);
-      if (wb_poison) hydro::WbPoison(pmy_pack, wbq0, phicc_wb, wb_phimax);   // TEST
       wb_cache_built = true;
     }
   }
