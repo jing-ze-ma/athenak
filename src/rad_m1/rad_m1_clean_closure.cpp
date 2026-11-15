@@ -64,11 +64,16 @@ void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &val
 //----------------------------------------------------------------------------------------
 //! \fn void CleanFaceVector
 //! \brief spherical polar: the exact vector area a of the low face of cell (k,j,i) normal
-//! to dir (r faces along r_hat, theta faces along theta_hat, phi faces along phi_hat)
+//! to dir (r faces along r_hat, theta faces along theta_hat, phi faces along phi_hat);
+//! on the cubed sphere that of CleanCsGeometry
 
 KOKKOS_INLINE_FUNCTION
 void CleanFaceVector(const CleanArgs &x, const DvceArray2D<Real> &x3f, const int dir,
                      const int m, const int k, const int j, const int i, Real a[3]) {
+  if (x.cub) {   // the exact closed face vectors of CleanCsGeometry
+    for (int c = 0; c < 3; ++c) a[c] = x.area[dir](m,k,j,i)*x.g(m,CLG_N+3*dir+c,k,j,i);
+    return;
+  }
   const Real r1 = x.x1f(m,i), r2 = x.x1f(m,i+1), t1 = x.x2f(m,j), t2 = x.x2f(m,j+1);
   const Real p1 = x3f(m,k), p2 = x3f(m,k+1);
   const Real hr = 0.5*(r2*r2 - r1*r1);
@@ -552,7 +557,7 @@ void RadiationM1::CleanClosureSphere() {
   const bool cub = pmy_pack->pmesh->use_cubed_sphere;
   auto x1v = pmy_pack->pcoord->x1v;
   auto cs = cln_s;
-  auto gn = cln_gn;
+  CleanArgs x = CleanMakeArgs();
 
   par_for("cln_sphere", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -593,16 +598,7 @@ void RadiationM1::CleanClosureSphere() {
     if (!cub) return;
     const Real dt = 0.5*(1.0 - drr);
     Real nd[3][3];
-    for (int d = 0; d < 3; ++d) {
-      const int dk = (d == 2), dj = (d == 1);
-      Real s = 0.0;
-      for (int c = 0; c < 3; ++c) {
-        nd[d][c] = (d == 0) ? gn(m,CLG_R+c,k,j,i) :
-                   gn(m,CLG_N+3*d+c,k,j,i) + gn(m,CLG_N+3*d+c,k+dk,j+dj,i);
-        s += nd[d][c]*nd[d][c];
-      }
-      for (int c = 0; c < 3; ++c) nd[d][c] /= std::sqrt(s);
-    }
+    CleanCsFamily(x, m, k, j, i, nd);
     const int ab[6][2] = {{0, 0}, {1, 1}, {2, 2}, {0, 1}, {0, 2}, {1, 2}};
     for (int a = 0; a < 6; ++a) {
       cs(m,CLN_D11+a,k,j,i) = (drr - dt)*nd[0][ab[a][0]]*nd[0][ab[a][1]] +
@@ -831,6 +827,7 @@ void RadiationM1::CleanFvSweep() {
     auto r_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
     auto t_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x2v);
     auto p_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x3v);
+    auto g_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_gn);
     std::vector<Real> key(ncell);
     std::vector<int> idx(ncell);
     for (int m = 0; m < nmb; ++m) {
@@ -840,6 +837,10 @@ void RadiationM1::CleanFvSweep() {
           const Real st = std::sin(t_h(m,j)), r = r_h(m,i);
           key[c] = r*(d_h(d,0)*st*std::cos(p_h(m,k)) + d_h(d,1)*st*std::sin(p_h(m,k)) +
                       d_h(d,2)*std::cos(t_h(m,j)));
+          if (x.cub) {   // the centroids
+            key[c] = d_h(d,0)*g_h(m,CLG_X,k,j,i) + d_h(d,1)*g_h(m,CLG_X+1,k,j,i) +
+                     d_h(d,2)*g_h(m,CLG_X+2,k,j,i);
+          }
           idx[c] = c;
         }
         std::sort(idx.begin(), idx.end(), [&](int a, int b) {return key[a] < key[b];});
@@ -960,7 +961,8 @@ void RadiationM1::CleanFvSweep() {
 //! \brief the closure from the vet_gd intensities in the local basis (r, theta, phi) of
 //! each cell, mu_b = n . e_b: J = <I>, K_bc = <I mu_b mu_c>, H+-_b = <I mu_b> over mu_b
 //! >< 0, K+^d_b = <I mu_b mu_d> over mu_d > 0 and C1 = <|I - S|>/J (CLN_* layout, as
-//! CleanClosureFromRays; no ray face fluxes).
+//! CleanClosureFromRays; no ray face fluxes).  On the cubed sphere mu_b = n_b (Cartesian
+//! D and k+ columns) and the half ranges are about the family normals (CleanCsFamily).
 
 void RadiationM1::CleanClosureFromGd() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -980,24 +982,32 @@ void RadiationM1::CleanClosureFromGd() {
   auto cs = cln_s;
   auto valid = cln_v;
   Real ray_min = cln_raymin;
+  CleanArgs x = CleanMakeArgs();
   par_for("cln_gd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real st = sin(x2v(m,j)), ct = cos(x2v(m,j));
     const Real sp = sin(x3v(m,k)), cp = cos(x3v(m,k));
     const Real s0 = exp(cw_(m,1,k+ok,j+og,i));
+    // the cubed sphere: D in Cartesian components, half ranges about the families n_d
+    Real nd[3][3];
+    if (x.cub) CleanCsFamily(x, m, k, j, i, nd);
     Real q[CLN_N] = {0.0};
     for (int d = 0; d < n; ++d) {
       const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
-      const Real mu[3] = {nx*st*cp + ny*st*sp + nz*ct, nx*ct*cp + ny*ct*sp - nz*st,
-                          -nx*sp + ny*cp};
+      Real mu[3] = {nx*st*cp + ny*st*sp + nz*ct, nx*ct*cp + ny*ct*sp - nz*st,
+                    -nx*sp + ny*cp}, nu[3];
+      for (int b = 0; b < 3; ++b) {
+        if (x.cub) mu[b] = dir_(d,b);
+        nu[b] = x.cub ? nx*nd[b][0] + ny*nd[b][1] + nz*nd[b][2] : mu[b];
+      }
       const Real iv = fv ? fi_(m,d,k,j,i) : vi_(m,d,k+ok,j+og,i);
       const Real a = dir_(d,3)*iv;
       q[CLN_J] += a;
       for (int b = 0; b < 3; ++b) {
         q[CLN_D11+b] += a*mu[b]*mu[b];
-        q[((mu[b] > 0.0) ? CLN_HP : CLN_HM)+b] += a*mu[b];
-        if (!(mu[b] > 0.0)) continue;
-        for (int c = 0; c < 3; ++c) q[CLN_KP+3*b+c] += a*mu[c]*mu[b];
+        q[((nu[b] > 0.0) ? CLN_HP : CLN_HM)+b] += a*nu[b];
+        if (!(nu[b] > 0.0)) continue;
+        for (int c = 0; c < 3; ++c) q[CLN_KP+3*b+c] += a*mu[c]*nu[b];
       }
       q[CLN_D11+3] += a*mu[0]*mu[1];
       q[CLN_D11+4] += a*mu[0]*mu[2];

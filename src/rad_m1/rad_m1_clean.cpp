@@ -101,16 +101,25 @@ void RadiationM1::CleanInit() {
                "(force_reference_work = split)");
   }
   if (pm->use_cubed_sphere) {
-    // eddington is the sphere closure of infinite radius; an even panel resolution
+    // the rays are vet_gd's directions transported conservatively (CleanFvSweep), or
+    // the analytic sphere (eddington: of infinite radius); an even panel resolution
     // keeps the cell centres off the z axis (the frame of y, CleanCsFrame)
-    if (!cln_cell || !(cln_sphere || cln_edd) || cln_consist || cln_milne ||
-        pm->mesh_indcs.nx2 % 2 != 0) {
+    if (!cln_cell || !(cln_sphere || cln_edd || vgd_on) || cln_consist || cln_milne ||
+        vgd_twin || VgdRotOn() || vra_on || vgd_async || pm->mesh_indcs.nx2 % 2 != 0) {
       CleanFatal("<rad_m1>/scheme = clean on the cubed sphere needs clean_layout = cell, "
-                 "clean_closure = sphere | eddington, no clean_consistency or "
-                 "clean_face_model = milne and an even <mesh>/nx2");
+                 "clean_closure = sphere | eddington or closure = vet_col with vet_gd "
+                 "(clean_rays = fv1 | fv, no twin, rotation or async), no "
+                 "clean_consistency or clean_face_model = milne and an even "
+                 "<mesh>/nx2");
     }
-    if (cln_edd) cln_sph_r = std::numeric_limits<Real>::max();
-    cln_sphere = true;
+    if (vgd_on) {
+      cln_rfv = std::max(cln_rfv, 1);
+      vlat_taucut = std::numeric_limits<Real>::max();
+      marena_on = false;
+    } else {
+      if (cln_edd) cln_sph_r = std::numeric_limits<Real>::max();
+      cln_sphere = true;
+    }
     CleanCsGeometry();
     cln_init = true;
     return;

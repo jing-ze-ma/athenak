@@ -196,20 +196,6 @@ Real CleanDnn(const CleanArgs &x, const int dir, const int m, const int kf, cons
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn bool CleanSeamFace
-//! \brief true for face (k,j) normal to dir on a cubed-sphere panel seam
-
-KOKKOS_INLINE_FUNCTION
-bool CleanSeamFace(const CleanArgs &x, const int dir, const int m, const int k,
-                   const int j) {
-  if (!x.cub || dir == 0) return false;
-  const int pos = (dir == 1) ? j : k;
-  return (pos == ((dir == 1) ? x.js : x.ks) && x.mbc(m,2*dir) == BoundaryFlag::panel) ||
-         (pos == ((dir == 1) ? x.je : x.ke) + 1 &&
-          x.mbc(m,2*dir+1) == BoundaryFlag::panel);
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn Real CleanCsFrame
 //! \brief cubed sphere: the orthonormal frame of y in cell (k,j,i), rows q[0] = r_hat
 //! (the hydro's), q[1] = theta_hat = phi_hat x r_hat, q[2] = phi_hat = z x r_hat/|.|, in
@@ -228,6 +214,27 @@ Real CleanCsFrame(const CleanArgs &x, const int m, const int k, const int j, con
   q[1][1] = -q[2][0]*q[0][2];
   q[1][2] = q[2][0]*q[0][1] - q[2][1]*q[0][0];
   return x.x1v(m,i)*rho;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCsFamily
+//! \brief cubed sphere: the normals n_d of the face families of cell (k,j,i) for the
+//! half-range closure (CLN_HP, CLN_HM, CLN_KP): r_hat of the frame and the mean normals
+//! of the two x2 and the two x3 faces
+
+KOKKOS_INLINE_FUNCTION
+void CleanCsFamily(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                   Real nd[3][3]) {
+  for (int d = 0; d < 3; ++d) {
+    const int dk = (d == 2), dj = (d == 1);
+    Real s = 0.0;
+    for (int c = 0; c < 3; ++c) {
+      nd[d][c] = (d == 0) ? x.g(m,CLG_R+c,k,j,i) :
+                 x.g(m,CLG_N+3*d+c,k,j,i) + x.g(m,CLG_N+3*d+c,k+dk,j+dj,i);
+      s += nd[d][c]*nd[d][c];
+    }
+    for (int c = 0; c < 3; ++c) nd[d][c] /= std::sqrt(s);
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -415,7 +422,6 @@ void CleanCellDrag(const CleanArgs &x, const Real chi, const Real rho, const int
 //! \brief coefficients cj of u_{L-1}, u_L, u_R, u_{R+1} in the jump u_R^- - u_L^+ of
 //! component c at face (k,j,i) normal to dir: (0, -1, 1, 0) at first order, with the
 //! lagged half-slopes s_i = (pl_i (u_i - u_{i-1}) + pr_i (u_{i+1} - u_i))/2 otherwise
-//! (first order on panel seams, whose ghosts carry the weights of the neighbour's axes)
 
 KOKKOS_INLINE_FUNCTION
 void CleanJumpCoefficients(const CleanArgs &x, const int dir, const int c, const int m,
@@ -424,7 +430,7 @@ void CleanJumpCoefficients(const CleanArgs &x, const int dir, const int c, const
   cj[1] = -1.0;
   cj[2] = 1.0;
   cj[3] = 0.0;
-  if (!x.recon || CleanSeamFace(x, dir, m, k, j)) return;
+  if (!x.recon) return;
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   const int n = 4*dir + c;
   const Real pll = x.u(m,CLC_PL+n,kl,jl,il), prl = x.u(m,CLC_PR+n,kl,jl,il);

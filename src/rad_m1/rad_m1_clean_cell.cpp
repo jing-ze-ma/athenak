@@ -10,6 +10,7 @@
 //! stepping are those of the staggered layout; see rad_m1_clean_cell.hpp for the
 //! discrete equations.
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <limits>
@@ -333,6 +334,30 @@ void RadiationM1::CleanCellSlopeWeights(const int v) {
     }
   });
   CleanGhostFill(cln_x, CLC_PL, 24);
+  if (!x.cub) return;
+  // a seam ghost's weights along this block's axis from the ghost's own index line (the
+  // exchanged ones belong to the neighbour's axes), so that the seam faces are second
+  // order (both layers of a seam ghost are the neighbour's cells)
+  const int no = std::max(indcs.nx2, indcs.nx3);
+  par_for("clc_slopes_seam", DevExeSpace(), 0, nmb1, 0, 3, 0, no - 1, is, ie,
+  KOKKOS_LAMBDA(const int m, const int sd, const int o, const int i) {
+    const int dir = 1 + sd/2, hi = sd%2;
+    if (x.mbc(m,2*dir+hi) != BoundaryFlag::panel) return;
+    const int g = (dir == 1) ? (hi ? je + 1 : js - 1) : (hi ? ke + 1 : ks - 1);
+    const int j = (dir == 1) ? g : js + o, k = (dir == 2) ? g : ks + o;
+    if (j > je + 1 || k > ke + 1) return;
+    const int dk = (dir == 2), dj = (dir == 1);
+    Real sm[4], s0[4], sp[4];
+    CleanCellState(x, v, m, k-dk, j-dj, i, sm);
+    CleanCellState(x, v, m, k, j, i, s0);
+    CleanCellState(x, v, m, k+dk, j+dj, i, sp);
+    for (int q = 0; q < 4; ++q) {
+      const Real dl = s0[q] - sm[q], dr = sp[q] - s0[q];
+      const bool on = dl*dr > 0.0;
+      u(m,CLC_PL+4*dir+q,k,j,i) = on ? dr/(dl + dr) : 0.0;
+      u(m,CLC_PR+4*dir+q,k,j,i) = on ? dl/(dl + dr) : 0.0;
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------
