@@ -13,7 +13,6 @@ void Resistivity::DtRetryVisit(V &v) {
   v.value("use_rkg_sts", use_rkg_sts);
   v.value("rkg_dt_safety", rkg_dt_safety);
   v.value("rkg_dt_fe", rkg_dt_fe);
-  v.value("wall_bt_zero", wall_bt_zero);
   v.value("wall_cond_reflect", wall_cond_reflect);
   v.value("wall_cond_ix1", wall_cond_ix1);
   v.value("track_x1_bflx", track_x1_bflx);

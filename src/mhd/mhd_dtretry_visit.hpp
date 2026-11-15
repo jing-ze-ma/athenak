@@ -130,7 +130,6 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("diode_ox1_btodd", diode_ox1_btodd);
   v.value("diode_ox1_charout", diode_ox1_charout);
   v.value("top_ghost_prim_copy", top_ghost_prim_copy);
-  v.value("wall_stress_free", wall_stress_free);
   v.value("wall_conducting_ix1", wall_conducting_ix1);
   v.value("wall_conducting", wall_conducting);
   v.value("any_reflect_face", any_reflect_face);

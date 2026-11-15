@@ -203,12 +203,10 @@ void HydrostaticEquilibrium(Mesh *pm) {
     }
 
     if (pmbp->pmhd != nullptr) {
-      // stress-free wall on a Cartesian mesh (wallsf-1028): inner ghost B_t odd with unit
-      // ratios (the r^2 / area weights below are spherical, and a Cartesian mesh has no
-      // area arrays; legacy stays bitwise)
-      const bool cart_sf_ = (pmbp->pmhd->wall_stress_free ||
-                             pmbp->pmhd->wall_conducting_ix1) &&
-                            !pm->use_spherical_polar && !pm->use_cubed_sphere;
+      // conducting wall on a Cartesian mesh: inner ghost B_t odd with unit ratios (the
+      // r^2 / area weights below are spherical, and a Cartesian mesh has no area arrays)
+      const bool cart_wall_ = pmbp->pmhd->wall_conducting_ix1 &&
+                              !pm->use_spherical_polar && !pm->use_cubed_sphere;
       par_for("usrboundaryx1_bfield", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
       KOKKOS_LAMBDA(int m, int k, int j) {
           if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
@@ -220,9 +218,9 @@ void HydrostaticEquilibrium(Mesh *pm) {
               Real fac2 = -(SQR(x1f_(m,iin+1))-SQR(x1f_(m,iin)))/(SQR(x1f_(m,iex+1))-SQR(x1f_(m,iex)));
               Real fac2p = fac2;
               // (a Cartesian mesh allocates no area arrays: unit ratios there)
-              Real fac3 = cart_sf_ ? -1.0 : -area3(m,k,j,iin)/area3(m,k,j,iex);
-              Real fac3p = cart_sf_ ? -1.0 : -area3(m,k+1,j,iin)/area3(m,k+1,j,iex);
-              if (cart_sf_) {  // r^2 weights mean nothing on a Cartesian x1: B_t odd
+              Real fac3 = cart_wall_ ? -1.0 : -area3(m,k,j,iin)/area3(m,k,j,iex);
+              Real fac3p = cart_wall_ ? -1.0 : -area3(m,k+1,j,iin)/area3(m,k+1,j,iex);
+              if (cart_wall_) {  // r^2 weights mean nothing on a Cartesian x1: B_t odd
                 fac2 = -1.0;
                 fac2p = -1.0;
               }
@@ -230,7 +228,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
               if (j == n2-1) {b0_x2f(m,k,j+1,iex) = b0_x2f(m,k,j+1,iin)*fac2p;}
               b0_x3f(m,k,j,iex) = b0_x3f(m,k,j,iin)*fac3;
               if (k == n3-1) {b0_x3f(m,k+1,j,iex) = b0_x3f(m,k+1,j,iin)*fac3p;}
-              Real fac1 = cart_sf_ ? 1.0 : area1(m,k,j,iin+1)/area1(m,k,j,iex);
+              Real fac1 = cart_wall_ ? 1.0 : area1(m,k,j,iin+1)/area1(m,k,j,iex);
               b0_x1f(m,k,j,iex) = b0_x1f(m,k,j,iin+1)*fac1;
             }
 //            for (int i=0; i<ng; ++i) {

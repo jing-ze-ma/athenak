@@ -778,9 +778,7 @@ void MHD::UctSeamOwnSide() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int nc = indcs.nx2;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
-  const bool wsf_ = wall_closed_ix1 && wall_stress_free;
   const BoundaryFlag rflag_ = BoundaryFlag::reflect;
-  const BoundaryFlag uflag_ = BoundaryFlag::user;
   auto X = xrec_;
   seam_for("uct_seam_own", DevExeSpace(), 0, nmb1, 0, 3, 0, nc-1, d.is, d.ie,
   KOKKOS_LAMBDA(const int m, const int sd, const int c, const int i) {
@@ -868,8 +866,7 @@ void MHD::UctSeamOwnSide() {
       }
       const int ifc = (s == 0) ? i : d.ie+1;
       const bool wall_in = ifc == d.is &&
-          ((mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_) ||
-           (wsf_ && mb_bcs.d_view(m,BoundaryFace::inner_x1) == uflag_));
+                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_;
       const bool wall_out = ifc == d.ie+1 &&
                             mb_bcs.d_view(m,BoundaryFace::outer_x1) == rflag_;
       const int k0 = K(c, r0), j0 = J(c, r0);

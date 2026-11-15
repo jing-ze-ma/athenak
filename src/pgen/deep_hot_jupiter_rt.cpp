@@ -294,40 +294,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (pmy_mesh_->pmb_pack->pmhd != nullptr) {
       auto *pmhd_w = pmy_mesh_->pmb_pack->pmhd;
       pmhd_w->wall_closed_ix1 = true;
-      // problem/wall_mhd_mirror (MHD only): conducting (DEFAULT, condwall-1028, user
-      // 10-29), stress_free (wallsf-1028) or legacy (bitwise 03b468843).  The ghosts of
-      // this boundary hold B_t ODD and B_r even (the field is normal to the wall,
-      // HydrostaticEquilibrium below), while the legacy mirror kept
-      // B_t EVEN at the is face: the wall then exerted the anchored Maxwell stress
-      // -B_r B_t on a free-slip flow and did the work -B_r (v_t.B_t), +1.04 % of
-      // Lsw_abs into WASP-121b b100 (wallpoynt_1028/RESULTS.md), which a wall at rest
-      // cannot do.  stress_free flips B_t in the mirror (zero stress, zero Poynting
-      // flux; v_t stays even, free slip as in hydro), takes the wall-edge corner EMFs
-      // from the interior row and zeroes the resistive Poynting flux at the wall.
-      const std::string wmm =
-          pin->GetOrAddString("problem", "wall_mhd_mirror", "conducting");
-      // conducting (condwall-1028): a perfectly conducting wall at rest.  The edge EMFs
-      // tangential to the wall (ideal and resistive) are 0, so B_r on the wall is held;
-      // the Riemann mass+energy fluxes through the wall are 0 (no Poynting flux); the
-      // mirror is the legacy one (B_t even, v_t even: free slip), so the anchored field
-      // keeps its Maxwell stress -B_r B_t on the wall (booked as Twall in the
-      // am_hst_split ledger).
-      // A restart whose input records wall_mhd_mirror keeps that value.
-      if (wmm == "stress_free") {
-        pmhd_w->wall_stress_free = true;
-        if (pmhd_w->presist != nullptr) pmhd_w->presist->wall_bt_zero = true;
-      } else if (wmm == "conducting") {
-        pmhd_w->wall_conducting_ix1 = true;
-        if (pmhd_w->presist != nullptr) pmhd_w->presist->wall_cond_ix1 = true;
-      } else if (wmm != "legacy") {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "problem/wall_mhd_mirror = '" << wmm
-                  << "'; expected stress_free, conducting or legacy" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (global_variable::my_rank == 0) {
-        std::cout << "  inner radial wall (MHD): wall_mhd_mirror = " << wmm << std::endl;
-      }
+      // under MHD the wall is a perfectly conducting wall at rest: the edge EMFs
+      // tangential to the wall (ideal and resistive) are 0, so B_r on the wall is held,
+      // and the Riemann mass and energy fluxes through the wall are 0 (no Poynting flux).
+      // The mirror keeps B_t and v_t even (free slip), so the anchored field keeps its
+      // Maxwell stress -B_r B_t on the wall (booked as Twall in the am_hst_split ledger).
+      pmhd_w->wall_conducting_ix1 = true;
+      if (pmhd_w->presist != nullptr) pmhd_w->presist->wall_cond_ix1 = true;
     }
     if (global_variable::my_rank == 0) {
       std::cout << "  inner radial wall: CLOSED (problem/wall_closed = true)"
@@ -2556,13 +2529,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // cells only; a walk in a ghost row (the x2/x3 caches of wb_dirs = all, which read
     // their own ghost rows and give a block's ghost copy of its neighbour's edge row) then
     // reads 0 there, and two blocks see different states on their common face: mass is not
-    // conserved across MeshBlock faces.  Under wb_dirs = all (or problem/phi_faces_ghosts,
-    // test key for the x1-only scheme) the same formulas fill EVERY face, interior ones
-    // bitwise as above.
+    // conserved across MeshBlock faces.  Under wb_dirs = all the same formulas fill
+    // EVERY face, interior ones bitwise as above.
     {
       const bool wba_g = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_all :
                          ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_all : false);
-      if (wba_g || pin->GetOrAddBoolean("problem","phi_faces_ghosts",false)) {
+      if (wba_g) {
         const int ng_ = indcs.ng;
         const int m1 = indcs.nx1 + 2*ng_, m2 = (indcs.nx2 > 1) ? indcs.nx2 + 2*ng_ : 1;
         const int m3 = (indcs.nx3 > 1) ? indcs.nx3 + 2*ng_ : 1;

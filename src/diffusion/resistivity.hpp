@@ -76,9 +76,6 @@ class Resistivity {
   bool rkg_dt_fe = false;
   Real LambdaBoundMax();
   void NewTimeStepRKGFE();
-  // stress-free closed inner wall: B_t = 0 on the is face of a user inner x1 boundary,
-  // so the resistive Poynting flux there is 0
-  bool wall_bt_zero = false;
   // conducting walls: the resistive edge EMF tangential to the reflect faces
   // (<mhd>/wall_conducting = resistive|full) and/or to the is face of a user inner x1
   // wall is 0, and so is the resistive Poynting flux through those faces

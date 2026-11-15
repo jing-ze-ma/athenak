@@ -235,8 +235,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const bool diode_ox1_ = diode_ox1;   // (mhd.hpp)
   const bool diode_btodd_ = diode_ox1_btodd;   // (mhd.hpp)
   const bool diode_chout_ = diode_ox1_charout;   // (mhd.hpp)
-  const bool wall_sf_ = wall_closed_ix1 && wall_stress_free;
-  // the dhj conducting wall is a closed wall on every geometry too (legacy mirror)
+  // the dhj conducting wall is a closed wall on every geometry too
   const bool wall_cd_ = wall_closed_ix1 && wall_conducting_ix1;
   // <mhd>/wall_wb_onesided (mhd.hpp, reconstruct/wb_wall.hpp, shared with
   // Hydro::Fluxes): every geometry, on the x1 dynamic WB paths that read wbq0 (PLM)
@@ -491,10 +490,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     // O(dx^2) and a strong blast leaked 2-3e-4 of the mass through a "closed" wall. Make
     // the ghost-side state the exact mirror of the interior-side one: any solver then
     // returns a zero mass flux (S_M = 0 by symmetry) to round-off.
-    // A Cartesian mesh takes the user-wall mirror only under the stress-free or the
-    // conducting wall (the legacy closed wall was never applied there; reflect is
-    // untouched on Cartesian).
-    if (use_spherical_polar || str_r1_ || wall_sf_ || wall_cd_ || wwb_) {
+    // A Cartesian mesh takes the user-wall mirror only under the conducting wall
+    // (reflect is untouched on Cartesian).
+    if (use_spherical_polar || str_r1_ || wall_cd_ || wwb_) {
       // under <mhd>/wall_wb_onesided a Cartesian reflect wall takes the
       // mirror as the curvilinear one (key off: unchanged)
       const bool curv_ = use_spherical_polar || str_r1_ || wwb_;
@@ -530,9 +528,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             for (int n=0; n<nder; ++n) {
               dl(n,is) = dr(n,is);
             }
-          }
-          if (bix1 == BoundaryFlag::user && wall_sf_) {  // stress-free: B_t odd
-            bl(1,is) = -br(1,is);  bl(2,is) = -br(2,is);
           }
         }
         if (curv_ && box1 == BoundaryFlag::reflect) {

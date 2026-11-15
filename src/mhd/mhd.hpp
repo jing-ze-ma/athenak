@@ -418,13 +418,7 @@ class MHD {
   bool diode_ox1_charout = false;
   // <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
   bool top_ghost_prim_copy = false;
-  // ... and under MHD, the STRESS-FREE wall (dhj problem/wall_mhd_mirror = stress_free;
-  // the dhj default is conducting since ): the mirror flips B_t as well,
-  // matching the odd ghost B_t of the user boundary, so the wall carries neither Maxwell
-  // stress nor Poynting flux, and the wall-edge corner EMFs read the interior row as the
-  // ghost row (mhd_corner_e.cpp)
-  bool wall_stress_free = false;
-  // ... and the CONDUCTING wall (dhj problem/wall_mhd_mirror = conducting, the default):
+  // ... and under MHD, the CONDUCTING wall (set by the dhj problem with wall_closed):
   // the edge EMFs tangential to the is face of the user inner x1 boundary are 0 (ideal
   // and resistive), so B_r on the wall is held, and the Riemann mass+energy fluxes are 0
   // (no Poynting flux; v_n = 0 already removes the advected part). Mirror as legacy.
