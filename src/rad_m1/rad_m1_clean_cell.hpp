@@ -247,15 +247,20 @@ void CleanCellSphWeights(const CleanArgs &x, const int dir, const int m, const i
 //! of cell (k,j,i) per unit E of the cell, g_b for the rows y_b: -(P_tt + P_pp)/r in y_r
 //! and -cot(theta) P_pp/r in y_theta, in the face-area form -c (D_tt + D_pp)
 //! (A_r+ - A_r-)/(2V) and -c D_pp (A_t+ - A_t-)/V that cancels the area terms of a
-//! uniform isotropic stress exactly
+//! uniform isotropic stress exactly.  The share of a low-order face, whose stress is
+//! that of D = I, takes D_tt = D_pp = 1, so that it cancels that face's area term too.
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int j,
                         const int i, Real g[3]) {
   const Real hv = x.h*x.c/x.vol(m,k,j,i);
   const Real dtt = CleanDiag(x, 1, 1, m, k, j, i), dpp = CleanDiag(x, 2, 2, m, k, j, i);
-  g[0] = -0.5*hv*(dtt + dpp)*(x.area[0](m,k,j,i+1) - x.area[0](m,k,j,i));
-  g[1] = (x.nf > 1) ? -hv*dpp*(x.area[1](m,k,j+1,i) - x.area[1](m,k,j,i)) : 0.0;
+  auto d = [&](const int dir, const int kk, const int jj, const int ii, const Real dc) {
+    return (x.fc[dir](m,CLF_LO,kk,jj,ii) > 0.0 ? 1.0 : dc)*x.area[dir](m,kk,jj,ii);
+  };
+  const Real dr = 0.5*(dtt + dpp);
+  g[0] = -hv*(d(0, k, j, i+1, dr) - d(0, k, j, i, dr));
+  g[1] = (x.nf > 1) ? -hv*(d(1, k, j+1, i, dpp) - d(1, k, j, i, dpp)) : 0.0;
   g[2] = 0.0;
 }
 
