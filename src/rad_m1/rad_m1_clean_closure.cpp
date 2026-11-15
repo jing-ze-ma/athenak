@@ -361,6 +361,7 @@ void RadiationM1::CleanClosureExtrap() {
   const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
   auto cs = cln_s;
   auto valid = cln_v;
+  CleanArgs x = CleanMakeArgs();
   int nguard = 0;
   Kokkos::parallel_reduce("cln_extrap",
                           Kokkos::RangePolicy<DevExeSpace>(0, (nmb1 + 1)*nk*nj*ni),
@@ -377,8 +378,9 @@ void RadiationM1::CleanClosureExtrap() {
     bool ok = line && ma(m,CLN_J,k,j,i) > 0.0 && q[CLN_J] > 0.0;
     if (ok) {
       const Real ij = 1.0/q[CLN_J];
-      Real h[3], a[3][3];
-      for (int b = 0; b < 3; ++b) h[b] = (q[CLN_HP+b] + q[CLN_HM+b])*ij;
+      Real s[3], h[3], a[3][3];
+      for (int b = 0; b < 3; ++b) s[b] = (q[CLN_HP+b] + q[CLN_HM+b])*ij;
+      CleanRayFlux(x, m, k, j, i, s, h);
       a[0][0] = q[CLN_D11]*ij;
       a[1][1] = q[CLN_D11+1]*ij;
       a[2][2] = q[CLN_D11+2]*ij;
@@ -401,7 +403,9 @@ void RadiationM1::CleanClosureExtrap() {
     }
     if (!ok) {
       if (line && mn(m,CLN_J,k,j,i) > 0.0) ++ng;
-      for (int n = 0; n < CLN_N; ++n) q[n] = mn(m,n,k,j,i);
+      // (the face sums of a MeshBlock face on the cubed sphere, held on both sides, stay
+      // extrapolated alike)
+      for (int n = 0; n < (x.cub ? CLN_F2 : CLN_N); ++n) q[n] = mn(m,n,k,j,i);
     }
     CleanStoreMoments(cs, valid, q, m, k, j, i);
   }, Kokkos::Sum<int>(nguard));
@@ -1034,6 +1038,8 @@ void RadiationM1::CleanClosureFromGd() {
 //! face components: the curvature of their stress.  Several MeshBlocks along x1: a level
 //! starts from the top face of the level below (vgd_x1b -> vgd_x1r), one level per pass;
 //! at a reflecting top the remainder is spread over the outermost level (zero wall flux).
+//! On the cubed sphere the momentum is Cartesian and the r faces carry the rays' upwind
+//! fluxes (no curvature terms).
 
 void RadiationM1::CleanGdFaceSums() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1089,11 +1095,18 @@ void RadiationM1::CleanGdFaceSums() {
     return fi_(m,d,k,j,i);
   };
   // vector area of the low face of cell (k,j,i) normal to dir and the local basis there
+  // (Cartesian on the cubed sphere)
   auto face = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
                                    const int i, Real a[3], Real e[3][3]) {
     CleanFaceVector(x, x3f, dir, m, k, j, i, a);
-    CleanLocalBasis((dir == 1) ? x.x2f(m,j) : x.x2v(m,j),
-                    (dir == 2) ? x3f(m,k) : x3v(m,k), e);
+    if (!x.cub) {
+      CleanLocalBasis((dir == 1) ? x.x2f(m,j) : x.x2v(m,j),
+                      (dir == 2) ? x3f(m,k) : x3v(m,k), e);
+      return;
+    }
+    for (int b = 0; b < 3; ++b) {
+      for (int c = 0; c < 3; ++c) e[b][c] = (b == c) ? 1.0 : 0.0;
+    }
   };
   // beam of direction d through the low theta or phi face of cell (k,j,i)
   auto lat = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
@@ -1134,24 +1147,31 @@ void RadiationM1::CleanGdFaceSums() {
   // beams of cell ic that hit it (f of sign sg) doubled, no tangential part
   auto mirror = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                      const int ic, const Real sg, Real q[4]) {
-    Real a[3], e[3][3], w[4] = {0.0};
+    Real a[3], e[3][3], w[4] = {0.0}, nf[3], wn = 0.0;
     face(0, m, k, j, i, a, e);
     for (int d = 0; d < n; ++d) {
       const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
       if (sg*f > 0.0) add(0, m, k, j, i, d, 2.0*f*inten(m, d, k, j, ic), w);
     }
+    for (int b = 0; b < 3; ++b) nf[b] = CleanNf(x, b, 0, m, k, j, i);
+    for (int b = 0; b < 3; ++b) wn += w[1+b]*nf[b];
     q[0] = 0.0;
-    q[1] = w[1];
-    q[2] = 0.0;
-    q[3] = 0.0;
+    for (int b = 0; b < 3; ++b) q[1+b] = wn*nf[b];
   };
   for (int dir = 1; dir < 3; ++dir) {
     const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
     par_for("cln_gd_lat", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real q[4] = {0.0};
-      for (int d = 0; d < n; ++d) add(dir, m, k, j, i, d, lat(dir, m, k, j, i, d), q);
-      for (int c = 0; c < 4; ++c) cs(m,nf+c,k,j,i) = q[c];
+      // the cubed sphere: the high face of the MeshBlock too (CLN_FH of its last cell)
+      const bool hi = x.cub && ((dir == 1) ? j == je : k == ke);
+      for (int up = 0; up <= (hi ? 1 : 0); ++up) {
+        const int kf = k + up*(dir == 2), jf = j + up*(dir == 1);
+        Real q[4] = {0.0};
+        for (int d = 0; d < n; ++d) {
+          add(dir, m, kf, jf, i, d, lat(dir, m, kf, jf, i, d), q);
+        }
+        for (int c = 0; c < 4; ++c) cs(m,(up ? CLN_FH + 4*(dir - 1) : nf)+c,k,j,i) = q[c];
+      }
     });
   }
   CleanGhostFill(cln_s, CLN_F2, 4);
@@ -1200,6 +1220,10 @@ void RadiationM1::CleanGdFaceSums() {
       const Real vb = in ? 0.0 : qr_(m,4*nkj + kj);   // the column's volume below
       for (int i = is; i <= ie; ++i) {
         for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
+        if (x.cub) {   // (no curvature terms: Cartesian momentum)
+          rflux(m, k, j, i + 1, q);
+          continue;
+        }
         Real g[3] = {0.0, 0.0, 0.0}, qi[3] = {q[1], q[2], q[3]};
         // the exchange V chi (S - J, -H_b) and the lateral outflow of the cell
         const Real chi = x.vol(m,k,j,i)*exp(cw_(m,0,k+ok,j+og,i));

@@ -47,7 +47,8 @@
 //! face normal n (y_d -> y.n, D_bd -> (D n)_b, D_dd -> n.D.n; D is Cartesian).  The rows
 //! (CleanCellRows) are sum A_f f/V for E, its projections on r_hat and theta_hat, and the
 //! torque about z for y_phi: E and L_z change only by face fluxes, a uniform isotropic
-//! state is exact, and no curvature terms are needed.
+//! state is exact, and no curvature terms are needed.  The rays' face sums are Cartesian
+//! and their kinetic flux takes the half ranges about the face normal (CleanCellKinetic).
 
 #include <cmath>
 
@@ -65,7 +66,9 @@ constexpr int CLF_UG = 4;    // 1: physical boundary face of a marked cell, upwi
                              //    against the ghost (clean_pos_ghost)
 constexpr int CLF_CB = CLF_N;  // consistency bracket of (fE, fY_1..3)
 constexpr int CLF_WK = CLF_CB + 4;  // weight w of the rays' kinetic flux of U - Ur
-constexpr int CLF_ML = CLF_WK + 1;  // clean_face_model = milne: mu and the sub-cell
+constexpr int CLF_HK = CLF_WK + 1;  // cubed sphere: its h+ of L and h- of R about the
+                                    // face normal (CleanCellConsistency)
+constexpr int CLF_ML = CLF_HK + 2;  // clean_face_model = milne: mu and the sub-cell
                                     // terms of the derivatives (CleanCellMilneSetup)
 
 // cell vectors (array cln_x), 4 components (E, y1, y2, y3) each
@@ -235,6 +238,27 @@ void CleanCsFamily(const CleanArgs &x, const int m, const int k, const int j, co
     }
     for (int c = 0; c < 3; ++c) nd[d][c] /= std::sqrt(s);
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanRayFlux
+//! \brief the rays' flux factor h = H/J of cell (k,j,i) in the components of the face
+//! fluxes from its half-range sums s_b = h+_b + h-_b: s itself; on the cubed sphere
+//! (Cartesian) the solution of n_b . h = s_b for the family normals n_b (CleanCsFamily)
+
+KOKKOS_INLINE_FUNCTION
+void CleanRayFlux(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                  const Real s[3], Real h[3]) {
+  for (int b = 0; b < 3; ++b) h[b] = s[b];
+  if (!x.cub) return;
+  Real nd[3][3], c[3][3];   // c_b = n_{b+1} x n_{b+2}
+  CleanCsFamily(x, m, k, j, i, nd);
+  for (int b = 0; b < 3; ++b) {
+    const Real *p = nd[(b+1)%3], *q = nd[(b+2)%3];
+    for (int e = 0; e < 3; ++e) c[b][e] = p[(e+1)%3]*q[(e+2)%3] - p[(e+2)%3]*q[(e+1)%3];
+  }
+  const Real det = nd[0][0]*c[0][0] + nd[0][1]*c[0][1] + nd[0][2]*c[0][2];
+  for (int e = 0; e < 3; ++e) h[e] = (s[0]*c[0][e] + s[1]*c[1][e] + s[2]*c[2][e])/det;
 }
 
 //----------------------------------------------------------------------------------------
@@ -477,6 +501,20 @@ bool CleanFaceDissipation(const CleanArgs &x, const int dir, const int m, const 
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanCellKinetic
+//! \brief the rays' half-range factors of the kinetic flux through the interior face
+//! (k,j,i) normal to dir: h+ of L and h- of R of the face family; on the cubed sphere
+//! about the face's own normal (CLF_HK)
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellKinetic(const CleanArgs &x, const int dir, const int m, const int k,
+                      const int j, const int i, Real &hp, Real &hm) {
+  const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
+  hp = x.cub ? x.fc[dir](m,CLF_HK,k,j,i) : x.cs(m,CLN_HP+dir,kl,jl,il);
+  hm = x.cub ? x.fc[dir](m,CLF_HK+1,k,j,i) : x.cs(m,CLN_HM+dir,k,j,i);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanCellFaceDistance
 //! \brief distance between the centres of the two cells across face (k,j,i) normal to
 //! dir: dx_d on a Cartesian mesh; on spherical polar dr, r dtheta and r sin(theta) dphi
@@ -642,16 +680,25 @@ void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int
 
 //----------------------------------------------------------------------------------------
 //! \fn void CleanCellDeviationFlux
-//! \brief adds the flux wh R_b of the momentum deviation R = y - h E of cell (k,j,i) to
-//! the flux rows nb0..nb1-1 of jj (wh = w c h+-, the rays' half-range flux factor)
+//! \brief adds the flux wh P R of the momentum deviation R = y - h E of cell (k,j,i)
+//! through the boundary face (kf,jf,iff) normal to dir to the flux rows of jj (wh = w c
+//! h+-, the rays' half-range flux factor): P = I on an open face, n n^T at a wall (its
+//! mirror image returns R_t and reverses R_n)
 
 KOKKOS_INLINE_FUNCTION
-void CleanCellDeviationFlux(const CleanArgs &x, const int m, const int k, const int j,
-                            const int i, const int nb0, const int nb1, const Real wh,
-                            Real jj[4][4]) {
-  for (int b = nb0; b < nb1; ++b) {
-    jj[1+b][1+b] += wh;
-    jj[1+b][0] -= wh*(x.cs(m,CLN_HP+b,k,j,i) + x.cs(m,CLN_HM+b,k,j,i));
+void CleanCellDeviationFlux(const CleanArgs &x, const int dir, const int m, const int kf,
+                            const int jf, const int iff, const int k, const int j,
+                            const int i, const bool wall, const Real wh, Real jj[4][4]) {
+  Real s[3], h[3];
+  for (int b = 0; b < 3; ++b) s[b] = x.cs(m,CLN_HP+b,k,j,i) + x.cs(m,CLN_HM+b,k,j,i);
+  CleanRayFlux(x, m, k, j, i, s, h);
+  for (int b = 0; b < x.nf; ++b) {
+    for (int c = 0; c < x.nf; ++c) {
+      const Real p = wall ? CleanNf(x, b, dir, m, kf, jf, iff)*
+                            CleanNf(x, c, dir, m, kf, jf, iff) : ((b == c) ? 1.0 : 0.0);
+      jj[1+b][1+c] += wh*p;
+      jj[1+b][0] -= wh*p*h[c];
+    }
   }
 }
 
@@ -693,8 +740,7 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
     if (bc == M1_IBC_REFLECT) {
       const Real dnn = CleanDnn(x, dir, m, k, j, i, kc, jc, ic);
       for (int b = 0; b < x.nf; ++b) jj[1+b][0] = x.c*CleanNf(x, b, dir, m, k, j, i)*dnn;
-      // the mirror image returns R_t and reverses R_d
-      CleanCellDeviationFlux(x, m, kc, jc, ic, dir, dir + 1, 2.0*wo, jj);
+      CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, true, 2.0*wo, jj);
       return;
     }
     const Real sg = blo ? -0.5*x.c : 0.5*x.c;
@@ -711,17 +757,18 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
     Real al, ar;
     CleanFaceWeights(x, dir, m, k, j, i, al, ar);
     jj[0][0] = blo ? ar : al;
+    const bool up = x.all_low || x.fc[dir](m,CLF_UG,k,j,i) > 0.0;
     for (int b = 0; b < x.nf; ++b) {
-      if (x.all_low || x.fc[dir](m,CLF_UG,k,j,i) > 0.0) {
+      if (up) {
         // first-order solve or marked boundary face: upwind (a = c) stress between the
         // inner cell and the ghost
         jj[1+b][0] = 0.5*x.c*CleanDn(x, b, dir, m, k, j, i, kc, jc, ic);
         jj[1+b][1+b] = sg;
       } else {
         jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, blo);
-        CleanCellDeviationFlux(x, m, kc, jc, ic, b, b + 1, wo, jj);
       }
     }
+    if (!up) CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, false, wo, jj);
     return;
   }
   Real al, hs;
@@ -754,9 +801,11 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
       jr[r][c] *= 1.0 - w;
     }
   }
+  Real hp, hm;
+  CleanCellKinetic(x, dir, m, k, j, i, hp, hm);
   for (int r = 0; r <= x.nf; ++r) {
-    jl[r][r] += w*x.c*x.cs(m,CLN_HP+dir,kl,jl_,il);
-    jr[r][r] += w*x.c*x.cs(m,CLN_HM+dir,k,j,i);
+    jl[r][r] += w*x.c*hp;
+    jr[r][r] += w*x.c*hm;
   }
 }
 
