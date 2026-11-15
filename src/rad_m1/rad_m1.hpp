@@ -2913,6 +2913,7 @@ class RadiationM1 {
   void CleanRays();
   void CleanClosureFromRays();
   void CleanClosureFromGd();
+  void CleanGdFaceSums();
   void CleanClosureFill();
   void CleanClosureEddington();
   void CleanFaceCoefficients();
