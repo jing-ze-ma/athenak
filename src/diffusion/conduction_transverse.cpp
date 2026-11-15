@@ -761,30 +761,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         sfrst[s] = ((s % 2) == 0) ? 1 : 0;
       }
     }
-    // ---- THE OUTER CROSS-TERM ITERATION (cubed sphere only).  The metric cross term
-    // is not in the tridiagonal, so one ADI step carries it frozen at T*.  That is
-    // unconditionally stable (the cross/diagonal symbol ratio is <= 1/2, and -> 0 at the
-    // Nyquist checkerboard), but a mid-band mode is left with amplification ~ -1/4
-    // instead of ~0.  rad_adi_cross_iter > 1 re-solves with the cross term evaluated at
-    // the previous answer, a fixed-point iteration with that same contraction factor.
-    // ncrit = 1 off the cubed sphere, and then `lag` is never read.
-    const int ncrit = (csx && rad_adi_cross_iter > 1) ? rad_adi_cross_iter : 1;
-    auto lag = (ncrit > 1) ? tr_ylg : tr_ya;
-    bool uselg = false;
     // the x1 window of every exchange this section makes, as in the refresh above
     const int sla_ = is, sua_ = ie;
-    for (int cit=0; cit<ncrit; ++cit) {
-    if (cit > 0) {
-      Kokkos::deep_copy(lag, yy);
-      pbval_tr->InitRecv(1);
-      pbval_tr->PackAndSendCC(lag, tr_ycoar, sla_, sua_);
-      while (pbval_tr->RecvAndUnpackCC(lag, tr_ycoar, sla_, sua_)
-             != TaskStatus::complete) {}
-      Kokkos::fence();
-      while (pbval_tr->ClearRecv() != TaskStatus::complete) {}
-      while (pbval_tr->ClearSend() != TaskStatus::complete) {}
-      uselg = true;
-    }
     for (int pass=0; pass<nsb*nsweep; ++pass) {
       const int sb = pass/nsweep;
       const int dpass = pass - sb*nsweep;
@@ -811,8 +789,6 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         const bool ub3 = three_d && !d2;
         const int lmode = (dpass == 0) ? smode[sb] : 2;    // 2 = add in place
         auto o_ = yy;
-        auto lg_ = lag;
-        const bool ulg_ = uselg;
         par_for("radtradirhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           const Real ai = st(m,ia_,k,j,i);
@@ -824,15 +800,14 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                       ? c2(m,k,j,i)*(phc - st(m,it_,k,j-1,i)) : 0.0;
             Real fr = (lnk2(m,j+1) && ai > 0.0 && alp2 > 0.0)
                       ? c2(m,k,j+1,i)*(st(m,it_,k,j+1,i) - phc) : 0.0;
-            // the metric cross term of the SAME faces, explicit: it is the part of
-            // M(0) the tridiagonal cannot carry (rad_adi_cross_iter re-evaluates it at
-            // the current answer instead of at T*)
+            // the metric cross term of the SAME faces, explicit at T*: it is the part
+            // of M(0) the tridiagonal cannot carry
             if (csx) {
               if (lnk2(m,j) && ai > 0.0 && alm2 > 0.0) {
-                fl -= cross2(lg_, ulg_, m, k, j, i);
+                fl -= cross2(o_, false, m, k, j, i);
               }
               if (lnk2(m,j+1) && ai > 0.0 && alp2 > 0.0) {
-                fr -= cross2(lg_, ulg_, m, k, j+1, i);
+                fr -= cross2(o_, false, m, k, j+1, i);
               }
             }
             mi = fr - fl;
@@ -845,10 +820,10 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                     ? c3(m,k+1,j,i)*(st(m,it_,k+1,j,i) - phc) : 0.0;
             if (csx) {
               if (lnk3(m,k) && ai > 0.0 && alm3 > 0.0) {
-                gl -= cross3(lg_, ulg_, m, k, j, i);
+                gl -= cross3(o_, false, m, k, j, i);
               }
               if (lnk3(m,k+1) && ai > 0.0 && alp3 > 0.0) {
-                gr -= cross3(lg_, ulg_, m, k+1, j, i);
+                gr -= cross3(o_, false, m, k+1, j, i);
               }
             }
             const Real m3 = gr - gl;
@@ -1261,7 +1236,6 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         }
         if (dy != 0.0) y_(m,0,k,j,i) += dy;
       });
-    }
     }
     ++sts_ncall;
 

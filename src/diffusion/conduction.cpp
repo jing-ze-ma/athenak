@@ -217,9 +217,6 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           std::exit(EXIT_FAILURE);
         }
       }
-      // the cubed-sphere cross-term outer iteration; see conduction.hpp
-      rad_adi_cross_iter = pin->GetOrAddInteger(block,"rad_adi_cross_iter",1);
-      if (rad_adi_cross_iter < 1) rad_adi_cross_iter = 1;
       rad_adi_seam_w = pin->GetOrAddReal(block,"rad_adi_seam_w",0.5);
       if (!(rad_adi_seam_w >= 0.0 && rad_adi_seam_w <= 1.0)) {
         std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
@@ -563,11 +560,6 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
             // the Richardson register: only lod2 keeps a second answer alive
             if (rad_adi_scm == ADISCM_LOD2 || rad_adi_scm == ADISCM_LOD2A) {
               Kokkos::realloc(tr_yf, nmb, 1, ncells3, ncells2, ncells1);
-            }
-            // the cross-term outer iteration's lag register; cubed sphere only
-            if (pp->pmesh->use_cubed_sphere && rad_cs_exact &&
-                rad_adi_cross_iter > 1) {
-              Kokkos::realloc(tr_ylg, nmb, 1, ncells3, ncells2, ncells1);
             }
             Kokkos::realloc(tr_acp, nmb, 1, ncells3, ncells2, ncells1);
             const int nbm = (adi_nb2 > adi_nb3) ? adi_nb2 : adi_nb3;

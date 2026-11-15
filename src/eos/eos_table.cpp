@@ -81,7 +81,6 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   model.yhel = pin->GetOrAddReal(block, "eos_yhe", 0.2485);
   model.a_metal = pin->GetOrAddReal(block, "eos_a_metal", 16.0);
   model.include_h2 = pin->GetOrAddBoolean(block, "eos_h2", true);
-  model.include_ion = pin->GetOrAddBoolean(block, "eos_ionization", true);
   model.include_metal_ion = pin->GetOrAddBoolean(block, "eos_metal_ionization", false);
   // [M/H] of the metal donors, default <problem>/met when present so the EOS and the
   // opacity use the same metallicity
@@ -300,8 +299,7 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
       << ylo << " " << tbl.dy << "\n"
       << "# comp: X Y Z H2 ion metal_ion mh\n"
       << "# " << model.xhyd << " " << model.yhel << " " << model.MetalFraction() << " "
-      << model.include_h2 << " " << model.include_ion << " "
-      << model.include_metal_ion << " " << model.metal_mh << "\n"
+      << model.include_h2 << " 1 " << model.include_metal_ion << " " << model.metal_mh << "\n"
       << "# then ny*nx rows, y (T) slowest: log10(e/rho)[cgs] log10(p/rho)[cgs]\n";
     f.precision(12);
     for (int j=0; j<ny; ++j) {
@@ -323,7 +321,6 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
             << "             X = " << model.xhyd << ", Y = " << model.yhel
             << ", Z = " << model.MetalFraction()
             << ", H2 " << (model.include_h2 ? "on" : "off")
-            << ", ionization " << (model.include_ion ? "on" : "off")
             << ", radiation " << (tbl.radiation ? "on" : "off") << std::endl;
   if (tbl.rad_taper) {
     std::cout << "             radiation TAPERED off between rho = " << rad_rho_hi

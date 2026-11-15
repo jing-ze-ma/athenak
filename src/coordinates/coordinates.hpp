@@ -100,7 +100,7 @@ class Coordinates {
   DvceArray4D<Real> z_ov_rE;
 
   void CoordSphericalPolar();
-  // spherical-polar phi (<mesh>/sp_phi_global) and theta (<mesh>/sp_theta_global) faces
+  // spherical-polar phi (<mesh>/sp_phi_global) and theta (<mesh>/layout_invariant) faces
   // and centres from the global cell index instead of the block's own edges, so the
   // coordinates are the same for every MeshBlock layout (default <mesh>/layout_invariant)
   bool sp_phi_global = false;

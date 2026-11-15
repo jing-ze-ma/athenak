@@ -460,9 +460,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     }
     use_etotgrav = pin->GetOrAddBoolean("mhd","etotgrav",false);
-    if (pin->DoesParameterExist("mhd","rst_eint")) {   // (mhd.hpp)
-      rst_eint_ideal = pin->GetBoolean("mhd","rst_eint");
-    }
     // (read only when named; see MHD::SplitBvalFastOK in mhd_splitbval.cpp).
     // Default true on a FRESH start (recipe::NewDefaults), as the hydro twin; the value
     // is recorded (GetOrAdd); a restart whose input lacks the key keeps false; an

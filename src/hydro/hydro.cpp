@@ -276,7 +276,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
            pin->GetBoolean("hydro","split_bval_fast") : true;
   // Default split_c2p_once = true on a fresh start and on a restart whose input lacks the
   // key (the value is recorded); <job>/recipe = none keeps false and an explicit key
-  // wins.  With it on, c2p_idempotent is a no-op (bitwise).
+  // wins.
   if (!pin->DoesParameterExist("hydro","split_c2p_once")) {
     if (recipe::GetMode(pin) != recipe::Mode::none) {
       pin->GetOrAddBoolean("hydro","split_c2p_once",true);
@@ -285,15 +285,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       recipe::Log("<hydro>/split_c2p_once = false (recipe none: the old default)");
     }
   }
-  if (pin->DoesParameterExist("hydro","rst_eint")) {   // (hydro.hpp)
-    rst_eint_ideal = pin->GetBoolean("hydro","rst_eint");
-  }
   scp_once = pin->DoesParameterExist("hydro","split_c2p_once") ?
              pin->GetBoolean("hydro","split_c2p_once") : false;
-  // c2p_idempotent is read only when named (default false); a restart whose input names
-  // it keeps that value.
-  c2pi_on = pin->DoesParameterExist("hydro","c2p_idempotent") ?
-            pin->GetBoolean("hydro","c2p_idempotent") : false;
   if (sbf_on && (pmy_pack->pmesh->multilevel ||
                  pin->DoesBlockExist("shearing_box") ||
                  pin->DoesBlockExist("orbital_advection"))) {
@@ -902,10 +895,6 @@ Hydro::~Hydro() {
   if (sbf_on && global_variable::my_rank == 0) {
     std::cout << "<hydro>/split_bval_fast: energy-only refreshes " << sbf_nfast
               << ", full refreshes " << sbf_nfull << " (rank 0)" << std::endl;
-  }
-  if (c2pi_on && global_variable::my_rank == 0) {
-    std::cout << "<hydro>/c2p_idempotent: split conversions skipped " << c2pi_nskip
-              << ", run " << c2pi_nrun << " (rank 0)" << std::endl;
   }
   if (pam != nullptr) {delete pam;}
   if (pmlat != nullptr) {delete pmlat;}

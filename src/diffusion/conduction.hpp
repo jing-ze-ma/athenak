@@ -341,13 +341,6 @@ class Conduction {
   static constexpr int ADISCM_LOD2 = 2;
   static constexpr int ADISCM_LOD2A = 4;   // lod2 with the half-step order alternated
   int rad_adi_scm = ADISCM_LOD;
-  // rad_adi_cross_iter (cubed sphere only, default 1): outer iterations of the ADI step
-  // in which the EXPLICIT metric cross term is re-evaluated at the current answer
-  // Th = T* + alpha y instead of at T*.  The fixed-point contraction factor is the
-  // cross/diagonal symbol ratio, <= 1/4 in the stiff mid-band and -> 0 at the Nyquist
-  // checkerboard, so 2 iterations remove the mid-band ringing described in the design
-  // note.  1 = the plain lagged cross term.  Ignored off the cubed sphere.
-  int rad_adi_cross_iter = 1;
   // rad_adi_seam_w (cubed sphere + rad_ang_solver = adi, default 0.5): where the
   // pair-implicit PANEL-SEAM sub-step evaluates the temperature, between the state the
   // directional sweeps started from (0) and the one they ended at (1).  0.5 is the
@@ -356,8 +349,6 @@ class Conduction {
   static constexpr int NADIB = 8;      // ceiling on blocks per line (reduced size 2*N)
   DvceArray5D<Real> tr_aw, tr_acp;     // the second spike, and the Thomas scratch
   DvceArray5D<Real> tr_yf;             // lod2 only: the full-step answer for Richardson
-  DvceArray5D<Real> tr_ylg;            // rad_adi_cross_iter > 1: the lagged answer the
-                                       // explicit metric cross term is evaluated at
   DvceArray4D<Real> tr_ared;           // (m, block, line, 6): the interface coefficients
   DvceArray1D<int> tr_aact, tr_ab0;    // per plane: active?  per block: its ring index
   HostArray1D<int> tr_aact_h, tr_ab0_h;

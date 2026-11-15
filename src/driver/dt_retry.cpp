@@ -438,7 +438,6 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   }
   fac_ = pin->GetOrAddReal("time", "dt_retry_fac", 0.5);
   grow_ = pin->GetOrAddReal("time", "dt_retry_grow", 1.25);
-  maxcut_ = pin->GetOrAddInteger("time", "dt_retry_max", 8);
   ngood_req_ = pin->GetOrAddInteger("time", "dt_retry_ngood", 10);
   // <time>/dt_retry_fac_t2 (read only when named): the dt factor of a
   // retry raised by <rad_m1>/time2_reject = retry (default: dt_retry_fac)
@@ -479,12 +478,6 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   // GPUs). No memory effect on a host-only build.
   if (pin->DoesParameterExist("time", "dt_retry_host")) {
     host_ = pin->GetBoolean("time", "dt_retry_host");
-  }
-  // <time>/dt_retry_host_skip_clean (read only when named; default true):
-  // with dt_retry_host, a View that has a write counter (vra_d) is not copied again
-  // while clean
-  if (pin->DoesParameterExist("time", "dt_retry_host_skip_clean")) {
-    skip_clean_ = pin->GetBoolean("time", "dt_retry_host_skip_clean");
   }
   // debug / audit keys, read only when named (the parameter dump is unchanged otherwise)
   if (pin->DoesParameterExist("time", "dt_retry_force_cycle")) {
@@ -571,7 +564,7 @@ void DtRetry::Build(Mesh *pm) {
   }
   // dt_retry_host skips the host copy of vet_rotate_avg's history vra_d
   // while it is clean (written only at rotation-block boundaries; RadiationM1::vra_gen)
-  if (host_ && skip_clean_) {
+  if (host_) {
     for (auto &e : ent_) {
       if (e->name == "m1.vra_d") {e->SetGen(&(pk->pradm1->vra_gen));}
     }
@@ -659,7 +652,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   if (ncut_ > maxcut_) {
     if (global_variable::my_rank == 0) {
       std::cout << "### FATAL ERROR: <time> dt_retry: cycle " << pm->ncycle << " failed "
-                << ncut_ << " times (dt_retry_max " << maxcut_ << "), dt " << dto
+                << ncut_ << " times (max " << maxcut_ << "), dt " << dto
                 << std::endl;
     }
     return false;

@@ -91,7 +91,6 @@ add_executable(
         hydro/hydro_newdt.cpp
         hydro/hydro_tasks.cpp
         hydro/hydro_splitbval.cpp
-        hydro/hydro_c2p_idem.cpp
         hydro/hydro_am.cpp
         hydro/hydro_mergelat.cpp
         hydro/hydro_ringavg.cpp

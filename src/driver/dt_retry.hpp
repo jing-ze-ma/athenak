@@ -178,10 +178,10 @@ class DtRetry {
   bool all_views_ = false;
   bool audit_ = false;
   bool host_ = false;      // <time>/dt_retry_host: clones in pinned host mem
-  bool skip_clean_ = true;  // <time>/dt_retry_host_skip_clean
   int poison_ = 0;
   Real fac_ = 0.5, grow_ = 1.25;
-  int maxcut_ = 8, ngood_req_ = 10;
+  static constexpr int maxcut_ = 8;   // cuts of one cycle before the run stops
+  int ngood_req_ = 10;
   int ngood_ = 0;        // accepted cycles since the last cut
   int ncut_ = 0;         // cuts of the current cycle
   int force_cycle_ = -1; // debug: raise a failure at this cycle (once)

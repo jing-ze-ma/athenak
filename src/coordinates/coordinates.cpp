@@ -128,14 +128,13 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
         }
       }
     }
-    // with <mesh>/layout_invariant both angles come from the global cell index unless
-    // sp_theta_global / sp_phi_global are named explicitly
+    // with <mesh>/layout_invariant both angles come from the global cell index (phi
+    // unless sp_phi_global is named explicitly)
     {
       const bool li = pmy_pack->pmesh->layout_invariant;
       sp_phi_global = pin->DoesParameterExist("mesh", "sp_phi_global") ?
                       pin->GetBoolean("mesh", "sp_phi_global") : li;
-      sp_theta_global = pin->DoesParameterExist("mesh", "sp_theta_global") ?
-                        pin->GetBoolean("mesh", "sp_theta_global") : li;
+      sp_theta_global = li;
     }
     CoordSphericalPolar();
   }
