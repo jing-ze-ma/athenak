@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file recipe.cpp
-//! \brief amdef-1019: <job>/recipe and the start-up defaults block (recipe.hpp)
+//! \brief <job>/recipe and the start-up defaults block (recipe.hpp)
 
 #include <cstdlib>
 #include <iostream>

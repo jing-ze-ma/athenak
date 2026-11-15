@@ -473,7 +473,7 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
     // from the evaluation at each segment's end, which also delivers that state's e and
     // p: anchor (p_i and the anchor coefficient), two interfaces, two neighbours.  A
     // third of the midpoint version's table traffic at the same order (see `seg`).
-    // thermo_i (dhjwball-1106): the anchor's p, chi_rho, chi_T already evaluated at t_i
+    // thermo_i: the anchor's p, chi_rho, chi_T already evaluated at t_i
     Real ei_t, p_i, chir, chit;
     if (thermo_i != nullptr) {
       p_i = thermo_i[0]; chir = thermo_i[1]; chit = thermo_i[2];

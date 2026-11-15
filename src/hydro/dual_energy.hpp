@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file dual_energy.hpp
-//! \brief duale-1112: dual-energy selection of the internal energy, the per-cell audit of
+//! \brief dual-energy selection of the internal energy, the per-cell audit of
 //! the energy floors, and the payment of the energy they create from the cell's own
 //! radiation (hydro and MHD, every geometry; general EOS only).  Every key is read only
 //! when named; absent, nothing here is allocated or called (bitwise).

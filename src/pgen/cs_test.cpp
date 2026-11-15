@@ -48,6 +48,7 @@
 //! radius to 1 and the mesh is the unit sphere.
 
 #include <algorithm>
+#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -1800,7 +1801,7 @@ void CSStressHistory(HistoryData *pdata, Mesh *pm) {
   const Real t = pm->time;
   const int nbr = cs_hist_nband;
   Real s2[3][3] = {}, mx[3][3] = {};
-  long long nc[3] = {0, 0, 0};
+  std::int64_t nc[3] = {0, 0, 0};
   Real el_num = 0.0, el_den = 0.0;
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     const int p = mbpanel.h_view(m);
@@ -3148,9 +3149,9 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
     const char *rn[3] = {"panel INTERIOR", "panel SEAM    ", "CUBE VERTEX   "};
     for (int r=0; r<3; ++r) {
       const Real w = (n_r[r] > 0) ? 1.0/static_cast<Real>(n_r[r]) : 0.0;
-      std::printf("###   REGION %s (%9lld cells)  L1(v)=%.4e L1(p)=%.4e L1(B)=%.4e"
+      std::printf("###   REGION %s (%9" PRId64 " cells)  L1(v)=%.4e L1(p)=%.4e L1(B)=%.4e"
                   "  Linf(v)=%.4e Linf(p)=%.4e Linf(B)=%.4e\n", rn[r],
-                  static_cast<long long>(n_r[r]), l1v_r[r]*w, l1p_r[r]*w, l1b_r[r]*w,
+                  static_cast<std::int64_t>(n_r[r]), l1v_r[r]*w, l1p_r[r]*w, l1b_r[r]*w,
                   liv_r[r], lip_r[r], lib_r[r]);
     }
     // TANGENTIAL velocity alone. See the note by l1vt_r: on a stratified problem this is
@@ -3194,11 +3195,11 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
 
   if (has_b) {
     const Real tot = (l1_seam + l1_rad + l1_int > 0.0) ? l1_seam+l1_rad+l1_int : 1.0;
-    std::printf("###   L1(B) budget: seam %.1f%% (%lld cells)  radial %.1f%% (%lld)"
-                "  interior %.1f%% (%lld)\n",
-                100.0*l1_seam/tot, static_cast<long long>(n_seam),
-                100.0*l1_rad/tot,  static_cast<long long>(n_rad),
-                100.0*l1_int/tot,  static_cast<long long>(n_int));
+    std::printf("###   L1(B) budget: seam %.1f%% (%" PRId64 " cells)"
+                "  radial %.1f%% (%" PRId64 ")  interior %.1f%% (%" PRId64 ")\n",
+                100.0*l1_seam/tot, static_cast<std::int64_t>(n_seam),
+                100.0*l1_rad/tot,  static_cast<std::int64_t>(n_rad),
+                100.0*l1_int/tot,  static_cast<std::int64_t>(n_int));
     std::printf("###   L1(B) per cell vs seam distance (cells):");
     for (int q=0; q<NBIN; ++q) {
       if (n_bin[q] > 0) {
@@ -3313,10 +3314,10 @@ void CSTestEosCacheCheck(Mesh *pm) {
 #endif
     if (global_variable::my_rank == 0) {
       std::printf("###   GENERAL-EOS CACHE vs w0:  near midline |cos|<=0.2 dp=%.3e"
-                  " dT=%.3e (%lld cells);  near CORNER |cos|>0.2 dp=%.3e dT=%.3e"
-                  " (%lld cells)\n", mxp[0], mxt[0],
-                  static_cast<long long>(nn[0]), mxp[1], mxt[1],
-                  static_cast<long long>(nn[1]));
+                  " dT=%.3e (%" PRId64 " cells);  near CORNER |cos|>0.2 dp=%.3e dT=%.3e"
+                  " (%" PRId64 " cells)\n", mxp[0], mxt[0],
+                  static_cast<std::int64_t>(nn[0]), mxp[1], mxt[1],
+                  static_cast<std::int64_t>(nn[1]));
     }
   }
 }
@@ -3754,8 +3755,8 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     const Real bs = (bmax > 0.0) ? bmax : 1.0;
     const Real l1n = (ncf > 0) ? l1f/static_cast<Real>(ncf)/bs : 0.0;
     std::printf("###   EVOLVED FIELD error vs the exact static B (all three face"
-                " components):  L1=%.4e  Linf=%.4e  (over %lld faces)\n",
-                l1n, mxf/bs, static_cast<long long>(ncf));
+                " components):  L1=%.4e  Linf=%.4e  (over %" PRId64 " faces)\n",
+                l1n, mxf/bs, static_cast<std::int64_t>(ncf));
     const char *cn[3] = {"x1f", "x2f", "x3f"};
     if (mxc >= 0) {
       std::printf("###     Linf on %s at panel %d (i,j,k)=(%d,%d,%d) of block %d;"
@@ -3767,8 +3768,8 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     const char *rn[3] = {"panel INTERIOR", "panel SEAM    ", "CUBE VERTEX   "};
     for (int r=0; r<3; ++r) {
       const Real w = (ncf_r[r] > 0) ? 1.0/static_cast<Real>(ncf_r[r])/bs : 0.0;
-      std::printf("###     REGION %s (%9lld faces)  L1=%.4e  Linf=%.4e\n", rn[r],
-                  static_cast<long long>(ncf_r[r]), l1f_r[r]*w, mxf_r[r]/bs);
+      std::printf("###     REGION %s (%9" PRId64 " faces)  L1=%.4e  Linf=%.4e\n", rn[r],
+                  static_cast<std::int64_t>(ncf_r[r]), l1f_r[r]*w, mxf_r[r]/bs);
     }
     std::printf("###     BY RADIAL INDEX:");
     for (int q=0; q<indcs.nx1; ++q) {
@@ -4210,12 +4211,12 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
 #endif
     if (global_variable::my_rank == 0) {
       std::printf("###   ERROR JUMP in B.rhat across a shared face (ghost - active):\n");
-      std::printf("###     PANEL SEAM      L1=%.4e  max=%.4e  over %lld faces\n",
+      std::printf("###     PANEL SEAM      L1=%.4e  max=%.4e  over %" PRId64 " faces\n",
                   (js_n > 0) ? js_l1/static_cast<Real>(js_n) : 0.0, js_mx,
-                  static_cast<long long>(js_n));
-      std::printf("###     same-panel CTRL L1=%.4e  max=%.4e  over %lld faces\n",
+                  static_cast<std::int64_t>(js_n));
+      std::printf("###     same-panel CTRL L1=%.4e  max=%.4e  over %" PRId64 " faces\n",
                   (jc_n > 0) ? jc_l1/static_cast<Real>(jc_n) : 0.0, jc_mx,
-                  static_cast<long long>(jc_n));
+                  static_cast<std::int64_t>(jc_n));
       const char *cnm[3] = {"x1f(B.rhat)", "x2f", "x3f"};
       for (int cmp=0; cmp<3; ++cmp) {
         std::printf("###       %-11s seam L1=%.4e   ctrl L1=%.4e   NONswap=%.4e"
@@ -4572,8 +4573,8 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
       for (int r=0; r<2; ++r) {
         const Real w = (tn[r] > 0) ? 1.0/static_cast<Real>(tn[r])/sc : 0.0;
         std::printf("###   LOOP SPLIT %s  total=%.4e  OPERATOR=%.4e  input=%.4e"
-                    "  (%lld edges)\n", rn[r], tt[r][0]*w, tt[r][1]*w, tt[r][2]*w,
-                    static_cast<long long>(tn[r]));
+                    "  (%" PRId64 " edges)\n", rn[r], tt[r][0]*w, tt[r][1]*w, tt[r][2]*w,
+                    static_cast<std::int64_t>(tn[r]));
       }
     }
   }
@@ -4922,10 +4923,10 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
                   pm_[0], pm_[1], pm_[2], pm_[3]);
     }
   }
-  std::printf("###   NON-FINITE cells: %lld of %lld   (within 2 cells of a seam:"
-              " %lld of %lld)\n",
-              static_cast<long long>(nnan), static_cast<long long>(ntot),
-              static_cast<long long>(nnan_s), static_cast<long long>(ntot_s));
+  std::printf("###   NON-FINITE cells: %" PRId64 " of %" PRId64
+              "   (within 2 cells of a seam: %" PRId64 " of %" PRId64 ")\n",
+              static_cast<std::int64_t>(nnan), static_cast<std::int64_t>(ntot),
+              static_cast<std::int64_t>(nnan_s), static_cast<std::int64_t>(ntot_s));
   // THE PROFILE FILE, in the format sp_test's SPTestBlastProfile writes so the two grids
   // can be compared bin for bin: volume-weighted rho, p, |v|, |B| binned in the radial
   // index, the geodesic angle from the blast centre (one bin per angular cell) and the
@@ -5671,10 +5672,11 @@ void CSTestLevelFluxCheck(Mesh *pm) {
   }
   if (wb.m0 >= 0) {
     std::printf("     WORST same-level bucket: dir %s panel %d lev %d  blocks %d,%d"
-                "  q=(%lld,%lld,%lld)  dM %11.4e  scale %11.4e  nfaces %d\n",
+                "  q=(%" PRId64 ",%" PRId64 ",%" PRId64 ")"
+                "  dM %11.4e  scale %11.4e  nfaces %d\n",
                 dn[wb.d], wb.p, wb.nlev, wb.m0, wb.m1,
-                static_cast<long long>(wb.q1), static_cast<long long>(wb.q2),
-                static_cast<long long>(wb.q3), wb.sm, wb.scale, wb.n);
+                static_cast<std::int64_t>(wb.q1), static_cast<std::int64_t>(wb.q2),
+                static_cast<std::int64_t>(wb.q3), wb.sm, wb.scale, wb.n);
     std::printf("     block %d: lev %d panel %d x1 [%g,%g] x2 [%g,%g] x3 [%g,%g]\n",
                 wb.m0, mblev.h_view(wb.m0), mbpanel.h_view(wb.m0),
                 size.h_view(wb.m0).x1min, size.h_view(wb.m0).x1max,
@@ -7999,8 +8001,8 @@ void CSTestSeamHaloScan(ParameterInput *pin, Mesh *pm) {
   }
   std::cout << "### GHOST SCAN BY CATEGORY: max |ghost - exact|\n";
   for (int c=0; c<5; ++c) {
-    std::printf("###   %s  n = %8lld  max = %12.4e\n", cnm[c],
-                static_cast<long long>(cnum[c]), cmax[c]);
+    std::printf("###   %s  n = %8" PRId64 "  max = %12.4e\n", cnm[c],
+                static_cast<std::int64_t>(cnum[c]), cmax[c]);
   }
 
   // ---- THIRD PASS: the x1x2x3 CORNER ghosts (slots 48-55) -------------------------
@@ -8060,8 +8062,8 @@ void CSTestSeamHaloScan(ParameterInput *pin, Mesh *pm) {
   }
   std::cout << "### CORNER (x1x2x3, slots 48-55) SCAN: max |ghost - exact|\n";
   for (int c=0; c<3; ++c) {
-    std::printf("###   %s  n = %8lld  max = %12.4e\n", knm[c],
-                static_cast<long long>(knum[c]), kmax[c]);
+    std::printf("###   %s  n = %8" PRId64 "  max = %12.4e\n", knm[c],
+                static_cast<std::int64_t>(knum[c]), kmax[c]);
   }
 }
 
@@ -8285,8 +8287,8 @@ void CSTestSeamHaloScanFC(ParameterInput *pin, Mesh *pm) {
   for (int q=0; q<5; ++q) {
     std::printf("###   %s ", cnm[q]);
     for (int c=0; c<3; ++c) {
-      std::printf("  %s n=%7lld max=%11.4e", cnmc[c],
-                  static_cast<long long>(cnum[q][c]), cmax[q][c]);
+      std::printf("  %s n=%7" PRId64 " max=%11.4e", cnmc[c],
+                  static_cast<std::int64_t>(cnum[q][c]), cmax[q][c]);
     }
     std::printf("\n");
   }

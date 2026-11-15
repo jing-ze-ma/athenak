@@ -648,7 +648,7 @@ IOWrapperSizeT IOWrapper::GetPosition(bool single_file_per_rank) {
 
 //----------------------------------------------------------------------------------------
 //! \fn std::size_t IOWrapper::DeferWrite()
-//! \brief asyncio-1113: record a write for the helper thread (async_io.hpp).  Sequential
+//! \brief record a write for the helper thread (async_io.hpp).  Sequential
 //! writes (Write_any_type) go at the running position of this file's sequential writes,
 //! which is where fwrite / MPI_File_write with the individual file pointer put them (the
 //! callers never Seek); "_at" writes go at offset, as fseek+fwrite / MPI_File_write_at.

@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file recipe.hpp
-//! \brief amdef-1019 (USER 10-19): the default set of a run and <job>/recipe.
+//! \brief the default set of a run and <job>/recipe.
 //!
 //! The defaults introduced 10-19 (<hydro|mhd>/am_transport where supported,
 //! <hydro|mhd>/etotgrav where supported, <rad_m1>/implicit_solver = bicgstab,
@@ -30,7 +30,7 @@ Mode GetMode(ParameterInput *pin);        // validates <job>/recipe (read withou
 bool NewDefaults(ParameterInput *pin);    // see above
 void Log(const std::string &line);        // one defaulted key (or why it stayed off)
 void PrintLog();                          // the start-up block (rank 0), then clears
-// prod1103c: a problem generator's fresh-start defaults of keys read before the pgen
+// a problem generator's fresh-start defaults of keys read before the pgen
 // exists (main.cpp, before the Mesh); pgen/<problem>_defaults.cpp or the no-op
 // pgen/early_defaults_none.cpp
 void PgenEarlyDefaults(ParameterInput *pin);

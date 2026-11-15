@@ -70,7 +70,7 @@ void GnomonicRaiseVelMHDFloors(const Real c, const EOS_Data &eos_, const bool ge
   // re-apply the floors to the internal energy corrected by the metric kinetic energy
   if (gen_) {
     // general EOS: energy/temperature floors of GeneralMHDFloorsPost (no entropy floor)
-    // share3-1031: the floors of SingleC2P_GeneralMHD (GeneralMHDFloorsPost) on the
+    // the floors of SingleC2P_GeneralMHD (GeneralMHDFloorsPost) on the
     // metric-correct energy; own = true; the entropy floor is not applied on this path
     // (sflr = false, as before); the table clamp is not counted here (as before)
     bool efl_used = false, tfl_used = false, tclamped = false, stale = false;
@@ -82,7 +82,7 @@ void GnomonicRaiseVelMHDFloors(const Real c, const EOS_Data &eos_, const bool ge
     }
   } else {
     // ideal EOS: pressure floor of IdealFloorsPost
-    // share3-1031: the ideal floors of SingleC2P_IdealMHD (IdealFloorsPost); on this path
+    // the ideal floors of SingleC2P_IdealMHD (IdealFloorsPost); on this path
     // only the pressure floor (tflr = sflr = false, as before)
     bool efl_used = false, tfl_used = false;
     IdealFloorsPost<true>(eos_, d, 1.0/d, true, false, false, ekin, emag, eint, etot,

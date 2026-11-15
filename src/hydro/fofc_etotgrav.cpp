@@ -27,7 +27,7 @@ void FofcTrialRemoveGrav(MeshBlockPack *pp, DvceArray5D<Real> utest,
   auto flx_ = flx;
   auto phif_ = phif;
   auto phicc_ = phicc;
-  // cornerfix-1103 <mesh>/cs_vertex_3cell: the same terms left out as in the trial update
+  // <mesh>/cs_vertex_3cell: the same terms left out as in the trial update
   const bool v3_ = pp->pmesh->use_cubed_sphere && pp->pmesh->cs_vertex_3cell && three_d;
   auto &vnb_ = pp->pmb->nghbr;
   auto &vpn_ = pp->pmb->mb_panel;

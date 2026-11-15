@@ -333,9 +333,9 @@ void BoxConvBC(Mesh *pm);
 void BoxConvFinal(ParameterInput *pin, Mesh *pm);
 void BoxConvHistory(HistoryData *pdata, Mesh *pm);
 
-// defaults-1002: <hydro>/fofc defaults to TRUE for this problem generator (every
+// <hydro>/fofc defaults to TRUE for this problem generator (every
 // stellar/box input ran it explicitly); see hydro::fofc_pgen_default (hydro.hpp).
-// merge-1008: <mhd>/fofc likewise (mhd::fofc_pgen_default, mhd.hpp).
+// <mhd>/fofc likewise (mhd::fofc_pgen_default, mhd.hpp).
 namespace {
 [[maybe_unused]] const bool kFofcPgenDefault = (hydro::fofc_pgen_default = true);
 [[maybe_unused]] const bool kMhdFofcPgenDefault = (mhd::fofc_pgen_default = true);
@@ -2735,7 +2735,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   // four energy snapshots this call makes.  The window is closed on the FIRST source
   // call of a cycle, which is stage 1, so E is always sampled at the same phase and the
   // accumulators below cover exactly the interval between two samples.
-  // <rad_m1>/force_reference_work = split (ke-dt-0926): the WB source gives the gas the
+  // <rad_m1>/force_reference_work = split: the WB source gives the gas the
   // work of the rho arad_ref part of its kick (the radiation pays it in its solve)
   radm1::RadiationM1 *pm1w = pmbp->pradm1;
   const bool fws = (pm1w != nullptr) && pm1w->fref_wsplit && wbdyn && wb_phi_eff_;
@@ -2816,7 +2816,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     // force_reference_work = split: the work of the rho arad_ref part of the WB kick, at
     // the stage-start velocity (a separate kernel: the default one is untouched)
     if (pm1w->FrefWaccOn()) {
-      // fref-split-cons-1006 (time_scheme = be): the same increment also goes to the
+      // (time_scheme = be): the same increment also goes to the
       // accumulator the be solve makes E pay (acc = gam0 acc + increment)
       auto wacc = pm1w->FrefWacc();
       const Real g0 = pm1w->FrefWaccGam0(bdt, pm->dt);

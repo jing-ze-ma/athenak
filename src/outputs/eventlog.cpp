@@ -63,7 +63,7 @@ void EventLogOutput::LoadOutputData(Mesh *pm) {
   MPI_Allreduce(MPI_IN_PLACE, &(pm->ecounter.dfloor_ke), 1, MPI_ATHENA_REAL, MPI_SUM,
                 MPI_COMM_WORLD);
 #endif
-  // fixbundle-1009 F4: the <rad_m1> totals (collective: every rank has the module)
+  // the <rad_m1> totals (collective: every rank has the module)
   pm->ecounter.m1on = (pm->pmb_pack->pradm1 != nullptr);
   if (pm->ecounter.m1on) {pm->pmb_pack->pradm1->EventTotals(pm->ecounter.m1tot);}
 
@@ -132,7 +132,7 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       std::fprintf(pfile,"#  cycle eos_dfloor eos_efloor eos_tfloor eos_vceil");
       std::fprintf(pfile," eos_fail c2p_it fofc  efloor_de eos_tclamp   eos_tset");
       std::fprintf(pfile,"   vceil_de");
-      // fixbundle-1009 F4 (APPENDED): dfloor_keep_velocity KE removed; with <rad_m1>
+      // appended columns: dfloor_keep_velocity KE removed; with <rad_m1>
       // the module's totals since the start of the run or restart (EventTotals)
       std::fprintf(pfile,"  dfloor_ke");
       if (pm->ecounter.m1on) {

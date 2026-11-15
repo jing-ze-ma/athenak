@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file cs_vertex_res.hpp
-//! \brief cornerfix-1103 <mesh>/cs_vertex_3cell: the cube-vertex radial edge of the
+//! \brief <mesh>/cs_vertex_3cell: the cube-vertex radial edge of the
 //! cubed-sphere resistive operators (Ohmic, ambipolar; also for the seam current of
 //! cs_seam_res = mean_j).  At a cube vertex only three cells meet: this block's corner
 //! cell (kv, jv) and the two seam ghost cells (kv, jn) (across the x2 seam) and (kn, jv)
@@ -35,12 +35,12 @@ bool CsVertexAt(const RegionSize &z, const int k, const int j, const int js, con
   return true;
 }
 
-//! cornerfix2-1103: a cell field AT the vertex point.  In this block's own (smoothly
+//! a cell field AT the vertex point.  In this block's own (smoothly
 //! extended) gnomonic chart the two seam ghost cells (kv, jn) and (kn, jv) are point
 //! reflections of each other through the vertex, so their mean is the linear-exact,
 //! convex (never overshooting) vertex value: second order, bounded at jumps.  (The
 //! 3-cell mean with the corner cell is NOT linear-exact in this chart: first order.)
-//! cornerfix3-1103: raised to a THIRD-order point value by the pair's curvature term,
+//! raised to a THIRD-order point value by the pair's curvature term,
 //! 1/8 of the second difference along the pair's direction centred on this block's own
 //! corner cell (the cells (kn, jv+dj), (kv, jv), (kv+dk, jn): real, corner-free), gated
 //! by the shared smoothness weight and bounded to the range of the five values
@@ -68,7 +68,7 @@ Real CsVertex3n(const A &a, const int m, const int n, const CsVtx3 &v, const int
 }
 
 
-//! cornerfix4-1103: a stencil read of cell (k, j) that may fall in the made-up cube-
+//! a stencil read of cell (k, j) that may fall in the made-up cube-
 //! vertex corner block (k outside [ks,ke] AND j outside [js,je] at a corner whose two
 //! flanking block faces are panel edges): the parallelogram value
 //!   f(k, jv) + f(kv, j) - f(kv, jv)   (jv, kv = the nearest active column / row)

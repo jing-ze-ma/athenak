@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file am_wb.cpp
-//! \brief amdef-1019 test (pgen_name = am_wb): a spherical shell of gas in a point-mass
+//! \brief test problem (pgen_name = am_wb): a spherical shell of gas in a point-mass
 //! potential, on the cubed sphere or spherical polar (3-D or 2-D sp), for the
 //! angular-momentum transport correction (<hydro>/am_transport) together with the
 //! geometric-source variants wellbalance_static[_reconst].

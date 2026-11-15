@@ -114,7 +114,7 @@ void MHD::FOFC(Driver *pdriver, int stage) {
     if (multi_d) { jl = js-1, ju = je+1; }
     if (three_d) { kl = ks-1, ku = ke+1; }
 
-    // cornerfix-1103 <mesh>/cs_vertex_3cell: as Hydro::FOFC -- a seam GHOST cell within
+    // <mesh>/cs_vertex_3cell: as Hydro::FOFC -- a seam GHOST cell within
     // ng of a cube-vertex corner along its row leaves the along-seam flux / EMF terms
     // (their stencils reach the made-up corner block) out of its trial state, and the
     // corner-block cells are never flagged
@@ -129,7 +129,7 @@ void MHD::FOFC(Driver *pdriver, int stage) {
       Real dtodx1 = beta_dt/size.d_view(m).dx1;
       Real dtodx2 = beta_dt/size.d_view(m).dx2;
       Real dtodx3 = beta_dt/size.d_view(m).dx3;
-      bool drop2 = false, drop3 = false;   // cornerfix-1103 (v3_ only)
+      bool drop2 = false, drop3 = false;   // (v3_ only)
       if (v3_) {
         CsVertexFofcDrop(vnb_.d_view, vpn_.d_view, m, k, j, js, je, ks, ke, ng_,
                          drop2, drop3);
@@ -345,7 +345,7 @@ void MHD::FOFC(Driver *pdriver, int stage) {
       }, Kokkos::Sum<int>(nflag_));
       pmy_pack->pmesh->ecounter.nfofc += nflag_;
     }
-    // cornerfix-1103: the cube-vertex corner-block cells are never flagged (v3_ only)
+    // the cube-vertex corner-block cells are never flagged (v3_ only)
     if (v3_) {
       auto fofcv_ = fofc;
       par_for("FOFC-vtxclr", DevExeSpace(), 0, nmb-1, 0, 3, 0, ng_-1, 0, ng_-1, il, iu,

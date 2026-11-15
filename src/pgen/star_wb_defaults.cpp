@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file star_wb_defaults.cpp
-//! \brief defaults-1105 (USER 11-05, share-audit P12): recipe::PgenEarlyDefaults of the
+//! \brief recipe::PgenEarlyDefaults of the
 //! he_star_m1 and ry_per_accretor builds (src/CMakeLists.txt links this file for those two
 //! problems; deep_hot_jupiter_rt has its own, every other pgen the no-op
 //! early_defaults_none.cpp).  The x1 well-balanced reconstruction of every he_star (HG,

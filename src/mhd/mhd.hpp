@@ -155,9 +155,9 @@ class MHD {
   // dt/2 after, both called by the Driver INSIDE the RKG halves:
   // R(dt/2) Tr(dt/2) [ck(dt/2)] H [ck(dt/2)] Tr(dt/2) R(dt/2).
   // The floor-tracer drain (not a rate) runs in the first half only. false: the task in
-  // "before_timeintegrator" (full dt, Lie), bitwise as before. FRESH-start default true
-  // whenever rkg_strang_fuse is on and a tracer exists (prod1103b, USER 11-03: removes
-  // the O(dt) tracer-split error at +0.5 %; restart-bitwise since ; mhd.cpp).
+  // "before_timeintegrator" (full dt, Lie). FRESH-start default true whenever
+  // rkg_strang_fuse is on and a tracer exists (removes the O(dt) tracer-split error at
+  // +0.5 % cost; mhd.cpp).
   bool trc_strang = false;
   void TracerSourceHalf(int half);
   int ifltr = -1;
@@ -261,8 +261,8 @@ class MHD {
   // UCT-HLL / UCT-HLLD corner EMF (Mignone & Del Zanna 2021) inside MHD::CornerE.
   // uct1/uct2/uct3 hold, per x1/x2/x3 face: 0 a^L (a^R = 1 - a^L), 1 d^L, 2 d^R, then the
   // a-weighted velocity of the face frame: 3 v_n, 4 v_t1, 5 v_t2 (UctFaceStore)
-  // FRESH-start default uct_hlld with rsolver = hlld | lhlld where supported (prod1103,
-  // USER 11-03; recipe::NewDefaults, mhd.cpp); a restart whose input lacks the key: gs07.
+  // FRESH-start default uct_hlld with rsolver = hlld | lhlld where supported
+  // (recipe::NewDefaults, mhd.cpp); a restart whose input lacks the key: gs07.
   bool emf_uct = false;
   bool emf_uct_hlld = false;
   DvceArray5D<Real> uct1, uct2, uct3;

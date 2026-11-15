@@ -36,7 +36,7 @@ struct CurrentDensityGeom {
   bool three_d;     // nx3 > 1: the x3-derivative terms of J1 and J2 exist
   DvceArray4D<Real> area1, area2, area3;  // Coordinates::areaedge.x{1,2,3}e
   DvceArray4D<Real> dx1, dx2, dx3;        // Coordinates::dxface.x{1,2,3}f
-  // share-1104 G9 <mhd>/sp_resist_x1_centred (spherical polar, stretched r): the radial
+  // <mhd>/sp_resist_x1_centred (spherical polar, stretched r): the radial
   // difference of the J2/J3 dual loops taken AT the x1 face with the cubed sphere's
   // RadialFaceWeights (resistivity_gnomonic.cpp), for the faces is..ie+1; false = the
   // two-point loop bit for bit
@@ -134,7 +134,7 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
   const auto &dx1 = geom.dx1;
   const auto &dx2 = geom.dx2;
   const auto &dx3 = geom.dx3;
-  // share-1104 G9: the face-centred radial derivative (geom.x1c) on faces is..ie+1;
+  // the face-centred radial derivative (geom.x1c) on faces is..ie+1;
   // rsc renormalises the loop from its mean radius to r_l (as res_cs_j2c/j3c)
   const bool x1c = geom.x1c;
   auto fw = [&](const int i, Real w[4], Real &rsc) {

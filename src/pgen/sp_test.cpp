@@ -409,7 +409,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // iprob 3: rotation axis, 2 = zhat (default), 0 = xhat (flow through the poles; HYDRO
   // only: with a field it would need B along xhat, which the MHD branch does not build)
   const int axis = pin->GetOrAddInteger("problem", "rot_axis", 2);
-  // lowmach-noise-1030 (TEST): iprob 3 cell-scale velocity noise, rms ~ vnoise/sqrt(3)
+  // (TEST): iprob 3 cell-scale velocity noise, rms ~ vnoise/sqrt(3)
   // in units of the sound speed sqrt(gamma p0/d0), all three components; read only when
   // set, so the parameter dump of every other run is unchanged
   Real vnoise3 = 0.0;
@@ -1140,7 +1140,7 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
     auto e2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x2e);
     auto e3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x3e);
     const Real eta = pres->eta_ohm_const;
-    // ambipolar-1101: <mhd>/ambipolar = constant adds eta_ad (B^2 J - (J.B) B), exact
+    // <mhd>/ambipolar = constant adds eta_ad (B^2 J - (J.B) B), exact
     // on the edge from the exact B (zero for the force-free iprob 11)
     const Real ead = (pres->ad_type == 1) ? pres->eta_ad : 0.0;
     const Real bref = (iprob == 12) ? b0c*pm->mesh_size.x1max : b0;

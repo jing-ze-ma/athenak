@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file he_strip_bg.cpp
-//! \brief (USER 11-02, He giant global): a ONE-SHOT restart-time transform
+//! \brief a ONE-SHOT restart-time transform
 //! of the he_star_m1 problem that removes the gas above the photosphere (lifted gas
 //! falling back, filling the volume to the outer boundary) and replaces it with a
 //! static, optically thin ambient in radiative equilibrium.
@@ -250,7 +250,7 @@ void HsStripBackground(ParameterInput *pin, Mesh *pm) {
 }
 
 //----------------------------------------------------------------------------------------
-//! (USER 11-05, HG prodG stall at t 4.4232e7): a ONE-SHOT restart-time tiny
+//! a ONE-SHOT restart-time tiny
 //! relative perturbation of the M1 radiation energy E of every active cell,
 //!   E -> E (1 + amp (2 h - 1)),  h = hash(gid, k, j, i) in [0, 1) (layout-independent),
 //! to move the trajectory off a deterministic stall.  Keys (<problem>):
@@ -301,7 +301,7 @@ void HsRestartPerturb(ParameterInput *pin, Mesh *pm) {
 }
 
 //----------------------------------------------------------------------------------------
-//! (USER 11-12, RSG eos_h2 switch at a restart): problem/eos_reinit_from_t
+//! problem/eos_reinit_from_t
 //! (absent or false = nothing, bitwise).  ONE-SHOT, on a restart: re-set the internal
 //! energy from the restart's (rho, T) with THIS run's EOS table, keeping T.  The general
 //! EOS measures e from a composition-dependent zero point (with <hydro>/eos_h2 = true it

@@ -291,8 +291,8 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
 
   if (icm.compare("grey") == 0) {
     // on a RESTART the grey column is only the reference state (potential, force
-    // reference): the run may continue under another opacity law (m1-perf-0928: the sp
-    // test of implicit_opac_newton restarts gateA with a powerlaw kappa(T))
+    // reference): the run may continue under another opacity law (e.g. a restart with
+    // a power-law kappa(T))
     if (!eos.is_ideal || (pm1->opacity_type != radm1::M1_OPAC_CONST && !restart)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "sph_wedge: wg_ic = grey needs an ideal EOS and <rad_m1>/"
@@ -567,7 +567,7 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
   user_bcs_func = RadM1WedgeBC;
   user_hist_func = RadM1WedgeHist;
   pgen_final_func = RadM1WedgeFinal;
-  // mhdfix-1025 <problem>/wg_hist_ebnd (read only when named; default false): user hst
+  // <problem>/wg_hist_ebnd (read only when named; default false): user hst
   // column 17 Ebnd_rad = the radiation energy the scheme put in through the x1 faces,
   // accumulated over the accepted steps (RadiationM1 Ebnd), for an exact energy budget:
   // Etot(t) - Etot(0) - Ebnd_rad(t) is then only the non-conservative sources (sponge,
@@ -746,14 +746,14 @@ void RadM1WedgeGravity(Mesh *pm, const Real bdt) {
     }
     u0(m,IM1,k,j,i) += src;
   });
-  // <rad_m1>/force_reference_work = split (ke-dt-0926): the work of the rho arad_ref part
+  // <rad_m1>/force_reference_work = split: the work of the rho arad_ref part
   // of the WB kick, at the stage-start velocity (a separate kernel: the default one is
   // untouched); the radiation pays it in its solve
   auto *pm1 = pmbp->pradm1;
   if (pm1 != nullptr && pm1->fref_wsplit && wbdyn) {
     auto aref = pm1->arad_ref;
     if (pm1->FrefWaccOn()) {
-      // fref-split-cons-1006 (time_scheme = be): the same increment also goes to the
+      // with time_scheme = be the same increment also goes to the
       // accumulator the be solve makes E pay (acc = gam0 acc + increment)
       auto wacc = pm1->FrefWacc();
       const Real g0 = pm1->FrefWaccGam0(bdt, pm->dt);
@@ -968,7 +968,7 @@ void RadM1WedgeHist(HistoryData *pdata, Mesh *pm) {
   pdata->label[13] = "M_tot";
   pdata->label[14] = "Mdot_top";
   pdata->label[15] = "Mdot_bot";
-  // mhdfix-1025 <problem>/wg_hist_ebnd: the accumulated x1 boundary radiation energy
+  // <problem>/wg_hist_ebnd: the accumulated x1 boundary radiation energy
   const bool ebnd = (pmbp->pradm1 != nullptr) && pmbp->pradm1->ebnd_on;
   if (ebnd) {
     pdata->nhist = 17;

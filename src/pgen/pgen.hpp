@@ -86,7 +86,7 @@ struct HotJupiterParam {
   // true = the top Rayleigh sponge (1e-7..1e-6 bar) / the bottom horizontal sponge
   // (50..100 bar) is applied; false switches it off. Defaults: top true, bottom false.
   bool sponge_top = true;
-  bool sponge_bottom = false;  // default changed 09-30 (user), was true
+  bool sponge_bottom = false;
 };
 
 //----------------------------------------------------------------------------------------

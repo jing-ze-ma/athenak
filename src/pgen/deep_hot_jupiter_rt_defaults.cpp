@@ -4,9 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file deep_hot_jupiter_rt_defaults.cpp
-//! \brief prod1103c (USER 11-03 "we should also make some other settings default"): the
-//! deep_hot_jupiter_rt FRESH-start defaults of keys that physics modules read before the
-//! problem generator exists (time, fluid, resistivity, EOS).  main.cpp calls
+//! \brief the deep_hot_jupiter_rt FRESH-start defaults of keys that physics modules read
+//! before the problem generator exists (time, fluid, resistivity, EOS).  main.cpp calls
 //! recipe::PgenEarlyDefaults(pin) once, after the input and the command line are read and
 //! before the Mesh is built; only this pgen's build links this file (other builds link
 //! pgen/early_defaults_none.cpp).  Rules as every recipe default: applied only when
@@ -110,7 +109,7 @@ void PgenEarlyDefaults(ParameterInput *pin) {
         "drain)");
   }
   // <mhd>/use_rkg_sts = true (RKG2 super-time-stepping of the resistive terms, every dhj
-  // MHD production deck; USER 11-03 overrides the 11-01 "keep false" for this scope) with
+  // MHD production deck) with
   // resistive dhj MHD: ohmic_resistivity named, or ambipolar named and not none.  Its
   // own fresh defaults (rkg_lean, rkg_dt_safety, rkg_strang, ...) follow in
   // resistivity.cpp.

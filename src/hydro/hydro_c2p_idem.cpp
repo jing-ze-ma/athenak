@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file hydro_c2p_idem.cpp
-//! \brief ckbval-1102 <hydro>/c2p_idempotent (read only when named, default false).
+//! \brief <hydro>/c2p_idempotent (read only when named, default false).
 //!
 //! WHY.  A conversion of a state that has already been converted is not a no-op today:
 //! under etotgrav every call does u0(IEN) = (E - rho Phi) + rho Phi in place, the T(d,e)
@@ -27,6 +27,7 @@
 //! Only ConToPrimSplit calls are candidates (the RK-stage and split-refresh conversions
 //! always follow a change); the frozen first conversion of a restart is never skipped.
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <type_traits>
@@ -49,7 +50,7 @@ void C2PIdemCopy(V &dst, const V &src) {
 
 KOKKOS_INLINE_FUNCTION
 bool C2PIdemSame(const Real a, const Real b) {
-  using U = std::conditional<sizeof(Real) == 8, unsigned long long, unsigned int>::type;
+  using U = std::conditional<sizeof(Real) == 8, std::uint64_t, std::uint32_t>::type;
   return Kokkos::bit_cast<U>(a) == Kokkos::bit_cast<U>(b);
 }
 

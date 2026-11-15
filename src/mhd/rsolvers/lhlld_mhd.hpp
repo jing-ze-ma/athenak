@@ -96,7 +96,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
      const DvceArray4D<Real> &bx,
      const DvceArray5D<Real> &flx, const DvceArray4D<Real> &ey,
      const DvceArray4D<Real> &ez, const DvceArray5D<Real> &w0) {
-  // dhjcuda2-1113: flx, ey, ez by const reference (they were by value): a View copy keeps
+  // flx, ey, ez by const reference: a View copy would keep
   // its pointer and strides in registers through the face loop until the final stores
   int ivy = IVX + ((ivx-IVX)+1)%3;
   int ivz = IVX + ((ivx-IVX)+2)%3;
@@ -105,7 +105,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   Real spd[5];         // signal speeds, left to right
 
   //------------------------ ADIABATIC HLLD solver ---------------------------------------
-  // dhjcuda2-1113: the per-face options below are read from eos (and size) where they are
+  // the per-face options below are read from eos (and size) where they are
   // used, inside the face loop, instead of being held in locals across it: on CUDA eos is
   // the kernel body in device memory, so a read at the point of use is one cached load,
   // while a local lives in a register through the whole solver (A100 ptxas: the flux
@@ -116,7 +116,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   // compiler's FMA contraction of (1-phi) and broke bitwise identity with the key off.
   // <mhd>/lhlld_emf_eta_pos (EOS_Data::lhlld_emf_eta_pos): see eos.hpp and Step 8.
   // <mhd>/lhlld_cb_sensor (EOS_Data::cb_sensor): see eos.hpp and utils/cb_sensor.hpp;
-  // cbcont-1102 <mhd>/lhlld_cb_cont (EOS_Data::cb_cont).
+  // <mhd>/lhlld_cb_cont (EOS_Data::cb_cont).
   // EOS_Data::chi_normal: <mhd>/lhlld_chi_normal; EOS_Data::alfmach: <mhd>/lhlld_alfmach.
 
   if (eos.is_ideal) {
@@ -204,7 +204,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       Real usql = SQR(wl_ivx) + (SQR(wl_ivy) + SQR(wl_ivz));
       Real usqr = SQR(wr_ivx) + (SQR(wr_ivy) + SQR(wr_ivz));
       if (eos.chi_normal) { usql = SQR(wl_ivx); usqr = SQR(wr_ivx); }
-      // alfmach-1102 <mhd>/lhlld_alfmach: Alfven floor scaled by chi_A = min(1, |u|/c_a)
+      // <mhd>/lhlld_alfmach: Alfven floor scaled by chi_A = min(1, |u|/c_a)
       // per side (c_a^2 -> |u|^2, c_ax^2 -> c_ax^2 |u|^2/c_a^2 where |u| < c_a), so that
       // c_u ~ |u| (1..sqrt 2) at M_A < 1; untouched (bitwise) where M_A >= 1
       if (eos.alfmach) {

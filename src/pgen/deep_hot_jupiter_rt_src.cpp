@@ -10,6 +10,7 @@
 //! from deep_hot_jupiter_rt.cpp.
 
 #include <algorithm>
+#include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
 
@@ -172,9 +173,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // explicit radial term is dropped only when that scheme is on; with etotgrav the
     // energy flux carries the potential either way
     const bool rotpot = pm->pgen->hot_jupiter_param.rot_potential;
-    // problem/sponge_top (default true), problem/sponge_bottom (default false since
-    // 09-30): switch the two velocity sponges at the end of this kernel off; captured by
-    // value.
+    // problem/sponge_top (default true), problem/sponge_bottom (default false):
+    // switch the two velocity sponges at the end of this kernel off; captured by value.
     const bool sponge_top_ = pm->pgen->hot_jupiter_param.sponge_top;
     const Real sp_plo_ = dhj_sp_top_plo_bar, sp_phi_ = dhj_sp_top_phi_bar;
     const Real sp_tau_ = dhj_sp_top_tau;
@@ -1195,10 +1195,11 @@ void DhjRtFreezeSplit(Mesh *pm, const Real dt) {
       std::fprintf(rt_test_fp, "\n");
       if (haveS) std::fprintf(rt_test_fp, "I %d\n", hc(m0,k0,j0) - is);
     }
-    std::fprintf(rt_test_fp, "S %lld %.17e %.17e %lld %lld %.6e %d %d %.6e %.6e %d %d "
-                 "%.9e %.9e %.9e %.6e %.6e %.9e\n", static_cast<long long>(rt_test_ncall),
-                 rt_test_ncall*dtr, dtr, static_cast<long long>(ndT),
-                 static_cast<long long>(ndE), mxT,
+    std::fprintf(rt_test_fp, "S %" PRId64 " %.17e %.17e %" PRId64 " %" PRId64
+                 " %.6e %d %d %.6e %.6e %d %d %.9e %.9e %.9e %.6e %.6e %.9e\n",
+                 static_cast<std::int64_t>(rt_test_ncall),
+                 rt_test_ncall*dtr, dtr, static_cast<std::int64_t>(ndT),
+                 static_cast<std::int64_t>(ndE), mxT,
                  ts::ck_implicit ? ts::ck_impl_last_it : 0,
                  ts::ck_implicit ? ts::ck_impl_nonconv : 0, ts::ck_impl_last_res,
                  ts::ck_impl_last_gap, ts::ck_impl_ncap, ts::ck_impl_nfall,
@@ -1207,8 +1208,8 @@ void DhjRtFreezeSplit(Mesh *pm, const Real dt) {
     if (rt_test_ncall == 1 || rt_test_ncall % rt_test_every == 0) {
       const char tag[3] = {'T', 'E', 'C'};
       for (int q=0; q<3; ++q) {
-        std::fprintf(rt_test_fp, "%c %lld", tag[q],
-                     static_cast<long long>(rt_test_ncall));
+        std::fprintf(rt_test_fp, "%c %" PRId64, tag[q],
+                     static_cast<std::int64_t>(rt_test_ncall));
         for (int i=is; i<=ie; ++i) std::fprintf(rt_test_fp, " %.17e",
                                                 hdg(m0,q,k0,j0,i));
         std::fprintf(rt_test_fp, "\n");

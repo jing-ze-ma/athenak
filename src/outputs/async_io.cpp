@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file async_io.cpp
-//! \brief asyncio-1113: background writing of restart and binary output files (see
+//! \brief background writing of restart and binary output files (see
 //! async_io.hpp).  Opt-in by ATHENA_ASYNC_OUTPUT=1.
 
 #include <fcntl.h>

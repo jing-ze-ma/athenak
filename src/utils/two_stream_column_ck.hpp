@@ -89,7 +89,7 @@ namespace two_stream_rt {
 //----------------------------------------------------------------------------------------
 // problem/ck_implicit: the switch.  false = bitwise the semi-implicit per-cell apply.
 // The variable starts false; deep_hot_jupiter_rt defaults the KEY to true on fresh rt_ck
-// runs since defaults2-0927 (false on restarts; see the pgen).
+// runs (false on restarts; see the pgen).
 inline bool ck_implicit = false;
 // problem/ck_impl_tol: the RESIDUAL tolerance, max_i |R_i|/(e_i + eps e_max) over the
 // column set, with eps = ck_impl_norm_eps.  Measuring a thin top cell against its own
@@ -111,7 +111,7 @@ inline Real ck_impl_dtol = 1.0e-8;
 // never reach the threshold, so they are unchanged bit for bit.
 constexpr Real CkDeadE = 1.0e-250;
 // problem/ck_impl_maxit: the pass cap.  Each pass is one full ck sweep.
-inline int ck_impl_maxit = 24;  // default changed 09-30 (user), was 8
+inline int ck_impl_maxit = 24;
 // problem/ck_impl_dtmax: cap on |de|/e per Newton pass.  A belt, not a limiter: it is
 // applied to the STEP, so a capped pass is simply a shorter one and the fixed point is
 // unchanged.  A column that needed it is counted.
@@ -129,7 +129,7 @@ inline Real ck_impl_dtmax = 0.5;
 inline Real ck_impl_demax = 0.5;
 // problem/ck_impl_floorbound: THE NEWTON IS A BOUND-CONSTRAINED SOLVE, e >= e_floor.
 // false = the unconstrained Newton, bit for bit.  deep_hot_jupiter_rt defaults the key
-// (and ck_impl_kkt_demax) to true on fresh fused ck_implicit runs since defaults2-0927.
+// (and ck_impl_kkt_demax) to true on fresh fused ck_implicit runs.
 //
 // e_floor = max(e(rho, tfloor), e(rho, pfloor)) is the state ConsToPrim restores a cell
 // to anyway (problem/rt_floor_consistent applies the same rule to the semi-implicit
@@ -154,8 +154,7 @@ inline bool ck_impl_floorbound = false;
 // the limiter that keeps a dt collapse away; removing it, demax = 0 with dtmax 3,
 // collapsed dt at cycle 22 in smokediag/dtm3d0); only the pass count and the
 // NOT-CONVERGED flag change: the passes a capped cell cannot use are no longer spent.
-// false = bitwise (default true on fresh fused ck_implicit dhj runs since
-// defaults2-0927).  Counted in slot 17 with (b).
+// false = bitwise (default true on fresh fused ck_implicit dhj runs).  Counted in slot 17 with (b).
 inline bool ck_impl_kkt_demax = false;
 // problem/ck_impl_stalldbg: diagnosis of columns that stall at a fixed residual.  0 =
 // off (bitwise).  N > 0: on every fused pass with index >= N, each column still active
@@ -217,7 +216,7 @@ inline bool ck_impl_kkt_row = false;
 // reports are made consistent with the energy it applied in the cells it leaves on a
 // bound (ck_impl_floorbound / ck_impl_kkt_demax KKT cells); 2 = in every cell.  Only the
 // reported arrays change, never the solution.  See CkConserveFlux (two_stream_rt.hpp).
-inline int ck_impl_conserve = 1;  // default changed 09-30 (user), was 0
+inline int ck_impl_conserve = 1;
 inline DvceArray1D<Real> *ck_cons_stat_ptr = nullptr;
 inline DvceArray5D<Real> *ck_cons_buf_ptr = nullptr;   // (m, 2, k, j, i) scratch
 inline int64_t ck_cons_ncell = 0;          // cells corrected, last call (verbose only)

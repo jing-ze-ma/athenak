@@ -240,8 +240,8 @@ Real hse_cap_ = 40.0;
 // stage 2 (problem/inner = envelope): the resolved stellar envelope, see the header
 bool env_ = false, env_noslip_ = false;
 Real env_np_ = 3.0, env_rhoph_ = 20.0, env_cph2_ = 240.25, env_rtop_ = 4.11;
-Real env_tro_ = 1.0e-4, env_tri_ = 1.0e-4, env_trs_ = 1.0e-4, env_phis_ = 0.0,
-    env_racc_ = 4.06;
+Real env_tro_ = 1.0e-4, env_tri_ = 1.0e-4, env_trs_ = 1.0e-4;
+Real env_phis_ = 0.0, env_racc_ = 4.06;
 Real env_dlt_ = 0.0;           // (spin^2 - 1) Omega^2 / 2
 // problem/env_cool (default false): the envelope and stream/atmosphere relaxation times
 // become the local radiative cooling time (diffusion + optically thin bridge, ES +
@@ -315,7 +315,7 @@ Real hist_tprev_ = -1.0;
 // booking fix: the radiation the stage resets put into the M1 state (nozzle
 // stream light zs[3], donor_irr / sector light zs[6]) as a PLAIN sum.  The M1 u0 is not
 // RK-combined, so the RK-weighted booking in register 10 kept only half of the stage-1
-// increment (EBUD-1019: the whole 'unbooked energy gain').  History only.
+// increment.  History only.
 Real erinj_ = 0.0;
 // the part of erinj_ booked by RyPerHoldBook (diagnostic, printed)
 Real hold_bk_ = 0.0;
@@ -420,8 +420,7 @@ bool thhse_ = false;
 // exist to make exactly this the column's hydrostatic wall pressure; it also holds the
 // solver's rho v_n^2 part of the old leak, O(v_n^2) with v_n ~ 1e-3 km/s).  Without it
 // the hse ghost (hydrostatic density, mirrored velocity) and the edge cell form a
-// non-mirror Riemann problem whose mass flux leaked ~2x the stream rate INTO the star
-// (EBUD-1019).
+// non-mirror Riemann problem whose mass flux leaked ~2x the stream rate INTO the star.
 bool thwc_ = false;
 // problem/theta_wall_flow = true (theta_bc = outflow | hse; read only when named,
 // default false = bitwise unchanged): the theta-ghost hydrostatic walk adds the edge
@@ -572,7 +571,7 @@ constexpr int kNtr = 9;
 // 6 Fo0, 7 Fo1  s0, s1 mass OUT through r_out and the user theta walls (outward positive)
 // 8 Bin  mass that ENTERED through the non-nozzle user boundaries (= the s1 source)
 Real trc0_[kNtr] = {0.0}, trc1_[kNtr] = {0.0};
-std::string trc_file_;
+std::string trc_file_;  // NOLINT(runtime/string)
 // The inertial L_z budget of the envelope,
 // closed by booked registers (per rank, RK weighted like acc0_, cumulative, in the
 // dt_retry checkpoint and the rst block), written to <basename>.lz.hst (user.hst is
@@ -618,7 +617,7 @@ Real jlast_ = 0.0;             // this rank's J at the last measurement
 Real jlok_ = 0.0;              // 1: jlast_ valid (0: take J(u1) at the next step start)
 Real lztr_ = 0.0, lzg_ = 0.0, lzc_ = 0.0, lzent_ = 0.0, lzfr_ = 0.0, lzft_ = 0.0;
 Real lzb_[3] = {0.0, 0.0, 0.0};   // this rank's J, Jin, Jout at the budget's start
-std::string lz_file_;
+std::string lz_file_;  // NOLINT(runtime/string)
 
 KOKKOS_INLINE_FUNCTION
 Real RochePot(const RocheParams &p, const Real r, const Real phi) {
@@ -687,7 +686,7 @@ void WbTanAccProbe(Mesh *pm);
 // from the restart file: wbtan::LoadFromRestart); the pgen (for the restart slabs)
 bool acc_wbt_g4_ = false;
 ProblemGenerator *acc_pg_ = nullptr;
-std::string wbt_file_;         // (e): <basename>.wbt.hst
+std::string wbt_file_;  // NOLINT(runtime/string) <basename>.wbt.hst
 
 //! (sin theta, phi in [0, 2 pi), cos theta) of the panel point (x2, x3) (code
 //! coordinates)
@@ -888,7 +887,11 @@ Real DonorSurfT(const RocheParams &p, const Real phl1, const Real xl1, const Rea
   if (tb < 0.0) return 0.0;
   for (int n=0; n<40; ++n) {
     const Real tm = 0.5*(ta + tb);
-    if (RochePotXYZ(p, p.asep + tm*nx, tm*ny, tm*nz) > phl1) tb = tm; else ta = tm;
+    if (RochePotXYZ(p, p.asep + tm*nx, tm*ny, tm*nz) > phl1) {
+      tb = tm;
+    } else {
+      ta = tm;
+    }
   }
   return 0.5*(ta + tb);
 }
@@ -2139,7 +2142,9 @@ void RyPerRadBook(Mesh *pm) {
       bool rs = false;
       if (kres) {
         rs = true;
-        for (int n=0; n<radm1::M1_T2_F1; ++n) {if (k1(m,n,k,j,ie) != 0.0) rs = false;}
+        for (int n=0; n<radm1::M1_T2_F1; ++n) {
+          if (k1(m,n,k,j,ie) != 0.0) rs = false;
+        }
       }
       if (!rs) {
         ak += (kp ? kpf(m,k,j) : (fk(m,k,j,ie+1) + (hbs ? bds(m,k,j) : 0.0)))*a;
@@ -3259,11 +3264,11 @@ void RyPerTrcHist(Mesh *pm) {
   FILE *fp = std::fopen(trc_file_.c_str(), "a");
   if (fp == nullptr) return;
   if (hdr) {
-    std::fprintf(fp, "# ry_per_accretor tracers (acctrc-1019): s0 stream, s1 boundary inflow; "
-                 "cumulative columns continue across restarts (rst block, acctrc-1019c)\n#  [1]=time  [2]=Ms0  "
-                 "[3]=Ms1  [4]=Nz0  [5]=Nz1  [6]=Sk0  [7]=Sk1  [8]=Fi0  [9]=Fi1  [10]=Fo0  "
-                 "[11]=Fo1  [12]=Bin  [13]=s0min  [14]=s0max  [15]=s1min  [16]=s1max  "
-                 "[17]=smax\n");
+    std::fprintf(fp, "# ry_per_accretor tracers (acctrc-1019): s0 stream, s1 boundary "
+                 "inflow; cumulative columns continue across restarts (rst block, "
+                 "acctrc-1019c)\n#  [1]=time  [2]=Ms0  [3]=Ms1  [4]=Nz0  [5]=Nz1  "
+                 "[6]=Sk0  [7]=Sk1  [8]=Fi0  [9]=Fi1  [10]=Fo0  [11]=Fo1  [12]=Bin  "
+                 "[13]=s0min  [14]=s0max  [15]=s1min  [16]=s1max  [17]=smax\n");
   }
   std::fprintf(fp, " %.15e", pm->time);
   for (int n=0; n<2 + kNtr; ++n) std::fprintf(fp, " %.15e", sb[n]);
@@ -3304,10 +3309,10 @@ void RyPerLzHist(Mesh *pm) {
   FILE *fp = std::fopen(lz_file_.c_str(), "a");
   if (fp == nullptr) return;
   if (hdr) {
-    std::fprintf(fp, "# ry_per_accretor inertial L_z budget (acclz-1020): dJ = dJin - dJout + "
-                 "Jgrv + Jcor + Jtr + Jrin + Jthw + Jspf + Jm1 + Jres\n#  [1]=time  [2]=Jdom  "
-                 "[3]=dJ  [4]=dJin  [5]=dJout  [6]=Jgrv  [7]=Jcor  [8]=Jtr  [9]=Jrin  "
-                 "[10]=Jthw  [11]=Jspf  [12]=Jm1  [13]=Jres\n");
+    std::fprintf(fp, "# ry_per_accretor inertial L_z budget (acclz-1020): dJ = dJin - "
+                 "dJout + Jgrv + Jcor + Jtr + Jrin + Jthw + Jspf + Jm1 + Jres\n#  "
+                 "[1]=time  [2]=Jdom  [3]=dJ  [4]=dJin  [5]=dJout  [6]=Jgrv  [7]=Jcor  "
+                 "[8]=Jtr  [9]=Jrin  [10]=Jthw  [11]=Jspf  [12]=Jm1  [13]=Jres\n");
   }
   std::fprintf(fp, " %.15e %.15e %.15e %.15e %.15e", pm->time, sb[0], dj, sb[2], sb[3]);
   for (int n=0; n<kNlz; ++n) std::fprintf(fp, " %.15e", sb[6+n]);
@@ -3315,7 +3320,7 @@ void RyPerLzHist(Mesh *pm) {
   std::fclose(fp);
 }
 
-//! (e): the L_z torque of the WB tangential force rho g_t (gt4_/gp4_, the
+//! the L_z torque of the WB tangential force rho g_t (gt4_/gp4_, the
 //! force RyPerSrcEnv applies), sum dV R (rho g)_phi in the AccJzCell form (sp: R rho g_3;
 //! cs: z of r x the covariant pair raised), over the domain and inside r_meas, to
 //! <basename>.wbt.hst at every user.hst output once g_t is set (rank 0).  The sp L_z
@@ -3374,7 +3379,7 @@ void RyPerWbtHist(Mesh *pm) {
 }
 
 void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
-  if (acc_wbt.on && acc_wbt_g4_) RyPerWbtHist(pm);   // (e)
+  if (acc_wbt.on && acc_wbt_g4_) RyPerWbtHist(pm);
   if (trc_) RyPerTrcHist(pm);
   if (lz_) RyPerLzHist(pm);
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -3497,9 +3502,11 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
     MPI_Bcast(hb, 12, MPI_DOUBLE, loc.r, MPI_COMM_WORLD);
 #endif
     if (global_variable::my_rank == 0 && loc.v < 1.0e299) {
-      std::printf("ry_per_accretor dt_report: t %.6e dt %.4e cell (m,k,j,i) (%d,%d,%d,%d) r %.5f "
-                  "phi %.4f rad: rho %.4g v_r %.4g v_th %.4g v_phi %.4g km/s e/rho %.4g "
-                  "(km/s)^2 [rank %d, theta %.4f deg]\n", pm->time, pm->dt,
+      std::printf("ry_per_accretor dt_report: t %.6e dt %.4e cell (m,k,j,i) "
+                  "(%d,%d,%d,%d) r %.5f phi %.4f rad: rho %.4g v_r %.4g v_th %.4g v_phi "
+                  "%.4g "
+                  "km/s e/rho %.4g (km/s)^2 [rank %d, theta %.4f deg]\n",
+                  pm->time, pm->dt,
                   static_cast<int>(hb[8]), static_cast<int>(hb[9]),
                   static_cast<int>(hb[10]),
                   static_cast<int>(hb[11]), hb[0], hb[1], hb[2], hb[3], hb[4], hb[5],
@@ -3590,7 +3597,8 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
 #endif
     if (global_variable::my_rank == 0) {
       std::printf("ry_per_accretor: t2_reset_exempt: %.0f non-positive stage values in "
-                  "reset cells skipped by the admissibility check (this run segment)\n", ns);
+                  "reset cells skipped by the admissibility check (this run segment)\n",
+                  ns);
     }
     radm1::g_t2_reset = DvceArray4D<Real>();
     radm1::g_t2_reset_on = false;
@@ -3906,7 +3914,9 @@ Real RadSpinArrays(MeshBlockPack *pmbp, const std::vector<Real> &crq, const bool
             hlo(m,k,i) = fth(hx1(m,i), tlo, hx3(m,k));
             hhi(m,k,i) = fth(hx1(m,i), thi, hx3(m,k));
             if (k >= ks && k <= ke && i >= is && i <= ie) {
-              if (plo && pm1->ibc_x2min == radm1::M1_IBC_X2FLUX) lk -= hlo(m,k,i)*ha2(m,k,js,i);
+              if (plo && pm1->ibc_x2min == radm1::M1_IBC_X2FLUX) {
+                lk -= hlo(m,k,i)*ha2(m,k,js,i);
+              }
               if (phi2 && pm1->ibc_x2max == radm1::M1_IBC_X2FLUX) {
                 lk += hhi(m,k,i)*ha2(m,k,je+1,i);
               }
@@ -3919,9 +3929,10 @@ Real RadSpinArrays(MeshBlockPack *pmbp, const std::vector<Real> &crq, const bool
       Kokkos::deep_copy(fx2hi_, hhi);
       if (first) pm1->SetX2FaceFlux(fx2lo_, fx2hi_);
       if (root && first) {
-        std::printf("ry_per_accretor: <rad_m1> x2 walls: IMPOSED equilibrium lateral flux "
-                    "F_col(psi) (g/g_col) dPhi/(r dth)/|grad Phi| (von Zeipel); outward total (rank 0) %.6g code "
-                    "(= %.4g Lsun of the full sphere scale)\n", lk, lk*rad_lfac_);
+        std::printf("ry_per_accretor: <rad_m1> x2 walls: IMPOSED equilibrium lateral "
+                    "flux F_col(psi) (g/g_col) dPhi/(r dth)/|grad Phi| (von Zeipel); "
+                    "outward total (rank 0) %.6g code (= %.4g Lsun of the full sphere "
+                    "scale)\n", lk, lk*rad_lfac_);
       }
     }
   }
@@ -4035,8 +4046,8 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
   // (P_rad << P_gas) and the stream's optical depth can be checked from the log.
   if (stream_on_) {
     if (env_trs_ != 0.0) {
-      fatal("stream on under <rad_m1> needs problem/env_t_relax_stream = 0 (the stream's T "
-            "is set by the EOS state at the window and by radiation, not relaxed)");
+      fatal("stream on under <rad_m1> needs problem/env_t_relax_stream = 0 (the stream's "
+            "T is set by the EOS state at the window and by radiation, not relaxed)");
     }
     const Real d = rho_s_, t = stl1_ ? l1_t_ : gen_tstr_;
     const Real e = eos.EnergyFromTemperature(d, t);
@@ -4053,9 +4064,9 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     auto hsk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sk);
     const Real wa = sig_*str_r_;      // arc sigma at the injection radius (code)
     if (root) {
-      std::printf("ry_per_accretor: <rad_m1> stream window peak: rho %.4g g/cc, T %.1f K, "
-                  "P_rad/P_gas %.4g (%s), kappa_R %.4g "
-                  "kappa_P %.4g cm^2/g, tau across one arc sigma (%.4g Rsun) %.4g\n",
+      std::printf("ry_per_accretor: <rad_m1> stream window peak: rho %.4g g/cc, T %.1f "
+                  "K, P_rad/P_gas %.4g (%s), kappa_R %.4g kappa_P %.4g cm^2/g, tau "
+                  "across one arc sigma (%.4g Rsun) %.4g\n",
                   d*du, t*tk, prad/pg, strad_ ? "radiation INJECTED: E = a T^4 = "
                   "window ghosts and outer Marshak bath, F = (4/3) E v" :
                   "radiation NOT injected: dark ghosts", hsk(0)/(du*lu),
@@ -4124,8 +4135,9 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     rad_fin_ = (1.0 - spr_w_)*spr_flux0_ + spr_w_*spr_flux1_;
     pm1->iflux_x1min = rad_fin_;
     if (root) {
-      std::printf("ry_per_accretor: spin ramp v2: bottom flux (1 - w) %.9g + w %.9g = %.9g "
-                  "(w %.6f); psi_in0 %.6g (spin-1 column F x band %.9g), psi_in1 %.6g\n",
+      std::printf("ry_per_accretor: spin ramp v2: bottom flux (1 - w) %.9g + w %.9g = "
+                  "%.9g (w %.6f); psi_in0 %.6g (spin-1 column F x band %.9g), psi_in1 "
+                  "%.6g\n",
                   spr_flux0_, spr_flux1_, rad_fin_, spr_w_, psi_in0, fc0, psi_in);
     }
   }
@@ -4291,9 +4303,9 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
     const bool oke = (mn[0] >= elo_d && mx[0] <= ehi_d && mn[1] >= elo_t
                       && mx[1] <= ehi_t);
     if (root) {
-      std::printf("ry_per_accretor: <rad_m1> radiatively active cells (rho >= %.4g code): "
-                  "log rho %.4f .. %.4f, log T %.4f .. %.4f; opacity grid log rho %.3f .. "
-                  "%.3f, log T %.3f .. %.3f: %s; EOS table: %s\n", thr,
+      std::printf("ry_per_accretor: <rad_m1> radiatively active cells (rho >= %.4g "
+                  "code): log rho %.4f .. %.4f, log T %.4f .. %.4f; opacity grid log rho "
+                  "%.3f .. %.3f, log T %.3f .. %.3f: %s; EOS table: %s\n", thr,
                       mn[0], mx[0], mn[1],
                   mx[1], dlo, dhi, tlo, thi, ok ? "inside" : "OUTSIDE",
                   oke ? "inside" : "OUTSIDE");
@@ -4456,8 +4468,9 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
       bool amb = false;
       for (int i=0; i<n1; ++i) isa[i] = 0;
       for (int i=ia; i<=n1-1; ++i) {
-        const Real pha = hpt(m,k,jc,i) - (eqtop ? aeq : (p3 ? RochePot3(p, racc, st, phc)
-                                                            : RochePot(p, racc, hx3(m,k))));
+        const Real pha = hpt(m,k,jc,i) -
+                         (eqtop ? aeq : (p3 ? RochePot3(p, racc, st, phc)
+                                            : RochePot(p, racc, hx3(m,k))));
         const Real da = ramb0*std::exp(std::max(-pha/camb2, -700.0));
         if (!amb && i > ia) {
           if (i <= n1 - 2) {
@@ -4702,7 +4715,11 @@ void EnvTcolColumn(MeshBlockPack *pmbp, const Real racc, const std::vector<Real>
     if (!(psir(a) > 0.0 && psir(b) < 0.0)) return vzrat;
     for (int it=0; it<60; ++it) {
       const Real c = 0.5*(a + b);
-      if (psir(c) > 0.0) a = c; else b = c;
+      if (psir(c) > 0.0) {
+        a = c;
+      } else {
+        b = c;
+      }
     }
     const Real r = 0.5*(a + b), ee = 1.0e-6;
     const Real gt = (RochePotS3(p, dlt, rspin, r, std::sin(th + ee), ph) -
@@ -4767,8 +4784,8 @@ void EnvTcolColumn(MeshBlockPack *pmbp, const Real racc, const std::vector<Real>
     Kokkos::deep_copy(tcol4_, ht4);
   }
   if (icvz && root && print) {
-    std::printf("ry_per_accretor: env_ic_vz: von Zeipel IC T x (g/g_col)^(w/4), taper depth "
-                "%.4g (psi), factor %.5f .. %.5f (rank 0)\n", vzdep, vzmin, vzmax);
+    std::printf("ry_per_accretor: env_ic_vz: von Zeipel IC T x (g/g_col)^(w/4), taper "
+                "depth %.4g (psi), factor %.5f .. %.5f (rank 0)\n", vzdep, vzmin, vzmax);
   }
 }
 
@@ -4800,9 +4817,9 @@ void WbTanCaptureIC(MeshBlockPack *pmbp, const DvceArray5D<Real> &usave,
   if (restore) Kokkos::deep_copy(phd->u0, usave);
   acc_wbt.ready = false;
   if (global_variable::my_rank == 0) {
-    std::printf("ry_per_accretor: problem/roche_wb_tan ON: tangential gt4/gp4 = the hydro's "
-                "own residual of the IC envelope (spin %.6g; probe at the first source "
-                "call)\n", spin_);
+    std::printf("ry_per_accretor: problem/roche_wb_tan ON: tangential gt4/gp4 = the "
+                "hydro's own residual of the IC envelope (spin %.6g; probe at the first "
+                "source call)\n", spin_);
   }
 }
 
@@ -4995,9 +5012,9 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     const Real ea = eos.EnergyFromTemperature(env_ramb_, gen_tamb_);
     env_camb2_ = eos.Pressure(env_ramb_, ea, gen_tamb_)/env_ramb_;
     if (root) {
-      std::printf("ry_per_accretor: thermo = general: T_ph %.1f K, T_amb %.4g K (P/rho %.5g"
-                  " = (%.3f km/s)^2), T_stream %.1f K, ghost T floor %.1f K; %.5g K per "
-                  "code T, %.5g g/cc per code density\n", gen_tph_*tk, gen_tamb_*tk,
+      std::printf("ry_per_accretor: thermo = general: T_ph %.1f K, T_amb %.4g K (P/rho "
+                  "%.5g = (%.3f km/s)^2), T_stream %.1f K, ghost T floor %.1f K; %.5g K "
+                  "per code T, %.5g g/cc per code density\n", gen_tph_*tk, gen_tamb_*tk,
                   env_camb2_, std::sqrt(env_camb2_), gen_tstr_*tk, gen_tfl_*tk, tk,
                   eos.dens_cgs);
     }
@@ -5038,11 +5055,12 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     }
     if (amb_radeq_) {
       if (env_tro_ != 0.0) {
-        fatal5("env_amb_mode = radeq needs problem/env_t_relax = 0 (the floor gas reaches "
-               "radiative equilibrium through the M1 coupling, no T relaxation)");
+        fatal5("env_amb_mode = radeq needs problem/env_t_relax = 0 (the floor gas "
+               "reaches radiative equilibrium through the M1 coupling, no T relaxation)");
       }
       if (pmbp->pradm1->otab.amask_rho > 0.0) {
-        fatal5("env_amb_mode = radeq needs absorption ON: remove <rad_m1>/opac_abs_rho_max");
+        fatal5("env_amb_mode = radeq needs absorption ON: remove "
+               "<rad_m1>/opac_abs_rho_max");
       }
       if (eos.dfloor != rho_amb) {
         fatal5("env_amb_mode = radeq needs hydro/dfloor = problem/rho_amb (the floor is "
@@ -5053,7 +5071,9 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       // the per-column outer bath: a T_s^4 in the stream window (stream_rad, stream on),
       // 0 elsewhere (vacuum, = the scalar implicit_ebath_x1max default)
       auto *pm1 = pmbp->pradm1;
-      if (pm1->iebath_x1max != 0.0) fatal5("stream_rad / radeq need implicit_ebath_x1max = 0");
+      if (pm1->iebath_x1max != 0.0) {
+        fatal5("stream_rad / radeq need implicit_ebath_x1max = 0");
+      }
       strad_e_ = pm1->arad*SQR(SQR(gen_tstr_));
       auto &ind = pmbp->pmesh->mb_indcs;
       const int nb = pmbp->nmb_thispack;
@@ -5074,8 +5094,9 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
         rb(m,k,j) = (on && fabs(dph) < ww) ? (stp ? ar*SQR(SQR(t)) : es) : 0.0;
       });
       if (root && stp) {
-        std::printf("ry_per_accretor: stream_t_profile = diffusion: T at x = dphi/sigma = 0, 1, "
-                    "2, 2.5, 3: %.0f %.0f %.0f %.0f %.0f K (floor stream_t_surf %.0f K)\n",
+        std::printf("ry_per_accretor: stream_t_profile = diffusion: T at x = dphi/sigma "
+                    "= 0, 1, 2, 2.5, 3: %.0f %.0f %.0f %.0f %.0f K (floor stream_t_surf "
+                    "%.0f K)\n",
                     StreamT(true, tc, tsf, 0.0)*eos.temp_cgs,
                     StreamT(true, tc, tsf, 1.0)*eos.temp_cgs,
                     StreamT(true, tc, tsf, 2.0)*eos.temp_cgs,
@@ -5085,8 +5106,8 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       pm1->SetX1maxBathColumns(rbath_);
       if (root) {
         std::printf("ry_per_accretor: S5: ambient %s; stream radiation %s (E = a T_s^4 = "
-                    "%.6g code at T_s %.1f K, F = (4/3) E v; outer Marshak bath per column)"
-                    "\n", amb_radeq_
+                    "%.6g code at T_s %.1f K, F = (4/3) E v; outer Marshak bath per "
+                    "column)\n", amb_radeq_
                         ? "radeq (floor at radiative equilibrium, absorption "
                     "on, floor booked as Mfl)" : "hot", on ? "INJECTED" : "off (dark)",
                     strad_e_, gen_tstr_*eos.temp_cgs);
@@ -5195,16 +5216,19 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     spr_pr_ = std::floor((spin_ - 1.0)/0.1 + 1.0e-9);
     dlt = env_dlt_;
     if (root) {
-      std::printf("ry_per_accretor: spin ramp (accspin-1028): s = 1 -> %.6f over t %.6g .. "
-                  "%.6g (1 - cos), refresh every ds %.4g; at t = %.6g s = %.6f (geometry: "
-                  "target spin)\n", spr_stgt_, spr_t0_, spr_t0_ + spr_tau_, spr_ds_,
+      std::printf("ry_per_accretor: spin ramp: s = 1 -> %.6f over t %.6g "
+                  ".. %.6g (1 - cos), refresh every ds %.4g; at t = %.6g s = %.6f "
+                  "(geometry: target spin)\n",
+                  spr_stgt_, spr_t0_, spr_t0_ + spr_tau_, spr_ds_,
                   pmbp->pmesh->time, spin_);
     }
   }
   const Real rtop = env_rtop_, phtop = env_phtop_;
   if (env_spin_top_ && root) {
-    std::printf("ry_per_accretor: env_spin_to_top: spin term + IC rotation up to r_spin %.6f "
-                "(max over phi of the top equipotential; phi-90 r_top %.6f)\n", env_rspin_, rtop90);
+    std::printf("ry_per_accretor: env_spin_to_top: spin term + IC rotation up to r_spin "
+                "%.6f (max "
+                "over phi of the top equipotential; phi-90 r_top %.6f)\n",
+                env_rspin_, rtop90);
   }
   const Real rspin = env_rspin_;
   // the stream's own temperature (default c_ph: unchanged runs) and the radius below
@@ -5478,8 +5502,8 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       }
       SpinColBlend(spr_w_);
       if (root) {
-        std::printf("ry_per_accretor: spin ramp v2: column blend w = %.6f of %s (spin 1) and the "
-                    "target column on %d union psi points\n", spr_w_,
+        std::printf("ry_per_accretor: spin ramp v2: column blend w = %.6f of %s (spin 1) "
+                    "and the target column on %d union psi points\n", spr_w_,
                     pin->GetString("problem", "spin_ramp_col0").c_str(),
                     static_cast<int>(spr_u_.size()));
       }
@@ -5578,10 +5602,10 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   const Real r_in = pmbp->pmesh->mesh_size.x1min;
   if (root) {
     const Real psi_in = phis - PhiWB(p, dlt, rtop, rspin, phtop, r_in, 0.5*M_PI);
-    std::printf("ry_per_accretor: ENVELOPE n %.2f, c_ph %.3f km/s, rho_ph %.4g, r_in %.5f"
-                " = %.4f R_acc; at r_in P/rho %.4g (c_iso %.2f km/s), rho %.4e; r_top "
-                "%.4f, t_relax %.3g / env %.3g / stream %.3g, wall %s; R_acc face found in "
-                "%d of %d local blocks\n", np, cph, rhoph, r_in, r_in/racc,
+    std::printf("ry_per_accretor: ENVELOPE n %.2f, c_ph %.3f km/s, rho_ph %.4g, r_in "
+                "%.5f = %.4f R_acc; at r_in P/rho %.4g (c_iso %.2f km/s), rho %.4e; "
+                "r_top %.4f, t_relax %.3g / env %.3g / stream %.3g, wall %s; R_acc face "
+                "found in %d of %d local blocks\n", np, cph, rhoph, r_in, r_in/racc,
                 EnvC2(psi_in, cph2, np),
                 std::sqrt(EnvC2(psi_in, cph2, np)), EnvRho(psi_in, cph2, np, rhoph), rtop,
                 env_tro_, env_tri_, env_trs_, ws.c_str(), nfound, nmb);
@@ -5599,8 +5623,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // (the accretor cold spot).  A named key is used as given.
   if (!pin->DoesParameterExist("problem", "roche_wb_tan")) {
     if (root) {
-      std::printf("ry_per_accretor: problem/roche_wb_tan = false (default since "
-                  "nowbtan-1104)\n");
+      std::printf("ry_per_accretor: problem/roche_wb_tan = false (default)\n");
     }
     acc_wbt.on = pin->GetOrAddBoolean("problem", "roche_wb_tan", false);
   } else {
@@ -5622,7 +5645,9 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     // (a): any constant spin (W_eq = the rotating IC); no spin ramp (W_eq
     // would change in time)
     if (spr_on_) bad = "no problem/spin_ramp (W_eq is the IC: a constant spin)";
-    if (!phd->use_etotgrav) bad = "<hydro>/etotgrav = true (the work is in the energy flux)";
+    if (!phd->use_etotgrav) {
+      bad = "<hydro>/etotgrav = true (the work is in the energy flux)";
+    }
     // (b): with env_ic_vz W_eq is the barotropic IC (thermo = general path)
     if (spr_icvz_ && !gen_) bad = "thermo = general with problem/env_ic_vz";
     if (pmbp->pmesh->adaptive || pmbp->pmesh->multilevel) bad = "a single-level mesh";
@@ -5922,8 +5947,9 @@ void RyPerRstRestore(const std::vector<char> &blk) {
   const size_t h = sizeof(kRyRstMagic) + 4*sizeof(std::int32_t);
   if (blk.size() < h || std::memcmp(blk.data(), &(kRyRstMagic[0]), sizeof(kRyRstMagic))) {
     if (root) {
-      std::printf("ry_per_accretor: this restart file carries no history registers (pre-"
-                  "acctrc-1019c): the cumulative user.hst/trc.hst columns restart from 0\n");
+      std::printf("ry_per_accretor: this restart file carries no history registers "
+                  "(older format): the cumulative user.hst/trc.hst columns restart "
+                  "from 0\n");
     }
     return;
   }
@@ -5940,8 +5966,8 @@ void RyPerRstRestore(const std::vector<char> &blk) {
   if (nrf < 1 || !(flz || kRstPerX == kRstPer0) || hdr[2] != kRstGlob || nbv < 0 ||
       (nbv > 0 && nbvt % nbv != 0) || blk.size() != h + (nreg + nbvt)*sizeof(Real)) {
     if (root) {
-      std::printf("ry_per_accretor: WARNING the restart file's history-register block has "
-                  "an unknown layout (%d ranks x %d + %d, %zu bytes): ignored, the "
+      std::printf("ry_per_accretor: WARNING the restart file's history-register block "
+                  "has an unknown layout (%d ranks x %d + %d, %zu bytes): ignored, the "
                   "cumulative columns restart from 0\n", nrf, hdr[1], hdr[2], blk.size());
     }
     return;
@@ -5979,8 +6005,8 @@ void RyPerRstRestore(const std::vector<char> &blk) {
       jlok_ = (ok > 0.0) ? 1.0 : 0.0;
     }
   } else if (lz_ && root) {
-    std::printf("ry_per_accretor: the restart file has no L_z budget registers: the lz.hst "
-                "budget starts at this restart\n");
+    std::printf("ry_per_accretor: the restart file has no L_z budget registers: the "
+                "lz.hst budget starts at this restart\n");
   }
   const Real *glb = all.data() + static_cast<size_t>(nrf)*kRstPerX;
   hist_tprev_ = glb[0];
@@ -6011,8 +6037,8 @@ void RyPerRstBadv() {
       rst_badv_.size() != static_cast<size_t>(pmsh->nmb_total)*rst_badv_n_) {
     if (root) {
       std::printf("ry_per_accretor: WARNING the restart file's outer-bath advective flux "
-                  "(%zu values) does not match this run: not restored (Ebnd offset by the "
-                  "first cycle's advective term)\n", rst_badv_.size());
+                  "(%zu values) does not match this run: not restored (Ebnd offset by "
+                  "the first cycle's advective term)\n", rst_badv_.size());
     }
     rst_badv_.clear();
     return;
@@ -6063,7 +6089,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (rad_) {
     if (!env_ || thermo.compare("general") != 0 ||
         pin->GetOrAddString("problem", "env_ic", "polytrope").compare("column") != 0) {
-      fatal("<rad_m1> needs problem/inner = envelope, thermo = general and env_ic = column");
+      fatal("<rad_m1> needs problem/inner = envelope, thermo = general and env_ic = "
+            "column");
     }
   }
   if (env_) {
@@ -6074,7 +6101,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (pin->GetString("hydro", "eos").compare("general") != 0 || !eos.tbl.active) {
         fatal("thermo = general needs <hydro>/eos = general with general_eos = table");
       }
-      if (eos.tbl.radiation) fatal("thermo = general needs <hydro>/eos_radiation = false");
+      if (eos.tbl.radiation) {
+        fatal("thermo = general needs <hydro>/eos_radiation = false");
+      }
       if (phd->wb_option != WBOption::polytropic) {
         fatal("thermo = general needs <hydro>/wb_option = polytropic");
       }
@@ -6129,8 +6158,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // ramp v2: the spin-1 column and its bottom flux (required)
     if (!pin->DoesParameterExist("problem", "spin_ramp_col0") ||
         !pin->DoesParameterExist("problem", "spin_ramp_flux0")) {
-      fatal("problem/spin_ramp_t needs problem/spin_ramp_col0 (the spin-1 column file) and "
-            "problem/spin_ramp_flux0 (its <rad_m1> bottom flux, code)");
+      fatal("problem/spin_ramp_t needs problem/spin_ramp_col0 (the spin-1 column file) "
+            "and problem/spin_ramp_flux0 (its <rad_m1> bottom flux, code)");
     }
     if (spr_stgt_ == 1.0) fatal("problem/spin_ramp_t needs problem/spin != 1");
   }
@@ -6254,8 +6283,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (!(sz_ > 0.0)) fatal("problem/stream_sigma_z must be > 0");
       }
       if (root) {
-        std::printf("ry_per_accretor: 3-D mode (theta %.3f..%.3f deg): nozzle Gaussian in z, "
-                    "exact 3-D Roche-lobe mask; forces/IC/WB stay theta-invariant (band)\n",
+        std::printf("ry_per_accretor: 3-D mode (theta %.3f..%.3f deg): nozzle Gaussian "
+                    "in z, exact 3-D Roche-lobe mask; forces/IC/WB stay theta-invariant "
+                    "(band)\n",
                     ms.x2min*180.0/M_PI, ms.x2max*180.0/M_PI);
       }
     }
@@ -6271,7 +6301,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (pin->DoesParameterExist("problem", "phys_3d")) {
       p3_ = pin->GetBoolean("problem", "phys_3d");
       if (p3_ && !g3d_) {
-        fatal("problem/phys_3d needs the 3-D mode (theta range beyond 2 deg from the plane)");
+        fatal("problem/phys_3d needs the 3-D mode (theta range beyond 2 deg from the "
+              "plane)");
       }
       if (p3_ && !(env_ && gen_)) {
         fatal("problem/phys_3d needs problem/inner = envelope and thermo = general");
@@ -6315,19 +6346,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (thwf_
           && !thout_) fatal("problem/theta_wall_flow needs theta_bc = outflow | hse");
       if (thwf_ && root) {
-        std::printf("ry_per_accretor: theta_wall_flow: the theta-ghost hydrostatic walk adds "
-                    "the edge cell's own rotation (centrifugal + Coriolis, w = v_phi/(r sin th))"
-                    "\n");
+        std::printf("ry_per_accretor: theta_wall_flow: the theta-ghost hydrostatic walk "
+                    "adds the edge cell's own rotation (centrifugal + Coriolis, w = "
+                    "v_phi/(r sin th))\n");
       }
     }
     {
-      const bool u2 = (pmy_mesh_->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::user) ||
-                      (pmy_mesh_->mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::user);
-      const bool u2b = (pmy_mesh_->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::user) &&
-                       (pmy_mesh_->mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::user);
-      if (thout_
-          && !u2b) fatal("theta_bc = outflow | hse needs mesh/ix2_bc = ox2_bc = user");
-      if (!thout_ && u2) fatal("mesh ix2_bc/ox2_bc = user needs problem/theta_bc = outflow | hse");
+      const auto &bcs = pmy_mesh_->mesh_bcs;
+      const bool u2 = (bcs[BoundaryFace::inner_x2] == BoundaryFlag::user) ||
+                      (bcs[BoundaryFace::outer_x2] == BoundaryFlag::user);
+      const bool u2b = (bcs[BoundaryFace::inner_x2] == BoundaryFlag::user) &&
+                       (bcs[BoundaryFace::outer_x2] == BoundaryFlag::user);
+      if (thout_ && !u2b) {
+        fatal("theta_bc = outflow | hse needs mesh/ix2_bc = ox2_bc = user");
+      }
+      if (!thout_ && u2) {
+        fatal("mesh ix2_bc/ox2_bc = user needs problem/theta_bc = outflow | hse");
+      }
     }
     env_sp_spin_ = pin->DoesParameterExist("problem", "env_sponge_spin") &&
                    pin->GetBoolean("problem", "env_sponge_spin");
@@ -6352,8 +6387,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // theta-thin slab's), and <rad_m1> (refused by the module on a polar mesh) stays off
     // in stage S0.
     {
-      const bool pol0 = (pmy_mesh_->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::polar);
-      const bool pol1 = (pmy_mesh_->mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::polar);
+      const auto &bcs = pmy_mesh_->mesh_bcs;
+      const bool pol0 = (bcs[BoundaryFace::inner_x2] == BoundaryFlag::polar);
+      const bool pol1 = (bcs[BoundaryFace::outer_x2] == BoundaryFlag::polar);
       if (pol0 || pol1) {
         if (!(pol0 && pol1)) fatal("full sphere: needs mesh/ix2_bc = ox2_bc = polar");
         if (!p3_) fatal("full sphere (polar x2 BCs) needs problem/phys_3d = true");
@@ -6367,8 +6403,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
         if (pin->DoesParameterExist("problem", "env_lin_band_factor") &&
             pin->GetReal("problem", "env_lin_band_factor") != 1.0) {
-          fatal("full sphere (polar x2 BCs): problem/env_lin_band_factor must be 1 (the band "
-                "factor applies to the theta-thin slab only)");
+          fatal("full sphere (polar x2 BCs): problem/env_lin_band_factor must be 1 (the "
+                "band factor applies to the theta-thin slab only)");
         }
         if (pin->DoesBlockExist("rad_m1")) {
           const char *rb[] = {"implicit_bc_x2min", "implicit_bc_x2max"};
@@ -6385,15 +6421,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           }
         }
         if (root) {
-          std::printf("ry_per_accretor: FULL SPHERE: polar x2 boundaries (theta 0..pi), no "
-                      "theta walls\n");
+          std::printf("ry_per_accretor: FULL SPHERE: polar x2 boundaries (theta 0..pi), "
+                      "no theta walls\n");
         }
       }
     }
     if (root && p3_) {
-      std::printf("ry_per_accretor: phys_3d: 3-D Roche potential (gravity r/theta/phi, Phi_wb, "
-                  "etotgrav), full Coriolis, IC/WB/ambient on 3-D equipotentials; theta walls "
-                  "%s; theta sponge %s (width %.3f deg, tau %.4g)\n",
+      std::printf("ry_per_accretor: phys_3d: 3-D Roche potential (gravity r/theta/phi, "
+                  "Phi_wb, etotgrav), full Coriolis, IC/WB/ambient on 3-D "
+                  "equipotentials; theta walls %s; theta sponge %s (width %.3f deg, tau "
+                  "%.4g)\n",
                   thhse_ ? "HSE (closed, hydrostatic theta ghosts, v_theta mirrored)" :
                   (thout_
                    ? "OUTFLOW (hydrostatic theta ghosts, v_theta diode)" : "reflecting"),
@@ -6430,7 +6467,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // window cells of the inner face's rho |v_r| A (A = r^2 (cos th1 - cos th2) dphi),
       // so a supersonic nozzle delivers exactly stream_mdot (upwind face flux)
       if (!pin->DoesParameterExist("problem", "stream_mdot")) {
-        fatal("stream_inject = l1 needs problem/stream_mdot (code mass/time in the band)");
+        fatal("stream_inject = l1 needs problem/stream_mdot (code mass/time in the "
+              "band)");
       }
       const Real mdot = pin->GetReal("problem", "stream_mdot");
       const auto &ms = pmy_mesh_->mesh_size;
@@ -6470,9 +6508,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (!(sum > 0.0)) fatal("cubed sphere: the nozzle window holds no cell");
         rho_s_ = mdot/sum;
         if (global_variable::my_rank == 0) {
-          std::printf("ry_per_accretor: cubed-sphere 3-D nozzle: sigma_z %.4f Rsun, full rate "
-                      "stream_mdot %.6g code -> peak rho %.6g code (r_f %.5f, window sum "
-                      "%.6g)\n", sz_, mdot, rho_s_, rf, sum);
+          std::printf("ry_per_accretor: cubed-sphere 3-D nozzle: sigma_z %.4f Rsun, full "
+                      "rate stream_mdot %.6g code -> peak rho %.6g code (r_f %.5f, "
+                      "window sum %.6g)\n", sz_, mdot, rho_s_, rf, sum);
         }
         sum = 0.0;
       } else if (g3d_) {
@@ -6512,8 +6550,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (global_variable::my_rank == 0) {
           std::printf("ry_per_accretor: 3-D nozzle: sigma_z %.4f Rsun (|z| < %.4f, theta "
                       "%.3f..%.3f deg), full rate stream_mdot %.6g code -> peak rho %.6g "
-                      "code; central slice %.6g code/time per Rsun of height = %.6g in the "
-                      "2-D band of height r_f 0.0122718 (r_f %.5f)\n", sz_, nsig_*sz_,
+                      "code; central slice %.6g code/time per Rsun of height = %.6g in "
+                      "the 2-D band of height r_f 0.0122718 (r_f %.5f)\n", sz_, nsig_*sz_,
                       90.0 - std::asin(std::fmin(nsig_*sz_/rf, 1.0))*180.0/M_PI,
                       90.0 + std::asin(std::fmin(nsig_*sz_/rf, 1.0))*180.0/M_PI, mdot,
                       rho_s_, rho_s_*sum0, rho_s_*sum0*rf*0.0122718, rf);
@@ -6553,8 +6591,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       fatal("stream_sector_light must be full | scaled | surface | dark | neck");
     }
     if (root) {
-      std::printf("ry_per_accretor: stream_sector_light %s (back-sink sector radiation)\n",
-                  sl.c_str());
+      std::printf("ry_per_accretor: stream_sector_light %s (back-sink sector "
+                  "radiation)\n", sl.c_str());
     }
   }
   dtrep_ = pin->DoesParameterExist("problem", "dt_report") &&
@@ -6616,8 +6654,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       tdk = pin->GetReal("problem", "donor_teff");
     }
     if (root) {
-      std::printf("ry_per_accretor: donor_irr: L_d %.6g Lsun, R_L (Eggleton, volume) %.4f "
-                  "Rsun -> T_d %.1f K%s\n", ldon, rlv, tdk,
+      std::printf("ry_per_accretor: donor_irr: L_d %.6g Lsun, R_L (Eggleton, volume) "
+                  "%.4f Rsun -> T_d %.1f K%s\n", ldon, rlv, tdk,
                   pin->DoesParameterExist("problem", "donor_teff")
                   ? " (donor_teff key)" : "");
     }
@@ -6625,8 +6663,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real tdc = tdk/tunit;
     mirr_e_ = pmbp->pradm1->arad*SQR(SQR(tdc));
     if (root) {
-      std::printf("ry_per_accretor: donor_irr: the donor lobe radiates at T_d %.1f K (E = "
-                  "a T^4 = %.6g code, F = 0); booked in Ebnd as radiation in\n", tdk,
+      std::printf("ry_per_accretor: donor_irr: the donor lobe radiates at T_d %.1f K (E "
+                  "= a T^4 = %.6g code, F = 0); booked in Ebnd as radiation in\n", tdk,
                   mirr_e_);
     }
     // ---- v4 gravity darkening, problem/donor_gdark = beta (default 0.25,
@@ -6686,7 +6724,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const Real cm = std::sqrt(clo*chi);
         Real lsum = 0.0;
         for (int n=0; n<na*nq; ++n) lsum += std::fmax(cm*std::pow(ga[n], b4), fl4)*da[n];
-        if (lsum > q4) chi = cm; else clo = cm;
+        if (lsum > q4) {
+          chi = cm;
+        } else {
+          clo = cm;
+        }
       }
       cc = std::sqrt(clo*chi);
     }
@@ -6721,15 +6763,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     mirr_ef_ = mirr_sc_*arc*fl4;
     mirr_e_ *= mirr_sc_;
     if (root) {
-      std::printf("ry_per_accretor: donor_gdark beta %.4g: lobe area %.5g Rsun^2 (4 pi R_L^2 "
-                  "%.5g), in-plane perimeter %.5g Rsun, T_mean %.1f K, floor %.3g T_mean; "
-                  "C %.6g K^4/g^%.3g\n", mirr_beta_, atot, 4.0*M_PI*SQR(rlv), ltot,
+      std::printf("ry_per_accretor: donor_gdark beta %.4g: lobe area %.5g Rsun^2 (4 pi "
+                  "R_L^2 %.5g), in-plane perimeter %.5g Rsun, T_mean %.1f K, floor %.3g "
+                  "T_mean; C %.6g K^4/g^%.3g\n",
+                  mirr_beta_, atot, 4.0*M_PI*SQR(rlv), ltot,
                   std::pow(tm4, 0.25), tfr, cc, b4);
       const int ias[8] = {0, na/36, na/12, na/6, na/3, na/2, 2*na/3, na - 1};
       for (int n=0; n<8; ++n) {
         const int ia = ias[n];
-        std::printf("ry_per_accretor: donor_gdark: in-plane alpha %6.1f deg from L1: g %.5g, "
-                    "T_loc %.1f K\n", (ia + 0.5)*180.0/na, gl[ia], std::pow(t4loc(gl[ia]),
+        std::printf("ry_per_accretor: donor_gdark: in-plane alpha %6.1f deg from L1: g "
+                    "%.5g, T_loc %.1f K\n",
+                    (ia + 0.5)*180.0/na, gl[ia], std::pow(t4loc(gl[ia]),
                     0.25));
       }
       {
@@ -6850,8 +6894,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       dtretry::RegisterValue(("ry_trc1_" + std::to_string(n)).c_str(), &trc1_[n]);
     }
     if (root) {
-      std::printf("ry_per_accretor: tracers on (<hydro>/nscalars = 2): s0 stream (nozzle), "
-                  "s1 boundary inflow (r_in, r_out, theta walls); diagnostics in %s\n",
+      std::printf("ry_per_accretor: tracers on (<hydro>/nscalars = 2): s0 stream "
+                  "(nozzle), s1 boundary inflow (r_in, r_out, theta walls); diagnostics "
+                  "in %s\n",
                   trc_file_.c_str());
     }
   }
@@ -6870,20 +6915,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 "km/s; stream state used: phi %.3f deg, v_r %.2f, v_phi %.2f km/s\n",
                 bo.phi*180.0/M_PI, bo.vr*aom, bo.vt*aom, phi_s_*180.0/M_PI, vr_s_, vp_s_);
     if (stl1_) {
-      std::printf("ry_per_accretor: stream_inject = l1 (Lubow-Shu nozzle): L1 curvature A "
-                  "%.4f B %.4f; c_T %.3f km/s along -x, T_L1 %.1f K, sigma_y %.4f Rsun "
+      std::printf("ry_per_accretor: stream_inject = l1 (Lubow-Shu nozzle): L1 curvature "
+                  "A %.4f B %.4f; c_T %.3f km/s along -x, T_L1 %.1f K, sigma_y %.4f Rsun "
                   "(sigma_phi %.5f rad at d_L1), peak rho %.6g code (%.4g g/cc) for "
-                  "stream_mdot %.6g; nozzle cells r %.5f .. %.5f (outer face at d_L1 %.5f), "
-                  "|phi| < %.4f rad; outer boundary: outflow (outer_rho %s), dark Marshak "
-                  "top\n", l1a, l1b, l1_c_, l1_t_*eos.temp_cgs, sig_*str_r_, sig_, rho_s_,
+                  "stream_mdot %.6g; nozzle cells r %.5f .. %.5f (outer face at d_L1 "
+                  "%.5f), |phi| < %.4f rad; outer boundary: outflow (outer_rho %s), dark "
+                  "Marshak top\n",
+                  l1a, l1b, l1_c_, l1_t_*eos.temp_cgs, sig_*str_r_, sig_, rho_s_,
                   rho_s_*(pmbp->punit ? pmbp->punit->density_cgs() : 1.0),
                   pin->GetReal("problem", "stream_mdot"), nz_rlo_, nz_rhi_, str_r_,
                   nsig_*sig_, orho.c_str());
     } else if (stvol_) {
-      std::printf("ry_per_accretor: stream_inject = volume: the ballistic state above is at "
-                  "stream_r %.4f Rsun = %.4f d_L1; nozzle cells r %.5f .. %.5f, |dphi| < "
-                  "%.4f rad; peak rho %.6g code%s; back sink %s, floor_keep_momentum %s; "
-                  "outer boundary: outflow (outer_rho %s), dark Marshak top\n",
+      std::printf("ry_per_accretor: stream_inject = volume: the ballistic state above is "
+                  "at stream_r %.4f Rsun = %.4f d_L1; nozzle cells r %.5f .. %.5f, "
+                  "|dphi| < %.4f rad; peak rho %.6g code%s; back sink %s, "
+                  "floor_keep_momentum %s; outer boundary: outflow (outer_rho %s), dark "
+                  "Marshak top\n",
                   str_r_, str_r_/(bo.dl1*asep), nz_rlo_, nz_rhi_, nsig_*sig_, rho_s_,
                   pin->DoesParameterExist("problem", "stream_mdot")
                   ? " (from stream_mdot)" : "",
@@ -6972,7 +7019,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // centrifugal term)
   if (cs_) {
     if (!env_ || !gen_ || !p3_) {
-      fatal("cubed sphere: needs problem/inner = envelope, thermo = general, phys_3d = true");
+      fatal("cubed sphere: needs problem/inner = envelope, thermo = general, phys_3d = "
+            "true");
     }
     // (stream port): the 3-D volume nozzle (stream_inject = volume), its back
     // sink, the Roche-lobe donor mask, donor_irr, stream_rad and stream_sector_light run
@@ -7001,8 +7049,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     if (corlz_) {
-      fatal("cubed sphere: problem/coriolis_lz is spherical-polar only; the Coriolis force is "
-            "the core <hydro>/frame_omega here (set by this pgen)");
+      fatal("cubed sphere: problem/coriolis_lz is spherical-polar only; the Coriolis "
+            "force is the core <hydro>/frame_omega here (set by this pgen)");
     }
     if (rad_ && (pmbp->pradm1->ibc_x2min == radm1::M1_IBC_X2FLUX ||
                  pmbp->pradm1->ibc_x2max == radm1::M1_IBC_X2FLUX)) {
@@ -7010,8 +7058,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     auto *pam = pmbp->phydro->pam;
     if (pam == nullptr) {
-      fatal("cubed sphere: needs the <hydro> angular-momentum module (<hydro>/am_transport) "
-            "for the Coriolis force (frame_omega)");
+      fatal("cubed sphere: needs the <hydro> angular-momentum module "
+            "(<hydro>/am_transport) for the Coriolis force (frame_omega)");
     }
     const Real om = rp_.omega;
     if (pin->DoesParameterExist("hydro", "frame_omega")) {
@@ -7036,11 +7084,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     if (root) {
-      std::printf("ry_per_accretor: CUBED SPHERE (csacc-1031): static envelope; Coriolis "
+      std::printf("ry_per_accretor: CUBED SPHERE: static envelope; Coriolis "
                   "-2 Omega x v from <hydro>/frame_omega = (0, 0, %.10e) with "
-                  "frame_centrifugal = false (centrifugal in the Roche potential); am_vector "
-                  "%s, frame_exact %s; L_z budget file off (Jdom/Jout from the Cartesian r x p"
-                  "%s)\n", om, pam->am_vector ? "on" : "off",
+                  "frame_centrifugal = false (centrifugal in the Roche potential); "
+                  "am_vector %s, frame_exact %s; L_z budget file off (Jdom/Jout from the "
+                  "Cartesian r x p%s)\n", om, pam->am_vector ? "on" : "off",
                       pam->frame_exact ? "on" : "off",
                   pam->am_vector ? " + the spin reservoir" : "");
     }
@@ -7075,8 +7123,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               !pin->GetBoolean("problem", "rad_book_lag"));
       if (rbk_) user_m1post_func = RyPerM1PostRb;
       if (rbk_ && global_variable::my_rank == 0) {
-        std::printf("ry_per_accretor: Ebnd radiation out booked per M1 solve (pgrst-1021; "
-                    "problem/rad_book_lag = true: the old one-cycle-late booking)\n");
+        std::printf("ry_per_accretor: Ebnd radiation out booked per M1 solve "
+                    "(problem/rad_book_lag = true: the old one-cycle-late "
+                    "booking)\n");
       }
     }
     if (thwc_) user_hydro_flux_func = RyPerWallFlux;

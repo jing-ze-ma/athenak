@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file dual_energy.cpp
-//! \brief duale-1112: see hydro/dual_energy.hpp.
+//! \brief see hydro/dual_energy.hpp.
 
 #include <cmath>
 #include <iostream>
