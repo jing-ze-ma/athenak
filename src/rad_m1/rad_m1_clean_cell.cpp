@@ -875,7 +875,7 @@ int RadiationM1::CleanCellMarkFaces() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellAllLowOrder
 //! \brief marks every face low-order (faces on a physical boundary only with
-//! clean_pos_boundary; otherwise their stress takes the upwind form, CleanCellFaceJacobian)
+//! clean_pos_boundary; otherwise their stress takes the upwind form)
 
 void RadiationM1::CleanCellAllLowOrder() {
   cln_all_low = true;
