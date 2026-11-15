@@ -19,7 +19,7 @@
 //! (d_i = cell centre - group volume centroid) that keeps the group's linear momentum
 //! P = sum V_i m_i AND its angular momentum L = sum V_i x_i x m_i exactly (both in
 //! Cartesian components, x_i = x1v rhat at the cell centre, the arm of the code's L_z
-//! = sum V R m_phi), <hydro>/merge_lat_mom = rigid (default) | cart (Omega = 0); the
+//! = sum V R m_phi); the
 //! energy E_i = e_bar + |m_i|^2/(2 rho_bar), e_bar so that sum V_i E_i is unchanged
 //! (falls back to Omega = 0 where the rotation part would take more than half of the
 //! thermal energy). The vector is moved between bases exactly: sp orthonormal
@@ -49,7 +49,6 @@
 //! <hydro>/merge_lat_rc = r_1[,r_2,...] shell outer radii (increasing, code units)
 //! <hydro>/merge_lat_f = f_1[,f_2,...] lateral merge factor per shell (x1v < r_1:
 //! f_1, r_1 <= x1v < r_2: f_2, ...)
-//! <hydro>/merge_lat_mom = rigid | cart
 //! <hydro>/merge_lat_rad = false | true
 //! <hydro>/merge_lat_check = true (test) every average re-sums its groups: max relative
 //! change of M, E, |P|, |L| printed as MLATDIAG chk
@@ -158,7 +157,6 @@ class MergeLat {
   Real rc[kMlatMaxShell];
   int fs[kMlatMaxShell];
   int fbig = 1;
-  bool rigid = true;
   bool rad = false;
   int diag_every = 0;
   bool check = false;       // <hydro>/merge_lat_check: group-sum errors of every average

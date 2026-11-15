@@ -263,18 +263,6 @@ class Hydro {
   DvceArray4D<Real> phi_wb_x1f;  // x1-face potential seen by the x1 WB scheme
   bool wb_guard_ideal = false;  // <hydro>/wb_guard_ideal (hydro.cpp)
   bool wb_clamp_ideal = false;  // <hydro>/wb_clamp_ideal (hydro.cpp)
-  int wb_cache_every = 0;       // rebuild wbq0 every stage (0) or every N-th cycle
-  // Kokkos team-scratch level for the flux kernels: 0 = LDS (64 kB per workgroup on
-  // AMD, which caps meshblock nx1 at a few hundred), 1 = global memory, no cap (~1% cost)
-  int scratch_level = 0;
-  // Has wbq0 ever been filled in this process? With wb_cache_every > 1 the rebuild is
-  // gated on (ncycle % wb_cache_every == 0), and ncycle is RESTORED from the restart
-  // file -- so a restart at a cycle that is not a multiple of wb_cache_every ran up to
-  // wb_cache_every-1 cycles against a freshly allocated (all-zero) background. The
-  // reconstruction then subtracts nothing and the scheme silently stops being
-  // well-balanced for those cycles, which kicks a deep hydrostatic star hard. Force the
-  // first call after start OR restart to build it.
-  bool wb_cache_built = false;
   // Set by the restart reader when the file carried BOTH general-EOS caches (wtemp and
   // the derived p, Gamma_1). The very first ConToPrim of a restarted run must then not
   // re-derive them -- the inversion is not idempotent and would move them by a few ULP,
@@ -369,7 +357,7 @@ class Hydro {
   bool diode_ox1 = false;
   // <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
   bool top_ghost_prim_copy = false;
-  // <mesh>/cs_seam_flux = shared: each panel-seam face is ONE Riemann problem
+  // shared seam flux: each panel-seam face is ONE Riemann problem
   // whose two states are the two panels' OWN interior-side reconstructions (exchanged as
   // face states, tangential velocity re-expressed on the receiver's basis), instead of
   // each panel's own solve against its resampled ghosts. CsSeamFaceStates (hydro_fluxes

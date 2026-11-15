@@ -279,7 +279,7 @@
             w0 = 1.0 - u*u;
             wp = 0.5*u*(u + 1.0);
             if (rs_lin && cs_interp) {
-              // <mesh>/cs_seam_resample = linear: the two bracketing donors, weights >= 0
+              // linear resample: the two bracketing donors, weights >= 0
               wm = (u < 0.0) ? -u : 0.0;
               wp = (u > 0.0) ? u : 0.0;
               w0 = 1.0 - wm - wp;

@@ -60,7 +60,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   int nvars = nhydro + nscalars;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const auto recon_method_ = recon_method;
-  // <mesh>/cs_seam_flux = shared: the neighbour's own seam face states
+  // shared seam flux: the neighbour's own seam face states
   // the x2/x3 backgrounds and weights (before the shared seam face states,
   // which reconstruct the edge cells exactly as the sweep does)
   if (wb_all) BuildWBCacheAll();
@@ -202,7 +202,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
   size_t scr_size = (ScrArray2D<Real>::shmem_size(nvars, ncells1) +
                      ScrArray2D<Real>::shmem_size(nder, ncells1)) * 2;
-  int scr_level = scratch_level;
+  int scr_level = 0;
   auto &flx1_ = uflx.x1f;
 
   auto &x1v_ = pmy_pack->pcoord->x1v;
@@ -226,19 +226,14 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
   bool wbreb_h = false;
   if (use_wellbalance_dynamic && use_wb_x1) {
-    const int ncyc = pmy_pack->pmesh->ncycle;
-    if (wb_cache_every <= 0 || !wb_cache_built ||
-        (stage == 1 && (ncyc % wb_cache_every) == 0)) {
-      BuildWBCache(jl, ju, kl, ku);
-      wb_cache_built = true;
-      wbreb_h = true;
-    }
+    BuildWBCache(jl, ju, kl, ku);
+    wbreb_h = true;
   }
 
 
   const Real wbreb_ = wbreb_h ? 1.0 : 0.0;
 
-  scr_level = TeamScratchLevel(scr_size, scratch_level);
+  scr_level = TeamScratchLevel(scr_size, 0);
   par_for_outer("hflux_x1",DevExeSpace(), scr_size, scr_level, 0, nmb1, kl, ku, jl, ju,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     auto wbcnt = wbcnt_;
@@ -619,7 +614,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       }
     }
 
-    scr_level = TeamScratchLevel(scr_size, scratch_level);
+    scr_level = TeamScratchLevel(scr_size, 0);
     // the j sweep of each (m, k) pencil split into nch2 chunks of jc2 faces when the
     // pack has too few (m, k) pencils to fill the GPU. A chunk re-makes the
     // reconstruction of its first row (the previous chunk's last); every face flux is
@@ -940,7 +935,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       il = is-1, iu = ie+1, jl = js-1, ju = je+1, kl = ks-2, ku = ke+2;
     }
 
-    scr_level = TeamScratchLevel(scr_size, scratch_level);
+    scr_level = TeamScratchLevel(scr_size, 0);
     // the k sweep split into chunks as the x2 j sweep
     const int nkf3 = ku - kl;
     const int npen3 = (nmb1 + 1)*(ju - jl + 1);
@@ -1211,7 +1206,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void Hydro::CsSeamFaceStates
-//! \brief <mesh>/cs_seam_flux = shared: exchanges each panel's own interior-side face
+//! \brief shared seam flux: exchanges each panel's own interior-side face
 //! state at its panel-seam faces (the PLM of its edge cell over ghost, edge and inner
 //! cell, as in the sweep: primitives plus the general-EOS derived pressure / Gamma_1,
 //! pressure floored, tangential velocity as covariant components on the face basis)
@@ -1232,22 +1227,14 @@ void Hydro::CsSeamFaceStates() {
   if (recon_method != ReconstructionMethod::plm ||
       use_wellbalance_static_reconst_perturb ||
       pmy_pack->pmesh->multilevel) {
-    if (!pmy_pack->pmesh->cs_seam_flux_named) {
-      // the DEFAULT shared seam on a setup it does not cover: the mean of the two solves
-      if (global_variable::my_rank == 0) {
-        std::cout
-            << "Hydro: cubed-sphere seam flux shared (default) not available for this"
-                  << " setup (needs PLM, no x2/x3 well-balanced reconstruction, uniform "
-                  << "mesh): seam flux = average" << std::endl;
-      }
-      cs_seam_shared = false;
-      return;
+    // a setup the shared seam states do not cover: the mean of the two solves
+    if (global_variable::my_rank == 0) {
+      std::cout << "Hydro: cubed-sphere seam flux shared not available for this setup "
+                << "(needs PLM, no x2/x3 well-balanced reconstruction, uniform mesh): "
+                << "seam flux = average" << std::endl;
     }
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<mesh>/cs_seam_flux = shared needs <hydro>/reconstruct = plm, no x2/x3 "
-              << "well-balanced or static-perturbation reconstruction and a uniform mesh"
-              << std::endl;
-    std::exit(EXIT_FAILURE);
+    cs_seam_shared = false;
+    return;
   }
   // mrglat- in the merged region (<hydro>/merge_lat_rc) the sweep's own seam face
   // state is the GROUP-level PLM (MlatCoarsePLM over the neighbour groups, zero slope for

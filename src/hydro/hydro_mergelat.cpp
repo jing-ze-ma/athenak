@@ -102,14 +102,6 @@ MergeLat::MergeLat(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) 
   }
   if (!pm->three_d) MlatFatal("needs a 3-D mesh");
   if (pm->multilevel) MlatFatal("SMR/AMR not supported");
-  const std::string mm = pin->GetOrAddString("hydro", "merge_lat_mom", "rigid");
-  if (mm == "rigid") {
-    rigid = true;
-  } else if (mm == "cart") {
-    rigid = false;
-  } else {
-    MlatFatal("merge_lat_mom = rigid | cart");
-  }
   rad = pin->GetOrAddBoolean("hydro", "merge_lat_rad", false);
   if (pin->DoesParameterExist("hydro", "merge_lat_check")) {
     check = pin->GetBoolean("hydro", "merge_lat_check");
@@ -119,7 +111,7 @@ MergeLat::MergeLat(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) 
     for (int n = 0; n < nsh; ++n) {
       std::cout << " x1v < " << rc[n] << " f " << fs[n] << ";";
     }
-    std::cout << " mom " << (rigid ? "rigid" : "cart") << ", rad "
+    std::cout << " mom rigid, rad "
               << (rad ? "merged" : "fine") << std::endl;
   }
 }
@@ -204,7 +196,6 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
   const MergeLatGeo g = Geo();
   auto fi_ = fi;
   auto u_ = u;
-  const bool rigid_ = rigid;
   const int nhyd_ = nhyd, nvar_ = nvar;
   auto phi_ = phi;
   const bool grav_ = grav;
@@ -292,54 +283,52 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
     if (db > 0.0) {
       const Real pp = P[0]*P[0] + P[1]*P[1] + P[2]*P[2];
       ekin = 0.5*pp*iv/db;
-      if (rigid_) {
-        // angular momentum about the centroid and the inertia tensor of the cells
-        Real L[3] = {0.0, 0.0, 0.0};
-        Real J[3][3] = {};   // zero-initialised
-        for (int kk = k; kk < k + f; ++kk) {
-          for (int jj = j; jj < j + f; ++jj) {
-            Real rh[3], b1[3], b2[3], cc, v[3], d[3];
-            MlatBasis(g, m, kk, jj, rh, b1, b2, cc);
-            const Real dv = g.vol(m,kk,jj,i);
-            MlatToCart(rh, b1, b2, cc, u_(m,IM1,kk,jj,i), u_(m,IM2,kk,jj,i),
-                       u_(m,IM3,kk,jj,i), v);
-            for (int q = 0; q < 3; ++q) {
-              d[q] = r*rh[q] - xc[q];
-            }
-            L[0] += dv*(d[1]*v[2] - d[2]*v[1]);
-            L[1] += dv*(d[2]*v[0] - d[0]*v[2]);
-            L[2] += dv*(d[0]*v[1] - d[1]*v[0]);
-            const Real d2 = d[0]*d[0] + d[1]*d[1] + d[2]*d[2];
-            for (int a = 0; a < 3; ++a) {
-              for (int b = 0; b < 3; ++b) {
-                J[a][b] += dv*((a == b ? d2 : 0.0) - d[a]*d[b]);
-              }
+      // angular momentum about the centroid and the inertia tensor of the cells
+      Real L[3] = {0.0, 0.0, 0.0};
+      Real J[3][3] = {};   // zero-initialised
+      for (int kk = k; kk < k + f; ++kk) {
+        for (int jj = j; jj < j + f; ++jj) {
+          Real rh[3], b1[3], b2[3], cc, v[3], d[3];
+          MlatBasis(g, m, kk, jj, rh, b1, b2, cc);
+          const Real dv = g.vol(m,kk,jj,i);
+          MlatToCart(rh, b1, b2, cc, u_(m,IM1,kk,jj,i), u_(m,IM2,kk,jj,i),
+                     u_(m,IM3,kk,jj,i), v);
+          for (int q = 0; q < 3; ++q) {
+            d[q] = r*rh[q] - xc[q];
+          }
+          L[0] += dv*(d[1]*v[2] - d[2]*v[1]);
+          L[1] += dv*(d[2]*v[0] - d[0]*v[2]);
+          L[2] += dv*(d[0]*v[1] - d[1]*v[0]);
+          const Real d2 = d[0]*d[0] + d[1]*d[1] + d[2]*d[2];
+          for (int a = 0; a < 3; ++a) {
+            for (int b = 0; b < 3; ++b) {
+              J[a][b] += dv*((a == b ? d2 : 0.0) - d[a]*d[b]);
             }
           }
         }
-        // Omega = J^-1 L (cofactors; J symmetric positive definite for f >= 2)
-        const Real c00 = J[1][1]*J[2][2] - J[1][2]*J[2][1];
-        const Real c01 = J[1][2]*J[2][0] - J[1][0]*J[2][2];
-        const Real c02 = J[1][0]*J[2][1] - J[1][1]*J[2][0];
-        const Real det = J[0][0]*c00 + J[0][1]*c01 + J[0][2]*c02;
-        const Real tr = J[0][0] + J[1][1] + J[2][2];
-        if (det > 1.0e-12*tr*tr*tr) {
-          const Real c11 = J[0][0]*J[2][2] - J[0][2]*J[2][0];
-          const Real c12 = J[0][1]*J[2][0] - J[0][0]*J[2][1];
-          const Real c22 = J[0][0]*J[1][1] - J[0][1]*J[1][0];
-          const Real id = 1.0/det;
-          // inverse = cofactor^T / det (symmetric)
-          om[0] = (c00*L[0] + c01*L[1] + c02*L[2])*id;
-          om[1] = (c01*L[0] + c11*L[1] + c12*L[2])*id;
-          om[2] = (c02*L[0] + c12*L[1] + c22*L[2])*id;
-          const Real erot = 0.5*(om[0]*L[0] + om[1]*L[1] + om[2]*L[2])/db;
-          // keep at least half of the group's thermal(+potential) energy
-          if (erot >= 0.0 && erot <= 0.5*(es - ekin - epot)) {
-            ekin += erot;
-          } else {
-            om[0] = om[1] = om[2] = 0.0;
-            Kokkos::atomic_add(&nfb(0), 1);
-          }
+      }
+      // Omega = J^-1 L (cofactors; J symmetric positive definite for f >= 2)
+      const Real c00 = J[1][1]*J[2][2] - J[1][2]*J[2][1];
+      const Real c01 = J[1][2]*J[2][0] - J[1][0]*J[2][2];
+      const Real c02 = J[1][0]*J[2][1] - J[1][1]*J[2][0];
+      const Real det = J[0][0]*c00 + J[0][1]*c01 + J[0][2]*c02;
+      const Real tr = J[0][0] + J[1][1] + J[2][2];
+      if (det > 1.0e-12*tr*tr*tr) {
+        const Real c11 = J[0][0]*J[2][2] - J[0][2]*J[2][0];
+        const Real c12 = J[0][1]*J[2][0] - J[0][0]*J[2][1];
+        const Real c22 = J[0][0]*J[1][1] - J[0][1]*J[1][0];
+        const Real id = 1.0/det;
+        // inverse = cofactor^T / det (symmetric)
+        om[0] = (c00*L[0] + c01*L[1] + c02*L[2])*id;
+        om[1] = (c01*L[0] + c11*L[1] + c12*L[2])*id;
+        om[2] = (c02*L[0] + c12*L[1] + c22*L[2])*id;
+        const Real erot = 0.5*(om[0]*L[0] + om[1]*L[1] + om[2]*L[2])/db;
+        // keep at least half of the group's thermal(+potential) energy
+        if (erot >= 0.0 && erot <= 0.5*(es - ekin - epot)) {
+          ekin += erot;
+        } else {
+          om[0] = om[1] = om[2] = 0.0;
+          Kokkos::atomic_add(&nfb(0), 1);
         }
       }
     }
@@ -408,7 +397,7 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
       chkerr[n] = std::max(chkerr[n], static_cast<double>(h(n)));
     }
   }
-  if (rigid && kind == 0) {
+  if (kind == 0) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), nfb);
     nfallback += h(0);
   }

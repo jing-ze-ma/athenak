@@ -271,8 +271,6 @@ void SetPhi(Mesh *pm, const std::vector<Real> &dpc, const std::vector<Real> &dpf
       if (i == n1m1) {pwf(m,k,j,i+1) = rwf(m,k,j,i+1) + df(i+1);}
     }
   });
-  if (fl.ph != nullptr) {fl.ph->wb_cache_built = false;}
-  if (fl.pm != nullptr) {fl.pm->wb_cache_built = false;}
 }
 
 Real MtabAt(const Real t) {return mtab_on_ ? mtab_.At(0, t - t0_) : 0.0;}

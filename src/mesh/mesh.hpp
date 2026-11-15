@@ -319,7 +319,6 @@ class Mesh {
   bool layout_invariant = false;
   int cs_seam_fc_order = 2;   // 3 = third-order FC seam ghost fields (mesh.cpp)
   int cs_seam_flux;           // seam flux: 0 average of the two solves, 3 shared states
-  bool cs_seam_flux_named = false;   // <mesh>/cs_seam_flux given in the input
   Real cs_seam_rho_guard;     // seam ghost density guard ratio, 0 = off (mesh.cpp)
   bool cs_seam_resample_linear;  // convex linear along-seam resample (mesh.cpp)
   int npanels;                // 6 if using cubed sphere; 1 otherwise

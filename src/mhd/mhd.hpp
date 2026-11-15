@@ -320,15 +320,6 @@ class MHD {
   void AddWbGravity(const Real bdt, const bool with_x1);
   bool wb_guard_ideal = false;  // <mhd>/wb_guard_ideal (mhd.cpp)
   bool wb_clamp_ideal = false;  // <mhd>/wb_clamp_ideal (mhd.cpp)
-  int wb_cache_every = 0;       // rebuild wbq0 every stage (0) or every N-th cycle
-  // Has wbq0 ever been filled in this process? With wb_cache_every > 1 the rebuild is
-  // gated on (ncycle % wb_cache_every == 0), and ncycle is RESTORED from the restart
-  // file -- so a restart at a cycle that is not a multiple of wb_cache_every ran up to
-  // wb_cache_every-1 cycles against a freshly allocated (all-zero) background. The
-  // reconstruction then subtracts nothing and the scheme silently stops being
-  // well-balanced for those cycles, which kicks a deep hydrostatic star hard. Force the
-  // first call after start OR restart to build it.
-  bool wb_cache_built = false;
   // Set by the restart reader when the file carried BOTH general-EOS caches (wtemp and
   // the derived p, Gamma_1). The very first ConToPrim of a restarted run must then not
   // re-derive them -- the inversion is not idempotent and would move them by a few ULP,

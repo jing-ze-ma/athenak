@@ -228,7 +228,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   pbval_u->cs_lin_resample = ppack->pmesh->cs_seam_resample_linear;
   pbval_u->cs_blockend_ext_ = CsSeamBlockendExtend(ppack, pin);
   pbval_u->InitializeBuffers((nhydro+nscalars));
-  // <mesh>/cs_seam_flux = shared: the seam face-state exchange (hydro.hpp)
+  // shared cubed-sphere seam flux: the seam face-state exchange (hydro.hpp)
   if (ppack->pmesh->use_cubed_sphere && ppack->pmesh->cs_seam_flux == 3) {
     cs_seam_shared = true;
     const int nfs = nhydro + nscalars + NDERIVED;
@@ -315,12 +315,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   use_wellbalance_dynamic = pin->GetOrAddBoolean("hydro","wellbalance_dynamic",false);
   use_wb_x1 = pin->GetOrAddBoolean("hydro","wb_x1",false);
-  // rebuild the well-balanced background cache at stage 1 of every N-th cycle instead
-  // of every stage (0 = every stage). A balanced state is unaffected; an evolving one
-  // reconstructs against a background up to N cycles old, which is nothing against the
-  // radiative timescale the profile changes on. N = 1 halves the walk cost, N = 10
-  // removes it.
-  wb_cache_every = pin->GetOrAddInteger("hydro","wb_cache_every",0);
   // Ideal-gas x1 WB cache (BuildWBCache) safety keys:
   // <hydro>/wb_clamp_ideal: polytropic closed form limits the T DECREASE over a
   // segment to t0/2, as the general-EOS walk does (getWBerho, clamp_dt);
@@ -343,7 +337,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
                                         wbi_default("wb_guard_ideal"));
   wb_clamp_ideal = pin->GetOrAddBoolean("hydro","wb_clamp_ideal",
                                         wbi_default("wb_clamp_ideal"));
-  scratch_level = pin->GetOrAddInteger("hydro","scratch_level",0);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
   // <hydro>/wall_wb_onesided (hydro.hpp, reconstruct/wb_wall.hpp): default true whenever
   // the x1 dynamic WB scheme is on and the key is not named, on a fresh start and on a
