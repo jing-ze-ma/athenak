@@ -503,6 +503,31 @@
               }
               iv = VgdInnerFace(st4, fC, i, true, ie0, bfc, cx1f(m,i), cx1v(m,i),
                                 cx1v(m,i+1), p2, ch0, ds, s0);
+            } else if (typ == 2 && imir) {
+              // a reflecting inner face (scheme = clean): the inflow at the face point is
+              // the first shell's inward intensity there in the specular image direction
+              // (nearest set direction; stencil cells of the inward branch only), times
+              // the column's flux ratio (VetGdInnerMirror)
+              const Real ux = xu/ru, uy = yu/ru, uz = zu/ru;
+              const Real mu = nx*ux + ny*uy + nz*uz;
+              int dm = 0;
+              Real best = -2.0;
+              for (int q = 0; q < n; ++q) {
+                const Real c = dir_(q,0)*(nx - 2.0*mu*ux) + dir_(q,1)*(ny - 2.0*mu*uy) +
+                               dir_(q,2)*(nz - 2.0*mu*uz);
+                if (c > best) {best = c; dm = q;}
+              }
+              bool ok[4];
+              bool all = true;
+              for (int q = 0; q < 4; ++q) {
+                ok[q] = (mr_(m,(q < 2) ? k0 : k1,(q % 2 == 0) ? j0 : j1,dm) < 0.0);
+                all = all && ok[q];
+              }
+              const Real im = VgdUpwindI(st4, [&](const int kk, const int jj) {
+                return rd0(kk,jj,i,dm);
+              }, ok, all);
+              iv = VgdInnerFace(st4, fC, i, true, (im < 0.0) ? s0 : isc_(m,k-ks,j-js)*im,
+                                bfc, cx1f(m,i), cx1v(m,i), cx1v(m,i+1), p2, ch0, ds, s0);
             } else if (typ == 2) {
               // the diffusion intensity at the inner face of the first shell,
               // S + mu (-dS/dtau_r); vet_bc_diff = face (gdface-1011): S of the FACE,

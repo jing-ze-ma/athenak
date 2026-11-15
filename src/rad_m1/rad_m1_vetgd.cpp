@@ -948,6 +948,7 @@ void RadiationM1::VetGdInit() {
     vgd_x1lv[m] = l.lx1;
     xf_h(m) = (l.lx1 == 0 ? 1 : 0) + (l.lx1 == vgd_nb1 - 1 ? 2 : 0);
     if (l.lx1 == vgd_nb1 - 1 && ibc_x1max == M1_IBC_REFLECT) {xf_h(m) += 4;}
+    xf_h(m) += 8*l.lx1;
     for (int g = 0; g < pm->nmb_total; ++g) {
       const LogicalLocation &o = pm->lloc_eachmb[g];
       if (o.level == l.level && o.lx2 == l.lx2 && o.lx3 == l.lx3 &&
@@ -5895,6 +5896,49 @@ void RadiationM1::VetGdTopMirror() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdInnerMirror
+//! \brief a reflecting inner x1 (scheme = clean), after the inward pass: the ratio of the
+//! inward radial flux of every column of the first shell to the outward flux of its
+//! specular images (nearest set directions), which scales the mirrored inflow of the
+//! inner face so that it returns the inflow (1 where either vanishes)
+
+void RadiationM1::VetGdInnerMirror() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1, n = vgd_n, w = vgd_w, is = indcs.is;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+  if (vgd_isc.extent_int(0) != nmb1 + 1) {Kokkos::realloc(vgd_isc, nmb1 + 1, nx3, nx2);}
+  auto dir_ = vgd_dir;
+  auto tg_ = vgd_trig;
+  auto vi_ = vgd_i;
+  auto xf_ = vgd_x1f;
+  auto sc_ = vgd_isc;
+  par_for("m1_vgd_imirror", DevExeSpace(), 0, nmb1, 0, nx3 - 1, 0, nx2 - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    sc_(m,k,j) = 1.0;
+    if (!(xf_(m) & 1)) {return;}
+    const Real r[3] = {tg_(m,k,j,0)*tg_(m,k,j,3), tg_(m,k,j,0)*tg_(m,k,j,2),
+                       tg_(m,k,j,1)};
+    Real hi = 0.0, ho = 0.0;
+    for (int d = 0; d < n; ++d) {
+      const Real mr = dir_(d,0)*r[0] + dir_(d,1)*r[1] + dir_(d,2)*r[2];
+      if (mr < 0.0) {
+        hi -= dir_(d,3)*mr*vi_(m,d,k+w,j+w,is);
+        continue;
+      }
+      int dm = 0;
+      Real best = -2.0;
+      for (int q = 0; q < n; ++q) {
+        Real c = 0.0;
+        for (int a = 0; a < 3; ++a) {c += dir_(q,a)*(dir_(d,a) - 2.0*mr*r[a]);}
+        if (c > best) {best = c; dm = q;}
+      }
+      ho += dir_(d,3)*mr*vi_(m,dm,k+w,j+w,is);
+    }
+    if (hi > 0.0 && ho > 0.0) {sc_(m,k,j) = hi/ho;}
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdX1Pass
 //! \brief vgd_x1b(m, :) of every MeshBlock to vgd_x1r of its x1 neighbour above (up) or
 //! below (an on-rank copy or one message per block)
@@ -5977,6 +6021,7 @@ void RadiationM1::VetGdSweep() {
   const bool thm = vgd_thmir || (vgd_thvac > 0);
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   const bool izf = vgd_izf && (ibc_x1min == M1_IBC_REFLECT);   // hrsplit-1110
+  const bool imir = clean && (ibc_x1min == M1_IBC_REFLECT) && !vgd_rbon;
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
   const int spe = VetSegMode();
   const int vim = vet_interp;   // unify-sc-gd-1012 (#6) vet_interp: 2 corner, 3 auto
@@ -6194,6 +6239,8 @@ void RadiationM1::VetGdSweep() {
   const bool rga = vgd_ring_act;
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
+    if (imir && !inw) {VetGdInnerMirror();}
+    auto isc_ = vgd_isc;
     const bool two = vgd_sw2;        // vet_gd_twin_fuse: the twin field in the same pass
     auto ct_ = vgd_cst;
     auto vt_ = vgd_itw;
