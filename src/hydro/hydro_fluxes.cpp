@@ -30,8 +30,6 @@
 #include "hydro/rsolvers/hlle_hyd.hpp"
 #include "hydro/rsolvers/hllc_hyd.hpp"
 #include "hydro/rsolvers/lhllc_hyd.hpp"
-#include "hydro/rsolvers/lhllc_c1_hyd.hpp"
-#include "reconstruct/plm_c1.hpp"
 #include "hydro/rsolvers/hllclm_hyd.hpp"
 #include "hydro/rsolvers/ausmpup_hyd.hpp"
 #include "hydro/rsolvers/roe_hyd.hpp"
@@ -66,10 +64,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   // the x2/x3 backgrounds and weights (before the shared seam face states,
   // which reconstruct the edge cells exactly as the sweep does)
   if (wb_all) BuildWBCacheAll();
-  if (wb_all && wb_poison) {   // TEST ONLY
-    WbPoison(pmy_pack, wbq2, phicc_wb, wb_phimax);
-    if (wbq3.extent_int(2) > 1) WbPoison(pmy_pack, wbq3, phicc_wb, wb_phimax);
-  }
   if (cs_seam_shared) {
     CsSeamFaceStates();
   }
@@ -141,14 +135,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   // phicc0 / phi0.x1f -- the same allocation -- unless <problem>/wb_phi_eff is on
   auto &phicc_wb_ = phicc_wb;
   auto phi_wb_x1f_ = phi_wb_x1f;
-  auto phi0_x2f = phi0.x2f;
   auto phi0_x3f = phi0.x3f;
 
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   const auto wb_option_ = wb_option;
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
-  const bool use_wb_x2_ = use_wb_x2;
   const bool wb_all_ = wb_all;
   auto wbq2_ = wbq2;
   auto wbq3_ = wbq3;
@@ -156,7 +148,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
   const Real wb_rmax_ = wb_rmax;
   const Real wb_phimax_ = wb_phimax;
-  const Real wb_rmin_ = wb_rmin;
   const bool use_wellbalance_static_reconst_perturb_ =
       use_wellbalance_static_reconst_perturb;
   // The gnomonic rotations need one (sin, cos) pair each, so hand the kernels that pair
@@ -239,7 +230,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     if (wb_cache_every <= 0 || !wb_cache_built ||
         (stage == 1 && (ncyc % wb_cache_every) == 0)) {
       BuildWBCache(jl, ju, kl, ku);
-      if (wb_poison) WbPoison(pmy_pack, wbq0, phicc_wb, wb_phimax);   // TEST
       wb_cache_built = true;
       wbreb_h = true;
     }
@@ -267,11 +257,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     ScrArray2D<Real> dl(member.team_scratch(scr_level), nder, ncells1);
     ScrArray2D<Real> dr(member.team_scratch(scr_level), nder, ncells1);
 
-    if ((use_spherical_polar || str_r1_) && recon_method_x1_ == ReconstructionMethod::plm)
-      {
+    if ((use_spherical_polar || str_r1_) &&
+        recon_method_x1_ == ReconstructionMethod::plm) {
         GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                               use_wellbalance_dynamic_,
-                              use_wb_x1_, wb_rmax_, wb_rmin_, wb_phimax_,
+                              use_wb_x1_, wb_rmax_, wb_phimax_,
                               m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc_wb_,
                               phi_wb_x1f_, wbq0_, wl, wr, wb_all_);
       } else if (use_spherical_polar || str_r1_) {
@@ -291,8 +281,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       } else {
     if (wb_all_) {   // x1 through the same routine (w = 1)
       WbAllPLM(member, use_wb_rho_, 1, m, k, j, il-1, iu, w0_, wbq0_, wbw_, wl, wr);
-    } else if (use_wellbalance_dynamic_ && use_wb_x1_)
-    {
+    } else if (use_wellbalance_dynamic_ && use_wb_x1_) {
       WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
           m, k, j, il-1, iu, w0_, phicc_wb_, phi_wb_x1f_, wbq0_, wl, wr);
     } else {
@@ -302,11 +291,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         DonorCellX1(member, m, k, j, il-1, iu, w0_, wl, wr);
         break;
       case ReconstructionMethod::plm:
-        if (eos_.plm_c1) {
-          PiecewiseLinearC1X1(member, m, k, j, il-1, iu, w0_, wl, wr);
-        } else {
-          PiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, wl, wr);
-        }
+        PiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, wl, wr);
         break;
       case ReconstructionMethod::ppm4:
       case ReconstructionMethod::ppmx:
@@ -331,7 +316,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       if ((use_spherical_polar || str_r1_) &&
           recon_method_x1_ == ReconstructionMethod::plm) {
         GridPiecewiseLinearDerX1(member, eos_, wb_option_, use_wellbalance_dynamic_,
-                                 use_wb_x1_, wb_rmax_, wb_rmin_, wb_phimax_,
+                                 use_wb_x1_, wb_rmax_, wb_phimax_,
                                  use_wellbalance_static_reconst_perturb_,
                                  pwb_, pfacewb_x1f,
                                  m, k, j, il-1, iu, w0_, wder_,
@@ -363,11 +348,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           DonorCellX1(member, m, k, j, il-1, iu, wder_, dl, dr);
           break;
         case ReconstructionMethod::plm:
-          if (eos_.plm_c1) {
-            PiecewiseLinearC1X1(member, m, k, j, il-1, iu, wder_, dl, dr);
-          } else {
-            PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
-          }
+          PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
           break;
         case ReconstructionMethod::ppm4:
         case ReconstructionMethod::ppmx:
@@ -489,7 +470,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         if (wwb_) {
           auto inr = [&](const int i) {
             return !curv1_ || (!(wb_rmax_ > 0.0 && x1v_(m,i) > wb_rmax_) &&
-                               !(wb_rmin_ > 0.0 && x1v_(m,i) < wb_rmin_) &&
                                !(phicc_wb_(m,k,j,i) > wb_phimax_));
           };
           if ((bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user))
@@ -565,11 +545,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1,
            nanrep_r,rscnt,rsrec);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
-      if (eos.c1_eps > 0.0) {
-        LHLLC_C1(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1,w0_);
-      } else {
-        LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1,w0_);
-      }
+      LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1,w0_);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
       HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
@@ -694,10 +670,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         } else {
         if (wb_all_) {
           WbAllPLM(member, use_wb_rho_, 2, m, k, j, il, iu, w0_, wbq2_, wbw_, wl_jp1, wr);
-        } else if (use_wellbalance_dynamic_ && use_wb_x2_)
-        {
-          WbLocalPiecewiseLinearX2(member, eos_, wb_option_, use_wb_rho_,
-              m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
         } else {
         // Reconstruct qR[j] and qL[j+1]
         switch (recon_method_) {
@@ -705,11 +677,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             DonorCellX2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
             break;
           case ReconstructionMethod::plm:
-            if (eos_.plm_c1) {
-              PiecewiseLinearC1X2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
-            } else {
-              PiecewiseLinearX2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
-            }
+            PiecewiseLinearX2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
             break;
           case ReconstructionMethod::ppm4:
           case ReconstructionMethod::ppmx:
@@ -738,21 +706,13 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                                     wder_, dl_jp1, dr);
       } else if (wb_all_) {
             WbAllPLMDer(member, 2, m, k, j, il, iu, wder_, wbq2_, wbw_, dl_jp1, dr);
-      } else if (use_wellbalance_dynamic_ && use_wb_x2_) {
-            WbPiecewiseLinearDerX2(member, eos_, wb_option_,
-                m, k, j, il, iu, w0_, wder_,
-                                   phicc0_, phi0_x2f, dl_jp1, dr);
-          } else {
+      } else {
           switch (recon_method_) {
             case ReconstructionMethod::dc:
               DonorCellX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
               break;
             case ReconstructionMethod::plm:
-              if (eos_.plm_c1) {
-                PiecewiseLinearC1X2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
-              } else {
-                PiecewiseLinearX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
-              }
+              PiecewiseLinearX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
               break;
             case ReconstructionMethod::ppm4:
             case ReconstructionMethod::ppmx:
@@ -905,7 +865,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             const Real sf = gtrig_xi.sn(m,k,j), cf = gtrig_xi.cs(m,k,j);
             const auto &sfs = sfs2_;
             const int ia = (il > is) ? il : is, ib = (iu < ie) ? iu : ie;
-            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, ia, ib, lo, sf, cf, nvars, nder,
+            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, ia, ib, lo, sf, cf,
+                                     nvars, nder,
                                      IVY, IVZ, wl, wr, dl, dr);
             member.team_barrier();
           }
@@ -919,12 +880,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,
                  nanrep_r,rscnt,rsrec);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
-            if (eos.c1_eps > 0.0) {
-              LHLLC_C1(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,
-                       w0_);
-            } else {
-              LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,w0_);
-            }
+            LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,w0_);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
             HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
@@ -1037,11 +993,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             DonorCellX3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
             break;
           case ReconstructionMethod::plm:
-            if (eos_.plm_c1) {
-              PiecewiseLinearC1X3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
-            } else {
-              PiecewiseLinearX3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
-            }
+            PiecewiseLinearX3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
             break;
           case ReconstructionMethod::ppm4:
           case ReconstructionMethod::ppmx:
@@ -1075,11 +1027,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               DonorCellX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
               break;
             case ReconstructionMethod::plm:
-              if (eos_.plm_c1) {
-                PiecewiseLinearC1X3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
-              } else {
-                PiecewiseLinearX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
-              }
+              PiecewiseLinearX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
               break;
             case ReconstructionMethod::ppm4:
             case ReconstructionMethod::ppmx:
@@ -1203,7 +1151,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             const Real sf = gtrig_eta.sn(m,k,j), cf = gtrig_eta.cs(m,k,j);
             const auto &sfs = sfs3_;
             const int ia = (il > is) ? il : is, ib = (iu < ie) ? iu : ie;
-            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, ia, ib, lo, sf, cf, nvars, nder,
+            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, ia, ib, lo, sf, cf,
+                                     nvars, nder,
                                      IVZ, IVY, wl, wr, dl, dr);
             member.team_barrier();
           }
@@ -1217,12 +1166,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,
                  nanrep_r,rscnt,rsrec);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
-            if (eos.c1_eps > 0.0) {
-              LHLLC_C1(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,
-                       w0_);
-            } else {
-              LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,w0_);
-            }
+            LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,w0_);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
             HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
@@ -1286,12 +1230,13 @@ void Hydro::CsSeamFaceStates() {
   const int nder = eos_.IsGeneral() ? NDERIVED : 0;
   const int nfs = nhydro + nscalars + NDERIVED;
   if (recon_method != ReconstructionMethod::plm ||
-      (use_wellbalance_dynamic && use_wb_x2) || use_wellbalance_static_reconst_perturb ||
+      use_wellbalance_static_reconst_perturb ||
       pmy_pack->pmesh->multilevel) {
     if (!pmy_pack->pmesh->cs_seam_flux_named) {
       // the DEFAULT shared seam on a setup it does not cover: the mean of the two solves
       if (global_variable::my_rank == 0) {
-        std::cout << "Hydro: cubed-sphere seam flux shared (default) not available for this"
+        std::cout
+            << "Hydro: cubed-sphere seam flux shared (default) not available for this"
                   << " setup (needs PLM, no x2/x3 well-balanced reconstruction, uniform "
                   << "mesh): seam flux = average" << std::endl;
       }
@@ -1315,9 +1260,9 @@ void Hydro::CsSeamFaceStates() {
     mlfi_ = pmlat->fi;
   }
   // the fill / covariant kernels are shared with MHD (cs_seam_states.hpp)
-  cs_seam::CsSeamPLMFill(pmy_pack, w0, nvars, 0, -1, eos_.pfloor, eos_.plm_c1,
+  cs_seam::CsSeamPLMFill(pmy_pack, w0, nvars, 0, -1, eos_.pfloor,
                          *pseamfs, mlat_, mlfi_, is, ie);
-  cs_seam::CsSeamPLMFill(pmy_pack, wder, nder, nvars, IDPR, eos_.pfloor, eos_.plm_c1,
+  cs_seam::CsSeamPLMFill(pmy_pack, wder, nder, nvars, IDPR, eos_.pfloor,
                          *pseamfs, mlat_, mlfi_, is, ie);
   if (wb_all) {   // the edge cells' own WB seam face states (shared code)
     WbAllCtx c = WbCtx();

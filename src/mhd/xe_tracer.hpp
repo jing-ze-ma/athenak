@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file xe_tracer.hpp
-//! \brief advected electron fraction (xetracer-1101), <mhd>/xe_tracer = true.
+//! \brief advected electron fraction, <mhd>/xe_tracer = true.
 //!
 //! One extra MHD passive scalar (the LAST one, index nmhd+nscalars-1) carries
 //! z = x_e = n_e/n_tot, the same quantity ResistivityEOS() and SetAmbipolar() otherwise
@@ -27,11 +27,10 @@
 //! singly ionized (the same abundances, [M/H] and condensation curves the composition
 //! table was built with, eos_composition.hpp), so condensation removes the carriers.
 //!
-//! alpha = Verner & Ferland (1996) radiative recombination of Na+ (rrfit, Na-like Na I;
-//! the same fit the offline nightxe_1101/chem.py uses), times <mhd>/xe_alpha_fac.  K+
-//! (2.762e-13 (T/1e4)^-0.80, rrfit power law) is within 30 % of it at 500-3000 K, and
-//! Na has 17x the abundance of K.  Night carriers are Na+ and K+ (closed-shell cores:
-//! dielectronic recombination negligible).
+//! alpha = Verner & Ferland (1996) radiative recombination of Na+ (rrfit, Na-like Na I),
+//! times <mhd>/xe_alpha_fac.  K+ (2.762e-13 (T/1e4)^-0.80, rrfit power law) is within
+//! 30 % of it at 500-3000 K, and Na has 17x the abundance of K.  Night carriers are Na+
+//! and K+ (closed-shell cores: dielectronic recombination negligible).
 
 #include <cmath>
 #include "athena.hpp"
@@ -39,7 +38,7 @@
 
 namespace xetracer {
 
-constexpr int kNDonor = eos_cgs::n_metal_donor;
+constexpr int kNDonor = eos_cgs::kNumMetalDonor;
 
 //! everything the source kernel needs, captured by value (no host pointers)
 struct XeTracerParams {
@@ -47,7 +46,6 @@ struct XeTracerParams {
   Real time_cgs = 1.0;      // s per code time unit
   Real xh = 0.7381;         // <mhd>/eos_xh (hydrogen mass fraction)
   Real metal_mh = 0.0;      // [M/H] of the donors
-  Real metal_tcond = 0.0;   // single-temperature rainout override
   bool metal_cond = false;  // per-species condensation curves
   bool metal_ion = false;   // donors present at all
   Real abun[kNDonor];
@@ -80,12 +78,6 @@ Real DonorCap(const XeTracerParams &p, const Real t, const Real p_cgs, const Rea
   if (!p.metal_ion) return 0.0;
   const Real nbase = nh*pow(10.0, p.metal_mh);
   Real sum = 0.0;
-  if (p.metal_tcond > 0.0) {
-    Real f = log10(t/(0.1*p.metal_tcond));
-    f = (f < 0.0) ? 0.0 : ((f > 1.0) ? 1.0 : f);
-    for (int s=0; s<kNDonor; ++s) sum += p.abun[s]*f;
-    return nbase*sum;
-  }
   Real lgp = log10(p_cgs/1.0e6);
   lgp = (lgp < -8.0) ? -8.0 : ((lgp > 3.0) ? 3.0 : lgp);
   for (int s=0; s<kNDonor; ++s) {

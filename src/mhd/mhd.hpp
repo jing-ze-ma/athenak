@@ -56,7 +56,7 @@ enum class MHD_RSolver {advect, llf, hlle, hlld, lhlld, roe,   // non-relativist
                         llf_sr, hlle_sr,                // SR
                         llf_gr, hlle_gr};                       // GR
 
-//----------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
 //! \struct MHDTaskIDs
 // \brief container to hold TaskIDs of all mhd tasks
 
@@ -236,20 +236,6 @@ class MHD {
   // following used for FOFC algorithm
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed
   bool use_fofc = false;   // flag to enable FOFC
-  // <mhd>/boris_c (EOS_Data::boris_c2inv): momentum of the RK-stage
-  // reference gam0 u0 + gam1 u1 (IM1..IM3), saved by RKUpdate, read by BorisCorrect;
-  // diagnostics accumulated over the run (printed every ndiag cycles)
-  bool boris_on = false;
-  DvceArray5D<Real> boris_mref;
-  int boris_ndiag = 100;
-  double boris_de_sum = 0.0;      // sum over stages of the signed E correction (x vol)
-  double boris_de_abs = 0.0;      // ... of |E correction| (x vol)
-  double boris_dm_abs = 0.0;      // ... of |momentum correction| (x vol)
-  double boris_ncell = 0.0;       // cell-stages with f < 0.99 (last cycle)
-  double boris_fmin = 1.0;        // min f (last cycle)
-  void BorisInit(ParameterInput *pin);
-  void BorisSaveRef(Driver *d, int stage);
-  void BorisCorrect(Driver *d, int stage);
   // Per-cell count of FOFC flags, for the `mhd_fofc` output variable: incremented by
   // one in every stage in which the cell was flagged, so a dump answers "WHERE did FOFC
   // fire", which the scalar <output>/file_type=log column cannot. Allocated only when
@@ -377,10 +363,6 @@ class MHD {
   // set by Resistivity::RKGCoeff under <mhd>/rkg_lean for the intermediate RKG
   // super-stages: no conserved-variable halo exchange (InitRecv/SendU/RecvU skip u0)
   bool rkg_skip_u = false;
-  // set by Resistivity::RKGCoeff under <mhd>/rkg_halo_ien_only: the conserved-variable
-  // halo exchange of this RKG super-stage moves only the variables of u0 whose bit is
-  // set in rkg_u_vmask (0 = all, the default)
-  int rkg_u_vmask = 0;
   bool c2p_split = false;   // true while the operator-split ConToPrim task runs
   // <mhd>/split_bval_fast: the MHD twin of the hydro energy-only refresh
   // after the operator-split source (see mhd_splitbval.cpp). sbf_s = u0 at the input of
@@ -436,13 +418,7 @@ class MHD {
   bool diode_ox1_charout = false;
   // <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
   bool top_ghost_prim_copy = false;
-  // ... and under MHD, the STRESS-FREE wall (dhj problem/wall_mhd_mirror = stress_free;
-  // the dhj default is conducting since ): the mirror flips B_t as well,
-  // matching the odd ghost B_t of the user boundary, so the wall carries neither Maxwell
-  // stress nor Poynting flux, and the wall-edge corner EMFs read the interior row as the
-  // ghost row (mhd_corner_e.cpp)
-  bool wall_stress_free = false;
-  // ... and the CONDUCTING wall (dhj problem/wall_mhd_mirror = conducting, the default):
+  // ... and under MHD, the CONDUCTING wall (set by the dhj problem with wall_closed):
   // the edge EMFs tangential to the is face of the user inner x1 boundary are 0 (ideal
   // and resistive), so B_r on the wall is held, and the Riemann mass+energy fluxes are 0
   // (no Poynting flux; v_n = 0 already removes the advected part). Mirror as legacy.
@@ -456,7 +432,6 @@ class MHD {
   // no Poynting flux at all)
   int wall_conducting = 2;
   bool any_reflect_face = false;   // some mesh face is reflect (host, set in the ctor)
-  bool use_wb_x2 = false;    // flag for directions
   // flag to enable local well-balanced method also in reconstructing rho
   bool use_wb_rho = false;
   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic
@@ -471,16 +446,6 @@ class MHD {
   // cells whose x1 WB potential exceeds it take plain PLM (Hydro::wb_phimax;
   // wb_dirs = all: w = 0). 1e300 = never. Set by the pgen.
   Real wb_phimax = 1.0e300;
-  bool wb_poison = false;   // TEST ONLY <block>/wb_poison_test: hydro_wball WbPoison
-  // Mirror of wb_rmax at the bottom of the domain: below wb_rmin the dynamic x1
-  // well-balanced reconstruction and the matching well-balanced gravity source are
-  // switched off cell by cell; 0 = never. Same failure mode from the other side --
-  // where the background the stencil builds is not the state the star is actually in
-  // (a deep radiative interior the polytropic/isentropic background does not describe),
-  // the "deviation" it reconstructs is not small, and the scheme can DRIVE the very
-  // buoyancy mode it is meant to leave alone. Below wb_rmin those cells take the plain
-  // reconstruction and the plain -rho g source, exactly as wellbalance_dynamic = false.
-  Real wb_rmin = 0.0;
   WBOption wb_option;
   DvceArray5D<Real> u0wb;   // background conserved variables
   DvceArray5D<Real> w0wb;   // background primitive variables
@@ -571,8 +536,12 @@ class MHD {
     HostArray1D<Real> polar_outer_h;
 
     void AddGravFlux(const DvceFaceFld4D<Real> &phi0, DvceFaceFld5D<Real> &flx);
-    void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
-    void RemoveGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
+    void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons,
+                     const int il, const int iu, const int jl, const int ju, const int kl,
+                     const int ku);
+    void RemoveGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons,
+                        const int il, const int iu, const int jl, const int ju,
+                        const int kl, const int ku);
 
     // evaluate the background pressure from the static background state
     void SetWbBackgroundPressure();
@@ -586,7 +555,7 @@ class MHD {
     void AddWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
     void RemoveWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
 
-      //----------------------------------------------------------------------------------------
+      //---------------------------------------------------------------------------------
       //! \fn AddWbPrimFace
       //! \brief Adds background face-centered variables onto ql(i+1) and qr(i).
 
@@ -598,14 +567,15 @@ class MHD {
         return;
       };
 
-      //----------------------------------------------------------------------------------------
+      //---------------------------------------------------------------------------------
       //! \fn AddWbPrimFaceX1
       //! \brief Adds background states onto face-centered primitive variables in
       //! x1-direction. This function should be called over [is-1,ie+1] to get BOTH L/R
       //! states over [is,ie]
 
       KOKKOS_INLINE_FUNCTION
-      static void AddWbPrimFaceX1(TeamMember_t const &member, const int m, const int k, const int j,
+      static void AddWbPrimFaceX1(TeamMember_t const &member, const int m,
+                                  const int k, const int j,
            const int il, const int iu, const DvceArray5D<Real> &q,
            ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
         int nvar = q.extent_int(1);
@@ -617,14 +587,15 @@ class MHD {
         return;
       };
 
-      //----------------------------------------------------------------------------------------
+      //---------------------------------------------------------------------------------
       //! \fn AddWbPrimFaceX2
       //! \brief Adds background states onto face-centered primitive variables in
       //! x2-direction. This function should be called over [js-1,je+1] to get BOTH L/R
       //! states over [js,je]
 
       KOKKOS_INLINE_FUNCTION
-      static void AddWbPrimFaceX2(TeamMember_t const &member, const int m, const int k, const int j,
+      static void AddWbPrimFaceX2(TeamMember_t const &member, const int m,
+                                  const int k, const int j,
            const int il, const int iu, const DvceArray5D<Real> &q,
            ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
         int nvar = q.extent_int(1);
@@ -636,14 +607,15 @@ class MHD {
         return;
       };
 
-      //----------------------------------------------------------------------------------------
+      //---------------------------------------------------------------------------------
       //! \fn AddWbPrimFaceX3
       //! \brief Adds background states onto face-centered primitive variables in
       //! x3-direction. This function should be called over [ks-1,ke+1] to get BOTH L/R
       //! states over [ks,ke]
 
       KOKKOS_INLINE_FUNCTION
-      static void AddWbPrimFaceX3(TeamMember_t const &member, const int m, const int k, const int j,
+      static void AddWbPrimFaceX3(TeamMember_t const &member, const int m,
+                                  const int k, const int j,
            const int il, const int iu, const DvceArray5D<Real> &q,
            ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
         int nvar = q.extent_int(1);
@@ -659,7 +631,8 @@ class MHD {
       static void WbLocalPiecewiseLinearX1(TeamMember_t const &member,
            const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
            const int m, const int k, const int j,
-           const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+           const int il, const int iu, const DvceArray5D<Real> &q,
+           const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          const DvceArray5D<Real> &wbq0,
            ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
         const auto wb_option_ = wb_option;
@@ -700,51 +673,7 @@ class MHD {
         return;
       };
 
-      KOKKOS_INLINE_FUNCTION
-      static void WbLocalPiecewiseLinearX2(TeamMember_t const &member,
-           const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
-           const int m, const int k, const int j,
-           const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
-           ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
-        Real igm1 = 1.0/(eos.gamma-1.0);
-        int nvar = q.extent_int(1);
-        for (int n=0; n<nvar; ++n) {
-          if (n == (IEN) || (n == (IDN) && use_wb_rho)) {
-            par_for_inner(member, il, iu, [&](const int i) {
-              Real q0_jm1, q0_jp1, q0_jmh, q0_jph, q0_j;
-              getWBq0(eos, wb_option, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
-                       q(m,IDN,k,j-1,i),q(m,IDN,k,j,i),q(m,IDN,k,j+1,i),
-                       q(m,IEN,k,j-1,i),q(m,IEN,k,j,i),q(m,IEN,k,j+1,i),
-                       phicc(m,k,j-1,i),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j+1,i),phicc(m,k,j+1,i),
-                       q0_jm1, q0_jmh, q0_j, q0_jph, q0_jp1);
-
-              Real q1_jm1 = q(m,n,k,j-1,i) - q0_jm1;
-              Real q1_j = q(m,n,k,j,i) - q0_j;
-              Real q1_jp1 = q(m,n,k,j+1,i) - q0_jp1;
-
-              PLM(q1_jm1, q1_j, q1_jp1, ql_jp1(n,i), qr_j(n,i));
-
-              ql_jp1(n,i) += q0_jph;
-              qr_j(n,i) += q0_jmh;
-
-                // Left/right slopes (properly scaled)
-                Real sL = q(m,n,k,j,i)   - q(m,n,k,j-1,i);
-                Real sR = q(m,n,k,j+1,i) - q(m,n,k,j,i);
-
-                if (ql_jp1(n,i) < 0.0 || qr_j(n,i) < 0.0 || sL * sR <= 0.0) {
-                    PLM(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), ql_jp1(n,i), qr_j(n,i));
-                }
-            });
-          } else {
-            par_for_inner(member, il, iu, [&](const int i) {
-              PLM(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), ql_jp1(n,i), qr_j(n,i));
-            });
-          }
-        }
-        return;
-      };
-
-    //------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX1
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
     //!
@@ -788,7 +717,7 @@ class MHD {
       return;
     };
 
-    //------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX2
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
     //!
@@ -832,7 +761,7 @@ class MHD {
       return;
     };
 
-    //------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX3
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
     //!
@@ -876,7 +805,7 @@ class MHD {
       return;
     };
 
-    //------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn WbPiecewiseLinearDerX1/X2/X3
     //! \brief well-balanced reconstruction of the DERIVED thermodynamic variables.
     //!
@@ -934,53 +863,10 @@ class MHD {
     };
 
     KOKKOS_INLINE_FUNCTION
-    static void WbPiecewiseLinearDerX2(TeamMember_t const &member,
-         const EOS_Data &eos, const WBOption wb_option,
-         const int m, const int k, const int j, const int il, const int iu,
-         const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
-         const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
-         ScrArray2D<Real> &dl_jp1, ScrArray2D<Real> &dr_j) {
-      int nvar = qd.extent_int(1);
-      for (int n=0; n<nvar; ++n) {
-        if (n == (IDPR)) {
-          par_for_inner(member, il, iu, [&](const int i) {
-            Real q0_jm1, q0_jmh, q0_j, q0_jph, q0_jp1;
-            getWBq0(eos, wb_option, WBVar::wb_pres,
-                    q(m,IDN,k,j-1,i),q(m,IDN,k,j,i),q(m,IDN,k,j+1,i),
-                    q(m,IEN,k,j-1,i),q(m,IEN,k,j,i),q(m,IEN,k,j+1,i),
-                    phicc(m,k,j-1,i),phi(m,k,j,i),phicc(m,k,j,i),
-                    phi(m,k,j+1,i),phicc(m,k,j+1,i),
-                    q0_jm1, q0_jmh, q0_j, q0_jph, q0_jp1);
-
-            Real q1_jm1 = qd(m,n,k,j-1,i) - q0_jm1;
-            Real q1_j   = qd(m,n,k,j,i)   - q0_j;
-            Real q1_jp1 = qd(m,n,k,j+1,i) - q0_jp1;
-
-            PLM(q1_jm1, q1_j, q1_jp1, dl_jp1(n,i), dr_j(n,i));
-
-            dl_jp1(n,i) += q0_jph;
-            dr_j(n,i)   += q0_jmh;
-
-            Real sL = qd(m,n,k,j,i)   - qd(m,n,k,j-1,i);
-            Real sR = qd(m,n,k,j+1,i) - qd(m,n,k,j,i);
-            if (dl_jp1(n,i) < 0.0 || dr_j(n,i) < 0.0 || sL * sR <= 0.0) {
-              PLM(qd(m,n,k,j-1,i), qd(m,n,k,j,i), qd(m,n,k,j+1,i),
-                  dl_jp1(n,i), dr_j(n,i));
-            }
-          });
-        } else {
-          par_for_inner(member, il, iu, [&](const int i) {
-            PLM(qd(m,n,k,j-1,i), qd(m,n,k,j,i), qd(m,n,k,j+1,i), dl_jp1(n,i), dr_j(n,i));
-          });
-        }
-      }
-      return;
-    };
-
-    KOKKOS_INLINE_FUNCTION
     static void PLM_nonuniform(const Real &q_im1, const Real &q_i, const Real &q_ip1,
-                        const Real &dxL, const Real &dxR, const Real &dxLh, const Real &dxRh,
-                        Real &ql_ip1, Real &qr_i, const bool c1 = false) {
+                        const Real &dxL, const Real &dxR,
+                        const Real &dxLh, const Real &dxRh,
+                        Real &ql_ip1, Real &qr_i) {
       Real cL = dxL/dxLh;
       Real cR = dxR/dxRh;
 
@@ -991,11 +877,6 @@ class MHD {
       // modified van Leer (Mignone 2014)
       Real slope = sL*sR*(cR*sL+cL*sR) / (SQR(sL)+(cR+cL-2.0)*sL*sR+SQR(sR));
       slope = (sL * sR > 0.0) ? slope : 0.0;
-      // <mhd>/plm_c1: C1 limiter (reconstruct/plm_c1.hpp)
-      if (c1 && slope != 0.0) {
-        const Real th = 2.0*sL*sR/(SQR(sL) + SQR(sR));
-        slope *= th*(2.0 - th);
-      }
 
       // Reconstruct to faces
       ql_ip1 = q_i + slope * dxRh;
@@ -1007,7 +888,7 @@ class MHD {
     static void GridPiecewiseLinearX1(TeamMember_t const &member, const EOS_Data &eos,
          const WBOption wb_option,
          const bool use_wb_rho, const bool use_wellbalance_dynamic, const bool use_wb_x1,
-         const Real wb_rmax, const Real wb_rmin,
+         const Real wb_rmax,
          const int m, const int k, const int j,
          const int il, const int iu, const DvceArray5D<Real> &q,
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
@@ -1018,7 +899,8 @@ class MHD {
       Real gamma = eos.gamma;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
-          if ((n == (IEN) || (n == (IDN) && use_wb_rho)) && use_wellbalance_dynamic && use_wb_x1 && hyd) {
+          if ((n == (IEN) || (n == (IDN) && use_wb_rho))
+              && use_wellbalance_dynamic && use_wb_x1 && hyd) {
             par_for_inner(member, il, iu, [&](const int i) {
               Real x_im1  = xv(m,i-1);
               Real x_imh  = xf(m,i);
@@ -1030,15 +912,13 @@ class MHD {
               Real dxL = x_i-x_im1;
               Real dxR = x_ip1-x_i;
 
-              // outside [wb_rmin, wb_rmax] the background is meaningless (see
-              // MHD::wb_rmax / MHD::wb_rmin), so this cell reconstructs its state
+              // above wb_rmax the background is meaningless (see MHD::wb_rmax),
+              // so this cell reconstructs its state
               // directly, like the non-well-balanced branch below. Per CELL, not per
               // MeshBlock: a radial block spans both.
-              if ((wb_rmax > 0.0 && x_i > wb_rmax) ||
-                  (wb_rmin > 0.0 && x_i < wb_rmin) ||
-                  phicc(m,k,j,i) > wb_phimax) {
+              if ((wb_rmax > 0.0 && x_i > wb_rmax) || phicc(m,k,j,i) > wb_phimax) {
                 PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1),
-                               dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
+                               dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i));
                 return;
               }
 
@@ -1051,7 +931,8 @@ class MHD {
               Real q1_i = q(m,n,k,j,i) - q0_i;
               Real q1_ip1 = q(m,n,k,j,i+1) - q0_ip1;
 
-              PLM_nonuniform(q1_im1, q1_i, q1_ip1, dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
+              PLM_nonuniform(q1_im1, q1_i, q1_ip1, dxL, dxR, dxLh, dxRh,
+                             ql(n,i+1), qr(n,i));
 
               ql(n,i+1) += q0_iph;
               qr(n,i) += q0_imh;
@@ -1062,14 +943,19 @@ class MHD {
 
                 if (eos.wb_plm_smooth) {   // continuous (reconstruct/wb_plm_blend.hpp)
                   Real pl_, pr_;
-                  PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
-                  wbplm::WbPlmBlend(q(m,n,k,j,i), sL, sR, pl_, pr_, eos.plm_c1, ql(n,i+1), qr(n,i));
+                  PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i),
+                                 q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, pl_, pr_);
+                  wbplm::WbPlmBlend(q(m,n,k,j,i), sL, sR, pl_, pr_,
+                                    ql(n,i+1), qr(n,i));
                 } else if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 ||
-                           (sL * sR <= 0.0 && !eos.plm_c1 && !wb_noext)) {
-                    PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
+                           (sL * sR <= 0.0 && !wb_noext)) {
+                    PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i),
+                                   q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1),
+                                   qr(n,i));
                 }
                 if (eos.wb_plm_range) {
-                  wbplm::WbPlmRange(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), ql(n,i+1), qr(n,i));
+                  wbplm::WbPlmRange(q(m,n,k,j,i-1), q(m,n,k,j,i),
+                                    q(m,n,k,j,i+1), ql(n,i+1), qr(n,i));
                 }
             });
           } else {
@@ -1084,7 +970,8 @@ class MHD {
               Real dxL = x_i-x_im1;
               Real dxR = x_ip1-x_i;
 
-              PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
+              PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1),
+                             dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i));
             });
           }
       }
@@ -1092,8 +979,11 @@ class MHD {
     };
 
     KOKKOS_INLINE_FUNCTION
-    static void GridPiecewiseLinearX2(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
-        const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
+    static void GridPiecewiseLinearX2(TeamMember_t const &member, const int m,
+                                      const int k, const int j, const int il,
+                                      const int iu,
+        const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv,
+        const DvceArray2D<Real> &xf,
         ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
       Real x_jm1  = xv(m,j-1);
       Real x_jmh  = xf(m,j);
@@ -1107,15 +997,19 @@ class MHD {
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         par_for_inner(member, il, iu, [&](const int i) {
-          PLM_nonuniform(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), dxL, dxR, dxLh, dxRh, ql_jp1(n,i), qr_j(n,i));
+          PLM_nonuniform(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), dxL, dxR,
+                         dxLh, dxRh, ql_jp1(n,i), qr_j(n,i));
         });
       }
       return;
     };
 
     KOKKOS_INLINE_FUNCTION
-    static void GridPiecewiseLinearX3(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
-        const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
+    static void GridPiecewiseLinearX3(TeamMember_t const &member, const int m,
+                                      const int k, const int j, const int il,
+                                      const int iu,
+        const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv,
+        const DvceArray2D<Real> &xf,
         ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
       Real x_km1  = xv(m,k-1);
       Real x_kmh  = xf(m,k);
@@ -1129,13 +1023,14 @@ class MHD {
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         par_for_inner(member, il, iu, [&](const int i) {
-          PLM_nonuniform(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), dxL, dxR, dxLh, dxRh, ql_kp1(n,i), qr_k(n,i));
+          PLM_nonuniform(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), dxL, dxR,
+                         dxLh, dxRh, ql_kp1(n,i), qr_k(n,i));
         });
       }
       return;
     };
 
-    //------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn GridPiecewiseLinearDerX1
     //! \brief non-uniform-grid counterpart of WbPiecewiseLinearDerX1, for the derived
     //! thermodynamic variables on a spherical-polar mesh. GridPiecewiseLinearX2/X3 are
@@ -1147,7 +1042,7 @@ class MHD {
     static void GridPiecewiseLinearDerX1(TeamMember_t const &member,
          const EOS_Data &eos, const WBOption wb_option,
          const bool use_wellbalance_dynamic, const bool use_wb_x1,
-         const Real wb_rmax, const Real wb_rmin,
+         const Real wb_rmax,
          const bool use_wb_static_perturb,
          const DvceArray4D<Real> &pwb, const DvceArray4D<Real> &pfwb,
          const int m, const int k, const int j, const int il, const int iu,
@@ -1180,7 +1075,7 @@ class MHD {
             const Real q0_ip1 = pwb(m,k,j,i+1);
             PLM_nonuniform(qd(m,n,k,j,i-1) - q0_im1, qd(m,n,k,j,i) - q0_i,
                            qd(m,n,k,j,i+1) - q0_ip1, dxL, dxR, dxLh, dxRh,
-                           dl(n,i+1), dr(n,i), eos.plm_c1);
+                           dl(n,i+1), dr(n,i));
             dl(n,i+1) += pfwb(m,k,j,i+1);
             dr(n,i)   += pfwb(m,k,j,i);
             return;
@@ -1190,7 +1085,6 @@ class MHD {
           // primitives were reconstructed in full
           if (n == (IDPR) && use_wellbalance_dynamic && use_wb_x1 &&
               !(wb_rmax > 0.0 && x_i > wb_rmax) &&
-              !(wb_rmin > 0.0 && x_i < wb_rmin) &&
               !(phicc(m,k,j,i) > wb_phimax)) {
             Real q0_im1, q0_imh, q0_i, q0_iph, q0_ip1;
             WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i,
@@ -1201,7 +1095,7 @@ class MHD {
             Real q1_ip1 = qd(m,n,k,j,i+1) - q0_ip1;
 
             PLM_nonuniform(q1_im1, q1_i, q1_ip1, dxL, dxR, dxLh, dxRh,
-                           dl(n,i+1), dr(n,i), eos.plm_c1);
+                           dl(n,i+1), dr(n,i));
 
             dl(n,i+1) += q0_iph;
             dr(n,i)   += q0_imh;
@@ -1211,12 +1105,13 @@ class MHD {
             if (eos.wb_plm_smooth) {   // continuous (reconstruct/wb_plm_blend.hpp)
               Real pl_, pr_;
               PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
-                             dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
-              wbplm::WbPlmBlend(qd(m,n,k,j,i), sL, sR, pl_, pr_, eos.plm_c1,
+                             dxL, dxR, dxLh, dxRh, pl_, pr_);
+              wbplm::WbPlmBlend(qd(m,n,k,j,i), sL, sR, pl_, pr_,
                                 dl(n,i+1), dr(n,i));
-            } else if (dl(n,i+1) < 0.0 || dr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
+            } else if (dl(n,i+1) < 0.0 || dr(n,i) < 0.0
+                       || sL * sR <= 0.0) {
               PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
-                             dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i), eos.plm_c1);
+                             dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i));
             }
             if (eos.wb_plm_range) {
               wbplm::WbPlmRange(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
@@ -1224,14 +1119,14 @@ class MHD {
             }
           } else {
             PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
-                           dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i), eos.plm_c1);
+                           dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i));
           }
         });
       }
       return;
     };
 
-    //------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn getWBq0
     //! \brief background values of ONE reconstruction channel at the five stencil points
     //! {i-1, i-1/2, i, i+1/2, i+1}. Dispatches to the ideal-gas closed forms in
@@ -1318,7 +1213,8 @@ class MHD {
     static void getWBerho(const int &n, const Real &gamma, const WBOption wb_option,
                 const Real &rho_im1, const Real &rho_i, const Real &rho_ip1,
                 const Real &e_im1, const Real &e_i, const Real &e_ip1,
-                const Real &phi_im1, const Real &phi_imh, const Real &phi_i, const Real &phi_iph, const Real &phi_ip1,
+                const Real &phi_im1, const Real &phi_imh,
+                const Real &phi_i, const Real &phi_iph, const Real &phi_ip1,
                 Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph, Real &q0_ip1,
                 const bool clamp_dt = false) {
       const auto wb_option_ = wb_option;
@@ -1399,7 +1295,8 @@ class MHD {
         case WBOption::adaptive_fast:
           {
             Real dTdivT = fabs((e_ip1/rho_ip1 - e_im1/rho_im1) / (e_i/rho_i));
-            Real dsdivs = fabs((e_ip1/pow(rho_ip1,gamma) - e_im1/pow(rho_im1,gamma)) / (e_i/pow(rho_i,gamma)));
+            Real dsdivs = fabs((e_ip1/pow(rho_ip1,gamma)
+                                - e_im1/pow(rho_im1,gamma)) / (e_i/pow(rho_i,gamma)));
             if (dTdivT > dsdivs) {
               wb_option_num = 2;
             } else {
@@ -1411,98 +1308,84 @@ class MHD {
           break;
       }
 
-        Real factor_im1, factor_i, factor_ip1;
-        if (n == (IEN)) {    // reconstructing e
-          if (wb_option_num == 0)
-              {
-                factor_im1 = rho_im1*igm1;
-                factor_i = rho_i*igm1;
-                factor_ip1 = rho_ip1*igm1;
-                q0_i = e_i;
-              }
-          else if (wb_option_num == 1)
-              {
-                factor_im1 = rho_im1/e_im1*igm1;
-                factor_i = rho_i/e_i*igm1;
-                factor_ip1 = rho_ip1/e_ip1*igm1;
-                q0_i = log(e_i);
-              }
-          else
-              {
-                factor_im1 = rho_im1/pow(e_im1,ig)*ig;
-                factor_i = rho_i/pow(e_i,ig)*ig;
-                factor_ip1 = rho_ip1/pow(e_ip1,ig)*ig;
-                q0_i = pow(e_i,gm1ig);
-              }
-        } else {    // reconstructing rho
-            if (wb_option_num == 0)
-              {
-                q0_im1 = 0.0;
-                q0_ip1 = 0.0;
-                q0_imh = 0.0;
-                q0_iph = 0.0;
-                q0_i = 0.0;
-                return;
-              }
-            else if (wb_option_num == 1)
-              {
-                factor_im1 = rho_im1/e_im1*igm1;
-                factor_i = rho_i/e_i*igm1;
-                factor_ip1 = rho_ip1/e_ip1*igm1;
-                q0_i = log(rho_i);
-              }
-            else
-              {
-                factor_im1 = pow(rho_im1,gamma)/e_im1*ig;
-                factor_i = pow(rho_i,gamma)/e_i*ig;
-                factor_ip1 = pow(rho_ip1,gamma)/e_ip1*ig;
-                q0_i = pow(rho_i,gamma-1.0);
-              }
+      Real factor_im1, factor_i, factor_ip1;
+      if (n == (IEN)) {    // reconstructing e
+        if (wb_option_num == 0) {
+          factor_im1 = rho_im1*igm1;
+          factor_i = rho_i*igm1;
+          factor_ip1 = rho_ip1*igm1;
+          q0_i = e_i;
+        } else if (wb_option_num == 1) {
+          factor_im1 = rho_im1/e_im1*igm1;
+          factor_i = rho_i/e_i*igm1;
+          factor_ip1 = rho_ip1/e_ip1*igm1;
+          q0_i = log(e_i);
+        } else {
+          factor_im1 = rho_im1/pow(e_im1,ig)*ig;
+          factor_i = rho_i/pow(e_i,ig)*ig;
+          factor_ip1 = rho_ip1/pow(e_ip1,ig)*ig;
+          q0_i = pow(e_i,gm1ig);
         }
-
-        Real dphi_im1 = phi_imh-phi_im1;
-        Real dphi_imh = phi_i-phi_imh;
-        Real dphi_i = phi_iph-phi_i;
-        Real dphi_iph = phi_ip1-phi_iph;
-
-        q0_im1 = q0_i + factor_im1 * dphi_im1 + factor_i * dphi_imh;
-        q0_ip1 = q0_i - factor_i * dphi_i - factor_ip1 * dphi_iph;
-        q0_imh = q0_i + factor_i * dphi_imh;
-        q0_iph = q0_i - factor_i * dphi_i;
-
-        if (n == (IEN)) {    // reconstructing e
-            q0_i = e_i;
-            if (wb_option_num == 1)
-                {
-                  q0_im1 = exp(q0_im1);
-                  q0_ip1 = exp(q0_ip1);
-                  q0_imh = exp(q0_imh);
-                  q0_iph = exp(q0_iph);
-                }
-            if (wb_option_num == 2)
-                {
-                  q0_im1 = pow(q0_im1,gigm1);
-                  q0_ip1 = pow(q0_ip1,gigm1);
-                  q0_imh = pow(q0_imh,gigm1);
-                  q0_iph = pow(q0_iph,gigm1);
-                }
-        } else {    // reconstructing rho
-            q0_i = rho_i;
-            if (wb_option_num == 1)
-                {
-                  q0_im1 = exp(q0_im1);
-                  q0_ip1 = exp(q0_ip1);
-                  q0_imh = exp(q0_imh);
-                  q0_iph = exp(q0_iph);
-                }
-            if (wb_option_num == 2)
-                {
-                  q0_im1 = pow(q0_im1,igm1);
-                  q0_ip1 = pow(q0_ip1,igm1);
-                  q0_imh = pow(q0_imh,igm1);
-                  q0_iph = pow(q0_iph,igm1);
-                }
+      } else {    // reconstructing rho
+        if (wb_option_num == 0) {
+          q0_im1 = 0.0;
+          q0_ip1 = 0.0;
+          q0_imh = 0.0;
+          q0_iph = 0.0;
+          q0_i = 0.0;
+          return;
+        } else if (wb_option_num == 1) {
+          factor_im1 = rho_im1/e_im1*igm1;
+          factor_i = rho_i/e_i*igm1;
+          factor_ip1 = rho_ip1/e_ip1*igm1;
+          q0_i = log(rho_i);
+        } else {
+          factor_im1 = pow(rho_im1,gamma)/e_im1*ig;
+          factor_i = pow(rho_i,gamma)/e_i*ig;
+          factor_ip1 = pow(rho_ip1,gamma)/e_ip1*ig;
+          q0_i = pow(rho_i,gamma-1.0);
         }
+      }
+
+      Real dphi_im1 = phi_imh-phi_im1;
+      Real dphi_imh = phi_i-phi_imh;
+      Real dphi_i = phi_iph-phi_i;
+      Real dphi_iph = phi_ip1-phi_iph;
+
+      q0_im1 = q0_i + factor_im1 * dphi_im1 + factor_i * dphi_imh;
+      q0_ip1 = q0_i - factor_i * dphi_i - factor_ip1 * dphi_iph;
+      q0_imh = q0_i + factor_i * dphi_imh;
+      q0_iph = q0_i - factor_i * dphi_i;
+
+      if (n == (IEN)) {    // reconstructing e
+        q0_i = e_i;
+        if (wb_option_num == 1) {
+          q0_im1 = exp(q0_im1);
+          q0_ip1 = exp(q0_ip1);
+          q0_imh = exp(q0_imh);
+          q0_iph = exp(q0_iph);
+        }
+        if (wb_option_num == 2) {
+          q0_im1 = pow(q0_im1,gigm1);
+          q0_ip1 = pow(q0_ip1,gigm1);
+          q0_imh = pow(q0_imh,gigm1);
+          q0_iph = pow(q0_iph,gigm1);
+        }
+      } else {    // reconstructing rho
+        q0_i = rho_i;
+        if (wb_option_num == 1) {
+          q0_im1 = exp(q0_im1);
+          q0_ip1 = exp(q0_ip1);
+          q0_imh = exp(q0_imh);
+          q0_iph = exp(q0_iph);
+        }
+        if (wb_option_num == 2) {
+          q0_im1 = pow(q0_im1,igm1);
+          q0_ip1 = pow(q0_ip1,igm1);
+          q0_imh = pow(q0_imh,igm1);
+          q0_iph = pow(q0_iph,igm1);
+        }
+      }
 
       return;
     };

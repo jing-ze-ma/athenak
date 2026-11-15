@@ -33,13 +33,12 @@
 //! \param[out]    ceil_used, floored  whether the ceiling / any floor fired
 //! \param[out]    tset_used  whether <hydro>/efloor_as_tfloor rebuilt e from T
 //! \param[out]    de       energy CREATED by the floors (negative if removed)
-//! \param[out]    vde      kinetic energy the VELOCITY CEILING clipped -- removed from
-//!                         the conserved total, or converted to internal energy under
-//!                         <hydro>/vceil_thermalise
+//! \param[out]    vde      kinetic energy the VELOCITY CEILING removed from the
+//!                         conserved total
 
 KOKKOS_INLINE_FUNCTION
 void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
-    const bool keepv_, const bool keept_, const Real vceil_, const bool act_,
+    const bool keepv_, const Real vceil_, const bool act_,
     const Real fv, const Real twarm, const Real d,
     Real &m1, Real &m2, Real &m3, Real &etot,
     Real &v1, Real &v2, Real &v3, Real &eint,
@@ -70,28 +69,20 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
     }
   }
   // velocity ceiling: scale the momentum by fs = vceil/|v| with |v|^2 = 2 KE/rho, and
-  // remove (1 - fs^2) KE from the total energy (or keep it as internal energy under
-  // vceil_thermalise)
+  // remove (1 - fs^2) KE from the total energy
   if (vceil_ > 0.0 && act_ && ekin > 0.0 && d > 0.0) {
     const Real vsq = 2.0*ekin/d;
     if (vsq > vceil_*vceil_) {
       const Real fs = vceil_/sqrt(vsq);
       m1 *= fs; m2 *= fs; m3 *= fs;
       v1 *= fs; v2 *= fs; v3 *= fs;
-      if (!eos_.vceil_thermalise) etot -= (1.0 - fs*fs)*ekin;
+      etot -= (1.0 - fs*fs)*ekin;
       vde += (1.0 - fs*fs)*ekin;
       ekin *= fs*fs;
       ceil_used = true;
     }
   }
   eint = etot - ekin;
-  // dfloor_keep_temperature: scale the internal energy by fv = d_old/dfloor
-  if (keept_) {
-    if (fv > 0.0 && fv < 1.0) {
-      eint *= fv;
-      etot = eint + ekin;
-    }
-  }
   bool mom_scaled = false;
   // Re-apply the floors to the internal energy corrected by the metric kinetic energy,
   // updating the conserved state consistently (as in SingleC2P_GeneralHyd/IdealHyd).

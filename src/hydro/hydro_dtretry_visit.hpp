@@ -104,12 +104,9 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("mlat_exch", mlat_exch);
   v.value("mlat_own_rec", mlat_own_rec);
   v.view("mlat_imask", mlat_imask);
-  v.value("use_wb_x2", use_wb_x2);
   v.value("use_wb_rho", use_wb_rho);
   v.value("wb_rmax", wb_rmax);
-  v.value("wb_rmin", wb_rmin);
   v.value("wb_phimax", wb_phimax);
-  v.value("wb_poison", wb_poison);
   v.value("wb_option", wb_option);
   v.view("u0wb", u0wb);
   v.view("w0wb", w0wb);

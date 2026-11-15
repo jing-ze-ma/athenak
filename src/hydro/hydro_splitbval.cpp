@@ -4,9 +4,10 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file hydro_splitbval.cpp
-//! \brief ckbval-1102 <hydro>/split_bval_fast: the check that lets the ghost refresh after
+//! \brief <hydro>/split_bval_fast: the check that lets the ghost refresh after
 //! the operator-split source (Hydro::RTOpSplitBvals) exchange u0(IEN) alone.
 
+#include <cstdint>
 #include <type_traits>
 
 #include "athena.hpp"
@@ -22,17 +23,17 @@
 #endif
 
 namespace hydro {
-// share-1104 P6: the test and the snapshot copy are shared with MHD
+// the test and the snapshot copy are shared with MHD (hydro/splitbval_impl.inc)
 #define SBV_CLASS Hydro
 #define SBV_NVAR nhydro
-#include "hydro/splitbval_impl.hpp"
+#include "hydro/splitbval_impl.inc"
 #undef SBV_CLASS
 #undef SBV_NVAR
 
 //----------------------------------------------------------------------------------------
 //! \fn void Hydro::SplitBvalSnap
 //! \brief u0 at the input of the first ConToPrim after a ghost refresh (called from
-//! ConToPrim when sbf_want), i.e. right after the exchange and the physical BCs.  Kept
+//! ConToPrim when sbf_want), i.e. right after the exchange and the physical BCs. Kept
 //! only for the conversions a split refresh can follow: the last RK stage, or the split
 //! refresh itself (no driver); any other refresh leaves no valid snapshot.
 
@@ -48,17 +49,17 @@ void Hydro::SplitBvalSnap(Driver *pdrive, int stage) {
 //! \brief <hydro>/split_c2p_once: true when the ConToPrimSplit tasks are redundant.
 //! Each ConToPrimSplit converts a state that has already been converted with nothing
 //! writing u0 in between:
-//!   - user_split_once: "after_timeintegrator" = RTStrangSplit (source, then
-//!     RTOpSplitBvals = exchange, BCs, ConToPrim over the whole mesh) -> ConToPrimSplit;
-//!     the next "before_timeintegrator" = (RTStrangSplit returns at stage 0) ->
-//!     ConToPrimSplit;
-//!   - no split source at all (e.g. <problem>/ck_time_scheme = hesdirk2, ck inside the
-//!     RK stages): both lists hold only the ConToPrimSplit after the last stage's own
-//!     ConToPrim.
+//! - user_split_once: "after_timeintegrator" = RTStrangSplit (source, then
+//! RTOpSplitBvals = exchange, BCs, ConToPrim over the whole mesh) -> ConToPrimSplit;
+//! the next "before_timeintegrator" = (RTStrangSplit returns at stage 0) ->
+//! ConToPrimSplit;
+//! - no split source at all (e.g. <problem>/ck_time_scheme = hesdirk2, ck inside the
+//! RK stages): both lists hold only the ConToPrimSplit after the last stage's own
+//! ConToPrim.
 //! Between those conversions and the next RK stage nothing writes u0 or w0 (NewTimeStep
-//! and the outputs only read them).  The repeats are not bitwise no-ops -- each one redoes
+//! and the outputs only read them). The repeats are not bitwise no-ops -- each one redoes
 //! u0(IEN) = (E - rho Phi) + rho Phi under etotgrav and re-solves T from the previous T
-//! -- so this is a ROUND-OFF change, off unless named.  The Strang split (a split source
+//! -- so this is a ROUND-OFF change, off unless named. The Strang split (a split source
 //! without user_split_once) keeps both tasks.
 
 bool Hydro::SplitC2POnce() const {

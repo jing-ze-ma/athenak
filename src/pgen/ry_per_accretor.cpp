@@ -569,7 +569,7 @@ std::string trc_file_;
 bool lz_ = false;
 // acclzc-1020 problem/coriolis_lz = true (read only when named; envelope): the phi
 // component of the Coriolis force in the conservative face-flux form (the z component of
-// hydro_am.hpp HydroAmFrame's T* = -Q_c, the dhj problem/coriolis_am form):
+// hydro_am.hpp HydroAmFrame's T* = -Q_c, the dhj amh::fix form):
 //   d(m3)/dt = -Omega Q_c/(R_c V),  Q_c = sum_faces Phi_out (R_f^2 - R_c^2),
 // Phi_out the outward mass flux x area of the update, R_f the cylindrical radius at the
 // face centre (x1 faces r_f sin(theta_c), x2 faces r_c sin(theta_f); phi faces R_f = R_c),

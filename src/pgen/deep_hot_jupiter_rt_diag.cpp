@@ -4,10 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file deep_hot_jupiter_rt_diag.cpp
-//! \brief deep_hot_jupiter_rt problem generator (tusplit-1102 piece): diagnostics -- the
-//! energy/mass budget (EBud*), the flux and angular-momentum history columns, the
-//! photosphere/OLR dumps and the per-cycle diagnostic.  Moved verbatim from
-//! deep_hot_jupiter_rt.cpp.
+//! \brief deep_hot_jupiter_rt problem generator: diagnostics -- the flux and
+//! angular-momentum history columns, the photosphere/OLR dumps and the per-cycle
+//! diagnostic.
 
 #include <cstdio>
 #include <iostream>
@@ -16,275 +15,9 @@
 
 #include "deep_hot_jupiter_rt.hpp"
 
-
-
-
-//----------------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------------
-// problem/budget_dt > 0 (DIAGNOSTIC, branch dhj-budget-0929): time-integrated per-shell
-// energy and mass ledger.  Every MeshBlock spans the full x1 range, so the shell index
-// is i-is.  rk2 only: a change made in stage 1 survives with weight gam0(2) = 0.5, one
-// made in stage 2 or in the operator split with weight 1; a stage's flux reaches the
-// final state with weight 0.5 dt in both stages.  Rows of acc (index = shell or face):
-//   0 FXE  x1 face energy flux fx1(IEN) A, weight 0.5 dt (incl. rho v Phi)      [faces]
-//   1 FXM  x1 face mass flux                                                    [faces]
-//   2 HDVE x2/x3 energy flux divergence sum (A F) over the cell, 0.5 dt         [shell]
-//   3 HDVM x2/x3 mass flux divergence                                           [shell]
-//   4 SRCE energy change of the whole user source (SourceFunc), weighted        [shell]
-//   5 SRCM mass change of SourceFunc (must be 0)                                [shell]
-//   6 FLRE ConToPrim floor energy (stage-weighted + split), from c2p_acc         [shell]
-//   7 FLRM ConToPrim floor mass                                                 [shell]
-//   8 QCK  energy change across the operator-split ck call                      [shell]
-//   9 FIR  ck net thermal flux of the arrays that call leaves, A dt (i >= icut) [faces]
-//  10 QSW  ck stellar deposit of those arrays, V dt                             [shell]
-//  11 [0..3] top face: int F_E dt, int F_M dt of stage 1, then of stage 2 (unweighted)
-//  12 [0..3] top face applied (0.5 dt): E, M over inflow faces (F_M < 0), then outflow
-//  13 FLRS the part of FLRE made by the split conversion after the ck call      [shell]
-//  14..18 CKX (= QCK - booked A F dt, V Qb dt) per cell class, summed per shell:
-//      14 full call, cell ends at e_floor;  15 full call, cell on the ck_impl_demax
-//      bound;  16 full call, other;  17 linearised cadence step, |de| capped;  18 lin,
-//      other.  Their sum over the rows is QCK - (FIR_i - FIR_i+1 + QSW_i).
-//  19 [0..4] cell counts of classes 14..18, [5] full calls, [6] lin steps
-// The dump (file ebudget.txt, rank 0) is taken right BEFORE the ck call of a cycle,
-// after the floors so far were drained: time, the cumulative rows, then the shell
-// sums E = sum u0(IEN) V and M = sum u0(IDN) V.  Ledger per shell over two dumps:
-//   dE_i = FXE_i - FXE_i+1 - HDVE_i + SRCE_i + FLRE_i + QCK_i  (and the same for M).
-
-void EBudShellEM(Mesh *pm, DvceArray2D<Real> t) {
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  auto u0 = pmbp->phydro->u0;
-  auto vol = pmbp->pcoord->volume;
-  const int nmb1 = pmbp->nmb_thispack - 1;
-  Kokkos::deep_copy(t, 0.0);
-  par_for("eb_em", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Kokkos::atomic_add(&t(0, i-is), u0(m,IEN,k,j,i)*vol(m,k,j,i));
-    Kokkos::atomic_add(&t(1, i-is), u0(m,IDN,k,j,i)*vol(m,k,j,i));
-  });
-}
-
-// the ConToPrim floor accumulator (c2p_acc, weighted by c2p_track::Weight) into the
-// ledger and into the pending sums the flux_hst_floor columns read; then zero it
-void EBudDrainFloors(Mesh *pm) {
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto c2p = pmbp->phydro->c2p_acc;
-  auto acc = *ebud::acc;
-  auto fh = *ebud::fhst;
-  const bool st = ebud::started;
-  const int n = static_cast<int>(c2p.extent(1));
-  par_for("eb_flr", DevExeSpace(), 0, n-1,
-  KOKKOS_LAMBDA(const int i) {
-    for (int r=0; r<4; ++r) fh(r,i) += c2p(r,i);
-    if (st) {
-      acc(6,i) += c2p(0,i) + c2p(2,i);
-      acc(7,i) += c2p(1,i) + c2p(3,i);
-      acc(13,i) += c2p(2,i);
-    }
-    for (int r=0; r<4; ++r) c2p(r,i) = 0.0;
-  });
-}
-
-// the flux terms of one RK stage (called at the top of SourceFunc: uflx holds the
-// stage's fluxes as RKUpdate applied them)
-void EBudStage(Mesh *pm, const Real bdt) {
-  if (!ebud::on || !ebud::started) return;
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  auto acc = *ebud::acc;
-  auto fx1 = pmbp->phydro->uflx.x1f;
-  auto fx2 = pmbp->phydro->uflx.x2f;
-  auto fx3 = pmbp->phydro->uflx.x3f;
-  auto a1 = pmbp->pcoord->area.x1f;
-  auto a2 = pmbp->pcoord->area.x2f;
-  auto a3 = pmbp->pcoord->area.x3f;
-  const Real w = 0.5*pm->dt;
-  const Real dtf = pm->dt;
-  const int r11 = (bdt > 0.75*pm->dt) ? 0 : 2;   // rk2: beta = 1 (stage 1), 0.5 (2)
-  const int nmb1 = pmbp->nmb_thispack - 1;
-  par_for("eb_stage", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real fe = fx1(m,IEN,k,j,i)*a1(m,k,j,i);
-    const Real fm = fx1(m,IDN,k,j,i)*a1(m,k,j,i);
-    Kokkos::atomic_add(&acc(0, i-is), fe*w);
-    Kokkos::atomic_add(&acc(1, i-is), fm*w);
-    if (i <= ie) {
-      const Real he = fx2(m,IEN,k,j+1,i)*a2(m,k,j+1,i) - fx2(m,IEN,k,j,i)*a2(m,k,j,i)
-                    + fx3(m,IEN,k+1,j,i)*a3(m,k+1,j,i) - fx3(m,IEN,k,j,i)*a3(m,k,j,i);
-      const Real hm = fx2(m,IDN,k,j+1,i)*a2(m,k,j+1,i) - fx2(m,IDN,k,j,i)*a2(m,k,j,i)
-                    + fx3(m,IDN,k+1,j,i)*a3(m,k+1,j,i) - fx3(m,IDN,k,j,i)*a3(m,k,j,i);
-      Kokkos::atomic_add(&acc(2, i-is), he*w);
-      Kokkos::atomic_add(&acc(3, i-is), hm*w);
-    } else {
-      Kokkos::atomic_add(&acc(11, r11), fe*dtf);
-      Kokkos::atomic_add(&acc(11, r11+1), fm*dtf);
-      const int r12 = (fm < 0.0) ? 0 : 2;
-      Kokkos::atomic_add(&acc(12, r12), fe*w);
-      Kokkos::atomic_add(&acc(12, r12+1), fm*w);
-    }
-  });
-}
-
-void EBudWrite(Mesh *pm, const Real t) {
-  const int n = pm->mb_indcs.nx1 + 1;
-  auto tm = *ebud::tmp;
-  EBudShellEM(pm, tm);
-  auto ha = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), *ebud::acc);
-  auto ht = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), tm);
-  std::vector<Real> buf((ebud::NQ + 2)*n);
-  for (int q=0; q<ebud::NQ; ++q)
-    for (int i=0; i<n; ++i) buf[q*n+i] = ha(q, i);
-  for (int q=0; q<2; ++q)
-    for (int i=0; i<n; ++i) buf[(ebud::NQ+q)*n+i] = ht(q, i);
-#if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, buf.data(), static_cast<int>(buf.size()),
-                MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-#endif
-  if (global_variable::my_rank == 0) {
-    FILE *fp = std::fopen("ebudget.txt", "a");
-    std::fprintf(fp, "# t= %.17e ncycle= %d\n", t, static_cast<int>(pm->ncycle));
-    for (int i=0; i<n; ++i) {
-      std::fprintf(fp, "%d", i);
-      for (int q=0; q<ebud::NQ+2; ++q) std::fprintf(fp, " %.17e", buf[q*n+i]);
-      std::fprintf(fp, "\n");
-    }
-    std::fclose(fp);
-  }
-}
-
-// wraps the operator-split ck call (user_split_once: once per cycle, full dt)
-void EBudCk(Mesh *pm, const Real dt, const bool before) {
-  if (!ebud::on) return;
-  namespace ts = two_stream_rt;
-  auto tm = *ebud::tmp;
-  const Real tstate = pm->time + dt;
-  if (before) {
-    EBudDrainFloors(pm);
-    if (!ebud::started) {
-      Kokkos::deep_copy(*ebud::acc, 0.0);
-      ebud::started = true;
-      ebud::t_next = tstate + ebud::dt_out;
-      EBudWrite(pm, tstate);
-    } else if (tstate >= ebud::t_next) {
-      EBudWrite(pm, tstate);
-      ebud::t_next += ebud::dt_out;
-    }
-    EBudShellEM(pm, tm);   // QCK 'before' (row 0)
-    if (ebud::cpre != nullptr) {
-      MeshBlockPack *pb = pm->pmb_pack;
-      auto &ib = pm->mb_indcs;
-      auto cp = *ebud::cpre;
-      auto u0b = pb->phydro->u0;
-      const ts::CkCadState st = ts::CkCadMakeState(pm);
-      par_for("eb_cpre", DevExeSpace(), 0, pb->nmb_thispack - 1, ib.ks, ib.ke, ib.js,
-              ib.je, ib.is, ib.ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        cp(m,0,k,j,i) = u0b(m,IEN,k,j,i);
-        cp(m,1,k,j,i) = st.Eint(m, k, j, i);
-      });
-      ebud::nfull0 = ts::ck_cad_nfull;
-    }
-    return;
-  }
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  auto acc = *ebud::acc;
-  auto u0 = pmbp->phydro->u0;
-  auto vol = pmbp->pcoord->volume;
-  auto a1 = pmbp->pcoord->area.x1f;
-  const int nmb1 = pmbp->nmb_thispack - 1;
-  par_for("eb_ck", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Kokkos::atomic_add(&acc(8, i-is), u0(m,IEN,k,j,i)*vol(m,k,j,i));
-  });
-  par_for("eb_ck0", DevExeSpace(), 0, ie-is,
-  KOKKOS_LAMBDA(const int i) {
-    acc(8, i) -= tm(0, i);
-  });
-  const bool rad = ts::rt_face_flux_ready() && (ts::rt_Qb_ptr != nullptr)
-                   && (ts::rt_icut_ptr != nullptr);
-  if (rad && ebud::cpre != nullptr) {
-    // CKX per cell class (rows 14..19)
-    auto fb = ts::rt_face_flux();
-    auto qb = *ts::rt_Qb_ptr;
-    auto icut = ts::rt_cut_index();
-    const int nblk = ts::rt_face_nblk();
-    auto cp = *ebud::cpre;
-    const ts::CkCadState st = ts::CkCadMakeState(pm);
-    const bool full = (ts::ck_cad_nfull != ebud::nfull0) || (ts::ck_impl_every <= 1);
-    const Real demax = ts::ck_impl_demax;
-    Real capf = ts::ck_impl_dtmax;
-    if (demax > 0.0 && demax < capf) capf = demax;
-    par_for("eb_ckx", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const int ic = icut(m,k,j);
-      Real bk = 0.0;
-      if (i >= ic) {
-        Real f0 = 0.0, f1 = 0.0, q = 0.0;
-        for (int b=0; b<nblk; ++b) {
-          f0 += fb(m,b,i,k,j);
-          f1 += fb(m,b,i+1,k,j);
-          q += qb(m,b,i,k,j);
-        }
-        bk = (f0*a1(m,k,j,i) - f1*a1(m,k,j,i+1) + q*vol(m,k,j,i))*dt;
-      }
-      const Real x = (u0(m,IEN,k,j,i) - cp(m,0,k,j,i))*vol(m,k,j,i) - bk;
-      const Real eb = cp(m,1,k,j,i);
-      const Real ea = st.Eint(m, k, j, i);
-      const Real d = u0(m,IDN,k,j,i);
-      int c = 0;
-      if (full) {
-        Real efl = st.eos.EnergyFromTemperature(d, st.eos.tfloor);
-        const Real ep = st.eos.EnergyFromPressure(d, st.eos.pfloor);
-        if (ep > efl) efl = ep;
-        if (ea <= efl*(1.0 + 1.0e-8)) {
-          c = 0;
-        } else if (demax > 0.0 && eb > 0.0 &&
-                   (ea <= eb*(1.0 - demax)*(1.0 + 1.0e-8) ||
-                    ea >= eb*(1.0 + demax)*(1.0 - 1.0e-8))) {
-          c = 1;
-        } else {
-          c = 2;
-        }
-      } else {
-        c = (eb > 0.0 && fabs(ea - eb) >= capf*eb*(1.0 - 1.0e-8)) ? 3 : 4;
-      }
-      Kokkos::atomic_add(&acc(14 + c, i-is), x);
-      Kokkos::atomic_add(&acc(19, c), 1.0);
-    });
-    par_for("eb_ckn", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
-      acc(19, full ? 5 : 6) += 1.0;
-    });
-  }
-  if (rad) {
-    auto fb = ts::rt_face_flux();
-    auto qb = *ts::rt_Qb_ptr;
-    auto icut = ts::rt_cut_index();
-    const int nblk = ts::rt_face_nblk();
-    par_for("eb_rad", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const int ic = icut(m,k,j);
-      if (i < ic) return;
-      Real f = 0.0, q = 0.0;
-      for (int b=0; b<nblk; ++b) {
-        f += fb(m,b,i,k,j);
-        if (i <= ie) q += qb(m,b,i,k,j);
-      }
-      Kokkos::atomic_add(&acc(9, i-is), f*a1(m,k,j,i)*dt);
-      if (i <= ie) Kokkos::atomic_add(&acc(10, i-is), q*vol(m,k,j,i)*dt);
-    });
-  }
-}
-
 //----------------------------------------------------------------------------------------
 //! \fn void DhjFluxStage
-//! \brief problem/flux_hst_rkavg: add this RK stage's fluid face fluxes at the top face
+//! \brief Add this RK stage's fluid face fluxes at the top face
 //! and at the inner wall, times the stage's weight, into dhj_fhst (reset on stage 1)
 
 void DhjFluxStage(Mesh *pm) {
@@ -369,14 +102,14 @@ void AmHstStage(Mesh *pm) {
   }, Kokkos::Sum<array_sum::GlobalSum>(sum));
   Kokkos::fence();
   for (int n=0; n<11; ++n) amh::acc[n] += wdt*sum.the_array[n];
-  // relaxdrag-1101 Tdrag: the drag removes itdrag bdt of every momentum component of u0
+  // Tdrag: the drag removes itdrag bdt of every momentum component of u0
   // in SourceFunc, so its z torque is -itdrag Lrel(u0) (same time and u0 as the kernel)
   const Real itd = DhjRelaxDragRate(pm->time, omega);
   if (itd > 0.0) amh::acc[11] += wdt*(-itd*DhjLrelU0(pm));
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn DhjRelaxDragRate (relaxdrag-1101)
+//! \fn DhjRelaxDragRate
 //! \brief 1/tau of the start-up Rayleigh drag at time t, as SourceFunc applies it (0 when
 //! off or after relax_drag_rot rotations)
 
@@ -392,7 +125,7 @@ Real DhjRelaxDragRate(const Real time, const Real omega) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn DhjLrelU0 (relaxdrag-1101)
+//! \fn DhjLrelU0
 //! \brief Lrel = sum vol (x P_y - y P_x) of this rank's u0, as AmHstColumns forms it
 
 Real DhjLrelU0(Mesh *pm) {
@@ -547,7 +280,7 @@ void DhjPhotosphereDump(ParameterInput *pin, Mesh *pm) {
           const Real fP0 = xP(m,k,j,ie+1) - static_cast<Real>(iP0);
           const Real gtop = EffGravAt(hj.grav, hj.ap, x1v(m,ie+1), hj.grav_point_mass,
                                       hj.omega, mu0, hj.stellar_tide)
-                            *cf(m,k,j,4);   // roche-dhj-1031: |grad Phi|/g_pm, else 1
+                            *cf(m,k,j,4);   // |grad Phi|/g_pm, else 1
           for (int g=0; g<CK_NG; ++g) {
             const Real kap = ck_kappa(lk, iT0, fT0, iP0, fP0, b, g) + kc(m,b,ie+1,k,j);
             tau[g] = kap*ptop*1.0e6/gtop;
@@ -950,8 +683,7 @@ void DhjOlrDump(ParameterInput *pin, Mesh *pm) {
 //! LAST ck call that touched each column (under ck_impl_every > 1 the last full call,
 //! or a later guard call on that column; within the call, its final pass).  The fluid
 //! columns read the RK-weighted sum of the stages' Riemann fluxes
-//! (problem/flux_hst_rkavg, default since dhj-ck-conserve 09-29; false = the last RK
-//! stage, as before; the flux_hst_wall split columns always read the last stage).
+//! (the last stage's for integrators without stage weights).
 //! Radiation is zero until the first ck call.
 //!   Lir_top   net thermal (longwave) luminosity out through the top face ie+1:
 //!             sum F_net(ie+1) A(ie+1), F_net = up - down, what the update differences
@@ -959,7 +691,7 @@ void DhjOlrDump(ParameterInput *pin, Mesh *pm) {
 //!             deposit is (1-albedo) times the local beam absorption, so the power the
 //!             model reflects is albedo times the power it INTERCEPTS, on the same
 //!             effective area (pi r_abs^2, r_abs where the slant depth reaches ~1), NOT
-//!             albedo F_star pi r_top^2 (the pre-dhj-wall-0927 definition, which counted
+//!             albedo F_star pi r_top^2 (the definition, which counted
 //!             light that never reaches the absorbing layer).
 //!   Lsw_abs   stellar power absorbed (the net stellar heating): sum Q_sw V over cells
 //!   Lrad_bot  net radiative luminosity up through the deepest ck face (icut; the inner
@@ -984,17 +716,14 @@ void DhjOlrDump(ParameterInput *pin, Mesh *pm) {
 //!             pseudo-spherical twilight) without being absorbed: it leaves the domain.
 //!             (The ck beam is a LOCAL absorption rate, by design -- see ck_beam_sph in
 //!             two_stream_rt.hpp; its photon budget is exact, tests_ck_sph 916dc953.)
-//! With problem/flux_hst_wall = true four more columns follow Lsw_in: Mdot_bot_in,
-//! Mdot_bot_out (sums over inner-wall faces with fx1(IDN,is) > 0 / < 0) and Efl_bot_in,
-//! Efl_bot_out (the fluid energy flux fx1(IEN,is) A over the same faces).
 
 //----------------------------------------------------------------------------------------
 //! \brief problem/am_hst: the eight angular-momentum columns from column n0 on.  Lrel and
 //! Iw are the state at the row (u0): Lrel = sum vol (x P_y - y P_x), P = rho V rebuilt
 //! from the covariant momenta, Iw = sum vol rho (x^2 + y^2), both with the cell-centre
 //! position the Coriolis source uses, so L_abs = Lrel + Omega Iw is the quantity
-//! problem/coriolis_am conserves.  Tcor (the torque the source applied: Tcont with
-//! coriolis_am, else Tcc) and the AmHstStage sums are rates averaged over the interval
+//! the Coriolis fix conserves.  Tcor (the torque the source applied: Tcont with
+//! amh::fix, else Tcc) and the AmHstStage sums are rates averaged over the interval
 //! since the previous row [g cm^2 s^-2].  Then
 //!     d(L_abs)/dt = Tcor + Omega dI/dt + (all other torques),
 //!     Omega dI/dt = Tbnd - Tcont  (+ floors),
@@ -1079,7 +808,7 @@ void AmHstColumns(HistoryData *pdata, Mesh *pm, const int n0) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn DhjTideTorque (tidetrq-1101)
+//! \fn DhjTideTorque
 //! \brief the z torque [g cm^2 s^-2] of the APPLIED tangential tide about the spin axis,
 //! sum over this rank's active cells of rho (r x a_t)_z vol = rho R (a_t . phi_hat) vol
 //! (the history output sums the ranks), at the current w0 (instantaneous, like Lrel/Iw):
@@ -1167,24 +896,23 @@ Real DhjTideTorque(Mesh *pm) {
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   namespace ts = two_stream_rt;
   constexpr int NFH0 = 9;
-  const bool fwall = dhj_flux_hst_wall;
   const bool ffloor = dhj_flux_hst_floor;
   // problem/am_hst: eight columns after all the others
-  const int NFL = (fwall ? (NFH0 + 4) : NFH0) + (ffloor ? 3 : 0);
+  const int NFL = NFH0 + (ffloor ? 3 : 0);
   const int NFH = NFL + (amh::on ? (amh::split ? 12 : 8) : 0);
-  // tidetrq-1101: Ttide (DhjTideTorque) after all the others, only with problem/roche
+  // Ttide (DhjTideTorque) after all the others, only with problem/roche
   const bool ttide = pm->pgen->hot_jupiter_param.roche;
-  // floortrc-1101: with <mhd>/floor_tracer and problem/flux_hst_floor, Mdrain [g/s] and
+  // with <mhd>/floor_tracer and problem/flux_hst_floor, Mdrain [g/s] and
   // Edrain [erg/s] after all the others: the floor-tracer drain (MHD::FloorTracerDrain)
   // over the same interval as Mfloor/Efloor, which are then NET (added - drained); the
   // gross floor addition is Mfloor + Mdrain
-  // relaxdrag-1101: Tdrag (the start-up Rayleigh drag's z torque, a rate over the
+  // Tdrag (the start-up Rayleigh drag's z torque, a rate over the
   // interval like Tcor) after Ttide, only with problem/am_hst
   const int NTD = NFH + (ttide ? 1 : 0);
   const int NDR = NTD + (amh::on ? 1 : 0);   // Mdrain/Edrain after Ttide and Tdrag
   // (the floor tracer is a default with the Alfven floor: when the two columns do not
   // fit, they are left out with a note instead of stopping the run)
-  // (share-1104 P4: <hydro>/floor_tracer books the same two columns)
+  // (P4: <hydro>/floor_tracer books the same two columns)
   bool fdrain = ffloor && (((pm->pmb_pack->pmhd != nullptr) &&
                             pm->pmb_pack->pmhd->floor_tracer) ||
                            ((pm->pmb_pack->phydro != nullptr) &&
@@ -1201,7 +929,7 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     fdrain = false;
   }
   pdata->nhist = NDR + (fdrain ? 2 : 0);
-  // ssbc-1111: with <mhd>/top_bc_bt = sourcesurface, Poy_top [erg/s] after all the
+  // with <mhd>/top_bc_bt = sourcesurface, Poy_top [erg/s] after all the
   // others: the radial Poynting flux sum_top (|B_t|^2 v_r - B_r v_t.B_t) dA of the
   // LAST ACTIVE cell (ie; the face value is ~0 by construction), orthonormal frame on cs
   const int NPY = pdata->nhist;
@@ -1234,12 +962,6 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   pdata->label[6] = "Mdot_top";
   pdata->label[7] = "Mdot_bot";
   pdata->label[8] = "Lsw_in";
-  if (fwall) {
-    pdata->label[9] = "Mdot_bot_in";
-    pdata->label[10] = "Mdot_bot_out";
-    pdata->label[11] = "Efl_bot_in";
-    pdata->label[12] = "Efl_bot_out";
-  }
   if (ffloor) {
     pdata->label[NFL-3] = "Efloor";
     pdata->label[NFL-2] = "Mfloor";
@@ -1291,16 +1013,16 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     cf = *ts::rt_cf_ptr;
     icut = ts::rt_cut_index();
   } else if (ts::RtFhStageViews(nmb, fb, qb, cf, icut, fstar, alb)) {
-    // problem/flux_hst_rst: a restart, before its first RT call: the cache the
+    // a restart with ck_implicit, before its first RT call: the cache the
     // restart file carries (chain blocks pre-summed, so nblk = 1 gives the same sums)
     rad = true;
     nblk = 1;
   }
-  // problem/flux_hst_rkavg: the stage-weighted fluid fluxes once a whole cycle is in
+  // the stage-weighted fluid fluxes once a whole cycle is in
   // the accumulator (else, e.g. the first row after a restart, the last stage's)
   const bool fav = dhj_fhst_avg && (dhj_fhst_stage == dhj_fhst_nst);
   auto fav_ = fav ? *dhj_fhst_ptr : DvceArray4D<Real>();
-  // stswall-1029: under RKG super-stepping the resistive (Poynting) energy flux is not in
+  // under RKG super-stepping the resistive (Poynting) energy flux is not in
   // uflx during the RK stages, so neither column above contains it.  The flux the last
   // super-step applied through ie+1 and is (Resistivity::rkg_bflx, slots 5 and 4) is
   // FOLDED INTO Etot_top and Etot_bot rather than given its own column: the history is
@@ -1368,11 +1090,6 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     // previous row (the history output sums the ranks), as a rate; then restart the sum
     DvceArray2D<Real> acc = (pmbp->pmhd != nullptr) ? pmbp->pmhd->c2p_acc
                                                     : pmbp->phydro->c2p_acc;
-    // problem/budget_dt: the ledger drains c2p_acc; the columns read its pending copy
-    if (ebud::on) {
-      EBudDrainFloors(pm);
-      acc = *ebud::fhst;
-    }
     auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), acc);
     Real ef = 0.0, mf = 0.0, efr = 0.0;
     for (int i=0; i<static_cast<int>(h.extent(1)); ++i) {
@@ -1424,28 +1141,4 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     }, Kokkos::Sum<Real>(poy));
     pdata->hdata[NPY] = poy;
   }
-  if (!fwall) return;
-  // problem/flux_hst_wall: the inner-wall in/out split, its own small reduction
-  array_sum::GlobalSum wsum;
-  Kokkos::parallel_reduce("dhj_flux_hist_wall",
-  Kokkos::RangePolicy<>(DevExeSpace(), 0, ncol),
-  KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &mb_sum) {
-    const int m = idx/(nx3*nx2);
-    const int kj = idx - m*(nx3*nx2);
-    const int k = ks + kj/nx2;
-    const int j = js + kj - (kj/nx2)*nx2;
-    const Real ab = area(m,k,j,is);
-    const Real mb = fx1(m,IDN,k,j,is)*ab;
-    const Real eb = fx1(m,IEN,k,j,is)*ab;
-    array_sum::GlobalSum hvars;
-    for (int n=0; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
-    if (mb > 0.0) {
-      hvars.the_array[0] = mb;  hvars.the_array[2] = eb;
-    } else {
-      hvars.the_array[1] = mb;  hvars.the_array[3] = eb;
-    }
-    mb_sum += hvars;
-  }, Kokkos::Sum<array_sum::GlobalSum>(wsum));
-  Kokkos::fence();
-  for (int n=0; n<4; ++n) pdata->hdata[NFH0+n] = wsum.the_array[n];
 }

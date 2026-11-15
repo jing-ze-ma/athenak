@@ -244,10 +244,10 @@ bool RTCol3Inv5X(const Real a[5][5], FT inv[5][5], int &nill) {
 //!
 //! WHY.  Deep in a stellar column the two-stream rows are an O(1e3) cancellation: U and D
 //! are each ~2 pi b and their difference is the flux, a part in tau of it.  The exact
-//! deep limit of the same two-stream is diffusion, F = (4 pi/3) dB/dtau, which carries the
-//! same number with NO cancellation and ONE unknown per cell instead of five.  So above
-//! the interface (column tau < rt_col3_hybrid_tau) the full two-stream is solved, below
-//! it the diffusion equation is, in ONE Newton system -- the deep part is a scalar
+//! deep limit of the same two-stream is diffusion, F = (4 pi/3) dB/dtau, which carries
+//! the same number with NO cancellation and ONE unknown per cell instead of five.  So
+//! above the interface (column tau < rt_col3_hybrid_tau) the full two-stream is solved,
+//! below it the diffusion equation is, in ONE Newton system -- the deep part is a scalar
 //! tridiagonal, the thin part the 5x5 block system, and the two meet at a 1x5 / 5x1 pair.
 //!
 //! THE INTERFACE CONDITIONS, at the face between cell isp-1 (deep) and isp (thin):
@@ -489,7 +489,7 @@ struct RTCol3 {
   Real Vc(const int m, const int k, const int j, const int i) const {
     return pp ? size.d_view(m).dx1 : vol(m,k,j,i)/Ar(m,k,j);
   }
-  //! \brief THE SPHERICAL FORM (this replaces the J = A I substitution of 1159a8f3).
+  //! \brief THE SPHERICAL FORM (in place of the J = A I substitution).
   //!
   //! The exact spherically symmetric moment pair of the two-stream closure is, with
   //! S = (I+ + I-)/2 ~ E and D = (I+ - I-)/2 ~ F and the Eddington factor f = mu^2 =
@@ -1012,7 +1012,7 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
   // ---- the energy row ---------------------------------------------------------------
   const Real tk = Tg(m,k,j,i);
   const Real rho = Rho(m,k,j,i);
-  const Real es = Wk<TLAY>(m,ESs,i,k,j);          // e*, cached in step 1: it never changes
+  const Real es = Wk<TLAY>(m,ESs,i,k,j);   // e*, cached in step 1: it never changes
   rsc = (es > 0.0) ? es : 1.0;
   const Real b = Wk<TLAY>(m,BBs,i,k,j);
   if (!(tk > 0.0) || !(b > 0.0) || !(es > 0.0)) {
@@ -1233,7 +1233,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       Wk<false>(m,CO+q,i,k,j) = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
     }
     Wk<false>(m,BB,i,k,j) = RTCol3WarmStart(*this, m, k, j, i, Bb(m,0,i,k,j));
-    Wk<false>(m,ES,i,k,j) = Ei(m,k,j,i);     // e*, fixed for the whole solve: cache it once
+    Wk<false>(m,ES,i,k,j) = Ei(m,k,j,i);   // e*, fixed for the whole solve
   }
   // THE NORM SCALE.  problem/rt_impl_norm = 1 measures each cell's energy residual
   // against e_i + eps e_max rather than against e_i alone.  In a stellar column e spans
@@ -1726,7 +1726,8 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
                      Src(m,0,i,k,j)*dxi, f3lo*Afl(m,k,j,i), Fb(m,0,i,k,j),
                      Wk<false>(m,EX,i,k,j)*dxi,
                      (wb*Wk<false>(m,SA,i,k,j) + Wk<false>(m,EX,i,k,j))*dxi,
-                     (Bb(m,0,i,k,j) > 0.0) ? (Wk<false>(m,BB,i,k,j)/Bb(m,0,i,k,j) - 1.0) : 0.0);
+                     (Bb(m,0,i,k,j) > 0.0) ?
+                         (Wk<false>(m,BB,i,k,j)/Bb(m,0,i,k,j) - 1.0) : 0.0);
     }
   }
   for (int i=ic; i<=ie; ++i) {
@@ -1816,7 +1817,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
 
 void RTCol3Launch(const RTCol3 &c, const int nmb1, const int ks, const int ke,
                   const int js, const int je);
-// (defined in utils/two_stream_rt_col3.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_col3.cpp)
 
 }  // namespace two_stream_rt
 #endif  // UTILS_TWO_STREAM_COLUMN_IMPLICIT_HPP_

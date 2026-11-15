@@ -215,7 +215,8 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
       const Real xp_ = (sidx == 0) ? x3mn : x2mn;
       const int spn_ = static_cast<int>(floor((xp_ + 1.0)/wp_ + 0.5))
                        *((sidx == 0) ? nx3_ : nx2_);
-      const Real pos = cs_seam::SeamPos(sc, spn_, (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang);
+      const Real pos = cs_seam::SeamPos(sc, spn_,
+                                        (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang);
       // TIE-SAFE stencil choice. At a panel END face (ang = +-pi/4, the
       // along-staggered component) the map shifts by exactly the normal offset, so at a
       // ghost cell centre pos is a HALF-INTEGER mathematically, and round(pos) went
@@ -491,135 +492,97 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
   Kokkos::deep_copy(fc_chunk_seg, h_cs);
   Kokkos::deep_copy(fc_chunk_beg, h_cb);
 
-  // the two walk sets (all layers / depth 1) with the seam srcval boxes
+  // the sample boxes, chunk lists and seam srcval boxes
   {
     const int js_ = cs_indcs.js, je_ = cs_indcs.je, ks_ = cs_indcs.ks, ke_ = cs_indcs.ke;
     // order 3 evaluates every seam sample itself (srcval3, no resample box)
     const bool fc3_ = (pmy_pack->pmesh->cs_seam_fc_order == 3);
-    int64_t npv_max = 0;
-    for (int d=0; d<2; ++d) {
-      std::vector<SubSegFC> sub;
-      std::vector<int> cs_p, cb_p, cs_s, cb_s, cs_r, cb_r;
-      int64_t pv = 0;
-      for (int q=0; q<nseg; ++q) {
-        const PackSegFC &g = h_seg(q);
-        SubSegFC u;
-        u.q = q; u.il = g.il; u.ni = g.ni; u.jl = g.jl; u.nj = g.nj; u.kl = g.kl;
-        u.nk = g.nk;
-        u.pvoff = -1; u.ptlo = 0; u.pnt = 0; u.pnlo = 0; u.pnn = 0; u.pil = 0; u.pni = 0;
-        if (d == 1) {
-          // direction of buffer n (nghbr_index.hpp: 0-7 x1 faces, 8-15 x2 faces, 16-23
-          // x1x2 edges, 24-31 x3 faces, 32-39 x3x1 edges, 40-47 x2x3 edges, 48-55
-          // corners); in each direction the buffer is ghost in, keep the source layer
-          // whose READ index (k,j after the seam map) is adjacent to the boundary
-          const int n = g.n;
-          int o1 = 0, o2 = 0, o3 = 0;
-          if (n < 8) {
-            o1 = (n < 4) ? -1 : 1;
-          } else if (n < 16) {
-            o2 = (n < 12) ? -1 : 1;
-          } else if (n < 24) {
-            o1 = (((n-16) >> 1) & 1) ? 1 : -1;  o2 = (((n-16) >> 2) & 1) ? 1 : -1;
-          } else if (n < 32) {
-            o3 = (n < 28) ? -1 : 1;
-          } else if (n < 40) {
-            o1 = (((n-32) >> 1) & 1) ? 1 : -1;  o3 = (((n-32) >> 2) & 1) ? 1 : -1;
-          } else if (n < 48) {
-            o2 = (((n-40) >> 1) & 1) ? 1 : -1;  o3 = (((n-40) >> 2) & 1) ? 1 : -1;
-          } else {
-            o1 = ((n-48) & 1) ? 1 : -1;  o2 = (((n-48) >> 1) & 1) ? 1 : -1;
-            o3 = (((n-48) >> 2) & 1) ? 1 : -1;
-          }
-          if (o1 != 0) {
-            u.il = (o1 < 0) ? g.il : g.il + g.ni - 1;
-            u.ni = 1;
-          }
-          if (o2 != 0) {
-            const int jt = (o2 < 0) ? g.jl : g.jl + g.nj - 1;
-            u.jl = (g.aj == 1) ? jt : (g.bj - jt); u.nj = 1;
-          }
-          if (o3 != 0) {
-            const int kt = (o3 < 0) ? g.kl : g.kl + g.nk - 1;
-            u.kl = (g.ak == 1) ? kt : (g.bk - kt); u.nk = 1;
-          }
+    std::vector<SubSegFC> sub;
+    std::vector<int> cs_p, cb_p, cs_s, cb_s, cs_r, cb_r;
+    int64_t pv = 0;
+    for (int q=0; q<nseg; ++q) {
+      const PackSegFC &g = h_seg(q);
+      SubSegFC u;
+      u.q = q; u.il = g.il; u.ni = g.ni; u.jl = g.jl; u.nj = g.nj; u.kl = g.kl;
+      u.nk = g.nk;
+      u.pvoff = -1; u.ptlo = 0; u.pnt = 0; u.pnlo = 0; u.pnn = 0; u.pil = 0; u.pni = 0;
+      if (g.mode == 2 && g.cs_seam != 0 && !g.cs_coar && !fc3_) {
+        // the samples' resample reads srcval at (bs..bs+2) along the seam, bs within
+        // [lo, hi-2] (BuildCubedSphereSeamTables), at the sample's own normal index
+        u.pil = u.il; u.pni = u.ni;
+        // with cs_seam_blockend = extend the box also covers ng cells
+        // on each side (the second pass's stencil reaches the along-seam ghosts)
+        const int bxg_ = cs_blockend_ext_ ? cs_indcs.ng : 0;
+        if (g.cs_seam == 2) {   // along eta (k); normal index jj = aj*j + bj
+          u.ptlo = ks_ - bxg_; u.pnt = ke_ + ((g.vv == 2) ? 1 : 0) - ks_ + 1 + 2*bxg_;
+          const int a0 = g.aj*u.jl + g.bj, a1 = g.aj*(u.jl + u.nj - 1) + g.bj;
+          u.pnlo = (a0 < a1) ? a0 : a1; u.pnn = u.nj;
+        } else {                 // along xi (j); normal index kk = ak*k + bk
+          u.ptlo = js_ - bxg_; u.pnt = je_ + ((g.vv == 1) ? 1 : 0) - js_ + 1 + 2*bxg_;
+          const int a0 = g.ak*u.kl + g.bk, a1 = g.ak*(u.kl + u.nk - 1) + g.bk;
+          u.pnlo = (a0 < a1) ? a0 : a1; u.pnn = u.nk;
         }
-        if (g.mode == 2 && g.cs_seam != 0 && !g.cs_coar && !fc3_) {
-          // the samples' resample reads srcval at (bs..bs+2) along the seam, bs within
-          // [lo, hi-2] (BuildCubedSphereSeamTables), at the sample's own normal index
-          u.pil = u.il; u.pni = u.ni;
-          // with cs_seam_blockend = extend the box also covers ng cells
-          // on each side (the second pass's stencil reaches the along-seam ghosts)
-          const int bxg_ = cs_blockend_ext_ ? cs_indcs.ng : 0;
-          if (g.cs_seam == 2) {   // along eta (k); normal index jj = aj*j + bj
-            u.ptlo = ks_ - bxg_; u.pnt = ke_ + ((g.vv == 2) ? 1 : 0) - ks_ + 1 + 2*bxg_;
-            const int a0 = g.aj*u.jl + g.bj, a1 = g.aj*(u.jl + u.nj - 1) + g.bj;
-            u.pnlo = (a0 < a1) ? a0 : a1; u.pnn = u.nj;
-          } else {                 // along xi (j); normal index kk = ak*k + bk
-            u.ptlo = js_ - bxg_; u.pnt = je_ + ((g.vv == 1) ? 1 : 0) - js_ + 1 + 2*bxg_;
-            const int a0 = g.ak*u.kl + g.bk, a1 = g.ak*(u.kl + u.nk - 1) + g.bk;
-            u.pnlo = (a0 < a1) ? a0 : a1; u.pnn = u.nk;
-          }
-          u.pvoff = static_cast<int>(pv);
-          const int npts = u.pnn*u.pnt*u.pni;
-          const int us = static_cast<int>(sub.size());
-          for (int c0=0; c0<npts; c0+=FC_PACK_CHUNK) {
-            cs_r.push_back(us);
-            cb_r.push_back(c0);
-          }
-          pv += npts;
-        } else if (g.mode == 2) {
-          // every other seam / pole segment: srcval at each sample itself, indexed by the
-          // sample (pnt = 0), so the sample pass never evaluates srcval
-          u.pvoff = static_cast<int>(pv); u.pnt = 0;
-          const int npts = u.nk*u.nj*u.ni;
-          const int us = static_cast<int>(sub.size());
-          for (int c0=0; c0<npts; c0+=FC_PACK_CHUNK) {
-            cs_r.push_back(us);
-            cb_r.push_back(c0);
-          }
-          pv += npts;
-        }
+        u.pvoff = static_cast<int>(pv);
+        const int npts = u.pnn*u.pnt*u.pni;
         const int us = static_cast<int>(sub.size());
-        const int nkji = u.nk*u.nj*u.ni;
-        for (int c0=0; c0<nkji; c0+=FC_PACK_CHUNK) {
-          if (g.mode != 2) {
-            cs_p.push_back(us);
-            cb_p.push_back(c0);
-          } else {
-            cs_s.push_back(us);
-            cb_s.push_back(c0);
-          }
+        for (int c0=0; c0<npts; c0+=FC_PACK_CHUNK) {
+          cs_r.push_back(us);
+          cb_r.push_back(c0);
         }
-        sub.push_back(u);
+        pv += npts;
+      } else if (g.mode == 2) {
+        // every other seam / pole segment: srcval at each sample itself, indexed by the
+        // sample (pnt = 0), so the sample pass never evaluates srcval
+        u.pvoff = static_cast<int>(pv); u.pnt = 0;
+        const int npts = u.nk*u.nj*u.ni;
+        const int us = static_cast<int>(sub.size());
+        for (int c0=0; c0<npts; c0+=FC_PACK_CHUNK) {
+          cs_r.push_back(us);
+          cb_r.push_back(c0);
+        }
+        pv += npts;
       }
-      npv_max = (pv > npv_max) ? pv : npv_max;
-      fc_np[d] = static_cast<int>(cs_p.size());
-      fc_ns[d] = static_cast<int>(cs_s.size());
-      fc_npre[d] = static_cast<int>(cs_r.size());
-      // chunk lists: plain, then seam, then precompute
-      std::vector<int> ca(cs_p), cb(cb_p);
-      ca.insert(ca.end(), cs_s.begin(), cs_s.end()); cb.insert(cb.end(), cb_s.begin(), cb_s.end());
-      ca.insert(ca.end(), cs_r.begin(), cs_r.end()); cb.insert(cb.end(), cb_r.begin(), cb_r.end());
-      const int nsub = static_cast<int>(sub.size());
-      Kokkos::realloc(fc_sub[d], (nsub > 0) ? nsub : 1);
-      auto h_sub = Kokkos::create_mirror_view(fc_sub[d]);
-      for (int u=0; u<nsub; ++u) {
-        h_sub(u) = sub[u];
+      const int us = static_cast<int>(sub.size());
+      const int nkji = u.nk*u.nj*u.ni;
+      for (int c0=0; c0<nkji; c0+=FC_PACK_CHUNK) {
+        if (g.mode != 2) {
+          cs_p.push_back(us);
+          cb_p.push_back(c0);
+        } else {
+          cs_s.push_back(us);
+          cb_s.push_back(c0);
+        }
       }
-      Kokkos::deep_copy(fc_sub[d], h_sub);
-      const int nc = static_cast<int>(ca.size());
-      Kokkos::realloc(fc_cs[d], (nc > 0) ? nc : 1);
-      Kokkos::realloc(fc_cb[d], (nc > 0) ? nc : 1);
-      auto h_a = Kokkos::create_mirror_view(fc_cs[d]);
-      auto h_b = Kokkos::create_mirror_view(fc_cb[d]);
-      for (int c=0; c<nc; ++c) {
-        h_a(c) = ca[c];
-        h_b(c) = cb[c];
-      }
-      Kokkos::deep_copy(fc_cs[d], h_a);
-      Kokkos::deep_copy(fc_cb[d], h_b);
+      sub.push_back(u);
     }
-    Kokkos::realloc(fc_preval, (npv_max > 0) ? npv_max : 1);
+    fc_np = static_cast<int>(cs_p.size());
+    fc_ns = static_cast<int>(cs_s.size());
+    fc_npre = static_cast<int>(cs_r.size());
+    // chunk lists: plain, then seam, then precompute
+    std::vector<int> ca(cs_p), cb(cb_p);
+    ca.insert(ca.end(), cs_s.begin(), cs_s.end());
+    cb.insert(cb.end(), cb_s.begin(), cb_s.end());
+    ca.insert(ca.end(), cs_r.begin(), cs_r.end());
+    cb.insert(cb.end(), cb_r.begin(), cb_r.end());
+    const int nsub = static_cast<int>(sub.size());
+    Kokkos::realloc(fc_sub, (nsub > 0) ? nsub : 1);
+    auto h_sub = Kokkos::create_mirror_view(fc_sub);
+    for (int u=0; u<nsub; ++u) {
+      h_sub(u) = sub[u];
+    }
+    Kokkos::deep_copy(fc_sub, h_sub);
+    const int nc = static_cast<int>(ca.size());
+    Kokkos::realloc(fc_cs, (nc > 0) ? nc : 1);
+    Kokkos::realloc(fc_cb, (nc > 0) ? nc : 1);
+    auto h_a = Kokkos::create_mirror_view(fc_cs);
+    auto h_b = Kokkos::create_mirror_view(fc_cb);
+    for (int c=0; c<nc; ++c) {
+      h_a(c) = ca[c];
+      h_b(c) = cb[c];
+    }
+    Kokkos::deep_copy(fc_cs, h_a);
+    Kokkos::deep_copy(fc_cb, h_b);
+    Kokkos::realloc(fc_preval, (pv > 0) ? pv : 1);
   }
   fc_seg_ready = true;
 }
@@ -633,7 +596,7 @@ struct FCPlainPack {
   DvceFaceFld4D<Real> b, cb;
   DvceArray1D<MeshBufferDv> sbuf, rbuf;
   DvceArray1D<PackSegFC> seg;
-  DvceArray1D<SubSegFC> sub;   // chunk -> sample box (all / depth 1)
+  DvceArray1D<SubSegFC> sub;   // chunk -> sample box
   DvceArray1D<int> cseg, cbeg;
   int c0;   // first chunk of this launch
 
@@ -890,7 +853,8 @@ struct FCSeamPack {
   // <mesh>/cs_seam_fc_order = 3: third-order average of the destination ghost face fed
   // by source sample (kk,jj,i) of component vv (cs_seam_fc3.hpp), in the source chart
   struct Fc3Geo {
-    int m, i, aeta, low, dir, nseam, ns, ne, as0, alo, ahi, clo, chi, flo, fhi, nxa, npan, ga0, off;
+    int m, i, aeta, low, dir, nseam, ns, ne, as0, alo, ahi, clo, chi, flo, fhi, nxa,
+        npan, ga0, off;
     Real dn, da, a0, amin, amax;
   };
   KOKKOS_FORCEINLINE_FUNCTION
@@ -955,7 +919,8 @@ struct FCSeamPack {
       const int col = g.nseam + g.dir*mc;
       const Real C = tan(0.25*M_PI - static_cast<Real>(mc)*g.dn);
       const Real f = sc*wl[mc]/(cs_fc3::ArcDens(C, Aa)*g.da);
-      for (int l=0; l<3; ++l) acc(g, 1, c0 + l, col, f*wq[l]*cs_fc3::Arc(C, tf[l], tf[l+1]));
+      for (int l=0; l<3; ++l) acc(g, 1, c0 + l, col,
+                                  f*wq[l]*cs_fc3::Arc(C, tf[l], tf[l+1]));
     }
   }
   // along-staggered component (along faces w..w+3, normal cells 0..2) at (u, xabs,
@@ -1121,7 +1086,12 @@ struct FCSeamPack {
       const int arr = (comp == 0) ? 0 : (((comp == 1) == (g.aeta != 0)) ? 1 : 2);
       const int k = g.aeta ? aa : nn, j = g.aeta ? nn : aa;
       const int c = (arr << 26) | (k << 13) | j;
-      for (int q=0; q<n; ++q) { if (code[q] == c) { w[q] += wt; return; } }
+      for (int q=0; q<n; ++q) {
+        if (code[q] == c) {
+          w[q] += wt;
+          return;
+        }
+      }
       if (n < kFc3Max) {
         code[n] = c;
         w[n] = wt;
@@ -1354,14 +1324,10 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
   const bool cs_nolim_ = pmy_pack->pmesh->cs_seam_fc_nolimit;
   auto sbuf = SendBufDv();
   auto rbuf = RecvBufDv();
-  // walk set 0 (all ng layers) or 1 (depth 1, <mhd>/rkg_halo_d1), see bvals.hpp; the
-  // extended seam pass needs full depth
   const bool fc3_ = (pmy_pack->pmesh->cs_seam_fc_order == 3);
-  const int d = (pack_depth == 1 && !(cs_blockend_ext_ && cs_ext_q_) && !fc3_) ? 1 : 0;
-  last_pack_depth_ = pack_depth;
-  const int np = fc_np[d], ns = fc_ns[d], nr = fc_npre[d];
+  const int np = fc_np, ns = fc_ns, nr = fc_npre;
   if (np > 0) {
-    FCPlainPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub[d], fc_cs[d], fc_cb[d], 0);
+    FCPlainPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub, fc_cs, fc_cb, 0);
     Kokkos::parallel_for("SendBuffFCplain", Kokkos::Experimental::require(
         Kokkos::RangePolicy<>(DevExeSpace(), 0, np*FC_PACK_CHUNK),
         Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
@@ -1369,7 +1335,7 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
   // the second pass of <mesh>/cs_seam_blockend = extend
   auto stbl_ = cs_ext_pass_ ? cs_seam_stnc_x : cs_seam_stnc;
   if (nr > 0) {
-    FCSeamPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub[d], fc_cs[d], fc_cb[d], cs_seam_geom,
+    FCSeamPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub, fc_cs, fc_cb, cs_seam_geom,
                  stbl_, fc_preval, np + ns, pmy_pack->pmesh->mb_indcs, cs_nolim_);
     f.ext_ = cs_ext_pass_; f.ext_jk = cs_ext_jk;
     f.useq_ = cs_ext_pass_ && cs_ext_q_; f.q = cs_ext_q;
@@ -1417,13 +1383,13 @@ void MeshBoundaryValuesFC::PackAndSendFCFlat(DvceFaceFld4D<Real> &b,
           Kokkos::RangePolicy<FCSeamPre3>(DevExeSpace(), 0, nr*FC_PACK_CHUNK),
           Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
     } else {
-    Kokkos::parallel_for("SendBuffFCsrc", Kokkos::Experimental::require(
-        Kokkos::RangePolicy<FCSeamPre>(DevExeSpace(), 0, nr*FC_PACK_CHUNK),
-        Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
+      Kokkos::parallel_for("SendBuffFCsrc", Kokkos::Experimental::require(
+          Kokkos::RangePolicy<FCSeamPre>(DevExeSpace(), 0, nr*FC_PACK_CHUNK),
+          Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
     }
   }
   if (ns > 0) {
-    FCSeamPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub[d], fc_cs[d], fc_cb[d], cs_seam_geom,
+    FCSeamPack f(b, cb, sbuf, rbuf, fc_seg, fc_sub, fc_cs, fc_cb, cs_seam_geom,
                  stbl_, fc_preval, np, pmy_pack->pmesh->mb_indcs, cs_nolim_);
     f.ext_ = cs_ext_pass_; f.ext_jk = cs_ext_jk;
     f.useq_ = cs_ext_pass_ && cs_ext_q_; f.q = cs_ext_q;
@@ -1457,7 +1423,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   // (bitwise the same buffers); every other mesh keeps the team kernel below.
   if (pmy_pack->pmesh->use_cubed_sphere) {
     PackAndSendFCFlat(b, cb);
-  } else {int my_rank = global_variable::my_rank;
+  } else {
+  int my_rank = global_variable::my_rank;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbgid = pmy_pack->pmb->mb_gid;
   auto &mblev = pmy_pack->pmb->mb_lev;
@@ -2330,13 +2297,10 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
   }
 
   // <mesh>/cs_seam_blockend = extend, the second pass (see the note in
-  // RecvAndUnpackCC): repeat the exchange with the panel-clamped stencil table, at the
-  // depth of the pack it repeats.
+  // RecvAndUnpackCC): repeat the exchange with the panel-clamped stencil table.
   if (cs_blockend_ext_ && !cs_ext_pass_ && pmy_pack->pmesh->use_cubed_sphere) {
     if (cs_ext_q_) CsSeamExtPartner(b);
     cs_ext_pass_ = true;
-    const int pd0 = pack_depth;
-    pack_depth = last_pack_depth_;
     (void) ClearSend();
     (void) InitRecv(3);
     while (PackAndSendFC(b, cb) != TaskStatus::complete) {}
@@ -2345,7 +2309,6 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
     // sends before unpacking (rad_m1_coupling.cpp FluidRefresh) would otherwise leave
     // them in flight into its next exchange, which reuses the buffers and the requests.
     (void) ClearSend();
-    pack_depth = pd0;
     cs_ext_pass_ = false;
   }
 
@@ -2362,7 +2325,7 @@ void MeshBoundaryValuesFC::CsSeamExtPartner(DvceFaceFld4D<Real> &b) {
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int ncell = nmb*(id.nx3 + 2*id.ng)*(id.nx2 + 2*id.ng)*(id.nx1 + 2*id.ng);
-  FCSeamPack f(b, b, SendBufDv(), RecvBufDv(), fc_seg, fc_sub[0], fc_cs[0], fc_cb[0],
+  FCSeamPack f(b, b, SendBufDv(), RecvBufDv(), fc_seg, fc_sub, fc_cs, fc_cb,
                cs_seam_geom, cs_seam_stnc_x, fc_preval, 0, id, false);
   f.ext_ = true; f.ext_jk = cs_ext_jk; f.q = cs_ext_q;
   Kokkos::parallel_for("CsSeamExtPartner",

@@ -223,17 +223,6 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
           pg = wder_(m,IDPR,k,j,i);
           g1 = wder_(m,IDG1,k,j,i);
         }
-        // boris-1102 <mhd>/boris_c: the fast speed of the limited system, B -> sqrt(f) B
-        // (an upper bound of it; see EOS_Data::boris_c2inv)
-        if (eos.boris_c2inv > 0.0) {
-          const Real sf = sqrt(eos.BorisF(eos.BorisX(w_d, w_bx*w_bx + w_by*w_by
-                                                     + w_bz*w_bz,
-                                                     eos.IsGeneral() ? pg : p,
-                                                     SQR(w0_(m,IVX,k,j,i))
-                                                     + SQR(w0_(m,IVY,k,j,i))
-                                                     + SQR(w0_(m,IVZ,k,j,i)))));
-          w_bx *= sf; w_by *= sf; w_bz *= sf;
-        }
 
         if (eos.IsGeneral()) {
           cf = eos.FastSpeedFromP(w_d, pg, g1, w_bx, w_by, w_bz);

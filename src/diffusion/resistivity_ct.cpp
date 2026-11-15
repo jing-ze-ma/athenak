@@ -3,16 +3,22 @@
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file mhd_ct.cpp
-//  \brief
+//! \file resistivity_ct.cpp
+//! \brief Constrained-transport update of the face-centred magnetic field for each
+//! super-stage of the RKG super-time-stepping of the resistive terms.
 
-// Athena++ headers
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "srcterms/srcterms.hpp"
 #include "driver/driver.hpp"
 #include "mhd/mhd.hpp"
 #include "diffusion/resistivity.hpp"
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Resistivity::CT
+//! \brief RKG recurrence for the face fields: b_j = mu b_{j-1} + nu b_{j-2}
+//! + (1-mu-nu) b_0 - dt curl(mu~ E_{j-1} + gamma~ E_0). b2 (b_{j-2}) is rotated in place:
+//! each update saves the field it overwrites for the next stage.
 
 TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -22,7 +28,7 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
 
   // capture class variables for the kernels
-  Real dt = pmy_pack->pmesh->dt*rkg_dtfac;   // rkgstrang-1102: dt/2 per Strang half
+  Real dt = pmy_pack->pmesh->dt*rkg_dtfac;   // dt/2 for a Strang half
   bool &multi_d = pmy_pack->pmesh->multi_d;
   bool &three_d = pmy_pack->pmesh->three_d;
   auto e1 = pmy_pack->pmhd->efld.x1e;
@@ -32,7 +38,7 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
   auto e20 = efld_ideal.x2e;
   auto e30 = efld_ideal.x3e;
   auto &mbsize = pmy_pack->pmb->mb_size;
-    
+
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
@@ -42,7 +48,7 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
   auto &dxe1 = pmy_pack->pcoord->dxedge.x1e;
   auto &dxe2 = pmy_pack->pcoord->dxedge.x2e;
   auto &dxe3 = pmy_pack->pcoord->dxedge.x3e;
-    
+
   Real fjm1;
   Real f0;
   if (stage == 1) {
@@ -52,81 +58,95 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
     fjm1 = mut;
     f0 = gat;
   }
-  // local copies of the RKG weights: reading the members inside the kernels below would
-  // capture `this` and dereference a host pointer on the device (see current_density.hpp)
+  // local copies of the RKG weights, so the kernels do not capture `this`
   const Real mu_ = mu;
   const Real nu_ = nu;
-    
+
+  // curvilinear meshes: Stokes' theorem with edge lengths and face areas
   if (use_cubed_sphere || use_spherical_polar) {
-      
-      //---- update B1 (only for 2D/3D problems)
-      auto bx1f = pmy_pack->pmhd->b0.x1f;
-      auto bx1f2 = b2.x1f;
-      auto bx1f_ideal = b_ideal.x1f;
-      auto ct1_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
-        if (stage > 1) {
-          const Real bold_ = bx1f(m,k,j,i);
-          bx1f(m,k,j,i) = mu_*bold_ + nu_*bx1f2(m,k,j,i) + (1.0-mu_-nu_)*bx1f_ideal(m,k,j,i);
-          bx1f2(m,k,j,i) = bold_;   // rkghalo-1103: Y_j for the next stage
-        }
-        bx1f(m,k,j,i) -= dt*(dxe3(m,k,j+1,i)*(fjm1*e3(m,k,j+1,i)+f0*e30(m,k,j+1,i)) - dxe3(m,k,j,i)*(fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/area1(m,k,j,i);
-        if (three_d) {
-          bx1f(m,k,j,i) += dt*(dxe2(m,k+1,j,i)*(fjm1*e2(m,k+1,j,i)+f0*e20(m,k+1,j,i)) - dxe2(m,k,j,i)*(fjm1*e2(m,k,j,i)+f0*e20(m,k,j,i)))/area1(m,k,j,i);
-        }
-      };
-      if (multi_d && !three_d) {
-        par_for("resCT-b1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1, ct1_);
+    //---- update B1 (only for 2D/3D problems)
+    auto bx1f = pmy_pack->pmhd->b0.x1f;
+    auto bx1f2 = b2.x1f;
+    auto bx1f_ideal = b_ideal.x1f;
+    auto ct1_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      if (stage > 1) {
+        const Real bold_ = bx1f(m,k,j,i);
+        bx1f(m,k,j,i) = mu_*bold_ + nu_*bx1f2(m,k,j,i)
+                        + (1.0-mu_-nu_)*bx1f_ideal(m,k,j,i);
+        bx1f2(m,k,j,i) = bold_;
       }
-
-      //---- update B2 (curl terms in 1D and 3D problems)
-      auto bx2f = pmy_pack->pmhd->b0.x2f;
-      auto bx2f2 = b2.x2f;
-      auto bx2f_ideal = b_ideal.x2f;
-      auto ct2_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
-        const bool do_pole = (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) || (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je+1);
-        Real a2 = (do_pole) ? 1.0 : area2(m,k,j,i);
-        Real dxe31 = (do_pole) ? 0.0 : dxe3(m,k,j,i+1);
-        Real dxe30 = (do_pole) ? 0.0 : dxe3(m,k,j,i);
-        if (stage > 1) {
-          const Real bold_ = bx2f(m,k,j,i);
-          bx2f(m,k,j,i) = mu_*bold_ + nu_*bx2f2(m,k,j,i) + (1.0-mu_-nu_)*bx2f_ideal(m,k,j,i);
-          bx2f2(m,k,j,i) = bold_;   // rkghalo-1103: Y_j for the next stage
-        }
-        bx2f(m,k,j,i) += dt*(dxe31*(fjm1*e3(m,k,j,i+1)+f0*e30(m,k,j,i+1)) - dxe30*(fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/a2;
-        if (three_d) {
-          Real dxe11 = (do_pole) ? 0.0 : dxe1(m,k+1,j,i);
-          Real dxe10 = (do_pole) ? 0.0 : dxe1(m,k,j,i);
-          bx2f(m,k,j,i) -= dt*(dxe11*(fjm1*e1(m,k+1,j,i)+f0*e10(m,k+1,j,i)) - dxe10*(fjm1*e1(m,k,j,i)+f0*e10(m,k,j,i)))/a2;
-        }
-      };
-
-      //---- update B3 (curl terms in 1D and 2D/3D problems)
-      auto bx3f = pmy_pack->pmhd->b0.x3f;
-      auto bx3f2 = b2.x3f;
-      auto bx3f_ideal = b_ideal.x3f;
-      auto ct3_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
-        if (stage > 1) {
-          const Real bold_ = bx3f(m,k,j,i);
-          bx3f(m,k,j,i) = mu_*bold_ + nu_*bx3f2(m,k,j,i) + (1.0-mu_-nu_)*bx3f_ideal(m,k,j,i);
-          bx3f2(m,k,j,i) = bold_;   // rkghalo-1103: Y_j for the next stage
-        }
-        bx3f(m,k,j,i) -= dt*(dxe2(m,k,j,i+1)*(fjm1*e2(m,k,j,i+1)+f0*e20(m,k,j,i+1)) - dxe2(m,k,j,i)*(fjm1*e2(m,k,j,i)+f0*e20(m,k,j,i)))/area3(m,k,j,i);
-        if (multi_d) {
-          bx3f(m,k,j,i) += dt*(dxe1(m,k,j+1,i)*(fjm1*e1(m,k,j+1,i)+f0*e10(m,k,j+1,i)) - dxe1(m,k,j,i)*(fjm1*e1(m,k,j,i)+f0*e10(m,k,j,i)))/area3(m,k,j,i);
-        }
-      };
-      // r1mspeed-1102: in 3D the three face updates run as ONE launch (each writes its
-      // own component from the edge EMFs only; bitwise, see par_for_fused3)
+      bx1f(m,k,j,i) -= dt*(dxe3(m,k,j+1,i)*(fjm1*e3(m,k,j+1,i)+f0*e30(m,k,j+1,i))
+                         - dxe3(m,k,j,i)*(fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))
+                       /area1(m,k,j,i);
       if (three_d) {
-        par_for_fused3("resCT", DevExeSpace(), nmb1, LoopBox3{ks, ke, js, je, is, ie+1}, ct1_,
-                       LoopBox3{ks, ke, js, je+1, is, ie}, ct2_,
-                       LoopBox3{ks, ke+1, js, je, is, ie}, ct3_);
-      } else {
-        par_for("resCT-b2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie, ct2_);
-        par_for("resCT-b3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie, ct3_);
+        bx1f(m,k,j,i) += dt*(dxe2(m,k+1,j,i)*(fjm1*e2(m,k+1,j,i)+f0*e20(m,k+1,j,i))
+                           - dxe2(m,k,j,i)*(fjm1*e2(m,k,j,i)+f0*e20(m,k,j,i)))
+                         /area1(m,k,j,i);
       }
-      
-  } else {
+    };
+    if (multi_d && !three_d) {
+      par_for("resCT-b1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1, ct1_);
+    }
+
+    //---- update B2 (curl terms in 1D and 3D problems); the polar faces have no area
+    auto bx2f = pmy_pack->pmhd->b0.x2f;
+    auto bx2f2 = b2.x2f;
+    auto bx2f_ideal = b_ideal.x2f;
+    auto ct2_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      const bool do_pole =
+          (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) ||
+          (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je+1);
+      Real a2 = (do_pole) ? 1.0 : area2(m,k,j,i);
+      Real dxe31 = (do_pole) ? 0.0 : dxe3(m,k,j,i+1);
+      Real dxe30 = (do_pole) ? 0.0 : dxe3(m,k,j,i);
+      if (stage > 1) {
+        const Real bold_ = bx2f(m,k,j,i);
+        bx2f(m,k,j,i) = mu_*bold_ + nu_*bx2f2(m,k,j,i)
+                        + (1.0-mu_-nu_)*bx2f_ideal(m,k,j,i);
+        bx2f2(m,k,j,i) = bold_;
+      }
+      bx2f(m,k,j,i) += dt*(dxe31*(fjm1*e3(m,k,j,i+1)+f0*e30(m,k,j,i+1))
+                         - dxe30*(fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/a2;
+      if (three_d) {
+        Real dxe11 = (do_pole) ? 0.0 : dxe1(m,k+1,j,i);
+        Real dxe10 = (do_pole) ? 0.0 : dxe1(m,k,j,i);
+        bx2f(m,k,j,i) -= dt*(dxe11*(fjm1*e1(m,k+1,j,i)+f0*e10(m,k+1,j,i))
+                           - dxe10*(fjm1*e1(m,k,j,i)+f0*e10(m,k,j,i)))/a2;
+      }
+    };
+
+    //---- update B3 (curl terms in 1D and 2D/3D problems)
+    auto bx3f = pmy_pack->pmhd->b0.x3f;
+    auto bx3f2 = b2.x3f;
+    auto bx3f_ideal = b_ideal.x3f;
+    auto ct3_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      if (stage > 1) {
+        const Real bold_ = bx3f(m,k,j,i);
+        bx3f(m,k,j,i) = mu_*bold_ + nu_*bx3f2(m,k,j,i)
+                        + (1.0-mu_-nu_)*bx3f_ideal(m,k,j,i);
+        bx3f2(m,k,j,i) = bold_;
+      }
+      bx3f(m,k,j,i) -= dt*(dxe2(m,k,j,i+1)*(fjm1*e2(m,k,j,i+1)+f0*e20(m,k,j,i+1))
+                         - dxe2(m,k,j,i)*(fjm1*e2(m,k,j,i)+f0*e20(m,k,j,i)))
+                       /area3(m,k,j,i);
+      if (multi_d) {
+        bx3f(m,k,j,i) += dt*(dxe1(m,k,j+1,i)*(fjm1*e1(m,k,j+1,i)+f0*e10(m,k,j+1,i))
+                           - dxe1(m,k,j,i)*(fjm1*e1(m,k,j,i)+f0*e10(m,k,j,i)))
+                         /area3(m,k,j,i);
+      }
+    };
+    // in 3D the three face updates run as one launch (par_for_fused3)
+    if (three_d) {
+      par_for_fused3("resCT", DevExeSpace(), nmb1,
+                     LoopBox3{ks, ke, js, je, is, ie+1}, ct1_,
+                     LoopBox3{ks, ke, js, je+1, is, ie}, ct2_,
+                     LoopBox3{ks, ke+1, js, je, is, ie}, ct3_);
+    } else {
+      par_for("resCT-b2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie, ct2_);
+      par_for("resCT-b3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie, ct3_);
+    }
+    return TaskStatus::complete;
+  }
 
   //---- update B1 (only for 2D/3D problems)
   if (multi_d) {
@@ -137,12 +157,15 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       if (stage > 1) {
         const Real bold_ = bx1f(m,k,j,i);
-        bx1f(m,k,j,i) = mu_*bold_ + nu_*bx1f2(m,k,j,i) + (1.0-mu_-nu_)*bx1f_ideal(m,k,j,i);
-        bx1f2(m,k,j,i) = bold_;   // rkghalo-1103: Y_j for the next stage
+        bx1f(m,k,j,i) = mu_*bold_ + nu_*bx1f2(m,k,j,i)
+                        + (1.0-mu_-nu_)*bx1f_ideal(m,k,j,i);
+        bx1f2(m,k,j,i) = bold_;
       }
-      bx1f(m,k,j,i) -= dt*((fjm1*e3(m,k,j+1,i)+f0*e30(m,k,j+1,i)) - (fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/mbsize.d_view(m).dx2;
+      bx1f(m,k,j,i) -= dt*((fjm1*e3(m,k,j+1,i)+f0*e30(m,k,j+1,i))
+                         - (fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/mbsize.d_view(m).dx2;
       if (three_d) {
-        bx1f(m,k,j,i) += dt*((fjm1*e2(m,k+1,j,i)+f0*e20(m,k+1,j,i)) - (fjm1*e2(m,k,j,i)+f0*e20(m,k,j,i)))/mbsize.d_view(m).dx3;
+        bx1f(m,k,j,i) += dt*((fjm1*e2(m,k+1,j,i)+f0*e20(m,k+1,j,i))
+                           - (fjm1*e2(m,k,j,i)+f0*e20(m,k,j,i)))/mbsize.d_view(m).dx3;
       }
     });
   }
@@ -156,11 +179,13 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
     if (stage > 1) {
       const Real bold_ = bx2f(m,k,j,i);
       bx2f(m,k,j,i) = mu_*bold_ + nu_*bx2f2(m,k,j,i) + (1.0-mu_-nu_)*bx2f_ideal(m,k,j,i);
-      bx2f2(m,k,j,i) = bold_;   // rkghalo-1103: Y_j for the next stage
+      bx2f2(m,k,j,i) = bold_;
     }
-    bx2f(m,k,j,i) += dt*((fjm1*e3(m,k,j,i+1)+f0*e30(m,k,j,i+1)) - (fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/mbsize.d_view(m).dx1;
+    bx2f(m,k,j,i) += dt*((fjm1*e3(m,k,j,i+1)+f0*e30(m,k,j,i+1))
+                       - (fjm1*e3(m,k,j,i)+f0*e30(m,k,j,i)))/mbsize.d_view(m).dx1;
     if (three_d) {
-      bx2f(m,k,j,i) -= dt*((fjm1*e1(m,k+1,j,i)+f0*e10(m,k+1,j,i)) - (fjm1*e1(m,k,j,i)+f0*e10(m,k,j,i)))/mbsize.d_view(m).dx3;
+      bx2f(m,k,j,i) -= dt*((fjm1*e1(m,k+1,j,i)+f0*e10(m,k+1,j,i))
+                         - (fjm1*e1(m,k,j,i)+f0*e10(m,k,j,i)))/mbsize.d_view(m).dx3;
     }
   });
 
@@ -173,14 +198,14 @@ TaskStatus Resistivity::CT(Driver *pdriver, int stage) {
     if (stage > 1) {
       const Real bold_ = bx3f(m,k,j,i);
       bx3f(m,k,j,i) = mu_*bold_ + nu_*bx3f2(m,k,j,i) + (1.0-mu_-nu_)*bx3f_ideal(m,k,j,i);
-      bx3f2(m,k,j,i) = bold_;   // rkghalo-1103: Y_j for the next stage
+      bx3f2(m,k,j,i) = bold_;
     }
-    bx3f(m,k,j,i) -= dt*((fjm1*e2(m,k,j,i+1)+f0*e20(m,k,j,i+1)) - (fjm1*e2(m,k,j,i)+f0*e20(m,k,j,i)))/mbsize.d_view(m).dx1;
+    bx3f(m,k,j,i) -= dt*((fjm1*e2(m,k,j,i+1)+f0*e20(m,k,j,i+1))
+                       - (fjm1*e2(m,k,j,i)+f0*e20(m,k,j,i)))/mbsize.d_view(m).dx1;
     if (multi_d) {
-      bx3f(m,k,j,i) += dt*((fjm1*e1(m,k,j+1,i)+f0*e10(m,k,j+1,i)) - (fjm1*e1(m,k,j,i)+f0*e10(m,k,j,i)))/mbsize.d_view(m).dx2;
+      bx3f(m,k,j,i) += dt*((fjm1*e1(m,k,j+1,i)+f0*e10(m,k,j+1,i))
+                         - (fjm1*e1(m,k,j,i)+f0*e10(m,k,j,i)))/mbsize.d_view(m).dx2;
     }
   });
-      
-  }
   return TaskStatus::complete;
 }

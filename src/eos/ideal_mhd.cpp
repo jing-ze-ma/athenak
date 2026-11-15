@@ -20,8 +20,7 @@ IdealMHD::IdealMHD(MeshBlockPack *pp, ParameterInput *pin) :
   eos_data.is_ideal = true;
   eos_data.gamma = pin->GetReal("mhd","gamma");
   eos_data.iso_cs = 0.0;
-  // An ideal gas has no composition of its own, but ohmic_resistivity = eos needs one.
-  // A no-op unless that resistivity is selected; the thermodynamics stay ideal.
+  // composition table for ohmic_resistivity = eos only (thermodynamics stay ideal)
   BuildElectronFractionTable("mhd", pin);
 }
 
@@ -40,7 +39,7 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
   int &nmb = pmy_pack->nmb_thispack;
   auto &eos = eos_data;
   auto &fofc_ = pmy_pack->pmhd->fofc;
-    
+
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   // cubed sphere AND a stretched radial grid: the one case where the plain face
   // average is not the field at the cell centre.  See CellCenteredRadialFld.
@@ -106,12 +105,8 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
         rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
         u.bz = lw*b.x3f(m,k,j,i) + rw*b.x3f(m,k+1,j,i);
       } else {
-      // The cubed sphere's x1 is radial and stretched exactly as spherical polar's is,
-      // so its centre is not the midpoint of its two faces either; see
-      // CellCenteredRadialFld.  This must MATCH what
-      // Coordinates::GnomonicEquiangleRaiseVelMHD rebuilds bcc with a moment later --
-      // a mismatch between the two is an energy difference the C2P floors then bake
-      // into u.e.  Every other grid keeps the plain average, bit for bit.
+      // cubed sphere: the stretched radial centre is not the face midpoint
+      // (CellCenteredRadialFld), as in GnomonicEquiangleRaiseVelMHD
       const bool rin_ = wbc_.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::reflect;
       const bool rout_ = wbc_.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect;
       u.bx = cs_str_x1_ ?
@@ -131,7 +126,7 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
     // <mhd>/valfven_max_cgs: Alfven-speed density floor (EOS_Data::va2max_inv), applied
     // like dfloor and written back below through dfloor_used
     bool vafloor_used = false;
-    const Real d_in = u.d;   // floortrc-1101: the density before any floor
+    const Real d_in = u.d;   // the density before any floor
     bool vanoin_used = false;
     if (eos.va2max_inv > 0.0) {
       const Real dva = (SQR(u.bx) + SQR(u.by) + SQR(u.bz))*eos.va2max_inv;
@@ -150,8 +145,7 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
     SingleC2P_IdealMHD(u, eos, w, dfloor_used, efloor_used, tfloor_used,
                        vceil_used, vceil_test);
     dfloor_used = dfloor_used || vafloor_used;
-    // The floor-TEST pass (FOFC) is handed scratch conserved data and must leave no
-    // trace, so the momentum rescale is written back only on the real pass.
+    // the floor-test pass (FOFC) works on scratch data: no momentum write-back
     if (!only_testfloors && (vceil_used || vanoin_used)) {
       cons(m,IM1,k,j,i) = u.mx;
       cons(m,IM2,k,j,i) = u.my;
@@ -161,9 +155,8 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
 
     // set FOFC flag and quit loop if this function called only to check floors
     if (only_testfloors) {
-      // the velocity ceiling counts as a floor event for FOFC, exactly as in
-      // ideal_hyd.cpp: a cell that would need it is one the first-order flux is meant
-      // to rescue.  vceil_test is the decision alone and performs no write.
+      // the velocity ceiling counts as a floor event for FOFC (vceil_test is the decision
+      // alone)
       if (dfloor_used || efloor_used || tfloor_used || vceil_test) {
         fofc_(m,k,j,i) = true;
         sumd++;  // use dfloor as counter for when either is true

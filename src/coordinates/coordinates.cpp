@@ -858,7 +858,6 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
 
   // density-floor corrections and velocity ceiling that need the metric kinetic energy
   const bool keepv_ = eos_data.dfloor_keep_velocity && eos_data.defer_cons_floors;
-  const bool keept_ = eos_data.dfloor_keep_temperature && eos_data.defer_cons_floors;
   const Real vceil_ = eos_data.vceil;
   // the ceiling acts in active cells only (ghosts are overwritten by the next exchange)
   auto &aidx = pmy_pack->pmesh->mb_indcs;
@@ -904,8 +903,8 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
                        k >= aks && k <= ake);
     Real v1, v2, v3, eint, pnew, g1new, temp, de, vde;
     bool ceil_used, floored, tset_used;
-    GnomonicRaiseVelFloors(c, eos_, gen_, keepv_, keept_, vceil_, act_,
-                           (keepv_ || keept_) ? dflfv_(m,k,j,i) : 1.0,
+    GnomonicRaiseVelFloors(c, eos_, gen_, keepv_, vceil_, act_,
+                           keepv_ ? dflfv_(m,k,j,i) : 1.0,
                            gen_ ? wtemp_(m,k,j,i) : 0.0, d,
                            m1, m2, m3, etot, v1, v2, v3, eint, pnew, g1new, temp,
                            ceil_used, floored, tset_used, de, vde);

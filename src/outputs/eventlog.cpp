@@ -161,8 +161,8 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       // <block>/efloor_as_tfloor: cells whose floored e was rebuilt from T.  APPENDED,
       // so every column index an existing reader uses is unchanged.
       std::fprintf(pfile, " %10" PRId64, pm->ecounter.neos_tset);
-      // kinetic energy density the velocity ceiling clipped since the last row: removed
-      // from the total energy, or turned into internal energy under vceil_thermalise.
+      // kinetic energy density the velocity ceiling removed from the total energy since
+      // the last row.
       // APPENDED, so every existing column index is unchanged.
       std::fprintf(pfile, " %11.4e",
                    static_cast<double>(pm->ecounter.vceil_de));

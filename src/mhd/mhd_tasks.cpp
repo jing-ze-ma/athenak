@@ -144,7 +144,7 @@ TaskStatus MHD::InitRecv(Driver *pdrive, int stage) {
   // skipped on BOTH sides (no Irecv here, no send in SendU): ClearRecv/ClearSend then
   // wait on the previous stage's already completed requests, which return at once
   if (!rkg_skip_u) {
-    tstat = pbval_u->InitRecv(nmhd+nscalars, rkg_u_vmask);
+    tstat = pbval_u->InitRecv(nmhd+nscalars);
     if (tstat != TaskStatus::complete) return tstat;
   }
   // post receives for B
@@ -388,9 +388,6 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->pgen->user_srcs) {
     (pmy_pack->pmesh->pgen->user_srcs_func)(pmy_pack->pmesh, beta_dt);
   }
-  // <mhd>/boris_c: perpendicular-to-B part of the stage's momentum change
-  // (fluxes + every momentum source above) times f (mhd_boris.cpp)
-  if (boris_on) BorisCorrect(pdrive, stage);
 
   return TaskStatus::complete;
 }
@@ -496,7 +493,7 @@ TaskStatus MHD::RestrictU(Driver *pdrive, int stage) {
 
 TaskStatus MHD::SendU(Driver *pdrive, int stage) {
   if (rkg_skip_u) return TaskStatus::complete;
-  TaskStatus tstat = pbval_u->PackAndSendCC(u0, coarse_u0, -1, -1, rkg_u_vmask);
+  TaskStatus tstat = pbval_u->PackAndSendCC(u0, coarse_u0);
   return tstat;
 }
 
@@ -506,7 +503,7 @@ TaskStatus MHD::SendU(Driver *pdrive, int stage) {
 
 TaskStatus MHD::RecvU(Driver *pdrive, int stage) {
   if (rkg_skip_u) return TaskStatus::complete;
-  TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0, -1, -1, rkg_u_vmask);
+  TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0);
   // a u0 refresh; the next ConToPrim takes the split_bval_fast snapshot
   if (sbf_on && tstat == TaskStatus::complete) {sbf_want = true; sbf_valid = false;}
   return tstat;
@@ -792,7 +789,6 @@ void MHD::C2PTrack(Driver *pdrive, int stage, bool before) {
 //! Hydro::RTStrangSplit: Strang halves (dt/2 in "before_timeintegrator", stage 0, and
 //! dt/2 in "after_timeintegrator") or, with user_split_once, ONE call with the full cycle
 //! dt after the last RK stage. pmesh->dt is the cycle dt in both lists.
-//! with user_split_pre_late the first half comes from Driver::Execute (stage = -1).
 
 TaskStatus MHD::RTStrangSplit(Driver *pdrive, int stage) {
   Mesh *pm = pmy_pack->pmesh;
@@ -805,12 +801,7 @@ TaskStatus MHD::RTStrangSplit(Driver *pdrive, int stage) {
     RTOpSplitBvals();
     return TaskStatus::complete;
   }
-  // user_split_pre_late: the first half is called by the Driver with
-  // stage = -1, after the leading RKG super-step; the task-list call (stage 0) skips
-  if (pm->pgen->user_split_pre_late && stage == 0) return TaskStatus::complete;
-  pm->pgen->user_split_half = (stage <= 0) ? 1 : 2;
   (pm->pgen->user_split_func)(pm, 0.5*(pm->dt));
-  pm->pgen->user_split_half = 0;
   RTOpSplitBvals();
   return TaskStatus::complete;
 }

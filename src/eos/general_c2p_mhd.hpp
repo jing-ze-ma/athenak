@@ -7,19 +7,16 @@
 //========================================================================================
 //! \file general_c2p_mhd.hpp
 //! \brief Inline conserved->primitive conversion for non-relativistic MHD with a general
-//! EOS. See general_c2p_hyd.hpp for the rationale; the only difference here is that the
-//! magnetic energy is also subtracted off before the internal energy is obtained.
+//! EOS (see general_c2p_hyd.hpp); the magnetic energy is also subtracted from E.
 
 //----------------------------------------------------------------------------------------
 //! \fn void GeneralMHDFloorsPost()
-//! \brief share3-1031: THE energy floors of the general-EOS MHD inversion on an internal
-//! energy e = E - KE - ME with final kinetic and magnetic energies: the one temperature
-//! solve, the pressure floor, the temperature floor, the entropy floor (`sflr`) and the
-//! p, Gamma_1 re-evaluation.  Shared by SingleC2P_GeneralMHD (own = !defer_cons_floors,
-//! sflr = true) and, on the cubed sphere, GnomonicRaiseVelMHDFloors (own = true, sflr =
-//! false: the entropy floor that path has never applied).  `own`: the total `etot` is
-//! rebuilt as e + e_k + e_m at each floor.  `stale`: e moved (p, Gamma_1 re-evaluated).
-//! The arithmetic is the former body of SingleC2P_GeneralMHD, in its order.
+//! \brief energy floors of the general-EOS MHD inversion on e = E - KE - ME with final
+//! kinetic and magnetic energies: the temperature solve, the pressure, temperature and
+//! entropy (sflr) floors and the p, Gamma_1 re-evaluation.  Used by SingleC2P_GeneralMHD
+//! (own = !defer_cons_floors, sflr = true) and on the cubed sphere by
+//! GnomonicRaiseVelMHDFloors (own = true, sflr = false).  With own, etot is rebuilt as
+//! e + e_k + e_m at each floor; stale: e moved and p, Gamma_1 were re-evaluated.
 
 KOKKOS_INLINE_FUNCTION
 void GeneralMHDFloorsPost(const EOS_Data &eos, const Real d, const Real di,
@@ -64,12 +61,9 @@ void GeneralMHDFloorsPost(const EOS_Data &eos, const Real d, const Real di,
 //----------------------------------------------------------------------------------------
 //! \fn void SingleC2P_GeneralMHD()
 //! \brief Converts a single state of conserved variables into primitive variables for
-//! non-relativistic MHD with a general EOS, and evaluates the derived thermodynamic
-//! quantities that are subsequently reconstructed to interfaces. Note the input CONSERVED
-//! state contains cell-centered magnetic fields, but the PRIMITIVE state returned through
-//! the arguments does not. As in the hydro version, `tguess` warm starts the temperature
-//! solve and the solved temperature is returned in `temp`; there is exactly one such
-//! solve per cell in the common case.
+//! non-relativistic MHD with a general EOS, and evaluates the derived quantities.  The
+//! conserved state contains cell-centered fields, the returned primitive state does not.
+//! tguess warm-starts the single temperature solve and temp returns it.
 
 KOKKOS_INLINE_FUNCTION
 void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
@@ -92,11 +86,7 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // set internal energy, apply floor, correcting total energy
   Real e_k = 0.5*di*(SQR(u.mx) + SQR(u.my) + SQR(u.mz));
   Real e_m = 0.5*(SQR(u.bx) + SQR(u.by) + SQR(u.bz));
-  // THE VELOCITY CEILING: identical to the block in ideal_c2p_mhd.hpp; see eos.hpp.
-  // <mhd>/vceil_thermalise leaves the TOTAL energy alone, so that w.e below picks the
-  // clipped kinetic energy up as internal energy; the magnetic energy is not involved
-  // either way.  The converted energy is NOT accumulated here: this inversion has no
-  // energy accumulator (see EOS_Data::vceil_thermalise).
+  // velocity ceiling (EOS_Data::vceil), as in ideal_c2p_mhd.hpp
   if (eos.vceil > 0.0) {
     const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
     if (vsq > SQR(eos.vceil)) {
@@ -105,7 +95,7 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
         const Real fs = eos.vceil/sqrt(vsq);
         u.mx *= fs; u.my *= fs; u.mz *= fs;
         w.vx *= fs; w.vy *= fs; w.vz *= fs;
-        if (!eos.vceil_thermalise) u.e -= (1.0 - fs*fs)*e_k;
+        u.e -= (1.0 - fs*fs)*e_k;
         e_k *= fs*fs;
         vceil_used = true;
       }

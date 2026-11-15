@@ -161,11 +161,15 @@ Real UctE1T(const UctCorner &d, const int m, const int k, const int j, const int
     fe = d.se(m,K(k),J(j))*fe - d.ce(m,K(k),J(j))*d.u3(m,3,K(k),J(j),i);
   }
   const Real vpw = fw + 0.5*(
-    UctHalf(UctVnXi(d,m,K(k-1),J(j-2),i), UctVnXi(d,m,K(k-1),J(j-1),i), UctVnXi(d,m,K(k-1),J(j),i), true) +
-    UctHalf(UctVnXi(d,m,K(k),J(j-2),i), UctVnXi(d,m,K(k),J(j-1),i), UctVnXi(d,m,K(k),J(j),i), true));
+    UctHalf(UctVnXi(d,m,K(k-1),J(j-2),i), UctVnXi(d,m,K(k-1),J(j-1),i),
+            UctVnXi(d,m,K(k-1),J(j),i), true) +
+    UctHalf(UctVnXi(d,m,K(k),J(j-2),i), UctVnXi(d,m,K(k),J(j-1),i),
+            UctVnXi(d,m,K(k),J(j),i), true));
   const Real vpe = fe + 0.5*(
-    UctHalf(UctVnXi(d,m,K(k-1),J(j-1),i), UctVnXi(d,m,K(k-1),J(j),i), UctVnXi(d,m,K(k-1),J(j+1),i), false) +
-    UctHalf(UctVnXi(d,m,K(k),J(j-1),i), UctVnXi(d,m,K(k),J(j),i), UctVnXi(d,m,K(k),J(j+1),i), false));
+    UctHalf(UctVnXi(d,m,K(k-1),J(j-1),i), UctVnXi(d,m,K(k-1),J(j),i),
+            UctVnXi(d,m,K(k-1),J(j+1),i), false) +
+    UctHalf(UctVnXi(d,m,K(k),J(j-1),i), UctVnXi(d,m,K(k),J(j),i),
+            UctVnXi(d,m,K(k),J(j+1),i), false));
   // v.n_3 of the x2 faces along x3
   Real fs = d.u2(m,4,K(k-1),J(j),i), fn = d.u2(m,4,K(k),J(j),i);
   if (d.cs) {
@@ -173,11 +177,15 @@ Real UctE1T(const UctCorner &d, const int m, const int k, const int j, const int
     fn = d.sx(m,K(k),J(j))*fn - d.cx(m,K(k),J(j))*d.u2(m,3,K(k),J(j),i);
   }
   const Real vqs = fs + 0.5*(
-    UctHalf(UctVnEta(d,m,K(k-2),J(j-1),i), UctVnEta(d,m,K(k-1),J(j-1),i), UctVnEta(d,m,K(k),J(j-1),i), true) +
-    UctHalf(UctVnEta(d,m,K(k-2),J(j),i), UctVnEta(d,m,K(k-1),J(j),i), UctVnEta(d,m,K(k),J(j),i), true));
+    UctHalf(UctVnEta(d,m,K(k-2),J(j-1),i), UctVnEta(d,m,K(k-1),J(j-1),i),
+            UctVnEta(d,m,K(k),J(j-1),i), true) +
+    UctHalf(UctVnEta(d,m,K(k-2),J(j),i), UctVnEta(d,m,K(k-1),J(j),i),
+            UctVnEta(d,m,K(k),J(j),i), true));
   const Real vqn = fn + 0.5*(
-    UctHalf(UctVnEta(d,m,K(k-1),J(j-1),i), UctVnEta(d,m,K(k),J(j-1),i), UctVnEta(d,m,K(k+1),J(j-1),i), false) +
-    UctHalf(UctVnEta(d,m,K(k-1),J(j),i), UctVnEta(d,m,K(k),J(j),i), UctVnEta(d,m,K(k+1),J(j),i), false));
+    UctHalf(UctVnEta(d,m,K(k-1),J(j-1),i), UctVnEta(d,m,K(k),J(j-1),i),
+            UctVnEta(d,m,K(k+1),J(j-1),i), false) +
+    UctHalf(UctVnEta(d,m,K(k-1),J(j),i), UctVnEta(d,m,K(k),J(j),i),
+            UctVnEta(d,m,K(k+1),J(j),i), false));
   Real dum, bqw, bqe, bps, bpn;
   PLM(d.b3(m,K(k),J(j-2),i), d.b3(m,K(k),J(j-1),i), d.b3(m,K(k),J(j),i), bqw, dum);
   PLM(d.b3(m,K(k),J(j-1),i), d.b3(m,K(k),J(j),i), d.b3(m,K(k),J(j+1),i), dum, bqe);
@@ -210,11 +218,15 @@ Real UctE2(const UctCorner &d, const int m, const int k, const int j, const int 
   const Real dn = 0.5*(d.u1(m,2,k-1,j,i) + d.u1(m,2,k,j,i));
   // v.n_3 of the x1 faces (slot 5) along x3
   const Real vpw = d.u1(m,5,k-1,j,i) + 0.5*(
-    UctHalf(UctVnEta(d,m,k-2,j,i-1), UctVnEta(d,m,k-1,j,i-1), UctVnEta(d,m,k,j,i-1), true) +
-    UctHalf(UctVnEta(d,m,k-2,j,i  ), UctVnEta(d,m,k-1,j,i  ), UctVnEta(d,m,k,j,i  ), true));
+    UctHalf(UctVnEta(d,m,k-2,j,i-1), UctVnEta(d,m,k-1,j,i-1), UctVnEta(d,m,k,j,i-1),
+            true) +
+    UctHalf(UctVnEta(d,m,k-2,j,i  ), UctVnEta(d,m,k-1,j,i  ), UctVnEta(d,m,k,j,i  ),
+            true));
   const Real vpe = d.u1(m,5,k,j,i) + 0.5*(
-    UctHalf(UctVnEta(d,m,k-1,j,i-1), UctVnEta(d,m,k,j,i-1), UctVnEta(d,m,k+1,j,i-1), false) +
-    UctHalf(UctVnEta(d,m,k-1,j,i  ), UctVnEta(d,m,k,j,i  ), UctVnEta(d,m,k+1,j,i  ), false));
+    UctHalf(UctVnEta(d,m,k-1,j,i-1), UctVnEta(d,m,k,j,i-1), UctVnEta(d,m,k+1,j,i-1),
+            false) +
+    UctHalf(UctVnEta(d,m,k-1,j,i  ), UctVnEta(d,m,k,j,i  ), UctVnEta(d,m,k+1,j,i  ),
+            false));
   // v.n_1 (v1) of the x3 faces (slot 4) along x1
   const Real vqs = d.u3(m,4,k,j,i-1) + 0.5*(
     UctHalf(d.w(m,IVX,k-1,j,i-2), d.w(m,IVX,k-1,j,i-1), d.w(m,IVX,k-1,j,i), true) +
@@ -266,17 +278,9 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   // B.rhat/|B| at nx2 = 32 is 1.6e-3, 2.9e-3, 4.1e-4 (6.7e-5 with all three).
   const bool sph_wall_ = use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar;
   const BoundaryFlag rflag_ = BoundaryFlag::reflect;
-  // STRESS-FREE closed USER inner wall (dhj wall_mhd_mirror = stress_free; mhd_fluxes):
-  // its mirror state has v_t and B_n even, v_n and B_t odd, so every tangential EMF of
-  // the mirror row equals the interior one. The ghost row itself holds the problem's
-  // own state (the dhj ghosts are the initial column at rest), so at a wall edge the
-  // GS07 terms read the INTERIOR row in place of the ghost row (im_ = i), and the x1
-  // choices are those of a zero-mass-flux wall (wall_in, as for reflect).
-  const bool wsf_ = wall_closed_ix1 && wall_stress_free;
-  const BoundaryFlag uflag_ = BoundaryFlag::user;
   // <mhd>/emf_scheme = uct | uct_hlld: the MD21 corner formula (UctE1/E2/E3) replaces
   // the GS07 weights per corner inside the kernels below; the cell-centred EMFs are not
-  // needed then. At a reflecting / stress-free wall edge it takes the mean of the two
+  // needed then. At a reflecting wall edge it takes the mean of the two
   // wall-face EMFs (the solver's mirror-state flux), reading no ghost row.
   const bool uct_ = emf_uct || emf_uct_hlld;
   // UCT near-vertex seam edges without the shared seam (CsVertexEmf3 below)
@@ -436,11 +440,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     par_for("emf2", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int j, const int i) {
       // reflecting radial wall: GS07 x1 upwind choices averaged (see sph_wall_)
-      const bool wall_sf = wsf_ && i == is &&
-                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == uflag_;
-      const bool wall_in = (sph_wall_ && i == is &&
-                            mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_) || wall_sf;
-      const int im_ = wall_sf ? i : i-1;   // the row standing in for the ghost row
+      const bool wall_in = sph_wall_ && i == is &&
+                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_;
       const bool wall_out = sph_wall_ && i == ie+1 &&
                             mb_bcs.d_view(m,BoundaryFace::outer_x1) == rflag_;
       const bool wall1 = wall_in || wall_out;
@@ -461,25 +462,25 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 
       Real e3_l2, e3_r2, e3_l1, e3_r1;
       if (wall1) {  // reflecting radial wall: no upwind side, see above
-        e3_l2 = 0.5*((e3x2_(m,ks,j,im_) - e3cc_(m,ks,j-1,im_)) +
+        e3_l2 = 0.5*((e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j-1,i-1)) +
               (e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j-1,i  )));
       } else if (flx1(m,IDN,ks,j-1,i) >= 0.0) {
-        e3_l2 = e3x2_(m,ks,j,im_) - e3cc_(m,ks,j-1,im_);
+        e3_l2 = e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j-1,i-1);
       } else {
         e3_l2 = e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j-1,i  );
       }
       if (wall1) {  // reflecting radial wall: no upwind side, see above
-        e3_r2 = 0.5*((e3x2_(m,ks,j,im_) - e3cc_(m,ks,j  ,im_)) +
+        e3_r2 = 0.5*((e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j  ,i-1)) +
               (e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j  ,i  )));
       } else if (flx1(m,IDN,ks,j,i) >= 0.0) {
-        e3_r2 = e3x2_(m,ks,j,im_) - e3cc_(m,ks,j  ,im_);
+        e3_r2 = e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j  ,i-1);
       } else {
         e3_r2 = e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j  ,i  );
       }
       if (flx2(m,IDN,ks,j,il_) >= 0.0) {
-        e3_l1 = e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,im_);
+        e3_l1 = e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,i-1);
       } else {
-        e3_l1 = e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,im_);
+        e3_l1 = e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,i-1);
       }
       if (flx2(m,IDN,ks,j,ir_) >= 0.0) {
         e3_r1 = e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,i  );
@@ -492,22 +493,22 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
           return w0_(m,IDN,ks,jj,ii)*(emf_has_e_ ? fabs(w0_(m,IEN,ks,jj,ii)) : emf_cs2_);
         };
         if (!wall1) {
-          e3_l2 = EmfPick(flx1(m,IDN,ks,j-1,i), emf_sm_, re(j-1,im_), re(j-1,i),
-                          e3x2_(m,ks,j,im_) - e3cc_(m,ks,j-1,im_),
+          e3_l2 = EmfPick(flx1(m,IDN,ks,j-1,i), emf_sm_, re(j-1,i-1), re(j-1,i),
+                          e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j-1,i-1),
                           e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j-1,i  ));
-          e3_r2 = EmfPick(flx1(m,IDN,ks,j,i), emf_sm_, re(j,im_), re(j,i),
-                          e3x2_(m,ks,j,im_) - e3cc_(m,ks,j  ,im_),
+          e3_r2 = EmfPick(flx1(m,IDN,ks,j,i), emf_sm_, re(j,i-1), re(j,i),
+                          e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j  ,i-1),
                           e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j  ,i  ));
         }
-        e3_l1 = EmfPick(flx2(m,IDN,ks,j,il_), emf_sm_, re(j-1,im_), re(j,im_),
-                        e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,im_),
-                        e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,im_));
+        e3_l1 = EmfPick(flx2(m,IDN,ks,j,il_), emf_sm_, re(j-1,i-1), re(j,i-1),
+                        e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,i-1),
+                        e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,i-1));
         e3_r1 = EmfPick(flx2(m,IDN,ks,j,ir_), emf_sm_, re(j-1,i), re(j,i),
                         e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,i  ),
                         e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,i  ));
       }
       e3(m,ks,j,i) = 0.25*(e3_l1 + e3_r1 + e3_l2 + e3_r2 +
-             e3x2_(m,ks,j,im_) + e3x2_(m,ks,j,i) + e3x1_(m,ks,j-1,i) + e3x1_(m,ks,j,i));
+             e3x2_(m,ks,j,i-1) + e3x2_(m,ks,j,i) + e3x1_(m,ks,j-1,i) + e3x1_(m,ks,j,i));
     });
   }
 
@@ -714,11 +715,8 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
         return w0_(m,IDN,kk,jj,ii)*(emf_has_e_ ? fabs(w0_(m,IEN,kk,jj,ii)) : emf_cs2_);
       };
       // reflecting radial wall: GS07 x1 upwind choices averaged (see sph_wall_)
-      const bool wall_sf = wsf_ && i == is &&
-                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == uflag_;
-      const bool wall_in = (sph_wall_ && i == is &&
-                            mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_) || wall_sf;
-      const int im_ = wall_sf ? i : i-1;   // the row standing in for the ghost row
+      const bool wall_in = sph_wall_ && i == is &&
+                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_;
       const bool wall_out = sph_wall_ && i == ie+1 &&
                             mb_bcs.d_view(m,BoundaryFace::outer_x1) == rflag_;
       const bool wall1 = wall_in || wall_out;
@@ -794,8 +792,10 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
           const bool pkl = z.x3min <= -1.0 + 1.0e-12, pkh = z.x3max >= 1.0 - 1.0e-12;
           const bool ksm = (k == ks && pkl) || (k == ke+1 && pkh);   // on an x3 seam
           const bool jsm = (j == js && pjl) || (j == je+1 && pjh);   // on an x2 seam
-          const bool nvj = (pjl && j > js && j < js + ng_) || (pjh && j <= je && j > je+1-ng_);
-          const bool nvk = (pkl && k > ks && k < ks + ng_) || (pkh && k <= ke && k > ke+1-ng_);
+          const bool nvj = (pjl && j > js && j < js + ng_)
+              || (pjh && j <= je && j > je+1-ng_);
+          const bool nvk = (pkl && k > ks && k < ks + ng_)
+              || (pkh && k <= ke && k > ke+1-ng_);
           if (ksm && !jsm && nvj) {
             e1(m,k,j,i) = UctE1T(ucd, m, k, j, i, UctMirror{ks, ke}, UctIdx());
           } else if (jsm && !ksm && nvk) {
@@ -856,37 +856,37 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       // integrate E2 to corner using SG07
       Real e2_l3, e2_r3, e2_l1, e2_r1;
       if (wall1) {  // reflecting radial wall: no upwind side, see above
-        e2_l3 = 0.5*((e2x3_(m,k,j,im_) - e2cc_(m,k-1,j,im_)) +
+        e2_l3 = 0.5*((e2x3_(m,k,j,i-1) - e2cc_(m,k-1,j,i-1)) +
               (e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  )));
       } else if (emf_sm_ >= 0.0) {  // emf_smooth
-        e2_l3 = EmfPick(flx1(m,IDN,k-1,j,i), emf_sm_, re3(k-1,j,im_), re3(k-1,j,i  ),
-                        e2x3_(m,k,j,im_) - e2cc_(m,k-1,j,im_),
+        e2_l3 = EmfPick(flx1(m,IDN,k-1,j,i), emf_sm_, re3(k-1,j,i-1), re3(k-1,j,i  ),
+                        e2x3_(m,k,j,i-1) - e2cc_(m,k-1,j,i-1),
                         e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  ));
       } else if (flx1(m,IDN,k-1,j,i) >= 0.0) {
-        e2_l3 = e2x3_(m,k,j,im_) - e2cc_(m,k-1,j,im_);
+        e2_l3 = e2x3_(m,k,j,i-1) - e2cc_(m,k-1,j,i-1);
       } else {
         e2_l3 = e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  );
       }
       if (wall1) {  // reflecting radial wall: no upwind side, see above
-        e2_r3 = 0.5*((e2x3_(m,k,j,im_) - e2cc_(m,k  ,j,im_)) +
+        e2_r3 = 0.5*((e2x3_(m,k,j,i-1) - e2cc_(m,k  ,j,i-1)) +
               (e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  )));
       } else if (emf_sm_ >= 0.0) {  // emf_smooth
-        e2_r3 = EmfPick(flx1(m,IDN,k,j,i), emf_sm_, re3(k  ,j,im_), re3(k  ,j,i  ),
-                        e2x3_(m,k,j,im_) - e2cc_(m,k  ,j,im_),
+        e2_r3 = EmfPick(flx1(m,IDN,k,j,i), emf_sm_, re3(k  ,j,i-1), re3(k  ,j,i  ),
+                        e2x3_(m,k,j,i-1) - e2cc_(m,k  ,j,i-1),
                         e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  ));
       } else if (flx1(m,IDN,k,j,i) >= 0.0) {
-        e2_r3 = e2x3_(m,k,j,im_) - e2cc_(m,k  ,j,im_);
+        e2_r3 = e2x3_(m,k,j,i-1) - e2cc_(m,k  ,j,i-1);
       } else {
         e2_r3 = e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  );
       }
       if (emf_sm_ >= 0.0) {  // emf_smooth
-        e2_l1 = EmfPick(flx3(m,IDN,k,j,il_), emf_sm_, re3(k-1,j,im_), re3(k  ,j,im_),
-                        e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,im_),
-                        e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,im_));
+        e2_l1 = EmfPick(flx3(m,IDN,k,j,il_), emf_sm_, re3(k-1,j,i-1), re3(k  ,j,i-1),
+                        e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,i-1),
+                        e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,i-1));
       } else if (flx3(m,IDN,k,j,il_) >= 0.0) {
-        e2_l1 = e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,im_);
+        e2_l1 = e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,i-1);
       } else {
-        e2_l1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,im_);
+        e2_l1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,i-1);
       }
       if (emf_sm_ >= 0.0) {  // emf_smooth
         e2_r1 = EmfPick(flx3(m,IDN,k,j,ir_), emf_sm_, re3(k-1,j,i  ), re3(k  ,j,i  ),
@@ -898,44 +898,44 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
         e2_r1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,i  );
       }
       e2(m,k,j,i) = 0.25*(e2_l3 + e2_r3 + e2_l1 + e2_r1 +
-                e2x3_(m,k,j,im_) + e2x3_(m,k,j,i) + e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i));
+                e2x3_(m,k,j,i-1) + e2x3_(m,k,j,i) + e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i));
 
       polar_diss_e2(e2(m,k,j,i));   // see polar_diss_e2 above (GS07 path)
 
       // integrate E3 to corner using SG07
       Real e3_l2, e3_r2, e3_l1, e3_r1;
       if (wall1) {  // reflecting radial wall: no upwind side, see above
-        e3_l2 = 0.5*((e3x2_(m,k,j,im_) - e3cc_(m,k,j-1,im_)) +
+        e3_l2 = 0.5*((e3x2_(m,k,j,i-1) - e3cc_(m,k,j-1,i-1)) +
               (e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  )));
       } else if (emf_sm_ >= 0.0) {  // emf_smooth
-        e3_l2 = EmfPick(flx1(m,IDN,k,j-1,i), emf_sm_, re3(k,j-1,im_), re3(k,j-1,i  ),
-                        e3x2_(m,k,j,im_) - e3cc_(m,k,j-1,im_),
+        e3_l2 = EmfPick(flx1(m,IDN,k,j-1,i), emf_sm_, re3(k,j-1,i-1), re3(k,j-1,i  ),
+                        e3x2_(m,k,j,i-1) - e3cc_(m,k,j-1,i-1),
                         e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  ));
       } else if (flx1(m,IDN,k,j-1,i) >= 0.0) {
-        e3_l2 = e3x2_(m,k,j,im_) - e3cc_(m,k,j-1,im_);
+        e3_l2 = e3x2_(m,k,j,i-1) - e3cc_(m,k,j-1,i-1);
       } else {
         e3_l2 = e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  );
       }
       if (wall1) {  // reflecting radial wall: no upwind side, see above
-        e3_r2 = 0.5*((e3x2_(m,k,j,im_) - e3cc_(m,k,j  ,im_)) +
+        e3_r2 = 0.5*((e3x2_(m,k,j,i-1) - e3cc_(m,k,j  ,i-1)) +
               (e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  )));
       } else if (emf_sm_ >= 0.0) {  // emf_smooth
-        e3_r2 = EmfPick(flx1(m,IDN,k,j,i), emf_sm_, re3(k,j  ,im_), re3(k,j  ,i  ),
-                        e3x2_(m,k,j,im_) - e3cc_(m,k,j  ,im_),
+        e3_r2 = EmfPick(flx1(m,IDN,k,j,i), emf_sm_, re3(k,j  ,i-1), re3(k,j  ,i  ),
+                        e3x2_(m,k,j,i-1) - e3cc_(m,k,j  ,i-1),
                         e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  ));
       } else if (flx1(m,IDN,k,j,i) >= 0.0) {
-        e3_r2 = e3x2_(m,k,j,im_) - e3cc_(m,k,j  ,im_);
+        e3_r2 = e3x2_(m,k,j,i-1) - e3cc_(m,k,j  ,i-1);
       } else {
         e3_r2 = e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  );
       }
       if (emf_sm_ >= 0.0) {  // emf_smooth
-        e3_l1 = EmfPick(flx2(m,IDN,k,j,il_), emf_sm_, re3(k,j-1,im_), re3(k,j  ,im_),
-                        e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,im_),
-                        e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,im_));
+        e3_l1 = EmfPick(flx2(m,IDN,k,j,il_), emf_sm_, re3(k,j-1,i-1), re3(k,j  ,i-1),
+                        e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,i-1),
+                        e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,i-1));
       } else if (flx2(m,IDN,k,j,il_) >= 0.0) {
-        e3_l1 = e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,im_);
+        e3_l1 = e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,i-1);
       } else {
-        e3_l1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,im_);
+        e3_l1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,i-1);
       }
       if (emf_sm_ >= 0.0) {  // emf_smooth
         e3_r1 = EmfPick(flx2(m,IDN,k,j,ir_), emf_sm_, re3(k,j-1,i  ), re3(k,j  ,i  ),
@@ -947,7 +947,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
         e3_r1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,i  );
       }
       e3(m,k,j,i) = 0.25*(e3_l1 + e3_r1 + e3_l2 + e3_r2 +
-                e3x2_(m,k,j,im_) + e3x2_(m,k,j,i) + e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i));
+                e3x2_(m,k,j,i-1) + e3x2_(m,k,j,i) + e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i));
     });
   }
   // cs_seam_mhd: the seam-edge / cube-vertex UCT EMFs as the sum of each panel's
@@ -967,7 +967,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 //! \fn void MHD::WallEmfZero
 //! \brief perfectly conducting wall at rest. On every REFLECT mesh face
 //! of a MeshBlock (refl) and/or on the is face of a USER inner x1 boundary (usr_ix1, the
-//! dhj closed wall under wall_mhd_mirror = conducting) the edge EMFs of `e` tangential to
+//! dhj closed wall) the edge EMFs of `e` tangential to
 //! that face are set to exactly 0, so CT leaves the face-normal field of the wall faces
 //! unchanged. Generic: Cartesian, spherical polar, cubed sphere (x1 = r there; the panel
 //! faces are never reflect). Edge extents: e1(k: ks..ke+1, j: js..je+1, i: is..ie),

@@ -162,33 +162,6 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   auto dx3c_ = pmy_pack->pcoord->dx3;
   auto g2 = csx ? cap_g2 : DvceArray4D<Real>("radtrg2dummy", 1, 1, 1, 1);
   auto g3 = csx ? cap_g3 : DvceArray4D<Real>("radtrg3dummy", 1, 1, 1, 1);
-  // ---- THE GHOST-SKIN BOOKKEEPING (rad_tr_halo_every).  N = 1 is the old loop: the
-  // increment is exchanged before every substage and computed on the ACTIVE cells only.
-  //
-  // With N > 1 the exchange happens only every N substages and the intermediate
-  // substages compute on a GHOST SKIN as well, so that the ghost values they need are
-  // there without a message.  What the skin costs is arithmetic on at most ng-1 extra
-  // ghost layers; what it saves is (N-1)/N of the halo traffic.
-  //
-  // THE VALID REGION.  Call d(y) the number of x2/x3 ghost layers on which y is correct
-  // (a FULL frame -- the x2x3 edge/corner ghosts included, which is why this switch
-  // needs the diagonal buffers).  An exchange sets d = ng.  The recurrence
-  // Y_j = mu Y_{j-1} + nu Y_{j-2} + mu~ tau M(Y_{j-1}) reads Y_{j-1} through the
-  // 5-POINT CROSS (one layer of reach) and Y_{j-2}
-  // POINTWISE, so
-  //     d(Y_j) = min( d(Y_{j-1}) - 1, d(Y_{j-2}) ),
-  // which is tracked exactly below in dcur/dold and must never go negative on the active
-  // cells (d >= 0).  Feeding only Y_{j-1} to a refill gives the steady state
-  // d = (ng-1, ng-2, ...) and survives N = 2 but NOT N >= 3 -- Y_{j-2} then runs out
-  // first -- so a refill at N >= 3 exchanges the second register too, and the traffic is
-  // 2 arrays per N substages instead of N.  N = 2 is therefore the cheapest cadence
-  // (1 array per 2 substages) and N = 3 the deepest one nghost = 3 allows.
-  const int ng_ = indcs.ng;
-  int hevery = rad_tr_halo_every;
-  if (hevery < 1) hevery = 1;
-  if (hevery > ng_) hevery = ng_;
-  const bool skin_ = (hevery > 1);
-  const bool xch2_ = (hevery >= 3);   // a refill also exchanges Y_{j-2}
   auto c1 = cap_c1;
   auto c2 = cap_c2;
   auto c3 = cap_c3;
@@ -260,12 +233,7 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     auto anew = tr_yb;
     // start from the w0 values everywhere, so a ghost the exchange does not reach (a
     // PHYSICAL x2/x3 boundary, whose faces are closed anyway) still holds a sane number
-    // the SKIN needs T* and alpha over the whole ng-deep frame, not one layer: the
-    // exchange below already fills tnew/anew that deep (a same-level face buffer is ng
-    // cells deep), so this only has to copy them out that far.  At hevery = 1 the extra
-    // layers are never read and sdg is 1, i.e. exactly the old ranges.
-    const int sdg = skin_ ? ng_ : 1;
-    par_for("radtrseed", DevExeSpace(), 0, nmb1, ks-sdg, ke+sdg, js-sdg, je+sdg, is, ie,
+    par_for("radtrseed", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       tnew(m,0,k,j,i) = st(m,it_,k,j,i);
       anew(m,0,k,j,i) = st(m,ia_,k,j,i);
@@ -279,11 +247,20 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       // a cell the EOS cannot invert is DROPPED from the system (alpha = 0 closes every
       // one of its faces, and the neighbour closes the same face by the same test), which
       // is what the stencil already does with a non-positive alpha
-      if (!(ei > 0.0) || !(d > 0.0) || !isfinite(ei)) { anew(m,0,k,j,i) = 0.0; return; }
+      if (!(ei > 0.0) || !(d > 0.0) || !isfinite(ei)) {
+        anew(m,0,k,j,i) = 0.0;
+        return;
+      }
       const Real tt = eos_.Temperature(d, ei, gen ? wtemp_(m,k,j,i) : -1.0);
-      if (!(tt > 0.0) || !isfinite(tt)) { anew(m,0,k,j,i) = 0.0; return; }
+      if (!(tt > 0.0) || !isfinite(tt)) {
+        anew(m,0,k,j,i) = 0.0;
+        return;
+      }
       const Real cv = eos_.SpecificHeatCv(d, ei, tt);
-      if (!(cv > 0.0) || !isfinite(cv)) { anew(m,0,k,j,i) = 0.0; return; }
+      if (!(cv > 0.0) || !isfinite(cv)) {
+        anew(m,0,k,j,i) = 0.0;
+        return;
+      }
       tnew(m,0,k,j,i) = tt;
       anew(m,0,k,j,i) = 1.0/(d*cv);
     });
@@ -309,8 +286,7 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     // st(...,k+-1,j+-1,i) with i an ACTIVE plane (the stencil, the Gershgorin reduction
     // and the copy-back all run over is..ie), so the x1-ghost columns of the transverse
     // halo are dead weight -- radtrseed/radtrcopy do not even write them.
-    // rad_tr_window = false exchanges the FULL x1 range instead of the window
-    const int sl_ = rad_tr_window ? is : -1, su_ = rad_tr_window ? ie : -1;
+    const int sl_ = is, su_ = ie;
     pbval_tr->InitRecv(1);
     pbval_tr->PackAndSendCC(tnew, tr_ycoar, sl_, su_);
     while (pbval_tr->RecvAndUnpackCC(tnew, tr_ycoar, sl_, su_) != TaskStatus::complete) {}
@@ -327,7 +303,7 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     Kokkos::fence();   // see the comment above: the recv buffer is re-posted below
     while (pbval_tr->ClearRecv() != TaskStatus::complete) {}
     while (pbval_tr->ClearSend() != TaskStatus::complete) {}
-    par_for("radtrcopy", DevExeSpace(), 0, nmb1, ks-sdg, ke+sdg, js-sdg, je+sdg, is, ie,
+    par_for("radtrcopy", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       st(m,it_,k,j,i) = tnew(m,0,k,j,i);
       st(m,ia_,k,j,i) = anew(m,0,k,j,i);
@@ -398,8 +374,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   // operators cannot disagree about the geometry.  The second term couples j to k and is
   // therefore not part of the 5-point/tridiagonal structure: it is carried explicitly.
   // Th = T* + alpha y when a register is supplied (usey), T* alone otherwise.
-  // cornerfix4-1103 <mesh>/cs_vertex_3cell: corner-block reads of the cross term take the
-  // parallelogram value (CsCornerCell, diffusion/cs_vertex_res.hpp); off: unchanged
+  // <mesh>/cs_vertex_3cell: corner-block reads of the cross term take the
+  // parallelogram value (CsCornerCell, diffusion/cs_vertex_res.hpp)
   const bool v3c_ = pmy_pack->pmesh->use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell;
   auto &vsz_ = pmy_pack->pmb->mb_size;
   const int vjs_ = pmy_pack->pmesh->mb_indcs.js, vje_ = pmy_pack->pmesh->mb_indcs.je;
@@ -435,8 +411,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   };
   // the cross term's contribution to the Gershgorin ROW RADIUS of the face: the sum of
   // |entry| over the four cells its stencil reads, each weighted by that cell's alpha
-  // cornerfix4-1103: a corner-block read enters thof as the parallelogram of three real
-  // cells (CsCornerCell), so its |entry| reaches each of them: alpha summed over the three
+  // a corner-block read enters thof as the parallelogram of three real cells
+  // (CsCornerCell), so its |entry| reaches each of them: alpha summed over the three
   auto aof = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
     int kv, jv;
     if (v3c_ && CsCornerRead(vsz_.d_view(m), k, j, vjs_, vje_, vks_, vke_, kv, jv)) {
@@ -796,7 +772,7 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     auto lag = (ncrit > 1) ? tr_ylg : tr_ya;
     bool uselg = false;
     // the x1 window of every exchange this section makes, as in the refresh above
-    const int sla_ = rad_tr_window ? is : -1, sua_ = rad_tr_window ? ie : -1;
+    const int sla_ = is, sua_ = ie;
     for (int cit=0; cit<ncrit; ++cit) {
     if (cit > 0) {
       Kokkos::deep_copy(lag, yy);
@@ -1403,7 +1379,10 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
           hi = p;
         }
       }
-      if (hi < lo) { lo = 0; hi = 0; }     // cannot happen: max_i s_i = nsub
+      if (hi < lo) {     // cannot happen: max_i s_i = nsub
+        lo = 0;
+        hi = 0;
+      }
       plo[j] = lo;
       phi[j] = hi;
       pswept += hi - lo + 1;
@@ -1419,12 +1398,9 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   Kokkos::deep_copy(ycur, 0.0);
   Kokkos::deep_copy(yold, 0.0);
   // Y_0 = Y_{-1} = 0 over the WHOLE array, ghosts included: both start fully valid.
-  int dcur = ng_, dold = ng_;
   for (int js_ = 1; js_ <= nsub; ++js_) {
-    // the refill cadence.  hevery = 1 reproduces "exchange before every substage but the
-    // first" exactly; hevery = N refills at js_ = 1 + N, 1 + 2N, ...
-    const bool refill = (js_ > 1) && (((js_ - 1) % hevery) == 0);
-    if (refill) {
+    // Y_{j-1} is exchanged before every substage but the first
+    if (js_ > 1) {
       // post the receives, send, and spin on the unpack: RecvAndUnpackCC is the only
       // one of these that can legitimately come back incomplete (the MPI traffic of
       // this substage is all there is to overlap it with)
@@ -1434,9 +1410,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       // the block's OWN row, never a transverse ghost, and the write-out reads active
       // cells only.  The brackets NEST as j grows (the set {i : s_i >= j} shrinks), so a
       // plane dropped here is never read again from this register either.
-      // rad_tr_window = false: (-1,-1) = the full x1 range, no window
-      const int iwl_ = rad_tr_window ? (is + plo[js_]) : -1;
-      const int iwu_ = rad_tr_window ? (is + phi[js_]) : -1;
+      const int iwl_ = is + plo[js_];
+      const int iwu_ = is + phi[js_];
       pbval_tr->InitRecv(1);
       pbval_tr->PackAndSendCC(ycur, tr_ycoar, iwl_, iwu_);
       while (pbval_tr->RecvAndUnpackCC(ycur, tr_ycoar, iwl_, iwu_)
@@ -1448,32 +1423,6 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       Kokkos::fence();
       while (pbval_tr->ClearRecv() != TaskStatus::complete) {}
       while (pbval_tr->ClearSend() != TaskStatus::complete) {}
-      dcur = ng_;
-      // hevery >= 3: Y_{j-2} as well, or the pointwise term of the recurrence runs the
-      // skin out before the next refill (see the bookkeeping note above)
-      if (xch2_) {
-        pbval_tr->InitRecv(1);
-        pbval_tr->PackAndSendCC(yold, tr_ycoar, iwl_, iwu_);
-        while (pbval_tr->RecvAndUnpackCC(yold, tr_ycoar, iwl_, iwu_)
-               != TaskStatus::complete) {}
-        Kokkos::fence();
-        while (pbval_tr->ClearRecv() != TaskStatus::complete) {}
-        while (pbval_tr->ClearSend() != TaskStatus::complete) {}
-        dold = ng_;
-      }
-    }
-    // the depth this substage can legitimately write (0 = the active cells alone, which
-    // is what hevery = 1 always gives)
-    int dnew = 0;
-    if (skin_) {
-      const int dlim = (dcur - 1 < dold) ? (dcur - 1) : dold;
-      dnew = (dlim < ng_ - 1) ? dlim : (ng_ - 1);
-      if (dnew < 0) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "rad_tr_halo_every: the ghost skin ran out"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
     }
     const Real muj = (js_ == 1) ? 1.0 : (2.0*js_ - 1.0)/js_;
     const Real nuj = (js_ == 1) ? 0.0 : (1.0 - js_)/js_;
@@ -1483,17 +1432,14 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     auto yo_ = yold;
     auto yn_ = ynew;
     const int ilo_ = is + plo[js_], ihi_ = is + phi[js_];
-    // the ghost SKIN: a full frame of depth dnew in x2/x3 (0 = the active cells only).
-    // Its own stencil inputs are valid because the frame is FULL -- a cell at
-    // (j = je+d, k = ke+d) reads (je+d+1, ke+d) and (je+d, ke+d+1), which lie in the
-    // depth-(d+1) frame the previous substage wrote.  The x1 window is untouched.
-    const int jsk = js - dnew, jek = je + dnew;
-    const int ksk = three_d ? (ks - dnew) : ks, kek = three_d ? (ke + dnew) : ke;
-    par_for("radtrsub", DevExeSpace(), 0, nmb1, ksk, kek, jsk, jek, ilo_, ihi_,
+    par_for("radtrsub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo_, ihi_,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       // the stiffness split left this block nothing to do: its increment stays zero,
       // but the register still has to be written, because the three registers rotate
-      if (blkon && blk(m) == 0) { yn_(m,0,k,j,i) = 0.0; return; }
+      if (blkon && blk(m) == 0) {
+        yn_(m,0,k,j,i) = 0.0;
+        return;
+      }
       // rad_sts_perplane: this plane's own s_i-stage scheme is already finished, so its
       // final increment is already sitting in the register substage s_i wrote it to, and
       // it is left there -- nothing is copied and nothing is written (the write-out below
@@ -1555,8 +1501,6 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     yold = ycur;
     ycur = ynew;
     ynew = tmp;
-    dold = dcur;
-    dcur = dnew;
   }
 
   // ---- write the increment into the energy, and measure what it did to the total

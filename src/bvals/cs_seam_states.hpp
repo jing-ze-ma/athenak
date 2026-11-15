@@ -14,7 +14,6 @@
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "reconstruct/plm.hpp"
-#include "reconstruct/plm_c1.hpp"
 #include "hydro/hydro_mergelat.hpp"
 
 namespace cs_seam {
@@ -27,7 +26,7 @@ namespace cs_seam {
 
 inline void CsSeamPLMFill(MeshBlockPack *pp, const DvceArray5D<Real> &q, const int nv,
                           const int out_off, const int floor_n, const Real pfl,
-                          const bool plm_c1, DvceFaceFld5D<Real> &fs, const bool mlat_,
+                          DvceFaceFld5D<Real> &fs, const bool mlat_,
                           const DvceArray2D<int> &mlfi_, const int ia, const int ib) {
   if (nv <= 0) return;
   auto &indcs = pp->pmesh->mb_indcs;
@@ -68,11 +67,7 @@ inline void CsSeamPLMFill(MeshBlockPack *pp, const DvceArray5D<Real> &q, const i
     } else {
       for (int n=0; n<nv; ++n) {
         Real ql, qr;
-        if (plm_c1) {
-          PLMC1(q_(m,n,k,jc-1,i), q_(m,n,k,jc,i), q_(m,n,k,jc+1,i), ql, qr);
-        } else {
-          PLM(q_(m,n,k,jc-1,i), q_(m,n,k,jc,i), q_(m,n,k,jc+1,i), ql, qr);
-        }
+        PLM(q_(m,n,k,jc-1,i), q_(m,n,k,jc,i), q_(m,n,k,jc+1,i), ql, qr);
         Real qq = lo ? qr : ql;
         if (n == floor_n) qq = fmax(qq, pfl);
         f2(m,out_off+n,k,jf,i) = qq;
@@ -105,11 +100,7 @@ inline void CsSeamPLMFill(MeshBlockPack *pp, const DvceArray5D<Real> &q, const i
     } else {
       for (int n=0; n<nv; ++n) {
         Real ql, qr;
-        if (plm_c1) {
-          PLMC1(q_(m,n,kc-1,j,i), q_(m,n,kc,j,i), q_(m,n,kc+1,j,i), ql, qr);
-        } else {
-          PLM(q_(m,n,kc-1,j,i), q_(m,n,kc,j,i), q_(m,n,kc+1,j,i), ql, qr);
-        }
+        PLM(q_(m,n,kc-1,j,i), q_(m,n,kc,j,i), q_(m,n,kc+1,j,i), ql, qr);
         Real qq = lo ? qr : ql;
         if (n == floor_n) qq = fmax(qq, pfl);
         f3(m,out_off+n,kf,j,i) = qq;

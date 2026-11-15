@@ -785,12 +785,11 @@ KOKKOS_INLINE_FUNCTION Real RadiusOf(const bool curv, const Real x1, const Real 
                                      const Real x1min) {
   return curv ? x1 : (rin + x1 - x1min);
 }
-// The STATIC well-balanced background's radial window: 1 inside [rmin, rmax], 0 outside.
+// The STATIC well-balanced background's radial window: 1 below rmax, 0 above.
 // A pure function of r, so cells and faces see the same field and the scheme stays
 // consistent.
-KOKKOS_INLINE_FUNCTION Real WbWindow(const Real r, const Real rmin, const Real rmax) {
+KOKKOS_INLINE_FUNCTION Real WbWindow(const Real r, const Real rmax) {
   if (rmax > 0.0 && r >= rmax) return 0.0;
-  if (rmin > 0.0 && r <= rmin) return 0.0;
   return 1.0;
 }
 
@@ -800,7 +799,7 @@ KOKKOS_INLINE_FUNCTION Real WbWindow(const Real r, const Real rmin, const Real r
 KOKKOS_INLINE_FUNCTION
 void WbBgAt(const EOS_Data &eos, const Real rgas, const Real igm1,
             const DvceArray1D<Real> &lnp, const DvceArray1D<Real> &tk, const int nf,
-            const Real rlo, const Real drf, const Real rmin, const Real rmax,
+            const Real rlo, const Real drf, const Real rmax,
             const Real r, Real &dbg, Real &ebg);
 
 // the column at radius r: ln p (code) and T (K), linear in r between fine nodes
@@ -818,12 +817,12 @@ KOKKOS_INLINE_FUNCTION void ColumnAt(const DvceArray1D<Real> &lnp,
 KOKKOS_INLINE_FUNCTION
 void WbBgAt(const EOS_Data &eos, const Real rgas, const Real igm1,
             const DvceArray1D<Real> &lnp, const DvceArray1D<Real> &tk, const int nf,
-            const Real rlo, const Real drf, const Real rmin, const Real rmax,
+            const Real rlo, const Real drf, const Real rmax,
             const Real r, Real &dbg, Real &ebg) {
   Real lp, t;
   ColumnAt(lnp, tk, nf, rlo, drf, r, lp, t);
   const Real d = DensFromPT(eos, rgas, exp(lp), t);
-  const Real w = WbWindow(r, rmin, rmax);
+  const Real w = WbWindow(r, rmax);
   dbg = w*d;
   ebg = w*EintFromDensT(eos, rgas, igm1, d, t);
 }
@@ -896,7 +895,10 @@ void ReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
       if (vp != std::string::npos) {
         std::istringstream vs(line.substr(vp + 10));
         Real lo, hi;
-        if (vs >> lo >> hi) { opac_lR_lo_ = lo; opac_lR_hi_ = hi; }
+        if (vs >> lo >> hi) {
+          opac_lR_lo_ = lo;
+          opac_lR_hi_ = hi;
+        }
       }
       if (!have_grid) {
         std::istringstream ss(line.substr(1));
@@ -2304,7 +2306,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         int ijoin = nfine;
         for (int i = itop; i < nfine; ++i) {
           const Real rho_i = DensFromPT(eos, rgas, exp(lnp(i)), tk(i));
-          if (!(rho_i > dbg) || !(rho_i < 1.0e5) || !(tk(i) > 0.0)) { ijoin = i; break; }
+          if (!(rho_i > dbg) || !(rho_i < 1.0e5) || !(tk(i) > 0.0)) {
+            ijoin = i;
+            break;
+          }
         }
         if (bghse) {
           // THE HOT CORONA.  Continue the SAME hydrostatic integration upward, but
@@ -2367,7 +2372,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (bg_rho_ > 0.0) {
       int ij = 0;
       for (int i = nfine-1; i >= 0; --i) {
-        if (htk(i) != bg_temp_) { ij = i+1; break; }
+        if (htk(i) != bg_temp_) {
+          ij = i+1;
+          break;
+        }
       }
       bg_rjoin_ = rlo + ij*drf;
       if (bg_hydrostatic_) {
@@ -2448,7 +2456,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           // absorb, so a cell there is legal -- it simply does not participate in the
           // radiative transfer.
           if (lR > opac_lR_hi_) {
-            if (nbad == 0) { wl = lR; wh = lR; wr = rr_*lunit; }
+            if (nbad == 0) {
+              wl = lR;
+              wh = lR;
+              wr = rr_*lunit;
+            }
             wl = fmin(wl, lR);
             wh = fmax(wh, lR);
             ++nbad;
@@ -2624,7 +2636,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   if (wbstat) {
     const Real wbrmax = is_mhd ? pmbp->pmhd->wb_rmax : pmbp->phydro->wb_rmax;
-    const Real wbrmin = is_mhd ? pmbp->pmhd->wb_rmin : pmbp->phydro->wb_rmin;
     auto u0wb = is_mhd ? pmbp->pmhd->u0wb : pmbp->phydro->u0wb;
     auto w0wb = is_mhd ? pmbp->pmhd->w0wb : pmbp->phydro->w0wb;
     auto wf1 = is_mhd ? pmbp->pmhd->w0facewb.x1f : pmbp->phydro->w0facewb.x1f;
@@ -2641,7 +2652,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real rc = RadiusOf(curv, xc, rin, x1min);
       Real dbg, ebg;
       WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w,
-             wbrmin, wbrmax, rc, dbg, ebg);
+             wbrmax, rc, dbg, ebg);
       w0wb(m,IDN,k,j,i) = dbg;
       w0wb(m,IVX,k,j,i) = 0.0;
       w0wb(m,IVY,k,j,i) = 0.0;
@@ -2671,14 +2682,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // the RADIAL faces take their own radius
       const Real xl = curv ? x1f_(m,i) : LeftEdgeX(i-is, indcs.nx1, x1lo, x1hi);
       Real dfl, efl;
-      WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmin, wbrmax,
+      WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmax,
              RadiusOf(curv, xl, rin, x1min), dfl, efl);
       wf1(m,IDN,k,j,i) = dfl; wf1(m,IEN,k,j,i) = efl;
       wf1(m,IVX,k,j,i) = 0.0; wf1(m,IVY,k,j,i) = 0.0; wf1(m,IVZ,k,j,i) = 0.0;
       if (i == n1m1) {
         const Real xr = curv ? x1f_(m,i+1) : LeftEdgeX(i+1-is, indcs.nx1, x1lo, x1hi);
         Real dfr, efr;
-        WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmin, wbrmax,
+        WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmax,
                RadiusOf(curv, xr, rin, x1min), dfr, efr);
         wf1(m,IDN,k,j,i+1) = dfr; wf1(m,IEN,k,j,i+1) = efr;
         wf1(m,IVX,k,j,i+1) = 0.0; wf1(m,IVY,k,j,i+1) = 0.0; wf1(m,IVZ,k,j,i+1) = 0.0;
@@ -2775,7 +2786,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         t1[0] = 0.0; t1[1] = -kh[2]; t1[2] = kh[1];
       }
       const double nt1 = sqrt(t1[0]*t1[0] + t1[1]*t1[1] + t1[2]*t1[2]);
-      for (int c=0; c<3; ++c) { t1[c] /= nt1; }
+      for (int c=0; c<3; ++c) {
+        t1[c] /= nt1;
+      }
       const double t2[3] = {kh[1]*t1[2] - kh[2]*t1[1], kh[2]*t1[0] - kh[0]*t1[2],
                             kh[0]*t1[1] - kh[1]*t1[0]};
       const double psi = 2.0*M_PI*uni(rng);
@@ -3165,17 +3178,15 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   // Its gravity source is -g*(rho - rho_bg): the background's own pressure difference has
   // already been taken out of the momentum RHS by RemoveWbFlux and the geometric source,
   // so a cell sitting exactly on the background must receive nothing here.  Where the
-  // background was windowed to zero (outside [wb_rmin, wb_rmax]) this IS -rho g, so the
+  // background was windowed to zero (above wb_rmax) this IS -rho g, so the
   // radius cutoffs need no branch of their own.
   const bool wbstat = is_mhd ? pmbp->pmhd->use_wellbalance_static
                              : pmbp->phydro->use_wellbalance_static;
   auto w0wb = is_mhd ? pmbp->pmhd->w0wb : pmbp->phydro->w0wb;
-  // outside [wb_rmin, wb_rmax] the reconstruction dropped the well-balanced background,
-  // so the source term must drop it too: the two are only well balanced TOGETHER.  Both
-  // modules carry the pair, so take it from whichever one is evolving the fluid --
-  // <mhd>/wb_r* under MHD, <hydro>/wb_r* otherwise.
+  // above wb_rmax the reconstruction dropped the well-balanced background, so the
+  // source term must drop it too: the two are only well balanced TOGETHER.  Take it
+  // from whichever module evolves the fluid (<mhd>/wb_rmax or <hydro>/wb_rmax).
   const Real wbrmax = is_mhd ? pmbp->pmhd->wb_rmax : pmbp->phydro->wb_rmax;
-  const Real wbrmin = is_mhd ? pmbp->pmhd->wb_rmin : pmbp->phydro->wb_rmin;
   const WBOption wbo = is_mhd ? pmbp->pmhd->wb_option : pmbp->phydro->wb_option;
   DvceArray4D<Real> phicc = is_mhd ? pmbp->pmhd->phicc0 : pmbp->phydro->phicc0;
   DvceArray4D<Real> ph1 = is_mhd ? pmbp->pmhd->phi0.x1f : pmbp->phydro->phi0.x1f;
@@ -3199,8 +3210,7 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     if (wbstat) {
       src = -bdt*g*(d - w0wb(m,IDN,k,j,i));
     }
-    if (wbdyn && !(wbrmax > 0.0 && r > wbrmax) &&
-        !(wbrmin > 0.0 && r < wbrmin)) {
+    if (wbdyn && !(wbrmax > 0.0 && r > wbrmax)) {
       Real pl, pr, d1, d2, d3;
       if (wbx1) {
         WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i, d1, pl, d2, pr, d3);
@@ -3321,7 +3331,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       const Real cmet = condrad ? pcnd->rad_met : 0.0;
       const bool climit = condrad && pcnd->rad_flux_limit;
       const bool ctaum = condrad && pcnd->rad_tau_mode;
-      const bool cbldr = condrad && pcnd->rad_blend_radial;
       const Real cpcut = (condrad && pcnd->rad_tau_mode) ? -1.0
                          : (condrad ? pcnd->rad_pcut : 0.0);
       auto cwf = (condrad && pcnd->rad_tau_mode) ? pcnd->rad_w
@@ -3375,7 +3384,7 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
               const Real dlc = curv ? (x1v_(m,i) - x1v_(m,i-1))
                                     : (size.d_view(m).x1max
                                        - size.d_view(m).x1min)/indcs.nx1;
-              const Real wt = (ctaum && cbldr) ? cwf(m,k,j,i) : 1.0;
+              const Real wt = ctaum ? cwf(m,k,j,i) : 1.0;
               const Real pfc = 0.5*(pl + pr);
               Real fcond = 0.0;
               if (pfc >= cpcut) {
@@ -3570,7 +3579,10 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         const Real fnew = ftar/(punit_*vunit);                         // code flux
         // problem/mlt_split_sync relaxes toward the SMOOTHED target instead, which
         // needs every face's target first: hold it aside and do it in a second pass
-        if (sync) { ftar1d(i) = fnew; return; }
+        if (sync) {
+          ftar1d(i) = fnew;
+          return;
+        }
         if (relaxt > 0.0 && !seed) {
           fmlt1d(i) += fmin(1.0, bdt*tunit/relaxt)*(fnew - fmlt1d(i));
         } else {
@@ -4006,7 +4018,9 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       KOKKOS_LAMBDA(const int m, Real &a) {
         if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
           for (int k=ks; k<=ke; ++k) {
-            for (int j=js; j<=je; ++j) { a += vol_(m,k,j,is); }
+            for (int j=js; j<=je; ++j) {
+              a += vol_(m,k,j,is);
+            }
           }
         }
       }, svol);
@@ -4426,7 +4440,10 @@ void RgCsCeiling(Mesh *pm) {
 
 void RedGiantGravityLedger(Mesh *pm, Real bdt) {
   const Real e0 = (eledger_ > 0) ? RgTotE(pm) : 0.0;
-  if (eledger_ > 0 && el_t0_ < 0.0) { el_t0_ = pm->time; el_e0_ = e0; }
+  if (eledger_ > 0 && el_t0_ < 0.0) {
+    el_t0_ = pm->time;
+    el_e0_ = e0;
+  }
   RedGiantGravity(pm, bdt);
   if (eledger_ > 0) el_[2] += RgTotE(pm) - e0;
   if (cs_max_ > 0.0) RgCsCeiling(pm);
@@ -4477,10 +4494,16 @@ void RedGiantRTSplit(Mesh *pm, Real bdt) {
 }
 
 void RedGiantRTSplitLedger(Mesh *pm, Real bdt) {
-  if (eledger_ <= 0) { RedGiantRTSplitBody(pm, bdt); return; }
+  if (eledger_ <= 0) {
+    RedGiantRTSplitBody(pm, bdt);
+    return;
+  }
   static int ncall = 0;
   const Real e0 = RgTotE(pm);
-  if (el_t0_ < 0.0) { el_t0_ = pm->time; el_e0_ = e0; }
+  if (el_t0_ < 0.0) {
+    el_t0_ = pm->time;
+    el_e0_ = e0;
+  }
   const Real mlt0 = el_[1];
   RgShellAcc(pm, -1.0, bdt);
   RedGiantRTSplitBody(pm, bdt);

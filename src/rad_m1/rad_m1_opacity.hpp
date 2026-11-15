@@ -6,12 +6,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_opacity.hpp
-//! \brief the analytic opacity laws of <rad_m1>, as device-inline functions.
-//!
-//! Everything here returns an opacity PER UNIT MASS in code units; the caller multiplies
-//! by rho and stores rho*kappa (an inverse length) in RadiationM1::opac.  Milestone 1b
-//! has no table opacity: `kappa_F` from the existing Rosseland table (design sect. 4) is
-//! milestone 2 work.
+//! \brief the opacity laws of <rad_m1> as device-inline functions.  All return opacities
+//! per unit mass in code units; the caller stores rho*kappa in RadiationM1::opac.
 
 #include <math.h>
 #include "athena.hpp"
@@ -22,30 +18,21 @@ namespace radm1 {
 
 //----------------------------------------------------------------------------------------
 //! \fn M1TableOpacities
-//! \brief <rad_m1>/opacity = table: the stellar Rosseland and Planck means, looked up in
-//! KELVIN and g/cm^3 on the shared (log10 T, log10 rho) grid of M1OpacTab.
-//!
-//! THE CONSISTENT SET (stage-2 plan sect. 4).  The tabulated Rosseland total ALREADY
-//! contains electron scattering, so it must not be added a second time: the transport
-//! opacity is kappa_F = kappa_R with kappa_s = 0.  The Planck table is absorption only
-//! and serves both the emission and the absorption mean, kappa_P = kappa_E = kappa_Pl.
-//! On the He column the two differ by 15x to 527x, which is why the design refuses
-//! planck_from_rosseland for any quoted result.
-//!
-//! vet_scatter (tab.scat != 0) splits that total into of = kappa_a = kappa_R - kappa_e
-//! and os = kappa_e (Ma+2026 eq. 7); every consumer uses of + os, the total.
-//!
+//! \brief <rad_m1>/opacity = table: stellar Rosseland and Planck means looked up in
+//! Kelvin and g/cm^3 on the shared (log10 T, log10 rho) grid of M1OpacTab.  The Rosseland
+//! total already contains electron scattering, so kappa_F = kappa_R with kappa_s = 0; the
+//! Planck table (absorption only) gives kappa_P = kappa_E.  With vet_scatter (tab.scat !=
+//! 0) the total is split into of = kappa_R - kappa_e and os = kappa_e (Ma+2026 eq. 7).
 //! \param[in]  tab   the two tables and their unit conversions
-//! \param[in]  d, t  density and temperature of the cell, CODE units
-//! \param[out] op,oe,of,os  the four opacities per unit mass, CODE units
+//! \param[in]  d, t  density and temperature of the cell, code units
+//! \param[out] op,oe,of,os  the four opacities per unit mass, code units
 
 KOKKOS_INLINE_FUNCTION
 void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
                       Real &op, Real &oe, Real &of, Real &os) {
   const Real tk = t*tab.tunit;
   const Real dc = d*tab.dunit;
-  // m1-fast4: both tables share the grid, so the logarithms, the two bisections and the
-  // weights are made ONCE; the arithmetic is RosselandTable's, term for term (bitwise)
+  // both tables share the grid: logarithms, bisections and weights are formed once
   const Real x = log10(tk), y = log10(dc);
   const int nT = tab.nT, nD = tab.nD;
   int i = 0, j = 0;
@@ -92,16 +79,14 @@ void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
   oe = op;
   of = kr*tab.kunit;
   os = 0.0;
-  // vet_scatter (vet-scatter-1006): split the TOTAL into kappa_a + kappa_e, guarded as
-  // in Ma+2026; of + os is the old of to round-off.  scat = 2 (EOS kappa_e) starts from
-  // the constant split here; the module's fill kernels then call M1ScatterEos.
+  // vet_scatter: split the total into kappa_a + kappa_e, guarded as in Ma+2026; scat = 2
+  // (EOS kappa_e) starts from the constant split and M1ScatterEos refines it
   if (tab.scat != 0) {
     const Real kt = of;
     os = M1ScatterGuard(kt, tab.kes, tab.kfl);
     of = kt - os;
   }
-  // <rad_m1>/opac_abs_rho_max: the absorption mask of tenuous (ambient) gas, scattering
-  // only (default amask_rho = 0: never true, bitwise inert)
+  // <rad_m1>/opac_abs_rho_max: below this density the gas only scatters (0 = off)
   if (d < tab.amask_rho) {
     op = 0.0;
     oe = 0.0;
@@ -112,12 +97,11 @@ void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
 
 //----------------------------------------------------------------------------------------
 //! \fn M1ScatterEos
-//! \brief vet_scatter_kappa_e = eos (vet-scatter-1006): the split of the total
-//! kappa_R = of + os with the IONISATION-DEPENDENT electron-scattering opacity
+//! \brief vet_scatter_kappa_e = eos: split kappa_R = of + os with the
+//! ionisation-dependent electron-scattering opacity
 //!     kappa_e = sigma_T n_e/rho = (sigma_T/m_u) x_e/mu,  x_e = n_e/n_tot,
-//! from the general EOS's own Saha composition (EOS_Data::ElectronFraction and
-//! MeanMolecularWeight, the table's ITXE surface), guarded as in Ma+2026.  A no-op
-//! unless tab.scat == 2.  d, t in CODE units (the EOS converts them itself).
+//! from the general EOS composition, guarded as in Ma+2026.  No-op unless tab.scat == 2;
+//! d, t in code units.
 template <class EosT>
 KOKKOS_INLINE_FUNCTION
 void M1ScatterEos(const M1OpacTab &tab, const EosT &eos, const Real d, const Real t,
@@ -132,14 +116,8 @@ void M1ScatterEos(const M1OpacTab &tab, const EosT &eos, const Real d, const Rea
 
 //----------------------------------------------------------------------------------------
 //! \fn M1UserOpacity
-//! \brief THE USER HOOK of <rad_m1>/opacity = user.  It is device-callable and is
-//! deliberately inline rather than a function pointer, because a host function pointer
-//! cannot be dereferenced inside a device lambda (see the CLAUDE.md kernel rules).  A
-//! problem that wants its own opacity law edits this one function and rebuilds.
-//!
-//! The default body returns the constant opacities, so `opacity = user` is a working
-//! (if trivial) configuration out of the box and the branch is always compiled.
-//!
+//! \brief opacity law of <rad_m1>/opacity = user, inline because device lambdas cannot
+//! call host function pointers; a problem with its own law edits this function.
 //! \param[in]  d, t        density and temperature of the cell, code units
 //! \param[in]  kp,ke,kf,ks the <rad_m1> constants, as defaults
 //! \param[out] op,oe,of,os the four opacities per unit mass
@@ -149,10 +127,9 @@ void M1UserOpacity(const Real d, const Real t, const Real kp, const Real ke,
                    const Real kf, const Real ks, const Real rho_ref, const Real t_ref,
                    const Real aa, const Real bb,
                    Real &op, Real &oe, Real &of, Real &os) {
-  // oplag-1014 study law (a PEAKED kappa(T), Fe-bump-like): the four constants times
-  //   (d/rho_ref)^a [1 + b exp(-ln^2(t/t_ref)/(2 s^2))],  s = 0.2,
-  // i.e. a bump of height 1 + b at t_ref, |d ln kappa/d ln T| up to ~3.5 for b = 4 on its
-  // flanks.  b = 0 (opac_b default) is the constant law of the stub (a = 0 likewise).
+  // default: a peaked kappa(T), the four constants times
+  //   (d/rho_ref)^a [1 + b exp(-ln^2(t/t_ref)/(2 s^2))],  s = 0.2;
+  // b = 0 (opac_b default) and a = 0 give the constant law
   const Real fd = (aa == 0.0) ? 1.0 : pow(fmax(d, 0.0)/rho_ref, aa);
   Real fb = 1.0;
   if (bb != 0.0) {
@@ -168,11 +145,10 @@ void M1UserOpacity(const Real d, const Real t, const Real kp, const Real ke,
 
 //----------------------------------------------------------------------------------------
 //! \fn M1Opacities
-//! \brief the four opacities per unit mass at (d, t) under the law `otype`:
+//! \brief the four opacities per unit mass at (d, t) under the law otype:
 //!   const     kappa = kappa0
-//!   powerlaw  kappa = kappa0 (d/rho_ref)^a (t/t_ref)^b,  ONE pair of exponents for all
-//!             four opacities (design sect. 4 wants no more than that in stage 1)
-//!   user      M1UserOpacity above (oplag-1014: a bump law, see there)
+//!   powerlaw  kappa = kappa0 (d/rho_ref)^a (t/t_ref)^b, one pair of exponents for all
+//! four   user      M1UserOpacity above
 
 KOKKOS_INLINE_FUNCTION
 void M1Opacities(const int otype, const Real d, const Real t,

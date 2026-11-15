@@ -137,7 +137,10 @@ bool SeamFaceGeom(const MeshBufferIndcs &ix, const int is, const int ie,
   }
   const bool jthin = (ix.bjs == ix.bje);
   const bool kthin = (ix.bks == ix.bke);
-  if (jthin == kthin) {return false;}     // x1 face, or an x2x3 edge
+  // x1 face, or an x2x3 edge
+  if (jthin == kthin) {
+    return false;
+  }
   x2face = jthin;
   sgn = (x2face ? (ix.bjs == js) : (ix.bks == ks)) ? -1.0 : 1.0;
   return true;
@@ -267,8 +270,14 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     }
     const int my_panel = mbpanel.d_view(m);
     const int dst_panel = nghbr.d_view(m,n).panel;
-    if ((dst_panel == my_panel) != ssp_) {return;}   // seam_same_panel
-    if (nghbr.d_view(m,n).rank != my_rank) {return;}   // off-rank: second kernel
+    // seam_same_panel
+    if ((dst_panel == my_panel) != ssp_) {
+      return;
+    }
+    // off-rank neighbours: second kernel
+    if (nghbr.d_view(m,n).rank != my_rank) {
+      return;
+    }
 
     const int il = rbuf[n].iflux_same[0].bis;
     const int iu = rbuf[n].iflux_same[0].bie;
@@ -379,8 +388,14 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     }
     const int my_panel = mbpanel.d_view(m);
     const int dst_panel = nghbr.d_view(m,n).panel;
-    if ((dst_panel == my_panel) != ssp_) {return;}   // seam_same_panel
-    if (nghbr.d_view(m,n).rank == my_rank) {return;}   // on-rank: first kernel
+    // seam_same_panel
+    if ((dst_panel == my_panel) != ssp_) {
+      return;
+    }
+    // on-rank neighbours: first kernel
+    if (nghbr.d_view(m,n).rank == my_rank) {
+      return;
+    }
 
     const int il = sbuf[n].iflux_same[0].bis;
     const int iu = sbuf[n].iflux_same[0].bie;

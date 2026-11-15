@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file deep_hot_jupiter_rt_src.cpp
-//! \brief deep_hot_jupiter_rt problem generator (tusplit-1102 piece): the source terms --
+//! \brief deep_hot_jupiter_rt problem generator (piece): the source terms --
 //! AmFix, the roche_wb_tan probe, SourceFunc, the double-grey two-stream RT and the
 //! operator-split correlated-k RT (DhjCkRtSplit, DhjRtFreezeSplit).  Moved verbatim
 //! from deep_hot_jupiter_rt.cpp.
@@ -14,16 +14,14 @@
 
 #include "deep_hot_jupiter_rt.hpp"
 #include "driver/dt_retry.hpp"
-#include "utils/imex_sdirk2.hpp"   // the tableau shared with rad_m1 hesdirk2
-#include "utils/ck_2nd.hpp"       // ck2nd-1102 ck_t2_seed
 #include <cstdlib>
 #include "hydro/hydro_wball.hpp"
 
 
 //----------------------------------------------------------------------------------------
 //! \fn void AmFix
-//! \brief problem/coriolis_am and problem/am_transport: add the zonal torque
-//!     dT = [coriolis_am] (-Omega Q_c - T_cc) + [am_transport] (T_cons - T_code)
+//! \brief Coriolis fix (amh::fix) and problem/am_transport: add the zonal torque
+//!     dT = [amh::fix] (-Omega Q_c - T_cc) + [am_transport] (T_cons - T_code)
 //! of every active cell to its momentum (AmOut::c2/c3; no radial or meridional part).
 //! Reads this stage's w0, wder, bcc0 and uflx and adds to u0 with the stage's bdt, like
 //! every other term of SourceFunc; T_cc is the torque that SourceFunc's rotating-frame
@@ -53,14 +51,14 @@ void AmFix(Mesh *pm, const Real bdt) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn WbTanProbe (roche-wbtan-1101, problem/roche_wb_tan): wbtan_common.hpp Probe
+//! \fn WbTanProbe (problem/roche_wb_tan): wbtan_common.hpp Probe
 //! (hydro or MHD, cubed sphere or spherical polar), with the pgen's own AmFix of W_eq as
 //! the extra term -- its problem/am_transport part (T_cons - T_code: a transport
-//! correction whose sum is the boundary torque) ONLY.  NOT the problem/coriolis_am part:
+//! correction whose sum is the boundary torque) ONLY.  NOT the amh::fix part:
 //! -Omega Q_c of W_eq is the Coriolis torque on the equilibrium's NUMERICAL mass fluxes
 //! (the first stage's radial redistribution, sum = Omega dI/dt); frozen into g_t it was
 //! a constant net z torque (Ttide -5.5e36 cs C8 WASP deck, -9.8e34 = -1.2e-3 Iw Omega
-//! per rotation on the C32 3x deck; wbtan-torquefix-1101).  The live AmFix applies it to
+//! per rotation on the C32 3x deck).  The live AmFix applies it to
 //! the evolving state every stage, as without the key.
 
 void WbTanAmFixExtra(Mesh *pm, DvceArray5D<Real> &us, DvceArray5D<Real> &u0s) {
@@ -90,15 +88,7 @@ void WbTanProbe(Mesh *pm, const Real bdt) {
 }
 
 void SourceFunc(Mesh *pm, Real bdt) {
-  if (std::getenv("WB_FDIAG") != nullptr) {   // dhjwball-1106 test only
-    if (pm->pmb_pack->phydro != nullptr) {
-      hydro::WbFluxDiag(pm->pmb_pack, pm->pmb_pack->phydro->uflx);
-    } else {
-      hydro::WbFluxDiag(pm->pmb_pack, pm->pmb_pack->pmhd->uflx);
-    }
-  }
   if (dhj_wbt.on && !dhj_wbt.ready) WbTanProbe(pm, bdt);
-  EBudStage(pm, bdt);
   DhjFluxStage(pm);
   if (amh::on) AmHstStage(pm);
   if (amh::fix || amh::trans) AmFix(pm, bdt);
@@ -152,7 +142,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
       phicc0 = pmbp->pmhd->phicc0;
       w0wb = pmbp->pmhd->w0wb;
     }
-    
+
     const bool use_spherical_polar = pm->use_spherical_polar;
     auto area1 = pmbp->pcoord->area.x1f;
     auto volume = pmbp->pcoord->volume;
@@ -160,16 +150,16 @@ void SourceFunc(Mesh *pm, Real bdt) {
     auto &x1v_ = pmbp->pcoord->x1v;
     auto &x2v_ = pmbp->pcoord->x2v;
     auto &x3v_ = pmbp->pcoord->x3v;
-    
+
     Real r0, r1;
     r0 = pm->mesh_size.x1min;
     r1 = pm->mesh_size.x1max;
-    
+
 //    Real ap = 9.44e9;
 //    Real omega = 2.06e-5;
 //    Real grav_acc = -942.0;
 //    Real Rgas = 4.593e7;
-    
+
 //    ParameterInput* pin;
     Real grav_acc = -pm->pgen->hot_jupiter_param.grav;
     Real ap = pm->pgen->hot_jupiter_param.ap;
@@ -186,22 +176,21 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // 09-30): switch the two velocity sponges at the end of this kernel off; captured by
     // value.
     const bool sponge_top_ = pm->pgen->hot_jupiter_param.sponge_top;
-    const bool sponge_top_rad_ = dhj_sponge_top_radial;
     const Real sp_plo_ = dhj_sp_top_plo_bar, sp_phi_ = dhj_sp_top_phi_bar;
     const Real sp_tau_ = dhj_sp_top_tau;
     const bool sponge_bottom_ = pm->pgen->hot_jupiter_param.sponge_bottom;
     const bool rotpot_src = rotpot && use_wellbalance_dynamic;
-    // roche-dhj-1031 problem/roche: the TANGENTIAL tidal force -grad_t TidePot (the radial
+    // problem/roche: the TANGENTIAL tidal force -grad_t TidePot (the radial
     // part is in phicc0/phi0 -> the well-balanced source; the work in the etotgrav flux,
     // both required with roche).  rgms = 0 when off: not applied, bitwise.
     const Real rgms = pm->pgen->hot_jupiter_param.roche ?
                       pm->pgen->hot_jupiter_param.roche_gms : 0.0;
     const Real rra = pm->pgen->hot_jupiter_param.roche_a;
-    // roche-wbtan-1101 problem/roche_wb_tan: the tangential centrifugal + tidal force is
+    // problem/roche_wb_tan: the tangential centrifugal + tidal force is
     // rho g_t (WbTanProbe) in place of the analytic projections below; Coriolis and the
     // radial terms unchanged; no energy term (etotgrav books the potential work)
     const bool wbt_ = dhj_wbt.on;
-    // dhjwball-1106 <mhd|hydro>/wb_dirs = all: the tangential centrifugal + tidal force is
+    // <mhd|hydro>/wb_dirs = all: the tangential centrifugal + tidal force is
     // the shared well-balanced source (AddWbGravity after this kernel, the true Phi of
     // phicc0/phi0): this kernel keeps the tangential Coriolis only (wbt_a2/a3); x1 as ever
     const bool wba_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_all :
@@ -209,7 +198,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const bool cor_only_ = wbt_ || wba_;
     const Real phimax_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_phimax :
                          ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_phimax : 1.0e300);
-    // relaxdrag-1101: the start-up Rayleigh drag switch and length (R/5, 1 by default)
+    // the start-up Rayleigh drag switch and length (R/5, 1 by default)
     const bool relax_ = dhj_relax_drag;
     const Real rdf_ = dhj_relax_drag_rot/5.0;
     DvceArray5D<Real> wbtg_;
@@ -226,21 +215,16 @@ void SourceFunc(Mesh *pm, Real bdt) {
     Real cpoly_[NSTRETCH_R_POLY];
     for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pm->fStretchRPoly[n];
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
-    
+
     Real iap = 1.0/ap;
     Real gm1 = gamma-1.0;
-    
+
     Real time = pm->time;
-    
+
     // problem/ck_impl_once: the radiation has left the RK stage (see
     // DhjCkRtSplit); nothing radiative is evaluated here.
     // problem/rt_test_freeze: the radiation is applied by DhjRtFreezeSplit instead
-    // problem/ck_time_scheme = hesdirk2: the SDIRK stage solve of this Heun stage
-    if (two_stream_rt::ck_t2_on) {
-      DhjCkT2Stage(pm, bdt);
-      // problem/ck_t2_freeze (TEST): nothing but the ck moves the state
-      if (dhj_ck_t2_freeze) return;
-    } else if (!two_stream_rt::ck_impl_once && !rt_test_freeze) {
+    if (!two_stream_rt::ck_impl_once && !rt_test_freeze) {
       picket_fence_two_stream_RT(pm, bdt);
     }
 
@@ -248,17 +232,9 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // inside a device lambda is illegal on a discrete GPU (see CLAUDE.md).
     const bool is_hydro_ = (pmbp->phydro != nullptr);
     const bool is_mhd_ = (pmbp->pmhd != nullptr);
-    // problem/budget_dt: the whole kernel's energy and mass change per shell, weighted
-    // by what survives the rk2 combination (0.5 dt/bdt: 0.5 in stage 1, 1 in stage 2)
-    const bool eb_on = ebud::on && ebud::started;
-    DvceArray2D<Real> ebacc;
-    if (eb_on) ebacc = *ebud::acc;
-    const Real eb_w = 0.5*pm->dt/bdt;
     par_for("usrsource", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const Real eb_e0 = u0(m,IEN,k,j,i);
-        const Real eb_d0 = u0(m,IDN,k,j,i);
-        
+
         Real x1v, x2v, x3v;
         if (use_spherical_polar) {
           x1v = x1v_(m,i);
@@ -285,7 +261,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           Real &x3max = size.d_view(m).x3max;
           x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
         }
-        
+
         Real lam, phi, z, theta, r;
         if (use_spherical_polar) {
           theta = x2v;
@@ -305,11 +281,11 @@ void SourceFunc(Mesh *pm, Real bdt) {
         Real rho = w0(m,IDN,k,j,i);
         Real p = eos.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
         Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
-        
+
         Real area_r = area1(m,k,j,i+1);
         Real area_l = area1(m,k,j,i);
         Real vol = volume(m,k,j,i);
-        
+
         // gravity
         const Real grav_r = GravAccAt(grav_acc, ap, r, grav_pmass);
         Real src = bdt*grav_r*w0(m,IDN,k,j,i);
@@ -331,14 +307,14 @@ void SourceFunc(Mesh *pm, Real bdt) {
               WBReadCache(wbq0_, WBVar::wb_pres, m, k, j, i, dum1, pl, dum2, pr, dum3);
           }
           src = bdt*(area_r*(pr-p)+area_l*(p-pl))/vol;
-          // dhjwball-1106 problem/wb_lobe_cut: no WB outside the L1 equipotential: the
+          // problem/wb_lobe_cut: no WB outside the L1 equipotential: the
           // plain radial force of the true Phi (plain PLM there: hydro.hpp/mhd.hpp x1)
           if (phicc0(m,k,j,i) > phimax_) {
             src = -bdt*rho*(phi0_x1f(m,k,j,i+1) - phi0_x1f(m,k,j,i))/dx1(m,k,j,i);
           }
         }
         u0(m,IM1,k,j,i) += src;
-        
+
         // Forces in the corotating frame
         Real wbt_a2 = 0.0, wbt_a3 = 0.0;   // problem/roche_wb_tan: Coriolis, per geometry
         if (use_spherical_polar) {
@@ -390,7 +366,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
             // already account for it.
             u0(m,IEN,k,j,i) += rho*(atr*vr + att*vtheta + atp*vphi)*bdt;
           }
-          // roche-dhj-1031: tangential -grad TidePot (stellar_tide is refused with it)
+          // tangential -grad TidePot (stellar_tide is refused with it)
           if (rgms != 0.0 && !cor_only_) {
             const Real cph = cos(phi), sph = sin(phi);
             Real gs, gy, gz;
@@ -464,7 +440,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
                                     - ((rotpot && use_etotgrav) ?
                                        SQR(omega)*(xx*rh0 + yy*rh1)*v1 : 0.0))*bdt;
           }
-          // roche-dhj-1031: tangential -grad TidePot.  The substellar point is along -x
+          // tangential -grad TidePot.  The substellar point is along -x
           // (CSCellAngles: phi = atan2(-y, -x)), so the stellar frame is s = -x, y' = -y,
           // z; the Cartesian acceleration is (gs, gy', -gz), projected like the
           // centrifugal one above on e1, e2 (covariant momentum components)
@@ -483,7 +459,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
         // problem/roche_wb_tan: ONE force path for sp and cs (wbtan_common.hpp): the
         // tangential centrifugal + tidal force rho g_t plus the front-end's Coriolis
         if (wbt_) wbtan::ApplyTan(u0, wbtg_, m, k, j, i, rho, wbt_a2, wbt_a3, bdt);
-        if (wba_) {   // dhjwball-1106: Coriolis here, the potential force in AddWbGravity
+        if (wba_) {   // Coriolis here, the potential force in AddWbGravity
           u0(m,IM2,k,j,i) += rho*wbt_a2*bdt;
           u0(m,IM3,k,j,i) += rho*wbt_a3*bdt;
         }
@@ -536,10 +512,6 @@ void SourceFunc(Mesh *pm, Real bdt) {
         fredux = itdrag*bdt; ///(1.0+itdrag*bdt);
         if (sponge_top_) {
           u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
-          if (!sponge_top_rad_) {
-            u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
-            u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
-          }
         }
         // Bottom sponge layer
         logpl = log(1.0e2*bar);
@@ -555,14 +527,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
           u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
           u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
         }
-        if (eb_on) {
-          Kokkos::atomic_add(&ebacc(4, i-is),
-                             (u0(m,IEN,k,j,i) - eb_e0)*volume(m,k,j,i)*eb_w);
-          Kokkos::atomic_add(&ebacc(5, i-is),
-                             (u0(m,IDN,k,j,i) - eb_d0)*volume(m,k,j,i)*eb_w);
-        }
     });
-    // dhjwball-1106: x2/x3 (x1: the WB fg of this kernel); reads this stage's caches
+    // x2/x3 (x1: the WB fg of this kernel); reads this stage's caches
     if (wba_) {
       if (pmbp->pmhd != nullptr) {pmbp->pmhd->AddWbGravity(bdt, false);}
       else {pmbp->phydro->AddWbGravity(bdt, false);}
@@ -587,7 +553,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     int nmb1 = pm->pmb_pack->nmb_thispack - 1;
     MeshBlockPack *pmbp = pm->pmb_pack;
     auto &size = pmbp->pmb->mb_size;
-        
+
     DvceArray5D<Real> u0, w0;
     const bool use_spherical_polar = pm->use_spherical_polar;
     auto &x1v_ = pmbp->pcoord->x1v;
@@ -596,7 +562,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     auto &x3v_ = pmbp->pcoord->x3v;
     const bool correct_spherical = false;
     const bool test_oned = false;
-        
+
     Real gamma;
     EOS_Data eos;
     // wtemp is the temperature ConsToPrim already solved for the current w0. It is
@@ -616,7 +582,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       eos = pmbp->pmhd->peos->eos_data;
     }
-    
+
     Real r0, r1;
     r0 = pm->mesh_size.x1min;
     r1 = pm->mesh_size.x1max;
@@ -624,7 +590,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     auto area1 = pmbp->pcoord->area.x1f;
     auto volume = pmbp->pcoord->volume;
     auto dx1 = pmbp->pcoord->dx1;
-    
+
 //    Real Teq = 1469.0;
 //    Real grav = 942.0;
 //    Real ap = 9.44e9;
@@ -635,12 +601,12 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
     Real Teq = pm->pgen->hot_jupiter_param.Teq;
-    
+
     Real iap = 1.0/ap;
     Real gm1 = gamma-1.0;
     Real cgs2Pa = 0.1;
     Real boltz_sigma = 5.6704e-5;
-    
+
     Real Tirr = Teq*sqrt(2);
     Real Fstar = boltz_sigma*SQR(SQR(Tirr));
     Real Tint = 100.0;
@@ -666,13 +632,13 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         Real I_ir_down_f[NN];
         Real I_ir_up_f[NN];
         Real B[NN];
-        
+
         Real x2v = x2v_(m,j);
         Real x3v = x3v_(m,k);
-        
+
         Real rtop = x1f_(m,ie+1);
         Real rbot = x1f_(m,is);
-        
+
         Real lam, phi, theta;
         if (use_spherical_polar) {
           theta = x2v;
@@ -689,7 +655,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         Real ex0 = -1.0;
         Real mu0 = ex*ex0;
         if (test_oned) mu0 = cos(85.0/90.0*M_PI/2.0);
-        
+
         // down-sweep
         Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,ie+1),w0(m,IEN,k,j,ie+1));
         Real rho = w0(m,IDN,k,j,ie+1);
@@ -701,11 +667,11 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         Real pf = exp((log(p)+log(pm1))/2.0);
         Real tau_v_f = 0.0;//pf/(grav/kap_v);
         Real tau_ir_f = 0.0;//pf/(grav/kap_ir);
-        
+
         tau_ir_down_f[ie+1] = tau_ir_f;
         F_v_down_f[ie+1] = Fstar*mu0;//*exp(-tau_v_f/muf);
         F_v_down_f[ie+1] = (mu0 > 0.0) ? F_v_down_f[ie+1] : 0.0;
-        
+
         // down-sweep
         for (int i=ie; i>is-1; --i) {
           Real rho = w0(m,IDN,k,j,i);
@@ -717,7 +683,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           Real kap_ir = 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
           if (test_oned) kap_ir = 1.0e-2;
           Real dr = dx1(m,k,j,i);
-            
+
           Real x1v = x1v_(m,i);
           Real z, r;
           if (use_spherical_polar) {
@@ -726,7 +692,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           } else {
             z = x1v;
           }
-            
+
           Real rf = x1f_(m,i);
           Real rf1 = x1f_(m,i+1);
 
@@ -736,7 +702,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           if (test_oned) muf = mu0;
           Real dtau_v = kap_v*rho*dr;
           Real dtau_ir = kap_ir*rho*dr;
-            
+
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rf1/rf); // Zhang+2023
           Real trans = exp(-dtau_v/muf);
@@ -747,13 +713,13 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         rho = w0(m,IDN,k,j,is-1);
         T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,is-1),p);
         B[is-1] = boltz_sigma/M_PI*SQR(SQR(T));
-        
+
         I_ir_down_f[ie+1] = 0.0;
         // down-sweep
         for (int i=ie; i>is-1; --i) {
           Real rf = x1f_(m,i);
           Real rf1 = x1f_(m,i+1);
-            
+
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rf1/rf);
           Real dtau = tau_ir_down_f[i]-tau_ir_down_f[i+1];
@@ -761,13 +727,13 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           Real Bavg = (B[i]+B[i+1])/2.0;
           I_ir_down_f[i] = (I_ir_down_f[i+1]*trans + Bavg*(1.0-trans))*fac;
         }
-        
+
         I_ir_up_f[is] = Iint;
         // up-sweep
         for (int i=is+1; i<ie+2; ++i) {
           Real rf = x1f_(m,i);
           Real rfm1 = x1f_(m,i-1);
-            
+
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rfm1/rf);
           Real dtau = tau_ir_down_f[i-1]-tau_ir_down_f[i];
@@ -775,7 +741,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           Real Bavg = (B[i-1]+B[i])/2.0;
           I_ir_up_f[i] = (I_ir_up_f[i-1]*trans + Bavg*(1.0-trans))*fac;
         }
-        
+
         // flux divergence
         for (int i=is; i<ie+1; ++i) {
           Real Ft = 2.0*M_PI*mu1*(I_ir_up_f[i+1]-I_ir_down_f[i+1])-F_v_down_f[i+1];
@@ -792,10 +758,10 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           }
           u0(m,IEN,k,j,i) += de;
         }
-        
+
     });
     RTSourceLimiterWarn(nclip);
-    
+
     return;
 }
 
@@ -823,7 +789,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     auto &x3v_ = pmbp->pcoord->x3v;
     const bool correct_spherical = false;
     const bool test_oned = false;
-    
+
     Real gamma;
     EOS_Data eos;
     // wtemp is the temperature ConsToPrim already solved for the current w0. It is
@@ -843,12 +809,12 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       eos = pmbp->pmhd->peos->eos_data;
     }
-    
+
     Real r0, r1;
     r0 = pm->mesh_size.x1min;
     r1 = pm->mesh_size.x1max;
     auto dx1 = pmbp->pcoord->dx1;
-    
+
 //    Real Teq = 1469.0;
 //    Real ap = 9.44e9;
 //    Real Rgas = 4.593e7;
@@ -859,13 +825,13 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
     Real Teq = pm->pgen->hot_jupiter_param.Teq;
-    
+
     Real iap = 1.0/ap;
     Real gm1 = gamma-1.0;
     Real igm1 = 1.0/gm1;
     Real cgs2Pa = 0.1;
     Real boltz_sigma = 5.6704e-5;
-    
+
     Real Tirr = Teq*sqrt(2);
     Real Fstar = boltz_sigma*SQR(SQR(Tirr));
     Real Tint = 500.0;
@@ -887,10 +853,10 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
         Real I_down[NN];
         Real B[NN];
         Real Q_v[NN];
-        
+
         Real x2v = x2v_(m,j);
         Real x3v = x3v_(m,k);
-        
+
         Real lam, phi, theta;
         if (use_spherical_polar) {
           theta = x2v;
@@ -907,7 +873,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
         Real ex0 = 1.0;
         Real mu0 = ex*ex0;
         if (test_oned) mu0 = cos(50.0/90.0*M_PI/2.0);
-        
+
         // down-sweep
         Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,ie+1),w0(m,IEN,k,j,ie+1));
         Real rho = w0(m,IDN,k,j,ie+1);
@@ -932,9 +898,9 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
             Real kap_ir = 1.0e-2; // 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
           if (test_oned) kap_ir = 1.0e-2;
           Real dr = dx1(m,k,j,i);
-            
+
           Real x1v = x1v_(m,i);
-            
+
           Real z, r;
           if (use_spherical_polar) {
             z = x1v-ap;
@@ -952,7 +918,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           if (test_oned) drcor = dr/mu0;
           Real dtau_v = kap_v*rho*drcor;
           Real dtau_ir = kap_ir*rho*dr;
-            
+
           tau_v += dtau_v;
           Real fac = 1.0;
 //          if (correct_spherical) fac = SQR(r1/r); // Zhang+2023
@@ -961,7 +927,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           Real Qv = kap_v*rho*Fstar*fac*exp(-tau_v);
           Q_v[i] = (mu0 > -mucr) ? Qv : 0.0;
 //          u0(m,IEN,k,j,i) += Q_v*bdt;
-        
+
           tau_ir_down[i] = tau_ir;
           tau_ir += dtau_ir/mu1;
           if (i==is) tau_ir_down[i-1] = tau_ir;
@@ -970,7 +936,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
         rho = w0(m,IDN,k,j,is-1);
         T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,is-1),p);
         B[is-1] = boltz_sigma/M_PI*SQR(SQR(T));
-        
+
         Real rtop = x1v_(m,ie+1);
         I_down[ie+1] = 0.0;
         // down-sweep
@@ -984,7 +950,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           Real Bavg = B[i];//(B(i)+B(i+1))/2.0;
           I_down[i] = (I_down[i+1]*trans + Bavg*(1.0-trans))*fac;
         }
-        
+
         Real rbot = x1v_(m,is-1);
         Real I_up = Iint;
         // up-sweep
@@ -1006,7 +972,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           if (test_oned) kap_ir = 1.0e-2;
 //          Real Q_ir = 4.0*M_PI*kap_ir*rho*(J-B(i));
 //          u0(m,IEN,k,j,i) += Q_ir*bdt;
-            
+
           Real kk = -4.0*M_PI*kap_ir*rho*boltz_sigma/M_PI*bdt;
           Real e0, e;
           if (eos.IsGeneral()) {
@@ -1050,9 +1016,9 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           }
           u0(m,IEN,k,j,i) += e-e0;
         }
-        
+
     });
-    
+
     return;
 }
 
@@ -1110,465 +1076,11 @@ void DhjCkRtSplit(Mesh *pm, const Real dt) {
   }
   // problem/ck_impl_every > 1: the cadence (full call every N cycles, linearised step in
   // between); see utils/two_stream_column_ck.hpp
-  EBudCk(pm, dt, true);
-  const int64_t nf0 = two_stream_rt::ck_cad_nfull;
-  two_stream_rt::ck_cad_half = pm->pgen->user_split_half;   // rkgfuse-1102 ck_strang
   if (two_stream_rt::ck_impl_every > 1) {
     two_stream_rt::CkCadStep(pm, dt);
   } else {
     picket_fence_two_stream_RT(pm, dt);
   }
-  EBudCk(pm, dt, false);
-  if (dhj_ck_count_every > 0) {
-    DhjCkCount((two_stream_rt::ck_impl_every <= 1) || (two_stream_rt::ck_cad_nfull != nf0));
-    if (pm->ncycle % dhj_ck_count_every == 0) DhjCkT2Report(pm, false);
-  }
-}
-
-//----------------------------------------------------------------------------------------
-//! ckhesdirk-1102: problem/ck_time_scheme = hesdirk2.
-//!
-//! DESIGN.  The ck heating S(e) (the backward-Euler correlated-k column solve and the
-//! cadence's linearised step CkCadLin, both BE in T) becomes the STIFF IMPLICIT part of
-//! the IMEX H-ESDIRK2 step of rad_m1_time2.cpp, whose explicit part is the Heun hydro,
-//! unchanged.  Implicit tableau A = [[0,0,0],[1-g,g,0],[1/2,b2,g]], g = 1 - 1/sqrt 2,
-//! b2 = g/(2(1-g)), stiffly accurate, FSAL (K1 = the last slope of the previous step).
-//! The ck runs IN each Heun stage (SourceFunc, where the in-stage ck call sat, after
-//! RKUpdate and before the stage's own exchange; MHD: MHDSrcTerms before CT), no longer
-//! in the operator split (user_split_func is not enrolled).  Each stage solve is the
-//! EXISTING BE solve with dt -> g dt, its old vector = (stage start) + inc:
-//!   stage 1: start = U^n + dt F(U^n),               inc = (1-g) dt K1
-//!   stage 2: start = (U^n + Y2)/2 + dt/2 F(Y2),       inc = dt (g/2 K1 + (b2-g/2) K2)
-//! (the Heun average supplies the rest of the tableau row, as in M1).  inc is added to
-//! u0(IEN) BEFORE the solve, so the solve's old vector and first iterate are rhs; its
-//! slope is K = (Y - rhs)/(g dt), i.e. what it actually applied (caps, fallbacks and
-//! floors of the solve included): stage 1 -> K2, stage 2 -> the next K1.
-//! Admissibility: a negative inc is clamped per cell to -(1 - ck_t2_pos_th) e_int
-//! (default th 0.5; counted), no global redo.
-//! Cadence (ck_impl_every > 1): stage 1 = CkCadStep as today (full on ncycle % N == 0);
-//! stage 2 is ALWAYS the linearised step on the operator stage 1 (or the last full call)
-//! stored (ck_cad_half = 2, shared with rkgfuse-1102 ck_strang), so the number of full solves per cycle is unchanged;
-//! ck_impl_every = 1: both stages are full solves (2 per cycle).  xstep counts cycles.
-//! Without a valid K1 (first step, a restart file without the T2 slabs) the step is
-//! backward Euler: no ck in stage 1, one BE solve with the full dt in stage 2 (= the
-//! Lie split of today, applied before the rest of stage 2's SourceFunc), K1 stored.
-//! Restart: K1 and its validity travel in the ck restart block (slabs T2K1, T2OK), so a
-//! continuation is the straight run.  dt_retry: K1 and ok are registered pgen state
-//! (dtretry::RegisterView/Value) and come back with a retried cycle (dt_retry is not
-//! wired for dhj without rad_m1 today).  MHD: the same hook; the RKG resistive step
-//! stays operator split as today.  The key absent: nothing here runs (bitwise).
-
-namespace {
-const imex_sdirk2::Tableau kCkT2Tab = imex_sdirk2::Make(0);   // hesdirk2
-const Real kCkT2G = kCkT2Tab.g;
-DvceArray4D<Real> *t2_k2 = nullptr;
-DvceArray4D<Real> *t2_r = nullptr;
-Real t2_pos_th = 0.5;
-double t2_nclamp = 0.0;
-int64_t t2_nbe = 0, t2_nstep = 0;
-bool t2_first = true;
-DvceArray4D<Real> *t2_y2 = nullptr;   // ck_t2_freeze: the stage-1 result (IEN)
-DvceArray4D<Real> *t2_sd = nullptr;   // ck2nd-1102 ck_t2_seed: g dt K of the stage
-int t2_kiter = 0;                     // ck2nd-1102 ck_t2_kiter (TEST)
-bool t2_probe = false;                // ck2nd-1102 ck_t2_start = probe
-bool t2_lin2 = false;                 // ck2nd-1102 ck_t2_lin2
-bool t2_cp_nofsal = false;
-int t2_cp_twice = 0;                  // ck2ndt-1102 ck_cad_probe_twice (TEST)            // ck2ndt-1102 ck_cad_probe_nofsal (TEST)
-int64_t t2_nprobe = 0;
-int64_t cnt_full = 0, cnt_nfall = 0, cnt_ncap = 0, cnt_nonconv = 0;
-
-void T2Alloc(Mesh *pm) {
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto u0 = (pmbp->phydro != nullptr) ? pmbp->phydro->u0 : pmbp->pmhd->u0;
-  auto &k1 = *two_stream_rt::ck_t2_k1_ptr;
-  if (k1.size() > 0 && k1.extent(0) == u0.extent(0)) return;
-  k1 = DvceArray4D<Real>("ck_t2_k1", u0.extent(0), u0.extent(2), u0.extent(3),
-                         u0.extent(4));
-  *t2_k2 = DvceArray4D<Real>("ck_t2_k2", u0.extent(0), u0.extent(2), u0.extent(3),
-                             u0.extent(4));
-  *t2_r = DvceArray4D<Real>("ck_t2_r", u0.extent(0), u0.extent(2), u0.extent(3),
-                            u0.extent(4));
-  if (t2_y2 != nullptr) {
-    *t2_y2 = DvceArray4D<Real>("ck_t2_y2", u0.extent(0), u0.extent(2), u0.extent(3),
-                               u0.extent(4));
-  }
-  if (t2_sd != nullptr) {
-    *t2_sd = DvceArray4D<Real>("ck_t2_sd", u0.extent(0), u0.extent(2), u0.extent(3),
-                               u0.extent(4));
-  }
-}
-
-// problem/ck_t2_freeze (TEST, hydro only): the explicit Heun part is removed, so the
-// step integrates de/dt = S(e) alone with the hesdirk2 tableau (the ck-isolating order
-// ladder).  At the top of each stage solve u0 is reset to what Heun would give with
-// F = 0: stage 1 U^n (= u1), stage 2 (U^n + Y2)/2, Y2 = the stage-1 result; SourceFunc
-// returns right after the ck, so no other source acts either.
-void T2Freeze(Mesh *pm, const int stage) {
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto u0 = pmbp->phydro->u0;
-  auto u1 = pmbp->phydro->u1;
-  auto y2 = *t2_y2;
-  const int nv = static_cast<int>(u0.extent(1));
-  auto &indcs = pm->mb_indcs;
-  const bool two = (stage == 2);
-  par_for("ck_t2_frz", DevExeSpace(), 0, pmbp->nmb_thispack - 1, indcs.ks, indcs.ke,
-          indcs.js, indcs.je, indcs.is, indcs.ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    for (int n=0; n<nv; ++n) u0(m,n,k,j,i) = u1(m,n,k,j,i);
-    if (two) u0(m,IEN,k,j,i) = 0.5*(u1(m,IEN,k,j,i) + y2(m,k,j,i));
-  });
-}
-void T2FreezeKeep(Mesh *pm) {
-  auto u0 = pm->pmb_pack->phydro->u0;
-  auto y2 = *t2_y2;
-  par_for("ck_t2_frzk", DevExeSpace(), 0, static_cast<int>(y2.extent(0)) - 1, 0,
-          static_cast<int>(y2.extent(1)) - 1, 0, static_cast<int>(y2.extent(2)) - 1, 0,
-          static_cast<int>(y2.extent(3)) - 1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    y2(m,k,j,i) = u0(m,IEN,k,j,i);
-  });
-}
-}  // namespace
-
-void DhjCkCount(const bool full) {
-  if (!full) return;
-  namespace ts = two_stream_rt;
-  ++cnt_full;
-  cnt_nfall += ts::ck_impl_nfall;
-  cnt_ncap += ts::ck_impl_ncap;
-  cnt_nonconv += ts::ck_impl_nonconv;
-}
-
-void DhjCkT2Report(Mesh *pm, const bool final) {
-  if (global_variable::my_rank != 0) return;
-  namespace ts = two_stream_rt;
-  std::printf("### ck_count%s ncycle=%d scheme=%s full=%lld nfall=%lld ncap=%lld "
-              "nonconv=%lld cadfull=%lld cadlin=%lld t2step=%lld t2be=%lld "
-              "t2clamp=%.0f\n", final ? "_final" : "", static_cast<int>(pm->ncycle),
-              ts::ck_t2_on ? "hesdirk2" : "split", static_cast<long long>(cnt_full),
-              static_cast<long long>(cnt_nfall), static_cast<long long>(cnt_ncap),
-              static_cast<long long>(cnt_nonconv),
-              static_cast<long long>(ts::ck_cad_nfull),
-              static_cast<long long>(ts::ck_cad_nlin), static_cast<long long>(t2_nstep),
-              static_cast<long long>(t2_nbe), t2_nclamp);
-  std::fflush(stdout);
-}
-
-void DhjCkT2Init(ParameterInput *pin, Mesh *pm) {
-  namespace ts = two_stream_rt;
-  t2_pos_th = pin->GetOrAddReal("problem", "ck_t2_pos_th", 0.5);
-  ts::ck_t2_k1_ptr = new DvceArray4D<Real>();
-  t2_k2 = new DvceArray4D<Real>();
-  t2_r = new DvceArray4D<Real>();
-  if (pin->DoesParameterExist("problem", "ck_t2_freeze")) {
-    dhj_ck_t2_freeze = pin->GetBoolean("problem", "ck_t2_freeze");
-  }
-  if (dhj_ck_t2_freeze) {
-    if (pm->pmb_pack->phydro == nullptr) {
-      std::cout << "### FATAL ERROR: problem/ck_t2_freeze is a hydro-only test" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    t2_y2 = new DvceArray4D<Real>();
-    if (global_variable::my_rank == 0) {
-      std::cout << "deep_hot_jupiter_rt: ck_t2_freeze TEST: hydro frozen, only the ck "
-                << "evolves the state" << std::endl;
-    }
-  }
-  // ck2nd-1102 problem/ck_t2_seed (read only when named): see utils/ck_2nd.hpp (2)
-  if (pin->DoesParameterExist("problem", "ck_t2_seed")) {
-    ts::ck_t2_seed = pin->GetBoolean("problem", "ck_t2_seed");
-  }
-  if (pin->DoesParameterExist("problem", "ck_t2_start")) {
-    const std::string st = pin->GetString("problem", "ck_t2_start");
-    if (st.compare("probe") == 0) {
-      t2_probe = true;
-    } else if (st.compare("be") != 0) {
-      std::cout << "### FATAL ERROR: problem/ck_t2_start = " << st << " (be | probe)"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
-  if (pin->DoesParameterExist("problem", "ck_t2_lin2")) {
-    t2_lin2 = pin->GetBoolean("problem", "ck_t2_lin2");
-  }
-  if (pin->DoesParameterExist("problem", "ck_cad_probe_twice")) {
-    t2_cp_twice = pin->GetInteger("problem", "ck_cad_probe_twice");
-  }
-  if (pin->DoesParameterExist("problem", "ck_cad_probe_nofsal")) {
-    t2_cp_nofsal = pin->GetBoolean("problem", "ck_cad_probe_nofsal");
-  }
-  if (pin->DoesParameterExist("problem", "ck_t2_kiter")) {
-    t2_kiter = pin->GetInteger("problem", "ck_t2_kiter");
-  }
-  if (ts::ck_t2_seed) {
-    t2_sd = new DvceArray4D<Real>();
-    ts::ck_seed_ext_ptr = t2_sd;
-  }
-  dtretry::RegisterView("ck_t2_k1", ts::ck_t2_k1_ptr);
-  dtretry::RegisterValue("ck_t2_ok", &ts::ck_t2_ok);
-  if (global_variable::my_rank == 0) {
-    std::cout << "deep_hot_jupiter_rt: ck_time_scheme = hesdirk2 (IMEX H-ESDIRK2, ck "
-              << "solved in each Heun stage with g dt, g = " << kCkT2G
-              << "; cadence stage 2 linearised; pos_th " << t2_pos_th << ")" << std::endl;
-  }
-  (void) pm;
-}
-
-void DhjCkT2Stage(Mesh *pm, const Real bdt) {
-  namespace ts = two_stream_rt;
-  if (t2_first) {
-    // the restart's K1 (or none: the first step is backward Euler)
-    t2_first = false;
-    T2Alloc(pm);
-    ts::ck_t2_ok = false;
-    if (ts::ck_rst_have && ts::CkRstStaged(ts::kCkSlabT2K1) &&
-        ts::CkRstStaged(ts::kCkSlabT2Ok)) {
-      const bool okv = (ts::ck_rst_stage[ts::kCkSlabT2Ok][0] > 0.5);
-      if (ts::CkRstPut(ts::kCkSlabT2K1, *ts::ck_t2_k1_ptr)) ts::ck_t2_ok = okv;
-      ts::CkRstStageFree(ts::kCkSlabT2Ok);
-    } else if (global_variable::restart_run && global_variable::my_rank == 0) {
-      std::cout << "### ck_time_scheme = hesdirk2: the restart file has no K1; the "
-                << "first step is backward Euler" << std::endl;
-    }
-  }
-  T2Alloc(pm);
-  const Real dt = pm->dt;
-  const int stage = (bdt == dt) ? 1 : 2;
-  if (dhj_ck_t2_freeze) T2Freeze(pm, stage);
-  const Real g = kCkT2G;
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto u0 = (pmbp->phydro != nullptr) ? pmbp->phydro->u0 : pmbp->pmhd->u0;
-  auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmbp->nmb_thispack - 1;
-  auto k1 = *ts::ck_t2_k1_ptr;
-  auto k2 = *t2_k2;
-  auto rr = *t2_r;
-  // ck2nd-1102 problem/ck_t2_lin2: ck_impl_every = 1 with the second stage linearised on
-  // the operator its own first stage just stored (half the full calls; the model error is
-  // O(Y3 - Y2) = O(dt^2), so the step stays second order)
-  const bool cad = (ts::ck_impl_every > 1) || t2_lin2;
-  auto solve = [&](const Real sdt, const bool lin) {
-    const int64_t nf0 = ts::ck_cad_nfull;
-    if (cad) {
-      // rkgfuse-1102's ck_cad_half: 1 = may be the cycle's full call, 2 = linearised
-      ts::ck_cad_half = lin ? 2 : 1;
-      ts::CkCadStep(pm, sdt);
-      ts::ck_cad_half = 0;
-    } else {
-      picket_fence_two_stream_RT(pm, sdt);
-    }
-    if (dhj_ck_count_every > 0) DhjCkCount(!cad || (ts::ck_cad_nfull != nf0));
-  };
-  auto report = [&]() {
-    if (dhj_ck_count_every > 0 && pm->ncycle % dhj_ck_count_every == 0) {
-      DhjCkT2Report(pm, false);
-    }
-  };
-  // ck2nd-1102 problem/ck_t2_start = probe (read only when named): without a K1 the
-  // first step is NOT backward Euler; K1 = S(U^n) is measured instead by a backward-Euler
-  // probe of 1e-4 dt on U^n (u0 set to u1 for it and put back), and the step is the
-  // ordinary hesdirk2 one.  The BE start leaves an O(dt) error in the fast (stiff)
-  // components that their relaxation hands to the slow ones: a first-order, decaying
-  // start-up error (measured: the frozen ladder, ratio ~5 that shrinks with the window).
-  if (!ts::ck_t2_ok && t2_probe && stage == 1) {
-    auto u1 = (pmbp->phydro != nullptr) ? pmbp->phydro->u1 : pmbp->pmhd->u1;
-    DvceArray5D<Real> keep("ck_t2_keep", u0.extent(0), u0.extent(1), u0.extent(2),
-                           u0.extent(3), u0.extent(4));
-    Kokkos::deep_copy(keep, u0);
-    Kokkos::deep_copy(u0, u1);
-    par_for("ck_t2_pr0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      rr(m,k,j,i) = u0(m,IEN,k,j,i);
-    });
-    const Real pdt = 1.0e-4*dt;
-    picket_fence_two_stream_RT(pm, pdt);
-    const Real ipdt = 1.0/pdt;
-    par_for("ck_t2_pr1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      k1(m,k,j,i) = (u0(m,IEN,k,j,i) - rr(m,k,j,i))*ipdt;
-    });
-    Kokkos::deep_copy(u0, keep);
-    ts::ck_t2_ok = true;
-    ++t2_nprobe;
-    if (global_variable::my_rank == 0) {
-      std::cout << "ck_time_scheme = hesdirk2: K1 from a probe of " << pdt
-                << " s (ck_t2_start = probe)" << std::endl;
-    }
-  }
-  if (!ts::ck_t2_ok) {
-    if (stage == 1) {
-      if (dhj_ck_t2_freeze) T2FreezeKeep(pm);
-      return;
-    }
-    par_for("ck_t2_be0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      rr(m,k,j,i) = u0(m,IEN,k,j,i);
-    });
-    solve(dt, false);
-    const Real idt = 1.0/dt;
-    par_for("ck_t2_be1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      k1(m,k,j,i) = (u0(m,IEN,k,j,i) - rr(m,k,j,i))*idt;
-    });
-    ts::ck_t2_ok = true;
-    ++t2_nbe;
-    report();
-    return;
-  }
-  const bool two = (stage == 2);
-  Real c1, c2;
-  imex_sdirk2::IncCoeffs(kCkT2Tab, stage, dt, c1, c2);
-  const ts::CkCadState st = ts::CkCadMakeState(pm);
-  const Real lof = 1.0 - t2_pos_th;
-  const Real hif = ts::ck_t2_pos_cap;   // ckdrift-1102 (0 = off)
-  Real ncl = 0.0;
-  Kokkos::parallel_reduce("ck_t2_inc", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
-    Real inc = c1*k1(m,k,j,i);
-    if (two) inc += c2*k2(m,k,j,i);
-    if (inc < 0.0) {
-      const Real e = st.Eint(m, k, j, i);
-      const Real lo = (e > 0.0) ? -lof*e : 0.0;
-      if (inc < lo) {
-        inc = lo;
-        sum += 1.0;
-      }
-    }
-    if (hif > 0.0 && inc > 0.0) {
-      const Real e = st.Eint(m, k, j, i);
-      const Real hi = (e > 0.0) ? hif*e : 0.0;
-      if (inc > hi) {
-        inc = hi;
-        sum += 1.0;
-      }
-    }
-    if (!(inc == inc)) inc = 0.0;
-    u0(m,IEN,k,j,i) += inc;
-    rr(m,k,j,i) = u0(m,IEN,k,j,i);
-  }, Kokkos::Sum<Real>(ncl));
-  t2_nclamp += ncl;
-  // ck2nd-1102 problem/ck_t2_seed: the Newton (and its frozen opacity) starts at the
-  // predicted stage value old + g dt K (stage 1 K1, stage 2 K2); full calls only
-  if (ts::ck_t2_seed) {
-    auto sd = *t2_sd;
-    auto ks_ = two ? k2 : k1;
-    const Real gdt = g*dt;
-    // prod-1102: the seed is capped HERE at ck_impl_dtmax x the cell's current internal
-    // energy (the stage state), not in CkWarmSeed against ck_ei (the previous call's last
-    // iterate): ck_ei is not in the restart file and a restart's rebuild passes overwrite
-    // it, so the old cap made a restart whose first full call is seeded non-bitwise
-    // (fresh r1m, rst at cycle 150 / 8967: 300 straight != 150 + 150)
-    const Real cap = ts::ck_impl_dtmax;
-    par_for("ck_t2_seed", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real s = gdt*ks_(m,k,j,i);
-      const Real e = st.Eint(m, k, j, i);
-      if (e > 0.0) {
-        const Real lim = cap*e;
-        if (s > lim) s = lim;
-        if (s < -lim) s = -lim;
-      } else {
-        s = 0.0;
-      }
-      if (!(s == s)) s = 0.0;
-      sd(m,k,j,i) = s;
-    });
-    ts::ck_seed_ext_on = true;
-  }
-  // ck2ndt-1102 problem/ck_cad_probe (utils/ck_2nd.hpp (8)): the model refresh as a
-  // probe on U^n at the start of a due step; then both stages are linearised
-  if (ts::ck_cad_probe && cad) {
-    // a restart's model (and ck_cad_cont state) first: without it the first step after
-    // a restart would probe off the schedule (not the straight run)
-    ts::CkRstCadRestore(pm);
-    if (!two && (ts::ck_cad_ptr == nullptr ||
-                 ts::CkCadProbeDue(pm->time, dt, pm->ncycle, ts::ck_impl_every))) {
-      ts::CkRstCadRestore(pm);
-      auto u1 = (pmbp->phydro != nullptr) ? pmbp->phydro->u1 : pmbp->pmhd->u1;
-      DvceArray5D<Real> keep("ck_cp_keep", u0.extent(0), u0.extent(1), u0.extent(2),
-                             u0.extent(3), u0.extent(4));
-      Kokkos::deep_copy(keep, u0);
-      Kokkos::deep_copy(u0, u1);
-      const bool sdo = ts::ck_seed_ext_on;
-      ts::ck_seed_ext_on = false;
-      const Real pdt = (ts::ck_cad_probe_dt > 0.0) ? ts::ck_cad_probe_dt
-                       : ts::ck_cad_probe_fac*dt;
-      const Real ti0 = ts::ck_tol_inc;
-      if (ts::ck_cad_probe_tolinc > 0.0) ts::ck_tol_inc = ts::ck_cad_probe_tolinc;
-      // ck2ndt-1102 problem/ck_cad_probe_twice (TEST): a first probe only to refresh
-      // what the call forms from the previous call (the VEF factors), then the probe
-      for (int pr=0; pr<t2_cp_twice; ++pr) {
-        picket_fence_two_stream_RT(pm, pdt);
-        Kokkos::deep_copy(u0, u1);
-      }
-      ts::ck_cad_probe_on = true;
-      picket_fence_two_stream_RT(pm, pdt);
-      ts::ck_cad_probe_on = false;
-      ts::ck_tol_inc = ti0;
-      if (ts::ck_cad_cont) ts::ck_cad_un = u1;
-      ts::CkCadProbeStore(pm, pdt, pm->time);
-      ts::ck_cad_un = DvceArray5D<Real>();
-      if (dhj_ck_count_every > 0) DhjCkCount(true);
-      Kokkos::deep_copy(u0, keep);
-      // FSAL across a refresh: the step's K1 is the NEW model's rate at U^n (= the
-      // probe's Q0), not the old model's last slope (an O(dt x jump) error per refresh,
-      // i.e. first order at a fixed refresh schedule)
-      if (!t2_cp_nofsal) {
-        // (the model through the probe's end state T0: Q0 + D (T(U^n) - T0))
-        auto cad_ = *ts::ck_cad_ptr;
-        // ck_cad_cont: the continuous model's rate at U^n includes the offset C (slot 7)
-        const bool cnt = ts::ck_cad_cont && ts::ck_cad2_ptr != nullptr;
-        auto cd2_ = cnt ? *ts::ck_cad2_ptr : cad_;
-        ts::CkCadState sn = ts::CkCadMakeState(pm);
-        sn.u0 = u1;
-        par_for("ck_cp_k1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-          Real kk = cad_(m,0,k,j,i);
-          if (cnt) kk += cd2_(m,7,k,j,i);
-          const Real t0 = cad_(m,2,k,j,i);
-          Real tk = 0.0, cv = 0.0;
-          if (t0 > 0.0 && sn.TCv(m, k, j, i, u1(m,IDN,k,j,i), sn.Eint(m, k, j, i), tk, cv)) {
-            kk += cad_(m,1,k,j,i)*(tk - t0);
-          }
-          k1(m,k,j,i) = kk;
-        });
-      }
-      ts::ck_seed_ext_on = sdo;
-    }
-    ts::ck_seed_ext_on = false;    // a linearised step has no Newton to seed
-    solve(g*dt, true);
-  } else {
-    solve(g*dt, two);
-  }
-  ts::ck_seed_ext_on = false;
-  // ck2nd-1102 problem/ck_t2_kiter = n (TEST, cadence 1 + ck_t2_seed): re-solve the
-  // stage n more times, each seeded with the increment the last solve applied, so the
-  // frozen opacity converges onto the stage value itself (isolates the opacity lag)
-  for (int it=0; it<t2_kiter && ts::ck_t2_seed && !cad; ++it) {
-    auto sd = *t2_sd;
-    par_for("ck_t2_kit", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      sd(m,k,j,i) = u0(m,IEN,k,j,i) - rr(m,k,j,i);
-      u0(m,IEN,k,j,i) = rr(m,k,j,i);
-    });
-    ts::ck_seed_ext_on = true;
-    solve(g*dt, two);
-    ts::ck_seed_ext_on = false;
-  }
-  const Real igdt = 1.0/(g*dt);
-  auto kd = two ? k1 : k2;
-  par_for("ck_t2_slope", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    kd(m,k,j,i) = (u0(m,IEN,k,j,i) - rr(m,k,j,i))*igdt;
-  });
-  if (two) {
-    ++t2_nstep;
-    report();
-  }
-  if (dhj_ck_t2_freeze && !two) T2FreezeKeep(pm);
 }
 
 //--------------------------------------------------------------------------------

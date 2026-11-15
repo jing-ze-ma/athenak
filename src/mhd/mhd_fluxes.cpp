@@ -24,13 +24,11 @@
 #include "eos/eos.hpp"
 #include "reconstruct/dc.hpp"
 #include "reconstruct/plm.hpp"
-#include "reconstruct/plm_c1.hpp"
 #include "reconstruct/ppm.hpp"
 #include "reconstruct/wenoz.hpp"
 #include "reconstruct/mignone_curvilinear.hpp"
 #include "mhd/rsolvers/advect_mhd.hpp"
 #include "mhd/rsolvers/cs_lowbeta_fallback.hpp"
-#include "mhd/rsolvers/boris_hlle_mhd.hpp"
 #include "mhd/rsolvers/llf_mhd.hpp"
 #include "mhd/rsolvers/hlle_mhd.hpp"
 #include "mhd/rsolvers/hlld_mhd.hpp"
@@ -95,30 +93,13 @@ void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
   const Real btr = SQR(br(iby,i)) + SQR(br(ibz,i));
   const Real ptl = pl + 0.5*(bxsq + btl);
   const Real ptr = pr + 0.5*(bxsq + btr);
-  Real cfl = eos.FastSpeedFromP(rl, pl, g1l, bxi, bl(iby,i), bl(ibz,i));
-  Real cfr = eos.FastSpeedFromP(rr, pr, g1r, bxi, br(iby,i), br(ibz,i));
-  // <mhd>/boris_c: the faces BorisHLLEFace took over carry an HLLE flux with
-  // the limited (B -> sqrt(f) B) fast speeds: same test, same speeds, HLL weights
-  // ( the one test BorisFaceTest, same |B|^2 / |v|^2 expressions)
-  bool boris_face = false;
-  if (eos.boris_c2inv > 0.0) {
-    Real ffl, ffr;
-    boris_face = BorisFaceTest(eos,
-        rl, bxi*bxi + bl(iby,i)*bl(iby,i) + bl(ibz,i)*bl(ibz,i), pl,
-        SQR(wl(IVX,i)) + SQR(wl(IVY,i)) + SQR(wl(IVZ,i)),
-        rr, bxi*bxi + br(iby,i)*br(iby,i) + br(ibz,i)*br(ibz,i), pr,
-        SQR(wr(IVX,i)) + SQR(wr(IVY,i)) + SQR(wr(IVZ,i)), ffl, ffr);
-    if (boris_face) {
-      const Real sfl = sqrt(ffl), sfr = sqrt(ffr);
-      cfl = eos.FastSpeedFromP(rl, pl, g1l, sfl*bxi, sfl*bl(iby,i), sfl*bl(ibz,i));
-      cfr = eos.FastSpeedFromP(rr, pr, g1r, sfr*bxi, sfr*br(iby,i), sfr*br(ibz,i));
-    }
-  }
+  const Real cfl = eos.FastSpeedFromP(rl, pl, g1l, bxi, bl(iby,i), bl(ibz,i));
+  const Real cfr = eos.FastSpeedFromP(rr, pr, g1r, bxi, br(iby,i), br(ibz,i));
   const Real sl = fmin(vl - cfl, vr - cfr);
   const Real sr = fmax(vl + cfl, vr + cfr);
   // CSLowBetaFallback's test, the shared CSLowBetaFires (lb_beta = 0 off the cubed
   // sphere)
-  const bool hll = hll_in || boris_face ||
+  const bool hll = hll_in ||
                    ((lb_beta > 0.0) && CSLowBetaFires(pl, pr, bxi, bl(iby,i), bl(ibz,i),
                                                       br(iby,i), br(ibz,i), lb_beta));
   Real al, dlc, drc;
@@ -158,26 +139,6 @@ void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
     al  = 0.5*(1.0 + nus);
     dlc = 0.5*(nul - nus)*(lsl - sl)*chil + 0.5*(fabs(lsl) - nus*lsl);
     drc = 0.5*(nur - nus)*(lsr - sr)*chir + 0.5*(fabs(lsr) - nus*lsr);
-    // <mhd>/lhlld_alfmach_rot (LHLLD only, refused for other solvers): the
-    // solver's B_t flux is F_ref + psi_A (F_HLLD - F_ref), F_ref = (F*L + F*R)/2 =
-    // (F^L + F^R)/2 + (S_L chi^L B^L + S_R chi^R B^R)/2, i.e. (a, d^L, d^R)_ref =
-    // (1/2, S_L chi^L/2, -S_R chi^R/2); blend the coefficients with the same psi_A
-    if (eos.alfmach_rot && !(0.5*bxsq < eos.hlld_bx_zero_tol*ptst) && lsl < 0.0 &&
-        lsr > 0.0) {
-      Real usql = SQR(vl) + (SQR(wl(ivy,i)) + SQR(wl(ivz,i)));
-      Real usqr = SQR(vr) + (SQR(wr(ivy,i)) + SQR(wr(ivz,i)));
-      if (eos.chi_normal) {
-        usql = SQR(vl);
-        usqr = SQR(vr);
-      }
-      const Real caxs = fabs(bxi)*fmax(1.0/sqrt(rl*sdl/sdml), 1.0/sqrt(rr*sdr/sdmr));
-      const Real psia = LhlldAlfRotPsi(w0, m, k, j, i, ivx, ivy, ivz, fmax(usql, usqr),
-                                       caxs, eos.cb_sensor, eos.cb_cont,
-                                       eos.alfmach_rot_min);
-      al  = 0.5 + psia*(al - 0.5);
-      dlc = 0.5*sl*chil + psia*(dlc - 0.5*sl*chil);
-      drc = -0.5*sr*chir + psia*(drc + 0.5*sr*chir);
-    }
     if (eta_pos) {   // LHLLD Step 8 (lhlld_emf_eta_pos)
       const Real ceta = fmax(0.0, -(fabs(sm) + 0.5*(vr - vl)));
       dlc += 0.5*ceta;
@@ -241,17 +202,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // phicc0 / phi0.x1f unless a problem generator enabled its own (bitwise default)
   auto &phiwbcc_ = phicc_wb;
   auto phiwb_x1f_ = phi_wb_x1f;
-  auto phi0_x2f = phi0.x2f;
   auto phi0_x3f = phi0.x3f;
 
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   const Real cs_lb_beta = cs_lowbeta_fallback;
-  // <mhd>/boris_c: limited-speed HLLE on the faces the limiter acts on
-  const bool boris_on_ = (peos->eos_data.boris_c2inv > 0.0);
   const auto wb_option_ = wb_option;
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
-  const bool use_wb_x2_ = use_wb_x2;
   const bool wb_all_ = wb_all;
   auto wbq2_ = wbq2;
   auto wbq3_ = wbq3;
@@ -259,7 +216,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
   const Real wb_rmax_ = wb_rmax;
   const Real wb_phimax_ = wb_phimax;
-  const Real wb_rmin_ = wb_rmin;
   const bool use_wellbalance_static_reconst_perturb_ =
       use_wellbalance_static_reconst_perturb;
   // The gnomonic rotations need one (sin, cos) pair each, so hand the kernels that pair
@@ -279,8 +235,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const bool diode_ox1_ = diode_ox1;   // (mhd.hpp)
   const bool diode_btodd_ = diode_ox1_btodd;   // (mhd.hpp)
   const bool diode_chout_ = diode_ox1_charout;   // (mhd.hpp)
-  const bool wall_sf_ = wall_closed_ix1 && wall_stress_free;
-  // the dhj conducting wall is a closed wall on every geometry too (legacy mirror)
+  // the dhj conducting wall is a closed wall on every geometry too
   const bool wall_cd_ = wall_closed_ix1 && wall_conducting_ix1;
   // <mhd>/wall_wb_onesided (mhd.hpp, reconstruct/wb_wall.hpp, shared with
   // Hydro::Fluxes): every geometry, on the x1 dynamic WB paths that read wbq0 (PLM)
@@ -316,10 +271,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // the gnomonic face rotation
   const bool cs_shr_ = cs_seam_mhd;
   if (wb_all) BuildWBCacheAll();   // (before the seam face states)
-  if (wb_all && wb_poison) {   // TEST ONLY
-    hydro::WbPoison(pmy_pack, wbq2, phicc_wb, wb_phimax);
-    if (wbq3.extent_int(2) > 1) hydro::WbPoison(pmy_pack, wbq3, phicc_wb, wb_phimax);
-  }
   if (cs_shr_) {
     CsSeamFaceStates();
   }
@@ -361,7 +312,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     if (wb_cache_every <= 0 || !wb_cache_built ||
         (stage == 1 && (ncyc % wb_cache_every) == 0)) {
       BuildWBCache(jl, ju, kl, ku);
-      if (wb_poison) hydro::WbPoison(pmy_pack, wbq0, phicc_wb, wb_phimax);   // TEST
       wb_cache_built = true;
     }
   }
@@ -381,12 +331,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       if (recon_method_x1_ == ReconstructionMethod::plm) {
         GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                               use_wellbalance_dynamic_,
-                              use_wb_x1_, wb_rmax_, wb_rmin_,
+                              use_wb_x1_, wb_rmax_,
                               m, k, j, il-1, iu, w0_, x1v_, x1f_, phiwbcc_,
                               phiwb_x1f_, wbq0_, true, wl, wr, wb_all_, wb_phimax_);
         GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                               use_wellbalance_dynamic_,
-                              use_wb_x1_, wb_rmax_, wb_rmin_,
+                              use_wb_x1_, wb_rmax_,
                               m, k, j, il-1, iu, b0_, x1v_, x1f_, phiwbcc_,
                               phiwb_x1f_, wbq0_, false, bl, br);
       } else {
@@ -410,19 +360,15 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         }
       }
     } else {
-    if (use_wellbalance_dynamic_ && use_wb_x1_)
-    {
+    if (use_wellbalance_dynamic_ && use_wb_x1_) {
       if (wb_all_) {   // x1 through the shared routine (w = 1)
-        hydro::WbAllPLM(member, use_wb_rho_, 1, m, k, j, il-1, iu, w0_, wbq0_, wbw_, wl, wr);
+        hydro::WbAllPLM(member, use_wb_rho_, 1, m, k, j, il-1, iu, w0_, wbq0_,
+                        wbw_, wl, wr);
       } else {
       WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
           m, k, j, il-1, iu, w0_, phiwbcc_, phiwb_x1f_, wbq0_, wl, wr);
       }
-      if (eos_.plm_c1) {
-        PiecewiseLinearC1X1(member, m, k, j, il-1, iu, b0_, bl, br);
-      } else {
-        PiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, bl, br);
-      }
+      PiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, bl, br);
     } else {
     // Reconstruct qR[i] and qL[i+1], for both W and Bcc
     switch (recon_method_) {
@@ -431,16 +377,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         DonorCellX1(member, m, k, j, il-1, iu, b0_, bl, br);
         break;
       case ReconstructionMethod::plm:
-        if (eos_.plm_c1) {
-          PiecewiseLinearC1X1(member, m, k, j, il-1, iu, w0_, wl, wr);
-        } else {
-          PiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, wl, wr);
-        }
-        if (eos_.plm_c1) {
-          PiecewiseLinearC1X1(member, m, k, j, il-1, iu, b0_, bl, br);
-        } else {
-          PiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, bl, br);
-        }
+        PiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, wl, wr);
+        PiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, bl, br);
         break;
       case ReconstructionMethod::ppm4:
       case ReconstructionMethod::ppmx:
@@ -467,11 +405,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       if ((use_spherical_polar || str_r1_) &&
           recon_method_x1_ == ReconstructionMethod::plm) {
         GridPiecewiseLinearDerX1(member, eos_, wb_option_, use_wellbalance_dynamic_,
-                                 use_wb_x1_, wb_rmax_, wb_rmin_,
+                                 use_wb_x1_, wb_rmax_,
                                  use_wellbalance_static_reconst_perturb_,
                                  pwb_, pfacewb_x1f,
                                  m, k, j, il-1, iu, w0_, wder_,
-                                 x1v_, x1f_, phiwbcc_, phiwb_x1f_, wbq0_, dl, dr, wb_phimax_);
+                                 x1v_, x1f_, phiwbcc_,
+                                 phiwb_x1f_, wbq0_, dl, dr, wb_phimax_);
       } else if (use_spherical_polar || str_r1_) {
         // reconstruct_x1 != plm: same Mignone curvilinear reconstruction as w0_/b0_
         // above, applied to the derived thermodynamic variables (no WB background,
@@ -500,11 +439,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           DonorCellX1(member, m, k, j, il-1, iu, wder_, dl, dr);
           break;
         case ReconstructionMethod::plm:
-          if (eos_.plm_c1) {
-            PiecewiseLinearC1X1(member, m, k, j, il-1, iu, wder_, dl, dr);
-          } else {
-            PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
-          }
+          PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
           break;
         case ReconstructionMethod::ppm4:
         case ReconstructionMethod::ppmx:
@@ -555,10 +490,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     // O(dx^2) and a strong blast leaked 2-3e-4 of the mass through a "closed" wall. Make
     // the ghost-side state the exact mirror of the interior-side one: any solver then
     // returns a zero mass flux (S_M = 0 by symmetry) to round-off.
-    // A Cartesian mesh takes the user-wall mirror only under the stress-free or the
-    // conducting wall (the legacy closed wall was never applied there; reflect is
-    // untouched on Cartesian).
-    if (use_spherical_polar || str_r1_ || wall_sf_ || wall_cd_ || wwb_) {
+    // A Cartesian mesh takes the user-wall mirror only under the conducting wall
+    // (reflect is untouched on Cartesian).
+    if (use_spherical_polar || str_r1_ || wall_cd_ || wwb_) {
       // under <mhd>/wall_wb_onesided a Cartesian reflect wall takes the
       // mirror as the curvilinear one (key off: unchanged)
       const bool curv_ = use_spherical_polar || str_r1_ || wwb_;
@@ -571,7 +505,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         if (wwb_) {
           auto inr = [&](const int i) {
             return !curv1_ || (!(wb_rmax_ > 0.0 && x1v_(m,i) > wb_rmax_) &&
-                               !(wb_rmin_ > 0.0 && x1v_(m,i) < wb_rmin_) &&
                                !(phiwbcc_(m,k,j,i) > wb_phimax_));
           };
           if ((bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user))
@@ -595,9 +528,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             for (int n=0; n<nder; ++n) {
               dl(n,is) = dr(n,is);
             }
-          }
-          if (bix1 == BoundaryFlag::user && wall_sf_) {  // stress-free: B_t odd
-            bl(1,is) = -br(1,is);  bl(2,is) = -br(2,is);
           }
         }
         if (curv_ && box1 == BoundaryFlag::reflect) {
@@ -695,22 +625,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                         wl,wr,bl,br,dl,dr,bx,flx1,e31,e21);
       member.team_barrier();
     }
-    if (boris_on_ && !use_cubed_sphere) {
-      member.team_barrier();
-      BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
-                    bx,flx1,e31,e21);
-    }
     if (use_cubed_sphere) {
       // low-beta dissipation fallback, BEFORE the rotation into covariant slots
       if (cs_lb_beta > 0.0) {
         CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,il,iu,IVX,cs_lb_beta,
                      wl,wr,bl,br,dl,dr,bx,flx1,e31,e21);
-        member.team_barrier();
-      }
-      if (boris_on_) {
-        member.team_barrier();
-        BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
-                      bx,flx1,e31,e21);
         member.team_barrier();
       }
       GnomonicEquiangleFluxX1(gtrig_cell,member,m,k,j,il,iu,flx1);
@@ -807,21 +726,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                                   x2v_, x2f_, wbq2_, wbw_, wl_jp1, wr);
           }
         } else {
-        if (use_wellbalance_dynamic_ && use_wb_x2_)
-        {
-          // is-1,ie+1, not il,iu -- the b0_ line below, the spherical-polar branch
-          // above, the whole default switch, and the Riemann solver all use
-          // is-1,ie+1. With il,iu (the x1 sweep's limits, never reset for x2/x3)
-          // this leaves wl_jp1/wr unwritten at i = is-1, which the solver reads.
-          WbLocalPiecewiseLinearX2(member, eos_, wb_option_, use_wb_rho_,
-              m, k, j, is-1, ie+1, w0_,
-                                   phicc0_, phi0_x2f, wl_jp1, wr);
-          if (eos_.plm_c1) {
-            PiecewiseLinearC1X2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
-          } else {
-            PiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
-          }
-        } else {
         // Reconstruct qR[j] and qL[j+1], for both W and Bcc
         switch (recon_method_) {
           case ReconstructionMethod::dc:
@@ -829,16 +733,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             DonorCellX2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
             break;
           case ReconstructionMethod::plm:
-            if (eos_.plm_c1) {
-              PiecewiseLinearC1X2(member, m, k, j, is-1, ie+1, w0_, wl_jp1, wr);
-            } else {
-              PiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, wl_jp1, wr);
-            }
-            if (eos_.plm_c1) {
-              PiecewiseLinearC1X2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
-            } else {
-              PiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
-            }
+            PiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, wl_jp1, wr);
+            PiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
             break;
           case ReconstructionMethod::ppm4:
           case ReconstructionMethod::ppmx:
@@ -851,7 +747,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             break;
           default:
             break;
-        }
         }
         if (wb_all_) {   // the WB deviation blended into the plain faces
           hydro::WbAllBlendUni(member, use_wb_rho_, 2, false, m, k, j, is-1, ie+1, w0_,
@@ -870,21 +765,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         WbStaticPiecewiseLinearDerX2(member, m, k, j, is-1, ie+1,
                                      pwb_, pfacewb_x2f,
                                     wder_, dl_jp1, dr);
-      } else if (use_wellbalance_dynamic_ && use_wb_x2_) {
-            WbPiecewiseLinearDerX2(member, eos_, wb_option_,
-                m, k, j, is-1, ie+1, w0_, wder_,
-                                   phicc0_, phi0_x2f, dl_jp1, dr);
-          } else {
+      } else {
           switch (recon_method_) {
             case ReconstructionMethod::dc:
               DonorCellX2(member, m, k, j, is-1, ie+1, wder_, dl_jp1, dr);
               break;
             case ReconstructionMethod::plm:
-              if (eos_.plm_c1) {
-                PiecewiseLinearC1X2(member, m, k, j, is-1, ie+1, wder_, dl_jp1, dr);
-              } else {
-                PiecewiseLinearX2(member, m, k, j, is-1, ie+1, wder_, dl_jp1, dr);
-              }
+              PiecewiseLinearX2(member, m, k, j, is-1, ie+1, wder_, dl_jp1, dr);
               break;
             case ReconstructionMethod::ppm4:
             case ReconstructionMethod::ppmx:
@@ -1059,21 +946,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                               wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
             member.team_barrier();
           }
-          if (boris_on_ && !use_cubed_sphere) {
-            member.team_barrier();
-            BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,dl,dr,
-                          by,flx2,e12,e32);
-          }
           if (use_cubed_sphere) {
             if (cs_lb_beta > 0.0) {
               CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,cs_lb_beta,
                            wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
-              member.team_barrier();
-            }
-            if (boris_on_) {
-              member.team_barrier();
-              BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,dl,dr,
-                            by,flx2,e12,e32);
               member.team_barrier();
             }
             GnomonicEquiangleFluxX2(gtrig_xi,member,m,k,j,is-1,ie+1,flx2);
@@ -1176,16 +1052,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             DonorCellX3(member, m, k, j, is-1, ie+1, b0_, bl_kp1, br);
             break;
           case ReconstructionMethod::plm:
-            if (eos_.plm_c1) {
-              PiecewiseLinearC1X3(member, m, k, j, is-1, ie+1, w0_, wl_kp1, wr);
-            } else {
-              PiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, wl_kp1, wr);
-            }
-            if (eos_.plm_c1) {
-              PiecewiseLinearC1X3(member, m, k, j, is-1, ie+1, b0_, bl_kp1, br);
-            } else {
-              PiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, bl_kp1, br);
-            }
+            PiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, wl_kp1, wr);
+            PiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, bl_kp1, br);
             break;
           case ReconstructionMethod::ppm4:
           case ReconstructionMethod::ppmx:
@@ -1221,11 +1089,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
               DonorCellX3(member, m, k, j, is-1, ie+1, wder_, dl_kp1, dr);
               break;
             case ReconstructionMethod::plm:
-              if (eos_.plm_c1) {
-                PiecewiseLinearC1X3(member, m, k, j, is-1, ie+1, wder_, dl_kp1, dr);
-              } else {
-                PiecewiseLinearX3(member, m, k, j, is-1, ie+1, wder_, dl_kp1, dr);
-              }
+              PiecewiseLinearX3(member, m, k, j, is-1, ie+1, wder_, dl_kp1, dr);
               break;
             case ReconstructionMethod::ppm4:
             case ReconstructionMethod::ppmx:
@@ -1270,10 +1134,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         // centroid theta = x2v, but an x3 face (area element r dr dtheta) is centred at
         // the theta midpoint of the cell.  The two differ by O(dtheta^2 cot theta),
         // negligible in the interior, but in the polar row the midpoint is dtheta/2
-        // against a centroid of 2 dtheta/3, and the phi-face fluxes enter the balance with
-        // weight ~2/(r dtheta dphi): unrotated, the r-components of v and B would be 4/3
-        // too large there, a resolution-independent spurious radial force.  So rotate the
-        // (r,theta) pairs of v and B into the face's own basis,
+        // against a centroid of 2 dtheta/3, and the phi-face fluxes enter the balance
+        // with weight ~2/(r dtheta dphi): unrotated, the r-components of v and B would be
+        // 4/3 too large there, a resolution-independent spurious radial force.  So rotate
+        // the (r,theta) pairs of v and B into the face's own basis,
         // rhat' = rhat cos d + thhat sin d.
         if (use_spherical_polar) {
           const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
@@ -1385,21 +1249,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                               wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
             member.team_barrier();
           }
-          if (boris_on_ && !use_cubed_sphere) {
-            member.team_barrier();
-            BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,dl,dr,
-                          bz,flx3,e23,e13);
-          }
           if (use_cubed_sphere) {
             if (cs_lb_beta > 0.0) {
               CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,cs_lb_beta,
                            wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
-              member.team_barrier();
-            }
-            if (boris_on_) {
-              member.team_barrier();
-              BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,dl,dr,
-                            bz,flx3,e23,e13);
               member.team_barrier();
             }
             GnomonicEquiangleFluxX3(gtrig_eta,member,m,k,j,is-1,ie+1,flx3);

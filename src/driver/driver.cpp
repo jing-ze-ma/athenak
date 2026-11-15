@@ -14,7 +14,8 @@
 #include <cmath>  // std::isfinite
 #include <cstdlib>  // std::_Exit
 #include <utility>  // std::pair
-#include <chrono>   // autobe-1029 hesdirk2 wall split
+#include <chrono>   // hesdirk2 wall split
+#include <memory>
 
 #include "utils/eint_ledger.hpp"
 #include "athena.hpp"
@@ -100,7 +101,7 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
     ndiag = pin->GetOrAddInteger("time", "ndiag", 1);
     nan_check_cycles = pin->GetOrAddInteger("time", "nan_check_cycles", 100);
     dt_min = pin->GetOrAddReal("time", "dt_min", 0.0);
-    // fin4-dtretry: <time>/dt_retry (fresh default true; restart without the key false)
+    // <time>/dt_retry (fresh default true; restart without the key false)
     pdtr_ = std::make_shared<dtretry::DtRetry>(pin, pmesh);
     pctr_ = std::make_shared<dtretry::CounterKeep>(pin, pmesh);
 
@@ -125,7 +126,7 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
       gam0[1] = 0.5;
       gam1[1] = 0.5;
       beta[1] = 0.5;
-      // <rad_m1>/time2_tableau = trbdf2 (ke-dt-0926, rad_m1_time2.cpp): the explicit
+      // <rad_m1>/time2_tableau = trbdf2 (rad_m1_time2.cpp): the explicit
       // partner of TR-BDF2, the two-stage RK2 with c2 = 2 - sqrt(2) and
       // b = (1 - 1/(2 c2), 1/(2 c2)): stage 2 = 3/4 U^n + 1/4 Y2 + dt/(2 c2) L(Y2)
       if (pin->DoesBlockExist("rad_m1") &&
@@ -352,7 +353,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   // restart a bitwise continuation; the primitives are still rebuilt below.
   // <time>/restart_refill_ghosts=true restores the old behaviour.
   bool refill = pin->GetOrAddBoolean("time", "restart_refill_ghosts", false);
-  // mrglat-1019: a state that is not yet group-uniform in the merged lateral cells (a
+  // a state that is not yet group-uniform in the merged lateral cells (a
   // fresh start, or a restart from a run without merging) is averaged here, and its
   // ghosts are then refilled.  A restart of a merged run finds every group bitwise
   // uniform in rho and is left untouched (bitwise continuation).
@@ -417,11 +418,11 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     // Mesh::NewTimeStep).  Recomputing dt here from the restored state gives a
     // roundoff-different value, so keep the one the file restored: only then does the
     // restarted run take exactly the step the straight run took.
-    // lhllc2nd-1102 <time>/dt_fixed (TEST key, read only when named): a constant dt for
+    // <time>/dt_fixed (TEST key, read only when named): a constant dt for
     // temporal-order tests (cfl halving with whole steps).  It is applied as the dt cap
     // of Mesh::NewTimeStep, so set cfl_number large enough that the CFL dt stays above
     // it (the run then takes exactly tlim/dt_fixed steps; check the final cycle count).
-    // ck2ndt-1102: on a restart dt_fixed also replaces the restored dt (else the first
+    // on a restart dt_fixed also replaces the restored dt (else the first
     // step of every ladder member is the file's dt, and the members' step boundaries
     // are offset from a schedule in simulated time)
     bool dtfix = false;
@@ -434,16 +435,16 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     if (res_flag && dt_rst > 0.0 && !dtfix) { pmesh->dt = dt_rst; }
   }
 
-  //---- Step 2b. icrad-1011: <rad_m1>/ic_rad (opt-in; FRESH STARTS ONLY, never on a
+  //---- Step 2b. <rad_m1>/ic_rad (opt-in; FRESH STARTS ONLY, never on a
   // restart): the IC radiation passes (rad_m1_icrad.cpp) at the first dt, then the
   // boundaries, primitives and dt of the new state exactly as Steps 1-2 do on any start
   if (!res_flag && time_evolution != TimeEvolution::tstatic &&
       pmesh->pmb_pack->pradm1 != nullptr && pmesh->pmb_pack->pradm1->icr_mode != 0) {
     pmesh->pmb_pack->pradm1->IcRadRun(this);
-    // reatm-1011: the pgen's post-ic_rad hook (null = nothing; pgen.hpp)
+    // the pgen's post-ic_rad hook (null = nothing; pgen.hpp)
     if (pmesh->pgen->user_icpost_func != nullptr) {
       (pmesh->pgen->user_icpost_func)(pmesh);
-      // dic-1013: a pgen that iterates its IC with the radiation (he_star_m1
+      // a pgen that iterates its IC with the radiation (he_star_m1
       // he_ic_equil) asks for the IC passes again (false = once, as before)
       while (pmesh->pgen->user_icpost_again) {
         pmesh->pmb_pack->pradm1->IcRadRun(this);
@@ -517,12 +518,12 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     if (wall_time > 0.) {
       elapsed_time = UpdateWallClock();
     }
-    // fin4-dtretry: a retried cycle starts from the checkpoint already in place
+    // a retried cycle starts from the checkpoint already in place
     bool dtr_retrying = false;
-    // unkkey-1017: WARNING for input keys never read, once, after the first cycle
+    // WARNING for input keys never read, once, after the first cycle
     // (some modules read their keys lazily inside the first step)
     bool unread_reported = false;
-    // rkgfuse-1102 <mhd>/rkg_strang_fuse: the fused Strang RKG split.
+    // <mhd>/rkg_strang_fuse: the fused Strang RKG split.
     //  rkg_strang (unfused) runs per cycle   [B] R(dt/2) H(dt) R(dt/2) [A]
     //  with B = before_timeintegrator (tracer pass, SaveMHDState), H = the RK stages,
     //  A = after_timeintegrator (dhj ck RT, user_split_once, full dt) + outputs + new dt.
@@ -545,7 +546,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     //  opens with the plain R(dt/2) (rkg_half 3, fac 0.5).  The first cycle of a run or
     //  restart has nothing pending.  A restart file is therefore always written on a
     //  synchronised state with nothing pending, and the run that continues from it takes
-    //  exactly the steps the uninterrupted run takes.  A dt retry (fin4-dtretry) puts
+    //  exactly the steps the uninterrupted run takes.  A dt retry puts
     //  rkg_pend back with the checkpoint; the retried cycle fuses it with its new dt.
     //  Between syncs the state carries a pending R(dt_n/2): only problem/user_cycle_func
     //  (dhj diag_gid) sees such a state.
@@ -553,24 +554,14 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     //  half sets 4|5 = the mean of the two (as rkg_strang); history rows are written on
     //  sync cycles only, so a row books the mean flux of the cycle's leading super-step
     //  (fused or opening) and its closing half.
-    //  dhj <problem>/ck_strang (user_split_pre_late): the ck RT is Strang-split too,
-    //  ck(dt/2) H ck(dt/2), nested INSIDE the RKG halves: R ck H ck R.  The first ck
-    //  half is taken here right after the leading RKG step, the second stays in A, and
-    //  the RKG step(s) that follow H (Lie R(dt), unfused half 2, the fused closing half)
-    //  move after A.
     Resistivity *prs0 = (pmesh->pmb_pack->pmhd != nullptr) ?
                         pmesh->pmb_pack->pmhd->presist : nullptr;
     const bool rkg_fuse = (prs0 != nullptr) && prs0->use_rkg_sts && prs0->rkg_strang &&
                           prs0->rkg_strang_fuse;
-    const bool ck_late = (pmesh->pgen != nullptr) &&
-                         (pmesh->pgen->user_split_func != nullptr) &&
-                         !pmesh->pgen->user_split_once &&
-                         pmesh->pgen->user_split_pre_late &&
-                         (pmesh->pmb_pack->pmhd != nullptr);
-    // rkgfuse-1102 <mhd>/tracer_strang: the tracer pass in halves, inside the RKG halves
+    // <mhd>/tracer_strang: the tracer pass in halves, inside the RKG halves
     const bool trc_s = (pmesh->pmb_pack->pmhd != nullptr) &&
                        pmesh->pmb_pack->pmhd->trc_strang;
-    const bool rkg_late = rkg_fuse || ck_late || trc_s;
+    const bool rkg_late = rkg_fuse || trc_s;
     if (rkg_fuse && pmesh->adaptive) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mhd>/rkg_strang_fuse is not supported with AMR"
@@ -579,7 +570,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     }
     Real rkg_pend = 0.0;        // the carried closing half, in time units (0 = none)
     Real rkg_pend_ckpt = 0.0;   // ... at the dt-retry checkpoint of this cycle
-    // ckdrift-1102 <mhd>/rkg_fuse_sync = outputs (default, as above) | none (read only
+    // <mhd>/rkg_fuse_sync = outputs (default, as above) | none (read only
     // when named).  With "outputs" the state is synchronised (the pending half closed
     // on its own) at every output and at the end of the run, so the SPLITTING SEQUENCE
     // depends on the output schedule: hst every 5 / 7 / 10 cycles gives different
@@ -624,7 +615,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (global_variable::my_rank == 0 && !dtr_retrying) {OutputCycleDiagnostics(pmesh);}
       if (pdtr_ != nullptr && pdtr_->on && !dtr_retrying) {pdtr_->Save(pmesh);}
       if (pctr_ != nullptr && pdtr_->on && !dtr_retrying) {pctr_->Save(pmesh, 0);}
-      // floorheat-1029 <problem>/eint_ledger (no-op unless on): a retried cycle drops the
+      // <problem>/eint_ledger (no-op unless on): a retried cycle drops the
       // failed attempt's entries; otherwise the gap since the last commit is booked
       if (dtr_retrying) {
         eint_ledger::Discard(pmesh);
@@ -633,9 +624,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       }
       if (dtr_retrying) {rkg_pend = rkg_pend_ckpt;} else {rkg_pend_ckpt = rkg_pend;}
       dtr_retrying = false;
-      // autobe-1029: the hesdirk2 wall split (rank 0, fenced; RadiationM1::Time2AutoBeEnd)
+      // the hesdirk2 wall split (rank 0, fenced; RadiationM1::Time2AutoBeEnd)
       radm1::RadiationM1 *pm1w = pmesh->pmb_pack->pradm1;
-      const bool t2wall = (pm1w != nullptr) && (pm1w->time_scheme == radm1::M1_TIME_HESDIRK2);
+      const bool t2wall = (pm1w != nullptr) &&
+                          (pm1w->time_scheme == radm1::M1_TIME_HESDIRK2);
       auto t2clk = [&]() {
         if (t2wall) {Kokkos::fence();}
         return std::chrono::steady_clock::now();
@@ -654,7 +646,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
 
       // RKG super-stepping of the resistive (Ohmic + ambipolar) EMF, operator-split from
       // the RK stages.  half = 0: one super-step over the cycle dt after the RK stages
-      // (Lie, first order in dt; the default).  rkgstrang-1102 <mhd>/rkg_strang = true:
+      // (Lie, first order in dt; the default).  <mhd>/rkg_strang = true:
       // dt/2 here, before the RK stages (after the before_timeintegrator split work), and
       // dt/2 after them (Strang, second order; the Athena++ RKL2 placement).  Each half
       // takes its stage count from dt/2 and the cycle's dt_diff (Resistivity::TotStage).
@@ -686,7 +678,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           std::exit(EXIT_FAILURE);
         }
         if (rkg_fuse) {
-          // rkgfuse-1102: the carried closing half of the previous cycle + this cycle's
+          // the carried closing half of the previous cycle + this cycle's
           // opening half (rkg_pend = 0: the opening half alone, fac exactly 0.5)
           rkg_step(3, (rkg_pend + 0.5*pmesh->dt)/pmesh->dt);
           rkg_pend = 0.0;
@@ -694,11 +686,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           rkg_step(1, 0.5);
         }
       }
-      // rkgfuse-1102 <mhd>/tracer_strang: the first tracer half, inside the leading RKG
+      // <mhd>/tracer_strang: the first tracer half, inside the leading RKG
       // step and outside the first ck half
       if (trc_s) {pmesh->pmb_pack->pmhd->TracerSourceHalf(1);}
-      // rkgfuse-1102 dhj ck_strang: the first ck half, inside the leading RKG step
-      if (ck_late) {(void) pmesh->pmb_pack->pmhd->RTStrangSplit(this, -1);}
 
       // time-integrator tasks for each stage of integrator
       // <rad_m1>/time_scheme = hesdirk2 (rad_m1_time2.cpp): the implicit radiation solve
@@ -707,37 +697,37 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       radm1::RadiationM1 *pm1 = pmesh->pmb_pack->pradm1;
       // <rad_m1>/implicit_mr_every > 1 (rad_m1_mr.cpp): multi-rate radiation, the Heun
       // stages run the hydro alone and the radiation is taken by MRStep below
-      // <rad_m1>/coupling_split (ke-dt-0926, rad_m1_mr.cpp): 1 = the Heun hydro alone,
+      // <rad_m1>/coupling_split (rad_m1_mr.cpp): 1 = the Heun hydro alone,
       // then R(dt); 2 = R(dt), then the Heun hydro alone; 0 = the paths here
       const int m1cs = (pm1 != nullptr) ? pm1->CSplitStep() : 0;
       if (m1cs == 2) {
         pm1->MRSolve(this, pmesh->dt);
       }
       const bool m1mr = (pm1 != nullptr) && (pm1->MRActive() || m1cs != 0);
-      // time2_start = slope (h2order-1011): a step without a stored slope gets K1 from a
+      // time2_start = slope: a step without a stored slope gets K1 from a
       // probe solve and runs the stages (no-op otherwise)
-      // vgdrot2-1012: the first step of a new vet_gd rotation block drops the old set's
+      // the first step of a new vet_gd rotation block drops the old set's
       // slope (vet_gd_rotate_slope; no-op without vet_gd_rotate_dt)
       if (pm1 != nullptr && !m1mr) {pm1->VetGdRotStep();}
-      // autobe-1029 <rad_m1>/time2_auto_be (off unless named): a step of a skip run takes
+      // <rad_m1>/time2_auto_be (off unless named): a step of a skip run takes
       // the backward-Euler redo path at once (t2_ok = false: no stages, no probe)
       if (pm1 != nullptr && !m1mr) {(void) pm1->Time2AutoBeBegin();}
-      // m1ctr-rollback-1017: slot 1 = the counters at the stage start; the helper solves
+      // slot 1 = the counters at the stage start; the helper solves
       // below put U^n back, so their counters are dropped (back to slot 1) too
       if (pctr_ != nullptr && pm1 != nullptr) {pctr_->Save(pmesh, 1);}
       bool m1help = false;
       if (pm1 != nullptr && !m1mr) {m1help = pm1->Time2StartProbe(this, pmesh->dt);}
-      // rotslope-1012: vet_gd_rotate_slope = correct, the slope's closure jump
+      // vet_gd_rotate_slope = correct, the slope's closure jump
       if (pm1 != nullptr && !m1mr) {
         m1help = pm1->Time2RotCorrect(this, pmesh->dt) || m1help;
       }
       if (m1help && pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 2);}
       const bool m1t2 = (pm1 != nullptr) && !m1mr && pm1->Time2Active();
       bool m1t2fail = false;
-      // mhdfix-1025 Ebnd (energy-budget diagnostic; no-op unless a pgen turned it on)
+      // Ebnd (energy-budget diagnostic; no-op unless a pgen turned it on)
       if (pm1 != nullptr) {pm1->EbndStart();}
       const bool nohyd = (pm1 != nullptr) && pm1->dbg_hydro_off && m1mr;
-      // raycheap2-1109 DIAGNOSTIC <rad_m1>/dbg_hydro_skip_t2 (read only when named): on
+      // DIAGNOSTIC <rad_m1>/dbg_hydro_skip_t2 (read only when named): on
       // the hesdirk2 path the hydro stages do only their register arithmetic with a zero
       // flux divergence (stage 1: u1 = u0; stage 2: u0 = gam0 u0 + gam1 u1), so the gas
       // moves only through the radiation exchange of the stage solves (R alone)
@@ -779,11 +769,11 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         ExecuteTaskList(pmesh, "after_stagen", stage);
         if (pm1 != nullptr) {pm1->DetTrace("hyd_out");}
       };
-      // pgrst-1021: the pgen registers at the stage-loop start (the backward-Euler redo
+      // the pgen registers at the stage-loop start (the backward-Euler redo
       // below puts them back with U^n); taken only when a redo can happen
       if (m1t2) {
         dtretry::PgenStageSave();
-        pm1->Time2Stash();   // pgrst-1021 time2_k1_reset (no-op unless named)
+        pm1->Time2Stash();   // time2_k1_reset (no-op unless named)
       }
       for (int stage=1; stage<=(nexp_stages); ++stage) {
         hydro_stage(stage);
@@ -794,14 +784,14 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           ExecuteTaskList(pmesh, "m1_before_stagen", 1);
           ExecuteTaskList(pmesh, "m1_stagen", 1);
           ExecuteTaskList(pmesh, "m1_after_stagen", 1);
-          // t2pos-1020 <rad_m1>/time2_posfix (off unless named): a stage 1 that is only
+          // <rad_m1>/time2_posfix (off unless named): a stage 1 that is only
           // not positive is solved again with its increment dropped where it failed
           // (counters of the dropped attempt: slot 2)
           if (pm1->t2_fail && pm1->t2_pfix_want) {
             const auto t2wp0 = t2clk();
             while (pm1->t2_fail && pm1->t2_pfix_want) {
               if (pctr_ != nullptr) {pctr_->Restore(pmesh, 2, 2);}
-              dtretry::PgenSolveRestore();   // pgrst-posfix-1021
+              dtretry::PgenSolveRestore();
               (void) pm1->Time2PosFix(this);
             }
             t2wp += t2sec(t2wp0, t2clk());
@@ -813,23 +803,23 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           if (stage == 1) {pm1->EbndStage1();}
         }
       }
-      // fin4-dtretry: a stage that raised the retry flag is not redone here (the retry
+      // a stage that raised the retry flag is not redone here (the retry
       // puts the whole cycle back); the check below the radiation update takes it
       const bool dtr_now = (pm1 != nullptr) && pm1->dtr_on && pm1->dtr_fail;
       if (m1t2fail) {t2wf = t2clk();}
       if (m1t2fail && !dtr_now) {
         if (pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 1);}
         pm1->Time2Restore(this);
-        // r136e-1107 dbg_energy_audit: the put-back is no segment (EAUDIT D=)
+        // dbg_energy_audit: the put-back is no segment (EAUDIT D=)
         if (pm1->dbg_eaudit) {pm1->EAuditMark(6);}
         dtretry::PgenStageRestore();
-        eint_ledger::Discard(pmesh);   // floorheat-1029: the redo starts a new baseline
+        eint_ledger::Discard(pmesh);   // the redo starts a new baseline
         for (int stage=1; stage<=(nexp_stages); ++stage) {hydro_stage(stage);}
       }
-        
+
       // RKG super-step, after the RK stages: the full dt (Lie, the default) or, with
       // <mhd>/rkg_strang, its second half (the first ran before the RK stages)
-      // (rkgfuse-1102: after "after_timeintegrator" instead with rkg_late, see above)
+      // (after "after_timeintegrator" instead with rkg_late, see above)
       if (rkg_on && !rkg_late) {
         if (prs->rkg_strang) {rkg_step(2, 0.5);} else {rkg_step(0, 1.0);}
       }
@@ -879,11 +869,11 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         }
       }
 
-      // autobe-1029: the cycle's kind for the wall split / time2_auto_be run state
+      // the cycle's kind for the wall split / time2_auto_be run state
       const auto t2we = t2clk();
       const int t2kind = (!t2wall || m1mr) ? -1 :
                          (m1t2 ? (m1t2fail ? 1 : 0) : (pm1->t2_abe_now ? 2 : 3));
-      // fin4-dtretry: a module raised a failure in this cycle -> the checkpoint back, a
+      // a module raised a failure in this cycle -> the checkpoint back, a
       // smaller dt, and the cycle again (nothing of the failed attempt is output)
       if (pdtr_ != nullptr && pdtr_->on && pdtr_->Failed(pmesh)) {
         if (t2kind >= 0) {pm1->Time2AutoBeEnd(4, t2sec(t2w0, t2we), 0.0, 0.0);}
@@ -899,8 +889,8 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         continue;
       }
       if (pm1 != nullptr) {pm1->EbndAccept(pmesh->dt, m1t2 && !m1t2fail);}
-      eint_ledger::Commit(pmesh);   // floorheat-1029 (no-op unless on)
-      // duale-1112 <hydro|mhd>/floor_pay = rad: the energy this step's fluid floors and
+      eint_ledger::Commit(pmesh);   // (no-op unless on)
+      // <hydro|mhd>/floor_pay = rad: the energy this step's fluid floors and
       // dual selection created is taken from E_rad of the same cell, once, after every
       // radiation stage (hydro/dual_energy.hpp)
       if (pm1 != nullptr) {
@@ -922,14 +912,14 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // Work after time integrator indicated by "1" in stage
       ExecuteTaskList(pmesh, "after_timeintegrator", 1);
 
-      // rkgfuse-1102 tracer_strang: the second tracer half, after the second ck half
+      // tracer_strang: the second tracer half, after the second ck half
       if (trc_s) {pmesh->pmb_pack->pmhd->TracerSourceHalf(2);}
-      // rkgfuse-1102: the RKG step after the split work of "after_timeintegrator"
+      // the RKG step after the split work of "after_timeintegrator"
       if (rkg_on && rkg_late) {
         if (!rkg_fuse) {
           if (prs->rkg_strang) {rkg_step(2, 0.5);} else {rkg_step(0, 1.0);}
         } else {
-          // sync point?  the time and ncycle this cycle ends on (same arithmetic as below)
+          // sync point?  the time and ncycle this cycle ends on (as computed below)
           const Real t_end = pmesh->time + pmesh->dt;
           const int nc_end = pmesh->ncycle + 1;
           bool sync = !(t_end < tlim) || (nlim >= 0 && nc_end >= nlim) ||
@@ -941,14 +931,14 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           for (auto &out : pout->pout_list) {
             if (out_due_at(out, t_end, nc_end)) {sync = true;}
           }
-          if (rkg_nosync) {sync = pmesh->adaptive;}   // ckdrift-1102 rkg_fuse_sync none
+          if (rkg_nosync) {sync = pmesh->adaptive;}   // rkg_fuse_sync none
           if (sync) {
             rkg_step(2, 0.5);
             rkg_pend = 0.0;
           } else {
             rkg_pend = 0.5*pmesh->dt;
           }
-          // ckdrift-1102 rkg_fuse_sync none: the carried half travels in the header of
+          // rkg_fuse_sync none: the carried half travels in the header of
           // every rst written from here on (in-loop and final)
           if (rkg_nosync) {pin->SetReal("mhd", "rkg_fuse_pend", rkg_pend);}
         }
@@ -1001,7 +991,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         }
       }
 
-      // asyncio-1113: finish (rename) background output writes that completed
+      // finish (rename) background output writes that completed
       async_io::Progress();
 
       // per-cycle problem-generator hook (problem/diag_gid in deep_hot_jupiter_rt).
@@ -1197,7 +1187,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         }
       }
 
-      // Update wall clock time if needed (rkgfuse-1102: read at the sync decision)
+      // Update wall clock time if needed (read at the sync decision)
       if (wall_time > 0. && !rkg_fuse) {
         elapsed_time = UpdateWallClock();
       }
@@ -1214,18 +1204,18 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
 //!  and printing diagnostic messages
 
 void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
-  // d6fast3-1112: the main loop alone (fenced), before the final outputs and the
+  // the main loop alone (fenced), before the final outputs and the
   // restart, which "cpu time used" includes
   Kokkos::fence();
   const float loop_time = run_time_.seconds();
   if (pdtr_ != nullptr) {pdtr_->Report(pmesh);}
   if (pctr_ != nullptr) {pctr_->Report(pmesh);}
-  // pgrst-1021: the stage-loop copies of the pgen registers hold device Views (a
+  // the stage-loop copies of the pgen registers hold device Views (a
   // registered View, e.g. he_star_m1 hs_fsub): freed here, before Kokkos::finalize
   dtretry::PgenStageClear();
   // cycle through output Types and load data / write files
   //  This design allows for asynchronous outputs to implemented in the future.
-  // rotavg-rst-1012 (bitwise chained runs): the final outputs of a run that ends before
+  // (bitwise chained runs): the final outputs of a run that ends before
   // tlim (nlim, wall time) are EXTRA snapshots that must not move the output schedule,
   // or the next link (restarted from the restart file written here) skips the next
   // scheduled dump / history row and numbers its files one ahead of the continuous run:
@@ -1319,7 +1309,7 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       std::cout << "particle-updates/cpu_second = " << pups << std::endl;
     }
   }
-  // asyncio-1113: every background output write finished and renamed before the outputs
+  // every background output write finished and renamed before the outputs
   // (which own the restart staging arrays) are deleted in main
   if (async_io::Enabled()) {
     Kokkos::Timer wt;
@@ -1346,7 +1336,8 @@ void Driver::OutputCycleDiagnostics(Mesh *pm) {
     if (pm->pmb_pack->pmhd != nullptr) {
       if (pm->pmb_pack->pmhd->presist != nullptr) {
         if (pm->pmb_pack->pmhd->presist->use_rkg_sts) {
-          std::cout << "RKG super-stepping total stage=" << pm->pmb_pack->pmhd->presist->s << " dt_diff=" << pm->dt_diff << std::endl;
+          std::cout << "RKG super-stepping total stage=" << pm->pmb_pack->pmhd->presist->s
+                    << " dt_diff=" << pm->dt_diff << std::endl;
         }
       }
     }

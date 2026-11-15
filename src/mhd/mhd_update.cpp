@@ -24,7 +24,6 @@ namespace mhd {
 //  update itself is fluid::RKUpdateCore, shared with Hydro::RKUpdate)
 
 TaskStatus MHD::RKUpdate(Driver *pdriver, int stage) {
-  if (boris_on) BorisSaveRef(pdriver, stage);   // boris-1102 (mhd_boris.cpp)
   fluid::RKUpdateCore(pmy_pack, pdriver, stage, nmhd + nscalars, uflx, u0, u1);
   return TaskStatus::complete;
 }

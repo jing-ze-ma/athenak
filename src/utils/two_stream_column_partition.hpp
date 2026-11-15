@@ -252,7 +252,8 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         const Real x = h/c.mu[q];
         const Real e0 = -expm1(-x);
         c.Wk<true>(m,EE+q,i,k,j) = e0;
-        c.Wk<true>(m,CI+q,i,k,j) = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
+        c.Wk<true>(m,CI+q,i,k,j) = (x > 1.0e-3) ? (e0 - 1.0 + e0/x)
+                                                : (x/2.0 - SQR(x)/3.0);
         c.Wk<true>(m,CO+q,i,k,j) = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
       }
       c.Wk<true>(m,BB,i,k,j) = RTCol3WarmStart(c, m, k, j, i, c.Bb(m,0,i,k,j));
@@ -1559,7 +1560,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
 
 void RTCol3TeamLaunch(const RTCol3 &c, const int nmb1, const int ks, const int ke,
                       const int js, const int je);
-// (defined in utils/two_stream_rt_col3.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_col3.cpp)
 
 }  // namespace two_stream_rt
 #endif  // UTILS_TWO_STREAM_COLUMN_PARTITION_HPP_

@@ -6,15 +6,12 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file c2p_floors_ideal.hpp
-//! \brief share3-1031: THE ideal-gas energy floors of the hydro / MHD inversion, applied
-//! to an internal energy e = E - KE (- ME) whose kinetic energy is final: the pressure
-//! floor e >= pfloor/(gamma - 1), the temperature floor (`tflr`) and the entropy floor
-//! (`sflr`).  Shared by SingleC2P_IdealHyd / SingleC2P_IdealMHD (own =
-//! !defer_cons_floors, tflr = sflr = true) and, on the cubed sphere, the ideal branch of
-//! GnomonicRaiseVelFloors / GnomonicRaiseVelMHDFloors (own = true; tflr = sflr = false:
-//! the cs path has only ever applied the pressure floor there -- ApplyEnergyFloor, whose
-//! ideal branch is this test and value bit for bit).  `own`: the total `etot` is rebuilt
-//! as e + e_k (+ e_m with kMag).  The arithmetic is the former c2p body, in its order.
+//! \brief ideal-gas energy floors of the hydro/MHD inversion on e = E - KE (- ME) with a
+//! final kinetic energy: pressure floor e >= pfloor/(gamma - 1), temperature floor (tflr)
+//! and entropy floor (sflr).  Used by SingleC2P_IdealHyd/MHD (own = !defer_cons_floors,
+//! tflr = sflr = true) and on the cubed sphere by GnomonicRaiseVelFloors /
+//! GnomonicRaiseVelMHDFloors (own = true, tflr = sflr = false).  With own, etot is
+//! rebuilt as e + e_k (+ e_m with kMag).
 
 #include <math.h>
 

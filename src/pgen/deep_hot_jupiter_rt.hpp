@@ -157,8 +157,6 @@ void DhjOlrDump(ParameterInput *pin, Mesh *pm);
 void DhjFinalDumps(ParameterInput *pin, Mesh *pm);
 // problem/flux_hst: the radiative / energy / mass flux history columns
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm);
-// problem/flux_hst_wall: four inner-wall in/out split columns (set in UserProblem)
-inline bool dhj_flux_hst_wall = false;
 // problem/flux_hst_floor: two floor-bookkeeping columns (set in UserProblem)
 inline bool dhj_flux_hst_floor = false;
 // relaxdrag-1101 problem/relax_drag (default true), problem/relax_drag_rot (default 5):
@@ -168,21 +166,16 @@ inline bool dhj_flux_hst_floor = false;
 inline bool dhj_relax_drag = true;
 inline Real dhj_relax_drag_rot = 5.0;
 inline Real dhj_floor_t0 = 0.0;   // start of the interval the floor columns average over
-// problem/sponge_top_mode (read without recording): "radial" (DEFAULT since 10-01, user
-// GO after am_coriolis_1001/ext arm D) makes the top velocity sponge damp the RADIAL
-// momentum only (IM1, rhat.m on both grids), so it exerts no axial torque and no drag
-// that reaches the jet below it (Shaw & Shepherd 2007): with it the 1e-5..1e-3 bar jet
-// matches a domain whose top and sponge are 2 decades higher, at the old dt and cost.
-// "all" damps all three components (the behaviour before 10-01, bitwise).
-inline bool dhj_sponge_top_radial = true;
+// The top velocity sponge damps the RADIAL momentum only (IM1, rhat.m on both grids),
+// so it exerts no axial torque and no drag that reaches the jet below it (Shaw &
+// Shepherd 2007).
 // problem/sponge_top_plo_bar, sponge_top_phi_bar, sponge_top_tau (read without recording;
 // defaults 1e-7 bar, 1e-6 bar, 1e3 s): the top sponge ramps from 0 at phi to 1 at plo
 // (linear in log p) with damping rate fdrag/tau
 inline Real dhj_sp_top_plo_bar = 1.0e-7;
 inline Real dhj_sp_top_phi_bar = 1.0e-6;
 inline Real dhj_sp_top_tau = 1.0e3;
-// problem/flux_hst_rkavg (default true; false = the last RK stage, the pre-0929
-// columns): the fluid face fluxes of the flux columns (Etot_top, Etot_bot, Mdot_top,
+// The fluid face fluxes of the flux columns (Etot_top, Etot_bot, Mdot_top,
 // Mdot_bot) are the RK-weighted sums over the stages of the cycle, i.e. the flux the
 // update actually applied (rk1 1; rk2 1/2, 1/2; rk3 1/6, 1/6, 2/3).  Accumulated per
 // column by DhjFluxStage at the top of SourceFunc (uflx then holds the stage's fluxes).
@@ -207,7 +200,7 @@ void DhjCycleDiag(Mesh *pm);
 // after the rotating-frame source, as a force along the zonal direction (-y, x, 0):
 // no radial or meridional part, and the total energy is not touched (the Coriolis force
 // never entered it), so their small work lands in the internal energy.
-//   problem/coriolis_am: take the ZONAL Coriolis torque from the face mass fluxes,
+//   amh::fix: take the ZONAL Coriolis torque from the face mass fluxes,
 //     -Omega Q_c with
 //         Q_c = sum_{faces f of c} Phi_f^out (W_f - W_c),   W = R^2,
 //     Phi^out the outward mass flux (flux x area) the update applies and W_f the face
@@ -233,8 +226,8 @@ void DhjCycleDiag(Mesh *pm);
 //     cubed sphere or spherical polar), OFF otherwise, so non-rotating runs are bitwise
 //     unchanged.  A rotating run with a source variant am_transport does not
 //     replicate (wellbalance_static) stops with a FATAL naming it, unless
-//     problem/am_transport = false is set explicitly; a rotating run with either key false prints a WARNING that L_abs
-//     drifts.  Read without recording; the startup log prints the effective values.
+//     problem/am_transport = false is set explicitly; a rotating run with either key
+//     false prints a WARNING that L_abs drifts.  Read without recording; the startup log prints the effective values.
 //   problem/am_hst (DIAGNOSTIC, default false; read without recording it): eight more
 //     history columns after the flux columns, see DhjFluxHistory and AmHstStage.
 //   problem/am_hst_split (DIAGNOSTIC, default false, needs am_hst and what am_transport
@@ -248,7 +241,7 @@ void DhjCycleDiag(Mesh *pm);
 //     column makes it 25, so am_hst_split + flux_hst_floor + roche is a start-up FATAL.)
 namespace amh {
 inline bool on = false;            // problem/am_hst
-inline bool fix = false;           // problem/coriolis_am
+inline bool fix = false;           // Coriolis fix (on in a rotating frame)
 inline bool split = false;         // problem/am_hst_split
 inline bool trans = false;         // problem/am_transport
 inline Real pdeep = 1.0e8;  // problem/am_hst_pdeep [barye]: the Tdif_deep split (100 bar)
@@ -517,21 +510,6 @@ void AmCell(const AmV &v, const int m, const int k, const int j, const int i, Am
     if (i == v.is) o.twall = fl1*rl*rb1;
   }
 }
-// problem/budget_dt (DIAGNOSTIC, branch dhj-budget-0929; off unless the key exists and
-// is > 0): per-shell energy and mass ledger, see EBudCk
-namespace ebud {
-constexpr int NQ = 20;
-inline bool on = false;
-inline bool started = false;
-inline Real dt_out = 0.0;
-inline Real t_next = 0.0;
-inline DvceArray2D<Real> *acc = nullptr;    // (NQ, nx1+1)
-inline DvceArray2D<Real> *tmp = nullptr;    // (2, nx1+1): shell E and M
-inline DvceArray2D<Real> *fhst = nullptr;  // (4, nx1): floors pending for the hst columns
-// (nmb, 2, n3, n2, n1): u0(IEN) and e_int before ck
-inline DvceArray5D<Real> *cpre = nullptr;
-inline int64_t nfull0 = 0;                  // ck_cad_nfull before the call
-}  // namespace ebud
 // roche-wbtan-1101 problem/roche_wb_tan (default false): the TANGENTIAL (x2/x3) part of
 // the potential force (centrifugal of rot_potential + the Roche tide) as the hydro's OWN
 // discrete tangential momentum residual of the equipotential equilibrium W_eq, instead of
@@ -547,23 +525,9 @@ inline int64_t nfull0 = 0;                  // ck_cad_nfull before the call
 // between rho g_t . v and the flux-form potential work lands in e_int, as before.
 inline wbtan::WbTan dhj_wbt;   // wbtan_common.hpp
 void WbTanProbe(Mesh *pm, const Real bdt);
-void EBudStage(Mesh *pm, const Real bdt);
-void EBudCk(Mesh *pm, const Real dt, const bool before);
-void EBudDrainFloors(Mesh *pm);
 // problem/ck_impl_once: the whole correlated-k radiation, once per hydro step,
 // with the full cycle dt, after the last RK stage
 void DhjCkRtSplit(Mesh *pm, const Real dt);
-// ckhesdirk-1102 problem/ck_time_scheme = hesdirk2: setup, the stage solve (called from
-// SourceFunc in place of the in-stage ck call), the end-of-run counters
-void DhjCkT2Init(ParameterInput *pin, Mesh *pm);
-void DhjCkT2Stage(Mesh *pm, const Real bdt);
-void DhjCkT2Report(Mesh *pm, const bool final);
-void DhjCkCount(const bool full);
-// problem/ck_count_every (read only when named; 0 = off): a cumulative ck counter line
-// (full calls, fallbacks, caps, non-converged, hesdirk2 clamps) every N cycles
-inline int dhj_ck_count_every = 0;
-// problem/ck_t2_freeze (TEST; read only when named, hesdirk2 + hydro only)
-inline bool dhj_ck_t2_freeze = false;
 
 // PER-CYCLE SINGLE-MESHBLOCK DIAGNOSTIC (problem/diag_gid, default -1 = off).  Which
 // global meshblock to dump, and the inclusive cycle window.  File-scope because the

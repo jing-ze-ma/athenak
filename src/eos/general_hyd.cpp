@@ -4,14 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file general_hyd.cpp
-//! \brief derived class that implements a general EOS in nonrelativistic hydro
-//!
-//! Unlike an ideal gas, a general EOS is expensive to evaluate (the temperature inversion
-//! is a root find) and is NOT scale free: ionization, dissociation and radiation pressure
-//! all depend on absolute density and temperature. This class therefore
-//!   (1) requires the run to declare its physical scale via the <units> block, and
-//!   (2) evaluates pressure and Gamma_1 once per cell in ConsToPrim, storing them in the
-//!       derived-variable array so that the Riemann solvers never call the EOS.
+//! \brief derived class that implements a general EOS in nonrelativistic hydro.  The EOS
+//! is not scale free, so a <units> block is required; p and Gamma_1 are evaluated once
+//! per cell in ConsToPrim and stored in the derived variables for the Riemann solvers.
 
 #include <float.h>
 
@@ -35,9 +30,7 @@ GeneralHydro::GeneralHydro(MeshBlockPack *pp, ParameterInput *pin) :
   eos_data.gamma = pin->GetReal("hydro","gamma");
   eos_data.iso_cs = 0.0;
 
-  // A general EOS depends on ABSOLUTE density and temperature, so the run must declare
-  // its physical scale. Without a <units> block the code units are arbitrary and the
-  // ionization/dissociation/radiation terms would be silently meaningless.
+  // a general EOS needs the physical scale of the run
   if (pp->punit == nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<hydro>/eos = general requires a <units> block: a general EOS is not "
@@ -48,25 +41,20 @@ GeneralHydro::GeneralHydro(MeshBlockPack *pp, ParameterInput *pin) :
   }
   eos_data.dens_cgs = pp->punit->density_cgs();
   eos_data.pres_cgs = pp->punit->pressure_cgs();
-  // NOTE: Units::temperature_cgs() folds in the constant mean molecular weight <units>/mu
-  // The general EOS carries composition itself (mu varies with the ionization state), so
-  // the reference mu is divided back out here and the temperature scale is defined with
-  // mu_ref = 1, i.e. T_cgs = v_code^2*m_u/k_B.
+  // Units::temperature_cgs() includes <units>/mu; the general EOS carries its own mu,
+  // so the temperature scale uses mu_ref = 1 (T_cgs = v_code^2 m_u/k_B)
   eos_data.temp_cgs = pp->punit->temperature_cgs()/pp->punit->mu();
 
-  // Build the interpolation table, unless the run asked for the gamma-law mode. The
-  // gamma law is the default because it makes the general code path reproduce the ideal
-  // one exactly, which is how the general interface is regression tested; a run that
-  // wants real thermodynamics selects general_eos = table.
+  // build the table unless general_eos = gamma (the default, which reproduces the ideal
+  // gas exactly)
   BuildGeneralEOS("hydro", pin);
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void ConsToPrim()
-//! \brief Converts conserved into primitive variables, and evaluates the derived
-//! thermodynamic variables (pressure, Gamma_1) that are reconstructed to interfaces.
-//! Operates over range of cells given in argument list. Number of times floors used
-//! stored into event counters.
+//! \brief Converts conserved into primitive variables and evaluates the derived variables
+//! (p, Gamma_1) that are reconstructed to faces.  Operates over range of cells given in
+//! argument list.  Number of times floors used stored into event counters.
 
 void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
                               const bool only_testfloors,
@@ -85,21 +73,16 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
   const int nkji = (ku - kl + 1)*nji;
   const int nmkji = nmb*nkji;
 
-  // THE FLOOR-SWITCH KERNEL LIVES IN ITS OWN TRANSLATION UNIT (general_hyd_floors.cpp).
-  // See the note on EOS_Data::floors_legacy.  It is not merely a second launch in this
-  // file: with both kernels in one TU the device compiler contracts the arithmetic of
-  // the legacy one differently and the default answer moves by an ULP, so the two are
-  // compiled apart and this routine keeps exactly the code it had before the switches
-  // existed.
+  // with a floor switch on, the kernel of general_hyd_floors.cpp runs; it is compiled
+  // apart so this kernel keeps its arithmetic (EOS_Data::floors_legacy)
   if (!eos.floors_legacy) {
     ConsToPrimFloors(cons, prim, only_testfloors, il, iu, jl, ju, kl, ku);
     return;
   }
 
   int nfloord_=0, nfloore_=0, nfloort_=0, ntclamp_=0;
-  // d6fast5-1112: on HIP LaunchBounds<256, 2> (the default 1024-thread bound capped the
-  // body at 128 VGPRs: 924 B/lane of scratch).  Integer sums only: any block size gives
-  // the same totals (bitwise)
+  // on HIP LaunchBounds<256, 2> keeps the body in registers; the integer sums are
+  // independent of the block size
 #if defined(KOKKOS_ENABLE_HIP)
   using C2pPol = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>;
 #else
@@ -122,8 +105,7 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
     u.mz = cons(m,IM3,k,j,i);
     u.e  = cons(m,IEN,k,j,i);
 
-    // call c2p function, which also returns the derived thermodynamic quantities
-    // (inline function in general_c2p_hyd.hpp file)
+    // call c2p function, which also returns the derived quantities (general_c2p_hyd.hpp)
     HydPrim1D w;
     Real pgas, g1;
     Real temp;
@@ -141,8 +123,7 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
     } else {
       // update counter, reset conserved if floor was hit
       if (dfloor_used) {
-        // share-1104 P4 <hydro>/floor_tracer: the floor's mass joins the floor-mass
-        // scalar (as <mhd>/floor_tracer in ideal_mhd.cpp / general_mhd.cpp)
+        // <hydro>/floor_tracer: the floor's mass joins the floor-mass scalar
         if (eos.ifltr >= 0) cons(m,eos.ifltr,k,j,i) += u.d - cons(m,IDN,k,j,i);
         cons(m,IDN,k,j,i) = u.d;
         sumd++;
@@ -155,8 +136,7 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
         cons(m,IEN,k,j,i) = u.e;
         sumt++;
       }
-      // the tabulated inversion had to be held at the table's own lowest or highest
-      // temperature: the state is outside the EOS, not merely at a floor
+      // the inversion was clamped to the table's temperature range
       if (tclamp_used) {
         sumc++;
       }
@@ -169,8 +149,7 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
       // store derived thermodynamic variables for reconstruction
       wder_(m,IDPR,k,j,i) = pgas;
       wder_(m,IDG1,k,j,i) = g1;
-      // cache the temperature solved for above; it is both the value other modules read
-      // and the warm start for this cell's inversion at the next stage
+      // cache the temperature for other modules and as next stage's warm start
       wtemp_(m,k,j,i) = temp;
       // convert scalars (if any)
       for (int n=nhyd; n<(nhyd+nscal); ++n) {
@@ -178,7 +157,7 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
         if (cons(m,n,k,j,i) < 0.0) {
           cons(m,n,k,j,i) = 0.0;
         }
-        // share-1104 P4 <hydro>/floor_tracer: the floor mass cannot exceed the cell mass
+        // the floor mass cannot exceed the cell mass
         if (n == eos.ifltr && cons(m,n,k,j,i) > u.d) {
           cons(m,n,k,j,i) = u.d;
         }
@@ -204,9 +183,8 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
 //----------------------------------------------------------------------------------------
 //! \fn void PrimToCons()
 //! \brief Converts primitive into conserved variables. Operates over range of cells given
-//! in argument list.  Floors never needed.
-//! NOTE: for non-relativistic hydrodynamics this transformation is EOS independent
-//! (E = e + E_kin involves no thermodynamics), so the ideal-gas kernel is reused.
+//! in argument list.  Floors never needed.  EOS independent (E = e + E_kin), so the
+//! ideal-gas kernel is reused.
 
 void GeneralHydro::PrimToCons(const DvceArray5D<Real> &prim, DvceArray5D<Real> &cons,
                               const int il, const int iu, const int jl, const int ju,

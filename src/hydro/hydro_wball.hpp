@@ -6,20 +6,20 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file hydro_wball.hpp
-//! \brief wball-1104: the dynamic (Kappeli & Mishra) well-balanced scheme in x2 and x3,
+//! \brief the dynamic (Kappeli & Mishra) well-balanced scheme in x2 and x3,
 //! <hydro>/wb_dirs = all, with a per-cell, per-direction VALIDITY WEIGHT w in [0, 1].
 //!
 //! Each cell carries, per direction d = x2, x3, its own local hydrostatic background
-//! walked from its own state with the same WBBackgroundStencil / closed forms the x1 cache
-//! uses (Hydro::wbq2 / wbq3, 15 channels: 5 points {d-1, d-1/2, d, d+1/2, d+1} x (d, e,
-//! p)), and a weight w_d (Hydro::wbw) from the stencil:
-//!     r_d = |dp + rho dPhi| / (rho |dPhi| + |dp| + eta p),  d over the cells d-1, d+1
-//!     w_d = ramp(r_d; r0 -> r1) x ramp(Mach; m0 -> m1)        (ramp: 1 below, 0 above)
+//! walked from its own state with the same WBBackgroundStencil / closed forms the x1
+//! cache uses (Hydro::wbq2 / wbq3, 15 channels: 5 points {d-1, d-1/2, d, d+1/2, d+1} x
+//! (d, e, p)), and a weight w_d (Hydro::wbw) from the stencil:
+//! r_d = |dp + rho dPhi| / (rho |dPhi| + |dp| + eta p), d over the cells d-1, d+1
+//! w_d = ramp(r_d; r0 -> r1) x ramp(Mach; m0 -> m1) (ramp: 1 below, 0 above)
 //! A face takes w_f = min(w of its two cells); the reconstruction AND the gravity source
 //! are blended with that same w_f:
-//!     face state  q_f = w_f q_f(WB deviation PLM) + (1 - w_f) q_f(plain PLM)
-//!     source      S_d = (1/dx) sum_{f = d+-1/2} sgn_f [w_f (p_bg,f - p_c)
-//!                                                  + (1 - w_f)(-rho_c (Phi_f - Phi_c))]
+//! face state q_f = w_f q_f(WB deviation PLM) + (1 - w_f) q_f(plain PLM)
+//! source S_d = (1/dx) sum_{f = d+-1/2} sgn_f [w_f (p_bg,f - p_c)
+//! + (1 - w_f)(-rho_c (Phi_f - Phi_c))]
 //! The second source term is the linearisation of the first (dp = -rho dPhi), the
 //! central -rho dPhi/dx in the same face-sum form, so w = 1 is the exact well-balanced
 //! pair, w = 0 the plain scheme with the analytic force, and any w in between a convex
@@ -45,7 +45,7 @@ Real WbRamp(const Real q, const Real a, const Real b) {
 
 //! the blended x2 (dir = 2) or x3 (dir = 3) reconstruction of one pencil: ql_p1(n,i) =
 //! the left state at the face +1/2 of cell (k,j,i), qr(n,i) = the right state at its face
-//! -1/2.  wbq = Hydro::wbq2 / wbq3, wbw = Hydro::wbw (index dir-1).
+//! -1/2. wbq = Hydro::wbq2 / wbq3, wbw = Hydro::wbw (index dir-1).
 KOKKOS_INLINE_FUNCTION
 void WbAllPLM(TeamMember_t const &member, const bool use_wb_rho, const int dir,
               const int m, const int k, const int j, const int il, const int iu,
@@ -58,7 +58,8 @@ void WbAllPLM(TeamMember_t const &member, const bool use_wb_rho, const int dir,
   for (int n=0; n<nvar; ++n) {
     const bool wbv = (n == IEN) || (n == IDN && use_wb_rho);
     par_for_inner(member, il, iu, [&](const int i) {
-      const Real qm = q(m,n,k-dk,j-dj,i-di), qc = q(m,n,k,j,i), qp = q(m,n,k+dk,j+dj,i+di);
+      const Real qm = q(m,n,k-dk,j-dj,i-di), qc = q(m,n,k,j,i);
+      const Real qp = q(m,n,k+dk,j+dj,i+di);
       Real lp, rp;
       PLM(qm, qc, qp, lp, rp);
       if (!wbv) {
@@ -71,7 +72,10 @@ void WbAllPLM(TeamMember_t const &member, const bool use_wb_rho, const int dir,
       Real lw, rw;
       PLM(qm - b_m, qc - b_c, qp - b_p, lw, rw);
       lw += b_ph; rw += b_mh;
-      if (lw < 0.0 || rw < 0.0) {lw = lp; rw = rp;}
+      if (lw < 0.0 || rw < 0.0) {
+        lw = lp;
+        rw = rp;
+      }
       // face weights: min over the two cells of each face (clamped to the built range)
       if (di) {   // x1: the global scheme (w = 1)
         ql_p1(n,i+1) = lw; qr(n,i) = rw;
@@ -100,7 +104,8 @@ void WbAllPLMDer(TeamMember_t const &member, const int dir, const int m, const i
   const int n2 = wbw.extent_int(3), n3 = wbw.extent_int(2);
   for (int n=0; n<nvar; ++n) {
     par_for_inner(member, il, iu, [&](const int i) {
-      const Real qm = qd(m,n,k-dk,j-dj,i-di), qc = qd(m,n,k,j,i), qp = qd(m,n,k+dk,j+dj,i+di);
+      const Real qm = qd(m,n,k-dk,j-dj,i-di), qc = qd(m,n,k,j,i);
+      const Real qp = qd(m,n,k+dk,j+dj,i+di);
       Real lp, rp;
       PLM(qm, qc, qp, lp, rp);
       if (n != IDPR) {
@@ -112,7 +117,10 @@ void WbAllPLMDer(TeamMember_t const &member, const int dir, const int m, const i
       Real lw, rw;
       PLM(qm - b_m, qc - b_c, qp - b_p, lw, rw);
       lw += b_ph; rw += b_mh;
-      if (lw < 0.0 || rw < 0.0) {lw = lp; rw = rp;}
+      if (lw < 0.0 || rw < 0.0) {
+        lw = lp;
+        rw = rp;
+      }
       if (di) {
         dl_p1(n,i+1) = lw; dr(n,i) = rw;
         return;
@@ -129,8 +137,8 @@ void WbAllPLMDer(TeamMember_t const &member, const int dir, const int m, const i
 }
 
 //! the cs shared-seam face state of an edge cell (Hydro::CsSeamFaceStates under
-//! wb_dirs = all): the WB deviation face value (lo: the -1/2 face, else +1/2) blended with
-//! the plain one by the face weight w, as WbAllPLM forms it in the sweep
+//! wb_dirs = all): the WB deviation face value (lo: the -1/2 face, else +1/2) blended
+//! with the plain one by the face weight w, as WbAllPLM forms it in the sweep
 KOKKOS_INLINE_FUNCTION
 Real WbSeamBlend(const Real qm, const Real qc, const Real qp, const DvceArray5D<Real> &c,
                  const int var, const int m, const int k, const int j, const int i,
@@ -145,8 +153,8 @@ Real WbSeamBlend(const Real qm, const Real qc, const Real qp, const DvceArray5D<
   return (w >= 1.0) ? qw : w*qw + (1.0 - w)*plain;
 }
 
-//! uniform grids (Cartesian, cs panel coordinates): as WbAllBlendGrid with the uniform PLM
-//! (the plain faces of any reconstruction already in ql_p1 / qr)
+//! uniform grids (Cartesian, cs panel coordinates): as WbAllBlendGrid with the uniform
+//! PLM (the plain faces of any reconstruction already in ql_p1 / qr)
 KOKKOS_INLINE_FUNCTION
 void WbAllBlendUni(TeamMember_t const &member, const bool use_wb_rho, const int dir,
                    const bool der, const int m, const int k, const int j, const int il,
@@ -169,7 +177,10 @@ void WbAllBlendUni(TeamMember_t const &member, const bool use_wb_rho, const int 
       PLM(qm - b_m, qc - b_c, qp - b_p, lw, rw);
       lw += b_ph; rw += b_mh;
       const Real lp = ql_p1(n,i), rp = qr(n,i);
-      if (lw < 0.0 || rw < 0.0) {lw = lp; rw = rp;}
+      if (lw < 0.0 || rw < 0.0) {
+        lw = lp;
+        rw = rp;
+      }
       const int km = (k - dk < 0) ? 0 : k - dk, kp = (k + dk > n3 - 1) ? n3 - 1 : k + dk;
       const int jm = (j - dj < 0) ? 0 : j - dj, jp = (j + dj > n2 - 1) ? n2 - 1 : j + dj;
       const Real wc = wbw(m,dir-1,k,j,i);
@@ -185,7 +196,7 @@ void WbAllBlendUni(TeamMember_t const &member, const bool use_wb_rho, const int 
 //! spherical polar (x2 = theta, x3 = phi): the plain faces are ALREADY in ql_p1 / qr
 //! (GridPiecewiseLinearX2/X3); this forms the WB
 //! deviation on the non-uniform grid (PLM_nonuniform at the reconstruction coordinates
-//! xv, xf: x2v_rec / xx2f, or x3v / xx3f) and blends it in with the face weights.  nd > 0:
+//! xv, xf: x2v_rec / xx2f, or x3v / xx3f) and blends it in with the face weights. nd > 0:
 //! the derived channel IDPR of qd (general EOS) against the background pressure.
 KOKKOS_INLINE_FUNCTION
 void WbAllBlendGrid(TeamMember_t const &member, const bool use_wb_rho, const int dir,
@@ -214,7 +225,10 @@ void WbAllBlendGrid(TeamMember_t const &member, const bool use_wb_rho, const int
       Hydro::PLM_nonuniform(qm - b_m, qc - b_c, qp - b_p, dxL, dxR, dxLh, dxRh, lw, rw);
       lw += b_ph; rw += b_mh;
       const Real lp = ql_p1(n,i), rp = qr(n,i);
-      if (lw < 0.0 || rw < 0.0) {lw = lp; rw = rp;}
+      if (lw < 0.0 || rw < 0.0) {
+        lw = lp;
+        rw = rp;
+      }
       const int km = (k - dk < 0) ? 0 : k - dk, kp = (k + dk > n3 - 1) ? n3 - 1 : k + dk;
       const int jm = (j - dj < 0) ? 0 : j - dj, jp = (j + dj > n2 - 1) ? n2 - 1 : j + dj;
       const Real wc = wbw(m,dir-1,k,j,i);
@@ -229,16 +243,13 @@ void WbAllBlendGrid(TeamMember_t const &member, const bool use_wb_rho, const int
 
 //! the fluid-independent view of a Hydro or MHD for the wb_dirs = all routines (shared
 //! code: Hydro:: and MHD:: members fill it and call the WbAll* functions below)
-void WbPoison(MeshBlockPack *pmbp, DvceArray5D<Real> &cache, const DvceArray4D<Real> &phiwb,
-              const Real phimax);
-void WbFluxDiag(MeshBlockPack *pmbp, DvceFaceFld5D<Real> &uflx);
 struct WbAllCtx {
   MeshBlockPack *pmbp = nullptr;
   EOS_Data eos;
   WBOption wbo;
   bool wgt = true, wbgi = false, wbs = false;
   Real r0 = 0.1, r1 = 0.3, m0 = 0.2, m1 = 0.5, eta = 1.0e-4;
-  Real phimax = 1.0e300;   // dhjwball-1106: wb_phimax (w = 0 above it)
+  Real phimax = 1.0e300;   // wb_phimax (w = 0 above it)
   DvceArray5D<Real> w0, u0, wder, wbq0, wbq2, wbq3, wbw;
   DvceArray4D<Real> phicc, phiwb, wtemp, pwb;   // phiwb: the x1 WB potential (wb_phimax)
   DvceArray4D<Real> phi1f, phi2f, phi3f;   // the face potentials (phi0.x1f/x2f/x3f)

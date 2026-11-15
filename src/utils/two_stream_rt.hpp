@@ -77,7 +77,7 @@ inline void par_reduce_clip4(const std::string &name, const int ml, const int mu
                              const Function &function, const bool async = false) {
   const int nk = ku-kl+1, nj = ju-jl+1, ni = iu-il+1;
   const int nkji = nk*nj*ni, nji = nj*ni;
-  // ck-jlin: j FASTEST, not i.  The only caller (rt_apply) reads ~5 nblk-slot sums per
+  // j FASTEST, not i.  The only caller (rt_apply) reads ~5 nblk-slot sums per
   // cell from the chain-block arrays laid out (m, blk, i, k, j), against a dozen
   // (m, k, j, i) reads; with i fastest every lane of a warp hit its own cache line.
   // Each cell's arithmetic is untouched, and the int count is order-free.
@@ -178,7 +178,7 @@ using atm_column::EffGravAt;
 // (rt_chain, rt_ck = false, rt_split = true), a test path that keeps the fixed size,
 // guarded.  The correlated-k kernels (rt_chain_ck, rt_chain_ck_lin, rt_chain_ck_lin1) and
 // the grey chain (rt_chain_grey) no longer use a compile-time column: their whole-column
-// arrays live in the n1-sized global buffer rt_ckscr_ptr (ck-scratch, ck-tiers), so any
+// arrays live in the n1-sized global buffer rt_ckscr_ptr, so any
 // n1 runs with no tier waste and no cap.
 #ifndef RT_NNC
 #define RT_NNC 72
@@ -227,7 +227,7 @@ using RtF = Real;
 #define RT_EXP(x)   exp(x)
 #endif
 
-// THE ck CHAIN KERNEL'S WHOLE-COLUMN ARRAYS LIVE IN GLOBAL MEMORY (ck-scratch).
+// THE ck CHAIN KERNEL'S WHOLE-COLUMN ARRAYS LIVE IN GLOBAL MEMORY.
 // rt_chain_ck keeps up to ten [RT_NB][n1] column arrays per thread (I_down, Cmx, Krs,
 // Kpc, Cc0/Cci/Cco, Js0..2).  As private arrays they were sized by a compile-time column
 // tier and put in the private (scratch) segment: 31 kB per lane for the production
@@ -281,7 +281,7 @@ std::conditional_t<ON, CkScrCol<T>, CkScrOne<T>> CkScrGet(Real *buf, const int g
     return CkScrOne<T>{};
   }
 }
-// ck-store: the chain kernel's groups INTERLEAVED by radial index instead: inside a
+// the chain kernel's groups INTERLEAVED by radial index instead: inside a
 // tile, element (cc, i) of group g of lane l sits at
 //   tile + ((i*S + g)*RT_NB + cc)*CKS_W + l   (in Reals),  S = the kernel's group count,
 // so at a given i every (group, chain) of the thread is a compile-time offset from ONE
@@ -315,7 +315,7 @@ std::conditional_t<ON, CkScrColI<T, S>, CkScrOne<T>> CkScrGetI(Real *buf, const 
     return CkScrOne<T>{};
   }
 }
-// ck-tiers: the same wave-tiled layout for the other column kernels (rt_chain_ck_lin,
+// the same wave-tiled layout for the other column kernels (rt_chain_ck_lin,
 // rt_chain_ck_lin1, rt_chain_grey).  Thread t's tile holds rows of n1 values; row r
 // (one chain or angle of one array) holds element i of lane l at
 //   tile + (r*n1 + i)*CKS_W + l,  tsz = (rows per thread)*n1*CKS_W.
@@ -609,7 +609,7 @@ inline DvceArray5D<Real> rt_face_flux() { return *rt_Fb_ptr; }
 inline Real rt_hist_fstar = 0.0;
 inline Real rt_hist_albedo = 0.0;
 
-// --- problem/flux_hst_rst: the face-flux cache across a restart (rthst-1101) ----------
+// --- rt_fhst_rst: the face-flux cache across a restart ---------------------------------
 // rt_Fb, rt_Qb, rt_icut and rt_cf slot 3 are written by the full RT calls only; under
 // the cadence (ck_impl_every) the history rows in between read what the last full call
 // left.  A restart starts with no cache, so until the next full call the flux history
@@ -917,11 +917,9 @@ inline bool rt_src_direct = false;
 inline bool rt_top_clamp = false;
 // problem/rt_semi_implicit: apply the split two-stream source semi-implicitly, relaxing
 // the cell toward radiative equilibrium instead of stepping explicitly (see the apply
-// kernel).  Default true, which is the behaviour since 048dff30.  The flag exists
-// because the semi-implicit step is NOT answer-preserving in general: on the cubed
-// sphere deep_hot_jupiter 09-07 configuration it moves the kinetic energy by 3 % in 20
-// cycles (A/B 2026-09-09).  Runs that must reproduce pre-048dff30 results set it false,
-// which restores the plain explicit de = src*bdt.
+// kernel).  Default true; false takes the plain explicit step de = src*bdt (the two
+// differ: on the cubed-sphere deep hot Jupiter the kinetic energy moves by 3 % in 20
+// cycles).
 inline bool rt_semi_implicit = true;
 // problem/rt_outer_verbose: print the per-cycle clip/rescue census and the mode-3
 // convergence lines even without problem/rt_cell_report.
@@ -1142,20 +1140,19 @@ inline Real rt_bot_flux = 0.0;
 //
 // Default false, i.e. THE FIX IS ON.  Set true to reproduce a pre-fix run bitwise.
 inline bool rt_layer_legacy = false;
-// problem/ck_spherical: give the CORRELATED-K thermal two-stream the SPHERICAL form of
-// 8bca3dfa, the one the grey centre-to-centre sweep and the mode-3 column solve already
-// carry.  Since 2026-09-22 problem/ck_spherical DEFAULTS TRUE on a spherical-polar or
+// problem/ck_spherical: give the CORRELATED-K thermal two-stream the SPHERICAL form
+// the grey centre-to-centre sweep and the mode-3 column solve carry.  problem/
+// ck_spherical DEFAULTS TRUE on a spherical-polar or
 // cubed-sphere mesh (and only under rt_ck && !rt_layer_legacy, the two things the guard
 // below requires) and is REFUSED on a Cartesian one; false is bitwise the
 // plane-parallel arithmetic the ck kernel used to run.
 //
-// WHY IT IS NEEDED NOW.  8bca3dfa converted the grey path and documented the ck kernel
-// as "not converted", justified by r_out/r_in < 1.3 hot-Jupiter domains.  The deep
-// hot-Jupiter production grid spans x1 = 9.44e9 .. 2.0556e10 cm, r_out/r_in = 2.18 and
-// an AREA RATIO of 4.75, so on that grid the unconverted kernel (a) does not dilute the
-// thermal flux, i.e. L = A F grows like r^2 through a transparent shell, and (b) misses
-// the -2F/r term of the deposit, so the thin upper atmosphere is irradiated from below
-// by an undiluted thermal flux.
+// WHY IT IS NEEDED.  The plane-parallel form is adequate for r_out/r_in < 1.3 only.
+// The deep hot-Jupiter production grid spans x1 = 9.44e9 .. 2.0556e10 cm, r_out/r_in =
+// 2.18 and an AREA RATIO of 4.75, so on that grid the unconverted kernel (a) does not
+// dilute the thermal flux, i.e. L = A F grows like r^2 through a transparent shell, and
+// (b) misses the -2F/r term of the deposit, so the thin upper atmosphere is irradiated
+// from below by an undiluted thermal flux.
 //
 // THE FORM.  Exactly the one derived on RTCol3::Bt in two_stream_column_implicit.hpp and
 // reused by the grey sweep: inside a cell the frame area A_i = V_i/dx_i is constant and
@@ -1242,7 +1239,7 @@ inline bool ck_spherical = false;
 // plane-parallel construction with no radial extent.
 //
 // THE DEPOSIT IS UNCHANGED IN FORM -- the local absorption rate, no column-power
-// bookkeeping (see the retraction on the beam in 2db7095c).  Written as a flux difference
+// bookkeeping.  Written as a flux difference
 // across the cell so that a thick layer does not under-deposit,
 //     Qb_i = (1-albedo) F_star w_b (kappa rho)_i [e^-tau(r_i) - e^-tau(r_{i+1})]
 //                                               / [tau(r_{i+1}) - tau(r_i)],
@@ -1263,7 +1260,7 @@ inline bool ck_spherical = false;
 // tau_ray(r_i) is not a running sum -- every target has its own chord set.  It is sized
 // to one element when the switch is off: the kernel is templated on the flag.
 inline bool ck_beam_sph = false;
-// problem/ck_beam_par (ck-fast2 lever 3): the pseudo-spherical beam of the tm sweep's
+// problem/ck_beam_par: the pseudo-spherical beam of the tm sweep's
 // STORING pass in its own kernels, a thread per target face instead of a thread per
 // column (the in-kernel block walks O(N^2) chords serially: measured 48 of the storing
 // kernel's 94 ms per call at nx1 256).  Same chords, same order, same deposit arithmetic;
@@ -1272,9 +1269,9 @@ inline bool ck_beam_sph = false;
 // deposits below e^-60 of the incident beam.  Needs ck_impl_lin, lin_thr = 1 (scratch).
 inline bool ck_beam_par = false;
 inline DvceArray4D<int> *ck_bstop_ptr = nullptr;   // (m, beam chain, k, j)
-// ck-next: ck_coef's per-cell inputs xT, xP, rho, dz as (m, q, i, k, j), j fastest
+// ck_coef's per-cell inputs xT, xP, rho, dz as (m, q, i, k, j), j fastest
 inline DvceArray5D<Real> *ck_cin_ptr = nullptr;
-// problem/ck_store_split (ck-store): on the storing pass of the linear re-apply, store the
+// problem/ck_store_split: on the storing pass of the linear re-apply, store the
 // opacity-only operator with a per-(band, g) kernel (ck_coef) and take the pass's fluxes
 // from the linear kernels, instead of running rt_chain_ck (see ckstsp_ in the pass).  The
 // operator is bitwise the chain kernel's; the storing pass's Src and Fb change by
@@ -1491,7 +1488,7 @@ inline int ck_sph_face = 0;
 // depth still from the ghost pressure).  The stellar beam is unchanged.  Chain kernel
 // only; refused with ck_impl_lin / ck_impl_jac_lin.
 inline int ck_sph_top = 0;
-// problem/ck_wall_flux_exact (wallfix-1002; default true on a fresh run, false on a
+// problem/ck_wall_flux_exact (default true on a fresh run, false on a
 // restart whose input lacks the key): the internal flux of the ck_sph_face = 5 / 6 wall.
 // The Marshak-type wall J + beta H = (B_cut + I_int)(1/2 + beta/4) with the pair at
 // mu = mu_eff = sqrt f gives u = R0 d + (B_cut + I_int)(1 + beta/2)/(1 + beta mu), so
@@ -1545,30 +1542,6 @@ inline bool ck_wall_flux_exact = false;
 inline int ck_vef_every = 1;
 inline int ck_vef_ncore = 8;          // rays through the bottom wall (p < r_cut)
 inline bool ck_vef_sync = true;
-// problem/ck_vef_report = N > 0 (diagnostic, print only): at every VEF refresh (after
-// the first) rank 0 prints, per pressure decade, the range of f = s^2/3 and of the face
-// factor gamma over all (band, g, cell), the largest relative change of s and gamma
-// against the factors being replaced (the lag of ck_vef_every), and the number of faces
-// whose x = gamma rho' (see the kernel) is outside [1/1.1, 1.1].  Nothing reads it.
-inline int ck_vef_report = 0;
-// problem/ck_f6_report = N > 0 (diagnostic, print only, read only when named): after
-// every ck_sph_face = 6 build rank 0 prints the number of ladder elements (g_s, g_p,
-// K_eq/B, R_c over all cells and (band, g)), how many are negative or not finite, and
-// the smallest ratio row excess / diagonal of the node rows in K (the shunt g_p over
-// g_p + the node's two series conductances; > 0: strictly diagonally dominant).
-inline int ck_f6_report = 0;
-// problem/ck_vef_xlim = X > 1 (default 0 = off, bitwise): limit the VEF face factor
-// x = gamma rho' of every interior face to [1/X, X] (gamma = (Phi f)_a/(Phi f)_b,
-// rho' = (A_b/A_a) s_b/s_a).  The face map of ck_sph_face = 5 has the reflections
-// (1 - x)/(1 + x) and (x - 1)/(1 + x): one of them is NEGATIVE whenever x != 1, and a
-// strong f contrast between two cells makes the frozen operator non-monotone (a cell's
-// net heating can grow with its own temperature).  On the WASP-121b 10x fresh start the
-// factors reach f ~ 0.1 and x = 0.5..1.6 at 1e-5..1e-3 bar within 150 cycles, the
-// runaway spreads down and the hydro dt collapses (ckf5_stab_1001/RESULTS.md).
-// Limiting x bounds the negative reflection by (X - 1)/(X + 1); it changes gamma only
-// where f jumps by a factor ~X^2 between neighbouring cells.  rho' (the flux
-// continuity) is untouched, so the deposit still telescopes.
-inline Real ck_vef_xlim = 0.0;
 // problem/ck_sph_face = 6 (the DEFAULT since f6-default 10-02): the VEF closure of face
 // 5 (same formal solution,
 // same f, h, beta, same ck_vef_every refresh) discretised as a PASSIVE LADDER NETWORK in
@@ -1659,87 +1632,6 @@ KOKKOS_INLINE_FUNCTION
 Real CkF6Rc(const CkF6Cell &a, const CkF6Cell &b) {
   const Real la2 = a.lam*a.lam, lb2 = b.lam*b.lam;
   return lb2/(1.0 + lb2)*a.z*a.phc + la2/(1.0 + la2)*b.z*b.phc;
-}
-template <typename XF>
-inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs,
-                        const DvceArray5D<Real> &vg,
-                        const DvceArray5D<Real> &vso, const DvceArray5D<Real> &vgo,
-                        const DvceArray4D<Real> &pb, const DvceArray3D<int> &icc,
-                        const XF &X1F,
-                        const int nmb1, const int nc, const int ks, const int ke,
-                        const int js, const int je, const int ie) {
-  constexpr int NBIN = 12;   // decades 1e-9 .. 1e3 bar
-  constexpr int NQ = 9;      // fmin fmax gmin gmax dsmax dgmax nout xmin xmax
-  DvceArray1D<Real> acc("ck_vef_rep", NBIN*NQ);
-  auto acc_ = acc;
-  Kokkos::parallel_for("ck_vef_rep_init", Kokkos::RangePolicy<DevExeSpace>(0, NBIN),
-  KOKKOS_LAMBDA(const int b) {
-    acc_(b*NQ+0) = 1.0e30; acc_(b*NQ+1) = -1.0e30;
-    acc_(b*NQ+2) = 1.0e30; acc_(b*NQ+3) = -1.0e30;
-    acc_(b*NQ+4) = 0.0; acc_(b*NQ+5) = 0.0; acc_(b*NQ+6) = 0.0;
-    acc_(b*NQ+7) = 1.0e30; acc_(b*NQ+8) = -1.0e30;
-  });
-  par_for("ck_vef_rep", DevExeSpace(), 0, nmb1, 0, nc - 1, ks, ke, js, je,
-  KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
-    const int icut = icc(m,k,j);
-    for (int i=icut; i<=ie; ++i) {
-      const Real p = pb(m,k,j,i);
-      int b = static_cast<int>(floor(log10(fmax(p, 1.0e-30)))) + 9;
-      b = (b < 0) ? 0 : ((b >= NBIN) ? NBIN - 1 : b);
-      const Real s = vs(m,c,i+1,k,j);
-      const Real f = s*s/3.0;
-      const Real g = vg(m,c,i,k,j);
-      Kokkos::atomic_min(&acc_(b*NQ+0), f);
-      Kokkos::atomic_max(&acc_(b*NQ+1), f);
-      Kokkos::atomic_min(&acc_(b*NQ+2), g);
-      Kokkos::atomic_max(&acc_(b*NQ+3), g);
-      const Real so = vso(m,c,i+1,k,j), go = vgo(m,c,i,k,j);
-      if (so > 0.0) Kokkos::atomic_max(&acc_(b*NQ+4), fabs(s/so - 1.0));
-      if (go > 0.0) Kokkos::atomic_max(&acc_(b*NQ+5), fabs(g/go - 1.0));
-      // x = gamma rho' of the face below cell i (rho' = (A_b/A_a) s_b/s_a, A = the
-      // frame area r_node^2): the face reflections are (1 - x)/(1 + x) and
-      // (x - 1)/(1 + x), both >= 0 only at x = 1
-      if (i > icut) {
-        const Real rm = X1F(m,i-1), r0 = X1F(m,i), rp = X1F(m,i+1);
-        const Real ab = rm*rm + rm*r0 + r0*r0, aa = r0*r0 + r0*rp + rp*rp;
-        const Real x = g*(ab/aa)*vs(m,c,i,k,j)/s;
-        Kokkos::atomic_min(&acc_(b*NQ+7), x);
-        Kokkos::atomic_max(&acc_(b*NQ+8), x);
-        if (x > 1.1 || x < 1.0/1.1) Kokkos::atomic_add(&acc_(b*NQ+6), 1.0);
-      }
-    }
-  });
-  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), acc);
-  Real v[NBIN*NQ], r[NBIN*NQ];
-  for (int q=0; q<NBIN*NQ; ++q) v[q] = h(q);
-#if MPI_PARALLEL_ENABLED
-  for (int b=0; b<NBIN; ++b) {
-    v[b*NQ+0] = -v[b*NQ+0]; v[b*NQ+2] = -v[b*NQ+2]; v[b*NQ+7] = -v[b*NQ+7];
-  }
-  Real cnt[NBIN];
-  for (int b=0; b<NBIN; ++b) {
-    cnt[b] = v[b*NQ+6]; v[b*NQ+6] = 0.0;
-  }
-  MPI_Reduce(v, r, NBIN*NQ, MPI_ATHENA_REAL, MPI_MAX, 0, MPI_COMM_WORLD);
-  Real cr[NBIN];
-  MPI_Reduce(cnt, cr, NBIN, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
-  for (int b=0; b<NBIN; ++b) {
-    r[b*NQ+0] = -r[b*NQ+0]; r[b*NQ+2] = -r[b*NQ+2]; r[b*NQ+6] = cr[b];
-    r[b*NQ+7] = -r[b*NQ+7];
-  }
-#else
-  for (int q=0; q<NBIN*NQ; ++q) r[q] = v[q];
-#endif
-  if (global_variable::my_rank == 0) {
-    for (int b=0; b<NBIN; ++b) {
-      if (r[b*NQ+1] < 0.0) continue;
-      std::printf("### vefrep ncycle=%d p=1e%+d f=[%.4e,%.4e] gam=[%.4e,%.4e] "
-                  "dsmax=%.3e dgmax=%.3e x=[%.4e,%.4e] nx10=%.0f\n",
-                  static_cast<int>(pm->ncycle),
-                  b - 9, r[b*NQ+0], r[b*NQ+1], r[b*NQ+2], r[b*NQ+3], r[b*NQ+4],
-                  r[b*NQ+5], r[b*NQ+7], r[b*NQ+8], r[b*NQ+6]);
-    }
-  }
 }
 inline bool CkVefDue(Mesh *pm, const bool ckfop, const bool ckfst) {
   const bool stp = !ck_vef_sync || !ckfop || ckfst;    // a pass that may refresh
@@ -2023,7 +1915,7 @@ Real BFaceW(const Real k_own, const Real k_far, const bool on) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void CkCinCout
-//! \brief ck-next: the half-layer pair (cin, cout) that ck_coef and the chain kernel's
+//! \brief the half-layer pair (cin, cout) that ck_coef and the chain kernel's
 //! cofs store in ck_ci / ck_co, formed again from the stored e0 and kappa rho, the
 //! cell's dz and the chain's mu -- the same expressions on the same numbers, so the
 //! stored values bitwise.  The linear kernels read two Reals per (cell, chain) less.
@@ -2040,7 +1932,7 @@ void CkCinCout(const Real kro, const Real dz, const Real mu, const Real e0r, Rea
   co = static_cast<Real>(cout);
 }
 //! \fn Real CkIdn
-//! \brief ck-next: lP slot 1, 1/(1 + R beta), from slot 0 and beta by ck_lin_build's
+//! \brief lP slot 1, 1/(1 + R beta), from slot 0 and beta by ck_lin_build's
 //! expression (bitwise the stored value)
 KOKKOS_INLINE_FUNCTION
 Real CkIdn(const Real rj, const Real bt) {
@@ -2048,7 +1940,7 @@ Real CkIdn(const Real rj, const Real bt) {
   return 1.0/static_cast<Real>(dn);
 }
 //! \fn Real CkEmW
-//! \brief ck-next: the emission weight lP slot 5 held, 2 (wfc/mu) kappa rho, from
+//! \brief the emission weight lP slot 5 held, 2 (wfc/mu) kappa rho, from
 //! 2 (wfc/mu) (lC row 2, stored by ck_lin_build) as a lone rounded product (CkMulRn):
 //! the stored value
 KOKKOS_INLINE_FUNCTION
@@ -2056,7 +1948,7 @@ Real CkEmW(const Real emw, const Real kro) {
   return CkMulRn(emw, kro);
 }
 //! \fn Real CkE0
-//! \brief ck-lin2: the half-layer e0 = 1 - e^{-dtau/mu}, dtau = 0.5 kappa rho dz, as
+//! \brief the half-layer e0 = 1 - e^{-dtau/mu}, dtau = 0.5 kappa rho dz, as
 //! ck_coef stores it in ck_c0 (ck_coef forms it by this function): the linear kernels
 //! form it from kappa rho and dz instead of reading ck_c0
 KOKKOS_INLINE_FUNCTION
@@ -2066,7 +1958,7 @@ Real CkE0(const Real kro, const Real dz, const Real mu) {
   return static_cast<Real>(-RT_EXPM1(-x));
 }
 //! \fn void CkLayW
-//! \brief ck-lin2: lP slots 2-4 of the layer joining cells i and i+1 -- dslv/dB_i,
+//! \brief lP slots 2-4 of the layer joining cells i and i+1 -- dslv/dB_i,
 //! dsuu/dB_{i+1} and the face interpolation dt_l/dtc -- from the two cells' kappa rho and
 //! dz by ck_lin_build's expressions (ck_lin_build forms them by this function): the
 //! linear kernels form them instead of reading lP
@@ -2077,7 +1969,7 @@ void CkLayW(const Real kro, const Real kru, const Real dz, const Real dzu, const
   wu = BFaceW(kro, kru, bf);
   const Real dt_l = 0.5*kro*dz;
 #if defined(__CUDA_ARCH__)
-  // ck-lin2-fma: nvcc contracts the sum as fma(0.5 kru, dzu, dt_l) in ck_lin_build,
+  // nvcc contracts the sum as fma(0.5 kru, dzu, dt_l) in ck_lin_build,
   // which stored these weights before; in the kernels that now form them it chose
   // otherwise.  The rounding is spelled out, so every kernel forms the numbers the
   // stored ones were (GPU-bitwise).  Host builds do not contract (a*b + c as written).
@@ -2265,7 +2157,7 @@ void get_Tint(const Real &Teq, Real &Tint) {
   return;
 }
 
-// defined in utils/two_stream_rt_pass.cpp (tusplit-1102)
+// defined in utils/two_stream_rt_pass.cpp
 void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
 
 //----------------------------------------------------------------------------------------
@@ -2296,7 +2188,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
 //! corrected in the last call and their sum r V [erg], this rank.
 
 void CkConserveFlux(Mesh *pm, const Real bdt);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn CkNonconvLoc
@@ -2308,7 +2200,7 @@ void CkConserveFlux(Mesh *pm, const Real bdt);
 //! only; nothing is written.
 
 void CkNonconvLoc(Mesh *pm, const Real bdt);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn CkNcRefSnap / CkNcRefCmp
@@ -2316,29 +2208,29 @@ void CkNonconvLoc(Mesh *pm, const Real bdt);
 //! after pass N, and at the end of the call compare it with the final one.  Print only.
 
 void CkNcRefSnap(Mesh *pm);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 void CkNcRefCmp(Mesh *pm, const int nsnap, const int npass, const bool conv);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn picket_fence_two_stream_RT
 //! \brief the two-stream source step.
 
 void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn void picket_fence_two_stream_RT
 //! \brief the outer radiative call: the body above, then the rank-uniform once-per-call
 //! point where the source-limiter clip count is reduced (see RTSourceLimiterReduce).
 void picket_fence_two_stream_RT(Mesh *pm, Real bdt);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 
 //----------------------------------------------------------------------------------------
 //! \struct TsrtX1F, TsrtEiN, TsrtRhoN, TsrtAFC, TsrtACC, TsrtBTF, TsrtMIXF
-//! \brief tusplit-1102: the seven helpers of picket_fence_two_stream_RT_pass that ride
+//! \brief the seven helpers of picket_fence_two_stream_RT_pass that ride
 //! in the ctx tuples of TsrtCkChain / TsrtGreyRt (X1F, eiN, rhoN, AFC, ACC, BTF, MIXF).
 //! They were KOKKOS_LAMBDAs local to the pass; as named functors (the same bodies, the
 //! same by-value captures as members, auto return type as the lambda's) the tuple types
@@ -2432,7 +2324,7 @@ struct TsrtMIXF {
 //----------------------------------------------------------------------------------------
 //! \fn TsrtCkChain, TsrtGreyRt
 //! \brief the correlated-k chain and grey column launches of
-//! picket_fence_two_stream_RT_pass (DECLARATIONS).  tusplit-1102: the bodies live in
+//! picket_fence_two_stream_RT_pass (DECLARATIONS).  The bodies live in
 //! utils/two_stream_rt_chain.hpp and are explicitly instantiated, for the tag sets the
 //! pass dispatches, in utils/two_stream_rt_chain_*.cpp; the pass itself is
 //! utils/two_stream_rt_pass.cpp.  TsrtCkChainCtx / TsrtGreyRtCtx are the types of the
@@ -2535,7 +2427,7 @@ inline CkCadState CkCadMakeState(Mesh *pm) {
 //! sum dx |Q_new| over the refreshed cells: the linear model's error at the refresh.
 
 void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn int CkCadLin
@@ -2550,7 +2442,7 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag);
 //! 4 max deviation, 5 sum dx |Q0| dt.  Returns the columns flagged on this rank.
 
 int CkCadLin(Mesh *pm, const Real dt, const bool diag);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn void CkCadStep
@@ -2560,7 +2452,7 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag);
 //! linearised step otherwise, with a full call for the columns the guard flags.
 
 void CkCadStep(Mesh *pm, const Real dt);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 }  // namespace two_stream_rt
 

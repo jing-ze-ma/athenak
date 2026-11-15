@@ -406,11 +406,12 @@ void MHD::CsSeamInit(ParameterInput *pin) {
   cs_seam_mhd = true;
   if (!pp->pmesh->use_cubed_sphere || !pp->pmesh->three_d ||
       recon_method != ReconstructionMethod::plm ||
-      (use_wellbalance_dynamic && use_wb_x2) || use_wellbalance_static_reconst_perturb ||
+      use_wellbalance_static_reconst_perturb ||
       pp->pmesh->multilevel || pp->pcoord->is_special_relativistic ||
       pp->pcoord->is_general_relativistic || use_fofc) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<mhd>/cs_seam_mhd needs a 3-D cubed sphere, reconstruct = plm, no x2/x3 "
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<mhd>/cs_seam_mhd needs a 3-D cubed sphere, "
+              << "reconstruct = plm, no x2/x3 "
               << "well-balanced or static-perturbation reconstruction, a uniform mesh, "
               << "Newtonian MHD, no fofc" << std::endl;
     std::exit(EXIT_FAILURE);
@@ -453,7 +454,8 @@ void MHD::CsSeamInit(ParameterInput *pin) {
     auto &pan_ = pp->pmb->mb_panel;
     auto &lev_ = pp->pmb->mb_lev;
     auto &sz_ = pp->pmb->mb_size;
-    ng_.sync_host(); gid_.sync_host(); pan_.sync_host(); lev_.sync_host(); sz_.sync_host();
+    ng_.sync_host(); gid_.sync_host(); pan_.sync_host(); lev_.sync_host();
+    sz_.sync_host();
     Kokkos::realloc(nbloc_, nmb, 4);
     auto hnb = Kokkos::create_mirror_view(nbloc_);
     const int nid[4] = {8, 12, 24, 28};
@@ -563,11 +565,11 @@ void MHD::CsSeamFaceStates() {
   const int ob = nvars + NDERIVED;
   const int nfs1 = cs_seam_nfs/2;
   DvceArray2D<int> nomlat;
-  cs_seam::CsSeamPLMFill(pmy_pack, w0, nvars, 0, -1, eos_.pfloor, eos_.plm_c1, *pseamfs,
+  cs_seam::CsSeamPLMFill(pmy_pack, w0, nvars, 0, -1, eos_.pfloor, *pseamfs,
                          false, nomlat, is-1, ie+1);
-  cs_seam::CsSeamPLMFill(pmy_pack, wder, nder, nvars, IDPR, eos_.pfloor, eos_.plm_c1,
+  cs_seam::CsSeamPLMFill(pmy_pack, wder, nder, nvars, IDPR, eos_.pfloor,
                          *pseamfs, false, nomlat, is-1, ie+1);
-  cs_seam::CsSeamPLMFill(pmy_pack, bcc0, 3, ob, -1, eos_.pfloor, eos_.plm_c1, *pseamfs,
+  cs_seam::CsSeamPLMFill(pmy_pack, bcc0, 3, ob, -1, eos_.pfloor, *pseamfs,
                          false, nomlat, is-1, ie+1);
   if (wb_all) {   // the edge cells' own WB seam face states (shared code)
     hydro::WbAllCtx c = WbCtx();
@@ -724,9 +726,11 @@ void MHD::CsVertexEmf3() {
       return (!alongj && jj < d.js) ? d.js : ((!alongj && jj > d.je) ? d.je : jj);
     };
     auto re = [&](const int kk, const int jj) {
-      return w0_(m,IDN,mk(kk),mj(jj),i)*(has_e_ ? fabs(w0_(m,IEN,mk(kk),mj(jj),i)) : cs2_);
+      return w0_(m,IDN,mk(kk),mj(jj),i)*(has_e_ ? fabs(w0_(m,IEN,mk(kk),mj(jj),i))
+                                         : cs2_);
     };
-    auto pick = [&](const Real fd, const Real ra, const Real rb, const Real a, const Real b) {
+    auto pick = [&](const Real fd, const Real ra, const Real rb, const Real a,
+                    const Real b) {
       if (sm_ >= 0.0) return b + EmfSmoothW(fd, sm_, 0.5*(ra + rb))*(a - b);
       return (fd >= 0.0) ? a : b;
     };
@@ -774,9 +778,7 @@ void MHD::UctSeamOwnSide() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int nc = indcs.nx2;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
-  const bool wsf_ = wall_closed_ix1 && wall_stress_free;
   const BoundaryFlag rflag_ = BoundaryFlag::reflect;
-  const BoundaryFlag uflag_ = BoundaryFlag::user;
   auto X = xrec_;
   seam_for("uct_seam_own", DevExeSpace(), 0, nmb1, 0, 3, 0, nc-1, d.is, d.ie,
   KOKKOS_LAMBDA(const int m, const int sd, const int c, const int i) {
@@ -812,7 +814,8 @@ void MHD::UctSeamOwnSide() {
       CellV(d, f2, m, K(a,r2), J(a,r2), ii, v2);
       for (int q=0; q<3; ++q) h[q] = OwnCarry(v0[q], v1[q], v2[q], ocm) - v0[q];
     };
-    auto Bown = [&](const DvceArray4D<Real> &b, const int a, const int ii, const bool fk) {
+    auto Bown = [&](const DvceArray4D<Real> &b, const int a, const int ii,
+                    const bool fk) {
       // fk: the face index runs along the seam (an along-seam face a), else cell a
       const int kk0 = K(a, r0), jj0 = J(a, r0);
       if (x2t) return OwnCarry(b(m,kk0,r0,ii), b(m,kk0,r1,ii), b(m,kk0,r2,ii), ocm);
@@ -863,8 +866,7 @@ void MHD::UctSeamOwnSide() {
       }
       const int ifc = (s == 0) ? i : d.ie+1;
       const bool wall_in = ifc == d.is &&
-          ((mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_) ||
-           (wsf_ && mb_bcs.d_view(m,BoundaryFace::inner_x1) == uflag_));
+                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_;
       const bool wall_out = ifc == d.ie+1 &&
                             mb_bcs.d_view(m,BoundaryFace::outer_x1) == rflag_;
       const int k0 = K(c, r0), j0 = J(c, r0);
@@ -881,12 +883,18 @@ void MHD::UctSeamOwnSide() {
       const Real *t = x2t ? fe.e2 : fe.e1;
       const Real *nS = x2t ? fe.nxi : fe.neta;
       const Real *nE = fe.r;
-      Real u1[3], u2[3]; PlaneBasis(t, nS, u1, u2);
+      Real u1[3], u2[3];
+      PlaneBasis(t, nS, u1, u2);
       Real nl[4][3];
-      for (int q=0; q<3; ++q) {nl[0][q] = nS[q]; nl[1][q] = nS[q]; nl[2][q] = nE[q];
-                               nl[3][q] = nE[q];}
+      for (int q=0; q<3; ++q) {
+        nl[0][q] = nS[q];
+        nl[1][q] = nS[q];
+        nl[2][q] = nE[q];
+        nl[3][q] = nE[q];
+      }
       Real tgE[3], tgS[3];
-      TxG(u1, u2, nl, 4, nE, tgE); TxG(u1, u2, nl, 4, nS, tgS);
+      TxG(u1, u2, nl, 4, nE, tgE);
+      TxG(u1, u2, nl, 4, nS, tgS);
       // seam faces at radial cells ifc-1 (lo) and ifc (hi): own-cell radial carries
       Real vS[2][3], bS[2];
       Frame fc; FrC(c, r0, fc);
@@ -912,7 +920,8 @@ void MHD::UctSeamOwnSide() {
       SolveB(u1, u2, nS, bS[0], nE, bE, Blo);
       SolveB(u1, u2, nS, bS[1], nE, bE, Bhi);
       const Real xl = Dot3(Blo, tgE), xr = Dot3(Bhi, tgE);
-      Real part = aE*Dot3(vS[0], nE)*xl + (1.0 - aE)*Dot3(vS[1], nE)*xr - (drE*xr - dlE*xl);
+      Real part = aE*Dot3(vS[0], nE)*xl + (1.0 - aE)*Dot3(vS[1], nE)*xr
+          - (drE*xr - dlE*xl);
       for (int h=0; h<2; ++h) {
         const int ii = (h == 0) ? ifc-1 : ifc;
         part += HalfC(pleft, us(m,0,SK(c),SJ(c),ii), us(m,1,SK(c),SJ(c),ii),
@@ -929,7 +938,8 @@ void MHD::UctSeamOwnSide() {
       if (fa < 0 || fa > nc || (fa == 0 && vlo) || (fa == nc && vhi)) {
         out(2+s) = 0.0; continue;
       }
-      Frame fe; MakeFrame(p, XiF(d, m, x2t ? sf : cb+fa), EtaF(d, m, x2t ? cb+fa : sf), fe);
+      Frame fe;
+      MakeFrame(p, XiF(d, m, x2t ? sf : cb+fa), EtaF(d, m, x2t ? cb+fa : sf), fe);
       const Real *t = fe.r;
       const Real *sp = x2t ? fe.e2 : fe.e1;
       const Real *nS = x2t ? fe.nxi : fe.neta;
@@ -947,12 +957,18 @@ void MHD::UctSeamOwnSide() {
       for (int q=0; q<3; ++q) nE[q] = x2t ? ff.neta[q] : ff.nxi[q];
       const Real ens = Dot3(nE, nS);
       for (int q=0; q<3; ++q) nW[q] = nE[q] - 2.0*ens*nS[q];
-      Real u1[3], u2[3]; PlaneBasis(t, nS, u1, u2);
+      Real u1[3], u2[3];
+      PlaneBasis(t, nS, u1, u2);
       Real nl[4][3];
-      for (int q=0; q<3; ++q) {nl[0][q] = nS[q]; nl[1][q] = nS[q]; nl[2][q] = nE[q];
-                               nl[3][q] = nW[q];}
+      for (int q=0; q<3; ++q) {
+        nl[0][q] = nS[q];
+        nl[1][q] = nS[q];
+        nl[2][q] = nE[q];
+        nl[3][q] = nW[q];
+      }
       Real tgE[3], tgS[3];
-      TxG(u1, u2, nl, 4, nE, tgE); TxG(u1, u2, nl, 4, nS, tgS);
+      TxG(u1, u2, nl, 4, nE, tgE);
+      TxG(u1, u2, nl, 4, nS, tgS);
       const Real aE = ua(m,0,kf,jf,i), dlE = ua(m,1,kf,jf,i), drE = ua(m,2,kf,jf,i);
       Real bE = x2t ? OwnCarry(ba(m,kf,r0,i), ba(m,kf,r1,i), ba(m,kf,r2,i), ocm)
                     : OwnCarry(ba(m,r0,jf,i), ba(m,r1,jf,i), ba(m,r2,jf,i), ocm);
@@ -1197,8 +1213,12 @@ void MHD::CsSeamResist(const DvceFaceFld4D<Real> &b0, const DvceArray4D<Real> &e
     const bool rev = SeamRev(d, m, sd);
     const int cb = x2t ? ks : js;
     const int sf = x2t ? (lo ? js : je+1) : (lo ? ks : ke+1);
-    auto O = [&](const int v) { return x2t ? o2(m, v, cb + c, sf, i) : o3(m, v, sf, cb + c, i); };
-    auto N = [&](const int v) { return x2t ? n2(m, v, cb + c, sf, i) : n3(m, v, sf, cb + c, i); };
+    auto O = [&](const int v) {
+      return x2t ? o2(m, v, cb + c, sf, i) : o3(m, v, sf, cb + c, i);
+    };
+    auto N = [&](const int v) {
+      return x2t ? n2(m, v, cb + c, sf, i) : n3(m, v, sf, cb + c, i);
+    };
     const Real sg = rev ? -1.0 : 1.0;
     const Real ea = 0.5*(O(0) + sg*N(0));
     if (x2t) {

@@ -8,18 +8,17 @@
 //! implicit column step (CkImplStep, CkWarmSeed), the flux conservation /
 //! non-convergence diagnostics and the ck_impl_every cadence (CkCadStore, CkCadLin,
 //! CkCadStep).
-//! tusplit-1102: moved verbatim out of the two-stream headers (which keep the
-//! declarations and the doc comments) so that they are compiled once, in their
-//! own translation unit.
+//! The two-stream headers keep the declarations and the doc comments, so that the
+//! bodies are compiled once, in their own translation unit.
 
 #include <algorithm>
+#include <cinttypes>
 #include <cstdio>
 #include <iostream>
 #include <string>
 #include <vector>
 
 #include "utils/two_stream_rt.hpp"
-#include "utils/ck_2nd.hpp"     // ck2nd-1102 (keys read only when named)
 #include "pgen/pgen.hpp"
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -37,18 +36,12 @@ void CkWarmSeed(Mesh *pm, DvceArray5D<Real> u0) {
   auto dep_ = *ck_dep_ptr;
   auto sd_ = *ck_seed_ptr;
   auto ei_ = *ck_ei_ptr;
-  // ck2nd-1102 problem/ck_t2_seed: the stage predictor instead (full calls only)
-  const bool ext = ck_seed_ext_on && !ck_cad_partial && (ck_seed_ext_ptr != nullptr);
-  const bool warm = ck_impl_warm || ext;
-  auto sx_ = ext ? *ck_seed_ext_ptr : dep_;
+  const bool warm = ck_impl_warm;
   const Real cap = ck_impl_dtmax;
   par_for("ck_warm_seed", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real s = 0.0;
-    if (ext) {
-      s = sx_(m,k,j,i);   // prod-1102: capped where it is formed (DhjCkT2Stage)
-      u0(m,IEN,k,j,i) += s;
-    } else if (warm) {
+    if (warm) {
       const Real e = ei_(m,k,j,i);          // the previous call's last iterate
       s = dep_(m,k,j,i);
       if (e > 0.0) {
@@ -66,7 +59,7 @@ void CkWarmSeed(Mesh *pm, DvceArray5D<Real> u0) {
   });
 }
 
-// layoutfix-1106 ck_impl_global_ctl: the convergence slots over all ranks (0, 1 maxima, the
+// ck_impl_global_ctl: the convergence slots over all ranks (0, 1 maxima, the
 // rest sums of counts and report-only sums)
 template <class H>
 static void CkCnvGlobal(H &h) {
@@ -198,10 +191,6 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     const int ngd_ = ck_impl_negdbg;
     const bool rfb_ = ck_impl_rowfb;
     const bool npv_ = ck_impl_negpiv;
-    const bool fstp_ = ck_force_step;       // ck2nd-1102 ck_impl_xpass
-    const Real tinc_ = ck_tol_inc;          // ck2nd-1102 (0 = off)
-    const Real tflr_ = ck_tol_floor;
-    const Real txfl_ = ck_tol_xfloor;
     const Real ptp_ = (ck_pbar_ptr != nullptr) ? ck_impl_tol_ptop : 0.0;
     const Real ept_ = ck_impl_norm_eps_top;
     auto pbr_ = (ptp_ > 0.0) ? *ck_pbar_ptr : CkDum<DvceArray4D<Real>>("ck_pbar_d");
@@ -282,18 +271,9 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
         auto epsc = [&](const int i) -> Real {
           return (ptp_ > 0.0 && pbr_(m,k,j,i) < ptp_) ? ept_ : eps;
         };
-        // ck2nd-1102 problem/ck_impl_tol_inc: the norm relative to the step (s <= tol
-        // <=> |R| <= tau |e - e*| + floor |e| + xfloor bdt (|S| + 2 E): the cell's OWN
-        // e and its gross exchange A + E, the round-off scale of S = A - E; no eps e_max
-        // share, which in a thin top cell is 1e5-1e9 x its e); off: today's norm
+        // the residual relative to the cell's energy (plus the eps share of the column
+        // maximum)
         auto snrm = [&](const int i, const Real r) -> Real {
-          // (ck_impl_tol_ptop > 0: the top cells p < ptop keep today's test)
-          if (tinc_ > 0.0 && !(ptp_ > 0.0 && pbr_(m,k,j,i) < ptp_)) {
-            const Real ec = ei_(m,k,j,i);
-            const Real den = tinc_*fabs(ec - est_(m,k,j,i)) + tflr_*fabs(ec)
-                             + txfl_*bdt*(fabs(src_(m,k,j,i)) + 2.0*fabs(em_(m,k,j,i)));
-            return (den > 0.0) ? tol*fabs(r)/den : ((r == 0.0) ? 0.0 : 1.0e300);
-          }
           return fabs(r)/(ei_(m,k,j,i) + epsc(i)*emax);
         };
         Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
@@ -343,7 +323,7 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           sm += bdt*src_(m,k,j,i)*dx1_(m,k,j,i);
         }, ss);
         // ck_impl_warm_step: pass 0 of a warm-started call always takes a step
-        const bool cvd = (rn <= tol) && !wfs_ && !fstp_;
+        const bool cvd = (rn <= tol) && !wfs_;
         if (!pred_) {
           Kokkos::single(Kokkos::PerTeam(tm), [&]() {
             Kokkos::atomic_max(&cnv_(0), rn);
@@ -1081,7 +1061,7 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     }
     auto hcf = ck_impl_nosync ? *hcf_c : Kokkos::create_mirror_view(cnv_);
     Kokkos::deep_copy(hcf, cnv_);
-    CkCnvGlobal(hcf);   // layoutfix-1106
+    CkCnvGlobal(hcf);
     ck_impl_last_res = hcf(0);
     ck_impl_last_gap = (hcf(5) != 0.0) ? (hcf(4)/hcf(5) - 1.0) : 0.0;
     ck_impl_nactive = static_cast<int>(hcf(6));
@@ -1154,7 +1134,7 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
   });
   auto hc = Kokkos::create_mirror_view(cnv_);
   Kokkos::deep_copy(hc, cnv_);
-  CkCnvGlobal(hc);   // layoutfix-1106
+  CkCnvGlobal(hc);
   ck_impl_last_res = hc(0);
   ck_impl_last_gap = (hc(5) != 0.0) ? (hc(4)/hc(5) - 1.0) : 0.0;
   ck_impl_nactive = static_cast<int>(hc(6));
@@ -1385,7 +1365,7 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     if (cap) Kokkos::atomic_add(&cnv_(2), 1.0);
   });
   Kokkos::deep_copy(hc, cnv_);
-  CkCnvGlobal(hc);   // layoutfix-1106
+  CkCnvGlobal(hc);
   ck_impl_last_dst = hc(1);
   ck_impl_ncap = static_cast<int>(hc(2));
   ck_impl_nfall = static_cast<int>(hc(3));
@@ -1772,12 +1752,8 @@ void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt) {
     // ck_impl_debug <= -2: the residual and the step of every pass, on the report line
     std::string hist;
     int ncsnap = -1;   // ck_impl_ncref: active columns at the latch, -1 = no latch
-    int xleft = -1;    // ck2nd-1102 ck_impl_xpass: forced passes left (-1 = not started)
     for (int it=0; it<nitmax; ++it) {
       ck_impl_pass = it;
-      // ck2nd-1102 problem/ck_top_live: the ghosts (the top slot's column above) re-formed
-      // from the CURRENT iterate before every pass, not left at the end of the last stage
-      if (ck_top_live && pm->pgen->user_bcs) (pm->pgen->user_bcs_func)(pm);
       picket_fence_two_stream_RT_pass(pm, bdt);
       MeshBlockPack *pp = pm->pmb_pack;
       DvceArray5D<Real> u0c = (pp->pmhd != nullptr) ? pp->pmhd->u0 : pp->phydro->u0;
@@ -1794,7 +1770,7 @@ void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt) {
         // Jacobian kernels skip converged columns), and the few slow columns are the
         // ones a stale chord holds back, so rebuild whatever the max residual did
         const int ncol_ = (ck_impl_global_ctl ? pm->nmb_total : pp->nmb_thispack)
-                          *pm->mb_indcs.nx2*pm->mb_indcs.nx3;   // layoutfix-1106
+                          *pm->mb_indcs.nx2*pm->mb_indcs.nx3;
         if (ck_impl_jreuse_act > 0.0 &&
             static_cast<Real>(ck_impl_nactive) < ck_impl_jreuse_act*ncol_) {
           ck_impl_jac_again = true;
@@ -1805,22 +1781,6 @@ void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt) {
         std::snprintf(hb, sizeof(hb), "%s%.2e/%.2e/%d", (it > 0) ? "," : "",
                       ck_impl_last_res, ck_impl_last_dst, ck_impl_nactive);
         hist += hb;
-      }
-      // ck2nd-1102 problem/ck_impl_xpass: n forced passes after the first convergence
-      if (stp == 0 && ck_impl_xpass > 0 && !ck_force_step && xleft < 0) {
-        xleft = ck_impl_xpass;
-      }
-      ck_force_step = false;
-      if (stp == 0 && xleft > 0 && it + 1 < nitmax) {
-        --xleft;
-        ++ck_impl_nxpass;
-        if (ck_cad_partial) {
-          Kokkos::deep_copy(DevExeSpace(), *ck_done_ptr, *ck_cad_mask_ptr);
-        } else {
-          Kokkos::deep_copy(DevExeSpace(), *ck_done_ptr, 0.0);
-        }
-        ck_force_step = true;
-        continue;
       }
       if (stp == 0) {
         npass = it + 1;
@@ -1911,69 +1871,6 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
   RTSourceLimiterReduce();
 }
 
-// ckdrift-1102 problem/ck_cad_drift_diag (TEST): the cell with the largest measured
-// drift |G| P^2/(c_v T) of this store, and the sign-flip / capped counts (x > 1e-2)
-static void CkCadDriftReport(Mesh *pm, const Real pint) {
-  if (!ck_cad_drift_diag || ck_cad_dg_ptr == nullptr) return;
-  auto dg_ = *ck_cad_dg_ptr;
-  auto cad_ = *ck_cad_ptr;
-  auto cd2_ = *ck_cad2_ptr;
-  auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  const int nmb = pm->pmb_pack->nmb_thispack;
-  const int64_t ntot = static_cast<int64_t>(nmb)*nx3*nx2*nx1;
-  using ML = Kokkos::MaxLoc<Real, int64_t>;
-  ML::value_type mx;
-  Kokkos::parallel_reduce("ck_cad_dg_max", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
-  KOKKOS_LAMBDA(const int64_t n, ML::value_type &v) {
-    const int i = static_cast<int>(n % nx1) + is;
-    const int j = static_cast<int>((n/nx1) % nx2) + js;
-    const int k = static_cast<int>((n/(nx1*nx2)) % nx3) + ks;
-    const int m = static_cast<int>(n/(static_cast<int64_t>(nx1)*nx2*nx3));
-    const Real x = dg_(m,0,k,j,i);
-    if (x > v.val) {v.val = x; v.loc = n;}
-  }, ML(mx));
-  Real nfl = 0.0, ncp = 0.0, nbig = 0.0;
-  Kokkos::parallel_reduce("ck_cad_dg_cnt", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
-  KOKKOS_LAMBDA(const int64_t n, Real &a, Real &b, Real &c) {
-    const int i = static_cast<int>(n % nx1) + is;
-    const int j = static_cast<int>((n/nx1) % nx2) + js;
-    const int k = static_cast<int>((n/(nx1*nx2)) % nx3) + ks;
-    const int m = static_cast<int>(n/(static_cast<int64_t>(nx1)*nx2*nx3));
-    if (dg_(m,0,k,j,i) > 1.0e-2) {
-      c += 1.0;
-      a += dg_(m,1,k,j,i);
-      b += dg_(m,2,k,j,i);
-    }
-  }, nfl, ncp, nbig);
-  const int64_t n = mx.loc;
-  const int i = static_cast<int>(n % nx1) + is;
-  const int j = static_cast<int>((n/nx1) % nx2) + js;
-  const int k = static_cast<int>((n/(nx1*nx2)) % nx3) + ks;
-  const int m = static_cast<int>(n/(static_cast<int64_t>(nx1)*nx2*nx3));
-  Real h[6] = {0, 0, 0, 0, 0, 0};
-  if (mx.val > 0.0) {
-    DvceArray1D<Real> pk("ck_cad_dg_pk", 6);
-    const bool h7 = (cd2_.extent(1) > 7);
-    par_for("ck_cad_dg_pk", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
-      pk(0) = cad_(m,0,k,j,i); pk(1) = cad_(m,1,k,j,i); pk(2) = cad_(m,2,k,j,i);
-      pk(3) = cad_(m,3,k,j,i); pk(4) = cd2_(m,0,k,j,i);
-      pk(5) = h7 ? cd2_(m,7,k,j,i) : 0.0;
-    });
-    auto hp = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pk);
-    for (int q=0; q<6; ++q) h[q] = hp(q);
-  }
-  const int gid = pm->pmb_pack->gids + m;
-  const LogicalLocation &ll = pm->lloc_eachmb[gid];
-  std::printf("### ck_drift ncyc=%d t=%.4e P=%.3e maxx=%.3e at gid=%d pan=%d K=%d J=%d i=%d"
-              " T=%.4e rho=%.3e Sn=%.4e D=%.3e G=%.4e C=%.4e | x>1e-2: n=%.0f flip=%.0f"
-              " cap=%.0f\n", static_cast<int>(pm->ncycle), pm->time, pint, mx.val, gid,
-              ll.panel, ll.lx3*nx3 + (k - ks), ll.lx2*nx2 + (j - js), i - is, h[2], h[3],
-              h[0], h[1], h[4], h[5], nbig, nfl, ncp);
-  std::fflush(stdout);
-}
-
 void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -1992,150 +1889,6 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
   auto dx1_ = pm->pmb_pack->pcoord->dx1;
   auto sta_ = *ck_cad_stat_ptr;
   const Real idt = 1.0/dt;
-  // ck2nd-1102 problem/ck_cad_drift: G and t0 per cell (a 1-element dummy when off)
-  const bool drf = ck_cad_drift;
-  if (drf && ck_cad2_ptr == nullptr) {
-    // ck2ndt-1102 ck_cad_drift2: slots 6 (the last slope), 7 (its midpoint time)
-    const int ns2 = (ck_cad_drift2 || ck_cad_cont) ? 8 : 6;
-    ck_cad2_ptr = new DvceArray5D<Real>("ck_cad2", cad_.extent(0), ns2, cad_.extent(2),
-                                        cad_.extent(3), cad_.extent(4));
-    // t0 = "none yet" (a restart's Q0 has no measured drift)
-    Kokkos::deep_copy(Kokkos::subview(*ck_cad2_ptr, Kokkos::ALL, 1, Kokkos::ALL,
-                                      Kokkos::ALL, Kokkos::ALL), -1.0e300);
-    if (ck_cad_drift2) {
-      Kokkos::deep_copy(Kokkos::subview(*ck_cad2_ptr, Kokkos::ALL, 7, Kokkos::ALL,
-                                        Kokkos::ALL, Kokkos::ALL), -1.0e300);
-    }
-  }
-  auto cd2_ = drf ? *ck_cad2_ptr : cad_;    // (not read when off)
-  const Real tev = ck_cad_teval;
-  if (drf) ++ck_cad_ndrift;
-  // ck2nd-1102 problem/ck_cad_tri: the drift of the TRIDIAGONAL model (the neighbours'
-  // own Jacobian terms J0 (i-1), J2 (i+1) taken out too); slot 5 = current T, slot 4 = G
-  const bool tri = drf && ck_cad_tri;
-  const bool dr2 = drf && ck_cad_drift2 && !tri;   // ck2ndt-1102 (ck_2nd.hpp (3c))
-  // ckdrift-1102 problem/ck_cad_drift_lim / ck_cad_drift_diag (ck_2nd.hpp (8d))
-  const Real dlim = ck_cad_drift_lim;
-  const bool dlon = drf && (dlim > 0.0);
-  const bool ddg = drf && ck_cad_drift_diag;
-  const Real pint = (ck_cad_dt > 0.0) ? ck_cad_dt
-                    : static_cast<Real>(ck_impl_every)*pm->dt;
-  if (ddg && (ck_cad_dg_ptr == nullptr || ck_cad_dg_ptr->extent(0) != cad_.extent(0))) {
-    ck_cad_dg_ptr = new DvceArray5D<Real>("ck_cad_dg", cad_.extent(0), 3, cad_.extent(2),
-                                          cad_.extent(3), cad_.extent(4));
-  }
-  auto dg_ = ddg ? *ck_cad_dg_ptr : cad_;    // (not read when off)
-  if (ddg) Kokkos::deep_copy(dg_, 0.0);
-  // the limiter: returns the G to use; x = |G_meas| P^2/(cv T), flip, capped -> dg_
-  auto lim_g = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
-                                    const Real gmeas, const Real gold, const Real cvv,
-                                    const Real tt) -> Real {
-    Real g = gmeas;
-    const Real en = cvv*tt;
-    const Real x = (en > 0.0) ? fabs(gmeas)*pint*pint/en : 0.0;
-    const bool flip = (gmeas*gold < 0.0);
-    bool cap = false;
-    if (dlon) {
-      if (flip) {
-        g = 0.0;
-      } else if (en > 0.0 && fabs(g)*pint*pint > dlim*en) {
-        g = copysign(dlim*en/(pint*pint), g);
-        cap = true;
-      }
-    }
-    if (ddg) {
-      dg_(m,0,k,j,i) = x;
-      dg_(m,1,k,j,i) = flip ? 1.0 : 0.0;
-      dg_(m,2,k,j,i) = cap ? 1.0 : 0.0;
-    }
-    return g;
-  };
-  // ck2ndt-1102 problem/ck_cad_cont (ck_2nd.hpp (8b)): the continuous probe store
-  if (drf && ck_cad_cont && ck_cad_un.size() > 0 && !partial) {
-    CkCadState sn = st;
-    sn.u0 = ck_cad_un;
-    const Real pest = ((ck_cad_dt > 0.0) ? ck_cad_dt
-                       : static_cast<Real>(ck_impl_every)*pm->dt)*ck_cad_cont_len;
-    ck_cad_cont_l = pest;
-    par_for("ck_cad_cont", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real d = st.u0(m,IDN,k,j,i);
-      Real tk = 0.0, cv = 0.0;
-      const bool ok = st.TCv(m, k, j, i, d, st.Eint(m, k, j, i), tk, cv);
-      Real tn = 0.0, cvn = 0.0;
-      const bool okn = sn.TCv(m, k, j, i, sn.u0(m,IDN,k,j,i), sn.Eint(m, k, j, i), tn, cvn);
-      Real q = 0.0, dd = 0.0;
-      if (ok && okn && i >= icut_(m,k,j)) {
-        q = dep_(m,k,j,i)*idt;
-        if (thu_(m,k,j,i) > 0.0) {
-          dd = jac_(m,1,k,j,i);
-        } else {
-          const Real tr = trt_(m,k,j,i);
-          dd = (tr > 0.0) ? -4.0*em_(m,k,j,i)/tr : 0.0;
-        }
-        if (!(dd <= 0.0)) dd = 0.0;
-        if (!(q == q)) q = 0.0;
-      }
-      const Real sn_ = (ok && okn) ? q + dd*(tn - tk) : 0.0;   // the rate at U^n
-      const Real q0 = cad_(m,0,k,j,i), d0 = cad_(m,1,k,j,i), t00 = cad_(m,2,k,j,i);
-      const Real g0 = cd2_(m,0,k,j,i), tp = cd2_(m,1,k,j,i), so = cd2_(m,6,k,j,i);
-      const bool hav = okn && (t00 > 0.0) && (q0 != 0.0 || d0 != 0.0);
-      const bool tv = (tp > -1.0e299) && (tev > tp);
-      Real aold = sn_, gm = 0.0;
-      if (hav) {
-        aold = q0 + d0*(tn - t00) + (tv ? g0*(tev - tp) : 0.0);
-        if (tv) gm = (sn_ - so - d0*(tn - t00))/(tev - tp);
-      }
-      if (!(aold == aold)) aold = sn_;
-      Real g = gm;
-      if (!(g == g)) g = 0.0;
-      if ((dlon || ddg) && hav && tv) g = lim_g(m, k, j, i, g, g0, cvn, tn);
-      // the model rate S_n + G tau + C max(0, 1 - tau/L), C = M_old - S_n (slot 7)
-      cd2_(m,7,k,j,i) = (ok && okn) ? aold - sn_ : 0.0;
-      cad_(m,0,k,j,i) = (ok && okn) ? sn_ : 0.0;
-      cad_(m,1,k,j,i) = dd;
-      cad_(m,2,k,j,i) = (ok && okn) ? tn : 0.0;
-      cad_(m,3,k,j,i) = d;
-      cd2_(m,0,k,j,i) = (ok && okn) ? g : 0.0;
-      cd2_(m,1,k,j,i) = tev;
-      cd2_(m,6,k,j,i) = sn_;
-    });
-    if (ddg) CkCadDriftReport(pm, pint);
-    return;
-  }
-  if (tri) {
-    par_for("ck_cad_tri_t", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real d = st.u0(m,IDN,k,j,i);
-      const Real e = st.Eint(m, k, j, i);
-      Real tk = 0.0, cv = 0.0;
-      const bool ok = st.TCv(m, k, j, i, d, e, tk, cv);
-      cd2_(m,5,k,j,i) = ok ? tk : 0.0;
-    });
-    par_for("ck_cad_tri_g", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      if (partial && msk_(m,k,j) > 0.5) return;
-      Real g = 0.0;
-      const Real tk = cd2_(m,5,k,j,i);
-      const Real q0 = cad_(m,0,k,j,i), d0 = cad_(m,1,k,j,i), t00 = cad_(m,2,k,j,i);
-      const Real tp = cd2_(m,1,k,j,i);
-      const Real tl = tev - tp;
-      const Real q = (tk > 0.0 && i >= icut_(m,k,j)) ? dep_(m,k,j,i)*idt : 0.0;
-      if (tk > 0.0 && t00 > 0.0 && tp > -1.0e299 && tl > 0.0 && (q0 != 0.0 || d0 != 0.0)
-          && q == q && q != 0.0) {
-        Real r = q - q0 - d0*(tk - t00);
-        if (i > is && cad_(m,2,k,j,i-1) > 0.0 && cd2_(m,5,k,j,i-1) > 0.0) {
-          r -= cd2_(m,2,k,j,i)*(cd2_(m,5,k,j,i-1) - cad_(m,2,k,j,i-1));
-        }
-        if (i < ie && cad_(m,2,k,j,i+1) > 0.0 && cd2_(m,5,k,j,i+1) > 0.0) {
-          r -= cd2_(m,3,k,j,i)*(cd2_(m,5,k,j,i+1) - cad_(m,2,k,j,i+1));
-        }
-        g = r/tl;
-        if (!(g == g)) g = 0.0;
-      }
-      cd2_(m,4,k,j,i) = g;
-    });
-  }
   par_for("ck_cad_store", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (partial && msk_(m,k,j) > 0.5) return;
@@ -2161,56 +1914,11 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
         Kokkos::atomic_add(&sta_(7), w*fabs(q));
       }
     }
-    if (drf) {
-      // the drift of the part of the rate the diagonal model missed since the last store
-      Real g = 0.0;
-      const Real q0 = cad_(m,0,k,j,i), d0 = cad_(m,1,k,j,i), t00 = cad_(m,2,k,j,i);
-      const Real tp = cd2_(m,1,k,j,i);
-      const Real tl = tev - tp;
-      if (tri) {
-        g = cd2_(m,4,k,j,i);
-      } else if (ok && t00 > 0.0 && tp > -1.0e299 && tl > 0.0 &&
-                 (q0 != 0.0 || d0 != 0.0) && (q != 0.0 || dd != 0.0)) {
-        g = (q - q0 - d0*(tk - t00))/tl;
-        if (!(g == g)) g = 0.0;
-        if (dlon || ddg) g = lim_g(m, k, j, i, g, cd2_(m,0,k,j,i), cv, tk);
-      }
-      if (dr2) {
-        // g is the mean slope over [tp, tev], i.e. the slope at its midpoint; with the
-        // previous mean slope (slot 6, midpoint slot 7) the curvature H, the slope at tev
-        // G = g + H tl/2, and the model rate Q0 + G tau + H tau^2/2
-        Real hh = 0.0;
-        const Real mid = tev - 0.5*tl;
-        const Real sp = cd2_(m,6,k,j,i), mp = cd2_(m,7,k,j,i);
-        const bool gv = (g != 0.0) && tl > 0.0 && tp > -1.0e299;
-        if (gv && mp > -1.0e299 && mid > mp) {
-          hh = (g - sp)/(mid - mp);
-          if (!(hh == hh)) hh = 0.0;
-        }
-        cd2_(m,6,k,j,i) = g;
-        cd2_(m,7,k,j,i) = gv ? mid : -1.0e300;
-        cd2_(m,4,k,j,i) = hh;
-        g += 0.5*hh*tl;
-      }
-      cd2_(m,0,k,j,i) = g;
-      cd2_(m,1,k,j,i) = tev;
-      if (tri) {
-        // the neighbour couplings of the Newton tridiagonal (thick cells; >= 0)
-        Real j0 = 0.0, j2 = 0.0;
-        if (ok && i >= icut_(m,k,j) && thu_(m,k,j,i) > 0.0) {
-          if (i > icut_(m,k,j)) j0 = jac_(m,0,k,j,i);
-          if (i < ie) j2 = jac_(m,2,k,j,i);
-        }
-        cd2_(m,2,k,j,i) = (j0 > 0.0) ? j0 : 0.0;
-        cd2_(m,3,k,j,i) = (j2 > 0.0) ? j2 : 0.0;
-      }
-    }
     cad_(m,0,k,j,i) = q;
     cad_(m,1,k,j,i) = dd;
     cad_(m,2,k,j,i) = ok ? tk : 0.0;
     cad_(m,3,k,j,i) = d;
   });
-  if (ddg) CkCadDriftReport(pm, pint);
 }
 
 int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
@@ -2226,15 +1934,6 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
   auto sta_ = *ck_cad_stat_ptr;
   const Real thr = ck_impl_every_thr;
   const bool thr_on = (thr > 0.0);
-  // ck2nd-1102 problem/ck_cad_drift (G = 0 until a store has measured one)
-  const bool drf = ck_cad_drift && (ck_cad2_ptr != nullptr);
-  auto cd2_ = drf ? *ck_cad2_ptr : cad_;    // (not read when off)
-  const Real tev = ck_cad_teval;
-  const bool tri = drf && ck_cad_tri;       // ck2nd-1102 ck_cad_tri
-  const bool dr2 = drf && ck_cad_drift2 && !tri;   // ck2ndt-1102 ck_cad_drift2
-  const int nlit = ck_cad_lin_iter;          // ck2ndt-1102 ck_cad_lin_iter
-  const bool cnt = drf && ck_cad_cont && ck_cad_probe && !tri;   // ck2ndt-1102
-  const Real cnl = ck_cad_cont_l;
   Real capf = ck_impl_dtmax;
   if (ck_impl_demax > 0.0 && ck_impl_demax < capf) capf = ck_impl_demax;
   const int nk = ke - ks + 1;
@@ -2288,82 +1987,10 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
     tm.team_barrier();
     Real sde = 0.0, sq = 0.0, saq = 0.0;
     int ncp = 0;
-    if (tri) {
-      // ck2nd-1102 ck_cad_tri: the linearised BE step with the Newton tridiagonal
-      //   (cv - dt D) dT_i - dt J0 dT_{i-1} - dt J2 dT_{i+1}
-      //     = dt (Q0 + G (t - t0) + D (T_i - T0_i) + J0 (T_{i-1} - T0_{i-1})
-      //           + J2 (T_{i+1} - T0_{i+1})),
-      // Thomas on one lane (slots 4/5 of ck_cad2 = c', r'); caps as the diagonal step
-      Kokkos::single(Kokkos::PerTeam(tm), [&]() {
-        auto act = [&](const int i) -> bool {
-          return (cad_(m,0,k,j,i) != 0.0 || cad_(m,1,k,j,i) != 0.0) &&
-                 cad_(m,4,k,j,i) > 0.0 && cad_(m,5,k,j,i) > 0.0;
-        };
-        Real cp = 0.0, rp = 0.0;
-        for (int i=is; i<=ie; ++i) {
-          Real a = 0.0, b = 1.0, c = 0.0, r = 0.0;
-          if (act(i)) {
-            const Real dd = cad_(m,1,k,j,i);
-            const Real tk = cad_(m,4,k,j,i);
-            const Real cv = cad_(m,5,k,j,i);
-            Real q0 = cad_(m,0,k,j,i) + cd2_(m,0,k,j,i)*(tev - cd2_(m,1,k,j,i));
-            r = q0 + dd*(tk - cad_(m,2,k,j,i));
-            b = cv - dd*dt;
-            if (i > is && act(i-1)) {
-              const Real j0 = cd2_(m,2,k,j,i);
-              r += j0*(cad_(m,4,k,j,i-1) - cad_(m,2,k,j,i-1));
-              a = -dt*j0;
-            }
-            if (i < ie && act(i+1)) {
-              const Real j2 = cd2_(m,3,k,j,i);
-              r += j2*(cad_(m,4,k,j,i+1) - cad_(m,2,k,j,i+1));
-              c = -dt*j2;
-            }
-            r *= dt;
-          }
-          const Real den = b - a*cp;
-          cp = c/den;
-          rp = (r - a*rp)/den;
-          cd2_(m,4,k,j,i) = cp;
-          cd2_(m,5,k,j,i) = rp;
-        }
-        Real dTn = 0.0;
-        for (int i=ie; i>=is; --i) {
-          const Real dT = cd2_(m,5,k,j,i) - cd2_(m,4,k,j,i)*dTn;
-          dTn = dT;
-          Real de = 0.0;
-          if (act(i)) {
-            de = cad_(m,5,k,j,i)*dT;
-            const Real e = st.Eint(m, k, j, i);
-            const Real lim = capf*e;
-            if (de > lim) {
-              de = lim;
-              ncp += 1;
-            } else if (de < -lim) {
-              de = -lim;
-              ncp += 1;
-            }
-            if (!(de == de)) de = 0.0;
-          }
-          cd2_(m,5,k,j,i) = de;    // applied below, after every row has read its T
-        }
-        for (int i=is; i<=ie; ++i) {
-          const Real de = cd2_(m,5,k,j,i);
-          if (de != 0.0) st.u0(m,IEN,k,j,i) += de;
-          cad_(m,5,k,j,i) = de;
-        }
-      });
-    } else {
     Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, is, ie+1),
     [&](const int i, int &nc) {
       Real q0 = cad_(m,0,k,j,i);
       const Real dd = cad_(m,1,k,j,i);
-      if (drf) {
-        const Real tau = tev - cd2_(m,1,k,j,i);
-        q0 += cd2_(m,0,k,j,i)*tau;
-        if (cnt && tau < cnl) q0 += cd2_(m,7,k,j,i)*(1.0 - tau/cnl);   // ck_cad_cont
-        if (dr2) q0 += 0.5*cd2_(m,4,k,j,i)*tau*tau;   // ck2ndt-1102 ck_cad_drift2
-      }
       const Real tk = cad_(m,4,k,j,i);
       const Real cv = cad_(m,5,k,j,i);
       Real de = 0.0;
@@ -2371,18 +1998,6 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
         const Real dT = (q0 + dd*(tk - cad_(m,2,k,j,i)))*dt/(cv - dd*dt);
         de = cv*dT;
         const Real e = st.Eint(m, k, j, i);
-        // ck2ndt-1102 problem/ck_cad_lin_iter = n: the BE step of the model solved by n
-        // more Newton iterations in e (T(e) of the EOS) instead of one linearisation in T
-        // (the unconverged stage leaves an O(de^2) error that a stiff cell does not damp)
-        for (int it=0; it<nlit; ++it) {
-          const Real e1 = e + de;
-          Real t1 = 0.0, c1 = 0.0;
-          if (!st.TCv(m, k, j, i, st.u0(m,IDN,k,j,i), e1, t1, c1)) break;
-          const Real r = de - dt*(q0 + dd*(t1 - cad_(m,2,k,j,i)));
-          const Real ddn = r/(1.0 - dt*dd/c1);
-          if (!(ddn == ddn)) break;
-          de -= ddn;
-        }
         const Real lim = capf*e;
         if (de > lim) {
           de = lim;
@@ -2396,7 +2011,6 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
       }
       cad_(m,5,k,j,i) = de;
     }, ncp);
-    }
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {
       msk_(m,k,j) = 2.0;
       Kokkos::atomic_max(&sta_(4), dv);
@@ -2427,41 +2041,14 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
   return static_cast<int>(hs(0));
 }
 
-// ck2ndt-1102 problem/ck_cad_probe (ck_2nd.hpp (8)): the probe call of pdt on U^n has
-// just run; store its rate as the cadence model at time tev (allocating on first use)
-void CkCadProbeStore(Mesh *pm, const Real pdt, const Real tev) {
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto &indcs = pm->mb_indcs;
-  if (ck_cad_stat_ptr == nullptr) {
-    ck_cad_stat_ptr = new DvceArray1D<Real>("ck_cad_stat", 8);
-  }
-  if (ck_cad_ptr == nullptr) {
-    const int n1 = indcs.nx1 + 2*indcs.ng;
-    const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
-    const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
-    ck_cad_ptr = new DvceArray5D<Real>("ck_cad", pmbp->nmb_thispack, 6, n3, n2, n1);
-    ck_cad_mask_ptr = new DvceArray3D<Real>("ck_cad_mask", pmbp->nmb_thispack, n3, n2);
-    Kokkos::deep_copy(*ck_cad_mask_ptr, 2.0);
-  }
-  ck_cad_teval = tev;
-  CkCadStore(pm, pdt, false, false);
-  ++ck_cad_nfull;
-  ++ck_cad_nprobe;
-}
-
 void CkCadStep(Mesh *pm, const Real dt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int ncol = pmbp->nmb_thispack*indcs.nx2*indcs.nx3;
   const bool diag = ck_impl_verbose;
   CkRstCadRestore(pm);     // restart: Q0, D, T0, rho0 (two_stream_ck_rst.hpp)
-  ck_cad_teval = pm->time + pm->dt;   // ck2nd-1102 ck_cad_drift (both T2 stages: c = 1)
-  // rkgfuse-1102 ck_strang: the second half of a cycle is never a scheduled full call
-  // ck2ndt-1102 problem/ck_cad_dt: the schedule in simulated time (ck_2nd.hpp (7))
-  const bool due = (ck_cad_dt > 0.0)
-                   ? CkSchedCross(pm->time, pm->dt, ck_cad_dt)
-                   : (pm->ncycle % static_cast<int64_t>(ck_impl_every) == 0);
-  const bool full = (ck_cad_ptr == nullptr) || (due && ck_cad_half != 2);
+  const bool due = (pm->ncycle % static_cast<int64_t>(ck_impl_every) == 0);
+  const bool full = (ck_cad_ptr == nullptr) || due;
   if (ck_cad_stat_ptr == nullptr) {
     ck_cad_stat_ptr = new DvceArray1D<Real>("ck_cad_stat", 8);
   }
@@ -2498,77 +2085,13 @@ void CkCadStep(Mesh *pm, const Real dt) {
     auto hs = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), *ck_cad_stat_ptr);
     std::printf("### ck_cadence ncycle=%d rank=%d mode=%s nref=%d ncol=%d fref=%.4e "
                 "dvmax=%.3e edef=%.4e sde=%.6e sq=%.6e ncap=%d linerr=%.4e "
-                "nfull=%lld nlin=%lld nguard=%lld\n",
+                "nfull=%" PRId64 " nlin=%" PRId64 " nguard=%" PRId64 "\n",
                 pm->ncycle, global_variable::my_rank, full ? "F" : (nref > 0 ? "G" : "L"),
                 nref, ncol, static_cast<double>(nref)/ncol, hs(4),
                 (hs(5) > 0.0) ? (hs(1) - hs(2))/hs(5) : 0.0, hs(1), hs(2),
                 static_cast<int>(hs(3)), (hs(7) > 0.0) ? hs(6)/hs(7) : -1.0,
-                static_cast<long long>(ck_cad_nfull), static_cast<long long>(ck_cad_nlin),
-                static_cast<long long>(ck_cad_nguard));
+                ck_cad_nfull, ck_cad_nlin, ck_cad_nguard);
   }
-}
-
-//----------------------------------------------------------------------------------------
-// ck2nd-1102 problem/ck_vef_tint (utils/ck_2nd.hpp (4)): the VEF factors of a storing
-// pass extrapolated linearly in time from the last two refreshes
-namespace {
-DvceArray5D<Real> *vt_sk = nullptr, *vt_gk = nullptr, *vt_sp = nullptr, *vt_gp = nullptr;
-Real vt_tk = 0.0, vt_tp = 0.0;
-int vt_n = 0;
-}  // namespace
-
-void CkVefTint(Mesh *pm, const bool refreshed, const bool storing) {
-  if (ck_vef_s_ptr == nullptr || ck_vef_g_ptr == nullptr) return;
-  auto vs_ = *ck_vef_s_ptr;
-  auto vg_ = *ck_vef_g_ptr;
-  const Real t = ck_cad_probe_on ? pm->time : pm->time + pm->dt;   // ck2ndt: probe at t
-  if (vt_sk == nullptr || vt_sk->extent(0) != vs_.extent(0)) {
-    auto mk = [&](const char *lab) {
-      return new DvceArray5D<Real>(std::string(lab), vs_.extent(0), vs_.extent(1), vs_.extent(2),
-                                   vs_.extent(3), vs_.extent(4));
-    };
-    vt_sk = mk("ck_vt_sk"); vt_gk = mk("ck_vt_gk");
-    vt_sp = mk("ck_vt_sp"); vt_gp = mk("ck_vt_gp");
-    vt_n = 0;
-  }
-  if (refreshed) {
-    if (vt_n > 0) {
-      Kokkos::deep_copy(*vt_sp, *vt_sk);
-      Kokkos::deep_copy(*vt_gp, *vt_gk);
-      vt_tp = vt_tk;
-    }
-    Kokkos::deep_copy(*vt_sk, vs_);
-    Kokkos::deep_copy(*vt_gk, vg_);
-    vt_tk = t;
-    ++vt_n;
-    return;
-  }
-  if (!storing || vt_n < 2 || !(vt_tk > vt_tp)) return;
-  const Real w = (t - vt_tk)/(vt_tk - vt_tp);
-  auto sk = *vt_sk, gk = *vt_gk, sp = *vt_sp, gp = *vt_gp;
-  const int n0 = static_cast<int>(vs_.extent(0)), n1 = static_cast<int>(vs_.extent(1));
-  const int n2 = static_cast<int>(vs_.extent(2)), n3 = static_cast<int>(vs_.extent(3));
-  const int n4 = static_cast<int>(vs_.extent(4));
-  par_for("ck_vef_tint", DevExeSpace(), 0, n0 - 1, 0, n1 - 1, 0, n2 - 1, 0, n3 - 1,
-  KOKKOS_LAMBDA(const int m, const int c, const int q, const int k) {
-    for (int j=0; j<n4; ++j) {
-      const Real a = sk(m,c,q,k,j), b = sp(m,c,q,k,j);
-      Real x = a;
-      if (a*b > 0.0) {
-        x = a + (a - b)*w;
-        if (!(x*a > 0.0)) x = a;
-      }
-      vs_(m,c,q,k,j) = x;
-      const Real ga = gk(m,c,q,k,j), gb = gp(m,c,q,k,j);
-      Real y = ga;
-      if (ga*gb > 0.0) {
-        y = ga + (ga - gb)*w;
-        if (!(y*ga > 0.0)) y = ga;
-      }
-      vg_(m,c,q,k,j) = y;
-    }
-  });
-  ++ck_vef_ntint;
 }
 
 }  // namespace two_stream_rt

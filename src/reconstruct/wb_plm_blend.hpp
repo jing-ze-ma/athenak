@@ -6,32 +6,31 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file wb_plm_blend.hpp
-//! \brief wbplm-1103 <hydro|mhd>/wb_plm_smooth (default false = bitwise legacy switch):
-//! a CONTINUOUS replacement for the fallback of the well-balanced x1 PLM
+//! \brief Continuous fallback and range bound for the well-balanced x1 PLM
 //! (Hydro/MHD::GridPiecewiseLinearX1 and GridPiecewiseLinearDerX1).
 //!
-//! The legacy rule takes the plain-PLM faces whenever a well-balanced face is negative or
-//! the raw data has an extremum (sL*sR <= 0, unless plm_c1).  Both tests are threshold
-//! flips: at an outflow1 top the ghost repeats the cell to a few ulp, sR is 0 +- roundoff,
-//! and 1 ulp of input switches the top face between the two reconstructions (measured on
-//! dhj_r1m v8: face pressure 1.7e-2 vs 7.3e-4, B 1e-16 -> 2e-6 in one cycle).
-//!
-//! The blend uses the faces q = w q_wb + (1 - w) q_plm with
+//! The default rule takes the plain-PLM faces whenever a well-balanced face is negative
+//! or the data have an extremum (sL*sR <= 0).  Both tests are threshold switches: near a
+//! flat top 1 ulp of input can flip a face between the two reconstructions.  With
+//! <hydro|mhd>/wb_plm_smooth = true the faces are instead blended,
+//!   q = w q_wb + (1 - w) q_plm,
 //!   w = S(th / kWbThExt) * S(min(q_wb,L, q_wb,R) / (kWbPosFrac |q_i|)),
-//!   th = 2 sL sR / (sL^2 + sR^2) in [-1, 1]   (the same smoothness indicator as plm_c1),
-//!   S(x) = smoothstep, 0 for x <= 0 and 1 for x >= 1.
-//! w is exactly 1 where the legacy rule kept the well-balanced faces with margin (the
-//! raw slopes within a factor ~10 of each other, both faces above a tenth of the cell
-//! value), so hydrostatic columns stay well balanced bitwise; it is exactly 0 wherever the
-//! legacy rule fell back; in between it is C1 in the data.  The extremum factor is 1
-//! under plm_c1, as in the legacy rule.  Both face sets are positive where they are used
-//! (w > 0 needs both well-balanced faces > 0), so the blend is too.
+//!   th = 2 sL sR / (sL^2 + sR^2) in [-1, 1],   S(x) = smoothstep on [0, 1].
+//! w is exactly 1 where the default rule keeps the well-balanced faces with margin (so a
+//! hydrostatic column stays balanced to round-off), exactly 0 where it falls back, and
+//! C1 in the data in between.  The blend is positive because w > 0 needs both
+//! well-balanced faces > 0.
+
 #include <cmath>
 #include "athena.hpp"
 
 namespace wbplm {
 constexpr Real kWbThExt = 0.2;     // th at which the extremum factor reaches 1
-constexpr Real kWbPosFrac = 0.1;   // face / cell value at which the positivity factor is 1
+constexpr Real kWbPosFrac = 0.1;   // face/cell value at which the positivity factor is 1
+
+//----------------------------------------------------------------------------------------
+//! \fn Real wbplm::SmoothStep01
+//! \brief smoothstep t^2 (3 - 2t) of x clamped to [0, 1]
 
 KOKKOS_INLINE_FUNCTION
 Real SmoothStep01(const Real x) {
@@ -39,40 +38,51 @@ Real SmoothStep01(const Real x) {
   return t*t*(3.0 - 2.0*t);
 }
 
-//! weight of the well-balanced faces (qwl = q_{i+1/2,L}, qwr = q_{i-1/2,R})
+//----------------------------------------------------------------------------------------
+//! \fn Real wbplm::WbPlmWeight
+//! \brief weight of the well-balanced faces (qwl = q_{i+1/2,L}, qwr = q_{i-1/2,R})
+
 KOKKOS_INLINE_FUNCTION
 Real WbPlmWeight(const Real q_i, const Real sL, const Real sR, const Real qwl,
-                 const Real qwr, const bool c1) {
-  Real w = 1.0;
-  if (!c1) {
-    const Real den = sL*sL + sR*sR;
-    const Real th = (den > 0.0) ? 2.0*sL*sR/den : 0.0;
-    w = SmoothStep01(th/kWbThExt);
-  }
+                 const Real qwr) {
+  // extremum factor
+  const Real den = sL*sL + sR*sR;
+  const Real th = (den > 0.0) ? 2.0*sL*sR/den : 0.0;
+  Real w = SmoothStep01(th/kWbThExt);
+  // positivity factor
   const Real qmin = fmin(qwl, qwr);
   const Real sc = kWbPosFrac*fabs(q_i);
   w *= (sc > 0.0) ? SmoothStep01(qmin/sc) : ((qmin > 0.0) ? 1.0 : 0.0);
   return w;   // NaN inputs give 0: fmax(NaN, 0) = 0 in SmoothStep01
 }
 
-//! in place: (ql, qr) well-balanced faces -> blended with the plain-PLM faces (pl, pr)
+//----------------------------------------------------------------------------------------
+//! \fn void wbplm::WbPlmBlend
+//! \brief blends the well-balanced faces (ql, qr) in place with the plain-PLM faces
+//! (pl, pr)
+
 KOKKOS_INLINE_FUNCTION
 void WbPlmBlend(const Real q_i, const Real sL, const Real sR, const Real pl,
-                const Real pr, const bool c1, Real &ql, Real &qr) {
-  const Real w = WbPlmWeight(q_i, sL, sR, ql, qr, c1);
+                const Real pr, Real &ql, Real &qr) {
+  const Real w = WbPlmWeight(q_i, sL, sR, ql, qr);
   if (w >= 1.0) return;
-  if (w <= 0.0) { ql = pl; qr = pr; return; }
+  if (w <= 0.0) {
+    ql = pl;
+    qr = pr;
+    return;
+  }
   ql = w*ql + (1.0 - w)*pl;
   qr = w*qr + (1.0 - w)*pr;
 }
 
-//! wbplm-1103 <hydro|mhd>/wb_plm_range (default false): bound both faces by the data range
-//! of the 3-cell stencil.  The dynamic background is a hydrostatic profile through cell i
-//! with cell i's own scale height; where the column is far from that (floor-cold top
-//! cells, a magnetically supported or outflowing top) its face values leave the data
-//! range -- measured on r1m v8 at cycle <= 10: up to 650x max(q_{i-1}, q_i, q_{i+1}) at
-//! the top cell, kept by the legacy rule.  In a hydrostatic column the background faces lie
-//! between the neighbours, so the bound never acts there (well balance is kept bitwise).
+//----------------------------------------------------------------------------------------
+//! \fn void wbplm::WbPlmRange
+//! \brief <hydro|mhd>/wb_plm_range = true: bounds both faces by the data range of the
+//! 3-cell stencil.  The dynamic background is a hydrostatic profile through cell i, so
+//! where the column is far from hydrostatic (floor-cold or outflowing top cells) its
+//! faces can leave the data range.  In a hydrostatic column the background faces lie
+//! between the neighbours and the bound never acts.
+
 KOKKOS_INLINE_FUNCTION
 void WbPlmRange(const Real qim1, const Real qi, const Real qip1, Real &ql, Real &qr) {
   const Real lo = fmin(qim1, fmin(qi, qip1)), hi = fmax(qim1, fmax(qi, qip1));

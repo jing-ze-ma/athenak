@@ -13,7 +13,8 @@ well-balanced schemes in turn, and every test below is parametrised over the two
              handed the FULL state; hydro_fofc.cpp adds the background back for the
              flagged cells only.
 
-  "dynamic"  <hydro>/wellbalance_dynamic + wb_x2 + wb_rho (Kappeli & Mishra), with
+  "dynamic"  <hydro>/wellbalance_dynamic + wb_x1 + wb_dirs = all + wb_rho (Kappeli &
+             Mishra; the x2 background of the wb_dirs = all cache), with
              wb_option = isentropic, which is exactly this atmosphere's stratification.
              There is no stored background at all: the scheme rebuilds a local
              hydrostatic one per stencil out of the current state and the gravitational
@@ -66,7 +67,8 @@ def wb_flags(wb):
         "hydro/wellbalance_static=" + ("true" if static else "false"),
         "hydro/wellbalance_static_reconst=" + ("true" if static else "false"),
         "hydro/wellbalance_dynamic=" + ("true" if dynamic else "false"),
-        "hydro/wb_x2=" + ("true" if dynamic else "false"),
+        "hydro/wb_x1=" + ("true" if dynamic else "false"),
+        "hydro/wb_dirs=" + ("all" if dynamic else "x1"),
         "hydro/wb_rho=" + ("true" if dynamic else "false"),
     ]
 

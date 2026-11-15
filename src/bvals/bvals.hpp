@@ -236,11 +236,10 @@ struct PackSegFC {
 
 //----------------------------------------------------------------------------------------
 //! \struct SubSegFC
-//! \brief the sample box of one PackSegFC that a pack actually walks (the
-//! whole segment, or only the source layer adjacent to the boundary for a depth-1 pack),
-//! and, for a cross-panel seam segment, the box of along-seam source values (srcval) its
-//! resample reads, evaluated once per pack into a scratch array instead of three times
-//! per sample. pvoff < 0: no precompute (the sample calls srcval itself).
+//! \brief the sample box of one PackSegFC and, for a cross-panel seam segment, the box
+//! of along-seam source values (srcval) its resample reads, evaluated once per pack into
+//! a scratch array instead of three times per sample. pvoff < 0: no precompute (the
+//! sample calls srcval itself).
 
 struct SubSegFC {
   int q;                   // fc_seg index
@@ -370,7 +369,7 @@ class MeshBoundaryValues {
   // vmask (default 0 = every variable): post the receives for the variables whose bit
   // is set only (uniform grids: the selected variables travel as one compact block at
   // the start of each buffer, see BvVarList). Must match the PackAndSendCC call on the
-  // sending side. Used by <mhd>/rkg_halo_ien_only.
+  // sending side. Used by <hydro|mhd>/split_bval_fast.
   TaskStatus InitRecv(const int nvar, const int vmask = 0);
   virtual TaskStatus InitFluxRecv(const int nvar)=0;
   TaskStatus ClearRecv();
@@ -434,9 +433,13 @@ inline BvVarList MakeBvVarList(const int nvar, const int vmask) {
   BvVarList l;
   l.n = 0;
   for (int v=0; v<nvar && v<32; ++v) {
-    if (vmask == 0 || ((vmask >> v) & 1)) {l.v[l.n++] = v;}
+    if (vmask == 0 || ((vmask >> v) & 1)) {
+      l.v[l.n++] = v;
+    }
   }
-  for (int q=l.n; q<32; ++q) {l.v[q] = 0;}
+  for (int q=l.n; q<32; ++q) {
+    l.v[q] = 0;
+  }
   return l;
 }
 // slot vl of MakeBvVarList(nvar, vmask) without indexing the list: the
@@ -466,21 +469,6 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // where variable 0 is the density; 0 = off): see PackAndSendCC.
   Real cs_rho_guard = 0.0;
   bool cs_lin_resample = false;   // <mesh>/cs_seam_resample = linear, same scope
-  // <hydro|mhd>/wb_seam (opt-in, with wb_dirs = all on the cubed sphere; set by
-  // Hydro/MHD on their conserved-state exchange only): the along-seam resample of the
-  // DENSITY and ENERGY takes each stencil cell's state WALKED hydrostatically
-  // (isothermal, or the local polytrope from the cell's inward seam-normal neighbour) to
-  // the potential of the ghost point (a 5-point Lagrange interpolation of phicc0 along
-  // the source row), then interpolates those: an equilibrium ghost is the equilibrium
-  // state at its own potential to O(h^5) instead of the O(h^2) of resampling the
-  // stratified state itself.
-  bool wb_seam = false;
-  DvceArray4D<Real> wbs_phi;   // the fluid's phicc0
-  EOS_Data wbs_eos;
-  int wbs_opt = 1;             // WBAdvance branch: 1 isothermal, 3 local polytrope
-  bool wbs_etg = false;        // E carries rho Phi (<hydro|mhd>/etotgrav)
-  int wbs_ien = 4;             // the energy index of the exchanged state
-  DvceArray5D<Real> wbs_bcc;   // MHD: the cell field (E carries |B|^2/2); empty for hydro
   // cs_noresample (default false): this object's cross-panel ghosts are the plain signed
   // index copy of the neighbour's own cells (no along-seam resample), i.e. the mirror
   // images of this block's cells across the seam. Set by the implicit M1 on its scratch
@@ -544,7 +532,7 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // variables whose bit is set, in increasing order, as a COMPACT block of variables in
   // the buffer (selected variable number vl takes chunk vl; with every variable vl = v
   // and the layout is the usual one). The other variables' ghosts are left as they
-  // are. Uniform grids only (multilevel: FATAL). Used by <mhd>/rkg_halo_ien_only.
+  // are. Uniform grids only (multilevel: FATAL). Used by split_bval_fast.
   TaskStatus PackAndSendCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca,
                            int iwl = -1, int iwu = -1, int vmask = 0);
   TaskStatus RecvAndUnpackCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca,
@@ -646,18 +634,12 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
   DvceArray1D<PackSegFC> fc_seg;          // the active (m,n,v) triples
   DvceArray1D<int> fc_chunk_seg;          // chunk -> fc_seg index (plain chunks first)
   DvceArray1D<int> fc_chunk_beg;          // chunk -> first flat sample of that triple
-  // two walk sets over fc_seg, [0] all ng layers, [1] depth 1 (only the
-  // source layer adjacent to each boundary; <mhd>/rkg_halo_d1, see resistivity.hpp).
-  // Each set: SubSegFC boxes and chunk lists for the plain samples, the seam samples and
-  // the seam srcval precompute (all chunk lists index fc_sub[set]).
-  DvceArray1D<SubSegFC> fc_sub[2];
-  DvceArray1D<int> fc_cs[2], fc_cb[2];    // chunk -> (sub index, first sample)
-  int fc_np[2] = {0, 0}, fc_ns[2] = {0, 0}, fc_npre[2] = {0, 0};   // chunk counts
-  DvceArray1D<Real> fc_preval;            // srcval scratch (max over the sets)
-  // 1 = the next PackAndSendFC packs (and RecvAndUnpackFC unpacks) depth 1 only; reset
-  // by the caller. 0 everywhere else.
-  int pack_depth = 0;
-  int last_pack_depth_ = 0;   // pack_depth of the last pack
+  // the walk over fc_seg: SubSegFC boxes and chunk lists for the plain samples, the seam
+  // samples and the seam srcval precompute (all chunk lists index fc_sub)
+  DvceArray1D<SubSegFC> fc_sub;
+  DvceArray1D<int> fc_cs, fc_cb;          // chunk -> (sub index, first sample)
+  int fc_np = 0, fc_ns = 0, fc_npre = 0;  // chunk counts
+  DvceArray1D<Real> fc_preval;            // srcval scratch
   // RecvAndUnpackFluxFC work arrays, kept (they were allocated, memset and
   // freed on every call: 2 cudaMalloc/cudaFree pairs and 4 fences per E exchange)
   DvceArray2D<int> nflx_buf;

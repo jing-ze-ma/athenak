@@ -307,7 +307,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     xe_par.time_cgs = (ppack->punit != nullptr) ? ppack->punit->time_cgs() : 1.0;
     xe_par.xh = pin->GetOrAddReal("mhd", "eos_xh", 0.7381);
     xe_par.metal_mh = peos->eos_data.tbl.metal_mh;
-    xe_par.metal_tcond = pin->GetOrAddReal("mhd", "eos_metal_tcond", 0.0);
     xe_par.metal_cond = pin->GetOrAddBoolean("mhd", "eos_metal_condensation", false);
     xe_par.metal_ion = pin->GetOrAddBoolean("mhd", "eos_metal_ionization", false);
     xetracer::FillDonors(xe_par);
@@ -526,7 +525,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                                           wbi_default("wb_guard_ideal"));
     wb_clamp_ideal = pin->GetOrAddBoolean("mhd","wb_clamp_ideal",
                                           wbi_default("wb_clamp_ideal"));
-    use_wb_x2 = pin->GetOrAddBoolean("mhd","wb_x2",false);
     use_wb_rho = pin->GetOrAddBoolean("mhd","wb_rho",false);
     // (mhd.hpp): as <hydro>/wall_wb_onesided, fresh-start default with WB x1
     if (!pin->DoesParameterExist("mhd","wall_wb_onesided") &&
@@ -549,9 +547,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // cubed sphere, where x1v is the radius) honours it -- a Cartesian mesh has no radius
     // to compare against. Mirror of <hydro>/wb_rmax.
     wb_rmax = pin->GetOrAddReal("mhd","wb_rmax",0.0);
-    if (pin->DoesParameterExist("mhd","wb_poison_test")) wb_poison = pin->GetBoolean("mhd","wb_poison_test");
-    // ...and off BELOW this radius (0 = never), same path, same caveat.
-    wb_rmin = pin->GetOrAddReal("mhd","wb_rmin",0.0);
     // radiation-modified CFL signal speed (mhd_newdt.cpp), the MHD form of
     // <hydro>/rad_signal_speed with the same default: on with an IMPLICIT M1 transport
     // (<rad_m1>/transport = implicit | implicit_x1), off otherwise. Read only when
@@ -625,10 +620,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
           }
         }
         if (wb_all) {
-          if (!use_wb_x1 || use_wb_x2 || pmy_pack->pmesh->one_d) {
+          if (!use_wb_x1 || pmy_pack->pmesh->one_d) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "<mhd>/wb_dirs = all needs wb_x1 = true, wb_x2 = "
-                      << "false and a 2-D/3-D mesh" << std::endl;
+                      << std::endl << "<mhd>/wb_dirs = all needs wb_x1 = true and a "
+                      << "2-D/3-D mesh" << std::endl;
             std::exit(EXIT_FAILURE);
           }
           wb_weight = pin->GetOrAddBoolean("mhd","wb_weight",true);
@@ -646,30 +641,16 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
           if (c3 > 1) Kokkos::realloc(wbq3, nmbw, 15, c3, c2, c1);
           Kokkos::realloc(wbw, nmbw, 7, c3, c2, c1);
           Kokkos::deep_copy(wbw, 1.0);
-          if (pin->DoesParameterExist("mhd","wb_seam") && pin->GetBoolean("mhd","wb_seam")) {
-            if (!pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->multilevel) {
-              std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                        << std::endl << "<mhd>/wb_seam needs a single-level cubed sphere"
-                        << std::endl;
-              std::exit(EXIT_FAILURE);
-            }
-            pbval_u->wb_seam = true;
-            pbval_u->wbs_phi = phicc0;
-            pbval_u->wbs_eos = peos->eos_data;
-            pbval_u->wbs_opt = (wb_option == WBOption::polytropic) ? 3 : 1;
-            pbval_u->wbs_etg = use_etotgrav;
-            pbval_u->wbs_ien = IEN;
-            pbval_u->wbs_bcc = bcc0;
-          }
           if (global_variable::my_rank == 0) {
             std::cout << "mhd: wb_dirs = all (x2/x3 dynamic well balance), wb_weight = "
                       << (wb_weight ? "true" : "false") << std::endl;
           }
         }
-        // select well-balanced scheme direction
-        if (!use_wb_x1 && !use_wb_x2) {
+        // the dynamic scheme is built on the x1 background (wb_dirs = all adds x2/x3)
+        if (!use_wb_x1) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<mhd> wb_direction not set!" << std::endl;
+                    << std::endl << "<mhd>/wellbalance_dynamic needs wb_x1 = true"
+                    << std::endl;
           std::exit(EXIT_FAILURE);
         }
     }
@@ -846,17 +827,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<mhd>/emf_scheme = " << es << " is not supported with "
                   << "mesh refinement (SMR/AMR); use emf_scheme = gs07" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      // emf_scheme = uct builds the corner EMF from the HLL coefficients
-      // (MD21 eq. 30), which have no Alfven fan, so the lhlld_alfmach_rot scaling of the
-      // fan dissipation (a TEST key) would act on the face fluxes only and be silently
-      // absent from CT. uct_hlld carries it (UctFaceStore); gs07 reads the face EMFs.
-      if (emf_uct && peos->eos_data.alfmach_rot) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<mhd>/lhlld_alfmach_rot is not seen by the "
-                  << "emf_scheme = uct corner EMF (HLL coefficients); use emf_scheme = "
-                  << "uct_hlld or gs07" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
@@ -1162,11 +1132,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
           !pin->DoesParameterExist("mhd","cs_seam_mhd")) {
         std::string no;
         if (!pmy_pack->pmesh->three_d || recon_method != ReconstructionMethod::plm ||
-            (use_wellbalance_dynamic && use_wb_x2) ||
             use_wellbalance_static_reconst_perturb || pmy_pack->pmesh->multilevel ||
             pmy_pack->pcoord->is_special_relativistic ||
             pmy_pack->pcoord->is_general_relativistic || use_fofc) {
-          no = "needs 3-D, plm, no x2 well-balance, uniform mesh, Newtonian, no fofc";
+          no = "needs 3-D, plm, uniform mesh, Newtonian, no fofc";
         } else if (!(emf_uct || emf_uct_hlld)) {
           no = "needs emf_scheme = uct or uct_hlld";
         }
@@ -1186,9 +1155,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       if (pin->DoesParameterExist("mhd","cs_seam_mhd")) {
         CsSeamInit(pin);
       }
-
-      // <mhd>/boris_c (mhd_boris.cpp)
-      if (peos->eos_data.boris_c2inv > 0.0) BorisInit(pin);
 
       // allocate array of flags used with FOFC
       if (use_fofc) {

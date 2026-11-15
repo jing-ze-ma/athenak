@@ -175,7 +175,7 @@ Mesh::Mesh(ParameterInput *pin) :
         pin->GetString("mesh_refinement", "refinement") != "none";
     if (recipe::GetMode(pin) != recipe::Mode::none && !rml) {
       pin->GetOrAddBoolean("mesh", "layout_invariant", true);
-      recipe::Log("<mesh>/layout_invariant = true (default, prod-1108; fresh, restart)");
+      recipe::Log("<mesh>/layout_invariant = true (default; fresh, restart)");
     } else {
       recipe::Log(std::string("<mesh>/layout_invariant = false (") +
                   (rml ? "restart of an SMR/AMR mesh" : "recipe none") +
@@ -213,7 +213,8 @@ Mesh::Mesh(ParameterInput *pin) :
         pin->GetString("mesh_refinement", "refinement") != "none")) {
     if (recipe::NewDefaults(pin)) {
       pin->GetOrAddInteger("mesh", "cs_seam_fc_order", 3);
-      recipe::Log("<mesh>/cs_seam_fc_order = 3 (default on a fresh resistive cs MHD start)");
+      recipe::Log("<mesh>/cs_seam_fc_order = 3 "
+                  "(default on a fresh resistive cs MHD start)");
     } else {
       recipe::Log("<mesh>/cs_seam_fc_order = 2 (" + std::string(
           recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
@@ -243,7 +244,8 @@ Mesh::Mesh(ParameterInput *pin) :
     } else if (recipe::GetMode(pin) != recipe::Mode::none &&
                !global_variable::restart_run) {
       cs_vertex_3cell = pin->GetOrAddBoolean("mesh", "cs_vertex_3cell", true);
-      recipe::Log("<mesh>/cs_vertex_3cell = true (default on a fresh cubed-sphere start)");
+      recipe::Log("<mesh>/cs_vertex_3cell = true "
+                  "(default on a fresh cubed-sphere start)");
     } else {
       recipe::Log("<mesh>/cs_vertex_3cell = false (" + std::string(
           recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
@@ -323,7 +325,8 @@ Mesh::Mesh(ParameterInput *pin) :
   if (use_grid_stretch_r_poly) {
     if (use_grid_stretch_r) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "mesh/use_grid_stretch_r and mesh/use_grid_stretch_r_poly "
+                << std::endl
+                << "mesh/use_grid_stretch_r and mesh/use_grid_stretch_r_poly "
                 << "are mutually exclusive" << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -402,7 +405,8 @@ Mesh::Mesh(ParameterInput *pin) :
       if (!(nin > 0 && ij > 1 && ij < nin && nh >= 2) ||
           pin->DoesParameterExist("mesh", "f_stretch_r_tail_nin")) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "mesh/f_stretch_r_head_*: need 1 < ij < nin, nx1 - (nin - "
+                  << std::endl
+                  << "mesh/f_stretch_r_head_*: need 1 < ij < nin, nx1 - (nin - "
                   << "ij) >= 2, and no f_stretch_r_tail_*" << std::endl;
         std::exit(EXIT_FAILURE);
       }
@@ -413,7 +417,8 @@ Mesh::Mesh(ParameterInput *pin) :
       // top fraction (1-q) q^(nh-1)/(1-q^nh) increases with q (-> 1/nh at q = 1)
       auto topf = [nh](Real q) {
         const Real lq = std::log(q);
-        return (lq == 0.0) ? 1.0/nh : -std::expm1(lq)*std::exp((nh-1)*lq)/(-std::expm1(nh*lq));
+        return (lq == 0.0) ? 1.0/nh
+            : -std::expm1(lq)*std::exp((nh-1)*lq)/(-std::expm1(nh*lq));
       };
       Real lo = 1.0e-3, hi = 1.0e3;
       for (int it = 0; it < 200; ++it) {
@@ -509,16 +514,19 @@ Mesh::Mesh(ParameterInput *pin) :
   // (sp_test iprob=11); with it div B stays at round-off and the errors are unchanged.
   use_polar_average_eresist = pin->GetOrAddBoolean("mesh", "use_polar_average_eresist",
                                                     true);
-  if (use_spherical_polar && pin->GetReal("mesh", "x3min")<0.0 && pin->GetReal("mesh", "x3max")<0.0) {
+  if (use_spherical_polar && pin->GetReal("mesh", "x3min")<0.0
+      && pin->GetReal("mesh", "x3max")<0.0) {
     mesh_size.x3min = 0.0;
     mesh_size.x3max = 2.0*M_PI;
   }
   if (use_polar_boundary) {
     mesh_size.x2min = 0.0;
     mesh_size.x2max = M_PI;
-    if (pin->DoesBlockExist("mhd") && (pin->GetInteger("mesh", "nx1") != pin->GetInteger("meshblock", "nx1"))) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-                << "polar boundary with MHD currently only supports one single meshblock in r direction" << std::endl;
+    if (pin->DoesBlockExist("mhd") &&
+        (pin->GetInteger("mesh", "nx1") != pin->GetInteger("meshblock", "nx1"))) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "polar boundary with MHD currently only supports one "
+                << "single meshblock in r direction" << std::endl;
       exit(EXIT_FAILURE);
     }
   }
@@ -651,9 +659,12 @@ Mesh::Mesh(ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (use_polar_boundary && (mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::polar || mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::polar)) {
+    if (use_polar_boundary &&
+        (mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::polar ||
+         mesh_bcs[BoundaryFace::outer_x2] != BoundaryFlag::polar)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "To use the polar boundary condition, both inner and outer x2 bcs must be polar" << std::endl;
+                << std::endl << "To use the polar boundary condition, both inner and "
+                << "outer x2 bcs must be polar" << std::endl;
       std::exit(EXIT_FAILURE);
     }
   } else {
@@ -683,9 +694,12 @@ Mesh::Mesh(ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (use_polar_boundary && (mesh_bcs[BoundaryFace::inner_x3] != BoundaryFlag::periodic || mesh_bcs[BoundaryFace::outer_x3] != BoundaryFlag::periodic)) {
+    if (use_polar_boundary &&
+        (mesh_bcs[BoundaryFace::inner_x3] != BoundaryFlag::periodic ||
+         mesh_bcs[BoundaryFace::outer_x3] != BoundaryFlag::periodic)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "To use the polar boundary condition, both inner and outer x3 bcs must be periodic" << std::endl;
+                << std::endl << "To use the polar boundary condition, both inner and "
+                << "outer x3 bcs must be periodic" << std::endl;
       std::exit(EXIT_FAILURE);
     }
   } else {
@@ -719,36 +733,17 @@ Mesh::Mesh(ParameterInput *pin) :
     // throughout -- RestrictFC and the flux correction are AREA-weighted, the EMF
     // restriction LENGTH-weighted, the Toth & Roe prolongation works on the face flux
     // A*B -- so the constraint it preserves is sum(area*B), which is the right one here.
-    // The former `mesh/cs_dev_allow_mhd_refinement` development switch is GONE: it
-    // existed only to run the diagnostics that were chasing the defect, and that defect
-    // is fixed (74cbc8df). An input that still sets it is simply ignored.
-    // RESISTIVITY + REFINEMENT was refused here, and the refusal is now LIFTED. It
-    // rested on one observation, that splitting x1 moved the answer, and that turned out
-    // to be a halo bug with nothing to do with the resistive EMF: the cube-vertex corner
-    // extrapolation ran only over the ACTIVE radial range, so a radial split left its
-    // radial-ghost layers written by nothing (397b4ad3). Ideal MHD never reads that
-    // block; the gnomonic resistive curl does. With it fixed, iprob=11 gives the SAME
-    // Linf(B) and the same Ohmic heating ratio at 1, 2 and 4 radial MeshBlocks, and
-    // refinement now meets the bar that certified ideal MHD (cf0eb77c):
+    // RESISTIVITY + REFINEMENT is supported as well: with iprob=11 the resistive run
+    // converges at the control's rate (Linf(B) 5.6994e-04 -> 2.2986e-04 over nx2
+    // 16 -> 32), the level-boundary and seam fluxes telescope to round-off, and the
+    // dumps are bitwise identical at 1, 2, 3 and 6 MPI ranks and on 1 and 2 GPUs.
     //
-    // converges at the control's rate and lands below it -- Linf(B) 5.6994e-04 ->
-    // 2.2986e-04 over nx2 16 -> 32 against a control of 5.8853e-04 -> 2.3112e-04,
-    // with the heating ratio 1.019297 -> 1.004858 against 1.025322 -> 1.006357;
-    // level-boundary flux telescoping at round-off (max|dM| 5.3e-23 on 1536 coarse/fine
-    // faces, scale 3.2e-07) and the seam flux likewise (dM/dt 2.6e-19);
-    // BITWISE identical over all five binary dumps at 1, 2, 3 and 6 MPI ranks, and on
-    // 1 and 2 MI300A GPUs, matching CPU in every printed digit.
-    //
-    // KNOWN LIMITATION, and it is NOT specific to resistivity. A halo region that is
-    // BOTH a panel seam and a level boundary is still FIRST order, even after a01ace75
-    // removed one of the two mechanisms behind it: over nx2 16 -> 32 the x1x2 / x3x1 edge
-    // halo goes 2.3278e-03 -> 1.1447e-03 and the cube-vertex corner downstream of it
-    // 1.8152e-02 -> 9.0263e-03, both ratio ~2.0, against 2.7e-04 for a same-panel level
-    // boundary and 3.9e-04 for a same-level seam. It is a property of the FACE-CENTRED
-    // halo -- identical with eta = 1e-10, and the cell-centred path is verifiably not
-    // affected -- so the already-supported ideal refinement path has carried it all
-    // along; ideal stencils simply never reach those cells. The domain norms above are
-    // unaffected because the region shrinks with h. See cs_test's GHOST SCAN.
+    // KNOWN LIMITATION, not specific to resistivity: a halo region that is BOTH a panel
+    // seam and a level boundary is FIRST order in the face-centred halo (over nx2
+    // 16 -> 32 the x1x2 / x3x1 edge halo goes 2.3278e-03 -> 1.1447e-03), against
+    // second order for a same-panel level boundary or a same-level seam.  Ideal
+    // stencils never reach those cells, and the domain norms are unaffected because the
+    // region shrinks with h.  See cs_test's GHOST SCAN.
     if (adaptive) {
       missing = "ADAPTIVE mesh refinement (mesh_refinement = adaptive): refinement "
                 "flags are walked through a single MeshBlockTree and a cubed sphere has "
@@ -778,7 +773,7 @@ Mesh::Mesh(ParameterInput *pin) :
     // even the use_spherical_polar branch other modules carry -- it is written for an
     // orthogonal grid throughout. Unlike fofc/viscosity/conduction this was never
     // refused, so a <radiation> block on this grid ran to completion and returned a
-    // wrong answer, which is exactly how the resistive curl behaved before 4bfacdd8.
+    // wrong answer.
     } else if (pin->DoesBlockExist("radiation")) {
       missing = "radiation (<radiation>): src/radiation/ has no cubed-sphere support of "
                 "any kind -- no gnomonic areas or volumes in the flux divergence, and no "
@@ -1345,7 +1340,8 @@ void Mesh::NewTimeStep(const Real tlim) {
   if (pmb_pack->pmhd != nullptr) {
     if (pmb_pack->pmhd->presist != nullptr) {
       if (pmb_pack->pmhd->presist->use_rkg_sts) {
-        MPI_Allreduce(MPI_IN_PLACE, &dt_diff, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+        MPI_Allreduce(MPI_IN_PLACE, &dt_diff, 1, MPI_ATHENA_REAL, MPI_MIN,
+                      MPI_COMM_WORLD);
       }
     }
   }

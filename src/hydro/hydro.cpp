@@ -206,9 +206,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     // the metric-correct kinetic-energy correction is made by GnomonicEquiangleRaiseVel,
     // which reads fv from here. Needed for both EOS flavours, so it sits outside the
     // general-EOS branch above.
-    if ((peos->eos_data.dfloor_keep_velocity ||
-         peos->eos_data.dfloor_keep_temperature) &&
-        peos->eos_data.defer_cons_floors) {
+    if (peos->eos_data.dfloor_keep_velocity && peos->eos_data.defer_cons_floors) {
       Kokkos::realloc(dfl_fv, nmb, ncells3, ncells2, ncells1);
       Kokkos::deep_copy(dfl_fv, 1.0);
     }
@@ -354,7 +352,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   wb_clamp_ideal = pin->GetOrAddBoolean("hydro","wb_clamp_ideal",
                                         wbi_default("wb_clamp_ideal"));
   scratch_level = pin->GetOrAddInteger("hydro","scratch_level",0);
-  use_wb_x2 = pin->GetOrAddBoolean("hydro","wb_x2",false);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
   // (hydro.hpp, reconstruct/wb_wall.hpp). USER 11-05: default true on a
   // FRESH start (recipe::NewDefaults) whenever the x1 dynamic WB scheme is on and the
@@ -382,9 +379,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // cubed sphere, where x1v is the radius) honours it -- a Cartesian mesh has no radius
   // to compare against.
   wb_rmax = pin->GetOrAddReal("hydro","wb_rmax",0.0);
-  if (pin->DoesParameterExist("hydro","wb_poison_test")) wb_poison = pin->GetBoolean("hydro","wb_poison_test");
-  // ...and off BELOW this radius (0 = never), same path, same caveat.
-  wb_rmin = pin->GetOrAddReal("hydro","wb_rmin",0.0);
   nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
   // am_transport defaults on (cs, multi-D sp, fresh dynamic runs): AmModule
   {
@@ -548,7 +542,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       if (wb_all) {
         std::string bad = "";
         if (!use_wb_x1) bad = "<hydro>/wb_x1 = true";
-        if (use_wb_x2) bad = "<hydro>/wb_x2 = false (the legacy x2 path)";
         if (pmy_pack->pcoord->is_general_relativistic ||
             pmy_pack->pcoord->is_special_relativistic) {
           bad = "a Newtonian mesh";
@@ -573,36 +566,16 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
         if (c3 > 1) Kokkos::realloc(wbq3, nmb, 15, c3, c2, c1);
         Kokkos::realloc(wbw, nmb, 7, c3, c2, c1);
         Kokkos::deep_copy(wbw, 1.0);
-        // <hydro>/wb_seam (opt-in, read only when named): the WB-aware seam
-        // resample of the density and energy (bvals.hpp, MeshBoundaryValuesCC::wb_seam)
-        if (pin->DoesParameterExist("hydro","wb_seam") && pin->GetBoolean("hydro","wb_seam")) {
-          if (!pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->multilevel) {
-            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "<hydro>/wb_seam needs a single-level cubed sphere"
-                      << std::endl;
-            std::exit(EXIT_FAILURE);
-          }
-          pbval_u->wb_seam = true;
-          pbval_u->wbs_phi = phicc0;
-          pbval_u->wbs_eos = peos->eos_data;
-          pbval_u->wbs_opt = (wb_option == WBOption::polytropic) ? 3 : 1;
-          pbval_u->wbs_etg = use_etotgrav;
-          pbval_u->wbs_ien = IEN;
-          if (global_variable::my_rank == 0) {
-            std::cout << "hydro: wb_seam = true (seam resample of rho, E walked to the ghost "
-                      << "potential, " << ((pbval_u->wbs_opt == 3) ? "local polytrope" :
-                      "isothermal") << ")" << std::endl;
-          }
-        }
         if (global_variable::my_rank == 0) {
           std::cout << "hydro: wb_dirs = all (x2/x3 dynamic well balance), wb_weight = "
                     << (wb_weight ? "true" : "false") << std::endl;
         }
       }
-      // select well-balanced scheme direction
-      if (!use_wb_x1 && !use_wb_x2) {
+      // the dynamic scheme is built on the x1 background (wb_dirs = all adds x2/x3)
+      if (!use_wb_x1) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<hydro> wb_direction not set!" << std::endl;
+                  << std::endl << "<hydro>/wellbalance_dynamic needs wb_x1 = true"
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
   }

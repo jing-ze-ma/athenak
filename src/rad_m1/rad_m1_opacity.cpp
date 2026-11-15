@@ -4,15 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_opacity.cpp
-//! \brief fill RadiationM1::opac with rho*kappa_{P,E,transport} once per substep stage.
-//!
-//! This runs BEFORE the fluxes (design sect. 5 task order), because the face value of
-//! rho*(kappa_F + kappa_s) is what the thick-limit flux needs, and it covers the ghost
-//! cells as well so that the first and last active face have both of their cells.
-//!
-//! The state is read from hydro's CONSERVED u0 -- density, the kinetic energy that is
-//! subtracted to get the internal energy, and from it the temperature -- and never from
-//! w0: the coupling writes u0 inside the substep, so w0 is one ConToPrim behind.
+//! \brief fills RadiationM1::opac with rho*kappa_{P,E,transport} once per stage, before
+//! the fluxes and including the ghost cells.  The state is read from the conserved u0
+//! (the coupling updates u0 inside the stage, so w0 lags).
 
 #include <math.h>
 
@@ -42,15 +36,11 @@ namespace radm1 {
 //! \fn TaskStatus RadiationM1::Opacity
 
 TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
-  // with no opacity at all the array stays at the zero it was allocated with, and the
-  // thick-limit flux and the coupling are both switched off: nothing to do
-  // m1-mhd: this task is the first gas reader of both M1 chains; |B|^2/2 of the stage's
-  // field is refreshed here, before any early return (Coupling / ImplicitSolve read it)
+  // first gas reader of both M1 chains: refresh |B|^2/2 of the stage's field
   if (fl_mhd && !emag_hold) EmagBuild(false);
   if (opac_zero) return TaskStatus::complete;
   if (!fl_on) return TaskStatus::complete;
-  // <rad_m1>/opac_freeze (debug): fill the array once and leave it alone afterwards, so
-  // that the opacity no longer responds to the state.  Default false -> bitwise inert.
+  // <rad_m1>/opac_freeze: fill the array once and keep it
   if (opac_freeze && opac_frozen) return TaskStatus::complete;
   if (opacity_type == M1_OPAC_TABLE && otab.nT <= 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -70,25 +60,19 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
   auto eos = fl.eos;
-  // <hydro>/etotgrav carries rho*Phi INSIDE the conserved energy, so the gas internal
-  // energy -- and so the temperature this lookup needs -- is u(IEN) - KE - rho*Phi.
-  // Without the last term the temperature is wrong by orders of magnitude at the top of
-  // a stratified box (measured on the He column: the total optical depth came out 17
-  // instead of 99).
+  // with <hydro>/etotgrav the conserved energy includes rho*Phi: subtract it as well
   const bool etg = fl.use_etotgrav;
   auto phicc = fl.phicc0;
   const bool mhd = fl_mhd;      // m1-mhd: and |B|^2/2
   auto emag_ = emag0;
-  // cs-hydro-energy (10-05): on the cubed sphere the momentum is COVARIANT, so the
-  // kinetic energy is 0.5 m_a v^a with the metric (gnomonic_raisevel.hpp)
+  // cubed sphere: the momentum is covariant, KE = 0.5 m_a v^a (gnomonic_raisevel.hpp)
   const bool csk = pmy_pack->pmesh->use_cubed_sphere;
   auto ccl = pmy_pack->pcoord->cos_cell;
   int otype = opacity_type;
   Real kp = kappa_p, ke = kappa_e, kf = kappa_f, ks = kappa_s;
   Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
   bool need_t = (otype != M1_OPAC_CONST);
-  // the tables are held BY VALUE on the module: copy the whole POD of Views into the
-  // kernel's closure rather than touching `this` inside the lambda
+  // copy the tables (held by value) into the closure instead of capturing this
   M1OpacTab ot = otab;
   const bool osc = vscat;   // vet_scatter: rho kappa_e -> opac(M1_OP_S)
   if (ot.scat == 2 && !eos.tbl.active) {
@@ -126,11 +110,10 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
     opac_(m,M1_OP_P,k,j,i) = d*op;
     opac_(m,M1_OP_E,k,j,i) = d*oe;
     opac_(m,M1_OP_T,k,j,i) = d*(of + os);
-    if (osc) {opac_(m,M1_OP_S,k,j,i) = d*os;}
+    if (osc) opac_(m,M1_OP_S,k,j,i) = d*os;
   });
 
-  // DIAGNOSTIC <rad_m1>/dbg_opac_patch: a horizontally inhomogeneous absorber (the three
-  // opacities times f inside a box of x1 x x2, ghost cells included).  Off by default.
+  // <rad_m1>/dbg_opac_patch (diagnostic): opacities times f inside an x1-x2 box
   if (dbg_opac_patch != 1.0) {
     const Real pf = dbg_opac_patch;
     const Real x1a = dbg_opac_x1lo, x1b = dbg_opac_x1hi;
@@ -146,7 +129,7 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
         opac_(m,M1_OP_P,k,j,i) *= pf;
         opac_(m,M1_OP_E,k,j,i) *= pf;
         opac_(m,M1_OP_T,k,j,i) *= pf;
-        if (osc) {opac_(m,M1_OP_S,k,j,i) *= pf;}
+        if (osc) opac_(m,M1_OP_S,k,j,i) *= pf;
       }
     });
   }
@@ -158,13 +141,10 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::RSLACheck
-//! \brief design sect. 2, the reduced-speed-of-light admissibility check, run ONCE on
-//! the first filled opacity array (tau needs rho*kappa, which the constructor does not
-//! have).  The consensus condition is chat >> v_max*max(1, tau_max), so what is printed
-//! is K = chat/(v_max*tau_max) and its reciprocal.  tau_max is the largest x1 COLUMN
-//! optical depth on this mesh, sum_i rho*(kappa_F + kappa_s) dx1 over the ACTIVE cells;
-//! v_max is <rad_m1>/rsla_vmax when that is positive and otherwise the measured max |v|
-//! (which for a column started from rest is zero, hence the input).
+//! \brief reduced-speed-of-light admissibility check, run once on the first filled
+//! opacity array: prints K = chat/(v_max tau_max), with tau_max the largest x1 column
+//! optical depth over the active cells and v_max = <rad_m1>/rsla_vmax if positive, else
+//! the measured max |v|
 
 void RadiationM1::RSLACheck() {
   rsla_done = true;
@@ -182,7 +162,9 @@ void RadiationM1::RSLACheck() {
   Kokkos::MDRangePolicy<Kokkos::Rank<3>>(DevExeSpace(), {0,ks,js}, {nmb1+1,ke+1,je+1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, Real &lmax) {
     Real tau = 0.0;
-    for (int i=is; i<=ie; ++i) {tau += opac_(m,M1_OP_T,k,j,i)*size.d_view(m).dx1;}
+    for (int i=is; i<=ie; ++i) {
+      tau += opac_(m,M1_OP_T,k,j,i)*size.d_view(m).dx1;
+    }
     lmax = (tau > lmax) ? tau : lmax;
   }, Kokkos::Max<Real>(taumax));
 
@@ -207,9 +189,7 @@ void RadiationM1::RSLACheck() {
 #endif
   Real vmeas = vmax;
   if (rsla_vmax > 0.0) vmax = rsla_vmax;
-  // With chat = c there is no reduced speed of light and nothing to be admissible about:
-  // the dynamic-diffusion tests (T4, beta tau = 14) run at chat = c on purpose and the
-  // condition of design sect. 2 does not apply to them.
+  // chat = c: nothing to check
   if (chat_over_c >= 1.0) {
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max="
