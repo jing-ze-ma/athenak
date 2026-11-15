@@ -21,9 +21,8 @@
 
 //----------------------------------------------------------------------------------------
 //! \enum EOSType
-//! \brief Selects which equation of state the general EOS interface in EOS_Data
-//! evaluates. EOSType::ideal reproduces the ideal-gas expressions identically, so runs
-//! that select it are numerically unchanged by the general interface.
+//! \brief equation of state evaluated by the general EOS interface of EOS_Data; ideal
+//! reproduces the ideal-gas expressions exactly
 
 enum class EOSType {ideal, general};
 
@@ -38,316 +37,138 @@ struct EOS_Data {
   Real iso_cs;       // isothermal sound speed
   bool is_ideal;     // flag to denote ideal gas EOS
   Real dfloor, pfloor, tfloor, sfloor;  // density, pressure, temperature, entropy floors
-  // CUBED SPHERE: ConsToPrim cannot form the KINETIC or MAGNETIC energy correctly there.
-  // The conserved momentum is COVARIANT on a non-orthogonal tangent basis, so |m|^2/d is
-  // not the kinetic energy; and for MHD, b0.x*f
-  // holds face-NORMAL projections and those three directions are not orthogonal, so the
-  // sum of their squares is not |B|^2 (the error is O(1) at a panel corner).  A floor
-  // tested against that wrong energy must NOT write back to the conserved energy: at low
-  // beta it fires and freezes the mistake into u.e, and the later correction in
-  // Coordinates::GnomonicEquiangleRaiseVelMHD -- which rebuilds bcc in an orthonormal
-  // frame and RE-APPLIES the floors properly -- can no longer recover it.  Measured: the
-  // per-step error at a cube vertex stops converging entirely (order -0.04 at beta = 0.1)
-  // and the recovered pressure is wrong by 3600% at beta = 0.01.  With the write deferred
-  // both are second order again (+1.97).  The primitive is still clamped here; only the
-  // conserved write is deferred, and Coordinates::GnomonicEquiangleRaiseVel{,MHD} then
-  // re-applies the floors to the corrected energy and updates cons itself.
-  //
-  // The HYDRO half is MEASURED to be benign: with 15904 floor firings in one step the
-  // cube-vertex order is +1.08 against the interior's +1.31, so no consistency is lost.
-  // It is guarded for structural uniformity, not for a demonstrated accuracy gain, and
-  // the guarded and unguarded results are bit-identical there -- when a cell ends up
-  // floored either way, deferring the write lands on the same value.
+  // cubed sphere: ConsToPrim clamps the primitives but leaves the conserved floor writes
+  // to Coordinates::GnomonicEquiangleRaiseVel{,MHD}.  The covariant momentum and
+  // face-normal B triple do not give the true kinetic and magnetic energies there, so a
+  // floor written back from ConsToPrim would freeze that error into u.e
   bool defer_cons_floors = false;
-  // <block>/dfloor_keep_velocity: how the DENSITY floor treats the momentum.  The old
-  // behaviour raises u.d to dfloor and leaves m and E alone, which changes the cell's
-  // velocity and silently CREATES internal energy (less of the fixed total is charged to
-  // the kinetic term once rho has gone up).  With this on the floor instead scales the
-  // momentum by fv = d_old/dfloor, so the kinetic energy falls to fv^3 of its old value
-  // -- KE = m^2/2rho with m -> fv m and rho -> rho/fv -- and the total energy is reduced
-  // by the same amount, leaving the INTERNAL energy exactly where it was.  The velocity
-  // ends at fv^2 of its old value, i.e. a deeply floored cell is damped hard instead of
-  // being left carrying a 1e11 cm/s momentum it inherited from a 1e-20 g/cm^3 state.
+  // <block>/dfloor_keep_velocity: the density floor scales the momentum by d_old/dfloor
+  // and removes the kinetic energy lost, so the internal energy is unchanged (default
+  // false: only u.d is raised)
   bool dfloor_keep_velocity = false;
 
-  // <hydro>/vceil, <mhd>/vceil -- a VELOCITY CEILING for NEWTONIAN hydro and MHD
-  // (0 = off, the default).
-  // The relativistic inversions have had one forever (gamma_max, counted in
-  // neos_vceil); the non-relativistic ones have not, and nothing else bounds |v|.  A
-  // cell that acquires a velocity thousands of times the local escape speed makes the
-  // total energy kinetic-dominated by many orders of magnitude, and the internal energy
-  // e = E - KE is then a catastrophic cancellation: it comes back negative or as pure
-  // round-off noise, the pressure floor repairs it by CREATING energy, and the next
-  // Riemann solve accelerates the cell further.  With this set, whenever |v| > vceil the
-  // momentum is scaled by fs = vceil/|v| and exactly (1 - fs^2) KE is removed from the
-  // conserved total, so the INTERNAL energy is left where it was -- the same bookkeeping
-  // dfloor_keep_velocity uses for the density floor, and the same reason it is deferred:
-  // on the cubed sphere |v| and KE are the METRIC norms (the momentum is covariant on a
-  // non-orthogonal basis) and only Coordinates::GnomonicEquiangleRaiseVel can form them,
-  // so there the ceiling is applied in that routine rather than in ConsToPrim.
-  // The MHD inversion applies exactly the same bookkeeping, on the KINETIC energy
-  // alone: the magnetic energy is untouched, so the internal energy is again left
-  // where it was, and on the cubed sphere it is deferred in the same way to
-  // Coordinates::GnomonicEquiangleRaiseVelMHD.  <mhd>/vceil is refused in SR/GR MHD
-  // (gamma_max instead).
-  // Firings are counted in EventCounters::neos_vceil (event-log column eos_vceil).
+  // <hydro|mhd>/vceil: velocity ceiling of the Newtonian inversions (0 = off).  Where
+  // |v| > vceil the momentum is scaled by vceil/|v| and the kinetic energy removed from
+  // the total, so the internal energy is unchanged.  On the cubed sphere it is applied in
+  // Coordinates::GnomonicEquiangleRaiseVel{,MHD}.  Counted in EventCounters::neos_vceil
   Real vceil = 0.0;
 
-  // <mhd>/valfven_max_cgs -- an ALFVEN-SPEED density floor for Newtonian MHD, in cm/s
-  // (0 = off, the default; read only when named).  Wherever B^2/rho > valfven_max^2
-  // (Heaviside-Lorentz code units, v_A^2 = B^2/rho) the density is raised to
-  // B^2/valfven_max^2 exactly as dfloor raises it: momentum and the conserved energy
-  // are left alone (the velocity drops, the internal energy density is kept).  It exists
-  // for tenuous, strongly magnetised layers (the nightside top of a hot Jupiter with a
-  // planetary dipole) where v_A would otherwise set the time step by orders of
-  // magnitude.  B^2 is the cell-centred face-average triple ConsToPrim already forms; on
-  // the cubed sphere that is the non-orthogonal face-normal triple, so the floor value
-  // is approximate there by up to the panel's 1/sin^2 metric factor, which is harmless
-  // for a floor.  Counted with the density floor (event-log column eos_dfloor).
-  // Stored as 1/valfven_max^2 in code units.
+  // <mhd>/valfven_max_cgs: Alfven-speed density floor [cm/s] (0 = off).  Where
+  // B^2/rho > valfven_max^2 the density is raised to B^2/valfven_max^2 like dfloor
+  // (momentum and energy unchanged).  Stored as 1/valfven_max^2 in code units
   Real va2max_inv = 0.0;
 
-  // <mhd>/valfven_noinfall_fac -- companion of valfven_max_cgs (0 = off, the default;
-  // read only when named).  Gas the Alfven-speed floor props up is not in hydrostatic
-  // balance (rho = B^2/v_A,max^2 falls off far more slowly than an atmosphere), so it
-  // rains down through the floor base into the real gas and is replaced every step:
-  // on the WASP-121b 1x resistive MHD deck that rain WAS the floor mass, 2e15 g/s
-  // (mhdfloor-1101).  With fac >= 1, wherever rho (after the floor) <= fac B^2/v_A,max^2
-  // the INWARD radial momentum is removed (m_1 -> max(m_1, 0)) together with its kinetic
-  // energy, so the internal energy is unchanged; outflow and the tangential momenta are
-  // left alone.  x1 must be radial (cubed sphere or spherical polar), where m_1 is the
-  // radial momentum on either grid.  Not counted separately (the cells are those of
-  // eos_dfloor).
+  // <mhd>/valfven_noinfall_fac (0 = off): where rho <= fac B^2/valfven_max^2 the inward
+  // radial momentum and its kinetic energy are removed, so gas held up by the Alfven
+  // floor does not rain into the atmosphere.  Needs a radial x1 (spherical polar or cubed
+  // sphere)
   Real va_noinfall_fac = 0.0;
 
-  // <mhd>/floor_tracer (floortrc-1101): the u0/w0 index of the floor-mass passive scalar
-  // (-1 = off).  ConsToPrim adds every density-floor increment (dfloor and the Alfven
-  // floor) to it; MHD::FloorTracerDrain removes it again where the floor does not bind.
+  // <mhd>/floor_tracer: scalar index of the floor-mass tracer (-1 = off); every
+  // density-floor increment is added to it
   int ifltr = -1;
-  // <mhd>/xe_tracer (tracer-1101): the u0/w0 index of the x_e tracer (-1 = off).  When a
-  // density floor raises rho in ConsToPrim, the tracer is scaled with it, so the floor
-  // mass inherits the cell's y = n_e/n_H instead of arriving with y = 0.
+  // <mhd>/xe_tracer: scalar index of the electron-fraction tracer (-1 = off); scaled with
+  // the density when a floor raises it
   int ixe = -1;
 
-  // <mhd>/hlld_bx_zero_tol -- plasma-beta cut used by the HLLD family (hlld_mhd.hpp,
-  // hlld_uct_mhd.hpp, lhlld_mhd.hpp) to decide whether the rotational discontinuities
-  // (the ** states) are built at all.  The test is 0.5*Bx^2 < tol*pt*: since pt* is the
-  // TOTAL pressure, this is a comparison against plasma beta, and a tolerance of tol
-  // drops the ** states for every beta above ~2/tol, however dynamically strong the
-  // field is.  1.0e-4 is the historical AthenaK/Athena++ value (inherited from
-  // HLLD_SMALL_NUMBER, whose other two uses compare |rho sd sdm - Bx^2| ~ rho c_f^2, a
-  // different and unrelated scale) and is kept as the default so existing runs are
-  // unchanged.  At beta above ~2e4 with Alfven Mach number <~ 1 that default is
-  // unstable -- the Balsara advected-vortex test grows its kinetic and magnetic
-  // energies by 100-1000x with no NaN -- and setting this down to ~1.0e-8 restores the
-  // ** states and fixes it, at the cost of the full 5-state solver's extra numerical
-  // dissipation of the transverse field in very-high-beta (~1e4-1e8), dynamically weak
-  // regimes (e.g. deep hot-Jupiter envelopes), where the low value is the wrong choice.
+  // <mhd>/hlld_bx_zero_tol: the HLLD family drops the rotational (**) states where
+  // 0.5 Bx^2 < tol pt*, i.e. for plasma beta above ~2/tol.  The default 1.0e-4 is the
+  // AthenaK/Athena++ value; ~1.0e-8 keeps the ** states at very high beta
   Real hlld_bx_zero_tol = 1.0e-4;
 
-  // <hydro>/lhllc_x1_phi_min, <mhd>/lhlld_x1_phi_min -- FLOOR on the low-Mach factor
-  // phi = chi(2-chi) of LHLLC/LHLLD (Minoshima & Miyoshi 2021) on x1 FACES ONLY.  phi
-  // scales the velocity-jump term of the contact pressure; the mass flux keeps its full
-  // HLLC/HLLD form, so at radial Mach ~1e-3 (deep hot-Jupiter envelope, phi ~3e-3) a
-  // 2-cell radial velocity checkerboard is left undamped.  x1 is radial on the
-  // spherical-polar and cubed-sphere grids, so this restores the radial dissipation
-  // while x2/x3 keep the low-Mach fix.  phi = max(phi, x1_phi_min) on x1 faces; >= 1
-  // gives full HLLC/HLLD radially.  <= 0 (default, key unset) = off, bitwise unchanged.
+  // <hydro>/lhllc_x1_phi_min, <mhd>/lhlld_x1_phi_min: floor on the low-Mach factor
+  // phi = chi (2 - chi) of LHLLC/LHLLD on x1 faces only (radial on curvilinear grids);
+  // >= 1 gives full HLLC/HLLD radially, <= 0 = off
   Real x1_phi_min = 0.0;
 
-  // <mhd>/lhlld_emf_eta_pos -- NON-NEGATIVE NUMERICAL RESISTIVITY of the LHLLD
-  // transverse-field (EMF) flux, all faces.  For weak B_n the HLLD star-region flux of
-  // a transverse field component B_t is F = B_K S_M (S_K - u_K)/(S_K - S_M) (K the
-  // upwind side of the contact).  To leading order in |u|/c_f its part beyond the
-  // centred flux (B_L u_L + B_R u_R)/2 is
-  //   F_up = Bbar (S_M - ubar) - (|S_M|/2 + du/4) dB,   du = u_R - u_L, dB = B_R - B_L,
-  // and the face changes the magnetic energy by F_up dB: the dB term is a numerical
-  // resistivity eta_face = (|S_M| + du/2) dx/2, NEGATIVE on a converging face whose
-  // normal-velocity jump exceeds twice the contact speed (-du > 2|S_M|).  This holds
-  // for HLLD and LHLLD alike (the B fluxes of LHLLD are HLLD's; p_T* does not enter
-  // them); the low-Mach fix makes it bite because it no longer damps the face jump du
-  // (the O(1/M) acoustic term).  With the key on, the transverse-field flux on such a
-  // face gets the minimal extra term that makes eta_face = 0 there,
-  //   dF_Bt = -(1/2) max(0, -(|S_M| + du/2)) dB_t,
-  // and the energy flux the matching Poynting term Bbar_t . dF_Bt (so the magnetic
-  // energy removed stays in the total energy as heat).  Mass, momentum and the low-Mach
-  // pressure fix are untouched.  Default true in <mhd> (user decision 10-30, set in
-  // eos.cpp); false = legacy LHLLD, bitwise.  MHD only.
+  // <mhd>/lhlld_emf_eta_pos: non-negative numerical resistivity of the LHLLD
+  // transverse-field flux.  The upwind part of the HLLD B_t flux is a resistivity
+  // eta_face = (|S_M| + du/2) dx/2, negative on a strongly converging face.  With the
+  // switch on, dF_Bt = -(1/2) max(0, -(|S_M| + du/2)) dB_t is added there, with the
+  // matching Poynting term in the energy flux (the removed magnetic energy becomes heat)
   bool lhlld_emf_eta_pos = false;
-  // <hydro>/lhllc_cb_sensor, <mhd>/lhlld_cb_sensor -- ODD-EVEN (2-cell, checkerboard)
-  // SENSOR for LHLLC/LHLLD, on every face.  The velocity-jump term rho c (u_L - u_R) of
-  // the contact pressure is the only part of the flux that damps a 2-cell compressive
-  // mode of the normal velocity (the Rhie-Chow role); phi = O(M) slows that damping
-  // from ~c/dx to ~|u|/dx.  With the sensor on, the face's normal mass flux
-  // q = rho*u_n is taken at the four cell centres i-2..i+1 along the normal; its
-  // consecutive differences d1, d2, d3 give the ODD (2dx) part of the face difference
-  // J = (2 d2 - d1 - d3)/4 (= d2 for a pure checkerboard, O(dx^3) for a smooth q), and
-  // s = clamp(J/d2, 0, 1)^p, p = cb_sensor, is the fraction of the face jump that is
-  // 2dx.
-  // Then phi -> phi + (1 - phi) s (applied as the equivalent floor on chi), so the face
-  // dissipation always lies between LHLLC/LHLLD (s = 0) and HLLC/HLLD (s = 1).  q is
-  // the mass flux, not u_n, so a resolved anelastic (div(rho u) ~ 0) stratified flow
-  // reads as smooth.  Default 1 (user decision 10-30, set in eos.cpp); <= 0 = off,
-  // legacy LHLLC/LHLLD, bitwise.
+  // <hydro>/lhllc_cb_sensor, <mhd>/lhlld_cb_sensor: odd-even (2-cell) sensor of
+  // LHLLC/LHLLD (<= 0 = off).  From the normal mass flux q = rho u_n at cells i-2..i+1
+  // the odd part of the face jump is J = (2 d2 - d1 - d3)/4; s = clamp(J/d2, 0, 1)^p,
+  // p = cb_sensor, and phi -> phi + (1 - phi) s, so the face dissipation lies between
+  // LHLLC/LHLLD (s = 0) and HLLC/HLLD (s = 1) (utils/cb_sensor.hpp)
   Real cb_sensor = 0.0;
-  // cbcont-1102 <hydro>/lhllc_cb_cont, <mhd>/lhlld_cb_cont (default false = legacy,
-  // bitwise; read only when named): the CONTINUOUS sensor fraction
-  // s = clamp(J d2/max(d2^2, J^2), 0, 1) in place of clamp(J/d2, 0, 1), which jumps
-  // 1 -> 0 where d2 changes sign under a finite J and makes the RK step first order in
-  // dt (utils/cb_sensor.hpp).  Same s wherever |J| <= |d2|.  FRESH-start default true
-  // with rsolver = lhllc / lhlld (prod1103, USER 11-03; recipe::NewDefaults, eos.cpp); a
-  // restart whose input lacks the key keeps false.
+  // <hydro>/lhllc_cb_cont, <mhd>/lhlld_cb_cont: continuous sensor fraction
+  // s = clamp(J d2/max(d2^2, J^2), 0, 1); equal to clamp(J/d2, 0, 1) where |J| <= |d2|
   bool cb_cont = false;
-  // wbplm-1103 <hydro>/wb_plm_smooth, <mhd>/wb_plm_smooth (default false = the legacy
-  // threshold fallback, bitwise; read only when named): continuous blend of the
-  // well-balanced and plain x1 PLM faces (reconstruct/wb_plm_blend.hpp)
+  // <hydro|mhd>/wb_plm_smooth: continuous blend of the well-balanced and plain x1 PLM
+  // faces (reconstruct/wb_plm_blend.hpp)
   bool wb_plm_smooth = false;
-  // wbplm-1103 <hydro|mhd>/wb_plm_range (default false, read only when named): bound the
-  // well-balanced x1 faces by the 3-cell data range (reconstruct/wb_plm_blend.hpp)
+  // <hydro|mhd>/wb_plm_range: bound the well-balanced x1 faces by the 3-cell data range
+  // (reconstruct/wb_plm_blend.hpp)
   bool wb_plm_range = false;
-  // lowmach2-1102 <mhd>/lhlld_chi_normal (false = Minoshima & Miyoshi eq. 14 with the
-  // full |u|, the legacy behaviour; read only when named; MHD only): c_u of LHLLD from
-  // the face-normal velocity only (|u|^2 -> u_n^2), mirroring LHLLC's chi; also used by
-  // the UCT face store.  FRESH-start default true
-  // with rsolver = lhlld (prod1103, USER 11-03; recipe::NewDefaults, eos.cpp); a restart
-  // whose input lacks the key keeps false.
+  // <mhd>/lhlld_chi_normal: c_u of LHLLD from the face-normal velocity only
+  // (|u|^2 -> u_n^2), as in LHLLC; also used by the UCT face store
   bool chi_normal = false;
-  // alfmach-1102 <mhd>/lhlld_alfmach (default false = Minoshima & Miyoshi c_u with the
-  // full Alfven floor, bitwise; read only when named; MHD only): ALFVEN-MACH SCALED
-  // FLOOR.  Per side, the Alfven speeds in c_u are scaled by chi_A = min(1, |u|/c_a),
-  // i.e. c_a^2 -> min(c_a^2, |u|^2), c_ax^2 -> c_ax^2 min(1, |u|^2/c_a^2), so that
-  // chi = O(|u|/c_f) when M_A = |u|/c_a < 1 (the floor ~c_a/c_f made the total-pressure
-  // dissipation O(1/M_A) too large), and c_u is unchanged (bitwise) where M_A >= 1.
-  // FRESH-start default true with rsolver = lhlld (prod1104a, USER 11-04; recipe::
-  // NewDefaults, eos.cpp); a restart whose input lacks the key keeps false.
+  // <mhd>/lhlld_alfmach: Alfven-Mach scaled floor of the LHLLD c_u.  The Alfven speeds
+  // are scaled by min(1, |u|/c_a), so chi = O(|u|/c_f) for M_A < 1; unchanged for
+  // M_A >= 1
   bool alfmach = false;
 
-  // <block>/efloor_from_ekin -- pay for the energy/pressure floor out of the cell's
-  // KINETIC energy before creating any.  The floor is applied to the internal energy and
-  // the conserved total is then rebuilt as e_floor + e_kin, so whenever the update
-  // leaves e = E - e_kin NEGATIVE the repair donates |e| out of nothing.  In a light
-  // cell next to a heavy one that donation is the cell's whole kinetic energy and it
-  // feeds straight back into the acceleration that caused it.  With this on the total
-  // energy is held fixed and the momentum is rescaled instead, so energy is created only
-  // in the residual case E < e_floor.
+  // <block>/efloor_from_ekin: the energy floor is paid from the kinetic energy (total
+  // energy fixed, momentum rescaled); energy is created only when E < e_floor
   bool efloor_from_ekin = false;
 
-  // <block>/efloor_as_tfloor -- REBUILD A FLOORED STATE FROM ITS TEMPERATURE.
-  //
-  // Under a tabulated EOS the energy floor and the table's own temperature clamp leave
-  // the cell INCONSISTENT: `pfloor` sets e to e(rho,pfloor), and EOSTable::ClampLogT
-  // returns the state at the table's lowest tabulated row whenever e lies below it --
-  // so T, p, Gamma_1 and the sound speed are those of the clamp row while the conserved
-  // energy is still that of a colder gas the table cannot represent.  Every consumer
-  // then disagrees with every other: the Riemann solver sees a pressure the cell's own
-  // energy does not support, the timestep sees the clamp row's sound speed, and the
-  // two-stream reads a Planck function the energy cannot pay for.
-  //
-  // With this on, whenever a floor fires or the inversion is clamped the internal energy
-  // is set to e(rho, T) for the temperature that was settled on -- at least `tfloor`,
-  // and the clamp row where the clamp bound -- and the conserved energy is corrected to
-  // match.  Re-inverting the cell then returns that same T by construction.  It also
-  // makes `tfloor` the floor that actually binds, which is why ReadEOS_Params() raises
-  // tfloor to the table's own lowest temperature when it is set below it: a tfloor under
-  // the table is unreachable, because the clamp intercepts every state that would trip
-  // it.  Counted in EventCounters::neos_tset.
+  // <block>/efloor_as_tfloor: whenever a floor fires or the table inversion is clamped,
+  // the internal energy is reset to e(rho, T) at the temperature settled on (at least
+  // tfloor) and the conserved energy corrected to match, so the floored cell is a
+  // consistent table state.  ReadEOS_Params raises tfloor to the table's lowest
+  // temperature.  Counted in EventCounters::neos_tset
   bool efloor_as_tfloor = false;
 
-  // TRUE when NONE of the four floor switches above (dfloor_keep_velocity, vceil,
-  // efloor_from_ekin, efloor_as_tfloor) is enabled, i.e. when the
-  // floors behave exactly as they did before they were added.  Set once in
-  // ReadEOS_Params().
-  //
-  // Why a flag rather than the switches' own tests: adding them rewrote the kernels that
-  // apply the floors -- expressions regrouped, temporaries hoisted, writes moved, and in
-  // Coordinates::GnomonicEquiangleRaiseVel a par_for turned into a parallel_reduce.  All
-  // of that is algebraically neutral when the switches are off, but it is not neutral in
-  // FLOATING POINT: the device compiler contracts the rearranged expressions differently
-  // and the answer moves by an ULP, which over a few thousand cycles is a different run.
-  // Where that happens the kernel is launched in TWO forms selected on this flag by the
-  // host, with the legacy form byte-identical to the pre-existing one.
+  // true when none of dfloor_keep_velocity, vceil, efloor_from_ekin, efloor_as_tfloor is
+  // on; kernels whose floor code was regrouped for those switches then run their original
+  // form, which keeps default runs bitwise identical (set in ReadEOS_Params)
   bool floors_legacy = true;
   Real gamma_max;    // ceiling on Lorentz factor in SR/GR
-  // AUSM+-up cut-off Mach numbers (hydro/ausm_mcut, ausm_mcut_p): f_a = M_o(2 - M_o)
-  // with M_o = min(1, max(M_bar, mcut)) scales the velocity-diffusion pressure term
-  // p_u, and f_a^p (mcut_p) the 1/f_a of the pressure-diffusion term M_p. Liou 2006 has
-  // one cut-off for both (mcut_p = mcut, the "original" AUSM+-up, M_p ~ 1/M at low
-  // Mach); Edelmann+2021 decouple them, and mcut_p = 1 (the default here) removes the
-  // 1/f_a from M_p altogether.
+  // <hydro>/ausm_mcut, ausm_mcut_p: AUSM+-up cut-off Mach numbers of the velocity- and
+  // pressure-diffusion terms (Liou 2006; mcut_p = 1 removes 1/f_a from M_p,
+  // Edelmann+2021)
   Real ausm_mcut = 1.0e-13, ausm_mcut_p = 1.0;
-  // hydro/ausm_wall_hllc: re-solve the physical reflecting/user x1 wall faces with HLLC,
-  // whose wall mass flux is exactly zero; AUSM+-up's pressure-diffusion term makes a
-  // wall leak mass in proportion to the adjacent pressure perturbation
+  // <hydro>/ausm_wall_hllc: re-solve reflecting/user x1 wall faces with HLLC (zero wall
+  // mass flux)
   bool ausm_wall_hllc = false;
-  // Set when an IDEAL-gas run has had the composition table built purely to supply the
-  // electron fraction to ohmic_resistivity = eos. In that case `tbl` holds valid surfaces
-  // but `tbl.active` is deliberately FALSE, because `active` is what every thermodynamic
-  // accessor below tests to choose between the ideal-gas expression and the table -- and
-  // such a run wants the ideal gas everywhere EXCEPT x_e. See
-  // EquationOfState::BuildElectronFractionTable().
+  // ideal-gas run with the composition table built only for the electron fraction
+  // (ohmic_resistivity = eos): tbl holds valid surfaces but tbl.active is false, so all
+  // thermodynamics stays ideal (EquationOfState::BuildElectronFractionTable)
   bool xe_from_table = false;
 
   EOSType eos_type = EOSType::ideal;  // EOS evaluated by the general interface below
 
-  // Unit conversion factors, code units -> cgs. An ideal gas is scale free and ignores
-  // these, but a general EOS (ionization, dissociation, radiation pressure) depends on
-  // ABSOLUTE density and temperature, so it must know the physical scale. All three are
-  // 1.0 when the run itself is in cgs units, which is the recommended setup. They are
-  // copied out of the units::Units class at construction because that class is host-only
-  // and cannot be captured in a device lambda.
+  // code -> cgs unit factors, used by the general EOS (copied from units::Units, which
+  // is host-only)
   Real dens_cgs = 1.0;   // g/cm^3       per unit code density
   Real pres_cgs = 1.0;   // erg/cm^3     per unit code pressure or energy density
   Real temp_cgs = 1.0;   // K            per unit code temperature
 
-  // The tabulated EOS. `tbl.active` is what actually selects between the two things
-  // `eos_type == general` can mean: with it false the general interface evaluates the
-  // same gamma law as the ideal path (which is what the general-vs-ideal regression tests
-  // rely on, and the default), with it true every accessor below goes to the table.
+  // tabulated EOS; tbl.active = false makes the general interface evaluate the ideal gas
   EOSTable tbl;
 
   //! \fn bool IsGeneral
-  //! \brief true when the EOS is expensive enough that p and Gamma_1 must be precomputed
-  //! into the derived-variable arrays and reconstructed, rather than evaluated inside the
-  //! Riemann solvers. False for an ideal gas, which keeps the original code path.
+  //! \brief true when p and Gamma_1 are precomputed into the derived variables and
+  //! reconstructed instead of evaluated inside the Riemann solvers
   KOKKOS_INLINE_FUNCTION
   bool IsGeneral() const {
     return (eos_type == EOSType::general);
   }
 
   //--------------------------------------------------------------------------------------
-  // GENERAL EOS INTERFACE for non-relativistic Hydro and MHD.
-  //
-  // These are the only EOS entry points non-relativistic kernels should call. They are
-  // written in terms of the primitive pair (d, e) = (density, internal energy density),
-  // which is what is actually stored in prim(IDN,...) and prim(IEN,...). Pressure is a
-  // derived quantity: for a general EOS it depends on BOTH d and e, which is why these
-  // take a density argument where the ideal-gas versions below do not.
-  //
-  // Every function reduces exactly to the ideal-gas expression when
-  // eos_type == EOSType::ideal, so existing ideal-gas runs are bitwise unchanged.
-  //
-  // COST MODEL, and why most of these come in two forms. Under a general EOS the physics
-  // is naturally a function of (d,T), but the code stores (d,e). Recovering T from (d,e)
-  // is a root find and is THE expensive operation; every other quantity is cheap once T
-  // is in hand. So each accessor below has a primary form taking (d,e,T) -- the caller
-  // has already solved for T and pays nothing more -- and a convenience form taking
-  // (d,e), which solves for T itself.
-  //
-  // Kernels on the hot path MUST use the (d,e,T) form, solving for T exactly once per
-  // cell (ConsToPrim does this and caches the result in Hydro/MHD::wtemp). The (d,e) form
-  // is for setup-time callers -- problem generators, one-off diagnostics -- where an
-  // extra root find does not matter. Calling the (d,e) form N times on one cell means N
-  // root finds.
+  // General EOS interface of non-relativistic hydro and MHD, in terms of the primitive
+  // pair (d, e) = (density, internal energy density).  Each function reduces exactly to
+  // the ideal-gas expression for EOSType::ideal.  Recovering T from (d, e) is the
+  // expensive root find, so most accessors come in a (d, e, T) form for hot kernels (T
+  // solved once per cell by ConsToPrim and cached in wtemp) and a (d, e) form for
+  // setup-time callers.
 
   //--------------------------------------------------------------------------------------
   //! \fn Real Temperature
-  //! \brief temperature T(d,e) in code units (p/d for an ideal gas).
-  //!
-  //! For a general EOS this is the single expensive entry point: it inverts e(d,T) for T.
-  //! `tguess` is an optional warm start -- normally the cached T in the same cell from
-  //! the previous stage -- which cuts the iteration count to a couple of steps. A
-  //! non-positive `tguess` means "no guess available", and the solver must bracket for
-  //! itself. An ideal gas ignores it.
+  //! \brief temperature T(d, e) in code units (p/d for an ideal gas); tguess > 0
+  //! warm-starts the table inversion
   KOKKOS_INLINE_FUNCTION
   Real Temperature(const Real d, const Real e, const Real tguess = -1.0) const {
     if (tbl.active) {
@@ -370,18 +191,15 @@ struct EOS_Data {
   }
 
   //! \fn Real Pressure
-  //! \brief gas pressure p(d,e); solves for the temperature itself. Setup-time use only.
+  //! \brief gas pressure p(d, e); solves for the temperature (setup-time use)
   KOKKOS_INLINE_FUNCTION
   Real Pressure(const Real d, const Real e) const {
     return Pressure(d, e, Temperature(d,e));
   }
 
-  //! \fn Real Gamma1 \brief first adiabatic exponent Gamma_1 = (dln p/dln d) at constant
-  //! entropy, from an already-solved temperature. This is the exponent that sets the
-  //! sound speed, and is what replaces the constant `gamma` in the wave-structure algebra
-  //! of the HLLC/HLLD/Roe solvers. For an ideal gas it is the constant ratio of specific
-  //! heats; for a general EOS it varies with (d,e) and dips well below 5/3 inside
-  //! partial-ionization zones.
+  //! \fn Real Gamma1
+  //! \brief first adiabatic exponent Gamma_1 from an already-solved temperature (gamma
+  //! for an ideal gas); replaces gamma in the wave speeds of the Riemann solvers
   KOKKOS_INLINE_FUNCTION
   Real Gamma1(const Real d, const Real e, const Real t) const {
     if (tbl.active) {
@@ -389,26 +207,22 @@ struct EOS_Data {
       Real rho = d*dens_cgs;
       Real tk = t*temp_cgs;
       tbl.Eval(rho, tk, s);
-      // The identity Gamma_1 = chi_rho + p chi_T^2/(rho T c_v). Every quantity on the
-      // right comes from the same table evaluation, so this is the true adiabatic
-      // exponent of the interpolated surface rather than an approximation to it.
+      // Gamma_1 = chi_rho + p chi_T^2/(rho T c_v), all from one table evaluation
       return (s.chi_rho + s.p*s.chi_t*s.chi_t/(rho*tk*s.cv));
     }
     return gamma;
   }
 
   //! \fn Real Gamma1
-  //! \brief Gamma_1(d,e); solves for the temperature itself. Setup-time use only.
+  //! \brief Gamma_1(d, e); solves for the temperature (setup-time use)
   KOKKOS_INLINE_FUNCTION
   Real Gamma1(const Real d, const Real e) const {
     return Gamma1(d, e, Temperature(d,e));
   }
 
-  //! \fn Real EnergyFromPressure \brief internal energy density e(d,p); inverse of
-  //! Pressure(). Needed for pressure floors, which are specified in terms of p but
-  //! applied to e. For a general EOS this is a root find (on T at fixed p, then e(d,T)),
-  //! so callers should reach it only when a floor has actually been shown to trip -- see
-  //! the note on TestPressureFloor().
+  //! \fn Real EnergyFromPressure
+  //! \brief internal energy density e(d, p), the inverse of Pressure (a root find for a
+  //! general EOS: call it only where a floor has been shown to trip)
   KOKKOS_INLINE_FUNCTION
   Real EnergyFromPressure(const Real d, const Real p) const {
     if (tbl.active) {
@@ -422,13 +236,8 @@ struct EOS_Data {
   }
 
   //! \fn Real EnergyFromPressure
-  //! \brief as above, but also hands back the temperature the inversion found, in `t`.
-  //!
-  //! The inversion solves for T on its way to e, so a caller needing both -- ConsToPrim
-  //! applying the pressure floor, which must leave a valid cached temperature behind --
-  //! would otherwise re-solve the root find it just paid for. The ideal branch
-  //! is written as e first and then T FROM that e, rather than the algebraically equal
-  //! p/d, so that it reproduces a following Temperature(d,e) bit for bit.
+  //! \brief as above, also returning the temperature t of the inversion.  The ideal
+  //! branch forms T from e so that it matches a following Temperature(d, e) bitwise
   KOKKOS_INLINE_FUNCTION
   Real EnergyFromPressure(const Real d, const Real p, Real &t) const {
     if (tbl.active) {
@@ -445,14 +254,8 @@ struct EOS_Data {
   }
 
   //! \fn void PressureAndGamma1
-  //! \brief gas pressure AND Gamma_1 at an already-solved temperature, from ONE table
-  //! evaluation.
-  //!
-  //! Pressure() and Gamma1() each perform a full Eval(), and ConsToPrim calls them at the
-  //! same (d,T) -- with BelowPressureFloor(), which is Pressure() again, that is three
-  //! evaluations of the identical point per cell per stage. Every quantity the two need
-  //! comes out of one Eval, so this returns both from one. The values are bit for bit
-  //! those of the separate calls.
+  //! \brief pressure and Gamma_1 at an already-solved temperature from one table
+  //! evaluation (bitwise equal to the separate calls)
   KOKKOS_INLINE_FUNCTION
   void PressureAndGamma1(const Real d, const Real e, const Real t,
                          Real &p, Real &g1) const {
@@ -471,20 +274,9 @@ struct EOS_Data {
   }
 
   //! \fn void TemperaturePressureGamma1
-  //! \brief the whole EOS step ConsToPrim performs: solve e(d,T) for T, then take p and
-  //! Gamma_1 at that T. `t` comes back in code units, as Temperature() returns it.
-  //!
-  //! Fused because the two halves share work that is invisible when they are separate
-  //! calls. The inversion iterates on log10 T and holds log10 rho throughout; the
-  //! evaluation that follows would take both logarithms again, and would recover the
-  //! temperature by multiplying back the same temp_cgs the inversion had just divided
-  //! out. Chaining them in the log domain removes two log10 per cell per stage and the
-  //! unit round trip with them.
-  //!
-  //! `tclamped` comes back true when the inversion had to be held at the table's own
-  //! lowest or highest tabulated temperature because the energy it was given lies
-  //! outside the tabulated range at this density (see EOSTable::ClampLogT). The caller
-  //! counts it -- it is a state the EOS cannot actually represent, not a floor firing.
+  //! \brief the EOS step of ConsToPrim: solve e(d, T) for T, then p and Gamma_1 at that
+  //! T, chained in the log domain.  tclamped is true when the inversion was held at the
+  //! table's lowest or highest temperature (EOSTable::ClampLogT)
   KOKKOS_INLINE_FUNCTION
   void TemperaturePressureGamma1(const Real d, const Real e, const Real tguess,
                                  Real &t, Real &p, Real &g1, bool &tclamped) const {
@@ -508,7 +300,7 @@ struct EOS_Data {
   }
 
   //! \fn void TemperaturePressureGamma1
-  //! \brief the same, for callers that do not count the table-range clamp.
+  //! \brief as above, without the table-range clamp flag
   KOKKOS_INLINE_FUNCTION
   void TemperaturePressureGamma1(const Real d, const Real e, const Real tguess,
                                  Real &t, Real &p, Real &g1) const {
@@ -517,49 +309,30 @@ struct EOS_Data {
     return;
   }
 
-  //! \fn bool BelowPressureFloor \brief true when the state (d,e) has p < pfloor, given
-  //! an already-solved temperature.
-  //!
-  //! This is the cheap way to test the pressure floor. The obvious test, `e <
-  //! EnergyFromPressure(d,pfloor)`, costs a root find in EVERY cell even though the floor
-  //! trips in almost none; testing p against pfloor instead reuses the temperature that
-  //! ConsToPrim has already solved for and costs nothing. The two tests are equivalent
-  //! because e(d,p) is monotonically increasing in p, so they can disagree only within
-  //! rounding of the floor itself, where either answer sets e to the same value.
+  //! \fn bool BelowPressureFloor
+  //! \brief true when p(d, e) < pfloor at an already-solved temperature; equivalent to
+  //! e < EnergyFromPressure(d, pfloor) without its root find
   KOKKOS_INLINE_FUNCTION
   bool BelowPressureFloor(const Real d, const Real e, const Real t) const {
     return (Pressure(d, e, t) < pfloor);
   }
 
   //! \fn Real TableTempMin
-  //! \brief the LOWEST TABULATED temperature, in CODE units; -1 when no table is active.
-  //! This is the temperature EOSTable::ClampLogT holds a sub-table state at, and
-  //! therefore the lowest temperature any floor can actually reach.
+  //! \brief lowest tabulated temperature in code units (-1 without a table)
   KOKKOS_INLINE_FUNCTION
   Real TableTempMin() const {
     return tbl.active ? (EOSTable::Pow10(tbl.ymin)/temp_cgs) : -1.0;
   }
-  //! duale-1112: the HIGHEST tabulated temperature, in CODE units; -1 without a table
+  //! \fn Real TableTempMax
+  //! \brief highest tabulated temperature in code units (-1 without a table)
   KOKKOS_INLINE_FUNCTION
   Real TableTempMax() const {
     return tbl.active ? (EOSTable::Pow10(tbl.ymax)/temp_cgs) : -1.0;
   }
 
   //! \fn Real EnergyFloorBound
-  //! \brief a cheap UPPER bound on EnergyFromPressure(d, pfloor), i.e. on the internal
-  //! energy density at the pressure floor.
-  //!
-  //! This exists so that the floor can be applied without paying for the exact inverse in
-  //! every cell: e >= EnergyFloorBound(d) proves e is above the floor, and only cells
-  //! that fail that cheap test need the root find. It is what makes ApplyEnergyFloor()
-  //! viable in reconstruction, where -- unlike in ConsToPrim -- no solved temperature is
-  //! at hand and BelowPressureFloor() would itself cost an inversion.
-  //!
-  //! For an ideal gas the bound is the exact value, so the ideal code path is unchanged.
-  //! A general EOS should return any closed-form bound it can justify -- for instance the
-  //! ideal-gas value at the smallest mean molecular weight its composition can reach,
-  //! plus the radiation contribution -- and must NEVER return something smaller than the
-  //! true value, which would let the floor be skipped in a cell that needed it.
+  //! \brief cheap upper bound on EnergyFromPressure(d, pfloor) (exact for an ideal gas):
+  //! cells with e above it skip the floor's root find
   KOKKOS_INLINE_FUNCTION
   Real EnergyFloorBound(const Real d) const {
     if (tbl.active) {
@@ -569,12 +342,7 @@ struct EOS_Data {
   }
 
   //! \fn void ApplyEnergyFloor
-  //! \brief raise an internal energy density to e(d,pfloor) if it lies below it.
-  //!
-  //! Used on reconstructed interface states, where an undershoot can drive e below the
-  //! floor. The bound test in front of the inversion is what keeps this cheap under a
-  //! general EOS; for an ideal gas the bound is exact and this reduces to the original
-  //! fmax against a constant.
+  //! \brief raises e to e(d, pfloor) if it lies below it (reconstructed face states)
   KOKKOS_INLINE_FUNCTION
   void ApplyEnergyFloor(const Real d, Real &e) const {
     if (e < EnergyFloorBound(d)) {
@@ -583,21 +351,10 @@ struct EOS_Data {
   }
 
   //! \fn bool ApplyEntropyFloor
-  //! \brief raise e so that the entropy variable K = p/d^gamma reaches sfloor, returning
-  //! whether it had to. `di` is 1/d, which every caller already has.
-  //!
-  //! sfloor is a floor on the IDEAL-GAS entropy variable, a well defined thing to
-  //! ask for only while the general EOS is evaluating a gamma law. A tabulated EOS has no
-  //! closed-form adiabat, and p/d^gamma with the input file's nominal gamma is not one of
-  //! its invariants, so applying it there would be a floor on a quantity with no meaning
-  //! -- worse than not applying it. Rather than fake it, BuildGeneralEOS() refuses at
-  //! startup when a run selects general_eos = table AND raises sfloor above its default,
-  //! and this returns false in that mode.
-  //!
-  //! The gamma-law branch is the ideal-gas arithmetic verbatim, INCLUDING its habit of
-  //! adjusting w.e without correcting the total energy the way the pressure and
-  //! temperature floors do. That asymmetry is upstream's; reproducing it keeps the
-  //! general path bitwise identical to the ideal one.
+  //! \brief raises e so that K = p/d^gamma reaches sfloor; returns whether it did.  di =
+  //! 1/d. Gamma-law only: a tabulated EOS returns false (BuildGeneralEOS refuses sfloor
+  //! with general_eos = table).  As in the ideal-gas floor, the total energy is not
+  //! corrected
   KOKKOS_INLINE_FUNCTION
   bool ApplyEntropyFloor(const Real d, const Real di, Real &e) const {
     if (tbl.active) return false;
@@ -611,14 +368,9 @@ struct EOS_Data {
     return false;
   }
 
-  //! \fn Real EnergyFromTemperature
-  //! \brief internal energy density e(d,T); inverse of Temperature(). Needed for the
-  //! temperature floor, which is specified in T but must be applied to e.
   //! \fn void ThermoAt
-  //! \brief e, p, chi_rho, chi_T and c_v at (d,T), code units, from ONE table evaluation.
-  //! The single-quantity accessors above each evaluate the table and discard the rest;
-  //! a caller that needs several of them at the same point (the well-balanced
-  //! background walk) pays once here.  Values are identical to the individual accessors.
+  //! \brief e, p, chi_rho, chi_T and c_v at (d, T) in code units from one table
+  //! evaluation (identical to the single accessors)
   KOKKOS_INLINE_FUNCTION
   void ThermoAt(const Real d, const Real t, Real &e, Real &p, Real &chi_rho,
                 Real &chi_t, Real &cv) const {
@@ -642,6 +394,8 @@ struct EOS_Data {
     return;
   }
 
+  //! \fn Real EnergyFromTemperature
+  //! \brief internal energy density e(d, T), the inverse of Temperature
   KOKKOS_INLINE_FUNCTION
   Real EnergyFromTemperature(const Real d, const Real t) const {
     if (tbl.active) {
@@ -655,12 +409,8 @@ struct EOS_Data {
   }
 
   //! \fn Real MeanMolecularWeight
-  //! \brief mean molecular weight mu(d,e), i.e. mass per particle in units of m_u. This
-  //! is what converts a mass density into a number density, which modules that do
-  //! per-particle microphysics (resistivity, cooling) need. Under the mu_ref = 1
-  //! convention the ideal-gas interface carries no composition at all, so it returns 1;
-  //! a general EOS returns the value its own composition implies, dropping from ~2.3 in
-  //! molecular H2/He to ~0.6 once hydrogen is ionized.
+  //! \brief mean molecular weight mu (mass per particle in m_u); 1 for the ideal gas
+  //! (mu_ref = 1 convention)
   KOKKOS_INLINE_FUNCTION
   Real MeanMolecularWeight(const Real d, const Real e, const Real t) const {
     if (tbl.active) {
@@ -672,24 +422,16 @@ struct EOS_Data {
   }
 
   //! \fn Real MeanMolecularWeight
-  //! \brief mu(d,e); solves for the temperature itself. Setup-time use only.
+  //! \brief mu(d, e); solves for the temperature (setup-time use)
   KOKKOS_INLINE_FUNCTION
   Real MeanMolecularWeight(const Real d, const Real e) const {
     return MeanMolecularWeight(d, e, Temperature(d,e));
   }
 
   //! \fn Real ElectronFraction
-  //! \brief free electrons per particle, n_e/n_tot, from the EOS's own composition.
-  //!
-  //! This is what a resistivity needs, and it is not something an ideal gas can answer:
-  //! composition is exactly what the ideal path does not carry, so it returns zero and
-  //! callers must check IsGeneral() first. A general EOS returns the value implied by
-  //! Saha equilibrium over whichever donors are enabled -- note that below ~4000 K the
-  //! electrons come from the metals, not from hydrogen, so the answer is orders of
-  //! magnitude too small unless eos_metal_ionization is on.
-  //!
-  //! Deliberately a separate table read rather than part of the bundled thermodynamic
-  //! state: only non-ideal MHD wants it, and every other EOS call would pay for it.
+  //! \brief free electrons per particle n_e/n_tot from the table composition (Saha); 0
+  //! for an ideal gas.  Below ~4000 K the electrons come from the metals
+  //! (eos_metal_ionization)
   KOKKOS_INLINE_FUNCTION
   Real ElectronFraction(const Real d, const Real e, const Real t) const {
     if (tbl.active) {
@@ -709,27 +451,21 @@ struct EOS_Data {
   Real MetalMetallicity() const { return tbl.metal_mh; }
 
   //! \fn Real ElectronFraction
-  //! \brief n_e/n_tot at (d,e); solves for the temperature itself. Setup-time use only.
+  //! \brief n_e/n_tot at (d, e); solves for the temperature (setup-time use)
   KOKKOS_INLINE_FUNCTION
   Real ElectronFraction(const Real d, const Real e) const {
     return ElectronFraction(d, e, Temperature(d,e));
   }
 
   //! \fn bool HasElectronFraction
-  //! \brief whether an electron fraction is available at all -- either from a general EOS
-  //! or from a table built solely for it on top of an ideal gas.
+  //! \brief true when an electron fraction is available (general EOS table, or a table
+  //! built only for it on top of an ideal gas)
   KOKKOS_INLINE_FUNCTION
   bool HasElectronFraction() const { return (tbl.active || xe_from_table); }
 
   //! \fn Real ElectronFractionKelvin
-  //! \brief n_e/n_tot from a CODE density and a temperature already in KELVIN.
-  //!
-  //! The (d,e,T) form above takes a CODE temperature and scales it by EOS_Data::temp_cgs,
-  //! which only a general EOS sets -- an ideal gas leaves it at 1.0, so routing an ideal
-  //! run through it would look up the table at a temperature wrong by that factor. This
-  //! form sidesteps the question: callers that already hold kelvin pass kelvin. It also
-  //! takes the density scale from the TABLE rather than from EOS_Data, for the same
-  //! reason. The resistivity computes T in kelvin on both EOS paths, so it uses this.
+  //! \brief n_e/n_tot from a code density and a temperature in kelvin; the density scale
+  //! is the table's, so it also serves ideal-gas runs with xe_from_table
   KOKKOS_INLINE_FUNCTION
   Real ElectronFractionKelvin(const Real d, const Real t_kelvin) const {
     if (tbl.active || xe_from_table) {
@@ -739,12 +475,8 @@ struct EOS_Data {
   }
 
   //! \fn Real DensityFromPressureTemperature
-  //! \brief density d(p,T); the (p,T) -> d inversion. Unlike everything else here this is
-  //! NOT a function of the primitive pair, and no kernel needs it: it exists for problem
-  //! generators that build a hydrostatic background by integrating dln p/dz in (p,T)
-  //! space and then have to close it with a density. For an ideal gas p = d T under the
-  //! mu_ref = 1 convention, so the inverse is exact; a general EOS has to root find on d,
-  //! which is why this is used at setup only and never inside a time step.
+  //! \brief density d(p, T) (a root find for a table; setup-time use, e.g. hydrostatic
+  //! backgrounds built in (p, T))
   KOKKOS_INLINE_FUNCTION
   Real DensityFromPressureTemperature(const Real p, const Real t) const {
     if (tbl.active) {
@@ -754,33 +486,26 @@ struct EOS_Data {
   }
 
   //! \fn Real SpecificHeatCv
-  //! \brief specific heat at constant volume c_v(d,e) = (de/dT)/d. Used by thermal
-  //! conduction, which currently hardwires the ideal-gas value 1/(gamma-1).
+  //! \brief specific heat at constant volume c_v = (de/dT)/d
   KOKKOS_INLINE_FUNCTION
   Real SpecificHeatCv(const Real d, const Real e, const Real t) const {
     if (tbl.active) {
       EOSThermoState s;
       tbl.Eval(d*dens_cgs, t*temp_cgs, s);
-      // c_v is an energy per unit mass per unit temperature, so converting it back to
-      // code units carries all three scales
       return (s.cv*dens_cgs*temp_cgs/pres_cgs);
     }
     return (1.0/(gamma-1.0));
   }
 
   //! \fn Real SpecificHeatCv
-  //! \brief c_v(d,e); solves for the temperature itself. Setup-time use only.
+  //! \brief c_v(d, e); solves for the temperature (setup-time use)
   KOKKOS_INLINE_FUNCTION
   Real SpecificHeatCv(const Real d, const Real e) const {
     return SpecificHeatCv(d, e, Temperature(d,e));
   }
 
   //! \fn Real ChiRho
-  //! \brief chi_rho = (dln p/dln d) at constant TEMPERATURE. Note this is NOT Gamma_1,
-  //! which is the same derivative at constant entropy; the two coincide only for an
-  //! isothermal gas. Needed by the well-balanced scheme, which integrates a hydrostatic
-  //! background at fixed T, and by Gamma_1 itself through
-  //! Gamma_1 = chi_rho + p chi_T^2/(d T c_v).
+  //! \brief chi_rho = (dln p/dln d) at constant temperature (not Gamma_1)
   KOKKOS_INLINE_FUNCTION
   Real ChiRho(const Real d, const Real e, const Real t) const {
     if (tbl.active) {
@@ -792,16 +517,14 @@ struct EOS_Data {
   }
 
   //! \fn Real ChiRho
-  //! \brief chi_rho(d,e); solves for the temperature itself. Setup-time use only.
+  //! \brief chi_rho(d, e); solves for the temperature (setup-time use)
   KOKKOS_INLINE_FUNCTION
   Real ChiRho(const Real d, const Real e) const {
     return ChiRho(d, e, Temperature(d,e));
   }
 
   //! \fn Real ChiT
-  //! \brief chi_T = (dln p/dln T) at constant density. Unity for an ideal gas; it departs
-  //! from unity wherever the number of particles depends on temperature (dissociation,
-  //! ionization) or radiation pressure contributes.
+  //! \brief chi_T = (dln p/dln T) at constant density
   KOKKOS_INLINE_FUNCTION
   Real ChiT(const Real d, const Real e, const Real t) const {
     if (tbl.active) {
@@ -813,39 +536,35 @@ struct EOS_Data {
   }
 
   //! \fn Real ChiT
-  //! \brief chi_T(d,e); solves for the temperature itself. Setup-time use only.
+  //! \brief chi_T(d, e); solves for the temperature (setup-time use)
   KOKKOS_INLINE_FUNCTION
   Real ChiT(const Real d, const Real e) const {
     return ChiT(d, e, Temperature(d,e));
   }
 
   //! \fn Real Enthalpy
-  //! \brief specific enthalpy h = (e + p)/d, from an already-solved temperature. Along a
-  //! hydrostatic isentrope h + Phi is constant, which is what makes the isentropic
-  //! well-balanced background integrable.
+  //! \brief specific enthalpy h = (e + p)/d from an already-solved temperature
   KOKKOS_INLINE_FUNCTION
   Real Enthalpy(const Real d, const Real e, const Real t) const {
     return ((e + Pressure(d,e,t))/d);
   }
 
   //! \fn Real Enthalpy
-  //! \brief h(d,e); solves for the temperature itself. Setup-time use only.
+  //! \brief h(d, e); solves for the temperature (setup-time use)
   KOKKOS_INLINE_FUNCTION
   Real Enthalpy(const Real d, const Real e) const {
     return Enthalpy(d, e, Temperature(d,e));
   }
 
   //! \fn Real SoundSpeedFromP
-  //! \brief adiabatic sound speed from an ALREADY EVALUATED pressure and Gamma_1. Used
-  //! wherever those were precomputed in ConsToPrim (timestep, FOFC, Riemann solvers), so
-  //! that the expensive EOS evaluation is not repeated.
+  //! \brief adiabatic sound speed from precomputed pressure and Gamma_1
   KOKKOS_INLINE_FUNCTION
   Real SoundSpeedFromP(const Real d, const Real p, const Real g1) const {
     return sqrt(g1*p/d);
   }
 
   //! \fn Real FastSpeedFromP
-  //! \brief fast magnetosonic speed from an ALREADY EVALUATED pressure and Gamma_1
+  //! \brief fast magnetosonic speed from precomputed pressure and Gamma_1
   KOKKOS_INLINE_FUNCTION
   Real FastSpeedFromP(const Real d, const Real p, const Real g1,
                       const Real bx, const Real by, const Real bz) const {
@@ -856,10 +575,9 @@ struct EOS_Data {
     return sqrt(0.5*(qsq + sqrt(tmp*tmp + 4.0*asq*ct2))/d);
   }
 
-  //! \fn Real SoundSpeed \brief adiabatic sound speed c_s(d,e) = sqrt(Gamma_1 p/d).
-  //! Solves for the temperature once and reuses it for both Gamma_1 and p. Setup-time use
-  //! only: on the hot path both have already been evaluated in ConsToPrim, so use
-  //! SoundSpeedFromP().
+  //! \fn Real SoundSpeed
+  //! \brief adiabatic sound speed sqrt(Gamma_1 p/d) at (d, e) (setup-time use; kernels
+  //! use SoundSpeedFromP)
   KOKKOS_INLINE_FUNCTION
   Real SoundSpeed(const Real d, const Real e) const {
     Real t = Temperature(d,e);
@@ -867,8 +585,8 @@ struct EOS_Data {
   }
 
   //! \fn Real FastSpeed
-  //! \brief fast magnetosonic speed for a general EOS, from (d,e) and the field. As with
-  //! SoundSpeed(), setup-time use only; the hot path has FastSpeedFromP().
+  //! \brief fast magnetosonic speed at (d, e) (setup-time use; kernels use
+  //! FastSpeedFromP)
   KOKKOS_INLINE_FUNCTION
   Real FastSpeed(const Real d, const Real e,
                  const Real bx, const Real by, const Real bz) const {
@@ -881,8 +599,7 @@ struct EOS_Data {
   }
 
   //--------------------------------------------------------------------------------------
-  // IDEAL GAS interface. Retained for the SR/GR solvers, which are out of scope for the
-  // general EOS; non-relativistic kernels should use the general interface above.
+  // Ideal-gas interface, used by the SR/GR solvers
 
   // IDEAL GAS PRESSURE: converts primitive variable (either internal energy density e
   // or temperature e/d) into pressure.
@@ -1055,14 +772,12 @@ class EquationOfState {
   MeshBlockPack* pmy_pack;
   EOS_Data eos_data;
 
-  // Selects and builds what the general EOS interface actually evaluates: either the
-  // gamma law (which reproduces the ideal path exactly) or the tabulated analytic EOS.
-  // Called from the GeneralHydro/GeneralMHD constructors, after the unit scales are set.
+  // builds what the general EOS interface evaluates (gamma law or table); called from the
+  // GeneralHydro/GeneralMHD constructors after the unit scales are set
   void BuildGeneralEOS(std::string block, ParameterInput *pin);
 
-  // Builds the same composition table for an IDEAL-gas run, but only so that
-  // ohmic_resistivity = eos has an electron fraction to read. Called from the IdealMHD
-  // constructor; a no-op unless that resistivity is selected.
+  // builds the composition table of an ideal-gas run for ohmic_resistivity = eos only
+  // (no-op otherwise)
   void BuildElectronFractionTable(std::string block, ParameterInput *pin);
 
   // virtual functions to convert cons to prim in either Hydro or MHD (depending on
@@ -1122,9 +837,7 @@ class IdealHydro : public EquationOfState {
                   const bool only_testfloors,
                   const int il, const int iu, const int jl, const int ju,
                   const int kl, const int ku) override;
-  // The same inversion with the EOS_Data floor switches active; it lives in
-  // ideal_hyd_floors.cpp.
-  // See the note on EOS_Data::floors_legacy for why it is a separate translation unit.
+  // inversion with the EOS_Data floor switches on (ideal_hyd_floors.cpp)
   void ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
                         const bool only_testfloors,
                         const int il, const int iu, const int jl, const int ju,
@@ -1136,9 +849,8 @@ class IdealHydro : public EquationOfState {
 
 //----------------------------------------------------------------------------------------
 //! \class GeneralHydro
-//! \brief Derived class for a general EOS in nonrelativistic hydro. Evaluates pressure
-//! and Gamma_1 once per cell in ConsToPrim and stores them in Hydro::wder, from where
-//! they are reconstructed to interfaces.
+//! \brief Derived class for a general EOS in nonrelativistic hydro; p and Gamma_1 are
+//! evaluated once per cell in ConsToPrim and stored in Hydro::wder
 
 class GeneralHydro : public EquationOfState {
  public:
@@ -1151,19 +863,14 @@ class GeneralHydro : public EquationOfState {
                   const bool only_testfloors,
                   const int il, const int iu, const int jl, const int ju,
                   const int kl, const int ku) override;
-  // The same inversion with the EOS_Data floor switches active; it lives in
-  // general_hyd_floors.cpp.
-  // See the note on EOS_Data::floors_legacy for why it is a separate translation unit.
+  // inversion with the EOS_Data floor switches on (general_hyd_floors.cpp)
   void ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
                         const bool only_testfloors,
                         const int il, const int iu, const int jl, const int ju,
                         const int kl, const int ku);
-  // THE FROZEN CONVERSION, used once, by the first ConToPrim of a RESTARTED run.  It is
-  // the algebraic half of the conversion only: the primitives come out of the conserved
-  // variables exactly as they always do, but the temperature and the derived (p, Gamma_1)
-  // are taken from wtemp / wder as the restart file restored them instead of being solved
-  // for again.  See Hydro::c2p_freeze_derived.  Its own translation unit, for the reason
-  // given on EOS_Data::floors_legacy: the default kernel's arithmetic must not move.
+  // inversion of the first ConToPrim after a restart: the temperature and (p, Gamma_1)
+  // are taken from the restored wtemp / wder instead of being solved for
+  // (Hydro::c2p_freeze_derived; general_hyd_frozen.cpp)
   void ConsToPrimFrozen(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
                         const int il, const int iu, const int jl, const int ju,
                         const int kl, const int ku);
@@ -1256,9 +963,8 @@ class IdealMHD : public EquationOfState {
 
 //----------------------------------------------------------------------------------------
 //! \class GeneralMHD
-//! \brief Derived class for a general EOS in nonrelativistic MHD. Evaluates pressure and
-//! Gamma_1 once per cell in ConsToPrim and stores them in MHD::wder, from where they are
-//! reconstructed to interfaces.
+//! \brief Derived class for a general EOS in nonrelativistic MHD; p and Gamma_1 are
+//! evaluated once per cell in ConsToPrim and stored in MHD::wder
 
 class GeneralMHD : public EquationOfState {
  public:
@@ -1272,13 +978,8 @@ class GeneralMHD : public EquationOfState {
                   const bool only_testfloors,
                   const int il, const int iu, const int jl, const int ju,
                   const int kl, const int ku) override;
-  // THE FROZEN CONVERSION, used once, by the first ConToPrim of a RESTARTED run.  The
-  // MHD counterpart of GeneralHydro::ConsToPrimFrozen (see general_hyd_frozen.cpp): the
-  // primitives and the cell-centred field come out of the conserved variables and the
-  // face field exactly as they always do, but the temperature and the derived
-  // (p, Gamma_1) are taken from wtemp / wder as the restart file restored them instead
-  // of being solved for again.  See MHD::c2p_freeze_derived.  Its own translation unit,
-  // for the reason given on EOS_Data::floors_legacy.
+  // MHD counterpart of GeneralHydro::ConsToPrimFrozen (MHD::c2p_freeze_derived;
+  // general_mhd_frozen.cpp)
   void ConsToPrimFrozen(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
                         DvceArray5D<Real> &prim, DvceArray5D<Real> &bcc,
                         const int il, const int iu, const int jl, const int ju,
