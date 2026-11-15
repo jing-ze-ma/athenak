@@ -101,7 +101,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   //    a solution with cells E <= 0 or |F| > c E switches their faces to the low-order
   //    flux and is solved again (at most clean_maxpos times).
   const bool iterate = cln_feedback || (cell && cln_recon);
-  int nit = 0, nit_sum = 0, npic = 0, npos = 0;
+  const bool stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
+  int nit = 0, nit_sum = 0, npic = 0, npos = 0, nmark = 0;
+  bool all_low = false;
   Real dpic = 0.0;
   bool converged = !iterate;
   const int maxnl = iterate ? cln_maxnl : 1;
@@ -146,7 +148,17 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanCopyIterate();
       }
     }
-    if (!cell || ipos >= cln_maxpos || CleanCellMarkFaces() == 0) break;
+    if (!cell || !cln_poslim) break;
+    const int nbad = CleanCellMarkFaces();
+    if (nbad == 0) break;
+    nmark += nbad;
+    if (ipos >= cln_maxpos) {
+      // a stage gives up (the step is redone by backward Euler); a backward-Euler step
+      // is solved once more with every face low-order
+      if (stage || all_low) break;
+      CleanCellAllLowOrder();
+      all_low = true;
+    }
     ++npos;
   }
   if (!converged) nit = -std::abs(nit) - 1;
@@ -157,9 +169,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (nneg > 0) cln_nneg += 1.0;
   if (global_variable::my_rank == 0) {
     if (cell) {
-      std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pic %d %.2e pos %d neg %d "
-                  "nreal %d\n", pmy_pack->pmesh->ncycle, t2_solve, nit, nit_sum, npic,
-                  dpic, npos, nneg, cln_nnreal);
+      std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pic %d %.2e pos %d mark %d "
+                  "all %d neg %d nreal %d\n", pmy_pack->pmesh->ncycle, t2_solve, nit,
+                  nit_sum, npic, dpic, npos, nmark, all_low ? 1 : 0, nneg, cln_nnreal);
     } else {
       std::printf("CLEAN cycle %d t2s %d it %d neg %d\n", pmy_pack->pmesh->ncycle,
                   t2_solve, nit, nneg);
@@ -173,7 +185,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanWriteBack();
   }
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
-    t2_fail = (nit < 0) || (nneg > 0);
+    t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_poslim && cln_nnreal > 0);
   }
   return TaskStatus::complete;
 }

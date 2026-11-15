@@ -105,6 +105,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }}
     cln_psi_eps = pin->GetOrAddReal("rad_m1","clean_psi_eps",1.0e-12);
     cln_maxpic = pin->GetOrAddInteger("rad_m1","clean_maxpic",12);
+    cln_poslim = pin->GetOrAddBoolean("rad_m1","clean_pos_limit",true);
     cln_maxpos = pin->GetOrAddInteger("rad_m1","clean_maxpos",3);
     cln_pcsweeps = pin->GetOrAddInteger("rad_m1","clean_pc_sweeps",1);
     if (transport != M1_TRANSPORT_IMPLICIT) {

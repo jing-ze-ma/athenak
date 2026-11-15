@@ -643,6 +643,28 @@ int RadiationM1::CleanCellMarkFaces() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellAllLowOrder
+//! \brief marks every face low-order
+
+void RadiationM1::CleanCellAllLowOrder() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  for (int dir = 0; dir < 3; ++dir) {
+    if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;
+    if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
+    auto fc = (dir == 0) ? cln_fc1 : ((dir == 1) ? cln_fc2 : cln_fc3);
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    par_for("clc_alllow", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      fc(m,CLF_LO,k,j,i) = 1.0;
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellWriteBack
 //! \brief stores the solution: E and F of the cells, the face fluxes of E (f0x*), the gas
 //! momentum and energy, and the stage slopes K = (U - U_old)/h.  The gas takes exactly

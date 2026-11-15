@@ -36,7 +36,8 @@ namespace radm1 {
 // face variables of the cell layout (arrays cln_fc1..3; CLF_TH as in the staggered one)
 constexpr int CLF_AL = 0;    // dissipation weight al
 constexpr int CLF_AF = 2;    // dissipation speed s = c sqrt(max(D_dd,L, D_dd,R))
-constexpr int CLF_LO = 3;    // 1: low-order face (first-order jumps, al = 1, s = c)
+constexpr int CLF_LO = 3;    // 1: low-order face (first-order jumps, al = 1, s = c,
+                             //    normal stress factor 1)
 
 // cell vectors (array cln_x), 4 components (E, y1, y2, y3) each
 constexpr int CLC_O = 0;     // old vector
@@ -265,8 +266,11 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
   jr[0][1+dir] = 0.5*x.c;
   for (int b = 0; b < x.nf; ++b) {
     if (!low) CleanJumpCoefficients(x, dir, 1+b, m, k, j, i, cj);
-    jl[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, kl, jl_, il);
-    jr[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, k, j, i);
+    // a low-order face carries the normal stress with pressure factor 1 (upwind
+    // characteristics E +- F/c with speeds +-c)
+    const bool chr = low && b == dir;
+    jl[1+b][0] = 0.5*x.c*(chr ? 1.0 : CleanDiag(x, b, dir, m, kl, jl_, il));
+    jr[1+b][0] = 0.5*x.c*(chr ? 1.0 : CleanDiag(x, b, dir, m, k, j, i));
     jl[1+b][1+b] = -hs*cj[1];
     jr[1+b][1+b] = -hs*cj[2];
   }
