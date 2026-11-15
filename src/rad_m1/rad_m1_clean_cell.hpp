@@ -41,6 +41,8 @@ constexpr int CLF_AL = 0;    // dissipation weight al
 constexpr int CLF_AF = 2;    // dissipation speed s = c sqrt(max(D_dd,L, D_dd,R))
 constexpr int CLF_LO = 3;    // 1: low-order face (first-order jumps, al = 1, s = c,
                              //    stress with D = I)
+constexpr int CLF_UG = 4;    // 1: physical boundary face of a marked cell, upwind stress
+                             //    against the ghost (clean_pos_ghost)
 constexpr int CLF_CB = CLF_N;  // consistency bracket of (fE, fY_1..3)
 
 // cell vectors (array cln_x), 4 components (E, y1, y2, y3) each
@@ -236,8 +238,8 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
     return;
   }
   s[0] += CleanFaceSource(x, dir, m, k, j, i);
-  if (x.all_low) {
-    // ghost part of the upwind stress of a first-order solve
+  if (x.all_low || x.fc[dir](m,CLF_UG,k,j,i) > 0.0) {
+    // ghost part of the upwind stress of a first-order solve or a marked boundary face
     const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
     const int ic = low ? i : i - (dir == 0);
     Real eg, yg[3], pg[3];
@@ -304,8 +306,9 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
     CleanFaceWeights(x, dir, m, k, j, i, al, ar);
     jj[0][0] = blo ? ar : al;
     for (int b = 0; b < x.nf; ++b) {
-      if (x.all_low) {
-        // first-order solve: upwind (a = c) stress between the inner cell and the ghost
+      if (x.all_low || x.fc[dir](m,CLF_UG,k,j,i) > 0.0) {
+        // first-order solve or marked boundary face: upwind (a = c) stress between the
+        // inner cell and the ghost
         jj[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, kc, jc, ic);
         jj[1+b][1+b] = sg;
       } else {

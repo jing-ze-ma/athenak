@@ -116,6 +116,7 @@ void RadiationM1::CleanCellFaceCoefficients() {
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);
       fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
       fc(m,CLF_LO,k,j,i) = 0.0;
+      fc(m,CLF_UG,k,j,i) = 0.0;
     });
   }
 }
@@ -886,7 +887,9 @@ int RadiationM1::CleanCellMarkFaces() {
   const bool multi_d = pmy_pack->pmesh->multi_d;
   const bool three_d = pmy_pack->pmesh->three_d;
   const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
-  // faces on a physical boundary are marked only with clean_pos_boundary
+  // faces on a physical boundary are marked only with clean_pos_boundary; with
+  // clean_pos_ghost they take the upwind stress against the ghost instead
+  const bool ug = cln_posghost;
   const bool b1 = cln_posbdry || ibc_x1min == M1_IBC_PERIODIC;
   const bool b2 = cln_posbdry || ibc_x2min == M1_IBC_PERIODIC;
   const bool b3 = cln_posbdry || ibc_x3min == M1_IBC_PERIODIC;
@@ -918,15 +921,19 @@ int RadiationM1::CleanCellMarkFaces() {
                              SQR(u(m,CLC_X+3,k,j,i)));
     if (e >= -zero && y <= (1.0 + 1.0e-12)*e + zero) return;
     n += 1.0;
-    if (b1 || i > is) fc1(m,CLF_LO,k,j,i) = 1.0;
-    if (b1 || i < ie) fc1(m,CLF_LO,k,j,i+1) = 1.0;
+    auto mark = [&](const DvceArray5D<Real> &fc, const bool in, const int kk,
+                    const int jj, const int ii) {
+      if (in || ug) fc(m,in ? CLF_LO : CLF_UG,kk,jj,ii) = 1.0;
+    };
+    mark(fc1, b1 || i > is, k, j, i);
+    mark(fc1, b1 || i < ie, k, j, i+1);
     if (multi_d) {
-      if (b2 || j > js) fc2(m,CLF_LO,k,j,i) = 1.0;
-      if (b2 || j < je) fc2(m,CLF_LO,k,j+1,i) = 1.0;
+      mark(fc2, b2 || j > js, k, j, i);
+      mark(fc2, b2 || j < je, k, j+1, i);
     }
     if (three_d) {
-      if (b3 || k > ks) fc3(m,CLF_LO,k,j,i) = 1.0;
-      if (b3 || k < ke) fc3(m,CLF_LO,k+1,j,i) = 1.0;
+      mark(fc3, b3 || k > ks, k, j, i);
+      mark(fc3, b3 || k < ke, k+1, j, i);
     }
   }, Kokkos::Sum<Real>(nbad));
   return static_cast<int>(nbad);

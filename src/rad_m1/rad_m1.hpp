@@ -2973,6 +2973,7 @@ class RadiationM1 {
   bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
+  bool cln_posghost = false;    // clean_pos_ghost: marked boundary faces, upwind ghost
   bool cln_all_low = false;     // the solve has every interior face low-order
   bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell
   bool cln_conswt = false;      // clean_consistency_weight: bracket times w(C1)
