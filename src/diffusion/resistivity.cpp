@@ -23,7 +23,7 @@
 #include "utils/recipe.hpp"
 
 //----------------------------------------------------------------------------------------
-// ctor: also calls Resistivity base class constructor
+// ctor: reads the Ohmic, ambipolar and super-time-stepping parameters and allocates
 
 Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     pmy_pack(pp),
@@ -38,8 +38,7 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     efld_ideal("efld_ideal",1,1,1,1),
     ad_coef("ad_coef",1,1,1,1),
     jcur("jcur",1,1,1,1) {
-  // ambipolar-1101: <mhd>/ambipolar = none | constant | eos.  Read only if present (a
-  // GetOrAdd would write the key into every restart file and change it bitwise).
+  // <mhd>/ambipolar = none | constant | eos, read only when present
   const bool has_ohm = pin->DoesParameterExist("mhd","ohmic_resistivity");
   if (pin->DoesParameterExist("mhd","ambipolar")) {
     const std::string adt = pin->GetString("mhd","ambipolar");
@@ -70,19 +69,10 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
                 << "'; expected constant, perna or eos" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // proddef-1101 (USER: the Caltech dhj MHD production keys as FRESH-start defaults,
-    // via recipe::NewDefaults).  use_rkg_sts keeps its old default false (user 11-01;
-    // USER 11-03: true on a fresh resistive deep_hot_jupiter_rt start, set before the
-    // physics by pgen/deep_hot_jupiter_rt_defaults.cpp);
-    // when STS is ON (named by the user) and the key is absent:
-    //   rkg_lean      = true  (uniform single-level cubed sphere: its FATAL),
-    //   rkg_dt_safety = 0.8   (cubed sphere or spherical polar: its FATAL; prod1103
-    //                          USER 11-03: was 0.5.  r1mspeed_1102: 0.8 tracks 0.5 to
-    //                          1.2e-4 in ME over 3000 r1m cycles, no dt dips; the edge is
-    //                          ~1.3, where dt collapses).  A restart whose input lacks the
-    //                          key keeps the old behaviour (off), as before.
-    // An explicit key wins; a restart whose input lacks a key keeps the OLD default and
-    // adds exactly what the old code added (use_rkg_sts, and rkg_lean only with STS).
+    // super-time-stepping keys. With use_rkg_sts on and the key absent, a fresh start
+    // (recipe::NewDefaults) takes rkg_lean = true on a uniform cubed sphere and
+    // rkg_dt_safety = 0.8 on a cubed sphere or spherical polar mesh; a restart whose
+    // input lacks a key keeps the old default (off). An explicit key always wins.
     const bool nd = recipe::NewDefaults(pin);
     const bool curv = pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar;
     const bool lean_ok = pp->pmesh->use_cubed_sphere && !pp->pmesh->multilevel;
@@ -96,18 +86,10 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     } else {
       rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
     }
-    // prod1103b defaults (USER 11-03 "make some defaults"; r1m production keys, approved
-    // 11-02): with STS ON on a uniform single-level cubed sphere and the key absent, a
-    // FRESH start (recipe::NewDefaults) takes rkg_strang = true (rkgstrang-1102),
-    // rkg_strang_fuse = true (rkgfuse-1102) and rkg_fuse_sync = none (ckdrift-1102: the
-    // solution independent of the output cadence).  The values are recorded (GetOrAdd) for
-    // the run's restarts; a restart whose input lacks a key keeps the old default (off /
-    // outputs); an explicit key always wins.
-    // share-1104 G2 (USER 11-04 "g2 should also apply on cartesian"): the Strang/fuse/
-    // sync code (driver.cpp, resistivity_rkg_tasks.cpp) has no geometry test, so the
-    // defaults apply on ANY single-level mesh (cubed sphere, spherical polar, Cartesian),
-    // not only where rkg_lean is possible.  What the code truly needs: no mesh refinement
-    // (rkg_strang_fuse FATALs with AMR) and no <rad_m1> (rkg_strang FATALs with it).
+    // Strang-split super-step: with use_rkg_sts on any single-level mesh without
+    // <rad_m1> and the key absent, a fresh start takes rkg_strang = true,
+    // rkg_strang_fuse = true and rkg_fuse_sync = none (recorded for the run's restarts);
+    // a restart whose input lacks a key keeps the old default (off / outputs)
     const bool strang_ok = !pp->pmesh->multilevel && !pin->DoesBlockExist("rad_m1");
     if (use_rkg_sts && strang_ok) {
       const char *ks[3] = {"rkg_strang", "rkg_strang_fuse", "rkg_fuse_sync"};
@@ -133,11 +115,9 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
         }
       }
     }
-    // rkgstrang-1102: read only when named, so a deck without it keeps its restart header
     if (pin->DoesParameterExist("mhd", "rkg_strang")) {
       rkg_strang = use_rkg_sts && pin->GetBoolean("mhd", "rkg_strang");
     }
-    // rkgfuse-1102: read only when named (restart header unchanged without it)
     if (pin->DoesParameterExist("mhd", "rkg_strang_fuse")) {
       rkg_strang_fuse = use_rkg_sts && pin->GetBoolean("mhd", "rkg_strang_fuse");
       if (rkg_strang_fuse && !rkg_strang) {
@@ -147,7 +127,6 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // rkgdt-1101: read only when named, so a deck without them keeps its restart header
     if (pin->DoesParameterExist("mhd", "rkg_dt_safety")) {
       rkg_dt_safety = pin->GetReal("mhd", "rkg_dt_safety");
     } else if (use_rkg_sts) {
@@ -176,7 +155,8 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cs_resist_x1_centred = pin->GetOrAddBoolean("mhd", "cs_resist_x1_centred", true);
-    // share-1104 G9 (USER 11-04 "go ahead with all"): <mhd>/sp_resist_x1_centred
+    // <mhd>/sp_resist_x1_centred: default true on a fresh start with a stretched
+    // spherical-polar radial grid
     {
       const bool sp_str = pp->pmesh->use_spherical_polar &&
                           (pp->pmesh->use_grid_stretch_r || pp->pmesh->use_grid_stretch_r_poly);
@@ -200,7 +180,7 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-      
+
     // Total number of MeshBlocks on this rank to be used in array dimensioning
     int nmb = std::max((pp->nmb_thispack), (pp->pmesh->nmb_maxperrank));
     auto &indcs = pp->pmesh->mb_indcs;
@@ -217,12 +197,8 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       Kokkos::realloc(jnorm.x2e, nmb, ncells3+1, ncells2, ncells1+1);
       Kokkos::realloc(jnorm.x3e, nmb, ncells3, ncells2+1, ncells1+1);
     }
-    // eta_b holds the diffusivity of every cell for EVERY resistivity type, because
-    // AddEMFGeneralResist() is the only EMF routine left and it reads eta_b for every
-    // cell (AddEMFConstantResist is commented out). A constant resistivity therefore has
-    // to fill the array too: leaving it at its 1x1x1x1 placeholder made each read run off
-    // the end of the allocation, which silently returned zero and left eta_ohm_const with
-    // no effect whatsoever.
+    // eta_b holds the diffusivity of every cell for every resistivity type (the EMF
+    // routines read it per cell), so a constant resistivity fills it too
     Kokkos::realloc(eta_b, nmb, ncells3, ncells2, ncells1);
     if (iso_resist_type.compare("constant") == 0) {
       // constant resistivity
@@ -232,7 +208,6 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       eta_ohm_const = 0.0;
       Kokkos::deep_copy(eta_b, 0.0);
     } else {
-//      min_xe = pin->GetReal("mhd","min_xe");
       max_eta = pin->GetReal("mhd","max_eta");
     }
     if (ad_type != 0 && pin->GetString("mhd","eos").compare("isothermal") == 0) {
@@ -243,9 +218,8 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     if (ad_type != 0) {
-      // eta_A cap: <mhd>/max_eta_ad on eta_A alone (the Ohmic cap max_eta is left as it
-      // is, so the Ohmic part never changes when AD is switched on).  Default: max_eta
-      // when the Ohmic coefficient has one, else no cap.
+      // eta_A cap: <mhd>/max_eta_ad on eta_A alone (the Ohmic cap max_eta is separate);
+      // default max_eta when the Ohmic coefficient has one, else no cap
       if (pin->DoesParameterExist("mhd","max_eta_ad")) {
         max_eta_ad = pin->GetReal("mhd","max_eta_ad");
       } else if (OhmicNeedsUpdate()) {
@@ -268,44 +242,44 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       }
     }
     if (use_rkg_sts) {
-        int nmhd;
-        // (1) construct EOS object (no default)
-        std::string eqn_of_state = pin->GetString("mhd","eos");
-        // ideal gas EOS
-        if (eqn_of_state.compare("ideal") == 0) {
-          nmhd = 5;
-        // general EOS: same five conserved variables as an ideal gas, it is only their
-        // relation to the primitives that differs
-        } else if (eqn_of_state.compare("general") == 0) {
-          nmhd = 5;
-        // isothermal EOS
-        } else if (eqn_of_state.compare("isothermal") == 0) {
-          nmhd = 4;
-        } else {
-          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
-                    << std::endl << "Super-timestepped resistivity does not support "
-                    << "<mhd>/eos = " << eqn_of_state << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-        // tracer-1101: the user's scalars plus the x_e / floor tracer slots, the same
-        // layout the MHD constructor builds (mhd/mhd_tracers.hpp)
-        mhd::TracerLayout tl_ = mhd::ReadTracerLayout(pin);
-        tl_.nuser = pin->GetOrAddInteger("mhd","nscalars",0);
-        int nscalars = tl_.Total();
-        Kokkos::realloc(u_ideal,     nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
-        Kokkos::realloc(b_ideal.x1f, nmb, ncells3, ncells2, ncells1+1);
-        Kokkos::realloc(b_ideal.x2f, nmb, ncells3, ncells2+1, ncells1);
-        Kokkos::realloc(b_ideal.x3f, nmb, ncells3+1, ncells2, ncells1);
-        Kokkos::realloc(uflx_ideal.x1f, nmb, (nmhd+nscalars), ncells3, ncells2, ncells1+1);
-        Kokkos::realloc(uflx_ideal.x2f, nmb, (nmhd+nscalars), ncells3, ncells2+1, ncells1);
-        Kokkos::realloc(uflx_ideal.x3f, nmb, (nmhd+nscalars), ncells3+1, ncells2, ncells1);
-        Kokkos::realloc(u2,     nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
-        Kokkos::realloc(b2.x1f, nmb, ncells3, ncells2, ncells1+1);
-        Kokkos::realloc(b2.x2f, nmb, ncells3, ncells2+1, ncells1);
-        Kokkos::realloc(b2.x3f, nmb, ncells3+1, ncells2, ncells1);
-        Kokkos::realloc(efld_ideal.x1e, nmb, ncells3+1, ncells2+1, ncells1);
-        Kokkos::realloc(efld_ideal.x2e, nmb, ncells3+1, ncells2, ncells1+1);
-        Kokkos::realloc(efld_ideal.x3e, nmb, ncells3, ncells2+1, ncells1+1);
+      int nmhd;
+      // (1) construct EOS object (no default)
+      std::string eqn_of_state = pin->GetString("mhd","eos");
+      // ideal gas EOS
+      if (eqn_of_state.compare("ideal") == 0) {
+        nmhd = 5;
+      // general EOS: same five conserved variables as an ideal gas, it is only their
+      // relation to the primitives that differs
+      } else if (eqn_of_state.compare("general") == 0) {
+        nmhd = 5;
+      // isothermal EOS
+      } else if (eqn_of_state.compare("isothermal") == 0) {
+        nmhd = 4;
+      } else {
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "Super-timestepped resistivity does not support "
+                  << "<mhd>/eos = " << eqn_of_state << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      // the user's scalars plus the x_e / floor tracer slots, the layout the MHD
+      // constructor builds (mhd/mhd_tracers.hpp)
+      mhd::TracerLayout tl_ = mhd::ReadTracerLayout(pin);
+      tl_.nuser = pin->GetOrAddInteger("mhd","nscalars",0);
+      int nscalars = tl_.Total();
+      Kokkos::realloc(u_ideal,     nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
+      Kokkos::realloc(b_ideal.x1f, nmb, ncells3, ncells2, ncells1+1);
+      Kokkos::realloc(b_ideal.x2f, nmb, ncells3, ncells2+1, ncells1);
+      Kokkos::realloc(b_ideal.x3f, nmb, ncells3+1, ncells2, ncells1);
+      Kokkos::realloc(uflx_ideal.x1f, nmb, (nmhd+nscalars), ncells3, ncells2, ncells1+1);
+      Kokkos::realloc(uflx_ideal.x2f, nmb, (nmhd+nscalars), ncells3, ncells2+1, ncells1);
+      Kokkos::realloc(uflx_ideal.x3f, nmb, (nmhd+nscalars), ncells3+1, ncells2, ncells1);
+      Kokkos::realloc(u2,     nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
+      Kokkos::realloc(b2.x1f, nmb, ncells3, ncells2, ncells1+1);
+      Kokkos::realloc(b2.x2f, nmb, ncells3, ncells2+1, ncells1);
+      Kokkos::realloc(b2.x3f, nmb, ncells3+1, ncells2, ncells1);
+      Kokkos::realloc(efld_ideal.x1e, nmb, ncells3+1, ncells2+1, ncells1);
+      Kokkos::realloc(efld_ideal.x2e, nmb, ncells3+1, ncells2, ncells1+1);
+      Kokkos::realloc(efld_ideal.x3e, nmb, ncells3, ncells2+1, ncells1+1);
     }
   }
 }
@@ -393,15 +367,6 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
     } else {
       ResistivityPerna(nn, T, max_eta_, eta_b(m,k,j,i));
     }
-//      Real lgrho = log10(rho);
-//      Real lgT = log10(T);
-//      lgrho = (lgrho < -7.0)? -7.0 : lgrho;
-//      lgrho = (lgrho > -2.0)? -2.0 : lgrho;
-//      lgT = (lgT < 3.0) ? 3.0 : lgT;
-//      lgT = (lgT > 4.542780748663102) ?  4.542780748663102 : lgT;
-//      lgrho = (lgrho+7.0)/(-2.0+7.0);
-//      lgT = (lgT-3.0)/(4.542780748663102-3.0);
-//    ResistivityKumar(lgrho, lgT, eta_b(m,k,j,i));
   });
   return;
 }
@@ -413,7 +378,6 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
 
 void Resistivity::AddResistiveEMFs(const DvceFaceFld4D<Real> &b0,
     DvceEdgeFld4D<Real> &efld) {
-//  AddEMFConstantResist(b0, efld);
   AddEMFDirect(efld_resist, efld);
   return;
 }
@@ -425,137 +389,7 @@ void Resistivity::AddResistiveEMFs(const DvceFaceFld4D<Real> &b0,
 //! Currently only Ohmic resistivity with constant coefficient is implemented.
 
 void Resistivity::AddResistiveFluxes(const DvceFaceFld4D<Real> &b0, const DvceArray5D<Real> &bc, DvceFaceFld5D<Real> &flx) {
-//  AddFluxConstantGridResist(b0, flx);
   AddFluxGeneralResist(b0, bc, flx);
-  return;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn AddEMFConstantResist()
-//  \brief Adds electric field from Ohmic resistivity to corner-centered electric field
-//  Using Ohm's Law to compute the electric field:  E + (v x B) = \eta J, then
-//    E_{inductive} = - (v x B)  [computed in the MHD Riemann solver]
-//    E_{resistive} = \eta J     [computed in this function]
-
-void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
-    DvceEdgeFld4D<Real> &efld) {
-  // DEAD CODE TRIPWIRE. Nothing calls this (the call in AddResistiveFluxes is commented
-  // out), but it reaches CurrentDensity(), whose only curvilinear branch is the
-  // spherical-polar one -- so on the cubed sphere it would take the CARTESIAN curl and
-  // be wrong by O(1), which is exactly the bug AddEMFGnomonicResist exists to fix. If
-  // this is ever re-enabled it must be given the same two-pass treatment.
-  if (pmy_pack->pmesh->use_cubed_sphere) {
-    std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__ << std::endl
-              << "AddEMFConstantResist has no cubed-sphere form; see "
-              << "diffusion/resistivity_gnomonic.cpp" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, ie = indcs.ie;
-  int js = indcs.js, je = indcs.je;
-  int ks = indcs.ks, ke = indcs.ke;
-  int ncells1 = indcs.nx1 + 2*(indcs.ng);
-  int nmb1 = pmy_pack->nmb_thispack - 1;
-  // gathered on the host; the kernels must not chase pmy_pack on the device
-  const auto geom = MakeCurrentDensityGeom(pmy_pack, sp_resist_x1_centred);
-
-  //---- 1-D problem:
-  //  copy face-centered E-fields to edges and return.
-  //  Note e2[is:ie+1,js:je,  ks:ke+1]
-  //       e3[is:ie+1,js:je+1,ks:ke  ]
-
-  if (pmy_pack->pmesh->one_d) {
-    // capture class variables for the kernels
-    auto e2 = efld.x2e;
-    auto e3 = efld.x3e;
-    auto &mbsize = pmy_pack->pmb->mb_size;
-    auto eta_o = eta_ohm_const;
-
-    int scr_level = 0;
-    size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
-
-    scr_level = TeamScratchLevel(scr_size, 0);
-    par_for_outer("ohm1", DevExeSpace(), scr_size, scr_level, 0, nmb1,
-    KOKKOS_LAMBDA(TeamMember_t member, const int m) {
-      ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);
-      ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
-      ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
-
-      CurrentDensity(geom, member, m, ks, js, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
-
-      // Add E_{resistive} = \eta J to corner-centered electric fields
-      par_for_inner(member, is, ie+1, [&](const int i) {
-        e2(m,ks,  js  ,i) += eta_o*j2(i);
-        e2(m,ke+1,js  ,i) += eta_o*j2(i);
-        e3(m,ks  ,js  ,i) += eta_o*j3(i);
-        e3(m,ks  ,je+1,i) += eta_o*j3(i);
-      });
-    });
-    return;
-  }
-
-  //---- 2-D problem:
-  if (pmy_pack->pmesh->two_d) {
-    // capture class variables for the kernels
-    auto e1 = efld.x1e;
-    auto e2 = efld.x2e;
-    auto e3 = efld.x3e;
-    auto &mbsize = pmy_pack->pmb->mb_size;
-    auto eta_o = eta_ohm_const;
-
-    int scr_level = 0;
-    size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
-
-    scr_level = TeamScratchLevel(scr_size, 0);
-    par_for_outer("ohm2", DevExeSpace(), scr_size, scr_level, 0, nmb1, js, je+1,
-    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int j) {
-      ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);
-      ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
-      ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
-
-      CurrentDensity(geom, member, m, ks, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
-
-      // Add E_{resistive} = \eta J to corner-centered electric fields
-      par_for_inner(member, is, ie+1, [&](const int i) {
-        e1(m,ks,  j,i) += eta_o*j1(i);
-        e1(m,ke+1,j,i) += eta_o*j1(i);
-        e2(m,ks,  j,i) += eta_o*j2(i);
-        e2(m,ke+1,j,i) += eta_o*j2(i);
-        e3(m,ks  ,j,i) += eta_o*j3(i);
-      });
-    });
-    return;
-  }
-
-  //---- 3-D problem:
-
-  // capture class variables for the kernels
-  auto e1 = efld.x1e;
-  auto e2 = efld.x2e;
-  auto e3 = efld.x3e;
-  auto &mbsize = pmy_pack->pmb->mb_size;
-  auto eta_o = eta_ohm_const;
-
-  int scr_level = 0;
-  size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
-
-  scr_level = TeamScratchLevel(scr_size, 0);
-  par_for_outer("ohm3", DevExeSpace(), scr_size, scr_level, 0, nmb1, ks, ke+1, js, je+1,
-  KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
-    ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);
-    ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
-    ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
-
-    CurrentDensity(geom, member, m, k, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
-
-    // Add E_{resistive} = \eta J to corner-centered electric fields
-    par_for_inner(member, is, ie+1, [&](const int i) {
-      e1(m,k,j,i) += eta_o*j1(i);
-      e2(m,k,j,i) += eta_o*j2(i);
-      e3(m,k,j,i) += eta_o*j3(i);
-    });
-  });
-
   return;
 }
 
@@ -707,110 +541,6 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
       e2(m,k,j,i) += 0.25*(eta_b_(m,k,j,i)+eta_b_(m,k,j,i-1)+eta_b_(m,k-1,j,i)+eta_b_(m,k-1,j,i-1))*j2(i);
       e3(m,k,j,i) += 0.25*(eta_b_(m,k,j,i)+eta_b_(m,k,j-1,i)+eta_b_(m,k,j,i-1)+eta_b_(m,k,j-1,i-1))*j3(i);
     });
-  });
-
-  return;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn AddResistiveFluxConstantResist()
-//  \brief Adds Poynting flux from Ohmic resistivity to energy flux
-//  Total energy equation is dE/dt = - Div(F) where F = (E X B) = \eta (J X B)
-
-void Resistivity::AddFluxConstantGridResist(const DvceFaceFld4D<Real> &b,
-                                        DvceFaceFld5D<Real> &flx) {
-  // DEAD CODE TRIPWIRE, as in AddEMFConstantResist: this crosses the edge EMFs with the
-  // cell-centred field with no regard for the frame each is held in.
-  if (pmy_pack->pmesh->use_cubed_sphere) {
-    std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__ << std::endl
-              << "AddFluxConstantGridResist has no cubed-sphere form; see "
-              << "AddFluxGeneralResist" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, ie = indcs.ie;
-  int js = indcs.js, je = indcs.je;
-  int ks = indcs.ks, ke = indcs.ke;
-  int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto size = pmy_pack->pmb->mb_size;
-  bool &multi_d = pmy_pack->pmesh->multi_d;
-  bool &three_d = pmy_pack->pmesh->three_d;
-  Real qa = 0.25*eta_ohm_const;
-
-  //------------------------------
-  // energy fluxes in x1-direction
-  auto &flx1 = flx.x1f;
-  par_for("ohm_heat1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real j2k   = -(b.x3f(m,k  ,j,i) - b.x3f(m,k  ,j,i-1))/size.d_view(m).dx1;
-    Real j2kp1 = -(b.x3f(m,k+1,j,i) - b.x3f(m,k+1,j,i-1))/size.d_view(m).dx1;
-
-    Real j3j   = (b.x2f(m,k,j  ,i) - b.x2f(m,k,j  ,i-1))/size.d_view(m).dx1;
-    Real j3jp1 = (b.x2f(m,k,j+1,i) - b.x2f(m,k,j+1,i-1))/size.d_view(m).dx1;
-
-    if (multi_d) {
-      j3j   -= (b.x1f(m,k,j  ,i) - b.x1f(m,k,j-1,i))/size.d_view(m).dx2;
-      j3jp1 -= (b.x1f(m,k,j+1,i) - b.x1f(m,k,j  ,i))/size.d_view(m).dx2;
-    }
-    if (three_d) {
-      j2k   += (b.x1f(m,k  ,j,i) - b.x1f(m,k-1,j,i))/size.d_view(m).dx3;
-      j2kp1 += (b.x1f(m,k+1,j,i) - b.x1f(m,k  ,j,i))/size.d_view(m).dx3;
-    }
-
-    // flx1 = (E X B)_{1} =  ((\eta J) X B)_{1} = \eta (J2*B3 - J3*B2)
-    flx1(m,IEN,k,j,i) += qa*(j2k  *(b.x3f(m,k  ,j  ,i) + b.x3f(m,k  ,j  ,i-1)) +
-                             j2kp1*(b.x3f(m,k+1,j  ,i) + b.x3f(m,k+1,j  ,i-1)) -
-                             j3j  *(b.x2f(m,k  ,j  ,i) + b.x2f(m,k  ,j  ,i-1)) -
-                             j3jp1*(b.x2f(m,k  ,j+1,i) + b.x2f(m,k  ,j+1,i-1)));
-  });
-  if (pmy_pack->pmesh->one_d) {return;}
-
-  //------------------------------
-  // energy fluxes in x2-direction
-  auto &flx2 = flx.x2f;
-  par_for("ohm_heat2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real j1k   = (b.x3f(m,k  ,j,i) - b.x3f(m,k  ,j-1,i))/size.d_view(m).dx2;
-    Real j1kp1 = (b.x3f(m,k+1,j,i) - b.x3f(m,k+1,j-1,i))/size.d_view(m).dx2;
-
-    Real j3i   = (b.x2f(m,k,j,i  ) - b.x2f(m,k,j  ,i-1))/size.d_view(m).dx1
-               - (b.x1f(m,k,j,i  ) - b.x1f(m,k,j-1,i  ))/size.d_view(m).dx2;
-    Real j3ip1 = (b.x2f(m,k,j,i+1) - b.x2f(m,k,j  ,i  ))/size.d_view(m).dx1
-               - (b.x1f(m,k,j,i+1) - b.x1f(m,k,j-1,i+1))/size.d_view(m).dx2;
-
-    if (three_d) {
-      j1k   -= (b.x2f(m,k  ,j,i) - b.x2f(m,k-1,j,i))/size.d_view(m).dx3;
-      j1kp1 -= (b.x2f(m,k+1,j,i) - b.x2f(m,k  ,j,i))/size.d_view(m).dx3;
-    }
-
-    // E2 = \eta (J X B)_{2} = \eta (J3*B1 - J1*B3)
-    flx2(m,IEN,k,j,i) += qa*(j3i  *(b.x1f(m,k  ,j,i  ) + b.x1f(m,k  ,j-1,i  )) +
-                             j3ip1*(b.x1f(m,k  ,j,i+1) + b.x1f(m,k  ,j-1,i+1)) -
-                             j1k  *(b.x3f(m,k  ,j,i  ) + b.x3f(m,k  ,j-1,i  )) -
-                             j1kp1*(b.x3f(m,k+1,j,i  ) + b.x3f(m,k+1,j-1,i  )));
-  });
-  if (pmy_pack->pmesh->two_d) {return;}
-
-  //------------------------------
-  // energy fluxes in x3-direction
-  auto &flx3 = flx.x3f;
-  par_for("ohm_heat3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real j1j   = (b.x3f(m,k,j  ,i) - b.x3f(m,k  ,j-1,i))/size.d_view(m).dx2
-               - (b.x2f(m,k,j  ,i) - b.x2f(m,k-1,j  ,i))/size.d_view(m).dx3;
-    Real j1jp1 = (b.x3f(m,k,j+1,i) - b.x3f(m,k  ,j  ,i))/size.d_view(m).dx2
-               - (b.x2f(m,k,j+1,i) - b.x2f(m,k-1,j+1,i))/size.d_view(m).dx3;
-
-    Real j2i   = -(b.x3f(m,k,j,i  ) - b.x3f(m,k  ,j,i-1))/size.d_view(m).dx1
-                + (b.x1f(m,k,j,i  ) - b.x1f(m,k-1,j,i  ))/size.d_view(m).dx3;
-    Real j2ip1 = -(b.x3f(m,k,j,i+1) - b.x3f(m,k  ,j,i  ))/size.d_view(m).dx1
-                + (b.x1f(m,k,j,i+1) - b.x1f(m,k-1,j,i+1))/size.d_view(m).dx3;
-
-    // E2 = \eta (J X B)_{2} = \eta (J1*B2 - J2*B1)
-    flx3(m,IEN,k,j,i) += qa*(j1j  *(b.x2f(m,k,j  ,i  ) + b.x2f(m,k-1,j  ,i  )) +
-                             j1jp1*(b.x2f(m,k,j+1,i  ) + b.x2f(m,k-1,j+1,i  )) -
-                             j2i  *(b.x1f(m,k,j  ,i  ) + b.x1f(m,k-1,j  ,i  )) -
-                             j2ip1*(b.x1f(m,k,j  ,i+1) + b.x1f(m,k-1,j  ,i+1)));
   });
 
   return;
@@ -979,20 +709,14 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
   const bool one_d = pmy_pack->pmesh->one_d;
   const bool two_d = pmy_pack->pmesh->two_d;
   const bool three_d = pmy_pack->pmesh->three_d;
-    
+
   ClearResistiveEMFs(efld_resist);
-//  if (iso_resist_type.compare("constant") == 0) {
-//    AddEMFConstantResist(b, efld_resist);
-//  } else {
-    AddEMFGeneralResist(b, efld_resist);
-//  }
-  // ambipolar diffusion (ambipolar-1101): onto the same edge EMF, before the walls and
-  // the Poynting flux below are formed from it
+  AddEMFGeneralResist(b, efld_resist);
+  // ambipolar diffusion onto the same edge EMF, before the walls and the Poynting flux
+  // below are formed from it
   if (ad_type != 0) AddEMFAmbipolar(b, bc, efld_resist);
-  // conducting walls (condwall-1028): the resistive tangential edge EMF is 0 on the wall
-  // faces.  Every edge around a wall face is then 0, so the resistive Poynting flux
-  // through it (built below from these edges) is 0 as well; the explicit path adds
-  // efld_resist to the corner EMF and the RKG path copies it, so both see the zero.
+  // conducting walls: the resistive tangential edge EMF is 0 on the wall faces, so the
+  // resistive Poynting flux through them (built below from these edges) is 0 as well
   if (wall_cond_reflect || wall_cond_ix1) {
     pmy_pack->pmhd->WallEmfZero(efld_resist, wall_cond_reflect, wall_cond_ix1);
   }
@@ -1066,7 +790,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
       fl1 = (x1v_(m,i)-x1f_(m,i))/dx1tot;
       fr1 = 1.0 - fl1;
     }
-      
+
     // flx1 = (E X B)_{1} =  ((\eta J) X B)_{1} = \eta (J2*B3 - J3*B2)
     if (cs_) { e3a = (e3a - ccell(m,k,j)*e2a)/scell(m,k,j); }
     if (wbt0_ && i == is &&
@@ -1118,7 +842,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
       fl2 = (x2v_(m,j)-x2f_(m,j))/dx2tot;
       fr2 = 1.0 - fl2;
     }
-      
+
     // E2 = \eta (J X B)_{2} = \eta (J3*B1 - J1*B3)
     Real fx2;
     if (cs_) {
@@ -1196,11 +920,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
 
 void Resistivity::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_data) {
   // resistive timestep on MeshBlock(s) in this pack
-//  if (iso_resist_type.compare("constant") == 0 && !pmy_pack->pmesh->use_spherical_polar) {
-//    NewTimeStepConstantGridResist(w0,eos_data);
-//  } else {
-    NewTimeStepGeneralResist(w0,eos_data);
-//  }
+  NewTimeStepGeneralResist(w0,eos_data);
   return;
 }
 
@@ -1219,12 +939,12 @@ void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EO
   Real dt1 = std::numeric_limits<float>::max();
   Real dt2 = std::numeric_limits<float>::max();
   Real dt3 = std::numeric_limits<float>::max();
-    
+
   auto &mbsize = pmy_pack->pmb->mb_size;
   const int nmkji = (pmy_pack->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji  = nx2*nx1;
-    
+
   // Coordinates::dx{1,2,3} are PHYSICAL lengths for both curvilinear systems, while
   // mb_size.dx* are index spacings -- on the cubed sphere x2 and x3 are angles on [-1,1],
   // so the Cartesian branch would overestimate the diffusive dt by orders of magnitude.
@@ -1258,12 +978,7 @@ void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EO
     int i = (idx - m*nkji - k*nji - j*nx1) + is;
     k += ks;
     j += js;
-    Real eta;
-//    if (iso_resist_type.compare("constant") == 0) {
-//      eta = eta_ohm_const;
-//    } else {
-      eta = eta_b_(m,k,j,i);
-//    }
+    Real eta = eta_b_(m,k,j,i);
     if (ad_on) {
       const Real b2 = SQR(bcc_(m,IBX,k,j,i)) + SQR(bcc_(m,IBY,k,j,i))
                     + SQR(bcc_(m,IBZ,k,j,i));
@@ -1279,33 +994,9 @@ void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EO
       min_dt3 = fmin(fac*SQR(mbsize.d_view(m).dx3)/eta, min_dt3);
     }
   }, Kokkos::Min<Real>(dt1), Kokkos::Min<Real>(dt2),Kokkos::Min<Real>(dt3));
-    
+
   dtnew = dt1;
   if (pmy_pack->pmesh->multi_d) { dtnew = std::min(dtnew, dt2); }
   if (pmy_pack->pmesh->three_d) { dtnew = std::min(dtnew, dt3); }
-  return;
-}
-
-void Resistivity::NewTimeStepConstantGridResist(const DvceArray5D<Real> &w0, const EOS_Data &eos_data) {
-  // resistive timestep on MeshBlock(s) in this pack
-  dtnew = std::numeric_limits<float>::max();
-  auto size = pmy_pack->pmb->mb_size;
-  Real fac;
-  if (pmy_pack->pmesh->three_d) {
-    fac = 1.0/6.0;
-  } else if (pmy_pack->pmesh->two_d) {
-    fac = 0.25;
-  } else {
-    fac = 0.5;
-  }
-  for (int m=0; m<(pmy_pack->nmb_thispack); ++m) {
-    dtnew = std::min(dtnew, fac*SQR(size.h_view(m).dx1)/eta_ohm_const);
-    if (pmy_pack->pmesh->multi_d) {
-      dtnew = std::min(dtnew, fac*SQR(size.h_view(m).dx2)/eta_ohm_const);
-    }
-    if (pmy_pack->pmesh->three_d) {
-      dtnew = std::min(dtnew, fac*SQR(size.h_view(m).dx3)/eta_ohm_const);
-    }
-  }
   return;
 }
