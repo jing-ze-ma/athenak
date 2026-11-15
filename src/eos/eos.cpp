@@ -25,35 +25,21 @@
 
 EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInput *pin) :
     pmy_pack(pp) {
-  // Whether the input actually SET tfloor has to be asked before GetOrAddReal below,
-  // which adds the parameter with its default and would make the question answer itself.
-  //
-  // Existence alone is NOT enough, because of restarts. GetOrAddReal records its default
-  // in the parameter list, and the restart file is a dump of that list, so the second leg
-  // of a run sees a `tfloor` this constructor added on the first leg. Reading that as
-  // "the user set both" made every general-EOS run using tfloor_kelvin impossible to
-  // restart -- which is every long run, since a 24 h slot has to be continued. Compare
-  // against the sentinel so an added default does not masquerade as a user value.
+  // whether the input set tfloor, asked before GetOrAddReal adds it; a default recorded
+  // in a restart file does not count as set
   const bool tfloor_set = pin->DoesParameterExist(bk, "tfloor") &&
                           !pin->IsParameterDefaulted(bk, "tfloor");
   eos_data.dfloor = pin->GetOrAddReal(bk,"dfloor",(FLT_MIN));
   eos_data.dfloor_keep_velocity =
       pin->GetOrAddBoolean(bk,"dfloor_keep_velocity",false);
-  // Only the HYDRO conserved-to-primitive path (ideal_c2p_hyd.hpp/general_c2p_hyd.hpp,
-  // and GnomonicEquiangleRaiseVel for the deferred cubed-sphere half) implements this.
-  // In an <mhd> block it would be read and silently ignored, so refuse it instead.
+  // dfloor_keep_velocity is implemented in the hydro inversions only
   if (eos_data.dfloor_keep_velocity && bk.compare("hydro") != 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<" << bk << ">/dfloor_keep_velocity is implemented only "
               << "for hydrodynamics" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // <hydro>/vceil and <mhd>/vceil: see the note on EOS_Data::vceil.  NON-RELATIVISTIC
-  // hydro and MHD only -- the relativistic inversions have their own ceiling
-  // (gamma_max), and reading this there would silently ignore it, so refuse it instead.
-  // On the CUBED SPHERE the ceiling is deferred for both: |v| and the kinetic energy are
-  // the METRIC ones there, so the ConsToPrim block only DECIDES and the application is
-  // made by Coordinates::GnomonicEquiangleRaiseVel{,MHD}.
+  // velocity ceiling (EOS_Data::vceil): Newtonian hydro and MHD only
   eos_data.vceil = pin->GetOrAddReal(bk,"vceil",0.0);
   if (eos_data.vceil > 0.0 &&
       (bk.compare("hydro") != 0 && bk.compare("mhd") != 0)) {
@@ -70,8 +56,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       std::exit(EXIT_FAILURE);
     }
   }
-  // <mhd>/valfven_max_cgs: see the note on EOS_Data::va2max_inv.  Newtonian MHD only,
-  // read only when named (no GetOrAdd, so unset inputs and restarts are unchanged).
+  // Alfven-speed density floor (EOS_Data::va2max_inv): Newtonian MHD only
   if (pin->DoesParameterExist(bk,"valfven_max_cgs")) {
     if (bk.compare("mhd") != 0 || pp->pcoord->is_special_relativistic ||
         pp->pcoord->is_general_relativistic) {
@@ -91,8 +76,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
                 << " [code]: density floor rho >= B^2/v_A,max^2" << std::endl;
     }
   }
-  // <mhd>/valfven_noinfall_fac: see the note on EOS_Data::va_noinfall_fac.  Read only
-  // when named; needs valfven_max_cgs and a radial x1.
+  // no-infall companion of the Alfven floor (EOS_Data::va_noinfall_fac); needs
+  // valfven_max_cgs and a radial x1
   if (pin->DoesParameterExist(bk,"valfven_noinfall_fac")) {
     const Real fac = pin->GetReal(bk,"valfven_noinfall_fac");
     if (fac > 0.0) {
@@ -111,13 +96,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       }
     }
   }
-  // <mhd>/hlld_bx_zero_tol: see the note on EOS_Data::hlld_bx_zero_tol.  Only the HLLD
-  // family (hlld_mhd.hpp, hlld_uct_mhd.hpp, lhlld_mhd.hpp) reads it; in any other block
-  // it would be parsed and silently ignored, so refuse it there instead.  The existence
-  // check has to run before GetOrAddReal below, which would otherwise add the default
-  // and make the question answer itself (same trap as tfloor_set above).
-  // Read it (and record the default) for MHD only: a GetOrAdd in a <hydro> block would be
-  // written into the restart file and then refused on reload as "MHD only".
+  // HLLD ** state tolerance (EOS_Data::hlld_bx_zero_tol), MHD only; recorded with its
+  // default in <mhd> only, so a <hydro> restart is not refused
   const bool hlld_tol_set = pin->DoesParameterExist(bk,"hlld_bx_zero_tol");
   if (bk.compare("mhd") == 0) {
     eos_data.hlld_bx_zero_tol = pin->GetOrAddReal(bk,"hlld_bx_zero_tol",1.0e-4);
@@ -128,8 +108,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
               << "for MHD" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // <hydro>/lhllc_x1_phi_min, <mhd>/lhlld_x1_phi_min: see EOS_Data::x1_phi_min.  Read
-  // only when set (no GetOrAdd), so an unset key leaves the restart header unchanged.
+  // radial low-Mach floor (EOS_Data::x1_phi_min)
   {
     const bool is_hyd = (bk.compare("hydro") == 0);
     const std::string key = is_hyd ? "lhllc_x1_phi_min" : "lhlld_x1_phi_min";
@@ -144,10 +123,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       eos_data.x1_phi_min = pin->GetReal(bk, key);
     }
   }
-  // <mhd>/lhlld_emf_eta_pos: see EOS_Data::lhlld_emf_eta_pos.  Read only when set (no
-  // GetOrAdd), so an unset key leaves the restart header unchanged.  MHD only: refused
-  // in any other block.  lhlld_emf_eta_pos defaults to true in <mhd>
-  // (user decision 10-30); only LHLLD reads it, so other solvers are unaffected.
+  // non-negative EMF resistivity of LHLLD (EOS_Data::lhlld_emf_eta_pos), default true in
+  // <mhd>, MHD only
   if (bk.compare("mhd") == 0) eos_data.lhlld_emf_eta_pos = true;
   for (const char *kc : {"lhlld_emf_eta_pos"}) {
     const std::string key(kc);
@@ -160,11 +137,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     }
     eos_data.lhlld_emf_eta_pos = pin->GetBoolean(bk, key);
   }
-  // <hydro>/lhllc_cb_sensor, <mhd>/lhlld_cb_sensor: see EOS_Data::cb_sensor.  Read only
-  // when set, as above; default 1 (user decision 10-30), only LHLLC/LHLLD read it.
-  // WASP-121b cs MHD production uses rsolver = lhlld with lhlld_cb_sensor = 1 +
-  // lhlld_emf_eta_pos = true, i.e. the defaults (lhlld-cb-1030 gates).  Set the key to
-  // 0 (and lhlld_emf_eta_pos = false) for the legacy LHLLC/LHLLD.
+  // odd-even sensor of LHLLC/LHLLD (EOS_Data::cb_sensor), default 1; 0 = off
   eos_data.cb_sensor = 1.0;
   {
     const bool is_hyd = (bk.compare("hydro") == 0);
@@ -179,8 +152,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     if (pin->DoesParameterExist(bk, key)) {
       eos_data.cb_sensor = pin->GetReal(bk, key);
     }
-    // cbcont-1102: see EOS_Data::cb_cont (read only when named: restart files of runs
-    // that do not set it are unchanged)
+    // continuous sensor fraction (EOS_Data::cb_cont)
     const std::string kc = is_hyd ? "lhllc_cb_cont" : "lhlld_cb_cont";
     const std::string bc = is_hyd ? "lhlld_cb_cont" : "lhllc_cb_cont";
     if (pin->DoesParameterExist(bk, bc)) {
@@ -189,10 +161,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
                 << "block; use <" << bk << ">/" << kc << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // prod1103 default (USER 11-03): cb_cont = true on a FRESH start (recipe::NewDefaults)
-    // whenever <bk>/rsolver = lhllc (hydro) / lhlld (MHD) and the key is not named; the
-    // value is recorded (GetOrAdd) so the run's restarts carry it.  A restart whose input
-    // lacks the key keeps the old default false (bitwise); an explicit key always wins.
+    // fresh-start default (recipe::NewDefaults): cb_cont = true with rsolver =
+    // lhllc/lhlld, recorded for the restarts; a restart input without the key keeps false
     {
       const std::string rs = is_hyd ? "lhllc" : "lhlld";
       if (!pin->DoesParameterExist(bk, kc) && pin->DoesParameterExist(bk, "rsolver") &&
@@ -210,7 +180,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     if (pin->DoesParameterExist(bk, kc)) {
       eos_data.cb_cont = pin->GetBoolean(bk, kc);
     }
-    // wbplm-1103: see EOS_Data::wb_plm_range (read only when named)
+    // well-balanced face range bound (EOS_Data::wb_plm_range)
     if (pin->DoesParameterExist(bk, "wb_plm_range")) {
       eos_data.wb_plm_range = pin->GetBoolean(bk, "wb_plm_range");
       if (eos_data.wb_plm_range &&
@@ -221,7 +191,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
         std::exit(EXIT_FAILURE);
       }
     }
-    // wbplm-1103: see EOS_Data::wb_plm_smooth (read only when named)
+    // well-balanced face blend (EOS_Data::wb_plm_smooth)
     if (pin->DoesParameterExist(bk, "wb_plm_smooth")) {
       eos_data.wb_plm_smooth = pin->GetBoolean(bk, "wb_plm_smooth");
       if (eos_data.wb_plm_smooth &&
@@ -233,12 +203,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
         std::exit(EXIT_FAILURE);
       }
     }
-    // prod1103 default (USER 11-03, "use u_n for lhllc/d"): lhlld_chi_normal = true on a
-    // FRESH start (recipe::NewDefaults) whenever <mhd>/rsolver = lhlld and the key is not
-    // named, i.e. c_u of LHLLD from the face-normal velocity as LHLLC's chi (lowmach2-1102:
-    // Gresho B_z KE 0.52 vs 0.47, checkerboard damping identical).  Recorded (GetOrAdd)
-    // for the run's restarts; a restart whose input lacks the key keeps false (bitwise);
-    // an explicit key always wins.  LHLLC always uses the face-normal chi.
+    // fresh-start default: lhlld_chi_normal = true with rsolver = lhlld (as cb_cont
+    // above); LHLLC always uses the face-normal chi
     if (!is_hyd && !pin->DoesParameterExist(bk, "lhlld_chi_normal") &&
         pin->DoesParameterExist(bk, "rsolver") && pin->GetString(bk, "rsolver") == "lhlld") {
       if (recipe::NewDefaults(pin)) {
@@ -259,11 +225,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       }
       eos_data.chi_normal = pin->GetBoolean(bk, "lhlld_chi_normal");
     }
-    // prod1104a default (USER 11-04, lowmachpu_1103 acoustics gate 18/18 PASS):
-    // <mhd>/lhlld_alfmach = true on a FRESH start (recipe::NewDefaults) whenever
-    // <mhd>/rsolver = lhlld and the key is not named; recorded (GetOrAdd) for the run's
-    // restarts.  A restart whose input lacks the key keeps false (bitwise); an explicit
-    // key always wins.
+    // fresh-start default: lhlld_alfmach = true with rsolver = lhlld (as cb_cont above)
     if (!is_hyd && !pin->DoesParameterExist(bk, "lhlld_alfmach") &&
         pin->DoesParameterExist(bk, "rsolver") && pin->GetString(bk, "rsolver") == "lhlld") {
       if (recipe::NewDefaults(pin)) {
@@ -275,7 +237,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
             "restart input has no key") + ": the old default)");
       }
     }
-    // see EOS_Data::alfmach (read only when named)
+    // Alfven-Mach scaled floor of LHLLD (EOS_Data::alfmach)
     for (const std::string key : {"lhlld_alfmach"}) {
       if (!pin->DoesParameterExist(bk, key)) continue;
       if (is_hyd) {
@@ -296,17 +258,11 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   eos_data.pfloor = pin->GetOrAddReal(bk,"pfloor",(FLT_MIN));
   eos_data.tfloor = pin->GetOrAddReal(bk,"tfloor",(FLT_MIN));
 
-  // See the note on EOS_Data::efloor_from_ekin (tabulated general EOS only).
+  // energy floor paid from the kinetic energy (EOS_Data::efloor_from_ekin)
   eos_data.efloor_from_ekin = pin->GetOrAddBoolean(bk,"efloor_from_ekin",false);
-  // See the note on EOS_Data::efloor_as_tfloor.  Also default OFF, also meaningful only
-  // for the tabulated general EOS, and it additionally RAISES tfloor to the table's own
-  // lowest temperature (in BuildGeneralEOS, once the table exists and its range is
-  // known), because a tfloor below the table can never fire.
+  // floored states rebuilt from their temperature (EOS_Data::efloor_as_tfloor)
   eos_data.efloor_as_tfloor = pin->GetOrAddBoolean(bk,"efloor_as_tfloor",false);
-  // efloor_from_ekin and efloor_as_tfloor are implemented only in the HYDRO general-EOS
-  // inversion (general_c2p_hyd.hpp); general_c2p_mhd.hpp never reads them, so in <mhd>
-  // they would be silent no-ops (efloor_as_tfloor would only raise tfloor).  Refuse them
-  // there, as dfloor_keep_velocity above.
+  // both are implemented in the hydro general-EOS inversion only (general_c2p_hyd.hpp)
   if ((eos_data.efloor_from_ekin || eos_data.efloor_as_tfloor) &&
       bk.compare("hydro") != 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -317,30 +273,18 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     std::exit(EXIT_FAILURE);
   }
   eos_data.sfloor = pin->GetOrAddReal(bk,"sfloor",(FLT_MIN));
-  // See the note on defer_cons_floors in eos.hpp.  Set for the cubed sphere, where
-  // GnomonicEquiangleRaiseVel{,MHD} re-applies the floors to the corrected energy.
+  // cubed sphere: conserved floor writes deferred to GnomonicEquiangleRaiseVel{,MHD}
   eos_data.defer_cons_floors = pp->pmesh->use_cubed_sphere;
 
-  // See the note on EOS_Data::floors_legacy: with none of the four floor switches above
-  // enabled the kernels take the pre-existing code path VERBATIM, so that a build
-  // carrying these features reproduces an older run bit for bit.
+  // original floor kernels when no floor switch is on (EOS_Data::floors_legacy)
   eos_data.floors_legacy = !(eos_data.dfloor_keep_velocity ||
                              (eos_data.vceil > 0.0) ||
                              eos_data.efloor_from_ekin ||
                              eos_data.efloor_as_tfloor);
 
-  // <block>/tfloor_kelvin -- the SAME floor, stated in kelvin instead of code units.
-  //
-  // `tfloor` is a floor on the CODE temperature, and what that means changes with the
-  // EOS: for an ideal gas it is p/d, whose kelvin scale carries the fixed <units>/mu, and
-  // a general EOS works at mu_ref = 1 and keeps composition in the EOS, so its scale is
-  // that same factor with the mu divided back out. The two differ by mu, which is how a
-  // value carried across from an ideal-gas input silently becomes a floor thousands of
-  // times too low or too high. Stating the floor in kelvin removes the trap and lets an
-  // ideal and a general input hold the SAME number.
-  //
-  // Additive on purpose: `tfloor` keeps its meaning exactly, so no existing input changes
-  // behaviour. Setting both is an error rather than a precedence rule.
+  // <block>/tfloor_kelvin: tfloor in kelvin.  The code temperature of an ideal gas
+  // carries <units>/mu while the general EOS works at mu_ref = 1, so a kelvin value means
+  // the same in both; setting tfloor as well is an error
   if (pin->DoesParameterExist(bk, "tfloor_kelvin")) {
     Real tk = pin->GetReal(bk, "tfloor_kelvin");
     if (tfloor_set) {
@@ -349,16 +293,13 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
                 << "are the same floor in different units. Set one." << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // The conversion is a unit system, so there has to be one.
     if (pp->punit == nullptr) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<" << bk << ">/tfloor_kelvin needs a <units> block to "
                 << "convert kelvin into code temperature" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // Relativistic and isothermal EOSs are excluded: the isothermal C2P has no
-    // temperature floor to set, and under SR/GR `tfloor` is not this quantity. Refuse
-    // rather than convert a number that will not be used the way the name suggests.
+    // non-relativistic ideal and general EOS only
     std::string eqn = pin->GetString(bk, "eos");
     bool general = (eqn.compare("general") == 0);
     bool ideal = (eqn.compare("ideal") == 0);
@@ -372,10 +313,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // kelvin per unit code temperature. Units::temperature_cgs() already folds in
-    // <units>/mu, which is what the ideal gas wants because its code temperature is p/d;
-    // the general EOS divides it back out for mu_ref = 1, exactly as EOS_Data::temp_cgs
-    // is built in the GeneralHydro/GeneralMHD constructors.
+    // kelvin per unit code temperature; the general EOS divides <units>/mu back out, as
+    // for EOS_Data::temp_cgs
     Real k_per_code = pp->punit->temperature_cgs();
     if (general) k_per_code /= pp->punit->mu();
     eos_data.tfloor = tk/k_per_code;
@@ -390,31 +329,19 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
 
 //----------------------------------------------------------------------------------------
 //! \fn void EquationOfState::BuildGeneralEOS()
-//! \brief select what the general EOS interface evaluates, and build the table if asked.
-//!
-//! Two modes, chosen by <block>/general_eos:
-//!   gamma  (default) -- the interface evaluates the same ideal gamma law as the ideal
-//!                       EOS. This is not a physics option so much as a control: it makes
-//!                       the general code path -- reconstruction of p and Gamma_1, the
-//!                       general Riemann solvers, the general well-balanced background --
-//!                       exercisable against an answer that is known exactly, which is
-//!                       what the general-vs-ideal regression tests assert.
-//!   table            -- the tabulated analytic EOS: H2 dissociation, H and He
-//!                       ionization, and optionally radiation pressure.
-//!
-//! Called only from the GeneralHydro/GeneralMHD constructors, and only after dens_cgs,
-//! pres_cgs and temp_cgs have been set, because the table is built in physical units.
+//! \brief selects what the general EOS interface evaluates, <block>/general_eos:
+//!   gamma (default): the ideal gamma law through the general code path (reference for
+//!                    the general-vs-ideal tests)
+//!   table:           the tabulated analytic EOS (H2 dissociation, H/He ionization,
+//!                    optional radiation pressure)
+//! Called from the GeneralHydro/GeneralMHD constructors after the unit scales are set.
 
 void EquationOfState::BuildGeneralEOS(std::string block, ParameterInput *pin) {
   std::string mode = pin->GetOrAddString(block, "general_eos", "gamma");
   if (mode.compare("gamma") == 0) {
     eos_data.tbl.active = false;
   } else if (mode.compare("table") == 0) {
-    // The entropy floor is a floor on the ideal-gas entropy variable p/d^gamma, which is
-    // not an invariant of a tabulated EOS and cannot be given a meaning here. Refuse it
-    // rather than apply a floor on a quantity that means nothing, or silently drop one
-    // the user asked for. (The default FLT_MIN can never trigger, so it is allowed
-    // through.) See EOS_Data::ApplyEntropyFloor().
+    // the entropy floor p/d^gamma has no meaning for a table; refuse a set sfloor
     if (eos_data.sfloor > static_cast<Real>(FLT_MIN)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<" << block << ">/sfloor is set, but the entropy floor "
@@ -425,14 +352,8 @@ void EquationOfState::BuildGeneralEOS(std::string block, ParameterInput *pin) {
     }
     BuildEOSTable(eos_data.tbl, pin, block, eos_data.dens_cgs, eos_data.pres_cgs,
                   eos_data.temp_cgs, eos_data.pfloor);
-    // <block>/efloor_as_tfloor: A TEMPERATURE FLOOR UNDER THE TABLE CANNOT FIRE.
-    // EOSTable::ClampLogT holds every sub-table inversion at the table's lowest
-    // tabulated row, so the temperature ConsToPrim sees is never below it and the
-    // `temp < tfloor` test is dead.  The he4 presupernova input carried
-    // tfloor = 5e3 K against a table starting at 10^3.8 = 6310 K and the counter read
-    // zero for the whole run while the clamp fired throughout.  Raise the floor to the
-    // table's own edge and say so; without the switch the input is left alone, so no
-    // existing run changes.
+    // efloor_as_tfloor: ClampLogT holds every inversion at the lowest tabulated row, so a
+    // tfloor below the table can never fire; raise it to the table edge
     if (eos_data.efloor_as_tfloor) {
       const Real tmin = eos_data.TableTempMin();
       if (tmin > 0.0 && eos_data.tfloor < tmin) {
@@ -457,34 +378,13 @@ void EquationOfState::BuildGeneralEOS(std::string block, ParameterInput *pin) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void EquationOfState::BuildElectronFractionTable()
-//! \brief build the composition table for an IDEAL-gas run, for its x_e alone
-//!
-//! `ohmic_resistivity = eos` wants n_e/n_tot from Saha over hydrogen and the metal
-//! donors. That normally arrives with the general EOS, but the two are separable: the
-//! general EOS is expensive because ConsToPrim has to invert e(rho,T) for T in every
-//! cell, and an ideal gas never does that. It can therefore have the table's electron
-//! fraction at essentially no cost -- measured at -0.02 ms/cycle against the `perna`
-//! fit, i.e. free, because one bicubic patch is no dearer than perna's
-//! log10 + pow(10,x) + 2 sqrt.
-//!
-//! WHAT IT BUYS. perna is potassium-only sqrt-Saha at a fixed abundance, so it has no
-//! saturation ceiling (over-predicts x_e ~3x above 3500 K at low pressure), no hydrogen
-//! term (under-predicts above ~6000 K), and no condensation or metallicity. The table
-//! has all of it, and ResistivityEOS() adds the Spitzer electron-ion term as well.
-//!
-//! WHAT IT DOES NOT BUY. An ideal gas carries a FIXED mu, so its temperature is
-//! p/(Rgas rho) with that mu baked in, and x_e goes as exp(-chi/2kT) with
-//! dln x_e/dln T of order 13. Wherever the real mean molecular weight departs from the
-//! assumed one -- across H2 dissociation above all -- the temperature is wrong and no
-//! electron-fraction model repairs it. This makes the resistivity the best it can be
-//! GIVEN the ideal thermodynamics; it does not make an ideal run equivalent to a
-//! general-EOS one.
+//! \brief builds the composition table of an ideal-gas run for the electron fraction of
+//! ohmic_resistivity = eos (Saha over H and the metal donors) without making the
+//! thermodynamics tabulated.  The temperature remains the ideal-gas one (fixed mu), so
+//! x_e is only as good as that temperature.
 
 void EquationOfState::BuildElectronFractionTable(std::string block, ParameterInput *pin) {
-  // Nothing to do unless the resistivity actually asks for the EOS electron fraction.
-  // The probe must NOT be GetOrAddString: that would ADD ohmic_resistivity to the input,
-  // and the Resistivity constructor keys off whether the parameter exists at all -- so a
-  // run with no resistivity would acquire one, of an invalid type, and abort.
+  // only for ohmic_resistivity = eos; probed without GetOrAdd, which would add the key
   if (!pin->DoesParameterExist(block, "ohmic_resistivity")) {return;}
   if (pin->GetString(block, "ohmic_resistivity").compare("eos") != 0) {return;}
 
@@ -501,17 +401,12 @@ void EquationOfState::BuildElectronFractionTable(std::string block, ParameterInp
 
   BuildEOSTable(eos_data.tbl, pin, block, dens_cgs, pres_cgs, temp_cgs, eos_data.pfloor);
 
-  // The surfaces are built, but the table must NOT be marked active. `tbl.active` is
-  // what every thermodynamic accessor in EOS_Data tests to choose between the ideal-gas
-  // expression and the table, and this run wants the ideal gas for all of them. Only the
-  // electron fraction comes from the table, and ElectronFractionKelvin() gates on
-  // xe_from_table instead, reading the interpolant directly.
+  // thermodynamics stay ideal: only ElectronFractionKelvin reads the table
+  // (xe_from_table)
   eos_data.tbl.active = false;
   eos_data.xe_from_table = true;
 
-  // The resistivity forms the ideal gas's temperature as p/(Rgas rho), which is kelvin
-  // only if the run is in cgs -- an assumption `perna` already makes. The table is
-  // indexed in physical units, so report the scale rather than let it be silent.
+  // the resistivity's ideal-gas T = p/(Rgas rho) is in kelvin only for a cgs run
   if (global_variable::my_rank == 0) {
     std::cout << "<" << block << ">: ideal gas + tabulated electron fraction for "
               << "ohmic_resistivity = eos; the thermodynamics stay ideal. Table indexed "
