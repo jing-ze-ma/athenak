@@ -227,7 +227,10 @@ void RadiationM1::CleanCellMilneSetup() {
 //! carries the rays' flux CLN_F1 less the boundary flux of Ur.  Reflecting and x2, x3
 //! boundary faces carry none; x3 faces take CLN_F3 as x2 faces CLN_F2.  A physical
 //! boundary face takes w of its inner cell (C1 copied to the ghost) for the momentum
-//! deviation it carries out.
+//! deviation it carries out.  On the cubed sphere the high x2, x3 faces of a MeshBlock
+//! take CLN_FH of its last cell and F_kin the half ranges about the face normal from
+//! the two cells' FV intensities (CLF_HK): every term of a seam face is computed alike
+//! on both sides.
 
 void RadiationM1::CleanCellConsistency() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -239,15 +242,23 @@ void RadiationM1::CleanCellConsistency() {
   const Real c1lo = cln_c0, c1hi = cln_c1;
   CleanArgs x = CleanMakeArgs();
   x.milne = false;   // the bracket is that of the moment scheme
+  auto fi = cln_fvi;
+  auto dir_ = vgd_dir;
+  const int nd = x.cub ? vgd_n : 0;
 
-  // the rays' cell moments Ur
+  // the rays' cell moments Ur (y in its frame on the cubed sphere)
   par_for("clc_raymom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = x.cs(m,CLN_J,k,j,i);
-    x.u(m,CLC_U,k,j,i) = jr;
-    for (int b = 0; b < 3; ++b) {
-      x.u(m,CLC_U+1+b,k,j,i) = jr*(x.cs(m,CLN_HP+b,k,j,i) + x.cs(m,CLN_HM+b,k,j,i));
+    Real s[3], h[3], q[3][3];
+    for (int b = 0; b < 3; ++b) s[b] = x.cs(m,CLN_HP+b,k,j,i) + x.cs(m,CLN_HM+b,k,j,i);
+    if (x.cub) {
+      CleanRayFlux(x, m, k, j, i, s, h);
+      CleanCsFrame(x, m, k, j, i, q);
+      for (int b = 0; b < 3; ++b) s[b] = q[b][0]*h[0] + q[b][1]*h[1] + q[b][2]*h[2];
     }
+    x.u(m,CLC_U,k,j,i) = jr;
+    for (int b = 0; b < 3; ++b) x.u(m,CLC_U+1+b,k,j,i) = jr*s[b];
   });
   CleanGhostFill(cln_x, CLC_U, 4);
 
@@ -268,20 +279,39 @@ void RadiationM1::CleanCellConsistency() {
         wb *= CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       }
       x.fc[dir](m,CLF_WK,k,j,i) = wb;
+      Real nv[3], hj[4] = {0.0, 0.0, 0.0, 0.0};   // J_L, J_R, H+_L, H-_R
+      for (int b = 0; b < 3; ++b) nv[b] = CleanNf(x, b, dir, m, k, j, i);
+      for (int d = 0; d < nd; ++d) {
+        const Real mu = dir_(d,0)*nv[0] + dir_(d,1)*nv[1] + dir_(d,2)*nv[2];
+        const Real wl = dir_(d,3)*fi(m,d,kl,jl,il), wr = dir_(d,3)*fi(m,d,k,j,i);
+        hj[0] += wl;
+        hj[1] += wr;
+        hj[(mu > 0.0) ? 2 : 3] += ((mu > 0.0) ? wl : wr)*mu;
+      }
+      if (nd > 0) {
+        x.fc[dir](m,CLF_HK,k,j,i) = (hj[0] > 0.0) ? hj[2]/hj[0] : 0.25;
+        x.fc[dir](m,CLF_HK+1,k,j,i) = (hj[1] > 0.0) ? hj[3]/hj[1] : -0.25;
+      }
       if (bdry && (dir != 0 || CleanBc(x, m, blo ? 0 : 1) == M1_IBC_REFLECT)) return;
-      const int nd = (dir == 0) ? CLN_FX : ((dir == 1) ? CLN_F2 : CLN_F3);
-      const int n = bdry ? CLN_F1 : nd;
+      // the rays' flux: of the face's own cell, an x1 boundary's or the high face of a
+      // MeshBlock on the cubed sphere from the inner cell
+      const bool up = bdry ? !blo : (x.cub && dir > 0 && (j > x.je || k > x.ke));
+      const int n = bdry ? CLN_F1 : (up ? CLN_FH + 4*(dir - 1) : ((dir == 0) ? CLN_FX :
+                                     ((dir == 1) ? CLN_F2 : CLN_F3)));
       Real f[4] = {0.0, 0.0, 0.0, 0.0}, fr[4] = {0.0, 0.0, 0.0, 0.0};
       if (bdry) {
         CleanCellFaceFlux(x, CLC_U, dir, m, k, j, i, true, f);
       } else {
         // the rays' kinetic flux of their own moments Ur: the part w takes in the solve
-        for (int r = 0; r <= x.nf; ++r) {
-          f[r] = x.c*(x.cs(m,CLN_HP+dir,kl,jl,il)*x.u(m,CLC_U+r,kl,jl,il) +
-                      x.cs(m,CLN_HM+dir,k,j,i)*x.u(m,CLC_U+r,k,j,i));
-        }
+        Real hp, hm, ul[4], ur[4];
+        CleanCellKinetic(x, dir, m, k, j, i, hp, hm);
+        CleanCellState(x, CLC_U, m, kl, jl, il, ul);
+        CleanCellState(x, CLC_U, m, k, j, i, ur);
+        for (int r = 0; r <= x.nf; ++r) f[r] = x.c*(hp*ul[r] + hm*ur[r]);
       }
-      for (int r = 0; r <= x.nf; ++r) fr[r] = x.c*x.cs(m,n+r,k,j,(bdry && !blo) ? il : i);
+      for (int r = 0; r <= x.nf; ++r) {
+        fr[r] = x.c*x.cs(m,n+r,up ? kl : k,up ? jl : j,up ? il : i);
+      }
       for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = wb*(fr[r] - f[r]);
     });
   }

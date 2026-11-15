@@ -53,7 +53,7 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_v, nmb, 2, n3, n2, n1);
   Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
-  const int nfc = cln_milne ? CLF_ML + 9 : (cln_consist ? CLF_WK + 1 : CLF_N);
+  const int nfc = cln_milne ? CLF_ML + 9 : (cln_consist ? CLF_HK + 2 : CLF_N);
   Kokkos::realloc(cln_fc1, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc2, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc3, nmb, nfc, n3, n2, n1);
@@ -104,13 +104,13 @@ void RadiationM1::CleanInit() {
     // the rays are vet_gd's directions transported conservatively (CleanFvSweep), or
     // the analytic sphere (eddington: of infinite radius); an even panel resolution
     // keeps the cell centres off the z axis (the frame of y, CleanCsFrame)
-    if (!cln_cell || !(cln_sphere || cln_edd || vgd_on) || cln_consist || cln_milne ||
-        vgd_twin || VgdRotOn() || vra_on || vgd_async || pm->mesh_indcs.nx2 % 2 != 0) {
+    if (!cln_cell || !(cln_sphere || cln_edd || vgd_on) || (cln_consist && !vgd_on) ||
+        cln_milne || vgd_twin || VgdRotOn() || vra_on || vgd_async ||
+        pm->mesh_indcs.nx2 % 2 != 0) {
       CleanFatal("<rad_m1>/scheme = clean on the cubed sphere needs clean_layout = cell, "
-                 "clean_closure = sphere | eddington or closure = vet_col with vet_gd "
-                 "(clean_rays = fv1 | fv, no twin, rotation or async), no "
-                 "clean_consistency or clean_face_model = milne and an even "
-                 "<mesh>/nx2");
+                 "clean_closure = sphere | eddington (no clean_consistency) or closure = "
+                 "vet_col with vet_gd (clean_rays = fv1 | fv, no twin, rotation or "
+                 "async), no clean_face_model = milne and an even <mesh>/nx2");
     }
     if (vgd_on) {
       cln_rfv = std::max(cln_rfv, 1);
