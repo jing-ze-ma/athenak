@@ -2887,7 +2887,7 @@ class RadiationM1 {
   void CleanInitFaceFluxes();
   void CleanOldVector();
   void CleanClosure();
-  void CleanPredictState();
+  void CleanPredictState(const bool stage2);
   void CleanClosureFromRays();
   void CleanClosureFill();
   void CleanFaceCoefficients();
@@ -2942,7 +2942,9 @@ class RadiationM1 {
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
   bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
-  bool cln_charall = false;     // clean_char_all: D = 1 for all stress rows on low faces
+  bool cln_posbdry = true;      // clean_pos_boundary: the limiter also marks boundary faces
+  bool cln_predflux = false;    // clean_predict_flux: the rays see F advanced with K1_F
+  bool cln_closstage = false;   // clean_closure_stage: stage 2 rebuilds the closure from Y1
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: line-relaxation sweeps (preconditioner)

@@ -602,6 +602,11 @@ int RadiationM1::CleanCellMarkFaces() {
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   const bool multi_d = pmy_pack->pmesh->multi_d;
   const bool three_d = pmy_pack->pmesh->three_d;
+  const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
+  // faces on a physical boundary are marked only with clean_pos_boundary
+  const bool b1 = cln_posbdry || ibc_x1min == M1_IBC_PERIODIC;
+  const bool b2 = cln_posbdry || ibc_x2min == M1_IBC_PERIODIC;
+  const bool b3 = cln_posbdry || ibc_x3min == M1_IBC_PERIODIC;
   auto u = cln_x;
   auto fc1 = cln_fc1, fc2 = cln_fc2, fc3 = cln_fc3;
 
@@ -630,15 +635,15 @@ int RadiationM1::CleanCellMarkFaces() {
                              SQR(u(m,CLC_X+3,k,j,i)));
     if (e >= -zero && y <= (1.0 + 1.0e-12)*e + zero) return;
     n += 1.0;
-    fc1(m,CLF_LO,k,j,i) = 1.0;
-    fc1(m,CLF_LO,k,j,i+1) = 1.0;
+    if (b1 || i > is) fc1(m,CLF_LO,k,j,i) = 1.0;
+    if (b1 || i < ie) fc1(m,CLF_LO,k,j,i+1) = 1.0;
     if (multi_d) {
-      fc2(m,CLF_LO,k,j,i) = 1.0;
-      fc2(m,CLF_LO,k,j+1,i) = 1.0;
+      if (b2 || j > js) fc2(m,CLF_LO,k,j,i) = 1.0;
+      if (b2 || j < je) fc2(m,CLF_LO,k,j+1,i) = 1.0;
     }
     if (three_d) {
-      fc3(m,CLF_LO,k,j,i) = 1.0;
-      fc3(m,CLF_LO,k+1,j,i) = 1.0;
+      if (b3 || k > ks) fc3(m,CLF_LO,k,j,i) = 1.0;
+      if (b3 || k < ke) fc3(m,CLF_LO,k+1,j,i) = 1.0;
     }
   }, Kokkos::Sum<Real>(nbad));
   return static_cast<int>(nbad);
@@ -646,7 +651,8 @@ int RadiationM1::CleanCellMarkFaces() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellAllLowOrder
-//! \brief marks every face low-order
+//! \brief marks every face low-order (faces on a physical boundary only with
+//! clean_pos_boundary)
 
 void RadiationM1::CleanCellAllLowOrder() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -659,7 +665,10 @@ void RadiationM1::CleanCellAllLowOrder() {
     if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
     auto fc = (dir == 0) ? cln_fc1 : ((dir == 1) ? cln_fc2 : cln_fc3);
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    par_for("clc_alllow", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    const int bc = (dir == 0) ? ibc_x1min : ((dir == 1) ? ibc_x2min : ibc_x3min);
+    const int off = (cln_posbdry || bc == M1_IBC_PERIODIC) ? 0 : 1;
+    par_for("clc_alllow", DevExeSpace(), 0, nmb1, ks + off*dk, ke + (1-off)*dk,
+            js + off*dj, je + (1-off)*dj, is + off*di, ie + (1-off)*di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       fc(m,CLF_LO,k,j,i) = 1.0;
     });

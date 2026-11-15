@@ -83,7 +83,6 @@ struct CleanArgs {
   bool use_beam;
   bool feedback;               // gas coupling (advective flux, exchange linearisation)
   bool recon;                  // cell layout: reconstructed face states in the jumps
-  bool charall;                // cell layout: D = 1 for every stress row on low faces
   int nf;                      // cell layout: number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
   bool multi_d, three_d;

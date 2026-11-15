@@ -37,7 +37,7 @@ namespace radm1 {
 constexpr int CLF_AL = 0;    // dissipation weight al
 constexpr int CLF_AF = 2;    // dissipation speed s = c sqrt(max(D_dd,L, D_dd,R))
 constexpr int CLF_LO = 3;    // 1: low-order face (first-order jumps, al = 1, s = c,
-                             //    normal stress factor 1)
+                             //    stress with D = I)
 
 // cell vectors (array cln_x), 4 components (E, y1, y2, y3) each
 constexpr int CLC_O = 0;     // old vector
@@ -202,15 +202,19 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
   const bool low = (pos == lo);
   if (x.bc[2*dir + (low ? 0 : 1)] == M1_IBC_REFLECT) return;
-  s[0] = CleanFaceSource(x, dir, m, k, j, i);
   // the ghost sits outside the face; its closure is read from the inner cell
   const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
   const int ic = low ? i : i - (dir == 0);
   Real eg, yg[3], pg[3];
   CleanCellGhost(x, dir, m, kc, jc, ic, low, eg, yg, pg);
-  for (int b = 0; b < x.nf; ++b) {
-    s[1+b] = 0.5*x.c*pg[b] + (low ? 0.5 : -0.5)*x.c*yg[b];
+  const Real sg = low ? 0.5*x.c : -0.5*x.c;
+  if (x.fc[dir](m,CLF_LO,k,j,i) > 0.0) {
+    s[0] = 0.5*x.c*yg[dir] + sg*eg;
+    for (int b = 0; b < x.nf; ++b) s[1+b] = ((b == dir) ? 0.5*x.c*eg : 0.0) + sg*yg[b];
+    return;
   }
+  s[0] = CleanFaceSource(x, dir, m, k, j, i);
+  for (int b = 0; b < x.nf; ++b) s[1+b] = 0.5*x.c*pg[b] + sg*yg[b];
 }
 
 //----------------------------------------------------------------------------------------
@@ -220,7 +224,8 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
 //! states of L-1 and R+1 (RC, reconstruction) are left to CleanCellFaceFlux.  On
 //! physical boundaries fE takes the boundary form of CleanFaceWeights and fY the
 //! upwind (a = c) flux between the inner cell and the incoming ghost state of
-//! CleanCellGhost; a reflecting wall carries only the normal stress of the inner cell.
+//! CleanCellGhost; a low-order boundary face takes the upwind characteristic flux
+//! (D = I) for both; a reflecting wall carries only the normal stress of the inner cell.
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const int k,
@@ -245,12 +250,23 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
       jj[1+dir][0] = x.c*CleanDiag(x, dir, dir, m, kc, jc, ic);
       return;
     }
+    const Real sg = blo ? -0.5*x.c : 0.5*x.c;
+    if (x.fc[dir](m,CLF_LO,k,j,i) > 0.0) {
+      // low-order boundary face: upwind characteristics against the ghost, D = I
+      jj[0][0] = sg;
+      jj[0][1+dir] = 0.5*x.c;
+      for (int b = 0; b < x.nf; ++b) {
+        jj[1+b][0] = (b == dir) ? 0.5*x.c : 0.0;
+        jj[1+b][1+b] = sg;
+      }
+      return;
+    }
     Real al, ar;
     CleanFaceWeights(x, dir, m, k, j, i, al, ar);
     jj[0][0] = blo ? ar : al;
     for (int b = 0; b < x.nf; ++b) {
       jj[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, kc, jc, ic);
-      jj[1+b][1+b] = blo ? -0.5*x.c : 0.5*x.c;
+      jj[1+b][1+b] = sg;
     }
     return;
   }
@@ -266,13 +282,11 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
   jr[0][1+dir] = 0.5*x.c;
   for (int b = 0; b < x.nf; ++b) {
     if (!low) CleanJumpCoefficients(x, dir, 1+b, m, k, j, i, cj);
-    // a low-order face carries the normal stress with pressure factor 1 (upwind
-    // characteristics E +- F/c with speeds +-c)
-    // (clean_char_all: every stress component takes D = 1 on low-order faces)
-    const bool chr = low && (b == dir || x.charall);
+    // a low-order face carries the stress with D = I (upwind characteristics E +- F/c
+    // with speeds +-c)
     const Real dch = (b == dir) ? 1.0 : 0.0;
-    jl[1+b][0] = 0.5*x.c*(chr ? dch : CleanDiag(x, b, dir, m, kl, jl_, il));
-    jr[1+b][0] = 0.5*x.c*(chr ? dch : CleanDiag(x, b, dir, m, k, j, i));
+    jl[1+b][0] = 0.5*x.c*(low ? dch : CleanDiag(x, b, dir, m, kl, jl_, il));
+    jr[1+b][0] = 0.5*x.c*(low ? dch : CleanDiag(x, b, dir, m, k, j, i));
     jl[1+b][1+b] = -hs*cj[1];
     jr[1+b][1+b] = -hs*cj[2];
   }
