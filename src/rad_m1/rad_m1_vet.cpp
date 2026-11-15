@@ -1886,6 +1886,11 @@ void RadiationM1::VetInit(ParameterInput *pin) {
       VetFatal("<rad_m1>/vet_seg must be mean, split, emit or jump");
     }
   }
+  // vet_seg_cross (default false): where the ray crosses a row or layer boundary of the
+  // upwind column before the x1 face and that cell is a material edge to the stencil,
+  // the last part of the upwind half-segment takes the chi and S of the cell it crosses
+  // (VetSegCross; with vet_interp != lin)
+  vet_xcr = pin->GetOrAddBoolean("rad_m1", "vet_seg_cross", false);
   vet_dump = pin->GetOrAddString("rad_m1", "vet_dump", "none");
   if (vet_dump.compare("none") == 0) {vet_dump = "";}
   vet_dump_every = pin->GetOrAddInteger("rad_m1", "vet_dump_every", 0);
@@ -3052,6 +3057,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
   const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;   // deepatm-1011
   const bool spl = vet_seg_split;   // segfix-1011
+  const bool xcr = vet_xcr;
   const int spe = VetSegMode();
   const int vim = vet_interp;   // unify-sc-gd-1012 (#6)
   const bool vpath = (vet_path != 0);   // open-od-1013
@@ -3516,6 +3522,18 @@ void RadiationM1::VetSweepMB(bool lagged) {
                                   cs_(m,li,1,kb,jb)};
               iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
                                f2s_ ? &ifc : nullptr);
+              int r2 = 0, r3 = 0;
+              const Real f = xcr ? fmin(VetCrossFrac(sh2, r2),
+                                        thrd ? VetCrossFrac(sh3, r3) : 1.0) : 1.0;
+              if (f < 1.0 && VetCrossEdge(wq, cq, cs_(m,li,0,kc + r3,jc + r2))) {
+                // vet_seg_cross: the stencil over 1 - f, then the cell crossed
+                Real ib;
+                (void) VetUpCorner(vim, wq, iq, cq, sq, s0, c0, (1.0 - f)*dx1/am1, spl,
+                                   spe, &ib);
+                iv = VetSegCross(ib, cs_(m,li,0,kc + r3,jc + r2),
+                                 cs_(m,li,1,kc + r3,jc + r2), s0, c0, dx1/am1, f, spe,
+                                 f2s_ ? &ifc : nullptr);
+              }
             } else if (spl) {
               // segfix-1011: vet_seg = split, the two halves at the x1 face
               iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,
@@ -3909,6 +3927,7 @@ void RadiationM1::VetShortCharSweep() {
   const bool dbgc = (t2_dbg_pred > 0) && (vet_dbgclip.extent_int(0) > 0);
   auto dcl_ = vet_dbgclip;
   const bool spl = vet_seg_split;   // segfix-1011
+  const bool xcr = vet_xcr;
   const int spe = VetSegMode();
   const bool x2o = vet_x2open, x3o = vet_x3open;   // bubbles-1012: vacuum x2 (x3) faces
   const int vim = vet_interp;   // unify-sc-gd-1012 (#6)
@@ -4266,6 +4285,21 @@ void RadiationM1::VetShortCharSweep() {
                                 vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
             iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
                              f2s_ ? &ifc : nullptr);
+            int r2 = 0, r3 = 0;
+            Real f = xcr ? fmin(VetCrossFrac(sh2, r2),
+                                thrd ? VetCrossFrac(sh3, r3) : 1.0) : 1.0;
+            const int q2 = j - js + r2, q3 = k - ks + r3;
+            if ((x2o && (q2 < 0 || q2 >= nx2)) || (x3o && (q3 < 0 || q3 >= nx3))) f = 1.0;
+            const int jq = js + VetWrap(q2, nx2), kq = thrd ? ks + VetWrap(q3, nx3) : k;
+            if (f < 1.0 && VetCrossEdge(wq, cq, vc_(m,M1_VET_CHX,kq,jq,iup))) {
+              // vet_seg_cross: the stencil over 1 - f, then the cell crossed
+              Real ib;
+              (void) VetUpCorner(vim, wq, iq, cq, sq, s0, c0, (1.0 - f)*dx1/am1, spl, spe,
+                                 &ib);
+              iv = VetSegCross(ib, vc_(m,M1_VET_CHX,kq,jq,iup),
+                               vc_(m,M1_VET_SRC,kq,jq,iup), s0, c0, dx1/am1, f, spe,
+                               f2s_ ? &ifc : nullptr);
+            }
           } else if (spl) {
             // segfix-1011: vet_seg = split, the two halves at the x1 face
             iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,

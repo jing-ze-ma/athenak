@@ -287,6 +287,40 @@ Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
 }
 
 
+// vet_seg_cross: the fraction of the upwind half-segment inside the cell at the x1 face
+// along one transverse direction (the foot shifted by sh cells over the whole step), and
+// that cell's offset rc; 1 where the half-segment stays in the foot's row
+KOKKOS_INLINE_FUNCTION
+Real VetCrossFrac(const Real sh, int &rc) {
+  const Real t1 = 0.5*sh;
+  rc = static_cast<int>(floor(t1 + 0.5));
+  const Real d = 0.5 + ((sh < 0.0) ? (t1 - rc) : (rc - t1));
+  return (sh != 0.0) ? fmin(1.0, d/fabs(t1)) : 1.0;
+}
+
+// vet_seg_cross: a material edge between the stencil and the crossed cell (extinction
+// contrast above kVetCornerRatio, as vet_interp = auto); a smooth field keeps the segment
+KOKKOS_INLINE_FUNCTION
+bool VetCrossEdge(const Real w[4], const Real cq[4], const Real cc) {
+  Real cmn = cc, cmx = cc;
+  for (int q = 0; q < 4; ++q) {
+    if (w[q] > 0.0) {cmn = fmin(cmn, cq[q]); cmx = fmax(cmx, cq[q]);}
+  }
+  return cmx > kVetCornerRatio*cmn;
+}
+
+// vet_seg_cross: the segment when the last part f of its upwind half lies in a cell C
+// other than the foot's: the stencil outcome ib at the entry into C, then C's chi and S
+// (constant) up to the face, then the own half as VetSegSplit (exact for a piecewise
+// constant field); ifc (if given) takes the intensity at the face
+KOKKOS_INLINE_FUNCTION
+Real VetSegCross(const Real ib, const Real cc, const Real sc, const Real s0,
+                 const Real c0, const Real hl, const Real f, const int spe,
+                 Real *ifc = nullptr) {
+  const Real ex = exp(-0.5*f*cc*hl);
+  return VetSegSplit(ib*ex + sc*(1.0 - ex), sc, s0, 0.0, 0.5*c0*hl, spe, ifc);
+}
+
 // open-od-1013: vet_path = cells.  The x1-plane sweep steps ONE x1 column per segment; a
 // ray steeper than the cell diagonal (|sh2| = dx1|mu2|/(|mu1| dx2) > 1, or |sh3| > 1)
 // jumps |sh| rows in that one segment and sees chi and S only at its two ends, so an

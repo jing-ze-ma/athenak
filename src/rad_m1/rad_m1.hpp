@@ -473,6 +473,7 @@ class RadiationM1 {
   bool vet_seg_emit = false;   // vet_seg = emit: split, limiter only where S_u > S_0
                                // as two sub-segments split at the face
   bool vet_seg_jump = false;   // vet_seg = jump (coreL-1012): emit + the contrast rule
+  bool vet_xcr = false;        // vet_seg_cross: the cell crossed before the x1 face
   // the segment mode VetSegSplit takes: 0 split, 1 emit, 2 jump (rad_m1_vetseg.hpp)
   int VetSegMode() const {return vet_seg_emit ? (vet_seg_jump ? 2 : 1) : 0;}
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
