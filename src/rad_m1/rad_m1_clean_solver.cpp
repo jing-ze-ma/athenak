@@ -297,7 +297,8 @@ int RadiationM1::CleanBiCGStab() {
   const int sy = cell ? CLC_Y : CLW_Y, sz = cell ? CLC_Z : CLW_Z;
 
   // w(dst) = sa w(a) + sb w(b)
-  auto axpby = [&](const int dst, const int a, const Real sa, const int b, const Real sb_) {
+  auto axpby = [&](const int dst, const int a, const Real sa, const int b,
+                   const Real sb_) {
     par_for("cln_axpby", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       for (int c = 0; c < nc; ++c) {

@@ -23,8 +23,8 @@
 namespace radm1 {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellOldVector
-//! \brief old vector (E, F/c) of the stage: E from CleanOldVector, F of the cells plus the
-//! stage increment.  Flux components beyond the mesh dimension are zero.
+//! \brief old vector (E, F/c) of the stage: E from CleanOldVector, F of the cells plus
+//! the stage increment.  Flux components beyond the mesh dimension are zero.
 
 void RadiationM1::CleanCellOldVector() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -327,7 +327,7 @@ void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
 
   par_for("clc_thomas", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    // forward: D_i = A0_i - Am_i C_{i-1}, C_i = D_i^-1 Ap_i, d_i = D_i^-1 (r_i - Am_i d_i-1)
+    // forward: D_i = A0_i - Am_i C_i-1, C_i = D_i^-1 Ap_i, d_i = D_i^-1 (r_i - Am_i d_i-1)
     for (int i = is; i <= ie; ++i) {
       Real a[4][4], b[4][5];
       for (int r = 0; r < 4; ++r) {
@@ -366,8 +366,8 @@ void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::CleanCellNewtonUpdate
-//! \brief new iterate from the solution X: with gas coupling E and T by CleanNewtonUpdate,
-//! F/c from X.  Returns the largest relative change: that of CleanNewtonUpdate and
+//! \brief new iterate from the solution X: with gas coupling E and T by
+//! CleanNewtonUpdate, F/c from X.  Returns the largest relative change: that of CleanNewtonUpdate and
 //! max |dE|, |dy| over max E.
 
 Real RadiationM1::CleanCellNewtonUpdate() {
@@ -525,9 +525,9 @@ int RadiationM1::CleanCellCountNegative() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellWriteBack
 //! \brief stores the solution: E and F of the cells, the face fluxes of E (f0x*), the gas
-//! momentum and energy, and the stage slopes K = (U - U_old)/h.  The gas takes exactly the
-//! momentum and energy the radiation gives up besides its face fluxes, so both totals
-//! change only by the fluxes through the boundary.
+//! momentum and energy, and the stage slopes K = (U - U_old)/h.  The gas takes exactly
+//! the momentum and energy the radiation gives up besides its face fluxes, so both
+//! totals change only by the fluxes through the boundary.
 
 void RadiationM1::CleanCellWriteBack() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
