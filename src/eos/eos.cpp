@@ -126,16 +126,14 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   // non-negative EMF resistivity of LHLLD (EOS_Data::lhlld_emf_eta_pos), default true in
   // <mhd>, MHD only
   if (bk.compare("mhd") == 0) eos_data.lhlld_emf_eta_pos = true;
-  for (const char *kc : {"lhlld_emf_eta_pos"}) {
-    const std::string key(kc);
-    if (!pin->DoesParameterExist(bk, key)) continue;
+  if (pin->DoesParameterExist(bk, "lhlld_emf_eta_pos")) {
     if (bk.compare("mhd") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<" << bk << ">/" << key << " is implemented only "
+                << std::endl << "<" << bk << ">/lhlld_emf_eta_pos is implemented only "
                 << "for MHD (LHLLD)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    eos_data.lhlld_emf_eta_pos = pin->GetBoolean(bk, key);
+    eos_data.lhlld_emf_eta_pos = pin->GetBoolean(bk, "lhlld_emf_eta_pos");
   }
   // odd-even sensor of LHLLC/LHLLD (EOS_Data::cb_sensor), default 1; 0 = off
   eos_data.cb_sensor = 1.0;
@@ -169,7 +167,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
           pin->GetString(bk, "rsolver") == rs) {
         if (recipe::NewDefaults(pin)) {
           pin->GetOrAddBoolean(bk, kc, true);
-          recipe::Log("<" + bk + ">/" + kc + " = true (default with rsolver = " + rs + ")");
+          recipe::Log("<" + bk + ">/" + kc + " = true (default with rsolver = " + rs +
+                      ")");
         } else {
           recipe::Log("<" + bk + ">/" + kc + " = false (" + std::string(
               recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
@@ -206,7 +205,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     // fresh-start default: lhlld_chi_normal = true with rsolver = lhlld (as cb_cont
     // above); LHLLC always uses the face-normal chi
     if (!is_hyd && !pin->DoesParameterExist(bk, "lhlld_chi_normal") &&
-        pin->DoesParameterExist(bk, "rsolver") && pin->GetString(bk, "rsolver") == "lhlld") {
+        pin->DoesParameterExist(bk, "rsolver") &&
+        pin->GetString(bk, "rsolver") == "lhlld") {
       if (recipe::NewDefaults(pin)) {
         pin->GetOrAddBoolean(bk, "lhlld_chi_normal", true);
         recipe::Log("<mhd>/lhlld_chi_normal = true (default with rsolver = lhlld)");
@@ -227,7 +227,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     }
     // fresh-start default: lhlld_alfmach = true with rsolver = lhlld (as cb_cont above)
     if (!is_hyd && !pin->DoesParameterExist(bk, "lhlld_alfmach") &&
-        pin->DoesParameterExist(bk, "rsolver") && pin->GetString(bk, "rsolver") == "lhlld") {
+        pin->DoesParameterExist(bk, "rsolver") &&
+        pin->GetString(bk, "rsolver") == "lhlld") {
       if (recipe::NewDefaults(pin)) {
         pin->GetOrAddBoolean(bk, "lhlld_alfmach", true);
         recipe::Log("<mhd>/lhlld_alfmach = true (default with rsolver = lhlld)");
@@ -238,21 +239,20 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       }
     }
     // Alfven-Mach scaled floor of LHLLD (EOS_Data::alfmach)
-    for (const std::string key : {"lhlld_alfmach"}) {
-      if (!pin->DoesParameterExist(bk, key)) continue;
+    if (pin->DoesParameterExist(bk, "lhlld_alfmach")) {
       if (is_hyd) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<hydro>/" << key << " is MHD (LHLLD) only"
+                  << std::endl << "<hydro>/lhlld_alfmach is MHD (LHLLD) only"
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }
       if (pin->GetOrAddString(bk, "rsolver", "none").compare("lhlld") != 0) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<mhd>/" << key << " needs <mhd>/rsolver = lhlld"
+                  << std::endl << "<mhd>/lhlld_alfmach needs <mhd>/rsolver = lhlld"
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      eos_data.alfmach = pin->GetBoolean(bk, key);
+      eos_data.alfmach = pin->GetBoolean(bk, "lhlld_alfmach");
     }
   }
   eos_data.pfloor = pin->GetOrAddReal(bk,"pfloor",(FLT_MIN));
@@ -385,8 +385,8 @@ void EquationOfState::BuildGeneralEOS(std::string block, ParameterInput *pin) {
 
 void EquationOfState::BuildElectronFractionTable(std::string block, ParameterInput *pin) {
   // only for ohmic_resistivity = eos; probed without GetOrAdd, which would add the key
-  if (!pin->DoesParameterExist(block, "ohmic_resistivity")) {return;}
-  if (pin->GetString(block, "ohmic_resistivity").compare("eos") != 0) {return;}
+  if (!pin->DoesParameterExist(block, "ohmic_resistivity")) return;
+  if (pin->GetString(block, "ohmic_resistivity").compare("eos") != 0) return;
 
   if (pmy_pack->punit == nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
