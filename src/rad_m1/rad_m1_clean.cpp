@@ -144,12 +144,18 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   const int maxnl = iterate ? cln_maxnl : 1;
   // the lagged slopes settle only to the accuracy of the linear solve
   const Real tol_nl = cell ? fmax(cln_tol_nl, 10.0*cln_tol) : cln_tol_nl;
+  // a change that stopped decreasing within 100 times both its round-off level (cln_fe,
+  // cln_fv, from the magnitudes of the terms of the solve) and tol_nl is converged too
+  auto settled = [&](const Real d, const Real d0, const Real f) {
+    return d < tol_nl || (d > 0.5*d0 && d < 100.0*fmin(f, tol_nl));
+  };
   for (int ipos = 0; ; ++ipos) {
     CleanFirstIterate();
     if (cell) CleanCellFirstIterate();
     if (cln_feedback) CleanAdvectiveCoefficients();
     converged = !iterate;
     npic = 0;
+    Real de0 = 1.0e300, dv0 = 1.0e300;
     for (int inl = 0; inl < maxnl; ++inl) {
       if (lagged && inl < cln_maxpic) ++npic;
       if ((cln_closit && inl < cln_maxpic) || (clos1 && inl == 1)) {
@@ -179,10 +185,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (lagged && inl < cln_maxpic) dpic = de;
       Real dv = 0.0;
       if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
-      if (de < tol_nl && dv < tol_nl && !(clos1 && inl == 0)) {
+      if (settled(de, de0, cln_fe) && settled(dv, dv0, cln_fv) && !(clos1 && inl == 0)) {
         converged = true;
         break;
       }
+      de0 = de;
+      dv0 = dv;
     }
     if (iterate) {
       if (cell) {

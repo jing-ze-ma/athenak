@@ -377,11 +377,13 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
 
 //----------------------------------------------------------------------------------------
 //! \fn void CleanCellDivergence
-//! \brief h div of the face fluxes of cell (k,j,i) for the cell vector at slot v
+//! \brief h div of the face fluxes of cell (k,j,i) for the cell vector at slot v (adiv
+//! adds the sum of their magnitudes)
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int k,
-                         const int j, const int i, const bool with_source, Real div[4]) {
+                         const int j, const int i, const bool with_source, Real div[4],
+                         Real *adiv = nullptr) {
   for (int r = 0; r < 4; ++r) div[r] = 0.0;
   for (int dir = 0; dir < 3; ++dir) {
     if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
@@ -390,6 +392,9 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
     CleanCellFaceFlux(x, v, dir, m, k+dk, j+dj, i+di, with_source, fp);
     CleanCellFaceFlux(x, v, dir, m, k, j, i, with_source, fm);
     for (int r = 0; r < 4; ++r) div[r] += x.h*x.idx[dir]*(fp[r] - fm[r]);
+    for (int r = 0; adiv && r < 4; ++r) {
+      adiv[r] += x.h*x.idx[dir]*(fabs(fp[r]) + fabs(fm[r]));
+    }
   }
 }
 
