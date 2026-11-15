@@ -605,8 +605,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // facebound-1112 step 1 <rad_m1>/time2_face_fct (rad_m1.hpp; read only when named)
   // defaults-1114 (USER 11-13): DEFAULT true on the cubed sphere / spherical polar with
   // multi-D implicit transport and hesdirk2 (ffct14 above); false elsewhere and with
-  // recipe none, as before.  Read only when named; an explicit key wins.
-  t2_ffct = ffct14;
+  // recipe none, as before.  Read only when named; an explicit key wins.  Not with
+  // scheme = clean: its t2inc F channels are cell momenta, and scaling them alone breaks
+  // the momentum and angular-momentum balance with the gas (positivity is the stage
+  // solve's: marking, then backward Euler)
+  t2_ffct = ffct14 && !clean;
   if (pin->DoesParameterExist("rad_m1", "time2_face_fct")) {
     t2_ffct = pin->GetBoolean("rad_m1", "time2_face_fct");
   }
