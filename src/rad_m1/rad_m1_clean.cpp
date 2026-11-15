@@ -48,8 +48,8 @@ void RadiationM1::CleanInit() {
     Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
     Kokkos::deep_copy(cln_x, 0.0);
   }
-  // multigrid levels of the cell layout: halve every direction with an even number (>= 4) of cells, down
-  // to the level where no direction can be halved
+  // multigrid levels of the cell layout: halve every direction with an even number
+  // (>= 4) of cells, down to the level where no direction can be halved
   if (cln_cell) {
     std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
     while (true) {
