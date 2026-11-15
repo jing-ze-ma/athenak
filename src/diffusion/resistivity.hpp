@@ -7,8 +7,12 @@
 //========================================================================================
 //! \file resistivity.hpp
 //  \brief Contains data and functions that implement various non-ideal MHD (resistive)
-//  processes: Ohmic diffusion and ambipolar diffusion (<mhd>/ambipolar, ambipolar-1101).
-//  The Hall effect is not implemented.
+//  processes: Ohmic diffusion and ambipolar diffusion (<mhd>/ambipolar). The Hall effect
+//  is not implemented.
+
+#include <map>
+#include <memory>
+#include <string>
 
 #include "athena.hpp"
 #include "parameter_input.hpp"
@@ -53,120 +57,97 @@ class Resistivity {
  public:
   Resistivity(MeshBlockPack *pp, ParameterInput *pin);
   ~Resistivity();
-  template <class V> void DtRetryVisit(V &v);   // resistivity_dtretry_visit.hpp (gen.)
+  template <class V> void DtRetryVisit(V &v);   // resistivity_dtretry_visit.hpp
 
   // data
   Real dtnew;
   std::string iso_resist_type;  // "constant", "perna" or "eos"
   Real eta_ohm_const;
-  DvceArray4D<Real> eta_b; // total resistivity of non-ideal MHD
-//  Real min_xe;
+  DvceArray4D<Real> eta_b;      // total resistivity of non-ideal MHD
   Real max_eta;
-  bool use_rkg_sts; // RKG super-stepping (Mattia+2026)
-  // rkgdt-1101 <mhd>/rkg_dt_safety (read only when named; off = 0): the dt_diff that sets
-  // the RKG stage count is safety x the forward-Euler limit 2/lambda of the operator, from a
-  // per-cell bound lambda_c = 4 eta_r (1/dx1)(1/dc- + 1/dc+)/2 + 4 eta_h (1/dx2^2 + 1/dx3^2)/s^2
-  // (dc = centroid spacings; eta_r, eta_h = max of eta over the cells of the radial-derivative
-  // edges, over the 3x3x3 block; s = sin of the cs cell angle, 1 elsewhere), NOT multiplied
-  // by cfl_number.  Off: the old
-  // cfl x (1/6) min_d dx_d^2/eta, bitwise.  See NewTimeStepRKGFE.  FRESH-start default
-  // (recipe::NewDefaults, resistivity.cpp) with STS on the cubed sphere / spherical polar:
-  // 0.8 (prod1103, USER 11-03; 0.5 before); a restart whose input lacks the key keeps 0.
+  bool use_rkg_sts;             // RKG super-time-stepping
+  // <mhd>/rkg_dt_safety (0 = off): the dt_diff that sets the RKG stage count is safety x
+  // the forward-Euler limit 2/lambda of the operator, from the per-cell bound
+  //   lambda_c = 4 eta_r (1/dx1)(1/dc- + 1/dc+)/2 + 4 eta_h (1/dx2^2 + 1/dx3^2)/s^2
+  // (dc = centroid spacings; eta_r, eta_h = max of eta over the 3x3x3 block; s = sine of
+  // the cubed-sphere cell angle, 1 elsewhere), not multiplied by cfl_number. Off: the
+  // usual cfl x (1/6) min_d dx_d^2/eta. See NewTimeStepRKGFE.
   Real rkg_dt_safety = 0.0;
   bool rkg_dt_fe = false;
   Real LambdaBoundMax(Real *rloc = nullptr, Real *etaloc = nullptr);
   void NewTimeStepRKGFE();
-  // stress-free closed inner wall (dhj problem/wall_mhd_mirror = stress_free): B_t = 0
-  // on the is face of a USER inner x1 boundary, so the resistive Poynting flux there is 0
+  // stress-free closed inner wall: B_t = 0 on the is face of a user inner x1 boundary,
+  // so the resistive Poynting flux there is 0
   bool wall_bt_zero = false;
-  // conducting walls (condwall-1028): the resistive edge EMF tangential to the reflect
-  // faces (<mhd>/wall_conducting = resistive|full) and/or to the is face of a user inner
-  // x1 wall (dhj wall_mhd_mirror = conducting) is 0; the resistive Poynting flux through
-  // those faces, built from the same edge EMFs, is then 0 too
+  // conducting walls: the resistive edge EMF tangential to the reflect faces
+  // (<mhd>/wall_conducting = resistive|full) and/or to the is face of a user inner x1
+  // wall is 0, and so is the resistive Poynting flux through those faces
   bool wall_cond_reflect = false;
   bool wall_cond_ix1 = false;
-  // stswall-1029: the RKG super-step does not pass through the RK stages, so a ledger
-  // that books the x1 face fluxes of the RK stages (dhj Etot_bot/Etot_top) misses the
-  // resistive energy it moves through the is and ie+1 faces.  With track_x1_bflx (set by
-  // the problem generator) RKUpdate follows the energy flux of those faces through the
-  // RKG recurrence: rkg_bflx(m, 0|1, k, j) = F_0 (is | ie+1), (2|3) = E_{j-2},
-  // (4|5) = E_{j-1}.  After the last super-stage (4|5) is the flux the whole super-step
-  // applied, per unit dt and area: the energy through the face is dt E A.
+  // track_x1_bflx (set by the problem generator): RKUpdate follows the energy flux
+  // through the is and ie+1 faces along the RKG recurrence, for ledgers that book the x1
+  // face fluxes of the RK stages only: rkg_bflx(m, 0|1, k, j) = F_0 (is | ie+1),
+  // (2|3) = E_{j-2}, (4|5) = E_{j-1}. After the last super-stage (4|5) is the flux the
+  // whole super-step applied per unit dt and area.
   bool track_x1_bflx = false;
   DvceArray4D<Real> rkg_bflx;
-  // <mhd>/rkg_lean (default false): the intermediate RKG super-stages (stage < s) skip
-  // what only the LAST stage needs -- the conserved-variable halo exchange, the EOS
-  // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only
-  // the energy slot of the conserved registers.  Uniform cubed-sphere meshes only.
+  // <mhd>/rkg_lean: the intermediate super-stages (stage < s) skip what only the last
+  // stage needs (conserved-variable halo exchange, EOS inversion, timestep) and copy
+  // only the energy slot of the conserved registers. Uniform cubed-sphere meshes only.
   bool rkg_lean = false;
-  // rkgstrang-1102 <mhd>/rkg_strang (default false = the Lie split, bitwise unchanged):
-  // the super-step is split in two halves of dt/2, one before the RK stages and one
-  // after them (Driver::Execute), so the resistive operator is Strang-split (second
-  // order in dt) instead of Lie-split.  Each half takes its stage count from dt/2 and
-  // the dt_diff of the cycle start (Mesh::NewTimeStep of the previous cycle).  eta (and
-  // ad_coef) is refreshed from w0 before the second half (RefreshEta), so each half
-  // freezes the coefficient on the state it starts from.  The rkg_bflx flux of the
-  // whole cycle is the mean of the two halves (slots 6|7 hold the first).  FRESH-start
-  // default true with STS on a uniform cubed sphere (prod1103b, USER 11-03; with
-  // rkg_strang_fuse and rkg_fuse_sync = none; recipe::NewDefaults, resistivity.cpp).
+  // <mhd>/rkg_strang: the super-step is split in two halves of dt/2, one before and one
+  // after the RK stages (Driver::Execute), so the resistive operator is Strang-split.
+  // Each half takes its stage count from dt/2 and the dt_diff of the cycle start; eta
+  // (and ad_coef) is refreshed from w0 before the second half (RefreshEta). The rkg_bflx
+  // flux of the cycle is the mean of the two halves (slots 6|7 hold the first).
   bool rkg_strang = false;
-  // rkgfuse-1102 <mhd>/rkg_strang_fuse (default false; needs rkg_strang): the second
-  // half of cycle n and the first half of cycle n+1 are ONE super-step over
-  // (dt_n + dt_{n+1})/2 at the start of cycle n+1 (Driver::Execute, where the order and
-  // the sync points are documented).  The super-step that leads a cycle (fused, or the
-  // plain dt/2 opening half after a sync) is rkg_half = 3: eta refreshed from w0 first
-  // (like half 2), and its rkg_bflx kept in slots 6|7 (like half 1); the closing half of
-  // a sync cycle is rkg_half = 2 (refresh, then the mean of the two fluxes in 4|5).
-  // FRESH-start default true with rkg_strang on (prod1103b, see rkg_strang).
+  // <mhd>/rkg_strang_fuse (needs rkg_strang): the second half of cycle n and the first
+  // half of cycle n+1 are one super-step over (dt_n + dt_{n+1})/2 at the start of cycle
+  // n+1 (see Driver::Execute). The super-step that leads a cycle is rkg_half = 3 (eta
+  // refreshed first, rkg_bflx kept in slots 6|7); the closing half of a sync cycle is
+  // rkg_half = 2.
   bool rkg_strang_fuse = false;
   int rkg_half = 0;        // set by the driver: 0 = one full-dt super-step, 1|2 = half,
                            // 3 = the leading super-step of a fused cycle
   Real rkg_dtfac = 1.0;    // set by the driver: fraction of pmesh->dt it spans
                            // (fused: (dt_n/2 + dt_{n+1}/2)/dt_{n+1})
   void RefreshEta();
-  // cubed sphere + STRETCHED radial grid: take the radial derivative of the Stokes loop
-  // AT the x1 face instead of at the midpoint of the two cell centres (see
-  // resistivity_gnomonic.cpp).  <mhd>/cs_resist_x1_centred, default true; a no-op on an
-  // unstretched radial grid.
+  // <mhd>/cs_resist_x1_centred: on a cubed sphere with a stretched radial grid, take the
+  // radial derivative of the Stokes loop at the x1 face instead of at the midpoint of
+  // the two cell centres (resistivity_gnomonic.cpp)
   bool cs_resist_x1_centred;
-  // share-1104 G9: the same face-centred radial derivative for the SPHERICAL-POLAR
-  // current (current_density.hpp).  <mhd>/sp_resist_x1_centred: true on a FRESH start
-  // (recipe::NewDefaults) on a stretched radial grid when not named; a restart whose input
-  // lacks the key keeps the old two-point loop (false); a no-op on an unstretched grid.
+  // <mhd>/sp_resist_x1_centred: the same face-centred radial derivative for the
+  // spherical-polar current (current_density.hpp)
   bool sp_resist_x1_centred = false;
   Real tau, alpha, w1, mu, nu, mut, gat;
-  int s = 0;   // RKG stage count; only set once TotStage() has run for the first time
+  int s = 0;   // RKG stage count; set by the first TotStage()
   Real bjm2, bjm1, bj;
-  DvceArray5D<Real> u_ideal;       // conserved variables, third register
-  DvceFaceFld4D<Real> b_ideal;     // face-centered magnetic fields, third register
-  DvceFaceFld5D<Real> uflx_ideal;   // fluxes of conserved quantities on cell faces, third register
-  DvceArray5D<Real> u2;       // conserved variables, fourth register
-  DvceFaceFld4D<Real> b2;     // face-centered magnetic fields, fourth register
-    
-  DvceEdgeFld4D<Real> efld_resist;   // edge-centered electric fields due to non-ideal effects (E_{resistive} = \eta J)
-  DvceEdgeFld4D<Real> jnorm;   // cubed sphere only: J in the FACE-NORMAL frame, the
-                               // intermediate of the two-pass curl (resistivity_gnomonic.cpp)
+  DvceArray5D<Real> u_ideal;        // conserved variables, third register
+  DvceFaceFld4D<Real> b_ideal;      // face-centered magnetic fields, third register
+  DvceFaceFld5D<Real> uflx_ideal;   // fluxes of conserved variables, third register
+  DvceArray5D<Real> u2;             // conserved variables, fourth register
+  DvceFaceFld4D<Real> b2;           // face-centered magnetic fields, fourth register
+
+  DvceEdgeFld4D<Real> efld_resist;  // edge-centered non-ideal electric field (eta J)
+  DvceEdgeFld4D<Real> jnorm;        // cubed sphere: J in the face-normal frame, the
+                                    // intermediate of the two-pass curl
   DvceEdgeFld4D<Real> efld_ideal;   // edge-centered electric fields
 
-  // AMBIPOLAR DIFFUSION (ambipolar-1101).  <mhd>/ambipolar = none (default) | constant |
-  // eos.  The edge EMF gains eta_A (J - (J.B) B/B^2), eta_A = ad_coef |B|^2 per cell,
-  // capped at max_eta_ad:
+  // ambipolar diffusion, <mhd>/ambipolar = none (default) | constant | eos. The edge EMF
+  // gains eta_A (J - (J.B) B/B^2), eta_A = ad_coef |B|^2 per cell, capped at max_eta_ad:
   //   constant: ad_coef = <mhd>/eta_ad (Athena++ convention eta_A = eta_ad B^2)
   //   eos:      ad_coef = pres_cgs/(gamma_in rho_i rho_n) (cgs), rho_i = x_e n m_ion,
   //             gamma_in = <mhd>/ad_sigv_in/(m_ion + m_n); see SetAmbipolar()
-  // Off (ad_type = 0) nothing below is allocated and every path is unchanged.
   int ad_type = 0;              // 0 none, 1 constant, 2 eos
-  // xetracer-1101: index of the advected x_e scalar in w (MHD::ixe), or -1 = local Saha
-  int xe_idx = -1;
-  // y = n_e/n_H in that scalar; n_H = xe_nhfac rho_cgs (xh/(a_hyd m_u))
-  Real xe_nhfac = 0.0;
+  int xe_idx = -1;              // index of the advected x_e scalar in w, -1 = local Saha
+  Real xe_nhfac = 0.0;          // n_H = xe_nhfac rho_cgs (the scalar holds n_e/n_H)
   Real eta_ad = 0.0;            // <mhd>/eta_ad (constant)
   Real ad_sigv_in = 1.9e-9;     // <mhd>/ad_sigv_in [cm^3/s], Langevin rate
   Real ad_mion_amu = 30.0;      // <mhd>/ad_mion_amu, mean ion mass [amu]
   Real max_eta_ad = 1.0e300;    // <mhd>/max_eta_ad, cap on eta_A alone
   DvceArray4D<Real> ad_coef;    // eta_A/|B|^2 per cell (code units)
-  DvceArray4D<Real> ad_eta_c;   // r1mspeed-1102: min(ad_coef |B|^2, cap) per cell, scratch
-  DvceEdgeFld4D<Real> jcur;     // edge current density J (AD only)
+  DvceArray4D<Real> ad_eta_c;   // min(ad_coef |B|^2, cap) per cell, scratch
+  DvceEdgeFld4D<Real> jcur;     // edge current density J (ambipolar only)
   bool OhmicNeedsUpdate() const {
     return (iso_resist_type.compare("perna") == 0 || iso_resist_type.compare("eos") == 0);
   }
@@ -178,151 +159,126 @@ class Resistivity {
   void SetAmbipolar(const DvceArray5D<Real> &w, const EOS_Data &eos, const Real &Rgas,
                     const int il, const int iu, const int jl, const int ju,
                     const int kl, const int ku);
-    
-    // container to hold names of TaskIDs
-    ResistivityTaskIDs id;
-    void AssembleResistRKGTasks(std::map<std::string, std::shared_ptr<TaskList>> tl);
-    TaskStatus TotStage(Driver *d, int stage);
-    TaskStatus RKGCoeff(Driver *d, int stage);
-    TaskStatus Fluxes(Driver *d, int stage);
-    TaskStatus CopyIniConsAndFluxes(Driver *d, int stage);
-    TaskStatus RKUpdate(Driver *d, int stage);
-    TaskStatus EField(Driver *d, int stage);
-    TaskStatus CopyIniE(Driver *d, int stage);
-    TaskStatus CT(Driver *d, int stage);
-    TaskStatus CopyCons(Driver *d, int stage);
-    TaskStatus SendFluxRKG(Driver *d, int stage);
-    TaskStatus RecvFluxRKG(Driver *d, int stage);
-    TaskStatus UpdateResistivity(Driver *d, int stage);
-    TaskStatus ConToPrimRKG(Driver *d, int stage);
-    TaskStatus NewTimeStepRKG(Driver *d, int stage);
+
+  // container to hold names of TaskIDs
+  ResistivityTaskIDs id;
+  void AssembleResistRKGTasks(std::map<std::string, std::shared_ptr<TaskList>> tl);
+  TaskStatus TotStage(Driver *d, int stage);
+  TaskStatus RKGCoeff(Driver *d, int stage);
+  TaskStatus Fluxes(Driver *d, int stage);
+  TaskStatus CopyIniConsAndFluxes(Driver *d, int stage);
+  TaskStatus RKUpdate(Driver *d, int stage);
+  TaskStatus EField(Driver *d, int stage);
+  TaskStatus CopyIniE(Driver *d, int stage);
+  TaskStatus CT(Driver *d, int stage);
+  TaskStatus CopyCons(Driver *d, int stage);
+  TaskStatus SendFluxRKG(Driver *d, int stage);
+  TaskStatus RecvFluxRKG(Driver *d, int stage);
+  TaskStatus UpdateResistivity(Driver *d, int stage);
+  TaskStatus ConToPrimRKG(Driver *d, int stage);
+  TaskStatus NewTimeStepRKG(Driver *d, int stage);
 
   // functions to add resistive E-Field and energy flux
   void AddResistiveEMFs(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);
-  void AddResistiveFluxes(const DvceFaceFld4D<Real> &b0, const DvceArray5D<Real> &bc, DvceFaceFld5D<Real> &flx);
+  void AddResistiveFluxes(const DvceFaceFld4D<Real> &b0, const DvceArray5D<Real> &bc,
+                          DvceFaceFld5D<Real> &flx);
   void AddEMFConstantResist(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);
   void AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);
   void AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);
-  // cornerfix-1103 <mesh>/cs_vertex_3cell: J (jnorm) at the cube-vertex edges without the
-  // made-up corner block (resistivity_gnomonic.cpp): the vertex radial J (j1 = true,
-  // radial cells il..iu) and the corner cell's two transverse edges (j1 = false, faces
-  // il..iu); second order and convex (cornerfix2-1103, see the function)
+  // <mesh>/cs_vertex_3cell: J (jnorm) at the cube-vertex edges without the corner block:
+  // the vertex radial J (j1 = true, radial cells il..iu) and the corner cell's two
+  // transverse edges (j1 = false, faces il..iu)
   void CsVertexJFix(const DvceFaceFld4D<Real> &b0, const int il, const int iu,
                     const bool j1);
   void AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeFld4D<Real> &efld);
   void AddFluxConstantGridResist(const DvceFaceFld4D<Real> &b, DvceFaceFld5D<Real> &flx);
-  void AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceArray5D<Real> &bc, DvceFaceFld5D<Real> &flx);
+  void AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceArray5D<Real> &bc,
+                            DvceFaceFld5D<Real> &flx);
   void NewTimeStep(const DvceArray5D<Real> &w, const EOS_Data &eos_data);
-  void NewTimeStepConstantGridResist(const DvceArray5D<Real> &w, const EOS_Data &eos_data);
+  void NewTimeStepConstantGridResist(const DvceArray5D<Real> &w,
+                                     const EOS_Data &eos_data);
   void NewTimeStepGeneralResist(const DvceArray5D<Real> &w, const EOS_Data &eos_data);
   void ClearResistiveEMFs(DvceEdgeFld4D<Real> &efld);
-  void SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos, const Real &Rgas, DvceArray4D<Real> &eta_b, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
+  void SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos, const Real &Rgas,
+                      DvceArray4D<Real> &eta_b, const int il, const int iu, const int jl,
+                      const int ju, const int kl, const int ku);
 
   //! \fn void ResistivityEOS
-  //! \brief Ohmic diffusivity from the EOS's own electron fraction.
-  //!
-  //! Two collision channels, added because the collision frequencies add:
-  //!   eta_en = 230 sqrt(T)/x_e   electrons scattering off neutrals (Blaes & Balbus 1994)
-  //!   eta_ei = 5.2e11 lnL/T^1.5  electrons off ions (Spitzer)
-  //! `perna` carries only the first, which is right while the gas is weakly ionized and
-  //! wrong once it is not: above ~7000 K in a hot-Jupiter atmosphere the Spitzer term is
-  //! the larger of the two, so a formula without it overstates the resistivity there.
-  //!
-  //! x_e comes from Saha over H, He and -- if eos_metal_ionization is on -- the alkalis
-  //! and iron. That last part is not optional in practice below ~4000 K, where hydrogen's
-  //! 13.6 eV contributes nothing and the metals supply everything.
-  //!
-  //! STATIC, and max_eta is passed rather than read off the member, because this is
-  //! called from inside a KOKKOS_LAMBDA: a non-static member function would make the
-  //! lambda capture `this` and dereference a host pointer on the device. See
-  //! current_density.hpp.
+  //! \brief Ohmic diffusivity from the electron fraction x_e of the EOS. Two collision
+  //! channels, added because the collision frequencies add:
+  //!   eta_en = 230 sqrt(T)/x_e   electrons off neutrals (Blaes & Balbus 1994)
+  //!   eta_ei = 5.2e11 lnL/T^1.5  electrons off ions (Spitzer, lnL = 20)
+  //! Static, with max_eta passed in, because it is called inside a KOKKOS_LAMBDA (a
+  //! non-static member function would capture `this`).
   KOKKOS_INLINE_FUNCTION
   static void ResistivityEOS(const Real &xe, const Real &T, const Real &max_eta,
                              Real &eta) {
     Real xemin = 230.0*sqrt(T)/max_eta;
     Real xu = (xe > xemin) ? xe : xemin;
     Real eta_en = 230.0*sqrt(T)/xu;
-    Real eta_ei = 5.2e11*20.0/(T*sqrt(T));       // Coulomb logarithm folded in at lnL=20
+    Real eta_ei = 5.2e11*20.0/(T*sqrt(T));
     eta = eta_en + eta_ei;
     eta = (eta < max_eta) ? eta : max_eta;
     return;
-  };
+  }
 
-  //! Static and taking max_eta explicitly, for the same reason as ResistivityEOS above.
+  //! \fn void ResistivityPerna
+  //! \brief Ohmic diffusivity of a weakly ionized gas from the thermal ionization of
+  //! potassium (Perna et al. 2010, after Balbus & Hawley 2000). Static, as above.
   KOKKOS_INLINE_FUNCTION
   static void ResistivityPerna(const Real &nn, const Real &T, const Real &max_eta,
                                Real &eta) {
-      // Perna+2010 <- Balbus & Hawley 2000
-      Real ak = 1.0e-7;
-      Real td25 = sqrt(sqrt(T/1.0e3));
-      Real x = 25188.0/T;
-      Real lgxe = log10(6.47e-13/(1.15e-11)*sqrt(ak/1.0e-7)*td25*td25*td25)+0.5*log10(2.4e15)-0.5*log10(nn)-25188.0/T/log(10.0);
-      Real min_xe = (230.0*sqrt(T))/max_eta;
-      lgxe = (lgxe < log10(min_xe)) ? log10(min_xe) : lgxe;
-      eta = 230.0*sqrt(T)/pow(10.0,lgxe);
-      return;
-  };
+    Real ak = 1.0e-7;
+    Real td25 = sqrt(sqrt(T/1.0e3));
+    Real lgxe = log10(6.47e-13/(1.15e-11)*sqrt(ak/1.0e-7)*td25*td25*td25)
+                + 0.5*log10(2.4e15) - 0.5*log10(nn) - 25188.0/T/log(10.0);
+    Real min_xe = (230.0*sqrt(T))/max_eta;
+    lgxe = (lgxe < log10(min_xe)) ? log10(min_xe) : lgxe;
+    eta = 230.0*sqrt(T)/pow(10.0,lgxe);
+    return;
+  }
 
-    //! Static for the same reason: even though it reads no member, a non-static member
-    //! function called from a KOKKOS_LAMBDA still drags `this` into the capture.
-    KOKKOS_INLINE_FUNCTION
-    static void ResistivityKumar(const Real &lgrho,
-                                 const Real &lgT,
-                                 Real &eta)
-    {
-        const int DEG_RHO = 3;
-        const int DEG_T   = 10;
-        
-        const Real coeff[44] = {
-            17756.83765359371,     -173325.8092641056,      168767.0872366536,       -5723.276575903336,
-           -37326.19648478865,      790498.1743027489,     -840928.4180831918,        43325.59798308437,
-           -49248.27029547974,    -1478318.436231536,     1764541.005654571,        -126982.0747314041,
-           234130.2791272859,      1446036.229095392,    -2021980.922938012,        194005.3996851212,
-          -310074.1307858078,      -773268.0679357855,    1371509.834590079,       -170580.4558143873,
-           207008.8037814973,       205890.886646132,     -557875.2688617986,        88339.33302144373,
-           -75659.75112439394,     -13471.97879598774,     131593.3843760589,       -26241.94440105469,
-            14728.0225312468,       -4914.572538661793,    -16574.12962411476,        4194.810984646928,
-            -1361.682380805944,        915.8663770325294,      969.022257281818,       -373.4843052758166,
-               45.32716559295613,       -41.45292106666464,      -18.95627191853248,        46.76985780921621,
-               -0.1374597443224571,       0.1358831125439432,       -2.447290454239667,        -6.506619810083309
-       };
-
-        Real rho_power[DEG_RHO+1];
-        rho_power[0] = 1.0;
-
-        for(int m=1; m<=DEG_RHO; m++) {
-            rho_power[m] = rho_power[m-1]*lgrho;
-        }
-
-
-        Real T_power[DEG_T+1];
-        T_power[0] = 1.0;
-
-        for(int k=1; k<=DEG_T; k++) {
-            T_power[k] = T_power[k-1]*lgT;
-        }
-
-
-        Real result = 0.0;
-
-        for(int k=0; k<=DEG_T; k++)
-        {
-            Real a = 0.0;
-
-            for(int m=0; m<=DEG_RHO; m++) {
-                a += coeff[k*4+m]*rho_power[m];
-            }
-
-            result += a*T_power[DEG_T-k];
-        }
-
-
-        eta = 1.0e4 /
-              (4.0*M_PI*1.0e-7) /
-               pow(10.0, result);
-        
-        return;
+  //! \fn void ResistivityKumar
+  //! \brief Ohmic diffusivity from a polynomial fit in log10(rho) and log10(T) (degree
+  //! 3 in rho, 10 in T). Static, as above.
+  KOKKOS_INLINE_FUNCTION
+  static void ResistivityKumar(const Real &lgrho, const Real &lgT, Real &eta) {
+    const int DEG_RHO = 3;
+    const int DEG_T   = 10;
+    const Real coeff[44] = {
+      17756.83765359371,   -173325.8092641056,  168767.0872366536,   -5723.276575903336,
+      -37326.19648478865,  790498.1743027489,   -840928.4180831918,  43325.59798308437,
+      -49248.27029547974,  -1478318.436231536,  1764541.005654571,   -126982.0747314041,
+      234130.2791272859,   1446036.229095392,   -2021980.922938012,  194005.3996851212,
+      -310074.1307858078,  -773268.0679357855,  1371509.834590079,   -170580.4558143873,
+      207008.8037814973,   205890.886646132,    -557875.2688617986,  88339.33302144373,
+      -75659.75112439394,  -13471.97879598774,  131593.3843760589,   -26241.94440105469,
+      14728.0225312468,    -4914.572538661793,  -16574.12962411476,  4194.810984646928,
+      -1361.682380805944,  915.8663770325294,   969.022257281818,    -373.4843052758166,
+      45.32716559295613,   -41.45292106666464,  -18.95627191853248,  46.76985780921621,
+      -0.1374597443224571, 0.1358831125439432,  -2.447290454239667,  -6.506619810083309
     };
+    Real rho_power[DEG_RHO+1];
+    rho_power[0] = 1.0;
+    for (int m=1; m<=DEG_RHO; m++) {
+      rho_power[m] = rho_power[m-1]*lgrho;
+    }
+    Real T_power[DEG_T+1];
+    T_power[0] = 1.0;
+    for (int k=1; k<=DEG_T; k++) {
+      T_power[k] = T_power[k-1]*lgT;
+    }
+    Real result = 0.0;
+    for (int k=0; k<=DEG_T; k++) {
+      Real a = 0.0;
+      for (int m=0; m<=DEG_RHO; m++) {
+        a += coeff[k*4+m]*rho_power[m];
+      }
+      result += a*T_power[DEG_T-k];
+    }
+    eta = 1.0e4/(4.0*M_PI*1.0e-7)/pow(10.0, result);
+    return;
+  }
 
  private:
   MeshBlockPack* pmy_pack;
