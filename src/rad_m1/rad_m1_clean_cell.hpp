@@ -39,13 +39,13 @@
 //!
 //! On a spherical-polar mesh y holds the physical components (y_r, y_theta, y_phi), div
 //! is the finite-volume divergence sum A_f f/V, with the angular-momentum conserving
-//! weights of CleanCellSphWeights, and the stress rows carry the curvature terms of
+//! weights of CleanCellRows, and the stress rows carry the curvature terms of
 //! CleanCellSphSource.  E changes only by face fluxes, so the total energy is conserved
 //! to round-off.  On the cubed sphere y holds (y_r, y_theta, y_phi) in the orthonormal
 //! frame about the hydro's radius vector (CleanCsFrame).  The face fluxes are formed in
 //! Cartesian components with the exact face vectors of CleanCsGeometry: d above is the
 //! face normal n (y_d -> y.n, D_bd -> (D n)_b, D_dd -> n.D.n; D is Cartesian).  The rows
-//! (CleanCsRows) are sum A_f f/V for E, its projections on r_hat and theta_hat, and the
+//! (CleanCellRows) are sum A_f f/V for E, its projections on r_hat and theta_hat, and the
 //! torque about z for y_phi: E and L_z change only by face fluxes, a uniform isotropic
 //! state is exact, and no curvature terms are needed.
 
@@ -256,22 +256,42 @@ void CleanCellState(const CleanArgs &x, const int v, const int m, const int k,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanCsRows
-//! \brief cubed sphere: the contribution g of the flux f = (fE, Cartesian stress vector
-//! P n) through face (kf,jf,iff) normal to dir to h div of the rows (E, y_r, y_theta,
-//! y_phi) of cell (k,j,i): h/V times A fE, A r_hat.f, A theta_hat.f and the torque
-//! (M x f)_z/R about z with M = int x dA of the face (r_f A n on a radial face, which
-//! carries no torque of an isotropic stress).  The y_phi row is thus the conservation
-//! form of L_z = V R y_phi; the y_r and y_theta rows are the projected divergence (no
-//! curvature terms; a uniform isotropic stress cancels since sum_f A_f = 0).
+//! \fn void CleanCellRows
+//! \brief the contribution g of the flux f (fE and the stress column) through face
+//! (kf,jf,iff) normal to dir to h div of the rows (E, y_1..3) of cell (k,j,i).
+//! Cartesian: h f/dx_d.  Spherical polar: h A_f/V f, times r_f/r on the r faces of the
+//! y_theta and y_phi rows and sin(theta_f)/sin(theta) on the theta faces of the y_phi
+//! row: the angular-momentum conserving forms r^-3 d_r(r^3 P_ra) and
+//! sin^-2 d_theta(sin^2 P_tp), which contain the curvature terms P_rt/r, P_rp/r and
+//! cot(theta) P_tp/r.  Cubed sphere (f in Cartesian components): h/V times A fE,
+//! A r_hat.f, A theta_hat.f and the torque (M x f)_z/R about z with M = int x dA of the
+//! face (r_f A n on a radial face, no torque of an isotropic stress): the y_phi row is
+//! the conservation form of L_z = V R y_phi, the y_r and y_theta rows the projected
+//! divergence (a uniform isotropic stress cancels since sum_f A_f = 0).
 
 KOKKOS_INLINE_FUNCTION
-void CleanCsRows(const CleanArgs &x, const int dir, const int m, const int kf,
-                 const int jf, const int iff, const int k, const int j, const int i,
-                 const Real f[4], Real g[4]) {
+void CleanCellRows(const CleanArgs &x, const int dir, const int m, const int kf,
+                   const int jf, const int iff, const int k, const int j, const int i,
+                   const Real f[4], Real g[4]) {
+  if (!x.sph && !x.cub) {
+    for (int r = 0; r < 4; ++r) g[r] = x.h*x.idx[dir]*f[r];
+    return;
+  }
+  const Real hv = x.h/x.vol(m,k,j,i), a = x.area[dir](m,kf,jf,iff);
+  if (x.sph) {
+    Real w[4] = {hv*a, hv*a, hv*a, hv*a};
+    if (dir == 0) {
+      const Real rf = x.x1f(m,iff)/x.x1v(m,i);
+      w[2] *= rf;
+      w[3] *= rf;
+    } else if (dir == 1) {
+      w[3] *= sin(x.x2f(m,jf))/sin(x.x2v(m,j));
+    }
+    for (int r = 0; r < 4; ++r) g[r] = w[r]*f[r];
+    return;
+  }
   Real q[3][3], mf[3];
   const Real rc = CleanCsFrame(x, m, k, j, i, q);
-  const Real hv = x.h/x.vol(m,k,j,i), a = x.area[dir](m,kf,jf,iff);
   for (int c = 0; c < 3; ++c) {
     mf[c] = (dir == 0) ? x.x1f(m,iff)*a*x.g(m,CLG_N+c,kf,jf,iff)
                        : x.g(m,CLG_M+3*(dir-1)+c,kf,jf,iff);
@@ -284,25 +304,25 @@ void CleanCsRows(const CleanArgs &x, const int dir, const int m, const int kf,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanCsBlock
-//! \brief cubed sphere: the block out of the rows of cell (k,j,i) (CleanCsRows) in the
-//! states (E, y in its frame) of cell (kn,jn,in), from the Jacobian jj of the face flux
-//! (Cartesian rows and columns)
+//! \fn void CleanCellBlock
+//! \brief the block out of the rows of cell (k,j,i) (CleanCellRows) in the states (E, y
+//! in its frame on the cubed sphere) of cell (kn,jn,in), from the Jacobian jj of the face
+//! flux through (kf,jf,iff) normal to dir
 
 KOKKOS_INLINE_FUNCTION
-void CleanCsBlock(const CleanArgs &x, const int dir, const int m, const int kf,
-                  const int jf, const int iff, const int k, const int j, const int i,
-                  const int kn, const int jn, const int in, const Real jj[4][4],
-                  Real out[4][4]) {
+void CleanCellBlock(const CleanArgs &x, const int dir, const int m, const int kf,
+                    const int jf, const int iff, const int k, const int j, const int i,
+                    const int kn, const int jn, const int in, const Real jj[4][4],
+                    Real out[4][4]) {
   Real q[3][3];
-  CleanCsFrame(x, m, kn, jn, in, q);
+  if (x.cub) CleanCsFrame(x, m, kn, jn, in, q);
   for (int c = 0; c < 4; ++c) {
     Real f[4], g[4];
     for (int r = 0; r < 4; ++r) {
-      f[r] = (c == 0) ? jj[r][0]
-                      : jj[r][1]*q[c-1][0] + jj[r][2]*q[c-1][1] + jj[r][3]*q[c-1][2];
+      f[r] = (c == 0 || !x.cub) ? jj[r][c]
+             : jj[r][1]*q[c-1][0] + jj[r][2]*q[c-1][1] + jj[r][3]*q[c-1][2];
     }
-    CleanCsRows(x, dir, m, kf, jf, iff, k, j, i, f, g);
+    CleanCellRows(x, dir, m, kf, jf, iff, k, j, i, f, g);
     for (int r = 0; r < 4; ++r) out[r][c] = g[r];
   }
 }
@@ -486,38 +506,6 @@ void CleanCellRhieChow(const CleanArgs &x, const int dir, const Real al, const i
   q[1] = a/d0 - gr;
   q[2] = gl - a/d0;
   q[3] = gr;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void CleanCellSphWeights
-//! \brief spherical polar: weights of the fluxes through the lower (wm) and upper (wp)
-//! faces of cell (k,j,i) normal to dir in h div f, per row (E, y_r, y_theta, y_phi):
-//! h A_f/V, times r_f/r on the r faces of the y_theta and y_phi rows and
-//! sin(theta_f)/sin(theta) on the theta faces of the y_phi row.  These are the
-//! angular-momentum conserving forms r^-3 d_r(r^3 P_ra) and sin^-2 d_theta(sin^2 P_tp),
-//! which contain the curvature terms P_rt/r, P_rp/r and cot(theta) P_tp/r.
-
-KOKKOS_INLINE_FUNCTION
-void CleanCellSphWeights(const CleanArgs &x, const int dir, const int m, const int k,
-                         const int j, const int i, Real wm[4], Real wp[4]) {
-  const Real hv = x.h/x.vol(m,k,j,i);
-  const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-  const Real am = x.area[dir](m,k,j,i), ap = x.area[dir](m,k+dk,j+dj,i+di);
-  for (int r = 0; r < 4; ++r) {
-    wm[r] = hv*am;
-    wp[r] = hv*ap;
-  }
-  if (dir == 0) {
-    const Real rm = x.x1f(m,i)/x.x1v(m,i), rp = x.x1f(m,i+1)/x.x1v(m,i);
-    for (int r = 2; r < 4; ++r) {
-      wm[r] *= rm;
-      wp[r] *= rp;
-    }
-  } else if (dir == 1) {
-    const Real sc = sin(x.x2v(m,j));
-    wm[3] *= sin(x.x2f(m,j))/sc;
-    wp[3] *= sin(x.x2f(m,j+1))/sc;
-  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1003,19 +991,12 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
     Real fp[4], fm[4];
     CleanCellFaceFlux(x, v, dir, m, k+dk, j+dj, i+di, with_source, fp);
     CleanCellFaceFlux(x, v, dir, m, k, j, i, with_source, fm);
-    if (x.cub) {
+    if (x.sph || x.cub) {
       Real gp[4], gm[4];
-      CleanCsRows(x, dir, m, k+dk, j+dj, i+di, k, j, i, fp, gp);
-      CleanCsRows(x, dir, m, k, j, i, k, j, i, fm, gm);
+      CleanCellRows(x, dir, m, k+dk, j+dj, i+di, k, j, i, fp, gp);
+      CleanCellRows(x, dir, m, k, j, i, k, j, i, fm, gm);
       for (int r = 0; r < 4; ++r) div[r] += gp[r] - gm[r];
       for (int r = 0; adiv && r < 4; ++r) adiv[r] += fabs(gp[r]) + fabs(gm[r]);
-    } else if (x.sph) {
-      Real wm[4], wp[4];
-      CleanCellSphWeights(x, dir, m, k, j, i, wm, wp);
-      for (int r = 0; r < 4; ++r) div[r] += wp[r]*fp[r] - wm[r]*fm[r];
-      for (int r = 0; adiv && r < 4; ++r) {
-        adiv[r] += wp[r]*fabs(fp[r]) + wm[r]*fabs(fm[r]);
-      }
     } else {
       for (int r = 0; r < 4; ++r) div[r] += x.h*x.idx[dir]*(fp[r] - fm[r]);
       for (int r = 0; adiv && r < 4; ++r) {
@@ -1046,21 +1027,16 @@ void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, con
   for (int dir = 0; dir < 3; ++dir) {
     if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
     const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-    Real s[4], wm[4], wp[4];
-    for (int r = 0; r < 4; ++r) {
-      wm[r] = x.h*x.idx[dir];
-      wp[r] = wm[r];
-    }
-    if (x.sph) CleanCellSphWeights(x, dir, m, k, j, i, wm, wp);
+    Real s[4], g[4];
     if (x.consist || x.milne || CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di)) {
       CleanCellFaceSource(x, dir, m, k+dk, j+dj, i+di, s);
-      if (x.cub) CleanCsRows(x, dir, m, k+dk, j+dj, i+di, k, j, i, s, wp);
-      for (int r = 0; r < 4; ++r) div[r] += x.cub ? wp[r] : wp[r]*s[r];
+      CleanCellRows(x, dir, m, k+dk, j+dj, i+di, k, j, i, s, g);
+      for (int r = 0; r < 4; ++r) div[r] += g[r];
     }
     if (x.consist || x.milne || CleanBoundaryFace(x, dir, m, k, j, i)) {
       CleanCellFaceSource(x, dir, m, k, j, i, s);
-      if (x.cub) CleanCsRows(x, dir, m, k, j, i, k, j, i, s, wm);
-      for (int r = 0; r < 4; ++r) div[r] -= x.cub ? wm[r] : wm[r]*s[r];
+      CleanCellRows(x, dir, m, k, j, i, k, j, i, s, g);
+      for (int r = 0; r < 4; ++r) div[r] -= g[r];
     }
   }
   if (x.sph && x.consist) {

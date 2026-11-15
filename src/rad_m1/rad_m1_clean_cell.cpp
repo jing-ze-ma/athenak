@@ -527,29 +527,17 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       const int sm = CleanLineSlotM(dir), sp = CleanLineSlotP(dir);
       CleanCellFaceJacobian(x, dir, m, k+dk, j+dj, i+di, jlp, jrp);
       CleanCellFaceJacobian(x, dir, m, k, j, i, jlm, jrm);
-      if (x.cub) {
+      if (x.sph || x.cub) {
         Real bp[4][4], bm[4][4], bpn[4][4], bmn[4][4];
-        CleanCsBlock(x, dir, m, k+dk, j+dj, i+di, k, j, i, k, j, i, jlp, bp);
-        CleanCsBlock(x, dir, m, k, j, i, k, j, i, k, j, i, jrm, bm);
-        CleanCsBlock(x, dir, m, k+dk, j+dj, i+di, k, j, i, k+dk, j+dj, i+di, jrp, bpn);
-        CleanCsBlock(x, dir, m, k, j, i, k, j, i, k-dk, j-dj, i-di, jlm, bmn);
+        CleanCellBlock(x, dir, m, k+dk, j+dj, i+di, k, j, i, k, j, i, jlp, bp);
+        CleanCellBlock(x, dir, m, k, j, i, k, j, i, k, j, i, jrm, bm);
+        CleanCellBlock(x, dir, m, k+dk, j+dj, i+di, k, j, i, k+dk, j+dj, i+di, jrp, bpn);
+        CleanCellBlock(x, dir, m, k, j, i, k, j, i, k-dk, j-dj, i-di, jlm, bmn);
         for (int r = 0; r < 4; ++r) {
           for (int c = 0; c < 4; ++c) {
             a0[r][c] += bp[r][c] - bm[r][c];
             x.u(m,sp+4*r+c,k,j,i) = bpn[r][c];
             x.u(m,sm+4*r+c,k,j,i) = -bmn[r][c];
-          }
-        }
-        continue;
-      }
-      if (x.sph) {
-        Real wm[4], wp[4];
-        CleanCellSphWeights(x, dir, m, k, j, i, wm, wp);
-        for (int r = 0; r < 4; ++r) {
-          for (int c = 0; c < 4; ++c) {
-            a0[r][c] += wp[r]*jlp[r][c] - wm[r]*jrm[r][c];
-            x.u(m,sp+4*r+c,k,j,i) = wp[r]*jrp[r][c];
-            x.u(m,sm+4*r+c,k,j,i) = -wm[r]*jlm[r][c];
           }
         }
         continue;
