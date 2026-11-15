@@ -11,10 +11,10 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 
 #include "deep_hot_jupiter_rt.hpp"
 #include "driver/dt_retry.hpp"
-#include <cstdlib>
 #include "hydro/hydro_wball.hpp"
 
 
@@ -190,9 +190,9 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // rho g_t (WbTanProbe) in place of the analytic projections below; Coriolis and the
     // radial terms unchanged; no energy term (etotgrav books the potential work)
     const bool wbt_ = dhj_wbt.on;
-    // <mhd|hydro>/wb_dirs = all: the tangential centrifugal + tidal force is
-    // the shared well-balanced source (AddWbGravity after this kernel, the true Phi of
-    // phicc0/phi0): this kernel keeps the tangential Coriolis only (wbt_a2/a3); x1 as ever
+    // <mhd|hydro>/wb_dirs = all: the tangential centrifugal + tidal force is the shared
+    // well-balanced source (AddWbGravity after this kernel, the true Phi of phicc0/phi0):
+    // this kernel keeps the tangential Coriolis only (wbt_a2/a3); x1 as ever
     const bool wba_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_all :
                       ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_all : false);
     const bool cor_only_ = wbt_ || wba_;
@@ -234,7 +234,6 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const bool is_mhd_ = (pmbp->pmhd != nullptr);
     par_for("usrsource", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-
         Real x1v, x2v, x3v;
         if (use_spherical_polar) {
           x1v = x1v_(m,i);
@@ -483,18 +482,16 @@ void SourceFunc(Mesh *pm, Real bdt) {
         Real t1   = 2.0 * dyntime * rdf_;
         Real t2   = 5.0 * dyntime * rdf_;
         Real itdrag, fredux;
-        if(time < t1) {
+        if (time < t1) {
           itdrag = 1.0 / tau1;
-        } else if(time < t2)
-          {
-            Real alp = (time - t1) / (t2 - t1);
-            itdrag   = 1.0 / tau1 * pow(tau1 / tau2, alp);
-          }
-        else {
+        } else if (time < t2) {
+          Real alp = (time - t1) / (t2 - t1);
+          itdrag   = 1.0 / tau1 * pow(tau1 / tau2, alp);
+        } else {
           itdrag = 0.0;
         }
         if (relax_ && time < t2) {
-          fredux = itdrag*bdt;///(1.0+itdrag*bdt);
+          fredux = itdrag*bdt;
           u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
           u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
           u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
@@ -530,8 +527,11 @@ void SourceFunc(Mesh *pm, Real bdt) {
     });
     // x2/x3 (x1: the WB fg of this kernel); reads this stage's caches
     if (wba_) {
-      if (pmbp->pmhd != nullptr) {pmbp->pmhd->AddWbGravity(bdt, false);}
-      else {pmbp->phydro->AddWbGravity(bdt, false);}
+      if (pmbp->pmhd != nullptr) {
+        pmbp->pmhd->AddWbGravity(bdt, false);
+      } else {
+        pmbp->phydro->AddWbGravity(bdt, false);
+      }
     }
 
     return;
@@ -758,7 +758,6 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           }
           u0(m,IEN,k,j,i) += de;
         }
-
     });
     RTSourceLimiterWarn(nclip);
 
@@ -1016,7 +1015,6 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           }
           u0(m,IEN,k,j,i) += e-e0;
         }
-
     });
 
     return;

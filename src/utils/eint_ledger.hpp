@@ -6,12 +6,12 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file eint_ledger.hpp
-//! \brief floorheat-1029 <problem>/eint_ledger (DIAGNOSTIC, opt-in, default off): a
+//! \brief <problem>/eint_ledger (DIAGNOSTIC, opt-in, default off): a
 //! per-operator INTERNAL-ENERGY ledger of the low-density (floor) gas.
 //!
 //! Mark(pm, "name") is called at the task boundaries (hydro flux update, coordinate
-//! sources, am_transport, polar ring averaging, the pgen's source kernel / density floor /
-//! reference-force work, ConToPrim, the M1 solve, the M1 ring averaging, the M1 fluid
+//! sources, am_transport, polar ring averaging, the pgen's source kernel / density floor
+//! / reference-force work, ConToPrim, the M1 solve, the M1 ring averaging, the M1 fluid
 //! refresh).  At each mark the hydro u0 of every active cell is turned into
 //!   rho, KE = |m|^2/(2 rho), e = E - KE - rho Phi (etotgrav)
 //! and compared with the previous mark.  The difference is booked to the operator that
@@ -47,7 +47,7 @@
 
 namespace eint_ledger {
 
-constexpr int kNcls = 5;   // + class 4: the region (polarpert-1029)
+constexpr int kNcls = 5;   // + class 4: the region
 constexpr int kNq = 5;
 constexpr int kNs = kNcls*kNq;
 constexpr int kNopMax = 24;
@@ -78,8 +78,9 @@ inline Real hot_cut = 1.0e4;
 inline Real theta_cut = 0.2618;   // rad (15 deg)
 inline Real rmin = 0.0;
 inline int dump_every = 0;
-// polarpert-1029: region class 4 = r in [reg_rmin, reg_rmax], theta within reg_th of a pole
-// (any density); q = d(rho v_r^2/2) vol, d(rho v_th^2/2) vol, d(e) vol, d(rho v_ph^2/2) vol, n
+// region class 4 = r in [reg_rmin, reg_rmax], theta within reg_th of a pole
+// (any density); q = d(rho v_r^2/2) vol, d(rho v_th^2/2) vol, d(e) vol, d(rho v_ph^2/2)
+// vol, n
 inline Real reg_rmin = 0.0, reg_rmax = -1.0, reg_th = 0.0;
 inline std::string dump_dir = ".";
 
@@ -180,7 +181,8 @@ inline void Take(Mesh *pm, const int op, const bool book) {
       }
       {
         const Real r = rx1(m,i), th = x2v(m,j);
-        if (r >= rr0 && r <= rr1 && (th < rth || th > M_PI - rth) && d > 0.0 && d0 > 0.0) {
+        if (r >= rr0 && r <= rr1 && (th < rth || th > M_PI - rth) && d > 0.0
+            && d0 > 0.0) {
           const Real v = vol(m,k,j,i);
           const Real b1 = a1(m,kk,jj,ii), b2 = a2(m,kk,jj,ii), b3 = a3(m,kk,jj,ii);
           sum.v[4*kNq + 0] += 0.5*(m1*m1/d - d0*b1*b1)*v;
@@ -261,7 +263,8 @@ inline void WriteDump(Mesh *pm) {
     buf.resize(static_cast<size_t>(nk)*nj*ni);
     for (int n = 0; n < nop + 2; ++n) {
       size_t p = 0;
-      for (int k = 0; k < nk; ++k) for (int j = 0; j < nj; ++j) for (int i = 0; i < ni; ++i) {
+      for (int k = 0; k < nk; ++k) for (int j = 0; j < nj; ++j) for (int i = 0;
+                                                                     i < ni; ++i) {
         Real v;
         if (n < nop) {
           v = ht(n,m,k,j,i);
@@ -283,7 +286,8 @@ inline void Commit(Mesh *pm) {
   if (!on || !have_base) return;
   const int nop = static_cast<int>(names.size());
   std::vector<Real> loc(static_cast<size_t>(nop)*kNs), glb(loc.size());
-  for (int n = 0; n < nop; ++n) for (int q = 0; q < kNs; ++q) loc[n*kNs + q] = cyc_sums[n][q];
+  for (int n = 0; n < nop; ++n) for (int q = 0; q < kNs; ++q) loc[n*kNs
+                                                                  + q] = cyc_sums[n][q];
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(loc.data(), glb.data(), static_cast<int>(loc.size()), MPI_ATHENA_REAL,
                 MPI_SUM, MPI_COMM_WORLD);
@@ -303,7 +307,7 @@ inline void Commit(Mesh *pm) {
   }
   auto *pmbp = pm->pmb_pack;
   if (reg_rmax > reg_rmin) {
-    // polarpert-1029: the region's state at the last mark: sum rho v_r^2/2 vol,
+    // the region's state at the last mark: sum rho v_r^2/2 vol,
     // rho v_th^2/2 vol, rho vol (mass), rho v_r vol (mean flow), and the count
     auto &icr = pm->mb_indcs;
     const int ni = icr.nx1, nj = icr.nx2, nk = icr.nx3, nmb = pmbp->nmb_thispack;
@@ -362,7 +366,8 @@ inline void Commit(Mesh *pm) {
     const Real eps = ep(m,kk,jj,ii)/d;
     if (eps > v.val) {v.val = eps; v.loc = idx;}
   }, Kokkos::MaxLoc<Real, int>(ml));
-  struct {double v; int r;} in{static_cast<double>(ml.val), global_variable::my_rank}, out;
+  struct {double v; int r;} in{static_cast<double>(ml.val), global_variable::my_rank},
+      out;
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(&in, &out, 1, MPI_DOUBLE_INT, MPI_MAXLOC, MPI_COMM_WORLD);
 #else
@@ -428,7 +433,8 @@ inline void Commit(Mesh *pm) {
   });
   Kokkos::deep_copy(cyv, 0.0f);
   for (int n = 0; n < nop; ++n) {
-    for (int q = 0; q < kNs; ++q) {tot_sums[n][q] += cyc_sums[n][q]; cyc_sums[n][q] = 0.0;}
+    for (int q = 0; q < kNs; ++q) {tot_sums[n][q] += cyc_sums[n][q];
+                                   cyc_sums[n][q] = 0.0;}
   }
   if (dump_every > 0 && (pm->ncycle % dump_every) == 0) {
     Kokkos::fence();
@@ -440,7 +446,8 @@ inline void Commit(Mesh *pm) {
 //! free the device views before Kokkos::finalize (pgen final hook)
 inline void Free() {
   d_prv = DvceArray4D<Real>(); e_prv = DvceArray4D<Real>(); k_prv = DvceArray4D<Real>();
-  v1_prv = DvceArray4D<Real>(); v2_prv = DvceArray4D<Real>(); v3_prv = DvceArray4D<Real>();
+  v1_prv = DvceArray4D<Real>(); v2_prv = DvceArray4D<Real>();
+  v3_prv = DvceArray4D<Real>();
   cyc = DvceArray5D<Real>(); tot = DvceArray5D<Real>();
   cyv = Kokkos::View<float*****, DevMemSpace>();
 }

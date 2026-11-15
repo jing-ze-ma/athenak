@@ -6,34 +6,34 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file wbtan_common.hpp
-//! \brief roche-wbtan-1101: the WELL-BALANCED TANGENTIAL potential force, shared by
+//! \brief the WELL-BALANCED TANGENTIAL potential force, shared by
 //! problem generators (deep_hot_jupiter_rt problem/roche_wb_tan; the accretor next), for
 //! the cubed sphere AND spherical polar, Hydro AND MHD.
 //!
 //! The x2/x3 part of -rho grad Phi_tot (centrifugal, tide, ...) is replaced by
 //!     S_t = -(rho/rho_eq) R_t(W_eq) = rho g_t,
 //! R_t the code's OWN discrete tangential momentum RHS of the problem's equipotential
-//! equilibrium W_eq (v = 0; MHD: B = 0, see ProbeT).  Then that equilibrium is balanced in
-//! x2/x3 to round-off (seams and sp poles included), whatever the reconstruction,
+//! equilibrium W_eq (v = 0; MHD: B = 0, see ProbeT).  Then that equilibrium is balanced
+//! in x2/x3 to round-off (seams and sp poles included), whatever the reconstruction,
 //! Riemann solver, metric terms or angular-momentum corrections, and for any departure
 //! from it the force is rho g_t, g_t = -grad_t Phi_tot + O(h^2).
 //!
 //! API (one WbTan per problem generator, file scope):
 //!   WbTan w;                        on/ready flags, W_eq, g_t, the private exchange
 //!   Alloc(w, pmbp)                  W_eq (nmb, 2, n3, n2, n1: rho_eq, eint_eq, ALL cells
-//!                                   incl. ghosts) and g_t (nmb, 2, ...: covariant g_2, g_3)
-//!   [the pgen fills *w.weq from its own IC formula, fresh start AND restart]
+//!                                   incl. ghosts) and g_t (nmb, 2, ...: covariant g_2,
+//! g_3) [the pgen fills *w.weq from its own IC formula, fresh start AND restart]
 //!   Probe(pm, w, extra, who)        once per run segment, at the first user-source call
 //!                                   (w.ready false): runs the fluid's own operators on
-//!                                   W_eq and fills g_t; the live state is saved/restored.
-//!                                   extra (ExtraFn or nullptr): adds the pgen's own stage
-//!                                   terms of W_eq with bdt = 1 to us (IM2/IM3), e.g. a pgen
-//!                                   AM fix; scratch is a free u0-shaped array.
+//!                                   W_eq and fills g_t; the live state is
+//! saved/restored. extra (ExtraFn or nullptr): adds the pgen's own stage
+//!                                   terms of W_eq with bdt = 1 to us (IM2/IM3), e.g. a
+//! pgen AM fix; scratch is a free u0-shaped array.
 //!   ApplyTan(u0, gt, m,k,j,i, rho, a2, a3, bdt)
 //!                                   in the user source, ONE call for sp and cs:
 //!                                   u0(IM2|IM3) += rho*(a_c + g_c)*bdt, a_c = the pgen's
-//!                                   remaining analytic tangential acceleration (Coriolis)
-//!                                   projected on the cell's basis by its geometry front-end.
+//!                                   remaining analytic tangential acceleration
+//! (Coriolis) projected on the cell's basis by its geometry front-end.
 //! Energy: none here; the etotgrav flux books the potential work (the caller requires
 //! etotgrav), so E_tot stays exactly conservative.
 
@@ -90,16 +90,18 @@ inline void AllocU(WbTan &w, MeshBlockPack *pmbp) {
   w.ueq = new DvceArray5D<Real>("wbtan_ueq", pmbp->nmb_thispack, 5, n3, n2, n1);
 }
 
-//! wbtan-rstg-1101: on a restart, g_t from the file's per-cell pgen slabs instead of a new
-//! probe (a restart must not depend on rebuilding W_eq bit for bit, nor on the probe being
-//! side-effect free on a developed state).  True (and w.ready) when the file had exactly
-//! the two g_t slabs of this mesh; false (re-probe at the first source call) otherwise.
+//! on a restart, g_t from the file's per-cell pgen slabs instead of a new
+//! probe (a restart must not depend on rebuilding W_eq bit for bit, nor on the probe
+//! being side-effect free on a developed state).  True (and w.ready) when the file had
+//! exactly the two g_t slabs of this mesh; false (re-probe at the first source call)
+//! otherwise.
 inline bool LoadFromRestart(ProblemGenerator *pg, WbTan &w, MeshBlockPack *pmbp,
                             const char *who) {
   Alloc(w, pmbp);
   auto &in = pg->pgen_rst_slabs_in;
   const bool ok = (in.extent_int(1) == 2) && (in.extent(0) == w.gt->extent(0)) &&
-                  (in.extent(2) == w.gt->extent(2)) && (in.extent(3) == w.gt->extent(3)) &&
+                  (in.extent(2) == w.gt->extent(2))
+                      && (in.extent(3) == w.gt->extent(3)) &&
                   (in.extent(4) == w.gt->extent(4));
   if (ok) {
     Kokkos::deep_copy(*w.gt, in);
@@ -188,25 +190,26 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   DvceArray5D<Real> su1, su2, su3;
   bool sxe = false;
   if constexpr (kMHD) {
-    // tracer-1101: a pending x_e Saha start (fresh start / restart without the tracer) is
+    // a pending x_e Saha start (fresh start / restart without the tracer) is
     // for the live state, not the probe's: kept pending across the probe's ConToPrim
     sxe = ph->xe_init_pending;
     sb1 = dup4(ph->b0.x1f); sb2 = dup4(ph->b0.x2f); sb3 = dup4(ph->b0.x3f);
-    // wbtan-etafix-1101: MHD::ConToPrim at stage 0 (as the probe calls it) recomputes the
+    // MHD::ConToPrim at stage 0 (as the probe calls it) recomputes the
     // resistivity arrays (Ohmic eta_b, ambipolar ad_coef) from the probe's state, whose
     // passive scalars -- the <mhd>/xe_tracer x_e among them -- are zero: an eta of the
     // probe state.  Saved here and restored below (E_B x450 in the first cycle with
-    // xe_tracer + ambipolar = eos, integ-test-1101 gate (b)).
-    // wbtan-emffix-1101: MHD::Fluxes also writes the face electric fields e3x1 ... e1x3,
+    // xe_tracer + ambipolar = eos, gate (b)).
+    // MHD::Fluxes also writes the face electric fields e3x1 ... e1x3,
     // which the stage's CornerE/CT read AFTER the user source (where the probe runs): the
     // probe's B = 0 fields replaced this stage's EMF (the stage-1 CT of the first cycle
     // after a fresh start or a restart: restart continuation broke).  Saved and restored.
     se31 = dup4(ph->e3x1); se21 = dup4(ph->e2x1); se12 = dup4(ph->e1x2);
     se32 = dup4(ph->e3x2); se23 = dup4(ph->e2x3); se13 = dup4(ph->e1x3);
-    // uctaudit-1103: under <mhd>/emf_scheme = uct | uct_hlld, MHD::Fluxes also writes the
+    // under <mhd>/emf_scheme = uct | uct_hlld, MHD::Fluxes also writes the
     // UCT face stores uct1/2/3 (UctFaceStore), which this stage's CornerE reads AFTER the
     // user source: without this the first stage of a fresh start built its corner EMF
-    // from the probe's B = 0 equilibrium coefficients and velocities.  Saved and restored.
+    // from the probe's B = 0 equilibrium coefficients and velocities.  Saved and
+    // restored.
     if (ph->emf_uct || ph->emf_uct_hlld) {
       if (ph->uct1.size() > 0) su1 = dup5(ph->uct1);
       if (ph->uct2.size() > 0) su2 = dup5(ph->uct2);
@@ -215,7 +218,7 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
     if (ph->presist != nullptr) {
       if (ph->presist->eta_b.size() > 0) seta = dup4(ph->presist->eta_b);
       if (ph->presist->ad_coef.size() > 0) sadc = dup4(ph->presist->ad_coef);
-      // wbtan-efldfix-1102: without STS, MHD::Fluxes -> AddResistiveFluxes clears and
+      // without STS, MHD::Fluxes -> AddResistiveFluxes clears and
       // rebuilds the resistive edge EMF efld_resist from the probe's B = 0; the stage's
       // EField adds it AFTER the user source, so the first stage after a fresh start or
       // a restart had no resistive EMF (no-STS restart continuation broke).
@@ -235,7 +238,7 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   };
   const bool sv_built = ph->wb_cache_built;
   const bool sv_fofc = ph->use_fofc;
-  // followup-1102 (port of Caltech 0f9dc36ec): two more pieces the probe would leave
+  // (port of Caltech 0f9dc36ec): two more pieces the probe would leave
   // behind.  (1) Mesh::ecounter: the probe's ConToPrim of W_eq adds its own floor hits,
   //     which would enter the event-log interval of the first cycle of every run segment
   //     (diagnostic only; restored for a clean log).  (2) the conduction module: Fluxes
@@ -255,7 +258,8 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   auto phi0 = ph->phicc0;
   const bool etg = ph->use_etotgrav;
   int nvar;
-  if constexpr (kMHD) {nvar = ph->nmhd + ph->nscalars;} else {nvar = ph->nhydro + ph->nscalars;}
+  if constexpr (kMHD) {nvar = ph->nmhd + ph->nscalars;} else {nvar = ph->nhydro
+                                                              + ph->nscalars;}
   zero_b();
   const bool full = (w.ueq != nullptr);
   DvceArray5D<Real> ueq;
@@ -278,7 +282,7 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
     w.pbv = new MeshBoundaryValuesCC(pmbp, nullptr, false);
     w.pbv->cs_rho_guard = ph->pbval_u->cs_rho_guard;
     w.pbv->cs_lin_resample = ph->pbval_u->cs_lin_resample;
-    w.pbv->cs_blockend_ext_ = ph->pbval_u->cs_blockend_ext_;   // layoutbug-1103
+    w.pbv->cs_blockend_ext_ = ph->pbval_u->cs_blockend_ext_;
     w.pbv->InitializeBuffers(nvar);
   }
   MeshBoundaryValuesCC *pbv = w.pbv;
@@ -406,7 +410,7 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   ph->pcond = sv_cond;
   pm->ecounter = sv_ec;
   w.ready = true;
-  // wbtan-rstg-1101: every restart file from now on carries g_t (kPgenSlabRstMagic)
+  // every restart file from now on carries g_t (kPgenSlabRstMagic)
   if (pm->pgen != nullptr) pm->pgen->pgen_rst_slabs = w.gt;
 
   // one line: the size of g_t (max |g_c| over the rank's cells, rank 0)

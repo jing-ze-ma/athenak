@@ -1000,7 +1000,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     });
   }
 
-  // rkgstrang-1102: the cell resistivity eta_b (+ the ambipolar eta_A), ghosts included
+  // the cell resistivity eta_b (+ the ambipolar eta_A), ghosts included
   if (name.compare("mhd_eta") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1298,7 +1298,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   //   otherwise: chi(|F|/cE) of the current state about n = F/|F| (eddington 1/3);
   //     closure = tau | vet_col before the first solve has no tensor: f_K = -1 is
   //     written and D = 1/3 (isotropic) as a placeholder.
-  if (name.compare("m1_vsc") == 0) {   // blendall-1009: vet_sc J, F/c
+  if (name.compare("m1_vsc") == 0) {   // vet_sc J, F/c
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
@@ -1372,7 +1372,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
-  // csmetric-1112 m1_comov (implicit multi-D solve, sp / cs; diagnostic): the comoving
+  // m1_comov (implicit multi-D solve, sp / cs; diagnostic): the comoving
   // residuals of the last solve's iterate with the FULL Eddington tensor (uniaxial chi,n
   // + the lateral / tangential slots wherever the solve has them, M1LatDx), metric
   // products on the cubed sphere, whatever keys the solve itself uses:
@@ -1467,7 +1467,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
-  // vgdgw-1110 m1_gw: x1-face g_L, g_R and weight AL at the LEFT face of cell i
+  // m1_gw: x1-face g_L, g_R and weight AL at the LEFT face of cell i
   if (name.compare("m1_gw") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1520,7 +1520,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
-  // tanacc-1107 m1_lat: the handed-over closure tensor slots (basetype_output.cpp)
+  // m1_lat: the handed-over closure tensor slots (basetype_output.cpp)
   if (name.compare("m1_lat") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1576,7 +1576,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 12;
   }
 
-  // sptests-1011 P2 m1_gdhr: the vet_gd half-range ratios (basetype_output.cpp)
+  // P2 m1_gdhr: the vet_gd half-range ratios (basetype_output.cpp)
   if (name.compare("m1_gdhr") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1593,7 +1593,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 6;
   }
 
-  // gdthin-1011 m1_thsw: the thin switch's cell inputs (basetype_output.cpp)
+  // m1_thsw: the thin switch's cell inputs (basetype_output.cpp)
   if (name.compare("m1_thsw") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1618,7 +1618,8 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
       if (hsc) {
         jj = vc_(m,radm1::M1_VET_J,k,j,i);
         if (jj > 0.0) {
-          const Real a = vc_(m,radm1::M1_VET_H1,k,j,i), b = vc_(m,radm1::M1_VET_H1+1,k,j,i);
+          const Real a = vc_(m,radm1::M1_VET_H1,k,j,i),
+              b = vc_(m,radm1::M1_VET_H1+1,k,j,i);
           const Real c = vc_(m,radm1::M1_VET_H1+2,k,j,i);
           fb = fmin(sqrt(a*a + b*b + c*c)/jj, 1.0);
           if (c1v) {

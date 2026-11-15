@@ -348,8 +348,7 @@ bool wall_noflux_ = true;
 // skewed -- the panel corners -- and grows with v^2.  Once the open-top atmosphere went
 // transonic (~8 km/s at i >= 300, t ~ 1e6) the 24 cube-vertex cells inside the sponge
 // were drained to the temperature floor within 2e4 s, became pressureless holes with
-// 40 km/s in them, and the run NaN'd (T7/T8/T9, 2026-09-09).  prod11's vertex cells
-// show the same drain at the 5-8 % level.
+// 40 km/s in them, and the run NaN'd.
 KOKKOS_INLINE_FUNCTION
 Real CsKinetic(const Real d, const Real m1, const Real m2, const Real m3, const Real c) {
   return CsKeMom(m1, m2, m3, c)/d;
@@ -392,7 +391,7 @@ bool spgguard_reported_ = false;    // has the first offender been printed
 // operator in this file that writes u0(IEN), scan the active cells for a conserved state
 // that is already unphysical -- non-finite d, momentum or energy, or E <= 0 -- and print
 // the first one, then keep running.  The point is to say WHICH operator writes the NaN
-// energy at a standing cold spike (the prod11_catch death), which the sponge guard can
+// energy at a standing cold spike (a production failure mode), which the sponge guard can
 // only report after the fact.  One reduction per operator, only when the switch is on.
 // Pointers, not Views, for the same reason as the guards above.
 bool nan_report_ = false;
@@ -482,7 +481,7 @@ bool surf_alloc_ = false;
 //     double x1v[nx1]                      the radial cell centres
 //     double q[nvar][nx1]                  the shell means, slot order
 //        0 rho   1 v1   2 rho v1   3 v1^2   4 v2^2+v3^2   5 T[K]   6 eint   7 v1(eint+p)
-// with, PRECISELY (fixed 2026-09-17, tests_r9 task 3; every slot area weighted):
+// with, precisely (every slot area weighted):
 //        0  rho                      w0(IDN)                          [g/cm^3]
 //        1  v1                       w0(IVX)                          [cm/s]
 //        2  rho v1                                                    [g/cm^2/s]
@@ -503,8 +502,8 @@ bool surf_alloc_ = false;
 // IEN and under a GENERAL EOS the primitive slot holds the INTERNAL ENERGY, not the
 // pressure (general_c2p_hyd.hpp:56 `w.e = u.e - e_k`; the pressure is in wder(IDPR)), so
 // the enthalpy flux was v1*2*eint on the ideal branch's arithmetic.  Both are diagnostic
-// only -- nothing reads them back into the evolution -- but tests_r6/an6.py's energy
-// columns do, and were wrong in the envelope by those factors.
+// only -- nothing reads them back into the evolution -- but analysis energy
+// columns read them, and were wrong in the envelope by those factors.
 // Identical to the box's record except that x1v is the STRETCHED grid's own cell centres
 // rather than a uniform reconstruction, so a reader must take x1v from the file (the box
 // reader already does), and except for the two corrections above, which the box's own
@@ -546,7 +545,7 @@ bool rt_grey_ = false;
 // has adjusted to the band opacities.  The global energy budget cannot do this: the
 // envelope holds ~1e48 erg while the flux imbalance integrates to ~1e40 over a short run.
 Real ck_dump_t2_ = -1.0;
-std::string ck_dump_file2_;
+std::string ck_dump_file2_;  // NOLINT(runtime/string)
 bool ck_dumped2_ = false;
 Real mlt_alpha_ = 0.0;   // problem/mlt_alpha; > 0 turns the convective flux on
 // The per-column path's SMOOTH hand-over to radiation, in the run's own evolving
@@ -557,7 +556,7 @@ Real mlt_alpha_ = 0.0;   // problem/mlt_alpha; > 0 turns the convective flux on
 // at t = 0 F_mlt falls from 0.79 L to 0.03 L across the two cells at tau ~ 30, where the
 // radiative solution still carries only 6e-4 L, so ~0.9 L is deposited in those two
 // cells; the photosphere ran 45-150 % hot and the run NaN'd at the cut radius by
-// t = 6.2e5 (R1b_mlt, 2026-09-09).
+// t = 6.2e5.
 Real lstar_cgs_ = 0.0;   // L [erg/s], for the physical cap F_mlt <= L/(4 pi r^2)
 // problem/mlt_ramp_time [s], 0 = off: the applied MLT flux is multiplied by
 // min(1, t/mlt_ramp_time).  Switching a flux of order L on in a single step drives an
@@ -588,16 +587,14 @@ Real mlt_hold_ = 0.0;
 // (1e-2..0.5 near the surface) and F_MLT(x) binds; below it only the DEFICIT is known,
 // and that is what gets carried.
 Real mlt_x_thr_ = 1.0e-4;
-// problem/mlt_split_deposit (default TRUE since 2026-09-22; needs problem/rt_strang,
-// problem/mlt_alpha > 0 and the two-stream, and is inert otherwise): deposit div F_conv
-// in the SAME
-// Strang half steps as the two-stream, not inside the RK stages.  In the MLT zone
-// div F_conv and div F_2s are each up to 6e-3 of eint per step and cancel; with one in
-// the stages and the other split, the stages see a pressure error ~ dt div F_conv, a
-// force dipole LINEAR in dt at the top of the MLT zone (tests_r12 fc3/fb0/fc07: +8.5 /
-// +4.1 / +1.0 % of rho g at cfl 0.3 / 0.15 / 0.0375; sign flips with mlt_alpha = 0).
-// The stage call still builds fconv_.  mlt_owed_ carries the half step made before the
-// first build.
+// problem/mlt_split_deposit (default true; needs problem/rt_strang, problem/mlt_alpha > 0
+// and the two-stream, and is inert otherwise): deposit div F_conv in the SAME Strang half
+// steps as the two-stream, not inside the RK stages.  In the MLT zone div F_conv and div
+// F_2s are each up to 6e-3 of eint per step and cancel; with one in the stages and the
+// other split, the stages see a pressure error ~ dt div F_conv, a force dipole LINEAR in
+// dt at the top of the MLT zone (+8.5 / +4.1 / +1.0 % of rho g at cfl 0.3 / 0.15 /
+// 0.0375; sign flips with mlt_alpha = 0). The stage call still builds fconv_.  mlt_owed_
+// carries the half step made before the first build.
 Real cs_max_ = 0.0, cs_mass_added_ = 0.0;   // problem/cs_max, see RgCsCeiling
 int eledger_ = 0;         // problem/e_ledger, see RedGiantRTSplit
 bool mlt_split_dep_ = false, mlt_fconv_ready_ = false;
@@ -606,7 +603,7 @@ Real mlt_owed_ = 0.0;
 // GRID-SCALE MODE out of the closure's target, with one [1 2 1]/4 pass over the faces
 // before the target enters the relaxed profile.
 //
-// THE MECHANISM IT FIXES (tests_r17, measured with the periodic face dump
+// THE MECHANISM IT FIXES (measured with the periodic face dump
 // problem/mlt_dump_dt).  The closure asks for D = F_req - F_rad - F_res - F_2s, a ~3 %
 // difference of two ~L numbers, and under the split -div D is deposited into the state
 // the implicit column solve then linearises about.  The sweep answers that source: in
@@ -620,18 +617,18 @@ Real mlt_owed_ = 0.0;
 // dependent: negligible on the shell profile, ENORMOUS and linear in dt at the grid
 // scale.  That is the whole observed signature -- zigzag(F_2s) 0.002 -> 2.5 (sign
 // flipping, |F_2s| up to 4 F_req) over 1.5 turnovers while zigzag(T) stays at 1.3e-3
-// and zigzag(F_req) at 8e-4 (tests_r17/P3); the grid-scale density zigzag that follows
+// and zigzag(F_req) at 8e-4; the grid-scale density zigzag that follows
 // at r/R 0.67-0.81, because in a radiation-pressure-dominated envelope p = p(T) to 2 %
 // and density has no restoring force; amplitude falling like dt^2 between cfl 0.3,
 // 0.15 and 0.075; and nothing at all with the deposit inside the RK stages
-// (tests_r17/Pin, zigzag(F_2s) 8e-3), which however pays the O(dt) force dipole the
+// (zigzag(F_2s) 8e-3), which however pays the O(dt) force dipole the
 // split removes.
 //
 // WHY THE SMOOTHER AND NOT THE OBVIOUS FIXES.  Re-forming the residual against the flux
 // of the sweep just done -- candidate (i)/(ii), make deficit and deposit simultaneous --
-// treats a stiff term explicitly and blows up at once (tests_r17/Y3: zigzag(rho) 3.9
+// treats a stiff term explicitly and blows up at once (zigzag(rho) 3.9
 // within 0.14 turnovers).  Dropping the max(0, .) rectifier so the flux can go negative
-// makes it WORSE (tests_r17/Z3: 2.5 at 1.5 turnovers against 0.62 with it), because the
+// makes it WORSE (2.5 at 1.5 turnovers against 0.62 with it), because the
 // rectifier was clipping half of the mode.  The loop gain is a property of the grid-
 // scale mode alone, so the cure is to keep that mode out of the loop: [1 2 1]/4
 // annihilates it exactly, leaves what the shell profile resolves (F_req goes as 1/r^2
@@ -643,8 +640,8 @@ DvceArray1D<Real> ftar1d_;   // (i): the unsmoothed target, mlt_split_sync only
 // problem/mlt_sync_passes (int, default 1, read only under mlt_split_sync): apply the
 // [1 2 1]/4 stencil this many times to the target instead of once.  One pass kills the
 // face-to-face mode exactly and nothing else; a 3-6 face standing oscillation between
-// F_2s and F_used survives it (tests_r18/out_part1_mltratio.txt, from the 3-D wedge
-// tests_r11/wedge9d: +-0.3 L at r/R 0.79-0.92).  n passes multiply a mode of wavelength
+// F_2s and F_used survives it (3-D wedge:
+// +-0.3 L at r/R 0.79-0.92).  n passes multiply a mode of wavelength
 // lambda faces by cos^{2n}(pi/lambda), so the 3-6 face band needs n > 1:
 //        lambda    n=1      n=2      n=4      n=8
 //             2    0        0        0        0
@@ -665,14 +662,15 @@ DvceArray1D<Real> ftar1d_b_;  // (i): ping-pong buffer, mlt_sync_passes > 1 only
 // so that t = 0 already carries the full closure.
 Real mlt_relax_ = 1.0e4;
 bool mlt_relax_seeded_ = false;
-std::string mlt_dump_ = "";  // problem/mlt_dump: write the faces of one column once
+// problem/mlt_dump: write the faces of one column once
+std::string mlt_dump_;  // NOLINT(runtime/string)
 bool mlt_dumped_ = false;
 // problem/mlt_dump_dt [s], 0 = off (diagnostic, shell-mean path only): APPEND the same
 // face table to <mlt_dump>.ts every mlt_dump_dt of simulated time, with one extra
 // column, the flux actually deposited (fconv after the per-column cap).  The one-shot
 // dump above answers "what does the closure ask for at t = 0"; this one answers "does
 // F_used drift or alternate face to face as the run goes on", which is what the
-// grid-scale density zigzag at the base of the MLT zone needs (tests_r17).
+// grid-scale density zigzag at the base of the MLT zone needs.
 Real mlt_dump_dt_ = 0.0;
 Real mlt_dump_next_ = -1.0;
 // The dump has to wait for the two-stream.  On the FIRST source call of a run the RT
@@ -690,8 +688,8 @@ int mlt_dump_calls_ = 0;
 // (drop/L = +-1 face to face in R1c_mlt's mltfaces_t0.txt): a checkerboard heating
 // source of order L, which is not a subgrid model of anything.  (2) TOP DUMP: any
 // shutoff of a per-column flux -- a radius cut or a tau taper -- deposits whatever it
-// still carries into the last few cells: 0.9 L (R1b_mlt, photosphere +45-150 %, NaN)
-// and 0.17 L per cell at tau ~ 50-150 (R1c_mlt).  The 1D profile is smooth (the noise
+// still carries into the last few cells: 0.9 L (photosphere +45-150 %, then NaN)
+// and 0.17 L per cell at tau ~ 50-150.  The 1D profile is smooth (the noise
 // averages down by sqrt(N_columns)), and the hand-over is done PHYSICALLY instead of by
 // a taper: the shell only asks MLT for the part of L/(4 pi r^2) that radiative
 // diffusion is not already carrying, so as the diffusive flux rises to L near the
@@ -715,7 +713,7 @@ DvceArray4D<Real> taumlt_;  // cell-centred Rosseland tau from the top, (m,k,j,i
 //! between calls -- shell_, fmean_, fdiag_, taumlt_ and fconv_ are all rebuilt from the
 //! current solution every call -- and without them a restart re-seeds fmlt1d to the
 //! instantaneous target and the applied subgrid flux jumps by a factor 1.5-7 in one step,
-//! which kicks the star (tests_r6/README.md section 3).  Layout: int32 nface, int32
+//! which kicks the star.  Layout: int32 nface, int32
 //! seeded, then nface Reals, in the pgen's own code flux units.  Enrolled only when
 //! problem/mlt_alpha > 0, so no other configuration writes a block at all.
 
@@ -968,7 +966,7 @@ void ReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
         // photospheric cell that has been shock-heated to 6e6 K at 2e-8 g/cm^3 also has
         // logR < -8, but it sits at tau ~ 100 in the diffusion operator, and handing it
         // the thin-gas floor made kappa_rad = 16 sigma T^3/(3 kappa rho) 1e5-1e6 x too
-        // large and took the conduction timestep to 1e-7 s (R8_lid_open, 2026-09-09).
+        // large and took the conduction timestep to 1e-7 s.
         // The edge value (electron scattering / free-free at the window's low-logR end)
         // is the physically sensible extrapolation for such a state.
         if (j < npre && (hlD(j) - 3.0*hlT(i) + 18.0) < opac_lR_lo_) {
@@ -1433,7 +1431,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   mlt_ramp_dn_ = pin->GetOrAddReal("problem", "mlt_ramp_down_time", 0.0);
   mlt_hold_ = pin->GetOrAddReal("problem", "mlt_hold_time", 0.0);
   mlt_x_thr_ = pin->GetOrAddReal("problem", "mlt_x_thr", 1.0e-4);
-  // problem/mlt_split_deposit: DEFAULT TRUE since 2026-09-22 (it was false).  See the
+  // problem/mlt_split_deposit (default true).  See the
   // declaration: with div F_conv inside the RK stages and div F_2s Strang-split, the
   // stages see a pressure error ~ dt div F_conv and a force dipole LINEAR in dt.  The
   // flag only has an effect where all three of problem/rt_strang, problem/mlt_alpha > 0
@@ -1719,7 +1717,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // above the domain, I_down = 0 at the top face.  The right boundary when the domain
     // top sits in optically thin gas (the He4 presupernova star: tau = 1e-2 at x1max),
     // and the box's production setting; here it was never read, so the mode-3 column,
-    // with rt_top_re forced off, always used the column model (2026-09-18).
+    // with rt_top_re forced off, always used the column model.
     ts::rt_top_vacuum = pin->GetOrAddBoolean("problem", "rt_top_vacuum", false);
     // see two_stream_rt.hpp, rt_layer_legacy: every layer used to span a whole
     // cell in optical depth but carry a source running between two cell CENTRES.
@@ -1749,7 +1747,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_semi_implicit = pin->GetOrAddBoolean("problem", "rt_semi_implicit", true);
     ts::rt_outer_verbose = pin->GetOrAddBoolean("problem", "rt_outer_verbose", false);
     ts::rt_impl_tol = pin->GetOrAddReal("problem", "rt_impl_tol", col3 ? 1.0e-8 : 1.0e-6);
-    // DEFAULT TRUE since 2026-09-22: the applied source is then the divergence of one
+    // Default true: the applied source is then the divergence of one
     // field and telescopes.  Consulted ONLY by the mode-3 column solve
     // (two_stream_rt.hpp, c3.ex_iter), so it is inert under rt_implicit_column = 0 --
     // verified bitwise on red_giant_column and red_giant_fofc.
@@ -2857,7 +2855,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // cancel.  (Both means verified numerically against 8e6 uniform directions.)
   const Real vrwamp = (nrw > 0)
                       ? sqrt(244.0/525.0)*vrandamp/sqrt(static_cast<Real>(nrw)) : 0.0;
-  // layoutaudit-1103 <problem>/vpert_global (read only when named; default false = the
+  // <problem>/vpert_global (read only when named; default false = the
   // old seed, bitwise): the structured seeds below are periodic over each MeshBlock's
   // OWN extent (x?lo..x?hi of the block), so the initial velocity pattern changes with
   // the MeshBlock layout (2x2 blocks per panel = twice the angular wavenumber).  true:
@@ -3225,7 +3223,7 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         // Same trap the sponge guards against (see "THE SPONGE RUNS BEFORE ConsToPrim"
         // below): the tabulated EOS takes log10(e), so a non-positive or non-finite
         // primitive energy returns NaN, src is NaN, and IM1 goes NaN while the density
-        // stays finite -- the prod11 death at t=3.2106e7.  w0(IEN) can be non-positive
+        // stays finite -- a production failure mode.  w0(IEN) can be non-positive
         // transiently here because the unclipped RT energy update precedes the floor.
         // Fall back to the background itself, p = (pl+pr)/2: with the cell pressure
         // taken as the background the curvature source reduces to the pure background
@@ -3792,19 +3790,20 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       }
     }
     mlt_fconv_ready_ = true;
-    if (!(mlt_split_dep_ && rt_strang_))
-    par_for("rg_mlt_div", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
-      Real div;
-      if (curv) {
-        div = (area1(m,k,j,i)*fconv(m,k,j,i) - area1(m,k,j,i+1)*fconv(m,k,j,i+1))
-              /volume(m,k,j,i);
-      } else {
-        div = (fconv(m,k,j,i) - fconv(m,k,j,i+1))/((x1hi - x1lo)/indcs.nx1);
-      }
-      u0(m,IEN,k,j,i) += bdt*div;
-    });
+    if (!(mlt_split_dep_ && rt_strang_)) {
+      par_for("rg_mlt_div", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
+        Real div;
+        if (curv) {
+          div = (area1(m,k,j,i)*fconv(m,k,j,i) - area1(m,k,j,i+1)*fconv(m,k,j,i+1))
+                /volume(m,k,j,i);
+        } else {
+          div = (fconv(m,k,j,i) - fconv(m,k,j,i+1))/((x1hi - x1lo)/indcs.nx1);
+        }
+        u0(m,IEN,k,j,i) += bdt*div;
+      });
+    }
     RGNanScan(pm, "MLT_flux_divergence");
   }
 
@@ -3903,53 +3902,54 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     KOKKOS_LAMBDA(const int m, Real &sEent, Real &sEprs) {
       if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
       for (int k=ks; k<=ke; ++k) {
-      for (int j=js; j<=je; ++j) {
-      const Real dr_ = x1f_r(m,is+1) - x1f_r(m,is);
-      Real r = u0(m,IDN,k,j,is);
-      const Real v1 = u0(m,IM1,k,j,is)/r, v2 = u0(m,IM2,k,j,is)/r;
-      const Real v3 = u0(m,IM3,k,j,is)/r;
-      const Real Ein = u0(m,IEN,k,j,is);
-      Real ei = u0(m,IEN,k,j,is) - 0.5*r*(v1*v1 + v2*v2 + v3*v3);
-      if (etotgrav) ei -= r*phicc(m,k,j,is);
-      Real es = ei/r;
-      Real P = eos.Pressure(r, ei);
-      Real g1 = eos.Gamma1(r, ei);
-      const Real cs = sqrt(g1*P/r);
-      if (v1 > 0.0) {
-        // the point on the adiabat through the base state AT THIS CELL'S PRESSURE; a
-        // fractional step toward it at constant pressure IS the entropy relaxation
-        const Real gad = GradAd(eos, gamma, rgas, p_base*punit_, t_base);
-        const Real T_ad = t_base*pow(P/p_base, gad);
-        const Real r_ad = DensFromPT(eos, rgas, P, T_ad);
-        if (r_ad > 0.0) {
-          const Real es_ad = EintFromDensT(eos, rgas, igm1, r_ad, T_ad)/r_ad;
-          const Real rlx = ccs*bdt*cs/dr_;
-          r  += rlx*(r_ad - r);
-          es += rlx*(es_ad - es);
+        for (int j=js; j<=je; ++j) {
+          const Real dr_ = x1f_r(m,is+1) - x1f_r(m,is);
+          Real r = u0(m,IDN,k,j,is);
+          const Real v1 = u0(m,IM1,k,j,is)/r, v2 = u0(m,IM2,k,j,is)/r;
+          const Real v3 = u0(m,IM3,k,j,is)/r;
+          const Real Ein = u0(m,IEN,k,j,is);
+          Real ei = u0(m,IEN,k,j,is) - 0.5*r*(v1*v1 + v2*v2 + v3*v3);
+          if (etotgrav) ei -= r*phicc(m,k,j,is);
+          Real es = ei/r;
+          Real P = eos.Pressure(r, ei);
+          Real g1 = eos.Gamma1(r, ei);
+          const Real cs = sqrt(g1*P/r);
+          if (v1 > 0.0) {
+            // the point on the adiabat through the base state AT THIS CELL'S PRESSURE; a
+            // fractional step toward it at constant pressure IS the entropy relaxation
+            const Real gad = GradAd(eos, gamma, rgas, p_base*punit_, t_base);
+            const Real T_ad = t_base*pow(P/p_base, gad);
+            const Real r_ad = DensFromPT(eos, rgas, P, T_ad);
+            if (r_ad > 0.0) {
+              const Real es_ad = EintFromDensT(eos, rgas, igm1, r_ad, T_ad)/r_ad;
+              const Real rlx = ccs*bdt*cs/dr_;
+              r  += rlx*(r_ad - r);
+              es += rlx*(es_ad - es);
+            }
+          }
+          {
+            Real Em = r*es + 0.5*r*(v1*v1 + v2*v2 + v3*v3);
+            if (etotgrav) Em += r*phicc(m,k,j,is);
+            sEent += (Em - Ein)*vol_(m,k,j,is)*eunit;
+            sEprs -= Em*vol_(m,k,j,is)*eunit;    // completed after the pressure damping
+          }
+          // damp pressure toward the shell mean, adiabatically
+          Real P1 = eos.Pressure(r, r*es);
+          Real g1p = eos.Gamma1(r, r*es);
+          const Real cs2 = g1p*P1/r;
+          const Real rlxp = ccp*bdt*sqrt(cs2)/dr_;
+          r  += rlxp*(1.0/cs2)*(meanP - P1);
+          es += rlxp*(1.0/(g1p*r))*(meanP - P1);
+          u0(m,IDN,k,j,is) = r;
+          u0(m,IM1,k,j,is) = r*v1;
+          u0(m,IM2,k,j,is) = r*v2;
+          u0(m,IM3,k,j,is) = r*v3;
+          Real E = r*es + 0.5*r*(v1*v1 + v2*v2 + v3*v3);
+          if (etotgrav) E += r*phicc(m,k,j,is);
+          u0(m,IEN,k,j,is) = E;
+          sEprs += E*vol_(m,k,j,is)*eunit;
         }
       }
-      {
-        Real Em = r*es + 0.5*r*(v1*v1 + v2*v2 + v3*v3);
-        if (etotgrav) Em += r*phicc(m,k,j,is);
-        sEent += (Em - Ein)*vol_(m,k,j,is)*eunit;
-        sEprs -= Em*vol_(m,k,j,is)*eunit;    // completed after the pressure damping
-      }
-      // damp pressure toward the shell mean, adiabatically
-      Real P1 = eos.Pressure(r, r*es);
-      Real g1p = eos.Gamma1(r, r*es);
-      const Real cs2 = g1p*P1/r;
-      const Real rlxp = ccp*bdt*sqrt(cs2)/dr_;
-      r  += rlxp*(1.0/cs2)*(meanP - P1);
-      es += rlxp*(1.0/(g1p*r))*(meanP - P1);
-      u0(m,IDN,k,j,is) = r;
-      u0(m,IM1,k,j,is) = r*v1;
-      u0(m,IM2,k,j,is) = r*v2;
-      u0(m,IM3,k,j,is) = r*v3;
-      Real E = r*es + 0.5*r*(v1*v1 + v2*v2 + v3*v3);
-      if (etotgrav) E += r*phicc(m,k,j,is);
-      u0(m,IEN,k,j,is) = E;
-      sEprs += E*vol_(m,k,j,is)*eunit;
-      }}
     }, dEent, dEprs);
     // Pass C: the shell means again, after those two steps
     Real srho2 = 0.0, srho2v = 0.0, sv = 0.0;
@@ -3980,25 +3980,26 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     KOKKOS_LAMBDA(const int m, Real &sEden) {
       if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
       for (int k=ks; k<=ke; ++k) {
-      for (int j=js; j<=je; ++j) {
-      const Real Ein = u0(m,IEN,k,j,is);
-      const Real r0 = u0(m,IDN,k,j,is);
-      const Real v1 = u0(m,IM1,k,j,is)/r0 - cvel;
-      const Real v2 = u0(m,IM2,k,j,is)/r0, v3 = u0(m,IM3,k,j,is)/r0;
-      Real ei = u0(m,IEN,k,j,is) - 0.5*r0*(SQR(u0(m,IM1,k,j,is)/r0) + v2*v2 + v3*v3);
-      if (etotgrav) ei -= r0*phicc(m,k,j,is);
-      const Real es = ei/r0;
-      const Real r = r0 + drho4;
-      if (!(r > 0.0)) continue;
-      u0(m,IDN,k,j,is) = r;
-      u0(m,IM1,k,j,is) = r*v1;
-      u0(m,IM2,k,j,is) = r*v2;
-      u0(m,IM3,k,j,is) = r*v3;
-      Real E = r*es + 0.5*r*(v1*v1 + v2*v2 + v3*v3);
-      if (etotgrav) E += r*phicc(m,k,j,is);
-      u0(m,IEN,k,j,is) = E;
-      sEden += (E - Ein)*vol_(m,k,j,is)*eunit;
-      }}
+        for (int j=js; j<=je; ++j) {
+          const Real Ein = u0(m,IEN,k,j,is);
+          const Real r0 = u0(m,IDN,k,j,is);
+          const Real v1 = u0(m,IM1,k,j,is)/r0 - cvel;
+          const Real v2 = u0(m,IM2,k,j,is)/r0, v3 = u0(m,IM3,k,j,is)/r0;
+          Real ei = u0(m,IEN,k,j,is) - 0.5*r0*(SQR(u0(m,IM1,k,j,is)/r0) + v2*v2 + v3*v3);
+          if (etotgrav) ei -= r0*phicc(m,k,j,is);
+          const Real es = ei/r0;
+          const Real r = r0 + drho4;
+          if (!(r > 0.0)) continue;
+          u0(m,IDN,k,j,is) = r;
+          u0(m,IM1,k,j,is) = r*v1;
+          u0(m,IM2,k,j,is) = r*v2;
+          u0(m,IM3,k,j,is) = r*v3;
+          Real E = r*es + 0.5*r*(v1*v1 + v2*v2 + v3*v3);
+          if (etotgrav) E += r*phicc(m,k,j,is);
+          u0(m,IEN,k,j,is) = E;
+          sEden += (E - Ein)*vol_(m,k,j,is)*eunit;
+        }
+      }
     }, dEden);
     // The report.  Rates over the interval since the last one, and the running totals,
     // both in units of L: the boundary is supposed to feed the star, so anything that
@@ -4393,7 +4394,7 @@ Real RgTotE(Mesh *pm) {
 // (c_s^2 = 4 e/(9 rho) radiation dominated, 10 e/(9 rho) for a gamma = 5/3 gas).  The
 // 1-D He4 column evacuates a cavity under the Fe bump (0.85-0.87 R, rho 4e-9 -> 1.6e-13
 // at T = 1.5e5 K); the EOS keeps LTE radiation pressure in a hot cell whatever its
-// density, so c_s = 4e9 cm/s there and dt falls from 17 s to 0.3 s (tests_r12/sd3).
+// density, so c_s = 4e9 cm/s there and dt falls from 17 s to 0.3 s.
 // The added mass is at rest and carries no energy (see the kernel).
 
 void RgCsCeiling(Mesh *pm) {
@@ -4424,7 +4425,7 @@ void RgCsCeiling(Mesh *pm) {
     if (d > 0.0 && d < dmin) {
       // the mass is added AT REST: momentum and total energy are kept, so the cell's
       // kinetic energy falls by d/dmin and the difference becomes heat.  Keeping the
-      // VELOCITY instead injected kinetic energy (tests_r12/cm_3.0e8: tot-E +40 %).
+      // VELOCITY instead injected kinetic energy (total energy +40 %).
       const Real dd = dmin - d;
       u0(m,IDN,k,j,i) = dmin;
       if (etotgrav) {
@@ -4532,7 +4533,7 @@ void RedGiantRTSplitBody(Mesh *pm, Real bdt) {
   // problem/mlt_split_deposit: div F_conv with the sweep's own dt (see the declaration),
   // BEFORE the sweep: the implicit column solve then starts from e + dt S, i.e. it is
   // backward Euler WITH the source, and a state with div F_2s + div F_conv = 0 is its
-  // fixed point.  Deposited after the sweep it is not (tests_r12/fs0: dipole 1.25x).
+  // fixed point.  Deposited after the sweep it is not (dipole 1.25x).
   if (mlt_split_dep_ && rt_strang_ && mlt_alpha_ > 0.0) {
     if (!mlt_fconv_ready_) {
       mlt_owed_ += bdt;

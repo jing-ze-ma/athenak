@@ -35,7 +35,7 @@
 #include "rad_m1/rad_m1_closure.hpp"
 
 namespace hydro {
-// share-1104 P6: <hydro>/dt_report and <hydro>/dt_report_npol (read only when named, in
+// P6: <hydro>/dt_report and <hydro>/dt_report_npol (read only when named, in
 // the Hydro constructor; -1 = not named).  The key wins; the env ATHENA_DT_REPORT /
 // ATHENA_DT_REPORT_NPOL stay as aliases (and <mhd>/dt_report takes the same env alias,
 // mhd_dtreport.cpp).  Diagnostics only: no state change.
@@ -67,7 +67,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   hloc.loc = -1;
   if (dt_diag.h_view.extent(0) == 0) Kokkos::realloc(dt_diag, ndtdiag);
 
-  // accpolar-1103: env ATHENA_DT_REPORT = N > 0 (diagnostic, no key): the report cycles
+  // env ATHENA_DT_REPORT = N > 0 (diagnostic, no key): the report cycles
   // also keep every cell's CFL dt (dt_cell) for the per-region minima (polar rows / rest)
   static int dtrep = -1;
   if (dtrep < 0) {
@@ -110,14 +110,14 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   auto &sncell_ = pmy_pack->pcoord->sin_cell;
   const bool multi_d_ = pmy_pack->pmesh->multi_d;
   const bool three_d_ = pmy_pack->pmesh->three_d;
-  // mrglat-1019: the merged cells' lateral CFL width is the GROUP width f dx2, f dx3
+  // the merged cells' lateral CFL width is the GROUP width f dx2, f dx3
   const bool mlat_ = (pmlat != nullptr && pmlat->on);
   DvceArray2D<int> mlfi_;
   if (mlat_) {
     pmlat->Build();
     mlfi_ = pmlat->fi;
   }
-  // ringavg-1029: the averaged polar rows' phi CFL width is the GROUP width N_j dx3
+  // the averaged polar rows' phi CFL width is the GROUP width N_j dx3
   const bool rav_ = (pravg != nullptr);
   DvceArray2D<Real> rnf_;
   if (rav_) rnf_ = pravg->nfac;
@@ -424,7 +424,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     dt_diag_valid = true;
   }
   dtnew_prev = dtnew;
-  // mrglat-1019 <hydro>/merge_lat_diag: the global gas M, E, P, L sums
+  // <hydro>/merge_lat_diag: the global gas M, E, P, L sums
   if (pmlat != nullptr && pmlat->diag_every > 0 &&
       (pmy_pack->pmesh->ncycle % pmlat->diag_every) == 0) {
     pmlat->Diag(u0, "h");
@@ -475,7 +475,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     MPI_Allreduce(MPI_IN_PLACE, &loc, 1, MPI_DOUBLE_INT, MPI_MINLOC, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, &dtg, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
 #endif
-    // accpolar-1103: the cell diagnostics for the global minimum and (sp) the minima of
+    // the cell diagnostics for the global minimum and (sp) the minima of
     // the polar rows (env ATHENA_DT_REPORT_NPOL rows from each pole, default 7; lines
     // DTREG polar) and of the rest (DTREG rest), each printed by its owning rank
     auto pmy_x2v_ = pmy_pack->pcoord->x2v;
@@ -510,7 +510,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         rl.val = std::numeric_limits<float>::max();
         rl.loc = -1;
         const int n2b = nx2, npl = npol;
-        Kokkos::parallel_reduce("HydroDtReg", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+        Kokkos::parallel_reduce("HydroDtReg",
+                                Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
         KOKKOS_LAMBDA(const int &idx, Kokkos::ValLocScalar<Real, int> &mr) {
           const int m = idx/nkji;
           const int k = (idx - m*nkji)/nji;
@@ -571,7 +572,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         Real h[3];
         if (curv) {
           h[0] = dx1_(m,k,j,i); h[1] = dx2_(m,k,j,i); h[2] = dx3_(m,k,j,i);
-          if (rav_) {h[2] *= rnf_(m,j);}   // accpolar-1103: the ring-avg group width
+          if (rav_) {h[2] *= rnf_(m,j);}   // the ring-avg group width
         } else {
           h[0] = mbsize.d_view(m).dx1; h[1] = mbsize.d_view(m).dx2;
           h[2] = mbsize.d_view(m).dx3;

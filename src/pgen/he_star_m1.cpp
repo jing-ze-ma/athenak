@@ -40,15 +40,15 @@
 //!     the previous history output;
 //!   * an optional multi-mode entropy/temperature seed (he_seed_nk, he_seed_rad,
 //!     he_seed_signs, he_seed_kdist).
-//!   * (n2seed-1022, USER "make that seed default") problem/he_seed_band = n2 (DEFAULT)
-//!     | old: n2 places the fresh-start seed where the initial column is most unstable
-//!     (Brunt-Vaisala N^2 < 0, gas + radiation, general EOS), real Y_lm with l from
-//!     pi r/H_p clipped to the grid, amplitude he_seed default 1e-3; old = the seed of
-//!     the keys as named (he_seed default 0), bitwise as before.  See HsN2Band().
-//!   * (hegiant-1006, problem/he_gm_column, default off) the gravity of the enclosed
+//!   * problem/he_seed_band = n2 (default) | old: n2 places the fresh-start seed where
+//!     the initial column is most unstable (Brunt-Vaisala N^2 < 0, gas + radiation,
+//!     general EOS), real Y_lm with l from pi r/H_p clipped to the grid, amplitude
+//!     he_seed default 1e-3; old = the seed of the keys as named (he_seed default 0),
+//!     bitwise as before.  See HsN2Band().
+//!   * problem/he_gm_column (default off): the gravity of the enclosed
 //!     mass of the initial column instead of the point mass: G m(r) = he_gm + G int 4 pi
 //!     r^2 rho_IC dr from r_in (he_gm = G m(r_in)), a static monopole frozen at t = 0.
-//!   * (hegiant-1006, problem/he_base_heat, default off) a wall inside a convective
+//!   * problem/he_base_heat (default off): a wall inside a convective
 //!     zone: the scaffold's wall-face convective luminosity is kept as a base heating
 //!     layer while the frozen scaffold is ramped off.
 //!
@@ -101,14 +101,15 @@
 #include "utils/repro_sum.hpp"
 #include "utils/recipe.hpp"
 
-// defaults-1002: <hydro>/fofc defaults to TRUE for this problem generator (every
+// <hydro>/fofc defaults to TRUE for this problem generator (every
 // stellar/box input ran it explicitly); see hydro::fofc_pgen_default (hydro.hpp).
-// merge-1008: <mhd>/fofc likewise (mhd::fofc_pgen_default, mhd.hpp).
+// <mhd>/fofc likewise (mhd::fofc_pgen_default, mhd.hpp).
 namespace {
 [[maybe_unused]] const bool kFofcPgenDefault = (hydro::fofc_pgen_default = true);
 [[maybe_unused]] const bool kMhdFofcPgenDefault = (mhd::fofc_pgen_default = true);
-// amdef-1019: this pgen fills the potential and carries rho*Phi (both gravity modes need
-// <hydro>/etotgrav = true): the new etotgrav default applies (hydro::etotgrav_pgen_default)
+// this pgen fills the potential and carries rho*Phi (both gravity modes need
+// <hydro>/etotgrav = true): the new etotgrav default applies
+// (hydro::etotgrav_pgen_default)
 [[maybe_unused]] const bool kEtgPgenDefault = (hydro::etotgrav_pgen_default = true);
 [[maybe_unused]] const bool kMhdEtgPgenDefault = (mhd::etotgrav_pgen_default = true);
 }  // namespace
@@ -119,7 +120,7 @@ DvceArray1D<Real> hs_rho_, hs_eint_;
 Real hs_rlo_ = 0.0, hs_dr_ = 1.0;
 int hs_nf_ = 0;
 Real hs_gm_ = 0.0, hs_rin_ = 1.0, hs_rint_ = 0.0, hs_fin_ = 0.0;
-// hegiant-1006: problem/he_gm_column (read only when named, default false = the point
+// problem/he_gm_column (read only when named, default false = the point
 // mass GM = he_gm, bit for bit): the gravity of the ENCLOSED MASS of the initial column,
 // G m(r) = he_gm + G int_{r_in}^{r} 4 pi r'^2 rho_IC dr' (he_gm = G m(r_in), the mass
 // inside the wall), FROZEN at t = 0 (a static monopole, rebuilt from he_ic_file on every
@@ -127,7 +128,7 @@ Real hs_gm_ = 0.0, hs_rin_ = 1.0, hs_rint_ = 0.0, hs_fin_ = 0.0;
 // uniform fine grid of the column (hs_rlo_, hs_dr_, hs_nf_).
 bool hs_gmc_ = false;
 DvceArray1D<Real> hs_phig_, hs_gmr_;
-// hegiant-1006: problem/he_base_heat [cm] (read only when named, default none): the wall
+// problem/he_base_heat [cm] (read only when named, default none): the wall
 // lies inside a CONVECTIVE zone, so the frozen MLT scaffold's wall-face flux F_MLT(r_in)
 // is the convective luminosity entering the domain.  While the scaffold is ramped off
 // (mlt_ramp_start/_time, weight w) that luminosity is kept as a BASE HEATING layer: the
@@ -139,12 +140,12 @@ Real hs_bheat_ = 0.0;
 DvceArray1D<Real> hs_fb_;
 Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
 bool hs_zflux_ = true;
-// hewbrmax-1107 problem/he_wb_grav_window (read only when named, default false): the x1
+// problem/he_wb_grav_window (read only when named, default false): the x1
 // WB gravity source honours the fluid's wb_rmax / wb_phimax window -- the cells
 // the reconstruction treats as plain (Hydro::wb_rmax) take the isodensity walk
 // p -/+ rho dPhi_wb instead of the cached hydrostatic walk (see HeStarGravity)
 bool hs_wbwin_ = false;
-// fsanchor-1009 problem/he_clump (TEST, read only when named, default false): a cold
+// problem/he_clump (TEST, read only when named, default false): a cold
 // opaque sphere of gas held fixed (rho, T, v = 0) at every stage, the absorber of the
 // shadow test in the production geometry; (r, theta, phi) centre, radius (code units)
 bool hs_cl_on_ = false;
@@ -153,7 +154,7 @@ Real hs_cl_d_ = 0.0, hs_cl_e_ = 0.0;
 // he-wind-bc: problem/he_bc_inner = inflow (hs_binf_) and he_bc_outer = outflow
 // (hs_bout_); defaults wall / noinflow = the he-presn-m1 behaviour
 bool hs_binf_ = false, hs_bout_ = false;
-// hg262-drive-1113: the initial column's rho, eint at r_in (scales of the table ghosts)
+// the initial column's rho, eint at r_in (scales of the table ghosts)
 Real hs_drv_d0_ = 1.0, hs_drv_e0_ = 1.0;
 // bsg-arm2: problem/he_bc_outer = hse (hs_bhse_): the top ghosts are the HYDROSTATIC
 // continuation of the last active cell (HeStarBC); he_bc_hse_gmax clamps the Eddington
@@ -174,13 +175,13 @@ Real hs_bhse_gmax_ = 0.9, hs_sp_dmax_ = 0.0;
 // of the ONE MeshBlock along x1; every block has the same radial grid)
 bool hs_bal_ = false;
 DvceArray1D<Real> hs_bd_, hs_be_;
-// reatm-1011 problem/he_ic_rad_atm_post (HeStarIcPost): the thin atmosphere's first
+// problem/he_ic_rad_atm_post (HeStarIcPost): the thin atmosphere's first
 // mesh cell above R_ph (x1 index incl. ghosts) and the column's floor density
 bool hs_atp_ = false;
 ParameterInput *hs_pin_ = nullptr;   // the run's input (HeStarIcPost records a_ref)
 int hs_atp_ia_ = -1;
 Real hs_atp_dfl_ = 0.0;
-// bsg-truerepro-1008 (Ma, Bildsten & Jiang 2026 setup, all three default off):
+// (Ma, Bildsten & Jiang 2026 setup, all three default off):
 // problem/he_gravity = pointmass (hs_pm_): NO well-balanced pair; the point-mass momentum
 //   source in the Athena++ form rho GM <1/r>_vol/x1v (etotgrav keeps the energy);
 // problem/he_bc_inner = zerocontact (hs_bzc_): every inner ghost holds the UNSCALED
@@ -189,7 +190,7 @@ Real hs_atp_dfl_ = 0.0;
 // problem/he_bc_outer = copy (hs_bcopy_): the edge cell's rho, eint, v_t copied,
 //   v_r copied where it points out and 0 where it points in.
 bool hs_pm_ = false, hs_bzc_ = false, hs_bcopy_ = false;
-// linhao-prod-1104 problem/he_bc_outer_r2 (read only when named; default false = bitwise;
+// problem/he_bc_outer_r2 (read only when named; default false = bitwise;
 // needs he_bc_outer = copy): L. Ma bsg_star.cpp Outflow_X1 exactly: edge v_r < 0 -> rho
 // copied, v_r = 0; else (v_r >= 0) ghost rho = previous ghost rho (r_{g-1}/r_g)^2 and v_r
 // copied; P (here eint, ideal gas) and v_t copied in both branches
@@ -211,12 +212,12 @@ DvceArray1D<Real> hs_fm_;
 // ramp, w = 1 always); hs_mw_ = the w now in <rad_m1>/esrc; hs_lmx_ = max over the x1
 // faces of the UNSCALED L_MLT = F_MLT r^2 Omega (the wedge's solid angle)
 Real hs_mrs_ = -1.0, hs_mrt_ = 0.0, hs_mw_ = 1.0, hs_lmx_ = 0.0;
-// n2ramp-1022: mlt_ramp_start/_time = auto (default) resolved from the IC column's
+// mlt_ramp_start/_time = auto (default) resolved from the IC column's
 // convective growth rates at the fresh start; hs_mr_store_ = the two numbers travel in
 // the restart file (trailer kHsRmpTag, the LAST one: start, time, tag)
 bool hs_mr_store_ = false;
 constexpr char kHsRmpTag[8] = {'H', 'S', 'R', 'A', 'M', 'P', '0', '1'};
-// n2seed-1022: the IC column's per-cell N^2 profile (HsN2Compute), computed once
+// the IC column's per-cell N^2 profile (HsN2Compute), computed once
 struct HsN2Col {
   bool done = false;
   int is = 0, iex = -1, ipk = 0, iu0 = 0, iu1 = 0, nu = 0;
@@ -236,14 +237,14 @@ Real hs_esc_ = 0.0, hs_esrmx_ = 0.0;
 // (F_MLT > 0) with its edges tapered.  F_sub(t=0) = F_MLT of the IC.  hs_fsub_ and the
 // update clock hs_ad_tl_ are RESTART STATE (the pgen block of pgen.hpp).
 bool hs_ad_ = false;
-// mltp-1017 problem/mlt_closure = pressure (opt-in): the same F_sub machinery (restart
+// problem/mlt_closure = pressure (opt-in): the same F_sub machinery (restart
 // state, relaxation over mlt_relax_time, every mlt_closure_every cycles), but the target
-// is the IC's F_MLT/F as a function of the SHELL-MEAN total pressure, F_sub = fm_IC(P_face)
-// x F_tot,IC(face) with F_tot,IC = L/(4 pi r^2) of the IC: the scaffold is frozen in P
-// instead of r and moves with the envelope.  hs_plnp_/hs_pfm_: ln P_tot, fm of the IC
-// (ascending in ln P), hs_ftot_: F_r + F_MLT of the IC on the faces.
+// is the IC's F_MLT/F as a function of the SHELL-MEAN total pressure, F_sub =
+// fm_IC(P_face) x F_tot,IC(face) with F_tot,IC = L/(4 pi r^2) of the IC: the scaffold is
+// frozen in P instead of r and moves with the envelope.  hs_plnp_/hs_pfm_: ln P_tot, fm
+// of the IC (ascending in ln P), hs_ftot_: F_r + F_MLT of the IC on the faces.
 bool hs_adp_ = false;
-// speedup-1109 problem/hs_ad_dead_skip (read only when named; prod-1110 default true;
+// problem/hs_ad_dead_skip (read only when named; default true;
 // bitwise):
 // under mesh/layout_invariant the per-shell serial sums of HsAdaptiveUpdate (a thread per
 // radial index over every column, with the EOS pressure) are overwritten by the
@@ -260,12 +261,12 @@ std::vector<Real> hs_tap_, hs_r2o_;
 char hs_ad_file_[1024] = {0};
 // Picard counters at the previous history output (HeStarHist)
 Real hs_pic_n0_ = 0.0, hs_pic_s0_ = 0.0;
-// rotavg-rst-1012: the open Picard window travels in the pgen restart block as a tagged
+// the open Picard window travels in the pgen restart block as a tagged
 // trailer (tag, solves, passes since the last history output), so the first user.hst row
 // after a restart is the continuous run's
 constexpr char kHsPicTag[8] = {'H', 'S', 'P', 'I', 'C', 'W', '0', '1'};
 Mesh *hs_mesh_ = nullptr;   // the mesh (HsAdaptiveRstWrite: the rad_m1 counters)
-// dic-1013 problem/he_ic_equil (HeStarIcEquil; read only when named, default false =
+// problem/he_ic_equil (HeStarIcEquil; read only when named, default false =
 // nothing): the discrete equilibrium of the initial state on the code's own operators.
 // hs_eq_ on; hs_eq_it_ the hook calls so far; hs_eq_dfl_ the column's floor density;
 // hs_eq_a_ a_ref of the active cells is..ie (the restart trailer kHsDicTag); hs_sfac_ the
@@ -311,7 +312,7 @@ Real HsLinInterp(const DvceArray1D<Real> &a, const Real rlo, const Real dr, cons
   return (1.0 - w)*a(i) + w*a(i+1);
 }
 
-//! bsglinhao-1014 (problem/he_ic_linhao): a uniform deviate U in [0, 1) that depends only
+//! (problem/he_ic_linhao): a uniform deviate U in [0, 1) that depends only
 //! on the GLOBAL cell index (and the key's seed): splitmix64 of the index.  Identical on
 //! every layout, device and site (the per-block srand(gid)/rand() stream of the Athena++
 //! pgen cannot be reproduced; only its statistics are).
@@ -413,7 +414,7 @@ void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
 }
 
 //----------------------------------------------------------------------------------------
-// icgen-1011 (problem/he_ic_rad = sph1d): helpers of the 1-D spherical grey
+// (problem/he_ic_rad = sph1d): helpers of the 1-D spherical grey
 // radiative-equilibrium solve of the initial column (see HeStarM1)
 
 // kappa_t = of + os (the total, = kappa_R: the vet_col/vet_gd extinction and the pgen's
@@ -524,7 +525,7 @@ void HsSph1dPass(const std::vector<Real> &rg, const std::vector<Real> &chi,
 }  // namespace
 
 namespace {
-//! cs-port-1016: the kinetic energy of a cell from the CONSERVED momenta.  On the cubed
+//! the kinetic energy of a cell from the CONSERVED momenta.  On the cubed
 //! sphere the transverse momenta are COVARIANT on the panel basis (angle cos c between
 //! e_xi and e_eta), so KE = (m1^2 + (m2^2 + m3^2 - 2 c m2 m3)/(1 - c^2))/(2 d); the plain
 //! sum of squares (the sp/Cartesian form, kept textually below) is wrong by the cross
@@ -560,16 +561,16 @@ bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Rea
               const Real ppw, const int lcap, Real &rlo, Real &rhi, int &lmin, int &lmax);
 Real HsN2Median(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar);
 }  // namespace
-// posfix-amvec-1022: the L budget history of pgen/tests/rad_m1_tests2.cpp (am_hist)
+// the L budget history of pgen/tests/rad_m1_tests2.cpp (am_hist)
 void RadM1AmHistory(HistoryData *pdata, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::UserProblem()
 //! \brief see the file header.
 
-void HsStripBackground(ParameterInput *pin, Mesh *pm);   // stripbg-1102 (he_strip_bg.cpp)
-void HsRestartPerturb(ParameterInput *pin, Mesh *pm);    // rstpert-1105 (he_strip_bg.cpp)
-void HsEosReinitFromT(ParameterInput *pin, Mesh *pm);    // eosreinit-1112 (he_strip_bg.cpp)
+void HsStripBackground(ParameterInput *pin, Mesh *pm);   // (he_strip_bg.cpp)
+void HsRestartPerturb(ParameterInput *pin, Mesh *pm);    // (he_strip_bg.cpp)
+void HsEosReinitFromT(ParameterInput *pin, Mesh *pm);    // (he_strip_bg.cpp)
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
@@ -613,7 +614,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_pm_ = (hg == "pointmass");
   }
   if (hs_pm_) {
-    // bsg-truerepro-1008: plain (not well-balanced) hydro with the full M1 force
+    // plain (not well-balanced) hydro with the full M1 force
     if (wbdyn || !etg) {
       HsFatal("problem/he_gravity = pointmass needs <hydro>/etotgrav = true and "
               "wellbalance_dynamic = false", __LINE__);
@@ -733,7 +734,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the two interpolants (agcar/geos B: 5.8e-6, vs 4.6e-7 for the ideal gas); E = aT^4 of
   // the file is then out of equilibrium with the gas by 4x that.  With this key the
   // code's T equals the column T to round-off (the log-linear resampling aside).
-  // defaults-1009 (user 10-09): default true on a fresh run whose file carries the T
+  // (user 10-09): default true on a fresh run whose file carries the T
   // column (he_ic_cols = 5 and >= 7 columns on its first data line); otherwise (4-column
   // files, a restart whose file lacks the key) the old default false.  Recorded.
   bool eft_def = false;
@@ -896,7 +897,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
-  // ---- icgen-1011 problem/he_ic_rad (file = the old IC; the default is set below).
+  // ---- problem/he_ic_rad (file = the old IC; the default is set below).
   // sph1d: above the depth tau_R = he_ic_rad_taub (from the mesh top, the run's
   // own kappa_t), the radiation energy density of the column is replaced by the solution
   // of the 1-D spherical grey transfer problem in radiative equilibrium (S = J = E, the
@@ -918,7 +919,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // device opacities) and rebuilt on every start, as the column itself.
   // he_ic_rad_dump = <file>: rank 0 writes the new column in the IC file format (r rho
   // eint F_r E T fmlt; usable with he_ic_rad = file; none = no dump).  NOTE-icgen.md.
-  // prodfinal-1011: DEFAULT sph1d (with he_ic_rad_gas = re_atm, he_ic_rad_hse = true) on
+  // DEFAULT sph1d (with he_ic_rad_gas = re_atm, he_ic_rad_hse = true) on
   // a FRESH start of every he_star_m1 run where it applies: opacity = table, no
   // he_wind_ic, he_ic_rad_thin not set.  Elsewhere the default stays file (the old IC),
   // silently.  A restart whose file lacks the key keeps file (the column is rebuilt on
@@ -926,7 +927,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // (later restarts keep it); explicit input overrides.  To keep the old IC on a fresh
   // start name problem/he_ic_rad = file (and rad_m1/ic_rad = none for the old radiation
   // start).
-  // reatm-1011 (he_ic_rad_atm_force = module): the factor phi = a_module/a_continuum of
+  // (he_ic_rad_atm_force = module): the factor phi = a_module/a_continuum of
   // the radiative acceleration of each mesh cell of the thin atmosphere (hatm_c, index
   // = the x1 cell index of block 0 incl. ghosts) and on the fine grid (hatm_f); 1 (and
   // unused) elsewhere / when off
@@ -954,7 +955,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real dtau0 = pin->GetOrAddReal("problem","he_ic_rad_dtau",0.05);
     const Real dlnr = pin->GetOrAddReal("problem","he_ic_rad_dlnr",2.0e-3);
     const int ncore = pin->GetOrAddInteger("problem","he_ic_rad_ncore",64);
-    // prodfinal-1011: fresh-start defaults re_atm + hse (the recommended IC, NOTE-icgen);
+    // fresh-start defaults re_atm + hse (the recommended IC, NOTE-icgen);
     // a restart whose file lacks the keys keeps column / false
     const bool icgdef = !global_variable::restart_run;
     const std::string gasm = pin->GetOrAddString("problem","he_ic_rad_gas",
@@ -963,13 +964,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const int maxit = pin->GetOrAddInteger("problem","he_ic_rad_maxit",60);
     const Real tol = pin->GetOrAddReal("problem","he_ic_rad_tol",1.0e-8);
     const Real htol = pin->GetOrAddReal("problem","he_ic_rad_hse_tol",1.0e-6);
-    // hsefix-1011 (NOTE-hsefix): the HSE outer loop on a near-Eddington column.
+    // (NOTE-hsefix): the HSE outer loop on a near-Eddington column.
     // (1) Gamma = kt F/(c g) of the HSE march is clamped at he_ic_rad_hse_gmax (as
     //     he_bc_hse_gmax).  Where Gamma > 1 (AG Car B: the kappa rise at T 20-25 kK, tau
     //     0.5-3 just below R_ph, Gamma 1.3; the file column has a density inversion
     //     there) the fixed-T march makes rho grow outward, kappa_t(rho) grows with it and
-    //     the E-solve <-> HSE loop ran away (rho overflowed, the solve grid became NaN and
-    //     the VET pass failed).  Clamped cells keep a net outward force (Gamma - gmax) g.
+    //     the E-solve <-> HSE loop ran away (rho overflowed, the solve grid became NaN
+    // and the VET pass failed).  Clamped cells keep a net outward force (Gamma - gmax) g.
     // (2) At the first rise of the outer residual max |dln rho| the update is damped,
     //     ln rho <- (1 - w) ln rho + w ln rho_HSE, w = he_ic_rad_hse_damp, from then on.
     // (3) The outer loop has its own limit he_ic_rad_hse_maxit (was he_ic_rad_maxit) and
@@ -1204,7 +1205,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       ftau();
       if (dlr < htol) break;
     }
-    // reatm-1011 problem/he_ic_rad_atm_force = module | continuum (needs hse and gas =
+    // problem/he_ic_rad_atm_force = module | continuum (needs hse and gas =
     // re_atm; default continuum = bitwise the old IC; recorded).  In the optically thin
     // atmosphere above R_ph the flux is fixed by the luminosity (F0 = L/(4 pi r^2) to
     // 3e-4 after ic_rad, measured) and <rad_m1> gives cell i the force
@@ -1531,7 +1532,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
-  // dic-1013 problem/he_ic_equil (read only when named; default false = nothing): see
+  // problem/he_ic_equil (read only when named; default false = nothing): see
   // HeStarIcEquil.  Its floor density is the column's minimum (the sph1d floor)
   hs_eq_ = pin->DoesParameterExist("problem","he_ic_equil") &&
            pin->GetBoolean("problem","he_ic_equil");
@@ -1648,7 +1649,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // tau from the top face, r_int (tau = he_tau_int), Phi_eff = Phi - int a_ref dr
   std::vector<Real> tau(nf, 0.0), aref(nf), cum(nf, 0.0);
   for (int n=0; n<nf; ++n) aref[n] = hkt(n)*hF[n]/cl;
-  // reatm-1011: the module form in the thin atmosphere (hatm_f = 1 elsewhere: bitwise)
+  // the module form in the thin atmosphere (hatm_f = 1 elsewhere: bitwise)
   if (hatm_on) {
     for (int n=0; n<nf; ++n) aref[n] *= hatm_f[n];
   }
@@ -1664,7 +1665,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       break;
     }
   }
-  // fixbundle-1009 F7 problem/he_ic_rad_thin (default false = bitwise): the initial
+  // F7 problem/he_ic_rad_thin (default false = bitwise): the initial
   // radiation above the photosphere (tau_R < 2/3 from the mesh top, this column) is the
   // uniformly bright sphere's, E = F_r/(c f), f = (1 + mu_c)/2, mu_c = sqrt(1 -
   // (R_ph/r)^2), instead of the column's a T^4; F_r is the column's own (= L/(4 pi r^2)
@@ -1839,7 +1840,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       aref_d(m,k,j,i) = 0.5*kt*(HsLinInterp(cF, rlo, dr, nf, rl)
                                 + HsLinInterp(cF, rlo, dr, nf, rr))/cl;
     });
-    // reatm-1011 (he_ic_rad_atm_force = module): the thin-atmosphere cells take the
+    // (he_ic_rad_atm_force = module): the thin-atmosphere cells take the
     // module's face-mean form, phi times the continuum value (phi = 1 elsewhere)
     if (hatm_on) {
       DvceArray1D<Real> aphi("hs_aphi", n1m1+1);
@@ -2132,7 +2133,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
-  // ---- reatm-1011: a RESTART of a run whose fresh start re-balanced the atmosphere
+  // ---- a RESTART of a run whose fresh start re-balanced the atmosphere
   // (HeStarIcPost) applies the a_ref it recorded in the input, and the Phi_eff rebuilt
   // from it above the face x1f(ia), exactly as the fresh start did
   if (restart && pin->DoesParameterExist("problem","he_ic_rad_atm_na")) {
@@ -2288,11 +2289,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (hs_mrs_ >= 0.0 && !hs_mlt_) {
     HsFatal("problem/mlt_ramp_start >= 0 needs problem/mlt_flux_frozen = true", __LINE__);
   }
-  // rotavg-rst-1012: the Picard window trailer of the pgen restart block (stripped here,
+  // the Picard window trailer of the pgen restart block (stripped here,
   // so the adaptive state below reads the block as before); the rad_m1 counters restart
   // at 0, so the window base is minus the open window's sums
   hs_mesh_ = pmy_mesh_;
-  // e1remap-1014 problem/he_ic_remap_file (read only when named; absent = nothing,
+  // problem/he_ic_remap_file (read only when named; absent = nothing,
   // bitwise the old code): a FRESH start whose state is a remapped restart of another
   // run (tools: remap_e1w.py).  The file carries the parent's time, its pgen restart
   // block (Picard window + the he_ic_equil a_ref trailer, applied below exactly as a
@@ -2354,12 +2355,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << ", pgen block " << npg << " bytes (remapped fresh start)" << std::endl;
     }
   }
-  // n2ramp-1022 (USER 10-22 via Caltech TASK fbe76481): both keys default to auto.  A
-  // number (as before) is used as given, mlt_ramp_start = -1 = no ramp.  auto on a FRESH
-  // start (mlt_flux_frozen only, else no ramp), rule v2 (USER 10-22, Caltech TASK
-  // ramp-rule-v2, supersedes v1 7/sigma_max + median): start = 0, time = the convective
-  // saturation time t_sat = mlt_ramp_nefold/(mlt_ramp_sigma_frac sigma_max) (defaults
-  // 10.5 = ln(v_MLT/v_seed), measured on the Caltech RSG E run, and 0.61 = sigma_eff/
+  // Both keys default to auto.  A number is used as given, mlt_ramp_start = -1 = no ramp.
+  // auto on a FRESH start (mlt_flux_frozen only, else no ramp): start = 0, time = the
+  // convective saturation time t_sat = mlt_ramp_nefold/(mlt_ramp_sigma_frac sigma_max)
+  // (defaults 10.5 = ln(v_MLT/v_seed), measured on the Caltech RSG E run, and 0.61 =
+  // sigma_eff/
   // sigma_max: Caltech's measured RSG E e-fold ~10 d at 0.995 R_ph against THIS code's
   // sigma_max (G m(r) gravity, code cells; 1/6.11 d); their 0.74 was against a fixed-GM
   // sigma_max (1/7.35 d); read only when a ramp key is auto), sigma_max from the IC
@@ -2370,7 +2370,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // restart reuses (never recomputed).  A restart (or he_ic_remap_file start) with auto
   // and no stored numbers keeps NO ramp (an old restart file carries the old binary's
   // explicit default -1 anyway).
-  // hg262-drive-1113: the drive's trailer is the LAST one: strip it first (he_drive.cpp)
+  // the drive's trailer is the LAST one: strip it first (he_drive.cpp)
   if (restart || hs_rmp) {hsdrive::RestartStrip(&pgen_rststate);}
   {
     const std::string ms = pin->GetOrAddString("problem","mlt_ramp_start","auto");
@@ -2449,7 +2449,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
   }
-  // dic-1013 (he_ic_equil): the equilibrium's a_ref of the active cells travels in the
+  // (he_ic_equil): the equilibrium's a_ref of the active cells travels in the
   // pgen restart block as the LAST tagged trailer (a_ref..., Real n, tag); a restart
   // re-applies it with the Phi_eff rebuilt from it above the face x1f(is), exactly as the
   // fresh start's HeStarIcEquil left them (stripped here, before the Picard trailer)
@@ -2467,7 +2467,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pm1->lbath_rst = true;
     }
   }
-  // (e1remap-1014: also from a he_ic_remap_file's copy of the parent's block)
+  // (also from a he_ic_remap_file's copy of the parent's block)
   if (restart || hs_rmp) {
     auto &blk = pgen_rststate;
     const std::size_t nt = sizeof(kHsDicTag) + sizeof(Real);
@@ -2490,7 +2490,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       HsAtmPhiEff(indcs.is, indcs.ie, hs_eq_a_, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
       HsAtmWrite(pmbp, indcs.is, hs_eq_a_, pc, pf);
       if (global_variable::my_rank == 0) {
-        std::cout << "he_star_m1: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the "
+        std::cout
+            << "he_star_m1: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the "
                   << "fresh start's equilibrium (restart trailer)" << std::endl;
       }
     } else if (hs_eq_) {
@@ -2502,17 +2503,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     auto &blk = pgen_rststate;
     const std::size_t nt = sizeof(kHsPicTag) + 2*sizeof(Real);
     if (blk.size() >= nt &&
-        std::memcmp(blk.data() + blk.size() - nt, &(kHsPicTag[0]), sizeof(kHsPicTag)) == 0) {
+        std::memcmp(blk.data() + blk.size() - nt, &(kHsPicTag[0]),
+                    sizeof(kHsPicTag)) == 0) {
       Real w[2];
       std::memcpy(&(w[0]), blk.data() + blk.size() - 2*sizeof(Real), 2*sizeof(Real));
-      // e1remap-1014: a remapped start opens a new window (the trailer is only stripped)
+      // a remapped start opens a new window (the trailer is only stripped)
       if (restart) {
         hs_pic_n0_ = -w[0];
         hs_pic_s0_ = -w[1];
       }
       blk.resize(blk.size() - nt);
     }
-    // relax-1108: an adaptive-closure remap keeps the adaptive state at the block's
+    // an adaptive-closure remap keeps the adaptive state at the block's
     // front (read below as a restart reads it); anything else left is refused
     const bool rmp_ad = hs_rmp && (pin->GetOrAddString("problem","mlt_closure",
                                                        "frozen") != "frozen");
@@ -2531,11 +2533,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_ad_ = (mc == "adaptive" || mc == "pressure");
     hs_adp_ = (mc == "pressure");
   }
-  // prod-1110: hs_ad_dead_skip DEFAULT true (acts only under mesh/layout_invariant;
-  // bitwise); name false for prod-1109
+  // problem/hs_ad_dead_skip (default true; acts only under mesh/layout_invariant)
   hs_ad_dskip_ = true;
   if (pin->DoesParameterExist("problem","hs_ad_dead_skip")) {
-    hs_ad_dskip_ = pin->GetBoolean("problem","hs_ad_dead_skip");   // speedup-1109
+    hs_ad_dskip_ = pin->GetBoolean("problem","hs_ad_dead_skip");
   }
   if (hs_ad_) {
     if (!hs_mlt_) {
@@ -2557,8 +2558,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Kokkos::deep_copy(hs_fsub_, hs_fm_);
     Kokkos::realloc(hs_shs_, nfc, 8);
     if (hs_adp_) {
-      // the IC's F_MLT/F against ln P_tot (P_gas(rho, T) + E/3 of the start-up column, the
-      // fine grid between x1min and x1max), and F_tot = F_r/(1 - fm) on the faces
+      // the IC's F_MLT/F against ln P_tot (P_gas(rho, T) + E/3 of the start-up column,
+      // the fine grid between x1min and x1max), and F_tot = F_r/(1 - fm) on the faces
       if (!tcol_read) {
         HsFatal("problem/mlt_closure = pressure needs the 7-column file", __LINE__);
       }
@@ -2598,7 +2599,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     hs_ad_tl_ = pmy_mesh_->time;
     hs_ad_cyc_ = -1;
-    // relax-1108: a he_ic_remap_file start takes F_sub from the file's adaptive state
+    // a he_ic_remap_file start takes F_sub from the file's adaptive state
     // (the parent's), and its update clock restarts at this start's time
     if (restart || hs_rmp) {
       const auto &blk = pgen_rststate;
@@ -2656,8 +2657,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // top sponge (default off) and hooks
   hs_zflux_ = pin->GetOrAddBoolean("problem","he_wall_zero_flux",true);
-  // prod-1108 (USER 11-08 "make some defaults"): DEFAULT true (was false); window keys
-  // absent it is bitwise the plain branch; recipe none keeps false
+  // default true; with the window keys absent it is bitwise the plain branch; recipe
+  // none keeps false
   hs_wbwin_ = recipe::GetMode(pin) != recipe::Mode::none;
   if (pin->DoesParameterExist("problem","he_wb_grav_window")) {
     hs_wbwin_ = pin->GetBoolean("problem","he_wb_grav_window");
@@ -2696,7 +2697,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     if (hs_bzc_) {
-      // bsg-truerepro-1008: the root find replays the plain (non-WB) spherical-polar
+      // the root find replays the plain (non-WB) spherical-polar
       // PLM (Hydro::PLM_nonuniform) and the ideal-gas HLLC contact speed
       auto *phy = pmbp->phydro;
       if (phy->use_wellbalance_dynamic || phy->rsolver_method != Hydro_RSolver::hllc ||
@@ -2715,9 +2716,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (hs_lbc_) {
       if (!hs_bzc_ || hcs || pm1->ibc_x1min != radm1::M1_IBC_FLUX ||
           pm1->f0x1.extent_int(0) == 0) {
-        HsFatal("problem/he_bc_linhao needs he_bc_inner = zerocontact, the spherical-polar "
-                "wedge and the implicit rad_m1 transport with implicit_bc_x1min = flux "
-                "(its flux is not used)", __LINE__);
+        HsFatal("problem/he_bc_linhao needs he_bc_inner = zerocontact, the "
+                "spherical-polar wedge and the implicit rad_m1 transport with "
+                "implicit_bc_x1min = flux (its flux is not used)", __LINE__);
       }
       if (pmbp->punit != nullptr && (std::fabs(pmbp->punit->length_cgs() - 1.0) > 1.0e-12
           || std::fabs(pmbp->punit->density_cgs() - 1.0) > 1.0e-12)) {
@@ -2779,11 +2780,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       lb.sync_device();
       hs_lbc_d_ = lb.d_view;
       pm1->impl_lbath = true;
-      // linhao-prod-1104 problem/he_bc_linhao_rad = interior (default: the interior face
+      // problem/he_bc_linhao_rad = interior (default: the interior face
       // formula with the ghost state, bitwise) | halfrange: his DO upwind face with the
       // half-range ghost intensities (bsg_star.cpp Inflow_rad_X1 cpp:969-1034).
-      // Derivation (E units, sum_all w = 1, his I+- = 0.5 (E/A +- (F/c)/B), A = sum_{mu>0}
-      // w = 1/2, B = sum_{mu>0} mu w = <mu>_+/2):
+      // Derivation (E units, sum_all w = 1, his I+- = 0.5 (E/A +- (F/c)/B), A =
+      // sum_{mu>0} w = 1/2, B = sum_{mu>0} mu w = <mu>_+/2):
       //   F_face/c = sum_{mu>0} w mu I+_ghost + sum_{mu<0} w mu I-_cell
       //            = B I+_g - B I-_is = 0.5 [(E_g - E_is) <mu>_+ + (F_g + F_is)/c]
       //   (the P_rr face flux 0.5 <mu^2>_+ [(E_g + E_is) + (F_g - F_is)/(c <mu>_+)] has
@@ -2804,16 +2805,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                              0.5063576644955016);
           const Real heg = lb.h_view(0,0,2), hfg = lb.h_view(0,0,3);
           pm1->impl_lbath_hr = true;
-          // the E-jump (dissipative) part of his DO face flux: modified HLLE (Jiang 2014/2021),
-          // s = (1 - e^-x)/x, x = tau2: (alpha tau_c)^2/2 (default; the Athena++ form as we
-          // read it) | tau: alpha tau_c | upwind: s = 1 (pure upwind, unstable at tau_c ~ 1e5)
-          // athena (default): the stock Athena++ implicit DO HLLE taufactor (tau_scheme 1),
-          // alpha = <radiation>/taucell (Athena++ default 5; his athinput not available),
-          // tau_c = alpha (kappa_T dx of ghost 1 + kappa_T dx of the first cell)
-          const std::string dm = pin->GetOrAddString("problem","he_bc_linhao_diss","athena");
-          // none (user 11-04, the production choice): no E-jump term at all, the face is the
-          // central average 0.5 (F_g + F_is) plus his Doppler / advective part
-          if (dm != "upwind" && dm != "tau" && dm != "tau2" && dm != "athena" && dm != "none") {
+          // the E-jump (dissipative) part of his DO face flux: modified HLLE (Jiang
+          // 2014/2021), s = (1 - e^-x)/x, x = tau2: (alpha tau_c)^2/2 (default; the
+          // Athena++ form as we read it) | tau: alpha tau_c | upwind: s = 1 (pure upwind,
+          // unstable at tau_c ~ 1e5) athena (default): the stock Athena++ implicit DO
+          // HLLE taufactor (tau_scheme 1), alpha = <radiation>/taucell (Athena++ default
+          // 5; his athinput not available), tau_c = alpha (kappa_T dx of ghost 1 +
+          // kappa_T dx of the first cell)
+          const std::string dm =
+              pin->GetOrAddString("problem","he_bc_linhao_diss","athena");
+          // none (user 11-04, the production choice): no E-jump term at all, the face is
+          // the central average 0.5 (F_g + F_is) plus his Doppler / advective part
+          if (dm != "upwind" && dm != "tau" && dm != "tau2" && dm != "athena"
+              && dm != "none") {
             HsFatal("problem/he_bc_linhao_diss must be athena, none, upwind, tau or tau2",
                     __LINE__);
           }
@@ -2821,7 +2825,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                              ((dm == "tau2") ? 2 : ((dm == "none") ? 4 : 3)));
           pm1->lbath_alpha = pin->GetOrAddReal("problem","he_bc_linhao_alpha",
                                                (dm == "athena") ? 5.0 : 1.0);
-          // vstarfix-1106 he_bc_linhao_fis = lagged | iter (rad_m1.hpp lbath_fis_iter; read only
+          // he_bc_linhao_fis = lagged | iter (rad_m1.hpp lbath_fis_iter; read only
           // when named, default lagged = bitwise)
           if (pin->DoesParameterExist("problem","he_bc_linhao_fis")) {
             const std::string fs = pin->GetString("problem","he_bc_linhao_fis");
@@ -2835,7 +2839,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           pm1->lbath_hfg = hfg;
           pm1->vgd_lhx_ie = heg + hfg/(pm1->c_light*mu1);
           if (global_variable::my_rank == 0) {
-            std::cout << std::setprecision(17) << "he_star_m1: he_bc_linhao_rad = halfrange:"
+            std::cout << std::setprecision(17)
+                << "he_star_m1: he_bc_linhao_rad = halfrange:"
                       << " <mu>_+ " << mu1 << ", ghost-1 E_g " << heg << " F_g " << hfg
                       << ", VET I+ " << pm1->vgd_lhx_ie << std::setprecision(6)
                       << std::endl;
@@ -2895,7 +2900,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_cl_on_ = pin->GetBoolean("problem","he_clump");
   }
   if (hs_cl_on_ && pmy_mesh_->use_cubed_sphere) {
-    // cs-port-1016: the test clump reads x2v, x3v as (theta, phi) (panel coordinates on
+    // the test clump reads x2v, x3v as (theta, phi) (panel coordinates on
     // the cubed sphere): refused instead of a silently misplaced clump
     HsFatal("problem/he_clump (test) is spherical-polar only (x2v, x3v read as theta, "
             "phi)", __LINE__);
@@ -2928,7 +2933,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   dtretry::RegisterView("hs_fsub", &hs_fsub_);
   user_bcs_func = HeStarBC;
   user_hist_func = HeStarHist;
-  // posfix-amvec-1022 (read only when named): problem/am_hist = true takes the history to
+  // (read only when named): problem/am_hist = true takes the history to
   // the energy / angular-momentum budget RadM1AmHistory (pgen/tests/rad_m1_tests2.cpp:
   // Eg, Er, gas L, radiation L, am_vector spin, frame L) instead
   if (pin->DoesParameterExist("problem", "am_hist") &&
@@ -2937,7 +2942,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   pgen_rst_write_func = HsAdaptiveRstWrite;   // adaptive state + the Picard window
   pgen_final_func = HeStarFinal;
-  // reatm-1011 problem/he_ic_rad_atm_post (default true with he_ic_rad_atm_force =
+  // problem/he_ic_rad_atm_post (default true with he_ic_rad_atm_force =
   // module; a fresh start whose <rad_m1>/ic_rad runs; the x1 WB pair): after the ic_rad
   // passes the thin atmosphere's gas sits at the code's own radiative-equilibrium T
   // (0.2-1.8 % in e/rho above the pgen's sph1d RE T, AG Car A; the same shift happens in
@@ -2957,7 +2962,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_atp_ = atp && !global_variable::restart_run && wbdyn && !hs_pm_ && !hs_rmp;
     if (hs_atp_) user_icpost_func = HeStarIcPost;
   }
-  // dic-1013 problem/he_ic_equil (read only when named; default false = nothing, bitwise
+  // problem/he_ic_equil (read only when named; default false = nothing, bitwise
   // the old start): the DISCRETE EQUILIBRIUM of the initial state on the code's own
   // operators, iterated with <rad_m1>/ic_rad (HeStarIcEquil, called after every ic_rad
   // run; Driver::Initialize repeats ic_rad + hook while user_icpost_again).  Each round:
@@ -3016,7 +3021,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << ", sponge rate = " << hs_sp_rate_ << " above r = " << hs_sp_r0_
               << std::endl;
   }
-  // hg262-drive-1113 (he_drive.hpp; every key read only when named, absent = bitwise):
+  // (he_drive.hpp; every key read only when named, absent = bitwise):
   // the inflow table, the live monopole gravity and the boundary ledgers
   {
     hsdrive::SetupArgs da;
@@ -3049,16 +3054,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hsdrive::Setup(pin, pmy_mesh_, restart, da);
     if (hsdrive::On()) {user_cycle_func = hsdrive::Cycle;}
   }
-  // stripbg-1102 (he_strip_bg.cpp): one-shot restart-time background strip, off unless
+  // (he_strip_bg.cpp): one-shot restart-time background strip, off unless
   // problem/strip_bg_on_restart = true (absent: bitwise)
   if (restart) {
-    hsdrive::RestartApply(pmy_mesh_);   // hg262-drive-1113 (absent: nothing)
-    HsEosReinitFromT(pin, pmy_mesh_);   // eosreinit-1112 (absent: bitwise)
+    hsdrive::RestartApply(pmy_mesh_);   // (absent: nothing)
+    HsEosReinitFromT(pin, pmy_mesh_);   // (absent: bitwise)
     HsStripBackground(pin, pmy_mesh_);
-    HsRestartPerturb(pin, pmy_mesh_);   // rstpert-1105 (absent: bitwise)
+    HsRestartPerturb(pin, pmy_mesh_);   // (absent: bitwise)
     return;
   }
-  // d6int-1113: a fresh start builds e with this run's EOS table already, so
+  // a fresh start builds e with this run's EOS table already, so
   // eos_reinit_from_t has nothing to do; mark it done so that the restarts of this run
   // never fire it (see HsEosReinitFromT).  The state is unchanged.
   if (pin->DoesParameterExist("problem", "eos_reinit_from_t") &&
@@ -3067,20 +3072,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     pin->SetBoolean("problem", "eos_reinit_done", true);
   }
   if (hs_rmp) {
-    // e1remap-1014: no <rad_m1>/ic_rad (the state is an evolved one), then the arrays
+    // no <rad_m1>/ic_rad (the state is an evolved one), then the arrays
     pm1->icr_mode = 0;
     HsRemapLoad(pmy_mesh_, hs_rmp_fn, hs_rmp_data, hs_rmp_n);
     return;
   }
 
-  // bsglinhao-1014: problem/he_ic_linhao (read only when named; default false = this
+  // problem/he_ic_linhao (read only when named; default false = this
   // IC bitwise, no key added to the input) replaces the initial state below by L. Ma's
   // Athena++ bsg_star.cpp construction (see the block at the end of this function)
   const bool hlin = pin->DoesParameterExist("problem","he_ic_linhao") &&
                     pin->GetBoolean("problem","he_ic_linhao");
 
   // ---- the initial state (active + ghost cells)
-  // n2seed-1022 (USER 10-22 "make that seed default"): he_seed_band = n2 (default) | old.
+  // problem/he_seed_band = n2 (default) | old.
   // old = the seed exactly as the keys below name it (he_seed default 0 = no seed).  n2 =
   // the radial band, the Y_lm l range and (he_seed default 1e-3) the amplitude come from
   // the convective growth rate of the initial column (HsN2Band); he_seed_rlo/rhi,
@@ -3199,16 +3204,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   smd.modify_host();
   smd.sync_device();
   auto smd_d = smd.d_view;
-  // ylmseed-1019 (USER 10-19: "we should use sph harmonics"): he_seed_ylm = true (read
+  // problem/he_seed_ylm = true (read
   // only when named) replaces the lateral modes by a random combination of REAL spherical
-  // harmonics Y_lm(theta, phi) in the GLOBAL polar angles of the cell centre (cubed sphere
-  // and spherical polar alike), l in [he_seed_lmin, he_seed_lmax], every m = -l..l, each
-  // coefficient Gaussian (own mt19937 stream seeded by he_seed_rng), normalised so the
-  // lateral field has rms 1/sqrt 2 over the full sphere (the multi-mode convention), under
-  // the same radial envelope.  Smooth at the poles (no taper) and with no preferred
-  // azimuthal period: the 90-degree wedge periods of the modes above are exactly 4-fold
-  // symmetric in phi, which is the cubed sphere's own panel symmetry.
-  // (n2seed-1022: he_seed_band = n2 forces Y_lm with its own l range; cap 32 -> 64)
+  // harmonics Y_lm(theta, phi) in the GLOBAL polar angles of the cell centre (cubed
+  // sphere and spherical polar alike), l in [he_seed_lmin, he_seed_lmax], every m =
+  // -l..l, each coefficient Gaussian (own mt19937 stream seeded by he_seed_rng),
+  // normalised so the lateral field has rms 1/sqrt 2 over the full sphere (the multi-mode
+  // convention), under the same radial envelope.  Smooth at the poles (no taper) and with
+  // no preferred azimuthal period: the 90-degree wedge periods of the modes above are
+  // exactly 4-fold symmetric in phi, which is the cubed sphere's own panel symmetry.
+  // (he_seed_band = n2 forces Y_lm with its own l range; cap 32 -> 64)
   const bool sylm = sn2 || (pin->DoesParameterExist("problem","he_seed_ylm") &&
                             pin->GetBoolean("problem","he_seed_ylm"));
   // (n2: an explicit he_seed_lmin / he_seed_lmax in the deck overrides the l window)
@@ -3246,9 +3251,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_m1: seed = real spherical harmonics l " << slmin << ".." << slmax
+      std::cout << "he_star_m1: seed = real spherical harmonics l " << slmin << ".."
+          << slmax
                 << " (" << (slmax + 1)*(slmax + 1) - slmin*slmin << " terms, all m), "
-                << "amplitude " << seed << (srad ? " (temperature: eint and E)" : " (eint)")
+                << "amplitude " << seed
+                << (srad ? " (temperature: eint and E)" : " (eint)")
                 << ", r " << srlo << " .. " << srhi << ", rng " << srng << std::endl;
     }
   }
@@ -3282,7 +3289,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     for (int n=0; n<nf; ++n) hw(n) = hV[n];
     Kokkos::deep_copy(cwv, hw);
   }
-  // dic-1013 (he_ic_equil): the seed factor is stored and applied after the equilibrium
+  // (he_ic_equil): the seed factor is stored and applied after the equilibrium
   const bool sdef = hs_eq_ && (seed != 0.0);
   hs_eq_seed_ = sdef;
   hs_eq_srad_ = srad;
@@ -3388,7 +3395,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   if (!hlin) return;
 
-  // ---- bsglinhao-1014: problem/he_ic_linhao = true.  The initial state of L. Ma's
+  // ---- problem/he_ic_linhao = true.  The initial state of L. Ma's
   // Athena++ pgen bsg_star.cpp (ProblemGenerator), in cgs (he_ic_linhao_file = his
   // MESA_profile_combined profile: r T rho M kappa F_r per line, cgs, ascending r; his
   // code reads the same table in code units, a pure rescaling):
@@ -3398,12 +3405,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   //    F_r = 0, with g = G M_rmax/rmax^2 (r/rmax)^2 EXACTLY as his code (the factor grows
   //    outward; the paper's "local gravity" would be (rmax/r)^2: reproduced, not fixed),
   //    P/rho = this EOS's code temperature T/T_unit (gas pressure only);
-  //  * gas energy from the UNPERTURBED rho and T (his IEN = rho T/(gamma - 1)), E = a T^4,
-  //    F1 = F_r (his two-zone intensities have exactly these moments), F2 = F3 = 0, v = 0;
-  //  * the perturbation rho *= 1 + amp (U - 0.5) where the unperturbed rho > rho_thr,
+  //  * gas energy from the UNPERTURBED rho and T (his IEN = rho T/(gamma - 1)), E = a
+  // T^4, F1 = F_r (his two-zone intensities have exactly these moments), F2 = F3 = 0, v =
+  // 0; * the perturbation rho *= 1 + amp (U - 0.5) where the unperturbed rho > rho_thr,
   //    U uniform per cell from HsLinhaoU(global cell index) (his: srand(gid), rand()):
-  //    isobaric (P, E unchanged).  The potential energy of etotgrav uses the perturbed rho.
-  //  * the comoving x1 face fluxes f0x1 = his F_r at the faces.
+  //    isobaric (P, E unchanged).  The potential energy of etotgrav uses the perturbed
+  // rho. * the comoving x1 face fluxes f0x1 = his F_r at the faces.
   // Fresh starts only (a restart returned above).  The ghost cells are filled the same
   // way and then overwritten by the (unchanged) boundary conditions.
   {
@@ -3424,8 +3431,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const int lrng = pin->GetOrAddInteger("problem","he_ic_linhao_rng",0);
     // Athena++ Constants::grav_const_cgs (his grav_rmax uses G and the file's M column)
     const Real lG = pin->GetOrAddReal("problem","he_ic_linhao_gconst",6.67408e-8);
-    // linhao-prod-1104: he_ic_linhao_gext = r2 (default, his bsg_star.cpp:429 g = g(rmax)
-    // (r/rmax)^+2, as coded) | invsq (the run's point mass GM/r^2, hydrostatic; see below)
+    // he_ic_linhao_gext = r2 (default, his bsg_star.cpp:429 g = g(rmax)
+    // (r/rmax)^+2, as coded) | invsq (the run's point mass GM/r^2, hydrostatic; see
+    // below)
     const std::string gxs = pin->GetOrAddString("problem","he_ic_linhao_gext","r2");
     if (gxs != "r2" && gxs != "invsq") {
       HsFatal("problem/he_ic_linhao_gext must be r2 or invsq", __LINE__);
@@ -3454,14 +3462,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real rmax = pr[np-1], tmax = pT[np-1], dmax = pd[np-1];
     const Real gmax = lG*pM[np-1]/(rmax*rmax);
     const Real dfl = eos.dfloor;
-    // his interpolation (bsg_star.cpp ProblemGenerator, r <= rmax): returns rho, T [K], F_r
+    // his interpolation (bsg_star.cpp ProblemGenerator, r <= rmax): returns rho, T [K],
+    // F_r
     auto lint = [&](const Real x1, Real &rho, Real &tem, Real &flx) {
       int lleft = 0, lright = 1;
       while ((x1 > pr[lright]) && (lright < np - 1)) lright = lright + 1;
       if (lright - lleft > 1) lleft = lright - 1;
-      rho = pd[lleft] + (x1 - pr[lleft])*(pd[lright] - pd[lleft])/(pr[lright] - pr[lleft]);
-      tem = pT[lleft] + (x1 - pr[lleft])*(pT[lright] - pT[lleft])/(pr[lright] - pr[lleft]);
-      flx = pF[lleft] + (x1 - pr[lleft])*(pF[lright] - pF[lleft])/(pr[lright] - pr[lleft]);
+      rho = pd[lleft]
+            + (x1 - pr[lleft])*(pd[lright] - pd[lleft])/(pr[lright] - pr[lleft]);
+      tem = pT[lleft]
+            + (x1 - pr[lleft])*(pT[lright] - pT[lleft])/(pr[lright] - pr[lleft]);
+      flx = pF[lleft]
+            + (x1 - pr[lleft])*(pF[lright] - pF[lleft])/(pr[lright] - pr[lleft]);
     };
     const int nm = nmb1 + 1, nc1 = n1m1 + 1;
     DualArray2D<Real> lD("hs_lin_d", nm, nc1), lE("hs_lin_eg", nm, nc1);
@@ -3483,10 +3495,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           tem = tmax;
           const Real tc = tem/tk;   // P/rho of this EOS at T(rmax)
           if (gxi) {
-            // linhao-prod-1104 he_ic_linhao_gext = invsq (USER 11-04 "fix their gravity
-            // outside the star"): the isothermal hydrostatic atmosphere of the run's own
-            // point mass, g = GM/r^2 (= g(rmax) (rmax/r)^2 with g(rmax) = GM/rmax^2):
-            //   rho = rho(rmax) exp(-(GM/(P/rho)) (1/rmax - 1/r))
+            // he_ic_linhao_gext = invsq: the isothermal hydrostatic atmosphere of the
+            // run's own point mass, g = GM/r^2 (= g(rmax) (rmax/r)^2 with g(rmax) =
+            // GM/rmax^2): rho = rho(rmax) exp(-(GM/(P/rho)) (1/rmax - 1/r))
             rho = dmax*std::exp(-(hs_gm_/tc)*(1.0/rmax - 1.0/x1));
           } else {
             const Real gl = gmax*std::pow(x1/rmax, 2.0);
@@ -3521,7 +3532,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const std::int64_t gn2 = pmy_mesh_->mesh_indcs.nx2 + 2*ng;
     const std::uint64_t useed = static_cast<std::uint64_t>(lrng);
     const bool m3 = (indcs.nx3 > 1), m2 = (indcs.nx2 > 1);
-    // lhxseed-1106 problem/he_ic_linhao_seed_group = true (read only when named): one
+    // problem/he_ic_linhao_seed_group = true (read only when named): one
     // deviate per hydro merge_lat group, so a merged 128^2 shell has the seed of his real
     // coarse cells (same amp and rms) instead of the average of 4 fine deviates.
     DualArray2D<int> lfg("hs_lin_fg", nm, nc1);
@@ -3591,9 +3602,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     if (global_variable::my_rank == 0) {
       int nthr = 0;
-      for (int n=0; n<np; ++n) if (pd[n] > lthr) nthr = n;
+      for (int n=0; n<np; ++n) {
+        if (pd[n] > lthr) nthr = n;
+      }
       std::cout << "he_star_m1: he_ic_linhao: " << lfn << " (" << np << " rows, r "
-                << pr[0] << " .. rmax " << rmax << "), T(rmax) " << tmax << " K, rho(rmax) "
+                << pr[0] << " .. rmax " << rmax << "), T(rmax) " << tmax
+                << " K, rho(rmax) "
                 << dmax << ", g(rmax) " << gmax
                 << (gxi ? " (gext invsq: hydrostatic in GM/r^2 above, GM = he_gm)"
                         : " (x (r/rmax)^2 above, as bsg_star.cpp)")
@@ -3646,7 +3660,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     const Real w = HsMltW(pm->time);
     if (w != hs_mw_) HsApplyMltW(pm, w);
   }
-  // fsanchor-1009 he_clump (TEST): re-impose the fixed cold clump (rho, eint, v = 0)
+  // he_clump (TEST): re-impose the fixed cold clump (rho, eint, v = 0)
   if (hs_cl_on_) {
     auto &cx1v = pmbp->pcoord->x1v;
     auto &cx2v = pmbp->pcoord->x2v;
@@ -3669,7 +3683,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
       }
     });
   }
-  // fixbundle-1009 F6 localisation (<rad_m1>/dbg_energy_tally, output only): sum IEN V
+  // F6 localisation (<rad_m1>/dbg_energy_tally, output only): sum IEN V
   // after each part of this source and the hydro energy flux through the x1 boundary
   // faces
   const bool htal = (pmbp->pradm1 != nullptr) && pmbp->pradm1->dbg_etally;
@@ -3717,7 +3731,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     ht[5] = fb[1];
   }
   if (hs_pm_) {
-    // he_gravity = pointmass (bsg-truerepro-1008): the Athena++ point-mass source
+    // he_gravity = pointmass: the Athena++ point-mass source
     // (srcterms PointMass): d(rho v_r) = -dt rho GM coord_src1/x1v, coord_src1 =
     // (r_+^2 - r_-^2)/2 / ((r_+^3 - r_-^3)/3).  The energy needs no source: etotgrav
     // carries rho Phi in the total energy and its flux.
@@ -3780,7 +3794,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   if (pm1 != nullptr && pm1->fref_wsplit) {
     auto aref = pm1->arad_ref;
     if (pm1->FrefWaccOn()) {
-      // fref-split-cons-1006 (time_scheme = be): the same increment also goes to the
+      // (time_scheme = be): the same increment also goes to the
       // accumulator the be solve makes E pay (acc = gam0 acc + increment)
       auto wacc = pm1->FrefWacc();
       const Real g0 = pm1->FrefWaccGam0(bdt, pm->dt);
@@ -3835,7 +3849,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
                   ht[2] - ht[1], 0.0, ht[4], ht[5], ht[0], ht[3]);
     }
   }
-  // hg262-drive-1113: the RK-exact boundary/sponge ledgers of this stage (he_drive.cpp)
+  // the RK-exact boundary/sponge ledgers of this stage (he_drive.cpp)
   const bool hdrv = hsdrive::On();
   if (hs_sp_rate_ <= 0.0) {
     if (hdrv) {hsdrive::StageLedger(pm, bdt, hs_binf_, hs_zflux_, 0.0);}
@@ -3872,7 +3886,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     if (hdrv) {hsdrive::StageLedger(pm, bdt, hs_binf_, hs_zflux_, htsum() - hdsp0);}
     return;
   }
-  const bool hcsg = pm->use_cubed_sphere;   // cs-port-1016: metric KE (HsKeCs)
+  const bool hcsg = pm->use_cubed_sphere;   // metric KE (HsKeCs)
   auto hccl = pmbp->pcoord->cos_cell;
   par_for("hs_sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3979,15 +3993,15 @@ void HeStarBC(Mesh *pm) {
   const Real dfl = eos.dfloor;
   const bool bhfc = bhse && hs_bhse_face_;
   auto ff1 = pmbp->pradm1->f0x1;
-  // bsg-truerepro-1008: he_bc_inner = zerocontact, he_bc_outer = copy
+  // he_bc_inner = zerocontact, he_bc_outer = copy
   const bool bzc = hs_bzc_, bcopy = hs_bcopy_;
-  const bool bcr2 = hs_bcr2_;   // linhao-prod-1104
+  const bool bcr2 = hs_bcr2_;
   auto &x1fb = pmbp->pcoord->xx1f;
-  const bool hcsb = pm->use_cubed_sphere;   // cs-port-1016: metric KE (HsKeCs)
+  const bool hcsb = pm->use_cubed_sphere;   // metric KE (HsKeCs)
   auto hcclb = pmbp->pcoord->cos_cell;
   const bool lbc = hs_lbc_;   // fin4-linhao-bc
   auto lbd = hs_lbc_d_;
-  // hg262-drive-1113 problem/he_bc_inner_table (he_bc_inner = inflow): the table's rho,
+  // problem/he_bc_inner_table (he_bc_inner = inflow): the table's rho,
   // T (code units) and v_r at r_in at the BC time
   const bool itab = hsdrive::InflowOn();
   Real tbd = 0.0, tbt = 0.0, tbv = 0.0;
@@ -4129,7 +4143,7 @@ void HeStarBC(Mesh *pm) {
         Real v1 = (v1e > 0.0) ? v1e : 0.0;
         const Real v2 = uh(m,IM2,k,j,ia)/da;
         const Real v3 = uh(m,IM3,k,j,ia)/da;
-        // linhao-prod-1104 he_bc_outer_r2: his branch test is v_r < 0 (v_r = 0 -> outflow)
+        // he_bc_outer_r2: his branch test is v_r < 0 (v_r = 0 -> outflow)
         const bool r2o = bcr2 && !(v1e < 0.0);
         if (bcr2) v1 = r2o ? v1e : 0.0;
         Real dg = da;
@@ -4225,7 +4239,7 @@ void HeStarBC(Mesh *pm) {
         continue;
       }
       if (inflo && itab) {
-        // hg262-drive-1113: the initial column's shape scaled to the table's (rho,
+        // the initial column's shape scaled to the table's (rho,
         // e(rho, T)) at r_in; v_r carries the table's mass flux rho v r^2 through every
         // ghost; v_t = 0 (non-rotating interior)
         Real tbe, tbp, tcr, tct, tcv;
@@ -4287,7 +4301,7 @@ void HeStarBC(Mesh *pm) {
 void HeStarHist(HistoryData *pdata, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   // w_mlt, L_MLT (= w max_faces F_MLT r^2 Omega) only with mlt_flux_frozen
-  // fixbundle-1009 F4: + P_esrc (power the explicit source puts into E, (chat/c) sum
+  // F4: + P_esrc (power the explicit source puts into E, (chat/c) sum
   // esrc V) and P_sponge (kinetic-energy loss rate of the top sponge at this state), the
   // two non-flux terms of d Etot/dt = L_in - L_top + P_esrc - P_sponge
   const int nb = hs_mlt_ ? 22 : 20;
@@ -4336,7 +4350,7 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   const Real chc = pm1->chat/pm1->c_light;
   const Real sprate = hs_sp_rate_, spr0 = hs_sp_r0_, sprt = hs_rtop_, spd = hs_sp_dmax_;
   const bool sprad = hs_sp_rad_;
-  const bool hcsh = pm->use_cubed_sphere;   // cs-port-1016: metric KE
+  const bool hcsh = pm->use_cubed_sphere;   // metric KE
   auto hccl_ = pmbp->pcoord->cos_cell;
   array_sum::GlobalSum sum_this;
   Kokkos::parallel_reduce("hs_hist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
@@ -4397,7 +4411,7 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
       const Real d = w0(m,IDN,k,j,i);
       const Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);
       h.the_array[7] = d*vol;
-      // cs-port-1016: w0 holds the CONTRAVARIANT v^a on the cubed sphere
+      // w0 holds the CONTRAVARIANT v^a on the cubed sphere
       h.the_array[8] = hcsh ? 0.5*d*(v1*v1 + v2*v2 + v3*v3
                                      + 2.0*hccl_(m,k,j)*v2*v3)*vol
                             : 0.5*d*(v1*v1 + v2*v2 + v3*v3)*vol;
@@ -4469,7 +4483,7 @@ void HsApplyMltW(Mesh *pm, const Real w) {
 //! one thread per radial index, serial over the columns; MPI sum), the target, the
 //! relaxation F_sub += (1 - exp(-(t - t_last)/tau)) (target - F_sub), clip >= 0, esrc.
 
-// rsgrst-1021: the rank-ordered sum of a host array over all ranks (MPI_Allgather, then
+// the rank-ordered sum of a host array over all ranks (MPI_Allgather, then
 // the ranks summed 0, 1, ... in that order on every rank).  An MPI_Allreduce(MPI_SUM)
 // does not fix the order in which the ranks' doubles are added: with HCOLL (Caltech
 // hpcx) the order changed with the communication history, so a restart -- same state,
@@ -4509,7 +4523,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
   auto sh = hs_shs_;
-  // speedup-1109 hs_ad_dead_skip: the serial sums only when they are used
+  // hs_ad_dead_skip: the serial sums only when they are used
   const bool dead = hs_ad_dskip_ && pm->layout_invariant;
   if (!dead) {
   par_for("hs_ad_shell", DevExeSpace(), is, ie+1, KOKKOS_LAMBDA(const int i) {
@@ -4542,7 +4556,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
   if (!dead) {Kokkos::deep_copy(hsh, sh);}
   const int nfc = hsh.extent_int(0);
   if (pm->layout_invariant) {
-    // layinv-1105: the same per-cell terms, summed order-independently over all ranks
+    // the same per-cell terms, summed order-independently over all ranks
     std::vector<Real> rs;
     repro::ShellSums("hs_ad_shell_r", 8, nfc, nmb, ks, ke, js, je, is, ie + 1,
                      KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
@@ -4565,7 +4579,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
       for (int q=0; q<8; ++q) {hsh(i,q) = rs[static_cast<size_t>(q)*nfc + i];}
     }
   } else {
-    HsDetSum(&hsh(is,0), 8*(ie + 2 - is));   // rsgrst-1021: rank-ordered (restart-exact)
+    HsDetSum(&hsh(is,0), 8*(ie + 2 - is));   // rank-ordered (restart-exact)
   }
   // luminosities of the wedge (the units of the history's L_in = F_in A(r_in))
   std::vector<Real> lc(nfc, 0.0), lrad(nfc, 0.0), lcf(nfc, 0.0), tgt(nfc, 0.0);
@@ -4576,7 +4590,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
                     + (4.0/3.0)*(hsh(i,7)/sv - vm*hsh(i,5)/sv);
     lc[i] = fc*0.5*(hsh(i,1) + hsh(i+1,1));
   }
-  // hg262-drive-1113: hs_fin_ (bitwise), or the current table flux with
+  // hs_fin_ (bitwise), or the current table flux with
   // problem/he_drive_closure_lin = table (open items 11-13)
   const Real lin = hsdrive::ClosureFlux(pm, hs_fin_)*hsh(is,1);
   for (int i=is; i<=ie+1; ++i) {
@@ -4586,7 +4600,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
     tgt[i] = hs_tap_[i]*((def > 0.0) ? def : 0.0)/hsh(i,1);
   }
   if (hs_adp_) {
-    // mltp-1017 mlt_closure = pressure: target fm_IC(ln P_face) F_tot,IC(face); P_face =
+    // mlt_closure = pressure: target fm_IC(ln P_face) F_tot,IC(face); P_face =
     // the log-mean of the adjacent shell-mean P_gas + E/3 (the edge cell's at is, ie+1)
     auto sp = hs_shp_;
     auto ww = w0;
@@ -4611,7 +4625,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
     }
     auto hsp = Kokkos::create_mirror_view(HostMemSpace(), sp);
     if (!dead) {Kokkos::deep_copy(hsp, sp);}
-    if (pm->layout_invariant) {   // layinv-1105: order-independent
+    if (pm->layout_invariant) {   // order-independent
       const int nsp = hsp.extent_int(0);
       std::vector<Real> rs;
       repro::ShellSums("hs_adp_shell_r", 3, nsp, nmb, ks, ke, js, je, is, ie,
@@ -4626,20 +4640,22 @@ void HsAdaptiveUpdate(Mesh *pm) {
         for (int q=0; q<3; ++q) {hsp(i,q) = rs[static_cast<size_t>(q)*nsp + i];}
       }
     } else {
-      HsDetSum(&hsp(is,0), 3*(ie + 1 - is));   // rsgrst-1021: rank-ordered
+      HsDetSum(&hsp(is,0), 3*(ie + 1 - is));   // rank-ordered
     }
     std::vector<Real> lp(nfc, 0.0);
     for (int i=is; i<=ie; ++i) lp[i] = log((hsp(i,1) + hsp(i,2)/3.0)/hsp(i,0));
     const int np = static_cast<int>(hs_plnp_.size());
     for (int i=is; i<=ie+1; ++i) {
-      const Real x = (i == is) ? lp[is] : ((i == ie + 1) ? lp[ie] : 0.5*(lp[i-1] + lp[i]));
+      const Real x = (i == is) ? lp[is] : ((i == ie + 1) ? lp[ie]
+                                           : 0.5*(lp[i-1] + lp[i]));
       Real fm;
       if (x <= hs_plnp_[0]) {
         fm = hs_pfm_[0];
       } else if (x >= hs_plnp_[np-1]) {
         fm = hs_pfm_[np-1];
       } else {
-        const int k = static_cast<int>(std::upper_bound(hs_plnp_.begin(), hs_plnp_.end(), x)
+        const int k = static_cast<int>(std::upper_bound(hs_plnp_.begin(),
+                                                        hs_plnp_.end(), x)
                                        - hs_plnp_.begin()) - 1;
         const Real a = (x - hs_plnp_[k])/(hs_plnp_[k+1] - hs_plnp_[k]);
         fm = (1.0 - a)*hs_pfm_[k] + a*hs_pfm_[k+1];
@@ -4700,7 +4716,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
 
 std::vector<char> HsAdaptiveRstWrite() {
   std::vector<char> out;
-  // rotavg-rst-1012: the open Picard window (solves, passes since the last history
+  // the open Picard window (solves, passes since the last history
   // output) as a tagged trailer behind the adaptive state (if any)
   auto pic = [&out]() {
     Real w[2] = {0.0, 0.0};
@@ -4715,7 +4731,7 @@ std::vector<char> HsAdaptiveRstWrite() {
     std::memcpy(out.data() + o, &(kHsPicTag[0]), sizeof(kHsPicTag));
     std::memcpy(out.data() + o + sizeof(kHsPicTag), &(w[0]), sizeof(w));
   };
-  // dic-1013: the he_ic_equil a_ref as the last trailer (only when it ran / was restored)
+  // the he_ic_equil a_ref as the last trailer (only when it ran / was restored)
   auto dic = [&out]() {
     if (hs_eq_a_.empty()) return;
     const std::size_t na = hs_eq_a_.size();
@@ -4736,7 +4752,7 @@ std::vector<char> HsAdaptiveRstWrite() {
     std::memcpy(out.data() + o, &l, sizeof(Real));
     std::memcpy(out.data() + o + sizeof(Real), &(kHsLbcTag[0]), sizeof(kHsLbcTag));
   };
-  // n2ramp-1022: the auto ramp's two numbers as the very last trailer
+  // the auto ramp's two numbers as the very last trailer
   auto rmp = [&out]() {
     if (!hs_mr_store_) return;
     const Real w[2] = {hs_mrs_, hs_mrt_};
@@ -4747,7 +4763,7 @@ std::vector<char> HsAdaptiveRstWrite() {
   };
   if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) {
     pic(); dic(); lbt(); rmp();
-    hsdrive::RstAppend(&out);   // hg262-drive-1113: the very last trailer (if on)
+    hsdrive::RstAppend(&out);   // the very last trailer (if on)
     return out;
   }
   const int nfc = hs_fsub_.extent_int(0);
@@ -4763,7 +4779,7 @@ std::vector<char> HsAdaptiveRstWrite() {
   dic();
   lbt();
   rmp();
-  hsdrive::RstAppend(&out);   // hg262-drive-1113: the very last trailer (if on)
+  hsdrive::RstAppend(&out);   // the very last trailer (if on)
   return out;
 }
 
@@ -4773,7 +4789,7 @@ std::vector<char> HsAdaptiveRstWrite() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void HsAtmPhiEff
-//! \brief reatm-1011: the x1 WB pair's Phi_eff rebuilt above the face x1f(ia) from the
+//! \brief the x1 WB pair's Phi_eff rebuilt above the face x1f(ia) from the
 //! per-cell reference accelerations a[i - ia] (cells ia..ie), each segment taking the
 //! true potential's own difference minus a dr; the ghosts above ie are shifted with the
 //! face x1f(ie+1).  Radial vectors (block 0): pc0/pf0 the pgen's Phi_eff at the cells /
@@ -4861,7 +4877,7 @@ void HsAtmWrite(MeshBlockPack *pmbp, const int ia, const std::vector<Real> &a,
 
 //----------------------------------------------------------------------------------------
 //! \fn void HeStarIcPost
-//! \brief reatm-1011 problem/he_ic_rad_atm_post: the thin atmosphere's discrete
+//! \brief problem/he_ic_rad_atm_post: the thin atmosphere's discrete
 //! hydrostatic re-balance at the gas T left by <rad_m1>/ic_rad, with a_ref = the
 //! module's own face-mean force at that state (see the enrolment in UserProblem).
 //! Called once, on a fresh start, by Driver::Initialize after IcRadRun.
@@ -4900,7 +4916,7 @@ void HeStarIcPost(Mesh *pm) {
     return ((static_cast<std::size_t>(m)*nk + (k - ks))*nj + (j - js))*nr + (i - i0);
   };
   Real ff = 0.0;   // F0 of the top face x1f(ie+1), summed
-  // layinv-1105 <mesh>/layout_invariant: the shell sums order-independent (ReproSum)
+  // <mesh>/layout_invariant: the shell sums order-independent (ReproSum)
   const bool lay = pm->layout_invariant;
   repro::ReproVec rv(lay ? 4*nr + 1 : 0);
   for (int m=0; m<nmb; ++m) {
@@ -4942,7 +4958,8 @@ void HeStarIcPost(Mesh *pm) {
   }
 #if MPI_PARALLEL_ENABLED
   if (!lay) {
-    MPI_Allreduce(MPI_IN_PLACE, sh.data(), 4*nr, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, sh.data(), 4*nr, MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, &ff, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
   }
   MPI_Allreduce(MPI_IN_PLACE, tmn.data(), nr, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
@@ -5110,7 +5127,7 @@ void HeStarIcPost(Mesh *pm) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void HeStarIcEquil
-//! \brief dic-1013 problem/he_ic_equil: one round of the discrete equilibrium of the
+//! \brief problem/he_ic_equil: one round of the discrete equilibrium of the
 //! initial state (see the enrolment in UserProblem).  Called by Driver::Initialize after
 //! every <rad_m1>/ic_rad run (fresh start); sets user_icpost_again while it wants another
 //! round.  The x1 structure is taken from the shell means (the initial state is l = 0);
@@ -5148,7 +5165,7 @@ void HeStarIcEquil(Mesh *pm) {
   const Real dtm = pm1->icr_dm_dt;
   // shell sums per x1 index: rho, T, the net deposit dm, count; per x1 face: F0 area
   std::vector<Real> sh(4*n1, 0.0), lf(n1 + 1, 0.0), af(n1 + 1, 0.0);
-  // layinv-1105 <mesh>/layout_invariant: the shell sums order-independent (ReproSum);
+  // <mesh>/layout_invariant: the shell sums order-independent (ReproSum);
   // slots [0, 4 n1) sh, [4 n1, 5 n1 + 1) lf, [5 n1 + 1, 6 n1 + 2) af
   const bool lay = pm->layout_invariant;
   repro::ReproVec rv(lay ? 6*n1 + 2 : 0);
@@ -5195,7 +5212,8 @@ void HeStarIcEquil(Mesh *pm) {
   }
 #if MPI_PARALLEL_ENABLED
   if (!lay) {
-    MPI_Allreduce(MPI_IN_PLACE, sh.data(), 4*n1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, sh.data(), 4*n1, MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, lf.data(), n1 + 1, MPI_ATHENA_REAL, MPI_SUM,
                   MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, af.data(), n1 + 1, MPI_ATHENA_REAL, MPI_SUM,
@@ -5490,7 +5508,7 @@ void HeStarIcEquil(Mesh *pm) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void HsRemapLoad()
-//! \brief e1remap-1014 problem/he_ic_remap_file: hydro u0 (5), M1 u0 (4) and f0x1 of
+//! \brief problem/he_ic_remap_file: hydro u0 (5), M1 u0 (4) and f0x1 of
 //! every MeshBlock of this rank, ghosts included, from the file's global arrays
 //! [nx3+2ng][nx2+2ng][nx1+2ng(+1)] (header checked by the caller; uniform mesh only)
 
@@ -5568,12 +5586,12 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_fb_ = DvceArray1D<Real>();
   hs_sfac_ = DvceArray4D<Real>();
   hs_lbc_d_ = DvceArray3D<Real>();   // fin4-linhao-bc
-  hsdrive::Final();   // hg262-drive-1113
+  hsdrive::Final();
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void HsN2Compute
-//! \brief n2seed-1022: the IC column's convective growth rate on the radial cells of the
+//! \brief the IC column's convective growth rate on the radial cells of the
 //! (single, full-length) x1 MeshBlock column, from the initial column as the IC kernel
 //! lays it down (he_ic_balance cells, else the fine column), once (hs_n2_):
 //!   T from the code EOS; P = p_gas + a T^4/3; Gamma_1 of gas + radiation from the first
@@ -5660,7 +5678,7 @@ void HsN2Compute(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real HsN2Median
-//! \brief n2ramp-1022: the mass-weighted (rho r^2 dr) median of 1/sigma over the cells
+//! \brief the mass-weighted (rho r^2 dr) median of 1/sigma over the cells
 //! below r_int with N^2 < 0 (hs_n2_), for mlt_ramp_time = auto.
 Real HsN2Median(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
   HsN2Compute(pmbp, eos, ar);
@@ -5689,7 +5707,7 @@ Real HsN2Median(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool HsN2Band
-//! \brief n2seed-1022: the radial band and Y_lm l range of the he_seed_band = n2 seed,
+//! \brief the radial band and Y_lm l range of the he_seed_band = n2 seed,
 //! from the growth rates of HsN2Compute.
 //! Band rule: cells with sigma >= frac sigma_max; gaps of <= ngap cells between such
 //! cells are closed; connected runs shorter than nmin cells (isolated IC-column ripples)
@@ -5773,7 +5791,7 @@ bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Rea
   rhi = hx1v(0,be+1);
   const Real hp = pt[bp]/(dd[bp]*gg[bp]);
   const Real lhp = M_PI*r[bp]/hp;
-  // USER 10-22 l window: l_hi = min(pi r/H_p, l_8), l_8 = 2 pi r/(ppw dx_lat) (ppw = 8:
+  // l window: l_hi = min(pi r/H_p, l_8), l_8 = 2 pi r/(ppw dx_lat) (ppw = 8:
   // pi r/(4 dx_lat)), dx_lat = r dangle with dangle the SMALLEST angular distance between
   // neighbouring cell centres (cubed sphere: over a whole equiangular panel; spherical
   // polar: min(dtheta, sin(theta) dphi) over the theta centres); l_lo = max(1, round(l_hi

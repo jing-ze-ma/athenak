@@ -246,14 +246,14 @@ struct DvceEdgeFld4D {
 // 1D-range, and thread teams for use with inner vector threads. Experiments in K-Athena
 // and Parthenon indicate that 1D-range policy is generally faster than multidimensional
 // MD-range policy, so the latter is not used.
-// d6fast5-1112: the policy of the par_for wrappers below.  On HIP a plain RangePolicy
+// the policy of the par_for wrappers below.  On HIP a plain RangePolicy
 // kernel is compiled for up to 1024 threads per block, which caps it at 128 VGPRs on
 // gfx942: the heavy per-cell kernels (EOS, opacity tables, Riemann solvers) then SPILL to
 // scratch (rocprofv3: 92-2288 B per lane).  LaunchBounds<256, 2> (as radm1::par_for_lb)
 // lets the register allocator use up to 256 VGPRs; Kokkos launches 256-thread blocks.
 // par_for has no reductions: the arithmetic and the result are unchanged (bitwise).
 // -DATHENA_HIP_PARFOR_LB=0: the old policy.
-// dhjfast-1112 (d6int-1113): src/CMakeLists.txt sets ATHENA_HIP_PARFOR_LB=1 for the
+//: src/CMakeLists.txt sets ATHENA_HIP_PARFOR_LB=1 for the
 // dhj build (PROBLEM=deep_hot_jupiter_rt; TOI-1518b 1 MI300A, apudev 13088323:
 // 45.8 -> 42.2 ms/cycle); the ck CkParFor4 uses the same policy.
 #if defined(KOKKOS_ENABLE_HIP) && !defined(ATHENA_HIP_PARFOR_LB)
@@ -267,7 +267,7 @@ using AthenaRangePolicy =
 template <typename ExeSpace>
 using AthenaRangePolicy = Kokkos::RangePolicy<ExeSpace>;
 #endif
-// dhjcuda-1112: ATHENA_CUDA_BODY_GLOBAL = B > 0 (CUDA; set for deep_hot_jupiter_rt
+// ATHENA_CUDA_BODY_GLOBAL = B > 0 (CUDA; set for deep_hot_jupiter_rt
 // in src/CMakeLists.txt): a 4D par_for body (and a ck CkParFor4 / boundary BvalsTeamFor
 // functor) of >= B bytes is copied to device memory (cudaMemcpyAsync on the launch
 // stream: a pageable copy this small is staged at once, no host or device sync) and the
@@ -296,7 +296,7 @@ inline const F *AthBodyToDevice(const Kokkos::Cuda &exec, const F &f) {
   }
   return reinterpret_cast<const F *>(buf);
 }
-// dhjcuda-1112: parallel_for(name, policy, body) with that rule (any policy; the
+// parallel_for(name, policy, body) with that rule (any policy; the
 // RangePolicy / TeamPolicy wrappers below use it for every rank of par_for and
 // par_for_outer that has no light-weight launch of its own)
 template <typename Policy, typename F>
@@ -380,7 +380,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
 }
 
 //------------------------------
-// rkghalo-1103: largest 4D par_for body launched as a kernel argument (bytes; CUDA's
+// largest 4D par_for body launched as a kernel argument (bytes; CUDA's
 // kernel-argument limit is 4096 incl. the policy); 0 = never (the old launch everywhere)
 #ifndef ATHENA_LW_LAUNCH_MAX
 #define ATHENA_LW_LAUNCH_MAX 3584
@@ -414,7 +414,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
     j += jl;
     function(n, k, j, i);
   };
-  // rkghalo-1103: a body of 0.5-3.5 kB is launched as a kernel ARGUMENT (HintLightWeight)
+  // a body of 0.5-3.5 kB is launched as a kernel ARGUMENT (HintLightWeight)
   // instead of through constant memory, whose reuse makes the host wait
   // (cudaEventSynchronize) on the previous constant-memory kernel before every such
   // launch, ~250 per r1m cycle.  Larger bodies keep the default (constant memory; a
@@ -423,7 +423,7 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
 #if defined(KOKKOS_ENABLE_CUDA) && (ATHENA_CUDA_BODY_GLOBAL > 0)
   if constexpr (std::is_same_v<ExeSpace, Kokkos::Cuda> &&
                 sizeof(body) >= ATHENA_CUDA_BODY_GLOBAL) {
-    // dhjcuda-1112: the body in device memory, the kernel argument its address only
+    // the body in device memory, the kernel argument its address only
     const auto *bp_ = AthBodyToDevice(exec_space, body);
     Kokkos::parallel_for(name, Kokkos::Experimental::require(
         AthenaRangePolicy<ExeSpace>(exec_space, 0, nnkji),
@@ -475,13 +475,14 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
 }
 
 //------------------------------
-// r1mspeed-1102: up to three INDEPENDENT 4D loops in one launch.  Each loop keeps its own
+// up to three INDEPENDENT 4D loops in one launch.  Each loop keeps its own
 // (k,j,i) box over m = 0..nmb1 and its own body; a thread of the bounding box runs every
 // body whose box holds its index, in the order given.  Bitwise the separate launches
 // provided no body reads what another body of the same launch writes.
 struct LoopBox3 {int kl, ku, jl, ju, il, iu;};
 template <typename F1, typename F2, typename F3>
-inline void par_for_fused3(const std::string &name, DevExeSpace exec_space, const int nmb1,
+inline void par_for_fused3(const std::string &name, DevExeSpace exec_space,
+                           const int nmb1,
                            const LoopBox3 b1, const F1 &f1, const LoopBox3 b2,
                            const F2 &f2, const LoopBox3 b3, const F3 &f3) {
   auto mn = [](int a, int b) {return (a < b) ? a : b;};
