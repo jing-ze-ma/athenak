@@ -1,0 +1,117 @@
+# AthenaK input file: 2D polytropic atmosphere in constant gravity, evolved with the
+# STATIC well-balanced (WB) scheme, used to regression-test first-order flux correction
+# (FOFC) in the one place where the two interact.
+#
+# During Hydro::Fluxes the WB perturbation reconstruction has subtracted the static
+# background from w0, so w0 is NOT a full state in that window.  The first-order
+# fallback is a physical Riemann solve and must be handed the FULL state; if it used the
+# perturbation instead, the flagged cells would be solved with a density of
+# rho - rho_background, which near the top of this atmosphere is a small difference of
+# two comparable numbers (and can be negative).
+#
+# The same input also drives the DYNAMIC well-balanced scheme (Kappeli & Mishra), which
+# keeps no stored background at all: it rebuilds a local hydrostatic one from the current
+# state plus the gravitational potential the pgen fills.  w0 is then a FULL state
+# throughout, so FOFC needs no special handling -- which is exactly what the dynamic cases
+# of the test check, next to the static ones.
+#
+# The test script sets, from the command line:
+#   <hydro>/fofc                       true / false
+#   <hydro>/wellbalance_static         true / false   (with wellbalance_static_reconst)
+#   <hydro>/wellbalance_dynamic        true / false   (with wb_x2, wb_rho)
+#   <problem>/vamp                     kick amplitude, 0 = untouched balance
+
+<comment>
+problem   = well-balanced atmosphere + velocity kick, FOFC regression test
+
+<job>
+basename  = fofc_wb    # problem ID: basename of output filenames
+
+<mesh>
+nghost    = 3          # FOFC requires nghost >= 3
+nx1       = 64         # Number of zones in X1-direction
+x1min     = -0.5       # minimum value of X1
+x1max     = 0.5        # maximum value of X1
+ix1_bc    = periodic   # inner-X1 boundary flag
+ox1_bc    = periodic   # outer-X1 boundary flag
+
+nx2       = 128        # Number of zones in X2-direction (the stratified direction)
+x2min     = 0.0        # minimum value of X2
+x2max     = 2.0        # maximum value of X2 (H0 = 2.5, so p > 0 everywhere)
+ix2_bc    = user       # ghost zones held at the analytic hydrostatic background
+ox2_bc    = user       # ditto
+
+nx3       = 1          # Number of zones in X3-direction
+x3min     = -0.5       # minimum value of X3
+x3max     = 0.5        # maximum value of X3
+ix3_bc    = periodic   # inner-X3 boundary flag
+ox3_bc    = periodic   # outer-X3 boundary flag
+
+<meshblock>
+nx1       = 32         # Number of cells in each MeshBlock, X1-dir
+nx2       = 32         # Number of cells in each MeshBlock, X2-dir
+nx3       = 1          # Number of cells in each MeshBlock, X3-dir
+
+<time>
+evolution  = dynamic   # dynamic/kinematic/static
+integrator = rk2       # time integration algorithm
+cfl_number = 0.3       # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim       = -1        # cycle limit
+tlim       = 0.04      # time limit
+ndiag      = 100000    # cycles between diagostic output
+
+<hydro>
+eos                       = ideal     # EOS type
+reconstruct               = plm       # spatial reconstruction method
+rsolver                   = hllc      # Riemann-solver to be used
+gamma                     = 1.6666666666666667   # gamma = C_p/C_v
+dfloor                    = 5.0e-2    # density floor: below the background everywhere
+                                      # (min rho = 0.0894 at x2 = 2), but only by 1.8x, so
+                                      # the kick drives a wide region through it
+pfloor                    = 1.0e-3    # pressure floor (min background p = 0.0179)
+fofc                      = false     # first-order flux correction (set by the test)
+wellbalance_static        = true      # static well-balanced scheme (set by the test)
+wellbalance_static_reconst = true     # reconstruct the deviation from the background
+# DYNAMIC well-balanced scheme (Kappeli & Mishra); switched on INSTEAD of the static one
+# by the test, which sets wellbalance_dynamic/wb_x2/wb_rho true and the two static flags
+# false.  wb_option = isentropic is the closed-form isentropic background, which is
+# exactly the stratification the pgen builds, so the balance is held to round-off.
+# Harmless when the dynamic scheme is off: wb_option is only read if it is on.
+wellbalance_dynamic       = false     # dynamic well-balanced scheme (set by the test)
+wb_x2                     = false     # the stratified direction (set by the test)
+wb_rho                    = false     # well-balance the density channel too (ditto)
+wb_option                 = isentropic  # local background assumed by the dynamic scheme
+
+<problem>
+pgen_name = wb_atm     # problem generator name
+user_srcs = true       # gravity is applied by the pgen (deviation source under WB)
+g0        = -1.0       # constant gravitational acceleration along -x2
+p0        = 1.0        # background pressure at x2 = 0
+rho0      = 1.0        # background density at x2 = 0
+x0        = 0.0        # centre of the velocity kick, x1
+y0        = 1.6        # centre of the kick, x2: high up, where the background
+                       # density is closest to the floor
+r0        = 0.2        # radius of the velocity kick
+vamp      = 6.0        # kick amplitude (the sound speed there is 0.775, Mach ~8)
+
+<output1>
+file_type   = log     # event counter log (column "fofc" counts FOFC-flagged cells)
+dt          = 0.004   # time increment between outputs
+
+<output2>
+file_type   = hst     # history dump: volume integrals over EVERY cell, so a NaN
+data_format = %24.16e # anywhere in the domain shows up here
+dt          = 0.004   # time increment between outputs
+
+<output3>
+file_type   = tab     # 1D cut along x1 through the centre of the kick (double prec.)
+variable    = hydro_w # variables to be output
+data_format = %24.16e # Optional data format string
+dt          = 0.04    # only the final time is needed
+slice_x2    = 1.6     # the height of the kick
+slice_x3    = 0.0     # the single x3 cell
+
+<output4>
+file_type   = bin     # full 2D field, for the WB-on / WB-off field comparison
+variable    = hydro_w # variables to be output
+dt          = 0.04    # only the final time is needed

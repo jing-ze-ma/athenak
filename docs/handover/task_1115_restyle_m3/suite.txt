@@ -1,0 +1,40 @@
+cubed_sphere_blast|cs_test|@PKG@/decks/cubed_sphere_blast_cubed_sphere_blast.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_blast_open|cs_test|@PKG@/decks/cubed_sphere_blast_open_cubed_sphere_blast_open.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_cavity|cs_test|@PKG@/decks/cubed_sphere_cavity_cubed_sphere_cavity.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_ffdecay|cs_test|@PKG@/decks/cubed_sphere_ffdecay_cubed_sphere_ffdecay.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_mhd|cs_test|@PKG@/decks/cubed_sphere_mhd_cubed_sphere_mhd.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_mhd_blast|cs_test|@PKG@/decks/cubed_sphere_mhd_blast_cubed_sphere_mhd_blast.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_mhd_conv|cs_test|@PKG@/decks/cubed_sphere_mhd_conv_cubed_sphere_mhd_conv.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_mhd_smr|cs_test|@PKG@/decks/cubed_sphere_mhd_smr_cubed_sphere_mhd_smr.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_mhd_strat|cs_test|@PKG@/decks/cubed_sphere_mhd_strat_cubed_sphere_mhd_strat.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_raddiff|cs_test|@PKG@/decks/cubed_sphere_raddiff_cubed_sphere_raddiff.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_resist|cs_test|@PKG@/decks/cubed_sphere_resist_cubed_sphere_resist.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_resist_smr|cs_test|@PKG@/decks/cubed_sphere_resist_smr_cubed_sphere_resist_smr.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_resist_smr_narrow|cs_test|@PKG@/decks/cubed_sphere_resist_smr_narrow_cubed_sphere_resist_smr_narrow.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_rigidrot|cs_test|@PKG@/decks/cubed_sphere_rigidrot_cubed_sphere_rigidrot.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_smr|cs_test|@PKG@/decks/cubed_sphere_smr_cubed_sphere_smr.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_toroidal|cs_test|@PKG@/decks/cubed_sphere_toroidal_cubed_sphere_toroidal.athinput|time/nlim=20 time/tlim=1e30|
+cubed_sphere_uniform|cs_test|@PKG@/decks/cubed_sphere_uniform_cubed_sphere_uniform.athinput|time/nlim=20 time/tlim=1e30|
+cs_ivan_hyd|cs_test|@PKG@/decks/cs_ivan_hyd_cs_ivan_hyd.athinput|time/nlim=20 time/tlim=1e30|
+cs_ivan_mhd|cs_test|@PKG@/decks/cs_ivan_mhd_cs_ivan_mhd.athinput|time/nlim=20 time/tlim=1e30|
+cs_regions_loop|cs_test|@PKG@/decks/cs_regions_loop_cs_regions_loop.athinput|time/nlim=20 time/tlim=1e30|
+cs_regions_rot|cs_test|@PKG@/decks/cs_regions_rot_cs_regions_rot.athinput|time/nlim=20 time/tlim=1e30|
+cs_regions_strat|cs_test|@PKG@/decks/cs_regions_strat_cs_regions_strat.athinput|time/nlim=20 time/tlim=1e30|
+li_dhj_hyd|deep_hot_jupiter_rt|@PKG@/decks/li_dhj_hyd_dhj_hyd.athinput|time/nlim=12 time/tlim=1e30 mesh/nx1=32 mesh/nx2=8 mesh/nx3=8 meshblock/nx1=32 meshblock/nx2=8 meshblock/nx3=8 time/ndiag=1 mesh/cs_seam_blockend=extend|ck=@PKG@/data/ck ic=@PKG@/data/ic
+li_dhj_r1m|deep_hot_jupiter_rt|@PKG@/decks/li_dhj_r1m_dhj_r1m.athinput|time/nlim=12 time/tlim=1e30 mesh/nx1=32 mesh/nx2=8 mesh/nx3=8 meshblock/nx1=32 meshblock/nx2=8 meshblock/nx3=8 time/ndiag=1 mesh/cs_seam_blockend=extend|ck=@PKG@/data/ck ic=@PKG@/data/ic
+li_he_hg|he_star_m1|@PKG@/decks/li_he_hg_he_hg.athinput|time/nlim=3 time/tlim=1e30 mesh/nx2=16 mesh/nx3=16 meshblock/nx1=704 meshblock/nx2=16 meshblock/nx3=16 mesh/cs_seam_blockend=extend problem/he_ic_file=@PKG@/data/ic_hegiant_14p5M_mk.txt problem/he_opac_table=@PKG@/data/rosseland_mesakap_afe2dd8da2bd.txt problem/he_planck_table=@PKG@/data/planck_ext2_x0.0009496_z0.0215304_416a61196c64.txt|
+li_he_rsg|he_star_m1|@PKG@/decks/li_he_rsg_he_rsg.athinput|time/nlim=3 time/tlim=1e30 mesh/nx2=16 mesh/nx3=16 meshblock/nx1=548 meshblock/nx2=16 meshblock/nx3=16 mesh/cs_seam_blockend=extend hydro/merge_lat_blockend=exchange problem/he_ic_file=@PKG@/data/ic_rsg_g25_deep.txt problem/he_opac_table=@PKG@/data/rosseland_mesakap_4c0e8b64d26a.txt problem/he_planck_table=@PKG@/data/planck_ext2_x0.653848_z0.019757_d38e5526afef.txt|
+li_cs_resist|cs_test|@PKG@/decks/li_cs_resist_cubed_sphere_resist.athinput|time/nlim=20 time/tlim=1e30|
+li_cs_raddiff|cs_test|@PKG@/decks/li_cs_raddiff_cubed_sphere_raddiff.athinput|time/nlim=20 time/tlim=1e30|
+li_cs_mhd_fc3|cs_test|@PKG@/decks/li_cs_mhd_fc3_cubed_sphere_mhd_blast.athinput|time/nlim=20 time/tlim=1e30 mesh/nx1=8 mesh/nx2=16 mesh/nx3=16 meshblock/nx1=8 meshblock/nx2=8 meshblock/nx3=8 mhd/nscalars=1 mesh/cs_seam_fc_order=3 mesh/cs_seam_blockend=extend|
+li_he_r136col|he_star_m1|@PKG@/decks/li_he_r136col_he_r136col.athinput|time/nlim=3 time/tlim=1e30 problem/he_ic_file=@PKG@/data/ic_r136a1_B.txt problem/he_opac_table=@PKG@/data/rosseland_mesakap_a09_x0.58_z0.0064_topsbase_T7.txt problem/he_planck_table=@PKG@/data/planck_tops_x0.58_z0.0064_a09_T7.txt|
+sp_blast_iso_wbs|sp_test|@PKG@/decks/sp_blast_iso_wbs_spherical_polar_blast.athinput|time/nlim=20 time/tlim=1e30 hydro/wellbalance_static=true|
+li_he_hg_wbwin|he_star_m1|@PKG@/decks/li_he_hg_wbwin_he_hg.athinput|time/nlim=3 time/tlim=1e30 mesh/nx2=16 mesh/nx3=16 meshblock/nx1=704 meshblock/nx2=16 meshblock/nx3=16 mesh/cs_seam_blockend=extend problem/he_ic_file=@PKG@/data/ic_hegiant_14p5M_mk.txt problem/he_opac_table=@PKG@/data/rosseland_mesakap_afe2dd8da2bd.txt problem/he_planck_table=@PKG@/data/planck_ext2_x0.0009496_z0.0215304_416a61196c64.txt problem/he_wb_grav_window=true|
+cs_strat_wbdyn|cs_test|@PKG@/decks/cs_strat_wbdyn_cs_regions_strat.athinput|time/nlim=10 time/tlim=1e30 mhd/wellbalance_dynamic=true mhd/wb_x1=true|
+cs_strat_wbdyn_rmax|cs_test|@PKG@/decks/cs_strat_wbdyn_rmax_cs_regions_strat.athinput|time/nlim=10 time/tlim=1e30 mhd/wellbalance_dynamic=true mhd/wb_x1=true mhd/wb_rmax=1.25|
+cs_strat_wball|cs_test|@PKG@/decks/cs_strat_wball_cs_regions_strat.athinput|time/nlim=10 time/tlim=1e30 mhd/wellbalance_dynamic=true mhd/wb_x1=true mhd/wb_dirs=all|
+rg_cs_wbdyn|red_giant|@PKG@/decks/rg_cs_wbdyn_rg_cs.athinput|time/nlim=5 mesh/nx1=48 meshblock/nx1=48 mesh/cs_seam_blockend=extend problem/rt_ck=false problem/opac_table=@PKG@/data/rosseland_gs98_x0.7_z0.014.txt time/tlim=1e30|
+rg_cs_wbdyn_rmax|red_giant|@PKG@/decks/rg_cs_wbdyn_rmax_rg_cs.athinput|time/nlim=5 mesh/nx1=48 meshblock/nx1=48 mesh/cs_seam_blockend=extend problem/rt_ck=false problem/opac_table=@PKG@/data/rosseland_gs98_x0.7_z0.014.txt time/tlim=1e30 hydro/wb_rmax=2.4e12|
+rg_cs_wbstat_rmax|red_giant|@PKG@/decks/rg_cs_wbstat_rmax_rg_cs.athinput|time/nlim=5 mesh/nx1=48 meshblock/nx1=48 mesh/cs_seam_blockend=extend problem/rt_ck=false problem/opac_table=@PKG@/data/rosseland_gs98_x0.7_z0.014.txt time/tlim=1e30 hydro/wellbalance_dynamic=false hydro/wellbalance_static=true hydro/wb_rmax=2.4e12|
+fofc_wb_static|built_in_pgens|@PKG@/decks/fofc_wb_static_fofc_wb.athinput|time/nlim=20 time/tlim=1e30 hydro/fofc=true|
+fofc_wb_dynamic|built_in_pgens|@PKG@/decks/fofc_wb_dynamic_fofc_wb.athinput|time/nlim=20 time/tlim=1e30 hydro/fofc=true hydro/wellbalance_static=false hydro/wellbalance_static_reconst=false hydro/wellbalance_dynamic=true hydro/wb_x2=true hydro/wb_rho=true|

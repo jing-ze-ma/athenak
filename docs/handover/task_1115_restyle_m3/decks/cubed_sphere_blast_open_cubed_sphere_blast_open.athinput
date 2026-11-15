@@ -1,0 +1,85 @@
+# Cubed sphere, MHD BLAST in an OPEN shell -- the twin of spherical_polar_blast_mhd.athinput.
+# Build with -D PROBLEM=cs_test.
+#
+# The same blast as the spherical-polar test: an overpressure cap of half-angle blast_ang
+# on the sphere at r in [1, 2], ambient d0 = p0 = 1, a UNIFORM field of strength b0c along
+# (bhx, bhy, bhz) built from its vector potential (div B at round-off), and the ambient
+# state (field included) held in the radial ghosts through the user BC, exactly as the sp
+# version does with ix1_bc = user.  Because the field threads the radial boundary the box
+# is NOT closed and the conserved sums printed at the end are not a budget; use
+# cubed_sphere_mhd_blast.athinput (azimuthal field, reflecting walls) for that.
+#
+# THE GATE is the profile file <basename>-blast.dat, in the format sp_test writes: the
+# volume-weighted rho, p, |v|, |B| binned in (radial index, geodesic angle from the
+# centre, azimuth about the centre from the field's projection).  On a sphere the blast
+# is invariant under rotation, so the profile must not depend on WHERE the centre sits:
+# compare a run centred on a panel centre (blast_x,y,z = 0,0,1) with one on a cube-edge
+# midpoint (1,1,0) and on a cube vertex (1,1,1), and with the sp pole/equator pair.
+# Choose the field tilt relative to the blast axis with bhx,bhy,bhz; the sp comparison
+# used 0, 45 and 90 degrees.  Use nx1 = nx2 = nx3 and double all three together; a cs
+# panel of n cells has the angular cell of an sp grid with nx2 = 2n.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cubed sphere MHD blast, open radial boundaries
+
+<job>
+basename = cs_blast_open
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user         # ambient state, field included, in the radial ghosts
+ox1_bc   = user
+
+nx2      = 8            # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 8            # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 8
+nx3      = 8
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.2
+ndiag      = 1000
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.666667
+
+<problem>
+iprob      = 12
+d0         = 1.0
+p0         = 1.0
+blast_p    = 10.0       # cap pressure (ambient 1)
+blast_ang  = 0.3        # half-angle of the cap, radians
+blast_x    = 1.0        # centre direction: (0,0,1) panel centre, (1,1,0) cube-edge
+blast_y    = 1.0        # midpoint, (1,1,1) cube vertex
+blast_z    = 1.0
+b0c        = 1.0        # uniform field strength (ambient beta = 2)
+bhx        = 1.0        # its direction; here along the blast axis (tilt 0)
+bhy        = 1.0
+bhz        = 1.0
+bazi       = 0.0        # no azimuthal part
+user_bcs   = true

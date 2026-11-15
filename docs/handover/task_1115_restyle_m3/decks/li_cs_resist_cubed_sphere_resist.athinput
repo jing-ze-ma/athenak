@@ -1,0 +1,116 @@
+# Cubed sphere, RESISTIVITY: the current-density test.  Build with -D PROBLEM=cs_test.
+#
+# problem/iprob = 11 is B = b0c*(-y,x,0) + a uniform tilted field, with v = 0 and the
+# pressure that balances J x B.  Two properties make it the right test:
+#
+#   1. curl B = 2*b0c*zhat EXACTLY and everywhere, so the resistive EMF eta*J is known
+#      analytically at every edge -- including the projection of zhat onto each edge's own
+#      unit tangent, which is what a current density that ignores the non-orthogonal
+#      gnomonic basis gets wrong by O(1) rather than O(h).
+#   2. The uniform part contributes nothing to curl B but makes every term of the discrete
+#      Stokes loop nonzero, so a dropped or mis-rotated term cannot hide.
+#
+# The state is static in B, and heats UNIFORMLY at eta*|J|^2 because div(E x B) = -E.J.
+# That heating is the only quantitative check on the POYNTING flux, which crosses the
+# edge EMFs (covariant) with bcc (orthonormal) and so needs its own rotation.
+#
+# CSTestResistCheck prints
+#   ### CS RESISTIVE EMF CHECK ... relative error vs the analytic eta*J
+#   ### CS ... Ohmic heating: <dp> measured ... exact (gam-1)*eta*J^2*t ... ratio
+# Expect the EMF L1 errors to converge at second order (the panel-edge ring is first
+# order: differencing the seam halo's own O(h^2) interpolation costs one order there) and
+# the heating ratio to approach 1.
+#
+# TO MEASURE THE CURRENT DENSITY ALONE, set a tiny cfl_number with nlim = 1.  Otherwise
+# the one-step evolution of the field contaminates the EMF error, amplified by 1/dr.
+#
+# RKG SUPER-TIME-STEPPING is validated with this same problem: add mhd/use_rkg_sts = true.
+# It routes through the same AddEMFGeneralResist, and resistivity_ct.cpp and
+# resistivity_update.cpp already had cubed-sphere branches.  At nx2 = 32, tlim = 0.2,
+# eta = 0.5 it gives heating ratio 0.9966 against the direct path's 1.0006, with EMF
+# errors agreeing to under 1% -- for 61x fewer MeshBlock-cycles and 10x less CPU.  Both
+# null tests (no current, and no resistivity) match the direct path exactly.
+#
+# THE SUPER-STEPPING IS FIRST ORDER IN TIME, and only in the ENERGY.  Refining dt at FIXED
+# grid over a 16x range (cfl 0.3 -> 0.01875) gives heating ratios
+#   0.996605 / 0.998619 / 0.999654 / 1.000177 / 1.000440
+# whose deviations from the dt -> 0 asymptote 1.000706 halve with dt: measured orders
+# 0.975 / 0.988 / 0.992 / 0.992.  Over the same scan the EMF errors and max|v| are
+# dt-INDEPENDENT and converge to the direct path's values, so the induction and the
+# momentum are fine; it is the Ohmic heating that is applied to first order.  Do not
+# measure this against the ANALYTIC value: the grid's own dt-independent error (+5.7e-4
+# here) then sits in the residual and makes the sequence look second order.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cubed sphere resistive current density
+
+<job>
+basename = cs_res
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 32           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 32           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 32
+nx3      = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.2
+ndiag      = 1000
+
+<mhd>
+eos               = ideal
+reconstruct       = plm
+rsolver           = hlld
+gamma             = 1.666667
+ohmic_resistivity = constant
+eta_ohm_const     = 0.5      # deliberately large: the heating must beat the ideal drift
+
+<problem>
+iprob    = 11
+d0       = 1.0
+p0       = 1.0
+b0c      = 0.1       # azimuthal amplitude; curl B = 2*b0c*zhat
+bunif    = 0.1       # uniform part, curl-free but present in every stencil term
+bhx      = 0.37      # its direction.  Deliberately TILTED.
+bhy      = 0.61
+bhz      = 0.70
+user_bcs = true
+# STATIC seam-halo accuracy scan of the FACE-CENTRED field.  With time/nlim = 0 the only
+# thing that has touched the ghosts is one boundary exchange, and the exact ghost value
+# of this static analytic field is known, so this measures the panel-seam halo of B and
+# nothing else.  1 = the per-block/per-face/per-component/per-layer table plus the
+# category bins, 2 = the full along-seam profiles.  Use it with
+# faces_from_potential = false, so the ACTIVE faces are the analytic projections exactly
+# and do not floor the scan.  See tests_seam_fc/README.md.  Both are listed here at
+# their defaults because a command line cannot ADD a parameter.
+seam_halo_scan_fc     = 0
+seam_halo_scan_fc_i   = 0
+# the header numbers (and the analytic-field finalizer) need this; default true since fefe6a179
+faces_from_potential  = false
