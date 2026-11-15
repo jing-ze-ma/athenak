@@ -74,6 +74,7 @@ struct CleanArgs {
   DvceArray5D<Real> w;         // work vectors
   DvceArray5D<Real> fc[3];     // face variables in x1, x2, x3
   DvceArray3D<Real> beam;      // boundary beam flux at x1min (m, k-ks, j-js)
+  DvceArray5D<Real> u;         // cell vectors of the cell layout (CLC_*)
   Real h, c, idx[3];           // stage step, light speed, inverse cell widths
   int bc[6];                   // boundary types x1min, x1max, ..., x3max
   Real ebath[6];               // boundary bath energy densities
@@ -81,6 +82,8 @@ struct CleanArgs {
   bool marshak;                // Marshak boundary form (else the rays' half range)
   bool use_beam;
   bool feedback;               // gas coupling (advective flux, exchange linearisation)
+  bool recon;                  // cell layout: reconstructed face states in the jumps
+  int nf;                      // cell layout: number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
   bool multi_d, three_d;
 };

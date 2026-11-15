@@ -2905,7 +2905,21 @@ class RadiationM1 {
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc);
-  Real CleanDot(const int a, const int b);
+  Real CleanDot(DvceArray5D<Real> w, const int nc, const int a, const int b);
+  // cell-centred layout (<rad_m1>/clean_layout = cell, rad_m1_clean_cell.cpp)
+  void CleanCellOldVector();
+  void CleanCellFaceCoefficients();
+  void CleanCellSlopeWeights();
+  void CleanCellFirstIterate();
+  void CleanCellRightHandSide();
+  void CleanCellApply(const int src, const int dst);
+  void CleanCellPreconditionerSetup();
+  void CleanCellPrecondition(const int src, const int dst);
+  Real CleanCellNewtonUpdate();
+  Real CleanCellVelocityUpdate();
+  void CleanCellCopyIterate();
+  int CleanCellCountNegative();
+  void CleanCellWriteBack();
 
   bool clean = false;           // <rad_m1>/scheme = clean
   Real cln_c0 = 0.1;            // clean_w_c0: C1 below which w = 0
@@ -2918,6 +2932,11 @@ class RadiationM1 {
   int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
   bool cln_pred = true;         // clean_predict: closure of the predicted state
   int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
+  bool cln_cell = false;        // clean_layout: false staggered, true cell-centred
+  int cln_alpha = 0;            // clean_alpha: dissipation weight (CLA_*), cell layout
+  bool cln_recon = true;        // clean_recon: plm (true) | none, cell layout
+  Real cln_psi_eps = 1.0e-12;   // clean_psi_eps: floor of the smoothness sensor
+  int cln_nnreal = 0;           // cells with |F| > c E in the last cell-layout solve
   bool cln_feedback = false;    // gas coupling active
   bool cln_init = false;        // arrays allocated
   bool cln_faces_set = false;   // starting face fluxes set
@@ -2929,6 +2948,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_v;      // closure fill flags (m,2,k,j,i)
   DvceArray5D<Real> cln_opb;    // opacities of the stage, kept during the closure build
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
+  DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve

@@ -20,6 +20,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
+#include "rad_m1/rad_m1_clean_cell.hpp"
 
 namespace radm1 {
 //----------------------------------------------------------------------------------------
@@ -42,6 +43,10 @@ void RadiationM1::CleanInit() {
   Kokkos::deep_copy(cln_fc1, 0.0);
   Kokkos::deep_copy(cln_fc2, 0.0);
   Kokkos::deep_copy(cln_fc3, 0.0);
+  if (cln_cell) {
+    Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
+    Kokkos::deep_copy(cln_x, 0.0);
+  }
 
   int nranks = 1;
 #if MPI_PARALLEL_ENABLED
@@ -64,59 +69,93 @@ void RadiationM1::CleanInit() {
 
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus RadiationM1::CleanSolve
-//! \brief the implicit stage solve of the clean scheme (replaces ImplicitSolve)
+//! \brief the implicit stage solve of the clean scheme (replaces ImplicitSolve), in the
+//! staggered layout (E in cells, F on faces) or the cell layout (E and F in cells)
 
 TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (!cln_init) CleanInit();
   FluidRef fl = FluidRef::Get(pmy_pack);
   cln_feedback = gas_feedback && fl.on;
+  const bool cell = cln_cell;
 
   // 1. starting face fluxes on the first cycle (restarts carry them)
   if (!cln_faces_set) {
     cln_faces_set = true;
-    if (pmy_pack->pmesh->ncycle == 0) CleanInitFaceFluxes();
+    if (pmy_pack->pmesh->ncycle == 0 && !cell) CleanInitFaceFluxes();
   }
 
   // 2. closure (from the gas before the stage increments are added), old vector, face
   //    coefficients
   CleanClosure();
   CleanOldVector();
-  CleanFaceCoefficients();
+  if (cell) {
+    CleanCellOldVector();
+    CleanCellFaceCoefficients();
+  } else {
+    CleanFaceCoefficients();
+  }
   CleanFirstIterate();
+  if (cell) CleanCellFirstIterate();
   if (cln_feedback) CleanAdvectiveCoefficients();
 
-  // 3. Newton iteration on the gas coupling; one linear solve without it
+  // 3. Newton iteration on the gas coupling and, with reconstruction, Picard passes on
+  //    the lagged slopes; one linear solve without either
+  const bool iterate = cln_feedback || (cell && cln_recon);
   int nit = 0;
-  bool converged = !cln_feedback;
-  const int maxnl = cln_feedback ? cln_maxnl : 1;
+  bool converged = !iterate;
+  const int maxnl = iterate ? cln_maxnl : 1;
+  // the lagged slopes settle only to the accuracy of the linear solve
+  const Real tol_nl = cell ? fmax(cln_tol_nl, 10.0*cln_tol) : cln_tol_nl;
   for (int inl = 0; inl < maxnl; ++inl) {
-    CleanRightHandSide();
-    CleanPreconditionerSetup();
+    if (cell) {
+      if (cln_recon) CleanCellSlopeWeights();
+      CleanCellRightHandSide();
+      CleanCellPreconditionerSetup();
+    } else {
+      CleanRightHandSide();
+      CleanPreconditionerSetup();
+    }
     nit = CleanBiCGStab();
     cln_nsolve += 1.0;
     cln_nit += std::abs(nit);
-    if (!cln_feedback || nit < 0) break;
-    const Real de = CleanNewtonUpdate();
-    const Real dv = CleanVelocityUpdate();
-    if (de < cln_tol_nl && dv < cln_tol_nl) {
+    if (!iterate || nit < 0) break;
+    const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
+    Real dv = 0.0;
+    if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
+    if (de < tol_nl && dv < tol_nl) {
       converged = true;
       break;
     }
   }
-  if (cln_feedback) CleanCopyIterate();
+  if (iterate) {
+    if (cell) {
+      CleanCellCopyIterate();
+    } else {
+      CleanCopyIterate();
+    }
+  }
   if (!converged) nit = -std::abs(nit) - 1;
 
   // 4. positivity of the solution
-  const int nneg = CleanCountNegative();
+  const int nneg = cell ? CleanCellCountNegative() : CleanCountNegative();
   if (nit < 0) cln_nfail += 1.0;
   if (nneg > 0) cln_nneg += 1.0;
   if (global_variable::my_rank == 0) {
-    std::printf("CLEAN cycle %d t2s %d it %d neg %d\n", pmy_pack->pmesh->ncycle,
-                t2_solve, nit, nneg);
+    if (cell) {
+      std::printf("CLEAN cycle %d t2s %d it %d neg %d nreal %d\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, nit, nneg, cln_nnreal);
+    } else {
+      std::printf("CLEAN cycle %d t2s %d it %d neg %d\n", pmy_pack->pmesh->ncycle,
+                  t2_solve, nit, nneg);
+    }
   }
 
   // 5. new state: face fluxes, E, cell fluxes, gas, stage slopes
-  CleanWriteBack();
+  if (cell) {
+    CleanCellWriteBack();
+  } else {
+    CleanWriteBack();
+  }
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
     t2_fail = (nit < 0) || (nneg > 0);
   }

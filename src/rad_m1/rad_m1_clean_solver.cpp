@@ -14,6 +14,7 @@
 #include "mesh/mesh.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
+#include "rad_m1/rad_m1_clean_cell.hpp"
 
 namespace radm1 {
 //----------------------------------------------------------------------------------------
@@ -30,6 +31,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.fc[1] = cln_fc2;
   x.fc[2] = cln_fc3;
   x.beam = ibm_f;
+  x.u = cln_x;
   x.h = dt_sub;
   x.c = c_light;
   x.idx[0] = 1.0/size.h_view(0).dx1;
@@ -48,6 +50,8 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.marshak = (cln_bdry_form == 1);
   x.use_beam = (ibm_n > 0);
   x.feedback = cln_feedback;
+  x.recon = cln_recon;
+  x.nf = pmy_pack->pmesh->three_d ? 3 : (pmy_pack->pmesh->multi_d ? 2 : 1);
   x.is = indcs.is;
   x.ie = indcs.ie;
   x.js = indcs.js;
@@ -99,15 +103,14 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
 
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::CleanDot
-//! \brief sum over active cells of w(a) w(b)
+//! \brief sum over active cells and the nc components of the vectors at slots a, b of w
 
-Real RadiationM1::CleanDot(const int a, const int b) {
+Real RadiationM1::CleanDot(DvceArray5D<Real> w, const int nc, const int a, const int b) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, js = indcs.js, ks = indcs.ks;
   int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   int nmb = pmy_pack->nmb_thispack;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
-  auto w = cln_w;
   Real sum = 0.0;
   Kokkos::parallel_reduce("cln_dot", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &s) {
@@ -115,7 +118,9 @@ Real RadiationM1::CleanDot(const int a, const int b) {
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/nx1;
     int i = idx - m*nkji - k*nji - j*nx1;
-    s += w(m,a,k+ks,j+js,i+is)*w(m,b,k+ks,j+js,i+is);
+    for (int c = 0; c < nc; ++c) {
+      s += w(m,a+c,k+ks,j+js,i+is)*w(m,b+c,k+ks,j+js,i+is);
+    }
   }, Kokkos::Sum<Real>(sum));
   return sum;
 }
@@ -272,8 +277,9 @@ void RadiationM1::CleanPrecondition(const int src, const int dst) {
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanBiCGStab
-//! \brief right-preconditioned BiCGStab for A X = B (work vectors CLW_X, CLW_B), starting
-//! from the X it is given.  Returns the number of iterations, negative if not converged.
+//! \brief right-preconditioned BiCGStab for A X = B, starting from the X it is given:
+//! scalar E vectors of cln_w (staggered layout) or 4-component vectors of cln_x (cell
+//! layout).  Returns the number of iterations, negative if not converged.
 
 int RadiationM1::CleanBiCGStab() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -281,55 +287,83 @@ int RadiationM1::CleanBiCGStab() {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto w = cln_w;
+  const bool cell = cln_cell;
+  auto w = cell ? cln_x : cln_w;
+  const int nc = cell ? 4 : 1;
+  const int sx = cell ? CLC_X : CLW_X, sb = cell ? CLC_B : CLW_B;
+  const int sr = cell ? CLC_R : CLW_R, sr0 = cell ? CLC_R0 : CLW_R0;
+  const int sp = cell ? CLC_P : CLW_P, sv = cell ? CLC_V : CLW_V;
+  const int ss = cell ? CLC_S : CLW_S, sq = cell ? CLC_Q : CLW_Q;
+  const int sy = cell ? CLC_Y : CLW_Y, sz = cell ? CLC_Z : CLW_Z;
 
   // w(dst) = sa w(a) + sb w(b)
-  auto axpby = [&](const int dst, const int a, const Real sa, const int b, const Real sb) {
+  auto axpby = [&](const int dst, const int a, const Real sa, const int b, const Real sb_) {
     par_for("cln_axpby", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      w(m,dst,k,j,i) = sa*w(m,a,k,j,i) + sb*w(m,b,k,j,i);
+      for (int c = 0; c < nc; ++c) {
+        w(m,dst+c,k,j,i) = sa*w(m,a+c,k,j,i) + sb_*w(m,b+c,k,j,i);
+      }
     });
   };
+  auto apply = [&](const int src, const int dst) {
+    if (cell) {
+      CleanCellApply(src, dst);
+    } else {
+      CleanApply(src, dst);
+    }
+  };
+  auto precondition = [&](const int src, const int dst) {
+    if (cell) {
+      CleanCellPrecondition(src, dst);
+    } else {
+      CleanPrecondition(src, dst);
+    }
+  };
+  auto dot = [&](const int a, const int b) {return CleanDot(w, nc, a, b);};
 
-  CleanApply(CLW_X, CLW_R);
-  axpby(CLW_R, CLW_B, 1.0, CLW_R, -1.0);
-  axpby(CLW_R0, CLW_R, 1.0, CLW_R, 0.0);
-  axpby(CLW_P, CLW_R, 0.0, CLW_R, 0.0);
-  axpby(CLW_V, CLW_R, 0.0, CLW_R, 0.0);
-  const Real tol = cln_tol*fmax(std::sqrt(CleanDot(CLW_B, CLW_B)), 1.0e-300);
-  if (std::sqrt(CleanDot(CLW_R, CLW_R)) <= tol) return 0;
+  apply(sx, sr);
+  axpby(sr, sb, 1.0, sr, -1.0);
+  axpby(sr0, sr, 1.0, sr, 0.0);
+  axpby(sp, sr, 0.0, sr, 0.0);
+  axpby(sv, sr, 0.0, sr, 0.0);
+  const Real tol = cln_tol*fmax(std::sqrt(dot(sb, sb)), 1.0e-300);
+  if (std::sqrt(dot(sr, sr)) <= tol) return 0;
 
   Real rho = 1.0, alpha = 1.0, omega = 1.0;
   for (int it = 1; it <= cln_maxit; ++it) {
-    const Real rho_new = CleanDot(CLW_R0, CLW_R);
+    const Real rho_new = dot(sr0, sr);
     if (rho_new == 0.0) return -it;
     const Real beta = (rho_new/rho)*(alpha/omega);
     rho = rho_new;
     par_for("cln_pupdate", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      w(m,CLW_P,k,j,i) = w(m,CLW_R,k,j,i)
-                         + beta*(w(m,CLW_P,k,j,i) - omega*w(m,CLW_V,k,j,i));
+      for (int c = 0; c < nc; ++c) {
+        w(m,sp+c,k,j,i) = w(m,sr+c,k,j,i)
+                          + beta*(w(m,sp+c,k,j,i) - omega*w(m,sv+c,k,j,i));
+      }
     });
-    CleanPrecondition(CLW_P, CLW_Y);
-    CleanApply(CLW_Y, CLW_V);
-    const Real r0v = CleanDot(CLW_R0, CLW_V);
+    precondition(sp, sy);
+    apply(sy, sv);
+    const Real r0v = dot(sr0, sv);
     if (r0v == 0.0) return -it;
     alpha = rho/r0v;
-    axpby(CLW_S, CLW_R, 1.0, CLW_V, -alpha);
-    if (std::sqrt(CleanDot(CLW_S, CLW_S)) <= tol) {
-      axpby(CLW_X, CLW_X, 1.0, CLW_Y, alpha);
+    axpby(ss, sr, 1.0, sv, -alpha);
+    if (std::sqrt(dot(ss, ss)) <= tol) {
+      axpby(sx, sx, 1.0, sy, alpha);
       return it;
     }
-    CleanPrecondition(CLW_S, CLW_Z);
-    CleanApply(CLW_Z, CLW_Q);
-    const Real qq = CleanDot(CLW_Q, CLW_Q);
-    omega = (qq > 0.0) ? CleanDot(CLW_Q, CLW_S)/qq : 0.0;
+    precondition(ss, sz);
+    apply(sz, sq);
+    const Real qq = dot(sq, sq);
+    omega = (qq > 0.0) ? dot(sq, ss)/qq : 0.0;
     par_for("cln_xupdate", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      w(m,CLW_X,k,j,i) += alpha*w(m,CLW_Y,k,j,i) + omega*w(m,CLW_Z,k,j,i);
-      w(m,CLW_R,k,j,i) = w(m,CLW_S,k,j,i) - omega*w(m,CLW_Q,k,j,i);
+      for (int c = 0; c < nc; ++c) {
+        w(m,sx+c,k,j,i) += alpha*w(m,sy+c,k,j,i) + omega*w(m,sz+c,k,j,i);
+        w(m,sr+c,k,j,i) = w(m,ss+c,k,j,i) - omega*w(m,sq+c,k,j,i);
+      }
     });
-    if (std::sqrt(CleanDot(CLW_R, CLW_R)) <= tol) return it;
+    if (std::sqrt(dot(sr, sr)) <= tol) return it;
     if (omega == 0.0) return -it;
   }
   return -cln_maxit;
