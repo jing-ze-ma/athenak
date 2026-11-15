@@ -206,6 +206,24 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (cell && cln_diagcells && all_low) CleanCellDiagnose();
   if (nit < 0) cln_nfail += 1.0;
   if (nneg > 0) cln_nneg += 1.0;
+  // a backward-Euler solve that did not converge fails the cycle: with <time>/dt_retry
+  // the cycle is taken again with a smaller dt (a failed stage is redone by backward
+  // Euler through t2_fail below)
+  if (nit < 0 && !t2stage) {
+    if (dtr_on) {
+      if (!dtr_fail) {
+        dtr_why = 1;
+        dtr_resid = -1.0;
+      }
+      dtr_fail = true;
+    }
+    if (global_variable::my_rank == 0) {
+      std::printf("CLEAN WARNING cycle %d: backward-Euler solve not converged (%s, %d "
+                  "so far)\n", pmy_pack->pmesh->ncycle,
+                  dtr_on ? "dt_retry" : "no dt_retry: accepted",
+                  static_cast<int>(cln_nfail));
+    }
+  }
   if (global_variable::my_rank == 0) {
     if (cell) {
       std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pic %d %.2e pos %d mark %d "
