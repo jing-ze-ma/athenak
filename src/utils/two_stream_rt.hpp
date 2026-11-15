@@ -779,13 +779,13 @@ inline Real rt_de_max = 0.5;
 // so the change is confined to exactly the cells the floor was catching.  It costs one
 // EOS evaluation per COOLING cell and stage.
 inline bool rt_floor_consistent = false;
-// problem/rt_semi_lin: recover the OLD semi-implicit step, which linearized the emission
-// about the current state and relaxed at lambda = 4E/e.  See the long note in rt_apply:
-// that form bounds cooling but leaves heating explicit and unbounded, so a cold optically
-// thin cell overshoots its equilibrium badly.  Kept only to reproduce runs made before
-// the fix.  DEFAULT TRUE, i.e. the old linearization, so that every problem generator
-// sharing this header reproduces its pre-fix runs bit for bit; the red-giant inputs set
-// it false to select the new equilibrium-relaxation step.
+// problem/rt_semi_lin: true = the semi-implicit step that linearizes the emission about
+// the current state and relaxes at lambda = 4E/e.  See the long note in rt_apply: that
+// form bounds cooling but leaves heating explicit and unbounded, so a cold optically thin
+// cell overshoots its equilibrium.  false = the equilibrium-relaxation step, which bounds
+// both.  The namespace value is the default of the problem generators that do not read
+// the key; box_convection defaults to false, red_giant to false with the mode-3 column
+// solve (true otherwise), and the red-giant inputs set it false.
 inline bool rt_semi_lin = true;
 // problem/rt_use_cons: take the cell's internal energy and density from the CONSERVED
 // state u0 instead of from w0.  w0 is the previous stage's ConToPrim output, and by the
@@ -797,9 +797,8 @@ inline bool rt_semi_lin = true;
 // which is how a cell is driven to a negative internal energy, repaired by the floor,
 // and handed to the next Riemann solve as a 0.1 K cell beside a 1e4 K one.  The
 // namespace value below is only the pre-pgen initialiser: every problem generator that
-// uses this header sets it from problem/rt_use_cons, and since 2026-09-22 the default
-// there is TRUE in box_convection and deep_hot_jupiter_rt, and the mode-3 flag in
-// red_giant.
+// uses this header sets it from problem/rt_use_cons, whose default is TRUE in
+// box_convection and deep_hot_jupiter_rt, and the mode-3 flag in red_giant.
 inline bool rt_use_cons = false;
 // problem/rt_test_mu0 and problem/ck_test_kgrey: TEST HOOKS for the well-posed checks
 // of the implicit correlated-k solve (tests_ck_implicit/wellposed).  rt_test_mu0 >= -1
@@ -1108,19 +1107,20 @@ inline bool rt_int_at_cut = true;
 // from <hydro>/rad_flux_inner under <problem>/rt_bottom_flux, and zeroes rad_flux_inner
 // at the same time so the flux is not also injected at the conduction wall face.
 inline Real rt_bot_flux = 0.0;
-// problem/rt_layer_legacy: the STAGGERED layer the grey and correlated-k sweeps used.
+// problem/rt_layer_legacy: true = the STAGGERED whole-cell layer of the grey and
+// correlated-k sweeps; false (DEFAULT) = the centre-to-centre layer described below.
 //
-// Every layer was integrated over a WHOLE cell in optical depth, dtau = kappa rho dz of
-// cell i, but with its source running linearly in tau from that cell's CENTRE Planck
-// function to the NEIGHBOUR CELL'S CENTRE one.  The interval the optical depth measures
-// and the interval the source runs over are then offset by half a cell, and the two
-// endpoints of the source are two cells apart while the layer is one cell thick.  The
-// error is O(dtau^2) and smooth, but it is not small where it matters: MEASURED against
-// an accurate formal solution on the He-star column, the emergent flux came out ~4 % low
-// at dtau/cell of 1-3 and wandered between 0.73 and 1.06 of the true flux at dtau/cell
-// 3-6, which is exactly the handover ramp of the He and B-star boxes.
+// The staggered layer is integrated over a WHOLE cell in optical depth, dtau = kappa rho
+// dz of cell i, but with its source running linearly in tau from that cell's CENTRE
+// Planck function to the NEIGHBOUR CELL'S CENTRE one.  The interval the optical depth
+// measures and the interval the source runs over are then offset by half a cell, and the
+// two endpoints of the source are two cells apart while the layer is one cell thick.  The
+// error is O(dtau^2) and smooth, but it is not small where it matters: against an
+// accurate formal solution on the He-star column the emergent flux comes out ~4 % low at
+// dtau/cell of 1-3 and wanders between 0.73 and 1.06 of the true flux at dtau/cell 3-6,
+// which is exactly the handover ramp of the He and B-star boxes.
 //
-// THE FIX.  The layers now run between cell CENTRES: layer (i, i+1) has
+// The centre-to-centre layers run between cell CENTRES: layer (i, i+1) has
 //     dtau = 0.5 (kappa rho dz)_i + 0.5 (kappa rho dz)_{i+1},
 // each half with its OWN opacity, and a source linear in tau between B_i and B_{i+1} --
 // which is exact for that layer, since the source really is (piecewise) linear there.
@@ -1138,7 +1138,6 @@ inline Real rt_bot_flux = 0.0;
 // two halves.  Em_g, the relaxation rate, becomes the cell's own 4 sigma kappa rho T^4
 // instead of the centre-to-centre average of two Planck functions.
 //
-// Default false, i.e. THE FIX IS ON.  Set true to reproduce a pre-fix run bitwise.
 inline bool rt_layer_legacy = false;
 // problem/ck_spherical: give the CORRELATED-K thermal two-stream the SPHERICAL form
 // the grey centre-to-centre sweep and the mode-3 column solve carry.  problem/
