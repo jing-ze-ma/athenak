@@ -111,12 +111,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     {std::string cl = pin->GetOrAddString("rad_m1","clean_closure",
                                           cln_cell ? "extrap" : "predict");
     cln_closit = (cl.compare("iterate") == 0);
-    cln_extrap = (cl.compare("extrap") == 0) ? 1 : ((cl.compare("extrap2") == 0) ? 2 : 0);
+    cln_extrap = (cl.compare("extrap") == 0) ? 1 : ((cl.compare("extrap2") == 0) ? 2 :
+                 ((cl.compare("extrap1") == 0) ? 3 : 0));
     cln_edd = (cl.compare("eddington") == 0);
     if (!cln_closit && cln_extrap == 0 && !cln_edd && cl.compare("predict") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_m1>/clean_closure = predict | iterate | extrap | extrap2 | "
-        << "eddington" << std::endl;
+        << std::endl << "<rad_m1>/clean_closure = predict | iterate | extrap | extrap1 | "
+        << "extrap2 | eddington" << std::endl;
       std::exit(EXIT_FAILURE);
     }}
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);

@@ -123,23 +123,26 @@ void RadiationM1::CleanClosureIterate() {
 //! \fn void RadiationM1::CleanRayMoments
 //! \brief formal solution of the current state (u0 and the gas, no prediction) and its
 //! moments J, K = D J, H+, H-, <|I - S|> per cell into dst (CLN_* layout, not normalised;
-//! J = 0 marks a cell whose rays do not carry its radiation)
+//! J = 0 marks a cell whose rays do not carry its radiation).  With solve = false the
+//! moments of the closure in place (the rays of the last formal solution) are taken.
 
-void RadiationM1::CleanRayMoments(DvceArray5D<Real> dst) {
+void RadiationM1::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
 
-  CleanPredictState(false);
-  vcol_srelax = false;
-  vcol_sbl = false;
-  vcol_sesc = false;
-  vscat_jrel = false;
-  VetShortChar();
-  if (cln_opsaved) Kokkos::deep_copy(opac, cln_opb);
-  CleanClosureFromRays();
+  if (solve) {
+    CleanPredictState(false);
+    vcol_srelax = false;
+    vcol_sbl = false;
+    vcol_sesc = false;
+    vscat_jrel = false;
+    VetShortChar();
+    if (cln_opsaved) Kokkos::deep_copy(opac, cln_opb);
+    CleanClosureFromRays();
+  }
 
   auto cs = cln_s;
   par_for("cln_raymom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -155,11 +158,25 @@ void RadiationM1::CleanRayMoments(DvceArray5D<Real> dst) {
 //! \fn void RadiationM1::CleanClosureAfterSolve
 //! \brief clean_closure = extrap(2): the ray moments of a converged solution.  The last
 //! solve of a step gives the moments at t^{n+1} (used from the next step on); with
-//! extrap2 the stage-1 solve gives those at the stage-1 time.
+//! extrap2 the stage-1 solve gives those at the stage-1 time.  extrap1 runs no formal
+//! solution here: the closure of the stage-1 solve (rays of its first iterate, a state at
+//! t^{n+1}) gives the moments at t^{n+1}; a backward-Euler step leaves none and the
+//! history starts again.
 
 void RadiationM1::CleanClosureAfterSolve() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
+  if (cln_extrap == 3) {
+    if (t2_solve == M1_T2S_STAGE1) {
+      CleanRayMoments(cln_mc, false);
+      cln_tm = time + dt;
+      cln_have_c = true;
+    } else if (t2_solve != M1_T2S_STAGE2) {
+      cln_have_c = false;
+      cln_have_n = false;
+    }
+    return;
+  }
   if (t2_solve == M1_T2S_STAGE1) {
     if (cln_extrap != 2) return;
     const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
@@ -187,12 +204,14 @@ void RadiationM1::CleanClosureAfterSolve() {
 //! moments at t^n where the extrapolated ones are not those of a non-negative intensity
 //! (J <= 0, |H| > J or K - H H^T/J not positive semidefinite; counted).  The first step,
 //! a restart and backward-Euler solves use the moments at t^n alone; without any (first
-//! step, restart) the closure of the state at t^n is built (CleanClosure).
+//! step, restart) the closure of the state at t^n is built (CleanClosure).  With extrap1
+//! the moments are those of the stage-1 closures and stage 2 keeps the stage-1 closure.
 
 void RadiationM1::CleanClosureExtrap() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
   cln_nguard = 0;
+  if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE2) return;
 
   // a new step: the end of the last step becomes t^n
   if (cln_have_c && cln_tm == time) {

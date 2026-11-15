@@ -2894,7 +2894,7 @@ class RadiationM1 {
   void CleanOldVector();
   void CleanClosure();
   void CleanPredictState(const bool use_k1);
-  void CleanRayMoments(DvceArray5D<Real> dst);
+  void CleanRayMoments(DvceArray5D<Real> dst, const bool solve = true);
   void CleanClosureExtrap();
   void CleanClosureAfterSolve();
   void CleanClosureIterate();
@@ -2966,6 +2966,7 @@ class RadiationM1 {
   bool cln_all_low = false;     // the solve has every interior face low-order
   bool cln_closit = false;      // clean_closure: predict | iterate
   int cln_extrap = 0;           // clean_closure = extrap (1, cell default) | extrap2 (2)
+                                // | extrap1 (3)
   bool cln_edd = false;         // clean_closure = eddington (D = I/3, no rays)
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
