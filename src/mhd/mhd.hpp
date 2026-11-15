@@ -305,19 +305,6 @@ class MHD {
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per
   // FACE. <= 0 disables it. See rsolvers/cs_lowbeta_fallback.hpp for why this exists.
   Real cs_lowbeta_fallback = 0.0;
-  // Spherical polar: the ORIGINAL polar-boundary code swaps HLLD for HLLE on the rows
-  // adjacent to each pole (all three directions). The hydro module has no such swap, and
-  // the extra HLLE dissipation there drives a spurious deep meridional circulation
-  // (bench/sp_excess2: with HLLE in both modules B=0 MHD == hydro bitwise), but the
-  // canonical polar MHD blast at 256^2 needs it (the far polar row drains and dt
-  // collapses without it, bench/polar_blast_hlle). <mhd>/polar_hlle_rows is a per-sweep
-  // MASK: bit 1 = x1 sweep, bit 2 = x2 (theta) sweep, bit 4 = x3 sweep. Default 6 =
-  // theta + phi swapped, RADIAL NOT: the radial-sweep swap alone carries the whole
-  // hot-Jupiter excess (bench/sp_excess4) and contributes nothing to the blast's
-  // stability (bench/polar_blast_hlle/gpu: mask 6 reaches tlim with min dt 2.84e-5 vs
-  // 3.05e-5 for the old 7; masks 2/4 dip to 2.2e-5; 0 collapses). 7 = the old swap
-  // everywhere, 0 = HLLD everywhere; true/false are accepted as 7/0.
-  int polar_hlle_rows = 6;
 
 
   // following only used for including time-independent gravity in the conserved energy

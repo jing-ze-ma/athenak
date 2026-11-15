@@ -9,7 +9,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -40,24 +39,8 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
   const int nrow = pm->mesh_indcs.nx2;   // theta rows of the whole mesh
   const int nphi = pm->mesh_indcs.nx3;
 
-  // group size per row counted from each pole: the override list, or the default rule
-  std::vector<int> nlist;
-  const bool have_list = pin->DoesParameterExist("mesh", "polar_ring_avg_n");
-  if (have_list) {
-    std::string s = pin->GetString("mesh", "polar_ring_avg_n");
-    // ':' is accepted as a separator too (sbatch --export splits on commas)
-    for (auto &c : s) {
-      if (c == ':') c = ',';
-    }
-    std::stringstream ss(s);
-    std::string tok;
-    while (std::getline(ss, tok, ',')) {
-      if (tok.find_first_not_of(" \t") != std::string::npos) {
-        nlist.push_back(std::stoi(tok));
-      }
-    }
-  }
-  const Real tol = pin->GetOrAddReal("mesh", "polar_ring_avg_tol", 1.05);
+  // the group size of a row doubles while 2 n sin(theta) <= tol
+  const Real tol = 1.05;
 
   const int nmb = ppack->nmb_thispack;
   const int n2 = ic.nx2 + 2*ic.ng;
@@ -73,19 +56,12 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
       if (j < ic.js || j > ic.je) continue;
       const int jg = lx2*ic.nx2 + (j - ic.js);
       const int jp = std::min(jg, nrow - 1 - jg);   // row from the nearer pole
+      // the doubling is capped by the half-ring (a mesh property), not by the
+      // MeshBlock nx3, so the group size does not depend on the phi decomposition; a
+      // block nx3 that the mesh-wide group size does not divide is refused below
       int n = 1;
-      if (have_list) {
-        if (jp < static_cast<int>(nlist.size())) n = nlist[jp];
-      } else {
-        // the doubling is capped by the HALF-RING (a mesh property),
-        // not by the MeshBlock nx3: capping by the block silently changed the polar
-        // group size (and the Fourier cutoff, the CFL group width and the M1 coarse
-        // groups that use it) with the phi decomposition. A block nx3 that the
-        // mesh-wide group size does not divide is refused below.
-        const Real st = std::sin(hx2v(m,j));
-        while (2*n*st <= tol && ((nphi/2) % (2*n)) == 0) n *= 2;
-      }
-      if (n < 1) RavgFatal("polar_ring_avg_n entries must be >= 1");
+      const Real st = std::sin(hx2v(m,j));
+      while (2*n*st <= tol && ((nphi/2) % (2*n)) == 0) n *= 2;
       if ((ic.nx3 % n) != 0 || ((nphi/2) % n) != 0) {
         RavgFatal("group size " + std::to_string(n) + " (row " + std::to_string(jp) +
                   " from the pole) must divide the MeshBlock nx3 = " +
@@ -120,7 +96,7 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
   if (global_variable::my_rank == 0) {
     std::cout << "RINGAVG polar ring averaging: group size per row from the pole:";
     for (int jp = 0; jp < nrow/2 && nrep[jp] > 1; ++jp) std::cout << " " << nrep[jp];
-    std::cout << (have_list ? " (polar_ring_avg_n)" : " (auto)") << std::endl;
+    std::cout << std::endl;
   }
   // <mesh>/polar_ring_avg_filter, read only when named
   if (pin->DoesParameterExist("mesh", "polar_ring_avg_filter")) {

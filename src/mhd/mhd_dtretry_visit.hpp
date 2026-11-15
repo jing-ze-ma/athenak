@@ -87,7 +87,6 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("cs_seam_nfs", cs_seam_nfs);
   v.value("use_polar_emf_diss", use_polar_emf_diss);
   v.value("cs_lowbeta_fallback", cs_lowbeta_fallback);
-  v.value("polar_hlle_rows", polar_hlle_rows);
   v.value("use_etotgrav", use_etotgrav);
   v.view("phi0.x1f", phi0.x1f);
   v.view("phi0.x2f", phi0.x2f);

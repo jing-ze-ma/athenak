@@ -51,7 +51,7 @@ namespace mhd {
 //! F^[B_t] = a^L F^L + a^R F^R - (d^R B_t^R - d^L B_t^L), F = v_n B_t - v_t B_n,
 //! one (a, d) pair for every face-parallel component B_t. ONE store for every solver:
 //! hll = true (emf_scheme = uct, rsolver = hlle, a spherical-polar polar-row face where
-//! polar_hlle_rows replaced HLLD/LHLLD by HLLE , or a cubed-sphere face where
+//! HLLD/LHLLD is replaced by HLLE (theta and phi sweeps), or a cubed-sphere face where
 //! CSLowBetaFallback replaced the flux by HLLE: same test (p_L + p_R) < lb_beta <B^2>):
 //! MD21 eq. 30, a^L = aR/(aR+aL), d^L = d^R = aR aL/(aR+aL), aR = max(0,S_R),
 //! aL = max(0,-S_L), S_L/S_R the Davis fast speeds of every solver here;
@@ -248,9 +248,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const Real cs_lb_beta = cs_lowbeta_fallback;
   // <mhd>/boris_c: limited-speed HLLE on the faces the limiter acts on
   const bool boris_on_ = (peos->eos_data.boris_c2inv > 0.0);
-  const bool polar_hlle_x1_ = (polar_hlle_rows & 1) != 0;
-  const bool polar_hlle_x2_ = (polar_hlle_rows & 2) != 0;
-  const bool polar_hlle_x3_ = (polar_hlle_rows & 4) != 0;
   const auto wb_option_ = wb_option;
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
@@ -668,9 +665,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     const auto &flx1 = flx1_;
     const auto &e31 = e31_;
     const auto &e21 = e21_;
-    const bool do_pole = polar_hlle_x1_ &&
-      ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) ||
-       (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je));
     if constexpr (rsolver_method_ == MHD_RSolver::advect) {
       Advect(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::llf) {
@@ -678,21 +672,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlle) {
       HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlld) {
-      if (do_pole) {
-        HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
-             bx,flx1,e31,e21);
-      } else {
       HLLD(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
            bx,flx1,e31,e21);
-      }
     } else if constexpr (rsolver_method_ == MHD_RSolver::lhlld) {
-      if (do_pole) {
-        HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
-             bx,flx1,e31,e21);
-      } else {
-        LHLLD(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
-              bx,flx1,e31,e21,w0_);
-      }
+      LHLLD(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
+            bx,flx1,e31,e21,w0_);
     } else if constexpr (rsolver_method_ == MHD_RSolver::llf_sr) {
       LLF_SR(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlle_sr) {
@@ -736,7 +720,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     if (uct_on_) {   // UCT corner EMF inputs (x1 faces)
       par_for_inner(member, il, iu, [&](const int i) {
         UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVX, i, bx(m,k,j,i),
-                     uct_hll_ || do_pole, uct_eta_,
+                     uct_hll_, uct_eta_,
                      uct_lb_, uct1_, m, k, j, w0_);
       });
       member.team_barrier();
@@ -1022,7 +1006,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             });
             member.team_barrier();
           }
-          const bool do_pole = polar_hlle_x2_ &&
+          // spherical polar: HLLE on the theta faces next to each pole (the polar
+          // rows drain and dt collapses with HLLD there)
+          const bool do_pole =
             ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar &&
               (j == js || j == js+1)) ||
              (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar &&
@@ -1348,7 +1334,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             });
             member.team_barrier();
           }
-          const bool do_pole = polar_hlle_x3_ &&
+          // spherical polar: HLLE on the phi faces of the polar rows
+          const bool do_pole =
             ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar &&
               j == js) ||
              (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je));

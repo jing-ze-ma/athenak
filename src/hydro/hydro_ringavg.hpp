@@ -26,11 +26,8 @@
 //!
 //! Keys (nothing is constructed unless polar_ring_avg = true):
 //! <mesh>/polar_ring_avg = true needs use_spherical_polar + use_polar_boundary
-//! <mesh>/polar_ring_avg_n = N_0,N_1,... group size per row counted from EACH pole
-//! (override; rows beyond the list: 1). Default: the
-//! largest power of 2 with N_j sin(theta_j) <=
-//! polar_ring_avg_tol, capped to divide the block nx3
-//! <mesh>/polar_ring_avg_tol = 1.05 (default rule only)
+//! The group size of row j is the largest power of 2 with N_j sin(theta_j) <= 1.05 that
+//! divides the half-ring nx3/2 (and must divide the MeshBlock nx3).
 //!
 //! (opt-in, read only when named; absent = the group average):
 //! <mesh>/polar_ring_avg_filter = fourier instead of the piecewise-constant group
@@ -46,8 +43,7 @@
 //! the M1 solve with polar_ring_avg_ke = rad, into the radiation E), never as velocity.
 //! Mass, momentum components, L_z and total energy are conserved per ring. A ring
 //! (pole, row, i) whose filtered rho or e falls below thr x the old value somewhere
-//! falls back to the group average (counted, reported at the end).
-//! <mesh>/polar_ring_avg_mfac = 1.0, <mesh>/polar_ring_avg_thr = 0.5 (fourier only)
+//! falls back to the group average (counted, reported at the end); mfac = 1, thr = 0.5.
 
 #include <vector>
 

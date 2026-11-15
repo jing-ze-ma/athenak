@@ -56,8 +56,8 @@ void RingAvg::FourierInit(ParameterInput *pin, const std::vector<int> &vjg) {
   const int nrow = pm->mesh_indcs.nx2;
   nphi = pm->mesh_indcs.nx3;
   nx1g = pm->mesh_indcs.nx1;
-  const Real mfac = pin->GetOrAddReal("mesh", "polar_ring_avg_mfac", 1.0);
-  fthr = pin->GetOrAddReal("mesh", "polar_ring_avg_thr", 0.5);
+  const Real mfac = 1.0;
+  fthr = 0.5;
   // the group size of every global row (identical on all ranks: same rule, same x2v);
   // rings are the rows with N > 1, from the global nfac table rebuilt here
   std::vector<int> ng(nrow, 1);
