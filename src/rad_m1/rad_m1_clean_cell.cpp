@@ -163,13 +163,15 @@ void RadiationM1::CleanCellFaceSpeeds() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellConsistency
-//! \brief consistency bracket C = F_ray - f(Ur) of every interior and open x1 face
-//! (clean_consistency): the rays' face flux of the sweep (CLN_FX at x1 faces, CLN_F1 at
-//! open x1 boundaries, CLN_F2 at x2 faces), whose cell balance is the exchange of the
-//! half-segments inside the cell, less the face flux of the solve (marks, weights) of
-//! Ur = (J, J h), h = h+ + h-, with the slopes of Ur: the bracket is fixed for given
-//! closure and marks.  Reflecting and x2, x3 boundary faces carry none.  The slopes of
-//! the iterate are restored.
+//! \brief consistency bracket of every interior and open x1 face (clean_consistency).
+//! An interior face takes the share w (the rays' streaming weight) of its flux from the
+//! rays: F = (1 - w) f(U) + w [F_ray + F_kin(U - Ur)], F_ray the rays' face flux of the
+//! sweep (CLN_FX, CLN_F2), whose cell balance is the exchange of the half-segments inside
+//! the cell, and F_kin the rays' kinetic upwind flux (their half-range factors on E), so
+//! that the deviation from the rays' moments Ur = (J, J h) moves only as the rays do;
+//! the bracket is w (F_ray - F_kin(Ur)), w in CLF_WK.  An open x1 boundary face carries
+//! the rays' flux CLN_F1 less the boundary flux of Ur.  Reflecting and x2, x3 boundary
+//! faces carry none.
 
 void RadiationM1::CleanCellConsistency() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -181,17 +183,18 @@ void RadiationM1::CleanCellConsistency() {
   const Real c1lo = cln_c0, c1hi = cln_c1;
   CleanArgs x = CleanMakeArgs();
 
-  // the rays' cell moments Ur
+  // the rays' cell moments Ur and streaming weight
   par_for("clc_raymom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = x.cs(m,CLN_J,k,j,i);
     x.u(m,CLC_U,k,j,i) = jr;
+    x.u(m,CLC_WC,k,j,i) = cwt ? CleanSmoothStep((x.cs(m,CLN_C1,k,j,i) - c1lo)/
+                                                (c1hi - c1lo)) : 1.0;
     for (int b = 0; b < 3; ++b) {
       x.u(m,CLC_U+1+b,k,j,i) = jr*(x.cs(m,CLN_HP+b,k,j,i) + x.cs(m,CLN_HM+b,k,j,i));
     }
   });
   CleanGhostFill(cln_x, CLC_U, 4);
-  if (cln_recon) CleanCellSlopeWeights(CLC_U);
 
   // the bracket of every interior face
   for (int dir = 0; dir < x.nf; ++dir) {
@@ -205,19 +208,29 @@ void RadiationM1::CleanCellConsistency() {
       if (bdry && (dir != 0 || CleanBc(x, m, blo ? 0 : 1) == M1_IBC_REFLECT)) return;
       const int kl = k - dk, jl = j - dj, il = i - di;
       const int n = bdry ? CLN_F1 : ((dir == 0) ? CLN_FX : CLN_F2);
-      Real f[4], fr[4] = {0.0, 0.0, 0.0, 0.0};
-      CleanCellFaceFlux(x, CLC_U, dir, m, k, j, i, bdry, f);
-      for (int r = 0; r <= x.nf; ++r) fr[r] = x.c*x.cs(m,n+r,k,j,(bdry && !blo) ? il : i);
       // clean_consistency_weight: the rays' streaming weight of the face
       Real wb = 1.0;
       if (cwt) {
         const Real c1 = 0.5*(x.cs(m,CLN_C1,kl,jl,il) + x.cs(m,CLN_C1,k,j,i));
         wb *= CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       }
+      x.fc[dir](m,CLF_WK,k,j,i) = bdry ? 0.0 : wb;
+      Real f[4] = {0.0, 0.0, 0.0, 0.0}, fr[4] = {0.0, 0.0, 0.0, 0.0};
+      if (bdry) {
+        CleanCellFaceFlux(x, CLC_U, dir, m, k, j, i, true, f);
+      } else {
+        // the rays' kinetic flux of their own moments Ur: the part w takes in the solve
+        const Real el = x.cs(m,CLN_J,kl,jl,il), er = x.cs(m,CLN_J,k,j,i);
+        f[0] = x.c*(x.cs(m,CLN_HP+dir,kl,jl,il)*el + x.cs(m,CLN_HM+dir,k,j,i)*er);
+        for (int b = 0; b < x.nf; ++b) {
+          f[1+b] = x.c*(CleanCellOutStress(x, dir, b, m, kl, jl, il, false)*el +
+                        CleanCellOutStress(x, dir, b, m, k, j, i, true)*er);
+        }
+      }
+      for (int r = 0; r <= x.nf; ++r) fr[r] = x.c*x.cs(m,n+r,k,j,(bdry && !blo) ? il : i);
       for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = wb*(fr[r] - f[r]);
     });
   }
-  if (cln_recon) CleanCellSlopeWeights(CLC_K);
 }
 
 //----------------------------------------------------------------------------------------
@@ -323,7 +336,10 @@ void RadiationM1::CleanCellRightHandSide() {
     x.w(m,CLW_RR,k,j,i) = rr;
     x.u(m,CLC_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
                          - rr*hcke*x.w(m,CLW_EK,k,j,i) - work - sdiv[0];
-    for (int b = 1; b < 4; ++b) x.u(m,CLC_B+b,k,j,i) = x.u(m,CLC_O+b,k,j,i) - sdiv[b];
+    for (int b = 1; b < 4; ++b) {
+      const Real s = (x.consist && b <= x.nf) ? 1.0 - x.u(m,CLC_WC,k,j,i) : 1.0;
+      x.u(m,CLC_B+b,k,j,i) = (x.u(m,CLC_O+b,k,j,i) - sdiv[b])*s;
+    }
     for (int b = 0; b < 4; ++b) x.u(m,CLC_X+b,k,j,i) = x.u(m,CLC_K+b,k,j,i);
   });
 }
@@ -356,6 +372,7 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
       if (b < x.nf) {
         y = y*(1.0 + x.h*x.c*chi) + div[1+b];
         if (x.feedback) y -= x.h*chi*x.w(m,CLW_A1+b,k,j,i)*e;
+        if (x.consist) y = CleanCellKineticRow(x, src, b, m, k, j, i, y);
       }
       x.u(m,dst+1+b,k,j,i) = y;
     }
@@ -407,6 +424,19 @@ void RadiationM1::CleanCellPreconditionerSetup() {
           x.u(m,sm+4*r+c,k,j,i) = -s*jlm[r][c];
         }
       }
+    }
+    // the rows y_b - h_b E of the streaming share (CleanCellKineticRow)
+    const Real wc = x.consist ? x.u(m,CLC_WC,k,j,i) : 0.0;
+    for (int b = 0; wc > 0.0 && b < x.nf; ++b) {
+      for (int c = 0; c < 4; ++c) {
+        a0[1+b][c] *= 1.0 - wc;
+        for (int dir = 0; dir < 3; ++dir) {
+          x.u(m,CleanLineSlotP(dir)+4*(1+b)+c,k,j,i) *= 1.0 - wc;
+          x.u(m,CleanLineSlotM(dir)+4*(1+b)+c,k,j,i) *= 1.0 - wc;
+        }
+      }
+      a0[1+b][1+b] += wc;
+      a0[1+b][0] -= wc*(x.cs(m,CLN_HP+b,k,j,i) + x.cs(m,CLN_HM+b,k,j,i));
     }
     for (int r = 0; r < 4; ++r) {
       for (int c = 0; c < 4; ++c) x.u(m,CLC_A0+4*r+c,k,j,i) = a0[r][c];

@@ -84,6 +84,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",50);
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
     cln_raymin = pin->GetOrAddReal("rad_m1","clean_ray_min",1.0e-3);
+    cln_fillpass = pin->GetOrAddInteger("rad_m1","clean_fill_passes",8);
     cln_pred = pin->GetOrAddBoolean("rad_m1","clean_predict",true);
     {std::string bf = pin->GetOrAddString("rad_m1","clean_bc","halfrange");
     cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
@@ -94,8 +95,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_recon = (rc.compare("plm") == 0);
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",false);
     cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",false);
-    // cells the rays leave empty keep the isotropic closure with clean_consistency
-    cln_fillpass = pin->GetOrAddInteger("rad_m1","clean_fill_passes",cln_consist ? 0 : 8);
     cln_alpha = (al.compare("tau") == 0) ? 0 : (al.compare("tau_sensor") == 0) ? 1 :
                 (al.compare("tau_ray") == 0) ? 2 : (al.compare("one") == 0) ? 3 :
                 (al.compare("zero") == 0) ? 4 : -1;
