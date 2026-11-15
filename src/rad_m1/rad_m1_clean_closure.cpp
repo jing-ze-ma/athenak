@@ -122,9 +122,10 @@ void RadiationM1::CleanClosureIterate() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanRayMoments
 //! \brief formal solution of the current state (u0 and the gas, no prediction) and its
-//! moments J, K = D J, H+, H-, <|I - S|> per cell into dst (CLN_* layout, not normalised;
-//! J = 0 marks a cell whose rays do not carry its radiation).  With solve = false the
-//! moments of the closure in place (the rays of the last formal solution) are taken.
+//! moments J, K = D J, H+, H-, <|I - S|> and the ray face fluxes per cell into dst (CLN_*
+//! layout, not normalised; J = 0 marks a cell whose rays do not carry its radiation).
+//! With solve = false the moments of the closure in place (the rays of the last formal
+//! solution) are taken.
 
 void RadiationM1::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -149,7 +150,7 @@ void RadiationM1::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = cs(m,CLN_J,k,j,i);
     for (int n = 0; n < CLN_J; ++n) dst(m,n,k,j,i) = jr*cs(m,n,k,j,i);
-    dst(m,CLN_J,k,j,i) = jr;
+    for (int n = CLN_J; n < CLN_N; ++n) dst(m,n,k,j,i) = cs(m,n,k,j,i);
   });
   cln_havec = false;
 }
@@ -319,6 +320,7 @@ void RadiationM1::CleanClosureExtrap() {
       cs(m,CLN_J,k,j,i) = 0.0;
       valid(m,0,k,j,i) = 0.0;
     }
+    for (int n = CLN_F2; n < CLN_N; ++n) cs(m,n,k,j,i) = q[n];
   }, Kokkos::Sum<int>(nguard));
   cln_nguard = nguard;
   cln_nguard_sum += nguard;
@@ -452,7 +454,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
 //! \fn void RadiationM1::CleanClosureFromRays
 //! \brief closure of every cell whose rays carry its radiation (J >= clean_ray_min E):
 //! D = K/J, h+- = H+-/J, k+ = K+/J, C1 = <|I - S|>/J.  Other cells are marked for the
-//! fill.
+//! fill.  The rays' face fluxes (CLN_F2, CLN_F1) are copied for every cell.
 
 void RadiationM1::CleanClosureFromRays() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -466,9 +468,11 @@ void RadiationM1::CleanClosureFromRays() {
   auto valid = cln_v;
   Real ray_min = cln_raymin;
 
+  const bool f2 = cln_consist;
   par_for("cln_rays", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = vc(m,M1_VET_J,k,j,i);
+    for (int n = 0; n < 8; ++n) cs(m,CLN_F2+n,k,j,i) = f2 ? vc(m,M1_VET_F2+n,k,j,i) : 0.0;
     if (jr > 0.0 && jr >= ray_min*iw_(m,M1_IW_EN,k,j,i)) {
       for (int a = 0; a < 6; ++a) cs(m,CLN_D11+a,k,j,i) = vc(m,M1_VET_D11+a,k,j,i);
       for (int a = 0; a < 3; ++a) {

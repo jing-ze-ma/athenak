@@ -37,9 +37,10 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_v, nmb, 2, n3, n2, n1);
   Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
-  Kokkos::realloc(cln_fc1, nmb, CLF_N, n3, n2, n1);
-  Kokkos::realloc(cln_fc2, nmb, CLF_N, n3, n2, n1);
-  Kokkos::realloc(cln_fc3, nmb, CLF_N, n3, n2, n1);
+  const int nfc = cln_consist ? CLF_CB + 4 : CLF_N;
+  Kokkos::realloc(cln_fc1, nmb, nfc, n3, n2, n1);
+  Kokkos::realloc(cln_fc2, nmb, nfc, n3, n2, n1);
+  Kokkos::realloc(cln_fc3, nmb, nfc, n3, n2, n1);
   Kokkos::deep_copy(cln_w, 0.0);
   Kokkos::deep_copy(cln_fc1, 0.0);
   Kokkos::deep_copy(cln_fc2, 0.0);
@@ -78,11 +79,12 @@ void RadiationM1::CleanInit() {
 #endif
   const bool cartesian = !pmy_pack->pmesh->use_cubed_sphere &&
                          !pmy_pack->pmesh->use_spherical_polar;
-  if (nmb != 1 || nranks != 1 || !cartesian || !vet_sc || !vet_full || chat != c_light) {
+  if (nmb != 1 || nranks != 1 || !cartesian || !vet_sc || !vet_full || chat != c_light ||
+      (cln_consist && pmy_pack->pmesh->three_d)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<rad_m1>/scheme = clean currently needs one MeshBlock on one rank, a "
-              << "Cartesian mesh, closure = vet_sc with vet_tensor = full, and chat = c"
-              << std::endl;
+              << "Cartesian mesh, closure = vet_sc with vet_tensor = full, and chat = c; "
+              << "clean_consistency a 1-D or 2-D mesh" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   // the formal solution must provide the half-range sums and C1
@@ -152,7 +154,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     npic = 0;
     for (int inl = 0; inl < maxnl; ++inl) {
       if (lagged && inl < cln_maxpic) ++npic;
-      if ((cln_closit && inl < cln_maxpic) || (clos1 && inl == 1)) {
+      const bool clos = (cln_closit && inl < cln_maxpic) || (clos1 && inl == 1);
+      if (clos) {
         CleanClosureIterate();
         if (cell) {
           CleanCellFaceSpeeds();
@@ -162,7 +165,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         if (cln_feedback) CleanAdvectiveCoefficients();
       }
       if (cell) {
-        if (cln_recon && inl < cln_maxpic) CleanCellSlopeWeights();
+        if (cln_consist && (inl == 0 || clos)) CleanCellConsistency();
+        if (cln_recon && inl < cln_maxpic) CleanCellSlopeWeights(CLC_K);
         CleanCellRightHandSide();
         CleanCellPreconditionerSetup();
       } else {
@@ -265,6 +269,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       CleanClosureFill();
       CleanGhostFill(cln_s, 0, CLN_N);
       CleanCellFaceSpeeds();
+      if (cln_consist) CleanCellConsistency();
       CleanCellClosureSlope(1.0);
     }
   }

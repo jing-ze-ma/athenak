@@ -25,6 +25,9 @@
 //! order, or (clean_recon = plm) the van Leer reconstruction of src/reconstruct/plm.hpp,
 //! u_L^+ = u_L + dl dr/(dl + dr), whose weights dr/(dl + dr), dl/(dl + dr) are taken
 //! from the Newton iterate (lagged) so that every pass stays a linear solve.
+//! With clean_consistency every interior face flux also carries the fixed bracket
+//! C = F_ray - f(Ur), the rays' kinetic flux less the face flux of their cell moments
+//! Ur = (J, J h), so that Ur is a steady state of the discrete moment equations.
 
 #include <cmath>
 
@@ -38,6 +41,7 @@ constexpr int CLF_AL = 0;    // dissipation weight al
 constexpr int CLF_AF = 2;    // dissipation speed s = c sqrt(max(D_dd,L, D_dd,R))
 constexpr int CLF_LO = 3;    // 1: low-order face (first-order jumps, al = 1, s = c,
                              //    stress with D = I)
+constexpr int CLF_CB = CLF_N;  // consistency bracket of (fE, fY_1..3)
 
 // cell vectors (array cln_x), 4 components (E, y1, y2, y3) each
 constexpr int CLC_O = 0;     // old vector
@@ -65,7 +69,8 @@ constexpr int CLC_KM = 171;
 constexpr int CLC_KP = 187;
 constexpr int CLC_T1 = 203;  // preconditioner scratch vectors
 constexpr int CLC_T2 = 207;
-constexpr int CLC_N = 211;
+constexpr int CLC_U = 211;   // the rays' cell moments (J, J h)
+constexpr int CLC_N = 215;
 
 // dissipation weight candidates (<rad_m1>/clean_alpha)
 constexpr int CLA_TAU = 0;          // A(tau) = (1 - exp(-tau))/tau
@@ -204,16 +209,17 @@ Real CleanCellOutStress(const CleanArgs &x, const int dir, const int b, const in
 
 //----------------------------------------------------------------------------------------
 //! \fn void CleanCellFaceSource
-//! \brief the E-independent part of the face fluxes on a physical boundary: the
-//! incoming E flux of CleanFaceSource and the stress of the incoming radiation (beam:
-//! its stress column; isotropic bath: c E_bath/6 on the normal row); in a first-order
-//! solve the ghost part of the upwind stress, on a low-order face that of the upwind
-//! characteristic flux
+//! \brief the E-independent part of the face fluxes: the consistency bracket and, on a
+//! physical boundary, the incoming E flux of CleanFaceSource and the stress of the
+//! incoming radiation (beam: its stress column; isotropic bath: c E_bath/6 on the normal
+//! row); in a first-order solve the ghost part of the upwind stress, on a low-order face
+//! that of the upwind characteristic flux
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const int k,
                          const int j, const int i, Real s[4]) {
-  for (int r = 0; r < 4; ++r) s[r] = 0.0;
+  for (int r = 0; r < 4; ++r) s[r] = x.consist ? x.fc[dir](m,CLF_CB+r,k,j,i) : 0.0;
+  if (!CleanBoundaryFace(x, dir, k, j, i)) return;
   const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
   const bool low = (pos == lo);
@@ -225,11 +231,11 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
     Real eg, yg[3], pg[3];
     CleanCellGhost(x, dir, m, kc, jc, ic, low, eg, yg, pg);
     const Real sg = low ? 0.5*x.c : -0.5*x.c;
-    s[0] = 0.5*x.c*yg[dir] + sg*eg;
-    for (int b = 0; b < x.nf; ++b) s[1+b] = ((b == dir) ? 0.5*x.c*eg : 0.0) + sg*yg[b];
+    s[0] += 0.5*x.c*yg[dir] + sg*eg;
+    for (int b = 0; b < x.nf; ++b) s[1+b] += ((b == dir) ? 0.5*x.c*eg : 0.0) + sg*yg[b];
     return;
   }
-  s[0] = CleanFaceSource(x, dir, m, k, j, i);
+  s[0] += CleanFaceSource(x, dir, m, k, j, i);
   if (x.all_low) {
     // ghost part of the upwind stress of a first-order solve
     const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
@@ -237,14 +243,14 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
     Real eg, yg[3], pg[3];
     CleanCellGhost(x, dir, m, kc, jc, ic, low, eg, yg, pg);
     const Real sg = low ? 0.5*x.c : -0.5*x.c;
-    for (int b = 0; b < x.nf; ++b) s[1+b] = 0.5*x.c*pg[b] + sg*yg[b];
+    for (int b = 0; b < x.nf; ++b) s[1+b] += 0.5*x.c*pg[b] + sg*yg[b];
     return;
   }
   if (low && dir == 0 && x.use_beam && x.beam(m,k-x.ks,j-x.js) > 0.0) {
-    for (int b = 0; b < x.nf; ++b) s[1+b] = x.bstress(m,b,k-x.ks,j-x.js);
+    for (int b = 0; b < x.nf; ++b) s[1+b] += x.bstress(m,b,k-x.ks,j-x.js);
     return;
   }
-  s[1+dir] = x.c*x.ebath[2*dir + (low ? 0 : 1)]/6.0;
+  s[1+dir] += x.c*x.ebath[2*dir + (low ? 0 : 1)]/6.0;
 }
 
 //----------------------------------------------------------------------------------------
@@ -333,7 +339,8 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
 //----------------------------------------------------------------------------------------
 //! \fn void CleanCellFaceFlux
 //! \brief face fluxes f = (fE, fY_1..3) at face (k,j,i) normal to dir of the cell vector
-//! at slot v of x.u; with_source adds the incoming boundary flux
+//! at slot v of x.u; with_source adds the incoming boundary flux and, with
+//! clean_consistency, the bracket
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int m,
@@ -349,14 +356,13 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
       f[r] += jl[r][c]*x.u(m,v+c,kl,jl_,il) + jr[r][c]*x.u(m,v+c,k,j,i);
     }
   }
-  if (CleanBoundaryFace(x, dir, k, j, i)) {
-    if (with_source) {
-      Real s[4];
-      CleanCellFaceSource(x, dir, m, k, j, i, s);
-      for (int r = 0; r < 4; ++r) f[r] += s[r];
-    }
-    return;
+  const bool bdry = CleanBoundaryFace(x, dir, k, j, i);
+  if (with_source && (bdry || x.consist)) {
+    Real s[4];
+    CleanCellFaceSource(x, dir, m, k, j, i, s);
+    for (int r = 0; r < 4; ++r) f[r] += s[r];
   }
+  if (bdry) return;
   // RC terms in E_{L-1} and E_{R+1}
   const int kp = k + dk, jp = j + dj, ip = i + di;
   const int km = kl - dk, jm = jl_ - dj, im = il - di;
@@ -395,7 +401,7 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
 
 //----------------------------------------------------------------------------------------
 //! \fn void CleanCellSourceDivergence
-//! \brief h div of the E-independent boundary fluxes of cell (k,j,i)
+//! \brief h div of the E-independent face fluxes of cell (k,j,i)
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, const int j,
@@ -405,11 +411,11 @@ void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, con
     if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
     const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
     Real s[4];
-    if (CleanBoundaryFace(x, dir, k+dk, j+dj, i+di)) {
+    if (x.consist || CleanBoundaryFace(x, dir, k+dk, j+dj, i+di)) {
       CleanCellFaceSource(x, dir, m, k+dk, j+dj, i+di, s);
       for (int r = 0; r < 4; ++r) div[r] += x.h*x.idx[dir]*s[r];
     }
-    if (CleanBoundaryFace(x, dir, k, j, i)) {
+    if (x.consist || CleanBoundaryFace(x, dir, k, j, i)) {
       CleanCellFaceSource(x, dir, m, k, j, i, s);
       for (int r = 0; r < 4; ++r) div[r] -= x.h*x.idx[dir]*s[r];
     }
