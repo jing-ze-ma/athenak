@@ -100,13 +100,10 @@ class Coordinates {
   DvceArray4D<Real> z_ov_rE;
 
   void CoordSphericalPolar();
-  // accpolar-1103 <mesh>/sp_phi_global (read only when named; default false = bitwise):
-  // the spherical-polar phi faces/centres from the GLOBAL phi index (LeftEdgeX(K, nx3 of
-  // the mesh, mesh x3min, x3max)) instead of the block's own edges: the same coordinates
-  // for every MeshBlock layout (the per-block formula differs in the last bit)
+  // spherical-polar phi (<mesh>/sp_phi_global) and theta (<mesh>/sp_theta_global) faces
+  // and centres from the global cell index instead of the block's own edges, so the
+  // coordinates are the same for every MeshBlock layout (default <mesh>/layout_invariant)
   bool sp_phi_global = false;
-  // layinv-1105 <mesh>/sp_theta_global: theta faces/centres from the global index
-  // (default = <mesh>/layout_invariant; coordinates.cpp)
   bool sp_theta_global = false;
   void SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
       const DvceArray4D<Real> &pwb, const DvceFaceFld5D<Real> uflx,

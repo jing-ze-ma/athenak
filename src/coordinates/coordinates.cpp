@@ -44,15 +44,15 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     sin_face_xi("sin_face_xi",1,1,1), cos_face_xi("cos_face_xi",1,1,1),
     sin_face_eta("sin_face_eta",1,1,1), cos_face_eta("cos_face_eta",1,1,1),
     x_ov_rD("x_ov_rD",1,1,1,1), y_ov_rC("y_ov_rC",1,1,1,1), z_ov_rE("z_ov_rC",1,1,1,1) {
-  // defaults-1009 (user 10-09): sp_x2_periodic_image defaults ON on a FRESH run on a
-  // theta-PERIODIC spherical-polar mesh (the only place it acts, BuildX2vRecon); a
-  // restart whose file lacks the key and every other mesh keep the old default (off)
+  // sp_x2_periodic_image defaults on for a fresh run on a theta-periodic spherical-polar
+  // mesh (the only place it acts, see BuildX2vRecon); off on a restart whose input lacks
+  // the key and on every other mesh
   const bool img_def = !global_variable::restart_run &&
       pmy_pack->pmesh->use_spherical_polar && pmy_pack->pmesh->multi_d &&
       pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic &&
       !pmy_pack->pmesh->use_grid_stretch_theta;
-  // curvilinear source-term options, from <mhd> or <hydro> (read only from an existing
-  // block, since AddPhysics builds modules from the blocks present)
+  // curvilinear options, from <mhd> or <hydro> (read only from an existing block, since
+  // AddPhysics builds modules from the blocks present)
   if (pin->DoesBlockExist("mhd")) {
     sp_x2_periodic_image = pin->GetOrAddBoolean("mhd","sp_x2_periodic_image",img_def);
   } else if (pin->DoesBlockExist("hydro")) {
@@ -105,11 +105,10 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     CoordGnomonicEquiangle();
   }
   if (pmy_pack->pmesh->use_spherical_polar) {
-    // prod1103d default (USER 11-03): sp_phi_global = true on a FRESH spherical-polar
-    // FULL-SPHERE start (polar boundaries at both poles, x3 periodic over 2 pi;
-    // recipe::NewDefaults) when the key is not named: the phi faces/centres come from the
-    // global index, so the IC is MeshBlock-layout exact.  Recorded for restarts; a
-    // restart whose input lacks the key keeps false (bitwise); an explicit key wins.
+    // <mesh>/sp_phi_global defaults to true on a fresh full-sphere start (polar
+    // boundaries at both poles, x3 periodic over 2 pi; recipe::NewDefaults) when the key
+    // is not named, so the phi coordinates do not depend on the MeshBlock layout.  The
+    // value is recorded for restarts; a restart whose input lacks the key keeps false.
     {
       Mesh *pm = pmy_pack->pmesh;
       const bool fullsph = pm->use_spherical_polar && pm->use_polar_boundary &&
@@ -120,7 +119,8 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
       if (fullsph && !pin->DoesParameterExist("mesh", "sp_phi_global")) {
         if (recipe::NewDefaults(pin)) {
           pin->GetOrAddBoolean("mesh", "sp_phi_global", true);
-          recipe::Log("<mesh>/sp_phi_global = true (default on a fresh sp full-sphere start)");
+          recipe::Log("<mesh>/sp_phi_global = true (default on a fresh sp full-sphere "
+                      "start)");
         } else {
           recipe::Log("<mesh>/sp_phi_global = false (" + std::string(
               recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
@@ -128,9 +128,8 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
         }
       }
     }
-    // layinv-1105: with <mesh>/layout_invariant (fresh default) both angles come from the
-    // global index (theta: sp_theta_global; phi: sp_phi_global, now also on wedges)
-    // unless the key is named; without layout_invariant the old rules, bitwise.
+    // with <mesh>/layout_invariant both angles come from the global cell index unless
+    // sp_theta_global / sp_phi_global are named explicitly
     {
       const bool li = pmy_pack->pmesh->layout_invariant;
       sp_phi_global = pin->DoesParameterExist("mesh", "sp_phi_global") ?
@@ -945,7 +944,8 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
 //! \brief MHD version of GnomonicEquiangleRaiseVel. In addition, rebuilds the
 //! cell-centred field from the faces in the orthonormal frame
 //! {rhat, e_xi, (e_eta - c e_xi)/s}, since the face-normal triple
-//! (B.rhat, B.nhat_xi, B.nhat_eta) held in b0 is not orthogonal, and subtracts the corresponding magnetic energy.
+//! (B.rhat, B.nhat_xi, B.nhat_eta) held in b0 is not orthogonal, and subtracts the
+//! corresponding magnetic energy.
 
 void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
     const DvceFaceFld4D<Real> &b0, DvceArray5D<Real> &bcc0, DvceArray5D<Real> &w0,
@@ -1275,6 +1275,13 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
   });
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void Coordinates::CoordSphericalPolar
+//! \brief Computes the geometry of the spherical-polar grid (r, theta, phi): face
+//! positions, volume centroids, face areas, volumes, edge lengths, dual-mesh lengths and
+//! areas, and the geometric source coefficients.  The radial and theta coordinates may
+//! be stretched; at a polar boundary the pole faces are placed exactly at theta = 0, pi.
+
 void Coordinates::CoordSphericalPolar() {
   auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1288,8 +1295,7 @@ void Coordinates::CoordSphericalPolar() {
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
   int nmb1 = pmy_pack->nmb_thispack - 1;
 
-  // Copy everything the lambda needs out of the Mesh before the kernel: dereferencing a
-  // host-side pointer on device only happens to work here under unified memory.
+  // copy everything the kernel needs out of the Mesh
   const bool str_r = pmy_pack->pmesh->use_grid_stretch_r;
   const bool str_rp = pmy_pack->pmesh->use_grid_stretch_r_poly;
   const Real fstr_r = pmy_pack->pmesh->fStretchR;
@@ -1315,7 +1321,7 @@ void Coordinates::CoordSphericalPolar() {
   auto z_ov_rE_ = z_ov_rE;
   const bool use_stretch_theta = pmy_pack->pmesh->use_grid_stretch_theta;
   const Real f_stretch_theta = pmy_pack->pmesh->fStretchTheta;
-  // accpolar-1103 <mesh>/sp_phi_global: the global phi index offset of every block
+  // sp_phi_global: the global phi index of the first cell of every block
   const bool phg = sp_phi_global;
   const int nx3t = pmy_pack->pmesh->mesh_indcs.nx3;
   const Real mx3min = pmy_pack->pmesh->mesh_size.x3min;
@@ -1329,16 +1335,16 @@ void Coordinates::CoordSphericalPolar() {
     }
     Kokkos::deep_copy(k0g, h);
   }
-  // layinv-1105 <mesh>/sp_theta_global (and phi with refinement): the global index of the
-  // block's first cell at its own level and the global cell count at that level
-  // (root-level count << (level - root level)); a refinement-free mesh has level = root,
-  // i.e. exactly the cell faces/centres a one-block run computes.  The theta stretch is a
-  // function of the uniform coordinate, applied afterwards exactly as before.
+  // sp_theta_global (and sp_phi_global with refinement): the global index of the block's
+  // first cell at its own level and the global cell count at that level (root-level count
+  // << (level - root level)), so every layout computes the faces and centres of a
+  // one-block run.  The theta stretch is applied afterwards to the uniform coordinate.
   const bool thg = sp_theta_global;
   const int nx2t = pmy_pack->pmesh->mesh_indcs.nx2;
   const Real mx2min = pmy_pack->pmesh->mesh_size.x2min;
   const Real mx2max = pmy_pack->pmesh->mesh_size.x2max;
-  DvceArray2D<int> lvg("sp_glob_lev", nmb1 + 1, 4);   // j0, nx2 at level, k0, nx3 at level
+  // per block: j0, nx2 at its level, k0, nx3 at its level
+  DvceArray2D<int> lvg("sp_glob_lev", nmb1 + 1, 4);
   {
     auto h = Kokkos::create_mirror_view(lvg);
     const int rl = pmy_pack->pmesh->root_level;
@@ -1352,9 +1358,9 @@ void Coordinates::CoordSphericalPolar() {
     }
     Kokkos::deep_copy(lvg, h);
   }
-  Real tplat[8];   // fullsph-1027 theta_plateau parameters (tplat[2] = 0: sinh map)
+  Real tplat[8];   // theta-plateau stretch parameters (tplat[2] = 0: sinh map)
   for (int n=0; n<8; ++n) tplat[n] = pmy_pack->pmesh->fStretchThetaPlat[n];
-  par_for("spcoord", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,//ks,ke,js,je,is,ie,
+  par_for("spcoord", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     // --- radial ---
     Real r_c, r_l, r_r;
@@ -1373,27 +1379,32 @@ void Coordinates::CoordSphericalPolar() {
     }
 
     // --- angles ---
-    Real theta  = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-    Real thetal = LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-    Real thetar = LeftEdgeX(j+1-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-    if (thg) {   // layinv-1105: from the global theta index (layout independent)
+    Real theta  = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                               size.d_view(m).x2max);
+    Real thetal = LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min,
+                             size.d_view(m).x2max);
+    Real thetar = LeftEdgeX(j+1-js, indcs.nx2, size.d_view(m).x2min,
+                             size.d_view(m).x2max);
+    if (thg) {   // from the global theta index
       const int jg = lvg(m,0) + j - js, n2g = lvg(m,1);
       theta  = CellCenterX(jg, n2g, mx2min, mx2max);
       thetal = LeftEdgeX(jg, n2g, mx2min, mx2max);
       thetar = LeftEdgeX(jg + 1, n2g, mx2min, mx2max);
     }
-    // stretch the radial grid
+    // stretch the theta grid
     if (use_stretch_theta) {
       Real factor_stretch = f_stretch_theta;
       ApplyThetaStretch(factor_stretch,tplat,theta);
       ApplyThetaStretch(factor_stretch,tplat,thetal);
       ApplyThetaStretch(factor_stretch,tplat,thetar);
     }
-    Real phi    = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-    Real phil   = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-    Real phir   = LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-    if (phg) {   // accpolar-1103: from the global phi index (layout independent)
-      // layinv-1105: the cell count at the block's level (= nx3t on a uniform mesh)
+    Real phi    = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                               size.d_view(m).x3max);
+    Real phil   = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                             size.d_view(m).x3max);
+    Real phir   = LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min,
+                             size.d_view(m).x3max);
+    if (phg) {   // from the global phi index, cell count at the block's level
       const int kg = k0g(m) + k - ks, n3g = lvg(m,3);
       phi  = CellCenterX(kg, n3g, mx3min, mx3max);
       phil = LeftEdgeX(kg, n3g, mx3min, mx3max);
@@ -1408,6 +1419,7 @@ void Coordinates::CoordSphericalPolar() {
     Real cosl   = cos(thetal);
     Real cosr   = cos(thetar);
 
+    // pole faces exactly on the axis
     if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) {
       if (j == js) {
         thetal = 0.0;
@@ -1477,24 +1489,26 @@ void Coordinates::CoordSphericalPolar() {
     if (k == n3m1) xx3f_(m,k+1) = phir;
 
     // --- volume ---
-
     volume_(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l) * fabs(cosl-cosr) * (phir-phil);
 
-    // Mignone 2014 correction
-    x1v_(m,i) = 1.0/4.0*(SQR(r_l/r_r)+1.0) / (1.0/3.0*(SQR(r_l/r_r)+(r_l/r_r)+1.0)) *(r_r+r_l); // 1.0/4.0*(SQR(SQR(r_r))-SQR(SQR(r_l))) / (1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l)); //0.5*(r_r+r_l); //
-    x2v_(m,j) = -((sintr-thetar*cosr) - (sintl-thetal*cosl)) / (cosr-cosl); // 0.5*(thetar+thetal); //
+    // cell centres at the volume centroids (Mignone 2014)
+    x1v_(m,i) = 1.0/4.0*(SQR(r_l/r_r)+1.0) / (1.0/3.0*(SQR(r_l/r_r)+(r_l/r_r)+1.0))
+                *(r_r+r_l);
+    x2v_(m,j) = -((sintr-thetar*cosr) - (sintl-thetal*cosl)) / (cosr-cosl);
     x3v_(m,k) = 0.5*(phir+phil);
     dx2_(m,k,j,i) = x1v_(m,i) * (thetar-thetal);
     dx3_(m,k,j,i) = x1v_(m,i) * fabs(sin(x2v_(m,j))) * (phir-phil);
     dx1_(m,k,j,i) = r_r-r_l;
 
+    // geometric source coefficients
     z_ov_rE_(m,k,j,i) = (area1r - area_.x1f(m,k,j,i)) / volume_(m,k,j,i);
     x_ov_rD_(m,k,j,i) = (area2r - area_.x2f(m,k,j,i)) / volume_(m,k,j,i);
     y_ov_rC_(m,k,j,i) = (sinr-sinl)/(sinr+sinl);
   });
+  // dual-mesh lengths and areas between the cell centres
   auto dxface_ = dxface;
   auto areaedge_ = areaedge;
-  par_for("spcoord_add", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,//ks,ke,js,je,is,ie,
+  par_for("spcoord_add", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (i > 0) dxface_.x1f(m,k,j,i) = x1v_(m,i) - x1v_(m,i-1);
     if (j > 0) dxface_.x2f(m,k,j,i) = x1v_(m,i)*(x2v_(m,j)-x2v_(m,j-1));
@@ -1503,12 +1517,10 @@ void Coordinates::CoordSphericalPolar() {
     }
     if (j > 0 && k > 0) {
       // The dual face around an r-edge spans theta from the centroid of cell j-1 to
-      // that of cell j.  At a POLE the two centroids are mirror images through the
-      // axis (the ghost centroid is the negative of the active one), so the plain
-      // |cos a - cos b| is IDENTICALLY ZERO there and the resistive current
-      // J_r = circulation/area at the polar edge divided by zero (NaN in the first
-      // cycle of any resistive run with a tangential field at the pole).  The dual
-      // face straddling the pole is two caps-slices, r^2 [(1-|cos a|)+(1-|cos b|)] dphi.
+      // that of cell j.  At a pole the two centroids are mirror images through the
+      // axis, so |cos a - cos b| vanishes there (and J_r = circulation/area with it);
+      // the dual face straddling the pole is two cap slices,
+      // r^2 [(1-|cos a|)+(1-|cos b|)] dphi.
       const Real ca = cos(x2v_(m,j)), cb = cos(x2v_(m,j-1));
       const bool pole =
           (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) ||
@@ -1516,8 +1528,14 @@ void Coordinates::CoordSphericalPolar() {
       const Real dcos = pole ? (2.0 - fabs(ca) - fabs(cb)) : fabs(ca - cb);
       areaedge_.x1e(m,k,j,i) = SQR(x1v_(m,i)) * dcos * (x3v_(m,k)-x3v_(m,k-1));
     }
-    if (k > 0 && i > 0) areaedge_.x2e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1))) * fabs(sin(x2v_(m,j))) * (x3v_(m,k)-x3v_(m,k-1));
-    if (i > 0 && j > 0) areaedge_.x3e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1))) * (x2v_(m,j)-x2v_(m,j-1));
+    if (k > 0 && i > 0) {
+      areaedge_.x2e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1)))
+                               * fabs(sin(x2v_(m,j))) * (x3v_(m,k)-x3v_(m,k-1));
+    }
+    if (i > 0 && j > 0) {
+      areaedge_.x3e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1)))
+                               * (x2v_(m,j)-x2v_(m,j-1));
+    }
   });
   BuildX2vRecon();
 }
@@ -1525,22 +1543,21 @@ void Coordinates::CoordSphericalPolar() {
 //----------------------------------------------------------------------------------------
 //! \fn Coordinates::BuildX2vRecon
 //! \brief theta positions used by the angular x2 reconstruction (GridPiecewiseLinearX2).
-//! Equal to x2v except, with <hydro|mhd>/sp_x2_periodic_image on a theta-PERIODIC mesh,
-//! in the ghost rows of blocks at x2min/x2max: there they are the PERIODIC IMAGES of the
+//! Equal to x2v except, with <hydro|mhd>/sp_x2_periodic_image on a theta-periodic mesh,
+//! in the ghost rows of blocks at x2min/x2max: there they are the periodic images of the
 //! cells the ghosts hold (centroid of [theta_l + L, theta_r + L] minus L, L = x2max -
 //! x2min).  x2v is the sin-weighted centroid, which is not invariant under theta ->
-//! theta + L, so with the plain x2v the faces x2min and x2max reconstruct the SAME cell
-//! values with different stencil spacings, F2(x2min) != F2(x2max), and mass, momentum
-//! and energy leak through the periodic seam (measured +2.6e23 g/cycle on the AG Car A
-//! 480x8x8 wedge, mass_1009).  With the images both faces see bitwise-equivalent
-//! stencils up to round-off.  Default off: x2v_rec = x2v, results bitwise unchanged.
+//! theta + L, so with the plain x2v the faces x2min and x2max would reconstruct the same
+//! cell values with different stencil spacings, and mass, momentum and energy would leak
+//! through the periodic seam.  With the images both faces see equivalent stencils.
 
 void Coordinates::BuildX2vRecon() {
   Kokkos::deep_copy(x2v_rec, x2v);
   Mesh *pm = pmy_pack->pmesh;
   if (!sp_x2_periodic_image || !pm->use_spherical_polar || !pm->multi_d) return;
   if (pm->mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::periodic) return;
-  if (pm->use_grid_stretch_theta) return;  // images are not translations then
+  // a stretched theta grid has no translation symmetry
+  if (pm->use_grid_stretch_theta) return;
   auto &indcs = pm->mb_indcs;
   const int js = indcs.js, je = indcs.je, ng = indcs.ng;
   const Real x2min = pm->mesh_size.x2min, x2max = pm->mesh_size.x2max;
@@ -1567,6 +1584,14 @@ void Coordinates::BuildX2vRecon() {
   Kokkos::deep_copy(x2v_rec, h_x2v);
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void Coordinates::SrcTermsSphericalPolarHydro
+//! \brief Geometric source terms of the hydro momentum equation on the spherical-polar
+//! grid.  The isotropic stress uses the face-difference coefficients x_ov_rD and z_ov_rE,
+//! so a uniform pressure cancels the flux divergence exactly; the off-diagonal terms are
+//! formed from the face fluxes.  pwb is the static well-balanced background pressure
+//! (used only with use_wellbalance_static).
+
 void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
     const DvceArray4D<Real> &pwb, const DvceFaceFld5D<Real> uflx,
     const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
@@ -1579,9 +1604,8 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
 
   // by-value copy of the EOS, capturable in the device lambda below
   auto eos_ = eos_data;
-  // The live gas pressure is read from the derived-variable cache rather than recomputed:
-  // p(d,e) is a root find for a general EOS, and ConsToPrim has already evaluated it once
-  // for this very state. An ideal gas allocates no wder array, and (gamma-1)*e is free.
+  // gas pressure from the derived-variable cache (wder) for a general EOS (ConsToPrim has
+  // already solved p(d,e) for this state), (gamma-1)*e for an ideal gas
   const bool gen_ = eos_.IsGeneral();
   auto &wder_ = pmy_pack->phydro->wder;
   auto volume_ = volume;
@@ -1605,9 +1629,7 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
     Real pr = (!eos_.is_ideal) ? w0(m,IDN,k,j,i)*SQR(eos_.iso_cs)
               : gen_ ? wder_(m,IDPR,k,j,i)
               : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
-    // subtract the background pressure, precomputed once by SetWbBackgroundPressure()
-    // -- for a general EOS it depends on the background DENSITY as well as its internal
-    // energy, so it cannot be written as (gamma-1)*e_bg and is not free to recompute
+    // subtract the static background pressure (SetWbBackgroundPressure)
     if (use_wb_static_) {
       pr -= pwb(m,k,j,i);
     }
@@ -1616,16 +1638,25 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
 
     Real src1 = z_ov_rE_(m,k,j,i) * m_ii_h;
     Real src2 = x_ov_rD_(m,k,j,i) * m_pp;
-    Real src3 = -y_ov_rC_(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area_.x2f(m,k,j,i)+uflx.x2f(m,IM3,k,j+1,i)*area_.x2f(m,k,j+1,i))/volume_(m,k,j,i);
+    Real src3 = -y_ov_rC_(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area_.x2f(m,k,j,i)
+                                      + uflx.x2f(m,IM3,k,j+1,i)*area_.x2f(m,k,j+1,i))
+                                     /volume_(m,k,j,i);
 
-    src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
-    src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM3,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
+    src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)
+                      + uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
+    src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)
+                      + uflx.x1f(m,IM3,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
 
     u0(m,IM1,k,j,i) += src1*bdt;
     u0(m,IM2,k,j,i) += src2*bdt;
     u0(m,IM3,k,j,i) += src3*bdt;
   });
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn void Coordinates::SrcTermsSphericalPolarMHD
+//! \brief Geometric source terms of the MHD momentum equation on the spherical-polar
+//! grid: SrcTermsSphericalPolarHydro plus the Maxwell stress of the cell-centred field.
 
 void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
     const DvceArray5D<Real> &bcc0, const DvceArray4D<Real> &pwb,
@@ -1640,9 +1671,8 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
 
   // by-value copy of the EOS, capturable in the device lambda below
   auto eos_ = eos_data;
-  // The live gas pressure is read from the derived-variable cache rather than recomputed:
-  // p(d,e) is a root find for a general EOS, and ConsToPrim has already evaluated it once
-  // for this very state. An ideal gas allocates no wder array, and (gamma-1)*e is free.
+  // gas pressure from the derived-variable cache (wder) for a general EOS (ConsToPrim has
+  // already solved p(d,e) for this state), (gamma-1)*e for an ideal gas
   const bool gen_ = eos_.IsGeneral();
   auto &wder_ = pmy_pack->pmhd->wder;
   auto volume_ = volume;
@@ -1666,22 +1696,26 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
     Real pr = (!eos_.is_ideal) ? w0(m,IDN,k,j,i)*SQR(eos_.iso_cs)
               : gen_ ? wder_(m,IDPR,k,j,i)
               : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
-    // subtract the background pressure, which for a general EOS depends on the background
-    // DENSITY as well as its internal energy and so cannot be written as (gamma-1)*e_bg
+    // subtract the static background pressure (SetWbBackgroundPressure)
     if (use_wb_static_) {
       pr -= pwb(m,k,j,i);
     }
     Real m_ii_h = pr + 0.5*rho*(v2*v2+v3*v3);
     Real m_pp = pr + rho*SQR(v3);
     m_ii_h += 0.5*SQR(bcc0(m,IBX,k,j,i));
-    m_pp += 0.5*( SQR(bcc0(m,IBX,k,j,i)) + SQR(bcc0(m,IBY,k,j,i)) - SQR(bcc0(m,IBZ,k,j,i)) );
+    m_pp += 0.5*( SQR(bcc0(m,IBX,k,j,i)) + SQR(bcc0(m,IBY,k,j,i))
+                 - SQR(bcc0(m,IBZ,k,j,i)) );
 
     Real src1 = z_ov_rE_(m,k,j,i) * m_ii_h;
     Real src2 = x_ov_rD_(m,k,j,i) * m_pp;
-    Real src3 = -y_ov_rC_(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area_.x2f(m,k,j,i)+uflx.x2f(m,IM3,k,j+1,i)*area_.x2f(m,k,j+1,i))/volume_(m,k,j,i);
+    Real src3 = -y_ov_rC_(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area_.x2f(m,k,j,i)
+                                      + uflx.x2f(m,IM3,k,j+1,i)*area_.x2f(m,k,j+1,i))
+                                     /volume_(m,k,j,i);
 
-    src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
-    src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM3,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
+    src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)
+                      + uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
+    src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)
+                      + uflx.x1f(m,IM3,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
 
     u0(m,IM1,k,j,i) += src1*bdt;
     u0(m,IM2,k,j,i) += src2*bdt;
