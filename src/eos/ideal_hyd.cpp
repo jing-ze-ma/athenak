@@ -41,12 +41,8 @@ void IdealHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
   const int nkji = (ku - kl + 1)*nji;
   const int nmkji = nmb*nkji;
 
-  // THE FLOOR-SWITCH KERNEL LIVES IN ITS OWN TRANSLATION UNIT (ideal_hyd_floors.cpp).
-  // See the note on EOS_Data::floors_legacy.  It is not merely a second launch in this
-  // file: with both kernels in one TU the device compiler contracts the arithmetic of
-  // the legacy one differently and the default answer moves by an ULP, so the two are
-  // compiled apart and this routine keeps exactly the code it had before the switches
-  // existed.
+  // with a floor switch on, the kernel of ideal_hyd_floors.cpp runs; it is compiled apart
+  // so this kernel keeps its arithmetic (EOS_Data::floors_legacy)
   if (!eos.floors_legacy) {
     ConsToPrimFloors(cons, prim, only_testfloors, il, iu, jl, ju, kl, ku);
     return;
@@ -85,8 +81,7 @@ void IdealHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
     } else {
       // update counter, reset conserved if floor was hit
       if (dfloor_used) {
-        // share-1104 P4 <hydro>/floor_tracer: the floor's mass joins the floor-mass
-        // scalar (as <mhd>/floor_tracer in ideal_mhd.cpp / general_mhd.cpp)
+        // <hydro>/floor_tracer: the floor's mass joins the floor-mass scalar
         if (eos.ifltr >= 0) cons(m,eos.ifltr,k,j,i) += u.d - cons(m,IDN,k,j,i);
         cons(m,IDN,k,j,i) = u.d;
         sumd++;
@@ -111,7 +106,7 @@ void IdealHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
         if (cons(m,n,k,j,i) < 0.0) {
           cons(m,n,k,j,i) = 0.0;
         }
-        // share-1104 P4 <hydro>/floor_tracer: the floor mass cannot exceed the cell mass
+        // the floor mass cannot exceed the cell mass
         if (n == eos.ifltr && cons(m,n,k,j,i) > u.d) {
           cons(m,n,k,j,i) = u.d;
         }

@@ -177,7 +177,7 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
                          dfloor_used, efloor_used, tfloor_used, vceil_used, vceil_test,
                          tclamp_used);
     dfloor_used = dfloor_used || vafloor_used;
-    // see the note in ideal_mhd.cpp: the floor-TEST pass writes nothing back
+    // the floor-test pass (FOFC) works on scratch data: no momentum write-back
     if (!only_testfloors && (vceil_used || vanoin_used)) {
       cons(m,IM1,k,j,i) = u.mx;
       cons(m,IM2,k,j,i) = u.my;

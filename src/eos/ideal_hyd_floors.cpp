@@ -4,14 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file ideal_hyd_floors.cpp
-//! \brief IdealHydro::ConsToPrimFloors(), the conserved-to-primitive inversion used when
-//! any of the floor switches of EOS_Data (dfloor_keep_velocity, vceil, efloor_from_ekin,
-//! efloor_as_tfloor) is enabled.
-//!
-//! WHY IT IS A FILE OF ITS OWN: see the note at the top of general_hyd_floors.cpp.  The
-//! default path is IdealHydro::ConsToPrim() in ideal_hyd.cpp, kept exactly as it was
-//! before these switches existed, and that only stays bitwise true while the two kernels
-//! are compiled apart.  Mirror into ideal_hyd.cpp any change meant to apply by DEFAULT.
+//! \brief IdealHydro::ConsToPrimFloors(), the inversion used when a floor switch of
+//! EOS_Data (dfloor_keep_velocity, vceil, efloor_from_ekin, efloor_as_tfloor) is on;
+//! compiled apart from ideal_hyd.cpp (see general_hyd_floors.cpp)
 
 #include "athena.hpp"
 #include "hydro/hydro.hpp"
@@ -20,8 +15,8 @@
 
 //----------------------------------------------------------------------------------------
 //! \fn void ConsToPrimFloors()
-//! \brief Converts conserved into primitive variables with the floor switches active.
-//! Same contract as IdealHydro::ConsToPrim(); see the note above.
+//! \brief Converts conserved into primitive variables with the floor switches active;
+//! same contract as IdealHydro::ConsToPrim()
 
 void IdealHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
                                   const bool only_testfloors,
@@ -66,9 +61,8 @@ void IdealHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &pr
     Real dfloor_fv=1.0;
     SingleC2P_IdealHyd(u, eos, w, dfloor_used, efloor_used, tfloor_used, dfloor_fv,
                        vceil_used, vceil_test);
-    // The floor-TEST pass (FOFC) must leave no trace: it is handed scratch conserved
-    // data and is followed by no GnomonicEquiangleRaiseVel, so neither the momentum
-    // rescale nor the fv it would hand on may be written from here.
+    // the floor-test pass (FOFC) works on scratch data and writes neither the momentum
+    // rescale nor fv
     if (!only_testfloors) {
       if ((eos.dfloor_keep_velocity && dfloor_fv < 1.0) || vceil_used) {
         cons(m,IM1,k,j,i) = u.mx;
@@ -81,9 +75,7 @@ void IdealHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &pr
 
     // set FOFC flag and quit loop if this function called only to check floors
     if (only_testfloors) {
-      // the velocity ceiling counts as a floor event for FOFC: a cell that would need it
-      // is one the first-order flux is meant to rescue (the ceiling itself is applied on
-      // the real pass, or deferred to the metric-aware pass on the cubed sphere)
+      // the velocity ceiling counts as a floor event for FOFC
       if (dfloor_used || efloor_used || tfloor_used || vceil_test) {
         fofc_(m,k,j,i) = true;
         sumd++;  // use dfloor as counter for when either is true
@@ -91,8 +83,7 @@ void IdealHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &pr
     } else {
       // update counter, reset conserved if floor was hit
       if (dfloor_used) {
-        // share-1104 P4 <hydro>/floor_tracer: the floor's mass joins the floor-mass
-        // scalar (as <mhd>/floor_tracer in ideal_mhd.cpp / general_mhd.cpp)
+        // <hydro>/floor_tracer: the floor's mass joins the floor-mass scalar
         if (eos.ifltr >= 0) cons(m,eos.ifltr,k,j,i) += u.d - cons(m,IDN,k,j,i);
         cons(m,IDN,k,j,i) = u.d;
         sumd++;
@@ -120,7 +111,7 @@ void IdealHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &pr
         if (cons(m,n,k,j,i) < 0.0) {
           cons(m,n,k,j,i) = 0.0;
         }
-        // share-1104 P4 <hydro>/floor_tracer: the floor mass cannot exceed the cell mass
+        // the floor mass cannot exceed the cell mass
         if (n == eos.ifltr && cons(m,n,k,j,i) > u.d) {
           cons(m,n,k,j,i) = u.d;
         }
