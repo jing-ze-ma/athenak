@@ -18,11 +18,11 @@
 #include "eos/eos.hpp"
 #include "hydro.hpp"
 
-// share-1104 P6: the body is shared with the other fluid (hydro/wellbalance_impl.hpp)
+// the body is shared with MHD (hydro/wellbalance_impl.inc)
 #define WB_CLASS Hydro
 #define WB_NVAR nhydro
 namespace hydro {
-#include "hydro/wellbalance_impl.hpp"
+#include "hydro/wellbalance_impl.inc"
 } // namespace hydro
 #undef WB_CLASS
 #undef WB_NVAR
