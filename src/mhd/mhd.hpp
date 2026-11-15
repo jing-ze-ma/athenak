@@ -100,7 +100,7 @@ struct MHDTaskIDs {
   TaskID crecv;
 };
 
-namespace hydro {class AmModule; struct WbAllCtx;}   // cs- /
+namespace hydro {class AmModule; struct WbAllCtx;}
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
@@ -416,7 +416,7 @@ class MHD {
 
   // following used for well-balanced scheme
   bool use_wellbalance_static = false;    // flag to enable static wellbalance
-  // cs- the angular-momentum module (hydro/hydro_am.hpp; nullptr unless one of
+  // the angular-momentum module (hydro/hydro_am.hpp; nullptr unless one of
   // <mhd>/am_transport | am_vector | frame_omega is named)
   hydro::AmModule *pam = nullptr;
   // flag to enable reconstructing perturbed primitive variables (less robust against

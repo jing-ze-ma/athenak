@@ -145,7 +145,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     bcctest("bcctest",1,1,1,1,1),
     fofc("fofc",1,1,1,1),
     fofc_cnt("fofc_cnt",1,1,1,1) {
-  // cs- the angular-momentum module (read only when named)
+  // the angular-momentum module (read only when named)
   // am_transport defaults on (cs, multi-D sp, fresh dynamic runs)
   {
     // (DefaultOn first: it is false at once when am_transport itself is named)
@@ -329,7 +329,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   // (dLz 3e-5..7e-5, not converging) and, with the resistive Poynting flux, an energy
   // loss (dE/E -1.4 %) on the closed cs shell (csam_1028/RESULTS.md). `resistive` zeroes
   // only the resistive part (ideal MHD bitwise unchanged); `full` also the ideal edge EMF
-  // (the former cs- <mhd>/wall_emf_zero, which this key replaces) and the
+  // (the former <mhd>/wall_emf_zero, which this key replaces) and the
   // Riemann mass+energy fluxes through the wall. Default `full` (user 10-29): it
   // changes ideal MHD with reflect walls (the wall B.n is frozen, E closes to round-off).
   if (pin->DoesParameterExist("mhd","wall_emf_zero")) {

@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file hydro_ringavg.cpp
-//! \brief ringavg-1029: conservative polar ring averaging (see hydro_ringavg.hpp).
+//! \brief conservative polar ring averaging (see hydro_ringavg.hpp).
 
 #include <cmath>
 #include <cstdlib>
@@ -21,7 +21,6 @@
 #include "hydro/hydro_ringavg.hpp"
 
 namespace hydro {
-
 namespace {
 [[noreturn]] void RavgFatal(const std::string &msg) {
   std::cout << "### FATAL ERROR in " << __FILE__ << std::endl
@@ -46,11 +45,16 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
   const bool have_list = pin->DoesParameterExist("mesh", "polar_ring_avg_n");
   if (have_list) {
     std::string s = pin->GetString("mesh", "polar_ring_avg_n");
-    for (auto &c : s) {if (c == ':') c = ',';}   // sbatch --export splits on commas
+    // ':' is accepted as a separator too (sbatch --export splits on commas)
+    for (auto &c : s) {
+      if (c == ':') c = ',';
+    }
     std::stringstream ss(s);
     std::string tok;
     while (std::getline(ss, tok, ',')) {
-      if (tok.find_first_not_of(" \t") != std::string::npos) nlist.push_back(std::stoi(tok));
+      if (tok.find_first_not_of(" \t") != std::string::npos) {
+        nlist.push_back(std::stoi(tok));
+      }
     }
   }
   const Real tol = pin->GetOrAddReal("mesh", "polar_ring_avg_tol", 1.05);
@@ -73,10 +77,10 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
       if (have_list) {
         if (jp < static_cast<int>(nlist.size())) n = nlist[jp];
       } else {
-        // layoutaudit-1103: the doubling is capped by the HALF-RING (a mesh property),
+        // the doubling is capped by the HALF-RING (a mesh property),
         // not by the MeshBlock nx3: capping by the block silently changed the polar
         // group size (and the Fourier cutoff, the CFL group width and the M1 coarse
-        // groups that use it) with the phi decomposition.  A block nx3 that the
+        // groups that use it) with the phi decomposition. A block nx3 that the
         // mesh-wide group size does not divide is refused below.
         const Real st = std::sin(hx2v(m,j));
         while (2*n*st <= tol && ((nphi/2) % (2*n)) == 0) n *= 2;
@@ -104,7 +108,11 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
     auto hm = Kokkos::create_mirror_view(em);
     auto hj = Kokkos::create_mirror_view(ej);
     auto hn = Kokkos::create_mirror_view(en);
-    for (int e = 0; e < nent; ++e) {hm(e) = vm[e]; hj(e) = vj[e]; hn(e) = vn[e];}
+    for (int e = 0; e < nent; ++e) {
+      hm(e) = vm[e];
+      hj(e) = vj[e];
+      hn(e) = vn[e];
+    }
     Kokkos::deep_copy(em, hm);
     Kokkos::deep_copy(ej, hj);
     Kokkos::deep_copy(en, hn);
@@ -114,7 +122,7 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
     for (int jp = 0; jp < nrow/2 && nrep[jp] > 1; ++jp) std::cout << " " << nrep[jp];
     std::cout << (have_list ? " (polar_ring_avg_n)" : " (auto)") << std::endl;
   }
-  // ringsmooth-1102: <mesh>/polar_ring_avg_filter, read only when named (default bitwise)
+  // <mesh>/polar_ring_avg_filter, read only when named
   if (pin->DoesParameterExist("mesh", "polar_ring_avg_filter")) {
     const std::string f = pin->GetString("mesh", "polar_ring_avg_filter");
     if (f == "fourier") {
@@ -129,11 +137,14 @@ RingAvg::RingAvg(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
 //----------------------------------------------------------------------------------------
 //! \fn RingAvg::Average
 //! \brief replace each phi group of the averaged rows by its group average (see the file
-//! header).  One thread per (group, i); sums in a fixed order: deterministic.
+//! header). One thread per (group, i); sums in a fixed order: deterministic.
 
 void RingAvg::Average(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Real> &phi,
                       const bool grav) {
-  if (fourier) {Filter(u, nvar, phi, grav, nullptr, 0, 0.0); return;}   // ringsmooth-1102
+  if (fourier) {
+    Filter(u, nvar, phi, grav, nullptr, 0, 0.0);
+    return;
+  }
   if (nent == 0) return;
   auto &ic = pmy_pack->pmesh->mb_indcs;
   const int is = ic.is, ie = ic.ie, ks = ic.ks, ke = ic.ke;
@@ -148,14 +159,20 @@ void RingAvg::Average(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Re
     const Real rn = 1.0/static_cast<Real>(n);
     for (int v = 0; v < nvar; ++v) {
       Real s = 0.0;
-      for (int kk = k; kk < k + n; ++kk) {s += u_(m,v,kk,j,i);}
+      for (int kk = k; kk < k + n; ++kk) {
+        s += u_(m,v,kk,j,i);
+      }
       s *= rn;
-      for (int kk = k; kk < k + n; ++kk) {u_(m,v,kk,j,i) = s;}
+      for (int kk = k; kk < k + n; ++kk) {
+        u_(m,v,kk,j,i) = s;
+      }
     }
     // etotgrav: IEN carries rho Phi with the cell's own Phi
     if (grav) {
       Real pb = 0.0;
-      for (int kk = k; kk < k + n; ++kk) {pb += phi_(m,kk,j,i);}
+      for (int kk = k; kk < k + n; ++kk) {
+        pb += phi_(m,kk,j,i);
+      }
       pb *= rn;
       const Real db = u_(m,IDN,k,j,i);
       for (int kk = k; kk < k + n; ++kk) {

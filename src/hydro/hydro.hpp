@@ -77,7 +77,7 @@ struct HydroTaskIDs {
 };
 
 namespace hydro {
-class AmModule;   // cs- hydro_am.hpp
+class AmModule;   // hydro_am.hpp
 struct WbAllCtx;   // (hydro_wball.hpp)
 class MergeLat;   // hydro_mergelat.hpp
 class RingAvg;    // hydro_ringavg.hpp
@@ -210,7 +210,7 @@ class Hydro {
   // after each stage-level operator and report the first offender. Default false, in
   // which case not one extra kernel runs. See the NanScan* helpers in hydro_tasks.cpp.
   bool nan_report = false;
-  // cs- the angular-momentum module (hydro_am.hpp; nullptr unless one of
+  // the angular-momentum module (hydro_am.hpp; nullptr unless one of
   // <hydro>/am_transport | am_vector | frame_omega is named)
   hydro::AmModule *pam = nullptr;
   // merged lateral cells near r_in (hydro_mergelat.hpp; nullptr unless

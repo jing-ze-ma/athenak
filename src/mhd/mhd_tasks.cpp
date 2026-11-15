@@ -376,7 +376,7 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
     pmy_pack->pcoord->SrcTermsSphericalPolarMHD(w0, bcc0, pwb, uflx,
                                                 peos->eos_data, beta_dt, u0);
   }
-  // cs- <mhd>/am_transport | am_vector | frame_omega (hydro/hydro_am.cpp): the
+  // <mhd>/am_transport | am_vector | frame_omega (hydro/hydro_am.cpp): the
   // MHD momentum flux carries the Maxwell stress; the CT field update is not touched
   if (pam != nullptr) {
     hydro::AmFluid fl{u0, u1, w0, wder, bcc0, uflx, peos->eos_data, true,
