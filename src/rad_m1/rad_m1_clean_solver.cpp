@@ -9,6 +9,7 @@
 //! preconditioner and right-preconditioned BiCGStab.
 
 #include <cmath>
+#include <limits>
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
@@ -325,18 +326,34 @@ int RadiationM1::CleanBiCGStab() {
   };
   auto dot = [&](const int a, const int b) {return CleanDot(w, nc, a, b);};
 
-  apply(sx, sr);
-  axpby(sr, sb, 1.0, sr, -1.0);
-  axpby(sr0, sr, 1.0, sr, 0.0);
-  axpby(sp, sr, 0.0, sr, 0.0);
-  axpby(sv, sr, 0.0, sr, 0.0);
+  // (re)start from the true residual of X with the shadow residual r0 = r.  A breakdown
+  // (r0.r at the rounding level of |r0| |r|, or r0.v or omega zero) restarts; a second
+  // breakdown right after a restart fails the solve.
+  Real rho = 1.0, alpha = 1.0, omega = 1.0, rr = 0.0, r0r0 = 0.0;
+  int it0 = 0;
+  auto restart = [&](const int it) {
+    if (it == it0 + 1) return false;
+    apply(sx, sr);
+    axpby(sr, sb, 1.0, sr, -1.0);
+    axpby(sr0, sr, 1.0, sr, 0.0);
+    axpby(sp, sr, 0.0, sr, 0.0);
+    axpby(sv, sr, 0.0, sr, 0.0);
+    rho = alpha = omega = 1.0;
+    rr = r0r0 = dot(sr, sr);
+    it0 = it;
+    return true;
+  };
+  restart(-1);
   const Real tol = cln_tol*fmax(std::sqrt(dot(sb, sb)), 1.0e-300);
-  if (std::sqrt(dot(sr, sr)) <= tol) return 0;
+  if (std::sqrt(rr) <= tol) return 0;
 
-  Real rho = 1.0, alpha = 1.0, omega = 1.0;
+  const Real eps = std::numeric_limits<Real>::epsilon();
   for (int it = 1; it <= cln_maxit; ++it) {
     const Real rho_new = dot(sr0, sr);
-    if (rho_new == 0.0) return -it;
+    if (!(fabs(rho_new) > eps*std::sqrt(r0r0*rr))) {
+      if (restart(it)) continue;
+      return -it;
+    }
     const Real beta = (rho_new/rho)*(alpha/omega);
     rho = rho_new;
     par_for("cln_pupdate", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -349,7 +366,10 @@ int RadiationM1::CleanBiCGStab() {
     precondition(sp, sy);
     apply(sy, sv);
     const Real r0v = dot(sr0, sv);
-    if (r0v == 0.0) return -it;
+    if (!std::isfinite(r0v) || r0v == 0.0) {
+      if (restart(it)) continue;
+      return -it;
+    }
     alpha = rho/r0v;
     axpby(ss, sr, 1.0, sv, -alpha);
     if (std::sqrt(dot(ss, ss)) <= tol) {
@@ -367,8 +387,9 @@ int RadiationM1::CleanBiCGStab() {
         w(m,sr+c,k,j,i) = w(m,ss+c,k,j,i) - omega*w(m,sq+c,k,j,i);
       }
     });
-    if (std::sqrt(dot(sr, sr)) <= tol) return it;
-    if (omega == 0.0) return -it;
+    rr = dot(sr, sr);
+    if (std::sqrt(rr) <= tol) return it;
+    if (omega == 0.0 && !restart(it)) return -it;
   }
   return -cln_maxit;
 }
