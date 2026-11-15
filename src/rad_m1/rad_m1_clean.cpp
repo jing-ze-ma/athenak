@@ -53,12 +53,6 @@ void RadiationM1::CleanInit() {
     Kokkos::realloc(cln_mc, nmb, CLN_N, n3, n2, n1);
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
   }
-  if (cln_retard && (vet_mbs != nullptr || vsc_rot || vet_milne)) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<rad_m1>/clean_ray_retard needs the single-MeshBlock vet_sc sweep with "
-              << "a fixed direction set (no rotation, no vet_milne)" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
 
   int nranks = 1;
 #if MPI_PARALLEL_ENABLED
