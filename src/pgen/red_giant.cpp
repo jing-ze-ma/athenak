@@ -200,9 +200,9 @@ DvceArray1D<Real> lnp_d_, tk_d_;
 DvceArray1D<Real> vc_d_;
 bool vpert_mlt_ = true;
 // problem/ic_tau_rad: the optical depth above which the INITIAL COLUMN follows grad_rad
-// rather than the convective gradient.  It used to be <hydro>/rad_tau_hi, which made the
-// initial star depend on where the RT/diffusion handover was put: moving the handover to
-// tau = 300 for stability also built the column radiative down to tau = 300, where
+// rather than the convective gradient.  It is separate from <hydro>/rad_tau_hi so that
+// the initial star does not depend on where the RT/diffusion handover is put: a handover
+// at tau = 300 would otherwise build the column radiative down to tau = 300, where
 // grad_rad/grad_ad ~ 1e3, i.e. a different and far hotter star.  Defaults to rad_tau_hi,
 // so nothing changes unless it is set.
 Real ic_tau_rad_ = -1.0;
@@ -1231,7 +1231,7 @@ void RedGiantProfileDump(Mesh *pm) {
       const Real cc = cs_p ? ccellp(m,k,j) : 0.0;
       // the internal energy exactly as ConToPrim extracts it: EintFromCons subtracts the
       // metric kinetic energy, the magnetic energy and rho*Phi (the last only under
-      // etotgrav, which is what slot 6 used to be wrong by)
+      // etotgrav)
       const Real emag = is_mhd ? MagEnergyCC(bcc, m, k, j, i) : 0.0;
       const Real ei = EintFromCons(u0, m, k, j, i, cc, cs_p, etg_p,
                                    etg_p ? phicc(m,k,j,i) : 0.0, emag);
@@ -1719,9 +1719,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // and the box's production setting; here it was never read, so the mode-3 column,
     // with rt_top_re forced off, always used the column model.
     ts::rt_top_vacuum = pin->GetOrAddBoolean("problem", "rt_top_vacuum", false);
-    // see two_stream_rt.hpp, rt_layer_legacy: every layer used to span a whole
-    // cell in optical depth but carry a source running between two cell CENTRES.
-    // The fix is the default here too; true restores the old layers.
+    // see two_stream_rt.hpp, rt_layer_legacy: false (default) = centre-to-centre
+    // layers, true = the staggered whole-cell layers.
     ts::rt_layer_legacy = pin->GetOrAddBoolean("problem", "rt_layer_legacy", false);
     ts::rt_cell_report = pin->GetOrAddBoolean("problem", "rt_cell_report", false);
     ts::rt_report_r = pin->GetOrAddReal("problem", "rt_report_r", 3.887e12);
@@ -1769,7 +1768,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       std::exit(EXIT_FAILURE);
     }
     // problem/rt_impl_reuse: reuse the block factorisation across Newton passes, with a
-    // contraction check (1) or unconditionally (2).  0 (the default) is the old code.
+    // contraction check (1) or unconditionally (2); 0 (the default) refactorises every
+    // pass.
     ts::rt_impl_reuse = pin->GetOrAddInteger("problem", "rt_impl_reuse", 0);
     ts::rt_impl_reuse_rho = pin->GetOrAddReal("problem", "rt_impl_reuse_rho", 0.3);
     if (ts::rt_impl_reuse < 0 || ts::rt_impl_reuse > 2) {
@@ -2019,10 +2019,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << " K, no irradiation" << std::endl;
   }
   // The star and grid numbers BOTH band solvers read; Teq = 0 switches the stellar sweep
-  // off.  This used to be set only on the correlated-k path, which left the grey path
-  // with grav = 0: the top-ghost column's dtau = kappa p / g_eff was then +inf, which the
-  // exponential absorbed silently, and became 0/0 = NaN the moment a transparent top cell
-  // made kappa zero.  The solver needs the gravity whichever band scheme is running.
+  // off.  Both band schemes need the gravity: with grav = 0 the top-ghost column's
+  // dtau = kappa p / g_eff is +inf, and 0/0 = NaN once a transparent top cell makes kappa
+  // zero.
   if (rt_ck_ || rt_grey_) {
     hot_jupiter_param.Teq = 0.0;
     hot_jupiter_param.omega = 0.0;

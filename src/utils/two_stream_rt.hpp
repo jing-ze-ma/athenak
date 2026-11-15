@@ -1001,7 +1001,7 @@ inline bool rt_impl_rescheck = false;
 // evaluation and two small matrix-vector products instead of the whole assembly,
 // factorisation and reduced elimination.  1 = reuse with a contraction check (the pass
 // refactorises when the residual failed to fall by a factor 0.3), 2 = reuse always
-// (diagnostic).  0 (the default) is the old code, bitwise.  The converged answer is the
+// (diagnostic).  0 (the default) refactorises every pass.  The converged answer is the
 // same root of the same residual to the same tolerance; only the iterates between the
 // first and the last differ, at O(the frozen de/db).  The
 // PARTITIONED path (rt_impl_solver = pcr) only; thomas is refused.
@@ -1069,7 +1069,7 @@ inline bool rt_impl_redpar = false;
 // system has mixed block sizes.  See two_stream_column_partition.hpp.
 inline Real rt_col3_hybrid_tau = 0.0;
 // problem/rt_impl_warm: WARM-START the mode-3 Newton from the previous call's converged
-// Planck function instead of from the entry state's.  0 = off (bitwise the old code),
+// Planck function instead of from the entry state's.  0 = off (the entry state),
 // 1 = the previous converged b per cell, 2 = linear extrapolation in time from the last
 // two.  Only the ITERATE moves; the residual, the Jacobian, the tolerance and the entry
 // state are untouched, so the converged root is the same one and the answer is equal to
@@ -1197,10 +1197,10 @@ inline bool rt_layer_legacy = false;
 // NOT CONVERTED, and refused: rt_layer_legacy (the staggered whole-cell ck layers) and
 // the mode-1/2 nearest-neighbour Jacobian, which the ck path never fills anyway.
 inline bool ck_spherical = false;
-// problem/ck_beam_sph: the PSEUDO-SPHERICAL direct stellar beam.  Since 2026-09-22 it
-// follows the same rule as ck_spherical: DEFAULT TRUE on a spherical-polar or
-// cubed-sphere mesh (under rt_ck && !rt_layer_legacy), REFUSED on a Cartesian one.
-// False is bitwise the plane-parallel slant path the correlated-k kernel used to use.
+// problem/ck_beam_sph: the PSEUDO-SPHERICAL direct stellar beam.  It follows the same
+// rule as ck_spherical: DEFAULT TRUE on a spherical-polar or cubed-sphere mesh (under
+// rt_ck && !rt_layer_legacy), REFUSED on a Cartesian one.  False = the plane-parallel
+// slant path.
 // Independent of ck_spherical (that switch converts the THERMAL two-stream; this one the
 // BEAM), and the two compose.
 //
@@ -1776,9 +1776,8 @@ Real RTTopDtau(const Real kap, const Real pcgs, const Real geff) {
 //!
 //! This is called from inside the pass (picket_fence_two_stream_RT_pass), whose number
 //! of calls is RANK-LOCAL under ck_implicit (the Newton loop stops per rank), so it must
-//! not hold a collective: it only accumulates.  The count used to be printed from here
-//! on rank 0 with rank 0's share alone, so a run whose clipping sat on other ranks
-//! showed a clean log.
+//! not hold a collective: it only accumulates (a count printed from here on rank 0
+//! would show rank 0's share alone).
 inline void RTSourceLimiterWarn(const int nclip) {
   if (rt_srclim_warned || nclip <= 0) return;
   rt_srclim_acc += nclip;
