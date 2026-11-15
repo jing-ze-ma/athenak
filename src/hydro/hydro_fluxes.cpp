@@ -137,14 +137,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   // phicc0 / phi0.x1f -- the same allocation -- unless <problem>/wb_phi_eff is on
   auto &phicc_wb_ = phicc_wb;
   auto phi_wb_x1f_ = phi_wb_x1f;
-  auto phi0_x2f = phi0.x2f;
   auto phi0_x3f = phi0.x3f;
 
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   const auto wb_option_ = wb_option;
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
-  const bool use_wb_x2_ = use_wb_x2;
   const bool wb_all_ = wb_all;
   auto wbq2_ = wbq2;
   auto wbq3_ = wbq3;
@@ -686,9 +684,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         } else {
         if (wb_all_) {
           WbAllPLM(member, use_wb_rho_, 2, m, k, j, il, iu, w0_, wbq2_, wbw_, wl_jp1, wr);
-        } else if (use_wellbalance_dynamic_ && use_wb_x2_) {
-          WbLocalPiecewiseLinearX2(member, eos_, wb_option_, use_wb_rho_,
-              m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
         } else {
         // Reconstruct qR[j] and qL[j+1]
         switch (recon_method_) {
@@ -729,11 +724,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                                     wder_, dl_jp1, dr);
       } else if (wb_all_) {
             WbAllPLMDer(member, 2, m, k, j, il, iu, wder_, wbq2_, wbw_, dl_jp1, dr);
-      } else if (use_wellbalance_dynamic_ && use_wb_x2_) {
-            WbPiecewiseLinearDerX2(member, eos_, wb_option_,
-                m, k, j, il, iu, w0_, wder_,
-                                   phicc0_, phi0_x2f, dl_jp1, dr);
-          } else {
+      } else {
           switch (recon_method_) {
             case ReconstructionMethod::dc:
               DonorCellX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
@@ -1279,7 +1270,7 @@ void Hydro::CsSeamFaceStates() {
   const int nder = eos_.IsGeneral() ? NDERIVED : 0;
   const int nfs = nhydro + nscalars + NDERIVED;
   if (recon_method != ReconstructionMethod::plm ||
-      (use_wellbalance_dynamic && use_wb_x2) || use_wellbalance_static_reconst_perturb ||
+      use_wellbalance_static_reconst_perturb ||
       pmy_pack->pmesh->multilevel) {
     if (!pmy_pack->pmesh->cs_seam_flux_named) {
       // the DEFAULT shared seam on a setup it does not cover: the mean of the two solves

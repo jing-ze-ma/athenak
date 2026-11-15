@@ -406,7 +406,7 @@ void MHD::CsSeamInit(ParameterInput *pin) {
   cs_seam_mhd = true;
   if (!pp->pmesh->use_cubed_sphere || !pp->pmesh->three_d ||
       recon_method != ReconstructionMethod::plm ||
-      (use_wellbalance_dynamic && use_wb_x2) || use_wellbalance_static_reconst_perturb ||
+      use_wellbalance_static_reconst_perturb ||
       pp->pmesh->multilevel || pp->pcoord->is_special_relativistic ||
       pp->pcoord->is_general_relativistic || use_fofc) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

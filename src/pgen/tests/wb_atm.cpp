@@ -31,18 +31,20 @@
 //! static well-balanced scheme is on.
 //!
 //! The same problem also drives the DYNAMIC well-balanced scheme (Kappeli & Mishra,
-//!   <hydro>/wellbalance_dynamic = true, wb_x2 = true, wb_rho = true,
+//!   <hydro>/wellbalance_dynamic = true, wb_x1 = true, wb_dirs = all, wb_rho = true,
 //!   wb_option = isentropic),
 //! which does NOT use u0wb/w0wb at all: it rebuilds a local hydrostatic background from
-//! the current state and the gravitational potential.  What it needs from the pgen is
-//! that potential -- phicc0 and phi0.x{1,2,3}f, filled over the full arrays below -- and
-//! a gravitational source written as the background's own pressure difference (see
+//! the current state and the gravitational potential, in x2 through the wb_dirs = all
+//! cache (hydro_wball.hpp).  What it needs from the pgen is that potential -- phicc0 and
+//! phi0.x{1,2,3}f, filled over the full arrays below -- and the matching gravitational
+//! source, the background's own pressure difference (Hydro::AddWbGravity, see
 //! WbAtmGravity).  The atmosphere here is isentropic, which is exactly the closed-form
 //! background wb_option = isentropic assumes, so the balance is held to round-off.
 
 // C++ headers
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <iostream>
 
@@ -287,9 +289,9 @@ void WbAtmBCsT(Mesh *pm, P *ph) {
 //! momentum source must act on the DEVIATION rho - rho_background only.  With the
 //! DYNAMIC scheme on there is no stored background to subtract: the momentum source is
 //! instead the local hydrostatic background's OWN pressure difference across the cell,
-//! (p_{j+1/2} - p_{j-1/2})/dx2, obtained through the same entry point the
-//! reconstruction uses (Hydro::getWBq0) so that the two cancel identically for a
-//! balanced state.  (Handing the dynamic scheme the plain -rho g source would NOT be
+//! (p_{j+1/2} - p_{j-1/2})/dx2 blended with the plain force by the validity weight,
+//! from the same cache the x2 reconstruction reads (AddWbGravity), so that the two
+//! cancel identically for a balanced state.  (Handing the dynamic scheme the plain -rho g source would NOT be
 //! well balanced, since the flux it assembles already carries the full background
 //! pressure.)  The energy source is physical and always uses the full density.
 
@@ -312,14 +314,14 @@ void WbAtmGravityT(Mesh *pm, P *ph, const Real bdt) {
   auto u0 = ph->u0;
   auto w0 = ph->w0;
   auto w0wb = ph->w0wb;
-  auto phicc0 = ph->phicc0;
-  auto phi2 = ph->phi0.x2f;
-  auto &size = pmbp->pmb->mb_size;
   const bool wbstatic = ph->use_wellbalance_static;
   const bool wbdyn = ph->use_wellbalance_dynamic;
-  // by-value copies, capturable in the device lambda (never dereference pmbp there)
-  const auto eos = ph->peos->eos_data;
-  const WBOption wbo = ph->wb_option;
+  if (wbdyn && !ph->wb_all) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "wb_atm: the dynamic well-balanced scheme needs "
+              << "wb_dirs = all (the atmosphere is stratified in x2)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   Real g0 = wbatm.g0;
 
   par_for("wb_atm_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -329,17 +331,10 @@ void WbAtmGravityT(Mesh *pm, P *ph, const Real bdt) {
     if (wbstatic) {
       src = bdt*g0*(w0(m,IDN,k,j,i) - w0wb(m,IDN,k,j,i));
     }
-    if (wbdyn) {
-      Real pl, pr, d1, d2, d3;
-      hydro::Hydro::getWBq0(eos, wbo, WBVar::wb_pres,
-          w0(m,IDN,k,j-1,i), w0(m,IDN,k,j,i), w0(m,IDN,k,j+1,i),
-          w0(m,IEN,k,j-1,i), w0(m,IEN,k,j,i), w0(m,IEN,k,j+1,i),
-          phicc0(m,k,j-1,i), phi2(m,k,j,i), phicc0(m,k,j,i), phi2(m,k,j+1,i),
-          phicc0(m,k,j+1,i), d1, pl, d2, pr, d3);
-      src = bdt*(pr - pl)/size.d_view(m).dx2;
-    }
-    u0(m,IM2,k,j,i) += src;
+    if (!wbdyn) u0(m,IM2,k,j,i) += src;
   });
+  // dynamic scheme: the momentum source of the x2 background cache (x1 has no gravity)
+  if (wbdyn) ph->AddWbGravity(bdt, false);
   return;
 }
 

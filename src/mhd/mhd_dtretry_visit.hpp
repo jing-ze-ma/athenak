@@ -143,7 +143,6 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("wall_conducting_ix1", wall_conducting_ix1);
   v.value("wall_conducting", wall_conducting);
   v.value("any_reflect_face", any_reflect_face);
-  v.value("use_wb_x2", use_wb_x2);
   v.value("use_wb_rho", use_wb_rho);
   v.value("wb_rmax", wb_rmax);
   v.value("wb_phimax", wb_phimax);

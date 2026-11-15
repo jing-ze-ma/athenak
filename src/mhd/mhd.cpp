@@ -526,7 +526,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                                           wbi_default("wb_guard_ideal"));
     wb_clamp_ideal = pin->GetOrAddBoolean("mhd","wb_clamp_ideal",
                                           wbi_default("wb_clamp_ideal"));
-    use_wb_x2 = pin->GetOrAddBoolean("mhd","wb_x2",false);
     use_wb_rho = pin->GetOrAddBoolean("mhd","wb_rho",false);
     // (mhd.hpp): as <hydro>/wall_wb_onesided, fresh-start default with WB x1
     if (!pin->DoesParameterExist("mhd","wall_wb_onesided") &&
@@ -622,10 +621,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
           }
         }
         if (wb_all) {
-          if (!use_wb_x1 || use_wb_x2 || pmy_pack->pmesh->one_d) {
+          if (!use_wb_x1 || pmy_pack->pmesh->one_d) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "<mhd>/wb_dirs = all needs wb_x1 = true, wb_x2 = "
-                      << "false and a 2-D/3-D mesh" << std::endl;
+                      << std::endl << "<mhd>/wb_dirs = all needs wb_x1 = true and a "
+                      << "2-D/3-D mesh" << std::endl;
             std::exit(EXIT_FAILURE);
           }
           wb_weight = pin->GetOrAddBoolean("mhd","wb_weight",true);
@@ -648,10 +647,11 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                       << (wb_weight ? "true" : "false") << std::endl;
           }
         }
-        // select well-balanced scheme direction
-        if (!use_wb_x1 && !use_wb_x2) {
+        // the dynamic scheme is built on the x1 background (wb_dirs = all adds x2/x3)
+        if (!use_wb_x1) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<mhd> wb_direction not set!" << std::endl;
+                    << std::endl << "<mhd>/wellbalance_dynamic needs wb_x1 = true"
+                    << std::endl;
           std::exit(EXIT_FAILURE);
         }
     }
@@ -1144,11 +1144,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
           !pin->DoesParameterExist("mhd","cs_seam_mhd")) {
         std::string no;
         if (!pmy_pack->pmesh->three_d || recon_method != ReconstructionMethod::plm ||
-            (use_wellbalance_dynamic && use_wb_x2) ||
             use_wellbalance_static_reconst_perturb || pmy_pack->pmesh->multilevel ||
             pmy_pack->pcoord->is_special_relativistic ||
             pmy_pack->pcoord->is_general_relativistic || use_fofc) {
-          no = "needs 3-D, plm, no x2 well-balance, uniform mesh, Newtonian, no fofc";
+          no = "needs 3-D, plm, uniform mesh, Newtonian, no fofc";
         } else if (!(emf_uct || emf_uct_hlld)) {
           no = "needs emf_scheme = uct or uct_hlld";
         }

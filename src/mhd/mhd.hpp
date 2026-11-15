@@ -456,7 +456,6 @@ class MHD {
   // no Poynting flux at all)
   int wall_conducting = 2;
   bool any_reflect_face = false;   // some mesh face is reflect (host, set in the ctor)
-  bool use_wb_x2 = false;    // flag for directions
   // flag to enable local well-balanced method also in reconstructing rho
   bool use_wb_rho = false;
   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic
@@ -698,53 +697,6 @@ class MHD {
         return;
       };
 
-      KOKKOS_INLINE_FUNCTION
-      static void WbLocalPiecewiseLinearX2(TeamMember_t const &member,
-           const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
-           const int m, const int k, const int j,
-           const int il, const int iu, const DvceArray5D<Real> &q,
-           const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
-           ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
-        Real igm1 = 1.0/(eos.gamma-1.0);
-        int nvar = q.extent_int(1);
-        for (int n=0; n<nvar; ++n) {
-          if (n == (IEN) || (n == (IDN) && use_wb_rho)) {
-            par_for_inner(member, il, iu, [&](const int i) {
-              Real q0_jm1, q0_jp1, q0_jmh, q0_jph, q0_j;
-              getWBq0(eos, wb_option, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
-                       q(m,IDN,k,j-1,i),q(m,IDN,k,j,i),q(m,IDN,k,j+1,i),
-                       q(m,IEN,k,j-1,i),q(m,IEN,k,j,i),q(m,IEN,k,j+1,i),
-                       phicc(m,k,j-1,i),phi(m,k,j,i),phicc(m,k,j,i),
-                       phi(m,k,j+1,i),phicc(m,k,j+1,i),
-                       q0_jm1, q0_jmh, q0_j, q0_jph, q0_jp1);
-
-              Real q1_jm1 = q(m,n,k,j-1,i) - q0_jm1;
-              Real q1_j = q(m,n,k,j,i) - q0_j;
-              Real q1_jp1 = q(m,n,k,j+1,i) - q0_jp1;
-
-              PLM(q1_jm1, q1_j, q1_jp1, ql_jp1(n,i), qr_j(n,i));
-
-              ql_jp1(n,i) += q0_jph;
-              qr_j(n,i) += q0_jmh;
-
-                // Left/right slopes (properly scaled)
-                Real sL = q(m,n,k,j,i)   - q(m,n,k,j-1,i);
-                Real sR = q(m,n,k,j+1,i) - q(m,n,k,j,i);
-
-                if (ql_jp1(n,i) < 0.0 || qr_j(n,i) < 0.0 || sL * sR <= 0.0) {
-                    PLM(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i),
-                        ql_jp1(n,i), qr_j(n,i));
-                }
-            });
-          } else {
-            par_for_inner(member, il, iu, [&](const int i) {
-              PLM(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), ql_jp1(n,i), qr_j(n,i));
-            });
-          }
-        }
-        return;
-      };
-
     //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX1
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
@@ -928,50 +880,6 @@ class MHD {
         } else {
           par_for_inner(member, il, iu, [&](const int i) {
             PLM(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1), dl(n,i+1), dr(n,i));
-          });
-        }
-      }
-      return;
-    };
-
-    KOKKOS_INLINE_FUNCTION
-    static void WbPiecewiseLinearDerX2(TeamMember_t const &member,
-         const EOS_Data &eos, const WBOption wb_option,
-         const int m, const int k, const int j, const int il, const int iu,
-         const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
-         const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
-         ScrArray2D<Real> &dl_jp1, ScrArray2D<Real> &dr_j) {
-      int nvar = qd.extent_int(1);
-      for (int n=0; n<nvar; ++n) {
-        if (n == (IDPR)) {
-          par_for_inner(member, il, iu, [&](const int i) {
-            Real q0_jm1, q0_jmh, q0_j, q0_jph, q0_jp1;
-            getWBq0(eos, wb_option, WBVar::wb_pres,
-                    q(m,IDN,k,j-1,i),q(m,IDN,k,j,i),q(m,IDN,k,j+1,i),
-                    q(m,IEN,k,j-1,i),q(m,IEN,k,j,i),q(m,IEN,k,j+1,i),
-                    phicc(m,k,j-1,i),phi(m,k,j,i),phicc(m,k,j,i),
-                    phi(m,k,j+1,i),phicc(m,k,j+1,i),
-                    q0_jm1, q0_jmh, q0_j, q0_jph, q0_jp1);
-
-            Real q1_jm1 = qd(m,n,k,j-1,i) - q0_jm1;
-            Real q1_j   = qd(m,n,k,j,i)   - q0_j;
-            Real q1_jp1 = qd(m,n,k,j+1,i) - q0_jp1;
-
-            PLM(q1_jm1, q1_j, q1_jp1, dl_jp1(n,i), dr_j(n,i));
-
-            dl_jp1(n,i) += q0_jph;
-            dr_j(n,i)   += q0_jmh;
-
-            Real sL = qd(m,n,k,j,i)   - qd(m,n,k,j-1,i);
-            Real sR = qd(m,n,k,j+1,i) - qd(m,n,k,j,i);
-            if (dl_jp1(n,i) < 0.0 || dr_j(n,i) < 0.0 || sL * sR <= 0.0) {
-              PLM(qd(m,n,k,j-1,i), qd(m,n,k,j,i), qd(m,n,k,j+1,i),
-                  dl_jp1(n,i), dr_j(n,i));
-            }
-          });
-        } else {
-          par_for_inner(member, il, iu, [&](const int i) {
-            PLM(qd(m,n,k,j-1,i), qd(m,n,k,j,i), qd(m,n,k,j+1,i), dl_jp1(n,i), dr_j(n,i));
           });
         }
       }

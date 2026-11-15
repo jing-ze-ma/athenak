@@ -241,7 +241,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // phicc0 / phi0.x1f unless a problem generator enabled its own (bitwise default)
   auto &phiwbcc_ = phicc_wb;
   auto phiwb_x1f_ = phi_wb_x1f;
-  auto phi0_x2f = phi0.x2f;
   auto phi0_x3f = phi0.x3f;
 
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
@@ -251,7 +250,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const auto wb_option_ = wb_option;
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
-  const bool use_wb_x2_ = use_wb_x2;
   const bool wb_all_ = wb_all;
   auto wbq2_ = wbq2;
   auto wbq3_ = wbq3;
@@ -801,20 +799,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                                   x2v_, x2f_, wbq2_, wbw_, wl_jp1, wr);
           }
         } else {
-        if (use_wellbalance_dynamic_ && use_wb_x2_) {
-          // is-1,ie+1, not il,iu -- the b0_ line below, the spherical-polar branch
-          // above, the whole default switch, and the Riemann solver all use
-          // is-1,ie+1. With il,iu (the x1 sweep's limits, never reset for x2/x3)
-          // this leaves wl_jp1/wr unwritten at i = is-1, which the solver reads.
-          WbLocalPiecewiseLinearX2(member, eos_, wb_option_, use_wb_rho_,
-              m, k, j, is-1, ie+1, w0_,
-                                   phicc0_, phi0_x2f, wl_jp1, wr);
-          if (eos_.plm_c1) {
-            PiecewiseLinearC1X2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
-          } else {
-            PiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
-          }
-        } else {
         // Reconstruct qR[j] and qL[j+1], for both W and Bcc
         switch (recon_method_) {
           case ReconstructionMethod::dc:
@@ -845,7 +829,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           default:
             break;
         }
-        }
         if (wb_all_) {   // the WB deviation blended into the plain faces
           hydro::WbAllBlendUni(member, use_wb_rho_, 2, false, m, k, j, is-1, ie+1, w0_,
                                wbq2_, wbw_, wl_jp1, wr);
@@ -863,11 +846,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         WbStaticPiecewiseLinearDerX2(member, m, k, j, is-1, ie+1,
                                      pwb_, pfacewb_x2f,
                                     wder_, dl_jp1, dr);
-      } else if (use_wellbalance_dynamic_ && use_wb_x2_) {
-            WbPiecewiseLinearDerX2(member, eos_, wb_option_,
-                m, k, j, is-1, ie+1, w0_, wder_,
-                                   phicc0_, phi0_x2f, dl_jp1, dr);
-          } else {
+      } else {
           switch (recon_method_) {
             case ReconstructionMethod::dc:
               DonorCellX2(member, m, k, j, is-1, ie+1, wder_, dl_jp1, dr);

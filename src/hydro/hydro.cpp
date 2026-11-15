@@ -354,7 +354,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   wb_clamp_ideal = pin->GetOrAddBoolean("hydro","wb_clamp_ideal",
                                         wbi_default("wb_clamp_ideal"));
   scratch_level = pin->GetOrAddInteger("hydro","scratch_level",0);
-  use_wb_x2 = pin->GetOrAddBoolean("hydro","wb_x2",false);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
   // (hydro.hpp, reconstruct/wb_wall.hpp). USER 11-05: default true on a
   // FRESH start (recipe::NewDefaults) whenever the x1 dynamic WB scheme is on and the
@@ -545,7 +544,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       if (wb_all) {
         std::string bad = "";
         if (!use_wb_x1) bad = "<hydro>/wb_x1 = true";
-        if (use_wb_x2) bad = "<hydro>/wb_x2 = false (the legacy x2 path)";
         if (pmy_pack->pcoord->is_general_relativistic ||
             pmy_pack->pcoord->is_special_relativistic) {
           bad = "a Newtonian mesh";
@@ -575,10 +573,11 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
                     << (wb_weight ? "true" : "false") << std::endl;
         }
       }
-      // select well-balanced scheme direction
-      if (!use_wb_x1 && !use_wb_x2) {
+      // the dynamic scheme is built on the x1 background (wb_dirs = all adds x2/x3)
+      if (!use_wb_x1) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<hydro> wb_direction not set!" << std::endl;
+                  << std::endl << "<hydro>/wellbalance_dynamic needs wb_x1 = true"
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
   }
