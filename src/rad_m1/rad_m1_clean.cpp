@@ -79,11 +79,12 @@ void RadiationM1::CleanInit() {
 #endif
   const bool cartesian = !pmy_pack->pmesh->use_cubed_sphere &&
                          !pmy_pack->pmesh->use_spherical_polar;
-  if (nmb != 1 || nranks != 1 || !cartesian || !vet_sc || !vet_full || chat != c_light) {
+  if (nmb != 1 || nranks != 1 || !cartesian || !vet_sc || !vet_full || chat != c_light ||
+      (cln_consist && pmy_pack->pmesh->three_d)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<rad_m1>/scheme = clean currently needs one MeshBlock on one rank, a "
-              << "Cartesian mesh, closure = vet_sc with vet_tensor = full, and chat = c"
-              << std::endl;
+              << "Cartesian mesh, closure = vet_sc with vet_tensor = full, and chat = c; "
+              << "clean_consistency a 1-D or 2-D mesh" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   // the formal solution must provide the half-range sums and C1

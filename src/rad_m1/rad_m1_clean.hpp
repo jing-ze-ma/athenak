@@ -32,7 +32,9 @@ constexpr int CLN_HM = 9;    // h-_a = H-_a/J (<= 0)
 constexpr int CLN_KP = 12;   // k+^d_b = K+^d_bd/J (outgoing stress of mu_d > 0), 3 d + b
 constexpr int CLN_C1 = 21;   // non-locality C1 = <|I - S|>/J
 constexpr int CLN_J = 22;    // J of the rays (energy-density units)
-constexpr int CLN_N = 23;
+constexpr int CLN_F2 = 23;   // the rays' flux through the low x2 face (M1_VET_F2, not
+                             // normalised; clean_consistency)
+constexpr int CLN_N = 27;
 
 // face variables (arrays cln_fc1, cln_fc2, cln_fc3)
 constexpr int CLF_W = 0;     // blend weight w

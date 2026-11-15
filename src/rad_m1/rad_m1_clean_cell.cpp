@@ -162,9 +162,10 @@ void RadiationM1::CleanCellFaceSpeeds() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellConsistency
 //! \brief consistency bracket C = F_ray - f(Ur) of every interior face
-//! (clean_consistency): the rays' kinetic upwind flux of their cell moments, E row
-//! c (h+_L J_L + h-_R J_R) and stress rows c (k+_L J_L + (D - k+)_R J_R)
-//! (CleanCellOutStress), less the face flux of the solve (current marks and weights) of
+//! (clean_consistency): the rays' face flux, whose cell balance is their exchange (on x1
+//! faces the kinetic upwind flux of the cell moments, E row c (h+_L J_L + h-_R J_R),
+//! stress rows c (k+_L J_L + (D - k+)_R J_R) (CleanCellOutStress); on x2 faces the sums
+//! of the sweep, CLN_F2), less the face flux of the solve (current marks and weights) of
 //! Ur = (J, J h), h = h+ + h-, with the slopes of Ur: the bracket is fixed for given
 //! closure and marks.  Physical boundary faces carry none.  The slopes of the iterate
 //! are restored.
@@ -197,18 +198,22 @@ void RadiationM1::CleanCellConsistency() {
       if (CleanBoundaryFace(x, dir, k, j, i)) return;
       const int kl = k - dk, jl = j - dj, il = i - di;
       const Real el = x.cs(m,CLN_J,kl,jl,il), er = x.cs(m,CLN_J,k,j,i);
-      Real f[4];
+      Real f[4], fr[4] = {0.0, 0.0, 0.0, 0.0};
       CleanCellFaceFlux(x, CLC_U, dir, m, k, j, i, false, f);
-      x.fc[dir](m,CLF_CB,k,j,i) = x.c*(x.cs(m,CLN_HP+dir,kl,jl,il)*el +
-                                       x.cs(m,CLN_HM+dir,k,j,i)*er) - f[0];
-      for (int b = 0; b < 3; ++b) {
-        Real fr = 0.0;
-        if (b < x.nf) {
-          fr = x.c*(CleanCellOutStress(x, dir, b, m, kl, jl, il, false)*el +
-                    CleanCellOutStress(x, dir, b, m, k, j, i, true)*er);
+      for (int r = 0; r <= x.nf; ++r) {
+        if (dir == 1) {
+          fr[r] = x.c*x.cs(m,CLN_F2+r,k,j,i);
+        } else if (r == 0) {
+          fr[r] = x.c*(x.cs(m,CLN_HP+dir,kl,jl,il)*el + x.cs(m,CLN_HM+dir,k,j,i)*er);
+        } else {
+          fr[r] = x.c*(CleanCellOutStress(x, dir, r-1, m, kl, jl, il, false)*el +
+                       CleanCellOutStress(x, dir, r-1, m, k, j, i, true)*er);
         }
-        x.fc[dir](m,CLF_CB+1+b,k,j,i) = fr - f[1+b];
       }
+      // none on a low-order face or in an all-low solve (the positivity fallback acts
+      // on U itself)
+      const Real wb = (x.all_low || x.fc[dir](m,CLF_LO,k,j,i) > 0.0) ? 0.0 : 1.0;
+      for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = wb*(fr[r] - f[r]);
     });
   }
   if (cln_recon) CleanCellSlopeWeights(CLC_K);

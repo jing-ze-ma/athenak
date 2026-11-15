@@ -2006,8 +2006,8 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   int ncells1 = indcs.nx1 + 2*(indcs.ng);
   int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  Kokkos::realloc(vet_cell, nmb, M1_VET_NC + (clean ? M1_VET_NKP : 0), ncells3, ncells2,
-                  ncells1);
+  Kokkos::realloc(vet_cell, nmb, M1_VET_NC + (clean ? M1_VET_NKP : 0) +
+                  (cln_consist ? 4 : 0), ncells3, ncells2, ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
   if (mbpath) {
     VetMBInit(pin);   // the banded plane buffers live in vet_mbs
@@ -3740,6 +3740,10 @@ void RadiationM1::VetShortCharSweep() {
   // thinsw-1010 (implicit_thin_switch = fs | fskn): the non-locality sum w |I - S| of the
   // rays at each cell (M1_VET_NL, C1 of M1ThinCell)
   const bool nls_ = thsw_c1;
+  // clean_consistency: the rays' x2-face fluxes (M1_VET_F2), the transverse part of the
+  // linear foot interpolation written as a flux, so that the cell balance of the rays'
+  // face fluxes is their exchange along the segment
+  const bool f2s_ = cln_consist;
   Kokkos::fence();
   Kokkos::Timer timer;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -3853,6 +3857,9 @@ void RadiationM1::VetShortCharSweep() {
       if (kps_) {
         for (int n = 0; n < M1_VET_NKP; ++n) {vcd_(m,M1_VET_KP+n,k,j,i) = 0.0;}
       }
+      if (f2s_) {
+        for (int n = 0; n < 4; ++n) {vcd_(m,M1_VET_F2+n,k,j,i) = 0.0;}
+      }
       if (nls_) {
         vcd_(m,M1_VET_NL,k,j,i) = 0.0;
         // vacuum (no extinction): no lagged scattering source, eps = 1
@@ -3945,6 +3952,7 @@ void RadiationM1::VetShortCharSweep() {
       for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {vc_(m,n,k,j,i) = 0.0;}
       if (hrs_) {for (int n = 0; n < 3; ++n) {vc_(m,M1_VET_HP1+n,k,j,i) = 0.0;}}
       if (kps_) {for (int n = 0; n < M1_VET_NKP; ++n) {vc_(m,M1_VET_KP+n,k,j,i) = 0.0;}}
+      if (f2s_) {for (int n = 0; n < 4; ++n) {vc_(m,M1_VET_F2+n,k,j,i) = 0.0;}}
       if (nls_) {vc_(m,M1_VET_NL,k,j,i) = 0.0;}
     });
   }
@@ -3963,6 +3971,7 @@ void RadiationM1::VetShortCharSweep() {
       Real kpu[M1_VET_NKP], kpd[M1_VET_NKP];
       for (int n = 0; n < M1_VET_NKP; ++n) {kpu[n] = 0.0; kpd[n] = 0.0;}
       Real nlu = 0.0, nld = 0.0;   // thinsw-1010
+      Real f2u[4] = {0.0, 0.0, 0.0, 0.0}, f2d[4] = {0.0, 0.0, 0.0, 0.0};
       for (int r = 0; r < nray; ++r) {
         const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
         const bool up = (m1 > 0.0);
@@ -4046,6 +4055,25 @@ void RadiationM1::VetShortCharSweep() {
               ka = ks + ((qa < 0) ? 0 : ((qa >= nx3) ? (nx3 - 1) : qa));
               kb = ks + ((qb < 0) ? 0 : ((qb >= nx3) ? (nx3 - 1) : qb));
             }
+          }
+          if (f2s_) {
+            // Phi: the upwind plane's intensity carried across the low x2 face by the
+            // shift s = -sh2 cells of the foot interpolation (I = 0 beyond a vacuum face)
+            auto ipj = [&](const int d) {
+              const int q = j - js + d;
+              if (x2o && (q < 0 || q >= nx2)) return 0.0;
+              return ip_(m,pr,rb,k,js + VetWrap(q, nx2));
+            };
+            const Real s = fabs(sh2), f = s - floor(s);
+            const int n = static_cast<int>(floor(s)), sg = (sh2 < 0.0) ? 1 : -1;
+            Real phi = f*ipj(sg > 0 ? -1 - n : n);
+            for (int q = 0; q < n; ++q) phi += ipj(sg > 0 ? -1 - q : q);
+            const Real g = sg*wr*am1*dx2/dx1*phi;
+            Real *fx = up ? f2u : f2d;
+            fx[0] += g;
+            fx[1] += g*m1;
+            fx[2] += g*m2;
+            fx[3] += g*m3;
           }
           const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
           const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
@@ -4179,6 +4207,12 @@ void RadiationM1::VetShortCharSweep() {
         if (nls_) {
           vc_(m,M1_VET_NL,k,j,iu) += nlu;
           vc_(m,M1_VET_NL,k,j,id) += nld;
+        }
+        if (f2s_) {
+          for (int n = 0; n < 4; ++n) {
+            vc_(m,M1_VET_F2+n,k,j,iu) += f2u[n];
+            vc_(m,M1_VET_F2+n,k,j,id) += f2d[n];
+          }
         }
       }
     });
