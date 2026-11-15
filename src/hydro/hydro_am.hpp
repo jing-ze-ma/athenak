@@ -609,7 +609,7 @@ bool HydroAmVecTorque(const HydroAmV &v, const int m, const int k, const int j,
 //! T* = -Q_c - Omega x L_abs,c, L_abs,c = V rc x rho (v + Omega x rc),
 //! Q_c = sum_f Phi_f^out (w_f - w_c), w(x) = x x (Omega x x),
 //! Phi^out the outward mass flux (x area) of the update and w_f at the face centre (the
-//! generalisation of the dhj problem/coriolis_am from z to a vector Omega): the frame
+//! generalisation of the dhj Coriolis fix (amh::fix) from z to a vector Omega): the frame
 //! terms then change sum_c L_abs by -Omega x L_abs plus the boundary flux of w exactly
 //! (the component along Omega is conserved to round-off; |L_abs| to the time
 //! integration). rc, the cell basis (b1, b2) and cc as HydroAmVecTorque; v from w0 (cs:
