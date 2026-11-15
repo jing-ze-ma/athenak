@@ -198,10 +198,6 @@ struct EOS_Data {
   // with rsolver = lhllc / lhlld (prod1103, USER 11-03; recipe::NewDefaults, eos.cpp); a
   // restart whose input lacks the key keeps false.
   bool cb_cont = false;
-  // lhllc2nd-1102 <hydro>/plm_c1, <mhd>/plm_c1 (default false = van Leer PLM, bitwise;
-  // read only when named): the C1 slope limiter of reconstruct/plm_c1.hpp (also in the
-  // non-uniform x1 PLM of the cubed sphere / spherical polar meshes)
-  bool plm_c1 = false;
   // wbplm-1103 <hydro>/wb_plm_smooth, <mhd>/wb_plm_smooth (default false = the legacy
   // threshold fallback, bitwise; read only when named): continuous blend of the
   // well-balanced and plain x1 PLM faces (reconstruct/wb_plm_blend.hpp)

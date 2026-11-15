@@ -565,11 +565,11 @@ void MHD::CsSeamFaceStates() {
   const int ob = nvars + NDERIVED;
   const int nfs1 = cs_seam_nfs/2;
   DvceArray2D<int> nomlat;
-  cs_seam::CsSeamPLMFill(pmy_pack, w0, nvars, 0, -1, eos_.pfloor, eos_.plm_c1, *pseamfs,
+  cs_seam::CsSeamPLMFill(pmy_pack, w0, nvars, 0, -1, eos_.pfloor, *pseamfs,
                          false, nomlat, is-1, ie+1);
-  cs_seam::CsSeamPLMFill(pmy_pack, wder, nder, nvars, IDPR, eos_.pfloor, eos_.plm_c1,
+  cs_seam::CsSeamPLMFill(pmy_pack, wder, nder, nvars, IDPR, eos_.pfloor,
                          *pseamfs, false, nomlat, is-1, ie+1);
-  cs_seam::CsSeamPLMFill(pmy_pack, bcc0, 3, ob, -1, eos_.pfloor, eos_.plm_c1, *pseamfs,
+  cs_seam::CsSeamPLMFill(pmy_pack, bcc0, 3, ob, -1, eos_.pfloor, *pseamfs,
                          false, nomlat, is-1, ie+1);
   if (wb_all) {   // the edge cells' own WB seam face states (shared code)
     hydro::WbAllCtx c = WbCtx();

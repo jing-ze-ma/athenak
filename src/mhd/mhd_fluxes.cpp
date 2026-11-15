@@ -24,7 +24,6 @@
 #include "eos/eos.hpp"
 #include "reconstruct/dc.hpp"
 #include "reconstruct/plm.hpp"
-#include "reconstruct/plm_c1.hpp"
 #include "reconstruct/ppm.hpp"
 #include "reconstruct/wenoz.hpp"
 #include "reconstruct/mignone_curvilinear.hpp"
@@ -370,11 +369,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
           m, k, j, il-1, iu, w0_, phiwbcc_, phiwb_x1f_, wbq0_, wl, wr);
       }
-      if (eos_.plm_c1) {
-        PiecewiseLinearC1X1(member, m, k, j, il-1, iu, b0_, bl, br);
-      } else {
-        PiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, bl, br);
-      }
+      PiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, bl, br);
     } else {
     // Reconstruct qR[i] and qL[i+1], for both W and Bcc
     switch (recon_method_) {
@@ -383,16 +378,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         DonorCellX1(member, m, k, j, il-1, iu, b0_, bl, br);
         break;
       case ReconstructionMethod::plm:
-        if (eos_.plm_c1) {
-          PiecewiseLinearC1X1(member, m, k, j, il-1, iu, w0_, wl, wr);
-        } else {
-          PiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, wl, wr);
-        }
-        if (eos_.plm_c1) {
-          PiecewiseLinearC1X1(member, m, k, j, il-1, iu, b0_, bl, br);
-        } else {
-          PiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, bl, br);
-        }
+        PiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, wl, wr);
+        PiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, bl, br);
         break;
       case ReconstructionMethod::ppm4:
       case ReconstructionMethod::ppmx:
@@ -453,11 +440,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           DonorCellX1(member, m, k, j, il-1, iu, wder_, dl, dr);
           break;
         case ReconstructionMethod::plm:
-          if (eos_.plm_c1) {
-            PiecewiseLinearC1X1(member, m, k, j, il-1, iu, wder_, dl, dr);
-          } else {
-            PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
-          }
+          PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
           break;
         case ReconstructionMethod::ppm4:
         case ReconstructionMethod::ppmx:
@@ -755,16 +738,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             DonorCellX2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
             break;
           case ReconstructionMethod::plm:
-            if (eos_.plm_c1) {
-              PiecewiseLinearC1X2(member, m, k, j, is-1, ie+1, w0_, wl_jp1, wr);
-            } else {
-              PiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, wl_jp1, wr);
-            }
-            if (eos_.plm_c1) {
-              PiecewiseLinearC1X2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
-            } else {
-              PiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
-            }
+            PiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, wl_jp1, wr);
+            PiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
             break;
           case ReconstructionMethod::ppm4:
           case ReconstructionMethod::ppmx:
@@ -801,11 +776,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
               DonorCellX2(member, m, k, j, is-1, ie+1, wder_, dl_jp1, dr);
               break;
             case ReconstructionMethod::plm:
-              if (eos_.plm_c1) {
-                PiecewiseLinearC1X2(member, m, k, j, is-1, ie+1, wder_, dl_jp1, dr);
-              } else {
-                PiecewiseLinearX2(member, m, k, j, is-1, ie+1, wder_, dl_jp1, dr);
-              }
+              PiecewiseLinearX2(member, m, k, j, is-1, ie+1, wder_, dl_jp1, dr);
               break;
             case ReconstructionMethod::ppm4:
             case ReconstructionMethod::ppmx:
@@ -1086,16 +1057,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             DonorCellX3(member, m, k, j, is-1, ie+1, b0_, bl_kp1, br);
             break;
           case ReconstructionMethod::plm:
-            if (eos_.plm_c1) {
-              PiecewiseLinearC1X3(member, m, k, j, is-1, ie+1, w0_, wl_kp1, wr);
-            } else {
-              PiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, wl_kp1, wr);
-            }
-            if (eos_.plm_c1) {
-              PiecewiseLinearC1X3(member, m, k, j, is-1, ie+1, b0_, bl_kp1, br);
-            } else {
-              PiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, bl_kp1, br);
-            }
+            PiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, wl_kp1, wr);
+            PiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, bl_kp1, br);
             break;
           case ReconstructionMethod::ppm4:
           case ReconstructionMethod::ppmx:
@@ -1131,11 +1094,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
               DonorCellX3(member, m, k, j, is-1, ie+1, wder_, dl_kp1, dr);
               break;
             case ReconstructionMethod::plm:
-              if (eos_.plm_c1) {
-                PiecewiseLinearC1X3(member, m, k, j, is-1, ie+1, wder_, dl_kp1, dr);
-              } else {
-                PiecewiseLinearX3(member, m, k, j, is-1, ie+1, wder_, dl_kp1, dr);
-              }
+              PiecewiseLinearX3(member, m, k, j, is-1, ie+1, wder_, dl_kp1, dr);
               break;
             case ReconstructionMethod::ppm4:
             case ReconstructionMethod::ppmx:

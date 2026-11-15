@@ -210,10 +210,6 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     if (pin->DoesParameterExist(bk, kc)) {
       eos_data.cb_cont = pin->GetBoolean(bk, kc);
     }
-    // lhllc2nd-1102: see EOS_Data::plm_c1 (read only when named)
-    if (pin->DoesParameterExist(bk, "plm_c1")) {
-      eos_data.plm_c1 = pin->GetBoolean(bk, "plm_c1");
-    }
     // wbplm-1103: see EOS_Data::wb_plm_range (read only when named)
     if (pin->DoesParameterExist(bk, "wb_plm_range")) {
       eos_data.wb_plm_range = pin->GetBoolean(bk, "wb_plm_range");

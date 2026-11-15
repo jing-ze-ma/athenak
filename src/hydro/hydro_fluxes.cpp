@@ -30,7 +30,6 @@
 #include "hydro/rsolvers/hlle_hyd.hpp"
 #include "hydro/rsolvers/hllc_hyd.hpp"
 #include "hydro/rsolvers/lhllc_hyd.hpp"
-#include "reconstruct/plm_c1.hpp"
 #include "hydro/rsolvers/hllclm_hyd.hpp"
 #include "hydro/rsolvers/ausmpup_hyd.hpp"
 #include "hydro/rsolvers/roe_hyd.hpp"
@@ -292,11 +291,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         DonorCellX1(member, m, k, j, il-1, iu, w0_, wl, wr);
         break;
       case ReconstructionMethod::plm:
-        if (eos_.plm_c1) {
-          PiecewiseLinearC1X1(member, m, k, j, il-1, iu, w0_, wl, wr);
-        } else {
-          PiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, wl, wr);
-        }
+        PiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, wl, wr);
         break;
       case ReconstructionMethod::ppm4:
       case ReconstructionMethod::ppmx:
@@ -353,11 +348,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           DonorCellX1(member, m, k, j, il-1, iu, wder_, dl, dr);
           break;
         case ReconstructionMethod::plm:
-          if (eos_.plm_c1) {
-            PiecewiseLinearC1X1(member, m, k, j, il-1, iu, wder_, dl, dr);
-          } else {
-            PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
-          }
+          PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
           break;
         case ReconstructionMethod::ppm4:
         case ReconstructionMethod::ppmx:
@@ -686,11 +677,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             DonorCellX2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
             break;
           case ReconstructionMethod::plm:
-            if (eos_.plm_c1) {
-              PiecewiseLinearC1X2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
-            } else {
-              PiecewiseLinearX2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
-            }
+            PiecewiseLinearX2(member, m, k, j, il, iu, w0_, wl_jp1, wr);
             break;
           case ReconstructionMethod::ppm4:
           case ReconstructionMethod::ppmx:
@@ -725,11 +712,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               DonorCellX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
               break;
             case ReconstructionMethod::plm:
-              if (eos_.plm_c1) {
-                PiecewiseLinearC1X2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
-              } else {
-                PiecewiseLinearX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
-              }
+              PiecewiseLinearX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
               break;
             case ReconstructionMethod::ppm4:
             case ReconstructionMethod::ppmx:
@@ -1010,11 +993,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             DonorCellX3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
             break;
           case ReconstructionMethod::plm:
-            if (eos_.plm_c1) {
-              PiecewiseLinearC1X3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
-            } else {
-              PiecewiseLinearX3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
-            }
+            PiecewiseLinearX3(member, m, k, j, il, iu, w0_, wl_kp1, wr);
             break;
           case ReconstructionMethod::ppm4:
           case ReconstructionMethod::ppmx:
@@ -1048,11 +1027,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               DonorCellX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
               break;
             case ReconstructionMethod::plm:
-              if (eos_.plm_c1) {
-                PiecewiseLinearC1X3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
-              } else {
-                PiecewiseLinearX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
-              }
+              PiecewiseLinearX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
               break;
             case ReconstructionMethod::ppm4:
             case ReconstructionMethod::ppmx:
@@ -1285,9 +1260,9 @@ void Hydro::CsSeamFaceStates() {
     mlfi_ = pmlat->fi;
   }
   // the fill / covariant kernels are shared with MHD (cs_seam_states.hpp)
-  cs_seam::CsSeamPLMFill(pmy_pack, w0, nvars, 0, -1, eos_.pfloor, eos_.plm_c1,
+  cs_seam::CsSeamPLMFill(pmy_pack, w0, nvars, 0, -1, eos_.pfloor,
                          *pseamfs, mlat_, mlfi_, is, ie);
-  cs_seam::CsSeamPLMFill(pmy_pack, wder, nder, nvars, IDPR, eos_.pfloor, eos_.plm_c1,
+  cs_seam::CsSeamPLMFill(pmy_pack, wder, nder, nvars, IDPR, eos_.pfloor,
                          *pseamfs, mlat_, mlfi_, is, ie);
   if (wb_all) {   // the edge cells' own WB seam face states (shared code)
     WbAllCtx c = WbCtx();
