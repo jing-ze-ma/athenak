@@ -9,7 +9,9 @@
 //! and its moments give the Eddington tensor D, the half-range factors h+- and the
 //! non-locality C1 of every cell.
 
+#include <algorithm>
 #include <utility>
+#include <vector>
 
 #include "athena.hpp"
 #include "coordinates/coordinates.hpp"
@@ -57,6 +59,63 @@ void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &val
     valid(m,0,k,j,i) = 0.0;
   }
   for (int n = CLN_F2; n < CLN_N; ++n) cs(m,n,k,j,i) = q[n];
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanFaceVector
+//! \brief spherical polar: the exact vector area a of the low face of cell (k,j,i) normal
+//! to dir (r faces along r_hat, theta faces along theta_hat, phi faces along phi_hat)
+
+KOKKOS_INLINE_FUNCTION
+void CleanFaceVector(const CleanArgs &x, const DvceArray2D<Real> &x3f, const int dir,
+                     const int m, const int k, const int j, const int i, Real a[3]) {
+  const Real r1 = x.x1f(m,i), r2 = x.x1f(m,i+1), t1 = x.x2f(m,j), t2 = x.x2f(m,j+1);
+  const Real p1 = x3f(m,k), p2 = x3f(m,k+1);
+  const Real hr = 0.5*(r2*r2 - r1*r1);
+  if (dir == 0) {
+    const Real s2 = 0.5*(t2 - t1) - 0.25*(sin(2.0*t2) - sin(2.0*t1));
+    a[0] = r1*r1*s2*(sin(p2) - sin(p1));
+    a[1] = r1*r1*s2*(cos(p1) - cos(p2));
+    a[2] = r1*r1*0.5*(SQR(sin(t2)) - SQR(sin(t1)))*(p2 - p1);
+  } else if (dir == 1) {
+    a[0] = sin(t1)*hr*cos(t1)*(sin(p2) - sin(p1));
+    a[1] = sin(t1)*hr*cos(t1)*(cos(p1) - cos(p2));
+    a[2] = -sin(t1)*hr*sin(t1)*(p2 - p1);
+  } else {
+    a[0] = -hr*(t2 - t1)*sin(p1);
+    a[1] = hr*(t2 - t1)*cos(p1);
+    a[2] = 0.0;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanFvFace
+//! \brief clean_rays = fv: the intensity of direction d on the low face of cell (k,j,i)
+//! normal to dir for a beam along +e_dir (pos) or -e_dir: that of the upwind cell, with
+//! o2 its minmod slope towards the face (second order in index space, positive)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanFvFace(const DvceArray5D<Real> &fi, const bool o2, const int m, const int d,
+                 const int dir, const int k, const int j, const int i, const bool pos) {
+  const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+  const int su = pos ? -1 : 0, sd = pos ? 0 : -1, sf = pos ? -2 : 1;
+  const Real u = fi(m,d,k+su*dk,j+su*dj,i+su*di);
+  if (!o2) return u;
+  const Real a = u - fi(m,d,k+sf*dk,j+sf*dj,i+sf*di);
+  const Real b = fi(m,d,k+sd*dk,j+sd*dj,i+sd*di) - u;
+  return u + ((a*b > 0.0) ? 0.5*((fabs(a) < fabs(b)) ? a : b) : 0.0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanLocalBasis
+//! \brief the local orthonormal basis (r_hat, theta_hat, phi_hat) at (th, ph)
+
+KOKKOS_INLINE_FUNCTION
+void CleanLocalBasis(const Real th, const Real ph, Real e[3][3]) {
+  const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+  e[0][0] = st*cp; e[0][1] = st*sp; e[0][2] = ct;
+  e[1][0] = ct*cp; e[1][1] = ct*sp; e[1][2] = -st;
+  e[2][0] = -sp;   e[2][1] = cp;    e[2][2] = 0.0;
 }
 
 //----------------------------------------------------------------------------------------
@@ -534,9 +593,205 @@ void RadiationM1::CleanRays() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     iw_(m,M1_IW_KT,k,j,i) = opac_(m,M1_OP_T,k,j,i);
   });
-  VetGdBuild();
+  if (cln_rfv > 0) {
+    VetGdSource();
+    CleanFvSweep();
+  } else {
+    VetGdBuild();
+  }
   CleanClosureFromGd();
   if (cln_consist) CleanGdFaceSums();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFvSeams
+//! \brief the ghosts of cln_fvi beyond a periodic theta or phi seam of the mesh (not a
+//! whole circle in phi) take their directions in the frame of their image cell
+//! (cln_fvm); the ghost exchange has copied the image cell's intensities
+
+void RadiationM1::CleanFvSeams() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
+  const int n = vgd_n;
+  const Real pp = pmy_pack->pmesh->mesh_size.x3max - pmy_pack->pmesh->mesh_size.x3min;
+  const bool circ = std::abs(pp - 2.0*M_PI) < 1.0e-10;
+  CleanArgs x = CleanMakeArgs();
+  auto fi = cln_fvi;
+  auto mp = cln_fvm;
+  const int n1 = fi.extent_int(4), n2 = fi.extent_int(3), n3 = fi.extent_int(2);
+  if (cln_fvt.extent_int(1) != n) Kokkos::realloc(cln_fvt, n3, n2, n1, n);
+  auto t = cln_fvt;
+  for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
+  par_for("cln_fv_seam", DevExeSpace(), 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+  KOKKOS_LAMBDA(const int k, const int j, const int i) {
+    int sd = -1;
+    if (j < js && x.mbc(m,2) == BoundaryFlag::periodic) sd = 0;
+    if (j > je && x.mbc(m,3) == BoundaryFlag::periodic) sd = 1;
+    if (!circ && k < ks && x.mbc(m,4) == BoundaryFlag::periodic) sd = 2;
+    if (!circ && k > ke && x.mbc(m,5) == BoundaryFlag::periodic) sd = 3;
+    if (sd < 0 || (sd < 2 && (k < ks || k > ke))) return;
+    for (int d = 0; d < n; ++d) t(k,j,i,d) = fi(m,mp(m,sd,k,d),k,j,i);
+    for (int d = 0; d < n; ++d) fi(m,d,k,j,i) = t(k,j,i,d);
+  });
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFvSweep
+//! \brief clean_rays = fv | fv1: the conservative formal solution on the vet_gd
+//! direction set (cln_fvi).  Per direction every face carries n . A_f times its upwind
+//! intensity (CleanFvFace: the upwind cell's, with fv its minmod slope), A_f the exact
+//! vector area, so that a cell passes on what enters it plus its exchange:
+//! sum_out n . A_f I_f + V chi I = sum_in |n . A_f| I_f + V chi S.  A beam keeps its
+//! energy; the cell intensities are those of the transported flux.  The
+//! cells are taken in the order of n . x of their centres (Gauss-Seidel, repeated with
+//! the ghost exchange until the largest change is below 1e-13 of the largest intensity).
+//! With fv at most 8 passes per build (the slopes converge over the builds of a run).
+//! The inner face emits the sweep's emission (vet_bc_inner emit) or the S of the first
+//! cell, the top is vacuum, a physical theta or phi face is closed.
+
+void RadiationM1::CleanFvSweep() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int ncell = nx1*nx2*nx3;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int n = vgd_n, og = vgd_w - indcs.ng;
+  CleanArgs x = CleanMakeArgs();
+  auto x3f = pmy_pack->pcoord->xx3f;
+  if (cln_fvi.extent_int(1) != n) {
+    // the intensities, the outward face vectors of every cell and the cell order of
+    // every direction (geometry and directions are fixed)
+    Kokkos::realloc(cln_fvi, nmb, n, cln_s.extent_int(2), cln_s.extent_int(3),
+                    cln_s.extent_int(4));
+    Kokkos::realloc(cln_fva, nmb, 18, cln_s.extent_int(2), cln_s.extent_int(3),
+                    cln_s.extent_int(4));
+    auto fa = cln_fva;
+    par_for("cln_fv_geo", DevExeSpace(), 0, nmb - 1, ks, indcs.ke, js, indcs.je, is,
+            indcs.ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int f = 0; f < 6; ++f) {
+        const int dir = f/2, up = f%2;
+        Real a[3];
+        CleanFaceVector(x, x3f, dir, m, k + (up && dir == 2), j + (up && dir == 1),
+                        i + (up && dir == 0), a);
+        for (int c = 0; c < 3; ++c) fa(m,3*f+c,k,j,i) = up ? a[c] : -a[c];
+      }
+    });
+    Kokkos::realloc(cln_fvo, nmb, n, ncell);
+    auto o_h = Kokkos::create_mirror_view(cln_fvo);
+    auto d_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_dir);
+    auto r_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
+    auto t_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x2v);
+    auto p_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x3v);
+    std::vector<Real> key(ncell);
+    std::vector<int> idx(ncell);
+    for (int m = 0; m < nmb; ++m) {
+      for (int d = 0; d < n; ++d) {
+        for (int c = 0; c < ncell; ++c) {
+          const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
+          const Real st = std::sin(t_h(m,j)), r = r_h(m,i);
+          key[c] = r*(d_h(d,0)*st*std::cos(p_h(m,k)) + d_h(d,1)*st*std::sin(p_h(m,k)) +
+                      d_h(d,2)*std::cos(t_h(m,j)));
+          idx[c] = c;
+        }
+        std::sort(idx.begin(), idx.end(), [&](int a, int b) {return key[a] < key[b];});
+        for (int c = 0; c < ncell; ++c) o_h(m,d,c) = idx[c];
+      }
+    }
+    Kokkos::deep_copy(cln_fvo, o_h);
+    Kokkos::deep_copy(cln_fvi, 0.0);
+    // a periodic theta or phi seam of a wedge: the ghosts' directions in the frame of
+    // their image cell, n' = sum_b (n . e_b(ghost)) e_b(image), the nearest set direction
+    // (an exact permutation for a phi period of the set)
+    const Real pt = pmy_pack->pmesh->mesh_size.x2max - pmy_pack->pmesh->mesh_size.x2min;
+    const Real pp = pmy_pack->pmesh->mesh_size.x3max - pmy_pack->pmesh->mesh_size.x3min;
+    const int c3 = cln_s.extent_int(2);
+    Kokkos::realloc(cln_fvm, nmb, 4, c3, n);
+    auto m_h = Kokkos::create_mirror_view(cln_fvm);
+    for (int m = 0; m < nmb; ++m) {
+      for (int sd = 0; sd < 4; ++sd) {
+        for (int k = 0; k < c3; ++k) {
+          // sd: theta low, theta high, phi low, phi high; the ghost one cell outside
+          const bool th = (sd < 2), lo = (sd%2 == 0);
+          const Real tg = th ? (lo ? t_h(m,js) - 1.0e-3 : t_h(m,indcs.je) + 1.0e-3)
+                             : 0.5*M_PI;
+          const Real pg = th ? p_h(m,k) : 0.0;
+          const Real ti = th ? tg + (lo ? pt : -pt) : tg;
+          const Real pi_ = th ? pg : pg + (lo ? pp : -pp);
+          Real eg[3][3], ei[3][3];
+          CleanLocalBasis(tg, pg, eg);
+          CleanLocalBasis(ti, pi_, ei);
+          for (int d = 0; d < n; ++d) {
+            Real v[3] = {0.0, 0.0, 0.0};
+            for (int b = 0; b < 3; ++b) {
+              const Real nb = d_h(d,0)*eg[b][0] + d_h(d,1)*eg[b][1] + d_h(d,2)*eg[b][2];
+              for (int c = 0; c < 3; ++c) v[c] += nb*ei[b][c];
+            }
+            int best = 0;
+            Real bd = -2.0;
+            for (int e = 0; e < n; ++e) {
+              const Real dt = v[0]*d_h(e,0) + v[1]*d_h(e,1) + v[2]*d_h(e,2);
+              if (dt > bd) {bd = dt; best = e;}
+            }
+            m_h(m,sd,k,d) = best;
+          }
+        }
+      }
+    }
+    Kokkos::deep_copy(cln_fvm, m_h);
+  }
+  auto fi = cln_fvi;
+  auto fa = cln_fva;
+  auto o_ = cln_fvo;
+  const bool o2 = (cln_rfv == 2);
+  auto dir_ = vgd_dir;
+  auto cw_ = vgd_cs;
+  const bool emi = VetBcEmit();
+  const Real iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
+  // (fv: the slopes make the sweep nonlinear; a few passes per build, each starting from
+  // the intensities of the last build)
+  for (int it = 0; it < (o2 ? 8 : 100); ++it) {
+    Real dmax = 0.0, imax = 0.0;
+    Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*n),
+    KOKKOS_LAMBDA(const int md, Real &dm, Real &im) {
+      const int m = md/n, d = md%n;
+      const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
+      for (int p = 0; p < ncell; ++p) {
+        const int c = o_(m,d,p);
+        const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
+        // the outflow faces' slope parts are taken at the current iterate
+        Real in = 0.0, out = 0.0, cor = 0.0;
+        const Real ic = fi(m,d,k,j,i);
+        for (int f = 0; f < 6; ++f) {
+          const int dir = f/2, up = f%2;
+          const int kf = k + (up && dir == 2), jf = j + (up && dir == 1);
+          const int i_f = i + (up && dir == 0);
+          const Real a = nv[0]*fa(m,3*f,k,j,i) + nv[1]*fa(m,3*f+1,k,j,i) +
+                         nv[2]*fa(m,3*f+2,k,j,i);
+          const bool bdry = CleanBoundaryFace(x, dir, m, kf, jf, i_f);
+          if (bdry && dir != 0) continue;
+          if (a >= 0.0) {
+            out += a;
+            cor += a*(CleanFvFace(fi, o2, m, d, dir, kf, jf, i_f, up) - ic);
+          } else if (!bdry) {
+            in -= a*CleanFvFace(fi, o2, m, d, dir, kf, jf, i_f, !up);
+          } else if (!up) {
+            in -= a*(emi ? iemit : exp(cw_(m,1,k+og,j+og,i)));
+          }
+        }
+        const Real vc = x.vol(m,k,j,i)*exp(cw_(m,0,k+og,j+og,i));
+        const Real sc = vc*exp(cw_(m,1,k+og,j+og,i));
+        const Real iv = (out + vc > 0.0) ? fmax((in - cor + sc)/(out + vc), 0.0) : 0.0;
+        dm = fmax(dm, fabs(iv - fi(m,d,k,j,i)));
+        im = fmax(im, iv);
+        fi(m,d,k,j,i) = iv;
+      }
+    }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(imax));
+    CleanGhostFill(cln_fvi, 0, n);
+    CleanFvSeams();
+    if (CleanReduce(dmax, true) <= 1.0e-13*CleanReduce(imax, true)) break;
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -554,6 +809,8 @@ void RadiationM1::CleanClosureFromGd() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const int n = vgd_n, og = vgd_w - indcs.ng;
   auto vi_ = vgd_i;
+  auto fi_ = cln_fvi;
+  const bool fv = (cln_rfv > 0);
   auto dir_ = vgd_dir;
   auto cw_ = vgd_cs;
   auto x2v = pmy_pack->pcoord->x2v;
@@ -572,7 +829,7 @@ void RadiationM1::CleanClosureFromGd() {
       const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
       const Real mu[3] = {nx*st*cp + ny*st*sp + nz*ct, nx*ct*cp + ny*ct*sp - nz*st,
                           -nx*sp + ny*cp};
-      const Real iv = vi_(m,d,k+og,j+og,i);
+      const Real iv = fv ? fi_(m,d,k,j,i) : vi_(m,d,k+og,j+og,i);
       const Real a = dir_(d,3)*iv;
       q[CLN_J] += a;
       for (int b = 0; b < 3; ++b) {
@@ -601,7 +858,8 @@ void RadiationM1::CleanClosureFromGd() {
 //! cell gets what its inner one carries plus the exchange V chi (S - J, -H) less the
 //! lateral outflow (the momentum in the column's basis), so that the energy balance of
 //! every cell is the vet_gd exchange to round-off.  Several MeshBlocks along x1: a level
-//! starts from the top face of the level below (vgd_x1b -> vgd_x1r), one level per pass.
+//! starts from the top face of the level below (vgd_x1b -> vgd_x1r), one level per pass;
+//! at a reflecting top the remainder is spread over the outermost level (zero wall flux).
 
 void RadiationM1::CleanGdFaceSums() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -611,6 +869,8 @@ void RadiationM1::CleanGdFaceSums() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const int n = vgd_n, og = vgd_w - indcs.ng;
   auto vi_ = vgd_i;
+  auto fi_ = cln_fvi;
+  const bool fv = (cln_rfv > 0), o2 = (cln_rfv == 2);
   auto dir_ = vgd_dir;
   auto cw_ = vgd_cs;
   auto x3f = pmy_pack->pcoord->xx3f;
@@ -622,33 +882,31 @@ void RadiationM1::CleanGdFaceSums() {
   const bool open = (ibc_x1min != M1_IBC_REFLECT);
   const bool emi = VetBcEmit();
   const Real iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
+  // the short characteristics' intensities in the mesh layout with the ghost exchange:
+  // the vet_gd band holds a neighbour MeshBlock's intensities only where its own sweep
+  // read them (a periodic seam keeps the band, whose directions follow the wall map)
+  if (!fv) {
+    if (cln_fvi.extent_int(1) != n) {
+      Kokkos::realloc(cln_fvi, nmb1 + 1, n, cs.extent_int(2), cs.extent_int(3),
+                      cs.extent_int(4));
+    }
+    fi_ = cln_fvi;
+    par_for("cln_gd_copy", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int d = 0; d < n; ++d) fi_(m,d,k,j,i) = vi_(m,d,k+og,j+og,i);
+    });
+    CleanGhostFill(cln_fvi, 0, n);
+  }
+  auto inten = [=] KOKKOS_FUNCTION (const int m, const int d, const int k, const int j,
+                                    const int i) {
+    return fi_(m,d,k,j,i);
+  };
   // vector area of the low face of cell (k,j,i) normal to dir and the local basis there
   auto face = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
                                    const int i, Real a[3], Real e[3][3]) {
-    const Real r1 = x.x1f(m,i), r2 = x.x1f(m,i+1), t1 = x.x2f(m,j), t2 = x.x2f(m,j+1);
-    const Real p1 = x3f(m,k), p2 = x3f(m,k+1);
-    const Real hr = 0.5*(r2*r2 - r1*r1);
-    Real th = x.x2v(m,j), ph = x3v(m,k);
-    if (dir == 0) {
-      const Real s2 = 0.5*(t2 - t1) - 0.25*(sin(2.0*t2) - sin(2.0*t1));
-      a[0] = r1*r1*s2*(sin(p2) - sin(p1));
-      a[1] = r1*r1*s2*(cos(p1) - cos(p2));
-      a[2] = r1*r1*0.5*(SQR(sin(t2)) - SQR(sin(t1)))*(p2 - p1);
-    } else if (dir == 1) {
-      th = t1;
-      a[0] = sin(t1)*hr*cos(t1)*(sin(p2) - sin(p1));
-      a[1] = sin(t1)*hr*cos(t1)*(cos(p1) - cos(p2));
-      a[2] = -sin(t1)*hr*sin(t1)*(p2 - p1);
-    } else {
-      ph = p1;
-      a[0] = -hr*(t2 - t1)*sin(p1);
-      a[1] = hr*(t2 - t1)*cos(p1);
-      a[2] = 0.0;
-    }
-    const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
-    e[0][0] = st*cp; e[0][1] = st*sp; e[0][2] = ct;
-    e[1][0] = ct*cp; e[1][1] = ct*sp; e[1][2] = -st;
-    e[2][0] = -sp;   e[2][1] = cp;    e[2][2] = 0.0;
+    CleanFaceVector(x, x3f, dir, m, k, j, i, a);
+    CleanLocalBasis((dir == 1) ? x.x2f(m,j) : x.x2v(m,j),
+                    (dir == 2) ? x3f(m,k) : x3v(m,k), e);
   };
   // beam of direction d through the low theta or phi face of cell (k,j,i)
   auto lat = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
@@ -658,7 +916,11 @@ void RadiationM1::CleanGdFaceSums() {
     face(dir, m, k, j, i, a, e);
     const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
     const int kl = k - (dir == 2), jl = j - (dir == 1);
-    return f*((f > 0.0) ? vi_(m,d,kl+og,jl+og,i) : vi_(m,d,k+og,j+og,i));
+    if (fv) return f*CleanFvFace(fi_, o2, m, d, dir, k, j, i, f > 0.0);
+    if (!(f > 0.0)) return f*inten(m, d, k, j, i);
+    const bool seam = (dir == 1) ? (j == js && x.mbc(m,2) == BoundaryFlag::periodic)
+                                 : (k == ks && x.mbc(m,4) == BoundaryFlag::periodic);
+    return f*(seam ? vi_(m,d,kl+og,jl+og,i) : inten(m, d, kl, jl, i));
   };
   // sums of the beams of every direction through the face, per unit area
   auto add = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
@@ -696,7 +958,7 @@ void RadiationM1::CleanGdFaceSums() {
       face(0, m, k, j, is, a, e);
       for (int d = 0; open && in && d < n; ++d) {
         const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
-        const Real iv = (emi && f > 0.0) ? iemit : vi_(m,d,k+og,j+og,is);
+        const Real iv = (emi && f > 0.0) ? iemit : inten(m, d, k, j, is);
         add(0, m, k, j, is, d, f*iv, q);
       }
       for (int c = 0; c < 4; ++c) {
@@ -708,7 +970,7 @@ void RadiationM1::CleanGdFaceSums() {
         const Real chi = x.vol(m,k,j,i)*exp(cw_(m,0,k+og,j+og,i));
         const Real s0 = exp(cw_(m,1,k+og,j+og,i));
         for (int d = 0; d < n; ++d) {
-          const Real di = dir_(d,3)*vi_(m,d,k+og,j+og,i);
+          const Real di = dir_(d,3)*inten(m, d, k, j, i);
           q[0] += chi*(dir_(d,3)*s0 - di);
           for (int b = 0; b < 3; ++b) {
             q[1+b] -= chi*di*(dir_(d,0)*e[b][0] + dir_(d,1)*e[b][1] + dir_(d,2)*e[b][2]);
@@ -730,6 +992,19 @@ void RadiationM1::CleanGdFaceSums() {
             }
           }
         }
+      }
+      if (xf_(m) & 4) {
+        // a reflecting top: the rays' remainder at the wall (their non-conservation)
+        // spread over the cells of the level by volume, so that none leaves through it
+        Real vt = 0.0, vc = 0.0;
+        for (int i = is; i <= ie; ++i) vt += x.vol(m,k,j,i);
+        for (int i = is + 1; i <= ie; ++i) {
+          vc += x.vol(m,k,j,i-1);
+          for (int c = 0; c < 4; ++c) {
+            cs(m,CLN_FX+c,k,j,i) -= q[c]*vc/(vt*x.area[0](m,k,j,i));
+          }
+        }
+        for (int c = 0; c < 4; ++c) q[c] = 0.0;
       }
       for (int c = 0; c < 4; ++c) {
         cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
