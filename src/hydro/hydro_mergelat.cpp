@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file hydro_mergelat.cpp
-//! \brief mrglat-1019: merged lateral cells near r_in (see hydro_mergelat.hpp).
+//! \brief merged lateral cells near r_in (see hydro_mergelat.hpp).
 
 #include <cstdio>
 #include <cstdlib>
@@ -26,14 +26,15 @@
 #include "hydro/hydro_mergelat.hpp"
 
 namespace hydro {
-
 namespace {
 std::vector<std::string> MlatSplit(const std::string &s) {
   std::vector<std::string> out;
   std::string tok;
   // ',' or ':' (sbatch --export splits on commas)
   std::string s2 = s;
-  for (auto &c : s2) {if (c == ':') c = ',';}
+  for (auto &c : s2) {
+    if (c == ':') c = ',';
+  }
   std::stringstream ss2(s2);
   while (std::getline(ss2, tok, ',')) {
     const size_t a = tok.find_first_not_of(" \t");
@@ -49,13 +50,24 @@ std::vector<std::string> MlatSplit(const std::string &s) {
 }
 }  // namespace
 
+//----------------------------------------------------------------------------------------
+//! \fn bool MergeLat::Named
+//! \brief true if the input names a key that constructs the module
+
 bool MergeLat::Named(ParameterInput *pin) {
   return pin->DoesParameterExist("hydro", "merge_lat_rc") ||
          pin->DoesParameterExist("hydro", "merge_lat_diag");
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn MergeLat::MergeLat
+//! \brief reads the shell radii and merge factors and the momentum / radiation options
+
 MergeLat::MergeLat(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) {
-  for (int n = 0; n < kMlatMaxShell; ++n) {rc[n] = 0.0; fs[n] = 1;}
+  for (int n = 0; n < kMlatMaxShell; ++n) {
+    rc[n] = 0.0;
+    fs[n] = 1;
+  }
   if (pin->DoesParameterExist("hydro", "merge_lat_diag")) {
     diag_every = pin->GetInteger("hydro", "merge_lat_diag");
   }
@@ -109,6 +121,10 @@ MergeLat::MergeLat(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) 
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn MergeLatGeo MergeLat::Geo
+//! \brief the geometry arrays the merge kernels capture
+
 MergeLatGeo MergeLat::Geo() {
   MergeLatGeo g;
   Coordinates *pco = pmy_pack->pcoord;
@@ -122,6 +138,11 @@ MergeLatGeo MergeLat::Geo() {
   g.cs = pmy_pack->pmesh->use_cubed_sphere;
   return g;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn void MergeLat::Build
+//! \brief the merge factor of every (MeshBlock, x1 cell) and the largest merged interior
+//! x1 index on this rank, built once
 
 void MergeLat::Build() {
   if (built) return;
@@ -144,7 +165,10 @@ void MergeLat::Build() {
     const int ff[8] = {f0, f1, f2, f3, f4, f5, f6, f7};
     int f = 1;
     for (int n = 0; n < nsh_; ++n) {
-      if (r < rr[n]) {f = ff[n]; break;}
+      if (r < rr[n]) {
+        f = ff[n];
+        break;
+      }
     }
     fi_(m,i) = f;
   });
@@ -161,7 +185,7 @@ void MergeLat::Build() {
 //----------------------------------------------------------------------------------------
 //! \fn MergeLat::Average
 //! \brief replace every merged group's conserved state by its group value (see the file
-//! header of hydro_mergelat.hpp).  One thread per group (the group's first cell), sums in
+//! header of hydro_mergelat.hpp). One thread per group (the group's first cell), sums in
 //! a fixed order: deterministic.
 
 void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
@@ -197,15 +221,20 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
           Real rh[3], b1[3], b2[3], cc, v[3];
           MlatBasis(g, m, kk, jj, rh, b1, b2, cc);
           const Real dv = g.vol(m,kk,jj,i);
-          MlatToCart(rh, b1, b2, cc, u_(m,1,kk,jj,i), u_(m,2,kk,jj,i), u_(m,3,kk,jj,i), v);
+          MlatToCart(rh, b1, b2, cc, u_(m,1,kk,jj,i), u_(m,2,kk,jj,i),
+                     u_(m,3,kk,jj,i), v);
           vs += dv;
           es += dv*u_(m,0,kk,jj,i);
-          for (int q = 0; q < 3; ++q) {fc[q] += dv*v[q];}
+          for (int q = 0; q < 3; ++q) {
+            fc[q] += dv*v[q];
+          }
         }
       }
       const Real iv = 1.0/vs;
       const Real eb = es*iv;
-      for (int q = 0; q < 3; ++q) {fc[q] *= iv;}
+      for (int q = 0; q < 3; ++q) {
+        fc[q] *= iv;
+      }
       for (int kk = k; kk < k + f; ++kk) {
         for (int jj = j; jj < j + f; ++jj) {
           Real rh[3], b1[3], b2[3], cc;
@@ -232,8 +261,13 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
         ms += dv*u_(m,IDN,kk,jj,i);
         es += dv*u_(m,IEN,kk,jj,i);
         if (grav_) vp += dv*phi_(m,kk,jj,i);
-        for (int n = 0; n < nsc && n < 4; ++n) {ss[n] += dv*u_(m,nhyd_+n,kk,jj,i);}
-        for (int q = 0; q < 3; ++q) {P[q] += dv*v[q]; X[q] += dv*r*rh[q];}
+        for (int n = 0; n < nsc && n < 4; ++n) {
+          ss[n] += dv*u_(m,nhyd_+n,kk,jj,i);
+        }
+        for (int q = 0; q < 3; ++q) {
+          P[q] += dv*v[q];
+          X[q] += dv*r*rh[q];
+        }
         if (chk_) {
           Lo[0] += dv*r*(rh[1]*v[2] - rh[2]*v[1]);
           Lo[1] += dv*r*(rh[2]*v[0] - rh[0]*v[2]);
@@ -244,7 +278,10 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
     const Real iv = 1.0/vs;
     const Real db = ms*iv;
     Real xc[3], mb[3];
-    for (int q = 0; q < 3; ++q) {xc[q] = X[q]*iv; mb[q] = P[q]*iv;}
+    for (int q = 0; q < 3; ++q) {
+      xc[q] = X[q]*iv;
+      mb[q] = P[q]*iv;
+    }
     Real om[3] = {0.0, 0.0, 0.0};
     Real ekin = 0.0;   // group kinetic energy (x V) of the new momentum field
     // etotgrav: IEN carries rho Phi; the group potential energy of the new state
@@ -255,7 +292,7 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
       if (rigid_) {
         // angular momentum about the centroid and the inertia tensor of the cells
         Real L[3] = {0.0, 0.0, 0.0};
-        Real J[3][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+        Real J[3][3] = {};   // zero-initialised
         for (int kk = k; kk < k + f; ++kk) {
           for (int jj = j; jj < j + f; ++jj) {
             Real rh[3], b1[3], b2[3], cc, v[3], d[3];
@@ -263,7 +300,9 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
             const Real dv = g.vol(m,kk,jj,i);
             MlatToCart(rh, b1, b2, cc, u_(m,IM1,kk,jj,i), u_(m,IM2,kk,jj,i),
                        u_(m,IM3,kk,jj,i), v);
-            for (int q = 0; q < 3; ++q) {d[q] = r*rh[q] - xc[q];}
+            for (int q = 0; q < 3; ++q) {
+              d[q] = r*rh[q] - xc[q];
+            }
             L[0] += dv*(d[1]*v[2] - d[2]*v[1]);
             L[1] += dv*(d[2]*v[0] - d[0]*v[2]);
             L[2] += dv*(d[0]*v[1] - d[1]*v[0]);
@@ -303,12 +342,16 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
     }
     const Real eb = (es - ekin - epot)*iv;   // thermal energy density
     Real sb[4];
-    for (int n = 0; n < 4; ++n) {sb[n] = ss[n]*iv;}
+    for (int n = 0; n < 4; ++n) {
+      sb[n] = ss[n]*iv;
+    }
     for (int kk = k; kk < k + f; ++kk) {
       for (int jj = j; jj < j + f; ++jj) {
         Real rh[3], b1[3], b2[3], cc, v[3], d[3];
         MlatBasis(g, m, kk, jj, rh, b1, b2, cc);
-        for (int q = 0; q < 3; ++q) {d[q] = r*rh[q] - xc[q];}
+        for (int q = 0; q < 3; ++q) {
+          d[q] = r*rh[q] - xc[q];
+        }
         v[0] = mb[0] + (om[1]*d[2] - om[2]*d[1]);
         v[1] = mb[1] + (om[2]*d[0] - om[0]*d[2]);
         v[2] = mb[2] + (om[0]*d[1] - om[1]*d[0]);
@@ -317,7 +360,9 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
                      u_(m,IM3,kk,jj,i));
         const Real ke = (db > 0.0) ? 0.5*(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])/db : 0.0;
         u_(m,IEN,kk,jj,i) = eb + ke + (grav_ ? db*phi_(m,kk,jj,i) : 0.0);
-        for (int n = 0; n < nsc && n < 4; ++n) {u_(m,nhyd_+n,kk,jj,i) = sb[n];}
+        for (int n = 0; n < nsc && n < 4; ++n) {
+          u_(m,nhyd_+n,kk,jj,i) = sb[n];
+        }
       }
     }
     if (chk_) {
@@ -332,7 +377,9 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
                      u_(m,IM3,kk,jj,i), v);
           m2 += dv*u_(m,IDN,kk,jj,i);
           e2 += dv*u_(m,IEN,kk,jj,i);
-          for (int q = 0; q < 3; ++q) {p2[q] += dv*v[q];}
+          for (int q = 0; q < 3; ++q) {
+            p2[q] += dv*v[q];
+          }
           l2[0] += dv*r*(rh[1]*v[2] - rh[2]*v[1]);
           l2[1] += dv*r*(rh[2]*v[0] - rh[0]*v[2]);
           l2[2] += dv*r*(rh[0]*v[1] - rh[1]*v[0]);
@@ -354,13 +401,19 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
   });
   if (chk_) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cerr);
-    for (int n = 0; n < 4; ++n) {chkerr[n] = std::max(chkerr[n], static_cast<double>(h(n)));}
+    for (int n = 0; n < 4; ++n) {
+      chkerr[n] = std::max(chkerr[n], static_cast<double>(h(n)));
+    }
   }
   if (rigid && kind == 0) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), nfb);
     nfallback += h(0);
   }
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn int MergeLat::CountNonUniform
+//! \brief number of merged groups (all ranks) whose cells differ in variable n0
 
 int MergeLat::CountNonUniform(const DvceArray5D<Real> &u, const int n0) {
   if (!on) return 0;
@@ -402,7 +455,7 @@ int MergeLat::CountNonUniform(const DvceArray5D<Real> &u, const int n0) {
 //----------------------------------------------------------------------------------------
 //! \fn MergeLat::Diag
 //! \brief global gas sums: M, E(IEN), P (Cartesian), L = sum V x x m (Cartesian, cell
-//! centre arm).  Rank 0 prints one MLATDIAG line.
+//! centre arm). Rank 0 prints one MLATDIAG line.
 
 void MergeLat::Diag(const DvceArray5D<Real> &u, const char *tag) {
   Mesh *pm = pmy_pack->pmesh;
@@ -428,7 +481,9 @@ void MergeLat::Diag(const DvceArray5D<Real> &u, const char *tag) {
     MlatToCart(rh, b1, b2, cc, u_(m,IM1,k,j,i), u_(m,IM2,k,j,i), u_(m,IM3,k,j,i), v);
     a.the_array[0] += dv*u_(m,IDN,k,j,i);
     a.the_array[1] += dv*u_(m,IEN,k,j,i);
-    for (int q = 0; q < 3; ++q) {a.the_array[2+q] += dv*v[q];}
+    for (int q = 0; q < 3; ++q) {
+      a.the_array[2+q] += dv*v[q];
+    }
     const Real x[3] = {r*rh[0], r*rh[1], r*rh[2]};
     a.the_array[5] += dv*(x[1]*v[2] - x[2]*v[1]);
     a.the_array[6] += dv*(x[2]*v[0] - x[0]*v[2]);
