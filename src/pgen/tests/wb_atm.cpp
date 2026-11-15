@@ -62,9 +62,9 @@ namespace {
 // parameters of the background, shared by the pgen, the BCs and the source term
 struct WbAtmVars {
   Real g0, p0, rho0, gamma, a0, h0;
-  int strat = 0;      // lowmach2-1102: 0 isentropic (legacy), 1 isothermal, 2 polytropic
+  int strat = 0;      // 0 isentropic (legacy), 1 isothermal, 2 polytropic
   Real nu = 0.0;      // polytropic index of strat 2
-  Real bx = 0.0;      // alfmach-1102: uniform horizontal field (MHD only)
+  Real bx = 0.0;      // uniform horizontal field (MHD only)
 };
 WbAtmVars wbatm;
 
@@ -75,7 +75,7 @@ Real WbAtmPres(const Real y, const Real p0, const Real h0, const Real gdgm1) {
   return p0*std::pow((1.0 - y/h0), gdgm1);
 }
 
-//! \fn WbAtmState (lowmach2-1102)
+//! \fn WbAtmState
 //! \brief background (p, rho) at height y.  strat 0 = the legacy isentropic profile
 //! (same expressions as before, bitwise); 1 = isothermal (Edelmann+ 2021 eq. 74),
 //! 2 = polytropic of index nu (eqs. 76-77), with phi = -g0 y.
@@ -100,7 +100,7 @@ void WbAtmBCs(Mesh *pm);
 void WbAtmGravity(Mesh *pm, const Real bdt);
 
 namespace {
-// alfmach-1102: the field parts of the MHD port (no-ops for hydro)
+// the field parts of the MHD port (no-ops for hydro)
 void WbAtmSetB(hydro::Hydro *ph, Mesh *pm, const Real bx, const bool ghosts) {}
 void WbAtmSetB(mhd::MHD *ph, Mesh *pm, const Real bx, const bool ghosts) {
   auto &indcs = pm->mb_indcs;
@@ -156,7 +156,7 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   Real g0 = pin->GetOrAddReal("problem", "g0", -1.0);
   Real p0 = pin->GetOrAddReal("problem", "p0", 1.0);
   Real rho0 = pin->GetOrAddReal("problem", "rho0", 1.0);
-  // alfmach-1102: also runs in MHD (static well balance only), with an optional uniform
+  // also runs in MHD (static well balance only), with an optional uniform
   // horizontal field B_x = sqrt(2 p(y=0)/bx_beta), <problem>/bx_beta (read when named)
   const bool is_mhd = (pmbp->pmhd != nullptr);
   Real gamma = is_mhd ? pmbp->pmhd->peos->eos_data.gamma
@@ -171,7 +171,7 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   wbatm.h0 = -gdgm1*p0/rho0/g0;
   Real a0 = wbatm.a0;
   Real h0 = wbatm.h0;
-  // lowmach2-1102 TEST keys (read only when set): <problem>/strat = isothermal |
+  // TEST keys (read only when set): <problem>/strat = isothermal |
   // polytropic (with poly_nu) and a cell-hashed white-noise velocity seed vrand (rms
   // per component, absolute units).  Use with the STATIC well-balanced scheme (exact
   // for any stored background); the dynamic scheme assumes the isentropic profile.
@@ -212,7 +212,9 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   Real y0 = pin->GetOrAddReal("problem", "y0", 1.0);
   Real r0 = pin->GetOrAddReal("problem", "r0", 0.2);
   Real vrand = 0.0;
-  if (pin->DoesParameterExist("problem", "vrand")) vrand = pin->GetReal("problem", "vrand");
+  if (pin->DoesParameterExist("problem", "vrand")) {
+    vrand = pin->GetReal("problem", "vrand");
+  }
 
   if (is_mhd) {
     WbAtmFill(pmbp->pmhd, pmy_mesh_, wv, gm1, g0, vamp, x0, y0, r0, vrand);
@@ -291,9 +293,10 @@ void WbAtmBCsT(Mesh *pm, P *ph) {
 //! instead the local hydrostatic background's OWN pressure difference across the cell,
 //! (p_{j+1/2} - p_{j-1/2})/dx2 blended with the plain force by the validity weight,
 //! from the same cache the x2 reconstruction reads (AddWbGravity), so that the two
-//! cancel identically for a balanced state.  (Handing the dynamic scheme the plain -rho g source would NOT be
-//! well balanced, since the flux it assembles already carries the full background
-//! pressure.)  The energy source is physical and always uses the full density.
+//! cancel identically for a balanced state.  (Handing the dynamic scheme the plain
+//! -rho g source would NOT be well balanced, since the flux it assembles already carries
+//! the full background pressure.)  The energy source is physical and always uses the
+//! full density.
 
 void WbAtmGravity(Mesh *pm, const Real bdt) {
   if (pm->pmb_pack->pmhd != nullptr) {
@@ -339,7 +342,8 @@ void WbAtmGravityT(Mesh *pm, P *ph, const Real bdt) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn WbAtmFill (alfmach-1102: the former body of WbAtmosphere, for hydro or MHD)
+//! \fn WbAtmFill
+//! \brief fills the atmosphere state of WbAtmosphere, for hydro or MHD
 
 template <class P>
 void WbAtmFill(P *ph, Mesh *pmesh, const WbAtmVars wv, const Real gm1, const Real g0,
@@ -377,7 +381,7 @@ void WbAtmFill(P *ph, Mesh *pmesh, const WbAtmVars wv, const Real gm1, const Rea
       v1 = vamp*(x1v - x0)/r0;
       v2 = vamp*(x2v - y0)/r0;
     }
-    if (vrand != 0.0) {   // lowmach2-1102: cell-hashed uniform deviates, rms vrand
+    if (vrand != 0.0) {   // cell-hashed uniform deviates, rms vrand
       const uint64_t gi = static_cast<uint64_t>((x1v + 1000.0)/size.d_view(m).dx1);
       const uint64_t gj = static_cast<uint64_t>((x2v + 1000.0)/size.d_view(m).dx2);
       uint64_t h = (gi*0x9E3779B97F4A7C15ULL)
