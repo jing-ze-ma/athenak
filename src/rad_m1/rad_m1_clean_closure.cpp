@@ -255,6 +255,7 @@ void RadiationM1::CleanClosureExtrap() {
         cs(m,CLN_HP+a,k,j,i) = fmax(q[CLN_HP+a]*ij, 0.0);
         cs(m,CLN_HM+a,k,j,i) = fmin(q[CLN_HM+a]*ij, 0.0);
       }
+      for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = q[CLN_KP+a]*ij;
       cs(m,CLN_C1,k,j,i) = fmax(q[CLN_C1]*ij, 0.0);
       cs(m,CLN_J,k,j,i) = q[CLN_J];
       valid(m,0,k,j,i) = 1.0;
@@ -265,6 +266,7 @@ void RadiationM1::CleanClosureExtrap() {
         cs(m,CLN_HP+a,k,j,i) = 0.25;
         cs(m,CLN_HM+a,k,j,i) = -0.25;
       }
+      for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
       cs(m,CLN_C1,k,j,i) = 1.0;
       cs(m,CLN_J,k,j,i) = 0.0;
       valid(m,0,k,j,i) = 0.0;
@@ -401,7 +403,8 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanClosureFromRays
 //! \brief closure of every cell whose rays carry its radiation (J >= clean_ray_min E):
-//! D = K/J, h+- = H+-/J, C1 = <|I - S|>/J.  Other cells are marked for the fill.
+//! D = K/J, h+- = H+-/J, k+ = K+/J, C1 = <|I - S|>/J.  Other cells are marked for the
+//! fill.
 
 void RadiationM1::CleanClosureFromRays() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -426,6 +429,7 @@ void RadiationM1::CleanClosureFromRays() {
         cs(m,CLN_HP+a,k,j,i) = fmax(hp, 0.0);
         cs(m,CLN_HM+a,k,j,i) = fmin(h - hp, 0.0);
       }
+      for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = vc(m,M1_VET_KP+a,k,j,i)/jr;
       cs(m,CLN_C1,k,j,i) = fmax(vc(m,M1_VET_NL,k,j,i)/jr, 0.0);
       cs(m,CLN_J,k,j,i) = jr;
       valid(m,0,k,j,i) = 1.0;
@@ -437,6 +441,7 @@ void RadiationM1::CleanClosureFromRays() {
         cs(m,CLN_HP+a,k,j,i) = 0.25;
         cs(m,CLN_HM+a,k,j,i) = -0.25;
       }
+      for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
       cs(m,CLN_C1,k,j,i) = 1.0;
       cs(m,CLN_J,k,j,i) = 0.0;
       valid(m,0,k,j,i) = 0.0;
@@ -446,7 +451,7 @@ void RadiationM1::CleanClosureFromRays() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanClosureFill
-//! \brief cells without ray radiation take the mean closure (D, h+-) of their valid
+//! \brief cells without ray radiation take the mean closure (D, h+-, k+) of their valid
 //! neighbours, one layer per pass (clean_fill_passes passes)
 
 void RadiationM1::CleanClosureFill() {
@@ -468,20 +473,20 @@ void RadiationM1::CleanClosureFill() {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       valid(m,1,k,j,i) = valid(m,0,k,j,i);
       if (valid(m,0,k,j,i) > 0.0) return;
-      Real sum[12] = {0.0};
+      Real sum[CLN_C1] = {0.0};
       int nv = 0;
       for (int kk = k-dk; kk <= k+dk; ++kk) {
         for (int jj = j-dj; jj <= j+dj; ++jj) {
           for (int ii = i-1; ii <= i+1; ++ii) {
             if (valid(m,0,kk,jj,ii) <= 0.0) continue;
             ++nv;
-            for (int n = 0; n < 12; ++n) sum[n] += cs(m,CLN_D11+n,kk,jj,ii);
+            for (int n = 0; n < CLN_C1; ++n) sum[n] += cs(m,n,kk,jj,ii);
           }
         }
       }
       if (nv == 0) return;
       valid(m,1,k,j,i) = 1.0;
-      for (int n = 0; n < 12; ++n) cs(m,CLN_D11+n,k,j,i) = sum[n]/nv;
+      for (int n = 0; n < CLN_C1; ++n) cs(m,n,k,j,i) = sum[n]/nv;
     });
     par_for("cln_fill_mark", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

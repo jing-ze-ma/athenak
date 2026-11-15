@@ -2006,7 +2006,8 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   int ncells1 = indcs.nx1 + 2*(indcs.ng);
   int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  Kokkos::realloc(vet_cell, nmb, M1_VET_NC, ncells3, ncells2, ncells1);
+  Kokkos::realloc(vet_cell, nmb, M1_VET_NC + (clean ? M1_VET_NKP : 0), ncells3, ncells2,
+                  ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
   if (mbpath) {
     VetMBInit(pin);   // the banded plane buffers live in vet_mbs
@@ -3734,6 +3735,8 @@ void RadiationM1::VetShortCharSweep() {
   // hrup-1009: the half-range sums sum w I max(mu_a, 0) (M1_VET_HP1..3); hrmb-1009:
   // every sweep variant carries them (the banded MB sweep in its moment arrays)
   const bool hrs_ = impl_beam_hr;
+  // scheme = clean: the half-range stress columns K+^d_bd (M1_VET_KP, boundary fluxes)
+  const bool kps_ = clean;
   // thinsw-1010 (implicit_thin_switch = fs | fskn): the non-locality sum w |I - S| of the
   // rays at each cell (M1_VET_NL, C1 of M1ThinCell)
   const bool nls_ = thsw_c1;
@@ -3847,6 +3850,9 @@ void RadiationM1::VetShortCharSweep() {
       if (hrs_) {
         for (int n = 0; n < 3; ++n) {vcd_(m,M1_VET_HP1+n,k,j,i) = 0.0;}
       }
+      if (kps_) {
+        for (int n = 0; n < M1_VET_NKP; ++n) {vcd_(m,M1_VET_KP+n,k,j,i) = 0.0;}
+      }
       if (nls_) {
         vcd_(m,M1_VET_NL,k,j,i) = 0.0;
         // vacuum (no extinction): no lagged scattering source, eps = 1
@@ -3938,6 +3944,7 @@ void RadiationM1::VetShortCharSweep() {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {vc_(m,n,k,j,i) = 0.0;}
       if (hrs_) {for (int n = 0; n < 3; ++n) {vc_(m,M1_VET_HP1+n,k,j,i) = 0.0;}}
+      if (kps_) {for (int n = 0; n < M1_VET_NKP; ++n) {vc_(m,M1_VET_KP+n,k,j,i) = 0.0;}}
       if (nls_) {vc_(m,M1_VET_NL,k,j,i) = 0.0;}
     });
   }
@@ -3953,6 +3960,8 @@ void RadiationM1::VetShortCharSweep() {
       Real acu[10], acd[10];
       for (int n = 0; n < 10; ++n) {acu[n] = 0.0; acd[n] = 0.0;}
       Real hpu[3] = {0.0, 0.0, 0.0}, hpd[3] = {0.0, 0.0, 0.0};
+      Real kpu[M1_VET_NKP], kpd[M1_VET_NKP];
+      for (int n = 0; n < M1_VET_NKP; ++n) {kpu[n] = 0.0; kpd[n] = 0.0;}
       Real nlu = 0.0, nld = 0.0;   // thinsw-1010
       for (int r = 0; r < nray; ++r) {
         const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
@@ -4138,6 +4147,14 @@ void RadiationM1::VetShortCharSweep() {
           hp[1] += a*fmax(m2, 0.0);
           hp[2] += a*fmax(m3, 0.0);
         }
+        if (kps_) {
+          Real *kp = up ? kpu : kpd;
+          const Real mu[3] = {m1, m2, m3};
+          for (int d = 0; d < 3; ++d) {
+            if (!(mu[d] > 0.0)) continue;
+            for (int b = 0; b < 3; ++b) kp[3*d+b] += a*mu[b]*mu[d];
+          }
+        }
         if (nls_) {
           if (up) {nlu += wr*fabs(iv - s0);} else {nld += wr*fabs(iv - s0);}
         }
@@ -4151,6 +4168,12 @@ void RadiationM1::VetShortCharSweep() {
           for (int n = 0; n < 3; ++n) {
             vc_(m,M1_VET_HP1+n,k,j,iu) += hpu[n];
             vc_(m,M1_VET_HP1+n,k,j,id) += hpd[n];
+          }
+        }
+        if (kps_) {
+          for (int n = 0; n < M1_VET_NKP; ++n) {
+            vc_(m,M1_VET_KP+n,k,j,iu) += kpu[n];
+            vc_(m,M1_VET_KP+n,k,j,id) += kpd[n];
           }
         }
         if (nls_) {
@@ -4622,10 +4645,13 @@ void RadiationM1::ImplBeamInit(ParameterInput *pin) {
   ibm_nr = 0;
   Kokkos::realloc(ibm_i, nmb, 4, nx3, nx2);
   Kokkos::realloc(ibm_f, nmb, nx3, nx2);
+  Kokkos::realloc(ibm_s, nmb, 3, nx3, nx2);
   auto hi = Kokkos::create_mirror_view(ibm_i);
   auto hf = Kokkos::create_mirror_view(ibm_f);
+  auto hs = Kokkos::create_mirror_view(ibm_s);
   Kokkos::deep_copy(hi, 0.0);
   Kokkos::deep_copy(hf, 0.0);
+  Kokkos::deep_copy(hs, 0.0);
   auto &msz = pmy_pack->pmb->mb_size;
   for (int b = 0; b < ibm_n; ++b) {
     const std::string p = "implicit_beam" + std::to_string(b) + "_";
@@ -4668,6 +4694,9 @@ void RadiationM1::ImplBeamInit(ParameterInput *pin) {
             if (!(fr > 0.0)) continue;
             hi(m,qq,k,j) += fr*eb/(nr*wr);
             hf(m,k,j) += c_light*wr*ah(rs[q],0)*fr*eb/(nr*wr);
+            for (int a = 0; a < 3; ++a) {
+              hs(m,a,k,j) += c_light*wr*ah(rs[q],a)*ah(rs[q],0)*fr*eb/(nr*wr);
+            }
           }
         }
       }
@@ -4682,6 +4711,7 @@ void RadiationM1::ImplBeamInit(ParameterInput *pin) {
   }
   Kokkos::deep_copy(ibm_i, hi);
   Kokkos::deep_copy(ibm_f, hf);
+  Kokkos::deep_copy(ibm_s, hs);
 }
 
 } // namespace radm1

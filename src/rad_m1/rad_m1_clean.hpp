@@ -29,9 +29,10 @@ namespace radm1 {
 constexpr int CLN_D11 = 0;   // Eddington tensor D11 D22 D33 D12 D13 D23
 constexpr int CLN_HP = 6;    // h+_a = H+_a/J, a = 1,2,3
 constexpr int CLN_HM = 9;    // h-_a = H-_a/J (<= 0)
-constexpr int CLN_C1 = 12;   // non-locality C1 = <|I - S|>/J
-constexpr int CLN_J = 13;    // J of the rays (energy-density units)
-constexpr int CLN_N = 14;
+constexpr int CLN_KP = 12;   // k+^d_b = K+^d_bd/J (outgoing stress of mu_d > 0), 3 d + b
+constexpr int CLN_C1 = 21;   // non-locality C1 = <|I - S|>/J
+constexpr int CLN_J = 22;    // J of the rays (energy-density units)
+constexpr int CLN_N = 23;
 
 // face variables (arrays cln_fc1, cln_fc2, cln_fc3)
 constexpr int CLF_W = 0;     // blend weight w
@@ -74,6 +75,7 @@ struct CleanArgs {
   DvceArray5D<Real> w;         // work vectors
   DvceArray5D<Real> fc[3];     // face variables in x1, x2, x3
   DvceArray3D<Real> beam;      // boundary beam flux at x1min (m, k-ks, j-js)
+  DvceArray4D<Real> bstress;   // beam stress column c K_b1 at x1min (m, b, k-ks, j-js)
   DvceArray5D<Real> u;         // cell vectors of the cell layout (CLC_*)
   Real h, c, idx[3];           // stage step, light speed, inverse cell widths
   int bc[6];                   // boundary types x1min, x1max, ..., x3max

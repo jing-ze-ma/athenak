@@ -99,6 +99,10 @@ constexpr int M1_VET_HP1 = 23;  // hrup-1009: sum w I max(mu_a, 0), a = 1 2 3 (h
 constexpr int M1_VET_NL  = 26;  // thinsw-1010: sum w |I - S| (C1 non-locality), fs only
 constexpr int M1_VET_EPS = 27;  // thinsw-1010: thermal fraction min(kappa_P/chi, 1) (fs)
 constexpr int M1_VET_NC  = 28;
+// scheme = clean: K+^d_bd = sum w I Omega_b mu_d over mu_d > 0 (slot KP + 3 d + b), after
+// the NC slots above (allocated only for the clean scheme)
+constexpr int M1_VET_KP  = 28;
+constexpr int M1_VET_NKP = 9;
 // tau_ten slots of the LATERAL correction (vet_col_lat; the cs CS2 interface): dD_ab in
 // the mesh basis, order rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
 constexpr int M1_TT_LAT0 = 4;
@@ -829,6 +833,7 @@ class RadiationM1 {
   int ibm_ray[4] = {-1, -1, -1, -1};
   DvceArray4D<Real> ibm_i;
   DvceArray3D<Real> ibm_f;
+  DvceArray4D<Real> ibm_s;   // the beams' stress column c sum w Omega_b mu1 I (clean)
   void ImplBeamInit(ParameterInput *pin);
   // implicit_marshak_face = linear (m1-sp-order2, spherical-polar wedge only): the
   // Marshak face flux takes the face E extrapolated from r^2 E of the two end cells

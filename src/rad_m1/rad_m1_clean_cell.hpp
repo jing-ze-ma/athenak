@@ -190,9 +190,24 @@ void CleanCellGhost(const CleanArgs &x, const int dir, const int m, const int k,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanCellOutStress
+//! \brief stress coefficient of the radiation leaving through the open boundary face of
+//! inner cell (k,j,i) normal to dir, column b: the rays' half-range k+^dir_b = K+_b,dir/J
+//! at a high face, D_b,dir - k+^dir_b at a low face
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCellOutStress(const CleanArgs &x, const int dir, const int b, const int m,
+                        const int k, const int j, const int i, const bool low) {
+  const Real kp = x.cs(m,CLN_KP+3*dir+b,k,j,i);
+  return low ? CleanDiag(x, b, dir, m, k, j, i) - kp : kp;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanCellFaceSource
 //! \brief the E-independent part of the face fluxes on a physical boundary: the
-//! incoming E flux of CleanFaceSource and the ghost part of the upwind stress flux
+//! incoming E flux of CleanFaceSource and the stress of the incoming radiation (beam:
+//! its stress column; isotropic bath: c E_bath/6 on the normal row); a low-order face the
+//! ghost part of the upwind characteristic flux
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const int k,
@@ -202,19 +217,23 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
   const bool low = (pos == lo);
   if (x.bc[2*dir + (low ? 0 : 1)] == M1_IBC_REFLECT) return;
-  // the ghost sits outside the face; its closure is read from the inner cell
-  const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
-  const int ic = low ? i : i - (dir == 0);
-  Real eg, yg[3], pg[3];
-  CleanCellGhost(x, dir, m, kc, jc, ic, low, eg, yg, pg);
-  const Real sg = low ? 0.5*x.c : -0.5*x.c;
   if (x.fc[dir](m,CLF_LO,k,j,i) > 0.0) {
+    // the ghost sits outside the face; its closure is read from the inner cell
+    const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
+    const int ic = low ? i : i - (dir == 0);
+    Real eg, yg[3], pg[3];
+    CleanCellGhost(x, dir, m, kc, jc, ic, low, eg, yg, pg);
+    const Real sg = low ? 0.5*x.c : -0.5*x.c;
     s[0] = 0.5*x.c*yg[dir] + sg*eg;
     for (int b = 0; b < x.nf; ++b) s[1+b] = ((b == dir) ? 0.5*x.c*eg : 0.0) + sg*yg[b];
     return;
   }
   s[0] = CleanFaceSource(x, dir, m, k, j, i);
-  for (int b = 0; b < x.nf; ++b) s[1+b] = 0.5*x.c*pg[b] + sg*yg[b];
+  if (low && dir == 0 && x.use_beam && x.beam(m,k-x.ks,j-x.js) > 0.0) {
+    for (int b = 0; b < x.nf; ++b) s[1+b] = x.bstress(m,b,k-x.ks,j-x.js);
+    return;
+  }
+  s[1+dir] = x.c*x.ebath[2*dir + (low ? 0 : 1)]/6.0;
 }
 
 //----------------------------------------------------------------------------------------
@@ -222,10 +241,12 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
 //! \brief derivatives jl, jr of the face fluxes (fE, fY_1..3) at face (k,j,i) normal to
 //! dir with respect to the states (E, y_1..3) of the cells L and R.  The terms in the
 //! states of L-1 and R+1 (RC, reconstruction) are left to CleanCellFaceFlux.  On
-//! physical boundaries fE takes the boundary form of CleanFaceWeights and fY the
-//! upwind (a = c) flux between the inner cell and the incoming ghost state of
-//! CleanCellGhost; a low-order boundary face takes the upwind characteristic flux
-//! (D = I) for both; a reflecting wall carries only the normal stress of the inner cell.
+//! physical boundaries fE takes the boundary form of CleanFaceWeights and fY the stress
+//! of the radiation leaving through the face, c k_out E of the inner cell
+//! (CleanCellOutStress; the incoming part is in CleanCellFaceSource); a low-order
+//! boundary face takes the upwind characteristic flux (D = I) against the ghost of
+//! CleanCellGhost for both; a reflecting wall carries only the normal stress of the
+//! inner cell.
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const int k,
@@ -265,8 +286,7 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
     CleanFaceWeights(x, dir, m, k, j, i, al, ar);
     jj[0][0] = blo ? ar : al;
     for (int b = 0; b < x.nf; ++b) {
-      jj[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, kc, jc, ic);
-      jj[1+b][1+b] = sg;
+      jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, kc, jc, ic, blo);
     }
     return;
   }

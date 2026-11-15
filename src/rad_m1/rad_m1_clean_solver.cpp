@@ -31,6 +31,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.fc[1] = cln_fc2;
   x.fc[2] = cln_fc3;
   x.beam = ibm_f;
+  x.bstress = ibm_s;
   x.u = cln_x;
   x.h = dt_sub;
   x.c = c_light;
