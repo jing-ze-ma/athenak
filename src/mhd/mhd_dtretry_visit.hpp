@@ -12,7 +12,6 @@
 template <class V>
 void mhd::MHD::DtRetryVisit(V &v) {
   v.value("recon_method", recon_method);
-  v.value("recon_method_x1", recon_method_x1);
   v.value("rsolver_method", rsolver_method);
   v.value("nmhd", nmhd);
   v.value("nscalars", nscalars);

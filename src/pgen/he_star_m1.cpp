@@ -2700,15 +2700,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // PLM (Hydro::PLM_nonuniform) and the ideal-gas HLLC contact speed
       auto *phy = pmbp->phydro;
       if (phy->use_wellbalance_dynamic || phy->rsolver_method != Hydro_RSolver::hllc ||
-          phy->recon_method_x1 != ReconstructionMethod::plm ||
           !pmy_mesh_->use_spherical_polar || eos.IsGeneral() || hs_bal_ ||
           indcs.nx1 < 2 || ng < 2) {
         HsFatal("problem/he_bc_inner = zerocontact needs spherical polar, an ideal gas, "
-                "<hydro>/rsolver = hllc, reconstruct_x1 = plm, no well-balanced scheme, "
+                "<hydro>/rsolver = hllc, no well-balanced scheme, "
                 "he_ic_balance = false, nx1 >= 2 and nghost >= 2", __LINE__);
       }
     }
-    // fin4-linhao-bc: problem/he_bc_linhao (see hs_lbc_)
+    // problem/he_bc_linhao (see hs_lbc_)
     if (pin->DoesParameterExist("problem","he_bc_linhao")) {
       hs_lbc_ = pin->GetBoolean("problem","he_bc_linhao");
     }
