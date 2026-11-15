@@ -213,15 +213,6 @@ struct EOS_Data {
   // with rsolver = lhllc / lhlld (prod1103, USER 11-03; recipe::NewDefaults, eos.cpp); a
   // restart whose input lacks the key keeps false.
   bool cb_cont = false;
-  // lhllc2nd-1102 <hydro>/lhllc_c1 = eps (> 0; default 0 = off, bitwise; read only when
-  // named) and <hydro>/lhllc_c1_parts (bit mask, default 31 = all): the C1 LHLLC of
-  // hydro/rsolvers/lhllc_c1_hyd.hpp.  Every min/max/abs/sign switch of LHLLC that a
-  // low-Mach flow sits on (contact switch sign(S*), PVRS q, chi, odd-even sensor, the
-  // x1 phi floor) is replaced by a C1 blend over a band eps (velocities in units of the
-  // larger sound speed, the PVRS pressure ratio p*/p - 1 directly), so that the flux is
-  // C1 in the state and RK2 keeps second order in dt.
-  Real c1_eps = 0.0;
-  int c1_parts = 31;
   // lhllc2nd-1102 <hydro>/plm_c1, <mhd>/plm_c1 (default false = van Leer PLM, bitwise;
   // read only when named): the C1 slope limiter of reconstruct/plm_c1.hpp (also in the
   // non-uniform x1 PLM of the cubed sphere / spherical polar meshes)

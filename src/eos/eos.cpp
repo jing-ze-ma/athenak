@@ -354,20 +354,6 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
         }
       }
     }
-    if ((eos_data.chi_full || eos_data.divdiss > 0) &&
-        pin->DoesParameterExist(bk, "lhllc_c1")) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "lhllc_chi_full / lhllc_divdiss are not implemented in "
-                << "the C1 LHLLC (lhllc_c1)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // lhllc2nd-1102: see EOS_Data::c1_eps (hydro only; read only when named)
-    if (is_hyd && pin->DoesParameterExist(bk, "lhllc_c1")) {
-      eos_data.c1_eps = pin->GetReal(bk, "lhllc_c1");
-      if (pin->DoesParameterExist(bk, "lhllc_c1_parts")) {
-        eos_data.c1_parts = pin->GetInteger(bk, "lhllc_c1_parts");
-      }
-    }
   }
   eos_data.pfloor = pin->GetOrAddReal(bk,"pfloor",(FLT_MIN));
   eos_data.tfloor = pin->GetOrAddReal(bk,"tfloor",(FLT_MIN));
