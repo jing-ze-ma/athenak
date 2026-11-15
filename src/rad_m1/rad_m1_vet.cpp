@@ -272,6 +272,9 @@ struct VetMBState {
   DvceArray5D<Real> csw;       // (nmb, nx1+2, 2, n3w, n2w) extinction and source, banded,
                                // layers 0 and nx1+1 = the x1 neighbours' face layers
   DvceArray5D<Real> ipl;       // (nmb, nring, nray, n3w, n2w) I of the last layers
+  DvceArray5D<Real> spl;       // (nmb, 4, 12, n3w, n2w) clean_consistency: face sums
+                               // of the x1 neighbours' cells, for the lower (0) and the
+                               // upper (1) one, received from the upper (2), lower (3)
   DvceArray3D<Real> sbuf, rbuf;  // (nmb, nof, maxcnt) message buffers
   MeshBoundaryValuesCC *pbd = nullptr;  // vet_tensor = full: ghost exchange of D
   DvceArray5D<Real> dsc, dsc_c;         // its scratch array (nmb, 6, k, j, i) and dummy
@@ -431,7 +434,11 @@ void VetBandPost(VetMBState &st, DvceArray5D<Real> &a, const int a0, const int n
     const int kr = idx/nj, jr = idx - kr*nj;
     const int jj = j0 + jr, kk = k0 + kr;
     const int aa = a0 + ab/nb, bb = b0 + ab%nb;
-    a_(m,aa,bb,kk,jj) = a_(n,aa,bb,kk - dk*nx3,jj - dj*nx2);
+    // a block that is its own neighbour (one block across a periodic direction) wraps
+    // the whole band, which may then be wider than the block
+    const int jsrc = (n == m) ? b2 + VetWrap(jj - b2, nx2) : jj - dj*nx2;
+    const int ksrc = (n == m && b3 > 0) ? b3 + VetWrap(kk - b3, nx3) : kk - dk*nx3;
+    a_(m,aa,bb,kk,jj) = a_(n,aa,bb,ksrc,jsrc);
   });
 #if MPI_PARALLEL_ENABLED
   st.req.clear();
@@ -615,7 +622,9 @@ void VetPlanePost(VetMBState &st, DvceArray5D<Real> &a, const int p, const int n
     if (idx >= nj*nk) return;
     const int kr = idx/nj, jr = idx - kr*nj;
     const int jj = j0 + jr, kk = k0 + kr;
-    a_(m,p,r,kk,jj) = a_(n,p,r,kk - dk*nx3,jj - dj*nx2);
+    const int jsrc = (n == m) ? b2 + VetWrap(jj - b2, nx2) : jj - dj*nx2;
+    const int ksrc = (n == m && b3 > 0) ? b3 + VetWrap(kk - b3, nx3) : kk - dk*nx3;
+    a_(m,p,r,kk,jj) = a_(n,p,r,ksrc,jsrc);
   });
 #if MPI_PARALLEL_ENABLED
   st.req.clear();
@@ -778,7 +787,7 @@ void VetX1Move(VetMBState &st, DvceArray5D<Real> &a, const int s, const int rcv,
     }
     // send to my opposite-side neighbour, which receives on its side s
     const int so = 1 - s;
-    const int lxn = (so == 1) ? (lx + 1) : (lx - 1);
+    const int lxn = (lx + ((so == 1) ? 1 : -1) + st.nbx1) % st.nbx1;
     if (st.xloc.h_view(2*m + so) == -1 && (rcv == -2 || lxn == rcv)) {
       const int rk = st.xrank[2*m + so];
       const int lidn = st.xlid[2*m + so];
@@ -1912,20 +1921,14 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   // the boundary intensity, downward rays enter ie with 0) is NOT periodic: an x1-uniform
   // state gets an x1-dependent tensor, i.e. a ramp along x1 with a jump at the wrap
   // (hot_blob slab facing x2: 22 % in E, 5 % in rho in 60 cycles).  So a fresh run on a
-  // periodic x1 mesh defaults to the periodic sweep (single MeshBlock), and a multi-block
-  // periodic x1 mesh, which has no periodic sweep, FATALs unless vet_x1_periodic = false
-  // is named (the open sweep, as before).  A restart whose file lacks the key keeps the
-  // open sweep (bitwise continuation).
+  // periodic x1 mesh defaults to the periodic sweep (on several MeshBlocks with a fixed
+  // number of passes).  A restart whose file lacks the key keeps the open sweep (bitwise
+  // continuation).
   const bool x1meshper =
       (pm->mesh_bcs[BoundaryFace::inner_x1] == BoundaryFlag::periodic);
   if (pin->DoesParameterExist("rad_m1", "vet_x1_periodic")) {
     vet_x1per = pin->GetBoolean("rad_m1", "vet_x1_periodic");
   } else if (x1meshper && !global_variable::restart_run) {
-    if (mbpath) {
-      VetFatal("<rad_m1>/closure = vet_sc on a periodic x1 mesh: the x1 sweep is not "
-               "periodic on several MeshBlocks / ranks (vet_x1_periodic needs a single "
-               "MeshBlock); name vet_x1_periodic = false to accept the open x1 sweep");
-    }
     vet_x1per = !vet_milne;
     pin->SetBoolean("rad_m1", "vet_x1_periodic", vet_x1per);
     if (global_variable::my_rank == 0) {
@@ -1934,7 +1937,6 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     }
   }
   if (vet_x1per) {
-    if (mbpath) {VetFatal("<rad_m1>/vet_x1_periodic needs a single MeshBlock");}
     if (vet_milne) {VetFatal("<rad_m1>/vet_x1_periodic excludes vet_milne");}
     if (pm->mesh_bcs[BoundaryFace::inner_x1] != BoundaryFlag::periodic) {
       VetFatal("<rad_m1>/vet_x1_periodic needs periodic x1 boundaries");
@@ -1950,7 +1952,7 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     // below the SC closure's own angular/spatial error, 1e-3..1e-2).  0 = exactly
     // vet_x1_npass passes, the default when vet_x1_npass is named without vet_x1_ptol
     // (an existing deck keeps its fixed count) and on a restart whose file lacks the key.
-    const bool fixed = np_named || global_variable::restart_run;
+    const bool fixed = np_named || global_variable::restart_run || mbpath;
     vet_x1ptol = pin->GetOrAddReal("rad_m1", "vet_x1_ptol", fixed ? 0.0 : 1.0e-6);
     if (vet_x1ptol < 0.0) {VetFatal("<rad_m1>/vet_x1_ptol must be >= 0");}
     if (global_variable::my_rank == 0) {
@@ -2297,7 +2299,7 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
   }
   st.w2 = static_cast<int>(std::floor(s2)) + 1;
   st.w3 = thrd ? (static_cast<int>(std::floor(s3)) + 1) : 0;
-  if (st.w2 > nx2 || (thrd && st.w3 > nx3)) {
+  if ((st.w2 > nx2 && nbx2 > 1) || (thrd && st.w3 > nx3 && nbx3 > 1)) {
     VetFatal("<rad_m1>/closure = vet_sc: a ray crosses " + std::to_string(st.w2) + " x "
              + std::to_string(st.w3) + " cells per layer, more than a MeshBlock ("
              + std::to_string(nx2) + " x " + std::to_string(nx3)
@@ -2330,8 +2332,9 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
   // per-cell kernel only; the ray kernel's moments (VetMomAdd) and the angle-parallel
   // sweep never wrote it, so on several MeshBlocks the switch read C1 = 0 (pipe: E 4 %
   // off the single-block run after one cycle).  With thsw_c1 the per-cell kernel is the
-  // default; naming the ray kernel or vet_mb_angles with it is FATAL.
-  if (thsw_c1) {
+  // default; naming the ray kernel or vet_mb_angles with it is FATAL.  The per-cell
+  // kernel is also the one with the clean scheme's sums and the periodic x1 sweep.
+  if (thsw_c1 || clean || vet_x1per) {
     if (pin->DoesParameterExist("rad_m1", "vet_mb_kernel") && st.raypar) {
       VetFatal("<rad_m1>/vet_mb_kernel = ray does not accumulate the thin-switch C1 sum "
                "(M1_VET_NL) that implicit_thin_switch / thin_corr / thin_recon need; use "
@@ -2384,7 +2387,7 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
   }
   st.b2 = st.hk*st.w2;
   st.b3 = st.hk*st.w3;
-  if (st.b2 > nx2 || (thrd && st.b3 > nx3)) {
+  if ((st.b2 > nx2 && nbx2 > 1) || (thrd && st.b3 > nx3 && nbx3 > 1)) {
     VetFatal("<rad_m1>/vet_mb_halo = " + std::to_string(st.hk) + ": the band ("
              + std::to_string(st.b2) + " x " + std::to_string(st.b3)
              + " cells) is wider than a MeshBlock");
@@ -2598,8 +2601,9 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
       }
     }
     for (int s = 0; s < 2; ++s) {
-      const int lx = l.lx1 + ((s == 0) ? -1 : 1);
+      int lx = l.lx1 + ((s == 0) ? -1 : 1);
       st.xloc.h_view(2*m + s) = -2;
+      if (vet_x1per) lx = (lx + st.nbx1) % st.nbx1;   // the periodic image
       if (lx < 0 || lx >= st.nbx1) continue;
       const int g = gof[(l.lx3*nbx2 + l.lx2)*st.nbx1 + lx];
       st.xgid[2*m + s] = g;
@@ -2752,6 +2756,7 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
   Kokkos::deep_copy(st.csw, 0.0);
   Kokkos::realloc(st.ipl, nsb, st.nring, st.nrl, st.n3w, st.n2w);
   Kokkos::deep_copy(st.ipl, 0.0);
+  if (cln_consist) Kokkos::realloc(st.spl, nsb, 4, 12, st.n3w, st.n2w);
   if (!st.agg) {
     Kokkos::realloc(st.sbuf, nsb, st.nof, st.maxcnt);
     Kokkos::realloc(st.rbuf, nsb, st.nof, st.maxcnt);
@@ -2785,6 +2790,11 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
       VetFatal("<rad_m1>/vet_mb_angles does not accumulate the thin-switch C1 sum "
                "(M1_VET_NL) that implicit_thin_switch / thin_corr / thin_recon need");
     }
+  }
+  if (vet_x1per && (st.ng > 1 || st.tb > 1 || st.nlag > 0 || st.ang ||
+                    vet_x1ptol > 0.0)) {
+    VetFatal("<rad_m1>/vet_x1_periodic on several MeshBlocks needs a fixed vet_x1_npass "
+             "and excludes vet_mb_agroup, vet_mb_tblock, vet_mb_lag and vet_mb_angles");
   }
   if (st.ang) {
     if (vet_milne || st.nlag > 0) {
@@ -3276,10 +3286,23 @@ void RadiationM1::VetSweepMB(bool lagged) {
       la = lb + 1;
     }
   }
-  for (int l = 0; l < (tbon ? 0 : nx1g); ++l) {
+  // vet_x1_periodic: npass sweeps, the first layer of a pass entering with the exit plane
+  // of the pass before (the periodic image); the moments are those of the last pass.
+  // clean_consistency: the face sums of a neighbour's cell go to spl (VetX1Move after)
+  const int npass = vet_x1per ? vet_x1npass : 1, ngl = npass*nx1g;
+  const bool x1src = vet_x1per && vet_x1src;
+  const bool kps_ = clean, f2s_ = cln_consist, x1per = vet_x1per;
+  const int bmn_ = ibm_nr;
+  const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];
+  auto bmi_ = ibm_i;
+  auto sp_ = st.spl;
+  if (f2s_) Kokkos::deep_copy(st.spl, 0.0);
+  for (int gl = 0; gl < (tbon ? 0 : ngl); ++gl) {
+    const int l = gl%nx1g;
+    const bool wrap = (gl >= nx1g), accum = (gl >= ngl - nx1g);
     // ring slot of this launch's plane and of the upwind one (l & 1, pw ^ 1 for 2)
-    const int pw = l%nring, pr = (l + nring - 1)%nring;
-    if (l > 0 && (l % nx1) == 0) {
+    const int pw = gl%nring, pr = (gl + nring - 1)%nring;
+    if (gl > 0 && (l % nx1) == 0) {
       // the x1 move copies whole planes: the band must have arrived
       if (pend) {
         VetPlaneWait(st, st.ipl, nrl, nsb, nx2, nx3);
@@ -3305,7 +3328,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
     }
     // vet_mb_halo = K: launch l = l0 + tt after the exchange of plane l0 (tt = 1..K; the
     // plane of launch 0 is exchanged too) sweeps (K - tt) reaches beyond the active cells
-    const int tt = (l == 0) ? hk : ((l - 1) % hk) + 1;
+    const int tt = (gl == 0) ? hk : ((gl - 1) % hk) + 1;
     if (st.raypar) {
       const int ek = hk - tt;
       const int e2 = ek*rw2, e3 = thrd ? ek*rw3 : 0;
@@ -3372,6 +3395,10 @@ void RadiationM1::VetSweepMB(bool lagged) {
         }
         Real hpu[3] = {0.0, 0.0, 0.0}, hpd[3] = {0.0, 0.0, 0.0};   // hrmb-1009
         Real nlu = 0.0, nld = 0.0;   // thinsw-1010
+        Real kpu[M1_VET_NKP], kpd[M1_VET_NKP];
+        for (int n = 0; n < M1_VET_NKP; ++n) {kpu[n] = 0.0; kpd[n] = 0.0;}
+        // face fluxes into the cells iu, id (F1, FX) and their upwind cells (F2, FX)
+        Real f2u[12] = {0.0}, f2d[12] = {0.0}, fnu[12] = {0.0}, fnd[12] = {0.0};
         for (int r = 0; r < nray; ++r) {
           const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
           const bool up = (m1 > 0.0);
@@ -3381,13 +3408,22 @@ void RadiationM1::VetSweepMB(bool lagged) {
           const Real c0 = vc_(m,M1_VET_CHX,k,j,i);
           const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
           Real iv;
-          if (l == 0) {
+          auto add4 = [&](Real *fx, const Real g) {
+            fx[0] += g;
+            fx[1] += g*m1;
+            fx[2] += g*m2;
+            fx[3] += g*m3;
+          };
+          Real ifc = 0.0;   // clean_consistency: the intensity at the face crossing
+          if (l == 0 && !wrap) {
             // the physical x1 face: VetShortChar, verbatim
             const int iin = up ? (i + 1) : (i - 1);
             const Real s1 = vc_(m,M1_VET_SRC,k,j,iin);
             const Real su = fmax(1.5*s0 - 0.5*s1, 0.0);
             Real ib = up ? 0.0 : bbhi;
-            if (up) {
+            if (x1src) {
+              ib = su;
+            } else if (up) {
               if (bblo >= 0.0) {
                 ib = bblo;
               } else if (milne) {
@@ -3400,7 +3436,11 @@ void RadiationM1::VetSweepMB(bool lagged) {
                           + iw_(m,M1_IW_F3,k,j,i)*m3;
                 ib = fmax(e + 3.0*fo/cl, 0.0);
               }
+              const int q = (r == bmr0) ? 0 : ((r == bmr1) ? 1
+                            : ((r == bmr2) ? 2 : ((r == bmr3) ? 3 : -1)));
+              if (q >= 0 && q < bmn_) {ib += bmi_(m,q,k-ks,j-js);}
             }
+            if (f2s_) add4((up ? f2u : f2d) + 4, wr*m1*ib);
             const Real dtau = 0.5*c0*dx1/am1;
             Real ex, w0, wu;
             VetSegW(dtau, ex, w0, wu);
@@ -3424,6 +3464,17 @@ void RadiationM1::VetSweepMB(bool lagged) {
               ka = kc + o3;
               kb = ka + 1;
             }
+            if (f2s_) {
+              // the upwind plane's intensity carried across the low x2 face by the shift
+              // of the foot interpolation (VetShortCharSweep)
+              const Real sa = fabs(sh2), fa = sa - floor(sa);
+              const int na = static_cast<int>(floor(sa)), sg = (sh2 < 0.0) ? 1 : -1;
+              Real phi = fa*ip_(m,pr,r,kc,jc + ((sg > 0) ? -1 - na : na));
+              for (int q = 0; q < na; ++q) {
+                phi += ip_(m,pr,r,kc,jc + ((sg > 0) ? -1 - q : q));
+              }
+              add4(up ? fnu : fnd, sg*wr*am1*dx2/dx1*phi);
+            }
             const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
             const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
             const Real iup_v = waa*ip_(m,pr,r,ka,ja) + wab*ip_(m,pr,r,ka,jb)
@@ -3440,16 +3491,20 @@ void RadiationM1::VetSweepMB(bool lagged) {
                                   cs_(m,li,0,kb,jb)};
               const Real sq[4] = {cs_(m,li,1,ka,ja), cs_(m,li,1,ka,jb), cs_(m,li,1,kb,ja),
                                   cs_(m,li,1,kb,jb)};
-              iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe);
+              iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
+                               f2s_ ? &ifc : nullptr);
             } else if (spl) {
               // segfix-1011: vet_seg = split, the two halves at the x1 face
-              iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
+              iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,
+                               f2s_ ? &ifc : nullptr);
             } else {
               const Real dtau = 0.5*(cu + c0)*dx1/am1;
               Real ex, w0, wu;
               VetSegW(dtau, ex, w0, wu);
               iv = iup_v*ex + wu*su + w0*s0;
+              if (f2s_) ifc = VetSegFaceI(iup_v, su, s0, 0.5*dtau, 0.5*dtau, 0);
             }
+            if (f2s_) add4(up ? f2u + 8 : fnd + 8, wr*m1*fmax(ifc, 0.0));
             if (vpath) {   // open-od-1013 vet_path = cells (VetPathStep)
               const Real sh3p = thrd ? (-dx1*m3/(am1*dx3)) : 0.0;
               const int lo = i - is + 1;   // the own banded layer
@@ -3474,6 +3529,11 @@ void RadiationM1::VetSweepMB(bool lagged) {
           }
           iv = fmax(iv, 0.0);
           ip_(m,pw,r,kc,jc) = iv;
+          if (f2s_ && !x1per && l == nx1g - 1) {
+            // the ray leaving through the x1 boundary face: the half cell at chi_0, S_0
+            const Real ex = exp(-0.5*c0*dx1/am1);
+            add4((up ? f2u : f2d) + 4, wr*m1*(iv*ex + (1.0 - ex)*s0));
+          }
           Real *ac = up ? acu : acd;
           const Real a = wr*iv;
           ac[0] += a;
@@ -3492,10 +3552,19 @@ void RadiationM1::VetSweepMB(bool lagged) {
             hp[1] += a*fmax(m2, 0.0);
             hp[2] += a*fmax(m3, 0.0);
           }
+          if (kps_) {
+            Real *kp = up ? kpu : kpd;
+            const Real mu[3] = {m1, m2, m3};
+            for (int d = 0; d < 3; ++d) {
+              if (!(mu[d] > 0.0)) continue;
+              for (int b = 0; b < 3; ++b) kp[3*d+b] += a*mu[b]*mu[d];
+            }
+          }
           if (nls_) {
             if (up) {nlu += wr*fabs(iv - s0);} else {nld += wr*fabs(iv - s0);}
           }
         }
+        if (!accum) return;
         for (int n = 0; n < 10; ++n) {
           if (ua) {
             vc_(m,M1_VET_J+n,k,j,iu) += acu[n];
@@ -3514,9 +3583,35 @@ void RadiationM1::VetSweepMB(bool lagged) {
           if (ua) {vc_(m,M1_VET_NL,k,j,iu) += nlu;}
           if (da) {vc_(m,M1_VET_NL,k,j,id) += nld;}
         }
+        if (kps_) {
+          for (int n = 0; n < M1_VET_NKP; ++n) {
+            if (ua) {vc_(m,M1_VET_KP+n,k,j,iu) += kpu[n];}
+            if (da) {vc_(m,M1_VET_KP+n,k,j,id) += kpd[n];}
+          }
+        }
+        if (f2s_) {
+          for (int n = 0; n < 12; ++n) {
+            if (ua) {
+              vc_(m,M1_VET_F2+n,k,j,iu) += f2u[n];
+              if (lu > 0) {
+                vc_(m,M1_VET_F2+n,k,j,iu-1) += fnu[n];
+              } else {
+                sp_(m,0,n,kc,jc) += fnu[n];
+              }
+            }
+            if (da) {
+              vc_(m,M1_VET_F2+n,k,j,id) += f2d[n];
+              if (ld < nx1 - 1) {
+                vc_(m,M1_VET_F2+n,k,j,id+1) += fnd[n];
+              } else {
+                sp_(m,1,n,kc,jc) += fnd[n];
+              }
+            }
+          }
+        }
       });
     }
-    if (tt == hk && (l < nx1g - 1 || lagged)) {
+    if (tt == hk && (gl < ngl - 1 || lagged)) {
       VetPlanePost(st, st.ipl, pw, nrl, nsb, nx2, nx3);
       if (ovl && l < nx1g - 1 && ((l + 1) % nx1) != 0) {
         pend = true;
@@ -3539,6 +3634,16 @@ void RadiationM1::VetSweepMB(bool lagged) {
         hs_(m,l,r,kk,jj) = t;
       });
     }
+  }
+  if (f2s_) {
+    // the face sums of the x1 neighbours' boundary cells
+    VetX1Move(st, st.spl, 1, -2, 2, 0, 0, 12, nsb);
+    VetX1Move(st, st.spl, 0, -2, 3, 1, 0, 12, nsb);
+    par_for("m1_vet_mb_spill", DevExeSpace(), 0, nmb-1, 0, 11, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j) {
+      vc_(m,M1_VET_F2+n,k,j,ie) += sp_(m,2,n,k-ks+w3,j-js+w2);
+      vc_(m,M1_VET_F2+n,k,j,is) += sp_(m,3,n,k-ks+w3,j-js+w2);
+    });
   }
   if (!st.raypar) return;   // the per-cell kernel added into vet_cell itself
   if (!hyb) {
@@ -4675,7 +4780,8 @@ void RadiationM1::VetReport() {
 //! n = 1 or 2 rays) is added to whatever the x1min face gives that ray (the Marshak bath,
 //! 0 for vacuum), and the moment solve takes the same rays' face flux
 //! F_in = c frac E_b mu1 as an imposed flux on those columns (Marshak elsewhere).
-//! Needs closure = vet_sc, implicit_bc_x1min = marshak and ONE MeshBlock (VetShortChar).
+//! Needs closure = vet_sc, implicit_bc_x1min = marshak and ONE MeshBlock (VetShortChar;
+//! several with scheme = clean).
 
 void RadiationM1::ImplBeamInit(ParameterInput *pin) {
   ibm_n = 0;
@@ -4686,7 +4792,7 @@ void RadiationM1::ImplBeamInit(ParameterInput *pin) {
   if (!vet_sc) VetFatal("<rad_m1>/implicit_beam_n needs closure = vet_sc");
   if (ibc_x1min != M1_IBC_MARSHAK)
     VetFatal("<rad_m1>/implicit_beam_n needs implicit_bc_x1min = marshak");
-  if (vet_mbs != nullptr || pmy_pack->pmesh->nmb_total > 1)
+  if (!clean && (vet_mbs != nullptr || pmy_pack->pmesh->nmb_total > 1))
     VetFatal("<rad_m1>/implicit_beam_n needs a single MeshBlock (VetShortChar sweep)");
   if (vet_x1per) VetFatal("<rad_m1>/implicit_beam_n is not for a periodic x1 sweep");
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -4738,6 +4844,9 @@ void RadiationM1::ImplBeamInit(ParameterInput *pin) {
       ibm_ray[qq] = rs[q];
       const Real wr = ah(rs[q],3);
       for (int m = 0; m < nmb; ++m) {
+        // the beams enter through the x1min face of the mesh
+        auto bf = pmy_pack->pmb->mb_bcs.h_view(m,BoundaryFace::inner_x1);
+        if (bf == BoundaryFlag::block) continue;
         const Real x2a = msz.h_view(m).x2min, dx2 = msz.h_view(m).dx2;
         for (int k = 0; k < nx3; ++k) {
           for (int j = 0; j < nx2; ++j) {
