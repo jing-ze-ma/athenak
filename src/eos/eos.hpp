@@ -130,9 +130,6 @@ struct EOS_Data {
   // pressure-diffusion terms (Liou 2006; mcut_p = 1 removes 1/f_a from M_p,
   // Edelmann+2021)
   Real ausm_mcut = 1.0e-13, ausm_mcut_p = 1.0;
-  // <hydro>/ausm_wall_hllc: re-solve reflecting/user x1 wall faces with HLLC (zero wall
-  // mass flux)
-  bool ausm_wall_hllc = false;
   // ideal-gas run with the composition table built only for the electron fraction
   // (ohmic_resistivity = eos): tbl holds valid surfaces but tbl.active is false, so all
   // thermodynamics stays ideal (EquationOfState::BuildElectronFractionTable)
