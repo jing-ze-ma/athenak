@@ -93,7 +93,7 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
   // STAGE S5: closure = vet_col (the per-column spherical formal solution) is allowed
   if (vet_sc || (tau_closure && !vet_col)) {why += " closure = vet_sc | tau;";}
   if (pm->multilevel) {why += " SMR/AMR;";}
-  if (pm->mesh_indcs.nx1 != pm->mb_indcs.nx1) {
+  if (pm->mesh_indcs.nx1 != pm->mb_indcs.nx1 && !clean) {
     why += " more than one MeshBlock along x1 (meshblock/nx1 must equal mesh/nx1);";
   }
   if (transport == M1_TRANSPORT_IMPLICIT) {

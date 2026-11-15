@@ -3974,6 +3974,15 @@ class RadiationM1 {
   Real vgd_npath = 0.0;   // open-od-1013: vet_path subdivided steps (ALL ranks, all sweeps)
   bool vgd_hinw = true;
   int vgd_nb2 = 1, vgd_nb3 = 1;
+  // several MeshBlocks along x1: the levels swept one after the other
+  int vgd_nb1 = 1;
+  std::vector<int> vgd_x1nb, vgd_x1lv;   // (2 m + 0/1): gid below / above, -1 none; lx1
+  DvceArray1D<int> vgd_x1f;   // (m): 1 innermost, 2 outermost level
+  DvceArray1D<int> vgd_x1mo;  // the blocks by level (the shell list order)
+  std::vector<int> vgd_shlv[2];   // (level): first code of the level in vgd_shl[pass]
+  DvceArray2D<Real> vgd_x1b, vgd_x1r;    // (m, v): one shell to / from the x1 neighbour
+  void VetGdX1Hand(const bool up);
+  void VetGdX1Pass(const bool up);
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_lxy;   // (m, 0/1): lx2, lx3
   DvceArray1D<Real> vgd_csb, vgd_crb;
   // vet_gd_halo_pipe (default true, bitwise): the compact mask of the NEXT shell is built

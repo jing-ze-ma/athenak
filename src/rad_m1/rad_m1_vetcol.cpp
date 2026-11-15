@@ -365,7 +365,8 @@ void RadiationM1::VetColInit() {
   auto &mindcs = pm->mesh_indcs;
   if (!trans_on) {VcolFatal("needs <rad_m1>/transport = implicit on a MULTI-D mesh");}
   if (pm->multilevel) {VcolFatal("SMR/AMR is not supported");}
-  if (mindcs.nx1 != indcs.nx1) {
+  // (the clean closure from vet_gd sets up but never builds the columns)
+  if (mindcs.nx1 != indcs.nx1 && !(clean && vgd_on)) {
     VcolFatal("needs ONE MeshBlock along x1 (meshblock/nx1 = mesh/nx1)");
   }
   if (ibc_x1min == M1_IBC_PERIODIC) {VcolFatal("a periodic x1 boundary has no top");}
@@ -682,6 +683,9 @@ void RadiationM1::VetColInit() {
 
 void RadiationM1::VetColBuild() {
   if (!tau_ready) {VetColInit();}
+  if (pmy_pack->pmesh->mesh_indcs.nx1 != pmy_pack->pmesh->mb_indcs.nx1) {
+    VcolFatal("needs ONE MeshBlock along x1 (meshblock/nx1 = mesh/nx1)");
+  }
   const int cyc = pmy_pack->pmesh->ncycle;
   if (vcol_built && vcol_every > 1 && (cyc % vcol_every) != 0) {
     vcol_nskip += 1.0;
