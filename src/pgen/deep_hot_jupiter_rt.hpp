@@ -905,82 +905,82 @@ std::uint64_t SplitMix64Mix(std::uint64_t x) {
 
 KOKKOS_INLINE_FUNCTION
 void get_daynight_Tp(const Real &p, Real &Tn, Real &Td) {
-    Real bar = 1.0e6;
-    Real pl = 1.0e-3*bar;
-    Real pt = log10(p/bar);
-    Real ptl = log10(pl/bar);
+  Real bar = 1.0e6;
+  Real pl = 1.0e-3*bar;
+  Real pt = log10(p/bar);
+  Real ptl = log10(pl/bar);
 
-    Real fn[13];
-    Real fd[14];
+  Real fn[13];
+  Real fd[14];
 
-    fn[0] = 1388.77348;
-    fn[1] = 279.575848;
-    fn[2] = -213.835822;
-    fn[3] = 21.0010475;
-    fn[4] = 100.938036;
-    fn[5] = 12.7972336;
-    fn[6] = -13.9266925;
-    fn[7] = -3.70783272;
-    fn[8] = 0.522370269;
-    fn[9] = 0.320837882;
-    fn[10]= 0.0451831612;
-    fn[11]= 2.18195583e-3;
-    fn[12]= 3.98938097e-6;
+  fn[0] = 1388.77348;
+  fn[1] = 279.575848;
+  fn[2] = -213.835822;
+  fn[3] = 21.0010475;
+  fn[4] = 100.938036;
+  fn[5] = 12.7972336;
+  fn[6] = -13.9266925;
+  fn[7] = -3.70783272;
+  fn[8] = 0.522370269;
+  fn[9] = 0.320837882;
+  fn[10]= 0.0451831612;
+  fn[11]= 2.18195583e-3;
+  fn[12]= 3.98938097e-6;
 
-    fd[0] = 2152.06036;
-    fd[1] = 29.3485512;
-    fd[2] = -183.318696;
-    fd[3] = 46.3893130;
-    fd[4] = 19.8116485;
-    fd[5] = -28.5473177;
-    fd[6] = -2.52726545;
-    fd[7] = 8.43627538;
-    fd[8] = 2.62945375;
-    fd[9] = -0.297098168;
-    fd[10]= -0.286871487;
-    fd[11]= -0.0590629443;
-    fd[12]= -5.38679474e-3;
-    fd[13]= -1.89972415e-4;
+  fd[0] = 2152.06036;
+  fd[1] = 29.3485512;
+  fd[2] = -183.318696;
+  fd[3] = 46.3893130;
+  fd[4] = 19.8116485;
+  fd[5] = -28.5473177;
+  fd[6] = -2.52726545;
+  fd[7] = 8.43627538;
+  fd[8] = 2.62945375;
+  fd[9] = -0.297098168;
+  fd[10]= -0.286871487;
+  fd[11]= -0.0590629443;
+  fd[12]= -5.38679474e-3;
+  fd[13]= -1.89972415e-4;
 
-    Real Tnstar = 0.0;
-    Real Tdstar = 0.0;
-    Real Tnstar_pl = 0.0;
-    Real Tdstar_pl = 0.0;
-    Real ptn = 1.0;
-    Real ptln = 1.0;
-    for(int ilogp=0; ilogp<13; ilogp++) {
-        Tnstar += fn[ilogp]*ptn;
-        Tnstar_pl += fn[ilogp]*ptln;
-        ptn *= pt;
-        ptln *= ptl;
-    }
-    ptn = 1.0;
-    ptln = 1.0;
-    for(int ilogp=0; ilogp<14; ilogp++) {
-        Tdstar += fd[ilogp]*ptn;
-        Tdstar_pl += fd[ilogp]*ptln;
-        ptn *= pt;
-        ptln *= ptl;
-    }
+  Real Tnstar = 0.0;
+  Real Tdstar = 0.0;
+  Real Tnstar_pl = 0.0;
+  Real Tdstar_pl = 0.0;
+  Real ptn = 1.0;
+  Real ptln = 1.0;
+  for(int ilogp=0; ilogp<13; ilogp++) {
+    Tnstar += fn[ilogp]*ptn;
+    Tnstar_pl += fn[ilogp]*ptln;
+    ptn *= pt;
+    ptln *= ptl;
+  }
+  ptn = 1.0;
+  ptln = 1.0;
+  for(int ilogp=0; ilogp<14; ilogp++) {
+    Tdstar += fd[ilogp]*ptn;
+    Tdstar_pl += fd[ilogp]*ptln;
+    ptn *= pt;
+    ptln *= ptl;
+  }
 
-    Tn = Tnstar;
-    Td = Tdstar;
-    Real x = log10(p / pl);
+  Tn = Tnstar;
+  Td = Tdstar;
+  Real x = log10(p / pl);
 
-    Real Tn_new = Tnstar_pl;// * exp(0.1   * x);
-    Real Td_new = Tdstar_pl;// * exp(0.015 * x);
+  Real Tn_new = Tnstar_pl;// * exp(0.1   * x);
+  Real Td_new = Tdstar_pl;// * exp(0.015 * x);
 
-    Tn_new = fmax(Tn_new, 250.0);
-    Td_new = fmax(Td_new, 1000.0);
+  Tn_new = fmax(Tn_new, 250.0);
+  Td_new = fmax(Td_new, 1000.0);
 
-    // blend
-    Tn = (p < pl) ? Tn_new : Tn;
-    Td = (p < pl) ? Td_new : Td;
+  // blend
+  Tn = (p < pl) ? Tn_new : Tn;
+  Td = (p < pl) ? Td_new : Td;
 
-    // enforce Td >= Tn
-    Td = fmax(Td, Tn);
+  // enforce Td >= Tn
+  Td = fmax(Td, Tn);
 
-    return;
+  return;
 }
 
 KOKKOS_INLINE_FUNCTION
@@ -1036,19 +1036,19 @@ void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr,
 
 KOKKOS_INLINE_FUNCTION
 void get_wb_Tp(const Real &p, Real &T) {
-    Real Tn, Td;
-    get_daynight_Tp(p, Tn, Td);
+  Real Tn, Td;
+  get_daynight_Tp(p, Tn, Td);
 
-    Real Tn2 = Tn*Tn;
-    Real Tn4 = Tn2*Tn2;
-    Real Td2 = Td*Td;
-    Real Td4 = Td2*Td2;
-    Real Tmid4 = 0.75*Tn4 + 0.25*Td4;
+  Real Tn2 = Tn*Tn;
+  Real Tn4 = Tn2*Tn2;
+  Real Td2 = Td*Td;
+  Real Td4 = Td2*Td2;
+  Real Tmid4 = 0.75*Tn4 + 0.25*Td4;
 
-    Real Tmid = sqrt(sqrt(Tmid4));
-    T = Tmid;
+  Real Tmid = sqrt(sqrt(Tmid4));
+  T = Tmid;
 
-    return;
+  return;
 }
 
 template <typename View1D>
@@ -1096,34 +1096,34 @@ KOKKOS_INLINE_FUNCTION
 void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                 const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr,
                 const Real &z, Real &rho, Real &p) {
-    Real bar = 1.0e6;
-    Real p0 = 250.0*bar;
-    Real dz = zarr(1)-zarr(0);
-    Real T;
+  Real bar = 1.0e6;
+  Real p0 = 250.0*bar;
+  Real dz = zarr(1)-zarr(0);
+  Real T;
 
-    if (z >= 0.0) {
-        int Nt = std::floor(z/dz);
-        // clamp to the last segment (linear extrapolation beyond it): cells above the
-        // column top (z_eff > 1.1 (r1-r0) under rot_potential) read past the end of
-        // logparr, which faulted on the GPU (ck-hitemp2-gpu). In range: unchanged.
-        const int Nmax = zarr.extent_int(0) - 2;
-        if (Nt > Nmax) Nt = Nmax;
-        Real logp = logparr(Nt)
-            + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
-        p = std::exp(logp);
-        get_wb_Tp(p,T);
-        rho = DensFromPT(eos, Rgas, p, T);
-    } else {
-        Real T0;
-        get_wb_Tp(p0,T0);
-        Real rho0 = DensFromPT(eos, Rgas, p0, T0);
-        Real H0 = -p0/rho0/grav_acc;
-        Real iH0 = 1.0/H0;
-        p = p0 * std::exp(-z*iH0);
-        rho = rho0 * std::exp(-z*iH0);
-    }
+  if (z >= 0.0) {
+    int Nt = std::floor(z/dz);
+    // clamp to the last segment (linear extrapolation beyond it): cells above the
+    // column top (z_eff > 1.1 (r1-r0) under rot_potential) read past the end of
+    // logparr, which faulted on the GPU (ck-hitemp2-gpu). In range: unchanged.
+    const int Nmax = zarr.extent_int(0) - 2;
+    if (Nt > Nmax) Nt = Nmax;
+    Real logp = logparr(Nt)
+        + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
+    p = std::exp(logp);
+    get_wb_Tp(p,T);
+    rho = DensFromPT(eos, Rgas, p, T);
+  } else {
+    Real T0;
+    get_wb_Tp(p0,T0);
+    Real rho0 = DensFromPT(eos, Rgas, p0, T0);
+    Real H0 = -p0/rho0/grav_acc;
+    Real iH0 = 1.0/H0;
+    p = p0 * std::exp(-z*iH0);
+    rho = rho0 * std::exp(-z*iH0);
+  }
 
-    return;
+  return;
 }
 
 template <typename View1D>
@@ -1204,30 +1204,30 @@ void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                   const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p,
                   const int &Ne, const DvceArray1D<Real> &Text,
                   const DvceArray1D<Real> &lgpext) {
-    Real bar = 1.0e6;
-    Real p0 = 250.0*bar;
-    Real dz = zarr(1)-zarr(0);
-    Real T;
+  Real bar = 1.0e6;
+  Real p0 = 250.0*bar;
+  Real dz = zarr(1)-zarr(0);
+  Real T;
 
-    if (z >= zarr(0)) {   // zarr(0) = 0 unless the ic_profile column reaches below z = 0
-        int Nt = std::floor((z - zarr(0))/dz);
-        if (Nt > N-2) Nt = N-2;   // as in get_wb_eos: never read past the column top
-        Real logp = logparr(Nt)
-            + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
-        p = std::exp(logp);
-        get_init_Tp(N, Tarr, lgparr, p,T, Ne, Text, lgpext);
-        rho = DensFromPT(eos, Rgas, p, T);
-    } else {
-        Real T0;
-        get_init_Tp(N, Tarr, lgparr, p0,T0, Ne, Text, lgpext);
-        Real rho0 = DensFromPT(eos, Rgas, p0, T0);
-        Real H0 = -p0/rho0/grav_acc;
-        Real iH0 = 1.0/H0;
-        p = p0 * std::exp(-z*iH0);
-        rho = rho0 * std::exp(-z*iH0);
-    }
+  if (z >= zarr(0)) {   // zarr(0) = 0 unless the ic_profile column reaches below z = 0
+    int Nt = std::floor((z - zarr(0))/dz);
+    if (Nt > N-2) Nt = N-2;   // as in get_wb_eos: never read past the column top
+    Real logp = logparr(Nt)
+        + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
+    p = std::exp(logp);
+    get_init_Tp(N, Tarr, lgparr, p,T, Ne, Text, lgpext);
+    rho = DensFromPT(eos, Rgas, p, T);
+  } else {
+    Real T0;
+    get_init_Tp(N, Tarr, lgparr, p0,T0, Ne, Text, lgpext);
+    Real rho0 = DensFromPT(eos, Rgas, p0, T0);
+    Real H0 = -p0/rho0/grav_acc;
+    Real iH0 = 1.0/H0;
+    p = p0 * std::exp(-z*iH0);
+    rho = rho0 * std::exp(-z*iH0);
+  }
 
-    return;
+  return;
 }
 
 KOKKOS_INLINE_FUNCTION
@@ -1235,63 +1235,63 @@ void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real 
                                  const Real &grav, const Real &mus, Real &taulim, Real &A,
                                  Real &B, Real (&C)[3], Real (&D)[3], Real (&E)[3],
                                  Real (&gamvv)[3], const Real albedo_set) {
-    Real Tirr4 = SQR(SQR(Tirr));
-    Real Tint4 = SQR(SQR(Tint));
-    Real Teq = Tirr/sqrt(2.0);
+  Real Tirr4 = SQR(SQR(Tirr));
+  Real Tint4 = SQR(SQR(Tint));
+  Real Teq = Tirr/sqrt(2.0);
 
-    Real Teff0 = sqrt(sqrt(Tint4+Tirr4/sqrt(3.0)));
-    Real albedo;
-    get_albedo(Teff0,grav,albedo);
-    if (albedo_set >= 0.0) albedo = albedo_set;   // problem/albedo (observed Bond albedo)
+  Real Teff0 = sqrt(sqrt(Tint4+Tirr4/sqrt(3.0)));
+  Real albedo;
+  get_albedo(Teff0,grav,albedo);
+  if (albedo_set >= 0.0) albedo = albedo_set;   // problem/albedo (observed Bond albedo)
 
-    Real Teff = sqrt(sqrt(Tint4+(1.0-albedo)*mus*Tirr4));
-    Real gamv1, gamv2, gamv3, beta, gamir1, gamir2;
-    get_picket_fence_coeff(Teq, Teff, gamv1, gamv2, gamv3, beta, gamir1, gamir2);
+  Real Teff = sqrt(sqrt(Tint4+(1.0-albedo)*mus*Tirr4));
+  Real gamv1, gamv2, gamv3, beta, gamir1, gamir2;
+  get_picket_fence_coeff(Teq, Teff, gamv1, gamv2, gamv3, beta, gamir1, gamir2);
 
-    Real R = gamir1/gamir2;
-    Real gamp = gamir1 + gamir2 - SQR(gamir2)*R;
-    taulim = sqrt(R/3.0)*sqrt(beta*SQR(R-1.0)-SQR(beta*(R-1.0))+R)/SQR(gamir1);
-    Real At1 = SQR(gamir1)*log(1.0+1.0/(taulim*gamir1));
-    Real At2 = SQR(gamir2)*log(1.0+1.0/(taulim*gamir2));
+  Real R = gamir1/gamir2;
+  Real gamp = gamir1 + gamir2 - SQR(gamir2)*R;
+  taulim = sqrt(R/3.0)*sqrt(beta*SQR(R-1.0)-SQR(beta*(R-1.0))+R)/SQR(gamir1);
+  Real At1 = SQR(gamir1)*log(1.0+1.0/(taulim*gamir1));
+  Real At2 = SQR(gamir2)*log(1.0+1.0/(taulim*gamir2));
 
-    Real a0 = 1.0/gamir1 + 1.0/gamir2;
-    Real a1 = -1.0/(3.0*SQR(taulim))
-        *(gamp/(1.0-gamp)*(gamir1+gamir2-2.0)/(gamir1+gamir2) + (gamir1+gamir2)
-          *taulim - (At1+At2)*SQR(taulim));
-    Real b0 = 1.0/(gamir1*gamir2/(gamir1-gamir2)*(At1-At2)/3.0 - SQR(gamir1*gamir2)
-                   /sqrt(3.0*gamp) - SQR(gamir1*gamir2)*gamir1*gamir2/(1.0-gamir1)
-                       /(1.0-gamir2)/(gamir1+gamir2));
-    A = 1.0/3.0*(a0+a1*b0);
-    B = -1.0/3.0*SQR(gamir1*gamir2)/gamp*b0;
+  Real a0 = 1.0/gamir1 + 1.0/gamir2;
+  Real a1 = -1.0/(3.0*SQR(taulim))
+      *(gamp/(1.0-gamp)*(gamir1+gamir2-2.0)/(gamir1+gamir2) + (gamir1+gamir2)
+        *taulim - (At1+At2)*SQR(taulim));
+  Real b0 = 1.0/(gamir1*gamir2/(gamir1-gamir2)*(At1-At2)/3.0 - SQR(gamir1*gamir2)
+                 /sqrt(3.0*gamp) - SQR(gamir1*gamir2)*gamir1*gamir2/(1.0-gamir1)
+                     /(1.0-gamir2)/(gamir1+gamir2));
+  A = 1.0/3.0*(a0+a1*b0);
+  B = -1.0/3.0*SQR(gamir1*gamir2)/gamp*b0;
 
-    for (int iv=0; iv<3; ++iv) {
-        Real gamv;
-        if (iv==0) gamv = gamv1;
-        if (iv==1) gamv = gamv2;
-        if (iv==2) gamv = gamv3;
-        gamvv[iv] = gamv;
+  for (int iv=0; iv<3; ++iv) {
+    Real gamv;
+    if (iv==0) gamv = gamv1;
+    if (iv==1) gamv = gamv2;
+    if (iv==2) gamv = gamv3;
+    gamvv[iv] = gamv;
 
-        Real longf = (3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv))
-            *(gamir1+gamir2) - 3.0*gamv
-                *(6.0*SQR(gamir1*gamir2)-SQR(gamv)*(SQR(gamir1)+SQR(gamir2)));
-        Real a2 = SQR(taulim)/(gamp*SQR(gamv)) * longf/(1.0-SQR(gamv*taulim));
-        Real Av1 = SQR(gamir1)*log(1.0+gamv/gamir1);
-        Real Av2 = SQR(gamir2)*log(1.0+gamv/gamir2);
-        Real a3 = -SQR(taulim) * (3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv))
-            *(Av1+Av2) / (gamp*SQR(gamv)*gamv*(1.0-SQR(gamv*taulim)));
-        Real b1 = gamir1*gamir2*(3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv))
-            *SQR(taulim) / (gamp*SQR(gamv)*(SQR(gamv*taulim)-1.0));
-        Real b2 = 3.0*(gamir1+gamir2)*SQR(gamv)
-            *gamv / ((3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv)));
-        Real b3 = (Av2-Av1) / (gamv*(gamir1-gamir2));
+    Real longf = (3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv))
+        *(gamir1+gamir2) - 3.0*gamv
+            *(6.0*SQR(gamir1*gamir2)-SQR(gamv)*(SQR(gamir1)+SQR(gamir2)));
+    Real a2 = SQR(taulim)/(gamp*SQR(gamv)) * longf/(1.0-SQR(gamv*taulim));
+    Real Av1 = SQR(gamir1)*log(1.0+gamv/gamir1);
+    Real Av2 = SQR(gamir2)*log(1.0+gamv/gamir2);
+    Real a3 = -SQR(taulim) * (3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv))
+        *(Av1+Av2) / (gamp*SQR(gamv)*gamv*(1.0-SQR(gamv*taulim)));
+    Real b1 = gamir1*gamir2*(3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv))
+        *SQR(taulim) / (gamp*SQR(gamv)*(SQR(gamv*taulim)-1.0));
+    Real b2 = 3.0*(gamir1+gamir2)*SQR(gamv)
+        *gamv / ((3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv)));
+    Real b3 = (Av2-Av1) / (gamv*(gamir1-gamir2));
 
-        C[iv] = -1.0/3.0*(b0*b1*(1.0+b2+b3)*a1 + a2 + a3);
-        D[iv] = -B*b1*(1.0+b2+b3);
-        E[iv] = (3.0-SQR(gamv/gamir1))
-            *(3.0-SQR(gamv/gamir2)) / (9.0*gamv*(SQR(gamv*taulim)-1.0));
-    }
+    C[iv] = -1.0/3.0*(b0*b1*(1.0+b2+b3)*a1 + a2 + a3);
+    D[iv] = -B*b1*(1.0+b2+b3);
+    E[iv] = (3.0-SQR(gamv/gamir1))
+        *(3.0-SQR(gamv/gamir2)) / (9.0*gamv*(SQR(gamv*taulim)-1.0));
+  }
 
-    return;
+  return;
 }
 
 KOKKOS_INLINE_FUNCTION
@@ -1299,15 +1299,15 @@ void get_picket_fence_Ttau(const Real &Tint, const Real &Tirr, const Real &mus,
                            const Real taulim, const Real &A, const Real &B,
                                const Real (&C)[3], Real (&D)[3], Real (&E)[3],
                                    Real (&gamv)[3], const Real &tau, Real &T) {
-    Real Tirr4 = SQR(SQR(Tirr));
-    Real Tint4 = SQR(SQR(Tint));
-    Real T4 = 3.0/4.0*Tint4*(tau + A + B*exp(-tau/taulim));
-    for (int iv=0; iv<3; ++iv) {
-        T4 += 3.0/4.0*1.0/3.0*Tirr4*mus*(C[iv] + D[iv]*exp(-tau/taulim)
-                                         + E[iv]*exp(-gamv[iv]*tau));
-    }
-    T = sqrt(sqrt(T4));
-    return;
+  Real Tirr4 = SQR(SQR(Tirr));
+  Real Tint4 = SQR(SQR(Tint));
+  Real T4 = 3.0/4.0*Tint4*(tau + A + B*exp(-tau/taulim));
+  for (int iv=0; iv<3; ++iv) {
+    T4 += 3.0/4.0*1.0/3.0*Tirr4*mus*(C[iv] + D[iv]*exp(-tau/taulim)
+                                     + E[iv]*exp(-gamv[iv]*tau));
+  }
+  T = sqrt(sqrt(T4));
+  return;
 }
 
 template <typename View1D>
@@ -1315,44 +1315,44 @@ void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &
                              const Real &Tint, const Real &Tirr, const Real &met,
                              const Real &grav, const Real &mus, const int &N, View1D Tarr,
                              View1D lgparr) {
-    Real bar = 1.0e6;
-    Real tautop = 1.0e-6;
-    Real Ttop;
-    Real taulim, A, B, C[3], D[3], E[3], gamv[3];
-    get_picket_fence_Ttau_coeff(Tint, Tirr, met, grav, mus, taulim, A, B, C, D, E, gamv,
-                                two_stream_rt::rt_albedo_set);
-    get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tautop, Ttop);
-    Real kapr, ptop;
-    ptop = 2.0; // 2e-6 bar
-    get_kapr(Ttop, ptop, met, kapr);
-    tautop = kapr/grav*ptop;
-    get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tautop, Ttop);
+  Real bar = 1.0e6;
+  Real tautop = 1.0e-6;
+  Real Ttop;
+  Real taulim, A, B, C[3], D[3], E[3], gamv[3];
+  get_picket_fence_Ttau_coeff(Tint, Tirr, met, grav, mus, taulim, A, B, C, D, E, gamv,
+                              two_stream_rt::rt_albedo_set);
+  get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tautop, Ttop);
+  Real kapr, ptop;
+  ptop = 2.0; // 2e-6 bar
+  get_kapr(Ttop, ptop, met, kapr);
+  tautop = kapr/grav*ptop;
+  get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tautop, Ttop);
 
-    Real lgptop = log10(ptop);
-    Real pbot = 300.0*bar;
-    Real lgpbot = log10(pbot);
-    Real dlgp = (lgpbot-lgptop)/(N-1);
-    Real lgp = lgptop;
-    Real p = pow(10.0,lgp);
-    Real tau = tautop;
-    Real lgtau = log10(tau);
-    Real T;
+  Real lgptop = log10(ptop);
+  Real pbot = 300.0*bar;
+  Real lgpbot = log10(pbot);
+  Real dlgp = (lgpbot-lgptop)/(N-1);
+  Real lgp = lgptop;
+  Real p = pow(10.0,lgp);
+  Real tau = tautop;
+  Real lgtau = log10(tau);
+  Real T;
+  get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tau, T);
+  get_kapr(Ttop, p, met, kapr);
+  for (int ip=0; ip<N; ++ ip) {
+    Tarr(ip) = T;
+    lgparr(ip) = lgp;
+    Real K = p*kapr/grav*log(10.0);
+    tau += K*dlgp;
+    lgp += dlgp;
+    p = pow(10.0,lgp);
     get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tau, T);
-    get_kapr(Ttop, p, met, kapr);
-    for (int ip=0; ip<N; ++ ip) {
-        Tarr(ip) = T;
-        lgparr(ip) = lgp;
-        Real K = p*kapr/grav*log(10.0);
-        tau += K*dlgp;
-        lgp += dlgp;
-        p = pow(10.0,lgp);
-        get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tau, T);
-        get_kapr(T, p, met, kapr);
-    }
+    get_kapr(T, p, met, kapr);
+  }
 
-    adjust_ad_pT_arr(eos, Rgas, gamma, N, Tarr, lgparr);
+  adjust_ad_pT_arr(eos, Rgas, gamma, N, Tarr, lgparr);
 
-    return;
+  return;
 }
 
 //----------------------------------------------------------------------------------------
