@@ -195,10 +195,13 @@
           Real iv;
           if (inw && l == n1 - 1 && (x1f_(m) & 2)) {
             // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat),
-            // or with the top bath (vgdbath-1011) its incident intensity attenuated
+            // or with the top bath (vgdbath-1011) or a reflecting top (the mirrored
+            // intensity in the ghost shell, VetGdTopMirror) its inflow attenuated
             const Real rtop = cx1f(m,ie+1);
             const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
-            iv = VgdTopInflow(ch0, ds, s0, exp(csx(m,1,k,j,i-1)), tbh, itop);
+            const bool rfl = (x1f_(m) & 4);
+            iv = VgdTopInflow(ch0, ds, s0, exp(csx(m,1,k,j,i-1)), tbh || rfl,
+                              rfl ? vix(m,d,k,j,i+1) : itop);
           } else if (!inw && zr < 1.0e-12*r) {
             iv = s0;                     // tangent at the cell centre (measure zero)
           } else {

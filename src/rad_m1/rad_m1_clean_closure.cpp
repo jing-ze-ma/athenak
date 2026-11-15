@@ -858,7 +858,8 @@ void RadiationM1::CleanClosureFromGd() {
 //! cell gets what its inner one carries plus the exchange V chi (S - J, -H) less the
 //! lateral outflow (the momentum in the column's basis), so that the energy balance of
 //! every cell is the vet_gd exchange to round-off.  Several MeshBlocks along x1: a level
-//! starts from the top face of the level below (vgd_x1b -> vgd_x1r), one level per pass.
+//! starts from the top face of the level below (vgd_x1b -> vgd_x1r), one level per pass;
+//! at a reflecting top the remainder is spread over the outermost level (zero wall flux).
 
 void RadiationM1::CleanGdFaceSums() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -991,6 +992,19 @@ void RadiationM1::CleanGdFaceSums() {
             }
           }
         }
+      }
+      if (xf_(m) & 4) {
+        // a reflecting top: the rays' remainder at the wall (their non-conservation)
+        // spread over the cells of the level by volume, so that none leaves through it
+        Real vt = 0.0, vc = 0.0;
+        for (int i = is; i <= ie; ++i) vt += x.vol(m,k,j,i);
+        for (int i = is + 1; i <= ie; ++i) {
+          vc += x.vol(m,k,j,i-1);
+          for (int c = 0; c < 4; ++c) {
+            cs(m,CLN_FX+c,k,j,i) -= q[c]*vc/(vt*x.area[0](m,k,j,i));
+          }
+        }
+        for (int c = 0; c < 4; ++c) q[c] = 0.0;
       }
       for (int c = 0; c < 4; ++c) {
         cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);

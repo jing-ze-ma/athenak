@@ -812,11 +812,10 @@ void RadiationM1::VetGdInit() {
   Mesh *pm = pmy_pack->pmesh;
   if (vgd_nside < 1 || vgd_nside > 6) {VgdFatal("vet_gd_nside must be 1..6");}
   if (!pm->three_d) {VgdFatal("needs a 3-D wedge");}
-  if (ibc_x1max != M1_IBC_MARSHAK) {
-    // the sweep has a VACUUM top: a reflecting (or any non-Marshak) outer x1 of the M1
-    // solve would be inconsistent with it near the top (GD_RESULTS.md, open item)
-    VgdFatal("reflecting outer x1 not supported; use implicit_bc_x1max = marshak "
-             "(+ vet_col_surface_q)");
+  if (ibc_x1max != M1_IBC_MARSHAK && !(clean && ibc_x1max == M1_IBC_REFLECT)) {
+    // the sweep has a vacuum top, or a mirror (VetGdTopMirror) for the clean scheme
+    VgdFatal("outer x1 needs implicit_bc_x1max = marshak (+ vet_col_surface_q), or "
+             "reflect with scheme = clean");
   }
   if (ibc_x2min == M1_IBC_MARSHAK || ibc_x2max == M1_IBC_MARSHAK ||
       ibc_x3min == M1_IBC_MARSHAK || ibc_x3max == M1_IBC_MARSHAK) {
@@ -948,6 +947,7 @@ void RadiationM1::VetGdInit() {
     const LogicalLocation &l = pm->lloc_eachmb[pmy_pack->gids + m];
     vgd_x1lv[m] = l.lx1;
     xf_h(m) = (l.lx1 == 0 ? 1 : 0) + (l.lx1 == vgd_nb1 - 1 ? 2 : 0);
+    if (l.lx1 == vgd_nb1 - 1 && ibc_x1max == M1_IBC_REFLECT) {xf_h(m) += 4;}
     for (int g = 0; g < pm->nmb_total; ++g) {
       const LogicalLocation &o = pm->lloc_eachmb[g];
       if (o.level == l.level && o.lx2 == l.lx2 && o.lx3 == l.lx3 &&
@@ -5832,6 +5832,62 @@ void RadiationM1::VetGdX1Hand(const bool up) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdTopMirror
+//! \brief a reflecting outer x1 (scheme = clean): the inflow of every inward direction at
+//! the top face (the outer x1 ghost shell of vgd_i) is the top cell's intensity of the
+//! last sweep in its specular image n - 2 (n . r) r (the nearest set direction), scaled
+//! so that the inflow returns the outflow's radial flux; the top cell's E, isotropic,
+//! when the cell has no outflow (the first sweep)
+
+void RadiationM1::VetGdTopMirror() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1, n = vgd_n, w = vgd_w, ie = indcs.ie;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3, ks = indcs.ks, js = indcs.js;
+  auto dir_ = vgd_dir;
+  auto tg_ = vgd_trig;
+  auto mp_ = vgd_rmap;
+  if (mp_.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(vgd_rmap, nmb1 + 1, nx3, nx2, n);
+    mp_ = vgd_rmap;
+    par_for("m1_vgd_rmap", DevExeSpace(), 0, nmb1, 0, nx3 - 1, 0, nx2 - 1, 0, n - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+      const Real r[3] = {tg_(m,k,j,0)*tg_(m,k,j,3), tg_(m,k,j,0)*tg_(m,k,j,2),
+                         tg_(m,k,j,1)};
+      const Real mr = dir_(d,0)*r[0] + dir_(d,1)*r[1] + dir_(d,2)*r[2];
+      Real best = -2.0;
+      for (int q = 0; q < n; ++q) {
+        Real c = 0.0;
+        for (int a = 0; a < 3; ++a) {c += dir_(q,a)*(dir_(d,a) - 2.0*mr*r[a]);}
+        if (c > best) {best = c; mp_(m,k,j,d) = q;}
+      }
+    });
+  }
+  auto vi_ = vgd_i;
+  auto iw_ = iw;
+  auto xf_ = vgd_x1f;
+  par_for("m1_vgd_mirror", DevExeSpace(), 0, nmb1, 0, nx3 - 1, 0, nx2 - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    if (!(xf_(m) & 4)) {return;}
+    const Real r[3] = {tg_(m,k,j,0)*tg_(m,k,j,3), tg_(m,k,j,0)*tg_(m,k,j,2),
+                       tg_(m,k,j,1)};
+    Real hp = 0.0, hm = 0.0;
+    for (int d = 0; d < n; ++d) {
+      const Real mr = dir_(d,0)*r[0] + dir_(d,1)*r[1] + dir_(d,2)*r[2];
+      if (mr >= 0.0) {
+        hp += dir_(d,3)*mr*vi_(m,d,k+w,j+w,ie);
+      } else {
+        hm -= dir_(d,3)*mr*vi_(m,mp_(m,k,j,d),k+w,j+w,ie);
+      }
+    }
+    const Real e0 = iw_(m,M1_IW_EN,k+ks,j+js,ie);
+    for (int d = 0; d < n; ++d) {   // (the outward ones are not read)
+      vi_(m,d,k+w,j+w,ie+1) = (hp > 0.0 && hm > 0.0) ?
+                              hp/hm*vi_(m,mp_(m,k,j,d),k+w,j+w,ie) : e0;
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdX1Pass
 //! \brief vgd_x1b(m, :) of every MeshBlock to vgd_x1r of its x1 neighbour above (up) or
 //! below (an on-rank copy or one message per block)
@@ -6123,6 +6179,7 @@ void RadiationM1::VetGdSweep() {
                    (vgd_fuse_h <= 1) && (vgd_hx_mode != 2);
   // mem2-1014 vet_gd_band_ring: shells lent a wide slab while their band is needed
   // (xffuse-1113: the other set's array as the second one, VetGdRingFlush)
+  if (ibc_x1max == M1_IBC_REFLECT) {VetGdTopMirror();}
   VetGdRingSweepBegin(vgd_sw2 || xffs);
   const bool rga = vgd_ring_act;
   for (int pass = 0; pass < 2; ++pass) {
