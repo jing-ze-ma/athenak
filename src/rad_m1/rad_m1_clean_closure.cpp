@@ -662,9 +662,10 @@ void RadiationM1::CleanFvSeams() {
 //! \fn bool RadiationM1::CleanFvWallInit
 //! \brief clean_rays = fv | fv1: whether the low (side 0) or high (side 1) theta face of
 //! the mesh is a reflecting wall; at the first call the specular map of its walls
-//! (cln_fvwm, per MeshBlock and column k): each beam leaving through the wall goes into
-//! the incoming set direction nearest to its mirror image n - 2 (n . t) t about the
-//! wall's theta_hat t at the face centre; cln_fvwu holds |n . t|.
+//! (cln_fvwm, per MeshBlock and column k): each incoming set direction takes the leaving
+//! direction nearest to its mirror image n - 2 (n . t) t about the wall's normal t at
+//! the face; cln_fvwu holds |n . t| (t the face's unit normal, the flux factor of every
+//! beam through it).
 
 bool RadiationM1::CleanFvWallInit(const int side) {
   Mesh *pm = pmy_pack->pmesh;
@@ -684,24 +685,30 @@ bool RadiationM1::CleanFvWallInit(const int side) {
   auto u_h = Kokkos::create_mirror_view(cln_fvwu);
   auto d_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_dir);
   auto t_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx2f);
-  auto p_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x3v);
+  auto p_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx3f);
   for (int m = 0; m < nmb; ++m) {
     for (int sd = 0; sd < 2; ++sd) {
       const Real th = t_h(m, sd ? indcs.je + 1 : indcs.js), sgn = sd ? 1.0 : -1.0;
-      for (int k = 0; k < c3; ++k) {
-        const Real t[3] = {cos(th)*cos(p_h(m,k)), cos(th)*sin(p_h(m,k)), -sin(th)};
+      for (int k = indcs.ks; k <= indcs.ke; ++k) {
+        // the unit normal of the wall face (CleanFaceVector: the mean theta_hat over the
+        // face's phi range)
+        const Real p1 = p_h(m,k), p2 = p_h(m,k+1);
+        Real t[3] = {cos(th)*(sin(p2) - sin(p1)), cos(th)*(cos(p1) - cos(p2)),
+                     -sin(th)*(p2 - p1)};
+        const Real tn = std::sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
+        for (int c = 0; c < 3; ++c) t[c] /= tn;
         for (int d = 0; d < n; ++d) {
           const Real nt = d_h(d,0)*t[0] + d_h(d,1)*t[1] + d_h(d,2)*t[2];
           u_h(m,sd,k,d) = std::abs(nt);
           m_h(m,sd,k,d) = -1;
-          if (!(sgn*nt > 0.0)) continue;
+          if (!(sgn*nt < 0.0)) continue;
           const Real v[3] = {d_h(d,0) - 2.0*nt*t[0], d_h(d,1) - 2.0*nt*t[1],
                              d_h(d,2) - 2.0*nt*t[2]};
           Real bd = -2.0;
           for (int e = 0; e < n; ++e) {
             const Real et = d_h(e,0)*t[0] + d_h(e,1)*t[1] + d_h(e,2)*t[2];
             const Real dt = v[0]*d_h(e,0) + v[1]*d_h(e,1) + v[2]*d_h(e,2);
-            if (sgn*et < 0.0 && dt > bd) {bd = dt; m_h(m,sd,k,d) = e;}
+            if (sgn*et > 0.0 && dt > bd) {bd = dt; m_h(m,sd,k,d) = e;}
           }
         }
       }
@@ -714,9 +721,11 @@ bool RadiationM1::CleanFvWallInit(const int side) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFvWalls
-//! \brief the incoming intensities of the reflecting theta walls (cln_fvw) from the beams
-//! of the wall cells leaving through them: I(e) = sum_{d -> e} w_d |n_d . t| I_d /
-//! (w_e |n_e . t|), so that every wall face returns exactly the energy it receives
+//! \brief the incoming intensities of the reflecting theta walls (cln_fvw): each incoming
+//! direction e takes the intensity of the wall cell along its mirror direction, scaled
+//! on each wall face so that it returns exactly the energy it receives,
+//! sum_e w_e |n_e . t| I(e) = sum_out w_d |n_d . t| I_d (isotropic radiation stays
+//! isotropic: the set integrates n exactly)
 
 void RadiationM1::CleanFvWalls() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -732,15 +741,14 @@ void RadiationM1::CleanFvWalls() {
   KOKKOS_LAMBDA(const int m, const int sd, const int k, const int i) {
     const int jc = sd ? je : js;
     if (!CleanBoundaryFace(x, 1, m, k, sd ? je + 1 : js, i)) return;
-    for (int e = 0; e < n; ++e) fw(m,sd,k,i,e) = 0.0;
-    for (int d = 0; d < n; ++d) {
-      const int e = mp(m,sd,k,d);
-      if (e >= 0) fw(m,sd,k,i,e) += dir_(d,3)*u(m,sd,k,d)*fi(m,d,k,jc,i);
-    }
+    Real so = 0.0, si = 0.0;
     for (int e = 0; e < n; ++e) {
-      const Real q = dir_(e,3)*u(m,sd,k,e);
-      fw(m,sd,k,i,e) = (q > 0.0) ? fw(m,sd,k,i,e)/q : 0.0;
+      const int d = mp(m,sd,k,e);
+      const Real q = dir_(e,3)*u(m,sd,k,e)*fi(m,(d >= 0) ? d : e,k,jc,i);
+      fw(m,sd,k,i,e) = (d >= 0) ? fi(m,d,k,jc,i) : 0.0;
+      if (d >= 0) {si += q;} else {so += q;}
     }
+    for (int e = 0; e < n; ++e) fw(m,sd,k,i,e) *= (si > 0.0) ? so/si : 0.0;
   });
 }
 
