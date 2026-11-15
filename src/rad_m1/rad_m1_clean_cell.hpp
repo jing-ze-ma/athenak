@@ -28,7 +28,12 @@
 //! from the Newton iterate (lagged) so that every pass stays a linear solve.
 //! With clean_consistency every interior face flux also carries the fixed bracket
 //! C = F_ray - f(Ur), the rays' kinetic flux less the face flux of their cell moments
-//! Ur = (J, J h), so that Ur is a steady state of the discrete moment equations.
+//! Ur = (J, J h), so that Ur is a steady state of the discrete moment equations.  Its
+//! streaming share w moves E and y with the rays' half-range flux factors,
+//! c (h+_L U_L + h-_R U_R): the momentum deviation R = y - h E, which takes what the
+//! closure's change leaves (y_old - h E), streams out as the rays do and is absorbed at
+//! chi, so y relaxes to h E and the gas takes the exchange h chi (y - a E/c); on open
+//! boundaries and walls R leaves with the inner cell's h+- (CleanCellDeviationFlux).
 //!
 //! On a spherical-polar mesh y holds the physical components (y_r, y_theta, y_phi), div
 //! is the finite-volume divergence sum A_f f/V, with the angular-momentum conserving
@@ -80,8 +85,7 @@ constexpr int CLC_KP = 187;
 constexpr int CLC_T1 = 203;  // preconditioner scratch vectors
 constexpr int CLC_T2 = 207;
 constexpr int CLC_U = 211;   // the rays' cell moments (J, J h)
-constexpr int CLC_WC = 215;  // the rays' streaming weight of the cell
-constexpr int CLC_N = 216;
+constexpr int CLC_N = 215;
 
 // dissipation weight candidates (<rad_m1>/clean_alpha)
 constexpr int CLA_TAU = 0;          // A(tau) = (1 - exp(-tau))/tau
@@ -249,14 +253,20 @@ void CleanCellSphWeights(const CleanArgs &x, const int dir, const int m, const i
 //! (A_r+ - A_r-)/(2V) and -c D_pp (A_t+ - A_t-)/V that cancels the area terms of a
 //! uniform isotropic stress exactly.  The share of a low-order face, whose stress is
 //! that of D = I, takes D_tt = D_pp = 1, so that it cancels that face's area term too.
+//! With clean_consistency an interior face's streaming share w carries the stress of
+//! the rays' moments (F_ray) and moves only y beyond them: its share of the curvature
+//! terms is that of J (kin = true, per unit J), the rest that of E.
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int j,
-                        const int i, Real g[3]) {
+                        const int i, Real g[3], const bool kin = false) {
   const Real hv = x.h*x.c/x.vol(m,k,j,i);
   const Real dtt = CleanDiag(x, 1, 1, m, k, j, i), dpp = CleanDiag(x, 2, 2, m, k, j, i);
   auto d = [&](const int dir, const int kk, const int jj, const int ii, const Real dc) {
-    return (x.fc[dir](m,CLF_LO,kk,jj,ii) > 0.0 ? 1.0 : dc)*x.area[dir](m,kk,jj,ii);
+    const Real w = (x.consist && !CleanBoundaryFace(x, dir, m, kk, jj, ii)) ?
+                   x.fc[dir](m,CLF_WK,kk,jj,ii) : 0.0;
+    return (kin ? w : 1.0 - w)*(x.fc[dir](m,CLF_LO,kk,jj,ii) > 0.0 ? 1.0 : dc)*
+           x.area[dir](m,kk,jj,ii);
   };
   const Real dr = 0.5*(dtt + dpp);
   g[0] = -hv*(d(0, k, j, i+1, dr) - d(0, k, j, i, dr));
@@ -353,6 +363,21 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanCellDeviationFlux
+//! \brief adds the flux wh R_b of the momentum deviation R = y - h E of cell (k,j,i) to
+//! the flux rows nb0..nb1-1 of jj (wh = w c h+-, the rays' half-range flux factor)
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellDeviationFlux(const CleanArgs &x, const int m, const int k, const int j,
+                            const int i, const int nb0, const int nb1, const Real wh,
+                            Real jj[4][4]) {
+  for (int b = nb0; b < nb1; ++b) {
+    jj[1+b][1+b] += wh;
+    jj[1+b][0] -= wh*(x.cs(m,CLN_HP+b,k,j,i) + x.cs(m,CLN_HM+b,k,j,i));
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanCellFaceJacobian
 //! \brief derivatives jl, jr of the face fluxes (fE, fY_1..3) at face (k,j,i) normal to
 //! dir with respect to the states (E, y_1..3) of the cells L and R.  The terms in the
@@ -363,7 +388,8 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
 //! every interior face low-order fY is the upwind (a = c) flux between the inner cell and
 //! the ghost of CleanCellGhost, a low-order boundary face (clean_pos_boundary) the upwind
 //! characteristic flux (D = I) for both; a reflecting wall carries only the normal stress
-//! of the inner cell.
+//! of the inner cell.  With clean_consistency the leaving stress and the wall carry the
+//! momentum deviation of the inner cell out (CleanCellDeviationFlux, weight w).
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const int k,
@@ -384,8 +410,12 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
     const int bc = blo ? CleanBc(x, m, 2*dir) : CleanBc(x, m, 2*dir+1);
     Real (*jj)[4] = blo ? jr : jl;
     const int kc = blo ? k : kl, jc = blo ? j : jl_, ic = blo ? i : il;
+    const Real wo = x.consist ? x.c*x.fc[dir](m,CLF_WK,k,j,i)*
+                                x.cs(m,(blo ? CLN_HM : CLN_HP)+dir,kc,jc,ic) : 0.0;
     if (bc == M1_IBC_REFLECT) {
       jj[1+dir][0] = x.c*CleanDiag(x, dir, dir, m, kc, jc, ic);
+      // the mirror image returns R_t and reverses R_d
+      CleanCellDeviationFlux(x, m, kc, jc, ic, dir, dir + 1, 2.0*wo, jj);
       return;
     }
     const Real sg = blo ? -0.5*x.c : 0.5*x.c;
@@ -410,6 +440,7 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
         jj[1+b][1+b] = sg;
       } else {
         jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, kc, jc, ic, blo);
+        CleanCellDeviationFlux(x, m, kc, jc, ic, b, b + 1, wo, jj);
       }
     }
     return;
@@ -436,7 +467,7 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
   }
   if (!x.consist) return;
   // clean_consistency: w of the face takes the rays' kinetic upwind flux, the cells'
-  // half-range factors on E (c h+_L E_L + c h-_R E_R, stress CleanCellOutStress)
+  // half-range factors on E and y (c h+_L U_L + c h-_R U_R)
   const Real w = x.fc[dir](m,CLF_WK,k,j,i);
   for (int r = 0; r < 4; ++r) {
     for (int c = 0; c < 4; ++c) {
@@ -444,11 +475,9 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
       jr[r][c] *= 1.0 - w;
     }
   }
-  jl[0][0] += w*x.c*x.cs(m,CLN_HP+dir,kl,jl_,il);
-  jr[0][0] += w*x.c*x.cs(m,CLN_HM+dir,k,j,i);
-  for (int b = 0; b < x.nf; ++b) {
-    jl[1+b][0] += w*x.c*CleanCellOutStress(x, dir, b, m, kl, jl_, il, false);
-    jr[1+b][0] += w*x.c*CleanCellOutStress(x, dir, b, m, k, j, i, true);
+  for (int r = 0; r <= x.nf; ++r) {
+    jl[r][r] += w*x.c*x.cs(m,CLN_HP+dir,kl,jl_,il);
+    jr[r][r] += w*x.c*x.cs(m,CLN_HM+dir,k,j,i);
   }
 }
 
@@ -500,21 +529,6 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanCellKineticRow
-//! \brief the y_b row of cell (k,j,i) for the cell vector at slot v (clean_consistency):
-//! its streaming share wc takes y_b = h_b E, the rays' flux factor on E (the deviation
-//! from the rays' moments carries their angular shape); row is that of the moment
-//! equation
-
-KOKKOS_INLINE_FUNCTION
-Real CleanCellKineticRow(const CleanArgs &x, const int v, const int b, const int m,
-                         const int k, const int j, const int i, const Real row) {
-  const Real wc = x.u(m,CLC_WC,k,j,i);
-  const Real hb = x.cs(m,CLN_HP+b,k,j,i) + x.cs(m,CLN_HM+b,k,j,i);
-  return (1.0 - wc)*row + wc*(x.u(m,v+1+b,k,j,i) - hb*x.u(m,v,k,j,i));
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void CleanCellDivergence
 //! \brief h div of the face fluxes of cell (k,j,i) for the cell vector at slot v (adiv
 //! adds the sum of their magnitudes)
@@ -549,6 +563,10 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
     Real g[3];
     CleanCellSphSource(x, m, k, j, i, g);
     for (int b = 0; b < x.nf; ++b) div[1+b] += g[b]*x.u(m,v,k,j,i);
+    if (with_source && x.consist) {
+      CleanCellSphSource(x, m, k, j, i, g, true);
+      for (int b = 0; b < x.nf; ++b) div[1+b] += g[b]*x.cs(m,CLN_J,k,j,i);
+    }
   }
 }
 
@@ -577,6 +595,11 @@ void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, con
       CleanCellFaceSource(x, dir, m, k, j, i, s);
       for (int r = 0; r < 4; ++r) div[r] -= wm[r]*s[r];
     }
+  }
+  if (x.sph && x.consist) {
+    Real g[3];
+    CleanCellSphSource(x, m, k, j, i, g, true);
+    for (int b = 0; b < x.nf; ++b) div[1+b] += g[b]*x.cs(m,CLN_J,k,j,i);
   }
 }
 
