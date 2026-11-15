@@ -1536,7 +1536,7 @@ inline bool ck_wall_flux_exact = false;
 // With ck_impl_lin (production path) face 5 needs ck_impl_lin_thr = 1 and ck_nquad = 2
 // (ck_coef then stores the triple at mu_eff for a frozen chain kernel that reads it).
 inline int ck_vef_every = 1;
-inline int ck_vef_ncore = 8;          // rays through the bottom wall (p < r_cut)
+constexpr int ck_vef_ncore = 8;       // rays through the bottom wall (p < r_cut)
 inline bool ck_vef_sync = true;
 // problem/ck_sph_face = 6 (the DEFAULT): the VEF closure of face
 // 5 (same formal solution,

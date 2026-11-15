@@ -729,14 +729,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << "(1.07x internal flux); set it true to switch" << std::endl;
     }
   }
-  // problem/ck_vef_every, ck_vef_ncore: the formal solution of ck_sph_face = 5.  With
+  // problem/ck_vef_every: the formal solution of ck_sph_face = 5.  With
   // face 5 the DEFAULTS of ck_vef_every (150), ck_impl_rowfb (true) and ck_impl_rsec (4)
   // are the measured cheapest accuracy-neutral setting;
   // explicit keys override; face 0 keeps the plain defaults (bitwise)
   const bool vef5 = two_stream_rt::ck_vef_on;
   two_stream_rt::ck_vef_every = pin->GetOrAddInteger("problem","ck_vef_every",
                                                      vef5 ? 150 : 1);
-  two_stream_rt::ck_vef_ncore = pin->GetOrAddInteger("problem","ck_vef_ncore",8);
   two_stream_rt::ck_vef_sync = pin->GetOrAddBoolean("problem","ck_vef_sync",true);
   // face 5 runs on the production linear path (ck_impl_lin, the paired tier, its
   // Jacobian from the factorisation); faces 1-4 on the chain kernel only
@@ -824,8 +823,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // (utils/two_stream_column_ck.hpp, tests_ck_implicit/README_jac.md)
   two_stream_rt::ck_impl_esc = pin->GetOrAddInteger("problem","ck_impl_esc",0);
   two_stream_rt::ck_impl_esc_rho = pin->GetOrAddReal("problem","ck_impl_esc_rho",0.9);
-  two_stream_rt::ck_impl_esc_extra =
-      pin->GetOrAddInteger("problem","ck_impl_esc_extra",8);
   two_stream_rt::ck_impl_aa = pin->GetOrAddInteger("problem","ck_impl_aa",0);
   two_stream_rt::ck_impl_aa_rst = pin->GetOrAddBoolean("problem","ck_impl_aa_rst",true);
   // problem/ck_impl_floorbound / ck_impl_kkt_demax: the Newton as a bound-constrained
