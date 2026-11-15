@@ -1,0 +1,113 @@
+# AthenaK input file: clean implicit grey M1 on a 3-D periodic multi-block mesh
+
+<comment>
+problem = clean M1 (cell layout, kinetic consistency) on a 3-D periodic mesh: a hot
+          ellipsoid with gas feedback; single vs multi-block regression
+
+<job>
+basename = clean_mb3d
+
+<mesh>
+nghost = 2
+nx1 = 16
+x1min = 0.0
+x1max = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+nx2 = 16
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 16
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 16
+nx2 = 16
+nx3 = 16
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = -1
+tlim = 1.875e-3
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+
+<rad_m1>
+vet_x1_npass = 8
+scheme = clean
+clean_layout = cell
+clean_closure = extrap1
+clean_maxpic = 4
+clean_pc_sweeps = 2
+clean_consistency = true
+clean_consistency_weight = true
+c_light = 100.0
+chat_over_c = 1.0
+cfl_rad = 0.4
+thick_flux = none
+closure = vet_sc
+e_floor = 1.0e-30
+subcycle = true
+opacity = const
+kappa_p = 10.0
+kappa_e = 10.0
+kappa_f = 10.0
+kappa_s = 0.0
+arad = 1
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 1.0
+implicit_tol = 1.0e-11
+implicit_maxit = 200
+implicit_lin_tol = 1.0e-13
+implicit_lin_maxit = 400
+implicit_solver = bicgstab
+implicit_offdiag = operator
+implicit_closure_lag = step
+implicit_recon = dc
+implicit_vimp = true
+time_scheme = hesdirk2
+vet_nmu = 4
+vet_nphi = 8
+vet_tensor = full
+vet_x1_periodic = true
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test = hot_blob
+blob_rho = 10.0
+blob_temp = 1.0
+bg_rho = 1.0e-2
+bg_temp = 0.5
+blob_x1 = 0.43
+blob_x2 = 0.56
+blob_x3 = 0.5
+blob_a1 = 0.2
+blob_a2 = 0.2
+blob_a3 = 0.15
+blob_edge = 0.03
+
+<output1>
+file_type = bin
+variable = hydro_u
+dt = 1.875e-3
+bin_double = true
+
+<output2>
+file_type = bin
+variable = m1
+dt = 1.875e-3
+bin_double = true
