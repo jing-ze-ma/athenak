@@ -789,7 +789,6 @@ void MHD::C2PTrack(Driver *pdrive, int stage, bool before) {
 //! Hydro::RTStrangSplit: Strang halves (dt/2 in "before_timeintegrator", stage 0, and
 //! dt/2 in "after_timeintegrator") or, with user_split_once, ONE call with the full cycle
 //! dt after the last RK stage. pmesh->dt is the cycle dt in both lists.
-//! with user_split_pre_late the first half comes from Driver::Execute (stage = -1).
 
 TaskStatus MHD::RTStrangSplit(Driver *pdrive, int stage) {
   Mesh *pm = pmy_pack->pmesh;
@@ -802,10 +801,7 @@ TaskStatus MHD::RTStrangSplit(Driver *pdrive, int stage) {
     RTOpSplitBvals();
     return TaskStatus::complete;
   }
-  // user_split_pre_late: the first half is called by the Driver with
-  // stage = -1, after the leading RKG super-step; the task-list call (stage 0) skips
-  if (pm->pgen->user_split_pre_late && stage == 0) return TaskStatus::complete;
-  pm->pgen->user_split_half = (stage <= 0) ? 1 : 2;
+  pm->pgen->user_split_half = (stage == 0) ? 1 : 2;
   (pm->pgen->user_split_func)(pm, 0.5*(pm->dt));
   pm->pgen->user_split_half = 0;
   RTOpSplitBvals();

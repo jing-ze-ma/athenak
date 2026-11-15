@@ -553,24 +553,14 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     //  half sets 4|5 = the mean of the two (as rkg_strang); history rows are written on
     //  sync cycles only, so a row books the mean flux of the cycle's leading super-step
     //  (fused or opening) and its closing half.
-    //  dhj <problem>/ck_strang (user_split_pre_late): the ck RT is Strang-split too,
-    //  ck(dt/2) H ck(dt/2), nested INSIDE the RKG halves: R ck H ck R.  The first ck
-    //  half is taken here right after the leading RKG step, the second stays in A, and
-    //  the RKG step(s) that follow H (Lie R(dt), unfused half 2, the fused closing half)
-    //  move after A.
     Resistivity *prs0 = (pmesh->pmb_pack->pmhd != nullptr) ?
                         pmesh->pmb_pack->pmhd->presist : nullptr;
     const bool rkg_fuse = (prs0 != nullptr) && prs0->use_rkg_sts && prs0->rkg_strang &&
                           prs0->rkg_strang_fuse;
-    const bool ck_late = (pmesh->pgen != nullptr) &&
-                         (pmesh->pgen->user_split_func != nullptr) &&
-                         !pmesh->pgen->user_split_once &&
-                         pmesh->pgen->user_split_pre_late &&
-                         (pmesh->pmb_pack->pmhd != nullptr);
     // rkgfuse-1102 <mhd>/tracer_strang: the tracer pass in halves, inside the RKG halves
     const bool trc_s = (pmesh->pmb_pack->pmhd != nullptr) &&
                        pmesh->pmb_pack->pmhd->trc_strang;
-    const bool rkg_late = rkg_fuse || ck_late || trc_s;
+    const bool rkg_late = rkg_fuse || trc_s;
     if (rkg_fuse && pmesh->adaptive) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mhd>/rkg_strang_fuse is not supported with AMR"
@@ -697,8 +687,6 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // rkgfuse-1102 <mhd>/tracer_strang: the first tracer half, inside the leading RKG
       // step and outside the first ck half
       if (trc_s) {pmesh->pmb_pack->pmhd->TracerSourceHalf(1);}
-      // rkgfuse-1102 dhj ck_strang: the first ck half, inside the leading RKG step
-      if (ck_late) {(void) pmesh->pmb_pack->pmhd->RTStrangSplit(this, -1);}
 
       // time-integrator tasks for each stage of integrator
       // <rad_m1>/time_scheme = hesdirk2 (rad_m1_time2.cpp): the implicit radiation solve
