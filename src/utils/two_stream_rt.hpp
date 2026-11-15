@@ -1545,18 +1545,6 @@ inline bool ck_wall_flux_exact = false;
 inline int ck_vef_every = 1;
 inline int ck_vef_ncore = 8;          // rays through the bottom wall (p < r_cut)
 inline bool ck_vef_sync = true;
-// problem/ck_vef_report = N > 0 (diagnostic, print only): at every VEF refresh (after
-// the first) rank 0 prints, per pressure decade, the range of f = s^2/3 and of the face
-// factor gamma over all (band, g, cell), the largest relative change of s and gamma
-// against the factors being replaced (the lag of ck_vef_every), and the number of faces
-// whose x = gamma rho' (see the kernel) is outside [1/1.1, 1.1].  Nothing reads it.
-inline int ck_vef_report = 0;
-// problem/ck_f6_report = N > 0 (diagnostic, print only, read only when named): after
-// every ck_sph_face = 6 build rank 0 prints the number of ladder elements (g_s, g_p,
-// K_eq/B, R_c over all cells and (band, g)), how many are negative or not finite, and
-// the smallest ratio row excess / diagonal of the node rows in K (the shunt g_p over
-// g_p + the node's two series conductances; > 0: strictly diagonally dominant).
-inline int ck_f6_report = 0;
 // problem/ck_vef_xlim = X > 1 (default 0 = off, bitwise): limit the VEF face factor
 // x = gamma rho' of every interior face to [1/X, X] (gamma = (Phi f)_a/(Phi f)_b,
 // rho' = (A_b/A_a) s_b/s_a).  The face map of ck_sph_face = 5 has the reflections
@@ -1659,87 +1647,6 @@ KOKKOS_INLINE_FUNCTION
 Real CkF6Rc(const CkF6Cell &a, const CkF6Cell &b) {
   const Real la2 = a.lam*a.lam, lb2 = b.lam*b.lam;
   return lb2/(1.0 + lb2)*a.z*a.phc + la2/(1.0 + la2)*b.z*b.phc;
-}
-template <typename XF>
-inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs,
-                        const DvceArray5D<Real> &vg,
-                        const DvceArray5D<Real> &vso, const DvceArray5D<Real> &vgo,
-                        const DvceArray4D<Real> &pb, const DvceArray3D<int> &icc,
-                        const XF &X1F,
-                        const int nmb1, const int nc, const int ks, const int ke,
-                        const int js, const int je, const int ie) {
-  constexpr int NBIN = 12;   // decades 1e-9 .. 1e3 bar
-  constexpr int NQ = 9;      // fmin fmax gmin gmax dsmax dgmax nout xmin xmax
-  DvceArray1D<Real> acc("ck_vef_rep", NBIN*NQ);
-  auto acc_ = acc;
-  Kokkos::parallel_for("ck_vef_rep_init", Kokkos::RangePolicy<DevExeSpace>(0, NBIN),
-  KOKKOS_LAMBDA(const int b) {
-    acc_(b*NQ+0) = 1.0e30; acc_(b*NQ+1) = -1.0e30;
-    acc_(b*NQ+2) = 1.0e30; acc_(b*NQ+3) = -1.0e30;
-    acc_(b*NQ+4) = 0.0; acc_(b*NQ+5) = 0.0; acc_(b*NQ+6) = 0.0;
-    acc_(b*NQ+7) = 1.0e30; acc_(b*NQ+8) = -1.0e30;
-  });
-  par_for("ck_vef_rep", DevExeSpace(), 0, nmb1, 0, nc - 1, ks, ke, js, je,
-  KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
-    const int icut = icc(m,k,j);
-    for (int i=icut; i<=ie; ++i) {
-      const Real p = pb(m,k,j,i);
-      int b = static_cast<int>(floor(log10(fmax(p, 1.0e-30)))) + 9;
-      b = (b < 0) ? 0 : ((b >= NBIN) ? NBIN - 1 : b);
-      const Real s = vs(m,c,i+1,k,j);
-      const Real f = s*s/3.0;
-      const Real g = vg(m,c,i,k,j);
-      Kokkos::atomic_min(&acc_(b*NQ+0), f);
-      Kokkos::atomic_max(&acc_(b*NQ+1), f);
-      Kokkos::atomic_min(&acc_(b*NQ+2), g);
-      Kokkos::atomic_max(&acc_(b*NQ+3), g);
-      const Real so = vso(m,c,i+1,k,j), go = vgo(m,c,i,k,j);
-      if (so > 0.0) Kokkos::atomic_max(&acc_(b*NQ+4), fabs(s/so - 1.0));
-      if (go > 0.0) Kokkos::atomic_max(&acc_(b*NQ+5), fabs(g/go - 1.0));
-      // x = gamma rho' of the face below cell i (rho' = (A_b/A_a) s_b/s_a, A = the
-      // frame area r_node^2): the face reflections are (1 - x)/(1 + x) and
-      // (x - 1)/(1 + x), both >= 0 only at x = 1
-      if (i > icut) {
-        const Real rm = X1F(m,i-1), r0 = X1F(m,i), rp = X1F(m,i+1);
-        const Real ab = rm*rm + rm*r0 + r0*r0, aa = r0*r0 + r0*rp + rp*rp;
-        const Real x = g*(ab/aa)*vs(m,c,i,k,j)/s;
-        Kokkos::atomic_min(&acc_(b*NQ+7), x);
-        Kokkos::atomic_max(&acc_(b*NQ+8), x);
-        if (x > 1.1 || x < 1.0/1.1) Kokkos::atomic_add(&acc_(b*NQ+6), 1.0);
-      }
-    }
-  });
-  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), acc);
-  Real v[NBIN*NQ], r[NBIN*NQ];
-  for (int q=0; q<NBIN*NQ; ++q) v[q] = h(q);
-#if MPI_PARALLEL_ENABLED
-  for (int b=0; b<NBIN; ++b) {
-    v[b*NQ+0] = -v[b*NQ+0]; v[b*NQ+2] = -v[b*NQ+2]; v[b*NQ+7] = -v[b*NQ+7];
-  }
-  Real cnt[NBIN];
-  for (int b=0; b<NBIN; ++b) {
-    cnt[b] = v[b*NQ+6]; v[b*NQ+6] = 0.0;
-  }
-  MPI_Reduce(v, r, NBIN*NQ, MPI_ATHENA_REAL, MPI_MAX, 0, MPI_COMM_WORLD);
-  Real cr[NBIN];
-  MPI_Reduce(cnt, cr, NBIN, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
-  for (int b=0; b<NBIN; ++b) {
-    r[b*NQ+0] = -r[b*NQ+0]; r[b*NQ+2] = -r[b*NQ+2]; r[b*NQ+6] = cr[b];
-    r[b*NQ+7] = -r[b*NQ+7];
-  }
-#else
-  for (int q=0; q<NBIN*NQ; ++q) r[q] = v[q];
-#endif
-  if (global_variable::my_rank == 0) {
-    for (int b=0; b<NBIN; ++b) {
-      if (r[b*NQ+1] < 0.0) continue;
-      std::printf("### vefrep ncycle=%d p=1e%+d f=[%.4e,%.4e] gam=[%.4e,%.4e] "
-                  "dsmax=%.3e dgmax=%.3e x=[%.4e,%.4e] nx10=%.0f\n",
-                  static_cast<int>(pm->ncycle),
-                  b - 9, r[b*NQ+0], r[b*NQ+1], r[b*NQ+2], r[b*NQ+3], r[b*NQ+4],
-                  r[b*NQ+5], r[b*NQ+7], r[b*NQ+8], r[b*NQ+6]);
-    }
-  }
 }
 inline bool CkVefDue(Mesh *pm, const bool ckfop, const bool ckfst) {
   const bool stp = !ck_vef_sync || !ckfop || ckfst;    // a pass that may refresh
