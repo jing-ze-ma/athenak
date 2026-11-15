@@ -625,6 +625,21 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
 
   // coarse-level correction
   CleanCellVCycle(l+1, CLM_B, CLM_X);
+  if (cln_pccyc == 2 && l + 2 < nlev) {
+    // W-cycle: a second cycle on the coarse residual
+    CleanCellLevelApply(c, CLM_X, CLM_T1);
+    par_for("clc_wres", DevExeSpace(), 0, nmb1, 0, c.n[2]-1, 0, c.n[1]-1, 0, c.n[0]-1,
+    KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int ic) {
+      for (int q = 0; q < 4; ++q) {
+        uc(m,CLM_R2+q,kc,jc,ic) = uc(m,CLM_B+q,kc,jc,ic) - uc(m,CLM_T1+q,kc,jc,ic);
+      }
+    });
+    CleanCellVCycle(l+1, CLM_R2, CLM_X2);
+    par_for("clc_wadd", DevExeSpace(), 0, nmb1, 0, c.n[2]-1, 0, c.n[1]-1, 0, c.n[0]-1,
+    KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int ic) {
+      for (int q = 0; q < 4; ++q) uc(m,CLM_X+q,kc,jc,ic) += uc(m,CLM_X2+q,kc,jc,ic);
+    });
+  }
   par_for("clc_prolong", DevExeSpace(), 0, nmb1, f.o[2], f.o[2]+f.n[2]-1,
           f.o[1], f.o[1]+f.n[1]-1, f.o[0], f.o[0]+f.n[0]-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

@@ -2969,6 +2969,7 @@ class RadiationM1 {
   int cln_gmres_m = 0;          // clean_gmres_m: GMRES restart (0: BiCGStab)
   DvceArray5D<Real> cln_kv;     // GMRES basis vectors
   bool cln_pcrecon = false;     // clean_pc_recon: lagged PLM jumps in the PC (experiment)
+  int cln_pccyc = 1;            // clean_pc_cycle: 1 V, 2 W (experiment)
   int cln_pc = 0;               // clean_pc: 0 line relaxation, 1 multigrid V-cycle
   std::vector<DvceArray5D<Real>> cln_mg;          // coarse levels of the multigrid
   std::vector<std::array<int, 3>> cln_mgn;        //   and their cells along x1..x3
