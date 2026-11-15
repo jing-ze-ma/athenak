@@ -164,8 +164,10 @@ void RadiationM1::CleanCellFaceSpeeds() {
 //! \brief consistency bracket C = F_ray - f(Ur) of every interior face
 //! (clean_consistency): the rays' kinetic upwind flux of their cell moments, E row
 //! c (h+_L J_L + h-_R J_R) and stress rows c (k+_L J_L + (D - k+)_R J_R)
-//! (CleanCellOutStress), less the face flux of the solve (current marks, weights and
-//! slopes) of Ur = (J, J h), h = h+ + h-.  Physical boundary faces carry none.
+//! (CleanCellOutStress), less the face flux of the solve (current marks and weights) of
+//! Ur = (J, J h), h = h+ + h-, with the slopes of Ur: the bracket is fixed for given
+//! closure and marks.  Physical boundary faces carry none.  The slopes of the iterate
+//! are restored.
 
 void RadiationM1::CleanCellConsistency() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -185,6 +187,7 @@ void RadiationM1::CleanCellConsistency() {
     }
   });
   CleanGhostFill(cln_x, CLC_U, 4);
+  if (cln_recon) CleanCellSlopeWeights(CLC_U);
 
   // the bracket of every interior face
   for (int dir = 0; dir < x.nf; ++dir) {
@@ -208,15 +211,17 @@ void RadiationM1::CleanCellConsistency() {
       }
     });
   }
+  if (cln_recon) CleanCellSlopeWeights(CLC_K);
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellSlopeWeights
-//! \brief lagged weights of the van Leer slopes of the Newton iterate:
+//! \brief lagged weights of the van Leer slopes of the cell vector at slot v (the Newton
+//! iterate, or Ur for the consistency bracket):
 //! pl = dr/(dl + dr), pr = dl/(dl + dr) where dl dr > 0, else 0, so that the half-slope
 //! dl dr/(dl + dr) = (pl dl + pr dr)/2 is linear in the state for fixed weights
 
-void RadiationM1::CleanCellSlopeWeights() {
+void RadiationM1::CleanCellSlopeWeights(const int v) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -224,7 +229,7 @@ void RadiationM1::CleanCellSlopeWeights() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const bool multi_d = pmy_pack->pmesh->multi_d;
   const bool three_d = pmy_pack->pmesh->three_d;
-  CleanGhostFill(cln_x, CLC_K, 4);
+  CleanGhostFill(cln_x, v, 4);
   auto u = cln_x;
 
   par_for("clc_slopes", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -235,8 +240,8 @@ void RadiationM1::CleanCellSlopeWeights() {
       for (int q = 0; q < 4; ++q) {
         Real pl = 0.0, pr = 0.0;
         if (on) {
-          const Real dl = u(m,CLC_K+q,k,j,i) - u(m,CLC_K+q,k-dk,j-dj,i-di);
-          const Real dr = u(m,CLC_K+q,k+dk,j+dj,i+di) - u(m,CLC_K+q,k,j,i);
+          const Real dl = u(m,v+q,k,j,i) - u(m,v+q,k-dk,j-dj,i-di);
+          const Real dr = u(m,v+q,k+dk,j+dj,i+di) - u(m,v+q,k,j,i);
           if (dl*dr > 0.0) {
             pl = dr/(dl + dr);
             pr = dl/(dl + dr);
@@ -281,7 +286,6 @@ void RadiationM1::CleanCellRightHandSide() {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  if (cln_consist) CleanCellConsistency();
   CleanArgs x = CleanMakeArgs();
   const Real arad_ = arad;
   FluidRef fl = FluidRef::Get(pmy_pack);

@@ -153,7 +153,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     npic = 0;
     for (int inl = 0; inl < maxnl; ++inl) {
       if (lagged && inl < cln_maxpic) ++npic;
-      if ((cln_closit && inl < cln_maxpic) || (clos1 && inl == 1)) {
+      const bool clos = (cln_closit && inl < cln_maxpic) || (clos1 && inl == 1);
+      if (clos) {
         CleanClosureIterate();
         if (cell) {
           CleanCellFaceSpeeds();
@@ -163,7 +164,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         if (cln_feedback) CleanAdvectiveCoefficients();
       }
       if (cell) {
-        if (cln_recon && inl < cln_maxpic) CleanCellSlopeWeights();
+        if (cln_consist && (inl == 0 || clos)) CleanCellConsistency();
+        if (cln_recon && inl < cln_maxpic) CleanCellSlopeWeights(CLC_K);
         CleanCellRightHandSide();
         CleanCellPreconditionerSetup();
       } else {

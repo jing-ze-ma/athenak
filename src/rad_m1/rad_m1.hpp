@@ -2922,7 +2922,7 @@ class RadiationM1 {
   void CleanCellOldVector();
   void CleanCellFaceCoefficients();
   void CleanCellConsistency();
-  void CleanCellSlopeWeights();
+  void CleanCellSlopeWeights(const int v);
   void CleanCellFirstIterate();
   void CleanCellRightHandSide();
   void CleanCellApply(const int src, const int dst);
