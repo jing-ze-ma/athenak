@@ -450,7 +450,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
 //! \fn void RadiationM1::CleanClosureFromRays
 //! \brief closure of every cell whose rays carry its radiation (J >= clean_ray_min E):
 //! D = K/J, h+- = H+-/J, k+ = K+/J, C1 = <|I - S|>/J.  Other cells are marked for the
-//! fill.  The rays' face fluxes (CLN_F2, CLN_F1, CLN_FX) are copied for every cell.
+//! fill.  The rays' face fluxes (CLN_F2 ... CLN_F3) are copied for every cell.
 
 void RadiationM1::CleanClosureFromRays() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -468,7 +468,7 @@ void RadiationM1::CleanClosureFromRays() {
   par_for("cln_rays", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = vc(m,M1_VET_J,k,j,i);
-    for (int n = 0; n < 12; ++n) {
+    for (int n = 0; n < M1_VET_NFS; ++n) {
       cs(m,CLN_F2+n,k,j,i) = f2 ? vc(m,M1_VET_F2+n,k,j,i) : 0.0;
     }
     if (jr > 0.0 && jr >= ray_min*iw_(m,M1_IW_EN,k,j,i)) {

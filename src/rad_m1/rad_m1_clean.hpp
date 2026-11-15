@@ -37,7 +37,8 @@ constexpr int CLN_F2 = 23;   // the rays' flux through the low x2 face (M1_VET_F
                              // normalised; clean_consistency)
 constexpr int CLN_F1 = 27;   // their flux through an x1 boundary face (M1_VET_F1)
 constexpr int CLN_FX = 31;   // their flux through the low x1 face (M1_VET_FX)
-constexpr int CLN_N = 35;
+constexpr int CLN_F3 = 35;   // their flux through the low x3 face (M1_VET_F3)
+constexpr int CLN_N = 39;
 
 // face variables (arrays cln_fc1, cln_fc2, cln_fc3)
 constexpr int CLF_W = 0;     // blend weight w

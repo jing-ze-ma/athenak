@@ -171,7 +171,7 @@ void RadiationM1::CleanCellFaceSpeeds() {
 //! that the deviation from the rays' moments Ur = (J, J h) moves only as the rays do;
 //! the bracket is w (F_ray - F_kin(Ur)), w in CLF_WK.  An open x1 boundary face carries
 //! the rays' flux CLN_F1 less the boundary flux of Ur.  Reflecting and x2, x3 boundary
-//! faces carry none.
+//! faces carry none; x3 faces take CLN_F3 as x2 faces CLN_F2.
 
 void RadiationM1::CleanCellConsistency() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -207,7 +207,8 @@ void RadiationM1::CleanCellConsistency() {
       const bool bdry = CleanBoundaryFace(x, dir, m, k, j, i), blo = (i == x.is);
       if (bdry && (dir != 0 || CleanBc(x, m, blo ? 0 : 1) == M1_IBC_REFLECT)) return;
       const int kl = k - dk, jl = j - dj, il = i - di;
-      const int n = bdry ? CLN_F1 : ((dir == 0) ? CLN_FX : CLN_F2);
+      const int nd = (dir == 0) ? CLN_FX : ((dir == 1) ? CLN_F2 : CLN_F3);
+      const int n = bdry ? CLN_F1 : nd;
       // clean_consistency_weight: the rays' streaming weight of the face
       Real wb = 1.0;
       if (cwt) {
