@@ -4,35 +4,14 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file general_mhd_frozen.cpp
-//! \brief GeneralMHD::ConsToPrimFrozen(), the conserved-to-primitive conversion used
-//! ONCE, by the first ConToPrim of a RESTARTED run.  The MHD counterpart of
-//! general_hyd_frozen.cpp, which carries the full argument; the short version:
-//!
-//! The conversion has two halves.  The algebraic one -- density, velocities, the
-//! cell-centred field as the average of the face field, and the internal energy left
-//! after the kinetic and magnetic energies are taken off -- is a pure function of the
-//! conserved state and the face field, both of which the restart file restores exactly.
-//! The THERMODYNAMIC one -- solve e(d,T) for T, then take p and Gamma_1 at that T -- is
-//! an iterative table inversion warm started from the cached temperature, and it is NOT
-//! idempotent: handed back its own converged answer it takes another step and lands a
-//! few ULP away.  The straight run never performs that inversion at the start of the
-//! cycle it is resuming (it carries wtemp and wder from the last stage of the previous
-//! cycle), while Driver::Initialize does, so the two runs enter the first cycle with
-//! different temperatures and different reconstructed pressures.
-//!
-//! WHAT IT DOES.  Exactly the algebraic half, in the same expressions and the same order
-//! as SingleC2P_GeneralMHD, and nothing else: wtemp and wder are read by later kernels,
-//! never written here, so the state the restart file restored survives into the first
-//! Fluxes call untouched.  Floors are not re-applied: the conserved variables in the
-//! file were written AFTER the conversion that floored them, so every floor test would
-//! be false anyway, and re-running them could only move the answer.  The next ConToPrim,
-//! at the end of the first stage, is the ordinary one again (MHD::c2p_freeze_derived is
-//! cleared after this call).
-//!
-//! WHY IT IS A FILE OF ITS OWN.  See the note at the top of general_hyd_floors.cpp: with
-//! two kernels in one translation unit the device compiler contracts the arithmetic of
-//! the untouched one differently, and the DEFAULT answer moves by a unit in the last
-//! place.  general_mhd.cpp is not touched by this feature at all.
+//! \brief GeneralMHD::ConsToPrimFrozen(), the conversion of the first ConToPrim after a
+//! restart.  The table inversion of T(d, e) is not idempotent (a converged answer moves
+//! by a few ulp when inverted again), while the straight run carries wtemp and wder into
+//! the cycle it resumes.  This kernel therefore does only the algebraic half (density,
+//! velocities, cell-centred field, internal energy) and reads, never writes, wtemp and
+//! wder; floors are not re-applied (the restored state was floored before it was
+//! written).  MHD::c2p_freeze_derived is cleared after the call. Compiled apart from
+//! general_mhd.cpp so the default kernel keeps its arithmetic.
 
 #include <float.h>
 
@@ -47,7 +26,7 @@
 
 //----------------------------------------------------------------------------------------
 //! \fn void GeneralMHD::ConsToPrimFrozen()
-//! \brief the algebraic half of ConsToPrim(), with the thermodynamic cache frozen.
+//! \brief the algebraic half of ConsToPrim() with the thermodynamic cache frozen
 
 void GeneralMHD::ConsToPrimFrozen(DvceArray5D<Real> &cons,
                                   const DvceFaceFld4D<Real> &b,

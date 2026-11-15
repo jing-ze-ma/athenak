@@ -4,11 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file general_mhd.cpp
-//! \brief derived class that implements a general EOS in nonrelativistic MHD
-//!
-//! See general_hyd.cpp for the design rationale: a general EOS is expensive and is not
-//! scale free, so it requires a <units> block and evaluates pressure and Gamma_1 once per
-//! cell in ConsToPrim, storing them for reconstruction to interfaces.
+//! \brief derived class that implements a general EOS in nonrelativistic MHD (see
+//! general_hyd.cpp: needs <units>, p and Gamma_1 evaluated once per cell in ConsToPrim)
 
 #include <float.h>
 
@@ -33,8 +30,7 @@ GeneralMHD::GeneralMHD(MeshBlockPack *pp, ParameterInput *pin) :
   eos_data.gamma = pin->GetReal("mhd","gamma");
   eos_data.iso_cs = 0.0;
 
-  // A general EOS depends on ABSOLUTE density and temperature, so the run must declare
-  // its physical scale (see general_hyd.cpp).
+  // a general EOS needs the physical scale of the run
   if (pp->punit == nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<mhd>/eos = general requires a <units> block: a general EOS is not "
@@ -53,10 +49,10 @@ GeneralMHD::GeneralMHD(MeshBlockPack *pp, ParameterInput *pin) :
 }
 
 //----------------------------------------------------------------------------------------
-//! \!fn void ConsToPrim()
-//! \brief Converts conserved into primitive variables, and evaluates the derived
-//! thermodynamic variables (pressure, Gamma_1) that are reconstructed to interfaces.
-//! Operates over range of cells given in argument list.
+//! \fn void ConsToPrim()
+//! \brief Converts conserved into primitive variables and evaluates the derived variables
+//! (p, Gamma_1) that are reconstructed to faces.  Operates over range of cells given in
+//! argument list.
 
 void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
                             DvceArray5D<Real> &prim, DvceArray5D<Real> &bcc,
@@ -137,12 +133,8 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
         rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
         u.bz = lw*b.x3f(m,k,j,i) + rw*b.x3f(m,k+1,j,i);
       } else {
-        // The cubed sphere's x1 is radial and stretched exactly as spherical polar's is,
-        // so its centre is not the midpoint of its two faces either; see
-        // CellCenteredRadialFld.  This must MATCH what
-        // Coordinates::GnomonicEquiangleRaiseVelMHD rebuilds bcc with a moment later --
-        // a mismatch between the two is an energy difference the C2P floors then bake
-        // into u.e.  Every other grid keeps the plain average, bit for bit.
+        // cubed sphere: the stretched radial centre is not the face midpoint
+        // (CellCenteredRadialFld), as in GnomonicEquiangleRaiseVelMHD
         const bool rin_ = wbc_.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::reflect;
         const bool rout_ = wbc_.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect;
         u.bx = cs_str_x1_ ?
@@ -154,8 +146,7 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
       }
     }
 
-    // call c2p function, which also returns the derived thermodynamic quantities
-    // (inline function in general_c2p_mhd.hpp file)
+    // call c2p function, which also returns the derived quantities (general_c2p_mhd.hpp)
     HydPrim1D w;
     Real pgas, g1;
     Real temp;
@@ -196,9 +187,8 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
 
     // set FOFC flag and quit loop if this function called only to check floors
     if (only_testfloors) {
-      // the velocity ceiling counts as a floor event for FOFC, exactly as in
-      // ideal_hyd.cpp: a cell that would need it is one the first-order flux is meant
-      // to rescue.  vceil_test is the decision alone and performs no write.
+      // the velocity ceiling counts as a floor event for FOFC (vceil_test is the decision
+      // alone)
       if (dfloor_used || efloor_used || tfloor_used || vceil_test) {
         fofc_(m,k,j,i) = true;
         sumd++;  // use dfloor as counter for when either is true
@@ -224,8 +214,7 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
       if (vceil_used) {
         sumv++;
       }
-      // the tabulated inversion had to be held at the table's own lowest or highest
-      // temperature: the state is outside the EOS, not merely at a floor
+      // the inversion was clamped to the table's temperature range
       if (tclamp_used) {
         sumc++;
       }
@@ -242,8 +231,7 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
       // store derived thermodynamic variables for reconstruction
       wder_(m,IDPR,k,j,i) = pgas;
       wder_(m,IDG1,k,j,i) = g1;
-      // cache the temperature solved for above; it is both the value other modules read
-      // and the warm start for this cell's inversion at the next stage
+      // cache the temperature for other modules and as next stage's warm start
       wtemp_(m,k,j,i) = temp;
       // convert scalars (if any), always stored at end of cons and prim arrays.
       for (int n=nmhd; n<(nmhd+nscal); ++n) {
@@ -277,11 +265,10 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
 }
 
 //----------------------------------------------------------------------------------------
-//! \!fn void PrimToCons()
+//! \fn void PrimToCons()
 //! \brief Converts primitive into conserved variables. Operates over range of cells given
-//! in argument list. Does not change cell- or face-centered magnetic fields.
-//! NOTE: for non-relativistic MHD this transformation is EOS independent, so the
-//! ideal-gas kernel is reused.
+//! in argument list. Does not change cell- or face-centered magnetic fields.  EOS
+//! independent, so the ideal-gas kernel is reused.
 
 void GeneralMHD::PrimToCons(const DvceArray5D<Real> &prim, const DvceArray5D<Real> &bcc,
                             DvceArray5D<Real> &cons, const int il, const int iu,
