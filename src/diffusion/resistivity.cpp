@@ -285,28 +285,30 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
 }
 
 //----------------------------------------------------------------------------------------
-// Resistivity destructor
+// destructor
 
 Resistivity::~Resistivity() {
 }
 
-void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos, const Real &Rgas, DvceArray4D<Real> &eta_b, const int il, const int iu, const int jl, const int ju, const int kl, const int ku) {
+//----------------------------------------------------------------------------------------
+//! \fn void Resistivity::SetResistivity()
+//! \brief Ohmic diffusivity eta_b of every cell in [il,iu]x[jl,ju]x[kl,ku] from the
+//! primitives: thermal ionization of potassium (perna) or the electron fraction of the
+//! EOS / the advected x_e tracer (eos), capped at max_eta.
+
+void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos,
+                                 const Real &Rgas, DvceArray4D<Real> &eta_b,
+                                 const int il, const int iu, const int jl, const int ju,
+                                 const int kl, const int ku) {
   int &nmb = pmy_pack->nmb_thispack;
   Real gm1 = eos.gamma - 1.0;
-  // ResistivityPerna is a thermal-ionization fit and needs a temperature in KELVIN and a
-  // particle number density. For an ideal gas both come from the problem's Rgas, which
-  // carries a fixed mean molecular weight. A general EOS supplies temperature and
-  // composition itself, so mu is asked of the EOS. The number density is then written as
-  // rho pres_cgs/(mu temp_cgs k_B) rather than rho/(mu m_u): eliminating m_u in favour of
-  // eos.temp_cgs = (pres_cgs/dens_cgs) m_u/k_B ties the number density to the same
-  // normalisation the temperature uses, instead of introducing a second atomic mass unit
-  // that would disagree with this file's k_B in the last digits.
+  // both fits need T in kelvin and the particle number density. An ideal gas takes
+  // them from <problem>/Rgas (fixed mean molecular weight); a general EOS supplies T and
+  // mu, and n = rho pres_cgs/(mu temp_cgs k_B) uses the same normalisation as T.
   const bool gen = eos.IsGeneral();
   const bool use_eos_xe = (iso_resist_type.compare("eos") == 0);
-  // The electron fraction has to come from somewhere: either the general EOS carries it,
-  // or an ideal-gas run had the composition table built for this alone (see
-  // EquationOfState::BuildElectronFractionTable). Fail here rather than silently return
-  // zero and float every cell to max_eta.
+  // the electron fraction comes from the general EOS or from the composition table an
+  // ideal-gas run builds for it (EquationOfState::BuildElectronFractionTable)
   if (use_eos_xe && !eos.HasElectronFraction()) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "ohmic_resistivity = eos found no electron fraction. It needs either "
@@ -317,9 +319,7 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // The ideal-gas branch below forms T = p/(Rgas rho) from <problem>/Rgas, which only a
-  // hot_jupiter problem sets; it is zero for anything else. Catch that here rather than
-  // divide by it per cell.
+  // the ideal-gas branch forms T = p/(Rgas rho); Rgas is set by hot_jupiter problems only
   if (!gen && !(Rgas > 0.0)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "the Ohmic resistivity needs a temperature, and on the ideal-gas branch "
@@ -329,13 +329,11 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
     std::exit(EXIT_FAILURE);
   }
 
-  // the temperature is read from the cache ConsToPrim filled for this same primitive
-  // state, not re-derived: T(d,e) is a root find for a general EOS and doing it here
-  // would repeat, per cell per stage, work that has already been done
+  // the temperature cache ConsToPrim filled for this primitive state
   auto &wtemp_ = pmy_pack->pmhd->wtemp;
   // local copy: reading the member inside the kernel would capture `this`
   const Real max_eta_ = max_eta;
-  // xetracer-1101: the advected x_e (MHD scalar xe_idx) replaces local Saha when >= 0
+  // the advected x_e (MHD scalar xe_idx) replaces local Saha when >= 0
   const int ixe = xe_idx;
   const Real nhfac = xe_nhfac;
   par_for("mhd_resistval", DevExeSpace(), 0, (nmb-1), kl, ku, jl, ju, il, iu,
@@ -356,10 +354,8 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
       nn = rho/(mu*mh);
     }
     if (use_eos_xe) {
-      // T is already in kelvin on both branches above, so the kelvin entry point is the
-      // one to use -- the (d,e,T) form would scale by EOS_Data::temp_cgs, which an ideal
-      // gas never sets. For a general EOS the two are the same number.
-      // tracer: x_e = n_e/n_tot = y n_H/n_tot (y = n_e/n_H is what is advected)
+      // T is in kelvin on both branches; with the tracer x_e = n_e/n_tot = y n_H/n_tot
+      // (y = n_e/n_H is advected)
       const Real rhoc = gen ? rho*eos.dens_cgs : rho;
       const Real xe = (ixe >= 0) ? w(m,ixe,k,j,i)*nhfac*rhoc/nn
                                  : eos.ElectronFractionKelvin(rho, T);
@@ -372,26 +368,31 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void AddResistiveEMFs()
-//! \brief Wrapper function that adds electric fields for different types of resistivity
-//! Currently only Ohmic resistivity with constant coefficient is implemented.
+//! \fn void Resistivity::AddResistiveEMFs()
+//! \brief Adds the non-ideal edge EMF (formed in AddFluxGeneralResist) to efld.
 
 void Resistivity::AddResistiveEMFs(const DvceFaceFld4D<Real> &b0,
-    DvceEdgeFld4D<Real> &efld) {
+                                   DvceEdgeFld4D<Real> &efld) {
   AddEMFDirect(efld_resist, efld);
   return;
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void AddResistiveFluxes()
-//! \brief Wrapper function that adds energy (Poynting) fluxes for different types of
-//! resistivity.
-//! Currently only Ohmic resistivity with constant coefficient is implemented.
+//! \fn void Resistivity::AddResistiveFluxes()
+//! \brief Forms the non-ideal edge EMF and adds its energy (Poynting) flux to flx.
 
-void Resistivity::AddResistiveFluxes(const DvceFaceFld4D<Real> &b0, const DvceArray5D<Real> &bc, DvceFaceFld5D<Real> &flx) {
+void Resistivity::AddResistiveFluxes(const DvceFaceFld4D<Real> &b0,
+                                     const DvceArray5D<Real> &bc,
+                                     DvceFaceFld5D<Real> &flx) {
   AddFluxGeneralResist(b0, bc, flx);
   return;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn void Resistivity::AddEMFGeneralResist()
+//! \brief Adds the Ohmic EMF E = eta J (eta per cell, eta_b) to the edge field efld.
+//! Using Ohm's Law E + (v x B) = eta J, the inductive part -(v x B) comes from the
+//! Riemann solver and the resistive part eta J from this function.
 
 void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
     DvceEdgeFld4D<Real> &efld) {
@@ -546,6 +547,10 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
   return;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void Resistivity::ClearResistiveEMFs()
+//! \brief Sets the edge field efld to zero on the active edges.
+
 void Resistivity::ClearResistiveEMFs(DvceEdgeFld4D<Real> &efld) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -607,7 +612,13 @@ void Resistivity::ClearResistiveEMFs(DvceEdgeFld4D<Real> &efld) {
   return;
 }
 
-void Resistivity::AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeFld4D<Real> &efld) {
+//----------------------------------------------------------------------------------------
+//! \fn void Resistivity::AddEMFDirect()
+//! \brief Adds efld_resist to efld on the active edges (copies it with super-time-
+//! stepping, where efld carries the resistive EMF alone).
+
+void Resistivity::AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist,
+                               DvceEdgeFld4D<Real> &efld) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -699,7 +710,14 @@ void Resistivity::AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeF
   return;
 }
 
-void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceArray5D<Real> &bc, DvceFaceFld5D<Real> &flx) {
+//----------------------------------------------------------------------------------------
+//! \fn void Resistivity::AddFluxGeneralResist()
+//! \brief Forms the resistive (Ohmic + ambipolar) edge EMF efld_resist and adds the
+//! energy flux (E x B) of every face to flx.
+
+void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b,
+                                       const DvceArray5D<Real> &bc,
+                                       DvceFaceFld5D<Real> &flx) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -805,8 +823,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
         + (fr1*bc(m,IBZ,k,j,i) + fl1*bc(m,IBZ,k,j,i-1))*e2a;
     }
   };
-  // r1mspeed-1102: in 3D the three face loops run as one launch (bitwise; see
-  // par_for_fused3); 1D/2D keep their separate launches
+  // in 3D the three face loops run as one launch (par_for_fused3)
   if (!three_d) {par_for("ohm_heat1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1, oh1_);}
   if (one_d) {return;}
 
@@ -924,8 +941,14 @@ void Resistivity::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_d
   return;
 }
 
-void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EOS_Data &eos_data) {
-  // rkgdt-1101: the RKG dt_diff from the forward-Euler bound (resistivity_rkgdt.cpp)
+//----------------------------------------------------------------------------------------
+//! \fn void Resistivity::NewTimeStepGeneralResist()
+//! \brief Diffusive time step fac min dx^2/eta over the cells of this pack (eta = eta_b
+//! plus the capped ambipolar eta_A), or the RKG forward-Euler bound with rkg_dt_safety.
+
+void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0,
+                                           const EOS_Data &eos_data) {
+  // the RKG dt_diff from the forward-Euler bound (resistivity_rkgdt.cpp)
   if (rkg_dt_fe) {
     NewTimeStepRKGFE();
     return;
@@ -945,9 +968,8 @@ void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EO
   const int nkji = nx3*nx2*nx1;
   const int nji  = nx2*nx1;
 
-  // Coordinates::dx{1,2,3} are PHYSICAL lengths for both curvilinear systems, while
-  // mb_size.dx* are index spacings -- on the cubed sphere x2 and x3 are angles on [-1,1],
-  // so the Cartesian branch would overestimate the diffusive dt by orders of magnitude.
+  // curvilinear meshes: Coordinates::dx{1,2,3} are the physical lengths (mb_size.dx*
+  // are index spacings, angles on the cubed sphere)
   const bool use_curvilinear = pmy_pack->pmesh->use_spherical_polar ||
                                pmy_pack->pmesh->use_cubed_sphere;
   auto &dx1_ = pmy_pack->pcoord->dx1;
@@ -955,7 +977,7 @@ void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EO
   auto &dx3_ = pmy_pack->pcoord->dx3;
   // local copy: reading the member inside the reduction would capture `this`
   auto eta_b_ = eta_b;
-  // ambipolar-1101: eta_O + eta_A, eta_A = min(ad_coef |B|^2, max_eta_ad) per cell
+  // eta_O + eta_A, eta_A = min(ad_coef |B|^2, max_eta_ad) per cell
   const bool ad_on = (ad_type != 0);
   auto coef_ = ad_coef;
   auto &bcc_ = pmy_pack->pmhd->bcc0;
