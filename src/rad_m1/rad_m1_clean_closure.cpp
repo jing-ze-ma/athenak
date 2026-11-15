@@ -26,31 +26,60 @@ namespace radm1 {
 //! \fn void RadiationM1::CleanClosure
 //! \brief builds the closure for t^{n+1}.  Both stage solves and a backward-Euler redo end
 //! at t^{n+1}, so one closure serves the whole step; it is rebuilt for a new step or a
-//! new dt.
+//! new dt.  clean_closure = eddington takes the isotropic closure instead of the rays.
 
 void RadiationM1::CleanClosure() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
   if (cln_havec && time == cln_tc && dt == cln_dtb) return;
 
-  CleanPredictState(true);
+  if (cln_edd) {
+    CleanClosureEddington();
+  } else {
+    CleanPredictState(true);
 
-  // formal solution of the predicted state, with its own source function (no relaxed
-  // source or relaxed scattering J, which would make the closure depend on dt)
-  vcol_srelax = false;
-  vcol_sbl = false;
-  vcol_sesc = false;
-  vscat_jrel = false;
-  VetShortChar();
-  if (cln_opsaved) Kokkos::deep_copy(opac, cln_opb);
-
-  CleanClosureFromRays();
-  CleanClosureFill();
+    // formal solution of the predicted state, with its own source function (no relaxed
+    // source or relaxed scattering J, which would make the closure depend on dt)
+    vcol_srelax = false;
+    vcol_sbl = false;
+    vcol_sesc = false;
+    vscat_jrel = false;
+    VetShortChar();
+    if (cln_opsaved) Kokkos::deep_copy(opac, cln_opb);
+    CleanClosureFromRays();
+    CleanClosureFill();
+  }
   CleanGhostFill(cln_s, 0, CLN_N);
 
   cln_tc = time;
   cln_dtb = dt;
   cln_havec = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanClosureEddington
+//! \brief clean_closure = eddington: the isotropic closure in every cell (D = I/3,
+//! h+- = +-1/4, k+ = I/6, C1 = 0), with no formal solution
+
+void RadiationM1::CleanClosureEddington() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto cs = cln_s;
+  par_for("cln_edd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int a = 0; a < 3; ++a) {
+      cs(m,CLN_D11+a,k,j,i) = 1.0/3.0;
+      cs(m,CLN_D11+3+a,k,j,i) = 0.0;
+      cs(m,CLN_HP+a,k,j,i) = 0.25;
+      cs(m,CLN_HM+a,k,j,i) = -0.25;
+    }
+    for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
+    cs(m,CLN_C1,k,j,i) = 0.0;
+    cs(m,CLN_J,k,j,i) = 0.0;
+  });
 }
 
 //----------------------------------------------------------------------------------------

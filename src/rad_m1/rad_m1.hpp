@@ -2901,6 +2901,7 @@ class RadiationM1 {
   void CleanCellFaceSpeeds();
   void CleanClosureFromRays();
   void CleanClosureFill();
+  void CleanClosureEddington();
   void CleanFaceCoefficients();
   void CleanAdvectiveCoefficients();
   void CleanFirstIterate();
@@ -2965,6 +2966,7 @@ class RadiationM1 {
   bool cln_all_low = false;     // the solve has every interior face low-order
   bool cln_closit = false;      // clean_closure: predict | iterate (default for cell)
   int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
+  bool cln_edd = false;         // clean_closure = eddington (D = I/3, no rays)
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
