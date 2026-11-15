@@ -22,8 +22,11 @@
 //! zones included), so the discrete state of both is the reference equilibrium.
 //!
 //! Gravity (user_srcs): rho g, on rho - rho_background with wellbalance_static, plus its
-//! work.  Mesh x1 boundaries: reflect.  History: gas x1 momentum, kinetic energy,
-//! max |v|/c_s (one rank), radiation E and F1/c (volume sums).
+//! work.  Mesh x1 boundaries: reflect.  <problem>/rh_seed adds a cell-to-cell x1 velocity
+//! of that amplitude after the background is set (a lateral seed for stability tests;
+//! in 3-D the unsplit hydro step needs cfl_number <= 1/3, else its grid-scale lateral
+//! mode grows).  History: gas x1 momentum, kinetic energy, max |v|/c_s (one rank),
+//! radiation E and F1/c (volume sums).
 
 #include <cmath>
 #include <iostream>
@@ -41,7 +44,7 @@
 #include "pgen/pgen.hpp"
 
 namespace {
-Real rh_g = 1.0, rh_gm = 0.0, rh_eddf = 0.0;
+Real rh_g = 1.0, rh_gm = 0.0, rh_eddf = 0.0, rh_seed = 0.0;
 bool rh_sph = false;
 
 //! gravity at x1 (height or radius)
@@ -108,6 +111,7 @@ void ProblemGenerator::RadiationM1Rhse(ParameterInput *pin, const bool restart) 
   rh_eddf = pin->GetOrAddReal("problem","rh_eddf",0.3);
   const Real rho0 = pin->GetOrAddReal("problem","rh_rho0",1.0);
   const Real t0 = pin->GetOrAddReal("problem","rh_temp",1.0);
+  rh_seed = pin->GetOrAddReal("problem","rh_seed",0.0);
   user_srcs_func = RhseGravity;
   user_hist_func = RhseHist;
   if (ph->use_wellbalance_static) user_icpost_func = RhseBackground;
@@ -170,13 +174,13 @@ namespace {
 //----------------------------------------------------------------------------------------
 //! \fn void RhseBackground
 //! \brief the current gas, everywhere, as the static well-balanced background; the face
-//! background is the mean of the two cells
+//! background is the mean of the two cells.  Then a cell-to-cell x1 velocity seed of
+//! amplitude rh_seed on top (a lateral seed for stability tests; default 0)
 
 void RhseBackground(Mesh *pm) {
   hydro::Hydro *ph = pm->pmb_pack->phydro;
   auto uh = ph->u0;
   auto u0wb = ph->u0wb, w0wb = ph->w0wb;
-  auto eos = ph->peos->eos_data;
   const int nmb1 = pm->pmb_pack->nmb_thispack - 1;
   const int n3 = uh.extent_int(2), n2 = uh.extent_int(3), n1 = uh.extent_int(4);
   par_for("rhse_bg", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
@@ -204,7 +208,15 @@ void RhseBackground(Mesh *pm) {
       }
     });
   }
-  (void) eos;
+  const Real sd = rh_seed;
+  if (sd == 0.0) return;
+  par_for("rhse_seed", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real dv = sd*sin(6.2831853*(0.618*i + 1.414*j + 2.236*k + 0.577*m));
+    const Real m1 = uh(m,IM1,k,j,i);
+    uh(m,IM1,k,j,i) += uh(m,IDN,k,j,i)*dv;
+    uh(m,IEN,k,j,i) += 0.5*(SQR(uh(m,IM1,k,j,i)) - m1*m1)/uh(m,IDN,k,j,i);
+  });
 }
 
 //----------------------------------------------------------------------------------------
