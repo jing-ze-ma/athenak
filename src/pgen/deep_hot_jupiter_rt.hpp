@@ -157,8 +157,6 @@ void DhjOlrDump(ParameterInput *pin, Mesh *pm);
 void DhjFinalDumps(ParameterInput *pin, Mesh *pm);
 // problem/flux_hst: the radiative / energy / mass flux history columns
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm);
-// problem/flux_hst_wall: four inner-wall in/out split columns (set in UserProblem)
-inline bool dhj_flux_hst_wall = false;
 // problem/flux_hst_floor: two floor-bookkeeping columns (set in UserProblem)
 inline bool dhj_flux_hst_floor = false;
 // relaxdrag-1101 problem/relax_drag (default true), problem/relax_drag_rot (default 5):
@@ -181,8 +179,7 @@ inline bool dhj_sponge_top_radial = true;
 inline Real dhj_sp_top_plo_bar = 1.0e-7;
 inline Real dhj_sp_top_phi_bar = 1.0e-6;
 inline Real dhj_sp_top_tau = 1.0e3;
-// problem/flux_hst_rkavg (default true; false = the last RK stage, the pre-0929
-// columns): the fluid face fluxes of the flux columns (Etot_top, Etot_bot, Mdot_top,
+// The fluid face fluxes of the flux columns (Etot_top, Etot_bot, Mdot_top,
 // Mdot_bot) are the RK-weighted sums over the stages of the cycle, i.e. the flux the
 // update actually applied (rk1 1; rk2 1/2, 1/2; rk3 1/6, 1/6, 2/3).  Accumulated per
 // column by DhjFluxStage at the top of SourceFunc (uflx then holds the stage's fluxes).

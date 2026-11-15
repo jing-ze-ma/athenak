@@ -41,7 +41,7 @@ using deep_copy_across::DeepCopyAcross;
 
 void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);   // two_stream_rt_pass.cpp
 inline void CkRstScalars();
-// problem/flux_hst_rst: the flux history's face-flux cache (two_stream_rt.hpp)
+// rt_fhst_rst: the flux history's face-flux cache (two_stream_rt.hpp)
 inline bool RtFhLive();
 template <typename V> inline void RtFhCollect(const int id, const V &dst);
 
@@ -212,7 +212,7 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
       for (int n=0; n<3; ++n) ids.push_back(kCkSlabVefB0 + n);
     }
   }
-  // problem/flux_hst_rst: the flux history's face-flux cache (or the staged one, not
+  // rt_fhst_rst: the flux history's face-flux cache (or the staged one, not
   // consumed yet: no full RT call since the restart)
   const bool fh_live = RtFhLive();
   const bool fh_stg = rt_fhst_rst && !fh_live && CkRstStaged(kCkSlabFhFb) &&

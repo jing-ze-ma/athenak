@@ -52,28 +52,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool use_cubed_sphere_ = pmy_mesh_->use_cubed_sphere;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
-  // problem/flux_hst (default true): append the nine flux columns of DhjFluxHistory to
-  // every history output.  Read without recording it in the input, so that a restart
-  // file written by a run that does not set the key is byte-for-byte what it was; an
-  // explicit flux_hst = false leaves the history exactly as before.
-  // Needs the curvilinear area/volume Views (cubed sphere or spherical polar); a
-  // Cartesian box has 1x1x1x1 placeholders there, so it is skipped.
-  const bool flux_hst = (pin->DoesParameterExist("problem","flux_hst")
-                         ? pin->GetBoolean("problem","flux_hst") : true)
-                        && (pmy_mesh_->use_cubed_sphere || use_spherical_polar);
-  int fh_rst_req = -1;   // problem/flux_hst_rst: -1 unset, 0 false, 1 true
+  // The flux columns of DhjFluxHistory are appended to every history output.  They need
+  // the curvilinear area/volume Views (cubed sphere or spherical polar); a Cartesian box
+  // has 1x1x1x1 placeholders there, so it has none.
+  const bool flux_hst = pmy_mesh_->use_cubed_sphere || use_spherical_polar;
   if (flux_hst) {
     user_hist = true;
     user_hist_func = DhjFluxHistory;
-    // problem/flux_hst_rst (rthst-1101): write the radiative face-flux cache these
-    // columns read into the implicit-ck restart block, so that the rows a continuation
-    // writes before its first full RT call equal the uninterrupted run's (they had no
-    // radiative part).  Diagnostic only.  Default = ck_implicit (resolved below, once
-    // ck_implicit is known; no block exists without it).  Read without recording it in
-    // the input; false writes restart files byte-identical to the ones before the key.
-    if (pin->DoesParameterExist("problem","flux_hst_rst")) {
-      fh_rst_req = pin->GetBoolean("problem","flux_hst_rst") ? 1 : 0;
-    }
     // stswall-1029: the RKG resistive energy flux through the top and the wall (see
     // Resistivity::track_x1_bflx); folded into Etot_top / Etot_bot by DhjFluxHistory
     {
@@ -83,9 +68,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         prk->pmhd->presist->track_x1_bflx = true;
       }
     }
-    // problem/flux_hst_rkavg (see its note); read without recording it in the input
-    const bool rkavg = pin->DoesParameterExist("problem","flux_hst_rkavg")
-                       ? pin->GetBoolean("problem","flux_hst_rkavg") : true;
+    // RK-stage weights of the stage-averaged fluid fluxes
     const std::string integ = pin->GetOrAddString("time","integrator","rk2");
     dhj_fhst_nst = 0;
     if (integ == "rk1") {
@@ -97,19 +80,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       dhj_fhst_w[2] = 2.0/3.0;
     }
     // other integrators (imex etc.): the last stage, as before
-    dhj_fhst_avg = rkavg && user_srcs && (dhj_fhst_nst > 0);
+    dhj_fhst_avg = user_srcs && (dhj_fhst_nst > 0);
     if (dhj_fhst_avg) {
       auto &ic = pmy_mesh_->mb_indcs;
       dhj_fhst_ptr = new DvceArray4D<Real>("dhj_fhst", pmy_mesh_->pmb_pack->nmb_thispack,
                                            4, ic.nx3 + 2*ic.ng, ic.nx2 + 2*ic.ng);
     }
   }
-  // problem/flux_hst_wall (default false): four more columns after the nine flux
-  // columns, splitting the inner-wall fluxes by the sign of the local mass flux:
-  // Mdot_bot_in / Mdot_bot_out (sum over faces with fx1(IDN,is) > 0 / < 0) and
-  // Efl_bot_in / Efl_bot_out (the fluid energy flux fx1(IEN,is) A over the same faces).
-  dhj_flux_hst_wall = flux_hst && pin->DoesParameterExist("problem","flux_hst_wall")
-                      && pin->GetBoolean("problem","flux_hst_wall");
   // problem/flux_hst_floor (default false; read without recording it, like flux_hst):
   // three more columns after the others, Efloor [erg/s] and Mfloor [g/s], the energy and
   // mass that ConToPrim's floors added to the active cells, averaged over the interval
@@ -257,7 +234,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         amh::nst = 3;  amh::w[0] = 1.0/6.0;  amh::w[1] = 1.0/6.0;  amh::w[2] = 2.0/3.0;
       }
       // + Ttide (tidetrq-1101) with problem/roche
-      const int nfh = 9 + (dhj_flux_hst_wall ? 4 : 0) + (dhj_flux_hst_floor ? 3 : 0)
+      const int nfh = 9 + (dhj_flux_hst_floor ? 3 : 0)
                       + (amh::split ? 12 : 8) + (hot_jupiter_param.roche ? 1 : 0)
                       + 1;  // + Tdrag (relaxdrag-1101)
       if (amh::nst == 0 || nfh > NHISTORY_VARIABLES) {
@@ -624,15 +601,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
        (two_stream_rt::ck_sweep_form != 2);
   two_stream_rt::ck_implicit =
       pin->GetOrAddBoolean("problem","ck_implicit",ckimp_default);}
-  // problem/flux_hst_rst: default = flux_hst && ck_implicit; without ck_implicit an
-  // explicit true is a no-op (no ck restart block to carry the cache) and warns
-  two_stream_rt::rt_fhst_rst = flux_hst && two_stream_rt::ck_implicit &&
-                               (fh_rst_req != 0);
-  if (flux_hst && fh_rst_req == 1 && !two_stream_rt::ck_implicit &&
-      global_variable::my_rank == 0) {
-    std::cout << "### WARNING: problem/flux_hst_rst = true needs problem/ck_implicit; "
-              << "ignored (restart files carry no flux-history cache)" << std::endl;
-  }
+  // With ck_implicit the restart block carries the radiative face-flux cache of the
+  // flux history, so the rows a continuation writes before its first full RT call equal
+  // the uninterrupted run's.
+  two_stream_rt::rt_fhst_rst = flux_hst && two_stream_rt::ck_implicit;
   two_stream_rt::ck_impl_tol = pin->GetOrAddReal("problem","ck_impl_tol",1.0e-8);
   two_stream_rt::ck_impl_dtol = pin->GetOrAddReal("problem","ck_impl_dtol",1.0e-8);
   two_stream_rt::ck_impl_norm_eps =

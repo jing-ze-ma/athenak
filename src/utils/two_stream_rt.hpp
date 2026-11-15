@@ -609,7 +609,7 @@ inline DvceArray5D<Real> rt_face_flux() { return *rt_Fb_ptr; }
 inline Real rt_hist_fstar = 0.0;
 inline Real rt_hist_albedo = 0.0;
 
-// --- problem/flux_hst_rst: the face-flux cache across a restart (rthst-1101) ----------
+// --- rt_fhst_rst: the face-flux cache across a restart ---------------------------------
 // rt_Fb, rt_Qb, rt_icut and rt_cf slot 3 are written by the full RT calls only; under
 // the cadence (ck_impl_every) the history rows in between read what the last full call
 // left.  A restart starts with no cache, so until the next full call the flux history

@@ -284,7 +284,7 @@ void EBudCk(Mesh *pm, const Real dt, const bool before) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void DhjFluxStage
-//! \brief problem/flux_hst_rkavg: add this RK stage's fluid face fluxes at the top face
+//! \brief Add this RK stage's fluid face fluxes at the top face
 //! and at the inner wall, times the stage's weight, into dhj_fhst (reset on stage 1)
 
 void DhjFluxStage(Mesh *pm) {
@@ -950,8 +950,7 @@ void DhjOlrDump(ParameterInput *pin, Mesh *pm) {
 //! LAST ck call that touched each column (under ck_impl_every > 1 the last full call,
 //! or a later guard call on that column; within the call, its final pass).  The fluid
 //! columns read the RK-weighted sum of the stages' Riemann fluxes
-//! (problem/flux_hst_rkavg, default since dhj-ck-conserve 09-29; false = the last RK
-//! stage, as before; the flux_hst_wall split columns always read the last stage).
+//! (the last stage's for integrators without stage weights).
 //! Radiation is zero until the first ck call.
 //!   Lir_top   net thermal (longwave) luminosity out through the top face ie+1:
 //!             sum F_net(ie+1) A(ie+1), F_net = up - down, what the update differences
@@ -984,9 +983,6 @@ void DhjOlrDump(ParameterInput *pin, Mesh *pm) {
 //!             pseudo-spherical twilight) without being absorbed: it leaves the domain.
 //!             (The ck beam is a LOCAL absorption rate, by design -- see ck_beam_sph in
 //!             two_stream_rt.hpp; its photon budget is exact, tests_ck_sph 916dc953.)
-//! With problem/flux_hst_wall = true four more columns follow Lsw_in: Mdot_bot_in,
-//! Mdot_bot_out (sums over inner-wall faces with fx1(IDN,is) > 0 / < 0) and Efl_bot_in,
-//! Efl_bot_out (the fluid energy flux fx1(IEN,is) A over the same faces).
 
 //----------------------------------------------------------------------------------------
 //! \brief problem/am_hst: the eight angular-momentum columns from column n0 on.  Lrel and
@@ -1167,10 +1163,9 @@ Real DhjTideTorque(Mesh *pm) {
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   namespace ts = two_stream_rt;
   constexpr int NFH0 = 9;
-  const bool fwall = dhj_flux_hst_wall;
   const bool ffloor = dhj_flux_hst_floor;
   // problem/am_hst: eight columns after all the others
-  const int NFL = (fwall ? (NFH0 + 4) : NFH0) + (ffloor ? 3 : 0);
+  const int NFL = NFH0 + (ffloor ? 3 : 0);
   const int NFH = NFL + (amh::on ? (amh::split ? 12 : 8) : 0);
   // tidetrq-1101: Ttide (DhjTideTorque) after all the others, only with problem/roche
   const bool ttide = pm->pgen->hot_jupiter_param.roche;
@@ -1234,12 +1229,6 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   pdata->label[6] = "Mdot_top";
   pdata->label[7] = "Mdot_bot";
   pdata->label[8] = "Lsw_in";
-  if (fwall) {
-    pdata->label[9] = "Mdot_bot_in";
-    pdata->label[10] = "Mdot_bot_out";
-    pdata->label[11] = "Efl_bot_in";
-    pdata->label[12] = "Efl_bot_out";
-  }
   if (ffloor) {
     pdata->label[NFL-3] = "Efloor";
     pdata->label[NFL-2] = "Mfloor";
@@ -1291,12 +1280,12 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     cf = *ts::rt_cf_ptr;
     icut = ts::rt_cut_index();
   } else if (ts::RtFhStageViews(nmb, fb, qb, cf, icut, fstar, alb)) {
-    // problem/flux_hst_rst: a restart, before its first RT call: the cache the
+    // a restart with ck_implicit, before its first RT call: the cache the
     // restart file carries (chain blocks pre-summed, so nblk = 1 gives the same sums)
     rad = true;
     nblk = 1;
   }
-  // problem/flux_hst_rkavg: the stage-weighted fluid fluxes once a whole cycle is in
+  // the stage-weighted fluid fluxes once a whole cycle is in
   // the accumulator (else, e.g. the first row after a restart, the last stage's)
   const bool fav = dhj_fhst_avg && (dhj_fhst_stage == dhj_fhst_nst);
   auto fav_ = fav ? *dhj_fhst_ptr : DvceArray4D<Real>();
@@ -1424,28 +1413,4 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     }, Kokkos::Sum<Real>(poy));
     pdata->hdata[NPY] = poy;
   }
-  if (!fwall) return;
-  // problem/flux_hst_wall: the inner-wall in/out split, its own small reduction
-  array_sum::GlobalSum wsum;
-  Kokkos::parallel_reduce("dhj_flux_hist_wall",
-  Kokkos::RangePolicy<>(DevExeSpace(), 0, ncol),
-  KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &mb_sum) {
-    const int m = idx/(nx3*nx2);
-    const int kj = idx - m*(nx3*nx2);
-    const int k = ks + kj/nx2;
-    const int j = js + kj - (kj/nx2)*nx2;
-    const Real ab = area(m,k,j,is);
-    const Real mb = fx1(m,IDN,k,j,is)*ab;
-    const Real eb = fx1(m,IEN,k,j,is)*ab;
-    array_sum::GlobalSum hvars;
-    for (int n=0; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
-    if (mb > 0.0) {
-      hvars.the_array[0] = mb;  hvars.the_array[2] = eb;
-    } else {
-      hvars.the_array[1] = mb;  hvars.the_array[3] = eb;
-    }
-    mb_sum += hvars;
-  }, Kokkos::Sum<array_sum::GlobalSum>(wsum));
-  Kokkos::fence();
-  for (int n=0; n<4; ++n) pdata->hdata[NFH0+n] = wsum.the_array[n];
 }

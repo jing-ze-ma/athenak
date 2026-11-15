@@ -616,7 +616,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           rt_xP_ptr = new DvceArray4D<Real>("rt_xP", nmb, n3, n2, n1);
           rt_icut_ptr = new DvceArray3D<int>("rt_icut", nmb, n3, n2);
           rt_Qb_ptr = new DvceArray5D<Real>("rt_Qb", nmb, nblk, n1, n3, n2);
-          RtFhRstAfterAlloc(nmb);   // problem/flux_hst_rst: the restart's cache
+          RtFhRstAfterAlloc(nmb);   // rt_fhst_rst: the restart's cache
           // problem/ck_implicit: the column solve's own scratch.  Nothing here exists
           // with the switch off (see utils/two_stream_column_ck.hpp).
           if (ck_implicit) {
