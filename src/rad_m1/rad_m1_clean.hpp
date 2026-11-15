@@ -20,6 +20,7 @@
 //!   E (1 + h c kE) + h div F = E_old + h c kP a T^4.
 
 #include "athena.hpp"
+#include "bvals/bvals.hpp"
 #include "eos/eos.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 
@@ -83,6 +84,7 @@ struct CleanArgs {
   DvceArray5D<Real> u;         // cell vectors of the cell layout (CLC_*)
   Real h, c, idx[3];           // stage step, light speed, inverse cell widths
   int bc[6];                   // boundary types x1min, x1max, ..., x3max
+  DvceArray2D<BoundaryFlag> mbc;  // boundary flags of the six faces of each MeshBlock
   Real ebath[6];               // boundary bath energy densities
   Real marshak_q;
   bool marshak;                // Marshak boundary form (else the rays' half range)
@@ -95,6 +97,18 @@ struct CleanArgs {
   int is, ie, js, je, ks, ke;
   bool multi_d, three_d;
 };
+
+//----------------------------------------------------------------------------------------
+//! \fn int CleanBc
+//! \brief boundary type of side s (x1min, x1max, ..., x3max) of MeshBlock m: the mesh's
+//! on a physical boundary, M1_IBC_PERIODIC on a face shared with a MeshBlock
+
+KOKKOS_INLINE_FUNCTION
+int CleanBc(const CleanArgs &x, const int m, const int s) {
+  const BoundaryFlag f = x.mbc(m,s);
+  return (f == BoundaryFlag::block || f == BoundaryFlag::periodic) ? M1_IBC_PERIODIC
+                                                                   : x.bc[s];
+}
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanLevel
@@ -178,15 +192,15 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   const int hi = (dir == 0) ? x.ie + 1 : ((dir == 1) ? x.je + 1 : x.ke + 1);
   al = 0.0;
   ar = 0.0;
-  if (pos == lo && x.bc[2*dir] != M1_IBC_PERIODIC) {
-    if (x.bc[2*dir] == M1_IBC_REFLECT) return;
+  if (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC) {
+    if (CleanBc(x, m, 2*dir) == M1_IBC_REFLECT) return;
     const bool beam = x.use_beam && dir == 0 && x.beam(m,k-x.ks,j-x.js) > 0.0;
     if (beam && x.marshak) return;
     ar = x.marshak ? -x.c*x.marshak_q : x.c*x.cs(m,CLN_HM+dir,k,j,i);
     return;
   }
-  if (pos == hi && x.bc[2*dir+1] != M1_IBC_PERIODIC) {
-    if (x.bc[2*dir+1] == M1_IBC_REFLECT) return;
+  if (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC) {
+    if (CleanBc(x, m, 2*dir+1) == M1_IBC_REFLECT) return;
     al = x.marshak ? x.c*x.marshak_q : x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
     return;
   }
@@ -207,13 +221,13 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
 //! \brief true for a face on a physical (non-periodic) boundary
 
 KOKKOS_INLINE_FUNCTION
-bool CleanBoundaryFace(const CleanArgs &x, const int dir, const int k, const int j,
-                       const int i) {
+bool CleanBoundaryFace(const CleanArgs &x, const int dir, const int m, const int k,
+                       const int j, const int i) {
   const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
   const int hi = (dir == 0) ? x.ie + 1 : ((dir == 1) ? x.je + 1 : x.ke + 1);
-  return (pos == lo && x.bc[2*dir] != M1_IBC_PERIODIC) ||
-         (pos == hi && x.bc[2*dir+1] != M1_IBC_PERIODIC);
+  return (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC) ||
+         (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC);
 }
 
 //----------------------------------------------------------------------------------------
@@ -232,7 +246,7 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
     div = x.idx[dir]*(x.cs(m,CLN_D11+dir,k,j,i)*x.w(m,e,k,j,i) -
                       x.cs(m,CLN_D11+dir,kl,jl,il)*x.w(m,e,kl,jl,il));
   }
-  if (!x.multi_d || CleanBoundaryFace(x, dir, k, j, i)) return div;
+  if (!x.multi_d || CleanBoundaryFace(x, dir, m, k, j, i)) return div;
   for (int b = 0; b < 3; ++b) {
     if (b == dir || (b == 1 && !x.multi_d) || (b == 2 && !x.three_d)) continue;
     const int ab = (dir + b == 1) ? 3 : ((dir + b == 2) ? 4 : 5);   // D12, D13, D23
@@ -254,7 +268,7 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
 KOKKOS_INLINE_FUNCTION
 Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
                     const int k, const int j, const int i) {
-  if (!x.multi_d || CleanBoundaryFace(x, dir, k, j, i)) return 0.0;
+  if (!x.multi_d || CleanBoundaryFace(x, dir, m, k, j, i)) return 0.0;
   const Real w = x.fc[dir](m,CLF_W,k,j,i);
   const Real th = x.fc[dir](m,CLF_TH,k,j,i);
   return -(1.0 - w)*th*x.h*x.c*x.c*CleanFaceStress(x, e, dir, m, k, j, i, false);
@@ -271,15 +285,15 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
   const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
   const int hi = (dir == 0) ? x.ie + 1 : ((dir == 1) ? x.je + 1 : x.ke + 1);
-  if (pos == lo && x.bc[2*dir] != M1_IBC_PERIODIC) {
-    if (x.bc[2*dir] == M1_IBC_REFLECT) return 0.0;
+  if (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC) {
+    if (CleanBc(x, m, 2*dir) == M1_IBC_REFLECT) return 0.0;
     if (x.use_beam && dir == 0 && x.beam(m,k-x.ks,j-x.js) > 0.0) {
       return x.beam(m,k-x.ks,j-x.js);
     }
     return x.marshak ? x.c*x.marshak_q*x.ebath[2*dir] : 0.25*x.c*x.ebath[2*dir];
   }
-  if (pos == hi && x.bc[2*dir+1] != M1_IBC_PERIODIC) {
-    if (x.bc[2*dir+1] == M1_IBC_REFLECT) return 0.0;
+  if (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC) {
+    if (CleanBc(x, m, 2*dir+1) == M1_IBC_REFLECT) return 0.0;
     return x.marshak ? -x.c*x.marshak_q*x.ebath[2*dir+1] : -0.25*x.c*x.ebath[2*dir+1];
   }
   const Real w = x.fc[dir](m,CLF_W,k,j,i);

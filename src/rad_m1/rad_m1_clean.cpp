@@ -73,18 +73,17 @@ void RadiationM1::CleanInit() {
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
   }
 
-  int nranks = 1;
-#if MPI_PARALLEL_ENABLED
-  nranks = global_variable::nranks;
-#endif
-  const bool cartesian = !pmy_pack->pmesh->use_cubed_sphere &&
-                         !pmy_pack->pmesh->use_spherical_polar;
-  if (nmb != 1 || nranks != 1 || !cartesian || !vet_sc || !vet_full || chat != c_light ||
-      (cln_consist && (pmy_pack->pmesh->three_d || vet_path != 0))) {
+  Mesh *pm = pmy_pack->pmesh;
+  const bool cartesian = !pm->use_cubed_sphere && !pm->use_spherical_polar;
+  const bool one_block = (pm->nmb_total == 1);
+  if (pm->multilevel || (!one_block && !cln_cell) || !cartesian || !vet_sc ||
+      !vet_full || chat != c_light ||
+      (cln_consist && (pm->three_d || vet_path != 0))) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<rad_m1>/scheme = clean currently needs one MeshBlock on one rank, a "
-              << "Cartesian mesh, closure = vet_sc with vet_tensor = full, and chat = c; "
-              << "clean_consistency a 1-D or 2-D mesh and vet_path = none" << std::endl;
+              << "<rad_m1>/scheme = clean currently needs a uniform Cartesian mesh "
+              << "(several MeshBlocks: clean_layout = cell), closure = vet_sc with "
+              << "vet_tensor = full, and chat = c; clean_consistency a 1-D or 2-D mesh "
+              << "and vet_path = none" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   // the formal solution must provide the half-range sums and C1
@@ -492,7 +491,7 @@ Real RadiationM1::CleanNewtonUpdate() {
     const Real dt = fabs(t - t_old)/fmax(fmax(t, t_old), 1.0e-300);
     dmax = fmax(dmax, fmax(de, dt));
   }, Kokkos::Max<Real>(change));
-  return change;
+  return CleanReduce(change, true);
 }
 
 //----------------------------------------------------------------------------------------
@@ -536,7 +535,7 @@ Real RadiationM1::CleanVelocityUpdate() {
     v_max = fmax(v_max, std::sqrt(v2));
   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax));
   CleanAdvectiveCoefficients();
-  return dvmax/fmax(vmax, 1.0e-300);
+  return CleanReduce(dvmax, true)/fmax(CleanReduce(vmax, true), 1.0e-300);
 }
 
 //----------------------------------------------------------------------------------------
@@ -579,7 +578,7 @@ int RadiationM1::CleanCountNegative() {
     b_max = fmax(b_max, fabs(w(m,CLW_B,k+ks,j+js,i+is)));
   }, Kokkos::Max<Real>(bmax));
 
-  const Real zero = 10.0*cln_tol*bmax;
+  const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
   Real nneg = 0.0;
   Kokkos::parallel_reduce("cln_neg", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &n) {
@@ -591,7 +590,7 @@ int RadiationM1::CleanCountNegative() {
     if (e < 0.0 && e >= -zero) e = 0.0;
     if (!(e >= 0.0)) n += 1.0;
   }, Kokkos::Sum<Real>(nneg));
-  return static_cast<int>(nneg);
+  return static_cast<int>(CleanReduce(nneg, false));
 }
 
 //----------------------------------------------------------------------------------------

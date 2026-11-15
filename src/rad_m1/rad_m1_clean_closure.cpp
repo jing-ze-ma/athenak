@@ -322,8 +322,8 @@ void RadiationM1::CleanClosureExtrap() {
     }
     for (int n = CLN_F2; n < CLN_N; ++n) cs(m,n,k,j,i) = q[n];
   }, Kokkos::Sum<int>(nguard));
-  cln_nguard = nguard;
-  cln_nguard_sum += nguard;
+  cln_nguard = static_cast<int>(CleanReduce(nguard, false));
+  cln_nguard_sum += cln_nguard;
   if (line) cln_next_sum += 1.0;
 
   CleanClosureFill();
