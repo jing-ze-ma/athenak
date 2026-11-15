@@ -460,8 +460,9 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
 //! \brief spherical polar: the exact ray moments of a uniformly bright sphere of radius
 //! R = clean_sphere_radius about the origin seen through vacuum.  Outside it the rays
 //! fill the cone mu > mu_c = sqrt(1 - R^2/r^2) about r_hat: D_rr = (1 + mu_c + mu_c^2)/3,
-//! D_tt = D_pp = (1 - D_rr)/2, h+_r = (1 + mu_c)/2, h-_r = 0, h+-_t,p = +-S/(pi (1 - mu_c))
-//! with S = int_{mu_c}^1 sqrt(1 - mu^2) dmu, C1 = 1; R -> 0 is the point source.  Inside
+//! D_tt = D_pp = (1 - D_rr)/2, h+_r = (1 + mu_c)/2, h-_r = 0,
+//! h+-_t = h+-_p = +-S/(pi (1 - mu_c)) with S = int_{mu_c}^1 sqrt(1 - mu^2) dmu, C1 = 1;
+//! R -> 0 is the point source.  Inside
 //! (r <= R) the radiation is isotropic: D = I/3, h+- = +-1/4, C1 = 0.
 
 void RadiationM1::CleanClosureSphere() {
