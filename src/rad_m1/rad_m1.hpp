@@ -3844,6 +3844,13 @@ class RadiationM1 {
   // a lateral ghost band of vgd_w cells (the deepest reach of an upwind point), filled
   // shell by shell from the 8 lateral neighbours (on-rank copies + MPI)
   int vgd_w = 0;
+  // the clean closure on a wedge: the band of any depth keyed on the global cell
+  // (VetGdGlobalBandInit, theta and phi periodic), the intensities unmapped; the sweep
+  // reads an on-rank owner (vgd_own) directly, a remote one from the band, and applies
+  // the wall map at the read, as one MeshBlock reads itself
+  bool vgd_raw = false;
+  DvceArray4D<int> vgd_own;   // (m, band k, band j, 3): owner's local index (-1 remote),
+                              // its band k, j
   DvceArray5D<Real> vgd_cs;    // (m, 2, k, j, i): ln chi, ln S with the vgd_w band
   DvceArray1D<int> vgd_hloc;   // (8 nmb): local index of the slot's neighbour, -1 remote
   std::vector<int> vgd_hrank, vgd_hlid;   // (8 nmb): the remote neighbour's rank, lid
@@ -4186,6 +4193,9 @@ class RadiationM1 {
   DvceArray1D<int> vgd_gbcap;             // (J): 1 = polar zone (branch only)
   DvceArray1D<int> vgd_gbfs, vgd_gbfr;    // flags -> positions (entry*n + v; +1)
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_gbpb;   // segment bounds
+  // vgd_raw: the scanned flags and bounds per (shell, pass, depth) (VetGdGbHaloC)
+  std::map<int, std::array<DvceArray1D<int>, 2>> vgd_gbcf;
+  std::map<int, std::vector<int>> vgd_gbcb;
   Real vgd_gbdmin = 0.0;
   template <class V>
   void VetGdGbHaloC(V &a, const int i, const int ws);
