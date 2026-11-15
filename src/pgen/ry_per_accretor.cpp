@@ -1934,9 +1934,9 @@ void RyPerWallFlux(Mesh *pm) {
 //! coupling, floor-class gas (rho < env_sponge_rho rho_amb, the floor sponge's density
 //! class) keeps |v| <= env_v_floor_max (rotating frame; the cs metric norm); the kinetic
 //! energy above the cap is removed (not booked, as in the sink cells).  The floor sponge
-//! caps the same cells in the user sources, but the implicit coupling that follows can give
-//! 1e-8 floor gas ~1e3 km/s (the light of the hot nozzle/stream under vet_gd), and the
-//! hydro dt of the next step then follows that floor gas.
+//! caps the same cells in the user sources, but the implicit coupling that follows can
+//! give 1e-8 floor gas ~1e3 km/s (the light of the hot nozzle/stream under vet_gd), and
+//! the hydro dt of the next step then follows that floor gas.
 bool flvc_ = false;
 void RyPerFloorVcap(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
