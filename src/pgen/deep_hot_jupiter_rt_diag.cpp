@@ -989,8 +989,8 @@ void DhjOlrDump(ParameterInput *pin, Mesh *pm) {
 //! Iw are the state at the row (u0): Lrel = sum vol (x P_y - y P_x), P = rho V rebuilt
 //! from the covariant momenta, Iw = sum vol rho (x^2 + y^2), both with the cell-centre
 //! position the Coriolis source uses, so L_abs = Lrel + Omega Iw is the quantity
-//! problem/coriolis_am conserves.  Tcor (the torque the source applied: Tcont with
-//! coriolis_am, else Tcc) and the AmHstStage sums are rates averaged over the interval
+//! the Coriolis fix conserves.  Tcor (the torque the source applied: Tcont with
+//! amh::fix, else Tcc) and the AmHstStage sums are rates averaged over the interval
 //! since the previous row [g cm^2 s^-2].  Then
 //!     d(L_abs)/dt = Tcor + Omega dI/dt + (all other torques),
 //!     Omega dI/dt = Tbnd - Tcont  (+ floors),

@@ -166,13 +166,9 @@ inline bool dhj_flux_hst_floor = false;
 inline bool dhj_relax_drag = true;
 inline Real dhj_relax_drag_rot = 5.0;
 inline Real dhj_floor_t0 = 0.0;   // start of the interval the floor columns average over
-// problem/sponge_top_mode (read without recording): "radial" (DEFAULT since 10-01, user
-// GO after am_coriolis_1001/ext arm D) makes the top velocity sponge damp the RADIAL
-// momentum only (IM1, rhat.m on both grids), so it exerts no axial torque and no drag
-// that reaches the jet below it (Shaw & Shepherd 2007): with it the 1e-5..1e-3 bar jet
-// matches a domain whose top and sponge are 2 decades higher, at the old dt and cost.
-// "all" damps all three components (the behaviour before 10-01, bitwise).
-inline bool dhj_sponge_top_radial = true;
+// The top velocity sponge damps the RADIAL momentum only (IM1, rhat.m on both grids),
+// so it exerts no axial torque and no drag that reaches the jet below it (Shaw &
+// Shepherd 2007).
 // problem/sponge_top_plo_bar, sponge_top_phi_bar, sponge_top_tau (read without recording;
 // defaults 1e-7 bar, 1e-6 bar, 1e3 s): the top sponge ramps from 0 at phi to 1 at plo
 // (linear in log p) with damping rate fdrag/tau
@@ -204,7 +200,7 @@ void DhjCycleDiag(Mesh *pm);
 // after the rotating-frame source, as a force along the zonal direction (-y, x, 0):
 // no radial or meridional part, and the total energy is not touched (the Coriolis force
 // never entered it), so their small work lands in the internal energy.
-//   problem/coriolis_am: take the ZONAL Coriolis torque from the face mass fluxes,
+//   amh::fix: take the ZONAL Coriolis torque from the face mass fluxes,
 //     -Omega Q_c with
 //         Q_c = sum_{faces f of c} Phi_f^out (W_f - W_c),   W = R^2,
 //     Phi^out the outward mass flux (flux x area) the update applies and W_f the face
@@ -245,7 +241,7 @@ void DhjCycleDiag(Mesh *pm);
 //     column makes it 25, so am_hst_split + flux_hst_floor + roche is a start-up FATAL.)
 namespace amh {
 inline bool on = false;            // problem/am_hst
-inline bool fix = false;           // problem/coriolis_am
+inline bool fix = false;           // Coriolis fix (on in a rotating frame)
 inline bool split = false;         // problem/am_hst_split
 inline bool trans = false;         // problem/am_transport
 inline Real pdeep = 1.0e8;  // problem/am_hst_pdeep [barye]: the Tdif_deep split (100 bar)

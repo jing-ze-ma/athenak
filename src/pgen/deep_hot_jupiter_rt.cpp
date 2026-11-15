@@ -126,9 +126,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (pfl->pmhd != nullptr) pfl->pmhd->EnableC2PTrack();
     dhj_floor_t0 = pmy_mesh_->time;
   }
-  // problem/coriolis_am, problem/am_transport (default ON in the rotating frame, user
-  // 10-01) and problem/am_hst (DIAGNOSTIC, default false): see namespace amh.  All read
-  // without recording, so a run that does not rotate is untouched (also its restarts).
+  // The continuity-consistent Coriolis torque (amh::fix, on in a rotating frame),
+  // problem/am_transport (default on in a rotating frame) and problem/am_hst (diagnostic,
+  // default false): see namespace amh.  Read without recording, so a run that does not
+  // rotate is untouched (also its restarts).
   {
     MeshBlockPack *pam = pmy_mesh_->pmb_pack;
     const bool curv = pmy_mesh_->use_cubed_sphere || use_spherical_polar;
@@ -141,39 +142,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::string bad = "";
     if (wbs) bad = mhd ? "<mhd>/wellbalance_static" : "<hydro>/wellbalance_static";
     const bool trq_ok = curv && bad.empty();
-    {
-      const std::string sm = pin->DoesParameterExist("problem","sponge_top_mode")
-                             ? pin->GetString("problem","sponge_top_mode") : "radial";
-      if (sm != "all" && sm != "radial") {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "problem/sponge_top_mode must be all or radial, not '"
-                  << sm << "'" << std::endl;
-        exit(EXIT_FAILURE);
-      }
-      dhj_sponge_top_radial = (sm == "radial");
-      if (pin->DoesParameterExist("problem","sponge_top_plo_bar")) {
-        dhj_sp_top_plo_bar = pin->GetReal("problem","sponge_top_plo_bar");
-      }
-      if (pin->DoesParameterExist("problem","sponge_top_phi_bar")) {
-        dhj_sp_top_phi_bar = pin->GetReal("problem","sponge_top_phi_bar");
-      }
-      if (pin->DoesParameterExist("problem","sponge_top_tau")) {
-        dhj_sp_top_tau = pin->GetReal("problem","sponge_top_tau");
-      }
-      if (global_variable::my_rank == 0) {
-        std::cout << "dhj: top sponge " << dhj_sp_top_plo_bar << " .. "
-                  << dhj_sp_top_phi_bar << " bar, tau " << dhj_sp_top_tau << " s"
-                  << std::endl;
-      }
-      if (global_variable::my_rank == 0) {
-        std::cout << "dhj: problem/sponge_top_mode = " << sm
-                  << (pin->DoesParameterExist("problem","sponge_top_mode") ? ""
-                      : " (default; 'all' = the pre-10-01 full-velocity sponge)")
-                  << std::endl;
-      }
+    // top sponge parameters (radial momentum only, see dhj_sp_top_*)
+    if (pin->DoesParameterExist("problem","sponge_top_plo_bar")) {
+      dhj_sp_top_plo_bar = pin->GetReal("problem","sponge_top_plo_bar");
     }
-    amh::fix = pin->DoesParameterExist("problem","coriolis_am")
-               ? pin->GetBoolean("problem","coriolis_am") : rotating;
+    if (pin->DoesParameterExist("problem","sponge_top_phi_bar")) {
+      dhj_sp_top_phi_bar = pin->GetReal("problem","sponge_top_phi_bar");
+    }
+    if (pin->DoesParameterExist("problem","sponge_top_tau")) {
+      dhj_sp_top_tau = pin->GetReal("problem","sponge_top_tau");
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "dhj: top sponge " << dhj_sp_top_plo_bar << " .. "
+                << dhj_sp_top_phi_bar << " bar, tau " << dhj_sp_top_tau << " s"
+                << std::endl;
+    }
+    amh::fix = rotating;
     amh::trans = pin->DoesParameterExist("problem","am_transport")
                  ? pin->GetBoolean("problem","am_transport") : rotating;
     // amdef-1019: the generic <hydro|mhd>/am_transport (default on cs / sp) is the same
@@ -198,18 +182,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << ": the transport angular-momentum correction is OFF, L_abs drifts"
                 << std::endl;
     }
-    if (global_variable::my_rank == 0 && rotating && !amh::fix) {
-      std::cout << "### WARNING: problem/coriolis_am = false in a rotating run: the "
-                << "Coriolis torque is not continuity-consistent, L_abs drifts"
-                << std::endl;
-    }
     amh::on = flux_hst && pin->DoesParameterExist("problem","am_hst")
               && pin->GetBoolean("problem","am_hst");
     amh::split = amh::on && pin->DoesParameterExist("problem","am_hst_split")
                  && pin->GetBoolean("problem","am_hst_split");
     if ((amh::fix || amh::trans || amh::on) && !(curv && user_srcs)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "problem/coriolis_am, am_transport and am_hst need "
+                << std::endl << "the Coriolis fix, problem/am_transport and am_hst need "
                 << "user_srcs and the cubed sphere or spherical polar" << std::endl;
       exit(EXIT_FAILURE);
     }
@@ -248,7 +227,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       amh::t0 = pmy_mesh_->time;
     }
     if (global_variable::my_rank == 0 && (rotating || amh::fix || amh::trans)) {
-      std::cout << "dhj: angular momentum: problem/coriolis_am = "
+      std::cout << "dhj: angular momentum: Coriolis fix = "
                 << (amh::fix ? "true" : "false") << ", problem/am_transport = "
                 << (amh::trans ? "true" : "false") << ", problem/am_hst = "
                 << (amh::on ? "true" : "false") << std::endl;

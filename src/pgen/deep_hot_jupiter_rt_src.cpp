@@ -22,8 +22,8 @@
 
 //----------------------------------------------------------------------------------------
 //! \fn void AmFix
-//! \brief problem/coriolis_am and problem/am_transport: add the zonal torque
-//!     dT = [coriolis_am] (-Omega Q_c - T_cc) + [am_transport] (T_cons - T_code)
+//! \brief Coriolis fix (amh::fix) and problem/am_transport: add the zonal torque
+//!     dT = [amh::fix] (-Omega Q_c - T_cc) + [am_transport] (T_cons - T_code)
 //! of every active cell to its momentum (AmOut::c2/c3; no radial or meridional part).
 //! Reads this stage's w0, wder, bcc0 and uflx and adds to u0 with the stage's bdt, like
 //! every other term of SourceFunc; T_cc is the torque that SourceFunc's rotating-frame
@@ -56,7 +56,7 @@ void AmFix(Mesh *pm, const Real bdt) {
 //! \fn WbTanProbe (roche-wbtan-1101, problem/roche_wb_tan): wbtan_common.hpp Probe
 //! (hydro or MHD, cubed sphere or spherical polar), with the pgen's own AmFix of W_eq as
 //! the extra term -- its problem/am_transport part (T_cons - T_code: a transport
-//! correction whose sum is the boundary torque) ONLY.  NOT the problem/coriolis_am part:
+//! correction whose sum is the boundary torque) ONLY.  NOT the amh::fix part:
 //! -Omega Q_c of W_eq is the Coriolis torque on the equilibrium's NUMERICAL mass fluxes
 //! (the first stage's radial redistribution, sum = Omega dI/dt); frozen into g_t it was
 //! a constant net z torque (Ttide -5.5e36 cs C8 WASP deck, -9.8e34 = -1.2e-3 Iw Omega
@@ -179,7 +179,6 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // 09-30): switch the two velocity sponges at the end of this kernel off; captured by
     // value.
     const bool sponge_top_ = pm->pgen->hot_jupiter_param.sponge_top;
-    const bool sponge_top_rad_ = dhj_sponge_top_radial;
     const Real sp_plo_ = dhj_sp_top_plo_bar, sp_phi_ = dhj_sp_top_phi_bar;
     const Real sp_tau_ = dhj_sp_top_tau;
     const bool sponge_bottom_ = pm->pgen->hot_jupiter_param.sponge_bottom;
@@ -529,10 +528,6 @@ void SourceFunc(Mesh *pm, Real bdt) {
         fredux = itdrag*bdt; ///(1.0+itdrag*bdt);
         if (sponge_top_) {
           u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
-          if (!sponge_top_rad_) {
-            u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
-            u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
-          }
         }
         // Bottom sponge layer
         logpl = log(1.0e2*bar);

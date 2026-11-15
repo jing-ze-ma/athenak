@@ -333,7 +333,7 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   }
   // the angular-momentum corrections of the same stage, from W_eq's fluxes: the hydro
   // module's (<hydro>/am_transport | am_vector, HydroSrcTerms) and the pgen's own
-  // (problem/coriolis_am | am_transport, AmFix in SourceFunc), both with bdt = 1 into
+  // (amh::fix | am_transport, AmFix in SourceFunc), both with bdt = 1 into
   // `us` (AmFix adds to the fluid's u0, so u0 is pointed at a zeroed scratch for it)
   if (ph->pam != nullptr) {
     DvceArray5D<Real> bcc_;
