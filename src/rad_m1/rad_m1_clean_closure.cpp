@@ -536,6 +536,7 @@ void RadiationM1::CleanRays() {
   });
   VetGdBuild();
   CleanClosureFromGd();
+  if (cln_consist) CleanGdFaceSums();
 }
 
 //----------------------------------------------------------------------------------------
@@ -587,6 +588,141 @@ void RadiationM1::CleanClosureFromGd() {
     }
     if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) q[CLN_J] = 0.0;
     CleanStoreMoments(cs, valid, q, m, k, j, i);
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanGdFaceSums
+//! \brief the vet_gd rays' face fluxes for clean_consistency (CLN_FX, CLN_F2, CLN_F3,
+//! CLN_F1: sum_d w (n_d . A_f) I_f / A_f and the stress columns in the face's local
+//! basis), A_f the exact vector area of the face (closed for every cell).  A theta or
+//! phi face carries the intensity of its upwind cell (none on a physical boundary).  The
+//! r faces of a column take the cell balances from the inner face: the outer r face of a
+//! cell gets what its inner one carries plus the exchange V chi (S - J, -H) less the
+//! lateral outflow (the momentum in the column's basis), so that the energy balance of
+//! every cell is the vet_gd exchange to round-off.
+
+void RadiationM1::CleanGdFaceSums() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int n = vgd_n, og = vgd_w - indcs.ng;
+  auto vi_ = vgd_i;
+  auto dir_ = vgd_dir;
+  auto cw_ = vgd_cs;
+  auto x3f = pmy_pack->pcoord->xx3f;
+  auto x3v = pmy_pack->pcoord->x3v;
+  auto cs = cln_s;
+  CleanArgs x = CleanMakeArgs();
+  // the inner face: no flux at a reflecting one, else the outward beams of the sweep's
+  // emission (vet_bc_inner emit) or of the first cell, the inward ones of the first cell
+  const bool open = (ibc_x1min != M1_IBC_REFLECT);
+  const bool emi = VetBcEmit();
+  const Real iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
+  // vector area of the low face of cell (k,j,i) normal to dir and the local basis there
+  auto face = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
+                                   const int i, Real a[3], Real e[3][3]) {
+    const Real r1 = x.x1f(m,i), r2 = x.x1f(m,i+1), t1 = x.x2f(m,j), t2 = x.x2f(m,j+1);
+    const Real p1 = x3f(m,k), p2 = x3f(m,k+1);
+    const Real hr = 0.5*(r2*r2 - r1*r1);
+    Real th = x.x2v(m,j), ph = x3v(m,k);
+    if (dir == 0) {
+      const Real s2 = 0.5*(t2 - t1) - 0.25*(sin(2.0*t2) - sin(2.0*t1));
+      a[0] = r1*r1*s2*(sin(p2) - sin(p1));
+      a[1] = r1*r1*s2*(cos(p1) - cos(p2));
+      a[2] = r1*r1*0.5*(SQR(sin(t2)) - SQR(sin(t1)))*(p2 - p1);
+    } else if (dir == 1) {
+      th = t1;
+      a[0] = sin(t1)*hr*cos(t1)*(sin(p2) - sin(p1));
+      a[1] = sin(t1)*hr*cos(t1)*(cos(p1) - cos(p2));
+      a[2] = -sin(t1)*hr*sin(t1)*(p2 - p1);
+    } else {
+      ph = p1;
+      a[0] = -hr*(t2 - t1)*sin(p1);
+      a[1] = hr*(t2 - t1)*cos(p1);
+      a[2] = 0.0;
+    }
+    const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+    e[0][0] = st*cp; e[0][1] = st*sp; e[0][2] = ct;
+    e[1][0] = ct*cp; e[1][1] = ct*sp; e[1][2] = -st;
+    e[2][0] = -sp;   e[2][1] = cp;    e[2][2] = 0.0;
+  };
+  // beam of direction d through the low theta or phi face of cell (k,j,i)
+  auto lat = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
+                                  const int i, const int d) {
+    if (CleanBoundaryFace(x, dir, m, k, j, i)) return 0.0;
+    Real a[3], e[3][3];
+    face(dir, m, k, j, i, a, e);
+    const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
+    const int kl = k - (dir == 2), jl = j - (dir == 1);
+    return f*((f > 0.0) ? vi_(m,d,kl+og,jl+og,i) : vi_(m,d,k+og,j+og,i));
+  };
+  // sums of the beams of every direction through the face, per unit area
+  auto add = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
+                                  const int i, const int d, const Real f, Real q[4]) {
+    Real a[3], e[3][3];
+    face(dir, m, k, j, i, a, e);
+    const Real w = dir_(d,3)*f/x.area[dir](m,k,j,i);
+    q[0] += w;
+    for (int b = 0; b < 3; ++b) {
+      q[1+b] += w*(dir_(d,0)*e[b][0] + dir_(d,1)*e[b][1] + dir_(d,2)*e[b][2]);
+    }
+  };
+  for (int dir = 1; dir < 3; ++dir) {
+    const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
+    par_for("cln_gd_lat", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real q[4] = {0.0};
+      for (int d = 0; d < n; ++d) add(dir, m, k, j, i, d, lat(dir, m, k, j, i, d), q);
+      for (int c = 0; c < 4; ++c) cs(m,nf+c,k,j,i) = q[c];
+    });
+  }
+  CleanGhostFill(cln_s, CLN_F2, 4);
+  CleanGhostFill(cln_s, CLN_F3, 4);
+  par_for("cln_gd_col", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    Real a[3], e[3][3], ef[3][3], q[4] = {0.0};
+    face(0, m, k, j, is, a, e);
+    for (int d = 0; open && d < n; ++d) {
+      const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
+      add(0, m, k, j, is, d, f*((emi && f > 0.0) ? iemit : vi_(m,d,k+og,j+og,is)), q);
+    }
+    for (int c = 0; c < 4; ++c) q[c] *= x.area[0](m,k,j,is);
+    for (int i = is; i <= ie; ++i) {
+      for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
+      // the exchange V chi (S - J, -H_b) and the lateral outflow of the cell
+      const Real chi = x.vol(m,k,j,i)*exp(cw_(m,0,k+og,j+og,i));
+      const Real s0 = exp(cw_(m,1,k+og,j+og,i));
+      for (int d = 0; d < n; ++d) {
+        const Real di = dir_(d,3)*vi_(m,d,k+og,j+og,i);
+        q[0] += chi*(dir_(d,3)*s0 - di);
+        for (int b = 0; b < 3; ++b) {
+          q[1+b] -= chi*di*(dir_(d,0)*e[b][0] + dir_(d,1)*e[b][1] + dir_(d,2)*e[b][2]);
+        }
+      }
+      for (int dir = 1; dir < 3; ++dir) {
+        const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
+        for (int up = 0; up < 2; ++up) {
+          const int kk = k + (up && dir == 2), jj = j + (up && dir == 1);
+          if (CleanBoundaryFace(x, dir, m, kk, jj, i)) continue;
+          face(dir, m, kk, jj, i, a, ef);
+          const Real sg = (up ? -1.0 : 1.0)*x.area[dir](m,kk,jj,i);
+          q[0] += sg*cs(m,nf,kk,jj,i);
+          for (int b = 0; b < 3; ++b) {
+            for (int c = 0; c < 3; ++c) {
+              q[1+b] += sg*cs(m,nf+1+c,kk,jj,i)*(ef[c][0]*e[b][0] + ef[c][1]*e[b][1] +
+                                                 ef[c][2]*e[b][2]);
+            }
+          }
+        }
+      }
+    }
+    for (int c = 0; c < 4; ++c) {
+      cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
+      cs(m,CLN_F1+c,k,j,ie) = q[c]/x.area[0](m,k,j,ie+1);
+    }
   });
 }
 

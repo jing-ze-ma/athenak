@@ -94,12 +94,12 @@ void RadiationM1::CleanInit() {
   if (pm->use_spherical_polar) {
     // the rays are vet_gd's (closure = vet_col with vet_gd) on its fixed direction set,
     // swept from the first shell, or the analytic sphere (clean_closure = sphere)
-    if (!cln_cell || !(cln_sphere || vgd_on) || cln_consist || pm->use_polar_boundary ||
+    if (!cln_cell || !(cln_sphere || vgd_on) || (cln_consist && !vgd_on) ||
         vgd_twin || VgdRotOn() || vra_on || vgd_async) {
-      CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_layout = cell, "
-                 "clean_closure = sphere or closure = vet_col with vet_gd (vet_gd_twin = "
-                 "false, vet_gd_rotate_dt = 0, no vet_rotate_avg or vet_gd_async), no "
-                 "clean_consistency and a wedge clear of the poles");
+      CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_layout = "
+                 "cell, clean_closure = sphere (no clean_consistency) or closure = "
+                 "vet_col with vet_gd (vet_gd_twin = false, vet_gd_rotate_dt = 0, no "
+                 "vet_rotate_avg or vet_gd_async)");
     }
     // (the sweep starts at the first shell; its intensities keep their own memory)
     vlat_taucut = std::numeric_limits<Real>::max();
