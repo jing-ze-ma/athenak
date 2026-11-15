@@ -665,7 +665,7 @@ TaskStatus TurbulenceDriver::InitializeModes(Driver *pdrive, int stage) {
 //  zssc_.template sync<DevExeSpace>();
 //  zsss_.template modify<HostMemSpace>();
 //  zsss_.template sync<DevExeSpace>();
-    
+
     xccc_.modify_host();
     xccc_.sync_device();
     xccs_.modify_host();

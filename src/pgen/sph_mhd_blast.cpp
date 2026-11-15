@@ -38,7 +38,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto &size = pmbp->pmb->mb_size;
   auto &mb_bcs = pmbp->pmb->mb_bcs;
   auto &panel = pmbp->pmb->mb_panel;
-    
+
   auto &use_spherical_polar = pmbp->pmesh->use_spherical_polar;
   auto &x1v_ = pmbp->pcoord->x1v;
   auto &x1f_ = pmbp->pcoord->xx1f;
@@ -66,7 +66,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     nscalars = pmbp->pmhd->nscalars;
   }
   auto &w0_ = (pmbp->phydro != nullptr)? pmbp->phydro->w0 : pmbp->pmhd->w0;
-    
+
   Real rho0 = pin->GetReal("problem","rho0");
   Real p0 = pin->GetReal("problem","p0");
   Real r0 = pin->GetReal("problem","r0");
@@ -77,14 +77,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   Real x0 = pin->GetReal("problem","x0");
   Real y0 = pin->GetReal("problem","y0");
   Real z0 = pin->GetReal("problem","z0");
-    
+
   Real V0 = 4.0/3.0*M_PI*r0*r0*r0;
   Real p1 = E0*gm1/V0;
 
   // initialize primitive variables
   par_for("pgen_prob", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    
+
     Real &x1min = size.d_view(m).x1min;
     Real &x1max = size.d_view(m).x1max;
     int nx1 = indcs.nx1;
@@ -94,7 +94,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real &x3min = size.d_view(m).x3min;
     Real &x3max = size.d_view(m).x3max;
     int nx3 = indcs.nx3;
-        
+
     Real x1v, x2v, x3v;
     Real x, y, z;
     Real x00, y00, z00;
@@ -119,7 +119,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       y00 = y0;
       z00 = z0;
     }
-      
+
     Real r = sqrt(SQR(x-x00)+SQR(y-y00)+SQR(z-z00));
     Real p = (r < r0) ? p1 : p0;
 
@@ -129,7 +129,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     w0_(m,IVX,k,j,i) = 0.0;
     w0_(m,IVY,k,j,i) = 0.0;
     w0_(m,IVZ,k,j,i) = 0.0;
-    
+
   });
 
   // initialize magnetic fields if MHD
@@ -138,7 +138,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     auto &bcc0 = pmbp->pmhd->bcc0;
     par_for("pgen_b0", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-        
+
       if (use_spherical_polar) {
         Real x1v = x1v_(m,i);
         Real x2v = x2v_(m,j);
@@ -149,7 +149,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         Real x1fr = x1f_(m,i+1);
         Real x2fr = x2f_(m,j+1);
         Real x3fr = x3f_(m,k+1);
-          
+
         Real A1 = 0.0;
 //        Real A2 = -0.5*b00*x1fl*sin(x3fl-angle);
 //        Real A2ip = -0.5*b00*x1fr*sin(x3fl-angle);
@@ -167,7 +167,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           Real A3ip = 0.5*b00*x1fr*(sin(angle)*sin(x2fl)-cos(angle)*cos(x2fl)*cos(x3v));
           Real A3jp = 0.5*b00*x1fl*(sin(angle)*sin(x2fr)-cos(angle)*cos(x2fr)*cos(x3v));
           Real A3ipjp = 0.5*b00*x1fr*(sin(angle)*sin(x2fr)-cos(angle)*cos(x2fr)*cos(x3v));
-          
+
         b0.x1f(m,k,j,i) = (dxe3(m,k,j+1,i)*A3jp - dxe3(m,k,j,i)*A3)/area1(m,k,j,i) - (dxe2(m,k+1,j,i)*A2kp - dxe2(m,k,j,i)*A2)/area1(m,k,j,i);
         if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) {
           b0.x2f(m,k,j,i) = - ((x1fr*(x3fr-x3fl))*A3ip - (x1fl*(x3fr-x3fl))*A3) / (0.5*(SQR(x1fr)-SQR(x1fl))*(x3fr-x3fl));
@@ -186,7 +186,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (i==ie) b0.x1f(m,k,j,i+1) = b0x1fip;
         if (j==je) b0.x2f(m,k,j+1,i) = b0x2fjp;
         if (k==ke) b0.x3f(m,k+1,j,i) = b0x3fkp;
-          
+
         Real lw, rw;
         lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
         rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
@@ -197,16 +197,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
         rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
         bcc0(m,IBZ,k,j,i) = lw*b0.x3f(m,k,j,i) + rw*b0x3fkp;
-            
+
       } else {
         Real bx = b00*cos(angle);
         Real by = b00*sin(angle);
         Real bz = 0.0;
-    
+
         bcc0(m,IBX,k,j,i) = bx;
         bcc0(m,IBY,k,j,i) = by;
         bcc0(m,IBZ,k,j,i) = bz;
-      
+
         b0.x1f(m,k,j,i) = bx;
         b0.x2f(m,k,j,i) = by;
         b0.x3f(m,k,j,i) = bz;

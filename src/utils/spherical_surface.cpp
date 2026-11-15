@@ -77,7 +77,7 @@ void SphericalSurface::InitializeAngleAndWeights() {
 //
 //  int_weights.template modify<HostMemSpace>();
 //  int_weights.template sync<DevExeSpace>();
-    
+
     polar_pos.modify_host();
     polar_pos.sync_device();
 

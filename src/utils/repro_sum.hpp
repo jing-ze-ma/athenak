@@ -213,7 +213,9 @@ inline void AllMergeMax(ReproSum *v, const int n, Real &mx) {
 //! rank deposits its terms with Add; Values() writes the results
 struct ReproVec {
   std::vector<ReproSum> a;
-  explicit ReproVec(const int n) : a(n) {for (auto &x : a) {x.Init();}}
+  explicit ReproVec(const int n) : a(n) {
+    for (auto &x : a) {x.Init();}
+  }
   void Add(const int q, const Real x) {a[q].Add(x);}
   void Merge() {AllMerge(a.data(), static_cast<int>(a.size()));}
   Real Value(const int q) const {return a[q].Value();}

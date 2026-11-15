@@ -741,7 +741,9 @@ void MHD::RTOpSplitBvals() {
   // <mhd>/split_bval_fast: u0(IEN) alone when SplitBvalFastOK proves it exact
   const bool fast = sbf_on && SplitBvalFastOK();
   const int vm = fast ? (1 << IEN) : 0;
-  if (sbf_on) {if (fast) {++sbf_nfast;} else {++sbf_nfull;}}
+  if (sbf_on) {
+    if (fast) {++sbf_nfast;} else {++sbf_nfull;}
+  }
   while (pbval_u->InitRecv(nmhd+nscalars, vm) != TaskStatus::complete) {}
   if (pmy_pack->pmesh->multilevel) {
     pmy_pack->pmesh->pmr->RestrictCC(u0, coarse_u0);

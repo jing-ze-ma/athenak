@@ -75,7 +75,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   int &ks = indcs.ks; int &ke = indcs.ke;
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
-    
+
   Real x0 = pin->GetReal("problem","x0");
   Real y0 = pin->GetReal("problem","y0");
   Real r0 = pin->GetReal("problem","r0");
@@ -91,13 +91,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 //  if (use_etotgrav) {
 //    phicc0_ = pmbp->phydro->phicc0;
 //  }
-    
+
     auto phi0_x1f = pmbp->phydro->phi0.x1f;
     auto phi0_x2f = pmbp->phydro->phi0.x2f;
     auto phi0_x3f = pmbp->phydro->phi0.x3f;
 
     auto phicc0 = pmbp->phydro->phicc0;
-    
+
     auto u0wb = pmbp->phydro->u0wb;
     auto w0wb = pmbp->phydro->w0wb;
     auto w0facewb_x1f = pmbp->phydro->w0facewb.x1f;
@@ -164,12 +164,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real &x2max = size.d_view(m).x2max;
       int nx2 = indcs.nx2;
       Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-        
+
         Real fy = x2v;
         if (iprob == 1) fy = (1.0-std::cos(ky*x2v))/ky;
       Real p = p0 * std::pow((1.0 - fy/H0),gdgm1);
 //      Real den = rho0 * pow((1 - x2v/H0),1.0/gm1);
-        
+
       Real r = std::sqrt(SQR((x1v - x0)/r0) + SQR((x2v - y0)/r0));
       Real A = A0;
       if (r < 1.0) {A = A0*(1.0 + dAbyA*SQR(std::cos(0.5*M_PI*r)));}
@@ -231,7 +231,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x1f(m,IM3,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IEN,k,j,i+1) = p/gm1;
             }
-            
+
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
             x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
             fy = x2v;
@@ -258,7 +258,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x2f(m,IM3,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IEN,k,j+1,i) = p/gm1;
             }
-            
+
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
             x2v = CellCenterX(j-js, nx2, x2min, x2max);
             fy = x2v;
@@ -299,7 +299,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             Real &x2max = size.d_view(m).x2max;
             int nx2 = indcs.nx2;
             Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-            
+
             Real phicc;
             if (iprob == 1) phicc = grav_acc/ky*std::cos(ky*x2v);
             if (iprob == 2) phicc = - grav_acc * x2v;
@@ -327,7 +327,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           Real &x2max = size.d_view(m).x2max;
           int nx2 = indcs.nx2;
           Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-            
+
             Real fy = x2v;
             if (iprob == 1) fy = (1.0-std::cos(ky*x2v))/ky;
           Real p = p0 * std::pow((1.0 - fy/H0),gdgm1);
@@ -428,7 +428,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
   int nmb = pm->pmb_pack->nmb_thispack;
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
-    
+
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
 
     DvceArray5D<Real> u0_;
@@ -462,7 +462,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user) {
         int nx2 = indcs.nx2;
         Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-          
+
         Real p = p0 * std::pow((1.0 - x2v/H0),gdgm1);
         Real den = std::pow(p/A0,1.0/gamma);
 
@@ -479,7 +479,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
         int nx2 = indcs.nx2;
         Real x2v = CellCenterX((je+j+1)-js, nx2, x2min, x2max);
-          
+
         Real p = p0 * std::pow((1.0 - x2v/H0),gdgm1);
         Real den = std::pow(p/A0,1.0/gamma);
 
@@ -524,7 +524,7 @@ void VaryingGravity(Mesh *pm, Real bdt) {
     const bool use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
 
     Real ky = 2.0*M_PI/pm->mesh_size.x2max;
-    
+
     Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
     // by-value copy, capturable in the device lambda below
@@ -535,7 +535,7 @@ void VaryingGravity(Mesh *pm, Real bdt) {
         Real &x2min = size.d_view(m).x2min;
         Real &x2max = size.d_view(m).x2max;
         Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
-        
+
       Real g = -109904.373*std::sin(ky*x2v);
       Real src = bdt*g*w0(m,IDN,k,j,i);
       if (!use_etotgrav) {
@@ -589,7 +589,7 @@ void ConstGravity(Mesh *pm, Real bdt) {
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
     const bool use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
     const bool use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
-    
+
     Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
     // by-value copy, capturable in the device lambda below
@@ -600,7 +600,7 @@ void ConstGravity(Mesh *pm, Real bdt) {
         Real &x2min = size.d_view(m).x2min;
         Real &x2max = size.d_view(m).x2max;
         Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
-        
+
       Real g = -32797.0738964;
       Real src = bdt*g*w0(m,IDN,k,j,i);
       if (!use_etotgrav) {
