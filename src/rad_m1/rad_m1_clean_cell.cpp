@@ -305,7 +305,7 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
 //! \brief 4x4 blocks of the preconditioner, from A with first-order jumps: the diagonal
 //! block of every cell (all directions) and the blocks of its two neighbours along each
 //! direction (states of cells i-1, i, i+1).  The RC terms in cells i+-2 and the
-//! reconstruction are left to the Krylov solve.
+//! reconstruction are left to the Krylov solve.  Then the blocks of the coarse levels.
 
 void RadiationM1::CleanCellPreconditionerSetup() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -350,25 +350,61 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       for (int c = 0; c < 4; ++c) x.u(m,CLC_A0+4*r+c,k,j,i) = a0[r][c];
     }
   });
+  CleanCellCoarseSetup();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CleanLevel RadiationM1::CleanCellLevel
+//! \brief level l of the preconditioner: l = 0 is the mesh (blocks in cln_x), l > 0 the
+//! coarse levels of the multigrid (cln_mg[l-1])
+
+CleanLevel RadiationM1::CleanCellLevel(const int l) {
+  CleanLevel lv;
+  if (l == 0) {
+    auto &indcs = pmy_pack->pmesh->mb_indcs;
+    lv.u = cln_x;
+    lv.o[0] = indcs.is;
+    lv.o[1] = indcs.js;
+    lv.o[2] = indcs.ks;
+    lv.n[0] = indcs.nx1;
+    lv.n[1] = indcs.nx2;
+    lv.n[2] = indcs.nx3;
+    lv.a0 = CLC_A0;
+    lv.cp = CLC_CP;
+    for (int d = 0; d < 3; ++d) {
+      lv.sm[d] = CleanLineSlotM(d);
+      lv.sp[d] = CleanLineSlotP(d);
+    }
+  } else {
+    lv.u = cln_mg[l-1];
+    for (int d = 0; d < 3; ++d) {
+      lv.o[d] = 0;
+      lv.n[d] = cln_mgn[l-1][d];
+      lv.sm[d] = CLM_M + 32*d;
+      lv.sp[d] = CLM_P + 32*d;
+    }
+    lv.a0 = CLM_A0;
+    lv.cp = CLM_CP;
+  }
+  return lv;
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellLineSolve
-//! \brief u(dst) = L^{-1} u(src), L the block-tridiagonal part of the preconditioner
+//! \brief u(dst) = L^{-1} u(src) on a level, L the block-tridiagonal part of its operator
 //! along direction dir (diagonal blocks and the neighbour blocks along dir): block Thomas
 //! solve on every line
 
-void RadiationM1::CleanCellLineSolve(const int dir, const int src, const int dst) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  const int nx[3] = {indcs.nx1, indcs.nx2, indcs.nx3};
+void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const int src,
+                                     const int dst) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int sm = CleanLineSlotM(dir), sp = CleanLineSlotP(dir);
+  const int is = lv.o[0], js = lv.o[1], ks = lv.o[2];
+  const int a0 = lv.a0, cp = lv.cp, sm = lv.sm[dir], sp = lv.sp[dir];
   // lines run along dir; (p, q) label them
-  const int np = (dir == 2) ? nx[1] : nx[2];
-  const int nq = (dir == 0) ? nx[1] : nx[0];
-  const int nl = nx[dir];
-  auto u = cln_x;
+  const int np = (dir == 2) ? lv.n[1] : lv.n[2];
+  const int nq = (dir == 0) ? lv.n[1] : lv.n[0];
+  const int nl = lv.n[dir];
+  auto u = lv.u;
 
   par_for("clc_thomas", DevExeSpace(), 0, nmb1, 0, np-1, 0, nq-1,
   KOKKOS_LAMBDA(const int m, const int p, const int q) {
@@ -386,14 +422,14 @@ void RadiationM1::CleanCellLineSolve(const int dir, const int src, const int dst
       for (int r = 0; r < 4; ++r) {
         Real rhs = u(m,src+r,k,j,i);
         for (int c = 0; c < 4; ++c) {
-          a[r][c] = u(m,CLC_A0+4*r+c,k,j,i);
+          a[r][c] = u(m,a0+4*r+c,k,j,i);
           b[r][c] = (n < nl - 1) ? u(m,sp+4*r+c,k,j,i) : 0.0;
         }
         if (n > 0) {
           for (int l = 0; l < 4; ++l) {
             const Real aml = u(m,sm+4*r+l,k,j,i);
             if (aml == 0.0) continue;
-            for (int c = 0; c < 4; ++c) a[r][c] -= aml*u(m,CLC_CP+4*l+c,kp,jp,ip);
+            for (int c = 0; c < 4; ++c) a[r][c] -= aml*u(m,cp+4*l+c,kp,jp,ip);
             rhs -= aml*u(m,dst+l,kp,jp,ip);
           }
         }
@@ -401,7 +437,7 @@ void RadiationM1::CleanCellLineSolve(const int dir, const int src, const int dst
       }
       CleanBlockSolve(a, b, 5);
       for (int r = 0; r < 4; ++r) {
-        for (int c = 0; c < 4; ++c) u(m,CLC_CP+4*r+c,k,j,i) = b[r][c];
+        for (int c = 0; c < 4; ++c) u(m,cp+4*r+c,k,j,i) = b[r][c];
         u(m,dst+r,k,j,i) = b[r][4];
       }
       kp = k;
@@ -417,7 +453,7 @@ void RadiationM1::CleanCellLineSolve(const int dir, const int src, const int dst
       for (int r = 0; r < 4; ++r) {
         d[r] = u(m,dst+r,k,j,i);
         for (int c = 0; c < 4; ++c) {
-          d[r] -= u(m,CLC_CP+4*r+c,k,j,i)*u(m,dst+c,kn,jn,in);
+          d[r] -= u(m,cp+4*r+c,k,j,i)*u(m,dst+c,kn,jn,in);
         }
       }
       for (int r = 0; r < 4; ++r) u(m,dst+r,k,j,i) = d[r];
@@ -426,36 +462,184 @@ void RadiationM1::CleanCellLineSolve(const int dir, const int src, const int dst
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::CleanCellPrecondition
-//! \brief u(dst) = M^{-1} u(src): x1-line solve, then line-solve corrections of the
-//! residual along x2, x3 (multi-D), and x1, x2, x3 again in each further sweep
-//! (clean_pc_sweeps; multiplicative line relaxation)
+//! \fn void RadiationM1::CleanCellLevelApply
+//! \brief u(dst) = A_l u(src) with the blocks of a level: diagonal block plus the
+//! neighbour blocks of the neighbours inside the level
 
-void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, ie = indcs.ie;
-  int js = indcs.js, je = indcs.je;
-  int ks = indcs.ks, ke = indcs.ke;
+void RadiationM1::CleanCellLevelApply(const CleanLevel &lv, const int src,
+                                      const int dst) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto u = cln_x;
-  CleanCellLineSolve(0, src, dst);
-  for (int n = 1; n < 3*cln_pcsweeps; ++n) {
-    const int dir = n % 3;
-    if ((dir == 1 && !pmy_pack->pmesh->multi_d) ||
-        (dir == 2 && !pmy_pack->pmesh->three_d)) continue;
-    CleanCellApply(dst, CLC_T1);
-    par_for("clc_pcres", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      for (int c = 0; c < 4; ++c) {
-        u(m,CLC_T1+c,k,j,i) = u(m,src+c,k,j,i) - u(m,CLC_T1+c,k,j,i);
+  const CleanLevel l = lv;
+
+  par_for("clc_lvapply", DevExeSpace(), 0, nmb1, l.o[2], l.o[2]+l.n[2]-1,
+          l.o[1], l.o[1]+l.n[1]-1, l.o[0], l.o[0]+l.n[0]-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real y[4];
+    for (int r = 0; r < 4; ++r) {
+      y[r] = 0.0;
+      for (int c = 0; c < 4; ++c) y[r] += l.u(m,l.a0+4*r+c,k,j,i)*l.u(m,src+c,k,j,i);
+    }
+    const int pos[3] = {i - l.o[0], j - l.o[1], k - l.o[2]};
+    for (int d = 0; d < 3; ++d) {
+      const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+      for (int r = 0; r < 4; ++r) {
+        for (int c = 0; c < 4; ++c) {
+          if (pos[d] > 0) {
+            y[r] += l.u(m,l.sm[d]+4*r+c,k,j,i)*l.u(m,src+c,k-dk,j-dj,i-di);
+          }
+          if (pos[d] < l.n[d] - 1) {
+            y[r] += l.u(m,l.sp[d]+4*r+c,k,j,i)*l.u(m,src+c,k+dk,j+dj,i+di);
+          }
+        }
+      }
+    }
+    for (int r = 0; r < 4; ++r) l.u(m,dst+r,k,j,i) = y[r];
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellCoarseSetup
+//! \brief blocks of the coarse levels by aggregation (Galerkin product with
+//! piecewise-constant prolongation and summing restriction): a coarse block is the sum of
+//! the blocks of its fine cells, the couplings between fine cells of the same coarse cell
+//! folded into the diagonal block
+
+void RadiationM1::CleanCellCoarseSetup() {
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nlev = static_cast<int>(cln_mg.size()) + 1;
+  for (int lc = 1; lc < nlev; ++lc) {
+    const CleanLevel f = CleanCellLevel(lc-1), c = CleanCellLevel(lc);
+    const int r[3] = {f.n[0]/c.n[0], f.n[1]/c.n[1], f.n[2]/c.n[2]};
+
+    par_for("clc_galerkin", DevExeSpace(), 0, nmb1, 0, c.n[2]-1, 0, c.n[1]-1,
+            0, c.n[0]-1,
+    KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int ic) {
+      for (int s = 0; s < CLM_CP; ++s) c.u(m,s,kc,jc,ic) = 0.0;
+      for (int a2 = 0; a2 < r[2]; ++a2) {
+        for (int a1 = 0; a1 < r[1]; ++a1) {
+          for (int a0 = 0; a0 < r[0]; ++a0) {
+            const int k = f.o[2] + r[2]*kc + a2;
+            const int j = f.o[1] + r[1]*jc + a1;
+            const int i = f.o[0] + r[0]*ic + a0;
+            const int a[3] = {a0, a1, a2};
+            for (int q = 0; q < 16; ++q) c.u(m,c.a0+q,kc,jc,ic) += f.u(m,f.a0+q,k,j,i);
+            for (int d = 0; d < 3; ++d) {
+              if (f.n[d] == 1) continue;
+              const int dm = (a[d] > 0) ? c.a0 : c.sm[d];
+              const int dp = (a[d] < r[d] - 1) ? c.a0 : c.sp[d];
+              for (int q = 0; q < 16; ++q) {
+                c.u(m,dm+q,kc,jc,ic) += f.u(m,f.sm[d]+q,k,j,i);
+                c.u(m,dp+q,kc,jc,ic) += f.u(m,f.sp[d]+q,k,j,i);
+              }
+            }
+          }
+        }
       }
     });
-    CleanCellLineSolve(dir, CLC_T1, CLC_T2);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellSmooth
+//! \brief nsweep sweeps of line relaxation on level l for A_l u(dst) = u(src): along x1,
+//! x2, x3 in turn, each a block-tridiagonal solve of the residual on all lines of that
+//! direction (multiplicative).  first: u(dst) starts from the x1-line solve of u(src).
+//! The residual on the mesh uses the full operator, on coarse levels their blocks.
+
+void RadiationM1::CleanCellSmooth(const int l, const int src, const int dst,
+                                  const bool first, const int nsweep) {
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const CleanLevel lv = CleanCellLevel(l);
+  const int t1 = (l == 0) ? CLC_T1 : CLM_T1, t2 = (l == 0) ? CLC_T2 : CLM_T2;
+  const int is = lv.o[0], ie = lv.o[0] + lv.n[0] - 1;
+  const int js = lv.o[1], je = lv.o[1] + lv.n[1] - 1;
+  const int ks = lv.o[2], ke = lv.o[2] + lv.n[2] - 1;
+  auto u = lv.u;
+  if (first) CleanCellLineSolve(lv, 0, src, dst);
+  for (int n = first ? 1 : 0; n < 3*nsweep; ++n) {
+    const int dir = n % 3;
+    if (lv.n[dir] == 1) continue;
+    if (l == 0) {
+      CleanCellApply(dst, t1);
+    } else {
+      CleanCellLevelApply(lv, dst, t1);
+    }
+    par_for("clc_pcres", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int c = 0; c < 4; ++c) u(m,t1+c,k,j,i) = u(m,src+c,k,j,i) - u(m,t1+c,k,j,i);
+    });
+    CleanCellLineSolve(lv, dir, t1, t2);
     par_for("clc_pccor", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      for (int c = 0; c < 4; ++c) u(m,dst+c,k,j,i) += u(m,CLC_T2+c,k,j,i);
+      for (int c = 0; c < 4; ++c) u(m,dst+c,k,j,i) += u(m,t2+c,k,j,i);
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellVCycle
+//! \brief u(dst) = M^{-1} u(src) on level l by a multigrid V-cycle: line-relaxation
+//! smoothing, the residual summed over each coarse cell, the V-cycle on level l+1, its
+//! solution added to every fine cell of its coarse cell, smoothing again.  The coarsest
+//! level (a few cells per direction) is relaxed with four times the sweeps.
+
+void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
+  const int nlev = static_cast<int>(cln_mg.size()) + 1;
+  if (l == nlev - 1) {
+    CleanCellSmooth(l, src, dst, true, (l == 0) ? cln_pcsweeps : 4*cln_pcsweeps);
+    return;
+  }
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const CleanLevel f = CleanCellLevel(l), c = CleanCellLevel(l+1);
+  const int t1 = (l == 0) ? CLC_T1 : CLM_T1;
+  const int r[3] = {f.n[0]/c.n[0], f.n[1]/c.n[1], f.n[2]/c.n[2]};
+
+  // pre-smoothing and the residual
+  CleanCellSmooth(l, src, dst, true, cln_pcsweeps);
+  if (l == 0) {
+    CleanCellApply(dst, t1);
+  } else {
+    CleanCellLevelApply(f, dst, t1);
+  }
+  auto uf = f.u;
+  auto uc = c.u;
+  par_for("clc_restrict", DevExeSpace(), 0, nmb1, 0, c.n[2]-1, 0, c.n[1]-1, 0, c.n[0]-1,
+  KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int ic) {
+    for (int q = 0; q < 4; ++q) {
+      Real s = 0.0;
+      for (int a2 = 0; a2 < r[2]; ++a2) {
+        for (int a1 = 0; a1 < r[1]; ++a1) {
+          for (int a0 = 0; a0 < r[0]; ++a0) {
+            const int k = f.o[2] + r[2]*kc + a2;
+            const int j = f.o[1] + r[1]*jc + a1;
+            const int i = f.o[0] + r[0]*ic + a0;
+            s += uf(m,src+q,k,j,i) - uf(m,t1+q,k,j,i);
+          }
+        }
+      }
+      uc(m,CLM_B+q,kc,jc,ic) = s;
+    }
+  });
+
+  // coarse-level correction
+  CleanCellVCycle(l+1, CLM_B, CLM_X);
+  par_for("clc_prolong", DevExeSpace(), 0, nmb1, f.o[2], f.o[2]+f.n[2]-1,
+          f.o[1], f.o[1]+f.n[1]-1, f.o[0], f.o[0]+f.n[0]-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kc = (k - f.o[2])/r[2], jc = (j - f.o[1])/r[1], ic = (i - f.o[0])/r[0];
+    for (int q = 0; q < 4; ++q) uf(m,dst+q,k,j,i) += uc(m,CLM_X+q,kc,jc,ic);
+  });
+
+  // post-smoothing
+  CleanCellSmooth(l, src, dst, false, cln_pcsweeps);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellPrecondition
+//! \brief u(dst) = M^{-1} u(src): one multigrid V-cycle from the mesh level
+
+void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
+  CleanCellVCycle(0, src, dst);
 }
 
 //----------------------------------------------------------------------------------------

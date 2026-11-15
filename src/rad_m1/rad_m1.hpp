@@ -48,6 +48,7 @@ namespace hydro {class RingAvg;}   // ringavg-1029: hydro_ringavg.hpp
 
 namespace radm1 {
 struct CleanArgs;   // rad_m1_clean.hpp
+struct CleanLevel;  // rad_m1_clean.hpp
 
 // indices of the evolved moments in u0(m,n,k,j,i)
 constexpr int M1_E  = 0;
@@ -2925,7 +2926,14 @@ class RadiationM1 {
   void CleanCellApply(const int src, const int dst);
   void CleanCellPreconditionerSetup();
   void CleanCellPrecondition(const int src, const int dst);
-  void CleanCellLineSolve(const int dir, const int src, const int dst);
+  CleanLevel CleanCellLevel(const int l);
+  void CleanCellLineSolve(const CleanLevel &lv, const int dir, const int src,
+                          const int dst);
+  void CleanCellLevelApply(const CleanLevel &lv, const int src, const int dst);
+  void CleanCellCoarseSetup();
+  void CleanCellSmooth(const int l, const int src, const int dst, const bool first,
+                       const int nsweep);
+  void CleanCellVCycle(const int l, const int src, const int dst);
   int CleanCellMarkFaces();
   void CleanCellAllLowOrder();
   void CleanCellDiagnose();
@@ -2957,7 +2965,9 @@ class RadiationM1 {
   int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
-  int cln_pcsweeps = 1;         // clean_pc_sweeps: line-relaxation sweeps (preconditioner)
+  int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
+  std::vector<DvceArray5D<Real>> cln_mg;          // coarse levels of the multigrid
+  std::vector<std::array<int, 3>> cln_mgn;        //   and their cells along x1..x3
   Real cln_psi_eps = 1.0e-12;   // clean_psi_eps: floor of the smoothness sensor
   int cln_nnreal = 0;           // cells with |F| > c E in the last cell-layout solve
   bool cln_feedback = false;    // gas coupling active

@@ -9,6 +9,7 @@
 //! gas by Newton iteration on the exchange and a fixed-point iteration on the velocity.
 //! See rad_m1_clean.hpp for the discrete equations.
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
@@ -46,6 +47,23 @@ void RadiationM1::CleanInit() {
   if (cln_cell) {
     Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
     Kokkos::deep_copy(cln_x, 0.0);
+  }
+  // multigrid levels of the cell layout: halve every direction with an even number
+  // (>= 4) of cells, down to the level where no direction can be halved
+  if (cln_cell) {
+    std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
+    while (true) {
+      bool coarser = false;
+      for (int d = 0; d < 3; ++d) {
+        if (nc[d] >= 4 && nc[d] % 2 == 0) {
+          nc[d] /= 2;
+          coarser = true;
+        }
+      }
+      if (!coarser) break;
+      cln_mgn.push_back(nc);
+      cln_mg.emplace_back("cln_mg", nmb, CLM_N, nc[2], nc[1], nc[0]);
+    }
   }
   if (cln_extrap > 0) {
     Kokkos::realloc(cln_mn, nmb, CLN_N, n3, n2, n1);
@@ -114,7 +132,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   const bool iterate = cln_feedback || (cell && cln_recon) || cln_closit;
   const bool lagged = (cell && cln_recon) || cln_closit;
   const bool t2stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
-  int nit = 0, nit_sum = 0, npic = 0, npos = 0, nmark = 0;
+  int nit = 0, nit_sum = 0, nsolve = 0, npic = 0, npos = 0, nmark = 0;
   bool all_low = false;
   Real dpic = 0.0;
   bool converged = !iterate;
@@ -148,6 +166,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       }
       nit = CleanBiCGStab();
       nit_sum += std::abs(nit);
+      ++nsolve;
       cln_nsolve += 1.0;
       cln_nit += std::abs(nit);
       if (!iterate || nit < 0) break;
@@ -190,9 +209,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (global_variable::my_rank == 0) {
     if (cell) {
       std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pic %d %.2e pos %d mark %d "
-                  "all %d neg %d nreal %d guard %d\n", pmy_pack->pmesh->ncycle, t2_solve,
-                  nit, nit_sum, npic, dpic, npos, nmark, all_low ? 1 : 0, nneg,
-                  cln_nnreal, cln_nguard);
+                  "all %d neg %d nreal %d guard %d solves %d\n", pmy_pack->pmesh->ncycle,
+                  t2_solve, nit, nit_sum, npic, dpic, npos, nmark, all_low ? 1 : 0, nneg,
+                  cln_nnreal, cln_nguard, nsolve);
     } else {
       std::printf("CLEAN cycle %d t2s %d it %d neg %d guard %d\n",
                   pmy_pack->pmesh->ncycle, t2_solve, nit, nneg, cln_nguard);
