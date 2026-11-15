@@ -9,6 +9,7 @@
 //! gas by Newton iteration on the exchange and a fixed-point iteration on the velocity.
 //! See rad_m1_clean.hpp for the discrete equations.
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
@@ -46,6 +47,23 @@ void RadiationM1::CleanInit() {
   if (cln_cell) {
     Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
     Kokkos::deep_copy(cln_x, 0.0);
+  }
+  // multigrid levels: halve every direction with an even number (>= 4) of cells, down
+  // to the level where no direction can be halved
+  if (cln_cell && cln_pc == 1) {
+    std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
+    while (true) {
+      bool coarser = false;
+      for (int d = 0; d < 3; ++d) {
+        if (nc[d] >= 4 && nc[d] % 2 == 0) {
+          nc[d] /= 2;
+          coarser = true;
+        }
+      }
+      if (!coarser) break;
+      cln_mgn.push_back(nc);
+      cln_mg.emplace_back("cln_mg", nmb, CLM_N, nc[2], nc[1], nc[0]);
+    }
   }
   if (cln_extrap > 0) {
     Kokkos::realloc(cln_mn, nmb, CLN_N, n3, n2, n1);

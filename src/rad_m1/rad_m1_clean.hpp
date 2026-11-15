@@ -89,6 +89,32 @@ struct CleanArgs {
 };
 
 //----------------------------------------------------------------------------------------
+//! \struct CleanLevel
+//! \brief one grid level of the cell-layout preconditioner: an array holding the 4x4
+//! blocks of the first-order operator (diagonal block and the blocks of the two
+//! neighbours along each direction) and 4-component vectors, with their slots
+
+struct CleanLevel {
+  DvceArray5D<Real> u;         // blocks and vectors (m, slot, k, j, i)
+  int o[3];                    // index of the first active cell along x1, x2, x3
+  int n[3];                    // active cells along x1, x2, x3
+  int a0;                      // diagonal block
+  int sm[3], sp[3];            // blocks of the lower and upper neighbour along each dir
+  int cp;                      // block-tridiagonal solve scratch
+};
+
+// slots of a coarse level (arrays cln_mg, no ghost cells)
+constexpr int CLM_A0 = 0;    // diagonal block (row major)
+constexpr int CLM_M = 16;    // block of the lower neighbour along dir: CLM_M + 32 dir
+constexpr int CLM_P = 32;    // block of the upper neighbour along dir: CLM_P + 32 dir
+constexpr int CLM_CP = 112;  // block-tridiagonal solve scratch
+constexpr int CLM_B = 128;   // right-hand side
+constexpr int CLM_X = 132;   // solution
+constexpr int CLM_T1 = 136;  // residual
+constexpr int CLM_T2 = 140;  // line-solve correction
+constexpr int CLM_N = 144;
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanSmoothStep
 //! \brief 3x^2 - 2x^3 on [0,1], 0 below and 1 above
 
