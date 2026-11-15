@@ -103,6 +103,13 @@ void RadiationM1::CleanInit() {
                  "vet_col with vet_gd (vet_gd_twin = false, vet_gd_rotate_dt = 0, no "
                  "vet_rotate_avg or vet_gd_async)");
     }
+    // the rays' theta walls follow the mesh: a reflecting wall mirrors (the conservative
+    // transport reflects specularly, CleanFvWalls), a periodic one wraps
+    if (vgd_on && !pm->use_polar_boundary) {
+      vgd_thmir = (cln_rfv == 0) &&
+                  (pm->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::reflect);
+      vgd_thvac = 0;
+    }
     // (the sweep starts at the first shell; its intensities keep their own memory)
     vlat_taucut = std::numeric_limits<Real>::max();
     marena_on = false;
