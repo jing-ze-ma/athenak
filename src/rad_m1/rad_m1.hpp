@@ -2918,6 +2918,7 @@ class RadiationM1 {
   void CleanCellLineSolve(const int dir, const int src, const int dst);
   int CleanCellMarkFaces();
   void CleanCellAllLowOrder();
+  void CleanCellDiagnose();
   Real CleanCellNewtonUpdate();
   Real CleanCellVelocityUpdate();
   void CleanCellCopyIterate();
@@ -2940,6 +2941,9 @@ class RadiationM1 {
   bool cln_recon = true;        // clean_recon: plm (true) | none, cell layout
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
   bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter
+  bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
+  bool cln_charall = false;     // clean_char_all: D = 1 for all stress rows on low faces
+  int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: line-relaxation sweeps (preconditioner)
   Real cln_psi_eps = 1.0e-12;   // clean_psi_eps: floor of the smoothness sensor

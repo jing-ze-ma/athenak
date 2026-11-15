@@ -11,6 +11,7 @@
 //! discrete equations.
 
 #include <cmath>
+#include <cstdio>
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
@@ -197,6 +198,7 @@ void RadiationM1::CleanCellRightHandSide() {
   auto eos = fl.eos;
   auto op = opac;
 
+  const int vfreeze = cln_vfreeze;
   par_for("clc_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = x.w(m,CLW_T,k,j,i);
@@ -212,7 +214,7 @@ void RadiationM1::CleanCellRightHandSide() {
       // work of the radiation force on the gas: the kinetic energy the gas gains
       for (int n = 0; n < 3; ++n) {
         const Real dm = x.w(m,CLW_DM+n,k,j,i);
-        work += (uh(m,IM1+n,k,j,i) + 0.5*dm)*dm/d;
+        work += (uh(m,IM1+n,k,j,i) + (vfreeze == 2 ? 0.0 : 0.5*dm))*dm/d;
       }
     }
     Real sdiv[4];
@@ -510,7 +512,7 @@ Real RadiationM1::CleanCellVelocityUpdate() {
     }
     v_max = fmax(v_max, std::sqrt(v2));
   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax));
-  CleanAdvectiveCoefficients();
+  if (cln_vfreeze != 1) CleanAdvectiveCoefficients();
   return dvmax/fmax(vmax, 1.0e-300);
 }
 
@@ -662,6 +664,56 @@ void RadiationM1::CleanCellAllLowOrder() {
       fc(m,CLF_LO,k,j,i) = 1.0;
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellDiagnose
+//! \brief diagnostic (clean_diag_cells): for the cells with |F| > c E in the solution,
+//! the smallest eigenvalue of D - f f^T (in-plane) for f = F/(cE) of the old vector and of
+//! the solution, the rays' D, C1 and flux factor h = H/J against the moment f
+
+void RadiationM1::CleanCellDiagnose() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks;
+  auto u = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_x);
+  auto cs = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_s);
+  auto lmin = [](Real a, Real b, Real d) {
+    return 0.5*(a + d) - std::sqrt(0.25*(a - d)*(a - d) + b*b);
+  };
+  int nbad = 0, nold = 0, nnew = 0, nray = 0, nprint = 0;
+  for (int j = js; j <= je; ++j) {
+    for (int i = is; i <= ie; ++i) {
+      const Real e = u(0,CLC_X,ks,j,i), eo = u(0,CLC_O,ks,j,i);
+      const Real y1 = u(0,CLC_X+1,ks,j,i), y2 = u(0,CLC_X+2,ks,j,i);
+      const Real yo1 = u(0,CLC_O+1,ks,j,i), yo2 = u(0,CLC_O+2,ks,j,i);
+      if (std::sqrt(y1*y1 + y2*y2) <= (1.0 + 1.0e-6)*e) continue;
+      ++nbad;
+      const Real d11 = cs(0,CLN_D11,ks,j,i), d22 = cs(0,CLN_D11+1,ks,j,i);
+      const Real d12 = cs(0,CLN_D11+3,ks,j,i);
+      const Real f1 = y1/e, f2 = y2/e;
+      const Real g1 = (eo > 0.0) ? yo1/eo : 0.0, g2 = (eo > 0.0) ? yo2/eo : 0.0;
+      const Real h1 = cs(0,CLN_HP,ks,j,i) + cs(0,CLN_HM,ks,j,i);
+      const Real h2 = cs(0,CLN_HP+1,ks,j,i) + cs(0,CLN_HM+1,ks,j,i);
+      const Real lo = lmin(d11 - g1*g1, d12 - g1*g2, d22 - g2*g2);
+      const Real ln = lmin(d11 - f1*f1, d12 - f1*f2, d22 - f2*f2);
+      const Real lr = lmin(d11 - h1*h1, d12 - h1*h2, d22 - h2*h2);
+      if (lo < -1.0e-12) ++nold;
+      if (ln < -1.0e-12) ++nnew;
+      if (lr < -1.0e-12) ++nray;
+      if (nprint < 25) {
+        ++nprint;
+        std::printf("CLDIAG i %d j %d E_old %.3e |f_old| %.3f E %.3e |f| %.3f D %.3f %.3f %.3f "
+                    "C1 %.3f J/E %.3e f_ray %.3f %.3f f_old %.3f %.3f f %.3f %.3f "
+                    "lmin_old %.3e lmin_new %.3e lmin_ray %.3e\n", i - is, j - js, eo,
+                    std::sqrt(g1*g1 + g2*g2), e, std::sqrt(f1*f1 + f2*f2), d11, d22, d12,
+                    cs(0,CLN_C1,ks,j,i), cs(0,CLN_J,ks,j,i)/fmax(e, 1.0e-300), h1, h2,
+                    g1, g2, f1, f2, lo, ln, lr);
+      }
+    }
+  }
+  std::printf("CLDIAG cycle %d t2s %d bad %d D-ff^T<0: old %d new %d ray %d\n",
+              pmy_pack->pmesh->ncycle, t2_solve, nbad, nold, nnew, nray);
 }
 
 //----------------------------------------------------------------------------------------

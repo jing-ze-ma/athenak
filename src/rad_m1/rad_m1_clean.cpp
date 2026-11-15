@@ -165,6 +165,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
 
   // 4. positivity of the solution
   const int nneg = cell ? CleanCellCountNegative() : CleanCountNegative();
+  if (cell && cln_diagcells && all_low) CleanCellDiagnose();
   if (nit < 0) cln_nfail += 1.0;
   if (nneg > 0) cln_nneg += 1.0;
   if (global_variable::my_rank == 0) {

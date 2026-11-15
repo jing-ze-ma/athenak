@@ -268,9 +268,11 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
     if (!low) CleanJumpCoefficients(x, dir, 1+b, m, k, j, i, cj);
     // a low-order face carries the normal stress with pressure factor 1 (upwind
     // characteristics E +- F/c with speeds +-c)
-    const bool chr = low && b == dir;
-    jl[1+b][0] = 0.5*x.c*(chr ? 1.0 : CleanDiag(x, b, dir, m, kl, jl_, il));
-    jr[1+b][0] = 0.5*x.c*(chr ? 1.0 : CleanDiag(x, b, dir, m, k, j, i));
+    // (clean_char_all: every stress component takes D = 1 on low-order faces)
+    const bool chr = low && (b == dir || x.charall);
+    const Real dch = (b == dir) ? 1.0 : 0.0;
+    jl[1+b][0] = 0.5*x.c*(chr ? dch : CleanDiag(x, b, dir, m, kl, jl_, il));
+    jr[1+b][0] = 0.5*x.c*(chr ? dch : CleanDiag(x, b, dir, m, k, j, i));
     jl[1+b][1+b] = -hs*cj[1];
     jr[1+b][1+b] = -hs*cj[2];
   }
