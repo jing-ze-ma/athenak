@@ -110,7 +110,7 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
     opac_(m,M1_OP_P,k,j,i) = d*op;
     opac_(m,M1_OP_E,k,j,i) = d*oe;
     opac_(m,M1_OP_T,k,j,i) = d*(of + os);
-    if (osc) {opac_(m,M1_OP_S,k,j,i) = d*os;}
+    if (osc) opac_(m,M1_OP_S,k,j,i) = d*os;
   });
 
   // <rad_m1>/dbg_opac_patch (diagnostic): opacities times f inside an x1-x2 box
@@ -129,7 +129,7 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
         opac_(m,M1_OP_P,k,j,i) *= pf;
         opac_(m,M1_OP_E,k,j,i) *= pf;
         opac_(m,M1_OP_T,k,j,i) *= pf;
-        if (osc) {opac_(m,M1_OP_S,k,j,i) *= pf;}
+        if (osc) opac_(m,M1_OP_S,k,j,i) *= pf;
       }
     });
   }
@@ -162,7 +162,9 @@ void RadiationM1::RSLACheck() {
   Kokkos::MDRangePolicy<Kokkos::Rank<3>>(DevExeSpace(), {0,ks,js}, {nmb1+1,ke+1,je+1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, Real &lmax) {
     Real tau = 0.0;
-    for (int i=is; i<=ie; ++i) {tau += opac_(m,M1_OP_T,k,j,i)*size.d_view(m).dx1;}
+    for (int i=is; i<=ie; ++i) {
+      tau += opac_(m,M1_OP_T,k,j,i)*size.d_view(m).dx1;
+    }
     lmax = (tau > lmax) ? tau : lmax;
   }, Kokkos::Max<Real>(taumax));
 
