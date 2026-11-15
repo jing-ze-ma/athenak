@@ -386,8 +386,9 @@ void RadiationM1::CleanCellLineSolve(const int dir, const int src, const int dst
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellPrecondition
-//! \brief u(dst) = M^{-1} u(src): x1-line solve, then (multi-D) one line-solve correction
-//! of the residual along x2 and along x3 (multiplicative line relaxation)
+//! \brief u(dst) = M^{-1} u(src): x1-line solve, then line-solve corrections of the
+//! residual along x2, x3 (multi-D), and x1, x2, x3 again in each further sweep
+//! (clean_pc_sweeps; multiplicative line relaxation)
 
 void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -397,7 +398,8 @@ void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto u = cln_x;
   CleanCellLineSolve(0, src, dst);
-  for (int dir = 1; dir < 3; ++dir) {
+  for (int n = 1; n < 3*cln_pcsweeps; ++n) {
+    const int dir = n % 3;
     if ((dir == 1 && !pmy_pack->pmesh->multi_d) ||
         (dir == 2 && !pmy_pack->pmesh->three_d)) continue;
     CleanCellApply(dst, CLC_T1);
@@ -532,7 +534,8 @@ void RadiationM1::CleanCellCopyIterate() {
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanCellCountNegative
 //! \brief CleanCountNegative on E of the solution; also counts the cells with
-//! |F| > c E beyond the solver tolerance (cln_nnreal, diagnostic only).  Returns the number of negative cells.
+//! |F| > c E beyond the solver tolerance (cln_nnreal, diagnostic only).  Returns the
+//! number of negative cells.
 
 int RadiationM1::CleanCellCountNegative() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;

@@ -254,17 +254,17 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
     return;
   }
   Real al, hs;
-  const bool lo = CleanFaceDissipation(x, dir, m, k, j, i, al, hs);
+  const bool low = CleanFaceDissipation(x, dir, m, k, j, i, al, hs);
   const Real th = x.fc[dir](m,CLF_TH,k,j,i);
   const Real q = 0.75*(1.0 - al)*th*x.h*x.c*x.c*x.idx[dir];
   Real cj[4] = {0.0, -1.0, 1.0, 0.0};
-  if (!lo) CleanJumpCoefficients(x, dir, 0, m, k, j, i, cj);
+  if (!low) CleanJumpCoefficients(x, dir, 0, m, k, j, i, cj);
   jl[0][0] = -hs*cj[1] + q*CleanDiag(x, dir, dir, m, kl, jl_, il);
   jr[0][0] = -hs*cj[2] - q*CleanDiag(x, dir, dir, m, k, j, i);
   jl[0][1+dir] = 0.5*x.c;
   jr[0][1+dir] = 0.5*x.c;
   for (int b = 0; b < x.nf; ++b) {
-    if (!lo) CleanJumpCoefficients(x, dir, 1+b, m, k, j, i, cj);
+    if (!low) CleanJumpCoefficients(x, dir, 1+b, m, k, j, i, cj);
     jl[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, kl, jl_, il);
     jr[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, k, j, i);
     jl[1+b][1+b] = -hs*cj[1];
