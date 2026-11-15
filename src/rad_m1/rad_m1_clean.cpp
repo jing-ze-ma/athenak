@@ -48,6 +48,9 @@ void RadiationM1::CleanInit() {
     Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
     Kokkos::deep_copy(cln_x, 0.0);
   }
+  if (cln_cell && cln_gmres_m > 0) {
+    Kokkos::realloc(cln_kv, nmb, 4*(cln_gmres_m + 1), n3, n2, n1);
+  }
   // multigrid levels: halve every direction with an even number (>= 4) of cells, down
   // to the level where no direction can be halved
   if (cln_cell && cln_pc == 1) {
@@ -170,7 +173,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanRightHandSide();
         CleanPreconditionerSetup();
       }
-      nit = CleanBiCGStab();
+      nit = (cell && cln_gmres_m > 0) ? CleanGMRES() : CleanBiCGStab();
       nit_sum += std::abs(nit);
       cln_nsolve += 1.0;
       cln_nit += std::abs(nit);

@@ -2906,6 +2906,7 @@ class RadiationM1 {
   void CleanPrecondition(const int src, const int dst);
   void CleanApply(const int src, const int dst);
   int CleanBiCGStab();
+  int CleanGMRES();
   Real CleanNewtonUpdate();
   Real CleanVelocityUpdate();
   void CleanCopyIterate();
@@ -2965,6 +2966,8 @@ class RadiationM1 {
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: line-relaxation sweeps (preconditioner)
   Real cln_pcwc = 1.0;          // clean_pc_wc: coarse-correction factor (experiment)
+  int cln_gmres_m = 0;          // clean_gmres_m: GMRES restart (0: BiCGStab)
+  DvceArray5D<Real> cln_kv;     // GMRES basis vectors
   int cln_pc = 0;               // clean_pc: 0 line relaxation, 1 multigrid V-cycle
   std::vector<DvceArray5D<Real>> cln_mg;          // coarse levels of the multigrid
   std::vector<std::array<int, 3>> cln_mgn;        //   and their cells along x1..x3
