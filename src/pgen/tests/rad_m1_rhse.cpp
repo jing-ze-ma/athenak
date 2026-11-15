@@ -6,8 +6,8 @@
 //! \file rad_m1_rhse.cpp
 //! \brief <problem>/m1_test = rhse: a static grey atmosphere in hydrostatic and radiative
 //! equilibrium, plane parallel (Cartesian, x1 = height, gravity rh_g along -x1) or
-//! spherical (spherical polar, x1 = r, gravity rh_gm/r^2).  The test of the
-//! well-balanced clean scheme (<rad_m1>/force_reference = clean with
+//! spherical (spherical polar or cubed sphere, x1 = r, gravity rh_gm/r^2).  The test of
+//! the well-balanced clean scheme (<rad_m1>/force_reference = clean with
 //! <hydro>/wellbalance_static).
 //!
 //! Gas: ideal, p = rho T.  The flux F (F0 at the bottom, F0 (r_in/r)^2 on a sphere) with
@@ -105,7 +105,7 @@ void ProblemGenerator::RadiationM1Rhse(ParameterInput *pin, const bool restart) 
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  rh_sph = pmy_mesh_->use_spherical_polar;
+  rh_sph = pmy_mesh_->use_spherical_polar || pmy_mesh_->use_cubed_sphere;
   rh_g = pin->GetOrAddReal("problem","rh_g",1.0);
   rh_gm = pin->GetOrAddReal("problem","rh_gm",1.0);
   rh_eddf = pin->GetOrAddReal("problem","rh_eddf",0.3);

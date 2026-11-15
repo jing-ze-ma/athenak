@@ -70,6 +70,8 @@ constexpr int CLF_HK = CLF_WK + 1;  // cubed sphere: its h+ of L and h- of R abo
                                     // face normal (CleanCellConsistency)
 constexpr int CLF_ML = CLF_HK + 2;  // clean_face_model = milne: mu and the sub-cell
                                     // terms of the derivatives (CleanCellMilneSetup)
+constexpr int CLF_KK = CLF_ML + 9;  // cubed sphere, milne: k+ of L and k- of R about
+                                    // the face normal (CleanCellConsistency)
 
 // cell vectors (array cln_x), 4 components (E, y1, y2, y3) each
 constexpr int CLC_O = 0;     // old vector
@@ -858,7 +860,9 @@ Real CleanCellMilneWeight(const CleanArgs &x, const int dir, const int m, const 
 //! is defined).  With the conservative FV rays (clean_rays = fv1 | fv) the stress rows
 //! also replace the rays' kinetic flux of y and its bracket, which carry the rays' too
 //! bright sub-cell photosphere into y; the short-characteristics face fluxes are defined
-//! only up to a divergence-free part, so with them the y bracket stays.
+//! only up to a divergence-free part, so with them the y bracket stays.  On the cubed
+//! sphere the normal is the face's own and an interior face takes the rays' half ranges
+//! about it (CLF_HK, CLF_KK; a seam ghost's family slots are in the neighbour's axes).
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
@@ -873,6 +877,9 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
   // boundary's ghost side has none
   Real a[2] = {0.0, 0.0}, r[2] = {0.0, 0.0}, cc[2] = {0.0, 0.0}, e0[2] = {0.0, 0.0};
   Real th[2] = {0.0, 0.0}, ks[2][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}}, den = 1.0;
+  Real hk[2] = {0.0, 0.0}, nv[3];
+  if (!bdry) CleanCellKinetic(x, dir, m, k, j, i, hk[0], hk[1]);
+  for (int b = 0; b < 3; ++b) nv[b] = CleanNf(x, b, dir, m, k, j, i);
   for (int n = 0; n < 2; ++n) {
     if (bdry && (n == 0) == blo) continue;
     const int kc = k - dk*(1 - n), jc = j - dj*(1 - n), ic = i - di*(1 - n);
@@ -890,15 +897,14 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
     const Real bf = bc + ((bl*br > 0.0) ? copysign(0.5*fmin(fabs(bl), fabs(br)), bl)
                                         : 0.0);
     e0[n] = bf - cc[n]*bc - (bf - bc)*t;
-    const Real h = bdry ? fabs((blo ? jr : jl)[0][0])/x.c :
-                   (n ? -x.cs(m,CLN_HM+dir,kc,jc,ic) : x.cs(m,CLN_HP+dir,kc,jc,ic));
+    const Real h = bdry ? fabs((blo ? jr : jl)[0][0])/x.c : (n ? -hk[1] : hk[0]);
     const Real tm = (bdry && x.marshak) ? 0.0 : th[n];
     a[n] = (1.0 - tm)*h + 0.25*tm;
     den += a[n]*r[n] - 0.5*tm;
     for (int b = 0; b < x.nf; ++b) {
-      ks[n][b] = (1.0 - th[n])*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic,
-                                                        n == 1) +
-                 ((b == dir) ? th[n]/6.0 : 0.0);
+      const Real kr = (x.cub && !bdry) ? x.fc[dir](m,CLF_KK+3*n+b,k,j,i) :
+                      CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, n == 1);
+      ks[n][b] = (1.0 - th[n])*kr + th[n]/6.0*nv[b];
     }
   }
   // y = yl E_L + yr E_R + y0, E_fL = c_L E_L + e0_L - r_L y, E_fR = c_R E_R + e0_R
@@ -912,7 +918,7 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
     for (int b = 0; b < x.nf; ++b) {
       const Real cy = (x.consist && x.fvrays) ? x.fc[dir](m,CLF_CB+1+b,k,j,i) : 0.0;
       s[1+b] += mu*(x.c*(ks[0][b]*(e0[0] - r[0]*y0) + ks[1][b]*(e0[1] + r[1]*y0) +
-                         ((b == dir) ? q*y0 : 0.0)) - cy);
+                         q*nv[b]*y0) - cy);
     }
     return;
   }
@@ -924,7 +930,7 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
   jl[0][0] += mu*x.c*yl;
   jr[0][0] += mu*x.c*yr;
   for (int b = 0; b < x.nf; ++b) {
-    const Real g = (b == dir) ? q : 0.0;
+    const Real g = q*nv[b];
     jl[1+b][0] = (1.0 - mu)*jl[1+b][0] +
                  mu*x.c*(ks[0][b]*(cc[0] - r[0]*yl) + (ks[1][b]*r[1] + g)*yl);
     jr[1+b][0] = (1.0 - mu)*jr[1+b][0] +
@@ -935,10 +941,12 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
   const int kc = blo ? k : k - dk, jc = blo ? j : j - dj, ic = blo ? i : i - di;
   const Real wo = mu*x.c*x.fc[dir](m,CLF_WK,k,j,i)*
                   x.cs(m,(blo ? CLN_HM : CLN_HP)+dir,kc,jc,ic);
-  for (int b = 0; b < x.nf; ++b) {
-    (blo ? jr : jl)[1+b][0] -= wo*(x.cs(m,CLN_HP+b,kc,jc,ic) +
-                                   x.cs(m,CLN_HM+b,kc,jc,ic));
+  Real sh[3], hr[3];
+  for (int b = 0; b < 3; ++b) {
+    sh[b] = x.cs(m,CLN_HP+b,kc,jc,ic) + x.cs(m,CLN_HM+b,kc,jc,ic);
   }
+  CleanRayFlux(x, m, kc, jc, ic, sh, hr);
+  for (int b = 0; b < x.nf; ++b) (blo ? jr : jl)[1+b][0] -= wo*hr[b];
 }
 
 //----------------------------------------------------------------------------------------
