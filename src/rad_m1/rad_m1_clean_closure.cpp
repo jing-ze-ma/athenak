@@ -458,9 +458,10 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
 //! R = clean_sphere_radius about the origin seen through vacuum.  Outside it the rays
 //! fill the cone mu > mu_c = sqrt(1 - R^2/r^2) about r_hat: D_rr = (1 + mu_c + mu_c^2)/3,
 //! D_tt = D_pp = (1 - D_rr)/2, h+_r = (1 + mu_c)/2, h-_r = 0,
-//! h+-_t = h+-_p = +-S/(pi (1 - mu_c)) with S = int_{mu_c}^1 sqrt(1 - mu^2) dmu, C1 = 1;
-//! R -> 0 is the point source.  Inside
-//! (r <= R) the radiation is isotropic: D = I/3, h+- = +-1/4, C1 = 0.
+//! h+-_t = h+-_p = +-S/(pi (1 - mu_c)) with S = int_{mu_c}^1 sqrt(1 - mu^2) dmu, C1 = 1,
+//! and the half-range stress columns k+^r = (D_rr, 0, 0), k+^t = (k, D_tt/2, 0),
+//! k+^p = (k, 0, D_pp/2) with k = (R/r) (1 + mu_c)/(3 pi); R -> 0 is the point source.
+//! Inside (r <= R) the radiation is isotropic: D = I/3, h+- = +-1/4, k+ = I/6, C1 = 0.
 
 void RadiationM1::CleanClosureSphere() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -475,7 +476,8 @@ void RadiationM1::CleanClosureSphere() {
   par_for("cln_sphere", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
-    Real drr = 1.0/3.0, hpr = 0.25, hmr = -0.25, ht = 0.25, c1 = 0.0;
+    Real drr = 1.0/3.0, hpr = 0.25, hmr = -0.25, ht = 0.25, c1 = 0.0, kr = 0.0,
+         krr = 1.0/6.0;
     if (r > rs) {
       const Real q = rs/r;
       const Real mc = std::sqrt(fmax(1.0 - q*q, 0.0));
@@ -486,6 +488,8 @@ void RadiationM1::CleanClosureSphere() {
       const Real s = 0.5*(std::asin(q) - mc*q);
       ht = (q > 1.0e-4) ? s*(1.0 + mc)/(M_PI*q*q) : 2.0*q/(3.0*M_PI);
       c1 = 1.0;
+      kr = q*(1.0 + mc)/(3.0*M_PI);
+      krr = drr;
     }
     cs(m,CLN_D11,k,j,i) = drr;
     cs(m,CLN_D11+1,k,j,i) = 0.5*(1.0 - drr);
@@ -497,6 +501,12 @@ void RadiationM1::CleanClosureSphere() {
       cs(m,CLN_HP+a,k,j,i) = ht;
       cs(m,CLN_HM+a,k,j,i) = -ht;
     }
+    for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = 0.0;
+    cs(m,CLN_KP,k,j,i) = krr;
+    cs(m,CLN_KP+3,k,j,i) = kr;
+    cs(m,CLN_KP+4,k,j,i) = 0.25*(1.0 - drr);
+    cs(m,CLN_KP+6,k,j,i) = kr;
+    cs(m,CLN_KP+8,k,j,i) = 0.25*(1.0 - drr);
     cs(m,CLN_C1,k,j,i) = c1;
     cs(m,CLN_J,k,j,i) = 1.0;
   });
