@@ -437,8 +437,13 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   } else {
     CleanWriteBack();
   }
+  // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
+  // rejected like a failed solve (the stage is redone by backward Euler, a
+  // backward-Euler step by dt_retry)
+  if (cell && cln_feedback && cln_neint > 0 && !t2stage && dtr_on) dtr_fail = true;
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
-    t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_poslim && cln_nnreal > 0);
+    t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_poslim && cln_nnreal > 0) ||
+              (cell && cln_feedback && cln_neint > 0);
   }
 
   // 6. clean_closure = extrap(2): ray moments of the new state.  The last solve of a
