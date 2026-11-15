@@ -51,7 +51,7 @@ namespace mhd {
 //! F^[B_t] = a^L F^L + a^R F^R - (d^R B_t^R - d^L B_t^L), F = v_n B_t - v_t B_n,
 //! one (a, d) pair for every face-parallel component B_t. ONE store for every solver:
 //! hll = true (emf_scheme = uct, rsolver = hlle, a spherical-polar polar-row face where
-//! polar_hlle_rows replaced HLLD/LHLLD by HLLE , or a cubed-sphere face where
+//! HLLD/LHLLD is replaced by HLLE (theta and phi sweeps), or a cubed-sphere face where
 //! CSLowBetaFallback replaced the flux by HLLE: same test (p_L + p_R) < lb_beta <B^2>):
 //! MD21 eq. 30, a^L = aR/(aR+aL), d^L = d^R = aR aL/(aR+aL), aR = max(0,S_R),
 //! aL = max(0,-S_L), S_L/S_R the Davis fast speeds of every solver here;
@@ -248,9 +248,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const Real cs_lb_beta = cs_lowbeta_fallback;
   // <mhd>/boris_c: limited-speed HLLE on the faces the limiter acts on
   const bool boris_on_ = (peos->eos_data.boris_c2inv > 0.0);
-  const bool polar_hlle_x1_ = (polar_hlle_rows & 1) != 0;
-  const bool polar_hlle_x2_ = (polar_hlle_rows & 2) != 0;
-  const bool polar_hlle_x3_ = (polar_hlle_rows & 4) != 0;
   const auto wb_option_ = wb_option;
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
@@ -293,8 +290,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // <mhd>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see mhd.hpp).
   const auto recon_method_x1_ = recon_method_x1;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
-  const bool pquad_ = pmy_pack->pmesh->use_polar_quadratic_recon;
-  const int px3_ = pmy_pack->pmesh->polar_x3_shift;
 
   //--------------------------------------------------------------------------------------
   // i-direction
@@ -357,8 +352,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // hydro, MHD already computes this sweep over exactly those transverse ranges
   // UNCONDITIONALLY -- the corner-EMF stencil needs them -- so no fofc widening is
   // required here (nor in the x2/x3 sweeps, which run over is-1,ie+1 in x1 and
-  // js-1,je+1 in x2 for the same reason). There is no MHD counterpart of the
-  // spherical-polar face-average (sp_favg) widening, so there is nothing to union with.
+  // js-1,je+1 in x2 for the same reason).
 
   // the well-balanced background of every cell in this sweep, walked once
 
@@ -671,9 +665,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     const auto &flx1 = flx1_;
     const auto &e31 = e31_;
     const auto &e21 = e21_;
-    const bool do_pole = polar_hlle_x1_ &&
-      ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) ||
-       (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je));
     if constexpr (rsolver_method_ == MHD_RSolver::advect) {
       Advect(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::llf) {
@@ -681,21 +672,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlle) {
       HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlld) {
-      if (do_pole) {
-        HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
-             bx,flx1,e31,e21);
-      } else {
       HLLD(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
            bx,flx1,e31,e21);
-      }
     } else if constexpr (rsolver_method_ == MHD_RSolver::lhlld) {
-      if (do_pole) {
-        HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
-             bx,flx1,e31,e21);
-      } else {
-        LHLLD(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
-              bx,flx1,e31,e21,w0_);
-      }
+      LHLLD(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
+            bx,flx1,e31,e21,w0_);
     } else if constexpr (rsolver_method_ == MHD_RSolver::llf_sr) {
       LLF_SR(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlle_sr) {
@@ -739,7 +720,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     if (uct_on_) {   // UCT corner EMF inputs (x1 faces)
       par_for_inner(member, il, iu, [&](const int i) {
         UctFaceStore(eos, wl, wr, bl, br, dl, dr, IVX, i, bx(m,k,j,i),
-                     uct_hll_ || do_pole, uct_eta_,
+                     uct_hll_, uct_eta_,
                      uct_lb_, uct1_, m, k, j, w0_);
       });
       member.team_barrier();
@@ -818,14 +799,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           dl_jp1 = dscr1;
         }
 
-        const bool pq = pquad_ &&
-          ((j == js && mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
-           (j == je && mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar));
         if (use_spherical_polar) {
-          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_, wl_jp1, wr,
-                                pq);
-          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, x2v_, x2f_, bl_jp1, br,
-                                pq);
+          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_, wl_jp1, wr);
+          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, x2v_, x2f_, bl_jp1, br);
           if (wb_all_) {
             hydro::WbAllBlendGrid(member, use_wb_rho_, 2, false, m, k, j, is-1, ie+1, w0_,
                                   x2v_, x2f_, wbq2_, wbw_, wl_jp1, wr);
@@ -889,8 +865,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         if (nder > 0) {
           if (use_spherical_polar) {
             GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, wder_, x2v_, x2f_,
-                                  dl_jp1, dr,
-                                  pq);
+                                  dl_jp1, dr);
           } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX2(member, m, k, j, is-1, ie+1,
                                      pwb_, pfacewb_x2f,
@@ -1031,7 +1006,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             });
             member.team_barrier();
           }
-          const bool do_pole = polar_hlle_x2_ &&
+          // spherical polar: HLLE on the theta faces next to each pole (the polar
+          // rows drain and dt collapses with HLLD there)
+          const bool do_pole =
             ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar &&
               (j == js || j == js+1)) ||
              (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar &&
@@ -1291,72 +1268,35 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
         // SPHERICAL POLAR: the states were reconstructed along phi at the cell's volume
         // centroid theta = x2v, but an x3 face (area element r dr dtheta) is centred at
-        // the theta MIDPOINT of the cell. The two differ by O(dtheta^2 cot theta),
+        // the theta midpoint of the cell.  The two differ by O(dtheta^2 cot theta),
         // negligible in the interior, but in the polar row the midpoint is dtheta/2
-        // against a centroid of 2 dtheta/3 and the phi-face fluxes enter the balance
-        // with weight ~2/(r dtheta dphi): the r-components of v and B (~ sin theta) were
-        // 4/3 too large -- a resolution-independent spurious radial force of ~0.5
-        // (B^2/2)/r (sp_test iprob=11) -- and any scalar with a gradient across the pole
-        // (p = p0 + g x, say) was read dtheta/6 off, an O(1) error in the polar cell's
-        // phi-force. Shift EVERY reconstructed variable to the midpoint with the
-        // centred theta-derivative of the cell values; the polar ghosts hold the analytic
-        // continuation through the axis (the exchange flips the tangential components),
-        // so the centred difference is valid in the polar row too. For a vector this
-        // shift includes the basis rotation rhat' = rhat cos d + thhat sin d.
-        // <mesh>/polar_x3_shift selects the form: 1 = "rotate", the exact basis rotation
-        // of the (r,theta) pairs of v and B alone (a8cfb83e); 2 = "shift", the unlimited
-        // centred-difference shift of every variable above (863e8337) -- BISECTED to the
-        // polar-row radial-field blow-up of the sp MHD production run (2026-09-10);
-        // 3 = "scalar", rotate the vectors and shift only the remaining variables;
-        // 0 = "off".
+        // against a centroid of 2 dtheta/3, and the phi-face fluxes enter the balance with
+        // weight ~2/(r dtheta dphi): unrotated, the r-components of v and B would be 4/3
+        // too large there, a resolution-independent spurious radial force.  So rotate the
+        // (r,theta) pairs of v and B into the face's own basis,
+        // rhat' = rhat cos d + thhat sin d.
         if (use_spherical_polar) {
-          if (px3_ == 1 || px3_ == 3) {
-            const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
-            const Real cd = cos(dang), sd0 = sin(dang);
-            // A REFLECTING radial wall: the ghost row holds the MIRROR image (v_r, B_r
-            // flipped) of the interior row, and its phi-face EMFs enter the wall-edge EMF
-            // (CornerE), which vanishes only if they are minus the interior ones.
-            // Rotating the mirrored (r,theta) pair by +dang is not the mirror of the
-            // rotated interior pair; rotating it by -dang is. With +dang the wall-edge
-            // E_theta was off by O(sin(dang) v_theta B_phi): B.rhat grew at the closed
-            // wall wherever the flow is not axisymmetric, and the Poynting flux through
-            // it drained energy (equator MHD blast, -5e-8 at nx2 = 32; now round-off).
-            const bool gin_ = mb_bcs.d_view(m,BoundaryFace::inner_x1) ==
-                              BoundaryFlag::reflect;
-            const bool gout_ = mb_bcs.d_view(m,BoundaryFace::outer_x1) ==
-                               BoundaryFlag::reflect;
-            par_for_inner(member, is-1, ie+1, [&](const int i) {
-              const Real sd = ((gin_ && i < is) || (gout_ && i > ie)) ? -sd0 : sd0;
-              Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
-              wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
-              a = wr(IVX,i); b = wr(IVY,i);
-              wr(IVX,i) = a*cd + b*sd;  wr(IVY,i) = -a*sd + b*cd;
-              a = bl_kp1(0,i); b = bl_kp1(1,i);
-              bl_kp1(0,i) = a*cd + b*sd;  bl_kp1(1,i) = -a*sd + b*cd;
-              a = br(0,i); b = br(1,i);
-              br(0,i) = a*cd + b*sd;  br(1,i) = -a*sd + b*cd;
-            });
-          }
-          if (px3_ == 2 || px3_ == 3) {
-            const Real fac = (0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j))
-                             /(x2v3_(m,j+1) - x2v3_(m,j-1));
-            for (int n=0; n<nvars; ++n) {
-              if (px3_ == 3 && (n == IVX || n == IVY)) continue;
-              par_for_inner(member, is-1, ie+1, [&](const int i) {
-                const Real sh = fac*(w0_(m,n,k,j+1,i) - w0_(m,n,k,j-1,i));
-                wl_kp1(n,i) += sh;
-                wr(n,i) += sh;
-              });
-            }
-            for (int n=0; n<3; ++n) {
-              if (px3_ == 3 && n != 2) continue;
-              par_for_inner(member, is-1, ie+1, [&](const int i) {
-                const Real sh = fac*(b0_(m,n,k,j+1,i) - b0_(m,n,k,j-1,i));
-                bl_kp1(n,i) += sh;
-                br(n,i) += sh;
-              });
-            }
-          }
+          const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
+          const Real cd = cos(dang), sd0 = sin(dang);
+          // At a reflecting radial wall the ghost row holds the mirror image (v_r, B_r
+          // flipped) of the interior row, and its phi-face EMFs enter the wall-edge EMF
+          // (CornerE), which vanishes only if they are minus the interior ones: the
+          // mirrored pair is therefore rotated by -dang.
+          const bool gin_ = mb_bcs.d_view(m,BoundaryFace::inner_x1) ==
+                            BoundaryFlag::reflect;
+          const bool gout_ = mb_bcs.d_view(m,BoundaryFace::outer_x1) ==
+                             BoundaryFlag::reflect;
+          par_for_inner(member, is-1, ie+1, [&](const int i) {
+            const Real sd = ((gin_ && i < is) || (gout_ && i > ie)) ? -sd0 : sd0;
+            Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
+            wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
+            a = wr(IVX,i); b = wr(IVY,i);
+            wr(IVX,i) = a*cd + b*sd;  wr(IVY,i) = -a*sd + b*cd;
+            a = bl_kp1(0,i); b = bl_kp1(1,i);
+            bl_kp1(0,i) = a*cd + b*sd;  bl_kp1(1,i) = -a*sd + b*cd;
+            a = br(0,i); b = br(1,i);
+            br(0,i) = a*cd + b*sd;  br(1,i) = -a*sd + b*cd;
+          });
         }
 
         member.team_barrier();
@@ -1394,7 +1334,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             });
             member.team_barrier();
           }
-          const bool do_pole = polar_hlle_x3_ &&
+          // spherical polar: HLLE on the phi faces of the polar rows
+          const bool do_pole =
             ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar &&
               j == js) ||
              (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je));
@@ -1488,12 +1429,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         }
       } // end loop over k
     });
-  }
-
-  // whole-mesh Cartesian momentum on spherical polar: fourth-order face averages of the
-  // hydrodynamic fluxes (see Coordinates::SphericalPolarFaceAverageFluxes)
-  if (pmy_pack->pcoord->sp_cart_all_momentum) {
-    pmy_pack->pcoord->SphericalPolarFaceAverageFluxes(uflx, IEN+1);
   }
 
   return;

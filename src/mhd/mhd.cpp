@@ -145,7 +145,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     bcctest("bcctest",1,1,1,1,1),
     fofc("fofc",1,1,1,1),
     fofc_cnt("fofc_cnt",1,1,1,1) {
-  // cs- the angular-momentum module (read only when named)
+  // the angular-momentum module (read only when named)
   // am_transport defaults on (cs, multi-D sp, fresh dynamic runs)
   {
     // (DefaultOn first: it is false at once when am_transport itself is named)
@@ -329,7 +329,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   // (dLz 3e-5..7e-5, not converging) and, with the resistive Poynting flux, an energy
   // loss (dE/E -1.4 %) on the closed cs shell (csam_1028/RESULTS.md). `resistive` zeroes
   // only the resistive part (ideal MHD bitwise unchanged); `full` also the ideal edge EMF
-  // (the former cs- <mhd>/wall_emf_zero, which this key replaces) and the
+  // (the former <mhd>/wall_emf_zero, which this key replaces) and the
   // Riemann mass+energy fluxes through the wall. Default `full` (user 10-29): it
   // changes ideal MHD with reflect walls (the wall B.n is frozen, E closes to round-off).
   if (pin->DoesParameterExist("mhd","wall_emf_zero")) {
@@ -774,7 +774,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // uct_hlld = UCT-HLLD (MD21 eqs. 40, 44-46; rsolver hlld or lhlld). Cartesian
     // 2-D/3-D, the cubed sphere (gnomonic face frames, the existing seam/vertex EMF
     // averaging) and spherical polar ( orthonormal face frames = the Cartesian branch of
-    // the shared UctE1/E2/E3; polar_hlle_rows faces take the HLL coefficients, the
+    // the shared UctE1/E2/E3; the polar-row HLLE faces take the HLL coefficients, the
     // polar-row polar_emf_diss term and the polar E_r azimuthal average act on the UCT
     // EMF as on GS07). fresh-start default (recipe::NewDefaults) when rsolver = hlld or
     // lhlld and the key is not named: emf_scheme = uct_hlld on every mesh UCT-HLLD
@@ -904,13 +904,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // value > 0 acts there too (same face test and HLLE flux, mhd_fluxes.cpp).
     cs_lowbeta_fallback = pin->GetOrAddReal("mhd","cs_lowbeta_fallback",
                      (pmy_pack->pmesh->use_cubed_sphere ? 0.5 : 0.0));
-    {
-      // per-sweep mask; accept the earlier boolean spelling too
-      std::string s = pin->GetOrAddString("mhd","polar_hlle_rows","6");
-      if (s == "true") polar_hlle_rows = 7;
-      else if (s == "false") polar_hlle_rows = 0;
-      else polar_hlle_rows = std::stoi(s);
-    }
 
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("mhd","reconstruct","plm");

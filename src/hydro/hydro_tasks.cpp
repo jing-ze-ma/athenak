@@ -580,7 +580,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
   }
   eint_ledger::Mark(pmy_pack->pmesh, "coord");
 
-  // cs- <hydro>/am_transport | am_vector | frame_omega: the angular-momentum
+  // <hydro>/am_transport | am_vector | frame_omega: the angular-momentum
   // module (hydro_am.cpp), from this stage's fluxes and w0
   if (pam != nullptr) {
     hydro::AmFluid fl{u0, u1, w0, wder, DvceArray5D<Real>(), uflx, peos->eos_data, false,

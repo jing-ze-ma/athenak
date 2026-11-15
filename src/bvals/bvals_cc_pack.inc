@@ -204,7 +204,7 @@
               ? ((cs_seam == 2) ? cs_indcs.cnx3 : cs_indcs.cnx2)
               : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
           if (cs_seam != 0 && seam_extent < 3) { cs_seam = 0; }
-          if (no_rs_cc || nors_) { cs_seam = 0; }
+          if (nors_) { cs_seam = 0; }
           if (cs_fxform || cs_hrquad) { cs_seam = 0; }
         } else if (do_pole) {
           aj = -1;

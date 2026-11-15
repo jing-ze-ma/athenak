@@ -78,20 +78,7 @@ reconstruct = plm
 rsolver     = hlld
 gamma       = 1.666667
 
-# RHS-SPLIT DIAGNOSTICS.  The tangential momentum RHS on this grid is a flux divergence
-# plus a geometric source term which must cancel; set exactly one of these to true to
-# measure one half of that cancellation on its own at nlim = 1.  Both change the answer
-# and are declared here only so they can be overridden on the command line.
-
-# THE WELL-BALANCED GEOMETRIC SOURCE.  Builds the source as the face sum
-# (1/V) sum_f A_f (T_cell.nhat_f).e_i(x_f) with CARTESIAN vectors, which is what the flux
-# divergence forms, so the two cancel to round-off whenever the face states equal the cell
-# state -- instead of only for the ISOTROPIC part, as the analytic form manages.
-cs_wellbalanced_src = false
-
-# THE K&M (DYNAMIC) WELL-BALANCED RADIAL RECONSTRUCTION -- a DIFFERENT lever from the one
-# above.  cs_wellbalanced_src rebuilds the GEOMETRIC source as a face sum, which attacks
-# the ANGULAR (flux-divergence vs source) cancellation; this one reconstructs the radial
+# THE K&M (DYNAMIC) WELL-BALANCED RADIAL RECONSTRUCTION: reconstructs the radial
 # face states about a local hydrostatic background, which attacks the RADIAL hydrostatic
 # truncation error -- the dominant term of this problem.  It needs the gravitational
 # potential, which cs_test fills for iprob = 13 only (Phi = g*(r - r0), sampled at x1v and

@@ -338,17 +338,6 @@ class Mesh {
   // Coefficients of the polynomial radial stretch. See StretchRPoly in coordinates.hpp.
   Real fStretchRPoly[NSTRETCH_R_POLY];
   bool use_polar_boundary;      // true if using polar boundaries
-  // polar_quadratic_recon: in the two polar cell rows reconstruct with the UNLIMITED
-  // quadratic through the mirror ghost, the cell and its neighbour (clamped to their
-  // range). A limited slope sees every even profile as an extremum at the pole and
-  // flattens the cell, which makes the polar theta-flux first order.
-  bool use_polar_quadratic_recon;
-  // polar_x3_shift: the theta correction applied to the x3-face (phi-face) states in
-  // spherical polar. 0 = off, 1 = rotate (exact basis rotation of the (r,theta) vector
-  // pairs into the face's own basis, a8cfb83e), 2 = shift (unlimited centred-difference
-  // theta shift of EVERY variable, 863e8337 -- bisected to the polar-row radial-field
-  // blow-up, 2026-09-10), 3 = scalar (rotate the vectors, shift the scalars).
-  int polar_x3_shift;
   // SPHERICAL POLAR + RESISTIVITY: the polar azimuthal average of the edge EMF E_r runs
   // at the end of CornerE, but the RESISTIVE EMF is added to the same array afterwards,
   // so the resistive part of E_r at the axis was never averaged and is free to be

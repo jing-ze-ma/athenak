@@ -183,7 +183,7 @@ void WbAllBlendUni(TeamMember_t const &member, const bool use_wb_rho, const int 
 }
 
 //! spherical polar (x2 = theta, x3 = phi): the plain faces are ALREADY in ql_p1 / qr
-//! (GridPiecewiseLinearX2/X3, the polar-row quadratic included); this forms the WB
+//! (GridPiecewiseLinearX2/X3); this forms the WB
 //! deviation on the non-uniform grid (PLM_nonuniform at the reconstruction coordinates
 //! xv, xf: x2v_rec / xx2f, or x3v / xx3f) and blends it in with the face weights.  nd > 0:
 //! the derived channel IDPR of qd (general EOS) against the background pressure.

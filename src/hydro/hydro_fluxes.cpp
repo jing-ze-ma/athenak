@@ -182,9 +182,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   const bool diode_ox1_ = diode_ox1;   // (hydro.hpp)
   // <hydro>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see hydro.hpp).
   const auto recon_method_x1_ = recon_method_x1;
-  auto &mb_bcs_pq = pmy_pack->pmb->mb_bcs;
-  const bool pquad_ = pmy_pack->pmesh->use_polar_quadratic_recon;
-  const int px3_ = pmy_pack->pmesh->polar_x3_shift;
+  auto &mb_bcs = pmy_pack->pmb->mb_bcs;
   // group-level lateral reconstruction of the merged cells (see
   // hydro_mergelat.hpp); off unless <hydro>/merge_lat_rc is named
   const bool mlat_ = (pmlat != nullptr && pmlat->on);
@@ -219,8 +217,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
 
-  const bool sp_favg_ = pmy_pack->pcoord->sp_cart_all_momentum &&
-                        pmy_pack->pcoord->sp_face_avg;
   // set the loop limits for 1D/2D/3D problems
   int il = is, iu = ie+1, jl = js, ju = je, kl = ks, ku = ke;
   if (use_fofc) {
@@ -486,10 +482,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         // mirrored too: the HLLC general-EOS branch reads them instead of recomputing p
         // from (d,e), so mirroring only wl would keep the ghost-side pressure and give
         // S_M != 0. (ix1_bc = reflect is left exactly as it was.)
-        const BoundaryFlag bix1 = mb_bcs_pq.d_view(m,BoundaryFace::inner_x1);
+        const BoundaryFlag bix1 = mb_bcs.d_view(m,BoundaryFace::inner_x1);
         // <hydro>/wall_wb_onesided: the wall cells reconstruct their WB
         // deviation one-sided (reconstruct/wb_wall.hpp), then the mirror below
-        const BoundaryFlag box1 = mb_bcs_pq.d_view(m,BoundaryFace::outer_x1);
+        const BoundaryFlag box1 = mb_bcs.d_view(m,BoundaryFace::outer_x1);
         if (wwb_) {
           auto inr = [&](const int i) {
             return !curv1_ || (!(wb_rmax_ > 0.0 && x1v_(m,i) > wb_rmax_) &&
@@ -534,7 +530,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     if (diode_ox1_) {
       member.team_barrier();
       Kokkos::single(Kokkos::PerTeam(member), [&]() {
-        if (mb_bcs_pq.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user &&
+        if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user &&
             wl(IVX,ie+1) < 0.0) {
           for (int n=0; n<nvars; ++n) {
             wr(n,ie+1) = wl(n,ie+1);
@@ -580,8 +576,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       AUSMPUP(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
       // hybrid: HLLC on the physical x1 wall faces (zero wall mass flux by construction)
       if (eos.ausm_wall_hllc) {
-        const BoundaryFlag bi = mb_bcs_pq.d_view(m,BoundaryFace::inner_x1);
-        const BoundaryFlag bo = mb_bcs_pq.d_view(m,BoundaryFace::outer_x1);
+        const BoundaryFlag bi = mb_bcs.d_view(m,BoundaryFace::inner_x1);
+        const BoundaryFlag bo = mb_bcs.d_view(m,BoundaryFace::outer_x1);
         if (bi == BoundaryFlag::reflect || bi == BoundaryFlag::user) {
           member.team_barrier();
           HLLC(member,eos,indcs,size,coord,m,k,j,is,is,IVX,wl,wr,dl,dr,flx1,
@@ -639,17 +635,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
     // set the loop limits for 1D/2D/3D problems
     il = is, iu = ie, jl = js-1, ju = je+1, kl = ks, ku = ke;
-    // BOTH widenings apply when both are on: FOFC needs the flux one cell beyond every
-    // flagged cell, and the sp face-average stencils read the x2 fluxes at i +- 1 and
-    // k +- 1. Written as `else if` the sp widening was dropped whenever fofc was on and
-    // the face averages then read stale x2 fluxes. (The FOFC ranges happen to contain
-    // the sp ones in every direction, so this is a no-op today; it is written as a
-    // UNION so that it stays correct if either widening changes.)
-    if (use_fofc || sp_favg_) {
-      il = is-1, iu = ie+1;
-      if (use_fofc) {
-        jl = js-2, ju = je+2;
-      }
+    // FOFC needs the flux one cell beyond every flagged cell
+    if (use_fofc) {
+      il = is-1, iu = ie+1, jl = js-2, ju = je+2;
       if (!pmy_pack->pmesh->two_d) {
         kl = ks-1, ku = ke+1;
       }
@@ -696,14 +684,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           dl_jp1 = dscr1;
         }
 
-        const bool pq = pquad_ &&
-          ((j == js &&
-            mb_bcs_pq.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
-           (j == je &&
-            mb_bcs_pq.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar));
         if (use_spherical_polar) {
             GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_,
-                                  wl_jp1, wr, pq);
+                                  wl_jp1, wr);
             if (wb_all_) {   // the WB deviation blended into the plain faces
               WbAllBlendGrid(member, use_wb_rho_, 2, false, m, k, j, is-1, ie+1, w0_,
                              x2v_, x2f_, wbq2_, wbw_, wl_jp1, wr);
@@ -744,8 +727,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         // Reconstruct the derived thermodynamic variables (general EOS only)
         if (nder > 0) {
           if (use_spherical_polar) {
-            GridPiecewiseLinearX2(member, m, k, j, il, iu, wder_, x2v_, x2f_, dl_jp1, dr,
-                                  pq);
+            GridPiecewiseLinearX2(member, m, k, j, il, iu, wder_, x2v_, x2f_, dl_jp1, dr);
             if (wb_all_) {
               WbAllBlendGrid(member, false, 2, true, m, k, j, il, iu, wder_, x2v_, x2f_,
                              wbq2_, wbw_, dl_jp1, dr);
@@ -871,8 +853,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         // Make it the exact mirror (v_theta flipped): S_M = 0 by symmetry.
         const BoundaryFlag rfl2 = BoundaryFlag::reflect;
         if (use_spherical_polar &&
-            ((j == js && mb_bcs_pq.d_view(m,BoundaryFace::inner_x2) == rfl2) ||
-             (j == je+1 && mb_bcs_pq.d_view(m,BoundaryFace::outer_x2) == rfl2))) {
+            ((j == js && mb_bcs.d_view(m,BoundaryFace::inner_x2) == rfl2) ||
+             (j == je+1 && mb_bcs.d_view(m,BoundaryFace::outer_x2) == rfl2))) {
           const bool in2 = (j == js);
           par_for_inner(member, il, iu, [&](const int i) {
             for (int n=0; n<nvars; ++n) {
@@ -998,13 +980,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
     // set the loop limits
     il = is, iu = ie, jl = js, ju = je, kl = ks-1, ku = ke+1;
-    // the union of both widenings; see the note in the x2 sweep. The face-average
-    // stencils read the x3 fluxes at i +- 1 and j +- 1 (the polar ghost row included).
-    if (use_fofc || sp_favg_) {
-      il = is-1, iu = ie+1, jl = js-1, ju = je+1;
-      if (use_fofc) {
-        kl = ks-2, ku = ke+2;
-      }
+    if (use_fofc) {
+      il = is-1, iu = ie+1, jl = js-1, ju = je+1, kl = ks-2, ku = ke+2;
     }
 
     scr_level = TeamScratchLevel(scr_size, scratch_level);
@@ -1188,37 +1165,18 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               GnomonicEquianglePrimFaceX3(gtrig_eta,member,m,k,j,il,iu,wl_kp1,wr);
           }
 
-        // SPHERICAL POLAR: correct the reconstructed x3-face states from the cell's
-        // volume centroid theta to the x3 face's midpoint theta (see the long note in
-        // mhd_fluxes.cpp). <mesh>/polar_x3_shift selects the form: 1 = "rotate", the
-        // exact basis rotation of the (r,theta) vector pair; 2 = "shift", the unlimited
-        // centred-difference theta shift of every variable, which also carries the
-        // scalar gradient but was BISECTED to the polar-row radial-field blow-up of the
-        // sp MHD production run (2026-09-10); 3 = "scalar", rotate the vectors and shift
-        // only the remaining variables; 0 = "off".
+        // SPHERICAL POLAR: rotate the reconstructed (r,theta) velocity pair from the
+        // basis at the cell's volume-centroid theta to the basis at the x3 face's
+        // midpoint theta (see the note in mhd_fluxes.cpp)
         if (use_spherical_polar) {
-          if (px3_ == 1 || px3_ == 3) {
-            const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
-            const Real cd = cos(dang), sd = sin(dang);
-            par_for_inner(member, il, iu, [&](const int i) {
-              Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
-              wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
-              a = wr(IVX,i); b = wr(IVY,i);
-              wr(IVX,i) = a*cd + b*sd;  wr(IVY,i) = -a*sd + b*cd;
-            });
-          }
-          if (px3_ == 2 || px3_ == 3) {
-            const Real fac = (0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j))
-                             /(x2v3_(m,j+1) - x2v3_(m,j-1));
-            for (int n=0; n<nvars; ++n) {
-              if (px3_ == 3 && (n == IVX || n == IVY)) continue;
-              par_for_inner(member, il, iu, [&](const int i) {
-                const Real sh = fac*(w0_(m,n,k,j+1,i) - w0_(m,n,k,j-1,i));
-                wl_kp1(n,i) += sh;
-                wr(n,i) += sh;
-              });
-            }
-          }
+          const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
+          const Real cd = cos(dang), sd = sin(dang);
+          par_for_inner(member, il, iu, [&](const int i) {
+            Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
+            wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
+            a = wr(IVX,i); b = wr(IVY,i);
+            wr(IVX,i) = a*cd + b*sd;  wr(IVY,i) = -a*sd + b*cd;
+          });
         }
 
         member.team_barrier();
@@ -1302,12 +1260,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         }
       } // end loop over k
     });
-  }
-
-  // whole-mesh Cartesian momentum on spherical polar: fourth-order face averages of the
-  // fluxes (see Coordinates::SphericalPolarFaceAverageFluxes)
-  if (pmy_pack->pcoord->sp_cart_all_momentum) {
-    pmy_pack->pcoord->SphericalPolarFaceAverageFluxes(uflx, nhydro);
   }
 
   return;

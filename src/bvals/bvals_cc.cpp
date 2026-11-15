@@ -163,9 +163,6 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // needed only on the cubed sphere, to give a source cell its (xi,eta)
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
-  int no_rs_cc = 0;
-  { const char *e_ = std::getenv("CS_NORESAMP_CC");
-    if (e_ != nullptr) { no_rs_cc = std::atoi(e_); } }
   const Real rg_ = cs_rho_guard;
   const bool rs_lin = cs_lin_resample;
   const bool nors_ = cs_noresample;
