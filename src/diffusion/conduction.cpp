@@ -141,7 +141,6 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
                   << std::endl << "rad_gate_dex must be positive" << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      rad_blend_radial = pin->GetOrAddBoolean(block,"rad_blend_radial",true);
       // the TRANSVERSE counterpart: false takes the vertical blend weight off the
       // x2/x3 faces and leaves them at weight 1.  Required when the grey two-stream
       // owns the whole column (w = 0 everywhere), or there is no horizontal radiative
@@ -169,8 +168,6 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_sts_split_x = pin->GetOrAddReal(block,"rad_sts_split_x",0.5);
       rad_sts_once = pin->GetOrAddBoolean(block,"rad_sts_once",false);
       rad_sts_perplane = pin->GetOrAddBoolean(block,"rad_sts_perplane",false);
-      rad_tr_window = pin->GetOrAddBoolean(block,"rad_tr_window",true);
-      rad_tr_halo_every = pin->GetOrAddInteger(block,"rad_tr_halo_every",1);
       rad_ang_maxit = pin->GetOrAddInteger(block,"rad_ang_maxit",200);
       rad_ang_verbose = pin->GetOrAddBoolean(block,"rad_ang_verbose",false);
       // ---- rad_ang_solver: which solver advances the transverse system.  "sts" (the
@@ -397,14 +394,6 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           std::exit(EXIT_FAILURE);
         }
       }
-      if (rad_sts_split && pin->GetOrAddInteger(block,"rad_tr_halo_every",1) > 1) {
-        // the stiffness split rewrites cap_c2/cap_c3 over the ACTIVE faces only, so the
-        // ghost skin would run on unsplit conductances
-        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
-                  << std::endl << "rad_tr_halo_every > 1 is not implemented with "
-                  << "rad_sts_split" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
       if (rad_sts_split && !(rad_sts_split_x > 0.0 && rad_sts_split_x <= 1.0)) {
         std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
                   << std::endl << "rad_sts_split_x is the explicit row-sum budget x_i "
@@ -478,11 +467,6 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
                     << "than one MeshBlock must be PERIODIC (the interface gather walks "
                     << "a closed ring of blocks)" << std::endl;
           std::exit(EXIT_FAILURE);
-        }
-        if (rad_tr_halo_every > 1 && global_variable::my_rank == 0) {
-          std::cout << "### WARNING: rad_tr_halo_every is IGNORED under "
-                    << "rad_ang_solver = adi -- the ADI step has no substage recurrence"
-                    << std::endl;
         }
         if (global_variable::my_rank == 0) {
           const char *snm = (rad_adi_scm == ADISCM_LOD2) ? "lod2" :
@@ -608,16 +592,9 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           // its own MeshBoundaryValues object, hence its own MPI_Comm_dup'd
           // communicator, so the substage traffic cannot collide with u0 or b0
           pbval_tr = new MeshBoundaryValuesCC(pp, pin, false);
-          // seamexact-1103: the same <mesh>/cs_seam_blockend rule as the fluid's halo
+          // the same <mesh>/cs_seam_blockend rule as the fluid's halo
           pbval_tr->cs_blockend_ext_ = CsSeamBlockendExtend(pp, pin);
           pbval_tr->InitializeBuffers(1);
-          // ---- the halo communication cadence, resolved once here.
-          if (rad_tr_halo_every < 1) rad_tr_halo_every = 1;
-          if (rad_tr_halo_every > indcs.ng) rad_tr_halo_every = indcs.ng;
-          if (global_variable::my_rank == 0 && rad_tr_halo_every > 1) {
-            std::cout << "### rad transverse halo: every = "
-                      << rad_tr_halo_every << " substages" << std::endl;
-          }
         }
       }
     } else if (pin->GetOrAddBoolean(block,"rad_implicit_x1",false) ||
@@ -962,8 +939,8 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   const bool cs = pmy_pack->pmesh->use_cubed_sphere && rad_cs_exact;
   auto &sinc_ = pmy_pack->pcoord->sin_cell;
   auto &cosc_ = pmy_pack->pcoord->cos_cell;
-  // cornerfix4-1103 <mesh>/cs_vertex_3cell: the metric cross terms' corner-block reads
-  // take the parallelogram value (CsCornerCell); off: unchanged
+  // <mesh>/cs_vertex_3cell: the metric cross terms' corner-block reads
+  // take the parallelogram value (CsCornerCell)
   const bool v3c_ = pmy_pack->pmesh->use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell;
   auto &vsz_ = pmy_pack->pmb->mb_size;
   const int vjs_ = pmy_pack->pmesh->mb_indcs.js, vje_ = pmy_pack->pmesh->mb_indcs.je;
@@ -977,11 +954,9 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   };
   const Real capbdt = beta_dt;
   // rad_sts_all: the x1 faces join the stencil, and the radial tau-blend weight comes
-  // with them (rad_blend_radial), exactly as it does in the explicit x1 face flux
+  // with them, exactly as it does in the explicit x1 face flux
   const bool sts1 = rad_sts_all;
-  const bool blend_r = rad_blend_radial;
-  // the x2/x3 faces take the blend weight only under rad_blend_transverse; the x1 faces
-  // below keep rad_blend_radial either way
+  // the x2/x3 faces take the blend weight only under rad_blend_transverse
   const bool blend_t = rad_blend_transverse;
   auto capx = cap_x;
   auto capc1 = cap_c1;
@@ -999,21 +974,14 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   auto &area2_ = pmy_pack->pcoord->area.x2f;
   auto &area3_ = pmy_pack->pcoord->area.x3f;
   auto eos_ = eos;
-  // ---- HOW DEEP INTO THE x2/x3 GHOSTS THE FACE COEFFICIENTS ARE BUILT.  One layer is
-  // all the RKL1 stencil reads when it runs on the active cells alone.  Under
-  // rad_tr_halo_every > 1 it also runs on a GHOST SKIN of depth up to ng-1, whose faces
-  // reach j = je+ng and k = ke+ng, so the coefficients must exist that deep.  The extra
-  // layers are simply never read at rad_tr_halo_every = 1, which is why turning this on
-  // changes no number; w0, wtemp, rad_tauf and rad_w are all valid over the full ghost
-  // extent (BuildRadWeights sweeps 0..n3m1, 0..n2m1), so the deep values are real.
-  const int gd_ = (rad_tr_halo_every > 1) ? indcs.ng : 1;
-  const int dm1 = (gd_ > 1) ? (gd_ - 1) : 1;   // = 1 at the default: the old ranges
-  const int c2kl = ks - dm1,     c2ku = ke + dm1;
-  const int c2jl = js - dm1,     c2ju = je + dm1 + 1;
-  const int c3kl = ks - dm1,     c3ku = ke + dm1 + 1;
-  const int c3jl = js - dm1,     c3ju = je + dm1;
-  const int xkl  = ks - gd_,     xku  = ke + gd_;
-  const int xjl  = js - gd_,     xju  = je + gd_;
+  // the face coefficients are built one layer into the x2/x3 ghosts: all the RKL1
+  // stencil on the active cells reads
+  const int c2kl = ks - 1, c2ku = ke + 1;
+  const int c2jl = js - 1, c2ju = je + 2;
+  const int c3kl = ks - 1, c3ku = ke + 2;
+  const int c3jl = js - 1, c3ju = je + 1;
+  const int xkl  = ks - 1, xku  = ke + 1;
+  const int xjl  = js - 1, xju  = je + 1;
   if (capang > 0.0) Kokkos::deep_copy(capcnt, 0);
   par_for("radcapc2", DevExeSpace(), 0, nmb1, c2kl, c2ku, c2jl, c2ju, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1116,7 +1084,7 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
       const Real pl = (gen ? wder_(m,IDPR,k,j,i-1) : w0(m,IEN,k,j,i-1)*gm1);
       const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
       const Real dl = size.d_view(m).dx1;
-      Real wt = (taumode && blend_r) ? wf(m,k,j,i) : 1.0;
+      Real wt = taumode ? wf(m,k,j,i) : 1.0;
       if (gaterho > 0.0) {
         wt *= RadGate(0.5*(w0(m,IDN,k,j,i-1) + w0(m,IDN,k,j,i))*dens_unit,
                       gaterho, gatedex);
@@ -1156,7 +1124,10 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
         const int i = (idx - m*nkji_ - (k - ks)*nji_ - (j - js)*nx1_) + is;
         const Real xv = capx(m,k,j,i);
         if (xv > capang) ++nov;
-        if (xv > xres.val) { xres.val = xv; xres.loc = idx; }
+        if (xv > xres.val) {
+          xres.val = xv;
+          xres.loc = idx;
+        }
       }, Kokkos::MaxLoc<Real, int>(xloc), nover);
       const int xl = xloc.loc;
       const Real xv = xloc.val;
@@ -1298,7 +1269,10 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
         // the two PHYSICAL x1 faces are not in the stencil and keep the full explicit
         // treatment AddIsotropicHeatFluxRadiative gives them; fraction 1 would double
         // them, fraction 0 is what the flux kernel is told to ignore
-        if (i == is || i == ie+1) { capf1(m,k,j,i) = 0.0; return; }
+        if (i == is || i == ie+1) {
+          capf1(m,k,j,i) = 0.0;
+          return;
+        }
         const Real cf = capc1(m,k,j,i);
         const Real fr = split_f(cf, cap_i(m,k,j,i-1), cap_i(m,k,j,i), true);
         capf1(m,k,j,i) = fr;
@@ -1353,7 +1327,6 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   // pressure cut, or the tau blend: with the blend every face is masked by its weight
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
-  const bool blend_r = rad_blend_radial;
   // rad_blend_transverse: the x2/x3 faces below drop the vertical weight when it is off
   const bool blend_t = rad_blend_transverse;
   auto &wf = rad_w;
@@ -1367,7 +1340,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   // three kernels change nothing (bar the sign of an exactly-zero flux, and a non-finite
   // face_flux, which 0*inf would turn into a NaN) and are not launched.  Every other
   // path (x1 implicit / sts, angular implicit / cap / split, diag, nan_report) runs.
-  if (taumode && rad_w_zero && fin == 0.0 && blend_r
+  if (taumode && rad_w_zero && fin == 0.0
       && (blend_t || !multi_d || !rad_angular)
       && !rad_implicit_x1 && !rad_sts_all && !rad_sts_split && !rad_implicit_ang
       && !(rad_cap_ang > 0.0) && !diag && !nan_report) {
@@ -1425,8 +1398,8 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   const bool cs = pmy_pack->pmesh->use_cubed_sphere && rad_cs_exact;
   auto &sinc_ = pmy_pack->pcoord->sin_cell;
   auto &cosc_ = pmy_pack->pcoord->cos_cell;
-  // cornerfix4-1103 <mesh>/cs_vertex_3cell: the metric cross terms' corner-block reads
-  // take the parallelogram value (CsCornerCell); off: unchanged
+  // <mesh>/cs_vertex_3cell: the metric cross terms' corner-block reads
+  // take the parallelogram value (CsCornerCell)
   const bool v3c_ = pmy_pack->pmesh->use_cubed_sphere && pmy_pack->pmesh->cs_vertex_3cell;
   auto &vsz_ = pmy_pack->pmb->mb_size;
   const int vjs_ = pmy_pack->pmesh->mb_indcs.js, vje_ = pmy_pack->pmesh->mb_indcs.je;
@@ -1445,7 +1418,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     cnd_nanrep_cnt = new DvceArray1D<int>("cnd_nanrep_cnt", 1);
     cnd_nanrep_rec = new DvceArray1D<Real>("cnd_nanrep_rec", 16);
   }
-  // vgdrot-1011: the off-switch stand-ins made once (were 2 allocations + frees per call)
+  // the off-switch stand-ins, allocated once
   if (!nanrep_c && cnd_nanrep_dmy_i == nullptr) {
     cnd_nanrep_dmy_i = new DvceArray1D<int>("d", 1);
     cnd_nanrep_dmy_r = new DvceArray1D<Real>("d", 1);
@@ -1500,7 +1473,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     const Real pl = (gen ? wder_(m,IDPR,k,j,i-1) : w0(m,IEN,k,j,i-1)*gm1);
     const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
     const Real dl = curv ? (x1v_(m,i) - x1v_(m,i-1)) : size.d_view(m).dx1;
-    Real wt = (taumode && blend_r) ? wf(m,k,j,i) : 1.0;
+    Real wt = taumode ? wf(m,k,j,i) : 1.0;
     if (gaterho > 0.0) {
       wt *= RadGate(0.5*(w0(m,IDN,k,j,i-1) + w0(m,IDN,k,j,i))*dens_unit,
                     gaterho, gatedex);
@@ -1793,7 +1766,6 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   const Real tmax = rad_tmax;   // temperature ceiling in kappa_rad only (0 = off)
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
-  const bool blend_r = rad_blend_radial;
   const bool limit = rad_flux_limit;
   const Real ffac = 4.0;                // c a T^4 = 4 sigma T^4, the free-streaming flux
   // the density gate, on the same face-averaged density the explicit x1 face uses
@@ -1913,7 +1885,7 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
               lf = 0.0;
             }
           }
-          Real wt = (taumode && blend_r) ? wf(m,k,j,i) : 1.0;
+          Real wt = taumode ? wf(m,k,j,i) : 1.0;
           if (gaterho > 0.0) wt *= RadGate(rhof, gaterho, gatedex);
           const Real af = curvg ? area1_(m,k,j,i) : 1.0;
           ca = wt*kap*lf*temp_unit/len_unit/eflx_unit*af/dl;
@@ -2130,7 +2102,6 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
     maxviol = fmax(maxviol, mviol_p);
     nfail += nfail_p;
     nclip += nclip_p;
-
   }
 
   // <problem>/nan_report: the conservation residual of the tridiagonal solve, and any
@@ -2200,7 +2171,7 @@ void Conduction::AddIsotropicHeatFluxConstCond(const DvceArray5D<Real> &w0,
     }
     flx1(m,IEN,k,j,i) -= kappa_ * dtempdx;
   });
-  if (pmy_pack->pmesh->one_d) {return;}
+  if (pmy_pack->pmesh->one_d) return;
 
   // fluxes in x2-direction
   auto &flx2 = flx.x2f;
@@ -2217,7 +2188,7 @@ void Conduction::AddIsotropicHeatFluxConstCond(const DvceArray5D<Real> &w0,
     }
     flx2(m,IEN,k,j,i) -= kappa_ * dtempdx;
   });
-  if (pmy_pack->pmesh->two_d) {return;}
+  if (pmy_pack->pmesh->two_d) return;
 
   // fluxes in x3-direction
   auto &flx3 = flx.x3f;
@@ -2311,7 +2282,7 @@ void Conduction::AddIsotropicHeatFluxSpitzerCond(const DvceArray5D<Real> &w0,
     }
     flx1(m,IEN,k,j,i) -= hflx;
   });
-  if (pmy_pack->pmesh->one_d) {return;}
+  if (pmy_pack->pmesh->one_d) return;
 
   // fluxes in x2-direction
   auto &flx2 = flx.x2f;
@@ -2354,7 +2325,7 @@ void Conduction::AddIsotropicHeatFluxSpitzerCond(const DvceArray5D<Real> &w0,
     }
     flx2(m,IEN,k,j,i) -= hflx;
   });
-  if (pmy_pack->pmesh->two_d) {return;}
+  if (pmy_pack->pmesh->two_d) return;
 
   // fluxes in x3-direction
   auto &flx3 = flx.x3f;
@@ -2436,7 +2407,6 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   const Real tmax = rad_tmax;   // temperature ceiling in kappa_rad only (0 = off)
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
-  const bool blend_r = rad_blend_radial;
   // rad_blend_transverse: with it off the x2/x3 face conductances carry weight 1, so
   // the transverse dt below must be formed at weight 1 as well
   const bool blend_t = rad_blend_transverse;
@@ -2562,7 +2532,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
         wmax = fmax(wf(m,k,j,i), wf(m,k,j,i+1));
         // a cell with no weight on either x1 face still conducts transversely when
         // rad_blend_transverse is off, so it may not be dropped from the reduction
-        if (wmax == 0.0 && blend_r && blend_t) return;
+        if (wmax == 0.0 && blend_t) return;
       }
     }
 
@@ -2602,7 +2572,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     Real dtc = dt_huge;
     const Real d1 = (curv && radiative) ? dx1_(m,k,j,i) : size.d_view(m).dx1;
     if (!impx1) {
-      const Real w1 = (taumode && blend_r) ? wmax : 1.0;
+      const Real w1 = taumode ? wmax : 1.0;
       const Real k1 = w1*keff(d1, tc(k,j,i-1), tc(k,j,i+1));
       if (k1 > 0.0) {
         min_dt = fmin(min_dt, SQR(d1)/k1*rcv);
@@ -2634,7 +2604,10 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       }
     }
     if (diag_) cdg(m,5,k,j,i) = dtc;
-    if (min_dt < mres.val) { mres.val = min_dt; mres.loc = idx; }
+    if (min_dt < mres.val) {
+      mres.val = min_dt;
+      mres.loc = idx;
+    }
   }, Kokkos::MinLoc<Real, int>(mloc));
   dtnew = mloc.val*fac;
   // decode the winning cell, for the collapse report in Mesh::NewTimeStep
@@ -2701,7 +2674,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       const Real s1v = sof(d1, tc(dk,dj,di-1), tc(dk,dj,di+1));
       const Real s2v = multi_d ? sof(d2, tc(dk,dj-1,di), tc(dk,dj+1,di)) : 0.0;
       const Real s3v = three_d ? sof(d3, tc(dk-1,dj,di), tc(dk+1,dj,di)) : 0.0;
-      const Real w1 = (taumode && blend_r) ? wmax : 1.0;
+      const Real w1 = taumode ? wmax : 1.0;
       Real wa = (taumode && blend_t) ? wmax : 1.0;
       // x1v is only allocated on a curvilinear mesh; on Cartesian it is a 1x1 dummy
       dd.d_view(0)  = curv ? x1v_(dm,di) : -1.0;

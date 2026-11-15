@@ -895,7 +895,10 @@ void ReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
       if (vp != std::string::npos) {
         std::istringstream vs(line.substr(vp + 10));
         Real lo, hi;
-        if (vs >> lo >> hi) { opac_lR_lo_ = lo; opac_lR_hi_ = hi; }
+        if (vs >> lo >> hi) {
+          opac_lR_lo_ = lo;
+          opac_lR_hi_ = hi;
+        }
       }
       if (!have_grid) {
         std::istringstream ss(line.substr(1));
@@ -2303,7 +2306,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         int ijoin = nfine;
         for (int i = itop; i < nfine; ++i) {
           const Real rho_i = DensFromPT(eos, rgas, exp(lnp(i)), tk(i));
-          if (!(rho_i > dbg) || !(rho_i < 1.0e5) || !(tk(i) > 0.0)) { ijoin = i; break; }
+          if (!(rho_i > dbg) || !(rho_i < 1.0e5) || !(tk(i) > 0.0)) {
+            ijoin = i;
+            break;
+          }
         }
         if (bghse) {
           // THE HOT CORONA.  Continue the SAME hydrostatic integration upward, but
@@ -2366,7 +2372,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (bg_rho_ > 0.0) {
       int ij = 0;
       for (int i = nfine-1; i >= 0; --i) {
-        if (htk(i) != bg_temp_) { ij = i+1; break; }
+        if (htk(i) != bg_temp_) {
+          ij = i+1;
+          break;
+        }
       }
       bg_rjoin_ = rlo + ij*drf;
       if (bg_hydrostatic_) {
@@ -2447,7 +2456,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           // absorb, so a cell there is legal -- it simply does not participate in the
           // radiative transfer.
           if (lR > opac_lR_hi_) {
-            if (nbad == 0) { wl = lR; wh = lR; wr = rr_*lunit; }
+            if (nbad == 0) {
+              wl = lR;
+              wh = lR;
+              wr = rr_*lunit;
+            }
             wl = fmin(wl, lR);
             wh = fmax(wh, lR);
             ++nbad;
@@ -2773,7 +2786,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         t1[0] = 0.0; t1[1] = -kh[2]; t1[2] = kh[1];
       }
       const double nt1 = sqrt(t1[0]*t1[0] + t1[1]*t1[1] + t1[2]*t1[2]);
-      for (int c=0; c<3; ++c) { t1[c] /= nt1; }
+      for (int c=0; c<3; ++c) {
+        t1[c] /= nt1;
+      }
       const double t2[3] = {kh[1]*t1[2] - kh[2]*t1[1], kh[2]*t1[0] - kh[0]*t1[2],
                             kh[0]*t1[1] - kh[1]*t1[0]};
       const double psi = 2.0*M_PI*uni(rng);
@@ -3316,7 +3331,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       const Real cmet = condrad ? pcnd->rad_met : 0.0;
       const bool climit = condrad && pcnd->rad_flux_limit;
       const bool ctaum = condrad && pcnd->rad_tau_mode;
-      const bool cbldr = condrad && pcnd->rad_blend_radial;
       const Real cpcut = (condrad && pcnd->rad_tau_mode) ? -1.0
                          : (condrad ? pcnd->rad_pcut : 0.0);
       auto cwf = (condrad && pcnd->rad_tau_mode) ? pcnd->rad_w
@@ -3370,7 +3384,7 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
               const Real dlc = curv ? (x1v_(m,i) - x1v_(m,i-1))
                                     : (size.d_view(m).x1max
                                        - size.d_view(m).x1min)/indcs.nx1;
-              const Real wt = (ctaum && cbldr) ? cwf(m,k,j,i) : 1.0;
+              const Real wt = ctaum ? cwf(m,k,j,i) : 1.0;
               const Real pfc = 0.5*(pl + pr);
               Real fcond = 0.0;
               if (pfc >= cpcut) {
@@ -3565,7 +3579,10 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         const Real fnew = ftar/(punit_*vunit);                         // code flux
         // problem/mlt_split_sync relaxes toward the SMOOTHED target instead, which
         // needs every face's target first: hold it aside and do it in a second pass
-        if (sync) { ftar1d(i) = fnew; return; }
+        if (sync) {
+          ftar1d(i) = fnew;
+          return;
+        }
         if (relaxt > 0.0 && !seed) {
           fmlt1d(i) += fmin(1.0, bdt*tunit/relaxt)*(fnew - fmlt1d(i));
         } else {
@@ -4001,7 +4018,9 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       KOKKOS_LAMBDA(const int m, Real &a) {
         if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
           for (int k=ks; k<=ke; ++k) {
-            for (int j=js; j<=je; ++j) { a += vol_(m,k,j,is); }
+            for (int j=js; j<=je; ++j) {
+              a += vol_(m,k,j,is);
+            }
           }
         }
       }, svol);
@@ -4421,7 +4440,10 @@ void RgCsCeiling(Mesh *pm) {
 
 void RedGiantGravityLedger(Mesh *pm, Real bdt) {
   const Real e0 = (eledger_ > 0) ? RgTotE(pm) : 0.0;
-  if (eledger_ > 0 && el_t0_ < 0.0) { el_t0_ = pm->time; el_e0_ = e0; }
+  if (eledger_ > 0 && el_t0_ < 0.0) {
+    el_t0_ = pm->time;
+    el_e0_ = e0;
+  }
   RedGiantGravity(pm, bdt);
   if (eledger_ > 0) el_[2] += RgTotE(pm) - e0;
   if (cs_max_ > 0.0) RgCsCeiling(pm);
@@ -4472,10 +4494,16 @@ void RedGiantRTSplit(Mesh *pm, Real bdt) {
 }
 
 void RedGiantRTSplitLedger(Mesh *pm, Real bdt) {
-  if (eledger_ <= 0) { RedGiantRTSplitBody(pm, bdt); return; }
+  if (eledger_ <= 0) {
+    RedGiantRTSplitBody(pm, bdt);
+    return;
+  }
   static int ncall = 0;
   const Real e0 = RgTotE(pm);
-  if (el_t0_ < 0.0) { el_t0_ = pm->time; el_e0_ = e0; }
+  if (el_t0_ < 0.0) {
+    el_t0_ = pm->time;
+    el_e0_ = e0;
+  }
   const Real mlt0 = el_[1];
   RgShellAcc(pm, -1.0, bdt);
   RedGiantRTSplitBody(pm, bdt);
