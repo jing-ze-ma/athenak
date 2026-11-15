@@ -3024,7 +3024,7 @@ class RadiationM1 {
   DvceArray3D<int> cln_fvo;     // the cell order of each direction (m, d, cell)
   DvceArray4D<int> cln_fvm;     // the direction maps of the periodic seams (m, side, k, d)
   DvceArray4D<Real> cln_fvt;    // scratch of CleanFvSeams
-  DvceArray4D<int> cln_fvwm;    // the specular maps of reflecting theta walls (m,side,k,d)
+  DvceArray4D<int> cln_fvwm;    // specular maps of reflecting theta walls (m,side,k,d)
   DvceArray4D<Real> cln_fvwu;   // |n . theta_hat| there
   DvceArray5D<Real> cln_fvw;    // the walls' incoming intensities (m, side, k, i, d)
   DvceArray5D<Real> cln_v;      // closure fill flags (m,2,k,j,i)
