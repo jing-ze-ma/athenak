@@ -86,7 +86,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
 
   // 2. closure (from the gas before the stage increments are added), old vector, face
   //    coefficients
-  CleanClosure();
+  if (!cln_closit) CleanClosure();
   CleanOldVector();
   if (cell) {
     CleanCellOldVector();
@@ -95,12 +95,14 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanFaceCoefficients();
   }
 
-  // 3. Newton iteration on the gas coupling and, with reconstruction, Picard passes on
-  //    the lagged slopes (at most clean_maxpic, then the slopes are frozen and only the
-  //    gas coupling iterates on); one linear solve without either.  In the cell layout
+  // 3. Newton iteration on the gas coupling and Picard passes on the lagged quantities:
+  //    the slopes (reconstruction) and, with clean_closure = iterate, the closure from
+  //    the rays of the iterate (at most clean_maxpic, then they are frozen and only the
+  //    gas coupling iterates on); one linear solve without any of these.  In the cell layout
   //    a solution with cells E <= 0 or |F| > c E switches their faces to the low-order
   //    flux and is solved again (at most clean_maxpos times).
-  const bool iterate = cln_feedback || (cell && cln_recon);
+  const bool iterate = cln_feedback || (cell && cln_recon) || cln_closit;
+  const bool lagged = (cell && cln_recon) || cln_closit;
   const bool t2stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   int nit = 0, nit_sum = 0, npic = 0, npos = 0, nmark = 0;
   bool all_low = false;
@@ -116,11 +118,18 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     converged = !iterate;
     npic = 0;
     for (int inl = 0; inl < maxnl; ++inl) {
-      if (cell) {
-        if (cln_recon && inl < cln_maxpic) {
-          CleanCellSlopeWeights();
-          ++npic;
+      if (lagged && inl < cln_maxpic) ++npic;
+      if (cln_closit && inl < cln_maxpic) {
+        CleanClosureIterate();
+        if (cell) {
+          CleanCellFaceSpeeds();
+        } else {
+          CleanFaceCoefficients();
         }
+        if (cln_feedback) CleanAdvectiveCoefficients();
+      }
+      if (cell) {
+        if (cln_recon && inl < cln_maxpic) CleanCellSlopeWeights();
         CleanCellRightHandSide();
         CleanCellPreconditionerSetup();
       } else {
@@ -133,7 +142,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       cln_nit += std::abs(nit);
       if (!iterate || nit < 0) break;
       const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
-      if (cell && cln_recon && inl < cln_maxpic) dpic = de;
+      if (lagged && inl < cln_maxpic) dpic = de;
       Real dv = 0.0;
       if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
       if (de < tol_nl && dv < tol_nl) {

@@ -16,21 +16,21 @@
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
+#include "rad_m1/rad_m1_clean_cell.hpp"
 
 namespace radm1 {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanClosure
 //! \brief builds the closure for t^{n+1}.  Both stage solves and a backward-Euler redo end
 //! at t^{n+1}, so one closure serves the whole step; it is rebuilt for a new step or a
-//! new dt, and with clean_closure_stage for stage 2 from the stage-1 solution.
+//! new dt.
 
 void RadiationM1::CleanClosure() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
-  const bool stage2 = cln_closstage && (t2_solve == M1_T2S_STAGE2);
-  if (cln_havec && time == cln_tc && dt == cln_dtb && !stage2) return;
+  if (cln_havec && time == cln_tc && dt == cln_dtb) return;
 
-  CleanPredictState(stage2);
+  CleanPredictState();
 
   // formal solution of the predicted state, with its own source function (no relaxed
   // source or relaxed scattering J, which would make the closure depend on dt)
@@ -51,6 +51,43 @@ void RadiationM1::CleanClosure() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanClosureIterate
+//! \brief closure of the current Newton/Picard iterate (clean_closure = iterate): the
+//! formal solution of the iterate's E, gas temperature and F, with the stage
+//! opacities, so that the Eddington tensor belongs to the state being solved for
+
+void RadiationM1::CleanClosureIterate() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool cell = cln_cell;
+  const Real cl = c_light;
+  auto iw_ = iw;
+  auto u0_ = u0;
+  auto w = cln_w;
+  auto u = cln_x;
+  par_for("cln_clositer", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    iw_(m,M1_IW_EN,k,j,i) = fmax(cell ? u(m,CLC_K,k,j,i) : w(m,CLW_EK,k,j,i), 0.0);
+    iw_(m,M1_IW_TP,k,j,i) = w(m,CLW_T,k,j,i);
+    iw_(m,M1_IW_F1,k,j,i) = cell ? cl*u(m,CLC_K+1,k,j,i) : u0_(m,M1_F1,k,j,i);
+    iw_(m,M1_IW_F2,k,j,i) = cell ? cl*u(m,CLC_K+2,k,j,i) : u0_(m,M1_F1+1,k,j,i);
+    iw_(m,M1_IW_F3,k,j,i) = cell ? cl*u(m,CLC_K+3,k,j,i) : u0_(m,M1_F1+2,k,j,i);
+  });
+  vcol_srelax = false;
+  vcol_sbl = false;
+  vcol_sesc = false;
+  vscat_jrel = false;
+  VetShortChar();
+  CleanClosureFromRays();
+  CleanClosureFill();
+  CleanGhostFill(cln_s, 0, CLN_N);
+  cln_havec = false;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanPredictState
 //! \brief the state at t^{n+1} predicted from the physics of this step, as input of the
 //! formal solution (iw: E, T, F) and, for temperature-dependent opacities, opac.
@@ -67,12 +104,9 @@ void RadiationM1::CleanClosure() {
 //!     and the transported E (stiff and local, so solved as such; no overshoot).
 //! Without gas feedback the gas is held fixed and E advances at its own rate.
 //! Density is not changed by radiation within a step.  The prediction is within O(dt^2)
-//! of U^{n+1}.  Without a valid K1 (first step) the coupling rates are zero.  With
-//! clean_predict_flux F is advanced by dt K1_F as well.  With stage2 the state is instead
-//! the stage-1 solution Y1 (recovered from the stage-2 start u0 = w1 u1 + w0 Y1) and the
-//! gas of the explicit stage, without rates.
+//! of U^{n+1}.  Without a valid K1 (first step) the coupling rates are zero.
 
-void RadiationM1::CleanPredictState(const bool stage2) {
+void RadiationM1::CleanPredictState() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -85,14 +119,7 @@ void RadiationM1::CleanPredictState(const bool stage2) {
 
   FluidRef fl = FluidRef::Get(pmy_pack);
   const bool fluid = fl.on;
-  const bool rates = cln_pred && t2_ok && (t2k1.extent_int(0) > nmb1) && !stage2;
-  const bool predflux = rates && cln_predflux;
-  const bool cell = cln_cell;
-  const bool heun = (t2_tab == 0 || t2_tab == 2);
-  const Real w0 = heun ? 0.5 : t2_w0, w1 = heun ? 0.5 : t2_w1;
-  const bool multi_d = pmy_pack->pmesh->multi_d;
-  const bool three_d = pmy_pack->pmesh->three_d;
-  auto u1_ = u1;
+  const bool rates = cln_pred && t2_ok && (t2k1.extent_int(0) > nmb1);
 
   // opacities at the predicted state; the solve itself uses those of the stage
   cln_opsaved = fluid && !opac_zero && (opacity_type != M1_OPAC_CONST);
@@ -124,9 +151,7 @@ void RadiationM1::CleanPredictState(const bool stage2) {
     // K1 is stored on active cells only; ghost cells take the explicit state
     const bool active = (k >= ks && k <= ke && j >= js && j <= je && i >= is && i <= ie);
     const bool use_rates = rates && active;
-    // stage 2: the stage-1 solution Y1 = (u0 - w1 u1)/w0
-    auto y1 = [&](const int n) {return (u0_(m,n,k,j,i) - w1*u1_(m,n,k,j,i))/w0;};
-    const Real e0 = stage2 ? fmax(y1(M1_E), 0.0) : u0_(m,M1_E,k,j,i);
+    const Real e0 = u0_(m,M1_E,k,j,i);
     Real e = e0, d = 1.0, t = 0.0;
     if (fluid) {
       d = uh(m,IDN,k,j,i);
@@ -161,17 +186,9 @@ void RadiationM1::CleanPredictState(const bool stage2) {
     if (active) {
       iw_(m,M1_IW_EN,k,j,i) = e;
       iw_(m,M1_IW_TP,k,j,i) = t;
-      for (int n = 0; n < 3; ++n) {
-        Real f = stage2 ? y1(M1_F1+n) : u0_(m,M1_F1+n,k,j,i);
-        if (predflux && (n == 0 || (n == 1 && multi_d) || (n == 2 && three_d))) {
-          // K1_F is a cell value (cell layout) or the face values around the cell
-          const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-          f += cell ? dt*k1(m,M1_T2_F1+n,k,j,i)
-                    : 0.5*dt*(k1(m,M1_T2_F1+n,k,j,i) +
-                              k1(m,M1_T2_F1+n,k+dk,j+dj,i+di));
-        }
-        iw_(m,(n == 0) ? M1_IW_F1 : ((n == 1) ? M1_IW_F2 : M1_IW_F3),k,j,i) = f;
-      }
+      iw_(m,M1_IW_F1,k,j,i) = u0_(m,M1_F1,k,j,i);
+      iw_(m,M1_IW_F2,k,j,i) = u0_(m,M1_F1+1,k,j,i);
+      iw_(m,M1_IW_F3,k,j,i) = u0_(m,M1_F1+2,k,j,i);
     }
     if (new_opac) {
       Real op, oe, of, os;

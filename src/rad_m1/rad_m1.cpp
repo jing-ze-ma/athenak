@@ -108,8 +108,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_poslim = pin->GetOrAddBoolean("rad_m1","clean_pos_limit",true);
     cln_diagcells = pin->GetOrAddBoolean("rad_m1","clean_diag_cells",false);
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",true);
-    cln_predflux = pin->GetOrAddBoolean("rad_m1","clean_predict_flux",false);
-    cln_closstage = pin->GetOrAddBoolean("rad_m1","clean_closure_stage",false);
+    {std::string cl = pin->GetOrAddString("rad_m1","clean_closure","predict");
+    cln_closit = (cl.compare("iterate") == 0);
+    if (!cln_closit && cl.compare("predict") != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/clean_closure = predict | iterate" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }}
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_maxpos = pin->GetOrAddInteger("rad_m1","clean_maxpos",3);
     cln_pcsweeps = pin->GetOrAddInteger("rad_m1","clean_pc_sweeps",1);

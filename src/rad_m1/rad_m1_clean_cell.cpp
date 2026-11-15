@@ -121,6 +121,45 @@ void RadiationM1::CleanCellFaceCoefficients() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellFaceSpeeds
+//! \brief dissipation weight and speed of every face after a closure update (the
+//! low-order flags and theta are kept)
+
+void RadiationM1::CleanCellFaceSpeeds() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Real c = c_light;
+  const Real c1lo = cln_c0, c1hi = cln_c1;
+  const int mode = cln_alpha;
+  auto &size = pmy_pack->pmb->mb_size;
+  const Real dx[3] = {size.h_view(0).dx1, size.h_view(0).dx2, size.h_view(0).dx3};
+  auto cs = cln_s;
+  auto op = opac;
+  auto u = cln_x;
+  for (int dir = 0; dir < 3; ++dir) {
+    if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;
+    if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
+    auto fc = (dir == 0) ? cln_fc1 : ((dir == 1) ? cln_fc2 : cln_fc3);
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    const Real dxd = dx[dir];
+    par_for("clc_facespeed", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const int kl = k - dk, jl = j - dj, il = i - di;
+      const Real chi = 0.5*(op(m,M1_OP_T,k,j,i) + op(m,M1_OP_T,kl,jl,il));
+      const Real c1 = fmax(cs(m,CLN_C1,k,j,i), cs(m,CLN_C1,kl,jl,il));
+      const Real sray = CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
+      const Real psi = fmax(u(m,CLC_PSI+dir,k,j,i), u(m,CLC_PSI+dir,kl,jl,il));
+      const Real dd = fmax(cs(m,CLN_D11+dir,k,j,i), cs(m,CLN_D11+dir,kl,jl,il));
+      fc(m,CLF_AL,k,j,i) = CleanDissipationWeight(mode, chi*dxd, psi, sray);
+      fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellSlopeWeights
 //! \brief lagged weights of the van Leer slopes of the Newton iterate:
 //! pl = dr/(dl + dr), pr = dl/(dl + dr) where dl dr > 0, else 0, so that the half-slope
