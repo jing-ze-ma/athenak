@@ -8,6 +8,7 @@
 //! \file mhd.hpp
 // \brief definitions for MHD class
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -371,7 +372,7 @@ class MHD {
   bool sbf_want = false;
   bool sbf_valid = false;
   DvceArray5D<Real> sbf_s;
-  long sbf_nfast = 0, sbf_nfull = 0;
+  std::int64_t sbf_nfast = 0, sbf_nfull = 0;
   bool SplitBvalFastOK();
   void SplitBvalSnap();
   // >= 0 while Resistivity::ConToPrimRKG runs: the weight of this super-
@@ -565,7 +566,7 @@ class MHD {
         ql_ip1 += qlwb_ip1;
         qr_i   += qrwb_i;
         return;
-      };
+      }
 
       //---------------------------------------------------------------------------------
       //! \fn AddWbPrimFaceX1
@@ -585,7 +586,7 @@ class MHD {
           });
         }
         return;
-      };
+      }
 
       //---------------------------------------------------------------------------------
       //! \fn AddWbPrimFaceX2
@@ -605,7 +606,7 @@ class MHD {
           });
         }
         return;
-      };
+      }
 
       //---------------------------------------------------------------------------------
       //! \fn AddWbPrimFaceX3
@@ -625,7 +626,7 @@ class MHD {
           });
         }
         return;
-      };
+      }
 
       KOKKOS_INLINE_FUNCTION
       static void WbLocalPiecewiseLinearX1(TeamMember_t const &member,
@@ -671,7 +672,7 @@ class MHD {
           }
         }
         return;
-      };
+      }
 
     //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX1
@@ -715,7 +716,7 @@ class MHD {
         }
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX2
@@ -759,7 +760,7 @@ class MHD {
         }
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX3
@@ -803,7 +804,7 @@ class MHD {
         }
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn WbPiecewiseLinearDerX1/X2/X3
@@ -860,7 +861,7 @@ class MHD {
         }
       }
       return;
-    };
+    }
 
     KOKKOS_INLINE_FUNCTION
     static void PLM_nonuniform(const Real &q_im1, const Real &q_i, const Real &q_ip1,
@@ -882,7 +883,7 @@ class MHD {
       ql_ip1 = q_i + slope * dxRh;
       qr_i   = q_i - slope * dxLh;
       return;
-    };
+    }
 
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX1(TeamMember_t const &member, const EOS_Data &eos,
@@ -976,7 +977,7 @@ class MHD {
           }
       }
       return;
-    };
+    }
 
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX2(TeamMember_t const &member, const int m,
@@ -1002,7 +1003,7 @@ class MHD {
         });
       }
       return;
-    };
+    }
 
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX3(TeamMember_t const &member, const int m,
@@ -1028,7 +1029,7 @@ class MHD {
         });
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn GridPiecewiseLinearDerX1
@@ -1124,7 +1125,7 @@ class MHD {
         });
       }
       return;
-    };
+    }
 
     //-----------------------------------------------------------------------------------
     //! \fn getWBq0
@@ -1192,7 +1193,7 @@ class MHD {
         }
       }
       return;
-    };
+    }
 
     //! As with getWBq0, the static overload takes wb_option explicitly so that a static
     //! caller needs no object; the member version supplies the object's own.
@@ -1388,7 +1389,7 @@ class MHD {
       }
 
       return;
-    };
+    }
 
  private:
   MeshBlockPack* pmy_pack;   // ptr to MeshBlockPack containing this MHD
