@@ -48,8 +48,8 @@ void PrintLog() {
   auto &v = Lines();
   if (global_variable::my_rank == 0 && !v.empty()) {
     std::cout
-        << "--- defaults (amdef-1019; <job>/recipe sets the default set: prod1019 | "
-              << "none) ---" << std::endl;
+        << "--- defaults (<job>/recipe sets the default set: prod1019 | none) ---"
+        << std::endl;
     for (const auto &s : v) {std::cout << "  " << s << std::endl;}
     std::cout << "--- end defaults ---" << std::endl;
   }

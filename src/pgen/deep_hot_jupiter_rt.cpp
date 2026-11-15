@@ -902,7 +902,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << ", ck_impl_conserve " << two_stream_rt::ck_impl_conserve
               << ", sponge_top " << hot_jupiter_param.sponge_top
               << ", sponge_bottom " << hot_jupiter_param.sponge_bottom
-              << " (defaults 24, 1, 1, 0 since 09-30)" << std::endl;
+              << " (defaults 24, 1, 1, 0)" << std::endl;
   }
   // problem/ck_impl_osc = N: per-cell Aitken damping of oscillating cells from pass N
   // on (utils/two_stream_column_ck.hpp).  0 = off (default, bitwise).
