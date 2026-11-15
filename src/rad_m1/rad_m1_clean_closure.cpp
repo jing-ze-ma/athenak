@@ -9,6 +9,8 @@
 //! and its moments give the Eddington tensor D, the half-range factors h+- and the
 //! non-locality C1 of every cell.
 
+#include <utility>
+
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
@@ -17,6 +19,7 @@
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_clean_cell.hpp"
+#include "utils/imex_sdirk2.hpp"
 
 namespace radm1 {
 //----------------------------------------------------------------------------------------
@@ -30,7 +33,7 @@ void RadiationM1::CleanClosure() {
   const Real dt = pmy_pack->pmesh->dt;
   if (cln_havec && time == cln_tc && dt == cln_dtb) return;
 
-  CleanPredictState();
+  CleanPredictState(true);
 
   // formal solution of the predicted state, with its own source function (no relaxed
   // source or relaxed scattering J, which would make the closure depend on dt)
@@ -88,6 +91,194 @@ void RadiationM1::CleanClosureIterate() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanRayMoments
+//! \brief formal solution of the current state (u0 and the gas, no prediction) and its
+//! moments J, K = D J, H+, H-, <|I - S|> per cell into dst (CLN_* layout, not normalised;
+//! J = 0 marks a cell whose rays do not carry its radiation)
+
+void RadiationM1::CleanRayMoments(DvceArray5D<Real> dst) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+
+  CleanPredictState(false);
+  vcol_srelax = false;
+  vcol_sbl = false;
+  vcol_sesc = false;
+  vscat_jrel = false;
+  VetShortChar();
+  if (cln_opsaved) Kokkos::deep_copy(opac, cln_opb);
+  CleanClosureFromRays();
+
+  auto cs = cln_s;
+  par_for("cln_raymom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real jr = cs(m,CLN_J,k,j,i);
+    for (int n = 0; n < CLN_J; ++n) dst(m,n,k,j,i) = jr*cs(m,n,k,j,i);
+    dst(m,CLN_J,k,j,i) = jr;
+  });
+  cln_havec = false;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanClosureAfterSolve
+//! \brief clean_closure = extrap(2): the ray moments of a converged solution.  The last
+//! solve of a step gives the moments at t^{n+1} (used from the next step on); with
+//! extrap2 the stage-1 solve gives those at the stage-1 time.
+
+void RadiationM1::CleanClosureAfterSolve() {
+  const Real time = pmy_pack->pmesh->time;
+  const Real dt = pmy_pack->pmesh->dt;
+  if (t2_solve == M1_T2S_STAGE1) {
+    if (cln_extrap != 2) return;
+    const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
+    CleanRayMoments(cln_m1);
+    cln_t1 = time + (tb.a21 + tb.g)*dt;
+    cln_have_1 = true;
+    return;
+  }
+  CleanRayMoments(cln_mc);
+  cln_tm = time + dt;
+  cln_have_c = true;
+  cln_cand_be = (t2_solve != M1_T2S_STAGE2);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanClosureExtrap
+//! \brief clean_closure = extrap(2): the closure at the stage time from ray moments of
+//! converged solutions, extrapolated linearly in time.
+//!
+//! The formal solution is linear in the source and the boundary intensity, so the
+//! extrapolated moments are those of the extrapolated intensity, exact when S and the
+//! inflow vary linearly in time; the closure D = K/J, h+- = H+-/J, C1 is then formed from
+//! them.  The line passes through the moments at t^{n-1} and t^n (extrap), or, for stage
+//! 2 with extrap2, through those at t^n and of the stage-1 solution.  A cell keeps the
+//! moments at t^n where the extrapolated ones are not those of a non-negative intensity
+//! (J <= 0, |H| > J or K - H H^T/J not positive semidefinite; counted).  The first step,
+//! a restart and backward-Euler solves use the moments at t^n alone; without any (first
+//! step, restart) the closure of the state at t^n is built (CleanClosure).
+
+void RadiationM1::CleanClosureExtrap() {
+  const Real time = pmy_pack->pmesh->time;
+  const Real dt = pmy_pack->pmesh->dt;
+  cln_nguard = 0;
+
+  // a new step: the end of the last step becomes t^n
+  if (cln_have_c && cln_tm == time) {
+    std::swap(cln_mp, cln_mn);
+    std::swap(cln_mn, cln_mc);
+    cln_tp = cln_tn;
+    cln_tn = time;
+    cln_have_p = cln_have_n && !cln_cand_be;
+    cln_have_n = true;
+    cln_have_c = false;
+    cln_have_1 = false;
+  }
+  if (!cln_have_n || cln_tn != time) {
+    CleanClosure();
+    return;
+  }
+
+  // the line M(t) = Mb + (t - tb)/(tb - ta) (Mb - Ma) at the stage time ts
+  const bool stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
+  Real ts = time + dt;
+  if (t2_solve == M1_T2S_STAGE1) {
+    const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
+    ts = time + (tb.a21 + tb.g)*dt;
+  }
+  const bool use1 = (cln_extrap == 2) && (t2_solve == M1_T2S_STAGE2) && cln_have_1 &&
+                    (cln_t1 > cln_tn);
+  const bool line = stage && (use1 || cln_have_p);
+  auto ma = use1 ? cln_mn : cln_mp;
+  auto mb = use1 ? cln_m1 : cln_mn;
+  const Real tb = use1 ? cln_t1 : cln_tn;
+  const Real ta = use1 ? cln_tn : cln_tp;
+  const Real wx = line ? (ts - tb)/(tb - ta) : 0.0;
+  auto mn = cln_mn;
+
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+  auto cs = cln_s;
+  auto valid = cln_v;
+  int nguard = 0;
+  Kokkos::parallel_reduce("cln_extrap",
+                          Kokkos::RangePolicy<DevExeSpace>(0, (nmb1 + 1)*nk*nj*ni),
+  KOKKOS_LAMBDA(const int t, int &ng) {
+    const int i = is + t%ni;
+    const int j = js + (t/ni)%nj;
+    const int k = ks + (t/(ni*nj))%nk;
+    const int m = t/(ni*nj*nk);
+    Real q[CLN_N];
+    for (int n = 0; n < CLN_N; ++n) {
+      q[n] = mb(m,n,k,j,i) + wx*(mb(m,n,k,j,i) - ma(m,n,k,j,i));
+    }
+    // the extrapolated moments must be those of a non-negative intensity
+    bool ok = line && ma(m,CLN_J,k,j,i) > 0.0 && q[CLN_J] > 0.0;
+    if (ok) {
+      const Real ij = 1.0/q[CLN_J];
+      Real h[3], a[3][3];
+      for (int b = 0; b < 3; ++b) h[b] = (q[CLN_HP+b] + q[CLN_HM+b])*ij;
+      a[0][0] = q[CLN_D11]*ij;
+      a[1][1] = q[CLN_D11+1]*ij;
+      a[2][2] = q[CLN_D11+2]*ij;
+      a[0][1] = a[1][0] = q[CLN_D11+3]*ij;
+      a[0][2] = a[2][0] = q[CLN_D11+4]*ij;
+      a[1][2] = a[2][1] = q[CLN_D11+5]*ij;
+      for (int b = 0; b < 3; ++b) {
+        for (int c = 0; c < 3; ++c) a[b][c] -= h[b]*h[c];
+      }
+      // all principal minors of D - h h^T non-negative (to round-off)
+      const Real eps = 1.0e-12;
+      const Real m01 = a[0][0]*a[1][1] - a[0][1]*a[0][1];
+      const Real m02 = a[0][0]*a[2][2] - a[0][2]*a[0][2];
+      const Real m12 = a[1][1]*a[2][2] - a[1][2]*a[1][2];
+      const Real det = a[0][0]*m12 - a[0][1]*(a[0][1]*a[2][2] - a[1][2]*a[0][2])
+                       + a[0][2]*(a[0][1]*a[1][2] - a[1][1]*a[0][2]);
+      ok = (h[0]*h[0] + h[1]*h[1] + h[2]*h[2] <= 1.0 + eps) &&
+           (a[0][0] >= -eps) && (a[1][1] >= -eps) && (a[2][2] >= -eps) &&
+           (m01 >= -eps) && (m02 >= -eps) && (m12 >= -eps) && (det >= -eps);
+    }
+    if (!ok) {
+      if (line && mn(m,CLN_J,k,j,i) > 0.0) ++ng;
+      for (int n = 0; n < CLN_N; ++n) q[n] = mn(m,n,k,j,i);
+    }
+    if (q[CLN_J] > 0.0) {
+      const Real ij = 1.0/q[CLN_J];
+      for (int a = 0; a < 6; ++a) cs(m,CLN_D11+a,k,j,i) = q[CLN_D11+a]*ij;
+      for (int a = 0; a < 3; ++a) {
+        cs(m,CLN_HP+a,k,j,i) = fmax(q[CLN_HP+a]*ij, 0.0);
+        cs(m,CLN_HM+a,k,j,i) = fmin(q[CLN_HM+a]*ij, 0.0);
+      }
+      cs(m,CLN_C1,k,j,i) = fmax(q[CLN_C1]*ij, 0.0);
+      cs(m,CLN_J,k,j,i) = q[CLN_J];
+      valid(m,0,k,j,i) = 1.0;
+    } else {
+      for (int a = 0; a < 3; ++a) {
+        cs(m,CLN_D11+a,k,j,i) = 1.0/3.0;
+        cs(m,CLN_D11+3+a,k,j,i) = 0.0;
+        cs(m,CLN_HP+a,k,j,i) = 0.25;
+        cs(m,CLN_HM+a,k,j,i) = -0.25;
+      }
+      cs(m,CLN_C1,k,j,i) = 1.0;
+      cs(m,CLN_J,k,j,i) = 0.0;
+      valid(m,0,k,j,i) = 0.0;
+    }
+  }, Kokkos::Sum<int>(nguard));
+  cln_nguard = nguard;
+  cln_nguard_sum += nguard;
+  if (line) cln_next_sum += 1.0;
+
+  CleanClosureFill();
+  CleanGhostFill(cln_s, 0, CLN_N);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanPredictState
 //! \brief the state at t^{n+1} predicted from the physics of this step, as input of the
 //! formal solution (iw: E, T, F) and, for temperature-dependent opacities, opac.
@@ -104,9 +295,10 @@ void RadiationM1::CleanClosureIterate() {
 //!     and the transported E (stiff and local, so solved as such; no overshoot).
 //! Without gas feedback the gas is held fixed and E advances at its own rate.
 //! Density is not changed by radiation within a step.  The prediction is within O(dt^2)
-//! of U^{n+1}.  Without a valid K1 (first step) the coupling rates are zero.
+//! of U^{n+1}.  Without a valid K1 (first step) or with use_k1 = false the coupling
+//! rates are zero and the formal solution sees the current state itself.
 
-void RadiationM1::CleanPredictState() {
+void RadiationM1::CleanPredictState(const bool use_k1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -119,7 +311,7 @@ void RadiationM1::CleanPredictState() {
 
   FluidRef fl = FluidRef::Get(pmy_pack);
   const bool fluid = fl.on;
-  const bool rates = cln_pred && t2_ok && (t2k1.extent_int(0) > nmb1);
+  const bool rates = use_k1 && cln_pred && t2_ok && (t2k1.extent_int(0) > nmb1);
 
   // opacities at the predicted state; the solve itself uses those of the stage
   cln_opsaved = fluid && !opac_zero && (opacity_type != M1_OPAC_CONST);

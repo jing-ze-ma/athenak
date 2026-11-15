@@ -47,6 +47,12 @@ void RadiationM1::CleanInit() {
     Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
     Kokkos::deep_copy(cln_x, 0.0);
   }
+  if (cln_extrap > 0) {
+    Kokkos::realloc(cln_mn, nmb, CLN_N, n3, n2, n1);
+    Kokkos::realloc(cln_mp, nmb, CLN_N, n3, n2, n1);
+    Kokkos::realloc(cln_mc, nmb, CLN_N, n3, n2, n1);
+    if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
+  }
 
   int nranks = 1;
 #if MPI_PARALLEL_ENABLED
@@ -86,7 +92,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
 
   // 2. closure (from the gas before the stage increments are added), old vector, face
   //    coefficients
-  if (!cln_closit) CleanClosure();
+  if (cln_extrap > 0) {
+    CleanClosureExtrap();
+  } else if (!cln_closit) {
+    CleanClosure();
+  }
   CleanOldVector();
   if (cell) {
     CleanCellOldVector();
@@ -180,11 +190,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (global_variable::my_rank == 0) {
     if (cell) {
       std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pic %d %.2e pos %d mark %d "
-                  "all %d neg %d nreal %d\n", pmy_pack->pmesh->ncycle, t2_solve, nit,
-                  nit_sum, npic, dpic, npos, nmark, all_low ? 1 : 0, nneg, cln_nnreal);
+                  "all %d neg %d nreal %d guard %d\n", pmy_pack->pmesh->ncycle, t2_solve,
+                  nit, nit_sum, npic, dpic, npos, nmark, all_low ? 1 : 0, nneg,
+                  cln_nnreal, cln_nguard);
     } else {
-      std::printf("CLEAN cycle %d t2s %d it %d neg %d\n", pmy_pack->pmesh->ncycle,
-                  t2_solve, nit, nneg);
+      std::printf("CLEAN cycle %d t2s %d it %d neg %d guard %d\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, nit, nneg, cln_nguard);
     }
   }
 
@@ -197,6 +208,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
     t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_poslim && cln_nnreal > 0);
   }
+
+  // 6. clean_closure = extrap(2): ray moments of the new state
+  if (cln_extrap > 0 && !t2_fail) CleanClosureAfterSolve();
   return TaskStatus::complete;
 }
 

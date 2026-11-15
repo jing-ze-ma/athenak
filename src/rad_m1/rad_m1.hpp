@@ -2887,7 +2887,10 @@ class RadiationM1 {
   void CleanInitFaceFluxes();
   void CleanOldVector();
   void CleanClosure();
-  void CleanPredictState();
+  void CleanPredictState(const bool use_k1);
+  void CleanRayMoments(DvceArray5D<Real> dst);
+  void CleanClosureExtrap();
+  void CleanClosureAfterSolve();
   void CleanClosureIterate();
   void CleanCellFaceSpeeds();
   void CleanClosureFromRays();
@@ -2946,6 +2949,7 @@ class RadiationM1 {
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
   bool cln_closit = false;      // clean_closure: predict | iterate (default for cell)
+  int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: line-relaxation sweeps (preconditioner)
@@ -2961,6 +2965,15 @@ class RadiationM1 {
   DvceArray5D<Real> cln_s;      // closure (CLN_*)
   DvceArray5D<Real> cln_v;      // closure fill flags (m,2,k,j,i)
   DvceArray5D<Real> cln_opb;    // opacities of the stage, kept during the closure build
+  // clean_closure = extrap(2): ray moments (CLN_* layout, not normalised by J) of the
+  // converged states at t^n (cln_mn), t^{n-1} (cln_mp), the end of the last step solved
+  // (cln_mc) and the stage-1 solution (cln_m1), with their times and validity
+  DvceArray5D<Real> cln_mn, cln_mp, cln_mc, cln_m1;
+  Real cln_tn = -1.0e300, cln_tp = -1.0e300, cln_tm = -1.0e300, cln_t1 = -1.0e300;
+  bool cln_have_n = false, cln_have_p = false, cln_have_c = false, cln_have_1 = false;
+  bool cln_cand_be = false;     // the step that made cln_mc ended with backward Euler
+  int cln_nguard = 0;           // cells whose extrapolated moments fell back to t^n
+  Real cln_nguard_sum = 0.0, cln_next_sum = 0.0;   // guard falls, extrapolated closures
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
