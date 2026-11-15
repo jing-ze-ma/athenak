@@ -6,9 +6,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file imex_sdirk2.hpp
-//! \brief ckhesdirk-1102: the tableau of the IMEX second-order step shared by
-//! <rad_m1>/time_scheme = hesdirk2 (rad_m1_time2.cpp) and <problem>/ck_time_scheme =
-//! hesdirk2 (deep_hot_jupiter_rt_src.cpp, DhjCkT2Stage).  The explicit part is AthenaK's
+//! \brief The tableau of the IMEX second-order step of <rad_m1>/time_scheme = hesdirk2
+//! (rad_m1_time2.cpp).  The explicit part is AthenaK's
 //! rk2 (Heun); the implicit part the stiffly accurate, L-stable ESDIRK
 //!   A = [[0,0,0],[1-g,g,0],[1/2,b2,g]],  g = 1 - 1/sqrt 2,  b2 = g/(2(1-g)),
 //! FSAL.  Each implicit stage is a backward-Euler solve with dt -> g dt on the old vector

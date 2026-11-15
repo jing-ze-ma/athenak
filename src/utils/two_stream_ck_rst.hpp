@@ -76,10 +76,6 @@ enum CkRstSlab : std::int32_t {
   kCkSlabFhFb = 11,   // rt_Fb summed over the chain blocks, (m,k,j,i), faces i
   kCkSlabFhQb = 12,   // rt_Qb summed over the chain blocks
   kCkSlabFhCol = 13,  // per column, i = 0..3: rt_icut, rt_cf(3), fstar, albedo
-  // ckhesdirk-1102 problem/ck_time_scheme = hesdirk2: the FSAL slope K1 and its
-  // validity (a Real, 1 or 0, in every cell)
-  kCkSlabT2K1 = 14,
-  kCkSlabT2Ok = 15,
   kCkSlabXsU0 = 16,   // u0 variable n at the store = 16 + n (n < 10)
   // ck2ndt-1102 problem/ck_cad_cont (utils/ck_2nd.hpp (8b)): the continuous model's
   // ck_cad2 slots G (0), t0 (1), S_n (6), C (7) = 26 .. 29 and its ramp length L = 30

@@ -801,9 +801,7 @@ TaskStatus MHD::RTStrangSplit(Driver *pdrive, int stage) {
     RTOpSplitBvals();
     return TaskStatus::complete;
   }
-  pm->pgen->user_split_half = (stage == 0) ? 1 : 2;
   (pm->pgen->user_split_func)(pm, 0.5*(pm->dt));
-  pm->pgen->user_split_half = 0;
   RTOpSplitBvals();
   return TaskStatus::complete;
 }

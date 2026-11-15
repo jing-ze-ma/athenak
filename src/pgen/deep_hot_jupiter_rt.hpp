@@ -528,17 +528,6 @@ void WbTanProbe(Mesh *pm, const Real bdt);
 // problem/ck_impl_once: the whole correlated-k radiation, once per hydro step,
 // with the full cycle dt, after the last RK stage
 void DhjCkRtSplit(Mesh *pm, const Real dt);
-// ckhesdirk-1102 problem/ck_time_scheme = hesdirk2: setup, the stage solve (called from
-// SourceFunc in place of the in-stage ck call), the end-of-run counters
-void DhjCkT2Init(ParameterInput *pin, Mesh *pm);
-void DhjCkT2Stage(Mesh *pm, const Real bdt);
-void DhjCkT2Report(Mesh *pm, const bool final);
-void DhjCkCount(const bool full);
-// problem/ck_count_every (read only when named; 0 = off): a cumulative ck counter line
-// (full calls, fallbacks, caps, non-converged, hesdirk2 clamps) every N cycles
-inline int dhj_ck_count_every = 0;
-// problem/ck_t2_freeze (TEST; read only when named, hesdirk2 + hydro only)
-inline bool dhj_ck_t2_freeze = false;
 
 // PER-CYCLE SINGLE-MESHBLOCK DIAGNOSTIC (problem/diag_gid, default -1 = off).  Which
 // global meshblock to dump, and the inclusive cycle window.  File-scope because the

@@ -2456,12 +2456,11 @@ void CkCadStep(Mesh *pm, const Real dt) {
   const bool diag = ck_impl_verbose;
   CkRstCadRestore(pm);     // restart: Q0, D, T0, rho0 (two_stream_ck_rst.hpp)
   ck_cad_teval = pm->time + pm->dt;   // ck2nd-1102 ck_cad_drift (both T2 stages: c = 1)
-  // rkgfuse-1102 ck_strang: the second half of a cycle is never a scheduled full call
   // ck2ndt-1102 problem/ck_cad_dt: the schedule in simulated time (ck_2nd.hpp (7))
   const bool due = (ck_cad_dt > 0.0)
                    ? CkSchedCross(pm->time, pm->dt, ck_cad_dt)
                    : (pm->ncycle % static_cast<int64_t>(ck_impl_every) == 0);
-  const bool full = (ck_cad_ptr == nullptr) || (due && ck_cad_half != 2);
+  const bool full = (ck_cad_ptr == nullptr) || due;
   if (ck_cad_stat_ptr == nullptr) {
     ck_cad_stat_ptr = new DvceArray1D<Real>("ck_cad_stat", 8);
   }
