@@ -1399,7 +1399,7 @@ template <class V>
 void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
                               const bool loc, const int ws) {
   auto a_ = a;
-  const bool dp = (ws >= 0) && vgd_gband && !vgd_gdnl.empty();
+  const bool dp = (ws >= 0) && (vgd_gband || vgd_raw) && !vgd_gdnl.empty();
   const int wq = dp ? std::min(ws, static_cast<int>(vgd_gdnl.size()) - 1) : 0;
   const int nl = loc ? (dp ? vgd_gdnl[wq] : vgd_csnloc) : 0;
   {

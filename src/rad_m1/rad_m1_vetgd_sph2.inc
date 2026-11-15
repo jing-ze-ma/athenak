@@ -353,6 +353,7 @@ void RadiationM1::VetGdRingGatherC(const int i0, const int i1) {
 //! partner rank, both sorted by depth so that the per-shell halo of depth ws is a prefix
 //! (VetGdCsHalo with ws).  Every slot is marked remote (vgd_hloc = -1): the sweep reads
 //! every band position from the band (no direct neighbour reads, which reach one block).
+//! vgd_raw (a wedge): J and K periodic, each x1 level apart; vgd_own the on-rank owners.
 
 void RadiationM1::VetGdGlobalBandInit() {
   Mesh *pm = pmy_pack->pmesh;
@@ -366,20 +367,22 @@ void RadiationM1::VetGdGlobalBandInit() {
   const int nt2 = pm->mesh_indcs.nx2, nt3 = pm->mesh_indcs.nx3;
   const int nb2 = vgd_nb2, nb3 = vgd_nb3;
   if (pm->multilevel) {VgdFatal("vet_gd_band_global: SMR/AMR not supported");}
-  if (nb2*nx2 != nt2 || nb3*nx3 != nt3 || (nt3 % 2) != 0) {
+  if (nb2*nx2 != nt2 || nb3*nx3 != nt3 || (vgd_pol && (nt3 % 2) != 0)) {
     VgdFatal("vet_gd_band_global: the MeshBlocks must tile the mesh, nx3 even");
   }
-  std::vector<int> gof(nb2*nb3, -1);
+  std::vector<int> gof(vgd_nb1*nb2*nb3, -1);
   for (int g = 0; g < ngb; ++g) {
     const LogicalLocation &l = pm->lloc_eachmb[g];
-    gof[l.lx3*nb2 + l.lx2] = g;
+    gof[(l.lx1*nb3 + l.lx3)*nb2 + l.lx2] = g;
   }
   // the owner (gid, band k, band j) of band position (kk, jj) of block g; false: none
   auto owner = [&](const int g, const int kk, const int jj, int &go, int &ko,
                    int &jo) -> bool {
     const LogicalLocation &l = pm->lloc_eachmb[g];
     int J = l.lx2*nx2 + jj - w, K = l.lx3*nx3 + kk - w;
-    if (J < 0) {
+    if (!vgd_pol) {
+      J = ((J % nt2) + nt2) % nt2;
+    } else if (J < 0) {
       J = -1 - J;
       K += nt3/2;
     } else if (J >= nt2) {
@@ -389,7 +392,7 @@ void RadiationM1::VetGdGlobalBandInit() {
     if (J < 0 || J >= nt2) {return false;}
     K = ((K % nt3) + nt3) % nt3;
     const int b2 = J/nx2, b3 = K/nx3;
-    go = gof[b3*nb2 + b2];
+    go = gof[(l.lx1*nb3 + b3)*nb2 + b2];
     ko = K - b3*nx3 + w;
     jo = J - b2*nx2 + w;
     return true;
@@ -399,6 +402,24 @@ void RadiationM1::VetGdGlobalBandInit() {
     const int dj = std::max(std::max(w - jj, jj - (w + nx2 - 1)), 0);
     return std::max(dk, dj);
   };
+  Kokkos::realloc(vgd_own, nmb, c3w, c2w, 3);
+  auto ow_h = Kokkos::create_mirror_view(vgd_own);
+  for (int m = 0; m < nmb; ++m) {
+    for (int kk = 0; kk < c3w; ++kk) {
+      for (int jj = 0; jj < c2w; ++jj) {
+        int go = -1, ko = kk, jo = jj;
+        if (!owner(g0 + m, kk, jj, go, ko, jo) || pm->rank_eachmb[go] != me) {
+          go = g0 - 1;
+          ko = kk;
+          jo = jj;
+        }
+        ow_h(m,kk,jj,0) = go - g0;
+        ow_h(m,kk,jj,1) = ko;
+        ow_h(m,kk,jj,2) = jo;
+      }
+    }
+  }
+  Kokkos::deep_copy(vgd_own, ow_h);
   // buckets by depth (1..w): on-rank (6 ints), per partner rank send / recv (3 ints)
   std::vector<std::vector<int>> lb(w + 1);
   std::map<int, std::vector<std::vector<int>>> sb, rb;
@@ -420,6 +441,9 @@ void RadiationM1::VetGdGlobalBandInit() {
         if (rr != me && ro != me) {continue;}
         const int jg = pm->lloc_eachmb[go].lx2*nx2 + jo - w;
         const int kg = pm->lloc_eachmb[go].lx3*nx3 + ko - w;
+        // (a theta-periodic image keeps every direction of its branch: no geometric map)
+        const int jr = pm->lloc_eachmb[gr].lx2*nx2 + jj - w;
+        const int tw = (!vgd_pol && (jr < 0 || jr >= nt2)) ? 1 : 0;
         if (rr == me && ro == me) {
           lb[d].insert(lb[d].end(), {gr - g0, kk, jj, go - g0, ko, jo, d});
         } else if (rr == me) {
@@ -428,14 +452,14 @@ void RadiationM1::VetGdGlobalBandInit() {
           v[d].insert(v[d].end(), {gr - g0, kk, jj});
           auto &vj = rbj[ro];
           if (vj.empty()) {vj.resize(w + 1);}
-          vj[d].insert(vj[d].end(), {jg, kg});
+          vj[d].insert(vj[d].end(), {jg, kg, tw});
         } else {
           auto &v = sb[rr];
           if (v.empty()) {v.resize(w + 1);}
           v[d].insert(v[d].end(), {go - pm->gids_eachrank[me], ko, jo});
           auto &vj = sbj[rr];
           if (vj.empty()) {vj.resize(w + 1);}
-          vj[d].insert(vj[d].end(), {jg, kg});
+          vj[d].insert(vj[d].end(), {jg, kg, tw});
         }
       }
     }
@@ -555,14 +579,14 @@ void RadiationM1::VetGdGlobalBandInit() {
   vgd_gbc = (vgd_hcomp > 0) && vgd_hmpi;
   if (vgd_gbc) {
     const int n = vgd_n;
-    Kokkos::realloc(vgd_gbjs, std::max(vgd_csnsnd, 1), 2);
-    Kokkos::realloc(vgd_gbjr, std::max(vgd_csnrcv, 1), 2);
+    Kokkos::realloc(vgd_gbjs, std::max(vgd_csnsnd, 1), 3);
+    Kokkos::realloc(vgd_gbjr, std::max(vgd_csnrcv, 1), 3);
     {
       auto a_h = Kokkos::create_mirror_view(vgd_gbjs);
-      for (int e = 0; e < vgd_csnsnd; ++e) {a_h(e,0) = sj[2*e]; a_h(e,1) = sj[2*e + 1];}
+      for (int e = 0; e < 3*vgd_csnsnd; ++e) {a_h(e/3,e%3) = sj[e];}
       Kokkos::deep_copy(vgd_gbjs, a_h);
       auto b_h = Kokkos::create_mirror_view(vgd_gbjr);
-      for (int e = 0; e < vgd_csnrcv; ++e) {b_h(e,0) = rj[2*e]; b_h(e,1) = rj[2*e + 1];}
+      for (int e = 0; e < 3*vgd_csnrcv; ++e) {b_h(e/3,e%3) = rj[e];}
       Kokkos::deep_copy(vgd_gbjr, b_h);
     }
     // the global rows: node theta, cell width, the polar zone (node colatitude <
@@ -582,7 +606,7 @@ void RadiationM1::VetGdGlobalBandInit() {
       if (0.5*(f0 + f1) < tb) {nz = J + 1;}
     }
     for (int J = 0; J < nt2; ++J) {
-      cp_h(J) = (J < nz + w + 1 || J >= nt2 - nz - w - 1) ? 1 : 0;
+      cp_h(J) = (vgd_pol && (J < nz + w + 1 || J >= nt2 - nz - w - 1)) ? 1 : 0;
     }
     Kokkos::deep_copy(vgd_gbth, th_h);
     Kokkos::deep_copy(vgd_gbdt, dt_h);
@@ -607,6 +631,8 @@ void RadiationM1::VetGdGlobalBandInit() {
                 << "keep their whole branch" << std::endl;
     }
   }
+  vgd_gbcf.clear();
+  vgd_gbcb.clear();
   // every slot reads the band (no direct on-rank neighbour reads)
   Kokkos::deep_copy(vgd_hloc, -1);
   for (int t = 0; t < 8*nmb; ++t) {vgd_hrank[t] = me;}
@@ -641,7 +667,7 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
   vgd_cur.fence();   // the shell's intensities (sweep stream) are complete
   const int wq = std::min(ws, static_cast<int>(vgd_gdnl.size()) - 1);
   {
-    const int nl = vgd_gdnl[wq];
+    const int nl = vgd_raw ? 0 : vgd_gdnl[wq];   // (vgd_raw: on-rank owners read direct)
     if (nl > 0) {
       auto L_ = vgd_csloc;
       par_for("m1_vgdgb_loc", DevExeSpace(), 0, nl - 1, 0, nv - 1,
@@ -678,52 +704,86 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
   auto fs_ = vgd_gbfs;
   auto fr_ = vgd_gbfr;
   const int nmx = std::max(ns, nr);
-  // (1) the flags of both sides (send: my interior cells; receive: my band positions)
-  par_for("m1_vgdgb_flag", DevExeSpace(), 0, nmx - 1, 0, nv - 1,
-  KOKKOS_LAMBDA(const int e, const int v) {
-    const Real nx = dir_(v,0), ny = dir_(v,1), nz = dir_(v,2);
-    for (int sd = 0; sd < 2; ++sd) {
-      if (e >= ((sd == 0) ? ns : nr)) {continue;}
-      const int dep = (sd == 0) ? DS_(e) : DR_(e);
-      int f = 0;
-      if (dep <= wq) {
-        const int J = (sd == 0) ? JS_(e,0) : JR_(e,0);
-        const int K = (sd == 0) ? JS_(e,1) : JR_(e,1);
-        const Real gam = 2.0*fmax(dt_(J), dph);
-        f = VgdHaloKeepTP(nx, ny, nz, th_(J), p0 + (K + 0.5)*dph, inw, mode,
-                          cp_(J) != 0, dep, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
-      }
-      if (sd == 0) {fs_(static_cast<size_t>(e)*nv + v) = f;}
-      else {fr_(static_cast<size_t>(e)*nv + v) = f;}
-    }
-  });
-  // (2) exclusive scans in place (flag -> position; totals at the end)
-  VgdScan2(DevExeSpace(), vgd_gbfs, static_cast<size_t>(ns)*nv, vgd_gbfr,
-           static_cast<size_t>(nr)*nv, "m1_vgdgb_scan2", vgd_scan_sums);
-  // (3) the positions at the partner segment bounds (prefix of depth wq) -> pinned host
-  {
-    std::vector<int> bd(4*np);
-    for (int p = 0; p < np; ++p) {
-      bd[4*p] = vgd_csps[p];
-      bd[4*p + 1] = vgd_csps[p] + vgd_gdsn[wq][p];
-      bd[4*p + 2] = vgd_cspr[p];
-      bd[4*p + 3] = vgd_cspr[p] + vgd_gdrn[wq][p];
-    }
-    for (int q = 0; q < 4*np; ++q) {vgd_gbpb(q) = bd[q];}
-  }
-  auto pb_ = vgd_gbpb;
-  const int np_ = np;
+  // vgd_raw (a fixed direction set): the kept (entry, direction) lists and the bounds of
+  // each (shell, pass, depth), made at their first exchange; the pack and unpack run over
+  // the kept values only (an unsent band value is never read)
+  const int key = (2*i + (inw ? 1 : 0))*(vgd_w + 1) + wq;
+  auto &cf = vgd_gbcf[vgd_raw ? key : -1];
+  auto &cb = vgd_gbcb[vgd_raw ? key : -1];
   auto pv = Kokkos::subview(vgd_gbpb, std::make_pair(4*np, 8*np));
-  Kokkos::fence();
-  Kokkos::parallel_for("m1_vgdgb_bnd", Kokkos::RangePolicy<>(DevExeSpace(), 0, 4*np),
-  KOKKOS_LAMBDA(const int q) {
-    const size_t at = static_cast<size_t>(pb_(q))*nv;
-    pb_(4*np_ + q) = ((q & 3) < 2) ? fs_(at) : fr_(at);
-  });
+  if (vgd_raw && !cb.empty()) {
+    for (int q = 0; q < 4*np; ++q) {pv(q) = cb[q];}
+  } else {
+    // (1) the flags of both sides (send: my interior cells; receive: my band positions)
+    par_for("m1_vgdgb_flag", DevExeSpace(), 0, nmx - 1, 0, nv - 1,
+    KOKKOS_LAMBDA(const int e, const int v) {
+      const Real nx = dir_(v,0), ny = dir_(v,1), nz = dir_(v,2);
+      for (int sd = 0; sd < 2; ++sd) {
+        if (e >= ((sd == 0) ? ns : nr)) {continue;}
+        const int dep = (sd == 0) ? DS_(e) : DR_(e);
+        int f = 0;
+        if (dep <= wq) {
+          const int J = (sd == 0) ? JS_(e,0) : JR_(e,0);
+          const int K = (sd == 0) ? JS_(e,1) : JR_(e,1);
+          const Real gam = 2.0*fmax(dt_(J), dph);
+          const bool all = (cp_(J) != 0) || (((sd == 0) ? JS_(e,2) : JR_(e,2)) != 0);
+          f = VgdHaloKeepTP(nx, ny, nz, th_(J), p0 + (K + 0.5)*dph, inw, mode, all, dep,
+                            rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
+        }
+        if (sd == 0) {fs_(static_cast<size_t>(e)*nv + v) = f;}
+        else {fr_(static_cast<size_t>(e)*nv + v) = f;}
+      }
+    });
+    // (2) exclusive scans in place (flag -> position; totals at the end)
+    VgdScan2(DevExeSpace(), vgd_gbfs, static_cast<size_t>(ns)*nv, vgd_gbfr,
+             static_cast<size_t>(nr)*nv, "m1_vgdgb_scan2", vgd_scan_sums);
+    // (3) the positions at the partner segment bounds (prefix of depth wq) -> pinned host
+    {
+      std::vector<int> bd(4*np);
+      for (int p = 0; p < np; ++p) {
+        bd[4*p] = vgd_csps[p];
+        bd[4*p + 1] = vgd_csps[p] + vgd_gdsn[wq][p];
+        bd[4*p + 2] = vgd_cspr[p];
+        bd[4*p + 3] = vgd_cspr[p] + vgd_gdrn[wq][p];
+      }
+      for (int q = 0; q < 4*np; ++q) {vgd_gbpb(q) = bd[q];}
+    }
+    auto pb_ = vgd_gbpb;
+    const int np_ = np;
+    Kokkos::fence();
+    Kokkos::parallel_for("m1_vgdgb_bnd", Kokkos::RangePolicy<>(DevExeSpace(), 0, 4*np),
+    KOKKOS_LAMBDA(const int q) {
+      const size_t at = static_cast<size_t>(pb_(q))*nv;
+      pb_(4*np_ + q) = ((q & 3) < 2) ? fs_(at) : fr_(at);
+    });
+    if (vgd_raw) {
+      Kokkos::fence();
+      cb.assign(pv.data(), pv.data() + 4*np);
+      for (int sd = 0; sd < 2; ++sd) {
+        auto f_ = (sd == 0) ? fs_ : fr_;
+        const int nq = ((sd == 0) ? ns : nr)*nv;
+        int nk = 0;
+        Kokkos::deep_copy(nk, Kokkos::subview(f_, nq));
+        cf[sd] = DvceArray1D<int>("m1_vgdgb_keep", std::max(nk, 1));
+        auto l_ = cf[sd];
+        Kokkos::parallel_for("m1_vgdgb_list", Kokkos::RangePolicy<>(DevExeSpace(), 0, nq),
+        KOKKOS_LAMBDA(const int q) {if (f_(q + 1) > f_(q)) {l_(f_(q)) = q;}});
+        cb.push_back(nk);
+      }
+    }
+  }
   // (4) the compact pack (my kept values in list order)
   auto sb_ = vgd_sbuf;
   auto rb_ = vgd_rbuf;
-  if (ns > 0) {
+  auto ls_ = cf[0], lr_ = cf[1];
+  if (vgd_raw && cb[4*np] > 0) {
+    Kokkos::parallel_for("m1_vgdgb_kpack",
+                         Kokkos::RangePolicy<>(DevExeSpace(), 0, cb[4*np]),
+    KOKKOS_LAMBDA(const int o) {
+      const int e = ls_(o)/nv;
+      sb_(o) = a_(S_(e,0),ls_(o) - e*nv,S_(e,1),S_(e,2),i);
+    });
+  } else if (ns > 0 && !vgd_raw) {
     par_for("m1_vgdgb_pack", DevExeSpace(), 0, ns - 1, 0, nv - 1,
     KOKKOS_LAMBDA(const int e, const int v) {
       const size_t q = static_cast<size_t>(e)*nv + v;
@@ -757,7 +817,14 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
   vgd_nexch += 1.0;
   vgd_csvsent += nsent;
   // (5) the expansion into the band (unsent positions of the prefix: 0, or NaN)
-  if (nr > 0) {
+  if (vgd_raw && cb[4*np + 1] > 0) {
+    Kokkos::parallel_for("m1_vgdgb_kunpack",
+                         Kokkos::RangePolicy<>(DevExeSpace(), 0, cb[4*np + 1]),
+    KOKKOS_LAMBDA(const int o) {
+      const int e = lr_(o)/nv;
+      a_(R_(e,0),lr_(o) - e*nv,R_(e,1),R_(e,2),i) = rb_(o);
+    });
+  } else if (nr > 0 && !vgd_raw) {
     const bool nanfill = (std::getenv("VGD_COMPACT_NAN") != nullptr);
     const Real fill = nanfill ? std::numeric_limits<Real>::quiet_NaN() : 0.0;
     par_for("m1_vgdgb_unpack", DevExeSpace(), 0, nr - 1, 0, nv - 1,

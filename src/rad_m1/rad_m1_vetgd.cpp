@@ -971,6 +971,12 @@ void RadiationM1::VetGdInit() {
     }
     vgd_hcomp = 0;   // the dense per-shell halo (the compact lists assume one level)
   }
+  vgd_raw = clean && !vgd_csg && !vgd_pol && !vgd_sth;
+  if (vgd_raw) {   // (the compact halo: the global band's, VetGdGbHaloC)
+    vgd_hx_on = false;
+    vgd_hx_mode = 0;
+    vgd_ipc_on = false;
+  }
   // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
   // sum w nn = I/3; the sweep never looks inside it)
   if (vgd_gl_nmu > 0) {
@@ -1043,7 +1049,7 @@ void RadiationM1::VetGdInit() {
     // angular offset <= chord / r_lo; + 2 cells for the bilinear stencil and rounding
     auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->xx1f);
-    int nmax = std::min(indcs.nx2, indcs.nx3);
+    int nmax = vgd_raw ? std::numeric_limits<int>::max() : std::min(indcs.nx2, indcs.nx3);
     // accpolar-1103 vet_gd_band_global: the band is filled from any block (global-cell
     // lists), so its depth is capped by the SPHERE (half a ring in phi, the theta rows
     // of one pole-to-pole mirror), not by the MeshBlock: the same depth for every layout
@@ -1110,7 +1116,7 @@ void RadiationM1::VetGdInit() {
     Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
   }
   if (!vgd_csg) {VetGdHaloInit();}   // cs-vetgd-1017: cs lists made by VetGdCsInit
-  if (vgd_gband) {VetGdGlobalBandInit();}   // accpolar-1103 (sph2.inc): after the slots
+  if (vgd_gband || vgd_raw) {VetGdGlobalBandInit();}   // (sph2.inc): after the slots
   if (vgd_pol) {VetGdRingInit();}   // accsp-1102: the polar ring buffers (sph2.inc)
   if (vgd_thmir) {
     // wallbug-1027 vet_gd_theta_wall = mirror: the theta neighbour across a wall is the
@@ -1889,10 +1895,10 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
       for (int j = 0; j < c2; ++j) {
         const double th = x2_h(m,j), ph = x3_h(m,k);
         double thw = th, phw = ph;
-        if (thwrap && th < t0) {thw = th + (t1 - t0);}
-        if (thwrap && th > t1) {thw = th - (t1 - t0);}
-        if (ph < p0) {phw = ph + (p1 - p0);}
-        if (ph > p1) {phw = ph - (p1 - p0);}
+        while (thwrap && thw < t0) {thw += t1 - t0;}
+        while (thwrap && thw > t1) {thw -= t1 - t0;}
+        while (phw < p0) {phw += p1 - p0;}
+        while (phw > p1) {phw -= p1 - p0;}
         const bool wall = (thw != th) || (phw != ph);
         w_h(m,k,j) = wall ? 1 : 0;
         for (int q = 0; q < n; ++q) {mp_h(m,k,j,q) = q;}
@@ -3006,7 +3012,8 @@ void RadiationM1::VetGdHaloInit() {
 //! \brief fill the lateral band (vgd_w cells) of a band-index array a(m, v, k, j, i),
 //! variables [0, nv), shells i in [i0, i1], from the 8 lateral neighbours' interiors:
 //! a local neighbour is copied directly (it reads only interiors, it writes only bands:
-//! no race), a remote one by one message per (block, slot)
+//! no race), a remote one by one message per (block, slot).  vgd_raw: the global-cell
+//! lists, unmapped; the intensities (mapd) only from remote owners
 
 template <class V>
 void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, const int ws,
@@ -3014,14 +3021,14 @@ void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, cons
   // accpolar-1103 vet_gd_band_global: every band position within depth ws from its
   // owner's interior (global-cell lists, rad_m1_vetgd_sph2.inc); the full sphere has no
   // direction re-indexing at its walls (checked in VgdTabCompute)
-  if (vgd_gband) {
+  if (vgd_gband || vgd_raw) {
     if (b != nullptr) {VgdFatal("vet_gd_band_global: no fused twin band");}
     // share-1104 G1: the compact per-shell exchange of the global band
     if (mapd && vgd_gbc && i1 == i0 && nv == vgd_n) {
       VetGdGbHaloC(a, i0, ws);
       return;
     }
-    VetGdCsHalo(a, nv, i0, i1, true, ws);
+    VetGdCsHalo(a, nv, i0, i1, !(vgd_raw && mapd), ws);
     return;
   }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -5954,8 +5961,11 @@ void RadiationM1::VetGdSweep() {
   auto x1f_ = vgd_x1f;
   // intensities outside the block (band index) of an ON-RANK neighbour are read from its
   // interior directly (direction re-indexed at a wall); remote ones from the band, filled
-  // per shell by VetGdHalo
+  // per shell by VetGdHalo (vgd_raw: from an on-rank owner or the band, re-indexed at
+  // the read)
   auto hl_ = vgd_hloc;
+  const bool raw_ = vgd_raw;
+  auto own_ = vgd_own;
   auto wl_ = vgd_wall;
   auto mp_ = vgd_map;
   const int nx2b = indcs.nx2, nx3b = indcs.nx3;

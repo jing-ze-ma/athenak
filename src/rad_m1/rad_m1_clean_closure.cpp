@@ -875,6 +875,11 @@ void RadiationM1::CleanGdFaceSums() {
   auto cw_ = vgd_cs;
   auto x3f = pmy_pack->pcoord->xx3f;
   auto x3v = pmy_pack->pcoord->x3v;
+  auto wl_ = vgd_wall;
+  auto mp_ = vgd_map;
+  auto m3_ = vgd_m3;
+  auto w3_ = vgd_w3;
+  const bool wint = vgd_wint;
   auto cs = cln_s;
   CleanArgs x = CleanMakeArgs();
   // the inner face: no flux at a reflecting one, else the outward beams of the sweep's
@@ -882,9 +887,8 @@ void RadiationM1::CleanGdFaceSums() {
   const bool open = (ibc_x1min != M1_IBC_REFLECT);
   const bool emi = VetBcEmit();
   const Real iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
-  // the short characteristics' intensities in the mesh layout with the ghost exchange:
-  // the vet_gd band holds a neighbour MeshBlock's intensities only where its own sweep
-  // read them (a periodic seam keeps the band, whose directions follow the wall map)
+  // the short characteristics' intensities in the mesh layout with the ghost exchange
+  // (the image cell's beyond a periodic seam, re-indexed by the wall map as the sweep)
   if (!fv) {
     if (cln_fvi.extent_int(1) != n) {
       Kokkos::realloc(cln_fvi, nmb1 + 1, n, cs.extent_int(2), cs.extent_int(3),
@@ -920,7 +924,13 @@ void RadiationM1::CleanGdFaceSums() {
     if (!(f > 0.0)) return f*inten(m, d, k, j, i);
     const bool seam = (dir == 1) ? (j == js && x.mbc(m,2) == BoundaryFlag::periodic)
                                  : (k == ks && x.mbc(m,4) == BoundaryFlag::periodic);
-    return f*(seam ? vi_(m,d,kl+og,jl+og,i) : inten(m, d, kl, jl, i));
+    if (!seam || wl_(m,kl+og,jl+og) == 0) return f*inten(m, d, kl, jl, i);
+    if (!wint) return f*inten(m, mp_(m,kl+og,jl+og,d), kl, jl, i);
+    Real v = 0.0;
+    for (int t = 0; t < 3; ++t) {
+      v += w3_(m,kl+og,jl+og,d,t)*inten(m, m3_(m,kl+og,jl+og,d,t), kl, jl, i);
+    }
+    return f*v;
   };
   // sums of the beams of every direction through the face, per unit area
   auto add = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,

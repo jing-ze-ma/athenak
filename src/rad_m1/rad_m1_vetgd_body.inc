@@ -125,24 +125,27 @@
             const bool wsx = upw && (wl_(m,kk,jj) != 0);
             const int oo = 3*(ek + 1) + (ej + 1);
             const int sl = 8*m + ((oo < 4) ? oo : (oo - 1));
-            const int nl = hl_(sl);
+            const int ow = raw_ ? own_(m,kk,jj,0) : 0;
+            const int nl = raw_ ? ((ow < 0) ? m : ow) : hl_(sl);
             if (nl < 0) {
               // the band copy (the unpack applied the wall map)
               const Real vb = vix(m,dq,kk,jj,ii);
               return wsx ? (vb + wsh(kk, jj, ii, dq, mt, vb)) : vb;
             }
             // accsp-1102: an on-rank pole partner: its rows reversed about the pole
-            const int jn = (hp_(sl) != 0) ? VgdPoleRow(jj, wb, nx2b) : (jj - ej*nx2b);
+            const int jn = raw_ ? ((ow < 0) ? jj : own_(m,kk,jj,2))
+                                : ((hp_(sl) != 0) ? VgdPoleRow(jj, wb, nx2b)
+                                                  : (jj - ej*nx2b));
+            const int kn = raw_ ? ((ow < 0) ? kk : own_(m,kk,jj,1)) : (kk - ek*nx3b);
             if (wint && wl_(m,kk,jj) != 0) {
               Real v = 0.0;
               for (int t = 0; t < 3; ++t) {
-                v += w3_(m,kk,jj,dq,t)*vix(nl,m3_(m,kk,jj,dq,t),kk - ek*nx3b,
-                                           jn,ii);
+                v += w3_(m,kk,jj,dq,t)*vix(nl,m3_(m,kk,jj,dq,t),kn,jn,ii);
               }
               return wsx ? (v + wsh(kk, jj, ii, dq, mt, v)) : v;
             }
             const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,dq) : dq;
-            const Real vd = vix(nl,dd,kk - ek*nx3b,jn,ii);
+            const Real vd = vix(nl,dd,kn,jn,ii);
             // (a plain neighbour ghost is the same cell: no shift)
             return wsx ? (vd + wsh(kk, jj, ii, dq, mt, vd)) : vd;
           };
