@@ -2007,7 +2007,7 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   Kokkos::realloc(vet_cell, nmb, M1_VET_NC + (clean ? M1_VET_NKP : 0) +
-                  (cln_consist ? 4 : 0), ncells3, ncells2, ncells1);
+                  (cln_consist ? 8 : 0), ncells3, ncells2, ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
   if (mbpath) {
     VetMBInit(pin);   // the banded plane buffers live in vet_mbs
@@ -3742,7 +3742,7 @@ void RadiationM1::VetShortCharSweep() {
   const bool nls_ = thsw_c1;
   // clean_consistency: the rays' x2-face fluxes (M1_VET_F2), the transverse part of the
   // linear foot interpolation written as a flux, so that the cell balance of the rays'
-  // face fluxes is their exchange along the segment
+  // face fluxes is their exchange along the segment; the entering x1 flux (M1_VET_F1)
   const bool f2s_ = cln_consist;
   Kokkos::fence();
   Kokkos::Timer timer;
@@ -3858,7 +3858,7 @@ void RadiationM1::VetShortCharSweep() {
         for (int n = 0; n < M1_VET_NKP; ++n) {vcd_(m,M1_VET_KP+n,k,j,i) = 0.0;}
       }
       if (f2s_) {
-        for (int n = 0; n < 4; ++n) {vcd_(m,M1_VET_F2+n,k,j,i) = 0.0;}
+        for (int n = 0; n < 8; ++n) {vcd_(m,M1_VET_F2+n,k,j,i) = 0.0;}
       }
       if (nls_) {
         vcd_(m,M1_VET_NL,k,j,i) = 0.0;
@@ -3952,7 +3952,7 @@ void RadiationM1::VetShortCharSweep() {
       for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {vc_(m,n,k,j,i) = 0.0;}
       if (hrs_) {for (int n = 0; n < 3; ++n) {vc_(m,M1_VET_HP1+n,k,j,i) = 0.0;}}
       if (kps_) {for (int n = 0; n < M1_VET_NKP; ++n) {vc_(m,M1_VET_KP+n,k,j,i) = 0.0;}}
-      if (f2s_) {for (int n = 0; n < 4; ++n) {vc_(m,M1_VET_F2+n,k,j,i) = 0.0;}}
+      if (f2s_) {for (int n = 0; n < 8; ++n) {vc_(m,M1_VET_F2+n,k,j,i) = 0.0;}}
       if (nls_) {vc_(m,M1_VET_NL,k,j,i) = 0.0;}
     });
   }
@@ -3971,7 +3971,7 @@ void RadiationM1::VetShortCharSweep() {
       Real kpu[M1_VET_NKP], kpd[M1_VET_NKP];
       for (int n = 0; n < M1_VET_NKP; ++n) {kpu[n] = 0.0; kpd[n] = 0.0;}
       Real nlu = 0.0, nld = 0.0;   // thinsw-1010
-      Real f2u[4] = {0.0, 0.0, 0.0, 0.0}, f2d[4] = {0.0, 0.0, 0.0, 0.0};
+      Real f2u[8] = {0.0}, f2d[8] = {0.0};
       for (int r = 0; r < nray; ++r) {
         const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
         const bool up = (m1 > 0.0);
@@ -4014,6 +4014,13 @@ void RadiationM1::VetShortCharSweep() {
                                                                   : ((r == bmr3) ? 3 : -1)));
               if (q >= 0 && q < bmn_) {ib += bmi_(m,q,k-ks,j-js);}
             }
+          }
+          if (f2s_) {
+            Real *fx = up ? f2u : f2d;
+            fx[4] += wr*m1*ib;
+            fx[5] += wr*m1*m1*ib;
+            fx[6] += wr*m1*m2*ib;
+            fx[7] += wr*m1*m3*ib;
           }
           const Real dtau = 0.5*c0*dx1/am1;
           Real ex, w0, wu;
@@ -4209,7 +4216,7 @@ void RadiationM1::VetShortCharSweep() {
           vc_(m,M1_VET_NL,k,j,id) += nld;
         }
         if (f2s_) {
-          for (int n = 0; n < 4; ++n) {
+          for (int n = 0; n < 8; ++n) {
             vc_(m,M1_VET_F2+n,k,j,iu) += f2u[n];
             vc_(m,M1_VET_F2+n,k,j,id) += f2d[n];
           }

@@ -106,8 +106,11 @@ constexpr int M1_VET_KP  = 28;
 constexpr int M1_VET_NKP = 9;
 // clean_consistency: the rays' flux through the low x2 face of the cell, sum w g Phi and
 // sum w g Phi Omega_b (b = 1 2 3), g = |mu_1| dx2/dx1 and Phi the upwind intensity the
-// foot interpolation shifts across the face, after the KP slots (VetShortCharSweep)
+// foot interpolation shifts across the face, after the KP slots (VetShortCharSweep);
+// then the flux of the rays entering through the x1 boundary face of the cell,
+// sum w mu_1 I and sum w mu_1 I Omega_b
 constexpr int M1_VET_F2  = 37;
+constexpr int M1_VET_F1  = 41;
 // tau_ten slots of the LATERAL correction (vet_col_lat; the cs CS2 interface): dD_ab in
 // the mesh basis, order rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
 constexpr int M1_TT_LAT0 = 4;
