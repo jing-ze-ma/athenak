@@ -18,7 +18,7 @@
 //! \brief the background pressure of ONE cell or face.
 //!
 //! A problem generator may switch the static background OFF over part of the domain by
-//! setting it to zero there (red_giant does this outside [wb_rmin, wb_rmax]): a zero
+//! setting it to zero there (red_giant does this above wb_rmax): a zero
 //! background makes the deviation the full state, the face background adds nothing and
 //! the flux removal removes nothing, which is exactly the plain scheme.  The EOS must
 //! not be asked about that state -- a tabulated EOS takes log10 of the density and the

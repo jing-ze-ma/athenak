@@ -471,15 +471,6 @@ class MHD {
   // cells whose x1 WB potential exceeds it take plain PLM (Hydro::wb_phimax;
   // wb_dirs = all: w = 0). 1e300 = never. Set by the pgen.
   Real wb_phimax = 1.0e300;
-  // Mirror of wb_rmax at the bottom of the domain: below wb_rmin the dynamic x1
-  // well-balanced reconstruction and the matching well-balanced gravity source are
-  // switched off cell by cell; 0 = never. Same failure mode from the other side --
-  // where the background the stencil builds is not the state the star is actually in
-  // (a deep radiative interior the polytropic/isentropic background does not describe),
-  // the "deviation" it reconstructs is not small, and the scheme can DRIVE the very
-  // buoyancy mode it is meant to leave alone. Below wb_rmin those cells take the plain
-  // reconstruction and the plain -rho g source, exactly as wellbalance_dynamic = false.
-  Real wb_rmin = 0.0;
   WBOption wb_option;
   DvceArray5D<Real> u0wb;   // background conserved variables
   DvceArray5D<Real> w0wb;   // background primitive variables
@@ -1006,7 +997,7 @@ class MHD {
     static void GridPiecewiseLinearX1(TeamMember_t const &member, const EOS_Data &eos,
          const WBOption wb_option,
          const bool use_wb_rho, const bool use_wellbalance_dynamic, const bool use_wb_x1,
-         const Real wb_rmax, const Real wb_rmin,
+         const Real wb_rmax,
          const int m, const int k, const int j,
          const int il, const int iu, const DvceArray5D<Real> &q,
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
@@ -1029,13 +1020,11 @@ class MHD {
               Real dxL = x_i-x_im1;
               Real dxR = x_ip1-x_i;
 
-              // outside [wb_rmin, wb_rmax] the background is meaningless (see
-              // MHD::wb_rmax / MHD::wb_rmin), so this cell reconstructs its state
+              // above wb_rmax the background is meaningless (see MHD::wb_rmax),
+              // so this cell reconstructs its state
               // directly, like the non-well-balanced branch below. Per CELL, not per
               // MeshBlock: a radial block spans both.
-              if ((wb_rmax > 0.0 && x_i > wb_rmax) ||
-                  (wb_rmin > 0.0 && x_i < wb_rmin) ||
-                  phicc(m,k,j,i) > wb_phimax) {
+              if ((wb_rmax > 0.0 && x_i > wb_rmax) || phicc(m,k,j,i) > wb_phimax) {
                 PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1),
                                dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
                 return;
@@ -1146,7 +1135,7 @@ class MHD {
     static void GridPiecewiseLinearDerX1(TeamMember_t const &member,
          const EOS_Data &eos, const WBOption wb_option,
          const bool use_wellbalance_dynamic, const bool use_wb_x1,
-         const Real wb_rmax, const Real wb_rmin,
+         const Real wb_rmax,
          const bool use_wb_static_perturb,
          const DvceArray4D<Real> &pwb, const DvceArray4D<Real> &pfwb,
          const int m, const int k, const int j, const int il, const int iu,
@@ -1189,7 +1178,6 @@ class MHD {
           // primitives were reconstructed in full
           if (n == (IDPR) && use_wellbalance_dynamic && use_wb_x1 &&
               !(wb_rmax > 0.0 && x_i > wb_rmax) &&
-              !(wb_rmin > 0.0 && x_i < wb_rmin) &&
               !(phicc(m,k,j,i) > wb_phimax)) {
             Real q0_im1, q0_imh, q0_i, q0_iph, q0_ip1;
             WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i,

@@ -140,7 +140,7 @@ DvceArray1D<Real> hs_fb_;
 Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
 bool hs_zflux_ = true;
 // hewbrmax-1107 problem/he_wb_grav_window (read only when named, default false): the x1
-// WB gravity source honours the fluid's wb_rmax / wb_rmin / wb_phimax window -- the cells
+// WB gravity source honours the fluid's wb_rmax / wb_phimax window -- the cells
 // the reconstruction treats as plain (Hydro::wb_rmax) take the isodensity walk
 // p -/+ rho dPhi_wb instead of the cached hydrostatic walk (see HeStarGravity)
 bool hs_wbwin_ = false;
@@ -3739,8 +3739,8 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
       u0(m,IM1,k,j,i) -= bdt*w0(m,IDN,k,j,i)*gmp*src1/x1vg(m,i);
     });
   } else if (hs_wbwin_) {
-  // hewbrmax-1107 problem/he_wb_grav_window: outside the fluid's WB window (x1v >
-  // wb_rmax > 0, x1v < wb_rmin > 0, or phicc_wb > wb_phimax: exactly the cells whose x1
+  // problem/he_wb_grav_window: outside the fluid's WB window (x1v > wb_rmax > 0 or
+  // phicc_wb > wb_phimax: exactly the cells whose x1
   // reconstruction is plain, hydro_fluxes.cpp / mhd_fluxes.cpp) the cached hydrostatic
   // walk describes no supported atmosphere (H << dr above a star): its face pressures
   // fall by orders of magnitude across the cell and the pressure form over-pulls the gas.
@@ -3750,9 +3750,8 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   // potential (so the a_ref split and the energy flux are untouched).  The switch is per
   // cell and coincides with the reconstruction's; the two forms differ by O(dr/H) of
   // the force where H is resolved, so the transition at wb_rmax is continuous to that
-  // order.  Window absent (all three at their defaults): bitwise the branch below.
+  // order.  Window absent (both at their defaults): bitwise the branch below.
   const Real wrmax = fl.mhd ? fl.pm->wb_rmax : fl.ph->wb_rmax;
-  const Real wrmin = fl.mhd ? fl.pm->wb_rmin : fl.ph->wb_rmin;
   const Real wphmax = fl.mhd ? fl.pm->wb_phimax : fl.ph->wb_phimax;
   auto &x1vw = pmbp->pcoord->x1v;
   auto pwcw = ph->phicc_wb, pwfw = ph->phi_wb_x1f;
@@ -3764,8 +3763,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     const Real e_ = w0(m,IEN,k,j,i);
     const Real p = (e_ > 0.0) ? eos.Pressure(d, e_) : 0.5*(pl + pr);
     const Real r = x1vw(m,i);
-    if ((wrmax > 0.0 && r > wrmax) || (wrmin > 0.0 && r < wrmin) ||
-        pwcw(m,k,j,i) > wphmax) {
+    if ((wrmax > 0.0 && r > wrmax) || pwcw(m,k,j,i) > wphmax) {
       pl = p + d*(pwcw(m,k,j,i) - pwfw(m,k,j,i));
       pr = p - d*(pwfw(m,k,j,i+1) - pwcw(m,k,j,i));
     }

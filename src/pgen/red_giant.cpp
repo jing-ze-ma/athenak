@@ -785,12 +785,11 @@ KOKKOS_INLINE_FUNCTION Real RadiusOf(const bool curv, const Real x1, const Real 
                                      const Real x1min) {
   return curv ? x1 : (rin + x1 - x1min);
 }
-// The STATIC well-balanced background's radial window: 1 inside [rmin, rmax], 0 outside.
+// The STATIC well-balanced background's radial window: 1 below rmax, 0 above.
 // A pure function of r, so cells and faces see the same field and the scheme stays
 // consistent.
-KOKKOS_INLINE_FUNCTION Real WbWindow(const Real r, const Real rmin, const Real rmax) {
+KOKKOS_INLINE_FUNCTION Real WbWindow(const Real r, const Real rmax) {
   if (rmax > 0.0 && r >= rmax) return 0.0;
-  if (rmin > 0.0 && r <= rmin) return 0.0;
   return 1.0;
 }
 
@@ -800,7 +799,7 @@ KOKKOS_INLINE_FUNCTION Real WbWindow(const Real r, const Real rmin, const Real r
 KOKKOS_INLINE_FUNCTION
 void WbBgAt(const EOS_Data &eos, const Real rgas, const Real igm1,
             const DvceArray1D<Real> &lnp, const DvceArray1D<Real> &tk, const int nf,
-            const Real rlo, const Real drf, const Real rmin, const Real rmax,
+            const Real rlo, const Real drf, const Real rmax,
             const Real r, Real &dbg, Real &ebg);
 
 // the column at radius r: ln p (code) and T (K), linear in r between fine nodes
@@ -818,12 +817,12 @@ KOKKOS_INLINE_FUNCTION void ColumnAt(const DvceArray1D<Real> &lnp,
 KOKKOS_INLINE_FUNCTION
 void WbBgAt(const EOS_Data &eos, const Real rgas, const Real igm1,
             const DvceArray1D<Real> &lnp, const DvceArray1D<Real> &tk, const int nf,
-            const Real rlo, const Real drf, const Real rmin, const Real rmax,
+            const Real rlo, const Real drf, const Real rmax,
             const Real r, Real &dbg, Real &ebg) {
   Real lp, t;
   ColumnAt(lnp, tk, nf, rlo, drf, r, lp, t);
   const Real d = DensFromPT(eos, rgas, exp(lp), t);
-  const Real w = WbWindow(r, rmin, rmax);
+  const Real w = WbWindow(r, rmax);
   dbg = w*d;
   ebg = w*EintFromDensT(eos, rgas, igm1, d, t);
 }
@@ -2624,7 +2623,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   if (wbstat) {
     const Real wbrmax = is_mhd ? pmbp->pmhd->wb_rmax : pmbp->phydro->wb_rmax;
-    const Real wbrmin = is_mhd ? pmbp->pmhd->wb_rmin : pmbp->phydro->wb_rmin;
     auto u0wb = is_mhd ? pmbp->pmhd->u0wb : pmbp->phydro->u0wb;
     auto w0wb = is_mhd ? pmbp->pmhd->w0wb : pmbp->phydro->w0wb;
     auto wf1 = is_mhd ? pmbp->pmhd->w0facewb.x1f : pmbp->phydro->w0facewb.x1f;
@@ -2641,7 +2639,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real rc = RadiusOf(curv, xc, rin, x1min);
       Real dbg, ebg;
       WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w,
-             wbrmin, wbrmax, rc, dbg, ebg);
+             wbrmax, rc, dbg, ebg);
       w0wb(m,IDN,k,j,i) = dbg;
       w0wb(m,IVX,k,j,i) = 0.0;
       w0wb(m,IVY,k,j,i) = 0.0;
@@ -2671,14 +2669,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // the RADIAL faces take their own radius
       const Real xl = curv ? x1f_(m,i) : LeftEdgeX(i-is, indcs.nx1, x1lo, x1hi);
       Real dfl, efl;
-      WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmin, wbrmax,
+      WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmax,
              RadiusOf(curv, xl, rin, x1min), dfl, efl);
       wf1(m,IDN,k,j,i) = dfl; wf1(m,IEN,k,j,i) = efl;
       wf1(m,IVX,k,j,i) = 0.0; wf1(m,IVY,k,j,i) = 0.0; wf1(m,IVZ,k,j,i) = 0.0;
       if (i == n1m1) {
         const Real xr = curv ? x1f_(m,i+1) : LeftEdgeX(i+1-is, indcs.nx1, x1lo, x1hi);
         Real dfr, efr;
-        WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmin, wbrmax,
+        WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmax,
                RadiusOf(curv, xr, rin, x1min), dfr, efr);
         wf1(m,IDN,k,j,i+1) = dfr; wf1(m,IEN,k,j,i+1) = efr;
         wf1(m,IVX,k,j,i+1) = 0.0; wf1(m,IVY,k,j,i+1) = 0.0; wf1(m,IVZ,k,j,i+1) = 0.0;
@@ -3165,17 +3163,15 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   // Its gravity source is -g*(rho - rho_bg): the background's own pressure difference has
   // already been taken out of the momentum RHS by RemoveWbFlux and the geometric source,
   // so a cell sitting exactly on the background must receive nothing here.  Where the
-  // background was windowed to zero (outside [wb_rmin, wb_rmax]) this IS -rho g, so the
+  // background was windowed to zero (above wb_rmax) this IS -rho g, so the
   // radius cutoffs need no branch of their own.
   const bool wbstat = is_mhd ? pmbp->pmhd->use_wellbalance_static
                              : pmbp->phydro->use_wellbalance_static;
   auto w0wb = is_mhd ? pmbp->pmhd->w0wb : pmbp->phydro->w0wb;
-  // outside [wb_rmin, wb_rmax] the reconstruction dropped the well-balanced background,
-  // so the source term must drop it too: the two are only well balanced TOGETHER.  Both
-  // modules carry the pair, so take it from whichever one is evolving the fluid --
-  // <mhd>/wb_r* under MHD, <hydro>/wb_r* otherwise.
+  // above wb_rmax the reconstruction dropped the well-balanced background, so the
+  // source term must drop it too: the two are only well balanced TOGETHER.  Take it
+  // from whichever module evolves the fluid (<mhd>/wb_rmax or <hydro>/wb_rmax).
   const Real wbrmax = is_mhd ? pmbp->pmhd->wb_rmax : pmbp->phydro->wb_rmax;
-  const Real wbrmin = is_mhd ? pmbp->pmhd->wb_rmin : pmbp->phydro->wb_rmin;
   const WBOption wbo = is_mhd ? pmbp->pmhd->wb_option : pmbp->phydro->wb_option;
   DvceArray4D<Real> phicc = is_mhd ? pmbp->pmhd->phicc0 : pmbp->phydro->phicc0;
   DvceArray4D<Real> ph1 = is_mhd ? pmbp->pmhd->phi0.x1f : pmbp->phydro->phi0.x1f;
@@ -3199,8 +3195,7 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     if (wbstat) {
       src = -bdt*g*(d - w0wb(m,IDN,k,j,i));
     }
-    if (wbdyn && !(wbrmax > 0.0 && r > wbrmax) &&
-        !(wbrmin > 0.0 && r < wbrmin)) {
+    if (wbdyn && !(wbrmax > 0.0 && r > wbrmax)) {
       Real pl, pr, d1, d2, d3;
       if (wbx1) {
         WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i, d1, pl, d2, pr, d3);
