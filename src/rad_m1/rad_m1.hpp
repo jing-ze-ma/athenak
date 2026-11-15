@@ -161,6 +161,7 @@ constexpr int M1_OPAC_TABLE    = 3;   // stellar Rosseland + Planck tables (mile
 // note at the head of rad_m1_coupling.cpp.
 constexpr int M1_FREF_NONE    = 0;
 constexpr int M1_FREF_WB_ARAD = 1;
+constexpr int M1_FREF_CLEAN   = 2;   // scheme = clean: its own force of the first solve
 
 //----------------------------------------------------------------------------------------
 //! \struct M1OpacTab
@@ -3041,6 +3042,9 @@ class RadiationM1 {
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
+  DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
+  bool cln_fref_set = false;    // cln_fref holds the force of the first coupled solve
+  bool cln_vzero = false;       // the iterates keep the gas momentum (steady start)
   struct CleanHalo {            // ghost exchange of nc components: scratch array,
     DvceArray5D<Real> a, ca;    // its coarse dummy and the exchange object
     std::unique_ptr<MeshBoundaryValuesCC> pb;

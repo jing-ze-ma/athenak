@@ -870,16 +870,21 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // already delivers rho*arad_ref(z) to the gas momentum (box_convection's effective
   // potential), so the coupling must hand the gas only the RESIDUAL radiative force.
   // The reference array itself comes from the problem generator (SetForceReference);
-  // without it the option is a fatal, not a silent no-op.
+  // without it the option is a fatal, not a silent no-op.  `clean` (scheme = clean):
+  // the reference is the clean solve's own radiative force of its first coupled solve,
+  // i.e. of the (steady-started) initial state; the hydro carries that state as its
+  // static well-balanced background, so a discrete equilibrium of both is exact.
   {std::string fr = pin->GetOrAddString("rad_m1","force_reference","none");
   if (fr.compare("none") == 0) {
     force_ref = M1_FREF_NONE;
   } else if (fr.compare("wb_arad") == 0) {
     force_ref = M1_FREF_WB_ARAD;
+  } else if (fr.compare("clean") == 0 && clean) {
+    force_ref = M1_FREF_CLEAN;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/force_reference = '" << fr << "' is not a valid choice "
-      << "(none | wb_arad)" << std::endl;
+      << "(none | wb_arad | clean with scheme = clean)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   }

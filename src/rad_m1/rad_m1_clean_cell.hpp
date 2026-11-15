@@ -22,8 +22,10 @@
 //! between the cell centres across the face, th = 1/(1 + h c chi_f),
 //! s = c sqrt(max(D_dd,L, D_dd,R)) and al the dissipation weight.  RC is the momentum
 //! interpolation of the flux to the face: where h c chi >> 1 it turns fE into the compact
-//! diffusion flux.  The jumps (E_R - E_L, y_R - y_L) are those of the face states: first
-//! order, or (clean_recon = plm) the van Leer reconstruction of src/reconstruct/plm.hpp,
+//! diffusion flux.  With force_reference = clean th h c^2 is c/max(chi_f, 2/dx_d), its
+//! steady value, so that a steady state of the scheme does not depend on h.  The jumps
+//! (E_R - E_L, y_R - y_L) are those of the face states: first order, or
+//! (clean_recon = plm) the van Leer reconstruction of src/reconstruct/plm.hpp,
 //! u_L^+ = u_L + dl dr/(dl + dr), whose weights dr/(dl + dr), dl/(dl + dr) are taken
 //! from the Newton iterate (lagged) so that every pass stays a linear solve.
 //! With clean_consistency every interior face flux also carries the fixed bracket
@@ -143,6 +145,21 @@ Real CleanDiag(const CleanArgs &x, const int a, const int b, const int m, const 
                const int j, const int i) {
   const int dab[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
   return x.cs(m,CLN_D11+dab[a][b],k,j,i);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanRefForce
+//! \brief component b of the reference force density that force_reference withholds
+//! from the gas: the stored force of the first coupled solve (clean), d arad_ref along x1
+//! (wb_arad), else 0.  Not in the restart file: a restart takes the force of its first
+//! solve, which equals the original one only for a run that is still in equilibrium.
+
+KOKKOS_INLINE_FUNCTION
+Real CleanRefForce(const int fref, const DvceArray5D<Real> &fr,
+                   const DvceArray4D<Real> &aref, const Real d, const int b, const int m,
+                   const int k, const int j, const int i) {
+  if (fref == M1_FREF_CLEAN) return fr(m,b,k,j,i);
+  return (fref == M1_FREF_WB_ARAD && b == 0) ? d*aref(m,k,j,i) : 0.0;
 }
 
 //----------------------------------------------------------------------------------------
