@@ -6,7 +6,8 @@
 //! \file deep_hot_jupiter.cpp
 //! \brief Problem generator for the deep hot Jupiter.
 //!
-//! REFERENCE: Heng, Menou, Phillipps, MNRAS, 413, 2380 (2011); Deitrick, Mendonça, Schroffenegger, Grimm, Tsai, Heng, ApJS, 248, 30 (2020)
+//! REFERENCE: Heng, Menou, Phillipps, MNRAS, 413, 2380 (2011); Deitrick, Mendonça,
+//! Schroffenegger, Grimm, Tsai, Heng, ApJS, 248, 30 (2020)
 //!
 //! problem/rt_use_cons (default TRUE here since 2026-09-22, as in box_convection;
 //! red_giant defaults it to its mode-3 flag).  Where the two-stream sweep reads the
@@ -28,7 +29,6 @@
 //! set the line, therefore change; cs_mhd_prod3 already set it true and does not.
 //! (The conserved state is not guaranteed positive after an RK stage; the sweep's
 //! EintFromCons path carries its own non-positive guard -- see utils/two_stream_rt.hpp.)
-
 
 #include <algorithm>
 #include <cstdio>
@@ -682,35 +682,38 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // key keeps its face, and a file written before the key existed ran face 0.  Explicit
   // keys always win.
   two_stream_rt::ck_sph_dilute = pin->GetOrAddBoolean("problem","ck_sph_dilute",false);
-  {const bool f6_cand = !restart && !two_stream_rt::ck_sph_dilute && rt_ck &&
-       ck_spherical && two_stream_rt::ck_sweep_form == 1 &&
-       !pin->DoesParameterExist("problem","ck_sph_face");
-  bool f6_def = false;
-  if (f6_cand) {
-    // the requirements of face 6 (as f6_ok below), ck_sph_top = 1 unless named
-    const int top_named = pin->DoesParameterExist("problem","ck_sph_top") ?
-                          pin->GetInteger("problem","ck_sph_top") : 1;
-    const int nq_named = pin->DoesParameterExist("problem","ck_nquad") ?
-                         pin->GetInteger("problem","ck_nquad") : 2;
-    std::string why;
-    if (!two_stream_rt::ck_implicit) why += " ck_implicit = false;";
-    if (!two_stream_rt::ck_impl_frozen_op) why += " ck_impl_frozen_op = false;";
-    if (!two_stream_rt::ck_impl_lin) why += " ck_impl_lin = false;";
-    if (!two_stream_rt::ck_impl_jac_lin) why += " ck_impl_jac_lin = false;";
-    if (two_stream_rt::ck_impl_lin_thr != 1) why += " ck_impl_lin_thr != 1;";
-    if (nq_named != 2) why += " ck_nquad != 2;";
-    if (two_stream_rt::ck_dif_dtau > 0.0) why += " ck_dif_dtau > 0;";
-    if (top_named != 1) why += " ck_sph_top != 1;";
-    f6_def = why.empty();
-    if (!f6_def && global_variable::my_rank == 0) {
-      std::cout << "### WARNING in deep_hot_jupiter_rt: problem/ck_sph_face is not set "
-                << "and its default (6) cannot run with" << why << " falling back to "
-                << "ck_sph_face = 0 (Eddington face).  Name ck_sph_face to silence this."
-                << std::endl;
+  {
+    const bool f6_cand = !restart && !two_stream_rt::ck_sph_dilute && rt_ck &&
+         ck_spherical && two_stream_rt::ck_sweep_form == 1 &&
+         !pin->DoesParameterExist("problem","ck_sph_face");
+    bool f6_def = false;
+    if (f6_cand) {
+      // the requirements of face 6 (as f6_ok below), ck_sph_top = 1 unless named
+      const int top_named = pin->DoesParameterExist("problem","ck_sph_top") ?
+                            pin->GetInteger("problem","ck_sph_top") : 1;
+      const int nq_named = pin->DoesParameterExist("problem","ck_nquad") ?
+                           pin->GetInteger("problem","ck_nquad") : 2;
+      std::string why;
+      if (!two_stream_rt::ck_implicit) why += " ck_implicit = false;";
+      if (!two_stream_rt::ck_impl_frozen_op) why += " ck_impl_frozen_op = false;";
+      if (!two_stream_rt::ck_impl_lin) why += " ck_impl_lin = false;";
+      if (!two_stream_rt::ck_impl_jac_lin) why += " ck_impl_jac_lin = false;";
+      if (two_stream_rt::ck_impl_lin_thr != 1) why += " ck_impl_lin_thr != 1;";
+      if (nq_named != 2) why += " ck_nquad != 2;";
+      if (two_stream_rt::ck_dif_dtau > 0.0) why += " ck_dif_dtau > 0;";
+      if (top_named != 1) why += " ck_sph_top != 1;";
+      f6_def = why.empty();
+      if (!f6_def && global_variable::my_rank == 0) {
+        std::cout << "### WARNING in deep_hot_jupiter_rt: problem/ck_sph_face is not set "
+                  << "and its default (6) cannot run with" << why << " falling back to "
+                  << "ck_sph_face = 0 (Eddington face).  Name ck_sph_face to silence "
+                  << "this."
+                  << std::endl;
+      }
     }
+    two_stream_rt::ck_sph_face = pin->GetOrAddInteger("problem","ck_sph_face",
+        f6_def ? 6 : (two_stream_rt::ck_sph_dilute ? 1 : 0));
   }
-  two_stream_rt::ck_sph_face = pin->GetOrAddInteger("problem","ck_sph_face",
-      f6_def ? 6 : (two_stream_rt::ck_sph_dilute ? 1 : 0));}
   // problem/ck_sph_top: see two_stream_rt::ck_sph_top; default 1 (vacuum top) with face
   // 6, which needs it, else 0 (bitwise the historical datum)
   two_stream_rt::ck_sph_top = pin->GetOrAddInteger("problem","ck_sph_top",
@@ -722,14 +725,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // problem/ck_wall_flux_exact (see two_stream_rt::ck_wall_flux_exact):
   // the face 5 / 6 wall delivers sigma T_int^4 exactly (was 1.0718x).  Default true on a
   // fresh run; a restart whose input lacks the key keeps the old wall (one line).
-  {const bool wnamed = pin->DoesParameterExist("problem","ck_wall_flux_exact");
-  two_stream_rt::ck_wall_flux_exact =
-      pin->GetOrAddBoolean("problem","ck_wall_flux_exact",!restart);
-  if (restart && !wnamed && two_stream_rt::ck_vef_on && global_variable::my_rank == 0) {
-    std::cout << "deep_hot_jupiter_rt: restart input has no problem/ck_wall_flux_exact: "
-              << "keeping the old face-" << two_stream_rt::ck_sph_face << " wall "
-              << "(1.07x internal flux); set it true to switch" << std::endl;
-  }}
+  {
+    const bool wnamed = pin->DoesParameterExist("problem","ck_wall_flux_exact");
+    two_stream_rt::ck_wall_flux_exact =
+        pin->GetOrAddBoolean("problem","ck_wall_flux_exact",!restart);
+    if (restart && !wnamed && two_stream_rt::ck_vef_on && global_variable::my_rank == 0) {
+      std::cout << "deep_hot_jupiter_rt: restart input has no "
+                << "problem/ck_wall_flux_exact: keeping the old face-"
+                << two_stream_rt::ck_sph_face << " wall "
+                << "(1.07x internal flux); set it true to switch" << std::endl;
+    }
+  }
   // problem/ck_vef_every, ck_vef_ncore: the formal solution of ck_sph_face = 5.  With
   // face 5 the DEFAULTS of ck_vef_every (150), ck_impl_rowfb (true) and ck_impl_rsec (4)
   // are the measured cheapest accuracy-neutral setting (cksph_test_0930/PORT.md);
@@ -890,7 +896,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // prod1103b default (USER 10-28 production key; audit 11-03): ck_impl_conserve = 2 on a
   // FRESH start (recipe::NewDefaults) with ck_implicit when the key is not named
   // (diagnostic: the solution is unchanged); recorded for the run's restarts.
-  if (!pin->DoesParameterExist("problem","ck_impl_conserve") && two_stream_rt::ck_implicit &&
+  if (!pin->DoesParameterExist("problem","ck_impl_conserve")
+      && two_stream_rt::ck_implicit &&
       recipe::NewDefaults(pin)) {
     pin->GetOrAddInteger("problem","ck_impl_conserve",2);
     recipe::Log("problem/ck_impl_conserve = 2 (default with ck_implicit)");
@@ -952,11 +959,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // prod1103b defaults (USER 09-24 dhj production "T4 + C2 + E4", approved for every
   // Caltech dhj production; audit 11-03): on a FRESH start (recipe::NewDefaults) with the
-  // fused frozen-operator ck_implicit Newton (ck_impl_fuse, ck_impl_frozen_op, debug <= 0,
-  // glob = none, aa = 0, reuse_jac = 0, colskip, no warm start, no rt_rad_force), each of
-  // these keys that is not named takes the production value and is recorded (GetOrAdd):
-  //   ck_impl_once = true (C2: the ck RT once per cycle, operator split after the RK
-  //   stages), ck_impl_jreuse = 0.2 (C2 adaptive chord), ck_impl_pred = true (C2
+  // fused frozen-operator ck_implicit Newton (ck_impl_fuse, ck_impl_frozen_op, debug <=
+  // 0, glob = none, aa = 0, reuse_jac = 0, colskip, no warm start, no rt_rad_force), each
+  // of these keys that is not named takes the production value and is recorded
+  // (GetOrAdd): ck_impl_once = true (C2: the ck RT once per cycle, operator split after
+  // the RK stages), ck_impl_jreuse = 0.2 (C2 adaptive chord), ck_impl_pred = true (C2
   //   predictor), ck_impl_every = 4 (E4 cadence; only with ck_impl_once on).
   // Otherwise (restart input without the key, recipe none, another ck configuration) the
   // old default (false / 0 / false / 1) is recorded as before.  An explicit key wins.
@@ -1153,15 +1160,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_dump_m = pin->GetOrAddInteger("problem","ck_dump_m",0);
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
-  // problem/ck_pcut_bar [bar]: correlated-k is applied where p < ck_pcut_bar (default 10).
-  // prod1103c (USER 11-03 "a switch to just use ck everywhere instead of the pcut"):
-  // ck_pcut_bar = none = NO pressure cut, the ck two-stream covers the whole column to the
-  // inner wall (rt_ck_pcut = the largest Real: the cut search finds the innermost cell,
-  // the same as any numeric cut above the deepest column pressure, e.g. the 1e8 of the
-  // route-B decks).  FRESH-start default (recipe::NewDefaults) with rt_ck when the fluid
-  // names isotropic_conduction = none (route B) and the key is not named, logged as "ck
-  // everywhere"; recorded for restarts.  Otherwise 10 bar as before; a numeric key works
-  // as before.
+  // problem/ck_pcut_bar [bar]: correlated-k is applied where p < ck_pcut_bar (default
+  // 10). prod1103c (USER 11-03 "a switch to just use ck everywhere instead of the pcut"):
+  // ck_pcut_bar = none = NO pressure cut, the ck two-stream covers the whole column to
+  // the inner wall (rt_ck_pcut = the largest Real: the cut search finds the innermost
+  // cell, the same as any numeric cut above the deepest column pressure, e.g. the 1e8 of
+  // the route-B decks).  FRESH-start default (recipe::NewDefaults) with rt_ck when the
+  // fluid names isotropic_conduction = none (route B) and the key is not named, logged as
+  // "ck everywhere"; recorded for restarts.  Otherwise 10 bar as before; a numeric key
+  // works as before.
   {
     const std::string fb = pin->DoesBlockExist("mhd") ? "mhd" : "hydro";
     const bool nocond = pin->DoesParameterExist(fb,"isotropic_conduction") &&
@@ -1169,8 +1176,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (!pin->DoesParameterExist("problem","ck_pcut_bar") && rt_ck && nocond) {
       if (recipe::NewDefaults(pin)) {
         pin->GetOrAddString("problem","ck_pcut_bar","none");
-        recipe::Log("problem/ck_pcut_bar = none: ck everywhere (default with rt_ck and <" +
-                    fb + ">/isotropic_conduction = none: route B)");
+        recipe::Log("problem/ck_pcut_bar = none: ck everywhere (default with rt_ck and <"
+                    + fb + ">/isotropic_conduction = none: route B)");
       } else {
         recipe::Log("problem/ck_pcut_bar = 10 (restart input or recipe none: the old "
                     "default)");
@@ -1362,7 +1369,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   if (pin->GetInteger("mesh", "nx1") != pin->GetInteger("meshblock", "nx1")) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "deep hot Jupiter problem generator only allows one meshblock in r direction for the RT to work properly" << std::endl;
+              << "deep hot Jupiter problem generator only allows one meshblock in r "
+              << "direction for the RT to work properly" << std::endl;
     exit(EXIT_FAILURE);
   }
 
@@ -1467,13 +1475,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // well-balanced background arrays built here feed the static scheme directly.
   auto eos = (pmbp->phydro != nullptr) ? pmbp->phydro->peos->eos_data
                                        : pmbp->pmhd->peos->eos_data;
-
-//  Real Teq = 1469.0;
-//  Real grav_acc = -942.0;
-//  Real ap = 9.44e9;
-//  Real omega = 2.06e-5;
-//  Real Rgas = 4.593e7;
-//  Real met = 0.0;
 
     // This problem generator (and utils/two_stream_rt.hpp) reads every dimensional
     // <problem> key as CGS without conversion -- Teq [K], grav [cm/s^2], ap [cm], omega
@@ -1600,7 +1601,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
       }
       if (global_variable::my_rank == 0) {
-        std::cout << "deep_hot_jupiter_rt: problem/roche ON: a = " << ra_ << " cm, G M_* = "
+        std::cout << "deep_hot_jupiter_rt: problem/roche ON: a = " << ra_
+            << " cm, G M_* = "
                   << rgms_ << " (M_* = " << rgms_/6.6743e-8/1.98892e33 << " Msun), "
                   << "G M_p = " << gm1r << ", L1 at " << rl1 << " cm (x1max/r_L1 = "
                   << r1/rl1 << "), Phi(L1) = " << phil1 << ", max Phi on x1max = "
@@ -1646,10 +1648,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (pmbp->phydro != nullptr) pmbp->phydro->wb_phimax = phil1;
         // the hse top ghosts are a hydrostatic walk (WBAdvance)
         if (dhj_top_bc == 0 && !(phtop < phil1)) {
-          std::cout << "### FATAL ERROR: problem/wb_lobe_cut with an open top shell needs "
+          std::cout
+              << "### FATAL ERROR: problem/wb_lobe_cut with an open top shell needs "
                     << "problem/top_bc = outflow1 or outflow0 (hse walks the ghosts); "
-                    << "wb_lobe_cut is on by default since prod-1107, problem/wb_lobe_cut = false restores the "
-                    << "old run" << std::endl;
+                    << "wb_lobe_cut is on by default; problem/wb_lobe_cut = false "
+                    << "restores the old run" << std::endl;
           exit(EXIT_FAILURE);
         }
         if (global_variable::my_rank == 0) {
@@ -1659,7 +1662,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       if (gsc >= 1.0e-3 && !(phtop < phil1) && global_variable::my_rank == 0) {
         std::cout << "### WARNING: problem/roche: the equipotential through part of the "
-                  << "domain top is OPEN (max Phi(x1max) >= Phi(L1)): those top cells lie "
+                  << "domain top is OPEN (max Phi(x1max) >= Phi(L1)): those top cells "
+                  << "lie "
                   << "outside the planet's Roche lobe" << std::endl;
       }
     }
@@ -1690,7 +1694,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (!rot_potential) bad = "problem/rot_potential = true (Phi must carry it)";
         if (!(use_spherical_polar || use_cubed_sphere_)) bad = "sp or the cubed sphere";
         if (use_wellbalance_static) bad = "no wellbalance_static";
-        if (!use_etotgrav) bad = "etotgrav = true (the work is booked by the energy flux)";
+        if (!use_etotgrav) {
+          bad = "etotgrav = true (the work is booked by the energy flux)";
+        }
         if (!user_srcs) bad = "problem/user_srcs = true";
         if (tide) bad = "problem/stellar_tide = false (not in Phi)";
         if (dhj_wbt.on) bad = "problem/roche_wb_tan = false";
@@ -1809,10 +1815,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     DualArray1D<Real> logparr("logparr", N);
     get_wb_eos_arr(eos, Rgas, grav_acc, ap, grav_pmass, N, zcol_,
                    zarr.h_view, logparr.h_view);
-//    zarr.template modify<HostMemSpace>();
-//    zarr.template sync<DevExeSpace>();
-//    logparr.template modify<HostMemSpace>();
-//    logparr.template sync<DevExeSpace>();
     zarr.modify_host();
     zarr.sync_device();
     logparr.modify_host();
@@ -1863,8 +1865,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     lgparr_init.modify_host();
     lgparr_init.sync_device();
 
-//    DvceArray1D<Real> zinitarr("zinitarr", N);
-//    DvceArray1D<Real> logpinitarr("logpinitarr", N);
     DualArray1D<Real> zarr_init("zarrinit", N);
     DualArray1D<Real> logparr_init("logparrinit", N);
     // problem/ic_profile: extend the IC column below z = 0 to the deepest cell or inner
@@ -1904,7 +1904,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       get_init_Tp_host(N, Tarr_init.h_view, lgparr_init.h_view,
                        std::exp(logparr_init.h_view(0)), tbot, ne_ext, Tarr_ext.h_view,
                        lgparr_ext.h_view);
-      std::cout << "deep_hot_jupiter_rt: IC column bottom p = " << std::pow(10.0, lgbot)/1.0e6
+      std::cout << "deep_hot_jupiter_rt: IC column bottom p = "
+          << std::pow(10.0, lgbot)/1.0e6
                 << " bar, T = " << tbot << " K ("
                 << ((lgbot > lgtab) ? "on the adiabat below the table bottom "
                                     : "inside the table; table bottom ")
@@ -1912,7 +1913,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (lgbot > lgend) {
         std::cout << "### WARNING: problem/ic_adiabat_ext: the IC column reaches "
                   << std::pow(10.0, lgbot)/1.0e6 << " bar, beyond the adiabat extension ("
-                  << std::pow(10.0, lgend)/1.0e6 << " bar): raise problem/ic_adiabat_ext_dex"
+                  << std::pow(10.0, lgend)/1.0e6
+                  << " bar): raise problem/ic_adiabat_ext_dex"
                   << std::endl;
       }
     }
@@ -2002,9 +2004,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
     // one-off: the initial condition. Skipped on a restart, where u0/w0 come from file.
     if (!restart) {
-    par_for("probini", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
+    par_for("probini", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0,
+            n1m1,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-
       Real &x1min = size.d_view(m).x1min;
       Real &x1max = size.d_view(m).x1max;
       int nx1 = indcs.nx1;
@@ -2054,12 +2056,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,zs,denwb,pwb);
 
       Real p, den;
-      get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p,
+      get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,
+                   zarr_init.d_view,logparr_init.d_view,zs,den,p,
                    ne_ext, Tarr_ext.d_view, lgparr_ext.d_view);
-//      get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
-//      get_init_eos(zinitarr,logpinitarr,x3v,lam,phi,den,p);
-//      p = pwb;
-//      den = denwb;
 
       if (!use_remap_) {
       u0_(m,IDN,k,j,i) = den;
@@ -2222,7 +2221,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
     par_for("probwb", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-
         Real &x1min = size.d_view(m).x1min;
         Real &x1max = size.d_view(m).x1max;
         int nx1 = indcs.nx1;
@@ -2270,12 +2268,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,zs,denwb,pwb);
 
         Real p, den;
-        get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p,
+        get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,
+                     zarr_init.d_view,logparr_init.d_view,zs,den,p,
                    ne_ext, Tarr_ext.d_view, lgparr_ext.d_view);
-//        get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
-//        get_init_eos(zinitarr,logpinitarr,x1v,lam,phi,den,p);
-//        p = pwb;
-//        den = denwb;
 
         Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
                               om2_, theta, phi, rgms_, ra_);
@@ -2524,10 +2519,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     });
     // "probwb" above fills the face potentials phi0.x1f/x2f/x3f on the ACTIVE
     // cells only; a walk in a ghost row (the x2/x3 caches of wb_dirs = all, which read
-    // their own ghost rows and give a block's ghost copy of its neighbour's edge row) then
-    // reads 0 there, and two blocks see different states on their common face: mass is not
-    // conserved across MeshBlock faces.  Under wb_dirs = all the same formulas fill
-    // EVERY face, interior ones bitwise as above.
+    // their own ghost rows and give a block's ghost copy of its neighbour's edge row)
+    // then reads 0 there, and two blocks see different states on their common face: mass
+    // is not conserved across MeshBlock faces.  Under wb_dirs = all the same formulas
+    // fill EVERY face, interior ones bitwise as above.
     {
       const bool wba_g = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_all :
                          ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_all : false);
@@ -2552,7 +2547,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           (void) lam;
           return TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta, phi, rgms_, ra_);
         };
-        par_for("probwb_ghostfaces", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, m3, 0, m2,
+        par_for("probwb_ghostfaces", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0,
+                m3, 0, m2,
                 0, m1,
         KOKKOS_LAMBDA(int m, int k, int j, int i) {
           const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
@@ -2575,13 +2571,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             return x;
           };
           auto c2 = [&](const int jj) {
-            return use_spherical_polar ? x2v_(m,jj) : CellCenterX(jj-js, nx2, x2min, x2max);
+            return use_spherical_polar ? x2v_(m,jj)
+                : CellCenterX(jj-js, nx2, x2min, x2max);
           };
           auto f2 = [&](const int jj) {
             return use_spherical_polar ? x2f_(m,jj) : LeftEdgeX(jj-js, nx2, x2min, x2max);
           };
           auto c3 = [&](const int kk) {
-            return use_spherical_polar ? x3v_(m,kk) : CellCenterX(kk-ks, nx3, x3min, x3max);
+            return use_spherical_polar ? x3v_(m,kk)
+                : CellCenterX(kk-ks, nx3, x3min, x3max);
           };
           auto f3 = [&](const int kk) {
             return use_spherical_polar ? x3f_(m,kk) : LeftEdgeX(kk-ks, nx3, x3min, x3max);
@@ -2597,9 +2595,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         int n1m1 = indcs.nx1 + 2*ng - 1;
         int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
         int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
-        par_for("wbgrav", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
+        par_for("wbgrav", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0,
+                n2m1, 0, n1m1,
         KOKKOS_LAMBDA(int m, int k, int j, int i) {
-
             Real &x1min = size.d_view(m).x1min;
             Real &x1max = size.d_view(m).x1max;
             int nx1 = indcs.nx1;
@@ -2664,26 +2662,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                               theta, phi, rgms_, ra_);
             }
         });
-//        par_for("wbgravbc", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1,
-//        KOKKOS_LAMBDA(int m, int k, int j) {
-//          if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect) {
-//            for (int i=0; i<ng; ++i) {
-//              phicc0(m,k,j,ie+i+1) = phicc0(m,k,j,ie-i);
-//              u0_(m,IDN,k,j,ie+i+1) = u0_(m,IDN,k,j,ie-i);
-//              u0_(m,IEN,k,j,ie+i+1) = u0_(m,IEN,k,j,ie-i);
-//              phi0_x1f(m,k,j,ie+i+1) = phicc0(m,k,j,ie);
-//            }
-//          }
-//        });
     }
     if (use_wellbalance_static) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
         int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
         int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
-        par_for("wbcc", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
+        par_for("wbcc", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1,
+                0, n1m1,
         KOKKOS_LAMBDA(int m, int k, int j, int i) {
-
           Real &x1min = size.d_view(m).x1min;
           Real &x1max = size.d_view(m).x1max;
           int nx1 = indcs.nx1;
@@ -2767,7 +2754,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       auto &b0 = pmbp->pmhd->b0;
       auto &bcc0 = pmbp->pmhd->bcc0;
-      par_for("pgen_b0", DevExeSpace(), 0,(pmbp->nmb_thispack-1),0, n3m1, 0, n2m1, 0, n1m1, //ks,ke,js,je,is,ie,
+      par_for("pgen_b0", DevExeSpace(), 0,(pmbp->nmb_thispack-1),0, n3m1, 0, n2m1, 0,
+              n1m1, //ks,ke,js,je,is,ie,
       KOKKOS_LAMBDA(int m, int k, int j, int i) {
           if (use_spherical_polar) {
             Real x1v = x1v_(m,i);
@@ -2789,26 +2777,37 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             Real A3ip = 0.5*bbot*r0*sin(x2fl)/SQR(x1fr/r0);
             Real A3jp = 0.5*bbot*r0*sin(x2fr)/SQR(x1fl/r0);
             Real A3ipjp = 0.5*bbot*r0*sin(x2fr)/SQR(x1fr/r0);
-//            Real A3 = 0.5*bbot*x1fl*sin(x2fl);
-//            Real A3ip = 0.5*bbot*x1fr*sin(x2fl);
-//            Real A3jp = 0.5*bbot*x1fl*sin(x2fr);
-//            Real A3ipjp = 0.5*bbot*x1fr*sin(x2fr);
 
-            b0.x1f(m,k,j,i) = (dxe3(m,k,j+1,i)*A3jp - dxe3(m,k,j,i)*A3)/area1(m,k,j,i) - (dxe2(m,k+1,j,i)*A2kp - dxe2(m,k,j,i)*A2)/area1(m,k,j,i);
-            if ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) || (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je+1)) {
-              b0.x2f(m,k,j,i) = - ((x1fr*(x3fr-x3fl))*A3ip - (x1fl*(x3fr-x3fl))*A3) / (0.5*(SQR(x1fr)-SQR(x1fl))*(x3fr-x3fl));
+            b0.x1f(m,k,j,i) = (dxe3(m,k,j+1,i)*A3jp
+                               - dxe3(m,k,j,i)*A3)/area1(m,k,j,i)
+                - (dxe2(m,k+1,j,i)*A2kp - dxe2(m,k,j,i)*A2)/area1(m,k,j,i);
+            if ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar &&
+                 j == js) ||
+                (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar &&
+                 j == je+1)) {
+              b0.x2f(m,k,j,i) = - ((x1fr*(x3fr-x3fl))*A3ip - (x1fl*(x3fr-x3fl))
+                                   *A3) / (0.5*(SQR(x1fr)-SQR(x1fl))*(x3fr-x3fl));
             } else {
-              b0.x2f(m,k,j,i) = - (dxe3(m,k,j,i+1)*A3ip - dxe3(m,k,j,i)*A3)/area2(m,k,j,i);
+              b0.x2f(m,k,j,i) = - (dxe3(m,k,j,i+1)*A3ip
+                                   - dxe3(m,k,j,i)*A3)/area2(m,k,j,i);
             }
             b0.x3f(m,k,j,i) = (dxe2(m,k,j,i+1)*A2ip - dxe2(m,k,j,i)*A2)/area3(m,k,j,i);
-            Real b0x1fip = (dxe3(m,k,j+1,i+1)*A3ipjp - dxe3(m,k,j,i+1)*A3ip)/area1(m,k,j,i+1) - (dxe2(m,k+1,j,i+1)*A2ipkp - dxe2(m,k,j,i+1)*A2ip)/area1(m,k,j,i+1);
+            Real b0x1fip = (dxe3(m,k,j+1,i+1)*A3ipjp
+                            - dxe3(m,k,j,i+1)*A3ip)/area1(m,k,j,i+1)
+                - (dxe2(m,k+1,j,i+1)*A2ipkp - dxe2(m,k,j,i+1)*A2ip)/area1(m,k,j,i+1);
             Real b0x2fjp;
-            if ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js-1) || (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je)) {
-              b0x2fjp = - ((x1fr*(x3fr-x3fl))*A3ipjp - (x1fl*(x3fr-x3fl))*A3jp) / (0.5*(SQR(x1fr)-SQR(x1fl))*(x3fr-x3fl));
+            if ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar &&
+                 j == js-1) ||
+                (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar &&
+                 j == je)) {
+              b0x2fjp = - ((x1fr*(x3fr-x3fl))*A3ipjp - (x1fl*(x3fr-x3fl))*A3jp) / (0.5
+                  *(SQR(x1fr)-SQR(x1fl))*(x3fr-x3fl));
             } else {
-              b0x2fjp = - (dxe3(m,k,j+1,i+1)*A3ipjp - dxe3(m,k,j+1,i)*A3jp)/area2(m,k,j+1,i);
+              b0x2fjp = - (dxe3(m,k,j+1,i+1)*A3ipjp
+                           - dxe3(m,k,j+1,i)*A3jp)/area2(m,k,j+1,i);
             }
-            Real b0x3fkp = (dxe2(m,k+1,j,i+1)*A2ipkp - dxe2(m,k+1,j,i)*A2kp)/area3(m,k+1,j,i);
+            Real b0x3fkp = (dxe2(m,k+1,j,i+1)*A2ipkp
+                            - dxe2(m,k+1,j,i)*A2kp)/area3(m,k+1,j,i);
             if (i==n1m1) b0.x1f(m,k,j,i+1) = b0x1fip;
             if (j==n2m1) b0.x2f(m,k,j+1,i) = b0x2fjp;
             if (k==n3m1) b0.x3f(m,k+1,j,i) = b0x3fkp;
@@ -2824,7 +2823,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
             bcc0(m,IBZ,k,j,i) = lw*b0.x3f(m,k,j,i) + rw*b0x3fkp;
 
-            u0_(m,IEN,k,j,i) += 0.5*(SQR(bcc0(m,IBX,k,j,i))+SQR(bcc0(m,IBY,k,j,i))+SQR(bcc0(m,IBZ,k,j,i)));
+            u0_(m,IEN,k,j,i) += 0.5
+                *(SQR(bcc0(m,IBX,k,j,i))+SQR(bcc0(m,IBY,k,j,i))+SQR(bcc0(m,IBZ,k,j,i)));
           } else if (use_cubed_sphere_) {
             // CUBED SPHERE.  The same dipole, built the same way: each face value is the
             // circulation of A around that face's own edges divided by the face area,
