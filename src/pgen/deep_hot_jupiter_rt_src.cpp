@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file deep_hot_jupiter_rt_src.cpp
-//! \brief deep_hot_jupiter_rt problem generator (tusplit-1102 piece): the source terms --
+//! \brief deep_hot_jupiter_rt problem generator (piece): the source terms --
 //! AmFix, the roche_wb_tan probe, SourceFunc, the double-grey two-stream RT and the
 //! operator-split correlated-k RT (DhjCkRtSplit, DhjRtFreezeSplit).  Moved verbatim
 //! from deep_hot_jupiter_rt.cpp.
@@ -51,14 +51,14 @@ void AmFix(Mesh *pm, const Real bdt) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn WbTanProbe (roche-wbtan-1101, problem/roche_wb_tan): wbtan_common.hpp Probe
+//! \fn WbTanProbe (problem/roche_wb_tan): wbtan_common.hpp Probe
 //! (hydro or MHD, cubed sphere or spherical polar), with the pgen's own AmFix of W_eq as
 //! the extra term -- its problem/am_transport part (T_cons - T_code: a transport
 //! correction whose sum is the boundary torque) ONLY.  NOT the amh::fix part:
 //! -Omega Q_c of W_eq is the Coriolis torque on the equilibrium's NUMERICAL mass fluxes
 //! (the first stage's radial redistribution, sum = Omega dI/dt); frozen into g_t it was
 //! a constant net z torque (Ttide -5.5e36 cs C8 WASP deck, -9.8e34 = -1.2e-3 Iw Omega
-//! per rotation on the C32 3x deck; wbtan-torquefix-1101).  The live AmFix applies it to
+//! per rotation on the C32 3x deck).  The live AmFix applies it to
 //! the evolving state every stage, as without the key.
 
 void WbTanAmFixExtra(Mesh *pm, DvceArray5D<Real> &us, DvceArray5D<Real> &u0s) {
@@ -142,7 +142,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
       phicc0 = pmbp->pmhd->phicc0;
       w0wb = pmbp->pmhd->w0wb;
     }
-    
+
     const bool use_spherical_polar = pm->use_spherical_polar;
     auto area1 = pmbp->pcoord->area.x1f;
     auto volume = pmbp->pcoord->volume;
@@ -150,16 +150,16 @@ void SourceFunc(Mesh *pm, Real bdt) {
     auto &x1v_ = pmbp->pcoord->x1v;
     auto &x2v_ = pmbp->pcoord->x2v;
     auto &x3v_ = pmbp->pcoord->x3v;
-    
+
     Real r0, r1;
     r0 = pm->mesh_size.x1min;
     r1 = pm->mesh_size.x1max;
-    
+
 //    Real ap = 9.44e9;
 //    Real omega = 2.06e-5;
 //    Real grav_acc = -942.0;
 //    Real Rgas = 4.593e7;
-    
+
 //    ParameterInput* pin;
     Real grav_acc = -pm->pgen->hot_jupiter_param.grav;
     Real ap = pm->pgen->hot_jupiter_param.ap;
@@ -180,17 +180,17 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const Real sp_tau_ = dhj_sp_top_tau;
     const bool sponge_bottom_ = pm->pgen->hot_jupiter_param.sponge_bottom;
     const bool rotpot_src = rotpot && use_wellbalance_dynamic;
-    // roche-dhj-1031 problem/roche: the TANGENTIAL tidal force -grad_t TidePot (the radial
+    // problem/roche: the TANGENTIAL tidal force -grad_t TidePot (the radial
     // part is in phicc0/phi0 -> the well-balanced source; the work in the etotgrav flux,
     // both required with roche).  rgms = 0 when off: not applied, bitwise.
     const Real rgms = pm->pgen->hot_jupiter_param.roche ?
                       pm->pgen->hot_jupiter_param.roche_gms : 0.0;
     const Real rra = pm->pgen->hot_jupiter_param.roche_a;
-    // roche-wbtan-1101 problem/roche_wb_tan: the tangential centrifugal + tidal force is
+    // problem/roche_wb_tan: the tangential centrifugal + tidal force is
     // rho g_t (WbTanProbe) in place of the analytic projections below; Coriolis and the
     // radial terms unchanged; no energy term (etotgrav books the potential work)
     const bool wbt_ = dhj_wbt.on;
-    // dhjwball-1106 <mhd|hydro>/wb_dirs = all: the tangential centrifugal + tidal force is
+    // <mhd|hydro>/wb_dirs = all: the tangential centrifugal + tidal force is
     // the shared well-balanced source (AddWbGravity after this kernel, the true Phi of
     // phicc0/phi0): this kernel keeps the tangential Coriolis only (wbt_a2/a3); x1 as ever
     const bool wba_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_all :
@@ -198,7 +198,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const bool cor_only_ = wbt_ || wba_;
     const Real phimax_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_phimax :
                          ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_phimax : 1.0e300);
-    // relaxdrag-1101: the start-up Rayleigh drag switch and length (R/5, 1 by default)
+    // the start-up Rayleigh drag switch and length (R/5, 1 by default)
     const bool relax_ = dhj_relax_drag;
     const Real rdf_ = dhj_relax_drag_rot/5.0;
     DvceArray5D<Real> wbtg_;
@@ -215,12 +215,12 @@ void SourceFunc(Mesh *pm, Real bdt) {
     Real cpoly_[NSTRETCH_R_POLY];
     for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pm->fStretchRPoly[n];
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
-    
+
     Real iap = 1.0/ap;
     Real gm1 = gamma-1.0;
-    
+
     Real time = pm->time;
-    
+
     // problem/ck_impl_once: the radiation has left the RK stage (see
     // DhjCkRtSplit); nothing radiative is evaluated here.
     // problem/rt_test_freeze: the radiation is applied by DhjRtFreezeSplit instead
@@ -234,7 +234,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const bool is_mhd_ = (pmbp->pmhd != nullptr);
     par_for("usrsource", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        
+
         Real x1v, x2v, x3v;
         if (use_spherical_polar) {
           x1v = x1v_(m,i);
@@ -261,7 +261,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           Real &x3max = size.d_view(m).x3max;
           x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
         }
-        
+
         Real lam, phi, z, theta, r;
         if (use_spherical_polar) {
           theta = x2v;
@@ -281,11 +281,11 @@ void SourceFunc(Mesh *pm, Real bdt) {
         Real rho = w0(m,IDN,k,j,i);
         Real p = eos.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
         Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
-        
+
         Real area_r = area1(m,k,j,i+1);
         Real area_l = area1(m,k,j,i);
         Real vol = volume(m,k,j,i);
-        
+
         // gravity
         const Real grav_r = GravAccAt(grav_acc, ap, r, grav_pmass);
         Real src = bdt*grav_r*w0(m,IDN,k,j,i);
@@ -307,14 +307,14 @@ void SourceFunc(Mesh *pm, Real bdt) {
               WBReadCache(wbq0_, WBVar::wb_pres, m, k, j, i, dum1, pl, dum2, pr, dum3);
           }
           src = bdt*(area_r*(pr-p)+area_l*(p-pl))/vol;
-          // dhjwball-1106 problem/wb_lobe_cut: no WB outside the L1 equipotential: the
+          // problem/wb_lobe_cut: no WB outside the L1 equipotential: the
           // plain radial force of the true Phi (plain PLM there: hydro.hpp/mhd.hpp x1)
           if (phicc0(m,k,j,i) > phimax_) {
             src = -bdt*rho*(phi0_x1f(m,k,j,i+1) - phi0_x1f(m,k,j,i))/dx1(m,k,j,i);
           }
         }
         u0(m,IM1,k,j,i) += src;
-        
+
         // Forces in the corotating frame
         Real wbt_a2 = 0.0, wbt_a3 = 0.0;   // problem/roche_wb_tan: Coriolis, per geometry
         if (use_spherical_polar) {
@@ -366,7 +366,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
             // already account for it.
             u0(m,IEN,k,j,i) += rho*(atr*vr + att*vtheta + atp*vphi)*bdt;
           }
-          // roche-dhj-1031: tangential -grad TidePot (stellar_tide is refused with it)
+          // tangential -grad TidePot (stellar_tide is refused with it)
           if (rgms != 0.0 && !cor_only_) {
             const Real cph = cos(phi), sph = sin(phi);
             Real gs, gy, gz;
@@ -440,7 +440,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
                                     - ((rotpot && use_etotgrav) ?
                                        SQR(omega)*(xx*rh0 + yy*rh1)*v1 : 0.0))*bdt;
           }
-          // roche-dhj-1031: tangential -grad TidePot.  The substellar point is along -x
+          // tangential -grad TidePot.  The substellar point is along -x
           // (CSCellAngles: phi = atan2(-y, -x)), so the stellar frame is s = -x, y' = -y,
           // z; the Cartesian acceleration is (gs, gy', -gz), projected like the
           // centrifugal one above on e1, e2 (covariant momentum components)
@@ -459,7 +459,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
         // problem/roche_wb_tan: ONE force path for sp and cs (wbtan_common.hpp): the
         // tangential centrifugal + tidal force rho g_t plus the front-end's Coriolis
         if (wbt_) wbtan::ApplyTan(u0, wbtg_, m, k, j, i, rho, wbt_a2, wbt_a3, bdt);
-        if (wba_) {   // dhjwball-1106: Coriolis here, the potential force in AddWbGravity
+        if (wba_) {   // Coriolis here, the potential force in AddWbGravity
           u0(m,IM2,k,j,i) += rho*wbt_a2*bdt;
           u0(m,IM3,k,j,i) += rho*wbt_a3*bdt;
         }
@@ -528,7 +528,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
         }
     });
-    // dhjwball-1106: x2/x3 (x1: the WB fg of this kernel); reads this stage's caches
+    // x2/x3 (x1: the WB fg of this kernel); reads this stage's caches
     if (wba_) {
       if (pmbp->pmhd != nullptr) {pmbp->pmhd->AddWbGravity(bdt, false);}
       else {pmbp->phydro->AddWbGravity(bdt, false);}
@@ -553,7 +553,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     int nmb1 = pm->pmb_pack->nmb_thispack - 1;
     MeshBlockPack *pmbp = pm->pmb_pack;
     auto &size = pmbp->pmb->mb_size;
-        
+
     DvceArray5D<Real> u0, w0;
     const bool use_spherical_polar = pm->use_spherical_polar;
     auto &x1v_ = pmbp->pcoord->x1v;
@@ -562,7 +562,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     auto &x3v_ = pmbp->pcoord->x3v;
     const bool correct_spherical = false;
     const bool test_oned = false;
-        
+
     Real gamma;
     EOS_Data eos;
     // wtemp is the temperature ConsToPrim already solved for the current w0. It is
@@ -582,7 +582,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       eos = pmbp->pmhd->peos->eos_data;
     }
-    
+
     Real r0, r1;
     r0 = pm->mesh_size.x1min;
     r1 = pm->mesh_size.x1max;
@@ -590,7 +590,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     auto area1 = pmbp->pcoord->area.x1f;
     auto volume = pmbp->pcoord->volume;
     auto dx1 = pmbp->pcoord->dx1;
-    
+
 //    Real Teq = 1469.0;
 //    Real grav = 942.0;
 //    Real ap = 9.44e9;
@@ -601,12 +601,12 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
     Real Teq = pm->pgen->hot_jupiter_param.Teq;
-    
+
     Real iap = 1.0/ap;
     Real gm1 = gamma-1.0;
     Real cgs2Pa = 0.1;
     Real boltz_sigma = 5.6704e-5;
-    
+
     Real Tirr = Teq*sqrt(2);
     Real Fstar = boltz_sigma*SQR(SQR(Tirr));
     Real Tint = 100.0;
@@ -632,13 +632,13 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         Real I_ir_down_f[NN];
         Real I_ir_up_f[NN];
         Real B[NN];
-        
+
         Real x2v = x2v_(m,j);
         Real x3v = x3v_(m,k);
-        
+
         Real rtop = x1f_(m,ie+1);
         Real rbot = x1f_(m,is);
-        
+
         Real lam, phi, theta;
         if (use_spherical_polar) {
           theta = x2v;
@@ -655,7 +655,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         Real ex0 = -1.0;
         Real mu0 = ex*ex0;
         if (test_oned) mu0 = cos(85.0/90.0*M_PI/2.0);
-        
+
         // down-sweep
         Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,ie+1),w0(m,IEN,k,j,ie+1));
         Real rho = w0(m,IDN,k,j,ie+1);
@@ -667,11 +667,11 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         Real pf = exp((log(p)+log(pm1))/2.0);
         Real tau_v_f = 0.0;//pf/(grav/kap_v);
         Real tau_ir_f = 0.0;//pf/(grav/kap_ir);
-        
+
         tau_ir_down_f[ie+1] = tau_ir_f;
         F_v_down_f[ie+1] = Fstar*mu0;//*exp(-tau_v_f/muf);
         F_v_down_f[ie+1] = (mu0 > 0.0) ? F_v_down_f[ie+1] : 0.0;
-        
+
         // down-sweep
         for (int i=ie; i>is-1; --i) {
           Real rho = w0(m,IDN,k,j,i);
@@ -683,7 +683,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           Real kap_ir = 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
           if (test_oned) kap_ir = 1.0e-2;
           Real dr = dx1(m,k,j,i);
-            
+
           Real x1v = x1v_(m,i);
           Real z, r;
           if (use_spherical_polar) {
@@ -692,7 +692,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           } else {
             z = x1v;
           }
-            
+
           Real rf = x1f_(m,i);
           Real rf1 = x1f_(m,i+1);
 
@@ -702,7 +702,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           if (test_oned) muf = mu0;
           Real dtau_v = kap_v*rho*dr;
           Real dtau_ir = kap_ir*rho*dr;
-            
+
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rf1/rf); // Zhang+2023
           Real trans = exp(-dtau_v/muf);
@@ -713,13 +713,13 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         rho = w0(m,IDN,k,j,is-1);
         T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,is-1),p);
         B[is-1] = boltz_sigma/M_PI*SQR(SQR(T));
-        
+
         I_ir_down_f[ie+1] = 0.0;
         // down-sweep
         for (int i=ie; i>is-1; --i) {
           Real rf = x1f_(m,i);
           Real rf1 = x1f_(m,i+1);
-            
+
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rf1/rf);
           Real dtau = tau_ir_down_f[i]-tau_ir_down_f[i+1];
@@ -727,13 +727,13 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           Real Bavg = (B[i]+B[i+1])/2.0;
           I_ir_down_f[i] = (I_ir_down_f[i+1]*trans + Bavg*(1.0-trans))*fac;
         }
-        
+
         I_ir_up_f[is] = Iint;
         // up-sweep
         for (int i=is+1; i<ie+2; ++i) {
           Real rf = x1f_(m,i);
           Real rfm1 = x1f_(m,i-1);
-            
+
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rfm1/rf);
           Real dtau = tau_ir_down_f[i-1]-tau_ir_down_f[i];
@@ -741,7 +741,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           Real Bavg = (B[i-1]+B[i])/2.0;
           I_ir_up_f[i] = (I_ir_up_f[i-1]*trans + Bavg*(1.0-trans))*fac;
         }
-        
+
         // flux divergence
         for (int i=is; i<ie+1; ++i) {
           Real Ft = 2.0*M_PI*mu1*(I_ir_up_f[i+1]-I_ir_down_f[i+1])-F_v_down_f[i+1];
@@ -758,10 +758,10 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           }
           u0(m,IEN,k,j,i) += de;
         }
-        
+
     });
     RTSourceLimiterWarn(nclip);
-    
+
     return;
 }
 
@@ -789,7 +789,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     auto &x3v_ = pmbp->pcoord->x3v;
     const bool correct_spherical = false;
     const bool test_oned = false;
-    
+
     Real gamma;
     EOS_Data eos;
     // wtemp is the temperature ConsToPrim already solved for the current w0. It is
@@ -809,12 +809,12 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       eos = pmbp->pmhd->peos->eos_data;
     }
-    
+
     Real r0, r1;
     r0 = pm->mesh_size.x1min;
     r1 = pm->mesh_size.x1max;
     auto dx1 = pmbp->pcoord->dx1;
-    
+
 //    Real Teq = 1469.0;
 //    Real ap = 9.44e9;
 //    Real Rgas = 4.593e7;
@@ -825,13 +825,13 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
     Real Teq = pm->pgen->hot_jupiter_param.Teq;
-    
+
     Real iap = 1.0/ap;
     Real gm1 = gamma-1.0;
     Real igm1 = 1.0/gm1;
     Real cgs2Pa = 0.1;
     Real boltz_sigma = 5.6704e-5;
-    
+
     Real Tirr = Teq*sqrt(2);
     Real Fstar = boltz_sigma*SQR(SQR(Tirr));
     Real Tint = 500.0;
@@ -853,10 +853,10 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
         Real I_down[NN];
         Real B[NN];
         Real Q_v[NN];
-        
+
         Real x2v = x2v_(m,j);
         Real x3v = x3v_(m,k);
-        
+
         Real lam, phi, theta;
         if (use_spherical_polar) {
           theta = x2v;
@@ -873,7 +873,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
         Real ex0 = 1.0;
         Real mu0 = ex*ex0;
         if (test_oned) mu0 = cos(50.0/90.0*M_PI/2.0);
-        
+
         // down-sweep
         Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,ie+1),w0(m,IEN,k,j,ie+1));
         Real rho = w0(m,IDN,k,j,ie+1);
@@ -898,9 +898,9 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
             Real kap_ir = 1.0e-2; // 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
           if (test_oned) kap_ir = 1.0e-2;
           Real dr = dx1(m,k,j,i);
-            
+
           Real x1v = x1v_(m,i);
-            
+
           Real z, r;
           if (use_spherical_polar) {
             z = x1v-ap;
@@ -918,7 +918,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           if (test_oned) drcor = dr/mu0;
           Real dtau_v = kap_v*rho*drcor;
           Real dtau_ir = kap_ir*rho*dr;
-            
+
           tau_v += dtau_v;
           Real fac = 1.0;
 //          if (correct_spherical) fac = SQR(r1/r); // Zhang+2023
@@ -927,7 +927,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           Real Qv = kap_v*rho*Fstar*fac*exp(-tau_v);
           Q_v[i] = (mu0 > -mucr) ? Qv : 0.0;
 //          u0(m,IEN,k,j,i) += Q_v*bdt;
-        
+
           tau_ir_down[i] = tau_ir;
           tau_ir += dtau_ir/mu1;
           if (i==is) tau_ir_down[i-1] = tau_ir;
@@ -936,7 +936,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
         rho = w0(m,IDN,k,j,is-1);
         T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,is-1),p);
         B[is-1] = boltz_sigma/M_PI*SQR(SQR(T));
-        
+
         Real rtop = x1v_(m,ie+1);
         I_down[ie+1] = 0.0;
         // down-sweep
@@ -950,7 +950,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           Real Bavg = B[i];//(B(i)+B(i+1))/2.0;
           I_down[i] = (I_down[i+1]*trans + Bavg*(1.0-trans))*fac;
         }
-        
+
         Real rbot = x1v_(m,is-1);
         Real I_up = Iint;
         // up-sweep
@@ -972,7 +972,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           if (test_oned) kap_ir = 1.0e-2;
 //          Real Q_ir = 4.0*M_PI*kap_ir*rho*(J-B(i));
 //          u0(m,IEN,k,j,i) += Q_ir*bdt;
-            
+
           Real kk = -4.0*M_PI*kap_ir*rho*boltz_sigma/M_PI*bdt;
           Real e0, e;
           if (eos.IsGeneral()) {
@@ -1016,9 +1016,9 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           }
           u0(m,IEN,k,j,i) += e-e0;
         }
-        
+
     });
-    
+
     return;
 }
 

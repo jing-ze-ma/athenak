@@ -4,14 +4,14 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file deep_hot_jupiter_rt_hse.cpp
-//! \brief deep_hot_jupiter_rt problem generator (tusplit-1102 piece):
+//! \brief deep_hot_jupiter_rt problem generator (piece):
 //! HydrostaticEquilibrium, the boundary/HSE hook.  Moved verbatim from deep_hot_jupiter_rt.cpp.
 
 #include "deep_hot_jupiter_rt.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \fn HseMaxwellBlockend
-//! \brief seamexact-1103: top_bc = hse with bc_outer_maxwell and cs_seam_blockend =
+//! \brief top_bc = hse with bc_outer_maxwell and cs_seam_blockend =
 //! extend.  The stress divergence of a top ghost cell reads the cell-centred field one
 //! column further out (j+1, k+1); in the OUTERMOST tangential ghost row that column is
 //! not in the block and the difference is one-sided -- next to an interior MeshBlock end
@@ -92,7 +92,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     Real gamma;
     bool use_etotgrav = false;
     bool use_wellbalance_dynamic = false;
-    
+
     DvceArray4D<Real> phi0_x1f;
     DvceArray4D<Real> phicc0;
     DvceArray5D<Real> bcc0;
@@ -137,14 +137,14 @@ void HydrostaticEquilibrium(Mesh *pm) {
       b0_x3f = pmbp->pmhd->b0.x3f;
     }
     Real bbot = pm->pgen->hot_jupiter_param.bbot;
-    
+
     int nvar = u0_.extent_int(1);
-    
+
     Real igm1 = 1.0/(gamma-1.0);
     Real gigm1 = gamma*igm1;
     Real gm1ig = (gamma-1.0)/gamma;
     Real ig = 1.0/gamma;
-    
+
     // Local copy of the file-scope flag. Reading the global directly from the kernel is
     // a reference to a __host__ variable in device code, which hipcc rejects outright --
     // the switch has to be captured by value like any other host state.
@@ -241,7 +241,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
             // problem/top_bc = outflow1 | outflow0: TANGENTIAL face field zero-gradient
             // (the last active cell's faces copied into every ghost); the ghost NORMAL
             // faces follow from div B = 0 in usrboundaryx1_bfield_divb below
-            // ssbc-1111, mhd/top_bc_bt = sourcesurface: the tangential faces are ODD
+            // mhd/top_bc_bt = sourcesurface: the tangential faces are ODD
             // about the top face instead (ghost ie+1+i = -cell ie-i), so B_t = 0 on the
             // face to second order and the field leaving the top is radial (potential-
             // field source surface).  The face EMF the Riemann solver builds from the
@@ -319,7 +319,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
         });
       }
     }
-    
+
 //    if (pmbp->phydro != nullptr) {
 //      if (use_etotgrav) {
 //        pmbp->phydro->RemoveGravEtot(phicc0, u0_, 0, is-1, 0, (n2-1), 0, (n3-1));
@@ -357,7 +357,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //          }
 //        }
 //    });
-    
+
     // The cell-centred field in the OUTER-x1 ghost zones is built here, in its own kernel,
     // and not in the extrapolation kernel below.  It used to be computed inline there, in
     // the same launch that reads bcc0 at (k,j+1) and (k+1,j) for the Maxwell stress -- cells
@@ -410,7 +410,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
         }
     });
 
-    // seamexact-1103: the Maxwell-stress divergence of the hse top ghost (i = 0..ng-1),
+    // the Maxwell-stress divergence of the hse top ghost (i = 0..ng-1),
     // shared by the boundary kernel and the block-end exchange below
     auto mxdiv = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i) {
       Real dM1mag;
@@ -438,7 +438,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
       dM1mag = -( (M11p1*area1(m,k,j,(ie+i+2))-M11*area1(m,k,j,(ie+i+1))) + (M12p1*area2(m,k,j+1,(ie+i+1))-M12*area2(m,k,j,(ie+i+1))) + (M13p1*area3(m,k+1,j,(ie+i+1))-M13*area3(m,k,j,(ie+i+1))) )/volume(m,k,j,(ie+i+1));
       return dM1mag;
     };
-    // seamexact-1103 (cs_seam_blockend = extend): the outermost tangential ghost row's
+    // (cs_seam_blockend = extend): the outermost tangential ghost row's
     // stress divergence from the same-panel neighbour that owns those columns
     const bool mxe_ = is_mhd_ && bc_outer_maxwell_ && !top_out_ &&
                       pmbp->pmhd->pbval_u->cs_blockend_ext_;
@@ -579,7 +579,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
             const Real m1o = fmax(u0_(m,IM1,k,j,ie), 0.0);
             Real m2o = u0_(m,IM2,k,j,ie);
             Real m3o = u0_(m,IM3,k,j,ie);
-            // mhdtop-1112 <mhd>/top_bc_bt = charout: ghost tangential velocity with ZERO
+            // <mhd>/top_bc_bt = charout: ghost tangential velocity with ZERO
             // incoming Alfven characteristic, z_in = v_t + s B_t/sqrt(rho) = 0, s = sgn
             // of B_r on the top face, B_t the ghost cell's (zerograd) field, all in the
             // orthonormal frame bcc lives in (cubed sphere: e_xi, (e_eta - c e_xi)/s;
@@ -630,7 +630,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
             if (is_mhd_) {
               // bcc0 in these ghost cells was built by usrboundaryx1_bcc_outer above.
               if (bc_outer_maxwell_) {
-              // seamexact-1103: at the OUTERMOST tangential ghost row next to an
+              // at the OUTERMOST tangential ghost row next to an
               // INTERIOR MeshBlock end (cs_seam_blockend = extend) the one-sided
               // difference above is layout dependent -- one block per panel side
               // differences centrally there; the owning neighbour's value, exchanged
@@ -693,7 +693,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
             u0_(m,IDN,k,j,(ie+i+1)) = rho0_ip;
             u0_(m,IM2,k,j,(ie+i+1)) = u0_(m,IM2,k,j,ie)/rho_i*rho0_ip;
             u0_(m,IM3,k,j,(ie+i+1)) = u0_(m,IM3,k,j,ie)/rho_i*rho0_ip;
-            Real mom = u0_(m,IM1,k,j,ie)/rho_i*rho0_ip; // fmax(0.0,u0_(m,IM1,k,j,ie)/rho_i*rho0_ip); // 
+            Real mom = u0_(m,IM1,k,j,ie)/rho_i*rho0_ip; // fmax(0.0,u0_(m,IM1,k,j,ie)/rho_i*rho0_ip); //
             u0_(m,IM1,k,j,(ie+i+1)) = mom;
             // Kinetic energy of the ghost cell.  On the CUBED SPHERE IM2/IM3 are
             // COVARIANT components on a non-orthogonal tangent basis, so

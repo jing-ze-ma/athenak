@@ -102,14 +102,14 @@ void AmHstStage(Mesh *pm) {
   }, Kokkos::Sum<array_sum::GlobalSum>(sum));
   Kokkos::fence();
   for (int n=0; n<11; ++n) amh::acc[n] += wdt*sum.the_array[n];
-  // relaxdrag-1101 Tdrag: the drag removes itdrag bdt of every momentum component of u0
+  // Tdrag: the drag removes itdrag bdt of every momentum component of u0
   // in SourceFunc, so its z torque is -itdrag Lrel(u0) (same time and u0 as the kernel)
   const Real itd = DhjRelaxDragRate(pm->time, omega);
   if (itd > 0.0) amh::acc[11] += wdt*(-itd*DhjLrelU0(pm));
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn DhjRelaxDragRate (relaxdrag-1101)
+//! \fn DhjRelaxDragRate
 //! \brief 1/tau of the start-up Rayleigh drag at time t, as SourceFunc applies it (0 when
 //! off or after relax_drag_rot rotations)
 
@@ -125,7 +125,7 @@ Real DhjRelaxDragRate(const Real time, const Real omega) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn DhjLrelU0 (relaxdrag-1101)
+//! \fn DhjLrelU0
 //! \brief Lrel = sum vol (x P_y - y P_x) of this rank's u0, as AmHstColumns forms it
 
 Real DhjLrelU0(Mesh *pm) {
@@ -280,7 +280,7 @@ void DhjPhotosphereDump(ParameterInput *pin, Mesh *pm) {
           const Real fP0 = xP(m,k,j,ie+1) - static_cast<Real>(iP0);
           const Real gtop = EffGravAt(hj.grav, hj.ap, x1v(m,ie+1), hj.grav_point_mass,
                                       hj.omega, mu0, hj.stellar_tide)
-                            *cf(m,k,j,4);   // roche-dhj-1031: |grad Phi|/g_pm, else 1
+                            *cf(m,k,j,4);   // |grad Phi|/g_pm, else 1
           for (int g=0; g<CK_NG; ++g) {
             const Real kap = ck_kappa(lk, iT0, fT0, iP0, fP0, b, g) + kc(m,b,ie+1,k,j);
             tau[g] = kap*ptop*1.0e6/gtop;
@@ -691,7 +691,7 @@ void DhjOlrDump(ParameterInput *pin, Mesh *pm) {
 //!             deposit is (1-albedo) times the local beam absorption, so the power the
 //!             model reflects is albedo times the power it INTERCEPTS, on the same
 //!             effective area (pi r_abs^2, r_abs where the slant depth reaches ~1), NOT
-//!             albedo F_star pi r_top^2 (the pre-dhj-wall-0927 definition, which counted
+//!             albedo F_star pi r_top^2 (the definition, which counted
 //!             light that never reaches the absorbing layer).
 //!   Lsw_abs   stellar power absorbed (the net stellar heating): sum Q_sw V over cells
 //!   Lrad_bot  net radiative luminosity up through the deepest ck face (icut; the inner
@@ -808,7 +808,7 @@ void AmHstColumns(HistoryData *pdata, Mesh *pm, const int n0) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn DhjTideTorque (tidetrq-1101)
+//! \fn DhjTideTorque
 //! \brief the z torque [g cm^2 s^-2] of the APPLIED tangential tide about the spin axis,
 //! sum over this rank's active cells of rho (r x a_t)_z vol = rho R (a_t . phi_hat) vol
 //! (the history output sums the ranks), at the current w0 (instantaneous, like Lrel/Iw):
@@ -900,19 +900,19 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   // problem/am_hst: eight columns after all the others
   const int NFL = NFH0 + (ffloor ? 3 : 0);
   const int NFH = NFL + (amh::on ? (amh::split ? 12 : 8) : 0);
-  // tidetrq-1101: Ttide (DhjTideTorque) after all the others, only with problem/roche
+  // Ttide (DhjTideTorque) after all the others, only with problem/roche
   const bool ttide = pm->pgen->hot_jupiter_param.roche;
-  // floortrc-1101: with <mhd>/floor_tracer and problem/flux_hst_floor, Mdrain [g/s] and
+  // with <mhd>/floor_tracer and problem/flux_hst_floor, Mdrain [g/s] and
   // Edrain [erg/s] after all the others: the floor-tracer drain (MHD::FloorTracerDrain)
   // over the same interval as Mfloor/Efloor, which are then NET (added - drained); the
   // gross floor addition is Mfloor + Mdrain
-  // relaxdrag-1101: Tdrag (the start-up Rayleigh drag's z torque, a rate over the
+  // Tdrag (the start-up Rayleigh drag's z torque, a rate over the
   // interval like Tcor) after Ttide, only with problem/am_hst
   const int NTD = NFH + (ttide ? 1 : 0);
   const int NDR = NTD + (amh::on ? 1 : 0);   // Mdrain/Edrain after Ttide and Tdrag
   // (the floor tracer is a default with the Alfven floor: when the two columns do not
   // fit, they are left out with a note instead of stopping the run)
-  // (share-1104 P4: <hydro>/floor_tracer books the same two columns)
+  // (P4: <hydro>/floor_tracer books the same two columns)
   bool fdrain = ffloor && (((pm->pmb_pack->pmhd != nullptr) &&
                             pm->pmb_pack->pmhd->floor_tracer) ||
                            ((pm->pmb_pack->phydro != nullptr) &&
@@ -929,7 +929,7 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     fdrain = false;
   }
   pdata->nhist = NDR + (fdrain ? 2 : 0);
-  // ssbc-1111: with <mhd>/top_bc_bt = sourcesurface, Poy_top [erg/s] after all the
+  // with <mhd>/top_bc_bt = sourcesurface, Poy_top [erg/s] after all the
   // others: the radial Poynting flux sum_top (|B_t|^2 v_r - B_r v_t.B_t) dA of the
   // LAST ACTIVE cell (ie; the face value is ~0 by construction), orthonormal frame on cs
   const int NPY = pdata->nhist;
@@ -1022,7 +1022,7 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   // the accumulator (else, e.g. the first row after a restart, the last stage's)
   const bool fav = dhj_fhst_avg && (dhj_fhst_stage == dhj_fhst_nst);
   auto fav_ = fav ? *dhj_fhst_ptr : DvceArray4D<Real>();
-  // stswall-1029: under RKG super-stepping the resistive (Poynting) energy flux is not in
+  // under RKG super-stepping the resistive (Poynting) energy flux is not in
   // uflx during the RK stages, so neither column above contains it.  The flux the last
   // super-step applied through ie+1 and is (Resistivity::rkg_bflx, slots 5 and 4) is
   // FOLDED INTO Etot_top and Etot_bot rather than given its own column: the history is

@@ -37,7 +37,7 @@
 #include <string>
 #include <vector>
 
-// tusplit-1102: the private header shared with deep_hot_jupiter_rt_{hse,src,diag}.cpp
+// the private header shared with deep_hot_jupiter_rt_{hse,src,diag}.cpp
 #include "deep_hot_jupiter_rt.hpp"
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
@@ -58,7 +58,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (flux_hst) {
     user_hist = true;
     user_hist_func = DhjFluxHistory;
-    // stswall-1029: the RKG resistive energy flux through the top and the wall (see
+    // the RKG resistive energy flux through the top and the wall (see
     // Resistivity::track_x1_bflx); folded into Etot_top / Etot_bot by DhjFluxHistory
     {
       MeshBlockPack *prk = pmy_mesh_->pmb_pack;
@@ -159,7 +159,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     amh::fix = rotating;
     amh::trans = pin->DoesParameterExist("problem","am_transport")
                  ? pin->GetBoolean("problem","am_transport") : rotating;
-    // amdef-1019: the generic <hydro|mhd>/am_transport (default on cs / sp) is the same
+    // the generic <hydro|mhd>/am_transport (default on cs / sp) is the same
     // transport correction: a DEFAULT one yields to problem/am_transport, a named one
     // together with it is a FATAL (applied twice)
     if (amh::trans) {
@@ -211,10 +211,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       } else if (integ == "rk3") {
         amh::nst = 3;  amh::w[0] = 1.0/6.0;  amh::w[1] = 1.0/6.0;  amh::w[2] = 2.0/3.0;
       }
-      // + Ttide (tidetrq-1101) with problem/roche
+      // + Ttide with problem/roche
       const int nfh = 9 + (dhj_flux_hst_floor ? 3 : 0)
                       + (amh::split ? 12 : 8) + (hot_jupiter_param.roche ? 1 : 0)
-                      + 1;  // + Tdrag (relaxdrag-1101)
+                      + 1;  // + Tdrag
       if (amh::nst == 0 || nfh > NHISTORY_VARIABLES) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "problem/am_hst needs rk1/rk2/rk3 and at most "
@@ -323,7 +323,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // read before anything restart-sensitive: the outer BC needs it on restarts too
   bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",true);
   {
-    // proddef-1101 (USER): fresh-start default outflow1 (Caltech, all five planets); a
+    // (USER): fresh-start default outflow1 (Caltech, all five planets); a
     // restart whose input lacks the key keeps the old hse
     if (!pin->DoesParameterExist("problem","top_bc")) {
       recipe::Log(recipe::NewDefaults(pin) ? "problem/top_bc = outflow1 (default)"
@@ -358,7 +358,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         pmy_mesh_->pmb_pack->pmhd->diode_ox1 = true;
       }
     }
-    // ssbc-1111: <mhd>/top_bc_bt (see deep_hot_jupiter_rt.hpp).  prod-1114 (user 11-12):
+    // <mhd>/top_bc_bt (see deep_hot_jupiter_rt.hpp).  (user 11-12):
     // DEFAULT sourcesurface for MHD runs with an outflow top (problem/top_bc = outflow1 |
     // outflow0), recorded in the input (GetOrAdd); hydro runs and the hse top do not read
     // the key unless it is named (hydro unchanged; name zerograd for the old MHD top).
@@ -387,7 +387,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (dhj_top_bt == 1 && dhj_top_bc == 1) {
         pmy_mesh_->pmb_pack->pmhd->diode_ox1_btodd = true;
       }
-      // mhdtop-1112: charout, see deep_hot_jupiter_rt.hpp and MHD::diode_ox1_charout
+      // charout, see deep_hot_jupiter_rt.hpp and MHD::diode_ox1_charout
       if (dhj_top_bt == 2 && dhj_top_bc == 1) {
         pmy_mesh_->pmb_pack->pmhd->diode_ox1_charout = true;
       }
@@ -467,7 +467,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // cannot turn a working input into a startup fatal: it falls back to 0 with
   // ck_spherical off (plane-parallel: the two-pass sweep IS the exact form there) and at
   // ck_sweep_cache != 2 (the only setting the probe-free forms are instantiated at).
-  // Until defaults-0927 (2026-09-27) it also fell back to 0 under ck_implicit; tm is now
+  // Until (2026-09-27) it also fell back to 0 under ck_implicit; tm is now
   // the default there too (the T4 linear path needs it, tm carries its own tridiagonal
   // since phase T1), so an implicit input that does not name the key moves from the
   // four-pass to the tm form.  Set the line explicitly to override.
@@ -512,7 +512,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // two_stream_rt::ck_implicit and utils/two_stream_column_ck.hpp).  With it on the gas
   // receives exactly the converged flux divergence -- no relaxation factor, no rt_de_max
   // clip -- at ck_impl_maxit ck sweeps per RK stage instead of one; false = the
-  // semi-implicit per-cell apply.  DEFAULT TRUE for FRESH runs since defaults2-0927
+  // semi-implicit per-cell apply.  DEFAULT TRUE for FRESH runs
   // (user decision 09-27: the production scheme), and with it the T4 set, ck_impl_arat
   // 1e30 and ck_impl_nosync, whose defaults below are conditional on it.  The default
   // is conditioned on the switch's own refusal in two_stream_rt.hpp (rt_ck,
@@ -559,7 +559,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // at 10x and 100x the production dt; see utils/two_stream_column_ck.hpp.
   two_stream_rt::ck_impl_tau_min =
       pin->GetOrAddReal("problem","ck_impl_tau_min",0.0);
-  // defaults-0927: 1e30 (no two-level split) under ck_implicit -- arat 2 FAILED (9 of 10
+  // 1e30 (no two-level split) under ck_implicit -- arat 2 FAILED (9 of 10
   // ranks non-converged, README_T1_stall) and every T4/c2 run uses 1e30; 2.0 otherwise
   two_stream_rt::ck_impl_arat = pin->GetOrAddReal("problem","ck_impl_arat",
       two_stream_rt::ck_implicit ? 1.0e30 : 2.0);
@@ -590,7 +590,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddBoolean("problem","ck_impl_jreuse_xc",false);
   two_stream_rt::ck_impl_jreuse_act =
       pin->GetOrAddReal("problem","ck_impl_jreuse_act",0.25);
-  // layoutfix-1106: rank-independent pass control (two_stream_column_ck.hpp)
+  // rank-independent pass control (two_stream_column_ck.hpp)
   // USER 11-07 make some defaults: problem/ck_impl_global_ctl default true (false = old)
   two_stream_rt::ck_impl_global_ctl = pin->GetOrAddBoolean("problem","ck_impl_global_ctl",
                                                            true);
@@ -601,7 +601,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddReal("problem","ck_impl_pred_fac",0.5);
   two_stream_rt::ck_impl_pred_chk =
       pin->GetOrAddBoolean("problem","ck_impl_pred_chk",false);
-  // defaults-0927: on under ck_implicit (bitwise on CPU and GPU, -4.3 %/cycle)
+  // on under ck_implicit (bitwise on CPU and GPU, -4.3 %/cycle)
   two_stream_rt::ck_impl_nosync =
       pin->GetOrAddBoolean("problem","ck_impl_nosync",two_stream_rt::ck_implicit);
   two_stream_rt::ck_impl_warm_step =
@@ -629,7 +629,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // layer coefficients are stored as well as kappa rho (memory against expm1); and
   // ck_impl_warm starts the Newton from the previous call's converged increment.  See
   // utils/two_stream_column_ck.hpp.
-  // defaults-0927 (2026-09-27): the T4 set -- ck_impl_frozen_op, ck_impl_lin,
+  // (2026-09-27): the T4 set -- ck_impl_frozen_op, ck_impl_lin,
   // ck_impl_fuse, ck_impl_jac_lin, ck_impl_cvsec -- DEFAULTS ON under ck_implicit
   // wherever their own refusals are met (tm sweep on a spherical ck run, sweep cache 2,
   // no ck_impl_refresh_kappa, a double-precision chain, ck_impl_debug <= 0); they are
@@ -719,7 +719,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // solution, refresh, restart state and face-5 Newton defaults
   two_stream_rt::ck_vef_on = (two_stream_rt::ck_sph_face == 5 ||
                               two_stream_rt::ck_sph_face == 6);
-  // problem/ck_wall_flux_exact (wallfix-1002, see two_stream_rt::ck_wall_flux_exact):
+  // problem/ck_wall_flux_exact (see two_stream_rt::ck_wall_flux_exact):
   // the face 5 / 6 wall delivers sigma T_int^4 exactly (was 1.0718x).  Default true on a
   // fresh run; a restart whose input lacks the key keeps the old wall (one line).
   {const bool wnamed = pin->DoesParameterExist("problem","ck_wall_flux_exact");
@@ -786,7 +786,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_cvsec = pin->GetOrAddBoolean("problem","ck_impl_cvsec",
       t4def && two_stream_rt::ck_impl_fuse);
   // problem/ck_beam_par (ck-fast2 lever 3): the storing pass's pseudo-spherical beam in
-  // its own per-target kernels (see two_stream_rt::ck_beam_par).  defaults-0927: ON
+  // its own per-target kernels (see two_stream_rt::ck_beam_par).  ON
   // wherever its requirements (checked below) hold, off otherwise (ck-fast2: -25 % RT;
   // it differs from the in-kernel beam only by deposits below e^-60 of the beam).
   {const bool bpdef = two_stream_rt::ck_implicit && two_stream_rt::ck_impl_frozen_op &&
@@ -831,7 +831,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_aa_rst = pin->GetOrAddBoolean("problem","ck_impl_aa_rst",true);
   // problem/ck_impl_floorbound / ck_impl_kkt_demax: the Newton as a bound-constrained
   // solve (e >= e_floor; KKT cells on the floor / on the demax bound count as converged).
-  // See utils/two_stream_column_ck.hpp.  DEFAULT TRUE since defaults2-0927 on FRESH runs
+  // See utils/two_stream_column_ck.hpp.  DEFAULT TRUE since on FRESH runs
   // of the fused ck_implicit Newton (ck_implicit, ck_impl_fuse, ck_impl_debug <= 0,
   // ck_impl_glob = none, ck_impl_aa = 0: the only path they exist on); false elsewhere
   // and on restarts (a file that lacks the keys keeps the unconstrained Newton).  Where
@@ -1264,7 +1264,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // problem/ck_nquad: DEFAULT 2 (two-point Gauss) since defaults-0927 (2026-09-27; user
+  // problem/ck_nquad: DEFAULT 2 (two-point Gauss) since (2026-09-27; user
   // 09-25 "ck_nquad = 2 for dhj production": the exact diffusion limit, nquad 1 is ~10 %
   // low there; rms eint vs a tight reference 1.0e-2 vs 1.6e-2; +6 % ms/cycle at nx1 256).
   // 1 restores the diffusivity-factor form.  The value is recorded, so a restart keeps
@@ -1380,7 +1380,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   int n1m1 = indcs.nx1 + 2*ng - 1;
   int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
-    
+
   // enrol the per-cycle diagnostic. The RT array is sized on the first RT call (which
   // happens before the first hook call); the conduction one has to be sized here,
   // because Conduction was built by AddPhysics before this pgen ran.
@@ -1402,7 +1402,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // Select either Hydro or MHD
   DvceArray5D<Real> u0_;
   DvceArray5D<Real> w0_;
-    
+
   DvceArray4D<Real> phi0_x1f;
   DvceArray4D<Real> phi0_x2f;
   DvceArray4D<Real> phi0_x3f;
@@ -1412,7 +1412,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   DvceArray5D<Real> w0facewb_x1f;
   DvceArray5D<Real> w0facewb_x2f;
   DvceArray5D<Real> w0facewb_x3f;
-    
+
   auto &x1v_ = pmbp->pcoord->x1v;
   auto &x1f_ = pmbp->pcoord->xx1f;
   auto &x2v_ = pmbp->pcoord->x2v;
@@ -1467,14 +1467,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // well-balanced background arrays built here feed the static scheme directly.
   auto eos = (pmbp->phydro != nullptr) ? pmbp->phydro->peos->eos_data
                                        : pmbp->pmhd->peos->eos_data;
-    
+
 //  Real Teq = 1469.0;
 //  Real grav_acc = -942.0;
 //  Real ap = 9.44e9;
 //  Real omega = 2.06e-5;
 //  Real Rgas = 4.593e7;
 //  Real met = 0.0;
-    
+
     // This problem generator (and utils/two_stream_rt.hpp) reads every dimensional
     // <problem> key as CGS without conversion -- Teq [K], grav [cm/s^2], ap [cm], omega
     // [1/s], ck_pcut_bar with 1 bar = 1e6 code pressure, bbot_gauss via sqrt(4 pi) --
@@ -1533,7 +1533,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // the column, the ghosts and the well-balanced arrays (see TotPotAt / ZEffFromPot)
     const bool rot_potential = pin->GetOrAddBoolean("problem","rot_potential",false);
     const Real om2_ = rot_potential ? SQR(omega) : 0.0;
-    // roche-dhj-1031 problem/roche (default false: rgms_ = 0 and every TotPotAt below
+    // problem/roche (default false: rgms_ = 0 and every TotPotAt below
     // is the old one, bitwise).  The host star's tide as a POTENTIAL: TidePot (companion
     // + indirect term) joins TotPotAt wherever this function builds a potential -- the
     // equipotential IC (z_eff of Phi_tot), the ghosts, phicc0 and the phi0 faces, hence
@@ -1611,7 +1611,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // the gas above that level is not bound to the planet (WASP-121b production grid:
       // x1max = 0.66 r_L1 on the axis, yet the lobe's POLAR radius is ~0.64 r_L1, so the
       // top cells near the poles sit just outside the Roche lobe)
-      // topbc-1101: the AREA fraction of the top shell (r = x1max) on open
+      // the AREA fraction of the top shell (r = x1max) on open
       // equipotentials (Phi > Phi(L1)), the guide for problem/top_bc: 0 -> hse, the
       // top is inside the lobe; > 0 -> outflow1 (no hydrostatic state above Phi(L1))
       {
@@ -1637,7 +1637,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                     << std::endl;
         }
       }
-      // dhjwball-1106 problem/wb_lobe_cut (USER 11-06 "we should not use wb above the roche
+      // problem/wb_lobe_cut (USER 11-06 "we should not use wb above the roche
       // lobe"; opt-in here, default false = bitwise): every WB (x1 and x2/x3, face states
       // and force) off where Phi > Phi(L1): plain PLM, plain -rho grad Phi
       // USER 11-07 make some defaults: default true (false = old, no cap)
@@ -1663,12 +1663,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << "outside the planet's Roche lobe" << std::endl;
       }
     }
-    // roche-wbtan-1101 problem/roche_wb_tan (fresh default: proddef-1101 below; see
+    // problem/roche_wb_tan (fresh default: below; see
     // namespace wbtan): the tangential centrifugal (+ tidal, with problem/roche) force as
     // the hydro's own discrete residual of the equipotential equilibrium.  Works with
     // rot_potential alone (centrifugal only) or with roche.
-    // nowbtan-1104 (USER 11-04 "we should not use the tangential tide"): default FALSE
-    // again, fresh start and restart alike (proddef-1101 had made it the fresh default
+    // (USER 11-04 "we should not use the tangential tide"): default FALSE
+    // again, fresh start and restart alike (had made it the fresh default
     // with problem/roche): S_t = -(rho/rho_eq) R_t(W_eq) is wrong wherever the gas is not
     // the stored equilibrium (the accretor cold spot; on dhj 99.5 % of the top shell lies
     // on OPEN equipotentials).  Without the key the analytic tangential tide of
@@ -1682,7 +1682,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     } else {
       dhj_wbt.on = pin->GetBoolean("problem","roche_wb_tan");
     }
-    {  // dhjwball-1106 wb_dirs = all: the tangential potential force is AddWbGravity
+    {  // wb_dirs = all: the tangential potential force is AddWbGravity
       const bool wba = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_all :
                        ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_all : false);
       if (wba) {
@@ -1764,15 +1764,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
 
     Real iap = 1.0/ap;
-    
+
     Real grav = -grav_acc;
     Real Tirr = Teq*sqrt(2);
     Real Tint;
     get_Tint(Teq, Tint);
     Real mus = 1.0;
-    
+
     const int N = 10000;
-    // roche-dhj-1031: the column must reach the largest z_eff in the domain; the tide
+    // the column must reach the largest z_eff in the domain; the tide
     // RAISES Phi at the poles (and the terminator), past the 1.1 (r1 - r0) margin
     Real zcol_ = (r1-r0)*1.1;
     if (roche_on) {
@@ -1817,7 +1817,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     zarr.sync_device();
     logparr.modify_host();
     logparr.sync_device();
-    
+
     DualArray1D<Real> Tarr_init("Tarrinit", N);
     DualArray1D<Real> lgparr_init("lgparrinit", N);
     // problem/ic_profile: a tabulated T(p) in place of the picket fence (+ 0.9 nabla_ad
@@ -1829,7 +1829,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     } else {
       read_ic_profile(ic_prof, N, Tarr_init.h_view, lgparr_init.h_view);
     }
-    // problem/ic_adiabat_ext (default true; ic_profile only; w121hroche-1101): BELOW the
+    // problem/ic_adiabat_ext (default true; ic_profile only): BELOW the
     // table's bottom row T(p) continues along the ADIABAT through that row,
     // dln T/dln p = GradAd(p, T) of the deck's own EOS (general table: H2 dissociation,
     // ionization), integrated (RK4) over ic_adiabat_ext_dex decades (default 2) on
@@ -1857,12 +1857,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       lgparr_ext.modify_host();
       lgparr_ext.sync_device();
     }
-    
+
     Tarr_init.modify_host();
     Tarr_init.sync_device();
     lgparr_init.modify_host();
     lgparr_init.sync_device();
-    
+
 //    DvceArray1D<Real> zinitarr("zinitarr", N);
 //    DvceArray1D<Real> logpinitarr("logpinitarr", N);
     DualArray1D<Real> zarr_init("zarrinit", N);
@@ -1878,7 +1878,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real zg = (om2_ > 0.0) ?
           ZEffFromPot(grav_acc, ap, TotPotAt(grav_acc, ap, rg, rg - ap, grav_pmass, om2_,
                                              0.5*M_PI), grav_pmass) : (rg - ap);
-      // roche-dhj-1031: the lowest Phi on the deepest shell is on the substellar or the
+      // the lowest Phi on the deepest shell is on the substellar or the
       // antistellar point of the equator
       if (roche_on) {
         for (const Real ph : {0.0, M_PI}) {
@@ -1916,7 +1916,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << std::endl;
       }
     }
-    
+
     zarr_init.modify_host();
     zarr_init.sync_device();
     logparr_init.modify_host();
@@ -2004,7 +2004,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (!restart) {
     par_for("probini", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-        
+
       Real &x1min = size.d_view(m).x1min;
       Real &x1max = size.d_view(m).x1max;
       int nx1 = indcs.nx1;
@@ -2014,7 +2014,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real &x3min = size.d_view(m).x3min;
       Real &x3max = size.d_view(m).x3max;
       int nx3 = indcs.nx3;
-        
+
       Real x1v, x2v, x3v;
       if (use_spherical_polar) {
         x1v = x1v_(m,i);
@@ -2029,7 +2029,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       Real r = x1v;
       if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
-        
+
       Real lam, theta, phi;
       if (use_spherical_polar) {
         theta = x2v;
@@ -2042,7 +2042,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         lam = x2v*iap;
         phi = x1v*iap;
       }
-        
+
       Real pwb, denwb;
       // rot_potential: sample the column at the equivalent height of this cell's total
       // potential (barotropic in Phi_tot); otherwise at its geometric height
@@ -2052,7 +2052,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                om2_, theta, phi, rgms_, ra_),
                       grav_pmass) : x1v;
       get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,zs,denwb,pwb);
-        
+
       Real p, den;
       get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p,
                    ne_ext, Tarr_ext.d_view, lgparr_ext.d_view);
@@ -2067,7 +2067,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       u0_(m,IM2,k,j,i) = 0.0;
       u0_(m,IM3,k,j,i) = 0.0;
       u0_(m,IEN,k,j,i) = EintFromP(eos, igm1, den, p);
-        
+
       w0_(m,IDN,k,j,i) = den;
       w0_(m,IVX,k,j,i) = 0.0;
       w0_(m,IVY,k,j,i) = 0.0;   // was IVX three times; harmless, ConsToPrim rebuilt w0
@@ -2105,7 +2105,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         w0_(m,IVZ,k,j,i) = vu3;
         w0_(m,IEN,k,j,i) = eint0;
       }
-        
+
         Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
                               om2_, theta, phi, rgms_, ra_);
         if (use_etotgrav) {
@@ -2114,7 +2114,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     });
     }  // end of !restart guard on the initial condition
 
-    // roche-wbtan-1101: the equipotential equilibrium W_eq (rho, eint; v = 0) of EVERY
+    // the equipotential equilibrium W_eq (rho, eint; v = 0) of EVERY
     // cell incl. the ghosts, by the IC formula above (fresh start AND restart: the probe
     // in SourceFunc runs once per run segment)
     if (dhj_wbt.on) {
@@ -2154,7 +2154,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         weq_(m,1,k,j,i) = EintFromP(eos, igm1, den, p);
       });
       dhj_wbt.ready = false;
-      // wbtan-rstg-1101: a restart takes g_t from the file when it carries it
+      // a restart takes g_t from the file when it carries it
       if (restart) wbtan::LoadFromRestart(this, dhj_wbt, pmbp, "deep_hot_jupiter_rt");
       if (global_variable::my_rank == 0) {
         std::cout << "deep_hot_jupiter_rt: problem/roche_wb_tan ON: tangential "
@@ -2222,7 +2222,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
     par_for("probwb", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-        
+
         Real &x1min = size.d_view(m).x1min;
         Real &x1max = size.d_view(m).x1max;
         int nx1 = indcs.nx1;
@@ -2232,7 +2232,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         Real &x3min = size.d_view(m).x3min;
         Real &x3max = size.d_view(m).x3max;
         int nx3 = indcs.nx3;
-        
+
         Real x1v, x2v, x3v;
         if (use_spherical_polar) {
           x1v = x1v_(m,i);
@@ -2247,7 +2247,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
         Real r = x1v;
         if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
-          
+
         Real lam, theta, phi;
         if (use_spherical_polar) {
           theta = x2v;
@@ -2260,7 +2260,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           lam = x3v*iap;
           phi = x2v*iap;
         }
-          
+
         Real pwb, denwb;
         const Real zs = (om2_ > 0.0) ?
             ZEffFromPot(grav_acc, ap,
@@ -2268,7 +2268,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                  om2_, theta, phi, rgms_, ra_),
                         grav_pmass) : x1v;
         get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,zs,denwb,pwb);
-        
+
         Real p, den;
         get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p,
                    ne_ext, Tarr_ext.d_view, lgparr_ext.d_view);
@@ -2276,10 +2276,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 //        get_init_eos(zinitarr,logpinitarr,x1v,lam,phi,den,p);
 //        p = pwb;
 //        den = denwb;
-        
+
         Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
                               om2_, theta, phi, rgms_, ra_);
-        
+
       if (use_etotgrav || use_wellbalance_dynamic) {
           if (use_spherical_polar) {
             x1v = x1f_(m,i);
@@ -2333,7 +2333,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                om2_, theta, phi, rgms_, ra_);
               phi0_x1f(m,k,j,i+1) = phicc;
           }
-          
+
           if (use_spherical_polar) {
             x1v = x1v_(m,i);
             x2v = x2f_(m,j);
@@ -2382,7 +2382,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                om2_, theta, phi, rgms_, ra_);
               phi0_x2f(m,k,j+1,i) = phicc;
           }
-          
+
           if (use_spherical_polar) {
             x1v = x1v_(m,i);
             x2v = x2v_(m,j);
@@ -2468,7 +2468,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x1f(m,IM3,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IEN,k,j,i+1) = EintFromP(eos, igm1, denwb, pwb);
             }
-            
+
             if (use_spherical_polar) {
               x1v = x1v_(m,i);
               x2v = x2f_(m,j);
@@ -2494,7 +2494,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x2f(m,IM3,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IEN,k,j+1,i) = EintFromP(eos, igm1, denwb, pwb);
             }
-            
+
             if (use_spherical_polar) {
               x1v = x1v_(m,i);
               x2v = x2v_(m,j);
@@ -2522,7 +2522,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
         }
     });
-    // dhjwball-1106: "probwb" above fills the face potentials phi0.x1f/x2f/x3f on the ACTIVE
+    // "probwb" above fills the face potentials phi0.x1f/x2f/x3f on the ACTIVE
     // cells only; a walk in a ghost row (the x2/x3 caches of wb_dirs = all, which read
     // their own ghost rows and give a block's ghost copy of its neighbour's edge row) then
     // reads 0 there, and two blocks see different states on their common face: mass is not
@@ -2599,7 +2599,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
         par_for("wbgrav", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
         KOKKOS_LAMBDA(int m, int k, int j, int i) {
-            
+
             Real &x1min = size.d_view(m).x1min;
             Real &x1max = size.d_view(m).x1max;
             int nx1 = indcs.nx1;
@@ -2609,7 +2609,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             Real &x3min = size.d_view(m).x3min;
             Real &x3max = size.d_view(m).x3max;
             int nx3 = indcs.nx3;
-            
+
             Real x1v, x2v, x3v;
             if (use_spherical_polar) {
               x1v = x1v_(m,i);
@@ -2624,7 +2624,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
             Real r = x1v;
             if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
-              
+
             Real lam, theta, phi;
             if (use_spherical_polar) {
               theta = x2v;
@@ -2637,7 +2637,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               lam = x3v*iap;
               phi = x2v*iap;
             }
-            
+
             Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
                                   om2_, theta, phi, rgms_, ra_);
             phicc0(m,k,j,i) = phicc;
@@ -2683,7 +2683,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
         par_for("wbcc", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
         KOKKOS_LAMBDA(int m, int k, int j, int i) {
-            
+
           Real &x1min = size.d_view(m).x1min;
           Real &x1max = size.d_view(m).x1max;
           int nx1 = indcs.nx1;
@@ -2693,7 +2693,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           Real &x3min = size.d_view(m).x3min;
           Real &x3max = size.d_view(m).x3max;
           int nx3 = indcs.nx3;
-            
+
           Real x1v, x2v, x3v;
           if (use_spherical_polar) {
             x1v = x1v_(m,i);
@@ -2708,7 +2708,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           }
           Real r = x1v;
           if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
-            
+
           Real pwb, denwb;
           get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
           u0wb(m,IDN,k,j,i) = denwb;
@@ -2779,7 +2779,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             Real x1fr = x1f_(m,i+1);
             Real x2fr = x2f_(m,j+1);
             Real x3fr = x3f_(m,k+1);
-              
+
             Real A1 = 0.0;
             Real A2 = 0.0;
             Real A2ip = 0.0;
@@ -2793,7 +2793,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 //            Real A3ip = 0.5*bbot*x1fr*sin(x2fl);
 //            Real A3jp = 0.5*bbot*x1fl*sin(x2fr);
 //            Real A3ipjp = 0.5*bbot*x1fr*sin(x2fr);
-              
+
             b0.x1f(m,k,j,i) = (dxe3(m,k,j+1,i)*A3jp - dxe3(m,k,j,i)*A3)/area1(m,k,j,i) - (dxe2(m,k+1,j,i)*A2kp - dxe2(m,k,j,i)*A2)/area1(m,k,j,i);
             if ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) || (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je+1)) {
               b0.x2f(m,k,j,i) = - ((x1fr*(x3fr-x3fl))*A3ip - (x1fl*(x3fr-x3fl))*A3) / (0.5*(SQR(x1fr)-SQR(x1fl))*(x3fr-x3fl));
@@ -2812,7 +2812,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             if (i==n1m1) b0.x1f(m,k,j,i+1) = b0x1fip;
             if (j==n2m1) b0.x2f(m,k,j+1,i) = b0x2fjp;
             if (k==n3m1) b0.x3f(m,k+1,j,i) = b0x3fkp;
-              
+
             Real lw, rw;
             lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
             rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
@@ -2823,7 +2823,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
             rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
             bcc0(m,IBZ,k,j,i) = lw*b0.x3f(m,k,j,i) + rw*b0x3fkp;
-              
+
             u0_(m,IEN,k,j,i) += 0.5*(SQR(bcc0(m,IBX,k,j,i))+SQR(bcc0(m,IBY,k,j,i))+SQR(bcc0(m,IBZ,k,j,i)));
           } else if (use_cubed_sphere_) {
             // CUBED SPHERE.  The same dipole, built the same way: each face value is the

@@ -45,7 +45,7 @@ void PgenEarlyDefaults(ParameterInput *pin) {
   }
   // <fluid>/wellbalance_dynamic = true + wb_x1 = true + wb_option = polytropic (the x1
   // well-balanced reconstruction of every dhj production deck; old default off) on every
-  // dhj mesh (share-1104 G4: the K&M x1 scheme has no geometry restriction -- cubed
+  // dhj mesh (G4: the K&M x1 scheme has no geometry restriction -- cubed
   // sphere, spherical polar, and the Cartesian plane-parallel box with constant g, where
   // x1 is the height); each key only when not named, wb_option only when the scheme ends on
   if (fluid) {
@@ -62,7 +62,7 @@ void PgenEarlyDefaults(ParameterInput *pin) {
   // <fluid>/am_vector = true with problem/am_transport = false (the angular-momentum
   // vector form + spin reservoir, as every dhj production deck; the pgen correction must
   // be off with it, YieldToPgen FATAL otherwise).  Only as the PAIR, on the cubed sphere
-  // or the spherical-polar mesh (share-1104 G4; AmModule's own exclusion: 1-D sp; no
+  // or the spherical-polar mesh (G4; AmModule's own exclusion: 1-D sp; no
   // angular momentum on the Cartesian box), when
   // neither the fluid's AM keys nor problem/am_transport are named.
   if (fluid && !named(fb, "am_vector") && !named(fb, "am_transport") &&
@@ -97,9 +97,9 @@ void PgenEarlyDefaults(ParameterInput *pin) {
     pin->GetOrAddReal("mhd", "valfven_max_cgs", 2.0e6);
     Log("<mhd>/valfven_max_cgs = 2e6 (default on a fresh dhj MHD start)");
   }
-  // <hydro>/floor_tracer = true (defaults-1105, USER 11-05): the floor-mass tracer with its
+  // <hydro>/floor_tracer = true: the floor-mass tracer with its
   // drain, as the dhj MHD fresh default (mhd.cpp, with valfven_max_cgs), on the shared
-  // tracer layout (share-1104 P4) for a fresh dhj HYDRO start when not named.  Not passive:
+  // tracer layout (P4) for a fresh dhj HYDRO start when not named.  Not passive:
   // the drain removes floor-added mass (A/B: effect only below 1e-6 bar).
   if (fb == "hydro" && fluid && !named("hydro", "floor_tracer")) {
     pin->GetOrAddBoolean("hydro", "floor_tracer", true);
@@ -116,7 +116,7 @@ void PgenEarlyDefaults(ParameterInput *pin) {
     Log("<mhd>/use_rkg_sts = true (default with resistive dhj MHD on a fresh start)");
   }
   // <fluid>/wb_plm_range = true, wb_plm_smooth = true, top_ghost_prim_copy = true
-  // (wbplm-1103; USER 11-03) for the dhj well-balanced x1 PLM on the non-uniform x1 grid
+  // for the dhj well-balanced x1 PLM on the non-uniform x1 grid
   // (cubed sphere or spherical polar, wellbalance_dynamic + wb_x1, reconstruct plm) with the
   // outflow1 top (problem/top_bc outflow1, the fresh default; top_ghost_prim_copy acts
   // only there).  Not supported elsewhere (the keys FATAL off the non-uniform WB PLM):
