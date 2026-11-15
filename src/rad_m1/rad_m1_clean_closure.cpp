@@ -659,6 +659,92 @@ void RadiationM1::CleanFvSeams() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::CleanFvWallInit
+//! \brief clean_rays = fv | fv1: whether the low (side 0) or high (side 1) theta face of
+//! the mesh is a reflecting wall; at the first call the specular map of its walls
+//! (cln_fvwm, per MeshBlock and column k): each beam leaving through the wall goes into
+//! the incoming set direction nearest to its mirror image n - 2 (n . t) t about the
+//! wall's theta_hat t at the face centre; cln_fvwu holds |n . t|.
+
+bool RadiationM1::CleanFvWallInit(const int side) {
+  Mesh *pm = pmy_pack->pmesh;
+  if (pm->use_polar_boundary || pm->mesh_bcs[side ? BoundaryFace::outer_x2
+                                                  : BoundaryFace::inner_x2] !=
+      BoundaryFlag::reflect) {
+    return false;
+  }
+  if (cln_fvwm.extent_int(0) > 0) return true;
+  auto &indcs = pm->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack, n = vgd_n, c3 = cln_s.extent_int(2);
+  Kokkos::realloc(cln_fvwm, nmb, 2, c3, n);
+  Kokkos::realloc(cln_fvwu, nmb, 2, c3, n);
+  Kokkos::realloc(cln_fvw, nmb, 2, c3, cln_s.extent_int(4), n);
+  Kokkos::deep_copy(cln_fvw, 0.0);
+  auto m_h = Kokkos::create_mirror_view(cln_fvwm);
+  auto u_h = Kokkos::create_mirror_view(cln_fvwu);
+  auto d_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_dir);
+  auto t_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx2f);
+  auto p_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x3v);
+  for (int m = 0; m < nmb; ++m) {
+    for (int sd = 0; sd < 2; ++sd) {
+      const Real th = t_h(m, sd ? indcs.je + 1 : indcs.js), sgn = sd ? 1.0 : -1.0;
+      for (int k = 0; k < c3; ++k) {
+        const Real t[3] = {cos(th)*cos(p_h(m,k)), cos(th)*sin(p_h(m,k)), -sin(th)};
+        for (int d = 0; d < n; ++d) {
+          const Real nt = d_h(d,0)*t[0] + d_h(d,1)*t[1] + d_h(d,2)*t[2];
+          u_h(m,sd,k,d) = std::abs(nt);
+          m_h(m,sd,k,d) = -1;
+          if (!(sgn*nt > 0.0)) continue;
+          const Real v[3] = {d_h(d,0) - 2.0*nt*t[0], d_h(d,1) - 2.0*nt*t[1],
+                             d_h(d,2) - 2.0*nt*t[2]};
+          Real bd = -2.0;
+          for (int e = 0; e < n; ++e) {
+            const Real et = d_h(e,0)*t[0] + d_h(e,1)*t[1] + d_h(e,2)*t[2];
+            const Real dt = v[0]*d_h(e,0) + v[1]*d_h(e,1) + v[2]*d_h(e,2);
+            if (sgn*et < 0.0 && dt > bd) {bd = dt; m_h(m,sd,k,d) = e;}
+          }
+        }
+      }
+    }
+  }
+  Kokkos::deep_copy(cln_fvwm, m_h);
+  Kokkos::deep_copy(cln_fvwu, u_h);
+  return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFvWalls
+//! \brief the incoming intensities of the reflecting theta walls (cln_fvw) from the beams
+//! of the wall cells leaving through them: I(e) = sum_{d -> e} w_d |n_d . t| I_d /
+//! (w_e |n_e . t|), so that every wall face returns exactly the energy it receives
+
+void RadiationM1::CleanFvWalls() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int js = indcs.js, je = indcs.je, n = vgd_n;
+  CleanArgs x = CleanMakeArgs();
+  auto fi = cln_fvi;
+  auto fw = cln_fvw;
+  auto mp = cln_fvwm;
+  auto u = cln_fvwu;
+  auto dir_ = vgd_dir;
+  par_for("cln_fv_wall", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0, 1, indcs.ks,
+          indcs.ke, indcs.is, indcs.ie,
+  KOKKOS_LAMBDA(const int m, const int sd, const int k, const int i) {
+    const int jc = sd ? je : js;
+    if (!CleanBoundaryFace(x, 1, m, k, sd ? je + 1 : js, i)) return;
+    for (int e = 0; e < n; ++e) fw(m,sd,k,i,e) = 0.0;
+    for (int d = 0; d < n; ++d) {
+      const int e = mp(m,sd,k,d);
+      if (e >= 0) fw(m,sd,k,i,e) += dir_(d,3)*u(m,sd,k,d)*fi(m,d,k,jc,i);
+    }
+    for (int e = 0; e < n; ++e) {
+      const Real q = dir_(e,3)*u(m,sd,k,e);
+      fw(m,sd,k,i,e) = (q > 0.0) ? fw(m,sd,k,i,e)/q : 0.0;
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFvSweep
 //! \brief clean_rays = fv | fv1: the conservative formal solution on the vet_gd
 //! direction set (cln_fvi).  Per direction every face carries n . A_f times its upwind
@@ -670,7 +756,8 @@ void RadiationM1::CleanFvSeams() {
 //! the ghost exchange until the largest change is below 1e-13 of the largest intensity).
 //! With fv at most 8 passes per build (the slopes converge over the builds of a run).
 //! The inner face emits the sweep's emission (vet_bc_inner emit) or the S of the first
-//! cell, the top is vacuum, a physical theta or phi face is closed.
+//! cell, the top is vacuum, a reflecting theta wall is specular (CleanFvWalls), another
+//! physical theta or phi face is closed.
 
 void RadiationM1::CleanFvSweep() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -769,6 +856,8 @@ void RadiationM1::CleanFvSweep() {
   auto o_ = cln_fvo;
   auto fm = cln_fvm;
   const bool o2 = (cln_rfv == 2);
+  const bool wall[2] = {CleanFvWallInit(0), CleanFvWallInit(1)};
+  auto fw = cln_fvw;
   auto dir_ = vgd_dir;
   auto cw_ = vgd_cs;
   const bool emi = VetBcEmit();
@@ -796,7 +885,13 @@ void RadiationM1::CleanFvSweep() {
           // (2-D axisymmetric: the phi faces open, their neighbours the own cell)
           const bool ax = axi && dir == 2;
           const bool bdry = !ax && CleanBoundaryFace(x, dir, m, kf, jf, i_f);
-          if (bdry && dir != 0) continue;
+          // a reflecting theta wall: specular (its incoming beams from cln_fvw)
+          const int sw = (dir == 1 && bdry && wall[up]) ? up : -1;
+          if (bdry && dir != 0 && sw < 0) continue;
+          if (sw >= 0 && a < 0.0) {
+            in -= a*fw(m,sw,k,i,d);
+            continue;
+          }
           if (a >= 0.0) {
             out += a;
             cor += a*((ax ? CleanFvFaceAxi(fi, fm, o2, m, d, k, j, i, up, up)
@@ -818,6 +913,7 @@ void RadiationM1::CleanFvSweep() {
     }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(imax));
     CleanGhostFill(cln_fvi, 0, n);
     CleanFvSeams();
+    if (wall[0] || wall[1]) CleanFvWalls();
     if (CleanReduce(dmax, true) <= 1.0e-13*CleanReduce(imax, true)) break;
   }
 }
