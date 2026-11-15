@@ -661,7 +661,7 @@ Mesh::Mesh(ParameterInput *pin) :
     }
     if (use_polar_boundary &&
         (mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::polar ||
-         mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::polar)) {
+         mesh_bcs[BoundaryFace::outer_x2] != BoundaryFlag::polar)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "To use the polar boundary condition, both inner and "
                 << "outer x2 bcs must be polar" << std::endl;
