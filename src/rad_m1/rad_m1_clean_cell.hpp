@@ -576,7 +576,11 @@ Real CleanCellMilneWeight(const CleanArgs &x, const int dir, const int m, const 
 //! (whose incoming flux is the moment scheme's; with clean_bc = marshak A = q and th = 0
 //! in the denominator).  The stress is the kinetic one of the same half ranges,
 //! K+-_dd = E_f/6 +- 3y/8 (Eddington) and the rays' k+- E_f.  The E and stress rows take
-//! these with weight mu; the consistency bracket stays (only its divergence is defined).
+//! these with weight mu.  The E bracket of clean_consistency stays (only its divergence
+//! is defined).  With the conservative FV rays (clean_rays = fv1 | fv) the stress rows
+//! also replace the rays' kinetic flux of y and its bracket, which carry the rays' too
+//! bright sub-cell photosphere into y; the short-characteristics face fluxes are defined
+//! only up to a divergence-free part, so with them the y bracket stays.
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
@@ -627,8 +631,9 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
     const Real y0 = (a[0]*e0[0] - a[1]*e0[1] + (s[0] - cb)/x.c)/den;
     s[0] = (1.0 - mu)*s[0] + mu*(cb + x.c*y0);
     for (int b = 0; b < x.nf; ++b) {
-      s[1+b] += mu*x.c*(ks[0][b]*(e0[0] - r[0]*y0) + ks[1][b]*(e0[1] + r[1]*y0) +
-                        ((b == dir) ? q*y0 : 0.0));
+      const Real cy = (x.consist && x.fvrays) ? x.fc[dir](m,CLF_CB+1+b,k,j,i) : 0.0;
+      s[1+b] += mu*(x.c*(ks[0][b]*(e0[0] - r[0]*y0) + ks[1][b]*(e0[1] + r[1]*y0) +
+                         ((b == dir) ? q*y0 : 0.0)) - cy);
     }
     return;
   }
@@ -686,9 +691,13 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
     jl[0][c] *= 1.0 - mu;
     jr[0][c] *= 1.0 - mu;
   }
+  // with clean_consistency and FV rays the stress rows drop the rays' kinetic y flux too
+  const bool ky = x.consist && x.fvrays;
   for (int r = 1; r <= x.nf; ++r) {
-    jl[r][0] *= 1.0 - mu;
-    jr[r][0] *= 1.0 - mu;
+    for (int c = 0; c < (ky ? 4 : 1); ++c) {
+      jl[r][c] *= 1.0 - mu;
+      jr[r][c] *= 1.0 - mu;
+    }
   }
   for (int r = 0; r <= x.nf; ++r) {
     jl[r][0] += x.fc[dir](m,CLF_ML+1+r,k,j,i);
