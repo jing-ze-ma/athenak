@@ -475,8 +475,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   //    clean_closure = extrap(2) the stage-1 solve, whose state Y1 differs from
   //    U(t^{n+1}) at O(dt^2), takes the closure of its own first iterate once (pass 1):
   //    the extrapolated closure alone makes the step first order in time.  In the cell
-  //    layout a solution with cells E < 0 or |F| > c E switches their faces to the
-  //    low-order flux and is solved again (at most clean_maxpos times).
+  //    layout a solution with cells E < 0 switches their faces to the low-order flux
+  //    and is solved again (at most clean_maxpos times).
   const bool clos1 = (cln_extrap > 0) && (t2_solve == M1_T2S_STAGE1);
   const bool iterate = cln_feedback || (cell && cln_recon) || cln_closit || clos1;
   const bool lagged = (cell && cln_recon) || cln_closit || clos1;
@@ -607,8 +607,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // backward-Euler step by dt_retry)
   if (cell && cln_feedback && cln_neint > 0 && !t2stage && dtr_on) dtr_fail = true;
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
-    t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_poslim && cln_nnreal > 0) ||
-              (cell && cln_feedback && cln_neint > 0);
+    t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_feedback && cln_neint > 0);
   }
 
   // 6. clean_closure = extrap(2): ray moments of the new state.  The last solve of a
