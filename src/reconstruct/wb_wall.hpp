@@ -54,7 +54,8 @@ void WallCellX1(const bool inner, const int m, const int k, const int j, const i
   for (int c=0; c<3; ++c) {
     if (c == 0 && !wb_rho) continue;
     if (c == 2 && nder == 0) continue;
-    const WBVar wv = (c == 0) ? WBVar::wb_dens : ((c == 1) ? WBVar::wb_eint : WBVar::wb_pres);
+    const WBVar wv = (c == 0) ? WBVar::wb_dens :
+                     ((c == 1) ? WBVar::wb_eint : WBVar::wb_pres);
     Real bm, bmh, bc, bph, bp;
     WBReadCache(wbq, wv, m, k, j, ic, bm, bmh, bc, bph, bp);
     const int n = (c == 0) ? IDN : IEN;
@@ -63,10 +64,22 @@ void WallCellX1(const bool inner, const int m, const int k, const int j, const i
     Real fw, fo;
     if (inner) {
       if (!OneSided(bmh, bph, qc - bc, qn - bp, dn, hl, hr, fw, fo)) continue;
-      if (c == 2) {dr(IDPR,ic) = fw; dl(IDPR,ic+1) = fo;} else {wr(n,ic) = fw; wl(n,ic+1) = fo;}
+      if (c == 2) {
+        dr(IDPR,ic) = fw;
+        dl(IDPR,ic+1) = fo;
+      } else {
+        wr(n,ic) = fw;
+        wl(n,ic+1) = fo;
+      }
     } else {
       if (!OneSided(bph, bmh, qc - bc, qn - bm, dn, hr, hl, fw, fo)) continue;
-      if (c == 2) {dl(IDPR,ic+1) = fw; dr(IDPR,ic) = fo;} else {wl(n,ic+1) = fw; wr(n,ic) = fo;}
+      if (c == 2) {
+        dl(IDPR,ic+1) = fw;
+        dr(IDPR,ic) = fo;
+      } else {
+        wl(n,ic+1) = fw;
+        wr(n,ic) = fo;
+      }
     }
   }
 }
