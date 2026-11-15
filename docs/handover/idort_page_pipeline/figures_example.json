@@ -1,0 +1,77 @@
+{
+ "01_cb": {
+  "file": "01_cb.png",
+  "caption": "E maps (exact / PROD / J_sc) and per-row beam energy of the two crossing beams, PROD on 82275582 (BE-fallback rerun) (ring 4, 64x256, c dt/dx 256): median row energy 1.006 of exact, peak 0.417 E_b at y = 0.65, Picard 14.8 with 0 non-converged steps. Plotted runs: Viper 1fdbe56e CPU build (bitwise to 281dd686 there); the Raven 281dd686 rerun reproduces the metrics to print precision, only Picard / NC counts and round-off floors differ (Raven: Picard 33.3, 6 NC, floor 4e-19).",
+  "status": "ok"
+ },
+ "01_cb_sp": {
+  "file": null,
+  "caption": "Spherical counterpart T8 (vet_gd_beam injected beams) is parked and was not run in suiteF (see 27_pinc_sp for the production thermal channel beam).",
+  "status": "no data"
+ },
+ "05_hsphere": {
+  "file": "05_hsphere.png",
+  "caption": "Homogeneous cylinder (Cartesian analogue of the IDORT sphere), PROD on 563ab474: E, F and P_xx/E vs the exact ray solution; E L1 outside 1.4 %, F 1.1 % (256^2, Gauss 8x32), f_xx(0.5) 0.3331/0.3331; 512^2: E 1.6 %, F 1.4 %.",
+  "status": "ok"
+ },
+ "06_nlte": {
+  "file": "06_nlte.png",
+  "caption": "Non-LTE atmosphere E(tau) for eps = 1e-1 ... 1e-8, PROD on 563ab474, against the Eddington analytic solution: L1 1.11 % (eps 1e-1) ... 0.01 % (1e-8), E_top/ex 0.9994-1.0000.",
+  "status": "ok"
+ },
+ "07_shd": {
+  "file": "07_shd.png",
+  "caption": "Static shadow E maps (exact, PROD ring 12x2, J_sc, ring 36x2) and a cut at x = 0.4, PROD on 563ab474: suite L1 ? and umbra ? (fin3_1012 ana/out_281dd686 cart.txt); L1 of the plotted x = 0.4 cut 0.046.",
+  "status": "ok"
+ },
+ "09_sdif": {
+  "file": "09_sdif.png",
+  "caption": "Static diffusion of a Gaussian pulse, PROD on 82275582 (BE-fallback rerun), vs the analytic solution: L1 0.02 / 0.06 / 0.28 % at the three output times, peak 1.0001 of analytic.",
+  "status": "ok"
+ },
+ "10_ddf": {
+  "file": "10_ddf.png",
+  "caption": "Advected diffusing pulse (gas_feedback on), PROD on 563ab474: profiles vs the analytic moving Gaussian; at t = 16 peak 0.9700 of analytic, centroid offset -0.0001, D_eff/D 0.984.",
+  "status": "ok"
+ },
+ "13_eq1": {
+  "file": "13_eq1.png",
+  "caption": "Thermal relaxation from (T, E) = (1, 100), PROD on 563ab474: E and aT^4 vs the analytic ODE, final E 96.79505, T 3.13663 (target 96.795, 3.13663); max rel. error E 1.1e-06.",
+  "status": "ok"
+ },
+ "14_eq2": {
+  "file": "14_eq2.png",
+  "caption": "Thermal relaxation from (T, E) = (100, 1), PROD on 563ab474: final E 145.78780, T 3.47480 (target 145.788, 3.4747), final mean v -2.2e-22.",
+  "status": "ok"
+ },
+ "15_eq3t": {
+  "file": "15_eq3t.png",
+  "caption": "Moving equilibrium (v = 3, c = 10), PROD on 563ab474: final E 1.13260, v 2.95538, P_tot 3.000000 (exact 3).",
+  "status": "ok"
+ },
+ "18_shock": {
+  "file": "18_shock.png",
+  "caption": "Radiating shocks M = 1.2 / 2 / 3, PROD on 563ab474 (512 and 1024 cells) vs the IDORT Zenodo transport reference at 512 cells: M 1.2 (512) L1 rho / T_gas / T_rad 0.0003 / 0.0003 / 0.0003; M 2 (512) L1 rho / T_gas / T_rad 0.0003 / 0.0003 / 0.0004; M 2 (1024) L1 rho / T_gas / T_rad 0.0006 / 0.0008 / 0.0009; M 3 (512) L1 rho / T_gas / T_rad 0.0011 / 0.0017 / 0.0018; M 3 (1024) L1 rho / T_gas / T_rad 0.0010 / 0.0014 / 0.0016 (fin3_1012 ana/out_281dd686 cart.txt, shockcmp.py).",
+  "status": "ok"
+ },
+ "19_cloud": {
+  "file": "19_cloud.png",
+  "caption": "Irradiated cloud density at t = 0.06 / 0.10 / 0.16, PROD on 563ab474 with the IDORT beam (I = 1031.3 c a = 540 a T0^4 per beam): halo edge -0.208 / -0.280 / -0.392, dense (rho > 3) cloud -0.067..0.104 / -0.034..0.104 / 0.011..0.106, peak rho 36 / 40 / 33; IDORT snapshots (read off the PNGs on y = 0): halo -0.205 / -0.275 / -0.390, rho > 3 -0.065..0.105 / -0.035..0.105 / 0.015..0.105. Reproduces IDORT (qualitative test).",
+  "status": "ok"
+ },
+ "20_marsh": {
+  "file": "20_marsh.png",
+  "caption": "Marshak wave E profile, PROD on 563ab474 (c dt/dx 10) / 82275582 BE-fallback rerun (c dt/dx 1), vs the S_N reference: c dt/dx = 1 L1(E) 0.0137; c dt/dx = 10 L1(E) 0.0141.",
+  "status": "ok"
+ },
+ "21_pipe": {
+  "file": "21_pipe.png",
+  "caption": "Crooked pipe, PROD on 563ab474: T_gas map and probe histories; probes at t = 10.0: 0.469 / 0.428 / 0.386 / 0.343 / 0.275 keV (c dt/dx 220), c dt/dx 2200 within 0.3 %. Caveat (IN): the probe-5 arrival time t(T >= 0.5) is 4.20 / 3.31 (c dt/dx 220 / 2200) vs FIN2 3.81 / 3.71, so FIN3 is less dt-consistent than FIN2 there; PASS is on the end state with our own criterion.",
+  "status": "ok"
+ },
+ "30_g5": {
+  "file": "30_g5.png",
+  "caption": "G5 2-D pulse variance growth vs the exact moment solution, PROD on 563ab474 (PROD on 0197f020 for comparison): d sigma^2/dt / 2D = kappa 12.8: 0.999565, kappa 128: 0.999874, kappa 1280: 1.000000, kappa 12800: 1.000000.",
+  "status": "ok"
+ }
+}

@@ -1,0 +1,1475 @@
+{
+ "sections": [
+  {
+   "id": "s411",
+   "nav": "4.1.1 beams",
+   "title": "4.1.1 Crossing beams",
+   "ref": "cf. Ma+ Sect. 4.1.1, Fig. 2 (J21 4.2)",
+   "figs": [
+    [
+     "01_cb.png",
+     "cf. Ma+ Fig. 2: E maps (exact / PROD / formal solution) and beam energy per row vs exact; ring 4, 64x256, c dt/dx 256."
+    ]
+   ],
+   "text": "Two beams crossing in vacuum; the scheme must keep each beam narrow and its energy constant along the path.",
+   "tests": [
+    "Crossing beams"
+   ]
+  },
+  {
+   "id": "s412",
+   "nav": "4.1.2 sphere",
+   "title": "4.1.2 Homogeneous sphere",
+   "ref": "cf. Ma+ Sect. 4.1.2, Fig. 3 (J21 4.6)",
+   "figs": [
+    [
+     "05_hsphere.png",
+     "cf. Ma+ Fig. 3: E, F and P_xx/E vs the exact ray solution (Cartesian homogeneous cylinder)."
+    ]
+   ],
+   "text": "An emitting optically thick body in vacuum: interior equilibrium, 1/r^2 fall-off outside.",
+   "tests": [
+    "Homogeneous sphere"
+   ]
+  },
+  {
+   "id": "s413",
+   "nav": "4.1.3 NLTE",
+   "title": "4.1.3 Non-LTE scattering atmosphere",
+   "ref": "cf. Ma+ Sect. 4.1.3 (J21 4.5)",
+   "figs": [
+    [
+     "06_nlte.png",
+     "cf. Ma+ Sect. 4.1.3 figure: E(tau) for eps = 1e-1 ... 1e-8 vs the Eddington analytic solution."
+    ]
+   ],
+   "text": "Scattering atmosphere with thermalisation parameter eps.",
+   "tests": [
+    "Non-LTE"
+   ]
+  },
+  {
+   "id": "s414",
+   "nav": "4.1.4 shadow",
+   "title": "4.1.4 Static shadow",
+   "ref": "cf. Ma+ Sect. 4.1.4, Fig. 5 (J21 4.3)",
+   "figs": [
+    [
+     "07_shd.png",
+     "cf. Ma+ Fig. 5: E maps (exact, PROD, formal solution) and a cut at x = 0.4."
+    ]
+   ],
+   "text": "An opaque clump shadowing a beam.",
+   "tests": [
+    "shadow"
+   ]
+  },
+  {
+   "id": "s421",
+   "nav": "4.2.1 diffusion",
+   "title": "4.2.1 Dynamic diffusion",
+   "ref": "cf. Ma+ Sect. 4.2.1 (J21 4.4)",
+   "figs": [
+    [
+     "10_ddf.png",
+     "cf. Ma+ Sect. 4.2.1: advected diffusing pulse vs the analytic moving Gaussian, t = 16."
+    ]
+   ],
+   "text": "A radiation pulse advected by moving gas while it diffuses.",
+   "tests": [
+    "Dynamic diffusion"
+   ]
+  },
+  {
+   "id": "s422",
+   "nav": "4.2.2 bubbles",
+   "title": "4.2.2 Multi-source bubbles",
+   "ref": "cf. Ma+ Sect. 4.2.2, Fig. 7",
+   "figs": [],
+   "text": "EXCLUDED from the suite by user decision (2026-10-13); not rerun."
+  },
+  {
+   "id": "s431",
+   "nav": "4.3.1 equilibrium",
+   "title": "4.3.1 Thermal equilibrium",
+   "ref": "cf. Ma+ Sect. 4.3.1, Fig. 8 (J21 4.1)",
+   "figs": [
+    [
+     "13_eq1.png",
+     "cf. Ma+ Fig. 8, case 1: (T, E) = (1, 100) relaxation vs the ODE."
+    ],
+    [
+     "14_eq2.png",
+     "cf. Ma+ Fig. 8, case 2: (T, E) = (100, 1)."
+    ]
+   ],
+   "text": "Gas-radiation energy exchange in a uniform medium at rest.",
+   "tests": [
+    "Thermal equilibrium 1"
+   ]
+  },
+  {
+   "id": "s432",
+   "nav": "4.3.2 linear waves",
+   "title": "4.3.2 Linear radiation-modified acoustic waves (second-order convergence)",
+   "ref": "cf. Ma+ Sect. 4.3.2",
+   "figs": [
+    [
+     "conv_rw_P001.png",
+     "cf. Ma+ Sect. 4.3.2, gas-dominated case: L1 error of rho (top) and E (bottom) after one period vs the exact damped eigenmode, N = 16-256 cells per wavelength, nt = 2N steps per period (dt ~ dx), tau_lambda = 0.01 / 1 / 100. PROD 1-D (Cartesian vet_sc) and PROD 2-D diagonal wave. Dashed: slope 2; p = order of the finest pair."
+    ],
+    [
+     "conv_rw_P10.png",
+     "cf. Ma+ Sect. 4.3.2, radiation-dominated case: as above."
+    ],
+    [
+     "conv_rw_ordermap.png",
+     "Extended grid: finest-pair order (N 128 -> 256) of rho and E for every (P_rad/P_gas, tau_lambda); green = second order."
+    ],
+    [
+     "conv_rw_grid.png",
+     "Extended grid: L1 error vs N for each combination (rho circles, E triangles); dashed slope 2."
+    ]
+   ],
+   "text": "Second order in rho in all six 1-D regimes; the 2-D diagonal wave E at P 3.3e-3, tau 1 is 1.31 (see the flags). Extended grid (10-21, production method, binary 4de8168d, x1, N 16-256, dt ~ dx): P_rad/P_gas 3.3e-3 - 3.33 x tau 0.01 - 1000. rho is second order except P 3.33 tau 10 (1.12). E LOSES ORDER IN THE THIN REGIME: finest-pair 0.66 / 0.66 / 0.76 at tau 0.01 and 1.55 / 1.58 at tau 0.1 (P <= 0.33); P 3.33 tau 10 E 1.37. P_rad/P_gas 33 is omitted: with c_light = 10 it has E/(rho c^2) = 1, outside the Newtonian regime of the test (the conservative2 write-back loop under time2_vstage diverges there).",
+   "tests": []
+  },
+  {
+   "id": "s433",
+   "nav": "4.3.3 shocks",
+   "title": "4.3.3 Radiating shocks",
+   "ref": "cf. Ma+ Sect. 4.3.3 (J21 4.8, JSD12 6.2)",
+   "figs": [
+    [
+     "18_shock.png",
+     "cf. Ma+ Sect. 4.3.3: rho, T_gas, T_rad profiles of the M = 1.2 / 2 / 3 shocks vs the IDORT transport reference."
+    ]
+   ],
+   "text": "Sub-critical radiating shocks with a radiative precursor.",
+   "tests": [
+    "Radiation shocks"
+   ]
+  },
+  {
+   "id": "s434",
+   "nav": "4.3.4 cloud",
+   "title": "4.3.4 Irradiated cloud",
+   "ref": "cf. Ma+ Sect. 4.3.4, Fig. 14 (J21 Fig. 5)",
+   "figs": [
+    [
+     "19_cloud.png",
+     "cf. Ma+ Fig. 14: density of the irradiated cloud at t = 0.06 / 0.10 / 0.16 with the IDORT beam."
+    ]
+   ],
+   "text": "A dense cloud ablated by a strong beam (RHD).",
+   "tests": [
+    "Irradiated cloud"
+   ]
+  }
+ ],
+ "diag": [
+  [
+   "all suite run dirs (PROD arm p/; p_563/ = the 563ab474 attempt of the rerun rows)",
+   "/raven/ptmp/jinma/idort1020/runs"
+  ],
+  [
+   "IDORT-row evaluations (eq, shocks, sp xord/tord/exact/lr)",
+   "/raven/ptmp/jinma/idort1020/eval/out_p"
+  ],
+  [
+   "Cartesian radwave runs",
+   "/raven/ptmp/jinma/idort1020/rw/runs"
+  ],
+  [
+   "cs/sp diffusion-mode runs",
+   "/raven/ptmp/jinma/idort1020/cs/runs"
+  ],
+  [
+   "convergence data (json)",
+   "/raven/ptmp/jinma/idort1020/page/{rwconv,spxconv,csconv,ladconv,conv_rows}.json"
+  ],
+  [
+   "time2_reject = retry non-admissible stage diagnostic (dbg_t2_admiss, ss/n32)",
+   "/raven/ptmp/jinma/idort1020/diag/ss32"
+  ]
+ ],
+ "lede": "IDORT paper tests only (Ma, Pakmor, Justham & de Mink 2025, arXiv 2503.16627, Sect. 4), rerun with the updated production keys (RSG deck of 2026-10-20: vet_source = relaxed_esc, implicit_am_cs, time2_reject = retry with dt_retry) on the train-tip binary 563ab474, Cartesian vet_sc, PROD arm only. Jiang-only tests, spherical / cubed-sphere counterparts and ladders are not shown.",
+ "meta": {
+  "binary": "athena_cpu_563ab474 (plain CPU, md5 0c9cbaca), /raven/ptmp/jinma/amdef_1019/bin; rerun rows: athena_cpu_82275582 (md5 c55079c1, train 82275582 = + t2befb-1020 BE fallback in time2_reject = retry)",
+  "commit": "prodmerge-1019b train tip 563ab474 (5864f189 + aaa01b3f relaxed_esc + 2506e3b8 time2_reject retry + ee24be34 relaxed_esc T* fix)",
+  "built": "2026-10-20 12:18 CEST (gcc 13.3 + openmpi 5.0, Release, Kokkos OpenMP)",
+  "runs": "/raven/ptmp/jinma/idort1020 (runs/, rw/, cs/, eval/); Raven CPU, 2026-10-20",
+  "arm": "p = deck <- args <- PROD keys (all in the deck, no command-line keys)"
+ },
+ "conv_note": "Order = log2 of successive L1 errors (finest pair decides PASS >= 1.8 / FLAG). Radwave errors are vs the exact eigenmode; sp, cs and ladder errors are self-convergence differences (restricted fine - coarse).",
+ "conv_figs": [
+  {
+   "file": "conv_rw_cart.png",
+   "caption": "Cartesian vet_sc radiation-modified acoustic wave, L1(rho) vs the exact damped eigenmode after one period, N 16-256 with nt = 2N (dt ~ dx), 6 regimes; PROD. Dashed: slope 2."
+  },
+  {
+   "file": "conv_rw_cart_E.png",
+   "caption": "Same, L1(E)."
+  },
+  {
+   "file": "conv_sp.png",
+   "caption": "sp wedge (vet_col + vet_gd, production closure) linear-mode ladders, 4-5 levels: rsw/rswt (+ moving shell, + user-approved deck _F), fixed dt (X) and dt ~ dx (_C), lateral waves (16-256), grey atmosphere, and the rswt dt-only sweep. PROD."
+  },
+  {
+   "file": "conv_cs.png",
+   "caption": "Cubed sphere and sp: radiation diffusion mode l = 2 (thick; atmosphere tau 20 with Marshak top; Eddington reference), space (N 8-64 panel cells, dt ~ dx) and time (N 16, dt/q), error classes all / seam / vertex on cs."
+  },
+  {
+   "file": "conv_lad_cart.png",
+   "caption": "Cartesian suite ladders (rw_*, pulse_k*): X (space, fixed dt), C (dt ~ dx), T (dt refinement); PROD."
+  }
+ ],
+ "conv_table": [
+  {
+   "case": "radwave x1 (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.3e-3, tau 0.01",
+   "var": "rho",
+   "N": "16 32 64 128 256 (dt ~ dx)",
+   "err": "9.51e-02 3.80e-02 1.06e-02 2.79e-03 7.02e-04 (vs exact)",
+   "pairs": "1.32 1.84 1.93 1.99",
+   "fit": "1.79",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave x1 (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.3e-3, tau 0.01",
+   "var": "E",
+   "N": "16 32 64 128 256 (dt ~ dx)",
+   "err": "6.07e-02 1.27e-02 3.96e-03 1.20e-03 7.60e-04 (vs exact)",
+   "pairs": "2.26 1.68 1.72 0.66",
+   "fit": "1.60",
+   "status": "FLAG",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave x1 (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.3e-3, tau 1",
+   "var": "rho",
+   "N": "16 32 64 128 256 (dt ~ dx)",
+   "err": "9.23e-02 3.66e-02 1.02e-02 2.58e-03 6.24e-04 (vs exact)",
+   "pairs": "1.34 1.84 1.98 2.05",
+   "fit": "1.82",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave x1 (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.3e-3, tau 1",
+   "var": "E",
+   "N": "16 32 64 128 256 (dt ~ dx)",
+   "err": "8.01e-02 1.89e-02 4.54e-03 1.11e-03 2.79e-04 (vs exact)",
+   "pairs": "2.08 2.06 2.03 1.99",
+   "fit": "2.04",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave x1 (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.3e-3, tau 100",
+   "var": "rho",
+   "N": "16 32 64 128 256 (dt ~ dx)",
+   "err": "9.38e-02 3.67e-02 1.00e-02 2.48e-03 5.72e-04 (vs exact)",
+   "pairs": "1.35 1.87 2.02 2.11",
+   "fit": "1.86",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave x1 (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.3e-3, tau 100",
+   "var": "E",
+   "N": "16 32 64 128 256 (dt ~ dx)",
+   "err": "9.31e-02 3.64e-02 9.80e-03 2.37e-03 5.31e-04 (vs exact)",
+   "pairs": "1.36 1.89 2.05 2.16",
+   "fit": "1.88",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave x1 (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.33, tau 0.01",
+   "var": "rho",
+   "N": "16 32 64 128 256 (dt ~ dx)",
+   "err": "6.10e-02 2.11e-02 5.37e-03 1.24e-03 2.72e-04 (vs exact)",
+   "pairs": "1.53 1.98 2.11 2.19",
+   "fit": "1.97",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave x1 (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.33, tau 0.01",
+   "var": "E",
+   "N": "16 32 64 128 256 (dt ~ dx)",
+   "err": "2.99e-02 1.43e-02 5.13e-03 1.35e-03 3.70e-04 (vs exact)",
+   "pairs": "1.06 1.48 1.93 1.86",
+   "fit": "1.61",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave x1 (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.33, tau 1",
+   "var": "rho",
+   "N": "16 32 64 128 256 (dt ~ dx)",
+   "err": "3.54e-02 1.14e-02 2.59e-03 5.70e-04 1.51e-04 (vs exact)",
+   "pairs": "1.63 2.14 2.19 1.92",
+   "fit": "2.01",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave x1 (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.33, tau 1",
+   "var": "E",
+   "N": "16 32 64 128 256 (dt ~ dx)",
+   "err": "3.36e-02 5.33e-03 1.67e-03 4.82e-04 1.33e-04 (vs exact)",
+   "pairs": "2.66 1.67 1.79 1.85",
+   "fit": "1.94",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave x1 (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.33, tau 100",
+   "var": "rho",
+   "N": "16 32 64 128 256 (dt ~ dx)",
+   "err": "6.15e-02 1.55e-02 3.79e-03 9.30e-04 2.29e-04 (vs exact)",
+   "pairs": "1.99 2.03 2.03 2.02",
+   "fit": "2.02",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave x1 (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.33, tau 100",
+   "var": "E",
+   "N": "16 32 64 128 256 (dt ~ dx)",
+   "err": "6.90e-02 1.71e-02 4.12e-03 9.93e-04 2.47e-04 (vs exact)",
+   "pairs": "2.01 2.05 2.05 2.01",
+   "fit": "2.04",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave xy (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.3e-3, tau 1",
+   "var": "rho",
+   "N": "16 32 64 128 (dt ~ dx)",
+   "err": "9.82e-02 3.63e-02 1.04e-02 2.64e-03 (vs exact)",
+   "pairs": "1.44 1.80 1.98",
+   "fit": "1.75",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave xy (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.3e-3, tau 1",
+   "var": "E",
+   "N": "16 32 64 128 (dt ~ dx)",
+   "err": "1.43e-01 3.40e-02 1.11e-02 4.46e-03 (vs exact)",
+   "pairs": "2.08 1.62 1.31",
+   "fit": "1.66",
+   "status": "FLAG",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave xy (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.3e-3, tau 100",
+   "var": "rho",
+   "N": "16 32 64 128 (dt ~ dx)",
+   "err": "9.88e-02 3.62e-02 1.02e-02 2.51e-03 (vs exact)",
+   "pairs": "1.45 1.83 2.03",
+   "fit": "1.77",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave xy (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.3e-3, tau 100",
+   "var": "E",
+   "N": "16 32 64 128 (dt ~ dx)",
+   "err": "9.80e-02 3.58e-02 9.98e-03 2.40e-03 (vs exact)",
+   "pairs": "1.45 1.84 2.06",
+   "fit": "1.79",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave xy (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.33, tau 1",
+   "var": "rho",
+   "N": "16 32 64 128 (dt ~ dx)",
+   "err": "3.42e-02 1.08e-02 2.52e-03 5.68e-04 (vs exact)",
+   "pairs": "1.66 2.11 2.15",
+   "fit": "1.98",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave xy (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.33, tau 1",
+   "var": "E",
+   "N": "16 32 64 128 (dt ~ dx)",
+   "err": "4.49e-02 6.77e-03 1.75e-03 4.87e-04 (vs exact)",
+   "pairs": "2.73 1.95 1.84",
+   "fit": "2.15",
+   "status": "PASS",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave xy (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.33, tau 100",
+   "var": "rho",
+   "N": "16 32 64 128 (dt ~ dx)",
+   "err": "6.34e-02 1.82e-02 5.39e-03 1.57e-03 (vs exact)",
+   "pairs": "1.80 1.76 1.78",
+   "fit": "1.78",
+   "status": "FLAG",
+   "arm": "PROD19"
+  },
+  {
+   "case": "radwave xy (PROD)",
+   "geom": "Cartesian vet_sc",
+   "regime": "P_rad/P_gas 3.33, tau 100",
+   "var": "E",
+   "N": "16 32 64 128 (dt ~ dx)",
+   "err": "7.04e-02 1.98e-02 5.59e-03 1.58e-03 (vs exact)",
+   "pairs": "1.83 1.82 1.82",
+   "fit": "1.82",
+   "status": "PASS",
+   "arm": "PROD19"
+  }
+ ],
+ "flags": [
+  {
+   "title": "Cartesian radwave 2-D (xy) P 3.3e-3 tau 1: E finest pair 1.31",
+   "text": "Spatial (10-19 dt-only / space-only sweeps); rho is 1.98. 2-D only (x1 is 2.0)."
+  }
+ ],
+ "summary": [
+  {
+   "test": "Crossing beams r4/r12/c0.5/c32 (IDORT 4.1.1)",
+   "geom": "Cartesian",
+   "metric": "median row energy / peak at y 0.65",
+   "value": "r4 1.006/0.417 (Picard 14.8, 0 NC, 4 dt retries), r12 1.006/0.417 (3 retries) on 82275582 (BE-fallback rerun); c0.5 1.006/0.417 on 563ab474. c32 on 563ab474 (non-FATAL, 6 time2_reject retries at cycle 1, deck nlim 24): 0.002/0.000 because the cut dt (1.9e-5) leaves no time for the beams to cross; the same deck on 82275582 (diag/cbc32_fb): 0.996/0.377",
+   "ref": "row >= 0.9, peak >= 0.3 E_b",
+   "verdict": "OPEN (c32 on 563ab474)",
+   "v10": ""
+  },
+  {
+   "test": "Crossing beams 4x resolution (r4n4x, 256x1024)",
+   "geom": "Cartesian",
+   "metric": "median row energy / peak",
+   "value": "0.834 / 0.465 with PROD on 82275582 (BE-fallback rerun; Picard 4.4, max 29, 8 dt retries); 10-19 PROD 0.878 / 0.512 (tolerance group)",
+   "ref": "row >= 0.9, peak >= 0.3 E_b",
+   "verdict": "FAIL",
+   "v10": ""
+  },
+  {
+   "test": "Crossing beams, Gauss 8x32 (cbg)",
+   "geom": "Cartesian",
+   "metric": "row energy",
+   "value": "FATAL on 82275582 (BE-fallback rerun): cycle 12, the backward-Euler redo does not converge (Picard resid 8.5e17 after 200 passes), dt_retry exhausted (14 retries); 563ab474: FATAL at cycle 1 (time2_reject = retry, no fallback)",
+   "ref": "completes; judge vs J_sc",
+   "verdict": "FAIL",
+   "v10": ""
+  },
+  {
+   "test": "Crossing beams cbh variant",
+   "geom": "Cartesian",
+   "metric": "row / peak, cost",
+   "value": "FATAL on 82275582 (BE-fallback rerun): cycle 1, BE redo Picard resid 1.3e23 (resid > implicit_resid_fatal) alternating with time2_reject, dt_retry_max 8 exhausted after 9585 s; 563ab474: FATAL at cycle 1",
+   "ref": "completes; row >= 0.9",
+   "verdict": "FAIL",
+   "v10": ""
+  },
+  {
+   "test": "Homogeneous sphere/cylinder",
+   "geom": "Cartesian",
+   "metric": "E, F outside",
+   "value": "E L1 1.4 %, F 1.1 % (256^2); f_xx(0.5) 0.3331",
+   "ref": "within 10 %",
+   "verdict": "PASS",
+   "v10": ""
+  },
+  {
+   "test": "Non-LTE scattering atmosphere",
+   "geom": "Cartesian",
+   "metric": "L1 vs Eddington analytic",
+   "value": "1.11 % (eps 1e-1) ... 0.01 % (1e-8)",
+   "ref": "L1 <= 2 %",
+   "verdict": "PASS",
+   "v10": ""
+  },
+  {
+   "test": "Static shadow ring 12x2 / Gauss (shd, shdg)",
+   "geom": "Cartesian",
+   "metric": "L1 of x = 0.4 cut",
+   "value": "0.046 / 0.137 (plotted cut)",
+   "ref": "L1 <= 2 % (suite metric)",
+   "verdict": "OPEN",
+   "v10": ""
+  },
+  {
+   "test": "Dynamic diffusion ddf / ddn",
+   "geom": "Cartesian",
+   "metric": "peak, centroid, D_eff",
+   "value": "ddf peak 0.970, D_eff/D 0.984; ddn 0.998, 1.001",
+   "ref": "peak within 5 %",
+   "verdict": "PASS",
+   "v10": ""
+  },
+  {
+   "test": "Thermal equilibrium 1 / 2",
+   "geom": "Cartesian",
+   "metric": "final E, T",
+   "value": "E 96.79505 T 3.13663 / E 145.78780 T 3.47480",
+   "ref": "targets",
+   "verdict": "PASS",
+   "v10": ""
+  },
+  {
+   "test": "Radiation shocks M 1.2 / 2 / 3",
+   "geom": "Cartesian",
+   "metric": "L1 rho/Tg/Tr vs IDORT transport",
+   "value": "M1.2 0.0003; M2 (512) 0.0003-0.0004, (1024) 0.0006-0.0009; M3 0.0010-0.0018",
+   "ref": "L1 <= 2 %",
+   "verdict": "PASS",
+   "v10": ""
+  },
+  {
+   "test": "Irradiated cloud (IDORT beam)",
+   "geom": "Cartesian",
+   "metric": "halo edge, dense cloud",
+   "value": "halo -0.208/-0.280/-0.392, cloud -0.067..0.104 / ...",
+   "ref": "qualitative vs IDORT",
+   "verdict": "PASS",
+   "v10": ""
+  }
+ ],
+ "summary_note": "PROD = the suite decks with every <rad_m1> method key and the <time> dt_retry keys of the production RSG cs deck (rsg_g25_1019/prod/R2/rsg_E_start1020r.athinput) set (keys table below), plus <hydro> am_transport on cs / multi-D sp decks and <mesh> cs_seam_flux = shared on cs decks. Single arm, one binary (rows rerun on the BE-fallback bin say so). Verdicts use the v10 criteria.",
+ "other_note": "",
+ "other": [
+  {
+   "title": "01_cb",
+   "file": "01_cb.png",
+   "caption": "E maps (exact / PROD / J_sc) and per-row beam energy of the two crossing beams, PROD on 82275582 (BE-fallback rerun) (ring 4, 64x256, c dt/dx 256): median row energy 1.006 of exact, peak 0.417 E_b at y = 0.65, Picard 14.8 with 0 non-converged steps. Plotted runs: Viper 1fdbe56e CPU build (bitwise to 281dd686 there); the Raven 281dd686 rerun reproduces the metrics to print precision, only Picard / NC counts and round-off floors differ (Raven: Picard 33.3, 6 NC, floor 4e-19)."
+  },
+  {
+   "title": "05_hsphere",
+   "file": "05_hsphere.png",
+   "caption": "Homogeneous cylinder (Cartesian analogue of the IDORT sphere), PROD on 563ab474: E, F and P_xx/E vs the exact ray solution; E L1 outside 1.4 %, F 1.1 % (256^2, Gauss 8x32), f_xx(0.5) 0.3331/0.3331; 512^2: E 1.6 %, F 1.4 %."
+  },
+  {
+   "title": "06_nlte",
+   "file": "06_nlte.png",
+   "caption": "Non-LTE atmosphere E(tau) for eps = 1e-1 ... 1e-8, PROD on 563ab474, against the Eddington analytic solution: L1 1.11 % (eps 1e-1) ... 0.01 % (1e-8), E_top/ex 0.9994-1.0000."
+  },
+  {
+   "title": "07_shd",
+   "file": "07_shd.png",
+   "caption": "Static shadow E maps (exact, PROD ring 12x2, J_sc, ring 36x2) and a cut at x = 0.4, PROD on 563ab474:  L1 of the plotted x = 0.4 cut 0.046."
+  },
+  {
+   "title": "09_sdif",
+   "file": "09_sdif.png",
+   "caption": "Static diffusion of a Gaussian pulse, PROD on 82275582 (BE-fallback rerun), vs the analytic solution: L1 0.02 / 0.06 / 0.28 % at the three output times, peak 1.0001 of analytic."
+  },
+  {
+   "title": "10_ddf",
+   "file": "10_ddf.png",
+   "caption": "Advected diffusing pulse (gas_feedback on), PROD on 563ab474: profiles vs the analytic moving Gaussian; at t = 16 peak 0.9700 of analytic, centroid offset -0.0001, D_eff/D 0.984."
+  },
+  {
+   "title": "13_eq1",
+   "file": "13_eq1.png",
+   "caption": "Thermal relaxation from (T, E) = (1, 100), PROD on 563ab474: E and aT^4 vs the analytic ODE, final E 96.79505, T 3.13663 (target 96.795, 3.13663); max rel. error E 1.1e-06."
+  },
+  {
+   "title": "14_eq2",
+   "file": "14_eq2.png",
+   "caption": "Thermal relaxation from (T, E) = (100, 1), PROD on 563ab474: final E 145.78780, T 3.47480 (target 145.788, 3.4747), final mean v -2.2e-22."
+  },
+  {
+   "title": "15_eq3t",
+   "file": "15_eq3t.png",
+   "caption": "Moving equilibrium (v = 3, c = 10), PROD on 563ab474: final E 1.13260, v 2.95538, P_tot 3.000000 (exact 3)."
+  },
+  {
+   "title": "18_shock",
+   "file": "18_shock.png",
+   "caption": "Radiating shocks M = 1.2 / 2 / 3, PROD on 563ab474 (512 and 1024 cells) vs the IDORT Zenodo transport reference at 512 cells: M 1.2 (512) L1 rho / T_gas / T_rad 0.0003 / 0.0003 / 0.0003; M 2 (512) L1 rho / T_gas / T_rad 0.0003 / 0.0003 / 0.0004; M 2 (1024) L1 rho / T_gas / T_rad 0.0006 / 0.0008 / 0.0009; M 3 (512) L1 rho / T_gas / T_rad 0.0011 / 0.0017 / 0.0018; M 3 (1024) L1 rho / T_gas / T_rad 0.0010 / 0.0014 / 0.0016 (fin3_1012 ana/out_281dd686 cart.txt, shockcmp.py)."
+  },
+  {
+   "title": "19_cloud",
+   "file": "19_cloud.png",
+   "caption": "Irradiated cloud density at t = 0.06 / 0.10 / 0.16, PROD on 563ab474 with the IDORT beam (I = 1031.3 c a = 540 a T0^4 per beam): halo edge -0.208 / -0.280 / -0.392, dense (rho > 3) cloud -0.067..0.104 / -0.034..0.104 / 0.011..0.106, peak rho 36 / 40 / 33; IDORT snapshots (read off the PNGs on y = 0): halo -0.205 / -0.275 / -0.390, rho > 3 -0.065..0.105 / -0.035..0.105 / 0.015..0.105. Reproduces IDORT (qualitative test)."
+  },
+  {
+   "title": "20_marsh",
+   "file": "20_marsh.png",
+   "caption": "Marshak wave E profile, PROD on 563ab474 (c dt/dx 10) / 82275582 BE-fallback rerun (c dt/dx 1), vs the S_N reference: c dt/dx = 1 L1(E) 0.0137; c dt/dx = 10 L1(E) 0.0141."
+  },
+  {
+   "title": "21_pipe",
+   "file": "21_pipe.png",
+   "caption": "Crooked pipe, PROD on 563ab474: T_gas map and probe histories; probes at t = 10.0: 0.469 / 0.428 / 0.386 / 0.343 / 0.275 keV (c dt/dx 220), c dt/dx 2200 within 0.3 %."
+  },
+  {
+   "title": "30_g5",
+   "file": "30_g5.png",
+   "caption": "G5 2-D pulse variance growth vs the exact moment solution, PROD on 563ab474 (PROD on 0197f020 for comparison): d sigma^2/dt / 2D = kappa 12.8: 0.999565, kappa 128: 0.999874, kappa 1280: 1.000000, kappa 12800: 1.000000."
+  }
+ ],
+ "regress": [],
+ "keys": [
+  [
+   "implicit_am_cs",
+   "true"
+  ],
+  [
+   "vet_gd_twin_state",
+   "trans"
+  ],
+  [
+   "vet_rotate_avg",
+   "4"
+  ],
+  [
+   "vet_gd_twin_weight",
+   "none"
+  ],
+  [
+   "vet_interp",
+   "auto"
+  ],
+  [
+   "vet_col_lat_cut_thin",
+   "1.0"
+  ],
+  [
+   "implicit_predictor_frozen",
+   "false"
+  ],
+  [
+   "implicit_hr_face_gd",
+   "none"
+  ],
+  [
+   "implicit_thin_js_face",
+   "hcface"
+  ],
+  [
+   "vet_gd_rotate_slope",
+   "correct"
+  ],
+  [
+   "vet_gd_rotate_stretch",
+   "0.02"
+  ],
+  [
+   "vet_gd_rotate_t0",
+   "0.0"
+  ],
+  [
+   "vet_gd_rotate_align",
+   "true"
+  ],
+  [
+   "time2_start",
+   "be"
+  ],
+  [
+   "time2_vet_sc",
+   "predict"
+  ],
+  [
+   "implicit_vimp_bc",
+   "true"
+  ],
+  [
+   "implicit_cs2_shift",
+   "false"
+  ],
+  [
+   "implicit_cs2_hll",
+   "drag"
+  ],
+  [
+   "time2_vet_col_source",
+   "blend"
+  ],
+  [
+   "vet_gd_symref",
+   "col"
+  ],
+  [
+   "implicit_thin_hcface_gd",
+   "x1"
+  ],
+  [
+   "implicit_thin_hcface",
+   "tau"
+  ],
+  [
+   "implicit_thin_bq_gd",
+   "cell"
+  ],
+  [
+   "implicit_thin_js_gd",
+   "x1"
+  ],
+  [
+   "implicit_thin_hcsf",
+   "j"
+  ],
+  [
+   "implicit_hr_excess",
+   "none"
+  ],
+  [
+   "time2_pred_cap",
+   "0.5"
+  ],
+  [
+   "implicit_gas_src",
+   "conservative2"
+  ],
+  [
+   "vet_seg",
+   "jump"
+  ],
+  [
+   "vet_bc_diff",
+   "face"
+  ],
+  [
+   "implicit_thin_corr",
+   "hc"
+  ],
+  [
+   "implicit_thin_switch",
+   "fse"
+  ],
+  [
+   "time2_vstage",
+   "true"
+  ],
+  [
+   "vet_gd_twin_fuse",
+   "true"
+  ],
+  [
+   "vet_gd_twin_det",
+   "true"
+  ],
+  [
+   "vet_source_noesrc",
+   "true"
+  ],
+  [
+   "vet_gd_twin",
+   "true"
+  ],
+  [
+   "vet_scatter",
+   "true"
+  ],
+  [
+   "vet_scatter_form",
+   "ma"
+  ],
+  [
+   "vet_scatter_j",
+   "relaxed"
+  ],
+  [
+   "implicit_face_opac_n",
+   "true"
+  ],
+  [
+   "implicit_pos_floor_solve",
+   "true"
+  ],
+  [
+   "implicit_gas_newton_switch",
+   "10"
+  ],
+  [
+   "implicit_thin_freeze",
+   "1.0e-2"
+  ],
+  [
+   "implicit_realisable_coupling",
+   "true"
+  ],
+  [
+   "report_newton_fb",
+   "false"
+  ],
+  [
+   "vet_col_lat_taucut",
+   "30.0"
+  ],
+  [
+   "vet_gd_gl_nmu",
+   "10"
+  ],
+  [
+   "vet_gd_gl_nphi",
+   "12"
+  ],
+  [
+   "vet_gd_gl_stagger",
+   "true"
+  ],
+  [
+   "vet_gd_rotate_every",
+   "10"
+  ],
+  [
+   "vet_col_lat_offdiag",
+   "operator"
+  ],
+  [
+   "vet_gd_tangential",
+   "false"
+  ],
+  [
+   "vet_gd_wall_interp",
+   "true"
+  ],
+  [
+   "vet_gd_halo_compact",
+   "2"
+  ],
+  [
+   "implicit_halo_direct",
+   "true"
+  ],
+  [
+   "implicit_od_cache",
+   "true"
+  ],
+  [
+   "implicit_krylov_fuse",
+   "1"
+  ],
+  [
+   "implicit_op_stencil",
+   "true"
+  ],
+  [
+   "implicit_precond",
+   "mg"
+  ],
+  [
+   "implicit_halo_mpi",
+   "true"
+  ],
+  [
+   "implicit_halo_overlap",
+   "true"
+  ],
+  [
+   "implicit_solver",
+   "bicgstab"
+  ],
+  [
+   "implicit_offdiag",
+   "auto"
+  ],
+  [
+   "implicit_closure_lag",
+   "step"
+  ],
+  [
+   "implicit_lin_maxit",
+   "200"
+  ],
+  [
+   "implicit_lin_tol",
+   "1.0e-10"
+  ],
+  [
+   "implicit_lin_cnorm",
+   "1.0e-10"
+  ],
+  [
+   "implicit_tol",
+   "1.0e-8"
+  ],
+  [
+   "implicit_resid_fatal",
+   "1.0e-2"
+  ],
+  [
+   "implicit_maxit",
+   "200"
+  ],
+  [
+   "implicit_one_pass",
+   "0"
+  ],
+  [
+   "implicit_opac_update",
+   "true"
+  ],
+  [
+   "implicit_opac_newton",
+   "true"
+  ],
+  [
+   "implicit_opac_newton_guard_mode",
+   "6"
+  ],
+  [
+   "implicit_opac_newton_slope_max",
+   "3"
+  ],
+  [
+   "implicit_gas_newton",
+   "true"
+  ],
+  [
+   "implicit_flux",
+   "blend"
+  ],
+  [
+   "implicit_flux_faces",
+   "all"
+  ],
+  [
+   "implicit_flux_beam",
+   "halfrange"
+  ],
+  [
+   "implicit_blend",
+   "idort_f"
+  ],
+  [
+   "implicit_blend_tau0",
+   "1"
+  ],
+  [
+   "implicit_blend_alpha",
+   "1"
+  ],
+  [
+   "implicit_blend_flo",
+   "0.3"
+  ],
+  [
+   "implicit_blend_fhi",
+   "0.6"
+  ],
+  [
+   "implicit_blend_xthin",
+   "0"
+  ],
+  [
+   "implicit_enthalpy",
+   "plm"
+  ],
+  [
+   "implicit_vimp",
+   "true"
+  ],
+  [
+   "implicit_predictor",
+   "step"
+  ],
+  [
+   "implicit_lin_ew_max",
+   "1.0e-2"
+  ],
+  [
+   "implicit_closure_thin_relax",
+   "1.5"
+  ],
+  [
+   "implicit_g0_exchange",
+   "true"
+  ],
+  [
+   "implicit_g0_limit",
+   "1.0"
+  ],
+  [
+   "implicit_pos_gas",
+   "true"
+  ],
+  [
+   "implicit_pos_floor",
+   "true"
+  ],
+  [
+   "time_scheme",
+   "hesdirk2"
+  ],
+  [
+   "vet_col_every",
+   "1"
+  ],
+  [
+   "time2_vet_col",
+   "predict"
+  ],
+  [
+   "time2_reject",
+   "retry"
+  ],
+  [
+   "thick_flux",
+   "none"
+  ],
+  [
+   "ap_form",
+   "alpha2"
+  ],
+  [
+   "scaled_prefactor",
+   "20"
+  ],
+  [
+   "advect_split",
+   "0"
+  ],
+  [
+   "split_vel",
+   "recon"
+  ],
+  [
+   "source_form",
+   "full"
+  ],
+  [
+   "f_source",
+   "cell"
+  ],
+  [
+   "opac_freeze",
+   "0"
+  ],
+  [
+   "rsla_warn",
+   "0.1"
+  ],
+  [
+   "rsla_vmax",
+   "-1"
+  ],
+  [
+   "rsla_force",
+   "0"
+  ],
+  [
+   "vet_col_ncore",
+   "8"
+  ],
+  [
+   "vet_col_nsub",
+   "1"
+  ],
+  [
+   "vet_col_nmu",
+   "4"
+  ],
+  [
+   "vet_col_order2",
+   "1"
+  ],
+  [
+   "vet_col_fk_min",
+   "0"
+  ],
+  [
+   "vet_col_reflect_top",
+   "1"
+  ],
+  [
+   "vet_col_surface_face",
+   "1"
+  ],
+  [
+   "vet_col_surface_q",
+   "1"
+  ],
+  [
+   "vet_col_surface_qmin",
+   "0.001"
+  ],
+  [
+   "vet_col_surface_qmax",
+   "1"
+  ],
+  [
+   "vet_source",
+   "relaxed_esc"
+  ],
+  [
+   "vet_col_team",
+   "1"
+  ],
+  [
+   "vet_col_team_size",
+   "0"
+  ],
+  [
+   "vet_col_chunk",
+   "0"
+  ],
+  [
+   "vet_col_axis",
+   "radial"
+  ],
+  [
+   "reconstruct",
+   "plm"
+  ],
+  [
+   "implicit_closure_relax",
+   "1"
+  ],
+  [
+   "implicit_closure_relax_thin",
+   "0"
+  ],
+  [
+   "implicit_trans_limit",
+   "none"
+  ],
+  [
+   "implicit_trans_fmax",
+   "1"
+  ],
+  [
+   "implicit_accel",
+   "none"
+  ],
+  [
+   "implicit_eos_cache",
+   "0"
+  ],
+  [
+   "implicit_eos_cache_nt",
+   "2"
+  ],
+  [
+   "implicit_eos_cache_check",
+   "1"
+  ],
+  [
+   "implicit_line_solver",
+   "pcr"
+  ],
+  [
+   "implicit_pcr_team",
+   "0"
+  ],
+  [
+   "implicit_pcr_check",
+   "0"
+  ],
+  [
+   "implicit_bcg_sync",
+   "1"
+  ],
+  [
+   "implicit_precond_float",
+   "0"
+  ],
+  [
+   "implicit_op_team_red",
+   "0"
+  ],
+  [
+   "implicit_mg_levels",
+   "3"
+  ],
+  [
+   "implicit_mg_halo",
+   "1"
+  ],
+  [
+   "implicit_krylov_pipe",
+   "0"
+  ],
+  [
+   "implicit_halo_ipc",
+   "0"
+  ],
+  [
+   "implicit_halo_ovl_faces",
+   "0"
+  ],
+  [
+   "implicit_picard_log",
+   "0"
+  ],
+  [
+   "implicit_lres_test",
+   "0"
+  ],
+  [
+   "implicit_conv_est",
+   "1"
+  ],
+  [
+   "implicit_src_stable",
+   "1"
+  ],
+  [
+   "implicit_lin_ew_gamma",
+   "0.9"
+  ],
+  [
+   "implicit_bcg_max_restarts",
+   "2"
+  ],
+  [
+   "implicit_bcg_fallback",
+   "line"
+  ],
+  [
+   "implicit_anderson_m",
+   "5"
+  ],
+  [
+   "implicit_anderson_beta",
+   "1"
+  ],
+  [
+   "implicit_anderson_start",
+   "1"
+  ],
+  [
+   "implicit_opac_newton_guard",
+   "0.5"
+  ],
+  [
+   "implicit_allow_multid",
+   "0"
+  ],
+  [
+   "implicit_marshak_face",
+   "linear"
+  ],
+  [
+   "implicit_face_weight",
+   "distance"
+  ],
+  [
+   "implicit_hr_model",
+   "0"
+  ],
+  [
+   "implicit_hr_face",
+   "sf"
+  ],
+  [
+   "implicit_blend_r0",
+   "1.5"
+  ],
+  [
+   "implicit_blend_xthin_mode",
+   "all"
+  ],
+  [
+   "implicit_blend_xthin_wmin",
+   "0"
+  ],
+  [
+   "implicit_thin_h0",
+   "0.3"
+  ],
+  [
+   "implicit_thin_h1",
+   "0.6"
+  ],
+  [
+   "implicit_thin_kn0",
+   "1"
+  ],
+  [
+   "implicit_thin_knp",
+   "4"
+  ],
+  [
+   "implicit_thin_fsa",
+   "0"
+  ],
+  [
+   "implicit_thin_fsj",
+   "0"
+  ],
+  [
+   "implicit_thin_recon",
+   "jse"
+  ],
+  [
+   "implicit_thin_bq",
+   "lin"
+  ],
+  [
+   "implicit_blend_fmode",
+   "max"
+  ],
+  [
+   "implicit_blend_mode",
+   "flux"
+  ],
+  [
+   "implicit_recon",
+   "dc"
+  ],
+  [
+   "implicit_fast_kernels",
+   "1"
+  ],
+  [
+   "implicit_vimp_fold",
+   "0"
+  ],
+  [
+   "implicit_predictor_order",
+   "2"
+  ],
+  [
+   "implicit_partition",
+   "none"
+  ],
+  [
+   "implicit_recon_w",
+   "-1"
+  ],
+  [
+   "implicit_res_floor",
+   "0"
+  ],
+  [
+   "implicit_gas_newton_switch_min",
+   "20"
+  ],
+  [
+   "implicit_stall_fac",
+   "0.5"
+  ],
+  [
+   "implicit_recon_lag",
+   "step"
+  ],
+  [
+   "implicit_recon_npass",
+   "-1"
+  ],
+  [
+   "implicit_bmom_half",
+   "1"
+  ],
+  [
+   "implicit_rad_inertia",
+   "1"
+  ],
+  [
+   "implicit_nofb_work",
+   "1"
+  ],
+  [
+   "implicit_f0_init",
+   "auto"
+  ],
+  [
+   "implicit_bc_advect",
+   "1"
+  ],
+  [
+   "time2_lin_tol_fac",
+   "1"
+  ],
+  [
+   "time2_one_pass_safety",
+   "30"
+  ],
+  [
+   "time2_enth_be",
+   "true"
+  ],
+  [
+   "implicit_cs2_vimp",
+   "true"
+  ],
+  [
+   "implicit_cs2_vimp_npass",
+   "3"
+  ],
+  [
+   "implicit_tol_rel",
+   "0.1"
+  ],
+  [
+   "implicit_tol_rel_max",
+   "1.0e-4"
+  ],
+  [
+   "implicit_opac_lag",
+   "pred"
+  ],
+  [
+   "implicit_opac_lag_passes",
+   "2"
+  ],
+  [
+   "implicit_gas_newton_u4",
+   "true"
+  ],
+  [
+   "vet_gd_twin_lowmem",
+   "true"
+  ],
+  [
+   "dt_retry",
+   "true"
+  ],
+  [
+   "dt_retry_fac_t2",
+   "0.9"
+  ],
+  [
+   "dt_retry_grow",
+   "1.1"
+  ],
+  [
+   "dt_retry_ngood",
+   "20"
+  ]
+ ],
+ "keys_note": "From /raven/ptmp/jinma/rsg_g25_1019/prod/R2/rsg_E_start1020r.athinput: every <rad_m1> key and <time> dt_retry / dt_retry_fac_t2 / dt_retry_grow / dt_retry_ngood, minus problem / unit / opacity / BC / grid / IC keys (tool/mkprod.py). Applied to every test deck after its own args.",
+ "drops_note": "Dropped only where the test forbids them (logged per run in prod_drop.txt): implicit_marshak_face / implicit_face_weight (sp-only) on Cartesian decks; implicit_op_stencil on periodic-x1 decks; implicit_vimp / implicit_cs2_vimp* when the test has gas_feedback, coupling or dbg_gas_force off; vet_gd_gl_nmu / nphi when the test sets its own quadrature; <hydro> am_transport on meshes it does not support (Cartesian, 1-D sp, 2-D sp with sp_cart_polar_momentum); a test alias vet_col_source gives way to vet_source. Hydro fofc not applied (needs nghost 3)."
+}
