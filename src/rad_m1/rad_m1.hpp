@@ -2903,6 +2903,7 @@ class RadiationM1 {
   // (rad_m1_clean*.cpp, docs/dev/rad_clean_scheme_design.md)
   TaskStatus CleanSolve(Driver *d, int stage);
   void CleanInit();
+  void CleanCsGeometry();
   void CleanSteadyStart(Driver *pdrive);
   void CleanInitFaceFluxes();
   void CleanOldVector();
@@ -2937,7 +2938,8 @@ class RadiationM1 {
   int CleanCountNegative();
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
-  void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc);
+  void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
+                      const bool phys = true);
   Real CleanDot(DvceArray5D<Real> w, const int nc, const int a, const int b);
   Real CleanReduce(Real v, const bool max);
   // cell-centred layout (<rad_m1>/clean_layout = cell, rad_m1_clean_cell.cpp)
@@ -3045,6 +3047,9 @@ class RadiationM1 {
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
   bool cln_fref_set = false;    // cln_fref holds the force of the first coupled solve
   bool cln_vzero = false;       // the iterates keep the gas momentum (steady start)
+  // cubed sphere: face areas, centroid distances across the faces, normals and centroids
+  DvceArray4D<Real> cln_ga[3], cln_gd[3];
+  DvceArray5D<Real> cln_gn;
   struct CleanHalo {            // ghost exchange of nc components: scratch array,
     DvceArray5D<Real> a, ca;    // its coarse dummy and the exchange object
     std::unique_ptr<MeshBoundaryValuesCC> pb;

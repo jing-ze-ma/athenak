@@ -108,18 +108,32 @@ struct CleanArgs {
   DvceArray4D<Real> dxf[3];    // distances between the cell centres across those faces
   DvceArray2D<Real> x1v, x1f;  // cell-centre (volume centroid) and face radii
   DvceArray2D<Real> x2v, x2f;  // cell-centre and face polar angles
+  // cubed sphere (cell layout): y in the cell's orthonormal frame (r, theta, phi) about
+  // the hydro's radius vector; vol, area, dxf and x1v, x1f as above, g the geometry
+  // (CLG_*) of CleanCsGeometry
+  bool cub;
+  DvceArray5D<Real> g;
 };
+
+// cubed-sphere geometry (array cln_gn), Cartesian components
+constexpr int CLG_N = 0;     // unit normal of the lower face along dir: CLG_N + 3 dir
+constexpr int CLG_X = 9;     // cell centroid
+constexpr int CLG_R = 12;    // r_hat of the cell centre (the hydro's, hydro_am.hpp)
+constexpr int CLG_E = 15;    // the hydro's unit panel tangents e_xi, e_eta (+3)
+constexpr int CLG_M = 21;    // first moment int x dA of the lower x2, x3 face (+3)
+constexpr int CLG_NV = 27;
 
 //----------------------------------------------------------------------------------------
 //! \fn int CleanBc
 //! \brief boundary type of side s (x1min, x1max, ..., x3max) of MeshBlock m: the mesh's
-//! on a physical boundary, M1_IBC_PERIODIC on a face shared with a MeshBlock
+//! on a physical boundary, M1_IBC_PERIODIC on a face shared with a MeshBlock (or a
+//! cubed-sphere panel)
 
 KOKKOS_INLINE_FUNCTION
 int CleanBc(const CleanArgs &x, const int m, const int s) {
   const BoundaryFlag f = x.mbc(m,s);
-  return (f == BoundaryFlag::block || f == BoundaryFlag::periodic) ? M1_IBC_PERIODIC
-                                                                   : x.bc[s];
+  return (f == BoundaryFlag::block || f == BoundaryFlag::periodic ||
+          f == BoundaryFlag::panel) ? M1_IBC_PERIODIC : x.bc[s];
 }
 
 //----------------------------------------------------------------------------------------

@@ -10,6 +10,7 @@
 //! stepping are those of the staggered layout; see rad_m1_clean_cell.hpp for the
 //! discrete equations.
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <limits>
@@ -75,6 +76,11 @@ void RadiationM1::CleanCellFaceCoefficients() {
   const bool wb = (force_ref == M1_FREF_CLEAN);
   CleanArgs x = CleanMakeArgs();
   auto cs = cln_s;
+  // on the cubed sphere the opacities of seam ghosts are the neighbour's cells (not the
+  // resampled gas ghosts), so that a seam face is single-valued
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    CleanGhostFill(opac, 0, opac.extent_int(1), false);
+  }
   auto op = opac;
   auto u = cln_x;
 
@@ -122,7 +128,8 @@ void RadiationM1::CleanCellFaceCoefficients() {
       const Real c1 = fmax(cs(m,CLN_C1,k,j,i), cs(m,CLN_C1,kl,jl,il));
       const Real sray = CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       const Real psi = fmax(u(m,CLC_PSI+dir,k,j,i), u(m,CLC_PSI+dir,kl,jl,il));
-      const Real dd = fmax(cs(m,CLN_D11+dir,k,j,i), cs(m,CLN_D11+dir,kl,jl,il));
+      const Real dd = fmax(CleanDnn(x, dir, m, k, j, i, k, j, i),
+                           CleanDnn(x, dir, m, k, j, i, kl, jl, il));
       const Real dxd = CleanCellFaceDistance(x, dir, m, k, j, i);
       fc(m,CLF_AL,k,j,i) = CleanDissipationWeight(mode, chi*dxd, psi, sray);
       // force_reference = clean: theta h c^2 = c/max(chi, 2/dx), the steady RC
@@ -165,7 +172,8 @@ void RadiationM1::CleanCellFaceSpeeds() {
       const Real c1 = fmax(cs(m,CLN_C1,k,j,i), cs(m,CLN_C1,kl,jl,il));
       const Real sray = CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       const Real psi = fmax(u(m,CLC_PSI+dir,k,j,i), u(m,CLC_PSI+dir,kl,jl,il));
-      const Real dd = fmax(cs(m,CLN_D11+dir,k,j,i), cs(m,CLN_D11+dir,kl,jl,il));
+      const Real dd = fmax(CleanDnn(x, dir, m, k, j, i, k, j, i),
+                           CleanDnn(x, dir, m, k, j, i, kl, jl, il));
       const Real dxd = CleanCellFaceDistance(x, dir, m, k, j, i);
       fc(m,CLF_AL,k,j,i) = CleanDissipationWeight(mode, chi*dxd, psi, sray);
       fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
@@ -296,17 +304,25 @@ void RadiationM1::CleanCellSlopeWeights(const int v) {
   const bool three_d = pmy_pack->pmesh->three_d;
   CleanGhostFill(cln_x, v, 4);
   auto u = cln_x;
+  CleanArgs x = CleanMakeArgs();
 
+  // (y in Cartesian components on the cubed sphere, as in the face fluxes)
   par_for("clc_slopes", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int dir = 0; dir < 3; ++dir) {
       const bool on = (dir == 0 || (dir == 1 && multi_d) || (dir == 2 && three_d));
       const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+      Real sm[4], s0[4], sp[4];
+      if (on) {
+        CleanCellState(x, v, m, k-dk, j-dj, i-di, sm);
+        CleanCellState(x, v, m, k, j, i, s0);
+        CleanCellState(x, v, m, k+dk, j+dj, i+di, sp);
+      }
       for (int q = 0; q < 4; ++q) {
         Real pl = 0.0, pr = 0.0;
         if (on) {
-          const Real dl = u(m,v+q,k,j,i) - u(m,v+q,k-dk,j-dj,i-di);
-          const Real dr = u(m,v+q,k+dk,j+dj,i+di) - u(m,v+q,k,j,i);
+          const Real dl = s0[q] - sm[q];
+          const Real dr = sp[q] - s0[q];
           if (dl*dr > 0.0) {
             pl = dr/(dl + dr);
             pr = dl/(dl + dr);
@@ -318,6 +334,30 @@ void RadiationM1::CleanCellSlopeWeights(const int v) {
     }
   });
   CleanGhostFill(cln_x, CLC_PL, 24);
+  if (!x.cub) return;
+  // a seam ghost's weights along this block's axis from the ghost's own index line (the
+  // exchanged ones belong to the neighbour's axes), so that the seam faces are second
+  // order (both layers of a seam ghost are the neighbour's cells)
+  const int no = std::max(indcs.nx2, indcs.nx3);
+  par_for("clc_slopes_seam", DevExeSpace(), 0, nmb1, 0, 3, 0, no - 1, is, ie,
+  KOKKOS_LAMBDA(const int m, const int sd, const int o, const int i) {
+    const int dir = 1 + sd/2, hi = sd%2;
+    if (x.mbc(m,2*dir+hi) != BoundaryFlag::panel) return;
+    const int g = (dir == 1) ? (hi ? je + 1 : js - 1) : (hi ? ke + 1 : ks - 1);
+    const int j = (dir == 1) ? g : js + o, k = (dir == 2) ? g : ks + o;
+    if (j > je + 1 || k > ke + 1) return;
+    const int dk = (dir == 2), dj = (dir == 1);
+    Real sm[4], s0[4], sp[4];
+    CleanCellState(x, v, m, k-dk, j-dj, i, sm);
+    CleanCellState(x, v, m, k, j, i, s0);
+    CleanCellState(x, v, m, k+dk, j+dj, i, sp);
+    for (int q = 0; q < 4; ++q) {
+      const Real dl = s0[q] - sm[q], dr = sp[q] - s0[q];
+      const bool on = dl*dr > 0.0;
+      u(m,CLC_PL+4*dir+q,k,j,i) = on ? dr/(dl + dr) : 0.0;
+      u(m,CLC_PR+4*dir+q,k,j,i) = on ? dl/(dl + dr) : 0.0;
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -375,9 +415,11 @@ void RadiationM1::CleanCellRightHandSide() {
       const Real s = 4.0*hckp*arad_*t*t*t;
       rr = s/(d*cv + s);
       // work of the radiation force on the gas: the kinetic energy the gas gains
+      Real pg[3];
+      CleanGasMomentum(x, uh, m, k, j, i, pg);
       for (int n = 0; n < 3; ++n) {
         const Real dm = x.w(m,CLW_DM+n,k,j,i);
-        work += (uh(m,IM1+n,k,j,i) + (vfreeze == 2 ? 0.0 : 0.5*dm))*dm/d;
+        work += (pg[n] + (vfreeze == 2 ? 0.0 : 0.5*dm))*dm/d;
       }
     }
     Real sdiv[4];
@@ -485,6 +527,21 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       const int sm = CleanLineSlotM(dir), sp = CleanLineSlotP(dir);
       CleanCellFaceJacobian(x, dir, m, k+dk, j+dj, i+di, jlp, jrp);
       CleanCellFaceJacobian(x, dir, m, k, j, i, jlm, jrm);
+      if (x.cub) {
+        Real bp[4][4], bm[4][4], bpn[4][4], bmn[4][4];
+        CleanCsBlock(x, dir, m, k+dk, j+dj, i+di, k, j, i, k, j, i, jlp, bp);
+        CleanCsBlock(x, dir, m, k, j, i, k, j, i, k, j, i, jrm, bm);
+        CleanCsBlock(x, dir, m, k+dk, j+dj, i+di, k, j, i, k+dk, j+dj, i+di, jrp, bpn);
+        CleanCsBlock(x, dir, m, k, j, i, k, j, i, k-dk, j-dj, i-di, jlm, bmn);
+        for (int r = 0; r < 4; ++r) {
+          for (int c = 0; c < 4; ++c) {
+            a0[r][c] += bp[r][c] - bm[r][c];
+            x.u(m,sp+4*r+c,k,j,i) = bpn[r][c];
+            x.u(m,sm+4*r+c,k,j,i) = -bmn[r][c];
+          }
+        }
+        continue;
+      }
       if (x.sph) {
         Real wm[4], wp[4];
         CleanCellSphWeights(x, dir, m, k, j, i, wm, wp);
@@ -905,7 +962,8 @@ Real RadiationM1::CleanCellVelocityUpdate() {
     const Real re = (ek + adiv[0] + hc*op(m,M1_OP_P,k,j,i)*arad_*
                      SQR(SQR(x.w(m,CLW_T,k,j,i))))/fmax(fabs(e), 1.0e-300);
     fe_max = fmax(fe_max, re);
-    Real v2 = 0.0;
+    Real v2 = 0.0, p[3];
+    CleanGasMomentum(x, uh, m, k, j, i, p);
     for (int b = 0; b < 3; ++b) {
       Real dm = 0.0;
       if (b < x.nf) {
@@ -922,7 +980,7 @@ Real RadiationM1::CleanCellVelocityUpdate() {
       }
       dv_max = fmax(dv_max, fabs(dm - x.w(m,CLW_DM+b,k,j,i))/d);
       x.w(m,CLW_DM+b,k,j,i) = dm;
-      v2 += SQR((uh(m,IM1+b,k,j,i) + dm)/d);
+      v2 += SQR((p[b] + dm)/d);
     }
     v_max = fmax(v_max, std::sqrt(v2));
   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(femax),
@@ -1163,7 +1221,10 @@ void RadiationM1::CleanCellDiagnose() {
 //! reference force is withheld from the gas momentum (an external source, like gravity),
 //! and the radiation pays only the work of the residual.  A gas left with eint < 0 takes
 //! the deficit from the cell's radiation E; cln_neint counts the cells where E did not
-//! cover it (the fluid's floor would create energy there).
+//! cover it (the fluid's floor would create energy there).  On the cubed sphere F is
+//! stored in the frame of y (F_r, F_theta, F_phi) and the gas momentum change (and its
+//! stage slope) in the hydro's components (CleanGasChange): E and L_z of gas plus
+//! radiation are conserved to round-off.
 
 void RadiationM1::CleanCellWriteBack() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1211,14 +1272,16 @@ void RadiationM1::CleanCellWriteBack() {
     CleanCellDivergence(x, CLC_X, m, k, j, i, true, div);
     Real e = x.u(m,CLC_X,k,j,i);
     const Real e_old = x.w(m,CLW_EO,k,j,i);
-    Real dm[3] = {0.0, 0.0, 0.0};
+    Real dm[3] = {0.0, 0.0, 0.0}, dh[3];
     Real den = 0.0;
     if (feedback) {
       for (int b = 0; b < x.nf && !vzero; ++b) {
         dm[b] = -(x.u(m,CLC_X+1+b,k,j,i) - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c
                 - h*CleanRefForce(fref, fr, aref, uh(m,IDN,k,j,i), b, m, k, j, i);
-        uh(m,IM1+b,k,j,i) += dm[b];
       }
+      // (the hydro's components; dm.e_a covariant on the cubed sphere)
+      CleanGasChange(x, m, k, j, i, dm, dh);
+      for (int b = 0; b < x.nf; ++b) uh(m,IM1+b,k,j,i) += dh[b];
       den = -(e - e_old) - div[0];
       if (vzero) {
         // steady start: the internal energy of the gas temperature of the iterate, not
@@ -1229,9 +1292,10 @@ void RadiationM1::CleanCellWriteBack() {
       } else {
         // an unconverged iterate's work differs from the kinetic energy of dm: a gas
         // left with eint < 0 takes the deficit from the cell's radiation
-        const Real def = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
-                              SQR(uh(m,IM3,k,j,i)))/uh(m,IDN,k,j,i) - uh(m,IEN,k,j,i)
-                         - den;
+        Real pg[3];
+        CleanGasMomentum(x, uh, m, k, j, i, pg);
+        const Real def = 0.5*(SQR(pg[0]) + SQR(pg[1]) + SQR(pg[2]))/uh(m,IDN,k,j,i)
+                         - uh(m,IEN,k,j,i) - den;
         if (def > 0.0) {
           const Real tk = fmin(def, fmax(e, 0.0));
           e -= tk;
@@ -1245,7 +1309,7 @@ void RadiationM1::CleanCellWriteBack() {
       kk(m,M1_T2_E,k,j,i) = (e - e_old)/h;
       for (int b = 0; b < 3; ++b) {
         kk(m,M1_T2_F1+b,k,j,i) = x.c*(x.u(m,CLC_X+1+b,k,j,i) - x.u(m,CLC_O+1+b,k,j,i))/h;
-        kk(m,M1_T2_M1+b,k,j,i) = dm[b]/h;
+        kk(m,M1_T2_M1+b,k,j,i) = feedback ? dh[b]/h : 0.0;
       }
       kk(m,M1_T2_EN,k,j,i) = den/h;
     }
@@ -1275,7 +1339,6 @@ void RadiationM1::CleanCellClosureSlope(const Real sign) {
   FluidRef fl = FluidRef::Get(pmy_pack);
   const bool feedback = cln_feedback;
   auto uh = fl.u0;
-  auto cs = cln_s;
   auto op = opac;
   auto kk = t2k1;
   par_for("clc_clslope", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -1285,17 +1348,18 @@ void RadiationM1::CleanCellClosureSlope(const Real sign) {
     const Real e = x.u(m,CLC_X,k,j,i);
     kk(m,M1_T2_E,k,j,i) -= sign*div[0]*ih;
     // velocity of the gas after the write-back
-    Real v[3] = {0.0, 0.0, 0.0};
+    Real v[3] = {0.0, 0.0, 0.0}, a[3], dm[3], dh[3];
     if (feedback) {
-      for (int b = 0; b < 3; ++b) v[b] = uh(m,IM1+b,k,j,i)/uh(m,IDN,k,j,i);
+      CleanGasMomentum(x, uh, m, k, j, i, v);
+      for (int b = 0; b < 3; ++b) v[b] /= uh(m,IDN,k,j,i);
     }
-    const int dab[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
+    CleanAdvect(x, m, k, j, i, v, a);
     const Real chi = op(m,M1_OP_T,k,j,i);
+    for (int b = 0; b < 3; ++b) dm[b] = (b < x.nf) ? -sign*chi*a[b]*e/x.c : 0.0;
+    CleanGasChange(x, m, k, j, i, dm, dh);
     for (int b = 0; b < x.nf; ++b) {
-      Real a = v[b];
-      for (int c = 0; c < 3; ++c) a += cs(m,CLN_D11+dab[b][c],k,j,i)*v[c];
-      kk(m,M1_T2_F1+b,k,j,i) += sign*x.c*(chi*a*e - div[1+b]*ih);
-      kk(m,M1_T2_M1+b,k,j,i) -= sign*chi*a*e/x.c;
+      kk(m,M1_T2_F1+b,k,j,i) += sign*x.c*(chi*a[b]*e - div[1+b]*ih);
+      kk(m,M1_T2_M1+b,k,j,i) += dh[b];
     }
   });
 }

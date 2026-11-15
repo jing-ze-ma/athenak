@@ -41,7 +41,13 @@
 //! is the finite-volume divergence sum A_f f/V, with the angular-momentum conserving
 //! weights of CleanCellSphWeights, and the stress rows carry the curvature terms of
 //! CleanCellSphSource.  E changes only by face fluxes, so the total energy is conserved
-//! to round-off.
+//! to round-off.  On the cubed sphere y holds (y_r, y_theta, y_phi) in the orthonormal
+//! frame about the hydro's radius vector (CleanCsFrame).  The face fluxes are formed in
+//! Cartesian components with the exact face vectors of CleanCsGeometry: d above is the
+//! face normal n (y_d -> y.n, D_bd -> (D n)_b, D_dd -> n.D.n; D is Cartesian).  The rows
+//! (CleanCsRows) are sum A_f f/V for E, its projections on r_hat and theta_hat, and the
+//! torque about z for y_phi: E and L_z change only by face fluxes, a uniform isotropic
+//! state is exact, and no curvature terms are needed.
 
 #include <cmath>
 
@@ -148,6 +154,226 @@ Real CleanDiag(const CleanArgs &x, const int a, const int b, const int m, const 
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanNf
+//! \brief component b of the unit normal of face (kf,jf,iff) normal to dir: e_dir, on the
+//! cubed sphere the face's own normal
+
+KOKKOS_INLINE_FUNCTION
+Real CleanNf(const CleanArgs &x, const int b, const int dir, const int m, const int kf,
+             const int jf, const int iff) {
+  return x.cub ? x.g(m,CLG_N+3*dir+b,kf,jf,iff) : ((b == dir) ? 1.0 : 0.0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanDn
+//! \brief component b of D n of cell (k,j,i), n the unit normal of face (kf,jf,iff)
+//! normal to dir (D_b,dir off the cubed sphere)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanDn(const CleanArgs &x, const int b, const int dir, const int m, const int kf,
+             const int jf, const int iff, const int k, const int j, const int i) {
+  if (!x.cub) return CleanDiag(x, b, dir, m, k, j, i);
+  Real d = 0.0;
+  for (int c = 0; c < 3; ++c) {
+    d += CleanDiag(x, b, c, m, k, j, i)*CleanNf(x, c, dir, m, kf, jf, iff);
+  }
+  return d;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanDnn
+//! \brief n.D.n of cell (k,j,i) with the normal of face (kf,jf,iff) normal to dir
+
+KOKKOS_INLINE_FUNCTION
+Real CleanDnn(const CleanArgs &x, const int dir, const int m, const int kf, const int jf,
+              const int iff, const int k, const int j, const int i) {
+  if (!x.cub) return CleanDiag(x, dir, dir, m, k, j, i);
+  Real d = 0.0;
+  for (int b = 0; b < 3; ++b) {
+    d += CleanNf(x, b, dir, m, kf, jf, iff)*CleanDn(x, b, dir, m, kf, jf, iff, k, j, i);
+  }
+  return d;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanCsFrame
+//! \brief cubed sphere: the orthonormal frame of y in cell (k,j,i), rows q[0] = r_hat
+//! (the hydro's), q[1] = theta_hat = phi_hat x r_hat, q[2] = phi_hat = z x r_hat/|.|, in
+//! Cartesian components (y_cart = Q^T y, Q^T = Q^-1).  Returns R = x1v |z x r_hat|, the
+//! arm of L_z (CleanInit refuses an odd panel resolution, which has R = 0 cells).
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCsFrame(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                  Real q[3][3]) {
+  for (int c = 0; c < 3; ++c) q[0][c] = x.g(m,CLG_R+c,k,j,i);
+  const Real rho = std::sqrt(q[0][0]*q[0][0] + q[0][1]*q[0][1]);
+  q[2][0] = -q[0][1]/rho;
+  q[2][1] = q[0][0]/rho;
+  q[2][2] = 0.0;
+  q[1][0] = q[2][1]*q[0][2];
+  q[1][1] = -q[2][0]*q[0][2];
+  q[1][2] = q[2][0]*q[0][1] - q[2][1]*q[0][0];
+  return x.x1v(m,i)*rho;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCsFamily
+//! \brief cubed sphere: the normals n_d of the face families of cell (k,j,i) for the
+//! half-range closure (CLN_HP, CLN_HM, CLN_KP): r_hat of the frame and the mean normals
+//! of the two x2 and the two x3 faces
+
+KOKKOS_INLINE_FUNCTION
+void CleanCsFamily(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                   Real nd[3][3]) {
+  for (int d = 0; d < 3; ++d) {
+    const int dk = (d == 2), dj = (d == 1);
+    Real s = 0.0;
+    for (int c = 0; c < 3; ++c) {
+      nd[d][c] = (d == 0) ? x.g(m,CLG_R+c,k,j,i) :
+                 x.g(m,CLG_N+3*d+c,k,j,i) + x.g(m,CLG_N+3*d+c,k+dk,j+dj,i);
+      s += nd[d][c]*nd[d][c];
+    }
+    for (int c = 0; c < 3; ++c) nd[d][c] /= std::sqrt(s);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCellState
+//! \brief E and y of cell (k,j,i) at slot v of x.u, y in Cartesian components on the
+//! cubed sphere (the face fluxes are formed in them)
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellState(const CleanArgs &x, const int v, const int m, const int k,
+                    const int j, const int i, Real s[4]) {
+  for (int c = 0; c < 4; ++c) s[c] = x.u(m,v+c,k,j,i);
+  if (!x.cub) return;
+  Real q[3][3];
+  CleanCsFrame(x, m, k, j, i, q);
+  for (int b = 0; b < 3; ++b) {
+    s[1+b] = x.u(m,v+1,k,j,i)*q[0][b] + x.u(m,v+2,k,j,i)*q[1][b] +
+             x.u(m,v+3,k,j,i)*q[2][b];
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCsRows
+//! \brief cubed sphere: the contribution g of the flux f = (fE, Cartesian stress vector
+//! P n) through face (kf,jf,iff) normal to dir to h div of the rows (E, y_r, y_theta,
+//! y_phi) of cell (k,j,i): h/V times A fE, A r_hat.f, A theta_hat.f and the torque
+//! (M x f)_z/R about z with M = int x dA of the face (r_f A n on a radial face, which
+//! carries no torque of an isotropic stress).  The y_phi row is thus the conservation
+//! form of L_z = V R y_phi; the y_r and y_theta rows are the projected divergence (no
+//! curvature terms; a uniform isotropic stress cancels since sum_f A_f = 0).
+
+KOKKOS_INLINE_FUNCTION
+void CleanCsRows(const CleanArgs &x, const int dir, const int m, const int kf,
+                 const int jf, const int iff, const int k, const int j, const int i,
+                 const Real f[4], Real g[4]) {
+  Real q[3][3], mf[3];
+  const Real rc = CleanCsFrame(x, m, k, j, i, q);
+  const Real hv = x.h/x.vol(m,k,j,i), a = x.area[dir](m,kf,jf,iff);
+  for (int c = 0; c < 3; ++c) {
+    mf[c] = (dir == 0) ? x.x1f(m,iff)*a*x.g(m,CLG_N+c,kf,jf,iff)
+                       : x.g(m,CLG_M+3*(dir-1)+c,kf,jf,iff);
+  }
+  g[0] = hv*a*f[0];
+  for (int b = 0; b < 2; ++b) {
+    g[1+b] = hv*a*(q[b][0]*f[1] + q[b][1]*f[2] + q[b][2]*f[3]);
+  }
+  g[3] = hv*(mf[0]*f[2] - mf[1]*f[1])/rc;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCsBlock
+//! \brief cubed sphere: the block out of the rows of cell (k,j,i) (CleanCsRows) in the
+//! states (E, y in its frame) of cell (kn,jn,in), from the Jacobian jj of the face flux
+//! (Cartesian rows and columns)
+
+KOKKOS_INLINE_FUNCTION
+void CleanCsBlock(const CleanArgs &x, const int dir, const int m, const int kf,
+                  const int jf, const int iff, const int k, const int j, const int i,
+                  const int kn, const int jn, const int in, const Real jj[4][4],
+                  Real out[4][4]) {
+  Real q[3][3];
+  CleanCsFrame(x, m, kn, jn, in, q);
+  for (int c = 0; c < 4; ++c) {
+    Real f[4], g[4];
+    for (int r = 0; r < 4; ++r) {
+      f[r] = (c == 0) ? jj[r][0]
+                      : jj[r][1]*q[c-1][0] + jj[r][2]*q[c-1][1] + jj[r][3]*q[c-1][2];
+    }
+    CleanCsRows(x, dir, m, kf, jf, iff, k, j, i, f, g);
+    for (int r = 0; r < 4; ++r) out[r][c] = g[r];
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanGasMomentum
+//! \brief the gas momentum of cell (k,j,i) in the frame of y.  On the cubed sphere the
+//! hydro stores m_r = p.r_hat and the COVARIANT components m_a = p.e_a on its unit panel
+//! tangents (non-orthogonal, g_ab = e_a.e_b, hydro_am.hpp): p_t = g^ab m_b e_a.
+
+KOKKOS_INLINE_FUNCTION
+void CleanGasMomentum(const CleanArgs &x, const DvceArray5D<Real> &uh, const int m,
+                      const int k, const int j, const int i, Real p[3]) {
+  for (int n = 0; n < 3; ++n) p[n] = uh(m,IM1+n,k,j,i);
+  if (!x.cub) return;
+  Real q[3][3], pt[3], c = 0.0;
+  CleanCsFrame(x, m, k, j, i, q);
+  for (int b = 0; b < 3; ++b) c += x.g(m,CLG_E+b,k,j,i)*x.g(m,CLG_E+3+b,k,j,i);
+  const Real u1 = (p[1] - c*p[2])/(1.0 - c*c), u2 = (p[2] - c*p[1])/(1.0 - c*c);
+  for (int b = 0; b < 3; ++b) {
+    pt[b] = u1*x.g(m,CLG_E+b,k,j,i) + u2*x.g(m,CLG_E+3+b,k,j,i);
+  }
+  for (int a = 1; a < 3; ++a) p[a] = q[a][0]*pt[0] + q[a][1]*pt[1] + q[a][2]*pt[2];
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanGasChange
+//! \brief the change dh of the hydro's momentum components of cell (k,j,i) for a change
+//! dm of the gas momentum in the frame of y (the inverse map of CleanGasMomentum): on the
+//! cubed sphere dh_r = dm_r and the covariant dh_a = dm_t.e_a
+
+KOKKOS_INLINE_FUNCTION
+void CleanGasChange(const CleanArgs &x, const int m, const int k, const int j,
+                    const int i, const Real dm[3], Real dh[3]) {
+  for (int n = 0; n < 3; ++n) dh[n] = dm[n];
+  if (!x.cub) return;
+  Real q[3][3], dt[3];
+  CleanCsFrame(x, m, k, j, i, q);
+  for (int b = 0; b < 3; ++b) dt[b] = dm[1]*q[1][b] + dm[2]*q[2][b];
+  for (int a = 1; a < 3; ++a) {
+    dh[a] = dt[0]*x.g(m,CLG_E+3*(a-1),k,j,i) + dt[1]*x.g(m,CLG_E+3*(a-1)+1,k,j,i) +
+            dt[2]*x.g(m,CLG_E+3*(a-1)+2,k,j,i);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanAdvect
+//! \brief a = v + D v of cell (k,j,i) for the gas velocity v in the frame of y (D in
+//! Cartesian components on the cubed sphere)
+
+KOKKOS_INLINE_FUNCTION
+void CleanAdvect(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                 const Real v[3], Real a[3]) {
+  if (!x.cub) {
+    for (int b = 0; b < 3; ++b) {
+      a[b] = v[b];
+      for (int c = 0; c < 3; ++c) a[b] += CleanDiag(x, b, c, m, k, j, i)*v[c];
+    }
+    return;
+  }
+  Real q[3][3], vc[3], ac[3];
+  CleanCsFrame(x, m, k, j, i, q);
+  for (int b = 0; b < 3; ++b) vc[b] = v[0]*q[0][b] + v[1]*q[1][b] + v[2]*q[2][b];
+  for (int b = 0; b < 3; ++b) {
+    ac[b] = vc[b];
+    for (int c = 0; c < 3; ++c) ac[b] += CleanDiag(x, b, c, m, k, j, i)*vc[c];
+  }
+  for (int b = 0; b < 3; ++b) a[b] = q[b][0]*ac[0] + q[b][1]*ac[1] + q[b][2]*ac[2];
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanRefForce
 //! \brief component b of the reference force density that force_reference withholds
 //! from the gas: the stored force of the first coupled solve (clean), d arad_ref along x1
@@ -168,15 +394,25 @@ Real CleanRefForce(const int fref, const DvceArray5D<Real> &fr,
 //! the advective source -h chi a_b E of row y_b per unit change of y_c + h div fY_c, the
 //! gas momentum the cell gives up (dv = -(dy + h div fY)/(c rho)): the gas velocity taken
 //! implicit in the solve (radiation force and drag), so that the velocity iteration
-//! contracts where the gas responds within h
+//! contracts where the gas responds within h (rows and columns in the frame of y)
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellDrag(const CleanArgs &x, const Real chi, const Real rho, const int m,
                    const int k, const int j, const int i, Real g[3][3]) {
   const Real s = x.h*chi*x.u(m,CLC_K,k,j,i)/(x.c*rho);
+  Real q[3][3];
+  if (x.cub) CleanCsFrame(x, m, k, j, i, q);
   for (int b = 0; b < 3; ++b) {
     for (int c = 0; c < 3; ++c) {
-      g[b][c] = s*((b == c ? 1.0 : 0.0) + CleanDiag(x, b, c, m, k, j, i));
+      Real d = 0.0;
+      if (x.cub) {   // D in the frame of y: Q D Q^T
+        for (int e = 0; e < 3; ++e) {
+          for (int f = 0; f < 3; ++f) d += q[b][e]*CleanDiag(x, e, f, m, k, j, i)*q[c][f];
+        }
+      } else {
+        d = CleanDiag(x, b, c, m, k, j, i);
+      }
+      g[b][c] = s*((b == c ? 1.0 : 0.0) + d);
     }
   }
 }
@@ -223,12 +459,12 @@ bool CleanFaceDissipation(const CleanArgs &x, const int dir, const int m, const 
 //! \fn Real CleanCellFaceDistance
 //! \brief distance between the centres of the two cells across face (k,j,i) normal to
 //! dir: dx_d on a Cartesian mesh; on spherical polar dr, r dtheta and r sin(theta) dphi
-//! between the volume centroids
+//! between the volume centroids, on the cubed sphere the centroids' distance
 
 KOKKOS_INLINE_FUNCTION
 Real CleanCellFaceDistance(const CleanArgs &x, const int dir, const int m, const int k,
                            const int j, const int i) {
-  return x.sph ? x.dxf[dir](m,k,j,i) : 1.0/x.idx[dir];
+  return (x.sph || x.cub) ? x.dxf[dir](m,k,j,i) : 1.0/x.idx[dir];
 }
 
 //----------------------------------------------------------------------------------------
@@ -329,12 +565,12 @@ void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int 
 //! \brief incoming state outside the open physical boundary face (k,j,i) normal to dir:
 //! the beam at x1min (E_g = F_b/(c sqrt(D_11)), y_g,b = D_1b F_b/(c D_11) with D of the
 //! inner cell, exact for a collimated beam), else the isotropic bath (D = 1/3, y = 0).
-//! Returns E_g, y_g and the stress column D_g,bd E_g.
+//! Returns E_g, y_g and the stress column D_g n E_g (n the face normal).
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellGhost(const CleanArgs &x, const int dir, const int m, const int k,
-                    const int j, const int i, const bool low, Real &eg, Real yg[3],
-                    Real pg[3]) {
+                    const int j, const int i, const bool low, const Real n[3], Real &eg,
+                    Real yg[3], Real pg[3]) {
   for (int b = 0; b < 3; ++b) {
     yg[b] = 0.0;
     pg[b] = 0.0;
@@ -350,20 +586,21 @@ void CleanCellGhost(const CleanArgs &x, const int dir, const int m, const int k,
     return;
   }
   eg = x.ebath[2*dir + (low ? 0 : 1)];
-  pg[dir] = eg/3.0;
+  for (int b = 0; b < 3; ++b) pg[b] = n[b]*eg/3.0;
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanCellOutStress
-//! \brief stress coefficient of the radiation leaving through the open boundary face of
-//! inner cell (k,j,i) normal to dir, column b: the rays' half-range k+^dir_b = K+_b,dir/J
-//! at a high face, D_b,dir - k+^dir_b at a low face
+//! \brief stress coefficient of the radiation leaving through the open boundary face
+//! (kf,jf,iff) of inner cell (k,j,i) normal to dir, column b: the rays' half-range
+//! k+^dir_b = K+_b,dir/J at a high face, (D n)_b - k+^dir_b at a low face
 
 KOKKOS_INLINE_FUNCTION
 Real CleanCellOutStress(const CleanArgs &x, const int dir, const int b, const int m,
-                        const int k, const int j, const int i, const bool low) {
+                        const int kf, const int jf, const int iff, const int k,
+                        const int j, const int i, const bool low) {
   const Real kp = x.cs(m,CLN_KP+3*dir+b,k,j,i);
-  return low ? CleanDiag(x, b, dir, m, k, j, i) - kp : kp;
+  return low ? CleanDn(x, b, dir, m, kf, jf, iff, k, j, i) - kp : kp;
 }
 
 //----------------------------------------------------------------------------------------
@@ -383,15 +620,17 @@ void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
   const bool low = (pos == lo);
   if (CleanBc(x, m, 2*dir + (low ? 0 : 1)) == M1_IBC_REFLECT) return;
+  Real n[3];
+  for (int b = 0; b < 3; ++b) n[b] = CleanNf(x, b, dir, m, k, j, i);
   if (x.fc[dir](m,CLF_LO,k,j,i) > 0.0) {
     // the ghost sits outside the face; its closure is read from the inner cell
     const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
     const int ic = low ? i : i - (dir == 0);
     Real eg, yg[3], pg[3];
-    CleanCellGhost(x, dir, m, kc, jc, ic, low, eg, yg, pg);
+    CleanCellGhost(x, dir, m, kc, jc, ic, low, n, eg, yg, pg);
     const Real sg = low ? 0.5*x.c : -0.5*x.c;
-    s[0] += 0.5*x.c*yg[dir] + sg*eg;
-    for (int b = 0; b < x.nf; ++b) s[1+b] += ((b == dir) ? 0.5*x.c*eg : 0.0) + sg*yg[b];
+    s[0] += 0.5*x.c*(yg[0]*n[0] + yg[1]*n[1] + yg[2]*n[2]) + sg*eg;
+    for (int b = 0; b < x.nf; ++b) s[1+b] += 0.5*x.c*eg*n[b] + sg*yg[b];
     return;
   }
   s[0] += CleanFaceSource(x, dir, m, k, j, i);
@@ -400,7 +639,7 @@ void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int
     const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
     const int ic = low ? i : i - (dir == 0);
     Real eg, yg[3], pg[3];
-    CleanCellGhost(x, dir, m, kc, jc, ic, low, eg, yg, pg);
+    CleanCellGhost(x, dir, m, kc, jc, ic, low, n, eg, yg, pg);
     const Real sg = low ? 0.5*x.c : -0.5*x.c;
     for (int b = 0; b < x.nf; ++b) s[1+b] += 0.5*x.c*pg[b] + sg*yg[b];
     return;
@@ -409,7 +648,7 @@ void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int
     for (int b = 0; b < x.nf; ++b) s[1+b] += x.bstress(m,b,k-x.ks,j-x.js);
     return;
   }
-  s[1+dir] += x.c*x.ebath[2*dir + (low ? 0 : 1)]/6.0;
+  for (int b = 0; b < x.nf; ++b) s[1+b] += n[b]*x.c*x.ebath[2*dir + (low ? 0 : 1)]/6.0;
 }
 
 //----------------------------------------------------------------------------------------
@@ -463,7 +702,8 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
     const Real wo = x.consist ? x.c*x.fc[dir](m,CLF_WK,k,j,i)*
                                 x.cs(m,(blo ? CLN_HM : CLN_HP)+dir,kc,jc,ic) : 0.0;
     if (bc == M1_IBC_REFLECT) {
-      jj[1+dir][0] = x.c*CleanDiag(x, dir, dir, m, kc, jc, ic);
+      const Real dnn = CleanDnn(x, dir, m, k, j, i, kc, jc, ic);
+      for (int b = 0; b < x.nf; ++b) jj[1+b][0] = x.c*CleanNf(x, b, dir, m, k, j, i)*dnn;
       // the mirror image returns R_t and reverses R_d
       CleanCellDeviationFlux(x, m, kc, jc, ic, dir, dir + 1, 2.0*wo, jj);
       return;
@@ -472,9 +712,9 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
     if (x.fc[dir](m,CLF_LO,k,j,i) > 0.0) {
       // low-order boundary face: upwind characteristics against the ghost, D = I
       jj[0][0] = sg;
-      jj[0][1+dir] = 0.5*x.c;
       for (int b = 0; b < x.nf; ++b) {
-        jj[1+b][0] = (b == dir) ? 0.5*x.c : 0.0;
+        jj[0][1+b] = 0.5*x.c*CleanNf(x, b, dir, m, k, j, i);
+        jj[1+b][0] = jj[0][1+b];
         jj[1+b][1+b] = sg;
       }
       return;
@@ -486,10 +726,10 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
       if (x.all_low || x.fc[dir](m,CLF_UG,k,j,i) > 0.0) {
         // first-order solve or marked boundary face: upwind (a = c) stress between the
         // inner cell and the ghost
-        jj[1+b][0] = 0.5*x.c*CleanDiag(x, b, dir, m, kc, jc, ic);
+        jj[1+b][0] = 0.5*x.c*CleanDn(x, b, dir, m, k, j, i, kc, jc, ic);
         jj[1+b][1+b] = sg;
       } else {
-        jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, kc, jc, ic, blo);
+        jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, blo);
         CleanCellDeviationFlux(x, m, kc, jc, ic, b, b + 1, wo, jj);
       }
     }
@@ -501,17 +741,17 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
   CleanCellRhieChow(x, dir, al, m, k, j, i, q);
   Real cj[4] = {0.0, -1.0, 1.0, 0.0};
   if (!low) CleanJumpCoefficients(x, dir, 0, m, k, j, i, cj);
-  jl[0][0] = -hs*cj[1] + q[1]*CleanDiag(x, dir, dir, m, kl, jl_, il);
-  jr[0][0] = -hs*cj[2] + q[2]*CleanDiag(x, dir, dir, m, k, j, i);
-  jl[0][1+dir] = 0.5*x.c;
-  jr[0][1+dir] = 0.5*x.c;
+  jl[0][0] = -hs*cj[1] + q[1]*CleanDnn(x, dir, m, k, j, i, kl, jl_, il);
+  jr[0][0] = -hs*cj[2] + q[2]*CleanDnn(x, dir, m, k, j, i, k, j, i);
   for (int b = 0; b < x.nf; ++b) {
+    const Real nb = CleanNf(x, b, dir, m, k, j, i);
+    jl[0][1+b] = 0.5*x.c*nb;
+    jr[0][1+b] = 0.5*x.c*nb;
     if (!low) CleanJumpCoefficients(x, dir, 1+b, m, k, j, i, cj);
     // a low-order face carries the stress with D = I (upwind characteristics E +- F/c
     // with speeds +-c)
-    const Real dch = (b == dir) ? 1.0 : 0.0;
-    jl[1+b][0] = 0.5*x.c*(low ? dch : CleanDiag(x, b, dir, m, kl, jl_, il));
-    jr[1+b][0] = 0.5*x.c*(low ? dch : CleanDiag(x, b, dir, m, k, j, i));
+    jl[1+b][0] = 0.5*x.c*(low ? nb : CleanDn(x, b, dir, m, k, j, i, kl, jl_, il));
+    jr[1+b][0] = 0.5*x.c*(low ? nb : CleanDn(x, b, dir, m, k, j, i, k, j, i));
     jl[1+b][1+b] = -hs*cj[1];
     jr[1+b][1+b] = -hs*cj[2];
   }
@@ -614,7 +854,8 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
     a[n] = (1.0 - tm)*h + 0.25*tm;
     den += a[n]*r[n] - 0.5*tm;
     for (int b = 0; b < x.nf; ++b) {
-      ks[n][b] = (1.0 - th[n])*CleanCellOutStress(x, dir, b, m, kc, jc, ic, n == 1) +
+      ks[n][b] = (1.0 - th[n])*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic,
+                                                        n == 1) +
                  ((b == dir) ? th[n]/6.0 : 0.0);
     }
   }
@@ -708,13 +949,13 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
                        Real f[4]) {
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
   const int kl = k - dk, jl_ = j - dj, il = i - di;
-  Real jl[4][4], jr[4][4];
+  Real jl[4][4], jr[4][4], ul[4], ur[4];
   CleanCellFaceJacobian(x, dir, m, k, j, i, jl, jr);
+  CleanCellState(x, v, m, kl, jl_, il, ul);
+  CleanCellState(x, v, m, k, j, i, ur);
   for (int r = 0; r < 4; ++r) {
     f[r] = 0.0;
-    for (int c = 0; c < 4; ++c) {
-      f[r] += jl[r][c]*x.u(m,v+c,kl,jl_,il) + jr[r][c]*x.u(m,v+c,k,j,i);
-    }
+    for (int c = 0; c < 4; ++c) f[r] += jl[r][c]*ul[c] + jr[r][c]*ur[c];
   }
   const bool bdry = CleanBoundaryFace(x, dir, m, k, j, i);
   if (with_source && (bdry || x.consist || x.milne)) {
@@ -733,15 +974,16 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
   Real q[4];
   CleanCellRhieChow(x, dir, al, m, k, j, i, q);
   hs *= s;
-  f[0] += (1.0 - mu)*s*(q[3]*CleanDiag(x, dir, dir, m, kp, jp, ip)*x.u(m,v,kp,jp,ip) +
-                        q[0]*CleanDiag(x, dir, dir, m, km, jm, im)*x.u(m,v,km,jm,im));
+  f[0] += (1.0 - mu)*s*(q[3]*CleanDnn(x, dir, m, k, j, i, kp, jp, ip)*x.u(m,v,kp,jp,ip) +
+                        q[0]*CleanDnn(x, dir, m, k, j, i, km, jm, im)*x.u(m,v,km,jm,im));
   // reconstruction terms of the dissipation in the states of L-1 and R+1
   if (!x.recon || lo) return;
+  CleanCellState(x, v, m, km, jm, im, ul);
+  CleanCellState(x, v, m, kp, jp, ip, ur);
   for (int c = 0; c <= x.nf; ++c) {
     Real cj[4];
     CleanJumpCoefficients(x, dir, c, m, k, j, i, cj);
-    f[c] -= (c == 0 ? 1.0 - mu : 1.0)*hs*(cj[0]*x.u(m,v+c,km,jm,im) +
-                                         cj[3]*x.u(m,v+c,kp,jp,ip));
+    f[c] -= (c == 0 ? 1.0 - mu : 1.0)*hs*(cj[0]*ul[c] + cj[3]*ur[c]);
   }
 }
 
@@ -761,7 +1003,13 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
     Real fp[4], fm[4];
     CleanCellFaceFlux(x, v, dir, m, k+dk, j+dj, i+di, with_source, fp);
     CleanCellFaceFlux(x, v, dir, m, k, j, i, with_source, fm);
-    if (x.sph) {
+    if (x.cub) {
+      Real gp[4], gm[4];
+      CleanCsRows(x, dir, m, k+dk, j+dj, i+di, k, j, i, fp, gp);
+      CleanCsRows(x, dir, m, k, j, i, k, j, i, fm, gm);
+      for (int r = 0; r < 4; ++r) div[r] += gp[r] - gm[r];
+      for (int r = 0; adiv && r < 4; ++r) adiv[r] += fabs(gp[r]) + fabs(gm[r]);
+    } else if (x.sph) {
       Real wm[4], wp[4];
       CleanCellSphWeights(x, dir, m, k, j, i, wm, wp);
       for (int r = 0; r < 4; ++r) div[r] += wp[r]*fp[r] - wm[r]*fm[r];
@@ -806,11 +1054,13 @@ void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, con
     if (x.sph) CleanCellSphWeights(x, dir, m, k, j, i, wm, wp);
     if (x.consist || x.milne || CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di)) {
       CleanCellFaceSource(x, dir, m, k+dk, j+dj, i+di, s);
-      for (int r = 0; r < 4; ++r) div[r] += wp[r]*s[r];
+      if (x.cub) CleanCsRows(x, dir, m, k+dk, j+dj, i+di, k, j, i, s, wp);
+      for (int r = 0; r < 4; ++r) div[r] += x.cub ? wp[r] : wp[r]*s[r];
     }
     if (x.consist || x.milne || CleanBoundaryFace(x, dir, m, k, j, i)) {
       CleanCellFaceSource(x, dir, m, k, j, i, s);
-      for (int r = 0; r < 4; ++r) div[r] -= wm[r]*s[r];
+      if (x.cub) CleanCsRows(x, dir, m, k, j, i, k, j, i, s, wm);
+      for (int r = 0; r < 4; ++r) div[r] -= x.cub ? wm[r] : wm[r]*s[r];
     }
   }
   if (x.sph && x.consist) {
