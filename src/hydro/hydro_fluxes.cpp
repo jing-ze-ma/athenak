@@ -42,8 +42,7 @@
 #include "hydro/rsolvers/hlle_grhyd.hpp"
 
 namespace hydro {
-
-// bsgaccel-1011: the x2 / x3 flux sweeps are chunked below this many (m, pencil) teams
+// the x2 / x3 flux sweeps are chunked below this many (m, pencil) teams
 constexpr int kHFluxMinTeams = 432;
 
 //----------------------------------------------------------------------------------------
@@ -63,25 +62,30 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   int nvars = nhydro + nscalars;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const auto recon_method_ = recon_method;
-  // csedge-1019 <mesh>/cs_seam_flux = shared: the neighbour's own seam face states
-  // wball-1104: the x2/x3 backgrounds and weights (before the shared seam face states,
+  // <mesh>/cs_seam_flux = shared: the neighbour's own seam face states
+  // the x2/x3 backgrounds and weights (before the shared seam face states,
   // which reconstruct the edge cells exactly as the sweep does)
   if (wb_all) BuildWBCacheAll();
-  if (wb_all && wb_poison) {   // dhjwball-1106 TEST ONLY
+  if (wb_all && wb_poison) {   // TEST ONLY
     WbPoison(pmy_pack, wbq2, phicc_wb, wb_phimax);
     if (wbq3.extent_int(2) > 1) WbPoison(pmy_pack, wbq3, phicc_wb, wb_phimax);
   }
-  if (cs_seam_shared) {CsSeamFaceStates();}
+  if (cs_seam_shared) {
+    CsSeamFaceStates();
+  }
   const bool cs_shr_ = cs_seam_shared;
   DvceArray5D<Real> sfs2_, sfs3_;
-  if (cs_shr_) {sfs2_ = pseamfs->x2f; sfs3_ = pseamfs->x3f;}
+  if (cs_shr_) {
+    sfs2_ = pseamfs->x2f;
+    sfs3_ = pseamfs->x3f;
+  }
   bool extrema = false;
   if (recon_method == ReconstructionMethod::ppmx) {
     extrema = true;
   }
 
-  // --- <problem>/nan_report: the HLLC in-kernel capture (see hllc_hyd.hpp).  Zeroed once
-  // per Fluxes call; the first face with a non-finite energy flux wins the record.  When
+  // --- <problem>/nan_report: the HLLC in-kernel capture (see hllc_hyd.hpp). Zeroed once
+  // per Fluxes call; the first face with a non-finite energy flux wins the record. When
   // the switch is off these are 1-element dummies and the solver never touches them.
   const bool nanrep_r_ = nan_report;
   if (nanrep_r_ && wbrec_nanrep_cnt == nullptr) {
@@ -139,13 +143,13 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto phi_wb_x1f_ = phi_wb_x1f;
   auto phi0_x2f = phi0.x2f;
   auto phi0_x3f = phi0.x3f;
-    
+
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   const auto wb_option_ = wb_option;
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
   const bool use_wb_x2_ = use_wb_x2;
-  const bool wb_all_ = wb_all;   // wball-1104
+  const bool wb_all_ = wb_all;
   auto wbq2_ = wbq2;
   auto wbq3_ = wbq3;
   auto wbw_ = wbw;
@@ -169,19 +173,19 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   // is off-centre even without a stretch; `reconstruct` governs the ANGULAR sweeps)
   const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
   const bool wall_ix1_ = wall_closed_ix1;
-  // wallwb-1105 <hydro>/wall_wb_onesided (hydro.hpp, reconstruct/wb_wall.hpp): every
+  // <hydro>/wall_wb_onesided (hydro.hpp, reconstruct/wb_wall.hpp): every
   // geometry, on the x1 dynamic WB paths that read the x1 cache wbq0 (PLM)
   const bool wwb_ = wall_wb_onesided && use_wellbalance_dynamic && use_wb_x1 &&
                     (wb_all || recon_method_x1 == ReconstructionMethod::plm ||
                      !(pmy_pack->pmesh->use_spherical_polar || str_r1_));
   const bool curv1_ = pmy_pack->pmesh->use_spherical_polar || str_r1_;
-  const bool diode_ox1_ = diode_ox1;   // topbc-1101 (hydro.hpp)
+  const bool diode_ox1_ = diode_ox1;   // (hydro.hpp)
   // <hydro>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see hydro.hpp).
   const auto recon_method_x1_ = recon_method_x1;
   auto &mb_bcs_pq = pmy_pack->pmb->mb_bcs;
   const bool pquad_ = pmy_pack->pmesh->use_polar_quadratic_recon;
   const int px3_ = pmy_pack->pmesh->polar_x3_shift;
-  // mrglat-1019: group-level lateral reconstruction of the merged cells (see
+  // group-level lateral reconstruction of the merged cells (see
   // hydro_mergelat.hpp); off unless <hydro>/merge_lat_rc is named
   const bool mlat_ = (pmlat != nullptr && pmlat->on);
   DvceArray2D<int> mlfi_;
@@ -192,7 +196,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   const int mln2_ = indcs_.nx2 + 2*indcs_.ng;
   const int mln3_ = indcs_.nx3 + 2*indcs_.ng;
   const int mlng_ = indcs_.ng;
-  // layoutaudit-1103 <hydro>/merge_lat_blockend = exchange: the cell of the group beyond
+  // <hydro>/merge_lat_blockend = exchange: the cell of the group beyond
   // each ghost group at an internal MeshBlock face (hydro.hpp, MlatBlockendStates)
   const bool mlx_ = mlat_ && mlat_exch;
   DvceArray1D<int> mlmask_;
@@ -211,7 +215,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                      ScrArray2D<Real>::shmem_size(nder, ncells1)) * 2;
   int scr_level = scratch_level;
   auto &flx1_ = uflx.x1f;
-    
+
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
 
@@ -239,7 +243,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     if (wb_cache_every <= 0 || !wb_cache_built ||
         (stage == 1 && (ncyc % wb_cache_every) == 0)) {
       BuildWBCache(jl, ju, kl, ku);
-      if (wb_poison) WbPoison(pmy_pack, wbq0, phicc_wb, wb_phimax);   // dhjwball-1106 TEST
+      if (wb_poison) WbPoison(pmy_pack, wbq0, phicc_wb, wb_phimax);   // TEST
       wb_cache_built = true;
       wbreb_h = true;
     }
@@ -289,15 +293,13 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             break;
         }
       } else {
-
-    if (wb_all_) {   // wball-1104: x1 through the same routine (w = 1)
+    if (wb_all_) {   // x1 through the same routine (w = 1)
       WbAllPLM(member, use_wb_rho_, 1, m, k, j, il-1, iu, w0_, wbq0_, wbw_, wl, wr);
     } else if (use_wellbalance_dynamic_ && use_wb_x1_)
     {
       WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
           m, k, j, il-1, iu, w0_, phicc_wb_, phi_wb_x1f_, wbq0_, wl, wr);
     } else {
-          
     // Reconstruct qR[i] and qL[i+1]
     switch (recon_method_) {
       case ReconstructionMethod::dc:
@@ -320,10 +322,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       default:
         break;
     }
-        
     }
     }
-      
+
     // Reconstruct the derived thermodynamic variables (general EOS only). apply_floors is
     // false: that logic keys off n==IDN/n==IEN, whose values collide with DerivedIndex.
     if (nder > 0) {
@@ -385,10 +386,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       }
       // reconstruction can undershoot; keep the interface pressure positive
       // The x1 reconstruction writes dl(n,i+1) from the thread that owns i, so the
-      // floor below reads a slot ANOTHER thread wrote.  Successive par_for_inner
+      // floor below reads a slot ANOTHER thread wrote. Successive par_for_inner
       // loops are not implicitly synchronised, so without this barrier whether the
       // floor sees the reconstructed value or a stale one is scheduling-dependent,
-      // and the run is not reproducible.  x2/x3 need no barrier: those
+      // and the run is not reproducible. x2/x3 need no barrier: those
       // reconstructions write index i from thread i.
       member.team_barrier();
       // --- <problem>/nan_report: look at the reconstruction BEFORE the fmax mask below.
@@ -441,10 +442,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         // undershoot -- it MASKS a non-finite reconstructed pressure and leaves the
         // interface energy wl/wr(IEN), which has no floor of its own, NaN; the HLLC
         // general-EOS branch then poisons flx(IEN) through 0*NaN while every momentum
-        // flux stays finite (the signature of the wb_recon_x1 death).  Repair the pair
+        // flux stays finite (the signature of the wb_recon_x1 death). Repair the pair
         // consistently instead: floored pressure AND the internal energy that belongs
         // to it, pfloor/(Gamma_1 - 1) with this interface's reconstructed Gamma_1
-        // (gamma-law fallback if that is unusable too).  The nan_report block above has
+        // (gamma-law fallback if that is unusable too). The nan_report block above has
         // already counted and recorded the event, so nothing is hidden any more.
         if (!isfinite(dl(IDPR,i)) || !isfinite(wl(IEN,i))) {
           Real g1 = (isfinite(dl(IDG1,i)) && dl(IDG1,i) > 1.0) ? dl(IDG1,i) : eos_.gamma;
@@ -468,25 +469,25 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       if (use_cubed_sphere) {
           GnomonicEquianglePrimFaceX1(gtrig_cell,member,m,k,j,il-1,iu,wl,wr);
       }
-      
+
     // A REFLECTING radial wall passes exactly zero mass flux only if the two states the
-    // Riemann solver sees at the wall face are mirror images.  The position-aware x1
+    // Riemann solver sees at the wall face are mirror images. The position-aware x1
     // reconstruction (spherical polar and, since the radial unification, the cubed
     // sphere) is not mirror-symmetric about the wall -- the ghost centroids do not mirror
     // the interior ones -- so the ghost-side state differed from the interior one at
-    // O(dx^2) and a strong blast leaked 2-3e-4 of the mass through a "closed" wall.  Make
+    // O(dx^2) and a strong blast leaked 2-3e-4 of the mass through a "closed" wall. Make
     // the ghost-side state the exact mirror of the interior-side one: any solver then
     // returns a zero mass flux (S_M = 0 by symmetry) to round-off.
     if (use_spherical_polar || str_r1_ || wwb_) {
       member.team_barrier();
       Kokkos::single(Kokkos::PerTeam(member), [&]() {
         // Also used for a USER inner boundary under wall_closed_ix1 (dhj problem/
-        // wall_closed).  There the derived pressure / Gamma_1 of a general EOS are
+        // wall_closed). There the derived pressure / Gamma_1 of a general EOS are
         // mirrored too: the HLLC general-EOS branch reads them instead of recomputing p
         // from (d,e), so mirroring only wl would keep the ghost-side pressure and give
-        // S_M != 0.  (ix1_bc = reflect is left exactly as it was.)
+        // S_M != 0. (ix1_bc = reflect is left exactly as it was.)
         const BoundaryFlag bix1 = mb_bcs_pq.d_view(m,BoundaryFace::inner_x1);
-        // wallwb-1105 <hydro>/wall_wb_onesided: the wall cells reconstruct their WB
+        // <hydro>/wall_wb_onesided: the wall cells reconstruct their WB
         // deviation one-sided (reconstruct/wb_wall.hpp), then the mirror below
         const BoundaryFlag box1 = mb_bcs_pq.d_view(m,BoundaryFace::outer_x1);
         if (wwb_) {
@@ -506,7 +507,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           }
         }
         if (bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user)) {
-          for (int n=0; n<nvars; ++n) { wl(n,is) = wr(n,is); }
+          for (int n=0; n<nvars; ++n) {
+            wl(n,is) = wr(n,is);
+          }
           wl(IVX,is) = -wr(IVX,is);
           if (bix1 == BoundaryFlag::user || wwb_) {  // reflect stays bitwise (key off)
             for (int n=0; n<nder; ++n) {
@@ -515,23 +518,31 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           }
         }
         if (box1 == BoundaryFlag::reflect) {
-          for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
+          for (int n=0; n<nvars; ++n) {
+            wr(n,ie+1) = wl(n,ie+1);
+          }
           wr(IVX,ie+1) = -wl(IVX,ie+1);
           if (wwb_) {
-            for (int n=0; n<nder; ++n) { dr(n,ie+1) = dl(n,ie+1); }
+            for (int n=0; n<nder; ++n) {
+              dr(n,ie+1) = dl(n,ie+1);
+            }
           }
         }
       });
     }
-    // topbc-1101 diode_ox1: a one-way outer radial face (see hydro.hpp)
+    // diode_ox1: a one-way outer radial face (see hydro.hpp)
     if (diode_ox1_) {
       member.team_barrier();
       Kokkos::single(Kokkos::PerTeam(member), [&]() {
         if (mb_bcs_pq.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user &&
             wl(IVX,ie+1) < 0.0) {
-          for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
+          for (int n=0; n<nvars; ++n) {
+            wr(n,ie+1) = wl(n,ie+1);
+          }
           wr(IVX,ie+1) = -wl(IVX,ie+1);
-          for (int n=0; n<nder; ++n) { dr(n,ie+1) = dl(n,ie+1); }
+          for (int n=0; n<nder; ++n) {
+            dr(n,ie+1) = dl(n,ie+1);
+          }
         }
       });
     }
@@ -539,8 +550,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     member.team_barrier();
 
     // compute fluxes over [is,ie+1]
-    // NOTE(@pdmullen): Capture variables prior to if constexpr.  Required for cuda 11.6+.
-    // dhjcuda2-1113: const references to the captured copies (see mhd_fluxes.cpp).
+    // NOTE(@pdmullen): Capture variables prior to if constexpr. Required for cuda 11.6+.
+    // const references to the captured copies (see mhd_fluxes.cpp).
     const auto &eos = eos_;
     const auto &rscnt = rscnt_;
     const auto &rsrec = rsrec_;
@@ -595,7 +606,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle_gr) {
       HLLE_GR(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
     }
-      
+
       if (use_cubed_sphere) {
           GnomonicEquiangleFluxX1(gtrig_cell,member,m,k,j,il,iu,flx1);
       }
@@ -622,7 +633,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     scr_size = (ScrArray2D<Real>::shmem_size(nvars, ncells1) +
                 ScrArray2D<Real>::shmem_size(nder, ncells1)) * 3;
     auto &flx2_ = uflx.x2f;
-      
+
     auto &x2v_ = pmy_pack->pcoord->x2v_rec;  // == x2v unless sp_x2_periodic_image
     auto &x2f_ = pmy_pack->pcoord->xx2f;
 
@@ -630,22 +641,25 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     il = is, iu = ie, jl = js-1, ju = je+1, kl = ks, ku = ke;
     // BOTH widenings apply when both are on: FOFC needs the flux one cell beyond every
     // flagged cell, and the sp face-average stencils read the x2 fluxes at i +- 1 and
-    // k +- 1.  Written as `else if` the sp widening was dropped whenever fofc was on and
-    // the face averages then read stale x2 fluxes.  (The FOFC ranges happen to contain
+    // k +- 1. Written as `else if` the sp widening was dropped whenever fofc was on and
+    // the face averages then read stale x2 fluxes. (The FOFC ranges happen to contain
     // the sp ones in every direction, so this is a no-op today; it is written as a
     // UNION so that it stays correct if either widening changes.)
     if (use_fofc || sp_favg_) {
       il = is-1, iu = ie+1;
-      if (use_fofc) { jl = js-2, ju = je+2; }
-      if (!pmy_pack->pmesh->two_d) { kl = ks-1, ku = ke+1; }
+      if (use_fofc) {
+        jl = js-2, ju = je+2;
+      }
+      if (!pmy_pack->pmesh->two_d) {
+        kl = ks-1, ku = ke+1;
+      }
     }
 
     scr_level = TeamScratchLevel(scr_size, scratch_level);
-    // bsgaccel-1011: the j sweep of each (m, k) pencil split into nch2 chunks of jc2
-    // faces when the pack has too few (m, k) pencils to fill the GPU (one MeshBlock per
-    // GPU: 66 teams on 108 SMs).  A chunk re-makes the reconstruction of its first row
-    // (the previous chunk's last); every face flux is computed once, by the same
-    // arithmetic (bitwise).  nch2 = 1 (the plain sweep) whenever the pencils suffice.
+    // the j sweep of each (m, k) pencil split into nch2 chunks of jc2 faces when the
+    // pack has too few (m, k) pencils to fill the GPU. A chunk re-makes the
+    // reconstruction of its first row (the previous chunk's last); every face flux is
+    // computed once, by the same arithmetic. nch2 = 1 (the plain sweep) otherwise.
     const int njf2 = ju - jl;                         // faces (jl, ju]
     const int npen2 = (nmb1 + 1)*(ku - kl + 1);
     int nch2 = 1;
@@ -690,12 +704,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         if (use_spherical_polar) {
             GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_,
                                   wl_jp1, wr, pq);
-            if (wb_all_) {   // wball-1104: the WB deviation blended into the plain faces
+            if (wb_all_) {   // the WB deviation blended into the plain faces
               WbAllBlendGrid(member, use_wb_rho_, 2, false, m, k, j, is-1, ie+1, w0_,
                              x2v_, x2f_, wbq2_, wbw_, wl_jp1, wr);
             }
         } else {
-            
         if (wb_all_) {
           WbAllPLM(member, use_wb_rho_, 2, m, k, j, il, iu, w0_, wbq2_, wbw_, wl_jp1, wr);
         } else if (use_wellbalance_dynamic_ && use_wb_x2_)
@@ -703,7 +716,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           WbLocalPiecewiseLinearX2(member, eos_, wb_option_, use_wb_rho_,
               m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
         } else {
-
         // Reconstruct qR[j] and qL[j+1]
         switch (recon_method_) {
           case ReconstructionMethod::dc:
@@ -726,10 +738,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           default:
             break;
         }
-            
         }
         }
-          
+
         // Reconstruct the derived thermodynamic variables (general EOS only)
         if (nder > 0) {
           if (use_spherical_polar) {
@@ -778,7 +789,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           });
         }
 
-        // mrglat-1019: the merged cells' x2 face states from the group-level PLM (a
+        // the merged cells' x2 face states from the group-level PLM (a
         // group whose neighbour cells lie outside the array keeps the fine states)
         if (mlat_) {
           member.team_barrier();
@@ -796,19 +807,26 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             const bool narrow = (f*((f + 1)/f) > mlng_ - 1);
             bool flat = (jm < 0 || jp > mln2_ - 1) ||
                         (narrow && (jlo <= js || jlo + f - 1 >= je));
-            // layoutaudit-1103 merge_lat_blockend = exchange (active rows and radii
+            // merge_lat_blockend = exchange (active rows and radii
             // only: the exchanged record covers k = ks..ke, i = is..ie; the FOFC-widened
-            // ghost rows / radial ghosts keep the rule above): at an INTERNAL block face an own edge
-            // group keeps its PLM (both neighbour cells are in the array), and the ghost
-            // group beyond the face takes the neighbour's cell beyond it (src 1 / 2)
+            // ghost rows / radial ghosts keep the rule above): at an INTERNAL block face
+            // an own edge group keeps its PLM (both neighbour cells are in the array),
+            // and the ghost group beyond the face takes the neighbour's cell beyond it
+            // (src 1 / 2)
             int src = 0;
             if (mlx_ && narrow && k >= ks && k <= ke && i >= is && i <= ie) {
               const int msk = mlmask_(m);
               const bool loi = (msk & 1) != 0, hii = (msk & 2) != 0;
               if (jlo < js) {
-                if (loi) {flat = false; src = 1;}
+                if (loi) {
+                  flat = false;
+                  src = 1;
+                }
               } else if (jlo > je) {
-                if (hii) {flat = false; src = 2;}
+                if (hii) {
+                  flat = false;
+                  src = 2;
+                }
               } else {
                 flat = ((jlo <= js) && !loi) || ((jlo + f - 1 >= je) && !hii);
               }
@@ -843,10 +861,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           if (use_cubed_sphere) {
               GnomonicEquianglePrimFaceX2(gtrig_xi,member,m,k,j,il,iu,wl_jp1,wr);
           }
-          
+
         member.team_barrier();
 
-        // condwall-1028: a REFLECTING theta wall on spherical polar.  The position-aware
+        // a REFLECTING theta wall on spherical polar. The position-aware
         // x2 reconstruction is not mirror-symmetric about the wall (as the x1 one about a
         // radial wall, see the x1 sweep), so the ghost-side state is not the mirror of
         // the interior one and the wall passed mass (6e-6 of M in t = 1, cw_test sp).
@@ -858,20 +876,32 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           const bool in2 = (j == js);
           par_for_inner(member, il, iu, [&](const int i) {
             for (int n=0; n<nvars; ++n) {
-              if (in2) {wl(n,i) = wr(n,i);} else {wr(n,i) = wl(n,i);}
+              if (in2) {
+                wl(n,i) = wr(n,i);
+              } else {
+                wr(n,i) = wl(n,i);
+              }
             }
-            if (in2) {wl(IVY,i) = -wr(IVY,i);} else {wr(IVY,i) = -wl(IVY,i);}
+            if (in2) {
+              wl(IVY,i) = -wr(IVY,i);
+            } else {
+              wr(IVY,i) = -wl(IVY,i);
+            }
             for (int n=0; n<nder; ++n) {
-              if (in2) {dl(n,i) = dr(n,i);} else {dr(n,i) = dl(n,i);}
+              if (in2) {
+                dl(n,i) = dr(n,i);
+              } else {
+                dr(n,i) = dl(n,i);
+              }
             }
           });
           member.team_barrier();
         }
 
-        // compute fluxes over [js,je+1].  RS returns flux in input wr array
+        // compute fluxes over [js,je+1]. RS returns flux in input wr array
         if (j>ja) {
           // NOTE(@pdmullen): Capture variables prior to if constexpr.
-          // dhjcuda2-1113: const references, see the x1 sweep.
+          // const references, see the x1 sweep.
           const auto &eos = eos_;
           const bool nanrep_r = nanrep_r_;
           const auto &rscnt = rscnt_;
@@ -880,10 +910,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           const auto &size = size_;
           const auto &coord = coord_;
           const auto &flx2 = flx2_;
-          // csedge-1019 shared seam: the ghost-side state of a panel-seam face is replaced
-          // by the neighbour panel's OWN reconstruction of its edge cell (CsSeamFaceStates),
-          // written in this face's frame (after GnomonicEquianglePrimFaceX2: IVY = v.n,
-          // IVZ = the covariant along-seam component)
+          // shared seam: the ghost-side state of a panel-seam face is replaced
+          // by the neighbour panel's OWN reconstruction of its edge cell
+          // (CsSeamFaceStates), written in this face's frame (after
+          // GnomonicEquianglePrimFaceX2: IVY = v.n, IVZ = the covariant along-seam
+          // component)
           if (cs_shr_ && k >= ks && k <= ke &&
               ((j == js && size.d_view(m).x2min <= -1.0 + 1.0e-12) ||
                (j == je+1 && size.d_view(m).x2max >= 1.0 - 1.0e-12))) {
@@ -959,7 +990,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     scr_size = (ScrArray2D<Real>::shmem_size(nvars, ncells1) +
                 ScrArray2D<Real>::shmem_size(nder, ncells1)) * 3;
     auto &flx3_ = uflx.x3f;
-      
+
     auto &x3v_ = pmy_pack->pcoord->x3v;
     auto &x3f_ = pmy_pack->pcoord->xx3f;
     auto &x2v3_ = pmy_pack->pcoord->x2v;
@@ -967,15 +998,17 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
     // set the loop limits
     il = is, iu = ie, jl = js, ju = je, kl = ks-1, ku = ke+1;
-    // the union of both widenings; see the note in the x2 sweep.  The face-average
+    // the union of both widenings; see the note in the x2 sweep. The face-average
     // stencils read the x3 fluxes at i +- 1 and j +- 1 (the polar ghost row included).
     if (use_fofc || sp_favg_) {
       il = is-1, iu = ie+1, jl = js-1, ju = je+1;
-      if (use_fofc) { kl = ks-2, ku = ke+2; }
+      if (use_fofc) {
+        kl = ks-2, ku = ke+2;
+      }
     }
 
     scr_level = TeamScratchLevel(scr_size, scratch_level);
-    // bsgaccel-1011: the k sweep split into chunks as the x2 j sweep (bitwise)
+    // the k sweep split into chunks as the x2 j sweep
     const int nkf3 = ku - kl;
     const int npen3 = (nmb1 + 1)*(ju - jl + 1);
     int nch3 = 1;
@@ -1088,7 +1121,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           });
         }
 
-        // mrglat-1019: the merged cells' x3 face states from the group-level PLM
+        // the merged cells' x3 face states from the group-level PLM
         if (mlat_) {
           member.team_barrier();
           par_for_inner(member, il, iu, [&](const int i) {
@@ -1105,15 +1138,21 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             const bool narrow = (f*((f + 1)/f) > mlng_ - 1);
             bool flat = (km < 0 || kp > mln3_ - 1) ||
                         (narrow && (klo <= ks || klo + f - 1 >= ke));
-            // layoutaudit-1103 merge_lat_blockend = exchange (see the x2 sweep)
+            // merge_lat_blockend = exchange (see the x2 sweep)
             int src = 0;
             if (mlx_ && narrow && j >= js && j <= je && i >= is && i <= ie) {
               const int msk = mlmask_(m);
               const bool loi = (msk & 4) != 0, hii = (msk & 8) != 0;
               if (klo < ks) {
-                if (loi) {flat = false; src = 1;}
+                if (loi) {
+                  flat = false;
+                  src = 1;
+                }
               } else if (klo > ke) {
-                if (hii) {flat = false; src = 2;}
+                if (hii) {
+                  flat = false;
+                  src = 2;
+                }
               } else {
                 flat = ((klo <= ks) && !loi) || ((klo + f - 1 >= ke) && !hii);
               }
@@ -1148,10 +1187,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           if (use_cubed_sphere) {
               GnomonicEquianglePrimFaceX3(gtrig_eta,member,m,k,j,il,iu,wl_kp1,wr);
           }
-          
+
         // SPHERICAL POLAR: correct the reconstructed x3-face states from the cell's
         // volume centroid theta to the x3 face's midpoint theta (see the long note in
-        // mhd_fluxes.cpp).  <mesh>/polar_x3_shift selects the form: 1 = "rotate", the
+        // mhd_fluxes.cpp). <mesh>/polar_x3_shift selects the form: 1 = "rotate", the
         // exact basis rotation of the (r,theta) vector pair; 2 = "shift", the unlimited
         // centred-difference theta shift of every variable, which also carries the
         // scalar gradient but was BISECTED to the polar-row radial-field blow-up of the
@@ -1184,10 +1223,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
         member.team_barrier();
 
-        // compute fluxes over [ks,ke+1].  RS returns flux in input wr array
+        // compute fluxes over [ks,ke+1]. RS returns flux in input wr array
         if (k>ka) {
           // NOTE(@pdmullen): Capture variables prior to if constexpr.
-          // dhjcuda2-1113: const references, see the x1 sweep.
+          // const references, see the x1 sweep.
           const auto &eos = eos_;
           const bool nanrep_r = nanrep_r_;
           const auto &rscnt = rscnt_;
@@ -1196,7 +1235,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           const auto &size = size_;
           const auto &coord = coord_;
           const auto &flx3 = flx3_;
-          // csedge-1019 shared seam (see the x2 sweep): after GnomonicEquianglePrimFaceX3
+          // shared seam (see the x2 sweep): after GnomonicEquianglePrimFaceX3
           // IVZ = v.n and IVY = the covariant along-seam component
           if (cs_shr_ && j >= js && j <= je &&
               ((k == ks && size.d_view(m).x3min <= -1.0 + 1.0e-12) ||
@@ -1275,18 +1314,15 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void Hydro::CsSeamFaceStates()
-//! \brief csedge-1019 <mesh>/cs_seam_flux = shared.  Each panel's OWN interior-side face
-//! state at its panel-seam faces -- the PLM of its edge cell over (ghost, edge, inner),
-//! exactly the reconstruction the sweep makes there (primitives + the general-EOS derived
-//! pressure / Gamma_1, pressure floored as in the sweep), the tangential velocity written
-//! as covariant components on the face's own basis -- is exchanged across the seam
-//! (pbval_fs, seam_raw: the pack re-expresses IVY/IVZ on the neighbour's basis at the face
-//! centre, cubed_sphere::TransformMomentum).  Afterwards *pseamfs holds, at every seam
-//! face of this rank, the NEIGHBOUR's own state.  The sweep then solves the seam face
-//! with (neighbour's own, this panel's own) states -- one Riemann problem, as an interior
-//! face -- and the two panels' results (mirror images up to round-off) are averaged in
-//! RecvAndUnpackFluxSeamCC, which keeps the update exactly conservative.
+//! \fn void Hydro::CsSeamFaceStates
+//! \brief <mesh>/cs_seam_flux = shared: exchanges each panel's own interior-side face
+//! state at its panel-seam faces (the PLM of its edge cell over ghost, edge and inner
+//! cell, as in the sweep: primitives plus the general-EOS derived pressure / Gamma_1,
+//! pressure floored, tangential velocity as covariant components on the face basis)
+//! through pbval_fs (seam_raw; the pack re-expresses IVY/IVZ on the neighbour's basis).
+//! Afterwards *pseamfs holds, at every seam face, the neighbour's own state; the sweep
+//! solves the seam face as one Riemann problem with (neighbour's own, own) states, and
+//! the two panels' fluxes are averaged in RecvAndUnpackFluxSeamCC (conservative).
 
 void Hydro::CsSeamFaceStates() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1316,22 +1352,22 @@ void Hydro::CsSeamFaceStates() {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // mrglat-rsg-1019: in the merged region (<hydro>/merge_lat_rc) the sweep's own seam face
+  // mrglat- in the merged region (<hydro>/merge_lat_rc) the sweep's own seam face
   // state is the GROUP-level PLM (MlatCoarsePLM over the neighbour groups, zero slope for
-  // a 'narrow' block-edge group), not the fine PLM of the edge cell: send exactly that, so
-  // both panels again solve the SAME seam Riemann problem (mirror images)
+  // a 'narrow' block-edge group), not the fine PLM of the edge cell: send exactly that,
+  // so both panels again solve the SAME seam Riemann problem (mirror images)
   const bool mlat_ = (pmlat != nullptr && pmlat->on);
   DvceArray2D<int> mlfi_;
   if (mlat_) {
     pmlat->Build();
     mlfi_ = pmlat->fi;
   }
-  // ucthshare-1102: the fill / covariant kernels are shared with MHD (cs_seam_states.hpp)
+  // the fill / covariant kernels are shared with MHD (cs_seam_states.hpp)
   cs_seam::CsSeamPLMFill(pmy_pack, w0, nvars, 0, -1, eos_.pfloor, eos_.plm_c1,
                          *pseamfs, mlat_, mlfi_, is, ie);
   cs_seam::CsSeamPLMFill(pmy_pack, wder, nder, nvars, IDPR, eos_.pfloor, eos_.plm_c1,
                          *pseamfs, mlat_, mlfi_, is, ie);
-  if (wb_all) {   // wball-1104: the edge cells' own WB seam face states (shared code)
+  if (wb_all) {   // the edge cells' own WB seam face states (shared code)
     WbAllCtx c = WbCtx();
     WbAllSeamFaces(c, *pseamfs, nvars, nder, use_wb_rho, is, ie);
   }
@@ -1345,20 +1381,16 @@ void Hydro::CsSeamFaceStates() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void Hydro::MlatBlockendStates()
-//! \brief layoutaudit-1103 <hydro>/merge_lat_blockend = exchange.  A 'narrow' merged
-//! group (f ceil(2/f) > nghost - 1) next to a MeshBlock face cannot be reconstructed
-//! from this block's ghosts alone when it is the NEIGHBOUR's group: its PLM needs the
-//! cell beyond it, f+1 cells from the face, outside the ghost zone.  The old rule
-//! flattened every such group (and, to stay conservative, the own group on the other
-//! side) at EVERY MeshBlock edge, which made the result depend on the layout (the panel
-//! midlines of a 2x2 layout went first order).  Here each block writes, at each of its
-//! internal x2/x3 faces, the primitive (+ derived) values of the cell its neighbour
-//! needs -- for the face js the first cell of its second group (js+f), for je+1 the last
-//! cell of its second-to-last group (je-f) -- and pbval_ml (seam_raw, seam_same_panel)
-//! hands them over, so *pmlfs then holds at each internal face the cell beyond the ghost
-//! group.  The sweep forms exactly the group PLM a one-block layout forms.  Active
-//! rows (k in ks..ke for x2 faces, j in js..je for x3) only.
+//! \fn void Hydro::MlatBlockendStates
+//! \brief <hydro>/merge_lat_blockend = exchange: a narrow merged latitude group
+//! (f ceil(2/f) > nghost - 1) next to a MeshBlock face cannot be reconstructed from this
+//! block's ghosts when it is the neighbour's group (its PLM needs the cell f+1 cells
+//! from the face). Each block writes, at each internal x2/x3 face, the primitive (+
+//! derived) values of the cell its neighbour needs (face js: first cell of its second
+//! group, js+f; face je+1: last cell of its second-to-last group, je-f), and pbval_ml
+//! (seam_raw, seam_same_panel) hands them over, so *pmlfs holds at each internal face
+//! the cell beyond the ghost group and the sweep forms the same group PLM as a one-block
+//! layout. Active rows (k in ks..ke for x2 faces, j in js..je for x3) only.
 
 void Hydro::MlatBlockendStates() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;

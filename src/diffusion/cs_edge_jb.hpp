@@ -131,9 +131,4 @@ Real CsEdgeAdEmf(const int dir, const CsEdgeJB &s) {
   return s.eta_a*(jd2 - jdb*s.bd2/bsq);
 }
 
-// <mhd>/cs_seam_res = mean_j: the cell-centred field the ambipolar seam current uses
-// (the stage bcc of the caller; nullptr = MHD::bcc0).  Set by AddEMFAmbipolarGnomonic
-// before MHD::CsSeamResist (mhd_cs_seam.cpp).
-void CsSeamResJBcc(const DvceArray5D<Real> *bc);
-
 #endif  // DIFFUSION_CS_EDGE_JB_HPP_

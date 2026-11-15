@@ -185,10 +185,18 @@ void CsSeamGhostPrim(const TM &member, const DvceArray5D<Real> &sfs, const int m
     for (int n=0; n<nvars; ++n) {
       Real q = sfs(m,n,k,j,i);
       if (n == ivn) q = (sfs(m,ivn,k,j,i) - cf*sfs(m,ivt,k,j,i))/sf;
-      if (lo) {wl(n,i) = q;} else {wr(n,i) = q;}
+      if (lo) {
+        wl(n,i) = q;
+      } else {
+        wr(n,i) = q;
+      }
     }
     for (int n=0; n<nder; ++n) {
-      if (lo) {dl(n,i) = sfs(m,nvars+n,k,j,i);} else {dr(n,i) = sfs(m,nvars+n,k,j,i);}
+      if (lo) {
+        dl(n,i) = sfs(m,nvars+n,k,j,i);
+      } else {
+        dr(n,i) = sfs(m,nvars+n,k,j,i);
+      }
     }
   });
 }

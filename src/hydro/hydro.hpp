@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file hydro.hpp
-//  \brief definitions for Hydro class
+// \brief definitions for Hydro class
 
 #include <map>
 #include <memory>
@@ -36,13 +36,14 @@ class ShearingBoxCC;
 class Driver;
 
 // constants that enumerate Hydro Riemann Solver options
-enum class Hydro_RSolver {advect, llf, hlle, hllc, lhllc, hllclm, ausmpup, roe,    // non-relativistic
+// non-relativistic
+enum class Hydro_RSolver {advect, llf, hlle, hllc, lhllc, hllclm, ausmpup, roe,
                           llf_sr, hlle_sr, hllc_sr,        // SR
                           llf_gr, hlle_gr};                // GR
 
 //----------------------------------------------------------------------------------------
 //! \struct HydroTaskIDs
-//  \brief container to hold TaskIDs of all hydro tasks
+// \brief container to hold TaskIDs of all hydro tasks
 
 struct HydroTaskIDs {
   TaskID irecv;
@@ -72,40 +73,41 @@ struct HydroTaskIDs {
   TaskID splitpc2p;
   TaskID splitpst;
   TaskID splitsc2p;
-  TaskID trcsrc;   // share-1104 P4: <hydro>/floor_tracer pass
+  TaskID trcsrc;   // P4: <hydro>/floor_tracer pass
 };
 
 namespace hydro {
-class AmModule;   // cs-open-1018: hydro_am.hpp
-struct WbAllCtx;   // wball-1104 (hydro_wball.hpp)
-class MergeLat;   // mrglat-1019: hydro_mergelat.hpp
-class RingAvg;    // ringavg-1029: hydro_ringavg.hpp
+class AmModule;   // cs- hydro_am.hpp
+struct WbAllCtx;   // (hydro_wball.hpp)
+class MergeLat;   // hydro_mergelat.hpp
+class RingAvg;    // hydro_ringavg.hpp
 
 // <problem>/nan_report: the HLLC in-kernel capture record (see hllc_hyd.hpp and the
-// readback in Hydro::Fluxes).  Pointers, not Views: a file-scope View outlives
-// Kokkos::finalize.  Never allocated unless the switch is on.
+// readback in Hydro::Fluxes). Pointers, not Views: a file-scope View outlives
+// Kokkos::finalize. Never allocated unless the switch is on.
 inline DvceArray1D<int> *rsolv_nanrep_cnt = nullptr;
 inline DvceArray1D<Real> *rsolv_nanrep_rec = nullptr;
 inline DvceArray1D<int> *wbrec_nanrep_cnt = nullptr;
 inline DvceArray1D<Real> *wbrec_nanrep_rec = nullptr;
 inline int wbrec_nanrep_lines = 0;
-// vgdrot-1011: the 1-element stand-ins passed to the solvers when nan_report is off, made
+// the 1-element stand-ins passed to the solvers when nan_report is off, made
 // once (were 4 device allocations + frees per Fluxes call); never written
 inline DvceArray1D<int> *nanrep_dummy_i = nullptr;
 inline DvceArray1D<Real> *nanrep_dummy_r = nullptr;
 inline int rsolv_nanrep_lines = 0;
 
-// <hydro>/fofc pgen-level default (defaults-1002): false in the core; a problem generator
+// <hydro>/fofc pgen-level default : false in the core; a problem generator
 // whose inputs all run FOFC sets it true at static initialisation (he_star_m1,
-// box_convection).  Constant-initialised, so it is false before any dynamic initialiser
-// runs; read once by the Hydro constructor.  An input that names the key is unchanged; a
+// box_convection). Constant-initialised, so it is false before any dynamic initialiser
+// runs; read once by the Hydro constructor. An input that names the key is unchanged; a
 // RESTART whose embedded input lacks the key keeps the old default (off).
 inline bool fofc_pgen_default = false;
-// amdef-1019 (USER 10-19): <hydro>/etotgrav pgen-level support flag.  The new default
-// etotgrav = true (utils/recipe.hpp) applies only where SUPPORTED: a problem generator that
-// fills the potential (phicc0/phi0) and writes its energy with rho*Phi sets this true at
-// static initialisation (he_star_m1, ry_per_accretor); plus an energy equation (not the
-// isothermal EOS) and no mesh refinement.  Elsewhere the default stays off silently.
+// (USER 10-19): <hydro>/etotgrav pgen-level support flag. The new default
+// etotgrav = true (utils/recipe.hpp) applies only where SUPPORTED: a problem generator
+// that fills the potential (phicc0/phi0) and writes its energy with rho*Phi sets this
+// true at static initialisation (he_star_m1, ry_per_accretor); plus an energy equation
+// (not the isothermal EOS) and no mesh refinement. Elsewhere the default stays off
+// silently.
 inline bool etotgrav_pgen_default = false;
 
 //----------------------------------------------------------------------------------------
@@ -128,17 +130,17 @@ class Hydro {
 
   int nhydro;             // number of hydro variables (5/4 for ideal/isothermal EOS)
   int nscalars;           // number of passive scalars
-  // share-1104 P4: the tracer slot layout shared with MHD (mhd/mhd_tracers.hpp): the
+  // P4: the tracer slot layout shared with MHD (mhd/mhd_tracers.hpp): the
   // user's <hydro>/nscalars, then <hydro>/floor_tracer (last; read only when named,
-  // default off).  floor_tracer adds ONE scalar (index ifltr) holding the floor-added
+  // default off). floor_tracer adds ONE scalar (index ifltr) holding the floor-added
   // mass: every ConsToPrim density-floor increment joins it, and once per cycle
   // (TracerSource, "before_timeintegrator") it is drained where the floor does not bind,
   // exactly as <mhd>/floor_tracer (floor density = dfloor; MHD::FloorTracerDrain).
-  // nscalars counts it.  fltr_dm/fltr_de: drained mass/energy (this rank, active cells).
+  // nscalars counts it. fltr_dm/fltr_de: drained mass/energy (this rank, active cells).
   mhd::TracerLayout tracers;
   bool floor_tracer = false;
   int ifltr = -1;
-  // duale-1112: <hydro>/dual_energy, floor_pay, fofc_retest, floor_audit
+  // <hydro>/dual_energy, floor_pay, fofc_retest, floor_audit
   fluid::DualEnergy dual;
   Real fltr_margin = 2.0, fltr_fmax = 0.01;
   Real fltr_dm = 0.0, fltr_de = 0.0;
@@ -179,18 +181,18 @@ class Hydro {
   DvceFaceFld5D<Real> uflx;   // fluxes of conserved quantities on cell faces
   Real dtnew;
   // The cell that set dtnew, and its state, for the `### dt COLLAPSE` report in
-  // Mesh::NewTimeStep.  Conduction has carried this since the radiative-diffusion
+  // Mesh::NewTimeStep. Conduction has carried this since the radiative-diffusion
   // hunt; the hydro side did not, so a hydro-limited collapse printed a number and no
-  // place -- 18 of them in the I4 run.  Filled by one extra single-cell kernel, and only
+  // place -- 18 of them in the I4 run. Filled by one extra single-cell kernel, and only
   // when dtnew has just collapsed (or on the first call), so a healthy run pays nothing.
   int dtnew_m = -1, dtnew_k = -1, dtnew_j = -1, dtnew_i = -1;
   static constexpr int ndtdiag = 8;
   DualArray1D<Real> dt_diag;   // r, rho, T, p, cs, v1, v2, v3
-  DvceArray4D<Real> dt_cell;   // accpolar-1103: per-cell CFL dt (env ATHENA_DT_REPORT only)
+  DvceArray4D<Real> dt_cell;   // per-cell CFL dt (env ATHENA_DT_REPORT only)
   bool dt_diag_valid = false;
   Real dtnew_prev = -1.0;
   // <hydro>/rad_signal_speed: the CFL signal speed includes the radiation pressure of
-  // the M1 field in optically thick cells (hydro_newdt.cpp).  Read only when named.
+  // the M1 field in optically thick cells (hydro_newdt.cpp). Read only when named.
   bool rad_signal_speed = false;
 
   // following used for FOFC
@@ -198,35 +200,37 @@ class Hydro {
   bool use_fofc = false;   // flag to enable FOFC
   // Per-cell count of FOFC flags, for the `hydro_fofc` output variable: incremented by
   // one in every stage in which the cell was flagged, so a dump answers "WHERE did FOFC
-  // fire", which the scalar <output>/file_type=log column cannot.  Allocated only when
+  // fire", which the scalar <output>/file_type=log column cannot. Allocated only when
   // use_fofc is true, and RESET TO ZERO each time the output variable is loaded, so a
-  // dump holds the flags accumulated since the previous dump of it.  Not carried in
+  // dump holds the flags accumulated since the previous dump of it. Not carried in
   // restart files.
   DvceArray4D<Real> fofc_cnt;
   FofcReport fofc_rep;     // <hydro>/fofc_report (diagnostic, read only when named)
   // <problem>/nan_report: scan the fluxes and the conserved state for a non-finite value
-  // after each stage-level operator and report the first offender.  Default false, in
-  // which case not one extra kernel runs.  See the NanScan* helpers in hydro_tasks.cpp.
+  // after each stage-level operator and report the first offender. Default false, in
+  // which case not one extra kernel runs. See the NanScan* helpers in hydro_tasks.cpp.
   bool nan_report = false;
-  // cs-open-1018: the angular-momentum module (hydro_am.hpp; nullptr unless one of
+  // cs- the angular-momentum module (hydro_am.hpp; nullptr unless one of
   // <hydro>/am_transport | am_vector | frame_omega is named)
   hydro::AmModule *pam = nullptr;
-  // mrglat-1019: merged lateral cells near r_in (hydro_mergelat.hpp; nullptr unless
+  // merged lateral cells near r_in (hydro_mergelat.hpp; nullptr unless
   // <hydro>/merge_lat_rc or merge_lat_diag is named)
   hydro::MergeLat *pmlat = nullptr;
-  // ringavg-1029: polar ring averaging (hydro_ringavg.hpp; nullptr unless
+  // polar ring averaging (hydro_ringavg.hpp; nullptr unless
   // <mesh>/polar_ring_avg = true)
   hydro::RingAvg *pravg = nullptr;
   DvceArray5D<Real> utest;  // scratch array for FOFC
-    
-  // following only used for including time-independent gravity in the conserved energy equation
+
+  // following only used for including time-independent gravity in the conserved energy
+  // equation
   bool use_etotgrav = false;   // flag to enable etotgrav
   DvceFaceFld4D<Real> phi0;     // face-centered gravitational potential energy
   DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
   DvceArray5D<Real> wbq0;       // per-cell well-balanced background (BuildWBCache)
-  // wball-1104 <hydro>/wb_dirs = all (hydro_wball.hpp/.cpp; read only when named): the
+  // <hydro>/wb_dirs = all (hydro_wball.hpp/.cpp; read only when named): the
   // dynamic well-balanced scheme in x2/x3 too, with the validity weight w per cell and
-  // direction (<hydro>/wb_weight, default true; thresholds wb_w_r0/r1, wb_w_m0/m1, wb_w_eta)
+  // direction (<hydro>/wb_weight, default true; thresholds wb_w_r0/r1, wb_w_m0/m1,
+  // wb_w_eta)
   bool wb_all = false;
   bool wb_weight = true;
   Real wbw_r0 = 0.1, wbw_r1 = 0.3, wbw_m0 = 0.2, wbw_m1 = 0.5, wbw_eta = 1.0e-4;
@@ -242,14 +246,14 @@ class Hydro {
   // ---- THE EFFECTIVE POTENTIAL OF THE WELL-BALANCED x1 SCHEME.
   // Phi_eff = Phi - int a_rad dz, i.e. the potential of the EFFECTIVE gravity
   // g_eff = g - a_rad, where a_rad is a radiative acceleration that a separate module
-  // (a grey two-stream, or M1) exerts on the gas.  It is used ONLY by the x1
+  // (a grey two-stream, or M1) exerts on the gas. It is used ONLY by the x1
   // well-balanced walk (BuildWBCache and the WB x1 reconstruction) and by the problem
-  // generator's WB gravity source, which together deliver -rho g_eff exactly.  Every
+  // generator's WB gravity source, which together deliver -rho g_eff exactly. Every
   // other use of the potential -- the etotgrav energy bookkeeping (AddGravEtot /
   // RemoveGravEtot / AddGravFlux), the x2/x3 backgrounds, diagnostics -- keeps the TRUE
   // potential phicc0 / phi0, because the conserved energy carries rho*Phi and only the
   // true gravity is a potential force.
-  // Unless EnableWBEffectivePotential() is called these two Views ARE phicc0 and
+  // Unless EnableWBEffectivePotential is called these two Views ARE phicc0 and
   // phi0.x1f (a Kokkos View assignment is a shallow copy: same data pointer, same
   // extents), so the default path executes exactly the same arithmetic on exactly the
   // same memory and is bitwise unchanged.
@@ -262,31 +266,31 @@ class Hydro {
   // Kokkos team-scratch level for the flux kernels: 0 = LDS (64 kB per workgroup on
   // AMD, which caps meshblock nx1 at a few hundred), 1 = global memory, no cap (~1% cost)
   int scratch_level = 0;
-  // Has wbq0 ever been filled in this process?  With wb_cache_every > 1 the rebuild is
+  // Has wbq0 ever been filled in this process? With wb_cache_every > 1 the rebuild is
   // gated on (ncycle % wb_cache_every == 0), and ncycle is RESTORED from the restart
   // file -- so a restart at a cycle that is not a multiple of wb_cache_every ran up to
-  // wb_cache_every-1 cycles against a freshly allocated (all-zero) background.  The
+  // wb_cache_every-1 cycles against a freshly allocated (all-zero) background. The
   // reconstruction then subtracts nothing and the scheme silently stops being
-  // well-balanced for those cycles, which kicks a deep hydrostatic star hard.  Force the
+  // well-balanced for those cycles, which kicks a deep hydrostatic star hard. Force the
   // first call after start OR restart to build it.
   bool wb_cache_built = false;
   // Set by the restart reader when the file carried BOTH general-EOS caches (wtemp and
-  // the derived p, Gamma_1).  The very first ConToPrim of a restarted run must then not
+  // the derived p, Gamma_1). The very first ConToPrim of a restarted run must then not
   // re-derive them -- the inversion is not idempotent and would move them by a few ULP,
-  // which is enough to make the restart stop being a bitwise continuation.  Cleared by
+  // which is enough to make the restart stop being a bitwise continuation. Cleared by
   // that call; see GeneralHydro::ConsToPrimFrozen.
   bool c2p_freeze_derived = false;
   // The internal energy w0(IEN) the restart file carried (pgen/pgen.hpp kEintRstMagic).
   // The frozen first ConToPrim puts it into w0 and leaves u0(IEN) as the file had it;
-  // then released.  Empty (and c2p_eint_rst false) otherwise.
+  // then released. Empty (and c2p_eint_rst false) otherwise.
   bool c2p_eint_rst = false;
   DvceArray4D<Real> eint_rst;
-  // t9rst-1113 <hydro>/rst_eint (read only when named; default true): the IDEAL-gas
+  // <hydro>/rst_eint (read only when named; default true): the IDEAL-gas
   // EOS carries w0(IEN) in the restart file too (as the general EOS always did) and
-  // the first ConToPrim of the restarted run takes it from there.  Re-deriving it
+  // the first ConToPrim of the restarted run takes it from there. Re-deriving it
   // from u0 is not bitwise where the last inversion of the straight run applied a
   // floor or etotgrav rounded (T9L6.2: 210 cells near the top after a BE redo, rel
-  // 3e-12, so a restart diverged at round-off).  Changes no fresh run.
+  // 3e-12, so a restart diverged at round-off). Changes no fresh run.
   bool rst_eint_ideal = true;
   bool RstEint() const {
     return peos->eos_data.IsGeneral() || (peos->eos_data.is_ideal && rst_eint_ideal);
@@ -296,17 +300,17 @@ class Hydro {
   // and mass ConToPrim adds to the ACTIVE cells (density/energy/temperature floors, the
   // cubed-sphere deferred floors, and the rounding of the etotgrav rho*Phi round trip),
   // volume integrated and weighted by the fraction that survives to the end of the step
-  // (the product of the later stages' gam0; 1 outside the RK stages).  c2p_acc(0, i-is)
+  // (the product of the later stages' gam0; 1 outside the RK stages). c2p_acc(0, i-is)
   // is energy, c2p_acc(1, i-is) mass, per x1 index (conversions inside the RK
   // stages), summed over this rank's MeshBlocks
   // since the owner last zeroed it; rows 2/3 the same for the operator-split conversion
-  // after the split radiation.  Diagnostic only: the state is not touched.
+  // after the split radiation. Diagnostic only: the state is not touched.
   bool c2p_track = false;
   bool c2p_split = false;   // true while the operator-split ConToPrim task runs
-  // ckbval-1102 <hydro>/split_bval_fast: the ghost refresh after the operator-split
+  // <hydro>/split_bval_fast: the ghost refresh after the operator-split
   // source (RTOpSplitBvals) exchanges u0(IEN) only when a check proves the other
   // conserved variables in every ghost already hold what a full exchange would deliver.
-  // See Hydro::SplitBvalFastOK in hydro_tasks.cpp.  sbf_s is u0 at the input of the
+  // See Hydro::SplitBvalFastOK in hydro_tasks.cpp. sbf_s is u0 at the input of the
   // first ConToPrim after the last ghost refresh (sbf_valid); sbf_want marks a refresh.
   bool sbf_on = false;
   bool sbf_want = false;
@@ -315,13 +319,13 @@ class Hydro {
   long sbf_nfast = 0, sbf_nfull = 0;
   bool SplitBvalFastOK();
   void SplitBvalSnap(Driver *pdrive, int stage);
-  // ckbval-1102 <hydro>/split_c2p_once: skip the two ConToPrimSplit tasks when the
+  // <hydro>/split_c2p_once: skip the two ConToPrimSplit tasks when the
   // operator-split source is user_split_once (RTOpSplitBvals converts already).
   // FRESH-start default true (prod1103; recipe::NewDefaults, hydro.cpp); a restart whose
   // input lacks the key keeps false.
   bool scp_once = false;
   bool SplitC2POnce() const;
-  // ckbval-1102 <hydro>/c2p_idempotent: a ConToPrimSplit conversion of a state that is
+  // <hydro>/c2p_idempotent: a ConToPrimSplit conversion of a state that is
   // bitwise the one the previous conversion left (u0, w0, wder, wtemp, all cells) is a
   // no-op; see hydro_c2p_idem.cpp
   bool c2pi_on = false;
@@ -335,48 +339,51 @@ class Hydro {
   DvceArray4D<Real> c2p_ref_e, c2p_ref_d;
   void EnableC2PTrack();
   void C2PTrack(Driver *pdrive, int stage, bool before);
-    
+
   // following used for well-balanced scheme
   bool use_wellbalance_static = false;    // flag to enable static wellbalance
-  bool use_wellbalance_static_reconst_perturb = false;    // flag to enable reconstructing perturbed primitive variables (less robust against large deviations)
-  bool use_wellbalance_dynamic = false;    // flag to enable dynamical well-balanced method by Kappeli & Mishra 2014, 2016
+  // flag to enable reconstructing perturbed primitive variables (less robust against
+  // large deviations)
+  bool use_wellbalance_static_reconst_perturb = false;
+  // flag to enable dynamical well-balanced method by Kappeli & Mishra 2014, 2016
+  bool use_wellbalance_dynamic = false;
   bool use_wb_x1 = false;    // flag for directions
   // closed inner radial wall under a USER inner-x1 boundary (set by a problem
   // generator, e.g. dhj problem/wall_closed): the x1 flux at the is face is computed
   // from the mirror of the interior-side state, exactly as for ix1_bc = reflect, so
   // it carries zero mass and zero advected energy whatever the ghost cells hold.
   bool wall_closed_ix1 = false;
-  // wallwb-1105 <hydro>/wall_wb_onesided (reconstruct/wb_wall.hpp): with the x1 dynamic
+  // <hydro>/wall_wb_onesided (reconstruct/wb_wall.hpp): with the x1 dynamic
   // WB scheme, the wall cell of a closed x1 wall (reflect inner/outer, or a user inner
   // face under wall_closed_ix1; every geometry) reconstructs its WB deviation one-sided
-  // towards the interior, and the wall face takes the mirror state.  Removes the
-  // closed-wall odd-even v_r mode.  Default true on a FRESH start with WB x1 (USER
+  // towards the interior, and the wall face takes the mirror state. Removes the
+  // closed-wall odd-even v_r mode. Default true on a FRESH start with WB x1 (USER
   // 11-05, recipe::NewDefaults); a restart whose input lacks the key keeps false.
   bool wall_wb_onesided = false;
-  // topbc-1101 ONE-WAY (diode) outer radial face under a USER outer-x1 boundary (set by
+  // ONE-WAY (diode) outer radial face under a USER outer-x1 boundary (set by
   // a problem generator, e.g. dhj problem/top_bc = outflow1): where the interior-side
   // state at the ie+1 face moves INWARD (v_r < 0) the ghost-side state is replaced by
   // its mirror image, exactly as for ox1_bc = reflect, so that face carries zero mass
   // and zero advected energy (pressure only); where it moves outward the ghost-side
-  // state is left as the boundary built it.  Default false: nothing changes.
+  // state is left as the boundary built it. Default false: nothing changes.
   bool diode_ox1 = false;
-  // wbplm-1103 <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
+  // <block>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp), default false
   bool top_ghost_prim_copy = false;
-  // csedge-1019 <mesh>/cs_seam_flux = shared: each panel-seam face is ONE Riemann problem
+  // <mesh>/cs_seam_flux = shared: each panel-seam face is ONE Riemann problem
   // whose two states are the two panels' OWN interior-side reconstructions (exchanged as
   // face states, tangential velocity re-expressed on the receiver's basis), instead of
-  // each panel's own solve against its resampled ghosts.  CsSeamFaceStates (hydro_fluxes
+  // each panel's own solve against its resampled ghosts. CsSeamFaceStates (hydro_fluxes
   // .cpp) fills *pseamfs with the NEIGHBOUR's face state at every seam face.
   bool cs_seam_shared = false;
   MeshBoundaryValuesCC *pbval_fs = nullptr;
   DvceFaceFld5D<Real> *pseamfs = nullptr;
   void CsSeamFaceStates();
-  // layoutaudit-1103 <hydro>/merge_lat_blockend = flat | exchange (hydro_fluxes.cpp
+  // <hydro>/merge_lat_blockend = flat | exchange (hydro_fluxes.cpp
   // MlatBlockendStates): with exchange, a 'narrow' merged group next to an INTERNAL
   // MeshBlock face is no longer flattened; the neighbour sends the one cell of the group
   // beyond the ghost group (pbval_ml, seam_raw + seam_same_panel, record *pmlfs at the
   // faces js / je+1 / ks / ke+1), so every block forms the group PLM a one-block layout
-  // forms.  mlat_imask(m): bits 1/2/4/8 = x2 lo/hi, x3 lo/hi face is internal.
+  // forms. mlat_imask(m): bits 1/2/4/8 = x2 lo/hi, x3 lo/hi face is internal.
   bool mlat_exch = false;
   MeshBoundaryValuesCC *pbval_ml = nullptr;
   DvceFaceFld5D<Real> *pmlfs = nullptr;
@@ -384,29 +391,30 @@ class Hydro {
   DvceArray1D<int> mlat_imask;
   void MlatBlockendStates();
   bool use_wb_x2 = false;    // flag for directions
-  bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
+  // flag to enable local well-balanced method also in reconstructing rho
+  bool use_wb_rho = false;
   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic
-  // well-balanced x1 reconstruction is switched off cell by cell; 0 = never.  The
+  // well-balanced x1 reconstruction is switched off cell by cell; 0 = never. The
   // hydrostatic background is a statement about a SUPPORTED atmosphere: over an
   // unsupported ambient medium (a uniform cold background above the star) the
   // background the stencil builds has nothing to do with the state, and the deviation
-  // it reconstructs is the whole state.  Above wb_rmax those cells take the plain
+  // it reconstructs is the whole state. Above wb_rmax those cells take the plain
   // reconstruction and the plain -rho g source, exactly as wellbalance_dynamic = false.
   Real wb_rmax = 0.0;
   // Mirror of wb_rmax at the bottom of the domain: below wb_rmin the dynamic x1
   // well-balanced reconstruction and the matching well-balanced gravity source are
-  // switched off cell by cell; 0 = never.  Same failure mode from the other side --
+  // switched off cell by cell; 0 = never. Same failure mode from the other side --
   // where the background the stencil builds is not the state the star is actually in
   // (a deep radiative interior the polytropic/isentropic background does not describe),
   // the "deviation" it reconstructs is not small, and the scheme can DRIVE the very
-  // buoyancy mode it is meant to leave alone.  Below wb_rmin those cells take the plain
+  // buoyancy mode it is meant to leave alone. Below wb_rmin those cells take the plain
   // reconstruction and the plain -rho g source, exactly as wellbalance_dynamic = false.
   Real wb_rmin = 0.0;
   // Equipotential version of wb_rmax, set by a problem generator (no input key): cells
   // whose x1 well-balanced potential phicc_wb exceeds wb_phimax take the plain
-  // reconstruction, exactly as above wb_rmax.  Default +huge = never (bitwise unchanged).
+  // reconstruction, exactly as above wb_rmax. Default +huge = never (bitwise unchanged).
   Real wb_phimax = 1.0e300;
-  bool wb_poison = false;   // dhjwball-1106 TEST ONLY <block>/wb_poison_test: hydro_wball WbPoison
+  bool wb_poison = false;   // TEST ONLY <block>/wb_poison_test: hydro_wball WbPoison
   WBOption wb_option;
   DvceArray5D<Real> u0wb;   // background conserved variables
   DvceArray5D<Real> w0wb;   // background primitive variables
@@ -417,7 +425,7 @@ class Hydro {
   // the EOS for the background pressure inside the reconstruction, the flux correction
   // and the coordinate source terms -- roughly twenty calls per cell per stage -- would
   // cost more than the rest of the well-balanced scheme put together. The background does
-  // not evolve, so none of that work is ever different. See SetWbBackgroundPressure().
+  // not evolve, so none of that work is ever different. See SetWbBackgroundPressure.
   DvceArray4D<Real> pwb;        // cell-centered background gas pressure
   DvceFaceFld4D<Real> pfacewb;  // face-centered background gas pressure
 
@@ -450,7 +458,7 @@ class Hydro {
   TaskStatus ConToPrim(Driver *d, int stage);
   TaskStatus ConToPrimSplit(Driver *d, int stage);
   TaskStatus RTStrangSplit(Driver *d, int stage);
-  // share-1104 P4 (mhd/mhd_tracers.cpp): the floor-tracer pass, its drain, the x1 ghosts
+  // P4 (mhd/mhd_tracers.cpp): the floor-tracer pass, its drain, the x1 ghosts
   TaskStatus TracerSource(Driver *d, int stage);
   void FloorTracerDrain();
   void TracerX1Ghosts(bool set_w);
@@ -466,19 +474,19 @@ class Hydro {
 
   // first-order flux correction
   void FOFC(Driver *d, int stage);
-    
+
   void AddGravFlux(const DvceFaceFld4D<Real> &phi0, DvceFaceFld5D<Real> &flx);
   void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
   void RemoveGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
-    
+
   // evaluate the background pressure from the static background state
   void SetWbBackgroundPressure();
   void BuildWBCache(const int jl, const int ju, const int kl, const int ku);
-  // give the x1 well-balanced scheme its own potential (see phicc_wb above).  Must be
+  // give the x1 well-balanced scheme its own potential (see phicc_wb above). Must be
   // called before the problem generator fills it, on EVERY start INCLUDING a restart:
   // the potential is not restart state.
   void EnableWBEffectivePotential();
-  // fill it from host arrays with the shapes of phicc0 and phi0.x1f.  Provided so that a
+  // fill it from host arrays with the shapes of phicc0 and phi0.x1f. Provided so that a
   // later milestone can hand over a profile built from a radiation module's initial
   // state instead of from a file; the problem generator may equally fill the Views in a
   // device kernel of its own.
@@ -489,7 +497,7 @@ class Hydro {
   void RemoveWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
 
     //----------------------------------------------------------------------------------------
-    //! \fn AddWbPrimFace()
+    //! \fn AddWbPrimFace
     //! \brief Adds background face-centered variables onto ql(i+1) and qr(i).
 
     KOKKOS_INLINE_FUNCTION
@@ -501,9 +509,10 @@ class Hydro {
     };
 
     //----------------------------------------------------------------------------------------
-    //! \fn AddWbPrimFaceX1()
-    //! \brief Adds background states onto face-centered primitive variables in x1-direction.
-    //! This function should be called over [is-1,ie+1] to get BOTH L/R states over [is,ie]
+    //! \fn AddWbPrimFaceX1
+    //! \brief Adds background states onto face-centered primitive variables in
+    //! x1-direction. This function should be called over [is-1,ie+1] to get BOTH L/R
+    //! states over [is,ie]
 
     KOKKOS_INLINE_FUNCTION
     static void AddWbPrimFaceX1(TeamMember_t const &member, const int m, const int k, const int j,
@@ -519,9 +528,10 @@ class Hydro {
     };
 
     //----------------------------------------------------------------------------------------
-    //! \fn AddWbPrimFaceX2()
-    //! \brief Adds background states onto face-centered primitive variables in x2-direction.
-    //! This function should be called over [js-1,je+1] to get BOTH L/R states over [js,je]
+    //! \fn AddWbPrimFaceX2
+    //! \brief Adds background states onto face-centered primitive variables in
+    //! x2-direction. This function should be called over [js-1,je+1] to get BOTH L/R
+    //! states over [js,je]
 
     KOKKOS_INLINE_FUNCTION
     static void AddWbPrimFaceX2(TeamMember_t const &member, const int m, const int k, const int j,
@@ -537,9 +547,10 @@ class Hydro {
     };
 
     //----------------------------------------------------------------------------------------
-    //! \fn AddWbPrimFaceX3()
-    //! \brief Adds background states onto face-centered primitive variables in x3-direction.
-    //! This function should be called over [ks-1,ke+1] to get BOTH L/R states over [ks,ke]
+    //! \fn AddWbPrimFaceX3
+    //! \brief Adds background states onto face-centered primitive variables in
+    //! x3-direction. This function should be called over [ks-1,ke+1] to get BOTH L/R
+    //! states over [ks,ke]
 
     KOKKOS_INLINE_FUNCTION
     static void AddWbPrimFaceX3(TeamMember_t const &member, const int m, const int k, const int j,
@@ -561,9 +572,8 @@ class Hydro {
          const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          const DvceArray5D<Real> &wbq0,
          ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
-        
       const auto wb_option_ = wb_option;
-        
+
       Real igm1 = 1.0/(eos.gamma-1.0);
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
@@ -572,20 +582,20 @@ class Hydro {
             Real q0_im1, q0_ip1, q0_imh, q0_iph, q0_i;
             WBReadCache(wbq0, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens, m, k, j, i,
                      q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
-              
+
             Real q1_im1 = q(m,n,k,j,i-1) - q0_im1;
             Real q1_i = q(m,n,k,j,i) - q0_i;
             Real q1_ip1 = q(m,n,k,j,i+1) - q0_ip1;
-              
+
             PLM(q1_im1, q1_i, q1_ip1, ql(n,i+1), qr(n,i));
-              
+
             ql(n,i+1) += q0_iph;
             qr(n,i) += q0_imh;
-              
+
               // Left/right slopes (properly scaled)
               Real sL = q(m,n,k,j,i)   - q(m,n,k,j,i-1);
               Real sR = q(m,n,k,j,i+1) - q(m,n,k,j,i);
-              
+
               if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 || sL * sR <= 0.0) {
                   PLM(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), ql(n,i+1), qr(n,i));
               }
@@ -598,7 +608,7 @@ class Hydro {
       }
       return;
     };
-    
+
     KOKKOS_INLINE_FUNCTION
     static void WbLocalPiecewiseLinearX2(TeamMember_t const &member,
          const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
@@ -616,20 +626,20 @@ class Hydro {
                      q(m,IEN,k,j-1,i),q(m,IEN,k,j,i),q(m,IEN,k,j+1,i),
                      phicc(m,k,j-1,i),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j+1,i),phicc(m,k,j+1,i),
                      q0_jm1, q0_jmh, q0_j, q0_jph, q0_jp1);
-              
+
             Real q1_jm1 = q(m,n,k,j-1,i) - q0_jm1;
             Real q1_j = q(m,n,k,j,i) - q0_j;
             Real q1_jp1 = q(m,n,k,j+1,i) - q0_jp1;
-              
+
             PLM(q1_jm1, q1_j, q1_jp1, ql_jp1(n,i), qr_j(n,i));
-              
+
             ql_jp1(n,i) += q0_jph;
             qr_j(n,i) += q0_jmh;
-              
+
               // Left/right slopes (properly scaled)
               Real sL = q(m,n,k,j,i)   - q(m,n,k,j-1,i);
               Real sR = q(m,n,k,j+1,i) - q(m,n,k,j,i);
-              
+
               if (ql_jp1(n,i) < 0.0 || qr_j(n,i) < 0.0 || sL * sR <= 0.0) {
                   PLM(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), ql_jp1(n,i), qr_j(n,i));
               }
@@ -642,9 +652,9 @@ class Hydro {
       }
       return;
     };
-    
+
     //------------------------------------------------------------------------------------
-    //! \fn WbStaticPiecewiseLinearDerX1()
+    //! \fn WbStaticPiecewiseLinearDerX1
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
     //!
     //! The static scheme reconstructs the perturbation of the primitives about a
@@ -656,7 +666,7 @@ class Hydro {
     //! nothing. The background pressure is not written as (gamma-1)*e_bg -- it depends on
     //! the background density too -- but neither is it asked of the EOS here: the
     //! background is static, so its pressure is evaluated once into pwb/pfwb at startup
-    //! by SetWbBackgroundPressure(). Under a general EOS each of these five reads would
+    //! by SetWbBackgroundPressure. Under a general EOS each of these five reads would
     //! otherwise be a temperature root find, in every cell of every stage.
 
     KOKKOS_INLINE_FUNCTION
@@ -688,7 +698,7 @@ class Hydro {
     };
 
     //------------------------------------------------------------------------------------
-    //! \fn WbStaticPiecewiseLinearDerX2()
+    //! \fn WbStaticPiecewiseLinearDerX2
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
     //!
     //! The static scheme reconstructs the perturbation of the primitives about a
@@ -700,7 +710,7 @@ class Hydro {
     //! nothing. The background pressure is not written as (gamma-1)*e_bg -- it depends on
     //! the background density too -- but neither is it asked of the EOS here: the
     //! background is static, so its pressure is evaluated once into pwb/pfwb at startup
-    //! by SetWbBackgroundPressure(). Under a general EOS each of these five reads would
+    //! by SetWbBackgroundPressure. Under a general EOS each of these five reads would
     //! otherwise be a temperature root find, in every cell of every stage.
 
     KOKKOS_INLINE_FUNCTION
@@ -732,7 +742,7 @@ class Hydro {
     };
 
     //------------------------------------------------------------------------------------
-    //! \fn WbStaticPiecewiseLinearDerX3()
+    //! \fn WbStaticPiecewiseLinearDerX3
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
     //!
     //! The static scheme reconstructs the perturbation of the primitives about a
@@ -744,7 +754,7 @@ class Hydro {
     //! nothing. The background pressure is not written as (gamma-1)*e_bg -- it depends on
     //! the background density too -- but neither is it asked of the EOS here: the
     //! background is static, so its pressure is evaluated once into pwb/pfwb at startup
-    //! by SetWbBackgroundPressure(). Under a general EOS each of these five reads would
+    //! by SetWbBackgroundPressure. Under a general EOS each of these five reads would
     //! otherwise be a temperature root find, in every cell of every stage.
 
     KOKKOS_INLINE_FUNCTION
@@ -776,7 +786,7 @@ class Hydro {
     };
 
     //------------------------------------------------------------------------------------
-    //! \fn WbPiecewiseLinearDerX1/X2/X3()
+    //! \fn WbPiecewiseLinearDerX1/X2/X3
     //! \brief well-balanced reconstruction of the DERIVED thermodynamic variables.
     //!
     //! Under a general EOS the Riemann solvers do not recompute pressure from the
@@ -890,7 +900,7 @@ class Hydro {
       // modified van Leer (Mignone 2014)
       Real slope = sL*sR*(cR*sL+cL*sR) / (SQR(sL)+(cR+cL-2.0)*sL*sR+SQR(sR));
       slope = (sL * sR > 0.0) ? slope : 0.0;
-      // lhllc2nd-1102 <hydro|mhd>/plm_c1 (EOS_Data::plm_c1): C1 limiter, the slope
+      // <hydro|mhd>/plm_c1 (EOS_Data::plm_c1): C1 limiter, the slope
       // times theta (2 - theta), theta = 2 sL sR/(sL^2 + sR^2) (reconstruct/plm_c1.hpp)
       if (c1 && slope != 0.0) {
         const Real th = 2.0*sL*sR/(SQR(sL) + SQR(sR));
@@ -902,7 +912,7 @@ class Hydro {
       qr_i   = q_i - slope * dxLh;
       return;
     };
-    
+
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX1(TeamMember_t const &member, const EOS_Data &eos,
          const WBOption wb_option,
@@ -914,7 +924,7 @@ class Hydro {
          const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          const DvceArray5D<Real> &wbq0,
         ScrArray2D<Real> &ql, ScrArray2D<Real> &qr, const bool wb_noext = false) {
-      // wb_noext (wball-1104, <hydro>/wb_dirs = all): no plain fallback at a STATE
+      // wb_noext (, <hydro>/wb_dirs = all): no plain fallback at a STATE
       // extremum (sL sR <= 0) -- the balanced deviation is kept there; negative faces
       // still fall back
       Real gamma = eos.gamma;
@@ -934,7 +944,7 @@ class Hydro {
 
               // outside [wb_rmin, wb_rmax] the background is meaningless (see
               // Hydro::wb_rmax / Hydro::wb_rmin), so this cell reconstructs its state
-              // directly, like the non-well-balanced branch below.  Per CELL, not per
+              // directly, like the non-well-balanced branch below. Per CELL, not per
               // MeshBlock: a radial block spans both.
               if ((wb_rmax > 0.0 && x_i > wb_rmax) ||
                   (wb_rmin > 0.0 && x_i < wb_rmin) ||
@@ -948,21 +958,21 @@ class Hydro {
               WBReadCache(wbq0, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                      m, k, j, i,
                      q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
-                
+
               Real q1_im1 = q(m,n,k,j,i-1) - q0_im1;
               Real q1_i = q(m,n,k,j,i) - q0_i;
               Real q1_ip1 = q(m,n,k,j,i+1) - q0_ip1;
-                  
+
               PLM_nonuniform(q1_im1, q1_i, q1_ip1, dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
-                  
+
               ql(n,i+1) += q0_iph;
               qr(n,i) += q0_imh;
-                
+
                 // Left/right slopes (properly scaled)
                 Real sL = (q(m,n,k,j,i)   - q(m,n,k,j,i-1)) / dxL;
                 Real sR = (q(m,n,k,j,i+1) - q(m,n,k,j,i)  ) / dxR;
-                
-                if (eos.wb_plm_smooth) {   // wbplm-1103: continuous (reconstruct/wb_plm_blend.hpp)
+
+                if (eos.wb_plm_smooth) {   // continuous (reconstruct/wb_plm_blend.hpp)
                   Real pl_, pr_;
                   PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
                   wbplm::WbPlmBlend(q(m,n,k,j,i), sL, sR, pl_, pr_, eos.plm_c1, ql(n,i+1), qr(n,i));
@@ -985,14 +995,14 @@ class Hydro {
               Real dxRh = x_iph-x_i;
               Real dxL = x_i-x_im1;
               Real dxR = x_ip1-x_i;
-                      
+
               PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
             });
           }
       }
       return;
     };
-    
+
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX2(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
         const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
@@ -1011,12 +1021,12 @@ class Hydro {
         // POLAR ROW: the mirror ghost sits at -x_j, so every profile even across the pole
         // has q(j-1) == q(j) and a limited slope reads that as an extremum and flattens
         // the cell -- first order at the pole for B_r of an axial field, B_phi of a
-        // transverse one, rho, p, ...  When the cell IS an extremum, use the quadratic
+        // transverse one, rho, p, ... When the cell IS an extremum, use the quadratic
         // through the three cell values at their centroids, with its curvature limited
-        // (Colella & Sekora 2008 style) by the curvature of the next triple (j, j+1, j+2):
-        // a smooth extremum keeps its parabola, a discontinuity is clipped to the limited
-        // slope.  Monotone profiles keep the ordinary limited slope.  Face values are
-        // clamped to the range of the three cells, so no new extremum is created.
+        // (Colella & Sekora 2008 style) by the curvature of the next triple (j, j+1,
+        // j+2): a smooth extremum keeps its parabola, a discontinuity is clipped to the
+        // limited slope. Monotone profiles keep the ordinary limited slope. Face values
+        // are clamped to the range of the three cells, so no new extremum is created.
         const Real x_jp2 = xv(m,j+2), x_jm2 = xv(m,j-2);
         // quadratic through (x_jm1,qm),(x_j,q0),(x_jp1,qp): slope and curvature at x_j
         const Real dl = x_j - x_jm1, dr = x_jp1 - x_j;
@@ -1059,7 +1069,7 @@ class Hydro {
       }
       return;
     };
-    
+
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX3(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
         const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
@@ -1083,7 +1093,7 @@ class Hydro {
     };
 
     //------------------------------------------------------------------------------------
-    //! \fn GridPiecewiseLinearDerX1()
+    //! \fn GridPiecewiseLinearDerX1
     //! \brief non-uniform-grid counterpart of WbPiecewiseLinearDerX1, for the derived
     //! thermodynamic variables on a spherical-polar mesh. GridPiecewiseLinearX2/X3 are
     //! already generic in the array they reconstruct and do no well-balancing, so wder
@@ -1118,11 +1128,11 @@ class Hydro {
 
           // the STATIC background is a field the problem generator supplied, so it
           // needs no cache walk: subtract it, reconstruct the deviation on this grid's
-          // own non-uniform stencil, and add the FACE background back.  Without this the
+          // own non-uniform stencil, and add the FACE background back. Without this the
           // pressure the Riemann solver consumes under a general EOS would be plain PLM
           // of the full stratified pressure while the primitives beside it are the
           // deviation plus the exact face background, and the background would no longer
-          // cancel to round-off.  A zero background (the problem generator's way of
+          // cancel to round-off. A zero background (the problem generator's way of
           // switching the scheme off over part of the domain) reduces to plain PLM here.
           if (n == (IDPR) && use_wb_static_perturb) {
             const Real q0_im1 = pwb(m,k,j,i-1);
@@ -1158,7 +1168,7 @@ class Hydro {
 
             Real sL = (qd(m,n,k,j,i)   - qd(m,n,k,j,i-1)) / dxL;
             Real sR = (qd(m,n,k,j,i+1) - qd(m,n,k,j,i)  ) / dxR;
-            if (eos.wb_plm_smooth) {   // wbplm-1103: continuous (reconstruct/wb_plm_blend.hpp)
+            if (eos.wb_plm_smooth) {   // continuous (reconstruct/wb_plm_blend.hpp)
               Real pl_, pr_;
               PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
                              dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
@@ -1182,11 +1192,11 @@ class Hydro {
     };
 
     //------------------------------------------------------------------------------------
-    //! \fn getWBq0()
+    //! \fn getWBq0
     //! \brief background values of ONE reconstruction channel at the five stencil points
-    //! {i-1, i-1/2, i, i+1/2, i+1}.  Dispatches to the ideal-gas closed forms in
-    //! getWBerho() below, or, for a general EOS, to the integrated background in
-    //! utils/wb_background.hpp.  Every well-balanced reconstruction and every
+    //! {i-1, i-1/2, i, i+1/2, i+1}. Dispatches to the ideal-gas closed forms in
+    //! getWBerho below, or, for a general EOS, to the integrated background in
+    //! utils/wb_background.hpp. Every well-balanced reconstruction and every
     //! gravitational source term must go through here, so that the background subtracted
     //! before reconstruction and the background differenced by the source term are the
     //! same object -- that consistency, not the background's accuracy, is what makes the
@@ -1235,7 +1245,7 @@ class Hydro {
           q0_iph = s_iph.p; q0_ip1 = s_ip1.p;
         }
       } else {
-        // ideal gas: unchanged closed forms.  The pressure channel is never reconstructed
+        // ideal gas: unchanged closed forms. The pressure channel is never reconstructed
         // for an ideal gas (nder is 0), but p = (gamma-1)e keeps this total anyway.
         int n = (var == WBVar::wb_dens) ? IDN : IEN;
         getWBerho(n, eos.gamma, wb_option, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
@@ -1277,7 +1287,7 @@ class Hydro {
       Real gigm1 = gamma*igm1;
       Real gm1ig = (gamma-1.0)/gamma;
       Real ig = 1.0/gamma;
-        
+
       switch (wb_option_) {
         case WBOption::isodensity:
           {
@@ -1305,8 +1315,8 @@ class Hydro {
             // Walked in two segments like the other branches: anchor -> interface, then
             // interface -> neighbour continuing from the interface state.
             // T LINEAR in Phi with slope b from the two neighbours is the exact
-            // polytrope:  d(dT)/dPhi = -d  =>  dln d/dPhi = -(1 + b)/T
-            //             =>  d = d_0 (T/T_0)^(-(1+b)/b)
+            // polytrope: d(dT)/dPhi = -d => dln d/dPhi = -(1 + b)/T
+            // => d = d_0 (T/T_0)^(-(1+b)/b)
             // (isothermal, b -> 0: d = d_0 exp(-dPhi/T_0)); e = d T/(gamma-1).
             const Real dphis = phi_ip1 - phi_im1;
             const Real gm1_ = gamma - 1.0;
@@ -1360,7 +1370,7 @@ class Hydro {
         default:
           break;
       }
-        
+
         Real factor_im1, factor_i, factor_ip1;
         if (n == (IEN)) {    // reconstructing e
           if (wb_option_num == 0)
@@ -1409,17 +1419,17 @@ class Hydro {
                 q0_i = pow(rho_i,gamma-1.0);
               }
         }
-          
+
         Real dphi_im1 = phi_imh-phi_im1;
         Real dphi_imh = phi_i-phi_imh;
         Real dphi_i = phi_iph-phi_i;
         Real dphi_iph = phi_ip1-phi_iph;
-        
+
         q0_im1 = q0_i + factor_im1 * dphi_im1 + factor_i * dphi_imh;
         q0_ip1 = q0_i - factor_i * dphi_i - factor_ip1 * dphi_iph;
         q0_imh = q0_i + factor_i * dphi_imh;
         q0_iph = q0_i - factor_i * dphi_i;
-          
+
         if (n == (IEN)) {    // reconstructing e
             q0_i = e_i;
             if (wb_option_num == 1)
@@ -1453,7 +1463,7 @@ class Hydro {
                   q0_iph = pow(q0_iph,igm1);
                 }
         }
-      
+
       return;
     };
 

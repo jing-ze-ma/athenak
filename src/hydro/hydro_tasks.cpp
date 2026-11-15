@@ -37,10 +37,9 @@
 #include "utils/c2p_track.hpp"
 
 namespace hydro {
-
 //----------------------------------------------------------------------------------------
-// <problem>/nan_report diagnostics.  Both helpers are no-ops unless Hydro::nan_report is
-// set, so a default run executes not one extra kernel and is bit-identical.  They exist
+// <problem>/nan_report diagnostics. Both helpers are no-ops unless Hydro::nan_report is
+// set, so a default run executes not one extra kernel and is bit-identical. They exist
 // to say WHICH stage-level operator first writes a non-finite value; see the call sites
 // in Hydro::Fluxes and Hydro::HydroSrcTerms.
 namespace {
@@ -59,7 +58,7 @@ void NanRepAlloc() {
 }
 
 //! \brief scan one face-centered flux component for a non-finite IDN/IM1/IEN and report
-//! the first offender with the two cell states that made it.  dir = 1, 2 or 3.
+//! the first offender with the two cell states that made it. dir = 1, 2 or 3.
 void NanScanFlux(MeshBlockPack *pmbp, const DvceArray5D<Real> &flx, const int dir,
                  const DvceArray5D<Real> &w0, const EOS_Data &eos, const char *tag) {
   if (nanrep_lines >= nanrep_maxlines) return;
@@ -165,9 +164,9 @@ void NanScanCons(MeshBlockPack *pmbp, const DvceArray5D<Real> &u0, const char *t
 }
 }  // namespace
 //----------------------------------------------------------------------------------------
-//! \fn  void Hydro::AssembleHydroTasks
+//! \fn void Hydro::AssembleHydroTasks
 //! \brief Adds hydro tasks to appropriate task lists used by time integrators.
-//! Called by MeshBlockPack::AddPhysics() function directly after Hydro constructor.
+//! Called by MeshBlockPack::AddPhysics function directly after Hydro constructor.
 //! Many of the functions in the task list are implemented in this file because they are
 //! simple, or they are wrappers that call one or more other functions.
 //!
@@ -198,7 +197,7 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
   id.splitpst  = tl["after_timeintegrator"]->AddTask(&Hydro::RTStrangSplit, this, none);
   id.splitsc2p = tl["after_timeintegrator"]->AddTask(&Hydro::ConToPrimSplit, this,
                                                      id.splitpst);
-  // share-1104 P4 <hydro>/floor_tracer: the per-cycle tracer pass (floor drain, x1
+  // P4 <hydro>/floor_tracer: the per-cycle tracer pass (floor drain, x1
   // ghosts; mhd/mhd_tracers.cpp) after the split source's ConToPrim (no task without it)
   if (tracers.NTracer() > 0) {
     id.trcsrc = tl["before_timeintegrator"]->AddTask(&Hydro::TracerSource, this,
@@ -222,7 +221,7 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
   // after it: the two are operator-split from each other and from the hydro
   id.imptrc    = tl["stagen"]->AddTask(&Hydro::ImplicitTransverseConduction, this,
                                        id.impcnd);
-  // mrglat-1019: the group average of the merged lateral cells (no-op unless
+  // the group average of the merged lateral cells (no-op unless
   // <hydro>/merge_lat_rc), after every operator of the stage and before any send
   id.mrglat    = tl["stagen"]->AddTask(&Hydro::MergeLatTask, this, id.imptrc);
   id.sendu_oa  = tl["stagen"]->AddTask(&Hydro::SendU_OA, this, id.mrglat);
@@ -294,9 +293,9 @@ TaskStatus Hydro::InitRecv(Driver *pdrive, int stage) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn  void Hydro::CopyCons
-//! \brief Simple task list function that copies u0 --> u1 in first stage.  Extended to
-//!  handle RK register logic at given stage
+//! \fn void Hydro::CopyCons
+//! \brief Simple task list function that copies u0 --> u1 in first stage. Extended to
+//! handle RK register logic at given stage
 
 TaskStatus Hydro::CopyCons(Driver *pdrive, int stage) {
   if (stage == 1) {
@@ -328,7 +327,7 @@ TaskStatus Hydro::CopyCons(Driver *pdrive, int stage) {
 //! of conserved variables
 
 TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
-  // duale-1112: the next ConToPrim follows an update; a change of this stage's state
+  // the next ConToPrim follows an update; a change of this stage's state
   // reaches the end of the step with the weight prod_{s > stage} gam0[s] (the 2S
   // register update u0 = gam0 u0 + gam1 u1 + ...; u1 is the step-start state)
   if (dual.any) {
@@ -446,7 +445,7 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
     }
   }
 
-  // Call FOFC if necessary.  It must run on the RIEMANN fluxes ALONE, before any
+  // Call FOFC if necessary. It must run on the RIEMANN fluxes ALONE, before any
   // additive correction (diffusion, gravity flux, the well-balanced flux removal, and
   // the resistive fluxes in MHD): the published algorithm forms the trial update from
   // the Riemann fluxes only, and the fallback is meant to replace that flux, with the
@@ -462,11 +461,11 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
   }
 
   // Restore the FULL primitives before any operator that reads them as a physical
-  // state.  Under wellbalance_static_reconst the background was removed from w0 at the
+  // state. Under wellbalance_static_reconst the background was removed from w0 at the
   // top of this task so the Riemann reconstruction sees the deviation; everything below
   // -- the conduction and viscous fluxes, and every consumer downstream -- needs the
-  // real state.  (FOFC above is the one operator that must run on the deviation: it adds
-  // the background back itself, see hydro_fofc.cpp.)  A temperature computed from a
+  // real state. (FOFC above is the one operator that must run on the deviation: it adds
+  // the background back itself, see hydro_fofc.cpp.) A temperature computed from a
   // deviation density and energy is meaningless, and on a stratified star that is the
   // whole heat flux.
   if (use_wellbalance_static_reconst_perturb) AddWbVar(w0wb,w0);
@@ -491,7 +490,7 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
   if (use_wellbalance_static) {
     RemoveWbFlux(pfacewb,uflx);
   }
-  // accwall-1019: the problem generator's flux hook (e.g. ry_per_accretor
+  // the problem generator's flux hook (e.g. ry_per_accretor
   // problem/theta_wall_closed); null unless a pgen enrolls it
   if (pmy_pack->pmesh->pgen->user_hydro_flux_func != nullptr) {
     (pmy_pack->pmesh->pgen->user_hydro_flux_func)(pmy_pack->pmesh);
@@ -553,7 +552,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
   // <problem>/nan_report: this task runs immediately after RKUpdate, so u0 here is what
   // the flux divergence produced
   if (nan_report) NanScanCons(pmy_pack, u0, "after_RKUpdate");
-  eint_ledger::Mark(pmy_pack->pmesh, "flux");   // floorheat-1029 (no-op unless on)
+  eint_ledger::Mark(pmy_pack->pmesh, "flux");   // (no-op unless on)
 
   // Add physics source terms (must be computed from primitives)
   if (psrc != nullptr) psrc->ApplySrcTerms(w0, peos->eos_data,  beta_dt, u0);
@@ -563,12 +562,13 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
   // Add shearing box source terms for cell-centered hydro variables
   if (psbox_u != nullptr) psbox_u->SourceTermsCC(w0, peos->eos_data, beta_dt, u0);
 
-  // Add coordinate source terms in GR.  Again, must be computed with only primitives.
+  // Add coordinate source terms in GR. Again, must be computed with only primitives.
   if (pmy_pack->pcoord->is_general_relativistic) {
     pmy_pack->pcoord->CoordSrcTerms(w0, peos->eos_data, beta_dt, u0);
   }
-    
-  // Add coordinate source terms in curvi-linear grid.  Again, must be computed with only primitives.
+
+  // Add coordinate source terms in curvi-linear grid. Again, must be computed with only
+  // primitives.
   if (pmy_pack->pmesh->use_cubed_sphere) {
     pmy_pack->pcoord->SrcTermsGnomonicEquiangle(w0, wder, pwb, uflx, peos->eos_data,
                                                 beta_dt, u0);
@@ -580,7 +580,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
   }
   eint_ledger::Mark(pmy_pack->pmesh, "coord");
 
-  // cs-open-1018 <hydro>/am_transport | am_vector | frame_omega: the angular-momentum
+  // cs- <hydro>/am_transport | am_vector | frame_omega: the angular-momentum
   // module (hydro_am.cpp), from this stage's fluxes and w0
   if (pam != nullptr) {
     hydro::AmFluid fl{u0, u1, w0, wder, DvceArray5D<Real>(), uflx, peos->eos_data, false,
@@ -589,7 +589,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
   }
   eint_ledger::Mark(pmy_pack->pmesh, "am");
 
-  // ringavg-1029 <mesh>/polar_ring_avg: the polar rows' phi groups to their averages,
+  // <mesh>/polar_ring_avg: the polar rows' phi groups to their averages,
   // after the transport (fluxes, coordinate sources, am_transport) and before the user
   // sources/floors, ConToPrim and SendU (hydro_ringavg.hpp)
   if (pravg != nullptr) {pravg->Average(u0, nhydro + nscalars, phicc0, use_etotgrav);}
@@ -608,7 +608,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
 //----------------------------------------------------------------------------------------
 //! \fn TaskList Hydro::ImplicitConduction
 //! \brief Wrapper task that applies the implicit radial radiative diffusion
-//! (<hydro>/rad_implicit_x1).  A no-op unless that flag is set; see
+//! (<hydro>/rad_implicit_x1). A no-op unless that flag is set; see
 //! Conduction::ImplicitRadialUpdate for what it solves and why.
 
 TaskStatus Hydro::ImplicitConduction(Driver *pdrive, int stage) {
@@ -624,8 +624,8 @@ TaskStatus Hydro::ImplicitConduction(Driver *pdrive, int stage) {
 //----------------------------------------------------------------------------------------
 //! \fn TaskList Hydro::ImplicitTransverseConduction
 //! \brief Wrapper task that applies the implicit transverse radiative diffusion
-//! (<hydro>/rad_implicit_ang).  A no-op unless that flag is set; see
-//! Conduction::ImplicitTransverseUpdate for what it solves and why.  With
+//! (<hydro>/rad_implicit_ang). A no-op unless that flag is set; see
+//! Conduction::ImplicitTransverseUpdate for what it solves and why. With
 //! <hydro>/rad_sts_all it instead runs the UNIFIED operator over x1, x2 and x3 in one
 //! RKL1 loop (Conduction::StsConductionUpdate), and the radial task above does nothing.
 
@@ -638,7 +638,7 @@ TaskStatus Hydro::ImplicitTransverseConduction(Driver *pdrive, int stage) {
   if (pcond->rad_tr_split_out) return TaskStatus::complete;
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
   // <hydro>/rad_sts_once: ONE call per cycle, after the LAST stage and over the
-  // FULL dt, instead of one per stage over beta_dt.  An RKL1 super-step of tau costs
+  // FULL dt, instead of one per stage over beta_dt. An RKL1 super-step of tau costs
   // sqrt(tau) substages, so one call over dt is cheaper than two over dt/2 by ~30 %.
   // The splitting between this operator and the hydro is FIRST ORDER either way -- the
   // operator is not part of the RK right-hand side, so running it every stage does not
@@ -649,7 +649,7 @@ TaskStatus Hydro::ImplicitTransverseConduction(Driver *pdrive, int stage) {
   }
   // <hydro>/rad_sts_all replaces BOTH implicit conduction tasks with this one: the radial
   // task above is a no-op (rad_implicit_x1 is refused alongside it) and the RKL1 loop
-  // here runs over all three directions at once.  Same slot in the stage either way.
+  // here runs over all three directions at once. Same slot in the stage either way.
   if (pcond->rad_sts_all) {
     pcond->StsConductionUpdate(u0, peos->eos_data, beta_dt);
   } else {
@@ -661,7 +661,7 @@ TaskStatus Hydro::ImplicitTransverseConduction(Driver *pdrive, int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn TaskList Hydro::MergeLatTask
-//! \brief mrglat-1019: the group average of the merged lateral cells (hydro_mergelat.hpp)
+//! \brief the group average of the merged lateral cells (hydro_mergelat.hpp)
 
 TaskStatus Hydro::MergeLatTask(Driver *pdrive, int stage) {
   if (pmlat == nullptr || !pmlat->on) return TaskStatus::complete;
@@ -730,7 +730,7 @@ TaskStatus Hydro::SendU(Driver *pdrive, int stage) {
 
 TaskStatus Hydro::RecvU(Driver *pdrive, int stage) {
   TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0);
-  // ckbval-1102: a ghost refresh; the next ConToPrim takes the split_bval_fast snapshot
+  // a ghost refresh; the next ConToPrim takes the split_bval_fast snapshot
   if (sbf_on && tstat == TaskStatus::complete) {
     sbf_want = true;
     sbf_valid = false;
@@ -786,7 +786,7 @@ TaskStatus Hydro::ApplyPhysicalBCs(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->pgen->user_bcs) {
     (pmy_pack->pmesh->pgen->user_bcs_func)(pmy_pack->pmesh);
   }
-  // share-1104 P4: floor-tracer radial ghosts at physical x1 boundaries (no-op without)
+  // P4: floor-tracer radial ghosts at physical x1 boundaries (no-op without)
   TracerX1Ghosts(false);
   return TaskStatus::complete;
 }
@@ -815,15 +815,15 @@ TaskStatus Hydro::Prolongate(Driver *pdrive, int stage) {
 //! \brief a COMPLETE ghost-zone update of u0 for an operator that ran OUTSIDE the stage's
 //! own communication window (the Strang half-steps of RTStrangSplit).
 //!
-//! WHY THIS EXISTS.  Every in-stage source writes ACTIVE cells only and is followed,
+//! WHY THIS EXISTS. Every in-stage source writes ACTIVE cells only and is followed,
 //! inside the same stage, by RestrictU -> SendU -> RecvU -> ApplyPhysicalBCs ->
 //! Prolongate -> ConToPrim, so what the next flux evaluation reads in the ghost zones is
-//! the state the source produced.  An operator applied in "before_/after_timeintegrator",
+//! the state the source produced. An operator applied in "before_/after_timeintegrator",
 //! or at the head of stage 1 before the stage's own exchange, has no such tail: the
 //! MeshBlock halos and -- decisively for a radiating box -- the PHYSICAL x1 wall and top
-//! ghosts still hold the state from before it ran.  The first flux divergence of the
+//! ghosts still hold the state from before it ran. The first flux divergence of the
 //! cycle is then evaluated across a discontinuity of one whole operator step at every
-//! block face and at both x1 boundaries.  In the optically thin lid the two-stream
+//! block face and at both x1 boundaries. In the optically thin lid the two-stream
 //! changes the top cell by order unity in a step, so the top ghost (built by the user BC
 //! from the last active cell) is order-unity wrong once per cycle.
 //!
@@ -831,14 +831,14 @@ TaskStatus Hydro::Prolongate(Driver *pdrive, int stage) {
 //! spun on rather than retried by the task machinery, which costs the MPI overlap once
 //! per cycle and nothing else.
 //!
-//! \param recv_posted  true when "before_stagen" has ALREADY posted the receives for U
-//!                     (i.e. this is being called from inside "stagen"); the posted
-//!                     receives are then consumed here instead of being posted twice.
-//! \param repost       true to post a fresh set of receives afterwards, for the SendU /
-//!                     RecvU the rest of the stage still has to run.
+//! \param recv_posted true when "before_stagen" has ALREADY posted the receives for U
+//! (i.e. this is being called from inside "stagen"); the posted
+//! receives are then consumed here instead of being posted twice.
+//! \param repost true to post a fresh set of receives afterwards, for the SendU /
+//! RecvU the rest of the stage still has to run.
 
 void Hydro::RTOpSplitBvals(bool recv_posted, bool repost) {
-  // ckbval-1102 <hydro>/split_bval_fast: u0(IEN) alone when SplitBvalFastOK proves the
+  // <hydro>/split_bval_fast: u0(IEN) alone when SplitBvalFastOK proves the
   // ghosts of every other variable already hold what the full exchange would give.
   // Everything after the exchange (BCs, ConToPrim over the whole mesh) is unchanged.
   const bool fast = !recv_posted && sbf_on && SplitBvalFastOK();
@@ -872,7 +872,7 @@ void Hydro::RTOpSplitBvals(bool recv_posted, bool repost) {
 //----------------------------------------------------------------------------------------
 //! \fn void Hydro::EnableC2PTrack / C2PTrack
 //! \brief floor bookkeeping of ConToPrim (see c2p_track in hydro.hpp and
-//! utils/c2p_track.hpp).  Enabled by a problem generator; c2p_acc is zeroed by its owner.
+//! utils/c2p_track.hpp). Enabled by a problem generator; c2p_acc is zeroed by its owner.
 
 void Hydro::EnableC2PTrack() {
   c2p_track::Enable(pmy_pack, c2p_acc, c2p_ref_e, c2p_ref_d);
@@ -896,10 +896,10 @@ void Hydro::C2PTrack(Driver *pdrive, int stage, bool before) {
 //! the RK stages): identical, except that the floor bookkeeping weights it by 1.
 
 TaskStatus Hydro::ConToPrimSplit(Driver *pdrive, int stage) {
-  // ckbval-1102 <hydro>/split_c2p_once: under user_split_once the conversion inside
+  // <hydro>/split_c2p_once: under user_split_once the conversion inside
   // RTOpSplitBvals is the last thing to touch u0 before the next RK stage, so this one
   // (after it, and again in "before_timeintegrator") only repeats it (a round-off change:
-  // each call re-runs the etotgrav round trip and the T(d,e) solve).  See SplitC2POnce.
+  // each call re-runs the etotgrav round trip and the T(d,e) solve). See SplitC2POnce.
   if (SplitC2POnce()) return TaskStatus::complete;
   c2p_split = true;
   TaskStatus ts = ConToPrim(pdrive, stage);
@@ -909,10 +909,10 @@ TaskStatus Hydro::ConToPrimSplit(Driver *pdrive, int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus Hydro::RTStrangSplit
-//! \brief the Strang half-step of ProblemGenerator::user_split_func.  It runs once in
+//! \brief the Strang half-step of ProblemGenerator::user_split_func. It runs once in
 //! "before_timeintegrator" and once in "after_timeintegrator", each with HALF the
 //! CYCLE dt -- pmesh->dt is fixed for the whole cycle, NewTimeStep running only after
-//! the second call -- so the two halves are equal and the split is second order.  Each
+//! the second call -- so the two halves are equal and the split is second order. Each
 //! is followed by ConToPrim in the same list so the stage (and the next cycle) sees
 //! primitives consistent with the conserved state the source just changed.
 //!
@@ -924,7 +924,7 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
   if (pm->pgen == nullptr || pm->pgen->user_split_func == nullptr) {
     return TaskStatus::complete;
   }
-  // user_split_once: ONE full-dt call, after the last RK stage.  The
+  // user_split_once: ONE full-dt call, after the last RK stage. The
   // "before_timeintegrator" half (stage = 0, see Driver::Execute) is skipped entirely,
   // so the source is applied once per cycle on the final state instead of being blended
   // by the SSP-RK stage weights.
@@ -934,7 +934,7 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
     RTOpSplitBvals(false, false);
     return TaskStatus::complete;
   }
-  pm->pgen->user_split_half = (stage == 0) ? 1 : 2;   // rkgfuse-1102
+  pm->pgen->user_split_half = (stage == 0) ? 1 : 2;
   (pm->pgen->user_split_func)(pm, 0.5*(pm->dt));
   pm->pgen->user_split_half = 0;
   // the half-step wrote ACTIVE cells only, outside any stage: bring the MeshBlock halos
@@ -948,8 +948,8 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
 //! \brief Wrapper task list function to call ConsToPrim over entire mesh (including gz)
 
 TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
-  if (sbf_on && sbf_want) SplitBvalSnap(pdrive, stage);   // ckbval-1102
-  if (c2pi_on && c2p_split && C2PIdemSkip()) return TaskStatus::complete;   // ckbval-1102
+  if (sbf_on && sbf_want) SplitBvalSnap(pdrive, stage);
+  if (c2pi_on && c2p_split && C2PIdemSkip()) return TaskStatus::complete;
   if (c2p_track) C2PTrack(pdrive, stage, true);
   eint_ledger::Mark(pmy_pack->pmesh, "gap_c2p");
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -959,10 +959,10 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
   // A restart that carried the internal energy (kEintRstMagic, pgen/pgen.hpp): the
   // frozen first conversion takes w0(IEN) from the file and hands u0(IEN) back exactly
-  // as the file had it.  Re-deriving the internal energy from the file's u0 goes through
+  // as the file had it. Re-deriving the internal energy from the file's u0 goes through
   // (E - rho phi) + rho phi - rho phi with etotgrav, which is not the E - rho phi of the
   // straight run's last inversion; the restart then stopped being bitwise.
-  // t9rst-1113: also the ideal-gas EOS (no derived state to freeze), see RstEint
+  // also the ideal-gas EOS (no derived state to freeze), see RstEint
   const bool eint_fix = c2p_eint_rst &&
                         (c2p_freeze_derived || !peos->eos_data.IsGeneral());
   DvceArray4D<Real> ekeep;
@@ -976,14 +976,14 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   if (use_etotgrav) {
     RemoveGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }
-  if (dual.any) dual.Pre(pmy_pack, u0);   // duale-1112
+  if (dual.any) dual.Pre(pmy_pack, u0);
   // remembered across the branch below because the cubed-sphere half of the inversion,
   // which owns the cache on that grid, has to be frozen by the SAME call
   const bool frozen = c2p_freeze_derived;
   if (c2p_freeze_derived) {
     // the first conversion of a RESTARTED run under a general EOS: the temperature and
     // the derived (p, Gamma_1) came out of the restart file and must survive this call
-    // untouched, or the restart is not a bitwise continuation.  One call only.
+    // untouched, or the restart is not a bitwise continuation. One call only.
     static_cast<GeneralHydro*>(peos)->ConsToPrimFrozen(u0, w0, 0, n1m1, 0, n2m1,
                                                        0, n3m1);
     c2p_freeze_derived = false;
@@ -998,7 +998,7 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
     if (frozen) {
       // ...and on this grid THIS routine, not ConsToPrim, is what re-solves wtemp/wder
       // and re-applies the deferred floors, so the frozen conversion has to reach here
-      // too or the cache the restart file restored is overwritten a moment later.  See
+      // too or the cache the restart file restored is overwritten a moment later. See
       // coordinates/gnomonic_raisevel_frozen.cpp.
       pmy_pack->pcoord->GnomonicEquiangleRaiseVelFrozen(u0, w0, 0, n1m1, 0, n2m1,
                                                         0, n3m1);
@@ -1007,12 +1007,12 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
                                                   0, n1m1, 0, n2m1, 0, n3m1);
     }
   }
-  // duale-1112: dual selection, floor audit / payment record, slot resync
+  // dual selection, floor audit / payment record, slot resync
   if (dual.any) dual.Post(pmy_pack, u0, w0, wder, wtemp, peos->eos_data);
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }
-  // wbplm-1103 <hydro>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp)
+  // <hydro>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp)
   if (top_ghost_prim_copy && diode_ox1) {
     TopGhostPrimCopy(pmy_pack, w0, wder, wtemp, peos->eos_data.IsGeneral());
   }
@@ -1025,7 +1025,7 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
     eint_rst = DvceArray4D<Real>();
     c2p_eint_rst = false;
   }
-  if (c2pi_on) C2PIdemSave();   // ckbval-1102
+  if (c2pi_on) C2PIdemSave();
   if (c2p_track) C2PTrack(pdrive, stage, false);
   eint_ledger::Mark(pmy_pack->pmesh, "c2p");
   runaway_scan::Scan(pmy_pack->pmesh, "ConToPrim_floors");
@@ -1035,11 +1035,11 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
 //----------------------------------------------------------------------------------------
 //! \fn TaskList Hydro::ClearSend
 //! \brief Wrapper task list function that checks all MPI sends have completed. Used in
-//! TaskList and in Driver::InitBoundaryValuesAndPrimitives()
-//! If stage=(last stage):      clears sends of U, Flx_U, U_OA, U_Shr
-//! If (last stage)>stage>=(0): clears sends of U, Flx_U,       U_Shr
-//! If stage=(-1):              clears sends of U
-//! If stage=(-4):              clears sends of                 U_Shr
+//! TaskList and in Driver::InitBoundaryValuesAndPrimitives
+//! If stage=(last stage): clears sends of U, Flx_U, U_OA, U_Shr
+//! If (last stage)>stage>=(0): clears sends of U, Flx_U, U_Shr
+//! If stage=(-1): clears sends of U
+//! If stage=(-4): clears sends of U_Shr
 
 TaskStatus Hydro::ClearSend(Driver *pdrive, int stage) {
   TaskStatus tstat;
@@ -1051,10 +1051,9 @@ TaskStatus Hydro::ClearSend(Driver *pdrive, int stage) {
 
   // with SMR/AMR check sends of restricted fluxes of U complete
   // do not check flux send for ICs (stage < 0)
-  // On the cubed sphere the PANEL-SEAM flux exchange (SendFlux) uses the same flux_req
-  // and must be waited on too: unwaited, every stage leaked one MPI request per off-rank
-  // seam neighbour and Cray MPICH aborted once its request pool ran out (DeltaAI, dhj
-  // at 2 ranks after ~8000 cycles: "Assertion failed ... req != NULL" in MPI_Isend).
+  // On the cubed sphere the panel-seam flux exchange (SendFlux) uses the same flux_req
+  // and must be waited on too (otherwise one MPI request per off-rank seam neighbour
+  // leaks every stage).
   if ((pmy_pack->pmesh->multilevel || pmy_pack->pmesh->use_cubed_sphere) &&
       (stage >= 0)) {
     tstat = pbval_u->ClearFluxSend();
@@ -1087,11 +1086,11 @@ TaskStatus Hydro::ClearSend(Driver *pdrive, int stage) {
 //----------------------------------------------------------------------------------------
 //! \fn TaskList Hydro::ClearRecv
 //! \brief Wrapper task list function that checks all MPI receives have completed. Used in
-//! TaskList and in Driver::InitBoundaryValuesAndPrimitives()
-//! If stage=(last stage):      clears recvs of U, Flx_U, U_OA, U_Shr
-//! If (last stage)>stage>=(0): clears recvs of U, Flx_U,       U_Shr
-//! If stage=(-1):              clears recvs of U
-//! If stage=(-4):              clears recvs of                 U_Shr
+//! TaskList and in Driver::InitBoundaryValuesAndPrimitives
+//! If stage=(last stage): clears recvs of U, Flx_U, U_OA, U_Shr
+//! If (last stage)>stage>=(0): clears recvs of U, Flx_U, U_Shr
+//! If stage=(-1): clears recvs of U
+//! If stage=(-4): clears recvs of U_Shr
 
 TaskStatus Hydro::ClearRecv(Driver *pdrive, int stage) {
   TaskStatus tstat;
@@ -1132,8 +1131,6 @@ TaskStatus Hydro::ClearRecv(Driver *pdrive, int stage) {
 
   return tstat;
 }
-
-
 
 
 } // namespace hydro

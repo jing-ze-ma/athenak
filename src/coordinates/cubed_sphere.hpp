@@ -110,7 +110,10 @@ int FindPanel(const Real q[3]) {
     Real a[3], b[3], n[3];
     PanelFrame(p, a, b, n);
     const Real d = q[0]*n[0] + q[1]*n[1] + q[2]*n[2];
-    if (d > bdot) { bdot = d; best = p; }
+    if (d > bdot) {
+      bdot = d;
+      best = p;
+    }
   }
   return best;
 }

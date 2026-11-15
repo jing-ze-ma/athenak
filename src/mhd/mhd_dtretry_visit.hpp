@@ -80,13 +80,10 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("emf_smooth", emf_smooth);
   v.value("emf_uct", emf_uct);
   v.value("emf_uct_hlld", emf_uct_hlld);
-  v.value("uct_corner_rec", uct_corner_rec);
   v.view("uct1", uct1);
   v.view("uct2", uct2);
   v.view("uct3", uct3);
   v.value("cs_seam_mhd", cs_seam_mhd);
-  v.value("cs_seam_noavg", cs_seam_noavg);
-  v.value("cs_seam_res_own", cs_seam_res_own);
   v.value("cs_seam_nfs", cs_seam_nfs);
   v.value("use_polar_emf_diss", use_polar_emf_diss);
   v.value("cs_lowbeta_fallback", cs_lowbeta_fallback);

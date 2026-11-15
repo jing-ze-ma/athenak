@@ -277,54 +277,6 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   }
   const bool v3_ = pmy_pack->pmesh->cs_vertex_3cell;
 
-  // fcorder3-1103 DIAGNOSTIC (env CS_RESJ_STAT=<every>, off unless set; no data change):
-  // max |J.n| of the pass-1 current on the panel-edge (seam) edges vs >= 2 cells inside,
-  // radial edges and tangential (x2/x3) edges, printed every <every>-th call by rank 0
-  {static const char *rjs_ = std::getenv("CS_RESJ_STAT");
-   static int rjcall_ = 0;
-   if (rjs_ != nullptr && (rjcall_++ % std::max(1, std::atoi(rjs_))) == 0) {
-    const int nx2_ = je - js + 1, nx3_ = ke - ks + 1, ni_ = ie - is + 1;
-    const int ntot_ = (nmb1 + 1)*(nx3_ + 1)*(nx2_ + 1)*ni_;
-    auto &msd = pmy_pack->pmb->mb_size;
-    Real mx[4];
-    for (int kd=0; kd<4; ++kd) {
-      Real r_ = 0.0;
-      Kokkos::parallel_reduce("res_cs_jstat", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot_),
-      KOKKOS_LAMBDA(const int t, Real &rr) {
-        const int i = is + t%ni_;
-        const int j = js + (t/ni_)%(nx2_ + 1);
-        const int k = ks + (t/(ni_*(nx2_ + 1)))%(nx3_ + 1);
-        const int m = t/(ni_*(nx2_ + 1)*(nx3_ + 1));
-        const auto z = msd.d_view(m);
-        const Real h2 = (z.x2max - z.x2min)/nx2_, h3 = (z.x3max - z.x3min)/nx3_;
-        // distance (faces) of face j / k from the panel edge
-        const Real xf = z.x2min + (j - js)*h2, ef = z.x3min + (k - ks)*h3;
-        const int dj = static_cast<int>(floor((1.0 - fabs(xf))/h2 + 0.5));
-        const int dk = static_cast<int>(floor((1.0 - fabs(ef))/h3 + 0.5));
-        const bool rad = (kd < 2);
-        const bool seam = rad ? (dj == 0 || dk == 0) : (dj == 0 || dk == 0);
-        const bool intr = (dj >= 2 && dk >= 2);
-        if ((kd % 2 == 0) ? !seam : !intr) return;
-        Real v = 0.0;
-        if (rad) {
-          v = fabs(jn1(m,k,j,i));
-        } else {
-          if (dj == 0 || intr) v = fmax(v, (k <= ke) ? fabs(jn3(m,k,j,i)) : 0.0);
-          if (dk == 0 || intr) v = fmax(v, (j <= je) ? fabs(jn2(m,k,j,i)) : 0.0);
-        }
-        rr = fmax(rr, v);
-      }, Kokkos::Max<Real>(r_));
-      mx[kd] = r_;
-    }
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, mx, 4, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
-#endif
-    if (global_variable::my_rank == 0) {
-      std::printf("### CS_RESJ_STAT call %d |J| max: radial seam %.4e interior %.4e |"
-                  " tangential seam %.4e interior %.4e\n", rjcall_ - 1, mx[0], mx[1],
-                  mx[2], mx[3]);
-    }
-  }}
 
   // ---- pass 2: rotate into the edge (covariant) frame and multiply by eta -------------
   // J.e_xi = (J.nhat_xi + c J.nhat_eta)/s and likewise for eta, the same transform
@@ -334,18 +286,12 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   auto e2 = efld.x2e;
   auto e3 = efld.x3e;
   auto eta_b_ = eta_b;
-  // ucthshare-1102 <mhd>/cs_seam_mhd = shared_g | shared_o: the seam edges take the SHARED
-  // resistive EMF (MHD::CsSeamResist, after pass 2).  cs_seam_res = own: pass 2 skips
-  // them; mean (default): pass 2 computes them and CsSeamResist takes the two-chart mean
-  const bool rsc_ = (pmy_pack->pmhd != nullptr && pmy_pack->pmhd->cs_seam_mhd >= 3);
-  const bool rsh_ = rsc_ && pmy_pack->pmhd->cs_seam_res_own;
+  // cs_seam_mhd: the seam edges take the two-chart mean of the resistive EMF
+  // (MHD::CsSeamResist, after the edge EMFs below)
+  const bool rsc_ = (pmy_pack->pmhd != nullptr && pmy_pack->pmhd->cs_seam_mhd);
   auto &msz_ = pmy_pack->pmb->mb_size;
 
   auto e1_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    if (rsh_ && ((k == ks && msz_.d_view(m).x3min <= -1.0 + 1.0e-12) ||
-                 (k == ke+1 && msz_.d_view(m).x3max >= 1.0 - 1.0e-12))) return;
-    if (rsh_ && ((j == js && msz_.d_view(m).x2min <= -1.0 + 1.0e-12) ||
-                 (j == je+1 && msz_.d_view(m).x2max >= 1.0 - 1.0e-12))) return;
     Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j-1,i)
                   + eta_b_(m,k-1,j,i) + eta_b_(m,k-1,j-1,i));
     CsVtx3 vx;   // cornerfix-1103: a cube vertex has three cells, not four
@@ -356,8 +302,6 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   };
 
   auto e2_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    if (rsh_ && ((k == ks && msz_.d_view(m).x3min <= -1.0 + 1.0e-12) ||
-                 (k == ke+1 && msz_.d_view(m).x3max >= 1.0 - 1.0e-12))) return;
     const Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j,i-1)
                         + eta_b_(m,k-1,j,i) + eta_b_(m,k-1,j,i-1));
     const Real j3a = 0.25*(jn3(m,k,j,i) + jn3(m,k,j+1,i)
@@ -366,8 +310,6 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
   };
 
   auto e3_ = KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    if (rsh_ && ((j == js && msz_.d_view(m).x2min <= -1.0 + 1.0e-12) ||
-                 (j == je+1 && msz_.d_view(m).x2max >= 1.0 - 1.0e-12))) return;
     const Real et = 0.25*(eta_b_(m,k,j,i) + eta_b_(m,k,j-1,i)
                         + eta_b_(m,k,j,i-1) + eta_b_(m,k,j-1,i-1));
     const Real j2a = 0.25*(jn2(m,k,j,i) + jn2(m,k+1,j,i)
@@ -380,7 +322,7 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
                  LoopBox3{ks, ke, js, je+1, is, ie+1}, e3_);
   // with ambipolar diffusion the two-chart mean is taken once, after the ambipolar EMF
   // has been added too (AddEMFAmbipolarGnomonic); the own-grid Ohmic part is added here
-  if (rsc_ && (rsh_ || ad_type == 0)) {
+  if (rsc_ && ad_type == 0) {
     pmy_pack->pmhd->CsSeamResist(b0, eta_b, jnorm, efld);
   }
 

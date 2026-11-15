@@ -535,7 +535,9 @@ void Coordinates::CoordGnomonicEquiangle() {
   const Real rmin_ = pmy_pack->pmesh->mesh_size.x1min;
   const Real rmax_ = pmy_pack->pmesh->mesh_size.x1max;
   Real cpoly_[NSTRETCH_R_POLY];
-  for (int n=0; n<NSTRETCH_R_POLY; ++n) { cpoly_[n] = pmy_pack->pmesh->fStretchRPoly[n]; }
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) {
+    cpoly_[n] = pmy_pack->pmesh->fStretchRPoly[n];
+  }
 
   // 1-D coordinate arrays: x1 is the radius with the volume-centroid centre (as in
   // CoordSphericalPolar); x2 and x3 are the panel coordinates (not angles)
@@ -559,7 +561,9 @@ void Coordinates::CoordGnomonicEquiangle() {
       const Real q = r_l/r_r;
       x1v_(m,i) = 0.25*(q*q + 1.0)/((1.0/3.0)*(q*q + q + 1.0))*(r_r + r_l);
       xx1f_(m,i) = r_l;
-      if (i == n1m1) { xx1f_(m,i+1) = r_r; }
+      if (i == n1m1) {
+        xx1f_(m,i+1) = r_r;
+      }
     });
     par_for("cs_coord1d_2", DevExeSpace(), 0,nmb1, 0,n2m1,
     KOKKOS_LAMBDA(const int m, const int j) {
@@ -859,7 +863,9 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
       } else {
         const Real eold = eint;
         eos_.ApplyEnergyFloor(d, eint);
-        if (eint != eold) { u0(m,IEN,k,j,i) = eint + 0.5*(m1*v1+m2*v2+m3*v3); }
+        if (eint != eold) {
+          u0(m,IEN,k,j,i) = eint + 0.5*(m1*v1+m2*v2+m3*v3);
+        }
       }
       w0(m,IEN,k,j,i) = eint;
     });
@@ -928,8 +934,12 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
       wder_(m,IDG1,k,j,i) = g1new;
       wtemp_(m,k,j,i) = temp;
     }
-    if (ceil_used) { sumv++; }
-    if (tset_used) { sumts++; }
+    if (ceil_used) {
+      sumv++;
+    }
+    if (tset_used) {
+      sumts++;
+    }
     sumde += de;
     sumvde += vde;
     w0(m,IVX,k,j,i) = v1;
@@ -1057,7 +1067,9 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
       u0(m,IM3,k,j,i) = m3;
       sumv++;
     }
-    if (ceil_used || floored) { u0(m,IEN,k,j,i) = etot; }
+    if (ceil_used || floored) {
+      u0(m,IEN,k,j,i) = etot;
+    }
     w0(m,IVX,k,j,i) = v1;
     w0(m,IVY,k,j,i) = v2;
     w0(m,IVZ,k,j,i) = v3;
@@ -1435,7 +1447,10 @@ void Coordinates::SrcTermsCurvilinearWB(const DvceArray5D<Real> &w0,
     auto addface = [&](const Real sig, const Real ar, const Real nh[3],
                        const Real f1[3], const Real f2[3], const Real f3[3]) {
       Real vn = 0.0, bn = 0.0;
-      for (int c=0; c<3; ++c) { vn += vv[c]*nh[c]; bn += bb[c]*nh[c]; }
+      for (int c=0; c<3; ++c) {
+        vn += vv[c]*nh[c];
+        bn += bb[c]*nh[c];
+      }
       const Real *ee[3] = {f1, f2, f3};
       for (int d=0; d<3; ++d) {
         Real ne = 0.0, ve = 0.0, be = 0.0;
@@ -2139,8 +2154,12 @@ void Coordinates::SphericalPolarFaceAverageFluxes(DvceFaceFld5D<Real> &uflx,
   });
   par_for("sp_favg_add", DevExeSpace(), 0,nmb-1, 0,nvar-1, ks,ke+1, js,je+1, is,ie,
   KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-    if (k <= ke) { f2(m,n,k,j,i) += q2(m,n,k,j,i); }
-    if (j <= je) { f3(m,n,k,j,i) += q3(m,n,k,j,i); }
+    if (k <= ke) {
+      f2(m,n,k,j,i) += q2(m,n,k,j,i);
+    }
+    if (j <= je) {
+      f3(m,n,k,j,i) += q3(m,n,k,j,i);
+    }
   });
   (void)xx3f_;
 }

@@ -31,7 +31,7 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
   auto &mb_indcs  = pmy_pack->pmesh->mb_indcs;
   int ng  = mb_indcs.ng;
   int ng1 = ng - 1;
-  const bool cs_vfill = pmy_pack->pmesh->cs_vertex_fill;
+  const bool cs_vfill = pmy_pack->pmesh->use_cubed_sphere;
 
   // set indices for sends to neighbors on SAME level
   // Formulae same as in LoadBoundaryBufferSameLevel in src/bvals/fc/bvals_fc.cpp
@@ -100,20 +100,32 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
                         !(pmy_pack->pmesh->use_cubed_sphere);
     // x1f component on x1-faces
     if (ml_ovl && (ox2 != 0 || ox3 != 0)) {
-      if (ox1 > 0) {isame[0].bie++;}
-      if (ox1 < 0) {isame[0].bis--;}
+      if (ox1 > 0) {
+        isame[0].bie++;
+      }
+      if (ox1 < 0) {
+        isame[0].bis--;
+      }
     }
     // x2f component on x2-faces
     if (ml_ovl && (ox1 != 0 || ox3 != 0)) {
-      if (ox2 > 0) {isame[1].bje++;}
-      if (ox2 < 0) {isame[1].bjs--;}
+      if (ox2 > 0) {
+        isame[1].bje++;
+      }
+      if (ox2 < 0) {
+        isame[1].bjs--;
+      }
     }
     // x3f component on x3-faces
     if (ml_ovl && (ox1 != 0 || ox2 != 0)) {
-      if (ox3 > 0) {isame[2].bke++;}
-      if (ox3 < 0) {isame[2].bks--;}
+      if (ox3 > 0) {
+        isame[2].bke++;
+      }
+      if (ox3 < 0) {
+        isame[2].bks--;
+      }
     }
-    // cube-vertex corner fill (<mesh>/cs_vertex_fill): widen same-level x2/x3 face
+    // cube-vertex corner fill (cubed sphere): widen same-level x2/x3 face
     // buffers by ng along the seam so the corner ghost block (no diagonal neighbour at a
     // cube vertex) is filled by the two flanking face exchanges
     if (cs_vfill) {
@@ -184,16 +196,28 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
   }
   // for SMR/AMR, always include the overlapping faces in edge and corner boundaries
   if (pmy_pack->pmesh->multilevel && (ox2 != 0 || ox3 != 0)) {
-    if (ox1 > 0) {icoar[0].bie++;}
-    if (ox1 < 0) {icoar[0].bis--;}
+    if (ox1 > 0) {
+      icoar[0].bie++;
+    }
+    if (ox1 < 0) {
+      icoar[0].bis--;
+    }
   }
   if (pmy_pack->pmesh->multilevel && (ox1 != 0 || ox3 != 0)) {
-    if (ox2 > 0) {icoar[1].bje++;}
-    if (ox2 < 0) {icoar[1].bjs--;}
+    if (ox2 > 0) {
+      icoar[1].bje++;
+    }
+    if (ox2 < 0) {
+      icoar[1].bjs--;
+    }
   }
   if (pmy_pack->pmesh->multilevel && (ox1 != 0 || ox2 != 0)) {
-    if (ox3 > 0) {icoar[2].bke++;}
-    if (ox3 < 0) {icoar[2].bks--;}
+    if (ox3 > 0) {
+      icoar[2].bke++;
+    }
+    if (ox3 < 0) {
+      icoar[2].bks--;
+    }
   }
   for (int i=0; i<=2; ++i) {
     int ndat = (icoar[i].bie - icoar[i].bis + 1)*(icoar[i].bje - icoar[i].bjs + 1)*
@@ -429,7 +453,7 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
                                            int ox1, int ox2, int ox3, int f1, int f2) {
   auto &mb_indcs  = pmy_pack->pmesh->mb_indcs;
   int ng = mb_indcs.ng;
-  const bool cs_vfill = pmy_pack->pmesh->cs_vertex_fill;
+  const bool cs_vfill = pmy_pack->pmesh->use_cubed_sphere;
 
   // set indices for receives from neighbors on SAME level
   // Formulae same as in SetBoundarySameLevel in src/bvals/fc/bvals_fc.cpp
@@ -480,20 +504,32 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
                         !(pmy_pack->pmesh->use_cubed_sphere);
     // x1f component on x1-faces
     if (ml_ovl && (ox2 != 0 || ox3 != 0)) {
-      if (ox1 > 0) {isame[0].bis--;}
-      if (ox1 < 0) {isame[0].bie++;}
+      if (ox1 > 0) {
+        isame[0].bis--;
+      }
+      if (ox1 < 0) {
+        isame[0].bie++;
+      }
     }
     // x2f component on x2-faces
     if (ml_ovl && (ox1 != 0 || ox3 != 0)) {
-      if (ox2 > 0) {isame[1].bjs--;}
-      if (ox2 < 0) {isame[1].bje++;}
+      if (ox2 > 0) {
+        isame[1].bjs--;
+      }
+      if (ox2 < 0) {
+        isame[1].bje++;
+      }
     }
     // x3f component on x3-faces
     if (ml_ovl && (ox1 != 0 || ox2 != 0)) {
-      if (ox3 > 0) {isame[2].bks--;}
-      if (ox3 < 0) {isame[2].bke++;}
+      if (ox3 > 0) {
+        isame[2].bks--;
+      }
+      if (ox3 < 0) {
+        isame[2].bke++;
+      }
     }
-    // cube-vertex corner fill (<mesh>/cs_vertex_fill): widen same-level x2/x3 face
+    // cube-vertex corner fill (cubed sphere): widen same-level x2/x3 face
     // buffers by ng along the seam so the corner ghost block (no diagonal neighbour at a
     // cube vertex) is filled by the two flanking face exchanges
     if (cs_vfill) {
@@ -722,16 +758,28 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
   }
   // for SMR/AMR, always include the overlapping faces in edge and corner boundaries
   if (pmy_pack->pmesh->multilevel && (ox2 != 0 || ox3 != 0)) {
-    if (ox1 > 0) {ifine[0].bis--;}
-    if (ox1 < 0) {ifine[0].bie++;}
+    if (ox1 > 0) {
+      ifine[0].bis--;
+    }
+    if (ox1 < 0) {
+      ifine[0].bie++;
+    }
   }
   if (pmy_pack->pmesh->multilevel && (ox1 != 0 || ox3 != 0)) {
-    if (ox2 > 0) {ifine[1].bjs--;}
-    if (ox2 < 0) {ifine[1].bje++;}
+    if (ox2 > 0) {
+      ifine[1].bjs--;
+    }
+    if (ox2 < 0) {
+      ifine[1].bje++;
+    }
   }
   if (pmy_pack->pmesh->multilevel && (ox1 != 0 || ox2 != 0)) {
-    if (ox3 > 0) {ifine[2].bks--;}
-    if (ox3 < 0) {ifine[2].bke++;}
+    if (ox3 > 0) {
+      ifine[2].bks--;
+    }
+    if (ox3 < 0) {
+      ifine[2].bke++;
+    }
   }
   for (int i=0; i<=2; ++i) {
     int ndat = (ifine[i].bie - ifine[i].bis + 1)*(ifine[i].bje - ifine[i].bjs + 1)*
