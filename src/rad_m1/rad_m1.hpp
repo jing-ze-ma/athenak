@@ -3992,12 +3992,14 @@ class RadiationM1 {
   // several MeshBlocks along x1: the levels swept one after the other
   int vgd_nb1 = 1;
   std::vector<int> vgd_x1nb, vgd_x1lv;   // (2 m + 0/1): gid below / above, -1 none; lx1
-  DvceArray1D<int> vgd_x1f;   // (m): 1 innermost, 2 outermost level
+  DvceArray1D<int> vgd_x1f;   // (m): 1 innermost, 2 outermost level, 4 reflecting top
   DvceArray1D<int> vgd_x1mo;  // the blocks by level (the shell list order)
   std::vector<int> vgd_shlv[2];   // (level): first code of the level in vgd_shl[pass]
   DvceArray2D<Real> vgd_x1b, vgd_x1r;    // (m, v): one shell to / from the x1 neighbour
   void VetGdX1Hand(const bool up);
   void VetGdX1Pass(const bool up);
+  DvceArray4D<int> vgd_rmap;   // (m, k, j, d): mirror direction at a reflecting top
+  void VetGdTopMirror();
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_lxy;   // (m, 0/1): lx2, lx3
   DvceArray1D<Real> vgd_csb, vgd_crb;
   // vet_gd_halo_pipe (default true, bitwise): the compact mask of the NEXT shell is built
