@@ -62,7 +62,7 @@ void Resistivity::AssembleResistRKGTasks(std::map<std::string, std::shared_ptr<T
   id.res_copyinie = tl["rkg_stagen"]->AddTask(&Resistivity::CopyIniE, this, id.mhd_recve);
   id.res_ct        = tl["rkg_stagen"]->AddTask(&Resistivity::CT, this, id.res_copyinie);
   id.mhd_restb     = tl["rkg_stagen"]->AddTask(&mhd::MHD::RestrictB, pmhd, id.res_ct);
-  id.mhd_sendb     = tl["rkg_stagen"]->AddTask(&Resistivity::SendBRKG, this, id.mhd_restb);
+  id.mhd_sendb     = tl["rkg_stagen"]->AddTask(&mhd::MHD::SendB, pmhd, id.mhd_restb);
   id.mhd_recvb     = tl["rkg_stagen"]->AddTask(&mhd::MHD::RecvB, pmhd, id.mhd_sendb);
   id.mhd_bcs       = tl["rkg_stagen"]->AddTask(&mhd::MHD::ApplyPhysicalBCs, pmhd, id.mhd_recvb);
   id.mhd_prol      = tl["rkg_stagen"]->AddTask(&mhd::MHD::Prolongate, pmhd, id.mhd_bcs);
@@ -154,21 +154,6 @@ TaskStatus Resistivity::RKGCoeff(Driver *pdrive, int stage) {
 TaskStatus Resistivity::Fluxes(Driver *pdrive, int stage) {
   AddResistiveFluxes(pmy_pack->pmhd->b0, pmy_pack->pmhd->bcc0, pmy_pack->pmhd->uflx);
   return TaskStatus::complete;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn Resistivity::SendBRKG
-//! \brief MHD::SendB for a super-stage; stages 1..s-2 pack depth 1 with rkg_halo_d1
-//! (see resistivity.hpp).  The depth is reset at once: no other exchange sees it.
-
-TaskStatus Resistivity::SendBRKG(Driver *pdrive, int stage) {
-  auto *pm = pmy_pack->pmhd;
-  // test aid (env RKG_D1_LAST, default 2): depth 1 for stages <= s - RKG_D1_LAST
-  static const int d1l_ = std::getenv("RKG_D1_LAST") ? std::atoi(std::getenv("RKG_D1_LAST")) : 2;
-  pm->pbval_b->pack_depth = (rkg_halo_d1 && stage <= s-d1l_) ? 1 : 0;
-  const TaskStatus st = pm->pbval_b->PackAndSendFC(pm->b0, pm->coarse_b0);
-  pm->pbval_b->pack_depth = 0;
-  return st;
 }
 
 //----------------------------------------------------------------------------------------

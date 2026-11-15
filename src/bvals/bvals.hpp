@@ -236,11 +236,10 @@ struct PackSegFC {
 
 //----------------------------------------------------------------------------------------
 //! \struct SubSegFC
-//! \brief the sample box of one PackSegFC that a pack actually walks (the
-//! whole segment, or only the source layer adjacent to the boundary for a depth-1 pack),
-//! and, for a cross-panel seam segment, the box of along-seam source values (srcval) its
-//! resample reads, evaluated once per pack into a scratch array instead of three times
-//! per sample. pvoff < 0: no precompute (the sample calls srcval itself).
+//! \brief the sample box of one PackSegFC and, for a cross-panel seam segment, the box
+//! of along-seam source values (srcval) its resample reads, evaluated once per pack into
+//! a scratch array instead of three times per sample. pvoff < 0: no precompute (the
+//! sample calls srcval itself).
 
 struct SubSegFC {
   int q;                   // fc_seg index
@@ -635,18 +634,12 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
   DvceArray1D<PackSegFC> fc_seg;          // the active (m,n,v) triples
   DvceArray1D<int> fc_chunk_seg;          // chunk -> fc_seg index (plain chunks first)
   DvceArray1D<int> fc_chunk_beg;          // chunk -> first flat sample of that triple
-  // two walk sets over fc_seg, [0] all ng layers, [1] depth 1 (only the
-  // source layer adjacent to each boundary; <mhd>/rkg_halo_d1, see resistivity.hpp).
-  // Each set: SubSegFC boxes and chunk lists for the plain samples, the seam samples and
-  // the seam srcval precompute (all chunk lists index fc_sub[set]).
-  DvceArray1D<SubSegFC> fc_sub[2];
-  DvceArray1D<int> fc_cs[2], fc_cb[2];    // chunk -> (sub index, first sample)
-  int fc_np[2] = {0, 0}, fc_ns[2] = {0, 0}, fc_npre[2] = {0, 0};   // chunk counts
-  DvceArray1D<Real> fc_preval;            // srcval scratch (max over the sets)
-  // 1 = the next PackAndSendFC packs (and RecvAndUnpackFC unpacks) depth 1 only; reset
-  // by the caller. 0 everywhere else.
-  int pack_depth = 0;
-  int last_pack_depth_ = 0;   // pack_depth of the last pack
+  // the walk over fc_seg: SubSegFC boxes and chunk lists for the plain samples, the seam
+  // samples and the seam srcval precompute (all chunk lists index fc_sub)
+  DvceArray1D<SubSegFC> fc_sub;
+  DvceArray1D<int> fc_cs, fc_cb;          // chunk -> (sub index, first sample)
+  int fc_np = 0, fc_ns = 0, fc_npre = 0;  // chunk counts
+  DvceArray1D<Real> fc_preval;            // srcval scratch
   // RecvAndUnpackFluxFC work arrays, kept (they were allocated, memset and
   // freed on every call: 2 cudaMalloc/cudaFree pairs and 4 fences per E exchange)
   DvceArray2D<int> nflx_buf;

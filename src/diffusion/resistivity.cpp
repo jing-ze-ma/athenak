@@ -100,12 +100,6 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     } else {
       rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
     }
-    // r1mspeed-1102: read only when named (no restart-header change); default false.
-    // Opt-in: on r1m the active cells stay bitwise but the restart's u0(IEN) ghost and
-    // general-EOS cache slabs differ in the depth-2 ghost ring (see resistivity.hpp)
-    if (pin->DoesParameterExist("mhd", "rkg_halo_d1")) {
-      rkg_halo_d1 = rkg_lean && pin->GetBoolean("mhd", "rkg_halo_d1");
-    }
     // prod1103b defaults (USER 11-03 "make some defaults"; r1m production keys, approved
     // 11-02): with STS ON on a uniform single-level cubed sphere and the key absent, a
     // FRESH start (recipe::NewDefaults) takes rkg_strang = true (rkgstrang-1102),

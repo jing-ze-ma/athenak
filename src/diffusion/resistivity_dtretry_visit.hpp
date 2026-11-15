@@ -19,7 +19,6 @@ void Resistivity::DtRetryVisit(V &v) {
   v.value("track_x1_bflx", track_x1_bflx);
   v.view("rkg_bflx", rkg_bflx);
   v.value("rkg_lean", rkg_lean);
-  v.value("rkg_halo_d1", rkg_halo_d1);
   v.value("rkg_strang", rkg_strang);
   v.value("rkg_strang_fuse", rkg_strang_fuse);
   v.value("rkg_half", rkg_half);
