@@ -811,7 +811,13 @@ bool VgdLevelSym(const int nl, std::vector<double> &d) {
 void RadiationM1::VetGdInit() {
   Mesh *pm = pmy_pack->pmesh;
   if (vgd_nside < 1 || vgd_nside > 6) {VgdFatal("vet_gd_nside must be 1..6");}
-  if (!pm->three_d) {VgdFatal("needs a 3-D wedge");}
+  // nx3 = 1: axisymmetric.  The phi band columns are the cell's own column with the
+  // directions rotated by their phi offset (the mesh's phi extent per column, which must
+  // map the direction set onto itself: exact wall maps)
+  if (!pm->multi_d) {VgdFatal("needs a 3-D wedge or a 2-D axisymmetric mesh");}
+  if (!pm->three_d && (vgd_twin || vgd_async || impl_beam_hr || impl_beam_fs)) {
+    VgdFatal("2-D axisymmetric: no vet_gd_twin / async / implicit_flux_beam");
+  }
   if (ibc_x1max != M1_IBC_MARSHAK && !(clean && ibc_x1max == M1_IBC_REFLECT)) {
     // the sweep has a vacuum top, or a mirror (VetGdTopMirror) for the clean scheme
     VgdFatal("outer x1 needs implicit_bc_x1max = marshak (+ vet_col_surface_q), or "
@@ -973,7 +979,9 @@ void RadiationM1::VetGdInit() {
     vgd_hcomp = 0;   // the dense per-shell halo (the compact lists assume one level)
   }
   vgd_raw = clean && !vgd_csg && !vgd_pol && !vgd_sth;
-  if (vgd_raw) {   // (the compact halo: the global band's, VetGdGbHaloC)
+  // (nx3 = 1: the dense halo, the compact / exact lists mark 3-D band reads)
+  if (!pm->three_d) {vgd_hcomp = 0;}
+  if (vgd_raw || !pm->three_d) {   // (the compact halo: the global band's, VetGdGbHaloC)
     vgd_hx_on = false;
     vgd_hx_mode = 0;
     vgd_ipc_on = false;
@@ -1021,6 +1029,22 @@ void RadiationM1::VetGdInit() {
               << std::endl;
   }
   vgd_n = static_cast<int>(vgd_base.size()/4);
+  if (!pm->three_d) {
+    const double per = pm->mesh_size.x3max - pm->mesh_size.x3min;
+    const double c = std::cos(per), s = std::sin(per);
+    for (int q = 0; q < vgd_n; ++q) {
+      const double *u = &vgd_base[4*q];
+      double bd = -2.0;
+      for (int r = 0; r < vgd_n; ++r) {
+        const double *v = &vgd_base[4*r];
+        bd = std::max(bd, (c*u[0] - s*u[1])*v[0] + (s*u[0] + c*u[1])*v[1] + u[2]*v[2]);
+      }
+      if (bd < 1.0 - 1.0e-12) {
+        VgdFatal("2-D axisymmetric: the phi extent of the mesh must rotate the direction "
+                 "set onto itself (e.g. 2 pi/vet_gd_gl_nphi, pi/2 for HEALPix)");
+      }
+    }
+  }
   if (vgd_n > M1_VGD_NMAX) {VgdFatal("too many directions");}
   const int n = vgd_n;
   Kokkos::realloc(vgd_dir, n, 4);
@@ -1050,7 +1074,8 @@ void RadiationM1::VetGdInit() {
     // angular offset <= chord / r_lo; + 2 cells for the bilinear stencil and rounding
     auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->xx1f);
-    int nmax = vgd_raw ? std::numeric_limits<int>::max() : std::min(indcs.nx2, indcs.nx3);
+    int nmax = vgd_raw ? std::numeric_limits<int>::max()
+                       : (pm->three_d ? std::min(indcs.nx2, indcs.nx3) : indcs.nx2);
     // accpolar-1103 vet_gd_band_global: the band is filled from any block (global-cell
     // lists), so its depth is capped by the SPHERE (half a ring in phi, the theta rows
     // of one pole-to-pole mirror), not by the MeshBlock: the same depth for every layout
@@ -2018,8 +2043,8 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
         double th = x2_h(m,j), ph = x3_h(m,k);
         if (thwrap && th < t0) {th += (t1 - t0);}
         if (thwrap && th > t1) {th -= (t1 - t0);}
-        if (ph < p0) {ph += (p1 - p0);}
-        if (ph > p1) {ph -= (p1 - p0);}
+        while (ph < p0) {ph += p1 - p0;}
+        while (ph > p1) {ph -= p1 - p0;}
         const double st = std::sin(th), ct = std::cos(th);
         const double sp = std::sin(ph), cp = std::cos(ph);
         for (int q = 0; q < n; ++q) {
@@ -3085,19 +3110,20 @@ void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, cons
       const int jd = (dj < 0) ? (w - ws) : ((dj == 0) ? w : (w + nx2));
       const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
       const int js_ = (dj < 0) ? (w + nx2 - ws) : w;
-      const int ks_ = (dk < 0) ? (w + nx3 - ws) : w;
+      // (nx3 = 1, axisymmetric: every phi band column is a copy of the one column)
+      const int ks_ = (nx3 == 1) ? w : (((dk < 0) ? (w + nx3 - ws) : w) + kk);
       const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
       const int jsrc = (pl != 0) ? VgdPoleRow(jd + jj, w, nx2) : (js_ + jj);
-      a_(m,v,kd+kk,jd+jj,i) = a_(nl,vs,ks_+kk,jsrc,i);
+      a_(m,v,kd+kk,jd+jj,i) = a_(nl,vs,ks_,jsrc,i);
     } else if (mpi) {
       // my interior that the remote neighbour needs in ITS opposite slot (across a pole:
       // the receiver's band row w - ws + jj (north) / w + nx2 + jj (south) is my row
       // reversed about the pole)
       const int js2 = (dj > 0) ? (w + nx2 - ws) : w;
-      const int ks2 = (dk > 0) ? (w + nx3 - ws) : w;
+      const int ks2 = (nx3 == 1) ? w : (((dk > 0) ? (w + nx3 - ws) : w) + kk);
       const int jsrc = (pl == 0) ? (js2 + jj)
                        : ((pl == 1) ? (w + ws - 1 - jj) : (w + nx2 - 1 - jj));
-      sb_(static_cast<size_t>(so_(ws,8*m + o))*nvi + t) = a_(m,v,ks2+kk,jsrc,i);
+      sb_(static_cast<size_t>(so_(ws,8*m + o))*nvi + t) = a_(m,v,ks2,jsrc,i);
     }
   });
   }  // !hcomp
@@ -7366,7 +7392,7 @@ void RadiationM1::VetGdMoments() {
   const int n = vgd_n;
   const int ilo = is + vlat_icut;
   auto vi_ = vgd_i;
-  const int og = vgd_w - indcs.ng;   // mesh index -> band index of vgd_i
+  const int og = vgd_w - indcs.ng, ok = vgd_w - ks;   // mesh index -> band index
   const bool sth_ = vgd_sth;   // accsp-1102
   auto thn_ = vgd_thn;
   auto dir_ = vgd_dir;
@@ -7430,7 +7456,7 @@ void RadiationM1::VetGdMoments() {
           if (c2 < ncell) {
             int m2, i2, j2, k2;
             dec(c2, m2, i2, j2, k2);
-            if (i2 >= ilo) {sv(cc*VGD_LDS_DC + dd) = vi_(m2,d0+dd,k2+og,j2+og,i2);}
+            if (i2 >= ilo) {sv(cc*VGD_LDS_DC + dd) = vi_(m2,d0+dd,k2+ok,j2+og,i2);}
           }
         }
         tm.team_barrier();
@@ -7477,7 +7503,7 @@ void RadiationM1::VetGdMoments() {
       const Real a = nx*st*cp + ny*st*sp + nz*ct;
       const Real b = nx*ct*cp + ny*ct*sp - nz*st;
       const Real c = -nx*sp + ny*cp;
-      const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
+      const Real wi = dir_(d,3)*vi_(m,d,k+ok,j+og,i);
       jm += wi;
       rr += wi*a*a;
       rt += wi*a*b;
@@ -7579,8 +7605,8 @@ void RadiationM1::VetGdMoments() {
                          : lg_.Th(mbsize, m, j, js);
     const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
     const VgdRhatSp rh{sin(th), cos(th), sin(ph), cos(ph)};
-    vq_(m,k,j) = VgdSurfaceQ(rh, dir_, vi_, n, m, k, j, og, ie, cx1v(m,ie)/cx1f(m,ie+1),
-                             sqf, jca, jcb, jcap, qlo, qhi, q0);
+    vq_(m,k,j) = VgdSurfaceQ(rh, dir_, vi_, n, m, k + ok - og, j, og, ie,
+                             cx1v(m,ie)/cx1f(m,ie+1), sqf, jca, jcb, jcap, qlo, qhi, q0);
   });
 }
 
@@ -7636,15 +7662,15 @@ void RadiationM1::VetGdSource() {
   VetLatSweep(0);
   // ln chi, ln S in the band index space, the lateral band filled exactly
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int og = vgd_w - indcs.ng, x1g = (vgd_nb1 > 1) ? 1 : 0;
+  const int og = vgd_w - indcs.ng, ok = vgd_w - indcs.ks, x1g = (vgd_nb1 > 1) ? 1 : 0;
   const int ilo = indcs.is + vlat_icut - x1g, ie = indcs.ie + x1g;
   auto cs_ = vlat_cs;
   auto cw_ = vgd_cs;
   par_for("m1_vgd_csw", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks,
           indcs.ke, indcs.js, indcs.je, ilo, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    cw_(m,0,k+og,j+og,i) = cs_(m,0,k,j,i);
-    cw_(m,1,k+og,j+og,i) = cs_(m,1,k,j,i);
+    cw_(m,0,k+ok,j+og,i) = cs_(m,0,k,j,i);
+    cw_(m,1,k+ok,j+og,i) = cs_(m,1,k,j,i);
   });
   vgd_cur = DevExeSpace();
   if (vgd_csg) {   // cs-vetgd-1017: the cs band copies
