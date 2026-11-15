@@ -14,7 +14,6 @@
 
 #include "deep_hot_jupiter_rt.hpp"
 #include "driver/dt_retry.hpp"
-#include "utils/ck_2nd.hpp"       // ck2nd-1102 ck_t2_seed
 #include <cstdlib>
 #include "hydro/hydro_wball.hpp"
 

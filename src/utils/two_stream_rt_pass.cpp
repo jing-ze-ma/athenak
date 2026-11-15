@@ -16,28 +16,6 @@
 #include <type_traits>
 
 #include "utils/two_stream_rt.hpp"
-#include "utils/ck_2nd.hpp"     // ck2nd-1102 ck_vef_tint (read only when named)
-
-namespace two_stream_rt {
-// ck2nd-1102 (utils/ck_2nd.hpp (4b)): the VEF refresh test, in simulated time when named
-inline bool CkVefDue2(Mesh *pm, const bool ckfop, const bool ckfst) {
-  if (!(ck_vef_dt > 0.0)) return CkVefDue(pm, ckfop, ckfst);
-  const bool stp = !ck_vef_sync || !ckfop || ckfst;
-  if (ck_cad_probe_on) {   // ck2ndt-1102 (ck_2nd.hpp (8c)): the probe at U^n, time t
-    const Real eps = 1.0e-3*pm->dt;
-    const Real tt = pm->time - ck_cad_t0;
-    const Real tp = tt - static_cast<Real>(ck_impl_every)*pm->dt;
-    return stp && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
-                   std::floor((tt + eps)/ck_vef_dt) > std::floor((tp + eps)/ck_vef_dt));
-  }
-  if (ck_cad_dt > 0.0) {   // ck2ndt-1102: stateless, on the multiples of ck_vef_dt
-    return stp && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
-                   CkSchedCross(pm->time, pm->dt, ck_vef_dt));
-  }
-  return stp && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
-                 pm->time + pm->dt >= ck_vef_tlast + ck_vef_dt);
-}
-}  // namespace two_stream_rt
 
 namespace two_stream_rt {
 
@@ -941,9 +919,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // storing call (no cut, no opacity, no chain sweep, no beam, no factorisation).
         if (ckfop_ && ck_impl_xstep > 0 && ck_impl_pass <= 0) {
           bool reu = (ck_impl_xs_cyc >= 0) && (ck_xsT_ptr != nullptr)
-                     && ((ck_xstep_dt > 0.0)    // ck2ndt-1102 (ck_2nd.hpp (7))
-                         ? !CkSchedCross(pm->time, pm->dt, ck_xstep_dt)
-                         : (pm->ncycle - ck_impl_xs_cyc < ck_impl_xstep));
+                     && (pm->ncycle - ck_impl_xs_cyc < ck_impl_xstep);
           const bool thr_on = (ck_impl_xstep_thr > 0.0);
           if (reu && thr_on) {
             auto t0_ = *ck_xsT_ptr;
@@ -1013,7 +989,7 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // rebuild of a restart re-takes it, so a second restart is bitwise too
         if ((ck_sph_face == 5 || ck_sph_face == 6) &&
             (ck_rst_rebuild_active ? ck_vef_force
-                                                       : CkVefDue2(pm, ckfop_, ckfst_))) {
+                                                       : CkVefDue(pm, ckfop_, ckfst_))) {
           CkVefSnap(pm, bdt);
         }
         if (ckjacp_) ck_impl_jac_built = true;
@@ -2179,11 +2155,8 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // a restart's rebuild passes (two_stream_ck_rst_state.hpp) form them only when
         // they rebuild the refresh itself (ck_vef_force) or nothing is there yet
         const bool vdue_ = ck_rst_rebuild_active ? ck_vef_force
-                                                 : CkVefDue2(pm, ckfop_, ckfst_);
+                                                 : CkVefDue(pm, ckfop_, ckfst_);
         // (ck_sph_face = 6 reads the same formal solution)
-        // ck2nd-1102 ck_vef_tint: does this pass re-form the factors
-        const bool vref_ = (ck_sph_face == 5 || ck_sph_face == 6) &&
-                           (ck_vef_s_ptr == nullptr || vdue_);
         if ((ck_sph_face == 5 || ck_sph_face == 6) &&
             (ck_vef_s_ptr == nullptr || vdue_)) {
           // a refresh forced on a re-applying pass (nothing formed yet, e.g. the first
@@ -2191,7 +2164,6 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           // a scheduled one: the next storing pass refreshes (and snapshots) properly
           if (!ck_rst_rebuild_active && vdue_) {
             ck_vef_last = static_cast<int>(pm->ncycle);
-            ck_vef_tlast = ck_cad_probe_on ? pm->time : pm->time + pm->dt;   // ck_vef_dt
           }
           const int nv = n1 + 3;
           const int nc_ = CK_NB*CK_NG;
@@ -2415,11 +2387,6 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
             });
           }
-        }
-        // ck2nd-1102 problem/ck_vef_tint (utils/ck_2nd.hpp (4)); off: nothing
-        if (ck_vef_tint && (ck_sph_face == 5 || ck_sph_face == 6) &&
-            !ck_rst_rebuild_active) {
-          CkVefTint(pm, vref_, ckfst_);
         }
         // problem/ck_sph_face; = 6 runs the chain kernel (a storing pass without
         // ck_beam_par, ck_impl_lin_check) on the face-5 map: its own operator lives in

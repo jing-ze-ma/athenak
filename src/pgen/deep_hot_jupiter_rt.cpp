@@ -39,7 +39,6 @@
 
 // tusplit-1102: the private header shared with deep_hot_jupiter_rt_{hse,src,diag}.cpp
 #include "deep_hot_jupiter_rt.hpp"
-#include "utils/ck_2nd.hpp"   // ck2nd-1102 (keys read only when named)
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   bool use_etotgrav = false;
@@ -1135,10 +1134,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_split_func = DhjRtFreezeSplit;
     user_split_once = true;
   }
-  // ck2nd-1102: ck_impl_tol_inc, ck_cad_drift (read only when named; utils/ck_2nd.hpp)
-  two_stream_rt::Ck2ndInit(pin, two_stream_rt::ck_impl_fuse &&
-                           (two_stream_rt::ck_impl_debug <= 0),
-                           two_stream_rt::ck_impl_glob, two_stream_rt::ck_impl_every);
   two_stream_rt::rt_test_mu0 = pin->GetOrAddReal("problem","rt_test_mu0",-2.0);
   two_stream_rt::ck_test_kgrey = pin->GetOrAddReal("problem","ck_test_kgrey",0.0);
   if (two_stream_rt::ck_implicit && global_variable::my_rank == 0) {

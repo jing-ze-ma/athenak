@@ -33,7 +33,6 @@
 #include "utils/two_stream_ck_rst.hpp"
 #include "utils/two_stream_column_ck.hpp"
 #include "utils/deep_copy_across.hpp"
-#include "utils/ck_2nd.hpp"   // ck2ndt-1102 ck_cad_cont state (slabs 26..30)
 
 namespace two_stream_rt {
 
@@ -220,13 +219,6 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
   if (fh_live || fh_stg) {
     for (int s=kCkSlabFhFb; s<=kCkSlabFhCol; ++s) ids.push_back(s);
   }
-  // ck2ndt-1102 problem/ck_cad_cont: the continuous model (live, or still staged)
-  const bool c2_live = ck_cad_cont && ck_cad2_ptr != nullptr &&
-                       ck_cad2_ptr->extent_int(1) >= 8;
-  const bool c2_stg = ck_cad_cont && !c2_live && CkRstStaged(kCkSlabCd2);
-  if (c2_live || c2_stg) {
-    for (int s=kCkSlabCd2; s<=kCkSlabCd2L; ++s) ids.push_back(s);
-  }
   const int ns = static_cast<int>(ids.size());
   if (ns > kCkRstMaxSlab) return 0;
   Kokkos::realloc(out, ns, nmb, n3, n2, n1);
@@ -238,12 +230,11 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
     // still staged (not consumed since the restart): copy the staged bytes
     const bool vid = (id >= kCkSlabVefCyc);
     const bool fid = (id >= kCkSlabFhFb && id <= kCkSlabFhCol);
-    const bool cid = (id >= kCkSlabCd2 && id <= kCkSlabCd2L);   // ck2ndt-1102
     const bool stg = CkRstStaged(id) &&
         ((id == kCkSlabThk && thk_stg) || (id == kCkSlabCv && ck_cv_ptr == nullptr) ||
          (id >= kCkSlabCad0 && id < kCkSlabCad0 + 4 && cad_stg) ||
-         (id >= kCkSlabXsW && !vid && !fid && !cid && xs_stg) ||
-         (vid && vs_stg) || (cid && c2_stg) ||
+         (id >= kCkSlabXsW && !vid && !fid && xs_stg) ||
+         (vid && vs_stg) ||
          (fid && fh_stg));
     if (stg) {
       const std::size_t nd = dst.size();
@@ -252,16 +243,6 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
       } else {
         Kokkos::deep_copy(dst, 0.0);
       }
-    } else if (cid && c2_live) {
-      if (id == kCkSlabCd2L) {
-        Kokkos::deep_copy(dst, ck_cad_cont_l);
-      } else {
-        const int sl[4] = {0, 1, 6, 7};
-        DeepCopyAcross(dst, Kokkos::subview(*ck_cad2_ptr, nm, sl[id - kCkSlabCd2],
-                                            ALL, ALL, ALL));
-      }
-    } else if (cid) {
-      Kokkos::deep_copy(dst, 0.0);
     } else if (fid) {
       RtFhCollect(id, dst);
     } else if (id == kCkSlabThk) {
@@ -624,7 +605,7 @@ inline void CkRstBeginCall(Mesh *pm) {
   }
   if (!reuse || !snap) {
     for (int id=kCkSlabXsW; id<kCkRstMaxSlab; ++id) {
-      if (id < kCkSlabCd2 || id > kCkSlabCd2L) CkRstStageFree(id);   // ck2ndt: keep cont
+      CkRstStageFree(id);
     }
   }
   // once the first call has run, nothing staged is wanted any more
@@ -654,21 +635,6 @@ inline void CkRstCadRestore(Mesh *pm) {
   for (int s=0; s<4; ++s) {
     ok = CkRstPut(kCkSlabCad0 + s, Kokkos::subview(*ck_cad_ptr, Kokkos::ALL, s,
                   Kokkos::ALL, Kokkos::ALL, Kokkos::ALL)) && ok;
-  }
-  // ck2ndt-1102 problem/ck_cad_cont: the continuous model's state (slabs 26..30)
-  if (ok && ck_cad_cont && ck_cad_drift && ck_cad2_ptr == nullptr &&
-      CkRstStaged(kCkSlabCd2)) {
-    ck_cad2_ptr = new DvceArray5D<Real>("ck_cad2", pmbp->nmb_thispack, 8, n3, n2, n1);
-    Kokkos::deep_copy(*ck_cad2_ptr, 0.0);
-    const int sl[4] = {0, 1, 6, 7};
-    for (int s=0; s<4; ++s) {
-      CkRstPut(kCkSlabCd2 + s, Kokkos::subview(*ck_cad2_ptr, Kokkos::ALL, sl[s],
-               Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
-    }
-    if (CkRstStaged(kCkSlabCd2L)) {
-      ck_cad_cont_l = ck_rst_stage[kCkSlabCd2L][0];
-      CkRstStageFree(kCkSlabCd2L);
-    }
   }
   if (!ok) {                          // does not fit: back to the forced full call
     delete ck_cad_ptr;
