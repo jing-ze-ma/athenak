@@ -41,7 +41,7 @@ enum class Hydro_RSolver {advect, llf, hlle, hllc, lhllc, hllclm, ausmpup, roe,
                           llf_sr, hlle_sr, hllc_sr,        // SR
                           llf_gr, hlle_gr};                // GR
 
-//----------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
 //! \struct HydroTaskIDs
 // \brief container to hold TaskIDs of all hydro tasks
 
@@ -110,7 +110,7 @@ inline bool fofc_pgen_default = false;
 // silently.
 inline bool etotgrav_pgen_default = false;
 
-//----------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
 //! \class Hydro
 
 class Hydro {
@@ -466,8 +466,12 @@ class Hydro {
   void FOFC(Driver *d, int stage);
 
   void AddGravFlux(const DvceFaceFld4D<Real> &phi0, DvceFaceFld5D<Real> &flx);
-  void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
-  void RemoveGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
+  void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons,
+                   const int il, const int iu, const int jl, const int ju, const int kl,
+                   const int ku);
+  void RemoveGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons,
+                      const int il, const int iu, const int jl, const int ju,
+                      const int kl, const int ku);
 
   // evaluate the background pressure from the static background state
   void SetWbBackgroundPressure();
@@ -486,7 +490,7 @@ class Hydro {
   void AddWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
   void RemoveWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
 
-    //----------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn AddWbPrimFace
     //! \brief Adds background face-centered variables onto ql(i+1) and qr(i).
 
@@ -498,14 +502,15 @@ class Hydro {
       return;
     };
 
-    //----------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn AddWbPrimFaceX1
     //! \brief Adds background states onto face-centered primitive variables in
     //! x1-direction. This function should be called over [is-1,ie+1] to get BOTH L/R
     //! states over [is,ie]
 
     KOKKOS_INLINE_FUNCTION
-    static void AddWbPrimFaceX1(TeamMember_t const &member, const int m, const int k, const int j,
+    static void AddWbPrimFaceX1(TeamMember_t const &member, const int m, const int k,
+                                const int j,
          const int il, const int iu, const DvceArray5D<Real> &q,
          ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
       int nvar = q.extent_int(1);
@@ -517,14 +522,15 @@ class Hydro {
       return;
     };
 
-    //----------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn AddWbPrimFaceX2
     //! \brief Adds background states onto face-centered primitive variables in
     //! x2-direction. This function should be called over [js-1,je+1] to get BOTH L/R
     //! states over [js,je]
 
     KOKKOS_INLINE_FUNCTION
-    static void AddWbPrimFaceX2(TeamMember_t const &member, const int m, const int k, const int j,
+    static void AddWbPrimFaceX2(TeamMember_t const &member, const int m, const int k,
+                                const int j,
          const int il, const int iu, const DvceArray5D<Real> &q,
          ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
       int nvar = q.extent_int(1);
@@ -536,14 +542,15 @@ class Hydro {
       return;
     };
 
-    //----------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn AddWbPrimFaceX3
     //! \brief Adds background states onto face-centered primitive variables in
     //! x3-direction. This function should be called over [ks-1,ke+1] to get BOTH L/R
     //! states over [ks,ke]
 
     KOKKOS_INLINE_FUNCTION
-    static void AddWbPrimFaceX3(TeamMember_t const &member, const int m, const int k, const int j,
+    static void AddWbPrimFaceX3(TeamMember_t const &member, const int m, const int k,
+                                const int j,
          const int il, const int iu, const DvceArray5D<Real> &q,
          ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
       int nvar = q.extent_int(1);
@@ -559,7 +566,8 @@ class Hydro {
     static void WbLocalPiecewiseLinearX1(TeamMember_t const &member,
          const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
          const int m, const int k, const int j,
-         const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+         const int il, const int iu, const DvceArray5D<Real> &q,
+         const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          const DvceArray5D<Real> &wbq0,
          ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
       const auto wb_option_ = wb_option;
@@ -603,7 +611,8 @@ class Hydro {
     static void WbLocalPiecewiseLinearX2(TeamMember_t const &member,
          const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
          const int m, const int k, const int j,
-         const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+         const int il, const int iu, const DvceArray5D<Real> &q,
+         const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
       Real igm1 = 1.0/(eos.gamma-1.0);
       int nvar = q.extent_int(1);
@@ -614,7 +623,8 @@ class Hydro {
             getWBq0(eos, wb_option, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                      q(m,IDN,k,j-1,i),q(m,IDN,k,j,i),q(m,IDN,k,j+1,i),
                      q(m,IEN,k,j-1,i),q(m,IEN,k,j,i),q(m,IEN,k,j+1,i),
-                     phicc(m,k,j-1,i),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j+1,i),phicc(m,k,j+1,i),
+                     phicc(m,k,j-1,i),phi(m,k,j,i),phicc(m,k,j,i),
+                     phi(m,k,j+1,i),phicc(m,k,j+1,i),
                      q0_jm1, q0_jmh, q0_j, q0_jph, q0_jp1);
 
             Real q1_jm1 = q(m,n,k,j-1,i) - q0_jm1;
@@ -631,7 +641,8 @@ class Hydro {
               Real sR = q(m,n,k,j+1,i) - q(m,n,k,j,i);
 
               if (ql_jp1(n,i) < 0.0 || qr_j(n,i) < 0.0 || sL * sR <= 0.0) {
-                  PLM(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), ql_jp1(n,i), qr_j(n,i));
+                  PLM(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i),
+                      ql_jp1(n,i), qr_j(n,i));
               }
           });
         } else {
@@ -643,7 +654,7 @@ class Hydro {
       return;
     };
 
-    //------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX1
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
     //!
@@ -687,7 +698,7 @@ class Hydro {
       return;
     };
 
-    //------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX2
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
     //!
@@ -731,7 +742,7 @@ class Hydro {
       return;
     };
 
-    //------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX3
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
     //!
@@ -775,7 +786,7 @@ class Hydro {
       return;
     };
 
-    //------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn WbPiecewiseLinearDerX1/X2/X3
     //! \brief well-balanced reconstruction of the DERIVED thermodynamic variables.
     //!
@@ -878,7 +889,8 @@ class Hydro {
 
     KOKKOS_INLINE_FUNCTION
     static void PLM_nonuniform(const Real &q_im1, const Real &q_i, const Real &q_ip1,
-                        const Real &dxL, const Real &dxR, const Real &dxLh, const Real &dxRh,
+                        const Real &dxL, const Real &dxR,
+                        const Real &dxLh, const Real &dxRh,
                         Real &ql_ip1, Real &qr_i, const bool c1 = false) {
       Real cL = dxL/dxLh;
       Real cR = dxR/dxRh;
@@ -920,7 +932,8 @@ class Hydro {
       Real gamma = eos.gamma;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
-          if ((n == (IEN) || (n == (IDN) && use_wb_rho)) && use_wellbalance_dynamic && use_wb_x1) {
+          if ((n == (IEN) || (n == (IDN) && use_wb_rho))
+              && use_wellbalance_dynamic && use_wb_x1) {
             par_for_inner(member, il, iu, [&](const int i) {
               Real x_im1  = xv(m,i-1);
               Real x_imh  = xf(m,i);
@@ -951,7 +964,8 @@ class Hydro {
               Real q1_i = q(m,n,k,j,i) - q0_i;
               Real q1_ip1 = q(m,n,k,j,i+1) - q0_ip1;
 
-              PLM_nonuniform(q1_im1, q1_i, q1_ip1, dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
+              PLM_nonuniform(q1_im1, q1_i, q1_ip1, dxL, dxR, dxLh, dxRh,
+                             ql(n,i+1), qr(n,i), eos.plm_c1);
 
               ql(n,i+1) += q0_iph;
               qr(n,i) += q0_imh;
@@ -962,14 +976,20 @@ class Hydro {
 
                 if (eos.wb_plm_smooth) {   // continuous (reconstruct/wb_plm_blend.hpp)
                   Real pl_, pr_;
-                  PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
-                  wbplm::WbPlmBlend(q(m,n,k,j,i), sL, sR, pl_, pr_, eos.plm_c1, ql(n,i+1), qr(n,i));
+                  PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i),
+                                 q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, pl_, pr_,
+                                 eos.plm_c1);
+                  wbplm::WbPlmBlend(q(m,n,k,j,i), sL, sR, pl_, pr_,
+                                    eos.plm_c1, ql(n,i+1), qr(n,i));
                 } else if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 ||
                            (sL * sR <= 0.0 && !eos.plm_c1 && !wb_noext)) {
-                    PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
+                    PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i),
+                                   q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1),
+                                   qr(n,i), eos.plm_c1);
                 }
                 if (eos.wb_plm_range) {
-                  wbplm::WbPlmRange(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), ql(n,i+1), qr(n,i));
+                  wbplm::WbPlmRange(q(m,n,k,j,i-1), q(m,n,k,j,i),
+                                    q(m,n,k,j,i+1), ql(n,i+1), qr(n,i));
                 }
             });
           } else {
@@ -984,7 +1004,8 @@ class Hydro {
               Real dxL = x_i-x_im1;
               Real dxR = x_ip1-x_i;
 
-              PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
+              PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1),
+                             dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i), eos.plm_c1);
             });
           }
       }
@@ -992,8 +1013,11 @@ class Hydro {
     };
 
     KOKKOS_INLINE_FUNCTION
-    static void GridPiecewiseLinearX2(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
-        const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
+    static void GridPiecewiseLinearX2(TeamMember_t const &member, const int m,
+                                      const int k, const int j, const int il,
+                                      const int iu,
+        const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv,
+        const DvceArray2D<Real> &xf,
         ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
       Real x_jm1  = xv(m,j-1);
       Real x_jmh  = xf(m,j);
@@ -1007,15 +1031,19 @@ class Hydro {
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         par_for_inner(member, il, iu, [&](const int i) {
-          PLM_nonuniform(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), dxL, dxR, dxLh, dxRh, ql_jp1(n,i), qr_j(n,i));
+          PLM_nonuniform(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), dxL, dxR,
+                         dxLh, dxRh, ql_jp1(n,i), qr_j(n,i));
         });
       }
       return;
     };
 
     KOKKOS_INLINE_FUNCTION
-    static void GridPiecewiseLinearX3(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
-        const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
+    static void GridPiecewiseLinearX3(TeamMember_t const &member, const int m,
+                                      const int k, const int j, const int il,
+                                      const int iu,
+        const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv,
+        const DvceArray2D<Real> &xf,
         ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
       Real x_km1  = xv(m,k-1);
       Real x_kmh  = xf(m,k);
@@ -1029,13 +1057,14 @@ class Hydro {
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         par_for_inner(member, il, iu, [&](const int i) {
-          PLM_nonuniform(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), dxL, dxR, dxLh, dxRh, ql_kp1(n,i), qr_k(n,i));
+          PLM_nonuniform(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), dxL, dxR,
+                         dxLh, dxRh, ql_kp1(n,i), qr_k(n,i));
         });
       }
       return;
     };
 
-    //------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn GridPiecewiseLinearDerX1
     //! \brief non-uniform-grid counterpart of WbPiecewiseLinearDerX1, for the derived
     //! thermodynamic variables on a spherical-polar mesh. GridPiecewiseLinearX2/X3 are
@@ -1116,7 +1145,8 @@ class Hydro {
                              dxL, dxR, dxLh, dxRh, pl_, pr_, eos.plm_c1);
               wbplm::WbPlmBlend(qd(m,n,k,j,i), sL, sR, pl_, pr_, eos.plm_c1,
                                 dl(n,i+1), dr(n,i));
-            } else if (dl(n,i+1) < 0.0 || dr(n,i) < 0.0 || (sL * sR <= 0.0 && !eos.plm_c1)) {
+            } else if (dl(n,i+1) < 0.0 || dr(n,i) < 0.0
+                       || (sL * sR <= 0.0 && !eos.plm_c1)) {
               PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
                              dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i), eos.plm_c1);
             }
@@ -1133,7 +1163,7 @@ class Hydro {
       return;
     };
 
-    //------------------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------------
     //! \fn getWBq0
     //! \brief background values of ONE reconstruction channel at the five stencil points
     //! {i-1, i-1/2, i, i+1/2, i+1}. Dispatches to the ideal-gas closed forms in
@@ -1220,7 +1250,8 @@ class Hydro {
     static void getWBerho(const int &n, const Real &gamma, const WBOption wb_option,
                 const Real &rho_im1, const Real &rho_i, const Real &rho_ip1,
                 const Real &e_im1, const Real &e_i, const Real &e_ip1,
-                const Real &phi_im1, const Real &phi_imh, const Real &phi_i, const Real &phi_iph, const Real &phi_ip1,
+                const Real &phi_im1, const Real &phi_imh,
+                const Real &phi_i, const Real &phi_iph, const Real &phi_ip1,
                 Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph, Real &q0_ip1,
                 const bool clamp_dt = false) {
       const auto wb_option_ = wb_option;
@@ -1301,7 +1332,8 @@ class Hydro {
         case WBOption::adaptive_fast:
           {
             Real dTdivT = fabs((e_ip1/rho_ip1 - e_im1/rho_im1) / (e_i/rho_i));
-            Real dsdivs = fabs((e_ip1/pow(rho_ip1,gamma) - e_im1/pow(rho_im1,gamma)) / (e_i/pow(rho_i,gamma)));
+            Real dsdivs = fabs((e_ip1/pow(rho_ip1,gamma)
+                                - e_im1/pow(rho_im1,gamma)) / (e_i/pow(rho_i,gamma)));
             if (dTdivT > dsdivs) {
               wb_option_num = 2;
             } else {
@@ -1313,98 +1345,84 @@ class Hydro {
           break;
       }
 
-        Real factor_im1, factor_i, factor_ip1;
-        if (n == (IEN)) {    // reconstructing e
-          if (wb_option_num == 0)
-              {
-                factor_im1 = rho_im1*igm1;
-                factor_i = rho_i*igm1;
-                factor_ip1 = rho_ip1*igm1;
-                q0_i = e_i;
-              }
-          else if (wb_option_num == 1)
-              {
-                factor_im1 = rho_im1/e_im1*igm1;
-                factor_i = rho_i/e_i*igm1;
-                factor_ip1 = rho_ip1/e_ip1*igm1;
-                q0_i = log(e_i);
-              }
-          else
-              {
-                factor_im1 = rho_im1/pow(e_im1,ig)*ig;
-                factor_i = rho_i/pow(e_i,ig)*ig;
-                factor_ip1 = rho_ip1/pow(e_ip1,ig)*ig;
-                q0_i = pow(e_i,gm1ig);
-              }
-        } else {    // reconstructing rho
-            if (wb_option_num == 0)
-              {
-                q0_im1 = 0.0;
-                q0_ip1 = 0.0;
-                q0_imh = 0.0;
-                q0_iph = 0.0;
-                q0_i = 0.0;
-                return;
-              }
-            else if (wb_option_num == 1)
-              {
-                factor_im1 = rho_im1/e_im1*igm1;
-                factor_i = rho_i/e_i*igm1;
-                factor_ip1 = rho_ip1/e_ip1*igm1;
-                q0_i = log(rho_i);
-              }
-            else
-              {
-                factor_im1 = pow(rho_im1,gamma)/e_im1*ig;
-                factor_i = pow(rho_i,gamma)/e_i*ig;
-                factor_ip1 = pow(rho_ip1,gamma)/e_ip1*ig;
-                q0_i = pow(rho_i,gamma-1.0);
-              }
+      Real factor_im1, factor_i, factor_ip1;
+      if (n == (IEN)) {    // reconstructing e
+        if (wb_option_num == 0) {
+          factor_im1 = rho_im1*igm1;
+          factor_i = rho_i*igm1;
+          factor_ip1 = rho_ip1*igm1;
+          q0_i = e_i;
+        } else if (wb_option_num == 1) {
+          factor_im1 = rho_im1/e_im1*igm1;
+          factor_i = rho_i/e_i*igm1;
+          factor_ip1 = rho_ip1/e_ip1*igm1;
+          q0_i = log(e_i);
+        } else {
+          factor_im1 = rho_im1/pow(e_im1,ig)*ig;
+          factor_i = rho_i/pow(e_i,ig)*ig;
+          factor_ip1 = rho_ip1/pow(e_ip1,ig)*ig;
+          q0_i = pow(e_i,gm1ig);
         }
-
-        Real dphi_im1 = phi_imh-phi_im1;
-        Real dphi_imh = phi_i-phi_imh;
-        Real dphi_i = phi_iph-phi_i;
-        Real dphi_iph = phi_ip1-phi_iph;
-
-        q0_im1 = q0_i + factor_im1 * dphi_im1 + factor_i * dphi_imh;
-        q0_ip1 = q0_i - factor_i * dphi_i - factor_ip1 * dphi_iph;
-        q0_imh = q0_i + factor_i * dphi_imh;
-        q0_iph = q0_i - factor_i * dphi_i;
-
-        if (n == (IEN)) {    // reconstructing e
-            q0_i = e_i;
-            if (wb_option_num == 1)
-                {
-                  q0_im1 = exp(q0_im1);
-                  q0_ip1 = exp(q0_ip1);
-                  q0_imh = exp(q0_imh);
-                  q0_iph = exp(q0_iph);
-                }
-            if (wb_option_num == 2)
-                {
-                  q0_im1 = pow(q0_im1,gigm1);
-                  q0_ip1 = pow(q0_ip1,gigm1);
-                  q0_imh = pow(q0_imh,gigm1);
-                  q0_iph = pow(q0_iph,gigm1);
-                }
-        } else {    // reconstructing rho
-            q0_i = rho_i;
-            if (wb_option_num == 1)
-                {
-                  q0_im1 = exp(q0_im1);
-                  q0_ip1 = exp(q0_ip1);
-                  q0_imh = exp(q0_imh);
-                  q0_iph = exp(q0_iph);
-                }
-            if (wb_option_num == 2)
-                {
-                  q0_im1 = pow(q0_im1,igm1);
-                  q0_ip1 = pow(q0_ip1,igm1);
-                  q0_imh = pow(q0_imh,igm1);
-                  q0_iph = pow(q0_iph,igm1);
-                }
+      } else {    // reconstructing rho
+        if (wb_option_num == 0) {
+          q0_im1 = 0.0;
+          q0_ip1 = 0.0;
+          q0_imh = 0.0;
+          q0_iph = 0.0;
+          q0_i = 0.0;
+          return;
+        } else if (wb_option_num == 1) {
+          factor_im1 = rho_im1/e_im1*igm1;
+          factor_i = rho_i/e_i*igm1;
+          factor_ip1 = rho_ip1/e_ip1*igm1;
+          q0_i = log(rho_i);
+        } else {
+          factor_im1 = pow(rho_im1,gamma)/e_im1*ig;
+          factor_i = pow(rho_i,gamma)/e_i*ig;
+          factor_ip1 = pow(rho_ip1,gamma)/e_ip1*ig;
+          q0_i = pow(rho_i,gamma-1.0);
         }
+      }
+
+      Real dphi_im1 = phi_imh-phi_im1;
+      Real dphi_imh = phi_i-phi_imh;
+      Real dphi_i = phi_iph-phi_i;
+      Real dphi_iph = phi_ip1-phi_iph;
+
+      q0_im1 = q0_i + factor_im1 * dphi_im1 + factor_i * dphi_imh;
+      q0_ip1 = q0_i - factor_i * dphi_i - factor_ip1 * dphi_iph;
+      q0_imh = q0_i + factor_i * dphi_imh;
+      q0_iph = q0_i - factor_i * dphi_i;
+
+      if (n == (IEN)) {    // reconstructing e
+        q0_i = e_i;
+        if (wb_option_num == 1) {
+          q0_im1 = exp(q0_im1);
+          q0_ip1 = exp(q0_ip1);
+          q0_imh = exp(q0_imh);
+          q0_iph = exp(q0_iph);
+        }
+        if (wb_option_num == 2) {
+          q0_im1 = pow(q0_im1,gigm1);
+          q0_ip1 = pow(q0_ip1,gigm1);
+          q0_imh = pow(q0_imh,gigm1);
+          q0_iph = pow(q0_iph,gigm1);
+        }
+      } else {    // reconstructing rho
+        q0_i = rho_i;
+        if (wb_option_num == 1) {
+          q0_im1 = exp(q0_im1);
+          q0_ip1 = exp(q0_ip1);
+          q0_imh = exp(q0_imh);
+          q0_iph = exp(q0_iph);
+        }
+        if (wb_option_num == 2) {
+          q0_im1 = pow(q0_im1,igm1);
+          q0_ip1 = pow(q0_ip1,igm1);
+          q0_imh = pow(q0_imh,igm1);
+          q0_iph = pow(q0_iph,igm1);
+        }
+      }
 
       return;
     };

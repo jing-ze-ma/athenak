@@ -199,12 +199,12 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
 #undef BVCC_PACK_NAME
 #define BVCC_PACK_NAME pack_f_
 #define BVCC_PACK_KSEAM false
-#include "bvals_cc_pack.inc"
+#include "bvals_cc_pack.inc"  // NOLINT(build/include)
 #undef BVCC_PACK_KSEAM
 #undef BVCC_PACK_NAME
 #else
 #define BVCC_PACK_NAME pack_
-#include "bvals_cc_pack.inc"
+#include "bvals_cc_pack.inc"  // NOLINT(build/include)
 #undef BVCC_PACK_NAME
 #endif
   if (use_cs || use_pole) {
@@ -492,7 +492,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
       }
 
       // Middle loop over k,j
-      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, q0_, q1_), [&](const int idx) {
+      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, q0_, q1_),
+                           [&](const int idx) {
         int k = idx / nj;
         int j = (idx - k * nj) + jl;
         k += kl;

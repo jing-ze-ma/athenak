@@ -404,10 +404,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         }
       }
     } else {
-    if (use_wellbalance_dynamic_ && use_wb_x1_)
-    {
+    if (use_wellbalance_dynamic_ && use_wb_x1_) {
       if (wb_all_) {   // x1 through the shared routine (w = 1)
-        hydro::WbAllPLM(member, use_wb_rho_, 1, m, k, j, il-1, iu, w0_, wbq0_, wbw_, wl, wr);
+        hydro::WbAllPLM(member, use_wb_rho_, 1, m, k, j, il-1, iu, w0_, wbq0_,
+                        wbw_, wl, wr);
       } else {
       WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
           m, k, j, il-1, iu, w0_, phiwbcc_, phiwb_x1f_, wbq0_, wl, wr);
@@ -465,7 +465,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                                  use_wellbalance_static_reconst_perturb_,
                                  pwb_, pfacewb_x1f,
                                  m, k, j, il-1, iu, w0_, wder_,
-                                 x1v_, x1f_, phiwbcc_, phiwb_x1f_, wbq0_, dl, dr, wb_phimax_);
+                                 x1v_, x1f_, phiwbcc_,
+                                 phiwb_x1f_, wbq0_, dl, dr, wb_phimax_);
       } else if (use_spherical_polar || str_r1_) {
         // reconstruct_x1 != plm: same Mignone curvilinear reconstruction as w0_/b0_
         // above, applied to the derived thermodynamic variables (no WB background,
@@ -800,8 +801,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                                   x2v_, x2f_, wbq2_, wbw_, wl_jp1, wr);
           }
         } else {
-        if (use_wellbalance_dynamic_ && use_wb_x2_)
-        {
+        if (use_wellbalance_dynamic_ && use_wb_x2_) {
           // is-1,ie+1, not il,iu -- the b0_ line below, the spherical-polar branch
           // above, the whole default switch, and the Riemann solver all use
           // is-1,ie+1. With il,iu (the x1 sweep's limits, never reset for x2/x3)
@@ -1054,8 +1054,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           }
           if (boris_on_ && !use_cubed_sphere) {
             member.team_barrier();
-            BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,dl,dr,
-                          by,flx2,e12,e32);
+            BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,
+                          dl,dr,by,flx2,e12,e32);
           }
           if (use_cubed_sphere) {
             if (cs_lb_beta > 0.0) {
@@ -1065,8 +1065,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             }
             if (boris_on_) {
               member.team_barrier();
-              BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,dl,dr,
-                            by,flx2,e12,e32);
+              BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,
+                            dl,dr,by,flx2,e12,e32);
               member.team_barrier();
             }
             GnomonicEquiangleFluxX2(gtrig_xi,member,m,k,j,is-1,ie+1,flx2);
@@ -1263,10 +1263,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         // centroid theta = x2v, but an x3 face (area element r dr dtheta) is centred at
         // the theta midpoint of the cell.  The two differ by O(dtheta^2 cot theta),
         // negligible in the interior, but in the polar row the midpoint is dtheta/2
-        // against a centroid of 2 dtheta/3, and the phi-face fluxes enter the balance with
-        // weight ~2/(r dtheta dphi): unrotated, the r-components of v and B would be 4/3
-        // too large there, a resolution-independent spurious radial force.  So rotate the
-        // (r,theta) pairs of v and B into the face's own basis,
+        // against a centroid of 2 dtheta/3, and the phi-face fluxes enter the balance
+        // with weight ~2/(r dtheta dphi): unrotated, the r-components of v and B would be
+        // 4/3 too large there, a resolution-independent spurious radial force.  So rotate
+        // the (r,theta) pairs of v and B into the face's own basis,
         // rhat' = rhat cos d + thhat sin d.
         if (use_spherical_polar) {
           const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
@@ -1380,8 +1380,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           }
           if (boris_on_ && !use_cubed_sphere) {
             member.team_barrier();
-            BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,dl,dr,
-                          bz,flx3,e23,e13);
+            BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,
+                          dl,dr,bz,flx3,e23,e13);
           }
           if (use_cubed_sphere) {
             if (cs_lb_beta > 0.0) {
@@ -1391,8 +1391,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             }
             if (boris_on_) {
               member.team_barrier();
-              BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,dl,dr,
-                            bz,flx3,e23,e13);
+              BorisHLLEFace(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,
+                            dl,dr,bz,flx3,e23,e13);
               member.team_barrier();
             }
             GnomonicEquiangleFluxX3(gtrig_eta,member,m,k,j,is-1,ie+1,flx3);

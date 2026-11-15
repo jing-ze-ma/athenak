@@ -161,11 +161,15 @@ Real UctE1T(const UctCorner &d, const int m, const int k, const int j, const int
     fe = d.se(m,K(k),J(j))*fe - d.ce(m,K(k),J(j))*d.u3(m,3,K(k),J(j),i);
   }
   const Real vpw = fw + 0.5*(
-    UctHalf(UctVnXi(d,m,K(k-1),J(j-2),i), UctVnXi(d,m,K(k-1),J(j-1),i), UctVnXi(d,m,K(k-1),J(j),i), true) +
-    UctHalf(UctVnXi(d,m,K(k),J(j-2),i), UctVnXi(d,m,K(k),J(j-1),i), UctVnXi(d,m,K(k),J(j),i), true));
+    UctHalf(UctVnXi(d,m,K(k-1),J(j-2),i), UctVnXi(d,m,K(k-1),J(j-1),i),
+            UctVnXi(d,m,K(k-1),J(j),i), true) +
+    UctHalf(UctVnXi(d,m,K(k),J(j-2),i), UctVnXi(d,m,K(k),J(j-1),i),
+            UctVnXi(d,m,K(k),J(j),i), true));
   const Real vpe = fe + 0.5*(
-    UctHalf(UctVnXi(d,m,K(k-1),J(j-1),i), UctVnXi(d,m,K(k-1),J(j),i), UctVnXi(d,m,K(k-1),J(j+1),i), false) +
-    UctHalf(UctVnXi(d,m,K(k),J(j-1),i), UctVnXi(d,m,K(k),J(j),i), UctVnXi(d,m,K(k),J(j+1),i), false));
+    UctHalf(UctVnXi(d,m,K(k-1),J(j-1),i), UctVnXi(d,m,K(k-1),J(j),i),
+            UctVnXi(d,m,K(k-1),J(j+1),i), false) +
+    UctHalf(UctVnXi(d,m,K(k),J(j-1),i), UctVnXi(d,m,K(k),J(j),i),
+            UctVnXi(d,m,K(k),J(j+1),i), false));
   // v.n_3 of the x2 faces along x3
   Real fs = d.u2(m,4,K(k-1),J(j),i), fn = d.u2(m,4,K(k),J(j),i);
   if (d.cs) {
@@ -173,11 +177,15 @@ Real UctE1T(const UctCorner &d, const int m, const int k, const int j, const int
     fn = d.sx(m,K(k),J(j))*fn - d.cx(m,K(k),J(j))*d.u2(m,3,K(k),J(j),i);
   }
   const Real vqs = fs + 0.5*(
-    UctHalf(UctVnEta(d,m,K(k-2),J(j-1),i), UctVnEta(d,m,K(k-1),J(j-1),i), UctVnEta(d,m,K(k),J(j-1),i), true) +
-    UctHalf(UctVnEta(d,m,K(k-2),J(j),i), UctVnEta(d,m,K(k-1),J(j),i), UctVnEta(d,m,K(k),J(j),i), true));
+    UctHalf(UctVnEta(d,m,K(k-2),J(j-1),i), UctVnEta(d,m,K(k-1),J(j-1),i),
+            UctVnEta(d,m,K(k),J(j-1),i), true) +
+    UctHalf(UctVnEta(d,m,K(k-2),J(j),i), UctVnEta(d,m,K(k-1),J(j),i),
+            UctVnEta(d,m,K(k),J(j),i), true));
   const Real vqn = fn + 0.5*(
-    UctHalf(UctVnEta(d,m,K(k-1),J(j-1),i), UctVnEta(d,m,K(k),J(j-1),i), UctVnEta(d,m,K(k+1),J(j-1),i), false) +
-    UctHalf(UctVnEta(d,m,K(k-1),J(j),i), UctVnEta(d,m,K(k),J(j),i), UctVnEta(d,m,K(k+1),J(j),i), false));
+    UctHalf(UctVnEta(d,m,K(k-1),J(j-1),i), UctVnEta(d,m,K(k),J(j-1),i),
+            UctVnEta(d,m,K(k+1),J(j-1),i), false) +
+    UctHalf(UctVnEta(d,m,K(k-1),J(j),i), UctVnEta(d,m,K(k),J(j),i),
+            UctVnEta(d,m,K(k+1),J(j),i), false));
   Real dum, bqw, bqe, bps, bpn;
   PLM(d.b3(m,K(k),J(j-2),i), d.b3(m,K(k),J(j-1),i), d.b3(m,K(k),J(j),i), bqw, dum);
   PLM(d.b3(m,K(k),J(j-1),i), d.b3(m,K(k),J(j),i), d.b3(m,K(k),J(j+1),i), dum, bqe);
@@ -210,11 +218,15 @@ Real UctE2(const UctCorner &d, const int m, const int k, const int j, const int 
   const Real dn = 0.5*(d.u1(m,2,k-1,j,i) + d.u1(m,2,k,j,i));
   // v.n_3 of the x1 faces (slot 5) along x3
   const Real vpw = d.u1(m,5,k-1,j,i) + 0.5*(
-    UctHalf(UctVnEta(d,m,k-2,j,i-1), UctVnEta(d,m,k-1,j,i-1), UctVnEta(d,m,k,j,i-1), true) +
-    UctHalf(UctVnEta(d,m,k-2,j,i  ), UctVnEta(d,m,k-1,j,i  ), UctVnEta(d,m,k,j,i  ), true));
+    UctHalf(UctVnEta(d,m,k-2,j,i-1), UctVnEta(d,m,k-1,j,i-1), UctVnEta(d,m,k,j,i-1),
+            true) +
+    UctHalf(UctVnEta(d,m,k-2,j,i  ), UctVnEta(d,m,k-1,j,i  ), UctVnEta(d,m,k,j,i  ),
+            true));
   const Real vpe = d.u1(m,5,k,j,i) + 0.5*(
-    UctHalf(UctVnEta(d,m,k-1,j,i-1), UctVnEta(d,m,k,j,i-1), UctVnEta(d,m,k+1,j,i-1), false) +
-    UctHalf(UctVnEta(d,m,k-1,j,i  ), UctVnEta(d,m,k,j,i  ), UctVnEta(d,m,k+1,j,i  ), false));
+    UctHalf(UctVnEta(d,m,k-1,j,i-1), UctVnEta(d,m,k,j,i-1), UctVnEta(d,m,k+1,j,i-1),
+            false) +
+    UctHalf(UctVnEta(d,m,k-1,j,i  ), UctVnEta(d,m,k,j,i  ), UctVnEta(d,m,k+1,j,i  ),
+            false));
   // v.n_1 (v1) of the x3 faces (slot 4) along x1
   const Real vqs = d.u3(m,4,k,j,i-1) + 0.5*(
     UctHalf(d.w(m,IVX,k-1,j,i-2), d.w(m,IVX,k-1,j,i-1), d.w(m,IVX,k-1,j,i), true) +
@@ -794,8 +806,10 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
           const bool pkl = z.x3min <= -1.0 + 1.0e-12, pkh = z.x3max >= 1.0 - 1.0e-12;
           const bool ksm = (k == ks && pkl) || (k == ke+1 && pkh);   // on an x3 seam
           const bool jsm = (j == js && pjl) || (j == je+1 && pjh);   // on an x2 seam
-          const bool nvj = (pjl && j > js && j < js + ng_) || (pjh && j <= je && j > je+1-ng_);
-          const bool nvk = (pkl && k > ks && k < ks + ng_) || (pkh && k <= ke && k > ke+1-ng_);
+          const bool nvj = (pjl && j > js && j < js + ng_)
+              || (pjh && j <= je && j > je+1-ng_);
+          const bool nvk = (pkl && k > ks && k < ks + ng_)
+              || (pkh && k <= ke && k > ke+1-ng_);
           if (ksm && !jsm && nvj) {
             e1(m,k,j,i) = UctE1T(ucd, m, k, j, i, UctMirror{ks, ke}, UctIdx());
           } else if (jsm && !ksm && nvk) {

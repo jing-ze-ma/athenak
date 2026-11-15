@@ -434,9 +434,13 @@ inline BvVarList MakeBvVarList(const int nvar, const int vmask) {
   BvVarList l;
   l.n = 0;
   for (int v=0; v<nvar && v<32; ++v) {
-    if (vmask == 0 || ((vmask >> v) & 1)) {l.v[l.n++] = v;}
+    if (vmask == 0 || ((vmask >> v) & 1)) {
+      l.v[l.n++] = v;
+    }
   }
-  for (int q=l.n; q<32; ++q) {l.v[q] = 0;}
+  for (int q=l.n; q<32; ++q) {
+    l.v[q] = 0;
+  }
   return l;
 }
 // slot vl of MakeBvVarList(nvar, vmask) without indexing the list: the

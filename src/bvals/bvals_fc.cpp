@@ -215,7 +215,8 @@ void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
       const Real xp_ = (sidx == 0) ? x3mn : x2mn;
       const int spn_ = static_cast<int>(floor((xp_ + 1.0)/wp_ + 0.5))
                        *((sidx == 0) ? nx3_ : nx2_);
-      const Real pos = cs_seam::SeamPos(sc, spn_, (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang);
+      const Real pos = cs_seam::SeamPos(sc, spn_,
+                                        (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang);
       // TIE-SAFE stencil choice. At a panel END face (ang = +-pi/4, the
       // along-staggered component) the map shifts by exactly the normal offset, so at a
       // ghost cell centre pos is a HALF-INTEGER mathematically, and round(pos) went
@@ -598,8 +599,10 @@ void MeshBoundaryValuesFC::BuildPackSegmentsFC() {
       fc_npre[d] = static_cast<int>(cs_r.size());
       // chunk lists: plain, then seam, then precompute
       std::vector<int> ca(cs_p), cb(cb_p);
-      ca.insert(ca.end(), cs_s.begin(), cs_s.end()); cb.insert(cb.end(), cb_s.begin(), cb_s.end());
-      ca.insert(ca.end(), cs_r.begin(), cs_r.end()); cb.insert(cb.end(), cb_r.begin(), cb_r.end());
+      ca.insert(ca.end(), cs_s.begin(), cs_s.end());
+      cb.insert(cb.end(), cb_s.begin(), cb_s.end());
+      ca.insert(ca.end(), cs_r.begin(), cs_r.end());
+      cb.insert(cb.end(), cb_r.begin(), cb_r.end());
       const int nsub = static_cast<int>(sub.size());
       Kokkos::realloc(fc_sub[d], (nsub > 0) ? nsub : 1);
       auto h_sub = Kokkos::create_mirror_view(fc_sub[d]);
@@ -890,7 +893,8 @@ struct FCSeamPack {
   // <mesh>/cs_seam_fc_order = 3: third-order average of the destination ghost face fed
   // by source sample (kk,jj,i) of component vv (cs_seam_fc3.hpp), in the source chart
   struct Fc3Geo {
-    int m, i, aeta, low, dir, nseam, ns, ne, as0, alo, ahi, clo, chi, flo, fhi, nxa, npan, ga0, off;
+    int m, i, aeta, low, dir, nseam, ns, ne, as0, alo, ahi, clo, chi, flo, fhi, nxa,
+        npan, ga0, off;
     Real dn, da, a0, amin, amax;
   };
   KOKKOS_FORCEINLINE_FUNCTION
@@ -955,7 +959,8 @@ struct FCSeamPack {
       const int col = g.nseam + g.dir*mc;
       const Real C = tan(0.25*M_PI - static_cast<Real>(mc)*g.dn);
       const Real f = sc*wl[mc]/(cs_fc3::ArcDens(C, Aa)*g.da);
-      for (int l=0; l<3; ++l) acc(g, 1, c0 + l, col, f*wq[l]*cs_fc3::Arc(C, tf[l], tf[l+1]));
+      for (int l=0; l<3; ++l) acc(g, 1, c0 + l, col,
+                                  f*wq[l]*cs_fc3::Arc(C, tf[l], tf[l+1]));
     }
   }
   // along-staggered component (along faces w..w+3, normal cells 0..2) at (u, xabs,
@@ -1121,7 +1126,12 @@ struct FCSeamPack {
       const int arr = (comp == 0) ? 0 : (((comp == 1) == (g.aeta != 0)) ? 1 : 2);
       const int k = g.aeta ? aa : nn, j = g.aeta ? nn : aa;
       const int c = (arr << 26) | (k << 13) | j;
-      for (int q=0; q<n; ++q) { if (code[q] == c) { w[q] += wt; return; } }
+      for (int q=0; q<n; ++q) {
+        if (code[q] == c) {
+          w[q] += wt;
+          return;
+        }
+      }
       if (n < kFc3Max) {
         code[n] = c;
         w[n] = wt;
@@ -1457,7 +1467,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   // (bitwise the same buffers); every other mesh keeps the team kernel below.
   if (pmy_pack->pmesh->use_cubed_sphere) {
     PackAndSendFCFlat(b, cb);
-  } else {int my_rank = global_variable::my_rank;
+  } else {
+  int my_rank = global_variable::my_rank;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbgid = pmy_pack->pmb->mb_gid;
   auto &mblev = pmy_pack->pmb->mb_lev;

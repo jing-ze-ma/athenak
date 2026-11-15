@@ -261,8 +261,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     ScrArray2D<Real> dl(member.team_scratch(scr_level), nder, ncells1);
     ScrArray2D<Real> dr(member.team_scratch(scr_level), nder, ncells1);
 
-    if ((use_spherical_polar || str_r1_) && recon_method_x1_ == ReconstructionMethod::plm)
-      {
+    if ((use_spherical_polar || str_r1_) &&
+        recon_method_x1_ == ReconstructionMethod::plm) {
         GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                               use_wellbalance_dynamic_,
                               use_wb_x1_, wb_rmax_, wb_phimax_,
@@ -285,8 +285,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       } else {
     if (wb_all_) {   // x1 through the same routine (w = 1)
       WbAllPLM(member, use_wb_rho_, 1, m, k, j, il-1, iu, w0_, wbq0_, wbw_, wl, wr);
-    } else if (use_wellbalance_dynamic_ && use_wb_x1_)
-    {
+    } else if (use_wellbalance_dynamic_ && use_wb_x1_) {
       WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
           m, k, j, il-1, iu, w0_, phicc_wb_, phi_wb_x1f_, wbq0_, wl, wr);
     } else {
@@ -687,8 +686,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         } else {
         if (wb_all_) {
           WbAllPLM(member, use_wb_rho_, 2, m, k, j, il, iu, w0_, wbq2_, wbw_, wl_jp1, wr);
-        } else if (use_wellbalance_dynamic_ && use_wb_x2_)
-        {
+        } else if (use_wellbalance_dynamic_ && use_wb_x2_) {
           WbLocalPiecewiseLinearX2(member, eos_, wb_option_, use_wb_rho_,
               m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
         } else {
@@ -898,7 +896,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             const Real sf = gtrig_xi.sn(m,k,j), cf = gtrig_xi.cs(m,k,j);
             const auto &sfs = sfs2_;
             const int ia = (il > is) ? il : is, ib = (iu < ie) ? iu : ie;
-            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, ia, ib, lo, sf, cf, nvars, nder,
+            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, ia, ib, lo, sf, cf,
+                                     nvars, nder,
                                      IVY, IVZ, wl, wr, dl, dr);
             member.team_barrier();
           }
@@ -1196,7 +1195,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             const Real sf = gtrig_eta.sn(m,k,j), cf = gtrig_eta.cs(m,k,j);
             const auto &sfs = sfs3_;
             const int ia = (il > is) ? il : is, ib = (iu < ie) ? iu : ie;
-            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, ia, ib, lo, sf, cf, nvars, nder,
+            cs_seam::CsSeamGhostPrim(member, sfs, m, k, j, ia, ib, lo, sf, cf,
+                                     nvars, nder,
                                      IVZ, IVY, wl, wr, dl, dr);
             member.team_barrier();
           }
@@ -1284,7 +1284,8 @@ void Hydro::CsSeamFaceStates() {
     if (!pmy_pack->pmesh->cs_seam_flux_named) {
       // the DEFAULT shared seam on a setup it does not cover: the mean of the two solves
       if (global_variable::my_rank == 0) {
-        std::cout << "Hydro: cubed-sphere seam flux shared (default) not available for this"
+        std::cout
+            << "Hydro: cubed-sphere seam flux shared (default) not available for this"
                   << " setup (needs PLM, no x2/x3 well-balanced reconstruction, uniform "
                   << "mesh): seam flux = average" << std::endl;
       }

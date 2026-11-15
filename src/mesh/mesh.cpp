@@ -213,7 +213,8 @@ Mesh::Mesh(ParameterInput *pin) :
         pin->GetString("mesh_refinement", "refinement") != "none")) {
     if (recipe::NewDefaults(pin)) {
       pin->GetOrAddInteger("mesh", "cs_seam_fc_order", 3);
-      recipe::Log("<mesh>/cs_seam_fc_order = 3 (default on a fresh resistive cs MHD start)");
+      recipe::Log("<mesh>/cs_seam_fc_order = 3 "
+                  "(default on a fresh resistive cs MHD start)");
     } else {
       recipe::Log("<mesh>/cs_seam_fc_order = 2 (" + std::string(
           recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
@@ -243,7 +244,8 @@ Mesh::Mesh(ParameterInput *pin) :
     } else if (recipe::GetMode(pin) != recipe::Mode::none &&
                !global_variable::restart_run) {
       cs_vertex_3cell = pin->GetOrAddBoolean("mesh", "cs_vertex_3cell", true);
-      recipe::Log("<mesh>/cs_vertex_3cell = true (default on a fresh cubed-sphere start)");
+      recipe::Log("<mesh>/cs_vertex_3cell = true "
+                  "(default on a fresh cubed-sphere start)");
     } else {
       recipe::Log("<mesh>/cs_vertex_3cell = false (" + std::string(
           recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
@@ -323,7 +325,8 @@ Mesh::Mesh(ParameterInput *pin) :
   if (use_grid_stretch_r_poly) {
     if (use_grid_stretch_r) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "mesh/use_grid_stretch_r and mesh/use_grid_stretch_r_poly "
+                << std::endl
+                << "mesh/use_grid_stretch_r and mesh/use_grid_stretch_r_poly "
                 << "are mutually exclusive" << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -402,7 +405,8 @@ Mesh::Mesh(ParameterInput *pin) :
       if (!(nin > 0 && ij > 1 && ij < nin && nh >= 2) ||
           pin->DoesParameterExist("mesh", "f_stretch_r_tail_nin")) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "mesh/f_stretch_r_head_*: need 1 < ij < nin, nx1 - (nin - "
+                  << std::endl
+                  << "mesh/f_stretch_r_head_*: need 1 < ij < nin, nx1 - (nin - "
                   << "ij) >= 2, and no f_stretch_r_tail_*" << std::endl;
         std::exit(EXIT_FAILURE);
       }
@@ -413,7 +417,8 @@ Mesh::Mesh(ParameterInput *pin) :
       // top fraction (1-q) q^(nh-1)/(1-q^nh) increases with q (-> 1/nh at q = 1)
       auto topf = [nh](Real q) {
         const Real lq = std::log(q);
-        return (lq == 0.0) ? 1.0/nh : -std::expm1(lq)*std::exp((nh-1)*lq)/(-std::expm1(nh*lq));
+        return (lq == 0.0) ? 1.0/nh
+            : -std::expm1(lq)*std::exp((nh-1)*lq)/(-std::expm1(nh*lq));
       };
       Real lo = 1.0e-3, hi = 1.0e3;
       for (int it = 0; it < 200; ++it) {
@@ -509,16 +514,19 @@ Mesh::Mesh(ParameterInput *pin) :
   // (sp_test iprob=11); with it div B stays at round-off and the errors are unchanged.
   use_polar_average_eresist = pin->GetOrAddBoolean("mesh", "use_polar_average_eresist",
                                                     true);
-  if (use_spherical_polar && pin->GetReal("mesh", "x3min")<0.0 && pin->GetReal("mesh", "x3max")<0.0) {
+  if (use_spherical_polar && pin->GetReal("mesh", "x3min")<0.0
+      && pin->GetReal("mesh", "x3max")<0.0) {
     mesh_size.x3min = 0.0;
     mesh_size.x3max = 2.0*M_PI;
   }
   if (use_polar_boundary) {
     mesh_size.x2min = 0.0;
     mesh_size.x2max = M_PI;
-    if (pin->DoesBlockExist("mhd") && (pin->GetInteger("mesh", "nx1") != pin->GetInteger("meshblock", "nx1"))) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-                << "polar boundary with MHD currently only supports one single meshblock in r direction" << std::endl;
+    if (pin->DoesBlockExist("mhd") &&
+        (pin->GetInteger("mesh", "nx1") != pin->GetInteger("meshblock", "nx1"))) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "polar boundary with MHD currently only supports one "
+                << "single meshblock in r direction" << std::endl;
       exit(EXIT_FAILURE);
     }
   }
@@ -651,9 +659,12 @@ Mesh::Mesh(ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (use_polar_boundary && (mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::polar || mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::polar)) {
+    if (use_polar_boundary &&
+        (mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::polar ||
+         mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::polar)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "To use the polar boundary condition, both inner and outer x2 bcs must be polar" << std::endl;
+                << std::endl << "To use the polar boundary condition, both inner and "
+                << "outer x2 bcs must be polar" << std::endl;
       std::exit(EXIT_FAILURE);
     }
   } else {
@@ -683,9 +694,12 @@ Mesh::Mesh(ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (use_polar_boundary && (mesh_bcs[BoundaryFace::inner_x3] != BoundaryFlag::periodic || mesh_bcs[BoundaryFace::outer_x3] != BoundaryFlag::periodic)) {
+    if (use_polar_boundary &&
+        (mesh_bcs[BoundaryFace::inner_x3] != BoundaryFlag::periodic ||
+         mesh_bcs[BoundaryFace::outer_x3] != BoundaryFlag::periodic)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "To use the polar boundary condition, both inner and outer x3 bcs must be periodic" << std::endl;
+                << std::endl << "To use the polar boundary condition, both inner and "
+                << "outer x3 bcs must be periodic" << std::endl;
       std::exit(EXIT_FAILURE);
     }
   } else {
@@ -1345,7 +1359,8 @@ void Mesh::NewTimeStep(const Real tlim) {
   if (pmb_pack->pmhd != nullptr) {
     if (pmb_pack->pmhd->presist != nullptr) {
       if (pmb_pack->pmhd->presist->use_rkg_sts) {
-        MPI_Allreduce(MPI_IN_PLACE, &dt_diff, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+        MPI_Allreduce(MPI_IN_PLACE, &dt_diff, 1, MPI_ATHENA_REAL, MPI_MIN,
+                      MPI_COMM_WORLD);
       }
     }
   }
