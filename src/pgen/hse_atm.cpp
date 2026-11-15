@@ -29,7 +29,6 @@
 #include "pgen.hpp"
 #include "pgen_eos_utils.hpp"
 
-
 // EOS-aware conversions shared with the other stratified problem generators
 using pgen_eos::EintFromP;
 using pgen_eos::PresFromEint;
@@ -127,8 +126,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // 2D PROBLEM ----------------------------------------------------------------
 
-//  if (pmbp->pmesh->two_d) {
-//    Kokkos::Random_XorShift64_Pool<> rand_pool64(pmbp->gids);
     par_for("hotbubble", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real &x1min = size.d_view(m).x1min;
@@ -335,50 +332,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       });
     }
 
-//  // 3D PROBLEM ----------------------------------------------------------------
-//
-//  } else {
-//    Kokkos::Random_XorShift64_Pool<> rand_pool64(pmbp->gids);
-//    par_for("rt3d", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
-//    KOKKOS_LAMBDA(int m, int k, int j, int i) {
-//      Real &x1min = size.d_view(m).x1min;
-//      Real &x1max = size.d_view(m).x1max;
-//      int nx1 = indcs.nx1;
-//      Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
-//
-//      Real &x2min = size.d_view(m).x2min;
-//      Real &x2max = size.d_view(m).x2max;
-//      int nx2 = indcs.nx2;
-//      Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-//
-//      Real &x3min = size.d_view(m).x3min;
-//      Real &x3max = size.d_view(m).x3max;
-//      int nx3 = indcs.nx3;
-//      Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-//
-//      Real den=1.0;
-//      if (x3v > 0.0) den *= drat;
-//
-//      if (iprob == 1) {
-//        u0_(m,IM3,k,j,i) = (1.0+cos(kx*x1v))*(1.0+cos(ky*x2v))*(1.0+cos(kz*x3v))/8.0;
-//      } else {
-//        auto rand_gen = rand_pool64.get_state();  // get random number state this thread
-//        Real r = 2.0*static_cast<Real>(rand_gen.frand()) - 1.0;
-//        u0_(m,IM3,k,j,i) = r * (1.0 + cos(kz*x3v))/2.0;
-//        rand_pool64.free_state(rand_gen);  // free state for use by other threads
-//      }
-//
-//      u0_(m,IDN,k,j,i) = den;
-//      u0_(m,IM1,k,j,i) = 0.0;
-//      u0_(m,IM2,k,j,i) = 0.0;
-//      u0_(m,IM3,k,j,i) *= (den*amp);
-//      u0_(m,IEN,k,j,i) = (p0 + grav_acc*den*x3v)/gm1 + 0.5*SQR(u0_(m,IM3,k,j,i))/den;
-//    });
-//  }
-
   return;
 }
-
 
 void HydrostaticEquilibrium(Mesh *pm) {
   auto &indcs = pm->mb_indcs;
@@ -479,7 +434,6 @@ void HydrostaticEquilibrium(Mesh *pm) {
   });
   return;
 }
-
 
 void GravitySource(Mesh *pm, Real bdt) {
     auto &indcs = pm->mb_indcs;
