@@ -155,21 +155,6 @@ struct EOS_Data {
   // gives full HLLC/HLLD radially.  <= 0 (default, key unset) = off, bitwise unchanged.
   Real x1_phi_min = 0.0;
 
-  // <mhd>/lhlld_phi_min -- FLOOR on phi of LHLLD on ALL faces (x1, x2, x3); same
-  // chi-floor mechanism as x1_phi_min.  >= 1 gives plain HLLD everywhere.  <= 0
-  // (default, key unset) = off, bitwise unchanged.  MHD only.
-  Real phi_min_all = 0.0;
-  // <mhd>/lhlld_oddeven -- ODD-EVEN (2-cell) SENSOR floor on chi of LHLLD, all faces.
-  // phi damps the face jump of the NORMAL velocity; at low Mach it leaves the 2-cell
-  // normal-velocity checkerboard undamped (the reason x1_phi_min exists).  With this
-  // key > 0 the face takes chi >= s^p (p = the key value), where
-  //   s = min(1, |d_f - (d_l + d_r)/2| / (|d_f| + (|d_l| + |d_r|)/2))
-  // is built from the cell-centred normal velocity w0(ivx) of the 4 cells around the
-  // face (d_l, d_f, d_r = the 3 consecutive cell differences).  s = 1 for a pure
-  // checkerboard or a step, s = O((k dx)^2) in smooth flow and 0 in linear flow, so the
-  // low-Mach fix is kept where the flow is resolved.  <= 0 (default) = off, bitwise
-  // unchanged.  MHD only.
-  Real lhlld_oddeven = 0.0;
   // <mhd>/lhlld_emf_eta_pos -- NON-NEGATIVE NUMERICAL RESISTIVITY of the LHLLD
   // transverse-field (EMF) flux, all faces.  For weak B_n the HLLD star-region flux of
   // a transverse field component B_t is F = B_K S_M (S_K - u_K)/(S_K - S_M) (K the
@@ -224,17 +209,10 @@ struct EOS_Data {
   // wbplm-1103 <hydro|mhd>/wb_plm_range (default false, read only when named): bound the
   // well-balanced x1 faces by the 3-cell data range (reconstruct/wb_plm_blend.hpp)
   bool wb_plm_range = false;
-  // lowmach2-1102 <hydro>/lhllc_chi_full (default false = legacy, bitwise; read only
-  // when named; hydro only): the Mach function of LHLLC from the FULL speed,
-  // chi = min(1, max(|u|_L, |u|_R)/max(c_L, c_R)) with |u| over all three velocity
-  // components, instead of the face-normal speed max(|u_n,L|, |u_n,R|)/max(c_L, c_R).
-  // This is Minoshima & Miyoshi 2021 eq. (14) as written (and what LHLLD already does,
-  // through c_u), SLAU/SLAU2 and Furusawa+ 2023.
-  bool chi_full = false;
   // lowmach2-1102 <mhd>/lhlld_chi_normal (false = Minoshima & Miyoshi eq. 14 with the
   // full |u|, the legacy behaviour; read only when named; MHD only): c_u of LHLLD from
-  // the face-normal velocity only (|u|^2 -> u_n^2), mirroring LHLLC's legacy chi; also
-  // used by the alfmach_rot psi_A (LHLLD and UctFaceStore).  FRESH-start default true
+  // the face-normal velocity only (|u|^2 -> u_n^2), mirroring LHLLC's chi; also used by
+  // the UCT face store.  FRESH-start default true
   // with rsolver = lhlld (prod1103, USER 11-03; recipe::NewDefaults, eos.cpp); a restart
   // whose input lacks the key keeps false.
   bool chi_normal = false;
@@ -247,30 +225,6 @@ struct EOS_Data {
   // FRESH-start default true with rsolver = lhlld (prod1104a, USER 11-04; recipe::
   // NewDefaults, eos.cpp); a restart whose input lacks the key keeps false.
   bool alfmach = false;
-  // alfmach-1102 <mhd>/lhlld_alfmach_rot (default false = HLLD Alfven fan, bitwise;
-  // read only when named) and <mhd>/lhlld_alfmach_rot_min = psi_min (default 0):
-  // ALFVEN-MACH SCALING OF THE ROTATIONAL-DISCONTINUITY DISSIPATION.  On faces whose
-  // Alfven fan straddles the face (S*_L < 0 < S*_R, ** states present) the transverse
-  // momentum and field fluxes become F_ref + psi_A (F_HLLD - F_ref), F_ref = the mean of
-  // the two outer-star fluxes F*_L, F*_R, with psi_A = chi_A (2 - chi_A),
-  // chi_A = min(1, max|u|/max c_ax*) floored by the odd-even sensor on the transverse
-  // velocities (cb_sensor/cb_cont) and psi_A >= psi_min; the energy flux takes the
-  // matching work/Poynting terms (as lhlld_emf_eta_pos).
-  bool alfmach_rot = false;
-  Real alfmach_rot_min = 0.0;
-  // lowmach2-1102 <hydro>/lhllc_divdiss, <mhd>/lhlld_divdiss (default false = off,
-  // bitwise; read only when named) and the TEST key <hydro|mhd>/lhllc|lhlld_divdiss_form
-  // (hpd | hp | raw | row; default hpd): MULTI-DIMENSIONAL DIVERGENCE DISSIPATION
-  // (utils/divdiss.hpp).  The contact (total) pressure gets the extra term
-  //   dp* = -(1 - phi) [m_L m_R/(m_L + m_R)] J/rhobar,     m_K = rho_K |S_K - u_K|,
-  // with J an undivided face measure of the divergence of the MASS flux rho u, so that
-  // the face keeps the 1-D velocity-jump term at phi = O(M) and, on top of it, the
-  // missing (1 - phi) of the acoustic dissipation acts on the divergence of rho u
-  // only (Barsukow 2021 arXiv:2103.02621, 2023 arXiv:2306.02847).  It is linear in the
-  // state (no switch, no parameter) and zero at phi = 1.  The energy flux carries the
-  // matching dp* S_M (the contact pressure work).  divdiss = form code: 1 hp, 2 raw,
-  // 3 row, 4 hpd (see divdiss.hpp); 0 = off.
-  int divdiss = 0;
 
   // <block>/efloor_from_ekin -- pay for the energy/pressure floor out of the cell's
   // KINETIC energy before creating any.  The floor is applied to the internal energy and

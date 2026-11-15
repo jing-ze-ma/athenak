@@ -140,26 +140,6 @@ void UctFaceStore(const EOS_Data &eos, const ScrArray2D<Real> &wl,
     al  = 0.5*(1.0 + nus);
     dlc = 0.5*(nul - nus)*(lsl - sl)*chil + 0.5*(fabs(lsl) - nus*lsl);
     drc = 0.5*(nur - nus)*(lsr - sr)*chir + 0.5*(fabs(lsr) - nus*lsr);
-    // <mhd>/lhlld_alfmach_rot (LHLLD only, refused for other solvers): the
-    // solver's B_t flux is F_ref + psi_A (F_HLLD - F_ref), F_ref = (F*L + F*R)/2 =
-    // (F^L + F^R)/2 + (S_L chi^L B^L + S_R chi^R B^R)/2, i.e. (a, d^L, d^R)_ref =
-    // (1/2, S_L chi^L/2, -S_R chi^R/2); blend the coefficients with the same psi_A
-    if (eos.alfmach_rot && !(0.5*bxsq < eos.hlld_bx_zero_tol*ptst) && lsl < 0.0 &&
-        lsr > 0.0) {
-      Real usql = SQR(vl) + (SQR(wl(ivy,i)) + SQR(wl(ivz,i)));
-      Real usqr = SQR(vr) + (SQR(wr(ivy,i)) + SQR(wr(ivz,i)));
-      if (eos.chi_normal) {
-        usql = SQR(vl);
-        usqr = SQR(vr);
-      }
-      const Real caxs = fabs(bxi)*fmax(1.0/sqrt(rl*sdl/sdml), 1.0/sqrt(rr*sdr/sdmr));
-      const Real psia = LhlldAlfRotPsi(w0, m, k, j, i, ivx, ivy, ivz, fmax(usql, usqr),
-                                       caxs, eos.cb_sensor, eos.cb_cont,
-                                       eos.alfmach_rot_min);
-      al  = 0.5 + psia*(al - 0.5);
-      dlc = 0.5*sl*chil + psia*(dlc - 0.5*sl*chil);
-      drc = -0.5*sr*chir + psia*(drc + 0.5*sr*chir);
-    }
     if (eta_pos) {   // LHLLD Step 8 (lhlld_emf_eta_pos)
       const Real ceta = fmax(0.0, -(fabs(sm) + 0.5*(vr - vl)));
       dlc += 0.5*ceta;

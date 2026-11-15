@@ -144,14 +144,12 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       eos_data.x1_phi_min = pin->GetReal(bk, key);
     }
   }
-  // <mhd>/lhlld_phi_min, <mhd>/lhlld_oddeven, <mhd>/lhlld_emf_eta_pos: see
-  // EOS_Data::phi_min_all, ::lhlld_oddeven and ::lhlld_emf_eta_pos.  Read only when
-  // set (no GetOrAdd), so an unset key leaves the restart header unchanged.  MHD
-  // only: refuse them in any other block.  lhlld_emf_eta_pos defaults to true in <mhd>
+  // <mhd>/lhlld_emf_eta_pos: see EOS_Data::lhlld_emf_eta_pos.  Read only when set (no
+  // GetOrAdd), so an unset key leaves the restart header unchanged.  MHD only: refused
+  // in any other block.  lhlld_emf_eta_pos defaults to true in <mhd>
   // (user decision 10-30); only LHLLD reads it, so other solvers are unaffected.
   if (bk.compare("mhd") == 0) eos_data.lhlld_emf_eta_pos = true;
-  for (const char *kc :
-       {"lhlld_phi_min", "lhlld_oddeven", "lhlld_emf_eta_pos"}) {
+  for (const char *kc : {"lhlld_emf_eta_pos"}) {
     const std::string key(kc);
     if (!pin->DoesParameterExist(bk, key)) continue;
     if (bk.compare("mhd") != 0) {
@@ -160,13 +158,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
                 << "for MHD (LHLLD)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (key.compare("lhlld_phi_min") == 0) {
-      eos_data.phi_min_all = pin->GetReal(bk, key);
-    } else if (key.compare("lhlld_emf_eta_pos") == 0) {
-      eos_data.lhlld_emf_eta_pos = pin->GetBoolean(bk, key);
-    } else {
-      eos_data.lhlld_oddeven = pin->GetReal(bk, key);
-    }
+    eos_data.lhlld_emf_eta_pos = pin->GetBoolean(bk, key);
   }
   // <hydro>/lhllc_cb_sensor, <mhd>/lhlld_cb_sensor: see EOS_Data::cb_sensor.  Read only
   // when set, as above; default 1 (user decision 10-30), only LHLLC/LHLLD read it.
@@ -245,23 +237,12 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
         std::exit(EXIT_FAILURE);
       }
     }
-    // lowmach2-1102: see EOS_Data::chi_full and EOS_Data::divdiss (read only when named)
-    if (pin->DoesParameterExist(bk, "lhllc_chi_full")) {
-      if (!is_hyd) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<" << bk << ">/lhllc_chi_full is hydro (LHLLC) only; "
-                  << "LHLLD already uses the full speed" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      eos_data.chi_full = pin->GetBoolean(bk, "lhllc_chi_full");
-    }
     // prod1103 default (USER 11-03, "use u_n for lhllc/d"): lhlld_chi_normal = true on a
     // FRESH start (recipe::NewDefaults) whenever <mhd>/rsolver = lhlld and the key is not
     // named, i.e. c_u of LHLLD from the face-normal velocity as LHLLC's chi (lowmach2-1102:
     // Gresho B_z KE 0.52 vs 0.47, checkerboard damping identical).  Recorded (GetOrAdd)
     // for the run's restarts; a restart whose input lacks the key keeps false (bitwise);
-    // an explicit key always wins.  LHLLC is unchanged (face-normal chi unless
-    // lhllc_chi_full is named).
+    // an explicit key always wins.  LHLLC always uses the face-normal chi.
     if (!is_hyd && !pin->DoesParameterExist(bk, "lhlld_chi_normal") &&
         pin->DoesParameterExist(bk, "rsolver") && pin->GetString(bk, "rsolver") == "lhlld") {
       if (recipe::NewDefaults(pin)) {
@@ -298,9 +279,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
             "restart input has no key") + ": the old default)");
       }
     }
-    // alfmach-1102: see EOS_Data::alfmach, ::alfmach_rot (read only when named)
-    for (const std::string key :
-         {"lhlld_alfmach", "lhlld_alfmach_rot", "lhlld_alfmach_rot_min"}) {
+    // see EOS_Data::alfmach (read only when named)
+    for (const std::string key : {"lhlld_alfmach"}) {
       if (!pin->DoesParameterExist(bk, key)) continue;
       if (is_hyd) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -314,45 +294,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      if (key.compare("lhlld_alfmach") == 0) {
-        eos_data.alfmach = pin->GetBoolean(bk, key);
-      } else if (key.compare("lhlld_alfmach_rot") == 0) {
-        eos_data.alfmach_rot = pin->GetBoolean(bk, key);
-      } else {
-        eos_data.alfmach_rot_min = pin->GetReal(bk, key);
-      }
-    }
-    {
-      const std::string kd = is_hyd ? "lhllc_divdiss" : "lhlld_divdiss";
-      const std::string bd = is_hyd ? "lhlld_divdiss" : "lhllc_divdiss";
-      if (pin->DoesParameterExist(bk, bd) || pin->DoesParameterExist(bk, bd + "_form")) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<" << bk << ">/" << bd << " is not valid in this "
-                  << "block; use <" << bk << ">/" << kd << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (pin->DoesParameterExist(bk, kd) && pin->GetBoolean(bk, kd)) {
-        eos_data.divdiss = 4;   // default form hpd (lowmach2-1102 tests: hp loses Gresho KE)
-        if (pin->DoesParameterExist(bk, kd + "_form")) {
-          const std::string f = pin->GetString(bk, kd + "_form");
-          if (f.compare("hp") == 0) {
-            eos_data.divdiss = 1;
-          } else if (f.compare("raw") == 0) {
-            eos_data.divdiss = 2;
-          } else if (f.compare("row") == 0) {
-            eos_data.divdiss = 3;
-          } else if (f.compare("hpd") == 0) {
-            eos_data.divdiss = 4;
-          } else if (f.compare("hpdk") == 0) {
-            eos_data.divdiss = 5;
-          } else {
-            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "<" << bk << ">/" << kd << "_form = " << f
-                      << " unknown (hpd | hpdk | hp | raw | row)" << std::endl;
-            std::exit(EXIT_FAILURE);
-          }
-        }
-      }
+      eos_data.alfmach = pin->GetBoolean(bk, key);
     }
   }
   eos_data.pfloor = pin->GetOrAddReal(bk,"pfloor",(FLT_MIN));

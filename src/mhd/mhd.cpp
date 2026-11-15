@@ -829,17 +829,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                   << "mesh refinement (SMR/AMR); use emf_scheme = gs07" << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      // emf_scheme = uct builds the corner EMF from the HLL coefficients
-      // (MD21 eq. 30), which have no Alfven fan, so the lhlld_alfmach_rot scaling of the
-      // fan dissipation (a TEST key) would act on the face fluxes only and be silently
-      // absent from CT. uct_hlld carries it (UctFaceStore); gs07 reads the face EMFs.
-      if (emf_uct && peos->eos_data.alfmach_rot) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<mhd>/lhlld_alfmach_rot is not seen by the "
-                  << "emf_scheme = uct corner EMF (HLL coefficients); use emf_scheme = "
-                  << "uct_hlld or gs07" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
     }
     // the cell-centred cube-vertex fill <mesh>/cs_vertex_fill_cc = true with the GS07
     // corner EMF (named, or the fallback when uct / uct_hlld is not selected) or with
