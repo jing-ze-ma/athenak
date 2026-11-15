@@ -111,15 +111,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                                        cln_cell && !cs && (!sp || gd));
     cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",
                                       cln_cell && !cs);
+    std::string fm = pin->GetOrAddString("rad_m1","clean_face_model","none");
+    cln_milne = (fm.compare("milne") == 0);
     cln_alpha = (al.compare("tau") == 0) ? 0 : (al.compare("tau_sensor") == 0) ? 1 :
                 (al.compare("tau_ray") == 0) ? 2 : (al.compare("one") == 0) ? 3 :
                 (al.compare("zero") == 0) ? 4 : -1;
     if ((!cln_cell && ly.compare("staggered") != 0) || cln_alpha < 0 ||
-        (!cln_recon && rc.compare("none") != 0) || (cln_consist && !cln_cell)) {
+        (!cln_recon && rc.compare("none") != 0) || (cln_consist && !cln_cell) ||
+        (!cln_milne && fm.compare("none") != 0) || (cln_milne && !cln_cell)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1>/clean_layout = staggered | cell, clean_alpha = tau | "
         << "tau_sensor | tau_ray | one | zero, clean_recon = plm | none; "
-        << "clean_consistency needs clean_layout = cell" << std::endl;
+        << "clean_face_model = none | milne; clean_consistency and clean_face_model = "
+        << "milne need clean_layout = cell" << std::endl;
       std::exit(EXIT_FAILURE);
     }}
     cln_psi_eps = pin->GetOrAddReal("rad_m1","clean_psi_eps",1.0e-12);

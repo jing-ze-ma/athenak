@@ -57,6 +57,8 @@ constexpr int CLF_UG = 4;    // 1: physical boundary face of a marked cell, upwi
                              //    against the ghost (clean_pos_ghost)
 constexpr int CLF_CB = CLF_N;  // consistency bracket of (fE, fY_1..3)
 constexpr int CLF_WK = CLF_CB + 4;  // weight w of the rays' kinetic flux of U - Ur
+constexpr int CLF_ML = CLF_WK + 1;  // clean_face_model = milne: mu and the sub-cell
+                                    // terms of the derivatives (CleanCellMilneSetup)
 
 // cell vectors (array cln_x), 4 components (E, y1, y2, y3) each
 constexpr int CLC_O = 0;     // old vector
@@ -85,7 +87,8 @@ constexpr int CLC_KP = 187;
 constexpr int CLC_T1 = 203;  // preconditioner scratch vectors
 constexpr int CLC_T2 = 207;
 constexpr int CLC_U = 211;   // the rays' cell moments (J, J h)
-constexpr int CLC_N = 215;
+constexpr int CLC_MB = 215;  // B = kP a T^4/kE of the old vector (clean_face_model)
+constexpr int CLC_N = 216;
 
 // dissipation weight candidates (<rad_m1>/clean_alpha)
 constexpr int CLA_TAU = 0;          // A(tau) = (1 - exp(-tau))/tau
@@ -317,16 +320,16 @@ Real CleanCellOutStress(const CleanArgs &x, const int dir, const int b, const in
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanCellFaceSource
-//! \brief the E-independent part of the face fluxes: the consistency bracket and, on a
-//! physical boundary, the incoming E flux of CleanFaceSource and the stress of the
-//! incoming radiation (beam: its stress column; isotropic bath: c E_bath/6 on the normal
-//! row); in a first-order solve the ghost part of the upwind stress, on a low-order face
-//! that of the upwind characteristic flux
+//! \fn void CleanCellM1Source
+//! \brief the E-independent part of the moment scheme's face fluxes: the consistency
+//! bracket and, on a physical boundary, the incoming E flux of CleanFaceSource and the
+//! stress of the incoming radiation (beam: its stress column; isotropic bath: c E_bath/6
+//! on the normal row); in a first-order solve the ghost part of the upwind stress, on a
+//! low-order face that of the upwind characteristic flux
 
 KOKKOS_INLINE_FUNCTION
-void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const int k,
-                         const int j, const int i, Real s[4]) {
+void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int k,
+                       const int j, const int i, Real s[4]) {
   for (int r = 0; r < 4; ++r) s[r] = x.consist ? x.fc[dir](m,CLF_CB+r,k,j,i) : 0.0;
   if (!CleanBoundaryFace(x, dir, m, k, j, i)) return;
   const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
@@ -378,8 +381,8 @@ void CleanCellDeviationFlux(const CleanArgs &x, const int m, const int k, const 
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanCellFaceJacobian
-//! \brief derivatives jl, jr of the face fluxes (fE, fY_1..3) at face (k,j,i) normal to
+//! \fn void CleanCellM1Jacobian
+//! \brief derivatives jl, jr of the moment fluxes (fE, fY_1..3) at face (k,j,i) normal to
 //! dir with respect to the states (E, y_1..3) of the cells L and R.  The terms in the
 //! states of L-1 and R+1 (RC, reconstruction) are left to CleanCellFaceFlux.  On
 //! physical boundaries fE takes the boundary form of CleanFaceWeights and fY the stress
@@ -392,8 +395,8 @@ void CleanCellDeviationFlux(const CleanArgs &x, const int m, const int k, const 
 //! momentum deviation of the inner cell out (CleanCellDeviationFlux, weight w).
 
 KOKKOS_INLINE_FUNCTION
-void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const int k,
-                           const int j, const int i, Real jl[4][4], Real jr[4][4]) {
+void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const int k,
+                         const int j, const int i, Real jl[4][4], Real jr[4][4]) {
   const int kl = k - (dir == 2), jl_ = j - (dir == 1), il = i - (dir == 0);
   const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
@@ -482,6 +485,171 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanCellMilneWeight
+//! \brief clean_face_model = milne: weight mu = (1 - exp(-2 tau_h))^4 of the sub-cell
+//! face fluxes at face (k,j,i) normal to dir, tau_h = chi d/2 the larger optical depth
+//! from a cell centre to the face (2 E_3(tau_h) ~ exp(-2 tau_h) is the share of the
+//! outgoing half-range flux that crosses the half cell).  The sub-cell flux, which does
+//! not carry y, differs from the moment scheme's by O(1) in thin cells, so
+//! mu = O(tau_h^4) leaves smooth solutions as they are; below 1e-12 it is zero.
+//! Low-order faces, a first-order solve and reflecting boundaries keep the moment
+//! scheme.
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCellMilneWeight(const CleanArgs &x, const int dir, const int m, const int k,
+                          const int j, const int i) {
+  if (!x.milne || x.all_low || x.fc[dir](m,CLF_LO,k,j,i) > 0.0 ||
+      x.fc[dir](m,CLF_UG,k,j,i) > 0.0) return 0.0;
+  const bool bdry = CleanBoundaryFace(x, dir, m, k, j, i);
+  const bool blo = bdry && (dir == 0 ? i == x.is : (dir == 1 ? j == x.js : k == x.ks));
+  if (bdry && CleanBc(x, m, 2*dir + (blo ? 0 : 1)) == M1_IBC_REFLECT) return 0.0;
+  const Real d = CleanCellFaceDistance(x, dir, m, k, j, i);
+  const Real tl = blo ? 0.0 : x.op(m,M1_OP_T,k-(dir == 2),j-(dir == 1),i-(dir == 0));
+  const Real tr = (bdry && !blo) ? 0.0 : x.op(m,M1_OP_T,k,j,i);
+  const Real mu = SQR(SQR(expm1(-fmax(tl, tr)*d)));
+  return (mu > 1.0e-12) ? mu : 0.0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCellMilne
+//! \brief clean_face_model = milne: the sub-cell Eddington fluxes of face (k,j,i) normal
+//! to dir, blended with weight mu into the moment scheme's derivatives jl, jr (s null) or
+//! into its E-independent part s (jl, jr then hold the moment scheme's derivatives).
+//! Between its centre and the face each cell solves E'' = k^2 (E - B), y = -E'/3 in the
+//! optical depth tau (k = sqrt(3 eps), eps = kE/chi, B = kP a T^4/kE linear in tau with
+//! the limited slope of the cell centres), so that the outward flux at the face is
+//!   y = (e - E_f)/r,  e = c E_c + B_f - c B_c - (B_f - B_c) t,  r = 3 tau_h t,
+//! z = k tau_h, c = 1/cosh z, t = tanh(z)/z, linear in the face value E_f.  The kinetic
+//! interface y = A_L E_fL - A_R E_fR + (th_L + th_R) y/2 couples the sides: a side emits
+//! the share th = 1 - exp(-2 tau_h) of the Eddington half range E_f/4 + y/2, the rest by
+//! the rays' (A = (1 - th) h + th/4).  Eliminating E_f,
+//!   y = (A_L e_L - A_R e_R)/(1 - (th_L + th_R)/2 + A_L r_L + A_R r_R):
+//! the rays' kinetic flux of thin cells, the diffusion flux (E_L - E_R)/(3 chi d) of
+//! thick ones, the Milne/Marshak flux of a thick cell against a thin one or a boundary
+//! (whose incoming flux is the moment scheme's; with clean_bc = marshak A = q and th = 0
+//! in the denominator).  The stress is the kinetic one of the same half ranges,
+//! K+-_dd = E_f/6 +- 3y/8 (Eddington) and the rays' k+- E_f.  The E and stress rows take
+//! these with weight mu; the consistency bracket stays (only its divergence is defined).
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
+                    const int j, const int i, Real jl[4][4], Real jr[4][4], Real *s) {
+  const Real mu = CleanCellMilneWeight(x, dir, m, k, j, i);
+  if (mu == 0.0) return;
+  const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+  const bool bdry = CleanBoundaryFace(x, dir, m, k, j, i);
+  const bool blo = bdry && (dir == 0 ? i == x.is : (dir == 1 ? j == x.js : k == x.ks));
+  const Real d = 0.5*CleanCellFaceDistance(x, dir, m, k, j, i);
+  // sides n = 0 (L), 1 (R): A, r, c, e - c E_c, th and the stress half ranges; a
+  // boundary's ghost side has none
+  Real a[2] = {0.0, 0.0}, r[2] = {0.0, 0.0}, cc[2] = {0.0, 0.0}, e0[2] = {0.0, 0.0};
+  Real th[2] = {0.0, 0.0}, ks[2][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}}, den = 1.0;
+  for (int n = 0; n < 2; ++n) {
+    if (bdry && (n == 0) == blo) continue;
+    const int kc = k - dk*(1 - n), jc = j - dj*(1 - n), ic = i - di*(1 - n);
+    const int sg = 2*n - 1;   // from the face into the cell
+    const Real chi = x.op(m,M1_OP_T,kc,jc,ic);
+    const Real eps = (chi > 0.0) ? fmin(x.op(m,M1_OP_E,kc,jc,ic)/chi, 1.0) : 0.0;
+    const Real tau = chi*d, z = std::sqrt(3.0*eps)*tau;
+    const Real t = (z > 1.0e-4) ? tanh(z)/z : 1.0 - z*z/3.0;
+    th[n] = -expm1(-2.0*tau);
+    cc[n] = 1.0/cosh(z);
+    r[n] = 3.0*tau*t;
+    const Real bc = x.u(m,CLC_MB,kc,jc,ic);
+    const Real bl = x.u(m,CLC_MB,kc-sg*dk,jc-sg*dj,ic-sg*di) - bc;
+    const Real br = bc - x.u(m,CLC_MB,kc+sg*dk,jc+sg*dj,ic+sg*di);
+    const Real bf = bc + ((bl*br > 0.0) ? copysign(0.5*fmin(fabs(bl), fabs(br)), bl)
+                                        : 0.0);
+    e0[n] = bf - cc[n]*bc - (bf - bc)*t;
+    const Real h = bdry ? fabs((blo ? jr : jl)[0][0])/x.c :
+                   (n ? -x.cs(m,CLN_HM+dir,kc,jc,ic) : x.cs(m,CLN_HP+dir,kc,jc,ic));
+    const Real tm = (bdry && x.marshak) ? 0.0 : th[n];
+    a[n] = (1.0 - tm)*h + 0.25*tm;
+    den += a[n]*r[n] - 0.5*tm;
+    for (int b = 0; b < x.nf; ++b) {
+      ks[n][b] = (1.0 - th[n])*CleanCellOutStress(x, dir, b, m, kc, jc, ic, n == 1) +
+                 ((b == dir) ? th[n]/6.0 : 0.0);
+    }
+  }
+  // y = yl E_L + yr E_R + y0, E_fL = c_L E_L + e0_L - r_L y, E_fR = c_R E_R + e0_R
+  // + r_R y
+  const Real yl = a[0]*cc[0]/den, yr = -a[1]*cc[1]/den, q = 0.375*(th[0] - th[1]);
+  if (s != nullptr) {
+    // the incoming flux of a boundary face (inside, s[0] is the bracket)
+    const Real cb = x.consist ? x.fc[dir](m,CLF_CB,k,j,i) : 0.0;
+    const Real y0 = (a[0]*e0[0] - a[1]*e0[1] + (s[0] - cb)/x.c)/den;
+    s[0] = (1.0 - mu)*s[0] + mu*(cb + x.c*y0);
+    for (int b = 0; b < x.nf; ++b) {
+      s[1+b] += mu*x.c*(ks[0][b]*(e0[0] - r[0]*y0) + ks[1][b]*(e0[1] + r[1]*y0) +
+                        ((b == dir) ? q*y0 : 0.0));
+    }
+    return;
+  }
+  // the E row and the stress columns E (the dissipation of y stays)
+  for (int c = 0; c < 4; ++c) {
+    jl[0][c] *= 1.0 - mu;
+    jr[0][c] *= 1.0 - mu;
+  }
+  jl[0][0] += mu*x.c*yl;
+  jr[0][0] += mu*x.c*yr;
+  for (int b = 0; b < x.nf; ++b) {
+    const Real g = (b == dir) ? q : 0.0;
+    jl[1+b][0] = (1.0 - mu)*jl[1+b][0] +
+                 mu*x.c*(ks[0][b]*(cc[0] - r[0]*yl) + (ks[1][b]*r[1] + g)*yl);
+    jr[1+b][0] = (1.0 - mu)*jr[1+b][0] +
+                 mu*x.c*(ks[1][b]*(cc[1] + r[1]*yr) + (g - ks[0][b]*r[0])*yr);
+  }
+  if (!bdry || !x.consist) return;
+  // the boundary's deviation flux keeps its E part (CleanCellDeviationFlux)
+  const int kc = blo ? k : k - dk, jc = blo ? j : j - dj, ic = blo ? i : i - di;
+  const Real wo = mu*x.c*x.fc[dir](m,CLF_WK,k,j,i)*
+                  x.cs(m,(blo ? CLN_HM : CLN_HP)+dir,kc,jc,ic);
+  for (int b = 0; b < x.nf; ++b) {
+    (blo ? jr : jl)[1+b][0] -= wo*(x.cs(m,CLN_HP+b,kc,jc,ic) +
+                                   x.cs(m,CLN_HM+b,kc,jc,ic));
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCellFaceSource
+//! \brief the E-independent part of the face fluxes (CleanCellM1Source, CleanCellMilne)
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const int k,
+                         const int j, const int i, Real s[4]) {
+  CleanCellM1Source(x, dir, m, k, j, i, s);
+  if (CleanCellMilneWeight(x, dir, m, k, j, i) == 0.0) return;
+  Real jl[4][4], jr[4][4];
+  CleanCellM1Jacobian(x, dir, m, k, j, i, jl, jr);
+  CleanCellMilne(x, dir, m, k, j, i, jl, jr, s);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCellFaceJacobian
+//! \brief derivatives jl, jr of the face fluxes: CleanCellM1Jacobian and the blend of
+//! CleanCellMilne, whose weight and terms CleanCellMilneSetup stores per face (CLF_ML)
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const int k,
+                           const int j, const int i, Real jl[4][4], Real jr[4][4]) {
+  CleanCellM1Jacobian(x, dir, m, k, j, i, jl, jr);
+  const Real mu = x.milne ? x.fc[dir](m,CLF_ML,k,j,i) : 0.0;
+  if (mu == 0.0) return;
+  for (int c = 0; c < 4; ++c) {
+    jl[0][c] *= 1.0 - mu;
+    jr[0][c] *= 1.0 - mu;
+  }
+  for (int r = 1; r <= x.nf; ++r) {
+    jl[r][0] *= 1.0 - mu;
+    jr[r][0] *= 1.0 - mu;
+  }
+  for (int r = 0; r <= x.nf; ++r) {
+    jl[r][0] += x.fc[dir](m,CLF_ML+1+r,k,j,i);
+    jr[r][0] += x.fc[dir](m,CLF_ML+5+r,k,j,i);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanCellFaceFlux
 //! \brief face fluxes f = (fE, fY_1..3) at face (k,j,i) normal to dir of the cell vector
 //! at slot v of x.u; with_source adds the incoming boundary flux and, with
@@ -502,7 +670,7 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
     }
   }
   const bool bdry = CleanBoundaryFace(x, dir, m, k, j, i);
-  if (with_source && (bdry || x.consist)) {
+  if (with_source && (bdry || x.consist || x.milne)) {
     Real s[4];
     CleanCellFaceSource(x, dir, m, k, j, i, s);
     for (int r = 0; r < 4; ++r) f[r] += s[r];
@@ -514,17 +682,19 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
   Real al, hs;
   const bool lo = CleanFaceDissipation(x, dir, m, k, j, i, al, hs);
   const Real s = x.consist ? 1.0 - x.fc[dir](m,CLF_WK,k,j,i) : 1.0;
+  const Real mu = x.milne ? x.fc[dir](m,CLF_ML,k,j,i) : 0.0;
   Real q[4];
   CleanCellRhieChow(x, dir, al, m, k, j, i, q);
   hs *= s;
-  f[0] += s*(q[3]*CleanDiag(x, dir, dir, m, kp, jp, ip)*x.u(m,v,kp,jp,ip) +
-             q[0]*CleanDiag(x, dir, dir, m, km, jm, im)*x.u(m,v,km,jm,im));
+  f[0] += (1.0 - mu)*s*(q[3]*CleanDiag(x, dir, dir, m, kp, jp, ip)*x.u(m,v,kp,jp,ip) +
+                        q[0]*CleanDiag(x, dir, dir, m, km, jm, im)*x.u(m,v,km,jm,im));
   // reconstruction terms of the dissipation in the states of L-1 and R+1
   if (!x.recon || lo) return;
   for (int c = 0; c <= x.nf; ++c) {
     Real cj[4];
     CleanJumpCoefficients(x, dir, c, m, k, j, i, cj);
-    f[c] -= hs*(cj[0]*x.u(m,v+c,km,jm,im) + cj[3]*x.u(m,v+c,kp,jp,ip));
+    f[c] -= (c == 0 ? 1.0 - mu : 1.0)*hs*(cj[0]*x.u(m,v+c,km,jm,im) +
+                                         cj[3]*x.u(m,v+c,kp,jp,ip));
   }
 }
 
@@ -587,11 +757,11 @@ void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, con
       wp[r] = wm[r];
     }
     if (x.sph) CleanCellSphWeights(x, dir, m, k, j, i, wm, wp);
-    if (x.consist || CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di)) {
+    if (x.consist || x.milne || CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di)) {
       CleanCellFaceSource(x, dir, m, k+dk, j+dj, i+di, s);
       for (int r = 0; r < 4; ++r) div[r] += wp[r]*s[r];
     }
-    if (x.consist || CleanBoundaryFace(x, dir, m, k, j, i)) {
+    if (x.consist || x.milne || CleanBoundaryFace(x, dir, m, k, j, i)) {
       CleanCellFaceSource(x, dir, m, k, j, i, s);
       for (int r = 0; r < 4; ++r) div[r] -= wm[r]*s[r];
     }

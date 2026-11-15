@@ -2943,6 +2943,7 @@ class RadiationM1 {
   void CleanCellOldVector();
   void CleanCellFaceCoefficients();
   void CleanCellConsistency();
+  void CleanCellMilneSetup();
   void CleanCellSlopeWeights(const int v);
   void CleanCellFirstIterate();
   void CleanCellRightHandSide();
@@ -2990,6 +2991,7 @@ class RadiationM1 {
   bool cln_all_low = false;     // the solve has every interior face low-order
   bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell
   bool cln_conswt = false;      // clean_consistency_weight: bracket times w(C1)
+  bool cln_milne = false;       // clean_face_model = milne: sub-cell Eddington faces
   bool cln_closit = false;      // clean_closure: predict | iterate
   int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
                                 // | extrap1 (3, cell default)
