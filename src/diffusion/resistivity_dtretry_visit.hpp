@@ -23,12 +23,6 @@ void Resistivity::DtRetryVisit(V &v) {
   v.value("rkg_strang_fuse", rkg_strang_fuse);
   v.value("rkg_half", rkg_half);
   v.value("rkg_dtfac", rkg_dtfac);
-  v.value("rkg_halo_ien_only", rkg_halo_ien_only);
-  v.value("rkg_halo_changed", rkg_halo_changed);
-  v.value("rkg_halo_nstage", rkg_halo_nstage);
-  v.value("rkg_halo_nfull", rkg_halo_nfull);
-  v.value("rkg_halo_nslot", rkg_halo_nslot);
-  v.view("rkg_halo_phys", rkg_halo_phys);
   v.value("cs_resist_x1_centred", cs_resist_x1_centred);
   v.value("sp_resist_x1_centred", sp_resist_x1_centred);
   v.value("tau", tau);

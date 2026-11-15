@@ -13,11 +13,9 @@
 //! either path (unchanged), so the face fields need no test;
 //! - the snapshot is u0 at the input of the first ConToPrim after the LAST u0 refresh,
 //! whichever it was: an RK stage, an RKG super-stage (MHD::RecvU also serves the RKG
-//! list, full or rkg_halo_ien_only-masked: either leaves every ghost equal to the
-//! exchange of the active cells), or the split refresh itself. Under rkg_lean the
-//! intermediate super-stages skip both the exchange and the conversion, so the
-//! snapshot is taken at the final super-stage's conversion, right after its
-//! exchange. The fused-Strang order (rkg_strang_fuse: leading RKG after
+//! list) or the split refresh itself. Under rkg_lean the intermediate super-stages skip
+//! both the exchange and the conversion, so the snapshot is taken at the final
+//! super-stage's conversion, right after its exchange. The fused-Strang order (rkg_strang_fuse: leading RKG after
 //! before_timeintegrator) changes only which refresh is the last one;
 //! - anything that writes a slot other than IEN after the snapshot -- the tracer pass
 //! (TracerSource), a ConToPrim tracer rescale, the Alfven-speed density floor (not a

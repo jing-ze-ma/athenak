@@ -88,13 +88,9 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     const bool lean_ok = pp->pmesh->use_cubed_sphere && !pp->pmesh->multilevel;
     use_rkg_sts = pin->GetOrAddBoolean("mhd", "use_rkg_sts", false);
     if (use_rkg_sts && !pin->DoesParameterExist("mhd", "rkg_lean")) {
-      // an explicit rkg_halo_ien_only = true (which FATALs with rkg_lean) keeps lean off
-      const bool halo = pin->DoesParameterExist("mhd", "rkg_halo_ien_only") &&
-                        pin->GetBoolean("mhd", "rkg_halo_ien_only");
-      const bool ld = nd && lean_ok && !halo;
+      const bool ld = nd && lean_ok;
       recipe::Log(std::string("<mhd>/rkg_lean = ") + (ld ? "true (default on a uniform "
-                  "cubed sphere)" : (nd ? (halo ? "false (rkg_halo_ien_only = true)"
-                  : "false (needs a uniform cubed sphere)")
+                  "cubed sphere)" : (nd ? "false (needs a uniform cubed sphere)"
                   : "false (old default: restart input or recipe none)")));
       rkg_lean = pin->GetOrAddBoolean("mhd", "rkg_lean", ld);
     } else {
@@ -177,17 +173,6 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mhd>/rkg_lean needs a uniform (not multilevel) "
                 << "cubed-sphere mesh" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // rkghalo-1101: read only when named (a deck without it keeps its restart header)
-    // a no-op without use_rkg_sts (no super-stages)
-    if (pin->DoesParameterExist("mhd", "rkg_halo_ien_only")) {
-      rkg_halo_ien_only = use_rkg_sts && pin->GetBoolean("mhd", "rkg_halo_ien_only");
-    }
-    if (rkg_halo_ien_only && (rkg_lean || pp->pmesh->multilevel)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<mhd>/rkg_halo_ien_only needs rkg_lean = false and a "
-                << "uniform (not multilevel) mesh" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     cs_resist_x1_centred = pin->GetOrAddBoolean("mhd", "cs_resist_x1_centred", true);
@@ -329,14 +314,6 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
 // Resistivity destructor
 
 Resistivity::~Resistivity() {
-  if (rkg_halo_ien_only && global_variable::my_rank == 0) {
-    std::cout << "rkg_halo_ien_only: " << rkg_halo_nstage << " super-stages >= 2, "
-              << rkg_halo_nfull << " with every slot exchanged; per slot:";
-    for (int v=0; v<32; ++v) {
-      if (rkg_halo_nslot[v] > 0) {std::cout << " " << v << ":" << rkg_halo_nslot[v];}
-    }
-    std::cout << std::endl;
-  }
 }
 
 void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos, const Real &Rgas, DvceArray4D<Real> &eta_b, const int il, const int iu, const int jl, const int ju, const int kl, const int ku) {

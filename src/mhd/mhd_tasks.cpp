@@ -144,7 +144,7 @@ TaskStatus MHD::InitRecv(Driver *pdrive, int stage) {
   // skipped on BOTH sides (no Irecv here, no send in SendU): ClearRecv/ClearSend then
   // wait on the previous stage's already completed requests, which return at once
   if (!rkg_skip_u) {
-    tstat = pbval_u->InitRecv(nmhd+nscalars, rkg_u_vmask);
+    tstat = pbval_u->InitRecv(nmhd+nscalars);
     if (tstat != TaskStatus::complete) return tstat;
   }
   // post receives for B
@@ -493,7 +493,7 @@ TaskStatus MHD::RestrictU(Driver *pdrive, int stage) {
 
 TaskStatus MHD::SendU(Driver *pdrive, int stage) {
   if (rkg_skip_u) return TaskStatus::complete;
-  TaskStatus tstat = pbval_u->PackAndSendCC(u0, coarse_u0, -1, -1, rkg_u_vmask);
+  TaskStatus tstat = pbval_u->PackAndSendCC(u0, coarse_u0);
   return tstat;
 }
 
@@ -503,7 +503,7 @@ TaskStatus MHD::SendU(Driver *pdrive, int stage) {
 
 TaskStatus MHD::RecvU(Driver *pdrive, int stage) {
   if (rkg_skip_u) return TaskStatus::complete;
-  TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0, -1, -1, rkg_u_vmask);
+  TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0);
   // a u0 refresh; the next ConToPrim takes the split_bval_fast snapshot
   if (sbf_on && tstat == TaskStatus::complete) {sbf_want = true; sbf_valid = false;}
   return tstat;

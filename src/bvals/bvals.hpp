@@ -369,7 +369,7 @@ class MeshBoundaryValues {
   // vmask (default 0 = every variable): post the receives for the variables whose bit
   // is set only (uniform grids: the selected variables travel as one compact block at
   // the start of each buffer, see BvVarList). Must match the PackAndSendCC call on the
-  // sending side. Used by <mhd>/rkg_halo_ien_only.
+  // sending side. Used by <hydro|mhd>/split_bval_fast.
   TaskStatus InitRecv(const int nvar, const int vmask = 0);
   virtual TaskStatus InitFluxRecv(const int nvar)=0;
   TaskStatus ClearRecv();
@@ -532,7 +532,7 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // variables whose bit is set, in increasing order, as a COMPACT block of variables in
   // the buffer (selected variable number vl takes chunk vl; with every variable vl = v
   // and the layout is the usual one). The other variables' ghosts are left as they
-  // are. Uniform grids only (multilevel: FATAL). Used by <mhd>/rkg_halo_ien_only.
+  // are. Uniform grids only (multilevel: FATAL). Used by split_bval_fast.
   TaskStatus PackAndSendCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca,
                            int iwl = -1, int iwu = -1, int vmask = 0);
   TaskStatus RecvAndUnpackCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca,

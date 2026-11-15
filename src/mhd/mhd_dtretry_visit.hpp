@@ -109,7 +109,6 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.view("eint_rst", eint_rst);
   v.value("c2p_track", c2p_track);
   v.value("rkg_skip_u", rkg_skip_u);
-  v.value("rkg_u_vmask", rkg_u_vmask);
   v.value("c2p_split", c2p_split);
   v.value("sbf_on", sbf_on);
   v.value("sbf_want", sbf_want);
