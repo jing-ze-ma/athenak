@@ -121,7 +121,7 @@
 //! STREAM AS A VOLUME SOURCE + DONOR SINK (keys read
 //! only when given, defaults = the boundary window above):
 //!  problem/stream_inject = volume: the domain extends beyond the old r_out (e.g. 1.5
-//! d_L1) and the stream is injected in a NOZZLE, a shell of problem/stream_ncell (2)
+//! d_L1) and the stream is injected in a NOZZLE, a shell of 2
 //! cells whose inner face is the x1 face nearest problem/stream_r (default x1max), inside
 //!    the same phi window: after the sources of every stage those cells are RESET to the
 //!    window state of the old ghosts (rho_s Gaussian, ballistic v at stream_r, T(phi),
@@ -228,13 +228,6 @@ Real rho_s_ = 1.0, phi_s_ = 0.0, sig_ = 0.05, nsig_ = 6.0, vr_s_ = 0.0, vp_s_ = 
 // so that the held Gaussian gas reaches the floor at the window edge instead of a held
 // pressure step against near-vacuum
 Real nsig_rad_ = 3.0;
-// problem/stream_rad_ellipse (read only when named; default false = the
-// rectangle |dphi| < n sigma, |z| < n sigma_z, bitwise): true holds the stream radiation
-// only inside the ELLIPSE (dphi/sigma)^2 + (z/sigma_z)^2 < stream_rad_nsig^2, the
-// optically thick part of the Gaussian (3-D formal solution: E = a T^4 to 1e-3 and
-// comoving F = 0 inside x < 2.7; the rectangle's corners, x 3-4.2, have tau_cell ~0.2
-// and E 5 % below a T^4, F_r ~0.25 cE)
-bool rad_ell_ = false;
 Real hse_cap_ = 40.0;
 // stage 2 (problem/inner = envelope): the resolved stellar envelope, see the header
 bool env_ = false, env_noslip_ = false;
@@ -348,12 +341,10 @@ Real msk_phl1_ = 0.0, msk_xl1_ = 0.0;   // Phi(L1) and the L1 distance from the 
 bool mirr_ = false;            // problem/donor_irr: the mask radiates at T_d
 Real mirr_e_ = 0.0;            // a T_d^4 (code), x donor_irr_scale
 // donor_irr_scale (2-D band: auto = physical 3-D dilution),
-// donor_gdark (von Zeipel beta: E = s a T_loc^4, T_loc^4 = C g_eff^(4 beta), floored),
-// sink_zero_v (zero v in the sink cells after the M1 coupling)
+// donor_gdark (von Zeipel beta: E = s a T_loc^4, T_loc^4 = C g_eff^(4 beta), floored)
 Real mirr_sc_ = 1.0;
 Real mirr_beta_ = 0.0;
 Real mirr_ec_ = 0.0, mirr_ef_ = 0.0;   // s a C (code E per g^(4 beta)) and s a T_floor^4
-bool szv_ = false;
 bool stl1_ = false;            // stream_inject = l1 (the nozzle at L1, Lubow-Shu state)
 int nz_if_ = -1;               // local x1 face index of the nozzle's inner face
 Real l1_c_ = 0.0, l1_t_ = 0.0; // L1 nozzle: speed along -x (km/s) and uniform T (code)
@@ -1908,7 +1899,7 @@ void RyPerLzMark(MeshBlockPack *pmbp) {
 //! energy it removes is the coupling's unpaid work and is not booked, see the end of the
 //! function).  The hydro dt is unchanged (computed before the M1 stage, and these cells
 //! never set it).  Active only while a sink can hold light or follow the stream
-//! (donor_irr on, or the back sink with the stream on); problem/sink_zero_v = false: off.
+//! (donor_irr on, or the back sink with the stream on).
 //! (problem/theta_wall_closed): the hse theta walls exactly closed.  Called by
 //! Hydro::Fluxes after every flux contribution (Riemann + FOFC, etotgrav, WB removal), so
 //! the RK update, the spherical-polar L_z source (it reads x2 IM3 fluxes), the
@@ -1942,8 +1933,8 @@ void RyPerWallFlux(Mesh *pm) {
 //! problem/floor_m1_vcap (read only when named, default false): after the M1
 //! coupling, floor-class gas (rho < env_sponge_rho rho_amb, the floor sponge's density
 //! class) keeps |v| <= env_v_floor_max (rotating frame; the cs metric norm); the kinetic
-//! energy above the cap is removed (not booked, as sink_zero_v).  The floor sponge caps
-//! the same cells in the user sources, but the implicit coupling that follows can give
+//! energy above the cap is removed (not booked, as in the sink cells).  The floor sponge
+//! caps the same cells in the user sources, but the implicit coupling that follows can give
 //! 1e-8 floor gas ~1e3 km/s (the light of the hot nozzle/stream under vet_gd), and the
 //! hydro dt of the next step then follows that floor gas.
 bool flvc_ = false;
@@ -1974,7 +1965,7 @@ void RyPerFloorVcap(Mesh *pm) {
 
 void RyPerM1Post(Mesh *pm) {
   if (flvc_) RyPerFloorVcap(pm);
-  if (!szv_ || !msk_) return;
+  if (!msk_) return;
   if (!(mirr_ || (nzback_ && stvol_ && stream_on_))) return;
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
@@ -2793,8 +2784,6 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const bool g3 = g3d_;
     const Real szz = sz_, wz = nsig_*sz_;
     const Real rww = nsig_rad_*sig_, rwz = nsig_rad_*sz_;
-    const bool rell = rad_ell_;
-    const Real rn2 = SQR(nsig_rad_);
     const bool trc = trc_;
     const int n0 = trc_n0_;
     auto phc = ph->phicc0;
@@ -2908,8 +2897,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
           v.the_array[1] = ((dn*v3 - m30) + om*rj*(dn - d0))*rj*dv;
         }
         v.the_array[2] = (en - e0)*dv;
-        const bool inrw = rell ? (SQR(dph/sg) + (g3 ? SQR(zc/szz) : 0.0) < rn2)
-                               : (fabs(dph) < rww && (!g3 || fabs(zc) < rwz));
+        const bool inrw = fabs(dph) < rww && (!g3 || fabs(zc) < rwz);
         if (srad && inrw) {
           const Real er = (stp || l1) ? sar*SQR(SQR(tn)) : sre;
           v.the_array[3] = (er - urd(m,radm1::M1_E,k,j,i))*dv;
@@ -6180,8 +6168,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   nsig_ = pin->GetOrAddReal("problem", "stream_nsig", 6.0);
   nsig_rad_ = pin->GetOrAddReal("problem", "stream_rad_nsig", std::fmin(3.0, nsig_));
   if (nsig_rad_ > nsig_) fatal("stream_rad_nsig must not exceed stream_nsig");
-  rad_ell_ = pin->DoesParameterExist("problem", "stream_rad_ellipse") &&
-             pin->GetBoolean("problem", "stream_rad_ellipse");
 
   const Real gu = kG*kMsun/(kRsun*kVel*kVel);   // G Msun in (km/s)^2 Rsun
   rp_.gma = gu*ma;
@@ -6435,7 +6421,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   (thsp_w_ > 0.0) ? "on" : "off", thsp_w_*180.0/M_PI, thsp_tau_);
     }
   }
-  // the nozzle shell: stream_ncell cells above the x1 face nearest stream_r
+  // the nozzle shell: 2 cells above the x1 face nearest stream_r
   msk_ = false;
   if (stvol_ || pin->DoesParameterExist("problem", "donor_mask")) {
     if (!env_ || !gen_) fatal("stream_inject = volume / donor_mask need inner = envelope "
@@ -6445,7 +6431,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (pmy_mesh_->mesh_indcs.nx1 != pmy_mesh_->mb_indcs.nx1) {
       fatal("stream_inject = volume needs one MeshBlock in x1");
     }
-    const int nzc = pin->GetOrAddInteger("problem", "stream_ncell", 2);
+    constexpr int nzc = 2;
     auto hxf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
     const int is = pmy_mesh_->mb_indcs.is, ie = pmy_mesh_->mb_indcs.ie;
     int fb = is;
@@ -6453,8 +6439,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (std::fabs(hxf(0,i) - str_r_) < std::fabs(hxf(0,fb) - str_r_)) fb = i;
     }
     if (stl1_) fb -= nzc;     // l1: the nozzle's OUTER face is the face nearest d_L1
-    if (!(nzc >= 1 && fb > is && fb + nzc <= ie + 1)) {
-      fatal("the nozzle (stream_r, stream_ncell) must lie inside the domain");
+    if (!(fb > is && fb + nzc <= ie + 1)) {
+      fatal("the nozzle (stream_r) must lie inside the domain");
     }
     nz_rlo_ = hxf(0,fb);
     nz_rhi_ = hxf(0,fb + nzc);
@@ -6788,8 +6774,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
   // (read, not added: the key stays out of the PAR_DUMP of runs that do not set it)
-  szv_ = !pin->DoesParameterExist("problem", "sink_zero_v") ||
-         pin->GetBoolean("problem", "sink_zero_v");
   flvc_ = pin->DoesParameterExist("problem", "floor_m1_vcap") &&
           pin->GetBoolean("problem", "floor_m1_vcap");
   // problem/t2_reset_exempt (read only when named, default false = bitwise): the

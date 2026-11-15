@@ -993,7 +993,7 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
   const Real b0 = sp_b0*decay;
   const Real p11 = FFPressure(p0, sp_b0, gm1, decay);
   // polar rows: within nband cells of either pole, by ANGLE (independent of blocks)
-  const int nband = pin->GetOrAddInteger("problem", "err_nband", 2);
+  constexpr int nband = 2;
   const Real dth_pole = nband*M_PI/static_cast<Real>(pm->mesh_indcs.nx2);
 
   // sums: [0..3] L1 v,p,rho,b (volume / face weighted), [4] volume, [5] face area

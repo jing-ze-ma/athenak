@@ -961,27 +961,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const std::string gasm = pin->GetOrAddString("problem","he_ic_rad_gas",
                                                  icgdef ? "re_atm" : "column");
     const bool hse = pin->GetOrAddBoolean("problem","he_ic_rad_hse",icgdef);
-    const int maxit = pin->GetOrAddInteger("problem","he_ic_rad_maxit",60);
+    constexpr int maxit = 60;
     const Real tol = pin->GetOrAddReal("problem","he_ic_rad_tol",1.0e-8);
     const Real htol = pin->GetOrAddReal("problem","he_ic_rad_hse_tol",1.0e-6);
-    // (NOTE-hsefix): the HSE outer loop on a near-Eddington column.
+    // HSE outer loop on a near-Eddington column:
     // (1) Gamma = kt F/(c g) of the HSE march is clamped at he_ic_rad_hse_gmax (as
-    //     he_bc_hse_gmax).  Where Gamma > 1 (AG Car B: the kappa rise at T 20-25 kK, tau
-    //     0.5-3 just below R_ph, Gamma 1.3; the file column has a density inversion
-    //     there) the fixed-T march makes rho grow outward, kappa_t(rho) grows with it and
-    //     the E-solve <-> HSE loop ran away (rho overflowed, the solve grid became NaN
-    // and the VET pass failed).  Clamped cells keep a net outward force (Gamma - gmax) g.
+    //     he_bc_hse_gmax).  Where Gamma > 1 the fixed-T march makes rho grow outward,
+    //     kappa_t(rho) grows with it and the E-solve <-> HSE loop runs away.  Clamped
+    //     cells keep a net outward force (Gamma - gmax) g.
     // (2) At the first rise of the outer residual max |dln rho| the update is damped,
     //     ln rho <- (1 - w) ln rho + w ln rho_HSE, w = he_ic_rad_hse_damp, from then on.
-    // (3) The outer loop has its own limit he_ic_rad_hse_maxit (was he_ic_rad_maxit) and
-    //     warns when it does not converge.
-    // A column with Gamma <= gmax and a monotone residual (AG Car A: Gamma <= 0.80) is
-    // bitwise unchanged.
+    // (3) The outer loop has its own limit he_ic_rad_hse_maxit and warns when it does
+    //     not converge.
+    // A column with Gamma <= gmax and a monotone residual is not affected.
     const Real hgmax = pin->GetOrAddReal("problem","he_ic_rad_hse_gmax",0.9);
     const Real hsdamp = pin->GetOrAddReal("problem","he_ic_rad_hse_damp",0.5);
     const int hsmaxo = pin->GetOrAddInteger("problem","he_ic_rad_hse_maxit",400);
     if (!(taua > 0.0 && taub > taua && dtau0 > 0.0 && dlnr > 0.0 && ncore >= 4 &&
-          maxit >= 1 && tol > 0.0 && htol > 0.0 && hgmax > 0.0 && hgmax < 1.0 &&
+          tol > 0.0 && htol > 0.0 && hgmax > 0.0 && hgmax < 1.0 &&
           hsdamp > 0.0 && hsdamp <= 1.0 && hsmaxo >= 1)) {
       HsFatal("problem/he_ic_rad: needs 0 < taua < taub, dtau, dlnr, tol > 0, ncore >= 4,"
               " 0 < hse_gmax < 1, 0 < hse_damp <= 1, hse_maxit >= 1",
@@ -1236,7 +1233,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 "he_ic_rad_gas = re_atm", __LINE__);
       }
       if (afm == "module") {
-        const int amaxit = pin->GetOrAddInteger("problem","he_ic_rad_atm_maxit",200);
+        constexpr int amaxit = 200;
         const Real atol = pin->GetOrAddReal("problem","he_ic_rad_atm_tol",1.0e-12);
         auto ax1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                         pmbp->pcoord->x1v);
@@ -1404,7 +1401,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           std::cout << rfl << " (" << rfl/rpa << " R_ph)" << std::endl;
           if (!(dph < atol)) {
             std::cout << "he_star_m1: he_ic_rad_atm_force: WARNING not converged in "
-                      << "he_ic_rad_atm_maxit = " << amaxit << std::endl;
+                      << amaxit << " iterations" << std::endl;
           }
           for (int i=ia; i<=aie; ++i) {
             if (!(cd[i] > dfl*(1.0 + 1.0e-6))) break;
@@ -2995,11 +2992,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_eq_last_ = pin->GetOrAddBoolean("problem","he_ic_equil_last_march",false);
     hs_eq_tol_ = pin->GetOrAddReal("problem","he_ic_equil_tol",1.0e-9);
     const Real eqdt = pin->GetOrAddReal("problem","he_ic_equil_dtfac",1.0e6);
-    const int eqn = pin->GetOrAddInteger("problem","he_ic_equil_relax_n",40);
+    constexpr int eqn = 40;
     const Real eqrt = pin->GetOrAddReal("problem","he_ic_equil_relax_tol",1.0e-12);
-    if (hs_eq_maxit_ < 1 || !(hs_eq_tol_ > 0.0) || !(eqdt > 0.0) || eqn < 1 ||
-        !(eqrt > 0.0)) {
-      HsFatal("problem/he_ic_equil_maxit, _relax_n >= 1, _tol, _dtfac, _relax_tol > 0",
+    if (hs_eq_maxit_ < 1 || !(hs_eq_tol_ > 0.0) || !(eqdt > 0.0) || !(eqrt > 0.0)) {
+      HsFatal("problem/he_ic_equil_maxit >= 1, _tol, _dtfac, _relax_tol > 0",
               __LINE__);
     }
     pm1->icr_mode |= 2;   // the relax steps are the steady-state solve

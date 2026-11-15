@@ -261,24 +261,9 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
     px0 = pin->GetOrAddReal("problem", "pulse_x0", 0.0);
     pdir = pin->GetOrAddReal("problem", "pulse_dir", 1.0);
   }
-  // <problem>/pulse_fast (TEST key, read only when named; MHD with the
-  // field along x2, b_angle = 90): the pulse is the exact linear FAST magnetosonic simple
-  // wave along x1 (k perpendicular to B), dp = pulse_amp p0 g, drho = dp/c0^2,
-  // dB2 = B0 drho/d0, dvx = pulse_dir c_f drho/d0, c_f^2 = c0^2 + B0^2/d0
-  bool pfast = false;
-  if (pin->DoesParameterExist("problem", "pulse_fast")) {
-    pfast = pin->GetBoolean("problem", "pulse_fast");
-  }
   const Real c0s = std::sqrt(eos.gamma*p0/d0);
   const Real l1m = pmy_mesh_->mesh_size.x1max - pmy_mesh_->mesh_size.x1min;
   gpu_p0_ = p0; gpu_d0_ = d0; gpu_c0_ = c0s; gpu_vamp_ = 1.0;
-  const Real cfs = std::sqrt(SQR(c0s) + (is_mhd ? b0mag*b0mag/d0 : 0.0));
-  const Real pfb = (pfast && is_mhd) ? b0mag : 0.0;   // dB2 = pfb drho/d0
-  if (pfast && is_mhd && std::fabs(bang - 0.5*M_PI) > 1.0e-12) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<problem>/pulse_fast needs b_angle = 90 (field along x2)" << std::endl;
-    exit(EXIT_FAILURE);
-  }
   const bool lm2 = (cbpij != 0.0) || (cbuy != 0.0) || (pamp != 0.0) || (cbut != 0.0) ||
                    (vamp != 1.0) || (ubg1 != 0.0) || (ubg2 != 0.0) || (cbp != 0.0) ||
                    (cbun != 0.0) || (cbkern != 0.0);
@@ -396,13 +381,7 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
         const Real dpp = pamp*p0*std::exp(-SQR(dxp/pw));
         pres += dpp;
         dens += dpp/SQR(c0s);
-        if (pfb != 0.0) {
-          vx += pdir*cfs*dpp/(SQR(c0s)*d0);
-          const Real by = b2 + pfb*dpp/(SQR(c0s)*d0);
-          emag = 0.5*(b1*b1 + by*by + b3*b3);
-        } else {
-          vx += pdir*dpp/(d0*c0s);
-        }
+        vx += pdir*dpp/(d0*c0s);
       }
     }
     u0(m,IDN,k,j,i) = dens;
@@ -427,17 +406,6 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
     }
     if (j==je) {
       b0.x2f(m,k,j+1,i) = b2;
-    }
-    if (pfb != 0.0) {
-      // x2-face field depends on x1 only: divergence-free; value at the cell centre x1
-      Real &x1min = size.d_view(m).x1min;
-      Real &x1max = size.d_view(m).x1max;
-      const Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
-      Real dxp = x1v - px0;
-      dxp -= l1m*std::round(dxp/l1m);
-      const Real by = b2 + pfb*pamp*p0*std::exp(-SQR(dxp/pw))/(SQR(c0s)*d0);
-      b0.x2f(m,k,j,i) = by;
-      if (j==je) b0.x2f(m,k,j+1,i) = by;
     }
     if (bphi0 != 0.0) {
       Real &x1min = size.d_view(m).x1min;
