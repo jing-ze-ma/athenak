@@ -143,6 +143,25 @@ Real CleanDiag(const CleanArgs &x, const int a, const int b, const int m, const 
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanCellDrag
+//! \brief with gas coupling: g_bc = h chi E_k (delta_bc + D_bc)/(c rho), the change of
+//! the advective source -h chi a_b E of row y_b per unit change of y_c + h div fY_c, the
+//! gas momentum the cell gives up (dv = -(dy + h div fY)/(c rho)): the gas velocity taken
+//! implicit in the solve (radiation force and drag), so that the velocity iteration
+//! contracts where the gas responds within h
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellDrag(const CleanArgs &x, const Real chi, const Real rho, const int m,
+                   const int k, const int j, const int i, Real g[3][3]) {
+  const Real s = x.h*chi*x.u(m,CLC_K,k,j,i)/(x.c*rho);
+  for (int b = 0; b < 3; ++b) {
+    for (int c = 0; c < 3; ++c) {
+      g[b][c] = s*((b == c ? 1.0 : 0.0) + CleanDiag(x, b, c, m, k, j, i));
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanJumpCoefficients
 //! \brief coefficients cj of u_{L-1}, u_L, u_R, u_{R+1} in the jump u_R^- - u_L^+ of
 //! component c at face (k,j,i) normal to dir: (0, -1, 1, 0) at first order, with the

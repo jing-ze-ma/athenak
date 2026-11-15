@@ -294,9 +294,11 @@ void RadiationM1::CleanCellFirstIterate() {
 //! \fn void RadiationM1::CleanCellRightHandSide
 //! \brief B_E = E_old + h c kP a T^4 - r h c kE E_k - W, B_y = y_old, each less h div of
 //! the E-independent face fluxes (exchange linearised about the iterate as in
-//! CleanRightHandSide), and the initial guess X = the iterate
+//! CleanRightHandSide), and the initial guess X = the iterate; with gas coupling B_y
+//! adds the iterate's part of the implicit gas velocity (CleanCellDrag)
 
 void RadiationM1::CleanCellRightHandSide() {
+  if (cln_feedback) CleanGhostFill(cln_x, CLC_K, 4);
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -334,6 +336,16 @@ void RadiationM1::CleanCellRightHandSide() {
     x.u(m,CLC_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
                          - rr*hcke*x.w(m,CLW_EK,k,j,i) - work - sdiv[0];
     for (int b = 1; b < 4; ++b) x.u(m,CLC_B+b,k,j,i) = x.u(m,CLC_O+b,k,j,i) - sdiv[b];
+    if (x.feedback) {
+      Real g[3][3], dk[4];
+      CleanCellDrag(x, op(m,M1_OP_T,k,j,i), uh(m,IDN,k,j,i), m, k, j, i, g);
+      CleanCellDivergence(x, CLC_K, m, k, j, i, false, dk);
+      for (int b = 0; b < x.nf; ++b) {
+        for (int c = 0; c < x.nf; ++c) {
+          x.u(m,CLC_B+1+b,k,j,i) += g[b][c]*(x.u(m,CLC_K+1+c,k,j,i) + dk[1+c]);
+        }
+      }
+    }
     for (int b = 0; b < 4; ++b) x.u(m,CLC_X+b,k,j,i) = x.u(m,CLC_K+b,k,j,i);
   });
 }
@@ -352,6 +364,7 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
   CleanGhostFill(cln_x, src, 4);
   CleanArgs x = CleanMakeArgs();
   auto op = opac;
+  auto uh = FluidRef::Get(pmy_pack).u0;
 
   par_for("clc_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -361,11 +374,16 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
     const Real e = x.u(m,src,k,j,i);
     const Real chi = op(m,M1_OP_T,k,j,i);
     x.u(m,dst,k,j,i) = e*(1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*(1.0 - rr)) + div[0];
+    Real g[3][3];
+    if (x.feedback) CleanCellDrag(x, chi, uh(m,IDN,k,j,i), m, k, j, i, g);
     for (int b = 0; b < 3; ++b) {
       Real y = x.u(m,src+1+b,k,j,i);
       if (b < x.nf) {
         y = y*(1.0 + x.h*x.c*chi) + div[1+b];
-        if (x.feedback) y -= x.h*chi*x.w(m,CLW_A1+b,k,j,i)*e;
+        if (x.feedback) {
+          y -= x.h*chi*x.w(m,CLW_A1+b,k,j,i)*e;
+          for (int c = 0; c < x.nf; ++c) y += g[b][c]*(x.u(m,src+1+c,k,j,i) + div[1+c]);
+        }
       }
       x.u(m,dst+1+b,k,j,i) = y;
     }
@@ -388,6 +406,7 @@ void RadiationM1::CleanCellPreconditionerSetup() {
   CleanArgs x = CleanMakeArgs();
   x.recon = false;
   auto op = opac;
+  auto uh = FluidRef::Get(pmy_pack).u0;
 
   par_for("clc_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -402,6 +421,13 @@ void RadiationM1::CleanCellPreconditionerSetup() {
     for (int b = 0; b < 3; ++b) {
       a0[1+b][1+b] = (b < x.nf) ? 1.0 + x.h*x.c*chi : 1.0;
       if (b < x.nf && x.feedback) a0[1+b][0] = -x.h*chi*x.w(m,CLW_A1+b,k,j,i);
+    }
+    if (x.feedback) {
+      Real g[3][3];
+      CleanCellDrag(x, chi, uh(m,IDN,k,j,i), m, k, j, i, g);
+      for (int b = 0; b < x.nf; ++b) {
+        for (int c = 0; c < x.nf; ++c) a0[1+b][1+c] += g[b][c];
+      }
     }
     for (int dir = 0; dir < 3; ++dir) {
       if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
