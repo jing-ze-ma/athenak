@@ -704,7 +704,8 @@ void RadiationM1::CleanCellDiagnose() {
       if (nprint < 25) {
         ++nprint;
         std::printf("CLDIAG i %d j %d E_old %.3e |f_old| %.3f E %.3e |f| %.3f "
-                    "D %.3f %.3f %.3f C1 %.3f J/E %.3e f_ray %.3f %.3f f_old %.3f %.3f f %.3f %.3f "
+                    "D %.3f %.3f %.3f C1 %.3f J/E %.3e f_ray %.3f %.3f "
+                    "f_old %.3f %.3f f %.3f %.3f "
                     "lmin_old %.3e lmin_new %.3e lmin_ray %.3e\n", i - is, j - js, eo,
                     std::sqrt(g1*g1 + g2*g2), e, std::sqrt(f1*f1 + f2*f2), d11, d22, d12,
                     cs(0,CLN_C1,ks,j,i), cs(0,CLN_J,ks,j,i)/fmax(e, 1.0e-300), h1, h2,
