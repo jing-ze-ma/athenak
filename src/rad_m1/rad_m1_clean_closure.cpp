@@ -900,9 +900,10 @@ void RadiationM1::CleanFvSweep() {
   auto cw_ = vgd_cs;
   const bool emi = VetBcEmit();
   const Real iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
-  // (fv: the slopes make the sweep nonlinear; a few passes per build, each starting from
-  // the intensities of the last build)
-  for (int it = 0; it < (o2 ? 8 : 100); ++it) {
+  // (fv: the slopes make the sweep nonlinear and the passes contract slowly, ~0.6 each;
+  // it too is iterated to convergence, else the closure carries the unconverged part
+  // of the build and no steady state is reached)
+  for (int it = 0; it < 100; ++it) {
     Real dmax = 0.0, imax = 0.0;
     Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*n),
     KOKKOS_LAMBDA(const int md, Real &dm, Real &im) {
