@@ -141,7 +141,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   const bool iterate = cln_feedback || (cell && cln_recon) || cln_closit;
   const bool lagged = (cell && cln_recon) || cln_closit;
   const bool t2stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
-  int nit = 0, nit_sum = 0, npic = 0, npos = 0, nmark = 0;
+  int nit = 0, nit_sum = 0, nsolve = 0, npic = 0, npos = 0, nmark = 0;
   bool all_low = false;
   Real dpic = 0.0;
   bool converged = !iterate;
@@ -175,6 +175,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       }
       nit = (cell && cln_gmres_m > 0) ? CleanGMRES() : CleanBiCGStab();
       nit_sum += std::abs(nit);
+      ++nsolve;
       cln_nsolve += 1.0;
       cln_nit += std::abs(nit);
       if (!iterate || nit < 0) break;
@@ -217,9 +218,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (global_variable::my_rank == 0) {
     if (cell) {
       std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pic %d %.2e pos %d mark %d "
-                  "all %d neg %d nreal %d guard %d\n", pmy_pack->pmesh->ncycle, t2_solve,
-                  nit, nit_sum, npic, dpic, npos, nmark, all_low ? 1 : 0, nneg,
-                  cln_nnreal, cln_nguard);
+                  "all %d neg %d nreal %d guard %d solves %d\n", pmy_pack->pmesh->ncycle,
+                  t2_solve, nit, nit_sum, npic, dpic, npos, nmark, all_low ? 1 : 0, nneg,
+                  cln_nnreal, cln_nguard, nsolve);
     } else {
       std::printf("CLEAN cycle %d t2s %d it %d neg %d guard %d\n",
                   pmy_pack->pmesh->ncycle, t2_solve, nit, nneg, cln_nguard);

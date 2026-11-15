@@ -315,7 +315,7 @@ void RadiationM1::CleanCellPreconditionerSetup() {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
-  x.recon = false;
+  x.recon = x.recon && cln_pcrecon;
   auto op = opac;
 
   par_for("clc_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
