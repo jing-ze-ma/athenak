@@ -12,6 +12,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <limits>
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
@@ -769,11 +770,13 @@ Real RadiationM1::CleanCellVelocityUpdate() {
   CleanArgs x = CleanMakeArgs();
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
+  auto op = opac;
+  const Real arad_ = arad;
 
-  Real dvmax = 0.0, vmax = 0.0;
+  Real dvmax = 0.0, vmax = 0.0, femax = 0.0, fvmax = 0.0;
   Kokkos::parallel_reduce("clc_velocity", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max) {
+  KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max, Real &fe_max, Real &fv_max) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/nx1;
@@ -782,20 +785,34 @@ Real RadiationM1::CleanCellVelocityUpdate() {
     j += js;
     i += is;
     const Real d = uh(m,IDN,k,j,i);
-    Real div[4];
-    CleanCellDivergence(x, CLC_K, m, k, j, i, true, div);
+    const Real e = x.u(m,CLC_K,k,j,i), hc = x.h*x.c;
+    const Real chi = op(m,M1_OP_T,k,j,i);
+    Real div[4], adiv[4] = {0.0, 0.0, 0.0, 0.0};
+    CleanCellDivergence(x, CLC_K, m, k, j, i, true, div, adiv);
+    // round-off levels of E (its terms over E) and of dm (the terms of the flux rows,
+    // with that of E in the stress)
+    const Real ek = fabs(e)*(1.0 + hc*op(m,M1_OP_E,k,j,i)) + fabs(x.w(m,CLW_EO,k,j,i));
+    const Real re = (ek + adiv[0] + hc*op(m,M1_OP_P,k,j,i)*arad_*
+                     SQR(SQR(x.w(m,CLW_T,k,j,i))))/fmax(fabs(e), 1.0e-300);
+    fe_max = fmax(fe_max, re);
     Real v2 = 0.0;
     for (int b = 0; b < 3; ++b) {
       Real dm = 0.0;
       if (b < x.nf) {
-        dm = -(x.u(m,CLC_K+1+b,k,j,i) - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c;
+        const Real y = x.u(m,CLC_K+1+b,k,j,i), yo = x.u(m,CLC_O+1+b,k,j,i);
+        dm = -(y - yo + div[1+b])/x.c;
+        fv_max = fmax(fv_max, (fabs(y)*(1.0 + hc*chi) + fabs(yo) + adiv[1+b]*(1.0 + re)
+                               + x.h*chi*fabs(x.w(m,CLW_A1+b,k,j,i)*e))/(x.c*d));
       }
       dv_max = fmax(dv_max, fabs(dm - x.w(m,CLW_DM+b,k,j,i))/d);
       x.w(m,CLW_DM+b,k,j,i) = dm;
       v2 += SQR((uh(m,IM1+b,k,j,i) + dm)/d);
     }
     v_max = fmax(v_max, std::sqrt(v2));
-  }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax));
+  }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(femax),
+  Kokkos::Max<Real>(fvmax));
+  cln_fe = std::numeric_limits<Real>::epsilon()*femax;
+  cln_fv = std::numeric_limits<Real>::epsilon()*fvmax/fmax(vmax, 1.0e-300);
   if (cln_vfreeze != 1) CleanAdvectiveCoefficients();
   return dvmax/fmax(vmax, 1.0e-300);
 }
