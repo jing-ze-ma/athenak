@@ -343,6 +343,8 @@ struct VetMBState {
   bool tbovl = true;
   bool tbdir = true;           // vet_mb_tblock_direct: read rank neighbours directly
   std::vector<int> rdh;        // (4 nrl) host copy of rdep
+  int npb = 1;                 // band passes: a band wider than a block takes cells of
+                               // the neighbours' band, filled by the pass before
 };
 
 namespace {
@@ -352,6 +354,19 @@ KOKKOS_INLINE_FUNCTION
 void VetRegion(const int d, const int nx, const int w, int &r0, int &nr) {
   r0 = (d < 0) ? 0 : ((d == 0) ? w : (w + nx));
   nr = (d == 0) ? nx : w;
+}
+
+// the pass of the band exchange that fills band cell (kk, jj): one per block width
+// between the cell and the active cells (0 for an active cell)
+KOKKOS_INLINE_FUNCTION
+int VetBandPass(const int kk, const int jj, const int nx2, const int nx3, const int b2,
+                const int b3) {
+  auto pass = [](const int c, const int nx, const int b) {
+    const int d = (c < b) ? b - c : ((c >= b + nx) ? c - b - nx + 1 : 0);
+    return (d + nx - 1)/nx;
+  };
+  const int p2 = pass(jj, nx2, b2), p3 = pass(kk, nx3, b3);
+  return (p2 > p3) ? p2 : p3;
 }
 
 //----------------------------------------------------------------------------------------
@@ -400,14 +415,17 @@ void VetAggPost(VetMBState &st, const VetMBState::Agg &A) {
 //! \brief fill the horizontal ghost band (width b2 x b3) of the banded planes A(m,
 //! a0..a0+na-1, b0..b0+nb-1, kk, jj) from the (2 or 8) horizontal neighbours' active
 //! cells: periodic wrap, a device copy between blocks of this rank, MPI (device buffers,
-//! like the boundary machinery) between ranks.  Ghost and source regions never overlap,
-//! so the local copy has no race.  VetBandPost launches the local copy and the pack and
+//! like the boundary machinery) between ranks.  A band wider than a block takes st.npb
+//! passes: pass p fills the cells p block widths out from the neighbours' cells one
+//! width nearer (active cells, or band cells of the pass before), so the local copy,
+//! which writes the cells of its pass only, has no race.  VetBandPost launches the local
+//! copy and the pack and
 //! posts the messages; VetBandWait completes them and unpacks.  Work that does not read
 //! the remote part of the band may be launched in between.
 
 void VetBandPost(VetMBState &st, DvceArray5D<Real> &a, const int a0, const int na,
                  const int b0, const int nb, const int nmb, const int nx2,
-                 const int nx3) {
+                 const int nx3, const int pass) {
   const int nof = st.nof, b2 = st.b2, b3 = st.b3, mreg = st.maxreg;
   const auto oj = st.oj;
   const auto ok = st.ok;
@@ -433,12 +451,9 @@ void VetBandPost(VetMBState &st, DvceArray5D<Real> &a, const int a0, const int n
     if (idx >= nj*nk) return;
     const int kr = idx/nj, jr = idx - kr*nj;
     const int jj = j0 + jr, kk = k0 + kr;
+    if (VetBandPass(kk, jj, nx2, nx3, b2, b3) != pass) return;
     const int aa = a0 + ab/nb, bb = b0 + ab%nb;
-    // a block that is its own neighbour (one block across a periodic direction) wraps
-    // the whole band, which may then be wider than the block
-    const int jsrc = (n == m) ? b2 + VetWrap(jj - b2, nx2) : jj - dj*nx2;
-    const int ksrc = (n == m && b3 > 0) ? b3 + VetWrap(kk - b3, nx3) : kk - dk*nx3;
-    a_(m,aa,bb,kk,jj) = a_(n,aa,bb,ksrc,jsrc);
+    a_(m,aa,bb,kk,jj) = a_(n,aa,bb,kk - dk*nx3,jj - dj*nx2);
   });
 #if MPI_PARALLEL_ENABLED
   st.req.clear();
@@ -566,8 +581,10 @@ void VetBandWait(VetMBState &st, DvceArray5D<Real> &a, const int nmb, const int 
 void VetBandExchange(VetMBState &st, DvceArray5D<Real> &a, const int a0, const int na,
                      const int b0, const int nb, const int nmb, const int nx2,
                      const int nx3) {
-  VetBandPost(st, a, a0, na, b0, nb, nmb, nx2, nx3);
-  VetBandWait(st, a, nmb, nx2, nx3);
+  for (int p = 1; p <= st.npb; ++p) {
+    VetBandPost(st, a, a0, na, b0, nb, nmb, nx2, nx3, p);
+    VetBandWait(st, a, nmb, nx2, nx3);
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -598,7 +615,8 @@ void VetRayRegion(const int d, const int nx, const int b, const int hk, const in
 //! oblique one).  Same values in every cell that is read.
 
 void VetPlanePost(VetMBState &st, DvceArray5D<Real> &a, const int p, const int nray,
-                  const int nmb, const int nx2, const int nx3, const bool loc = true) {
+                  const int nmb, const int nx2, const int nx3, const bool loc = true,
+                  const int pass = 1) {
   const int nof = st.nof, b2 = st.b2, b3 = st.b3, mreg = st.maxreg, hk = st.hk;
   const auto oj = st.oj;
   const auto ok = st.ok;
@@ -622,9 +640,8 @@ void VetPlanePost(VetMBState &st, DvceArray5D<Real> &a, const int p, const int n
     if (idx >= nj*nk) return;
     const int kr = idx/nj, jr = idx - kr*nj;
     const int jj = j0 + jr, kk = k0 + kr;
-    const int jsrc = (n == m) ? b2 + VetWrap(jj - b2, nx2) : jj - dj*nx2;
-    const int ksrc = (n == m && b3 > 0) ? b3 + VetWrap(kk - b3, nx3) : kk - dk*nx3;
-    a_(m,p,r,kk,jj) = a_(n,p,r,ksrc,jsrc);
+    if (VetBandPass(kk, jj, nx2, nx3, b2, b3) != pass) return;
+    a_(m,p,r,kk,jj) = a_(n,p,r,kk - dk*nx3,jj - dj*nx2);
   });
 #if MPI_PARALLEL_ENABLED
   st.req.clear();
@@ -2299,12 +2316,6 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
   }
   st.w2 = static_cast<int>(std::floor(s2)) + 1;
   st.w3 = thrd ? (static_cast<int>(std::floor(s3)) + 1) : 0;
-  if ((st.w2 > nx2 && nbx2 > 1) || (thrd && st.w3 > nx3 && nbx3 > 1)) {
-    VetFatal("<rad_m1>/closure = vet_sc: a ray crosses " + std::to_string(st.w2) + " x "
-             + std::to_string(st.w3) + " cells per layer, more than a MeshBlock ("
-             + std::to_string(nx2) + " x " + std::to_string(nx3)
-             + "): use wider MeshBlocks");
-  }
   // scaling options (read only when given, so that an input without them writes the
   // restart file it always wrote): vet_mb_halo = K exchanges a band K w wide every K
   // layers and recomputes the overlap redundantly (same arithmetic, same numbers);
@@ -2387,11 +2398,7 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
   }
   st.b2 = st.hk*st.w2;
   st.b3 = st.hk*st.w3;
-  if ((st.b2 > nx2 && nbx2 > 1) || (thrd && st.b3 > nx3 && nbx3 > 1)) {
-    VetFatal("<rad_m1>/vet_mb_halo = " + std::to_string(st.hk) + ": the band ("
-             + std::to_string(st.b2) + " x " + std::to_string(st.b3)
-             + " cells) is wider than a MeshBlock");
-  }
+  st.npb = std::max((st.b2 + nx2 - 1)/nx2, thrd ? (st.b3 + nx3 - 1)/nx3 : 1);
   if (!st.raypar && st.hk > 1) {
     VetFatal("<rad_m1>/vet_mb_halo > 1 needs vet_mb_kernel = ray");
   }
@@ -2790,6 +2797,10 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
       VetFatal("<rad_m1>/vet_mb_angles does not accumulate the thin-switch C1 sum "
                "(M1_VET_NL) that implicit_thin_switch / thin_corr / thin_recon need");
     }
+  }
+  if (st.npb > 1 && (st.hk > 1 || st.tb > 1 || st.nlag > 0)) {
+    VetFatal("<rad_m1>/closure = vet_sc: a band wider than a MeshBlock excludes "
+             "vet_mb_halo > 1, vet_mb_tblock and vet_mb_lag");
   }
   if (vet_x1per && (st.ng > 1 || st.tb > 1 || st.nlag > 0 || st.ang ||
                     vet_x1ptol > 0.0)) {
@@ -3624,7 +3635,11 @@ void RadiationM1::VetSweepMB(bool lagged) {
       });
     }
     if (tt == hk && (gl < ngl - 1 || lagged)) {
-      VetPlanePost(st, st.ipl, pw, nrl, nsb, nx2, nx3);
+      for (int p = 1; p < st.npb; ++p) {
+        VetPlanePost(st, st.ipl, pw, nrl, nsb, nx2, nx3, true, p);
+        VetPlaneWait(st, st.ipl, nrl, nsb, nx2, nx3);
+      }
+      VetPlanePost(st, st.ipl, pw, nrl, nsb, nx2, nx3, true, st.npb);
       if (ovl && l < nx1g - 1 && ((l + 1) % nx1) != 0) {
         pend = true;
       } else {
