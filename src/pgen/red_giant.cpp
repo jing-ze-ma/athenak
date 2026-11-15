@@ -603,13 +603,14 @@ Real mlt_owed_ = 0.0;
 // GRID-SCALE MODE out of the closure's target, with one [1 2 1]/4 pass over the faces
 // before the target enters the relaxed profile.
 //
-// THE MECHANISM IT FIXES (measured with a periodic face dump).  The closure asks for D = F_req - F_rad - F_res - F_2s, a ~3 %
-// difference of two ~L numbers, and under the split -div D is deposited into the state
-// the implicit column solve then linearises about.  The sweep answers that source: in
-// gas this optically thick the stiff solve absorbs an imposed source almost completely
-// within one step and carries it as a FACE FLUX, so F_2s picks up ~ -F_used, and the
-// next closure call -- which defines F_used as F_req - F_2s -- reads its own deposit
-// back with the sign that asks for more.  The loop is
+// THE MECHANISM IT FIXES (measured with a periodic face dump).  The closure asks for
+// D = F_req - F_rad - F_res - F_2s, a ~3 % difference of two ~L numbers, and under the
+// split -div D is deposited into the state the implicit column solve then linearises
+// about.  The sweep answers that source: in gas this optically thick the stiff solve
+// absorbs an imposed source almost completely within one step and carries it as a FACE
+// FLUX, so F_2s picks up ~ -F_used, and the next closure call -- which defines F_used
+// as F_req - F_2s -- reads its own deposit back with the sign that asks for more.  The
+// loop is
 //     F_used^(n+1) = F_req - F_2s^n,   F_2s^n = F_2s^eq - a F_used^n,
 // a = theta/(1 + theta) with theta the sweep's diffusion number D dt/dx^2, so the gain
 // is a and any mismatch is amplified by 1/(1 - a) = 1 + theta.  theta is scale

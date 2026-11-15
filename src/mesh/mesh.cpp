@@ -157,8 +157,9 @@ Mesh::Mesh(ParameterInput *pin) :
   // the state (M1 Krylov dot products, coarse-space band sums, vet_gd / ic_rad shell
   // sums, problem-generator IC shell sums) uses the order-independent exact accumulator
   // utils/repro_sum.hpp, and the spherical-polar theta and phi coordinates are computed
-  // from the GLOBAL cell index (<mesh>/sp_phi_global follows it unless named). Default true on a fresh start and on a restart whose input lacks the key
-  // (recorded); <job>/recipe = none keeps false = the block-ordered paths.
+  // from the GLOBAL cell index (<mesh>/sp_phi_global follows it unless named). Default
+  // true on a fresh start and on a restart whose input lacks the key (recorded);
+  // <job>/recipe = none keeps false = the block-ordered paths.
   // <mesh>/layout_invariant_mode = block (default) | exact:
   // block = every sum per MeshBlock in a fixed order, only the per-MeshBlock partials
   // summed exactly (repro::block_mode; +~0 % cost); exact = every cell term deposited

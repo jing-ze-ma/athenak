@@ -299,7 +299,8 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
       << ylo << " " << tbl.dy << "\n"
       << "# comp: X Y Z H2 ion metal_ion mh\n"
       << "# " << model.xhyd << " " << model.yhel << " " << model.MetalFraction() << " "
-      << model.include_h2 << " 1 " << model.include_metal_ion << " " << model.metal_mh << "\n"
+      << model.include_h2 << " 1 " << model.include_metal_ion << " " << model.metal_mh
+      << "\n"
       << "# then ny*nx rows, y (T) slowest: log10(e/rho)[cgs] log10(p/rho)[cgs]\n";
     f.precision(12);
     for (int j=0; j<ny; ++j) {

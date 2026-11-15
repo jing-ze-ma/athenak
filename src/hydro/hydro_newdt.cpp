@@ -474,7 +474,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     MPI_Allreduce(MPI_IN_PLACE, &dtg, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
 #endif
     // the cell diagnostics for the global minimum and (sp) the minima of
-    // the polar rows (7 rows from each pole; lines DTREG polar) and of the rest (DTREG rest), each printed by its owning rank
+    // the polar rows (7 rows from each pole; lines DTREG polar) and of the rest (DTREG
+    // rest), each printed by its owning rank
     auto pmy_x2v_ = pmy_pack->pcoord->x2v;
     auto pmy_x3v_ = pmy_pack->pcoord->x3v;
     // the targets: kind 0 the global minimum (its owner), 1 polar rows, 2 the rest
