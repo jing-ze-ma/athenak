@@ -27,6 +27,7 @@
 //! Only ConToPrimSplit calls are candidates (the RK-stage and split-refresh conversions
 //! always follow a change); the frozen first conversion of a restart is never skipped.
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <type_traits>
@@ -49,7 +50,7 @@ void C2PIdemCopy(V &dst, const V &src) {
 
 KOKKOS_INLINE_FUNCTION
 bool C2PIdemSame(const Real a, const Real b) {
-  using U = std::conditional<sizeof(Real) == 8, unsigned long long, unsigned int>::type;
+  using U = std::conditional<sizeof(Real) == 8, std::uint64_t, std::uint32_t>::type;
   return Kokkos::bit_cast<U>(a) == Kokkos::bit_cast<U>(b);
 }
 
