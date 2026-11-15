@@ -94,6 +94,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_cell = (ly.compare("cell") == 0);
     cln_recon = (rc.compare("plm") == 0);
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",false);
+    cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",false);
     cln_alpha = (al.compare("tau") == 0) ? 0 : (al.compare("tau_sensor") == 0) ? 1 :
                 (al.compare("tau_ray") == 0) ? 2 : (al.compare("one") == 0) ? 3 :
                 (al.compare("zero") == 0) ? 4 : -1;

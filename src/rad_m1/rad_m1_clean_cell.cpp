@@ -176,6 +176,8 @@ void RadiationM1::CleanCellConsistency() {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool cwt = cln_conswt;
+  const Real c1lo = cln_c0, c1hi = cln_c1;
   CleanArgs x = CleanMakeArgs();
 
   // the rays' cell moments Ur
@@ -211,8 +213,12 @@ void RadiationM1::CleanCellConsistency() {
         }
       }
       // none on a low-order face or in an all-low solve (the positivity fallback acts
-      // on U itself)
-      const Real wb = (x.all_low || x.fc[dir](m,CLF_LO,k,j,i) > 0.0) ? 0.0 : 1.0;
+      // on U itself); clean_consistency_weight: the rays' streaming weight of the face
+      Real wb = (x.all_low || x.fc[dir](m,CLF_LO,k,j,i) > 0.0) ? 0.0 : 1.0;
+      if (cwt) {
+        const Real c1 = 0.5*(x.cs(m,CLN_C1,kl,jl,il) + x.cs(m,CLN_C1,k,j,i));
+        wb *= CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
+      }
       for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = wb*(fr[r] - f[r]);
     });
   }
