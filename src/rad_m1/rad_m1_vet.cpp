@@ -1974,6 +1974,8 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     // below the SC closure's own angular/spatial error, 1e-3..1e-2).  0 = exactly
     // vet_x1_npass passes, the default when vet_x1_npass is named without vet_x1_ptol
     // (an existing deck keeps its fixed count) and on a restart whose file lacks the key.
+    // From the second build on an adaptive sweep starts from the last exit plane; a fine
+    // wave on a large background needs vet_x1_ptol ~ 1e-14.
     const bool fixed = np_named || global_variable::restart_run || mbpath;
     vet_x1ptol = pin->GetOrAddReal("rad_m1", "vet_x1_ptol", fixed ? 0.0 : 1.0e-6);
     if (vet_x1ptol < 0.0) {VetFatal("<rad_m1>/vet_x1_ptol must be >= 0");}
@@ -4095,8 +4097,19 @@ void RadiationM1::VetShortCharSweep() {
   Real dprev = -1.0;
   int npdone = 0;
   bool conv = false;
+  // an adaptive sweep after the first build starts from the last build's exit plane (its
+  // periodic image then), not from the boundary inflow
+  const bool warm = adapt && (vet_x1_nbuild > 0.0);
+  if (warm) {
+    auto ip_ = vet_ipl;
+    auto ent_ = vet_x1ent;
+    par_for("m1_vet_x1warm", DevExeSpace(), 0, nmb1, 0, nray - 1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int r, const int k, const int j) {
+      ip_(m,1,r,k,j) = ent_(m,r,k,j);
+    });
+  }
   for (int p = 0; p < npass; ++p) {
-  const bool wrap = vet_x1per && (p > 0);   // layer is (ie) reads the periodic image
+  const bool wrap = vet_x1per && (p > 0 || warm);   // layer is (ie) reads the image
   const bool mrlo = mlo && (p > 0), mrhi = mhi && (p > 0);   // ... or the mirror image
   // only the last pass adds to the moments (adaptive: each pass, on zeroed moments)
   const bool accum = adapt || (p == npass - 1);
