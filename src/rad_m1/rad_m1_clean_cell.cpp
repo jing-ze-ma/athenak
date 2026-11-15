@@ -1069,7 +1069,8 @@ void RadiationM1::CleanCellDiagnose() {
 //! \brief stores the solution: E and F of the cells, the face fluxes of E (f0x*), the gas
 //! momentum and energy, and the stage slopes K = (U - U_old)/h.  The gas takes exactly
 //! the momentum and energy the radiation gives up besides its face fluxes, so both
-//! totals change only by the fluxes through the boundary.
+//! totals change only by the fluxes through the boundary.  cln_neint counts the cells
+//! left with negative internal energy (the fluid's floor would create energy there).
 
 void RadiationM1::CleanCellWriteBack() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1104,8 +1105,10 @@ void RadiationM1::CleanCellWriteBack() {
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
   auto u0_ = u0;
-  par_for("clc_wbcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  Real neint = 0.0;
+  Kokkos::parallel_reduce("clc_wbcell", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &nb) {
     Real div[4];
     CleanCellDivergence(x, CLC_X, m, k, j, i, true, div);
     const Real e = x.u(m,CLC_X,k,j,i);
@@ -1119,6 +1122,8 @@ void RadiationM1::CleanCellWriteBack() {
       }
       den = -(e - e_old) - div[0];
       uh(m,IEN,k,j,i) += den;
+      if (!(uh(m,IEN,k,j,i) >= 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
+                                    SQR(uh(m,IM3,k,j,i)))/uh(m,IDN,k,j,i))) nb += 1.0;
     }
     if (slopes) {
       kk(m,M1_T2_E,k,j,i) = (e - e_old)/h;
@@ -1130,7 +1135,8 @@ void RadiationM1::CleanCellWriteBack() {
     }
     u0_(m,M1_E,k,j,i) = e;
     for (int b = 0; b < 3; ++b) u0_(m,M1_F1+b,k,j,i) = x.c*x.u(m,CLC_X+1+b,k,j,i);
-  });
+  }, Kokkos::Sum<Real>(neint));
+  cln_neint = static_cast<int>(CleanReduce(neint, false));
 }
 
 //----------------------------------------------------------------------------------------
