@@ -2979,8 +2979,8 @@ class RadiationM1 {
   bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell
   bool cln_conswt = false;      // clean_consistency_weight: bracket times w(C1)
   bool cln_closit = false;      // clean_closure: predict | iterate
-  int cln_extrap = 0;           // clean_closure = extrap (1, cell default) | extrap2 (2)
-                                // | extrap1 (3)
+  int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
+                                // | extrap1 (3, cell default)
   bool cln_edd = false;         // clean_closure = eddington (D = I/3, no rays)
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
