@@ -159,14 +159,16 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     // spherical-polar radial grid
     {
       const bool sp_str = pp->pmesh->use_spherical_polar &&
-                          (pp->pmesh->use_grid_stretch_r || pp->pmesh->use_grid_stretch_r_poly);
+                          (pp->pmesh->use_grid_stretch_r ||
+                           pp->pmesh->use_grid_stretch_r_poly);
       if (pin->DoesParameterExist("mhd", "sp_resist_x1_centred")) {
         sp_resist_x1_centred = pin->GetBoolean("mhd", "sp_resist_x1_centred");
       } else if (sp_str) {
         if (nd) {
-          sp_resist_x1_centred = pin->GetOrAddBoolean("mhd", "sp_resist_x1_centred", true);
-          recipe::Log("<mhd>/sp_resist_x1_centred = true (default on a stretched sp radial "
-                      "grid)");
+          sp_resist_x1_centred = pin->GetOrAddBoolean("mhd", "sp_resist_x1_centred",
+                                                      true);
+          recipe::Log("<mhd>/sp_resist_x1_centred = true (default on a stretched sp "
+                      "radial grid)");
         } else {
           recipe::Log(std::string("<mhd>/sp_resist_x1_centred = false (") +
                       (recipe::GetMode(pin) == recipe::Mode::none ? "recipe none"
@@ -176,7 +178,8 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       sp_resist_x1_centred = sp_resist_x1_centred && sp_str;
       if (sp_resist_x1_centred && pp->pmesh->mb_indcs.ng < 2) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<mhd>/sp_resist_x1_centred needs nghost >= 2" << std::endl;
+                  << std::endl << "<mhd>/sp_resist_x1_centred needs nghost >= 2"
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
@@ -489,7 +492,8 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
         e1(m,ke+1,j,i) += 0.5*(eta_b_(m,ks,j,i)+eta_b_(m,ks,j-1,i))*j1(i);
         e2(m,ks,  j,i) += 0.5*(eta_b_(m,ks,j,i)+eta_b_(m,ks,j,i-1))*j2(i);
         e2(m,ke+1,j,i) += 0.5*(eta_b_(m,ks,j,i)+eta_b_(m,ks,j,i-1))*j2(i);
-        e3(m,ks  ,j,i) += 0.25*(eta_b_(m,ks,j,i)+eta_b_(m,ks,j,i-1)+eta_b_(m,ks,j-1,i)+eta_b_(m,ks,j-1,i-1))*j3(i);
+        e3(m,ks  ,j,i) += 0.25*(eta_b_(m,ks,j,i)+eta_b_(m,ks,j,i-1)+eta_b_(m,ks,j-1,i)
+                                +eta_b_(m,ks,j-1,i-1))*j3(i);
       });
     });
     return;
@@ -538,9 +542,12 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
 
     // Add E_{resistive} = \eta J to corner-centered electric fields
     par_for_inner(member, is, ie+1, [&](const int i) {
-      e1(m,k,j,i) += 0.25*(eta_b_(m,k,j,i)+eta_b_(m,k,j-1,i)+eta_b_(m,k-1,j,i)+eta_b_(m,k-1,j-1,i))*j1(i);
-      e2(m,k,j,i) += 0.25*(eta_b_(m,k,j,i)+eta_b_(m,k,j,i-1)+eta_b_(m,k-1,j,i)+eta_b_(m,k-1,j,i-1))*j2(i);
-      e3(m,k,j,i) += 0.25*(eta_b_(m,k,j,i)+eta_b_(m,k,j-1,i)+eta_b_(m,k,j,i-1)+eta_b_(m,k,j-1,i-1))*j3(i);
+      e1(m,k,j,i) += 0.25*(eta_b_(m,k,j,i)+eta_b_(m,k,j-1,i)+eta_b_(m,k-1,j,i)
+                           +eta_b_(m,k-1,j-1,i))*j1(i);
+      e2(m,k,j,i) += 0.25*(eta_b_(m,k,j,i)+eta_b_(m,k,j,i-1)+eta_b_(m,k-1,j,i)
+                           +eta_b_(m,k-1,j,i-1))*j2(i);
+      e3(m,k,j,i) += 0.25*(eta_b_(m,k,j,i)+eta_b_(m,k,j-1,i)+eta_b_(m,k,j,i-1)
+                           +eta_b_(m,k,j-1,i-1))*j3(i);
     });
   });
 
@@ -775,7 +782,6 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b,
   auto &mbbcs_ = pmy_pack->pmb->mb_bcs;
   auto &flx1 = flx.x1f;
   auto oh1_ = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-
     Real e3a, e2a;
     if (one_d) {
       e3a = e3(m,k,j,i);
@@ -810,7 +816,9 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b,
     }
 
     // flx1 = (E X B)_{1} =  ((\eta J) X B)_{1} = \eta (J2*B3 - J3*B2)
-    if (cs_) { e3a = (e3a - ccell(m,k,j)*e2a)/scell(m,k,j); }
+    if (cs_) {
+      e3a = (e3a - ccell(m,k,j)*e2a)/scell(m,k,j);
+    }
     if (wbt0_ && i == is &&
         mbbcs_.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
       fl1 = 0.0;  fr1 = 0.0;
@@ -824,8 +832,10 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b,
     }
   };
   // in 3D the three face loops run as one launch (par_for_fused3)
-  if (!three_d) {par_for("ohm_heat1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1, oh1_);}
-  if (one_d) {return;}
+  if (!three_d) {
+    par_for("ohm_heat1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1, oh1_);
+  }
+  if (one_d) return;
 
   //------------------------------
   // energy fluxes in x2-direction
@@ -884,8 +894,10 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b,
       flx2(m,IEN,k,j,i) += fx2;
     }
   };
-  if (!three_d) {par_for("ohm_heat2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie, oh2_);}
-  if (two_d) {return;}
+  if (!three_d) {
+    par_for("ohm_heat2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie, oh2_);
+  }
+  if (two_d) return;
 
   //------------------------------
   // energy fluxes in x3-direction
@@ -924,9 +936,10 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b,
         + (fr3*bc(m,IBY,k,j,i) + fl3*bc(m,IBY,k-1,j,i))*e1a;
     }
   };
-  par_for_fused3("ohm_heat", DevExeSpace(), nmb1, LoopBox3{ks, ke, js, je, is, ie+1}, oh1_,
-                 LoopBox3{ks, ke, js, je+1, is, ie}, oh2_, LoopBox3{ks, ke+1, js, je, is, ie},
-                 oh3_);
+  par_for_fused3("ohm_heat", DevExeSpace(), nmb1,
+                 LoopBox3{ks, ke, js, je, is, ie+1}, oh1_,
+                 LoopBox3{ks, ke, js, je+1, is, ie}, oh2_,
+                 LoopBox3{ks, ke+1, js, je, is, ie}, oh3_);
 
   return;
 }
@@ -1018,7 +1031,7 @@ void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0,
   }, Kokkos::Min<Real>(dt1), Kokkos::Min<Real>(dt2),Kokkos::Min<Real>(dt3));
 
   dtnew = dt1;
-  if (pmy_pack->pmesh->multi_d) { dtnew = std::min(dtnew, dt2); }
-  if (pmy_pack->pmesh->three_d) { dtnew = std::min(dtnew, dt3); }
+  if (pmy_pack->pmesh->multi_d) dtnew = std::min(dtnew, dt2);
+  if (pmy_pack->pmesh->three_d) dtnew = std::min(dtnew, dt3);
   return;
 }
