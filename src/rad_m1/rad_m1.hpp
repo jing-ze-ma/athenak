@@ -2964,7 +2964,7 @@ class RadiationM1 {
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
-  int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
+  int cln_fillpass = 8;         // clean_fill_passes: closure fill layers (0 consistency)
   bool cln_pred = true;         // clean_predict: closure of the predicted state
   int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
   bool cln_cell = false;        // clean_layout: false staggered, true cell-centred
