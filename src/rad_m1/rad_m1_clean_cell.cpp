@@ -1021,9 +1021,10 @@ void RadiationM1::CleanCellWriteBack() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellClosureSlope
-//! \brief adds sign times the closure-dependent part of the implicit rates of the solution
-//! to the step's last slope K1: the flux divergence of E and F and, with gas coupling, the
-//! advective source chi a E of F with a = v + D v (the gas takes the opposite momentum).
+//! \brief adds sign times the closure-dependent part of the implicit rates of the
+//! solution to the step's last slope K1: the flux divergence of E and F and, with gas
+//! coupling, the advective source chi a E of F with a = v + D v (the gas takes the
+//! opposite momentum).
 //! Called with -1 before and +1 after a closure update, it re-evaluates K1 = f(U^{n+1})
 //! with the new closure.
 
