@@ -195,7 +195,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
        << std::endl << "Input file is likely missing corresponding block" << std::endl;
     exit(EXIT_FAILURE);
   }
-  if (ivar==167 && (pm->pmb_pack->pmhd == nullptr ||
+  if (ivar==169 && (pm->pmb_pack->pmhd == nullptr ||
                     pm->pmb_pack->pmhd->presist == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
        << "Output variable 'mhd_eta' requested in <output> block '"
@@ -234,15 +234,15 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       }
     }
   }
-  if (ivar==166 && (pm->pmb_pack->pradm1 == nullptr)) {
+  if (ivar==168 && (pm->pmb_pack->pradm1 == nullptr)) {
     std::cout << "### FATAL ERROR: m1_gdhr output needs a <rad_m1> block" << std::endl;
     exit(EXIT_FAILURE);
   }
-  if (ivar==165 && (pm->pmb_pack->pradm1 == nullptr)) {
+  if (ivar==167 && (pm->pmb_pack->pradm1 == nullptr)) {
     std::cout << "### FATAL ERROR: m1_thsw output needs a <rad_m1> block" << std::endl;
     exit(EXIT_FAILURE);
   }
-  if (ivar==164 && (pm->pmb_pack->pradm1 == nullptr)) {
+  if (ivar==166 && (pm->pmb_pack->pradm1 == nullptr)) {
     std::cout << "### FATAL ERROR: m1_vsc output needs a <rad_m1> block" << std::endl;
     exit(EXIT_FAILURE);
   }
