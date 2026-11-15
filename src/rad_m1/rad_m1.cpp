@@ -150,7 +150,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_maxpos = pin->GetOrAddInteger("rad_m1","clean_maxpos",3);
     cln_pcsweeps = pin->GetOrAddInteger("rad_m1","clean_pc_sweeps",1);
     // clean_init = given | steady (read only when named: an input without it keeps a
-    // byte-identical parameter dump)
+    // byte-identical parameter dump).  A start out of radiative equilibrium takes steady:
+    // the rays, a steady solution, run ahead of the given field's front.
     if (pin->DoesParameterExist("rad_m1","clean_init")) {
       const std::string ci = pin->GetString("rad_m1","clean_init");
       if (ci != "given" && ci != "steady") {
