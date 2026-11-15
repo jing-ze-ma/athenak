@@ -266,8 +266,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   } else {
     presist = nullptr;
   }
-  // <mhd>/tracer_strang (read only when named). prod1103b default (USER
-  // 11-03): true on a FRESH start (recipe::NewDefaults) whenever rkg_strang_fuse is on
+  // <mhd>/tracer_strang: default true on a FRESH start (recipe::NewDefaults) whenever
+  // rkg_strang_fuse is on
   // and a tracer (x_e or floor) exists and the key is not named; recorded (GetOrAdd)
   // for the run's restarts; a restart whose input lacks the key keeps false (bitwise).
   if (!pin->DoesParameterExist("mhd","tracer_strang") && (tracers.xe || tracers.fl) &&
@@ -463,11 +463,9 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       rst_eint_ideal = pin->GetBoolean("mhd","rst_eint");
     }
     // (read only when named; see MHD::SplitBvalFastOK in mhd_splitbval.cpp).
-    // prod1103 default (USER 11-02/11-03): true on a FRESH start (recipe::NewDefaults),
-    // as the hydro twin; ckbval_1102 + prod_1103 gates: r1m bitwise 40/300 and restart
-    // split (on r1m it never takes the energy-only path: 0 fast refreshes, a no-op). The
-    // value is recorded (GetOrAdd); a restart whose input lacks the key keeps false;
-    // explicit wins.
+    // Default true on a FRESH start (recipe::NewDefaults), as the hydro twin; the value
+    // is recorded (GetOrAdd); a restart whose input lacks the key keeps false; an
+    // explicit key wins.
     if (!pin->DoesParameterExist("mhd","split_bval_fast")) {
       if (recipe::NewDefaults(pin)) {
         pin->GetOrAddBoolean("mhd","split_bval_fast",true);

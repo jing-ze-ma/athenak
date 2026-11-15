@@ -51,7 +51,7 @@ int rep_calls = 0;
 void DtReportInit(ParameterInput *pin, MeshBlockPack *pp, const bool rss) {
   if (pin->DoesParameterExist("mhd", "dt_report")) {
     rep_every = pin->GetInteger("mhd", "dt_report");
-    // prod1103: the report reads the curvilinear cell widths (pcoord dx1/dx2/dx3, sin of
+    // the report reads the curvilinear cell widths (pcoord dx1/dx2/dx3, sin of
     // the cs cell angle), so it is 3-D cubed sphere / spherical polar only; refuse the key
     // elsewhere at start-up instead of switching it off silently.  Hydro has no dt_report.
     if (rep_every > 0 && (!pp->pmesh->three_d || rss ||

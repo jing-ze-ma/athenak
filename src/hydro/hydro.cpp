@@ -277,14 +277,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // or seam resamples, which is all the check below covers.
   sbf_on = pin->DoesParameterExist("hydro","split_bval_fast") ?
            pin->GetBoolean("hydro","split_bval_fast") : true;
-  // prod1103 default (USER 11-02/11-03): split_c2p_once = true on a FRESH start
-  // (recipe::NewDefaults; ckbval_1102: gates a/c/d bitwise where they must be, seed-noise
-  // gate b: the change is at the round-off seed-spread level, worst bin 1.26x the 1e-14
-  // and 1.61x the 1e-12 member spread; -11 % hydro ms/cycle). The value is recorded
-  // (GetOrAdd); a restart whose input lacks the key keeps false (bitwise); an explicit
-  // key wins. With it on, c2p_idempotent is a no-op (bitwise, ckbval_1102 gates_idem).
-  // (USER 11-08): also true on a restart whose input lacks the key (recorded);
-  // only <job>/recipe = none keeps the old false. Name false for .
+  // Default split_c2p_once = true on a fresh start and on a restart whose input lacks the
+  // key (the value is recorded); <job>/recipe = none keeps false and an explicit key
+  // wins.  With it on, c2p_idempotent is a no-op (bitwise).
   if (!pin->DoesParameterExist("hydro","split_c2p_once")) {
     if (recipe::GetMode(pin) != recipe::Mode::none) {
       pin->GetOrAddBoolean("hydro","split_c2p_once",true);
@@ -298,11 +293,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   scp_once = pin->DoesParameterExist("hydro","split_c2p_once") ?
              pin->GetBoolean("hydro","split_c2p_once") : false;
-  // prod1104b default (USER 11-04) WITHDRAWN by (USER 11-05: GPU timing showed
-  // no gain, RSG -2 %, dhj +2 % = noise; it never acts in dhj hydro): c2p_idempotent is
-  // again read only when named, default false on a fresh start. A restart whose input
-  // names it (runs started 11-04/05 recorded true) keeps that value; an explicit key
-  // wins.
+  // c2p_idempotent is read only when named (default false); a restart whose input names
+  // it keeps that value.
   c2pi_on = pin->DoesParameterExist("hydro","c2p_idempotent") ?
             pin->GetBoolean("hydro","c2p_idempotent") : false;
   if (sbf_on && (pmy_pack->pmesh->multilevel ||
@@ -353,15 +345,12 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
                                         wbi_default("wb_clamp_ideal"));
   scratch_level = pin->GetOrAddInteger("hydro","scratch_level",0);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
-  // (hydro.hpp, reconstruct/wb_wall.hpp). USER 11-05: default true on a
-  // FRESH start (recipe::NewDefaults) whenever the x1 dynamic WB scheme is on and the
-  // key is not named (it acts only at closed / reflecting x1 walls); recorded, so the
-  // run's restarts carry it. A restart whose input lacks the key keeps the old
-  // behaviour (false, bitwise); an explicit key always wins.
+  // <hydro>/wall_wb_onesided (hydro.hpp, reconstruct/wb_wall.hpp): default true whenever
+  // the x1 dynamic WB scheme is on and the key is not named, on a fresh start and on a
+  // restart (recorded); it acts only at closed / reflecting x1 walls.  <job>/recipe =
+  // none keeps false and an explicit key always wins.
   if (!pin->DoesParameterExist("hydro","wall_wb_onesided") &&
       use_wellbalance_dynamic && use_wb_x1) {
-    // (USER 11-08): also on a restart whose input lacks the key (recorded);
-    // only <job>/recipe = none keeps the old wall cell. Name false for .
     if (recipe::GetMode(pin) != recipe::Mode::none) {
       pin->GetOrAddBoolean("hydro","wall_wb_onesided",true);
       recipe::Log("<hydro>/wall_wb_onesided = true (default with wellbalance_dynamic + "

@@ -172,9 +172,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // explicit radial term is dropped only when that scheme is on; with etotgrav the
     // energy flux carries the potential either way
     const bool rotpot = pm->pgen->hot_jupiter_param.rot_potential;
-    // problem/sponge_top (default true), problem/sponge_bottom (default false since
-    // 09-30): switch the two velocity sponges at the end of this kernel off; captured by
-    // value.
+    // problem/sponge_top (default true), problem/sponge_bottom (default false):
+    // switch the two velocity sponges at the end of this kernel off; captured by value.
     const bool sponge_top_ = pm->pgen->hot_jupiter_param.sponge_top;
     const Real sp_plo_ = dhj_sp_top_plo_bar, sp_phi_ = dhj_sp_top_phi_bar;
     const Real sp_tau_ = dhj_sp_top_tau;

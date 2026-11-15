@@ -45,7 +45,7 @@ inline Tableau Make(const int tab) {
     t.c31 = 0.5*g;
     t.c32 = b2 - 0.5*g;
   } else if (tab == 2) {
-    // seamE-1106 sdirk2: Alexander's two-stage L-stable SDIRK (g = 1 - 1/sqrt 2): no K1 in
+    // sdirk2: Alexander's two-stage L-stable SDIRK (g = 1 - 1/sqrt 2): no K1 in
     // either stage.  With the Heun average of the start state, stage 2's start is
     // U^n + (1 - g) dt K2 + (the implicit g dt K3): c32 = (1 - g) - g/2.  The hydro keeps
     // Heun (c2 = 1), so the implicit stage 1 at c = g is not the hydro's stage time.

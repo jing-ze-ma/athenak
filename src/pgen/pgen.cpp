@@ -89,7 +89,6 @@ Real ReadHotJupiterBbot(ParameterInput *pin, Mesh *pm) {
   if (has_g) {
     bbot = pin->GetReal("problem", "bbot_gauss")/gauss_per_code;
   } else {
-    // default changed 09-30 (user), was none (fatal if absent)
     bbot = pin->GetOrAddReal("problem", "bbot", 0.0);
   }
   if (global_variable::my_rank == 0) {
@@ -133,7 +132,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm) :
       hot_jupiter_param.sponge_top =
           pin->GetOrAddBoolean("problem","sponge_top",true);
       hot_jupiter_param.sponge_bottom =
-          // default changed 09-30 (user), was true
           pin->GetOrAddBoolean("problem","sponge_bottom",false);
   }
   // check for user-defined boundary conditions
@@ -217,7 +215,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     hot_jupiter_param.sponge_top =
         pin->GetOrAddBoolean("problem","sponge_top",true);
     hot_jupiter_param.sponge_bottom =
-        // default changed 09-30 (user), was true
         pin->GetOrAddBoolean("problem","sponge_bottom",false);
   }
         

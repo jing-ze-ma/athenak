@@ -152,23 +152,21 @@ Mesh::Mesh(ParameterInput *pin) :
           "restart input has no key") + ": the old default, key not added)");
     }
   }
-  // (USER 11-05 "fix invariant") `<mesh>/layout_invariant`: results independent
+  // <mesh>/layout_invariant: results independent
   // of the MeshBlock layout and the rank count. true: every global / shell SUM that feeds
   // the state (M1 Krylov dot products, coarse-space band sums, vet_gd / ic_rad shell
   // sums, problem-generator IC shell sums) uses the order-independent exact accumulator
   // utils/repro_sum.hpp, and the spherical-polar theta and phi coordinates are computed
   // from the GLOBAL cell index (<mesh>/sp_theta_global, sp_phi_global follow it unless
-  // named). Fresh-start default true (recipe::NewDefaults), recorded for restarts; a
-  // restart whose input lacks the key keeps false = the old block-ordered paths, bitwise.
-  // (USER 11-08 "make some defaults"): default true on a fresh start AND on a
-  // restart whose input lacks the key (recorded); recipe none keeps false (not added).
-  // <mesh>/layout_invariant_mode = block (DEFAULT, ) | exact :
+  // named). Default true on a fresh start and on a restart whose input lacks the key
+  // (recorded); <job>/recipe = none keeps false = the block-ordered paths.
+  // <mesh>/layout_invariant_mode = block (default) | exact:
   // block = every sum per MeshBlock in a fixed order, only the per-MeshBlock partials
   // summed exactly (repro::block_mode; +~0 % cost); exact = every cell term deposited
   // exactly (+8 % per cycle on HG). Both are layout / rank-count invariant; they differ
   // from each other at round-off. Recorded for restarts.
   // A RESTART of an SMR/AMR mesh keeps false (the sp vet_gd global geometry is
-  // single-level only and would be fatal; fresh starts as before).
+  // single-level only and would be fatal).
   if (!pin->DoesParameterExist("mesh", "layout_invariant")) {
     const bool rml = global_variable::restart_run &&
         pin->DoesParameterExist("mesh_refinement", "refinement") &&

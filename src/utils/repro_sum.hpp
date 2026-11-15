@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file repro_sum.hpp
-//! \brief (USER 11-05 "fix invariant"): an ORDER-INDEPENDENT sum of doubles.
+//! \brief an ORDER-INDEPENDENT sum of doubles.
 //!
 //! A plain floating-point sum depends on the order of its terms, so every global or
 //! shell sum taken in (MeshBlock, k, j, i) order changes in the last bits with the

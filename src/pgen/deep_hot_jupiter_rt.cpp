@@ -94,7 +94,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // stages left below a floor).  Nothing else books them: they are not fluxes, so
   // they are the part of d(tot-E)/dt that Etot_bot - Etot_top does not contain (see
   // Hydro::c2p_track).  Costs two active-cell kernels per ConToPrim; off by default.
-  // relaxdrag default (USER 11-01): false on a FRESH dhj start (recipe::NewDefaults; the
+  // relaxdrag default: false on a FRESH dhj start (recipe::NewDefaults; the
   // resolved value is written into the input, so restarts continue with it); a restart
   // whose input lacks the key keeps the old default true; an explicit key wins
   if (!pin->DoesParameterExist("problem","relax_drag")) {
@@ -233,12 +233,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
   // <hydro>/lhllc_x1_phi_min, <mhd>/lhlld_x1_phi_min (EOS_Data::x1_phi_min) on dhj:
-  //   FRESH start (recipe::NewDefaults; prod1103, USER 11-03): 0 = the low-Mach fix on
-  //     the radial faces too, hydro AND MHD (mhdab_1102: MHD state within 0.5-2 % of 1,
-  //     the r1m v6 deck's value), = the global default.
+  //   FRESH start (recipe::NewDefaults): 0 = the low-Mach fix on the radial faces too,
+  //     hydro AND MHD, = the global default.
   //   RESTART whose input lacks the key (or <job>/recipe = none): 1, the old dhj-only
-  //     default (user 09-30: the full HLLC/HLLD velocity-jump term on x1 faces), so
-  //     running chains are unchanged.
+  //     default (the full HLLC/HLLD velocity-jump term on x1 faces), so running
+  //     chains are unchanged.
   // An input (or restart) that names the key keeps its value; GetOrAdd records the
   // chosen value so this run's restarts carry it.  To change it on a restart use
   // `-i file` with the key (the command line cannot add a key a restart file lacks).
@@ -323,7 +322,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // read before anything restart-sensitive: the outer BC needs it on restarts too
   bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",true);
   {
-    // (USER): fresh-start default outflow1 (Caltech, all five planets); a
+    // fresh-start default outflow1; a
     // restart whose input lacks the key keeps the old hse
     if (!pin->DoesParameterExist("problem","top_bc")) {
       recipe::Log(recipe::NewDefaults(pin) ? "problem/top_bc = outflow1 (default)"
@@ -535,11 +534,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_dtol = pin->GetOrAddReal("problem","ck_impl_dtol",1.0e-8);
   two_stream_rt::ck_impl_norm_eps =
       pin->GetOrAddReal("problem","ck_impl_norm_eps",1.0e-3);
-  // default changed 09-30 (user), was 8
-  // prod1103c default (USER 11-03 "default become 16"): ck_impl_maxit = 16 on a FRESH
-  // start (recipe::NewDefaults) with ck_implicit when the key is not named (every Caltech
-  // dhj production deck: "reset 09-30 (user): original 3x key"); recorded for restarts.
-  // Otherwise 24 (the 09-30 default) as before; an explicit key wins.
+  // ck_impl_maxit = 16 on a FRESH start (recipe::NewDefaults) with ck_implicit when the
+  // key is not named; recorded for restarts.
+  // Otherwise 24; an explicit key wins.
   if (!pin->DoesParameterExist("problem","ck_impl_maxit") && two_stream_rt::ck_implicit) {
     const bool nd = recipe::NewDefaults(pin);
     pin->GetOrAddInteger("problem","ck_impl_maxit", nd ? 16 : 24);
@@ -570,7 +567,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_colskip =
       pin->GetOrAddBoolean("problem","ck_impl_colskip",true);
   // ck_impl_once / _jreuse / _pred / _every: read here only when named; otherwise the
-  // value (prod1103b fresh default or the old one) is set and recorded below, once the
+  // value (fresh default or the restart default) is set and recorded below, once the
   // fused-Newton configuration is known (before ck_impl_xstep)
   const bool once_named = pin->DoesParameterExist("problem","ck_impl_once");
   two_stream_rt::ck_impl_once =
@@ -591,7 +588,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_jreuse_act =
       pin->GetOrAddReal("problem","ck_impl_jreuse_act",0.25);
   // rank-independent pass control (two_stream_column_ck.hpp)
-  // USER 11-07 make some defaults: problem/ck_impl_global_ctl default true (false = old)
+  // problem/ck_impl_global_ctl: default true (false = per-rank pass control)
   two_stream_rt::ck_impl_global_ctl = pin->GetOrAddBoolean("problem","ck_impl_global_ctl",
                                                            true);
   const bool pred_named = pin->DoesParameterExist("problem","ck_impl_pred");
@@ -892,8 +889,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // call leaves on a bound, 2 = in every cell.  The solution is unchanged either way
   // (CkConserveFlux, utils/two_stream_rt.hpp).  Read only if present, so a run without
   // it writes the same restart header.
-  // default changed 09-30 (user), was 0
-  // prod1103b default (USER 10-28 production key; audit 11-03): ck_impl_conserve = 2 on a
+  // ck_impl_conserve = 2 on a
   // FRESH start (recipe::NewDefaults) with ck_implicit when the key is not named
   // (diagnostic: the solution is unchanged); recorded for the run's restarts.
   if (!pin->DoesParameterExist("problem","ck_impl_conserve")
@@ -957,8 +953,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "IGNORED with ck_impl_refresh_kappa = true: the operator is frozen "
               << "only where the opacity is." << std::endl;
   }
-  // prod1103b defaults (USER 09-24 dhj production "T4 + C2 + E4", approved for every
-  // Caltech dhj production; audit 11-03): on a FRESH start (recipe::NewDefaults) with the
+  // Production defaults ("T4 + C2 + E4"): on a FRESH start (recipe::NewDefaults) with the
   // fused frozen-operator ck_implicit Newton (ck_impl_fuse, ck_impl_frozen_op, debug <=
   // 0, glob = none, aa = 0, reuse_jac = 0, colskip, no warm start, no rt_rad_force), each
   // of these keys that is not named takes the production value and is recorded
@@ -1161,14 +1156,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
   // problem/ck_pcut_bar [bar]: correlated-k is applied where p < ck_pcut_bar (default
-  // 10). prod1103c (USER 11-03 "a switch to just use ck everywhere instead of the pcut"):
-  // ck_pcut_bar = none = NO pressure cut, the ck two-stream covers the whole column to
-  // the inner wall (rt_ck_pcut = the largest Real: the cut search finds the innermost
+  // 10).  ck_pcut_bar = none = NO pressure cut, the ck two-stream covers the whole column
+  // to the inner wall (rt_ck_pcut = the largest Real: the cut search finds the innermost
   // cell, the same as any numeric cut above the deepest column pressure, e.g. the 1e8 of
   // the route-B decks).  FRESH-start default (recipe::NewDefaults) with rt_ck when the
   // fluid names isotropic_conduction = none (route B) and the key is not named, logged as
-  // "ck everywhere"; recorded for restarts.  Otherwise 10 bar as before; a numeric key
-  // works as before.
+  // "ck everywhere"; recorded for restarts.  Otherwise 10 bar; a numeric key is used as
+  // given.
   {
     const std::string fb = pin->DoesBlockExist("mhd") ? "mhd" : "hydro";
     const bool nocond = pin->DoesParameterExist(fb,"isotropic_conduction") &&
@@ -1639,10 +1633,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                     << std::endl;
         }
       }
-      // problem/wb_lobe_cut (USER 11-06 "we should not use wb above the roche
-      // lobe"; opt-in here, default false = bitwise): every WB (x1 and x2/x3, face states
-      // and force) off where Phi > Phi(L1): plain PLM, plain -rho grad Phi
-      // USER 11-07 make some defaults: default true (false = old, no cap)
+      // problem/wb_lobe_cut (default true): every WB (x1 and x2/x3, face states and
+      // force) off where Phi > Phi(L1): plain PLM, plain -rho grad Phi
       if (pin->GetOrAddBoolean("problem","wb_lobe_cut",true)) {
         if (pmbp->pmhd != nullptr) pmbp->pmhd->wb_phimax = phil1;
         if (pmbp->phydro != nullptr) pmbp->phydro->wb_phimax = phil1;
@@ -1671,12 +1663,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // namespace wbtan): the tangential centrifugal (+ tidal, with problem/roche) force as
     // the hydro's own discrete residual of the equipotential equilibrium.  Works with
     // rot_potential alone (centrifugal only) or with roche.
-    // (USER 11-04 "we should not use the tangential tide"): default FALSE
-    // again, fresh start and restart alike (had made it the fresh default
-    // with problem/roche): S_t = -(rho/rho_eq) R_t(W_eq) is wrong wherever the gas is not
-    // the stored equilibrium (the accretor cold spot; on dhj 99.5 % of the top shell lies
-    // on OPEN equipotentials).  Without the key the analytic tangential tide of
-    // problem/roche is used.  A named key (deck, restart input, command line) still wins.
+    // default FALSE, fresh start and restart alike: S_t = -(rho/rho_eq) R_t(W_eq) is
+    // wrong wherever the gas is not the stored equilibrium (the accretor cold spot; on
+    // dhj 99.5 % of the top shell lies on OPEN equipotentials).  Without the key the
+    // analytic tangential tide of problem/roche is used.  A named key (deck, restart
+    // input, command line) still wins.
     if (!pin->DoesParameterExist("problem","roche_wb_tan")) {
       if (roche_on) {
         recipe::Log("problem/roche_wb_tan = false (default since nowbtan-1104: the "
@@ -2733,7 +2724,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // Base field in CODE units (Heaviside-Lorentz, p_mag = B^2/2): problem/bbot, or
       // problem/bbot_gauss converted by ReadHotJupiterBbot (pgen.cpp), which also prints
       // it in both units.  B_r = bbot cos(theta) (r0/r)^3: bbot is the polar field at r0.
-      // default changed 09-30 (user), was none (fatal if absent)
       Real bbot = hot_jupiter ? hot_jupiter_param.bbot
                               : pin->GetOrAddReal("problem","bbot",0.0);
       // problem/remap_bfile (see below) REPLACES the seed: with the key set the dipole is

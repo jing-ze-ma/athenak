@@ -102,7 +102,7 @@ inline int rsolv_nanrep_lines = 0;
 // runs; read once by the Hydro constructor. An input that names the key is unchanged; a
 // RESTART whose embedded input lacks the key keeps the old default (off).
 inline bool fofc_pgen_default = false;
-// (USER 10-19): <hydro>/etotgrav pgen-level support flag. The new default
+// <hydro>/etotgrav pgen-level support flag. The default
 // etotgrav = true (utils/recipe.hpp) applies only where SUPPORTED: a problem generator
 // that fills the potential (phicc0/phi0) and writes its energy with rho*Phi sets this
 // true at static initialisation (he_star_m1, ry_per_accretor); plus an energy equation
@@ -321,8 +321,7 @@ class Hydro {
   void SplitBvalSnap(Driver *pdrive, int stage);
   // <hydro>/split_c2p_once: skip the two ConToPrimSplit tasks when the
   // operator-split source is user_split_once (RTOpSplitBvals converts already).
-  // FRESH-start default true (prod1103; recipe::NewDefaults, hydro.cpp); a restart whose
-  // input lacks the key keeps false.
+  // Default true unless <job>/recipe = none (hydro.cpp).
   bool scp_once = false;
   bool SplitC2POnce() const;
   // <hydro>/c2p_idempotent: a ConToPrimSplit conversion of a state that is
@@ -357,8 +356,8 @@ class Hydro {
   // WB scheme, the wall cell of a closed x1 wall (reflect inner/outer, or a user inner
   // face under wall_closed_ix1; every geometry) reconstructs its WB deviation one-sided
   // towards the interior, and the wall face takes the mirror state. Removes the
-  // closed-wall odd-even v_r mode. Default true on a FRESH start with WB x1 (USER
-  // 11-05, recipe::NewDefaults); a restart whose input lacks the key keeps false.
+  // closed-wall odd-even v_r mode. Default true with WB x1 unless <job>/recipe = none
+  // (hydro.cpp).
   bool wall_wb_onesided = false;
   // ONE-WAY (diode) outer radial face under a USER outer-x1 boundary (set by
   // a problem generator, e.g. dhj problem/top_bc = outflow1): where the interior-side
