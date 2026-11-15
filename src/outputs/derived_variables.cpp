@@ -1324,7 +1324,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     const bool impl = (prm->transport != radm1::M1_TRANSPORT_EXPLICIT) &&
                       (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radm1::M1_IW_WCHI);
     const bool itrans = impl && prm->trans_on && (iw_.extent_int(1) > radm1::M1_IW_N3);
-    const bool dfull = impl && prm->vet_sc && prm->vet_full;
+    const bool dfull = (impl || prm->clean) && prm->vet_sc && prm->vet_full;
     const bool notens = !impl && (prm->tau_closure || prm->vet_col);
     const bool edd = prm->eddington;
     const int chk = prm->chi_kind;
