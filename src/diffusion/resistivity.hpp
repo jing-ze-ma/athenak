@@ -74,16 +74,8 @@ class Resistivity {
   // 0.8 (prod1103, USER 11-03; 0.5 before); a restart whose input lacks the key keeps 0.
   Real rkg_dt_safety = 0.0;
   bool rkg_dt_fe = false;
-  // rkgdt-1101 <mhd>/rkg_lmax_diag = N (read only when named; 0 = off): at the first RKG
-  // super-step, N power iterations for the largest eigenvalue of the actual resistive
-  // operator L B = curl_CT(eta J(B)) (same EMF, wall, seam-sync and CT code as the
-  // super-stages) on the current state; printed against the per-cell bound.  The state
-  // is restored afterwards (diagnostic; not bitwise-neutral for the ledgers of user BCs).
-  int rkg_lmax_diag = 0;
-  bool rkg_lmax_done = false;
   Real LambdaBoundMax(Real *rloc = nullptr, Real *etaloc = nullptr);
   void NewTimeStepRKGFE();
-  void LmaxDiag();
   // stress-free closed inner wall (dhj problem/wall_mhd_mirror = stress_free): B_t = 0
   // on the is face of a USER inner x1 boundary, so the resistive Poynting flux there is 0
   bool wall_bt_zero = false;

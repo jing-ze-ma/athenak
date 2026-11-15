@@ -83,11 +83,6 @@ void Resistivity::AssembleResistRKGTasks(std::map<std::string, std::shared_ptr<T
 }
 
 TaskStatus Resistivity::TotStage(Driver *pdrive, int stage) {
-  // rkgdt-1101 <mhd>/rkg_lmax_diag: once, on the state the first super-step starts from
-  if (rkg_lmax_diag > 0 && !rkg_lmax_done) {
-    rkg_lmax_done = true;
-    LmaxDiag();
-  }
   // rkgstrang-1102: the second half starts from the state the RK stages left; its eta
   // rkgfuse-1102: so does the leading super-step of a fused cycle (rkg_half = 3), which
   // starts from the state the previous cycle's RK stages and split work left

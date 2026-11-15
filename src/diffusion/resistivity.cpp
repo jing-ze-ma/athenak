@@ -166,20 +166,16 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
                   "with STS on cs/sp)" : (nd ? "0 = off (cs/sp only)"
                   : "0 = off (old default: restart input or recipe none)")));
     }
-    if (pin->DoesParameterExist("mhd", "rkg_lmax_diag")) {
-      rkg_lmax_diag = pin->GetInteger("mhd", "rkg_lmax_diag");
-    }
     rkg_dt_fe = (rkg_dt_safety > 0.0);
-    if ((rkg_dt_fe || rkg_lmax_diag > 0) && !use_rkg_sts) {
+    if (rkg_dt_fe && !use_rkg_sts) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<mhd>/rkg_dt_safety and rkg_lmax_diag need use_rkg_sts"
+                << std::endl << "<mhd>/rkg_dt_safety needs use_rkg_sts"
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if ((rkg_dt_fe || rkg_lmax_diag > 0) && !(pp->pmesh->use_cubed_sphere ||
-                                             pp->pmesh->use_spherical_polar)) {
+    if (rkg_dt_fe && !(pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<mhd>/rkg_dt_safety and rkg_lmax_diag: cubed sphere or "
+                << std::endl << "<mhd>/rkg_dt_safety: cubed sphere or "
                 << "spherical polar only" << std::endl;
       std::exit(EXIT_FAILURE);
     }
