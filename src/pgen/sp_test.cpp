@@ -429,12 +429,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the time the radial ghosts of iprob = 11 are evaluated at is t^n + bc_time_frac*dt;
   // Mesh::time advances only at the end of a cycle while the BCs run inside each stage
   sp_bc_tfrac = pin->GetOrAddReal("problem", "bc_time_frac", 0.0);
-  // econsistent = true: the magnetic energy is built from the SAME cell-centred bcc that
-  // ConsToPrim subtracts, so the recovered pressure is exactly uniform and only the
-  // geometric-source/flux-divergence mismatch survives.  false (cs_test's choice): the
-  // analytic b0^2/2, so the |bcc|^2 - b0^2 defect appears as an O(dtheta^2) pressure
-  // ripple, largest in the polar rows -- which then dominates the one-step force.
-  const bool econs = pin->GetOrAddBoolean("problem", "econsistent", true);
   const Real gm1 = (is_mhd ? pmbp->pmhd->peos->eos_data.gamma
                            : pmbp->phydro->peos->eos_data.gamma) - 1.0;
   if (iprob == 11) {
@@ -628,8 +622,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
       rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
       bcc(m,IBZ,k,j,i) = lw*bx3f(m,k,j,i) + rw*bx3f(m,k+1,j,i);
-      bsq = (econs || iprob != 8) ? (SQR(bcc(m,IBX,k,j,i)) + SQR(bcc(m,IBY,k,j,i))
-                                    + SQR(bcc(m,IBZ,k,j,i))) : b0*b0;
+      // the magnetic energy is built from the SAME cell-centred bcc that ConsToPrim
+      // subtracts, so the recovered pressure is exactly uniform and only the
+      // geometric-source/flux-divergence mismatch survives
+      bsq = SQR(bcc(m,IBX,k,j,i)) + SQR(bcc(m,IBY,k,j,i)) + SQR(bcc(m,IBZ,k,j,i));
     }
     u0(m,IEN,k,j,i) = pgas/gm1 + 0.5*dn*(vth*vth + vphi*vphi) + 0.5*bsq;
   });

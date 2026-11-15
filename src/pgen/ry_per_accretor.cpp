@@ -6567,9 +6567,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (!g3d_) rho_s_ = mdot/sum;
     }
   }
-  // the two stabilisers added for the L1 nozzle, keys default: on for l1, off for
-  // volume (stream_back_sink); on with any nozzle/mask (floor_keep_momentum)
-  nzback_ = stvol_ && pin->GetOrAddBoolean("problem", "stream_back_sink", true);
+  // the two stabilisers of the L1 nozzle: the back sink with the volume stream, the
+  // floor that keeps the momentum with any nozzle or donor mask
+  nzback_ = stvol_;
   // problem/stream_sector_light (read, not added:
   // the key stays out of the PAR_DUMP of runs that do not set it; default full = v4)
   ssl_ = 0;
@@ -6620,8 +6620,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       eint_ledger::dump_dir = pin->GetString("problem", "eint_ledger_dir");
     }
   }
-  flmom_ = (stvol_ || pin->DoesParameterExist("problem", "donor_mask")) &&
-           pin->GetOrAddBoolean("problem", "floor_keep_momentum", true);
+  flmom_ = stvol_ || pin->DoesParameterExist("problem", "donor_mask");
   if (pin->DoesParameterExist("problem", "donor_mask")) {
     const std::string dm = pin->GetString("problem", "donor_mask");
     msk_ = (dm.compare("roche") == 0);
