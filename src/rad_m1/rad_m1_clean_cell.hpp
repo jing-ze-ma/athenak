@@ -176,9 +176,7 @@ bool CleanFaceDissipation(const CleanArgs &x, const int dir, const int m, const 
 KOKKOS_INLINE_FUNCTION
 Real CleanCellFaceDistance(const CleanArgs &x, const int dir, const int m, const int k,
                            const int j, const int i) {
-  if (!x.sph) return 1.0/x.idx[dir];
-  if (dir == 0) return x.dxf.x1f(m,k,j,i);
-  return (dir == 1) ? x.dxf.x2f(m,k,j,i) : x.dxf.x3f(m,k,j,i);
+  return x.sph ? x.dxf[dir](m,k,j,i) : 1.0/x.idx[dir];
 }
 
 //----------------------------------------------------------------------------------------
@@ -215,17 +213,8 @@ KOKKOS_INLINE_FUNCTION
 void CleanCellSphWeights(const CleanArgs &x, const int dir, const int m, const int k,
                          const int j, const int i, Real wm[4], Real wp[4]) {
   const Real hv = x.h/x.vol(m,k,j,i);
-  Real am, ap;
-  if (dir == 0) {
-    am = x.area.x1f(m,k,j,i);
-    ap = x.area.x1f(m,k,j,i+1);
-  } else if (dir == 1) {
-    am = x.area.x2f(m,k,j,i);
-    ap = x.area.x2f(m,k,j+1,i);
-  } else {
-    am = x.area.x3f(m,k,j,i);
-    ap = x.area.x3f(m,k+1,j,i);
-  }
+  const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+  const Real am = x.area[dir](m,k,j,i), ap = x.area[dir](m,k+dk,j+dj,i+di);
   for (int r = 0; r < 4; ++r) {
     wm[r] = hv*am;
     wp[r] = hv*ap;
@@ -256,8 +245,8 @@ void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int 
                         const int i, Real g[3]) {
   const Real hv = x.h*x.c/x.vol(m,k,j,i);
   const Real dtt = CleanDiag(x, 1, 1, m, k, j, i), dpp = CleanDiag(x, 2, 2, m, k, j, i);
-  g[0] = -0.5*hv*(dtt + dpp)*(x.area.x1f(m,k,j,i+1) - x.area.x1f(m,k,j,i));
-  g[1] = (x.nf > 1) ? -hv*dpp*(x.area.x2f(m,k,j+1,i) - x.area.x2f(m,k,j,i)) : 0.0;
+  g[0] = -0.5*hv*(dtt + dpp)*(x.area[0](m,k,j,i+1) - x.area[0](m,k,j,i));
+  g[1] = (x.nf > 1) ? -hv*dpp*(x.area[1](m,k,j+1,i) - x.area[1](m,k,j,i)) : 0.0;
   g[2] = 0.0;
 }
 

@@ -65,8 +65,12 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   if (x.sph) {
     auto *pc = pmy_pack->pcoord;
     x.vol = pc->volume;
-    x.area = pc->area;
-    x.dxf = pc->dxface;
+    x.area[0] = pc->area.x1f;
+    x.area[1] = pc->area.x2f;
+    x.area[2] = pc->area.x3f;
+    x.dxf[0] = pc->dxface.x1f;
+    x.dxf[1] = pc->dxface.x2f;
+    x.dxf[2] = pc->dxface.x3f;
     x.x1v = pc->x1v;
     x.x1f = pc->xx1f;
     x.x2v = pc->x2v;
