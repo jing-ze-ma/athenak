@@ -2942,6 +2942,7 @@ class RadiationM1 {
   void CleanCellCopyIterate();
   int CleanCellCountNegative();
   void CleanCellWriteBack();
+  void CleanCellClosureSlope(const Real sign);
 
   bool clean = false;           // <rad_m1>/scheme = clean
   Real cln_c0 = 0.1;            // clean_w_c0: C1 below which w = 0

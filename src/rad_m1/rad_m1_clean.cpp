@@ -246,8 +246,21 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_poslim && cln_nnreal > 0);
   }
 
-  // 6. clean_closure = extrap(2): ray moments of the new state
-  if (cln_extrap > 0 && !t2_fail) CleanClosureAfterSolve();
+  // 6. clean_closure = extrap(2): ray moments of the new state.  The last solve of a
+  //    step also re-evaluates its slope K1 = f(U^{n+1}) with the closure of these rays
+  //    (the difference quotient of the solve carries the extrapolated closure, whose
+  //    error the stiff coupling turns into an O(dt) error of the slope)
+  if (cln_extrap > 0 && !t2_fail) {
+    const bool reslope = cell && t2_solve != M1_T2S_NONE && t2_solve != M1_T2S_STAGE1;
+    if (reslope) CleanCellClosureSlope(-1.0);
+    CleanClosureAfterSolve();
+    if (reslope) {
+      CleanClosureFill();
+      CleanGhostFill(cln_s, 0, CLN_N);
+      CleanCellFaceSpeeds();
+      CleanCellClosureSlope(1.0);
+    }
+  }
   return TaskStatus::complete;
 }
 

@@ -1018,4 +1018,48 @@ void RadiationM1::CleanCellWriteBack() {
   });
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellClosureSlope
+//! \brief adds sign times the closure-dependent part of the implicit rates of the solution
+//! to the step's last slope K1: the flux divergence of E and F and, with gas coupling, the
+//! advective source chi a E of F with a = v + D v (the gas takes the opposite momentum).
+//! Called with -1 before and +1 after a closure update, it re-evaluates K1 = f(U^{n+1})
+//! with the new closure.
+
+void RadiationM1::CleanCellClosureSlope(const Real sign) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Real ih = 1.0/dt_sub;
+  CleanArgs x = CleanMakeArgs();
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  const bool feedback = cln_feedback;
+  auto uh = fl.u0;
+  auto cs = cln_s;
+  auto op = opac;
+  auto kk = t2k1;
+  par_for("clc_clslope", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real div[4];
+    CleanCellDivergence(x, CLC_X, m, k, j, i, true, div);
+    const Real e = x.u(m,CLC_X,k,j,i);
+    kk(m,M1_T2_E,k,j,i) -= sign*div[0]*ih;
+    // velocity of the gas after the write-back
+    Real v[3] = {0.0, 0.0, 0.0};
+    if (feedback) {
+      for (int b = 0; b < 3; ++b) v[b] = uh(m,IM1+b,k,j,i)/uh(m,IDN,k,j,i);
+    }
+    const int dab[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
+    const Real chi = op(m,M1_OP_T,k,j,i);
+    for (int b = 0; b < x.nf; ++b) {
+      Real a = v[b];
+      for (int c = 0; c < 3; ++c) a += cs(m,CLN_D11+dab[b][c],k,j,i)*v[c];
+      kk(m,M1_T2_F1+b,k,j,i) += sign*x.c*(chi*a*e - div[1+b]*ih);
+      kk(m,M1_T2_M1+b,k,j,i) -= sign*chi*a*e/x.c;
+    }
+  });
+}
+
 }  // namespace radm1
