@@ -543,13 +543,15 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // defaults-1114 (USER 11-13 "make some defaults", the R136/HG/RSG key set): where
   // time2_face_fct is on by default (cubed sphere / spherical polar, multi-D implicit
   // transport, hesdirk2; below) the face limiter replaces the redistribution and the
-  // DEFAULT is 0; elsewhere (Cartesian, 1-D) the prod-1108 rule above stays.
+  // DEFAULT is 0; elsewhere (Cartesian, 1-D) the prod-1108 rule above stays.  The clean
+  // scheme does not redistribute (a column-local compensation; the answer would depend
+  // on the MeshBlocks along x1).
   const bool ffct14 = recipe::GetMode(pin) != recipe::Mode::none && sph_geom &&
                       trans_on && time_scheme == M1_TIME_HESDIRK2;
   {
     const bool onecol = pmy_pack->pmesh->mesh_indcs.nx1 == pmy_pack->pmesh->mb_indcs.nx1;
     const bool rnone = recipe::GetMode(pin) == recipe::Mode::none;
-    t2_k1rd = (onecol && !rnone && !ffct14) ? 0.1 : 0.0;
+    t2_k1rd = (onecol && !rnone && !ffct14 && !clean) ? 0.1 : 0.0;
     if (!pin->DoesParameterExist("rad_m1", "time2_k1_redist")) {
       recipe::Log(std::string("<rad_m1>/time2_k1_redist = ") + (t2_k1rd > 0.0 ? "0.1" :
                   "0") + (ffct14 ? " (default, defaults-1114: time2_face_fct)" :
