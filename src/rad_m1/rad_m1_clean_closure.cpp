@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "athena.hpp"
+#include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "rad_m1/rad_m1.hpp"
@@ -23,12 +24,53 @@
 
 namespace radm1 {
 //----------------------------------------------------------------------------------------
+//! \fn void CleanStoreMoments
+//! \brief the closure of a cell from its ray moments q (CLN_* layout, not normalised):
+//! D = K/J, h+- = H+-/J, k+ = K+/J, C1 = <|I - S|>/J; without rays (J = 0) isotropic
+//! and marked for the fill.  The face fluxes are copied.
+
+KOKKOS_INLINE_FUNCTION
+void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &valid,
+                       const Real *q, const int m, const int k, const int j,
+                       const int i) {
+  if (q[CLN_J] > 0.0) {
+    const Real ij = 1.0/q[CLN_J];
+    for (int a = 0; a < 6; ++a) cs(m,CLN_D11+a,k,j,i) = q[CLN_D11+a]*ij;
+    for (int a = 0; a < 3; ++a) {
+      cs(m,CLN_HP+a,k,j,i) = fmax(q[CLN_HP+a]*ij, 0.0);
+      cs(m,CLN_HM+a,k,j,i) = fmin(q[CLN_HM+a]*ij, 0.0);
+    }
+    for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = q[CLN_KP+a]*ij;
+    cs(m,CLN_C1,k,j,i) = fmax(q[CLN_C1]*ij, 0.0);
+    cs(m,CLN_J,k,j,i) = q[CLN_J];
+    valid(m,0,k,j,i) = 1.0;
+  } else {
+    for (int a = 0; a < 3; ++a) {
+      cs(m,CLN_D11+a,k,j,i) = 1.0/3.0;
+      cs(m,CLN_D11+3+a,k,j,i) = 0.0;
+      cs(m,CLN_HP+a,k,j,i) = 0.25;
+      cs(m,CLN_HM+a,k,j,i) = -0.25;
+    }
+    for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
+    cs(m,CLN_C1,k,j,i) = 1.0;
+    cs(m,CLN_J,k,j,i) = 0.0;
+    valid(m,0,k,j,i) = 0.0;
+  }
+  for (int n = CLN_F2; n < CLN_N; ++n) cs(m,n,k,j,i) = q[n];
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanClosure
 //! \brief builds the closure for t^{n+1}.  Both stage solves and a backward-Euler redo end
 //! at t^{n+1}, so one closure serves the whole step; it is rebuilt for a new step or a
 //! new dt.  clean_closure = eddington takes the isotropic closure instead of the rays.
 
 void RadiationM1::CleanClosure() {
+  if (cln_sphere) {
+    if (!cln_havec) CleanClosureSphere();
+    cln_havec = true;
+    return;
+  }
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
   if (cln_havec && time == cln_tc && dt == cln_dtb) return;
@@ -37,16 +79,8 @@ void RadiationM1::CleanClosure() {
     CleanClosureEddington();
   } else {
     CleanPredictState(true);
-
-    // formal solution of the predicted state, with its own source function (no relaxed
-    // source or relaxed scattering J, which would make the closure depend on dt)
-    vcol_srelax = false;
-    vcol_sbl = false;
-    vcol_sesc = false;
-    vscat_jrel = false;
-    VetShortChar();
+    CleanRays();
     if (cln_opsaved) Kokkos::deep_copy(opac, cln_opb);
-    CleanClosureFromRays();
     CleanClosureFill();
   }
   CleanGhostFill(cln_s, 0, CLN_N);
@@ -108,12 +142,7 @@ void RadiationM1::CleanClosureIterate() {
     iw_(m,M1_IW_F2,k,j,i) = cell ? cl*u(m,CLC_K+2,k,j,i) : u0_(m,M1_F1+1,k,j,i);
     iw_(m,M1_IW_F3,k,j,i) = cell ? cl*u(m,CLC_K+3,k,j,i) : u0_(m,M1_F1+2,k,j,i);
   });
-  vcol_srelax = false;
-  vcol_sbl = false;
-  vcol_sesc = false;
-  vscat_jrel = false;
-  VetShortChar();
-  CleanClosureFromRays();
+  CleanRays();
   CleanClosureFill();
   CleanGhostFill(cln_s, 0, CLN_N);
   cln_havec = false;
@@ -136,13 +165,8 @@ void RadiationM1::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
 
   if (solve) {
     CleanPredictState(false);
-    vcol_srelax = false;
-    vcol_sbl = false;
-    vcol_sesc = false;
-    vscat_jrel = false;
-    VetShortChar();
+    CleanRays();
     if (cln_opsaved) Kokkos::deep_copy(opac, cln_opb);
-    CleanClosureFromRays();
   }
 
   auto cs = cln_s;
@@ -293,30 +317,7 @@ void RadiationM1::CleanClosureExtrap() {
       if (line && mn(m,CLN_J,k,j,i) > 0.0) ++ng;
       for (int n = 0; n < CLN_N; ++n) q[n] = mn(m,n,k,j,i);
     }
-    if (q[CLN_J] > 0.0) {
-      const Real ij = 1.0/q[CLN_J];
-      for (int a = 0; a < 6; ++a) cs(m,CLN_D11+a,k,j,i) = q[CLN_D11+a]*ij;
-      for (int a = 0; a < 3; ++a) {
-        cs(m,CLN_HP+a,k,j,i) = fmax(q[CLN_HP+a]*ij, 0.0);
-        cs(m,CLN_HM+a,k,j,i) = fmin(q[CLN_HM+a]*ij, 0.0);
-      }
-      for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = q[CLN_KP+a]*ij;
-      cs(m,CLN_C1,k,j,i) = fmax(q[CLN_C1]*ij, 0.0);
-      cs(m,CLN_J,k,j,i) = q[CLN_J];
-      valid(m,0,k,j,i) = 1.0;
-    } else {
-      for (int a = 0; a < 3; ++a) {
-        cs(m,CLN_D11+a,k,j,i) = 1.0/3.0;
-        cs(m,CLN_D11+3+a,k,j,i) = 0.0;
-        cs(m,CLN_HP+a,k,j,i) = 0.25;
-        cs(m,CLN_HM+a,k,j,i) = -0.25;
-      }
-      for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
-      cs(m,CLN_C1,k,j,i) = 1.0;
-      cs(m,CLN_J,k,j,i) = 0.0;
-      valid(m,0,k,j,i) = 0.0;
-    }
-    for (int n = CLN_F2; n < CLN_N; ++n) cs(m,n,k,j,i) = q[n];
+    CleanStoreMoments(cs, valid, q, m, k, j, i);
   }, Kokkos::Sum<int>(nguard));
   cln_nguard = static_cast<int>(CleanReduce(nguard, false));
   cln_nguard_sum += cln_nguard;
@@ -443,6 +444,149 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
       opac_(m,M1_OP_T,k,j,i) = d*(of + os);
       if (scat) opac_(m,M1_OP_S,k,j,i) = d*os;
     }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanClosureSphere
+//! \brief spherical polar: the exact ray moments of a uniformly bright sphere of radius
+//! R = clean_sphere_radius about the origin seen through vacuum.  Outside it the rays
+//! fill the cone mu > mu_c = sqrt(1 - R^2/r^2) about r_hat: D_rr = (1 + mu_c + mu_c^2)/3,
+//! D_tt = D_pp = (1 - D_rr)/2, h+_r = (1 + mu_c)/2, h-_r = 0,
+//! h+-_t = h+-_p = +-S/(pi (1 - mu_c)) with S = int_{mu_c}^1 sqrt(1 - mu^2) dmu, C1 = 1,
+//! and the half-range stress columns k+^r = (D_rr, 0, 0), k+^t = (k, D_tt/2, 0),
+//! k+^p = (k, 0, D_pp/2) with k = (R/r) (1 + mu_c)/(3 pi); R -> 0 is the point source.
+//! Inside (r <= R) the radiation is isotropic: D = I/3, h+- = +-1/4, k+ = I/6, C1 = 0.
+
+void RadiationM1::CleanClosureSphere() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Real rs = cln_sph_r;
+  auto x1v = pmy_pack->pcoord->x1v;
+  auto cs = cln_s;
+
+  par_for("cln_sphere", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real r = x1v(m,i);
+    Real drr = 1.0/3.0, hpr = 0.25, hmr = -0.25, ht = 0.25, c1 = 0.0, kr = 0.0,
+         krr = 1.0/6.0;
+    if (r > rs) {
+      const Real q = rs/r;
+      const Real mc = std::sqrt(fmax(1.0 - q*q, 0.0));
+      drr = (1.0 + mc + mc*mc)/3.0;
+      hpr = 0.5*(1.0 + mc);
+      hmr = 0.0;
+      // S/(pi (1 - mu_c)) with 1 - mu_c = q^2/(1 + mu_c); S ~ 2 q^3/3 for small q
+      const Real s = 0.5*(std::asin(q) - mc*q);
+      ht = (q > 1.0e-4) ? s*(1.0 + mc)/(M_PI*q*q) : 2.0*q/(3.0*M_PI);
+      c1 = 1.0;
+      kr = q*(1.0 + mc)/(3.0*M_PI);
+      krr = drr;
+    }
+    cs(m,CLN_D11,k,j,i) = drr;
+    cs(m,CLN_D11+1,k,j,i) = 0.5*(1.0 - drr);
+    cs(m,CLN_D11+2,k,j,i) = 0.5*(1.0 - drr);
+    for (int a = 3; a < 6; ++a) cs(m,CLN_D11+a,k,j,i) = 0.0;
+    cs(m,CLN_HP,k,j,i) = hpr;
+    cs(m,CLN_HM,k,j,i) = hmr;
+    for (int a = 1; a < 3; ++a) {
+      cs(m,CLN_HP+a,k,j,i) = ht;
+      cs(m,CLN_HM+a,k,j,i) = -ht;
+    }
+    for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = 0.0;
+    cs(m,CLN_KP,k,j,i) = krr;
+    cs(m,CLN_KP+3,k,j,i) = kr;
+    cs(m,CLN_KP+4,k,j,i) = 0.25*(1.0 - drr);
+    cs(m,CLN_KP+6,k,j,i) = kr;
+    cs(m,CLN_KP+8,k,j,i) = 0.25*(1.0 - drr);
+    cs(m,CLN_C1,k,j,i) = c1;
+    cs(m,CLN_J,k,j,i) = 1.0;
+  });
+  CleanGhostFill(cln_s, 0, CLN_N);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanRays
+//! \brief the formal solution of the state in iw (E, T, F; chi from opac) and its
+//! closure: vet_sc on a Cartesian mesh, vet_gd from the first shell on spherical polar.
+//! The source function is the state's own (no relaxed source or relaxed scattering J,
+//! which would make the closure depend on dt).
+
+void RadiationM1::CleanRays() {
+  vcol_srelax = false;
+  vcol_sbl = false;
+  vcol_sesc = false;
+  vscat_jrel = false;
+  if (!vgd_on) {
+    VetShortChar();
+    CleanClosureFromRays();
+    return;
+  }
+  if (!tau_ready) VetColInit();
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  auto iw_ = iw;
+  auto opac_ = opac;
+  par_for("cln_gd_chi", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks, indcs.ke,
+          indcs.js, indcs.je, indcs.is, indcs.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    iw_(m,M1_IW_KT,k,j,i) = opac_(m,M1_OP_T,k,j,i);
+  });
+  VetGdBuild();
+  CleanClosureFromGd();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanClosureFromGd
+//! \brief the closure from the vet_gd intensities in the local basis (r, theta, phi) of
+//! each cell, mu_b = n . e_b: J = <I>, K_bc = <I mu_b mu_c>, H+-_b = <I mu_b> over mu_b
+//! >< 0, K+^d_b = <I mu_b mu_d> over mu_d > 0 and C1 = <|I - S|>/J (CLN_* layout, as
+//! CleanClosureFromRays; no ray face fluxes).
+
+void RadiationM1::CleanClosureFromGd() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int n = vgd_n, og = vgd_w - indcs.ng;
+  auto vi_ = vgd_i;
+  auto dir_ = vgd_dir;
+  auto cw_ = vgd_cs;
+  auto x2v = pmy_pack->pcoord->x2v;
+  auto x3v = pmy_pack->pcoord->x3v;
+  auto iw_ = iw;
+  auto cs = cln_s;
+  auto valid = cln_v;
+  Real ray_min = cln_raymin;
+  par_for("cln_gd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real st = sin(x2v(m,j)), ct = cos(x2v(m,j));
+    const Real sp = sin(x3v(m,k)), cp = cos(x3v(m,k));
+    const Real s0 = exp(cw_(m,1,k+og,j+og,i));
+    Real q[CLN_N] = {0.0};
+    for (int d = 0; d < n; ++d) {
+      const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
+      const Real mu[3] = {nx*st*cp + ny*st*sp + nz*ct, nx*ct*cp + ny*ct*sp - nz*st,
+                          -nx*sp + ny*cp};
+      const Real iv = vi_(m,d,k+og,j+og,i);
+      const Real a = dir_(d,3)*iv;
+      q[CLN_J] += a;
+      for (int b = 0; b < 3; ++b) {
+        q[CLN_D11+b] += a*mu[b]*mu[b];
+        q[((mu[b] > 0.0) ? CLN_HP : CLN_HM)+b] += a*mu[b];
+        if (!(mu[b] > 0.0)) continue;
+        for (int c = 0; c < 3; ++c) q[CLN_KP+3*b+c] += a*mu[c]*mu[b];
+      }
+      q[CLN_D11+3] += a*mu[0]*mu[1];
+      q[CLN_D11+4] += a*mu[0]*mu[2];
+      q[CLN_D11+5] += a*mu[1]*mu[2];
+      q[CLN_C1] += dir_(d,3)*fabs(iv - s0);
+    }
+    if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) q[CLN_J] = 0.0;
+    CleanStoreMoments(cs, valid, q, m, k, j, i);
   });
 }
 

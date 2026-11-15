@@ -97,6 +97,14 @@ struct CleanArgs {
   int nf;                      // cell layout: number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
   bool multi_d, three_d;
+  // spherical-polar geometry (cell layout): x1 = r, x2 = theta, x3 = phi, vectors in the
+  // local orthonormal basis
+  bool sph;
+  DvceArray4D<Real> vol;       // cell volumes
+  DvceArray4D<Real> area[3];   // face areas normal to x1, x2, x3
+  DvceArray4D<Real> dxf[3];    // distances between the cell centres across those faces
+  DvceArray2D<Real> x1v, x1f;  // cell-centre (volume centroid) and face radii
+  DvceArray2D<Real> x2v, x2f;  // cell-centre and face polar angles
 };
 
 //----------------------------------------------------------------------------------------

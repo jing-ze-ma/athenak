@@ -13,6 +13,8 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <limits>
+#include <string>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -24,6 +26,15 @@
 #include "rad_m1/rad_m1_clean_cell.hpp"
 
 namespace radm1 {
+//----------------------------------------------------------------------------------------
+//! \fn void CleanFatal
+//! \brief stops the run with a message about an unsupported clean-scheme setup
+
+static void CleanFatal(const std::string &msg) {
+  std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << msg << std::endl;
+  std::exit(EXIT_FAILURE);
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanInit
 //! \brief allocates the arrays of the clean solve and checks that the setup is supported
@@ -72,17 +83,33 @@ void RadiationM1::CleanInit() {
     Kokkos::realloc(cln_mc, nmb, CLN_N, n3, n2, n1);
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
   }
-
   Mesh *pm = pmy_pack->pmesh;
-  const bool cartesian = !pm->use_cubed_sphere && !pm->use_spherical_polar;
-  const bool one_block = (pm->nmb_total == 1);
-  if (pm->multilevel || (!one_block && !cln_cell) || !cartesian || !vet_sc ||
-      !vet_full || chat != c_light) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<rad_m1>/scheme = clean currently needs a uniform Cartesian mesh "
-              << "(several MeshBlocks: clean_layout = cell), closure = vet_sc with "
-              << "vet_tensor = full, and chat = c" << std::endl;
-    std::exit(EXIT_FAILURE);
+  if (pm->multilevel || (pm->nmb_total > 1 && !cln_cell) || chat != c_light) {
+    CleanFatal("<rad_m1>/scheme = clean currently needs a uniform mesh (several "
+               "MeshBlocks: clean_layout = cell) and chat = c");
+  }
+  if (pm->use_cubed_sphere) {
+    CleanFatal("<rad_m1>/scheme = clean does not run on the cubed sphere yet");
+  }
+  if (pm->use_spherical_polar) {
+    // the rays are vet_gd's (closure = vet_col with vet_gd) on its fixed direction set,
+    // swept from the first shell, or the analytic sphere (clean_closure = sphere)
+    if (!cln_cell || !(cln_sphere || vgd_on) || cln_consist || pm->use_polar_boundary ||
+        vgd_twin || VgdRotOn() || vra_on || vgd_async) {
+      CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_layout = cell, "
+                 "clean_closure = sphere or closure = vet_col with vet_gd (vet_gd_twin = "
+                 "false, vet_gd_rotate_dt = 0, no vet_rotate_avg or vet_gd_async), no "
+                 "clean_consistency and a wedge clear of the poles");
+    }
+    // (the sweep starts at the first shell; its intensities keep their own memory)
+    vlat_taucut = std::numeric_limits<Real>::max();
+    marena_on = false;
+    cln_init = true;
+    return;
+  }
+  if (cln_sphere || !vet_sc || !vet_full) {
+    CleanFatal("<rad_m1>/scheme = clean on a Cartesian mesh needs closure = vet_sc with "
+               "vet_tensor = full (clean_closure = sphere is for spherical polar)");
   }
   // the formal solution must provide the half-range sums and C1
   impl_beam_hr = true;

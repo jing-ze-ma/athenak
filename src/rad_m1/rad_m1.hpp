@@ -2910,7 +2910,9 @@ class RadiationM1 {
   void CleanClosureAfterSolve();
   void CleanClosureIterate();
   void CleanCellFaceSpeeds();
+  void CleanRays();
   void CleanClosureFromRays();
+  void CleanClosureFromGd();
   void CleanClosureFill();
   void CleanClosureEddington();
   void CleanFaceCoefficients();
@@ -2957,6 +2959,7 @@ class RadiationM1 {
   int CleanCellCountNegative();
   void CleanCellWriteBack();
   void CleanCellClosureSlope(const Real sign);
+  void CleanClosureSphere();
 
   bool clean = false;           // <rad_m1>/scheme = clean
   Real cln_c0 = 0.1;            // clean_w_c0: C1 below which w = 0
@@ -2984,6 +2987,8 @@ class RadiationM1 {
   int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
                                 // | extrap1 (3, cell default)
   bool cln_edd = false;         // clean_closure = eddington (D = I/3, no rays)
+  bool cln_sphere = false;      // clean_closure = sphere (spherical polar)
+  Real cln_sph_r = 0.0;         // clean_sphere_radius
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid

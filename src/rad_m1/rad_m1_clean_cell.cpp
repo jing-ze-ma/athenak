@@ -72,8 +72,7 @@ void RadiationM1::CleanCellFaceCoefficients() {
   const Real h = dt_sub, c = c_light, eps = cln_psi_eps;
   const Real c1lo = cln_c0, c1hi = cln_c1;
   const int mode = cln_alpha;
-  auto &size = pmy_pack->pmb->mb_size;
-  const Real dx[3] = {size.h_view(0).dx1, size.h_view(0).dx2, size.h_view(0).dx3};
+  CleanArgs x = CleanMakeArgs();
   auto cs = cln_s;
   auto op = opac;
   auto u = cln_x;
@@ -104,7 +103,6 @@ void RadiationM1::CleanCellFaceCoefficients() {
     if (dir == 2 && !three_d) continue;
     auto fc = (dir == 0) ? cln_fc1 : ((dir == 1) ? cln_fc2 : cln_fc3);
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    const Real dxd = dx[dir];
     par_for("clc_facecoef", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
@@ -113,6 +111,7 @@ void RadiationM1::CleanCellFaceCoefficients() {
       const Real sray = CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       const Real psi = fmax(u(m,CLC_PSI+dir,k,j,i), u(m,CLC_PSI+dir,kl,jl,il));
       const Real dd = fmax(cs(m,CLN_D11+dir,k,j,i), cs(m,CLN_D11+dir,kl,jl,il));
+      const Real dxd = CleanCellFaceDistance(x, dir, m, k, j, i);
       fc(m,CLF_AL,k,j,i) = CleanDissipationWeight(mode, chi*dxd, psi, sray);
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);
       fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
@@ -136,8 +135,7 @@ void RadiationM1::CleanCellFaceSpeeds() {
   const Real c = c_light;
   const Real c1lo = cln_c0, c1hi = cln_c1;
   const int mode = cln_alpha;
-  auto &size = pmy_pack->pmb->mb_size;
-  const Real dx[3] = {size.h_view(0).dx1, size.h_view(0).dx2, size.h_view(0).dx3};
+  CleanArgs x = CleanMakeArgs();
   auto cs = cln_s;
   auto op = opac;
   auto u = cln_x;
@@ -146,7 +144,6 @@ void RadiationM1::CleanCellFaceSpeeds() {
     if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
     auto fc = (dir == 0) ? cln_fc1 : ((dir == 1) ? cln_fc2 : cln_fc3);
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    const Real dxd = dx[dir];
     par_for("clc_facespeed", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
@@ -155,6 +152,7 @@ void RadiationM1::CleanCellFaceSpeeds() {
       const Real sray = CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       const Real psi = fmax(u(m,CLC_PSI+dir,k,j,i), u(m,CLC_PSI+dir,kl,jl,il));
       const Real dd = fmax(cs(m,CLN_D11+dir,k,j,i), cs(m,CLN_D11+dir,kl,jl,il));
+      const Real dxd = CleanCellFaceDistance(x, dir, m, k, j, i);
       fc(m,CLF_AL,k,j,i) = CleanDissipationWeight(mode, chi*dxd, psi, sray);
       fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
     });
@@ -414,10 +412,22 @@ void RadiationM1::CleanCellPreconditionerSetup() {
     for (int dir = 0; dir < 3; ++dir) {
       if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
       const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-      const Real s = x.h*x.idx[dir];
       const int sm = CleanLineSlotM(dir), sp = CleanLineSlotP(dir);
       CleanCellFaceJacobian(x, dir, m, k+dk, j+dj, i+di, jlp, jrp);
       CleanCellFaceJacobian(x, dir, m, k, j, i, jlm, jrm);
+      if (x.sph) {
+        Real wm[4], wp[4];
+        CleanCellSphWeights(x, dir, m, k, j, i, wm, wp);
+        for (int r = 0; r < 4; ++r) {
+          for (int c = 0; c < 4; ++c) {
+            a0[r][c] += wp[r]*jlp[r][c] - wm[r]*jrm[r][c];
+            x.u(m,sp+4*r+c,k,j,i) = wp[r]*jrp[r][c];
+            x.u(m,sm+4*r+c,k,j,i) = -wm[r]*jlm[r][c];
+          }
+        }
+        continue;
+      }
+      const Real s = x.h*x.idx[dir];
       for (int r = 0; r < 4; ++r) {
         for (int c = 0; c < 4; ++c) {
           a0[r][c] += s*(jlp[r][c] - jrm[r][c]);
@@ -425,6 +435,11 @@ void RadiationM1::CleanCellPreconditionerSetup() {
           x.u(m,sm+4*r+c,k,j,i) = -s*jlm[r][c];
         }
       }
+    }
+    if (x.sph) {
+      Real g[3];
+      CleanCellSphSource(x, m, k, j, i, g);
+      for (int b = 0; b < x.nf; ++b) a0[1+b][0] += g[b];
     }
     // the rows y_b - h_b E of the streaming share (CleanCellKineticRow)
     const Real wc = x.consist ? x.u(m,CLC_WC,k,j,i) : 0.0;
