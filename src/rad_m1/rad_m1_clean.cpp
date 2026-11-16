@@ -160,9 +160,8 @@ void RadiationM1::CleanInit() {
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
   }
   Mesh *pm = pmy_pack->pmesh;
-  if (pm->multilevel || (pm->nmb_total > 1 && !cln_cell) || chat != c_light) {
-    CleanFatal("<rad_m1>/scheme = clean currently needs a uniform mesh (several "
-               "MeshBlocks: clean_layout = cell) and chat = c");
+  if (pm->multilevel || chat != c_light) {
+    CleanFatal("<rad_m1>/scheme = clean currently needs a uniform mesh and chat = c");
   }
   // the boundaries of the clean solve: open (bath, beam; outflow without a bath),
   // reflect, periodic and, in the cell layout, an imposed flux (x1, and x2 with the
