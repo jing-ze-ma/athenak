@@ -2958,6 +2958,7 @@ class RadiationM1 {
   int CleanCountNegative();
   int CleanStagRealizable(const int mark);
   void CleanStagForceDiag();
+  void CleanStagBracket();
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
