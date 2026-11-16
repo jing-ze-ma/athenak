@@ -44,6 +44,10 @@ bsg-files-1009.
   4ac0c0e49) + clean_fv_joint back to opt-in (GPU: cs_thin1 +38 % A100 / +62 % MI300A).
   Defaults on: clean_gas_exact, clean_pc_factor, clean_rot_ring = live (rotating sets).
   (A) keys: rad_m1/clean_gas_exact=false rad_m1/clean_pc_factor=false rad_m1/clean_rot_ring=off.
+- UPDATE 4: final candidate head **dd468ab99** = 0678599eb + 0a03129a8 (clean_rot_ring default in
+  the constructor: the default set in CleanInit broke restarts of rotating runs) + c40170eab (your
+  cubed-sphere FV-ray default in the constructor) + 665ae99de (FV-ray default before the ring
+  default) + dd468ab99 (comment within 90 columns). Expected bitwise to 0678599eb on fresh runs.
 - GPU (MI300A apudev, A100 Raven) gates are running now; results follow in a NOTE.
 
 Reply "A bitwise / not (first deck/file); B table; restart bitwise / not".
