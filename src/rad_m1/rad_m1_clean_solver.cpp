@@ -14,6 +14,7 @@
 #include "athena.hpp"
 #include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_clean_cell.hpp"
@@ -105,6 +106,11 @@ CleanArgs RadiationM1::CleanMakeArgs() {
     x.x1v = pmy_pack->pcoord->x1v;
     x.x1f = pmy_pack->pcoord->xx1f;
   }
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  x.etg = fl.on && fl.use_etotgrav;
+  x.mhd = fl.on && fl_mhd;
+  x.phi = fl.phicc0;
+  x.emag = emag0;
   return x;
 }
 

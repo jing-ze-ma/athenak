@@ -1627,7 +1627,7 @@ void RadiationM1::CleanCellWriteBack() {
       } else {
         // the gas eint changes by the exchange of the solve only
         const Real ke = 0.5*(SQR(pg[0]) + SQR(pg[1]) + SQR(pg[2]))/uh(m,IDN,k,j,i);
-        if (uh(m,IEN,k,j,i) + den - ke - wk < 0.0) nb += 1.0;
+        if (CleanGasEint(x, uh, ke + wk, m, k, j, i) + den < 0.0) nb += 1.0;
       }
       uh(m,IEN,k,j,i) += den;
     }

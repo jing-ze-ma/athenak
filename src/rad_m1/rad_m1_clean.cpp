@@ -864,7 +864,7 @@ void RadiationM1::CleanOldVector() {
       Real p[3];
       CleanGasMomentum(x, uh, m, k, j, i, p);
       const Real ekin = 0.5*(SQR(p[0]) + SQR(p[1]) + SQR(p[2]))/d;
-      const Real eint = fmax(uh(m,IEN,k,j,i) - ekin, 0.0);
+      const Real eint = fmax(CleanGasEint(x, uh, ekin, m, k, j, i), 0.0);
       t = eos.Temperature(d, eint);
       w(m,CLW_EI,k,j,i) = eint;
     }
