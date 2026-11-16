@@ -239,8 +239,11 @@ void RadiationM1::CleanInit() {
   if (pm->use_spherical_polar) {
     // the rays are vet_gd's (closure = vet_col with vet_gd) on its fixed direction set,
     // swept from the first shell, or the analytic sphere (clean_closure = sphere)
-    if (!cln_cell || !(cln_sphere || vgd_on) || (cln_consist && !vgd_on) ||
-        vgd_twin || vgd_async || (VgdRotOn() && cln_rfv == 0)) {
+    // (staggered: r and r-theta, no clean_consistency; also clean_closure = eddington)
+    const bool stg = !cln_cell && !cln_consist && !pm->three_d;
+    if ((!cln_cell && !stg) || !(cln_sphere || vgd_on || (stg && cln_edd)) ||
+        (cln_consist && !vgd_on) || vgd_twin || vgd_async ||
+        (VgdRotOn() && cln_rfv == 0)) {
       CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_layout = "
                  "cell, clean_closure = sphere (no clean_consistency) or closure = "
                  "vet_col with vet_gd (vet_gd_twin = false, no vet_gd_async; a rotating "
@@ -1549,7 +1552,7 @@ void RadiationM1::CleanWriteBack() {
       if (three_d) div += x.idx[2]*(f3(m,k+1,j,i) - f3(m,k,j,i));
       // (clean_stag_split: the faces store F^H, E moved by the energy flux)
       den = -(e - x.w(m,CLW_EO,k,j,i)) -
-            (xh.hi ? CleanFluxDivergence(x, CLW_X, m, k, j, i, true) : h*div);
+            ((xh.hi || x.sph) ? CleanFluxDivergence(x, CLW_X, m, k, j, i, true) : h*div);
       uh(m,IEN,k,j,i) += den;
     }
     if (slopes) {
