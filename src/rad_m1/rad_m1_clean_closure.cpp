@@ -1938,13 +1938,14 @@ void RadiationM1::CleanFvSweep() {
   int lseg = 1;
   for (const auto &sg : cln_fvseg) lseg = std::max(lseg, sg[1] - sg[0] + 1);
   Kokkos::View<Kokkos::MinMaxScalar<Real>*, DevMemSpace> rsg("cln_fv_rsg", lseg);
+  using RedView = decltype(Kokkos::subview(rsg, 0));
   for (int it = 0; it < 100; ++it) {
     Real dmax = 0.0, imax = 0.0;
     if (axi) Kokkos::deep_copy(cln_fvx, fi);
     if (act) Kokkos::deep_copy(done, -1);
     const int l1 = (jt && it > 0) ? std::min(cln_fvl0, nlev) : 0;
     // one level (sg > 0: only the cells of cycle segment sg) into the reduction rv
-    auto level = [&](const int l, const int sg, auto rv) {
+    auto level = [&](const int l, const int sg, const RedView rv) {
     const int64_t k0 = cln_fvkl[l];
     const int nkb = static_cast<int>(cln_fvkl[l+1] - k0);
     Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0,

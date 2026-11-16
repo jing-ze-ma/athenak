@@ -904,7 +904,7 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
           for (int r = 0; r < 4; ++r) {
             for (int l = 0; l < 4; ++l) {
               const Real g = f[l][r];
-              if constexpr (kStore) {
+              if (kStore) {
                 lf(m,32*ir+((sd < 0) ? 0 : 16)+4*r+l,k-ks,j-js,i-is) = g;
               }
               for (int c = 0; c < 4; ++c) {
@@ -955,7 +955,7 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
           }
           b[r][4] = rhs;
         }
-        if constexpr (kStore) {
+        if (kStore) {
           int k, j, i;
           cell(n, k, j, i);
           Real lu[4][4], piv[4];
