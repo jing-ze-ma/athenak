@@ -1491,8 +1491,8 @@ void RadiationM1::CleanStagBracket() {
 //! cell's momentum flux is the rays' kinetic upwind flux of the face momentum,
 //!   P_i = (1 - w_i) [(D E)_i - al_i [F]_i/(2c)] + w_i (h+_i F_lo + h-_i F_hi)/c,
 //! the staggered form of the cell layout's c (h+ y_L + h- y_R) (y = F/c; a beam, F = c E,
-//! h+ = 1, gives D E = E), and on spherical polar the w share of the curvature terms of
-//! D E is dropped (the cell layout's streaming share has the rays' own).  It telescopes,
+//! h+ = 1, gives D E = E), on spherical polar in area form, (1/dx +- s) P_R,L (s of
+//! CleanStagSph: the w share keeps 2 P_rr/r, F r^2 of a beam is steady).  It telescopes,
 //! the lines stay tridiagonal (M-matrix: h+ >= 0 >= h-), and w = al = 0 keeps F^H.
 
 void RadiationM1::CleanStagFSolve(const int e) {
@@ -1516,8 +1516,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
       fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
       fc(m,CLF_N+1,k,j,i) = 0.0;
       if (!fk || CleanBoundaryFace(x, dir, m, k, j, i)) return;
-      // (fkin: the w share of the transverse stresses D_{dir,b} E of F^H; on spherical
-      // polar also that of its curvature terms)
+      // (fkin: the w share of the transverse stresses D_{dir,b} E of F^H)
       for (int b = 0; b < x.nf; ++b) {
         Real p[4], q[4], cp, cm;
         if (b == dir) continue;
@@ -1526,13 +1525,22 @@ void RadiationM1::CleanStagFSolve(const int e) {
         CleanStagEdgeWeights(x, dir, b, m, k, j, i, cp, cm);
         fc(m,CLF_N+1,k,j,i) += cp*p[0]*p[3] - cm*q[0]*q[3];
       }
-      if (!x.sph) return;
+      if (!x.sph || dir == 2) return;
+      // (spherical polar: the w share's transverse pressures, the curvature of D E but
+      // that of the normal stress (q = 4), are the rays' own (CLN_G, the cell layout's
+      // CleanCellSphSource) where the cell holds their J, faded as CleanRayShare)
+      const Real q1 = CleanStagSph(x, 1, dir, m, k, j, i);
+      const Real qn = 2.0*CleanStagSph(x, 4, dir, m, k, j, i)/q1;
       auto wq = [&](const int q, const int kk, const int jj, const int ii) {
-        return CleanSmoothStep((x.cs(m,CLN_C1,kk,jj,ii) - c1lo)/(c1hi - c1lo))*
-               CleanStagSph(x, q, dir, m, k, j, i)*x.w(m,e,kk,jj,ii);
+        const Real ec = x.w(m,e,kk,jj,ii);
+        const Real rs = CleanSmoothStep(2.5*fmax(ec, 0.0)/
+                                        fmax(x.cs(m,CLN_J,kk,jj,ii), 1.0e-300) - 0.25);
+        return CleanSmoothStep((x.cs(m,CLN_C1,kk,jj,ii) - c1lo)/(c1hi - c1lo))*rs*
+               (q1*(CleanStagSph(x, q, dir, m, k, j, i) -
+                    qn*x.cs(m,CLN_D11+dir,kk,jj,ii))*ec -
+                x.cs(m,CLN_G+dir,kk,jj,ii)/x.vol(m,kk,jj,ii));
       };
-      fc(m,CLF_N+1,k,j,i) += 0.5*CleanStagSph(x, 1, dir, m, k, j, i)*
-                             (wq(2, k-dk, j-dj, i-di) + wq(3, k, j, i));
+      fc(m,CLF_N+1,k,j,i) += 0.5*(wq(2, k-dk, j-dj, i-di) + wq(3, k, j, i));
     });
     par_for("cln_fs1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1611,15 +1619,19 @@ void RadiationM1::CleanStagFSolve(const int e) {
             const Real g = 0.5*x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i);
             const Real it_ = 1.0/fc(m,CLF_TH,k,j,i);
             // (fkin: h c^2 [w P_kin]_L^R/dx, P_kin = (h+ F_lo + h- F_hi)/c of a cell)
+            // (spherical polar: area form, (1/dx -+ s) of cell L, R)
             const Real q = x.h*x.c*(x.sph ? CleanStagSph(x, 0, dir, m, k, j, i)
                                           : x.idx[dir]);
+            const Real qs = x.sph ? x.h*x.c*CleanStagSph(x, 4, dir, m, k, j, i) : 0.0;
             const Real hpl = x.cs(m,CLN_HP+dir,k-dk,j-dj,i-di);
             const Real hml = x.cs(m,CLN_HM+dir,k-dk,j-dj,i-di);
             const Real hpr = x.cs(m,CLN_HP+dir,k,j,i), hmr = x.cs(m,CLN_HM+dir,k,j,i);
-            lo = -g*all - q*wl*hpl;
-            hi = -g*alr + q*wr*hmr;
-            dg = it_ - lo - hi + q*(wr*(hpr + hmr) - wl*(hpl + hml)) + tg;
-            r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(al(m,1,k-dk,j-dj,i-di) - al(m,1,k,j,i)) +
+            lo = -g*all - q*wl*hpl + qs*wl*hpl;
+            hi = -g*alr + q*wr*hmr + qs*wr*hmr;
+            dg = it_ - lo - hi + q*(wr*(hpr + hmr) - wl*(hpl + hml)) +
+                 qs*(wr*(hpr + hmr) + wl*(hpl + hml)) + tg;
+            r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(al(m,1,k-dk,j-dj,i-di) - al(m,1,k,j,i)) -
+                qs*x.c*(al(m,1,k-dk,j-dj,i-di) + al(m,1,k,j,i)) +
                 x.h*x.c*x.c*fc(m,CLF_N+1,k,j,i) + tr;
             // (the faces beyond a MeshBlock line end: the neighbours', lagged)
             if (t == 0) {r -= lo*x.w(m,CLW_Y,k-dk,j-dj,i-di); lo = 0.0;}
@@ -1684,10 +1696,12 @@ void RadiationM1::CleanStagFSolve(const int e) {
         return al(m,2,kk,jj,ii)*(x.cs(m,CLN_HP+dir,kk,jj,ii)*l +
                x.cs(m,CLN_HM+dir,kk,jj,ii)*h)/x.c + al(m,1,kk,jj,ii);
       };
+      const Real q = x.sph ? CleanStagSph(x, 0, dir, m, k, j, i) : x.idx[dir];
+      const Real qs = x.sph ? CleanStagSph(x, 4, dir, m, k, j, i) : 0.0;
       fc(m,CLF_N+1,k,j,i) += (alr*(fp - f) - all*(f - fm))/
                              (2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i)) -
-          (x.sph ? CleanStagSph(x, 0, dir, m, k, j, i) : x.idx[dir])*
-          (pk(k, j, i, f, fp) - pk(k-dk, j-dj, i-di, fm, f));
+          q*(pk(k, j, i, f, fp) - pk(k-dk, j-dj, i-di, fm, f)) -
+          qs*(pk(k, j, i, f, fp) + pk(k-dk, j-dj, i-di, fm, f));
     });
   }
 }

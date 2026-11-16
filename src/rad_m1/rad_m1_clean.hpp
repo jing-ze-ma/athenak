@@ -290,13 +290,17 @@ Real CleanExchangeTemperature(const EOS_Data &eos, const Real d, const Real a,
 //!   phi faces:   none: the stress divergence is in angular-momentum (torque) form,
 //!                [sum over the dual faces of A R (D E)_.ph + A_ph ((D E)_phph)]/(V R),
 //!                R = r sin(theta), so that L_z changes only by boundary torques
-//! (a uniform isotropic state, D = I/3, is exactly steady)
+//! (a uniform isotropic state, D = I/3, is exactly steady); q = 4 the part of q = 2, 3
+//! of the normal stress itself per D_nn E, s = 1/r_f (r faces), cot(theta_f)/(2 r)
+//! (theta faces), so that a normal stress P of the cells enters as (1/dx +- s) P_R,L,
+//! the discrete (1/A) d_n(A P)
 
 KOKKOS_INLINE_FUNCTION
 Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m, const int k,
                   const int j, const int i) {
   if (q == 0) return (dir == 2) ? x.area[2](m,k,j,i)/x.vol(m,k,j,i) : 1.0/x.dxf[dir](m,k,j,i);
   if (dir == 2 && q >= 2) return 0.0;   // (phi faces: torque form, CleanFaceStress)
+  if (q == 4) return (dir == 0) ? 1.0/x.x1f(m,i) : 0.5/(tan(x.x2f(m,j))*x.x1v(m,i));
   if (q == 1) return 1.0/((dir == 0) ? x.x1f(m,i) : x.x1v(m,i));
   const int kc = (q == 2) ? k - (dir == 2) : k, jc = (q == 2) ? j - (dir == 1) : j;
   const int ic = (q == 2) ? i - (dir == 0) : i;
