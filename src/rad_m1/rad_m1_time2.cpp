@@ -49,6 +49,7 @@
 #include "utils/recipe.hpp"
 #include "rad_m1/rad_m1_parfor.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "utils/eint_from_cons.hpp"
 #include "utils/imex_sdirk2.hpp"
@@ -3384,12 +3385,15 @@ void RadiationM1::Time2VetColExtrap2() {
 //! vet_prev (M1_T2_NVET, closure = vet_sc)
 
 int RadiationM1::Time2RstNchWant() {
-  if (time_scheme != M1_TIME_HESDIRK2) return 0;
+  // the hesdirk2 slope channels, then (any time scheme) the clean scheme's state
   const int np = (impl_pord == 2) ? 5 : 3;
-  return M1_T2_NK + (impl_pred ? np : 0) + (vet_sc ? M1_T2_NVET : 0)
+  const int nt = (time_scheme != M1_TIME_HESDIRK2) ? 0 :
+         M1_T2_NK + (impl_pred ? np : 0) + (vet_sc ? M1_T2_NVET : 0)
          + ((vet_sc && vsc_every > 1) ? 2*M1_T2_NVET : 0)    // vet_sc_every: D0, D1
-         + ((vet_col && t2_vcmode == 4) ? M1_X2_NCH : 0)     // rbfast-1021 extrap2
-         + ((force_ref == M1_FREF_CLEAN) ? 4 : 0);           // the reference force, set
+         + ((vet_col && t2_vcmode == 4) ? M1_X2_NCH : 0);    // rbfast-1021 extrap2
+  return nt + ((force_ref == M1_FREF_CLEAN) ? 4 : 0)         // the reference force, set
+         + ((clean && cln_cell && cln_extrap > 0) ? 2*CLN_N + 1 : 0)    // extrap history
+         + ((clean && cln_rfv > 0) ? vgd_n : 0);   // the conservative rays' intensities
 }
 
 //----------------------------------------------------------------------------------------
@@ -3416,8 +3420,13 @@ bool RadiationM1::ThcRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
   return true;
 }
 
+bool RadiationM1::Time2RstAccept(const int nfile) {
+  const int nb = Time2RstNchWant() - ((clean && cln_rfv > 0) ? vgd_n : 0);
+  t2_nfv = (clean && cln_rfv > 0) ? nfile - nb : 0;
+  return (nfile == nb + t2_nfv) && (t2_nfv >= 0);
+}
 int RadiationM1::Time2RstNch() {
-  return t2_ok ? Time2RstNchWant() : 0;
+  return (t2_ok || time_scheme != M1_TIME_HESDIRK2) ? Time2RstNchWant() : 0;
 }
 
 // gpumem-1022: m0 > 0 packs MeshBlocks m0 .. m0+nmb-1 into a(0 .. nmb-1) (per-MB staging)
@@ -3425,17 +3434,20 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   auto mb = std::make_pair(0, nmb);
   auto ms = std::make_pair(m0, m0 + nmb);
   auto AL = Kokkos::ALL;
+  const bool h2 = (time_scheme == M1_TIME_HESDIRK2);
   int c = 0;
-  Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+M1_T2_NK), AL, AL, AL),
-                    Kokkos::subview(t2k1, ms, AL, AL, AL, AL));
-  c += M1_T2_NK;
-  if (impl_pred) {
+  if (h2) {
+    Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+M1_T2_NK), AL, AL, AL),
+                      Kokkos::subview(t2k1, ms, AL, AL, AL, AL));
+    c += M1_T2_NK;
+  }
+  if (h2 && impl_pred) {
     const int np = (impl_pord == 2) ? 5 : 3;
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+np), AL, AL, AL),
                       Kokkos::subview(ipred2, ms, AL, AL, AL, AL));
     c += np;
   }
-  if (vet_sc) {
+  if (h2 && vet_sc) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+M1_T2_NVET), AL, AL, AL),
                       Kokkos::subview(vet_prev, ms, AL, AL, AL, AL));
     c += M1_T2_NVET;
@@ -3459,8 +3471,31 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
                       (have && cln_fref_set) ? 1.0 : 0.0);
     c += 4;
   }
+  // clean_closure = extrap*: the ray moments at t^n and at the end of the step, then
+  // t^n, that end time and the flags at i = 0..4
+  if (clean && cln_cell && cln_extrap > 0) {
+    const bool have = (cln_mn.extent_int(0) >= m0 + nmb);
+    if (have) {
+      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+CLN_N), AL, AL, AL),
+                        Kokkos::subview(cln_mn, ms, AL, AL, AL, AL));
+      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c+CLN_N, c+2*CLN_N), AL,
+                                        AL, AL),
+                        Kokkos::subview(cln_mc, ms, AL, AL, AL, AL));
+    }
+    auto a_ = a;
+    const int cq = c + 2*CLN_N;
+    const Real v0 = cln_tn, v1 = cln_tm, v2 = (have && cln_have_n) ? 1.0 : 0.0;
+    const Real v3 = (have && cln_have_c) ? 1.0 : 0.0, v4 = cln_cand_be ? 1.0 : 0.0;
+    par_for("m1_t2_clnrst", DevExeSpace(), 0, nmb - 1, 0, static_cast<int>(a.extent(2))-1,
+            0, static_cast<int>(a.extent(3))-1, 0, static_cast<int>(a.extent(4))-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      a_(m,cq,k,j,i) = (i == 0) ? v0 : ((i == 1) ? v1 : ((i == 2) ? v2 :
+                       ((i == 3) ? v3 : ((i == 4) ? v4 : 0.0))));
+    });
+    c += 2*CLN_N + 1;
+  }
   // rbfast-1021 extrap2: the raw builds of the last step, q at i = 0, time, alpha
-  if (vet_col && t2_vcmode == 4) {
+  if (h2 && vet_col && t2_vcmode == 4) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+M1_X2_NTT), AL, AL, AL),
                       Kokkos::subview(x2_tt, ms, AL, AL, AL, AL));
     c += M1_X2_NTT;
@@ -3481,18 +3516,36 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
       a_(m,cq+2,k,j,i) = al;
       a_(m,cq+3,k,j,i) = ds;
     });
+    c += 4;
+  }
+  // clean_rays = fv1 | fv: the intensities the next sweep starts from, last
+  if (clean && cln_rfv > 0 && cln_fvi.extent_int(0) >= m0 + nmb) {
+    Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+vgd_n), AL, AL, AL),
+                      Kokkos::subview(cln_fvi, ms, AL, AL, AL, AL));
   }
 }
 
 void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   auto mb = std::make_pair(0, nmb);
   auto AL = Kokkos::ALL;
-  if (ch < M1_T2_NK) {
+  const bool h2 = (time_scheme == M1_TIME_HESDIRK2);
+  // the last t2_nfv channels: the conservative rays' intensities (their number is not
+  // known before the first sweep, Time2RstAccept)
+  const int nfv0 = Time2RstNchWant() - ((clean && cln_rfv > 0) ? vgd_n : 0);
+  if (clean && cln_rfv > 0 && ch >= nfv0) {
+    if (cln_fvi.extent_int(0) != nmb || cln_fvi.extent_int(1) != t2_nfv) {
+      Kokkos::realloc(cln_fvi, nmb, t2_nfv, w.extent_int(1), w.extent_int(2),
+                      w.extent_int(3));
+    }
+    DeepCopyAcross(Kokkos::subview(cln_fvi, mb, ch - nfv0, AL, AL, AL), w);
+    return;
+  }
+  if (h2 && ch < M1_T2_NK) {
     DeepCopyAcross(Kokkos::subview(t2k1, mb, ch, AL, AL, AL), w);
     return;
   }
-  ch -= M1_T2_NK;
-  if (impl_pred) {
+  if (h2) ch -= M1_T2_NK;
+  if (h2 && impl_pred) {
     const int np = (impl_pord == 2) ? 5 : 3;
     if (ch < np) {
       DeepCopyAcross(Kokkos::subview(ipred2, mb, ch, AL, AL, AL), w);
@@ -3500,7 +3553,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= np;
   }
-  if (vet_sc) {
+  if (h2 && vet_sc) {
     if (ch < M1_T2_NVET) {
       DeepCopyAcross(Kokkos::subview(vet_prev, mb, ch, AL, AL, AL), w);
       return;
@@ -3533,8 +3586,28 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= 4;
   }
+  if (clean && cln_cell && cln_extrap > 0) {
+    if (ch < 2*CLN_N) {
+      auto &mx = (ch < CLN_N) ? cln_mn : cln_mc;
+      if (mx.extent_int(0) != nmb) {
+        Kokkos::realloc(mx, nmb, CLN_N, w.extent_int(1), w.extent_int(2),
+                        w.extent_int(3));
+      }
+      DeepCopyAcross(Kokkos::subview(mx, mb, ch%CLN_N, AL, AL, AL), w);
+      return;
+    }
+    if (ch == 2*CLN_N) {
+      cln_tn = w(0,0,0,0);
+      cln_tm = w(0,0,0,1);
+      cln_have_n = (w(0,0,0,2) > 0.5);
+      cln_have_c = (w(0,0,0,3) > 0.5);
+      cln_cand_be = (w(0,0,0,4) > 0.5);
+      return;
+    }
+    ch -= 2*CLN_N + 1;
+  }
   // rbfast-1021 extrap2 (Time2RstPack)
-  if (vet_col && t2_vcmode == 4) {
+  if (h2 && vet_col && t2_vcmode == 4) {
     if (ch < M1_X2_NTT) {
       DeepCopyAcross(Kokkos::subview(x2_tt, mb, ch, AL, AL, AL), w);
     } else if (ch < M1_X2_NTT + M1_X2_NHR) {

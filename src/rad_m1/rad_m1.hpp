@@ -2188,6 +2188,8 @@ class RadiationM1 {
   int dbg_rst_fp = 0;
   int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
   int Time2RstNch();            // ...and writes (0 unless a slope is stored)
+  bool Time2RstAccept(const int nfile);   // a file's channels fit (sets t2_nfv)
+  int t2_nfv = 0;               // conservative-ray intensity channels of the file
   void Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0 = 0);
   // gpumem-1022 <rad_m1>/restart_pack_per_mb (read only when named; default true since
   // memcut-1113, was false): the restart writer stages the hesdirk2 channels one

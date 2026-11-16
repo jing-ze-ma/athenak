@@ -22,11 +22,12 @@
 //! zones included), so the discrete state of both is the reference equilibrium.
 //!
 //! Gravity (user_srcs): rho g, on rho - rho_background with wellbalance_static, plus its
-//! work.  Mesh x1 boundaries: reflect.  <problem>/rh_seed adds a cell-to-cell x1 velocity
-//! of that amplitude after the background is set (a lateral seed for stability tests;
-//! in 3-D the unsplit hydro step needs cfl_number <= 1/3, else its grid-scale lateral
-//! mode grows).  History: gas x1 momentum, kinetic energy, max |v|/c_s (one rank),
-//! radiation E and F1/c (volume sums).
+//! work; the background is in the restart file (pgen_rst_slabs).  Mesh x1 boundaries:
+//! reflect.  <problem>/rh_seed adds a cell-to-cell x1 velocity of that amplitude after
+//! the background is set (a lateral seed for stability tests; in 3-D the unsplit hydro
+//! step needs cfl_number <= 1/3, else its grid-scale lateral mode grows).  History: gas
+//! x1 momentum, kinetic energy, max |v|/c_s (one rank), radiation E and F1/c (volume
+//! sums).
 
 #include <cmath>
 #include <iostream>
@@ -88,6 +89,7 @@ Real RhseEdd(const bool sph, const Real x, const Real a, const Real b, const Rea
 
 void RhseGravity(Mesh *pm, const Real bdt);
 void RhseBackground(Mesh *pm);
+void RhseBgDerive(Mesh *pm);
 void RhseHist(HistoryData *pdata, Mesh *pm);
 }  // namespace
 
@@ -114,7 +116,15 @@ void ProblemGenerator::RadiationM1Rhse(ParameterInput *pin, const bool restart) 
   rh_seed = pin->GetOrAddReal("problem","rh_seed",0.0);
   user_srcs_func = RhseGravity;
   user_hist_func = RhseHist;
-  if (ph->use_wellbalance_static) user_icpost_func = RhseBackground;
+  if (ph->use_wellbalance_static) {
+    // the background travels in the restart file
+    user_icpost_func = RhseBackground;
+    pgen_rst_slabs = &ph->u0wb;
+    if (restart && pgen_rst_slabs_in.extent_int(1) == 5) {
+      Kokkos::deep_copy(ph->u0wb, pgen_rst_slabs_in);
+      RhseBgDerive(pmy_mesh_);
+    }
+  }
 
   const Real cl = pm1->c_light, ar = pm1->arad, kap = pm1->kappa_f + pm1->kappa_s;
   const Real gm1 = ph->peos->eos_data.gamma - 1.0;
@@ -180,17 +190,38 @@ namespace {
 void RhseBackground(Mesh *pm) {
   hydro::Hydro *ph = pm->pmb_pack->phydro;
   auto uh = ph->u0;
-  auto u0wb = ph->u0wb, w0wb = ph->w0wb;
+  Kokkos::deep_copy(ph->u0wb, Kokkos::subview(uh, Kokkos::ALL, std::make_pair(0, 5),
+                                              Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+  RhseBgDerive(pm);
   const int nmb1 = pm->pmb_pack->nmb_thispack - 1;
   const int n3 = uh.extent_int(2), n2 = uh.extent_int(3), n1 = uh.extent_int(4);
+  const Real sd = rh_seed;
+  if (sd == 0.0) return;
+  par_for("rhse_seed", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real dv = sd*sin(6.2831853*(0.618*i + 1.414*j + 2.236*k + 0.577*m));
+    const Real m1 = uh(m,IM1,k,j,i);
+    uh(m,IM1,k,j,i) += uh(m,IDN,k,j,i)*dv;
+    uh(m,IEN,k,j,i) += 0.5*(SQR(uh(m,IM1,k,j,i)) - m1*m1)/uh(m,IDN,k,j,i);
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RhseBgDerive
+//! \brief the primitive and face background of the conserved one (u0wb)
+
+void RhseBgDerive(Mesh *pm) {
+  hydro::Hydro *ph = pm->pmb_pack->phydro;
+  auto u0wb = ph->u0wb, w0wb = ph->w0wb;
+  const int nmb1 = pm->pmb_pack->nmb_thispack - 1;
+  const int n3 = u0wb.extent_int(2), n2 = u0wb.extent_int(3), n1 = u0wb.extent_int(4);
   par_for("rhse_bg", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real d = uh(m,IDN,k,j,i);
-    for (int n = 0; n < 5; ++n) u0wb(m,n,k,j,i) = uh(m,n,k,j,i);
+    const Real d = u0wb(m,IDN,k,j,i);
     w0wb(m,IDN,k,j,i) = d;
-    for (int n = IVX; n <= IVZ; ++n) w0wb(m,n,k,j,i) = uh(m,n,k,j,i)/d;
-    w0wb(m,IEN,k,j,i) = uh(m,IEN,k,j,i) - 0.5*(SQR(uh(m,IM1,k,j,i)) +
-                        SQR(uh(m,IM2,k,j,i)) + SQR(uh(m,IM3,k,j,i)))/d;
+    for (int n = IVX; n <= IVZ; ++n) w0wb(m,n,k,j,i) = u0wb(m,n,k,j,i)/d;
+    w0wb(m,IEN,k,j,i) = u0wb(m,IEN,k,j,i) - 0.5*(SQR(u0wb(m,IM1,k,j,i)) +
+                        SQR(u0wb(m,IM2,k,j,i)) + SQR(u0wb(m,IM3,k,j,i)))/d;
   });
   for (int dir = 0; dir < 3; ++dir) {
     if ((dir == 1 && n2 == 1) || (dir == 2 && n3 == 1)) continue;
@@ -208,15 +239,6 @@ void RhseBackground(Mesh *pm) {
       }
     });
   }
-  const Real sd = rh_seed;
-  if (sd == 0.0) return;
-  par_for("rhse_seed", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real dv = sd*sin(6.2831853*(0.618*i + 1.414*j + 2.236*k + 0.577*m));
-    const Real m1 = uh(m,IM1,k,j,i);
-    uh(m,IM1,k,j,i) += uh(m,IDN,k,j,i)*dv;
-    uh(m,IEN,k,j,i) += 0.5*(SQR(uh(m,IM1,k,j,i)) - m1*m1)/uh(m,IDN,k,j,i);
-  });
 }
 
 //----------------------------------------------------------------------------------------

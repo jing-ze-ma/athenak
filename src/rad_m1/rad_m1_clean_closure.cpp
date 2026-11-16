@@ -823,11 +823,13 @@ void RadiationM1::CleanFvSweep() {
   const bool axi = !pmy_pack->pmesh->three_d;
   CleanArgs x = CleanMakeArgs();
   auto x3f = pmy_pack->pcoord->xx3f;
-  if (cln_fvi.extent_int(1) != n) {
-    // the intensities, the outward face vectors of every cell and the cell order of
-    // every direction (geometry and directions are fixed)
-    Kokkos::realloc(cln_fvi, nmb, n, cln_s.extent_int(2), cln_s.extent_int(3),
-                    cln_s.extent_int(4));
+  if (cln_fvo.extent_int(1) != n) {
+    // the intensities (unless a restart has read them), the outward face vectors of
+    // every cell and the cell order of every direction (geometry and directions fixed)
+    if (cln_fvi.extent_int(1) != n) {
+      Kokkos::realloc(cln_fvi, nmb, n, cln_s.extent_int(2), cln_s.extent_int(3),
+                      cln_s.extent_int(4));
+    }
     Kokkos::realloc(cln_fva, nmb, 18, cln_s.extent_int(2), cln_s.extent_int(3),
                     cln_s.extent_int(4));
     auto fa = cln_fva;
@@ -869,7 +871,6 @@ void RadiationM1::CleanFvSweep() {
       }
     }
     Kokkos::deep_copy(cln_fvo, o_h);
-    Kokkos::deep_copy(cln_fvi, 0.0);
     // a periodic theta or phi seam of a wedge: the ghosts' directions in the frame of
     // their image cell, n' = sum_b (n . e_b(ghost)) e_b(image), the nearest set direction
     // (an exact permutation for a phi period of the set)
@@ -930,6 +931,9 @@ void RadiationM1::CleanFvSweep() {
   }
   if (o2) Kokkos::deep_copy(cln_fvp, fi);
   auto fp = o2 ? cln_fvp : fi;
+  // the walls' incoming beams of the intensities the sweep starts from (a restart has
+  // no others)
+  if (wall[0] || wall[1]) CleanFvWalls();
   for (int it = 0; it < 100; ++it) {
     Real dmax = 0.0, imax = 0.0;
     Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*n),

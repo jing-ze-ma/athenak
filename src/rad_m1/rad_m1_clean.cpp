@@ -86,9 +86,10 @@ void RadiationM1::CleanInit() {
     }
   }
   if (cln_extrap > 0) {
-    Kokkos::realloc(cln_mn, nmb, CLN_N, n3, n2, n1);
+    // (a restart may have read t^n and the end of the last step)
+    if (cln_mn.extent_int(0) != nmb) Kokkos::realloc(cln_mn, nmb, CLN_N, n3, n2, n1);
     Kokkos::realloc(cln_mp, nmb, CLN_N, n3, n2, n1);
-    Kokkos::realloc(cln_mc, nmb, CLN_N, n3, n2, n1);
+    if (cln_mc.extent_int(0) != nmb) Kokkos::realloc(cln_mc, nmb, CLN_N, n3, n2, n1);
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
   }
   Mesh *pm = pmy_pack->pmesh;
@@ -445,6 +446,9 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
 
 TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (!cln_init) CleanInit();
+  // the vet_gd direction set before any use (the consistency term reads it at the first
+  // solve of a restart, before any ray build)
+  if (vgd_on && !tau_ready) VetColInit();
   FluidRef fl = FluidRef::Get(pmy_pack);
   cln_feedback = gas_feedback && fl.on;
   const bool cell = cln_cell;
