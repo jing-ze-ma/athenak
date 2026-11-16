@@ -811,8 +811,6 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   const bool t2stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   int nit = 0, nit_sum = 0, nsolve = 0, npic = 0, npos = 0, nmark = 0;
   std::array<int, 2> nfirst = {0, 0};
-  cln_fsn = cln_fsit = 0;
-  cln_fsres = 0.0;
   bool all_low = false;
   cln_all_low = false;
   Real dpic = 0.0;
@@ -971,15 +969,6 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     // (a failed solve or a probe does not change the energy flux's memory)
     cln_dok = (nit >= 0) && !t2_inprobe;
     CleanWriteBack();
-    // the F solves with transverse terms: their passes and the largest last change
-    if (cln_fsn > 0 && global_variable::my_rank == 0) {
-      std::printf("CLEAN FSOLVE cycle %d t2s %d solves %d passes %d max dF/F %.2e\n",
-                  pmy_pack->pmesh->ncycle, t2_solve, cln_fsn, cln_fsit, cln_fsres);
-      if (cln_feedback && !(cln_fsres <= 1.0e-10)) {
-        std::printf("CLEAN WARNING cycle %d: F solve not converged (weighted dF/F %.2e)"
-                    "\n", pmy_pack->pmesh->ncycle, cln_fsres);
-      }
-    }
   }
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
   // rejected like a failed solve (the stage is redone by backward Euler, a
@@ -1699,17 +1688,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
       fc(m,CLF_N+1,k,j,i) = 0.0;
-      if (!fk || CleanBoundaryFace(x, dir, m, k, j, i)) return;
-      // (fkin: the w share of the transverse stresses D_{dir,b} E of F^H)
-      for (int b = 0; b < x.nf; ++b) {
-        Real p[4], q[4], cp, cm;
-        if (b == dir) continue;
-        CleanStagEdge(x, e, dir, b, m, k, j, i, 1, c1lo, c1hi, p);
-        CleanStagEdge(x, e, dir, b, m, k, j, i, -1, c1lo, c1hi, q);
-        CleanStagEdgeWeights(x, dir, b, m, k, j, i, cp, cm);
-        fc(m,CLF_N+1,k,j,i) += cp*p[0]*p[3] - cm*q[0]*q[3];
-      }
-      if (!x.sph || dir == 2) return;
+      if (!fk || !x.sph || dir == 2 || CleanBoundaryFace(x, dir, m, k, j, i)) return;
       // (spherical polar: the w share's transverse pressures, the curvature of D E but
       // that of the normal stress (q = 4), are the rays' own (CLN_G, the cell layout's
       // CleanCellSphSource) where the cell holds their J, faded as CleanRayShare)
@@ -1751,7 +1730,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
       const Real sr = x.cs(m,CLN_HP+dir,k,j,i) + x.cs(m,CLN_HM+dir,k,j,i);
       al(m,1,k,j,i) = wc*((dd - sr*sr)*fmin(x.cs(m,CLN_J,k,j,i), fmax(ec, 0.0)) - dd*ec);
       al(m,2,k,j,i) = wc;
-      // (F of the low face, for the exchange; with transverse terms the last F solve's)
+      // (F of the low face, for the exchange; multi-D: the last F solve's)
       x.w(m,CLW_Y,k,j,i) = fc(m,(fk && x.multi_d) ? CLF_N+2 : CLF_N,k,j,i);
     });
     CleanGhostFill(cln_v, 0, 3);
@@ -1759,12 +1738,10 @@ void RadiationM1::CleanStagFSolve(const int e) {
     const int n = (dir == 0) ? ie - is + 1 : ((dir == 1) ? je - js + 1 : ke - ks + 1);
     const int na = (dir == 0) ? je - js + 1 : ie - is + 1;
     const int nb = (dir == 2) ? je - js + 1 : ke - ks + 1;
-    // the lines' coefficients are the same in every pass below, only the other rows' F
-    // (CLW_Z) and the neighbours' F at the line ends change: once, lo (CLW_AM), hi at the
-    // last face (CLW_AP), the Thomas factors den (CLW_A0) and c' (CLW_CP), r without the
-    // transverse term (CLW_R0), the faces with an equation (CLW_P) and its transverse
-    // weights (2 per b: CLW_V, then CLW_WK; scratch slots of the E solve and of the cell
-    // layout)
+    // the lines' coefficients are the same in every pass below, only the neighbours' F at
+    // the line ends changes: once, lo (CLW_AM), hi at the last face (CLW_AP), the Thomas
+    // factors den (CLW_A0) and c' (CLW_CP), r (CLW_R0) and the faces with an equation
+    // (CLW_P; scratch slots of the E solve)
     Kokkos::parallel_for("cln_fs2f", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                          (nmb1 + 1)*na*nb),
     KOKKOS_LAMBDA(const int idx) {
@@ -1782,22 +1759,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
         const bool bd = CleanBoundaryFace(x, dir, m, k, j, i);
         const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
         const Real wl = al(m,2,k-dk,j-dj,i-di), wr = al(m,2,k,j,i);
-        // (fkin: the rays' kinetic transport of F along b != dir through the dual faces
-        // of CleanStagEdge, the other rows' F lagged; started from the last F solve's)
-        Real tg = 0.0;
-        for (int b = 0, nt = 0; b < x.nf && fk && !bd; ++b) {
-          Real p[4], q[4], cp, cm;
-          if (b == dir) continue;
-          CleanStagEdge(x, e, dir, b, m, k, j, i, 1, c1lo, c1hi, p);
-          CleanStagEdge(x, e, dir, b, m, k, j, i, -1, c1lo, c1hi, q);
-          CleanStagEdgeWeights(x, dir, b, m, k, j, i, cp, cm);
-          tg += x.h*x.c*(cp*p[0]*p[1] - cm*q[0]*q[2]);
-          const int sw = (nt++ == 0) ? CLW_V : CLW_WK;
-          x.w(m,sw,k,j,i) = cp*p[0]*p[2];
-          x.w(m,sw+1,k,j,i) = cm*q[0]*q[1];
-        }
-        const bool eq = !bd && (all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0 ||
-                                tg > 0.0);
+        const bool eq = !bd && (all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0);
         if (eq) {
           const Real g = 0.5*x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i);
           const Real it_ = 1.0/fc(m,CLF_TH,k,j,i);
@@ -1812,7 +1774,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
           lo = -g*all - q*wl*hpl + qs*wl*hpl;
           hi = -g*alr + q*wr*hmr + qs*wr*hmr;
           dg = it_ - lo - hi + q*(wr*(hpr + hmr) - wl*(hpl + hml)) +
-               qs*(wr*(hpr + hmr) + wl*(hpl + hml)) + tg;
+               qs*(wr*(hpr + hmr) + wl*(hpl + hml));
           r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(al(m,1,k-dk,j-dj,i-di) - al(m,1,k,j,i)) -
               qs*x.c*(al(m,1,k-dk,j-dj,i-di) + al(m,1,k,j,i)) +
               x.h*x.c*x.c*fc(m,CLF_N+1,k,j,i);
@@ -1830,25 +1792,12 @@ void RadiationM1::CleanStagFSolve(const int e) {
         x.w(m,CLW_P,k,j,i) = eq ? 1.0 : 0.0;
       }
     });
-    // the passes stop at a change of 1e-14 of max |F|.  With the transverse terms (fkin,
-    // multi-D) they are a block-Jacobi iteration, slow where the rays stream (a beam
-    // crosses one row per pass); the change is weighted by max(1 - w, 1 - theta), the
-    // share of F the energy flux and the gas take.  With gas coupling they go on to 256
-    // passes, unless the change stalls (less than 10% in 8 passes); without, F enters
-    // only the energy flux's memory, and they stop once the rate of the last 4 passes
-    // cannot reach 1e-14 within 64
-    const bool wq = fk && x.multi_d, gas = cln_feedback;
-    Real q = 0.0, q8[8] = {};
-    int it = 0;
-    const int itmax = (wq && gas) ? 256 : 64;
-    for (; it < itmax; ++it) {
+    // the passes (one exact Thomas solve per line; more only to settle the lagged line
+    // ends of other MeshBlocks) stop at a change of 1e-14 of max |F|, or when the change
+    // no longer decreases (round-off)
+    Real q0 = 1.0e300;
+    for (int it = 0; it < 64; ++it) {
       Real dmax = 0.0, fmx = 0.0;
-      if (fk && x.multi_d) {   // (the other rows' F of the last pass, transverse terms)
-        Kokkos::deep_copy(Kokkos::subview(cln_w, Kokkos::ALL, CLW_Z, Kokkos::ALL,
-                                          Kokkos::ALL, Kokkos::ALL),
-                          Kokkos::subview(cln_w, Kokkos::ALL, CLW_Y, Kokkos::ALL,
-                                          Kokkos::ALL, Kokkos::ALL));
-      }
       Kokkos::parallel_reduce("cln_fs2", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                               (nmb1 + 1)*na*nb),
       KOKKOS_LAMBDA(const int idx, Real &d_max, Real &f_max) {
@@ -1864,15 +1813,6 @@ void RadiationM1::CleanStagFSolve(const int e) {
           face(t, k, j, i);
           Real r = x.w(m,CLW_R0,k,j,i);
           if (x.w(m,CLW_P,k,j,i) > 0.0) {
-            Real tr = 0.0;
-            for (int b = 0, nt = 0; b < x.nf && fk; ++b) {
-              if (b == dir) continue;
-              const int sw = (nt++ == 0) ? CLW_V : CLW_WK;
-              const int bk = (b == 2), bj = (b == 1), bi = (b == 0);
-              tr -= x.h*x.c*(x.w(m,sw,k,j,i)*x.w(m,CLW_Z,k+bk,j+bj,i+bi) -
-                             x.w(m,sw+1,k,j,i)*x.w(m,CLW_Z,k-bk,j-bj,i-bi));
-            }
-            r += tr;
             if (t == 0) r -= x.w(m,CLW_AM,k,j,i)*x.w(m,CLW_Y,k-dk,j-dj,i-di);
             if (t == n) r -= x.w(m,CLW_AP,k,j,i)*x.w(m,CLW_Y,k+dk,j+dj,i+di);
           }
@@ -1886,26 +1826,15 @@ void RadiationM1::CleanStagFSolve(const int e) {
           const Real fv = x.w(m,CLW_R,k,j,i) - ((t < n) ? x.w(m,CLW_CP,k,j,i)*fn : 0.0);
           fn = fv;
           // (the last face's slot is a ghost: the neighbour's or a physical face)
-          if (t < n) d_max = fmax(d_max, fabs(fv - x.w(m,CLW_Y,k,j,i))*(!wq ? 1.0 :
-              fmax(1.0 - fc(m,CLF_W,k,j,i), 1.0 - fc(m,CLF_TH,k,j,i))));
+          if (t < n) d_max = fmax(d_max, fabs(fv - x.w(m,CLW_Y,k,j,i)));
           f_max = fmax(f_max, fabs(fv));
           x.w(m,CLW_Y,k,j,i) = fv;
         }
       }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(fmx));
       CleanGhostFill(cln_w, CLW_Y, 1);
-      q = CleanReduce(dmax, true)/fmax(CleanReduce(fmx, true), 1.0e-300);
-      if (CleanReduce(dmax, true) <= 1.0e-14*CleanReduce(fmx, true)) break;
-      if (wq && it >= 8) {
-        const Real rho = std::pow(q/fmax(q8[(it - 4)%8], 1.0e-300), 0.25);
-        if (gas ? (q > 0.9*q8[it%8])
-                : (!(rho < 1.0) || it + std::log(1.0e-14/q)/std::log(rho) > 64.0)) break;
-      }
-      q8[it%8] = q;
-    }
-    if (wq) {
-      cln_fsit += std::min(it + 1, itmax);
-      cln_fsn += 1;
-      cln_fsres = fmax(cln_fsres, q);
+      const Real q = CleanReduce(dmax, true)/fmax(CleanReduce(fmx, true), 1.0e-300);
+      if (q <= 1.0e-14 || q >= q0) break;
+      q0 = q;
     }
     // F and the dissipation term of every face
     par_for("cln_fs3", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
@@ -1924,18 +1853,6 @@ void RadiationM1::CleanStagFSolve(const int e) {
       fc(m,CLF_N+2,k,j,i) = f;
       const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
       const Real wl = al(m,2,k-dk,j-dj,i-di), wr = al(m,2,k,j,i);
-      Real tk = 0.0;   // (fkin: the transverse kinetic stress)
-      for (int b = 0; b < x.nf && fk; ++b) {
-        Real p[4], q[4], cp, cm;
-        if (b == dir) continue;
-        CleanStagEdge(x, e, dir, b, m, k, j, i, 1, c1lo, c1hi, p);
-        CleanStagEdge(x, e, dir, b, m, k, j, i, -1, c1lo, c1hi, q);
-        CleanStagEdgeWeights(x, dir, b, m, k, j, i, cp, cm);
-        const int bk = (b == 2), bj = (b == 1), bi = (b == 0);
-        tk += (cp*p[0]*(p[1]*f + p[2]*x.w(m,CLW_Y,k+bk,j+bj,i+bi)) -
-               cm*q[0]*(q[1]*x.w(m,CLW_Y,k-bk,j-bj,i-bi) + q[2]*f))/x.c;
-      }
-      fc(m,CLF_N+1,k,j,i) -= tk;
       if (!(all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0)) return;
       // (a physical high face keeps F^H; the ghost fill replaced its slot)
       const Real fm = x.w(m,CLW_Y,k-dk,j-dj,i-di);

@@ -1299,9 +1299,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   for (int q0_ = 0; q0_ < 3; ++q0_) {v.view("cln_ga[]", cln_ga[q0_]);}
   for (int q0_ = 0; q0_ < 3; ++q0_) {v.view("cln_gd[]", cln_gd[q0_]);}
   v.view("cln_gn", cln_gn);
-  v.value("cln_fsn", cln_fsn);
-  v.value("cln_fsit", cln_fsit);
-  v.value("cln_fsres", cln_fsres);
   v.value("cln_nsolve", cln_nsolve);
   v.value("cln_nit", cln_nit);
   v.value("cln_nfail", cln_nfail);

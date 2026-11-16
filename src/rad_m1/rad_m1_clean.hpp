@@ -357,32 +357,6 @@ Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanStagEdgeWeights
-//! \brief the weights cp, cm of the dual faces o = +1, -1 of CleanStagEdge in the
-//! transverse stress of face (k,j,i) normal to dir, cp P(+1) - cm P(-1), as
-//! CleanFaceStress: 1/dx_b; on spherical polar its central (1/r) d_theta, d_r and
-//! d_phi, and on phi faces the torque form A R/(V R) (L_z changes by boundary torques)
-
-KOKKOS_INLINE_FUNCTION
-void CleanStagEdgeWeights(const CleanArgs &x, const int dir, const int b, const int m,
-                          const int k, const int j, const int i, Real &cp, Real &cm) {
-  cp = cm = x.idx[b];
-  if (!x.sph) return;
-  if (dir == 2) {
-    const Real vr = x.vol(m,k,j,i)*x.x1v(m,i)*sin(x.x2v(m,j));
-    cp = (b == 0) ? x.area[0](m,k,j,i+1)*x.x1f(m,i+1)*sin(x.x2v(m,j))/vr :
-                    x.area[1](m,k,j+1,i)*sin(x.x2f(m,j+1))*x.x1v(m,i)/vr;
-    cm = (b == 0) ? x.area[0](m,k,j,i)*x.x1f(m,i)*sin(x.x2v(m,j))/vr :
-                    x.area[1](m,k,j,i)*sin(x.x2f(m,j))*x.x1v(m,i)/vr;
-    return;
-  }
-  const Real rb = (dir == 0) ? x.x1f(m,i) : x.x1v(m,i);
-  cp = cm = (b == 0) ? 2.0/(x.x1v(m,i+1) - x.x1v(m,i-1)) :
-            ((b == 1) ? 2.0/(rb*(x.x2v(m,j+1) - x.x2v(m,j-1))) :
-            x.idx[2]/(rb*sin((dir == 1) ? x.x2f(m,j) : x.x2v(m,j))));
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn Real CleanDivW
 //! \brief weight of the flux through the low (side 0) or high (side 1) face along dir in
 //! the divergence of cell (k,j,i): 1/dx_d, on spherical polar A_f/V
@@ -609,40 +583,6 @@ bool CleanBoundaryFace(const CleanArgs &x, const int dir, const int m, const int
   const int hi = (dir == 0) ? x.ie + 1 : ((dir == 1) ? x.je + 1 : x.ke + 1);
   return (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC) ||
          (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void CleanStagEdge
-//! \brief clean_stag_fkin, Cartesian: the dual face along b != dir of the momentum of
-//! face (k,j,i) normal to dir, between its row and row o = +-1: the means over its four
-//! cells of the streaming weight w (C1), h+_b, h-_b and D_{dir,b} E (E in work vector e);
-//! w = 0 on a physical boundary
-
-KOKKOS_INLINE_FUNCTION
-void CleanStagEdge(const CleanArgs &x, const int e, const int dir, const int b,
-                   const int m, const int k, const int j, const int i, const int o,
-                   const Real c1lo, const Real c1hi, Real q[4]) {
-  const int ab = (dir + b == 1) ? 3 : ((dir + b == 2) ? 4 : 5);
-  for (int n = 0; n < 4; ++n) q[n] = 0.0;
-  for (int c = 0; c < 4; ++c) {
-    const int s = (c & 1), r = (c >> 1)*o;
-    const int kk = k - s*(dir == 2) + r*(b == 2), jj = j - s*(dir == 1) + r*(b == 1);
-    const int ii = i - s*(dir == 0) + r*(b == 0);
-    q[0] += 0.25*CleanSmoothStep((x.cs(m,CLN_C1,kk,jj,ii) - c1lo)/(c1hi - c1lo));
-    q[1] += 0.25*x.cs(m,CLN_HP+b,kk,jj,ii);
-    q[2] += 0.25*x.cs(m,CLN_HM+b,kk,jj,ii);
-    q[3] += 0.25*x.cs(m,ab,kk,jj,ii)*x.w(m,e,kk,jj,ii);
-  }
-  // (a physical boundary carries no kinetic flux of the momentum along it: a mirror
-  // reflects mu_b, so the flux mu_b mu_dir I is odd; the stress of D E stays there.
-  // Spherical polar: only the transports along theta and phi of the theta and phi faces,
-  // whose dual faces have the flux form (phi faces: torque); the r faces and the radial
-  // transverse transport keep the differential form of D E)
-  const int u = (o > 0);
-  if (CleanBoundaryFace(x, b, m, k + u*(b == 2), j + u*(b == 1), i + u*(b == 0)) ||
-      (x.sph && (dir == 0 || b == 0))) {
-    q[0] = 0.0;
-  }
 }
 
 //----------------------------------------------------------------------------------------
