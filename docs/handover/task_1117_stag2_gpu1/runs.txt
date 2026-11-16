@@ -1,0 +1,26 @@
+# group tag nranks(=GPUs)   deck = decks/<tag>.athinput, run dir runs/<tag>
+# S1: Cartesian beams/shadows/thick (1 block)
+S1   s1_cb_x0.5         1
+S1   s1_cbg_x0.5        1
+S1   s1_ws66_x0.5       1
+S1   s1_shd_x0.5        1
+S1   s1_shdg_x0.5       1
+S1   s1_hcyl_x0.5       1
+S1   s1_nltek1_x1       1
+# S2: spherical polar with gas (well-balancing, decomposition, rotating box, closed box)
+S2   s2_rhse_sp2        1
+S2   s2_sp3             1
+S2   s2_sp3_mb2         2
+S2   s2_flzq            1
+S2   s2_pulse0          1
+# S3: 1-D/2-D gas-radiation physics (wave, stiff drag, radiative shock, radial free streaming)
+S3   s3_rwp             1
+S3   s3_rwm             1
+S3   s3_drag            1
+S3   s3_shock_m7        1
+S3   s3_fs              1
+# T: timing pairs, staggered vs cell (only when named; one at a time)
+T    t_shd_x2_stag      1
+T    t_shd_x2_cell      1
+T    t_sp1x1h_stag      1
+T    t_sp1x1h_cell      1

@@ -1,0 +1,1058 @@
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+### WARNING (scheme = clean): <rad_m1/implicit_recon> has no effect, the clean solve reads <rad_m1>/clean_recon
+### WARNING (scheme = clean): <rad_m1/ic_rad> has no effect, the clean solve reads <rad_m1>/clean_init
+### WARNING (scheme = clean): no effect: rad_m1/implicit_solver rad_m1/implicit_precond
+<rad_m1> vet_rotate_advance = true (rotadv-1102): with vet_rotate_avg the rotated sets do not repeat; the averaged last-K window advances (no effect without vet_rotate_avg)
+<rad_m1> implicit_precond = line
+<rad_m1>/implicit_face_weight = distance (default)
+<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken from the radiation of the same column (no energy created)
+<rad_m1> implicit_face_mmat = true: x1 face flux lam F_H + (1-lam) F_L, lam = Zalesak factor of the explicit face flux (facemmat-1112)
+<rad_m1>: transport=implicit (3-D) solver=bicgstab lin_tol=1e-10 lin_maxit=200
+         implicit_cfl=10000 tol=1e-08 maxit=200 opac_update=false marshak_q=0.5
+         implicit_flux=central implicit_recon=dc implicit_partition=none
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+         implicit_enthalpy=plm (deferred correction)
+         implicit_bc_advect=true (Marshak x1 end carries A E)
+         implicit_offdiag=operator (auto) closure_relax=1 closure_lag=step trans_limit=none
+         implicit_accel=none
+         implicit_gas_newton=true implicit_eos_cache=false
+         x1 boundaries: min=0 max=0 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=0 flux_max=0
+<rad_m1> time2_auto_be=16: after a stage fallback the next 1, 2, 4, ... 16 steps take the backward-Euler redo path at once
+<rad_m1> time2_posfix=4 time2_posfix_grow=1: local stage-1 positivity re-solve
+<rad_m1> time_scheme=hesdirk2 (g=0.292893; first step, restarts without the slope and failed stages take backward Euler)
+         time2_enth_be=true implicit_cs2_vimp_npass=3
+<rad_m1>: spherical-polar wedge (stage S2: chi(f) closure, radial integrating factor, lagged curvature, offdiag none; implicit with areas/volumes/face distances from Coordinates
+<rad_m1>: c=40 chat/c=1 cfl_rad=0.4 thick_flux=none ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=vet_col subcycle=false
+         kappa_p=0 kappa_e=0 kappa_f=0 kappa_s=500 coupling=true gas_feedback=true arad=1
+         opacity= force_reference=clean temp_unit_kelvin=1 rho_unit_cgs=1
+<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+--- defaults (<job>/recipe sets the default set: prod1019 | none) ---
+  <mesh>/layout_invariant = true (default; fresh, restart)
+  <hydro>/split_c2p_once = true (default, fresh start and restart)
+  <rad_m1>/vet_source = relaxed_esc (default)
+  <rad_m1>/vet_rotate_advance = true (default on a fresh vet_gd run)
+  <rad_m1>/vet_gd_halo_compact = 2 (default with vet_gd on a fresh start)
+  <rad_m1>/implicit_resid_fatal = 1e-2 (default)
+  <rad_m1>/time2_k1_redist = 0 (default, defaults-1114: time2_face_fct)
+  <time>/dt_retry = true (default)
+--- end defaults ---
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=96.8641, measured v_max=0)
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 57 rays, 48 shells), axis radial, rebuilt every 1 step(s); vet_col_order2 (quadratic mu, face core); vet_bc_diff = face; f_K >= 0; 1 shell(s) kept trapezoid weights; team build, 8 shells per chunk, team size AUTO; outer Marshak q = H(face)/J(top cell) in [0.001, 1]
+<rad_m1> vet_gd direction set: 108 directions; moment errors |sum w - 1| 0, |sum w n| 4.72712e-17, |sum w nn - I/3| 3.33067e-16 (rotated 1.66533e-16), 4th-moment anisotropy 0.00222517 (rotated 0.00082807)
+<rad_m1> vet_gd: exact per-shell lateral halo, band 0 cells (needed 7), per-shell depth mean 0
+<rad_m1> vet_gd_band_global (accpolar-1103): band 0 cells keyed on the global cell (exact copies from any block; rank 0: on-rank 0, sent 0, received 0 positions per shell at full depth, partners 0); stencil clamped to the cell's own window (layout independent)
+<rad_m1> vet_gd: ragged per-shell band intensity array 0 GB on rank 0 (dense band 0.000718848 GB)
+<rad_m1> vet_gd: global-direction SC closure on the sp wedge, HEALPix nside 3 (108 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0; rank 0 wall ghost columns 0, direction maps exact 0 of 0 (the rest: nearest direction)
+CLEAN cycle 0 t2s 0 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2
+CLEAN FSOLVE cycle 0 t2s 0 solves 9 passes 38 max dF/F 4.19e-15
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 6.006e-02
+CLEAN cycle 0 t2s 0 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2
+CLEAN FSOLVE cycle 0 t2s 0 solves 9 passes 37 max dF/F 4.12e-15
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 1.742e-03
+CLEAN cycle 0 t2s 0 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2
+CLEAN FSOLVE cycle 0 t2s 0 solves 9 passes 36 max dF/F 8.66e-15
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 5.663e-05
+CLEAN cycle 0 t2s 0 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2
+CLEAN FSOLVE cycle 0 t2s 0 solves 9 passes 33 max dF/F 7.16e-15
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 4.088e-06
+CLEAN cycle 0 t2s 0 it 0 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2
+CLEAN FSOLVE cycle 0 t2s 0 solves 9 passes 32 max dF/F 4.31e-15
+<rad_m1> clean_init steady pass 4: max(|dE|, |dF|/c)/max E = 2.574e-06
+CLEAN cycle 0 t2s 0 it 0 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2
+CLEAN FSOLVE cycle 0 t2s 0 solves 9 passes 31 max dF/F 5.59e-15
+<rad_m1> clean_init steady pass 5: max(|dE|, |dF|/c)/max E = 5.084e-07
+CLEAN cycle 0 t2s 0 it 0 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2
+CLEAN FSOLVE cycle 0 t2s 0 solves 9 passes 30 max dF/F 2.55e-15
+<rad_m1> clean_init steady pass 6: max(|dE|, |dF|/c)/max E = 1.439e-07
+CLEAN cycle 0 t2s 0 it 0 (sum 3) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2
+CLEAN FSOLVE cycle 0 t2s 0 solves 9 passes 28 max dF/F 9.80e-15
+<rad_m1> clean_init steady pass 7: max(|dE|, |dF|/c)/max E = 4.706e-08
+CLEAN cycle 0 t2s 0 it 0 (sum 2) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2
+CLEAN FSOLVE cycle 0 t2s 0 solves 9 passes 28 max dF/F 1.58e-15
+<rad_m1> clean_init steady pass 8: max(|dE|, |dF|/c)/max E = 7.617e-09
+CLEAN cycle 0 t2s 0 it 0 (sum 1) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2
+CLEAN FSOLVE cycle 0 t2s 0 solves 9 passes 26 max dF/F 1.59e-15
+<rad_m1> clean_init steady pass 9: max(|dE|, |dF|/c)/max E = 1.262e-09
+<rad_m1> clean_init steady: converged after 10 passes (0 formal solutions); radiation E 6.6479523947e-03 -> 7.2198851795e-03, F/c 9.5356e-05 0.0000e+00 0.0000e+00 -> 1.4187e-04 2.9442e-16 -1.5484e-07 (volume sums)
+
+Setup complete, executing task list(s)...
+
+elapsed=1.311322e+00 cycle=0 time=0.000000e+00 dt=1.530931e-02
+<time> dt_retry checkpoint: 2038 members, 547 Views (19 copied, 6.104576e+00 MB on rank 0): hyd.u0 1.331200e-01 hyd.w0 1.331200e-01 m1.f0x1 2.713600e-02 m1.f0x2 2.995200e-02 m1.f0x3 2.995200e-02 m1.ipred 1.331200e-01 m1.t2k1 2.129920e-01 m1.ipred2 1.331200e-01 m1.x2_tt 2.662400e-01 m1.x2_hr 2.662400e-01 m1.x2_q 5.120000e-04 m1.u0 1.064960e-01 m1.opac 7.987200e-02 m1.cln_fvi 2.875392e+00 m1.cln_fc1 4.526080e-01 m1.cln_fc2 4.526080e-01 m1.cln_fc3 4.526080e-01 m1.tau_ten 2.662400e-01 m1.vlat_cs 5.324800e-02
+CLEAN cycle 0 t2s 1 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 0 t2s 1 solves 15 passes 77 max dF/F 6.34e-15
+### WARNING: 1 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+###   rad_m1/ic_rad = none
+elapsed=1.452265e+00 cycle=1 time=1.530931e-02 dt=1.495590e-02
+CLEAN cycle 1 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 1 t2s 2 solves 15 passes 76 max dF/F 5.56e-15
+CLEAN cycle 1 t2s 3 it 0 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 1 t2s 3 solves 15 passes 66 max dF/F 7.06e-15
+elapsed=1.583809e+00 cycle=2 time=3.026521e-02 dt=1.470405e-02
+CLEAN cycle 2 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 2 t2s 2 solves 15 passes 75 max dF/F 5.26e-15
+CLEAN cycle 2 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 2 t2s 3 solves 15 passes 64 max dF/F 7.83e-15
+elapsed=1.714808e+00 cycle=3 time=4.496926e-02 dt=1.451765e-02
+CLEAN cycle 3 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 3 t2s 2 solves 15 passes 75 max dF/F 9.72e-15
+CLEAN cycle 3 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 3 t2s 3 solves 15 passes 65 max dF/F 8.99e-15
+elapsed=1.845636e+00 cycle=4 time=5.948690e-02 dt=1.437496e-02
+CLEAN cycle 4 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 4 t2s 2 solves 15 passes 75 max dF/F 7.27e-15
+CLEAN cycle 4 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 4 t2s 3 solves 15 passes 67 max dF/F 8.88e-15
+elapsed=1.976126e+00 cycle=5 time=7.386186e-02 dt=1.426262e-02
+CLEAN cycle 5 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 5 t2s 2 solves 15 passes 75 max dF/F 8.36e-15
+CLEAN cycle 5 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 5 t2s 3 solves 15 passes 68 max dF/F 8.94e-15
+elapsed=2.106737e+00 cycle=6 time=8.812448e-02 dt=1.417192e-02
+CLEAN cycle 6 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 6 t2s 2 solves 15 passes 76 max dF/F 8.08e-15
+CLEAN cycle 6 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 6 t2s 3 solves 15 passes 71 max dF/F 5.57e-15
+elapsed=2.240917e+00 cycle=7 time=1.022964e-01 dt=1.409701e-02
+CLEAN cycle 7 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 7 t2s 2 solves 15 passes 75 max dF/F 9.95e-15
+CLEAN cycle 7 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 7 t2s 3 solves 15 passes 71 max dF/F 7.63e-15
+elapsed=2.400901e+00 cycle=8 time=1.163934e-01 dt=1.403390e-02
+CLEAN cycle 8 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 8 t2s 2 solves 15 passes 74 max dF/F 9.07e-15
+CLEAN cycle 8 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 8 t2s 3 solves 15 passes 72 max dF/F 5.11e-15
+elapsed=2.532475e+00 cycle=9 time=1.304273e-01 dt=1.397976e-02
+CLEAN cycle 9 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 9 t2s 2 solves 15 passes 76 max dF/F 6.11e-15
+CLEAN cycle 9 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 9 t2s 3 solves 15 passes 72 max dF/F 6.55e-15
+elapsed=2.663748e+00 cycle=10 time=1.444071e-01 dt=1.393255e-02
+CLEAN cycle 10 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 10 t2s 2 solves 15 passes 74 max dF/F 9.46e-15
+CLEAN cycle 10 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 10 t2s 3 solves 15 passes 72 max dF/F 8.11e-15
+elapsed=2.795215e+00 cycle=11 time=1.583396e-01 dt=1.389068e-02
+CLEAN cycle 11 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 11 t2s 2 solves 15 passes 74 max dF/F 8.21e-15
+CLEAN cycle 11 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 11 t2s 3 solves 15 passes 69 max dF/F 7.52e-15
+elapsed=2.926448e+00 cycle=12 time=1.722303e-01 dt=1.385291e-02
+CLEAN cycle 12 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 12 t2s 2 solves 15 passes 74 max dF/F 9.25e-15
+CLEAN cycle 12 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 12 t2s 3 solves 15 passes 70 max dF/F 8.12e-15
+elapsed=3.056870e+00 cycle=13 time=1.860832e-01 dt=1.378566e-02
+CLEAN cycle 13 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 13 t2s 2 solves 15 passes 74 max dF/F 9.20e-15
+CLEAN cycle 13 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 13 t2s 3 solves 15 passes 70 max dF/F 9.10e-15
+elapsed=3.184738e+00 cycle=14 time=1.998689e-01 dt=1.369190e-02
+CLEAN cycle 14 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 14 t2s 2 solves 15 passes 74 max dF/F 8.74e-15
+CLEAN cycle 14 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 14 t2s 3 solves 15 passes 70 max dF/F 9.84e-15
+elapsed=3.311018e+00 cycle=15 time=2.135608e-01 dt=1.360414e-02
+CLEAN cycle 15 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 15 t2s 2 solves 15 passes 74 max dF/F 8.27e-15
+CLEAN cycle 15 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 15 t2s 3 solves 15 passes 71 max dF/F 8.73e-15
+elapsed=3.457568e+00 cycle=16 time=2.271649e-01 dt=1.352175e-02
+CLEAN cycle 16 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 16 t2s 2 solves 15 passes 74 max dF/F 8.27e-15
+CLEAN cycle 16 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 16 t2s 3 solves 15 passes 71 max dF/F 9.84e-15
+elapsed=3.583879e+00 cycle=17 time=2.406867e-01 dt=1.343783e-02
+CLEAN cycle 17 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 17 t2s 2 solves 15 passes 74 max dF/F 8.74e-15
+CLEAN cycle 17 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 17 t2s 3 solves 15 passes 72 max dF/F 3.34e-15
+elapsed=3.709762e+00 cycle=18 time=2.541245e-01 dt=1.335292e-02
+CLEAN cycle 18 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 18 t2s 2 solves 15 passes 75 max dF/F 6.31e-15
+CLEAN cycle 18 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 18 t2s 3 solves 15 passes 72 max dF/F 3.66e-15
+elapsed=3.826819e+00 cycle=19 time=2.674774e-01 dt=1.327318e-02
+CLEAN cycle 19 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 19 t2s 2 solves 15 passes 76 max dF/F 4.73e-15
+CLEAN cycle 19 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 19 t2s 3 solves 15 passes 72 max dF/F 3.97e-15
+elapsed=3.919693e+00 cycle=20 time=2.807506e-01 dt=1.319916e-02
+CLEAN cycle 20 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 20 t2s 2 solves 15 passes 76 max dF/F 4.59e-15
+CLEAN cycle 20 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 20 t2s 3 solves 15 passes 72 max dF/F 4.25e-15
+elapsed=4.009858e+00 cycle=21 time=2.939498e-01 dt=1.312924e-02
+CLEAN cycle 21 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 21 t2s 2 solves 15 passes 76 max dF/F 4.15e-15
+CLEAN cycle 21 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 21 t2s 3 solves 15 passes 72 max dF/F 4.60e-15
+elapsed=4.101701e+00 cycle=22 time=3.070790e-01 dt=1.305289e-02
+CLEAN cycle 22 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 22 t2s 2 solves 15 passes 76 max dF/F 4.02e-15
+CLEAN cycle 22 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 22 t2s 3 solves 15 passes 72 max dF/F 4.91e-15
+elapsed=4.194773e+00 cycle=23 time=3.201319e-01 dt=1.297889e-02
+CLEAN cycle 23 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 23 t2s 2 solves 15 passes 76 max dF/F 4.48e-15
+CLEAN cycle 23 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 23 t2s 3 solves 15 passes 72 max dF/F 5.36e-15
+elapsed=4.301031e+00 cycle=24 time=3.331108e-01 dt=1.290983e-02
+CLEAN cycle 24 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 24 t2s 2 solves 15 passes 76 max dF/F 4.89e-15
+CLEAN cycle 24 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 24 t2s 3 solves 15 passes 71 max dF/F 9.42e-15
+elapsed=4.394325e+00 cycle=25 time=3.460206e-01 dt=1.284555e-02
+CLEAN cycle 25 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 25 t2s 2 solves 15 passes 76 max dF/F 5.26e-15
+CLEAN cycle 25 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 25 t2s 3 solves 15 passes 71 max dF/F 9.95e-15
+elapsed=4.485438e+00 cycle=26 time=3.588661e-01 dt=1.278469e-02
+CLEAN cycle 26 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 26 t2s 2 solves 15 passes 76 max dF/F 5.85e-15
+CLEAN cycle 26 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 26 t2s 3 solves 15 passes 72 max dF/F 7.51e-15
+elapsed=4.578089e+00 cycle=27 time=3.716508e-01 dt=1.271504e-02
+CLEAN cycle 27 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 27 t2s 2 solves 15 passes 76 max dF/F 7.11e-15
+CLEAN cycle 27 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 27 t2s 3 solves 15 passes 72 max dF/F 8.85e-15
+elapsed=4.669793e+00 cycle=28 time=3.843659e-01 dt=1.264917e-02
+CLEAN cycle 28 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 28 t2s 2 solves 15 passes 76 max dF/F 8.77e-15
+CLEAN cycle 28 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 28 t2s 3 solves 15 passes 73 max dF/F 7.74e-15
+elapsed=4.762688e+00 cycle=29 time=3.970150e-01 dt=1.258787e-02
+CLEAN cycle 29 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 29 t2s 2 solves 15 passes 77 max dF/F 7.19e-15
+CLEAN cycle 29 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 29 t2s 3 solves 15 passes 73 max dF/F 8.26e-15
+elapsed=4.855740e+00 cycle=30 time=4.096029e-01 dt=1.253070e-02
+CLEAN cycle 30 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 30 t2s 2 solves 15 passes 77 max dF/F 7.80e-15
+CLEAN cycle 30 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 30 t2s 3 solves 15 passes 73 max dF/F 8.79e-15
+elapsed=4.948177e+00 cycle=31 time=4.221336e-01 dt=1.247639e-02
+CLEAN cycle 31 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 31 t2s 2 solves 15 passes 77 max dF/F 8.36e-15
+CLEAN cycle 31 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 31 t2s 3 solves 15 passes 73 max dF/F 9.33e-15
+elapsed=5.059078e+00 cycle=32 time=4.346100e-01 dt=1.241378e-02
+CLEAN cycle 32 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 32 t2s 2 solves 15 passes 77 max dF/F 8.94e-15
+CLEAN cycle 32 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 32 t2s 3 solves 15 passes 73 max dF/F 9.88e-15
+elapsed=5.152268e+00 cycle=33 time=4.470238e-01 dt=1.235377e-02
+CLEAN cycle 33 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 33 t2s 2 solves 15 passes 77 max dF/F 9.47e-15
+CLEAN cycle 33 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 33 t2s 3 solves 15 passes 74 max dF/F 9.72e-15
+elapsed=5.246838e+00 cycle=34 time=4.593776e-01 dt=1.229785e-02
+CLEAN cycle 34 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 34 t2s 2 solves 15 passes 78 max dF/F 7.64e-15
+CLEAN cycle 34 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 34 t2s 3 solves 15 passes 75 max dF/F 7.69e-15
+elapsed=5.340153e+00 cycle=35 time=4.716754e-01 dt=1.224597e-02
+CLEAN cycle 35 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 35 t2s 2 solves 15 passes 78 max dF/F 8.00e-15
+CLEAN cycle 35 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 35 t2s 3 solves 15 passes 75 max dF/F 8.06e-15
+elapsed=5.433860e+00 cycle=36 time=4.839214e-01 dt=1.219645e-02
+CLEAN cycle 36 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 36 t2s 2 solves 15 passes 78 max dF/F 8.43e-15
+CLEAN cycle 36 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 36 t2s 3 solves 15 passes 75 max dF/F 8.43e-15
+elapsed=5.526194e+00 cycle=37 time=4.961178e-01 dt=1.214215e-02
+CLEAN cycle 37 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 37 t2s 2 solves 15 passes 78 max dF/F 8.80e-15
+CLEAN cycle 37 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 37 t2s 3 solves 15 passes 75 max dF/F 8.80e-15
+elapsed=5.617912e+00 cycle=38 time=5.082600e-01 dt=1.208620e-02
+CLEAN cycle 38 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 38 t2s 2 solves 15 passes 78 max dF/F 9.13e-15
+CLEAN cycle 38 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 38 t2s 3 solves 15 passes 75 max dF/F 9.12e-15
+elapsed=5.711050e+00 cycle=39 time=5.203462e-01 dt=1.203380e-02
+CLEAN cycle 39 t2s 2 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 39 t2s 2 solves 15 passes 78 max dF/F 9.50e-15
+CLEAN cycle 39 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 39 t2s 3 solves 15 passes 75 max dF/F 9.48e-15
+elapsed=5.818571e+00 cycle=40 time=5.323800e-01 dt=1.198550e-02
+CLEAN cycle 40 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 40 t2s 2 solves 15 passes 76 max dF/F 4.59e-15
+CLEAN cycle 40 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 40 t2s 3 solves 15 passes 73 max dF/F 4.78e-15
+elapsed=5.911886e+00 cycle=41 time=5.443655e-01 dt=1.193969e-02
+CLEAN cycle 41 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 41 t2s 2 solves 15 passes 76 max dF/F 4.82e-15
+CLEAN cycle 41 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 41 t2s 3 solves 15 passes 73 max dF/F 4.87e-15
+elapsed=6.005249e+00 cycle=42 time=5.563052e-01 dt=1.189554e-02
+CLEAN cycle 42 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 42 t2s 2 solves 15 passes 76 max dF/F 5.00e-15
+CLEAN cycle 42 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 42 t2s 3 solves 15 passes 73 max dF/F 5.03e-15
+elapsed=6.097489e+00 cycle=43 time=5.682007e-01 dt=1.184228e-02
+CLEAN cycle 43 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 43 t2s 2 solves 15 passes 76 max dF/F 5.20e-15
+CLEAN cycle 43 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 43 t2s 3 solves 15 passes 73 max dF/F 5.20e-15
+elapsed=6.190042e+00 cycle=44 time=5.800430e-01 dt=1.179204e-02
+CLEAN cycle 44 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 44 t2s 2 solves 15 passes 76 max dF/F 5.40e-15
+CLEAN cycle 44 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 44 t2s 3 solves 15 passes 73 max dF/F 5.37e-15
+elapsed=6.282687e+00 cycle=45 time=5.918350e-01 dt=1.174521e-02
+CLEAN cycle 45 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 45 t2s 2 solves 15 passes 76 max dF/F 5.61e-15
+CLEAN cycle 45 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 45 t2s 3 solves 15 passes 73 max dF/F 5.60e-15
+elapsed=6.375986e+00 cycle=46 time=6.035802e-01 dt=1.170225e-02
+CLEAN cycle 46 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 46 t2s 2 solves 15 passes 76 max dF/F 5.84e-15
+CLEAN cycle 46 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 46 t2s 3 solves 15 passes 73 max dF/F 5.85e-15
+elapsed=6.469059e+00 cycle=47 time=6.152825e-01 dt=1.166084e-02
+CLEAN cycle 47 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 47 t2s 2 solves 15 passes 76 max dF/F 6.01e-15
+CLEAN cycle 47 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 47 t2s 3 solves 15 passes 73 max dF/F 6.09e-15
+elapsed=6.576754e+00 cycle=48 time=6.269433e-01 dt=1.161955e-02
+CLEAN cycle 48 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 48 t2s 2 solves 15 passes 76 max dF/F 6.07e-15
+CLEAN cycle 48 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 48 t2s 3 solves 15 passes 73 max dF/F 6.35e-15
+elapsed=6.670234e+00 cycle=49 time=6.385629e-01 dt=1.157051e-02
+CLEAN cycle 49 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 49 t2s 2 solves 15 passes 76 max dF/F 6.43e-15
+CLEAN cycle 49 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 49 t2s 3 solves 15 passes 73 max dF/F 6.58e-15
+elapsed=6.764493e+00 cycle=50 time=6.501334e-01 dt=1.152427e-02
+CLEAN cycle 50 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 50 t2s 2 solves 15 passes 76 max dF/F 6.76e-15
+CLEAN cycle 50 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 50 t2s 3 solves 15 passes 73 max dF/F 6.83e-15
+elapsed=6.858196e+00 cycle=51 time=6.616576e-01 dt=1.148117e-02
+CLEAN cycle 51 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 51 t2s 2 solves 15 passes 76 max dF/F 7.01e-15
+CLEAN cycle 51 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 51 t2s 3 solves 15 passes 73 max dF/F 7.12e-15
+elapsed=6.951811e+00 cycle=52 time=6.731388e-01 dt=1.144170e-02
+CLEAN cycle 52 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 52 t2s 2 solves 15 passes 76 max dF/F 7.40e-15
+CLEAN cycle 52 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 52 t2s 3 solves 15 passes 73 max dF/F 7.50e-15
+elapsed=7.044829e+00 cycle=53 time=6.845805e-01 dt=1.140387e-02
+CLEAN cycle 53 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 53 t2s 2 solves 15 passes 76 max dF/F 7.90e-15
+CLEAN cycle 53 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 53 t2s 3 solves 15 passes 73 max dF/F 7.98e-15
+elapsed=7.137598e+00 cycle=54 time=6.959844e-01 dt=1.136739e-02
+CLEAN cycle 54 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 54 t2s 2 solves 15 passes 76 max dF/F 8.10e-15
+CLEAN cycle 54 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 54 t2s 3 solves 15 passes 73 max dF/F 8.31e-15
+elapsed=7.228571e+00 cycle=55 time=7.073518e-01 dt=1.132190e-02
+CLEAN cycle 55 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 55 t2s 2 solves 15 passes 76 max dF/F 8.46e-15
+CLEAN cycle 55 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 55 t2s 3 solves 15 passes 73 max dF/F 8.65e-15
+elapsed=7.336567e+00 cycle=56 time=7.186737e-01 dt=1.127822e-02
+CLEAN cycle 56 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 56 t2s 2 solves 15 passes 76 max dF/F 8.81e-15
+CLEAN cycle 56 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 56 t2s 3 solves 15 passes 73 max dF/F 9.05e-15
+elapsed=7.428229e+00 cycle=57 time=7.299519e-01 dt=1.123736e-02
+CLEAN cycle 57 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 57 t2s 2 solves 15 passes 76 max dF/F 9.13e-15
+CLEAN cycle 57 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 57 t2s 3 solves 15 passes 73 max dF/F 9.42e-15
+elapsed=7.520098e+00 cycle=58 time=7.411893e-01 dt=1.119967e-02
+CLEAN cycle 58 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 58 t2s 2 solves 15 passes 76 max dF/F 8.95e-15
+CLEAN cycle 58 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 58 t2s 3 solves 15 passes 73 max dF/F 8.92e-15
+elapsed=7.614499e+00 cycle=59 time=7.523889e-01 dt=1.116466e-02
+CLEAN cycle 59 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 59 t2s 2 solves 15 passes 76 max dF/F 9.08e-15
+CLEAN cycle 59 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 59 t2s 3 solves 15 passes 74 max dF/F 8.89e-15
+elapsed=7.705980e+00 cycle=60 time=7.635536e-01 dt=1.113067e-02
+CLEAN cycle 60 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 60 t2s 2 solves 15 passes 78 max dF/F 6.64e-15
+CLEAN cycle 60 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 60 t2s 3 solves 15 passes 74 max dF/F 9.49e-15
+elapsed=7.797189e+00 cycle=61 time=7.746842e-01 dt=1.109355e-02
+CLEAN cycle 61 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 61 t2s 2 solves 15 passes 77 max dF/F 7.63e-15
+CLEAN cycle 61 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 61 t2s 3 solves 15 passes 74 max dF/F 9.77e-15
+elapsed=7.888297e+00 cycle=62 time=7.857778e-01 dt=1.105126e-02
+CLEAN cycle 62 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 62 t2s 2 solves 15 passes 77 max dF/F 8.80e-15
+CLEAN cycle 62 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 62 t2s 3 solves 15 passes 75 max dF/F 7.13e-15
+elapsed=7.979257e+00 cycle=63 time=7.968291e-01 dt=1.101144e-02
+CLEAN cycle 63 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 63 t2s 2 solves 15 passes 77 max dF/F 9.12e-15
+CLEAN cycle 63 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 63 t2s 3 solves 15 passes 75 max dF/F 7.22e-15
+elapsed=8.090137e+00 cycle=64 time=8.078405e-01 dt=1.097436e-02
+CLEAN cycle 64 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 64 t2s 2 solves 15 passes 77 max dF/F 9.66e-15
+CLEAN cycle 64 t2s 3 it 0 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 64 t2s 3 solves 15 passes 75 max dF/F 7.31e-15
+elapsed=8.179773e+00 cycle=65 time=8.188149e-01 dt=1.094040e-02
+CLEAN cycle 65 t2s 2 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 65 t2s 2 solves 15 passes 86 max dF/F 6.22e-15
+CLEAN cycle 65 t2s 3 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 65 t2s 3 solves 15 passes 83 max dF/F 6.16e-15
+elapsed=8.270395e+00 cycle=66 time=8.297553e-01 dt=1.090868e-02
+CLEAN cycle 66 t2s 2 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 66 t2s 2 solves 15 passes 86 max dF/F 6.35e-15
+CLEAN cycle 66 t2s 3 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 66 t2s 3 solves 15 passes 83 max dF/F 6.33e-15
+elapsed=8.361281e+00 cycle=67 time=8.406639e-01 dt=1.087778e-02
+CLEAN cycle 67 t2s 2 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 67 t2s 2 solves 15 passes 86 max dF/F 6.50e-15
+CLEAN cycle 67 t2s 3 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 67 t2s 3 solves 15 passes 83 max dF/F 6.49e-15
+elapsed=8.453446e+00 cycle=68 time=8.515417e-01 dt=1.084212e-02
+CLEAN cycle 68 t2s 2 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 68 t2s 2 solves 15 passes 85 max dF/F 8.09e-15
+CLEAN cycle 68 t2s 3 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 68 t2s 3 solves 15 passes 83 max dF/F 6.61e-15
+elapsed=8.544005e+00 cycle=69 time=8.623838e-01 dt=1.080250e-02
+CLEAN cycle 69 t2s 2 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 69 t2s 2 solves 15 passes 86 max dF/F 6.77e-15
+CLEAN cycle 69 t2s 3 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 69 t2s 3 solves 15 passes 82 max dF/F 6.73e-15
+elapsed=8.634232e+00 cycle=70 time=8.731863e-01 dt=1.076524e-02
+CLEAN cycle 70 t2s 2 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 70 t2s 2 solves 15 passes 86 max dF/F 6.90e-15
+CLEAN cycle 70 t2s 3 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 70 t2s 3 solves 15 passes 82 max dF/F 6.85e-15
+elapsed=8.724021e+00 cycle=71 time=8.839516e-01 dt=1.073055e-02
+CLEAN cycle 71 t2s 2 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 71 t2s 2 solves 15 passes 86 max dF/F 6.98e-15
+CLEAN cycle 71 t2s 3 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 71 t2s 3 solves 15 passes 82 max dF/F 7.02e-15
+elapsed=8.826257e+00 cycle=72 time=8.946821e-01 dt=1.069879e-02
+CLEAN cycle 72 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 72 t2s 2 solves 18 passes 91 max dF/F 7.19e-15
+CLEAN cycle 72 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 72 t2s 3 solves 18 passes 87 max dF/F 7.16e-15
+elapsed=8.921863e+00 cycle=73 time=9.053809e-01 dt=1.066994e-02
+CLEAN cycle 73 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 73 t2s 2 solves 18 passes 91 max dF/F 7.46e-15
+CLEAN cycle 73 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 73 t2s 3 solves 18 passes 87 max dF/F 7.42e-15
+elapsed=9.015353e+00 cycle=74 time=9.160508e-01 dt=1.064161e-02
+CLEAN cycle 74 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 74 t2s 2 solves 18 passes 91 max dF/F 7.71e-15
+CLEAN cycle 74 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 74 t2s 3 solves 18 passes 88 max dF/F 7.65e-15
+elapsed=9.111520e+00 cycle=75 time=9.266925e-01 dt=1.061106e-02
+CLEAN cycle 75 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 75 t2s 2 solves 18 passes 91 max dF/F 7.70e-15
+CLEAN cycle 75 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 75 t2s 3 solves 18 passes 89 max dF/F 7.68e-15
+elapsed=9.207716e+00 cycle=76 time=9.373035e-01 dt=1.057303e-02
+CLEAN cycle 76 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 76 t2s 2 solves 18 passes 91 max dF/F 9.66e-15
+CLEAN cycle 76 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 76 t2s 3 solves 18 passes 88 max dF/F 9.22e-15
+elapsed=9.303168e+00 cycle=77 time=9.478765e-01 dt=1.053722e-02
+CLEAN cycle 77 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 77 t2s 2 solves 18 passes 91 max dF/F 8.19e-15
+CLEAN cycle 77 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 77 t2s 3 solves 18 passes 88 max dF/F 8.38e-15
+elapsed=9.399052e+00 cycle=78 time=9.584138e-01 dt=1.050379e-02
+CLEAN cycle 78 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 78 t2s 2 solves 18 passes 91 max dF/F 8.97e-15
+CLEAN cycle 78 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 78 t2s 3 solves 18 passes 87 max dF/F 8.82e-15
+elapsed=9.494679e+00 cycle=79 time=9.689176e-01 dt=1.047299e-02
+CLEAN cycle 79 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 79 t2s 2 solves 18 passes 90 max dF/F 9.15e-15
+CLEAN cycle 79 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 79 t2s 3 solves 18 passes 88 max dF/F 9.06e-15
+elapsed=9.606065e+00 cycle=80 time=9.793905e-01 dt=1.044521e-02
+CLEAN cycle 80 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 80 t2s 2 solves 18 passes 91 max dF/F 9.49e-15
+CLEAN cycle 80 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 80 t2s 3 solves 18 passes 88 max dF/F 9.31e-15
+elapsed=9.701852e+00 cycle=81 time=9.898358e-01 dt=1.041949e-02
+CLEAN cycle 81 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 81 t2s 2 solves 18 passes 91 max dF/F 9.74e-15
+CLEAN cycle 81 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 81 t2s 3 solves 18 passes 88 max dF/F 9.68e-15
+elapsed=9.797570e+00 cycle=82 time=1.000255e+00 dt=1.039421e-02
+CLEAN cycle 82 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 82 t2s 2 solves 18 passes 93 max dF/F 8.68e-15
+CLEAN cycle 82 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 82 t2s 3 solves 18 passes 88 max dF/F 9.99e-15
+elapsed=9.892843e+00 cycle=83 time=1.010649e+00 dt=1.036110e-02
+CLEAN cycle 83 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 83 t2s 2 solves 18 passes 93 max dF/F 8.85e-15
+CLEAN cycle 83 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 83 t2s 3 solves 18 passes 89 max dF/F 8.82e-15
+elapsed=9.987465e+00 cycle=84 time=1.021011e+00 dt=1.032542e-02
+CLEAN cycle 84 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 84 t2s 2 solves 18 passes 93 max dF/F 8.99e-15
+CLEAN cycle 84 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 84 t2s 3 solves 18 passes 89 max dF/F 8.97e-15
+elapsed=1.008288e+01 cycle=85 time=1.031336e+00 dt=1.029192e-02
+CLEAN cycle 85 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 85 t2s 2 solves 18 passes 93 max dF/F 9.18e-15
+CLEAN cycle 85 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 85 t2s 3 solves 18 passes 89 max dF/F 9.14e-15
+elapsed=1.017880e+01 cycle=86 time=1.041628e+00 dt=1.026074e-02
+CLEAN cycle 86 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 86 t2s 2 solves 18 passes 93 max dF/F 9.29e-15
+CLEAN cycle 86 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 86 t2s 3 solves 18 passes 89 max dF/F 9.30e-15
+elapsed=1.028810e+01 cycle=87 time=1.051889e+00 dt=1.023211e-02
+CLEAN cycle 87 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 87 t2s 2 solves 18 passes 93 max dF/F 9.68e-15
+CLEAN cycle 87 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 87 t2s 3 solves 18 passes 92 max dF/F 9.59e-15
+elapsed=1.040085e+01 cycle=88 time=1.062121e+00 dt=1.020648e-02
+CLEAN cycle 88 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 88 t2s 2 solves 18 passes 96 max dF/F 8.52e-15
+CLEAN cycle 88 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 88 t2s 3 solves 18 passes 95 max dF/F 5.15e-15
+elapsed=1.050280e+01 cycle=89 time=1.072327e+00 dt=1.018302e-02
+CLEAN cycle 89 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 89 t2s 2 solves 18 passes 94 max dF/F 9.77e-15
+CLEAN cycle 89 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 89 t2s 3 solves 18 passes 92 max dF/F 9.63e-15
+elapsed=1.060933e+01 cycle=90 time=1.082510e+00 dt=1.015989e-02
+CLEAN cycle 90 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 90 t2s 2 solves 18 passes 95 max dF/F 8.23e-15
+CLEAN cycle 90 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 90 t2s 3 solves 18 passes 93 max dF/F 9.94e-15
+elapsed=1.071067e+01 cycle=91 time=1.092670e+00 dt=1.012703e-02
+CLEAN cycle 91 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 91 t2s 2 solves 18 passes 95 max dF/F 8.38e-15
+CLEAN cycle 91 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 91 t2s 3 solves 18 passes 94 max dF/F 8.38e-15
+elapsed=1.081236e+01 cycle=92 time=1.102797e+00 dt=1.009306e-02
+CLEAN cycle 92 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 92 t2s 2 solves 18 passes 95 max dF/F 8.52e-15
+CLEAN cycle 92 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 92 t2s 3 solves 18 passes 94 max dF/F 8.52e-15
+elapsed=1.091331e+01 cycle=93 time=1.112890e+00 dt=1.006146e-02
+CLEAN cycle 93 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 93 t2s 2 solves 18 passes 95 max dF/F 8.69e-15
+CLEAN cycle 93 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 93 t2s 3 solves 18 passes 94 max dF/F 8.67e-15
+elapsed=1.101471e+01 cycle=94 time=1.122952e+00 dt=1.003238e-02
+CLEAN cycle 94 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 94 t2s 2 solves 18 passes 95 max dF/F 8.86e-15
+CLEAN cycle 94 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 94 t2s 3 solves 18 passes 93 max dF/F 9.56e-15
+elapsed=1.111618e+01 cycle=95 time=1.132984e+00 dt=1.000605e-02
+CLEAN cycle 95 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 95 t2s 2 solves 18 passes 95 max dF/F 9.04e-15
+CLEAN cycle 95 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 95 t2s 3 solves 18 passes 94 max dF/F 9.01e-15
+elapsed=1.123563e+01 cycle=96 time=1.142990e+00 dt=9.982870e-03
+CLEAN cycle 96 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 96 t2s 2 solves 18 passes 95 max dF/F 9.24e-15
+CLEAN cycle 96 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 96 t2s 3 solves 18 passes 94 max dF/F 9.20e-15
+elapsed=1.133819e+01 cycle=97 time=1.152973e+00 dt=9.963495e-03
+CLEAN cycle 97 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 97 t2s 2 solves 18 passes 95 max dF/F 9.47e-15
+CLEAN cycle 97 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 97 t2s 3 solves 18 passes 94 max dF/F 9.42e-15
+elapsed=1.143963e+01 cycle=98 time=1.162936e+00 dt=9.946059e-03
+CLEAN cycle 98 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 98 t2s 2 solves 18 passes 95 max dF/F 9.70e-15
+CLEAN cycle 98 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 98 t2s 3 solves 18 passes 94 max dF/F 9.65e-15
+elapsed=1.154149e+01 cycle=99 time=1.172883e+00 dt=9.929737e-03
+CLEAN cycle 99 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 99 t2s 2 solves 18 passes 95 max dF/F 9.95e-15
+CLEAN cycle 99 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 99 t2s 3 solves 18 passes 94 max dF/F 9.89e-15
+elapsed=1.164360e+01 cycle=100 time=1.182812e+00 dt=9.900219e-03
+CLEAN cycle 100 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 100 t2s 2 solves 18 passes 96 max dF/F 5.98e-15
+CLEAN cycle 100 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 100 t2s 3 solves 18 passes 95 max dF/F 6.02e-15
+elapsed=1.174545e+01 cycle=101 time=1.192713e+00 dt=9.873140e-03
+CLEAN cycle 101 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 101 t2s 2 solves 18 passes 96 max dF/F 6.18e-15
+CLEAN cycle 101 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 101 t2s 3 solves 18 passes 95 max dF/F 6.09e-15
+elapsed=1.184744e+01 cycle=102 time=1.202586e+00 dt=9.848939e-03
+CLEAN cycle 102 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 102 t2s 2 solves 18 passes 96 max dF/F 6.28e-15
+CLEAN cycle 102 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 102 t2s 3 solves 18 passes 95 max dF/F 6.28e-15
+elapsed=1.194834e+01 cycle=103 time=1.212435e+00 dt=9.827728e-03
+CLEAN cycle 103 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 103 t2s 2 solves 18 passes 96 max dF/F 6.48e-15
+CLEAN cycle 103 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 103 t2s 3 solves 18 passes 95 max dF/F 6.41e-15
+elapsed=1.205951e+01 cycle=104 time=1.222262e+00 dt=9.809741e-03
+CLEAN cycle 104 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 104 t2s 2 solves 18 passes 95 max dF/F 6.76e-15
+CLEAN cycle 104 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 104 t2s 3 solves 18 passes 94 max dF/F 9.63e-15
+elapsed=1.216159e+01 cycle=105 time=1.232072e+00 dt=9.795432e-03
+CLEAN cycle 105 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 105 t2s 2 solves 18 passes 96 max dF/F 7.07e-15
+CLEAN cycle 105 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 105 t2s 3 solves 18 passes 95 max dF/F 6.90e-15
+elapsed=1.226360e+01 cycle=106 time=1.241867e+00 dt=9.785646e-03
+CLEAN cycle 106 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 106 t2s 2 solves 18 passes 96 max dF/F 7.19e-15
+CLEAN cycle 106 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 106 t2s 3 solves 18 passes 95 max dF/F 7.15e-15
+elapsed=1.235369e+01 cycle=107 time=1.251653e+00 dt=9.779064e-03
+CLEAN cycle 107 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 107 t2s 2 solves 18 passes 96 max dF/F 7.45e-15
+CLEAN cycle 107 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 107 t2s 3 solves 18 passes 95 max dF/F 7.41e-15
+elapsed=1.243060e+01 cycle=108 time=1.261432e+00 dt=9.773695e-03
+CLEAN cycle 108 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 108 t2s 2 solves 18 passes 96 max dF/F 7.84e-15
+CLEAN cycle 108 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 108 t2s 3 solves 18 passes 95 max dF/F 7.70e-15
+elapsed=1.250775e+01 cycle=109 time=1.271206e+00 dt=9.753064e-03
+CLEAN cycle 109 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 109 t2s 2 solves 18 passes 95 max dF/F 7.99e-15
+CLEAN cycle 109 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 109 t2s 3 solves 18 passes 94 max dF/F 7.89e-15
+elapsed=1.258410e+01 cycle=110 time=1.280959e+00 dt=9.731818e-03
+CLEAN cycle 110 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 110 t2s 2 solves 18 passes 96 max dF/F 8.24e-15
+CLEAN cycle 110 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 110 t2s 3 solves 18 passes 95 max dF/F 8.17e-15
+elapsed=1.266058e+01 cycle=111 time=1.290691e+00 dt=9.713615e-03
+CLEAN cycle 111 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 111 t2s 2 solves 18 passes 96 max dF/F 8.49e-15
+CLEAN cycle 111 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 111 t2s 3 solves 18 passes 95 max dF/F 8.35e-15
+elapsed=1.275474e+01 cycle=112 time=1.300404e+00 dt=9.698553e-03
+CLEAN cycle 112 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 112 t2s 2 solves 18 passes 96 max dF/F 8.73e-15
+CLEAN cycle 112 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 112 t2s 3 solves 18 passes 95 max dF/F 8.63e-15
+elapsed=1.283180e+01 cycle=113 time=1.310103e+00 dt=9.686943e-03
+CLEAN cycle 113 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 113 t2s 2 solves 18 passes 96 max dF/F 9.01e-15
+CLEAN cycle 113 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 113 t2s 3 solves 18 passes 95 max dF/F 8.94e-15
+elapsed=1.290842e+01 cycle=114 time=1.319790e+00 dt=9.679478e-03
+CLEAN cycle 114 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 114 t2s 2 solves 18 passes 96 max dF/F 9.35e-15
+CLEAN cycle 114 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 114 t2s 3 solves 18 passes 94 max dF/F 9.53e-15
+elapsed=1.298506e+01 cycle=115 time=1.329469e+00 dt=9.677519e-03
+CLEAN cycle 115 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 115 t2s 2 solves 18 passes 95 max dF/F 9.77e-15
+CLEAN cycle 115 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 115 t2s 3 solves 18 passes 95 max dF/F 9.64e-15
+elapsed=1.306199e+01 cycle=116 time=1.339147e+00 dt=9.678383e-03
+CLEAN cycle 116 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 116 t2s 2 solves 18 passes 93 max dF/F 9.91e-15
+CLEAN cycle 116 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 116 t2s 3 solves 18 passes 93 max dF/F 9.50e-15
+elapsed=1.313872e+01 cycle=117 time=1.348825e+00 dt=9.676291e-03
+CLEAN cycle 117 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 117 t2s 2 solves 18 passes 94 max dF/F 9.88e-15
+CLEAN cycle 117 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 117 t2s 3 solves 18 passes 93 max dF/F 9.88e-15
+elapsed=1.322213e+01 cycle=118 time=1.358502e+00 dt=9.654446e-03
+CLEAN cycle 118 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 118 t2s 2 solves 18 passes 95 max dF/F 6.86e-15
+CLEAN cycle 118 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 118 t2s 3 solves 18 passes 94 max dF/F 6.78e-15
+elapsed=1.329902e+01 cycle=119 time=1.368156e+00 dt=9.635927e-03
+CLEAN cycle 119 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 119 t2s 2 solves 18 passes 95 max dF/F 7.03e-15
+CLEAN cycle 119 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 119 t2s 3 solves 18 passes 94 max dF/F 7.04e-15
+elapsed=1.338549e+01 cycle=120 time=1.377792e+00 dt=9.620738e-03
+CLEAN cycle 120 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 120 t2s 2 solves 18 passes 95 max dF/F 7.45e-15
+CLEAN cycle 120 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 120 t2s 3 solves 18 passes 94 max dF/F 7.38e-15
+elapsed=1.346247e+01 cycle=121 time=1.387413e+00 dt=9.609076e-03
+CLEAN cycle 121 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 121 t2s 2 solves 18 passes 94 max dF/F 7.74e-15
+CLEAN cycle 121 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 121 t2s 3 solves 18 passes 94 max dF/F 7.66e-15
+elapsed=1.353928e+01 cycle=122 time=1.397022e+00 dt=9.601551e-03
+CLEAN cycle 122 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 122 t2s 2 solves 18 passes 94 max dF/F 9.77e-15
+CLEAN cycle 122 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 122 t2s 3 solves 18 passes 94 max dF/F 7.93e-15
+elapsed=1.361618e+01 cycle=123 time=1.406623e+00 dt=9.599454e-03
+CLEAN cycle 123 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 123 t2s 2 solves 18 passes 95 max dF/F 8.28e-15
+CLEAN cycle 123 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 123 t2s 3 solves 18 passes 94 max dF/F 8.28e-15
+elapsed=1.369302e+01 cycle=124 time=1.416223e+00 dt=9.605182e-03
+CLEAN cycle 124 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 124 t2s 2 solves 18 passes 94 max dF/F 9.34e-15
+CLEAN cycle 124 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 124 t2s 3 solves 18 passes 94 max dF/F 8.66e-15
+elapsed=1.376955e+01 cycle=125 time=1.425828e+00 dt=9.612226e-03
+CLEAN cycle 125 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 125 t2s 2 solves 18 passes 95 max dF/F 9.12e-15
+CLEAN cycle 125 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 125 t2s 3 solves 18 passes 94 max dF/F 9.08e-15
+elapsed=1.384609e+01 cycle=126 time=1.435440e+00 dt=9.597734e-03
+CLEAN cycle 126 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 126 t2s 2 solves 18 passes 95 max dF/F 9.40e-15
+CLEAN cycle 126 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 126 t2s 3 solves 18 passes 94 max dF/F 9.45e-15
+elapsed=1.392259e+01 cycle=127 time=1.445038e+00 dt=9.578023e-03
+CLEAN cycle 127 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 127 t2s 2 solves 18 passes 94 max dF/F 9.70e-15
+CLEAN cycle 127 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 127 t2s 3 solves 18 passes 94 max dF/F 9.74e-15
+elapsed=1.401274e+01 cycle=128 time=1.454616e+00 dt=9.562015e-03
+CLEAN cycle 128 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 128 t2s 2 solves 18 passes 95 max dF/F 9.97e-15
+CLEAN cycle 128 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 128 t2s 3 solves 18 passes 94 max dF/F 9.98e-15
+elapsed=1.408999e+01 cycle=129 time=1.464178e+00 dt=9.549785e-03
+CLEAN cycle 129 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 129 t2s 2 solves 18 passes 96 max dF/F 9.83e-15
+CLEAN cycle 129 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 129 t2s 3 solves 18 passes 96 max dF/F 9.76e-15
+elapsed=1.416680e+01 cycle=130 time=1.473728e+00 dt=9.541868e-03
+CLEAN cycle 130 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 130 t2s 2 solves 18 passes 96 max dF/F 9.76e-15
+CLEAN cycle 130 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 130 t2s 3 solves 18 passes 97 max dF/F 9.32e-15
+elapsed=1.424387e+01 cycle=131 time=1.483270e+00 dt=9.539588e-03
+CLEAN cycle 131 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 131 t2s 2 solves 18 passes 96 max dF/F 9.78e-15
+CLEAN cycle 131 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 131 t2s 3 solves 18 passes 97 max dF/F 9.78e-15
+elapsed=1.432095e+01 cycle=132 time=1.492809e+00 dt=9.545509e-03
+CLEAN cycle 132 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 132 t2s 2 solves 18 passes 100 max dF/F 8.47e-15
+CLEAN cycle 132 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 132 t2s 3 solves 18 passes 102 max dF/F 8.03e-15
+elapsed=1.439825e+01 cycle=133 time=1.502355e+00 dt=9.558708e-03
+CLEAN cycle 133 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 133 t2s 2 solves 18 passes 100 max dF/F 7.07e-15
+CLEAN cycle 133 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 133 t2s 3 solves 18 passes 98 max dF/F 9.48e-15
+elapsed=1.447523e+01 cycle=134 time=1.511913e+00 dt=9.559840e-03
+CLEAN cycle 134 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 134 t2s 2 solves 18 passes 100 max dF/F 7.27e-15
+CLEAN cycle 134 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 134 t2s 3 solves 18 passes 98 max dF/F 7.41e-15
+elapsed=1.455241e+01 cycle=135 time=1.521473e+00 dt=9.538372e-03
+CLEAN cycle 135 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 135 t2s 2 solves 18 passes 97 max dF/F 9.92e-15
+CLEAN cycle 135 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 135 t2s 3 solves 18 passes 98 max dF/F 7.75e-15
+elapsed=1.464113e+01 cycle=136 time=1.531012e+00 dt=9.521170e-03
+CLEAN cycle 136 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 136 t2s 2 solves 18 passes 98 max dF/F 8.20e-15
+CLEAN cycle 136 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 136 t2s 3 solves 18 passes 98 max dF/F 8.15e-15
+elapsed=1.471845e+01 cycle=137 time=1.540533e+00 dt=9.508204e-03
+CLEAN cycle 137 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 137 t2s 2 solves 18 passes 98 max dF/F 8.53e-15
+CLEAN cycle 137 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 137 t2s 3 solves 18 passes 98 max dF/F 8.62e-15
+elapsed=1.479558e+01 cycle=138 time=1.550041e+00 dt=9.499974e-03
+CLEAN cycle 138 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 138 t2s 2 solves 18 passes 98 max dF/F 9.09e-15
+CLEAN cycle 138 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 138 t2s 3 solves 18 passes 97 max dF/F 9.67e-15
+elapsed=1.487248e+01 cycle=139 time=1.559541e+00 dt=9.497950e-03
+CLEAN cycle 139 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 139 t2s 2 solves 18 passes 98 max dF/F 9.65e-15
+CLEAN cycle 139 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 139 t2s 3 solves 18 passes 97 max dF/F 9.70e-15
+elapsed=1.494943e+01 cycle=140 time=1.569039e+00 dt=9.505060e-03
+CLEAN cycle 140 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 140 t2s 2 solves 18 passes 99 max dF/F 6.56e-15
+CLEAN cycle 140 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 140 t2s 3 solves 18 passes 98 max dF/F 6.56e-15
+elapsed=1.502647e+01 cycle=141 time=1.578544e+00 dt=9.524880e-03
+CLEAN cycle 141 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 141 t2s 2 solves 18 passes 99 max dF/F 7.92e-15
+CLEAN cycle 141 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 141 t2s 3 solves 18 passes 99 max dF/F 8.70e-15
+elapsed=1.510358e+01 cycle=142 time=1.588069e+00 dt=9.539749e-03
+CLEAN cycle 142 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 142 t2s 2 solves 18 passes 99 max dF/F 8.19e-15
+CLEAN cycle 142 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 142 t2s 3 solves 18 passes 99 max dF/F 8.10e-15
+elapsed=1.518111e+01 cycle=143 time=1.597609e+00 dt=9.517102e-03
+CLEAN cycle 143 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 143 t2s 2 solves 18 passes 99 max dF/F 6.08e-15
+CLEAN cycle 143 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 143 t2s 3 solves 18 passes 98 max dF/F 9.88e-15
+elapsed=1.527289e+01 cycle=144 time=1.607126e+00 dt=9.499306e-03
+CLEAN cycle 144 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 144 t2s 2 solves 18 passes 99 max dF/F 7.54e-15
+CLEAN cycle 144 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 144 t2s 3 solves 18 passes 98 max dF/F 9.72e-15
+elapsed=1.535045e+01 cycle=145 time=1.616625e+00 dt=9.486266e-03
+CLEAN cycle 145 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 145 t2s 2 solves 18 passes 99 max dF/F 8.14e-15
+CLEAN cycle 145 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 145 t2s 3 solves 18 passes 99 max dF/F 9.13e-15
+elapsed=1.542765e+01 cycle=146 time=1.626111e+00 dt=9.478569e-03
+CLEAN cycle 146 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 146 t2s 2 solves 18 passes 98 max dF/F 7.37e-15
+CLEAN cycle 146 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 146 t2s 3 solves 18 passes 99 max dF/F 9.84e-15
+elapsed=1.550488e+01 cycle=147 time=1.635590e+00 dt=9.478060e-03
+CLEAN cycle 147 t2s 2 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 147 t2s 2 solves 18 passes 99 max dF/F 7.93e-15
+CLEAN cycle 147 t2s 3 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 147 t2s 3 solves 18 passes 99 max dF/F 9.69e-15
+elapsed=1.558236e+01 cycle=148 time=1.645068e+00 dt=9.488442e-03
+CLEAN cycle 148 t2s 2 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 148 t2s 2 solves 18 passes 99 max dF/F 9.85e-15
+CLEAN cycle 148 t2s 3 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 148 t2s 3 solves 18 passes 99 max dF/F 9.56e-15
+elapsed=1.565995e+01 cycle=149 time=1.654556e+00 dt=9.516157e-03
+CLEAN cycle 149 t2s 2 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 149 t2s 2 solves 18 passes 99 max dF/F 8.77e-15
+CLEAN cycle 149 t2s 3 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 149 t2s 3 solves 18 passes 99 max dF/F 9.81e-15
+elapsed=1.573749e+01 cycle=150 time=1.664072e+00 dt=9.538597e-03
+CLEAN cycle 150 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 150 t2s 2 solves 18 passes 99 max dF/F 9.78e-15
+CLEAN cycle 150 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 150 t2s 3 solves 18 passes 99 max dF/F 9.82e-15
+elapsed=1.581498e+01 cycle=151 time=1.673611e+00 dt=9.515594e-03
+CLEAN cycle 151 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 151 t2s 2 solves 18 passes 100 max dF/F 9.90e-15
+CLEAN cycle 151 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 151 t2s 3 solves 18 passes 99 max dF/F 9.92e-15
+elapsed=1.590207e+01 cycle=152 time=1.683127e+00 dt=9.497963e-03
+CLEAN cycle 152 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 152 t2s 2 solves 18 passes 100 max dF/F 9.88e-15
+CLEAN cycle 152 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 152 t2s 3 solves 18 passes 100 max dF/F 9.74e-15
+elapsed=1.597971e+01 cycle=153 time=1.692625e+00 dt=9.485671e-03
+CLEAN cycle 153 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 153 t2s 2 solves 18 passes 100 max dF/F 9.11e-15
+CLEAN cycle 153 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 153 t2s 3 solves 18 passes 101 max dF/F 9.98e-15
+elapsed=1.605698e+01 cycle=154 time=1.702110e+00 dt=9.479669e-03
+CLEAN cycle 154 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 154 t2s 2 solves 18 passes 100 max dF/F 9.28e-15
+CLEAN cycle 154 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 154 t2s 3 solves 18 passes 101 max dF/F 9.85e-15
+elapsed=1.613412e+01 cycle=155 time=1.711590e+00 dt=9.482631e-03
+CLEAN cycle 155 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 155 t2s 2 solves 18 passes 100 max dF/F 9.75e-15
+CLEAN cycle 155 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 155 t2s 3 solves 18 passes 101 max dF/F 9.95e-15
+elapsed=1.621120e+01 cycle=156 time=1.721073e+00 dt=9.499769e-03
+CLEAN cycle 156 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 156 t2s 2 solves 18 passes 100 max dF/F 9.88e-15
+CLEAN cycle 156 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 156 t2s 3 solves 18 passes 102 max dF/F 9.19e-15
+elapsed=1.628860e+01 cycle=157 time=1.730572e+00 dt=9.537654e-03
+CLEAN cycle 157 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 157 t2s 2 solves 18 passes 103 max dF/F 9.55e-15
+CLEAN cycle 157 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 157 t2s 3 solves 18 passes 102 max dF/F 9.56e-15
+elapsed=1.636613e+01 cycle=158 time=1.740110e+00 dt=9.554923e-03
+CLEAN cycle 158 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 158 t2s 2 solves 18 passes 103 max dF/F 9.78e-15
+CLEAN cycle 158 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 158 t2s 3 solves 18 passes 101 max dF/F 9.82e-15
+elapsed=1.644364e+01 cycle=159 time=1.749665e+00 dt=9.532479e-03
+CLEAN cycle 159 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 159 t2s 2 solves 18 passes 102 max dF/F 9.80e-15
+CLEAN cycle 159 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 159 t2s 3 solves 18 passes 101 max dF/F 9.89e-15
+elapsed=1.653590e+01 cycle=160 time=1.759197e+00 dt=9.515897e-03
+CLEAN cycle 160 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 160 t2s 2 solves 18 passes 103 max dF/F 7.37e-15
+CLEAN cycle 160 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 160 t2s 3 solves 18 passes 105 max dF/F 7.39e-15
+elapsed=1.661379e+01 cycle=161 time=1.768713e+00 dt=9.505510e-03
+CLEAN cycle 161 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 161 t2s 2 solves 18 passes 105 max dF/F 8.69e-15
+CLEAN cycle 161 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 161 t2s 3 solves 18 passes 104 max dF/F 8.88e-15
+elapsed=1.669141e+01 cycle=162 time=1.778219e+00 dt=9.503203e-03
+CLEAN cycle 162 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 162 t2s 2 solves 18 passes 105 max dF/F 9.28e-15
+CLEAN cycle 162 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 162 t2s 3 solves 18 passes 103 max dF/F 9.92e-15
+elapsed=1.676892e+01 cycle=163 time=1.787722e+00 dt=9.513364e-03
+CLEAN cycle 163 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 163 t2s 2 solves 18 passes 105 max dF/F 4.61e-15
+CLEAN cycle 163 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 163 t2s 3 solves 18 passes 103 max dF/F 9.59e-15
+elapsed=1.684645e+01 cycle=164 time=1.797235e+00 dt=9.544181e-03
+CLEAN cycle 164 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 164 t2s 2 solves 18 passes 104 max dF/F 5.85e-15
+CLEAN cycle 164 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 164 t2s 3 solves 18 passes 104 max dF/F 5.89e-15
+elapsed=1.692399e+01 cycle=165 time=1.806780e+00 dt=9.597009e-03
+CLEAN cycle 165 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 165 t2s 2 solves 18 passes 104 max dF/F 9.80e-15
+CLEAN cycle 165 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 165 t2s 3 solves 18 passes 105 max dF/F 4.97e-15
+elapsed=1.700140e+01 cycle=166 time=1.816377e+00 dt=9.585834e-03
+CLEAN cycle 166 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 166 t2s 2 solves 18 passes 106 max dF/F 4.63e-15
+CLEAN cycle 166 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 166 t2s 3 solves 18 passes 106 max dF/F 4.60e-15
+elapsed=1.707877e+01 cycle=167 time=1.825962e+00 dt=9.565563e-03
+CLEAN cycle 167 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 167 t2s 2 solves 18 passes 104 max dF/F 5.42e-15
+CLEAN cycle 167 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 167 t2s 3 solves 18 passes 105 max dF/F 4.69e-15
+elapsed=1.716536e+01 cycle=168 time=1.835528e+00 dt=9.551788e-03
+CLEAN cycle 168 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 168 t2s 2 solves 18 passes 105 max dF/F 5.13e-15
+CLEAN cycle 168 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 168 t2s 3 solves 18 passes 105 max dF/F 4.97e-15
+elapsed=1.724318e+01 cycle=169 time=1.845080e+00 dt=9.545903e-03
+CLEAN cycle 169 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 169 t2s 2 solves 18 passes 105 max dF/F 5.07e-15
+CLEAN cycle 169 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 169 t2s 3 solves 18 passes 105 max dF/F 5.07e-15
+elapsed=1.732288e+01 cycle=170 time=1.854626e+00 dt=9.551891e-03
+CLEAN cycle 170 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 170 t2s 2 solves 18 passes 104 max dF/F 6.00e-15
+CLEAN cycle 170 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 170 t2s 3 solves 18 passes 104 max dF/F 6.36e-15
+elapsed=1.740095e+01 cycle=171 time=1.864178e+00 dt=9.577679e-03
+CLEAN cycle 171 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 171 t2s 2 solves 18 passes 104 max dF/F 5.83e-15
+CLEAN cycle 171 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 171 t2s 3 solves 18 passes 104 max dF/F 5.81e-15
+elapsed=1.747847e+01 cycle=172 time=1.873755e+00 dt=9.633376e-03
+CLEAN cycle 172 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 172 t2s 2 solves 18 passes 104 max dF/F 6.50e-15
+CLEAN cycle 172 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 172 t2s 3 solves 18 passes 105 max dF/F 6.48e-15
+elapsed=1.755583e+01 cycle=173 time=1.883389e+00 dt=9.652860e-03
+CLEAN cycle 173 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 173 t2s 2 solves 18 passes 105 max dF/F 7.13e-15
+CLEAN cycle 173 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 173 t2s 3 solves 18 passes 105 max dF/F 7.09e-15
+elapsed=1.763323e+01 cycle=174 time=1.893042e+00 dt=9.630414e-03
+CLEAN cycle 174 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 174 t2s 2 solves 18 passes 104 max dF/F 7.43e-15
+CLEAN cycle 174 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 174 t2s 3 solves 18 passes 104 max dF/F 7.47e-15
+elapsed=1.771077e+01 cycle=175 time=1.902672e+00 dt=9.614767e-03
+CLEAN cycle 175 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 175 t2s 2 solves 18 passes 105 max dF/F 7.97e-15
+CLEAN cycle 175 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 175 t2s 3 solves 18 passes 105 max dF/F 9.89e-15
+elapsed=1.781264e+01 cycle=176 time=1.912287e+00 dt=9.607180e-03
+CLEAN cycle 176 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 176 t2s 2 solves 18 passes 104 max dF/F 8.53e-15
+CLEAN cycle 176 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 176 t2s 3 solves 18 passes 104 max dF/F 8.41e-15
+elapsed=1.790109e+01 cycle=177 time=1.921894e+00 dt=9.611744e-03
+CLEAN cycle 177 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 177 t2s 2 solves 18 passes 104 max dF/F 9.03e-15
+CLEAN cycle 177 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 177 t2s 3 solves 18 passes 104 max dF/F 9.01e-15
+elapsed=1.797776e+01 cycle=178 time=1.931506e+00 dt=9.637057e-03
+CLEAN cycle 178 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 178 t2s 2 solves 18 passes 104 max dF/F 9.75e-15
+CLEAN cycle 178 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 178 t2s 3 solves 18 passes 104 max dF/F 9.81e-15
+elapsed=1.805818e+01 cycle=179 time=1.941143e+00 dt=9.697636e-03
+CLEAN cycle 179 t2s 2 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 179 t2s 2 solves 18 passes 102 max dF/F 5.23e-15
+CLEAN cycle 179 t2s 3 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 179 t2s 3 solves 18 passes 102 max dF/F 6.35e-15
+elapsed=1.813882e+01 cycle=180 time=1.950840e+00 dt=9.730825e-03
+CLEAN cycle 180 t2s 2 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 180 t2s 2 solves 18 passes 102 max dF/F 5.54e-15
+CLEAN cycle 180 t2s 3 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 180 t2s 3 solves 18 passes 102 max dF/F 6.79e-15
+elapsed=1.821944e+01 cycle=181 time=1.960571e+00 dt=9.707716e-03
+CLEAN cycle 181 t2s 2 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 181 t2s 2 solves 18 passes 102 max dF/F 5.62e-15
+CLEAN cycle 181 t2s 3 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 181 t2s 3 solves 18 passes 102 max dF/F 7.00e-15
+elapsed=1.830045e+01 cycle=182 time=1.970279e+00 dt=9.691710e-03
+CLEAN cycle 182 t2s 2 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 182 t2s 2 solves 18 passes 103 max dF/F 5.83e-15
+CLEAN cycle 182 t2s 3 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 182 t2s 3 solves 18 passes 105 max dF/F 5.81e-15
+elapsed=1.838167e+01 cycle=183 time=1.979971e+00 dt=9.684337e-03
+CLEAN cycle 183 t2s 2 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 183 t2s 2 solves 18 passes 103 max dF/F 8.53e-15
+CLEAN cycle 183 t2s 3 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 183 t2s 3 solves 18 passes 105 max dF/F 8.66e-15
+elapsed=1.847374e+01 cycle=184 time=1.989655e+00 dt=9.690546e-03
+CLEAN cycle 184 t2s 2 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 184 t2s 2 solves 18 passes 105 max dF/F 6.41e-15
+CLEAN cycle 184 t2s 3 it 0 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 184 t2s 3 solves 18 passes 107 max dF/F 6.21e-15
+elapsed=1.855538e+01 cycle=185 time=1.999345e+00 dt=6.545686e-04
+CLEAN cycle 185 t2s 2 it 0 (sum 3) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 185 t2s 2 solves 15 passes 49 max dF/F 8.40e-15
+CLEAN cycle 185 t2s 3 it 0 (sum 3) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 185 t2s 3 solves 15 passes 48 max dF/F 8.80e-15
+<time> dt_retry: 186 checkpoints (1.017821e-01 s, 6.104576e+00 MB on rank 0), 0 retries, cap -1.000000e+00
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 0, hesdirk2 helper solves 0; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 0.000000e+00 / 0.000000e+00
+elapsed=1.863677e+01 cycle=186 time=2.000000e+00 dt=1.309137e-03
+
+Terminating on time limit
+time=2.000000e+00 cycle=186
+tlim=2.000000e+00 nlim=-1
+
+MeshBlock-cycles = 186
+cpu time used  = 1.732549e+01
+main loop time (before the final outputs) = 1.731051e+01
+zone-cycles/cpu_second = 8.244962e+03
+particle-updates/cpu_second = 0.000000e+00
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_m1> closure = vet_col: 0.000000e+00 tensor builds (0.000000e+00 skipped), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per build
+<rad_m1> vet_col_lat: 0.000000e+00 sweeps (incl. the first build's 3 inflow iterations), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_m1> vet_gd: rank 0 fenced seconds: source 0.000000e+00, sweeps 0.000000e+00 (of which per-shell halo+walls 0.000000e+00, of which MPI wait 0.000000e+00), tables (rotation) 0.000000e+00, uniform twin 0.000000e+00, moments 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_m1> vet_gd halo (rank 0): exchanges 0.000000e+00, bytes sent 0.000000e+00 (0.000000e+00 per exchange), post 0.000000e+00 s, partners 0; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd vet_path = none: subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main 0.000000e+00 twin 0.000000e+00
+<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists 0.000000e+00 made, 0.000000e+00 MB of 0.000000e+00 (key 4096, GPU: <= free/2); exchanges by list 0.000000e+00, dense 0.000000e+00
+<rad_m1> vgdrot-1011 (rank 0): exact-list batches 0.000000e+00 (group 0, 0.000000e+00 s, list reallocs 0.000000e+00); table prefetch 1 swapped in 0.000000e+00 of the rotations
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> consfix-1109: implicit_cons_final=1 solves=0.000000e+00 extra passes after a mode fallback=0.000000e+00
+<rad_m1> implicit transport: solves=0.000000e+00 Picard iterations mean=0.000000e+00 max=0.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0.000000e+00
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=0.000000e+00 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=0.000000e+00 energy moved rad->gas=0.000000e+00 | E floor raises cell-solves=0.000000e+00 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) of which solve undershoot (pos_floor_solve)=0.000000e+00 taken from the column's radiation (implicit_pos_floor_cons)=0.000000e+00 | |F| > c E scaled back cell-solves=0.000000e+00 sum(|F|/(cE) - 1)=0.000000e+00
+<rad_m1> implicit_face_mmat: checked passes=0.000000e+00 limited passes=0.000000e+00 limited cells=0.000000e+00 limited x1 faces=0.000000e+00 max rounds=0.000000e+00 left (b<=0 after the limit)=0.000000e+00 realisability-bound faces (|F_H| > c min E)=0.000000e+00 (rank 0: rounds=0.000000e+00 R exchanges=0.000000e+00 zalesak_halo_skip=on rowsel=on re-assembled rows=0.000000e+00 of 0.000000e+00 zalesak_cap_rounds=4 capped passes=0.000000e+00)
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual (max|r|/max|b|) mean=0.000000e+00 max=0.000000e+00
+<rad_m1>   (diagnostic; Picard test on it: no; lin_tol=1.000000e-10; inner stop: lin_tol relative to max|b|, loosened by Eisenstat-Walker ew_max=1.000000e-02)
+<rad_m1> bicgstab: outer passes=0.000000e+00 linear solves=0.000000e+00 inner iterations mean=0.000000e+00 max=0.000000e+00 total=0.000000e+00
+<rad_m1> bicgstab: breakdowns=0.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=0.000000e+00 (0.000000e+00 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=0.000000e+00 newton fallbacks=0.000000e+00 (0.000000e+00 per cell-pass)
+<rad_m1> FBLOCAL triggers 0.000000e+00 local 0.000000e+00 global 0.000000e+00 bad cells 0.000000e+00 masked cells 0.000000e+00
+<rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=1.000000e+300
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.000000e+300 local kills=0.000000e+00 cells(rank 0)=0.000000e+00
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0.000000e+00 written-back gas eint <= 0 cell-solves=0.000000e+00
+<rad_m1> time_scheme=hesdirk2: stage steps=1.850000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=extrap2 fallbacks=0.000000e+00 time2_posfix: steps=0.000000e+00 re-solves=0.000000e+00 cells=0.000000e+00 accepted-with-fallback stages=0.000000e+00
+<rad_m1> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)
+<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps 1.671799e+01 (posfix 0.000000e+00) | failed stage attempts 0.000000e+00 (posfix 0.000000e+00) | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 1.376624e-01 | discarded dt_retry attempts 0.000000e+00
+<rad_m1> clean FV rays: 207 builds, 1101 passes, 111201 wavefront levels
+wall 21.25
+rc=0

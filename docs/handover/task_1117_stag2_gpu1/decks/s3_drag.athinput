@@ -1,0 +1,105 @@
+<comment>
+problem = stiff radiation drag (stag2 dp)
+
+<job>
+basename = dr
+
+<mesh>
+nghost = 2
+nx1 = 32
+x1min = 0.0
+x1max = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+nx2 = 4
+x2min = 0.0
+x2max = 0.125
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 32
+nx2 = 4
+nx3 = 1
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim = -1
+tlim = 0.01
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+
+<rad_m1>
+clean_pos_limit = false
+c_light = 100.0
+chat_over_c = 1.0
+cfl_rad = 0.4
+thick_flux = none
+closure = vet_sc
+e_floor = 1.0e-30
+subcycle = true
+opacity = const
+kappa_p = 1e-12
+kappa_e = 1e-12
+kappa_f = 320.0
+kappa_s = 320.0
+arad = 1
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 4.0
+time_scheme = hesdirk2
+scheme = clean
+clean_layout = staggered
+vet_nmu = 4
+vet_nphi = 8
+vet_tensor = full
+vet_x1_periodic = true
+vet_x1_npass = 38
+clean_stag_split = true
+clean_stag_fsolve = true
+clean_stag_fkin = true
+clean_stag_fwork = true
+clean_consistency = true
+clean_stag_gflux = true
+clean_stag_vimp = true
+clean_stag_upwind = true
+clean_stag_pc = mg
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test = thick_pulse
+gas_rho = 1.0
+gas_eint = 1.5
+gas_vx = 10.0
+pulse_amp = 0.0
+pulse_bg = 22500.0
+pulse_width = 0.1
+pulse_x0 = 0.5
+pulse_1d = true
+
+<output1>
+file_type = tab
+variable = m1
+data_format = %.16e
+dt = 0.00125
+slice_x2 = 0.0625
+
+<output2>
+file_type = tab
+variable = hydro_u
+data_format = %.16e
+dt = 0.00125
+slice_x2 = 0.0625

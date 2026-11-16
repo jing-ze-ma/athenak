@@ -1,0 +1,512 @@
+Athena binary output version=1.1
+  size of preheader=5
+  time=2
+  cycle=186
+  size of location=8
+  size of variable=8
+  number of variables=4
+  variables:  m1_e  m1_f1  m1_f2  m1_f3  
+  header offset=26794
+#------------------------- PAR_DUMP -------------------------
+<comment>
+problem = rhse: spherical grey scattering envelope in hydrostatic + radiative equilibrium (clean wb test) 
+<job>
+basename = rh 
+<mesh>
+nghost                    = 2                  
+nx1                       = 48                 
+x1min                     = 1.0                
+x1max                     = 2.0                
+ix1_bc                    = reflect            
+ox1_bc                    = reflect            
+nx2                       = 4                  
+x2min                     = 1.3707963267948966 
+x2max                     = 1.7707963267948966 
+ix2_bc                    = reflect            
+ox2_bc                    = reflect            
+nx3                       = 4                  
+x3min                     = 0.0                
+x3max                     = 0.4                
+ix3_bc                    = periodic           
+ox3_bc                    = periodic           
+use_spherical_polar       = true               
+use_cubed_sphere          = 0                  # Default value added at run time
+layout_invariant          = 1                  # Default value added at run time
+layout_invariant_mode     = block              # Default value added at run time
+use_grid_stretch_r        = 0                  # Default value added at run time
+use_grid_stretch_r_poly   = 0                  # Default value added at run time
+use_grid_stretch_theta    = 0                  # Default value added at run time
+use_polar_boundary        = 0                  # Default value added at run time
+use_polar_average_eresist = 1                  # Default value added at run time
+theta_plateau             = 0                  # Default value added at run time
+polar_ring_avg            = 0                  # Default value added at run time
+<meshblock>
+nx1 = 24 
+nx2 = 4  
+nx3 = 4  
+<time>
+evolution             = dynamic 
+integrator            = rk2     
+cfl_number            = 0.3     
+nlim                  = -1      
+tlim                  = 2.0     
+ndiag                 = 1       
+start_time            = 0       # Default value added at run time
+nan_check_cycles      = 100     # Default value added at run time
+dt_min                = 0       # Default value added at run time
+dt_retry              = 1       # Default value added at run time
+dt_retry_fac          = 0.5     # Default value added at run time
+dt_retry_grow         = 1.25    # Default value added at run time
+dt_retry_ngood        = 10      # Default value added at run time
+dt_retry_views        = minimal # Default value added at run time
+restart_refill_ghosts = 0       # Default value added at run time
+<hydro>
+eos                        = ideal                  
+reconstruct                = plm                    
+rsolver                    = hllc                   
+gamma                      = 1.666666666666667      
+rad_signal_speed           = false                  
+am_transport               = true                   
+wellbalance_static         = false                  
+wellbalance_static_reconst = false                  
+sp_x2_periodic_image       = 0                      # Default value added at run time
+dfloor                     = 1.1754943508222875e-38 # Default value added at run time
+dfloor_keep_velocity       = 0                      # Default value added at run time
+vceil                      = 0                      # Default value added at run time
+pfloor                     = 1.1754943508222875e-38 # Default value added at run time
+tfloor                     = 1.1754943508222875e-38 # Default value added at run time
+efloor_from_ekin           = 0                      # Default value added at run time
+efloor_as_tfloor           = 0                      # Default value added at run time
+sfloor                     = 1.1754943508222875e-38 # Default value added at run time
+nscalars                   = 0                      # Default value added at run time
+etotgrav                   = 0                      # Default value added at run time
+split_c2p_once             = 1                      # Default value added at run time
+wellbalance_dynamic        = 0                      # Default value added at run time
+wb_x1                      = 0                      # Default value added at run time
+wb_guard_ideal             = 0                      # Default value added at run time
+wb_clamp_ideal             = 0                      # Default value added at run time
+wb_rho                     = 0                      # Default value added at run time
+wb_rmax                    = 0                      # Default value added at run time
+fofc                       = 0                      # Default value added at run time
+eos_radiation              = 0                      # Default value added at run time
+<rad_m1>
+clean_layout                    = staggered     
+clean_stag_split                = true          
+clean_stag_fsolve               = true          
+clean_stag_fkin                 = true          
+clean_stag_fwork                = true          
+clean_consistency               = true          
+clean_stag_gflux                = true          
+clean_stag_vimp                 = true          
+clean_stag_upwind               = true          
+clean_stag_pc                   = mg            
+clean_pos_limit                 = false         
+clean_rays                      = fv1           
+force_reference                 = clean         
+c_light                         = 40.0          
+chat_over_c                     = 1.0           
+closure                         = vet_col       
+vet_col_lat                     = true          
+vet_gd                          = true          
+vet_gd_twin                     = false         
+vet_gd_rotate_dt                = 0             
+e_floor                         = 1.0e-30       
+opacity                         = const         
+kappa_p                         = 0.0           
+kappa_e                         = 0.0           
+kappa_f                         = 0.0           
+kappa_s                         = 500.0         
+arad                            = 1.0           
+coupling                        = true          
+gas_feedback                    = true          
+transport                       = implicit      
+implicit_cfl                    = 1.0e4         
+implicit_solver                 = bicgstab      
+implicit_precond                = line          
+implicit_recon                  = dc            
+implicit_bc_x1min               = marshak       
+implicit_bc_x1max               = marshak       
+implicit_ebath_x1min            = 0.0           
+implicit_ebath_x1max            = 0.0           
+time_scheme                     = hesdirk2      
+ic_rad                          = none          
+scheme                          = clean         
+clean_closure                   = extrap1       
+clean_init                      = steady        
+clean_init_n                    = 50            
+clean_tol                       = 1.0e-10       
+clean_tol_nl                    = 1.0e-11       
+clean_maxnl                     = 60            
+clean_w_c0                      = 0.1           # Default value added at run time
+clean_w_c1                      = 0.5           # Default value added at run time
+clean_maxit                     = 4000          # Default value added at run time
+clean_ray_min                   = 0.001         # Default value added at run time
+clean_fill_passes               = 8             # Default value added at run time
+clean_predict                   = 1             # Default value added at run time
+clean_bc                        = halfrange     # Default value added at run time
+clean_alpha                     = tau           # Default value added at run time
+clean_recon                     = plm           # Default value added at run time
+clean_consistency_weight        = 0             # Default value added at run time
+clean_face_model                = none          # Default value added at run time
+clean_psi_eps                   = 1e-12         # Default value added at run time
+clean_maxpic                    = 12            # Default value added at run time
+clean_diag_cells                = 0             # Default value added at run time
+clean_pos_boundary              = 0             # Default value added at run time
+clean_pos_ghost                 = 0             # Default value added at run time
+clean_vfreeze                   = 0             # Default value added at run time
+clean_gas_exact                 = 1             # Default value added at run time
+clean_yres                      = 0             # Default value added at run time
+clean_nl_norm                   = global        # Default value added at run time
+clean_nl_efloor                 = 0             # Default value added at run time
+clean_maxpos                    = 3             # Default value added at run time
+clean_pc_sweeps                 = 1             # Default value added at run time
+clean_init_dtfac                = 1000000       # Default value added at run time
+clean_init_tol                  = 1e-08         # Default value added at run time
+cfl_rad                         = 0.4           # Default value added at run time
+subcycle                        = 1             # Default value added at run time
+thick_flux                      = none          # Default value added at run time
+ap_form                         = alpha2        # Default value added at run time
+scaled_prefactor                = 20            # Default value added at run time
+temp_unit_kelvin                = 1             # Default value added at run time
+rho_unit_cgs                    = 1             # Default value added at run time
+kappa_unit                      = 1             # Default value added at run time
+rho_ref                         = 1             # Default value added at run time
+t_ref                           = 1             # Default value added at run time
+opac_a                          = 0             # Default value added at run time
+opac_b                          = 0             # Default value added at run time
+advect_split                    = 0             # Default value added at run time
+split_vel                       = recon         # Default value added at run time
+source_form                     = full          # Default value added at run time
+f_source                        = cell          # Default value added at run time
+opac_freeze                     = 0             # Default value added at run time
+dbg_gas_force                   = 1             # Default value added at run time
+dbg_gas_heat                    = 1             # Default value added at run time
+dbg_gas_force_trans             = 1             # Default value added at run time
+dbg_trans_memory                = 1             # Default value added at run time
+dbg_tensor                      = none          # Default value added at run time
+dbg_tensor_tilt                 = 0.3           # Default value added at run time
+time2_fref_wacc                 = 1             # Default value added at run time
+rsla_warn                       = 0.1           # Default value added at run time
+rsla_vmax                       = -1            # Default value added at run time
+rsla_force                      = 0             # Default value added at run time
+vet_col_ncore                   = 8             # Default value added at run time
+vet_col_nsub                    = 1             # Default value added at run time
+vet_col_nmu                     = 4             # Default value added at run time
+vet_every                       = 1             # Default value added at run time
+vet_col_order2                  = 1             # Default value added at run time
+vet_col_fk_min                  = 0             # Default value added at run time
+vet_col_reflect_top             = 1             # Default value added at run time
+vet_col_surface_face            = 1             # Default value added at run time
+vet_col_surface_q               = 1             # Default value added at run time
+vet_col_surface_qmin            = 0.001         # Default value added at run time
+vet_col_surface_qmax            = 1             # Default value added at run time
+vet_source                      = relaxed_esc   # Default value added at run time
+vet_bc_diff                     = face          # Default value added at run time
+vet_seg                         = jump          # Default value added at run time
+vet_col_team                    = 1             # Default value added at run time
+vet_col_team_size               = 0             # Default value added at run time
+vet_col_chunk                   = 0             # Default value added at run time
+vet_col_axis                    = radial        # Default value added at run time
+vet_rotate_advance              = 1             # Default value added at run time
+vet_bc_bath                     = 1             # Default value added at run time
+vet_interp                      = auto          # Default value added at run time
+vet_path                        = none          # Default value added at run time
+vet_bc_inner                    = auto          # Default value added at run time
+vet_bc_reflect                  = auto          # Default value added at run time
+vet_gd_halo_compact             = 2             # Default value added at run time
+vet_col_lat_cut_thin            = 1             # Default value added at run time
+reconstruct                     = plm           # Default value added at run time
+implicit_tol                    = 1e-08         # Default value added at run time
+implicit_tol_rel                = 0             # Default value added at run time
+implicit_tol_rel_max            = 0.0001        # Default value added at run time
+implicit_maxit                  = 200           # Default value added at run time
+implicit_lin_tol                = 1e-10         # Default value added at run time
+implicit_lin_maxit              = 200           # Default value added at run time
+implicit_offdiag                = auto          # Default value added at run time
+implicit_closure_relax          = 1             # Default value added at run time
+implicit_closure_relax_thin     = 0             # Default value added at run time
+implicit_closure_lag            = step          # Default value added at run time
+implicit_trans_limit            = none          # Default value added at run time
+implicit_trans_fmax             = 1             # Default value added at run time
+implicit_accel                  = none          # Default value added at run time
+implicit_gas_newton             = 1             # Default value added at run time
+implicit_eos_cache              = 0             # Default value added at run time
+report_newton_fb                = 0             # Default value added at run time
+dbg_energy_tally                = 0             # Default value added at run time
+implicit_eos_cache_nt           = 2             # Default value added at run time
+implicit_eos_cache_check        = 1             # Default value added at run time
+implicit_line_solver            = pcr           # Default value added at run time
+implicit_pcr_team               = 0             # Default value added at run time
+implicit_pcr_check              = 0             # Default value added at run time
+implicit_bcg_sync               = 1             # Default value added at run time
+implicit_halo_direct            = 0             # Default value added at run time
+implicit_od_cache               = 0             # Default value added at run time
+implicit_krylov_fuse            = 0             # Default value added at run time
+implicit_op_stencil             = 0             # Default value added at run time
+implicit_precond_float          = 0             # Default value added at run time
+implicit_op_team_red            = 0             # Default value added at run time
+implicit_krylov_pipe            = 0             # Default value added at run time
+implicit_halo_mpi               = 0             # Default value added at run time
+implicit_halo_ipc               = 0             # Default value added at run time
+implicit_halo_overlap           = 0             # Default value added at run time
+implicit_halo_ovl_faces         = 0             # Default value added at run time
+implicit_picard_log             = 0             # Default value added at run time
+implicit_tsolve_opac            = 1             # Default value added at run time
+implicit_tsolve_opac_start      = 20            # Default value added at run time
+implicit_tsolve_opac_mode       = 1             # Default value added at run time
+implicit_cs_e0_metric           = 1             # Default value added at run time
+implicit_thin_freeze            = 0.01          # Default value added at run time
+implicit_resid_fatal            = 0.01          # Default value added at run time
+implicit_lres_test              = 0             # Default value added at run time
+implicit_conv_est               = 1             # Default value added at run time
+implicit_src_stable             = 1             # Default value added at run time
+implicit_lin_ew_max             = 0.01          # Default value added at run time
+implicit_lin_ew_gamma           = 0.9           # Default value added at run time
+implicit_lin_cnorm              = 0             # Default value added at run time
+implicit_bcg_max_restarts       = 2             # Default value added at run time
+implicit_bcg_fallback           = line          # Default value added at run time
+implicit_precond_fallback       = none          # Default value added at run time
+implicit_face_opac_n            = 1             # Default value added at run time
+implicit_det_reduce             = 0             # Default value added at run time
+implicit_predictor              = step          # Default value added at run time
+implicit_predictor_frozen       = 0             # Default value added at run time
+implicit_anderson_m             = 5             # Default value added at run time
+implicit_anderson_beta          = 1             # Default value added at run time
+implicit_anderson_start         = 1             # Default value added at run time
+implicit_opac_update            = 0             # Default value added at run time
+dbg_opac_part                   = 0             # Default value added at run time
+implicit_opac_newton            = 0             # Default value added at run time
+implicit_opac_newton_guard      = 0.5           # Default value added at run time
+implicit_gas_newton_u4          = 0             # Default value added at run time
+implicit_opac_lag               = none          # Default value added at run time
+implicit_opac_lag_passes        = 3             # Default value added at run time
+implicit_g0_limit               = 1             # Default value added at run time
+implicit_g0_exchange            = 1             # Default value added at run time
+implicit_pos_gas                = 1             # Default value added at run time
+implicit_pos_floor              = 1             # Default value added at run time
+implicit_pos_floor_solve        = 1             # Default value added at run time
+implicit_opac_newton_guard_mode = 6             # Default value added at run time
+implicit_allow_multid           = 0             # Default value added at run time
+marshak_q                       = 0.5           # Default value added at run time
+implicit_marshak_face           = linear        # Default value added at run time
+implicit_face_weight            = distance      # Default value added at run time
+implicit_flux                   = central       # Default value added at run time
+implicit_flux_faces             = x1            # Default value added at run time
+implicit_flux_beam              = closure       # Default value added at run time
+implicit_blend                  = tau_f         # Default value added at run time
+implicit_blend_alpha            = 1             # Default value added at run time
+implicit_blend_r0               = 1.5           # Default value added at run time
+implicit_blend_xthin            = 0             # Default value added at run time
+implicit_blend_xthin_mode       = all           # Default value added at run time
+implicit_blend_xthin_wmin       = 0             # Default value added at run time
+implicit_thin_switch            = none          # Default value added at run time
+implicit_blend_fmode            = max           # Default value added at run time
+implicit_blend_mode             = flux          # Default value added at run time
+implicit_blend_tau0             = 1             # Default value added at run time
+implicit_blend_flo              = 0.6           # Default value added at run time
+implicit_blend_fhi              = 0.9           # Default value added at run time
+implicit_enthalpy               = plm           # Default value added at run time
+implicit_vimp                   = 1             # Default value added at run time
+implicit_hold                   = 1             # Default value added at run time
+implicit_fast_kernels           = 1             # Default value added at run time
+implicit_vimp_fold              = 0             # Default value added at run time
+implicit_one_pass               = 0             # Default value added at run time
+implicit_predictor_order        = 2             # Default value added at run time
+implicit_partition              = none          # Default value added at run time
+implicit_recon_w                = -1            # Default value added at run time
+implicit_res_floor              = 0             # Default value added at run time
+implicit_gas_newton_switch      = 10            # Default value added at run time
+implicit_gas_newton_switch_min  = 20            # Default value added at run time
+implicit_stall_fac              = 0.5           # Default value added at run time
+implicit_recon_lag              = picard        # Default value added at run time
+implicit_recon_npass            = -1            # Default value added at run time
+implicit_bmom_half              = 1             # Default value added at run time
+implicit_rad_inertia            = 1             # Default value added at run time
+implicit_nofb_work              = 1             # Default value added at run time
+implicit_gas_src                = conservative2 # Default value added at run time
+implicit_cs2_dbg                = 0             # Default value added at run time
+implicit_cs2_vimp               = 1             # Default value added at run time
+implicit_cs2_vimp_npass         = 3             # Default value added at run time
+implicit_cs2_shift              = 0             # Default value added at run time
+implicit_cs2_wbsolve            = 1             # Default value added at run time
+implicit_cs2_hll                = drag          # Default value added at run time
+implicit_f0_init                = auto          # Default value added at run time
+implicit_flux_x1min             = 0             # Default value added at run time
+implicit_flux_x1max             = 0             # Default value added at run time
+implicit_bc_advect              = 1             # Default value added at run time
+implicit_vimp_bc                = 1             # Default value added at run time
+implicit_face_opac              = arith         # Default value added at run time
+time2_enth_be                   = 1             # Default value added at run time
+time2_vstage                    = 1             # Default value added at run time
+time2_vet                       = extrap2       # Default value added at run time
+time2_vet_x2_fields             = 9             # Default value added at run time
+time2_lin_tol_fac               = 1             # Default value added at run time
+time2_one_pass_safety           = 30            # Default value added at run time
+polar_ring_avg                  = 0             # Default value added at run time
+<problem>
+am_hist     = true        
+rh_seed     = 1.0e-3      
+pgen_name   = rad_m1_beam 
+m1_test     = rhse        
+user_srcs   = true        
+user_hist   = true        
+rh_gm       = 1.0         
+rh_eddf     = 0.3         
+rh_rho0     = 1.0         
+rh_temp     = 0.1         
+nan_report  = 0           # Default value added at run time
+hot_jupiter = 0           # Default value added at run time
+rh_g        = 1           # Default value added at run time
+<output1>
+file_type            = bin    
+bin_double           = true   
+variable             = m1     
+dcycle               = 16     
+last_time            = 0      # Updated during run time
+file_number          = 12     # Updated during run time
+id                   = m1     # Default value added at run time
+ghost_zones          = 0      # Default value added at run time
+gid                  = -1     # Default value added at run time
+data_format          = %12.5e # Default value added at run time
+single_file_per_rank = 0      # Default value added at run time
+<output2>
+file_type            = bin     
+bin_double           = true    
+variable             = hydro_u 
+dcycle               = 16      
+last_time            = 0       # Updated during run time
+file_number          = 13      # Updated during run time
+id                   = hydro_u # Default value added at run time
+ghost_zones          = 0       # Default value added at run time
+gid                  = -1      # Default value added at run time
+data_format          = %12.5e  # Default value added at run time
+single_file_per_rank = 0       # Default value added at run time
+<output3>
+file_type            = rst    
+dcycle               = 8      
+last_time            = 0      # Updated during run time
+file_number          = 24     # Updated during run time
+ghost_zones          = 0      # Default value added at run time
+gid                  = -1     # Default value added at run time
+data_format          = %12.5e # Default value added at run time
+single_file_per_rank = 0      # Default value added at run time
+<output7>
+file_type      = hst                 
+dt             = 0.05                
+data_format    = %.17e               
+last_time      = 2.000000000000001   # Updated during run time
+file_number    = 0                   # Default value added at run time
+ghost_zones    = 0                   # Default value added at run time
+gid            = -1                  # Default value added at run time
+user_hist_only = 0                   # Default value added at run time
+<mesh_refinement>
+refinement = none # Default value added at run time
+<coord>
+special_rel = 0 # Default value added at run time
+general_rel = 0 # Default value added at run time
+#------------------------- PAR_DUMP -------------------------
+<par_end>
+                                        ğ?      ø?åù!Èîõ?K`w‡.Uü?        š™™™™™Ù?×o¬?@/Æ?%0†®¨Â?ÌPÀ’‰ª¿?ZÖËQ»?¨-µ80·?9tÆöMş³?/¨DP±?rÍİr0®?¥œ@Ê#@ª?±Êòö¦?ä¨ƒL"¤?E–±¡?Ë$Ïì½$Ÿ?úØ½¡r›?}@ÜÑ6˜?›m%=R_•?¥AteŞ’?º—Íê§?XÊzÉc?
+Øjêáç‰?wzá7òÍ†?JİÈïö	„?$ªt‘?¥âw®4¸~?ÂrÔÆ?˜	ª´iŒÂ?W‹æ(†¿?êÊe“îº?w(&ƒ ·?ˆ‰iÅó³?4øH±?™ m[®?¼DmM9ª?:üğCñ¦?X,Oã¤?Ò8^›®¡?zóíu6!Ÿ?–­Qœp›?¨gâ½4˜?×ºÕ×ğ]•?"Â‹ì`İ’?ÀòÎ)§?İé³ö­b?²øÌŠç‰?	ò%ZÍ†?×tüñˆ	„?Ş¯gÎO‘??!Å·~?“¾rÔÆ?ÿª´iŒÂ?Ï*‹æ(†¿?hóÊe“îº?³ (&ƒ ·?¯ŒiÅó³?·øH±?®(m[®?½ÂDmM9ª?÷üğCñ¦?…,Oã¤?Ú5^›®¡?_êíu6!Ÿ?‰¦Qœp›?viâ½4˜?ïÌÕ×ğ]•?uæ‹ì`İ’?” Î)§?«=´ö­b?t(ÍŠç‰?Ùò%ZÍ†?šjüñˆ	„?!êgÎO‘?ŞÅ·~?Ös¬?@/Æ?Ş0†®¨Â?:QÀ’‰ª¿?ïãËQ»?ò¸-µ80·?ìˆÆöMş³?¿DP±?œüİr0®?ÊË@Ê#@ª?æùòö¦?ØƒL"¤?í;E–±¡?nÏì½$Ÿ?Û`Ø½¡r›?N‡ÜÑ6˜?w¨%=R_•?¡ÜAteŞ’?×Íê§?ÆszÉc?µ¹kêáç‰?×}â7òÍ†?c´Éïö	„?Mªt‘?)p®4¸~?íá7>(/Æ?ª¹çÔ©Â?·z‡|«¿?Qéú@»?´6w	1·?ß9[
+øş³?‡¯î¤P±?L“%ù®?^€›¤¶@ª?–€D†yö¦?#gJk‘"¤?Kóƒ;6±¡?=³©)æ$Ÿ?,.üÓ§r›?“¢‰“ˆ6˜?1×&_•?S¯¥Ì'Ş’?¨@É§?á
+,c?Zn‘ç‰?{%Ÿ"Í†?@$çÜ	„?/£M™?w¤=N¶~?;ÙôÂÆ?˜?'7PŒÂ?0Ö‡†¿?ƒÄu,ïº?¡gıb!·?€¾Mô³?èEgI±?Pîï®?Nª«šÎ9ª?Iëˆ' ñ¦?+ü¾*!¤?hÀ®¡?Ó«Y!Ÿ?8ˆ,*p›?_§4˜?‹`¬Æ]•?&‚?%İ’?§m|’ß¦?'šDb?„Ñ_Pæ‰?Åİ»†Ì†?d÷Üã¥„?ŸÓ#_?]¶
+Ìµ~?ÔÜôÂÆ?Ÿ0'7PŒÂ?úßÕ‡†¿?TÄu,ïº?Smıb!·?rÍMô³?"üEgI±?	Dîï®?ŠŞ«šÎ9ª?"‰' ñ¦?f2¿*!¤?KPhÀ®¡?) ‚«Y!Ÿ?îµ,*p›?M#_§4˜?T¬Æ]•?Vo?%İ’?Ãi|’ß¦?MFšDb?ˆ`Pæ‰?4Æİ»†Ì†?àòÜã¥„?â—$_?Ê´
+Ìµ~?—İ7>(/Æ?Ô¸çÔ©Â?a¯z‡|«¿?<éú@»?ÑGw	1·?‰I[
+øş³?‡½î¤P±??c“%ù®?Y›¤¶@ª?=‡D†yö¦?¼gJk‘"¤?hñƒ;6±¡?°©)æ$Ÿ?‡/üÓ§r›?%«‰“ˆ6˜?]-×&_•?ÏÈ¥Ì'Ş’?z^É§?ÈJ,c?+Ç‘ç‰?ÚÀŸ"Í†?Ò èÜ	„?‰N™?ªAN¶~?µ¾õf&Æ?®’)„¤Â?Â×®a§¿?•IP?»?qú¡wG0·?rÖõúÔş³?7æh»ÊP±?ÁS J®?“z÷LMAª?ºGïü	÷¦?h¨'`#¤?°È1®§±¡?¢çSª%Ÿ?2L;‘Qs›?O±7˜?ÓÏ°÷¬_•?ˆ›­=¤Ş’?,ı±¨?HğÑ•d?“@è‰?gÚ«’Î†?‡a
+
+„?ÌËĞ‘?6O†»¸~?Æ…uJs,Æ?·xx×¦Â?[~ÕÒ¨¿?îdÛñ”»?Õ'¿ /·?›YŠ‡oı³?¢?t9~O±?†Ú¾ŒC®?÷\§µr?ª?;˜‹õ¦? ÃÇä!¤?şşÿƒ»°¡?Ü¿Êù=$Ÿ?iNg<r›?$äN6˜?Ÿ³$·_•?f‰V8Ş’?5§RÌ§?&•G™­c?IÓ(–æç‰?u}FÎ†?´ÓE)F
+„?VcU«’?èÓIY¹~?|uJs,Æ?çÆxx×¦Â?õ©ÕÒ¨¿?ÓiÛñ”»?®'¿ /·?EŠ‡oı³?F(t9~O±?Ü²¾ŒC®?İA§µr?ª?’-˜‹õ¦?êÁÇä!¤?h „»°¡?-ÏÊù=$Ÿ?]g<r›?V1äN6˜?™¿$·_•?<”‰V8Ş’?` RÌ§?ÚcG™­c?–(–æç‰?…}FÎ†?EôE)F
+„?E¹T«’?ĞeKY¹~?
+Äõf&Æ?&µ’)„¤Â?ÔĞ®a§¿?qIP?»?§õ¡wG0·?ÍÒõúÔş³?<âh»ÊP±?eJ J®?ën÷LMAª?`8ïü	÷¦?•'`#¤?¼²1®§±¡?$¼Sª%Ÿ?0';‘Qs›?ÿ±7˜?Ü¹°÷¬_•?Š‡­=¤Ş’?‰ûü±¨?ªÂÑ•d?ÎD@è‰?\B«’Î†?G¦`
+
+„?|IËĞ‘?WK†»¸~?Ğ#7ØÆ?¨d/°œÂ?÷WË ıœ¿?S&Ç`¯şº?àÖïó+·?:9¥qóû³?±¶¹ÛN±?¶„¨¨å®?2@öŠ?ª?I_0Üõ¦?œ§èŸL"¤?±•’)±¡?,UÎ/%Ÿ?dtR
+s›?QO©7˜?Fì¶‚Ë_•?I5Ô­æŞ’?6<Xu¨?FİØ[úd?ph€æ4é‰?RuñpÏ†?À•&¦©„?Š²&‘“?íúNô²¼~?™ÏÂñ Æ?±m”}ŸÂ?Jd¿ê¿?ÑàVşº?|y#ùÛ*·?ÚIÈ˜¨ú³?dÙM±?Z“›È¶®?SrÈy¶=ª?¨Óí‰^ô¦?¾óy!¤?jVÏÎ8°¡?¬¶àA#Ÿ??Ñ–oçq›?%ªş\16˜?¯ôŒÊ#_•?±ä¢jŞ’?´¹|¨?‘ÖŞd?õx¬ëè‰?şeñOÏ†?¤í
+ä«„?ÑòŒ³“?KË%¹5½~?YÒÂñ Æ?ze”}ŸÂ?ÖI¿ê¿?Ö	àVşº?Á†#ùÛ*·?[È˜¨ú³?%uÙM±?´›È¶®?ÈÈy¶=ª?éíí‰^ô¦?vy!¤?fÏÎ8°¡?…ÍàA#Ÿ?ß–oçq›?ğ­ş\16˜?÷ìŒÊ#_•?Îmä¢jŞ’?¡£|¨?çÕŞd?In¬ëè‰?»rñOÏ†?İä«„?yÀŒ³“?»¹5½~?Æ7ØÆ?³d/°œÂ?šbË ıœ¿?ş#Ç`¯şº?¦ØÖïó+·?È+¥qóû³?¢¶¹ÛN±?Óf¨¨å®?)öŠ?ª?è;_0Üõ¦?s£èŸL"¤?¡•’)±¡?ÇZÎ/%Ÿ?ÌyR
+s›?ñQ©7˜?°è¶‚Ë_•?m$Ô­æŞ’?œŞ;Xu¨?ìVØ[úd?¤æ4é‰?ğpÏ†?}Û%¦©„?KK²&‘“?´”Vô²¼~?H¹å•Ÿ?Z@t¿?Œ¯=˜œ?ŒESw›?MûÌtš?ªĞ¿E™?x¼zú}œ˜?xor©&Ä—?Aáıö–?à4Šú3–?Õk¨³@z•?İÓ²É”?0?;:Ú”?aVå~“?_şròã’?ÜSáL­N’?µJ¼`À‘?gç„òİ7‘?®Ø´?TÁ‡7?]ÖÉ|w|?:¼2¯b”?jfórµ?p¡8BßŒ?¦B×Ïx`?èëÏ¿hD?ÁŞQ5œ?4Ay?5›?LÓÍöBš?öPĞi\™?1öˆö£€˜?ª1aÈò®—?ETá”»æ–?:‡él'–?•MÔ—~p•?H(5sÁ”?2—×”?jÑTAy“?¥²9Oß’?v2z¥K’?
+*>Éñ½‘?go´†è5‘?¦AûôD³?‡bÃ„È5?Öàuz?ôo®üÒ’?²±sI´?©UšwŞŒ?ù²×Ïx`?0TĞ¿hD?ÊßQ5œ?v~y?5›?3ôÒÍöBš?ŞÍOĞi\™?^±ˆö£€˜?Éï`Èò®—?€á”»æ–?Û_él'–?8Ô—~p•?%5sÁ”?Ò2—×”?:æTAy“?Ö¿9Oß’?R2z¥K’?+å=Éñ½‘?¿İ³†è5‘?/\úôD³?3Â„È5?V,Şuz?²’¬üÒ’?Œ¸pI´?åş™wŞŒ?2Y¸å•Ÿ?z¶t¿?\¯=˜œ?ŸDSw›?‡úÌtš?&öÏ¿E™?8àyú}œ˜?jnq©&Ä—?æàıö–?%¼2Šú3–?¶Õ¦³@z•?ÒÄÑ²É”? ?9:Ú”?Œ0Tå~“?. pòã’?ºÌŞL­N’?¢`G¼`À‘?š9‚òİ7‘?åéØ´?;…7?F<Å|w|?,œ.¯b”?¬órµ?j¨8BßŒ?ØXjfŸ?€ì]¼?"|°šëœ?Âğ‘mÂw›?"ÛÈ¿ uš?Ó±ˆ‚™?m»™âĞ˜?’1MËoÅ—?J‡ƒŒ/ø–?êšÛ±5–?ıâÓ7{•?Ï?M"ğÉ”?¬¹U¥š ”?ÚÕœŠ­~“?L±2¯ã’?6Êj3O’?Àrv¸ÙÀ‘?€Q¡vL8‘?ŸâÙ>µ?XB=l7?Õå’-}?f	›•?°U¶?¾Çå âßŒ?†[W?ÆÁyº­??5K[ã2œ?ÂŒø¥4›?”I;Cš?¼ÖáH$]™?^¹B•˜?º7¿Uõ¯—?¼ïò	ºç–? Uíı[(–?Tç`(Yq•?dïİÂ7Â”?:)÷¯†”?LT!ÏÜy“?F}ª‰Øß’?µÚxL’?hpEc^¾‘?ZD/I6‘?BÁµÉ›³? úô6?Píí
+şz?®z@ÇG“?’ğ™¦´?„”‡·ŞŒ?
+W?¤/yº­??¦`J[ã2œ? ô÷¥4›?2/I;Cš?DŒáH$]™?p-¹B•˜?º­¾Uõ¯—?Ò1ò	ºç–?d[ìı[(–?m²_(Yq•?n†ÜÂ7Â”?™õ¯†”?´®ÏÜy“?1Ù¨‰Øß’?NÙxL’?Ş Dc^¾‘?7G.I6‘?7µÉ›³?S÷ùô6?Ô‡í
+şz?Ê¶:ÇG“?g¤ã™¦´?(´3‡·ŞŒ?
+©jfŸ?dJì]¼?ĞÈ¯šëœ?“‘mÂw›?WéÇ¿ uš?ˆô°ˆ‚™?¤á˜âĞ˜?ôULËoÅ—?|¨‚Œ/ø–?”ÁÚ±5–?HÓ7{•?……L"ğÉ”?U¥š ”?90œŠ­~“?jm°2¯ã’?»nÉj3O’? hu¸ÙÀ‘?_ÓŸvL8‘?:¾
+Ù>µ?…e:l7?à­ß’-}?4¤˜•?òU¶?)˜Ì âßŒ?vŒŸvÕ?3]2¦Ü?Rú_Ûzœ?ğjƒl›?0…d)nš?0»&–~™?TÌs¤Æ›˜?l˜(“Ä—?òÿ™»ø–?‰6J­N5–?,§‰«{•?"Aé°xÊ”?m†â#!”?Ù8Ä*“?Hü\ä’?Õ€=ƒO’?İZÈtÁ‘?3ì_8‘?`Ÿëh.µ?ğBQp57?+áÃÀl|?˜€ô“?áF®k—´?“åMØíİŒ?—ßiŸ?ˆÈ€Î¸?d3ğ
+C‰œ?¶C>/s›?®VÇÔàpš?L€´¶~™?º·uš˜?Ô€ëL…Â—?øï¬W¬õ–?€Œ‹`ç2–?ß2k]y•?ÇHÿVÈ”?-…à6”?-áÍ#t}“?*ã–â’?Ø´¦1N’?X²å¿‘?"â\7‘? Ãu—K´?÷eÃl6?ó3s {?Y“„¡’?7%.Q³?¨ÉŸŞ¤ÜŒ?ZSjŸ?ĞMÎ¸?\½ğ
+C‰œ?ÙxC>/s›?Ë˜ÇÔàpš?Ïq€´¶~™?ZJuš˜?•AìL…Â—?ˆÙ­W¬õ–?Ğ•Œ`ç2–?İı3k]y•?-uÿVÈ”?eb†à6”?†Ï#t}“?"bä–â’?¼ß§1N’?t¼å¿‘?fßâ\7‘?&v—K´?x9Ãl6?ÕÒ3s {?®:˜„¡’?K5™.Q³? ù{Ş¤ÜŒ?ÀĞŸvÕ?6D2¦Ü?±q‚_Ûzœ?R‹kƒl›?"d)nš?÷o»&–~™?‡t¤Æ›˜?8P˜(“Ä—?¸Bš»ø–?°ŠJ­N5–?$§‰«{•?%Çé°xÊ”?ê‡â#!”? “9Ä*“?lÜ\ä’?“ =ƒO’?·ßÉtÁ‘?·£î_8‘?ãmîh.µ?>×Tp57?¢‰ËÀl|?„ô“?íÌ¬k—´?xhØíİŒ?t÷j»¥? FTÁò{?—+Ùbœ?—Ñ™v°Y›? âOt`š?Âqá°Dt™?Äò~Àğ“˜?¦Ú‘¾—?Á÷Ébó–?Q=Ö0¬1–?’1Ëx•?×6õ)È”?”3ËB”?ïl­Ü™}“?æÄMLÂâ’?ú IVN’?ä¸Îù¿‘?– ¿Y7‘?Ğrb*´?’UÍ&6?ş%5H!z?ŞêU¦^‘?á×—±?"pş]ÚŒ?¨õP]Ø?TöL9À˜?š8İg'rœ?Æ£2úa›?'Äõcš?Høkït™?VùñÜş’˜?X·æ	Ç¼—?Ôñ˜„6ñ–?„¢‰õg/–?|ü†—v•?stùøÆ”?ì3²f”?¦ğÜáñ{“?ÊËtPMá’?+>ŞM’?Ü@¡Cß¾‘?€ú„Ğd6‘?İO;U³?ÌRü–l5?S8)Öx?N,İ¡0?)ô	z°?Ö	š®AÙŒ?c.P]Ø?eM9À˜?¿İg'rœ?53úa›?ñØÄõcš?=”lït™?¼vòÜş’˜? ç	Ç¼—?&™„6ñ–?·‰õg/–?BŠü†—v•?ĞbùøÆ”?8²f”?ùÛÜáñ{“?¬ÄtPMá’?<>ŞM’?Fy¡Cß¾‘?ùi…Ğd6‘?<U³?”Qı–l5?À‘:)Öx?.—Ş¡0?İö	z°?¶kµ®AÙŒ?®œj»¥?È TÁò{?LÍ+Ùbœ?šv°Y›?zZPt`š?<â°Dt™? €Àğ“˜?[V§Ú‘¾—?BvËbó–?ªà×0¬1–?I;1Ëx•?¹Y8õ)È”?êÍB”?cU¯Ü™}“?µ¸OLÂâ’?Âò¢IVN’?jªÎù¿‘?íß¿Y7‘?„8b*´?­1WÍ&6?ï7H!z?`NX¦^‘?‰á×—±?Íşı]ÚŒ?Vİ•lí6%?M
+²oâ	?©âÙ%º?–ŒDÙIX?t1àêÏ?Y­©Å© ?ë`RBA`ù>©::]ró>ÒwIüí>öí¿t>ç>V|íâ>|ù¶
+XXÜ>š˜QEÖ>ÔÄ‘²Ñ>8s›¬"¾Ë>„ˆÍO÷Å>Éuq jÁ>mô}ĞŸ»>p-Énìµ>èšìç h±>16+°«>ÿº-Î$¦>…Âtó¡>Ã·_c>½»lí6%?c%%pâ	?a&º?Æ2ÀØIX?cŞ3êÏ?Ün.Å© ?„´AA`ù>€”9]ró>©¼DHüí>;_ ¿t>ç>²ÉWìâ>õ%	XXÜ>ã¦ÕOEÖ>l°Ñ>Ò§"¾Ë>$²ëÈO÷Å>¡jÁ>"HzĞŸ»>ÙGnìµ>F¥í h±>°«>¸—U=Î$¦>â.jtó¡>oŞ'bb>Åï8lí6%¿çŞvnâ	¿İáG%º¿<ï?ÚIX¿s‰DìÏ¿HGÃÅ© ¿%—DA`ù¾y{;]ró¾o’’Küí¾oÂt>ç¾SÈïâ¾‹6§XXÜ¾WùOXEÖ¾ĞaØ¹Ñ¾ı`İº"¾Ë¾]`EØO÷Å¾éH¥jÁ¾¤!°{ĞŸ»¾½rnìµ¾pSÁæ h±¾Bm,°«¾j’™&Î$¦¾³ügLtó¡¾ë]ÀÏ`¾rÏ^lí6%¿ıùénâ	¿K`{%º¿l•»ÙIX¿b6˜ëÏ¿ËHÅ© ¿¾ê_CA`ù¾v¾ö:]ró¾F×¹Jüí¾F÷¢Át>ç¾c ïâ¾\XXÜ¾VEÖ¾h¹Å·Ñ¾Òñ¶"¾Ë¾ı ©ÓO÷Å¾"t¼¡jÁ¾YLãxĞŸ»¾dnìµ¾Î]ãë h±¾ V°«¾#oÙ6Î$¦¾2ÄÔ6tó¡¾Fy0Ò_¾Qd³ßo„%?iÎ'ÿn?¡nĞ…ƒ	?“e¿Ë?ˆQíã^?ÀUÍ¶é ?tÅ-”`Âù>ëÀSñ¿ó>àşÚZ{î>œÎš£˜«ç>º®½ó~â>6U
+ºtİ>°yË–øÖ>õ üìAÒ>}¬Ş‡ü/Í>daF-ÛwÇ>úF¬\íüÂ>Cu3ùí¾>8+Åb¹>t¯vµ>ğwõ¡Š±>LÛ©À™­>$@ôË‚B©>y%èà¥>Egßo„%?»¢Kÿn?·œ]…ƒ	?‚ó®e¿Ë?æí¦ä^?šQÍ¶é ?6$”`Âù>vØñ¿ó> *¤ØZ{î>H"ş¡˜«ç>mò~â>ËÁ¶tİ>«ƒQÈ–øÖ>´¾éşëAÒ>ÁŞ-ü/Í>6Í#ÛwÇ>ØûdNíüÂ>9,êùí¾>'¤±Åb¹>Ò=òvµ>0@hç¡Š±>ñÂÀ™­>ÁŒÍè‚B©>Í0:~çà¥>éAqào„%¿R»‡ÿn¿›nş†ƒ	¿@d¿Ë¿8$™â^¿VTYÌ¶é ¿É‚è“`Âù¾®¶ñ¿ó¾ØNÛZ{î¾¶ÑÃ¤˜«ç¾¹€¦ô~â¾>†»tİ¾ë>2Í–øÖ¾ƒ÷ñìAÒ¾H¤ı’ü/Í¾›	BÛwÇ¾(ê}íüÂ¾?îŠùí¾¾ˆğêrÅb¹¾Á—áèvµ¾Å¨•#¢Š±¾Ã}ğøÀ™­¾ :â‚B©¾“=èà¥¾İk%ào„%¿¤«ÿn¿±œ‹†ƒ	¿‘ ´d¿Ë¿–ÀRã^¿²˜¨Ì¶é ¿tóŞ“`Âù¾9^:ñ¿ó¾]âÙZ{î¾b%'£˜«ç¾lQüò~â¾°ì<¸tİ¾æ§
+Ê–øÖ¾BµßìAÒ¾ŒÖLŒü/Í¾Äo8ÛwÇ¾ŸÎníüÂ¾5¥o[ùí¾¾–dLÅb¹¾ˆaÄÈvµ¾ïø…¢Š±¾3E#Á™­¾cÿ‚B©¾g®è^çà¥¾ô!~•?ö¾Ş §bá¾;È×º™‰Á¾ÚÁr)H¹>´öh­K@Ì>K àO•Ñ>lñ°j‡tÒ>]ôQjİÑ>ùôÜiBƒĞ>È«ì~2¥Í>ô„QÀÊ>„-({¢Æ>‹‡‡ÏlÃ>õ\cİ†À>>å®}Wâ»>íÒs4¸S·>H3`ôO³>v•ız¯>V\2†©>0‡¢p2£>#0kÏJ2›>ÅM€>îòCp‘)r> 6QwÈ,€¾gÌ•?ö¾`ª bá¾Hhïª™‰Á¾¤"|H¹>=7m¡K@Ì>ü¬ÀİO•Ñ>—Gj‡tÒ>÷SjİÑ>3`˜kBƒĞ>!.Œ‚2¥Í>µ&ÒÂÊ>s^“|¢Æ>Õ—¡ ÏlÃ>g{ß†À>Œğ„Wâ»>K¦?C¸S·>U›áO³>d™\@z¯>Œ¯Ì©>R$éØp2£>ÊNòJ2›>sİÿ:>`ÀK)r>ü8ĞÅ,€¾Ğ¶Ç•?ö>¼t¹bá>Ho¶æ™‰Á>ìQPLH¹¾ÔÇK@Ì¾†ËèO•Ñ¾^n‡tÒ¾ªfnRjİÑ¾_q‘hBƒĞ¾ßª[z2¥Í¾•Ì¼Ê¾éDƒw¢Æ¾ˆ­ÏlÃ¾Òı	Ø†À¾ÉìjWâ»¾’·À¸S·¾YÔŠ¼O³¾å~vz¯¾À›©¾`qÒ;p2£¾Ö;“-J2›¾|Ï[ó¾îFÁ)r¾æUÈ,€>C¤•?ö>>~i²bá>UÎÖ™‰Á>¶²Y:H¹¾»K@Ì¾èëåO•Ñ¾7´æm‡tÒ¾± ™SjİÑ¾™ÜLjBƒĞ¾8-û}2¥Í¾Vn–¾Ê¾Øuîx¢Æ¾è˜ÇÏlÃ¾D¿Ù†À¾O-rWâ»¾ğŠŒ ¸S·¾f<ÖO³¾2¢U¹z¯¾ÄpL©¾‚°rp2£¾}Z?PJ2›¾*©®¾™[Ãœ)r¾Òu`Å,€>~Ú\í|ìù¾Béó£¦ºä¾jF¦úŒÊ¾‘¢X«>„š©mm¾È>kM Œ–Ğ>a)°î£üÑ>Ä{ü
+ÅÑ>Š‡‘R°Ğ>x3.Ñ‹fÎ>³ªû&Ë>ê¯xÂñÇ>Æ.5l!ñÄ>èÂRáí8Â>µtïß›¿>DºJrd»>$S¤m#µ·>ÈÔ$Vk{´>‘¥cm‹¥±>k_”çÊ1®>x›ãs©>¢®ÙøæÕ¤>=7Œ¤ >r"(J Í•>úrî|ìù¾qüó¦¦ºä¾)I¬úŒÊ¾Z;ÌX«>İÃ3{m¾È>øÊ\¥Œ–Ğ>+<ò£üÑ>ìíWÅÑ>¦ü´’R°Ğ>ÈRÓ‹fÎ>³ø¹¬û&Ë>aûàzÂñÇ>5öo!ñÄ>yFDæí8Â>şõãë›¿>Å7rd»>Vkv#µ·>›_Zk{´>íhRm‹¥±>Å:eàÊ1®>aÎÖs©>şÔÏíæÕ¤>Ÿf¦¤ >+ñ}_Í•>%G_ê|ìù>œ¢¯š¦ºä>[‡G‘úŒÊ>("ÑGX«¾DÏÉLm¾È¾L?‚’Œ–Ğ¾ô2şã£üÑ¾0ğ[ÅÑ¾6#ŠR°Ğ¾ *TÆ‹fÎ¾¶Ÿ¡û&Ë¾7 nÂñÇ¾	$Wa!ñÄ¾Ğê­Ôí8Â¾/wÄ›¿¾± úqd»¾FÂ¿^#µ·¾h±Pk{´¾à *j‹¥±¾²í¾ÛÊ1®¾ê4Ós©¾}ë÷æÕ¤¾˜(½¤ ¾ád°²Í•¾¡ß’ë|ìù>Ëµ¯¦ºä>pf—úŒÊ>!`{qX«¾øSZm¾È¾¶‘—Œ–Ğ¾¾Eiç£üÑ¾Xb·ÅÑ¾1«¾‹R°Ğ¾?¿xÈ‹fÎ¾aú¥£û&Ë¾®RfqÂñÇ¾xúe!ñÄ¾anŸÙí8Â¾xƒkĞ›¿¾2sùrd»¾0Å†g#µ·¾êò“Tk{´¾<äj‹¥±¾ÉÔÊ1®¾ëHÆs©¾Ù
+ìæÕ¤¾^q×¤ ¾š3ÈÍ•¾ä)ƒı¿c ;SË¿EŞñ" ¿<bš\´õ¾ª¯¼.Øsí¾²£óã¾R©l“ÓíÚ¾oÿâ‰ĞÒ¾DrVÒ)ÊÇ¾“ÍĞ“¾¾ñä¨ ²¾~’z¤¾àçäü~Œ¾ ñüMAãx>°L,ZiÍ—>î·˜.¤>R²½ØÇ®¬>ğr˜G	³>SV!}¸>ßWy‰5¿>ä’ƒ!|Ã>lH^È>7-¶^JcÎ>Oa áèÒ>Ìd.¬J?Íƒ`şD?m[Qó
+?õĞZŸyÏ?«c»–sû>É”|¡2ô>´æœØıí>ÎÈ|æ>ÜªWÍ 
+á>Ø4§)Ú>8§F²¾dÔ>c[x 06Ğ>Œİü´iÊ>ö]å„€2Æ>é„ß)jÃ>µ¶ÜÑÁ>œÔ&ó<Á>k;Ê–Á>%ÿ"÷áÂ>˜=~,$Å>„9N"yÈ>fÜVíÍ>öêC€Ñ>Rªòˆ[Õ>eÈ¬J?IÉñ_şD?§EQó
+?ù/IŸyÏ?Ié;»–sû>\_|¡2ô>øØıí>:+|æ>/E±Ì 
+á>~§)Ú>Z±¾dÔ>ñ™Ÿ06Ğ>·×ª³iÊ>‘S„€2Æ>!¦à)jÃ>.*‘ÑÁ>uŠU%ó<Á>ñb¾5Ê–Á>‹¡¹òáÂ>€\z,$Å>¶2I#yÈ>+G]íÍ>†ÂÈC€Ñ>[]ÇÆˆ[Õ>Íÿt)ƒı¿rÉÄSË¿àZò" ¿ Á•›\´õ¾Î½Q1Øsí¾–¿¹¥óã¾ÿ¡S˜ÓíÚ¾©FeĞÒ¾Ól…Û)ÊÇ¾ÜğĞ“¾¾ª-!¨ ²¾Çc`$¤¾Ä>o+~Œ¾ğd–ê@ãx>^s6EiÍ—>x(.¤>Şf»ØÇ®¬>LF5D	³>ş#*K!}¸>É<q5¿>2¸b‰!|Ã>œK%`^È>X4;FJcÎ>°|(áèÒ>©¿ú"?í2„æÒõï>
+Ø»mp]Ş>¼’ÇÄ>(†¿Æâ-”¾y³g	4?¾¾È#4€;Å¾³›â³xÇ¾?'|¼ÙrÇ¾»ûĞXÜ6Æ¾¬—qÁÂcÄ¾£–Ô[Â¾™Ûê\À¾¡Úº×½¾ÿ¿Ùºò¹¾À]Ù k·¾-Â¢X„µ¾n<è!	d´¾oULÓyø³¾»lYT´¾|‘üî„µ¾ØX”ì·¾Â8<yÆµº¾¤ÈüŞı¾¾b‘¨ˆÍ#¿Mâ0#¿ˆµ!~i¿‰k
+‡T¿t{ót¿‚Ê²-×ş¾}µèh÷¾¯n)I0äñ¾ğŸëÀMˆë¾†	üTå¾·œ@¦à¾—Rœæ\4Ú¾ëù 2êÓÔ¾å>ÃGÂĞ¾]¨*’hË¾X7Û>—æÆ¾üœXÜÌ°Ã¾dm9ıÂ‘Á¾.ÆÈ›UmÀ¾ö]¾¿4(À¾)ÿrÈM¹À¾£ü/FK(Â¾šñUãr‚Ä¾Rå&êØğÇ¾qõƒ¨ˆÍ#¿.¨â/#¿Óë!~i¿+%
+‡T¿Æ™[zót¿’~Š±-×ş¾g´èh÷¾‘µdH0äñ¾Ãê…¿Mˆë¾~¦üTå¾?’¦à¾†'óå\4Ú¾øó“1êÓÔ¾N.GÂĞ¾Å‚hË¾r¿9—æÆ¾¾õÓÌ°Ã¾'eØôÂ‘Á¾«2«–UmÀ¾,š¹4(À¾l€ˆÄM¹À¾Ô„HK(Â¾â“ÖÛr‚Ä¾‚ÙÏØğÇ¾+"?ÌëÒõï>Ê~Îpp]Ş>Ë¤ “Ä>PBÇ¢â-”¾!×hú3?¾¾fW.€;Å¾µÂ‡³xÇ¾üò5°ÙrÇ¾‚3õIÜ6Æ¾<¶N³ÂcÄ¾Ë½µˆÔ[Â¾©ÉÍê\À¾TS¼½¾"R>¼ºò¹¾b(¾¶ k·¾[4„µ¾CUL	d´¾!¬¯yø³¾–¹äXT´¾¶ÂÒëí„µ¾ X²·¾îs„\Æµº¾ªYƒŞı¾¾Xñ`?*í³Ml¢?b¯jdføÿ>10D¾N–õ>cA°1í>-OÈ~¯ã>ä4ÓgÚ>ÿrÍökƒÑ>aõ¾ªUØÆ>âŒR„å¼>’ø®/±>,4˜«³¡>Prb}Ëº…> ¶ESºl€¾<®%¬G˜¾ÄÜÜXë˜£¾j;H+6«¾†1Åö¹Ğ±¾6³.Z­»¶¾ÈÉ£;­¼¾x*‚x>şÁ¾G©<"I„Æ¾B… ?y#Ì¾|{SåÑ¾@
+[U‰¿ÊâmÁÉK¿÷ÖGxÈù	¿T*	/d¿¿šÇãè7Kû¾˜®Ä	ëô¾^`Ò´{í¾THE<"æ¾8HüL¯¥à¾°%FŠ‡^Ù¾Î«àöÃšÓ¾¿Y\MzŞÎ¾.2y"äÈ¾G&Ï¹Ä¾äØß]EşÁ¾|eÃÛsÀ¾öFlœŞ¿¾Õ~Î<YÀ¾÷ER´Á¾}ŠÊbÄ¾ğ5)*lÇ¾7Â<	Ì¾şŠ
+ï
+Ñ¾uÚ{!.ğÔ¾¯E:U‰¿ÒÿÑÀÉK¿š6xÈù	¿æñ.d¿¿~ºè7Kû¾àø‹	ëô¾2`P´{í¾XÊ®;"æ¾°XL¯¥à¾G‰‡^Ù¾ß¢õÃšÓ¾®¨¡KzŞÎ¾B5Ïw"äÈ¾Ü¬ùÎ¹Ä¾Ğk^EşÁ¾•¤ÛsÀ¾9™OlœŞ¿¾7Y¥È<YÀ¾²¬nM´Á¾àQ^Ä¾ä8¥)*lÇ¾g¤É<	Ì¾Ô«ëï
+Ñ¾¥Ú™ö-ğÔ¾ò&Ç`?âß=Nl¢?„ªÔeføÿ>wøD¿N–õ>[’æ°1í>s£ ¯ã>Äöi8ÓgÚ>ê† ükƒÑ>‹§´UØÆ> ò:^„å¼>ª*¶/±>œ>]§«³¡> 	ÀËº…>€±  ºl€¾Ì[b¦G˜¾Øá'Xë˜£¾óÁ†G+6«¾ôRäô¹Ğ±¾<8DN­»¶¾<Eå"­¼¾ÿpc>şÁ¾šØI„Æ¾Şé(y#Ì¾J|håÑ¾lTUà ¿Â„P~ALğ¾ .kî¼Ş¾)sqÅ¾@4™nºÑ‡>ø•4ãò¼>¶’yu/Ä>ƒ·hêoÆ>—ä”Æ>T!ˆ|¶_Å>ıŒõªÃ>?ù‡ö7ÇÁ>¹ÍM&]á¿>Ğò1¢¯•¼>œgSÔ¹>Ü#Kù7¶·>Fíã ÒI¶>¦¦»raœµ>°°/Ïí¹µ>5;B\w«¶>ü‘ÿk´€¸>èê«¦°Q»>"’g·h5¿> I|æ2Â>FÃú®#?Hƒ8Ï³?æı>u?1½zœd?nZä"‰?‹ªš%äÿ>–YkÛ–˜÷>°Ôê,®ò>€	GA?íë>.‡€Ğ‹ºå>šóx á>Pyf`PûÚ>dæÏY–Õ>–Xg"Ñ~Ñ>»¸ÏôÓÌ>Œxô¯ÓCÈ>ì<	ÍqşÄ>o2¼iPÏÂ>È­¦@cšÁ>_h1ÛÃDÁ>7ŒÁBÆÁ> RIÚû#Ã>ŒåÜmÅ><bƒŒÇÈ>.6í®#?
+qÏ³?Tsu?²mezœd?…œã"‰?Š]$äÿ>ìv|Ú–˜÷>Êí",®ò>øß??íë>şÏ‹ºå>Ç»Dx á>rå¿_PûÚ>7ËÏY–Õ> DÛ!Ñ~Ñ>´ì"ôÓÌ>WïJ«ÓCÈ>ºé"ÃqşÄ>C|ñaPÏÂ>Áö;cšÁ>p`ÙÕÃDÁ>ø,¾BÆÁ> ~ŒÜû#Ã>f¾ÕmÅ>Zß*/ÇÈ>ÎNcUà ¿äæó€ALğ¾xµîmî¼Ş¾€ü&vqÅ¾€EÂ*ºÑ‡>hO Ôò¼>æÊn/Ä>TEH`êoÆ>É-?‰Æ>EÏ†n¶_Å>ÏoÓ‚õªÃ>®èté7ÇÁ>™ÍÂ]á¿>v©†¯•¼>øfóãRÔ¹>2B¾Ò7¶·>†ñ±|ÒI¶>œ;Paœµ>^’¬í¹µ>šr3w«¶>6¶7´€¸>âgñh°Q»>æÇ(—h5¿>’ê›Âæ2Â>                                       ø?       @åù!Èîõ?K`w‡.Uü?        š™™™™™Ù?3¾nS¿Ãz?º õEk8w?¹q´t?C[8µ×=q?Ï!·âöm?hñ®GmÅj?óiáùœQh?¸ÿLÏf?ê@Å$†d?^"n>b?pXì•2]`?L·ö~]?±ÌOô„Z?.³ÇW?* òÜéBU?¦øŞ•¤òR?oD¬GÓP? !W¥iÃM?UJÉ6J?t)Èñ™şF?&O°­}D?ä¼J±[A?–,'mo=?sLl778?'æoÃz?2cÃJ08w?‰O•€ït?9öêä=q?¬Ì{û÷m?P^Çj?Íå°òRh?*œOf?-•X*bd?9vøól b?ÎC0œ_`?*æç„]?%Ú W:ŠZ?!ÿbêşÌW?†³ßHU?WçÙ¨÷R?Ì& f
+ØP?öŸcTÌM?ËDZÒ?J?YÒ2FiG?YÂñ‚ D?ÖáEüi_A?¢æÊs=?^¬ÑæB8?{ŸæoÃz?êÊJ08w?xÅ¡€ït?6ëä=q?óÃ_{û÷m?r ^Çj?ÿ*ù¯òRh?>çOf?ÚP*bd?±Ëñól b?ıÿ/œ_`?;2Şç„]?©šW:ŠZ?¸Ì]êşÌW?æó®ßHU?ó0ãÙ¨÷R?8ıûe
+ØP?¤¡ZTÌM?ÿ”QÒ?J?_5)FiG?8¿è‚ D?V>üi_A?n{÷åÊs=?.¢ÑæB8?Â3qS¿Ãz?š´ñEk8w?h´t?¬2µ×=q?»ªqâöm?P¯GmÅj?MéùœQh?HhMÏf?²YÌ$†d?Ø‹t>b?=Şñ•2]`?ÑÄ#ö~]?4±Vô„Z?|Ö³ÇW?ÒõÜéBU?Kuß•¤òR?ş#C¬GÓP?C¡R¥iÃM?®
+ıÉ6J?¹„Ãñ™şF?ÿw®­}D?ùv¼J±[A?-—1'mo=?f÷u778?µd´pÁz?jë±ƒø5w?Ò!„	t?t¿+a5;q?ˆa«òm?®%Ñ¡Âj?îáéNh?Q&?ßf?Zä:mÆd?d±zÂ¯b?–ã)ĞöZ`?ÇiLh{]?¦¯q”‚Z?­	cÃÆW?gA.û©CU?Üğr·SõR?š2 ØP?Âo^ºÌÑM?i¥tÉJJ?m²FG?Ë$åH6D?"î¯ò×yA?OY ı®=?
+Fm={8?ªNIwaÁz?%İI¾6w?Ì‹r8¿	t?›<òÃ;q?àÁ™6Éôm?l7sÅj?]SöÄöPh?°ˆî8f?G²Ed?V¬t–mb?MÉµ®Ş]`?‰^û)e]?'s°Õ™ˆZ?µË­F¯ÌW?ˆ8"_IU?\	–¸¸úR?<‘J!İP?LÕÁ4éÚM?_´Ñe0RJ?¯ç¾ª G?OÀ'gÂ;D?Ó7J)|}A?´¼ù}±=?5Œò8?6Ø>waÁz?•Ç=¾6w?êĞ_8¿	t?%˜òÃ;q?B¹6Éôm?Å;sÅj?}àÅöPh?wÕ˜î8f?Ô~(²Ed?³–mb?"/À®Ş]`?ÈN*e]?¿Õ½Õ™ˆZ?¸ş·F¯ÌW?@"_IU?º¬›¸¸úR?ûJ!İP?ƒÊ4éÚM?T’Úe0RJ?6©Éª G?É%2gÂ;D?	«Q)|}A?«Äù}±=?ƒôò8?®Šd´pÁz?ùn¹ƒø5w?ß-„	t?­Ra5;q?dûÌ«òm?X‡!Ñ¡Âj?ËâÒéNh?)1ßf?´W/mÆd?u
+qÂ¯b?›"ĞöZ`?K#\Lh{]?h\¤q”‚Z?ÖYÃÆW?Œç%û©CU?¬Äj·SõR?Ú¢‘2 ØP?—/LºÌÑM?ø`ÉJJ?õFG?åÑH6D?z0¡ò×yA?4˜ìü®=?şø:m={8?ë9?wÄz?İrŞ›_9w?¼Ì[Zt?¨m×‰?q?¢œCüm?µÒgÎÌj?ÛVƒhYh?ç€èÌîf?[¥d?0•{V'b?ÔıØf`?.(’i“]?µiC¤’šZ?Õb¿yŞW?õıN¶ÓZU?ª’mW­S?¼/«jíP?YêÒùM?VgÄW4oJ?#¹Á8G?‚¨3ÊVD?%æÄi—A?Ì™®;ùã=?Ã´êÍª8?lŸ×‹Åz?ı$ó¹:w?çQÿt?çµ5ÏoAq?s“…â n?—uˆĞj?îˆİ9U]h?•¢ñdï!f?¨3%%d?;Š“i+b?Y(-ôèj`?–Åâ%i›]?ÈQìDU¢Z?è9İãåW?õÂôËaU?hÓaÍS?Y=ÂáCóP?§ÙYKN?šÎƒ}xJ?²¨¤‰
+AG?‚ˆ¼f]D?Ë½hšA?É«Kï=?×Ÿîíµ8?N¦×‹Åz?$*ÿ¹:w?A1dÿt?¬ıdÏoAq?x·	ã n? –uˆĞj?%PÌ9U]h?ˆãádï!f?uG%%%d?÷‡“i+b?È#ôèj`?2:Ò%i›]?ßDU¢Z?u­/İãåW?‚aºôËaU?qê[ÍS?G½áCóP?#cĞYKN?ó¦†ƒ}xJ?äPš‰
+AG?ì;²f]D?šï`šA?¯¿À«Kï=?—œîíµ8?)?wÄz?ûÖ›_9w?XLZt?ª€g×‰?q?,è¡›Cüm?˜ÏÕgÎÌj?Å?eƒhYh?'HöÌîf?K±d?kŸ{V'b?6ÜıØf`?ºE5’i“]?rHN¤’šZ?x¶ÈyŞW?ÎdW¶ÓZU?Ù²uW­S?En³jíP?ê;üÒùM?¨½×W4oJ?w7¹Á8G?\¯FÊVD?ƒÿÓi—A?i{Â;ùã=?¥/êÍª8?mpÉìòÈz?RÓ/u>w?E‹Ñ#t?^¹¨Fq?n,pö	n?¡CérÚj?åbK‚ôgh?¾_(Û-f?"'C¾od?KtŒ:b?ñ©çÎz`?¤ôó~°½]?ïÒ×ZşÆZ?pñqÉX?°l±¸ŠU?OëÇÀË<S?Ljâx[Q?ß,Z^N?
+x¢³ÜÓJ?ÑÒ‚?	G?p[æ3¼D?á‰üA?÷ôLŸ>?¨µYÄM9?©ÛÚ»³Éz?fƒGw?w?t8«€lt?ÁˆFÉœGq?jj$n?ß4‹İj?u;Q‡\kh?ÏÍ¨m1f?jÆ8#d?©AßeÊ=b?#Ò¡Ÿ~`?şÑéèVÅ]?§à“UÎZ?pñdô&X?Û´2Ê‘U?cR;zCS?gèª”%Q?+óiN?¦ÑòQŞJ?{.Ñ´¦G?øÓÌ}ÅD?àV¤ĞûB?÷¼›úı­>?;¾”bZ9?XâÖ»³Éz?±7|Gw?w?İ*Ÿ€lt?`3'ÉœGq?¦$n?!½4‹İj?Œí^‡\kh?„©¨m1f?ÌÓÏ8#d?K¦æeÊ=b?t´×¡Ÿ~`?æÚñèVÅ]?°o™UÎZ?ğ›hô&X?9a¶2Ê‘U?IÏ;zCS?ëéª”%Q?8«+óiN?7dÔòQŞJ?#šÑ´¦G?ßÿÒ}ÅD?S«ĞûB?ºĞ§úı­>?øóÈ”bZ9?LPÇìòÈz? !/u>w?R-•Ñ#t?#È8¨Fq?ûqpö	n?J›érÚj?ØC‚ôgh?ıZ(Û-f?XÚ;¾od?x¥mŒ:b?ú¤çÎz`?·gë~°½]?¨¸ÑZşÆZ?«èíqÉX?`°¸ŠU?Ù«ÈÀË<S?õäx[Q?æ
+a^N?8±ª³ÜÓJ?k%‰?	G?¼¬]æ3¼D?‰üA?–˜ˆôLŸ>?ĞyªYÄM9?‚×gƒŒ?ŠS©Y)L‹?¢JZŠ?Rãg† Û‰?6i²Q½3‰?°û§îÎšˆ?
+jdÂG
+ˆ?ZÓ‘æ|‡?y@wMó†?lç-•m†?ê“¢të…?öBÙ%m…?ªØÉññ„?¶NyÅy„?_Âı_„?jZd|‘ƒ?´/ˆÆ ƒ?¸é3†•±‚?ºÒ+D‚?7¬·Ø?ú¦VKÛn?l–eìb?ø,|îŠ¢€?õJ=Ë ?€?¦x¤ê"Œ?.1C%L‹?Ó&zŠ?è«õ$Ü‰?6oW5‰?÷Q›Åœˆ?Ú«µ¬ˆ?îÕN€‡?<™‰†ÿ÷†?ˆr¿’s†?2å…Ôò…?UX=…u…?3³gşiû„?>íjF„„?†vr×„?à˜Ïƒ?b«ššÎ-ƒ?îš¬?!¿‚?]{×øQ‚?†‹ÏC~æ?ggQ¶|?ëÓ?è<ˆç³€?¸µÕD9S€?Š0ê"Œ?zA%L‹?Ñ·&zŠ?ä$}õ$Ü‰?dW—W5‰?¨ßÅœˆ?°ş§µ¬ˆ?¢™ÇN€‡?ög~†ÿ÷†?:li¿’s†?‘jŞ…Ôò…?xC=…u…?íƒcşiû„?Ô4éjF„„?Ú˜r×„?†ş“Ïƒ?<Ç•šÎ-ƒ?o¨?!¿‚?HªÒøQ‚?º¢ÉC~æ?L¶|?.fÏ?Db„ç³€?Ş_ÒD9S€?"mƒŒ?Š{ªY)L‹?˜sZŠ?à…† Û‰?¼Q½3‰?bâoîÎšˆ?x•bÂG
+ˆ?ÊšÜ‘æ|‡?6§LwMó†?ÔÌô-•m†? y±të…?2œQÙ%m…?ÃçÉññ„?§ˆÅy„?Ú ı_„?…kp|‘ƒ?< ˆÆ ƒ?Äƒ8†•±‚?ªÑÒ+D‚?Ôf2¬·Ø?ĞöNKÛn?P‘]ìb?pvîŠ¢€?û;;Ë ?€?ØŒ·‚$Œ?bf»ß®L‹?W¯ÏjŠ?\­ïeÛ‰?–ËO4‰?$eèÈ›ˆ?œÆj$
+ˆ?$@•D
+|‡?»hƒ¾”ñ†?øÙn•ïj†?Òš—è…?~OØ¡h…?/³.>ì„?¹s$œs„?{4ÊÔ¨ıƒ?´‘†•Šƒ?†?ö9Hƒ?$ÅìDh¬‚?¼\½“A‚?òîÄ@Ú?Z'õÛu?8Æ³6	?J”İñd´€?ìÓP<V€?£OíÑ:Œ?_”öL‹?rÍŠ?Z†ì4Û‰?ÛØPö3‰?Ş³yäšˆ?Jïî
+ˆ?ÒM‡¶|‡?Q£ƒÿCó†?ªF|<°m†?u®Cù×ë…?¥/ı€m…?ßl%wò„?°ÑKú‹z„?0æm˜•„?.[4o“ƒ?š+»ùô#ƒ?[@ĞòÃ¶‚?`V”oL‚?#0Kqtå?¬ünp?Àu«ße ?È¹ÙwÂ€?`ñ'ÔŞg€?R¥Ò:Œ?ÓùîL‹?¬ÔìŠ?Â—'4Û‰?Í¬ÏOö3‰?™b@yäšˆ?êªèî
+ˆ?øn‡¶|‡?ôx•ÿCó†?C<°m†?ªöVù×ë…?êBı€m…?‘}%wò„?ıYú‹z„?Ì­x˜•„?h4o“ƒ?Ó½ùô#ƒ?‰/ÎòÃ¶‚?‚VoL‚?9gBqtå?òïnp?2éße ?nrÍwÂ€?TµÔŞg€?~]˜‚$Œ?Jt®ß®L‹?à«jŠ?ÒÓîeÛ‰?rÂP4‰?D?É›ˆ?”Ûœj$
+ˆ?Ì.„D
+|‡?Hïq¾”ñ†?bÁ^•ïj†?ÓĞŒ—è…?ò…CØ¡h…?†Ë%>ì„?âMm$œs„?T ÆÔ¨ıƒ?|Ÿ†•Šƒ?²Bõ9Hƒ?2(íDh¬‚?>s¾“A‚?ÊrÆ@Ú?¤ôøÛu?c¹6	?ĞFâñd´€?j·	P<V€?Ğóı²Œ?ÎR/}°I‹?¶„¯Ñ‹Š?&æ¦:)×‰?è”ÉgC/‰?÷"ÅÑê•ˆ?(¶¼Îˆ?C3¯I÷v‡?º
+L!í†?2çlg†?R*ê½å…?0
+Ò5İg…?:Èşp’í„?¬%|©v„?ø³„ºí„?¨<p/’ƒ?7<`:$ƒ?|QÅ›¸‚?¡0×O‚?~º¥¥_ê?&iš¶Ñ‡?OÄZ— (?f†w=éÊ€?àDà{no€?n tåTŒ?Ğ‘¨„*H‹?„p(ŠŠ?Ni
+Õ‰?Fí5ı,‰?ÄLÆ( ”ˆ?.Wxˆ?(@>v‡??}Îì†?dS4¾g†?ñçÍæ…?¸ig*½i…?0,ÄNğ„?p4v”Hz„?9‰Húp„?–¬d——ƒ?Î½‘d*ƒ?Sı§0p¿‚?±åGÜ*W‚?Ë
+ß½ûñ?—óıŒ?¸ó‚0?Ce#Ó€?ıÁ(»äw€?2SåTŒ?ŞØ¯„*H‹?èãP(ŠŠ?f—Úh
+Õ‰?ô˜66ı,‰?òã8) ”ˆ?(ê¥Wxˆ?Æ>v‡?(ÙlÎì†?ùR#¾g†?ˆ6÷æÍæ…?6£W*½i…?ÄNğ„?®]j”Hz„?Â?úp„?X*_——ƒ?¿‚d*ƒ?Æş©0p¿‚?wMÜ*W‚?€¸ç½ûñ?´‚
+ Œ?•÷ ƒ0?©Mš#Ó€?†+3»äw€?ò²Œ?¶<}°I‹?,¨¨¯Ñ‹Š?oŠÚ:)×‰?êã’gC/‰?(•nÑê•ˆ?ğn¼Îˆ?²í¿I÷v‡?
+L!í†?œÅölg†?’7ê½å…?åõÜ5İg…?²øq’í„?Iì©v„?“Bˆºí„?™Ãq/’ƒ?Äu<`:$ƒ?@WÄ›¸‚?9¨×O‚?à±£¥_ê?¼–¶Ñ‡?µU— (?0[s=éÊ€?:„Ü{no€? 
+ïcŒ?NÔĞYmD‹?°óB5V…Š? 971Ï‰?,Æóô$‰?TuL?W‰ˆ?Îck“°ö‡?´;$ég‡?ËÑäoİ†?à+É¨YW†?&|ã§Õ…?¨¹0ÎHX…?ˆm‰€6ß„?ßÜzj„?.Úm+úƒ?àèEhqƒ?Ö¢âz'ƒ?‹.í4Å‚?¿ĞM]uh‚?XÇ?3º‚?Ä€Í×Ô¿?$Ÿ,q?°´HŞ%?}#ˆ;İÛ€?¼¡½7
+Œ?Ü’DC‹?òPsÄƒŠ?lT[)Í‰?¦jÀÕ"‰?·ç)o‡ˆ?h8ÆO3õ‡?ÂaƒÁf‡?Ü"Jæ¬Ü†?²œW†?\÷8~Ö…?[2X‚Y…?t÷ì4Oá„?ó¼:„m„?ñåo3şƒ?*3'R|“ƒ?:\"„-ƒ?~ Ú*Ì‚?ùSD5p‚?m›vR‚?ğyHĞwÈ?¢'Júy?7KÊ	.?.nj˜õä€?˜½7
+Œ?â*DC‹?î[5sÄƒŠ?y0<[)Í‰?d*@ÀÕ"‰?¸gäo‡ˆ?lÀÈO3õ‡?p³oƒÁf‡?|Wæ¬Ü†?rœW†?ºC~Ö…?½£;X‚Y…?.™õ4Oá„?ó¦Ä:„m„?‰¬ëo3şƒ?xµ,R|“ƒ?ña"„-ƒ?(ÀÚ*Ì‚?WD5p‚?Ïy{R‚?%NĞwÈ?ØPúy?ÚûQÊ	.?Hıp˜õä€?cïcŒ?AuÏYmD‹?D15V…Š?Ã1Ï‰?æÕô$‰?È…?W‰ˆ?¸Hm“°ö‡?®Ì1$ég‡?ô¨Ääoİ†?­òº¨YW†?zåã§Õ…?W ÎHX…?{Íx€6ß„?²
+zj„?€ øl+úƒ?¸O9hqƒ?äìúáz'ƒ?ìpí4Å‚?N]uh‚?ô‚C3º‚?ƒ8Ó×Ô¿?êÏ Ÿ,q?Ò¿JŞ%?x½†;İÛ€?1Û:ÆÁ›>I,9´Ñ>ÃŞ=À¥Z¡>ìwÍö¢>æ¾ê_6“>PpıÇã‘¨¾Vtz¼€1°>ñ”ÕŒRÅ>ÊKxæèÉ>N’xØœÊ>òE¤öxÊ>‘£Š°UQÊ>,nRÊ>`kŸnwÉ>:Ü´È>R`Ÿ¨¨Å>“Nç	Á>£´g;
+µ>æ–ñ][ÿ‘>hV”U>¥¾m^4~> ŒT–çšÏ> İ…)äâ> Ç›–ğ>³¶§„ÇÁ›>U·o³Ñ>FRç¸¤Z¡>—<ÿÒ‹ö¢>]oBX6“>ˆiä‘¨¾Ëu9õ€1°>PÔGìŒRÅ>3‘`óèÉ>K”=|ØœÊ>¸p-¡öxÊ>¿7Â©UQÊ> ²KÊ>RŸ2ŒnwÉ>P’…ß´È>µ ¶¨Å>¼t"Á>û0³;
+µ>ŸH ·\ÿ‘>jh ĞT>¥¾Ü^êš>  ì»çšÏ> Ÿ’)äâ>@üÂ–ğ>=3~kÈÁ›¾•
+g³Ñ¾ì†¤¤Z¡¾ìÿóÏ‹ö¢¾ŸòËSX6“¾Ëçzä‘¨>SY<Â€1°¾² JİŒRÅ¾·LíêèÉ¾Î
++uØœÊ¾şÕ”öxÊ¾*V’UQÊ¾¬·§"Ê¾¼bNnwÉ¾ +È‰´È¾UYNH¨Å¾±)„ŸÁ¾e
+[“:
+µ¾³^~²Wÿ‘¾Ë`CW>¥>w{¾ <|[çšÏ¾ â†~)äâ¾@Q›–ğ¾¿¶ÉÁ›¾òH²Ñ¾oúM–£Z¡¾—{Õ‰ö¢¾ÃPŠQ6“¾TcSÅä‘¨>ÈZûú€1°¾@…ôŒRÅ¾ ’Õ÷èÉ¾QÖxØœÊ¾Ä~½‘öxÊ¾XêD‹UQÊ¾€û¨Ê¾ğõJnwÉ¾®E´È¾¸ÏU¨Å¾Úï¸Á¾àu×Ş:
+µ¾l­Yÿ‘¾!aKV>¥>üf¡İ|¾ PçšÏ¾ t<†)äâ¾€9–ğ¾]¨ÛØzÇ£>k˜„æaş¢>CÍq¢>øò¬X[>RGØKL š>„åwf*ø¨>x ßiQÇ>·«ôµõĞ>—ÈÇTÓ>±ÉE…NwÔ>$è–y?KÕ>Û0÷îìÖ>ñãmÈÖ>P¢1²ŸS×>ë8Gù¡ƒ×>i±Dşn×>ç»£!ĞÕ>$<s/ŒyÓ>
+Ìö´FĞ>
+¯*Òˆ#Ë>ÉDP[ƒĞ>  M2~Û> ²€íĞç> ã°Jkô>t_n{Ç£>´°}8cş¢>%½Ô>Ïq¢>
+Å#b>`85[V š>ˆ<Ü‹*ø¨>‰9)3QÇ>WæhÎµõĞ>ÍÌ›vÇTÓ>ˆÏ1^NwÔ>n¿S?KÕ>PÅ¬ÊìÖ>æÂ‚JÈÖ>W Æ‘ŸS×>Í¾gÛ¡ƒ×>¦›8ãn×>¢pOŒ!ĞÕ>®EŒyÓ>‰s’ê´FĞ>³ @Ëˆ#Ë>6œW[ƒĞ> Àƒ=~Û> B…íĞç>€H˜Mkô>ğJ+yÇ£¾‰‹PNbş¢¾Ÿ–:<Îq¢¾ƒš"£_¾t"¸=U š¾œ•+ø¨¾'nHQÇ¾÷Ú¼ßµõĞ¾¢÷‹ÇTÓ¾™œxNwÔ¾½¤Òr?KÕ¾íìÖ¾3ÅmÈÖ¾ãƒÅ±ŸS×¾"ü\ó¡ƒ×¾oXîn×¾=)‡!ĞÕ¾ŒyÓ¾‡öˆÊ´FĞ¾‡q‚ˆ#Ë¾Ä7[ƒĞ¾ <S!~Û¾ ˜¹yíĞç¾ ò€Ikô¾ºÜayÇ£¾Ò£I cş¢¾´G8Ğq¢¾’±:nf¾‚M_ š¾ ìg(+ø¨¾8RQÇ¾—–¹µõĞ¾ØDËdÇTÓ¾pˆQNwÔ¾<ûL?KÕ¾|¡ÊÈìÖ¾’4KÈÖ¾êáY‘ŸS×¾‚}Õ¡ƒ×¾¬îKÓn×¾ø5êo!ĞÕ¾~Ùó‹yÓ¾éN¾´FĞ¾0‰†{ˆ#Ë¾¢>[ƒĞ¾ \‰,~Û¾ (IíĞç¾€WhLkô¾v­Ùˆp&–¾tJ{8m£¾áÍ"­xR®¾_EêgÙ²¾8ˆ7saš¾1ô1ê’§±>Æxâé¬í¶>„@¡G»¼>ÄnçÔ--Â>0§Çÿ°¸Å>^™áı”ËÈ>PÌ4w‡Ë>=–³²rùÍ>‚—föÉıÏ>úÜM.©Ğ>¹²2?ÈĞ>¹>~LãĞ>fzC\;ÅÌ>`æjéQÇ>™Rƒ¤o5Á>©ƒğ›¦çÀ> ‹wÍ> ¶š ·Õ> v)æö3Û>²nĞp&–¾ÌÃÚÌ9m£¾Úìe¢zR®¾ĞµhÙ²¾dx
+B!aš¾î\3Ğ’§±>ñ•e­í¶>OíÁ»¼>¬I[.-Â>û]J±¸Å>Yg0G•ËÈ>@Ä¾‡Ë>/4ørùÍ>Ä9ÊıÏ>±
+´M©Ğ>?ùN?ÈĞ>â¹eãĞ>yŒ2„;ÅÌ>N$C(éQÇ>vªo5Á>DÎÍŒ¦çÀ> ˜wÍ> €	 ·Õ> ±Ùö3Û>ÿ¹JDm&–>#­ã8m£>–'¯£yR®>JM4hÙ²>øS6(aš>H½·Ÿ’§±¾ÂÈ/­í¶¾•1Ş»¼¾š_wú--Â¾Ù'Å±¸Å¾¿•ËÈ¾¯€|‡Ë¾œ?æ²rùÍ¾†íÙøÉıÏ¾CÈ¡4©Ğ¾hòëA?ÈĞ¾P¸‹hãĞ¾‚¼S®;ÅÌ¾Ï£eéQÇ¾Õ°§òo5Á¾¸ŞÎ¦çÀ¾ ,Ï@wÍ¾ f‚¦ ·Õ¾ “{êö3Û¾;{‡‹m&–>{&U4:m£>Fò˜{R®>¦ÃiÙ²>$D	÷)aš>&¹…’§±¾?ß«­í¶¾@*»¼¾‚:ëD.-Â¾¤ˆZe±¸Å¾º^SV•ËÈ¾´"Ä‡Ë¾~ØførùÍ¾ÈX‘;ÊıÏ¾úõT©Ğ¾.á^?ÈĞ¾µ[ÇãĞ¾•ÎBÖ;ÅÌ¾½áè€éQÇ¾Jzšøo5Á¾Sé»¿¦çÀ¾ 4c-wÍ¾ 0ˆ› ·Õ¾ 1Şö3Û¾ŞƒwØ:„>òw0.p¾™ÈÆIâ”¾o=‰-qo•¾’Uú³Ê±>uƒ‡İ
+6É>{H+µ‘ÉÅ>æ°õŸ4ˆÅ> Œ¶%©3È>0_#%XË>‚Û‘ #Î>lóÎFĞ>m{f RÑ>C—œø(Ò>&½­¥L§Ò>Ş!Æad¡Ò>Ø)n¬×Ñ>Ü§}N	Ğ> §DÊ>Ö|²>¾Â>Ô´‡>õ¾> €ÕBÆ> H\ìxŒË> ‚‘ rÉ>°ª¸7„>œ‘M-.p¾[ÏXâ”¾§ù2kmo•¾X2wµÊ±>x‚Ø
+6É>we9†‘ÉÅ>èÒŠt4ˆÅ><!v©3È>XS]%XË>Q–{ #Î>şeZéÎFĞ>i‰ıÿQÑ>[İ¢î(Ò>cÿZšL§Ò>Ã¶vTd¡Ò>»?¬×Ñ>ê¡œ<	Ğ>çõxu§DÊ>}#Õ‚>¾Â>÷W!×ô¾>  åÆ> ¬…¿xŒË> Z7ûrÉ>—‰6„¾ˆ†³²+.p>D$šâ”>Æ«ĞKmo•>Œ—V™µÊ±¾<dª6É¾Hç~ª‘ÉÅ¾~Dx4ˆÅ¾¶Ş¤©3È¾ìAÆ!%XË¾<Åa #Î¾ a£ÏFĞ¾
+v  RÑ¾KˆÛ€(Ò¾ÈTJÕL§Ò¾5’î™d¡Ò¾¾f(Z¬×Ñ¾	õ*‹	Ğ¾Qšª¨DÊ¾1”<?¾Â¾ctxÖõ¾¾ h]nÆ¾  ÒüxŒË¾ bHrÉ¾i°¦m3„¾3
+Š®(.p>Ä¶¢$}â”>şgz‰io•>]3·Ê±¾?c@ÿ
+6É¾D{‘ÉÅ¾€fe4ˆÅ¾òsd÷¨3È¾ƒÄ%XË¾€Ö‡ #Î¾øZîøÎFĞ¾{  RÑ¾cÎá€(Ò¾—÷ÉL§Ò¾'ŸŒd¡Ò¾¡YùJ¬×Ñ¾ïIy	Ğ¾& ô§DÊ¾Ø™•ï>¾Â¾†oõ¾¾ èl:Æ¾ üÏxŒË¾ :îõrÉ¾sˆ"«|x×>	BA2
+İ>²· Áâ>ÈÀÌgæ>hfd÷§5ã>äA©#¾¨¾½
+MÖÚ¾áéLz‘„ç¾„1*G­ñ¾¾TOóø¾zĞ™ĞÜ ¿áhq•¿ü}„‡X¿¢öæÆŞ¿¨{~
+9¿²·à$L¿^å;–‰ ¿–¼aÕ#¿ì ö“U'¿ø
+L¨¯µ*¿ÜZM•…ê,¿Ğ¾¿]	-¿ĞúäB-¿¨úÎ-¿C{¯µ8Ú>Ò7oà>ğdôòã>[ïĞØç>ß
+ƒlÔâ>HrHBÀµ¾	t%„ÉøÙ¾€œø·Í4è¾‡Sg?¡›ò¾¼ e¸3ú¾wïŞï’¿rÃƒWÛ¿›ì±¿‹“æ¶`@¿Æw“†–¿|—miá¢¿ğŸ.-Õ¶ ¿ñs:şô#¿ˆ,ğkNh'¿ÀÈ¿–¶*¿zÖ¹ëÈ,¿zšØç,¿0È`v6Y-¿@+àó7.¿èW$/µ8Ú>Şlùyà>Ô¶•™ôòã>¹+ã“ĞØç>Ue§lÔâ>d¥AFÀµ¾RÛÉøÙ¾
+ zÀÍ4è¾|ÒşD¡›ò¾÷‘ßk¸3ú¾.×åó’¿I\Û¿×Í	ñ±¿>ç¹`@¿âš1–†–¿¢lá¢¿ÚŸe.Õ¶ ¿Àÿô#¿:†lNh'¿óÍ(¿–¶*¿œIN¹ëÈ,¿À¡À™Øç,¿ ­u6Y-¿Øb_ßó7.¿l.¦|x×>NDfı1
+İ>´ÌõÀâ>'ôÀ¾gæ>4Û§5ã>|6{$¾¨¾O	‡MÖÚ¾u[u‘„ç¾8Åã'G­ñ¾T6$Oóø¾úÁEĞÜ ¿”ão•¿ƒq‡X¿Ín¢ÆŞ¿XöT{
+9¿föîÛ$L¿˜½“‰ ¿à{R¹aÕ#¿&“!ó“U'¿"¥Ğ¥¯µ*¿hR±“…ê,¿PÂÜ¾]	-¿0PªäB-¿ ’BúÎ-¿AÀ£İkÂ¾&ˆËneÆ¾èW¯ÉËË¾8‚Ã_uêË¾0Â )İ5Ğ¾T•ù“ÁUä¾î;VòÚë¾Ì”$“İğ¾ˆWµÒçşó¾8˜.Š¾©÷¾§ €˜öû¾Ba3‡ ¿>>»Ô¢¿×91’ğ¿^åøÚKÑ
+¿7¬Ta¿g›¯1%Í¿-)ÏA¿“™Cjí¿õ'	C¿;d¬§v¿àÒ 8ã€¿`~%{¿0Ñ´»—y¿œÕ.MÖÌ¾õ €éMŞÑ¾UÌëm«£Ö¾â úà±Ø¾`
+àºîùÙ¾n2,‹Õ†æ¾ŠöĞØŸÚğ¾¯–àõ¾Ÿ•gÎŒbø¾fÒBóåÀû¾ªÄÓFµÿ¾f^c££7¿fÔ‹ĞÎ¿s#¿?¿s¤~X~é¿¶	Š°¼í¿+9©œÈ¿.—'1›&¿?R9\ ¿ÊåõCi¿(€¹Ñ¢¿ {ŞÃŸ:¿ ÷I--2¿Ğ[	#í¿  7QMÖÌ¾ˆ&SûMŞÑ¾¼?L«£Ö¾ê´I±Ø¾n¹úîùÙ¾¡Î‘Õ†æ¾tw-×ŸÚğ¾ïö0şßõ¾ĞT"ÊŒbø¾VŸîåÀû¾MlÏFµÿ¾Ï‹¡£7¿£fÏÎ¿E¿?¿0€¶W~é¿İ¿¯¼í¿«*œÈ¿éü–0›&¿Ò²[ ¿Ó¦õCi¿÷`Ò¢¿€–—ÄŸ:¿ Ä.-2¿@é#í¿éÊç¤İkÂ¾BtOeÆ¾&÷ŒÉËË¾lä”(uêË¾VÊ­øÜ5Ğ¾‰†—ÁUä¾ÜZ£VòÚë¾&>Q“İğ¾Ğ·ÊÑçşó¾Ãç‡¾©÷¾¢×—|˜öû¾¾ÇÆ2‡ ¿’‰§Ô¢¿R«2“ğ¿teŸİKÑ
+¿Â¶^Ya¿!HR5%Í¿4MÔÓA¿l ´oí¿‚Î.H¿Uõ¯§v¿€3¹:ã€¿ÀŠ˜{¿0şù»—y¿MŸ@å+×Õ¾‹ WhıøÚ¾r%Gê~à¾0ø2|ä¾ æfÕìë¾4š'„ã¶ğ¾d¨˜lEñ¾ A¹)ò¾şæíùô¾N†T'nnö¾ì½i	qşø¾öØßè¥û¾rëµ¤Sş¾!ô.™9{ ¿ó†Ç‘Éº¿$""b¢Û¿j“Ï¿“À>†¿£ç;Õbõ¿áÈ^Ó ¿ØÅİ
+J’¿€ÕÀ…9S¿@•´®÷è ¿€4xÕEó¾D§b!ŒãÙ¾Ro'{%à¾¿îö×ã¾!?}•@±è¾ò™ÕÎòî¾TÇÃTêuñ¾ğ¬G^ó¾C€İô¾Ôäio½ö¾Äª†Ñ‡¬ø¾FØbÔ¸­ú¾¦38e¹ü¾çÊIôlÀş¾Ç,dV ¿Ãé­à/2¿à(c8cå¿f¢`lc¿F€’ÿ¤¿´Š‰·_®¿qÆÈå±¿b˜&U’¿ ŸaqS¿@Iì’,{¿à¾Š]ÑG¿x(h;ŒãÙ¾ê?A…%à¾õŒ©ùö×ã¾Öşuª@±è¾^‹%*Îòî¾ê‚¨Yêuñ¾5şÕ]ó¾ ~İô¾îşfo½ö¾‡*Î‡¬ø¾›ÀáĞ¸­ú¾oY°4e¹ü¾%ø
+ñlÀş¾ßydV ¿*áŞ/2¿`I'6cå¿*ôû]lc¿Şuİ	ÿ¤¿ àKµ_®¿€¢JÇå±¿¬%	(U’¿@
+[cqS¿@U•,{¿€ŒÒ_ÑG¿`pÃß+×Õ¾e¢æVıøÚ¾?Gğ<ê~à¾6é2|ä¾×Åò¶ìë¾v+—ã¶ğ¾v¦W˜lEñ¾ñ@¹)ò¾û–Nìùô¾7Éá%nnö¾ÍÃœqşø¾–Š~ç¥û¾Ì ùµ¤Sş¾™eyš9{ ¿æ@æ”Éº¿8“g¢Û¿³Ñ&Ï¿Å`¥Ê>†¿†e_àbõ¿ŠiÓ ¿ÿ»æJ’¿ öí‰9S¿À³¦°÷è ¿ÀöüwÕEó¾t„/®Å>  Àm‡Ê>:¥ÏJ’ñĞ>”İYôËÑ> =x£mj€>Ôd ZÏGİ¾2éÅ¡ä¾ñÖÄê¾®€DY¾ñ¾r¬z¹ş·÷¾”·œ¸xÁş¾B2Dg¿™·
+· ¿p§Ë(¬H¿ÁŞâYÉ­¿›rØfÅ.¿ ùÒ	p;¿%“R	¡á¿G-öõˆ!¿6zyŞ`/$¿5šBÄ&¿ÀĞ-…ºİ%¿06CŸl%¿ §;Ë½I$¿x¨Ÿ€Í>¸3^ÑÒ>7­¦ÙÖ>Ù=Şµ! ×>àÅÔ»Ò›>üÕHMnŞ¾ò( Í_|á¾“Ø´Jºç¾ÖäÚƒöğ¾ğéCCZ÷¾\àş¾öş(PŸ ¿v¬•{¿z0Ç_f—¿~®Wß:¿'Z­´¿hGî—Œ¿Ò–Qî¿æµ«Ø!¿xGQ6n®#¿‰ÒŸš¯e%¿ĞqĞe%¿°ŞvëŞ$¿-ñ¥q}$¿Š`¯8Ÿ€Í>®ÃäÒ>0“$¿¦ÙÖ>£$Ø! ×> §L¿Ò›>n2•TnŞ¾ˆµ¾Õ_|á¾mï<ÀJºç¾µÛáƒöğ¾Î£VKZ÷¾Ì"Aéş¾‰¦áTŸ ¿\ãrš{¿ğh„df—¿ÕãÆYß:¿ëÄQ¯´¿ó1Ÿï—Œ¿ƒÕ•Rî¿3Éÿ«Ø!¿(6n®#¿… š¯e%¿™Ke%¿ ìëŞ$¿Ø‚_¥q}$¿àÂ½1®Å>» œm‡Ê>Ì38’ñĞ>Xì¯?ôËÑ>€wT9hj€>Ê½fÏGİ¾@‚ä¾ÎĞÄê¾£gBY¾ñ¾~¸ş·÷¾ªp·xÁş¾Fa0Dg¿aåÆ· ¿à—‹$¬H¿døVÉ­¿B7	cÅ.¿êY,p;¿ğZ#¡á¿Q\_óõˆ!¿g`ıÛ`/$¿¾90@Ä&¿¦ûƒºİ%¿À·‡BŸl%¿`2EË½I$¿

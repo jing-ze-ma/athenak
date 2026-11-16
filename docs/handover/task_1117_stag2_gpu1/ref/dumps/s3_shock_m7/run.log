@@ -1,0 +1,876 @@
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+<rad_m1> implicit_precond = mg
+<rad_m1> implicit_mg_x3line = false
+<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken from the radiation of the same column (no energy created)
+<rad_m1>: transport=implicit (2-D) solver=bicgstab lin_tol=1e-10 lin_maxit=200
+         implicit_cfl=-1 tol=1e-08 maxit=200 opac_update=false marshak_q=0.5
+         implicit_flux=central implicit_recon=dc implicit_partition=none
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+         implicit_enthalpy=plm (deferred correction)
+         implicit_bc_advect=true (Marshak x1 end carries A E)
+         implicit_offdiag=operator (auto) closure_relax=1 closure_lag=step trans_limit=none
+         implicit_accel=none
+         implicit_gas_newton=true implicit_eos_cache=false
+         x1 boundaries: min=0 max=0 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=0 flux_max=0
+<rad_m1> closure = vet_sc: short characteristics, 64 rays (double-Gauss nmu=4 x nphi=8), lagged per hydro step, FULL tensor D = K/J (eigenvalue floor 0.000000), vet_bc_diff = face, vet_seg = jump
+<rad_m1> time2_auto_be=16: after a stage fallback the next 1, 2, 4, ... 16 steps take the backward-Euler redo path at once
+<rad_m1> time2_posfix=4 time2_posfix_grow=1: local stage-1 positivity re-solve
+<rad_m1> time_scheme=hesdirk2 (g=0.292893; first step, restarts without the slope and failed stages take backward Euler)
+         time2_enth_be=true implicit_cs2_vimp_npass=3
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.4 thick_flux=none ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=vet_sc subcycle=false
+         kappa_p=577.16 kappa_e=577.16 kappa_f=577.16 kappa_s=0 coupling=true gas_feedback=true arad=1.63324e-42
+         opacity= force_reference=none temp_unit_kelvin=1 rho_unit_cgs=1
+<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+--- defaults (<job>/recipe sets the default set: prod1019 | none) ---
+  <mesh>/layout_invariant = true (default; fresh, restart)
+  <hydro>/split_c2p_once = true (default, fresh start and restart)
+  <rad_m1>/implicit_solver = bicgstab (default)
+  <rad_m1>/implicit_resid_fatal = 1e-2 (default)
+  <rad_m1>/vet_source = relaxed_esc (default)
+  <rad_m1>/time2_k1_redist = 0 (default, prod-1108)
+  <time>/dt_retry = true (default)
+--- end defaults ---
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=1053.4, measured v_max=1.21192e+08)
+<rad_m1> vet_gd_rotate_dt = auto: 20 x the first dt 2.05211e-11 = 4.104226020896956e-10 (recorded; t0 0, align on, stretch 0.02)
+
+Setup complete, executing task list(s)...
+
+elapsed=3.991976e-02 cycle=0 time=0.000000e+00 dt=2.052113e-11
+<time> dt_retry checkpoint: 2021 members, 540 Views (11 copied, 1.666144e+00 MB on rank 0): hyd.u0 8.320000e-02 hyd.w0 8.320000e-02 m1.vet_cell 8.819200e-01 m1.f0x1 1.670400e-02 m1.f0x2 1.872000e-02 m1.ipred 8.320000e-02 m1.t2k1 1.331200e-01 m1.ipred2 8.320000e-02 m1.vet_prev 1.664000e-01 m1.u0 6.656000e-02 m1.opac 4.992000e-02
+CLEAN cycle 0 t2s 1 it 0 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 12
+CLEAN FSOLVE cycle 0 t2s 1 solves 26 passes 52 max dF/F 0.00e+00
+### WARNING: 4 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+###   mesh/ix3_bc = periodic
+###   mesh/ox3_bc = periodic
+###   meshblock/nx3 = 1
+###   problem/user_bcs = true
+CLEAN cycle 1 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 1 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 1 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 1 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 2 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 2 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 2 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 2 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 3 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 3 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 3 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 3 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 4 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 4 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 4 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 4 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 5 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 5 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 5 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 5 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 6 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 6 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 6 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 6 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 7 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 7 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 7 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 7 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 8 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 8 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 8 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 8 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 9 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 9 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 9 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 9 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 10 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 10 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 10 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 10 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 11 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 11 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 11 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 11 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 12 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 12 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 12 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 12 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 13 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 13 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 13 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 13 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 14 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 14 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 14 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 14 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 15 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 15 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 15 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 15 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 16 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 16 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 16 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 16 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 17 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 17 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 17 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 17 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 18 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 18 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 18 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 18 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 19 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 19 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 19 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 19 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 20 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 20 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 20 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 20 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 20 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 20 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 21 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 21 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 21 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 21 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 22 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 22 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 22 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 22 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 23 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 23 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 23 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 23 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 24 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 24 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 24 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 24 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 25 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 25 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 25 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 25 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 26 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 26 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 26 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 26 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 27 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 27 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 27 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 27 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 28 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 28 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 28 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 28 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 29 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 29 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 29 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 29 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 30 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 30 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 30 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 30 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 31 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 31 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 31 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 31 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 32 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 32 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 32 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 32 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 33 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 33 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 33 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 33 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 34 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 34 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 34 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 34 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 35 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 35 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 35 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 35 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 36 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 36 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 36 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 36 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 37 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 37 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 37 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 37 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 38 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 38 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 38 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 38 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 39 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 39 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 39 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 39 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 40 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 40 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 40 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 40 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 40 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 40 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 41 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 41 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 41 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 41 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 42 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 42 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 42 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 42 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 43 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 43 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 43 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 43 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 44 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 44 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 44 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 44 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 45 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 45 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 45 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 45 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 46 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 46 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 46 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 46 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 47 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 47 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 47 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 47 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 48 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 48 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 48 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 48 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 49 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 49 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 49 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 49 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 50 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 50 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 50 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 50 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 51 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 51 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 51 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 51 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 52 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 52 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 52 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 52 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 53 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 53 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 53 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 53 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 54 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 54 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 54 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 54 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 55 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 55 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 55 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 55 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 56 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 56 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 56 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 56 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 57 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 57 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 57 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 57 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 58 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 58 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 58 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 58 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 59 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 59 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 59 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 59 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 60 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 60 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 60 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 60 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 60 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 60 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 61 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 61 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 61 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 61 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 62 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 62 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 62 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 62 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 63 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 63 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 63 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 63 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 64 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 64 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 64 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 64 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 65 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 65 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 65 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 65 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 66 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 66 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 66 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 66 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 67 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 67 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 67 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 67 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 68 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 68 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 68 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 68 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 69 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 69 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 69 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 69 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 70 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 70 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 70 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 70 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 71 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 71 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 71 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 71 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 72 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 72 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 72 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 72 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 73 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 73 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 73 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 73 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 74 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 74 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 74 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 74 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 75 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 75 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 75 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 75 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 76 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 76 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 76 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 76 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 77 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 77 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 77 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 77 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 78 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 78 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 78 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 78 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 79 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 79 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 79 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 79 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 80 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 80 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 80 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 80 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 80 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 80 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 81 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 81 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 81 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 81 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 82 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 82 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 82 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 82 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 83 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 83 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 83 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 83 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 84 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 84 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 84 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 84 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 85 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 85 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 85 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 85 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 86 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 86 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 86 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 86 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 87 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 87 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 87 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 87 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 88 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 88 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 88 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 88 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 89 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 89 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 89 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 89 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 90 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 90 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 90 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 90 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 91 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 91 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 91 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 91 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 92 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 92 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 92 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 92 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 93 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 93 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 93 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 93 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 94 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 94 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 94 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 94 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 95 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 95 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 95 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 95 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 96 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 96 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 96 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 96 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 97 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 97 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 97 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 97 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 98 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 98 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 98 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 98 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 99 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 99 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 99 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 99 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 100 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 100 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 100 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 100 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 100 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 100 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 101 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 101 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 101 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 101 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 102 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 102 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 102 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 102 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 103 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 103 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 103 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 103 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 104 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 104 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 104 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 104 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 105 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 105 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 105 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 105 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 106 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 106 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 106 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 106 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 107 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 107 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 107 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 107 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 108 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 108 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 108 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 108 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 109 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 109 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 109 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 109 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 110 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 110 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 110 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 110 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 111 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 111 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 111 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 111 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 112 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 112 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 112 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 112 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 113 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 113 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 113 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 113 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 114 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 114 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 114 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 114 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 115 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 115 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 115 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 115 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 116 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 116 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 116 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 116 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 117 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 117 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 117 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 117 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 118 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 118 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 118 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 118 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 119 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 119 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 119 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 119 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 120 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 120 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 120 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 120 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 120 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 120 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 121 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 121 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 121 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 121 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 122 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 122 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 122 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 122 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 123 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 123 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 123 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 123 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 124 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 124 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 124 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 124 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 125 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 125 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 125 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 125 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 126 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 126 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 126 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 126 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 127 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 127 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 127 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 127 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 128 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 128 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 128 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 128 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 129 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 129 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 129 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 129 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 130 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 130 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 130 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 130 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 131 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 131 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 131 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 131 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 132 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 132 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 132 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 132 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 133 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 133 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 133 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 133 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 134 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 134 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 134 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 134 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 135 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 135 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 135 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 135 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 136 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 136 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 136 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 136 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 137 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 137 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 137 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 137 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 138 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 138 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 138 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 138 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 139 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 139 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 139 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 139 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 140 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 140 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 140 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 140 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 140 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 140 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 141 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 141 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 141 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 141 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 142 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 142 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 142 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 142 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 143 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 143 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 143 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 143 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 144 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 144 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 144 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 144 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 145 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 145 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 145 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 145 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 146 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 146 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 146 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 146 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 147 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 147 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 147 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 147 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 148 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 148 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 148 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 148 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 149 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 149 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 149 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 149 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 150 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 150 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 150 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 150 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 151 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 151 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 151 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 151 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 152 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 152 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 152 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 152 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 153 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 153 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 153 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 153 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 154 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 154 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 154 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 154 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 155 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 155 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 155 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 155 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 156 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 156 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 156 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 156 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 157 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 157 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 157 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 157 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 158 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 158 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 158 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 158 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 159 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 159 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 159 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 159 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 160 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 160 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 160 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 160 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 160 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 160 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 161 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 161 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 161 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 161 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 162 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 162 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 162 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 162 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 163 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 163 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 163 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 163 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 164 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 164 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 164 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 164 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 165 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 165 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 165 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 165 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 166 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 166 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 166 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 166 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 167 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 167 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 167 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 167 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 168 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 168 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 168 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 168 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 169 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 169 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 169 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 169 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 170 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 170 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 170 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 170 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 171 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 171 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 171 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 171 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 172 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 172 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 172 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 172 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 173 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 173 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 173 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 173 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 174 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 174 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 174 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 174 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 175 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 175 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 175 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 175 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 176 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 176 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 176 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 176 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 177 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 177 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 177 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 177 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 178 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 178 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 178 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 178 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 179 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 179 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 179 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 179 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 180 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 180 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 180 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 180 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 180 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 180 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 181 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 181 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 181 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 181 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 182 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 182 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 182 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 182 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 183 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 183 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 183 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 183 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 184 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 184 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 184 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 184 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 185 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 185 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 185 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 185 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 186 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 186 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 186 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 186 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 187 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 187 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 187 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 187 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 188 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 188 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 188 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 188 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 189 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 189 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 189 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 189 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 190 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 190 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 190 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 190 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 191 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 191 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 191 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 191 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 192 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 192 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 192 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 192 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 193 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 193 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 193 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 193 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 194 t2s 2 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 194 t2s 2 solves 20 passes 40 max dF/F 0.00e+00
+CLEAN cycle 194 t2s 3 it 0 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 9
+CLEAN FSOLVE cycle 194 t2s 3 solves 20 passes 40 max dF/F 0.00e+00
+<time> dt_retry: 195 checkpoints (4.607122e-02 s, 1.666144e+00 MB on rank 0), 0 retries, cap -1.000000e+00
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 0, hesdirk2 helper solves 9; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 0.000000e+00 / 0.000000e+00
+
+Terminating on time limit
+time=4.000000e-09 cycle=195
+tlim=4.000000e-09 nlim=-1
+
+MeshBlock-cycles = 195
+cpu time used  = 7.861444e+00
+main loop time (before the final outputs) = 7.852273e+00
+zone-cycles/cpu_second = 2.539991e+04
+particle-updates/cpu_second = 0.000000e+00
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> consfix-1109: implicit_cons_final=1 solves=0.000000e+00 extra passes after a mode fallback=0.000000e+00
+<rad_m1> implicit transport: solves=0.000000e+00 Picard iterations mean=0.000000e+00 max=0.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0.000000e+00
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=0.000000e+00 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=0.000000e+00 energy moved rad->gas=0.000000e+00 | E floor raises cell-solves=0.000000e+00 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) of which solve undershoot (pos_floor_solve)=0.000000e+00 taken from the column's radiation (implicit_pos_floor_cons)=0.000000e+00 | |F| > c E scaled back cell-solves=0.000000e+00 sum(|F|/(cE) - 1)=0.000000e+00
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual (max|r|/max|b|) mean=0.000000e+00 max=0.000000e+00
+<rad_m1>   (diagnostic; Picard test on it: no; lin_tol=1.000000e-10; inner stop: lin_tol relative to max|b|, loosened by Eisenstat-Walker ew_max=1.000000e-02)
+<rad_m1> bicgstab: outer passes=0.000000e+00 linear solves=0.000000e+00 inner iterations mean=0.000000e+00 max=0.000000e+00 total=0.000000e+00
+<rad_m1> bicgstab: breakdowns=0.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=0.000000e+00 (0.000000e+00 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=0.000000e+00 newton fallbacks=0.000000e+00 (0.000000e+00 per cell-pass)
+<rad_m1> FBLOCAL triggers 0.000000e+00 local 0.000000e+00 global 0.000000e+00 bad cells 0.000000e+00 masked cells 0.000000e+00
+<rad_m1> offdiag=operator closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=1.000000e+300
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.000000e+300 local kills=0.000000e+00 cells(rank 0)=0.000000e+00
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0.000000e+00 written-back gas eint <= 0 cell-solves=0.000000e+00
+<rad_m1> time_scheme=hesdirk2: stage steps=1.940000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_sc=predict fallbacks=0.000000e+00 source=state time2_pred_cap=5.000000e-01 limited cell-builds=0.000000e+00 of 0.000000e+00 vet_gd_rotate_slope=correct solves=9.000000e+00 failed=0.000000e+00 Picard passes=0.000000e+00 (frac 2.928932e-01, reuse on) time2_posfix: steps=0.000000e+00 re-solves=0.000000e+00 cells=0.000000e+00 accepted-with-fallback stages=0.000000e+00 rotate_align shortened dt=1.940000e+02
+<rad_m1> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)
+<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps 7.730714e+00 (posfix 0.000000e+00) | failed stage attempts 0.000000e+00 (posfix 0.000000e+00) | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 5.486149e-02 | discarded dt_retry attempts 0.000000e+00
+rc=0

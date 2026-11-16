@@ -1,0 +1,116 @@
+<job>
+basename = sp
+
+<mesh>
+nghost = 2
+nx1 = 32
+x1min = 1.0
+x1max = 10.0
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 8
+x2min = 1.1707963267948966
+x2max = 1.9707963267948967
+ix2_bc = reflect
+ox2_bc = reflect
+nx3 = 8
+x3min = 0.0
+x3max = 1.5707963267948966
+ix3_bc = periodic
+ox3_bc = periodic
+use_spherical_polar = true
+
+<meshblock>
+nx1 = 32
+nx2 = 8
+nx3 = 8
+
+<time>
+nlim = 32
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+tlim = 1e+30
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+rad_signal_speed = false
+
+<rad_m1>
+clean_pos_limit = false
+clean_layout = staggered
+clean_stag_split = true
+clean_stag_fsolve = true
+clean_stag_fkin = true
+clean_stag_fwork = true
+clean_consistency = true
+clean_stag_gflux = true
+clean_stag_vimp = true
+clean_stag_upwind = true
+clean_stag_pc = mg
+clean_rays = fv1
+c_light = 1.0
+chat_over_c = 1.0
+closure = vet_col
+e_floor = 1.0e-30
+opacity = const
+kappa_p = 0.0
+kappa_e = 0.0
+kappa_f = 0.0
+kappa_s = 1e-4
+arad = 1.0
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 11.25
+implicit_solver = bicgstab
+implicit_precond = line
+implicit_recon = dc
+implicit_bc_x1min = marshak
+implicit_bc_x1max = marshak
+implicit_ebath_x1min = 4.0
+implicit_ebath_x1max = 0.0
+time_scheme = hesdirk2
+ic_rad = none
+scheme = clean
+vet_gd_gl_nmu = 8
+vet_gd_gl_nphi = 16
+vet_gd_allow_clamp = true
+clean_stag_pos_gas = true
+vet_gd_theta_wall = vacuum
+vet_col_lat = true
+vet_gd = true
+vet_gd_twin = false
+vet_gd_rotate_dt = 0
+clean_closure = extrap1
+clean_sphere_radius = 1.0
+clean_tol = 1.0e-14
+clean_tol_nl = 1.0e-13
+clean_maxnl = 60
+
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test = sph_shell
+gas_rho = 1.0
+gas_temp = 1.0e-10
+e_out = 1e-12
+e_amp = 0.0
+r0 = 0.0
+width = 1.0
+
+<output1>
+file_type = bin
+bin_double = true
+variable = m1
+data_format = %24.16e
+dt = 1e+30
+<output2>
+file_type = bin
+bin_double = true
+variable = hydro_u
+dt = 1e+30

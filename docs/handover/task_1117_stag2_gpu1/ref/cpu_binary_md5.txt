@@ -1,0 +1,1 @@
+bd94f61ea366c9bf3538a9be28cd9714  ../../../bench/bin/athena_g1d

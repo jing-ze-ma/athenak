@@ -1,0 +1,126 @@
+<job>
+basename = sp
+
+<mesh>
+nghost = 2
+nx1 = 32
+x1min = 1.0
+x1max = 5.0
+ix1_bc = reflect
+ox1_bc = reflect
+nx2 = 8
+x2min = 1.1707963267948966
+x2max = 1.9707963267948967
+ix2_bc = reflect
+ox2_bc = reflect
+nx3 = 8
+x3min = 0.0
+x3max = 1.5707963267948966
+ix3_bc = periodic
+ox3_bc = periodic
+use_spherical_polar = true
+
+<meshblock>
+nx1 = 32
+nx2 = 8
+nx3 = 8
+
+<time>
+nlim = -1
+tlim = 32.87856
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+rad_signal_speed = false
+
+<rad_m1>
+clean_layout = staggered
+clean_stag_split = true
+clean_stag_fsolve = true
+clean_stag_fkin = true
+clean_stag_fwork = true
+clean_consistency = true
+clean_stag_gflux = true
+clean_stag_vimp = true
+clean_stag_upwind = true
+clean_stag_pc = mg
+clean_pos_limit = false
+c_light = 10.0
+chat_over_c = 1.0
+closure = vet_col
+e_floor = 1.0e-30
+opacity = const
+kappa_p = 0.0
+kappa_e = 0.0
+kappa_f = 0.0
+kappa_s = 1e-2
+arad = 1.0
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 226.875
+implicit_solver = bicgstab
+implicit_precond = line
+implicit_recon = dc
+implicit_bc_x1min = reflect
+implicit_bc_x1max = reflect
+implicit_ebath_x1min = 0.0
+implicit_ebath_x1max = 4.5399929762484854e-05
+time_scheme = hesdirk2
+ic_rad = none
+scheme = clean
+vet_gd_gl_nmu = 16
+vet_gd_gl_nphi = 32
+vet_gd_allow_clamp = true
+clean_rays = fv1
+vet_col_lat = true
+vet_gd = true
+vet_gd_twin = false
+vet_gd_rotate_dt = 0
+clean_closure = extrap1
+clean_sphere_radius = 100.0
+#
+#
+#
+
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test = sph_shell
+gas_rho = 1e2
+gas_temp = 1e-4
+e_out = 4.5399929762484854e-05
+e_amp = 1.0
+r0 = 3.0
+user_hist = true
+am_hist = true
+gas_rot = 2.0e-3
+width = 0.15811388300841897
+lat_amp = 0.5
+lat_l2 = 1.0
+
+<output1>
+file_type = bin
+bin_double = true
+variable = m1
+data_format = %24.16e
+dt = 580.7999994191999
+
+
+<output7>
+file_type = hst
+data_format = %24.16e
+dt = 1.0e-12
+
+<output8>
+file_type = bin
+bin_double = true
+variable = hydro_u
+dt = 580.7999994191999

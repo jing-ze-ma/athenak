@@ -1,0 +1,185 @@
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+### WARNING (scheme = clean): <rad_m1/implicit_recon> has no effect, the clean solve reads <rad_m1>/clean_recon
+### WARNING (scheme = clean): <rad_m1/ic_rad> has no effect, the clean solve reads <rad_m1>/clean_init
+### WARNING (scheme = clean): no effect: rad_m1/implicit_solver rad_m1/implicit_precond
+<rad_m1> vet_rotate_advance = true (rotadv-1102): with vet_rotate_avg the rotated sets do not repeat; the averaged last-K window advances (no effect without vet_rotate_avg)
+<rad_m1> implicit_precond = line
+<rad_m1>/implicit_face_weight = distance (default)
+<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken from the radiation of the same column (no energy created)
+<rad_m1> implicit_face_mmat = true: x1 face flux lam F_H + (1-lam) F_L, lam = Zalesak factor of the explicit face flux (facemmat-1112)
+<rad_m1>: transport=implicit (3-D) solver=bicgstab lin_tol=1e-10 lin_maxit=200
+         implicit_cfl=226.875 tol=1e-08 maxit=200 opac_update=false marshak_q=0.5
+         implicit_flux=central implicit_recon=dc implicit_partition=none
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+         implicit_enthalpy=plm (deferred correction)
+         implicit_offdiag=operator (auto) closure_relax=1 closure_lag=step trans_limit=none
+         implicit_accel=none
+         implicit_gas_newton=true implicit_eos_cache=false
+         x1 boundaries: min=2 max=2 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=0 flux_max=0
+<rad_m1> time2_auto_be=16: after a stage fallback the next 1, 2, 4, ... 16 steps take the backward-Euler redo path at once
+<rad_m1> time2_posfix=4 time2_posfix_grow=1: local stage-1 positivity re-solve
+<rad_m1> time_scheme=hesdirk2 (g=0.292893; first step, restarts without the slope and failed stages take backward Euler)
+         time2_enth_be=true implicit_cs2_vimp_npass=3
+<rad_m1>: spherical-polar wedge (stage S2: chi(f) closure, radial integrating factor, lagged curvature, offdiag none; implicit with areas/volumes/face distances from Coordinates
+<rad_m1>: c=10 chat/c=1 cfl_rad=0.4 thick_flux=none ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=vet_col subcycle=false
+         kappa_p=0 kappa_e=0 kappa_f=0 kappa_s=0.01 coupling=true gas_feedback=true arad=1
+         opacity= force_reference=none temp_unit_kelvin=1 rho_unit_cgs=1
+<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+--- defaults (<job>/recipe sets the default set: prod1019 | none) ---
+  <mesh>/layout_invariant = true (default; fresh, restart)
+  <hydro>/split_c2p_once = true (default, fresh start and restart)
+  <hydro>/am_transport = true (default on the spherical-polar mesh; set it false to switch the angular-momentum transport correction off)
+  <rad_m1>/vet_source = relaxed_esc (default)
+  <rad_m1>/vet_rotate_advance = true (default on a fresh vet_gd run)
+  <rad_m1>/vet_gd_halo_compact = 2 (default with vet_gd on a fresh start)
+  <rad_m1>/implicit_resid_fatal = 1e-2 (default)
+  <rad_m1>/time2_k1_redist = 0 (default, defaults-1114: time2_face_fct)
+  <time>/dt_retry = true (default)
+--- end defaults ---
+
+Setup complete, executing task list(s)...
+
+elapsed=2.894114e-02 cycle=0 time=0.000000e+00 dt=2.416101e+00
+<time> dt_retry checkpoint: 2037 members, 546 Views (13 copied, 2.414592e+00 MB on rank 0): hyd.u0 2.073600e-01 hyd.w0 2.073600e-01 m1.f0x1 4.262400e-02 m1.f0x2 4.492800e-02 m1.f0x3 4.492800e-02 m1.ipred 2.073600e-01 m1.t2k1 3.317760e-01 m1.ipred2 2.073600e-01 m1.x2_tt 4.147200e-01 m1.x2_hr 4.147200e-01 m1.x2_q 1.152000e-03 m1.u0 1.658880e-01 m1.opac 1.244160e-01
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=3.999962e+00, measured v_max=9.863706e-03)
+<rad_m1> vet_col_surface_q: the outer x1 boundary is not marshak; the q is built but unused
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 41 rays, 32 shells), axis radial, rebuilt every 1 step(s); vet_col_order2 (quadratic mu, face core); vet_bc_diff = face; f_K >= 0.000000e+00; reflecting top (mirrored, a <= 9.900000e-01); 1 shell(s) kept trapezoid weights; team build, 8 shells per chunk, team size AUTO; outer Marshak q = H(face)/J(top cell) in [1.000000e-03, 1.000000e+00]
+<rad_m1> vet_gd direction set: 512 directions; moment errors |sum w - 1| 9.992007e-16, |sum w n| 4.175534e-17, |sum w nn - I/3| 2.220446e-15 (rotated 1.332268e-15), 4th-moment anisotropy 1.804112e-15 (rotated 8.881784e-16)
+<rad_m1> vet_gd: exact per-shell lateral halo, band 0 cells (needed 12), per-shell depth mean 0.000000e+00
+<rad_m1> vet_gd_band_global (accpolar-1103): band 0 cells keyed on the global cell (exact copies from any block; rank 0: on-rank 0, sent 0, received 0 positions per shell at full depth, partners 0); stencil clamped to the cell's own window (layout independent)
+<rad_m1> vet_gd: ragged per-shell band intensity array 0.000000e+00 GB on rank 0 (dense band 9.437184e-03 GB)
+<rad_m1> vet_gd: global-direction SC closure on the sp wedge, product GL16x32 staggered (512 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 0, direction maps exact 0 of 0 (the rest: nearest direction)
+CLEAN cycle 0 t2s 1 it 0 (sum 80) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 7
+CLEAN FSOLVE cycle 0 t2s 1 solves 24 passes 888 max dF/F 9.84e-15
+### WARNING: 2 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+###   rad_m1/ic_rad = none
+###   rad_m1/clean_sphere_radius = 100.0
+CLEAN cycle 1 t2s 2 it 0 (sum 52) pos 0 mark 0 all 0 neg 744 r1 744 r2 2261 first 744 2261 guard 0 solves 5
+CLEAN FSOLVE cycle 1 t2s 2 solves 18 passes 669 max dF/F 9.95e-15
+CLEAN cycle 1 t2s 1 it 1 (sum 41) pos 0 mark 0 all 0 neg 0 r1 0 r2 184 first 0 184 guard 0 solves 4
+CLEAN FSOLVE cycle 1 t2s 1 solves 15 passes 594 max dF/F 9.30e-15
+CLEAN cycle 2 t2s 1 it 1 (sum 57) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 2 t2s 1 solves 18 passes 477 max dF/F 9.93e-15
+CLEAN cycle 3 t2s 2 it 1 (sum 48) pos 0 mark 0 all 0 neg 320 r1 320 r2 979 first 320 979 guard 0 solves 5
+CLEAN FSOLVE cycle 3 t2s 2 solves 18 passes 467 max dF/F 9.36e-15
+CLEAN cycle 3 t2s 1 it 2 (sum 47) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 3 t2s 1 solves 15 passes 506 max dF/F 9.53e-15
+CLEAN cycle 4 t2s 1 it 0 (sum 47) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 4 t2s 1 solves 15 passes 253 max dF/F 9.93e-15
+CLEAN cycle 5 t2s 1 it 1 (sum 45) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 5 t2s 1 solves 15 passes 190 max dF/F 6.29e-15
+CLEAN cycle 6 t2s 2 it 0 (sum 45) pos 0 mark 0 all 0 neg 64 r1 64 r2 128 first 64 128 guard 0 solves 5
+CLEAN FSOLVE cycle 6 t2s 2 solves 18 passes 210 max dF/F 9.19e-15
+CLEAN cycle 6 t2s 1 it 1 (sum 44) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 6 t2s 1 solves 15 passes 192 max dF/F 9.66e-15
+CLEAN cycle 7 t2s 1 it 0 (sum 46) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 7 t2s 1 solves 15 passes 169 max dF/F 9.72e-15
+CLEAN cycle 8 t2s 1 it 0 (sum 47) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 8 t2s 1 solves 15 passes 187 max dF/F 7.46e-15
+CLEAN cycle 9 t2s 1 it 0 (sum 44) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 9 t2s 1 solves 15 passes 176 max dF/F 8.50e-15
+CLEAN cycle 10 t2s 1 it 1 (sum 45) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 10 t2s 1 solves 15 passes 191 max dF/F 7.48e-15
+CLEAN cycle 11 t2s 2 it 0 (sum 45) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 11 t2s 2 solves 18 passes 207 max dF/F 8.42e-15
+CLEAN cycle 11 t2s 3 it 0 (sum 31) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 11 t2s 3 solves 15 passes 149 max dF/F 8.24e-15
+CLEAN cycle 12 t2s 2 it 0 (sum 43) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 12 t2s 2 solves 18 passes 213 max dF/F 9.73e-15
+CLEAN cycle 12 t2s 3 it 0 (sum 29) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 12 t2s 3 solves 15 passes 151 max dF/F 8.40e-15
+CLEAN cycle 13 t2s 2 it 0 (sum 44) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 13 t2s 2 solves 18 passes 210 max dF/F 9.39e-15
+CLEAN cycle 13 t2s 3 it 0 (sum 33) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 13 t2s 3 solves 15 passes 153 max dF/F 9.84e-15
+CLEAN cycle 14 t2s 2 it 0 (sum 51) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 64 solves 5
+CLEAN FSOLVE cycle 14 t2s 2 solves 18 passes 227 max dF/F 8.39e-15
+CLEAN cycle 14 t2s 3 it 0 (sum 36) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 14 t2s 3 solves 15 passes 157 max dF/F 9.61e-15
+CLEAN cycle 15 t2s 2 it 0 (sum 50) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 15 t2s 2 solves 18 passes 234 max dF/F 9.77e-15
+CLEAN cycle 15 t2s 3 it 0 (sum 34) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 15 t2s 3 solves 15 passes 165 max dF/F 8.65e-15
+CLEAN cycle 16 t2s 2 it 0 (sum 56) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 192 solves 5
+CLEAN FSOLVE cycle 16 t2s 2 solves 18 passes 233 max dF/F 9.52e-15
+CLEAN cycle 16 t2s 3 it 0 (sum 37) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 16 t2s 3 solves 15 passes 163 max dF/F 9.91e-15
+CLEAN cycle 17 t2s 2 it 0 (sum 52) pos 0 mark 0 all 0 neg 24 r1 24 r2 35 first 24 35 guard 960 solves 5
+CLEAN FSOLVE cycle 17 t2s 2 solves 18 passes 598 max dF/F 8.89e-15
+CLEAN cycle 17 t2s 1 it 6 (sum 55) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 17 t2s 1 solves 15 passes 204 max dF/F 9.33e-15
+CLEAN cycle 18 t2s 1 it 0 (sum 50) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 18 t2s 1 solves 18 passes 216 max dF/F 9.73e-15
+CLEAN cycle 19 t2s 2 it 0 (sum 62) pos 0 mark 0 all 0 neg 0 r1 0 r2 170 first 0 170 guard 0 solves 5
+CLEAN FSOLVE cycle 19 t2s 2 solves 18 passes 268 max dF/F 8.87e-15
+CLEAN cycle 19 t2s 3 it 1 (sum 40) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 19 t2s 3 solves 15 passes 223 max dF/F 9.49e-15
+CLEAN cycle 20 t2s 2 it 1 (sum 54) pos 0 mark 0 all 0 neg 64 r1 64 r2 128 first 64 128 guard 1344 solves 5
+CLEAN FSOLVE cycle 20 t2s 2 solves 18 passes 483 max dF/F 9.97e-15
+CLEAN cycle 20 t2s 1 it 1 (sum 64) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5
+CLEAN FSOLVE cycle 20 t2s 1 solves 18 passes 319 max dF/F 8.83e-15
+CLEAN cycle 21 t2s 1 it 1 (sum 47) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 21 t2s 1 solves 15 passes 498 max dF/F 9.44e-15
+CLEAN cycle 22 t2s 2 it 1 (sum 68) pos 0 mark 0 all 0 neg 0 r1 0 r2 99 first 0 99 guard 0 solves 5
+CLEAN FSOLVE cycle 22 t2s 2 solves 18 passes 463 max dF/F 9.56e-15
+CLEAN cycle 22 t2s 3 it 0 (sum 39) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 22 t2s 3 solves 15 passes 301 max dF/F 9.79e-15
+CLEAN cycle 23 t2s 2 it 0 (sum 55) pos 0 mark 0 all 0 neg 8 r1 8 r2 18 first 8 18 guard 120 solves 5
+CLEAN FSOLVE cycle 23 t2s 2 solves 18 passes 589 max dF/F 9.25e-15
+CLEAN cycle 23 t2s 1 it 4 (sum 58) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 23 t2s 1 solves 15 passes 424 max dF/F 9.04e-15
+CLEAN cycle 24 t2s 1 it 5 (sum 59) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 24 t2s 1 solves 15 passes 345 max dF/F 9.08e-15
+CLEAN cycle 25 t2s 2 it 0 (sum 53) pos 0 mark 0 all 0 neg 32 r1 32 r2 115 first 32 115 guard 0 solves 5
+CLEAN FSOLVE cycle 25 t2s 2 solves 18 passes 259 max dF/F 9.45e-15
+CLEAN cycle 25 t2s 1 it 2 (sum 61) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4
+CLEAN FSOLVE cycle 25 t2s 1 solves 15 passes 215 max dF/F 9.58e-15
+CLEAN cycle 26 t2s 1 it 1 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3
+CLEAN FSOLVE cycle 26 t2s 1 solves 12 passes 98 max dF/F 7.28e-15
+<time> dt_retry: 27 checkpoints (3.920686e-02 s, 2.414592e+00 MB on rank 0), 0 retries, cap -1.000000e+00
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 7, hesdirk2 helper solves 0; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 0.000000e+00 / 0.000000e+00
+
+Terminating on time limit
+time=3.287856e+01 cycle=27
+tlim=3.287856e+01 nlim=-1
+
+MeshBlock-cycles = 27
+cpu time used  = 2.078420e+01
+main loop time (before the final outputs) = 2.077673e+01
+zone-cycles/cpu_second = 2.660482e+03
+particle-updates/cpu_second = 0.000000e+00
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_m1> closure = vet_col: 0.000000e+00 tensor builds (0.000000e+00 skipped), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per build
+<rad_m1> vet_col_lat: 0.000000e+00 sweeps (incl. the first build's 3 inflow iterations), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_m1> vet_gd: rank 0 fenced seconds: source 0.000000e+00, sweeps 0.000000e+00 (of which per-shell halo+walls 0.000000e+00, of which MPI wait 0.000000e+00), tables (rotation) 0.000000e+00, uniform twin 0.000000e+00, moments 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_m1> vet_gd halo (rank 0): exchanges 0.000000e+00, bytes sent 0.000000e+00 (0.000000e+00 per exchange), post 0.000000e+00 s, partners 0; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd vet_path = none: subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main 0.000000e+00 twin 0.000000e+00
+<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists 0.000000e+00 made, 0.000000e+00 MB of 0.000000e+00 (key 4096, GPU: <= free/2); exchanges by list 0.000000e+00, dense 0.000000e+00
+<rad_m1> vgdrot-1011 (rank 0): exact-list batches 0.000000e+00 (group 0, 0.000000e+00 s, list reallocs 0.000000e+00); table prefetch 1 swapped in 0.000000e+00 of the rotations
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> consfix-1109: implicit_cons_final=1 solves=0.000000e+00 extra passes after a mode fallback=0.000000e+00
+<rad_m1> implicit transport: solves=0.000000e+00 Picard iterations mean=0.000000e+00 max=0.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0.000000e+00
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=0.000000e+00 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=0.000000e+00 energy moved rad->gas=0.000000e+00 | E floor raises cell-solves=0.000000e+00 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) of which solve undershoot (pos_floor_solve)=0.000000e+00 taken from the column's radiation (implicit_pos_floor_cons)=0.000000e+00 | |F| > c E scaled back cell-solves=0.000000e+00 sum(|F|/(cE) - 1)=0.000000e+00
+<rad_m1> implicit_face_mmat: checked passes=0.000000e+00 limited passes=0.000000e+00 limited cells=0.000000e+00 limited x1 faces=0.000000e+00 max rounds=0.000000e+00 left (b<=0 after the limit)=0.000000e+00 realisability-bound faces (|F_H| > c min E)=0.000000e+00 (rank 0: rounds=0.000000e+00 R exchanges=0.000000e+00 zalesak_halo_skip=on rowsel=on re-assembled rows=0.000000e+00 of 0.000000e+00 zalesak_cap_rounds=4 capped passes=0.000000e+00)
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual (max|r|/max|b|) mean=0.000000e+00 max=0.000000e+00
+<rad_m1>   (diagnostic; Picard test on it: no; lin_tol=1.000000e-10; inner stop: lin_tol relative to max|b|, loosened by Eisenstat-Walker ew_max=1.000000e-02)
+<rad_m1> bicgstab: outer passes=0.000000e+00 linear solves=0.000000e+00 inner iterations mean=0.000000e+00 max=0.000000e+00 total=0.000000e+00
+<rad_m1> bicgstab: breakdowns=0.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=0.000000e+00 (0.000000e+00 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=0.000000e+00 newton fallbacks=0.000000e+00 (0.000000e+00 per cell-pass)
+<rad_m1> FBLOCAL triggers 0.000000e+00 local 0.000000e+00 global 0.000000e+00 bad cells 0.000000e+00 masked cells 0.000000e+00
+<rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=1.000000e+300
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.000000e+300 local kills=0.000000e+00 cells(rank 0)=0.000000e+00
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0.000000e+00 written-back gas eint <= 0 cell-solves=0.000000e+00
+<rad_m1> time_scheme=hesdirk2: stage steps=8.000000e+00 backward-Euler steps=1.900000e+01 stage fallbacks=7.000000e+00 vet clips=0.000000e+00 time2_vet_col=extrap2 fallbacks=0.000000e+00 time2_posfix: steps=0.000000e+00 re-solves=0.000000e+00 cells=0.000000e+00 accepted-with-fallback stages=0.000000e+00
+<rad_m1> time2_auto_be=16: skipped-stage BE steps=1.100000e+01 stage retries=6.000000e+00 (succeeded 3.000000e+00)
+<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps 4.479933e+00 (posfix 0.000000e+00) | failed stage attempts 4.116009e+00 (posfix 0.000000e+00) | their BE redo 3.777091e+00 | auto_be steps 5.714029e+00 | other BE steps 2.641337e+00 | discarded dt_retry attempts 0.000000e+00
+<rad_m1> clean FV rays: 35 builds, 384 passes, 37248 wavefront levels
+wall 23.12
+rc=0
