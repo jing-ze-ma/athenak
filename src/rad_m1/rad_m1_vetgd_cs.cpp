@@ -517,8 +517,8 @@ void RadiationM1::VetGdCsInit() {
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, &wneed, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
 #endif
-    vgd_w = std::min(wneed, nc);
-    vgd_capped = (vgd_w < wneed);
+    vgd_w = clean ? 0 : std::min(wneed, nc);   // (clean: the FV rays read no band)
+    vgd_capped = (vgd_w < wneed) && !clean;
     for (int l = indcs.is; l <= indcs.ie; ++l) {
       vgd_wsh[l] = vgd_w;
       vgd_wsi[l] = vgd_w;
