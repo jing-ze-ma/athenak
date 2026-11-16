@@ -1453,6 +1453,13 @@ void RadiationM1::CleanStagBracket() {
 //! faces next to other MeshBlocks or a periodic wrap take the neighbours' F lagged,
 //! iterated with the ghost exchange).  CLF_N holds F, CLF_N + 1 the dissipation term
 //! (al_R [F]_R - al_L [F]_L)/(2 c dx_f) the gas momentum takes (CleanMomentumChange).
+//! clean_stag_fkin: the streaming share w_i (C1 of the cell, the faces' ramp) of every
+//! cell's momentum flux is the rays' kinetic upwind flux of the face momentum,
+//!   P_i = (1 - w_i) [(D E)_i - al_i [F]_i/(2c)] + w_i (h+_i F_lo + h-_i F_hi)/c,
+//! the staggered form of the cell layout's c (h+ y_L + h- y_R) (y = F/c; a beam, F = c E,
+//! h+ = 1, gives D E = E), and on spherical polar the w share of the curvature terms of
+//! D E is dropped (the cell layout's streaming share has the rays' own).  It telescopes,
+//! the lines stay tridiagonal (M-matrix: h+ >= 0 >= h-), and w = al = 0 keeps F^H.
 
 void RadiationM1::CleanStagFSolve(const int e) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1464,6 +1471,8 @@ void RadiationM1::CleanStagFSolve(const int e) {
   xh.hi = true;
   auto op = opac;
   auto al = cln_v;
+  const bool fk = cln_fkin;
+  const Real c1lo = cln_c0, c1hi = cln_c1;
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
@@ -1472,6 +1481,14 @@ void RadiationM1::CleanStagFSolve(const int e) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
       fc(m,CLF_N+1,k,j,i) = 0.0;
+      // (fkin, spherical polar: the w share of the curvature terms of F^H)
+      if (!fk || !x.sph || CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      auto wq = [&](const int q, const int kk, const int jj, const int ii) {
+        return CleanSmoothStep((x.cs(m,CLN_C1,kk,jj,ii) - c1lo)/(c1hi - c1lo))*
+               CleanStagSph(x, q, dir, m, k, j, i)*x.w(m,e,kk,jj,ii);
+      };
+      fc(m,CLF_N+1,k,j,i) = 0.5*CleanStagSph(x, 1, dir, m, k, j, i)*
+                            (wq(2, k-dk, j-dj, i-di) + wq(3, k, j, i));
     });
     par_for("cln_fs1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1486,10 +1503,15 @@ void RadiationM1::CleanStagFSolve(const int e) {
         if (!CleanBoundaryFace(x, dir, m, kf, jf, iff) &&
             !(fabs(f) <= (1.0 + 1.0e-12)*x.c*fmax(ed, 0.0))) a = 1.0;
       }
-      al(m,0,k,j,i) = a;
+      // (fkin: w of the cell, slot 2, and the part of P - D E without F, -w D E, slot 1)
+      const Real wc = fk ? CleanSmoothStep((x.cs(m,CLN_C1,k,j,i) - c1lo)/(c1hi - c1lo))
+                         : 0.0;
+      al(m,0,k,j,i) = (1.0 - wc)*a;
+      al(m,1,k,j,i) = -wc*x.cs(m,CLN_D11+dir,k,j,i)*x.w(m,e,k,j,i);
+      al(m,2,k,j,i) = wc;
       x.w(m,CLW_Y,k,j,i) = fc(m,CLF_N,k,j,i);   // (F of the low face, for the exchange)
     });
-    CleanGhostFill(cln_v, 0, 1);
+    CleanGhostFill(cln_v, 0, 3);
     CleanGhostFill(cln_w, CLW_Y, 1);
     const int n = (dir == 0) ? ie - is + 1 : ((dir == 1) ? je - js + 1 : ke - ks + 1);
     const int na = (dir == 0) ? je - js + 1 : ie - is + 1;
@@ -1513,13 +1535,21 @@ void RadiationM1::CleanStagFSolve(const int e) {
           Real lo = 0.0, hi = 0.0, dg = 1.0, r = fc(m,CLF_N,k,j,i);
           const bool bd = CleanBoundaryFace(x, dir, m, k, j, i);
           const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
-          if (!bd && (all > 0.0 || alr > 0.0)) {
+          const Real wl = al(m,2,k-dk,j-dj,i-di), wr = al(m,2,k,j,i);
+          if (!bd && (all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0)) {
             const Real g = 0.5*x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i);
             const Real it_ = 1.0/fc(m,CLF_TH,k,j,i);
-            lo = -g*all;
-            hi = -g*alr;
-            dg = it_ - lo - hi;
-            r = fc(m,CLF_N,k,j,i)*it_;
+            // (fkin: h c^2 [w P_kin]_L^R/dx, P_kin = (h+ F_lo + h- F_hi)/c of a cell)
+            const Real q = x.h*x.c*(x.sph ? CleanStagSph(x, 0, dir, m, k, j, i)
+                                          : x.idx[dir]);
+            const Real hpl = x.cs(m,CLN_HP+dir,k-dk,j-dj,i-di);
+            const Real hml = x.cs(m,CLN_HM+dir,k-dk,j-dj,i-di);
+            const Real hpr = x.cs(m,CLN_HP+dir,k,j,i), hmr = x.cs(m,CLN_HM+dir,k,j,i);
+            lo = -g*all - q*wl*hpl;
+            hi = -g*alr + q*wr*hmr;
+            dg = it_ - lo - hi + q*(wr*(hpr + hmr) - wl*(hpl + hml));
+            r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(al(m,1,k-dk,j-dj,i-di) - al(m,1,k,j,i)) +
+                x.h*x.c*x.c*fc(m,CLF_N+1,k,j,i);
             // (the faces beyond a MeshBlock line end: the neighbours', lagged)
             if (t == 0) {r -= lo*x.w(m,CLW_Y,k-dk,j-dj,i-di); lo = 0.0;}
             if (t == n) {r -= hi*x.w(m,CLW_Y,k+dk,j+dj,i+di); hi = 0.0;}
@@ -1551,10 +1581,17 @@ void RadiationM1::CleanStagFSolve(const int e) {
       fc(m,CLF_N,k,j,i) = f;
       if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
       const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
-      if (!(all > 0.0 || alr > 0.0)) return;
-      fc(m,CLF_N+1,k,j,i) = (alr*(x.w(m,CLW_Y,k+dk,j+dj,i+di) - f) -
-                             all*(f - x.w(m,CLW_Y,k-dk,j-dj,i-di)))/
-                            (2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i));
+      const Real wl = al(m,2,k-dk,j-dj,i-di), wr = al(m,2,k,j,i);
+      if (!(all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0)) return;
+      const Real fm = x.w(m,CLW_Y,k-dk,j-dj,i-di), fp = x.w(m,CLW_Y,k+dk,j+dj,i+di);
+      auto pk = [&](const int kk, const int jj, const int ii, const Real l, const Real h) {
+        return al(m,2,kk,jj,ii)*(x.cs(m,CLN_HP+dir,kk,jj,ii)*l +
+               x.cs(m,CLN_HM+dir,kk,jj,ii)*h)/x.c + al(m,1,kk,jj,ii);
+      };
+      fc(m,CLF_N+1,k,j,i) += (alr*(fp - f) - all*(f - fm))/
+                             (2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i)) -
+          (x.sph ? CleanStagSph(x, 0, dir, m, k, j, i) : x.idx[dir])*
+          (pk(k, j, i, f, fp) - pk(k-dk, j-dj, i-di, fm, f));
     });
   }
 }
