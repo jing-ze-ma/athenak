@@ -2975,11 +2975,13 @@ class RadiationM1 {
   CleanLevel CleanCellLevel(const int l);
   void CleanCellLineSolve(const CleanLevel &lv, const int dir, const int src,
                           const int dst);
-  template <bool kStore>
+  template <bool kStore, typename F = Real>
   void CleanCellLineSolveRows(const CleanLevel &lv, const int dir, const int src,
                               const int dst);
+  template <typename F>
   void CleanCellLineFactorSolve(const CleanLevel &lv, const int src, const int dst);
   int CleanCellLineRows(const int nline, const int nw, const int nt);
+  void CleanCellFactorStore();
   void CleanCellLevelApply(const CleanLevel &lv, const int src, const int dst);
   void CleanCellCoarseSetup();
   void CleanCellSmooth(const int l, const int src, const int dst, const bool first,
@@ -3044,6 +3046,7 @@ class RadiationM1 {
   int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
   int cln_chunk = 32;           // rows per Thomas system of the line solve
   bool cln_pcfac = true;        // clean_pc_factor: x1line keeps the factors of its lines
+  bool cln_pcf32 = false;       // clean_pc_factor_float: ... in single precision
   int cln_pcreuse = 1;          // clean_pc_reuse: preconditioner rebuilt every n passes
   bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
   bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
@@ -3132,6 +3135,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
   DvceArray5D<Real> cln_lf;     // factors of the x1-line solve (clean_pc_factor)
+  DvceArray5D<float> cln_lfs;   // the same in single precision (clean_pc_factor_float)
   DvceArray1D<Real> cln_lw;     // rows of the line solves, a block per team
   DvceArray5D<Real> cln_ff;     // face fluxes of the operator (CleanCellApply)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)

@@ -94,20 +94,23 @@ constexpr int CLC_S = 32;
 constexpr int CLC_Q = 36;
 constexpr int CLC_Y = 40;
 constexpr int CLC_Z = 44;
-constexpr int CLC_AM = 48;   // preconditioner: 4x4 block of cell i-1 (row major)
-constexpr int CLC_A0 = 64;   // diagonal block
-constexpr int CLC_AP = 80;   // block of cell i+1
-constexpr int CLC_PSI = 96;  // smoothness sensor of the old vector along x1, x2, x3
-constexpr int CLC_PL = 99;   // lagged slope weights pl, pr of (dir, component):
-constexpr int CLC_PR = 111;  //   slot + 4 dir + component
-constexpr int CLC_JM = 123;  // preconditioner blocks of cells j-1, j+1, k-1, k+1
-constexpr int CLC_JP = 139;
-constexpr int CLC_KM = 155;
-constexpr int CLC_KP = 171;
-constexpr int CLC_T1 = 187;  // preconditioner scratch vectors
-constexpr int CLC_T2 = 191;
-constexpr int CLC_U = 195;   // the rays' cell moments (J, J h)
-constexpr int CLC_MB = 199;  // B = kP a T^4/kE of the old vector (clean_face_model)
+constexpr int CLC_PSI = 48;  // smoothness sensor of the old vector along x1, x2, x3
+constexpr int CLC_PL = 51;   // lagged slope weights pl, pr of (dir, component):
+constexpr int CLC_PR = 63;   //   slot + 4 dir + component
+constexpr int CLC_U = 75;    // the rays' cell moments (J, J h)
+constexpr int CLC_MB = 79;   // B = kP a T^4/kE of the old vector (clean_face_model)
+constexpr int CLC_NF = 80;   // (clean_pc = x1line with clean_pc_factor: its blocks are in
+                             // the factor store, CleanCellPreconditionerSetup)
+constexpr int CLC_AM = 80;   // preconditioner: 4x4 block of cell i-1 (row major)
+constexpr int CLC_A0 = 96;   // diagonal block
+constexpr int CLC_AP = 112;  // block of cell i+1
+constexpr int CLC_NL = 128;  // (clean_pc = x1line: no other blocks)
+constexpr int CLC_JM = 128;  // preconditioner blocks of cells j-1, j+1, k-1, k+1
+constexpr int CLC_JP = 144;
+constexpr int CLC_KM = 160;
+constexpr int CLC_KP = 176;
+constexpr int CLC_T1 = 192;  // preconditioner scratch vectors
+constexpr int CLC_T2 = 196;
 constexpr int CLC_N = 200;
 
 // dissipation weight candidates (<rad_m1>/clean_alpha)

@@ -209,6 +209,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_pc_factor")) {
       cln_pcfac = pin->GetBoolean("rad_m1","clean_pc_factor");
     }
+    // clean_pc_factor_float (read only when named): those factors kept in single
+    // precision (half the memory; the preconditioner, not the solution, changes)
+    if (pin->DoesParameterExist("rad_m1","clean_pc_factor_float")) {
+      cln_pcf32 = pin->GetBoolean("rad_m1","clean_pc_factor_float");
+    }
     if (pin->DoesParameterExist("rad_m1","clean_pc_reuse")) {
       cln_pcreuse = std::max(pin->GetInteger("rad_m1","clean_pc_reuse"), 1);
     }
