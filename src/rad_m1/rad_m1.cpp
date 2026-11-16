@@ -191,6 +191,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                pin->GetBoolean("rad_m1","clean_stag_fkin");
     cln_fwork = pin->DoesParameterExist("rad_m1","clean_stag_fwork") &&
                 pin->GetBoolean("rad_m1","clean_stag_fwork");
+    // (fkin needs the rays' consistent energy flux, fwork the kinetic momentum)
+    if ((cln_fkin && !cln_consist) || (cln_fwork && !cln_fkin)) {
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> clean_stag_fkin needs clean_consistency, clean_stag_fwork "
+                  << "clean_stag_fkin: ignored" << std::endl;
+      }
+      cln_fkin = cln_fkin && cln_consist;
+      cln_fwork = cln_fwork && cln_fkin;
+    }
     cln_diagforce = pin->DoesParameterExist("rad_m1","clean_diag_force") &&
                     pin->GetBoolean("rad_m1","clean_diag_force");
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
