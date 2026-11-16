@@ -115,6 +115,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::string rr = pin->GetString("rad_m1","clean_rot_ring");
       cln_ring = (rr.compare("live") == 0) ? 1 : ((rr.compare("jump") == 0) ? 2 : 0);
     }
+    // clean_fv_joint (read only when named): the fv1 sweep levels of all MeshBlocks of a
+    // rank at once, the upwind cell across a MeshBlock face read from its own block
+    if (pin->DoesParameterExist("rad_m1","clean_fv_joint")) {
+      cln_fvjoint = pin->GetBoolean("rad_m1","clean_fv_joint");
+    }
     cln_fillpass = pin->GetOrAddInteger("rad_m1","clean_fill_passes",8);
     cln_pred = pin->GetOrAddBoolean("rad_m1","clean_predict",true);
     {std::string bf = pin->GetOrAddString("rad_m1","clean_bc","halfrange");

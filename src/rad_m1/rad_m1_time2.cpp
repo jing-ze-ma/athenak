@@ -3861,6 +3861,10 @@ void RadiationM1::Time2Report() {
             << " (posfix " << t2w_fpfix << ") | their BE redo " << t2w_redo
             << " | auto_be steps " << t2w_abe << " | other BE steps " << t2w_be
             << " | discarded dt_retry attempts " << t2w_retry << std::endl;
+  if (clean && cln_fvnp[0] > 0) {
+    std::cout << "<rad_m1> clean FV rays: " << cln_fvnp[0] << " builds, " << cln_fvnp[1]
+              << " passes, " << cln_fvnp[2] << " wavefront levels" << std::endl;
+  }
 }
 
 }  // namespace radm1

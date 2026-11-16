@@ -10,6 +10,9 @@
 //! non-locality C1 of every cell.
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <iostream>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -17,6 +20,7 @@
 #include <Kokkos_Sort.hpp>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
 #include "mesh/nghbr_index.hpp"
@@ -1366,11 +1370,26 @@ void RadiationM1::CleanFvLevels() {
     Kokkos::realloc(cln_fvc, static_cast<size_t>(nmd)*nc);
     cln_fvls.assign(nmd, std::vector<int>());
   }
+  // (clean_fv_joint: the MeshBlocks of a direction in one group)
+  cln_fvjoint = cln_fvjoint && cln_rfv == 1 && !ca.sph && !pmy_pack->pmesh->multilevel &&
+                !VgdRotOn();
+  const bool jt = cln_fvjoint;
   std::vector<int> due;
-  for (int md = 0; md < nmd; ++md) {
+  for (int q = 0; q < nmd; ++q) {
+    const int md = jt ? (q%nmb)*n + q/nmb : q;
     if (cln_fvdo[md%n]) due.push_back(md);
   }
-  const int nw = std::max(1, std::min(static_cast<int>(due.size()), (1 << 25)/nc));
+  int nw = std::max(1, std::min(static_cast<int>(due.size()), (1 << 25)/nc));
+  if (jt) nw = std::max(nmb, nw - nw%nmb);
+  cln_fvl0 = std::numeric_limits<int>::max();
+  cln_fvjn[0] = cln_fvjn[1] = 0;
+  if (jt) {
+    if (cln_fvcore.extent_int(0) != nmd || cln_fvcore.extent_int(1) != nc) {
+      Kokkos::realloc(cln_fvcore, nmd, nc);
+    }
+    Kokkos::deep_copy(cln_fvcore, 0);
+    cln_fvseg.clear();
+  }
   DvceArray1D<int> mds("cln_fvl_md", nw);
   DvceArray2D<int> ord("cln_fvord", nw, nc), pos("cln_fvpos", nw, nc);
   DvceArray2D<int> lev("cln_fvlev", nw, nc);
@@ -1383,64 +1402,69 @@ void RadiationM1::CleanFvLevels() {
     const int nq = std::min(nw, static_cast<int>(due.size() - w0));
     for (int w = 0; w < nq; ++w) mds_h(w) = due[w0 + w];
     Kokkos::deep_copy(mds, mds_h);
-    // the cell order of each direction: n . x ascending, equal keys by the cell index
-    for (int w = 0; w < nq; ++w) {
-      const int m = mds_h(w)/n, d = mds_h(w)%n;
-      auto o = Kokkos::subview(ord, w, Kokkos::ALL);
-      par_for("cln_fv_key", DevExeSpace(), 0, nc - 1, KOKKOS_LAMBDA(const int c) {
-        key(c) = CleanFvKey(xc, dir_, cub, m, d, c);
-        o(c) = c;
-      });
-      Kokkos::sort(DevExeSpace(), o, KOKKOS_LAMBDA(const int a, const int b) {
-        return key(a) < key(b) || (key(a) == key(b) && a < b);
-      });
-    }
-    par_for("cln_fvl_pos", DevExeSpace(), 0, nw - 1, 0, nc - 1,
-    KOKKOS_LAMBDA(const int w, const int p) {
-      if (w < nq) pos(w,ord(w,p)) = p;
-      lev(w,p) = 0;
-    });
     int lmax = 0;
-    Kokkos::parallel_reduce("cln_fvl_lev", Kokkos::TeamPolicy<>(DevExeSpace(), nq,
-                                                                Kokkos::AUTO),
-    KOKKOS_LAMBDA(const TeamMember_t &tm, int &lm) {
-      const int w = tm.league_rank(), m = mds(w)/n, d = mds(w)%n;
-      const int nx[3] = {nx1, nx2, nx3};
-      for (int p0 = 0; p0 < nc; p0 += nb) {
-        const int p1 = (p0 + nb < nc) ? p0 + nb : nc;
-        int chg = 1;
-        while (chg > 0) {
-          Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, p0, p1),
-          [&](const int p, int &ch) {
-            const int c = ord(w,p), x[3] = {c%nx1, (c/nx1)%nx2, c/(nx1*nx2)};
-            int l = 0;
-            for (int f = 0; f < 6; ++f) {
-              const int e = f/2, s = (f%2) ? 1 : -1;
-              const Real a = dir_(d,0)*fa(m,3*f,ks+x[2],js+x[1],is+x[0]) +
-                             dir_(d,1)*fa(m,3*f+1,ks+x[2],js+x[1],is+x[0]) +
-                             dir_(d,2)*fa(m,3*f+2,ks+x[2],js+x[1],is+x[0]);
-              if ((axi && e == 2) || (a == 0.0 && r2 == 1)) continue;
-              for (int r = 1; r <= r2; ++r) {
-                int y[3] = {x[0], x[1], x[2]};
-                y[e] += r*s;
-                if (y[e] < 0 || y[e] >= nx[e]) break;
-                const int g = y[0] + nx1*(y[1] + nx2*y[2]);
-                if (pos(w,g) < p) l = (l > lev(w,g) + 1) ? l : lev(w,g) + 1;
-              }
-            }
-            if (l != lev(w,c)) {
-              lev(w,c) = l;
-              ++ch;
-            }
-          }, chg);
-        }
+    if (jt) {
+      lmax = CleanFvJoint(mds, nq, lev, xc);
+    } else {
+      // the cell order of each direction: n . x ascending, equal keys by the cell index
+      for (int w = 0; w < nq; ++w) {
+        const int m = mds_h(w)/n, d = mds_h(w)%n;
+        auto o = Kokkos::subview(ord, w, Kokkos::ALL);
+        par_for("cln_fv_key", DevExeSpace(), 0, nc - 1, KOKKOS_LAMBDA(const int c) {
+          key(c) = CleanFvKey(xc, dir_, cub, m, d, c);
+          o(c) = c;
+        });
+        Kokkos::sort(DevExeSpace(), o, KOKKOS_LAMBDA(const int a, const int b) {
+          return key(a) < key(b) || (key(a) == key(b) && a < b);
+        });
       }
-      int l1 = 0;
-      Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nc), [&](const int c, int &l) {
-        l = (l > lev(w,c) + 1) ? l : lev(w,c) + 1;
-      }, Kokkos::Max<int>(l1));
-      Kokkos::single(Kokkos::PerTeam(tm), [&]() {lm = (lm > l1) ? lm : l1;});
-    }, Kokkos::Max<int>(lmax));
+      par_for("cln_fvl_pos", DevExeSpace(), 0, nw - 1, 0, nc - 1,
+      KOKKOS_LAMBDA(const int w, const int p) {
+        if (w < nq) pos(w,ord(w,p)) = p;
+        lev(w,p) = 0;
+      });
+      Kokkos::parallel_reduce("cln_fvl_lev", Kokkos::TeamPolicy<>(DevExeSpace(), nq,
+                                                                  Kokkos::AUTO),
+      KOKKOS_LAMBDA(const TeamMember_t &tm, int &lm) {
+        const int w = tm.league_rank(), m = mds(w)/n, d = mds(w)%n;
+        const int nx[3] = {nx1, nx2, nx3};
+        for (int p0 = 0; p0 < nc; p0 += nb) {
+          const int p1 = (p0 + nb < nc) ? p0 + nb : nc;
+          int chg = 1;
+          while (chg > 0) {
+            Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, p0, p1),
+            [&](const int p, int &ch) {
+              const int c = ord(w,p), x[3] = {c%nx1, (c/nx1)%nx2, c/(nx1*nx2)};
+              int l = 0;
+              for (int f = 0; f < 6; ++f) {
+                const int e = f/2, s = (f%2) ? 1 : -1;
+                const Real a = dir_(d,0)*fa(m,3*f,ks+x[2],js+x[1],is+x[0]) +
+                               dir_(d,1)*fa(m,3*f+1,ks+x[2],js+x[1],is+x[0]) +
+                               dir_(d,2)*fa(m,3*f+2,ks+x[2],js+x[1],is+x[0]);
+                if ((axi && e == 2) || (a == 0.0 && r2 == 1)) continue;
+                for (int r = 1; r <= r2; ++r) {
+                  int y[3] = {x[0], x[1], x[2]};
+                  y[e] += r*s;
+                  if (y[e] < 0 || y[e] >= nx[e]) break;
+                  const int g = y[0] + nx1*(y[1] + nx2*y[2]);
+                  if (pos(w,g) < p) l = (l > lev(w,g) + 1) ? l : lev(w,g) + 1;
+                }
+              }
+              if (l != lev(w,c)) {
+                lev(w,c) = l;
+                ++ch;
+              }
+            }, chg);
+          }
+        }
+        int l1 = 0;
+        Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nc),
+        [&](const int c, int &l) {
+          l = (l > lev(w,c) + 1) ? l : lev(w,c) + 1;
+        }, Kokkos::Max<int>(l1));
+        Kokkos::single(Kokkos::PerTeam(tm), [&]() {lm = (lm > l1) ? lm : l1;});
+      }, Kokkos::Max<int>(lmax));
+    }
     // the cells of each direction sorted by (level, cell), and the count of each level
     DvceArray2D<int> cnt("cln_fvl_n", nq, lmax);
     par_for("cln_fvl_key", DevExeSpace(), 0, nw - 1, 0, nc - 1,
@@ -1460,6 +1484,24 @@ void RadiationM1::CleanFvLevels() {
       auto &ls = cln_fvls[mds_h(w)];
       ls.assign(lmax + 1, 0);
       for (int l = 0; l < lmax; ++l) ls[l+1] = ls[l] + cnt_h(w,l);
+    }
+  }
+  if (jt) {
+    const Real nd = CleanReduce(cln_fvjn[0], false), ne = CleanReduce(cln_fvjn[1], false);
+    cln_fvexact = (ne == 0.0);
+    if (global_variable::my_rank == 0 && !cln_fvjoint_said) {
+      std::printf("<rad_m1> clean_fv_joint: %.0f dropped inflows (rank 0: %d cycle "
+                  "segments), %.0f cells reading another rank%s\n", nd,
+                  static_cast<int>(cln_fvseg.size()), ne,
+                  cln_fvexact ? "" : ": the MeshBlocks' own levels instead");
+      cln_fvjoint_said = true;
+    }
+    // (a rank's sweep waiting for another's would repeat its longer levels: off)
+    if (!cln_fvexact) {
+      cln_fvjoint = false;
+      cln_fvdo.assign(n, true);
+      CleanFvLevels();
+      return;
     }
   }
   // the levels of the sweep: each takes the m n + d in turn
@@ -1500,6 +1542,209 @@ void RadiationM1::CleanFvLevels() {
   Kokkos::deep_copy(cln_fvo, o_h);
   Kokkos::deep_copy(cln_fvk, k_h);
   cln_fvdo.assign(n, false);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::CleanFvJoint
+//! \brief clean_fv_joint: the sweep levels of the directions mds(w), w < nq (each
+//! direction's MeshBlocks consecutive, w = (direction) nmb + m), over all MeshBlocks of
+//! the rank: a cell takes the level after its upwind face neighbours, across a MeshBlock
+//! face the cell the ghost exchange copies (cln_fvsrc).  The levels are the rounds of a
+//! topological order; where it stalls the remaining cells on and between cycles of the
+//! upwind graph (those with a remaining downstream cell) drop their inflow from cells
+//! later in n . x, and such a cell's upwind neighbour waits for it (the sweep reads the
+//! last pass there).  Returns the number of levels; cln_fvl0 is the first level with a
+//! dropped inflow or one from another rank, cln_fvexact whether there is none.
+
+int RadiationM1::CleanFvJoint(const DvceArray1D<int> &mds, const int nq,
+                              DvceArray2D<int> lev, const DvceArray3D<Real> &xc) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nc = nx1*nx2*indcs.nx3;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmy_pack->nmb_thispack, n = cln_fvn, nw = lev.extent_int(0);
+  const int n1 = cln_s.extent_int(4), n2 = cln_s.extent_int(3), n3 = cln_s.extent_int(2);
+  CleanArgs ca = CleanMakeArgs();
+  if (cln_fvsrc.extent_int(0) != nmb) {
+    // the source of every ghost: the exchange of the cells' global indices
+    DvceArray5D<Real> id("cln_fvid", nmb, 1, n3, n2, n1);
+    const int gs = pmy_pack->gids;
+    par_for("cln_fvj_id", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool in = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
+      const int c = (i - is) + nx1*((j - js) + nx2*(k - ks));
+      id(m,0,k,j,i) = in ? static_cast<Real>(gs + m)*nc + c : -1.0;
+    });
+    CleanGhostFill(id, 0, 1, false);
+    Kokkos::realloc(cln_fvsrc, nmb, n3, n2, n1);
+    auto src = cln_fvsrc;
+    par_for("cln_fvj_src", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool in = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
+      const Real v = id(m,0,k,j,i);
+      const int64_t g = static_cast<int64_t>(v), b = g/nc - gs;
+      src(m,k,j,i) = (in || v < 0.0 || b < 0 || b >= nmb) ? -1 :
+                     static_cast<int>(b*nc + g%nc);
+    });
+  }
+  auto src = cln_fvsrc;
+  auto fa = cln_fva;
+  auto dir_ = cln_fvd;
+  const bool cub = !ca.sph;
+  // the face neighbour of cell c of w across face f: w' nc + c', -1 none (a physical
+  // boundary, an axis of one cell), -2 a cell of another rank; up: an upwind one
+  auto nbr = [=] KOKKOS_FUNCTION (const int w, const int c, const int f) {
+    const int m = mds(w)/n, e = f/2, s = (f%2) ? 1 : -1;
+    int x[3] = {c%nx1, (c/nx1)%nx2, c/(nx1*nx2)};
+    const int nx[3] = {nx1, nx2, nc/(nx1*nx2)};
+    if (!ca.cub && (e == 1 ? !ca.multi_d : e == 2 && !ca.three_d)) return -1;
+    if (CleanBoundaryFace(ca, e, m, ks + x[2] + (f == 5), js + x[1] + (f == 3),
+                          is + x[0] + (f == 1))) return -1;
+    x[e] += s;
+    if (x[e] >= 0 && x[e] < nx[e]) return w*nc + x[0] + nx1*(x[1] + nx2*x[2]);
+    const int v = src(m,ks+x[2],js+x[1],is+x[0]);
+    return (v < 0) ? -2 : (w - m + v/nc)*nc + v%nc;
+  };
+  auto up = [=] KOKKOS_FUNCTION (const int w, const int c, const int f) {
+    const int m = mds(w)/n, d = mds(w)%n;
+    const int k = ks + c/(nx1*nx2), j = js + (c/nx1)%nx2, i = is + c%nx1;
+    const Real a = dir_(d,0)*fa(m,3*f,k,j,i) + dir_(d,1)*fa(m,3*f+1,k,j,i) +
+                   dir_(d,2)*fa(m,3*f+2,k,j,i);
+    return (a < 0.0) ? nbr(w, c, f) : -1;
+  };
+  auto key = [=] KOKKOS_FUNCTION (const int v) {
+    return CleanFvKey(xc, dir_, cub, mds(v/nc)/n, mds(v/nc)%n, v%nc);
+  };
+  DvceArray2D<int8_t> drop("cln_fvj_drop", nw, nc), al("cln_fvj_al", nw, nc);
+  DvceArray2D<int8_t> hd("cln_fvj_hd", nw, nc);
+  par_for("cln_fvj_init", DevExeSpace(), 0, nw - 1, 0, nc - 1,
+  KOKKOS_LAMBDA(const int w, const int c) {
+    lev(w,c) = (w < nq) ? -1 : 0;
+  });
+  // the rounds: a cell is ready when its inflows and the cells it dropped an inflow
+  // from wait for (dropped inflows of its neighbours from it) are of earlier rounds
+  const auto pol = Kokkos::RangePolicy<>(DevExeSpace(), 0, nq*nc);
+  auto core = cln_fvcore;
+  int left = nq*nc, r = 0, ndrop = 0;
+  auto round = [&](const int sg) {
+    int na = 0;
+    Kokkos::parallel_reduce("cln_fvj_round", pol,
+    KOKKOS_LAMBDA(const int q, int &cnt) {
+      const int w = q/nc, c = q%nc;
+      if (lev(w,c) >= 0 || (sg > 0 && core(mds(w),c) != sg)) return;
+      auto done = [&](const int v) {return lev(v/nc,v%nc) >= 0 && lev(v/nc,v%nc) < r;};
+      for (int f = 0; f < 6; ++f) {
+        const int v = up(w, c, f);
+        if (v >= 0 && !(drop(w,c) & (1 << f)) && !done(v)) return;
+        const int u = nbr(w, c, f);
+        if (u < 0 || drop(u/nc,u%nc) == 0) continue;
+        for (int g = 0; g < 6; ++g) {
+          if ((drop(u/nc,u%nc) & (1 << g)) && up(u/nc, u%nc, g) == w*nc + c && !done(u)) {
+            return;
+          }
+        }
+      }
+      lev(w,c) = r;
+      ++cnt;
+    }, na);
+    return na;
+  };
+  while (left > 0) {
+    const int na = round(0);
+    if (na > 0) {
+      left -= na;
+      ++r;
+      continue;
+    }
+    // a stall: the remaining cells al, less those with no remaining downstream cell
+    par_for("cln_fvj_al", DevExeSpace(), 0, nw - 1, 0, nc - 1,
+    KOKKOS_LAMBDA(const int w, const int c) {
+      al(w,c) = (lev(w,c) < 0) ? 1 : 0;
+    });
+    for (int nt = 1; nt > 0;) {
+      Kokkos::deep_copy(hd, 0);
+      par_for("cln_fvj_hd", DevExeSpace(), 0, nq - 1, 0, nc - 1,
+      KOKKOS_LAMBDA(const int w, const int c) {
+        for (int f = 0; f < 6 && al(w,c); ++f) {
+          const int v = up(w, c, f);
+          if (v >= 0 && !(drop(w,c) & (1 << f)) && al(v/nc,v%nc)) hd(v/nc,v%nc) = 1;
+        }
+      });
+      nt = 0;
+      Kokkos::parallel_reduce("cln_fvj_trim", pol,
+      KOKKOS_LAMBDA(const int q, int &cnt) {
+        const int w = q/nc, c = q%nc;
+        if (al(w,c) && !hd(w,c)) {
+          al(w,c) = 0;
+          ++cnt;
+        }
+      }, nt);
+    }
+    // (none left: every remaining cell)
+    int nd = 0, all = 0;
+    for (; all < 2 && nd == 0; ++all) {
+      Kokkos::parallel_reduce("cln_fvj_drop", pol,
+      KOKKOS_LAMBDA(const int q, int &cnt) {
+        const int w = q/nc, c = q%nc;
+        if (lev(w,c) >= 0 || !(all || al(w,c))) return;
+        const int me = w*nc + c;
+        for (int f = 0; f < 6; ++f) {
+          const int v = up(w, c, f);
+          if (v < 0 || (drop(w,c) & (1 << f)) || !(all || al(v/nc,v%nc)) ||
+              lev(v/nc,v%nc) >= 0) continue;
+          const Real kv = key(v), kc = key(me);
+          if (kv > kc || (kv == kc && v > me)) {
+            drop(w,c) |= (1 << f);
+            ++cnt;
+          }
+        }
+      }, nd);
+    }
+    if (nd == 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/clean_fv_joint: the sweep levels do not close"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    ndrop += nd;
+    // the core is a segment of levels of its own, repeated by the sweep until it
+    // converges (the cells downstream of it wait for it)
+    const int sg = static_cast<int>(cln_fvseg.size()) + 1, fb = (all == 2);
+    int ns = 0;
+    Kokkos::parallel_reduce("cln_fvj_core", pol,
+    KOKKOS_LAMBDA(const int q, int &cnt) {
+      const int w = q/nc, c = q%nc;
+      if (lev(w,c) < 0 && (fb || al(w,c))) {
+        core(mds(w),c) = sg;
+        ++cnt;
+      }
+    }, ns);
+    const int r0 = r;
+    for (int na = 0; ns > 0; ns -= na, left -= na, ++r) {
+      na = round(sg);
+      if (na == 0) break;
+    }
+    cln_fvseg.push_back({r0, r - 1, sg});
+  }
+  // the first level whose cells read another rank, and the cells that do
+  auto ext = [=] KOKKOS_FUNCTION (const int w, const int c) {
+    bool e = false;
+    for (int f = 0; f < 6; ++f) e = e || (up(w, c, f) == -2);
+    return e;
+  };
+  int l0 = 0, ne = 0;
+  Kokkos::parallel_reduce("cln_fvj_l0", pol,
+  KOKKOS_LAMBDA(const int q, int &l) {
+    if (ext(q/nc, q%nc)) l = (lev(q/nc,q%nc) < l) ? lev(q/nc,q%nc) : l;
+  }, Kokkos::Min<int>(l0));
+  Kokkos::parallel_reduce("cln_fvj_ne", pol,
+  KOKKOS_LAMBDA(const int q, int &cnt) {
+    if (ext(q/nc, q%nc)) ++cnt;
+  }, ne);
+  cln_fvl0 = std::min(cln_fvl0, l0);
+  cln_fvjn[0] += ndrop;
+  cln_fvjn[1] += ne;
+  return r;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1679,17 +1924,27 @@ void RadiationM1::CleanFvSweep() {
   // take a cell, done: the pass that has); the others would repeat their intensity
   const bool act = !o2 && !ld && !axi;
   const int ie = indcs.ie, je = indcs.je, ke = indcs.ke, nc = nx1*nx2*indcs.nx3;
-  if (act && cln_fvdue.extent_int(1) != nc) {
+  if (act && (cln_fvdue.extent_int(0) != nmb*n || cln_fvdue.extent_int(1) != nc)) {
     Kokkos::realloc(cln_fvdue, nmb*n, nc);
     Kokkos::realloc(cln_fvdone, nmb*n, nc);
   }
   auto due = cln_fvdue;
   auto done = cln_fvdone;
+  cln_fvnp[0] += 1;
+  // clean_fv_joint: a later pass starts at the first level that reads the last pass
+  const bool jt = cln_fvjoint;
+  auto fsrc = cln_fvsrc;
+  auto fcore = cln_fvcore;
+  int lseg = 1;
+  for (const auto &sg : cln_fvseg) lseg = std::max(lseg, sg[1] - sg[0] + 1);
+  Kokkos::View<Kokkos::MinMaxScalar<Real>*, DevMemSpace> rsg("cln_fv_rsg", lseg);
   for (int it = 0; it < 100; ++it) {
     Real dmax = 0.0, imax = 0.0;
     if (axi) Kokkos::deep_copy(cln_fvx, fi);
     if (act) Kokkos::deep_copy(done, -1);
-    for (int l = 0; l < nlev; ++l) {
+    const int l1 = (jt && it > 0) ? std::min(cln_fvl0, nlev) : 0;
+    // one level (sg > 0: only the cells of cycle segment sg) into the reduction rv
+    auto level = [&](const int l, const int sg, auto rv) {
     const int64_t k0 = cln_fvkl[l];
     const int nkb = static_cast<int>(cln_fvkl[l+1] - k0);
     Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0,
@@ -1703,6 +1958,7 @@ void RadiationM1::CleanFvSweep() {
         if (fg(l,mid) <= q) {md = mid;} else {h = mid;}
       }
       const int m = md/n, d = md%n, c = fc(fo(l,md) + q);
+      if (sg > 0 && fcore(md,c) != sg) return;
       const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
       {
         const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
@@ -1761,8 +2017,14 @@ void RadiationM1::CleanFvSweep() {
           } else {
             // the upwind trace (lld: the neighbour's transverse slopes too)
             auto &fd = ld ? fq : fp;
+            // (clean_fv_joint: across a MeshBlock face the cell its ghost copies)
+            const int s = up ? 1 : -1;
+            const int sv = (jt && !bdry) ? fsrc(m,k+s*(dir == 2),j+s*(dir == 1),
+                                                i+s*(dir == 0)) : -1;
+            const int cv = sv%nc;
             Real t = bdry ? (up ? ihi : (emi ? iemit : fq(m,CLQ_S0,k,j,i)))
                    : ax ? CleanFvFaceAxi(fx, fd, fm, o2, m, d, k, j, i, up, !up, nl)
+                   : (sv >= 0) ? fi(sv/nc,d,ks+cv/(nx1*nx2),js+(cv/nx1)%nx2,is+cv%nx1)
                    : CleanFvFace(fi, fd, o2, m, d, dir, kf, jf, i_f, !up, nl);
             for (int q = 0; q < bmn && bdry && !up; ++q) {
               if (d == bmr[q]) t += bmi(m,q,(bmi.extent_int(2) > 1) ? k - ks : 0,j - js);
@@ -1842,17 +2104,39 @@ void RadiationM1::CleanFvSweep() {
         }
         for (int e = 0; e < 3 && ld; ++e) fi(m,(1+e)*n+d,k,j,i) = sl[e];
       }
-    }, Kokkos::MinMax<Real, DevMemSpace>(Kokkos::subview(red, l)));
+    }, Kokkos::MinMax<Real, DevMemSpace>(rv));
+    };
+    for (int l = l1; l < nlev; ++l) {
+      level(l, 0, Kokkos::subview(red, l));
+      // clean_fv_joint: a cycle segment ending here is repeated until it converges
+      for (const auto &sg : cln_fvseg) {
+        for (int rep = 0; jt && sg[1] == l && rep < 100; ++rep) {
+          for (int q = sg[0]; q <= l; ++q) {
+            level(q, sg[2], Kokkos::subview(rsg, q - sg[0]));
+          }
+          auto s_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rsg);
+          Real dm = 0.0, im = 0.0;
+          for (int q = 0; q <= l - sg[0]; ++q) {
+            dm = fmax(dm, -s_h(q).min_val);
+            im = fmax(im, s_h(q).max_val);
+          }
+          cln_fvnp[2] += l - sg[0] + 1;
+          if (dm <= cln_fvtol*im) break;
+        }
+      }
     }
     auto r_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), red);
     for (int l = 0; l < nlev; ++l) {
-      dmax = fmax(dmax, -r_h(l).min_val);
+      if (l >= l1) dmax = fmax(dmax, -r_h(l).min_val);
       imax = fmax(imax, r_h(l).max_val);
     }
     CleanGhostFill(cln_fvi, 0, cln_fvb*n);
     CleanFvPanelSlopes(false);
     CleanFvSeams();
     if (wall[0] || wall[1]) CleanFvWalls();
+    cln_fvnp[1] += 1;
+    cln_fvnp[2] += nlev - l1;
+    if (jt && cln_fvexact) break;
     if (CleanReduce(dmax, true) <= cln_fvtol*CleanReduce(imax, true)) break;
   }
 }

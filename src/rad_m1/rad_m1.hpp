@@ -2929,6 +2929,8 @@ class RadiationM1 {
   void CleanFvSourceAlloc();
   void CleanFvCartSource();
   void CleanFvLevels();
+  int CleanFvJoint(const DvceArray1D<int> &mds, const int nq, DvceArray2D<int> lev,
+                   const DvceArray3D<Real> &xc);
   void CleanFvPanelSlopes(const bool q);
   void CleanFvSeams();
   bool CleanFvWall(const int side);
@@ -3068,6 +3070,15 @@ class RadiationM1 {
   DvceArray5D<Real> cln_fvp;    // fv: the intensities of the last build (downwind slopes)
   DvceArray5D<Real> cln_fvx;    // 2-D axisymmetric: the intensities of the last pass
   DvceArray2D<int8_t> cln_fvdue, cln_fvdone;   // fv1 passes: cells due (CleanFvSweep)
+  bool cln_fvjoint = false;     // clean_fv_joint: fv1 levels over the rank's MeshBlocks
+  bool cln_fvexact = false;     // joint: one pass is the exact sweep (all ranks)
+  int cln_fvl0 = 0;             // joint: the first level a later pass takes
+  int cln_fvjn[2] = {0, 0};     // joint: the dropped inflows, the cells reading ghosts
+  bool cln_fvjoint_said = false;   // joint: the first build's counts printed
+  int64_t cln_fvnp[3] = {0, 0, 0};   // FV rays: builds, passes, levels swept (summary)
+  DvceArray2D<int> cln_fvcore;  // joint: the cycle segment of each cell (m n + d, c)
+  std::vector<std::array<int, 3>> cln_fvseg;   // joint: its levels and number
+  DvceArray4D<int> cln_fvsrc;   // joint: the local m nc + c of each ghost (-1 none)
   DvceArray5D<Real> cln_fva;    // the outward vector areas of the six faces of a cell
   DvceArray1D<int> cln_fvc;     // the cells of each m n + d by level (CleanFvLevels)
   DvceArray2D<int> cln_fvg;     // the start of each m n + d in a level (level, m n + d)
