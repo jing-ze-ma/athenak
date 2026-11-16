@@ -1483,6 +1483,12 @@ void RadiationM1::CleanWriteBack() {
     u0_(m,M1_F1,k,j,i) = 0.5*(f1(m,k,j,i) + f1(m,k,j,i+1));
     u0_(m,M1_F1+1,k,j,i) = multi_d ? 0.5*(f2(m,k,j,i) + f2(m,k,j+1,i)) : 0.0;
     u0_(m,M1_F1+2,k,j,i) = three_d ? 0.5*(f3(m,k,j,i) + f3(m,k+1,j,i)) : 0.0;
+    // (clean_stag_split: the cell flux is that of the energy flux Phi, the faces keep F^H)
+    for (int d = 0; d < 3 && xh.hi; ++d) {
+      if ((d == 1 && !multi_d) || (d == 2 && !three_d)) continue;
+      u0_(m,M1_F1+d,k,j,i) = 0.5*(CleanFaceFlux(x, CLW_X, d, m, k, j, i, true) +
+          CleanFaceFlux(x, CLW_X, d, m, k+(d == 2), j+(d == 1), i+(d == 0), true));
+    }
   });
 }
 
