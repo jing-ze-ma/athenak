@@ -175,6 +175,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_psi_eps = pin->GetOrAddReal("rad_m1","clean_psi_eps",1.0e-12);
     cln_maxpic = pin->GetOrAddInteger("rad_m1","clean_maxpic",12);
     cln_poslim = pin->GetOrAddBoolean("rad_m1","clean_pos_limit",true);
+    cln_posgas = !cln_cell && pin->DoesParameterExist("rad_m1","clean_stag_pos_gas") &&
+                 pin->GetBoolean("rad_m1","clean_stag_pos_gas");
+    cln_poslim0 = cln_poslim;
     cln_diagcells = pin->GetOrAddBoolean("rad_m1","clean_diag_cells",false);
     // (read only when named: output headers list the input)
     // (default: on for the staggered layout; read only when named)
