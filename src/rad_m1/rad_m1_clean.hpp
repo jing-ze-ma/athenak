@@ -921,9 +921,13 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       wt = (xv > 0.0) ? 0.5*xc*(vc + vo)/xv : 0.5;
     }
     if (x.hi && CleanBoundaryFace(x, dir, m, kf, jf, iff)) {
-      dm += 0.5*x.h*xc*f/x.c;   // (a boundary flux is no F equation: the inner half
-      if (cf) {                 //  cell's absorption of it)
-        cf[side] = 0.5*x.h*xc*f/x.c;
+      // (a boundary flux is no F equation: the inner half cell's absorption of it;
+      // gflux: the share 1 - exp(-chi dx/2) the half cell absorbs, not chi dx/2)
+      const Real dc = 1.0/CleanDivW(x, dir, m, k, j, i, side), q = 0.5*xc*dc;
+      const Real db = x.gf ? -expm1(-q)*x.h*f/(x.c*dc) : 0.5*x.h*xc*f/x.c;
+      dm += db;
+      if (cf) {
+        cf[side] = db;
         wf[side] = 0.5;
       }
       continue;
