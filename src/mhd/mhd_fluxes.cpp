@@ -931,6 +931,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
               }
             });
           }
+          // the next row's reconstruction rewrites wl/wr on other threads
+          member.team_barrier();
         }
       } // end of loop over j
     });
@@ -1234,6 +1236,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
               }
             });
           }
+          // the next row's reconstruction rewrites wl/wr on other threads
+          member.team_barrier();
         }
       } // end loop over k
     });

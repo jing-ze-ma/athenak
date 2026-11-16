@@ -403,6 +403,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     }
 
       if (use_wellbalance_static_reconst_perturb_) {
+        // the pressure floor above repairs wl/wr(IEN,i) on another thread
+        member.team_barrier();
         AddWbPrimFaceX1(member,m,k,j,il-1,iu,w0facewb_x1f,wl,wr);
       }
 
@@ -615,6 +617,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               WbAllBlendGrid(member, use_wb_rho_, 2, false, m, k, j, is-1, ie+1, w0_,
                              x2v_, x2f_, wbq2_, wbw_, wl_jp1, wr);
             }
+            // (over [is-1, ie+1]: the face work on [il, iu] below takes other threads'
+            // entries)
+            member.team_barrier();
         } else {
         if (wb_all_) {
           WbAllPLM(member, use_wb_rho_, 2, m, k, j, il, iu, w0_, wbq2_, wbw_, wl_jp1, wr);
@@ -864,6 +869,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               }
             });
           }
+          // the next row's reconstruction rewrites wl/wr on other threads
+          member.team_barrier();
         }
       } // end of loop over j
     });
@@ -932,6 +939,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             WbAllBlendGrid(member, use_wb_rho_, 3, false, m, k, j, is-1, ie+1, w0_, x3v_,
                            x3f_, wbq3_, wbw_, wl_kp1, wr);
           }
+          // (over [is-1, ie+1]: the face work on [il, iu] below takes other threads'
+          // entries)
+          member.team_barrier();
         } else if (wb_all_) {
           WbAllPLM(member, use_wb_rho_, 3, m, k, j, il, iu, w0_, wbq3_, wbw_, wl_kp1, wr);
         } else {
@@ -1149,6 +1159,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               }
             });
           }
+          // the next row's reconstruction rewrites wl/wr on other threads
+          member.team_barrier();
         }
       } // end loop over k
     });
