@@ -657,6 +657,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   } else {
     CleanFaceCoefficients();
     if (cln_consist) CleanStagBracket();
+    if (cln_gflux) CleanGhostFill(cln_w, CLW_EO, 1);   // (the donors' E_old, memory)
   }
 
   // 3. Newton iteration on the gas coupling and Picard passes on the lagged quantities:
@@ -1384,6 +1385,11 @@ int RadiationM1::CleanStagRealizable(const int mark) {
         if (clip) cb = fmin(fmax(cb, -x.c*fmax(er, 0.0) - p0), x.c*fmax(el, 0.0) - p0);
         if (cb != c0) q5 += 1.0;
       } else if (mark == 2 || (mark == 1 && (r2 || !(el >= -zero) || !(er >= -zero)))) {
+        // (gflux: the face keeps w and drops what breaks the M-matrix, CleanStagMemUp)
+        if (x.gf) {
+          x.fc[dir](m,CLF_SLO,k,j,i) = 1.0;
+          return;
+        }
         x.fc[dir](m,CLF_W,k,j,i) = 1.0;
         if (x.consist && !keep) x.fc[dir](m,CLF_RC,k,j,i) = 0.0;   // (no bracket)
       }
@@ -1410,14 +1416,17 @@ int RadiationM1::CleanStagRealizable(const int mark) {
 //! flux through it (CLN_FX, CLN_F2, CLN_F3 of its upper cell) and Phi_f(J) the energy
 //! flux of the rays' own J, so that Phi(J) + C = (1 - w) Phi(J) + w F_ray.  Lagged (fixed
 //! in the solve), energy flux only (CleanFaceSource); a low-order face drops it.
-//! clean_stag_gflux: no bracket; the rays' face flux enters as flux factors of the
-//! streaming share, Phi_w = c (g+ E_L + g- E_R) with g+ J_L + g- J_R = F_ray/c (CLF_HP,
-//! CLF_HM): the half ranges H+-_f = h+-_f J of CleanFaceCoefficients, tilted by the
-//! defect dd = F_ray/c - H+_f - H-_f in proportion to their sizes,
+//! clean_stag_gflux: no additive bracket; it enters the streaming share as flux factors,
+//! Phi_w = c (g+ E_L + g- E_R) with c (g+ J_L + g- J_R) w = c (h+ J_L + h- J_R) w + C_f
+//! (CLF_HP, CLF_HM), so that the face flux of E = J is the bracket's, (1 - w) Phi(J) +
+//! w F_ray: the half ranges H+-_f = h+-_f J of CleanFaceCoefficients, tilted by the
+//! defect dd = C_f/(w c) in proportion to their sizes,
 //!   H+-' = H+-_f (1 +- dd/s),  s = H+_f - H-_f,
-//! the shrinking one at most to 0, |g+-| <= 1.  Linear in E with the upwind signs, so the
-//! streaming share keeps the M-matrix and the donor bound of each face for any E, and at
-//! E = J it carries the rays' face flux (the partial-current form of HOLO methods).
+//! the shrinking one at most to 0.  Linear in E with the upwind signs, so the streaming
+//! share keeps the M-matrix for any E (an empty cell sends nothing, whatever the rays
+//! hold; the partial-current form of HOLO methods).  g+- are not capped at 1: the sweep's
+//! face flux can exceed c J of the donor at a beam edge (its foot interpolation reaches
+//! past the two cells), and the cap there breaks the consistency of the beam.
 
 void RadiationM1::CleanStagBracket() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1452,12 +1461,12 @@ void RadiationM1::CleanStagBracket() {
       if (bf || !gf) return;
       const Real jl = x.w(m,CLW_Z,k-dk,j-dj,i-di), jr = x.w(m,CLW_Z,k,j,i);
       const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
-      const Real fr = x.cs(m,n,k,j,i), dd = fr - hl - hr, s = hl - hr;
-      // (H+', and H-' = F_ray/c - H+'; without half ranges the cell's h+- stay)
+      const Real dd = x.cs(m,n,k,j,i) - pj/x.c, fr = hl + hr + dd, s = hl - hr;
+      // (H+', and H-' = fr - H+'; without half ranges the cell's h+- stay)
       const Real hp = !(s > 0.0) ? hl : ((dd < 0.0) ? fmax(hl + dd*hl/s, 0.0) :
                                         fr - fmin(hr - dd*hr/s, 0.0));
-      if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = fmin(hp/jl, 1.0);
-      if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = fmax(((s > 0.0) ? fr - hp : hr)/jr, -1.0);
+      if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = hp/jl;
+      if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = ((s > 0.0) ? fr - hp : hr)/jr;
     });
   }
   if (!(cln_bclip & 4)) return;

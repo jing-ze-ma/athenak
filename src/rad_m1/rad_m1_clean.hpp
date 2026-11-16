@@ -52,6 +52,10 @@ constexpr int CLF_HM = 4;    // h-_f
 constexpr int CLF_RC = 5;    // cell layout: RC coefficient (1 - al) c/chi_f (h-free);
                              // staggered: the consistency bracket (CleanStagBracket)
 constexpr int CLF_N = 6;
+constexpr int CLF_SLO = CLF_N + 4;  // staggered, clean_stag_gflux: 1 on a low-order face
+                                    // (CleanFaceWeights, CleanStagMemUp), else 0
+constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
+                                     // share of the donor's E_old goes upwind
 
 // work vectors (array cln_w)
 constexpr int CLW_EO = 0;    // E of the old vector
@@ -117,6 +121,7 @@ struct CleanArgs {
   bool milne;                  // cell layout: sub-cell Eddington face model
   bool fvrays;                 // cell layout: FV rays (clean_rays = fv1 | fv)
   bool fd;                     // staggered, clean_stag_fkin: the energy flux's G + F^H - F
+  bool gf;                     // staggered, clean_stag_gflux: flux factors, low order
   bool fs;                     // staggered, clean_stag_fsolve: the face F of the F solve
                                // (CLF_N) with its dissipation term (CLF_N + 1)
   bool hi;                     // staggered, clean_stag_split: the face momentum state
@@ -369,6 +374,32 @@ Real CleanStagDnn(const CleanArgs &x, const int dir, const int m, const int kf,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanStagMemUp
+//! \brief clean_stag_gflux: the memory (1 - w) theta (G + d) of the energy flux through
+//! face (k,j,i) normal to dir taken implicitly upwind, as q E_donor with q = memory/E_old
+//! of the donor, |q| <= c (the donor-cell form of production's postr-1031): on a
+//! low-order face, and wherever its explicit outflow over the stage, h A/V |memory|,
+//! would take more than CLN_MEMUP of the donor's E_old.  Returns q (> 0: from L, < 0:
+//! from R), 0 where the memory stays explicit.  At E = E_old it is the explicit memory.
+
+KOKKOS_INLINE_FUNCTION
+Real CleanStagMemUp(const CleanArgs &x, const int dir, const int m, const int k,
+                    const int j, const int i) {
+  if (!x.gf || x.hi) return 0.0;
+  const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
+  const Real g = (1.0 - x.fc[dir](m,CLF_W,k,j,i))*x.fc[dir](m,CLF_TH,k,j,i)*
+                 (x.fc[dir](m,CLF_G,k,j,i) + (x.fd ? x.fc[dir](m,CLF_N+3,k,j,i) : 0.0));
+  if (g == 0.0) return 0.0;
+  const bool up = (g > 0.0);   // (the donor: L for an outflow to R)
+  const Real eo = up ? x.w(m,CLW_EO,kl,jl,il) : x.w(m,CLW_EO,k,j,i);
+  const Real out = x.h*fabs(g)*(up ? CleanDivW(x, dir, m, kl, jl, il, 1) :
+                                     CleanDivW(x, dir, m, k, j, i, 0));
+  if (!(x.fc[dir](m,CLF_SLO,k,j,i) > 0.0) && out <= CLN_MEMUP*eo) return 0.0;
+  const Real q = (eo > 0.0) ? fmin(fabs(g)/eo, x.c) : x.c;
+  return up ? q : -q;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanFaceWeights
 //! \brief coefficients of E_L and E_R in the flux through face (k,j,i) normal to dir, i.e.
 //! everything but the off-diagonal Eddington terms and the old-vector flux G.  Physical
@@ -397,12 +428,15 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   }
   const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
   const Real th = x.fc[dir](m,CLF_TH,k,j,i);
+  // (clean_stag_gflux, low-order face: the two-point diffusion of D E without the
+  // curvature and cross terms, donor-cell advection, the memory upwind: an M-matrix)
+  const bool low = x.gf && !x.hi && x.fc[dir](m,CLF_SLO,k,j,i) > 0.0;
   const Real g = (1.0 - w)*th*x.h*x.c*x.c*x.idx[dir];
   al = g*x.cs(m,CLN_D11+dir,kl,jl,il) + w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
   ar = -g*x.cs(m,CLN_D11+dir,k,j,i) + w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
   if (x.sph && !x.cub) {   // (centre distance and the curvature terms, CleanStagSph)
     const Real gs = (1.0 - w)*th*x.h*x.c*x.c, id = CleanStagSph(x, 0, dir, m, k, j, i);
-    const Real hr = 0.5*CleanStagSph(x, 1, dir, m, k, j, i);
+    const Real hr = low ? 0.0 : 0.5*CleanStagSph(x, 1, dir, m, k, j, i);
     al = gs*(id*x.cs(m,CLN_D11+dir,kl,jl,il) - hr*CleanStagSph(x, 2, dir, m, k, j, i)) +
          w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
     ar = -gs*(id*x.cs(m,CLN_D11+dir,k,j,i) + hr*CleanStagSph(x, 3, dir, m, k, j, i)) +
@@ -414,15 +448,20 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
          w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
     ar = -gs*CleanStagDnn(x, dir, m, k, j, i, k, j, i) + w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
   }
+  const Real q = CleanStagMemUp(x, dir, m, k, j, i);
+  if (q > 0.0) al += q;
+  if (q < 0.0) ar += q;
   if (x.feedback) {
     const Real s = 0.5*(1.0 - w)*(1.0 - th);
-    al += s*x.w(m,CLW_A1+dir,kl,jl,il);
-    ar += s*x.w(m,CLW_A1+dir,k,j,i);
+    const Real sl = s*x.w(m,CLW_A1+dir,kl,jl,il), sr = s*x.w(m,CLW_A1+dir,k,j,i);
     // the beta term th c beta_f (hc kP a T^4 - hc kE E)_f of eq. 57 (Ma et al. 2025)
     const Real b = -0.25*(1.0 - w)*th*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) +
                                           x.w(m,CLW_BT+dir,k,j,i))*x.h*x.c;
-    al += b*x.op(m,M1_OP_E,kl,jl,il);
-    ar += b*x.op(m,M1_OP_E,k,j,i);
+    const Real bl = b*x.op(m,M1_OP_E,kl,jl,il), br = b*x.op(m,M1_OP_E,k,j,i);
+    al += (low && sl + sr < 0.0) ? 0.0 : (low ? sl + sr : sl);
+    ar += (low && sl + sr >= 0.0) ? 0.0 : (low ? sl + sr : sr);
+    al += (low && b < 0.0) ? 0.0 : (low ? bl + br : bl);
+    ar += (low && b >= 0.0) ? 0.0 : (low ? bl + br : br);
   }
 }
 
@@ -544,6 +583,7 @@ KOKKOS_INLINE_FUNCTION
 Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
                     const int k, const int j, const int i) {
   if (!x.multi_d || CleanBoundaryFace(x, dir, m, k, j, i)) return 0.0;
+  if (x.gf && !x.hi && x.fc[dir](m,CLF_SLO,k,j,i) > 0.0) return 0.0;   // (low-order face)
   const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
   const Real th = x.fc[dir](m,CLF_TH,k,j,i);
   return -(1.0 - w)*th*x.h*x.c*x.c*CleanFaceStress(x, e, dir, m, k, j, i, false);
@@ -578,6 +618,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
   const Real th = (1.0 - w)*x.fc[dir](m,CLF_TH,k,j,i);
   Real s = th*x.fc[dir](m,CLF_G,k,j,i);
   if (x.fd && !x.hi) s += th*x.fc[dir](m,CLF_N+3,k,j,i);   // (fkin: of F^H, the last F^H)
+  if (CleanStagMemUp(x, dir, m, k, j, i) != 0.0) s = 0.0;   // (gflux: upwind, implicit)
   if (x.consist && !x.hi) s += x.fc[dir](m,CLF_RC,k,j,i);   // (staggered bracket)
   if (x.feedback) {   // (the emission part of the beta term, CleanFaceWeights)
     s += 0.25*th*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) + x.w(m,CLW_BT+dir,k,j,i))*
