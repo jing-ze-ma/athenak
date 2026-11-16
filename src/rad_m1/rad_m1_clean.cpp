@@ -1096,8 +1096,9 @@ void RadiationM1::CleanRightHandSide() {
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::CleanNewtonUpdate
 //! \brief new iterate E_k = X and the gas temperature in exchange equilibrium with it
-//! (the absorption takes max(X, 0); the staggered layout also keeps that as the iterate,
-//! the cell layout keeps X, whose E < 0 its positivity limiter treats).  The cell layout
+//! (the absorption takes max(X, 0); the staggered layout also keeps that as the iterate
+//! without its positivity limiter and clean_stag_gflux, the cell layout keeps X, whose
+//! E < 0 its positivity limiter treats).  The cell layout
 //! takes the gas eint change -A of eq. 56 of Ma et al. (2025) (CLW_GM, CLW_EP of
 //! CleanCellRightHandSide, CleanCellNewtonUpdate).
 //! Returns max |dE|/E, |dT|/T (clean_nl_norm = cell: |dE| over max(|E|, the E scale
@@ -1117,7 +1118,7 @@ Real RadiationM1::CleanNewtonUpdate() {
   auto eos = fl.eos;
   auto op = opac;
   auto w = cln_w;
-  const bool cell = cln_cell, poslim = cln_poslim;
+  const bool cell = cln_cell, poslim = cln_poslim || cln_gflux;
 
   Real change = 0.0, femax = 0.0;
   Kokkos::parallel_reduce("cln_newton", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
@@ -1408,6 +1409,14 @@ int RadiationM1::CleanStagRealizable(const int mark) {
 //! flux through it (CLN_FX, CLN_F2, CLN_F3 of its upper cell) and Phi_f(J) the energy
 //! flux of the rays' own J, so that Phi(J) + C = (1 - w) Phi(J) + w F_ray.  Lagged (fixed
 //! in the solve), energy flux only (CleanFaceSource); a low-order face drops it.
+//! clean_stag_gflux: no bracket; the rays' face flux enters as flux factors of the
+//! streaming share, Phi_w = c (g+ E_L + g- E_R) with g+ J_L + g- J_R = F_ray/c (CLF_HP,
+//! CLF_HM): the half ranges H+-_f = h+-_f J of CleanFaceCoefficients, tilted by the
+//! defect dd = F_ray/c - H+_f - H-_f in proportion to their sizes,
+//!   H+-' = H+-_f (1 +- dd/s),  s = H+_f - H-_f,
+//! the shrinking one at most to 0, |g+-| <= 1.  Linear in E with the upwind signs, so the
+//! streaming share keeps the M-matrix and the donor bound of each face for any E, and at
+//! E = J it carries the rays' face flux (the partial-current form of HOLO methods).
 
 void RadiationM1::CleanStagBracket() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1418,6 +1427,7 @@ void RadiationM1::CleanStagBracket() {
   CleanArgs x = CleanMakeArgs();
   x.consist = false;
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
+  const bool gf = cln_gflux;
   par_for("cln_rayj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     x.w(m,CLW_Z,k,j,i) = x.cs(m,CLN_J,k,j,i);
@@ -1436,8 +1446,17 @@ void RadiationM1::CleanStagBracket() {
       const Real pj = -(1.0 - w)*cd*CleanFaceStress(x, CLW_Z, dir, m, k, j, i, true) +
           w*x.c*(x.fc[dir](m,CLF_HP,k,j,i)*x.w(m,CLW_Z,k-dk,j-dj,i-di) +
                  x.fc[dir](m,CLF_HM,k,j,i)*x.w(m,CLW_Z,k,j,i));
-      x.fc[dir](m,CLF_RC,k,j,i) = CleanBoundaryFace(x, dir, m, k, j, i) ? 0.0 :
-          w*(x.c*x.cs(m,n,k,j,i) - pj);
+      const bool bf = CleanBoundaryFace(x, dir, m, k, j, i);
+      x.fc[dir](m,CLF_RC,k,j,i) = (bf || gf) ? 0.0 : w*(x.c*x.cs(m,n,k,j,i) - pj);
+      if (bf || !gf) return;
+      const Real jl = x.w(m,CLW_Z,k-dk,j-dj,i-di), jr = x.w(m,CLW_Z,k,j,i);
+      const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
+      const Real fr = x.cs(m,n,k,j,i), dd = fr - hl - hr, s = hl - hr;
+      // (H+', and H-' = F_ray/c - H+'; without half ranges the cell's h+- stay)
+      const Real hp = !(s > 0.0) ? hl : ((dd < 0.0) ? fmax(hl + dd*hl/s, 0.0) :
+                                        fr - fmin(hr - dd*hr/s, 0.0));
+      if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = fmin(hp/jl, 1.0);
+      if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = fmax(((s > 0.0) ? fr - hp : hr)/jr, -1.0);
     });
   }
   if (!(cln_bclip & 4)) return;

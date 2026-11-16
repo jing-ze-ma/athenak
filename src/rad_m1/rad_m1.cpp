@@ -189,6 +189,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_stag_bclip")) {
       cln_bclip = pin->GetInteger("rad_m1","clean_stag_bclip");
     }
+    // (clean_stag_gflux replaces the bracket of clean_consistency)
+    cln_gflux = cln_consist && pin->DoesParameterExist("rad_m1","clean_stag_gflux") &&
+                pin->GetBoolean("rad_m1","clean_stag_gflux");
     cln_fsolve = pin->DoesParameterExist("rad_m1","clean_stag_fsolve") &&
                  pin->GetBoolean("rad_m1","clean_stag_fsolve");
     cln_fkin = pin->DoesParameterExist("rad_m1","clean_stag_fkin") &&
