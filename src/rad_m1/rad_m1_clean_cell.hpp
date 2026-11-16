@@ -60,8 +60,7 @@ namespace radm1 {
 // face variables of the cell layout (arrays cln_fc1..3; CLF_TH as in the staggered one)
 constexpr int CLF_AL = 0;    // dissipation weight al
 constexpr int CLF_AF = 2;    // dissipation speed s = c sqrt(max(D_dd,L, D_dd,R))
-constexpr int CLF_LO = 3;    // 1: low-order face (first-order jumps, al = 1, s = c,
-                             //    stress with D = I)
+constexpr int CLF_LO = 3;    // 1: low-order face (CleanCellM1Jacobian)
 constexpr int CLF_UG = 4;    // 1: physical boundary face of a marked cell, upwind stress
                              //    against the ghost (clean_pos_ghost)
 constexpr int CLF_CB = CLF_N;  // consistency bracket of (fE, fY_1..3)
@@ -491,7 +490,7 @@ void CleanJumpCoefficients(const CleanArgs &x, const int dir, const int c, const
 //----------------------------------------------------------------------------------------
 //! \fn bool CleanFaceDissipation
 //! \brief dissipation weight al and al s/2 of the interior face (k,j,i) normal to dir;
-//! a low-order face takes al = 1, s = c.  Returns true for a low-order face.
+//! a low-order face takes al = 1, s = c (its fY).  Returns true for a low-order face.
 
 KOKKOS_INLINE_FUNCTION
 bool CleanFaceDissipation(const CleanArgs &x, const int dir, const int m, const int k,
@@ -555,13 +554,12 @@ void CleanCellRhieChow(const CleanArgs &x, const int dir, const Real al, const i
 //! of cell (k,j,i) per unit E of the cell, g_b for the rows y_b: -(P_tt + P_pp)/r in y_r
 //! and -cot(theta) P_pp/r in y_theta, in the face-area form -c (D_tt + D_pp)
 //! (A_r+ - A_r-)/(2V) and -c D_pp (A_t+ - A_t-)/V that cancels the area terms of a
-//! uniform isotropic stress exactly.  The moment share of a low-order face, whose stress
-//! is that of D = I, takes D_tt = D_pp = 1, so that it cancels that face's area term too.
-//! With clean_consistency the streaming share w of the faces that carry the rays' flux
-//! F_ray (low-order or not) moves only y beyond the rays' moments: its curvature terms
-//! are the rays' own, CLN_G (kin = true, independent of E, shared by the r faces' w as
-//! the area terms), so that the rays' moments (J, J h) are its steady state; the y_phi
-//! row keeps its angular-momentum flux form (no source), so that L_z stays exact.
+//! uniform isotropic stress exactly.  With clean_consistency the streaming share w of
+//! the faces that carry the rays' flux F_ray (low-order or not) moves only y beyond the
+//! rays' moments: its curvature terms are the rays' own, CLN_G (kin = true, independent
+//! of E, shared by the r faces' w as the area terms), so that the rays' moments (J, J h)
+//! are its steady state; the y_phi row keeps its angular-momentum flux form (no source),
+//! so that L_z stays exact.
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int j,
@@ -581,8 +579,7 @@ void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int 
   }
   const Real dtt = CleanDiag(x, 1, 1, m, k, j, i), dpp = CleanDiag(x, 2, 2, m, k, j, i);
   auto d = [&](const int dir, const int kk, const int jj, const int ii, const Real dc) {
-    return (1.0 - wf(dir, kk, jj, ii))*(x.fc[dir](m,CLF_LO,kk,jj,ii) > 0.0 ? 1.0 : dc)*
-           x.area[dir](m,kk,jj,ii);
+    return (1.0 - wf(dir, kk, jj, ii))*dc*x.area[dir](m,kk,jj,ii);
   };
   const Real dr = 0.5*(dtt + dpp);
   g[0] = -hv*(d(0, k, j, i+1, dr) - d(0, k, j, i, dr));
@@ -638,8 +635,8 @@ Real CleanCellOutStress(const CleanArgs &x, const int dir, const int b, const in
 //! \brief the E-independent part of the moment scheme's face fluxes: the consistency
 //! bracket and, on a physical boundary, the incoming E flux of CleanFaceSource and the
 //! stress of the incoming radiation (beam: its stress column; isotropic bath: c E_bath/6
-//! on the normal row); in a first-order solve the ghost part of the upwind stress, on a
-//! low-order face that of the upwind characteristic flux
+//! on the normal row); in a first-order solve or on a low-order face the ghost part of
+//! the upwind stress
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int k,
@@ -652,19 +649,8 @@ void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int
   if (CleanBc(x, m, 2*dir + (low ? 0 : 1)) == M1_IBC_REFLECT) return;
   Real n[3];
   for (int b = 0; b < 3; ++b) n[b] = CleanNf(x, b, dir, m, k, j, i);
-  if (x.fc[dir](m,CLF_LO,k,j,i) > 0.0) {
-    // the ghost sits outside the face; its closure is read from the inner cell
-    const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
-    const int ic = low ? i : i - (dir == 0);
-    Real eg, yg[3], pg[3];
-    CleanCellGhost(x, dir, m, kc, jc, ic, low, n, eg, yg, pg);
-    const Real sg = low ? 0.5*x.c : -0.5*x.c;
-    s[0] += 0.5*x.c*(yg[0]*n[0] + yg[1]*n[1] + yg[2]*n[2]) + sg*eg;
-    for (int b = 0; b < x.nf; ++b) s[1+b] += 0.5*x.c*eg*n[b] + sg*yg[b];
-    return;
-  }
   s[0] += CleanFaceSource(x, dir, m, k, j, i);
-  if (x.all_low || x.fc[dir](m,CLF_UG,k,j,i) > 0.0) {
+  if (x.all_low || x.fc[dir](m,CLF_LO,k,j,i) > 0.0 || x.fc[dir](m,CLF_UG,k,j,i) > 0.0) {
     // ghost part of the upwind stress of a first-order solve or a marked boundary face
     const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
     const int ic = low ? i : i - (dir == 0);
@@ -712,12 +698,17 @@ void CleanCellDeviationFlux(const CleanArgs &x, const int dir, const int m, cons
 //! states of L-1 and R+1 (RC, reconstruction) are left to CleanCellFaceFlux.  On
 //! physical boundaries fE takes the boundary form of CleanFaceWeights and fY the stress
 //! of the radiation leaving through the face, c k_out E of the inner cell
-//! (CleanCellOutStress; the incoming part is in CleanCellFaceSource).  In a solve with
-//! every interior face low-order fY is the upwind (a = c) flux between the inner cell and
-//! the ghost of CleanCellGhost, a low-order boundary face (clean_pos_boundary) the upwind
-//! characteristic flux (D = I) for both; a reflecting wall carries only the normal stress
-//! of the inner cell.  With clean_consistency the leaving stress and the wall carry the
-//! momentum deviation of the inner cell out (CleanCellDeviationFlux, weight w).
+//! (CleanCellOutStress; the incoming part is in CleanCellFaceSource).  In a first-order
+//! solve and on a low-order boundary face fY is the upwind (a = c) flux between the inner
+//! cell and the ghost of CleanCellGhost; a reflecting wall carries only the normal stress
+//! of the inner cell.  A low-order interior face takes its E flux from the rays' half
+//! ranges and the compact diffusion flux, blended with the face's weight a,
+//!   fE = a c (h+_L E_L + h-_R E_R) - (1 - a) th h c^2 ((D_dd E)_R - (D_dd E)_L)/dx_d,
+//! free of y and monotone in E (as the boundary form), so that the E row of a cell with
+//! every face low-order is an M-matrix (the work W aside); its fY has the cells' own
+//! stress with first-order dissipation at speed c.  With clean_consistency the leaving
+//! stress and the wall carry the momentum deviation of the inner cell out
+//! (CleanCellDeviationFlux, weight w).
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const int k,
@@ -747,20 +738,11 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
       return;
     }
     const Real sg = blo ? -0.5*x.c : 0.5*x.c;
-    if (x.fc[dir](m,CLF_LO,k,j,i) > 0.0) {
-      // low-order boundary face: upwind characteristics against the ghost, D = I
-      jj[0][0] = sg;
-      for (int b = 0; b < x.nf; ++b) {
-        jj[0][1+b] = 0.5*x.c*CleanNf(x, b, dir, m, k, j, i);
-        jj[1+b][0] = jj[0][1+b];
-        jj[1+b][1+b] = sg;
-      }
-      return;
-    }
     Real al, ar;
     CleanFaceWeights(x, dir, m, k, j, i, al, ar);
     jj[0][0] = blo ? ar : al;
-    const bool up = x.all_low || x.fc[dir](m,CLF_UG,k,j,i) > 0.0;
+    const bool up = x.all_low || x.fc[dir](m,CLF_LO,k,j,i) > 0.0 ||
+                    x.fc[dir](m,CLF_UG,k,j,i) > 0.0;
     for (int b = 0; b < x.nf; ++b) {
       if (up) {
         // first-order solve or marked boundary face: upwind (a = c) stress between the
@@ -807,12 +789,20 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
     jl[0][1+b] = 0.5*x.c*nb;
     jr[0][1+b] = 0.5*x.c*nb;
     if (!low) CleanJumpCoefficients(x, dir, 1+b, m, k, j, i, cj);
-    // a low-order face carries the stress with D = I (upwind characteristics E +- F/c
-    // with speeds +-c)
-    jl[1+b][0] = 0.5*x.c*(low ? nb : CleanDn(x, b, dir, m, k, j, i, kl, jl_, il));
-    jr[1+b][0] = 0.5*x.c*(low ? nb : CleanDn(x, b, dir, m, k, j, i, k, j, i));
+    jl[1+b][0] = 0.5*x.c*CleanDn(x, b, dir, m, k, j, i, kl, jl_, il);
+    jr[1+b][0] = 0.5*x.c*CleanDn(x, b, dir, m, k, j, i, k, j, i);
     jl[1+b][1+b] = -hs*cj[1];
     jr[1+b][1+b] = -hs*cj[2];
+  }
+  if (low) {
+    const Real a = x.fc[dir](m,CLF_AL,k,j,i);
+    const Real g = (1.0 - a)*x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c/
+                   CleanCellFaceDistance(x, dir, m, k, j, i);
+    Real hp, hm;
+    CleanCellKinetic(x, dir, m, k, j, i, hp, hm);
+    jl[0][0] = a*x.c*hp + g*CleanDnn(x, dir, m, k, j, i, kl, jl_, il);
+    jr[0][0] = a*x.c*hm - g*CleanDnn(x, dir, m, k, j, i, k, j, i);
+    for (int b = 0; b < 3; ++b) jl[0][1+b] = jr[0][1+b] = 0.0;
   }
   if (!x.consist) return;
   // clean_consistency: w of the face takes the rays' kinetic upwind flux, the cells'
