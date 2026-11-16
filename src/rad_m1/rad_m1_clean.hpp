@@ -116,6 +116,7 @@ struct CleanArgs {
   bool consist;                // cell layout: face fluxes carry the consistency bracket
   bool milne;                  // cell layout: sub-cell Eddington face model
   bool fvrays;                 // cell layout: FV rays (clean_rays = fv1 | fv)
+  bool fd;                     // staggered, clean_stag_fkin: the energy flux's G + F^H - F
   bool fs;                     // staggered, clean_stag_fsolve: the face F of the F solve
                                // (CLF_N) with its dissipation term (CLF_N + 1)
   bool hi;                     // staggered, clean_stag_split: the face momentum state
@@ -572,6 +573,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   const Real th = (1.0 - w)*x.fc[dir](m,CLF_TH,k,j,i);
   Real s = th*x.fc[dir](m,CLF_G,k,j,i);
+  if (x.fd && !x.hi) s += th*x.fc[dir](m,CLF_N+3,k,j,i);   // (fkin: of F^H, the last F^H)
   if (x.consist && !x.hi) s += x.fc[dir](m,CLF_RC,k,j,i);   // (staggered bracket)
   if (x.feedback) {   // (the emission part of the beta term, CleanFaceWeights)
     s += 0.25*th*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) + x.w(m,CLW_BT+dir,k,j,i))*
