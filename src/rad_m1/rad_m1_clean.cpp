@@ -116,7 +116,7 @@ void RadiationM1::CleanInit() {
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
   const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N),
-                           cln_fsolve ? CLF_N + 4 : 0);
+                           cln_fsolve ? CLF_N + 4 + (cln_fkin ? 1 : 0) : 0);
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = cln_cell && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
@@ -834,7 +834,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (cell) {
     CleanCellWriteBack();
   } else {
-    cln_dok = (nit >= 0);   // (a failed solve does not change the energy flux's memory)
+    // (a failed solve or a probe does not change the energy flux's memory)
+    cln_dok = (nit >= 0) && !t2_inprobe;
     CleanWriteBack();
   }
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
@@ -1497,6 +1498,23 @@ void RadiationM1::CleanStagBracket() {
       Real &cb = x.fc[dir](m,CLF_RC,k,j,i);
       cb *= (cb > 0.0) ? lam(m,0,k-dk,j-dj,i-di) : lam(m,0,k,j,i);
     });
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanDMem
+//! \brief clean_stag_fkin: the energy flux's memory d (CLF_N + 3) of the stage-loop start
+//! into CLF_N + 4 (save) or back (a rejected stage: its write-back, and that of a stage 1
+//! before it, belong to a solution the backward-Euler redo discards)
+
+void RadiationM1::CleanDMem(const bool save) {
+  if (!clean || !cln_fsolve || !cln_fkin) return;
+  if (!cln_init) CleanInit();
+  auto AL = Kokkos::ALL;
+  for (auto fc : {cln_fc1, cln_fc2, cln_fc3}) {
+    auto d = Kokkos::subview(fc, AL, CLF_N + 3, AL, AL, AL);
+    auto s = Kokkos::subview(fc, AL, CLF_N + 4, AL, AL, AL);
+    if (save) {Kokkos::deep_copy(s, d);} else {Kokkos::deep_copy(d, s);}
   }
 }
 

@@ -1398,6 +1398,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
 
 void RadiationM1::Time2Stash() {
   t2_ys_ok = false;
+  CleanDMem(true);
   if (!t2_k1reset || t2ys.extent_int(0) < pmy_pack->nmb_thispack) return;
   auto ys_ = t2ys;
   auto u_ = u0;
@@ -1443,6 +1444,7 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
     hydro::AmModule *pam = hydro::AmModuleOf(pmy_pack);
     Kokkos::deep_copy(DevExeSpace(), pam->am_spin, pam->am_spin1);
   }
+  CleanDMem(false);
   t2_fail = false;
   t2_ok = false;
   t2_nfall += 1.0;
@@ -2046,6 +2048,7 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
   if (!t2_pfix_want) return false;
   t2_pfix_want = false;
   t2_pfix_n += 1;
+  CleanDMem(false);
   Mesh *pmesh = pmy_pack->pmesh;
   // the stage-1 start back: radiation U^n (u1, face copies), the gas after Heun stage 1
   Kokkos::deep_copy(DevExeSpace(), u0, u1);

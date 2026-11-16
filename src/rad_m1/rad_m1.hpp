@@ -2960,6 +2960,7 @@ class RadiationM1 {
   void CleanStagForceDiag();
   void CleanStagBracket();
   void CleanStagFSolve(const int e);
+  void CleanDMem(const bool save);
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
