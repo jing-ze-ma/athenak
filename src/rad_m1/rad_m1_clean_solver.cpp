@@ -324,8 +324,8 @@ void RadiationM1::CleanApply(const int src, const int dst) {
 
   par_for("cln_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real rr = x.feedback ? x.w(m,CLW_RR,k,j,i) : 0.0;
-    x.w(m,dst,k,j,i) = x.w(m,src,k,j,i)*(1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*(1.0 - rr))
+    const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
+    x.w(m,dst,k,j,i) = x.w(m,src,k,j,i)*(1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr)
                        + CleanFluxDivergence(x, src, m, k, j, i, false);
   });
 }
@@ -350,13 +350,13 @@ void RadiationM1::CleanPreconditionerSetup() {
     Real al_p, ar_p, al_m, ar_m;
     CleanFaceWeights(x, 0, m, k, j, i+1, al_p, ar_p);
     CleanFaceWeights(x, 0, m, k, j, i, al_m, ar_m);
-    const Real rr = x.feedback ? x.w(m,CLW_RR,k,j,i) : 0.0;
-    Real a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*(1.0 - rr) + x.h*x.idx[0]*(al_p - ar_m);
+    const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
+    Real a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr + x.h*x.idx[0]*(al_p - ar_m);
     x.w(m,CLW_AM,k,j,i) = -x.h*x.idx[0]*al_m;
     x.w(m,CLW_AP,k,j,i) = x.h*x.idx[0]*ar_p;
     if (x.sph || x.cub) {   // (A_f/V weights, CleanDivW)
       const Real wp = CleanDivW(x, 0, m, k, j, i, 1), wm = CleanDivW(x, 0, m, k, j, i, 0);
-      a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*(1.0 - rr) + x.h*(wp*al_p - wm*ar_m);
+      a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr + x.h*(wp*al_p - wm*ar_m);
       x.w(m,CLW_AM,k,j,i) = -x.h*wm*al_m;
       x.w(m,CLW_AP,k,j,i) = x.h*wp*ar_p;
     }
