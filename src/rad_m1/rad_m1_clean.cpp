@@ -1887,8 +1887,9 @@ void RadiationM1::CleanWriteBack() {
           CleanFaceFlux(x, CLW_X, d, m, k+(d == 2), j+(d == 1), i+(d == 0), true));
     }
   });
-  // cells the write-back left with gas eint < 0 by lowering it (the solve is then not
-  // accepted, as in the cell layout; an eint the hydro left <= 0 is not the solve's)
+  // cells the write-back left with gas eint < 0, or below the EOS floor, by lowering it
+  // (the solve is then not accepted, as in the cell layout; an eint the hydro left there
+  // is not the solve's)
   cln_neint = 0;
   if (!feedback) return;
   auto &id = pmy_pack->pmesh->mb_indcs;
@@ -1901,8 +1902,15 @@ void RadiationM1::CleanWriteBack() {
     const int j = (idx%nji)/nx1 + js, i = idx%nx1 + is;
     const Real ke = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
                          SQR(uh(m,IM3,k,j,i)))/uh(m,IDN,k,j,i);
-    if (!(CleanGasEint(x, uh, ke, m, k, j, i) > 0.0) && !(x.w(m,CLW_JV,k,j,i) >= 0.0) &&
-        x.w(m,CLW_EI,k,j,i) > 0.0) n += 1.0;
+    // (and below the eint of the EOS temperature floor: the hydro's floor would add
+    // energy the radiation's budget does not see)
+    Real ef = 0.0;
+    if (eos.tfloor > 0.0) {
+      Real p, chi_rho, chi_t, cv;
+      eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, p, chi_rho, chi_t, cv);
+    }
+    if (!(CleanGasEint(x, uh, ke, m, k, j, i) > ef) && !(x.w(m,CLW_JV,k,j,i) >= 0.0) &&
+        x.w(m,CLW_EI,k,j,i) > ef) n += 1.0;
   }, Kokkos::Sum<Real>(nb));
   cln_neint = static_cast<int>(CleanReduce(nb, false));
 }
