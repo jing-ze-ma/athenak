@@ -1519,8 +1519,8 @@ void RadiationM1::CleanStagFSolve(const int e) {
         return CleanSmoothStep((x.cs(m,CLN_C1,kk,jj,ii) - c1lo)/(c1hi - c1lo))*
                CleanStagSph(x, q, dir, m, k, j, i)*x.w(m,e,kk,jj,ii);
       };
-      fc(m,CLF_N+1,k,j,i) = 0.5*CleanStagSph(x, 1, dir, m, k, j, i)*
-                            (wq(2, k-dk, j-dj, i-di) + wq(3, k, j, i));
+      fc(m,CLF_N+1,k,j,i) += 0.5*CleanStagSph(x, 1, dir, m, k, j, i)*
+                             (wq(2, k-dk, j-dj, i-di) + wq(3, k, j, i));
     });
     par_for("cln_fs1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
