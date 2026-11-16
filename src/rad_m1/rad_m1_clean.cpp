@@ -115,6 +115,9 @@ void RadiationM1::CleanInit() {
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
   const int nfc = cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N);
+  // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
+  cln_opt = cln_cell && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
+            (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
   Kokkos::realloc(cln_fc1, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc2, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc3, nmb, nfc, n3, n2, n1);
@@ -582,6 +585,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   for (int ipos = 0; ; ++ipos) {
     CleanFirstIterate();
     if (cell) CleanCellFirstIterate();
+    if (cln_opt && cln_feedback) {
+      CleanCellOpacity();
+      CleanCellFaceSpeeds();
+    }
     if (cln_feedback) CleanAdvectiveCoefficients();
     converged = !iterate;
     npic = 0;
@@ -598,8 +605,14 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         }
         if (cln_feedback) CleanAdvectiveCoefficients();
       }
+      if (cln_opt && cln_feedback && inl > 0) {   // the opacities of the iterate's T
+        CleanCellOpacity();
+        CleanCellFaceSpeeds();
+      }
       if (cell) {
-        if (cln_hk && (inl == 0 || clos)) CleanCellConsistency();
+        if (cln_hk && (inl == 0 || clos || (cln_opt && cln_feedback))) {
+          CleanCellConsistency();
+        }
         if (cln_recon && inl < cln_maxpic) CleanCellSlopeWeights(CLC_K);
         CleanCellRightHandSide();
         CleanCellPreconditionerSetup();

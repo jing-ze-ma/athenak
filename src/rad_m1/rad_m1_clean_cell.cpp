@@ -20,6 +20,7 @@
 #include "eos/eos.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
+#include "rad_m1/rad_m1_opacity.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_clean_cell.hpp"
 
@@ -169,6 +170,49 @@ void RadiationM1::CleanCellFaceSpeeds() {
       fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellOpacity
+//! \brief opacities of the active cells at the gas temperature of the Newton iterate (an
+//! opacity law that depends on T; the density is that of the stage), with the
+//! derivatives of rho kappa_P and rho kappa_E with T (CLW_DK, one-sided differences) for
+//! the exchange linearisation of CleanCellRightHandSide, so that the converged iterate
+//! solves the stage with the opacities of its own temperature
+
+void RadiationM1::CleanCellOpacity() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  auto uh = fl.u0;
+  auto eos = fl.eos;
+  auto op = opac;
+  auto w = cln_w;
+  const int otype = opacity_type;
+  const M1OpacTab ot = otab;
+  const Real kp = kappa_p, kev = kappa_e, kf = kappa_f, ks_ = kappa_s;
+  const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
+  const bool osc = vscat;
+  par_for("clc_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = uh(m,IDN,k,j,i), t = w(m,CLW_T,k,j,i), dt = 1.0e-6*t;
+    Real o[2][4];
+    for (int n = 0; n < 2; ++n) {
+      M1CellOpacities(otype, ot, eos, d, t + n*dt, kp, kev, kf, ks_, rref, tref, aa, bb,
+                      o[n][0], o[n][1], o[n][2], o[n][3]);
+    }
+    op(m,M1_OP_P,k,j,i) = d*o[0][0];
+    op(m,M1_OP_E,k,j,i) = d*o[0][1];
+    op(m,M1_OP_T,k,j,i) = d*(o[0][2] + o[0][3]);
+    if (osc) op(m,M1_OP_S,k,j,i) = d*o[0][3];
+    for (int n = 0; n < 2; ++n) {
+      w(m,CLW_DK+n,k,j,i) = (dt > 0.0) ? d*(o[1][n] - o[0][n])/dt : 0.0;
+    }
+  });
+  CleanGhostFill(opac, 0, opac.extent_int(1), false);
 }
 
 //----------------------------------------------------------------------------------------
@@ -444,6 +488,7 @@ void RadiationM1::CleanCellRightHandSide() {
   auto op = opac;
   const bool eso = esrc_on;
   auto es = esrc;
+  const bool opt = cln_opt && cln_feedback;
 
   const int vfreeze = cln_vfreeze;
   if (cln_milne) CleanCellMilneSetup();
@@ -457,7 +502,12 @@ void RadiationM1::CleanCellRightHandSide() {
       const Real d = uh(m,IDN,k,j,i);
       Real e, p, chi_rho, chi_t, cv;
       eos.ThermoAt(d, t, e, p, chi_rho, chi_t, cv);
-      const Real s = 4.0*hckp*arad_*t*t*t;
+      // the exchange h c (kP a T^4 - kE E) linearised in T, with kP(T), kE(T) of a T law
+      Real s = 4.0*hckp*arad_*t*t*t;
+      if (opt) {
+        s = fmax(s + x.h*x.c*(x.w(m,CLW_DK,k,j,i)*arad_*SQR(SQR(t)) -
+                              x.w(m,CLW_DK+1,k,j,i)*fmax(x.w(m,CLW_EK,k,j,i), 0.0)), 0.0);
+      }
       rr = s/(d*cv + s);
       // work of the radiation force on the gas: the kinetic energy the gas gains
       Real pg[3];
@@ -1344,9 +1394,10 @@ void RadiationM1::CleanCellDiagnose() {
 //! radiation pays the work of the residual, exactly the kinetic energy the gas gains,
 //! and with wb_arad (force_reference_work = split) also that of the reference force,
 //! which the problem generator gives the gas.  cln_neint counts the cells left with
-//! eint < 0 (the fluid's floor would create energy there).  On the cubed sphere F is stored in the frame of y (F_r, F_theta,
-//! F_phi) and the gas momentum change (and its stage slope) in the hydro's components
-//! (CleanGasChange): E and L_z of gas plus radiation are conserved to round-off.
+//! eint < 0 (the fluid's floor would create energy there).  On the cubed sphere F is
+//! stored in the frame of y (F_r, F_theta, F_phi) and the gas momentum change (and its
+//! stage slope) in the hydro's components (CleanGasChange): E and L_z of gas plus
+//! radiation are conserved to round-off.
 
 void RadiationM1::CleanCellWriteBack() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
