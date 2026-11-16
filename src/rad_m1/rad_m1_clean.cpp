@@ -1828,7 +1828,8 @@ void RadiationM1::CleanStagFSolve(const int e) {
           fn = fv;
           // (the last face's slot is a ghost: the neighbour's or a physical face)
           if (t < n) d_max = fmax(d_max, fabs(fv - x.w(m,CLW_Y,k,j,i)));
-          f_max = fmax(f_max, fabs(fv));
+          // (|F| floored by 1e-8 c |E|: with F at round-off the stop is not decided by it)
+          f_max = fmax(f_max, fmax(fabs(fv), 1.0e-8*x.c*fabs(x.w(m,e,k,j,i))));
           x.w(m,CLW_Y,k,j,i) = fv;
         }
       }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(fmx));
@@ -2021,7 +2022,7 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
           fn = x.w(m,CLW_R,k,j,i) - ((t < n) ? x.w(m,CLW_CP,k,j,i)*fn : 0.0);
           const Real fo = (t > 0) ? v(m,9+2*dir+1,kl,jl,il) : v(m,9+2*dir,k,j,i);
           d_max = fmax(d_max, fabs(fn - fo));
-          f_max = fmax(f_max, fabs(fn));
+          f_max = fmax(f_max, fmax(fabs(fn), 1.0e-8*x.c*fabs(x.w(m,e,k,j,i))));
           if (t > 0) v(m,9+2*dir+1,kl,jl,il) = fn;
           if (t < n) v(m,9+2*dir,k,j,i) = fn;
         }
