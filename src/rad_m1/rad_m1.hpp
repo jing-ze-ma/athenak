@@ -2969,6 +2969,7 @@ class RadiationM1 {
   void CleanCellSlopeWeights(const int v);
   void CleanCellFirstIterate();
   void CleanCellRightHandSide();
+  void CleanCellFaceFluxes(const int src, const bool with_source);
   void CleanCellApply(const int src, const int dst);
   void CleanCellPreconditionerSetup();
   void CleanCellPrecondition(const int src, const int dst);

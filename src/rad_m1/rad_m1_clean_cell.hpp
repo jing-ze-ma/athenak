@@ -465,7 +465,9 @@ KOKKOS_INLINE_FUNCTION
 Real CleanCellBetaSource(const CleanArgs &x, const int v, const int m, const int k,
                          const int j, const int i) {
   Real s = x.w(m,CLW_RE,k,j,i)*x.u(m,v,k,j,i);
-  for (int b = 0; b < x.nf; ++b) s += x.w(m,CLW_RY+b,k,j,i)*x.u(m,v+1+b,k,j,i);
+  for (int b = 0; b < 3; ++b) {
+    if (b < x.nf) s += x.w(m,CLW_RY+b,k,j,i)*x.u(m,v+1+b,k,j,i);
+  }
   return s;
 }
 
@@ -679,9 +681,11 @@ void CleanCellGhost(const CleanArgs &x, const int dir, const int m, const int k,
     const Real yb = x.beam(m,k-x.ks,j-x.js)/x.c;
     const Real d11 = fmax(CleanDiag(x, 0, 0, m, k, j, i), 1.0e-12);
     eg = yb/std::sqrt(d11);
-    for (int b = 0; b < x.nf; ++b) {
-      yg[b] = CleanDiag(x, 0, b, m, k, j, i)*yb/d11;
-      pg[b] = CleanDiag(x, b, 0, m, k, j, i)*eg;
+    for (int b = 0; b < 3; ++b) {
+      if (b < x.nf) {
+        yg[b] = CleanDiag(x, 0, b, m, k, j, i)*yb/d11;
+        pg[b] = CleanDiag(x, b, 0, m, k, j, i)*eg;
+      }
     }
     return;
   }
@@ -726,7 +730,9 @@ void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int
   if (bc == M1_IBC_FLUX) {
     const Real f = CleanFaceSource(x, dir, m, k, j, i);
     s[0] += f;
-    for (int b = 0; b < x.nf; ++b) s[1+b] += (low ? 2.0 : -2.0)/3.0*f*n[b];
+    for (int b = 0; b < 3; ++b) {
+      if (b < x.nf) s[1+b] += (low ? 2.0 : -2.0)/3.0*f*n[b];
+    }
     return;
   }
   s[0] += CleanFaceSource(x, dir, m, k, j, i);
@@ -737,14 +743,20 @@ void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int
     Real eg, yg[3], pg[3];
     CleanCellGhost(x, dir, m, kc, jc, ic, low, n, eg, yg, pg);
     const Real sg = low ? 0.5*x.c : -0.5*x.c;
-    for (int b = 0; b < x.nf; ++b) s[1+b] += 0.5*x.c*pg[b] + sg*yg[b];
+    for (int b = 0; b < 3; ++b) {
+      if (b < x.nf) s[1+b] += 0.5*x.c*pg[b] + sg*yg[b];
+    }
     return;
   }
   if (low && dir == 0 && x.use_beam && x.beam(m,k-x.ks,j-x.js) > 0.0) {
-    for (int b = 0; b < x.nf; ++b) s[1+b] += x.bstress(m,b,k-x.ks,j-x.js);
+    for (int b = 0; b < 3; ++b) {
+      if (b < x.nf) s[1+b] += x.bstress(m,b,k-x.ks,j-x.js);
+    }
     return;
   }
-  for (int b = 0; b < x.nf; ++b) s[1+b] += n[b]*x.c*x.ebath[2*dir + (low ? 0 : 1)]/6.0;
+  for (int b = 0; b < 3; ++b) {
+    if (b < x.nf) s[1+b] += n[b]*x.c*x.ebath[2*dir + (low ? 0 : 1)]/6.0;
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -761,12 +773,17 @@ void CleanCellDeviationFlux(const CleanArgs &x, const int dir, const int m, cons
   Real s[3], h[3];
   for (int b = 0; b < 3; ++b) s[b] = x.cs(m,CLN_HP+b,k,j,i) + x.cs(m,CLN_HM+b,k,j,i);
   CleanRayFlux(x, m, k, j, i, s, h);
-  for (int b = 0; b < x.nf; ++b) {
-    for (int c = 0; c < x.nf; ++c) {
-      const Real p = wall ? CleanNf(x, b, dir, m, kf, jf, iff)*
-                            CleanNf(x, c, dir, m, kf, jf, iff) : ((b == c) ? 1.0 : 0.0);
-      jj[1+b][1+c] += wh*p;
-      jj[1+b][0] -= wh*p*h[c];
+  for (int b = 0; b < 3; ++b) {
+    if (b < x.nf) {
+      for (int c = 0; c < 3; ++c) {
+        if (c < x.nf) {
+          const Real p = wall ? CleanNf(x, b, dir, m, kf, jf, iff)*
+                                CleanNf(x, c, dir, m, kf, jf, iff)
+                              : ((b == c) ? 1.0 : 0.0);
+          jj[1+b][1+c] += wh*p;
+          jj[1+b][0] -= wh*p*h[c];
+        }
+      }
     }
   }
 }
@@ -789,16 +806,20 @@ void CleanCellM1BoundaryJacobian(const CleanArgs &x, const int dir, const int m,
                               x.cs(m,(blo ? CLN_HM : CLN_HP)+dir,kc,jc,ic) : 0.0;
   if (bc == M1_IBC_REFLECT) {
     const Real dnn = CleanDnn(x, dir, m, k, j, i, kc, jc, ic);
-    for (int b = 0; b < x.nf; ++b) jj[1+b][0] = x.c*CleanNf(x, b, dir, m, k, j, i)*dnn;
+    for (int b = 0; b < 3; ++b) {
+      if (b < x.nf) jj[1+b][0] = x.c*CleanNf(x, b, dir, m, k, j, i)*dnn;
+    }
     CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, true, 2.0*wo, jj);
     return;
   }
   if (bc == M1_IBC_FLUX) {
     const Real hs = (blo ? -2.0 : 2.0)/3.0*x.c*
                     x.cs(m,(blo ? CLN_HM : CLN_HP)+dir,kc,jc,ic);
-    for (int b = 0; b < x.nf; ++b) {
-      jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, blo) +
-                   hs*CleanNf(x, b, dir, m, k, j, i);
+    for (int b = 0; b < 3; ++b) {
+      if (b < x.nf) {
+        jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, blo) +
+                     hs*CleanNf(x, b, dir, m, k, j, i);
+      }
     }
     CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, false, wo, jj);
     return;
@@ -809,14 +830,16 @@ void CleanCellM1BoundaryJacobian(const CleanArgs &x, const int dir, const int m,
   jj[0][0] = blo ? ar : al;
   const bool up = x.all_low || x.fc[dir](m,CLF_LO,k,j,i) > 0.0 ||
                   x.fc[dir](m,CLF_UG,k,j,i) > 0.0;
-  for (int b = 0; b < x.nf; ++b) {
-    if (up) {
-      // first-order solve or marked boundary face: upwind (a = c) stress between the
-      // inner cell and the ghost
-      jj[1+b][0] = 0.5*x.c*CleanDn(x, b, dir, m, k, j, i, kc, jc, ic);
-      jj[1+b][1+b] = sg;
-    } else {
-      jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, blo);
+  for (int b = 0; b < 3; ++b) {
+    if (b < x.nf) {
+      if (up) {
+        // first-order solve or marked boundary face: upwind (a = c) stress between the
+        // inner cell and the ghost
+        jj[1+b][0] = 0.5*x.c*CleanDn(x, b, dir, m, k, j, i, kc, jc, ic);
+        jj[1+b][1+b] = sg;
+      } else {
+        jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, blo);
+      }
     }
   }
   if (!up) CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, false, wo, jj);
@@ -835,10 +858,14 @@ void CleanCellM1BoundaryJacobian(const CleanArgs &x, const int dir, const int m,
   const Real sd = (blo ? -0.5 : 0.5)*x.c*std::sqrt(fmax(CleanDnn(x, dir, m, k, j, i, kc,
                                                                   jc, ic), 0.0));
   jj[0][0] -= 0.5*x.c*hn;
-  for (int b = 0; b < x.nf; ++b) {
-    jj[0][1+b] += 0.5*x.c*n[b];
-    jj[1+b][0] -= sd*n[b]*hn;
-    for (int c = 0; c < x.nf; ++c) jj[1+b][1+c] += sd*n[b]*n[c];
+  for (int b = 0; b < 3; ++b) {
+    if (b < x.nf) {
+      jj[0][1+b] += 0.5*x.c*n[b];
+      jj[1+b][0] -= sd*n[b]*hn;
+      for (int c = 0; c < 3; ++c) {
+        if (c < x.nf) jj[1+b][1+c] += sd*n[b]*n[c];
+      }
+    }
   }
 }
 
@@ -902,15 +929,17 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
   if (!low) CleanJumpCoefficients(x, dir, 0, m, k, j, i, cj);
   jl[0][0] = -hs*cj[1] + q[1]*CleanDnn(x, dir, m, k, j, i, kl, jl_, il);
   jr[0][0] = -hs*cj[2] + q[2]*CleanDnn(x, dir, m, k, j, i, k, j, i);
-  for (int b = 0; b < x.nf; ++b) {
-    const Real nb = CleanNf(x, b, dir, m, k, j, i);
-    jl[0][1+b] = 0.5*x.c*nb;
-    jr[0][1+b] = 0.5*x.c*nb;
-    if (!low) CleanJumpCoefficients(x, dir, 1+b, m, k, j, i, cj);
-    jl[1+b][0] = 0.5*x.c*CleanDn(x, b, dir, m, k, j, i, kl, jl_, il);
-    jr[1+b][0] = 0.5*x.c*CleanDn(x, b, dir, m, k, j, i, k, j, i);
-    jl[1+b][1+b] = -hs*cj[1];
-    jr[1+b][1+b] = -hs*cj[2];
+  for (int b = 0; b < 3; ++b) {
+    if (b < x.nf) {
+      const Real nb = CleanNf(x, b, dir, m, k, j, i);
+      jl[0][1+b] = 0.5*x.c*nb;
+      jr[0][1+b] = 0.5*x.c*nb;
+      if (!low) CleanJumpCoefficients(x, dir, 1+b, m, k, j, i, cj);
+      jl[1+b][0] = 0.5*x.c*CleanDn(x, b, dir, m, k, j, i, kl, jl_, il);
+      jr[1+b][0] = 0.5*x.c*CleanDn(x, b, dir, m, k, j, i, k, j, i);
+      jl[1+b][1+b] = -hs*cj[1];
+      jr[1+b][1+b] = -hs*cj[2];
+    }
   }
   if (low) {
     const Real a = x.fc[dir](m,CLF_AL,k,j,i);
@@ -940,9 +969,11 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
   }
   Real hp, hm;
   CleanCellKinetic(x, dir, m, k, j, i, hp, hm);
-  for (int r = 0; r <= x.nf; ++r) {
-    jl[r][r] += w*x.c*hp;
-    jr[r][r] += w*x.c*hm;
+  for (int r = 0; r < 4; ++r) {
+    if (r <= x.nf) {
+      jl[r][r] += w*x.c*hp;
+      jr[r][r] += w*x.c*hm;
+    }
   }
 }
 
@@ -1041,10 +1072,12 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
     const Real tm = (bdry && x.marshak) ? 0.0 : th[n];
     a[n] = (1.0 - tm)*h + 0.25*tm;
     den += a[n]*r[n] - 0.5*tm;
-    for (int b = 0; b < x.nf; ++b) {
-      const Real kr = (x.cub && !bdry) ? x.fc[dir](m,CLF_KK+3*n+b,k,j,i) :
-                      CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, n == 1);
-      ks[n][b] = (1.0 - th[n])*kr + th[n]/6.0*nv[b];
+    for (int b = 0; b < 3; ++b) {
+      if (b < x.nf) {
+        const Real kr = (x.cub && !bdry) ? x.fc[dir](m,CLF_KK+3*n+b,k,j,i) :
+                        CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, n == 1);
+        ks[n][b] = (1.0 - th[n])*kr + th[n]/6.0*nv[b];
+      }
     }
   }
   // y = yl E_L + yr E_R + y0, E_fL = c_L E_L + e0_L - r_L y, E_fR = c_R E_R + e0_R
@@ -1055,10 +1088,12 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
     const Real cb = x.consist ? x.fc[dir](m,CLF_CB,k,j,i) : 0.0;
     const Real y0 = (a[0]*e0[0] - a[1]*e0[1] + (s[0] - cb)/x.c)/den;
     s[0] = (1.0 - mu)*s[0] + mu*(cb + x.c*y0);
-    for (int b = 0; b < x.nf; ++b) {
-      const Real cy = (x.consist && x.fvrays) ? x.fc[dir](m,CLF_CB+1+b,k,j,i) : 0.0;
-      s[1+b] += mu*(x.c*(ks[0][b]*(e0[0] - r[0]*y0) + ks[1][b]*(e0[1] + r[1]*y0) +
-                         q*nv[b]*y0) - cy);
+    for (int b = 0; b < 3; ++b) {
+      if (b < x.nf) {
+        const Real cy = (x.consist && x.fvrays) ? x.fc[dir](m,CLF_CB+1+b,k,j,i) : 0.0;
+        s[1+b] += mu*(x.c*(ks[0][b]*(e0[0] - r[0]*y0) + ks[1][b]*(e0[1] + r[1]*y0) +
+                           q*nv[b]*y0) - cy);
+      }
     }
     return;
   }
@@ -1069,12 +1104,14 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
   }
   jl[0][0] += mu*x.c*yl;
   jr[0][0] += mu*x.c*yr;
-  for (int b = 0; b < x.nf; ++b) {
-    const Real g = q*nv[b];
-    jl[1+b][0] = (1.0 - mu)*jl[1+b][0] +
-                 mu*x.c*(ks[0][b]*(cc[0] - r[0]*yl) + (ks[1][b]*r[1] + g)*yl);
-    jr[1+b][0] = (1.0 - mu)*jr[1+b][0] +
-                 mu*x.c*(ks[1][b]*(cc[1] + r[1]*yr) + (g - ks[0][b]*r[0])*yr);
+  for (int b = 0; b < 3; ++b) {
+    if (b < x.nf) {
+      const Real g = q*nv[b];
+      jl[1+b][0] = (1.0 - mu)*jl[1+b][0] +
+                   mu*x.c*(ks[0][b]*(cc[0] - r[0]*yl) + (ks[1][b]*r[1] + g)*yl);
+      jr[1+b][0] = (1.0 - mu)*jr[1+b][0] +
+                   mu*x.c*(ks[1][b]*(cc[1] + r[1]*yr) + (g - ks[0][b]*r[0])*yr);
+    }
   }
   if (!bdry || !x.consist) return;
   // the boundary's deviation flux keeps its E part (CleanCellDeviationFlux)
@@ -1086,9 +1123,11 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
     sh[b] = x.cs(m,CLN_HP+b,kc,jc,ic) + x.cs(m,CLN_HM+b,kc,jc,ic);
   }
   CleanRayFlux(x, m, kc, jc, ic, sh, hr);
-  for (int b = 0; b < x.nf; ++b) {
-    jl[1+b][0] -= blo ? 0.0 : wo*hr[b];
-    jr[1+b][0] -= blo ? wo*hr[b] : 0.0;
+  for (int b = 0; b < 3; ++b) {
+    if (b < x.nf) {
+      jl[1+b][0] -= blo ? 0.0 : wo*hr[b];
+      jr[1+b][0] -= blo ? wo*hr[b] : 0.0;
+    }
   }
 }
 
@@ -1123,15 +1162,19 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
   }
   // with clean_consistency and FV rays the stress rows drop the rays' kinetic y flux too
   const bool ky = x.consist && x.fvrays;
-  for (int r = 1; r <= x.nf; ++r) {
-    for (int c = 0; c < (ky ? 4 : 1); ++c) {
-      jl[r][c] *= 1.0 - mu;
-      jr[r][c] *= 1.0 - mu;
+  for (int r = 1; r < 4; ++r) {
+    if (r <= x.nf) {
+      for (int c = 0; c < (ky ? 4 : 1); ++c) {
+        jl[r][c] *= 1.0 - mu;
+        jr[r][c] *= 1.0 - mu;
+      }
     }
   }
-  for (int r = 0; r <= x.nf; ++r) {
-    jl[r][0] += x.fc[dir](m,CLF_ML+1+r,k,j,i);
-    jr[r][0] += x.fc[dir](m,CLF_ML+5+r,k,j,i);
+  for (int r = 0; r < 4; ++r) {
+    if (r <= x.nf) {
+      jl[r][0] += x.fc[dir](m,CLF_ML+1+r,k,j,i);
+      jr[r][0] += x.fc[dir](m,CLF_ML+5+r,k,j,i);
+    }
   }
 }
 
@@ -1178,18 +1221,21 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
   if (!x.recon || lo) return;
   CleanCellState(x, v, m, km, jm, im, ul);
   CleanCellState(x, v, m, kp, jp, ip, ur);
-  for (int c = 0; c <= x.nf; ++c) {
-    Real cj[4];
-    CleanJumpCoefficients(x, dir, c, m, k, j, i, cj);
-    f[c] -= (c == 0 ? 1.0 - mu : 1.0)*hs*(cj[0]*ul[c] + cj[3]*ur[c]);
+  for (int c = 0; c < 4; ++c) {
+    if (c <= x.nf) {
+      Real cj[4];
+      CleanJumpCoefficients(x, dir, c, m, k, j, i, cj);
+      f[c] -= (c == 0 ? 1.0 - mu : 1.0)*hs*(cj[0]*ul[c] + cj[3]*ur[c]);
+    }
   }
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void CleanCellDivergence
 //! \brief h div of the face fluxes of cell (k,j,i) for the cell vector at slot v (adiv
-//! adds the sum of their magnitudes)
+//! adds the sum of their magnitudes); FF: the face fluxes from x.ff only (x.ffon)
 
+template <bool FF = false>
 KOKKOS_INLINE_FUNCTION
 void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int k,
                          const int j, const int i, const bool with_source, Real div[4],
@@ -1199,12 +1245,12 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
     if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
     const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
     Real fp[4], fm[4];
-    if (x.ffon) {
+    if (FF || x.ffon) {
       for (int r = 0; r < 4; ++r) {
         fp[r] = x.ff(m,4*dir+r,k+dk,j+dj,i+di);
         fm[r] = x.ff(m,4*dir+r,k,j,i);
       }
-    } else {
+    } else if constexpr (!FF) {
       CleanCellFaceFlux(x, v, dir, m, k+dk, j+dj, i+di, with_source, fp);
       CleanCellFaceFlux(x, v, dir, m, k, j, i, with_source, fm);
     }
@@ -1225,10 +1271,14 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
   if (x.sph) {
     Real g[3];
     CleanCellSphSource(x, m, k, j, i, g);
-    for (int b = 0; b < x.nf; ++b) div[1+b] += g[b]*x.u(m,v,k,j,i);
+    for (int b = 0; b < 3; ++b) {
+      if (b < x.nf) div[1+b] += g[b]*x.u(m,v,k,j,i);
+    }
     if (with_source && x.consist) {
       CleanCellSphSource(x, m, k, j, i, g, true);
-      for (int b = 0; b < x.nf; ++b) div[1+b] += g[b];
+      for (int b = 0; b < 3; ++b) {
+        if (b < x.nf) div[1+b] += g[b];
+      }
     }
   }
 }
@@ -1259,7 +1309,9 @@ void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, con
   if (x.sph && x.consist) {
     Real g[3];
     CleanCellSphSource(x, m, k, j, i, g, true);
-    for (int b = 0; b < x.nf; ++b) div[1+b] += g[b];
+    for (int b = 0; b < 3; ++b) {
+      if (b < x.nf) div[1+b] += g[b];
+    }
   }
 }
 

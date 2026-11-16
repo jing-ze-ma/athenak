@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -1337,7 +1338,7 @@ void RadiationM1::CleanFvWalls() {
 //! cln_fvls their level starts; level l of the sweep takes the m n + d in turn
 //! (cln_fvg, cln_fvo), cln_fvlv[l] cells.  One team per direction takes the order in
 //! chunks; the levels of a chunk are relaxed from below until they no longer change
-//! (the longest path).  The directions go in groups of at most 2^25 cells (scratch).
+//! (the longest path).  The directions go in groups of at most 2^27 cells (scratch).
 
 void RadiationM1::CleanFvLevels() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1379,7 +1380,7 @@ void RadiationM1::CleanFvLevels() {
     const int md = jt ? (q%nmb)*n + q/nmb : q;
     if (cln_fvdo[md%n]) due.push_back(md);
   }
-  int nw = std::max(1, std::min(static_cast<int>(due.size()), (1 << 25)/nc));
+  int nw = std::max(1, std::min(static_cast<int>(due.size()), (1 << 27)/nc));
   if (jt) nw = std::max(nmb, nw - nw%nmb);
   cln_fvl0 = std::numeric_limits<int>::max();
   cln_fvjn[0] = cln_fvjn[1] = 0;
@@ -1945,12 +1946,16 @@ void RadiationM1::CleanFvSweep() {
     if (act) Kokkos::deep_copy(done, -1);
     const int l1 = (jt && it > 0) ? std::min(cln_fvl0, nlev) : 0;
     // one level (sg > 0: only the cells of cycle segment sg) into the reduction rv
-    auto level = [&](const int l, const int sg, const RedView rv) {
+    auto level = [&](const int l, const int sg, const RedView rv, auto pl) {
     const int64_t k0 = cln_fvkl[l];
     const int nkb = static_cast<int>(cln_fvkl[l+1] - k0);
     Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                                                             cln_fvlv[l]),
     KOKKOS_LAMBDA(const int q, Kokkos::MinMaxScalar<Real> &mm) {
+      // (pl: the plain fv1 sweep, the branches of the other forms compiled out)
+      constexpr bool P = decltype(pl)::value;
+      const bool o2c = !P && o2, ldc = !P && ld, axc = !P && axi, acc = P || act;
+      const int nlc = ldc ? nl : 0;
       // (the m n + d of entry q: the last whose start in the level is <= q, between
       // those of its 64-entry block and of the next)
       int md = fk(k0 + q/64);
@@ -1963,7 +1968,7 @@ void RadiationM1::CleanFvSweep() {
       const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
       {
         const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
-        if (act && it > 0 && due(md,c) != it && i != is && i != ie && j != js &&
+        if (acc && it > 0 && due(md,c) != it && i != is && i != ie && j != js &&
             j != je && k != ks && k != ke) {
           done(md,c) = it;
           mm.max_val = fmax(mm.max_val, fi(m,d,k,j,i));
@@ -1984,7 +1989,7 @@ void RadiationM1::CleanFvSweep() {
           const Real a = nv[0]*fa(m,3*f,k,j,i) + nv[1]*fa(m,3*f+1,k,j,i) +
                          nv[2]*fa(m,3*f+2,k,j,i);
           // (2-D axisymmetric: the phi faces open, their neighbours the own cell)
-          const bool ax = axi && dir == 2;
+          const bool ax = axc && dir == 2;
           // (Cartesian: no faces along an axis of one cell)
           if (!x.sph && !x.cub && (dir == 1 ? !x.multi_d : dir == 2 && !x.three_d)) {
             continue;
@@ -1996,7 +2001,7 @@ void RadiationM1::CleanFvSweep() {
           const Real sg = up ? 1.0 : -1.0;
           if (sw >= 0 && a < 0.0) {
             in -= a*fw(m,sw,k,i,d);
-            for (int e = 0; e < 3 && ld; ++e) {
+            for (int e = 0; e < 3 && ldc; ++e) {
               rd[e] -= a*((e == 1) ? sg*fw(m,sw,k,i,d) : fw(m,sw,k,i,(1+e)*n+d));
             }
             hd[1] -= sg*a;
@@ -2008,7 +2013,7 @@ void RadiationM1::CleanFvSweep() {
             cd[dir] += sg*a;
             od[dir] += a;
             po[dir] |= up ? 1 : 2;
-            if (o2) {
+            if (o2c) {
               const int sg = up ? 1 : -1;
               ou[no] = a;
               ud[no][0] = CleanFvNbr(ax ? fx : fi, fm, ax, m, d, dir, k, j, i, -sg);
@@ -2017,22 +2022,22 @@ void RadiationM1::CleanFvSweep() {
             }
           } else {
             // the upwind trace (lld: the neighbour's transverse slopes too)
-            auto &fd = ld ? fq : fp;
+            auto &fd = ldc ? fq : fp;
             // (clean_fv_joint: across a MeshBlock face the cell its ghost copies)
             const int s = up ? 1 : -1;
             const int sv = (jt && !bdry) ? fsrc(m,k+s*(dir == 2),j+s*(dir == 1),
                                                 i+s*(dir == 0)) : -1;
             const int cv = sv%nc;
             Real t = bdry ? (up ? ihi : (emi ? iemit : fq(m,CLQ_S0,k,j,i)))
-                   : ax ? CleanFvFaceAxi(fx, fd, fm, o2, m, d, k, j, i, up, !up, nl)
+                   : ax ? CleanFvFaceAxi(fx, fd, fm, o2c, m, d, k, j, i, up, !up, nlc)
                    : (sv >= 0) ? fi(sv/nc,d,ks+cv/(nx1*nx2),js+(cv/nx1)%nx2,is+cv%nx1)
-                   : CleanFvFace(fi, fd, o2, m, d, dir, kf, jf, i_f, !up, nl);
+                   : CleanFvFace(fi, fd, o2c, m, d, dir, kf, jf, i_f, !up, nlc);
             for (int q = 0; q < bmn && bdry && !up; ++q) {
               if (d == bmr[q]) t += bmi(m,q,(bmi.extent_int(2) > 1) ? k - ks : 0,j - js);
             }
             in -= a*t;
             hd[dir] -= sg*a;
-            for (int e = 0; e < 3 && ld; ++e) {
+            for (int e = 0; e < 3 && ldc; ++e) {
               rd[e] -= a*((e == dir) ? sg*t : bdry ? 0.0
                           : CleanFvNbr(ax ? fx : fi, fm, ax, m, d, dir, k, j, i, up ? 1 : -1,
                                        (1+e)*n));
@@ -2047,7 +2052,7 @@ void RadiationM1::CleanFvSweep() {
         // the average or an outflow trace would be negative the slopes are scaled
         // towards the step value
         Real sl[3] = {0.0, 0.0, 0.0};
-        if (ld && out + vc > 0.0) {
+        if (ldc && out + vc > 0.0) {
           const Real t = out + vc;
           Real num = in + sc, den = t, th = 1.0, qe[3];
           for (int e = 0; e < 3; ++e) {
@@ -2092,9 +2097,9 @@ void RadiationM1::CleanFvSweep() {
         mm.max_val = fmax(mm.max_val, iv);
         // (a change: the downstream neighbours are due in this pass, or the next one if
         // this pass has taken them)
-        const bool chg = act && !(iv == fi(m,d,k,j,i));
+        const bool chg = acc && !(iv == fi(m,d,k,j,i));
         fi(m,d,k,j,i) = iv;
-        if (act) done(md,c) = it;
+        if (acc) done(md,c) = it;
         for (int f = 0; f < 6 && chg; ++f) {
           const int x0 = (f < 2) ? i - is : ((f < 4) ? j - js : k - ks);
           const int x1 = (f < 2) ? ie - is : ((f < 4) ? je - js : ke - ks);
@@ -2103,17 +2108,24 @@ void RadiationM1::CleanFvSweep() {
           const int cn = c + s*st;
           due(md,cn) = (done(md,cn) == it) ? it + 1 : it;
         }
-        for (int e = 0; e < 3 && ld; ++e) fi(m,(1+e)*n+d,k,j,i) = sl[e];
+        for (int e = 0; e < 3 && ldc; ++e) fi(m,(1+e)*n+d,k,j,i) = sl[e];
       }
     }, Kokkos::MinMax<Real, DevMemSpace>(rv));
     };
+    auto lev = [&](const int l, const int sg, const RedView rv) {
+      if (act) {
+        level(l, sg, rv, std::true_type());
+      } else {
+        level(l, sg, rv, std::false_type());
+      }
+    };
     for (int l = l1; l < nlev; ++l) {
-      level(l, 0, Kokkos::subview(red, l));
+      lev(l, 0, Kokkos::subview(red, l));
       // clean_fv_joint: a cycle segment ending here is repeated until it converges
       for (const auto &sg : cln_fvseg) {
         for (int rep = 0; jt && sg[1] == l && rep < 100; ++rep) {
           for (int q = sg[0]; q <= l; ++q) {
-            level(q, sg[2], Kokkos::subview(rsg, q - sg[0]));
+            lev(q, sg[2], Kokkos::subview(rsg, q - sg[0]));
           }
           auto s_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rsg);
           Real dm = 0.0, im = 0.0;

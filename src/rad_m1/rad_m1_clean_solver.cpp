@@ -152,13 +152,22 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
   auto h = hl.a;
   const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
   MeshBoundaryValuesCC *pb = hl.pb.get();
+  // (only the cells outside CleanInner are copied: CleanShell)
   if (part != 2) {
-    par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
-    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-      if (!CleanInner(k, j, i, ng, is, ie, js, je, ks, ke, md, td)) {
+    const CleanShell sc(n3, n2, n1, ng, is, ie, js, je, ks, ke, md, td);
+    if (sc.Empty()) {
+      par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
+      KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
         h(m,n,k,j,i) = a(m,c0+n,k,j,i);
-      }
-    });
+      });
+    } else {
+      par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, sc.ncell-1,
+      KOKKOS_LAMBDA(const int m, const int n, const int q) {
+        int k, j, i;
+        CleanShellCell(sc, q, k, j, i);
+        h(m,n,k,j,i) = a(m,c0+n,k,j,i);
+      });
+    }
     while (pb->InitRecv(nc) == TaskStatus::incomplete) {}
     while (pb->PackAndSendCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
     if (part == 1) return;
@@ -166,11 +175,12 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
   while (pb->RecvAndUnpackCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
   while (pb->ClearSend() == TaskStatus::incomplete) {}
   while (pb->ClearRecv() == TaskStatus::incomplete) {}
-  par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-    if (!CleanInner(k, j, i, 0, is, ie, js, je, ks, ke, md, td)) {
-      a(m,c0+n,k,j,i) = h(m,n,k,j,i);
-    }
+  const CleanShell sb(n3, n2, n1, 0, is, ie, js, je, ks, ke, md, td);
+  par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, nc-1, 0, sb.ncell-1,
+  KOKKOS_LAMBDA(const int m, const int n, const int q) {
+    int k, j, i;
+    CleanShellCell(sb, q, k, j, i);
+    a(m,c0+n,k,j,i) = h(m,n,k,j,i);
   });
   if (!phys) return;
 

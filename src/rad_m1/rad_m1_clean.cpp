@@ -1036,7 +1036,9 @@ Real RadiationM1::CleanNewtonUpdate() {
   const bool cell = cln_cell;
 
   Real change = 0.0;
-  Kokkos::parallel_reduce("cln_newton", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  // (256 threads per block: the exchange temperature needs more than 128 registers)
+  using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
+  Kokkos::parallel_reduce("cln_newton", Rp256(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &dmax) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
