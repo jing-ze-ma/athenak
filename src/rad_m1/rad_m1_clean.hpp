@@ -87,6 +87,36 @@ constexpr int CLW_Z = 40;
 constexpr int CLW_N = 41;
 
 //----------------------------------------------------------------------------------------
+//! \struct CleanFvI
+//! \brief the FV rays' intensities: cln_fvi, or cln_fvis in single precision
+//! (clean_fv_float).  Reads give Real, Set stores in the precision of the array, Round
+//! is a value as stored.
+
+struct CleanFvI {
+  DvceArray5D<Real> d;
+  DvceArray5D<float> f;
+  bool f32 = false;
+  KOKKOS_INLINE_FUNCTION
+  Real operator()(const int m, const int n, const int k, const int j, const int i) const {
+    return f32 ? static_cast<Real>(f(m,n,k,j,i)) : d(m,n,k,j,i);
+  }
+  KOKKOS_INLINE_FUNCTION
+  Real Round(const Real v) const {
+    return f32 ? static_cast<Real>(static_cast<float>(v)) : v;
+  }
+  KOKKOS_INLINE_FUNCTION
+  void Set(const int m, const int n, const int k, const int j, const int i,
+           const Real v) const {
+    if (f32) {
+      f(m,n,k,j,i) = static_cast<float>(v);
+    } else {
+      d(m,n,k,j,i) = v;
+    }
+  }
+  int extent_int(const int r) const {return f32 ? f.extent_int(r) : d.extent_int(r);}
+};
+
+//----------------------------------------------------------------------------------------
 //! \struct CleanArgs
 //! \brief everything the device functions of the clean solve read
 

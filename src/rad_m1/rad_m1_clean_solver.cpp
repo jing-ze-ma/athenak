@@ -126,9 +126,19 @@ CleanArgs RadiationM1::CleanMakeArgs() {
 
 void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                                  const bool phys, const int part) {
+  CleanGhostFillT(a, c0, nc, phys, part);
+}
+
+void RadiationM1::CleanGhostFill(DvceArray5D<float> a, const int c0, const int nc) {
+  CleanGhostFillT(a, c0, nc, true, 0);
+}
+
+template <typename T>
+void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
+                                  const bool phys, const int part) {
   if (nc > 32) {   // the exchange moves at most 32 variables at once
-    CleanGhostFill(a, c0, 32, phys);
-    CleanGhostFill(a, c0 + 32, nc - 32, phys);
+    CleanGhostFillT(a, c0, 32, phys, 0);
+    CleanGhostFillT(a, c0 + 32, nc - 32, phys, 0);
     return;
   }
   auto &indcs = pmy_pack->pmesh->mb_indcs;

@@ -2956,6 +2956,10 @@ class RadiationM1 {
   int CleanCountNegative();
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
+  void CleanGhostFill(DvceArray5D<float> a, const int c0, const int nc);
+  template <typename T>
+  void CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc, const bool phys,
+                       const int part);
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                       const bool phys = true, const int part = 0);
   std::array<Real, 2> CleanDots(DvceArray5D<Real> w, const int nc, const int n,
@@ -3071,6 +3075,8 @@ class RadiationM1 {
   int cln_rfv = 0;              // clean_rays = fv1 | fv | lld: the conservative sweep
   int cln_fvb = 1;              // blocks of cln_fvi: lld 4 (average, slopes along x1..x3)
   DvceArray5D<Real> cln_fvi;    // its intensities (m, b n + d, k, j, i)
+  DvceArray5D<float> cln_fvis;  // the same in single precision (clean_fv_float)
+  bool cln_fvf32 = false;       // clean_fv_float: cln_fvis instead of cln_fvi
   DvceArray5D<Real> cln_fvq;    // lld: the source moments (m, CLQ_*, k, j, i)
   DvceArray5D<Real> cln_fvp;    // fv: the intensities of the last build (downwind slopes)
   DvceArray5D<Real> cln_fvx;    // 2-D axisymmetric: the intensities of the last pass

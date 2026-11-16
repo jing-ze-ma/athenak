@@ -285,7 +285,7 @@ void RadiationM1::CleanCellConsistency() {
   CleanArgs x = CleanMakeArgs();
   const bool ml = x.milne;
   x.milne = false;   // the bracket is that of the moment scheme
-  auto fi = cln_fvi;
+  CleanFvI fi{cln_fvi, cln_fvis, cln_fvf32};
   auto dir_ = cln_fvd;
   const int nd = x.cub ? cln_fvn : 0;
 

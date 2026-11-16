@@ -146,6 +146,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool gd = sp && pin->DoesParameterExist("rad_m1","vet_gd") &&
                     pin->GetBoolean("rad_m1","vet_gd");
     if (cln_cell && gd && !pin->DoesParameterExist("rad_m1","clean_rays")) cln_rfv = 1;
+    // clean_fv_float (read only when named): the fv1 rays' intensities in single
+    // precision (no effect without FV rays)
+    if (pin->DoesParameterExist("rad_m1","clean_fv_float")) {
+      cln_fvf32 = pin->GetBoolean("rad_m1","clean_fv_float") && cln_rfv > 0;
+      if (cln_fvf32 && cln_rfv != 1) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_fv_float needs clean_rays = fv1" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",
                                        cln_cell && !cs && (!sp || gd));
     cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",cln_cell);
