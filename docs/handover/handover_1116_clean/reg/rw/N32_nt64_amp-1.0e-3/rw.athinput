@@ -1,0 +1,111 @@
+<comment>
+problem = runs_3r_radwave vetf_impl_x1_P3.33333_t0.1_N32_nt64_amp-1.0e-3_armCLN_refvetqs_d_rm_clean_layoutcell_rm_schemeclean_tshesdirk2_vimptrue
+
+<job>
+basename = rw
+
+<mesh>
+nghost = 2
+nx1 = 32
+x1min = 0.0
+x1max = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+nx2 = 4
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 32
+nx2 = 4
+nx3 = 1
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.8
+nlim = -1
+tlim = 0.98499176260202226
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+
+<rad_m1>
+c_light = 10
+chat_over_c = 1.0
+cfl_rad = 0.4
+thick_flux = none
+closure = vet_sc
+e_floor = 1.0e-30
+subcycle = true
+opacity = const
+kappa_p = 0.10000000000000001
+kappa_e = 0.10000000000000001
+kappa_f = 0.10000000000000001
+kappa_s = 0.0
+arad = 9.9999900000000004
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 4.924958813010111
+implicit_tol = 1.0e-11
+implicit_maxit = 200
+implicit_lin_tol = 1.0e-13
+implicit_lin_maxit = 400
+implicit_solver = bicgstab
+implicit_offdiag = operator
+implicit_closure_lag = step
+implicit_recon = dc
+implicit_vimp = true
+time_scheme = hesdirk2
+clean_layout = cell
+scheme = clean
+vet_nmu = 4
+vet_nphi = 8
+vet_tensor = full
+vet_x1_periodic = true
+vet_x1_npass = 134
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test = radwave
+radwave_dir = x1
+radwave_amp = -0.001
+radwave_rho = 1.0
+radwave_t = 1.0
+radwave_eig = true
+radwave_eig_e_im = -0.013286348641790957
+radwave_eig_e_re = -0.0028318139663201986
+radwave_eig_f_im = -0.0028950473306407517
+radwave_eig_f_re = -0.010412618187019365
+radwave_eig_t_im = -0.16047868469309312
+radwave_eig_t_re = 0.023981590777442836
+radwave_eig_v_im = -0.090461583215404692
+radwave_eig_v_re = 1.0152369166604307
+
+<output1>
+file_type = tab
+variable = hydro_w
+data_format = %.16e
+dt = 0.061561985162626391
+slice_x2 = 0.125
+
+
+<output2>
+file_type = tab
+variable = m1
+data_format = %.16e
+dt = 0.061561985162626391
+slice_x2 = 0.125
+

@@ -1,0 +1,33 @@
+# ref_62d71accc.txt: ./ana.sh R, ./wb.sh and the RT lines of run.sh for push 13 = int 62d71accc
+# (bitwise to 0e2194db2), Orion CPU, gcc/13 openmpi/4.1, -O3 Release -ffp-contract=off,
+# Athena_ENABLE_MPI=ON Athena_ENABLE_OPENMP=ON Athena_M1_VGD_NMAX=4096; cpu times are not reference values
+== REF
+thin_p     it     100 warn  0 cpu    15.00 | L1(E) 1.289e-01 L1(F) 1.464e-01
+thin_r     it      99 warn  0 cpu    19.27 | L1(E) 1.179e-01 L1(F) 1.418e-01
+thin_f     it     120 warn  0 cpu   100.27 | L1(E) 2.942e-02 L1(F) 6.445e-02
+dif        it     963 warn  0 cpu    42.55 | L1(E) 1.536e-02
+lat        it     963 warn  0 cpu    26.51 | L1(E) 2.915e-01
+pulse0     it      58 warn  0 cpu    18.10 | energy +8.882e-16
+s88        it     321 warn  0 cpu     0.43 |  steady pass 1: max(|dE|, |dF|/c)/max E = 2.578e-07
+s81        it     248 warn  0 cpu     0.10 |  steady pass 1: max(|dE|, |dF|/c)/max E = 2.578e-07
+rhse       it     806 warn  0 cpu     3.78 | <rad_m1> clean_init steady: converged after 12 passes (0 formal soluti vcs_max 1.85058e-01
+cs_uni     it       0 warn  0 cpu     0.81 | cs/uni_REF t 2.5 max|E-1| 0.00e+00 max|F|/c 0.00e+00
+cs_closed  it     122 warn  0 cpu    14.46 | cs/closed_REF t 0 -> 1: sum E V 9.60491711124601352e+02 -> 9.60491711124601352e+02 rel 0.00e+00 | sum F V [0. 0.
+cs_thin1   it     117 warn  0 cpu    79.15 | thin cs/thin1_REF t 56.25 L1(E) 3.891e-02 L1(y_r) 5.778e-02 max|y_t|/max|y_r| 7.96
+cs_feed1   it     257 warn  0 cpu    18.52 | cs/feed1_REF: E_rad+E_gas 2.368898072051050e+02 -> 2.368898072051050e+02 rel -1.11e-16 (E_rad 1.3593e+02 -> 7.0052e+01)    L_z gas 1.216141e+02 -> 1.206213e+02, rad 0.000000e+00 -> 9.928008e-01, total change/scale -5.84e-17 
+flz_q      it    7910 warn  0 cpu    96.21 | flz qREF N 32: steps 40 t 32.88 | Lz(gas+rad) drift max 3.91e-16 (of max|Lrz| 1.45e+02, final Lgz 1.452e+02 Lrz 1.086e-03)
+flz_Q      it     711 warn  0 cpu    20.60 | flz QREF N 32: steps 40 t 80.39 | Lz(gas+rad) drift max 1.72e-15 (of max|Lrz| 1.45e+03, final Lgz 1.452e+03 Lrz 7.671e-04)
+cs_thin1mb it     123 warn  0 cpu    83.14 | thin cs/thin1mb_REF t 56.25 L1(E) 3.891e-02 L1(y_r) 5.778e-02 max|y_t|/max|y_r| 7.
+  cc cb_FIN3_r4 REF 4.5999e-01 warn 0
+  cc cbg_FIN3_g8x32 REF 1.1003e+00 warn 0
+  cc hcyl_FIN3_g8x32 REF 1.2061e-02 warn 0
+  cc nltek1_FIN3_d REF 9.0716e-05 warn 0
+  cc shd_FIN3_r12g2 REF 1.1805e-02 warn 0
+RT REF_sp3mb:hydro_u same m1 same
+RT REF_hcyl:hydro_u same m1 same
+RT REF_thin1:hydro_u same m1 same
+RT REF_feed:hydro_u same m1 same
+wb fv1 max v/c_s 8.39985e-08 CLEAN WARNING 0
+wb fv max v/c_s 6.83945e-08 CLEAN WARNING 0
+wb lld max v/c_s 5.56674e-08 CLEAN WARNING 0
+wb cart max v/c_s 1.85442e-07 CLEAN WARNING 0

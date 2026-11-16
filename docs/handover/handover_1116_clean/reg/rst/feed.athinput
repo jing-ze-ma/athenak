@@ -1,0 +1,115 @@
+<job>
+basename = cs
+
+<mesh>
+nghost = 2
+nx1 = 16
+x1min = 1.0
+x1max = 3.0
+ix1_bc = reflect
+ox1_bc = reflect
+nx2 = 8
+x2min = -1.0
+x2max = 1.0
+ix2_bc = panel
+ox2_bc = panel
+nx3 = 8
+x3min = -1.0
+x3max = 1.0
+ix3_bc = panel
+ox3_bc = panel
+use_cubed_sphere = true
+
+<meshblock>
+nx1 = 16
+nx2 = 8
+nx3 = 8
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 12
+tlim = 1e+30
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+rad_signal_speed = false
+
+<rad_m1>
+c_light = 10.0
+chat_over_c = 1.0
+closure = vet_col
+e_floor = 1.0e-30
+opacity = const
+kappa_p = 1.0
+kappa_e = 1.0
+kappa_f = 0.0
+kappa_s = 20.0
+arad = 1.0
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 4.0
+implicit_solver = bicgstab
+implicit_precond = mg
+implicit_krylov_fuse = 1
+implicit_recon = dc
+implicit_bc_x1min = reflect
+implicit_bc_x1max = reflect
+implicit_ebath_x1min = 0.0
+implicit_ebath_x1max = 0.0
+time_scheme = hesdirk2
+ic_rad = none
+scheme = clean
+clean_layout = cell
+clean_closure = extrap1
+clean_sphere_radius = 0.0
+clean_tol = 1.0e-14
+clean_tol_nl = 1.0e-13
+clean_maxnl = 60
+vet_gd = true
+clean_rays = fv1
+vet_gd_gl_nmu = 8
+vet_gd_gl_nphi = 16
+vet_gd_twin = false
+vet_gd_rotate_dt = 0
+vet_col_lat = true
+vet_gd_allow_clamp = true
+clean_consistency = true
+clean_face_model = none
+force_reference = none
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test = sph_shell
+gas_rho = 1.0
+gas_temp = 0.5
+e_out = 1.0
+e_amp = 1.0
+r0 = 2.0
+width = 0.3
+lat_amp = 0.5
+lat_l = 1
+lat_axis = vertex
+gas_rot = 0.3
+gas_vr = 0.2
+rho_lat_amp = 0.4
+
+<output1>
+file_type = bin
+bin_double = true
+variable = m1
+dcycle = 16
+<output2>
+file_type = bin
+bin_double = true
+variable = hydro_u
+dcycle = 16
+<output3>
+file_type = rst
+dcycle = 8

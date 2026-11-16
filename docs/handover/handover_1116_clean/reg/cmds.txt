@@ -1,0 +1,29 @@
+cd $REG/cc && export OMP_NUM_THREADS=8 && ./run_ladder.sh $ARM $BIN "scheme = clean;clean_layout = cell" hcyl_FIN3_g8x32 0.5 0.8
+cd $REG/cc && export OMP_NUM_THREADS=8 && ./run_ladder.sh $ARM $BIN "scheme = clean;clean_layout = cell" cbg_FIN3_g8x32 0.5 0.08
+cd $REG/cc && export OMP_NUM_THREADS=8 && ./run_ladder.sh $ARM $BIN "scheme = clean;clean_layout = cell" cb_FIN3_r4 0.5 0.08
+cd $REG/cc && export OMP_NUM_THREADS=8 && ./run_ladder.sh $ARM $BIN "scheme = clean;clean_layout = cell" shd_FIN3_r12g2 0.25 1.027961e-3
+cd $REG/cc && export OMP_NUM_THREADS=8 && ./run_ladder.sh $ARM $BIN "scheme = clean;clean_layout = cell" nltek1_FIN3_d 1 9.375e5
+cd $REG && export OMP_NUM_THREADS=4 NLIM=150 THPER=1 && python3 gtg.py run $BIN thin ${ARM}_p 32 8 8 gd vet_gd_gl_nmu=8 vet_gd_gl_nphi=16 vet_gd_allow_clamp=true
+cd $REG && export OMP_NUM_THREADS=4 NLIM=150 && python3 gtg.py run $BIN thin ${ARM}_r 32 8 8 gd vet_gd_gl_nmu=8 vet_gd_gl_nphi=16 vet_gd_allow_clamp=true
+cd $REG && export OMP_NUM_THREADS=8 NLIM=150 FULL=1 MB3=16 && python3 gtg.py run $BIN thin ${ARM}_f 32 16 32 gd vet_gd_gl_nmu=16 vet_gd_gl_nphi=32 vet_gd_allow_clamp=true
+cd $REG && export OMP_NUM_THREADS=4 && python3 gtg.py run $BIN dif $ARM 32 8 8 gd vet_gd_gl_nmu=8 vet_gd_gl_nphi=16 vet_gd_allow_clamp=true
+cd $REG && export OMP_NUM_THREADS=4 && python3 gtg.py run $BIN lat $ARM 32 8 4 gd vet_gd_gl_nmu=8 vet_gd_gl_nphi=16 vet_gd_allow_clamp=true
+cd $REG && export OMP_NUM_THREADS=4 EOUT=1e-12 SUBS='implicit_bc_x1max = marshak=>implicit_bc_x1max = reflect;dt = 3.999999996=>dt = 0.05' && python3 gtg.py run $BIN pulse0 $ARM 64 8 8 gd vet_gd_gl_nmu=8 vet_gd_gl_nphi=16 vet_gd_allow_clamp=true
+cd $REG && export OMP_NUM_THREADS=4 NLIM=20 && python3 gtg.py run $BIN thin ${ARM}_s88 32 8 8 sph clean_init=steady clean_init_n=2
+cd $REG && export OMP_NUM_THREADS=4 NLIM=20 && python3 gtg.py run $BIN thin ${ARM}_s81 32 8 1 sph clean_init=steady clean_init_n=2
+cd $REG/rhse/$ARM && export OMP_NUM_THREADS=4 && $BIN -i rhse_sp.athinput > log.txt 2>&1
+cd $REG/cs/uni_$ARM && export OMP_NUM_THREADS=6 && $BIN -i cs.athinput > run.log 2>&1
+cd $REG/cs/closed_$ARM && export OMP_NUM_THREADS=6 && $BIN -i cs.athinput > run.log 2>&1
+cd $REG/cs/thin1_$ARM && export OMP_NUM_THREADS=6 && $BIN -i cs.athinput > run.log 2>&1
+cd $REG/cs/feed1_$ARM && export OMP_NUM_THREADS=6 && $BIN -i cs.athinput > run.log 2>&1
+cd $REG/fb && export OMP_NUM_THREADS=8 TG=1e-4 NLIM=40 RHO=1e2 KS=1e-2 && python3 fb.py run $BIN flz q$ARM 32 8 8 gd vet_gd_gl_nmu=16 vet_gd_gl_nphi=32 vet_gd_allow_clamp=true clean_rays=fv1
+cd $REG/fb && export OMP_NUM_THREADS=8 TG=1e-4 NLIM=40 RHO=1e3 KS=1 && python3 fb.py run $BIN flz Q$ARM 32 8 8 gd vet_gd_gl_nmu=16 vet_gd_gl_nphi=32 vet_gd_allow_clamp=true clean_rays=fv1
+cd $REG/rw/N32_nt64_amp1.0e-3_$ARM && export OMP_NUM_THREADS=2 && $BIN -i rw.athinput -d . > log.txt 2>&1; echo rc=$? >> log.txt
+cd $REG/rw/N32_nt64_amp-1.0e-3_$ARM && export OMP_NUM_THREADS=2 && $BIN -i rw.athinput -d . > log.txt 2>&1; echo rc=$? >> log.txt
+cd $REG/rw/N64_nt128_amp1.0e-3_$ARM && export OMP_NUM_THREADS=2 && $BIN -i rw.athinput -d . > log.txt 2>&1; echo rc=$? >> log.txt
+cd $REG/rw/N64_nt128_amp-1.0e-3_$ARM && export OMP_NUM_THREADS=2 && $BIN -i rw.athinput -d . > log.txt 2>&1; echo rc=$? >> log.txt
+cd $REG/cs/thin1mb_$ARM && export OMP_NUM_THREADS=6 && $BIN -i cs.athinput meshblock/nx1=32 > run.log 2>&1
+cd $REG/rst && ./rt.sh ${ARM}_hcyl $BIN $REG/rst/hcyl.athinput 8 mesh/nx1=128 mesh/nx2=128 meshblock/nx1=128 meshblock/nx2=128
+cd $REG/rst && ./rt.sh ${ARM}_sp3mb $BIN $REG/rst/sp3.athinput 8 rad_m1/force_reference=clean problem/rh_seed=1.0e-3 meshblock/nx1=24
+cd $REG/rst && ./rt.sh ${ARM}_feed $BIN $REG/rst/feed.athinput 8 rad_m1/clean_face_model=milne rad_m1/force_reference=clean
+cd $REG/rst && ./rt.sh ${ARM}_thin1 $BIN $REG/rst/thin1.athinput 8
