@@ -4117,6 +4117,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_vimp needs <mesh>/nghost >= 2");
   }
   int niw = full ? (bicg_on ? M1_NIW_K : M1_NIW) : M1_NIW_X1;
+  // scheme = clean reads none of the components appended below (its iw ends here)
+  const int niw_clean = niw;
   // MILESTONE 3g: the five per-cell components of the gas coupling are APPENDED, so
   // every index above keeps the value it had and the array grows only when asked for.
   iw_gas = -1;
@@ -4393,7 +4395,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(ecache, -1.0);
   }
   if (impl_cmi) {iw_cmi = niw; niw += 1;}   // cmemimpl-1112: the donor factor lam
-  MemArenaInit(pin, nmb, niw, ncells3, ncells2, ncells1);   // memcut-1113 (= realloc)
+  MemArenaInit(pin, nmb, clean ? niw_clean : niw, ncells3, ncells2, ncells1);
   if (impl_thin_frz > 0.0) {
     Kokkos::realloc(thin_frz, nmb, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(thin_frz, 0.0);
