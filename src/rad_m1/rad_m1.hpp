@@ -2936,6 +2936,9 @@ class RadiationM1 {
   void CleanFvSourceAlloc();
   void CleanFvCartSource();
   void CleanFvLevels();
+  bool CleanFvRows(const DvceArray1D<int> &mds, const int nq,
+                   const DvceArray2D<int> &pos);
+  void CleanFvRowLists();
   int CleanFvJoint(const DvceArray1D<int> &mds, const int nq, DvceArray2D<int> lev,
                    const DvceArray3D<Real> &xc);
   void CleanFvPanelSlopes(const bool q);
@@ -3123,6 +3126,14 @@ class RadiationM1 {
   std::vector<int64_t> cln_fvkl;   // the start of each level in cln_fvk
   std::vector<std::vector<int>> cln_fvls;   // the level starts of each m n + d
   std::vector<int> cln_fvlv;    // the number of cells of each level
+  bool cln_fvrwok = true;       // the order allows the row chunks (CleanFvRows)
+  bool cln_fvrw = false;        // the levels hold row chunks
+  int cln_fvrl = 16;            // the cells of a row chunk along x1
+  DvceArray2D<int> cln_fvrt;    // the level of each chunk (m n + d, row nch + chunk)
+  DvceArray2D<int8_t> cln_fvrs; // each row's direction along x1 (m n + d, row)
+  DvceArray1D<int> cln_fvre;    // the chunks of all levels, (m n + d) nt + chunk
+  std::vector<int64_t> cln_fvrls;   // the start of each level in cln_fvre
+  DvceArray5D<Real> cln_fvga;   // rows: face area vectors and volume (m, k, j, i, 19)
   std::vector<bool> cln_fvdo;   // the directions whose levels are due (CleanFvTables)
   DvceArray4D<int> cln_fvm;     // the direction maps of the periodic seams (m, side, k, d)
   DvceArray2D<Real> cln_fvt;    // scratch of CleanFvSeams
