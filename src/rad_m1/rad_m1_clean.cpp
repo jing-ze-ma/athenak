@@ -2363,8 +2363,9 @@ void RadiationM1::CleanWriteBack() {
       Real pr, chi_rho, chi_t, cv;
       eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, pr, chi_rho, chi_t, cv);
     }
-    if (!(CleanGasEint(x, uh, ke, m, k, j, i) > ef) && !(x.w(m,CLW_JV,k,j,i) >= 0.0) &&
-        x.w(m,CLW_EI,k,j,i) > ef) n += 1.0;
+    const Real tz = 1.0e-12*(fabs(uh(m,IEN,k,j,i)) + ke + ef);   // (eint's round-off)
+    if (!(CleanGasEint(x, uh, ke, m, k, j, i) > ef - tz) &&
+        !(x.w(m,CLW_JV,k,j,i) >= 0.0) && x.w(m,CLW_EI,k,j,i) > ef + tz) n += 1.0;
   }, Kokkos::Sum<Real>(nb));
   cln_neint = static_cast<int>(CleanReduce(nb, false));
 }
