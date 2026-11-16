@@ -1365,16 +1365,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   << std::endl;
       }
     }
+    // the cubed sphere's FV rays (CleanInit) are counted in a restart file's channels
+    if (clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on) {
+      cln_rfv = std::max(cln_rfv, 1);
+    }
     // clean_rot_ring not named: live wherever the vet_gd FV rays rotate in time with a
     // cross-fade (decided here, before a restart file's channels are counted)
     if (clean && !cln_ring_named && vgd_on && cln_rfv > 0 && vra_on && g_vra_adv &&
         vgd_xf && (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
         vra_k <= M1_RA_NF) {
       cln_ring = 1;
-    }
-    // the cubed sphere's FV rays (CleanInit) are counted in a restart file's channels
-    if (clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on) {
-      cln_rfv = std::max(cln_rfv, 1);
     }
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
