@@ -284,13 +284,16 @@ Real CleanExchangeTemperature(const EOS_Data &eos, const Real d, const Real a,
 //! divergence is d_n(D_nn E) + transverse + (h_L E_L + h_R E_R)/(2 r) with
 //!   r faces:     h = 2 D_rr - D_thth - D_phph + cot(theta) D_rth  (theta of the cell)
 //!   theta faces: h = cot(theta_f) (D_thth - D_phph) + 3 D_rth
-//!   phi faces:   h = 3 D_rph + 2 cot(theta) D_thph
+//!   phi faces:   none: the stress divergence is in angular-momentum (torque) form,
+//!                [sum over the dual faces of A R (D E)_.ph + A_ph ((D E)_phph)]/(V R),
+//!                R = r sin(theta), so that L_z changes only by boundary torques
 //! (a uniform isotropic state, D = I/3, is exactly steady)
 
 KOKKOS_INLINE_FUNCTION
 Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m, const int k,
                   const int j, const int i) {
-  if (q == 0) return 1.0/x.dxf[dir](m,k,j,i);
+  if (q == 0) return (dir == 2) ? x.area[2](m,k,j,i)/x.vol(m,k,j,i) : 1.0/x.dxf[dir](m,k,j,i);
+  if (dir == 2 && q >= 2) return 0.0;   // (phi faces: torque form, CleanFaceStress)
   if (q == 1) return 1.0/((dir == 0) ? x.x1f(m,i) : x.x1v(m,i));
   const int kc = (q == 2) ? k - (dir == 2) : k, jc = (q == 2) ? j - (dir == 1) : j;
   const int ic = (q == 2) ? i - (dir == 0) : i;
@@ -298,7 +301,6 @@ Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m, c
   if (dir == 0) {
     return 2.0*d(0) - d(1) - d(2) + (x.multi_d ? d(3)/tan(x.x2v(m,jc)) : 0.0);
   }
-  if (dir == 2) return 3.0*d(4) + 2.0*d(5)/tan(x.x2v(m,jc));
   return (d(1) - d(2))/tan(x.x2f(m,j)) + 3.0*d(3);
 }
 
@@ -412,6 +414,21 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
       return x.cs(m,ab,kk,jj,ii)*x.w(m,e,kk,jj,ii);
     };
     // (spherical polar: d_r on theta faces, (1/r) d_theta on r faces, central)
+    if (x.sph && dir == 2) {   // (torque form: dual r faces i, i+1 and theta faces j, j+1)
+      const Real vr = x.vol(m,k,j,i)*x.x1v(m,i)*sin(x.x2v(m,j));
+      auto pe = [&](const int jj, const int ii) {   // (D E)_{b,ph} at a dual face
+        return 0.25*(de(k,jj,ii) + de(k-1,jj,ii) + de(k,jj-(b == 1),ii-(b == 0)) +
+                     de(k-1,jj-(b == 1),ii-(b == 0)));
+      };
+      if (b == 0) {
+        div += (x.area[0](m,k,j,i+1)*x.x1f(m,i+1)*pe(j,i+1) -
+                x.area[0](m,k,j,i)*x.x1f(m,i)*pe(j,i))*sin(x.x2v(m,j))/vr;
+      } else {
+        div += (x.area[1](m,k,j+1,i)*sin(x.x2f(m,j+1))*pe(j+1,i) -
+                x.area[1](m,k,j,i)*sin(x.x2f(m,j))*pe(j,i))*x.x1v(m,i)/vr;
+      }
+      continue;
+    }
     const Real rb = !x.sph ? 1.0 : ((dir == 0) ? x.x1f(m,i) : x.x1v(m,i));
     const Real ib = !x.sph ? x.idx[b] : ((b == 0) ? 2.0/(x.x1v(m,i+1) - x.x1v(m,i-1)) :
                     ((b == 1) ? 2.0/(rb*(x.x2v(m,j+1) - x.x2v(m,j-1))) :
