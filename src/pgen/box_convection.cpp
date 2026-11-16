@@ -2054,9 +2054,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
     ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
     ts::rt_nan_report = pin->GetOrAddBoolean("problem", "nan_report", false);
-    ts::rt_dump_m = pin->GetOrAddInteger("problem", "rt_dump_m", 0);
-    ts::rt_dump_j = pin->GetOrAddInteger("problem", "rt_dump_j", -1);
-    ts::rt_dump_k = pin->GetOrAddInteger("problem", "rt_dump_k", -1);
     // ---- the per-column emergent-flux surface dump (see the header block) ----------
     surf_dt_ = pin->GetOrAddReal("problem", "rt_surface_dt", 0.0);
     {

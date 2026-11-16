@@ -31,8 +31,7 @@
 //!      ledgers of the mass and total energy through the x1 boundary faces, the sponge,
 //!      W_grav, int F_in A dt and the radiation energy through the x1 faces as the
 //!      scheme applies it (RadiationM1 Ebnd, split in / out), written with M_tot, E_tot
-//!      every
-//!      problem/he_drive_log_every cycles to <basename>.hsdrive.txt (rank 0).
+//!      every cycle to <basename>.hsdrive.txt (rank 0).
 //!  problem/he_drive_closure_lin = const (default) | table (read only with the rad_m1
 //!      flux table): the L_in the adaptive MLT closure targets, the constant
 //!      implicit_flux_x1min or the current table flux.

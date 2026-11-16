@@ -11,8 +11,7 @@
 //! prints, per rank,
 //!   - the fast-magnetosonic dt (the one NewTimeStep uses; the copy here must equal
 //!     dtnew, which is printed alongside as a check), over ALL cells and over cells with
-//!     p >= dt_report_p1 and p >= dt_report_p2 (code pressure; defaults 1 and 1e3 =
-//!     1e-6 and 1e-3 bar in cgs code units);
+//!     p >= 1 and p >= 1e3 (code pressure; 1e-6 and 1e-3 bar in cgs code units);
 //!   - the same with the SOUND speed in place of the fast speed (B ignored) and with the
 //!     FLOW speed alone, so the signal can be named;
 //!   - the number of cells within 1.2x of the minimum in the three pressure bands, and of
@@ -44,7 +43,6 @@ namespace mhd {
 
 namespace {
 int rep_every = 0;
-Real rep_p1 = 1.0, rep_p2 = 1.0e3;
 int rep_calls = 0;
 }  // namespace
 
@@ -62,14 +60,11 @@ void DtReportInit(ParameterInput *pin, MeshBlockPack *pp, const bool rss) {
                 << "polar mesh and rad_signal_speed off" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    rep_p1 = pin->GetOrAddReal("mhd", "dt_report_p1", 1.0);
-    rep_p2 = pin->GetOrAddReal("mhd", "dt_report_p2", 1.0e3);
   } else if (std::getenv("ATHENA_DT_REPORT") != nullptr &&
              std::atoi(std::getenv("ATHENA_DT_REPORT")) > 0) {
     // the hydro env ATHENA_DT_REPORT = N is an alias of <mhd>/dt_report
     // when the key is absent (the key wins).  Where the report is unsupported the alias
-    // is ignored with a note (no FATAL: an env must not stop a run); nothing is added to
-    // the input dump (p1/p2 keep their defaults unless named).
+    // is ignored with a note (no FATAL: an env must not stop a run).
     if (!pp->pmesh->three_d || rss ||
         !(pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar)) {
       if (global_variable::my_rank == 0) {
@@ -79,12 +74,6 @@ void DtReportInit(ParameterInput *pin, MeshBlockPack *pp, const bool rss) {
       }
     } else {
       rep_every = std::atoi(std::getenv("ATHENA_DT_REPORT"));
-      if (pin->DoesParameterExist("mhd", "dt_report_p1")) {
-        rep_p1 = pin->GetReal("mhd", "dt_report_p1");
-      }
-      if (pin->DoesParameterExist("mhd", "dt_report_p2")) {
-        rep_p2 = pin->GetReal("mhd", "dt_report_p2");
-      }
     }
   }
 }
@@ -115,7 +104,7 @@ void DtReport(MHD *pm, MeshBlockPack *pp) {
   if (!curv) { rep_every = 0; return; }
   auto dx1_ = pp->pcoord->dx1, dx2_ = pp->pcoord->dx2, dx3_ = pp->pcoord->dx3;
   auto sn_ = pp->pcoord->sin_cell;
-  const Real p1 = rep_p1, p2 = rep_p2;
+  const Real p1 = 1.0, p2 = 1.0e3;   // the lower edges of the two high-pressure bands
   const Real va2i = eos.va2max_inv;
 
   // per-cell: fast / sound / flow dt (min over the three directions), pressure

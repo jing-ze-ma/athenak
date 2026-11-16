@@ -126,7 +126,6 @@ struct EOSCompositionModel {
   double yhel = 0.2485;     // helium mass fraction
   double a_metal = 16.0;    // mean atomic weight of the inert metal component
   bool include_h2 = true;   // include H2 formation, dissociation and rot/vib energy
-  bool include_ion = true;  // include H and He ionization
 
   //! metal ionization (default off): adds the donors' electrons only (they are already
   //! particles of the inert metal lump), so mu barely changes while n_e changes by orders
@@ -321,15 +320,13 @@ struct EOSCompositionModel {
     // equilibrium constants
     double kdis = include_h2 ? DissociationConstant(t) : 0.0;
     double sf = SahaFactor(t);
-    double kh = 0.0, khe1 = 0.0, khe2 = 0.0;
-    if (include_ion) {
-      double bh = -chi_h/(kboltz*t);
-      double b1 = -chi_he1/(kboltz*t);
-      double b2 = -chi_he2/(kboltz*t);
-      kh   = (bh > -700.0) ? sf*exp(bh) : 0.0;         // g factor 2*(1/2) = 1
-      khe1 = (b1 > -700.0) ? 4.0*sf*exp(b1) : 0.0;     // g factor 2*(2/1) = 4
-      khe2 = (b2 > -700.0) ? sf*exp(b2) : 0.0;         // g factor 2*(1/2) = 1
-    }
+    // H and He ionization (Saha)
+    double bh = -chi_h/(kboltz*t);
+    double b1 = -chi_he1/(kboltz*t);
+    double b2 = -chi_he2/(kboltz*t);
+    double kh   = (bh > -700.0) ? sf*exp(bh) : 0.0;         // g factor 2*(1/2) = 1
+    double khe1 = (b1 > -700.0) ? 4.0*sf*exp(b1) : 0.0;     // g factor 2*(2/1) = 4
+    double khe2 = (b2 > -700.0) ? sf*exp(b2) : 0.0;         // g factor 2*(1/2) = 1
 
     // metal donors. The T-dependent factors are hoisted out of the bisection below, so
     // the extra cost inside it is one divide per species per iteration.

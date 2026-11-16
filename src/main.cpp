@@ -77,9 +77,8 @@ namespace {
 //! false afterwards, so it is never inherited by the restarts this run writes).
 //!
 //! The list is the union over the pgens that fill phicc0 (dhj, red_giant/He4, box,
-//! convection/solar, hse_atm, hotbubble, wb_atm, shallow_hot_jupiter): gravity
-//! and potential keys and the unit system they are converted with.  problem/omega counts
-//! only when rot_potential is on.
+//! hse_atm, wb_atm): gravity and potential keys and the unit system they are converted
+//! with.  problem/omega counts only when rot_potential is on.
 //!
 //! RESTART CONSISTENCY OF THE GRID (always, with or without etotgrav).  The restart file
 //! stores the cell data block by block, but the cell POSITIONS are rebuilt from the

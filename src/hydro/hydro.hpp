@@ -122,10 +122,6 @@ class Hydro {
 
   // data
   ReconstructionMethod recon_method;
-  // <hydro>/reconstruct_x1 = plm (default) | ppm4 | wenoz -- reconstruction used on the
-  // RADIAL (x1) sweep on the cubed sphere and on spherical polar; see the note by the
-  // same name in mhd.hpp.
-  ReconstructionMethod recon_method_x1;
   Hydro_RSolver rsolver_method;
   EquationOfState *peos;  // chosen EOS
 
@@ -274,15 +270,13 @@ class Hydro {
   // then released. Empty (and c2p_eint_rst false) otherwise.
   bool c2p_eint_rst = false;
   DvceArray4D<Real> eint_rst;
-  // <hydro>/rst_eint (read only when named; default true): the IDEAL-gas
-  // EOS carries w0(IEN) in the restart file too (as the general EOS always did) and
-  // the first ConToPrim of the restarted run takes it from there. Re-deriving it
-  // from u0 is not bitwise where the last inversion of the straight run applied a
-  // floor or etotgrav rounded (T9L6.2: 210 cells near the top after a BE redo, rel
-  // 3e-12, so a restart diverged at round-off). Changes no fresh run.
-  bool rst_eint_ideal = true;
+  // The ideal-gas EOS carries w0(IEN) in the restart file too, as the general EOS
+  // does, and the first ConToPrim of the restarted run takes it from there.
+  // Re-deriving it from u0 is not bitwise where the last inversion of the straight run
+  // applied a floor or etotgrav rounded, so a restart would diverge at round-off.
+  // Changes no fresh run.
   bool RstEint() const {
-    return peos->eos_data.IsGeneral() || (peos->eos_data.is_ideal && rst_eint_ideal);
+    return peos->eos_data.IsGeneral() || peos->eos_data.is_ideal;
   }
 
   // FLOOR BOOKKEEPING (off unless a problem generator calls EnableC2PTrack): the energy
@@ -313,16 +307,6 @@ class Hydro {
   // Default true unless <job>/recipe = none (hydro.cpp).
   bool scp_once = false;
   bool SplitC2POnce() const;
-  // <hydro>/c2p_idempotent: a ConToPrimSplit conversion of a state that is
-  // bitwise the one the previous conversion left (u0, w0, wder, wtemp, all cells) is a
-  // no-op; see hydro_c2p_idem.cpp
-  bool c2pi_on = false;
-  bool c2pi_valid = false;
-  DvceArray5D<Real> c2pi_u, c2pi_w, c2pi_d;
-  DvceArray4D<Real> c2pi_t;
-  std::int64_t c2pi_nskip = 0, c2pi_nrun = 0;
-  bool C2PIdemSkip();
-  void C2PIdemSave();
   DvceArray2D<Real> c2p_acc;
   DvceArray4D<Real> c2p_ref_e, c2p_ref_d;
   void EnableC2PTrack();

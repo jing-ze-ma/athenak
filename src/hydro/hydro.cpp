@@ -98,15 +98,12 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // (2) Initialize scalars, diffusion, source terms
   nscalars = pin->GetOrAddInteger("hydro","nscalars",0);
-  // P6: the dt report keys (hydro_newdt.cpp; env ATHENA_DT_REPORT[_NPOL]
-  // aliases), read only when named
+  // the dt report key (hydro_newdt.cpp; env alias ATHENA_DT_REPORT), read only when
+  // named
   {
-    extern int dt_report_key, dt_report_npol_key;
+    extern int dt_report_key;
     if (pin->DoesParameterExist("hydro","dt_report")) {
       dt_report_key = pin->GetInteger("hydro","dt_report");
-    }
-    if (pin->DoesParameterExist("hydro","dt_report_npol")) {
-      dt_report_npol_key = pin->GetInteger("hydro","dt_report_npol");
     }
   }
   // P4: the passive-tracer layout shared with MHD (mhd/mhd_tracers.hpp): the
@@ -279,7 +276,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
            pin->GetBoolean("hydro","split_bval_fast") : true;
   // Default split_c2p_once = true on a fresh start and on a restart whose input lacks the
   // key (the value is recorded); <job>/recipe = none keeps false and an explicit key
-  // wins.  With it on, c2p_idempotent is a no-op (bitwise).
+  // wins.
   if (!pin->DoesParameterExist("hydro","split_c2p_once")) {
     if (recipe::GetMode(pin) != recipe::Mode::none) {
       pin->GetOrAddBoolean("hydro","split_c2p_once",true);
@@ -288,15 +285,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       recipe::Log("<hydro>/split_c2p_once = false (recipe none: the old default)");
     }
   }
-  if (pin->DoesParameterExist("hydro","rst_eint")) {   // (hydro.hpp)
-    rst_eint_ideal = pin->GetBoolean("hydro","rst_eint");
-  }
   scp_once = pin->DoesParameterExist("hydro","split_c2p_once") ?
              pin->GetBoolean("hydro","split_c2p_once") : false;
-  // c2p_idempotent is read only when named (default false); a restart whose input names
-  // it keeps that value.
-  c2pi_on = pin->DoesParameterExist("hydro","c2p_idempotent") ?
-            pin->GetBoolean("hydro","c2p_idempotent") : false;
   if (sbf_on && (pmy_pack->pmesh->multilevel ||
                  pin->DoesBlockExist("shearing_box") ||
                  pin->DoesBlockExist("orbital_advection"))) {
@@ -660,76 +650,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
 
-    // select RADIAL (x1) reconstruction on the cubed sphere / spherical polar (default
-    // PLM, i.e. today's GridPiecewiseLinearX1, bitwise unchanged). `reconstruct` above
-    // never reaches the x1 sweep on those two grids -- see the note on str_r1_ in
-    // hydro_fluxes.cpp -- so this is a SEPARATE knob, not a fallback for it.
-    {
-      bool cs_or_sp = pmy_pack->pmesh->use_cubed_sphere ||
-                      pmy_pack->pmesh->use_spherical_polar;
-      std::string xorder1 = pin->GetOrAddString("hydro","reconstruct_x1","plm");
-      auto &indcs = pmy_pack->pmesh->mb_indcs;
-      if (xorder1.compare("plm") == 0) {
-        recon_method_x1 = ReconstructionMethod::plm;
-      } else if (xorder1.compare("ppmx") == 0) {
-        // See the identical refusal + citation in mhd.cpp: Mignone (2014) [JCP 270,
-        // 784, arXiv:1404.0537] gives no curvilinear Colella-Sekora extremum-preserving
-        // PPM limiter, only the CW84-style one (his Eqs. 45-48); use ppm4 instead.
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<hydro>/reconstruct_x1=ppmx is not implemented: Mignone "
-          << "(2014) gives no curvilinear Colella-Sekora extremum-preserving PPM "
-          << "limiter; use reconstruct_x1=ppm4 (curvilinear CW84 limiter) or plm"
-          << std::endl;
-        std::exit(EXIT_FAILURE);
-      } else if (xorder1.compare("ppm4") == 0 ||
-                 xorder1.compare("wenoz") == 0) {
-        // The published, non-uniform-grid-EXACT reconstruction from A. Mignone, JCP
-        // 270, 784 (2014), arXiv:1404.0537: ppm4 = his curvilinear 4th-order PPM
-        // (Sec. 3.3); wenoz = his curvilinear WENO3 (Sec. 3.2, third order -- a genuine
-        // order reduction from the uniform-grid 5th-order WENO-Z used elsewhere, since
-        // the paper gives no higher-order curvilinear WENO). See
-        // reconstruct/mignone_curvilinear.hpp for the implementation.
-        if (indcs.ng < 3) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-            << std::endl << "<hydro>/reconstruct_x1=" << xorder1 << " requires at least "
-            << "3 ghost zones, but <mesh>/nghost=" << indcs.ng << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-        if (use_fofc && indcs.ng < 4) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-            << std::endl << "FOFC and <hydro>/reconstruct_x1=" << xorder1 << " require "
-            << "at least 4 ghost zones, but <mesh>/nghost=" << indcs.ng << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-        // The Kappeli & Mishra dynamic radial well-balancing is PLM-specific (see the
-        // identical refusal in mhd.cpp); refuse rather than silently drop it.
-        if (use_wellbalance_dynamic && use_wb_x1) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-            << std::endl << "<hydro>/reconstruct_x1=" << xorder1 << " is not implemented "
-            << "with <hydro>/wellbalance_dynamic + wb_x1 (the K&M radial well-balancing "
-            << "is PLM-only); use <hydro>/reconstruct_x1=plm or turn wellbalance_dynamic "
-            << "off" << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-        if (xorder1.compare("ppm4") == 0) {
-          recon_method_x1 = ReconstructionMethod::ppm4;
-        } else {
-          recon_method_x1 = ReconstructionMethod::wenoz;
-        }
-      } else {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<hydro>/reconstruct_x1 = '" << xorder1
-                  << "' not implemented" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (cs_or_sp && global_variable::my_rank == 0) {
-        std::cout << "Radial (x1) reconstruction on the "
-                  << (pmy_pack->pmesh->use_cubed_sphere ? "cubed sphere" : "spherical "
-                      "polar") << " grid (<hydro>/reconstruct_x1) = " << xorder1
-                  << std::endl;
-      }
-    }
-
     // select Riemann solver (no default). Test for compatibility of options
     std::string rsolver = pin->GetString("hydro","rsolver");
     // Special relativistic dynamic solvers
@@ -905,10 +825,6 @@ Hydro::~Hydro() {
   if (sbf_on && global_variable::my_rank == 0) {
     std::cout << "<hydro>/split_bval_fast: energy-only refreshes " << sbf_nfast
               << ", full refreshes " << sbf_nfull << " (rank 0)" << std::endl;
-  }
-  if (c2pi_on && global_variable::my_rank == 0) {
-    std::cout << "<hydro>/c2p_idempotent: split conversions skipped " << c2pi_nskip
-              << ", run " << c2pi_nrun << " (rank 0)" << std::endl;
   }
   if (pam != nullptr) {delete pam;}
   if (pmlat != nullptr) {delete pmlat;}

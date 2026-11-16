@@ -26,7 +26,6 @@
 #include "reconstruct/plm.hpp"
 #include "reconstruct/ppm.hpp"
 #include "reconstruct/wenoz.hpp"
-#include "reconstruct/mignone_curvilinear.hpp"
 #include "mhd/rsolvers/advect_mhd.hpp"
 #include "mhd/rsolvers/cs_lowbeta_fallback.hpp"
 #include "mhd/rsolvers/llf_mhd.hpp"
@@ -240,10 +239,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // <mhd>/wall_wb_onesided (mhd.hpp, reconstruct/wb_wall.hpp, shared with
   // Hydro::Fluxes): every geometry, on the x1 dynamic WB paths that read wbq0 (PLM)
   const bool curv1_ = pmy_pack->pmesh->use_spherical_polar || str_r1_;
-  const bool wwb_ = wall_wb_onesided && use_wellbalance_dynamic && use_wb_x1 &&
-                    (wb_all || recon_method_x1 == ReconstructionMethod::plm || !curv1_);
-  // <mhd>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see mhd.hpp).
-  const auto recon_method_x1_ = recon_method_x1;
+  const bool wwb_ = wall_wb_onesided && use_wellbalance_dynamic && use_wb_x1;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
 
   //--------------------------------------------------------------------------------------
@@ -323,37 +319,16 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     ScrArray2D<Real> dr(member.team_scratch(scr_level), nder, ncells1);
 
     if (use_spherical_polar || str_r1_) {
-      if (recon_method_x1_ == ReconstructionMethod::plm) {
-        GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
-                              use_wellbalance_dynamic_,
-                              use_wb_x1_, wb_rmax_,
-                              m, k, j, il-1, iu, w0_, x1v_, x1f_, phiwbcc_,
-                              phiwb_x1f_, wbq0_, true, wl, wr, wb_all_, wb_phimax_);
-        GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
-                              use_wellbalance_dynamic_,
-                              use_wb_x1_, wb_rmax_,
-                              m, k, j, il-1, iu, b0_, x1v_, x1f_, phiwbcc_,
-                              phiwb_x1f_, wbq0_, false, bl, br);
-      } else {
-        // ppm4/wenoz on the RADIAL sweep: the published (Mignone 2014) curvilinear
-        // volume-coordinate reconstruction -- see reconstruct/mignone_curvilinear.hpp
-        // for the full derivation and equation references. ppmx is refused at setup
-        // (no curvilinear Colella-Sekora limiter in that paper). Setup also refused
-        // wellbalance_dynamic+wb_x1 with this choice, so there is no background to
-        // subtract here.
-        switch (recon_method_x1_) {
-          case ReconstructionMethod::ppm4:
-            MignonePPM4X1(member,eos_,true, m,k,j,il-1,iu,w0_,x1v_,x1f_,wl,wr);
-            MignonePPM4X1(member,eos_,false,m,k,j,il-1,iu,b0_,x1v_,x1f_,bl,br);
-            break;
-          case ReconstructionMethod::wenoz:
-            MignoneWENO3X1(member,eos_,true, m,k,j,il-1,iu,w0_,x1v_,x1f_,wl,wr);
-            MignoneWENO3X1(member,eos_,false,m,k,j,il-1,iu,b0_,x1v_,x1f_,bl,br);
-            break;
-          default:
-            break;
-        }
-      }
+      GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
+                            use_wellbalance_dynamic_,
+                            use_wb_x1_, wb_rmax_,
+                            m, k, j, il-1, iu, w0_, x1v_, x1f_, phiwbcc_,
+                            phiwb_x1f_, wbq0_, true, wl, wr, wb_all_, wb_phimax_);
+      GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
+                            use_wellbalance_dynamic_,
+                            use_wb_x1_, wb_rmax_,
+                            m, k, j, il-1, iu, b0_, x1v_, x1f_, phiwbcc_,
+                            phiwb_x1f_, wbq0_, false, bl, br);
     } else {
     if (use_wellbalance_dynamic_ && use_wb_x1_) {
       if (wb_all_) {   // x1 through the shared routine (w = 1)
@@ -397,8 +372,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       // hands the Riemann solver this reconstructed pressure rather than recomputing it
       // from the reconstructed (d,e), so leaving it to plain PLM would put the entire
       // hydrostatic gradient back into the solver's pressure and unbalance the scheme.
-      if ((use_spherical_polar || str_r1_) &&
-          recon_method_x1_ == ReconstructionMethod::plm) {
+      if (use_spherical_polar || str_r1_) {
         GridPiecewiseLinearDerX1(member, eos_, wb_option_, use_wellbalance_dynamic_,
                                  use_wb_x1_, wb_rmax_,
                                  use_wellbalance_static_reconst_perturb_,
@@ -406,20 +380,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                                  m, k, j, il-1, iu, w0_, wder_,
                                  x1v_, x1f_, phiwbcc_,
                                  phiwb_x1f_, wbq0_, dl, dr, wb_phimax_);
-      } else if (use_spherical_polar || str_r1_) {
-        // reconstruct_x1 != plm: same Mignone curvilinear reconstruction as w0_/b0_
-        // above, applied to the derived thermodynamic variables (no WB background,
-        // refused at setup for this combination).
-        switch (recon_method_x1_) {
-          case ReconstructionMethod::ppm4:
-            MignonePPM4X1(member,eos_,false,m,k,j,il-1,iu,wder_,x1v_,x1f_,dl,dr);
-            break;
-          case ReconstructionMethod::wenoz:
-            MignoneWENO3X1(member,eos_,false,m,k,j,il-1,iu,wder_,x1v_,x1f_,dl,dr);
-            break;
-          default:
-            break;
-        }
       } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX1(member, m, k, j, il-1, iu,
                                      pwb_, pfacewb_x1f,

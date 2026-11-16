@@ -35,12 +35,10 @@
 #include "rad_m1/rad_m1_closure.hpp"
 
 namespace hydro {
-// P6: <hydro>/dt_report and <hydro>/dt_report_npol (read only when named, in
-// the Hydro constructor; -1 = not named).  The key wins; the env ATHENA_DT_REPORT /
-// ATHENA_DT_REPORT_NPOL stay as aliases (and <mhd>/dt_report takes the same env alias,
+// <hydro>/dt_report (read only when named, in the Hydro constructor; -1 = not named).
+// The key wins over the env alias ATHENA_DT_REPORT (which <mhd>/dt_report takes too,
 // mhd_dtreport.cpp).  Diagnostics only: no state change.
 int dt_report_key = -1;
-int dt_report_npol_key = -1;
 
 //----------------------------------------------------------------------------------------
 // \!fn void Hydro::NewTimeStep()
@@ -476,8 +474,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     MPI_Allreduce(MPI_IN_PLACE, &dtg, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
 #endif
     // the cell diagnostics for the global minimum and (sp) the minima of
-    // the polar rows (env ATHENA_DT_REPORT_NPOL rows from each pole, default 7; lines
-    // DTREG polar) and of the rest (DTREG rest), each printed by its owning rank
+    // the polar rows (7 rows from each pole; lines DTREG polar) and of the rest (DTREG
+    // rest), each printed by its owning rank
     auto pmy_x2v_ = pmy_pack->pcoord->x2v;
     auto pmy_x3v_ = pmy_pack->pcoord->x3v;
     // the targets: kind 0 the global minimum (its owner), 1 polar rows, 2 the rest
@@ -487,12 +485,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     }
     if (dtcell_on) {
       // the polar rows (global row < npol from either pole) and the rest
-      static int npol = -1;
-      if (npol < 0) {
-        const char *ev = std::getenv("ATHENA_DT_REPORT_NPOL");
-        npol = (dt_report_npol_key >= 0) ? dt_report_npol_key
-                                         : ((ev != nullptr) ? std::atoi(ev) : 7);
-      }
+      const int npol = 7;
       const int nrow = pmy_pack->pmesh->mesh_indcs.nx2;
       auto &mbl = pmy_pack->pmesh->lloc_eachmb;
       std::vector<int> lx2h(pmy_pack->nmb_thispack);

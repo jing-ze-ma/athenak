@@ -230,7 +230,7 @@ Real hs_esc_ = 0.0, hs_esrmx_ = 0.0;
 // problem/mlt_closure = adaptive (default frozen): the ADAPTIVE SHELL-MEAN DEFICIT
 // closure.  The applied subgrid flux F_sub (x1 faces) relaxes toward
 // s(r) max(0, L - L_rad - L_conv,res)/A over problem/mlt_relax_time, updated every
-// problem/mlt_closure_every cycles at the START of the cycle (before any stage), from
+// cycle at its START (before any stage), from
 // shell sums over all ranks: L_rad = sum A F_0 (the M1 comoving face flux), L_conv,res =
 // the FLUCTUATION flux A (<v_r'(e+p)_gas'> + (4/3) <v_r'E'>) of the cell shells averaged
 // to the face.  s = clamp(fmlt_IC/problem/mlt_closure_taper, 0, 1): the FeCZ of the IC
@@ -238,7 +238,7 @@ Real hs_esc_ = 0.0, hs_esrmx_ = 0.0;
 // update clock hs_ad_tl_ are RESTART STATE (the pgen block of pgen.hpp).
 bool hs_ad_ = false;
 // problem/mlt_closure = pressure (opt-in): the same F_sub machinery (restart
-// state, relaxation over mlt_relax_time, every mlt_closure_every cycles), but the target
+// state, relaxation over mlt_relax_time, every cycle), but the target
 // is the IC's F_MLT/F as a function of the SHELL-MEAN total pressure, F_sub =
 // fm_IC(P_face) x F_tot,IC(face) with F_tot,IC = L/(4 pi r^2) of the IC: the scaffold is
 // frozen in P instead of r and moves with the envelope.  hs_plnp_/hs_pfm_: ln P_tot, fm
@@ -254,7 +254,7 @@ std::vector<Real> hs_plnp_, hs_pfm_, hs_ftot_;
 DvceArray2D<Real> hs_shp_;
 Real hs_ad_tau_ = 1500.0, hs_ad_taper_ = 0.01, hs_ad_tl_ = 0.0;
 Real hs_ad_dout_ = 0.0, hs_ad_tout_ = 0.0, hs_lsub_ = 0.0;
-int hs_ad_every_ = 1, hs_ad_cyc_ = -1;
+int hs_ad_cyc_ = -1;
 DvceArray1D<Real> hs_fsub_;
 DvceArray2D<Real> hs_shs_;
 std::vector<Real> hs_tap_, hs_r2o_;
@@ -2548,10 +2548,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               __LINE__);
     }
     hs_ad_tau_ = pin->GetOrAddReal("problem","mlt_relax_time",1500.0);
-    hs_ad_every_ = pin->GetOrAddInteger("problem","mlt_closure_every",1);
     hs_ad_dout_ = pin->GetOrAddReal("problem","mlt_closure_dout",0.0);
-    if (!(hs_ad_tau_ > 0.0) || hs_ad_every_ < 1) {
-      HsFatal("problem/mlt_relax_time must be > 0 and mlt_closure_every >= 1", __LINE__);
+    if (!(hs_ad_tau_ > 0.0)) {
+      HsFatal("problem/mlt_relax_time must be > 0", __LINE__);
     }
     const int nfc = n1m1 + 2;
     Kokkos::realloc(hs_fsub_, nfc);
@@ -2640,7 +2639,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (global_variable::my_rank == 0) {
       std::cout << "he_star_m1: mlt_closure = " << (hs_adp_ ? "pressure" : "adaptive")
                 << ", relax time " << hs_ad_tau_
-                << " s, every " << hs_ad_every_ << " cycle(s), taper "
+                << " s, every cycle, taper "
                 << pin->GetReal("problem","mlt_closure_taper") << ", update clock "
                 << hs_ad_tl_ << ", max L_sub = " << hs_lsub_ << std::endl;
     }
@@ -2701,15 +2700,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // PLM (Hydro::PLM_nonuniform) and the ideal-gas HLLC contact speed
       auto *phy = pmbp->phydro;
       if (phy->use_wellbalance_dynamic || phy->rsolver_method != Hydro_RSolver::hllc ||
-          phy->recon_method_x1 != ReconstructionMethod::plm ||
           !pmy_mesh_->use_spherical_polar || eos.IsGeneral() || hs_bal_ ||
           indcs.nx1 < 2 || ng < 2) {
         HsFatal("problem/he_bc_inner = zerocontact needs spherical polar, an ideal gas, "
-                "<hydro>/rsolver = hllc, reconstruct_x1 = plm, no well-balanced scheme, "
+                "<hydro>/rsolver = hllc, no well-balanced scheme, "
                 "he_ic_balance = false, nx1 >= 2 and nghost >= 2", __LINE__);
       }
     }
-    // fin4-linhao-bc: problem/he_bc_linhao (see hs_lbc_)
+    // problem/he_bc_linhao (see hs_lbc_)
     if (pin->DoesParameterExist("problem","he_bc_linhao")) {
       hs_lbc_ = pin->GetBoolean("problem","he_bc_linhao");
     }
@@ -3641,7 +3639,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
   // the adaptive closure: once per cycle, at its first stage (before any M1 solve of
-  // the cycle), every mlt_closure_every cycles; it re-applies w(t) itself
+  // the cycle); it re-applies w(t) itself
   // the closure is skipped once the ramp has ended (w(t) = 0 AND w = 0 already applied
   // to esrc): F_sub then enters nothing (esrc = w F_sub deposit, history slot 21 =
   // w L_sub), so F_sub and its clock stay FROZEN at their last values (also in the
@@ -3649,11 +3647,9 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   // cadence kept: the update runs and writes its lines)
   if (hs_ad_ && pm->ncycle != hs_ad_cyc_) {
     hs_ad_cyc_ = pm->ncycle;
-    if (pm->ncycle % hs_ad_every_ == 0) {
-      const bool off = (hs_mrs_ >= 0.0 && HsMltW(pm->time) == 0.0 && hs_mw_ == 0.0);
-      const bool dout = (hs_ad_dout_ > 0.0 && pm->time >= hs_ad_tout_);
-      if (!off || dout) HsAdaptiveUpdate(pm);
-    }
+    const bool off = (hs_mrs_ >= 0.0 && HsMltW(pm->time) == 0.0 && hs_mw_ == 0.0);
+    const bool dout = (hs_ad_dout_ > 0.0 && pm->time >= hs_ad_tout_);
+    if (!off || dout) HsAdaptiveUpdate(pm);
   }
   // the frozen-MLT ramp: w at the step's start time (the same on every stage)
   if (hs_mlt_ && hs_mrs_ >= 0.0) {

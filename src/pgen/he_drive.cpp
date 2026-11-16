@@ -45,7 +45,7 @@ timetable::Table itab_, mtab_;
 bool mtab_on_ = false;
 Real t0_ = 0.0;
 SetupArgs a_;
-int every_ = 1, logev_ = 1;
+int every_ = 1;
 char logfn_[1024] = {0};   // <basename>.hsdrive.txt
 // RK stage coefficients of the integrator (driver.cpp), for the stage ledger
 int nst_ = 0;
@@ -454,9 +454,8 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   }
   t0_ = pin->GetOrAddReal("problem","he_drive_t0",0.0);
   every_ = pin->GetOrAddInteger("problem","he_gm_live_every",1);
-  logev_ = pin->GetOrAddInteger("problem","he_drive_log_every",1);
-  if (every_ < 1 || logev_ < 1) {
-    Fatal("problem/he_gm_live_every and he_drive_log_every must be >= 1");
+  if (every_ < 1) {
+    Fatal("problem/he_gm_live_every must be >= 1");
   }
   std::snprintf(logfn_, sizeof(logfn_), "%s.hsdrive.txt",
                 pin->GetString("job","basename").c_str());
@@ -537,8 +536,8 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   }
   tprev_ = pm->time;
   if (global_variable::my_rank == 0) {
-    std::cout << "he_drive (hg262-drive-1113): ledger on (log " << logfn_ << " every "
-              << logev_ << " cycles), inflow table " << (inf_ ? "on" : "off")
+    std::cout << "he_drive: ledger on (log " << logfn_ << " every cycle), inflow table "
+              << (inf_ ? "on" : "off")
               << ", live gravity " << (live_ ? "on" : "off");
     if (live_) {
       std::cout << " (every " << every_ << " cycles, M_int table "
@@ -712,16 +711,15 @@ void CycleBody(Mesh *pm, const bool log) {
     erad_ += ain_*a_.fconst*(t - tprev_);
   }
   tprev_ = t;
-  const bool logd = log && (pm->ncycle % logev_ == 0);
   const bool refr = live_ && (pm->ncycle % every_ == 0 || !ref_);
-  if (!logd && !refr) return;
+  if (!log && !refr) return;
   std::vector<Real> sh;
   ShellSums(pm, &sh);
   if (refr) {
     wgrav_ += Refresh(pm, sh, true);
-    if (logd) {ShellSums(pm, &sh);}
+    if (log) ShellSums(pm, &sh);
   }
-  if (logd) {WriteLog(pm, sh);}
+  if (log) WriteLog(pm, sh);
 }
 
 void Cycle(Mesh *pm) {

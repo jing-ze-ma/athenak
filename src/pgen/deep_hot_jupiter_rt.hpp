@@ -539,7 +539,7 @@ void DhjCkRtSplit(Mesh *pm, const Real dt);
 // PER-CYCLE SINGLE-MESHBLOCK DIAGNOSTIC (problem/diag_gid, default -1 = off).  Which
 // global meshblock to dump, and the inclusive cycle window.  File-scope because the
 // per-cycle hook takes only the Mesh.
-namespace dhj_rt_local {   // was an anonymous namespace
+namespace dhj_rt_local {
 inline int diag_gid = -1;
 inline int diag_cycle_min = 0;
 inline int diag_cycle_max = 2147483647;
@@ -854,7 +854,7 @@ inline int dhj_top_bt = 0;
 //  rt_test_dT, rt_test_nwave   initial perturbation T -> T (1 + dT sin(nwave pi xi)),
 //                  xi = (r - x1min)/(x1max - x1min); nwave = 0 is a uniform dT.
 //  rt_test_out, rt_test_every  per-cycle diagnostic file (serial runs only).
-namespace dhj_rt_local {   // was an anonymous namespace
+namespace dhj_rt_local {
 // problem/dtloc_every = N > 0: every N cycles print the cell that set the hydro/MHD dt
 // (gid, i, j, k) with its pressure from the ck sweep.  Print only; 0 (default) = off.
 inline int dtloc_every = 0;
@@ -862,7 +862,6 @@ inline bool rt_test_freeze = false;
 inline Real rt_test_dt = 0.0;
 inline std::string rt_test_out;
 inline int rt_test_every = 1;
-inline int rt_test_col[3] = {0, -1, -1};
 inline DvceArray5D<Real> *rt_frz_ptr = nullptr;
 inline DvceArray4D<Real> *rt_frzT_ptr = nullptr;
 inline std::int64_t rt_test_ncall = 0;
@@ -873,7 +872,6 @@ using dhj_rt_local::rt_test_freeze;
 using dhj_rt_local::rt_test_dt;
 using dhj_rt_local::rt_test_out;
 using dhj_rt_local::rt_test_every;
-using dhj_rt_local::rt_test_col;
 using dhj_rt_local::rt_frz_ptr;
 using dhj_rt_local::rt_frzT_ptr;
 using dhj_rt_local::rt_test_ncall;

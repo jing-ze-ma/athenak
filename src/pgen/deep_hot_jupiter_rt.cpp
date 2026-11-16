@@ -3,7 +3,7 @@
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file deep_hot_jupiter.cpp
+//! \file deep_hot_jupiter_rt.cpp
 //! \brief Problem generator for the deep hot Jupiter.
 //!
 //! REFERENCE: Heng, Menou, Phillipps, MNRAS, 413, 2380 (2011); Deitrick, Mendonça,
@@ -839,15 +839,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // they bind (both WASP-121b productions, every call) the unconstrained Newton cannot
   // converge: 1x 466/500 calls NOT-CONVERGED off vs 6/500 on, 10x 500/500 vs 133/500
   // Set either line explicitly to override.
-  {const bool fbdef = !restart && two_stream_rt::ck_implicit &&
-       two_stream_rt::ck_impl_fuse && two_stream_rt::ck_impl_debug <= 0 &&
-       two_stream_rt::ck_impl_glob == 0 && two_stream_rt::ck_impl_aa == 0;
-  two_stream_rt::ck_impl_floorbound =
-      pin->GetOrAddBoolean("problem","ck_impl_floorbound",fbdef);
-  two_stream_rt::ck_impl_kkt_demax =
-      pin->GetOrAddBoolean("problem","ck_impl_kkt_demax",fbdef);}
-  two_stream_rt::ck_impl_stalldbg =
-      pin->GetOrAddInteger("problem","ck_impl_stalldbg",0);
+  {
+    const bool fbdef = !restart && two_stream_rt::ck_implicit &&
+        two_stream_rt::ck_impl_fuse && two_stream_rt::ck_impl_debug <= 0 &&
+        two_stream_rt::ck_impl_glob == 0 && two_stream_rt::ck_impl_aa == 0;
+    two_stream_rt::ck_impl_floorbound =
+        pin->GetOrAddBoolean("problem","ck_impl_floorbound",fbdef);
+    two_stream_rt::ck_impl_kkt_demax =
+        pin->GetOrAddBoolean("problem","ck_impl_kkt_demax",fbdef);
+  }
   two_stream_rt::ck_impl_negdbg = pin->GetOrAddInteger("problem","ck_impl_negdbg",0);
   two_stream_rt::ck_impl_jfd = pin->GetOrAddInteger("problem","ck_impl_jfd",0);
   two_stream_rt::ck_impl_rowfb = pin->GetOrAddBoolean("problem","ck_impl_rowfb",
@@ -1096,9 +1096,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     rt_test_dt = pin->GetOrAddReal("problem","rt_test_dt",0.0);
     rt_test_out = pin->GetOrAddString("problem","rt_test_out","");
     rt_test_every = pin->GetOrAddInteger("problem","rt_test_every",1);
-    rt_test_col[0] = pin->GetOrAddInteger("problem","rt_test_col_m",0);
-    rt_test_col[1] = pin->GetOrAddInteger("problem","rt_test_col_k",-1);
-    rt_test_col[2] = pin->GetOrAddInteger("problem","rt_test_col_j",-1);
     user_split_func = DhjRtFreezeSplit;
     user_split_once = true;
   }
@@ -1816,23 +1813,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     } else {
       read_ic_profile(ic_prof, N, Tarr_init.h_view, lgparr_init.h_view);
     }
-    // problem/ic_adiabat_ext (default true; ic_profile only): BELOW the
-    // table's bottom row T(p) continues along the ADIABAT through that row,
-    // dln T/dln p = GradAd(p, T) of the deck's own EOS (general table: H2 dissociation,
-    // ionization), integrated (RK4) over ic_adiabat_ext_dex decades (default 2) on
-    // Ne = 801 points uniform in log10 p.  Before, get_init_Tp(_host) continued the LAST
-    // SEGMENT of the table linearly in log10 p, which the inner wall reaches whenever it
-    // cuts equipotentials deeper than the table (rot_potential margins, problem/roche:
-    // ~4400 bar substellar vs 2241 bar for WASP-121b).  Only lookups at log10 p > the
-    // table bottom change; every lookup inside the table is bitwise (and a deck whose
-    // column never leaves the table is bitwise).  false: the old linear extrapolation.
-    // Beyond the extension's end: its last segment, linearly (WARNING printed).
+    // with an ic_profile, BELOW the table's bottom row T(p) continues along the ADIABAT
+    // through that row, dln T/dln p = GradAd(p, T) of the deck's own EOS (general table:
+    // H2 dissociation, ionization), integrated (RK4) over ic_adiabat_ext_dex decades
+    // (default 2) on Ne = 801 points uniform in log10 p.  The inner wall reaches it
+    // whenever it cuts equipotentials deeper than the table (rot_potential margins,
+    // problem/roche: ~4400 bar substellar vs 2241 bar for WASP-121b).  Beyond the
+    // extension's end: its last segment, linearly (WARNING printed).
     int ne_ext = 0;
     const int ne_alloc = 801;
     DualArray1D<Real> Tarr_ext("Tarrext", ne_alloc);
     DualArray1D<Real> lgparr_ext("lgparrext", ne_alloc);
-    const bool ic_ad_ext = !ic_prof.empty() &&
-                           pin->GetOrAddBoolean("problem", "ic_adiabat_ext", true);
+    const bool ic_ad_ext = !ic_prof.empty();
     const Real ic_ad_dex = ic_prof.empty() ? 0.0 :
                            pin->GetOrAddReal("problem", "ic_adiabat_ext_dex", 2.0);
     if (ic_ad_ext) {

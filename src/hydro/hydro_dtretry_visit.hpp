@@ -12,7 +12,6 @@
 template <class V>
 void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("recon_method", recon_method);
-  v.value("recon_method_x1", recon_method_x1);
   v.value("rsolver_method", rsolver_method);
   v.value("nhydro", nhydro);
   v.value("nscalars", nscalars);
@@ -84,14 +83,6 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("sbf_nfast", sbf_nfast);
   v.value("sbf_nfull", sbf_nfull);
   v.value("scp_once", scp_once);
-  v.value("c2pi_on", c2pi_on);
-  v.value("c2pi_valid", c2pi_valid);
-  v.view("c2pi_u", c2pi_u);
-  v.view("c2pi_w", c2pi_w);
-  v.view("c2pi_d", c2pi_d);
-  v.view("c2pi_t", c2pi_t);
-  v.value("c2pi_nskip", c2pi_nskip);
-  v.value("c2pi_nrun", c2pi_nrun);
   v.view("c2p_acc", c2p_acc);
   v.view("c2p_ref_e", c2p_ref_e);
   v.view("c2p_ref_d", c2p_ref_d);

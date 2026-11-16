@@ -117,15 +117,6 @@ class MHD {
 
   // data
   ReconstructionMethod recon_method;
-  // <mhd>/reconstruct_x1 = plm (default) | ppm4 | wenoz -- reconstruction used on the
-  // RADIAL (x1) sweep on the cubed sphere and on spherical polar, where x1 is always
-  // non-uniform (radial stretch) and `reconstruct` above only reaches the angular (x2/x3)
-  // sweeps (see the note above GridPiecewiseLinearX1's use in mhd_fluxes.cpp). ppm4 and
-  // wenoz are Mignone (2014)'s published curvilinear reconstructions (see
-  // reconstruct/mignone_curvilinear.hpp); ppmx is refused (no published curvilinear
-  // Colella-Sekora limiter). Ignored on every other grid, where the x1 sweep already
-  // honours `reconstruct`.
-  ReconstructionMethod recon_method_x1;
   MHD_RSolver rsolver_method;
   EquationOfState *peos;   // chosen EOS
 
@@ -331,15 +322,13 @@ class MHD {
   // then released. Empty (and c2p_eint_rst false) otherwise.
   bool c2p_eint_rst = false;
   DvceArray4D<Real> eint_rst;
-  // <mhd>/rst_eint (read only when named; default true): the IDEAL-gas
-  // EOS carries w0(IEN) in the restart file too (as the general EOS always did) and
-  // the first ConToPrim of the restarted run takes it from there. Re-deriving it
-  // from u0 is not bitwise where the last inversion of the straight run applied a
-  // floor or etotgrav rounded (T9L6.2: 210 cells near the top after a BE redo, rel
-  // 3e-12, so a restart diverged at round-off). Changes no fresh run.
-  bool rst_eint_ideal = true;
+  // The ideal-gas EOS carries w0(IEN) in the restart file too, as the general EOS
+  // does, and the first ConToPrim of the restarted run takes it from there.
+  // Re-deriving it from u0 is not bitwise where the last inversion of the straight run
+  // applied a floor or etotgrav rounded, so a restart would diverge at round-off.
+  // Changes no fresh run.
   bool RstEint() const {
-    return peos->eos_data.IsGeneral() || (peos->eos_data.is_ideal && rst_eint_ideal);
+    return peos->eos_data.IsGeneral() || peos->eos_data.is_ideal;
   }
 
   // FLOOR BOOKKEEPING (off unless a problem generator calls EnableC2PTrack): the energy

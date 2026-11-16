@@ -1070,10 +1070,9 @@ void DhjRtFreezeSplit(Mesh *pm, const Real dt) {
       hc = Kokkos::create_mirror_view(*ts::rt_icut_ptr);
       Kokkos::deep_copy(hc, *ts::rt_icut_ptr);
     }
-    const int m0 = rt_test_col[0];
-    const int k0 = (rt_test_col[1] >= 0) ? rt_test_col[1] : ks;
-    const int j0 = (rt_test_col[2] >= 0) ? rt_test_col[2] : js;
-    // E: every column against the reference column, BITWISE, on T and on u0(IEN)
+    // E: every column against the reference column (m, k, j) = (0, ks, js), BITWISE, on
+    // T and on u0(IEN)
+    const int m0 = 0, k0 = ks, j0 = js;
     std::int64_t ndT = 0, ndE = 0;
     Real mxT = 0.0;
     // C: the column budget sum V (e - e*) - dt sum V S, and the solver's own residual

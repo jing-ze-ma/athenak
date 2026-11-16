@@ -78,9 +78,9 @@
 //!                        A reflecting wall there bounces plumes, forces the convective
 //!                        flux to zero and pins the envelope entropy at its initial
 //!                        value.  `open` replaces it with the Stein-Nordlund / CO5BOLD
-//!                        (Freytag+ 2012) treatment that solar_convection.cpp already
-//!                        uses: the ghosts continue hydrostatically at the interior
-//!                        temperature with the velocity copied, so plumes pass through,
+//!                        (Freytag+ 2012) treatment: the ghosts continue
+//!                        hydrostatically at the interior temperature with the
+//!                        velocity copied, so plumes pass through,
 //!                        and the lowest active layer is relaxed each step -- upflows
 //!                        toward a prescribed deep adiabat (this is the energy input and
 //!                        it sets the emergent flux), pressure toward the shell mean,
@@ -603,14 +603,14 @@ Real mlt_owed_ = 0.0;
 // GRID-SCALE MODE out of the closure's target, with one [1 2 1]/4 pass over the faces
 // before the target enters the relaxed profile.
 //
-// THE MECHANISM IT FIXES (measured with the periodic face dump
-// problem/mlt_dump_dt).  The closure asks for D = F_req - F_rad - F_res - F_2s, a ~3 %
-// difference of two ~L numbers, and under the split -div D is deposited into the state
-// the implicit column solve then linearises about.  The sweep answers that source: in
-// gas this optically thick the stiff solve absorbs an imposed source almost completely
-// within one step and carries it as a FACE FLUX, so F_2s picks up ~ -F_used, and the
-// next closure call -- which defines F_used as F_req - F_2s -- reads its own deposit
-// back with the sign that asks for more.  The loop is
+// THE MECHANISM IT FIXES (measured with a periodic face dump).  The closure asks for
+// D = F_req - F_rad - F_res - F_2s, a ~3 % difference of two ~L numbers, and under the
+// split -div D is deposited into the state the implicit column solve then linearises
+// about.  The sweep answers that source: in gas this optically thick the stiff solve
+// absorbs an imposed source almost completely within one step and carries it as a FACE
+// FLUX, so F_2s picks up ~ -F_used, and the next closure call -- which defines F_used
+// as F_req - F_2s -- reads its own deposit back with the sign that asks for more.  The
+// loop is
 //     F_used^(n+1) = F_req - F_2s^n,   F_2s^n = F_2s^eq - a F_used^n,
 // a = theta/(1 + theta) with theta the sweep's diffusion number D dt/dx^2, so the gain
 // is a and any mismatch is amplified by 1/(1 - a) = 1 + theta.  theta is scale
@@ -665,14 +665,6 @@ bool mlt_relax_seeded_ = false;
 // problem/mlt_dump: write the faces of one column once
 std::string mlt_dump_;  // NOLINT(runtime/string)
 bool mlt_dumped_ = false;
-// problem/mlt_dump_dt [s], 0 = off (diagnostic, shell-mean path only): APPEND the same
-// face table to <mlt_dump>.ts every mlt_dump_dt of simulated time, with one extra
-// column, the flux actually deposited (fconv after the per-column cap).  The one-shot
-// dump above answers "what does the closure ask for at t = 0"; this one answers "does
-// F_used drift or alternate face to face as the run goes on", which is what the
-// grid-scale density zigzag at the base of the MLT zone needs.
-Real mlt_dump_dt_ = 0.0;
-Real mlt_dump_next_ = -1.0;
 // The dump has to wait for the two-stream.  On the FIRST source call of a run the RT
 // solver has not run yet, so its face-flux array does not exist and F_2s reads zero --
 // which made the t = 0 budget check show a full L unaccounted for above the photosphere
@@ -1425,7 +1417,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // a RESOLVED-convection run from a stratification that already carries L.
   const Real mlt_alpha_ic = pin->GetOrAddReal("problem", "mlt_alpha_ic", mlt_alpha_);
   mlt_dump_ = pin->GetOrAddString("problem", "mlt_dump", "");
-  mlt_dump_dt_ = pin->GetOrAddReal("problem", "mlt_dump_dt", 0.0);
   mlt_mean_ = pin->GetOrAddBoolean("problem", "mlt_mean", true);
   mlt_ramp_ = pin->GetOrAddReal("problem", "mlt_ramp_time", 0.0);
   mlt_ramp_dn_ = pin->GetOrAddReal("problem", "mlt_ramp_down_time", 0.0);
@@ -3663,8 +3654,8 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
                               : (x1hi_ - x1lo_)/indcs.nx1;
         const Real fmax_ = 0.1*fmin(w0(m,IEN,k,j,i-1), w0(m,IEN,k,j,i))*dxl/bdt;
         fconv(m,k,j,i) = ramp*fmin(fmlt1d(i), fmax_);
-        // diagnostic only (problem/mlt_dump_dt): the deposited flux and the cap, so the
-        // periodic dump can tell "the closure asked for less" from "the cap bit"
+        // diagnostic only (problem/mlt_dump): the deposited flux and the cap, so the
+        // dump can tell "the closure asked for less" from "the cap bit"
         if (m == 0 && k == ks && j == js) {
           fdiag(i,6) = fmax_*punit_*vunit;
           fdiag(i,7) = fconv(m,k,j,i)*punit_*vunit;
@@ -3768,26 +3759,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         }
       }
     }
-    // problem/mlt_dump_dt: the same table, appended, once every mlt_dump_dt seconds
-    if (mlt_dump_dt_ > 0.0 && mltmean && !mlt_dump_.empty()
-        && global_variable::my_rank == 0) {
-      const Real tnow = pm->time*tunit;
-      if (mlt_dump_next_ < 0.0 || tnow >= mlt_dump_next_) {
-        mlt_dump_next_ = tnow + mlt_dump_dt_;
-        auto hm = Kokkos::create_mirror_view(fmean_);
-        Kokkos::deep_copy(hm, fmean_);
-        auto hd2 = Kokkos::create_mirror_view(fdiag_);
-        Kokkos::deep_copy(hd2, fdiag_);
-        std::ofstream tf(mlt_dump_ + ".ts", std::ios::app);
-        tf.precision(6);
-        tf << std::scientific << "# t " << pm->time*tunit << "\n";
-        for (int i = is+1; i <= ie; ++i) {
-          tf << i;
-          for (int q = 0; q < 17; ++q) tf << " " << hm(i,q);
-          tf << " " << hd2(i,7) << " " << hd2(i,6) << "\n";
-        }
-      }
-    }
     mlt_fconv_ready_ = true;
     if (!(mlt_split_dep_ && rt_strang_)) {
       par_for("rg_mlt_div", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -3807,11 +3778,11 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   }
 
   // --- OPEN INNER BOUNDARY: the CO5BOLD (Freytag+ 2012) relaxation of the lowest active
-  // layer, the same treatment solar_convection.cpp uses, on a spherical shell.  Four
-  // steps: relax UPFLOWING gas toward the deep adiabat (this is the energy input and it
-  // sets the emergent luminosity), damp pressure toward the shell mean, restore the mean
-  // density, and remove the net radial mass flux.  The means are global over the whole
-  // shell at i = is, so they need a reduction across ranks.
+  // layer, on a spherical shell.  Four steps: relax UPFLOWING gas toward the deep
+  // adiabat (this is the energy input and it sets the emergent luminosity), damp
+  // pressure toward the shell mean, restore the mean density, and remove the net radial
+  // mass flux.  The means are global over the whole shell at i = is, so they need a
+  // reduction across ranks.
   if (open_inner_) {
     auto &mb_bcs = pmbp->pmb->mb_bcs;
     const Real rgas = rgas_, igm1 = 1.0/gm1_, gamma = gm1_ + 1.0;
