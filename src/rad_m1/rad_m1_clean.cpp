@@ -809,9 +809,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                   "r1 %d r2 %d first %d %d guard %d solves %d\n", pmy_pack->pmesh->ncycle,
                   t2_solve, nit, nit_sum, npos, nmark, all_low ? 1 : 0, nneg, cln_nr1,
                   cln_nr2, nfirst[0], nfirst[1], cln_nguard, nsolve);
-      if (cln_split) std::printf("CLEAN SPLIT cycle %d t2s %d r3 %d max %.3e clip %d\n",
-                                 pmy_pack->pmesh->ncycle, t2_solve, cln_nr3, cln_fh,
-                                 cln_nclip);
+      if (cln_split) std::printf("CLEAN SPLIT cycle %d t2s %d r3 %d max %.3e clip %d "
+                                 "Emin/Emax %.3e Eneg/E %.3e\n", pmy_pack->pmesh->ncycle,
+                                 t2_solve, cln_nr3, cln_fh, cln_nclip, cln_eneg[0],
+                                 cln_eneg[1]);
     }
   }
 
@@ -1223,6 +1224,8 @@ int RadiationM1::CleanCountNegative() {
   }, Kokkos::Max<Real>(bmax));
 
   const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
+  // (staggered clean_stag_tau_pos: E < 0 within tau_pos max E is kept, not counted)
+  const Real zt = cln_cell ? 0.0 : cln_taupos*cln_emax;
   Real nneg = 0.0;
   Kokkos::parallel_reduce("cln_neg", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &n) {
@@ -1232,7 +1235,7 @@ int RadiationM1::CleanCountNegative() {
     int i = idx - m*nkji - k*nji - j*nx1;
     Real &e = w(m,CLW_X,k+ks,j+js,i+is);
     if (e < 0.0 && e >= -zero) e = 0.0;
-    if (!(e >= 0.0)) n += 1.0;
+    if (!(e >= -zt)) n += 1.0;
   }, Kokkos::Sum<Real>(nneg));
   return static_cast<int>(CleanReduce(nneg, false));
 }
@@ -1255,16 +1258,28 @@ int RadiationM1::CleanStagRealizable(const int mark) {
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   CleanGhostFill(cln_w, CLW_X, 1);
   CleanArgs x = CleanMakeArgs();
-  Real bmax = 0.0;
+  Real bmax = 0.0, emax = 0.0, emin = 0.0, eneg = 0.0, esum = 0.0;
   Kokkos::parallel_reduce("cln_bmax", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &b_max) {
+  KOKKOS_LAMBDA(const int idx, Real &b_max, Real &e_max, Real &e_min, Real &e_neg,
+                Real &e_sum) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/nx1;
     int i = idx - m*nkji - k*nji - j*nx1;
     b_max = fmax(b_max, fabs(x.w(m,CLW_B,k+ks,j+js,i+is)));
-  }, Kokkos::Max<Real>(bmax));
-  const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
+    const Real e = x.w(m,CLW_X,k+ks,j+js,i+is);
+    e_max = fmax(e_max, e);
+    e_min = fmin(e_min, e);
+    e_neg += fmin(e, 0.0);
+    e_sum += fabs(e);
+  }, Kokkos::Max<Real>(bmax), Kokkos::Max<Real>(emax), Kokkos::Min<Real>(emin),
+  Kokkos::Sum<Real>(eneg), Kokkos::Sum<Real>(esum));
+  emax = CleanReduce(emax, true);
+  cln_emax = emax;
+  cln_eneg[0] = -CleanReduce(-emin, true)/fmax(emax, 1.0e-300);   // min E/max E
+  cln_eneg[1] = CleanReduce(eneg, false)/fmax(CleanReduce(esum, false), 1.0e-300);
+  // (clean_stag_tau_pos: R1, R2 within tau_pos max E)
+  const Real zero = fmax(10.0*cln_tol*CleanReduce(bmax, true), cln_taupos*emax);
   Real n1 = 0.0, n2 = 0.0, n3 = 0.0, n5 = 0.0;
   cln_fh = 0.0;
   // clean_stag_bclip: the passes limit the bracket instead of making faces low-order

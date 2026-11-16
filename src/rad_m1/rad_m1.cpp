@@ -178,6 +178,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // (read only when named: output headers list the input)
     cln_split = pin->DoesParameterExist("rad_m1","clean_stag_split") &&
                 pin->GetBoolean("rad_m1","clean_stag_split");
+    if (pin->DoesParameterExist("rad_m1","clean_stag_tau_pos")) {
+      cln_taupos = pin->GetReal("rad_m1","clean_stag_tau_pos");
+    }
     if (pin->DoesParameterExist("rad_m1","clean_stag_bclip")) {
       cln_bclip = pin->GetInteger("rad_m1","clean_stag_bclip");
     }
