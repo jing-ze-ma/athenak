@@ -149,6 +149,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_maxpos = pin->GetOrAddInteger("rad_m1","clean_maxpos",3);
     cln_pcsweeps = pin->GetOrAddInteger("rad_m1","clean_pc_sweeps",1);
+    // clean_line_solver = hybrid | pcr | thomas (TEMPORARY, for GPU timing): rows per
+    // Thomas system of the line solve (CleanCellLineSolve)
+    if (pin->DoesParameterExist("rad_m1","clean_line_solver")) {
+      const std::string ls = pin->GetString("rad_m1","clean_line_solver");
+      cln_chunk = (ls == "pcr") ? 1 : ((ls == "thomas") ? (1 << 30) : 32);
+    }
     // clean_init = given | steady (read only when named: an input without it keeps a
     // byte-identical parameter dump).  A start out of radiative equilibrium takes steady:
     // the rays, a steady solution, run ahead of the given field's front.

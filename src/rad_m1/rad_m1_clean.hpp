@@ -152,19 +152,17 @@ struct CleanLevel {
   int n[3];                    // active cells along x1, x2, x3
   int a0;                      // diagonal block
   int sm[3], sp[3];            // blocks of the lower and upper neighbour along each dir
-  int cp;                      // block-tridiagonal solve scratch
 };
 
 // slots of a coarse level (arrays cln_mg, no ghost cells)
 constexpr int CLM_A0 = 0;    // diagonal block (row major)
 constexpr int CLM_M = 16;    // block of the lower neighbour along dir: CLM_M + 32 dir
 constexpr int CLM_P = 32;    // block of the upper neighbour along dir: CLM_P + 32 dir
-constexpr int CLM_CP = 112;  // block-tridiagonal solve scratch
-constexpr int CLM_B = 128;   // right-hand side
-constexpr int CLM_X = 132;   // solution
-constexpr int CLM_T1 = 136;  // residual
-constexpr int CLM_T2 = 140;  // line-solve correction
-constexpr int CLM_N = 144;
+constexpr int CLM_B = 112;   // right-hand side
+constexpr int CLM_X = 116;   // solution
+constexpr int CLM_T1 = 120;  // residual
+constexpr int CLM_T2 = 124;  // line-solve correction
+constexpr int CLM_N = 128;
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanSmoothStep
