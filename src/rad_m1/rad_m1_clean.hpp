@@ -346,7 +346,16 @@ Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m,
     return (dir == 2) ? x.area[2](m,k,j,i)/x.vol(m,k,j,i) : 1.0/x.dxf[dir](m,k,j,i);
   }
   if (dir == 2 && q >= 2) return 0.0;   // (phi faces: torque form, CleanFaceStress)
-  if (q == 4) return (dir == 0) ? 1.0/x.x1f(m,i) : 0.5/(tan(x.x2f(m,j))*x.x1v(m,i));
+  // (a theta-periodic seam face takes one cot in both copies, as 32fab890f, so that its
+  // flux is single valued)
+  const BoundaryFlag pf = BoundaryFlag::periodic;
+  const bool sm = (dir == 1) &&
+                  ((j == x.js && x.mbc(m,BoundaryFace::inner_x2) == pf) ||
+                   (j == x.je + 1 && x.mbc(m,BoundaryFace::outer_x2) == pf));
+  if (q == 4) {
+    return (dir == 0) ? 1.0/x.x1f(m,i) :
+           (sm ? 0.5*x.cseam/x.x1v(m,i) : 0.5/(tan(x.x2f(m,j))*x.x1v(m,i)));
+  }
   if (q == 1) return 1.0/((dir == 0) ? x.x1f(m,i) : x.x1v(m,i));
   const int kc = (q == 2) ? k - (dir == 2) : k, jc = (q == 2) ? j - (dir == 1) : j;
   const int ic = (q == 2) ? i - (dir == 0) : i;
@@ -354,13 +363,7 @@ Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m,
   if (dir == 0) {
     return 2.0*d(0) - d(1) - d(2) + (x.multi_d ? d(3)/tan(x.x2v(m,jc)) : 0.0);
   }
-  // (a theta-periodic seam face takes one cot in both copies, as 32fab890f, so that its
-  // flux is single valued)
-  const BoundaryFlag pf = BoundaryFlag::periodic;
-  if ((j == x.js && x.mbc(m,BoundaryFace::inner_x2) == pf) ||
-      (j == x.je + 1 && x.mbc(m,BoundaryFace::outer_x2) == pf)) {
-    return (d(1) - d(2))*x.cseam + 3.0*d(3);
-  }
+  if (sm) return (d(1) - d(2))*x.cseam + 3.0*d(3);
   return (d(1) - d(2))/tan(x.x2f(m,j)) + 3.0*d(3);
 }
 
