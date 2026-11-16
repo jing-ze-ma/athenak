@@ -981,7 +981,9 @@ void RadiationM1::CleanRightHandSide() {
 //! \fn Real RadiationM1::CleanNewtonUpdate
 //! \brief new iterate E_k = X and the gas temperature in exchange equilibrium with it
 //! (the absorption takes max(X, 0); the staggered layout also keeps that as the iterate,
-//! the cell layout keeps X, whose E < 0 its positivity limiter treats).
+//! the cell layout keeps X, whose E < 0 its positivity limiter treats).  The cell layout
+//! takes the gas eint change -h S_E - dKE with the full S_E of eq. 56 of Ma et al.
+//! (2025) (CLW_GM, CLW_EP of CleanCellRightHandSide, CleanCellNewtonUpdate).
 //! Returns max |dE|/E, |dT|/T.
 
 Real RadiationM1::CleanNewtonUpdate() {
@@ -1012,10 +1014,11 @@ Real RadiationM1::CleanNewtonUpdate() {
     const Real t_old = w(m,CLW_T,k,j,i);
     const Real x = w(m,CLW_X,k,j,i);
     const Real ex = fmax(x, 0.0);
-    const Real e = cell ? x : ex;
+    const Real e = cell ? x : ex, g = cell ? w(m,CLW_GM,k,j,i) : 1.0;
     const Real t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
-                       hc*op(m,M1_OP_P,k,j,i)*arad_,
-                       w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*ex, t_old);
+                       hc*op(m,M1_OP_P,k,j,i)*g*arad_,
+                       w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*ex
+                       + (cell ? w(m,CLW_EP,k,j,i) : 0.0), t_old);
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
     const Real de = fabs(e - e_old)/fmax(fmax(e, e_old), 1.0e-300);

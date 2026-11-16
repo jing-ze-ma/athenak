@@ -73,9 +73,15 @@ constexpr int CLW_S = 21;
 constexpr int CLW_Q = 22;
 constexpr int CLW_Y = 23;
 constexpr int CLW_Z = 24;
-constexpr int CLW_WK = 25;   // work W of the right-hand side
+constexpr int CLW_WK = 25;   // energy the gas takes besides heat: kinetic energy it gains
+                             // (and the reference force's work, cell layout), iterate
 constexpr int CLW_DK = 26;   // d(rho kappa_P)/dT, d(rho kappa_E)/dT of the iterate
-constexpr int CLW_N = 28;
+constexpr int CLW_BT = 28;   // cell layout: beta = v/c of the iterate (3, frame of y)
+constexpr int CLW_RE = 31;   // h S_E = hc kP G a T^4 - hc kE E + RE E + RY.y (Ma et al.
+constexpr int CLW_RY = 32;   //   2025, eq. 56, G = CLW_GM): the beta terms (RY: 3)
+constexpr int CLW_GM = 35;   // G = 1 + beta^2/2
+constexpr int CLW_EP = 36;   // -(RE E + RY.y) - WK of the solution (eint of the gas)
+constexpr int CLW_N = 37;
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanArgs
