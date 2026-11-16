@@ -917,7 +917,12 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
     const Real bf = bc + ((bl*br > 0.0) ? copysign(0.5*fmin(fabs(bl), fabs(br)), bl)
                                         : 0.0);
     e0[n] = bf - cc[n]*bc - (bf - bc)*t;
-    const Real h = bdry ? fabs((blo ? jr : jl)[0][0])/x.c : (n ? -hk[1] : hk[0]);
+    Real h = n ? -hk[1] : hk[0];
+    if (bdry) {   // the kinetic outgoing flux (CleanFaceWeights), not the full column
+      Real fl, fr;
+      CleanFaceWeights(x, dir, m, k, j, i, fl, fr);
+      h = fabs(blo ? fr : fl)/x.c;
+    }
     const Real tm = (bdry && x.marshak) ? 0.0 : th[n];
     a[n] = (1.0 - tm)*h + 0.25*tm;
     den += a[n]*r[n] - 0.5*tm;
