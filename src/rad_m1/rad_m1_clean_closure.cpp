@@ -2046,15 +2046,23 @@ void RadiationM1::CleanFvSweep() {
     if (axi) Kokkos::deep_copy(cln_fvx, cln_fvi);
     if (act) Kokkos::deep_copy(done, -1);
     const int l1 = (jt && it > 0) ? std::min(cln_fvl0, nlev) : 0;
-    // one level (sg > 0: only the cells of cycle segment sg) into the reduction rv
+    // one level (sg > 0: only the cells of cycle segment sg) into the reduction rv; pl
+    // std::true_type: the plain fv1 sweep (CUDA, which takes no device lambda inside a
+    // generic one: a flag, the branches of the other forms kept)
+#if defined(KOKKOS_ENABLE_CUDA)
+    auto level = [&](const int l, const int sg, const RedView rv, const bool P) {
+#else
     auto level = [&](const int l, const int sg, const RedView rv, auto pl) {
+#endif
     const int64_t k0 = cln_fvkl[l];
     const int nkb = static_cast<int>(cln_fvkl[l+1] - k0);
     Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                                                             cln_fvlv[l]),
     KOKKOS_LAMBDA(const int q, Kokkos::MinMaxScalar<Real> &mm) {
+#if !defined(KOKKOS_ENABLE_CUDA)
       // (pl: the plain fv1 sweep, the branches of the other forms compiled out)
       constexpr bool P = decltype(pl)::value;
+#endif
       const bool o2c = !P && o2, ldc = !P && ld, axc = !P && axi, acc = P || act;
       const int nlc = ldc ? nl : 0;
       // (the m n + d of entry q: the last whose start in the level is <= q, between
