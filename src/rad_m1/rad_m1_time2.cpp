@@ -3392,7 +3392,7 @@ int RadiationM1::Time2RstNchWant() {
          + ((vet_sc && vsc_every > 1) ? 2*M1_T2_NVET : 0)    // vet_sc_every: D0, D1
          + ((vet_col && t2_vcmode == 4) ? M1_X2_NCH : 0);    // rbfast-1021 extrap2
   return nt + ((force_ref == M1_FREF_CLEAN) ? 4 : 0)         // the reference force, set
-         + ((clean && cln_cell && cln_extrap > 0) ? 2*CLN_N + 1 : 0)    // extrap history
+         + ((clean && cln_extrap > 0) ? 2*CLN_N + 1 : 0)    // extrap history
          + ((clean && cln_ring) ? vra_k*CLN_N + 1 : 0)       // clean_rot_ring
          + ((clean && cln_rfv > 0) ? cln_fvb*cln_fvn : 0);   // the conservative rays
 }
@@ -3474,7 +3474,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   }
   // clean_closure = extrap*: the ray moments at t^n and at the end of the step, then
   // t^n, that end time and the flags at i = 0..4
-  if (clean && cln_cell && cln_extrap > 0) {
+  if (clean && cln_extrap > 0) {
     const bool have = (cln_mn.extent_int(0) >= m0 + nmb);
     if (have) {
       Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+CLN_N), AL, AL, AL),
@@ -3614,7 +3614,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= 4;
   }
-  if (clean && cln_cell && cln_extrap > 0) {
+  if (clean && cln_extrap > 0) {
     if (ch < 2*CLN_N) {
       auto &mx = (ch < CLN_N) ? cln_mn : cln_mc;
       if (mx.extent_int(0) != nmb) {
