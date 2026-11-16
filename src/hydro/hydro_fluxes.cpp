@@ -463,6 +463,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     }
 
       if (use_wellbalance_static_reconst_perturb_) {
+        // the pressure floor above repairs wl/wr(IEN,i) on another thread
+        member.team_barrier();
         AddWbPrimFaceX1(member,m,k,j,il-1,iu,w0facewb_x1f,wl,wr);
       }
 
@@ -956,6 +958,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               }
             });
           }
+          // the next row's reconstruction rewrites wl/wr on other threads
+          member.team_barrier();
         }
       } // end of loop over j
     });
@@ -1277,6 +1281,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               }
             });
           }
+          // the next row's reconstruction rewrites wl/wr on other threads
+          member.team_barrier();
         }
       } // end loop over k
     });
