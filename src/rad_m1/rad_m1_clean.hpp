@@ -482,11 +482,12 @@ Real CleanStagN(const CleanArgs &x, const int v, const int dir, const int m,
 //! \brief coefficients of E_L and E_R in the flux through face (k,j,i) normal to dir, i.e.
 //! everything but the off-diagonal Eddington terms and the old-vector flux G.  Physical
 //! boundaries (non-periodic) take the boundary flux of their form (none at a wall or an
-//! imposed flux, CleanFaceSource).
+//! imposed flux, CleanFaceSource).  up (if given) is the donor-cell share phi of
+//! clean_stag_upwind.
 
 KOKKOS_INLINE_FUNCTION
 void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int k,
-                      const int j, const int i, Real &al, Real &ar) {
+                      const int j, const int i, Real &al, Real &ar, Real *up = nullptr) {
   if (x.fwc) {
     al = x.fc[dir](m,CLF_QL,k,j,i);
     ar = x.fc[dir](m,CLF_QL+1,k,j,i);
@@ -552,8 +553,8 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     const Real ul = CleanStagN(x, CLW_A1, dir, m, k, j, i, kl, jl, il);
     const Real ur = CleanStagN(x, CLW_A1, dir, m, k, j, i, k, j, i);
     const Real sl = s*ul, sr = s*ur;
-    if (x.upw) {   // (clean_stag_upwind: the donor cell, M-matrix; CleanStagAdvectCorr
-      if (ul + ur > 0.0) {   //  adds the rest, lagged, except on a low-order face)
+    if (x.upw && low) {   // (clean_stag_upwind on a low-order face: the donor cell)
+      if (ul + ur > 0.0) {
         al += 2.0*sl;
       } else {
         ar += 2.0*sr;
@@ -564,14 +565,30 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
                    (CleanStagN(x, CLW_BT, dir, m, k, j, i, kl, jl, il) +
                     CleanStagN(x, CLW_BT, dir, m, k, j, i, k, j, i))*x.h*x.c;
     // (clean_stag_sbimp: of (1 - r) kE E, the emission's response through the gas T)
-    const Real bl = b*x.op(m,M1_OP_E,kl,jl,il)*(x.sbi ? 1.0 - x.w(m,CLW_GX,kl,jl,il) : 1.0);
-    const Real br = b*x.op(m,M1_OP_E,k,j,i)*(x.sbi ? 1.0 - x.w(m,CLW_GX,k,j,i) : 1.0);
-    if (!x.upw) {
+    const Real rl = x.sbi ? 1.0 - x.w(m,CLW_GX,kl,jl,il) : 1.0;
+    const Real rr = x.sbi ? 1.0 - x.w(m,CLW_GX,k,j,i) : 1.0;
+    const Real bl = b*x.op(m,M1_OP_E,kl,jl,il)*rl, br = b*x.op(m,M1_OP_E,k,j,i)*rr;
+    if (!(x.upw && low)) {
       al += (low && sl + sr < 0.0) ? 0.0 : (low ? sl + sr : sl);
       ar += (low && sl + sr >= 0.0) ? 0.0 : (low ? sl + sr : sr);
     }
     al += (low && b < 0.0) ? 0.0 : (low ? bl + br : bl);
     ar += (low && b >= 0.0) ? 0.0 : (low ? bl + br : br);
+    // (clean_stag_upwind: where the central flux breaks the M-matrix, al < 0 or ar > 0
+    // (cell Peclet number > 1), the share phi of the advective flux that goes donor cell
+    // is the least that restores it, continuous in the coefficients, so that the operator
+    // changes smoothly between passes; CleanStagAdvectCorr adds phi times the rest,
+    // lagged)
+    if (x.upw && !low && !(al >= 0.0 && ar <= 0.0)) {
+      auto need = [](const Real c, const Real d) {   // least p >= 0 with c + p d >= 0
+        return (c >= 0.0) ? 0.0 : ((d > 0.0) ? -c/d : 1.0);
+      };
+      const Real o = (ul + ur > 0.0) ? 1.0 : -1.0;
+      const Real phi = fmin(fmax(need(al, o*sl), need(-ar, o*sr)), 1.0);
+      if (up) *up = phi;
+      al += o*phi*sl;
+      ar -= o*phi*sr;
+    }
   }
 }
 
@@ -677,12 +694,15 @@ Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanStagAdvectCorr
-//! \brief clean_stag_upwind: the advective flux of face (k,j,i) normal to dir is
+//! \brief clean_stag_upwind: on a face whose central advective flux breaks the
+//! M-matrix (cell Peclet number > 1, CleanFaceWeights) the share phi of the flux of face
+//! (k,j,i) normal to dir is
 //!   A_f = a_up E_up + [a_f E_f - a_up E_up]^k,  a_f = (a_L + a_R)/2,
 //! the donor cell (upwind on a_f) in the matrix, which keeps the M-matrix at any
 //! beta tau_cell, and the rest at the iterate E^k (CLW_EK, a deferred correction): E_f is
 //! the van Leer value from the upwind side (src/reconstruct/plm.hpp).  At the fixed point
-//! the face carries a_f E_f, second order in smooth flows and monotone at jumps.
+//! the face carries a_f E_f, second order in smooth flows and monotone at jumps; the
+//! rest (all of it where the M-matrix holds) stays central.
 
 KOKKOS_INLINE_FUNCTION
 Real CleanStagAdvectCorr(const CleanArgs &x, const int dir, const int m, const int k,
@@ -756,9 +776,14 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     }
   }
   if (x.drag) s += (1.0 - w)*qd*x.fc[dir](m,CLF_DQ,k,j,i);
-  // (the advective share 1 - theta_d, CleanFaceWeights; a low-order face keeps the donor)
+  // (the advective share 1 - theta_d of an upwind face, CleanFaceWeights; a low-order
+  // face keeps the donor)
   if (x.upw && x.feedback && !(x.gf && !x.hi && x.fc[dir](m,CLF_SLO,k,j,i) > 0.0)) {
-    s += ((1.0 - w) - th)*(1.0 - qd)*CleanStagAdvectCorr(x, dir, m, k, j, i);
+    Real al, ar, phi = 0.0;
+    CleanFaceWeights(x, dir, m, k, j, i, al, ar, &phi);
+    if (phi > 0.0) {
+      s += phi*((1.0 - w) - th)*(1.0 - qd)*CleanStagAdvectCorr(x, dir, m, k, j, i);
+    }
   }
   return s;
 }
