@@ -3030,17 +3030,19 @@ class RadiationM1 {
   Real cln_tc = -1.0e300;       // time of the closure build
   Real cln_dtb = 0.0;           // dt of the closure build
   DvceArray5D<Real> cln_s;      // closure (CLN_*)
-  int cln_rfv = 0;              // clean_rays = fv1 | fv: the conservative sweep (1st, 2nd order)
-  DvceArray5D<Real> cln_fvi;    // its intensities (m, d, k, j, i)
+  int cln_rfv = 0;              // clean_rays = fv1 | fv | lld: the conservative sweep
+  int cln_fvb = 1;              // blocks of cln_fvi: lld 4 (average, slopes along x1..x3)
+  DvceArray5D<Real> cln_fvi;    // its intensities (m, b n + d, k, j, i)
+  DvceArray5D<Real> cln_fvq;    // lld: the source moments (m, CLQ_*, k, j, i)
   DvceArray5D<Real> cln_fvp;    // fv: the intensities of the last build (downwind slopes)
-  DvceArray5D<Real> cln_fvq;    // fv, 2-D axisymmetric: the intensities of the last pass
+  DvceArray5D<Real> cln_fvx;    // 2-D axisymmetric: the intensities of the last pass
   DvceArray5D<Real> cln_fva;    // the outward vector areas of the six faces of a cell
   DvceArray3D<int> cln_fvo;     // the cell order of each direction (m, d, cell)
   DvceArray4D<int> cln_fvm;     // the direction maps of the periodic seams (m, side, k, d)
   DvceArray4D<Real> cln_fvt;    // scratch of CleanFvSeams
   DvceArray4D<int> cln_fvwm;    // specular maps of reflecting theta walls (m,side,k,d)
   DvceArray4D<Real> cln_fvwu;   // |n . theta_hat| there
-  DvceArray5D<Real> cln_fvw;    // the walls' incoming intensities (m, side, k, i, d)
+  DvceArray5D<Real> cln_fvw;    // the walls' incoming intensities (m,side,k,i,b N + d)
   DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; CleanFvSets)
   int cln_fvn = 0;              // their number
   std::vector<Real> cln_fvkey;  // the set (block key) in each slot of a rotating union
