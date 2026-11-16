@@ -167,6 +167,9 @@ void RadiationM1::CleanCellFaceSpeeds() {
       const Real al = CleanDissipationWeight(mode, chi*dxd, psi, sray, rc, pw);
       fc(m,CLF_AL,k,j,i) = al;
       fc(m,CLF_TH,k,j,i) = wb ? rc*dxd/(h*c) : (1.0 - al)/(1.0 + h*c*chi);
+      // the RC term takes the steady coefficient at every h (with force_reference = clean
+      // TH h c^2 bitwise): an h-dependent one makes the spatial operator depend on dt
+      fc(m,CLF_RC,k,j,i) = rc*dxd/(h*c)*h*c*c;
       fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
     });
   }
