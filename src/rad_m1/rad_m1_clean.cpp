@@ -111,7 +111,7 @@ void RadiationM1::CleanInit() {
   int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
   int nmb = pmy_pack->nmb_thispack;
   Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
-  Kokkos::realloc(cln_v, nmb, 2, n3, n2, n1);
+  Kokkos::realloc(cln_v, nmb, 3, n3, n2, n1);
   Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
@@ -655,6 +655,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   auto settled = [&](const Real d, const Real d0, const Real f) {
     return d < tol_nl || (d > 0.5*d0 && d < 100.0*fmin(f, tol_nl));
   };
+  if (cell) Kokkos::deep_copy(Kokkos::subview(cln_v, Kokkos::ALL, 2, Kokkos::ALL,
+                                              Kokkos::ALL, Kokkos::ALL), 0.0);
   for (int ipos = 0; ; ++ipos) {
     CleanFirstIterate();
     if (cell) CleanCellFirstIterate();
