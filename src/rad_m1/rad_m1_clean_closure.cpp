@@ -2446,8 +2446,14 @@ void RadiationM1::CleanFvRstRead() {
   if (!md || indcs.ng < 2 || n < 4) return;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
-  auto v = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-             Kokkos::subview(cln_fvi, 0, std::make_pair(0, 4), ks, js - 1, is - 2));
+  // (the record through a contiguous copy: a strided device subview has no copy to the
+  // host on CUDA)
+  auto fi = cln_fvi;
+  DvceArray1D<Real> rec("cln_fv_rec", 4);
+  par_for("cln_fv_rec", DevExeSpace(), 0, 3, KOKKOS_LAMBDA(const int e) {
+    rec(e) = fi(0,e,ks,js-1,is-2);
+  });
+  auto v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rec);
   if (!(v(0) == kCleanFvRstMagic)) return;
   cln_fvt1 = v(1);
   cln_fvt2 = v(2);
@@ -2456,7 +2462,6 @@ void RadiationM1::CleanFvRstRead() {
   Kokkos::realloc(cln_fvgp, nmb, n, sh.ncell);
   const int oi = is - 1, oj = js - 1, ok = ks - (td ? 1 : 0);
   auto gp = cln_fvgp;
-  auto fi = cln_fvi;
   par_for("cln_fv_rstr", DevExeSpace(), 0, nmb - 1, 0, n - 1, 0, sh.ncell - 1,
   KOKKOS_LAMBDA(const int m, const int d, const int q) {
     int k, j, i;
