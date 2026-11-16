@@ -774,6 +774,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // 4. positivity of the solution
   const int nneg = cell ? CleanCellCountNegative() : CleanCountNegative();
   if (cell && cln_diagcells && all_low) CleanCellDiagnose();
+  if (!cell && cln_diagforce) CleanStagForceDiag();
   if (nit < 0) cln_nfail += 1.0;
   if (nneg > 0) cln_nneg += 1.0;
   // a backward-Euler solve that did not converge fails the cycle: with <time>/dt_retry
@@ -1252,6 +1253,70 @@ int RadiationM1::CleanStagRealizable(const int mark) {
   cln_nr1 = static_cast<int>(CleanReduce(n1, false));
   cln_nr2 = static_cast<int>(CleanReduce(n2, false));
   return cln_nr1 + cln_nr2;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagForceDiag
+//! \brief diagnostic (clean_diag_force, staggered): on the low-order faces (w = 1) the
+//! momentum a face hands to the gas, -[(F - G)/c^2 + h d_n(D E)] (CleanMomentumChange),
+//! against the physical one, h chi_f (F - A)/c = (1/theta - 1)(F - A)/c^2 (A the face
+//! advective flux).  Prints sum |mismatch| over those faces, the part with h c chi_f > 1,
+//! both over sum |physical| of all interior faces, the largest |mismatch| over the
+//! largest |physical|, and sum |mismatch| over sum |F|/c^2 of all interior faces.
+
+void RadiationM1::CleanStagForceDiag() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  int nmb = pmy_pack->nmb_thispack;
+  CleanGhostFill(cln_w, CLW_X, 1);
+  CleanArgs x = CleanMakeArgs();
+  // phys, mis, thick, n, |F|/c^2, max mis, max phys
+  Real r[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    const int f1 = nx1 + di, f2 = nx2 + dj, f3 = nx3 + dk, fji = f2*f1, fkji = f3*fji;
+    Real q[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    Kokkos::parallel_reduce("cln_fdiag", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*fkji),
+    KOKKOS_LAMBDA(const int idx, Real &p, Real &mi, Real &th, Real &n, Real &fm,
+                  Real &mm, Real &mp) {
+      int m = idx/fkji;
+      int k = (idx - m*fkji)/fji;
+      int j = (idx - m*fkji - k*fji)/f1;
+      int i = idx - m*fkji - k*fji - j*f1;
+      k += ks;
+      j += js;
+      i += is;
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      const Real f = CleanFaceFlux(x, CLW_X, dir, m, k, j, i, true), c2 = x.c*x.c;
+      const Real t = x.fc[dir](m,CLF_TH,k,j,i);
+      const Real a = x.feedback ? 0.5*(x.w(m,CLW_A1+dir,k-dk,j-dj,i-di)*
+                     x.w(m,CLW_X,k-dk,j-dj,i-di) + x.w(m,CLW_A1+dir,k,j,i)*
+                     x.w(m,CLW_X,k,j,i)) : 0.0;
+      const Real ph = (1.0/t - 1.0)*(f - a)/c2;
+      p += fabs(ph);
+      fm += fabs(f)/c2;
+      mp = fmax(mp, fabs(ph));
+      if (x.fc[dir](m,CLF_W,k,j,i) < 1.0) return;
+      const Real d = fabs(-(f - x.fc[dir](m,CLF_G,k,j,i))/c2 -
+                          x.h*CleanFaceStress(x, CLW_X, dir, m, k, j, i, true) - ph);
+      mi += d;
+      if (t < 0.5) th += d;
+      n += 1.0;
+      mm = fmax(mm, d);
+    }, Kokkos::Sum<Real>(q[0]), Kokkos::Sum<Real>(q[1]), Kokkos::Sum<Real>(q[2]),
+    Kokkos::Sum<Real>(q[3]), Kokkos::Sum<Real>(q[4]), Kokkos::Max<Real>(q[5]),
+    Kokkos::Max<Real>(q[6]));
+    for (int n = 0; n < 5; ++n) r[n] += q[n];
+    for (int n = 5; n < 7; ++n) r[n] = fmax(r[n], q[n]);
+  }
+  for (int n = 0; n < 7; ++n) r[n] = CleanReduce(r[n], n >= 5);
+  if (global_variable::my_rank == 0) {
+    std::printf("CLEAN FORCE cycle %d t2s %d low %d mis %.3e thick %.3e max %.3e "
+                "mom %.3e\n", pmy_pack->pmesh->ncycle, t2_solve, static_cast<int>(r[3]),
+                r[1]/fmax(r[0], 1.0e-300), r[2]/fmax(r[0], 1.0e-300),
+                r[5]/fmax(r[6], 1.0e-300), r[1]/fmax(r[4], 1.0e-300));
+  }
 }
 
 //----------------------------------------------------------------------------------------
