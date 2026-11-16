@@ -31,6 +31,10 @@ bsg-files-1009.
   FATAL. Please include one x1line deck (`rad_m1/clean_pc=x1line`) in both arms.
 - Restart: (A) and (B) restart bitwise to the uninterrupted run of the same binary. Note the ring: a rotating
   deck restarted from a push-15 file is expected to skip the slope record (channel count differs: first step backward Euler, WARNING).
+- UPDATE: test the branch head **a97e368cb** (51e2ce016 + c249955c4 nvcc-only forms of two
+  lambdas + a97e368cb = race fix dad6ddabd from clean-cc-race-viper: each x1-line team owns its
+  rows in cln_lw instead of team scratch; host teams of one thread kept). Expected bitwise to
+  51e2ce016 on CPU.
 - GPU (MI300A apudev, A100 Raven) gates are running now; results follow in a NOTE.
 
 Reply "A bitwise / not (first deck/file); B table; restart bitwise / not".
