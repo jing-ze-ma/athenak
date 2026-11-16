@@ -1405,6 +1405,7 @@ Real RadiationM1::CleanVelocityUpdate() {
       if (dir == 0 || (dir == 1 && x.multi_d) || (dir == 2 && x.three_d)) {
         const Real mag = mg[dir];
         dm = dmv[dir];
+        v_max = fmax(v_max, mag/d);   // (|v| floor: the size of the stage's force terms)
         // (force_reference = clean: the first coupled solve's force is the reference,
         // withheld from the gas; nothing while the gas momentum is frozen)
         if (cap) fr(m,dir,k,j,i) = dm/x.h;
