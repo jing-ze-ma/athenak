@@ -3065,6 +3065,7 @@ class RadiationM1 {
   int cln_nr1 = 0, cln_nr2 = 0;  // staggered: cells E < 0, faces |F| > c E_donor
   int cln_nr3 = 0;              // clean_stag_split: faces |F^H| > c E_donor (diagnostic)
   Real cln_fh = 0.0;            //   and the largest |F^H|/(c E_donor)
+  int cln_bclip = 0, cln_nclip = 0;  // clean_stag_bclip; bracket faces it limited
   Real cln_fe = 0.0, cln_fv = 0.0;  // round-off levels of the Newton changes dE, dv
   bool cln_feedback = false;    // gas coupling active
   bool cln_init = false;        // arrays allocated
