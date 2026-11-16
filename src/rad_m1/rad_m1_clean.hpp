@@ -307,6 +307,29 @@ Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m, c
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanStagEdge
+//! \brief clean_stag_fkin, Cartesian: the dual face along b != dir of the momentum of
+//! face (k,j,i) normal to dir, between its row and row o = +-1: the means over its four
+//! cells of the streaming weight w (C1), h+_b, h-_b and D_{dir,b} E (E in work vector e)
+
+KOKKOS_INLINE_FUNCTION
+void CleanStagEdge(const CleanArgs &x, const int e, const int dir, const int b,
+                   const int m, const int k, const int j, const int i, const int o,
+                   const Real c1lo, const Real c1hi, Real q[4]) {
+  const int ab = (dir + b == 1) ? 3 : ((dir + b == 2) ? 4 : 5);
+  for (int n = 0; n < 4; ++n) q[n] = 0.0;
+  for (int c = 0; c < 4; ++c) {
+    const int s = (c & 1), r = (c >> 1)*o;
+    const int kk = k - s*(dir == 2) + r*(b == 2), jj = j - s*(dir == 1) + r*(b == 1);
+    const int ii = i - s*(dir == 0) + r*(b == 0);
+    q[0] += 0.25*CleanSmoothStep((x.cs(m,CLN_C1,kk,jj,ii) - c1lo)/(c1hi - c1lo));
+    q[1] += 0.25*x.cs(m,CLN_HP+b,kk,jj,ii);
+    q[2] += 0.25*x.cs(m,CLN_HM+b,kk,jj,ii);
+    q[3] += 0.25*x.cs(m,ab,kk,jj,ii)*x.w(m,e,kk,jj,ii);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanDivW
 //! \brief weight of the flux through the low (side 0) or high (side 1) face along dir in
 //! the divergence of cell (k,j,i): 1/dx_d, on spherical polar A_f/V
