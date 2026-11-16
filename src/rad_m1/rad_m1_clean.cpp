@@ -982,8 +982,8 @@ void RadiationM1::CleanRightHandSide() {
 //! \brief new iterate E_k = X and the gas temperature in exchange equilibrium with it
 //! (the absorption takes max(X, 0); the staggered layout also keeps that as the iterate,
 //! the cell layout keeps X, whose E < 0 its positivity limiter treats).  The cell layout
-//! takes the gas eint change -h S_E - dKE with the full S_E of eq. 56 of Ma et al.
-//! (2025) (CLW_GM, CLW_EP of CleanCellRightHandSide, CleanCellNewtonUpdate).
+//! takes the gas eint change -A of eq. 56 of Ma et al. (2025) (CLW_GM, CLW_EP of
+//! CleanCellRightHandSide, CleanCellNewtonUpdate).
 //! Returns max |dE|/E, |dT|/T.
 
 Real RadiationM1::CleanNewtonUpdate() {
