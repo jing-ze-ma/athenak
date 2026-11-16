@@ -1144,6 +1144,10 @@ Real RadiationM1::CleanVelocityUpdate() {
   CleanGhostFill(cln_w, CLW_EK, 1);
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = cln_split;
+  if (cln_fwork && cln_fsolve && cln_split) {   // (clean_stag_fwork: the momentum of the
+    CleanStagFSolve(CLW_EK);                     //  F solve, which the write-back gives
+    xh.fs = true;                                //  the gas, for the work W of the E row)
+  }
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
   auto op = opac;
