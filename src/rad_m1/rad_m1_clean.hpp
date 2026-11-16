@@ -23,6 +23,7 @@
 #include "bvals/bvals.hpp"
 #include "eos/eos.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#include "reconstruct/plm.hpp"
 
 namespace radm1 {
 
@@ -132,6 +133,7 @@ struct CleanArgs {
   bool hi;                     // staggered, clean_stag_split: the face momentum state
                                // F^H (w = 0), not the energy flux
   bool drag;                   // staggered, clean_stag_vimp: implicit gas velocity
+  bool upw;                    // staggered, clean_stag_upwind: donor-cell advective flux
   DvceArray5D<Real> op;        // opacities (M1_OP_*)
   int nf;                      // cell layout: number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
@@ -437,11 +439,19 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     const bool beam = x.use_beam && dir == 0 && x.beam(m,k-x.ks,j-x.js) > 0.0;
     if (beam && x.marshak) return;
     ar = x.marshak ? -x.c*x.marshak_q : x.c*x.cs(m,CLN_HM+dir,k,j,i);
+    // (clean_stag_upwind: an open end carries the advective flux a E of the energy, the
+    // end cell's when it flows out, the bath's when in, CleanFaceSource)
+    if (x.upw && x.feedback && !x.hi && CleanOpen(x, m, 2*dir) && !beam) {
+      ar += fmin(x.w(m,CLW_A1+dir,k,j,i), 0.0);
+    }
     return;
   }
   if (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC) {
     if (!CleanOpen(x, m, 2*dir+1)) return;
     al = x.marshak ? x.c*x.marshak_q : x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
+    if (x.upw && x.feedback && !x.hi && CleanOpen(x, m, 2*dir+1)) {
+      al += fmax(x.w(m,CLW_A1+dir,kl,jl,il), 0.0);
+    }
     return;
   }
   const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
@@ -474,13 +484,23 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   if (q < 0.0) ar += q;
   if (x.feedback) {
     const Real s = 0.5*(1.0 - w)*(1.0 - th);
-    const Real sl = s*x.w(m,CLW_A1+dir,kl,jl,il), sr = s*x.w(m,CLW_A1+dir,k,j,i);
+    const Real ul = x.w(m,CLW_A1+dir,kl,jl,il), ur = x.w(m,CLW_A1+dir,k,j,i);
+    const Real sl = s*ul, sr = s*ur;
+    if (x.upw) {   // (clean_stag_upwind: the donor cell, M-matrix; CleanStagAdvectCorr
+      if (ul + ur > 0.0) {   //  adds the rest, lagged, except on a low-order face)
+        al += 2.0*sl;
+      } else {
+        ar += 2.0*sr;
+      }
+    }
     // the beta term th c beta_f (hc kP a T^4 - hc kE E)_f of eq. 57 (Ma et al. 2025)
     const Real b = -0.25*(1.0 - w)*t0*(1.0 - qd)*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) +
                                           x.w(m,CLW_BT+dir,k,j,i))*x.h*x.c;
     const Real bl = b*x.op(m,M1_OP_E,kl,jl,il), br = b*x.op(m,M1_OP_E,k,j,i);
-    al += (low && sl + sr < 0.0) ? 0.0 : (low ? sl + sr : sl);
-    ar += (low && sl + sr >= 0.0) ? 0.0 : (low ? sl + sr : sr);
+    if (!x.upw) {
+      al += (low && sl + sr < 0.0) ? 0.0 : (low ? sl + sr : sl);
+      ar += (low && sl + sr >= 0.0) ? 0.0 : (low ? sl + sr : sr);
+    }
     al += (low && b < 0.0) ? 0.0 : (low ? bl + br : bl);
     ar += (low && b >= 0.0) ? 0.0 : (low ? bl + br : br);
   }
@@ -613,6 +633,30 @@ Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanStagAdvectCorr
+//! \brief clean_stag_upwind: the advective flux of face (k,j,i) normal to dir is
+//!   A_f = a_up E_up + [a_f E_f - a_up E_up]^k,  a_f = (a_L + a_R)/2,
+//! the donor cell (upwind on a_f) in the matrix, which keeps the M-matrix at any
+//! beta tau_cell, and the rest at the iterate E^k (CLW_EK, a deferred correction): E_f is
+//! the van Leer value from the upwind side (src/reconstruct/plm.hpp).  At the fixed point
+//! the face carries a_f E_f, second order in smooth flows and monotone at jumps.
+
+KOKKOS_INLINE_FUNCTION
+Real CleanStagAdvectCorr(const CleanArgs &x, const int dir, const int m, const int k,
+                         const int j, const int i) {
+  const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+  auto e = [&](const int o) {return x.w(m,CLW_EK,k+o*dk,j+o*dj,i+o*di);};
+  const Real ul = x.w(m,CLW_A1+dir,k-dk,j-dj,i-di), ur = x.w(m,CLW_A1+dir,k,j,i);
+  Real ef, dum;
+  if (ul + ur > 0.0) {
+    PLM(e(-2), e(-1), e(0), ef, dum);
+    return 0.5*(ul + ur)*ef - ul*e(-1);
+  }
+  PLM(e(-1), e(0), e(1), dum, ef);
+  return 0.5*(ul + ur)*ef - ur*e(0);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanFaceSource
 //! \brief the part of the face flux that does not depend on E: (1-w) theta G inside, the
 //! incoming flux (beam, bath) or the imposed flux on physical boundaries
@@ -629,12 +673,19 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     if (x.use_beam && dir == 0 && x.beam(m,k-x.ks,j-x.js) > 0.0) {
       return x.beam(m,k-x.ks,j-x.js);
     }
-    return x.marshak ? x.c*x.marshak_q*x.ebath[2*dir] : 0.25*x.c*x.ebath[2*dir];
+    const bool up = x.upw && x.feedback && !x.hi;
+    const Real ab = up ? fmax(x.w(m,CLW_A1+dir,k,j,i), 0.0) : 0.0;
+    return (x.marshak ? x.c*x.marshak_q*x.ebath[2*dir] : 0.25*x.c*x.ebath[2*dir]) +
+           ab*x.ebath[2*dir];
   }
   if (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC) {
     if (CleanBc(x, m, 2*dir+1) == M1_IBC_REFLECT) return 0.0;
     if (CleanBc(x, m, 2*dir+1) == M1_IBC_FLUX) return dir ? x.ifx2[1](m,k,i) : x.iflux[1];
-    return x.marshak ? -x.c*x.marshak_q*x.ebath[2*dir+1] : -0.25*x.c*x.ebath[2*dir+1];
+    const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
+    const bool up = x.upw && x.feedback && !x.hi;
+    const Real ab = up ? fmin(x.w(m,CLW_A1+dir,kl,jl,il), 0.0) : 0.0;
+    return (x.marshak ? -x.c*x.marshak_q*x.ebath[2*dir+1] : -0.25*x.c*x.ebath[2*dir+1]) +
+           ab*x.ebath[2*dir+1];
   }
   const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
@@ -650,6 +701,10 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
          (x.w(m,CLW_RE,kl,jl,il) + x.w(m,CLW_RE,k,j,i));
   }
   if (x.drag) s += (1.0 - w)*qd*x.fc[dir](m,CLF_DQ,k,j,i);
+  // (the advective share 1 - theta_d, CleanFaceWeights; a low-order face keeps the donor)
+  if (x.upw && x.feedback && !(x.gf && !x.hi && x.fc[dir](m,CLF_SLO,k,j,i) > 0.0)) {
+    s += ((1.0 - w) - th)*(1.0 - qd)*CleanStagAdvectCorr(x, dir, m, k, j, i);
+  }
   return s;
 }
 

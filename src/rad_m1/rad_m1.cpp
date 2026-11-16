@@ -210,6 +210,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_vimp = !cln_cell && cln_split &&
                pin->DoesParameterExist("rad_m1","clean_stag_vimp") &&
                pin->GetBoolean("rad_m1","clean_stag_vimp");
+    cln_upw = !cln_cell && pin->DoesParameterExist("rad_m1","clean_stag_upwind") &&
+              pin->GetBoolean("rad_m1","clean_stag_upwind");
     cln_diagforce = pin->DoesParameterExist("rad_m1","clean_diag_force") &&
                     pin->GetBoolean("rad_m1","clean_diag_force");
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
