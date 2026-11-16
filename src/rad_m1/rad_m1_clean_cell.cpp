@@ -966,7 +966,9 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
   auto lw = cln_lw;
   auto line = KOKKOS_LAMBDA(TeamMember_t tm) {
     LineRows w(&lw(static_cast<size_t>(nw)*tm.league_rank()), nw);
-    for (int ln = tm.league_rank(); ln < nline; ln += tm.league_size()) {
+    int l0, l1, ls;
+    CleanLineRange(nline, tm.league_rank(), tm.league_size(), l0, l1, ls);
+    for (int ln = l0; ln < l1; ln += ls) {
       const int m = ln/(np*nq);
       const int p = (ln - m*np*nq)/nq, q = ln % nq;
       auto cell = [&](const int n, int &k, int &j, int &i) {
@@ -1131,7 +1133,7 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
 //! \fn int RadiationM1::CleanCellLineRows
 //! \brief the number of teams of a line solve over nline lines (nw values of rows each,
 //! teams of nt threads on a GPU): at most as many as run at once.  Team t owns values
-//! [t nw, (t+1) nw) of cln_lw and takes the lines t, t + teams, ...  (A block of team
+//! [t nw, (t+1) nw) of cln_lw and takes the lines of CleanLineRange.  (A block of team
 //! scratch that the next team takes over within the same launch carries no memory fence
 //! between the two teams, which on MI300A made the solves differ from run to run.)
 
@@ -1179,7 +1181,9 @@ void RadiationM1::CleanCellLineFactorSolve(const CleanLevel &lv, const int src,
   auto lw = cln_lw;
   auto line = KOKKOS_LAMBDA(TeamMember_t tm) {
     LineRows w(&lw(static_cast<size_t>(nw)*tm.league_rank()), nw);
-    for (int ln = tm.league_rank(); ln < nline; ln += tm.league_size()) {
+    int l0, l1, ls;
+    CleanLineRange(nline, tm.league_rank(), tm.league_size(), l0, l1, ls);
+    for (int ln = l0; ln < l1; ln += ls) {
       const int m = ln/(np*nq);
       const int k = (ln - m*np*nq)/nq, j = ln % nq;
       Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {

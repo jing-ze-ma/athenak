@@ -289,6 +289,26 @@ void CleanShellCell(const CleanShell &s, int q, int &k, int &j, int &i) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanLineRange
+//! \brief the lines [lo, hi) in steps st that team t of nt takes out of nline
+//! (CleanCellLineRows): on the host the contiguous chunk [t nline/nt, (t+1) nline/nt), so
+//! that a thread's lines lie next to each other in memory; on a GPU t, t + nt, ...
+
+KOKKOS_INLINE_FUNCTION
+void CleanLineRange(const int nline, const int t, const int nt, int &lo, int &hi,
+                    int &st) {
+  if constexpr (std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
+    lo = static_cast<int>(static_cast<int64_t>(nline)*t/nt);
+    hi = static_cast<int>(static_cast<int64_t>(nline)*(t + 1)/nt);
+    st = 1;
+  } else {
+    lo = t;
+    hi = nline;
+    st = nt;
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \struct CleanLevel
 //! \brief one grid level of the cell-layout preconditioner: an array holding the 4x4
 //! blocks of the first-order operator (diagonal block and the blocks of the two
