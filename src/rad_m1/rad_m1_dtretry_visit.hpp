@@ -1158,6 +1158,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_all_low", cln_all_low);
   v.value("cln_hk", cln_hk);
   v.value("cln_opt", cln_opt);
+  v.value("cln_sopt", cln_sopt);
   v.value("cln_consist", cln_consist);
   v.value("cln_conswt", cln_conswt);
   v.value("cln_milne", cln_milne);
@@ -1191,6 +1192,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_psi_eps", cln_psi_eps);
   v.value("cln_nnreal", cln_nnreal);
   v.value("cln_fsolve", cln_fsolve);
+  v.value("cln_ksok", cln_ksok);
   v.value("cln_fkin", cln_fkin);
   v.value("cln_dok", cln_dok);
   v.value("cln_fwork", cln_fwork);
@@ -1299,6 +1301,9 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   for (int q0_ = 0; q0_ < 3; ++q0_) {v.view("cln_gd[]", cln_gd[q0_]);}
   v.view("cln_gn", cln_gn);
   v.view("cln_hbuf", cln_hbuf);
+  v.value("cln_fsn", cln_fsn);
+  v.value("cln_fsit", cln_fsit);
+  v.value("cln_fsres", cln_fsres);
   v.value("cln_nsolve", cln_nsolve);
   v.value("cln_nit", cln_nit);
   v.value("cln_nfail", cln_nfail);
