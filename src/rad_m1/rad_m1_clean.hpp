@@ -155,6 +155,19 @@ bool CleanOpen(const CleanArgs &x, const int m, const int s) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool CleanInner
+//! \brief cell (k,j,i) lies inside the active cells, at least g from every block face
+//! along the mesh dimensions (md: multi-D, td: 3-D)
+
+KOKKOS_INLINE_FUNCTION
+bool CleanInner(const int k, const int j, const int i, const int g, const int is,
+                const int ie, const int js, const int je, const int ks, const int ke,
+                const bool md, const bool td) {
+  return i >= is + g && i <= ie - g && (!md || (j >= js + g && j <= je - g)) &&
+         (!td || (k >= ks + g && k <= ke - g));
+}
+
+//----------------------------------------------------------------------------------------
 //! \struct CleanLevel
 //! \brief one grid level of the cell-layout preconditioner: an array holding the 4x4
 //! blocks of the first-order operator (diagonal block and the blocks of the two

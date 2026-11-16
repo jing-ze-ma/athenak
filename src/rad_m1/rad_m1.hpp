@@ -2942,7 +2942,7 @@ class RadiationM1 {
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
-                      const bool phys = true);
+                      const bool phys = true, const int part = 0);
   std::array<Real, 2> CleanDots(DvceArray5D<Real> w, const int nc, const int n,
                                 const std::array<int, 4> ab);
   Real CleanReduce(Real v, const bool max);
