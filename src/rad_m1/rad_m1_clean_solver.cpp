@@ -214,6 +214,7 @@ std::array<Real, 2> RadiationM1::CleanDots(DvceArray5D<Real> w, const int nc, co
   int nmb = pmy_pack->nmb_thispack;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   std::array<Real, 2> d = {0.0, 0.0};
+  const int a0 = ab[0], a1 = ab[1], a2 = ab[2], a3 = ab[3];   // (std::array is host-only)
   Kokkos::parallel_reduce("cln_dot", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &s0, Real &s1) {
     int m = idx/nkji;
@@ -221,8 +222,8 @@ std::array<Real, 2> RadiationM1::CleanDots(DvceArray5D<Real> w, const int nc, co
     int j = (idx - m*nkji - k*nji)/nx1;
     int i = idx - m*nkji - k*nji - j*nx1;
     for (int c = 0; c < nc; ++c) {
-      s0 += w(m,ab[0]+c,k+ks,j+js,i+is)*w(m,ab[1]+c,k+ks,j+js,i+is);
-      if (n > 1) s1 += w(m,ab[2]+c,k+ks,j+js,i+is)*w(m,ab[3]+c,k+ks,j+js,i+is);
+      s0 += w(m,a0+c,k+ks,j+js,i+is)*w(m,a1+c,k+ks,j+js,i+is);
+      if (n > 1) s1 += w(m,a2+c,k+ks,j+js,i+is)*w(m,a3+c,k+ks,j+js,i+is);
     }
   }, Kokkos::Sum<Real>(d[0]), Kokkos::Sum<Real>(d[1]));
 #if MPI_PARALLEL_ENABLED
