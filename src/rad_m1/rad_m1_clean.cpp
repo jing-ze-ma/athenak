@@ -1383,6 +1383,15 @@ Real RadiationM1::CleanNewtonUpdate() {
         fmax(fabs(e), 1.0e-300));
   }, Kokkos::Max<Real>(change), Kokkos::Max<Real>(femax));
   if (!cell) cln_fe = std::numeric_limits<Real>::epsilon()*CleanReduce(femax, true);
+  // (clean_stag_sbimp: the face beta terms' emission of the new T, hc kP a T^4, for the
+  // F solve of the velocity update, whose F the next pass's y takes)
+  if (cln_sbimp && cln_feedback) {
+    par_for("cln_sbre", DevExeSpace(), 0, nmb-1, ks, ks+nx3-1, js, js+nx2-1, is,
+            is+nx1-1, KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      w(m,CLW_RE,k,j,i) = hc*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(w(m,CLW_T,k,j,i)));
+    });
+    CleanGhostFill(cln_w, CLW_RE, 1);
+  }
   return CleanReduce(change, true);
 }
 
