@@ -1409,9 +1409,16 @@ void RadiationM1::CleanStagBracket() {
     const int n = (dir == 0) ? CLN_FX : ((dir == 1) ? CLN_F2 : CLN_F3);
     par_for("cln_sbracket", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      // (Phi(J) at its steady value, -(c/chi_f) div(D J) in the share 1 - w: the bracket,
+      // and with it the steady state of the scheme, does not depend on h or on G)
+      const Real w = x.fc[dir](m,CLF_W,k,j,i);
+      const Real chi = 0.5*(x.op(m,M1_OP_T,k,j,i) + x.op(m,M1_OP_T,k-dk,j-dj,i-di));
+      const Real cd = (chi > 0.0) ? x.c/chi : x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c;
+      const Real pj = -(1.0 - w)*cd*CleanFaceStress(x, CLW_Z, dir, m, k, j, i, true) +
+          w*x.c*(x.fc[dir](m,CLF_HP,k,j,i)*x.w(m,CLW_Z,k-dk,j-dj,i-di) +
+                 x.fc[dir](m,CLF_HM,k,j,i)*x.w(m,CLW_Z,k,j,i));
       x.fc[dir](m,CLF_RC,k,j,i) = CleanBoundaryFace(x, dir, m, k, j, i) ? 0.0 :
-          x.fc[dir](m,CLF_W,k,j,i)*(x.c*x.cs(m,n,k,j,i) -
-                                     CleanFaceFlux(x, CLW_Z, dir, m, k, j, i, true));
+          w*(x.c*x.cs(m,n,k,j,i) - pj);
     });
   }
   if (!(cln_bclip & 4)) return;
