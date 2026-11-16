@@ -2195,7 +2195,7 @@ void RadM1CsHistory(HistoryData *pdata, Mesh *pm) {
 //! active cells, V = Coordinates volume, arm r_c rhat (cell-centre radius, as the
 //! <hydro>/am_transport correction): Eg = sum V u(IEN), Er = sum V E, Lg = sum V r x m
 //! (x, y, z), Lr = sum V r x F/c^2 (x, y, z).  cs: covariant m, F raised with the cell's
-//! e_xi.e_eta; sp: orthonormal.
+//! e_xi.e_eta (the clean scheme's F in its frame of y, CleanCsFrame); sp: orthonormal.
 
 void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
   pdata->nhist = m1_am_ebnd ? 15 : 14;
@@ -2220,9 +2220,12 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   const bool csm = pm->use_cubed_sphere;
   const Real ic2 = 1.0/(pmbp->pradm1->c_light*pmbp->pradm1->c_light);
-  // (clean_stag_split: the radiation momentum is the faces' F^H, not the cell flux)
+  // (clean_stag_split: the radiation momentum is the faces' F^H, not the cell flux; on
+  // the cubed sphere the cell flux is the face momenta's vector.  The clean scheme's cs
+  // cell flux is in the frame of y, (r, theta, phi) about rhat, not covariant)
   radm1::RadiationM1 *pr = pmbp->pradm1;
-  const bool sfh = pr->clean && !pr->cln_cell && pr->cln_split;
+  const bool sfh = pr->clean && !pr->cln_cell && pr->cln_split && !csm;
+  const bool fry = pr->clean && csm;
   const bool md = pm->multi_d, td = pm->three_d;
   auto g1 = pr->f0x1, g2 = pr->f0x2, g3 = pr->f0x3;
   // <hydro>/am_vector: the spin reservoir, L = am_spin rhat_c (total)
@@ -2273,7 +2276,19 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
     };
     Real lg[3], lr[3];
     lv(uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i), lg);
-    if (sfh) {
+    if (fry) {   // (F = F_r rhat + F_theta theta_hat + F_phi phi_hat)
+      const Real rho = std::sqrt(rh[0]*rh[0] + rh[1]*rh[1]);
+      const Real ph[3] = {-rh[1]/rho, rh[0]/rho, 0.0};
+      const Real th[3] = {ph[1]*rh[2], -ph[0]*rh[2], ph[0]*rh[1] - ph[1]*rh[0]};
+      Real p[3];
+      for (int q = 0; q < 3; ++q) {
+        p[q] = u0(m,radm1::M1_F1,k,j,i)*rh[q] + u0(m,radm1::M1_F2,k,j,i)*th[q] +
+               u0(m,radm1::M1_F3,k,j,i)*ph[q];
+      }
+      lr[0] = r*(rh[1]*p[2] - rh[2]*p[1]);
+      lr[1] = r*(rh[2]*p[0] - rh[0]*p[2]);
+      lr[2] = r*(rh[0]*p[1] - rh[1]*p[0]);
+    } else if (sfh) {
       lv(0.5*(g1(m,k,j,i) + g1(m,k,j,i+1)), md ? 0.5*(g2(m,k,j,i) + g2(m,k,j+1,i)) : 0.0,
          td ? 0.5*(g3(m,k,j,i) + g3(m,k+1,j,i)) : 0.0, lr);
     } else {

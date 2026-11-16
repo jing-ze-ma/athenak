@@ -66,6 +66,9 @@ constexpr int CLF_DB = CLF_N + 9;   // clean_stag_vimp: drag share b = beta/(1 +
 constexpr int CLF_DQ = CLF_N + 10;  //   the face momentum Q = G - c^2 dm_f of the iterate
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
+constexpr int CLF_KS = CLF_N + 11;  // clean_stag_fkin, cubed sphere: the kinetic
+                                    // transport's coefficients between rows (+9,
+                                    // CleanStagCsKin)
 
 // work vectors (array cln_w)
 constexpr int CLW_EO = 0;    // E of the old vector
@@ -101,7 +104,10 @@ constexpr int CLW_JV = 37;   // (1 - r) dA/dbeta/(c^2 rho), dS_p/dbeta/(c^2 rho)
 constexpr int CLW_GX = 40;   //   iterate (3 + 1): implicit gas velocity, CleanCellDrag
 constexpr int CLW_TM = 41;   // clean_stag_pc = mg: coefficients of E_{j-1}, E_{j+1},
                              //   E_{k-1}, E_{k+1} (4)
-constexpr int CLW_N = 45;
+constexpr int CLW_L = 45;    // staggered, cubed sphere: the lateral stress sums Y of the
+                             // face families q of a cell, CLW_L + 3 q
+                             // (CleanStagCsLateral)
+constexpr int CLW_N = 54;
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanArgs
@@ -181,7 +187,10 @@ constexpr int CLG_X = 9;     // cell centroid
 constexpr int CLG_R = 12;    // r_hat of the cell centre (the hydro's, hydro_am.hpp)
 constexpr int CLG_E = 15;    // the hydro's unit panel tangents e_xi, e_eta (+3)
 constexpr int CLG_M = 21;    // first moment int x dA of the lower x2, x3 face (+3)
-constexpr int CLG_NV = 27;
+constexpr int CLG_F = 27;    // staggered, exchanged (a seam ghost's are its owner's): the
+                             // normal of the lower x2 face, the volume (+3), the normal
+                             // of the lower x3 face (+4) and the MeshBlock gid (+7)
+constexpr int CLG_NV = 35;
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanGasEint
@@ -437,6 +446,65 @@ Real CleanStagMemUp(const CleanArgs &x, const int dir, const int m, const int k,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn int CleanCsSlot
+//! \brief cubed sphere, staggered: the face (kf,jf,iff) normal to dir of cell (k,j,i), or
+//! with far set the other face of its family, in the axes of the cell's owner: returns
+//! 2 q + hi (q its family, hi = 1 for the owner's upper face), s = +-1 the owner's
+//! orientation of the face normal along ours (a seam ghost's axes may be swapped and
+//! flipped; the face is in the owner's x2 family if its x2 normal is along n)
+
+KOKKOS_INLINE_FUNCTION
+int CleanCsSlot(const CleanArgs &x, const int dir, const int m, const int kf,
+                const int jf, const int iff, const int k, const int j, const int i,
+                const bool far, Real &s) {
+  s = 1.0;
+  const bool up = (dir == 0) ? (iff > i) : ((dir == 1) ? (jf > j) : (kf > k));
+  if (dir == 0) return (up != far) ? 1 : 0;
+  Real t2 = 0.0, t3 = 0.0;
+  for (int c = 0; c < 3; ++c) {
+    t2 += x.g(m,CLG_F+c,k,j,i)*x.g(m,CLG_N+3*dir+c,kf,jf,iff);
+    t3 += x.g(m,CLG_F+4+c,k,j,i)*x.g(m,CLG_N+3*dir+c,kf,jf,iff);
+  }
+  const int q = (fabs(t2) > fabs(t3)) ? 1 : 2;
+  s = (((q == 1) ? t2 : t3) > 0.0) ? 1.0 : -1.0;
+  return 2*q + (((up == (s > 0.0)) != far) ? 1 : 0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanStagCsLat
+//! \brief cubed sphere: n.(Y_p + Y_p') of cell (k,j,i) (CleanStagCsLateral), n the
+//! normal of its face (kf,jf,iff) normal to dir and p, p' the cell's two face families
+//! other than the face's, in the owner's axes (CleanCsSlot)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanStagCsLat(const CleanArgs &x, const int dir, const int m, const int kf,
+                    const int jf, const int iff, const int k, const int j, const int i) {
+  Real s, d = 0.0;
+  const int q = CleanCsSlot(x, dir, m, kf, jf, iff, k, j, i, false, s)/2;
+  const int p = (q == 0) ? 1 : 0, pp = (q == 2) ? 1 : 2;
+  for (int c = 0; c < 3; ++c) {
+    d += x.g(m,CLG_N+3*dir+c,kf,jf,iff)*(x.w(m,CLW_L+3*p+c,k,j,i) +
+                                        x.w(m,CLW_L+3*pp+c,k,j,i));
+  }
+  return d;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanStagN
+//! \brief the component along face (kf,jf,iff) normal to dir of the vector in work slots
+//! v, v+1, v+2 of cell (k,j,i): slot v + dir; on the cubed sphere (Cartesian) n.v
+
+KOKKOS_INLINE_FUNCTION
+Real CleanStagN(const CleanArgs &x, const int v, const int dir, const int m,
+                const int kf, const int jf, const int iff, const int k, const int j,
+                const int i) {
+  if (!x.cub) return x.w(m,v+dir,k,j,i);
+  Real d = 0.0;
+  for (int b = 0; b < 3; ++b) d += x.g(m,CLG_N+3*dir+b,kf,jf,iff)*x.w(m,v+b,k,j,i);
+  return d;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanFaceWeights
 //! \brief coefficients of E_L and E_R in the flux through face (k,j,i) normal to dir, i.e.
 //! everything but the off-diagonal Eddington terms and the old-vector flux G.  Physical
@@ -465,7 +533,7 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     // (clean_stag_upwind: an open end carries the advective flux a E of the energy, the
     // end cell's when it flows out, the bath's when in, CleanFaceSource)
     if (x.upw && x.feedback && !x.hi && CleanOpen(x, m, 2*dir) && !beam) {
-      ar += fmin(x.w(m,CLW_A1+dir,k,j,i), 0.0);
+      ar += fmin(CleanStagN(x, CLW_A1, dir, m, k, j, i, k, j, i), 0.0);
     }
     return;
   }
@@ -473,7 +541,7 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     if (!CleanOpen(x, m, 2*dir+1)) return;
     al = x.marshak ? x.c*x.marshak_q : x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
     if (x.upw && x.feedback && !x.hi && CleanOpen(x, m, 2*dir+1)) {
-      al += fmax(x.w(m,CLW_A1+dir,kl,jl,il), 0.0);
+      al += fmax(CleanStagN(x, CLW_A1, dir, m, k, j, i, kl, jl, il), 0.0);
     }
     return;
   }
@@ -496,8 +564,9 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     ar = -gs*(id*x.cs(m,CLN_D11+dir,k,j,i) + hr*CleanStagSph(x, 3, dir, m, k, j, i)) +
          w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
   }
-  if (x.cub) {   // (cubed sphere: the face-normal momentum, n.D.n E over the centroid
-    const Real gs = (1.0 - w)*th*x.h*x.c*x.c/x.dxf[dir](m,k,j,i);   //  distance)
+  if (x.cub) {   // (cubed sphere: the face-normal momentum, A n.D.n E over V_f)
+    const Real gs = (1.0 - w)*th*x.h*x.c*x.c*x.area[dir](m,k,j,i)/
+                    (0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,il)));
     al = gs*CleanStagDnn(x, dir, m, k, j, i, kl, jl, il) +
          w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
     ar = -gs*CleanStagDnn(x, dir, m, k, j, i, k, j, i) + w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
@@ -507,7 +576,8 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   if (q < 0.0) ar += q;
   if (x.feedback) {
     const Real s = 0.5*(1.0 - w)*(1.0 - th);
-    const Real ul = x.w(m,CLW_A1+dir,kl,jl,il), ur = x.w(m,CLW_A1+dir,k,j,i);
+    const Real ul = CleanStagN(x, CLW_A1, dir, m, k, j, i, kl, jl, il);
+    const Real ur = CleanStagN(x, CLW_A1, dir, m, k, j, i, k, j, i);
     const Real sl = s*ul, sr = s*ur;
     if (x.upw) {   // (clean_stag_upwind: the donor cell, M-matrix; CleanStagAdvectCorr
       if (ul + ur > 0.0) {   //  adds the rest, lagged, except on a low-order face)
@@ -517,8 +587,9 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
       }
     }
     // the beta term th c beta_f (hc kP a T^4 - hc kE E)_f of eq. 57 (Ma et al. 2025)
-    const Real b = -0.25*(1.0 - w)*t0*(1.0 - qd)*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) +
-                                          x.w(m,CLW_BT+dir,k,j,i))*x.h*x.c;
+    const Real b = -0.25*(1.0 - w)*t0*(1.0 - qd)*x.c*
+                   (CleanStagN(x, CLW_BT, dir, m, k, j, i, kl, jl, il) +
+                    CleanStagN(x, CLW_BT, dir, m, k, j, i, k, j, i))*x.h*x.c;
     const Real bl = b*x.op(m,M1_OP_E,kl,jl,il), br = b*x.op(m,M1_OP_E,k,j,i);
     if (!x.upw) {
       al += (low && sl + sr < 0.0) ? 0.0 : (low ? sl + sr : sl);
@@ -589,10 +660,16 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
                      const int k, const int j, const int i, const bool normal) {
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   Real div = 0.0;
-  if (x.cub) {   // (cubed sphere: the normal stress of the face-normal momentum)
-    return normal ? (CleanStagDnn(x, dir, m, k, j, i, k, j, i)*x.w(m,e,k,j,i) -
-                     CleanStagDnn(x, dir, m, k, j, i, kl, jl, il)*x.w(m,e,kl,jl,il))/
-                    x.dxf[dir](m,k,j,i) : 0.0;
+  if (x.cub) {   // (cubed sphere: n.div(D E) of the two half cells, the normal stress
+    if (normal) {  //  and the lateral sums CleanStagCsLat, over V_f)
+      div = x.area[dir](m,k,j,i)*(CleanStagDnn(x, dir, m, k, j, i, k, j, i)*x.w(m,e,k,j,i)
+            - CleanStagDnn(x, dir, m, k, j, i, kl, jl, il)*x.w(m,e,kl,jl,il));
+    }
+    if (!CleanBoundaryFace(x, dir, m, k, j, i)) {
+      div += CleanStagCsLat(x, dir, m, k, j, i, kl, jl, il) +
+             CleanStagCsLat(x, dir, m, k, j, i, k, j, i);
+    }
+    return div/(0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,il)));
   }
   if (normal && x.sph) {
     div = CleanStagSph(x, 0, dir, m, k, j, i)*(x.cs(m,CLN_D11+dir,k,j,i)*x.w(m,e,k,j,i) -
@@ -671,7 +748,8 @@ Real CleanStagAdvectCorr(const CleanArgs &x, const int dir, const int m, const i
                          const int j, const int i) {
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
   auto e = [&](const int o) {return x.w(m,CLW_EK,k+o*dk,j+o*dj,i+o*di);};
-  const Real ul = x.w(m,CLW_A1+dir,k-dk,j-dj,i-di), ur = x.w(m,CLW_A1+dir,k,j,i);
+  const Real ul = CleanStagN(x, CLW_A1, dir, m, k, j, i, k-dk, j-dj, i-di);
+  const Real ur = CleanStagN(x, CLW_A1, dir, m, k, j, i, k, j, i);
   Real ef, dum;
   if (ul + ur > 0.0) {
     PLM(e(-2), e(-1), e(0), ef, dum);
@@ -699,7 +777,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
       return x.beam(m,k-x.ks,j-x.js);
     }
     const bool up = x.upw && x.feedback && !x.hi;
-    const Real ab = up ? fmax(x.w(m,CLW_A1+dir,k,j,i), 0.0) : 0.0;
+    const Real ab = up ? fmax(CleanStagN(x, CLW_A1, dir, m, k, j, i, k, j, i), 0.0) : 0.0;
     return (x.marshak ? x.c*x.marshak_q*x.ebath[2*dir] : 0.25*x.c*x.ebath[2*dir]) +
            ab*x.ebath[2*dir];
   }
@@ -708,7 +786,8 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     if (CleanBc(x, m, 2*dir+1) == M1_IBC_FLUX) return dir ? x.ifx2[1](m,k,i) : x.iflux[1];
     const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
     const bool up = x.upw && x.feedback && !x.hi;
-    const Real ab = up ? fmin(x.w(m,CLW_A1+dir,kl,jl,il), 0.0) : 0.0;
+    const Real ab = up ? fmin(CleanStagN(x, CLW_A1, dir, m, k, j, i, kl, jl, il), 0.0)
+                       : 0.0;
     return (x.marshak ? -x.c*x.marshak_q*x.ebath[2*dir+1] : -0.25*x.c*x.ebath[2*dir+1]) +
            ab*x.ebath[2*dir+1];
   }
@@ -722,7 +801,8 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
   if (CleanStagMemUp(x, dir, m, k, j, i) != 0.0) s = 0.0;   // (gflux: upwind, implicit)
   if (x.consist && !x.hi) s += x.fc[dir](m,CLF_RC,k,j,i);   // (staggered bracket)
   if (x.feedback) {   // (the emission part of the beta term, CleanFaceWeights)
-    s += 0.25*tg*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) + x.w(m,CLW_BT+dir,k,j,i))*
+    s += 0.25*tg*x.c*(CleanStagN(x, CLW_BT, dir, m, k, j, i, kl, jl, il) +
+                      CleanStagN(x, CLW_BT, dir, m, k, j, i, k, j, i))*
          (x.w(m,CLW_RE,kl,jl,il) + x.w(m,CLW_RE,k,j,i));
   }
   if (x.drag) s += (1.0 - w)*qd*x.fc[dir](m,CLF_DQ,k,j,i);
@@ -815,11 +895,13 @@ Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const i
 //! \brief the momentum the radiation gives to cell (k,j,i) along dir over the stage, in
 //! conservative form: at each face, minus the left side of the radiation flux equation,
 //! -[(F - G)/c^2 + h div(D E)], half of each face to each neighbour (clean_stag_split: in
-//! proportion to their chi, as the two half cells absorb).  E is work vector e.
+//! proportion to their chi, as the two half cells absorb).  E is work vector e.  With cf,
+//! wf set: the term of each face (low, high) and its weight wt.
 
 KOKKOS_INLINE_FUNCTION
 Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const int m,
-                         const int k, const int j, const int i, Real *mag = nullptr) {
+                         const int k, const int j, const int i, Real *mag = nullptr,
+                         Real *cf = nullptr, Real *wf = nullptr) {
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
   Real dm = 0.0;
   for (int side = 0; side < 2; ++side) {
@@ -831,18 +913,28 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
     const int o = 2*side - 1;
     const Real xc = x.op(m,M1_OP_T,k,j,i), xs = xc + x.op(m,M1_OP_T,k+o*dk,j+o*dj,i+o*di);
     Real wt = (x.hi && xs > 0.0) ? xc/xs : 0.5;
-    if (x.hi && x.sph) {   // (each half cell its absorption of the face momentum, V_f F)
-      const Real vc = x.vol(m,k,j,i), vo = x.vol(m,k+o*dk,j+o*dj,i+o*di);
+    if (x.hi && (x.sph || x.cub)) {   // (each half cell its absorption of V_f F; cubed
+      const int ko = k + o*dk, jo = j + o*dj, io = i + o*di;   //  sphere: the owners' V)
+      const Real vc = x.cub ? x.g(m,CLG_F+3,k,j,i) : x.vol(m,k,j,i);
+      const Real vo = x.cub ? x.g(m,CLG_F+3,ko,jo,io) : x.vol(m,ko,jo,io);
       const Real xv = xc*vc + x.op(m,M1_OP_T,k+o*dk,j+o*dj,i+o*di)*vo;
       wt = (xv > 0.0) ? 0.5*xc*(vc + vo)/xv : 0.5;
     }
     if (x.hi && CleanBoundaryFace(x, dir, m, kf, jf, iff)) {
-      // (a boundary flux is no F equation: the inner half cell's absorption of it)
-      dm += 0.5*x.h*xc*f/x.c;
+      dm += 0.5*x.h*xc*f/x.c;   // (a boundary flux is no F equation: the inner half
+      if (cf) {                 //  cell's absorption of it)
+        cf[side] = 0.5*x.h*xc*f/x.c;
+        wf[side] = 0.5;
+      }
       continue;
     }
-    dm -= wt*((f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff, true) -
-              (x.fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0));
+    const Real t = wt*((f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff,
+                   true) - (x.fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0));
+    dm -= t;
+    if (cf) {
+      cf[side] = -t;
+      wf[side] = wt;
+    }
     // (mag: the size of its terms, for the round-off level of dm)
     auto de = [&](const int kk, const int jj, const int ii) {
       return fabs(x.cs(m,CLN_D11+dir,kk,jj,ii)*x.w(m,e,kk,jj,ii));

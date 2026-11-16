@@ -263,6 +263,7 @@ std::array<Real, 2> RadiationM1::CleanDots(DvceArray5D<Real> w, const int nc, co
 //! \brief per face: the blend weight w(C1), theta, the old-vector flux G, and the
 //! half-range factors h+-_f.  h+_f = H+_f/J_L and h-_f = H-_f/J_R, with H+-_f the rays'
 //! half-range fluxes reconstructed to the face from the upwind side (minmod-limited);
+//! on the cubed sphere with FV rays their half ranges about the face normal.
 //! |h+-_f| <= 1 keeps the operator an M-matrix.
 
 void RadiationM1::CleanFaceCoefficients() {
@@ -278,6 +279,16 @@ void RadiationM1::CleanFaceCoefficients() {
   auto op = opac;
   auto inc = t2inc;
   const bool fsk = cln_fsolve, gfx = cln_gflux;
+  cln_ksok = false;   // (cubed sphere, fkin: the kinetic coefficients, CleanStagFSolveCs)
+  // (cubed sphere: the opacities of seam ghosts are the neighbour's cells, not of the
+  // resampled gas ghosts, as CleanCellFaceCoefficients: a seam face is single-valued)
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    CleanGhostFill(opac, 0, opac.extent_int(1), false);
+  }
+  auto gn = cln_gn;
+  auto fi = cln_fvi;
+  auto dv = cln_fvd;
+  const int nd = (pmy_pack->pmesh->use_cubed_sphere && cln_rfv > 0) ? cln_fvn : 0;
 
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;
@@ -317,6 +328,22 @@ void RadiationM1::CleanFaceCoefficients() {
                                        : cs(m,CLN_HP+dir,kl,jl,il);
       fc(m,CLF_HM,k,j,i) = (jr_ > 0.0) ? fmax(fmin(hmf/jr_, 0.0), -1.0)
                                        : cs(m,CLN_HM+dir,k,j,i);
+      if (nd == 0) return;
+      // (cubed sphere: about the face's own normal from the FV intensities of L and R,
+      // as CleanCellConsistency, so that a seam face takes the same h+- on both sides)
+      // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
+      Real jl0 = 0.0, jr0 = 0.0, hp0 = 0.0, hm0 = 0.0;
+      for (int d = 0; d < nd; ++d) {
+        Real mu = 0.0;
+        for (int b = 0; b < 3; ++b) mu += dv(d,b)*gn(m,CLG_N+3*dir+b,k,j,i);
+        const Real wl = dv(d,3)*fi(m,d,kl,jl,il), wr = dv(d,3)*fi(m,d,k,j,i);
+        jl0 += wl;
+        jr0 += wr;
+        if (mu > 0.0) hp0 += wl*mu;
+        if (!(mu > 0.0)) hm0 += wr*mu;
+      }
+      fc(m,CLF_HP,k,j,i) = (jl0 > 0.0) ? hp0/jl0 : 0.25;
+      fc(m,CLF_HM,k,j,i) = (jr0 > 0.0) ? hm0/jr0 : -0.25;
     });
   }
 }
@@ -332,6 +359,7 @@ void RadiationM1::CleanApply(const int src, const int dst) {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanGhostFill(cln_w, src, 1);
+  CleanStagCsLateral(src);
   CleanArgs x = CleanMakeArgs();
   x.fwc = true;
   auto op = opac;

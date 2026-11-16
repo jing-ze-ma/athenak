@@ -2969,6 +2969,8 @@ class RadiationM1 {
   // the cell layout keeps the CLN_JR (= 49) of push 16's files, CLN_JR is staggered only
   int CleanRstNq() const;
   void CleanStagDrag(const bool first);
+  void CleanStagFSolveCs(const int e);
+  void CleanStagCsLateral(const int e);
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
@@ -3075,6 +3077,8 @@ class RadiationM1 {
   Real cln_psi_eps = 1.0e-12;   // clean_psi_eps: floor of the smoothness sensor
   int cln_nnreal = 0;           // cells with |F| > c E in the last cell-layout solve
   bool cln_fsolve = false;      // staggered: the face F of a separate F solve
+  bool cln_ksok = false;        // cubed sphere, fkin: CleanStagCsKin's face coefficients
+                                // are those of the last CleanFaceCoefficients
   bool cln_fkin = false;        // staggered fsolve: streaming share of the rays' kinetic
                                 //   momentum flux
   bool cln_dok = true;          // staggered fkin: the last solve converged (memory d)
