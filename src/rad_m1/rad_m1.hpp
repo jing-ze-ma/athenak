@@ -2943,7 +2943,8 @@ class RadiationM1 {
   CleanArgs CleanMakeArgs();
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                       const bool phys = true);
-  Real CleanDot(DvceArray5D<Real> w, const int nc, const int a, const int b);
+  std::array<Real, 2> CleanDots(DvceArray5D<Real> w, const int nc, const int n,
+                                const std::array<int, 4> ab);
   Real CleanReduce(Real v, const bool max);
   // cell-centred layout (<rad_m1>/clean_layout = cell, rad_m1_clean_cell.cpp)
   void CleanCellOldVector();
