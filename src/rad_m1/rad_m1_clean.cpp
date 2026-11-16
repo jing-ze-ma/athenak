@@ -1733,14 +1733,14 @@ void RadiationM1::CleanStagFSolve(const int e) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real rc;
       const Real tau = op(m,M1_OP_T,k,j,i)*CleanCellFaceDistance(x, dir, m, k, j, i);
-      // (fkin: the streaming share is kinetic, so only the R2 faces need the dissipation)
+      // (fkin: the streaming share is kinetic, without dissipation)
       Real a = fk ? 0.0 : CleanDissipationWeight(CLA_TAU, tau, 0.0, 0.0, rc);
       for (int s = 0; s < 2; ++s) {
         const int kf = k + s*dk, jf = j + s*dj, iff = i + s*di;
         if (!fk) a = fmax(a, fc(m,CLF_W,kf,jf,iff));
         const Real f = fc(m,CLF_N,kf,jf,iff);
         const Real ed = (f > 0.0) ? x.w(m,e,kf-dk,jf-dj,iff-di) : x.w(m,e,kf,jf,iff);
-        if (!CleanBoundaryFace(x, dir, m, kf, jf, iff) &&
+        if (!fk && !CleanBoundaryFace(x, dir, m, kf, jf, iff) &&
             !(fabs(f) <= (1.0 + 1.0e-12)*x.c*fmax(ed, 0.0))) a = 1.0;
       }
       // (fkin: w of the cell, slot 2, and the part of P - D E without F, -w D E, slot 1)
@@ -1953,7 +1953,7 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
         if (!fk) a = fmax(a, x.fc[q](m,CLF_W,kf,jf,iff));
         const Real f = x.fc[q](m,CLF_N,kf,jf,iff);
         const Real ed = (f > 0.0) ? x.w(m,e,kf-dk,jf-dj,iff-di) : x.w(m,e,kf,jf,iff);
-        if (!CleanBoundaryFace(x, q, m, kf, jf, iff) &&
+        if (!fk && !CleanBoundaryFace(x, q, m, kf, jf, iff) &&
             !(fabs(f) <= (1.0 + 1.0e-12)*x.c*fmax(ed, 0.0))) a = 1.0;
         v(m,9+2*q+s,k,j,i) = x.fc[q](m,CLF_N+2,kf,jf,iff);
       }
