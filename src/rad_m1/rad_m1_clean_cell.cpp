@@ -1060,6 +1060,24 @@ void RadiationM1::CleanCellSmooth(const int l, const int src, const int dst,
   const int js = lv.o[1], je = lv.o[1] + lv.n[1] - 1;
   const int ks = lv.o[2], ke = lv.o[2] + lv.n[2] - 1;
   auto u = lv.u;
+  if (cln_pc == CLN_PC_PRODMG) {
+    // one forward red-black sweep of x1-line solves (the old production smoother): the
+    // lines of even j + k from u(src), then the odd ones from the residual of the
+    // level's blocks
+    CleanCellLineSolve(lv, 0, src, dst);
+    CleanCellLevelApply(lv, dst, t1);
+    par_for("clc_pcres", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int c = 0; c < 4; ++c) u(m,t1+c,k,j,i) = u(m,src+c,k,j,i) - u(m,t1+c,k,j,i);
+    });
+    CleanCellLineSolve(lv, 0, t1, t2);
+    par_for("clc_pccor", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if ((j - js + k - ks) % 2 == 0) return;
+      for (int c = 0; c < 4; ++c) u(m,dst+c,k,j,i) += u(m,t2+c,k,j,i);
+    });
+    return;
+  }
   if (first) CleanCellLineSolve(lv, 0, src, dst);
   for (int n = first ? 1 : 0; n < 3*nsweep; ++n) {
     const int dir = n % 3;
@@ -1100,9 +1118,10 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
   const int t1 = (l == 0) ? CLC_T1 : CLM_T1;
   const int r[3] = {f.n[0]/c.n[0], f.n[1]/c.n[1], f.n[2]/c.n[2]};
 
-  // pre-smoothing and the residual
+  // pre-smoothing and the residual (prodmg: of the level's blocks)
+  const bool pm = (cln_pc == CLN_PC_PRODMG);
   CleanCellSmooth(l, src, dst, true, cln_pcsweeps);
-  if (l == 0) {
+  if (l == 0 && !pm) {
     CleanCellApply(dst, t1);
   } else {
     CleanCellLevelApply(f, dst, t1);
@@ -1139,15 +1158,21 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
     for (int q = 0; q < 4; ++q) uf(m,dst+q,k,j,i) += uc(m,CLM_X+q,kc,jc,ic);
   });
 
-  // post-smoothing
-  CleanCellSmooth(l, src, dst, false, cln_pcsweeps);
+  // post-smoothing (not with prodmg)
+  if (!pm) CleanCellSmooth(l, src, dst, false, cln_pcsweeps);
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellPrecondition
-//! \brief u(dst) = M^{-1} u(src): one multigrid V-cycle from the mesh level
+//! \brief u(dst) = M^{-1} u(src): one multigrid V-cycle from the mesh level (clean_pc =
+//! vcycle; prodmg: the old production mg, x1 kept), or the x1-line solve of the mesh
+//! (x1line)
 
 void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
+  if (cln_pc == CLN_PC_X1LINE) {
+    CleanCellLineSolve(CleanCellLevel(0), 0, src, dst);
+    return;
+  }
   CleanCellVCycle(0, src, dst);
 }
 

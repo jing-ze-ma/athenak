@@ -56,6 +56,8 @@ constexpr int M1_F1 = 1;
 constexpr int M1_F2 = 2;
 constexpr int M1_F3 = 3;
 constexpr int M1_NVAR = 4;
+constexpr int CLN_PC_X1LINE = 1;   // clean_pc = x1line: x1-line solve of the mesh
+constexpr int CLN_PC_PRODMG = 2;   // clean_pc = prodmg: the old production mg
 
 // number of explicit stages of the PD-ARS (Chu et al. 2019) integrator used per substep.
 // With S == 0 it reduces to Heun / SSP-RK2.
@@ -2992,6 +2994,7 @@ class RadiationM1 {
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
   Real cln_fvtol = 1.0e-13;     // clean_fv_tol: pass stop of the FV rays
+  int cln_pc = 0;               // clean_pc: 0 vcycle or CLN_PC_*
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
   int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
   bool cln_pred = true;         // clean_predict: closure of the predicted state
