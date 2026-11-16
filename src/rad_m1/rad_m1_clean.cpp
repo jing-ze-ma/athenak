@@ -1520,7 +1520,12 @@ void RadiationM1::CleanStagFSolve(const int e) {
       const Real wc = fk ? CleanSmoothStep((x.cs(m,CLN_C1,k,j,i) - c1lo)/(c1hi - c1lo))
                          : 0.0;
       al(m,0,k,j,i) = (1.0 - wc)*a;
-      al(m,1,k,j,i) = -wc*x.cs(m,CLN_D11+dir,k,j,i)*x.w(m,e,k,j,i);
+      // (and the stress the kinetic form misses for the rays' own state, F = c s J:
+      // (D - s^2) J, 0 for a beam, J/3 for an isotropic field, with J of the rays where
+      // the cell holds at least that much, lagged)
+      const Real dd = x.cs(m,CLN_D11+dir,k,j,i), ec = x.w(m,e,k,j,i);
+      const Real sr = x.cs(m,CLN_HP+dir,k,j,i) + x.cs(m,CLN_HM+dir,k,j,i);
+      al(m,1,k,j,i) = wc*((dd - sr*sr)*fmin(x.cs(m,CLN_J,k,j,i), fmax(ec, 0.0)) - dd*ec);
       al(m,2,k,j,i) = wc;
       x.w(m,CLW_Y,k,j,i) = fc(m,CLF_N,k,j,i);   // (F of the low face, for the exchange)
     });
