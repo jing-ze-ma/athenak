@@ -41,6 +41,64 @@ static void CleanFatal(const std::string &msg) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanPreflight
+//! \brief the production keys of <rad_m1> (and <time>) an input names with scheme =
+//! clean (not the defaults a restart file lists): a key the clean solve replaces names
+//! its clean counterpart, the others it does not read are listed once, and a key whose
+//! loss would change the physics stops the run unless it is off.  The keys the clean
+//! solve reads (boundaries, beams, the time step, multi-rate, the hesdirk2 tableau and
+//! its backward-Euler steps) pass.
+
+void RadiationM1::CleanPreflight(ParameterInput *pin) {
+  // block/key (* ends a prefix): nullptr read, "" no effect, "!" fatal, else clean key
+  static const char *tab[][2] = {
+    {"rad_m1/implicit_bc_*", nullptr}, {"rad_m1/implicit_flux_x1m*", nullptr},
+    {"rad_m1/implicit_ebath_*", nullptr}, {"rad_m1/implicit_beam*", nullptr},
+    {"rad_m1/implicit_cfl", nullptr}, {"rad_m1/implicit_allow_multid", nullptr},
+    {"rad_m1/implicit_mr_*", nullptr}, {"rad_m1/implicit_det_trace", nullptr},
+    {"rad_m1/implicit_tol", "clean_tol_nl"}, {"rad_m1/implicit_lin_tol", "clean_tol"},
+    {"rad_m1/implicit_maxit", "clean_maxnl"},
+    {"rad_m1/implicit_lin_maxit", "clean_maxit"},
+    {"rad_m1/implicit_recon", "clean_recon"},
+    {"rad_m1/implicit_closure_lag", "clean_closure"},
+    {"rad_m1/time2_vet", "clean_closure"}, {"rad_m1/time2_vet_col", "clean_closure"},
+    {"rad_m1/time2_vet_sc", "clean_closure"},
+    {"rad_m1/time2_vet_extrap", "clean_closure"}, {"rad_m1/time2_lin_tol*", "clean_tol"},
+    {"rad_m1/implicit_ghost_x1min", "!"}, {"rad_m1/implicit_*", ""},
+    {"rad_m1/time2_accept_fallback", ""}, {"rad_m1/time2_posfix*", ""},
+    {"rad_m1/time2_k1_*", ""}, {"rad_m1/time2_face_fct", ""},
+    {"time/dt_retry_t2_be", ""}};
+  const bool say = (global_variable::my_rank == 0);
+  std::string none;
+  for (const InputBlock &ib : pin->block) {
+    if (ib.block_name != "rad_m1" && ib.block_name != "time") continue;
+    for (const InputLine &ln : ib.line) {
+      if (ln.param_comment == ParameterInput::default_comment) continue;
+      const std::string k = ib.block_name + "/" + ln.param_name, &v = ln.param_value;
+      for (const auto &t : tab) {
+        const std::string p(t[0]);
+        const size_t n = p.size() - (p.back() == '*');
+        if (k.compare(0, n, p, 0, n) != 0 || (n == p.size() && k.size() != n)) continue;
+        if (t[1] == nullptr) break;
+        const std::string c(t[1]);
+        if (c == "!" && v != "false" && v != "0") {
+          CleanFatal("<" + k + "> = " + v + " has no counterpart in scheme = clean");
+        }
+        if (c.empty()) none += " " + k;
+        if (say && !c.empty() && c != "!") {
+          std::cout << "### WARNING (scheme = clean): <" << k << "> has no effect, the "
+                    << "clean solve reads <rad_m1>/" << c << std::endl;
+        }
+        break;
+      }
+    }
+  }
+  if (say && !none.empty()) {
+    std::cout << "### WARNING (scheme = clean): no effect:" << none << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanInit
 //! \brief allocates the arrays of the clean solve and checks that the setup is supported
 
@@ -114,9 +172,9 @@ void RadiationM1::CleanInit() {
     CleanFatal("<rad_m1>/esrc (problem/mlt_flux_frozen) with scheme = clean needs "
                "clean_layout = cell");
   }
-  if (impl_lbath || impl_ghx || iebath_hi_col_on) {
-    CleanFatal("scheme = clean has no ghost-built inner face (problem/he_bc_linhao, "
-               "implicit_ghost_x1min) and no per-column outer bath");
+  if (impl_lbath || iebath_hi_col_on) {
+    CleanFatal("scheme = clean has no ghost-built inner face (problem/he_bc_linhao) and "
+               "no per-column outer bath");
   }
   if ((force_ref != M1_FREF_NONE && !cln_cell) ||
       (force_ref == M1_FREF_WB_ARAD && !fref_wsplit)) {

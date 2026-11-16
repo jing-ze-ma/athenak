@@ -77,6 +77,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   {std::string sc = pin->GetOrAddString("rad_m1","scheme","default");
   if (sc.compare("clean") == 0) {
     clean = true;
+    CleanPreflight(pin);
     cln_c0 = pin->GetOrAddReal("rad_m1","clean_w_c0",0.1);
     cln_c1 = pin->GetOrAddReal("rad_m1","clean_w_c1",0.5);
     cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
