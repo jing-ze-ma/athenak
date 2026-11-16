@@ -100,11 +100,13 @@ const char *kDtrMinimal[] = {
   // (views minimal) was not bitwise the straight run at the next dump; restoring vgd_hr
   // (or vra_a0/a1/c) alone made it bitwise
   "m1.vgd_hr",
-  // scheme = clean (not visited before: a retry read the failed attempt's): the rays'
-  // intensities a clean_rays = fv1 | fv | lld sweep starts from, with cln_fref_set
-  // (force_reference = clean recaptures).  The extrap history is left alone: its flags
-  // go with the handles the attempt swapped and, on a first cycle, with cln_init
-  "m1.cln_fvi",
+  // scheme = clean (members not visited before: a retry read the failed attempt's):
+  // the face arrays (clean_stag_fkin's energy flux memory d, CLF_N + 3) and the rays'
+  // intensities a clean_rays = fv1 | fv | lld sweep starts from.  The rest is rewritten
+  // before it is read once the visited values are back (cln_fref_set: force_reference =
+  // clean recaptures; cln_have_*, cln_tn and the swapped handles: the extrap history);
+  // a forced retry with them poisoned was bitwise the straight run
+  "m1.cln_fc1", "m1.cln_fc2", "m1.cln_fc3", "m1.cln_fvi",
 };
 
 // debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of
