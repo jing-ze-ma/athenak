@@ -832,6 +832,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (cell) {
     CleanCellWriteBack();
   } else {
+    cln_dok = (nit >= 0);   // (a failed solve does not change the energy flux's memory)
     CleanWriteBack();
   }
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
@@ -1064,7 +1065,7 @@ void RadiationM1::CleanRightHandSide() {
       Real e, p, chi_rho, chi_t, cv;
       eos.ThermoAt(d, t, e, p, chi_rho, chi_t, cv);
       const Real s = 4.0*hckp*arad_*t*t*t;
-      rr = s/(d*cv + s);
+      rr = (s > 0.0) ? s/(d*cv + s) : 0.0;   // (no exchange: none, also where T = 0)
       // work of the radiation force on the gas, (v_old + dm/(2 rho)).dm: exactly the
       // kinetic energy the gas gains, taken from the radiation
       for (int n = 0; n < 3; ++n) {
@@ -1492,7 +1493,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
   xh.hi = true;
   auto op = opac;
   auto al = cln_v;
-  const bool fk = cln_fkin;
+  const bool fk = cln_fkin, dok = cln_dok;
   const Real c1lo = cln_c0, c1hi = cln_c1;
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
@@ -1642,7 +1643,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
       // (fkin, the solution's F solve: d = Phi^H - F, Phi^H = F^H + theta d the energy
       // flux's high-order part, whose memory is G + d (CleanFaceSource): its own history,
       // so that its steady state, F^H of G = F^H, does not depend on h)
-      if (fk && e == CLW_X) {
+      if (fk && e == CLW_X && dok) {
         fc(m,CLF_N+3,k,j,i) += fc(m,CLF_N,k,j,i) - f - (1.0 - fc(m,CLF_TH,k,j,i))*
                                fc(m,CLF_N+3,k,j,i);
       }
@@ -1837,6 +1838,7 @@ void RadiationM1::CleanWriteBack() {
         den -= rd;
       }
       uh(m,IEN,k,j,i) += den;
+      x.w(m,CLW_JV,k,j,i) = den - wk;   // (its change of the gas eint, cln_neint)
     }
     if (slopes) {
       kk(m,M1_T2_E,k,j,i) = (e - x.w(m,CLW_EO,k,j,i))/h;
@@ -1854,7 +1856,8 @@ void RadiationM1::CleanWriteBack() {
           CleanFaceFlux(x, CLW_X, d, m, k+(d == 2), j+(d == 1), i+(d == 0), true));
     }
   });
-  // cells left with gas eint < 0 (the solve is then not accepted, as in the cell layout)
+  // cells the write-back left with gas eint < 0 by lowering it (the solve is then not
+  // accepted, as in the cell layout; an eint the hydro left <= 0 is not the solve's)
   cln_neint = 0;
   if (!feedback) return;
   auto &id = pmy_pack->pmesh->mb_indcs;
@@ -1867,7 +1870,8 @@ void RadiationM1::CleanWriteBack() {
     const int j = (idx%nji)/nx1 + js, i = idx%nx1 + is;
     const Real ke = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
                          SQR(uh(m,IM3,k,j,i)))/uh(m,IDN,k,j,i);
-    if (!(uh(m,IEN,k,j,i) - ke > 0.0)) n += 1.0;
+    if (!(uh(m,IEN,k,j,i) - ke > 0.0) && !(x.w(m,CLW_JV,k,j,i) >= 0.0) &&
+        x.w(m,CLW_EI,k,j,i) > 0.0) n += 1.0;
   }, Kokkos::Sum<Real>(nb));
   cln_neint = static_cast<int>(CleanReduce(nb, false));
 }

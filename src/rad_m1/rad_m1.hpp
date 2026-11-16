@@ -3064,6 +3064,7 @@ class RadiationM1 {
   bool cln_fsolve = false;      // staggered: the face F of a separate F solve
   bool cln_fkin = false;        // staggered fsolve: streaming share of the rays' kinetic
                                 //   momentum flux
+  bool cln_dok = true;          // staggered fkin: the last solve converged (memory d)
   bool cln_fwork = false;       // staggered fsolve: also in the Newton loop (the work W)
   bool cln_split = false;       // staggered: energy flux apart from the face momentum
   bool cln_diagforce = false;   // staggered: momentum of low-order faces (diagnostic)
