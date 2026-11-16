@@ -187,6 +187,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_fsolve = pin->DoesParameterExist("rad_m1","clean_stag_fsolve") &&
                  pin->GetBoolean("rad_m1","clean_stag_fsolve");
+    cln_fkin = pin->DoesParameterExist("rad_m1","clean_stag_fkin") &&
+               pin->GetBoolean("rad_m1","clean_stag_fkin");
     cln_diagforce = pin->DoesParameterExist("rad_m1","clean_diag_force") &&
                     pin->GetBoolean("rad_m1","clean_diag_force");
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
