@@ -1613,6 +1613,8 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
   auto y_ov_rC_ = y_ov_rC;
   auto z_ov_rE_ = z_ov_rE;
   const bool use_wb_static_ = pmy_pack->phydro->use_wellbalance_static;
+  // (1-D: the hydro's x2 fluxes have no j+1 face; they are zero there)
+  const int dj = pmy_pack->pmesh->multi_d ? 1 : 0;
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real r_l = xx1f_(m,i);
@@ -1637,7 +1639,7 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
     Real src1 = z_ov_rE_(m,k,j,i) * m_ii_h;
     Real src2 = x_ov_rD_(m,k,j,i) * m_pp;
     Real src3 = -y_ov_rC_(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area_.x2f(m,k,j,i)
-                                      + uflx.x2f(m,IM3,k,j+1,i)*area_.x2f(m,k,j+1,i))
+                                      + uflx.x2f(m,IM3,k,j+dj,i)*area_.x2f(m,k,j+1,i))
                                      /volume_(m,k,j,i);
 
     src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)
