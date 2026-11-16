@@ -661,6 +661,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   const bool t2stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   int nit = 0, nit_sum = 0, nsolve = 0, npic = 0, npos = 0, nmark = 0;
   std::array<int, 2> nfirst = {0, 0};
+  cln_nclip = 0;
   bool all_low = false;
   cln_all_low = false;
   Real dpic = 0.0;
@@ -808,8 +809,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                   "r1 %d r2 %d first %d %d guard %d solves %d\n", pmy_pack->pmesh->ncycle,
                   t2_solve, nit, nit_sum, npos, nmark, all_low ? 1 : 0, nneg, cln_nr1,
                   cln_nr2, nfirst[0], nfirst[1], cln_nguard, nsolve);
-      if (cln_split) std::printf("CLEAN SPLIT cycle %d t2s %d r3 %d max %.3e\n",
-                                 pmy_pack->pmesh->ncycle, t2_solve, cln_nr3, cln_fh);
+      if (cln_split) std::printf("CLEAN SPLIT cycle %d t2s %d r3 %d max %.3e clip %d\n",
+                                 pmy_pack->pmesh->ncycle, t2_solve, cln_nr3, cln_fh,
+                                 cln_nclip);
     }
   }
 
@@ -1263,17 +1265,42 @@ int RadiationM1::CleanStagRealizable(const int mark) {
     b_max = fmax(b_max, fabs(x.w(m,CLW_B,k+ks,j+js,i+is)));
   }, Kokkos::Max<Real>(bmax));
   const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
-  Real n1 = 0.0, n2 = 0.0, n3 = 0.0;
+  Real n1 = 0.0, n2 = 0.0, n3 = 0.0, n5 = 0.0;
   cln_fh = 0.0;
+  // clean_stag_bclip: the passes limit the bracket instead of making faces low-order
+  // (1: clip to the donor bound at X; 2: an R1 cell's outgoing bracket scaled to what
+  // it has, E_old + incoming bracket + emission, as CleanCellConsistency's FV rays)
+  const bool clip = (mark == 1) && x.consist && (cln_bclip & 1);
+  const bool fct = (mark == 1) && x.consist && (cln_bclip & 2);
+  const bool keep = (cln_bclip & 4);   // (a low-order face keeps the limited bracket)
+  auto lam = cln_v;
+  if (fct) {
+    const Real arad_ = arad;
+    auto op = opac;
+    par_for("cln_bfct", DevExeSpace(), 0, nmb-1, ks, ks+nx3-1, js, js+nx2-1, is, is+nx1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real pout = 0.0, pin = 0.0;
+      for (int d = 0; d < x.nf; ++d) {
+        const Real cl = x.fc[d](m,CLF_RC,k,j,i);
+        const Real ch = x.fc[d](m,CLF_RC,k+(d == 2),j+(d == 1),i+(d == 0));
+        pout += x.h*x.idx[d]*(fmax(-cl, 0.0) + fmax(ch, 0.0));
+        pin += x.h*x.idx[d]*(fmax(cl, 0.0) + fmax(-ch, 0.0));
+      }
+      const Real a = fmax(x.w(m,CLW_EO,k,j,i), 0.0) + pin + x.h*x.c*op(m,M1_OP_P,k,j,i)*
+                     arad_*SQR(SQR(x.w(m,CLW_T,k,j,i)));
+      lam(m,0,k,j,i) = (!(x.w(m,CLW_X,k,j,i) >= -zero) && pout > a) ? a/pout : 1.0;
+    });
+    CleanGhostFill(cln_v, 0, 1);
+  }
   CleanArgs xh = x;
   xh.hi = true;
   const bool split = cln_split;
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     const int f1 = nx1 + di, f2 = nx2 + dj, f3 = nx3 + dk, fji = f2*f1, fkji = f3*fji;
-    Real r1 = 0.0, r2 = 0.0, r3 = 0.0, r4 = 0.0;
+    Real r1 = 0.0, r2 = 0.0, r3 = 0.0, r4 = 0.0, r5 = 0.0;
     Kokkos::parallel_reduce("cln_real", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*fkji),
-    KOKKOS_LAMBDA(const int idx, Real &q1, Real &q2, Real &q3, Real &q4) {
+    KOKKOS_LAMBDA(const int idx, Real &q1, Real &q2, Real &q3, Real &q4, Real &q5) {
       int m = idx/fkji;
       int k = (idx - m*fkji)/fji;
       int j = (idx - m*fkji - k*fji)/f1;
@@ -1295,12 +1322,19 @@ int RadiationM1::CleanStagRealizable(const int mark) {
         if (!(fabs(fh) <= (1.0 + 1.0e-12)*x.c*eh + x.c*zero)) q3 += 1.0;
         q4 = fmax(q4, fabs(fh)/(x.c*fmax(eh, 0.0) + x.c*zero + 1.0e-300));
       }
-      if (mark == 2 || (mark == 1 && (r2 || !(el >= -zero) || !(er >= -zero)))) {
+      if (clip || fct) {
+        Real &cb = x.fc[dir](m,CLF_RC,k,j,i);
+        const Real c0 = cb, p0 = f - cb;
+        if (fct) cb *= (cb > 0.0) ? lam(m,0,k-dk,j-dj,i-di) : lam(m,0,k,j,i);
+        if (clip) cb = fmin(fmax(cb, -x.c*fmax(er, 0.0) - p0), x.c*fmax(el, 0.0) - p0);
+        if (cb != c0) q5 += 1.0;
+      } else if (mark == 2 || (mark == 1 && (r2 || !(el >= -zero) || !(er >= -zero)))) {
         x.fc[dir](m,CLF_W,k,j,i) = 1.0;
-        if (x.consist) x.fc[dir](m,CLF_RC,k,j,i) = 0.0;   // (no bracket)
+        if (x.consist && !keep) x.fc[dir](m,CLF_RC,k,j,i) = 0.0;   // (no bracket)
       }
     }, Kokkos::Sum<Real>(r1), Kokkos::Sum<Real>(r2), Kokkos::Sum<Real>(r3),
-    Kokkos::Max<Real>(r4));
+    Kokkos::Max<Real>(r4), Kokkos::Sum<Real>(r5));
+    n5 += r5;
     n1 += r1;
     n2 += r2;
     n3 += r3;
@@ -1310,6 +1344,7 @@ int RadiationM1::CleanStagRealizable(const int mark) {
   cln_nr2 = static_cast<int>(CleanReduce(n2, false));
   cln_nr3 = static_cast<int>(CleanReduce(n3, false));
   cln_fh = CleanReduce(cln_fh, true);
+  cln_nclip += static_cast<int>(CleanReduce(n5, false));
   return cln_nr1 + cln_nr2;
 }
 
@@ -1342,6 +1377,36 @@ void RadiationM1::CleanStagBracket() {
       x.fc[dir](m,CLF_RC,k,j,i) = CleanBoundaryFace(x, dir, m, k, j, i) ? 0.0 :
           x.fc[dir](m,CLF_W,k,j,i)*(x.c*x.cs(m,n,k,j,i) -
                                      CleanFaceFlux(x, CLW_Z, dir, m, k, j, i, true));
+    });
+  }
+  if (!(cln_bclip & 4)) return;
+  // clean_stag_bclip & 4: every cell's outgoing bracket at most what it has, E_old +
+  // h c kP a T^4 (FCT, factor of the donor): the right-hand side stays >= 0, so the
+  // all-low-order backward-Euler solve keeps E >= 0 with the bracket
+  const Real arad_ = arad;
+  auto op = opac;
+  auto lam = cln_v;
+  const bool cln8 = (cln_bclip & 8);   // (budget with the incoming bracket)
+  par_for("cln_bfct0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real pout = 0.0, pin = 0.0;
+    for (int d = 0; d < x.nf; ++d) {
+      const Real cl = x.fc[d](m,CLF_RC,k,j,i);
+      const Real ch = x.fc[d](m,CLF_RC,k+(d == 2),j+(d == 1),i+(d == 0));
+      pout += x.h*x.idx[d]*(fmax(-cl, 0.0) + fmax(ch, 0.0));
+      pin += x.h*x.idx[d]*(fmax(cl, 0.0) + fmax(-ch, 0.0));
+    }
+    const Real a = fmax(x.w(m,CLW_EO,k,j,i), 0.0) + x.h*x.c*op(m,M1_OP_P,k,j,i)*arad_*
+                   SQR(SQR(x.w(m,CLW_T,k,j,i))) + ((cln8) ? pin : 0.0);
+    lam(m,0,k,j,i) = (pout > a) ? a/pout : 1.0;
+  });
+  CleanGhostFill(cln_v, 0, 1);
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    par_for("cln_bfct1", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real &cb = x.fc[dir](m,CLF_RC,k,j,i);
+      cb *= (cb > 0.0) ? lam(m,0,k-dk,j-dj,i-di) : lam(m,0,k,j,i);
     });
   }
 }
