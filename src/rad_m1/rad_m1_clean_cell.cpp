@@ -321,7 +321,18 @@ void RadiationM1::CleanCellConsistency() {
       for (int r = 0; r <= x.nf; ++r) {
         fr[r] = x.c*x.cs(m,n+r,up ? kl : k,up ? jl : j,up ? il : i);
       }
-      for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = wb*(fr[r] - f[r]);
+      // causality: the rays, a steady solution, run ahead of the moments' field; with the
+      // FV rays (true face fluxes) the bracket fades out where a cell holds less than
+      // half of the rays' J (gone below 0.1 J; the short characteristics' bracket is
+      // defined only up to a divergence-free part and stays)
+      auto share = [&](const int kk, const int jj, const int ii) {
+        return x.fvrays ? CleanSmoothStep(2.5*fmax(x.u(m,CLC_O,kk,jj,ii), 0.0)/
+                                          fmax(x.cs(m,CLN_J,kk,jj,ii), 1.0e-300) - 0.25)
+                        : 1.0;
+      };
+      const Real q = fmin(bdry && blo ? 1.0 : share(kl, jl, il),
+                          bdry && !blo ? 1.0 : share(k, j, i));
+      for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = q*wb*(fr[r] - f[r]);
     });
   }
 }
@@ -1093,10 +1104,11 @@ int RadiationM1::CleanCellCountNegative() {
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanCellMarkFaces
-//! \brief marks every face of the cells whose solution has E < 0 or |F| > c E (beyond
-//! the solver tolerance, 10 clean_tol max|B_E|) as low-order.  The flags of these cells
-//! (cln_v slot 1) take the ghost exchange, so that a face shared by two MeshBlocks is
-//! marked on both.  Returns the number of such cells.
+//! \brief marks every face of the cells whose solution has E < 0 (beyond the solver
+//! tolerance, 10 clean_tol max|B_E|) as low-order.  |F| > c E is left alone: a beam
+//! overshoots |F| = c E slightly, and low-order faces there smear it into E < 0.  The
+//! flags of these cells (cln_v slot 1) take the ghost exchange, so that a face shared by
+//! two MeshBlocks is marked on both.  Returns the number of such cells.
 
 int RadiationM1::CleanCellMarkFaces() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1129,10 +1141,7 @@ int RadiationM1::CleanCellMarkFaces() {
     k += ks;
     j += js;
     i += is;
-    const Real e = u(m,CLC_X,k,j,i);
-    const Real y = std::sqrt(SQR(u(m,CLC_X+1,k,j,i)) + SQR(u(m,CLC_X+2,k,j,i)) +
-                             SQR(u(m,CLC_X+3,k,j,i)));
-    const bool b = !(e >= -zero && y <= (1.0 + 1.0e-12)*e + zero);
+    const bool b = !(u(m,CLC_X,k,j,i) >= -zero);
     bad(m,1,k,j,i) = b ? 1.0 : 0.0;
     if (b) n += 1.0;
   }, Kokkos::Sum<Real>(nbad));

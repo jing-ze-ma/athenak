@@ -475,8 +475,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   //    clean_closure = extrap(2) the stage-1 solve, whose state Y1 differs from
   //    U(t^{n+1}) at O(dt^2), takes the closure of its own first iterate once (pass 1):
   //    the extrapolated closure alone makes the step first order in time.  In the cell
-  //    layout a solution with cells E < 0 or |F| > c E switches their faces to the
-  //    low-order flux and is solved again (at most clean_maxpos times).
+  //    layout a solution with cells E < 0 switches their faces to the low-order flux
+  //    and is solved again (at most clean_maxpos times).
   const bool clos1 = (cln_extrap > 0) && (t2_solve == M1_T2S_STAGE1);
   const bool iterate = cln_feedback || (cell && cln_recon) || cln_closit || clos1;
   const bool lagged = (cell && cln_recon) || cln_closit || clos1;
@@ -607,8 +607,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // backward-Euler step by dt_retry)
   if (cell && cln_feedback && cln_neint > 0 && !t2stage && dtr_on) dtr_fail = true;
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
-    t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_poslim && cln_nnreal > 0) ||
-              (cell && cln_feedback && cln_neint > 0);
+    t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_feedback && cln_neint > 0);
   }
 
   // 6. clean_closure = extrap(2): ray moments of the new state.  The last solve of a
@@ -809,8 +808,10 @@ void RadiationM1::CleanRightHandSide() {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::CleanNewtonUpdate
-//! \brief new iterate E_k = X (a non-positive value is replaced by E_k/10) and the gas
-//! temperature in exchange equilibrium with it.  Returns max |dE|/E, |dT|/T.
+//! \brief new iterate E_k = X and the gas temperature in exchange equilibrium with it
+//! (a non-positive X enters the exchange as E_k/10; the staggered layout also keeps that
+//! as the iterate, the cell layout keeps X, whose E < 0 its positivity limiter treats).
+//! Returns max |dE|/E, |dT|/T.
 
 Real RadiationM1::CleanNewtonUpdate() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -824,6 +825,7 @@ Real RadiationM1::CleanNewtonUpdate() {
   auto eos = fl.eos;
   auto op = opac;
   auto w = cln_w;
+  const bool cell = cln_cell;
 
   Real change = 0.0;
   Kokkos::parallel_reduce("cln_newton", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
@@ -837,11 +839,12 @@ Real RadiationM1::CleanNewtonUpdate() {
     i += is;
     const Real e_old = w(m,CLW_EK,k,j,i);
     const Real t_old = w(m,CLW_T,k,j,i);
-    Real e = w(m,CLW_X,k,j,i);
-    if (!(e > 0.0)) e = 0.1*e_old;
+    const Real x = w(m,CLW_X,k,j,i);
+    const Real ex = (x > 0.0) ? x : 0.1*e_old;
+    const Real e = cell ? x : ex;
     const Real t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
                        hc*op(m,M1_OP_P,k,j,i)*arad_,
-                       w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*e, t_old);
+                       w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*ex, t_old);
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
     const Real de = fabs(e - e_old)/fmax(fmax(e, e_old), 1.0e-300);
