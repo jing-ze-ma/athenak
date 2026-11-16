@@ -3070,6 +3070,7 @@ class RadiationM1 {
   Real cln_nguard_sum = 0.0, cln_next_sum = 0.0;   // guard falls, extrapolated closures
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
+  DvceArray5D<Real> cln_ff;     // face fluxes of the operator (CleanCellApply)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
   bool cln_fref_set = false;    // cln_fref holds the force of the first coupled solve

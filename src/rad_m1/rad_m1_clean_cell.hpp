@@ -1173,8 +1173,15 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
     if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
     const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
     Real fp[4], fm[4];
-    CleanCellFaceFlux(x, v, dir, m, k+dk, j+dj, i+di, with_source, fp);
-    CleanCellFaceFlux(x, v, dir, m, k, j, i, with_source, fm);
+    if (x.ffon) {
+      for (int r = 0; r < 4; ++r) {
+        fp[r] = x.ff(m,4*dir+r,k+dk,j+dj,i+di);
+        fm[r] = x.ff(m,4*dir+r,k,j,i);
+      }
+    } else {
+      CleanCellFaceFlux(x, v, dir, m, k+dk, j+dj, i+di, with_source, fp);
+      CleanCellFaceFlux(x, v, dir, m, k, j, i, with_source, fm);
+    }
     if (x.sph || x.cub) {
       Real gp[4], gm[4];
       CleanCellRows(x, dir, m, k+dk, j+dj, i+di, k, j, i, fp, gp);

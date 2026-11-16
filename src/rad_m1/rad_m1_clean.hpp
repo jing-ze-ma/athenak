@@ -96,6 +96,8 @@ struct CleanArgs {
   DvceArray3D<Real> beam;      // boundary beam flux at x1min (m, k-ks, j-js)
   DvceArray4D<Real> bstress;   // beam stress column c K_b1 at x1min (m, b, k-ks, j-js)
   DvceArray5D<Real> u;         // cell vectors of the cell layout (CLC_*)
+  DvceArray5D<Real> ff;        // face fluxes, 4 per direction (ffon: CleanCellDivergence)
+  bool ffon = false;
   Real h, c, idx[3];           // stage step, light speed, inverse cell widths
   int bc[6];                   // boundary types x1min, x1max, ..., x3max
   DvceArray2D<BoundaryFlag> mbc;  // boundary flags of the six faces of each MeshBlock

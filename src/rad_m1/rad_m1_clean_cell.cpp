@@ -621,8 +621,8 @@ void RadiationM1::CleanCellRightHandSide() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellApply
 //! \brief u(dst) = A u(src) over the active cells: the local exchange and flux sources
-//! plus h div of the face fluxes; flux components beyond the mesh dimension are identity.
-//! The cells at least ng from the block faces are done while the ghosts are exchanged.
+//! plus h div of the face fluxes (each face once); flux components beyond the mesh
+//! dimension are identity.
 
 void RadiationM1::CleanCellApply(const int src, const int dst) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -633,14 +633,28 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
   CleanArgs x = CleanMakeArgs();
   auto op = opac;
   auto uh = FluidRef::Get(pmy_pack).u0;
-  const int ng = indcs.ng;
   const bool md = x.multi_d, td = x.three_d;
 
-  for (int part = 1; part <= 2; ++part) {
-  CleanGhostFill(cln_x, src, 4, true, part);
+  // the face fluxes once per face (cln_ff), then the cells
+  CleanGhostFill(cln_x, src, 4, true);
+  if (cln_ff.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(cln_ff, nmb1 + 1, 12, cln_x.extent_int(2), cln_x.extent_int(3),
+                    cln_x.extent_int(4));
+  }
+  x.ff = cln_ff;
+  for (int dir = 0; dir < 3; ++dir) {
+    if ((dir == 1 && !md) || (dir == 2 && !td)) continue;
+    const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+    par_for("clc_applyf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real f[4];
+      CleanCellFaceFlux(x, src, dir, m, k, j, i, false, f);
+      for (int r = 0; r < 4; ++r) x.ff(m,4*dir+r,k,j,i) = f[r];
+    });
+  }
+  x.ffon = true;
   par_for("clc_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    if (CleanInner(k, j, i, ng, is, ie, js, je, ks, ke, md, td) != (part == 1)) return;
     Real div[4];
     CleanCellDivergence(x, src, m, k, j, i, false, div);
     const Real rr = x.feedback ? x.w(m,CLW_RR,k,j,i) : 0.0;
@@ -668,7 +682,6 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
       x.u(m,dst+1+b,k,j,i) = y;
     }
   });
-  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -818,12 +831,10 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
   while (nl > cln_chunk*nsys) nsys *= 2;
   // row n: A x_n-P + B x_n + C x_n+P = r (52 values) in buffer 0 or 1
   const size_t scr = ScrArray1D<Real>::shmem_size(104*nl);
-  // (64-thread teams with the rows in global scratch: many lines per compute unit)
-  Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<64, 1>> policy(DevExeSpace(),
-      (nmb1 + 1)*np*nq, Kokkos::AUTO);
+  // (the rows in global scratch, teams of 64 threads for lines of up to 64 rows: many
+  // lines per compute unit)
   const int lev = 1;
-  Kokkos::parallel_for("clc_line", policy.set_scratch_size(lev, Kokkos::PerTeam(scr)),
-  KOKKOS_LAMBDA(TeamMember_t tm) {
+  auto line = KOKKOS_LAMBDA(TeamMember_t tm) {
     const int m = tm.league_rank()/(np*nq);
     const int p = (tm.league_rank() - m*np*nq)/nq, q = tm.league_rank() % nq;
     auto cell = [&](const int n, int &k, int &j, int &i) {
@@ -940,7 +951,12 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
       cell(n, k, j, i);
       for (int r = 0; r < 4; ++r) u(m,dst+r,k,j,i) = w(t + 52*n + 48 + r);
     });
-  });
+  };
+  using Policy = Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
+  const int nt = std::min((nl > 64) ? 256 : 64, Policy(DevExeSpace(), 1, 1).team_size_max(
+                          line, Kokkos::ParallelForTag()));
+  Kokkos::parallel_for("clc_line", Policy(DevExeSpace(), (nmb1 + 1)*np*nq, nt)
+                       .set_scratch_size(lev, Kokkos::PerTeam(scr)), line);
 }
 
 //----------------------------------------------------------------------------------------
