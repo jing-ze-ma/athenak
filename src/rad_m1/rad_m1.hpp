@@ -3055,7 +3055,7 @@ class RadiationM1 {
   DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; CleanFvSets)
   int cln_fvn = 0;              // their number
   std::vector<Real> cln_fvkey;  // the set (block key) in each slot of a rotating union
-  DvceArray5D<Real> cln_v;      // closure fill flags (m,2,k,j,i)
+  DvceArray5D<Real> cln_v;      // closure fill, bracket, E < 0 flags (m,3,k,j,i)
   DvceArray5D<Real> cln_opb;    // opacities of the stage, kept during the closure build
   // clean_closure = extrap(2): ray moments (CLN_* layout, not normalised by J) of the
   // converged states at t^n (cln_mn), t^{n-1} (cln_mp), the end of the last step solved

@@ -364,9 +364,11 @@ void RadiationM1::CleanCellConsistency() {
   }
   if (!cln_consist || cln_rfv == 0) return;
 
-  // FV rays: the bracket takes out of a cell at most the energy it has to give,
-  // E_old + h c kP a T^4 plus what the bracket brings in; its outflowing faces take the
-  // factor of their upwind cell (flux-corrected transport), so they stay single-valued.
+  // FV rays: in a cell whose solution had E < 0 (positivity passes), the bracket takes
+  // out at most the energy it has to give, E_old + h c kP a T^4 plus what the bracket
+  // brings in (elsewhere the implicit transport refills it, and a steady state does not
+  // depend on h); its outflowing faces take the factor of their upwind cell
+  // (flux-corrected transport), so they stay single-valued.
   // (The short characteristics' bracket carries a divergence-free part out of empty
   // cells that their steady state needs; it is left alone.)
   const Real arad_ = arad;
@@ -388,7 +390,7 @@ void RadiationM1::CleanCellConsistency() {
     }
     const Real a = fmax(x.w(m,CLW_EO,k,j,i), 0.0) + pin +
                    x.h*x.c*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(x.w(m,CLW_T,k,j,i)));
-    lim(m,1,k,j,i) = (pout > a) ? a/pout : 1.0;
+    lim(m,1,k,j,i) = (pout > a && lim(m,2,k,j,i) > 0.0) ? a/pout : 1.0;
   });
   CleanGhostFill(cln_v, 1, 1);
   for (int dir = 0; dir < x.nf; ++dir) {
@@ -1336,7 +1338,7 @@ int RadiationM1::CleanCellCountNegative() {
 //! \brief marks every face of the cells whose solution has E < 0 (beyond the solver
 //! tolerance, 10 clean_tol max|B_E|) as low-order.  |F| > c E is left alone: a beam
 //! overshoots |F| = c E slightly, and low-order faces there smear it into E < 0.  The
-//! flags of these cells (cln_v slot 1) take the ghost exchange, so that a face shared by
+//! flags of these cells (cln_v slot 2) take the ghost exchange, so that a face shared by
 //! two MeshBlocks is marked on both.  Returns the number of such cells.
 
 int RadiationM1::CleanCellMarkFaces() {
@@ -1371,12 +1373,12 @@ int RadiationM1::CleanCellMarkFaces() {
     j += js;
     i += is;
     const bool b = !(u(m,CLC_X,k,j,i) >= -zero);
-    bad(m,1,k,j,i) = b ? 1.0 : 0.0;
+    if (b) bad(m,2,k,j,i) = 1.0;
     if (b) n += 1.0;
   }, Kokkos::Sum<Real>(nbad));
   nbad = CleanReduce(nbad, false);
   if (nbad == 0.0) return 0;
-  CleanGhostFill(cln_v, 1, 1);
+  CleanGhostFill(cln_v, 2, 1);
 
   // faces on a physical boundary are marked only with clean_pos_boundary; with
   // clean_pos_ghost they take the upwind stress against the ghost instead
@@ -1387,7 +1389,7 @@ int RadiationM1::CleanCellMarkFaces() {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     par_for("clc_mark", DevExeSpace(), 0, nmb-1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real bl = bad(m,1,k-dk,j-dj,i-di), br = bad(m,1,k,j,i);
+      const Real bl = bad(m,2,k-dk,j-dj,i-di), br = bad(m,2,k,j,i);
       if (!CleanBoundaryFace(x, dir, m, k, j, i)) {
         if (bl > 0.0 || br > 0.0) fc(m,CLF_LO,k,j,i) = 1.0;
         return;
