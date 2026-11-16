@@ -3048,10 +3048,13 @@ class RadiationM1 {
   DvceArray1D<int> cln_fvc;     // the cells of each m n + d by level (CleanFvLevels)
   DvceArray2D<int> cln_fvg;     // the start of each m n + d in a level (level, m n + d)
   DvceArray2D<int64_t> cln_fvo; // its offset in cln_fvc less that start (level, m n + d)
+  DvceArray1D<int> cln_fvk;     // the m n + d at every 64th entry of each level
+  std::vector<int64_t> cln_fvkl;   // the start of each level in cln_fvk
   std::vector<std::vector<int>> cln_fvls;   // the level starts of each m n + d
   std::vector<int> cln_fvlv;    // the number of cells of each level
   std::vector<bool> cln_fvdo;   // the directions whose levels are due (CleanFvTables)
   DvceArray4D<int> cln_fvm;     // the direction maps of the periodic seams (m, side, k, d)
+  DvceArray2D<Real> cln_fvt;    // scratch of CleanFvSeams
   DvceArray4D<int> cln_fvwm;    // specular maps of reflecting theta walls (m,side,k,d)
   DvceArray4D<Real> cln_fvwu;   // |n . theta_hat| there
   DvceArray5D<Real> cln_fvw;    // the walls' incoming intensities (m,side,k,i,b N + d)

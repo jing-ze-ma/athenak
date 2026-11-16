@@ -771,27 +771,32 @@ void RadiationM1::CleanFvSeams() {
   auto fi = cln_fvi;
   auto mp = cln_fvm;
   const int n1 = fi.extent_int(4), n2 = fi.extent_int(3), ng = indcs.ng;
-  // one team per ghost cell of the theta seams (th = 1, ghost row jg) and of the phi
-  // seams (th = 0, ghost layer kg), its intensities permuted through team scratch
-  for (int th = 1; th >= (circ ? 1 : 0); --th) {
-  par_for_outer("cln_fv_seam", DevExeSpace(), ScrArray1D<Real>::shmem_size(n), 0, 0,
-                pmy_pack->nmb_thispack - 1, th ? ks : 0, th ? ke : 2*ng - 1, 0,
-                th ? 2*ng - 1 : n2 - 1, 0, n1 - 1,
-  KOKKOS_LAMBDA(TeamMember_t tm, const int m, const int kq, const int jq, const int i) {
-    const int g = th ? jq : kq, gs = (g < ng) ? g + (th ? js : ks) - ng
-                                              : g - ng + (th ? je : ke) + 1;
-    const int k = th ? kq : gs, j = th ? gs : jq, sd = (th ? 0 : 2) + (g < ng ? 0 : 1);
-    if (x.mbc(m,2+sd) != BoundaryFlag::periodic) return;
-    ScrArray1D<Real> t(tm.team_scratch(0), n);
-    for (int b = 0; b < nb; ++b) {
-      par_for_inner(tm, 0, n - 1, [&](const int d) {
-        t(d) = fi(m,b*n+mp(m,sd,k,d),k,j,i);
-      });
-      tm.team_barrier();
-      par_for_inner(tm, 0, n - 1, [&](const int d) {fi(m,b*n+d,k,j,i) = t(d);});
-      tm.team_barrier();
-    }
-  });
+  // the ghost cells of the theta seams (rows j < js, j > je of ks <= k <= ke) and of the
+  // phi seams (layers k < ks, k > ke), i fastest, in groups that permute their
+  // intensities through a scratch array of at most 2^24 values
+  const int64_t nt = 2*ng*(ke - ks + 1)*n1, np = circ ? 0 : 2*ng*n2*n1;
+  const int64_t ne = pmy_pack->nmb_thispack*(nt + np);
+  const int64_t nq = std::max(int64_t(1), std::min(ne, int64_t(1 << 24)/n));
+  if (cln_fvt.extent_int(1) != n) Kokkos::realloc(cln_fvt, nq, n);
+  auto t = cln_fvt;
+  for (int64_t e0 = 0; e0 < ne; e0 += nq) {
+    Kokkos::parallel_for("cln_fv_seam", Kokkos::RangePolicy<>(DevExeSpace(), e0,
+                                                             std::min(ne, e0 + nq)),
+    KOKKOS_LAMBDA(const int64_t e) {
+      const int m = static_cast<int>(e/(nt + np)), i = static_cast<int>(e%n1);
+      const int64_t r = e%(nt + np), q = (r < nt) ? r/n1 : (r - nt)/n1;
+      const bool th = (r < nt);
+      const int g = static_cast<int>(th ? q/(ke - ks + 1) : q/n2);
+      const int gs = (g < ng) ? g + (th ? js : ks) - ng : g - ng + (th ? je : ke) + 1;
+      const int k = th ? ks + static_cast<int>(q%(ke - ks + 1)) : gs;
+      const int j = th ? gs : static_cast<int>(q%n2);
+      const int sd = (th ? 0 : 2) + ((g < ng) ? 0 : 1);
+      if (x.mbc(m,2+sd) != BoundaryFlag::periodic) return;
+      for (int b = 0; b < nb; ++b) {
+        for (int d = 0; d < n; ++d) t(e-e0,d) = fi(m,b*n+mp(m,sd,k,d),k,j,i);
+        for (int d = 0; d < n; ++d) fi(m,b*n+d,k,j,i) = t(e-e0,d);
+      }
+    });
   }
 }
 
@@ -1197,8 +1202,21 @@ void RadiationM1::CleanFvLevels() {
     g_h(l,nmd) = s;
     cln_fvlv[l] = s;
   }
+  // the m n + d of every 64th entry of a level (where the sweep's search starts)
+  cln_fvkl.assign(nlev + 1, 0);
+  for (int l = 0; l < nlev; ++l) cln_fvkl[l+1] = cln_fvkl[l] + (cln_fvlv[l] + 63)/64;
+  Kokkos::realloc(cln_fvk, cln_fvkl[nlev]);
+  auto k_h = Kokkos::create_mirror_view(cln_fvk);
+  for (int l = 0; l < nlev; ++l) {
+    for (int md = 0; md < nmd; ++md) {
+      for (int b = (g_h(l,md) + 63)/64; 64*b < g_h(l,md+1); ++b) {
+        k_h(cln_fvkl[l] + b) = md;
+      }
+    }
+  }
   Kokkos::deep_copy(cln_fvg, g_h);
   Kokkos::deep_copy(cln_fvo, o_h);
+  Kokkos::deep_copy(cln_fvk, k_h);
   cln_fvdo.assign(n, false);
 }
 
@@ -1256,6 +1274,7 @@ void RadiationM1::CleanFvSweep() {
   auto fc = cln_fvc;
   auto fg = cln_fvg;
   auto fo = cln_fvo;
+  auto fk = cln_fvk;
   const int nmd = nmb*n;
   auto fm = cln_fvm;
   const bool o2 = (cln_rfv == 2);
@@ -1388,12 +1407,15 @@ void RadiationM1::CleanFvSweep() {
     if (axi) Kokkos::deep_copy(cln_fvx, fi);
     if (act) Kokkos::deep_copy(done, -1);
     for (int l = 0; l < nlev; ++l) {
+    const int64_t k0 = cln_fvkl[l];
+    const int nkb = static_cast<int>(cln_fvkl[l+1] - k0);
     Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                                                             cln_fvlv[l]),
     KOKKOS_LAMBDA(const int q, Kokkos::MinMaxScalar<Real> &mm) {
-      // (the m n + d of entry q: the last whose start in the level is <= q)
-      int md = 0;
-      for (int h = nmd; h - md > 1;) {
+      // (the m n + d of entry q: the last whose start in the level is <= q, between
+      // those of its 64-entry block and of the next)
+      int md = fk(k0 + q/64);
+      for (int h = (q/64 + 1 < nkb) ? fk(k0 + q/64 + 1) + 1 : nmd; h - md > 1;) {
         const int mid = (md + h)/2;
         if (fg(l,mid) <= q) {md = mid;} else {h = mid;}
       }
