@@ -1,0 +1,348 @@
+Athena binary output version=1.1
+  size of preheader=5
+  time=4
+  cycle=90
+  size of location=8
+  size of variable=8
+  number of variables=4
+  variables:  m1_e  m1_f1  m1_f2  m1_f3  
+  header offset=20294
+#------------------------- PAR_DUMP -------------------------
+<job>
+basename = sp 
+<mesh>
+nghost                    = 2                  
+nx1                       = 256                
+x1min                     = 1.0                
+x1max                     = 24.0               
+ix1_bc                    = outflow            
+ox1_bc                    = outflow            
+nx2                       = 1                  
+x2min                     = 1.1707963267948966 
+x2max                     = 1.9707963267948967 
+ix2_bc                    = reflect            
+ox2_bc                    = reflect            
+nx3                       = 1                  
+x3min                     = 0.0                
+x3max                     = 1.0471975511965976 
+ix3_bc                    = periodic           
+ox3_bc                    = periodic           
+use_spherical_polar       = true               
+use_cubed_sphere          = 0                  # Default value added at run time
+layout_invariant          = 1                  # Default value added at run time
+layout_invariant_mode     = block              # Default value added at run time
+use_grid_stretch_r        = 0                  # Default value added at run time
+use_grid_stretch_r_poly   = 0                  # Default value added at run time
+use_grid_stretch_theta    = 0                  # Default value added at run time
+use_polar_boundary        = 0                  # Default value added at run time
+use_polar_average_eresist = 1                  # Default value added at run time
+theta_plateau             = 0                  # Default value added at run time
+polar_ring_avg            = 0                  # Default value added at run time
+<meshblock>
+nx1 = 256 
+nx2 = 1   
+nx3 = 1   
+<time>
+evolution             = dynamic 
+integrator            = rk2     
+cfl_number            = 0.3     
+nlim                  = -1      
+tlim                  = 4.0     
+ndiag                 = 1000000 
+start_time            = 0       # Default value added at run time
+nan_check_cycles      = 100     # Default value added at run time
+dt_min                = 0       # Default value added at run time
+dt_retry              = 1       # Default value added at run time
+dt_retry_fac          = 0.5     # Default value added at run time
+dt_retry_grow         = 1.25    # Default value added at run time
+dt_retry_ngood        = 10      # Default value added at run time
+dt_retry_views        = minimal # Default value added at run time
+restart_refill_ghosts = 0       # Default value added at run time
+<hydro>
+eos                        = ideal                  
+reconstruct                = plm                    
+rsolver                    = hllc                   
+gamma                      = 1.666666666666667      
+rad_signal_speed           = false                  
+sp_x2_periodic_image       = 0                      # Default value added at run time
+dfloor                     = 1.1754943508222875e-38 # Default value added at run time
+dfloor_keep_velocity       = 0                      # Default value added at run time
+vceil                      = 0                      # Default value added at run time
+pfloor                     = 1.1754943508222875e-38 # Default value added at run time
+tfloor                     = 1.1754943508222875e-38 # Default value added at run time
+efloor_from_ekin           = 0                      # Default value added at run time
+efloor_as_tfloor           = 0                      # Default value added at run time
+sfloor                     = 1.1754943508222875e-38 # Default value added at run time
+nscalars                   = 0                      # Default value added at run time
+etotgrav                   = 0                      # Default value added at run time
+split_c2p_once             = 1                      # Default value added at run time
+wellbalance_dynamic        = 0                      # Default value added at run time
+wb_x1                      = 0                      # Default value added at run time
+wb_guard_ideal             = 0                      # Default value added at run time
+wb_clamp_ideal             = 0                      # Default value added at run time
+wb_rho                     = 0                      # Default value added at run time
+wb_rmax                    = 0                      # Default value added at run time
+wellbalance_static         = 0                      # Default value added at run time
+wellbalance_static_reconst = 0                      # Default value added at run time
+fofc                       = 0                      # Default value added at run time
+eos_radiation              = 0                      # Default value added at run time
+<rad_m1>
+c_light                         = 1.0       
+chat_over_c                     = 1.0       
+closure                         = eddington 
+e_floor                         = 1.0e-30   
+opacity                         = const     
+kappa_p                         = 0.0       
+kappa_e                         = 0.0       
+kappa_f                         = 0.0       
+kappa_s                         = 1e-10     
+arad                            = 1.0       
+coupling                        = true      
+gas_feedback                    = false     
+transport                       = implicit  
+implicit_cfl                    = 0.5       
+implicit_solver                 = bicgstab  
+implicit_precond                = line      
+implicit_recon                  = dc        
+implicit_bc_x1min               = reflect   
+implicit_bc_x1max               = marshak   
+implicit_ebath_x1min            = 0.0       
+implicit_ebath_x1max            = 0.0       
+time_scheme                     = hesdirk2  
+ic_rad                          = none      
+scheme                          = clean     
+clean_layout                    = cell      
+clean_closure                   = sphere    
+clean_sphere_radius             = 0.0       
+clean_tol                       = 1.0e-14   
+clean_tol_nl                    = 1.0e-13   
+clean_maxnl                     = 60        
+clean_w_c0                      = 0.1       
+clean_w_c1                      = 0.5       
+clean_maxit                     = 4000      
+clean_ray_min                   = 0.001     
+clean_fill_passes               = 8         
+clean_predict                   = true      
+clean_bc                        = halfrange 
+clean_alpha                     = tau       
+clean_recon                     = plm       
+clean_consistency               = false     
+clean_consistency_weight        = true      
+clean_face_model                = none      
+clean_psi_eps                   = 1e-12     
+clean_maxpic                    = 12        
+clean_pos_limit                 = true      
+clean_diag_cells                = false     
+clean_pos_boundary              = false     
+clean_pos_ghost                 = false     
+clean_vfreeze                   = 0         
+clean_maxpos                    = 3         
+clean_pc_sweeps                 = 1         
+cfl_rad                         = 0.4       # Default value added at run time
+subcycle                        = 1         # Default value added at run time
+thick_flux                      = none      # Default value added at run time
+ap_form                         = alpha2    # Default value added at run time
+scaled_prefactor                = 20        # Default value added at run time
+temp_unit_kelvin                = 1         # Default value added at run time
+rho_unit_cgs                    = 1         # Default value added at run time
+kappa_unit                      = 1         # Default value added at run time
+rho_ref                         = 1         # Default value added at run time
+t_ref                           = 1         # Default value added at run time
+opac_a                          = 0         # Default value added at run time
+opac_b                          = 0         # Default value added at run time
+advect_split                    = 0         # Default value added at run time
+split_vel                       = recon     # Default value added at run time
+source_form                     = full      # Default value added at run time
+f_source                        = cell      # Default value added at run time
+opac_freeze                     = 0         # Default value added at run time
+dbg_gas_force                   = 1         # Default value added at run time
+dbg_gas_heat                    = 1         # Default value added at run time
+dbg_gas_force_trans             = 1         # Default value added at run time
+dbg_trans_memory                = 1         # Default value added at run time
+dbg_tensor                      = none      # Default value added at run time
+dbg_tensor_tilt                 = 0.3       # Default value added at run time
+force_reference                 = none      # Default value added at run time
+time2_fref_wacc                 = 1         # Default value added at run time
+rsla_warn                       = 0.1       # Default value added at run time
+rsla_vmax                       = -1        # Default value added at run time
+rsla_force                      = 0         # Default value added at run time
+reconstruct                     = plm       # Default value added at run time
+implicit_tol                    = 1e-08     # Default value added at run time
+implicit_tol_rel                = 0         # Default value added at run time
+implicit_tol_rel_max            = 0.0001    # Default value added at run time
+implicit_maxit                  = 200       # Default value added at run time
+implicit_lin_tol                = 1e-10     # Default value added at run time
+implicit_lin_maxit              = 200       # Default value added at run time
+implicit_offdiag                = auto      # Default value added at run time
+implicit_closure_relax          = 1         # Default value added at run time
+implicit_closure_relax_thin     = 0         # Default value added at run time
+implicit_closure_lag            = pass      # Default value added at run time
+implicit_trans_limit            = none      # Default value added at run time
+implicit_trans_fmax             = 1         # Default value added at run time
+implicit_accel                  = none      # Default value added at run time
+implicit_gas_newton             = 1         # Default value added at run time
+implicit_eos_cache              = 0         # Default value added at run time
+report_newton_fb                = 0         # Default value added at run time
+dbg_energy_tally                = 0         # Default value added at run time
+implicit_eos_cache_nt           = 2         # Default value added at run time
+implicit_eos_cache_check        = 1         # Default value added at run time
+implicit_line_solver            = pcr       # Default value added at run time
+implicit_pcr_team               = 0         # Default value added at run time
+implicit_pcr_check              = 0         # Default value added at run time
+implicit_bcg_sync               = 1         # Default value added at run time
+implicit_halo_direct            = 1         # Default value added at run time
+implicit_od_cache               = 1         # Default value added at run time
+implicit_krylov_fuse            = 3         # Default value added at run time
+implicit_op_stencil             = 1         # Default value added at run time
+implicit_precond_float          = 0         # Default value added at run time
+implicit_op_team_red            = 0         # Default value added at run time
+implicit_lin_cnorm              = 0         # Default value added at run time
+implicit_krylov_pipe            = 0         # Default value added at run time
+implicit_halo_mpi               = 1         # Default value added at run time
+implicit_halo_ipc               = 0         # Default value added at run time
+implicit_halo_overlap           = 0         # Default value added at run time
+implicit_halo_ovl_faces         = 0         # Default value added at run time
+implicit_picard_log             = 0         # Default value added at run time
+implicit_tsolve_opac            = 1         # Default value added at run time
+implicit_tsolve_opac_start      = 20        # Default value added at run time
+implicit_tsolve_opac_mode       = 1         # Default value added at run time
+implicit_cs_e0_metric           = 1         # Default value added at run time
+implicit_thin_freeze            = 0.01      # Default value added at run time
+implicit_resid_fatal            = 0.01      # Default value added at run time
+implicit_lres_test              = 0         # Default value added at run time
+implicit_conv_est               = 1         # Default value added at run time
+implicit_src_stable             = 1         # Default value added at run time
+implicit_lin_ew_max             = 0.01      # Default value added at run time
+implicit_lin_ew_gamma           = 0.9       # Default value added at run time
+implicit_bcg_max_restarts       = 2         # Default value added at run time
+implicit_bcg_fallback           = line      # Default value added at run time
+implicit_precond_fallback       = none      # Default value added at run time
+implicit_face_opac_n            = 1         # Default value added at run time
+implicit_det_reduce             = 0         # Default value added at run time
+implicit_predictor              = step      # Default value added at run time
+implicit_predictor_frozen       = 0         # Default value added at run time
+implicit_anderson_m             = 5         # Default value added at run time
+implicit_anderson_beta          = 1         # Default value added at run time
+implicit_anderson_start         = 1         # Default value added at run time
+implicit_opac_update            = 0         # Default value added at run time
+dbg_opac_part                   = 0         # Default value added at run time
+implicit_opac_newton            = 0         # Default value added at run time
+implicit_opac_newton_guard      = 0.5       # Default value added at run time
+implicit_gas_newton_u4          = 0         # Default value added at run time
+implicit_opac_lag               = none      # Default value added at run time
+implicit_opac_lag_passes        = 3         # Default value added at run time
+implicit_g0_limit               = 1         # Default value added at run time
+implicit_g0_exchange            = 1         # Default value added at run time
+implicit_pos_gas                = 1         # Default value added at run time
+implicit_pos_floor              = 1         # Default value added at run time
+implicit_pos_floor_solve        = 1         # Default value added at run time
+implicit_opac_newton_guard_mode = 6         # Default value added at run time
+implicit_allow_multid           = 0         # Default value added at run time
+marshak_q                       = 0.5       # Default value added at run time
+implicit_marshak_face           = linear    # Default value added at run time
+implicit_face_weight            = distance  # Default value added at run time
+implicit_flux                   = central   # Default value added at run time
+implicit_flux_faces             = x1        # Default value added at run time
+implicit_flux_beam              = closure   # Default value added at run time
+implicit_blend                  = tau_f     # Default value added at run time
+implicit_blend_alpha            = 1         # Default value added at run time
+implicit_blend_r0               = 1.5       # Default value added at run time
+implicit_blend_xthin            = 0         # Default value added at run time
+implicit_blend_xthin_mode       = all       # Default value added at run time
+implicit_blend_xthin_wmin       = 0         # Default value added at run time
+implicit_thin_switch            = none      # Default value added at run time
+implicit_blend_fmode            = max       # Default value added at run time
+implicit_blend_mode             = flux      # Default value added at run time
+implicit_blend_tau0             = 1         # Default value added at run time
+implicit_blend_flo              = 0.6       # Default value added at run time
+implicit_blend_fhi              = 0.9       # Default value added at run time
+implicit_enthalpy               = plm       # Default value added at run time
+implicit_vimp                   = 0         # Default value added at run time
+implicit_hold                   = 1         # Default value added at run time
+implicit_fast_kernels           = 1         # Default value added at run time
+implicit_vimp_fold              = 0         # Default value added at run time
+implicit_one_pass               = 0         # Default value added at run time
+implicit_predictor_order        = 2         # Default value added at run time
+implicit_partition              = none      # Default value added at run time
+implicit_recon_w                = -1        # Default value added at run time
+implicit_res_floor              = 0         # Default value added at run time
+implicit_gas_newton_switch      = 10        # Default value added at run time
+implicit_gas_newton_switch_min  = 20        # Default value added at run time
+implicit_stall_fac              = 0.5       # Default value added at run time
+implicit_recon_lag              = picard    # Default value added at run time
+implicit_recon_npass            = -1        # Default value added at run time
+implicit_bmom_half              = 1         # Default value added at run time
+implicit_rad_inertia            = 1         # Default value added at run time
+implicit_nofb_work              = 1         # Default value added at run time
+implicit_gas_src                = matched   # Default value added at run time
+implicit_f0_init                = auto      # Default value added at run time
+implicit_flux_x1min             = 0         # Default value added at run time
+implicit_flux_x1max             = 0         # Default value added at run time
+implicit_bc_advect              = 1         # Default value added at run time
+implicit_face_opac              = arith     # Default value added at run time
+time2_enth_be                   = 1         # Default value added at run time
+time2_vstage                    = 1         # Default value added at run time
+time2_lin_tol_fac               = 1         # Default value added at run time
+time2_one_pass_safety           = 30        # Default value added at run time
+polar_ring_avg                  = 0         # Default value added at run time
+<problem>
+pgen_name   = rad_m1_beam 
+m1_test     = sph_shell   
+gas_rho     = 1.0         
+gas_temp    = 1.0e-16     
+e_out       = 0.1         
+e_amp       = 1.0         
+r0          = 12.0        
+width       = 0.3         
+nan_report  = 0           # Default value added at run time
+hot_jupiter = 0           # Default value added at run time
+user_srcs   = 0           # Default value added at run time
+user_hist   = 0           # Default value added at run time
+e_in        = 0           # Default value added at run time
+<output1>
+file_type   = tab         
+variable    = m1          
+data_format = %24.16e     
+dt          = 3.999999996 
+last_time   = 0           # Updated during run time
+file_number = 1           # Updated during run time
+id          = m1          # Default value added at run time
+ghost_zones = 0           # Default value added at run time
+gid         = -1          # Default value added at run time
+<output2>
+file_type            = bin         
+bin_double           = true        
+variable             = m1          
+dt                   = 3.999999996 
+last_time            = 0           # Updated during run time
+file_number          = 1           # Updated during run time
+id                   = m1          # Default value added at run time
+ghost_zones          = 0           # Default value added at run time
+gid                  = -1          # Default value added at run time
+data_format          = %12.5e      # Default value added at run time
+single_file_per_rank = 0           # Default value added at run time
+<mesh_refinement>
+refinement = none # Default value added at run time
+<coord>
+special_rel = 0 # Default value added at run time
+general_rel = 0 # Default value added at run time
+#------------------------- PAR_DUMP -------------------------
+<par_end>
+                                           ğ?      8@²Æİí”»ò?“ªºaˆÿ?        es-8RÁğ?Ş¨¯Ü@z‹&¼$Bÿ?•ÀH#1ú?Ş¯„5÷?Z‡ì­¼Xô?Y7*ßıò?áçë¯ğ?I§±¤T÷ì?åb¹':ê?ú%õ3%âç?yÁÎ^sŞå?j‰Hd ä?j<°ÂÈ™â?†®ÜBá?{Â3Nà?Ì½W!eŞ?Ü.‘ï0Ü?Rªzš(†Ú?ïŞôEÙ?P£qÔ®×?-I{†6wÖ?CŠ¸}0]Õ?ÓkÜ~ü\Ô?›,Y†sÓ?í¢œGÒ?çñyÚÚÑ?á[RÓ['Ñ?.ªå1‚Ğ?H>L§ÔÏ?‘»šz»Î?OŒ·~†¸Í?QìÔ ÉÌ?¼!ëË?¥"Ø^Ë?X£AO×ZÊ?|P‚é¤É?{VÑ„„ùÈ?[áµ5XÈ?ßÉbÁÇ?k‰–;h4Ç?WŸ;œ²Æ?Û¨z/Ã;Æ?‘¿zˆ‘ÏÅ?7d‰TmÅ?¡hJ²
+Å?«X²ÿ‰ÂÄ?Øè(¦wÄ?GæM2Ä?Fp™ñÃ?µIgÒ´Ã?>œÅl{Ã?¶÷÷ EÃ?PôH@Ã?’ùsğßÂ?Ijö¡à°Â?„¹"IæƒÂ?ænCÚXÂ?àæ±š/Â?]@‡à Â?%µX¿âÁ?)õƒ£ÀÁ?¡_.$<¥Á?Eì#˜Á?Ö–I³œÁ?ğ“>>g³Á?q£Ç'íÁ?HJO—8eÂ?ã§"jàFÃ?ú¤+J'ÏÄ?T¢T˜QÇ?@ÒÌÿ'6Ë?¸Á|Ğ?İš‰V'‹Ô?Õñ÷óÙ?LƒOßÖYà?ÉÇ/»9ä?»6Dçh!è?‘è8ë?=f¼#šì?Ö^À	oì?µ§„të?Ø[G=Bè?*ùv?‹áã?Ï\w¡³Ü?Ÿ	
+ı˜*Ñ?Š°¯[¿?JÌm¤¢F¦?ei5e	¤Ÿ?¡Ù`0”î¨?ku¥A«ğ³?7Û9…­Ä»?·~±‹NÀ?Æ1™”ÕÙÀ?üÿ» qÀ?È[§½Â‚¿?"r‰ù²$¾?p+Ê¤r½?
+ç*æËa½?ğ«Q"ˆ½?8ÌÉ,ç¬½?6eµ3¼½?lŸÏ
+¶½?;4²¤5¢½?Õ«šV†½?Å!pj½?•[£6µQ½?¦—(0T>½?‹Âş//½?^§¶•"½?7İåÉ½?^)EÙ	½?Csú±Âû¼?œÆ“Ôì¼?†’ÛŞ¼?˜mĞ¼?utEqÃ¼?vñ°¶¼?êğ§ ª¼?ÿZ9æ³¼?¹‚Šì’¼?,ù¶`X‡¼?äo{Œü{¼?€ÓáÚp¼?ÀäE'şe¼?HE"x[¼?¥{ãPQ¼?‡¦0¾sG¼?ˆ–i½=¼?¹eK‘4¼?hŸ9§u*¼?¾b{0!¼?RQ6¼?3õhÅ¼?¢æ´±¼?Œ¯îş»?§'Ñ¾õ»?şÜ8Äì»?hÔ§â»?”,¾eÚ»?Ä‰sP"Ô»?4´ÆÚ)Ğ»?Œà©}îÍ»?rSÙºË»?ìg÷7ÛÅ»?¼ë—ö£·»?	^è¦£Ÿ»?4>6‡N‚»?ÈşLø5k»?Û¾J¨k»?îCJso¡»?ÇkÁÜé
+¼?½¥®”€l¼?8‚«4-š¼?^Ã‚p¼?Òî©ö/tº?­c±ü·?R*ùšüÉµ?ƒMÙgX´?‹ûS%Ëµ?N›Dä–ê»?/\ ‚õNÃ?üeŠ‘¦€É?tp‚#Ï?Å|I1­Ñ?JAîÒ?‹Oë×uÓ?¿æŠeVÓ?ƒºö9FSÒ?bDM•‚Ğ?sàiÔÌ?K{*äàÈ?CŒƒÅ?˜L!úÂ?Ä^~ÉÁ?¤„¬Û‰¿?°şW[È½?ŸFiœ¨¼?{§ñ÷zõ»?©Õ÷İ‰»?%è—k5J»?ê\37m$»?¤Ì!æı»?*(ÙäÇıº?ÏóDôº?=%é^Vîº?3„
+úêº?İ~W7Qæº?šÌ…ääâº?j¤ÒA—ßº?ÚÉÄkZÜº?áä)*Ùº?ü’Öº?Ê g ìÒº?æ5ßÏº?¶Ş‡[ÜÌº?(¨’àÉº?®¹ÿûáÆº?ñºo¼ÈÃº?/&naÀº?ğ³mèF¼º?Ôşşb¾¶º?<c˜}®º?K7
+P¡º?.şE‘‹º?•¢î†ugº?F3¦&0,º?†™ı½Í¹?;İúò49¹?º¶Kü[¸?æ/Œ¨·?‚0~»qkµ?jw@sg;³?c7É_˜°?ÑMx5|Y«?PSefˆ–¥?œÈšPÜ ?JØb¨XPœ?î?¡Ñ›?#ÁÇœ?Á](×?æ]cÜ¯ ?•vÓêá ?»"w:¡?<ı`w7¡?wdx¡?‡¦°2í ?ÿoİy”Ø ?‰x(Ù˜Û ?­_›šê ?`™jı ?D Èj¡?,Íÿ¡?å=ñæ¡?2{qB"¡?ˆ¼'¡?öÌS*/¡?œ¶»Çé7¡?gÕc’Ê@¡?§Ú°I¡?6}Í…•P¡?Y¨
+ÑW¡?"Nô7_¡?<7Ó•†f¡?Òn¡?}+!‘u¡?ºÛAcü|¡?ØEã‚M„¡?ÉšÄ‰‹¡?©ó-³’¡?	–üğË™¡?ñ'Uß ¡?*­!¡¨¡?˜ÕV¯ğ®¡?vWƒ_µ¡?Ÿ%”&¾¡?
+1½DÇ¡?ËïËªj[×¿âO18]¿À¿Ñtô½tÈÁ¿cöû'îÇ¿Sy6˜œË¿âà°5¶Ì¿¬ç€şË Î¿÷ĞèÏ¿ø-¢g®Ï¿væÄ°AĞ¿(`Ğ¿Æôö5XĞ¿DÎ‘Ğ¿’1ìÇÔÏ¿%H€áÏ¿-¤€è<Ï¿K›òŞ=áÎ¿&KG²·~Î¿fŞ×$gÎ¿šmPÂ¬Í¿(/Óğ?Í¿A«¾¥ßÑÌ¿Ãe@qYcÌ¿¬<õË¿C9Š°‡Ë¿ÄE¬Ë¿¹âÅQ±Ê¿äeÖj²HÊ¿4rKë±áÉ¿âXè#|É¿oÀ¢óÉ¿1ÛFµÈ¿åÓ†TÈ¿&Ì¥}SöÇ¿Íd«»I›Ç¿–®iüÈCÇ¿oŠî¿ïÆ¿fÈÇšÆ¿3	IZOÆ¿›¸Ì Æ¿ş°5SÑ±Å¿``=]œaÅ¿ÏæñæÓÅ¿(‡U”¼Ä¿`ˆªUhÄ¿àâ¶šÃÄ¿­ü•¿Ã¿£€ÒÓrlÃ¿­”qiİÃ¿+Ÿ1ËÂ¿4”µ`¤}Â¿€jM*P2Â¿()8éÁ¿æ[wR¢Á¿«Wî‹]Á¿™¥àqÊÁ¿û ƒÆôÙÀ¿“Š.ÅñšÀ¿y¡ÇÛ¿]À¿?ŞæE°"À¿V¸©YÖ¿¿˜ºõ¼u¿¿Rİô;Q-¿¿çz
+¿¿ôÂ#h™¿¿¿±=¬\¿¿ÄõFö—À¿ê}Y€ŞÀ¿Õÿ§9RRÂ¿(Zõ-ï¿Ä¿Q®3‘È¿çˆ@Î¿ÚàÙ¤×$Ó¿Hš‘Fı‚Ø¿N ó’:ß¿%|iq%xã¿c‚¥ğ=[ç¿øs²mê¿Á2w@Êë¿–EÒšë¿•„b=ê¿ŒÑ­Teç¿-²) ã¿gÔÅ©(èÚ¿×gæ)L­Î¿I£"¿œ–·¿SÑôdjŒ¿úæ"ã¹H¿¨[Æ‹’¿ß%N
+©õ§¿gjmª°³¿é=tpe¸¿¸ò]¹¿ËUøÛp¸¿•pKñ¶¿)!n8wµ¿>ÔÉÇº£´¿ì¼Év=t´¿0WÔ{[€´¿y»Pš…´¿ÍU%Qy´¿3( ñ”Y´¿3+*´¿“èšîó³¿ğÁFÀ»³¿ÊÁQÃˆ³¿2Z¬“5[³¿¸Y=q2³¿ªï°’³¿ñ=…^Ïå²¿(L½ˆ¿²¿=™ûe˜²¿AS7ñp²¿’Í@J²¿Dë*qk$²¿$†÷ÿ±¿öXèîOÜ±¿£ÿkl¹±¿§+Y(–±¿Ç£Q}s±¿gİm¾pQ±¿Vbı/±¿p]®Q±¿ªç<–î°¿sä~Î°¿ó¶<ÖØ®°¿Ôñ–ú½°¿¯^Bq°¿}h£L^S°¿­Š»Cè5°¿d›XÁŸ°¿X£¯®ö¯¿_ ›H¼¯¿g/¨¾İ‚¯¿éMA…K¯¿Ÿ¸ÛòÖ¯¿ª?WDä®¿¯ø«"²®¿.ÌKTj~®¿ò +\ŸG®¿Q4³i®¿ˆn¾Ñ­¿¯ìM–­¿®¿…xc­¿Ê
+™è¿A­¿#I éİ3­¿c©ëB2­¿øĞ¡Ó'­¿,PAç¬¿úÃu°¥<¬¿]àÌ^4«¿Çe	ÊQ;ª¿Ãjë¡ª©¿Öç§Ğzfª¿µ³/¹o­¿Eğ×±¿ûFU6³¿ªÅìõŠ[´¿CèïZ³¿²Êz©¿ZIö…•È¿‚^š'Èş¤?é4aÃÄİµ?Î4Œc¾?ş…;ºLÀÁ?YŸg¹ÙÂ?Q™ÿé¦¦Â?,˜­À?l{Šç-º?øØ¸á±?ø!g
+#¤?›òõŒ?ƒ‹ÈåŒy¿¯V'¸a•¿òÔ]×@Ÿ¿¬ƒÎ•ù¢¿
+éom¶¥¿ƒH´M¦¿Áaşİû¦¿…É;S§¿šdı~w§¿ßŞ^R7€§¿è½›by§¿Ú\ï#še§¿åÁGdfK§¿À†1"Ê.§¿&ùµX§¿¥ıÇó¦¿,£Ày^Ö¦¿$y·8¹¦¿w¨d¢\œ¦¿"•½Ê¦¿f)ãc¦¿Å­=t€G¦¿ZEnÃ+¦¿s?„C¦¿¨
+ëô¥¿œìTŒ‹Ù¥¿ÁÚİ­¾½¥¿0k„» ¥¿ÊÕQè¥¿u\¥¿ï£r{-¥¿#úÔİí¤¿%«‘¤¿ÄéÃzH¤¿ãÙ=¹h5£¿.rîú¡¿,Îˆ}+ ¿aŸ†
+¢8›¿Ú •I”¿înOåÇ†¿Ş8-gH:F¿n‹©dD†?|©¿†Ì–?/K`Îı1 ?zÕ‘ú¢?B«ê%Õ¦£?±¢æô>£?aFN)Úk¢?Ã,t™a¡?ÍûS¬/˜ ?§±ŠR ?ò–2of ?¥>©H˜ ?°TH…	Ñ ?­H$Û+ø ?;l	¡¡?Ñy5È¡?ê¾³¡?|yæ¡?V¤B_}
+¡?Utw¡?Ãù^2 ¡?fzãœ*¡?Á§ü»3¡?b«¼ñ:¡?ÍlRÌ@¡?HÂ(¸ûG¡?6µ®O¡?şG/%W¡?Võö_K_¡?šaµPÍf¡?Ïê¸-n¡?ó™­Šu¡?M5¹ƒê|¡?§BêC„¡?P\p‰‹¡?ÄÊJ·’¡?cQ/Î™¡?U¡Wß ¡?ßî¨¡?06Qğ®¡?a_µ¡?;¼›:¾¡?ù¼JÇ¡?                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                

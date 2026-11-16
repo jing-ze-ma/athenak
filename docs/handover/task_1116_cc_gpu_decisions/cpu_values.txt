@@ -1,0 +1,13 @@
+CPU values (Orion, commit 4680ce500 = origin/clean-cc 32af6349e outputs, OMP 4 threads) of the thin-sphere arms:
+g6_thin1_a3 rc=0 L1(E) 4.4554e-02
+g6_thin1_base rc=0 L1(E) 4.4554e-02
+g6_thin1_geo4 rc=0 L1(E) 2.4957e-02
+g6_thin1_geo4rot rc=0 L1(E) 1.8390e-02
+g6_thin1l_a3 rc=0 L1(E) 1.1591e-01
+g6_thin1l_base rc=0 L1(E) 1.1591e-01
+g6_thin1l_geo4 rc=0 L1(E) 6.3074e-02
+g6_thin1l_geo4rot (still running when committed; not finished)
+g6_thin1_lld rc=0 L1(E) 1.5034e-01
+g6_thin1l_lld rc=0 L1(E) 3.0942e-01
+g6_thin1l_rot (still running when committed; not finished)
+g6_thin1_rot rc=0 L1(E) 2.9638e-02

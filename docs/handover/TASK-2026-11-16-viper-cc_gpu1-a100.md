@@ -124,10 +124,36 @@ python3 compare.py --runs runs_n4096 G1 > gates_n4096.md
 
 ## Orion CPU reference (ref/ref.json, final dumps in ref/dumps/)
 Commit 4680ce500 (outputs bitwise identical to 32af6349e), CPU build (gcc/13, openmpi/4.1, MPI + OpenMP, Release, `-ffp-contract=off`), md5
-(follows with ref/), 4 OpenMP threads, ranks as in runs.txt. All decks have every clean key written out
+1326bb7410d558b5cec09a38b6f87cd5, 4 OpenMP threads, ranks as in runs.txt. All decks have every clean key written out
 (taken from the parameter dump); on Orion the explicit decks reproduce the implicit defaults bitwise.
 
-**The ref/ directory (G1-G4 references) follows in the next commit (the job is running). G5 needs no references: start G5 now.**
+| run | score | CLEAN lines / sum / pic | CPU conservation, v/c_s | CPU 4-vs-1 maxrel | CPU wall s |
+|---|---|---|---|---|---|
+| g1_nltek1_x0.5 | L1 9.857942e-05 | 59 / 451 / 151 | - | - | 22 |
+| g1_hcyl_x0.5 | metric 1.200974e-02 | 64 / 563 / 169 | - | - | 80 |
+| g1_cb_x0.5 | metric 4.599888e-01 | 14 / 614 / 31 | - | - | 23 |
+| g1_shd_x0.25 | metric 1.180539e-02 | 4 / 134 / 8 | - | - | 15 |
+| g1_rwp | l1_rho 3.648449e-03, l1_E 3.582953e-03 | 127 / 432 / 684 | dE -1.2e-15, dP 2.4e-15 | - | 8 |
+| g1_rwm | - | 127 / 432 / 684 | - | - | 6 |
+| g2_nltek1_x0.5 | L1 9.889859e-05 | 59 / 476 / 150 | - | 4.1e-06 | 23 |
+| g2_hcyl_x0.5 | metric 1.200974e-02 | 64 / 610 / 169 | - | 2.7e-10 | 46 |
+| g2_cb_x0.5 | metric 4.599888e-01 | 14 / 697 / 31 | - | 3.6e-07 | 16 |
+| g2_shd_x0.25 | metric 1.180539e-02 | 4 / 150 / 8 | - | 2.5e-10 | 17 |
+| g2_rwp | l1_rho 3.648450e-03, l1_E 3.582953e-03 | 127 / 432 / 685 | dE 3.1e-16, dP 1.1e-14 | 6.6e-08 | 18 |
+| g2_rwm | - | 127 / 432 / 685 | - | 6.6e-08 | 19 |
+| g3_rhse_sp2 | - | 1322 / 2700 / 5286 | dE 1.2e-05, vcs_maxall 7.4e-06 | - | 28 |
+| g3_rhse_sp3 | - | 347 / 962 / 1446 | dE 1.5e-03, dLz -1.6e-08, vcs_maxall 1.1e-03 | - | 81 |
+| g3_rhse_sp3_mb4 | - | 347 / 1072 / 1441 | dE 1.5e-03, dLz -1.6e-08, vcs_maxall 4.3e-03 | 1.1e-07 | 54 |
+| g3_pulsew | - | 179 / 2091 / 1384 | - | - | 10 |
+| g3_spthin | - | 39 / 82 / 87 | - | - | 11 |
+| g4_rhse_cs6 | - | 377 / 2298 / 1811 | dE 2.3e-04, vcs_maxall 1.2e-03 | - | 798 |
+| g4_rhse_cs24 | - | 377 / 2269 / 1816 | dE 2.6e-04, vcs_maxall 3.8e-03 | - | 251 |
+| g4_cs_thin1 | - | 199 / 117 / 346 | - | - | 145 |
+| g4_cs_feed1 | - | 19 / 250 / 202 | - | - | 42 |
+
+CPU thread spread (1 and 16 vs 4 OpenMP threads): g1_nltek1_x0.5 score 2.4e-04 field 7.6e-07 dsum 2; g1_hcyl_x0.5 score 0.0e+00 field 7.2e-16 dsum 0; g1_cb_x0.5 score 1.6e-15 field 6.7e-16 dsum 0; g1_shd_x0.25 score 0.0e+00 field 4.1e-16 dsum 0; g1_rwp score 2.5e-11 field 9.7e-11 dsum 0; g1_rwm score 0.0e+00 field 9.0e-11 dsum 0
+
+All CPU runs: rc 0, 0 CLEAN WARNING, 0 DT_RETRY. Running compare.py on Orion against the 16-thread runs gives "all gates passed".
 
 ## Rules
 - Fresh starts only. Stop on FATAL, NaN or rc != 0 (G1-G4) and send the last 40 log lines;
