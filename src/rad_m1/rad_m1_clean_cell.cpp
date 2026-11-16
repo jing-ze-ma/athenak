@@ -818,9 +818,10 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
   while (nl > cln_chunk*nsys) nsys *= 2;
   // row n: A x_n-P + B x_n + C x_n+P = r (52 values) in buffer 0 or 1
   const size_t scr = ScrArray1D<Real>::shmem_size(104*nl);
-  Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>> policy(DevExeSpace(),
+  // (64-thread teams with the rows in global scratch: many lines per compute unit)
+  Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<64, 1>> policy(DevExeSpace(),
       (nmb1 + 1)*np*nq, Kokkos::AUTO);
-  const int lev = TeamScratchLevel(scr, 0);
+  const int lev = 1;
   Kokkos::parallel_for("clc_line", policy.set_scratch_size(lev, Kokkos::PerTeam(scr)),
   KOKKOS_LAMBDA(TeamMember_t tm) {
     const int m = tm.league_rank()/(np*nq);
@@ -1541,9 +1542,12 @@ void RadiationM1::CleanCellWriteBack() {
   auto eos = fl.eos;
   auto u0_ = u0;
   Real neint = 0.0;
-  Kokkos::parallel_reduce("clc_wbcell", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &nb) {
+  const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+  Kokkos::parallel_reduce("clc_wbcell", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                                                              (nmb1 + 1)*nk*nj*ni),
+  KOKKOS_LAMBDA(const int q, Real &nb) {
+    const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
+    const int j = js + (q/ni)%nj, i = is + q%ni;
     Real div[4];
     CleanCellDivergence(x, CLC_X, m, k, j, i, true, div);
     Real e = x.u(m,CLC_X,k,j,i);
