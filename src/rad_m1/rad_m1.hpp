@@ -451,9 +451,9 @@ class RadiationM1 {
   // Eddington tensor of the multi-D implicit solve is K/J of a grey formal solution for
   // the specific intensity, computed ONCE per hydro step from the start-of-step state
   bool vet_sc;               // closure = vet_sc (default false)
-  int vet_nmu, vet_nphi, vet_nray;  // mu nodes per hemisphere, azimuths, rays
-  bool vet_milne;            // DIAGNOSTIC: source = exact grey Milne S(tau), gate 3
-  bool vet_bc_bath;          // a MARSHAK x1 end gives the SC rays its bath (m1-h2div)
+  int vet_nmu = 0, vet_nphi = 0, vet_nray = 0;  // mu nodes per hemisphere, azimuths, rays
+  bool vet_milne = false;    // DIAGNOSTIC: source = exact grey Milne S(tau), gate 3
+  bool vet_bc_bath = false;  // a MARSHAK x1 end gives the SC rays its bath (m1-h2div)
   // unify-sc-gd-1012 (#2): the x1 boundary intensity of the formal solutions, one rule
   // for vet_sc and vet_gd (VetBcInit, rad_m1.cpp).  vet_bc_inner (alias vet_gd_inner on
   // vet_gd): the entering intensity at a MARSHAK or FLUX inner x1 face, 0 diff (the
@@ -477,8 +477,8 @@ class RadiationM1 {
   bool vet_xcr = false;        // vet_seg_cross: the cell crossed before the x1 face
   // the segment mode VetSegSplit takes: 0 split, 1 emit, 2 jump (rad_m1_vetseg.hpp)
   int VetSegMode() const {return vet_seg_emit ? (vet_seg_jump ? 2 : 1) : 0;}
-  bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
-  int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
+  bool vet_x1per = false;    // vet_x1_periodic (default false): periodic x1 sweep
+  int vet_x1npass = 0;       // ...and its number of passes (runs_3r_radwave)
   // m1cyc-1029 adaptive periodic sweep: stop when the estimated error of the entry plane
   // d_p/(1 - q) < vet_x1_ptol (0 = exactly vet_x1npass passes); counters for VetReport
   Real vet_x1ptol = 0.0;
@@ -511,9 +511,9 @@ class RadiationM1 {
   void VetRotSet(const Real beta);
   void VetScRotAvgSetup();     // rotavg-1012: vet_sc's averaged fields (vet_cell)
   void VetShortCharSweep();    // the build with the current set
-  bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis
-  bool vet_full;             // vet_tensor = full: the solve reads all six D_ab = K_ab/J
-  Real vet_eig_min;          // vet_tensor = full: eigenvalue floor of the guarded D
+  bool vet_axis_flux = false;  // uniaxial axis: the SC flux (true) or the principal axis
+  bool vet_full = false;     // vet_tensor = full: the solve reads all six D_ab = K_ab/J
+  Real vet_eig_min = 0.0;    // vet_tensor = full: eigenvalue floor of the guarded D
   Real vet_nguard, vet_ncell;  // full: cell-calls the guard changed D / all cell-calls
   Real vet_guard_max;        // full: largest |D_guarded - D_raw| (max norm) of the run
   Real vet_d11_min;          // full: smallest guarded D_11 of the run (x1 line diagonal)
@@ -521,7 +521,7 @@ class RadiationM1 {
   // multiplied by f inside the box [x1lo,x1hi] x [x2lo,x2hi] -- a horizontally
   // inhomogeneous absorber that casts a shadow (full-tensor VET test)
   Real dbg_opac_patch, dbg_opac_x1lo, dbg_opac_x1hi, dbg_opac_x2lo, dbg_opac_x2hi;
-  int vet_dump_every;        // column dump every N calls (0 = the first call only)
+  int vet_dump_every = 0;    // column dump every N calls (0 = the first call only)
   std::string vet_dump;      // column dump file stem ("" = no dump)
   Real vet_time, vet_itime, vet_ncall;  // SC seconds, implicit-solve seconds, calls
   DvceArray2D<Real> vet_ang;   // (nray, 4): mu1, mu2, mu3, weight (sum of weights = 1)
