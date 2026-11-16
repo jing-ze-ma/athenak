@@ -57,9 +57,9 @@ void RadiationM1::CleanCellOldVector() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellFaceCoefficients
-//! \brief per face: the dissipation weight al, theta and the dissipation speed.  The
-//! smoothness sensor psi (Jameson type, on E and F/c of the old vector, the larger of the
-//! two cells) enters only clean_alpha = tau_sensor.
+//! \brief per face: the dissipation weight al, the RC weight and the dissipation speed
+//! (CleanCellFaceSpeeds).  The smoothness sensor psi (Jameson type, on E and F/c of the
+//! old vector, the larger of the two cells) enters only clean_alpha = tau_sensor.
 
 void RadiationM1::CleanCellFaceCoefficients() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -70,12 +70,8 @@ void RadiationM1::CleanCellFaceCoefficients() {
   const bool multi_d = pmy_pack->pmesh->multi_d;
   const bool three_d = pmy_pack->pmesh->three_d;
   const int nf = three_d ? 3 : (multi_d ? 2 : 1);
-  const Real h = dt_sub, c = c_light, eps = cln_psi_eps;
-  const Real c1lo = cln_c0, c1hi = cln_c1;
-  const int mode = cln_alpha;
-  const bool wb = (force_ref == M1_FREF_CLEAN);
+  const Real eps = cln_psi_eps;
   CleanArgs x = CleanMakeArgs();
-  auto cs = cln_s;
   // on the cubed sphere the opacities of seam ghosts are the neighbour's cells (not the
   // resampled gas ghosts), so that a seam face is single-valued
   if (pmy_pack->pmesh->use_cubed_sphere) {
@@ -116,6 +112,7 @@ void RadiationM1::CleanCellFaceCoefficients() {
     CleanGhostFill(cln_x, CLC_MB, 1);
   }
 
+  CleanCellFaceSpeeds();
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !multi_d) continue;
     if (dir == 2 && !three_d) continue;
@@ -123,19 +120,6 @@ void RadiationM1::CleanCellFaceCoefficients() {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     par_for("clc_facecoef", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const int kl = k - dk, jl = j - dj, il = i - di;
-      const Real chi = 0.5*(op(m,M1_OP_T,k,j,i) + op(m,M1_OP_T,kl,jl,il));
-      const Real c1 = fmax(cs(m,CLN_C1,k,j,i), cs(m,CLN_C1,kl,jl,il));
-      const Real sray = CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
-      const Real psi = fmax(u(m,CLC_PSI+dir,k,j,i), u(m,CLC_PSI+dir,kl,jl,il));
-      const Real dd = fmax(CleanDnn(x, dir, m, k, j, i, k, j, i),
-                           CleanDnn(x, dir, m, k, j, i, kl, jl, il));
-      const Real dxd = CleanCellFaceDistance(x, dir, m, k, j, i);
-      fc(m,CLF_AL,k,j,i) = CleanDissipationWeight(mode, chi*dxd, psi, sray);
-      // force_reference = clean: theta h c^2 = c/max(chi, 2/dx), the steady RC
-      // coefficient, so that the scheme's steady states do not depend on h
-      fc(m,CLF_TH,k,j,i) = wb ? 1.0/(h*c*fmax(chi, 2.0/dxd)) : 1.0/(1.0 + h*c*chi);
-      fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
       fc(m,CLF_LO,k,j,i) = 0.0;
       fc(m,CLF_UG,k,j,i) = 0.0;
     });
@@ -144,8 +128,10 @@ void RadiationM1::CleanCellFaceCoefficients() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellFaceSpeeds
-//! \brief dissipation weight and speed of every face after a closure update (the
-//! low-order flags and theta are kept)
+//! \brief dissipation weight al, RC weight (1 - al) theta and dissipation speed of every
+//! face (after a closure update: the low-order flags are kept).  force_reference = clean
+//! takes the steady RC coefficient (CleanDissipationWeight), so that the scheme's steady
+//! states do not depend on h.
 
 void RadiationM1::CleanCellFaceSpeeds() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -153,9 +139,10 @@ void RadiationM1::CleanCellFaceSpeeds() {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  const Real c = c_light;
+  const Real h = dt_sub, c = c_light;
   const Real c1lo = cln_c0, c1hi = cln_c1;
   const int mode = cln_alpha;
+  const bool wb = (force_ref == M1_FREF_CLEAN);
   CleanArgs x = CleanMakeArgs();
   auto cs = cln_s;
   auto op = opac;
@@ -175,7 +162,10 @@ void RadiationM1::CleanCellFaceSpeeds() {
       const Real dd = fmax(CleanDnn(x, dir, m, k, j, i, k, j, i),
                            CleanDnn(x, dir, m, k, j, i, kl, jl, il));
       const Real dxd = CleanCellFaceDistance(x, dir, m, k, j, i);
-      fc(m,CLF_AL,k,j,i) = CleanDissipationWeight(mode, chi*dxd, psi, sray);
+      Real rc;
+      const Real al = CleanDissipationWeight(mode, chi*dxd, psi, sray, rc);
+      fc(m,CLF_AL,k,j,i) = al;
+      fc(m,CLF_TH,k,j,i) = wb ? rc*dxd/(h*c) : (1.0 - al)/(1.0 + h*c*chi);
       fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
     });
   }
