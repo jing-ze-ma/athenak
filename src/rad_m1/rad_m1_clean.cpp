@@ -143,9 +143,9 @@ void RadiationM1::CleanInit() {
   }
   // multigrid levels of the cell layout: halve every direction with an even number
   // (>= 4) of cells, down to the level where no direction can be halved (clean_pc =
-  // prodmg: x1 is never halved, two coarse levels)
-  if (cln_cell && cln_pc != CLN_PC_X1LINE) {
-    const bool pm = (cln_pc == CLN_PC_PRODMG);
+  // prodmg, and staggered clean_stag_pc = mg: x1 is never halved, two coarse levels)
+  if ((cln_cell && cln_pc != CLN_PC_X1LINE) || cln_stagmg) {
+    const bool pm = (cln_cell && cln_pc == CLN_PC_PRODMG) || cln_stagmg;
     std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
     while (!(pm && cln_mgn.size() == 2)) {
       bool coarser = false;
@@ -157,7 +157,7 @@ void RadiationM1::CleanInit() {
       }
       if (!coarser) break;
       cln_mgn.push_back(nc);
-      cln_mg.emplace_back("cln_mg", nmb, CLM_N, nc[2], nc[1], nc[0]);
+      cln_mg.emplace_back("cln_mg", nmb, cln_stagmg ? CLS_N : CLM_N, nc[2], nc[1], nc[0]);
     }
   }
   if (cln_extrap > 0) {

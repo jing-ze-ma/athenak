@@ -211,6 +211,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                pin->GetBoolean("rad_m1","clean_stag_vimp");
     cln_upw = !cln_cell && pin->DoesParameterExist("rad_m1","clean_stag_upwind") &&
               pin->GetBoolean("rad_m1","clean_stag_upwind");
+    // clean_stag_pc = line | mg (read only when named; staggered): the preconditioner of
+    // the E solve, the x1-line solve or the old production mg (CleanStagVCycle)
+    if (pin->DoesParameterExist("rad_m1","clean_stag_pc")) {
+      const std::string pc = pin->GetString("rad_m1","clean_stag_pc");
+      if (pc != "line" && pc != "mg") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_stag_pc = line | mg" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      cln_stagmg = !cln_cell && (pc == "mg");
+    }
     cln_diagforce = pin->DoesParameterExist("rad_m1","clean_diag_force") &&
                     pin->GetBoolean("rad_m1","clean_diag_force");
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);

@@ -2950,6 +2950,11 @@ class RadiationM1 {
   void CleanRightHandSide();
   void CleanPreconditionerSetup();
   void CleanPrecondition(const int src, const int dst);
+  CleanLevel CleanStagLevel(const int l);
+  void CleanStagLineSolve(const CleanLevel &lv, const int src, const int dst,
+                          const int col);
+  void CleanStagCoarseSetup();
+  void CleanStagVCycle(const int l, const int src, const int dst);
   void CleanApply(const int src, const int dst);
   int CleanBiCGStab();
   Real CleanNewtonUpdate();
@@ -3059,6 +3064,7 @@ class RadiationM1 {
   bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
   bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
   bool cln_lf_ok = false;       // cln_lf holds the factors of the current blocks
+  bool cln_stagmg = false;      // clean_stag_pc = mg: the old production mg (staggered)
   bool cln_steady = false;      // clean_init = steady: radiation relaxed before step 1
   int cln_steady_n = 50;        // clean_init_n: most pre-solve passes
   Real cln_steady_dtfac = 1.0e6, cln_steady_tol = 1.0e-8;  // clean_init_dtfac, _tol
