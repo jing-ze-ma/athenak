@@ -284,6 +284,7 @@ Real CleanExchangeTemperature(const EOS_Data &eos, const Real d, const Real a,
 //! divergence is d_n(D_nn E) + transverse + (h_L E_L + h_R E_R)/(2 r) with
 //!   r faces:     h = 2 D_rr - D_thth - D_phph + cot(theta) D_rth  (theta of the cell)
 //!   theta faces: h = cot(theta_f) (D_thth - D_phph) + 3 D_rth
+//!   phi faces:   h = 3 D_rph + 2 cot(theta) D_thph
 //! (a uniform isotropic state, D = I/3, is exactly steady)
 
 KOKKOS_INLINE_FUNCTION
@@ -297,6 +298,7 @@ Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m, c
   if (dir == 0) {
     return 2.0*d(0) - d(1) - d(2) + (x.multi_d ? d(3)/tan(x.x2v(m,jc)) : 0.0);
   }
+  if (dir == 2) return 3.0*d(4) + 2.0*d(5)/tan(x.x2v(m,jc));
   return (d(1) - d(2))/tan(x.x2f(m,j)) + 3.0*d(3);
 }
 
@@ -410,8 +412,10 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
       return x.cs(m,ab,kk,jj,ii)*x.w(m,e,kk,jj,ii);
     };
     // (spherical polar: d_r on theta faces, (1/r) d_theta on r faces, central)
+    const Real rb = !x.sph ? 1.0 : ((dir == 0) ? x.x1f(m,i) : x.x1v(m,i));
     const Real ib = !x.sph ? x.idx[b] : ((b == 0) ? 2.0/(x.x1v(m,i+1) - x.x1v(m,i-1)) :
-                    2.0/(x.x1f(m,i)*(x.x2v(m,j+1) - x.x2v(m,j-1))));
+                    ((b == 1) ? 2.0/(rb*(x.x2v(m,j+1) - x.x2v(m,j-1))) :
+                    x.idx[2]/(rb*sin((dir == 1) ? x.x2f(m,j) : x.x2v(m,j)))));
     div += 0.25*ib*(de(k+dk,j+dj,i+di) + de(kl+dk,jl+dj,il+di)
                     - de(k-dk,j-dj,i-di) - de(kl-dk,jl-dj,il-di));
   }
