@@ -72,6 +72,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.milne = cln_milne;
   x.fvrays = (cln_rfv > 0);
   x.hi = false;
+  x.fwc = false;
   x.fs = false;
   x.fd = cln_fsolve && cln_fkin;
   x.gf = cln_gflux;
@@ -344,6 +345,7 @@ void RadiationM1::CleanApply(const int src, const int dst) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanGhostFill(cln_w, src, 1);
   CleanArgs x = CleanMakeArgs();
+  x.fwc = true;
   auto op = opac;
 
   par_for("cln_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -370,6 +372,19 @@ void RadiationM1::CleanPreconditionerSetup() {
   CleanArgs x = CleanMakeArgs();
   auto op = opac;
   const bool mg = cln_stagmg;
+  // the face weights of the pass, once per face for CleanApply (x.fwc)
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    par_for("cln_fwc", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      CleanFaceWeights(x, dir, m, k, j, i, fc(m,CLF_QL,k,j,i), fc(m,CLF_QL+1,k,j,i));
+      const Real t0 = fc(m,CLF_TH,k,j,i);   // (clean_stag_vimp: theta_d, CleanFaceCross)
+      const Real th = t0 + (x.drag ? fc(m,CLF_DB,k,j,i) : 0.0)*(1.0 - t0);
+      fc(m,CLF_QL+2,k,j,i) = -(1.0 - fc(m,CLF_W,k,j,i))*th*x.h*x.c*x.c;
+    });
+  }
+  x.fwc = true;
 
   par_for("cln_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

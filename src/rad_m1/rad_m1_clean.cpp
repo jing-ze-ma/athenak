@@ -116,8 +116,9 @@ void RadiationM1::CleanInit() {
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
   const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N),
-                           cln_vimp ? CLF_DQ + 1 : (cln_gflux ? CLF_SLO + 1 :
-                           (cln_fsolve ? (cln_fkin ? CLF_DS + 1 : CLF_N + 4) : 0)));
+                           cln_cell ? (cln_fsolve ? CLF_N + 4 : 0) :
+                           (cln_vimp ? CLF_DQ + 1 : (cln_gflux ? CLF_SLO + 1 :
+                           ((cln_fsolve && cln_fkin) ? CLF_DS + 1 : CLF_QL + 3))));
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = cln_cell && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
