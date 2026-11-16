@@ -1,0 +1,49 @@
+From eabc9ea0710df788593f6dafa4c8052dcb03540e Mon Sep 17 00:00:00 2001
+From: Jingze Ma <jingzema0211@gmail.com>
+Date: Mon, 16 Nov 2026 20:11:04 +0100
+Subject: [PATCH 2/2] rad_m1 clean cell: force_reference = clean from the
+ converged, accepted first coupled solve
+
+CleanCellVelocityUpdate captured the reference at Newton iterate 0 of the first coupled
+solve and marked it set there, before convergence was known, so a first solve that then
+failed (not converged, E < 0, a rejected stage, a dt_retry cut) left the gas a reference
+from a discarded iterate for the whole run.  Every iterate of the first coupled solve now
+recaptures it, and CleanSolve marks it set only when that solve is accepted; a failed
+one is redone and captures it again (the staggered rule of clean-cc-stag2-wb 6dc54b2e3).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/rad_m1/rad_m1_clean.cpp      | 4 ++++
+ src/rad_m1/rad_m1_clean_cell.cpp | 1 -
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/rad_m1/rad_m1_clean.cpp b/src/rad_m1/rad_m1_clean.cpp
+index 54ab747f6..30e60f00b 100644
+--- a/src/rad_m1/rad_m1_clean.cpp
++++ b/src/rad_m1/rad_m1_clean.cpp
+@@ -813,6 +813,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
+   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
+     t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_feedback && cln_neint > 0);
+   }
++  // (force_reference = clean: the reference is the force of the converged, accepted
++  // first coupled solve, every iterate of which recaptures it; a failed one is redone)
++  if (force_ref == M1_FREF_CLEAN && cln_feedback && !cln_vzero && nit >= 0 &&
++      nneg == 0 && !(t2stage && t2_fail) && !dtr_fail) cln_fref_set = true;
+ 
+   // 6. clean_closure = extrap(2): ray moments of the new state.  The last solve of a
+   //    step also re-evaluates its slope K1 = f(U^{n+1}) with the closure of these rays
+diff --git a/src/rad_m1/rad_m1_clean_cell.cpp b/src/rad_m1/rad_m1_clean_cell.cpp
+index 6201205de..efc80f757 100644
+--- a/src/rad_m1/rad_m1_clean_cell.cpp
++++ b/src/rad_m1/rad_m1_clean_cell.cpp
+@@ -1503,7 +1503,6 @@ Real RadiationM1::CleanCellVelocityUpdate() {
+     v_max = fmax(v_max, std::sqrt(v2));
+   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(femax),
+   Kokkos::Max<Real>(fvmax));
+-  if (cap) cln_fref_set = true;
+   cln_fe = std::numeric_limits<Real>::epsilon()*femax;
+   cln_fv = std::numeric_limits<Real>::epsilon()*fvmax/fmax(vmax, 1.0e-300);
+   if (cln_vfreeze != 1) CleanAdvectiveCoefficients();
+-- 
+2.51.0
+

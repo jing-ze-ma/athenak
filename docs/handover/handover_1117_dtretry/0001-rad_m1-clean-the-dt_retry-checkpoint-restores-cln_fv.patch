@@ -1,0 +1,52 @@
+From d5734da827e5fd2681f93032033b9280a581008d Mon Sep 17 00:00:00 2001
+From: Jingze Ma <jingzema0211@gmail.com>
+Date: Mon, 16 Nov 2026 20:11:03 +0100
+Subject: [PATCH 1/2] rad_m1 clean: the dt_retry checkpoint restores cln_fvi
+ and cln_fref_set
+
+The generated visitor had no cln_* member, so a retried cycle read the failed attempt's
+fv sweep start intensities (cln_fvi: a forced retry at fac 1 of q_cel at cycle 4 was not
+bitwise the straight run) and cln_fref_set (force_reference = clean kept the reference
+the failed attempt captured).  Both are visited and cln_fvi goes to kDtrMinimal; the
+forced retry is then bitwise.  The extrap history is left alone (its flags go with the
+handles the attempt swapped and, on a first cycle, with cln_init; clean-cc-stag2-fix2
+2b73c9eae visits the whole cln_* set of its class).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/driver/dt_retry.cpp             | 5 +++++
+ src/rad_m1/rad_m1_dtretry_visit.hpp | 2 ++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/src/driver/dt_retry.cpp b/src/driver/dt_retry.cpp
+index 4a6d54329..7aa1811b3 100644
+--- a/src/driver/dt_retry.cpp
++++ b/src/driver/dt_retry.cpp
+@@ -100,6 +100,11 @@ const char *kDtrMinimal[] = {
+   // (views minimal) was not bitwise the straight run at the next dump; restoring vgd_hr
+   // (or vra_a0/a1/c) alone made it bitwise
+   "m1.vgd_hr",
++  // scheme = clean (not visited before: a retry read the failed attempt's): the rays'
++  // intensities a clean_rays = fv1 | fv | lld sweep starts from, with cln_fref_set
++  // (force_reference = clean recaptures).  The extrap history is left alone: its flags
++  // go with the handles the attempt swapped and, on a first cycle, with cln_init
++  "m1.cln_fvi",
+ };
+ 
+ // debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of
+diff --git a/src/rad_m1/rad_m1_dtretry_visit.hpp b/src/rad_m1/rad_m1_dtretry_visit.hpp
+index b1d692e6b..7045ee9c0 100644
+--- a/src/rad_m1/rad_m1_dtretry_visit.hpp
++++ b/src/rad_m1/rad_m1_dtretry_visit.hpp
+@@ -1132,6 +1132,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
+   v.value("eaud_pc", eaud_pc);
+   v.value("eaud_pd", eaud_pd);
+   v.view("acl_cnt_d", acl_cnt_d);
++  v.view("cln_fvi", cln_fvi);
++  v.value("cln_fref_set", cln_fref_set);
+   v.value("tau_closure", tau_closure);
+   v.value("tau_ready", tau_ready);
+   v.value("tau_nblk", tau_nblk);
+-- 
+2.51.0
+
