@@ -242,6 +242,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_nl_print")) {
       cln_nlprint = pin->GetBoolean("rad_m1","clean_nl_print");
     }
+    // clean_halo_vars (read only when named, 1..32): at most this many variables per
+    // ghost exchange of the clean solve (its scratch array holds that many)
+    if (pin->DoesParameterExist("rad_m1","clean_halo_vars")) {
+      cln_hmax = std::min(std::max(pin->GetInteger("rad_m1","clean_halo_vars"), 1), 32);
+    }
     // clean_line_teams (read only when named): at most this many teams take the lines of
     // a line solve (each line still one team), fewer rows of cln_lw
     if (pin->DoesParameterExist("rad_m1","clean_line_teams")) {

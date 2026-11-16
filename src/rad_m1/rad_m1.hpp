@@ -3051,6 +3051,7 @@ class RadiationM1 {
   int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
   int cln_chunk = 32;           // rows per Thomas system of the line solve
   int cln_lteams = 0;           // clean_line_teams: most teams of a line solve (0: all)
+  int cln_hmax = 32;            // clean_halo_vars: most variables of one ghost exchange
   bool cln_pcfac = true;        // clean_pc_factor: x1line keeps the factors of its lines
   bool cln_pcf32 = false;       // clean_pc_factor_float: ... in single precision
   int cln_pcreuse = 1;          // clean_pc_reuse: preconditioner rebuilt every n passes
