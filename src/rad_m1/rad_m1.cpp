@@ -1372,6 +1372,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         vra_k <= M1_RA_NF) {
       cln_ring = 1;
     }
+    // the cubed sphere's FV rays (CleanInit) are counted in a restart file's channels
+    if (clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on) {
+      cln_rfv = std::max(cln_rfv, 1);
+    }
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
     // default: true on a fresh run; a restart whose file lacks the key keeps the vacuum
