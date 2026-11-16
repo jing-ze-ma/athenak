@@ -3106,8 +3106,9 @@ class RadiationM1 {
   bool cln_fvrst = false;       // extrap: cln_fvi read from a restart (its record)
   DvceArray3D<Real> cln_fvgp;   // extrap: the first ghost layer of the build before
   DvceArray3D<Real> cln_fvgx;   // extrap: the inflow the pass took (extrapolated)
-  Real cln_fvlagtol = 1.0e-4;   // clean_fv_lag_tol: inflow miss of one extrap pass
-  Real CleanFvExtrapMiss();
+  Real cln_fvlagtol = 1.0e-4;   // clean_fv_lag_tol: inflow miss / imax of one extrap pass
+  Real cln_fvlagfrac = 0.5;     // clean_fv_lag_frac: inflow miss / its change, the same
+  void CleanFvExtrapMiss(Real &miss, Real &chg);
   bool CleanFvExtrap();
   void CleanFvRstRead();
   void CleanFvRstWrite(DvceArray5D<Real> &a, const int c, const int nmb, const int m0);
@@ -3115,6 +3116,8 @@ class RadiationM1 {
   int cln_fvjn[2] = {0, 0};     // joint: the dropped inflows, the cells reading ghosts
   bool cln_fvjoint_said = false;   // joint: the first build's counts printed
   int64_t cln_fvnp[3] = {0, 0, 0};   // FV rays: builds, passes, levels swept (summary)
+  int64_t cln_fvxp[2] = {0, 0};   // extrap: one-pass builds, builds swept on (summary)
+  Real cln_fvxr = 0.0;            // extrap: largest inflow miss over its change (summary)
   DvceArray2D<int> cln_fvcore;  // joint: the cycle segment of each cell (m n + d, c)
   std::vector<std::array<int, 3>> cln_fvseg;   // joint: its levels and number
   DvceArray4D<int> cln_fvsrc;   // joint: the local m nc + c of each ghost (-1 none)
