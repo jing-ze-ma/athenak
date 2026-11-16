@@ -95,7 +95,9 @@ constexpr int CLW_GM = 35;   // G = 1 - beta^2/2
 constexpr int CLW_EP = 36;   // -(RE E + RY.y) of the solution (eint of the gas)
 constexpr int CLW_JV = 37;   // (1 - r) dA/dbeta/(c^2 rho), dS_p/dbeta/(c^2 rho) of the
 constexpr int CLW_GX = 40;   //   iterate (3 + 1): implicit gas velocity, CleanCellDrag
-constexpr int CLW_N = 41;
+constexpr int CLW_TM = 41;   // clean_stag_pc = mg: coefficients of E_{j-1}, E_{j+1},
+                             //   E_{k-1}, E_{k+1} (4)
+constexpr int CLW_N = 45;
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanArgs
@@ -250,6 +252,14 @@ constexpr int CLM_X = 116;   // solution
 constexpr int CLM_T1 = 120;  // residual
 constexpr int CLM_T2 = 124;  // line-solve correction
 constexpr int CLM_N = 128;
+
+// slots of a coarse level of the staggered mg (arrays cln_mg): the x1-line coefficients,
+// diagonal and Thomas scratch in the order of cln_w (CLW_AM..CLW_CP), then as CLW_TM
+constexpr int CLS_A0 = 1;    // diagonal (CLS_A0 -+ 1: E_{i-1}, E_{i+1}; + 2: scratch)
+constexpr int CLS_TM = 4;    // E_{j-1}, E_{j+1}, E_{k-1}, E_{k+1}
+constexpr int CLS_B = 8;     // right-hand side
+constexpr int CLS_X = 9;     // solution
+constexpr int CLS_N = 10;
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanSmoothStep

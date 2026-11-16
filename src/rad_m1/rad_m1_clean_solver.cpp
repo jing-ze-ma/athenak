@@ -6,7 +6,8 @@
 //! \file rad_m1_clean_solver.cpp
 //! \brief Linear algebra of the clean implicit radiation solve: face coefficients, the
 //! operator A E = E (1 + h c kE (1-r)) + h div F_lin(E), an x1-line tridiagonal
-//! preconditioner and right-preconditioned BiCGStab.
+//! preconditioner (or the old production multigrid on it) and right-preconditioned
+//! BiCGStab.
 
 #include <cmath>
 #include <limits>
@@ -357,7 +358,8 @@ void RadiationM1::CleanApply(const int src, const int dst) {
 //! \fn void RadiationM1::CleanPreconditionerSetup
 //! \brief coefficients of the preconditioner: the x1-line tridiagonal part of A plus the
 //! diagonal of its x2 and x3 parts (the off-diagonal Eddington terms are left to the
-//! Krylov iteration)
+//! Krylov iteration); clean_stag_pc = mg also the x2 and x3 couplings and the coarse
+//! levels
 
 void RadiationM1::CleanPreconditionerSetup() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -367,6 +369,7 @@ void RadiationM1::CleanPreconditionerSetup() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
   auto op = opac;
+  const bool mg = cln_stagmg;
 
   par_for("cln_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -388,6 +391,11 @@ void RadiationM1::CleanPreconditionerSetup() {
       CleanFaceWeights(x, 1, m, k, j, i, al_m, ar_m);
       a0 += (x.sph || x.cub) ? x.h*(CleanDivW(x, 1, m, k, j, i, 1)*al_p -
                          CleanDivW(x, 1, m, k, j, i, 0)*ar_m) : x.h*x.idx[1]*(al_p - ar_m);
+      if (mg) {
+        const bool cv = x.sph || x.cub;
+        x.w(m,CLW_TM,k,j,i) = -x.h*al_m*(cv ? CleanDivW(x, 1, m, k, j, i, 0) : x.idx[1]);
+        x.w(m,CLW_TM+1,k,j,i) = x.h*ar_p*(cv ? CleanDivW(x, 1, m, k, j, i, 1) : x.idx[1]);
+      }
     }
     if (x.three_d) {
       CleanFaceWeights(x, 2, m, k+1, j, i, al_p, ar_p);
@@ -395,39 +403,211 @@ void RadiationM1::CleanPreconditionerSetup() {
       a0 += x.cub ? x.h*(CleanDivW(x, 2, m, k, j, i, 1)*al_p -
                          CleanDivW(x, 2, m, k, j, i, 0)*ar_m)
                   : x.h*x.idx[2]*(al_p - ar_m);
+      if (mg) {
+        x.w(m,CLW_TM+2,k,j,i) = -x.h*al_m*(x.cub ? CleanDivW(x, 2, m, k, j, i, 0)
+                                                  : x.idx[2]);
+        x.w(m,CLW_TM+3,k,j,i) = x.h*ar_p*(x.cub ? CleanDivW(x, 2, m, k, j, i, 1)
+                                                 : x.idx[2]);
+      }
     }
     x.w(m,CLW_A0,k,j,i) = a0;
+  });
+  if (mg) CleanStagCoarseSetup();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CleanLevel RadiationM1::CleanStagLevel
+//! \brief level l of the staggered mg: l = 0 is the mesh (rows in cln_w), l > 0 the
+//! coarse levels (cln_mg[l-1]).  The rows are scalar (CleanLevel with 1x1 blocks) and
+//! keep the slot order AM, A0, AP, Thomas scratch of cln_w on every level.
+
+CleanLevel RadiationM1::CleanStagLevel(const int l) {
+  CleanLevel lv;
+  if (l == 0) {
+    auto &indcs = pmy_pack->pmesh->mb_indcs;
+    lv.u = cln_w;
+    lv.o[0] = indcs.is;
+    lv.o[1] = indcs.js;
+    lv.o[2] = indcs.ks;
+    lv.n[0] = indcs.nx1;
+    lv.n[1] = indcs.nx2;
+    lv.n[2] = indcs.nx3;
+    lv.a0 = CLW_A0;
+  } else {
+    lv.u = cln_mg[l-1];
+    for (int d = 0; d < 3; ++d) {
+      lv.o[d] = 0;
+      lv.n[d] = cln_mgn[l-1][d];
+    }
+    lv.a0 = CLS_A0;
+  }
+  const int tm = (l == 0) ? CLW_TM : CLS_TM;
+  lv.sm[0] = lv.a0 - 1;
+  lv.sp[0] = lv.a0 + 1;
+  for (int d = 1; d < 3; ++d) {
+    lv.sm[d] = tm + 2*(d-1);
+    lv.sp[d] = tm + 2*(d-1) + 1;
+  }
+  return lv;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagCoarseSetup
+//! \brief rows of the coarse levels of the staggered mg (Galerkin R A7 P, the old
+//! production mg): P piecewise constant over 2 x 2 (x2,x3) aggregates of the same x1
+//! index inside one MeshBlock, R = P^T.  A coupling inside the aggregate goes onto the
+//! diagonal, one to another aggregate stays, one across the block face is never used.
+//! On curvilinear meshes the mesh rows are summed with their cell volumes (as
+//! CleanCellCoarseSetup).
+
+void RadiationM1::CleanStagCoarseSetup() {
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nlev = static_cast<int>(cln_mg.size()) + 1;
+  const bool curv = pmy_pack->pmesh->use_spherical_polar ||
+                    pmy_pack->pmesh->use_cubed_sphere;
+  auto vol = pmy_pack->pcoord->volume;
+  for (int lc = 1; lc < nlev; ++lc) {
+    const CleanLevel f = CleanStagLevel(lc-1), c = CleanStagLevel(lc);
+    const int r[3] = {1, f.n[1]/c.n[1], f.n[2]/c.n[2]};
+    const bool vw = (lc == 1) && curv;
+
+    par_for("cls_galerkin", DevExeSpace(), 0, nmb1, 0, c.n[2]-1, 0, c.n[1]-1,
+            0, c.n[0]-1,
+    KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int ic) {
+      Real a0 = 0.0, am[3] = {0.0, 0.0, 0.0}, ap[3] = {0.0, 0.0, 0.0};
+      for (int a2 = 0; a2 < r[2]; ++a2) {
+        for (int a1 = 0; a1 < r[1]; ++a1) {
+          const int k = f.o[2] + r[2]*kc + a2, j = f.o[1] + r[1]*jc + a1;
+          const int i = f.o[0] + ic;
+          const int a[3] = {0, a1, a2};
+          const Real v = vw ? vol(m,k,j,i) : 1.0;
+          a0 += v*f.u(m,f.a0,k,j,i);
+          for (int d = 0; d < 3; ++d) {
+            if (f.n[d] == 1) continue;
+            const Real lo = v*f.u(m,f.sm[d],k,j,i), hi = v*f.u(m,f.sp[d],k,j,i);
+            if (a[d] > 0) {
+              a0 += lo;
+            } else {
+              am[d] += lo;
+            }
+            if (a[d] < r[d] - 1) {
+              a0 += hi;
+            } else {
+              ap[d] += hi;
+            }
+          }
+        }
+      }
+      c.u(m,c.a0,kc,jc,ic) = a0;
+      for (int d = 0; d < 3; ++d) {
+        c.u(m,c.sm[d],kc,jc,ic) = am[d];
+        c.u(m,c.sp[d],kc,jc,ic) = ap[d];
+      }
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagLineSolve
+//! \brief u(dst) = L^{-1} u(src) on a level of the staggered preconditioner, L its
+//! x1-line tridiagonal part: Thomas solve along the x1 lines of colour col (-1: every
+//! line; 0: the lines of even j + k; 1: the odd ones, with the couplings to u(dst) of the
+//! even neighbours inside the level on the right-hand side)
+
+void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const int dst,
+                                     const int col) {
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const CleanLevel l = lv;
+  const int is = l.o[0], ie = l.o[0] + l.n[0] - 1, cp = l.a0 + 2;
+  auto w = l.u;
+
+  par_for("cln_thomas", DevExeSpace(), 0, nmb1, l.o[2], l.o[2]+l.n[2]-1,
+          l.o[1], l.o[1]+l.n[1]-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const int pj = j - l.o[1], pk = k - l.o[2];
+    if (col >= 0 && (pj + pk) % 2 != col) return;
+    Real cprev = 0.0, dprev = 0.0;
+    for (int i = is; i <= ie; ++i) {
+      const Real am = (i > is) ? w(m,l.sm[0],k,j,i) : 0.0;
+      const Real ap = (i < ie) ? w(m,l.sp[0],k,j,i) : 0.0;
+      Real r = w(m,src,k,j,i);
+      if (col == 1) {
+        if (pj > 0) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
+        if (pj < l.n[1] - 1) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
+        if (pk > 0) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
+        if (pk < l.n[2] - 1) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
+      }
+      const Real den = w(m,l.a0,k,j,i) - am*cprev;
+      cprev = ap/den;
+      dprev = (r - am*dprev)/den;
+      w(m,cp,k,j,i) = cprev;
+      w(m,dst,k,j,i) = dprev;
+    }
+    for (int i = ie-1; i >= is; --i) {
+      w(m,dst,k,j,i) -= w(m,cp,k,j,i)*w(m,dst,k,j,i+1);
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagVCycle
+//! \brief u(dst) = M^{-1} u(src) on level l of the staggered mg (the old production mg,
+//! rad_m1_precond.cpp at 391cd4c15): z0 = S r, one forward red-black sweep of x1-line
+//! solves (the even lines, then the odd ones with the even z0 on the right-hand side);
+//! r1 = R (r - A7 z0), the residual of the level's rows inside the MeshBlock summed over
+//! each aggregate (with the cell volumes from a curvilinear mesh); z = z0 + P z1, z1 the
+//! same on level l+1.  The coarsest level takes the sweep alone; no post-smoothing.
+
+void RadiationM1::CleanStagVCycle(const int l, const int src, const int dst) {
+  const CleanLevel f = CleanStagLevel(l);
+  CleanStagLineSolve(f, src, dst, 0);
+  CleanStagLineSolve(f, src, dst, 1);
+  if (l == static_cast<int>(cln_mg.size())) return;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const CleanLevel c = CleanStagLevel(l+1);
+  const int r[3] = {1, f.n[1]/c.n[1], f.n[2]/c.n[2]};
+  const bool vw = (l == 0) && (pmy_pack->pmesh->use_spherical_polar ||
+                                pmy_pack->pmesh->use_cubed_sphere);
+  auto vol = pmy_pack->pcoord->volume;
+
+  par_for("cls_restrict", DevExeSpace(), 0, nmb1, 0, c.n[2]-1, 0, c.n[1]-1, 0, c.n[0]-1,
+  KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int ic) {
+    Real s = 0.0;
+    for (int a2 = 0; a2 < r[2]; ++a2) {
+      for (int a1 = 0; a1 < r[1]; ++a1) {
+        const int k = f.o[2] + r[2]*kc + a2, j = f.o[1] + r[1]*jc + a1;
+        const int i = f.o[0] + ic;
+        const int pos[3] = {ic, j - f.o[1], k - f.o[2]};
+        Real y = f.u(m,f.a0,k,j,i)*f.u(m,dst,k,j,i);
+        for (int d = 0; d < 3; ++d) {
+          const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+          if (pos[d] > 0) y += f.u(m,f.sm[d],k,j,i)*f.u(m,dst,k-dk,j-dj,i-di);
+          if (pos[d] < f.n[d] - 1) y += f.u(m,f.sp[d],k,j,i)*f.u(m,dst,k+dk,j+dj,i+di);
+        }
+        s += (vw ? vol(m,k,j,i) : 1.0)*(f.u(m,src,k,j,i) - y);
+      }
+    }
+    c.u(m,CLS_B,kc,jc,ic) = s;
+  });
+  CleanStagVCycle(l+1, CLS_B, CLS_X);
+  par_for("cls_prolong", DevExeSpace(), 0, nmb1, f.o[2], f.o[2]+f.n[2]-1,
+          f.o[1], f.o[1]+f.n[1]-1, f.o[0], f.o[0]+f.n[0]-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    f.u(m,dst,k,j,i) += c.u(m,CLS_X,(k - f.o[2])/r[2],(j - f.o[1])/r[1],i - f.o[0]);
   });
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanPrecondition
 //! \brief w(dst) = M^{-1} w(src): tridiagonal (Thomas) solve along every x1 line
+//! (clean_stag_pc = line), or the old production mg (mg, CleanStagVCycle)
 
 void RadiationM1::CleanPrecondition(const int src, const int dst) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, ie = indcs.ie;
-  int js = indcs.js, je = indcs.je;
-  int ks = indcs.ks, ke = indcs.ke;
-  int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto w = cln_w;
-
-  par_for("cln_thomas", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-  KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    Real cprev = 0.0, dprev = 0.0;
-    for (int i = is; i <= ie; ++i) {
-      const Real am = (i > is) ? w(m,CLW_AM,k,j,i) : 0.0;
-      const Real ap = (i < ie) ? w(m,CLW_AP,k,j,i) : 0.0;
-      const Real den = w(m,CLW_A0,k,j,i) - am*cprev;
-      cprev = ap/den;
-      dprev = (w(m,src,k,j,i) - am*dprev)/den;
-      w(m,CLW_CP,k,j,i) = cprev;
-      w(m,dst,k,j,i) = dprev;
-    }
-    for (int i = ie-1; i >= is; --i) {
-      w(m,dst,k,j,i) -= w(m,CLW_CP,k,j,i)*w(m,dst,k,j,i+1);
-    }
-  });
+  if (cln_stagmg) {
+    CleanStagVCycle(0, src, dst);
+  } else {
+    CleanStagLineSolve(CleanStagLevel(0), src, dst, -1);
+  }
 }
 
 //----------------------------------------------------------------------------------------
