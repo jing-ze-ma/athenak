@@ -1199,24 +1199,42 @@ void RadiationM1::CleanRightHandSide() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = x.w(m,CLW_T,k,j,i);
     const Real hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
-    Real rr = 0.0, work = 0.0, gm = 1.0, sb = 0.0;
+    Real rr = 0.0, work = 0.0, gm = 1.0, sb = 0.0, dop = 0.0;
     if (x.feedback) {
-      Real b2 = 0.0, ba = 0.0, by = 0.0, y2 = 0.0, fs[3] = {0.0, 0.0, 0.0};
+      Real b2 = 0.0, ba = 0.0, by = 0.0, bp = 0.0, y2 = 0.0, fs[3] = {0.0, 0.0, 0.0};
       // (clean_stag_fwork: the F solve's F, which the gas takes)
       auto ff = [&](const int d, const int kk, const int jj, const int ii) {
         return xh.fs ? xh.fc[d](m,CLF_N,kk,jj,ii)
                      : CleanFaceFlux(xh, CLW_EK, d, m, kk, jj, ii, true);
       };
-      for (int n = 0; n < x.nf; ++n) {
+      // (the advective flux a E at a face, as the face fluxes carry it)
+      auto af = [&](const int n, const int kk, const int jj, const int ii) {
+        const int kl = kk - (n == 2), jl = jj - (n == 1), il = ii - (n == 0);
+        return 0.5*(x.w(m,CLW_A1+n,kl,jl,il)*x.w(m,CLW_EK,kl,jl,il) +
+                    x.w(m,CLW_A1+n,kk,jj,ii)*x.w(m,CLW_EK,kk,jj,ii));
+      };
+      // (gflux: a physical boundary face's flux, absorbed in an opaque half cell, enters
+      // the cell mean as its mean over the half cell, (1 - e^-q)/q, q = chi dx/2, as the
+      // momentum it gives, CleanMomentumChange)
+      Real fw[6] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+      for (int n = 0; n < 3; ++n) {   // (trip 3: fw stays in registers)
         const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-        fs[n] = ff(n, k, j, i) + ff(n, k+dk, j+dj, i+di);
+        for (int sd = 0; sd < 2 && x.gf && n < x.nf; ++sd) {
+          if (!CleanBoundaryFace(x, n, m, k+sd*dk, j+sd*dj, i+sd*di)) continue;
+          const Real q = 0.5*op(m,M1_OP_T,k,j,i)/CleanDivW(x, n, m, k, j, i, sd);
+          fw[2*n+sd] = (q > 1.0e-8) ? -expm1(-q)/q : 1.0;
+        }
+      }
+      for (int n = 0; n < 3; ++n) {
+        const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+        if (n < x.nf) fs[n] = fw[2*n]*ff(n, k, j, i) + fw[2*n+1]*ff(n, k+dk, j+dj, i+di);
       }
       if (x.cub) {   // (the cell's flux vector, CleanStagCsVector)
         Real c[6], w[6];
         for (int d = 0; d < 6; ++d) w[d] = 1.0;
         for (int d = 0; d < 3; ++d) {
-          c[2*d] = ff(d, k, j, i);
-          c[2*d+1] = ff(d, k+(d == 2), j+(d == 1), i+(d == 0));
+          c[2*d] = fw[2*d]*ff(d, k, j, i);
+          c[2*d+1] = fw[2*d+1]*ff(d, k+(d == 2), j+(d == 1), i+(d == 0));
         }
         CleanStagCsVector(x, m, k, j, i, c, w, fs);
         for (int d = 0; d < 3; ++d) fs[d] *= 2.0;
@@ -1225,15 +1243,28 @@ void RadiationM1::CleanRightHandSide() {
         const Real bt = x.w(m,CLW_BT+n,k,j,i);
         if (n < x.nf) by += bt*0.5*fs[n]/x.c;
         y2 += SQR(0.5*fs[n]/x.c);
+        // (gflux: a E face by face; the cubed sphere's face families are not the vector's
+        // components, there the cell's a E, the form without gflux)
+        if (n < x.nf && x.gf && !x.cub) {
+          const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+          bp += bt*0.5*(af(n, k, j, i) + af(n, k+dk, j+dj, i+di))/x.c;
+        }
         b2 += SQR(bt);
         ba += bt*x.w(m,CLW_A1+n,k,j,i)/x.c;
       }
+      if (x.gf && x.cub) bp = ba*x.w(m,CLW_EK,k,j,i);
       // (y realisable, |y| <= E, as implicit_realisable_coupling: the gas eint takes the
       // same sb, CLW_EP, so the energy stays exact)
       const Real ek = fmax(x.w(m,CLW_EK,k,j,i), 0.0);
       if (y2 > SQR(ek)) by *= ek/std::sqrt(y2);
       gm = 1.0 - 0.5*b2;
       sb = hcke*((0.5*b2 - ba)*x.w(m,CLW_EK,k,j,i) + 2.0*by);
+      // gflux: sb = hcke [dop E + 2 beta.F'/c] with the comoving flux F' = F - a E taken
+      // face by face (F - A of each face, ~ theta in an opaque cell), not as the faces'
+      // mean F less the cell's a E: at a front the two means differ by the neighbour's
+      // a E, which hcke >> 1 turned into a lagged source the iteration could not settle
+      dop = 0.5*b2 + ba;
+      if (x.gf) sb = hcke*(dop*x.w(m,CLW_EK,k,j,i) + 2.0*(by - bp));
     }
     const Real hckp = x.h*x.c*op(m,M1_OP_P,k,j,i)*gm;
     x.w(m,CLW_GM,k,j,i) = gm;
@@ -1250,6 +1281,15 @@ void RadiationM1::CleanRightHandSide() {
       rr = (s > 0.0) ? s/(d*cv + s) : 0.0;   // (no exchange: none, also where T = 0)
       // (1 - r = d cv/(d cv + s) without cancellation, as implicit_src_stable)
       x.w(m,CLW_RY,k,j,i) = (s > 0.0) ? d*cv/(d*cv + s) : 1.0;
+      // gflux: the Doppler part hcke dop E of sb is a change of the absorption, hcke
+      // (1 - dop): taken in the Newton step as the exchange (r -> r + dop (1 - r), sb
+      // keeps its value at E_k), not lagged; where hcke dop >> 1 (an opaque cell with a
+      // moving gas) the lagged term drove the iteration away
+      if (x.gf) {
+        const Real dc = fmin(fmax(dop, 0.0), 1.0);
+        rr += dc*(1.0 - rr);
+        x.w(m,CLW_RY,k,j,i) *= 1.0 - dc;
+      }
       // work of the radiation force on the gas, (v_old + dm/(2 rho)).dm: exactly the
       // kinetic energy the gas gains, taken from the radiation
       Real pg[3];
