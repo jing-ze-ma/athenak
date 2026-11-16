@@ -1503,7 +1503,6 @@ Real RadiationM1::CleanCellVelocityUpdate() {
     v_max = fmax(v_max, std::sqrt(v2));
   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(femax),
   Kokkos::Max<Real>(fvmax));
-  if (cap) cln_fref_set = true;
   cln_fe = std::numeric_limits<Real>::epsilon()*femax;
   cln_fv = std::numeric_limits<Real>::epsilon()*fvmax/fmax(vmax, 1.0e-300);
   if (cln_vfreeze != 1) CleanAdvectiveCoefficients();

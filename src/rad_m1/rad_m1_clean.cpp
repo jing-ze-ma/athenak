@@ -813,6 +813,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
     t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_feedback && cln_neint > 0);
   }
+  // (force_reference = clean: the reference is the force of the converged, accepted
+  // first coupled solve, every iterate of which recaptures it; a failed one is redone)
+  if (force_ref == M1_FREF_CLEAN && cln_feedback && !cln_vzero && nit >= 0 &&
+      nneg == 0 && !(t2stage && t2_fail) && !dtr_fail) cln_fref_set = true;
 
   // 6. clean_closure = extrap(2): ray moments of the new state.  The last solve of a
   //    step also re-evaluates its slope K1 = f(U^{n+1}) with the closure of these rays
