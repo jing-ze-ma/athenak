@@ -3175,6 +3175,8 @@ class RadiationM1 {
   };
   std::map<int, CleanHalo> cln_halo;   // by nc
   DvceArray5D<Real> cln_hbuf;   // the storage of every scratch array (32 components)
+  int cln_fsn = 0, cln_fsit = 0;   // the F solves with transverse terms of a CleanSolve,
+  Real cln_fsres = 0.0;            //   their passes and the largest last change
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
   void ImplicitPartitionInit();
