@@ -156,8 +156,12 @@ void RadiationM1::CleanInit() {
   if (cln_extrap > 0) {
     // (a restart may have read t^n and the end of the last step)
     if (cln_mn.extent_int(0) != nmb) Kokkos::realloc(cln_mn, nmb, CLN_N, n3, n2, n1);
-    Kokkos::realloc(cln_mp, nmb, CLN_N, n3, n2, n1);
     if (cln_mc.extent_int(0) != nmb) Kokkos::realloc(cln_mc, nmb, CLN_N, n3, n2, n1);
+    if (cln_mshare) {
+      cln_mp = cln_mc;
+    } else {
+      Kokkos::realloc(cln_mp, nmb, CLN_N, n3, n2, n1);
+    }
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
   }
   Mesh *pm = pmy_pack->pmesh;

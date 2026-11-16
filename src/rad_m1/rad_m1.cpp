@@ -189,6 +189,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     if (cln_sphere) cln_sph_r = pin->GetReal("rad_m1","clean_sphere_radius");}
+    // clean_extrap_share (read only when named): the moments at t^{n-1} and those of the
+    // end of the step share one array (a rejected step then redoes without the line)
+    if (pin->DoesParameterExist("rad_m1","clean_extrap_share")) {
+      cln_mshare = pin->GetBoolean("rad_m1","clean_extrap_share");
+    }
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_gas_exact = pin->GetOrAddBoolean("rad_m1","clean_gas_exact",true);
     cln_yres = pin->GetOrAddBoolean("rad_m1","clean_yres",false);

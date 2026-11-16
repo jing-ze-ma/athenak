@@ -377,7 +377,9 @@ void RadiationM1::CleanClosureAfterSolve() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
   if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE2) return;
+  // (clean_extrap_share: writing cln_mc overwrites the moments at t^{n-1})
   if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE1) {
+    if (cln_mshare) cln_have_p = false;
     CleanRayMoments(cln_mc, false);
     cln_tm = time + dt;
     cln_have_c = true;
@@ -393,6 +395,7 @@ void RadiationM1::CleanClosureAfterSolve() {
     cln_have_1 = true;
     return;
   }
+  if (cln_mshare) cln_have_p = false;
   CleanRayMoments(cln_mc);
   cln_tm = time + dt;
   cln_have_c = true;
@@ -485,7 +488,11 @@ void RadiationM1::CleanClosureExtrap() {
   // a new step: the end of the last step becomes t^n
   if (cln_have_c && cln_tm == time) {
     std::swap(cln_mp, cln_mn);
-    std::swap(cln_mn, cln_mc);
+    if (cln_mshare) {
+      cln_mc = cln_mp;
+    } else {
+      std::swap(cln_mn, cln_mc);
+    }
     cln_tp = cln_tn;
     cln_tn = time;
     cln_have_p = cln_have_n && !cln_cand_be;
