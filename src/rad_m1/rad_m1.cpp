@@ -160,8 +160,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 (al.compare("zero") == 0) ? 4 : -1;
     if ((!cln_cell && ly.compare("staggered") != 0) || cln_alpha < 0 ||
         (!cln_recon && rc.compare("none") != 0) || (cln_consist && !cln_cell &&
-        !(pin->DoesParameterExist("rad_m1","clean_stag_split") &&
-          pin->GetBoolean("rad_m1","clean_stag_split"))) ||
+        pin->DoesParameterExist("rad_m1","clean_stag_split") &&
+        !pin->GetBoolean("rad_m1","clean_stag_split")) ||
         (!cln_milne && fm.compare("none") != 0) || (cln_milne && !cln_consist)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1>/clean_layout = staggered | cell, clean_alpha = tau | "
@@ -176,8 +176,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_poslim = pin->GetOrAddBoolean("rad_m1","clean_pos_limit",true);
     cln_diagcells = pin->GetOrAddBoolean("rad_m1","clean_diag_cells",false);
     // (read only when named: output headers list the input)
-    cln_split = pin->DoesParameterExist("rad_m1","clean_stag_split") &&
-                pin->GetBoolean("rad_m1","clean_stag_split");
+    // (default: on for the staggered layout; read only when named)
+    cln_split = pin->DoesParameterExist("rad_m1","clean_stag_split") ?
+                pin->GetBoolean("rad_m1","clean_stag_split") : !cln_cell;
     if (pin->DoesParameterExist("rad_m1","clean_stag_tau_pos")) {
       cln_taupos = pin->GetReal("rad_m1","clean_stag_tau_pos");
     }
