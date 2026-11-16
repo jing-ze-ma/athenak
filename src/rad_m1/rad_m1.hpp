@@ -3068,6 +3068,7 @@ class RadiationM1 {
                                 //   momentum flux
   bool cln_dok = true;          // staggered fkin: the last solve converged (memory d)
   bool cln_fwork = false;       // staggered fsolve: also in the Newton loop (the work W)
+  bool cln_fsk = false;         //   CLF_N holds the F solve's F of the iterate
   bool cln_split = false;       // staggered: energy flux apart from the face momentum
   bool cln_diagforce = false;   // staggered: momentum of low-order faces (diagnostic)
   int cln_nr1 = 0, cln_nr2 = 0;  // staggered: cells E < 0, faces |F| > c E_donor

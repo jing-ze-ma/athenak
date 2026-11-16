@@ -691,6 +691,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                                               Kokkos::ALL, Kokkos::ALL), 0.0);
   for (int ipos = 0; ; ++ipos) {
     CleanFirstIterate();
+    cln_fsk = false;
     if (cell) CleanCellFirstIterate();
     if (cln_opt && cln_feedback) {
       CleanCellOpacity();
@@ -1037,23 +1038,32 @@ void RadiationM1::CleanRightHandSide() {
   }
   CleanArgs xh = x;   // (the face momentum state, clean_stag_split)
   xh.hi = cln_split;
+  xh.fs = cln_fsk;
   par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = x.w(m,CLW_T,k,j,i);
     const Real hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
     Real rr = 0.0, work = 0.0, gm = 1.0, sb = 0.0;
     if (x.feedback) {
-      Real b2 = 0.0, ba = 0.0, by = 0.0;
+      Real b2 = 0.0, ba = 0.0, by = 0.0, y2 = 0.0;
       for (int n = 0; n < 3; ++n) {
         const Real bt = x.w(m,CLW_BT+n,k,j,i);
         const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-        if (n < x.nf) {
-          by += bt*0.5*(CleanFaceFlux(xh, CLW_EK, n, m, k, j, i, true) +
-                        CleanFaceFlux(xh, CLW_EK, n, m, k+dk, j+dj, i+di, true))/x.c;
+        if (n < x.nf) {   // (clean_stag_fwork: the F solve's F, which the gas takes)
+          const Real fl = xh.fs ? xh.fc[n](m,CLF_N,k,j,i)
+                                : CleanFaceFlux(xh, CLW_EK, n, m, k, j, i, true);
+          const Real fh = xh.fs ? xh.fc[n](m,CLF_N,k+dk,j+dj,i+di)
+                                : CleanFaceFlux(xh, CLW_EK, n, m, k+dk, j+dj, i+di, true);
+          by += bt*0.5*(fl + fh)/x.c;
+          y2 += SQR(0.5*(fl + fh)/x.c);
         }
         b2 += SQR(bt);
         ba += bt*x.w(m,CLW_A1+n,k,j,i)/x.c;
       }
+      // (y realisable, |y| <= E, as implicit_realisable_coupling: the gas eint takes the
+      // same sb, CLW_EP, so the energy stays exact)
+      const Real ek = fmax(x.w(m,CLW_EK,k,j,i), 0.0);
+      if (y2 > SQR(ek)) by *= ek/std::sqrt(y2);
       gm = 1.0 - 0.5*b2;
       sb = hcke*((0.5*b2 - ba)*x.w(m,CLW_EK,k,j,i) + 2.0*by);
     }
@@ -1158,6 +1168,7 @@ Real RadiationM1::CleanVelocityUpdate() {
   if (cln_fwork && cln_fsolve && cln_split) {   // (clean_stag_fwork: the momentum of the
     CleanStagFSolve(CLW_EK);                     //  F solve, which the write-back gives
     xh.fs = true;                                //  the gas, for the work W of the E row)
+    cln_fsk = true;
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
