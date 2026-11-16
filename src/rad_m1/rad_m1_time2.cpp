@@ -3550,6 +3550,16 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + cln_fvb*cln_fvn), AL, AL,
                                       AL),
                       Kokkos::subview(cln_fvi, ms, AL, AL, AL, AL));
+  } else if (clean && cln_fvf32 && cln_fvis.extent_int(0) >= m0 + nmb) {
+    // (clean_fv_float: the single-precision intensities as doubles)
+    auto a_ = a;
+    auto fs = cln_fvis;
+    const int c0 = c, nv = cln_fvb*cln_fvn, mo = m0;
+    par_for("m1_t2_fvrst", DevExeSpace(), 0, nmb - 1, 0, nv - 1, 0, fs.extent_int(2) - 1,
+            0, fs.extent_int(3) - 1, 0, fs.extent_int(4) - 1,
+    KOKKOS_LAMBDA(const int m, const int v, const int k, const int j, const int i) {
+      a_(m,c0+v,k,j,i) = fs(mo+m,v,k,j,i);
+    });
   }
 }
 

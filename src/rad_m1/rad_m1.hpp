@@ -2958,6 +2958,10 @@ class RadiationM1 {
   int CleanCountNegative();
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
+  void CleanGhostFill(DvceArray5D<float> a, const int c0, const int nc);
+  template <typename T>
+  void CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc, const bool phys,
+                       const int part);
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                       const bool phys = true, const int part = 0);
   std::array<Real, 2> CleanDots(DvceArray5D<Real> w, const int nc, const int n,
@@ -2977,11 +2981,13 @@ class RadiationM1 {
   CleanLevel CleanCellLevel(const int l);
   void CleanCellLineSolve(const CleanLevel &lv, const int dir, const int src,
                           const int dst);
-  template <bool kStore>
+  template <bool kStore, typename F = Real>
   void CleanCellLineSolveRows(const CleanLevel &lv, const int dir, const int src,
                               const int dst);
+  template <typename F>
   void CleanCellLineFactorSolve(const CleanLevel &lv, const int src, const int dst);
   int CleanCellLineRows(const int nline, const int nw, const int nt);
+  void CleanCellFactorStore();
   void CleanCellLevelApply(const CleanLevel &lv, const int src, const int dst);
   void CleanCellCoarseSetup();
   void CleanCellSmooth(const int l, const int src, const int dst, const bool first,
@@ -3030,6 +3036,7 @@ class RadiationM1 {
                                 // the FV rays (clean_rays = fv1 | fv), clean_consistency
   bool cln_closit = false;      // clean_closure: predict | iterate
   int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
+  bool cln_mshare = false;      // clean_extrap_share: cln_mp and cln_mc one array
                                 // | extrap1 (3, cell default)
   bool cln_edd = false;         // clean_closure = eddington (D = I/3, no rays)
   bool cln_sphere = false;      // clean_closure = sphere (spherical polar)
@@ -3045,7 +3052,10 @@ class RadiationM1 {
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
   int cln_chunk = 32;           // rows per Thomas system of the line solve
+  int cln_lteams = 0;           // clean_line_teams: most teams of a line solve (0: all)
+  int cln_hmax = 16;            // clean_halo_vars: most variables of one ghost exchange
   bool cln_pcfac = true;        // clean_pc_factor: x1line keeps the factors of its lines
+  bool cln_pcf32 = false;       // clean_pc_factor_float: ... in single precision
   int cln_pcreuse = 1;          // clean_pc_reuse: preconditioner rebuilt every n passes
   bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
   bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
@@ -3069,6 +3079,8 @@ class RadiationM1 {
   int cln_rfv = 0;              // clean_rays = fv1 | fv | lld: the conservative sweep
   int cln_fvb = 1;              // blocks of cln_fvi: lld 4 (average, slopes along x1..x3)
   DvceArray5D<Real> cln_fvi;    // its intensities (m, b n + d, k, j, i)
+  DvceArray5D<float> cln_fvis;  // the same in single precision (clean_fv_float)
+  bool cln_fvf32 = false;       // clean_fv_float: cln_fvis instead of cln_fvi
   DvceArray5D<Real> cln_fvq;    // lld: the source moments (m, CLQ_*, k, j, i)
   DvceArray5D<Real> cln_fvp;    // fv: the intensities of the last build (downwind slopes)
   DvceArray5D<Real> cln_fvx;    // 2-D axisymmetric: the intensities of the last pass
@@ -3134,6 +3146,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
   DvceArray5D<Real> cln_lf;     // factors of the x1-line solve (clean_pc_factor)
+  DvceArray5D<float> cln_lfs;   // the same in single precision (clean_pc_factor_float)
   DvceArray1D<Real> cln_lw;     // rows of the line solves, a block per team
   DvceArray5D<Real> cln_ff;     // face fluxes of the operator (CleanCellApply)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)

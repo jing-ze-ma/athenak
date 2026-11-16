@@ -147,6 +147,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool gd = sp && pin->DoesParameterExist("rad_m1","vet_gd") &&
                     pin->GetBoolean("rad_m1","vet_gd");
     if (cln_cell && gd && !pin->DoesParameterExist("rad_m1","clean_rays")) cln_rfv = 1;
+    // clean_fv_float (read only when named): the fv1 rays' intensities in single
+    // precision (no effect without FV rays)
+    if (pin->DoesParameterExist("rad_m1","clean_fv_float")) {
+      cln_fvf32 = pin->GetBoolean("rad_m1","clean_fv_float") && cln_rfv > 0;
+      if (cln_fvf32 && cln_rfv != 1) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_fv_float needs clean_rays = fv1" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",
                                        cln_cell && !cs && (!sp || gd));
     cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",cln_cell);
@@ -190,6 +200,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     if (cln_sphere) cln_sph_r = pin->GetReal("rad_m1","clean_sphere_radius");}
+    // clean_extrap_share (read only when named): the moments at t^{n-1} and those of the
+    // end of the step share one array (a rejected step then redoes without the line)
+    if (pin->DoesParameterExist("rad_m1","clean_extrap_share")) {
+      cln_mshare = pin->GetBoolean("rad_m1","clean_extrap_share");
+    }
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_gas_exact = pin->GetOrAddBoolean("rad_m1","clean_gas_exact",true);
     cln_yres = pin->GetOrAddBoolean("rad_m1","clean_yres",false);
@@ -210,6 +225,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_pc_factor")) {
       cln_pcfac = pin->GetBoolean("rad_m1","clean_pc_factor");
     }
+    // clean_pc_factor_float (read only when named): those factors kept in single
+    // precision (half the memory; the preconditioner, not the solution, changes)
+    if (pin->DoesParameterExist("rad_m1","clean_pc_factor_float")) {
+      cln_pcf32 = pin->GetBoolean("rad_m1","clean_pc_factor_float");
+    }
     if (pin->DoesParameterExist("rad_m1","clean_pc_reuse")) {
       cln_pcreuse = std::max(pin->GetInteger("rad_m1","clean_pc_reuse"), 1);
     }
@@ -223,11 +243,27 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_nl_print")) {
       cln_nlprint = pin->GetBoolean("rad_m1","clean_nl_print");
     }
+    // clean_halo_vars (read only when named, 1..32, default 16): at most this many
+    // variables per ghost exchange of the clean solve (its scratch array holds that many)
+    if (pin->DoesParameterExist("rad_m1","clean_halo_vars")) {
+      cln_hmax = std::min(std::max(pin->GetInteger("rad_m1","clean_halo_vars"), 1), 32);
+    }
+    // clean_line_teams (read only when named): at most this many teams take the lines of
+    // a line solve (each line still one team), fewer rows of cln_lw
+    if (pin->DoesParameterExist("rad_m1","clean_line_teams")) {
+      cln_lteams = std::max(pin->GetInteger("rad_m1","clean_line_teams"), 0);
+    }
     // clean_line_solver = hybrid | pcr | thomas (TEMPORARY, for GPU timing): rows per
     // Thomas system of the line solve (CleanCellLineSolve)
     if (pin->DoesParameterExist("rad_m1","clean_line_solver")) {
       const std::string ls = pin->GetString("rad_m1","clean_line_solver");
       cln_chunk = (ls == "pcr") ? 1 : ((ls == "thomas") ? (1 << 30) : 32);
+    }
+    // clean_line_chunk (read only when named): rows per Thomas system of the line solve
+    // (fewer PCR rounds, a smaller factor store with clean_pc_factor; slower, not
+    // recommended)
+    if (pin->DoesParameterExist("rad_m1","clean_line_chunk")) {
+      cln_chunk = std::max(pin->GetInteger("rad_m1","clean_line_chunk"), 1);
     }
     // clean_init = given | steady (read only when named: an input without it keeps a
     // byte-identical parameter dump).  A start out of radiative equilibrium takes steady:

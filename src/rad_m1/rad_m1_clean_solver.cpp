@@ -121,14 +121,24 @@ CleanArgs RadiationM1::CleanMakeArgs() {
 //! cells, without the along-seam resample) by the cell-centred boundary exchange on a
 //! scratch array of nc components (only the ghosts and the ng layers the exchange reads
 //! are copied in, only the ghosts back), then (phys) a copy of the edge cell on physical
-//! boundaries.  part = 1 only starts the exchange (nc <= 32), part = 2 finishes it: work
-//! on the cells CleanInner by ng can run in between.
+//! boundaries.  part = 1 only starts the exchange (nc <= clean_halo_vars), part = 2
+//! finishes it: work on the cells CleanInner by ng can run in between.
 
 void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                                  const bool phys, const int part) {
-  if (nc > 32) {   // the exchange moves at most 32 variables at once
-    CleanGhostFill(a, c0, 32, phys);
-    CleanGhostFill(a, c0 + 32, nc - 32, phys);
+  CleanGhostFillT(a, c0, nc, phys, part);
+}
+
+void RadiationM1::CleanGhostFill(DvceArray5D<float> a, const int c0, const int nc) {
+  CleanGhostFillT(a, c0, nc, true, 0);
+}
+
+template <typename T>
+void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
+                                  const bool phys, const int part) {
+  if (nc > cln_hmax) {   // the exchange moves at most clean_halo_vars variables at once
+    CleanGhostFillT(a, c0, cln_hmax, phys, 0);
+    CleanGhostFillT(a, c0 + cln_hmax, nc - cln_hmax, phys, 0);
     return;
   }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -141,7 +151,9 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
   CleanHalo &hl = cln_halo[nc];
   if (!hl.pb) {
     // (the exchanges run one at a time: their scratch arrays share one allocation)
-    if (cln_hbuf.extent_int(0) == 0) Kokkos::realloc(cln_hbuf, nmb1 + 1, 32, n3, n2, n1);
+    if (cln_hbuf.extent_int(0) == 0) {
+      Kokkos::realloc(cln_hbuf, nmb1 + 1, cln_hmax, n3, n2, n1);
+    }
     hl.a = DvceArray5D<Real>(cln_hbuf.data(), nmb1 + 1, nc, n3, n2, n1);
     Kokkos::realloc(hl.ca, nmb1 + 1, nc, 1, 1, 1);
     hl.pb.reset(new MeshBoundaryValuesCC(pmy_pack, nullptr, false));
@@ -411,7 +423,7 @@ int RadiationM1::CleanBiCGStab() {
   const int sx = cell ? CLC_X : CLW_X, sb = cell ? CLC_B : CLW_B;
   const int sr = cell ? CLC_R : CLW_R, sr0 = cell ? CLC_R0 : CLW_R0;
   const int sp = cell ? CLC_P : CLW_P, sv = cell ? CLC_V : CLW_V;
-  const int ss = cell ? CLC_S : CLW_S, sq = cell ? CLC_Q : CLW_Q;
+  const int ss = cell ? CLC_R : CLW_S, sq = cell ? CLC_Q : CLW_Q;
   const int sy = cell ? CLC_Y : CLW_Y, sz = cell ? CLC_Z : CLW_Z;
 
   // w(dst) = sa w(a) + sb w(b)

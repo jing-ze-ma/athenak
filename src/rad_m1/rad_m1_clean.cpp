@@ -112,7 +112,7 @@ void RadiationM1::CleanInit() {
   int nmb = pmy_pack->nmb_thispack;
   Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_v, nmb, 3, n3, n2, n1);
-  Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
+  Kokkos::realloc(cln_w, nmb, cln_cell ? CLW_NC : CLW_N, n3, n2, n1);
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
   const int nfc = cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N);
@@ -127,7 +127,9 @@ void RadiationM1::CleanInit() {
   Kokkos::deep_copy(cln_fc2, 0.0);
   Kokkos::deep_copy(cln_fc3, 0.0);
   if (cln_cell) {
-    Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
+    const int nf = (cln_hk || cln_milne) ? CLC_NF : CLC_U;
+    const int nc = (cln_pc != CLN_PC_X1LINE) ? CLC_N : (cln_pcfac ? nf : CLC_NL);
+    Kokkos::realloc(cln_x, nmb, nc, n3, n2, n1);
     Kokkos::deep_copy(cln_x, 0.0);
   }
   if (force_ref == M1_FREF_CLEAN && cln_fref.extent_int(0) != nmb) {
@@ -155,8 +157,12 @@ void RadiationM1::CleanInit() {
   if (cln_extrap > 0) {
     // (a restart may have read t^n and the end of the last step)
     if (cln_mn.extent_int(0) != nmb) Kokkos::realloc(cln_mn, nmb, CLN_N, n3, n2, n1);
-    Kokkos::realloc(cln_mp, nmb, CLN_N, n3, n2, n1);
     if (cln_mc.extent_int(0) != nmb) Kokkos::realloc(cln_mc, nmb, CLN_N, n3, n2, n1);
+    if (cln_mshare) {
+      cln_mp = cln_mc;
+    } else {
+      Kokkos::realloc(cln_mp, nmb, CLN_N, n3, n2, n1);
+    }
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
   }
   Mesh *pm = pmy_pack->pmesh;

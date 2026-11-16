@@ -285,7 +285,7 @@ void RadiationM1::CleanCellConsistency() {
   CleanArgs x = CleanMakeArgs();
   const bool ml = x.milne;
   x.milne = false;   // the bracket is that of the moment scheme
-  auto fi = cln_fvi;
+  CleanFvI fi{cln_fvi, cln_fvis, cln_fvf32};
   auto dir_ = cln_fvd;
   const int nd = x.cub ? cln_fvn : 0;
 
@@ -705,6 +705,25 @@ void RadiationM1::CleanCellPreconditionerSetup() {
   x.recon = false;
   auto op = opac;
   auto uh = FluidRef::Get(pmy_pack).u0;
+  // x1line keeps only the blocks along x1; with clean_pc_factor they go to the factor
+  // store (slot - CLC_AM, active cells), which the first line solve overwrites with the
+  // factors (CleanCellLineSolveRows)
+  const bool x1 = (cln_pc == CLN_PC_X1LINE);
+  const bool fd = x1 && cln_pcfac && !cln_pcf32, fs = x1 && cln_pcfac && cln_pcf32;
+  if (x1 && cln_pcfac) CleanCellFactorStore();
+  auto lf = cln_lf;
+  auto lfs = cln_lfs;
+  auto u = cln_x;
+  auto put = [=] KOKKOS_FUNCTION (const int m, const int n, const int k, const int j,
+                                  const int i, const Real v) {
+    if (fd) {
+      lf(m,n-CLC_AM,k-ks,j-js,i-is) = v;
+    } else if (fs) {
+      lfs(m,n-CLC_AM,k-ks,j-js,i-is) = static_cast<float>(v);
+    } else {
+      u(m,n,k,j,i) = v;
+    }
+  };
 
   par_for("clc_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -741,6 +760,7 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
       const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
       const int sm = CleanLineSlotM(dir), sp = CleanLineSlotP(dir);
+      const bool keep = (dir == 0 || !x1);
       CleanCellFaceJacobian(x, dir, m, k+dk, j+dj, i+di, jlp, jrp);
       CleanCellFaceJacobian(x, dir, m, k, j, i, jlm, jrm);
       if (x.sph || x.cub) {
@@ -752,8 +772,10 @@ void RadiationM1::CleanCellPreconditionerSetup() {
         for (int r = 0; r < 4; ++r) {
           for (int c = 0; c < 4; ++c) {
             a0[r][c] += bp[r][c] - bm[r][c];
-            x.u(m,sp+4*r+c,k,j,i) = bpn[r][c];
-            x.u(m,sm+4*r+c,k,j,i) = -bmn[r][c];
+            if (keep) {
+              put(m, sp+4*r+c, k, j, i, bpn[r][c]);
+              put(m, sm+4*r+c, k, j, i, -bmn[r][c]);
+            }
           }
         }
         continue;
@@ -762,8 +784,10 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       for (int r = 0; r < 4; ++r) {
         for (int c = 0; c < 4; ++c) {
           a0[r][c] += s*(jlp[r][c] - jrm[r][c]);
-          x.u(m,sp+4*r+c,k,j,i) = s*jrp[r][c];
-          x.u(m,sm+4*r+c,k,j,i) = -s*jlm[r][c];
+          if (keep) {
+            put(m, sp+4*r+c, k, j, i, s*jrp[r][c]);
+            put(m, sm+4*r+c, k, j, i, -s*jlm[r][c]);
+          }
         }
       }
     }
@@ -773,11 +797,32 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       for (int b = 0; b < x.nf; ++b) a0[1+b][0] += g[b];
     }
     for (int r = 0; r < 4; ++r) {
-      for (int c = 0; c < 4; ++c) x.u(m,CLC_A0+4*r+c,k,j,i) = a0[r][c];
+      for (int c = 0; c < 4; ++c) put(m, CLC_A0+4*r+c, k, j, i, a0[r][c]);
     }
   });
   cln_lf_ok = false;
   if (cln_pc != CLN_PC_X1LINE) CleanCellCoarseSetup();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellFactorStore
+//! \brief allocates the factor store of the x1-line solve (cln_lf, or cln_lfs with
+//! clean_pc_factor_float): per active cell 32 values per PCR round and 49 of the Thomas
+//! rows (CleanCellLineSolveRows), at least the 48 of the blocks it starts from
+
+void RadiationM1::CleanCellFactorStore() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int nsys = 1, nround = 0;
+  while (indcs.nx1 > cln_chunk*nsys) nsys *= 2;
+  for (int st = 1; st < nsys; st *= 2) ++nround;
+  const int nmb = pmy_pack->nmb_thispack, nf = 32*nround + 49;
+  if (cln_pcf32) {
+    if (cln_lfs.extent_int(0) != nmb || cln_lfs.extent_int(1) != nf) {
+      Kokkos::realloc(cln_lfs, nmb, nf, indcs.nx3, indcs.nx2, indcs.nx1);
+    }
+  } else if (cln_lf.extent_int(0) != nmb || cln_lf.extent_int(1) != nf) {
+    Kokkos::realloc(cln_lf, nmb, nf, indcs.nx3, indcs.nx2, indcs.nx1);
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -830,10 +875,11 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellLineSolveRows
 //! \brief the line solve of CleanCellLineSolve; kStore also keeps its factors in cln_lf
-//! (CleanCellLineFactorSolve): per PCR round the multipliers of the two neighbour rows,
-//! per row of the Thomas systems the reduced lower block, D^-1 C and the factors of D
+//! (cln_lfs: F = float) for CleanCellLineFactorSolve: per PCR round the multipliers of
+//! the two neighbour rows, per row of the Thomas systems the reduced lower block, D^-1 C
+//! and the factors of D
 
-template <bool kStore>
+template <bool kStore, typename F>
 void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
                                          const int src, const int dst) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
@@ -846,7 +892,12 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
   auto u = lv.u;
   int nsys = 1;
   while (nl > cln_chunk*nsys) nsys *= 2;
-  auto lf = cln_lf;
+  DvceArray5D<F> lf;
+  if constexpr (std::is_same_v<F, float>) {
+    lf = cln_lfs;
+  } else {
+    lf = cln_lf;
+  }
   int nround = 0;
   for (int st = 1; st < nsys; st *= 2) ++nround;
   const int lt = 32*nround;
@@ -869,9 +920,15 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
         int k, j, i;
         cell(n, k, j, i);
         for (int e = 0; e < 16; ++e) {
-          w(52*n + e) = (n > 0) ? u(m,sm+e,k,j,i) : 0.0;
-          w(52*n + 16 + e) = u(m,a0+e,k,j,i);
-          w(52*n + 32 + e) = (n < nl - 1) ? u(m,sp+e,k,j,i) : 0.0;
+          if (kStore) {   // the blocks of CleanCellPreconditionerSetup
+            w(52*n + e) = (n > 0) ? lf(m,e,k-ks,j-js,i-is) : 0.0;
+            w(52*n + 16 + e) = lf(m,16+e,k-ks,j-js,i-is);
+            w(52*n + 32 + e) = (n < nl - 1) ? lf(m,32+e,k-ks,j-js,i-is) : 0.0;
+          } else {
+            w(52*n + e) = (n > 0) ? u(m,sm+e,k,j,i) : 0.0;
+            w(52*n + 16 + e) = u(m,a0+e,k,j,i);
+            w(52*n + 32 + e) = (n < nl - 1) ? u(m,sp+e,k,j,i) : 0.0;
+          }
         }
         for (int r = 0; r < 4; ++r) w(52*n + 48 + r) = u(m,src+r,k,j,i);
       });
@@ -909,7 +966,8 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
               for (int l = 0; l < 4; ++l) {
                 const Real g = f[l][r];
                 if (kStore) {
-                  lf(m,32*ir+((sd < 0) ? 0 : 16)+4*r+l,k-ks,j-js,i-is) = g;
+                  const int f = 32*ir + ((sd < 0) ? 0 : 16) + 4*r + l;
+                  lf(m,f,k-ks,j-js,i-is) = static_cast<F>(g);
                 }
                 for (int c = 0; c < 4; ++c) {
                   if (sd < 0) {
@@ -964,14 +1022,18 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
             cell(n, k, j, i);
             Real lu[4][4], piv[4];
             CleanBlockFactor(a, b, 5, lu, piv);
+            // (the four pivot rows packed in one value, 2 bits each)
+            int pk = 0;
             for (int r = 0; r < 4; ++r) {
               for (int c = 0; c < 4; ++c) {
-                lf(m,lt+4*r+c,k-ks,j-js,i-is) = (n >= nsys) ? w(o + 52*n + 4*r + c) : 0.0;
-                lf(m,lt+16+4*r+c,k-ks,j-js,i-is) = b[r][c];
-                lf(m,lt+32+4*r+c,k-ks,j-js,i-is) = lu[r][c];
+                const Real al = (n >= nsys) ? w(o + 52*n + 4*r + c) : 0.0;
+                lf(m,lt+4*r+c,k-ks,j-js,i-is) = static_cast<F>(al);
+                lf(m,lt+16+4*r+c,k-ks,j-js,i-is) = static_cast<F>(b[r][c]);
+                lf(m,lt+32+4*r+c,k-ks,j-js,i-is) = static_cast<F>(lu[r][c]);
               }
-              lf(m,lt+48+r,k-ks,j-js,i-is) = piv[r];
+              pk += static_cast<int>(piv[r]) << (2*r);
             }
+            lf(m,lt+48,k-ks,j-js,i-is) = static_cast<F>(pk);
           } else {
             CleanBlockSolve(a, b, 5);
           }
@@ -1020,6 +1082,7 @@ int RadiationM1::CleanCellLineRows(const int nline, const int nw, const int nt) 
   if constexpr (!std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
     nlg /= nt;
   }
+  if (cln_lteams > 0) nlg = std::min(nlg, cln_lteams);
   nlg = std::max(1, std::min(nline, nlg));
   const size_t n = static_cast<size_t>(nlg)*nw;
   if (cln_lw.extent(0) < n) Kokkos::realloc(cln_lw, n);
@@ -1030,15 +1093,22 @@ int RadiationM1::CleanCellLineRows(const int nline, const int nw, const int nt) 
 //! \fn void RadiationM1::CleanCellLineFactorSolve
 //! \brief u(dst) = L^{-1} u(src) along x1 on the mesh level with the factors that
 //! CleanCellLineSolveRows<true> kept in cln_lf: the operations of that solve on the right
-//! hand side only (the same result to the last bit), one team per line
+//! hand side only (the same result to the last bit), one team per line.  F = float: the
+//! factors of cln_lfs
 
+template <typename F>
 void RadiationM1::CleanCellLineFactorSolve(const CleanLevel &lv, const int src,
                                            const int dst) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const int is = lv.o[0], js = lv.o[1], ks = lv.o[2];
   const int np = lv.n[2], nq = lv.n[1], nl = lv.n[0];
   auto u = lv.u;
-  auto lf = cln_lf;
+  DvceArray5D<F> lf;
+  if constexpr (std::is_same_v<F, float>) {
+    lf = cln_lfs;
+  } else {
+    lf = cln_lf;
+  }
   int nsys = 1;
   while (nl > cln_chunk*nsys) nsys *= 2;
   int nround = 0;
@@ -1084,6 +1154,7 @@ void RadiationM1::CleanCellLineFactorSolve(const CleanLevel &lv, const int src,
       Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nsys), [&](const int sy) {
         for (int n = sy; n < nl; n += nsys) {
           Real rhs[4], lu[4][4], piv[4];
+          const int pk = static_cast<int>(lf(m,lt+48,k,j,n));
           for (int r = 0; r < 4; ++r) {
             rhs[r] = w(o + 4*n + r);
             if (n >= nsys) {
@@ -1094,7 +1165,7 @@ void RadiationM1::CleanCellLineFactorSolve(const CleanLevel &lv, const int src,
               }
             }
             for (int c = 0; c < 4; ++c) lu[r][c] = lf(m,lt+32+4*r+c,k,j,n);
-            piv[r] = lf(m,lt+48+r,k,j,n);
+            piv[r] = static_cast<Real>((pk >> (2*r)) & 3);
           }
           CleanBlockFactorSolve(lu, piv, rhs);
           for (int r = 0; r < 4; ++r) w(t + 4*n + r) = rhs[r];
@@ -1339,15 +1410,17 @@ void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
     if (!cln_pcfac) {
       CleanCellLineSolve(lv, 0, src, dst);
     } else if (cln_lf_ok) {
-      CleanCellLineFactorSolve(lv, src, dst);
-    } else {
-      int nsys = 1, nround = 0;
-      while (lv.n[0] > cln_chunk*nsys) nsys *= 2;
-      for (int st = 1; st < nsys; st *= 2) ++nround;
-      const int nmb = pmy_pack->nmb_thispack, nf = 32*nround + 52;
-      if (cln_lf.extent_int(0) != nmb || cln_lf.extent_int(1) != nf) {
-        Kokkos::realloc(cln_lf, nmb, nf, lv.n[2], lv.n[1], lv.n[0]);
+      if (cln_pcf32) {
+        CleanCellLineFactorSolve<float>(lv, src, dst);
+      } else {
+        CleanCellLineFactorSolve<Real>(lv, src, dst);
       }
+    } else if (cln_pcf32) {
+      // (the first solve too takes the rounded factors: one preconditioner per solve)
+      CleanCellLineSolveRows<true, float>(lv, 0, src, dst);
+      CleanCellLineFactorSolve<float>(lv, src, dst);
+      cln_lf_ok = true;
+    } else {
       CleanCellLineSolveRows<true>(lv, 0, src, dst);
       cln_lf_ok = true;
     }
