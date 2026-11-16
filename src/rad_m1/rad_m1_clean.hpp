@@ -90,6 +90,8 @@ struct CleanArgs {
   int bc[6];                   // boundary types x1min, x1max, ..., x3max
   DvceArray2D<BoundaryFlag> mbc;  // boundary flags of the six faces of each MeshBlock
   Real ebath[6];               // boundary bath energy densities
+  Real iflux[2];               // imposed fluxes of x1 flux faces (M1_IBC_FLUX), x1min/max
+  DvceArray3D<Real> ifx2[2];   // those of x2 flux faces (m, k, i), x2min/max
   Real marshak_q;
   bool marshak;                // Marshak boundary form (else the rays' half range)
   bool use_beam;
@@ -138,6 +140,17 @@ int CleanBc(const CleanArgs &x, const int m, const int s) {
   const BoundaryFlag f = x.mbc(m,s);
   return (f == BoundaryFlag::block || f == BoundaryFlag::periodic ||
           f == BoundaryFlag::panel) ? M1_IBC_PERIODIC : x.bc[s];
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool CleanOpen
+//! \brief true if the physical boundary of side s of MeshBlock m lets the rays' flux
+//! through (bath, beam): neither a wall nor an imposed flux
+
+KOKKOS_INLINE_FUNCTION
+bool CleanOpen(const CleanArgs &x, const int m, const int s) {
+  const int bc = CleanBc(x, m, s);
+  return bc != M1_IBC_REFLECT && bc != M1_IBC_FLUX;
 }
 
 //----------------------------------------------------------------------------------------
@@ -307,7 +320,7 @@ Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanFaceSource
 //! \brief the part of the face flux that does not depend on E: (1-w) theta G inside, the
-//! incoming flux (beam, bath) on physical boundaries
+//! incoming flux (beam, bath) or the imposed flux on physical boundaries
 
 KOKKOS_INLINE_FUNCTION
 Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k,
@@ -317,6 +330,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
   const int hi = (dir == 0) ? x.ie + 1 : ((dir == 1) ? x.je + 1 : x.ke + 1);
   if (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC) {
     if (CleanBc(x, m, 2*dir) == M1_IBC_REFLECT) return 0.0;
+    if (CleanBc(x, m, 2*dir) == M1_IBC_FLUX) return dir ? x.ifx2[0](m,k,i) : x.iflux[0];
     if (x.use_beam && dir == 0 && x.beam(m,k-x.ks,j-x.js) > 0.0) {
       return x.beam(m,k-x.ks,j-x.js);
     }
@@ -324,6 +338,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
   }
   if (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC) {
     if (CleanBc(x, m, 2*dir+1) == M1_IBC_REFLECT) return 0.0;
+    if (CleanBc(x, m, 2*dir+1) == M1_IBC_FLUX) return dir ? x.ifx2[1](m,k,i) : x.iflux[1];
     return x.marshak ? -x.c*x.marshak_q*x.ebath[2*dir+1] : -0.25*x.c*x.ebath[2*dir+1];
   }
   const Real w = x.fc[dir](m,CLF_W,k,j,i);

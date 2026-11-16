@@ -568,7 +568,7 @@ void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int 
   // w of the faces that carry the rays' flux (interior and open x1 faces)
   auto wf = [&](const int dir, const int kk, const int jj, const int ii) {
     const bool on = !CleanBoundaryFace(x, dir, m, kk, jj, ii) ||
-                    (dir == 0 && CleanBc(x, m, (ii == x.is) ? 0 : 1) != M1_IBC_REFLECT);
+                    (dir == 0 && CleanOpen(x, m, (ii == x.is) ? 0 : 1));
     return (x.consist && on) ? x.fc[dir](m,CLF_WK,kk,jj,ii) : 0.0;
   };
   const Real am = x.area[0](m,k,j,i), ap = x.area[0](m,k,j,i+1);
@@ -635,8 +635,6 @@ Real CleanCellOutStress(const CleanArgs &x, const int dir, const int b, const in
 //! \brief the E-independent part of the moment scheme's face fluxes: the consistency
 //! bracket and, on a physical boundary, the incoming E flux of CleanFaceSource and the
 //! stress of the incoming radiation (beam: its stress column; isotropic bath: c E_bath/6
-//! on the normal row); in a first-order solve or on a low-order face the ghost part of
-//! the upwind stress
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int k,
@@ -646,9 +644,16 @@ void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int
   const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
   const bool low = (pos == lo);
-  if (CleanBc(x, m, 2*dir + (low ? 0 : 1)) == M1_IBC_REFLECT) return;
+  const int bc = CleanBc(x, m, 2*dir + (low ? 0 : 1));
+  if (bc == M1_IBC_REFLECT) return;
   Real n[3];
   for (int b = 0; b < 3; ++b) n[b] = CleanNf(x, b, dir, m, k, j, i);
+  if (bc == M1_IBC_FLUX) {
+    const Real f = CleanFaceSource(x, dir, m, k, j, i);
+    s[0] += f;
+    for (int b = 0; b < x.nf; ++b) s[1+b] += (low ? 2.0 : -2.0)/3.0*f*n[b];
+    return;
+  }
   s[0] += CleanFaceSource(x, dir, m, k, j, i);
   if (x.all_low || x.fc[dir](m,CLF_LO,k,j,i) > 0.0 || x.fc[dir](m,CLF_UG,k,j,i) > 0.0) {
     // ghost part of the upwind stress of a first-order solve or a marked boundary face
@@ -701,8 +706,13 @@ void CleanCellDeviationFlux(const CleanArgs &x, const int dir, const int m, cons
 //! (CleanCellOutStress; the incoming part is in CleanCellFaceSource).  In a first-order
 //! solve and on a low-order boundary face fY is the upwind (a = c) flux between the inner
 //! cell and the ghost of CleanCellGhost; a reflecting wall carries only the normal stress
-//! of the inner cell.  A low-order interior face takes its E flux from the rays' half
-//! ranges and the compact diffusion flux, blended with the face's weight a,
+//! of the inner cell.  An imposed flux F (M1_IBC_FLUX, a boundary source of energy) fixes
+//! fE = F, low-order or not; its face holds the leaving half range of the inner cell,
+//! flux c h E and stress c k_out E, and an isotropic entering half range that makes up
+//! F, flux F - c h E and stress 2/3 of it, so that fY = c k_out E + (2/3) (F - c h E) n
+//! (exact for two half-isotropic streams).  A low-order interior face takes its E flux
+//! from the rays' half ranges and the compact diffusion flux, blended with the face's
+//! weight a,
 //!   fE = a c (h+_L E_L + h-_R E_R) - (1 - a) th h c^2 ((D_dd E)_R - (D_dd E)_L)/dx_d,
 //! free of y and monotone in E (as the boundary form), so that the E row of a cell with
 //! every face low-order is an M-matrix (the work W aside); its fY has the cells' own
@@ -735,6 +745,16 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
       const Real dnn = CleanDnn(x, dir, m, k, j, i, kc, jc, ic);
       for (int b = 0; b < x.nf; ++b) jj[1+b][0] = x.c*CleanNf(x, b, dir, m, k, j, i)*dnn;
       CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, true, 2.0*wo, jj);
+      return;
+    }
+    if (bc == M1_IBC_FLUX) {
+      const Real hs = (blo ? -2.0 : 2.0)/3.0*x.c*
+                      x.cs(m,(blo ? CLN_HM : CLN_HP)+dir,kc,jc,ic);
+      for (int b = 0; b < x.nf; ++b) {
+        jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, blo) +
+                     hs*CleanNf(x, b, dir, m, k, j, i);
+      }
+      CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, false, wo, jj);
       return;
     }
     const Real sg = blo ? -0.5*x.c : 0.5*x.c;
@@ -830,8 +850,8 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
 //! outgoing half-range flux that crosses the half cell).  The sub-cell flux, which does
 //! not carry y, differs from the moment scheme's by O(1) in thin cells, so
 //! mu = O(tau_h^4) leaves smooth solutions as they are; below 1e-12 it is zero.
-//! Low-order faces, a first-order solve and reflecting boundaries keep the moment
-//! scheme.
+//! Low-order faces, a first-order solve, reflecting and imposed-flux boundaries keep the
+//! moment scheme.
 
 KOKKOS_INLINE_FUNCTION
 Real CleanCellMilneWeight(const CleanArgs &x, const int dir, const int m, const int k,
@@ -840,7 +860,7 @@ Real CleanCellMilneWeight(const CleanArgs &x, const int dir, const int m, const 
       x.fc[dir](m,CLF_UG,k,j,i) > 0.0) return 0.0;
   const bool bdry = CleanBoundaryFace(x, dir, m, k, j, i);
   const bool blo = bdry && (dir == 0 ? i == x.is : (dir == 1 ? j == x.js : k == x.ks));
-  if (bdry && CleanBc(x, m, 2*dir + (blo ? 0 : 1)) == M1_IBC_REFLECT) return 0.0;
+  if (bdry && !CleanOpen(x, m, 2*dir + (blo ? 0 : 1))) return 0.0;
   const Real d = CleanCellFaceDistance(x, dir, m, k, j, i);
   const Real tl = blo ? 0.0 : x.op(m,M1_OP_T,k-(dir == 2),j-(dir == 1),i-(dir == 0));
   const Real tr = (bdry && !blo) ? 0.0 : x.op(m,M1_OP_T,k,j,i);

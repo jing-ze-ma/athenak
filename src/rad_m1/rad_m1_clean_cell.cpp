@@ -224,13 +224,14 @@ void RadiationM1::CleanCellMilneSetup() {
 //! the cell, and F_kin the rays' kinetic upwind flux (their half-range factors on E and
 //! y), so that the deviation from the rays' moments Ur = (J, J h) moves only as the rays
 //! do; the bracket is w (F_ray - F_kin(Ur)), w in CLF_WK.  An open x1 boundary face
-//! carries the rays' flux CLN_F1 less the boundary flux of Ur.  Reflecting and x2, x3
-//! boundary faces carry none; x3 faces take CLN_F3 as x2 faces CLN_F2.  A physical
-//! boundary face takes w of its inner cell (C1 copied to the ghost) for the momentum
-//! deviation it carries out.  On the cubed sphere the high x2, x3 faces of a MeshBlock
-//! take CLN_FH of its last cell and F_kin the half ranges about the face normal from
-//! the two cells' FV intensities (CLF_HK; with clean_face_model = milne also the stress
-//! half ranges, CLF_KK): every term of a seam face is computed alike on both sides.
+//! carries the rays' flux CLN_F1 less the boundary flux of Ur.  Reflecting, imposed-flux
+//! and x2, x3 boundary faces carry none; x3 faces take CLN_F3 as x2 faces CLN_F2.  A
+//! physical boundary face takes w of its inner cell (C1 copied to the ghost) for the
+//! momentum deviation it carries out.  On the cubed sphere the high x2, x3 faces of a
+//! MeshBlock take CLN_FH of its last cell and F_kin the half ranges about the face normal
+//! from the two cells' FV intensities (CLF_HK; with clean_face_model = milne also the
+//! stress half ranges, CLF_KK): every term of a seam face is computed alike on both
+//! sides.
 
 void RadiationM1::CleanCellConsistency() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -301,7 +302,7 @@ void RadiationM1::CleanCellConsistency() {
           x.fc[dir](m,CLF_KK+3+b,k,j,i) = (hj[1] > 0.0) ? kk[3+b]/hj[1] : nv[b]/6.0;
         }
       }
-      if (bdry && (dir != 0 || CleanBc(x, m, blo ? 0 : 1) == M1_IBC_REFLECT)) return;
+      if (bdry && (dir != 0 || !CleanOpen(x, m, blo ? 0 : 1))) return;
       // the rays' flux: of the face's own cell, an x1 boundary's or the high face of a
       // MeshBlock on the cubed sphere from the inner cell
       const bool up = bdry ? !blo : (x.cub && dir > 0 && (j > x.je || k > x.ke));

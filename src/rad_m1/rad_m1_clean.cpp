@@ -97,6 +97,22 @@ void RadiationM1::CleanInit() {
     CleanFatal("<rad_m1>/scheme = clean currently needs a uniform mesh (several "
                "MeshBlocks: clean_layout = cell) and chat = c");
   }
+  // the boundaries of the clean solve: open (bath, beam), reflect, periodic and, in the
+  // cell layout, an imposed flux (x1, and x2 with the problem generator's face fluxes)
+  const int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
+  for (int s = 0; s < 6; ++s) {
+    const bool flux = bc[s] == M1_IBC_FLUX || (bc[s] == M1_IBC_X2FLUX && ifx2_on);
+    if (!(bc[s] == M1_IBC_MARSHAK || bc[s] == M1_IBC_REFLECT ||
+          bc[s] == M1_IBC_PERIODIC || (flux && cln_cell))) {
+      CleanFatal("<rad_m1>/implicit_bc_* with scheme = clean: auto | marshak | reflect | "
+                 "periodic, flux (x1, x2 with the problem generator's face fluxes) with "
+                 "clean_layout = cell; not efix or outflow");
+    }
+  }
+  if (impl_lbath || impl_ghx || iebath_hi_col_on) {
+    CleanFatal("scheme = clean has no ghost-built inner face (problem/he_bc_linhao, "
+               "implicit_ghost_x1min) and no per-column outer bath");
+  }
   if ((force_ref != M1_FREF_NONE && !cln_cell) ||
       (force_ref == M1_FREF_WB_ARAD && !fref_wsplit)) {
     CleanFatal("<rad_m1>/force_reference with scheme = clean needs clean_layout = cell "
