@@ -333,11 +333,14 @@ void RadiationM1::VetGdCsInit() {
   const double q4 = 0.25*M_PI;
   const int nbj = nc/nx2, nbk = nc/nx3;
   const int ngb = pm->nmb_total;
-  // the blocks: panel and global first cell
-  std::vector<int> bp(ngb), bj(ngb), bk(ngb), gof(6*nbj*nbk, -1);
+  // the blocks: panel and global first cell; the band of a block comes from the blocks
+  // of its own x1 level
+  std::vector<int> bp(ngb), bj(ngb), bk(ngb), gof(vgd_nb1*6*nbj*nbk, -1);
+  auto gofi = [&](const int g, const int p, const int b3, const int b2) -> int & {
+    return gof[((pm->lloc_eachmb[g].lx1*6 + p)*nbk + b3)*nbj + b2];
+  };
   for (int g = 0; g < ngb; ++g) {
     const LogicalLocation &l = pm->lloc_eachmb[g];
-    if (l.lx1 != 0) {VgdCsFatal("needs ONE MeshBlock along x1");}
     if (l.panel < 0 || l.panel > 5 || l.lx2 < 0 || l.lx2 >= nbj || l.lx3 < 0 ||
         l.lx3 >= nbk) {
       VgdCsFatal("unexpected MeshBlock location (panel / lx2 / lx3)");
@@ -345,7 +348,7 @@ void RadiationM1::VetGdCsInit() {
     bp[g] = l.panel;
     bj[g] = l.lx2*nx2;
     bk[g] = l.lx3*nx3;
-    gof[(l.panel*nbk + l.lx3)*nbj + l.lx2] = g;
+    gofi(g, l.panel, l.lx3, l.lx2) = g;
   }
   for (size_t t = 0; t < gof.size(); ++t) {
     if (gof[t] < 0) {VgdCsFatal("incomplete MeshBlock grid");}
@@ -497,17 +500,25 @@ void RadiationM1::VetGdCsInit() {
     vgd_wsi.assign(indcs.nx1 + 2*indcs.ng, 0);
     vgd_wso.assign(indcs.nx1 + 2*indcs.ng, 0);
     int wneed = 0;
-    for (int l = indcs.is; l <= indcs.ie; ++l) {
-      const double r = x1v_h(0,l);
-      const double rlo = (l > indcs.is) ? x1v_h(0,l-1) : x1f_h(0,l);
-      double a = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
-      if (l < indcs.ie) {
-        a = std::max(a, std::sqrt(x1v_h(0,l+1)*x1v_h(0,l+1) - r*r));
+    auto xf_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_x1f);
+    for (int m = 0; m < nmb; ++m) {
+      // (the shells next to another level: its radii from the x1 ghosts)
+      const bool lo = (xf_h(m) & 1), hi = (xf_h(m) & 2);
+      for (int l = indcs.is; l <= indcs.ie; ++l) {
+        const double r = x1v_h(m,l);
+        const double rlo = (l > indcs.is || !lo) ? x1v_h(m,l-1) : x1f_h(m,l);
+        double a = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
+        if (l < indcs.ie || !hi) {
+          a = std::max(a, std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r));
+        }
+        wneed = std::max(wneed, static_cast<int>(std::ceil(a/(rlo*dmin))) + 3);
       }
-      wneed = std::max(wneed, static_cast<int>(std::ceil(a/(rlo*dmin))) + 3);
     }
-    vgd_w = std::min(wneed, nc);
-    vgd_capped = (vgd_w < wneed);
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &wneed, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+#endif
+    vgd_w = clean ? 0 : std::min(wneed, nc);   // (clean: the FV rays read no band)
+    vgd_capped = (vgd_w < wneed) && !clean;
     for (int l = indcs.is; l <= indcs.ie; ++l) {
       vgd_wsh[l] = vgd_w;
       vgd_wsi[l] = vgd_w;
@@ -580,7 +591,7 @@ void RadiationM1::VetGdCsInit() {
         if (jj >= w && jj < w + nx2 && kk >= w && kk < w + nx3) {continue;}
         int q, a, t;
         if (!unfold(bp[gr], bj[gr] + jj - w, bk[gr] + kk - w, q, a, t)) {continue;}
-        const int go = gof[(q*nbk + t/nx3)*nbj + a/nx2];
+        const int go = gofi(gr, q, t/nx3, a/nx2);
         const int ro = pm->rank_eachmb[go];
         if (rr != me && ro != me) {continue;}
         const int ko = t - bk[go] + w, jo = a - bj[go] + w;

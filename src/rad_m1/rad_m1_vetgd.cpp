@@ -957,7 +957,7 @@ void RadiationM1::VetGdInit() {
     xf_h(m) += 8*l.lx1;
     for (int g = 0; g < pm->nmb_total; ++g) {
       const LogicalLocation &o = pm->lloc_eachmb[g];
-      if (o.level == l.level && o.lx2 == l.lx2 && o.lx3 == l.lx3 &&
+      if (o.level == l.level && o.panel == l.panel && o.lx2 == l.lx2 && o.lx3 == l.lx3 &&
           std::abs(o.lx1 - l.lx1) == 1) {
         vgd_x1nb[2*m + (o.lx1 > l.lx1 ? 1 : 0)] = g;
       }
@@ -971,10 +971,12 @@ void RadiationM1::VetGdInit() {
                    [&](const int a, const int b) {return vgd_x1lv[a] < vgd_x1lv[b];});
   Kokkos::deep_copy(vgd_x1mo, mo_h);
   if (vgd_nb1 > 1) {
-    if (vgd_csg || vgd_async || vgd_twin || vgd_upf != 0 || vgd_pol || !vgd_shl_on ||
-        indcs.nx1 < 2) {
-      VgdFatal("several MeshBlocks along x1 need a wedge, MeshBlock nx1 >= 2, "
-               "vet_gd_shell_list and no vet_gd_async / twin / upwind / full sphere");
+    // (the cubed sphere: the clean scheme's FV rays, CleanFvSweep, no sweep levels)
+    if ((vgd_csg && !clean) || vgd_async || vgd_twin || vgd_upf != 0 || vgd_pol ||
+        (!vgd_shl_on && !vgd_csg) || indcs.nx1 < 2) {
+      VgdFatal("several MeshBlocks along x1 need a wedge or (scheme = clean) the cubed "
+               "sphere, MeshBlock nx1 >= 2, vet_gd_shell_list and no vet_gd_async / "
+               "twin / upwind / full sphere");
     }
     vgd_hcomp = 0;   // the dense per-shell halo (the compact lists assume one level)
   }
@@ -1074,7 +1076,9 @@ void RadiationM1::VetGdInit() {
     // angular offset <= chord / r_lo; + 2 cells for the bilinear stencil and rounding
     auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->xx1f);
-    int nmax = vgd_raw ? std::numeric_limits<int>::max()
+    // (the clean scheme's FV rays, CleanFvSweep, read the cells and ghosts only: no band)
+    const bool fvr = vgd_raw && cln_rfv > 0;
+    int nmax = vgd_raw ? (fvr ? 0 : std::numeric_limits<int>::max())
                        : (pm->three_d ? std::min(indcs.nx2, indcs.nx3) : indcs.nx2);
     // accpolar-1103 vet_gd_band_global: the band is filled from any block (global-cell
     // lists), so its depth is capped by the SPHERE (half a ring in phi, the theta rows
@@ -1122,13 +1126,13 @@ void RadiationM1::VetGdInit() {
       vgd_wsi = vgd_wsh;
       vgd_wso = vgd_wsh;
     }
-    vgd_capped = (vgd_w < wneed);
+    vgd_capped = (vgd_w < wneed) && !fvr;
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd: exact per-shell lateral halo, band " << vgd_w
                 << " cells (needed " << wneed << "), per-shell depth mean "
                 << std::accumulate(vgd_wsh.begin(), vgd_wsh.end(), 0.0)/indcs.nx1
-                << ((vgd_w < wneed) ? ": MeshBlocks too small, the deepest near-tangent "
-                                      "reads are clamped (counted)" : "") << std::endl;
+                << (vgd_capped ? ": MeshBlocks too small, the deepest near-tangent "
+                                 "reads are clamped (counted)" : "") << std::endl;
     }
   }
   const int c2w = indcs.nx2 + 2*vgd_w, c3w = indcs.nx3 + 2*vgd_w;
