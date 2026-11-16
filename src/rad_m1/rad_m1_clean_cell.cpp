@@ -489,9 +489,6 @@ void RadiationM1::CleanCellRightHandSide() {
   const bool eso = esrc_on;
   auto es = esrc;
   const bool opt = cln_opt && cln_feedback;
-  const int fref = force_ref;
-  auto fr = cln_fref;
-  auto aref = arad_ref;
 
   const int vfreeze = cln_vfreeze;
   if (cln_milne) CleanCellMilneSetup();
@@ -499,31 +496,32 @@ void RadiationM1::CleanCellRightHandSide() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = x.w(m,CLW_T,k,j,i);
     const Real hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
-    // the beta terms of h S_E (Ma et al. 2025, eq. 56) with beta = v/c of the iterate
-    // (that of a): G = 1 + beta^2/2, RE = hc [(chi - kE) beta.a/c - kE beta^2/2],
-    // RY = hc (2 kE - chi) beta
+    // h S_E (Ma et al. 2025, eq. 56) = A - W: W = v.dm the work of the force on the gas,
+    // with v time-centred (v_old + dm/(2 rho)) so that W is the kinetic energy the gas
+    // gains, and A = hc [(kP a T^4 - kE E) G + kE beta.(y + F'/c)] its heating, with
+    // beta = v/c of the iterate (that of a), G = 1 - beta^2/2, F'/c = y - a E/c; the
+    // beta terms A - hc (kP a T^4 G - kE E) = RE E + RY.y, RE = hc kE (beta^2/2 -
+    // beta.a/c), RY = 2 hc kE beta
     Real bt[3] = {0.0, 0.0, 0.0}, ba = 0.0, b2 = 0.0, rr = 0.0, work = 0.0;
     if (x.feedback) {
       const Real d = uh(m,IDN,k,j,i);
       CleanGasMomentum(x, uh, m, k, j, i, bt);
       for (int n = 0; n < 3; ++n) {
         const Real dm = x.w(m,CLW_DM+n,k,j,i);
-        // the kinetic energy the gas gains and the work of the reference force (the
-        // energy the gas takes besides heat, CleanCellWriteBack)
-        work += (bt[n] + (vfreeze == 2 ? 0.0 : 0.5*dm))*dm/d
-                + x.h*CleanRefForce(fref, fr, aref, d, n, m, k, j, i)*(bt[n] + dm)/d;
+        // the kinetic energy the gas gains
+        work += (bt[n] + (vfreeze == 2 ? 0.0 : 0.5*dm))*dm/d;
         bt[n] = (bt[n] + (vfreeze == 1 ? 0.0 : dm))/(d*x.c);
         ba += bt[n]*x.w(m,CLW_A1+n,k,j,i)/x.c;
         b2 += SQR(bt[n]);
       }
     }
-    const Real hcx = x.h*x.c*op(m,M1_OP_T,k,j,i), gm = 1.0 + 0.5*b2;
+    const Real gm = 1.0 - 0.5*b2;
     const Real hckp = x.h*x.c*op(m,M1_OP_P,k,j,i)*gm;
     x.w(m,CLW_GM,k,j,i) = gm;
-    x.w(m,CLW_RE,k,j,i) = (hcx - hcke)*ba - 0.5*hcke*b2;
+    x.w(m,CLW_RE,k,j,i) = hcke*(0.5*b2 - ba);
     for (int n = 0; n < 3; ++n) {
       x.w(m,CLW_BT+n,k,j,i) = bt[n];
-      x.w(m,CLW_RY+n,k,j,i) = (2.0*hcke - hcx)*bt[n];
+      x.w(m,CLW_RY+n,k,j,i) = 2.0*hcke*bt[n];
     }
     if (x.feedback) {
       const Real d = uh(m,IDN,k,j,i);
@@ -541,11 +539,11 @@ void RadiationM1::CleanCellRightHandSide() {
     CleanCellSourceDivergence(x, m, k, j, i, sdiv);
     x.w(m,CLW_RR,k,j,i) = rr;
     x.w(m,CLW_WK,k,j,i) = work;
-    // h S_E linearised about the iterate (the gas eint takes -h S_E - WK)
+    // A linearised about the iterate (the gas eint takes -A)
     const Real sk = hckp*arad_*SQR(SQR(t)) - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0)
                     + rr*CleanCellBetaSource(x, CLC_K, m, k, j, i);
     x.u(m,CLC_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
-                         - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - sdiv[0]
+                         - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work - sdiv[0]
                          + rr*CleanCellBetaSource(x, CLC_K, m, k, j, i)
                          + (eso ? x.h*es(m,k,j,i) : 0.0);
     // y: + beta h c (kP a T^4 - kE E) (eq. 57), the emission part of sk
@@ -553,10 +551,26 @@ void RadiationM1::CleanCellRightHandSide() {
       x.u(m,CLC_B+b,k,j,i) = x.u(m,CLC_O+b,k,j,i) - sdiv[b]
                              + (b > x.nf ? 0.0 : bt[b-1]*sk/gm);
     }
+    // the implicit gas velocity, dbeta = -(dy + h div fY)/(c^2 rho), in the beta terms:
+    // JV = (1 - r) dA/dbeta/(c^2 rho), dA/dbeta_c = hc [-(kP a T^4 - kE E) beta_c
+    // + 2 kE (y_c - a_c E/c)], and GX = dS_p,b/dbeta_b/(c^2 rho)
+    const bool iv = x.feedback && !x.vzero;
+    const Real ic2 = iv ? 1.0/(SQR(x.c)*uh(m,IDN,k,j,i)) : 0.0, ek = x.u(m,CLC_K,k,j,i);
+    const Real xe = x.h*x.c*(op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(t)) -
+                             op(m,M1_OP_E,k,j,i)*ek);
+    x.w(m,CLW_GX,k,j,i) = ic2*sk/gm;
+    for (int c = 0; c < 3; ++c) {
+      const Real yk = x.u(m,CLC_K+1+c,k,j,i);
+      x.w(m,CLW_JV+c,k,j,i) = (1.0 - rr)*ic2*(2.0*hcke*(yk - x.w(m,CLW_A1+c,k,j,i)*ek/x.c)
+                                               - xe*bt[c]);
+    }
     if (x.feedback) {
       Real g[3][3], dk[4];
       CleanCellDrag(x, op(m,M1_OP_T,k,j,i), uh(m,IDN,k,j,i), m, k, j, i, g);
       CleanCellDivergence(x, CLC_K, m, k, j, i, false, dk);
+      for (int c = 0; c < x.nf; ++c) {
+        x.u(m,CLC_B,k,j,i) += x.w(m,CLW_JV+c,k,j,i)*(x.u(m,CLC_K+1+c,k,j,i) + dk[1+c]);
+      }
       for (int b = 0; b < x.nf; ++b) {
         for (int c = 0; c < x.nf; ++c) {
           x.u(m,CLC_B+1+b,k,j,i) += g[b][c]*(x.u(m,CLC_K+1+c,k,j,i) + dk[1+c]);
@@ -599,6 +613,9 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
     const Real sb = x.feedback ? CleanCellBetaSource(x, src, m, k, j, i) : 0.0;
     const Real rg = x.feedback ? rr/x.w(m,CLW_GM,k,j,i) : 0.0;
     x.u(m,dst,k,j,i) = e*(1.0 + hcke*(1.0 - rr)) + div[0] - (1.0 - rr)*sb;
+    for (int c = 0; c < x.nf && x.feedback; ++c) {
+      x.u(m,dst,k,j,i) += x.w(m,CLW_JV+c,k,j,i)*(x.u(m,src+1+c,k,j,i) + div[1+c]);
+    }
     Real g[3][3];
     if (x.feedback) CleanCellDrag(x, chi, uh(m,IDN,k,j,i), m, k, j, i, g);
     for (int b = 0; b < 3; ++b) {
@@ -664,6 +681,7 @@ void RadiationM1::CleanCellPreconditionerSetup() {
         if (r > 0) a0[r][0] += x.w(m,CLW_BT+r-1,k,j,i)*hcke*(1.0 - rg);
         for (int c = 0; c < x.nf; ++c) a0[r][1+c] += s[r]*x.w(m,CLW_RY+c,k,j,i);
       }
+      for (int c = 0; c < x.nf; ++c) a0[0][1+c] += x.w(m,CLW_JV+c,k,j,i);
     }
     for (int dir = 0; dir < 3; ++dir) {
       if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
@@ -1081,8 +1099,9 @@ void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::CleanCellNewtonUpdate
 //! \brief new iterate from the solution X: with gas coupling E and T by
-//! CleanNewtonUpdate (eint changes by -h S_E(X) - dKE), F/c from X.  Returns the
-//! largest relative change: that of CleanNewtonUpdate and max |dE|, |dy| over max E.
+//! CleanNewtonUpdate (eint changes by -A(X), CleanCellRightHandSide), F/c from X.
+//! Returns the largest relative change: that of CleanNewtonUpdate and max |dE|, |dy|
+//! over max E.
 
 Real RadiationM1::CleanCellNewtonUpdate() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1103,7 +1122,7 @@ Real RadiationM1::CleanCellNewtonUpdate() {
     par_for("clc_xe", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       w(m,CLW_X,k,j,i) = u(m,CLC_X,k,j,i);
-      w(m,CLW_EP,k,j,i) = -CleanCellBetaSource(x, CLC_X, m, k, j, i) - w(m,CLW_WK,k,j,i);
+      w(m,CLW_EP,k,j,i) = -CleanCellBetaSource(x, CLC_X, m, k, j, i);
     });
     de_newton = CleanNewtonUpdate();
   }
@@ -1434,14 +1453,14 @@ void RadiationM1::CleanCellDiagnose() {
 //! totals change only by the fluxes through the boundary and the external source esrc
 //! (the radiation's; the slope of E carries it); with force_reference the reference force
 //! is withheld from the gas momentum (an external source, like gravity).  The gas total
-//! energy takes -h S_E (the work of the force is in S_E, Ma et al. 2025, eq. 56) less
-//! the work of the reference force, which the radiation pays and (wb_arad,
-//! force_reference_work = split) the problem generator gives the gas; its eint that less
-//! the exact kinetic energy the gas gains.  cln_neint counts the cells left with eint < 0
-//! (the fluid's floor would create energy there).  On the cubed sphere F is stored in
-//! the frame of y (F_r, F_theta, F_phi) and the gas momentum change (and its stage
-//! slope) in the hydro's components (CleanGasChange): E and L_z of gas plus radiation
-//! are conserved to round-off.
+//! energy takes -h S_E = W - A (Ma et al. 2025, eq. 56, CleanCellRightHandSide) with W
+//! the exact kinetic energy the gas gains (of the residual force), so its eint takes -A;
+//! with wb_arad (force_reference_work = split) the radiation also pays the work of the
+//! reference force, which the problem generator gives the gas.  cln_neint counts the
+//! cells left with eint < 0 (the fluid's floor would create energy there).  On the
+//! cubed sphere F is stored in the frame of y (F_r, F_theta, F_phi) and the gas momentum
+//! change (and its stage slope) in the hydro's components (CleanGasChange): E and L_z of
+//! gas plus radiation are conserved to round-off.
 
 void RadiationM1::CleanCellWriteBack() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1498,16 +1517,20 @@ void RadiationM1::CleanCellWriteBack() {
         dm[b] = -(x.u(m,CLC_X+1+b,k,j,i) - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c
                 - h*CleanRefForce(fref, fr, aref, uh(m,IDN,k,j,i), b, m, k, j, i);
       }
-      // the kinetic energy (p + dm/2).dm/rho the gas gains (its eint takes -h S_E less
-      // that, the drag work of S_E being implicit) and the work of the reference force at
-      // the velocity after the kick, paid by the radiation in S_E
+      // the work W of S_E is exactly the kinetic energy (p + dm/2).dm/rho the gas gains,
+      // not the W of the iterate the solve took (the gas eint takes -A), and, with
+      // wb_arad, the radiation pays the work of the reference force at the velocity
+      // after the kick, which the problem generator's well-balanced source gives the gas
       Real pg[3], wk = 0.0, wr = 0.0;
       CleanGasMomentum(x, uh, m, k, j, i, pg);
       for (int b = 0; b < 3; ++b) {
         const Real d = uh(m,IDN,k,j,i);
         wk += (pg[b] + 0.5*dm[b])*dm[b]/d;
-        wr += h*CleanRefForce(fref, fr, aref, d, b, m, k, j, i)*(pg[b] + dm[b])/d;
+        if (fref == M1_FREF_WB_ARAD) {
+          wr += h*CleanRefForce(fref, fr, aref, d, b, m, k, j, i)*(pg[b] + dm[b])/d;
+        }
       }
+      e -= wk - x.w(m,CLW_WK,k,j,i) + wr;
       // (the hydro's components; dm.e_a covariant on the cubed sphere)
       CleanGasChange(x, m, k, j, i, dm, dh);
       for (int b = 0; b < x.nf; ++b) uh(m,IM1+b,k,j,i) += dh[b];
@@ -1544,7 +1567,7 @@ void RadiationM1::CleanCellWriteBack() {
 //! \brief adds sign times the closure-dependent part of the implicit rates of the
 //! solution to the step's last slope K1: the flux divergence of E and F and, with gas
 //! coupling, the advective source chi a E of F with a = v + D v (the gas takes the
-//! opposite momentum) and the drag work (chi - kE) v.a E/c of E (the gas the opposite).
+//! opposite momentum) and the term -kE v.a E/c of E (the gas the opposite).
 //! Called with -1 before and +1 after a closure update, it re-evaluates K1 = f(U^{n+1})
 //! with the new closure.
 
@@ -1576,11 +1599,11 @@ void RadiationM1::CleanCellClosureSlope(const Real sign) {
     CleanAdvect(x, m, k, j, i, v, a);
     const Real chi = op(m,M1_OP_T,k,j,i);
     for (int b = 0; b < 3; ++b) dm[b] = (b < x.nf) ? -sign*chi*a[b]*e/x.c : 0.0;
-    // and (chi - kE) beta.a E of S_E (eq. 56), whose gas energy takes the opposite
+    // and -kE v.a E/c of A (eq. 56), whose gas energy takes the opposite
     Real va = 0.0;
     for (int b = 0; b < x.nf; ++b) va += v[b]*a[b];
-    kk(m,M1_T2_E,k,j,i) += sign*(chi - op(m,M1_OP_E,k,j,i))*va*e/x.c;
-    kk(m,M1_T2_EN,k,j,i) -= sign*(chi - op(m,M1_OP_E,k,j,i))*va*e/x.c;
+    kk(m,M1_T2_E,k,j,i) -= sign*op(m,M1_OP_E,k,j,i)*va*e/x.c;
+    kk(m,M1_T2_EN,k,j,i) += sign*op(m,M1_OP_E,k,j,i)*va*e/x.c;
     CleanGasChange(x, m, k, j, i, dm, dh);
     for (int b = 0; b < x.nf; ++b) {
       kk(m,M1_T2_F1+b,k,j,i) += sign*x.c*(chi*a[b]*e - div[1+b]*ih);
