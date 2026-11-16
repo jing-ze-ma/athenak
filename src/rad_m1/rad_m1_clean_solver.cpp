@@ -264,6 +264,7 @@ void RadiationM1::CleanFaceCoefficients() {
   auto cs = cln_s;
   auto op = opac;
   auto inc = t2inc;
+  const bool fsk = cln_fsolve;
 
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;
@@ -281,6 +282,7 @@ void RadiationM1::CleanFaceCoefficients() {
       fc(m,CLF_W,k,j,i) = CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);
       fc(m,CLF_G,k,j,i) = f0(m,k,j,i) + (stage ? inc(m,tf,k,j,i) : 0.0);
+      if (fsk) fc(m,CLF_N+2,k,j,i) = fc(m,CLF_G,k,j,i);   // (fsolve: start of its F)
 
       // rays' half-range fluxes H+ = h+ J (from the left) and H- = h- J (from the right)
       auto hp = [&](const int kk, const int jj, const int ii) {
