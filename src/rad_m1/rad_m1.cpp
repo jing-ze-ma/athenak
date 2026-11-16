@@ -108,6 +108,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 ((cr.compare("fv1") == 0) ? 1 : 0);
       cln_fvb = (cln_rfv == 3) ? 4 : 1;
     }
+    // clean_rot_ring = live | jump (read only when named): a rotating union swept as the
+    // current set (+ the next one), the older ones carried as moment offsets
+    // (CleanRingMoments)
+    if (pin->DoesParameterExist("rad_m1","clean_rot_ring")) {
+      std::string rr = pin->GetString("rad_m1","clean_rot_ring");
+      cln_ring = (rr.compare("live") == 0) ? 1 : ((rr.compare("jump") == 0) ? 2 : 0);
+    }
     cln_fillpass = pin->GetOrAddInteger("rad_m1","clean_fill_passes",8);
     cln_pred = pin->GetOrAddBoolean("rad_m1","clean_predict",true);
     {std::string bf = pin->GetOrAddString("rad_m1","clean_bc","halfrange");
@@ -1309,6 +1316,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // restart whose file lacks it).
     VetRotInit(pin);   // bubbles-1012: shared with vet_sc (rad_m1_vetgd.cpp)
     RotAvgParse(pin);   // rotavg-1012 (also after vet_sc's VetRotInit)
+    // clean_rot_ring = jump: a block's first step is backward Euler from the first step
+    // on (a restart on a block boundary too)
+    if (cln_ring == 2) vgd_rot_slope = 2;
     // vgdxf-1112: vet_gd_rotate_xfade (read only when named; rad_m1.hpp)
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade")) {
       vgd_xf = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade");

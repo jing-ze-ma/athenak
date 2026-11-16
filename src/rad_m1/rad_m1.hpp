@@ -2933,6 +2933,9 @@ class RadiationM1 {
   void CleanFvSeams();
   bool CleanFvWall(const int side);
   void CleanFvSets(const Real tc, const int cyc);
+  void CleanRingMoments();
+  void CleanRingJump();
+  void CleanRingSolveSet();
   void CleanFvTables(const int d0, const int nd);
   void CleanFvWalls();
   void CleanClosureFill();
@@ -3082,6 +3085,25 @@ class RadiationM1 {
   DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; CleanFvSets)
   int cln_fvn = 0;              // their number
   std::vector<Real> cln_fvkey;  // the set (block key) in each slot of a rotating union
+  // clean_rot_ring: the rotating union swept as the current and the next set only, the
+  // K - 1 older sets carried as offsets of their ray moments (CleanRingMoments)
+  int cln_ring = 0;             // clean_rot_ring = live (1: + the next set) | jump (2)
+  bool cln_rlast = false;       // jump: the build closes its block (the next set swept)
+  bool cln_rjump = false;       // jump: cln_rnew holds the next block's moments
+  DvceArray5D<Real> cln_rnew;   // jump: the moments of block b+1's window at the boundary
+  bool cln_rok = false;         // the ring holds the offsets of the sets before cln_rb
+  int64_t cln_rb = 0;           // the current set of the ring (rotation block)
+  int64_t cln_rpb = 0;          // the block of the pending Delta
+  Real cln_rpt = 0.0;           // its time (the block boundary)
+  Real cln_rs = 0.0;            // the cross-fade fraction of the build
+  int cln_rns = 0;              // the swept slots of the build
+  int64_t cln_rbld = 0;         // the block of the build
+  std::vector<int64_t> cln_fvblk;   // the set in each slot
+  std::vector<DvceArray2D<Real>> cln_fvdm;   // the directions with only slot q weighted
+  DvceArray5D<Real> cln_rl;     // the slots' ray moments (CLN_*, not normalised)
+  DvceArray5D<Real> cln_rr;     // the offsets M_{b-j} - M_b, j = 1 .. K-1 (CLN_N each)
+  DvceArray5D<Real> cln_rpd;    // the pending Delta M_{b+1} - M_b
+  Real cln_rguard_sum = 0.0, cln_roff_sum = 0.0;   // guard falls, off-boundary shifts
   DvceArray5D<Real> cln_v;      // closure fill, bracket, E < 0 flags (m,3,k,j,i)
   DvceArray5D<Real> cln_opb;    // opacities of the stage, kept during the closure build
   // clean_closure = extrap(2): ray moments (CLN_* layout, not normalised by J) of the

@@ -3393,6 +3393,7 @@ int RadiationM1::Time2RstNchWant() {
          + ((vet_col && t2_vcmode == 4) ? M1_X2_NCH : 0);    // rbfast-1021 extrap2
   return nt + ((force_ref == M1_FREF_CLEAN) ? 4 : 0)         // the reference force, set
          + ((clean && cln_cell && cln_extrap > 0) ? 2*CLN_N + 1 : 0)    // extrap history
+         + ((clean && cln_ring) ? vra_k*CLN_N + 1 : 0)       // clean_rot_ring
          + ((clean && cln_rfv > 0) ? cln_fvb*cln_fvn : 0);   // the conservative rays
 }
 
@@ -3493,6 +3494,32 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
                        ((i == 3) ? v3 : ((i == 4) ? v4 : 0.0))));
     });
     c += 2*CLN_N + 1;
+  }
+  // clean_rot_ring: the offsets and the pending Delta, then the ring's flag, block, the
+  // pending block and its time at i = 0..3
+  if (clean && cln_ring) {
+    const int nr = (vra_k - 1)*CLN_N;
+    const bool have = cln_rok && (cln_rr.extent_int(0) >= m0 + nmb);
+    if (have) {
+      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+nr), AL, AL, AL),
+                        Kokkos::subview(cln_rr, ms, AL, AL, AL, AL));
+      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c+nr, c+nr+CLN_N), AL, AL,
+                                        AL),
+                        Kokkos::subview(cln_rpd, ms, AL, AL, AL, AL));
+    }
+    auto a_ = a;
+    const int cq = c + nr + CLN_N;
+    const Real v0 = have ? 1.0 : 0.0, v1 = static_cast<Real>(cln_rb);
+    const Real v2 = static_cast<Real>(cln_rpb), v3 = cln_rpt;
+    const int na3 = static_cast<int>(a.extent(2)), na2 = static_cast<int>(a.extent(3));
+    const int na1 = static_cast<int>(a.extent(4));
+    par_for("m1_t2_ringrst", DevExeSpace(), 0, nmb - 1, 0, na3 - 1, 0, na2 - 1, 0,
+            na1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      a_(m,cq,k,j,i) = (i == 0) ? v0 : ((i == 1) ? v1 : ((i == 2) ? v2 :
+                       ((i == 3) ? v3 : 0.0)));
+    });
+    c += nr + CLN_N + 1;
   }
   // rbfast-1021 extrap2: the raw builds of the last step, q at i = 0, time, alpha
   if (h2 && vet_col && t2_vcmode == 4) {
@@ -3606,6 +3633,26 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       return;
     }
     ch -= 2*CLN_N + 1;
+  }
+  if (clean && cln_ring) {
+    const int nr = (vra_k - 1)*CLN_N;
+    if (ch < nr + CLN_N) {
+      auto &rx = (ch < nr) ? cln_rr : cln_rpd;
+      const int nx = (ch < nr) ? nr : CLN_N;
+      if (rx.extent_int(0) != nmb) {
+        Kokkos::realloc(rx, nmb, nx, w.extent_int(1), w.extent_int(2), w.extent_int(3));
+      }
+      DeepCopyAcross(Kokkos::subview(rx, mb, (ch < nr) ? ch : ch - nr, AL, AL, AL), w);
+      return;
+    }
+    if (ch == nr + CLN_N) {
+      cln_rok = (w(0,0,0,0) > 0.5);
+      cln_rb = static_cast<int64_t>(std::llround(w(0,0,0,1)));
+      cln_rpb = static_cast<int64_t>(std::llround(w(0,0,0,2)));
+      cln_rpt = w(0,0,0,3);
+      return;
+    }
+    ch -= nr + CLN_N + 1;
   }
   // rbfast-1021 extrap2 (Time2RstPack)
   if (h2 && vet_col && t2_vcmode == 4) {
@@ -3776,6 +3823,10 @@ void RadiationM1::Time2Report() {
   if (t2_flr_rho > 0.0) {std::cout << " time2_floor_eint(rho<" << t2_flr_rho << ") cell-stages(rank 0)=" << t2_flr_n;}
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
+  if (cln_ring) {
+    std::cout << " clean_rot_ring guard cells=" << cln_rguard_sum
+              << " off-boundary shifts=" << cln_roff_sum;
+  }
   std::cout << std::endl;
   if (t2_xsp) {   // rsglock-1112 time2_exch_split (rank 0)
     std::cout << "<rad_m1> time2_exch_split=psi (rank 0): stages " << t2_xsp_calls

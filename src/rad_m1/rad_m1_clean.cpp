@@ -204,6 +204,15 @@ void RadiationM1::CleanInit() {
     }
     vgd_rot_slope = 0;
   }
+  if (cln_ring && !(vgd_on && cln_rfv > 0 && vra_on && g_vra_adv &&
+                    vgd_xf == (cln_ring == 1) && (vgd_rot_dt > 0.0 || vgd_rot_auto) &&
+                    vgd_rot_align && vra_k <= M1_RA_NF)) {
+    CleanFatal("<rad_m1>/clean_rot_ring needs vet_gd FV rays rotating in time: "
+               "vet_rotate_avg = K with vet_rotate_advance, vet_gd_rotate_dt and "
+               "_align, with vet_gd_rotate_xfade for live, without for jump");
+  }
+  // jump: the first step of a block is a backward-Euler step (no slope of the old sets)
+  if (cln_ring == 2) vgd_rot_slope = 2;
   if (pm->use_cubed_sphere) {
     // the rays are vet_gd's directions transported conservatively (CleanFvSweep), or
     // the analytic sphere (eddington: of infinite radius); an even panel resolution
@@ -623,6 +632,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   } else if (!cln_closit) {
     CleanClosure();
   }
+  if (cln_ring == 2) CleanRingSolveSet();
   CleanOldVector();
   if (cell) {
     CleanCellOldVector();

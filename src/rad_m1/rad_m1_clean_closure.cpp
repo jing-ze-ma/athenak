@@ -378,6 +378,7 @@ void RadiationM1::CleanClosureAfterSolve() {
     cln_tm = time + dt;
     cln_have_c = true;
     cln_cand_be = false;
+    CleanRingJump();
     return;
   }
   if (t2_solve == M1_T2S_STAGE1) {
@@ -392,6 +393,67 @@ void RadiationM1::CleanClosureAfterSolve() {
   cln_tm = time + dt;
   cln_have_c = true;
   cln_cand_be = (t2_solve != M1_T2S_STAGE2);
+  CleanRingJump();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanRingSolveSet
+//! \brief clean_rot_ring = jump: the swept set whose intensities give the face half
+//! ranges of the solve (CleanCellConsistency) is the set of the step's rotation block;
+//! the step after a block boundary reads the next set of the boundary build
+
+void RadiationM1::CleanRingSolveSet() {
+  const int64_t bs = VetGdBlock(pmy_pack->pmesh->ncycle);
+  const int ns = static_cast<int>(cln_fvdm.size());
+  for (int q = 0; q < ns && ns > 1; ++q) {
+    if (cln_fvblk[q] == bs) Kokkos::deep_copy(cln_fvd, cln_fvdm[q]);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanRingJump
+//! \brief clean_rot_ring = jump: the moments of a step that closes a rotation block
+//! become those of the next block's window at its end (the closure jumps there), and the
+//! next step does not extrapolate through the jump
+
+void RadiationM1::CleanRingJump() {
+  if (!cln_rjump) return;
+  Kokkos::deep_copy(cln_mc, cln_rnew);
+  cln_cand_be = true;
+  cln_rjump = false;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool CleanRealizable
+//! \brief whether ray moments q (CLN_* layout, not normalised, J > 0) are those of a
+//! non-negative intensity: |H| <= J and K - H H^T/J positive semidefinite (to round-off)
+
+KOKKOS_INLINE_FUNCTION
+bool CleanRealizable(const CleanArgs &x, const Real *q, const int m, const int k,
+                     const int j, const int i) {
+  const Real ij = 1.0/q[CLN_J];
+  Real s[3], h[3], a[3][3];
+  for (int b = 0; b < 3; ++b) s[b] = (q[CLN_HP+b] + q[CLN_HM+b])*ij;
+  CleanRayFlux(x, m, k, j, i, s, h);
+  a[0][0] = q[CLN_D11]*ij;
+  a[1][1] = q[CLN_D11+1]*ij;
+  a[2][2] = q[CLN_D11+2]*ij;
+  a[0][1] = a[1][0] = q[CLN_D11+3]*ij;
+  a[0][2] = a[2][0] = q[CLN_D11+4]*ij;
+  a[1][2] = a[2][1] = q[CLN_D11+5]*ij;
+  for (int b = 0; b < 3; ++b) {
+    for (int c = 0; c < 3; ++c) a[b][c] -= h[b]*h[c];
+  }
+  // all principal minors of D - h h^T non-negative
+  const Real eps = 1.0e-12;
+  const Real m01 = a[0][0]*a[1][1] - a[0][1]*a[0][1];
+  const Real m02 = a[0][0]*a[2][2] - a[0][2]*a[0][2];
+  const Real m12 = a[1][1]*a[2][2] - a[1][2]*a[1][2];
+  const Real det = a[0][0]*m12 - a[0][1]*(a[0][1]*a[2][2] - a[1][2]*a[0][2])
+                   + a[0][2]*(a[0][1]*a[1][2] - a[1][1]*a[0][2]);
+  return (h[0]*h[0] + h[1]*h[1] + h[2]*h[2] <= 1.0 + eps) &&
+         (a[0][0] >= -eps) && (a[1][1] >= -eps) && (a[2][2] >= -eps) &&
+         (m01 >= -eps) && (m02 >= -eps) && (m12 >= -eps) && (det >= -eps);
 }
 
 //----------------------------------------------------------------------------------------
@@ -471,32 +533,8 @@ void RadiationM1::CleanClosureExtrap() {
       q[n] = mb(m,n,k,j,i) + wx*(mb(m,n,k,j,i) - ma(m,n,k,j,i));
     }
     // the extrapolated moments must be those of a non-negative intensity
-    bool ok = line && ma(m,CLN_J,k,j,i) > 0.0 && q[CLN_J] > 0.0;
-    if (ok) {
-      const Real ij = 1.0/q[CLN_J];
-      Real s[3], h[3], a[3][3];
-      for (int b = 0; b < 3; ++b) s[b] = (q[CLN_HP+b] + q[CLN_HM+b])*ij;
-      CleanRayFlux(x, m, k, j, i, s, h);
-      a[0][0] = q[CLN_D11]*ij;
-      a[1][1] = q[CLN_D11+1]*ij;
-      a[2][2] = q[CLN_D11+2]*ij;
-      a[0][1] = a[1][0] = q[CLN_D11+3]*ij;
-      a[0][2] = a[2][0] = q[CLN_D11+4]*ij;
-      a[1][2] = a[2][1] = q[CLN_D11+5]*ij;
-      for (int b = 0; b < 3; ++b) {
-        for (int c = 0; c < 3; ++c) a[b][c] -= h[b]*h[c];
-      }
-      // all principal minors of D - h h^T non-negative (to round-off)
-      const Real eps = 1.0e-12;
-      const Real m01 = a[0][0]*a[1][1] - a[0][1]*a[0][1];
-      const Real m02 = a[0][0]*a[2][2] - a[0][2]*a[0][2];
-      const Real m12 = a[1][1]*a[2][2] - a[1][2]*a[1][2];
-      const Real det = a[0][0]*m12 - a[0][1]*(a[0][1]*a[2][2] - a[1][2]*a[0][2])
-                       + a[0][2]*(a[0][1]*a[1][2] - a[1][1]*a[0][2]);
-      ok = (h[0]*h[0] + h[1]*h[1] + h[2]*h[2] <= 1.0 + eps) &&
-           (a[0][0] >= -eps) && (a[1][1] >= -eps) && (a[2][2] >= -eps) &&
-           (m01 >= -eps) && (m02 >= -eps) && (m12 >= -eps) && (det >= -eps);
-    }
+    const bool ok = line && ma(m,CLN_J,k,j,i) > 0.0 && q[CLN_J] > 0.0 &&
+                    CleanRealizable(x, q, m, k, j, i);
     if (!ok) {
       if (line && mn(m,CLN_J,k,j,i) > 0.0) ++ng;
       // (the face sums of a MeshBlock face on the cubed sphere, held on both sides, stay
@@ -752,8 +790,188 @@ void RadiationM1::CleanRays() {
   } else {
     VetGdBuild();
   }
+  if (cln_ring) {
+    CleanRingMoments();
+    return;
+  }
   CleanClosureFromGd();
   if (cln_consist) CleanGdFaceSums();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanRingMoments
+//! \brief clean_rot_ring: the closure of the rotating union of vet_rotate_avg = K sets
+//! with the cross-fade from a sweep of the current set b and the next set b+1 alone.
+//! The union's moments (CLN_*, not normalised; the face sums included) are
+//!   M = (1 - s)/K M_{b-K+1} + 1/K sum_{j=1}^{K-2} M_{b-j} + 1/K M_b + s/K M_{b+1}
+//! with the older sets taken as M_{b-j} = M_b + d_j, the offsets d_j = M_{b-j} - M_b
+//! measured on the same state.  The build that closes block b (on its boundary t_b+1,
+//! s = 1; vet_gd_rotate_align puts a step end there on every dt) gives Delta = M_{b+1} -
+//! M_b, and the first build of block b+1 shifts the ring: d_1 = -Delta, d_j -= Delta.
+//! The offsets are therefore piecewise constant in t with steps at the block boundaries:
+//! the closure is a function of t, the state and the states at the boundaries, continuous
+//! in t, so the integrator keeps its order in dt; against the union it lags by the
+//! change of the ray-pattern differences over at most K rotation blocks.  A fresh start
+//! (or a missed boundary) sweeps the whole union once to fill the ring.  A cell whose
+//! mixture is not that of a non-negative intensity takes the two swept sets' (1 - s) M_b
+//! + s M_{b+1} (the cell moments only on the cubed sphere, whose face sums are held on
+//! both sides of a MeshBlock face).  Linear in the moments, so every face sum stays
+//! single-valued and conservative.
+
+void RadiationM1::CleanRingMoments() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmy_pack->nmb_thispack, nk = vra_k, nr = nk - 1, ns = cln_rns;
+  const int64_t b = cln_rbld;
+  const Real s = cln_rs;
+  const int c3 = cln_s.extent_int(2), c2 = cln_s.extent_int(3), c1 = cln_s.extent_int(4);
+  if (cln_rl.extent_int(0) != nmb || cln_rl.extent_int(1) != std::max(ns, 2)*CLN_N) {
+    Kokkos::realloc(cln_rl, nmb, std::max(ns, 2)*CLN_N, c3, c2, c1);
+  }
+  if (cln_rr.extent_int(0) != nmb) {   // (a restart has read them)
+    Kokkos::realloc(cln_rr, nmb, nr*CLN_N, c3, c2, c1);
+    Kokkos::realloc(cln_rpd, nmb, CLN_N, c3, c2, c1);
+    cln_rok = false;
+  }
+  // the moments of each swept set (the ray_min test on the mixture below)
+  auto dfull = cln_fvd;
+  const Real ray_min = cln_raymin;
+  cln_raymin = 0.0;
+  auto cs = cln_s;
+  auto rl = cln_rl;
+  std::vector<int> slot(nk + 2, -1);   // slot of block b - nk + 1 + p
+  for (int q = 0; q < ns; ++q) {
+    cln_fvd = cln_fvdm[q];
+    CleanClosureFromGd();
+    if (cln_consist) CleanGdFaceSums();
+    const int o = q*CLN_N;
+    par_for("cln_ring_raw", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real jr = cs(m,CLN_J,k,j,i);
+      for (int n = 0; n < CLN_J; ++n) rl(m,o+n,k,j,i) = jr*cs(m,n,k,j,i);
+      for (int n = CLN_J; n < CLN_N; ++n) rl(m,o+n,k,j,i) = cs(m,n,k,j,i);
+    });
+    const int64_t p = cln_fvblk[q] - (b - nk + 1);
+    if (p >= 0 && p <= nk) slot[p] = q;
+  }
+  cln_fvd = dfull;
+  cln_raymin = ray_min;
+  // (jump: the next set only at the build that closes the block; its weight is s = 0)
+  const int qb = slot[nr], qn = (slot[nk] >= 0) ? slot[nk] : slot[nr];
+  bool full = true;
+  for (int p = 0; p < nr; ++p) full = full && slot[p] >= 0;
+  auto rr = cln_rr;
+  auto pd = cln_rpd;
+  if (!cln_rok || b != cln_rb) {
+    const bool shift = cln_rok && b == cln_rb + 1 && cln_rpb == cln_rb;
+    if (shift) {
+      // the pending Delta is that of the boundary of block b when it closed the block
+      const Real tk = vgd_rot_t0 + static_cast<Real>(b)*vgd_rot_dt;
+      if (std::abs(cln_rpt - tk) > 1.0e-9*vgd_rot_dt) cln_roff_sum += 1.0;
+      par_for("cln_ring_shift", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        for (int n = 0; n < CLN_N; ++n) {
+          for (int r = nr - 1; r > 0; --r) {
+            rr(m,r*CLN_N+n,k,j,i) = rr(m,(r-1)*CLN_N+n,k,j,i) - pd(m,n,k,j,i);
+          }
+          rr(m,n,k,j,i) = -pd(m,n,k,j,i);
+        }
+      });
+    } else if (full) {
+      // the whole union swept: the offsets of the older sets from it
+      Kokkos::Array<int, M1_RA_NF> sa;
+      for (int r = 0; r < nr; ++r) sa[r] = slot[nr - 1 - r];
+      par_for("cln_ring_fill", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        for (int r = 0; r < nr; ++r) {
+          for (int n = 0; n < CLN_N; ++n) {
+            rr(m,r*CLN_N+n,k,j,i) = rl(m,sa[r]*CLN_N+n,k,j,i) - rl(m,qb*CLN_N+n,k,j,i);
+          }
+        }
+      });
+    } else {
+      // a boundary missed: this build takes the swept sets, the next one the union
+      cln_roff_sum += 1.0;
+      cln_rok = false;
+    }
+    if (shift || full) {
+      cln_rok = true;
+      cln_rb = b;
+    }
+  }
+  // the pending Delta of this build
+  if (slot[nk] >= 0) {
+    par_for("cln_ring_delta", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int n = 0; n < CLN_N; ++n) {
+        pd(m,n,k,j,i) = rl(m,qn*CLN_N+n,k,j,i) - rl(m,qb*CLN_N+n,k,j,i);
+      }
+    });
+    cln_rpb = b;
+    cln_rpt = vgd_rot_t0 + (static_cast<Real>(b) + (cln_rlast ? 1.0 : s))*vgd_rot_dt;
+  }
+  // the mixture; jump, at the build that closes the block: also the moments of the next
+  // block's window there (cln_rnew, the closure history of the next step)
+  const bool ring = cln_rok;
+  const bool nxt = ring && cln_rlast && slot[nk] >= 0;
+  if (nxt && cln_rnew.extent_int(0) != nmb) {
+    Kokkos::realloc(cln_rnew, nmb, CLN_N, c3, c2, c1);
+  }
+  auto rw = cln_rnew;
+  const Real wk = 1.0/static_cast<Real>(nk);
+  auto iw_ = iw;
+  auto valid = cln_v;
+  CleanArgs x = CleanMakeArgs();
+  int nguard = 0;
+  const int ni = ie - is + 1, nj = je - js + 1, nkk = ke - ks + 1;
+  Kokkos::parallel_reduce("cln_ring_mix",
+                          Kokkos::RangePolicy<DevExeSpace>(0, nmb*nkk*nj*ni),
+  KOKKOS_LAMBDA(const int t, int &ng) {
+    const int i = is + t%ni;
+    const int j = js + (t/ni)%nj;
+    const int k = ks + (t/(ni*nj))%nkk;
+    const int m = t/(ni*nj*nkk);
+    const int nf = x.cub ? CLN_F2 : CLN_N;
+    Real q[CLN_N];
+    for (int n = 0; n < CLN_N; ++n) {
+      const Real mb = rl(m,qb*CLN_N+n,k,j,i), mn = rl(m,qn*CLN_N+n,k,j,i);
+      Real v = (1.0 - s)*mb + s*mn;
+      if (ring) {
+        v = wk*(mb + s*mn);
+        for (int r = 0; r < nr; ++r) {
+          v += ((r == nr - 1) ? (1.0 - s) : 1.0)*wk*(mb + rr(m,r*CLN_N+n,k,j,i));
+        }
+      }
+      q[n] = v;
+    }
+    if (ring && !(q[CLN_J] > 0.0 && CleanRealizable(x, q, m, k, j, i))) {
+      const Real mb = rl(m,qb*CLN_N+CLN_J,k,j,i), mn = rl(m,qn*CLN_N+CLN_J,k,j,i);
+      if ((1.0 - s)*mb + s*mn > 0.0) ++ng;
+      for (int n = 0; n < nf; ++n) {
+        q[n] = (1.0 - s)*rl(m,qb*CLN_N+n,k,j,i) + s*rl(m,qn*CLN_N+n,k,j,i);
+      }
+    }
+    if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) q[CLN_J] = 0.0;
+    CleanStoreMoments(cs, valid, q, m, k, j, i);
+    if (!nxt) return;
+    for (int n = 0; n < CLN_N; ++n) {
+      const Real mb = rl(m,qb*CLN_N+n,k,j,i);
+      Real v = wk*(mb + rl(m,qn*CLN_N+n,k,j,i));
+      for (int r = 0; r < nr - 1; ++r) v += wk*(mb + rr(m,r*CLN_N+n,k,j,i));
+      q[n] = v;
+    }
+    if (!(q[CLN_J] > 0.0 && CleanRealizable(x, q, m, k, j, i))) {
+      if (rl(m,qn*CLN_N+CLN_J,k,j,i) > 0.0) ++ng;
+      for (int n = 0; n < nf; ++n) q[n] = rl(m,qn*CLN_N+n,k,j,i);
+    }
+    if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) {
+      for (int n = 0; n < CLN_F2; ++n) q[n] = 0.0;
+    }
+    for (int n = 0; n < CLN_N; ++n) rw(m,n,k,j,i) = q[n];
+  }, Kokkos::Sum<int>(nguard));
+  cln_rjump = nxt;
+  cln_rguard_sum += CleanReduce(nguard, false);
 }
 
 //----------------------------------------------------------------------------------------
@@ -880,7 +1098,6 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
   const Mesh *pm = pmy_pack->pmesh;
   const int nk = vra_on ? vra_k : 1;
   const bool xf = vgd_xf && !(vra_on && !g_vra_adv);
-  const int ns = nk + (xf ? 1 : 0);
   int64_t b = VetGdBlock(cyc);
   Real s = 0.0;
   if (vgd_rot_dt > 0.0) {
@@ -889,18 +1106,44 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
     const Real tau = (tc - (xf ? 0.0 : 0.5*dt) - vgd_rot_t0)/vgd_rot_dt;
     b = static_cast<int64_t>(std::floor(tau));
     if (xf) s = tau - static_cast<Real>(b);
+    // clean_rot_ring = live: a build on a block boundary closes the block (s = 1)
+    if (cln_ring == 1 && s < 1.0e-9) {
+      b -= 1;
+      s = 1.0;
+    }
   }
+  // clean_rot_ring with its history: the current set and the next one, (1 - s) and s;
+  // jump: the next one (weight 0) only at the build that closes the block
+  const bool two = cln_ring && cln_rok;
+  cln_rlast = (cln_ring == 2) &&
+              tc >= vgd_rot_t0 + (static_cast<Real>(b) + 1.0 - 1.0e-9)*vgd_rot_dt;
+  const int nx = (xf || cln_rlast) ? 1 : 0;
+  const int ns = (two ? 1 : nk) + nx;
+  const int on = cln_fvn/n;
+  const std::vector<int64_t> oblk = cln_fvblk;
+  const bool remap = cln_ring && on > 0 && cln_fvn != ns*n &&
+                     cln_fvi.extent_int(1) == cln_fvb*on*n;
   if (cln_fvn != ns*n) {
     cln_fvn = ns*n;
     cln_fvd = DvceArray2D<Real>("cln_fvd", ns*n, 4);
     cln_fvkey.assign(ns, std::numeric_limits<Real>::quiet_NaN());
+    cln_fvblk.assign(ns, 0);
+    if (cln_ring) {
+      // (the sweep's pass flags are sized for the swept directions)
+      if (cln_fvdue.extent_int(0) < pmy_pack->nmb_thispack*ns*n) {
+        cln_fvdue = DvceArray2D<int8_t>();
+      }
+      cln_fvdm.resize(ns);
+      for (int q = 0; q < ns; ++q) cln_fvdm[q] = DvceArray2D<Real>("cln_fvdm", ns*n, 4);
+    }
   }
   auto d_h = Kokkos::create_mirror_view(cln_fvd);
   std::vector<bool> chg(ns, false);
-  for (int64_t blk = b - nk + 1; blk <= b + (xf ? 1 : 0); ++blk) {
+  for (int64_t blk = (two ? b : b - nk + 1); blk <= b + nx; ++blk) {
     const int q = static_cast<int>(((blk % ns) + ns) % ns);
     const Real key = VetGdAngleBlk(blk);
-    const Real w = ((xf && blk == b - nk + 1) ? 1.0 - s : ((blk > b) ? s : 1.0))/nk;
+    Real w = ((xf && blk == b - nk + 1) ? 1.0 - s : ((blk > b) ? s : 1.0))/nk;
+    if (two) w = (blk > b) ? s : 1.0 - s;
     const std::vector<double> d = VgdRotate(key);
     for (int e = 0; e < n; ++e) {
       for (int c = 0; c < 3; ++c) d_h(q*n+e,c) = d[4*e+c];
@@ -908,8 +1151,46 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
     }
     chg[q] = !(key == cln_fvkey[q]);
     cln_fvkey[q] = key;
+    cln_fvblk[q] = blk;
   }
   Kokkos::deep_copy(cln_fvd, d_h);
+  if (remap) {
+    // clean_rot_ring: a set kept keeps its intensities, a new one starts from the newest
+    // old set's (the sweep's starting point)
+    auto ofi = cln_fvi;
+    DvceArray5D<Real> fi("cln_fvi", ofi.extent_int(0), cln_fvb*ns*n, ofi.extent_int(2),
+                         ofi.extent_int(3), ofi.extent_int(4));
+    auto AL = Kokkos::ALL;
+    for (int q = 0; q < ns; ++q) {
+      int oq = 0;
+      for (int r = 0; r < on; ++r) {
+        if (oblk[r] == cln_fvblk[q] || (oblk[oq] != cln_fvblk[q] && oblk[r] > oblk[oq])) {
+          oq = r;
+        }
+      }
+      for (int c = 0; c < cln_fvb; ++c) {
+        const int a = (c*ns + q)*n, o = (c*on + oq)*n;
+        Kokkos::deep_copy(Kokkos::subview(fi, AL, std::make_pair(a, a + n), AL, AL, AL),
+                          Kokkos::subview(ofi, AL, std::make_pair(o, o + n), AL, AL, AL));
+      }
+    }
+    cln_fvi = fi;
+  }
+  if (cln_ring) {
+    // the directions of each slot alone, with the set's own weights
+    for (int q = 0; q < ns; ++q) {
+      auto m_h = Kokkos::create_mirror_view(cln_fvdm[q]);
+      const std::vector<double> d = VgdRotate(cln_fvkey[q]);
+      for (int e = 0; e < ns*n; ++e) {
+        for (int c = 0; c < 3; ++c) m_h(e,c) = d_h(e,c);
+        m_h(e,3) = (e/n == q) ? d[4*(e%n)+3] : 0.0;
+      }
+      Kokkos::deep_copy(cln_fvdm[q], m_h);
+    }
+    cln_rns = ns;
+    cln_rs = s;
+    cln_rbld = b;
+  }
   for (int q = 0; q < ns; ++q) {
     if (chg[q]) CleanFvTables(q*n, n);
   }
