@@ -25,6 +25,15 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "reconstruct/plm.hpp"
 
+// the face flux is not inlined on the device: inlined into the kernels that call it
+// many times, nvcc (cicc) compiles this layout for more than an hour.  Host builds
+// inline it as before
+#if defined(__CUDACC__)
+#define CLEAN_DEVICE_NOINLINE __noinline__
+#else
+#define CLEAN_DEVICE_NOINLINE
+#endif
+
 namespace radm1 {
 
 // closure variables (arrays cln_c and cln_s)
@@ -793,7 +802,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
 //! \brief flux through face (k,j,i) normal to dir for E in work vector e; with_source adds
 //! the E-independent part
 
-KOKKOS_INLINE_FUNCTION
+CLEAN_DEVICE_NOINLINE KOKKOS_INLINE_FUNCTION
 Real CleanFaceFlux(const CleanArgs &x, const int e, const int dir, const int m,
                    const int k, const int j, const int i, const bool with_source) {
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
