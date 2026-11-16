@@ -85,9 +85,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",50);
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
     cln_raymin = pin->GetOrAddReal("rad_m1","clean_ray_min",1.0e-3);
-    if (pin->DoesParameterExist("rad_m1","clean_rays")) {   // sc | fv1 (sp default) | fv
+    // clean_rays = sc | fv1 (sp default) | fv | lld
+    if (pin->DoesParameterExist("rad_m1","clean_rays")) {
       std::string cr = pin->GetString("rad_m1","clean_rays");
-      cln_rfv = (cr.compare("fv") == 0) ? 2 : ((cr.compare("fv1") == 0) ? 1 : 0);
+      cln_rfv = (cr.compare("lld") == 0) ? 3 : (cr.compare("fv") == 0) ? 2 :
+                ((cr.compare("fv1") == 0) ? 1 : 0);
+      cln_fvb = (cln_rfv == 3) ? 4 : 1;
     }
     cln_fillpass = pin->GetOrAddInteger("rad_m1","clean_fill_passes",8);
     cln_pred = pin->GetOrAddBoolean("rad_m1","clean_predict",true);
