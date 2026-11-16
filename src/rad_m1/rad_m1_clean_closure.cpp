@@ -1004,7 +1004,7 @@ void RadiationM1::CleanFvSeams() {
   const Real pp = pmy_pack->pmesh->mesh_size.x3max - pmy_pack->pmesh->mesh_size.x3min;
   const bool circ = std::abs(pp - 2.0*M_PI) < 1.0e-10;
   CleanArgs x = CleanMakeArgs();
-  CleanFvI fi{cln_fvi, cln_fvis, cln_fvf32};
+  CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   auto mp = cln_fvm;
   const int n1 = fi.extent_int(4), n2 = fi.extent_int(3), ng = indcs.ng;
   // the ghost cells of the theta seams (rows j < js, j > je of ks <= k <= ke) and of the
@@ -1144,7 +1144,7 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
   const int ns = (two ? 1 : nk) + nx;
   const int on = cln_fvn/n;
   const std::vector<int64_t> oblk = cln_fvblk;
-  const CleanFvI ofv{cln_fvi, cln_fvis, cln_fvf32};
+  const CleanFvI ofv = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   const bool remap = cln_ring && on > 0 && cln_fvn != ns*n &&
                      ofv.extent_int(1) == cln_fvb*on*n;
   if (cln_fvn != ns*n) {
@@ -1187,7 +1187,7 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
     const int e4 = ofv.extent_int(4);
     DvceArray5D<Real> fi;
     DvceArray5D<float> fs;
-    if (cln_fvf32) {
+    if (ofv.f32) {
       fs = DvceArray5D<float>("cln_fvis", e0, cln_fvb*ns*n, e2, e3, e4);
     } else {
       fi = DvceArray5D<Real>("cln_fvi", e0, cln_fvb*ns*n, e2, e3, e4);
@@ -1203,7 +1203,7 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
       for (int c = 0; c < cln_fvb; ++c) {
         const int a = (c*ns + q)*n, o = (c*on + oq)*n;
         auto ra = std::make_pair(a, a + n), ro = std::make_pair(o, o + n);
-        if (cln_fvf32) {
+        if (ofv.f32) {
           Kokkos::deep_copy(Kokkos::subview(fs, AL, ra, AL, AL, AL),
                             Kokkos::subview(ofs, AL, ro, AL, AL, AL));
         } else {
@@ -1330,7 +1330,7 @@ void RadiationM1::CleanFvWalls() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int js = indcs.js, je = indcs.je, n = cln_fvn, nl = (cln_fvb > 1) ? n : 0;
   CleanArgs x = CleanMakeArgs();
-  CleanFvI fi{cln_fvi, cln_fvis, cln_fvf32};
+  CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   auto fq = cln_fvq;
   auto fw = cln_fvw;
   auto mp = cln_fvwm;
@@ -1869,7 +1869,7 @@ void RadiationM1::CleanFvSweep() {
                      cln_rfv == 1 && !axi;
   if (!lagon) cln_fvnv = 0;
   bool lag = lagon && (cln_fvlag == 1);
-  CleanFvI fi{cln_fvi, cln_fvis, cln_fvf32};
+  CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   auto fa = cln_fva;
   auto fc = cln_fvc;
   auto fg = cln_fvg;
@@ -2322,7 +2322,7 @@ bool RadiationM1::CleanFvExtrap() {
   if (ex && (cln_fvgx.extent_int(1) != n || cln_fvgx.extent_int(2) != sh.ncell)) {
     Kokkos::realloc(cln_fvgx, nmb, n, sh.ncell);
   }
-  const CleanFvI fi{cln_fvi, cln_fvis, cln_fvf32};
+  const CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   auto gp = cln_fvgp;
   auto gx = cln_fvgx;
   par_for("cln_fv_extrap", DevExeSpace(), 0, nmb - 1, 0, n - 1, 0, sh.ncell - 1,
@@ -2355,7 +2355,7 @@ Real RadiationM1::CleanFvExtrapMiss() {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int oi = is - 1, oj = js - (md ? 1 : 0), ok = ks - (td ? 1 : 0);
-  const CleanFvI fi{cln_fvi, cln_fvis, cln_fvf32};
+  const CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   auto gx = cln_fvgx;
   auto bc = pmy_pack->pmb->mb_bcs.d_view;
   auto open = [] KOKKOS_FUNCTION (const BoundaryFlag f) {
@@ -2488,7 +2488,7 @@ void RadiationM1::CleanClosureFromGd() {
   const bool fv = (cln_rfv > 0);
   const int n = fv ? cln_fvn : vgd_n, og = vgd_w - indcs.ng, ok = vgd_w - ks;
   auto vi_ = vgd_i;
-  const CleanFvI fi_{cln_fvi, cln_fvis, cln_fvf32};
+  const CleanFvI fi_ = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   auto dir_ = fv ? cln_fvd : vgd_dir;
   auto cw_ = vgd_cs;
   auto fq = cln_fvq;
@@ -2561,7 +2561,7 @@ void RadiationM1::CleanGdFaceSums() {
   const bool fv = (cln_rfv > 0), o2 = (cln_rfv == 2);
   const int n = fv ? cln_fvn : vgd_n, og = vgd_w - indcs.ng, ok = vgd_w - ks;
   auto vi_ = vgd_i;
-  CleanFvI fi_{cln_fvi, cln_fvis, cln_fvf32};
+  CleanFvI fi_ = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   auto fm_ = cln_fvm;
   const int nl = (cln_rfv == 3) ? n : 0;
   const CleanFvI fq_ = (nl > 0) ? CleanFvI{cln_fvq} : fi_;

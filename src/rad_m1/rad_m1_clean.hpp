@@ -114,6 +114,12 @@ struct CleanFvI {
     }
   }
   int extent_int(const int r) const {return f32 ? f.extent_int(r) : d.extent_int(r);}
+  // the intensities as they are held: with clean_fv_float, the doubles a restart read
+  // until the next sweep converts them
+  static CleanFvI Of(const DvceArray5D<Real> &d_, const DvceArray5D<float> &f_,
+                     const bool f32_) {
+    return CleanFvI{d_, f_, f32_ && d_.extent_int(1) == 0};
+  }
 };
 
 //----------------------------------------------------------------------------------------
