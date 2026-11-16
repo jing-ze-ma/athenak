@@ -244,8 +244,8 @@ void RadiationM1::CleanInit() {
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
   const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N),
                            cln_cell ? (cln_fsolve ? CLF_N + 4 : 0) :
-                           (cln_vimp ? CLF_DQ + 1 : (cln_gflux ? CLF_SLO + 1 :
-                           ((cln_fsolve && cln_fkin) ? CLF_DS + 1 : CLF_QL + 3))));
+                           (cln_vimp ? CLF_DQ + 1 :
+                           ((cln_fsolve && cln_fkin) ? CLF_DS + 1 : CLF_QL + 3)));
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = (cln_cell || cln_sopt >= 0.0) && !opac_freeze && !opac_zero &&
             (opacity_type == M1_OPAC_TABLE ||
@@ -912,10 +912,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanCopyIterate();
       }
     }
-    // (staggered: R1, R2 of the solution; with clean_pos_limit the faces of their cells
-    // and the R2 faces take the rays' half-range flux, w = 1)
+    // (staggered: R1, R2 of the solution, counted)
     const int nbad = cell ? (cln_poslim ? CleanCellMarkFaces() : 0) :
-                     CleanStagRealizable(cln_poslim && ipos < cln_maxpos);
+                     CleanStagRealizable();
     if (!cell && ipos == 0) nfirst = {cln_nr1, cln_nr2};
     if (!cln_poslim || nbad == 0) break;
     nmark += nbad;
@@ -923,8 +922,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       // a stage gives up (the step is redone by backward Euler); a backward-Euler step
       // is solved once more with every face low-order
       if (t2stage || all_low) break;
-      if (cell) CleanCellAllLowOrder();
-      if (!cell) CleanStagRealizable(2);
+      CleanCellAllLowOrder();
       all_low = true;
     }
     ++npos;
@@ -981,8 +979,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // backward-Euler step by dt_retry)
   if (cln_feedback && cln_neint > 0 && !t2stage && dtr_on) dtr_fail = true;
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
-    t2_fail = (nit < 0) || (nneg > 0) || (cln_feedback && cln_neint > 0) ||
-              (!cell && cln_poslim && cln_nr2 > 0);
+    t2_fail = (nit < 0) || (nneg > 0) || (cln_feedback && cln_neint > 0);
   }
   // (force_reference = clean: the reference is the force of the converged, accepted
   // first coupled solve, every iterate of which recaptures it; a failed one is redone)
@@ -1528,12 +1525,9 @@ int RadiationM1::CleanCountNegative() {
 //! \brief staggered layout: the realizability of the solution X beyond the solver
 //! tolerance (10 clean_tol max|B|, CleanCountNegative), R1: cells with E < 0 (cln_nr1),
 //! R2: interior faces whose flux leaves more than c E of the donor cell (cln_nr2).
-//! mark = 1 makes the faces of the R1 cells and the R2 faces low-order, mark = 2 every
-//! interior face: w = 1, the rays' half-range flux c (h+ E_L + h- E_R) (until the next
-//! CleanFaceCoefficients).  With every face low-order a backward-Euler solve has an
-//! M-matrix (E >= 0) and |F_f| <= c E_donor (|h+-| <= 1).  Returns cln_nr1 + cln_nr2.
+//! Returns cln_nr1 + cln_nr2.
 
-int RadiationM1::CleanStagRealizable(const int mark) {
+int RadiationM1::CleanStagRealizable() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, js = indcs.js, ks = indcs.ks;
   int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
@@ -1574,15 +1568,6 @@ int RadiationM1::CleanStagRealizable(const int mark) {
       const Real ed = (f > 0.0) ? el : er;
       const bool r2 = !(fabs(f) <= (1.0 + 1.0e-12)*x.c*ed + x.c*zero);
       if (r2) q2 += 1.0;
-      if (mark == 2 || (mark == 1 && (r2 || !(el >= -zero) || !(er >= -zero)))) {
-        // (gflux: the face keeps w and drops what breaks the M-matrix, CleanStagMemUp)
-        if (x.gf) {
-          x.fc[dir](m,CLF_SLO,k,j,i) = 1.0;
-          return;
-        }
-        x.fc[dir](m,CLF_W,k,j,i) = 1.0;
-        if (x.consist) x.fc[dir](m,CLF_RC,k,j,i) = 0.0;   // (no bracket)
-      }
     }, Kokkos::Sum<Real>(r1), Kokkos::Sum<Real>(r2));
     n1 += r1;
     n2 += r2;

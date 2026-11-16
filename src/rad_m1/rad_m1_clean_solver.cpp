@@ -286,7 +286,7 @@ void RadiationM1::CleanFaceCoefficients() {
   auto cs = cln_s;
   auto op = opac;
   auto inc = t2inc;
-  const bool fsk = cln_fsolve, gfx = cln_gflux;
+  const bool fsk = cln_fsolve;
   // (cubed sphere: the opacities of seam ghosts are the neighbour's cells, not of the
   // resampled gas ghosts, as CleanCellFaceCoefficients: a seam face is single-valued)
   if (pmy_pack->pmesh->use_cubed_sphere) {
@@ -314,7 +314,6 @@ void RadiationM1::CleanFaceCoefficients() {
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);
       fc(m,CLF_G,k,j,i) = f0(m,k,j,i) + (stage ? inc(m,tf,k,j,i) : 0.0);
       if (fsk) fc(m,CLF_N+2,k,j,i) = fc(m,CLF_G,k,j,i);   // (fsolve: start of its F)
-      if (gfx) fc(m,CLF_SLO,k,j,i) = 0.0;   // (gflux: every face high order)
 
       // rays' half-range fluxes H+ = h+ J (from the left) and H- = h- J (from the right)
       auto hp = [&](const int kk, const int jj, const int ii) {

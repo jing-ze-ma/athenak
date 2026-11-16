@@ -2961,7 +2961,7 @@ class RadiationM1 {
   Real CleanVelocityUpdate();
   void CleanCopyIterate();
   int CleanCountNegative();
-  int CleanStagRealizable(const int mark);
+  int CleanStagRealizable();
   void CleanStagBracket();
   void CleanStagFSolve(const int e);
   void CleanDMem(const bool save);

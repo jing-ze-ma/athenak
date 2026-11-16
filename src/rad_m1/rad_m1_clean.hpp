@@ -69,10 +69,8 @@ constexpr int CLF_N = 6;
 constexpr int CLF_QL = CLF_N + 4;   // the operator's al, ar (CleanFaceWeights) and cross
                                     // factor -(1-w) theta h c^2 of the pass (3)
 constexpr int CLF_DS = CLF_N + 7;   // clean_stag_fkin: d of the stage-loop start
-constexpr int CLF_SLO = CLF_N + 8;  // clean_stag_gflux: 1 on a low-order face
-                                    // (CleanFaceWeights, CleanStagMemUp), else 0
-constexpr int CLF_DB = CLF_N + 9;   // clean_stag_vimp: drag share b = beta/(1 + beta) and
-constexpr int CLF_DQ = CLF_N + 10;  //   the face momentum Q = G - c^2 dm_f of the iterate
+constexpr int CLF_DB = CLF_N + 8;   // clean_stag_vimp: drag share b = beta/(1 + beta) and
+constexpr int CLF_DQ = CLF_N + 9;   //   the face momentum Q = G - c^2 dm_f of the iterate
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
 
@@ -422,7 +420,7 @@ Real CleanStagMemUp(const CleanArgs &x, const int dir, const int m, const int k,
   const Real eo = up ? x.w(m,CLW_EO,kl,jl,il) : x.w(m,CLW_EO,k,j,i);
   const Real out = x.h*fabs(g)*(up ? CleanDivW(x, dir, m, kl, jl, il, 1) :
                                      CleanDivW(x, dir, m, k, j, i, 0));
-  if (!(x.fc[dir](m,CLF_SLO,k,j,i) > 0.0) && out <= CLN_MEMUP*eo) return 0.0;
+  if (out <= CLN_MEMUP*eo) return 0.0;
   const Real q = (eo > 0.0) ? fmin(fabs(g)/eo, x.c) : x.c;
   return up ? q : -q;
 }
@@ -533,15 +531,12 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   // flux 1 - theta_d and the beta term theta (1 - b), CleanStagDrag)
   const Real t0 = x.fc[dir](m,CLF_TH,k,j,i);
   const Real qd = x.drag ? x.fc[dir](m,CLF_DB,k,j,i) : 0.0, th = t0 + qd*(1.0 - t0);
-  // (clean_stag_gflux, low-order face: the two-point diffusion of D E without the
-  // curvature and cross terms, donor-cell advection, the memory upwind: an M-matrix)
-  const bool low = x.gf && !x.hi && x.fc[dir](m,CLF_SLO,k,j,i) > 0.0;
   const Real g = (1.0 - w)*th*x.h*x.c*x.c*x.idx[dir];
   al = g*x.cs(m,CLN_D11+dir,kl,jl,il) + w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
   ar = -g*x.cs(m,CLN_D11+dir,k,j,i) + w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
   if (x.sph && !x.cub) {   // (centre distance and the curvature terms, CleanStagSph)
     const Real gs = (1.0 - w)*th*x.h*x.c*x.c, id = CleanStagSph(x, 0, dir, m, k, j, i);
-    const Real hr = low ? 0.0 : 0.5*CleanStagSph(x, 1, dir, m, k, j, i);
+    const Real hr = 0.5*CleanStagSph(x, 1, dir, m, k, j, i);
     al = gs*(id*x.cs(m,CLN_D11+dir,kl,jl,il) - hr*CleanStagSph(x, 2, dir, m, k, j, i)) +
          w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
     ar = -gs*(id*x.cs(m,CLN_D11+dir,k,j,i) + hr*CleanStagSph(x, 3, dir, m, k, j, i)) +
@@ -562,13 +557,6 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     const Real ul = CleanStagN(x, CLW_A1, dir, m, k, j, i, kl, jl, il);
     const Real ur = CleanStagN(x, CLW_A1, dir, m, k, j, i, k, j, i);
     const Real sl = s*ul, sr = s*ur;
-    if (x.upw && low) {   // (clean_stag_upwind on a low-order face: the donor cell)
-      if (ul + ur > 0.0) {
-        al += 2.0*sl;
-      } else {
-        ar += 2.0*sr;
-      }
-    }
     // the beta term th c beta_f (hc kP a T^4 - hc kE E)_f of eq. 57 (Ma et al. 2025)
     const Real b = -0.25*(1.0 - w)*t0*(1.0 - qd)*x.c*
                    (CleanStagN(x, CLW_BT, dir, m, k, j, i, kl, jl, il) +
@@ -577,18 +565,16 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     const Real rl = x.sbi ? 1.0 - x.w(m,CLW_GX,kl,jl,il) : 1.0;
     const Real rr = x.sbi ? 1.0 - x.w(m,CLW_GX,k,j,i) : 1.0;
     const Real bl = b*x.op(m,M1_OP_E,kl,jl,il)*rl, br = b*x.op(m,M1_OP_E,k,j,i)*rr;
-    if (!(x.upw && low)) {
-      al += (low && sl + sr < 0.0) ? 0.0 : (low ? sl + sr : sl);
-      ar += (low && sl + sr >= 0.0) ? 0.0 : (low ? sl + sr : sr);
-    }
-    al += (low && b < 0.0) ? 0.0 : (low ? bl + br : bl);
-    ar += (low && b >= 0.0) ? 0.0 : (low ? bl + br : br);
+    al += sl;
+    ar += sr;
+    al += bl;
+    ar += br;
     // (clean_stag_upwind: where the central flux breaks the M-matrix, al < 0 or ar > 0
     // (cell Peclet number > 1), the share phi of the advective flux that goes donor cell
     // is the least that restores it, continuous in the coefficients, so that the operator
     // changes smoothly between passes; CleanStagAdvectCorr adds phi times the rest,
     // lagged)
-    if (x.upw && !low && !(al >= 0.0 && ar <= 0.0)) {
+    if (x.upw && !(al >= 0.0 && ar <= 0.0)) {
       auto need = [](const Real c, const Real d) {   // least p >= 0 with c + p d >= 0
         return (c >= 0.0) ? 0.0 : ((d > 0.0) ? -c/d : 1.0);
       };
@@ -692,7 +678,6 @@ KOKKOS_INLINE_FUNCTION
 Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
                     const int k, const int j, const int i) {
   if (!x.multi_d || CleanBoundaryFace(x, dir, m, k, j, i)) return 0.0;
-  if (x.gf && !x.hi && x.fc[dir](m,CLF_SLO,k,j,i) > 0.0) return 0.0;   // (low-order face)
   const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
   const Real t0 = x.fc[dir](m,CLF_TH,k,j,i);   // (clean_stag_vimp: theta_d, as
   const Real qd = x.drag ? x.fc[dir](m,CLF_DB,k,j,i) : 0.0;   //  CleanFaceWeights)
@@ -785,9 +770,8 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     }
   }
   if (x.drag) s += (1.0 - w)*qd*x.fc[dir](m,CLF_DQ,k,j,i);
-  // (the advective share 1 - theta_d of an upwind face, CleanFaceWeights; a low-order
-  // face keeps the donor)
-  if (x.upw && x.feedback && !(x.gf && !x.hi && x.fc[dir](m,CLF_SLO,k,j,i) > 0.0)) {
+  // (the advective share 1 - theta_d of an upwind face, CleanFaceWeights)
+  if (x.upw && x.feedback) {
     Real al, ar, phi = 0.0;
     CleanFaceWeights(x, dir, m, k, j, i, al, ar, &phi);
     if (phi > 0.0) {
