@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <type_traits>
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
@@ -952,9 +953,13 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
       for (int r = 0; r < 4; ++r) u(m,dst+r,k,j,i) = w(t + 52*n + 48 + r);
     });
   };
+  // (on the host one thread per line: a host team holds all the threads)
   using Policy = Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
-  const int nt = std::min((nl > 64) ? 256 : 64, Policy(DevExeSpace(), 1, 1).team_size_max(
-                          line, Kokkos::ParallelForTag()));
+  int nt = 1;
+  if constexpr (!std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
+    nt = std::min((nl > 64) ? 256 : 64, Policy(DevExeSpace(), 1, 1).team_size_max(line,
+                  Kokkos::ParallelForTag()));
+  }
   Kokkos::parallel_for("clc_line", Policy(DevExeSpace(), (nmb1 + 1)*np*nq, nt)
                        .set_scratch_size(lev, Kokkos::PerTeam(scr)), line);
 }
