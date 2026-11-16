@@ -658,6 +658,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   const bool lagged = (cell && cln_recon) || cln_closit || clos1;
   const bool t2stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   int nit = 0, nit_sum = 0, nsolve = 0, npic = 0, npos = 0, nmark = 0;
+  std::array<int, 2> nfirst = {0, 0};
   bool all_low = false;
   cln_all_low = false;
   Real dpic = 0.0;
@@ -750,16 +751,19 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanCopyIterate();
       }
     }
-    if (!cell) CleanStagRealizable();
-    if (!cell || !cln_poslim) break;
-    const int nbad = CleanCellMarkFaces();
-    if (nbad == 0) break;
+    // (staggered: R1, R2 of the solution; with clean_pos_limit the faces of their cells
+    // and the R2 faces take the rays' half-range flux, w = 1)
+    const int nbad = cell ? (cln_poslim ? CleanCellMarkFaces() : 0) :
+                     CleanStagRealizable(cln_poslim && ipos < cln_maxpos);
+    if (!cell && ipos == 0) nfirst = {cln_nr1, cln_nr2};
+    if (!cln_poslim || nbad == 0) break;
     nmark += nbad;
     if (ipos >= cln_maxpos) {
       // a stage gives up (the step is redone by backward Euler); a backward-Euler step
       // is solved once more with every face low-order
       if (t2stage || all_low) break;
-      CleanCellAllLowOrder();
+      if (cell) CleanCellAllLowOrder();
+      if (!cell) CleanStagRealizable(2);
       all_low = true;
     }
     ++npos;
@@ -796,9 +800,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                   t2_solve, nit, nit_sum, npic, dpic, npos, nmark, all_low ? 1 : 0, nneg,
                   cln_nnreal, cln_nguard, nsolve);
     } else {
-      std::printf("CLEAN cycle %d t2s %d it %d (sum %d) neg %d r1 %d r2 %d guard %d "
-                  "solves %d\n", pmy_pack->pmesh->ncycle, t2_solve, nit, nit_sum, nneg,
-                  cln_nr1, cln_nr2, cln_nguard, nsolve);
+      std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pos %d mark %d all %d neg %d "
+                  "r1 %d r2 %d first %d %d guard %d solves %d\n", pmy_pack->pmesh->ncycle,
+                  t2_solve, nit, nit_sum, npos, nmark, all_low ? 1 : 0, nneg, cln_nr1,
+                  cln_nr2, nfirst[0], nfirst[1], cln_nguard, nsolve);
     }
   }
 
@@ -813,7 +818,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // backward-Euler step by dt_retry)
   if (cell && cln_feedback && cln_neint > 0 && !t2stage && dtr_on) dtr_fail = true;
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
-    t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_feedback && cln_neint > 0);
+    t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_feedback && cln_neint > 0) ||
+              (!cell && cln_poslim && cln_nr2 > 0);
   }
   // (force_reference = clean: the reference is the force of the converged, accepted
   // first coupled solve, every iterate of which recaptures it; a failed one is redone)
@@ -1040,7 +1046,7 @@ Real RadiationM1::CleanNewtonUpdate() {
   auto eos = fl.eos;
   auto op = opac;
   auto w = cln_w;
-  const bool cell = cln_cell;
+  const bool cell = cln_cell, poslim = cln_poslim;
 
   Real change = 0.0, femax = 0.0;
   Kokkos::parallel_reduce("cln_newton", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
@@ -1056,7 +1062,7 @@ Real RadiationM1::CleanNewtonUpdate() {
     const Real t_old = w(m,CLW_T,k,j,i);
     const Real x = w(m,CLW_X,k,j,i);
     const Real ex = fmax(x, 0.0);
-    const Real e = cell ? x : ex, g = cell ? w(m,CLW_GM,k,j,i) : 1.0;
+    const Real e = (cell || poslim) ? x : ex, g = cell ? w(m,CLW_GM,k,j,i) : 1.0;
     const Real t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
                        hc*op(m,M1_OP_P,k,j,i)*g*arad_,
                        w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*ex
@@ -1190,9 +1196,12 @@ int RadiationM1::CleanCountNegative() {
 //! \brief staggered layout: the realizability of the solution X beyond the solver
 //! tolerance (10 clean_tol max|B|, CleanCountNegative), R1: cells with E < 0 (cln_nr1),
 //! R2: interior faces whose flux leaves more than c E of the donor cell (cln_nr2).
-//! Returns cln_nr1 + cln_nr2.
+//! mark = 1 makes the faces of the R1 cells and the R2 faces low-order, mark = 2 every
+//! interior face: w = 1, the rays' half-range flux c (h+ E_L + h- E_R) (until the next
+//! CleanFaceCoefficients).  With every face low-order a backward-Euler solve has an
+//! M-matrix (E >= 0) and |F_f| <= c E_donor (|h+-| <= 1).  Returns cln_nr1 + cln_nr2.
 
-int RadiationM1::CleanStagRealizable() {
+int RadiationM1::CleanStagRealizable(const int mark) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, js = indcs.js, ks = indcs.ks;
   int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
@@ -1230,7 +1239,11 @@ int RadiationM1::CleanStagRealizable() {
       if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
       const Real f = CleanFaceFlux(x, CLW_X, dir, m, k, j, i, true);
       const Real ed = (f > 0.0) ? el : er;
-      if (!(fabs(f) <= (1.0 + 1.0e-12)*x.c*ed + x.c*zero)) q2 += 1.0;
+      const bool r2 = !(fabs(f) <= (1.0 + 1.0e-12)*x.c*ed + x.c*zero);
+      if (r2) q2 += 1.0;
+      if (mark == 2 || (mark == 1 && (r2 || !(el >= -zero) || !(er >= -zero)))) {
+        x.fc[dir](m,CLF_W,k,j,i) = 1.0;
+      }
     }, Kokkos::Sum<Real>(r1), Kokkos::Sum<Real>(r2));
     n1 += r1;
     n2 += r2;

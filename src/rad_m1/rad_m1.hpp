@@ -2956,7 +2956,7 @@ class RadiationM1 {
   Real CleanVelocityUpdate();
   void CleanCopyIterate();
   int CleanCountNegative();
-  int CleanStagRealizable();
+  int CleanStagRealizable(const int mark);
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
