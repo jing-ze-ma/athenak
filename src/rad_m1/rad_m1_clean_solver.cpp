@@ -441,14 +441,14 @@ void RadiationM1::CleanPreconditionerSetup() {
     if (x.three_d) {
       CleanFaceWeights(x, 2, m, k+1, j, i, al_p, ar_p);
       CleanFaceWeights(x, 2, m, k, j, i, al_m, ar_m);
-      a0 += x.cub ? x.h*(CleanDivW(x, 2, m, k, j, i, 1)*al_p -
-                         CleanDivW(x, 2, m, k, j, i, 0)*ar_m)
-                  : x.h*x.idx[2]*(al_p - ar_m);
+      const bool cv = x.sph || x.cub;
+      a0 += cv ? x.h*(CleanDivW(x, 2, m, k, j, i, 1)*al_p -
+                      CleanDivW(x, 2, m, k, j, i, 0)*ar_m)
+               : x.h*x.idx[2]*(al_p - ar_m);
       if (mg) {
-        x.w(m,CLW_TM+2,k,j,i) = -x.h*al_m*(x.cub ? CleanDivW(x, 2, m, k, j, i, 0)
-                                                  : x.idx[2]);
-        x.w(m,CLW_TM+3,k,j,i) = x.h*ar_p*(x.cub ? CleanDivW(x, 2, m, k, j, i, 1)
-                                                 : x.idx[2]);
+        x.w(m,CLW_TM+2,k,j,i) = -x.h*al_m*(cv ? CleanDivW(x, 2, m, k, j, i, 0)
+                                               : x.idx[2]);
+        x.w(m,CLW_TM+3,k,j,i) = x.h*ar_p*(cv ? CleanDivW(x, 2, m, k, j, i, 1) : x.idx[2]);
       }
     }
     x.w(m,CLW_A0,k,j,i) = a0;
