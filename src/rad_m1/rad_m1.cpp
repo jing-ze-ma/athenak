@@ -101,6 +101,24 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_fv_tol")) {
       cln_fvtol = pin->GetReal("rad_m1","clean_fv_tol");
     }
+    // clean_fv_lag = off | lag | extrap (read only when named, default off): one pass of
+    // the FV rays per build, the inflow across MeshBlock faces and periodic seams that of
+    // the last build (lag) or extrapolated linearly in time from the last two (extrap)
+    if (pin->DoesParameterExist("rad_m1","clean_fv_lag")) {
+      std::string fl = pin->GetString("rad_m1","clean_fv_lag");
+      cln_fvlag = (fl.compare("extrap") == 0) ? 2 : ((fl.compare("lag") == 0) ? 1 : 0);
+      if (cln_fvlag == 0 && fl.compare("off") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_fv_lag = off | lag | extrap" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // clean_fv_lag_tol (read only when named, default 1e-4): an extrap build stays at one
+    // pass while its extrapolated inflow missed the new one by at most this over the
+    // largest intensity, else it sweeps on until converged
+    if (pin->DoesParameterExist("rad_m1","clean_fv_lag_tol")) {
+      cln_fvlagtol = pin->GetReal("rad_m1","clean_fv_lag_tol");
+    }
     cln_raymin = pin->GetOrAddReal("rad_m1","clean_ray_min",1.0e-3);
     // clean_rays = sc | fv1 (sp default) | fv | lld
     if (pin->DoesParameterExist("rad_m1","clean_rays")) {

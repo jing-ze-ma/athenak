@@ -515,7 +515,10 @@ void RadiationM1::CleanCellFirstIterate() {
 //! of the implicit gas velocity (CleanCellDrag)
 
 void RadiationM1::CleanCellRightHandSide() {
-  if (cln_feedback) CleanGhostFill(cln_x, CLC_K, 4);
+  if (cln_feedback) {
+    CleanGhostFill(cln_x, CLC_K, 4);
+    CleanCellFaceFluxes(CLC_K, false);
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -532,6 +535,7 @@ void RadiationM1::CleanCellRightHandSide() {
   const bool opt = cln_opt && cln_feedback;
 
   const int vfreeze = cln_vfreeze;
+  x.ff = cln_ff;
   if (cln_milne) CleanCellMilneSetup();
   par_for("clc_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -608,18 +612,64 @@ void RadiationM1::CleanCellRightHandSide() {
     if (x.feedback) {
       Real g[3][3], dk[4];
       CleanCellDrag(x, op(m,M1_OP_T,k,j,i), uh(m,IDN,k,j,i), m, k, j, i, g);
-      CleanCellDivergence(x, CLC_K, m, k, j, i, false, dk);
-      for (int c = 0; c < x.nf; ++c) {
-        x.u(m,CLC_B,k,j,i) += x.w(m,CLW_JV+c,k,j,i)*(x.u(m,CLC_K+1+c,k,j,i) + dk[1+c]);
+      CleanCellDivergence<true>(x, CLC_K, m, k, j, i, false, dk);
+      for (int c = 0; c < 3; ++c) {
+        if (c < x.nf) {
+          x.u(m,CLC_B,k,j,i) += x.w(m,CLW_JV+c,k,j,i)*(x.u(m,CLC_K+1+c,k,j,i) + dk[1+c]);
+        }
       }
-      for (int b = 0; b < x.nf; ++b) {
-        for (int c = 0; c < x.nf; ++c) {
-          x.u(m,CLC_B+1+b,k,j,i) += g[b][c]*(x.u(m,CLC_K+1+c,k,j,i) + dk[1+c]);
+      for (int b = 0; b < 3; ++b) {
+        if (b < x.nf) {
+          for (int c = 0; c < 3; ++c) {
+            if (c < x.nf) {
+              x.u(m,CLC_B+1+b,k,j,i) += g[b][c]*(x.u(m,CLC_K+1+c,k,j,i) + dk[1+c]);
+            }
+          }
         }
       }
     }
     for (int b = 0; b < 4; ++b) x.u(m,CLC_X+b,k,j,i) = x.u(m,CLC_K+b,k,j,i);
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellFaceFluxes
+//! \brief the face fluxes of the cell vector at slot src into cln_ff (4 per direction, at
+//! every face of the active cells once; with_source as CleanCellFaceFlux), for
+//! CleanCellDivergence<true>
+
+void RadiationM1::CleanCellFaceFluxes(const int src, const bool with_source) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (cln_ff.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(cln_ff, nmb1 + 1, 12, cln_x.extent_int(2), cln_x.extent_int(3),
+                    cln_x.extent_int(4));
+  }
+  CleanArgs x = CleanMakeArgs();
+  auto ff = cln_ff;
+  for (int dir = 0; dir < 3; ++dir) {
+    if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
+    const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+    // (one kernel each way: the source terms stay out of the apply's)
+    if (with_source) {
+      par_for("clc_facefs", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real f[4];
+        CleanCellFaceFlux(x, src, dir, m, k, j, i, true, f);
+        for (int r = 0; r < 4; ++r) ff(m,4*dir+r,k,j,i) = f[r];
+      });
+    } else {
+      par_for("clc_applyf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real f[4];
+        CleanCellFaceFlux(x, src, dir, m, k, j, i, false, f);
+        for (int r = 0; r < 4; ++r) ff(m,4*dir+r,k,j,i) = f[r];
+      });
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -637,30 +687,16 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
   CleanArgs x = CleanMakeArgs();
   auto op = opac;
   auto uh = FluidRef::Get(pmy_pack).u0;
-  const bool md = x.multi_d, td = x.three_d;
 
   // the face fluxes once per face (cln_ff), then the cells
   CleanGhostFill(cln_x, src, 4, true);
-  if (cln_ff.extent_int(0) != nmb1 + 1) {
-    Kokkos::realloc(cln_ff, nmb1 + 1, 12, cln_x.extent_int(2), cln_x.extent_int(3),
-                    cln_x.extent_int(4));
-  }
+  CleanCellFaceFluxes(src, false);
   x.ff = cln_ff;
-  for (int dir = 0; dir < 3; ++dir) {
-    if ((dir == 1 && !md) || (dir == 2 && !td)) continue;
-    const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-    par_for("clc_applyf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real f[4];
-      CleanCellFaceFlux(x, src, dir, m, k, j, i, false, f);
-      for (int r = 0; r < 4; ++r) x.ff(m,4*dir+r,k,j,i) = f[r];
-    });
-  }
   x.ffon = true;
   par_for("clc_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real div[4];
-    CleanCellDivergence(x, src, m, k, j, i, false, div);
+    CleanCellDivergence<true>(x, src, m, k, j, i, false, div);
     const Real rr = x.feedback ? x.w(m,CLW_RR,k,j,i) : 0.0;
     const Real e = x.u(m,src,k,j,i);
     const Real chi = op(m,M1_OP_T,k,j,i), hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
@@ -668,8 +704,10 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
     const Real sb = x.feedback ? CleanCellBetaSource(x, src, m, k, j, i) : 0.0;
     const Real rg = x.feedback ? rr/x.w(m,CLW_GM,k,j,i) : 0.0;
     x.u(m,dst,k,j,i) = e*(1.0 + hcke*(1.0 - rr)) + div[0] - (1.0 - rr)*sb;
-    for (int c = 0; c < x.nf && x.feedback; ++c) {
-      x.u(m,dst,k,j,i) += x.w(m,CLW_JV+c,k,j,i)*(x.u(m,src+1+c,k,j,i) + div[1+c]);
+    for (int c = 0; c < 3; ++c) {
+      if (c < x.nf && x.feedback) {
+        x.u(m,dst,k,j,i) += x.w(m,CLW_JV+c,k,j,i)*(x.u(m,src+1+c,k,j,i) + div[1+c]);
+      }
     }
     Real g[3][3];
     if (x.feedback) CleanCellDrag(x, chi, uh(m,IDN,k,j,i), m, k, j, i, g);
@@ -680,7 +718,9 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
         if (x.feedback) {
           y -= x.h*chi*x.w(m,CLW_A1+b,k,j,i)*e;
           y += x.w(m,CLW_BT+b,k,j,i)*(hcke*(1.0 - rg)*e + rg*sb);
-          for (int c = 0; c < x.nf; ++c) y += g[b][c]*(x.u(m,src+1+c,k,j,i) + div[1+c]);
+          for (int c = 0; c < 3; ++c) {
+            if (c < x.nf) y += g[b][c]*(x.u(m,src+1+c,k,j,i) + div[1+c]);
+          }
         }
       }
       x.u(m,dst+1+b,k,j,i) = y;
@@ -1517,7 +1557,9 @@ Real RadiationM1::CleanCellVelocityUpdate() {
   int nmb = pmy_pack->nmb_thispack;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   CleanGhostFill(cln_x, CLC_K, 4);
+  CleanCellFaceFluxes(CLC_K, true);
   CleanArgs x = CleanMakeArgs();
+  x.ff = cln_ff;
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
   auto op = opac;
@@ -1530,8 +1572,9 @@ Real RadiationM1::CleanCellVelocityUpdate() {
   auto aref = arad_ref;
 
   Real dvmax = 0.0, vmax = 0.0, femax = 0.0, fvmax = 0.0;
-  Kokkos::parallel_reduce("clc_velocity", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                          nmb*nkji),
+  // (256 threads per block: more than 128 registers)
+  using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
+  Kokkos::parallel_reduce("clc_velocity", Rp256(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max, Real &fe_max, Real &fv_max) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
@@ -1544,7 +1587,7 @@ Real RadiationM1::CleanCellVelocityUpdate() {
     const Real e = x.u(m,CLC_K,k,j,i), hc = x.h*x.c;
     const Real chi = op(m,M1_OP_T,k,j,i);
     Real div[4], adiv[4] = {0.0, 0.0, 0.0, 0.0};
-    CleanCellDivergence(x, CLC_K, m, k, j, i, true, div, adiv);
+    CleanCellDivergence<true>(x, CLC_K, m, k, j, i, true, div, adiv);
     // round-off levels of E (its terms over E) and of dm (the terms of the flux rows,
     // with that of E in the stress)
     const Real ek = fabs(e)*(1.0 + hc*op(m,M1_OP_E,k,j,i)) + fabs(x.w(m,CLW_EO,k,j,i));

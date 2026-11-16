@@ -238,6 +238,57 @@ bool CleanInner(const int k, const int j, const int i, const int g, const int is
 }
 
 //----------------------------------------------------------------------------------------
+//! \struct CleanShell
+//! \brief the cells of an n3 x n2 x n1 array outside its box [k0,k1] x [j0,j1] x [i0,i1]
+//! (CleanInner by g), counted plane by plane: the k planes below and above the box whole,
+//! the planes through it without the box's rows
+
+struct CleanShell {
+  int n1, n2, n3, i0, i1, j0, j1, k0, k1;
+  int nio, ncell;
+  CleanShell(const int n3_, const int n2_, const int n1_, const int g, const int is,
+             const int ie, const int js, const int je, const int ks, const int ke,
+             const bool md, const bool td) :
+      n1(n1_), n2(n2_), n3(n3_), i0(is + g), i1(ie - g), j0(md ? js + g : 0),
+      j1(md ? je - g : n2_ - 1), k0(td ? ks + g : 0), k1(td ? ke - g : n3_ - 1) {
+    nio = n1 - (i1 - i0 + 1);
+    ncell = n3*n2*n1 - (k1 - k0 + 1)*(j1 - j0 + 1)*(i1 - i0 + 1);
+  }
+  bool Empty() const {return i1 < i0 || j1 < j0 || k1 < k0;}
+};
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanShellCell
+//! \brief cell (k,j,i) number q of the shell s
+
+KOKKOS_INLINE_FUNCTION
+void CleanShellCell(const CleanShell &s, int q, int &k, int &j, int &i) {
+  const int np = s.n2*s.n1, nj = s.j1 - s.j0 + 1;
+  const int pl = np - nj*(s.i1 - s.i0 + 1), nb = s.k0*np, nm = (s.k1 - s.k0 + 1)*pl;
+  if (q < nb || q >= nb + nm) {
+    if (q >= nb) q -= nb + nm - (s.k1 + 1)*np;
+    k = q/np;
+    j = (q - k*np)/s.n1;
+    i = q - k*np - j*s.n1;
+    return;
+  }
+  q -= nb;
+  k = s.k0 + q/pl;
+  int r = q%pl;
+  const int rb = s.j0*s.n1, rm = nj*s.nio;
+  if (r < rb || r >= rb + rm) {
+    if (r >= rb) r -= rb + rm - (s.j1 + 1)*s.n1;
+    j = r/s.n1;
+    i = r%s.n1;
+    return;
+  }
+  r -= rb;
+  j = s.j0 + r/s.nio;
+  const int t = r%s.nio;
+  i = (t < s.i0) ? t : s.i1 + 1 + (t - s.i0);
+}
+
+//----------------------------------------------------------------------------------------
 //! \struct CleanLevel
 //! \brief one grid level of the cell-layout preconditioner: an array holding the 4x4
 //! blocks of the first-order operator (diagonal block and the blocks of the two
