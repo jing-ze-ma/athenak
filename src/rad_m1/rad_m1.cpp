@@ -95,8 +95,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // clean_fv_tol (read only when named): the passes of the FV rays stop at this largest
-    // change over the largest intensity
+    // clean_fv_tol (read only when named, default 1e-10): the passes of the FV rays stop
+    // at this largest change over the largest intensity
     if (pin->DoesParameterExist("rad_m1","clean_fv_tol")) {
       cln_fvtol = pin->GetReal("rad_m1","clean_fv_tol");
     }
