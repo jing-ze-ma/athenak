@@ -1024,11 +1024,19 @@ void RadiationM1::CleanFvSweep() {
   }
   if (o2) Kokkos::deep_copy(cln_fvp, fi);
   auto fp = o2 ? cln_fvp : fi;
+  // 2-D axisymmetric: a phi face's neighbour is the own cell in other directions, which
+  // other threads write in the same pass: they are read from the last pass (cln_fvq)
+  if (axi && cln_fvq.extent_int(1) != n) {
+    Kokkos::realloc(cln_fvq, fi.extent_int(0), n, fi.extent_int(2), fi.extent_int(3),
+                    fi.extent_int(4));
+  }
+  auto fq = axi ? cln_fvq : fi;
   // the walls' incoming beams of the intensities the sweep starts from (a restart has
   // no others)
   if (wall[0] || wall[1]) CleanFvWalls();
   for (int it = 0; it < 100; ++it) {
     Real dmax = 0.0, imax = 0.0;
+    if (axi) Kokkos::deep_copy(cln_fvq, fi);
     Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*n),
     KOKKOS_LAMBDA(const int md, Real &dm, Real &im) {
       const int m = md/n, d = md%n;
@@ -1062,12 +1070,12 @@ void RadiationM1::CleanFvSweep() {
             if (o2) {
               const int sg = up ? 1 : -1;
               ou[no] = a;
-              ud[no][0] = CleanFvNbr(fi, fm, ax, m, d, dir, k, j, i, -sg);
+              ud[no][0] = CleanFvNbr(ax ? fq : fi, fm, ax, m, d, dir, k, j, i, -sg);
               ud[no][1] = CleanFvNbr(fp, fm, ax, m, d, dir, k, j, i, sg);
               ++no;
             }
           } else if (!bdry) {
-            in -= a*(ax ? CleanFvFaceAxi(fi, fp, fm, o2, m, d, k, j, i, up, !up)
+            in -= a*(ax ? CleanFvFaceAxi(fq, fp, fm, o2, m, d, k, j, i, up, !up)
                         : CleanFvFace(fi, fp, o2, m, d, dir, kf, jf, i_f, !up));
           } else if (!up) {
             in -= a*(emi ? iemit : exp(cw_(m,1,k+ok,j+og,i)));
