@@ -772,7 +772,8 @@ void CleanCellDeviationFlux(const CleanArgs &x, const int dir, const int m, cons
 //! \fn void CleanCellM1BoundaryJacobian
 //! \brief CleanCellM1Jacobian on the physical boundary face (k,j,i) normal to dir: the
 //! derivatives jj with respect to the state of the inner cell (R at a low face, L at a
-//! high one)
+//! high one; the caller copies them by value, as nvcc miscompiles a pointer selected
+//! between jl and jr)
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellM1BoundaryJacobian(const CleanArgs &x, const int dir, const int m,
@@ -879,12 +880,15 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
   }
   const bool blo = (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC);
   const bool bhi = (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC);
-  if (blo) {
-    CleanCellM1BoundaryJacobian(x, dir, m, k, j, i, true, jr);
-    return;
-  }
-  if (bhi) {
-    CleanCellM1BoundaryJacobian(x, dir, m, k, j, i, false, jl);
+  if (blo || bhi) {
+    Real jb[4][4] = {};
+    CleanCellM1BoundaryJacobian(x, dir, m, k, j, i, blo, jb);
+    for (int r = 0; r < 4; ++r) {
+      for (int c = 0; c < 4; ++c) {
+        jl[r][c] = blo ? 0.0 : jb[r][c];
+        jr[r][c] = blo ? jb[r][c] : 0.0;
+      }
+    }
     return;
   }
   Real al, hs;
@@ -1080,11 +1084,8 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
   }
   CleanRayFlux(x, m, kc, jc, ic, sh, hr);
   for (int b = 0; b < x.nf; ++b) {
-    if (blo) {
-      jr[1+b][0] -= wo*hr[b];
-    } else {
-      jl[1+b][0] -= wo*hr[b];
-    }
+    jl[1+b][0] -= blo ? 0.0 : wo*hr[b];
+    jr[1+b][0] -= blo ? wo*hr[b] : 0.0;
   }
 }
 
