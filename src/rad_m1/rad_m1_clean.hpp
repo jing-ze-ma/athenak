@@ -76,9 +76,10 @@ constexpr int CLW_Y = 23;
 constexpr int CLW_Z = 24;
 constexpr int CLW_WK = 25;   // work W of the right-hand side
 constexpr int CLW_DK = 26;   // d(rho kappa_P)/dT, d(rho kappa_E)/dT of the iterate
-constexpr int CLW_BT = 28;   // cell layout: beta = v/c of the iterate (3, frame of y)
+constexpr int CLW_BT = 28;   // beta = v/c of the iterate (3, cell layout: frame of y)
 constexpr int CLW_RE = 31;   // h S_E = hc kP G a T^4 - hc kE E + RE E + RY.y - W (Ma et
-constexpr int CLW_RY = 32;   //   al. 2025, eq. 56, G = CLW_GM): the beta terms (RY: 3)
+constexpr int CLW_RY = 32;   //   al. 2025, eq. 56, G = CLW_GM): the beta terms (RY: 3);
+                             //   staggered: RE = hc kP a T^4, RY unused
 constexpr int CLW_GM = 35;   // G = 1 - beta^2/2
 constexpr int CLW_EP = 36;   // -(RE E + RY.y) of the solution (eint of the gas)
 constexpr int CLW_JV = 37;   // (1 - r) dA/dbeta/(c^2 rho), dS_p/dbeta/(c^2 rho) of the
@@ -307,6 +308,11 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     const Real s = 0.5*(1.0 - w)*(1.0 - th);
     al += s*x.w(m,CLW_A1+dir,kl,jl,il);
     ar += s*x.w(m,CLW_A1+dir,k,j,i);
+    // the beta term th c beta_f (hc kP a T^4 - hc kE E)_f of eq. 57 (Ma et al. 2025)
+    const Real b = -0.25*(1.0 - w)*th*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) +
+                                          x.w(m,CLW_BT+dir,k,j,i))*x.h*x.c;
+    al += b*x.op(m,M1_OP_E,kl,jl,il);
+    ar += b*x.op(m,M1_OP_E,k,j,i);
   }
 }
 
@@ -393,7 +399,14 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     return x.marshak ? -x.c*x.marshak_q*x.ebath[2*dir+1] : -0.25*x.c*x.ebath[2*dir+1];
   }
   const Real w = x.fc[dir](m,CLF_W,k,j,i);
-  return (1.0 - w)*x.fc[dir](m,CLF_TH,k,j,i)*x.fc[dir](m,CLF_G,k,j,i);
+  const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
+  const Real th = (1.0 - w)*x.fc[dir](m,CLF_TH,k,j,i);
+  Real s = th*x.fc[dir](m,CLF_G,k,j,i);
+  if (x.feedback) {   // (the emission part of the beta term, CleanFaceWeights)
+    s += 0.25*th*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) + x.w(m,CLW_BT+dir,k,j,i))*
+         (x.w(m,CLW_RE,kl,jl,il) + x.w(m,CLW_RE,k,j,i));
+  }
+  return s;
 }
 
 //----------------------------------------------------------------------------------------

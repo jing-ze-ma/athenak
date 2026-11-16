@@ -982,7 +982,13 @@ void RadiationM1::CleanFirstIterate() {
 //! \fn void RadiationM1::CleanRightHandSide
 //! \brief B = E_old + h c kP a T^4 - r h c kE E_k - W - h div F_source, with the exchange
 //! linearised about the iterate (r = s/(d cv + s), s = 4 h c kP a T^3), W the work of
-//! the radiation force of the iterate on the gas, and the initial guess X = E_k
+//! the radiation force of the iterate on the gas, and the initial guess X = E_k.  With
+//! gas coupling the beta terms of Ma et al. (2025, eq. 56; see rad_m1_clean_cell.hpp):
+//! the emission takes G = 1 - beta^2/2 (CLW_GM) and B adds the lagged A - hc (kP a T^4 G
+//! - kE E) = hc kE [(beta^2/2 - beta.a/c) E_k + 2 beta.y_k] (y_k = F/c of the iterate,
+//! mean of the two faces; the gas eint takes its opposite, CLW_EP), with beta = v/c of
+//! the iterate (CLW_BT) and hc kP a T^4 (CLW_RE) for the face fluxes (eq. 57,
+//! CleanFaceWeights)
 
 void RadiationM1::CleanRightHandSide() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -997,12 +1003,41 @@ void RadiationM1::CleanRightHandSide() {
   auto eos = fl.eos;
   auto op = opac;
 
+  if (x.feedback) {
+    par_for("cln_beta", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int n = 0; n < 3; ++n) {
+        x.w(m,CLW_BT+n,k,j,i) = (uh(m,IM1+n,k,j,i) + x.w(m,CLW_DM+n,k,j,i))/
+                                (uh(m,IDN,k,j,i)*x.c);
+      }
+      x.w(m,CLW_RE,k,j,i) = x.h*x.c*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(x.w(m,CLW_T,k,j,i)));
+    });
+    CleanGhostFill(cln_w, CLW_BT, 4);
+    CleanGhostFill(cln_w, CLW_EK, 1);
+  }
   par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = x.w(m,CLW_T,k,j,i);
-    const Real hckp = x.h*x.c*op(m,M1_OP_P,k,j,i);
     const Real hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
-    Real rr = 0.0, work = 0.0;
+    Real rr = 0.0, work = 0.0, gm = 1.0, sb = 0.0;
+    if (x.feedback) {
+      Real b2 = 0.0, ba = 0.0, by = 0.0;
+      for (int n = 0; n < 3; ++n) {
+        const Real bt = x.w(m,CLW_BT+n,k,j,i);
+        const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+        if (n < x.nf) {
+          by += bt*0.5*(CleanFaceFlux(x, CLW_EK, n, m, k, j, i, true) +
+                        CleanFaceFlux(x, CLW_EK, n, m, k+dk, j+dj, i+di, true))/x.c;
+        }
+        b2 += SQR(bt);
+        ba += bt*x.w(m,CLW_A1+n,k,j,i)/x.c;
+      }
+      gm = 1.0 - 0.5*b2;
+      sb = hcke*((0.5*b2 - ba)*x.w(m,CLW_EK,k,j,i) + 2.0*by);
+    }
+    const Real hckp = x.h*x.c*op(m,M1_OP_P,k,j,i)*gm;
+    x.w(m,CLW_GM,k,j,i) = gm;
+    x.w(m,CLW_EP,k,j,i) = -sb;
     if (x.feedback) {
       const Real d = uh(m,IDN,k,j,i);
       Real e, p, chi_rho, chi_t, cv;
@@ -1019,7 +1054,7 @@ void RadiationM1::CleanRightHandSide() {
     x.w(m,CLW_RR,k,j,i) = rr;
     x.w(m,CLW_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
                          - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work
-                         - CleanSourceDivergence(x, m, k, j, i);
+                         - CleanSourceDivergence(x, m, k, j, i) + sb;
     x.w(m,CLW_X,k,j,i) = x.w(m,CLW_EK,k,j,i);
   });
 }
@@ -1064,11 +1099,11 @@ Real RadiationM1::CleanNewtonUpdate() {
     const Real t_old = w(m,CLW_T,k,j,i);
     const Real x = w(m,CLW_X,k,j,i);
     const Real ex = fmax(x, 0.0);
-    const Real e = (cell || poslim) ? x : ex, g = cell ? w(m,CLW_GM,k,j,i) : 1.0;
+    const Real e = (cell || poslim) ? x : ex, g = w(m,CLW_GM,k,j,i);
     const Real t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
                        hc*op(m,M1_OP_P,k,j,i)*g*arad_,
                        w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*ex
-                       + (cell ? w(m,CLW_EP,k,j,i) : 0.0), t_old);
+                       + w(m,CLW_EP,k,j,i), t_old);
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
     const Real de = ncell ? fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), esc)
