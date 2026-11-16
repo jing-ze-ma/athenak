@@ -432,10 +432,11 @@ void RadiationM1::CleanCellFirstIterate() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellRightHandSide
-//! \brief B_E = E_old + h c kP a T^4 - r h c kE E_k - W, B_y = y_old, each less h div of
-//! the E-independent face fluxes (exchange linearised about the iterate as in
-//! CleanRightHandSide), and the initial guess X = the iterate; with gas coupling B_y
-//! adds the iterate's part of the implicit gas velocity (CleanCellDrag)
+//! \brief B_E = E_old + h c kP a T^4 - r h c kE E_k - W + h esrc, B_y = y_old, each less
+//! h div of the E-independent face fluxes (exchange linearised about the iterate as in
+//! CleanRightHandSide; esrc the explicit energy source of <rad_m1>, an external one),
+//! and the initial guess X = the iterate; with gas coupling B_y adds the iterate's part
+//! of the implicit gas velocity (CleanCellDrag)
 
 void RadiationM1::CleanCellRightHandSide() {
   if (cln_feedback) CleanGhostFill(cln_x, CLC_K, 4);
@@ -450,6 +451,8 @@ void RadiationM1::CleanCellRightHandSide() {
   auto uh = fl.u0;
   auto eos = fl.eos;
   auto op = opac;
+  const bool eso = esrc_on;
+  auto es = esrc;
 
   const int vfreeze = cln_vfreeze;
   if (cln_milne) CleanCellMilneSetup();
@@ -477,7 +480,8 @@ void RadiationM1::CleanCellRightHandSide() {
     CleanCellSourceDivergence(x, m, k, j, i, sdiv);
     x.w(m,CLW_RR,k,j,i) = rr;
     x.u(m,CLC_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
-                         - rr*hcke*x.w(m,CLW_EK,k,j,i) - work - sdiv[0];
+                         - rr*hcke*x.w(m,CLW_EK,k,j,i) - work - sdiv[0]
+                         + (eso ? x.h*es(m,k,j,i) : 0.0);
     for (int b = 1; b < 4; ++b) x.u(m,CLC_B+b,k,j,i) = x.u(m,CLC_O+b,k,j,i) - sdiv[b];
     if (x.feedback) {
       Real g[3][3], dk[4];
@@ -1254,10 +1258,11 @@ void RadiationM1::CleanCellDiagnose() {
 //! \brief stores the solution: E and F of the cells, the face fluxes of E (f0x*), the gas
 //! momentum and energy, and the stage slopes K = (U - U_old)/h.  The gas takes exactly
 //! the momentum and energy the radiation gives up besides its face fluxes, so both
-//! totals change only by the fluxes through the boundary; with force_reference the
-//! reference force is withheld from the gas momentum (an external source, like gravity),
-//! and the radiation pays only the work of the residual.  A gas left with eint < 0 takes
-//! the deficit from the cell's radiation E; cln_neint counts the cells where E did not
+//! totals change only by the fluxes through the boundary and the external source esrc
+//! (the radiation's; the slope of E carries it); with force_reference the reference force
+//! is withheld from the gas momentum (an external source, like gravity), and the
+//! radiation pays only the work of the residual.  A gas left with eint < 0 takes the
+//! deficit from the cell's radiation E; cln_neint counts the cells where E did not
 //! cover it (the fluid's floor would create energy there).  On the cubed sphere F is
 //! stored in the frame of y (F_r, F_theta, F_phi) and the gas momentum change (and its
 //! stage slope) in the hydro's components (CleanGasChange): E and L_z of gas plus
@@ -1281,6 +1286,8 @@ void RadiationM1::CleanCellWriteBack() {
   const bool vzero = cln_vzero;
   auto fr = cln_fref;
   auto aref = arad_ref;
+  const bool eso = esrc_on;
+  auto es = esrc;
 
   // face fluxes of E
   for (int dir = 0; dir < 3; ++dir) {
@@ -1319,7 +1326,7 @@ void RadiationM1::CleanCellWriteBack() {
       // (the hydro's components; dm.e_a covariant on the cubed sphere)
       CleanGasChange(x, m, k, j, i, dm, dh);
       for (int b = 0; b < x.nf; ++b) uh(m,IM1+b,k,j,i) += dh[b];
-      den = -(e - e_old) - div[0];
+      den = -(e - e_old) - div[0] + (eso ? h*es(m,k,j,i) : 0.0);
       if (vzero) {
         // steady start: the internal energy of the gas temperature of the iterate, not
         // the residual of a step h -> infinity

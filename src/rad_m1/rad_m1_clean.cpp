@@ -109,6 +109,10 @@ void RadiationM1::CleanInit() {
                  "clean_layout = cell; not efix or outflow");
     }
   }
+  if (esrc_on && !cln_cell) {
+    CleanFatal("<rad_m1>/esrc (problem/mlt_flux_frozen) with scheme = clean needs "
+               "clean_layout = cell");
+  }
   if (impl_lbath || impl_ghx || iebath_hi_col_on) {
     CleanFatal("scheme = clean has no ghost-built inner face (problem/he_bc_linhao, "
                "implicit_ghost_x1min) and no per-column outer bath");
