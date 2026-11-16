@@ -44,6 +44,8 @@
 #include "rad_m1/rad_m1.hpp"
 #include "pgen/pgen.hpp"
 
+void RadM1AmHistory(HistoryData *pdata, Mesh *pm);   // rad_m1_tests2.cpp
+
 namespace {
 Real rh_g = 1.0, rh_gm = 0.0, rh_eddf = 0.0, rh_seed = 0.0;
 bool rh_sph = false;
@@ -116,6 +118,10 @@ void ProblemGenerator::RadiationM1Rhse(ParameterInput *pin, const bool restart) 
   rh_seed = pin->GetOrAddReal("problem","rh_seed",0.0);
   user_srcs_func = RhseGravity;
   user_hist_func = RhseHist;
+  // (read only when named) problem/am_hist: the energy / angular-momentum budget instead
+  if (pin->DoesParameterExist("problem","am_hist") && pin->GetBoolean("problem","am_hist")) {
+    user_hist_func = RadM1AmHistory;
+  }
   if (ph->use_wellbalance_static) {
     // the background travels in the restart file
     user_icpost_func = RhseBackground;
