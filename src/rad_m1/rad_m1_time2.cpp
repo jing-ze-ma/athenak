@@ -436,6 +436,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
                 << std::endl;
     }
   }
+  if (pin->DoesParameterExist("rad_m1", "dbg_inckc_ke")) {
+    t2_inckc_dbg = pin->GetReal("rad_m1", "dbg_inckc_ke");
+  }
   // rsglock-1112 time2_inc_energy = gas | rad (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_inc_energy")) {
     const std::string ie = pin->GetString("rad_m1", "time2_inc_energy");
@@ -1365,6 +1368,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       t2_flr_n += nf;
     }
   }
+  if (t2_inckc > 0.0 && t2_inckc_dbg >= 0.0) {Time2IncKeCapReport(stage);}
   if (t2_inckc > 0.0) {Time2IncKeCap(stage);}   // hgfix-1110 time2_inc_kecap
   if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // facebound-1112 step 1
   if (t2_theta > 0.0) {Time2StageTheta(stage, dt);}   // facebound-1112
@@ -1559,6 +1563,84 @@ void RadiationM1::Time2IncKeCap(int stage) {
               << " eint_h<=0 " << t2_inckc_hn << " KE " << t2_inckc_ke << " |dm| "
               << t2_inckc_pm << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2IncKeCapReport
+//! \brief <rad_m1>/dbg_inckc_ke = X: the cell of this rank with the largest kinetic-energy
+//! excess of its stage increment (the quantity Time2IncKeCap caps), printed with its gas,
+//! radiation and increment state when the excess times the cell volume exceeds X.
+
+void RadiationM1::Time2IncKeCapReport(int stage) {
+  FluidRef flf = FluidRef::Get(pmy_pack);
+  if (!flf.on || t2inc.extent_int(1) <= M1_T2_EN) {return;}
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
+  auto ug = flf.u0;
+  auto in_ = t2inc;
+  auto ur = u0;
+  const Real th = t2_inckc;
+  const bool etg = flf.use_etotgrav;
+  auto phicc = flf.phicc0;
+  const bool mhd = fl_mhd && (emag0.extent_int(0) > nmb1);
+  auto emag_ = emag0;
+  auto cvol = pmy_pack->pcoord->volume;
+  const bool hvol = (cvol.extent_int(0) > nmb1) && (cvol.extent_int(3) > 1);
+  auto excess = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real dd = ug(m,IDN,k,j,i);
+    if (!(dd > 0.0)) {return 0.0;}
+    const Real q1 = ug(m,IM1,k,j,i), q2 = ug(m,IM2,k,j,i), q3 = ug(m,IM3,k,j,i);
+    const Real d1 = in_(m,M1_T2_M1,k,j,i), d2 = in_(m,M1_T2_M1+1,k,j,i);
+    const Real d3 = in_(m,M1_T2_M1+2,k,j,i);
+    const Real keh = 0.5*(q1*q1 + q2*q2 + q3*q3)/dd;
+    const Real kep = 0.5*((q1 + d1)*(q1 + d1) + (q2 + d2)*(q2 + d2)
+                          + (q3 + d3)*(q3 + d3))/dd;
+    Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
+    if (mhd) {egrv += emag_(m,k,j,i);}
+    const Real eh = ug(m,IEN,k,j,i) - keh - egrv;
+    const Real cap = eh + in_(m,M1_T2_EN,k,j,i) - th*fmax(eh, 0.0);
+    const Real x = (kep - keh - cap)*(hvol ? cvol(m,k,j,i) : 1.0);
+    return (x == x) ? x : 1.0e300;
+  };
+  Real xmax = 0.0;
+  Kokkos::parallel_reduce("m1_t2_inckc_dbg", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+      (nmb1 + 1)*nk*nj*ni),
+  KOKKOS_LAMBDA(const int n, Real &mx) {
+    const int m = n/(nk*nj*ni), r = n - m*(nk*nj*ni);
+    const int k = r/(nj*ni) + ks, j = (r/ni)%nj + js, i = r%ni + is;
+    mx = fmax(mx, excess(m, k, j, i));
+  }, Kokkos::Max<Real>(xmax));
+  if (!(xmax > t2_inckc_dbg)) {return;}
+  Kokkos::View<int*, DevMemSpace> loc("inckc_dbg_loc", 1);
+  Kokkos::deep_copy(loc, -1);
+  Kokkos::parallel_for("m1_t2_inckc_dbg_loc", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+      (nmb1 + 1)*nk*nj*ni),
+  KOKKOS_LAMBDA(const int n) {
+    const int m = n/(nk*nj*ni), r = n - m*(nk*nj*ni);
+    const int k = r/(nj*ni) + ks, j = (r/ni)%nj + js, i = r%ni + is;
+    if (excess(m, k, j, i) == xmax) {loc(0) = n;}
+  });
+  auto hl = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), loc);
+  const int n = hl(0);
+  if (n < 0) {return;}
+  const int m = n/(nk*nj*ni), r = n - m*(nk*nj*ni);
+  const int k = r/(nj*ni) + ks, j = (r/ni)%nj + js, i = r%ni + is;
+  auto hu = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(),
+              Kokkos::subview(ug, m, Kokkos::ALL, k, j, i));
+  auto hn = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(),
+              Kokkos::subview(in_, m, Kokkos::ALL, k, j, i));
+  auto hr = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(),
+              Kokkos::subview(ur, m, Kokkos::ALL, k, j, i));
+  std::printf("<rad_m1> INCKC_DBG rank %d cycle %d stage %d gid %d (m,k,j,i) = "
+              "(%d,%d,%d,%d) excess(x vol) %.4e | rho %.4e m %.4e %.4e %.4e EN %.6e"
+              " | inc E %.4e m %.4e %.4e %.4e EN %.4e F0 %.4e %.4e %.4e"
+              " | rad E %.4e F %.4e %.4e %.4e\n", global_variable::my_rank,
+              pmy_pack->pmesh->ncycle, stage, pmy_pack->pmb->mb_gid.h_view(m), m, k, j,
+              i, xmax, hu(IDN), hu(IM1), hu(IM2), hu(IM3), hu(IEN), hn(M1_T2_E),
+              hn(M1_T2_M1), hn(M1_T2_M1+1), hn(M1_T2_M1+2), hn(M1_T2_EN), hn(M1_T2_F1),
+              hn(M1_T2_F1+1), hn(M1_T2_F1+2), hr(0), hr(1), hr(2), hr(3));
 }
 
 //----------------------------------------------------------------------------------------

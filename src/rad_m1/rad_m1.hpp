@@ -2426,6 +2426,11 @@ class RadiationM1 {
   Real t2_inckc_ke = 0.0, t2_inckc_pm = 0.0;
   int t2_inckc_calls = 0;
   void Time2IncKeCap(int stage);
+  // <rad_m1>/dbg_inckc_ke = X (read only when named; prints only): before the
+  // time2_inc_kecap pass, each rank prints the cell whose kinetic-energy excess
+  // (KE(m_h + t2inc_m) - KE(m_h) - room, x volume) is largest, when it exceeds X
+  Real t2_inckc_dbg = -1.0;
+  void Time2IncKeCapReport(int stage);
   // rsglock-1112 <rad_m1>/time2_inc_energy = gas | rad (read only when named; gas =
   // absent = bitwise).  rad: each slope K also stores its kinetic-energy part
   // K_KE = (KE(m_o + dt K_m) - KE(m_o))/dt (m_o the solve's old-vector momentum), and
