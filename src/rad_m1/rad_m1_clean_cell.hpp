@@ -1196,8 +1196,15 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
     if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
     const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
     Real fp[4], fm[4];
-    CleanCellFaceFlux(x, v, dir, m, k+dk, j+dj, i+di, with_source, fp);
-    CleanCellFaceFlux(x, v, dir, m, k, j, i, with_source, fm);
+    if (x.ffon) {
+      for (int r = 0; r < 4; ++r) {
+        fp[r] = x.ff(m,4*dir+r,k+dk,j+dj,i+di);
+        fm[r] = x.ff(m,4*dir+r,k,j,i);
+      }
+    } else {
+      CleanCellFaceFlux(x, v, dir, m, k+dk, j+dj, i+di, with_source, fp);
+      CleanCellFaceFlux(x, v, dir, m, k, j, i, with_source, fm);
+    }
     if (x.sph || x.cub) {
       Real gp[4], gm[4];
       CleanCellRows(x, dir, m, k+dk, j+dj, i+di, k, j, i, fp, gp);
@@ -1260,20 +1267,26 @@ void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, con
 KOKKOS_INLINE_FUNCTION
 void CleanBlockSolve(Real a[4][4], Real b[4][5], const int nb) {
   for (int p = 0; p < 4; ++p) {
+    // (fixed indices only, so that a and b stay in registers)
     int piv = p;
+    Real amax = fabs(a[p][p]);
     for (int r = p + 1; r < 4; ++r) {
-      if (fabs(a[r][p]) > fabs(a[piv][p])) piv = r;
+      if (fabs(a[r][p]) > amax) {
+        piv = r;
+        amax = fabs(a[r][p]);
+      }
     }
-    if (piv != p) {
+    for (int r = p + 1; r < 4; ++r) {
+      if (r != piv) continue;
       for (int c = 0; c < 4; ++c) {
         const Real t = a[p][c];
-        a[p][c] = a[piv][c];
-        a[piv][c] = t;
+        a[p][c] = a[r][c];
+        a[r][c] = t;
       }
       for (int n = 0; n < nb; ++n) {
         const Real t = b[p][n];
-        b[p][n] = b[piv][n];
-        b[piv][n] = t;
+        b[p][n] = b[r][n];
+        b[r][n] = t;
       }
     }
     const Real inv = 1.0/a[p][p];

@@ -9517,14 +9517,16 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
   Kokkos::deep_copy(a.off, off_h);
   Kokkos::deep_copy(a.wi, wi_h);
   Kokkos::deep_copy(a.sb, sb_h);
-  if (!MemArenaVgd(a, tot + 1)) {Kokkos::realloc(a.d, tot + 1);}   // memcut-1113
+  // (the clean scheme's FV rays keep their own intensities, cln_fvi)
+  const int64_t nd = (clean && cln_rfv > 0) ? 0 : tot + 1;
+  if (!MemArenaVgd(a, nd)) {Kokkos::realloc(a.d, nd);}   // memcut-1113
   Kokkos::deep_copy(a.d, 0.0);
   Kokkos::deep_copy(a.oos, 0.0);
   if (global_variable::my_rank == 0) {
     const double dense = static_cast<double>(a.nmb)*a.n*(a.nx3 + 2*vgd_w)*
                          (a.nx2 + 2*vgd_w)*c1;
     std::cout << "<rad_m1> vet_gd: ragged per-shell band intensity array "
-              << tot*sizeof(Real)/1.0e9 << " GB on rank 0 (dense band "
+              << nd*sizeof(Real)/1.0e9 << " GB on rank 0 (dense band "
               << dense*sizeof(Real)/1.0e9 << " GB)" << std::endl;
   }
 }

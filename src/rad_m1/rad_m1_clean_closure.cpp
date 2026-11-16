@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-#include <Kokkos_NestedSort.hpp>
+#include <Kokkos_Sort.hpp>
 
 #include "athena.hpp"
 #include "coordinates/coordinates.hpp"
@@ -770,23 +770,33 @@ void RadiationM1::CleanFvSeams() {
   CleanArgs x = CleanMakeArgs();
   auto fi = cln_fvi;
   auto mp = cln_fvm;
-  const int n1 = fi.extent_int(4), n2 = fi.extent_int(3), n3 = fi.extent_int(2);
-  if (cln_fvt.extent_int(3) != n) Kokkos::realloc(cln_fvt, n3, n2, n1, n);
+  const int n1 = fi.extent_int(4), n2 = fi.extent_int(3), ng = indcs.ng;
+  // the ghost cells of the theta seams (rows j < js, j > je of ks <= k <= ke) and of the
+  // phi seams (layers k < ks, k > ke), i fastest, in groups that permute their
+  // intensities through a scratch array of at most 2^24 values
+  const int64_t nt = 2*ng*(ke - ks + 1)*n1, np = circ ? 0 : 2*ng*n2*n1;
+  const int64_t ne = pmy_pack->nmb_thispack*(nt + np);
+  const int64_t nq = std::max(int64_t(1), std::min(ne, int64_t(1 << 24)/n));
+  if (cln_fvt.extent_int(1) != n) Kokkos::realloc(cln_fvt, nq, n);
   auto t = cln_fvt;
-  for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
-  par_for("cln_fv_seam", DevExeSpace(), 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
-  KOKKOS_LAMBDA(const int k, const int j, const int i) {
-    int sd = -1;
-    if (j < js && x.mbc(m,2) == BoundaryFlag::periodic) sd = 0;
-    if (j > je && x.mbc(m,3) == BoundaryFlag::periodic) sd = 1;
-    if (!circ && k < ks && x.mbc(m,4) == BoundaryFlag::periodic) sd = 2;
-    if (!circ && k > ke && x.mbc(m,5) == BoundaryFlag::periodic) sd = 3;
-    if (sd < 0 || (sd < 2 && (k < ks || k > ke))) return;
-    for (int b = 0; b < nb; ++b) {
-      for (int d = 0; d < n; ++d) t(k,j,i,d) = fi(m,b*n+mp(m,sd,k,d),k,j,i);
-      for (int d = 0; d < n; ++d) fi(m,b*n+d,k,j,i) = t(k,j,i,d);
-    }
-  });
+  for (int64_t e0 = 0; e0 < ne; e0 += nq) {
+    Kokkos::parallel_for("cln_fv_seam", Kokkos::RangePolicy<>(DevExeSpace(), e0,
+                                                             std::min(ne, e0 + nq)),
+    KOKKOS_LAMBDA(const int64_t e) {
+      const int m = static_cast<int>(e/(nt + np)), i = static_cast<int>(e%n1);
+      const int64_t r = e%(nt + np), q = (r < nt) ? r/n1 : (r - nt)/n1;
+      const bool th = (r < nt);
+      const int g = static_cast<int>(th ? q/(ke - ks + 1) : q/n2);
+      const int gs = (g < ng) ? g + (th ? js : ks) - ng : g - ng + (th ? je : ke) + 1;
+      const int k = th ? ks + static_cast<int>(q%(ke - ks + 1)) : gs;
+      const int j = th ? gs : static_cast<int>(q%n2);
+      const int sd = (th ? 0 : 2) + ((g < ng) ? 0 : 1);
+      if (x.mbc(m,2+sd) != BoundaryFlag::periodic) return;
+      for (int b = 0; b < nb; ++b) {
+        for (int d = 0; d < n; ++d) t(e-e0,d) = fi(m,b*n+mp(m,sd,k,d),k,j,i);
+        for (int d = 0; d < n; ++d) fi(m,b*n+d,k,j,i) = t(e-e0,d);
+      }
+    });
   }
 }
 
@@ -907,80 +917,26 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFvTables
 //! \brief the tables of the swept directions d0 .. d0+nd-1 (one set; every search stays
-//! in it): the cell order of each direction by n . x of the cell centres (centroids on
-//! the cubed sphere; cln_fvo), the direction maps of the periodic seams of a wedge
-//! (cln_fvm: the ghost's direction in the frame of its image cell, n' = sum_b (n .
-//! e_b(ghost)) e_b(image), the nearest set direction; an exact permutation for a phi
-//! period of the set) and of the reflecting theta walls (cln_fvwm: an incoming direction
-//! takes the leaving one nearest to its mirror image n - 2 (n . t) t about the wall's
-//! unit normal t, the mean theta_hat over the face's phi range; cln_fvwu = |n . t|)
+//! in it): the direction maps of the periodic seams of a wedge (cln_fvm: the ghost's
+//! direction in the frame of its image cell, n' = sum_b (n . e_b(ghost)) e_b(image), the
+//! nearest set direction; an exact permutation for a phi period of the set) and of the
+//! reflecting theta walls (cln_fvwm: an incoming direction takes the leaving one nearest
+//! to its mirror image n - 2 (n . t) t about the wall's unit normal t, the mean
+//! theta_hat over the face's phi range; cln_fvwu = |n . t|); their sweep levels are due
 
 void RadiationM1::CleanFvTables(const int d0, const int nd) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
-  const int nx1 = indcs.nx1, nx2 = indcs.nx2, ncell = nx1*nx2*indcs.nx3;
+  const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
   const int nmb = pmy_pack->nmb_thispack, nn = cln_fvn, c3 = cln_s.extent_int(2);
-  if (cln_fvo.extent_int(1) != nn) {
-    Kokkos::realloc(cln_fvo, nmb, nn, ncell);
+  if (cln_fvm.extent_int(3) != nn) {
     Kokkos::realloc(cln_fvm, nmb, 4, c3, nn);
+    cln_fvdo.assign(nn, true);
   }
-  cln_fvlv.clear();   // (the sweep's levels follow the order: CleanFvLevels)
+  for (int d = d0; d < d0 + nd; ++d) cln_fvdo[d] = true;
   CleanArgs x = CleanMakeArgs();
   auto dir_ = cln_fvd;
-  auto x1v = pmy_pack->pcoord->x1v;
   auto x2v = pmy_pack->pcoord->x2v;
   auto x3v = pmy_pack->pcoord->x3v;
-  auto g = cln_gn;
-  // the factors of n . x of every cell (r, sin th, cos ph, sin ph, cos th; the centroid)
-  DvceArray3D<Real> xc("cln_fvxc", nmb, 5, ncell);
-  par_for("cln_fv_xc", DevExeSpace(), 0, nmb - 1, 0, ncell - 1,
-  KOKKOS_LAMBDA(const int m, const int c) {
-    const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
-    const Real f[5] = {x1v(m,i), sin(x2v(m,j)), cos(x3v(m,k)), sin(x3v(m,k)),
-                       cos(x2v(m,j))};
-    // (the cubed sphere: the centroid; Cartesian: the centre)
-    const Real xp[3] = {x1v(m,i), x2v(m,j), x3v(m,k)};
-    for (int a = 0; a < 5; ++a) {
-      xc(m,a,c) = (a >= 3 || x.sph) ? f[a] : (x.cub ? g(m,CLG_X+a,k,j,i) : xp[a]);
-    }
-  });
-  auto o_ = cln_fvo;
-  const bool cub = !x.sph;
-  if (!VgdRotOn()) {   // (the fixed set: the host sort, whose order of equal keys the
-                       // fv slopes keep bitwise)
-    auto x_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), xc);
-    auto d_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dir_);
-    auto o_h = Kokkos::create_mirror_view(o_);
-    std::vector<Real> key(ncell);
-    std::vector<int> idx(ncell);
-    for (int m = 0; m < nmb; ++m) {
-      for (int d = d0; d < d0 + nd; ++d) {
-        for (int c = 0; c < ncell; ++c) {
-          key[c] = CleanFvKey(x_h, d_h, cub, m, d, c);
-          idx[c] = c;
-        }
-        std::sort(idx.begin(), idx.end(), [&](int a, int b) {return key[a] < key[b];});
-        for (int c = 0; c < ncell; ++c) o_h(m,d,c) = idx[c];
-      }
-    }
-    Kokkos::deep_copy(o_, o_h);
-  } else {
-    Kokkos::parallel_for("cln_fv_order", Kokkos::TeamPolicy<>(DevExeSpace(), nmb*nd,
-                                                              Kokkos::AUTO),
-    KOKKOS_LAMBDA(const TeamMember_t &tm) {
-      const int m = tm.league_rank()/nd, d = d0 + tm.league_rank()%nd;
-      auto ord = Kokkos::subview(o_, m, d, Kokkos::ALL);
-      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, ncell), [&](const int c) {
-        ord(c) = c;
-      });
-      tm.team_barrier();
-      Kokkos::Experimental::sort_team(tm, ord, [&](const int a, const int b) {
-        const Real ka = CleanFvKey(xc, dir_, cub, m, d, a);
-        const Real kb = CleanFvKey(xc, dir_, cub, m, d, b);
-        return ka < kb || (ka == kb && a < b);
-      });
-    });
-  }
   // the seams (sd: theta low, theta high, phi low, phi high; the ghost one cell outside)
   const Real pt = pmy_pack->pmesh->mesh_size.x2max - pmy_pack->pmesh->mesh_size.x2min;
   const Real pp = pmy_pack->pmesh->mesh_size.x3max - pmy_pack->pmesh->mesh_size.x3min;
@@ -1086,63 +1042,182 @@ void RadiationM1::CleanFvWalls() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFvLevels
-//! \brief the wavefronts of the sweep: in each direction's order (cln_fvo) a cell takes
+//! \brief the wavefronts of the sweep for the directions that are due: in each
+//! direction's cell order (n . x ascending; centroids on the cubed sphere) a cell takes
 //! the level after every face neighbour placed before it across a face the direction
 //! crosses (fv: every cell up to two along an axis), so that a level's cells of all
 //! directions read nothing written in the level and a pass gives the sequential
-//! sweep's intensities; cln_fvl lists (m n + d, cell) by level, cln_fvlv the level starts
+//! sweep's intensities.  cln_fvc lists the cells of each m n + d by (level, cell),
+//! cln_fvls their level starts; level l of the sweep takes the m n + d in turn
+//! (cln_fvg, cln_fvo), cln_fvlv[l] cells.  One team per direction takes the order in
+//! chunks; the levels of a chunk are relaxed from below until they no longer change
+//! (the longest path).  The directions go in groups of at most 2^25 cells (scratch).
 
 void RadiationM1::CleanFvLevels() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3, nc = nx1*nx2*nx3;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
   const int nmb = pmy_pack->nmb_thispack, n = cln_fvn, r2 = (cln_rfv == 2) ? 2 : 1;
+  const int nmd = nmb*n, nb = 1024;
   const bool axi = !pmy_pack->pmesh->three_d && pmy_pack->pmesh->use_spherical_polar;
-  auto o_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fvo);
-  auto a_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fva);
-  auto d_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fvd);
-  const int nx[3] = {nx1, nx2, nx3};
-  std::vector<int> lev(nc), lq(static_cast<size_t>(nmb)*n*nc), cnt;
-  for (int m = 0; m < nmb; ++m) {
-    for (int d = 0; d < n; ++d) {
-      std::fill(lev.begin(), lev.end(), -1);
-      for (int p = 0; p < nc; ++p) {
-        const int c = o_h(m,d,p), x[3] = {c%nx1, (c/nx1)%nx2, c/(nx1*nx2)};
-        int l = 0;
-        for (int f = 0; f < 6; ++f) {
-          const int e = f/2, s = (f%2) ? 1 : -1;
-          const Real a = d_h(d,0)*a_h(m,3*f,ks+x[2],js+x[1],is+x[0]) +
-                         d_h(d,1)*a_h(m,3*f+1,ks+x[2],js+x[1],is+x[0]) +
-                         d_h(d,2)*a_h(m,3*f+2,ks+x[2],js+x[1],is+x[0]);
-          if ((axi && e == 2) || (a == 0.0 && r2 == 1)) continue;
-          for (int r = 1; r <= r2; ++r) {
-            int y[3] = {x[0], x[1], x[2]};
-            y[e] += r*s;
-            if (y[e] < 0 || y[e] >= nx[e]) break;
-            const int g = lev[y[0] + nx1*(y[1] + nx2*y[2])];
-            if (g >= 0) l = std::max(l, g + 1);
-          }
+  CleanArgs ca = CleanMakeArgs();
+  auto fa = cln_fva;
+  auto dir_ = cln_fvd;
+  auto x1v = pmy_pack->pcoord->x1v;
+  auto x2v = pmy_pack->pcoord->x2v;
+  auto x3v = pmy_pack->pcoord->x3v;
+  auto gn = cln_gn;
+  // the factors of n . x of every cell (r, sin th, cos ph, sin ph, cos th; the centroid)
+  DvceArray3D<Real> xc("cln_fvxc", nmb, 5, nc);
+  par_for("cln_fv_xc", DevExeSpace(), 0, nmb - 1, 0, nc - 1,
+  KOKKOS_LAMBDA(const int m, const int c) {
+    const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
+    const Real f[5] = {x1v(m,i), sin(x2v(m,j)), cos(x3v(m,k)), sin(x3v(m,k)),
+                       cos(x2v(m,j))};
+    // (the cubed sphere: the centroid; Cartesian: the centre)
+    const Real xp[3] = {x1v(m,i), x2v(m,j), x3v(m,k)};
+    for (int a = 0; a < 5; ++a) {
+      xc(m,a,c) = (a >= 3 || ca.sph) ? f[a] : (ca.cub ? gn(m,CLG_X+a,k,j,i) : xp[a]);
+    }
+  });
+  if (cln_fvc.extent(0) != static_cast<size_t>(nmd)*nc) {
+    Kokkos::realloc(cln_fvc, static_cast<size_t>(nmd)*nc);
+    cln_fvls.assign(nmd, std::vector<int>());
+  }
+  std::vector<int> due;
+  for (int md = 0; md < nmd; ++md) {
+    if (cln_fvdo[md%n]) due.push_back(md);
+  }
+  const int nw = std::max(1, std::min(static_cast<int>(due.size()), (1 << 25)/nc));
+  DvceArray1D<int> mds("cln_fvl_md", nw);
+  DvceArray2D<int> ord("cln_fvord", nw, nc), pos("cln_fvpos", nw, nc);
+  DvceArray2D<int> lev("cln_fvlev", nw, nc);
+  DvceArray1D<Real> key("cln_fvkey", nc);
+  DvceArray1D<int64_t> lk("cln_fvl_key", static_cast<size_t>(nw)*nc);
+  auto mds_h = Kokkos::create_mirror_view(mds);
+  auto fc = cln_fvc;
+  const bool cub = !ca.sph;
+  for (size_t w0 = 0; w0 < due.size(); w0 += nw) {
+    const int nq = std::min(nw, static_cast<int>(due.size() - w0));
+    for (int w = 0; w < nq; ++w) mds_h(w) = due[w0 + w];
+    Kokkos::deep_copy(mds, mds_h);
+    // the cell order of each direction: n . x ascending, equal keys by the cell index
+    for (int w = 0; w < nq; ++w) {
+      const int m = mds_h(w)/n, d = mds_h(w)%n;
+      auto o = Kokkos::subview(ord, w, Kokkos::ALL);
+      par_for("cln_fv_key", DevExeSpace(), 0, nc - 1, KOKKOS_LAMBDA(const int c) {
+        key(c) = CleanFvKey(xc, dir_, cub, m, d, c);
+        o(c) = c;
+      });
+      Kokkos::sort(DevExeSpace(), o, KOKKOS_LAMBDA(const int a, const int b) {
+        return key(a) < key(b) || (key(a) == key(b) && a < b);
+      });
+    }
+    par_for("cln_fvl_pos", DevExeSpace(), 0, nw - 1, 0, nc - 1,
+    KOKKOS_LAMBDA(const int w, const int p) {
+      if (w < nq) pos(w,ord(w,p)) = p;
+      lev(w,p) = 0;
+    });
+    int lmax = 0;
+    Kokkos::parallel_reduce("cln_fvl_lev", Kokkos::TeamPolicy<>(DevExeSpace(), nq,
+                                                                Kokkos::AUTO),
+    KOKKOS_LAMBDA(const TeamMember_t &tm, int &lm) {
+      const int w = tm.league_rank(), m = mds(w)/n, d = mds(w)%n;
+      const int nx[3] = {nx1, nx2, nx3};
+      for (int p0 = 0; p0 < nc; p0 += nb) {
+        const int p1 = (p0 + nb < nc) ? p0 + nb : nc;
+        int chg = 1;
+        while (chg > 0) {
+          Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, p0, p1),
+          [&](const int p, int &ch) {
+            const int c = ord(w,p), x[3] = {c%nx1, (c/nx1)%nx2, c/(nx1*nx2)};
+            int l = 0;
+            for (int f = 0; f < 6; ++f) {
+              const int e = f/2, s = (f%2) ? 1 : -1;
+              const Real a = dir_(d,0)*fa(m,3*f,ks+x[2],js+x[1],is+x[0]) +
+                             dir_(d,1)*fa(m,3*f+1,ks+x[2],js+x[1],is+x[0]) +
+                             dir_(d,2)*fa(m,3*f+2,ks+x[2],js+x[1],is+x[0]);
+              if ((axi && e == 2) || (a == 0.0 && r2 == 1)) continue;
+              for (int r = 1; r <= r2; ++r) {
+                int y[3] = {x[0], x[1], x[2]};
+                y[e] += r*s;
+                if (y[e] < 0 || y[e] >= nx[e]) break;
+                const int g = y[0] + nx1*(y[1] + nx2*y[2]);
+                if (pos(w,g) < p) l = (l > lev(w,g) + 1) ? l : lev(w,g) + 1;
+              }
+            }
+            if (l != lev(w,c)) {
+              lev(w,c) = l;
+              ++ch;
+            }
+          }, chg);
         }
-        lev[c] = l;
-        lq[(static_cast<size_t>(m)*n + d)*nc + p] = l;
-        if (l >= static_cast<int>(cnt.size())) cnt.resize(l + 1, 0);
-        ++cnt[l];
+      }
+      int l1 = 0;
+      Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nc), [&](const int c, int &l) {
+        l = (l > lev(w,c) + 1) ? l : lev(w,c) + 1;
+      }, Kokkos::Max<int>(l1));
+      Kokkos::single(Kokkos::PerTeam(tm), [&]() {lm = (lm > l1) ? lm : l1;});
+    }, Kokkos::Max<int>(lmax));
+    // the cells of each direction sorted by (level, cell), and the count of each level
+    DvceArray2D<int> cnt("cln_fvl_n", nq, lmax);
+    par_for("cln_fvl_key", DevExeSpace(), 0, nw - 1, 0, nc - 1,
+    KOKKOS_LAMBDA(const int w, const int c) {
+      const int64_t wl = w*static_cast<int64_t>(lmax) + lev(w,c);
+      lk(w*static_cast<int64_t>(nc) + c) = wl*nc + c;
+      if (w < nq) Kokkos::atomic_add(&cnt(w,lev(w,c)), 1);
+    });
+    Kokkos::sort(DevExeSpace(), lk);
+    par_for("cln_fvl_list", DevExeSpace(), 0, nq - 1, 0, nc - 1,
+    KOKKOS_LAMBDA(const int w, const int p) {
+      fc(mds(w)*static_cast<int64_t>(nc) + p) =
+          static_cast<int>(lk(w*static_cast<int64_t>(nc) + p)%nc);
+    });
+    auto cnt_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cnt);
+    for (int w = 0; w < nq; ++w) {
+      auto &ls = cln_fvls[mds_h(w)];
+      ls.assign(lmax + 1, 0);
+      for (int l = 0; l < lmax; ++l) ls[l+1] = ls[l] + cnt_h(w,l);
+    }
+  }
+  // the levels of the sweep: each takes the m n + d in turn
+  int nlev = 0;
+  for (int md = 0; md < nmd; ++md) {
+    nlev = std::max(nlev, static_cast<int>(cln_fvls[md].size()) - 1);
+  }
+  Kokkos::realloc(cln_fvg, nlev, nmd + 1);
+  Kokkos::realloc(cln_fvo, nlev, nmd);
+  auto g_h = Kokkos::create_mirror_view(cln_fvg);
+  auto o_h = Kokkos::create_mirror_view(cln_fvo);
+  cln_fvlv.assign(nlev, 0);
+  for (int l = 0; l < nlev; ++l) {
+    int s = 0;
+    for (int md = 0; md < nmd; ++md) {
+      const auto &ls = cln_fvls[md];
+      const int nl = static_cast<int>(ls.size()) - 1;
+      g_h(l,md) = s;
+      o_h(l,md) = md*static_cast<int64_t>(nc) + ((l < nl) ? ls[l] : 0) - s;
+      s += (l < nl) ? ls[l+1] - ls[l] : 0;
+    }
+    g_h(l,nmd) = s;
+    cln_fvlv[l] = s;
+  }
+  // the m n + d of every 64th entry of a level (where the sweep's search starts)
+  cln_fvkl.assign(nlev + 1, 0);
+  for (int l = 0; l < nlev; ++l) cln_fvkl[l+1] = cln_fvkl[l] + (cln_fvlv[l] + 63)/64;
+  Kokkos::realloc(cln_fvk, cln_fvkl[nlev]);
+  auto k_h = Kokkos::create_mirror_view(cln_fvk);
+  for (int l = 0; l < nlev; ++l) {
+    for (int md = 0; md < nmd; ++md) {
+      for (int b = (g_h(l,md) + 63)/64; 64*b < g_h(l,md+1); ++b) {
+        k_h(cln_fvkl[l] + b) = md;
       }
     }
   }
-  cln_fvlv.assign(cnt.size() + 1, 0);
-  for (size_t l = 0; l < cnt.size(); ++l) cln_fvlv[l+1] = cln_fvlv[l] + cnt[l];
-  Kokkos::realloc(cln_fvl, cln_fvlv.back(), 2);
-  auto l_h = Kokkos::create_mirror_view(cln_fvl);
-  std::vector<int> pos(cln_fvlv.begin(), cln_fvlv.end() - 1);
-  for (int md = 0; md < nmb*n; ++md) {
-    for (int p = 0; p < nc; ++p) {
-      const int q = pos[lq[static_cast<size_t>(md)*nc + p]]++;
-      l_h(q,0) = md;
-      l_h(q,1) = o_h(md/n,md%n,p);
-    }
-  }
-  Kokkos::deep_copy(cln_fvl, l_h);
+  Kokkos::deep_copy(cln_fvg, g_h);
+  Kokkos::deep_copy(cln_fvo, o_h);
+  Kokkos::deep_copy(cln_fvk, k_h);
+  cln_fvdo.assign(n, false);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1154,7 +1229,8 @@ void RadiationM1::CleanFvLevels() {
 //! sum_out n . A_f I_f + V chi I = sum_in |n . A_f| I_f + V chi S.  A beam keeps its
 //! energy; the cell intensities are those of the transported flux.  The
 //! cells are taken in the order of n . x of their centres (Gauss-Seidel, repeated with
-//! the ghost exchange until the largest change is below 1e-13 of the largest intensity).
+//! the ghost exchange until the largest change is below clean_fv_tol (1e-13) of the
+//! largest intensity).
 //! With fv at most 8 passes per build (the slopes converge over the builds of a run).
 //! The inner face emits the sweep's emission (vet_bc_inner emit) or the S of the first
 //! cell and the boundary beams (implicit_beam), the top its Marshak bath, a reflecting
@@ -1191,10 +1267,16 @@ void RadiationM1::CleanFvSweep() {
       }
     });
   }
-  if (cln_fvlv.empty()) CleanFvLevels();
+  if (std::find(cln_fvdo.begin(), cln_fvdo.end(), true) != cln_fvdo.end()) {
+    CleanFvLevels();
+  }
   auto fi = cln_fvi;
   auto fa = cln_fva;
-  auto fl = cln_fvl;
+  auto fc = cln_fvc;
+  auto fg = cln_fvg;
+  auto fo = cln_fvo;
+  auto fk = cln_fvk;
+  const int nmd = nmb*n;
   auto fm = cln_fvm;
   const bool o2 = (cln_rfv == 2);
   const bool wall[2] = {CleanFvWall(0), CleanFvWall(1)};
@@ -1306,18 +1388,48 @@ void RadiationM1::CleanFvSweep() {
   // the walls' incoming beams of the intensities the sweep starts from (a restart has
   // no others)
   if (wall[0] || wall[1]) CleanFvWalls();
+  // (each level reduces -(its largest change) and its largest intensity on the device:
+  // no wait)
+  const int nlev = static_cast<int>(cln_fvlv.size());
+  Kokkos::View<Kokkos::MinMaxScalar<Real>*, DevMemSpace> red("cln_fv_red", nlev);
+  // fv1: a pass after the first takes only the cells at the faces of the MeshBlock and
+  // those whose upwind neighbour changed after it took them (due: the pass that must
+  // take a cell, done: the pass that has); the others would repeat their intensity
+  const bool act = !o2 && !ld && !axi;
+  const int ie = indcs.ie, je = indcs.je, ke = indcs.ke, nc = nx1*nx2*indcs.nx3;
+  if (act && cln_fvdue.extent_int(1) != nc) {
+    Kokkos::realloc(cln_fvdue, nmb*n, nc);
+    Kokkos::realloc(cln_fvdone, nmb*n, nc);
+  }
+  auto due = cln_fvdue;
+  auto done = cln_fvdone;
   for (int it = 0; it < 100; ++it) {
     Real dmax = 0.0, imax = 0.0;
     if (axi) Kokkos::deep_copy(cln_fvx, fi);
-    for (int l = 0; l + 1 < static_cast<int>(cln_fvlv.size()); ++l) {
-    Real dl = 0.0, il = 0.0;
-    Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), cln_fvlv[l],
-                                                            cln_fvlv[l+1]),
-    KOKKOS_LAMBDA(const int q, Real &dm, Real &im) {
-      const int m = fl(q,0)/n, d = fl(q,0)%n, c = fl(q,1);
+    if (act) Kokkos::deep_copy(done, -1);
+    for (int l = 0; l < nlev; ++l) {
+    const int64_t k0 = cln_fvkl[l];
+    const int nkb = static_cast<int>(cln_fvkl[l+1] - k0);
+    Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                                                            cln_fvlv[l]),
+    KOKKOS_LAMBDA(const int q, Kokkos::MinMaxScalar<Real> &mm) {
+      // (the m n + d of entry q: the last whose start in the level is <= q, between
+      // those of its 64-entry block and of the next)
+      int md = fk(k0 + q/64);
+      for (int h = (q/64 + 1 < nkb) ? fk(k0 + q/64 + 1) + 1 : nmd; h - md > 1;) {
+        const int mid = (md + h)/2;
+        if (fg(l,mid) <= q) {md = mid;} else {h = mid;}
+      }
+      const int m = md/n, d = md%n, c = fc(fo(l,md) + q);
       const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
       {
         const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
+        if (act && it > 0 && due(md,c) != it && i != is && i != ie && j != js &&
+            j != je && k != ks && k != ke) {
+          done(md,c) = it;
+          mm.max_val = fmax(mm.max_val, fi(m,d,k,j,i));
+          return;
+        }
         // fv: the outflow faces carry the cell's own minmod slope, I + mm(I - U, D - I)/2
         // (U, D the neighbours up- and downstream), solved with the cell: the residual
         // increases with I (slope >= (out + vc)/2), a few Newton steps on its pieces
@@ -1325,7 +1437,7 @@ void RadiationM1::CleanFvSweep() {
         // the slope equations, outflow sides po (+1, high face; 2, low face)
         Real in = 0.0, out = 0.0, ou[6], ud[6][2], cd[3] = {0.0, 0.0, 0.0};
         Real hd[3] = {0.0, 0.0, 0.0}, rd[3] = {0.0, 0.0, 0.0}, od[3] = {0.0, 0.0, 0.0};
-        int no = 0, po[3] = {0, 0, 0};
+        int no = 0, po[3] = {0, 0, 0}, om = 0;
         for (int f = 0; f < 6; ++f) {
           const int dir = f/2, up = f%2;
           const int kf = k + (up && dir == 2), jf = j + (up && dir == 1);
@@ -1352,6 +1464,7 @@ void RadiationM1::CleanFvSweep() {
             continue;
           }
           if (a >= 0.0) {
+            if (!bdry) om |= 1 << f;
             out += a;
             cd[dir] += sg*a;
             od[dir] += a;
@@ -1430,20 +1543,35 @@ void RadiationM1::CleanFvSweep() {
           if (fabs(dv) <= 1.0e-15*fabs(iv)) break;
         }
         iv = fmax(iv, 0.0);
-        dm = fmax(dm, fabs(iv - fi(m,d,k,j,i)));
-        im = fmax(im, iv);
+        mm.min_val = fmin(mm.min_val, -fabs(iv - fi(m,d,k,j,i)));
+        mm.max_val = fmax(mm.max_val, iv);
+        // (a change: the downstream neighbours are due in this pass, or the next one if
+        // this pass has taken them)
+        const bool chg = act && !(iv == fi(m,d,k,j,i));
         fi(m,d,k,j,i) = iv;
+        if (act) done(md,c) = it;
+        for (int f = 0; f < 6 && chg; ++f) {
+          const int x0 = (f < 2) ? i - is : ((f < 4) ? j - js : k - ks);
+          const int x1 = (f < 2) ? ie - is : ((f < 4) ? je - js : ke - ks);
+          if (!(om & (1 << f)) || x0 == ((f%2) ? x1 : 0)) continue;   // (in the block)
+          const int s = (f%2) ? 1 : -1, st = (f < 2) ? 1 : ((f < 4) ? nx1 : nx1*nx2);
+          const int cn = c + s*st;
+          due(md,cn) = (done(md,cn) == it) ? it + 1 : it;
+        }
         for (int e = 0; e < 3 && ld; ++e) fi(m,(1+e)*n+d,k,j,i) = sl[e];
       }
-    }, Kokkos::Max<Real>(dl), Kokkos::Max<Real>(il));
-    dmax = fmax(dmax, dl);
-    imax = fmax(imax, il);
+    }, Kokkos::MinMax<Real, DevMemSpace>(Kokkos::subview(red, l)));
+    }
+    auto r_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), red);
+    for (int l = 0; l < nlev; ++l) {
+      dmax = fmax(dmax, -r_h(l).min_val);
+      imax = fmax(imax, r_h(l).max_val);
     }
     CleanGhostFill(cln_fvi, 0, cln_fvb*n);
     CleanFvPanelSlopes(false);
     CleanFvSeams();
     if (wall[0] || wall[1]) CleanFvWalls();
-    if (CleanReduce(dmax, true) <= 1.0e-13*CleanReduce(imax, true)) break;
+    if (CleanReduce(dmax, true) <= cln_fvtol*CleanReduce(imax, true)) break;
   }
 }
 
@@ -1714,6 +1842,17 @@ void RadiationM1::CleanGdFaceSums() {
   auto qb_ = vgd_x1b;
   auto qr_ = vgd_x1r;
   const int nj = je - js + 1, nkj = (ke - ks + 1)*nj;
+  // fv: the rays' r face fluxes, all faces at once (the columns only read them)
+  DvceArray5D<Real> rf("cln_gd_rf", fv ? nmb1 + 1 : 1, 4, fv ? ke - ks + 1 : 1,
+                       fv ? nj : 1, fv ? ie - is + 2 : 1);
+  if (fv) {
+    par_for("cln_gd_rf", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie + 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real q[4];
+      rflux(m, k, j, i, q);
+      for (int c = 0; c < 4; ++c) rf(m,c,k-ks,j-js,i-is) = q[c];
+    });
+  }
   for (int lev = 0; lev < vgd_nb1; ++lev) {
     if (lev > 0) VetGdX1Pass(true);
     par_for("cln_gd_col", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -1731,19 +1870,20 @@ void RadiationM1::CleanGdFaceSums() {
       for (int c = 0; c < 4; ++c) {
         q[c] = in ? q[c]*x.area[0](m,k,j,is) : qr_(m,c*nkj + kj);
       }
-      if (fv) rflux(m, k, j, is, q);
+      for (int c = 0; c < 4 && fv; ++c) q[c] = rf(m,c,k-ks,j-js,0);
       const Real vb = in ? 0.0 : qr_(m,4*nkj + kj);   // the column's volume below
       for (int i = is; i <= ie; ++i) {
         for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
         if (x.cub) {   // (no curvature terms: Cartesian momentum)
-          rflux(m, k, j, i + 1, q);
+          if (!fv) rflux(m, k, j, i + 1, q);
+          for (int c = 0; c < 4 && fv; ++c) q[c] = rf(m,c,k-ks,j-js,i+1-is);
           continue;
         }
         Real g[2] = {0.0, 0.0}, qi = q[2];
         // the exchange V chi (S - J, -H_b) and the lateral outflow of the cell
         const Real chi = x.vol(m,k,j,i)*exp(cw_(m,0,k+ok,j+og,i));
         const Real s0 = exp(cw_(m,1,k+ok,j+og,i));
-        for (int d = 0; d < n; ++d) {
+        for (int d = 0; d < n && !fv; ++d) {   // (fv: the face fluxes are the rays')
           const Real di = dir_(d,3)*inten(m, d, k, j, i);
           q[0] += chi*(dir_(d,3)*s0 - di);
           for (int b = 0; b < 3; ++b) {
@@ -1770,7 +1910,7 @@ void RadiationM1::CleanGdFaceSums() {
             }
           }
         }
-        if (fv) rflux(m, k, j, i + 1, q);
+        for (int c = 0; c < 4 && fv; ++c) q[c] = rf(m,c,k-ks,j-js,i+1-is);
         // the angular-momentum weight r_f/r of the y_theta row on the r faces
         g[1] += q[2]*(1.0 - x.x1f(m,i+1)/x.x1v(m,i)) - qi*(1.0 - x.x1f(m,i)/x.x1v(m,i));
         for (int b = 0; b < 2; ++b) cs(m,CLN_G+b,k,j,i) = g[b];

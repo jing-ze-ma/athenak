@@ -134,12 +134,14 @@ void RadiationM1::CleanInit() {
     Kokkos::realloc(cln_fref, nmb, 3, n3, n2, n1);   // (a restart has read it)
   }
   // multigrid levels of the cell layout: halve every direction with an even number
-  // (>= 4) of cells, down to the level where no direction can be halved
+  // (>= 4) of cells, down to the level where no direction can be halved (clean_pc =
+  // prodmg: x1 is never halved, two coarse levels)
   if (cln_cell) {
+    const bool pm = (cln_pc == CLN_PC_PRODMG);
     std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
-    while (true) {
+    while (!(pm && cln_mgn.size() == 2)) {
       bool coarser = false;
-      for (int d = 0; d < 3; ++d) {
+      for (int d = (pm ? 1 : 0); d < 3; ++d) {
         if (nc[d] >= 4 && nc[d] % 2 == 0) {
           nc[d] /= 2;
           coarser = true;

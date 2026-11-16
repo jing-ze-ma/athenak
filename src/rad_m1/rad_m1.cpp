@@ -84,6 +84,22 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",4000);
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",50);
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
+    // clean_pc = vcycle | x1line | prodmg (read only when named): the preconditioner of
+    // the cell layout (CleanCellPrecondition)
+    if (pin->DoesParameterExist("rad_m1","clean_pc")) {
+      const std::string pc = pin->GetString("rad_m1","clean_pc");
+      cln_pc = (pc == "x1line") ? CLN_PC_X1LINE : ((pc == "prodmg") ? CLN_PC_PRODMG : 0);
+      if (pc != "vcycle" && cln_pc == 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_pc = vcycle | x1line | prodmg" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // clean_fv_tol (read only when named): the passes of the FV rays stop at this largest
+    // change over the largest intensity
+    if (pin->DoesParameterExist("rad_m1","clean_fv_tol")) {
+      cln_fvtol = pin->GetReal("rad_m1","clean_fv_tol");
+    }
     cln_raymin = pin->GetOrAddReal("rad_m1","clean_ray_min",1.0e-3);
     // clean_rays = sc | fv1 (sp default) | fv | lld
     if (pin->DoesParameterExist("rad_m1","clean_rays")) {

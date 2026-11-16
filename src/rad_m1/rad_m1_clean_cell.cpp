@@ -621,8 +621,8 @@ void RadiationM1::CleanCellRightHandSide() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellApply
 //! \brief u(dst) = A u(src) over the active cells: the local exchange and flux sources
-//! plus h div of the face fluxes; flux components beyond the mesh dimension are identity.
-//! The cells at least ng from the block faces are done while the ghosts are exchanged.
+//! plus h div of the face fluxes (each face once); flux components beyond the mesh
+//! dimension are identity.
 
 void RadiationM1::CleanCellApply(const int src, const int dst) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -633,14 +633,28 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
   CleanArgs x = CleanMakeArgs();
   auto op = opac;
   auto uh = FluidRef::Get(pmy_pack).u0;
-  const int ng = indcs.ng;
   const bool md = x.multi_d, td = x.three_d;
 
-  for (int part = 1; part <= 2; ++part) {
-  CleanGhostFill(cln_x, src, 4, true, part);
+  // the face fluxes once per face (cln_ff), then the cells
+  CleanGhostFill(cln_x, src, 4, true);
+  if (cln_ff.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(cln_ff, nmb1 + 1, 12, cln_x.extent_int(2), cln_x.extent_int(3),
+                    cln_x.extent_int(4));
+  }
+  x.ff = cln_ff;
+  for (int dir = 0; dir < 3; ++dir) {
+    if ((dir == 1 && !md) || (dir == 2 && !td)) continue;
+    const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+    par_for("clc_applyf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real f[4];
+      CleanCellFaceFlux(x, src, dir, m, k, j, i, false, f);
+      for (int r = 0; r < 4; ++r) x.ff(m,4*dir+r,k,j,i) = f[r];
+    });
+  }
+  x.ffon = true;
   par_for("clc_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    if (CleanInner(k, j, i, ng, is, ie, js, je, ks, ke, md, td) != (part == 1)) return;
     Real div[4];
     CleanCellDivergence(x, src, m, k, j, i, false, div);
     const Real rr = x.feedback ? x.w(m,CLW_RR,k,j,i) : 0.0;
@@ -668,7 +682,6 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
       x.u(m,dst+1+b,k,j,i) = y;
     }
   });
-  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -818,10 +831,10 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
   while (nl > cln_chunk*nsys) nsys *= 2;
   // row n: A x_n-P + B x_n + C x_n+P = r (52 values) in buffer 0 or 1
   const size_t scr = ScrArray1D<Real>::shmem_size(104*nl);
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb1 + 1)*np*nq, Kokkos::AUTO);
-  const int lev = TeamScratchLevel(scr, 0);
-  Kokkos::parallel_for("clc_line", policy.set_scratch_size(lev, Kokkos::PerTeam(scr)),
-  KOKKOS_LAMBDA(TeamMember_t tm) {
+  // (the rows in global scratch, teams of 64 threads for lines of up to 64 rows: many
+  // lines per compute unit)
+  const int lev = 1;
+  auto line = KOKKOS_LAMBDA(TeamMember_t tm) {
     const int m = tm.league_rank()/(np*nq);
     const int p = (tm.league_rank() - m*np*nq)/nq, q = tm.league_rank() % nq;
     auto cell = [&](const int n, int &k, int &j, int &i) {
@@ -938,7 +951,12 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
       cell(n, k, j, i);
       for (int r = 0; r < 4; ++r) u(m,dst+r,k,j,i) = w(t + 52*n + 48 + r);
     });
-  });
+  };
+  using Policy = Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
+  const int nt = std::min((nl > 64) ? 256 : 64, Policy(DevExeSpace(), 1, 1).team_size_max(
+                          line, Kokkos::ParallelForTag()));
+  Kokkos::parallel_for("clc_line", Policy(DevExeSpace(), (nmb1 + 1)*np*nq, nt)
+                       .set_scratch_size(lev, Kokkos::PerTeam(scr)), line);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1042,6 +1060,24 @@ void RadiationM1::CleanCellSmooth(const int l, const int src, const int dst,
   const int js = lv.o[1], je = lv.o[1] + lv.n[1] - 1;
   const int ks = lv.o[2], ke = lv.o[2] + lv.n[2] - 1;
   auto u = lv.u;
+  if (cln_pc == CLN_PC_PRODMG) {
+    // one forward red-black sweep of x1-line solves (the old production smoother): the
+    // lines of even j + k from u(src), then the odd ones from the residual of the
+    // level's blocks
+    CleanCellLineSolve(lv, 0, src, dst);
+    CleanCellLevelApply(lv, dst, t1);
+    par_for("clc_pcres", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int c = 0; c < 4; ++c) u(m,t1+c,k,j,i) = u(m,src+c,k,j,i) - u(m,t1+c,k,j,i);
+    });
+    CleanCellLineSolve(lv, 0, t1, t2);
+    par_for("clc_pccor", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if ((j - js + k - ks) % 2 == 0) return;
+      for (int c = 0; c < 4; ++c) u(m,dst+c,k,j,i) += u(m,t2+c,k,j,i);
+    });
+    return;
+  }
   if (first) CleanCellLineSolve(lv, 0, src, dst);
   for (int n = first ? 1 : 0; n < 3*nsweep; ++n) {
     const int dir = n % 3;
@@ -1082,9 +1118,10 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
   const int t1 = (l == 0) ? CLC_T1 : CLM_T1;
   const int r[3] = {f.n[0]/c.n[0], f.n[1]/c.n[1], f.n[2]/c.n[2]};
 
-  // pre-smoothing and the residual
+  // pre-smoothing and the residual (prodmg: of the level's blocks)
+  const bool pm = (cln_pc == CLN_PC_PRODMG);
   CleanCellSmooth(l, src, dst, true, cln_pcsweeps);
-  if (l == 0) {
+  if (l == 0 && !pm) {
     CleanCellApply(dst, t1);
   } else {
     CleanCellLevelApply(f, dst, t1);
@@ -1121,15 +1158,21 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
     for (int q = 0; q < 4; ++q) uf(m,dst+q,k,j,i) += uc(m,CLM_X+q,kc,jc,ic);
   });
 
-  // post-smoothing
-  CleanCellSmooth(l, src, dst, false, cln_pcsweeps);
+  // post-smoothing (not with prodmg)
+  if (!pm) CleanCellSmooth(l, src, dst, false, cln_pcsweeps);
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellPrecondition
-//! \brief u(dst) = M^{-1} u(src): one multigrid V-cycle from the mesh level
+//! \brief u(dst) = M^{-1} u(src): one multigrid V-cycle from the mesh level (clean_pc =
+//! vcycle; prodmg: the old production mg, x1 kept), or the x1-line solve of the mesh
+//! (x1line)
 
 void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
+  if (cln_pc == CLN_PC_X1LINE) {
+    CleanCellLineSolve(CleanCellLevel(0), 0, src, dst);
+    return;
+  }
   CleanCellVCycle(0, src, dst);
 }
 
@@ -1540,9 +1583,12 @@ void RadiationM1::CleanCellWriteBack() {
   auto eos = fl.eos;
   auto u0_ = u0;
   Real neint = 0.0;
-  Kokkos::parallel_reduce("clc_wbcell", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &nb) {
+  const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+  Kokkos::parallel_reduce("clc_wbcell", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                                                              (nmb1 + 1)*nk*nj*ni),
+  KOKKOS_LAMBDA(const int q, Real &nb) {
+    const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
+    const int j = js + (q/ni)%nj, i = is + q%ni;
     Real div[4];
     CleanCellDivergence(x, CLC_X, m, k, j, i, true, div);
     Real e = x.u(m,CLC_X,k,j,i);

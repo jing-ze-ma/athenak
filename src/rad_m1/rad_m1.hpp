@@ -56,6 +56,8 @@ constexpr int M1_F1 = 1;
 constexpr int M1_F2 = 2;
 constexpr int M1_F3 = 3;
 constexpr int M1_NVAR = 4;
+constexpr int CLN_PC_X1LINE = 1;   // clean_pc = x1line: x1-line solve of the mesh
+constexpr int CLN_PC_PRODMG = 2;   // clean_pc = prodmg: the old production mg
 
 // number of explicit stages of the PD-ARS (Chu et al. 2019) integrator used per substep.
 // With S == 0 it reduces to Heun / SSP-RK2.
@@ -2991,6 +2993,8 @@ class RadiationM1 {
   int cln_maxit = 4000;         // clean_maxit: BiCGStab iterations
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
+  Real cln_fvtol = 1.0e-13;     // clean_fv_tol: pass stop of the FV rays
+  int cln_pc = 0;               // clean_pc: 0 vcycle or CLN_PC_*
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
   int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
   bool cln_pred = true;         // clean_predict: closure of the predicted state
@@ -3043,12 +3047,18 @@ class RadiationM1 {
   DvceArray5D<Real> cln_fvq;    // lld: the source moments (m, CLQ_*, k, j, i)
   DvceArray5D<Real> cln_fvp;    // fv: the intensities of the last build (downwind slopes)
   DvceArray5D<Real> cln_fvx;    // 2-D axisymmetric: the intensities of the last pass
+  DvceArray2D<int8_t> cln_fvdue, cln_fvdone;   // fv1 passes: cells due (CleanFvSweep)
   DvceArray5D<Real> cln_fva;    // the outward vector areas of the six faces of a cell
-  DvceArray3D<int> cln_fvo;     // the cell order of each direction (m, d, cell)
-  DvceArray2D<int> cln_fvl;     // the sweep's (m n + d, cell) by level (CleanFvLevels)
-  std::vector<int> cln_fvlv;    // the start of each level in cln_fvl
+  DvceArray1D<int> cln_fvc;     // the cells of each m n + d by level (CleanFvLevels)
+  DvceArray2D<int> cln_fvg;     // the start of each m n + d in a level (level, m n + d)
+  DvceArray2D<int64_t> cln_fvo; // its offset in cln_fvc less that start (level, m n + d)
+  DvceArray1D<int> cln_fvk;     // the m n + d at every 64th entry of each level
+  std::vector<int64_t> cln_fvkl;   // the start of each level in cln_fvk
+  std::vector<std::vector<int>> cln_fvls;   // the level starts of each m n + d
+  std::vector<int> cln_fvlv;    // the number of cells of each level
+  std::vector<bool> cln_fvdo;   // the directions whose levels are due (CleanFvTables)
   DvceArray4D<int> cln_fvm;     // the direction maps of the periodic seams (m, side, k, d)
-  DvceArray4D<Real> cln_fvt;    // scratch of CleanFvSeams
+  DvceArray2D<Real> cln_fvt;    // scratch of CleanFvSeams
   DvceArray4D<int> cln_fvwm;    // specular maps of reflecting theta walls (m,side,k,d)
   DvceArray4D<Real> cln_fvwu;   // |n . theta_hat| there
   DvceArray5D<Real> cln_fvw;    // the walls' incoming intensities (m,side,k,i,b N + d)
@@ -3069,6 +3079,7 @@ class RadiationM1 {
   Real cln_nguard_sum = 0.0, cln_next_sum = 0.0;   // guard falls, extrapolated closures
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
+  DvceArray5D<Real> cln_ff;     // face fluxes of the operator (CleanCellApply)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
   bool cln_fref_set = false;    // cln_fref holds the force of the first coupled solve
@@ -3081,6 +3092,7 @@ class RadiationM1 {
     std::unique_ptr<MeshBoundaryValuesCC> pb;
   };
   std::map<int, CleanHalo> cln_halo;   // by nc
+  DvceArray5D<Real> cln_hbuf;   // the storage of every scratch array (32 components)
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
   void ImplicitPartitionInit();
