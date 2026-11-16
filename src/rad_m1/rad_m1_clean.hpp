@@ -61,8 +61,7 @@ constexpr int CLF_TH = 1;    // theta = 1/(1 + h c chi_f)
 constexpr int CLF_G = 2;     // flux of the old vector G_f
 constexpr int CLF_HP = 3;    // h+_f
 constexpr int CLF_HM = 4;    // h-_f
-constexpr int CLF_RC = 5;    // cell layout: RC coefficient (1 - al) c/chi_f (h-free);
-                             // staggered: the consistency bracket (CleanStagBracket)
+constexpr int CLF_RC = 5;    // cell layout: RC coefficient (1 - al) c/chi_f (h-free)
 constexpr int CLF_N = 6;
 // staggered face slots after CLF_N (clean_stag_fsolve: CLF_N .. CLF_N + 3 hold its F,
 // the dissipation term, F^H and, with clean_stag_fkin, the energy flux's memory d)
@@ -754,7 +753,6 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
   Real s = tg*x.fc[dir](m,CLF_G,k,j,i);
   if (x.fd && !x.hi) s += th*x.fc[dir](m,CLF_N+3,k,j,i);   // (fkin: of F^H, the last F^H)
   if (CleanStagMemUp(x, dir, m, k, j, i) != 0.0) s = 0.0;   // (gflux: upwind, implicit)
-  if (x.consist && !x.hi) s += x.fc[dir](m,CLF_RC,k,j,i);   // (staggered bracket)
   if (x.feedback) {   // (the emission part of the beta term, CleanFaceWeights)
     s += 0.25*tg*x.c*(CleanStagN(x, CLW_BT, dir, m, k, j, i, kl, jl, il) +
                       CleanStagN(x, CLW_BT, dir, m, k, j, i, k, j, i))*

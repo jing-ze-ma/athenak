@@ -1407,7 +1407,7 @@ Real RadiationM1::CleanVelocityUpdate() {
   CleanStagCsLateral(CLW_EK);
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = cln_split;
-  if (cln_fwork && cln_fsolve && cln_split) {   // (clean_stag_fwork: the momentum of the
+  if (cln_fwork) {   // (clean_stag_fwork: the momentum of the
     CleanStagFSolve(CLW_EK);                     //  F solve, which the write-back gives
     xh.fs = true;                                //  the gas, for the work W of the E row)
     cln_fsk = true;
@@ -1579,12 +1579,11 @@ int RadiationM1::CleanStagRealizable() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagBracket
-//! \brief staggered clean_consistency (with clean_stag_split, Cartesian): the bracket
-//! C_f = w (F_ray,f - Phi_f(J)) of every interior face (CLF_RC), F_ray the rays' energy
-//! flux through it (CLN_FX, CLN_F2, CLN_F3 of its upper cell) and Phi_f(J) the energy
-//! flux of the rays' own J, so that Phi(J) + C = (1 - w) Phi(J) + w F_ray.  Lagged (fixed
-//! in the solve), energy flux only (CleanFaceSource); a low-order face drops it.
-//! clean_stag_gflux: no additive bracket; it enters the streaming share as flux factors,
+//! \brief staggered clean_consistency: the bracket C_f = w (F_ray,f - Phi_f(J)) of every
+//! interior face, F_ray the rays' energy flux through it (CLN_FX, CLN_F2, CLN_F3 of its
+//! upper cell) and Phi_f(J) the energy flux of the rays' own J, so that Phi(J) + C =
+//! (1 - w) Phi(J) + w F_ray.  Lagged (fixed in the solve), energy flux only.  It enters
+//! the streaming share as flux factors (clean_stag_gflux),
 //! Phi_w = c (g+ E_L + g- E_R) with c (g+ J_L + g- J_R) w = c (h+ J_L + h- J_R) w + C_f
 //! (CLF_HP, CLF_HM), so that the face flux of E = J is the bracket's, (1 - w) Phi(J) +
 //! w F_ray: the half ranges H+-_f = h+-_f J of CleanFaceCoefficients, tilted by the
@@ -1607,7 +1606,6 @@ void RadiationM1::CleanStagBracket() {
   CleanArgs x = CleanMakeArgs();
   x.consist = false;
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
-  const bool gf = cln_gflux;
   par_for("cln_rayj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     x.w(m,CLW_Z,k,j,i) = x.cs(m,CLN_J,k,j,i);
@@ -1631,8 +1629,7 @@ void RadiationM1::CleanStagBracket() {
       const bool up = x.cub && dir > 0 && (j > x.je || k > x.ke);
       const Real fy = up ? x.cs(m,CLN_FH+4*(dir-1),k-dk,j-dj,i-di) : x.cs(m,n,k,j,i);
       const bool bf = CleanBoundaryFace(x, dir, m, k, j, i);
-      x.fc[dir](m,CLF_RC,k,j,i) = (bf || gf) ? 0.0 : w*(x.c*fy - pj);
-      if (bf || !gf) return;
+      if (bf) return;
       // (the rays' J also where it is below clean_ray_min E: their face flux passes
       // through cells they hold almost nothing in, the side cells of a diagonal beam)
       const Real jl = x.cs(m,CLN_JR,k-dk,j-dj,i-di), jr = x.cs(m,CLN_JR,k,j,i);
@@ -2246,10 +2243,8 @@ void RadiationM1::CleanWriteBack() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     x.w(m,CLW_Q,k,j,i) = CleanFluxDivergence(x, CLW_X, m, k, j, i, true);
   });
-  if (cln_fsolve && cln_split) {   // the face F of the F solve and its dissipation
-    CleanStagFSolve(CLW_X);
-    xh.fs = true;
-  }
+  CleanStagFSolve(CLW_X);   // (the face F of the F solve and its dissipation)
+  xh.fs = true;
 
   // face fluxes of the solution
   for (int dir = 0; dir < 3; ++dir) {
@@ -2261,8 +2256,7 @@ void RadiationM1::CleanWriteBack() {
     const int tf = M1_T2_F1 + dir;
     par_for("cln_wbface", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real f = xh.fs ? fc(m,CLF_N,k,j,i)
-                           : CleanFaceFlux(xh, CLW_X, dir, m, k, j, i, true);
+      const Real f = fc(m,CLF_N,k,j,i);
       if (slopes) kk(m,tf,k,j,i) = (f - fc(m,CLF_G,k,j,i))/h;
       f0(m,k,j,i) = f;
     });

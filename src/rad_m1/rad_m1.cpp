@@ -149,12 +149,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                     pin->GetBoolean("rad_m1","vet_gd");
     const bool gd = sp && vg;
     if (gd && !pin->DoesParameterExist("rad_m1","clean_rays")) cln_rfv = 1;
-    // (staggered: on by default with clean_stag_split, where the rays are not opt-in)
-    cln_split = pin->DoesParameterExist("rad_m1","clean_stag_split") ?
-                pin->GetBoolean("rad_m1","clean_stag_split") : !cln_cell;
+    // (staggered: with the split energy flux, where the rays are not opt-in)
+    cln_split = !cln_cell;
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",
-                                       (cln_cell || cln_split) &&
-                                       (cs ? !cln_cell && vg : !sp || gd));
+                                       cs ? !cln_cell && vg : !sp || gd);
     cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",cln_cell);
     std::string fm = pin->GetOrAddString("rad_m1","clean_face_model","none");
     cln_milne = (fm.compare("milne") == 0);
@@ -166,16 +164,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 (al.compare("tau_ray") == 0) ? 2 : (al.compare("one") == 0) ? 3 :
                 (al.compare("zero") == 0) ? 4 : -1;
     if ((!cln_cell && ly.compare("staggered") != 0) || cln_alpha < 0 ||
-        (!cln_recon && rc.compare("none") != 0) || (cln_consist && !cln_cell &&
-        pin->DoesParameterExist("rad_m1","clean_stag_split") &&
-        !pin->GetBoolean("rad_m1","clean_stag_split")) ||
+        (!cln_recon && rc.compare("none") != 0) ||
         (!cln_milne && fm.compare("none") != 0) || (cln_milne && !cln_consist)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1>/clean_layout = staggered | cell, clean_alpha = tau | "
         << "tau_sensor | tau_ray | one | zero, clean_recon = plm | none; "
-        << "clean_face_model = none | milne; clean_consistency needs clean_layout = cell "
-        << "(staggered: clean_stag_split) "
-        << "and clean_face_model = milne needs clean_consistency" << std::endl;
+        << "clean_face_model = none | milne; "
+        << "clean_face_model = milne needs clean_consistency" << std::endl;
       std::exit(EXIT_FAILURE);
     }}
     cln_psi_eps = pin->GetOrAddReal("rad_m1","clean_psi_eps",1.0e-12);
@@ -183,38 +178,21 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // (cell layout only: the flux factors of the staggered clean_stag_gflux keep E >= 0)
     cln_poslim = pin->GetOrAddBoolean("rad_m1","clean_pos_limit",cln_cell) && cln_cell;
     cln_diagcells = pin->GetOrAddBoolean("rad_m1","clean_diag_cells",false);
-    // the staggered scheme (read only when named; the defaults are the recommended set):
-    // clean_stag_fsolve, the face momentum of its own F solve; clean_stag_fkin, the rays'
-    // kinetic momentum flux in it, with clean_stag_fwork, the F solve in the Newton loop;
-    // clean_stag_gflux, the rays' face flux as flux factors; clean_stag_vimp, the gas
-    // velocity implicit in the face momentum; clean_stag_upwind, the donor-cell advective
-    // flux; clean_stag_pc = mg | line, the preconditioner of the E solve;
-    // clean_stag_sbimp (default off), the Ma et al. beta terms linearised in E
+    // the staggered scheme: the energy flux apart from the face momentum (split), the
+    // face momentum of its own F solve (fsolve) in the Newton loop (fwork), with
+    // clean_consistency the rays' kinetic momentum flux in it (fkin) and their face flux
+    // as flux factors (gflux), the donor-cell share of the advective flux (upwind).  Read
+    // only when named: clean_stag_vimp, the gas velocity implicit in the face momentum;
+    // clean_stag_pc = mg | line, the preconditioner of the E solve; clean_stag_sbimp
+    // (default off), the Ma et al. beta terms linearised in E
     auto stag = [&](const char *key, const bool def) {
       return !cln_cell && (pin->DoesParameterExist("rad_m1", key) ?
                            pin->GetBoolean("rad_m1", key) : def);
     };
-    cln_fsolve = stag("clean_stag_fsolve", cln_split);
-    cln_fkin = stag("clean_stag_fkin", cln_fsolve && cln_consist);
-    cln_fwork = stag("clean_stag_fwork", cln_fkin);
-    cln_gflux = stag("clean_stag_gflux", cln_consist);
+    cln_fsolve = cln_upw = cln_split;
+    cln_fkin = cln_fwork = cln_gflux = cln_split && cln_consist;
     cln_vimp = stag("clean_stag_vimp", cln_split);
-    cln_upw = stag("clean_stag_upwind", true);
     cln_sbimp = stag("clean_stag_sbimp", false) && cln_split;
-    // (fkin needs the F solve and the rays' consistent energy flux, and fkin and fwork go
-    // together; gflux and vimp need the bracket and the split)
-    const bool fk = cln_fkin && cln_fsolve && cln_consist && cln_fwork;
-    const bool gf = cln_gflux && cln_consist, vi = cln_vimp && cln_split;
-    if ((fk != cln_fkin || fk != cln_fwork || gf != cln_gflux || vi != cln_vimp) &&
-        global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> clean_stag_fkin and clean_stag_fwork need each other, "
-                << "clean_stag_fsolve and clean_consistency; clean_stag_gflux needs "
-                << "clean_consistency, clean_stag_vimp clean_stag_split: ignored"
-                << std::endl;
-    }
-    cln_fkin = cln_fwork = fk;
-    cln_gflux = gf;
-    cln_vimp = vi;
     {const std::string pc = pin->DoesParameterExist("rad_m1","clean_stag_pc") ?
                             pin->GetString("rad_m1","clean_stag_pc") : "mg";
     if (pc != "line" && pc != "mg") {
