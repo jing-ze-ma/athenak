@@ -2926,6 +2926,7 @@ class RadiationM1 {
   void CleanFvSweep();
   void CleanFvSourceAlloc();
   void CleanFvCartSource();
+  void CleanFvLevels();
   void CleanFvPanelSlopes(const bool q);
   void CleanFvSeams();
   bool CleanFvWall(const int side);
@@ -3044,6 +3045,8 @@ class RadiationM1 {
   DvceArray5D<Real> cln_fvx;    // 2-D axisymmetric: the intensities of the last pass
   DvceArray5D<Real> cln_fva;    // the outward vector areas of the six faces of a cell
   DvceArray3D<int> cln_fvo;     // the cell order of each direction (m, d, cell)
+  DvceArray2D<int> cln_fvl;     // the sweep's (m n + d, cell) by level (CleanFvLevels)
+  std::vector<int> cln_fvlv;    // the start of each level in cln_fvl
   DvceArray4D<int> cln_fvm;     // the direction maps of the periodic seams (m, side, k, d)
   DvceArray4D<Real> cln_fvt;    // scratch of CleanFvSeams
   DvceArray4D<int> cln_fvwm;    // specular maps of reflecting theta walls (m,side,k,d)

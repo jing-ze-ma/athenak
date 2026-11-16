@@ -923,6 +923,7 @@ void RadiationM1::CleanFvTables(const int d0, const int nd) {
     Kokkos::realloc(cln_fvo, nmb, nn, ncell);
     Kokkos::realloc(cln_fvm, nmb, 4, c3, nn);
   }
+  cln_fvlv.clear();   // (the sweep's levels follow the order: CleanFvLevels)
   CleanArgs x = CleanMakeArgs();
   auto dir_ = cln_fvd;
   auto x1v = pmy_pack->pcoord->x1v;
@@ -1083,6 +1084,67 @@ void RadiationM1::CleanFvWalls() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFvLevels
+//! \brief the wavefronts of the sweep: in each direction's order (cln_fvo) a cell takes
+//! the level after every face neighbour placed before it across a face the direction
+//! crosses (fv: every cell up to two along an axis), so that a level's cells of all
+//! directions read nothing written in the level and a pass gives the sequential
+//! sweep's intensities; cln_fvl lists (m n + d, cell) by level, cln_fvlv the level starts
+
+void RadiationM1::CleanFvLevels() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3, nc = nx1*nx2*nx3;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nmb = pmy_pack->nmb_thispack, n = cln_fvn, r2 = (cln_rfv == 2) ? 2 : 1;
+  const bool axi = !pmy_pack->pmesh->three_d && pmy_pack->pmesh->use_spherical_polar;
+  auto o_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fvo);
+  auto a_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fva);
+  auto d_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fvd);
+  const int nx[3] = {nx1, nx2, nx3};
+  std::vector<int> lev(nc), lq(static_cast<size_t>(nmb)*n*nc), cnt;
+  for (int m = 0; m < nmb; ++m) {
+    for (int d = 0; d < n; ++d) {
+      std::fill(lev.begin(), lev.end(), -1);
+      for (int p = 0; p < nc; ++p) {
+        const int c = o_h(m,d,p), x[3] = {c%nx1, (c/nx1)%nx2, c/(nx1*nx2)};
+        int l = 0;
+        for (int f = 0; f < 6; ++f) {
+          const int e = f/2, s = (f%2) ? 1 : -1;
+          const Real a = d_h(d,0)*a_h(m,3*f,ks+x[2],js+x[1],is+x[0]) +
+                         d_h(d,1)*a_h(m,3*f+1,ks+x[2],js+x[1],is+x[0]) +
+                         d_h(d,2)*a_h(m,3*f+2,ks+x[2],js+x[1],is+x[0]);
+          if ((axi && e == 2) || (a == 0.0 && r2 == 1)) continue;
+          for (int r = 1; r <= r2; ++r) {
+            int y[3] = {x[0], x[1], x[2]};
+            y[e] += r*s;
+            if (y[e] < 0 || y[e] >= nx[e]) break;
+            const int g = lev[y[0] + nx1*(y[1] + nx2*y[2])];
+            if (g >= 0) l = std::max(l, g + 1);
+          }
+        }
+        lev[c] = l;
+        lq[(static_cast<size_t>(m)*n + d)*nc + p] = l;
+        if (l >= static_cast<int>(cnt.size())) cnt.resize(l + 1, 0);
+        ++cnt[l];
+      }
+    }
+  }
+  cln_fvlv.assign(cnt.size() + 1, 0);
+  for (size_t l = 0; l < cnt.size(); ++l) cln_fvlv[l+1] = cln_fvlv[l] + cnt[l];
+  Kokkos::realloc(cln_fvl, cln_fvlv.back(), 2);
+  auto l_h = Kokkos::create_mirror_view(cln_fvl);
+  std::vector<int> pos(cln_fvlv.begin(), cln_fvlv.end() - 1);
+  for (int md = 0; md < nmb*n; ++md) {
+    for (int p = 0; p < nc; ++p) {
+      const int q = pos[lq[static_cast<size_t>(md)*nc + p]]++;
+      l_h(q,0) = md;
+      l_h(q,1) = o_h(md/n,md%n,p);
+    }
+  }
+  Kokkos::deep_copy(cln_fvl, l_h);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFvSweep
 //! \brief clean_rays = fv | fv1: the conservative formal solution on the vet_gd
 //! direction set (cln_fvi).  Per direction every face carries n . A_f times its upwind
@@ -1101,8 +1163,7 @@ void RadiationM1::CleanFvWalls() {
 void RadiationM1::CleanFvSweep() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  const int ncell = nx1*nx2*nx3;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2;
   const int nmb = pmy_pack->nmb_thispack;
   const int n = cln_fvn, og = vgd_w - indcs.ng, ok = vgd_w - ks;
   const bool axi = !pmy_pack->pmesh->three_d && pmy_pack->pmesh->use_spherical_polar;
@@ -1129,9 +1190,10 @@ void RadiationM1::CleanFvSweep() {
       }
     });
   }
+  if (cln_fvlv.empty()) CleanFvLevels();
   auto fi = cln_fvi;
   auto fa = cln_fva;
-  auto o_ = cln_fvo;
+  auto fl = cln_fvl;
   auto fm = cln_fvm;
   const bool o2 = (cln_rfv == 2);
   const bool wall[2] = {CleanFvWall(0), CleanFvWall(1)};
@@ -1246,12 +1308,14 @@ void RadiationM1::CleanFvSweep() {
   for (int it = 0; it < 100; ++it) {
     Real dmax = 0.0, imax = 0.0;
     if (axi) Kokkos::deep_copy(cln_fvx, fi);
-    Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*n),
-    KOKKOS_LAMBDA(const int md, Real &dm, Real &im) {
-      const int m = md/n, d = md%n;
+    for (int l = 0; l + 1 < static_cast<int>(cln_fvlv.size()); ++l) {
+    Real dl = 0.0, il = 0.0;
+    Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), cln_fvlv[l],
+                                                            cln_fvlv[l+1]),
+    KOKKOS_LAMBDA(const int q, Real &dm, Real &im) {
+      const int m = fl(q,0)/n, d = fl(q,0)%n, c = fl(q,1);
       const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
-      for (int p = 0; p < ncell; ++p) {
-        const int c = o_(m,d,p);
+      {
         const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
         // fv: the outflow faces carry the cell's own minmod slope, I + mm(I - U, D - I)/2
         // (U, D the neighbours up- and downstream), solved with the cell: the residual
@@ -1370,7 +1434,10 @@ void RadiationM1::CleanFvSweep() {
         fi(m,d,k,j,i) = iv;
         for (int e = 0; e < 3 && ld; ++e) fi(m,(1+e)*n+d,k,j,i) = sl[e];
       }
-    }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(imax));
+    }, Kokkos::Max<Real>(dl), Kokkos::Max<Real>(il));
+    dmax = fmax(dmax, dl);
+    imax = fmax(imax, il);
+    }
     CleanGhostFill(cln_fvi, 0, cln_fvb*n);
     CleanFvPanelSlopes(false);
     CleanFvSeams();
