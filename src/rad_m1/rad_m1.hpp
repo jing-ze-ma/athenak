@@ -3008,6 +3008,7 @@ class RadiationM1 {
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
   Real cln_fvtol = 1.0e-10;     // clean_fv_tol: pass stop of the FV rays
+  bool cln_fvlag = false;       // clean_fv_lag: one FV pass, inflows across blocks lagged
   int cln_pc = 0;               // clean_pc: 0 vcycle or CLN_PC_*
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
   int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
@@ -3077,6 +3078,7 @@ class RadiationM1 {
   DvceArray2D<int8_t> cln_fvdue, cln_fvdone;   // fv1 passes: cells due (CleanFvSweep)
   bool cln_fvjoint = true;      // clean_fv_joint: fv1 levels over the rank's MeshBlocks
   bool cln_fvexact = false;     // joint: one pass is the exact sweep (all ranks)
+  bool cln_fvfull = true;       // clean_fv_lag: a new swept set this step (full sweep)
   int cln_fvl0 = 0;             // joint: the first level a later pass takes
   int cln_fvjn[2] = {0, 0};     // joint: the dropped inflows, the cells reading ghosts
   bool cln_fvjoint_said = false;   // joint: the first build's counts printed

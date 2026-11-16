@@ -1093,6 +1093,9 @@ bool RadiationM1::CleanFvWall(const int side) {
 
 void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
   const int n = vgd_n;
+  // clean_fv_lag: the last step swept the same set unless it belongs to another rotation
+  // block (a function of tc and dt alone, so that a restart decides as the run would)
+  cln_fvfull = (cln_ring != 0);
   if (!VgdRotOn()) {
     if (cln_fvn == n) return;
     cln_fvd = vgd_dir;
@@ -1104,6 +1107,7 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
   const int nk = vra_on ? vra_k : 1;
   const bool xf = vgd_xf && !(vra_on && !g_vra_adv);
   int64_t b = VetGdBlock(cyc);
+  if (vgd_rot_dt <= 0.0) cln_fvfull = cln_fvfull || (cyc < 1) || VetGdBlock(cyc - 1) != b;
   Real s = 0.0;
   if (vgd_rot_dt > 0.0) {
     // (without the cross-fade the block of the step's midpoint, as VetGdBlock)
@@ -1111,6 +1115,7 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
     const Real tau = (tc - (xf ? 0.0 : 0.5*dt) - vgd_rot_t0)/vgd_rot_dt;
     b = static_cast<int64_t>(std::floor(tau));
     if (xf) s = tau - static_cast<Real>(b);
+    cln_fvfull = cln_fvfull || std::floor(tau - pm->dt/vgd_rot_dt) != std::floor(tau);
     // clean_rot_ring = live: a build on a block boundary closes the block (s = 1)
     if (cln_ring == 1 && s < 1.0e-9) {
       b -= 1;
@@ -1774,6 +1779,10 @@ void RadiationM1::CleanFvSweep() {
   const bool axi = !pmy_pack->pmesh->three_d && pmy_pack->pmesh->use_spherical_polar;
   CleanArgs x = CleanMakeArgs();
   auto x3f = pmy_pack->pcoord->xx3f;
+  // clean_fv_lag: one pass from the intensities of the last build (a restart's), the
+  // ghosts refreshed from them first: the inflow across MeshBlock faces and periodic
+  // seams lags by one build, the order inside a MeshBlock stays exact
+  const bool have = (cln_fvi.extent_int(1) == cln_fvb*n);
   if (cln_fvi.extent_int(1) != cln_fvb*n) {
     Kokkos::realloc(cln_fvi, nmb, cln_fvb*n, cln_s.extent_int(2), cln_s.extent_int(3),
                     cln_s.extent_int(4));
@@ -1798,6 +1807,7 @@ void RadiationM1::CleanFvSweep() {
   if (std::find(cln_fvdo.begin(), cln_fvdo.end(), true) != cln_fvdo.end()) {
     CleanFvLevels();
   }
+  const bool lag = cln_fvlag && have && !cln_fvfull && !cln_fvjoint;
   auto fi = cln_fvi;
   auto fa = cln_fva;
   auto fc = cln_fvc;
@@ -1912,6 +1922,11 @@ void RadiationM1::CleanFvSweep() {
     });
     CleanGhostFill(cln_fvq, CLQ_C, 3);
     CleanFvPanelSlopes(true);
+  }
+  if (lag) {
+    CleanGhostFill(cln_fvi, 0, cln_fvb*n);
+    CleanFvPanelSlopes(false);
+    CleanFvSeams();
   }
   // the walls' incoming beams of the intensities the sweep starts from (a restart has
   // no others)
@@ -2149,7 +2164,7 @@ void RadiationM1::CleanFvSweep() {
     if (wall[0] || wall[1]) CleanFvWalls();
     cln_fvnp[1] += 1;
     cln_fvnp[2] += nlev - l1;
-    if (jt && cln_fvexact) break;
+    if ((jt && cln_fvexact) || lag) break;
     if (CleanReduce(dmax, true) <= cln_fvtol*CleanReduce(imax, true)) break;
   }
 }

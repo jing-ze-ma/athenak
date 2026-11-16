@@ -100,6 +100,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_fv_tol")) {
       cln_fvtol = pin->GetReal("rad_m1","clean_fv_tol");
     }
+    // clean_fv_lag (read only when named, default false): one pass of the FV rays per
+    // build, the inflow from other MeshBlocks and across periodic seams that of the last
+    // build (full passes on a new direction set)
+    if (pin->DoesParameterExist("rad_m1","clean_fv_lag")) {
+      cln_fvlag = pin->GetBoolean("rad_m1","clean_fv_lag");
+    }
     cln_raymin = pin->GetOrAddReal("rad_m1","clean_ray_min",1.0e-3);
     // clean_rays = sc | fv1 (sp default) | fv | lld
     if (pin->DoesParameterExist("rad_m1","clean_rays")) {
