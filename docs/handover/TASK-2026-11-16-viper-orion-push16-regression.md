@@ -35,6 +35,10 @@ bsg-files-1009.
   lambdas + a97e368cb = race fix dad6ddabd from clean-cc-race-viper: each x1-line team owns its
   rows in cln_lw instead of team scratch; host teams of one thread kept). Expected bitwise to
   51e2ce016 on CPU.
+- UPDATE 2: test the head **0aee9a208**: clean_yres is back to opt-in (default false). With it on,
+  the first backward-Euler step of rhse_cs6 / rhse_cs24 does not converge (CLEAN WARNING +
+  dt_retry, MI300A and A100; bisect: off -> clean, gas_exact or fv_joint off -> still warns).
+  So for (A) add nothing new (rad_m1/clean_yres=false is now the default); (B) = no keys.
 - GPU (MI300A apudev, A100 Raven) gates are running now; results follow in a NOTE.
 
 Reply "A bitwise / not (first deck/file); B table; restart bitwise / not".
