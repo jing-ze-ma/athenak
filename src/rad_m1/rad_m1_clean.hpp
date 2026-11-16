@@ -55,11 +55,13 @@ constexpr int CLF_RC = 5;    // cell layout: RC coefficient (1 - al) c/chi_f (h-
 constexpr int CLF_N = 6;
 // staggered face slots after CLF_N (clean_stag_fsolve: CLF_N .. CLF_N + 3 hold its F,
 // the dissipation term, F^H and, with clean_stag_fkin, the energy flux's memory d)
-constexpr int CLF_DS = CLF_N + 4;   // clean_stag_fkin: d of the stage-loop start
-constexpr int CLF_SLO = CLF_N + 5;  // clean_stag_gflux: 1 on a low-order face
+constexpr int CLF_QL = CLF_N + 4;   // the operator's al, ar (CleanFaceWeights) and cross
+                                    // factor -(1-w) theta h c^2 of the pass (3)
+constexpr int CLF_DS = CLF_N + 7;   // clean_stag_fkin: d of the stage-loop start
+constexpr int CLF_SLO = CLF_N + 8;  // clean_stag_gflux: 1 on a low-order face
                                     // (CleanFaceWeights, CleanStagMemUp), else 0
-constexpr int CLF_DB = CLF_N + 6;   // clean_stag_vimp: drag share b = beta/(1 + beta) and
-constexpr int CLF_DQ = CLF_N + 7;   //   the face momentum Q = G - c^2 dm_f of the iterate
+constexpr int CLF_DB = CLF_N + 9;   // clean_stag_vimp: drag share b = beta/(1 + beta) and
+constexpr int CLF_DQ = CLF_N + 10;  //   the face momentum Q = G - c^2 dm_f of the iterate
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
 
@@ -136,6 +138,7 @@ struct CleanArgs {
                                // F^H (w = 0), not the energy flux
   bool drag;                   // staggered, clean_stag_vimp: implicit gas velocity
   bool upw;                    // staggered, clean_stag_upwind: donor-cell advective flux
+  bool fwc;                    // staggered: al, ar and the cross factor from CLF_QL
   DvceArray5D<Real> op;        // opacities (M1_OP_*)
   int nf;                      // cell layout: number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
@@ -438,6 +441,11 @@ Real CleanStagMemUp(const CleanArgs &x, const int dir, const int m, const int k,
 KOKKOS_INLINE_FUNCTION
 void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int k,
                       const int j, const int i, Real &al, Real &ar) {
+  if (x.fwc) {
+    al = x.fc[dir](m,CLF_QL,k,j,i);
+    ar = x.fc[dir](m,CLF_QL+1,k,j,i);
+    return;
+  }
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
@@ -639,7 +647,8 @@ Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
   const Real t0 = x.fc[dir](m,CLF_TH,k,j,i);   // (clean_stag_vimp: theta_d, as
   const Real qd = x.drag ? x.fc[dir](m,CLF_DB,k,j,i) : 0.0;   //  CleanFaceWeights)
   const Real th = t0 + qd*(1.0 - t0);
-  return -(1.0 - w)*th*x.h*x.c*x.c*CleanFaceStress(x, e, dir, m, k, j, i, false);
+  return (x.fwc ? x.fc[dir](m,CLF_QL+2,k,j,i) : -(1.0 - w)*th*x.h*x.c*x.c)*
+         CleanFaceStress(x, e, dir, m, k, j, i, false);
 }
 
 //----------------------------------------------------------------------------------------
