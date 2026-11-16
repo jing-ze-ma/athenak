@@ -23,14 +23,16 @@
 //! cells L and R:
 //!   fE   = c (y_d,L + y_d,R)/2 - al (s/2) (E_R - E_L) + RC
 //!   fY_b = c (D_bd,L E_L + D_bd,R E_R)/2 - al (s/2) (y_b,R - y_b,L)
-//!   RC   = (1 - al) th h c^2 [(g_L + g_R)/2 - ((D_dd E)_R - (D_dd E)_L)/dx_d]
+//!   RC   = (1 - al) (c/chi_f) [(g_L + g_R)/2 - ((D_dd E)_R - (D_dd E)_L)/dx_d]
 //! with g_i = ((D_dd E)_{i+1} - (D_dd E)_{i-1})/(x_{i+1} - x_{i-1}), dx_d the distance
 //! between the cell centres across the face, th = 1/(1 + h c chi_f),
 //! s = c sqrt(max(D_dd,L, D_dd,R)) and al the dissipation weight.  RC is the momentum
 //! interpolation of the flux to the face: where h c chi >> 1 it turns fE into the compact
-//! diffusion flux.  With force_reference = clean (1 - al) th h c^2 is its steady value
-//! (1 - al) c/chi_f (CleanDissipationWeight), so that a steady state of the scheme does
-//! not depend on h.  The jumps
+//! diffusion flux.  Its coefficient is the steady value (1 - al) c/chi_f of
+//! (1 - al) th h c^2 (CleanDissipationWeight) at every h: a steady state of the scheme
+//! does not depend on h, and the spatial operator not on the time step (with th h c^2 the
+//! RC term is O(h dx^2) where h c chi < 1, a first-order term of the time ladders at
+//! fixed N).  Low-order faces keep th.  The jumps
 //! (E_R - E_L, y_R - y_L) are those of the face states: first order, or
 //! (clean_recon = plm) the van Leer reconstruction of src/reconstruct/plm.hpp,
 //! u_L^+ = u_L + dl dr/(dl + dr), whose weights dr/(dl + dr), dl/(dl + dr) are taken
@@ -591,7 +593,7 @@ KOKKOS_INLINE_FUNCTION
 void CleanCellRhieChow(const CleanArgs &x, const int dir, const bool lo, const int m,
                        const int k, const int j, const int i, Real q[4]) {
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-  const Real a = lo ? 0.0 : x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c;
+  const Real a = lo ? 0.0 : x.fc[dir](m,CLF_RC,k,j,i);
   const Real d0 = CleanCellFaceDistance(x, dir, m, k, j, i);
   const Real dm = CleanCellFaceDistance(x, dir, m, k-dk, j-dj, i-di);
   const Real dp = CleanCellFaceDistance(x, dir, m, k+dk, j+dj, i+di);

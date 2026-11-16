@@ -49,7 +49,8 @@ constexpr int CLF_TH = 1;    // theta = 1/(1 + h c chi_f)
 constexpr int CLF_G = 2;     // flux of the old vector G_f
 constexpr int CLF_HP = 3;    // h+_f
 constexpr int CLF_HM = 4;    // h-_f
-constexpr int CLF_N = 5;
+constexpr int CLF_RC = 5;    // cell layout: RC coefficient (1 - al) c/chi_f (h-free)
+constexpr int CLF_N = 6;
 
 // work vectors (array cln_w)
 constexpr int CLW_EO = 0;    // E of the old vector
