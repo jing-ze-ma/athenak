@@ -1602,8 +1602,8 @@ void RadiationM1::VetGdCsSweep() {
   const int spe = VetSegMode();
   const int vim = vet_interp;
   const bool emi = VetBcEmit() && (lcut == 0) &&
-                   (ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK);
-  const Real iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
+                   (ibc_x1min != M1_IBC_REFLECT);
+  const Real iemit = VetBathLo();
   const bool tbh = vgd_tbath && (ibc_x1max == M1_IBC_MARSHAK) && (iebath_x1max != 0.0);
   const Real itop = tbh ? iebath_x1max : 0.0;
   auto cx1v = pmy_pack->pcoord->x1v;

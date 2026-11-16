@@ -1709,13 +1709,15 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
 //! \fn Real RadiationM1::VetBathLo
 //! \brief unify-sc-gd-1012 (#2): the isotropic intensity entering the vet_sc sweep at the
 //! inner x1 face when vet_bc_inner resolves to emit (VetBcEmit): the Marshak bath
-//! implicit_ebath_x1min, or the black sphere 4 F/c of a flux face; -1 = the diffusion
+//! implicit_ebath_x1min, the black sphere 4 F/c of a flux face, nothing at an outflow
+//! face (scheme = clean); -1 = the diffusion
 //! intensity (or the Milne diagnostic's exact one).  The old rule (vet_bc_bath at a
 //! Marshak face) is vet_bc_inner = auto, bitwise.
 
 Real RadiationM1::VetBathLo() const {
   if (vet_milne || !VetBcEmit()) {return -1.0;}
-  return (ibc_x1min == M1_IBC_MARSHAK) ? iebath_x1min : 4.0*iflux_x1min/c_light;
+  if (ibc_x1min == M1_IBC_OUTFLOW) return 0.0;
+  return (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1744,8 +1746,9 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   // the moment solve's transverse faces must be the same vacuum (implicit_bc_x2min|max,
   // x3min|max = marshak): a reflecting (zero-flux) face has no formal-solution
   // counterpart here
-  if ((vet_x2open && (ibc_x2min != M1_IBC_MARSHAK || ibc_x2max != M1_IBC_MARSHAK)) ||
-      (vet_x3open && (ibc_x3min != M1_IBC_MARSHAK || ibc_x3max != M1_IBC_MARSHAK))) {
+  auto vac = [](const int b) {return b == M1_IBC_MARSHAK || b == M1_IBC_OUTFLOW;};
+  if ((vet_x2open && !(vac(ibc_x2min) && vac(ibc_x2max))) ||
+      (vet_x3open && !(vac(ibc_x3min) && vac(ibc_x3max)))) {
     VetFatal("<rad_m1>/closure = vet_sc on a non-periodic x2 (x3) mesh needs "
              "implicit_bc_x2min = implicit_bc_x2max (x3min, x3max) = marshak: the "
              "vacuum face of both the formal solution and the moment solve");

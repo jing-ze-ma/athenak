@@ -635,6 +635,8 @@ Real CleanCellOutStress(const CleanArgs &x, const int dir, const int b, const in
 //! \brief the E-independent part of the moment scheme's face fluxes: the consistency
 //! bracket and, on a physical boundary, the incoming E flux of CleanFaceSource and the
 //! stress of the incoming radiation (beam: its stress column; isotropic bath: c E_bath/6
+//! on the normal row; imposed flux F: 2F/3, CleanCellM1Jacobian); in a first-order solve
+//! or on a low-order face the ghost part of the upwind stress
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int k,

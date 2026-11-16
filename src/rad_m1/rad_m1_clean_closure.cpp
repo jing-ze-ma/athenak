@@ -921,7 +921,7 @@ void RadiationM1::CleanFvSweep() {
   auto dir_ = vgd_dir;
   auto cw_ = vgd_cs;
   const bool emi = VetBcEmit();
-  const Real iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
+  const Real iemit = VetBathLo();
   // fv: the downwind cell of a slope is read from the last build (the own cell's outflow
   // slopes are implicit), so that a pass is a complete upwind sweep as in fv1; the slopes
   // settle with the run, exactly at a steady state
@@ -1124,7 +1124,7 @@ void RadiationM1::CleanGdFaceSums() {
   // emission (vet_bc_inner emit) or of the first cell, the inward ones of the first cell
   const bool open = (ibc_x1min != M1_IBC_REFLECT);
   const bool emi = VetBcEmit();
-  const Real iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
+  const Real iemit = VetBathLo();
   // the short characteristics' intensities in the mesh layout with the ghost exchange
   // (the image cell's beyond a periodic seam, re-indexed by the wall map as the sweep)
   if (!fv) {

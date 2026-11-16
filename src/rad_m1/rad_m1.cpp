@@ -2477,6 +2477,7 @@ void RadiationM1::VetBcInit(ParameterInput *pin, const bool gd) {
 //! face (emit: a Marshak or flux face; auto: a Marshak face)
 
 bool RadiationM1::VetBcEmit() const {
+  if (ibc_x1min == M1_IBC_OUTFLOW) {return true;}   // (scheme = clean) nothing enters
   if (vet_bc_inner == 1) {
     return (ibc_x1min == M1_IBC_MARSHAK) || (ibc_x1min == M1_IBC_FLUX);
   }

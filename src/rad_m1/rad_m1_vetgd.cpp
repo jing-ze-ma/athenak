@@ -818,7 +818,8 @@ void RadiationM1::VetGdInit() {
   if (!pm->three_d && (vgd_twin || vgd_async || impl_beam_hr || impl_beam_fs)) {
     VgdFatal("2-D axisymmetric: no vet_gd_twin / async / implicit_flux_beam");
   }
-  if (ibc_x1max != M1_IBC_MARSHAK && !(clean && ibc_x1max == M1_IBC_REFLECT)) {
+  if (ibc_x1max != M1_IBC_MARSHAK &&
+      !(clean && (ibc_x1max == M1_IBC_REFLECT || ibc_x1max == M1_IBC_OUTFLOW))) {
     // the sweep has a vacuum top, or a mirror (VetGdTopMirror) for the clean scheme
     VgdFatal("outer x1 needs implicit_bc_x1max = marshak (+ vet_col_surface_q), or "
              "reflect with scheme = clean");
@@ -6066,9 +6067,8 @@ void RadiationM1::VetGdSweep() {
   // outward rays at the physical inner face start from his ghost I_+
   const bool lhx = (vgd_lhx_ie > 0.0) && (lcut == 0) && !vgd_beam;
   const bool emi = lhx || ((VetBcEmit() || (vgd_beam && vgd_emit)) && (lcut == 0) &&
-                   (vgd_beam || ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK));
-  const Real iemit = lhx ? vgd_lhx_ie : (vgd_beam ? 0.0 : ((ibc_x1min == M1_IBC_FLUX) ?
-                     4.0*iflux_x1min/c_light : iebath_x1min));
+                   (vgd_beam || ibc_x1min != M1_IBC_REFLECT));
+  const Real iemit = lhx ? vgd_lhx_ie : (vgd_beam ? 0.0 : VetBathLo());
   // linhao-prod-1104 (user 11-04 "mimic his inner BC with the rotating rays"): I_+ per column
   // with the half-range sums of the CURRENT direction set about the column's radial
   // direction, so the outward ghost moments are exactly E_g and F_g at any orientation
@@ -9001,8 +9001,8 @@ void RadiationM1::VetGdSymRef() {
   in.F[ns] = vgd_sr_x1f[ie + 1];
   // the boundary rules of VetGdSweep (twin: no beam; vet_gd_symref refuses vet_gd_beam)
   in.emi = VetBcEmit() && (lcut == 0) &&
-           (ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK);
-  in.iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
+           (ibc_x1min != M1_IBC_REFLECT);
+  in.iemit = VetBathLo();
   if (vgd_lhx_ie > 0.0 && lcut == 0) {   // linhao-prod-1104 halfrange (rad_m1.hpp)
     in.emi = true;
     in.iemit = vgd_lhx_ie;

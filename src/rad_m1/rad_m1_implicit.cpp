@@ -1080,9 +1080,11 @@ int ImplBCFromString(const std::string &s, const BoundaryFlag mbc) {
   if (s.compare("reflect") == 0) return M1_IBC_REFLECT;
   if (s.compare("periodic") == 0) return M1_IBC_PERIODIC;
   if (s.compare("efix") == 0) return M1_IBC_EFIX;
+  if (s.compare("outflow") == 0) return M1_IBC_OUTFLOW;
   std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
     << std::endl << "<rad_m1>/implicit_bc_x1min|max = '" << s << "' is not a valid "
-    << "choice (auto | marshak | flux | reflect | periodic | efix)" << std::endl;
+    << "choice (auto | marshak | flux | reflect | periodic | efix | outflow (scheme = "
+    << "clean))" << std::endl;
   std::exit(EXIT_FAILURE);
   return M1_IBC_MARSHAK;
 }
@@ -3746,6 +3748,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   ibc_x1max = ImplBCFromString(
       pin->GetOrAddString("rad_m1","implicit_bc_x1max","auto"),
       mbcs[static_cast<int>(BoundaryFace::outer_x1)]);
+  if (!clean && (ibc_x1min == M1_IBC_OUTFLOW || ibc_x1max == M1_IBC_OUTFLOW)) {
+    ImplFatal("<rad_m1>/implicit_bc_x1min|max = outflow needs scheme = clean");
+  }
   // bubbles-1012: the transverse faces (read only when named; auto = the old rule)
   {
     auto tbc = [&](const char *key, const BoundaryFace f) -> int {
