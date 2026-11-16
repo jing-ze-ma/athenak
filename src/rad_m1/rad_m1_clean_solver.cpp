@@ -192,10 +192,17 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
   const int ib[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
   int rf = 0;   // (bit s: side s reflects)
   for (int s = 0; s < 6; ++s) rf |= (ib[s] == M1_IBC_REFLECT) ? (1 << s) : 0;
+  // (D is the rays'. The x1min end of their sweep keeps the diffusion intensity unless
+  // vet_bc_reflect = mirror: there the wall cell's D_12 is that of a field the rays do
+  // not mirror, and an odd ghost turned it into a shear gradient D_12 E/dx in the theta
+  // faces of the wall row that moved the gas at the flz q wall outward. Its D_12 ghost
+  // stays even; D_13 stays odd (no wall torque: L_z exact))
+  const bool rm = vet_bc_mirror;
   auto sg = [=] KOKKOS_FUNCTION (const int c, const int s, const int m) {
     const int p = c - CLN_D11 - 3;   // (D12, D13, D23: axes 01, 02, 12; p != 2 - d)
     if (!ts || p < 0 || p > 2) return 1.0;
     if (bc(m,s) == BoundaryFlag::polar) return (p < 2) ? -1.0 : 1.0;
+    if (s == 0 && !rm && p == 0) return 1.0;
     return (((rf >> s) & 1) && p != 2 - s/2) ? -1.0 : 1.0;
   };
   par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
