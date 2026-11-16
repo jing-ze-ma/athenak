@@ -2965,6 +2965,9 @@ class RadiationM1 {
   void CleanStagBracket();
   void CleanStagFSolve(const int e);
   void CleanDMem(const bool save);
+  // closure components in the restart files of the extrap history and clean_rot_ring:
+  // the cell layout keeps the CLN_JR (= 49) of push 16's files, CLN_JR is staggered only
+  int CleanRstNq() const;
   void CleanStagDrag(const bool first);
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
