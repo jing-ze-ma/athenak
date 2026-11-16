@@ -127,6 +127,12 @@ void RadiationM1::CleanInit() {
   Kokkos::deep_copy(cln_fc1, 0.0);
   Kokkos::deep_copy(cln_fc2, 0.0);
   Kokkos::deep_copy(cln_fc3, 0.0);
+  for (int d = 0; d < 3 && cln_rstd.extent_int(0) == nmb && cln_fsolve; ++d) {
+    auto fc = (d == 0) ? cln_fc1 : ((d == 1) ? cln_fc2 : cln_fc3);   // (from a restart)
+    auto AL = Kokkos::ALL;
+    Kokkos::deep_copy(Kokkos::subview(fc, AL, CLF_N + 3, AL, AL, AL),
+                      Kokkos::subview(cln_rstd, AL, d, AL, AL, AL));
+  }
   if (cln_cell) {
     Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
     Kokkos::deep_copy(cln_x, 0.0);

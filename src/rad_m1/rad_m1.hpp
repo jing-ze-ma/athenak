@@ -3154,6 +3154,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_ff;     // face fluxes of the operator (CleanCellApply)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
+  DvceArray5D<Real> cln_rstd;   // staggered fkin: the restart's memory d (m,3,k,j,i)
   bool cln_fref_set = false;    // cln_fref holds the force of the first coupled solve
   bool cln_vzero = false;       // the iterates keep the gas momentum (steady start)
   // cubed sphere: face areas, centroid distances across the faces, normals and centroids
