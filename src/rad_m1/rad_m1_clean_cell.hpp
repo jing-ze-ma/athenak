@@ -515,14 +515,15 @@ bool CleanFaceDissipation(const CleanArgs &x, const int dir, const int m, const 
 //! \fn void CleanCellKinetic
 //! \brief the rays' half-range factors of the kinetic flux through the interior face
 //! (k,j,i) normal to dir: h+ of L and h- of R of the face family; on the cubed sphere
-//! about the face's own normal (CLF_HK)
+//! with FV rays about the face's own normal (CLF_HK)
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellKinetic(const CleanArgs &x, const int dir, const int m, const int k,
                       const int j, const int i, Real &hp, Real &hm) {
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
-  hp = x.cub ? x.fc[dir](m,CLF_HK,k,j,i) : x.cs(m,CLN_HP+dir,kl,jl,il);
-  hm = x.cub ? x.fc[dir](m,CLF_HK+1,k,j,i) : x.cs(m,CLN_HM+dir,k,j,i);
+  const bool hk = x.cub && x.fvrays;
+  hp = hk ? x.fc[dir](m,CLF_HK,k,j,i) : x.cs(m,CLN_HP+dir,kl,jl,il);
+  hm = hk ? x.fc[dir](m,CLF_HK+1,k,j,i) : x.cs(m,CLN_HM+dir,k,j,i);
 }
 
 //----------------------------------------------------------------------------------------

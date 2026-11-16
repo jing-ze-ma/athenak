@@ -111,7 +111,9 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
   Kokkos::realloc(cln_v, nmb, 2, n3, n2, n1);
   Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
-  const int nfc = cln_milne ? CLF_KK + 6 : (cln_consist ? CLF_HK + 2 : CLF_N);
+  // the cubed sphere takes the half ranges about the face normals from the FV rays
+  cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
+  const int nfc = cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N);
   Kokkos::realloc(cln_fc1, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc2, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc3, nmb, nfc, n3, n2, n1);
@@ -596,7 +598,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         if (cln_feedback) CleanAdvectiveCoefficients();
       }
       if (cell) {
-        if (cln_consist && (inl == 0 || clos)) CleanCellConsistency();
+        if (cln_hk && (inl == 0 || clos)) CleanCellConsistency();
         if (cln_recon && inl < cln_maxpic) CleanCellSlopeWeights(CLC_K);
         CleanCellRightHandSide();
         CleanCellPreconditionerSetup();
@@ -706,7 +708,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       CleanClosureFill();
       CleanGhostFill(cln_s, 0, CLN_N);
       CleanCellFaceSpeeds();
-      if (cln_consist) CleanCellConsistency();
+      if (cln_hk) CleanCellConsistency();
       if (cln_milne) CleanCellMilneSetup();
       CleanCellClosureSlope(1.0);
     }
