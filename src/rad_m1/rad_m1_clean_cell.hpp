@@ -560,7 +560,8 @@ void CleanCellRhieChow(const CleanArgs &x, const int dir, const Real al, const i
 //! With clean_consistency the streaming share w of the faces that carry the rays' flux
 //! F_ray (low-order or not) moves only y beyond the rays' moments: its curvature terms
 //! are the rays' own, CLN_G (kin = true, independent of E, shared by the r faces' w as
-//! the area terms), so that the rays' moments (J, J h) are its steady state.
+//! the area terms), so that the rays' moments (J, J h) are its steady state; the y_phi
+//! row keeps its angular-momentum flux form (no source), so that L_z stays exact.
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int j,
@@ -575,7 +576,7 @@ void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int 
   const Real am = x.area[0](m,k,j,i), ap = x.area[0](m,k,j,i+1);
   if (kin) {
     const Real w = (wf(0, k, j, i+1)*ap - wf(0, k, j, i)*am)/(ap - am);
-    for (int b = 0; b < 3; ++b) g[b] = w*hv*x.cs(m,CLN_G+b,k,j,i);
+    for (int b = 0; b < 3; ++b) g[b] = (b < 2) ? w*hv*x.cs(m,CLN_G+b,k,j,i) : 0.0;
     return;
   }
   const Real dtt = CleanDiag(x, 1, 1, m, k, j, i), dpp = CleanDiag(x, 2, 2, m, k, j, i);
