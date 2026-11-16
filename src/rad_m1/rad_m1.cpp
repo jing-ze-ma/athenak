@@ -93,7 +93,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_pred = pin->GetOrAddBoolean("rad_m1","clean_predict",true);
     {std::string bf = pin->GetOrAddString("rad_m1","clean_bc","halfrange");
     cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
-    {std::string ly = pin->GetOrAddString("rad_m1","clean_layout","staggered");
+    {std::string ly = pin->GetOrAddString("rad_m1","clean_layout","cell");
     std::string al = pin->GetOrAddString("rad_m1","clean_alpha","tau");
     std::string rc = pin->GetOrAddString("rad_m1","clean_recon","plm");
     cln_cell = (ly.compare("cell") == 0);
