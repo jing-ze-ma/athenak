@@ -116,7 +116,7 @@ void RadiationM1::CleanInit() {
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
   const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N),
-                           cln_fsolve ? CLF_N + 3 : 0);
+                           cln_fsolve ? CLF_N + 4 : 0);
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = cln_cell && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
@@ -1633,6 +1633,13 @@ void RadiationM1::CleanStagFSolve(const int e) {
       fc(m,CLF_N+2,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H: the boundary's, kept)
       if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
       const Real f = x.w(m,CLW_Y,k,j,i);
+      // (fkin, the solution's F solve: d = Phi^H - F, Phi^H = F^H + theta d the energy
+      // flux's high-order part, whose memory is G + d (CleanFaceSource): its own history,
+      // so that its steady state, F^H of G = F^H, does not depend on h)
+      if (fk && e == CLW_X) {
+        fc(m,CLF_N+3,k,j,i) += fc(m,CLF_N,k,j,i) - f - (1.0 - fc(m,CLF_TH,k,j,i))*
+                               fc(m,CLF_N+3,k,j,i);
+      }
       fc(m,CLF_N,k,j,i) = f;
       fc(m,CLF_N+2,k,j,i) = f;
       const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
