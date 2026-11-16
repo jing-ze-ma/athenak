@@ -64,7 +64,8 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/time2_vet", "clean_closure"}, {"rad_m1/time2_vet_col", "clean_closure"},
     {"rad_m1/time2_vet_sc", "clean_closure"},
     {"rad_m1/time2_vet_extrap", "clean_closure"}, {"rad_m1/time2_lin_tol*", "clean_tol"},
-    {"rad_m1/implicit_ghost_x1min", "!"}, {"rad_m1/implicit_*", ""},
+    {"rad_m1/implicit_ghost_x1min", "!"}, {"rad_m1/ic_rad*", "clean_init"},
+    {"rad_m1/implicit_*", ""},
     {"rad_m1/time2_accept_fallback", ""}, {"rad_m1/time2_posfix*", ""},
     {"rad_m1/time2_k1_*", ""}, {"rad_m1/time2_face_fct", ""},
     {"time/dt_retry_t2_be", ""}};

@@ -98,6 +98,7 @@ bool RadiationM1::VsrcNoes() const {
 //! \brief the ic_rad keys (read only when named) and their restrictions
 
 void RadiationM1::IcRadInit(ParameterInput *pin) {
+  if (clean) return;   // its solves are the production scheme's; clean_init = steady
   // icrad-1011 default (user 10-11): fs_relax on a FRESH start of an implicit vet_col +
   // vet_gd run with a fluid (the configuration it was tested on); none for every other
   // problem (no M1 / explicit / no vet_gd: the hook is not even armed).  A restart never
