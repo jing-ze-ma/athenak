@@ -1808,51 +1808,38 @@ void RadiationM1::CleanStagFSolve(const int e) {
         x.w(m,CLW_P,k,j,i) = eq ? 1.0 : 0.0;
       }
     });
-    // the passes (one exact Thomas solve per line; more only to settle the lagged line
-    // ends of other MeshBlocks) stop at a change of 1e-14 of max |F|, or when the change
-    // no longer decreases (round-off)
-    Real q0 = 1.0e300;
-    for (int it = 0; it < 64; ++it) {
-      Real dmax = 0.0, fmx = 0.0;
-      Kokkos::parallel_reduce("cln_fs2", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                              (nmb1 + 1)*na*nb),
-      KOKKOS_LAMBDA(const int idx, Real &d_max, Real &f_max) {
-        const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb;
-        auto face = [&](const int t, int &k, int &j, int &i) {
-          if (dir == 0) {i = is + t; j = js + a; k = ks + b;}
-          if (dir == 1) {j = js + t; i = is + a; k = ks + b;}
-          if (dir == 2) {k = ks + t; i = is + a; j = js + b;}
-        };
-        Real dp = 0.0;
-        for (int t = 0; t <= n; ++t) {
-          int k, j, i;
-          face(t, k, j, i);
-          Real r = x.w(m,CLW_R0,k,j,i);
-          if (x.w(m,CLW_P,k,j,i) > 0.0) {
-            if (t == 0) r -= x.w(m,CLW_AM,k,j,i)*x.w(m,CLW_Y,k-dk,j-dj,i-di);
-            if (t == n) r -= x.w(m,CLW_AP,k,j,i)*x.w(m,CLW_Y,k+dk,j+dj,i+di);
-          }
-          dp = (r - ((t == 0) ? 0.0 : x.w(m,CLW_AM,k,j,i))*dp)/x.w(m,CLW_A0,k,j,i);
-          x.w(m,CLW_R,k,j,i) = dp;
+    // one exact Thomas solve per line; the faces beyond a line end of a MeshBlock or
+    // a periodic wrap are the last F solve's (lagged)
+    Kokkos::parallel_for("cln_fs2", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                         (nmb1 + 1)*na*nb),
+    KOKKOS_LAMBDA(const int idx) {
+      const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb;
+      auto face = [&](const int t, int &k, int &j, int &i) {
+        if (dir == 0) {i = is + t; j = js + a; k = ks + b;}
+        if (dir == 1) {j = js + t; i = is + a; k = ks + b;}
+        if (dir == 2) {k = ks + t; i = is + a; j = js + b;}
+      };
+      Real dp = 0.0;
+      for (int t = 0; t <= n; ++t) {
+        int k, j, i;
+        face(t, k, j, i);
+        Real r = x.w(m,CLW_R0,k,j,i);
+        if (x.w(m,CLW_P,k,j,i) > 0.0) {
+          if (t == 0) r -= x.w(m,CLW_AM,k,j,i)*x.w(m,CLW_Y,k-dk,j-dj,i-di);
+          if (t == n) r -= x.w(m,CLW_AP,k,j,i)*x.w(m,CLW_Y,k+dk,j+dj,i+di);
         }
-        Real fn = 0.0;
-        for (int t = n; t >= 0; --t) {
-          int k, j, i;
-          face(t, k, j, i);
-          const Real fv = x.w(m,CLW_R,k,j,i) - ((t < n) ? x.w(m,CLW_CP,k,j,i)*fn : 0.0);
-          fn = fv;
-          // (the last face's slot is a ghost: the neighbour's or a physical face)
-          if (t < n) d_max = fmax(d_max, fabs(fv - x.w(m,CLW_Y,k,j,i)));
-          // (|F| floored by 1e-8 c |E|: with F at round-off the stop is not decided by it)
-          f_max = fmax(f_max, fmax(fabs(fv), 1.0e-8*x.c*fabs(x.w(m,e,k,j,i))));
-          x.w(m,CLW_Y,k,j,i) = fv;
-        }
-      }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(fmx));
-      CleanGhostFill(cln_w, CLW_Y, 1);
-      const Real q = CleanReduce(dmax, true)/fmax(CleanReduce(fmx, true), 1.0e-300);
-      if (q <= 1.0e-14 || q >= q0) break;
-      q0 = q;
-    }
+        dp = (r - ((t == 0) ? 0.0 : x.w(m,CLW_AM,k,j,i))*dp)/x.w(m,CLW_A0,k,j,i);
+        x.w(m,CLW_R,k,j,i) = dp;
+      }
+      Real fn = 0.0;
+      for (int t = n; t >= 0; --t) {   // (the last face's slot is a ghost: the
+        int k, j, i;                   //  neighbour's or a physical face)
+        face(t, k, j, i);
+        fn = x.w(m,CLW_R,k,j,i) - ((t < n) ? x.w(m,CLW_CP,k,j,i)*fn : 0.0);
+        x.w(m,CLW_Y,k,j,i) = fn;
+      }
+    });
+    CleanGhostFill(cln_w, CLW_Y, 1);
     // F and the dissipation term of every face
     par_for("cln_fs3", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
