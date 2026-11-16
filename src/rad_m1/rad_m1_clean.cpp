@@ -1825,13 +1825,16 @@ void RadiationM1::CleanWriteBack() {
         den = ei - x.w(m,CLW_EI,k,j,i);
       } else {
         // the gas takes the exchange of the solution with the iterate's T, the beta terms
-        // and W, E the rest (its fluxes): the linear solve's residual stays in E, not eint
+        // and W, E the rest (its fluxes): the linear solve's residual goes to E, not eint
         const Real t = x.w(m,CLW_T,k,j,i);
         const Real ex = h*x.c*(x.op(m,M1_OP_P,k,j,i)*x.w(m,CLW_GM,k,j,i)*arad_*SQR(SQR(t)) -
                                x.op(m,M1_OP_E,k,j,i)*fmax(e, 0.0));
-        const Real dg = x.w(m,CLW_EP,k,j,i) - ex + wk;
-        e += den - dg;
-        den = dg;
+        // (the residual over the row's local diagonal: all of it in a scattering cell,
+        // little where the exchange is stiff, whose X the solve fixes to tol/diagonal)
+        const Real rd = (den - x.w(m,CLW_EP,k,j,i) + ex - wk)/
+                        (1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*(1.0 - x.w(m,CLW_RR,k,j,i)));
+        e += rd;
+        den -= rd;
       }
       uh(m,IEN,k,j,i) += den;
     }
