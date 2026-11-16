@@ -1825,11 +1825,12 @@ void RadiationM1::CleanWriteBack() {
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = cln_split;   // (clean_stag_split: the faces store the momentum state)
   auto kk = (t2_solve == M1_T2S_STAGE1) ? t2k2 : t2k1;
-  // h div Phi of the solution (CLW_R0) before the F solve below moves the energy flux's
-  // memory d (clean_stag_fkin): E takes the residual of the operator it was solved with
+  // h div Phi of the solution (CLW_Q, a slot the F solve leaves alone) before the F solve
+  // below moves the energy flux's memory d (clean_stag_fkin): E takes the residual of the
+  // operator it was solved with
   par_for("cln_wbdiv", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    x.w(m,CLW_R0,k,j,i) = CleanFluxDivergence(x, CLW_X, m, k, j, i, true);
+    x.w(m,CLW_Q,k,j,i) = CleanFluxDivergence(x, CLW_X, m, k, j, i, true);
   });
   if (cln_fsolve && cln_split) {   // the face F of the F solve and its dissipation
     CleanStagFSolve(CLW_X);
@@ -1888,7 +1889,7 @@ void RadiationM1::CleanWriteBack() {
       if (three_d) div += x.idx[2]*(f3(m,k+1,j,i) - f3(m,k,j,i));
       // (clean_stag_split: the faces store F^H, E moved by the energy flux)
       den = -(e - x.w(m,CLW_EO,k,j,i)) - ((xh.hi || x.sph || x.cub) ?
-            x.w(m,CLW_R0,k,j,i) : h*div);
+            x.w(m,CLW_Q,k,j,i) : h*div);
       if (x.vzero) {   // (steady start: the eint of the iterate's T, not the residual of
         Real ei, p, chi_rho, chi_t, cv;   //  a step h -> infinity, as the cell layout)
         eos.ThermoAt(uh(m,IDN,k,j,i), x.w(m,CLW_T,k,j,i), ei, p, chi_rho, chi_t, cv);
