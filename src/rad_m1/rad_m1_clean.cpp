@@ -239,8 +239,8 @@ void RadiationM1::CleanInit() {
   if (pm->use_spherical_polar) {
     // the rays are vet_gd's (closure = vet_col with vet_gd) on its fixed direction set,
     // swept from the first shell, or the analytic sphere (clean_closure = sphere)
-    // (staggered: r and r-theta, no clean_consistency; also clean_closure = eddington)
-    const bool stg = !cln_cell && !cln_consist && !pm->three_d;
+    // (staggered: r and r-theta; also clean_closure = eddington)
+    const bool stg = !cln_cell && !pm->three_d;
     if ((!cln_cell && !stg) || !(cln_sphere || vgd_on || (stg && cln_edd)) ||
         (cln_consist && !vgd_on) || vgd_twin || vgd_async ||
         (VgdRotOn() && cln_rfv == 0)) {
@@ -1380,6 +1380,7 @@ void RadiationM1::CleanStagBracket() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
   x.consist = false;
+  x.feedback = false;   // (the gas terms read the last iterate's work vectors)
   par_for("cln_rayj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     x.w(m,CLW_Z,k,j,i) = x.cs(m,CLN_J,k,j,i);
