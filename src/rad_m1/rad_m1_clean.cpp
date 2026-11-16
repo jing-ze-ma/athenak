@@ -1025,7 +1025,7 @@ Real RadiationM1::CleanNewtonUpdate() {
                        + (cell ? w(m,CLW_EP,k,j,i) : 0.0), t_old);
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
-    const Real de = fabs(e - e_old)/fmax(fmax(e, e_old), 1.0e-300);
+    const Real de = fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), 1.0e-300);
     const Real dt = fabs(t - t_old)/fmax(fmax(t, t_old), 1.0e-300);
     dmax = fmax(dmax, fmax(de, dt));
   }, Kokkos::Max<Real>(change));
