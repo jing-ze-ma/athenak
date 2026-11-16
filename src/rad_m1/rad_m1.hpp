@@ -2907,6 +2907,7 @@ class RadiationM1 {
   void CleanInit();
   void CleanPreflight(ParameterInput *pin);
   void CleanCsGeometry();
+  void CleanCartGeometry();
   void CleanSteadyStart(Driver *pdrive);
   void CleanInitFaceFluxes();
   void CleanOldVector();
@@ -2922,6 +2923,8 @@ class RadiationM1 {
   void CleanClosureFromGd();
   void CleanGdFaceSums();
   void CleanFvSweep();
+  void CleanFvSourceAlloc();
+  void CleanFvCartSource();
   void CleanFvSeams();
   bool CleanFvWall(const int side);
   void CleanFvSets(const Real tc, const int cyc);

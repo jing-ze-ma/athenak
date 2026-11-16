@@ -251,7 +251,63 @@ void RadiationM1::CleanInit() {
   // the formal solution must provide the half-range sums and C1
   impl_beam_hr = true;
   thsw_c1 = true;
+  if (cln_rfv > 0) CleanCartGeometry();
   cln_init = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCartGeometry
+//! \brief Cartesian mesh with the FV rays (clean_rays = fv1 | fv | lld): the cell
+//! geometry the rays read through the curvilinear hooks (volumes, face areas, centre and
+//! face coordinates)
+
+void RadiationM1::CleanCartGeometry() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  auto *pc = pmy_pack->pcoord;
+  const int nmb = pmy_pack->nmb_thispack, ng = indcs.ng;
+  const int c1 = indcs.nx1 + 2*ng, c2 = (indcs.nx2 > 1) ? indcs.nx2 + 2*ng : 1;
+  const int c3 = (indcs.nx3 > 1) ? indcs.nx3 + 2*ng : 1;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  Kokkos::realloc(pc->volume, nmb, c3, c2, c1);
+  Kokkos::realloc(pc->area.x1f, nmb, c3, c2, c1 + 1);
+  Kokkos::realloc(pc->area.x2f, nmb, c3, c2 + 1, c1);
+  Kokkos::realloc(pc->area.x3f, nmb, c3 + 1, c2, c1);
+  Kokkos::realloc(pc->x1v, nmb, c1);
+  Kokkos::realloc(pc->x2v, nmb, c2);
+  Kokkos::realloc(pc->x3v, nmb, c3);
+  Kokkos::realloc(pc->xx1f, nmb, c1 + 1);
+  Kokkos::realloc(pc->xx2f, nmb, c2 + 1);
+  Kokkos::realloc(pc->xx3f, nmb, c3 + 1);
+  auto &size = pmy_pack->pmb->mb_size;
+  auto vol = pc->volume;
+  auto a1 = pc->area.x1f, a2 = pc->area.x2f, a3 = pc->area.x3f;
+  auto x1v = pc->x1v, x2v = pc->x2v, x3v = pc->x3v;
+  auto x1f = pc->xx1f, x2f = pc->xx2f, x3f = pc->xx3f;
+  par_for("cln_cart_geo", DevExeSpace(), 0, nmb - 1, 0, c3, 0, c2, 0, c1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d1 = size.d_view(m).dx1, d2 = size.d_view(m).dx2, d3 = size.d_view(m).dx3;
+    const bool i_ = i < c1, j_ = j < c2, k_ = k < c3;
+    if (j_ && k_) a1(m,k,j,i) = d2*d3;
+    if (i_ && k_) a2(m,k,j,i) = d1*d3;
+    if (i_ && j_) a3(m,k,j,i) = d1*d2;
+    if (!(i_ && j_ && k_)) return;
+    vol(m,k,j,i) = d1*d2*d3;
+    if (j == 0 && k == 0) {
+      x1f(m,i) = size.d_view(m).x1min + (i - is)*d1;
+      x1v(m,i) = x1f(m,i) + 0.5*d1;
+      if (i == c1 - 1) x1f(m,c1) = x1f(m,i) + d1;
+    }
+    if (i == 0 && k == 0) {
+      x2f(m,j) = size.d_view(m).x2min + (j - js)*d2;
+      x2v(m,j) = x2f(m,j) + 0.5*d2;
+      if (j == c2 - 1) x2f(m,c2) = x2f(m,j) + d2;
+    }
+    if (i == 0 && j == 0) {
+      x3f(m,k) = size.d_view(m).x3min + (k - ks)*d3;
+      x3v(m,k) = x3f(m,k) + 0.5*d3;
+      if (k == c3 - 1) x3f(m,c3) = x3f(m,k) + d3;
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------

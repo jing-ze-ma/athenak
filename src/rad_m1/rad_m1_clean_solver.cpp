@@ -80,7 +80,8 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.multi_d = pmy_pack->pmesh->multi_d;
   x.three_d = pmy_pack->pmesh->three_d;
   x.sph = pmy_pack->pmesh->use_spherical_polar;
-  if (x.sph) {
+  x.cub = pmy_pack->pmesh->use_cubed_sphere;
+  if (x.sph || (!x.cub && cln_rfv > 0)) {
     auto *pc = pmy_pack->pcoord;
     x.vol = pc->volume;
     x.area[0] = pc->area.x1f;
@@ -94,7 +95,6 @@ CleanArgs RadiationM1::CleanMakeArgs() {
     x.x2v = pc->x2v;
     x.x2f = pc->xx2f;
   }
-  x.cub = pmy_pack->pmesh->use_cubed_sphere;
   if (x.cub) {
     x.vol = pmy_pack->pcoord->volume;
     for (int d = 0; d < 3; ++d) {
