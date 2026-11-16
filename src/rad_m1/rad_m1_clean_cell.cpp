@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <type_traits>
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
@@ -25,6 +26,9 @@
 #include "rad_m1/rad_m1_clean_cell.hpp"
 
 namespace radm1 {
+// the rows of one line solve in cln_lw
+using LineRows = Kokkos::View<Real*, DevMemSpace, Kokkos::MemoryUnmanaged>;
+
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellOldVector
 //! \brief old vector (E, F/c) of the stage: E from CleanOldVector, F of the cells plus
@@ -846,156 +850,177 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
   int nround = 0;
   for (int st = 1; st < nsys; st *= 2) ++nround;
   const int lt = 32*nround;
-  // row n: A x_n-P + B x_n + C x_n+P = r (52 values) in buffer 0 or 1
-  const size_t scr = ScrArray1D<Real>::shmem_size(104*nl);
-  // (the rows in global scratch, teams of 64 threads for lines of up to 64 rows: many
-  // lines per compute unit)
-  const int lev = 1;
+  // row n: A x_n-P + B x_n + C x_n+P = r (52 values) in buffer 0 or 1, in the rows of
+  // cln_lw that the team owns (CleanCellLineRows)
+  const int nline = (nmb1 + 1)*np*nq, nw = 104*nl;
+  const int nlg = CleanCellLineRows(nline, nw, (nl > 64) ? 256 : 64);
+  auto lw = cln_lw;
   auto line = KOKKOS_LAMBDA(TeamMember_t tm) {
-    const int m = tm.league_rank()/(np*nq);
-    const int p = (tm.league_rank() - m*np*nq)/nq, q = tm.league_rank() % nq;
-    auto cell = [&](const int n, int &k, int &j, int &i) {
-      k = (dir == 2) ? ks + n : ks + p;
-      j = (dir == 1) ? js + n : ((dir == 2) ? js + p : js + q);
-      i = (dir == 0) ? is + n : is + q;
-    };
-    ScrArray1D<Real> w(tm.team_scratch(lev), 104*nl);
-    Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
-      int k, j, i;
-      cell(n, k, j, i);
-      for (int e = 0; e < 16; ++e) {
-        w(52*n + e) = (n > 0) ? u(m,sm+e,k,j,i) : 0.0;
-        w(52*n + 16 + e) = u(m,a0+e,k,j,i);
-        w(52*n + 32 + e) = (n < nl - 1) ? u(m,sp+e,k,j,i) : 0.0;
-      }
-      for (int r = 0; r < 4; ++r) w(52*n + 48 + r) = u(m,src+r,k,j,i);
-    });
-    tm.team_barrier();
-    // PCR rounds: row n takes rows n -+ st out, f = -X Bnb^-1 (X = A or C of row n) from
-    // Bnb^T f^T = -X^T
-    int o = 0, ir = 0;
-    for (int st = 1; st < nsys; st *= 2) {
-      const int d = 52*nl - o;
+    LineRows w(&lw(static_cast<size_t>(nw)*tm.league_rank()), nw);
+    for (int ln = tm.league_rank(); ln < nline; ln += tm.league_size()) {
+      const int m = ln/(np*nq);
+      const int p = (ln - m*np*nq)/nq, q = ln % nq;
+      auto cell = [&](const int n, int &k, int &j, int &i) {
+        k = (dir == 2) ? ks + n : ks + p;
+        j = (dir == 1) ? js + n : ((dir == 2) ? js + p : js + q);
+        i = (dir == 0) ? is + n : is + q;
+      };
       Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
         int k, j, i;
         cell(n, k, j, i);
-        Real an[4][4], bn[4][4], cn[4][4], rn[4];
-        for (int r = 0; r < 4; ++r) {
-          for (int c = 0; c < 4; ++c) {
-            an[r][c] = 0.0;
-            bn[r][c] = w(o + 52*n + 16 + 4*r + c);
-            cn[r][c] = 0.0;
-          }
-          rn[r] = w(o + 52*n + 48 + r);
+        for (int e = 0; e < 16; ++e) {
+          w(52*n + e) = (n > 0) ? u(m,sm+e,k,j,i) : 0.0;
+          w(52*n + 16 + e) = u(m,a0+e,k,j,i);
+          w(52*n + 32 + e) = (n < nl - 1) ? u(m,sp+e,k,j,i) : 0.0;
         }
-        for (int sd = -1; sd <= 1; sd += 2) {
-          const int nb = n + sd*st;
-          if (nb < 0 || nb >= nl) continue;
-          const int ox = o + 52*n + ((sd < 0) ? 0 : 32), ob = o + 52*nb;
-          Real bt[4][4], f[4][5];
+        for (int r = 0; r < 4; ++r) w(52*n + 48 + r) = u(m,src+r,k,j,i);
+      });
+      tm.team_barrier();
+      // PCR rounds: row n takes rows n -+ st out, f = -X Bnb^-1 (X = A or C of row n)
+      // from Bnb^T f^T = -X^T
+      int o = 0, ir = 0;
+      for (int st = 1; st < nsys; st *= 2) {
+        const int d = 52*nl - o;
+        Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
+          int k, j, i;
+          cell(n, k, j, i);
+          Real an[4][4], bn[4][4], cn[4][4], rn[4];
           for (int r = 0; r < 4; ++r) {
             for (int c = 0; c < 4; ++c) {
-              bt[r][c] = w(ob + 16 + 4*c + r);
-              f[r][c] = -w(ox + 4*c + r);
+              an[r][c] = 0.0;
+              bn[r][c] = w(o + 52*n + 16 + 4*r + c);
+              cn[r][c] = 0.0;
+            }
+            rn[r] = w(o + 52*n + 48 + r);
+          }
+          for (int sd = -1; sd <= 1; sd += 2) {
+            const int nb = n + sd*st;
+            if (nb < 0 || nb >= nl) continue;
+            const int ox = o + 52*n + ((sd < 0) ? 0 : 32), ob = o + 52*nb;
+            Real bt[4][4], f[4][5];
+            for (int r = 0; r < 4; ++r) {
+              for (int c = 0; c < 4; ++c) {
+                bt[r][c] = w(ob + 16 + 4*c + r);
+                f[r][c] = -w(ox + 4*c + r);
+              }
+            }
+            CleanBlockSolve(bt, f, 4);   // f[l][r] = (-X Bnb^-1)[r][l]
+            for (int r = 0; r < 4; ++r) {
+              for (int l = 0; l < 4; ++l) {
+                const Real g = f[l][r];
+                if constexpr (kStore) {
+                  lf(m,32*ir+((sd < 0) ? 0 : 16)+4*r+l,k-ks,j-js,i-is) = g;
+                }
+                for (int c = 0; c < 4; ++c) {
+                  if (sd < 0) {
+                    an[r][c] += g*w(ob + 4*l + c);
+                  } else {
+                    cn[r][c] += g*w(ob + 32 + 4*l + c);
+                  }
+                  bn[r][c] += g*w(ob + ((sd < 0) ? 32 : 0) + 4*l + c);
+                }
+                rn[r] += g*w(ob + 48 + l);
+              }
             }
           }
-          CleanBlockSolve(bt, f, 4);   // f[l][r] = (-X Bnb^-1)[r][l]
           for (int r = 0; r < 4; ++r) {
-            for (int l = 0; l < 4; ++l) {
-              const Real g = f[l][r];
-              if constexpr (kStore) {
-                lf(m,32*ir+((sd < 0) ? 0 : 16)+4*r+l,k-ks,j-js,i-is) = g;
-              }
-              for (int c = 0; c < 4; ++c) {
-                if (sd < 0) {
-                  an[r][c] += g*w(ob + 4*l + c);
-                } else {
-                  cn[r][c] += g*w(ob + 32 + 4*l + c);
-                }
-                bn[r][c] += g*w(ob + ((sd < 0) ? 32 : 0) + 4*l + c);
-              }
-              rn[r] += g*w(ob + 48 + l);
+            for (int c = 0; c < 4; ++c) {
+              w(d + 52*n + 4*r + c) = an[r][c];
+              w(d + 52*n + 16 + 4*r + c) = bn[r][c];
+              w(d + 52*n + 32 + 4*r + c) = cn[r][c];
             }
+            w(d + 52*n + 48 + r) = rn[r];
+          }
+        });
+        tm.team_barrier();
+        o = d;
+        ++ir;
+      }
+      // block Thomas on each system s (rows s, s + P, ...): forward D = B - A C_n-P,
+      // C_n = D^-1 C, d_n = D^-1 (r - A d_n-P) (C_n, d_n in the other buffer); backward
+      // x_n = d_n - C_n x_n+P
+      const int t = 52*nl - o;
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nsys), [&](const int sy) {
+        for (int n = sy; n < nl; n += nsys) {
+          Real a[4][4], b[4][5];
+          for (int r = 0; r < 4; ++r) {
+            Real rhs = w(o + 52*n + 48 + r);
+            for (int c = 0; c < 4; ++c) {
+              a[r][c] = w(o + 52*n + 16 + 4*r + c);
+              b[r][c] = w(o + 52*n + 32 + 4*r + c);
+            }
+            if (n >= nsys) {
+              for (int l = 0; l < 4; ++l) {
+                const Real aml = w(o + 52*n + 4*r + l);
+                if (aml == 0.0) continue;
+                for (int c = 0; c < 4; ++c) a[r][c] -= aml*w(t + 52*(n-nsys) + 4*l + c);
+                rhs -= aml*w(t + 52*(n-nsys) + 48 + l);
+              }
+            }
+            b[r][4] = rhs;
+          }
+          if constexpr (kStore) {
+            int k, j, i;
+            cell(n, k, j, i);
+            Real lu[4][4], piv[4];
+            CleanBlockFactor(a, b, 5, lu, piv);
+            for (int r = 0; r < 4; ++r) {
+              for (int c = 0; c < 4; ++c) {
+                lf(m,lt+4*r+c,k-ks,j-js,i-is) = (n >= nsys) ? w(o + 52*n + 4*r + c) : 0.0;
+                lf(m,lt+16+4*r+c,k-ks,j-js,i-is) = b[r][c];
+                lf(m,lt+32+4*r+c,k-ks,j-js,i-is) = lu[r][c];
+              }
+              lf(m,lt+48+r,k-ks,j-js,i-is) = piv[r];
+            }
+          } else {
+            CleanBlockSolve(a, b, 5);
+          }
+          for (int r = 0; r < 4; ++r) {
+            for (int c = 0; c < 4; ++c) w(t + 52*n + 4*r + c) = b[r][c];
+            w(t + 52*n + 48 + r) = b[r][4];
           }
         }
-        for (int r = 0; r < 4; ++r) {
-          for (int c = 0; c < 4; ++c) {
-            w(d + 52*n + 4*r + c) = an[r][c];
-            w(d + 52*n + 16 + 4*r + c) = bn[r][c];
-            w(d + 52*n + 32 + 4*r + c) = cn[r][c];
+        for (int n = sy + nsys*((nl - 1 - sy)/nsys) - nsys; n >= 0; n -= nsys) {
+          for (int r = 0; r < 4; ++r) {
+            for (int c = 0; c < 4; ++c) {
+              w(t + 52*n + 48 + r) -= w(t + 52*n + 4*r + c)*w(t + 52*(n+nsys) + 48 + c);
+            }
           }
-          w(d + 52*n + 48 + r) = rn[r];
         }
       });
       tm.team_barrier();
-      o = d;
-      ++ir;
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
+        int k, j, i;
+        cell(n, k, j, i);
+        for (int r = 0; r < 4; ++r) u(m,dst+r,k,j,i) = w(t + 52*n + 48 + r);
+      });
+      tm.team_barrier();
     }
-    // block Thomas on each system s (rows s, s + P, ...): forward D = B - A C_n-P,
-    // C_n = D^-1 C, d_n = D^-1 (r - A d_n-P) (C_n, d_n in the other buffer); backward
-    // x_n = d_n - C_n x_n+P
-    const int t = 52*nl - o;
-    Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nsys), [&](const int sy) {
-      for (int n = sy; n < nl; n += nsys) {
-        Real a[4][4], b[4][5];
-        for (int r = 0; r < 4; ++r) {
-          Real rhs = w(o + 52*n + 48 + r);
-          for (int c = 0; c < 4; ++c) {
-            a[r][c] = w(o + 52*n + 16 + 4*r + c);
-            b[r][c] = w(o + 52*n + 32 + 4*r + c);
-          }
-          if (n >= nsys) {
-            for (int l = 0; l < 4; ++l) {
-              const Real aml = w(o + 52*n + 4*r + l);
-              if (aml == 0.0) continue;
-              for (int c = 0; c < 4; ++c) a[r][c] -= aml*w(t + 52*(n-nsys) + 4*l + c);
-              rhs -= aml*w(t + 52*(n-nsys) + 48 + l);
-            }
-          }
-          b[r][4] = rhs;
-        }
-        if constexpr (kStore) {
-          int k, j, i;
-          cell(n, k, j, i);
-          Real lu[4][4], piv[4];
-          CleanBlockFactor(a, b, 5, lu, piv);
-          for (int r = 0; r < 4; ++r) {
-            for (int c = 0; c < 4; ++c) {
-              lf(m,lt+4*r+c,k-ks,j-js,i-is) = (n >= nsys) ? w(o + 52*n + 4*r + c) : 0.0;
-              lf(m,lt+16+4*r+c,k-ks,j-js,i-is) = b[r][c];
-              lf(m,lt+32+4*r+c,k-ks,j-js,i-is) = lu[r][c];
-            }
-            lf(m,lt+48+r,k-ks,j-js,i-is) = piv[r];
-          }
-        } else {
-          CleanBlockSolve(a, b, 5);
-        }
-        for (int r = 0; r < 4; ++r) {
-          for (int c = 0; c < 4; ++c) w(t + 52*n + 4*r + c) = b[r][c];
-          w(t + 52*n + 48 + r) = b[r][4];
-        }
-      }
-      for (int n = sy + nsys*((nl - 1 - sy)/nsys) - nsys; n >= 0; n -= nsys) {
-        for (int r = 0; r < 4; ++r) {
-          for (int c = 0; c < 4; ++c) {
-            w(t + 52*n + 48 + r) -= w(t + 52*n + 4*r + c)*w(t + 52*(n+nsys) + 48 + c);
-          }
-        }
-      }
-    });
-    tm.team_barrier();
-    Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
-      int k, j, i;
-      cell(n, k, j, i);
-      for (int r = 0; r < 4; ++r) u(m,dst+r,k,j,i) = w(t + 52*n + 48 + r);
-    });
   };
   using Policy = Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
   const int nt = std::min((nl > 64) ? 256 : 64, Policy(DevExeSpace(), 1, 1).team_size_max(
                           line, Kokkos::ParallelForTag()));
-  Kokkos::parallel_for(kStore ? "clc_linef" : "clc_line",
-                       Policy(DevExeSpace(), (nmb1 + 1)*np*nq, nt)
-                       .set_scratch_size(lev, Kokkos::PerTeam(scr)), line);
+  Kokkos::parallel_for(kStore ? "clc_linef" : "clc_line", Policy(DevExeSpace(), nlg, nt),
+                       line);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::CleanCellLineRows
+//! \brief the number of teams of a line solve over nline lines (nw values of rows each,
+//! teams of nt threads on a GPU): at most as many as run at once.  Team t owns values
+//! [t nw, (t+1) nw) of cln_lw and takes the lines t, t + teams, ...  (A block of team
+//! scratch that the next team takes over within the same launch carries no memory fence
+//! between the two teams, which on MI300A made the solves differ from run to run.)
+
+int RadiationM1::CleanCellLineRows(const int nline, const int nw, const int nt) {
+  int nlg = DevExeSpace().concurrency();
+  if constexpr (!std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
+    nlg /= nt;
+  }
+  nlg = std::max(1, std::min(nline, nlg));
+  const size_t n = static_cast<size_t>(nlg)*nw;
+  if (cln_lw.extent(0) < n) Kokkos::realloc(cln_lw, n);
+  return nlg;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1016,76 +1041,80 @@ void RadiationM1::CleanCellLineFactorSolve(const CleanLevel &lv, const int src,
   int nround = 0;
   for (int st = 1; st < nsys; st *= 2) ++nround;
   const int lt = 32*nround;
-  // the right hand sides of the rows (4 values) in buffer 0 or 1
-  const size_t scr = ScrArray1D<Real>::shmem_size(8*nl);
-  const int lev = 1;
+  // the right hand sides of the rows (4 values) in buffer 0 or 1, in the rows of cln_lw
+  // that the team owns
+  const int nline = (nmb1 + 1)*np*nq, nw = 8*nl;
+  const int nlg = CleanCellLineRows(nline, nw, (nl > 64) ? 256 : 64);
+  auto lw = cln_lw;
   auto line = KOKKOS_LAMBDA(TeamMember_t tm) {
-    const int m = tm.league_rank()/(np*nq);
-    const int k = (tm.league_rank() - m*np*nq)/nq, j = tm.league_rank() % nq;
-    ScrArray1D<Real> w(tm.team_scratch(lev), 8*nl);
-    Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
-      for (int r = 0; r < 4; ++r) w(4*n + r) = u(m,src+r,ks+k,js+j,is+n);
-    });
-    tm.team_barrier();
-    int o = 0, ir = 0;
-    for (int st = 1; st < nsys; st *= 2) {
-      const int d = 4*nl - o;
+    LineRows w(&lw(static_cast<size_t>(nw)*tm.league_rank()), nw);
+    for (int ln = tm.league_rank(); ln < nline; ln += tm.league_size()) {
+      const int m = ln/(np*nq);
+      const int k = (ln - m*np*nq)/nq, j = ln % nq;
       Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
-        Real rn[4];
-        for (int r = 0; r < 4; ++r) rn[r] = w(o + 4*n + r);
-        for (int sd = -1; sd <= 1; sd += 2) {
-          const int nb = n + sd*st;
-          if (nb < 0 || nb >= nl) continue;
-          const int ob = o + 4*nb, og = 32*ir + ((sd < 0) ? 0 : 16);
-          for (int r = 0; r < 4; ++r) {
-            for (int l = 0; l < 4; ++l) rn[r] += lf(m,og+4*r+l,k,j,n)*w(ob + l);
-          }
-        }
-        for (int r = 0; r < 4; ++r) w(d + 4*n + r) = rn[r];
+        for (int r = 0; r < 4; ++r) w(4*n + r) = u(m,src+r,ks+k,js+j,is+n);
       });
       tm.team_barrier();
-      o = d;
-      ++ir;
-    }
-    // block Thomas on each system: forward d_n = D^-1 (r - A d_n-P), backward
-    // x_n = d_n - C_n x_n+P
-    const int t = 4*nl - o;
-    Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nsys), [&](const int sy) {
-      for (int n = sy; n < nl; n += nsys) {
-        Real rhs[4], lu[4][4], piv[4];
-        for (int r = 0; r < 4; ++r) {
-          rhs[r] = w(o + 4*n + r);
-          if (n >= nsys) {
-            for (int l = 0; l < 4; ++l) {
-              const Real aml = lf(m,lt+4*r+l,k,j,n);
-              if (aml == 0.0) continue;
-              rhs[r] -= aml*w(t + 4*(n-nsys) + l);
+      int o = 0, ir = 0;
+      for (int st = 1; st < nsys; st *= 2) {
+        const int d = 4*nl - o;
+        Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
+          Real rn[4];
+          for (int r = 0; r < 4; ++r) rn[r] = w(o + 4*n + r);
+          for (int sd = -1; sd <= 1; sd += 2) {
+            const int nb = n + sd*st;
+            if (nb < 0 || nb >= nl) continue;
+            const int ob = o + 4*nb, og = 32*ir + ((sd < 0) ? 0 : 16);
+            for (int r = 0; r < 4; ++r) {
+              for (int l = 0; l < 4; ++l) rn[r] += lf(m,og+4*r+l,k,j,n)*w(ob + l);
             }
           }
-          for (int c = 0; c < 4; ++c) lu[r][c] = lf(m,lt+32+4*r+c,k,j,n);
-          piv[r] = lf(m,lt+48+r,k,j,n);
-        }
-        CleanBlockFactorSolve(lu, piv, rhs);
-        for (int r = 0; r < 4; ++r) w(t + 4*n + r) = rhs[r];
+          for (int r = 0; r < 4; ++r) w(d + 4*n + r) = rn[r];
+        });
+        tm.team_barrier();
+        o = d;
+        ++ir;
       }
-      for (int n = sy + nsys*((nl - 1 - sy)/nsys) - nsys; n >= 0; n -= nsys) {
-        for (int r = 0; r < 4; ++r) {
-          for (int c = 0; c < 4; ++c) {
-            w(t + 4*n + r) -= lf(m,lt+16+4*r+c,k,j,n)*w(t + 4*(n+nsys) + c);
+      // block Thomas on each system: forward d_n = D^-1 (r - A d_n-P), backward
+      // x_n = d_n - C_n x_n+P
+      const int t = 4*nl - o;
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nsys), [&](const int sy) {
+        for (int n = sy; n < nl; n += nsys) {
+          Real rhs[4], lu[4][4], piv[4];
+          for (int r = 0; r < 4; ++r) {
+            rhs[r] = w(o + 4*n + r);
+            if (n >= nsys) {
+              for (int l = 0; l < 4; ++l) {
+                const Real aml = lf(m,lt+4*r+l,k,j,n);
+                if (aml == 0.0) continue;
+                rhs[r] -= aml*w(t + 4*(n-nsys) + l);
+              }
+            }
+            for (int c = 0; c < 4; ++c) lu[r][c] = lf(m,lt+32+4*r+c,k,j,n);
+            piv[r] = lf(m,lt+48+r,k,j,n);
+          }
+          CleanBlockFactorSolve(lu, piv, rhs);
+          for (int r = 0; r < 4; ++r) w(t + 4*n + r) = rhs[r];
+        }
+        for (int n = sy + nsys*((nl - 1 - sy)/nsys) - nsys; n >= 0; n -= nsys) {
+          for (int r = 0; r < 4; ++r) {
+            for (int c = 0; c < 4; ++c) {
+              w(t + 4*n + r) -= lf(m,lt+16+4*r+c,k,j,n)*w(t + 4*(n+nsys) + c);
+            }
           }
         }
-      }
-    });
-    tm.team_barrier();
-    Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
-      for (int r = 0; r < 4; ++r) u(m,dst+r,ks+k,js+j,is+n) = w(t + 4*n + r);
-    });
+      });
+      tm.team_barrier();
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
+        for (int r = 0; r < 4; ++r) u(m,dst+r,ks+k,js+j,is+n) = w(t + 4*n + r);
+      });
+      tm.team_barrier();
+    }
   };
   using Policy = Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
   const int nt = std::min((nl > 64) ? 256 : 64, Policy(DevExeSpace(), 1, 1).team_size_max(
                           line, Kokkos::ParallelForTag()));
-  Kokkos::parallel_for("clc_lines", Policy(DevExeSpace(), (nmb1 + 1)*np*nq, nt)
-                       .set_scratch_size(lev, Kokkos::PerTeam(scr)), line);
+  Kokkos::parallel_for("clc_lines", Policy(DevExeSpace(), nlg, nt), line);
 }
 
 //----------------------------------------------------------------------------------------
