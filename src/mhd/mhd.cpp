@@ -496,12 +496,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     use_wellbalance_dynamic = pin->GetOrAddBoolean("mhd","wellbalance_dynamic",false);
     use_wb_x1 = pin->GetOrAddBoolean("mhd","wb_x1",false);
-    // rebuild the well-balanced background cache at stage 1 of every N-th cycle instead
-    // of every stage (0 = every stage). A balanced state is unaffected; an evolving one
-    // reconstructs against a background up to N cycles old, which is nothing against the
-    // radiative timescale the profile changes on. N = 1 halves the walk cost, N = 10
-    // removes it.
-    wb_cache_every = pin->GetOrAddInteger("mhd","wb_cache_every",0);
     // Ideal-gas x1 WB cache (BuildWBCache) safety keys:
     // <mhd>/wb_clamp_ideal: polytropic closed form limits the T DECREASE over a
     // segment to t0/2, as the general-EOS walk does (getWBerho, clamp_dt);

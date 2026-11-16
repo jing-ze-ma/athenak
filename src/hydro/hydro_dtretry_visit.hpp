@@ -72,9 +72,6 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.view("phi_wb_x1f", phi_wb_x1f);
   v.value("wb_guard_ideal", wb_guard_ideal);
   v.value("wb_clamp_ideal", wb_clamp_ideal);
-  v.value("wb_cache_every", wb_cache_every);
-  v.value("scratch_level", scratch_level);
-  v.value("wb_cache_built", wb_cache_built);
   v.value("c2p_freeze_derived", c2p_freeze_derived);
   v.value("c2p_eint_rst", c2p_eint_rst);
   v.view("eint_rst", eint_rst);

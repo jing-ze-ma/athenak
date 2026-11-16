@@ -255,44 +255,23 @@ Mesh::Mesh(ParameterInput *pin) :
   if (use_cubed_sphere && pin->DoesParameterExist("mesh", "cs_vertex_cc_perturb")) {
     cs_vertex_diag::cc_perturb = pin->GetReal("mesh", "cs_vertex_cc_perturb");
   }
-  // <mesh>/cs_seam_flux = shared: one Riemann problem per seam face from the two panels'
-  // own reconstructions (Hydro::CsSeamFaceStates); the two results are averaged so the
-  // seam is exactly conservative (setups the shared states do not cover fall back to the
-  // plain average of the two outward fluxes).
+  // cubed-sphere seams: one Riemann problem per seam face from the two panels' own
+  // reconstructions (Hydro::CsSeamFaceStates), the two results averaged so the seam is
+  // exactly conservative (setups the shared states do not cover fall back to the plain
+  // average of the two outward fluxes); the fluid conserved state in the seam halo is
+  // resampled along the seam from the two bracketing donor cells with non-negative
+  // weights (a convex combination of admissible states).
   // <mesh>/cs_seam_rho_guard = R (default 4, 0 = off): a seam ghost cell whose resampled
   // density differs from its plain-copy source cell by more than a factor R takes the
   // plain copy for every variable.
   cs_seam_rho_guard = use_cubed_sphere ?
       pin->GetOrAddReal("mesh", "cs_seam_rho_guard", 4.0) : 0.0;
-  // <mesh>/cs_seam_resample = linear (default) | quadratic: along-seam resample of the
-  // fluid conserved state in the seam halo; linear uses the two bracketing donor cells
-  // with non-negative weights (a convex combination of admissible states)
-  cs_seam_resample_linear = false;
-  if (use_cubed_sphere) {
-    std::string rs = pin->GetOrAddString("mesh", "cs_seam_resample", "linear");
-    if (rs == "linear") {
-      cs_seam_resample_linear = true;
-    } else if (rs != "quadratic") {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<mesh>/cs_seam_resample = '" << rs
-                << "' must be quadratic or linear" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
+  cs_seam_resample_linear = use_cubed_sphere;
   cs_seam_flux = 0;
   if (use_cubed_sphere) {
-    cs_seam_flux_named = pin->DoesParameterExist("mesh", "cs_seam_flux");
-    std::string sf = pin->GetOrAddString("mesh", "cs_seam_flux", "shared");
-    if (sf != "shared") {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<mesh>/cs_seam_flux = '" << sf << "' must be shared"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     cs_seam_flux = 3;
     if (global_variable::my_rank == 0) {
-      std::cout << "Mesh: cubed-sphere seam flux = shared"
-                << ", resample = " << (cs_seam_resample_linear ? "linear" : "quadratic")
+      std::cout << "Mesh: cubed-sphere seam flux = shared, resample = linear"
                 << ", rho_guard = " << cs_seam_rho_guard << std::endl;
     }
   }

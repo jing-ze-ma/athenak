@@ -236,7 +236,6 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
       Kokkos::deep_copy(ph->b0.x3f, 0.0); Kokkos::deep_copy(ph->bcc0, 0.0);
     }
   };
-  const bool sv_built = ph->wb_cache_built;
   const bool sv_fofc = ph->use_fofc;
   // (port of Caltech 0f9dc36ec): two more pieces the probe would leave
   // behind.  (1) Mesh::ecounter: the probe's ConToPrim of W_eq adds its own floor hits,
@@ -305,7 +304,6 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   (void) ph->ConToPrim(nullptr, 0);
   ph->c2p_track = sv_trk;
   zero_b();
-  ph->wb_cache_built = false;   // the x1 WB background of W_eq
   ph->use_fofc = false;
   ph->Fluxes(nullptr, 0);
   // the panel-seam flux reconciliation of SendFlux/RecvFlux
@@ -405,7 +403,6 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
     Kokkos::deep_copy(ph->b0.x1f, sb1); Kokkos::deep_copy(ph->b0.x2f, sb2);
     Kokkos::deep_copy(ph->b0.x3f, sb3); Kokkos::deep_copy(ph->bcc0, sbcc);
   }
-  ph->wb_cache_built = sv_built;
   ph->use_fofc = sv_fofc;
   ph->pcond = sv_cond;
   pm->ecounter = sv_ec;

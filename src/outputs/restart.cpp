@@ -1582,13 +1582,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       outarray_wem = outarray_wm1 = outarray_wm2 = HostArray4D<Real>();
   outfield.x1f = outfield.x2f = outfield.x3f = HostArray4D<Real>();
 
-  // BITWISE RESTARTS: the dynamic well-balanced background (hydro/mhd wbq0) is a CACHE
-  // rebuilt only every wb_cache_every cycles, and it is NOT restart state.  A restarted
-  // run rebuilds it from the state in this file, while the straight run keeps one built
-  // up to wb_cache_every-1 cycles earlier.  Invalidate it here so both runs rebuild it
-  // from exactly the state this file holds, on the very next stage 1.
-  if (pm->pmb_pack->phydro != nullptr) { pm->pmb_pack->phydro->wb_cache_built = false; }
-  if (pm->pmb_pack->pmhd != nullptr) { pm->pmb_pack->pmhd->wb_cache_built = false; }
 
   return;
 }

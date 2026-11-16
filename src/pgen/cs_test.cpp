@@ -6,12 +6,7 @@
 //! \file cs_test.cpp
 //! \brief Clean validation problems for the gnomonic-equiangular CUBED SPHERE grid.
 //!
-//! The pre-existing cubed_sphere.cpp / solid_body_rot.cpp pgens are scratch files: they
-//! do not compile against the current well-balancing API, they write the KINETIC energy
-//! into the primitive energy slot (w0(IEN) is the INTERNAL energy density p/(gamma-1),
-//! not the total), and their velocity transforms are only valid on one panel. Diagnosing
-//! the grid through them means debugging two things at once, so this file provides a
-//! deliberately minimal instrument instead.
+//! A deliberately minimal set of exact or analytic states for diagnosing the grid.
 //!
 //! problem/iprob selects:
 //!  17 / 18 = the Ivan et al. (JCP 2013) supersonic-expansion (hydro) and MHD
@@ -1304,7 +1299,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // mhd_ct.cpp consumes.  That makes div B vanish to ROUND-OFF by construction rather
     // than to truncation: CT preserves whatever divergence it is handed, so an initial
     // field projected face-by-face (which is what iprob = 8 does) starts with a small but
-    // permanent monopole on a curvilinear grid.  This follows pole_mhd_blast.cpp.
+    // permanent monopole on a curvilinear grid.
     //
     // A.rhat = 0.5*(B0 x r).r_hat = 0 identically, so the RADIAL edge potential A1
     // vanishes and only the two tangential edge components are needed -- the same

@@ -468,7 +468,7 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // <mesh>/cs_seam_rho_guard (set by Hydro/MHD on their conserved-state exchange only,
   // where variable 0 is the density; 0 = off): see PackAndSendCC.
   Real cs_rho_guard = 0.0;
-  bool cs_lin_resample = false;   // <mesh>/cs_seam_resample = linear, same scope
+  bool cs_lin_resample = false;   // convex linear seam resample (fluid state)
   // cs_noresample (default false): this object's cross-panel ghosts are the plain signed
   // index copy of the neighbour's own cells (no along-seam resample), i.e. the mirror
   // images of this block's cells across the seam. Set by the implicit M1 on its scratch
@@ -480,7 +480,7 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   int seam_flux_var = -1;
   // the *FluxSeamCC exchange moves RAW face values (no outward sign, the
   // receiver's array is overwritten by the neighbour's) -- the hydro's shared seam face
-  // states (<mesh>/cs_seam_flux = shared, Hydro::CsSeamFaceStates)
+  // states (shared seam flux, Hydro::CsSeamFaceStates)
   bool seam_raw = false;
   // (seam_raw only): the *FluxSeamCC exchange runs over the SAME-PANEL,
   // same-level, non-polar x2/x3 FACE neighbours (internal MeshBlock faces, incl. periodic
