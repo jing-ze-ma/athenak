@@ -475,8 +475,9 @@ void RadiationM1::CleanCellRightHandSide() {
     Real sdiv[4];
     CleanCellSourceDivergence(x, m, k, j, i, sdiv);
     x.w(m,CLW_RR,k,j,i) = rr;
+    x.w(m,CLW_WK,k,j,i) = work;
     x.u(m,CLC_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
-                         - rr*hcke*x.w(m,CLW_EK,k,j,i) - work - sdiv[0];
+                         - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work - sdiv[0];
     for (int b = 1; b < 4; ++b) x.u(m,CLC_B+b,k,j,i) = x.u(m,CLC_O+b,k,j,i) - sdiv[b];
     if (x.feedback) {
       Real g[3][3], dk[4];
@@ -1266,12 +1267,12 @@ void RadiationM1::CleanCellDiagnose() {
 //! the momentum and energy the radiation gives up besides its face fluxes, so both
 //! totals change only by the fluxes through the boundary; with force_reference the
 //! reference force is withheld from the gas momentum (an external source, like gravity),
-//! and the radiation pays only the work of the residual.  A gas left with eint < 0 takes
-//! the deficit from the cell's radiation E; cln_neint counts the cells where E did not
-//! cover it (the fluid's floor would create energy there).  On the cubed sphere F is
-//! stored in the frame of y (F_r, F_theta, F_phi) and the gas momentum change (and its
-//! stage slope) in the hydro's components (CleanGasChange): E and L_z of gas plus
-//! radiation are conserved to round-off.
+//! and the radiation pays only the work of the residual: exactly the kinetic energy the
+//! gas gains.  cln_neint counts the cells left with eint < 0 (the fluid's floor would
+//! create energy there).  On the cubed sphere F is stored in the frame of y (F_r,
+//! F_theta, F_phi) and the gas momentum change (and its stage slope) in the hydro's
+//! components (CleanGasChange): E and L_z of gas plus radiation are conserved to
+//! round-off.
 
 void RadiationM1::CleanCellWriteBack() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1326,6 +1327,12 @@ void RadiationM1::CleanCellWriteBack() {
         dm[b] = -(x.u(m,CLC_X+1+b,k,j,i) - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c
                 - h*CleanRefForce(fref, fr, aref, uh(m,IDN,k,j,i), b, m, k, j, i);
       }
+      // the radiation pays exactly the kinetic energy (p + dm/2).dm/rho the gas gains,
+      // not the work W of the iterate the solve took
+      Real pg[3], wk = 0.0;
+      CleanGasMomentum(x, uh, m, k, j, i, pg);
+      for (int b = 0; b < 3; ++b) wk += (pg[b] + 0.5*dm[b])*dm[b]/uh(m,IDN,k,j,i);
+      e -= wk - x.w(m,CLW_WK,k,j,i);
       // (the hydro's components; dm.e_a covariant on the cubed sphere)
       CleanGasChange(x, m, k, j, i, dm, dh);
       for (int b = 0; b < x.nf; ++b) uh(m,IM1+b,k,j,i) += dh[b];
@@ -1337,18 +1344,9 @@ void RadiationM1::CleanCellWriteBack() {
         eos.ThermoAt(uh(m,IDN,k,j,i), x.w(m,CLW_T,k,j,i), ei, p, chi_rho, chi_t, cv);
         den = ei - x.w(m,CLW_EI,k,j,i);
       } else {
-        // an unconverged iterate's work differs from the kinetic energy of dm: a gas
-        // left with eint < 0 takes the deficit from the cell's radiation
-        Real pg[3];
-        CleanGasMomentum(x, uh, m, k, j, i, pg);
-        const Real def = 0.5*(SQR(pg[0]) + SQR(pg[1]) + SQR(pg[2]))/uh(m,IDN,k,j,i)
-                         - uh(m,IEN,k,j,i) - den;
-        if (def > 0.0) {
-          const Real tk = fmin(def, fmax(e, 0.0));
-          e -= tk;
-          den += tk;
-          if (tk < def) nb += 1.0;
-        }
+        // the gas eint changes by the exchange of the solve only
+        const Real ke = 0.5*(SQR(pg[0]) + SQR(pg[1]) + SQR(pg[2]))/uh(m,IDN,k,j,i);
+        if (uh(m,IEN,k,j,i) + den - ke - wk < 0.0) nb += 1.0;
       }
       uh(m,IEN,k,j,i) += den;
     }
