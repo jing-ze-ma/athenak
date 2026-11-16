@@ -1079,6 +1079,7 @@ int RadiationM1::CleanCellLineRows(const int nline, const int nw, const int nt) 
   if constexpr (!std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
     nlg /= nt;
   }
+  if (cln_lteams > 0) nlg = std::min(nlg, cln_lteams);
   nlg = std::max(1, std::min(nline, nlg));
   const size_t n = static_cast<size_t>(nlg)*nw;
   if (cln_lw.extent(0) < n) Kokkos::realloc(cln_lw, n);

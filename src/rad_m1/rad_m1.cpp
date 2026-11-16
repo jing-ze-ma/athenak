@@ -242,6 +242,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_nl_print")) {
       cln_nlprint = pin->GetBoolean("rad_m1","clean_nl_print");
     }
+    // clean_line_teams (read only when named): at most this many teams take the lines of
+    // a line solve (each line still one team), fewer rows of cln_lw
+    if (pin->DoesParameterExist("rad_m1","clean_line_teams")) {
+      cln_lteams = std::max(pin->GetInteger("rad_m1","clean_line_teams"), 0);
+    }
     // clean_line_solver = hybrid | pcr | thomas (TEMPORARY, for GPU timing): rows per
     // Thomas system of the line solve (CleanCellLineSolve)
     if (pin->DoesParameterExist("rad_m1","clean_line_solver")) {
