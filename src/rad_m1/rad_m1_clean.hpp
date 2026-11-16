@@ -116,6 +116,8 @@ struct CleanArgs {
   bool consist;                // cell layout: face fluxes carry the consistency bracket
   bool milne;                  // cell layout: sub-cell Eddington face model
   bool fvrays;                 // cell layout: FV rays (clean_rays = fv1 | fv)
+  bool fs;                     // staggered, clean_stag_fsolve: the face F of the F solve
+                               // (CLF_N) with its dissipation term (CLF_N + 1)
   bool hi;                     // staggered, clean_stag_split: the face momentum state
                                // F^H (w = 0), not the energy flux
   DvceArray5D<Real> op;        // opacities (M1_OP_*)
@@ -580,7 +582,8 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
   Real dm = 0.0;
   for (int side = 0; side < 2; ++side) {
     const int kf = k + side*dk, jf = j + side*dj, iff = i + side*di;
-    const Real f = CleanFaceFlux(x, e, dir, m, kf, jf, iff, true);
+    const Real f = x.fs ? x.fc[dir](m,CLF_N,kf,jf,iff) :
+                   CleanFaceFlux(x, e, dir, m, kf, jf, iff, true);
     const Real g = x.fc[dir](m,CLF_G,kf,jf,iff);
     // (clean_stag_split: shared as the two half cells absorb, chi_c/(chi_L + chi_R))
     const int o = 2*side - 1;
@@ -595,7 +598,8 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       dm += 0.5*x.h*xc*f/x.c;   // (a boundary flux is no F equation: the inner half cell's
       continue;                 //  absorption of it)
     }
-    dm -= wt*((f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff, true));
+    dm -= wt*((f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff, true) -
+              (x.fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0));
     // (mag: the size of its terms, for the round-off level of dm)
     auto de = [&](const int kk, const int jj, const int ii) {
       return fabs(x.cs(m,CLN_D11+dir,kk,jj,ii)*x.w(m,e,kk,jj,ii));
