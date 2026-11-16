@@ -108,15 +108,22 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 ((cr.compare("fv1") == 0) ? 1 : 0);
       cln_fvb = (cln_rfv == 3) ? 4 : 1;
     }
-    // clean_rot_ring = live | jump (read only when named): a rotating union swept as the
-    // current set (+ the next one), the older ones carried as moment offsets
-    // (CleanRingMoments)
+    // clean_rot_ring = off | live | jump (read only when named; live wherever the vet_gd
+    // FV rays rotate with a cross-fade, CleanInit): a rotating union swept as the current
+    // set (+ the next one), the older ones carried as moment offsets (CleanRingMoments)
     if (pin->DoesParameterExist("rad_m1","clean_rot_ring")) {
       std::string rr = pin->GetString("rad_m1","clean_rot_ring");
       cln_ring = (rr.compare("live") == 0) ? 1 : ((rr.compare("jump") == 0) ? 2 : 0);
+      cln_ring_named = true;
+      if (cln_ring == 0 && rr.compare("off") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_rot_ring = off | live | jump" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
-    // clean_fv_joint (read only when named): the fv1 sweep levels of all MeshBlocks of a
-    // rank at once, the upwind cell across a MeshBlock face read from its own block
+    // clean_fv_joint (read only when named, default true): the fv1 sweep levels of all
+    // MeshBlocks of a rank at once, the upwind cell across a MeshBlock face read from its
+    // own block
     if (pin->DoesParameterExist("rad_m1","clean_fv_joint")) {
       cln_fvjoint = pin->GetBoolean("rad_m1","clean_fv_joint");
     }
@@ -183,8 +190,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (cln_sphere) cln_sph_r = pin->GetReal("rad_m1","clean_sphere_radius");}
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
-    cln_gas_exact = pin->GetOrAddBoolean("rad_m1","clean_gas_exact",false);
-    cln_yres = pin->GetOrAddBoolean("rad_m1","clean_yres",false);
+    cln_gas_exact = pin->GetOrAddBoolean("rad_m1","clean_gas_exact",true);
+    cln_yres = pin->GetOrAddBoolean("rad_m1","clean_yres",true);
     {const std::string nn = pin->GetOrAddString("rad_m1","clean_nl_norm","global");
     if (nn.compare("global") != 0 && nn.compare("cell") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -195,7 +202,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_nl_efloor = pin->GetOrAddReal("rad_m1","clean_nl_efloor",0.0);
     cln_maxpos = pin->GetOrAddInteger("rad_m1","clean_maxpos",3);
     cln_pcsweeps = pin->GetOrAddInteger("rad_m1","clean_pc_sweeps",1);
-    // clean_pc_factor, clean_pc_reuse (read only when named): the x1line preconditioner
+    // clean_pc_factor (default true), clean_pc_reuse (read only when named): the x1line
+    // preconditioner
     // keeps the factors of its line solves until its blocks are rebuilt, which is done
     // on every clean_pc_reuse-th Newton/Picard pass of a solve
     if (pin->DoesParameterExist("rad_m1","clean_pc_factor")) {

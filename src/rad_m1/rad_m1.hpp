@@ -3032,9 +3032,9 @@ class RadiationM1 {
   bool cln_sphere = false;      // clean_closure = sphere (spherical polar)
   Real cln_sph_r = 0.0;         // clean_sphere_radius
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
-  bool cln_gas_exact = false;   // clean_gas_exact: gas eint of the write-back by the
+  bool cln_gas_exact = true;    // clean_gas_exact: gas eint of the write-back by the
                                 // cell's exact local exchange
-  bool cln_yres = false;        // clean_yres: y of a cell less its linear residual over
+  bool cln_yres = true;         // clean_yres: y of a cell less its linear residual over
                                 // the row diagonal before the gas takes its momentum
   bool cln_nl_cell = false;     // clean_nl_norm = cell: per-cell relative Newton changes
   Real cln_nl_efloor = 0.0;     // clean_nl_efloor: E scale of that norm over max E
@@ -3042,7 +3042,7 @@ class RadiationM1 {
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
   int cln_chunk = 32;           // rows per Thomas system of the line solve
-  bool cln_pcfac = false;       // clean_pc_factor: x1line keeps the factors of its lines
+  bool cln_pcfac = true;        // clean_pc_factor: x1line keeps the factors of its lines
   int cln_pcreuse = 1;          // clean_pc_reuse: preconditioner rebuilt every n passes
   bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
   bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
@@ -3070,7 +3070,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_fvp;    // fv: the intensities of the last build (downwind slopes)
   DvceArray5D<Real> cln_fvx;    // 2-D axisymmetric: the intensities of the last pass
   DvceArray2D<int8_t> cln_fvdue, cln_fvdone;   // fv1 passes: cells due (CleanFvSweep)
-  bool cln_fvjoint = false;     // clean_fv_joint: fv1 levels over the rank's MeshBlocks
+  bool cln_fvjoint = true;      // clean_fv_joint: fv1 levels over the rank's MeshBlocks
   bool cln_fvexact = false;     // joint: one pass is the exact sweep (all ranks)
   int cln_fvl0 = 0;             // joint: the first level a later pass takes
   int cln_fvjn[2] = {0, 0};     // joint: the dropped inflows, the cells reading ghosts
@@ -3099,6 +3099,7 @@ class RadiationM1 {
   // clean_rot_ring: the rotating union swept as the current and the next set only, the
   // K - 1 older sets carried as offsets of their ray moments (CleanRingMoments)
   int cln_ring = 0;             // clean_rot_ring = live (1: + the next set) | jump (2)
+  bool cln_ring_named = false;  // clean_rot_ring named in the input
   bool cln_rlast = false;       // jump: the build closes its block (the next set swept)
   bool cln_rjump = false;       // jump: cln_rnew holds the next block's moments
   DvceArray5D<Real> cln_rnew;   // jump: the moments of block b+1's window at the boundary
