@@ -191,7 +191,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (cln_sphere) cln_sph_r = pin->GetReal("rad_m1","clean_sphere_radius");}
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_gas_exact = pin->GetOrAddBoolean("rad_m1","clean_gas_exact",true);
-    cln_yres = pin->GetOrAddBoolean("rad_m1","clean_yres",false);
+    {const std::string yr = pin->GetOrAddString("rad_m1","clean_yres","false");
+    if (yr.compare("false") == 0) {
+      cln_yres = M1_YRES_OFF;
+    } else if (yr.compare("true") == 0 || yr.compare("post") == 0) {
+      cln_yres = M1_YRES_POST;
+    } else if (yr.compare("local") == 0) {
+      cln_yres = M1_YRES_LOCAL;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/clean_yres = false | true (= post) | post | local"
+        << std::endl;
+      std::exit(EXIT_FAILURE);
+    }}
     {const std::string nn = pin->GetOrAddString("rad_m1","clean_nl_norm","global");
     if (nn.compare("global") != 0 && nn.compare("cell") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

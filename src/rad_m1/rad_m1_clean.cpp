@@ -129,6 +129,10 @@ void RadiationM1::CleanInit() {
   if (cln_cell) {
     Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
     Kokkos::deep_copy(cln_x, 0.0);
+    if (cln_yres == M1_YRES_LOCAL) {
+      Kokkos::realloc(cln_dy, nmb, 3, n3, n2, n1);
+      Kokkos::deep_copy(cln_dy, 0.0);
+    }
   }
   if (force_ref == M1_FREF_CLEAN && cln_fref.extent_int(0) != nmb) {
     Kokkos::realloc(cln_fref, nmb, 3, n3, n2, n1);   // (a restart has read it)
@@ -710,7 +714,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanPreconditionerSetup();
       }
       nit = CleanBiCGStab();
-      if (cell && cln_yres && cln_feedback) CleanCellResidual();
+      // (clean_yres = local: the local exchange of the solution X, kept while a pass
+      // leaves X as it is, so that the gas does not take the round-off of a new residual)
+      if (cell && cln_yres != M1_YRES_OFF && cln_feedback &&
+          (cln_yres == M1_YRES_POST || inl == 0 || nit != 0)) {
+        CleanCellResidual();
+      }
       nit_sum += std::abs(nit);
       ++nsolve;
       cln_nsolve += 1.0;
