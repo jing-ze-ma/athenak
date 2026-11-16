@@ -165,6 +165,11 @@ constexpr int M1_FREF_NONE    = 0;
 constexpr int M1_FREF_WB_ARAD = 1;
 constexpr int M1_FREF_CLEAN   = 2;   // scheme = clean: its own force of the first solve
 
+// <rad_m1>/clean_yres: the y of a cell (cell layout) whose balance the gas momentum takes
+constexpr int M1_YRES_OFF   = 0;   // the y of the linear solve
+constexpr int M1_YRES_POST  = 1;   // y less its linear residual over 1 + h c chi
+constexpr int M1_YRES_LOCAL = 2;   // y of the cell's exact local momentum exchange
+
 //----------------------------------------------------------------------------------------
 //! \struct M1OpacTab
 //! \brief the two stellar opacity tables, as device Views held BY VALUE on the module so
@@ -3046,8 +3051,9 @@ class RadiationM1 {
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   bool cln_gas_exact = true;    // clean_gas_exact: gas eint of the write-back by the
                                 // cell's exact local exchange
-  bool cln_yres = false;        // clean_yres: y of a cell less its linear residual over
+  int cln_yres = M1_YRES_OFF;   // clean_yres: y of a cell less its linear residual over
                                 // the row diagonal before the gas takes its momentum
+                                // (post: 1 + h c chi; local: with the gas response)
   bool cln_nl_cell = false;     // clean_nl_norm = cell: per-cell relative Newton changes
   Real cln_nl_efloor = 0.0;     // clean_nl_efloor: E scale of that norm over max E
   Real cln_nl_escale = 0.0;     // that E scale, clean_nl_efloor max E of the iterate
@@ -3160,6 +3166,8 @@ class RadiationM1 {
   Real cln_nguard_sum = 0.0, cln_next_sum = 0.0;   // guard falls, extrapolated closures
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
+  DvceArray5D<Real> cln_dy;     // clean_yres = local: the y change of the cell's local
+                                // exchange of the solution (CleanCellResidual)
   DvceArray5D<Real> cln_lf;     // factors of the x1-line solve (clean_pc_factor)
   DvceArray5D<float> cln_lfs;   // the same in single precision (clean_pc_factor_float)
   DvceArray1D<Real> cln_lw;     // rows of the line solves, a block per team

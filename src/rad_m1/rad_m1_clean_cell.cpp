@@ -536,6 +536,12 @@ void RadiationM1::CleanCellRightHandSide() {
 
   const int vfreeze = cln_vfreeze;
   x.ff = cln_ff;
+  // (until force_reference = clean has taken its force, that of the iterate)
+  const int fref = force_ref;
+  const bool yloc = (cln_yres == M1_YRES_LOCAL) &&
+                    !((fref == M1_FREF_CLEAN) && !cln_fref_set && !cln_vzero);
+  auto fr = cln_fref;
+  auto aref = arad_ref;
   if (cln_milne) CleanCellMilneSetup();
   par_for("clc_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -609,21 +615,33 @@ void RadiationM1::CleanCellRightHandSide() {
       x.w(m,CLW_JV+c,k,j,i) = (1.0 - rr)*ic2*(2.0*hcke*(yk - x.w(m,CLW_A1+c,k,j,i)*ek/x.c)
                                                - xe*bt[c]);
     }
+    // (clean_yres = local: y + h div fY of the iterate as its momentum change states it,
+    // y_old - c (dm + h f_ref), less the source part sdiv that B holds, so that the rows
+    // hold the gas velocity of the solution whatever y the iterate's dm balanced)
     if (x.feedback) {
-      Real g[3][3], dk[4];
-      CleanCellDrag(x, op(m,M1_OP_T,k,j,i), uh(m,IDN,k,j,i), m, k, j, i, g);
-      CleanCellDivergence<true>(x, CLC_K, m, k, j, i, false, dk);
-      for (int c = 0; c < 3; ++c) {
-        if (c < x.nf) {
-          x.u(m,CLC_B,k,j,i) += x.w(m,CLW_JV+c,k,j,i)*(x.u(m,CLC_K+1+c,k,j,i) + dk[1+c]);
+      const Real d = uh(m,IDN,k,j,i);
+      Real g[3][3], dk[4], yk[3];
+      CleanCellDrag(x, op(m,M1_OP_T,k,j,i), d, m, k, j, i, g);
+      if (yloc) {
+        for (int c = 0; c < 3; ++c) {
+          if (c < x.nf) {
+            yk[c] = x.u(m,CLC_O+1+c,k,j,i) - sdiv[1+c] - x.c*(x.w(m,CLW_DM+c,k,j,i) +
+                    x.h*CleanRefForce(fref, fr, aref, d, c, m, k, j, i));
+          }
         }
+      } else {
+        CleanCellDivergence<true>(x, CLC_K, m, k, j, i, false, dk);
+        for (int c = 0; c < 3; ++c) {
+          if (c < x.nf) yk[c] = x.u(m,CLC_K+1+c,k,j,i) + dk[1+c];
+        }
+      }
+      for (int c = 0; c < 3; ++c) {
+        if (c < x.nf) x.u(m,CLC_B,k,j,i) += x.w(m,CLW_JV+c,k,j,i)*yk[c];
       }
       for (int b = 0; b < 3; ++b) {
         if (b < x.nf) {
           for (int c = 0; c < 3; ++c) {
-            if (c < x.nf) {
-              x.u(m,CLC_B+1+b,k,j,i) += g[b][c]*(x.u(m,CLC_K+1+c,k,j,i) + dk[1+c]);
-            }
+            if (c < x.nf) x.u(m,CLC_B+1+b,k,j,i) += g[b][c]*yk[c];
           }
         }
       }
@@ -1567,7 +1585,8 @@ Real RadiationM1::CleanCellVelocityUpdate() {
   const int fref = force_ref;
   const bool vzero = cln_vzero;
   const bool cap = (fref == M1_FREF_CLEAN) && !cln_fref_set && !vzero;
-  const bool yres = cln_yres;
+  const int yres = cln_yres;
+  auto dy = cln_dy;
   auto fr = cln_fref;
   auto aref = arad_ref;
 
@@ -1600,7 +1619,8 @@ Real RadiationM1::CleanCellVelocityUpdate() {
       Real dm = 0.0;
       if (b < x.nf) {
         Real y = x.u(m,CLC_K+1+b,k,j,i);
-        if (yres) y += x.u(m,CLC_R+1+b,k,j,i)/(1.0 + hc*chi);
+        if (yres == M1_YRES_POST) y += x.u(m,CLC_R+1+b,k,j,i)/(1.0 + hc*chi);
+        if (yres == M1_YRES_LOCAL) y += dy(m,b,k,j,i);
         const Real yo = x.u(m,CLC_O+1+b,k,j,i);
         dm = -(y - yo + div[1+b])/x.c;
         if (cap || vzero) {
@@ -1646,7 +1666,12 @@ void RadiationM1::CleanCellCopyIterate() {
 //! \fn void RadiationM1::CleanCellResidual
 //! \brief clean_yres: the residual B - A X of the solution of the linear solve, in CLC_R
 //! (the vector the next solve starts from), for the cell's y correction of
-//! CleanCellVelocityUpdate and CleanCellWriteBack
+//! CleanCellVelocityUpdate and CleanCellWriteBack.  With clean_yres = local, cln_dy is
+//! that correction: the change of y that zeroes the cell's y rows with its face
+//! fluxes, E and the other cells kept, M dy = r_y, M = (1 + h c chi) I + g + BT rg RY
+//! the cell's own block of the y rows of A (drag, the implicit gas velocity of
+//! CleanCellDrag, the beta term of the emission), so that the cell's radiation and gas
+//! momentum are in exact local exchange and the residual is not taken by the gas.
 
 void RadiationM1::CleanCellResidual() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1661,6 +1686,31 @@ void RadiationM1::CleanCellResidual() {
     for (int b = 0; b < 4; ++b) {
       u(m,CLC_R+b,k,j,i) = u(m,CLC_B+b,k,j,i) - u(m,CLC_R+b,k,j,i);
     }
+  });
+  if (cln_yres != M1_YRES_LOCAL) return;
+  CleanArgs x = CleanMakeArgs();
+  auto op = opac;
+  auto uh = FluidRef::Get(pmy_pack).u0;
+  auto dy = cln_dy;
+  par_for("clc_resloc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real g[3][3], a[4][4], r[4][5];
+    CleanCellDrag(x, op(m,M1_OP_T,k,j,i), uh(m,IDN,k,j,i), m, k, j, i, g);
+    const Real hcx = x.h*x.c*op(m,M1_OP_T,k,j,i);
+    const Real rg = x.w(m,CLW_RR,k,j,i)/x.w(m,CLW_GM,k,j,i);
+    for (int b = 0; b < 4; ++b) {
+      for (int c = 0; c < 4; ++c) a[b][c] = (b == c) ? 1.0 : 0.0;
+      r[b][0] = 0.0;
+    }
+    for (int b = 0; b < x.nf; ++b) {
+      for (int c = 0; c < x.nf; ++c) {
+        a[1+b][1+c] = ((b == c) ? 1.0 + hcx : 0.0) + g[b][c]
+                      + x.w(m,CLW_BT+b,k,j,i)*rg*x.w(m,CLW_RY+c,k,j,i);
+      }
+      r[1+b][0] = x.u(m,CLC_R+1+b,k,j,i);
+    }
+    CleanBlockSolve(a, r, 1);
+    for (int b = 0; b < x.nf; ++b) dy(m,b,k,j,i) = r[1+b][0];
   });
 }
 
@@ -1903,7 +1953,8 @@ void RadiationM1::CleanCellWriteBack() {
   const bool eso = esrc_on;
   auto es = esrc;
   const bool gexact = cln_gas_exact;
-  const bool yres = cln_yres;
+  const int yres = cln_yres;
+  auto dy = cln_dy;
   const Real arad_ = arad;
   auto op = opac;
 
@@ -1941,11 +1992,14 @@ void RadiationM1::CleanCellWriteBack() {
     for (int b = 0; b < 3; ++b) y[b] = x.u(m,CLC_X+1+b,k,j,i);
     Real den = 0.0;
     if (feedback) {
-      if (yres) {
+      if (yres == M1_YRES_POST) {
         // y less its share of the linear residual, the face fluxes kept: the gas takes
         // the balance of the corrected y, not the residual over rho
         const Real hcx = h*x.c*op(m,M1_OP_T,k,j,i);
         for (int b = 0; b < x.nf; ++b) y[b] += x.u(m,CLC_R+1+b,k,j,i)/(1.0 + hcx);
+      } else if (yres == M1_YRES_LOCAL) {
+        // y of the cell's exact local momentum exchange (CleanCellResidual)
+        for (int b = 0; b < x.nf; ++b) y[b] += dy(m,b,k,j,i);
       }
       for (int b = 0; b < x.nf && !vzero; ++b) {
         dm[b] = -(y[b] - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c
