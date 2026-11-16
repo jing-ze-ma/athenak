@@ -2989,6 +2989,7 @@ class RadiationM1 {
   int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
   bool cln_cell = false;        // clean_layout: false staggered, true cell-centred
   int cln_alpha = 0;            // clean_alpha: dissipation weight (CLA_*), cell layout
+  int cln_dpow = 2;             // clean_dissip_power (temporary test key): al = A^p
   bool cln_recon = true;        // clean_recon: plm (true) | none, cell layout
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
   bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter

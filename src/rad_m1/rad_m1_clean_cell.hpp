@@ -138,20 +138,23 @@ int CleanLineSlotP(const int dir) {
 
 KOKKOS_INLINE_FUNCTION
 Real CleanDissipationWeight(const int mode, const Real tau, const Real psi,
-                            const Real sray, Real &rc) {
+                            const Real sray, Real &rc, const int p = 2) {
   // A = 1 - b tau
   const Real b = (tau > 1.0e-4) ? (1.0 + expm1(-tau)/tau)/tau
                                 : 0.5 - tau*(1.0 - 0.25*tau)/6.0;
   const Real a = (tau > 1.0e-4) ? -expm1(-tau)/tau : 1.0 - b*tau;
+  // A^p, p = <rad_m1>/clean_dissip_power (temporary test key)
+  const Real ap = (p == 3) ? a*a*a : a*a;
   Real al = 0.0;
   switch (mode) {
-    case CLA_TAU: al = a*a; break;
-    case CLA_TAU_SENSOR: al = fmax(a*a*psi, sray); break;
-    case CLA_TAU_RAY: al = fmax(a*a, sray); break;
+    case CLA_TAU: al = ap; break;
+    case CLA_TAU_SENSOR: al = fmax(ap*psi, sray); break;
+    case CLA_TAU_RAY: al = fmax(ap, sray); break;
     case CLA_ONE: al = 1.0; break;
     default: break;
   }
-  rc = (mode == CLA_TAU) ? b*(1.0 + a) : (1.0 - al)/fmax(tau, 2.0);
+  rc = (mode == CLA_TAU) ? b*(1.0 + a + ((p == 3) ? a*a : 0.0))
+                         : (1.0 - al)/fmax(tau, 2.0);
   return al;
 }
 

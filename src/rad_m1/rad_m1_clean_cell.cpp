@@ -141,7 +141,7 @@ void RadiationM1::CleanCellFaceSpeeds() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const Real h = dt_sub, c = c_light;
   const Real c1lo = cln_c0, c1hi = cln_c1;
-  const int mode = cln_alpha;
+  const int mode = cln_alpha, pw = cln_dpow;
   const bool wb = (force_ref == M1_FREF_CLEAN);
   CleanArgs x = CleanMakeArgs();
   auto cs = cln_s;
@@ -163,7 +163,7 @@ void RadiationM1::CleanCellFaceSpeeds() {
                            CleanDnn(x, dir, m, k, j, i, kl, jl, il));
       const Real dxd = CleanCellFaceDistance(x, dir, m, k, j, i);
       Real rc;
-      const Real al = CleanDissipationWeight(mode, chi*dxd, psi, sray, rc);
+      const Real al = CleanDissipationWeight(mode, chi*dxd, psi, sray, rc, pw);
       fc(m,CLF_AL,k,j,i) = al;
       fc(m,CLF_TH,k,j,i) = wb ? rc*dxd/(h*c) : (1.0 - al)/(1.0 + h*c*chi);
       fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
