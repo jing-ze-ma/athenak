@@ -777,7 +777,8 @@ Real CleanFluxDivergence(const CleanArgs &x, const int e, const int m, const int
                          const int j, const int i, const bool with_source) {
   if (x.sph || x.cub) {   // (finite volume, sum A_f F_f/V)
     Real d = 0.0;
-    for (int n = 0; n < x.nf; ++n) {
+    for (int n = 0; n < 3; ++n) {   // (constant trip: x.fc[n], x.area[n] resolved)
+      if (n >= x.nf) break;
       const int dk = (n == 2), dj = (n == 1), di = (n == 0);
       d += CleanDivW(x, n, m, k, j, i, 1)*CleanFaceFlux(x, e, n, m, k+dk, j+dj, i+di,
                                                          with_source) -
@@ -807,7 +808,8 @@ Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const i
                            const int i) {
   if (x.sph || x.cub) {
     Real d = 0.0;
-    for (int n = 0; n < x.nf; ++n) {
+    for (int n = 0; n < 3; ++n) {
+      if (n >= x.nf) break;
       const int dk = (n == 2), dj = (n == 1), di = (n == 0);
       d += CleanDivW(x, n, m, k, j, i, 1)*CleanFaceSource(x, n, m, k+dk, j+dj, i+di) -
            CleanDivW(x, n, m, k, j, i, 0)*CleanFaceSource(x, n, m, k, j, i);
