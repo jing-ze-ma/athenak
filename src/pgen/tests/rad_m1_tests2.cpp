@@ -1227,20 +1227,13 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     }
     const Real cax = m1_cs_ax[0], cay = m1_cs_ax[1], caz = m1_cs_ax[2];
     // (cubed sphere, read only when named): rho_lat_amp = a multiplies the gas
-    // density by 1 + a P_{rho_lat_l}(rhat . axis) with rho_lat_axis = z | edge | vertex
-    // (default edge, l = 1): a smooth LATERAL opacity structure for the seam / vertex
-    // order gate (a static cold gas: the pressure stays negligible)
-    Real rla = 0.0, rlx = 1.0, rly = 1.0, rlz = 0.0;
-    int rll = 1;
+    // density by 1 + a P_1(rhat . axis) with the axis along a cube edge, (1,1,0)/sqrt(2):
+    // a smooth lateral opacity structure for the seam / vertex order gate (a static cold
+    // gas: the pressure stays negligible)
+    Real rla = 0.0;
+    const Real rlx = 1.0/std::sqrt(2.0), rly = rlx, rlz = 0.0;
     if (csm && pin->DoesParameterExist("problem","rho_lat_amp")) {
       rla = pin->GetReal("problem","rho_lat_amp");
-      rll = pin->GetOrAddInteger("problem","rho_lat_l",1);
-      std::string ax = pin->GetOrAddString("problem","rho_lat_axis","edge");
-      rlx = 1.0; rly = 1.0; rlz = 0.0;
-      if (ax == "z") {rlx = 0.0; rly = 0.0; rlz = 1.0;}
-      if (ax == "vertex") {rlx = 1.0; rly = 1.0; rlz = 1.0;}
-      const Real an = std::sqrt(rlx*rlx + rly*rly + rlz*rlz);
-      rlx /= an; rly /= an; rlz /= an;
     }
     // (spherical polar, read only when named): rho_lat_sp = a multiplies the
     // gas density by 1 + a cos(2 pi (theta - x2min)/L2) cos(2 pi (phi - x3min)/L3): the
@@ -1312,7 +1305,7 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         const Real mr = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
                                size.d_view(m).x2min, size.d_view(m).x2max,
                                size.d_view(m).x3min, size.d_view(m).x3max, rlx, rly, rlz);
-        const Real fr = 1.0 + rla*M1Legendre(rll, mr);
+        const Real fr = 1.0 + rla*M1Legendre(1, mr);
         uh(m,IDN,k,j,i) *= fr;
         uh(m,IEN,k,j,i) *= fr;
       }

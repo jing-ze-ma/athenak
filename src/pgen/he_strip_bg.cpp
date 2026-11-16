@@ -80,7 +80,7 @@ void HsStripBackground(ParameterInput *pin, Mesh *pm) {
   const Real taucut = pin->GetOrAddReal("problem", "strip_bg_tau", 2.0/3.0);
   const Real rfac = pin->GetOrAddReal("problem", "strip_bg_rho_fac", 1.0e-3);
   const Real rmax = pin->GetOrAddReal("problem", "strip_bg_rho_max", 2.0e-14);
-  const int nb = pin->GetOrAddInteger("problem", "strip_bg_nblend", 3);
+  constexpr int nb = 3;
 
   MeshBlockPack *pmbp = pm->pmb_pack;
   hydro::Hydro *ph = pmbp->phydro;
@@ -330,10 +330,7 @@ void HsEosReinitFromT(ParameterInput *pin, Mesh *pm) {
   // + 5 then differs from 10 (real RSG, Raven 32089203).  The applying run records
   // problem/eos_reinit_done = true in the input its restart files carry; seen there, the
   // key is ignored.
-  // problem/eos_reinit_force = true re-applies it anyway.
-  const bool force_ = pin->DoesParameterExist("problem", "eos_reinit_force") &&
-                      pin->GetBoolean("problem", "eos_reinit_force");
-  if (!force_ && pin->DoesParameterExist("problem", "eos_reinit_done") &&
+  if (pin->DoesParameterExist("problem", "eos_reinit_done") &&
       pin->GetBoolean("problem", "eos_reinit_done")) {
     if (global_variable::my_rank == 0) {
       const int c0_ = pin->DoesParameterExist("problem", "eos_reinit_done_cycle") ?
@@ -457,5 +454,4 @@ void HsEosReinitFromT(ParameterInput *pin, Mesh *pm) {
   pin->SetBoolean("problem", "eos_reinit_from_t", false);
   pin->SetBoolean("problem", "eos_reinit_done", true);   // (see above)
   pin->SetInteger("problem", "eos_reinit_done_cycle", pm->ncycle);
-  if (force_) {pin->SetBoolean("problem", "eos_reinit_force", false);}
 }

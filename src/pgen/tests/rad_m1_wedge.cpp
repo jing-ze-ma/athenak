@@ -98,7 +98,7 @@ Real wg_rlo_ = 0.0, wg_dr_ = 1.0;
 int wg_nf_ = 0;
 Real wg_gm_ = 0.0, wg_rin_ = 1.0, wg_rint_ = 0.0, wg_fin_ = 0.0;
 // outer x1 wall (wg_bc_top) and the top sponge (wg_sponge_rate, wg_sponge_r0)
-bool wg_top_open_ = false, wg_zflux_ = true, wg_bot_res_ = false;
+bool wg_top_open_ = false, wg_bot_res_ = false;
 Real wg_sp_rate_ = 0.0, wg_sp_r0_ = 0.0, wg_rtop_ = 1.0;
 // m1-mhd: <mhd> mode, split monopole B_r = wg_b0 (r_in/r)^2 (current-free); the x1
 // ghost faces carry the same r^-2 continuation of the edge face
@@ -252,7 +252,7 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
   wg_fin_ = pin->GetOrAddReal("rad_m1","implicit_flux_x1min",0.0);
   const Real fr2 = wg_fin_*wg_rin_*wg_rin_;          // F(r) = fr2/r^2
   const std::string icm = pin->GetOrAddString("problem","wg_ic","grey");
-  const int nf = pin->GetOrAddInteger("problem","wg_nfine",8192);
+  constexpr int nf = 8192;
   const Real tau_int = pin->GetOrAddReal("problem","wg_tau_int",1.0);
   const bool fref = (pm1->force_ref == radm1::M1_FREF_WB_ARAD);
   const bool phieff = pin->GetOrAddBoolean("problem","wg_phi_eff",fref);
@@ -548,7 +548,6 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       std::exit(EXIT_FAILURE);
     }
     wg_top_open_ = (bt == "open");
-    wg_zflux_ = pin->GetOrAddBoolean("problem","wg_wall_zero_flux",true);
     const std::string bb = pin->GetOrAddString("problem","wg_bc_bot","wall");
     if (bb != "wall" && bb != "reservoir") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -772,34 +771,32 @@ void RadM1WedgeGravity(Mesh *pm, const Real bdt) {
   }
   // x1 walls: the scaled-profile ghosts are not a mirror image of the edge cell, so the
   // Riemann flux through a "closed" wall carries mass (a 17 % loss in 2 500 s at Gamma
-  // 1.1).  wg_wall_zero_flux (default true) takes the wall face's mass, transverse
-  // momentum and energy fluxes back out of the edge cells (u0 was just updated with them,
-  // with this same beta dt); the pressure flux stays.  With wg_bc_top = open the outer
+  // 1.1).  The wall face's mass, transverse momentum and energy fluxes are therefore
+  // taken back out of the edge cells (u0 was just updated with them, with this same
+  // beta dt); the pressure flux stays.  With wg_bc_top = open the outer
   // face keeps outflow and loses only inflow.
-  if (wg_zflux_) {
-    auto flx1 = ph->uflx->x1f;
-    auto &mbbcs = pmbp->pmb->mb_bcs;
-    const bool topen = wg_top_open_;
-    const bool bres = wg_bot_res_;
-    par_for("wg_zflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      if (!bres && mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
-        const Real f = bdt*area1(m,k,j,is)/volume(m,k,j,is);
-        u0(m,IDN,k,j,is) -= f*flx1(m,IDN,k,j,is);
-        u0(m,IM2,k,j,is) -= f*flx1(m,IM2,k,j,is);
-        u0(m,IM3,k,j,is) -= f*flx1(m,IM3,k,j,is);
-        u0(m,IEN,k,j,is) -= f*flx1(m,IEN,k,j,is);
-      }
-      if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user &&
-          !(topen && flx1(m,IDN,k,j,ie+1) > 0.0)) {
-        const Real f = bdt*area1(m,k,j,ie+1)/volume(m,k,j,ie);
-        u0(m,IDN,k,j,ie) += f*flx1(m,IDN,k,j,ie+1);
-        u0(m,IM2,k,j,ie) += f*flx1(m,IM2,k,j,ie+1);
-        u0(m,IM3,k,j,ie) += f*flx1(m,IM3,k,j,ie+1);
-        u0(m,IEN,k,j,ie) += f*flx1(m,IEN,k,j,ie+1);
-      }
-    });
-  }
+  auto flx1 = ph->uflx->x1f;
+  auto &mbbcs = pmbp->pmb->mb_bcs;
+  const bool topen = wg_top_open_;
+  const bool bres = wg_bot_res_;
+  par_for("wg_zflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    if (!bres && mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      const Real f = bdt*area1(m,k,j,is)/volume(m,k,j,is);
+      u0(m,IDN,k,j,is) -= f*flx1(m,IDN,k,j,is);
+      u0(m,IM2,k,j,is) -= f*flx1(m,IM2,k,j,is);
+      u0(m,IM3,k,j,is) -= f*flx1(m,IM3,k,j,is);
+      u0(m,IEN,k,j,is) -= f*flx1(m,IEN,k,j,is);
+    }
+    if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user &&
+        !(topen && flx1(m,IDN,k,j,ie+1) > 0.0)) {
+      const Real f = bdt*area1(m,k,j,ie+1)/volume(m,k,j,ie);
+      u0(m,IDN,k,j,ie) += f*flx1(m,IDN,k,j,ie+1);
+      u0(m,IM2,k,j,ie) += f*flx1(m,IM2,k,j,ie+1);
+      u0(m,IM3,k,j,ie) += f*flx1(m,IM3,k,j,ie+1);
+      u0(m,IEN,k,j,ie) += f*flx1(m,IEN,k,j,ie+1);
+    }
+  });
   if (wg_sp_rate_ <= 0.0) return;
   // top sponge: the velocity relaxes to zero at the rate wg_sponge_rate*w,
   // w = ((r - r0)/(r_top - r0))^2 above r0; the kinetic energy removed leaves the

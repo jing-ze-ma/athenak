@@ -571,8 +571,6 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm);
 void CSTestFFCheck(ParameterInput *pin, Mesh *pm);
 void CSTestResistCheck(ParameterInput *pin, Mesh *pm);
 void CSTestEosCacheCheck(Mesh *pm);
-void CSTestSeamGatesFinal(ParameterInput *pin, Mesh *pm);
-void (*cs_prev_final)(ParameterInput *, Mesh *) = nullptr;
 void CSTestBlastCheck(ParameterInput *pin, Mesh *pm);
 void CSTestSeamFluxCheck(Mesh *pm);
 void CSTestLevelFluxCheck(Mesh *pm);
@@ -664,7 +662,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     cs_cavr = pin->GetOrAddReal("problem", "cav_r", 1.5);
     cs_cavwr = pin->GetOrAddReal("problem", "cav_wr", 0.3);
     cs_cavp = pin->GetOrAddInteger("problem", "cav_p", 0);
-    cs_hist_nband = pin->GetOrAddInteger("problem", "cav_nband", 1);
+    cs_hist_nband = 1;
     user_hist_func = CSTestCavityHistory;
   }
   cs_iprob = iprob;
@@ -835,12 +833,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     bux = bu*hx/hn; buy = bu*hy/hn; buz = bu*hz/hn;
     cs_bazi = bazi;
     cs_bvx = bux; cs_bvy = buy; cs_bvz = buz;
-  }
-
-  if (pin->DoesParameterExist("problem", "seam_gate") &&
-      pin->GetBoolean("problem", "seam_gate")) {
-    cs_prev_final = pgen_final_func;
-    pgen_final_func = CSTestSeamGatesFinal;
   }
 
   const Real blob_w = pin->GetOrAddReal("problem", "blob_width", 0.3);
@@ -2566,114 +2558,6 @@ void CSTestGravSrc(Mesh *pm, const Real bdt) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn CSErrCells
-//! \brief <problem>/err_cells (read only when named): every active cell's
-//! error against the exact steady state of iprob 3 / 9 (rigid rotation about any axis,
-//! with or without the uniform field), 17 or 18 (Ivan et al.) -> <basename>-errcells.dat
-//! (-errcells.<rank>.dat with MPI), for maps of the error vs distance from the cube
-//! vertices and the seams.  Columns: panel, panel-global (jg, kg), i, xi, eta, r, vol,
-//! rho-rho_ex, p-p_ex, |V-V_ex| (Cartesian), |V_t-V_t,ex| (its tangential part), the
-//! cell-centre unit vector (qx, qy, qz).  Exact values at the cell centre (radial
-//! centroid).  <problem>/err_cells_rstride = s keeps every s-th radial layer only.
-
-void CSErrCells(ParameterInput *pin, Mesh *pm) {
-  if (!(pin->DoesParameterExist("problem", "err_cells") &&
-        pin->GetBoolean("problem", "err_cells"))) return;
-  const int iprob = cs_iprob;
-  if (iprob != 3 && iprob != 9 && iprob != 17 && iprob != 18) return;
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  const int npan = pm->mesh_indcs.nx2;
-  auto &size = pmbp->pmb->mb_size;
-  size.sync_host();
-  auto &mbpanel = pmbp->pmb->mb_panel;
-  mbpanel.sync_host();
-  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
-  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
-  const Real fstr_r_ = pmbp->pmesh->fStretchR;
-  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
-  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
-  Real cpoly_[NSTRETCH_R_POLY];
-  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmbp->pmesh->fStretchRPoly[n];
-  const bool is_mhd = (pmbp->pmhd != nullptr);
-  auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
-  auto w0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), w0);
-  const Real gm1 = (is_mhd ? pmbp->pmhd->peos->eos_data.gamma
-                           : pmbp->phydro->peos->eos_data.gamma) - 1.0;
-  const CSIvanPar P = cs_iv;
-  // <problem>/err_cells_rstride = s: only every s-th radial layer (small n128 dumps)
-  const int rst = std::max(1, pin->GetOrAddInteger("problem", "err_cells_rstride", 1));
-  // one file per rank (-errcells.dat on one rank, -errcells.<rank>.dat otherwise)
-  std::string fname = pin->GetString("job", "basename") + "-errcells" +
-      (global_variable::nranks > 1 ? "." + std::to_string(global_variable::my_rank) : "")
-      + ".dat";
-  FILE *pf = std::fopen(fname.c_str(), "w");
-  if (pf == nullptr) return;
-  std::fprintf(pf, "# iprob %d t %.8e ncycle %d npan %d nx1 %d | p jg kg i xi eta r vol"
-               " drho dp |dV| |dVt| qx qy qz\n", iprob, pm->time, pm->ncycle, npan,
-               pm->mesh_indcs.nx1);
-  for (int m=0; m<pmbp->nmb_thispack; ++m) {
-    const int p = mbpanel.h_view(m);
-    const Real x1mn = size.h_view(m).x1min, x1mx = size.h_view(m).x1max;
-    const Real x2mn = size.h_view(m).x2min, x2mx = size.h_view(m).x2max;
-    const Real x3mn = size.h_view(m).x3min, x3mx = size.h_view(m).x3max;
-    for (int k=0; k<nx3; ++k) {
-      const Real eta = 0.25*M_PI*CellCenterX(k, nx3, x3mn, x3mx);
-      const Real ytl = tan(0.25*M_PI*LeftEdgeX(k, nx3, x3mn, x3mx));
-      const Real ytr = tan(0.25*M_PI*LeftEdgeX(k+1, nx3, x3mn, x3mx));
-      const int kg = static_cast<int>(floor(0.5*(CellCenterX(k, nx3, x3mn, x3mx) + 1.0)
-                                            *npan));
-      for (int j=0; j<nx2; ++j) {
-        const Real xi = 0.25*M_PI*CellCenterX(j, nx2, x2mn, x2mx);
-        const Real xtl = tan(0.25*M_PI*LeftEdgeX(j, nx2, x2mn, x2mx));
-        const Real xtr = tan(0.25*M_PI*LeftEdgeX(j+1, nx2, x2mn, x2mx));
-        auto om = [](const Real X, const Real Y) {return atan(X*Y/sqrt(1.0+X*X+Y*Y));};
-        const Real dom = om(xtr, ytr) - om(xtl, ytr) - om(xtr, ytl) + om(xtl, ytl);
-        const int jg = static_cast<int>(floor(0.5*(CellCenterX(j, nx2, x2mn, x2mx) + 1.0)
-                                              *npan));
-        Real e1[3], e2[3], q[3];
-        cubed_sphere::PanelTangents(p, xi, eta, e1, e2);
-        cubed_sphere::PanelToCart(p, xi, eta, q);
-        for (int i=0; i<nx1; i+=rst) {
-          Real rl = LeftEdgeX(i, nx1, x1mn, x1mx), rr = LeftEdgeX(i+1, nx1, x1mn, x1mx);
-          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
-          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
-          const Real rc = RadialCentroid(rl, rr);
-          const Real vol = (rr*rr*rr - rl*rl*rl)/3.0*dom;
-          Real dn, pr, v1, v2, v3;
-          if (iprob == 3 || iprob == 9) {   // a uniform B exerts no force: same p, v
-            Real ie_;
-            RigidRotState(p, xi, eta, rc, cs_d0, cs_p0, cs_omega, gm1, dn, ie_, v1, v2,
-                          v3, cs_axx, cs_axy, cs_axz);
-            pr = gm1*ie_;
-          } else {
-            Real bb[3];
-            IvanExact(P, iprob, p, xi, eta, rc, dn, pr, v1, v2, v3, bb);
-          }
-          const Real n1 = w0h(m,IVX,k+ks,j+js,i+is) - v1;
-          const Real n2 = w0h(m,IVY,k+ks,j+js,i+is) - v2;
-          const Real n3 = w0h(m,IVZ,k+ks,j+js,i+is) - v3;
-          Real dv2 = 0.0, dt2 = 0.0;
-          for (int c=0; c<3; ++c) {
-            const Real t = n2*e1[c] + n3*e2[c];
-            const Real a = n1*q[c] + t;
-            dv2 += a*a; dt2 += t*t;
-          }
-          std::fprintf(pf, "%d %d %d %d %.8e %.8e %.8e %.8e %.6e %.6e %.6e %.6e %.8f %.8f"
-                       " %.8f\n", p, jg, kg, i, xi, eta, rc, vol,
-                       w0h(m,IDN,k+ks,j+js,i+is) - dn, gm1*w0h(m,IEN,k+ks,j+js,i+is) - pr,
-                       std::sqrt(dv2), std::sqrt(dt2), q[0], q[1], q[2]);
-        }
-      }
-    }
-  }
-  std::fclose(pf);
-  return;
-}
-
-//----------------------------------------------------------------------------------------
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   CSTestEosCacheCheck(pm);
@@ -2685,7 +2569,6 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   // hydro errors alone, against the same exact steady equilibrium.
   const bool has_b = (pmbp->pmhd != nullptr) && (cs_iprob == 9);
   if (pmbp->pmhd == nullptr && pmbp->phydro == nullptr) return;
-  CSErrCells(pin, pm);
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -4039,8 +3922,9 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
                   if (ub > 3) { ub = 3; }
                   jpb_l1[ub][cmp] += dc; ++jpb_n[ub][cmp];
                 }
+              } else {
+                jcc_l1[cmp] += dc; ++jcc_n[cmp];
               }
-              else      { jcc_l1[cmp] += dc; ++jcc_n[cmp]; }
               if (cmp == 0) {
                 if (seam) {
                   js_l1 += dc; ++js_n; js_mx = fmax(js_mx, dc);
@@ -4888,48 +4772,6 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
         }
         std::fclose(pfile);
         std::printf("### CS BLAST PROFILE written to %s\n", fname.c_str());
-      }
-    }
-    // <problem>/blast_cells (read only when named; one rank): every active
-    // cell's radial index, geodesic angle from the centre, azimuth about it (from e1),
-    // rho, p, |B| -> <basename>-cells.dat, for a per-cell imprint analysis
-    if (pin->DoesParameterExist("problem", "blast_cells") &&
-        pin->GetBoolean("problem", "blast_cells") && global_variable::nranks == 1) {
-      std::string fname = pin->GetString("job", "basename") + "-cells.dat";
-      FILE *pf = std::fopen(fname.c_str(), "w");
-      if (pf != nullptr) {
-        std::fprintf(pf, "# i ang psi rho p |B|  t %.6e\n", pm->time);
-        for (int m=0; m<pmbp->nmb_thispack; ++m) {
-          const int p = mbpanel.h_view(m);
-          for (int k=ks; k<=ke; ++k) {
-            const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3,
-                                                  size.h_view(m).x3min,
-                                                  size.h_view(m).x3max);
-            for (int j=js; j<=je; ++j) {
-              const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2,
-                                                    size.h_view(m).x2min,
-                                                    size.h_view(m).x2max);
-              Real q[3];
-              cubed_sphere::PanelToCart(p, xc, ec, q);
-              const Real cd = q[0]*c[0] + q[1]*c[1] + q[2]*c[2];
-              const Real ang = std::acos(std::fmin(1.0, std::fmax(-1.0, cd)));
-              const Real psi = std::atan2(q[0]*e2[0] + q[1]*e2[1] + q[2]*e2[2],
-                                          q[0]*e1[0] + q[1]*e1[1] + q[2]*e1[2]);
-              for (int i=is; i<=ie; ++i) {
-                Real babs = 0.0;
-                if (is_mhd) {
-                  babs = std::sqrt(SQR(bcc(m,IBX,k,j,i)) + SQR(bcc(m,IBY,k,j,i))
-                                   + SQR(bcc(m,IBZ,k,j,i)));
-                }
-                // + panel, xi, eta (seam-distance maps)
-                std::fprintf(pf, "%d %.10e %.10e %.10e %.10e %.10e %d %.8e %.8e\n", i-is,
-                             ang, psi, wh(m,IDN,k,j,i), gm1*wh(m,IEN,k,j,i), babs, p, xc,
-                             ec);
-              }
-            }
-          }
-        }
-        std::fclose(pf);
       }
     }
   }
@@ -5918,349 +5760,6 @@ void CSCornerHaloSmoothness(MeshBlockPack *pmbp) {
 }
 
 
-//----------------------------------------------------------------------------------------
-//! <problem>/seam_gate = true (read only when named): the three geometric
-//! seam gates of the iprob = 8 check (cube-vertex x1e spread, block-corner x1e spread by
-//! geometry, shared seam face single-valuedness), copied verbatim, for ANY iprob, run at
-//! the end after the problem's own final function.  One rank.
-void CSTestSeamGatesFinal(ParameterInput *pin, Mesh *pm) {
-  if (cs_prev_final != nullptr) cs_prev_final(pin, pm);
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  if (pmbp->pmhd == nullptr) return;
-  auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie;
-  const int js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int ng = indcs.ng;
-  auto &size = pmbp->pmb->mb_size;
-  size.sync_host();
-  auto &mbpanel = pmbp->pmb->mb_panel;
-  mbpanel.sync_host();
-  (void) ie;
-    {
-      auto &ef = pmbp->pmhd->efld;
-      auto e1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ef.x1e);
-      std::map<std::string, std::pair<Real,Real>> lo_hi;   // min, max over panels
-      for (int m=0; m<pmbp->nmb_thispack; ++m) {
-        const int p = mbpanel.h_view(m);
-        for (int cj=0; cj<2; ++cj) {
-          for (int ck=0; ck<2; ++ck) {
-            const int jc = cj ? je+1 : js;
-            const int kc = ck ? ke+1 : ks;
-            const Real xi = 0.25*M_PI*LeftEdgeX(jc-js, indcs.nx2, size.h_view(m).x2min,
-                                                                  size.h_view(m).x2max);
-            const Real et = 0.25*M_PI*LeftEdgeX(kc-ks, indcs.nx3, size.h_view(m).x3min,
-                                                                  size.h_view(m).x3max);
-            Real cx, cy, cz;
-            PanelToCart(p, xi, et, cx, cy, cz);
-            // A CUBE VERTEX has |x| = |y| = |z|. With several MeshBlocks per panel a
-            // block corner is usually just an ordinary interior edge, which is shared by
-            // four blocks and is not what this check is about.
-            if (fabs(fabs(cx) - fabs(cy)) > 1.0e-9 ||
-                fabs(fabs(cx) - fabs(cz)) > 1.0e-9) continue;
-            for (int i=is; i<=ie; ++i) {
-              char key[128];
-              std::snprintf(key, sizeof(key), "%d_%.9f_%.9f_%.9f", i-is, cx, cy, cz);
-              const Real e = e1h(m,kc,jc,i);
-              auto it = lo_hi.find(std::string(key));
-              if (it == lo_hi.end()) {
-                lo_hi[std::string(key)] = std::make_pair(e,e);
-              } else {
-                it->second.first  = fmin(it->second.first, e);
-                it->second.second = fmax(it->second.second, e);
-              }
-            }
-          }
-        }
-      }
-      Real spread = 0.0, emag = 0.0;
-      int nvert = 0;
-      for (auto &kv : lo_hi) {
-        spread = fmax(spread, kv.second.second - kv.second.first);
-        emag = fmax(emag, fabs(kv.second.second));
-        ++nvert;
-      }
-      std::printf("### CS CUBE-VERTEX EMF SPREAD: %12.5e over %d vertex edges"
-                  " (max|e1| %10.3e)\n", spread, nvert, emag);
-    }
-    {
-      auto &ef = pmbp->pmhd->efld;
-      auto e1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ef.x1e);
-      std::map<std::string, std::pair<std::pair<Real,Real>,int>> tb;
-      for (int m=0; m<pmbp->nmb_thispack; ++m) {
-        const int p = mbpanel.h_view(m);
-        for (int cj=0; cj<2; ++cj) {
-          for (int ck=0; ck<2; ++ck) {
-            const int jc = cj ? je+1 : js;
-            const int kc = ck ? ke+1 : ks;
-            const Real xi = 0.25*M_PI*LeftEdgeX(jc-js, indcs.nx2, size.h_view(m).x2min,
-                                                                  size.h_view(m).x2max);
-            const Real et = 0.25*M_PI*LeftEdgeX(kc-ks, indcs.nx3, size.h_view(m).x3min,
-                                                                  size.h_view(m).x3max);
-            Real cx, cy, cz;
-            PanelToCart(p, xi, et, cx, cy, cz);
-            const bool vtx = (fabs(fabs(cx)-fabs(cy)) < 1.0e-9 &&
-                              fabs(fabs(cx)-fabs(cz)) < 1.0e-9);
-            const bool seam = (fabs(fabs(xi) - 0.25*M_PI) < 1.0e-9 ||
-                               fabs(fabs(et) - 0.25*M_PI) < 1.0e-9);
-            const int bkt = vtx ? 0 : (seam ? 1 : 2);
-            for (int i=is; i<=ie; ++i) {
-              char key[128];
-              std::snprintf(key, sizeof(key), "%d_%.9f_%.9f_%.9f", i-is, cx, cy, cz);
-              const Real e = e1h(m,kc,jc,i);
-              auto it = tb.find(std::string(key));
-              if (it == tb.end()) {
-                tb[std::string(key)] = std::make_pair(std::make_pair(e,e), bkt);
-              } else {
-                it->second.first.first  = fmin(it->second.first.first, e);
-                it->second.first.second = fmax(it->second.first.second, e);
-              }
-            }
-          }
-        }
-      }
-      Real sp[3] = {0.0, 0.0, 0.0};
-      int nb[3] = {0, 0, 0};
-      for (auto &kv : tb) {
-        const int b = kv.second.second;
-        sp[b] = fmax(sp[b], kv.second.first.second - kv.second.first.first);
-        nb[b] += 1;
-      }
-      const char *nm[3] = {"cube vertex   ", "four-block seam", "panel interior"};
-      std::printf("### CS BLOCK-CORNER x1e SPREAD by geometry\n");
-      for (int b=0; b<3; ++b) {
-        std::printf("   %s  %12.5e   (%d edges)\n", nm[b], sp[b], nb[b]);
-      }
-    }
-    {
-      // diagnostic: SAME-PANEL ghost consistency.  Every ghost cell / face
-      // whose position lies inside the same panel is compared with the owner block's
-      // interior value (u0, w0 all variables; b0 three components): face ghosts (one
-      // transverse index outside), corner ghosts (both outside), and the shared block-
-      // boundary faces themselves (the two owners' copies).
-      auto u0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->u0);
-      auto w0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->w0);
-      auto c1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x1f);
-      auto c2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
-      auto c3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
-      const int nx = indcs.nx2, nv = u0h.extent_int(1);
-      std::map<std::tuple<int,int,int>, int> own;
-      std::vector<int> oj(pmbp->nmb_thispack), ok(pmbp->nmb_thispack);
-      int np = 0;
-      for (int m=0; m<pmbp->nmb_thispack; ++m) {
-        const auto &z = size.h_view(m);
-        np = static_cast<int>(std::lround(2.0/(z.x2max - z.x2min)))*nx;
-        oj[m] = static_cast<int>(std::lround((z.x2min + 1.0)*0.5*np));
-        ok[m] = static_cast<int>(std::lround((z.x3min + 1.0)*0.5*np));
-        own[std::make_tuple(mbpanel.h_view(m), oj[m], ok[m])] = m;
-      }
-      // cat: 0 face ghost, 1 corner ghost, 2 shared boundary face; q: 0 u0, 1 w0, 2 b1, 3
-      // b2, 4 b3
-      Real dm[5][5] = {}; int cnt[5][5] = {};
-      int wk[5][5][4] = {};
-      auto findm = [&](int p, int J, int K, int &m2, int &jj, int &kk) {
-        if (J < 0 || K < 0 || J >= np || K >= np) return false;
-        auto it = own.find(std::make_tuple(p, (J/nx)*nx, (K/nx)*nx));
-        if (it == own.end()) return false;
-        m2 = it->second; jj = J - oj[m2] + js; kk = K - ok[m2] + ks; return true;
-      };
-      auto acc = [&](int c, int q, Real a, Real b, int m, int k, int j, int i) {
-        if (i < is || i > ie) c = (j == js-ng || j >= je+ng || k == ks-ng
-                                   || k >= ke+ng) ? 4 : 3;
-        const Real d = fabs(a - b); cnt[c][q] += 1;
-        if (d > dm[c][q]) {dm[c][q] = d; wk[c][q][0] = m; wk[c][q][1] = k;
-                           wk[c][q][2] = j; wk[c][q][3] = i;}
-      };
-      for (int m=0; m<pmbp->nmb_thispack; ++m) {
-        const int p = mbpanel.h_view(m);
-        for (int k=ks-ng; k<=ke+ng; ++k) {
-          for (int j=js-ng; j<=je+ng; ++j) {
-            const bool jo = (j < js || j > je), ko = (k < ks || k > ke);
-            if (!jo && !ko) continue;
-            int m2, jj, kk;
-            if (!findm(p, oj[m]+j-js, ok[m]+k-ks, m2, jj, kk)) continue;
-            const int c = (jo && ko) ? 1 : 0;
-            for (int i=is-ng; i<=ie+ng; ++i) {
-              for (int v=0; v<nv; ++v) {
-                acc(c, 0, u0h(m,v,k,j,i), u0h(m2,v,kk,jj,i), m, k, j, i);
-                acc(c, 1, w0h(m,v,k,j,i), w0h(m2,v,kk,jj,i), m, k, j, i);
-              }
-              acc(c, 2, c1(m,k,j,i), c1(m2,kk,jj,i), m, k, j, i);
-            }
-          }
-        }
-        // x2 faces j = js-ng .. je+ng+1; owner = the block holding face J as a LOW face
-        // (J % nx == 0 -> the upper block), or the shared copy (category 2)
-        for (int k=ks-ng; k<=ke+ng; ++k) {
-          for (int j=js-ng; j<=je+ng+1; ++j) {
-            const bool jo = (j < js || j > je+1), ko = (k < ks || k > ke);
-            const bool shared = (j == js || j == je+1) && !ko;
-            if (!jo && !ko && !shared) continue;
-            const int J = oj[m]+j-js, K = ok[m]+k-ks;
-            int m2, jj, kk;
-            if (!findm(p, (J == np) ? J-1 : J, K, m2, jj, kk)) continue;
-            if (J == np) jj += 1;
-            if (m2 == m) continue;
-            const int c = shared ? 2 : ((jo && ko) ? 1 : 0);
-            for (int i=is-ng; i<=ie+ng; ++i) acc(c, 3, c2(m,k,j,i),
-                                                 c2(m2,kk,jj,i), m, k, j, i);
-          }
-        }
-        for (int k=ks-ng; k<=ke+ng+1; ++k) {
-          for (int j=js-ng; j<=je+ng; ++j) {
-            const bool ko = (k < ks || k > ke+1), jo = (j < js || j > je);
-            const bool shared = (k == ks || k == ke+1) && !jo;
-            if (!jo && !ko && !shared) continue;
-            const int J = oj[m]+j-js, K = ok[m]+k-ks;
-            int m2, jj, kk;
-            if (!findm(p, J, (K == np) ? K-1 : K, m2, jj, kk)) continue;
-            if (K == np) kk += 1;
-            if (m2 == m) continue;
-            const int c = shared ? 2 : ((jo && ko) ? 1 : 0);
-            for (int i=is-ng; i<=ie+ng; ++i) acc(c, 4, c3(m,k,j,i),
-                                                 c3(m2,kk,jj,i), m, k, j, i);
-          }
-        }
-      }
-      const char *cn[5] = {"face ghost  ", "corner ghost", "shared face ",
-                           "radial gh   ", "rad gh outer"};
-      const char *qn[5] = {"u0", "w0", "b1", "b2", "b3"};
-      {
-        // EMFs on the shared block faces (x1e, x3e on j faces; x1e, x2e on k faces),
-        // split: block-corner edge / face interior, radial index boundary / interior
-        auto e1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                                                      pmbp->pmhd->efld.x1e);
-        auto e2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                                                      pmbp->pmhd->efld.x2e);
-        auto e3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                                                      pmbp->pmhd->efld.x3e);
-        Real em[2][2][3] = {}; int ew[2][2][3][4] = {};
-        auto ea = [&](int c, int r, int q, Real a, Real b, int m, int k, int j, int i) {
-          const Real d = fabs(a - b);
-          if (d > em[c][r][q]) {em[c][r][q] = d; ew[c][r][q][0] = m; ew[c][r][q][1] = k;
-                                ew[c][r][q][2] = j; ew[c][r][q][3] = i;}
-        };
-        for (int m=0; m<pmbp->nmb_thispack; ++m) {
-          const int p = mbpanel.h_view(m);
-          // upper j face of m vs the lower j face of the block above (same panel)
-          int m2, jj, kk;
-          if (findm(p, oj[m]+nx, ok[m], m2, jj, kk)) {
-            for (int k=ks; k<=ke+1; ++k) {
-              const int c = (k == ks || k == ke+1) ? 0 : 1;
-              for (int i=is; i<=ie+1; ++i) {
-                if (i <= ie) ea(c, (i == is || i == ie) ? 0 : 1, 0,
-                                e1(m,k,je+1,i), e1(m2,k,js,i), m, k, je+1, i);
-                if (k <= ke) ea(c, (i == is || i == ie+1) ? 0 : 1, 2,
-                                e3(m,k,je+1,i), e3(m2,k,js,i), m, k, je+1, i);
-              }
-            }
-          }
-          if (findm(p, oj[m], ok[m]+nx, m2, jj, kk)) {
-            for (int j=js; j<=je+1; ++j) {
-              const int c = (j == js || j == je+1) ? 0 : 1;
-              for (int i=is; i<=ie+1; ++i) {
-                if (i <= ie) ea(c, (i == is || i == ie) ? 0 : 1, 0,
-                                e1(m,ke+1,j,i), e1(m2,ks,j,i), m, ke+1, j, i);
-                if (j <= je) ea(c, (i == is || i == ie+1) ? 0 : 1, 1,
-                                e2(m,ke+1,j,i), e2(m2,ks,j,i), m, ke+1, j, i);
-              }
-            }
-          }
-        }
-        const char *rn[2] = {"radial-bdry", "radial-int "};
-        for (int c=0; c<2; ++c) for (int r=0; r<2; ++r) {
-          std::printf("### CS SHARED-FACE EMF %s %s:", c ? "face-interior"
-                      : "block-corner ", rn[r]);
-          for (int q=0; q<3; ++q) std::printf("  e%d %10.3e @m%d k%d j%d i%d",
-                                              q+1, em[c][r][q],
-              ew[c][r][q][0], ew[c][r][q][1], ew[c][r][q][2], ew[c][r][q][3]);
-          std::printf("\n");
-        }
-      }
-      std::printf("### CS SAME-PANEL GHOST CONSISTENCY (max |ghost - owner|)\n");
-      for (int c=0; c<5; ++c) {
-        std::printf("   %s", cn[c]);
-        for (int q=0; q<5; ++q) std::printf("  %s %10.3e (n %d @m%d k%d j%d i%d)",
-                                            qn[q], dm[c][q],
-            cnt[c][q], wk[c][q][0], wk[c][q][1], wk[c][q][2], wk[c][q][3]);
-        std::printf("\n");
-      }
-    }
-    {
-      auto &b0f = pmbp->pmhd->b0;
-      auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x2f);
-      auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x3f);
-      struct SeamFace { Real b; Real n[3]; int panel; };
-      // Split off the faces within ng of a seam END, i.e. a panel corner. Only there do
-      // the two panels average over DIFFERENT sets of contributions.
-      std::map<std::string, SeamFace> seen;
-      Real dmax = 0.0, bmax = 0.0, cmax = 0.0;
-      int npair = 0;
-      for (int m=0; m<pmbp->nmb_thispack; ++m) {
-        const int p = mbpanel.h_view(m);
-        for (int side=0; side<4; ++side) {
-          const bool jface = (side < 2);
-          const int jj = (side == 0) ? js : ((side == 1) ? je+1 : 0);
-          const int kk = (side == 2) ? ks : ((side == 3) ? ke+1 : 0);
-          const int nlo = jface ? ks : js;
-          const int nhi = jface ? ke : je;
-          for (int t=nlo; t<=nhi; ++t) {
-            const int j = jface ? jj : t;
-            const int k = jface ? t  : kk;
-            const Real x2n = size.h_view(m).x2min, x2x = size.h_view(m).x2max;
-            const Real x3n = size.h_view(m).x3min, x3x = size.h_view(m).x3max;
-            const Real xi = 0.25*M_PI*(jface
-                ? LeftEdgeX(j-js, indcs.nx2, x2n, x2x)
-                : CellCenterX(j-js, indcs.nx2, x2n, x2x));
-            const Real et = 0.25*M_PI*(jface
-                ? CellCenterX(k-ks, indcs.nx3, x3n, x3x)
-                : LeftEdgeX(k-ks, indcs.nx3, x3n, x3x));
-            Real n1[3], n2[3], cx, cy, cz;
-            PanelToCart(p, xi, et, cx, cy, cz);
-            PanelNormals(p, xi, et, n1, n2);
-            for (int i=is; i<=ie; ++i) {
-              char key[128];
-              std::snprintf(key, sizeof(key), "%d_%.9f_%.9f_%.9f", i-is, cx, cy, cz);
-              SeamFace f;
-              f.b = jface ? b2h(m,k,j,i) : b3h(m,k,j,i);
-              for (int c=0; c<3; ++c) {f.n[c] = jface ? n1[c] : n2[c];}
-              f.panel = p;
-              auto it = seen.find(std::string(key));
-              if (it == seen.end()) {
-                seen[std::string(key)] = f;
-              } else if (it->second.panel != p) {
-                const Real dot = it->second.n[0]*f.n[0] + it->second.n[1]*f.n[1]
-                               + it->second.n[2]*f.n[2];
-                const Real d = fabs(it->second.b - dot*f.b);
-                // "near a corner" must mean near a CUBE VERTEX, tested geometrically:
-                // with several MeshBlocks per panel the ends of a block's seam are
-                // mostly ordinary interior edges, and bucketing by index would count
-                // those too and hide which faces are actually at issue.
-                Real vdot = 0.0;
-                for (int vv=0; vv<8; ++vv) {
-                  const Real vx = ((vv&1)?1.0:-1.0)/sqrt(3.0);
-                  const Real vy = ((vv&2)?1.0:-1.0)/sqrt(3.0);
-                  const Real vz = ((vv&4)?1.0:-1.0)/sqrt(3.0);
-                  vdot = fmax(vdot, cx*vx + cy*vy + cz*vz);
-                }
-                const Real dang = 0.5*M_PI/static_cast<Real>(indcs.nx2);
-                if (acos(fmin(1.0,vdot)) < (ng + 0.5)*dang) {
-                  cmax = fmax(cmax, d);
-                } else {
-                  dmax = fmax(dmax, d);
-                }
-                bmax = fmax(bmax, fabs(f.b));
-                ++npair;
-              }
-            }
-          }
-        }
-      }
-      std::printf("### CS SEAM FACE SINGLE-VALUED: max|b_P - b_Q| = %12.5e away from a"
-                  " cube vertex, %12.5e within %d cells of one; %d shared faces,"
-                  " max|b| %9.3e\n", dmax, cmax, ng, npair, bmax);
-    }
-}
 
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -8599,7 +8098,6 @@ CSIvanErr CSIvanErrSums(Mesh *pm) {
 
 void CSIvanErrors(ParameterInput *pin, Mesh *pm) {
   CSIvanErr E = CSIvanErrSums(pm);
-  CSErrCells(pin, pm);
   if (global_variable::my_rank != 0) return;
   const int nring = static_cast<int>(E.rl1.size());
   Real il1 = 0.0, ivol = 0.0, ili = 0.0;
