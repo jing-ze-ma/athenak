@@ -938,7 +938,8 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
     auto de = [&](const int kk, const int jj, const int ii) {
       return fabs(x.cs(m,CLN_D11+dir,kk,jj,ii)*x.w(m,e,kk,jj,ii));
     };
-    if (mag) *mag += 0.5*((fabs(f) + fabs(g))/(x.c*x.c) + x.h*x.idx[dir]*
+    const Real id = (x.sph || x.cub) ? 1.0/x.dxf[dir](m,kf,jf,iff) : x.idx[dir];
+    if (mag) *mag += 0.5*((fabs(f) + fabs(g))/(x.c*x.c) + x.h*id*
                           (de(kf,jf,iff) + de(kf-dk,jf-dj,iff-di)));
   }
   return dm;
