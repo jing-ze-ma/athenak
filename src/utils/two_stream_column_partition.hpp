@@ -1399,6 +1399,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       c.rd(m,k,j,b0+NCL) = static_cast<Real>(ncl);
     }, Kokkos::Max<Real>(dbm));
     if (dbm > dbmax) dbmax = dbm;
+    tm.team_barrier();   // every segment's clamp count is written
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {
       Real ncl = 0.0;
       for (int s=0; s<nsg; ++s) ncl += c.rd(m,k,j,s*nrd+NCL);
