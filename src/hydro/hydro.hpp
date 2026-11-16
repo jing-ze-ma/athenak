@@ -376,7 +376,7 @@ class Hydro {
   // whose x1 well-balanced potential phicc_wb exceeds wb_phimax take the plain
   // reconstruction, exactly as above wb_rmax. Default +huge = never (bitwise unchanged).
   Real wb_phimax = 1.0e300;
-  WBOption wb_option;
+  WBOption wb_option = isodensity;
   DvceArray5D<Real> u0wb;   // background conserved variables
   DvceArray5D<Real> w0wb;   // background primitive variables
   DvceFaceFld5D<Real> w0facewb;   // face-centered background primitive variables

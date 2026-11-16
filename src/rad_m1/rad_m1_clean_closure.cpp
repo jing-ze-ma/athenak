@@ -87,8 +87,10 @@ void CleanFaceVector(const CleanArgs &x, const DvceArray2D<Real> &x3f, const int
     for (int c = 0; c < 3; ++c) a[c] = (c == dir) ? x.area[dir](m,k,j,i) : 0.0;
     return;
   }
-  const Real r1 = x.x1f(m,i), r2 = x.x1f(m,i+1), t1 = x.x2f(m,j), t2 = x.x2f(m,j+1);
-  // (a phi face reads only its own phi: the high face of a 2-D cell has no k+1 edge)
+  // (a theta or phi face reads only its own angle: the high face of a 1-D (2-D) cell has
+  // no j+1 (k+1) edge)
+  const Real r1 = x.x1f(m,i), r2 = x.x1f(m,i+1), t1 = x.x2f(m,j);
+  const Real t2 = (dir == 1) ? t1 : x.x2f(m,j+1);
   const Real p1 = x3f(m,k), p2 = (dir == 2) ? p1 : x3f(m,k+1);
   const Real hr = 0.5*(r2*r2 - r1*r1);
   if (dir == 0) {
