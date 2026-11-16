@@ -93,8 +93,8 @@
 //!                        soon as the thin top adjusts; the standing jump that leaves at
 //!                        the top face drains the top layer.  `open` continues the top
 //!                        active cell hydrostatically at its own temperature, outflow
-//!                        only unless problem/open_outer_noinflow is false.  Mass and
-//!                        energy can then leave; problem/face_budget reports how much.
+//!                        only.  Mass and energy can then leave; problem/face_budget
+//!                        reports how much.
 //!   problem/s_relax_cs, problem/s_relax_cp   the two relaxation rates (0.1, 0.3)
 //!   problem/column_dump  if set, rank 0 writes the initial column to this file
 //!   problem/ic_profile   if set, the initial stratification is READ from this file
@@ -163,7 +163,7 @@ using pgen_eos::GradAd;
 using pgen_eos::TempKelvin;
 
 void RedGiantGravity(Mesh *pm, Real bdt);
-// problem/rt_strang, problem/rt_once_per_cycle: the radiation operator applied OUTSIDE
+// problem/rt_strang: the radiation operator applied OUTSIDE
 // the RK stages (ProblemGenerator::user_split_func).  See the declarations of rt_strang_
 void RedGiantRTSplit(Mesh *pm, Real bdt);
 void RedGiantGravityLedger(Mesh *pm, Real bdt);
@@ -256,17 +256,6 @@ bool open_inner_ = false;
 // atmosphere gives no flux through the face at all and the top is free to find its own
 // stratification.
 bool open_outer_ = false;
-// problem/open_outer_noinflow (default true): with an open top, clamp the ghost's radial
-// velocity to outflow.  The ghost is an extrapolation, not a reservoir; letting it push
-// mass back down invents material the domain never had.  False copies the velocity as the
-// inner boundary does, which is the right choice only if something above is being
-// modelled.
-bool open_outer_noinflow_ = true;
-// problem/open_outer_lid (default false): keep the open ghost's hydrostatic (rho, e)
-// continuation but MIRROR the radial velocity about the top face, so no mass crosses it.
-// For a star whose radial pulsation lifts BOUND gas (a few per cent of v_esc) through a
-// top that sits just above the photosphere: outflow-only drains it irreversibly.
-bool open_outer_lid_ = false;
 Real p_base_ = 0.0, t_base_ = 0.0;      // the initial column AT the inner wall, cgs
 // --- AMBIENT MEDIUM outside the star (problem/bg_rho > 0).  A constant (rho, T) filling
 // the domain above the point where the hydrostatic column thins to bg_rho, so that x1max
@@ -303,29 +292,26 @@ bool bg_hydrostatic_ = false;           // problem/bg_hydrostatic
 // shell is ~1e-15.
 Real opac_floor_ = 1.0e-5;
 Real cs_change_ = 0.1, cp_change_ = 0.3;
-// problem/open_conserve (default true): make the density-restoring pass energy neutral.
-// That pass adds the SAME drho to every cell of the base shell at the cell's own
-// specific energy, so it moves mass between hot and cold columns and the total energy
-// changes by drho * sum_i e_i V_i -- a sink of thousands of L once the shell has any
-// entropy contrast (measured: -4e3 L, against the +1 L the boundary is meant to supply).
-// With this on, whatever it adds is removed again uniformly over the shell.
-bool open_conserve_ = true;
+// The density-restoring pass is made energy neutral.  That pass adds the SAME drho to
+// every cell of the base shell at the cell's own specific energy, so it moves mass
+// between hot and cold columns and the total energy changes by drho * sum_i e_i V_i -- a
+// sink of thousands of L once the shell has any entropy contrast (measured: -4e3 L,
+// against the +1 L the boundary is meant to supply). Whatever it adds is removed again
+// uniformly over the shell.
 // problem/face_budget (cycles, 0 = off): the energy and mass the RADIAL FACES of the
 // domain carry, integrated over each shell.  The open boundary's own passes are only
 // half of its budget -- the other half is what the Riemann solver advects across the
 // same face, and nothing else in the code reports it.  Sampled once per cycle, at the
 // first stage, times dt: an O(dt) estimate of the cycle's transfer, which is all that
 // is needed to compare a suspected sink against L.
-// problem/open_nomassflux (default true with inner_bc = open): hold the NET mass flux
-// through the inner FACE at zero.  The boundary's fourth pass drives the shell-mean
-// radial velocity at the lowest cell CENTRE to zero, but the mass leaves across the
-// face, and measured (problem/face_budget) that face drained 3.0e30 g and 2.0e44 erg --
-// the whole of the run's energy loss -- in 2.3e4 s.  Each stage this removes the net
-// mass the face just delivered, uniformly over the base shell, together with the energy
-// and momentum that mass carried at the shell-mean specific enthalpy and velocity.  A
-// zero-net-mass convective enthalpy flux, which is the luminosity the boundary is meant
-// to supply, passes through untouched.
-bool open_nomassflux_ = true;
+// With inner_bc = open the NET mass flux through the inner FACE is held at zero.  The
+// boundary's fourth pass drives the shell-mean radial velocity at the lowest cell CENTRE
+// to zero, but the mass leaves across the face, and measured (problem/face_budget) that
+// face drained 3.0e30 g and 2.0e44 erg -- the whole of the run's energy loss -- in 2.3e4
+// s.  Each stage this removes the net mass the face just delivered, uniformly over the
+// base shell, together with the energy and momentum that mass carried at the shell-mean
+// specific enthalpy and velocity.  A zero-net-mass convective enthalpy flux, which is the
+// luminosity the boundary is meant to supply, passes through untouched.
 // problem/wall_noflux (default true, inner_bc = wall): make the reflecting wall exactly
 // impermeable.  The ghost carries the INITIAL COLUMN's density and pressure with only
 // v_r mirrored -- which is what keeps it in balance with the well-balanced background --
@@ -412,15 +398,10 @@ Real face_E_in_l_ = 0.0, face_E_out_l_ = 0.0, face_t_last_ = 0.0;
 Real open_lstar_ = 0.0;
 // --- OPERATOR-SPLIT SCHEDULING, ported from box_convection.cpp (:1922-2110).
 // problem/rt_strang: the radiation operator (the two-stream column solve, its radiative
-// force and, with rt_split_transverse, the implicit transverse diffusion) is applied as
-// a Strang-split operator around the time integrator -- dt/2 before, dt/2 after -- and
-// NOT inside the RK stages.  problem/rt_once_per_cycle is the Lie variant: once with the
-// full dt after the last stage.  Both are enrolled through user_split_func.
+// force and the implicit transverse diffusion) is applied as a Strang-split operator
+// around the time integrator -- dt/2 before, dt/2 after -- and NOT inside the RK stages,
+// enrolled through user_split_func.
 bool rt_strang_ = false;
-bool rt_once_ = false;
-// problem/rt_split_transverse: with the column out of the stage, take the implicit
-// transverse (ADI) operator out with it, over the same bdt.  Default ON under a split.
-bool rt_split_tr_ = false;
 
 // --- problem/vdamp_top_tau, problem/vdamp_top_time (0 = OFF, the default, and bitwise
 // inert): the TAU-BASED top sponge ported from box_convection.cpp (:1691-1692 and the
@@ -599,62 +580,6 @@ Real cs_max_ = 0.0, cs_mass_added_ = 0.0;   // problem/cs_max, see RgCsCeiling
 int eledger_ = 0;         // problem/e_ledger, see RedGiantRTSplit
 bool mlt_split_dep_ = false, mlt_fconv_ready_ = false;
 Real mlt_owed_ = 0.0;
-// problem/mlt_split_sync (needs mlt_split_deposit + mlt_mean), default off: take the
-// GRID-SCALE MODE out of the closure's target, with one [1 2 1]/4 pass over the faces
-// before the target enters the relaxed profile.
-//
-// THE MECHANISM IT FIXES (measured with a periodic face dump).  The closure asks for
-// D = F_req - F_rad - F_res - F_2s, a ~3 % difference of two ~L numbers, and under the
-// split -div D is deposited into the state the implicit column solve then linearises
-// about.  The sweep answers that source: in gas this optically thick the stiff solve
-// absorbs an imposed source almost completely within one step and carries it as a FACE
-// FLUX, so F_2s picks up ~ -F_used, and the next closure call -- which defines F_used
-// as F_req - F_2s -- reads its own deposit back with the sign that asks for more.  The
-// loop is
-//     F_used^(n+1) = F_req - F_2s^n,   F_2s^n = F_2s^eq - a F_used^n,
-// a = theta/(1 + theta) with theta the sweep's diffusion number D dt/dx^2, so the gain
-// is a and any mismatch is amplified by 1/(1 - a) = 1 + theta.  theta is scale
-// dependent: negligible on the shell profile, ENORMOUS and linear in dt at the grid
-// scale.  That is the whole observed signature -- zigzag(F_2s) 0.002 -> 2.5 (sign
-// flipping, |F_2s| up to 4 F_req) over 1.5 turnovers while zigzag(T) stays at 1.3e-3
-// and zigzag(F_req) at 8e-4; the grid-scale density zigzag that follows
-// at r/R 0.67-0.81, because in a radiation-pressure-dominated envelope p = p(T) to 2 %
-// and density has no restoring force; amplitude falling like dt^2 between cfl 0.3,
-// 0.15 and 0.075; and nothing at all with the deposit inside the RK stages
-// (zigzag(F_2s) 8e-3), which however pays the O(dt) force dipole the
-// split removes.
-//
-// WHY THE SMOOTHER AND NOT THE OBVIOUS FIXES.  Re-forming the residual against the flux
-// of the sweep just done -- candidate (i)/(ii), make deficit and deposit simultaneous --
-// treats a stiff term explicitly and blows up at once (zigzag(rho) 3.9
-// within 0.14 turnovers).  Dropping the max(0, .) rectifier so the flux can go negative
-// makes it WORSE (2.5 at 1.5 turnovers against 0.62 with it), because the
-// rectifier was clipping half of the mode.  The loop gain is a property of the grid-
-// scale mode alone, so the cure is to keep that mode out of the loop: [1 2 1]/4
-// annihilates it exactly, leaves what the shell profile resolves (F_req goes as 1/r^2
-// over 144 faces) untouched to O((dx/L)^2), and -- applied to the TARGET, not to the
-// relaxed state, and with the walls mirrored so the flux there stays zero -- keeps the
-// deposit exactly conservative and the relaxation filter exactly as it was.
-bool mlt_split_sync_ = false;
-DvceArray1D<Real> ftar1d_;   // (i): the unsmoothed target, mlt_split_sync only
-// problem/mlt_sync_passes (int, default 1, read only under mlt_split_sync): apply the
-// [1 2 1]/4 stencil this many times to the target instead of once.  One pass kills the
-// face-to-face mode exactly and nothing else; a 3-6 face standing oscillation between
-// F_2s and F_used survives it (3-D wedge:
-// +-0.3 L at r/R 0.79-0.92).  n passes multiply a mode of wavelength
-// lambda faces by cos^{2n}(pi/lambda), so the 3-6 face band needs n > 1:
-//        lambda    n=1      n=2      n=4      n=8
-//             2    0        0        0        0
-//             3    0.250    0.0625   3.91e-3  1.53e-5
-//             4    0.500    0.250    0.0625   3.91e-3
-//             6    0.750    0.563    0.316    0.100
-//            12    0.933    0.871    0.758    0.574
-// The cost is the profile the closure is allowed to keep: at n = 8 a 12-face feature is
-// already down 43 %, and the smoother is a diffusion of 2n/4 faces^2 per call, so the
-// number should be the smallest one that reaches the band that is ringing.  Every pass
-// mirrors the walls exactly as the single pass does, so the deposit stays conservative.
-int mlt_sync_passes_ = 1;
-DvceArray1D<Real> ftar1d_b_;  // (i): ping-pong buffer, mlt_sync_passes > 1 only
 // problem/mlt_relax_time [s], 0 = off: relax the applied 1-D profile toward the freshly
 // computed flux by dt/relax_time each call.  The deficit now contains the RESOLVED
 // convective flux, which is a turbulent correlation and flickers from dump to dump; the
@@ -1305,7 +1230,7 @@ void RedGiantProfileTick(Mesh *pm) {
 //----------------------------------------------------------------------------------------
 //! \fn void RedGiantRTSweep
 //! \brief the band/grey two-stream call itself, shared by the in-stage source term and
-//! the operator-split entry point (problem/rt_strang, rt_once_per_cycle) so that the two
+//! the operator-split entry point (problem/rt_strang) so that the two
 //! are the SAME code with a different dt.
 
 void RedGiantRTSweep(Mesh *pm, Real bdt) {
@@ -1430,16 +1355,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // clean-up kept rt_strang: with rt_strang false there is no split half step to
   // deposit into and the stage-local deposit runs whatever this flag says.
   mlt_split_dep_ = pin->GetOrAddBoolean("problem", "mlt_split_deposit", true);
-  mlt_split_sync_ = pin->GetOrAddBoolean("problem", "mlt_split_sync", false);
   mlt_relax_ = pin->GetOrAddReal("problem", "mlt_relax_time", 1.0e4);
-  if (mlt_split_sync_) {
-    mlt_sync_passes_ = pin->GetOrAddInteger("problem", "mlt_sync_passes", 1);
-    if (mlt_sync_passes_ < 1) {
-      std::cout << "### FATAL ERROR in red_giant: problem/mlt_sync_passes = "
-                << mlt_sync_passes_ << " must be >= 1" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
   // the shell mean indexes cells by their GLOBAL radial position, so a MeshBlock that
   // covers only part of the radius would average cells at different radii together
   if (mlt_alpha_ > 0.0 && mlt_mean_ &&
@@ -1449,14 +1365,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << pmy_mesh_->mesh_indcs.nx1 << " and meshblock/nx1 = "
               << pmy_mesh_->mb_indcs.nx1 << ". Set meshblock/nx1 = mesh/nx1, or set "
               << "problem/mlt_mean = false." << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-  // the sync form smooths the shell-mean target: it has nowhere to live without the
-  // shell-mean closure, and nothing to fix without the split deposit
-  if (mlt_split_sync_ && !(mlt_split_dep_ && mlt_mean_)) {
-    std::cout << "### FATAL ERROR in red_giant: problem/mlt_split_sync needs "
-              << "problem/mlt_split_deposit = true and problem/mlt_mean = true"
-              << std::endl;
     std::exit(EXIT_FAILURE);
   }
   sponge_on_ = pin->GetOrAddBoolean("problem", "sponge", true);
@@ -1910,35 +1818,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     // ---- OPERATOR-SPLIT SCHEDULING (box_convection.cpp:1922-2110) -------------------
     // problem/rt_strang: the whole radiation operator is Strang-split around the time
-    // integrator (dt/2 before, dt/2 after) instead of being applied once per RK stage;
-    // problem/rt_once_per_cycle applies it once with the full dt after the last stage.
-    // Both take the source OUT of the stage, so the in-stage call below is skipped.
+    // integrator (dt/2 before, dt/2 after) instead of being applied once per RK stage,
+    // so the in-stage call below is skipped.  The implicit transverse (ADI) operator
+    // moves WITH it, over the same bdt and on the state the column solve has just
+    // relaxed.
     rt_strang_ = pin->GetOrAddBoolean("problem", "rt_strang", false);
-    rt_once_ = pin->GetOrAddBoolean("problem", "rt_once_per_cycle", false);
-    if (rt_strang_ && rt_once_) {
-      std::cout << "### FATAL ERROR in red_giant: problem/rt_strang and "
-                << "problem/rt_once_per_cycle are mutually exclusive" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (rt_strang_ || rt_once_) {
+    if (rt_strang_) {
       user_split_func = RedGiantRTSplit;
-      user_split_once = rt_once_;
-      // problem/rt_split_transverse: with the column out of the stage, the implicit
-      // transverse (ADI) operator moves WITH it, over the same bdt and on the state the
-      // column solve has just relaxed.  Default ON whenever a split is active.
-      rt_split_tr_ = pin->GetOrAddBoolean("problem", "rt_split_transverse", true);
-      if (rt_split_tr_ && pc != nullptr && pc->rad_implicit_ang) {
+      if (pc != nullptr && pc->rad_implicit_ang) {
         pc->rad_tr_split_out = true;
       }
       if (global_variable::my_rank == 0) {
-        std::cout << "red_giant: the two-stream is applied "
-                  << (rt_strang_ ? "STRANG-SPLIT around the time integrator (dt/2 "
-                                   "before, dt/2 after)"
-                                 : "ONCE per cycle with the full dt after the last RK "
-                                   "stage")
-                  << " and NOT inside the RK stages"
-                  << (rt_split_tr_ ? "; the transverse operator moves with it" : "")
-                  << std::endl;
+        std::cout << "red_giant: the two-stream is applied STRANG-SPLIT around the time "
+                  << "integrator (dt/2 before, dt/2 after) and NOT inside the RK stages; "
+                  << "the transverse operator moves with it" << std::endl;
       }
     }
     if (global_variable::my_rank == 0) {
@@ -2033,14 +1926,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Kokkos::realloc(shell_, n1m1+2, 13);
     Kokkos::realloc(fmlt1d_, n1m1+2);
     Kokkos::realloc(fmean_, n1m1+2, 17);
-    if (mlt_split_sync_) {
-      Kokkos::realloc(ftar1d_, n1m1+2);
-      Kokkos::deep_copy(ftar1d_, 0.0);   // a face the closure skips contributes nothing
-      if (mlt_sync_passes_ > 1) {        // the ping-pong buffer, only when it is used
-        Kokkos::realloc(ftar1d_b_, n1m1+2);
-        Kokkos::deep_copy(ftar1d_b_, 0.0);
-      }
-    }
     // the relaxed profile goes into, and comes out of, the restart file (see
     // RedGiantMltRestartState).  Enrolled only here, so a run with problem/mlt_alpha = 0
     // writes no block and every other pgen's restart format is untouched.
@@ -2487,12 +2372,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      open_outer_noinflow_ = pin->GetOrAddBoolean("problem", "open_outer_noinflow", true);
-      open_outer_lid_ = pin->GetOrAddBoolean("problem", "open_outer_lid", false);
       if (open_outer_ && global_variable::my_rank == 0) {
         std::cout << "red_giant: OPEN outer boundary -- the ghosts continue the top "
-                  << "active cell hydrostatically at its own temperature"
-                  << (open_outer_noinflow_ ? ", outflow only." : ", velocity copied.")
+                  << "active cell hydrostatically at its own temperature, outflow only."
                   << " Mass and energy CAN leave the domain; problem/face_budget "
                   << "reports how much." << std::endl;
       }
@@ -2501,8 +2383,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       face_budget_ = pin->GetOrAddInteger("problem", "face_budget", 0);
       open_debug_ = pin->GetOrAddInteger("problem", "open_debug", 0);
       wall_noflux_ = pin->GetOrAddBoolean("problem", "wall_noflux", true);
-      open_nomassflux_ = pin->GetOrAddBoolean("problem", "open_nomassflux", true);
-      open_conserve_ = pin->GetOrAddBoolean("problem", "open_conserve", true);
       open_lstar_ = lstar;
       p_base_ = exp(hlnp(ibot))*punit_;
       t_base_ = htk(ibot);
@@ -3423,8 +3303,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       // the deficit IS the hand-over and it vanishes wherever radiation takes the load.
       auto fmean = fmean_;
       const Real xthr = mlt_x_thr_, relaxt = mlt_relax_;
-      const bool sync = mlt_split_sync_;
-      auto ftar1d = mlt_split_sync_ ? ftar1d_ : fmlt1d_;   // unwritten unless sync
       const bool seed = !mlt_relax_seeded_;
       auto ktab = ktab_;
       auto klT = klT_;
@@ -3565,12 +3443,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         }
         // (d) relax the applied profile toward the target
         const Real fnew = ftar/(punit_*vunit);                         // code flux
-        // problem/mlt_split_sync relaxes toward the SMOOTHED target instead, which
-        // needs every face's target first: hold it aside and do it in a second pass
-        if (sync) {
-          ftar1d(i) = fnew;
-          return;
-        }
         if (relaxt > 0.0 && !seed) {
           fmlt1d(i) += fmin(1.0, bdt*tunit/relaxt)*(fnew - fmlt1d(i));
         } else {
@@ -3578,48 +3450,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         }
         fmean(i,8) = fmlt1d(i)*punit_*vunit;
       });
-      // problem/mlt_split_sync: one [1 2 1]/4 pass over the faces before the target
-      // enters the relaxed profile.  That stencil ANNIHILATES the face-to-face mode
-      // exactly, which is the one the deposit-sweep loop amplifies (see the switch's
-      // declaration), and leaves everything the shell profile actually resolves --
-      // F_req goes as 1/r^2 over 144 faces -- untouched to O((dx/L)^2).  It is applied
-      // to the TARGET, not to the relaxed state: smoothing the state itself once per
-      // stage would be a diffusion operator running at the stage rate and would erase
-      // the profile.  The walls are mirrored, so the flux there stays zero and the
-      // deposit stays exactly conservative.
-      if (mlt_split_sync_) {
-        // problem/mlt_sync_passes > 1: the leading passes, ping-ponging between the
-        // target array and its buffer, so that the last one is the block below and the
-        // n = 1 path is untouched.  Each is the same mirrored stencil.
-        DvceArray1D<Real> psrc = ftar1d_, pdst = ftar1d_b_;
-        for (int p = 1; p < mlt_sync_passes_; ++p) {
-          auto ftar1d_p = psrc;
-          auto ftar1d_o = pdst;
-          par_for("rg_mlt_smooth_p", DevExeSpace(), is+1, ie, KOKKOS_LAMBDA(const int i) {
-            const Real fl = (i > is+1) ? ftar1d_p(i-1) : ftar1d_p(i);
-            const Real fr = (i < ie) ? ftar1d_p(i+1) : ftar1d_p(i);
-            ftar1d_o(i) = 0.25*fl + 0.5*ftar1d_p(i) + 0.25*fr;
-          });
-          DvceArray1D<Real> pswap = psrc; psrc = pdst; pdst = pswap;
-        }
-        auto ftar1d_s = psrc;
-        auto fmlt1d_s = fmlt1d_;
-        auto fmean_s = fmean_;
-        const Real relaxt_s = mlt_relax_, tunit_s = tunit;
-        const Real punv = punit_*vunit;
-        const bool seed_s = !mlt_relax_seeded_;
-        par_for("rg_mlt_smooth", DevExeSpace(), is+1, ie, KOKKOS_LAMBDA(const int i) {
-          const Real fl = (i > is+1) ? ftar1d_s(i-1) : ftar1d_s(i);
-          const Real fr = (i < ie) ? ftar1d_s(i+1) : ftar1d_s(i);
-          const Real fsm = 0.25*fl + 0.5*ftar1d_s(i) + 0.25*fr;
-          if (relaxt_s > 0.0 && !seed_s) {
-            fmlt1d_s(i) += fmin(1.0, bdt*tunit_s/relaxt_s)*(fsm - fmlt1d_s(i));
-          } else {
-            fmlt1d_s(i) = fsm;
-          }
-          fmean_s(i,8) = fmlt1d_s(i)*punv;
-        });
-      }
       mlt_relax_seeded_ = true;
     }
     // problem/mlt_ramp_time: fade the applied flux in, so the cut region heats over
@@ -3793,51 +3623,49 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     // Pass 0: cancel the NET mass the inner face delivered this stage.  The fluxes the
     // RKUpdate just applied are still in uflx, so this is exact per stage rather than a
     // correction chasing a drift.
-    if (open_nomassflux_) {
-      auto &flx1 = is_mhd ? pmbp->pmhd->uflx.x1f : pmbp->phydro->uflx.x1f;
-      auto &area1_ = pmbp->pcoord->area.x1f;
-      auto &vol0_ = pmbp->pcoord->volume;
-      Real sM = 0.0, sV = 0.0, sH = 0.0, sD = 0.0, sPv = 0.0;
-      Kokkos::parallel_reduce("rg_co50", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb1+1),
-      KOKKOS_LAMBDA(const int m, Real &aM, Real &aV, Real &aH, Real &aD, Real &aPv) {
-        if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
-        for (int k=ks; k<=ke; ++k) {
-          for (int j=js; j<=je; ++j) {
-            const Real vol = vol0_(m,k,j,is);
-            const Real d = u0(m,IDN,k,j,is);
-            const Real cc = cs_g ? ccell_g(m,k,j) : 0.0;
-            Real ei = u0(m,IEN,k,j,is)
-                      - CsKinetic(d, u0(m,IM1,k,j,is), u0(m,IM2,k,j,is),
-                                  u0(m,IM3,k,j,is), cc);
-            if (etotgrav) ei -= d*phicc(m,k,j,is);
-            aM += area1_(m,k,j,is)*flx1(m,IDN,k,j,is);
-            aV += vol;
-            aH += (u0(m,IEN,k,j,is) + eos.Pressure(d, ei))*vol;   // total enthalpy
-            aD += d*vol;
-            aPv += u0(m,IM1,k,j,is)*vol;
-          }
+    auto &flx1 = is_mhd ? pmbp->pmhd->uflx.x1f : pmbp->phydro->uflx.x1f;
+    auto &area1_ = pmbp->pcoord->area.x1f;
+    auto &vol0_ = pmbp->pcoord->volume;
+    Real sM = 0.0, sV = 0.0, sH = 0.0, sD = 0.0, sPv = 0.0;
+    Kokkos::parallel_reduce("rg_co50", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb1+1),
+    KOKKOS_LAMBDA(const int m, Real &aM, Real &aV, Real &aH, Real &aD, Real &aPv) {
+      if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          const Real vol = vol0_(m,k,j,is);
+          const Real d = u0(m,IDN,k,j,is);
+          const Real cc = cs_g ? ccell_g(m,k,j) : 0.0;
+          Real ei = u0(m,IEN,k,j,is)
+                    - CsKinetic(d, u0(m,IM1,k,j,is), u0(m,IM2,k,j,is),
+                                u0(m,IM3,k,j,is), cc);
+          if (etotgrav) ei -= d*phicc(m,k,j,is);
+          aM += area1_(m,k,j,is)*flx1(m,IDN,k,j,is);
+          aV += vol;
+          aH += (u0(m,IEN,k,j,is) + eos.Pressure(d, ei))*vol;   // total enthalpy
+          aD += d*vol;
+          aPv += u0(m,IM1,k,j,is)*vol;
         }
-      }, sM, sV, sH, sD, sPv);
+      }
+    }, sM, sV, sH, sD, sPv);
 #if MPI_PARALLEL_ENABLED
-      {
-        Real g[5] = {sM, sV, sH, sD, sPv};
-        MPI_Allreduce(MPI_IN_PLACE, g, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-        sM = g[0]; sV = g[1]; sH = g[2]; sD = g[3]; sPv = g[4];
-      }
+    {
+      Real g[5] = {sM, sV, sH, sD, sPv};
+      MPI_Allreduce(MPI_IN_PLACE, g, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      sM = g[0]; sV = g[1]; sH = g[2]; sD = g[3]; sPv = g[4];
+    }
 #endif
-      if (sV > 0.0 && sD > 0.0) {
-        const Real dd = -bdt*sM/sV;      // code density, the same in every base cell
-        const Real hbar = sH/sD;         // shell-mean specific total enthalpy
-        const Real vbar = sPv/sD;        // shell-mean radial velocity
-        par_for("rg_co50b", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-        KOKKOS_LAMBDA(const int m, const int k, const int j) {
-          if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
-          if (u0(m,IDN,k,j,is) + dd <= 0.0) return;
-          u0(m,IDN,k,j,is) += dd;
-          u0(m,IM1,k,j,is) += dd*vbar;
-          u0(m,IEN,k,j,is) += dd*hbar;
-        });
-      }
+    if (sV > 0.0 && sD > 0.0) {
+      const Real dd = -bdt*sM/sV;      // code density, the same in every base cell
+      const Real hbar = sH/sD;         // shell-mean specific total enthalpy
+      const Real vbar = sPv/sD;        // shell-mean radial velocity
+      par_for("rg_co50b", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+      KOKKOS_LAMBDA(const int m, const int k, const int j) {
+        if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+        if (u0(m,IDN,k,j,is) + dd <= 0.0) return;
+        u0(m,IDN,k,j,is) += dd;
+        u0(m,IM1,k,j,is) += dd*vbar;
+        u0(m,IEN,k,j,is) += dd*hbar;
+      });
     }
     // Pass A: shell means of density and pressure
     Real srho0 = 0.0, sumP = 0.0, sN = 0.0;
@@ -3983,7 +3811,7 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
 #endif
     // Pass E: give back what Pass D took.  Uniformly in volume, so the shell's own
     // structure is untouched and only the spurious global term goes away.
-    if (open_conserve_ && dEden != 0.0) {
+    if (dEden != 0.0) {
       Real svol = 0.0;
       Kokkos::parallel_reduce("rg_co5Evol", Kokkos::RangePolicy<>(DevExeSpace(),0,nmb1+1),
       KOKKOS_LAMBDA(const int m, Real &a) {
@@ -4265,11 +4093,11 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   }
 
   // --- the optically thin layers: the correlated-k or the grey two-stream if one of
-  // them is on, else the old grey Eddington relaxation.  problem/rt_strang and
-  // problem/rt_once_per_cycle take this source OUT of the stage: RedGiantRTSplit then
+  // them is on, else the old grey Eddington relaxation.  problem/rt_strang takes this
+  // source OUT of the stage: RedGiantRTSplit then
   // makes exactly the same call, with a different dt and at a different point in the
   // cycle, and nothing else moves.
-  if ((rt_ck_ || rt_grey_) && !rt_strang_ && !rt_once_) {
+  if ((rt_ck_ || rt_grey_) && !rt_strang_) {
     RedGiantRTSweep(pm, bdt);
     // problem/rt_surface_dt: the emergent top-face flux the sweep has just produced
     RedGiantSurfaceTick(pm);
@@ -4321,16 +4149,16 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RedGiantRTSplit
-//! \brief problem/rt_strang (and problem/rt_once_per_cycle): the two-stream as an
-//! OPERATOR-SPLIT source around the time integrator instead of an in-stage one.
-//! Hydro::RTStrangSplit calls this twice a cycle with bdt = dt/2 (or once with the full
-//! dt under rt_once_per_cycle), on the state at the start and at the end of the cycle,
-//! and runs ConToPrim after each.  It is exactly the call RedGiantGravity makes when the
-//! split is off, with a different dt and at a different point in the cycle.
+//! \brief problem/rt_strang: the two-stream as an OPERATOR-SPLIT source around the time
+//! integrator instead of an in-stage one.
+//! Hydro::RTStrangSplit calls this twice a cycle with bdt = dt/2, on the state at the
+//! start and at the end of the cycle, and runs ConToPrim after each.  It is exactly the
+//! call RedGiantGravity makes when the split is off, with a different dt and at a
+//! different point in the cycle.
 //!
-//! With problem/rt_split_transverse the implicit transverse (ADI) operator travels with
-//! it, over the same bdt and on the state the column solve has just relaxed: its x2/x3
-//! ghosts are the last exchange's, exactly as they are for the in-stage task it replaces.
+//! The implicit transverse (ADI) operator travels with it, over the same bdt and on the
+//! state the column solve has just relaxed: its x2/x3 ghosts are the last exchange's,
+//! exactly as they are for the in-stage task it replaces.
 
 // problem/e_ledger (cycles, 0 = off; single rank only): which OPERATOR changes the
 // domain's sum of u0(IEN) dV.  el_(0) = the two-stream sweep (with its radiative force),
@@ -4540,21 +4368,19 @@ void RedGiantRTSplitBody(Mesh *pm, Real bdt) {
     }
   }
   RedGiantRTSweep(pm, bdt);
-  if (rt_split_tr_) {
-    MeshBlockPack *pmbp = pm->pmb_pack;
-    const bool is_mhd = (pmbp->pmhd != nullptr);
-    Conduction *pc = is_mhd ? pmbp->pmhd->pcond : pmbp->phydro->pcond;
-    auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
-    const EOS_Data &eos = is_mhd ? pmbp->pmhd->peos->eos_data
-                                 : pmbp->phydro->peos->eos_data;
-    if (pc != nullptr && pc->rad_implicit_ang) {
-      if (pc->rad_sts_all) {
-        pc->StsConductionUpdate(u0, eos, bdt);
-      } else {
-        pc->ImplicitTransverseUpdate(u0, eos, bdt);
-      }
-      RGNanScan(pm, "RT_transverse_split");
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  Conduction *pc = is_mhd ? pmbp->pmhd->pcond : pmbp->phydro->pcond;
+  auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  const EOS_Data &eos = is_mhd ? pmbp->pmhd->peos->eos_data
+                               : pmbp->phydro->peos->eos_data;
+  if (pc != nullptr && pc->rad_implicit_ang) {
+    if (pc->rad_sts_all) {
+      pc->StsConductionUpdate(u0, eos, bdt);
+    } else {
+      pc->ImplicitTransverseUpdate(u0, eos, bdt);
     }
+    RGNanScan(pm, "RT_transverse_split");
   }
   // the per-angular-cell surface dump, once per cycle (pm->time does not move between
   // the two Strang half steps, so the arming below fires on the first of them only)
@@ -4602,8 +4428,6 @@ void RedGiantBC(Mesh *pm) {
   const bool open_in = open_inner_;
   // OPEN outer boundary: the same continuation at the other end.  See open_outer_.
   const bool open_out = open_outer_;
-  const bool open_out_noin = open_outer_noinflow_;
-  const bool open_out_lid = open_outer_lid_;
   // The AMBIENT MEDIUM is not hydrostatic -- a 400 K gas has a scale height of ~1e-3 R
   // at the outer wall -- so it falls in at the free-fall speed and the reflecting ghost
   // below (v1 mirrored) lets the top cells evacuate with nothing coming back.  Measured:
@@ -4748,13 +4572,7 @@ void RedGiantBC(Mesh *pm) {
       guard_hit(m, k, j, i, d_i, e_i, t_i, p_g);
       column_state(m, i, d_g, e_g);
     }
-    if (open_out_lid) {
-      Real d_m, e_m, v2m, v3m;       // the mirror cell about the top face
-      state_i(m, k, j, 2*im + 1 - i, d_m, e_m, v1, v2m, v3m);
-      v1 = -v1;
-    } else if (open_out_noin && v1 < 0.0) {
-      v1 = 0.0;
-    }
+    if (v1 < 0.0) v1 = 0.0;   // outflow only
     if (open_dbg && m == 0 && k == 2 && j == 2) {
       Kokkos::printf("rg_open_bc_out i=%d im=%d: d_i=%.6e e_i=%.6e p_i=%.6e t_i=%.6e "
                      "dphi=%.6e p_g=%.6e d_g=%.6e e_g=%.6e v1=%.6e\n",
@@ -4888,8 +4706,6 @@ void RedGiantFinal(ParameterInput *pin, Mesh *pm) {
   fdiag_ = DvceArray2D<Real>();
   shell_ = DvceArray2D<Real>();
   fmlt1d_ = DvceArray1D<Real>();
-  ftar1d_ = DvceArray1D<Real>();
-  ftar1d_b_ = DvceArray1D<Real>();
   fmean_ = DvceArray2D<Real>();
   klT_ = DvceArray1D<Real>();
   klD_ = DvceArray1D<Real>();

@@ -664,7 +664,7 @@ inline bool ck_impl_jac_again = false;
 // Needs ck_impl_glob = ls_sub.
 inline int ck_impl_esc = 0;
 inline Real ck_impl_esc_rho = 0.9;
-inline int ck_impl_esc_extra = 8;
+constexpr int ck_impl_esc_extra = 8;
 // problem/ck_impl_aa (README_jac.md): ANDERSON (Pulay / DIIS) ACCELERATION of the chord
 // iteration, depth ck_impl_aa (0 = off, default, bitwise; at most CK_AA_MAX).  Each
 // column keeps the last aa differences of its iterates dX and of its backward-Euler

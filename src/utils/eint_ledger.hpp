@@ -235,7 +235,10 @@ inline void WriteDump(Mesh *pm) {
   std::snprintf(fn, sizeof(fn), "%s/eledger.%06d.r%04d.bin", dump_dir.c_str(),
                 pm->ncycle, global_variable::my_rank);
   FILE *f = std::fopen(fn, "wb");
-  if (f == nullptr) {std::printf("ELEDGER cannot open %s\n", fn); return;}
+  if (f == nullptr) {
+    std::printf("ELEDGER cannot open %s\n", fn);
+    return;
+  }
   int hdr[6] = {nop, nmb, nk, nj, ni, pm->ncycle};
   std::fwrite(hdr, sizeof(int), 6, f);
   for (int n = 0; n < nop; ++n) {
@@ -362,7 +365,10 @@ inline void Commit(Mesh *pm) {
     const Real d = dp(m,kk,jj,ii);
     if (!(d < rc) || d <= 0.0 || x1v(m, ii + is) < rm) return;
     const Real eps = ep(m,kk,jj,ii)/d;
-    if (eps > v.val) {v.val = eps; v.loc = idx;}
+    if (eps > v.val) {
+      v.val = eps;
+      v.loc = idx;
+    }
   }, Kokkos::MaxLoc<Real, int>(ml));
   struct {double v; int r;} in{static_cast<double>(ml.val), global_variable::my_rank},
       out;
@@ -432,8 +438,10 @@ inline void Commit(Mesh *pm) {
   });
   Kokkos::deep_copy(cyv, 0.0f);
   for (int n = 0; n < nop; ++n) {
-    for (int q = 0; q < kNs; ++q) {tot_sums[n][q] += cyc_sums[n][q];
-                                   cyc_sums[n][q] = 0.0;}
+    for (int q = 0; q < kNs; ++q) {
+      tot_sums[n][q] += cyc_sums[n][q];
+      cyc_sums[n][q] = 0.0;
+    }
   }
   if (dump_every > 0 && (pm->ncycle % dump_every) == 0) {
     Kokkos::fence();
