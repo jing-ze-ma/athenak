@@ -80,7 +80,7 @@ constexpr int CLW_DK = 26;   // d(rho kappa_P)/dT, d(rho kappa_E)/dT of the iter
 constexpr int CLW_BT = 28;   // beta = v/c of the iterate (3, cell layout: frame of y)
 constexpr int CLW_RE = 31;   // h S_E = hc kP G a T^4 - hc kE E + RE E + RY.y - W (Ma et
 constexpr int CLW_RY = 32;   //   al. 2025, eq. 56, G = CLW_GM): the beta terms (RY: 3);
-                             //   staggered: RE = hc kP a T^4, RY unused
+                             //   staggered: RE = hc kP a T^4, RY 1 - r
 constexpr int CLW_GM = 35;   // G = 1 - beta^2/2
 constexpr int CLW_EP = 36;   // -(RE E + RY.y) of the solution (eint of the gas)
 constexpr int CLW_JV = 37;   // (1 - r) dA/dbeta/(c^2 rho), dS_p/dbeta/(c^2 rho) of the

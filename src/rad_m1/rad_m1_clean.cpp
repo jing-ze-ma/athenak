@@ -1076,6 +1076,8 @@ void RadiationM1::CleanRightHandSide() {
       eos.ThermoAt(d, t, e, p, chi_rho, chi_t, cv);
       const Real s = 4.0*hckp*arad_*t*t*t;
       rr = (s > 0.0) ? s/(d*cv + s) : 0.0;   // (no exchange: none, also where T = 0)
+      // (1 - r = d cv/(d cv + s) without cancellation, as implicit_src_stable)
+      x.w(m,CLW_RY,k,j,i) = (s > 0.0) ? d*cv/(d*cv + s) : 1.0;
       // work of the radiation force on the gas, (v_old + dm/(2 rho)).dm: exactly the
       // kinetic energy the gas gains, taken from the radiation
       for (int n = 0; n < 3; ++n) {
@@ -1861,7 +1863,7 @@ void RadiationM1::CleanWriteBack() {
         // (the residual over the row's local diagonal: all of it in a scattering cell,
         // little where the exchange is stiff, whose X the solve fixes to tol/diagonal)
         const Real rd = (den - x.w(m,CLW_EP,k,j,i) + ex - wk)/
-                        (1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*(1.0 - x.w(m,CLW_RR,k,j,i)));
+                        (1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*x.w(m,CLW_RY,k,j,i));
         e += rd;
         den -= rd;
       }
