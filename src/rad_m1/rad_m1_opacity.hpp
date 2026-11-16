@@ -173,5 +173,24 @@ void M1Opacities(const int otype, const Real d, const Real t,
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn M1CellOpacities
+//! \brief the four opacities per unit mass at (d, t) of the <rad_m1> law: the tables with
+//! the EOS electron scattering (M1ScatterEos), or M1Opacities
+
+template <class EosT>
+KOKKOS_INLINE_FUNCTION
+void M1CellOpacities(const int otype, const M1OpacTab &ot, const EosT &eos, const Real d,
+                     const Real t, const Real kp, const Real ke, const Real kf,
+                     const Real ks, const Real rho_ref, const Real t_ref, const Real aa,
+                     const Real bb, Real &op, Real &oe, Real &of, Real &os) {
+  if (otype == M1_OPAC_TABLE) {
+    M1TableOpacities(ot, d, t, op, oe, of, os);
+    M1ScatterEos(ot, eos, d, t, of, os);
+  } else {
+    M1Opacities(otype, d, t, kp, ke, kf, ks, rho_ref, t_ref, aa, bb, op, oe, of, os);
+  }
+}
+
 } // namespace radm1
 #endif // RAD_M1_RAD_M1_OPACITY_HPP_

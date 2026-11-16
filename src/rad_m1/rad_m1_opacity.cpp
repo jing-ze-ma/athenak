@@ -101,12 +101,8 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
       t = eos.Temperature(d, fmax(eint, 0.0));
     }
     Real op, oe, of, os;
-    if (otype == M1_OPAC_TABLE) {
-      M1TableOpacities(ot, d, t, op, oe, of, os);
-      M1ScatterEos(ot, eos, d, t, of, os);
-    } else {
-      M1Opacities(otype, d, t, kp, ke, kf, ks, rref, tref, aa, bb, op, oe, of, os);
-    }
+    M1CellOpacities(otype, ot, eos, d, t, kp, ke, kf, ks, rref, tref, aa, bb, op, oe, of,
+                    os);
     opac_(m,M1_OP_P,k,j,i) = d*op;
     opac_(m,M1_OP_E,k,j,i) = d*oe;
     opac_(m,M1_OP_T,k,j,i) = d*(of + os);

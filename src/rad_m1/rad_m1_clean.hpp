@@ -74,7 +74,8 @@ constexpr int CLW_Q = 22;
 constexpr int CLW_Y = 23;
 constexpr int CLW_Z = 24;
 constexpr int CLW_WK = 25;   // work W of the right-hand side
-constexpr int CLW_N = 26;
+constexpr int CLW_DK = 26;   // d(rho kappa_P)/dT, d(rho kappa_E)/dT of the iterate
+constexpr int CLW_N = 28;
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanArgs
