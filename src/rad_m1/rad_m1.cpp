@@ -121,7 +121,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // clean_fv_joint (read only when named, default true): the fv1 sweep levels of all
+    // clean_fv_joint (read only when named): the fv1 sweep levels of all
     // MeshBlocks of a rank at once, the upwind cell across a MeshBlock face read from its
     // own block
     if (pin->DoesParameterExist("rad_m1","clean_fv_joint")) {

@@ -3073,7 +3073,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_fvp;    // fv: the intensities of the last build (downwind slopes)
   DvceArray5D<Real> cln_fvx;    // 2-D axisymmetric: the intensities of the last pass
   DvceArray2D<int8_t> cln_fvdue, cln_fvdone;   // fv1 passes: cells due (CleanFvSweep)
-  bool cln_fvjoint = true;      // clean_fv_joint: fv1 levels over the rank's MeshBlocks
+  bool cln_fvjoint = false;     // clean_fv_joint: fv1 levels over the rank's MeshBlocks
   bool cln_fvexact = false;     // joint: one pass is the exact sweep (all ranks)
   int cln_fvl0 = 0;             // joint: the first level a later pass takes
   int cln_fvjn[2] = {0, 0};     // joint: the dropped inflows, the cells reading ghosts
