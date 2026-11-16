@@ -539,7 +539,7 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
     pm->dt = big ? fac*dt0 : dt0;
     dt_sub = pm->dt;
     copy(true);
-    cln_tc = -1.0e300;   // (predict: the closure of this pass's state, not of the last dt's)
+    cln_tc = -1.0e300;   // (predict: the closure of this pass, not of the last dt)
     const Real nf = cln_nfail + cln_nneg;
     // one radiation step: the ordinary m1 task lists (closure, solve, ghost exchange)
     for (int stage = 1; stage <= nstage; ++stage) {
