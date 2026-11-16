@@ -423,8 +423,8 @@ void CleanAdvect(const CleanArgs &x, const int m, const int k, const int j, cons
 //! \fn Real CleanRefForce
 //! \brief component b of the reference force density that force_reference withholds
 //! from the gas: the stored force of the first coupled solve (clean), d arad_ref along x1
-//! (wb_arad), else 0.  Not in the restart file: a restart takes the force of its first
-//! solve, which equals the original one only for a run that is still in equilibrium.
+//! (wb_arad), else 0.  The clean one is in the restart file with the hesdirk2 slopes
+//! (Time2RstPack).
 
 KOKKOS_INLINE_FUNCTION
 Real CleanRefForce(const int fref, const DvceArray5D<Real> &fr,

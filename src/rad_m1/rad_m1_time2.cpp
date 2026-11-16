@@ -3388,7 +3388,8 @@ int RadiationM1::Time2RstNchWant() {
   const int np = (impl_pord == 2) ? 5 : 3;
   return M1_T2_NK + (impl_pred ? np : 0) + (vet_sc ? M1_T2_NVET : 0)
          + ((vet_sc && vsc_every > 1) ? 2*M1_T2_NVET : 0)    // vet_sc_every: D0, D1
-         + ((vet_col && t2_vcmode == 4) ? M1_X2_NCH : 0);    // rbfast-1021 extrap2
+         + ((vet_col && t2_vcmode == 4) ? M1_X2_NCH : 0)     // rbfast-1021 extrap2
+         + ((force_ref == M1_FREF_CLEAN) ? 4 : 0);           // the reference force, set
 }
 
 //----------------------------------------------------------------------------------------
@@ -3446,6 +3447,17 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
                         Kokkos::subview(vsc_d1, ms, AL, AL, AL, AL));
       c += 2*nv;
     }
+  }
+  // force_reference = clean: the reference force and whether it is set
+  if (force_ref == M1_FREF_CLEAN) {
+    const bool have = (cln_fref.extent_int(0) >= m0 + nmb);
+    if (have) {
+      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+3), AL, AL, AL),
+                        Kokkos::subview(cln_fref, ms, AL, AL, AL, AL));
+    }
+    Kokkos::deep_copy(Kokkos::subview(a, mb, c+3, AL, AL, AL),
+                      (have && cln_fref_set) ? 1.0 : 0.0);
+    c += 4;
   }
   // rbfast-1021 extrap2: the raw builds of the last step, q at i = 0, time, alpha
   if (vet_col && t2_vcmode == 4) {
@@ -3505,6 +3517,21 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       }
       ch -= 2*M1_T2_NVET;
     }
+  }
+  if (force_ref == M1_FREF_CLEAN) {
+    if (ch < 3) {
+      if (cln_fref.extent_int(0) != nmb) {
+        Kokkos::realloc(cln_fref, nmb, 3, w.extent_int(1), w.extent_int(2),
+                        w.extent_int(3));
+      }
+      DeepCopyAcross(Kokkos::subview(cln_fref, mb, ch, AL, AL, AL), w);
+      return;
+    }
+    if (ch == 3) {
+      cln_fref_set = (w(0,0,0,0) > 0.5);
+      return;
+    }
+    ch -= 4;
   }
   // rbfast-1021 extrap2 (Time2RstPack)
   if (vet_col && t2_vcmode == 4) {

@@ -65,7 +65,9 @@ void RadiationM1::CleanInit() {
     Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
     Kokkos::deep_copy(cln_x, 0.0);
   }
-  if (force_ref == M1_FREF_CLEAN) Kokkos::realloc(cln_fref, nmb, 3, n3, n2, n1);
+  if (force_ref == M1_FREF_CLEAN && cln_fref.extent_int(0) != nmb) {
+    Kokkos::realloc(cln_fref, nmb, 3, n3, n2, n1);   // (a restart has read it)
+  }
   // multigrid levels of the cell layout: halve every direction with an even number
   // (>= 4) of cells, down to the level where no direction can be halved
   if (cln_cell) {
