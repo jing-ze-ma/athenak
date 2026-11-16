@@ -862,6 +862,46 @@ Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const i
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanStagCsVector
+//! \brief cubed sphere, staggered: the Cartesian vector u of cell (k,j,i) whose
+//! projections p on the unit normals n of its six faces (low and high face of family q at
+//! 2 q, 2 q + 1) fit in the least squares of weights w, given c = w p:
+//! (sum w n n^T) u = sum c n.  Exact for a uniform vector (p = n.u) on any cell: the face
+//! families are not orthogonal and the two faces of a family not parallel, so no face
+//! projection is a component of u in a basis (nor are the mean normals' projections).
+
+KOKKOS_INLINE_FUNCTION
+void CleanStagCsVector(const CleanArgs &x, const int m, const int k, const int j,
+                       const int i, const Real c[6], const Real w[6], Real u[3]) {
+  Real a[3][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+  Real b[3] = {0.0, 0.0, 0.0};
+  for (int q = 0; q < 3; ++q) {
+    for (int s = 0; s < 2; ++s) {
+      const int kf = k + s*(q == 2), jf = j + s*(q == 1), iff = i + s*(q == 0);
+      for (int r = 0; r < 3; ++r) {
+        const Real nr = x.g(m,CLG_N+3*q+r,kf,jf,iff);
+        b[r] += c[2*q+s]*nr;
+        for (int t = 0; t < 3; ++t) a[r][t] += w[2*q+s]*nr*x.g(m,CLG_N+3*q+t,kf,jf,iff);
+      }
+    }
+  }
+  // (Cramer: the columns of the inverse are the cross products of the rows; written out,
+  // no runtime-indexed local)
+  Real ca[3][3];
+  ca[0][0] = a[1][1]*a[2][2] - a[1][2]*a[2][1];
+  ca[0][1] = a[1][2]*a[2][0] - a[1][0]*a[2][2];
+  ca[0][2] = a[1][0]*a[2][1] - a[1][1]*a[2][0];
+  ca[1][0] = a[2][1]*a[0][2] - a[2][2]*a[0][1];
+  ca[1][1] = a[2][2]*a[0][0] - a[2][0]*a[0][2];
+  ca[1][2] = a[2][0]*a[0][1] - a[2][1]*a[0][0];
+  ca[2][0] = a[0][1]*a[1][2] - a[0][2]*a[1][1];
+  ca[2][1] = a[0][2]*a[1][0] - a[0][0]*a[1][2];
+  ca[2][2] = a[0][0]*a[1][1] - a[0][1]*a[1][0];
+  const Real det = a[0][0]*ca[0][0] + a[0][1]*ca[0][1] + a[0][2]*ca[0][2];
+  for (int t = 0; t < 3; ++t) u[t] = (ca[0][t]*b[0] + ca[1][t]*b[1] + ca[2][t]*b[2])/det;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanStagBetaE
 //! \brief the E-dependent part of the E-row beta terms (Ma et al. 2025, eq. 56) of cell
 //! (k,j,i), sb(E) = hc kE [(beta^2/2 - beta.a/c) E + 2 beta.y(E)], y the mean of the two
@@ -871,11 +911,22 @@ Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const i
 KOKKOS_INLINE_FUNCTION
 Real CleanStagBetaE(const CleanArgs &xh, const int e, const int m, const int k,
                     const int j, const int i) {
-  Real b2 = 0.0, ba = 0.0, by = 0.0;
+  Real b2 = 0.0, ba = 0.0, by = 0.0, fv[3];
+  if (xh.cub) {   // (the cell's flux vector, CleanStagCsVector, as CleanRightHandSide)
+    Real c[6], w[6];
+    for (int d = 0; d < 6; ++d) {
+      const int q = d/2, s = d%2;
+      c[d] = CleanFaceFlux(xh, e, q, m, k+s*(q == 2), j+s*(q == 1), i+s*(q == 0), false);
+      w[d] = 1.0;
+    }
+    CleanStagCsVector(xh, m, k, j, i, c, w, fv);
+  }
   for (int n = 0; n < 3; ++n) {
     const Real bt = xh.w(m,CLW_BT+n,k,j,i);
     const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-    if (n < xh.nf) {
+    if (n < xh.nf && xh.cub) {
+      by += bt*fv[n]/xh.c;
+    } else if (n < xh.nf) {
       by += bt*0.5*(CleanFaceFlux(xh, e, n, m, k, j, i, false) +
                     CleanFaceFlux(xh, e, n, m, k+dk, j+dj, i+di, false))/xh.c;
     }

@@ -60,46 +60,6 @@ static void CleanStagGasMomentum(const CleanArgs &x, const DvceArray5D<Real> &uh
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanStagCsVector
-//! \brief cubed sphere, staggered: the Cartesian vector u of cell (k,j,i) whose
-//! projections p on the unit normals n of its six faces (low and high face of family q at
-//! 2 q, 2 q + 1) fit in the least squares of weights w, given c = w p:
-//! (sum w n n^T) u = sum c n.  Exact for a uniform vector (p = n.u) on any cell: the face
-//! families are not orthogonal and the two faces of a family not parallel, so no face
-//! projection is a component of u in a basis (nor are the mean normals' projections).
-
-KOKKOS_INLINE_FUNCTION
-static void CleanStagCsVector(const CleanArgs &x, const int m, const int k, const int j,
-                              const int i, const Real c[6], const Real w[6], Real u[3]) {
-  Real a[3][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
-  Real b[3] = {0.0, 0.0, 0.0};
-  for (int q = 0; q < 3; ++q) {
-    for (int s = 0; s < 2; ++s) {
-      const int kf = k + s*(q == 2), jf = j + s*(q == 1), iff = i + s*(q == 0);
-      for (int r = 0; r < 3; ++r) {
-        const Real nr = x.g(m,CLG_N+3*q+r,kf,jf,iff);
-        b[r] += c[2*q+s]*nr;
-        for (int t = 0; t < 3; ++t) a[r][t] += w[2*q+s]*nr*x.g(m,CLG_N+3*q+t,kf,jf,iff);
-      }
-    }
-  }
-  // (Cramer: the columns of the inverse are the cross products of the rows; written out,
-  // no runtime-indexed local)
-  Real ca[3][3];
-  ca[0][0] = a[1][1]*a[2][2] - a[1][2]*a[2][1];
-  ca[0][1] = a[1][2]*a[2][0] - a[1][0]*a[2][2];
-  ca[0][2] = a[1][0]*a[2][1] - a[1][1]*a[2][0];
-  ca[1][0] = a[2][1]*a[0][2] - a[2][2]*a[0][1];
-  ca[1][1] = a[2][2]*a[0][0] - a[2][0]*a[0][2];
-  ca[1][2] = a[2][0]*a[0][1] - a[2][1]*a[0][0];
-  ca[2][0] = a[0][1]*a[1][2] - a[0][2]*a[1][1];
-  ca[2][1] = a[0][2]*a[1][0] - a[0][0]*a[1][2];
-  ca[2][2] = a[0][0]*a[1][1] - a[0][1]*a[1][0];
-  const Real det = a[0][0]*ca[0][0] + a[0][1]*ca[0][1] + a[0][2]*ca[0][2];
-  for (int t = 0; t < 3; ++t) u[t] = (ca[0][t]*b[0] + ca[1][t]*b[1] + ca[2][t]*b[2])/det;
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void CleanStagMomentum
 //! \brief staggered: the momentum the radiation gives to cell (k,j,i) over the stage
 //! (CleanMomentumChange of each face family, mag its terms' size) in the components of
