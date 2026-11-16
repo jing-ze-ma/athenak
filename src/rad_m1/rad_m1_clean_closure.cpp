@@ -572,6 +572,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
   bool scat = vscat;
   Real arad_ = arad, cl = c_light;
   const bool feedback = cln_feedback;
+  CleanArgs x = CleanMakeArgs();
 
   par_for("cln_predict", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -584,7 +585,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
       d = uh(m,IDN,k,j,i);
       Real mom[3] = {uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i)};
       const Real ekin = 0.5*(SQR(mom[0]) + SQR(mom[1]) + SQR(mom[2]))/d;
-      const Real eint_h = fmax(uh(m,IEN,k,j,i) - ekin, 0.0);
+      const Real eint_h = fmax(CleanGasEint(x, uh, ekin, m, k, j, i), 0.0);
       t = eos.Temperature(d, eint_h);
       if (use_rates && !feedback) {
         // gas held fixed: E advances at its own rate, which includes the exchange

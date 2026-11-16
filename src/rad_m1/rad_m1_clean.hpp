@@ -129,6 +129,9 @@ struct CleanArgs {
   // (CLG_*) of CleanCsGeometry
   bool cub;
   DvceArray5D<Real> g;
+  // the conserved gas energy also holds d phi (<hydro>/etotgrav) and |B|^2/2 (<mhd>)
+  bool etg, mhd;
+  DvceArray4D<Real> phi, emag;
 };
 
 // the source moments of the FV rays (array cln_fvq; lld: all, else chi and S)
@@ -148,6 +151,21 @@ constexpr int CLG_R = 12;    // r_hat of the cell centre (the hydro's, hydro_am.
 constexpr int CLG_E = 15;    // the hydro's unit panel tangents e_xi, e_eta (+3)
 constexpr int CLG_M = 21;    // first moment int x dA of the lower x2, x3 face (+3)
 constexpr int CLG_NV = 27;
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanGasEint
+//! \brief gas internal energy of cell (k,j,i) of the conserved state uh with kinetic
+//! energy ekin: the total energy less ekin, the gravitational energy d phi
+//! (<hydro>/etotgrav) and the magnetic energy (<mhd>), as RadiationM1::Opacity forms it
+
+KOKKOS_INLINE_FUNCTION
+Real CleanGasEint(const CleanArgs &x, const DvceArray5D<Real> &uh, const Real ekin,
+                  const int m, const int k, const int j, const int i) {
+  Real eint = uh(m,IEN,k,j,i) - ekin;
+  if (x.etg) eint -= uh(m,IDN,k,j,i)*x.phi(m,k,j,i);
+  if (x.mhd) eint -= x.emag(m,k,j,i);
+  return eint;
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn int CleanBc
