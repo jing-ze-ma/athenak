@@ -1973,7 +1973,20 @@ void RadiationM1::CleanFvSweep() {
   // take a cell, done: the pass that has); the others would repeat their intensity
   const bool act = !o2 && !ld && !axi;
   const int ie = indcs.ie, je = indcs.je, ke = indcs.ke, nc = nx1*nx2*indcs.nx3;
-  if (act && (cln_fvdue.extent_int(0) != nmb*n || cln_fvdue.extent_int(1) != nc)) {
+  // (clean_pc = x1line with clean_pc_factor, the factors rebuilt every pass: the flags
+  // live in the factor store, which no solve reads before its next rebuild)
+  const bool shf = act && cln_cell && cln_pc == CLN_PC_X1LINE && cln_pcfac &&
+                   cln_pcreuse == 1;
+  if (shf) {
+    CleanCellFactorStore();
+    int8_t *pf = cln_pcf32 ? reinterpret_cast<int8_t *>(cln_lfs.data())
+                           : reinterpret_cast<int8_t *>(cln_lf.data());
+    const size_t nf = static_cast<size_t>(nmb)*n*nc;
+    cln_fvdue = DvceArray2D<int8_t>(pf, nmb*n, nc);
+    cln_fvdone = DvceArray2D<int8_t>(pf + nf, nmb*n, nc);
+    Kokkos::deep_copy(cln_fvdue, -1);
+    cln_lf_ok = false;
+  } else if (act && (cln_fvdue.extent_int(0) != nmb*n || cln_fvdue.extent_int(1) != nc)) {
     Kokkos::realloc(cln_fvdue, nmb*n, nc);
     Kokkos::realloc(cln_fvdone, nmb*n, nc);
   }
