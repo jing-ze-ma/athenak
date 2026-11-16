@@ -1,0 +1,13 @@
+Setup complete, executing task list(s)...
+
+elapsed=1.097098e-01 cycle=0 time=0.000000e+00 dt=2.055921e-04
+<time> dt_retry checkpoint: 1844 members, 493 Views (11 copied, 2.773370e+01 MB on rank 0): hyd.u0 1.372800e+00 hyd.w0 1.372800e+00 m1.vet_cell 1.455168e+01 m1.f0x1 2.756160e-01 m1.f0x2 2.766400e-01 m1.ipred 1.372800e+00 m1.t2k1 2.196480e+00 m1.ipred2 1.372800e+00 m1.vet_prev 2.745600e+00 m1.u0 1.098240e+00 m1.opac 1.098240e+00
+CLEAN WARNING cycle 0: backward-Euler solve not converged (dt_retry, 1 so far)
+CLEAN cycle 0 t2s 1 it -7 (sum 1566) pic 12 1.46e+295 pos 4 mark 42 all 1 neg 8 nreal 18 guard 0 solves 250
+DT_RETRY cycle=0 t=0.000000e+00 dt 2.055921e-04 -> 1.027961e-04 reason=NON-CONVERGED resid=-1.000000e+00 cut 1
+CLEAN WARNING cycle 0: backward-Euler solve not converged (dt_retry, 2 so far)
+CLEAN cycle 0 t2s 1 it -4 (sum 951) pic 12 1.55e+293 pos 4 mark 60 all 1 neg 12 nreal 90 guard 0 solves 250
+DT_RETRY cycle=0 t=0.000000e+00 dt 1.027961e-04 -> 5.139803e-05 reason=NON-CONVERGED resid=-1.000000e+00 cut 2
+CLEAN cycle 0 t2s 1 it 0 (sum 426) pic 12 2.57e+291 pos 4 mark 480 all 1 neg 96 nreal 1722 guard 0 solves 215
+### WARNING: 48 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+###   mesh/ix3_bc = periodic
