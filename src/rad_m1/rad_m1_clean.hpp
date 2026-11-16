@@ -138,6 +138,7 @@ struct CleanArgs {
   DvceArray4D<Real> dxf[3];    // distances between the cell centres across those faces
   DvceArray2D<Real> x1v, x1f;  // cell-centre (volume centroid) and face radii
   DvceArray2D<Real> x2v, x2f;  // cell-centre and face polar angles
+  Real cseam;                  // cot of a theta-periodic seam face: its two copies' mean
   // cubed sphere (cell layout): y in the cell's orthonormal frame (r, theta, phi) about
   // the hydro's radius vector; vol, area, dxf and x1v, x1f as above, g the geometry
   // (CLG_*) of CleanCsGeometry
@@ -312,6 +313,13 @@ Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m, c
   auto d = [&](const int n) {return x.cs(m,CLN_D11+n,kc,jc,ic);};
   if (dir == 0) {
     return 2.0*d(0) - d(1) - d(2) + (x.multi_d ? d(3)/tan(x.x2v(m,jc)) : 0.0);
+  }
+  // (a theta-periodic seam face takes one cot in both copies, as 32fab890f, so that its
+  // flux is single valued)
+  const BoundaryFlag pf = BoundaryFlag::periodic;
+  if ((j == x.js && x.mbc(m,BoundaryFace::inner_x2) == pf) ||
+      (j == x.je + 1 && x.mbc(m,BoundaryFace::outer_x2) == pf)) {
+    return (d(1) - d(2))*x.cseam + 3.0*d(3);
   }
   return (d(1) - d(2))/tan(x.x2f(m,j)) + 3.0*d(3);
 }
