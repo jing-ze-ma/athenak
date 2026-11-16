@@ -115,6 +115,8 @@ struct CleanArgs {
   bool consist;                // cell layout: face fluxes carry the consistency bracket
   bool milne;                  // cell layout: sub-cell Eddington face model
   bool fvrays;                 // cell layout: FV rays (clean_rays = fv1 | fv)
+  bool hi;                     // staggered, clean_stag_split: the face momentum state
+                               // F^H (w = 0), not the energy flux
   DvceArray5D<Real> op;        // opacities (M1_OP_*)
   int nf;                      // cell layout: number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
@@ -299,7 +301,7 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     al = x.marshak ? x.c*x.marshak_q : x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
     return;
   }
-  const Real w = x.fc[dir](m,CLF_W,k,j,i);
+  const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
   const Real th = x.fc[dir](m,CLF_TH,k,j,i);
   const Real g = (1.0 - w)*th*x.h*x.c*x.c*x.idx[dir];
   al = g*x.cs(m,CLN_D11+dir,kl,jl,il) + w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
@@ -369,7 +371,7 @@ KOKKOS_INLINE_FUNCTION
 Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
                     const int k, const int j, const int i) {
   if (!x.multi_d || CleanBoundaryFace(x, dir, m, k, j, i)) return 0.0;
-  const Real w = x.fc[dir](m,CLF_W,k,j,i);
+  const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
   const Real th = x.fc[dir](m,CLF_TH,k,j,i);
   return -(1.0 - w)*th*x.h*x.c*x.c*CleanFaceStress(x, e, dir, m, k, j, i, false);
 }
@@ -398,7 +400,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     if (CleanBc(x, m, 2*dir+1) == M1_IBC_FLUX) return dir ? x.ifx2[1](m,k,i) : x.iflux[1];
     return x.marshak ? -x.c*x.marshak_q*x.ebath[2*dir+1] : -0.25*x.c*x.ebath[2*dir+1];
   }
-  const Real w = x.fc[dir](m,CLF_W,k,j,i);
+  const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   const Real th = (1.0 - w)*x.fc[dir](m,CLF_TH,k,j,i);
   Real s = th*x.fc[dir](m,CLF_G,k,j,i);

@@ -174,6 +174,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_poslim = pin->GetOrAddBoolean("rad_m1","clean_pos_limit",true);
     cln_diagcells = pin->GetOrAddBoolean("rad_m1","clean_diag_cells",false);
     // (read only when named: output headers list the input)
+    cln_split = pin->DoesParameterExist("rad_m1","clean_stag_split") &&
+                pin->GetBoolean("rad_m1","clean_stag_split");
     cln_diagforce = pin->DoesParameterExist("rad_m1","clean_diag_force") &&
                     pin->GetBoolean("rad_m1","clean_diag_force");
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);

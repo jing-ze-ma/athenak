@@ -805,6 +805,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                   "r1 %d r2 %d first %d %d guard %d solves %d\n", pmy_pack->pmesh->ncycle,
                   t2_solve, nit, nit_sum, npos, nmark, all_low ? 1 : 0, nneg, cln_nr1,
                   cln_nr2, nfirst[0], nfirst[1], cln_nguard, nsolve);
+      if (cln_split) std::printf("CLEAN SPLIT cycle %d t2s %d r3 %d max %.3e\n",
+                                 pmy_pack->pmesh->ncycle, t2_solve, cln_nr3, cln_fh);
     }
   }
 
@@ -1014,6 +1016,8 @@ void RadiationM1::CleanRightHandSide() {
     CleanGhostFill(cln_w, CLW_BT, 4);
     CleanGhostFill(cln_w, CLW_EK, 1);
   }
+  CleanArgs xh = x;   // (the face momentum state, clean_stag_split)
+  xh.hi = cln_split;
   par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = x.w(m,CLW_T,k,j,i);
@@ -1025,8 +1029,8 @@ void RadiationM1::CleanRightHandSide() {
         const Real bt = x.w(m,CLW_BT+n,k,j,i);
         const int dk = (n == 2), dj = (n == 1), di = (n == 0);
         if (n < x.nf) {
-          by += bt*0.5*(CleanFaceFlux(x, CLW_EK, n, m, k, j, i, true) +
-                        CleanFaceFlux(x, CLW_EK, n, m, k+dk, j+dj, i+di, true))/x.c;
+          by += bt*0.5*(CleanFaceFlux(xh, CLW_EK, n, m, k, j, i, true) +
+                        CleanFaceFlux(xh, CLW_EK, n, m, k+dk, j+dj, i+di, true))/x.c;
         }
         b2 += SQR(bt);
         ba += bt*x.w(m,CLW_A1+n,k,j,i)/x.c;
@@ -1130,7 +1134,8 @@ Real RadiationM1::CleanVelocityUpdate() {
   int nmb = pmy_pack->nmb_thispack;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   CleanGhostFill(cln_w, CLW_EK, 1);
-  CleanArgs x = CleanMakeArgs();
+  CleanArgs x = CleanMakeArgs(), xh = x;
+  xh.hi = cln_split;
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
   auto op = opac;
@@ -1153,7 +1158,7 @@ Real RadiationM1::CleanVelocityUpdate() {
       Real dm = 0.0;
       if (dir == 0 || (dir == 1 && x.multi_d) || (dir == 2 && x.three_d)) {
         Real mag = 0.0;
-        dm = CleanMomentumChange(x, CLW_EK, dir, m, k, j, i, &mag);
+        dm = CleanMomentumChange(xh, CLW_EK, dir, m, k, j, i, &mag);
         // (times that of E in the stress, as CleanCellVelocityUpdate)
         const Real e = fmax(fabs(x.w(m,CLW_EK,k,j,i)), 1.0e-300), hc = x.h*x.c;
         fv_max = fmax(fv_max, mag/d*(2.0 + (e*hc*op(m,M1_OP_E,k,j,i) + fabs(x.w(m,
@@ -1255,13 +1260,17 @@ int RadiationM1::CleanStagRealizable(const int mark) {
     b_max = fmax(b_max, fabs(x.w(m,CLW_B,k+ks,j+js,i+is)));
   }, Kokkos::Max<Real>(bmax));
   const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
-  Real n1 = 0.0, n2 = 0.0;
+  Real n1 = 0.0, n2 = 0.0, n3 = 0.0;
+  cln_fh = 0.0;
+  CleanArgs xh = x;
+  xh.hi = true;
+  const bool split = cln_split;
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     const int f1 = nx1 + di, f2 = nx2 + dj, f3 = nx3 + dk, fji = f2*f1, fkji = f3*fji;
-    Real r1 = 0.0, r2 = 0.0;
+    Real r1 = 0.0, r2 = 0.0, r3 = 0.0, r4 = 0.0;
     Kokkos::parallel_reduce("cln_real", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*fkji),
-    KOKKOS_LAMBDA(const int idx, Real &q1, Real &q2) {
+    KOKKOS_LAMBDA(const int idx, Real &q1, Real &q2, Real &q3, Real &q4) {
       int m = idx/fkji;
       int k = (idx - m*fkji)/fji;
       int j = (idx - m*fkji - k*fji)/f1;
@@ -1277,15 +1286,26 @@ int RadiationM1::CleanStagRealizable(const int mark) {
       const Real ed = (f > 0.0) ? el : er;
       const bool r2 = !(fabs(f) <= (1.0 + 1.0e-12)*x.c*ed + x.c*zero);
       if (r2) q2 += 1.0;
+      if (split) {   // (diagnostic: the momentum state)
+        const Real fh = CleanFaceFlux(xh, CLW_X, dir, m, k, j, i, true);
+        const Real eh = (fh > 0.0) ? el : er;
+        if (!(fabs(fh) <= (1.0 + 1.0e-12)*x.c*eh + x.c*zero)) q3 += 1.0;
+        q4 = fmax(q4, fabs(fh)/(x.c*fmax(eh, 0.0) + x.c*zero + 1.0e-300));
+      }
       if (mark == 2 || (mark == 1 && (r2 || !(el >= -zero) || !(er >= -zero)))) {
         x.fc[dir](m,CLF_W,k,j,i) = 1.0;
       }
-    }, Kokkos::Sum<Real>(r1), Kokkos::Sum<Real>(r2));
+    }, Kokkos::Sum<Real>(r1), Kokkos::Sum<Real>(r2), Kokkos::Sum<Real>(r3),
+    Kokkos::Max<Real>(r4));
     n1 += r1;
     n2 += r2;
+    n3 += r3;
+    cln_fh = fmax(cln_fh, r4);
   }
   cln_nr1 = static_cast<int>(CleanReduce(n1, false));
   cln_nr2 = static_cast<int>(CleanReduce(n2, false));
+  cln_nr3 = static_cast<int>(CleanReduce(n3, false));
+  cln_fh = CleanReduce(cln_fh, true);
   return cln_nr1 + cln_nr2;
 }
 
@@ -1304,7 +1324,8 @@ void RadiationM1::CleanStagForceDiag() {
   int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   int nmb = pmy_pack->nmb_thispack;
   CleanGhostFill(cln_w, CLW_X, 1);
-  CleanArgs x = CleanMakeArgs();
+  CleanArgs x = CleanMakeArgs(), xh = x;
+  xh.hi = cln_split;   // (the flux the gas sees)
   // phys, mis, thick, n, |F|/c^2, max mis, max phys
   Real r[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   for (int dir = 0; dir < x.nf; ++dir) {
@@ -1322,7 +1343,7 @@ void RadiationM1::CleanStagForceDiag() {
       j += js;
       i += is;
       if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
-      const Real f = CleanFaceFlux(x, CLW_X, dir, m, k, j, i, true), c2 = x.c*x.c;
+      const Real f = CleanFaceFlux(xh, CLW_X, dir, m, k, j, i, true), c2 = x.c*x.c;
       const Real t = x.fc[dir](m,CLF_TH,k,j,i);
       const Real a = x.feedback ? 0.5*(x.w(m,CLW_A1+dir,k-dk,j-dj,i-di)*
                      x.w(m,CLW_X,k-dk,j-dj,i-di) + x.w(m,CLW_A1+dir,k,j,i)*
@@ -1371,7 +1392,8 @@ void RadiationM1::CleanWriteBack() {
   const bool feedback = cln_feedback;
   const Real h = dt_sub;
   CleanGhostFill(cln_w, CLW_X, 1);
-  CleanArgs x = CleanMakeArgs();
+  CleanArgs x = CleanMakeArgs(), xh = x;
+  xh.hi = cln_split;   // (clean_stag_split: the faces store the momentum state)
   auto kk = (t2_solve == M1_T2S_STAGE1) ? t2k2 : t2k1;
 
   // face fluxes of the solution
@@ -1384,7 +1406,7 @@ void RadiationM1::CleanWriteBack() {
     const int tf = M1_T2_F1 + dir;
     par_for("cln_wbface", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real f = CleanFaceFlux(x, CLW_X, dir, m, k, j, i, true);
+      const Real f = CleanFaceFlux(xh, CLW_X, dir, m, k, j, i, true);
       if (slopes) kk(m,tf,k,j,i) = (f - fc(m,CLF_G,k,j,i))/h;
       f0(m,k,j,i) = f;
     });
@@ -1401,16 +1423,18 @@ void RadiationM1::CleanWriteBack() {
     Real dm[3] = {0.0, 0.0, 0.0};
     Real den = 0.0;
     if (feedback) {
-      dm[0] = CleanMomentumChange(x, CLW_X, 0, m, k, j, i);
-      if (multi_d) dm[1] = CleanMomentumChange(x, CLW_X, 1, m, k, j, i);
-      if (three_d) dm[2] = CleanMomentumChange(x, CLW_X, 2, m, k, j, i);
+      dm[0] = CleanMomentumChange(xh, CLW_X, 0, m, k, j, i);
+      if (multi_d) dm[1] = CleanMomentumChange(xh, CLW_X, 1, m, k, j, i);
+      if (three_d) dm[2] = CleanMomentumChange(xh, CLW_X, 2, m, k, j, i);
       for (int n = 0; n < 3; ++n) uh(m,IM1+n,k,j,i) += dm[n];
       // gas energy: exactly what the radiation gives up besides its flux divergence, so
       // that total energy changes only by the face fluxes
       Real div = x.idx[0]*(f1(m,k,j,i+1) - f1(m,k,j,i));
       if (multi_d) div += x.idx[1]*(f2(m,k,j+1,i) - f2(m,k,j,i));
       if (three_d) div += x.idx[2]*(f3(m,k+1,j,i) - f3(m,k,j,i));
-      den = -(e - x.w(m,CLW_EO,k,j,i)) - h*div;
+      // (clean_stag_split: the faces store F^H, E moved by the energy flux)
+      den = -(e - x.w(m,CLW_EO,k,j,i)) -
+            (xh.hi ? CleanFluxDivergence(x, CLW_X, m, k, j, i, true) : h*div);
       uh(m,IEN,k,j,i) += den;
     }
     if (slopes) {
