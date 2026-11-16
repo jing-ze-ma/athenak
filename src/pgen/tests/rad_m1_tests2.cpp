@@ -2220,6 +2220,11 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   const bool csm = pm->use_cubed_sphere;
   const Real ic2 = 1.0/(pmbp->pradm1->c_light*pmbp->pradm1->c_light);
+  // (clean_stag_split: the radiation momentum is the faces' F^H, not the cell flux)
+  radm1::RadiationM1 *pr = pmbp->pradm1;
+  const bool sfh = pr->clean && !pr->cln_cell && pr->cln_split;
+  const bool md = pm->multi_d, td = pm->three_d;
+  auto g1 = pr->f0x1, g2 = pr->f0x2, g3 = pr->f0x3;
   // <hydro>/am_vector: the spin reservoir, L = am_spin rhat_c (total)
   hydro::AmModule *pam = hydro::AmModuleOf(pmbp);
   const bool spn = (pam != nullptr) && pam->am_vector;
@@ -2268,8 +2273,13 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
     };
     Real lg[3], lr[3];
     lv(uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i), lg);
-    lv(u0(m,radm1::M1_F1,k,j,i), u0(m,radm1::M1_F2,k,j,i), u0(m,radm1::M1_F3,k,j,i),
-       lr);
+    if (sfh) {
+      lv(0.5*(g1(m,k,j,i) + g1(m,k,j,i+1)), md ? 0.5*(g2(m,k,j,i) + g2(m,k,j+1,i)) : 0.0,
+         td ? 0.5*(g3(m,k,j,i) + g3(m,k+1,j,i)) : 0.0, lr);
+    } else {
+      lv(u0(m,radm1::M1_F1,k,j,i), u0(m,radm1::M1_F2,k,j,i), u0(m,radm1::M1_F3,k,j,i),
+         lr);
+    }
     hv.the_array[0] = v*uh(m,IEN,k,j,i);
     hv.the_array[1] = v*u0(m,radm1::M1_E,k,j,i);
     for (int q = 0; q < 3; ++q) {
