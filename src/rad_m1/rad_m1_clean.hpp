@@ -42,7 +42,9 @@ constexpr int CLN_F3 = 35;   // their flux through the low x3 face (M1_VET_F3)
 constexpr int CLN_FH = 39;   // cubed sphere: through the high x2, x3 face of the last
                              // cell of a MeshBlock (+4; a seam ghost's low face differs)
 constexpr int CLN_G = 47;    // curvature of their stress in the cell layout (y_r, y_theta)
-constexpr int CLN_N = 49;
+constexpr int CLN_JR = 49;   // their J also below clean_ray_min E (CLN_J is 0 there): the
+                             // staggered flux factors (clean_stag_gflux)
+constexpr int CLN_N = 50;
 
 // face variables (arrays cln_fc1, cln_fc2, cln_fc3)
 constexpr int CLF_W = 0;     // blend weight w

@@ -2203,6 +2203,7 @@ void RadiationM1::CleanClosureFromGd() {
       q[CLN_D11+5] += a*mu[1]*mu[2];
       q[CLN_C1] += dir_(d,3)*fabs(iv - s0);
     }
+    q[CLN_JR] = q[CLN_J];
     if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) q[CLN_J] = 0.0;
     CleanStoreMoments(cs, valid, q, m, k, j, i);
   });
@@ -2567,6 +2568,7 @@ void RadiationM1::CleanClosureFromRays() {
     for (int n = 0; n < M1_VET_NFS; ++n) {
       cs(m,CLN_F2+n,k,j,i) = f2 ? vc(m,M1_VET_F2+n,k,j,i) : 0.0;
     }
+    cs(m,CLN_JR,k,j,i) = jr;
     if (jr > 0.0 && jr >= ray_min*iw_(m,M1_IW_EN,k,j,i)) {
       for (int a = 0; a < 6; ++a) cs(m,CLN_D11+a,k,j,i) = vc(m,M1_VET_D11+a,k,j,i);
       for (int a = 0; a < 3; ++a) {
