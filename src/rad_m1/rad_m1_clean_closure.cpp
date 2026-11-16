@@ -1147,10 +1147,18 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
   std::vector<bool> chg(ns, false);
   for (int64_t blk = (two ? b : b - nk + 1); blk <= b + nx; ++blk) {
     const int q = static_cast<int>(((blk % ns) + ns) % ns);
-    const Real key = VetGdAngleBlk(blk);
+    // (Cartesian: vet_sc's set of the block, turned about x1 by beta, VetRotBeta)
+    const Real key = vgd_on ? VetGdAngleBlk(blk) : VetRotBeta(blk);
     Real w = ((xf && blk == b - nk + 1) ? 1.0 - s : ((blk > b) ? s : 1.0))/nk;
     if (two) w = (blk > b) ? s : 1.0 - s;
-    const std::vector<double> d = VgdRotate(key);
+    std::vector<double> d;
+    if (vgd_on) {
+      d = VgdRotate(key);
+    } else {
+      VetBuildAngles(key);
+      auto a_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vet_ang);
+      d.assign(a_h.data(), a_h.data() + 4*n);
+    }
     for (int e = 0; e < n; ++e) {
       for (int c = 0; c < 3; ++c) d_h(q*n+e,c) = d[4*e+c];
       d_h(q*n+e,3) = w*d[4*e+3];
@@ -1160,6 +1168,7 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
     cln_fvblk[q] = blk;
   }
   Kokkos::deep_copy(cln_fvd, d_h);
+  if (!vgd_on) VetBuildAngles(vsc_beta);   // (vet_sc's own set back)
   if (remap) {
     // clean_rot_ring: a set kept keeps its intensities, a new one starts from the newest
     // old set's (the sweep's starting point)
