@@ -664,8 +664,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   Real dpic = 0.0;
   bool converged = !iterate;
   const int maxnl = iterate ? cln_maxnl : 1;
-  // the lagged slopes settle only to the accuracy of the linear solve
-  const Real tol_nl = cell ? fmax(cln_tol_nl, 10.0*cln_tol) : cln_tol_nl;
+  // the lagged slopes (and the staggered velocity) settle only to the accuracy of the
+  // linear solve
+  const Real tol_nl = fmax(cln_tol_nl, 10.0*cln_tol);
   // a change that stopped decreasing within 100 times both its round-off level (cln_fe,
   // cln_fv, from the magnitudes of the terms of the solve) and tol_nl is converged too
   auto settled = [&](const Real d, const Real d0, const Real f) {
@@ -1040,9 +1041,9 @@ Real RadiationM1::CleanNewtonUpdate() {
   auto w = cln_w;
   const bool cell = cln_cell;
 
-  Real change = 0.0;
+  Real change = 0.0, femax = 0.0;
   Kokkos::parallel_reduce("cln_newton", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &dmax) {
+  KOKKOS_LAMBDA(const int idx, Real &dmax, Real &fe_max) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/nx1;
@@ -1065,7 +1066,12 @@ Real RadiationM1::CleanNewtonUpdate() {
                           : fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), 1.0e-300);
     const Real dt = fabs(t - t_old)/fmax(fmax(t, t_old), 1.0e-300);
     dmax = fmax(dmax, fmax(de, dt));
-  }, Kokkos::Max<Real>(change));
+    // staggered: round-off level of E (its terms over E; cell: CleanCellVelocityUpdate)
+    if (!cell) fe_max = fmax(fe_max, (fabs(e)*(1.0 + hc*op(m,M1_OP_E,k,j,i)) +
+        fabs(w(m,CLW_EO,k,j,i)) + hc*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(t)))/
+        fmax(fabs(e), 1.0e-300));
+  }, Kokkos::Max<Real>(change), Kokkos::Max<Real>(femax));
+  if (!cell) cln_fe = std::numeric_limits<Real>::epsilon()*CleanReduce(femax, true);
   return CleanReduce(change, true);
 }
 
@@ -1084,11 +1090,13 @@ Real RadiationM1::CleanVelocityUpdate() {
   CleanArgs x = CleanMakeArgs();
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
+  auto op = opac;
+  const Real arad_ = arad;
 
-  Real dvmax = 0.0, vmax = 0.0;
+  Real dvmax = 0.0, vmax = 0.0, fvmax = 0.0;
   Kokkos::parallel_reduce("cln_velocity", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max) {
+  KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max, Real &fv_max) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/nx1;
@@ -1101,16 +1109,24 @@ Real RadiationM1::CleanVelocityUpdate() {
     for (int dir = 0; dir < 3; ++dir) {
       Real dm = 0.0;
       if (dir == 0 || (dir == 1 && x.multi_d) || (dir == 2 && x.three_d)) {
-        dm = CleanMomentumChange(x, CLW_EK, dir, m, k, j, i);
+        Real mag = 0.0;
+        dm = CleanMomentumChange(x, CLW_EK, dir, m, k, j, i, &mag);
+        // (times that of E in the stress, as CleanCellVelocityUpdate)
+        const Real e = fmax(fabs(x.w(m,CLW_EK,k,j,i)), 1.0e-300), hc = x.h*x.c;
+        fv_max = fmax(fv_max, mag/d*(2.0 + (e*hc*op(m,M1_OP_E,k,j,i) + fabs(x.w(m,
+                 CLW_EO,k,j,i)) + hc*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(x.w(m,CLW_T,k,j,
+                 i))))/e));
       }
       dv_max = fmax(dv_max, fabs(dm - x.w(m,CLW_DM+dir,k,j,i))/d);
       x.w(m,CLW_DM+dir,k,j,i) = dm;
       v2 += SQR((uh(m,IM1+dir,k,j,i) + dm)/d);
     }
     v_max = fmax(v_max, std::sqrt(v2));
-  }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax));
+  }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(fvmax));
   CleanAdvectiveCoefficients();
-  return CleanReduce(dvmax, true)/fmax(CleanReduce(vmax, true), 1.0e-300);
+  vmax = fmax(CleanReduce(vmax, true), 1.0e-300);
+  cln_fv = std::numeric_limits<Real>::epsilon()*CleanReduce(fvmax, true)/vmax;
+  return CleanReduce(dvmax, true)/vmax;
 }
 
 //----------------------------------------------------------------------------------------
