@@ -762,14 +762,20 @@ void RadiationM1::CleanCellLevelApply(const CleanLevel &lv, const int src,
 //! \brief blocks of the coarse levels by aggregation (Galerkin product with
 //! piecewise-constant prolongation and summing restriction): a coarse block is the sum of
 //! the blocks of its fine cells, the couplings between fine cells of the same coarse cell
-//! folded into the diagonal block
+//! folded into the diagonal block.  On curvilinear meshes the mesh rows are summed with
+//! their cell volumes, so that the fluxes between fine cells cancel as in the
+//! conservative operator.
 
 void RadiationM1::CleanCellCoarseSetup() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const int nlev = static_cast<int>(cln_mg.size()) + 1;
+  const bool curv = pmy_pack->pmesh->use_spherical_polar ||
+                    pmy_pack->pmesh->use_cubed_sphere;
+  auto vol = pmy_pack->pcoord->volume;
   for (int lc = 1; lc < nlev; ++lc) {
     const CleanLevel f = CleanCellLevel(lc-1), c = CleanCellLevel(lc);
     const int r[3] = {f.n[0]/c.n[0], f.n[1]/c.n[1], f.n[2]/c.n[2]};
+    const bool vw = (lc == 1) && curv;
 
     par_for("clc_galerkin", DevExeSpace(), 0, nmb1, 0, c.n[2]-1, 0, c.n[1]-1,
             0, c.n[0]-1,
@@ -782,14 +788,15 @@ void RadiationM1::CleanCellCoarseSetup() {
             const int j = f.o[1] + r[1]*jc + a1;
             const int i = f.o[0] + r[0]*ic + a0;
             const int a[3] = {a0, a1, a2};
-            for (int q = 0; q < 16; ++q) c.u(m,c.a0+q,kc,jc,ic) += f.u(m,f.a0+q,k,j,i);
+            const Real v = vw ? vol(m,k,j,i) : 1.0;
+            for (int q = 0; q < 16; ++q) c.u(m,c.a0+q,kc,jc,ic) += v*f.u(m,f.a0+q,k,j,i);
             for (int d = 0; d < 3; ++d) {
               if (f.n[d] == 1) continue;
               const int dm = (a[d] > 0) ? c.a0 : c.sm[d];
               const int dp = (a[d] < r[d] - 1) ? c.a0 : c.sp[d];
               for (int q = 0; q < 16; ++q) {
-                c.u(m,dm+q,kc,jc,ic) += f.u(m,f.sm[d]+q,k,j,i);
-                c.u(m,dp+q,kc,jc,ic) += f.u(m,f.sp[d]+q,k,j,i);
+                c.u(m,dm+q,kc,jc,ic) += v*f.u(m,f.sm[d]+q,k,j,i);
+                c.u(m,dp+q,kc,jc,ic) += v*f.u(m,f.sp[d]+q,k,j,i);
               }
             }
           }
@@ -839,9 +846,10 @@ void RadiationM1::CleanCellSmooth(const int l, const int src, const int dst,
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellVCycle
 //! \brief u(dst) = M^{-1} u(src) on level l by a multigrid V-cycle: line-relaxation
-//! smoothing, the residual summed over each coarse cell, the V-cycle on level l+1, its
-//! solution added to every fine cell of its coarse cell, smoothing again.  The coarsest
-//! level (a few cells per direction) is relaxed with four times the sweeps.
+//! smoothing, the residual summed over each coarse cell (with the cell volumes from a
+//! curvilinear mesh, as CleanCellCoarseSetup), the V-cycle on level l+1, its solution
+//! added to every fine cell of its coarse cell, smoothing again.  The coarsest level (a
+//! few cells per direction) is relaxed with four times the sweeps.
 
 void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
   const int nlev = static_cast<int>(cln_mg.size()) + 1;
@@ -863,6 +871,9 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
   }
   auto uf = f.u;
   auto uc = c.u;
+  const bool vw = (l == 0) && (pmy_pack->pmesh->use_spherical_polar ||
+                                pmy_pack->pmesh->use_cubed_sphere);
+  auto vol = pmy_pack->pcoord->volume;
   par_for("clc_restrict", DevExeSpace(), 0, nmb1, 0, c.n[2]-1, 0, c.n[1]-1, 0, c.n[0]-1,
   KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int ic) {
     for (int q = 0; q < 4; ++q) {
@@ -873,7 +884,7 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
             const int k = f.o[2] + r[2]*kc + a2;
             const int j = f.o[1] + r[1]*jc + a1;
             const int i = f.o[0] + r[0]*ic + a0;
-            s += uf(m,src+q,k,j,i) - uf(m,t1+q,k,j,i);
+            s += (vw ? vol(m,k,j,i) : 1.0)*(uf(m,src+q,k,j,i) - uf(m,t1+q,k,j,i));
           }
         }
       }
