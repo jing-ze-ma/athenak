@@ -1870,7 +1870,7 @@ void RadiationM1::CleanWriteBack() {
     const int j = (idx%nji)/nx1 + js, i = idx%nx1 + is;
     const Real ke = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
                          SQR(uh(m,IM3,k,j,i)))/uh(m,IDN,k,j,i);
-    if (!(uh(m,IEN,k,j,i) - ke > 0.0) && !(x.w(m,CLW_JV,k,j,i) >= 0.0) &&
+    if (!(CleanGasEint(x, uh, ke, m, k, j, i) > 0.0) && !(x.w(m,CLW_JV,k,j,i) >= 0.0) &&
         x.w(m,CLW_EI,k,j,i) > 0.0) n += 1.0;
   }, Kokkos::Sum<Real>(nb));
   cln_neint = static_cast<int>(CleanReduce(nb, false));
