@@ -221,7 +221,7 @@ void RadiationM1::CleanCellMilneSetup() {
 //! MeshBlock take CLN_FH of its last cell and F_kin the half ranges about the face normal
 //! from the two cells' FV intensities (CLF_HK; with clean_face_model = milne also the
 //! stress half ranges, CLF_KK): every term of a seam face is computed alike on both
-//! sides.
+//! sides.  Without clean_consistency (cubed sphere) only these half ranges are filled.
 
 void RadiationM1::CleanCellConsistency() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -292,6 +292,7 @@ void RadiationM1::CleanCellConsistency() {
           x.fc[dir](m,CLF_KK+3+b,k,j,i) = (hj[1] > 0.0) ? kk[3+b]/hj[1] : nv[b]/6.0;
         }
       }
+      if (!x.consist) return;
       if (bdry && (dir != 0 || !CleanOpen(x, m, blo ? 0 : 1))) return;
       // the rays' flux: of the face's own cell, an x1 boundary's or the high face of a
       // MeshBlock on the cubed sphere from the inner cell

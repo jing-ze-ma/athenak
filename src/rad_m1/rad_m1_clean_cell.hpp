@@ -514,14 +514,35 @@ bool CleanFaceDissipation(const CleanArgs &x, const int dir, const int m, const 
 //! \fn void CleanCellKinetic
 //! \brief the rays' half-range factors of the kinetic flux through the interior face
 //! (k,j,i) normal to dir: h+ of L and h- of R of the face family; on the cubed sphere
-//! about the face's own normal (CLF_HK)
+//! with FV rays about the face's own normal (CLF_HK)
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellKinetic(const CleanArgs &x, const int dir, const int m, const int k,
                       const int j, const int i, Real &hp, Real &hm) {
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
-  hp = x.cub ? x.fc[dir](m,CLF_HK,k,j,i) : x.cs(m,CLN_HP+dir,kl,jl,il);
-  hm = x.cub ? x.fc[dir](m,CLF_HK+1,k,j,i) : x.cs(m,CLN_HM+dir,k,j,i);
+  const bool hk = x.cub && x.fvrays;
+  hp = hk ? x.fc[dir](m,CLF_HK,k,j,i) : x.cs(m,CLN_HP+dir,kl,jl,il);
+  hm = hk ? x.fc[dir](m,CLF_HK+1,k,j,i) : x.cs(m,CLN_HM+dir,k,j,i);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanCellAdvectN
+//! \brief component along the normal of face (kf,jf,iff) normal to dir of the advective
+//! coefficient a = v + D v of cell (k,j,i) (CLW_A1, in the frame of y)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCellAdvectN(const CleanArgs &x, const int dir, const int m, const int kf,
+                      const int jf, const int iff, const int k, const int j,
+                      const int i) {
+  Real a[3], q[3][3];
+  for (int b = 0; b < 3; ++b) a[b] = x.w(m,CLW_A1+b,k,j,i);
+  if (x.cub) CleanCsFrame(x, m, k, j, i, q);
+  Real an = 0.0;
+  for (int b = 0; b < 3; ++b) {
+    const Real ab = x.cub ? a[0]*q[0][b] + a[1]*q[1][b] + a[2]*q[2][b] : a[b];
+    an += CleanNf(x, b, dir, m, kf, jf, iff)*ab;
+  }
+  return an;
 }
 
 //----------------------------------------------------------------------------------------
@@ -724,7 +745,9 @@ void CleanCellDeviationFlux(const CleanArgs &x, const int dir, const int m, cons
 //! (exact for two half-isotropic streams).  A low-order interior face takes its E flux
 //! from the rays' half ranges and the compact diffusion flux, blended with the face's
 //! weight a,
-//!   fE = a c (h+_L E_L + h-_R E_R) - (1 - a) th h c^2 ((D_dd E)_R - (D_dd E)_L)/dx_d,
+//!   fE = a c (h+_L E_L + h-_R E_R) - (1 - a) th h c^2 ((D_dd E)_R - (D_dd E)_L)/dx_d
+//!        + (1 - a) (1 - th) (max(a_n,L, 0) E_L + min(a_n,R, 0) E_R)
+//! (a_n the normal advective coefficient, the flux of the relaxed y),
 //! free of y and monotone in E (as the boundary form), so that the E row of a cell with
 //! every face low-order is an M-matrix (the work W aside); its fY has the cells' own
 //! stress with first-order dissipation at speed c.  With clean_consistency the leaving
@@ -833,6 +856,12 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
     CleanCellKinetic(x, dir, m, k, j, i, hp, hm);
     jl[0][0] = a*x.c*hp + g*CleanDnn(x, dir, m, k, j, i, kl, jl_, il);
     jr[0][0] = a*x.c*hm - g*CleanDnn(x, dir, m, k, j, i, k, j, i);
+    if (x.feedback) {
+      // the advective flux of the relaxed y, (1 - a)(1 - th) a_n E, upwind
+      const Real s = fmax(1.0 - a - x.fc[dir](m,CLF_TH,k,j,i), 0.0);
+      jl[0][0] += s*fmax(CleanCellAdvectN(x, dir, m, k, j, i, kl, jl_, il), 0.0);
+      jr[0][0] += s*fmin(CleanCellAdvectN(x, dir, m, k, j, i, k, j, i), 0.0);
+    }
     for (int b = 0; b < 3; ++b) jl[0][1+b] = jr[0][1+b] = 0.0;
   }
   if (!x.consist) return;
