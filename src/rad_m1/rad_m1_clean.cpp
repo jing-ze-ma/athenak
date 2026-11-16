@@ -1664,7 +1664,10 @@ void RadiationM1::CleanStagFSolve(const int e) {
       }
       fc(m,CLF_N+1,k,j,i) -= tk;
       if (!(all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0)) return;
-      const Real fm = x.w(m,CLW_Y,k-dk,j-dj,i-di), fp = x.w(m,CLW_Y,k+dk,j+dj,i+di);
+      // (a physical high face keeps F^H; the ghost fill replaced its slot)
+      const Real fm = x.w(m,CLW_Y,k-dk,j-dj,i-di);
+      const Real fp = CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di) ?
+                      fc(m,CLF_N,k+dk,j+dj,i+di) : x.w(m,CLW_Y,k+dk,j+dj,i+di);
       auto pk = [&](const int kk, const int jj, const int ii, const Real l, const Real h) {
         return al(m,2,kk,jj,ii)*(x.cs(m,CLN_HP+dir,kk,jj,ii)*l +
                x.cs(m,CLN_HM+dir,kk,jj,ii)*h)/x.c + al(m,1,kk,jj,ii);
