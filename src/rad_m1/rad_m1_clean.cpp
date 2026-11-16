@@ -240,8 +240,8 @@ void RadiationM1::CleanInit() {
   if (pm->use_spherical_polar) {
     // the rays are vet_gd's (closure = vet_col with vet_gd) on its fixed direction set,
     // swept from the first shell, or the analytic sphere (clean_closure = sphere)
-    // (staggered: r and r-theta; also clean_closure = eddington)
-    const bool stg = !cln_cell && !pm->three_d;
+    // (staggered: also clean_closure = eddington)
+    const bool stg = !cln_cell;
     if ((!cln_cell && !stg) || !(cln_sphere || vgd_on || (stg && cln_edd)) ||
         (cln_consist && !vgd_on) || vgd_twin || vgd_async ||
         (VgdRotOn() && cln_rfv == 0)) {
