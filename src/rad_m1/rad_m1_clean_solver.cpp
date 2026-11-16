@@ -179,14 +179,8 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
   while (pb->RecvAndUnpackCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
   while (pb->ClearSend() == TaskStatus::incomplete) {}
   while (pb->ClearRecv() == TaskStatus::incomplete) {}
-  par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-    if (!CleanInner(k, j, i, 0, is, ie, js, je, ks, ke, md, td)) {
-      a(m,c0+n,k,j,i) = h(m,n,k,j,i);
-    }
-  });
-  if (!phys) return;
-
+  // the ghosts back; with phys, a physical boundary's ghosts take the edge cell (the
+  // index clamped along each physical side: x1, x2, x3 copies in one)
   auto bc = pmy_pack->pmb->mb_bcs.d_view;
   auto pf = [] KOKKOS_FUNCTION (const BoundaryFlag f) {
     return f != BoundaryFlag::block && f != BoundaryFlag::periodic &&
@@ -195,36 +189,30 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
   // (the cubed sphere's D is Cartesian: a radial wall mirrors it about n, not done here)
   const bool ts = (a.data() == cln_s.data()) && !pmy_pack->pmesh->use_cubed_sphere;
   const int ib[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
-  bool rf[6];
-  for (int s = 0; s < 6; ++s) rf[s] = (ib[s] == M1_IBC_REFLECT);
+  int rf = 0;   // (bit s: side s reflects)
+  for (int s = 0; s < 6; ++s) rf |= (ib[s] == M1_IBC_REFLECT) ? (1 << s) : 0;
   auto sg = [=] KOKKOS_FUNCTION (const int c, const int s, const int m) {
     const int p = c - CLN_D11 - 3;   // (D12, D13, D23: axes 01, 02, 12; p != 2 - d)
     if (!ts || p < 0 || p > 2) return 1.0;
     if (bc(m,s) == BoundaryFlag::polar) return (p < 2) ? -1.0 : 1.0;
-    return (rf[s] && p != 2 - s/2) ? -1.0 : 1.0;
+    return (((rf >> s) & 1) && p != 2 - s/2) ? -1.0 : 1.0;
   };
-  par_for("cln_ghost1", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, ng-1,
-  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int g) {
-    const Real sl = sg(c0+n, 0, m), sh = sg(c0+n, 1, m);
-    if (pf(bc(m,BoundaryFace::inner_x1))) a(m,c0+n,k,j,is-1-g) = sl*a(m,c0+n,k,j,is);
-    if (pf(bc(m,BoundaryFace::outer_x1))) a(m,c0+n,k,j,ie+1+g) = sh*a(m,c0+n,k,j,ie);
+  par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+    if (CleanInner(k, j, i, 0, is, ie, js, je, ks, ke, md, td)) return;
+    int kk = k, jj = j, ii = i;
+    Real sp = 1.0;   // (the parity of the off-diagonal D at walls and poles)
+    if (phys) {
+      if (i < is && pf(bc(m,BoundaryFace::inner_x1))) {ii = is; sp *= sg(c0+n, 0, m);}
+      if (i > ie && pf(bc(m,BoundaryFace::outer_x1))) {ii = ie; sp *= sg(c0+n, 1, m);}
+      if (j < js && pf(bc(m,BoundaryFace::inner_x2))) {jj = js; sp *= sg(c0+n, 2, m);}
+      if (j > je && pf(bc(m,BoundaryFace::outer_x2))) {jj = je; sp *= sg(c0+n, 3, m);}
+      if (k < ks && pf(bc(m,BoundaryFace::inner_x3))) {kk = ks; sp *= sg(c0+n, 4, m);}
+      if (k > ke && pf(bc(m,BoundaryFace::outer_x3))) {kk = ke; sp *= sg(c0+n, 5, m);}
+    }
+    a(m,c0+n,k,j,i) = sp*(CleanInner(kk, jj, ii, 0, is, ie, js, je, ks, ke, md, td) ?
+                          a(m,c0+n,kk,jj,ii) : h(m,n,kk,jj,ii));
   });
-  if (pmy_pack->pmesh->multi_d) {
-    par_for("cln_ghost2", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, ng-1, 0, n1-1,
-    KOKKOS_LAMBDA(const int m, const int n, const int k, const int g, const int i) {
-      const Real sl = sg(c0+n, 2, m), sh = sg(c0+n, 3, m);
-      if (pf(bc(m,BoundaryFace::inner_x2))) a(m,c0+n,k,js-1-g,i) = sl*a(m,c0+n,k,js,i);
-      if (pf(bc(m,BoundaryFace::outer_x2))) a(m,c0+n,k,je+1+g,i) = sh*a(m,c0+n,k,je,i);
-    });
-  }
-  if (pmy_pack->pmesh->three_d) {
-    par_for("cln_ghost3", DevExeSpace(), 0, nmb1, 0, nc-1, 0, ng-1, 0, n2-1, 0, n1-1,
-    KOKKOS_LAMBDA(const int m, const int n, const int g, const int j, const int i) {
-      const Real sl = sg(c0+n, 4, m), sh = sg(c0+n, 5, m);
-      if (pf(bc(m,BoundaryFace::inner_x3))) a(m,c0+n,ks-1-g,j,i) = sl*a(m,c0+n,ks,j,i);
-      if (pf(bc(m,BoundaryFace::outer_x3))) a(m,c0+n,ke+1+g,j,i) = sh*a(m,c0+n,ke,j,i);
-    });
-  }
 }
 
 //----------------------------------------------------------------------------------------
