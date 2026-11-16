@@ -31,6 +31,7 @@
 #include "rad_m1/rad_m1_clean_cell.hpp"
 
 namespace radm1 {
+extern bool g_vra_adv;   // vet_rotate_advance (rad_m1_vetgd.cpp)
 //----------------------------------------------------------------------------------------
 //! \fn void CleanFatal
 //! \brief stops the run with a message about an unsupported clean-scheme setup
@@ -184,16 +185,29 @@ void RadiationM1::CleanInit() {
                "and, for wb_arad, the reference work given by the problem generator "
                "(force_reference_work = split)");
   }
+  if (vgd_on && VgdRotOn()) {
+    // the rotating FV rays (CleanFvSets): the closure is the J-weighted mean of the
+    // sets, continuous across the blocks with the cross-fade; no slope correction
+    const bool fixed = vra_on && !g_vra_adv;
+    if (vra_ema || vra_eq || (vgd_xf && !(vgd_rot_dt > 0.0 || vgd_rot_auto)) ||
+        (cln_rfv == 2 && !fixed) || (vgd_rot3 && !pm->three_d)) {
+      CleanFatal("<rad_m1>/scheme = clean with a rotating vet_gd set: vet_rotate_avg = K "
+                 "(J-weighted, no _ema), vet_gd_rotate_xfade with vet_gd_rotate_dt, "
+                 "clean_rays = fv only for a fixed union (vet_rotate_avg without "
+                 "vet_rotate_advance), and on a 2-D axisymmetric mesh the z axis");
+    }
+    vgd_rot_slope = 0;
+  }
   if (pm->use_cubed_sphere) {
     // the rays are vet_gd's directions transported conservatively (CleanFvSweep), or
     // the analytic sphere (eddington: of infinite radius); an even panel resolution
     // keeps the cell centres off the z axis (the frame of y, CleanCsFrame)
     if (!cln_cell || !(cln_sphere || cln_edd || vgd_on) || (cln_consist && !vgd_on) ||
-        vgd_twin || VgdRotOn() || vra_on || vgd_async || pm->mesh_indcs.nx2 % 2 != 0) {
+        vgd_twin || vgd_async || pm->mesh_indcs.nx2 % 2 != 0) {
       CleanFatal("<rad_m1>/scheme = clean on the cubed sphere needs clean_layout = cell, "
                  "clean_closure = sphere | eddington (no clean_consistency) or closure = "
-                 "vet_col with vet_gd (clean_rays = fv1 | fv, no twin, rotation or "
-                 "async) and an even <mesh>/nx2");
+                 "vet_col with vet_gd (clean_rays = fv1 | fv, no twin or async) and an "
+                 "even <mesh>/nx2");
     }
     if (vgd_on) {
       cln_rfv = std::max(cln_rfv, 1);
@@ -211,11 +225,11 @@ void RadiationM1::CleanInit() {
     // the rays are vet_gd's (closure = vet_col with vet_gd) on its fixed direction set,
     // swept from the first shell, or the analytic sphere (clean_closure = sphere)
     if (!cln_cell || !(cln_sphere || vgd_on) || (cln_consist && !vgd_on) ||
-        vgd_twin || VgdRotOn() || vra_on || vgd_async) {
+        vgd_twin || vgd_async || (VgdRotOn() && cln_rfv == 0)) {
       CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_layout = "
                  "cell, clean_closure = sphere (no clean_consistency) or closure = "
-                 "vet_col with vet_gd (vet_gd_twin = false, vet_gd_rotate_dt = 0, no "
-                 "vet_rotate_avg or vet_gd_async)");
+                 "vet_col with vet_gd (vet_gd_twin = false, no vet_gd_async; a rotating "
+                 "set needs clean_rays = fv1 | fv)");
     }
     // the rays' theta walls follow the mesh: a reflecting wall mirrors (the conservative
     // transport reflects specularly, CleanFvWalls), a periodic one wraps
@@ -527,6 +541,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // the vet_gd direction set before any use (the consistency term reads it at the first
   // solve of a restart, before any ray build)
   if (vgd_on && !tau_ready) VetColInit();
+  if (vgd_on && cln_rfv > 0 && cln_fvn == 0) {
+    CleanFvSets(pmy_pack->pmesh->time, pmy_pack->pmesh->ncycle - 1);
+  }
   FluidRef fl = FluidRef::Get(pmy_pack);
   cln_feedback = gas_feedback && fl.on;
   const bool cell = cln_cell;
