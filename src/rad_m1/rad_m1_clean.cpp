@@ -751,6 +751,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanCopyIterate();
       }
     }
+    if (!cell) CleanStagRealizable();
     if (!cell || !cln_poslim) break;
     const int nbad = CleanCellMarkFaces();
     if (nbad == 0) break;
@@ -796,8 +797,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                   t2_solve, nit, nit_sum, npic, dpic, npos, nmark, all_low ? 1 : 0, nneg,
                   cln_nnreal, cln_nguard, nsolve);
     } else {
-      std::printf("CLEAN cycle %d t2s %d it %d neg %d guard %d\n",
-                  pmy_pack->pmesh->ncycle, t2_solve, nit, nneg, cln_nguard);
+      std::printf("CLEAN cycle %d t2s %d it %d (sum %d) neg %d r1 %d r2 %d guard %d "
+                  "solves %d\n", pmy_pack->pmesh->ncycle, t2_solve, nit, nit_sum, nneg,
+                  cln_nr1, cln_nr2, cln_nguard, nsolve);
     }
   }
 
@@ -1182,6 +1184,61 @@ int RadiationM1::CleanCountNegative() {
     if (!(e >= 0.0)) n += 1.0;
   }, Kokkos::Sum<Real>(nneg));
   return static_cast<int>(CleanReduce(nneg, false));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::CleanStagRealizable
+//! \brief staggered layout: the realizability of the solution X beyond the solver
+//! tolerance (10 clean_tol max|B|, CleanCountNegative), R1: cells with E < 0 (cln_nr1),
+//! R2: interior faces whose flux leaves more than c E of the donor cell (cln_nr2).
+//! Returns cln_nr1 + cln_nr2.
+
+int RadiationM1::CleanStagRealizable() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  int nmb = pmy_pack->nmb_thispack;
+  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  CleanGhostFill(cln_w, CLW_X, 1);
+  CleanArgs x = CleanMakeArgs();
+  Real bmax = 0.0;
+  Kokkos::parallel_reduce("cln_bmax", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &b_max) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/nx1;
+    int i = idx - m*nkji - k*nji - j*nx1;
+    b_max = fmax(b_max, fabs(x.w(m,CLW_B,k+ks,j+js,i+is)));
+  }, Kokkos::Max<Real>(bmax));
+  const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
+  Real n1 = 0.0, n2 = 0.0;
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    const int f1 = nx1 + di, f2 = nx2 + dj, f3 = nx3 + dk, fji = f2*f1, fkji = f3*fji;
+    Real r1 = 0.0, r2 = 0.0;
+    Kokkos::parallel_reduce("cln_real", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*fkji),
+    KOKKOS_LAMBDA(const int idx, Real &q1, Real &q2) {
+      int m = idx/fkji;
+      int k = (idx - m*fkji)/fji;
+      int j = (idx - m*fkji - k*fji)/f1;
+      int i = idx - m*fkji - k*fji - j*f1;
+      const bool cell = (i < nx1 && j < nx2 && k < nx3);   // (its low face)
+      k += ks;
+      j += js;
+      i += is;
+      const Real el = x.w(m,CLW_X,k-dk,j-dj,i-di), er = x.w(m,CLW_X,k,j,i);
+      if (dir == 0 && cell && !(er >= -zero)) q1 += 1.0;
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      const Real f = CleanFaceFlux(x, CLW_X, dir, m, k, j, i, true);
+      const Real ed = (f > 0.0) ? el : er;
+      if (!(fabs(f) <= (1.0 + 1.0e-12)*x.c*ed + x.c*zero)) q2 += 1.0;
+    }, Kokkos::Sum<Real>(r1), Kokkos::Sum<Real>(r2));
+    n1 += r1;
+    n2 += r2;
+  }
+  cln_nr1 = static_cast<int>(CleanReduce(n1, false));
+  cln_nr2 = static_cast<int>(CleanReduce(n2, false));
+  return cln_nr1 + cln_nr2;
 }
 
 //----------------------------------------------------------------------------------------
