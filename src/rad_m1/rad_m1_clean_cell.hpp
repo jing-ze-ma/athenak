@@ -89,19 +89,18 @@ constexpr int CLC_Z = 44;
 constexpr int CLC_AM = 48;   // preconditioner: 4x4 block of cell i-1 (row major)
 constexpr int CLC_A0 = 64;   // diagonal block
 constexpr int CLC_AP = 80;   // block of cell i+1
-constexpr int CLC_CP = 96;   // block-tridiagonal solve scratch
-constexpr int CLC_PSI = 112; // smoothness sensor of the old vector along x1, x2, x3
-constexpr int CLC_PL = 115;  // lagged slope weights pl, pr of (dir, component):
-constexpr int CLC_PR = 127;  //   slot + 4 dir + component
-constexpr int CLC_JM = 139;  // preconditioner blocks of cells j-1, j+1, k-1, k+1
-constexpr int CLC_JP = 155;
-constexpr int CLC_KM = 171;
-constexpr int CLC_KP = 187;
-constexpr int CLC_T1 = 203;  // preconditioner scratch vectors
-constexpr int CLC_T2 = 207;
-constexpr int CLC_U = 211;   // the rays' cell moments (J, J h)
-constexpr int CLC_MB = 215;  // B = kP a T^4/kE of the old vector (clean_face_model)
-constexpr int CLC_N = 216;
+constexpr int CLC_PSI = 96;  // smoothness sensor of the old vector along x1, x2, x3
+constexpr int CLC_PL = 99;   // lagged slope weights pl, pr of (dir, component):
+constexpr int CLC_PR = 111;  //   slot + 4 dir + component
+constexpr int CLC_JM = 123;  // preconditioner blocks of cells j-1, j+1, k-1, k+1
+constexpr int CLC_JP = 139;
+constexpr int CLC_KM = 155;
+constexpr int CLC_KP = 171;
+constexpr int CLC_T1 = 187;  // preconditioner scratch vectors
+constexpr int CLC_T2 = 191;
+constexpr int CLC_U = 195;   // the rays' cell moments (J, J h)
+constexpr int CLC_MB = 199;  // B = kP a T^4/kE of the old vector (clean_face_model)
+constexpr int CLC_N = 200;
 
 // dissipation weight candidates (<rad_m1>/clean_alpha)
 constexpr int CLA_TAU = 0;          // A(tau)^2, A = (1 - exp(-tau))/tau
