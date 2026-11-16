@@ -1,0 +1,1 @@
+cart/cloud/FIN3_r12g2 | p rc=0 fatal=0 dtr=0 unk=0 mean=3.085286e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00 t=2789 |

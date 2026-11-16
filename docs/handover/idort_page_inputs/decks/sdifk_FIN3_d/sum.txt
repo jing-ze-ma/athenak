@@ -1,0 +1,1 @@
+cart/sdifk/FIN3_d | p rc=0 fatal=0 dtr=3 unk=0 mean=2.000000e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00 t=33 |
