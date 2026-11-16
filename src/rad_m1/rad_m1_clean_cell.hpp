@@ -769,6 +769,76 @@ void CleanCellDeviationFlux(const CleanArgs &x, const int dir, const int m, cons
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanCellM1BoundaryJacobian
+//! \brief CleanCellM1Jacobian on the physical boundary face (k,j,i) normal to dir: the
+//! derivatives jj with respect to the state of the inner cell (R at a low face, L at a
+//! high one)
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellM1BoundaryJacobian(const CleanArgs &x, const int dir, const int m,
+                                 const int k, const int j, const int i, const bool blo,
+                                 Real jj[4][4]) {
+  const int kl = k - (dir == 2), jl_ = j - (dir == 1), il = i - (dir == 0);
+  const int bc = CleanBc(x, m, 2*dir + (blo ? 0 : 1));
+  const int kc = blo ? k : kl, jc = blo ? j : jl_, ic = blo ? i : il;
+  const Real wo = x.consist ? x.c*x.fc[dir](m,CLF_WK,k,j,i)*
+                              x.cs(m,(blo ? CLN_HM : CLN_HP)+dir,kc,jc,ic) : 0.0;
+  if (bc == M1_IBC_REFLECT) {
+    const Real dnn = CleanDnn(x, dir, m, k, j, i, kc, jc, ic);
+    for (int b = 0; b < x.nf; ++b) jj[1+b][0] = x.c*CleanNf(x, b, dir, m, k, j, i)*dnn;
+    CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, true, 2.0*wo, jj);
+    return;
+  }
+  if (bc == M1_IBC_FLUX) {
+    const Real hs = (blo ? -2.0 : 2.0)/3.0*x.c*
+                    x.cs(m,(blo ? CLN_HM : CLN_HP)+dir,kc,jc,ic);
+    for (int b = 0; b < x.nf; ++b) {
+      jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, blo) +
+                   hs*CleanNf(x, b, dir, m, k, j, i);
+    }
+    CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, false, wo, jj);
+    return;
+  }
+  const Real sg = blo ? -0.5*x.c : 0.5*x.c;
+  Real al, ar;
+  CleanFaceWeights(x, dir, m, k, j, i, al, ar);
+  jj[0][0] = blo ? ar : al;
+  const bool up = x.all_low || x.fc[dir](m,CLF_LO,k,j,i) > 0.0 ||
+                  x.fc[dir](m,CLF_UG,k,j,i) > 0.0;
+  for (int b = 0; b < x.nf; ++b) {
+    if (up) {
+      // first-order solve or marked boundary face: upwind (a = c) stress between the
+      // inner cell and the ghost
+      jj[1+b][0] = 0.5*x.c*CleanDn(x, b, dir, m, k, j, i, kc, jc, ic);
+      jj[1+b][1+b] = sg;
+    } else {
+      jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, blo);
+    }
+  }
+  if (!up) CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, false, wo, jj);
+  if (up || x.consist) return;
+  // without the consistency term the moment system's outgoing wave (speed c sqrt(D_nn),
+  // eigenvector (1, -+sqrt(D_nn) n)) carries the deviation R_n = (y - h E).n from the
+  // rays' flux out, (c R_n/2, -+c sqrt(D_nn) R_n n/2): the boundary prescribes only the
+  // incoming wave and a consistent state (R = 0) keeps the kinetic flux
+  Real sh[3], h[3], n[3], hn = 0.0;
+  for (int b = 0; b < 3; ++b) {
+    sh[b] = x.cs(m,CLN_HP+b,kc,jc,ic) + x.cs(m,CLN_HM+b,kc,jc,ic);
+    n[b] = CleanNf(x, b, dir, m, k, j, i);
+  }
+  CleanRayFlux(x, m, kc, jc, ic, sh, h);
+  for (int b = 0; b < 3; ++b) hn += h[b]*n[b];
+  const Real sd = (blo ? -0.5 : 0.5)*x.c*std::sqrt(fmax(CleanDnn(x, dir, m, k, j, i, kc,
+                                                                  jc, ic), 0.0));
+  jj[0][0] -= 0.5*x.c*hn;
+  for (int b = 0; b < x.nf; ++b) {
+    jj[0][1+b] += 0.5*x.c*n[b];
+    jj[1+b][0] -= sd*n[b]*hn;
+    for (int c = 0; c < x.nf; ++c) jj[1+b][1+c] += sd*n[b]*n[c];
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanCellM1Jacobian
 //! \brief derivatives jl, jr of the moment fluxes (fE, fY_1..3) at face (k,j,i) normal to
 //! dir with respect to the states (E, y_1..3) of the cells L and R.  The terms in the
@@ -809,65 +879,12 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
   }
   const bool blo = (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC);
   const bool bhi = (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC);
-  if (blo || bhi) {
-    const int bc = blo ? CleanBc(x, m, 2*dir) : CleanBc(x, m, 2*dir+1);
-    Real (*jj)[4] = blo ? jr : jl;
-    const int kc = blo ? k : kl, jc = blo ? j : jl_, ic = blo ? i : il;
-    const Real wo = x.consist ? x.c*x.fc[dir](m,CLF_WK,k,j,i)*
-                                x.cs(m,(blo ? CLN_HM : CLN_HP)+dir,kc,jc,ic) : 0.0;
-    if (bc == M1_IBC_REFLECT) {
-      const Real dnn = CleanDnn(x, dir, m, k, j, i, kc, jc, ic);
-      for (int b = 0; b < x.nf; ++b) jj[1+b][0] = x.c*CleanNf(x, b, dir, m, k, j, i)*dnn;
-      CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, true, 2.0*wo, jj);
-      return;
-    }
-    if (bc == M1_IBC_FLUX) {
-      const Real hs = (blo ? -2.0 : 2.0)/3.0*x.c*
-                      x.cs(m,(blo ? CLN_HM : CLN_HP)+dir,kc,jc,ic);
-      for (int b = 0; b < x.nf; ++b) {
-        jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, blo) +
-                     hs*CleanNf(x, b, dir, m, k, j, i);
-      }
-      CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, false, wo, jj);
-      return;
-    }
-    const Real sg = blo ? -0.5*x.c : 0.5*x.c;
-    Real al, ar;
-    CleanFaceWeights(x, dir, m, k, j, i, al, ar);
-    jj[0][0] = blo ? ar : al;
-    const bool up = x.all_low || x.fc[dir](m,CLF_LO,k,j,i) > 0.0 ||
-                    x.fc[dir](m,CLF_UG,k,j,i) > 0.0;
-    for (int b = 0; b < x.nf; ++b) {
-      if (up) {
-        // first-order solve or marked boundary face: upwind (a = c) stress between the
-        // inner cell and the ghost
-        jj[1+b][0] = 0.5*x.c*CleanDn(x, b, dir, m, k, j, i, kc, jc, ic);
-        jj[1+b][1+b] = sg;
-      } else {
-        jj[1+b][0] = x.c*CleanCellOutStress(x, dir, b, m, k, j, i, kc, jc, ic, blo);
-      }
-    }
-    if (!up) CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, false, wo, jj);
-    if (up || x.consist) return;
-    // without the consistency term the moment system's outgoing wave (speed c sqrt(D_nn),
-    // eigenvector (1, -+sqrt(D_nn) n)) carries the deviation R_n = (y - h E).n from the
-    // rays' flux out, (c R_n/2, -+c sqrt(D_nn) R_n n/2): the boundary prescribes only the
-    // incoming wave and a consistent state (R = 0) keeps the kinetic flux
-    Real sh[3], h[3], n[3], hn = 0.0;
-    for (int b = 0; b < 3; ++b) {
-      sh[b] = x.cs(m,CLN_HP+b,kc,jc,ic) + x.cs(m,CLN_HM+b,kc,jc,ic);
-      n[b] = CleanNf(x, b, dir, m, k, j, i);
-    }
-    CleanRayFlux(x, m, kc, jc, ic, sh, h);
-    for (int b = 0; b < 3; ++b) hn += h[b]*n[b];
-    const Real sd = (blo ? -0.5 : 0.5)*x.c*std::sqrt(fmax(CleanDnn(x, dir, m, k, j, i, kc,
-                                                                    jc, ic), 0.0));
-    jj[0][0] -= 0.5*x.c*hn;
-    for (int b = 0; b < x.nf; ++b) {
-      jj[0][1+b] += 0.5*x.c*n[b];
-      jj[1+b][0] -= sd*n[b]*hn;
-      for (int c = 0; c < x.nf; ++c) jj[1+b][1+c] += sd*n[b]*n[c];
-    }
+  if (blo) {
+    CleanCellM1BoundaryJacobian(x, dir, m, k, j, i, true, jr);
+    return;
+  }
+  if (bhi) {
+    CleanCellM1BoundaryJacobian(x, dir, m, k, j, i, false, jl);
     return;
   }
   Real al, hs;
@@ -1062,7 +1079,13 @@ void CleanCellMilne(const CleanArgs &x, const int dir, const int m, const int k,
     sh[b] = x.cs(m,CLN_HP+b,kc,jc,ic) + x.cs(m,CLN_HM+b,kc,jc,ic);
   }
   CleanRayFlux(x, m, kc, jc, ic, sh, hr);
-  for (int b = 0; b < x.nf; ++b) (blo ? jr : jl)[1+b][0] -= wo*hr[b];
+  for (int b = 0; b < x.nf; ++b) {
+    if (blo) {
+      jr[1+b][0] -= wo*hr[b];
+    } else {
+      jl[1+b][0] -= wo*hr[b];
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
