@@ -1571,7 +1571,8 @@ void RadiationM1::CleanStagFSolve(const int e) {
           face(t, k, j, i);
           const Real fv = x.w(m,CLW_R,k,j,i) - ((t < n) ? x.w(m,CLW_CP,k,j,i)*fn : 0.0);
           fn = fv;
-          d_max = fmax(d_max, fabs(fv - x.w(m,CLW_Y,k,j,i)));
+          // (the last face's slot is a ghost: the neighbour's or a physical face)
+          if (t < n) d_max = fmax(d_max, fabs(fv - x.w(m,CLW_Y,k,j,i)));
           f_max = fmax(f_max, fabs(fv));
           x.w(m,CLW_Y,k,j,i) = fv;
         }
@@ -1582,9 +1583,9 @@ void RadiationM1::CleanStagFSolve(const int e) {
     // F and the dissipation term of every face
     par_for("cln_fs3", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;   // (it keeps F^H)
       const Real f = x.w(m,CLW_Y,k,j,i);
       fc(m,CLF_N,k,j,i) = f;
-      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
       const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
       const Real wl = al(m,2,k-dk,j-dj,i-di), wr = al(m,2,k,j,i);
       if (!(all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0)) return;
