@@ -146,7 +146,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool cs = pmy_pack->pmesh->use_cubed_sphere;
     const bool gd = sp && pin->DoesParameterExist("rad_m1","vet_gd") &&
                     pin->GetBoolean("rad_m1","vet_gd");
-    if (cln_cell && gd && !pin->DoesParameterExist("rad_m1","clean_rays")) cln_rfv = 1;
+    if (gd && !pin->DoesParameterExist("rad_m1","clean_rays")) cln_rfv = 1;
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",
                                        cln_cell && !cs && (!sp || gd));
     cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",cln_cell);
