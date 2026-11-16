@@ -172,7 +172,9 @@ void RadiationM1::CleanInit() {
   }
   // the boundaries of the clean solve: open (bath, beam; outflow without a bath),
   // reflect, periodic and, in the cell layout, an imposed flux (x1, and x2 with the
-  // problem generator's face fluxes)
+  // problem generator's face fluxes).  The staggered face weights take an imposed flux
+  // as the face's whole flux (CleanFaceWeights), but its F solve, write-back and wall
+  // force have not been tested with one: kept out
   const int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
   for (int s = 0; s < 6; ++s) {
     const bool flux = bc[s] == M1_IBC_FLUX || (bc[s] == M1_IBC_X2FLUX && ifx2_on);

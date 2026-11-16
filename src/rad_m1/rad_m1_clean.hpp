@@ -411,7 +411,8 @@ Real CleanStagMemUp(const CleanArgs &x, const int dir, const int m, const int k,
 //! \fn void CleanFaceWeights
 //! \brief coefficients of E_L and E_R in the flux through face (k,j,i) normal to dir, i.e.
 //! everything but the off-diagonal Eddington terms and the old-vector flux G.  Physical
-//! boundaries (non-periodic) take the boundary flux of their form.
+//! boundaries (non-periodic) take the boundary flux of their form (none at a wall or an
+//! imposed flux, CleanFaceSource).
 
 KOKKOS_INLINE_FUNCTION
 void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int k,
@@ -423,14 +424,14 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   al = 0.0;
   ar = 0.0;
   if (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC) {
-    if (CleanBc(x, m, 2*dir) == M1_IBC_REFLECT) return;
+    if (!CleanOpen(x, m, 2*dir)) return;   // (a wall; an imposed flux is all source)
     const bool beam = x.use_beam && dir == 0 && x.beam(m,k-x.ks,j-x.js) > 0.0;
     if (beam && x.marshak) return;
     ar = x.marshak ? -x.c*x.marshak_q : x.c*x.cs(m,CLN_HM+dir,k,j,i);
     return;
   }
   if (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC) {
-    if (CleanBc(x, m, 2*dir+1) == M1_IBC_REFLECT) return;
+    if (!CleanOpen(x, m, 2*dir+1)) return;
     al = x.marshak ? x.c*x.marshak_q : x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
     return;
   }
