@@ -327,6 +327,47 @@ void RadiationM1::CleanCellConsistency() {
       for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = q*wb*(fr[r] - f[r]);
     });
   }
+  if (!cln_consist || cln_rfv == 0) return;
+
+  // FV rays: the bracket takes out of a cell at most the energy it has to give,
+  // E_old + h c kP a T^4 plus what the bracket brings in; its outflowing faces take the
+  // factor of their upwind cell (flux-corrected transport), so they stay single-valued.
+  // (The short characteristics' bracket carries a divergence-free part out of empty
+  // cells that their steady state needs; it is left alone.)
+  const Real arad_ = arad;
+  auto op = opac;
+  auto lim = cln_v;
+  par_for("clc_bracket_out", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real pout = 0.0, pin = 0.0;
+    for (int dir = 0; dir < x.nf; ++dir) {
+      const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+      for (int n = 0; n < 2; ++n) {
+        Real f[4], g[4];
+        for (int r = 0; r < 4; ++r) f[r] = x.fc[dir](m,CLF_CB+r,k+n*dk,j+n*dj,i+n*di);
+        CleanCellRows(x, dir, m, k+n*dk, j+n*dj, i+n*di, k, j, i, f, g);
+        const Real o = n ? g[0] : -g[0];
+        pout += fmax(o, 0.0);
+        pin += fmax(-o, 0.0);
+      }
+    }
+    const Real a = fmax(x.w(m,CLW_EO,k,j,i), 0.0) + pin +
+                   x.h*x.c*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(x.w(m,CLW_T,k,j,i)));
+    lim(m,1,k,j,i) = (pout > a) ? a/pout : 1.0;
+  });
+  CleanGhostFill(cln_v, 1, 1);
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    par_for("clc_bracket_lim", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool bdry = CleanBoundaryFace(x, dir, m, k, j, i);
+      const bool lo = (dir == 0 ? i == x.is : (dir == 1 ? j == x.js : k == x.ks));
+      const bool out = x.fc[dir](m,CLF_CB,k,j,i) > 0.0;   // from L to R
+      if (bdry && out == lo) return;   // into the mesh
+      const Real q = out ? lim(m,1,k-dk,j-dj,i-di) : lim(m,1,k,j,i);
+      for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) *= q;
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------
