@@ -116,7 +116,8 @@ void RadiationM1::CleanInit() {
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
   const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N),
-                           cln_fsolve ? CLF_N + 4 + (cln_fkin ? 1 : 0) : 0);
+                           cln_vimp ? CLF_DQ + 1 : (cln_gflux ? CLF_SLO + 1 :
+                           (cln_fsolve ? (cln_fkin ? CLF_DS + 1 : CLF_N + 4) : 0)));
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = cln_cell && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
@@ -696,6 +697,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanFirstIterate();
     cln_fsk = false;
     if (cell) CleanCellFirstIterate();
+    if (cln_vimp && cln_feedback) CleanStagDrag(true);
     if (cln_opt && cln_feedback) {
       CleanCellOpacity();
       CleanCellFaceSpeeds();
@@ -1220,6 +1222,7 @@ Real RadiationM1::CleanVelocityUpdate() {
     }
     v_max = fmax(v_max, std::sqrt(v2));
   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(fvmax));
+  if (cln_vimp) CleanStagDrag(false);   // (with the coefficients of this dm)
   CleanAdvectiveCoefficients();
   vmax = fmax(CleanReduce(vmax, true), 1.0e-300);
   cln_fv = std::numeric_limits<Real>::epsilon()*CleanReduce(fvmax, true)/vmax;
@@ -1506,7 +1509,7 @@ void RadiationM1::CleanStagBracket() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanDMem
 //! \brief clean_stag_fkin: the energy flux's memory d (CLF_N + 3) of the stage-loop start
-//! into CLF_N + 4 (save) or back (a rejected stage: its write-back, and that of a stage 1
+//! into CLF_DS (save) or back (a rejected stage: its write-back, and that of a stage 1
 //! before it, belong to a solution the backward-Euler redo discards)
 
 void RadiationM1::CleanDMem(const bool save) {
@@ -1515,7 +1518,7 @@ void RadiationM1::CleanDMem(const bool save) {
   auto AL = Kokkos::ALL;
   for (auto fc : {cln_fc1, cln_fc2, cln_fc3}) {
     auto d = Kokkos::subview(fc, AL, CLF_N + 3, AL, AL, AL);
-    auto s = Kokkos::subview(fc, AL, CLF_N + 4, AL, AL, AL);
+    auto s = Kokkos::subview(fc, AL, CLF_DS, AL, AL, AL);
     if (save) {Kokkos::deep_copy(s, d);} else {Kokkos::deep_copy(d, s);}
   }
 }
@@ -1750,6 +1753,57 @@ void RadiationM1::CleanStagFSolve(const int e) {
                              (2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i)) -
           q*(pk(k, j, i, f, fp) - pk(k-dk, j-dj, i-di, fm, f)) -
           qs*(pk(k, j, i, f, fp) + pk(k-dk, j-dj, i-di, fm, f));
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagDrag
+//! \brief clean_stag_vimp (staggered, gas coupling): the gas velocity implicit in the
+//! face momentum, eliminated face by face so that the E solve stays scalar.  A change
+//! dm_f of the momentum face f gives up moves its two half cells (mass rho_c/2, share
+//! wt_c = chi_c/(chi_L + chi_R)) by dv_c = 2 wt_c dm_f/rho_c, and the advective flux by
+//! (1 - theta) dA_f = beta c^2 dm_f with
+//!   beta = (1 - theta) sum_c wt_c (1 + D_nn,c) E_c/(rho_c c^2),
+//! E of the iterate.  With dm_f = -[(F - F^k)/c^2 + h d_n(D (E - E^k))] relative to the
+//! flux of the iterate's velocity,
+//!   F = (1 - b) F^H(E) + b [Q - h c^2 d_n(D E)],  b = beta/(1 + beta),
+//!   Q = F^k + h c^2 d_n(D E^k) = G - c^2 dm_f^k (CLF_DB, CLF_DQ; CleanFaceWeights,
+//!   CleanFaceCross, CleanFaceSource)
+//! and the energy flux takes the same increment.  When the loop has converged F = F^H:
+//! the solution is that of the lagged velocity.  first: the first iterate, dm^k = 0 and
+//! Q = G; b = 0 while the gas momentum is frozen and before the reference force is set.
+
+void RadiationM1::CleanStagDrag(const bool first) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (first) CleanGhostFill(cln_w, CLW_EK, 1);
+  CleanArgs x = CleanMakeArgs(), xh = x;
+  xh.hi = true;
+  auto uh = FluidRef::Get(pmy_pack).u0;
+  const bool off = cln_vzero || (first && force_ref == M1_FREF_CLEAN && !cln_fref_set);
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    par_for("cln_drag", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;   // (no F equation)
+      const Real q = first ? fc(m,CLF_G,k,j,i) :
+                     CleanFaceFlux(xh, CLW_EK, dir, m, k, j, i, true) +
+                     x.h*x.c*x.c*CleanFaceStress(x, CLW_EK, dir, m, k, j, i, true);
+      const Real xl = x.op(m,M1_OP_T,k-dk,j-dj,i-di), xs = xl + x.op(m,M1_OP_T,k,j,i);
+      const Real wl = (xs > 0.0) ? xl/xs : 0.5;
+      auto ce = [&](const int kk, const int jj, const int ii) {
+        return (1.0 + x.cs(m,CLN_D11+dir,kk,jj,ii))*fmax(x.w(m,CLW_EK,kk,jj,ii), 0.0)/
+               uh(m,IDN,kk,jj,ii);
+      };
+      const Real bt = off ? 0.0 : (1.0 - fc(m,CLF_TH,k,j,i))*(wl*ce(k-dk, j-dj, i-di) +
+                      (1.0 - wl)*ce(k, j, i))/(x.c*x.c);
+      fc(m,CLF_DB,k,j,i) = bt/(1.0 + bt);
+      fc(m,CLF_DQ,k,j,i) = q;
     });
   }
 }
