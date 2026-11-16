@@ -1,0 +1,142 @@
+<comment>
+problem = runs_3r_radwave vetf_impl_x1_P3.33333_t10_N32_nt64_amp-1.00e-03_armCLN_refvetqs_d_rm_clean_layoutcell_rm_schemeclean_rm_vet_gd_rotate_dt0_rm_vet_x1_ptol0_tshesdirk2_vimptrue
+
+<job>
+basename = rw
+
+<mesh>
+nghost = 2
+nx1 = 32
+x1min = 0.0
+x1max = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+nx2 = 4
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 8
+nx2 = 4
+nx3 = 1
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.8
+nlim = -1
+tlim = 0.4707789049422601
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+
+<rad_m1>
+c_light = 10
+chat_over_c = 1.0
+cfl_rad = 0.4
+thick_flux = none
+closure = vet_sc
+e_floor = 1.0e-30
+subcycle = true
+opacity = const
+kappa_p = 10
+kappa_e = 10
+kappa_f = 10
+kappa_s = 0.0
+arad = 9.9999900000000004
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 2.3538945247113006
+implicit_tol = 1.0e-11
+implicit_maxit = 200
+implicit_lin_tol = 1.0e-13
+implicit_lin_maxit = 400
+implicit_solver = bicgstab
+implicit_offdiag = operator
+implicit_closure_lag = step
+implicit_recon = dc
+implicit_vimp = true
+time_scheme = hesdirk2
+clean_layout = cell
+scheme = clean
+vet_gd_rotate_dt = 0
+vet_x1_ptol = 0
+vet_nmu = 4
+vet_nphi = 8
+vet_tensor = full
+vet_x1_periodic = true
+vet_x1_npass = 3
+clean_w_c0 = 0.1
+clean_w_c1 = 0.5
+clean_tol = 1e-10
+clean_maxit = 4000
+clean_maxnl = 50
+clean_tol_nl = 1e-11
+clean_ray_min = 0.001
+clean_fill_passes = 8
+clean_predict = true
+clean_bc = halfrange
+clean_alpha = tau
+clean_recon = plm
+clean_consistency = true
+clean_consistency_weight = true
+clean_face_model = none
+clean_psi_eps = 1e-12
+clean_maxpic = 12
+clean_pos_limit = true
+clean_diag_cells = false
+clean_pos_boundary = false
+clean_pos_ghost = false
+clean_closure = extrap1
+clean_vfreeze = 0
+clean_maxpos = 3
+clean_pc_sweeps = 1
+<problem>
+pgen_name = rad_m1_beam
+m1_test = radwave
+radwave_dir = x1
+radwave_amp = -0.001
+radwave_rho = 1.0
+radwave_t = 1.0
+radwave_eig = true
+radwave_eig_e_im = -0.93719457552033014
+radwave_eig_e_re = 1.0004079853349557
+radwave_eig_f_im = -0.26126460466568929
+radwave_eig_f_re = 0.14257725284963349
+radwave_eig_t_im = -0.2367053674437937
+radwave_eig_t_re = 0.25071568899370794
+radwave_eig_v_im = -0.58260758099122267
+radwave_eig_v_re = 2.1241393560797968
+
+<output1>
+file_type = tab
+variable = hydro_w
+data_format = %.16e
+dt = 0.029423681558891256
+slice_x2 = 0.125
+
+
+<output2>
+file_type = tab
+variable = m1
+data_format = %.16e
+dt = 0.029423681558891256
+slice_x2 = 0.125
+
+<output9>
+file_type = bin
+variable = m1
+dt = 1e30
+bin_double = true
