@@ -475,7 +475,8 @@ Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const i
 //! \fn Real CleanMomentumChange
 //! \brief the momentum the radiation gives to cell (k,j,i) along dir over the stage, in
 //! conservative form: at each face, minus the left side of the radiation flux equation,
-//! -[(F - G)/c^2 + h div(D E)], half of each face to each neighbour.  E is work vector e.
+//! -[(F - G)/c^2 + h div(D E)], half of each face to each neighbour (clean_stag_split: in
+//! proportion to their chi, as the two half cells absorb).  E is work vector e.
 
 KOKKOS_INLINE_FUNCTION
 Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const int m,
@@ -486,7 +487,15 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
     const int kf = k + side*dk, jf = j + side*dj, iff = i + side*di;
     const Real f = CleanFaceFlux(x, e, dir, m, kf, jf, iff, true);
     const Real g = x.fc[dir](m,CLF_G,kf,jf,iff);
-    dm -= 0.5*((f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff, true));
+    // (clean_stag_split: shared as the two half cells absorb, chi_c/(chi_L + chi_R))
+    const int o = 2*side - 1;
+    const Real xc = x.op(m,M1_OP_T,k,j,i), xs = xc + x.op(m,M1_OP_T,k+o*dk,j+o*dj,i+o*di);
+    const Real wt = (x.hi && xs > 0.0) ? xc/xs : 0.5;
+    if (x.hi && CleanBoundaryFace(x, dir, m, kf, jf, iff)) {
+      dm += 0.5*x.h*xc*f/x.c;   // (a boundary flux is no F equation: the inner half cell's
+      continue;                 //  absorption of it)
+    }
+    dm -= wt*((f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff, true));
     // (mag: the size of its terms, for the round-off level of dm)
     auto de = [&](const int kk, const int jj, const int ii) {
       return fabs(x.cs(m,CLN_D11+dir,kk,jj,ii)*x.w(m,e,kk,jj,ii));
