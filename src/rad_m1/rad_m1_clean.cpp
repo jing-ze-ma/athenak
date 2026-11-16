@@ -184,7 +184,7 @@ void RadiationM1::CleanInit() {
     CleanFatal("scheme = clean has no ghost-built inner face (problem/he_bc_linhao) and "
                "no per-column outer bath");
   }
-  if ((force_ref != M1_FREF_NONE && !cln_cell) ||
+  if ((force_ref == M1_FREF_WB_ARAD && !cln_cell) ||
       (force_ref == M1_FREF_WB_ARAD && !fref_wsplit)) {
     CleanFatal("<rad_m1>/force_reference with scheme = clean needs clean_layout = cell "
                "and, for wb_arad, the reference work given by the problem generator "
@@ -1147,6 +1147,9 @@ Real RadiationM1::CleanVelocityUpdate() {
   auto uh = fl.u0;
   auto op = opac;
   const Real arad_ = arad;
+  const bool fref = (force_ref == M1_FREF_CLEAN);
+  const bool cap = fref && !cln_fref_set && !cln_vzero;
+  auto fr = cln_fref;
 
   Real dvmax = 0.0, vmax = 0.0, fvmax = 0.0;
   Kokkos::parallel_reduce("cln_velocity", Kokkos::RangePolicy<>(DevExeSpace(), 0,
@@ -1166,6 +1169,11 @@ Real RadiationM1::CleanVelocityUpdate() {
       if (dir == 0 || (dir == 1 && x.multi_d) || (dir == 2 && x.three_d)) {
         Real mag = 0.0;
         dm = CleanMomentumChange(xh, CLW_EK, dir, m, k, j, i, &mag);
+        // (force_reference = clean: the first coupled solve's force is the reference,
+        // withheld from the gas; nothing while the gas momentum is frozen)
+        if (cap) fr(m,dir,k,j,i) = dm/x.h;
+        if (fref) dm -= cap ? dm : x.h*fr(m,dir,k,j,i);
+        if (x.vzero) dm = 0.0;
         // (times that of E in the stress, as CleanCellVelocityUpdate)
         const Real e = fmax(fabs(x.w(m,CLW_EK,k,j,i)), 1.0e-300), hc = x.h*x.c;
         fv_max = fmax(fv_max, mag/d*(2.0 + (e*hc*op(m,M1_OP_E,k,j,i) + fabs(x.w(m,
@@ -1179,6 +1187,7 @@ Real RadiationM1::CleanVelocityUpdate() {
     v_max = fmax(v_max, std::sqrt(v2));
   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(fvmax));
   CleanAdvectiveCoefficients();
+  if (cap) cln_fref_set = true;
   vmax = fmax(CleanReduce(vmax, true), 1.0e-300);
   cln_fv = std::numeric_limits<Real>::epsilon()*CleanReduce(fvmax, true)/vmax;
   return CleanReduce(dvmax, true)/vmax;
@@ -1536,6 +1545,8 @@ void RadiationM1::CleanWriteBack() {
   auto uh = fl.u0;
   auto u0_ = u0;
   auto f1 = f0x1, f2 = f0x2, f3 = f0x3;
+  const bool fref = (force_ref == M1_FREF_CLEAN);
+  auto fr = cln_fref;
   par_for("cln_wbcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real e = x.w(m,CLW_X,k,j,i);
@@ -1545,6 +1556,10 @@ void RadiationM1::CleanWriteBack() {
       dm[0] = CleanMomentumChange(xh, CLW_X, 0, m, k, j, i);
       if (multi_d) dm[1] = CleanMomentumChange(xh, CLW_X, 1, m, k, j, i);
       if (three_d) dm[2] = CleanMomentumChange(xh, CLW_X, 2, m, k, j, i);
+      for (int n = 0; n < 3; ++n) {   // (force_reference = clean, frozen gas momentum)
+        if (fref) dm[n] -= h*fr(m,n,k,j,i);
+        if (x.vzero) dm[n] = 0.0;
+      }
       for (int n = 0; n < 3; ++n) uh(m,IM1+n,k,j,i) += dm[n];
       // gas energy: exactly what the radiation gives up besides its flux divergence, so
       // that total energy changes only by the face fluxes
