@@ -207,7 +207,6 @@ void RadiationM1::CleanInit() {
   const bool ring_ok = vgd_on && cln_rfv > 0 && vra_on && g_vra_adv &&
                        (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
                        vra_k <= M1_RA_NF;
-  if (!cln_ring_named && ring_ok && vgd_xf) cln_ring = 1;
   if (cln_ring && !(ring_ok && vgd_xf == (cln_ring == 1))) {
     CleanFatal("<rad_m1>/clean_rot_ring needs vet_gd FV rays rotating in time: "
                "vet_rotate_avg = K with vet_rotate_advance, vet_gd_rotate_dt and "
